@@ -91,7 +91,8 @@ mview_window_open(
 	struct mview_input *input,
 	uint32_t width,
 	uint32_t height,
-	int fullscreen)
+	int fullscreen,
+	uint32_t content)
 {
 	int status;
 
@@ -162,6 +163,16 @@ mview_window_open(
 	xdg_toplevel_set_app_id(window->toplevel, "mview");
 	if (fullscreen)
 		xdg_toplevel_set_fullscreen(window->toplevel, NULL);
+
+	/* The content the surface shows (a game lets the compositor show it straight), when asked and offered. */
+	if (content != WP_CONTENT_TYPE_V1_TYPE_NONE && window->content_manager != NULL) {
+		window->content_type = wp_content_type_manager_v1_get_surface_content_type(window->content_manager, window->surface);
+		if (window->content_type == NULL)
+			return -1;
+		wp_content_type_v1_set_content_type(window->content_type, content);
+	}
+
+	/* The empty commit applies the role's state and the content type. */
 	wl_surface_commit(window->surface);
 
 	/* No Vulkan buffer can be presented until the initial configure has been acknowledged. */
@@ -263,6 +274,12 @@ mview_window_close(
 	if (window->seat != NULL)
 		wl_seat_destroy(window->seat);
 
+	/* The surface's content type goes before the surface, the manager with it. */
+	if (window->content_type != NULL)
+		wp_content_type_v1_destroy(window->content_type);
+	if (window->content_manager != NULL)
+		wp_content_type_manager_v1_destroy(window->content_manager);
+
 	/* Partial initialization follows the same child-before-parent retirement order. */
 	if (window->toplevel != NULL)
 		xdg_toplevel_destroy(window->toplevel);
@@ -360,6 +377,16 @@ window_global(
 		status = wl_seat_add_listener(window->seat, &seat_listener, window);
 		if (status != 0)
 			return;
+
+		/* This announcement has no additional interface to bind. */
+		return;
+	}
+
+	/* The content-type manager lets the viewer say it shows a game (--content); its absence only leaves the type unsaid. */
+	match = strcmp(interface, "wp_content_type_manager_v1");
+	if (match == 0 && window->content_manager == NULL) {
+		window->content_manager = wl_registry_bind(registry, name, &wp_content_type_manager_v1_interface, 1U);
+		return;
 	}
 
 	/* Succeeded: this announcement either supplied a needed binding or needed no action. */

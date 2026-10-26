@@ -80,7 +80,9 @@ VkResult
 mview_renderer_open(
 	struct mview_renderer *renderer,
 	struct mview_window *window,
-	int pixel_shading)
+	int pixel_shading,
+	VkPresentModeKHR present_mode,
+	uint32_t copies)
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
@@ -93,6 +95,8 @@ mview_renderer_open(
 	renderer->extent.width = window->width;
 	renderer->extent.height = window->height;
 	renderer->pixel_shading = pixel_shading;
+	renderer->wanted_present = present_mode;
+	renderer->copies = copies;
 
 	/* The application requests only standard instance extensions. */
 	extensions[0] = VK_KHR_SURFACE_EXTENSION_NAME;
@@ -742,11 +746,12 @@ renderer_swapchain(
 	VkSurfaceCapabilitiesKHR capabilities;
 	VkSurfaceFormatKHR *formats;
 	VkSwapchainCreateInfoKHR create;
+	VkPresentModeKHR *modes;
 	uint32_t count;
 	uint32_t index;
 	VkResult error;
 
-	/* FIFO is the one presentation mode every Vulkan surface supports. */
+	/* The surface's formats first. */
 	renderer->operation = "vkGetPhysicalDeviceSurfaceFormatsKHR";
 	count = 0U;
 	error = vkGetPhysicalDeviceSurfaceFormatsKHR(renderer->physical, renderer->surface, &count, NULL);
@@ -782,6 +787,37 @@ renderer_swapchain(
 	/* The viewer's colour handling assumes an 8-bit UNORM target. */
 	if (renderer->format == VK_FORMAT_UNDEFINED)
 		return VK_ERROR_FORMAT_NOT_SUPPORTED;
+
+	/* FIFO is the one presentation mode every Vulkan surface supports; another is used when the surface offers it. */
+	renderer->present_mode = VK_PRESENT_MODE_FIFO_KHR;
+	renderer->operation = "vkGetPhysicalDeviceSurfacePresentModesKHR";
+	count = 0U;
+	error = vkGetPhysicalDeviceSurfacePresentModesKHR(renderer->physical, renderer->surface, &count, NULL);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* Holds the surface's presentation modes. */
+	modes = calloc(count + 1U, sizeof(*modes));
+	if (modes == NULL)
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+
+	/* Failed enumeration leaves no mode safe to inspect. */
+	error = vkGetPhysicalDeviceSurfacePresentModesKHR(renderer->physical, renderer->surface, &count, modes);
+	if (error != VK_SUCCESS) {
+		free(modes);
+		return error;
+	}
+
+	/* Takes the asked mode when it is among them. */
+	for (index = 0U; index < count; index++) {
+		if (modes[index] == renderer->wanted_present) {
+			renderer->present_mode = renderer->wanted_present;
+			break;
+		}
+	}
+
+	/* The chosen mode is kept; the list goes. */
+	free(modes);
 
 	/* Obtains the native extent and object-count limits before creation. */
 	renderer->operation = "vkGetPhysicalDeviceSurfaceCapabilitiesKHR";
@@ -826,7 +862,7 @@ renderer_swapchain(
 	create.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	create.preTransform = capabilities.currentTransform;
 	create.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
-	create.presentMode = VK_PRESENT_MODE_FIFO_KHR;
+	create.presentMode = renderer->present_mode;
 	create.clipped = VK_TRUE;
 	create.oldSwapchain = old;
 
@@ -2169,11 +2205,16 @@ renderer_record(
 	VkDeviceSize offset;
 	VkPipeline bound;
 	struct mview_push push;
+	struct mview_camera view;
 	const struct mview_material *material;
 	const struct mview_group *group;
 	uint32_t pipeline;
 	uint32_t texture;
 	uint32_t index;
+	uint32_t copy;
+	uint32_t columns;
+	uint32_t rows;
+	float spacing;
 
 	/* A neutral dark grey background and the far depth plane. */
 	memset(clear, 0, sizeof(clear));
@@ -2208,48 +2249,69 @@ renderer_record(
 	vkCmdBindVertexBuffers(renderer->command, 0U, 1U, &renderer->vertices.buffer, &offset);
 	vkCmdBindIndexBuffer(renderer->command, renderer->indices.buffer, 0U, VK_INDEX_TYPE_UINT32);
 
-	/* The transforms are the same for every group; the colour changes per material. */
-	mview_camera_push(camera, renderer->extent.width, renderer->extent.height, &push);
+	/*
+	 * The copies' grid (--copies): as many columns as the square root asks,
+	 * the rows that fill, the viewer moved back so the whole grid shows.
+	 */
+	view = *camera;
+	columns = 1U;
+	while (columns * columns < renderer->copies)
+		columns++;
+	rows = (renderer->copies + columns - 1U) / columns;
+	if (columns > 1U)
+		view.distance = camera->distance * (float)columns;
+	spacing = 2.0f * camera->radius;
 
 	/*
 	 * The per-pixel shading's scene block for this view; the previous frame's
 	 * fence was waited on, so no GPU work reads the buffer while it changes.
 	 */
 	if (renderer->pixel_shading != 0)
-		mview_camera_scene(camera, renderer->extent.width, renderer->extent.height, (struct mview_scene *)renderer->scene.mapping);
+		mview_camera_scene(&view, renderer->extent.width, renderer->extent.height, (struct mview_scene *)renderer->scene.mapping);
 
-	/* Draws each group with its material's pipeline, texture and colour. */
+	/* Draws every copy, each shifted in the view plane to its place in the grid. */
 	bound = VK_NULL_HANDLE;
-	for (index = 0U; index < model->group_count; index++) {
-		group = &model->groups[index];
-		material = &model->materials[group->material];
+	for (copy = 0U; copy < renderer->copies; copy++) {
+		/* The copy's place: its column and row about the grid's centre. */
+		view.pan[0] = camera->pan[0] + ((float)(copy % columns) - 0.5f * (float)(columns - 1U)) * spacing;
+		view.pan[1] = camera->pan[1] - ((float)(copy / columns) - 0.5f * (float)(rows - 1U)) * spacing;
 
-		/* Consecutive groups of the same kind keep the bound pipeline. */
-		pipeline = (uint32_t)material->alpha * 2U + (uint32_t)material->cull;
-		if (renderer->pipelines[pipeline] != bound) {
-			bound = renderer->pipelines[pipeline];
-			vkCmdBindPipeline(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, bound);
+		/* The transforms are the same for every group of the copy; the colour changes per material. */
+		mview_camera_push(&view, renderer->extent.width, renderer->extent.height, &push);
+
+		/* Draws each group with its material's pipeline, texture and colour. */
+		for (index = 0U; index < model->group_count; index++) {
+			group = &model->groups[index];
+			material = &model->materials[group->material];
+
+			/* Consecutive groups of the same kind keep the bound pipeline. */
+			pipeline = (uint32_t)material->alpha * 2U + (uint32_t)material->cull;
+			if (renderer->pipelines[pipeline] != bound) {
+				bound = renderer->pipelines[pipeline];
+				vkCmdBindPipeline(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, bound);
+			}
+
+			/* An untextured material samples the white texture after the model's own. */
+			texture = model->texture_count;
+			if (material->texture >= 0)
+				texture = (uint32_t)material->texture;
+
+			/* Binds the material's texture. */
+			vkCmdBindDescriptorSets(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U, &renderer->sets[texture], 0U, NULL);
+
+			/* Pushes the transforms with this material's colour. */
+			memcpy(push.color, material->color, sizeof(push.color));
+			vkCmdPushConstants(
+				renderer->command,
+				renderer->layout,
+				VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+				0U,
+				(uint32_t)sizeof(push),
+				&push);
+
+			/* Draws the group's triangles. */
+			vkCmdDrawIndexed(renderer->command, group->count, 1U, group->first, 0, 0U);
 		}
-
-		/* An untextured material samples the white texture after the model's own. */
-		texture = model->texture_count;
-		if (material->texture >= 0)
-			texture = (uint32_t)material->texture;
-
-		vkCmdBindDescriptorSets(renderer->command, VK_PIPELINE_BIND_POINT_GRAPHICS, renderer->layout, 0U, 1U, &renderer->sets[texture], 0U, NULL);
-
-		/* Pushes the transforms with this material's colour. */
-		memcpy(push.color, material->color, sizeof(push.color));
-		vkCmdPushConstants(
-			renderer->command,
-			renderer->layout,
-			VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-			0U,
-			(uint32_t)sizeof(push),
-			&push);
-
-		/* Draws the group's triangles. */
-		vkCmdDrawIndexed(renderer->command, group->count, 1U, group->first, 0, 0U);
 	}
 
 	/* Ends the pass, which leaves the image ready to present. */
