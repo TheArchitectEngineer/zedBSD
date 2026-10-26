@@ -233,6 +233,8 @@ design-reviewer は U1〜U9 に全部賛成（条件つき: U1 は使わない p
 
 ## 12. 人の判断が要る事（p002 の前・merge の前）
 
+**決定（2026-10-27、Q1 の技術判断、ユーザーへ報告）**: D1 は (b)、D2 は (a)。D1 は同日 P1 が実施した（5330 の Debian で `sfdisk --part-label`、p4〜p6 を `zedBSD-nvme-boot`・`zedBSD-nvme-root`・`zedBSD-nvme-swap` に。[hw5330 の README](../tools/hw5330/README.md) の区画の表）。
+
 ### D1. 同じ PARTLABEL が二つになる（重大、design-review の 1）
 
 q1612 で NVMe に作った区画は p5 `zedBSD-root`・p6 `zedBSD-swap`。5330 の試験の USB の image の `zedbsd.cfg` は `rootpart=PARTLABEL=zedBSD-root swap0=PARTLABEL=zedBSD-swap`。VMD の driver で NVMe が見えると、`block_identity_resolve()` が二つめの一致で EEXIST を返し（`src/kern/block-identity.c` 188）、vfs が root の selector の解決で失敗する（`src/kern/vfs.c` 2135-2138）。**この driver が main に入った時点で 5330 の USB の回帰（5330-run.sh）が全部落ちる**。止まると遠隔の電源が無い。案:
