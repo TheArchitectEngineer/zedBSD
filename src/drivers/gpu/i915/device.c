@@ -1055,7 +1055,7 @@ i915_start_prepare(
 	 * Tells the graphics and display versions, the engines and the
 	 * workaround rules from the device id, as the PCI driver matches it:
 	 * Tiger Lake, Rocket Lake, Alder Lake and Raptor Lake have a Gen12 GT,
-	 * Skylake to Comet Lake a Gen9 one.  The revision is the stepping some
+	 * Ice Lake a Gen11 one, Skylake to Comet Lake a Gen9 one.  The revision is the stepping some
 	 * Gen9 workarounds depend on.
 	 */
 	product = drv_i915_pci_read16(&gt->pci, 0x02U);
