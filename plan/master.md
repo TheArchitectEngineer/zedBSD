@@ -590,13 +590,13 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS287](ws287/ws.md) | MG008 | EHCI の full-speed・low-speed の device（split transaction、ZYBO の ChipIdea を含む） | planning | 着手は後日 |
 | [WS288](ws288/ws.md) | MG008 | FPGA の GPU の IP（display controller・command processor・blitter・vertex fetcher・rasterizer・shader unit・texture unit・ROP・memory controller）、ZYBO で workflow、本命は KC705 | closed（2026-10-26 22:57、ユーザーの指示。amaterrace-gpu は他の担当へ、zedBSD の driver は WS290） | 2026-10-24 ユーザーの決定で目標の板は KC705 だけ、RTL を揃えるのを優先（板は p024、timing は p025）。cleared p002〜p005・p007・p008・p012・p017・p023、in-progress p001・p006（branch）・p009。引き継ぎ [handover-20261024-2230.md](ws288/handover-20261024-2230.md) |
 | [WS289](ws289/ws.md) | MG008 | ZYBO の単独起動: SD（SDIO0）・LAN（GEM0 + RTL8211E、SSH）・SD からの起動（BOOT.BIN）。root を SD に。SDHCI・Cadence GEM の共通の部分を汎用の driver に分ける | completed | 2026-10-23 completed。実機の ZYBO が SD の BOOT.BIN → SPL Falcon → FIT kernel で単独起動し、root は SD、LAN 1000 Mbps・DHCP・SSH、`deploy.sh` で kernel 更新と reboot ができる。汎用の SDHCI・Cadence GEM の core を Pi 4/Pi 5/ZYBO の glue に分けた。100/10 Mbps は未確認 |
-| [WS291](ws291/ws.md) | MG006 | GPU の driver の描画の速さ（desktop 60 fps・重い 3D の model 50 fps）: AMD RDNA（P2）→ NVIDIA（P2、GPU を入れ替え）→ PowerVR（VF2、P3） | planned | p001 desktop の計測（q1595、P2） |
+| [WS291](ws291/ws.md) | MG006 | GPU の driver の描画の速さ（desktop 60 fps・重い 3D の model 50 fps）: AMD RDNA（P2）→ NVIDIA（P2、GPU を入れ替え）→ PowerVR（VF2、P3） | incomplete（p001・p002・p002a cleared） | p003 投入の経路（q1603、P2） |
 | [WS296](ws296/ws.md) | MG001 | src/drivers（gpu/ を除く）の comment から開発の管理情報を消し、XXX の規約の当て直し（usb など 11 file） | planned | 18 LW、担当の起動はユーザーの指示の時 |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
 | [WS294](ws294/ws.md) | MG006 | i915 の GuC による submission | canceled（2026-10-27 00:18、GuC は WS295 の xe で） | — |
 | [WS293](ws293/ws.md) | MG006 | i915 の Vulkan の executor を render/ から vk/ に揃える（動作は不変） | completed（2026-10-27 01:39） | — |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
-| [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 2.0（amaterrace-gpu の docs/ghci.md）だけに書き直す。試験は host だけ | planning | p001 の設計（q1594、P1） |
+| [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 2.0（amaterrace-gpu の docs/ghci.md）だけに書き直す。試験は host だけ | incomplete（p001 の設計は済み、ghci-questions.md の回答待ち） | p001 の設計（q1594、P1） |
 | [WS279](ws279/ws.md) | MG008 | Raspberry Pi 5 の GPU（V3D 7.1）と display（HVS6）（2026-10-21 ユーザー） | incomplete | p001 design.md（約 47〜64 LW の Phase 表）、ユーザーの判断 D1〜D4 待ち |
 | [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | incomplete | p001 設計・p002 起動 image は main（6757ac6f2）、実機の確認待ち（plan/ws278/tests/rpi5-hw-test.md）、判断 D1〜D3 待ち |
 | [WS275](ws275/ws.md) | MG008 | sun4u に /dev/graphics を実装し Xzed を動かす（2026-10-19 ユーザー） | incomplete（2026-10-19 停止、BUG-337。p001〜p005 cleared・main に merge 50bd10c5f） | BUG-337 |
