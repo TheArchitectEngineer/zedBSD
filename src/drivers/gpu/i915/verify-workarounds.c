@@ -744,7 +744,10 @@ i915_verify_wa_wait_engine(
 
 /*
  * Reports whether a register lies in a multicast range of its graphics
- * version: Gen9 takes the Gen8 ranges, every other version the Gen12 ones.
+ * version: Gen9 and Gen11 take the Gen8 ranges, Gen12 the Gen12 ones.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_workarounds.c
+ * (mcr_range: graphics versions 8 to 11 take mcr_ranges_gen8).
  */
 static int
 i915_mcr_range_of(
@@ -752,10 +755,10 @@ i915_mcr_range_of(
 	uint32_t offset)
 {
 	/* A Gen12 register is looked up in the Gen12 ranges. */
-	if (graphics_ver != 9)
+	if (graphics_ver >= 12)
 		return drv_i915_wa_multicast_gen12(offset);
 
-	/* A Gen9 register in the Gen8 ranges. */
+	/* A Gen9 or Gen11 register in the Gen8 ranges. */
 	return i915_mcr_in_ranges(i915_mcr_ranges_gen8, (unsigned)(sizeof(i915_mcr_ranges_gen8) / sizeof(i915_mcr_ranges_gen8[0])), offset);
 }
 

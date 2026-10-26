@@ -99,6 +99,7 @@ drv_i915_engine_setup_common(
 		ge->sseu_has_slice_pg = sseu->has_slice_pg;
 		ge->sseu_max_eus_per_subslice = sseu->max_eus_per_subslice;
 		ge->sseu_eu_per_subslice = sseu->eu_per_subslice;
+		ge->sseu_subslice_mask = sseu->subslice_mask;
 	}
 
 	/* Marks the engine ready for the execlists setup. */

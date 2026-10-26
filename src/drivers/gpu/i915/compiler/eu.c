@@ -6,12 +6,13 @@
  */
 
 /*
- * Gen9 and Gen12 EU instruction encoder (see eu.h).
+ * Gen9, Gen11 and Gen12 EU instruction encoder (see eu.h).
  *
- * Each instruction is four little-endian 32-bit words on both versions.
+ * Each instruction is four little-endian 32-bit words on every version.
  * Field bit positions, hardware opcode values, register types and the
- * descriptor layout of SEND are in intel/eu-encoding-gen12.h and
- * intel/eu-encoding-gen9.h.  A buffer is encoded in one layout (struct
+ * descriptor layout of SEND are in intel/eu-encoding-gen12.h,
+ * intel/eu-encoding-gen9.h and, for the types Ice Lake numbers anew,
+ * intel/eu-encoding-gen11.h.  A buffer is encoded in one layout (struct
  * i915_eu_format) chosen when it is prepared; the emitters ask the layout
  * where each field goes.
  *
@@ -37,9 +38,9 @@
  * compiler emits and leaves on the table the pipelining a dataflow
  * analysis would allow.
  *
- * Gen9 has no SWSB byte: its hardware scoreboard holds an instruction that
- * reads a register until the instruction writing it is done, so the Gen9
- * layout encodes neither the byte nor the sync.nop.  What the hardware does
+ * Gen9 and Gen11 have no SWSB byte: their hardware scoreboard holds an
+ * instruction that reads a register until the instruction writing it is
+ * done, so their layouts encode neither the byte nor the sync.nop.  What the hardware does
  * not see -- a message whose reply nobody reads, such as a memory fence --
  * the code generator waits for itself (compile-compute.inc).
  */
@@ -53,6 +54,7 @@
 
 #include "../intel/eu-encoding-gen12.h"
 #include "../intel/eu-encoding-gen9.h"
+#include "../intel/eu-encoding-gen11.h"
 
 /*
  * Marks a parameter a function deliberately leaves unread.
@@ -479,6 +481,133 @@ static const struct i915_eu_format i915_eu_format_gen9 = {
 	GEN9_EU_FILE_IMM,
 };
 
+/*
+ * The Ice Lake layout: the Gen9 fields, opcodes and SEND forms with the
+ * Gen11 type numbers (intel/eu-encoding-gen11.h), translated from the
+ * names the code generator uses: UB 0 -> 4, UW 1 -> 2, UD 2 -> 0, B 4 -> 5
+ * (the immediate V -> 5), W 5 -> 3, D 6 -> 1, HF 9 -> 8, F 10 -> 9.
+ */
+static const struct i915_eu_format i915_eu_format_gen11 = {
+	11U,
+	{ GEN9_EU_OPCODE_HI, GEN9_EU_OPCODE_LO },
+	{ GEN9_EU_EXEC_SIZE_HI, GEN9_EU_EXEC_SIZE_LO },
+	{ GEN9_EU_PRED_CONTROL_HI, GEN9_EU_PRED_CONTROL_LO },
+	{ GEN9_EU_COND_MODIFIER_HI, GEN9_EU_COND_MODIFIER_LO },
+	{ GEN9_EU_MATH_FUNCTION_HI, GEN9_EU_MATH_FUNCTION_LO },
+	GEN9_EU_NO_MASK_BIT,
+	GEN9_EU_FLAG_REG_NR_BIT,
+	GEN9_EU_FLAG_SUBREG_NR_BIT,
+	0,
+	{ 0U, 0U },
+	{
+		{ GEN9_EU_DST_REG_FILE_HI, GEN9_EU_DST_REG_FILE_LO },
+		{ GEN9_EU_DST_REG_TYPE_HI, GEN9_EU_DST_REG_TYPE_LO },
+		{ GEN9_EU_DST_SUBREG_HI, GEN9_EU_DST_SUBREG_LO },
+		{ GEN9_EU_DST_REG_NR_HI, GEN9_EU_DST_REG_NR_LO },
+		{ GEN9_EU_DST_HSTRIDE_HI, GEN9_EU_DST_HSTRIDE_LO },
+		{ 0U, 0U },
+		{ 0U, 0U },
+		I915_EU_NO_BIT,
+		I915_EU_NO_BIT,
+		I915_EU_NO_BIT,
+	},
+	{
+		{ GEN9_EU_SRC0_REG_FILE_HI, GEN9_EU_SRC0_REG_FILE_LO },
+		{ GEN9_EU_SRC0_REG_TYPE_HI, GEN9_EU_SRC0_REG_TYPE_LO },
+		{ GEN9_EU_SRC0_SUBREG_HI, GEN9_EU_SRC0_SUBREG_LO },
+		{ GEN9_EU_SRC0_REG_NR_HI, GEN9_EU_SRC0_REG_NR_LO },
+		{ GEN9_EU_SRC0_HSTRIDE_HI, GEN9_EU_SRC0_HSTRIDE_LO },
+		{ GEN9_EU_SRC0_WIDTH_HI, GEN9_EU_SRC0_WIDTH_LO },
+		{ GEN9_EU_SRC0_VSTRIDE_HI, GEN9_EU_SRC0_VSTRIDE_LO },
+		GEN9_EU_SRC0_ABS_BIT,
+		GEN9_EU_SRC0_NEGATE_BIT,
+		I915_EU_NO_BIT,
+	},
+	{
+		{ GEN9_EU_SRC1_REG_FILE_HI, GEN9_EU_SRC1_REG_FILE_LO },
+		{ GEN9_EU_SRC1_REG_TYPE_HI, GEN9_EU_SRC1_REG_TYPE_LO },
+		{ GEN9_EU_SRC1_SUBREG_HI, GEN9_EU_SRC1_SUBREG_LO },
+		{ GEN9_EU_SRC1_REG_NR_HI, GEN9_EU_SRC1_REG_NR_LO },
+		{ GEN9_EU_SRC1_HSTRIDE_HI, GEN9_EU_SRC1_HSTRIDE_LO },
+		{ GEN9_EU_SRC1_WIDTH_HI, GEN9_EU_SRC1_WIDTH_LO },
+		{ GEN9_EU_SRC1_VSTRIDE_HI, GEN9_EU_SRC1_VSTRIDE_LO },
+		GEN9_EU_SRC1_ABS_BIT,
+		GEN9_EU_SRC1_NEGATE_BIT,
+		I915_EU_NO_BIT,
+	},
+	{ GEN9_EU_IMM32_HI, GEN9_EU_IMM32_LO },
+	{ GEN9_EU_JIP_HI, GEN9_EU_JIP_LO },
+	{ GEN9_EU_UIP_HI, GEN9_EU_UIP_LO },
+	{ GEN9_EU_SEND_SFID_HI, GEN9_EU_SEND_SFID_LO },
+	GEN9_EU_SEND_EOT_BIT,
+	{
+		GEN9_EU_OP_MOV,
+		GEN9_EU_OP_SEL,
+		GEN9_EU_OP_NOT,
+		GEN9_EU_OP_AND,
+		GEN9_EU_OP_OR,
+		GEN9_EU_OP_XOR,
+		GEN9_EU_OP_SHR,
+		GEN9_EU_OP_SHL,
+		GEN9_EU_OP_ASR,
+		GEN9_EU_OP_CMP,
+		GEN9_EU_OP_IF,
+		GEN9_EU_OP_ENDIF,
+		GEN9_EU_OP_WHILE,
+		GEN9_EU_OP_WAIT,
+		GEN9_EU_OP_SEND,
+		GEN9_EU_OP_SENDC,
+		GEN9_EU_OP_SENDS,
+		GEN9_EU_OP_SENDSC,
+		I915_EU_NO_OPCODE,
+		GEN9_EU_OP_MATH,
+		GEN9_EU_OP_ADD,
+		GEN9_EU_OP_MUL,
+		GEN9_EU_OP_FRC,
+		GEN9_EU_OP_RNDD,
+		GEN9_EU_OP_RNDE,
+		GEN9_EU_OP_RNDZ,
+		GEN9_EU_OP_NOP,
+	},
+	{
+		GEN11_EU_TYPE_UB,
+		GEN11_EU_TYPE_UW,
+		GEN11_EU_TYPE_UD,
+		I915_EU_NO_TYPE,
+		GEN11_EU_TYPE_B,
+		GEN11_EU_TYPE_W,
+		GEN11_EU_TYPE_D,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		GEN11_EU_TYPE_HF,
+		GEN11_EU_TYPE_F,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+	},
+	{
+		I915_EU_NO_TYPE,
+		GEN11_EU_TYPE_UW,
+		GEN11_EU_TYPE_UD,
+		I915_EU_NO_TYPE,
+		GEN11_EU_IMM_TYPE_V,
+		GEN11_EU_TYPE_W,
+		GEN11_EU_TYPE_D,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		GEN11_EU_TYPE_HF,
+		GEN11_EU_TYPE_F,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+		I915_EU_NO_TYPE,
+	},
+	GEN9_EU_FILE_IMM,
+};
+
 static struct i915_eu_reg i915_eu_grf_typed(uint32_t nr, uint32_t type);
 static uint32_t *i915_eu_reserve(struct i915_eu_buf *buffer);
 static void i915_eu_common(struct i915_eu_buf *buffer, uint32_t *inst, enum i915_eu_opcode opcode, int order);
@@ -522,8 +651,8 @@ drv_i915_eu_init(
 /*
  * Prepares an empty instruction buffer for graphics version `graphics_ver`.
  *
- * 9 (Skylake, Kaby Lake, Coffee Lake) and 12 (Tiger Lake, Alder Lake) are
- * encoded; any other version poisons the buffer, so nothing a caller emits
+ * 9 (Skylake, Kaby Lake, Coffee Lake), 11 (Ice Lake) and 12 (Tiger Lake,
+ * Alder Lake) are encoded; any other version poisons the buffer, so nothing a caller emits
  * into it can be shipped.
  */
 void
@@ -537,6 +666,12 @@ drv_i915_eu_init_gen(
 	/* Gen9 has its own layout. */
 	if (graphics_ver == 9U) {
 		buffer->format = &i915_eu_format_gen9;
+		return;
+	}
+
+	/* So has Ice Lake. */
+	if (graphics_ver == 11U) {
+		buffer->format = &i915_eu_format_gen11;
 		return;
 	}
 

@@ -48,6 +48,7 @@
 
 #include "../intel/genxml.h"
 #include "../intel/genxml-gen9.h"
+#include "../intel/genxml-gen11.h"
 
 /* How many rectangles are logged even when they succeed. */
 #define I915_BLIT_LOGGED_RECTANGLES	4U
@@ -102,10 +103,12 @@ drv_i915_gfx_rect_prepare(
 	unsigned graphics_ver;
 	int error;
 
-	/* The kernels are compiled for the GT's version, Gen12 unless it is Gen9. */
+	/* The kernels are compiled for the GT's version, Gen12 unless it is Gen9 or Gen11. */
 	graphics_ver = 12U;
 	if (session->vk->i915->gt.graphics_ver == GEN9_GRAPHICS_VER)
 		graphics_ver = GEN9_GRAPHICS_VER;
+	if (session->vk->i915->gt.graphics_ver == GEN11_GRAPHICS_VER)
+		graphics_ver = GEN11_GRAPHICS_VER;
 
 	/* Compiles the fill kernel the first time. */
 	if (i915_blit_fill_kernel == NULL) {
@@ -972,22 +975,27 @@ i915_blit_build_batch(
 	uint32_t null_depth;
 	uint32_t stencil_dwords;
 	int gen9;
+	int pre12;
 
 	/* Switches to 3D, programs the state bases and the once-per-context state. */
 	state_va = space->slot_va;
 	drv_i915_gfx_emit_context_setup(batch, state_va, space->window_va, 0U, mocs);
 
 	/*
-	 * Takes the forms of the batch's version: Gen9 has no L3
-	 * bypass bit, its null depth buffer has the format in bits 20:18, and
-	 * its stencil buffer is five dwords.
+	 * Takes the forms of the batch's version: before Gen12 (Gen9 and
+	 * Gen11) there is no L3 bypass bit, the null depth buffer has the
+	 * format in bits 20:18, and the stencil buffer is five dwords; Gen9
+	 * alone has no extended system values.
 	 */
 	gen9 = 0;
+	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+		gen9 = 1;
+	pre12 = 0;
 	l3_bypass = GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE;
 	null_depth = (GEN12_SURFTYPE_NULL << 29) | (GEN12_DEPTH_FORMAT_D32_FLOAT << 24);
 	stencil_dwords = GEN12_3DSTATE_STENCIL_BUFFER_DWORDS;
-	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
-		gen9 = 1;
+	if (batch->graphics_ver < 12U) {
+		pre12 = 1;
 		l3_bypass = 0U;
 		null_depth = (GEN12_SURFTYPE_NULL << 29) | (GEN12_DEPTH_FORMAT_D32_FLOAT << GEN9_DEPTH_FORMAT_SHIFT);
 		stencil_dwords = GEN9_3DSTATE_STENCIL_BUFFER_DWORDS;
@@ -1021,7 +1029,7 @@ i915_blit_build_batch(
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF, GEN12_3DSTATE_VF_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS, GEN12_3DSTATE_VF_SGVS_DWORDS);
 
-	/* Clears the extended system values, which only Gen12 has. */
+	/* Clears the extended system values, which Gen11 and Gen12 have. */
 	if (gen9 == 0)
 		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
 
@@ -1053,7 +1061,7 @@ i915_blit_build_batch(
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_VIEWPORT_STATE_POINTERS_CC, I915_GFX_DYN_CC_VIEWPORT);
 
 	/* Points it at the coarse pixel state, which only Gen12 has. */
-	if (gen9 == 0)
+	if (pre12 == 0)
 		drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CPS_POINTERS, I915_GFX_DYN_CPS);
 
 	/*
@@ -1090,7 +1098,7 @@ i915_blit_build_batch(
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_GS, GEN12_3DSTATE_GS_DWORDS);
 
 	/* No primitive replication, which only Gen12 has. */
-	if (gen9 == 0)
+	if (pre12 == 0)
 		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
 
 	/* Clips with statistics only, and passes screen-space positions through. */
@@ -1123,9 +1131,9 @@ i915_blit_build_batch(
 	for (index = 2U; index < GEN12_3DSTATE_DEPTH_BUFFER_DWORDS; index++)
 		drv_i915_batch_emit(batch, 0U);
 
-	/* A null stencil buffer: SURFTYPE_NULL on Gen12, not enabled on Gen9. */
+	/* A null stencil buffer: SURFTYPE_NULL on Gen12, not enabled before. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_STENCIL_BUFFER, stencil_dwords));
-	if (gen9 != 0) {
+	if (pre12 != 0) {
 		drv_i915_batch_emit(batch, 0U);
 	} else {
 		drv_i915_batch_emit(batch, GEN12_SURFTYPE_NULL << 29);

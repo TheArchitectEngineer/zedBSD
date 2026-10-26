@@ -392,7 +392,7 @@ i915_compile_terminate_compute(
 	 * frees itself.
 	 */
 	descriptor = EU_DESC_TERMINATE;
-	if (state->graphics_ver == 9U)
+	if (state->graphics_ver < 11U)
 		descriptor |= GEN9_EU_DESC_TERMINATE_NO_URB;
 
 	/* Copies the header into the last register, outside the mask. */
@@ -678,7 +678,8 @@ i915_compile_atomic_shared(
  * commit bit; the encoder waits for each reply before going on, so the
  * thread's earlier accesses are done when the next instruction runs.  An
  * acquire needs no more: nothing after a fence starts before its reply.
- * Gen9 sends the data cache's fence alone and reads its reply (see below).
+ * Gen9 sends the data cache's fence alone and reads its reply; Gen11 sends
+ * the two fences and reads both replies (see below).
  */
 static void
 i915_compile_fence(
@@ -727,6 +728,22 @@ i915_compile_fence(
 		return;
 	}
 
+	/*
+	 * Gen11: shared memory has its own fence, and the hardware has no
+	 * software scoreboard to wait with, so each fence writes its own reply
+	 * register and a move of each reply to the null register holds the
+	 * thread until both are done.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/intel/compiler/brw_from_nir.cpp
+	 * (the memory fences from Gen11 on, which always stall),
+	 * brw_generator.cpp (FS_OPCODE_SCHEDULING_FENCE before Gen12).
+	 */
+	if (state->graphics_ver == 11U) {
+		i915_compile_fence_gen11(state, fences, reply, descriptor);
+		state->grf_busy[reply] = 0U;
+		return;
+	}
+
 	/* The buffers' fence, at the data cache's entry. */
 	if ((fences & DRV_GPU_IR_FENCE_GLOBAL) != 0U)
 		drv_i915_eu_send_scalar(&state->code, drv_i915_eu_grf(reply), drv_i915_eu_grf(0U), EU_SFID_DATA_CACHE, descriptor | EU_BTI_DATA_CACHE);
@@ -737,6 +754,55 @@ i915_compile_fence(
 
 	/* The register is free again. */
 	state->grf_busy[reply] = 0U;
+}
+
+/*
+ * Sends the Gen11 fences `fences` names, the buffers' into `reply` and
+ * shared memory's into a register of its own, and waits for both replies
+ * by reading them.
+ */
+static void
+i915_compile_fence_gen11(
+	struct i915_compile_state *state,
+	uint32_t fences,
+	uint32_t reply,
+	uint32_t descriptor)
+{
+	struct i915_eu_reg null;
+	struct i915_eu_reg wait;
+	uint32_t shared_reply;
+
+	/* A second register for shared memory's reply. */
+	shared_reply = i915_compile_temporary(state);
+	if (state->out_of_registers != 0)
+		return;
+
+	/* The buffers' fence, at the data cache's entry. */
+	if ((fences & DRV_GPU_IR_FENCE_GLOBAL) != 0U)
+		drv_i915_eu_send_scalar(&state->code, drv_i915_eu_grf(reply), drv_i915_eu_grf(0U), EU_SFID_DATA_CACHE, descriptor | EU_BTI_DATA_CACHE);
+
+	/* Then shared memory's, at the shared memory's entry. */
+	if ((fences & DRV_GPU_IR_FENCE_SHARED) != 0U)
+		drv_i915_eu_send_scalar(&state->code, drv_i915_eu_grf(shared_reply), drv_i915_eu_grf(0U), EU_SFID_DATA_CACHE, descriptor | EU_BTI_SLM);
+
+	/* Holds the thread until the buffers' fence has replied. */
+	null = drv_i915_eu_null();
+	null.type = EU_TYPE_UW;
+	if ((fences & DRV_GPU_IR_FENCE_GLOBAL) != 0U) {
+		wait = drv_i915_eu_grf_scalar(reply, 0U);
+		wait.type = EU_TYPE_UW;
+		drv_i915_eu_mov_scalar(&state->code, null, wait);
+	}
+
+	/* And until shared memory's has. */
+	if ((fences & DRV_GPU_IR_FENCE_SHARED) != 0U) {
+		wait = drv_i915_eu_grf_scalar(shared_reply, 0U);
+		wait.type = EU_TYPE_UW;
+		drv_i915_eu_mov_scalar(&state->code, null, wait);
+	}
+
+	/* The second register is free again. */
+	state->grf_busy[shared_reply] = 0U;
 }
 
 /*
@@ -771,13 +837,14 @@ i915_compile_barrier(
 		return;
 
 	/*
-	 * The bits of r0.2 that hold the barrier ID: Gen9 has its own.
+	 * The bits of r0.2 that hold the barrier ID: Gen9 has its own; Gen11
+	 * has Gen12's.
 	 *
 	 * Values referenced: Mesa 25.0.7 src/intel/compiler/brw_fs_nir.cpp
 	 * (emit_barrier).
 	 */
 	identity_mask = EU_BARRIER_ID_MASK;
-	if (state->graphics_ver == 9U)
+	if (state->graphics_ver < 11U)
 		identity_mask = GEN9_EU_BARRIER_ID_MASK;
 
 	/* The payload: cleared, then the barrier ID in dword 2. */

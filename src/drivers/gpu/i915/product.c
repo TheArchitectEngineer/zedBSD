@@ -50,6 +50,9 @@ struct i915_product_row {
 	const char *name;
 };
 
+/* The Ice Lake ids. */
+static const uint16_t i915_product_icelake[] = { I915_PCI_ICL_IDS(I915_PRODUCT_ID) };
+
 /* The Tiger Lake ids. */
 static const uint16_t i915_product_tigerlake[] = { I915_PCI_TGL_IDS(I915_PRODUCT_ID) };
 
@@ -85,16 +88,28 @@ static const uint16_t i915_product_cometlake[] = { I915_PCI_CML_IDS(I915_PRODUCT
 /*
  * The platforms, looked up in order; an id is in one list only.
  *
- * Rocket Lake has no second video decode engine.  The render engine's
+ * Ice Lake is graphics version 11 with its own lists.  Rocket Lake has no
+ * second video decode engine.  The render engine's
  * PSMI rule (Wa_1607297627) is taken by Tiger Lake, Rocket Lake and the
  * Alder Lake-P class, not by Alder Lake-S and Raptor Lake-S.
  *
  * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/i915_pci.c
- * (tgl_info, rkl_info, adl_s_info, adl_p_info: platform_engine_mask) and
+ * (icl_info, tgl_info, rkl_info, adl_s_info, adl_p_info:
+ * platform_engine_mask) and
  * drivers/gpu/drm/i915/gt/intel_workarounds.c (rcs_engine_wa_init: the
  * platforms of Wa_1607297627).
  */
 static const struct i915_product_row i915_product_rows[] = {
+	{
+		i915_product_icelake,
+		sizeof(i915_product_icelake) / sizeof(i915_product_icelake[0]),
+		11U,
+		11U,
+		I915_PLATFORM_GEN11,
+		I915_PRODUCT_ENGINES_TWO_VIDEO,
+		0U,
+		"Ice Lake"
+	},
 	{
 		i915_product_tigerlake,
 		sizeof(i915_product_tigerlake) / sizeof(i915_product_tigerlake[0]),

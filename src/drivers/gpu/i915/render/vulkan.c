@@ -100,11 +100,12 @@ drv_i915_render_attach(
 	/*
 	 * Offers video decode when the boot asked for it and the GT has the
 	 * video decode engine; the worker, created before the node is
-	 * published, knows the engines.  A Gen9 GT has no decoder the executor
-	 * drives (its MFX differs and needs the HuC), so it offers none.
+	 * published, knows the engines.  A Gen9 or Gen11 GT has no decoder the
+	 * executor drives (the executor writes the Gen12 MFX commands), so it
+	 * offers none.
 	 */
 	vk->video = 0;
-	if (i915_render_video_requested && device->gt.graphics_ver != 9U) {
+	if (i915_render_video_requested && device->gt.graphics_ver >= 12U) {
 		error = drv_i915_worker_video_state(device);
 		if (error == 0)
 			vk->video = 1;

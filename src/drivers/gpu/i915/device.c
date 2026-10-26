@@ -1055,7 +1055,7 @@ i915_start_prepare(
 	 * Tells the graphics and display versions, the engines and the
 	 * workaround rules from the device id, as the PCI driver matches it:
 	 * Tiger Lake, Rocket Lake, Alder Lake and Raptor Lake have a Gen12 GT,
-	 * Skylake to Comet Lake a Gen9 one.  The revision is the stepping some
+	 * Ice Lake a Gen11 one, Skylake to Comet Lake a Gen9 one.  The revision is the stepping some
 	 * Gen9 workarounds depend on.
 	 */
 	product = drv_i915_pci_read16(&gt->pci, 0x02U);
@@ -1218,6 +1218,8 @@ i915_start_registers(
 	gt->regs_window.size = (unsigned long)gt->regs.size;
 	if (gt->graphics_ver == 9U) {
 		ranges = drv_i915_mmio_gen9_ranges(&range_count);
+	} else if (gt->graphics_ver == 11U) {
+		ranges = drv_i915_mmio_gen11_ranges(&range_count);
 	} else {
 		ranges = drv_i915_mmio_gen12_ranges(&range_count);
 	}
@@ -1862,9 +1864,9 @@ i915_start_pxp(
 
 	gt = &device->gt;
 
-	/* Gen9 has no protected-content support: the context is not created. */
-	if (gt->graphics_ver == 9U) {
-		kern_logf("i915: pxp_init: skipped (no protected content on Gen9)\n");
+	/* Gen9 and Gen11 have no protected-content support: the context is not created. */
+	if (gt->graphics_ver < 12U) {
+		kern_logf("i915: pxp_init: skipped (no protected content before Gen12)\n");
 		return;
 	}
 

@@ -30,6 +30,7 @@
 #include "../intel/commands.h"
 #include "../intel/genxml.h"
 #include "../intel/genxml-gen9.h"
+#include "../intel/genxml-gen11.h"
 
 /* The genxml SURFACE_FORMAT values of the VkFormats the render paths read and write. */
 /*
@@ -899,9 +900,12 @@ drv_i915_gfx_instruction_heap_clear_gen(
 	const uint32_t *fill;
 	unsigned at;
 
-	/* Takes the version's end-of-thread instructions. */
+	/*
+	 * Takes the version's end-of-thread instructions; Gen11 encodes them
+	 * as Gen9 does (the two types they name have the same numbers).
+	 */
 	fill = i915_gfx_eot_only;
-	if (graphics_ver == GEN9_GRAPHICS_VER)
+	if (graphics_ver < 12U)
 		fill = i915_gfx_eot_only_gen9;
 
 	/* Repeats them over the whole window. */
@@ -911,15 +915,15 @@ drv_i915_gfx_instruction_heap_clear_gen(
 
 /*
  * Returns the MOCS field value of uncached memory on the graphics version:
- * index 3 of the Gen12 table, index 0 of the Gen9 one, shifted
- * as every MOCS field holds it.
+ * index 3 of the Gen12 table, index 0 of the Gen9 and the Ice Lake ones,
+ * shifted as every MOCS field holds it.
  */
 uint32_t
 drv_i915_gfx_mocs_uncached(
 	unsigned graphics_ver)
 {
-	/* Gen9's uncached entry. */
-	if (graphics_ver == GEN9_GRAPHICS_VER)
+	/* Gen9's and Gen11's uncached entry. */
+	if (graphics_ver < 12U)
 		return GEN12_MOCS(GEN9_MOCS_UNCACHED_INDEX);
 
 	/* Gen12's. */
@@ -964,28 +968,33 @@ drv_i915_gfx_emit_context_setup(
 	uint32_t select;
 	uint32_t base_dwords;
 	int gen9;
+	int pre12;
 
 	/* Locates the three heaps the state bases name. */
 	surface = state_va + I915_GFX_SURFACE_HEAP;
 	dynamic = state_va + I915_GFX_DYNAMIC_HEAP;
 	instruction = instruction_va;
 
-	/* Notes whether the batch is built for Gen9. */
+	/* Notes whether the batch is built for Gen9, or for a version before Gen12 (Gen9 or Gen11). */
 	gen9 = 0;
 	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
 		gen9 = 1;
+	pre12 = 0;
+	if (batch->graphics_ver < 12U)
+		pre12 = 1;
 
 	/*
 	 * Chooses the pipeline select and the base address packet's length:
-	 * Gen12 also masks in and sets the media sampler DOP clock gate, Gen9
-	 * only the selection; Gen9 has no bindless sampler base.
+	 * Gen12 also masks in and sets the media sampler DOP clock gate, the
+	 * versions before only the selection; Gen9 has no bindless sampler
+	 * base.
 	 */
 	select = GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D);
 	base_dwords = GEN12_STATE_BASE_ADDRESS_DWORDS;
-	if (gen9 != 0) {
+	if (pre12 != 0)
 		select = (GEN12_CMD_PIPELINE_SELECT << 16) | GEN9_PIPELINE_SELECT_MASK | GEN12_PIPELINE_SELECT_3D;
+	if (gen9 != 0)
 		base_dwords = GEN9_STATE_BASE_ADDRESS_DWORDS;
-	}
 
 	/* Flushes and stalls before the pipeline is switched to 3D. */
 	drv_i915_batch_pipe_control(batch,
@@ -1001,6 +1010,28 @@ drv_i915_gfx_emit_context_setup(
 		drv_i915_batch_emit(batch, I915_CMD_MI_LOAD_REGISTER_IMM(1));
 		drv_i915_batch_emit(batch, GEN9_REG_CACHE_MODE_1);
 		drv_i915_batch_emit(batch, GEN9_CACHE_MODE_1_VALUE);
+	}
+
+	/*
+	 * Programs the Ice Lake context's L3 partition, which the kernel's
+	 * context workaround leaves without ways, and the registers its state
+	 * setup writes once: the texel offset precision fix, the partial write
+	 * merging and the replay mode.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_init_state.c
+	 * (init_common_queue_state, init_render_queue_state: graphics version
+	 * 11).
+	 */
+	if (batch->graphics_ver == GEN11_GRAPHICS_VER) {
+		drv_i915_batch_emit(batch, I915_CMD_MI_LOAD_REGISTER_IMM(4));
+		drv_i915_batch_emit(batch, GEN11_REG_L3CNTLREG);
+		drv_i915_batch_emit(batch, GEN11_L3CNTLREG_DEFAULT);
+		drv_i915_batch_emit(batch, GEN11_REG_HALF_SLICE_CHICKEN7);
+		drv_i915_batch_emit(batch, GEN11_HALF_SLICE_CHICKEN7_VALUE);
+		drv_i915_batch_emit(batch, GEN11_REG_TCCNTLREG);
+		drv_i915_batch_emit(batch, GEN11_TCCNTLREG_VALUE);
+		drv_i915_batch_emit(batch, GEN11_REG_CS_CHICKEN1);
+		drv_i915_batch_emit(batch, GEN11_CS_CHICKEN1_VALUE);
 	}
 
 	/*
@@ -1031,7 +1062,7 @@ drv_i915_gfx_emit_context_setup(
 	drv_i915_batch_emit(batch, (uint32_t)(surface >> 32));
 	drv_i915_batch_emit(batch, (4096U / 64U - 1U) << 12);
 
-	/* The bindless sampler heap's base and size, which only Gen12 has. */
+	/* The bindless sampler heap's base and size, which Gen11 and Gen12 have. */
 	if (gen9 == 0) {
 		drv_i915_batch_emit(batch, 1U | (mocs << 4));
 		drv_i915_batch_emit(batch, 0U);
@@ -1060,6 +1091,10 @@ drv_i915_gfx_emit_context_setup(
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_POLY_STIPPLE_OFFSET, GEN12_3DSTATE_POLY_STIPPLE_OFFSET_DWORDS);
 	drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_LINE_STIPPLE, GEN12_3DSTATE_LINE_STIPPLE_DWORDS);
 
+	/* Turns coarse pixel shading off on Ice Lake, whose state is a packet of its own. */
+	if (batch->graphics_ver == GEN11_GRAPHICS_VER)
+		drv_i915_batch_zero(batch, GEN11_CMD_3DSTATE_CPS, GEN11_3DSTATE_CPS_DWORDS);
+
 	/* Places the single sample at the pixel centre, and two and four samples at the standard positions. */
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_SAMPLE_PATTERN, GEN12_3DSTATE_SAMPLE_PATTERN_DWORDS));
 	for (index = 1U; index < GEN12_3DSTATE_SAMPLE_PATTERN_DWORDS; index++) {
@@ -1073,7 +1108,7 @@ drv_i915_gfx_emit_context_setup(
 	}
 
 	/* Clears the depth bounds, which only Gen12 has. */
-	if (gen9 == 0)
+	if (pre12 == 0)
 		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_DEPTH_BOUNDS, GEN12_3DSTATE_DEPTH_BOUNDS_DWORDS);
 
 	/* Clears the binding tables of the unused geometry stages. */
@@ -1243,9 +1278,9 @@ drv_i915_gfx_emit_vertex_input(
 		order[index] = other;
 	}
 
-	/* Gen12 keeps vertex data out of the L3 bypass; Gen9 has no such bit. */
+	/* Gen12 keeps vertex data out of the L3 bypass; Gen9 and Gen11 have no such bit. */
 	l3_bypass = GEN12_VERTEX_BUFFER_L3_BYPASS_DISABLE;
-	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+	if (batch->graphics_ver < 12U)
 		l3_bypass = 0U;
 
 	/* Emits one VERTEX_BUFFER_STATE for each binding of the pipeline (none for a pipeline without). */
@@ -1338,7 +1373,7 @@ drv_i915_gfx_emit_vertex_input(
 	drv_i915_batch_emit(batch, GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_VF_SGVS, GEN12_3DSTATE_VF_SGVS_DWORDS));
 	drv_i915_batch_emit(batch, sgvs);
 
-	/* Clears the extended system values, which only Gen12 has. */
+	/* Clears the extended system values, which Gen11 and Gen12 have. */
 	if (batch->graphics_ver != GEN9_GRAPHICS_VER)
 		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_VF_SGVS_2, GEN12_3DSTATE_VF_SGVS_2_DWORDS);
 
@@ -1432,7 +1467,7 @@ drv_i915_gfx_emit_index_buffer(
 
 	/* The L3 bypass disable, which only Gen12 has. */
 	l3_bypass = GEN12_INDEX_BUFFER_L3_BYPASS_DISABLE;
-	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+	if (batch->graphics_ver < 12U)
 		l3_bypass = 0U;
 
 	/*
@@ -1483,8 +1518,14 @@ drv_i915_gfx_emit_urb(
 	uint32_t gs_start;
 	int error;
 
-	/* Gen9 allocates the URB with its own packets. */
-	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+	/*
+	 * Gen9 allocates the URB with its own packets, and so does Gen11, whose
+	 * URB is at least as large and whose entry limits are higher.
+	 *
+	 * Values referenced: Mesa 25.0.7 src/intel/genxml/gen110.xml
+	 * (3DSTATE_URB_VS), src/intel/common/intel_l3_config.c (icl_l3_configs).
+	 */
+	if (batch->graphics_ver < 12U) {
 		error = i915_state_emit_urb_gen9(batch, vs_entry_size, gs_entry_size);
 		if (error != 0)
 			return error;
@@ -1608,16 +1649,16 @@ drv_i915_gfx_emit_constants(
 	}
 
 	/*
-	 * Commits the vertex and the geometry stage's push data on Gen9: there
-	 * a 3DSTATE_CONSTANT_* packet takes effect only at the stage's next
-	 * 3DSTATE_BINDING_TABLE_POINTERS_*.  The context setup cleared those stages' pointers before these packets,
+	 * Commits the vertex and the geometry stage's push data on Gen9 and
+	 * Gen11: there a 3DSTATE_CONSTANT_* packet takes effect only at the
+	 * stage's next 3DSTATE_BINDING_TABLE_POINTERS_*.  The context setup cleared those stages' pointers before these packets,
 	 * and the pixel stage's pointer comes later with the draw.  Gen12 is
 	 * left as it is.
 	 *
 	 * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_draw.c
 	 * (cmd_buffer_emit_descriptor_pointers).
 	 */
-	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+	if (batch->graphics_ver < 12U) {
 		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_VS, GEN12_3DSTATE_POINTERS_DWORDS);
 		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_BINDING_TABLE_POINTERS_GS, GEN12_3DSTATE_POINTERS_DWORDS);
 	}
@@ -1688,8 +1729,8 @@ drv_i915_gfx_emit_raster(
 	if (kernels->gs_code != NULL)
 		deref = GEN12_URB_DEREF_BLOCK_SIZE_PER_POLY;
 
-	/* Gen9 has no deref block size. */
-	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
+	/* Gen9 and Gen11 have no deref block size. */
+	if (batch->graphics_ver < 12U)
 		deref = 0U;
 
 	/*
@@ -1820,8 +1861,8 @@ drv_i915_gfx_emit_depth(
 	drv_i915_batch_emit(batch, stencil_masks);
 	drv_i915_batch_emit(batch, stencil_references);
 
-	/* Gen9 describes its depth and stencil buffers in its own forms. */
-	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+	/* Gen9 describes its depth and stencil buffers in its own forms, which Gen11 keeps. */
+	if (batch->graphics_ver < 12U) {
 		error = i915_state_depth_buffer_gen9(batch, state, depth, has_depth, mocs);
 		if (error != 0)
 			return error;
@@ -1921,10 +1962,15 @@ drv_i915_gfx_emit_vertex_shader(
 	/* The scratch space of a kernel that spills: its per-thread size and the stage's buffer. */
 	scratch = i915_state_scratch(kernels->vs_scratch_bytes, kernels->vs_scratch_offset);
 
-	/* The thread count less one, where the version puts it: Gen9 has fewer threads, one bit higher. */
+	/*
+	 * The thread count less one, where the version puts it: Gen9 has fewer
+	 * threads, one bit higher; Gen11 has its own count where Gen12 puts it.
+	 */
 	threads = (I915_GFX_MAX_VS_THREADS - 1U) << 22;
 	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
 		threads = (GEN9_MAX_VS_THREADS - 1U) << GEN9_VS_MAX_THREADS_SHIFT;
+	if (batch->graphics_ver == GEN11_GRAPHICS_VER)
+		threads = (GEN11_MAX_VS_THREADS - 1U) << 22;
 
 	/*
 	 * Writes the kernel start pointer; IEEE-754 with no samplers and no
@@ -1964,6 +2010,7 @@ drv_i915_gfx_emit_geometry_shader(
 	uint64_t scratch;
 	uint32_t grf;
 	uint32_t primitive_id;
+	uint32_t threads;
 
 	/* A draw without a geometry kernel turns the stage off. */
 	if (kernels->gs_code == NULL) {
@@ -1977,6 +2024,11 @@ drv_i915_gfx_emit_geometry_shader(
 	primitive_id = 0U;
 	if (kernels->gs_primitive_id != 0U)
 		primitive_id = 1U;
+
+	/* The thread count: Gen11 has fewer geometry threads. */
+	threads = I915_GFX_MAX_GS_THREADS;
+	if (batch->graphics_ver == GEN11_GRAPHICS_VER)
+		threads = GEN11_MAX_GS_THREADS;
 
 	/*
 	 * Writes the kernel start pointer; the vertices of an input primitive,
@@ -2005,7 +2057,7 @@ drv_i915_gfx_emit_geometry_shader(
 			    (1U << 10) |
 			    (GEN12_GS_DISPATCH_MODE_SIMD8 << 11) |
 			    (kernels->gs_control_hwords << 20));
-	drv_i915_batch_emit(batch, (I915_GFX_MAX_GS_THREADS - 1U) | (kernels->gs_control_format << 31));
+	drv_i915_batch_emit(batch, (threads - 1U) | (kernels->gs_control_format << 31));
 	drv_i915_batch_emit(batch, 0U);
 }
 
@@ -3900,8 +3952,8 @@ i915_state_emit_urb_gen9(
 /*
  * Appends the PIPE_CONTROL that invalidates the vertex fetch cache (with the
  * other flags).  On Gen9 the SKL PRM wants a null PIPE_CONTROL
- * before it and a post-sync write on it, which goes to post_sync_va; Gen12
- * needs neither.
+ * before it and a post-sync write on it, which goes to post_sync_va; Gen11
+ * and Gen12 need neither.
  *
  * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_buffer.c (the VF
  * cache invalidation workaround).
@@ -3912,7 +3964,7 @@ i915_state_vf_invalidate(
 	uint32_t flags,
 	uint64_t post_sync_va)
 {
-	/* Gen12 invalidates with the one PIPE_CONTROL. */
+	/* Gen11 and Gen12 invalidate with the one PIPE_CONTROL. */
 	if (batch->graphics_ver != GEN9_GRAPHICS_VER) {
 		drv_i915_batch_pipe_control(batch, flags);
 		return;

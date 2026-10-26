@@ -15,7 +15,7 @@
  * less the ones fused off, and any GPU fault the firmware left pending is
  * reported and cleared.
  *
- * The two generations the driver serves differ in where they keep each of
+ * The generations the driver serves differ in where they keep each of
  * these, so each has a description (struct i915_gt_generation) and the
  * steps below read it instead of testing the version at every turn.
  */
@@ -93,6 +93,19 @@ static const uint32_t i915_info_crystal_hz[] = { 24000000U, 19200000U, 38400000U
 #define I915_INFO_GEN9_EUS		8U
 #define I915_INFO_GEN12_DSS		6U
 #define I915_INFO_GEN12_EUS		16U
+
+/*
+ * The Ice Lake shape: 1 slice of 8 subslices of 8 EUs.  Its subslice fuse
+ * names the disabled subslices (Gen12 names the enabled DSS at the same
+ * register), and each EU enable bit is one EU, the same in every subslice.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_sseu.c
+ * (gen11_sseu_info_init) and drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN11_GT_SUBSLICE_DISABLE).
+ */
+#define I915_INFO_GEN11_SUBSLICES	8U
+#define I915_INFO_GEN11_EUS		8U
+#define I915_INFO_GEN11_SUBSLICE_DISABLE	0x0913cU
 
 /* How many decode and enhancement instances the media fuse describes. */
 #define I915_INFO_MEDIA_VCS		8U
@@ -197,23 +210,46 @@ struct i915_gt_generation {
 	uint32_t fault_data0;
 	uint32_t fault_data1;
 	bool gen9;
+
+	/* Reads the slice, subslice and EU fuses. */
+	void (*read_sseu)(struct i915_sseu *sseu, struct i915_mmio *mmio);
 };
+
+static void i915_info_sseu_gen12(struct i915_sseu *sseu, struct i915_mmio *mmio);
+static void i915_info_sseu_gen11(struct i915_sseu *sseu, struct i915_mmio *mmio);
+static void i915_info_sseu_gen9(struct i915_sseu *sseu, struct i915_mmio *mmio);
 
 static const struct i915_gt_generation i915_info_gen12 = {
 	i915_engine_table, sizeof(i915_engine_table) / sizeof(i915_engine_table[0]),
 	i915_info_domains_gen12, sizeof(i915_info_domains_gen12) / sizeof(i915_info_domains_gen12[0]),
-	0x0cec4U, 0x0ceb8U, 0x0cebcU, false
+	0x0cec4U, 0x0ceb8U, 0x0cebcU, false,
+	i915_info_sseu_gen12
+};
+
+/*
+ * The Gen11 description: the Gen12 engines and reset domains, the Gen8
+ * fault registers.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt.c
+ * (intel_gt_check_and_clear_faults: graphics versions 8 to 11 take
+ * gen8_check_faults) and drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN8_RING_FAULT_REG, GEN8_FAULT_TLB_DATA0, GEN8_FAULT_TLB_DATA1).
+ */
+static const struct i915_gt_generation i915_info_gen11 = {
+	i915_engine_table, sizeof(i915_engine_table) / sizeof(i915_engine_table[0]),
+	i915_info_domains_gen12, sizeof(i915_info_domains_gen12) / sizeof(i915_info_domains_gen12[0]),
+	0x04094U, 0x04b10U, 0x04b14U, false,
+	i915_info_sseu_gen11
 };
 static const struct i915_gt_generation i915_info_gen9 = {
 	i915_engine_table_gen9, sizeof(i915_engine_table_gen9) / sizeof(i915_engine_table_gen9[0]),
 	i915_info_domains_gen9, sizeof(i915_info_domains_gen9) / sizeof(i915_info_domains_gen9[0]),
-	0x04094U, 0x04b10U, 0x04b14U, true
+	0x04094U, 0x04b10U, 0x04b14U, true,
+	i915_info_sseu_gen9
 };
 
 static unsigned i915_info_bits(uint32_t bits);
 static uint32_t i915_info_timestamp_hz(const struct i915_gt_generation *g, struct i915_mmio *mmio, uint32_t *period_ns);
-static void i915_info_sseu_gen12(struct i915_sseu *sseu, struct i915_mmio *mmio);
-static void i915_info_sseu_gen9(struct i915_sseu *sseu, struct i915_mmio *mmio);
 static uint32_t i915_info_media_fuses(struct i915_gt_info *gt, uint32_t engine_mask, struct i915_mmio *mmio);
 static uint32_t i915_info_context_size(int graphics_ver, int class);
 static uint32_t i915_info_reset_domain_of(const struct i915_gt_generation *g, int id);
@@ -242,16 +278,20 @@ drv_i915_gt_init_mmio(
 	unsigned weight;
 	size_t i;
 
-	g = graphics_ver == 9 ? &i915_info_gen9 : &i915_info_gen12;
+	/* Picks the description of the generation. */
+	g = &i915_info_gen12;
+	if (graphics_ver == 9) {
+		g = &i915_info_gen9;
+	} else if (graphics_ver == 11) {
+		g = &i915_info_gen11;
+	}
 	gt->graphics_ver = graphics_ver;
 
 	gt->clock_frequency = i915_info_timestamp_hz(g, mmio, &gt->clock_period_ns);
 	gt->clock_valid = gt->clock_frequency != 0U ? 1 : 0;
 
-	if (g->gen9)
-		i915_info_sseu_gen9(&gt->sseu, mmio);
-	else
-		i915_info_sseu_gen12(&gt->sseu, mmio);
+	/* Reads the slice, subslice and EU fuses the generation's way. */
+	g->read_sseu(&gt->sseu, mmio);
 
 	/* Gen12 steers to an L3 bank: the usable banks are the ones the mirror fuse leaves. */
 	if (g->gen9) {
@@ -411,6 +451,60 @@ i915_info_sseu_gen12(
 	sseu->eu_per_subslice = (uint16_t)i915_info_bits(eus);
 
 	/* Only the slice as a whole can be power gated. */
+	sseu->has_slice_pg = 1;
+	sseu->valid = 1;
+}
+
+/*
+ * The Gen11 slice, subslice and EU fuses.
+ *
+ * One slice; the subslice fuse names the disabled subslices, and each bit
+ * of the EU fuse is one EU, the same in every subslice.  Slices,
+ * subslices and EUs can each be power gated.
+ */
+static void
+i915_info_sseu_gen11(
+	struct i915_sseu *sseu,
+	struct i915_mmio *mmio)
+{
+	uint32_t slices;
+	uint32_t subslices;
+	uint16_t eus;
+	unsigned i;
+
+	/* Starts from the Ice Lake shape with nothing present. */
+	sseu->max_slices = 1U;
+	sseu->max_subslices = (uint8_t)I915_INFO_GEN11_SUBSLICES;
+	sseu->max_eus_per_subslice = (uint8_t)I915_INFO_GEN11_EUS;
+	sseu->slice_mask = 0U;
+	sseu->subslice_mask = 0U;
+	for (i = 0U; i < I915_SSEU_MAX_SUBSLICES; i++)
+		sseu->eu_mask[i] = 0U;
+
+	/* Ice Lake has a single slice in practice; another value is only reported. */
+	slices = drv_i915_read32(mmio, I915_INFO_SLICE_ENABLE) & I915_INFO_SLICE_ENABLE_MASK;
+	if (slices != 0x1U)
+		kern_logf("i915: WARN GT_SLICE_ENABLE=0x%x (expected 0x1)\n", (unsigned)slices);
+
+	/* The present subslices are the ones the fuse does not disable. */
+	subslices = ~drv_i915_read32(mmio, I915_INFO_GEN11_SUBSLICE_DISABLE);
+	subslices &= (1U << I915_INFO_GEN11_SUBSLICES) - 1U;
+
+	/* The present EUs of one subslice are the ones the fuse does not disable. */
+	eus = (uint16_t)(~drv_i915_read32(mmio, I915_INFO_EU_DISABLE) & I915_INFO_EU_DISABLE_MASK);
+
+	/* Slice 0 holds the present subslices, each with the same EUs. */
+	sseu->slice_mask = 1U;
+	sseu->subslice_mask = (uint16_t)subslices;
+	sseu->eu_total = 0U;
+	for (i = 0U; i < I915_INFO_GEN11_SUBSLICES; i++) {
+		if ((subslices & (1U << i)) != 0U)
+			sseu->eu_mask[i] = eus;
+		sseu->eu_total = (uint16_t)(sseu->eu_total + i915_info_bits(sseu->eu_mask[i]));
+	}
+	sseu->eu_per_subslice = (uint16_t)i915_info_bits(eus);
+
+	/* Slices, subslices and EUs can each be power gated. */
 	sseu->has_slice_pg = 1;
 	sseu->valid = 1;
 }

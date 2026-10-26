@@ -15,6 +15,7 @@
  * carries.  The functions below work only through that record.
  */
 
+#include "i915.h"
 #include "context.h"
 #include "device-info.h"
 #include "engine.h"
@@ -89,8 +90,10 @@ struct i915_lrc_layout {
 };
 
 static uint32_t i915_lrc_power_state_gen12(const struct i915_gt_engine *ge);
+static uint32_t i915_lrc_power_state_gen11(const struct i915_gt_engine *ge);
 static uint32_t i915_lrc_power_state_gen9(const struct i915_gt_engine *ge);
 static void i915_lrc_batches_gen12(struct i915_gt_context *ce);
+static void i915_lrc_batches_gen11(struct i915_gt_context *ce);
 static void i915_lrc_batches_gen9(struct i915_gt_context *ce);
 
 /*
@@ -108,6 +111,26 @@ static const struct i915_lrc_layout i915_lrc_gen12 = {
 	0U,
 	i915_lrc_power_state_gen12,
 	i915_lrc_batches_gen12
+};
+
+/*
+ * The Gen11 layout: the Gen11 render table and the Gen9 table for the other
+ * engines, the engine-relative load-register headers of Gen11, the Gen9
+ * slots, and no context workaround batch.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_lrc.c
+ * (reg_offsets, set_offsets, lrc_ring_mi_mode, lrc_ring_bb_offset,
+ * lrc_ring_indirect_ptr, lrc_ring_indirect_offset,
+ * lrc_ring_indirect_offset_default, init_common_regs: the GRAPHICS_VER 11
+ * values).
+ */
+static const struct i915_lrc_layout i915_lrc_gen11 = {
+	i915_lrc_gen11_rcs, i915_lrc_gen9_xcs, 1,
+	0x54U, 0x64U, 0x1aU, 0x1cU,
+	I915_GT_GEN11_CTX_RCS_INDIRECT_CTX_OFFSET_DEFAULT,
+	0U,
+	i915_lrc_power_state_gen11,
+	i915_lrc_batches_gen11
 };
 
 /*
@@ -391,6 +414,10 @@ i915_lrc_layout_of(
 	/* A Gen9 engine has the Gen9 layout. */
 	if (ce->ge->info->graphics_ver == 9)
 		return &i915_lrc_gen9_layout;
+
+	/* A Gen11 engine has the Gen11 layout. */
+	if (ce->ge->info->graphics_ver == 11)
+		return &i915_lrc_gen11;
 
 	/* Every other engine has the Gen12 layout. */
 	return &i915_lrc_gen12;
@@ -913,6 +940,14 @@ i915_lrc_batches_gen9(
 	i915_lrc_name_indirect(ce, &i915_lrc_gen9_layout, start, cs);
 }
 
+/* Writes no workaround batch: a Gen11 context carries none. */
+static void
+i915_lrc_batches_gen11(
+	struct i915_gt_context *ce)
+{
+	UNUSED_PARAMETER(ce);
+}
+
 /*
  * Builds the Gen12 render power clock state: a request for every enabled
  * slice where slices can be power gated, and nothing otherwise.  Gen12
@@ -934,6 +969,66 @@ i915_lrc_power_state_gen12(
 
 	/* Reports the request with the slice count enabled. */
 	return I915_GT_GEN8_RPCS_ENABLE | I915_GT_GEN8_RPCS_S_CNT_ENABLE | slices;
+}
+
+/*
+ * Builds the Gen11 render power clock state.
+ *
+ * The slice count field of Gen11 is wider than Gen9's, but the subslice
+ * count is three bits and at most four: a request for more subslices than
+ * that, or than half of the present ones, is made as two whole slices
+ * instead, which the hardware takes as every subslice of the one slice.
+ * Every EU of a subslice is asked for, as the minimum and the maximum.
+ *
+ * Procedure referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_sseu.c
+ * (intel_sseu_make_rpcs).
+ */
+static uint32_t
+i915_lrc_power_state_gen11(
+	const struct i915_gt_engine *ge)
+{
+	uint32_t slices;
+	uint32_t subslices;
+	uint32_t half;
+	uint32_t eus;
+	uint32_t rpcs;
+	int subslice_request;
+
+	/* Starts with no explicit request, for the whole device. */
+	rpcs = 0U;
+	slices = (uint32_t)i915_lrc_count_bits(ge->sseu_slice_mask);
+	subslices = (uint32_t)i915_lrc_count_bits((uint8_t)ge->sseu_subslice_mask);
+	subslice_request = 1;
+
+	/* More subslices than the count field holds are asked for as two whole slices. */
+	half = subslices / 2U;
+	if (half > 4U)
+		half = 4U;
+	if (slices == 1U && subslices > half) {
+		subslice_request = 0;
+		slices *= 2U;
+	}
+
+	/* Requests the slices. */
+	if (ge->sseu_has_slice_pg != 0) {
+		rpcs |= I915_GT_GEN8_RPCS_ENABLE | I915_GT_GEN8_RPCS_S_CNT_ENABLE;
+		rpcs |= (slices << I915_GT_GEN11_RPCS_S_CNT_SHIFT) & I915_GT_GEN11_RPCS_S_CNT_MASK;
+	}
+
+	/* Requests the subslices, when they were not asked for as slices. */
+	if (subslice_request != 0) {
+		rpcs |= I915_GT_GEN8_RPCS_ENABLE | I915_GT_GEN8_RPCS_SS_CNT_ENABLE;
+		rpcs |= (subslices << I915_GT_GEN8_RPCS_SS_CNT_SHIFT) & I915_GT_GEN8_RPCS_SS_CNT_MASK;
+	}
+
+	/* Requests every EU of each subslice, as the minimum and the maximum. */
+	eus = (uint32_t)ge->sseu_max_eus_per_subslice;
+	rpcs |= (eus << I915_GT_GEN8_RPCS_EU_MIN_SHIFT) & I915_GT_GEN8_RPCS_EU_MIN_MASK;
+	rpcs |= (eus << I915_GT_GEN8_RPCS_EU_MAX_SHIFT) & I915_GT_GEN8_RPCS_EU_MAX_MASK;
+	rpcs |= I915_GT_GEN8_RPCS_ENABLE;
+
+	/* Reports the power clock state word. */
+	return rpcs;
 }
 
 /*

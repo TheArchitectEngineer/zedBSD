@@ -7,8 +7,8 @@
 
 /*
  * The workaround registers and values: multicast register steering, the
- * GT, render engine and render context workarounds of Alder Lake-P and of
- * Gen9, and the registers the whitelist opens to non-privileged batches.
+ * GT, render engine and render context workarounds of Alder Lake-P, of Ice
+ * Lake and of Gen9, and the registers the whitelist opens to non-privileged batches.
  * The MOCS and PAT values are in mocs.h; I915_GT_RING_CTX_TIMESTAMP, which
  * the whitelist also opens, is in gt-regs.h.
  */
@@ -267,5 +267,113 @@
 #define I915_GT_GAMW_ECO_ENABLE_64K_IPS_FIELD		0xFU
 #define I915_GT_HSW_GTT_CACHE_EN			0x4024U
 #define I915_GT_GTT_CACHE_EN_ALL			0xF0007FFFU
+
+/*
+ * icl_gt_workarounds_init: the Ice Lake GT workarounds.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN11_GACB_PERF_CTRL, GEN11_HASH_CTRL_MASK, GEN11_HASH_CTRL_BIT0,
+ * GEN11_HASH_CTRL_BIT4, GEN11_LSN_UNSLCVC,
+ * GEN11_LSN_UNSLCVC_GAFS_HALF_SF_MAXALLOC,
+ * GEN11_LSN_UNSLCVC_GAFS_HALF_CL2_MAXALLOC, GAMW_ECO_DEV_CTX_RELOAD_DISABLE,
+ * GAMT_CHKN_DISABLE_L3_COH_PIPE, UNSLICE_UNIT_LEVEL_CLKGATE,
+ * VSUNIT_CLKGATE_DIS, HSUNIT_CLKGATE_DIS, UNSLICE_UNIT_LEVEL_CLKGATE2,
+ * PSDUNIT_CLKGATE_DIS, GEN11_SUBSLICE_UNIT_LEVEL_CLKGATE,
+ * GWUNIT_CLKGATE_DIS, GEN11_SLICE_UNIT_LEVEL_CLKGATE, L3_CLKGATE_DIS,
+ * L3_CR2X_CLKGATE_DIS).
+ */
+#define I915_GT_GEN11_GACB_PERF_CTRL			0x4b80U
+#define I915_GT_GEN11_HASH_CTRL_MASK			((0x3U << 12) | (0xfU << 0))
+#define I915_GT_GEN11_HASH_CTRL_BIT0			(1U << 0)
+#define I915_GT_GEN11_HASH_CTRL_BIT4			(1U << 12)
+#define I915_GT_GEN11_LSN_UNSLCVC			0xb43cU
+#define I915_GT_GEN11_LSN_UNSLCVC_GAFS_HALF_SF_MAXALLOC	(1U << 7)
+#define I915_GT_GEN11_LSN_UNSLCVC_GAFS_HALF_CL2_MAXALLOC	(1U << 9)
+#define I915_GT_GAMW_ECO_DEV_CTX_RELOAD_DISABLE		(1U << 7)
+#define I915_GT_GAMT_CHKN_DISABLE_L3_COH_PIPE		(1U << 31)
+#define I915_GT_UNSLICE_UNIT_LEVEL_CLKGATE		0x9434U
+#define I915_GT_VSUNIT_CLKGATE_DIS			(1U << 3)
+#define I915_GT_HSUNIT_CLKGATE_DIS			(1U << 8)
+#define I915_GT_UNSLICE_UNIT_LEVEL_CLKGATE2		0x94e4U
+#define I915_GT_PSDUNIT_CLKGATE_DIS			(1U << 5)
+#define I915_GT_GEN11_SUBSLICE_UNIT_LEVEL_CLKGATE	0x9524U
+#define I915_GT_GWUNIT_CLKGATE_DIS			(1U << 16)
+#define I915_GT_GEN11_SLICE_UNIT_LEVEL_CLKGATE		0x94d4U
+#define I915_GT_L3_CLKGATE_DIS				(1U << 16)
+#define I915_GT_L3_CR2X_CLKGATE_DIS			(1U << 17)
+
+/*
+ * icl_ctx_workarounds_init: the Ice Lake render context workarounds.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN8_L3CNTLREG, GEN8_ERRDETBCTRL, ICL_HDC_MODE,
+ * GEN10_CACHE_MODE_SS, FLOAT_BLEND_OPTIMIZATION_ENABLE,
+ * GEN11_SAMPLER_ENABLE_HEADLESS_MSG, GEN11_DIS_PICK_2ND_EU) and
+ * drivers/gpu/drm/i915/i915_reg.h (IVB_FBC_RT_BASE, IVB_FBC_RT_BASE_UPPER,
+ * ILK_FBC_RT_VALID).
+ */
+#define I915_GT_GEN8_L3CNTLREG				0x7034U
+#define I915_GT_GEN8_ERRDETBCTRL			(1U << 9)
+#define I915_GT_ICL_HDC_MODE				0xe5f4U
+#define I915_GT_GEN10_CACHE_MODE_SS			0xe420U
+#define I915_GT_FLOAT_BLEND_OPTIMIZATION_ENABLE		(1U << 4)
+#define I915_GT_GEN11_SAMPLER_ENABLE_HEADLESS_MSG	(1U << 5)
+#define I915_GT_IVB_FBC_RT_BASE				0x7020U
+#define I915_GT_IVB_FBC_RT_BASE_UPPER			0x7024U
+#define I915_GT_ILK_FBC_RT_VALID			(1U << 0)
+#define I915_GT_GEN11_DIS_PICK_2ND_EU			(1U << 7)
+
+/*
+ * rcs_engine_wa_init and general_render_compute_wa_init: the Ice Lake
+ * render engine workarounds.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN11_INDIRECT_STATE_BASE_ADDR_OVERRIDE,
+ * _3D_CHICKEN3_AA_LINE_QUALITY_FIX_ENABLE, GEN11_ARBITRATION_PRIO_ORDER_MASK,
+ * GEN11_HASH_CTRL_EXCL_MASK, GEN11_HASH_CTRL_EXCL_BIT0, GEN11_GLBLINVL,
+ * GEN11_BANK_HASH_ADDR_EXCL_MASK, GEN11_BANK_HASH_ADDR_EXCL_BIT0,
+ * GEN11_LQSC_CLEAN_EVICT_DISABLE, GEN7_SARCHKMD,
+ * GEN7_DISABLE_SAMPLER_PREFETCH, GEN11_SCRATCH2,
+ * GEN11_COHERENT_PARTIAL_WRITE_MERGE_ENABLE, GEN11_ENABLE_32_PLANE_MODE).
+ */
+#define I915_GT_GEN11_INDIRECT_STATE_BASE_ADDR_OVERRIDE	(1U << 0)
+#define I915_GT_3D_CHICKEN3_AA_LINE_QUALITY_FIX_ENABLE	(1U << 5)
+#define I915_GT_GEN11_ARBITRATION_PRIO_ORDER_MASK	(0x3fU << 22)
+#define I915_GT_GEN11_HASH_CTRL_EXCL_MASK		(0x7fU << 0)
+#define I915_GT_GEN11_HASH_CTRL_EXCL_BIT0		(0x1U << 0)
+#define I915_GT_GEN11_GLBLINVL				0xb404U
+#define I915_GT_GEN11_BANK_HASH_ADDR_EXCL_MASK		(0x7fU << 5)
+#define I915_GT_GEN11_BANK_HASH_ADDR_EXCL_BIT0		(1U << 5)
+#define I915_GT_GEN11_LQSC_CLEAN_EVICT_DISABLE		(1U << 6)
+#define I915_GT_GEN7_SARCHKMD				0xb000U
+#define I915_GT_GEN7_DISABLE_SAMPLER_PREFETCH		(1U << 30)
+#define I915_GT_GEN11_SCRATCH2				0xb140U
+#define I915_GT_GEN11_COHERENT_PARTIAL_WRITE_MERGE_ENABLE	(1U << 19)
+#define I915_GT_GEN11_ENABLE_32_PLANE_MODE		(1U << 7)
+
+/*
+ * icl_whitelist_build: the Ice Lake render registers opened to
+ * non-privileged batches, and the video decode engine's HuC status
+ * registers (offsets from the engine's base).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (GEN9_SLICE_COMMON_ECO_CHICKEN1) and
+ * drivers/gpu/drm/i915/gt/intel_workarounds.c (icl_whitelist_build: the
+ * offsets 0x2000, 0x2014 and 0x23b0).
+ */
+#define I915_GT_GEN9_SLICE_COMMON_ECO_CHICKEN1		0x731cU
+#define I915_GT_HUC_STATUS(base)			((base) + 0x2000U)
+#define I915_GT_HUC_UKERNEL_HDR_INFO(base)		((base) + 0x2014U)
+#define I915_GT_HUC_STATUS2(base)			((base) + 0x23b0U)
+
+/*
+ * The Ice Lake third video decode engine's own MOCS table, and the Gen10
+ * PAT index registers Ice Lake programs one entry at a time.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gt_regs.h
+ * (__GEN11_VCS2_MOCS0, GEN10_PAT_INDEX).
+ */
+#define I915_GT_GEN11_VCS2_MOCS0			0x10000U
+#define I915_GT_GEN10_PAT_INDEX(index)			(0x40e0U + (uint32_t)(index) * 4U)
 
 #endif /* DRIVERS_GPU_I915_INTEL_WORKAROUNDS_H */

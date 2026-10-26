@@ -20,6 +20,10 @@
  * the Gen9 (Skylake GT2) programming instead, as a host smoke test whose
  * output run.sh keeps for reading; it is not compared with anything.
  *
+ * Built with GOLDEN_GEN11 and GOLDEN_PRODUCT set to an Ice Lake id (the
+ * tree under test only) it runs the Ice Lake programming, an 1x8x8 part;
+ * run.sh checks its lists against Linux.
+ *
  * Built with GOLDEN_PRODUCT=<PCI device id> (the tree under test only) the
  * engines and the platform's workaround rules come from the driver's
  * product table for that id instead of the Alder Lake-P constants, and the
@@ -59,6 +63,11 @@
 #define GOLDEN_ENGINE_MASK	((1U << 0) | (1U << 1) | (1U << 8) | (1U << 16))
 #define GOLDEN_VERSION		9
 #define GOLDEN_DOMAINS		3
+#elif defined(GOLDEN_GEN11)
+/* The Ice Lake engine set (the product table gives it too) and the graphics version. */
+#define GOLDEN_ENGINE_MASK	((1U << 0) | (1U << 1) | (1U << 8) | (1U << 10) | (1U << 16))
+#define GOLDEN_VERSION		11
+#define GOLDEN_DOMAINS		5
 #else
 /* The Alder Lake-P engine set: RCS0, BCS0, VCS0, VCS2 and VECS0, and the graphics version. */
 #define GOLDEN_ENGINE_MASK	((1U << 0) | (1U << 1) | (1U << 8) | (1U << 10) | (1U << 16))
@@ -115,6 +124,8 @@ main(void)
 	mock.write_hook = golden_write_hook;
 #ifdef GOLDEN_GEN9
 	ranges = drv_i915_mmio_gen9_ranges(&range_count);
+#elif defined(GOLDEN_GEN11)
+	ranges = drv_i915_mmio_gen11_ranges(&range_count);
 #else
 	ranges = drv_i915_mmio_gen12_ranges(&range_count);
 #endif
@@ -140,6 +151,10 @@ main(void)
 	mock_mmio_preset(&mock, 0x9120U, (0x1U << 25) | (0x8U << 20));
 	info.platform = 1;
 	info.revision = 7U;
+#endif
+#ifdef GOLDEN_GEN11
+	/* An Ice Lake GT2: no subslice disabled (the register names the disabled ones on Gen11). */
+	mock_mmio_preset(&mock, 0x913cU, 0x0U);
 #endif
 	mock_mmio_preset(&mock, 0x145998U, 0x00090f12U);
 

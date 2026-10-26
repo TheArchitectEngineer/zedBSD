@@ -78,6 +78,9 @@ else
 fi
 
 # One run per Gen12 product row: Tiger Lake, Rocket Lake, Alder Lake-S, Raptor Lake-S, Alder Lake-P.
+build "$repo" "$out/build-icl" "-DGOLDEN_GEN11 -DGOLDEN_PRODUCT=0x8a52"
+"$out/build-icl/golden" > "$out/icl.txt" 2> "$out/icl.product"
+echo "icl smoke: $(grep -c '^W ' "$out/icl.txt") register writes, $(grep -c 'rc=0' "$out/icl.txt") steps rc=0, $(grep 'rc=' "$out/icl.txt" | grep -vc 'rc=0') steps failed ($out/icl.txt)"
 for product in tgl:0x9a49 rkl:0x4c8a adls:0x4680 rpls:0xa780 adlp:0x46a8; do
 	row=${product%%:*}
 	build "$repo" "$out/build-$row" -DGOLDEN_PRODUCT=${product#*:}

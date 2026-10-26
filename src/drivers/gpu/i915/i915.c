@@ -68,8 +68,8 @@ static int i915_boot_line_has(const char *line, const char *token);
 /*
  * Registers the i915 PCI driver for the graphics devices it covers.
  *
- * Tiger Lake, Rocket Lake, Alder Lake-S/P/N and Raptor Lake-S/P/U are
- * matched, and the Gen9 parts (Skylake, Kaby Lake, Coffee Lake, Comet
+ * Ice Lake, Tiger Lake, Rocket Lake, Alder Lake-S/P/N and Raptor Lake-S/P/U
+ * are matched, and the Gen9 parts (Skylake, Kaby Lake, Coffee Lake, Comet
  * Lake), which the attach takes unless i915.gen9 is off.  A matched device whose display this
  * driver has no platform data for says so in its start log instead of
  * programming the wrong registers.
@@ -78,6 +78,7 @@ int
 drv_pci_i915_driver_register(void)
 {
 	static const struct drv_pci_id identifiers[] = {
+		I915_PCI_ICL_IDS(I915_ID),
 		I915_PCI_TGL_IDS(I915_ID),
 		I915_PCI_RKL_IDS(I915_ID),
 		I915_PCI_ADLS_IDS(I915_ID),
