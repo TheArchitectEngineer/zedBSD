@@ -1266,6 +1266,10 @@ void
 amdrdna_spaces_mark_status(
 	struct amdrdna_device *device);
 
+void
+amdrdna_spaces_mark_waves(
+	struct amdrdna_device *device);
+
 uint64_t
 amdrdna_space_run_ticks(
 	struct amdrdna_space *space,

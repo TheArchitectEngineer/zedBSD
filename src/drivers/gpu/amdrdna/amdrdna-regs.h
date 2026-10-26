@@ -192,6 +192,33 @@
 #define AMDRDNA_GC_REG_ENGINE1_STATUS		0x0da6U
 
 /*
+ * The shader sequencer's indirect window on a wave of the array the
+ * array select names (GC window 0): the index word (the wave in bits 4:0,
+ * the register in 31:16) and the data word; and the wave registers read
+ * through it: the status (valid in bit 16, in a barrier 12, export ready
+ * 8, must export 27), the program counter's low and high words, the
+ * instruction at it, the lane mask and the hardware identity.
+ *
+ * Values referenced: Linux v6.12
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmSQ_IND_INDEX 0x1118, mmSQ_IND_DATA 0x1119, ixSQ_WAVE_STATUS 0x0102,
+ * ixSQ_WAVE_PC_LO 0x0108, ixSQ_WAVE_PC_HI 0x0109, ixSQ_WAVE_INST_DW0
+ * 0x010a, ixSQ_WAVE_HW_ID1 0x0117, ixSQ_WAVE_EXEC_LO 0x027e) and
+ * gc_10_1_0_sh_mask.h (SQ_IND_INDEX__WAVE_ID__SHIFT 0,
+ * SQ_IND_INDEX__INDEX__SHIFT 16, SQ_WAVE_STATUS__VALID__SHIFT 16).
+ */
+#define AMDRDNA_GC_REG_WAVE_INDEX		0x1118U
+#define AMDRDNA_GC_REG_WAVE_DATA		0x1119U
+#define AMDRDNA_GC_WAVE_REGISTER_SHIFT		16U
+#define AMDRDNA_WAVE_STATUS			0x0102U
+#define AMDRDNA_WAVE_PC_LOW			0x0108U
+#define AMDRDNA_WAVE_PC_HIGH			0x0109U
+#define AMDRDNA_WAVE_INSTRUCTION		0x010aU
+#define AMDRDNA_WAVE_IDENTITY			0x0117U
+#define AMDRDNA_WAVE_EXEC			0x027eU
+#define AMDRDNA_WAVE_STATUS_VALID		(1U << 16)
+
+/*
  * The flash ROM's address and data registers (SMUIO window 0); each read
  * of the data register returns the next dword of the ROM.
  *
