@@ -881,6 +881,7 @@ stub_session_open(
 	/* The device an Alder Lake-P executor serves. */
 	memset(&stub_device, 0, sizeof(stub_device));
 	stub_device.product = 0x46a6U;
+	stub_device.gt.graphics_ver = 12U;
 
 	/* The reply blob, whose physical address is its host pointer. */
 	memset(&stub_reply_object, 0, sizeof(stub_reply_object));

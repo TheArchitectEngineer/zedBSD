@@ -327,6 +327,7 @@ fixture_open(void)
 
 	memset(&fixture_device, 0, sizeof(fixture_device));
 	fixture_device.product = 0x46a6U;
+	fixture_device.gt.graphics_ver = 12U;
 	memset(&fixture_gpu, 0, sizeof(fixture_gpu));
 
 	memset(&reply_object, 0, sizeof(reply_object));

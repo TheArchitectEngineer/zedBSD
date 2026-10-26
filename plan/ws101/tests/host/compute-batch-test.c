@@ -382,6 +382,7 @@ test_add(void)
 	batch.count = 0U;
 	batch.capacity = 1024U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, &grid, 6U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
 	assert(batch.overflow == 0);
 	curbe_regs = binary->cross_thread_regs + 32U;
@@ -480,6 +481,7 @@ test_ids(void)
 	batch.count = 0U;
 	batch.capacity = 1024U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, &grid, 4U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
 	assert(batch.overflow == 0);
 	curbe_regs = binary->cross_thread_regs + 12U;
@@ -569,6 +571,7 @@ test_ids_indirect(void)
 	batch.count = 0U;
 	batch.capacity = 1024U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, &grid, 6U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
 	assert(batch.overflow == 0);
 	snprintf(expect, sizeof(expect),
@@ -634,6 +637,7 @@ test_reduce(void)
 	batch.count = 0U;
 	batch.capacity = 1024U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	drv_i915_gfx_dispatch_build(&batch, &space, pipeline, &kernels, &grid, 6U, GEN12_MOCS(I915_MOCS_UNCACHED_INDEX));
 	assert(batch.overflow == 0);
 	snprintf(expect, sizeof(expect),

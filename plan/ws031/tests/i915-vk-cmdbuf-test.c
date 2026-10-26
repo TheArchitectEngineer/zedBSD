@@ -470,6 +470,7 @@ test_emission(void)
 	batch.count = 0U;
 	batch.capacity = 128U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	memset(&shape, 0, sizeof(shape));
 	shape.topology = GEN12_3DPRIM_TRILIST;
 	shape.vertex_count = 3U;
@@ -491,8 +492,8 @@ test_emission(void)
 	assert(commands[primitive + 2] == ((64U - 1U) | ((32U - 1U) << 16)));
 
 	/* The batch ends: MI_BATCH_BUFFER_END and one MI_NOOP behind it. */
-	assert(commands[batch.count - 2U] == MI_BATCH_BUFFER_END);
-	assert(commands[batch.count - 1U] == MI_NOOP);
+	assert(commands[batch.count - 2U] == I915_CMD_MI_BATCH_BUFFER_END);
+	assert(commands[batch.count - 1U] == I915_CMD_MI_NOOP);
 
 	/*
 	 * A batch too small for the primitive overflows instead of writing past
@@ -502,6 +503,7 @@ test_emission(void)
 	batch.count = 0U;
 	batch.capacity = 8U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	drv_i915_gfx_emit_primitive(&batch, 64U, 32U, &shape);
 	assert(batch.overflow != 0);
 	assert(batch.count > 8U);
@@ -516,6 +518,7 @@ test_emission(void)
 	batch.count = 0U;
 	batch.capacity = 128U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	shape.random_access = 1;
 	shape.vertex_count = 6U;
 	shape.start_vertex = 3U;
@@ -1774,6 +1777,7 @@ test_logic_op(void)
 	batch.count = 0U;
 	batch.capacity = 8U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	drv_i915_gfx_emit_ps_blend(&batch, &pipeline);
 	assert(batch.count == 2U && (commands[1] & GEN12_PS_BLEND_ENABLE) == 0U);
 
@@ -2117,6 +2121,7 @@ test_blend_state(void)
 	batch.count = 0U;
 	batch.capacity = 8U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	drv_i915_gfx_emit_ps_blend(&batch, &pipeline);
 	assert(batch.count == 2U);
 	assert(commands[0] == GEN12_CMD_HEADER(GEN12_CMD_3DSTATE_PS_BLEND, GEN12_3DSTATE_PS_BLEND_DWORDS));
