@@ -2,6 +2,12 @@
 
 # Past Log
 
+## 2026-10-27 plan の整理（q1608 P3・q1610 P4）
+
+ユーザーの指示（2026-10-27）で、記録の食い違いを直し、plan を読みやすい形にした。P3 の精査（[ws-audit.md](../agents/P3/ws-audit.md)）で未完の WS 150 件を completed 86・canceled 3・保留 59・継続 2 に。
+P4 が AGENTS.md・master.md を作り直し（decisions-log・history-log・工数の表は削除、git の履歴に残る）、完了の WS は [workstreams-closed.md](../workstreams-closed.md)、
+道具は [tools.md](../tools.md)、q1593 までの Queue Board は [queue-board-through-q1593.md](queue-board-through-q1593.md) へ。
+
 ## 最新: q1404〜q1516 / WS269 VisionFive 2 の PowerVR（2026-10-20〜21）
 
 [q1404〜q1516履歴](queue-q1404-q1516.md): PMU の hw event → TA の terminate PPP state → compute の PDS と K0 → LOAD の全画面 draw。板 96 で gpu-selftest 13/13・vkmatrix 15/15・vkcoherency PASS、UAT image main 06f1ba788。
