@@ -432,3 +432,38 @@ ls build/wsNNN/pNNN-hw/shots/*-live.png
 - image は `config-5330.mk`（CI の amd64 ＋ 撮影 ＋ keiland-shot・backlight-probe）: `make ZEDBSD_CONFIG=plan/tools/hw5330/config-5330.mk BUILD=<dir> disk-image`。
 - 証拠の要約は `evidence/NAME.md`（git の中）、kernel の log と PNG は `build/hw5330/logs/`（git の外、`LOGS` で変えられる）。既定の基準は `evidence/t1229i21-main-merged-20261017.md`（2026-10-17 の WS245 の merge の後の main）。
 - `5330-bootcycle.sh`（段ごとの 1 回の起動、`~/ws245` の kernel を使う）、`5330-ws253-early.sh`・`5330-ws253-collect.sh`（WS253 の起動時間の読み取り）。
+
+## NVMe の zedBSD の区画（2026-10-27、q1612）
+
+ユーザーの指示（2026-10-27）「5330で、Linuxのext4をリサイズして領域を空けて、nvmeにパーティションを作って、zedBSDを起動できるようにしたいです。」（大きさは 16 GB）。
+Debian の ext4（`nvme0n1p2`）を 16 GiB 縮め、p2 と swap（p3）の間に zedBSD の区画を作った。p1・p3 の位置と UUID、ext4 の UUID は変えていない（fstab・initramfs の RESUME はそのまま）。
+
+| 区画 | start（sector 512） | size | type | PARTLABEL・label | 中身 |
+| --- | --- | --- | --- | --- | --- |
+| p1 | 2048 | 1998848（976 MiB） | EFI System | — | Debian の ESP（`40DD-CFBF`、変えていない） |
+| p2 | 2000896 | 448432128（218961 MiB、前は 481986560） | Linux filesystem | — | Debian の `/`（ext4 `034701e3-…`、PARTUUID `c8421e56-…`） |
+| p4 | 450433024 | 524288（256 MiB） | Microsoft basic data `EBD0A0A2-…` | `zedBSD-boot`・FAT32 label `ZEDBSD` | 空（`F2E9-0F41`）。`/zedbsd.cfg` と kernel を置く所 |
+| p5 | 450957312 | 30932992（15104 MiB） | FreeBSD UFS `516E7CB6-…` | `zedBSD-root` | 型だけ（UFS は未書き込み） |
+| p6 | 481890304 | 2097152（1 GiB） | FreeBSD swap `516E7CB5-…` | `zedBSD-swap` | 型だけ（mkswap しない。Linux の swap の型にしない） |
+| p3 | 483987456 | 16130048（7.7 GiB） | Linux swap | — | Debian の swap（変えていない） |
+
+- 型は `tools/build/zedimage-host.c` の image と同じ。区画の番号は disk の順でない（sfdisk は「not in disk order」と言う）。並べ替えない（p3 の名前が変わる）。
+- 前後の区画表・dumpe2fs・各段の出力は centris の P3 の worktree の `build/hw5330/resize/`（git の外）。
+- まだ無い物: NVMe から zedBSD を起動する UEFI の entry、p4・p5 への書き込み、`5330-run.sh` の NVMe 化。今の zedBSD の kernel は Intel VMD（RST）の後ろの NVMe を見られない（WS298）。
+  USB と NVMe の両方に `PARTLABEL=zedBSD-root` がある時の kernel の選び方は WS298 の後に確かめる。
+
+### 手順（live USB、`5330-live-usb.sh`）
+
+USB（`/dev/sda`）は SystemRescue 13.02 になっている（zedBSD の image は上書きした。`5330-run.sh --kernel` の前に zedBSD の image を書き直す）。
+
+1. `5330-live-usb.sh write`（書いた後 `cmp` で stick と image を比べた）→ `boot`（BootNext、42 秒で live）。BootOrder は変えない（live の entry は `000A`、BootOrder の外）。
+2. live で: `lsblk`・`findmnt -S /dev/nvme0n1p2` が空・`blkid` の UUID。`sfdisk -d` と `dumpe2fs -h` を host に保存（戻しの元）。
+3. `e2fsck -f -n` → `e2fsck -f -p`（exit 0。1 なら `-n` で clean を確かめる、2 以上は止まる）。
+4. `resize2fs -p /dev/nvme0n1p2 210000M`（新しい区画より約 9 GiB 小さく。46 秒）→ `e2fsck -f -n`。block 数 ×4096 < 新しい区画の byte を数で確かめる。
+5. `echo size=448432128 | sfdisk --no-act -N 2 /dev/nvme0n1` で start・type が不変を見てから本番 → `partprobe` → `sfdisk -d` で p1・p3・p2 の uuid が不変。
+6. `resize2fs -p /dev/nvme0n1p2`（区画いっぱい、56054016 block）→ `e2fsck -f -n`。
+7. 3 行の表を `sfdisk --no-act --append` で試してから `sfdisk --append` → `sfdisk -V`・`wipefs -n`（p4〜p6 に古い signature が無い）→ `mkfs.vfat -F 32 -n ZEDBSD /dev/nvme0n1p4`。
+8. `back` → Debian で `/` が `034701e3-…` で rw、`df` 210G、`swapon --show` に p3、`systemctl is-system-running` が running。
+
+戻し方: 5 の前は区画表が無傷（`resize2fs` で伸ばし直す）。5 の後は保存した dump を `sfdisk /dev/nvme0n1 < dump` で書き戻して `resize2fs`。
+Debian が起動しない時は遠隔の電源が無いので、ユーザーが F12 で USB の SystemRescue を選ぶ。
