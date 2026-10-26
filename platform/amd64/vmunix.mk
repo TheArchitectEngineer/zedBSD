@@ -274,6 +274,7 @@ endif
 AMD64_GHCI_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_GHCI),y)
 AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/pci-attach.c src/drivers/gpu/ghci/cp.c \
+	src/drivers/gpu/ghci/firmware.c \
 	src/drivers/gpu/ghci/memory.c src/drivers/gpu/ghci/range.c src/drivers/gpu/ghci/blit.c \
 	src/drivers/gpu/ghci/state.c src/drivers/gpu/ghci/check.c src/drivers/gpu/ghci/capset.c \
 	src/drivers/gpu/ghci/jobs.c src/drivers/gpu/ghci/isa.c src/drivers/gpu/ghci/display.c \

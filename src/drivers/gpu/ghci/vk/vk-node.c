@@ -8,7 +8,8 @@
 /*
  * The operations the Vulkan executor adds to a GHCI node: the capset
  * libvulkan reads, the queued frames and their drain, the job markers
- * libvulkan completes its fences with, and the device's fault.
+ * libvulkan completes its fences with, the stop of a closing session's
+ * work, and the device's fault.
  *
  * A job marker is reserved with the core's completion before libvulkan
  * submits, committed to the session's last fence (the fence after the
@@ -39,6 +40,8 @@ static int node_reserve(void *private_data, void *opaque, uint32_t timeline, str
 static int node_commit(void *private_data, void *opaque, void *token, struct drv_gpu_completion *completion);
 static int node_cancel(void *private_data, void *opaque, void *token, struct drv_gpu_completion *completion, unsigned fault);
 static int node_capacity(void *private_data, void *opaque, uint32_t timeline, unsigned *available);
+static int node_stop_begin(void *private_data, void *opaque, int error);
+static int node_stop_poll(void *private_data, void *opaque);
 static void node_fault(void *private_data, int error);
 static int timeline_owned(const struct ghci_session *owner, uint32_t timeline);
 
@@ -57,13 +60,15 @@ static const struct drv_gpu_job_ops job_operations = {
 };
 
 /*
- * The recovery: only the device's fault.  The command processor's own
- * reset after a GPU fault or a hang is the service thread's (cp.c), and
- * a session's work is waited for by the drain.
+ * The recovery: the stop of a session's work, which the core asks for at
+ * every close (without it the core takes each close for a device that
+ * cannot stop, and faults the whole device), and the device's fault.  The
+ * command processor's own reset after a GPU fault or a hang is the
+ * service thread's (cp.c).
  */
 static const struct drv_gpu_recovery_ops recovery_operations = {
-	NULL,
-	NULL,
+	node_stop_begin,
+	node_stop_poll,
 	node_fault,
 	NULL,
 	NULL
@@ -328,6 +333,75 @@ node_capacity(
 		return error;
 
 	/* Succeeded: the count is a snapshot, not a promise. */
+	return 0;
+}
+
+/*
+ * Begins the stop of a session's work.  The core has stopped taking the
+ * session's commands; its frames and fences in the ring end by
+ * themselves (or with the next reset), so nothing more is to be done.
+ */
+static int
+node_stop_begin(
+	void *private_data,
+	void *opaque,
+	int error)
+{
+	(void)private_data;
+	(void)opaque;
+	(void)error;
+
+	/* Succeeded: the stop has begun; the poll says when it is done. */
+	return 0;
+}
+
+/*
+ * Reports whether a stopping session's work is done: 0 when no frame of
+ * it is in flight, no job marker waits and its last fence passed (or a
+ * reset ended it), EAGAIN before.
+ */
+static int
+node_stop_poll(
+	void *private_data,
+	void *opaque)
+{
+	struct ghci_device *device;
+	struct ghci_session *owner;
+	struct ghci_ticket ticket;
+	unsigned pending;
+	unsigned committed;
+	int outstanding;
+	int done;
+
+	/* What of the session is still in flight. */
+	device = private_data;
+	owner = opaque;
+	mutex_lock(&device->lock);
+
+	pending = 0U;
+	committed = 0U;
+	if (owner->vk != NULL) {
+		pending = owner->vk->pending;
+		committed = owner->vk->jobs.committed;
+	}
+	outstanding = owner->outstanding;
+	ticket.fence = owner->last_fence;
+	ticket.generation = owner->last_generation;
+
+	mutex_unlock(&device->lock);
+
+	/* The last fence, when one is outstanding. */
+	done = 1;
+	if (outstanding)
+		done = ghci_cp_done(device, ticket.fence, ticket.generation);
+
+	/* Work still in flight: the service thread completes it meanwhile. */
+	if (!done || pending != 0U || committed != 0U) {
+		ghci_service_wake(device, GHCI_WORK_REPLY);
+		return EAGAIN;
+	}
+
+	/* Succeeded: the GPU no longer reaches the session's memory for it. */
 	return 0;
 }
 

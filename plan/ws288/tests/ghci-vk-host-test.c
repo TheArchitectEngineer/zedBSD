@@ -1169,6 +1169,12 @@ test_executor(void)
 	expect(error == 0 && device.vk != NULL, "vk second start");
 	error = core_ops->open(core_private, &opaque);
 	expect(error == 0, "vk second open");
+	expect(core_ops->recovery != NULL && core_ops->recovery->stop_begin != NULL && core_ops->recovery->stop_poll != NULL,
+	    "vk the core's stop contract (without it every close faults the device)");
+	error = core_ops->recovery->stop_begin(core_private, opaque, 0);
+	expect(error == 0, "vk stop begun");
+	error = core_ops->recovery->stop_poll(core_private, opaque);
+	expect(error == 0, "vk an idle session's stop is done at once");
 	core_ops->commands->drain(core_private, opaque);
 	core_ops->close(core_private, opaque);
 	expect(model_last_control == GPU_OP_GHCI_SESSION_CLOSE, "vk SESSION_CLOSE sent at the close");

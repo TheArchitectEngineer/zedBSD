@@ -2039,6 +2039,29 @@ enum gpu_op {
 	 * Sent by: userland/tests/ghci-blit.
 	 * Decoded by: ghci/native.c: ghci_native_command, ghci/check.c:
 	 * ghci_native_prepare.
+	 *
+	 * GPU_OP_GHCI_DIAG and GPU_OP_GHCI_FIRMWARE are commands to the GHCI
+	 * driver, not gpu-ops of the ring, sent by root only through
+	 * GPU_COMMAND on every kernel:
+	 *   DIAG     [u32 number][u32 flags 0][u32 rounds 1..100000]: the
+	 *            diagnostics of the paths to host and local memory (the
+	 *            register window, the debug port, and the firmware's
+	 *            DIAG_ECHO, DIAG_WRITE and DIAG_SUM), each step logged;
+	 *            the command fails with EIO when a step failed.  flags [0]
+	 *            PAINT instead blits colour bands and grey steps into the
+	 *            display's idle frame (scanned out while a monitor is
+	 *            connected and no lease holds the display) and has the
+	 *            firmware sum it back (rounds 0).
+	 *   FIRMWARE [u32 number][u32 flags][u32 part][u32 offset][u32 count]
+	 *            [count words]: words of a firmware image staged in the
+	 *            driver (part 0 IMEM, 1 DMEM; offset and count in words).
+	 *            flags [0] LOAD: then reset the GPU, load the staged image
+	 *            with the CPFW capability, start it and check its
+	 *            GHCI_INIT (only while the sender's session is the only
+	 *            one); [1] through local memory: the image is first copied
+	 *            into the GPU's local memory with the debug port.
+	 * Sent by: userland/base/ghcictl (diag, paint, fwload).
+	 * Decoded by: ghci/firmware.c: ghci_firmware_command.
 	 */
 	GPU_OP_GHCI_SESSION_OPEN = 0x10100,
 	GPU_OP_GHCI_SESSION_CLOSE = 0x10101,
@@ -2048,7 +2071,9 @@ enum gpu_op {
 	GPU_OP_GHCI_FRAME = 0x10105,
 	GPU_OP_GHCI_BUFFER_GRANT = 0x10106,
 	GPU_OP_GHCI_BUFFER_REVOKE = 0x10107,
-	GPU_OP_GHCI_HEAP = 0x10108
+	GPU_OP_GHCI_HEAP = 0x10108,
+	GPU_OP_GHCI_DIAG = 0x10180,
+	GPU_OP_GHCI_FIRMWARE = 0x10181
 };
 
 #endif

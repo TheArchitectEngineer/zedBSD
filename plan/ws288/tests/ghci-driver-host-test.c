@@ -24,7 +24,10 @@
  * stand-in for the command processor's firmware: the GHCI control
  * gpu-ops succeed, and a GHCI_FRAME writes a result for each of its
  * records (model_aux gives their aux words) and the frame's result, then
- * raises RESULT.  The Vulkan executor's test (ghci-vk-host-test.c)
+ * raises RESULT.  GHCI_INIT answers with the token (model_init_mode
+ * gives the wrong answers of the start's tests), and DIAG_ECHO,
+ * DIAG_WRITE and DIAG_SUM work on the model's memory, as does the debug
+ * port (DBG_ADDR, DBG_DATA).  The Vulkan executor's test (ghci-vk-host-test.c)
  * includes this file with GHCI_MODEL_ONLY, which leaves out this test's
  * own checks and main.
  *
@@ -50,6 +53,7 @@
 #include "drivers/gpu/ghci/ghci.h"
 #include "kern/clock.h"
 #include "kern/poll.h"
+#include "drivers/gpu/ghci/frame.h"
 #include "drivers/gpu/ghci/hcr.h"
 #include "drivers/gpu/ghci/packets.h"
 #include "uapi/gpu.h"
@@ -179,6 +183,21 @@ static unsigned model_control_packets;
 static uint32_t model_last_control;
 
 /*
+ * The model firmware's INIT: how it answers (MODEL_INIT_*), and the INITs
+ * and diagnostics it took.  The debug port's address and status (error:
+ * the last access was outside the memories).
+ */
+#define MODEL_INIT_RIGHT		0
+#define MODEL_INIT_SILENT		1
+#define MODEL_INIT_WRONG_TOKEN		2
+#define MODEL_INIT_OLD_FIRMWARE		3
+static int model_init_mode;
+static unsigned model_inits;
+static unsigned model_diags;
+static uint32_t model_dbg_address;
+static uint32_t model_dbg_status;
+
+/*
  * The control packets (not frames) in the order the model ran them: the
  * gpu-op, the packet's tag and its first arguments; the log keeps the
  * first MODEL_CONTROL_LOG.
@@ -252,6 +271,7 @@ static void model_interrupt(void);
 static void model_setup_window(int discrete);
 static unsigned model_guard_changed(void);
 static int model_class_v(const uint32_t *ring, uint32_t at, uint32_t count);
+static int model_firmware_op(const uint32_t *ring, uint32_t at, uint32_t count, uint32_t *reply);
 static uint32_t model_dc_read(uint32_t offset);
 static void model_dc_write(uint32_t offset, uint32_t value);
 static int model_dc_scanout_register(uint32_t offset);
@@ -266,6 +286,9 @@ static void test_discrete(void);
 static void test_unified(void);
 static void test_display(void);
 static void test_polled_uncached(void);
+static void test_firmware(void);
+static void test_idle_frame(void);
+static int firmware_start(struct ghci_device *device, int mode);
 #endif
 
 /* The kernel's MMIO: the register window is the model's. */
@@ -306,6 +329,8 @@ kern_mmio_read32(
 		return model_fault_info;
 	if (offset == GHCI_FAULT_ADDR)
 		return model_fault_address;
+	if (offset == GHCI_DBG_STATUS)
+		return model_dbg_status;
 	if (offset == GHCI_CTRL)
 		return model_registers[offset / 4U] & ~GHCI_CTRL_RESET;
 
@@ -319,6 +344,7 @@ kern_mmio_write32(
 	volatile void *address,
 	uint32_t value)
 {
+	uint8_t *word;
 	uint32_t offset;
 
 	/* The register's offset in the window. */
@@ -359,6 +385,23 @@ kern_mmio_write32(
 		model_wptr = value;
 		model_doorbells++;
 		model_run();
+		return;
+	}
+
+	/* The debug port: DBG_ADDR reads the word into DBG_DATA, a DBG_DATA write writes it. */
+	if (offset == GHCI_DBG_ADDR || offset == GHCI_DBG_DATA) {
+		if (offset == GHCI_DBG_ADDR)
+			model_dbg_address = value;
+		word = model_memory(model_dbg_address, 4U);
+		model_dbg_status = 0U;
+		if (word == NULL) {
+			model_dbg_status = GHCI_DBG_ERROR;
+		} else if (offset == GHCI_DBG_ADDR) {
+			memcpy(&model_registers[GHCI_DBG_DATA / 4U], word, 4U);
+		} else {
+			memcpy(word, &value, 4U);
+			model_registers[GHCI_DBG_DATA / 4U] = value;
+		}
 		return;
 	}
 
@@ -722,6 +765,8 @@ main(void)
 	test_unified();
 	test_display();
 	test_polled_uncached();
+	test_firmware();
+	test_idle_frame();
 	expect(lock_errors == 0U, "no mutex locked twice");
 
 	/* Reports the counts of the checks. */
@@ -1111,6 +1156,7 @@ model_class_v(
 	uint32_t count)
 {
 	uint32_t pair[2];
+	uint32_t reply[GHCI_REPLY_WORDS];
 	uint32_t opcode;
 	uint32_t flags;
 	uint32_t result;
@@ -1118,6 +1164,7 @@ model_class_v(
 	uint32_t records;
 	uint32_t index;
 	uint8_t *word;
+	int answered;
 
 	/* The head. */
 	if (count < 3U) {
@@ -1127,6 +1174,21 @@ model_class_v(
 	opcode = ring[at + 1U];
 	flags = ring[at + 2U];
 	result = ring[at + 3U];
+
+	/* INIT and the diagnostics: a reply of 16 words (none for a silent INIT). */
+	answered = model_firmware_op(ring, at, count, reply);
+	if (answered >= 0) {
+		if (answered == 0 || (flags & 2U) == 0U)
+			return 0;
+		word = model_memory(result, sizeof(reply));
+		if (word == NULL) {
+			model_fault(GHCI_FAULT_APERTURE, ring[at]);
+			return -1;
+		}
+		memcpy(word, reply, sizeof(reply));
+		model_irq_status |= GHCI_IRQ_RESULT;
+		return 0;
+	}
 
 	/* A frame: each record's result, by index. */
 	pair[0] = 0U;
@@ -1178,6 +1240,84 @@ model_class_v(
 
 	/* The packet was taken. */
 	return 0;
+}
+
+/*
+ * Runs INIT or a diagnostic as the model firmware into a reply: 1 when
+ * it answers, 0 when it stays silent, -1 for another gpu-op.
+ */
+static int
+model_firmware_op(
+	const uint32_t *ring,
+	uint32_t at,
+	uint32_t count,
+	uint32_t *reply)
+{
+	uint32_t opcode;
+	uint32_t address;
+	uint32_t bytes;
+	uint32_t index;
+	uint32_t value;
+	uint8_t *memory;
+
+	/* Only these gpu-ops. */
+	opcode = ring[at + 1U];
+	memset(reply, 0, GHCI_REPLY_WORDS * 4U);
+	if (opcode == GHCI_GPU_OP_INIT) {
+		model_inits++;
+		if (model_init_mode == MODEL_INIT_SILENT)
+			return 0;
+		if (model_init_mode == MODEL_INIT_OLD_FIRMWARE) {
+			reply[0] = (uint32_t)-8;
+			return 1;
+		}
+		reply[1] = ring[at + 4U];
+		if (model_init_mode == MODEL_INIT_WRONG_TOKEN)
+			reply[1] ^= 1U;
+		reply[GHCI_INIT_NOT_TOKEN] = ~ring[at + 4U];
+		reply[GHCI_INIT_VERSION] = 0x00020001U;
+		reply[GHCI_INIT_PROTOCOL_WORD] = GHCI_INIT_PROTOCOL;
+		reply[GHCI_INIT_FEATURES] = GHCI_INIT_F_DIAG | GHCI_INIT_F_VULKAN;
+		reply[GHCI_INIT_LINE] = 64U;
+		reply[GHCI_INIT_SESSIONS] = 32U;
+		reply[GHCI_INIT_PACKET] = model_registers[GHCI_RING_BASE / 4U] + (at + 1U) * 4U;
+		return 1;
+	}
+	if (opcode != GHCI_GPU_OP_DIAG_ECHO && opcode != GHCI_GPU_OP_DIAG_WRITE && opcode != GHCI_GPU_OP_DIAG_SUM)
+		return -1;
+	model_diags++;
+
+	/* The echo. */
+	if (opcode == GHCI_GPU_OP_DIAG_ECHO) {
+		reply[1] = ring[at + 4U];
+		for (index = 0U; index < reply[1] && index < GHCI_DIAG_ECHO_WORDS && 4U + index < count; index++)
+			reply[2U + index] = ring[at + 5U + index];
+		return 1;
+	}
+
+	/* A pattern written or summed, over the model's memory. */
+	address = ring[at + 4U];
+	bytes = ring[at + 6U];
+	memory = model_memory(address, bytes);
+	if (memory == NULL) {
+		reply[0] = (uint32_t)-4;
+		return 1;
+	}
+	reply[1] = bytes;
+	for (index = 0U; index < bytes / 4U; index++) {
+		if (opcode == GHCI_GPU_OP_DIAG_WRITE) {
+			value = ring[at + 7U] + index * ring[at + 8U];
+			memcpy(&memory[index * 4U], &value, 4U);
+			continue;
+		}
+		memcpy(&value, &memory[index * 4U], 4U);
+		reply[GHCI_DIAG_SUM_PLAIN] += value;
+		reply[GHCI_DIAG_SUM_WEIGHTED] += (index + 1U) * value;
+		if (index < 4U)
+			reply[GHCI_DIAG_SUM_FIRST + index] = value;
+		reply[GHCI_DIAG_SUM_LAST] = value;
+	}
+	return 1;
 }
 
 /* Reads a register of the display controller's window. */
@@ -1909,6 +2049,260 @@ test_polled_uncached(void)
 	expect(uncached_unmaps == uncached_maps && uncached_bytes == 0U, "uncached: every view removed at the stop");
 	core_superuser = 0;
 	model_device = NULL;
+}
+
+/*
+ * The firmware's handshake, diagnostics and reload on a discrete GPU with
+ * firmware (no shader unit, so no executor) and a CPFW capability: a
+ * start whose INIT is answered right, wrong or not at all, or by a
+ * firmware older than INIT; the diagnostics from the driver and from
+ * root's command; INIT again after a reset; a reload from host memory and
+ * through local memory.
+ */
+static void
+test_firmware(void)
+{
+	static struct ghci_device device;
+	uint32_t stream[16];
+	uint32_t inits;
+	uint32_t word;
+	uint8_t *memory;
+	int error;
+	void *opaque;
+
+	/* The right answer starts the device, with the diagnostics. */
+	error = firmware_start(&device, MODEL_INIT_RIGHT);
+	expect(error == 0, "firmware: the start with INIT answered");
+	expect(model_inits == 1U, "firmware: INIT sent once at the start");
+	expect((device.fw_features & GHCI_INIT_F_DIAG) != 0U && device.fw_version == 0x00020001U, "firmware: INIT's version and features kept");
+
+	/* The diagnostics pass on the model, with its firmware's steps. */
+	model_diags = 0U;
+	error = ghci_firmware_diag(&device, 3U);
+	expect(error == 0, "firmware: the diagnostics pass");
+	expect(model_diags == 3U * 6U, "firmware: six gpu-ops of the diagnostics a round (echo, write, sum through both views, local write and sum)");
+	expect(device.diag_alias != NULL, "firmware: an uncached view of the host buffer beside the direct map");
+	expect(model_registers[GHCI_SCRATCH / 4U] != 0U, "firmware: the register step wrote SCRATCH");
+	error = ghci_firmware_diag(&device, 0U);
+	expect(error == EINVAL, "firmware: no rounds refused");
+
+	/* Root alone sends the command. */
+	core_ops->open(core_private, &opaque);
+	stream[0] = GPU_OP_GHCI_DIAG;
+	stream[1] = 0U;
+	stream[2] = 1U;
+	core_superuser = 0;
+	error = core_ops->command(core_private, opaque, stream, 12U);
+	expect(error == EPERM, "firmware: the diagnostics refused to a user");
+	core_superuser = 1;
+	error = core_ops->command(core_private, opaque, stream, 12U);
+	expect(error == 0, "firmware: the diagnostics from root's command");
+	stream[1] = 4U;
+	error = core_ops->command(core_private, opaque, stream, 12U);
+	expect(error == EINVAL, "firmware: a diagnostics command with an unknown flag refused");
+
+	/* A reset sends INIT again before the ring takes other work. */
+	inits = model_inits;
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(model_inits == inits + 1U && !device.lost, "firmware: INIT after the reset");
+
+	/* A reload from host memory: four IMEM words, two DMEM words, the load. */
+	stream[0] = GPU_OP_GHCI_FIRMWARE;
+	stream[1] = 0U;
+	stream[2] = 0U;
+	stream[3] = 0U;
+	stream[4] = 4U;
+	stream[5] = 0x00000013U;
+	stream[6] = 0x11111111U;
+	stream[7] = 0x22222222U;
+	stream[8] = 0x33333333U;
+	error = core_ops->command(core_private, opaque, stream, 9U * 4U);
+	expect(error == 0, "firmware: IMEM staged");
+	stream[1] = 1U;
+	stream[2] = 1U;
+	stream[4] = 2U;
+	stream[5] = 0x44444444U;
+	stream[6] = 0x55555555U;
+	inits = model_inits;
+	error = core_ops->command(core_private, opaque, stream, 7U * 4U);
+	expect(error == 0, "firmware: the reload from host memory");
+	expect(model_registers[GHCI_CPFW_IWORDS / 4U] == 4U && model_registers[GHCI_CPFW_DWORDS / 4U] == 2U, "firmware: the words loaded");
+	expect(model_registers[GHCI_CPFW_IBASE / 4U] == device.fw_image->gpu_address, "firmware: IMEM loaded from the staged image");
+	expect(model_registers[GHCI_CPFW_DBASE / 4U] == device.fw_image->gpu_address + 131072U, "firmware: DMEM after IMEM's room");
+	expect((model_registers[GHCI_CPFW_CTRL / 4U] & GHCI_CPFW_CTRL_RUN) != 0U, "firmware: RUN after the load");
+	expect(model_inits == inits + 1U && !device.lost, "firmware: INIT after the reload");
+
+	/* A reload through local memory: the image copied there by the debug port. */
+	stream[0] = GPU_OP_GHCI_FIRMWARE;
+	stream[1] = 0U;
+	stream[2] = 0U;
+	stream[3] = 0U;
+	stream[4] = 4U;
+	stream[5] = 0x00000013U;
+	stream[6] = 0x66666666U;
+	stream[7] = 0x77777777U;
+	stream[8] = 0x88888888U;
+	error = core_ops->command(core_private, opaque, stream, 9U * 4U);
+	stream[1] = 3U;
+	stream[2] = 1U;
+	stream[4] = 2U;
+	stream[5] = 0x99999999U;
+	stream[6] = 0xaaaaaaaaU;
+	error = core_ops->command(core_private, opaque, stream, 7U * 4U);
+	expect(error == 0, "firmware: the reload through local memory");
+	expect(model_registers[GHCI_CPFW_IBASE / 4U] == device.fw_image_local->gpu_address, "firmware: IMEM loaded from local memory");
+	memory = model_memory(device.fw_image_local->gpu_address + 12U, 4U);
+	word = 0U;
+	if (memory != NULL)
+		memcpy(&word, memory, 4U);
+	expect(word == 0x88888888U, "firmware: the debug port copied IMEM");
+	memory = model_memory(device.fw_image_local->gpu_address + 131072U + 4U, 4U);
+	word = 0U;
+	if (memory != NULL)
+		memcpy(&word, memory, 4U);
+	expect(word == 0xaaaaaaaaU, "firmware: the debug port copied DMEM");
+
+	/* A piece of a part that does not exist, or past its end, is refused; another session refuses a reload. */
+	stream[1] = 0U;
+	stream[2] = 2U;
+	error = core_ops->command(core_private, opaque, stream, 7U * 4U);
+	expect(error == EINVAL, "firmware: a third part refused");
+	stream[2] = 1U;
+	stream[3] = 16383U;
+	error = core_ops->command(core_private, opaque, stream, 7U * 4U);
+	expect(error == EINVAL, "firmware: DMEM past its end refused");
+	core_ops->close(core_private, opaque);
+	core_superuser = 0;
+	error = ghci_device_stop(&device);
+	expect(error == 0, "firmware: stop");
+	model_device = NULL;
+
+	/* A wrong token, and no answer at all, fail the start. */
+	error = firmware_start(&device, MODEL_INIT_WRONG_TOKEN);
+	expect(error == EIO, "firmware: a wrong token fails the start");
+	model_device = NULL;
+	error = firmware_start(&device, MODEL_INIT_SILENT);
+	expect(error == EIO, "firmware: no answer fails the start");
+	model_device = NULL;
+
+	/* A firmware older than INIT starts the device without the diagnostics' firmware steps. */
+	model_registers[GHCI_CPFW_VERSION / 4U] = 0x00020000U;
+	error = firmware_start(&device, MODEL_INIT_OLD_FIRMWARE);
+	expect(error == 0 && device.fw_features == 0U, "firmware: an older firmware starts without features");
+	model_diags = 0U;
+	error = ghci_firmware_diag(&device, 1U);
+	expect(error == 0 && model_diags == 0U, "firmware: an older firmware's diagnostics skip its steps");
+	error = ghci_device_stop(&device);
+	expect(error == 0, "firmware: stop of the older firmware");
+	model_init_mode = MODEL_INIT_RIGHT;
+	model_device = NULL;
+}
+
+/*
+ * The idle frame: a connected display with no lease is lit on the driver's
+ * frame in 1280 x 720 at the first service round, once; a lease then
+ * takes the display as from a lit one.
+ */
+static void
+test_idle_frame(void)
+{
+	static struct ghci_device device;
+	struct gpu_display_claim claim;
+	uint8_t *memory;
+	uint32_t word;
+	int error;
+	void *opaque;
+
+	/* A display that is connected from the start. */
+	model_setup_display();
+	memset(&device, 0, sizeof(device));
+	device.registers = (volatile uint8_t *)model_registers;
+	device.register_bytes = sizeof(model_registers);
+	device.window = model_window_guard;
+	device.window_physical = MODEL_WINDOW_PHYSICAL;
+	device.window_bytes = MODEL_WINDOW_BYTES;
+	model_device = &device;
+	error = ghci_device_start(&device);
+	expect(error == 0 && device.display.idle_frame != NULL, "idle: start with an idle frame");
+	expect((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U, "idle: dark before the service");
+
+	/* The service lights it on the idle frame in 1280 x 720. */
+	ghci_service_step(&device, GHCI_WORK_DISPLAY);
+	expect((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) != 0U, "idle: lit by the service");
+	expect(model_dc[GHCI_DC_FB_BASE / 4U] == device.display.idle_frame->gpu_address, "idle: the idle frame scanned out");
+	expect(model_dc[GHCI_DC_H_ACTIVE / 4U] == 1280U && model_dc[GHCI_DC_V_ACTIVE / 4U] == 720U, "idle: 1280 x 720");
+
+	/* The picture in the idle frame, read back by the model firmware's sums. */
+	model_registers[GHCI_CAPS / 4U] |= GHCI_CAPS_FIRMWARE;
+	device.fw_features = GHCI_INIT_F_DIAG;
+	error = ghci_firmware_paint(&device);
+	expect(error == 0, "idle: the picture painted and read back");
+	memory = model_memory(device.display.idle_frame->gpu_address + 5120U * 10U + 4U * 170U, 4U);
+	word = 0U;
+	if (memory != NULL)
+		memcpy(&word, memory, 4U);
+	expect(word == 0x00ffff00U, "idle: the second band is yellow");
+	memory = model_memory(device.display.idle_frame->gpu_address + 5120U * 700U + 4U * 1279U, 4U);
+	word = 0U;
+	if (memory != NULL)
+		memcpy(&word, memory, 4U);
+	expect(word == 0x00ffffffU, "idle: the last grey step is white");
+	model_registers[GHCI_CAPS / 4U] &= ~GHCI_CAPS_FIRMWARE;
+
+	/* A lease is taken as from a lit display, and its release leaves it dark. */
+	core_ops->open(core_private, &opaque);
+	memset(&claim, 0, sizeof(claim));
+	claim.display_id = 1U;
+	claim.generation = 1U;
+	error = core_ops->display->claim(core_private, opaque, &claim);
+	expect(error == 0, "idle: a lease is taken");
+	core_ops->close(core_private, opaque);
+	ghci_service_step(&device, GHCI_WORK_DISPLAY);
+	ghci_service_step(&device, GHCI_WORK_DISPLAY);
+	expect((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U && !device.display.ending, "idle: dark after the lease, not lit again");
+	error = ghci_device_stop(&device);
+	expect(error == 0, "idle: stop");
+	model_device = NULL;
+}
+
+/*
+ * Starts a discrete GPU with firmware and a CPFW capability (after the
+ * MEM capability) whose INIT answers as `mode` says.
+ */
+static int
+firmware_start(
+	struct ghci_device *device,
+	int mode)
+{
+	uint32_t version;
+	int error;
+
+	/* The window with the MEM capability, then CPFW at its registers, READY. */
+	version = model_registers[GHCI_CPFW_VERSION / 4U];
+	model_setup_window(1);
+	model_registers[GHCI_CAPS / 4U] |= GHCI_CAPS_FIRMWARE | (1U << 18);
+	model_registers[MODEL_EXTCAP / 4U] |= 2U << 16;
+	model_registers[MODEL_EXTCAP / 4U + 2U] = GHCI_XCAP_CPFW | (1U << 8);
+	model_registers[MODEL_EXTCAP / 4U + 3U] = GHCI_CPFW_CTRL;
+	model_registers[GHCI_CPFW_STATUS / 4U] = GHCI_CPFW_STATUS_READY;
+	model_registers[GHCI_CPFW_VERSION / 4U] = version;
+	model_init_mode = mode;
+	model_inits = 0U;
+
+	/* The device on it. */
+	memset(device, 0, sizeof(*device));
+	device->registers = (volatile uint8_t *)model_registers;
+	device->register_bytes = sizeof(model_registers);
+	device->window = model_window_guard;
+	device->window_physical = MODEL_WINDOW_PHYSICAL;
+	device->window_bytes = MODEL_WINDOW_BYTES;
+	model_device = device;
+	error = ghci_device_start(device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device runs. */
+	return 0;
 }
 
 /* Fills a present request of the lease's frame: the size, rows, format and flags, generation 1. */

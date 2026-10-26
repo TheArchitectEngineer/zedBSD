@@ -80,7 +80,7 @@ done
 
 # The driver, its executor, its compiler and the record codec the executor shares.
 ghci="$repo/src/drivers/gpu/ghci"
-for source in "$ghci/ghci.c" "$ghci/cp.c" "$ghci/memory.c" "$ghci/blit.c" "$ghci/native.c" "$ghci/check.c" \
+for source in "$ghci/ghci.c" "$ghci/cp.c" "$ghci/firmware.c" "$ghci/memory.c" "$ghci/blit.c" "$ghci/native.c" "$ghci/check.c" \
 	"$ghci/range.c" "$ghci/share.c" "$ghci/state.c" "$ghci/capset.c" "$ghci/jobs.c" "$ghci/isa.c" \
 	"$ghci/display.c" "$ghci/display-scan.c" "$ghci/adv7511.c" \
 	"$ghci"/vk/*.c "$ghci"/compiler/*.c "$repo/src/drivers/gpu/compiler/spirv.c" \

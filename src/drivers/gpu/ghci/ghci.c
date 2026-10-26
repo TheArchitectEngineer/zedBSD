@@ -155,6 +155,21 @@ ghci_device_start(
 		return error;
 	}
 
+	/*
+	 * The handshake with the firmware (GHCI_INIT): its answer through the
+	 * ring and host memory proves the path every packet takes.  A device
+	 * whose firmware does not answer, or answers wrong, is not started.
+	 */
+	error = ghci_firmware_init(device);
+	if (error != 0) {
+		kern_logf("ghci: %s: the firmware did not answer INIT; the device is not started\n", device->name);
+		ghci_display_detach(device);
+		ghci_poll_stop(device);
+		ghci_cp_stop(device);
+		ghci_memory_fini(device);
+		return EIO;
+	}
+
 	/* Starts the thread that recovers from faults and gives deferred memory back. */
 	error = ghci_service_start(device);
 	if (error != 0) {
@@ -213,6 +228,9 @@ ghci_device_stop(
 {
 	int error;
 
+	/* Says that the detach asks the device to stop. */
+	kern_logf("ghci: %s: stop asked (sessions %u)\n", device->name, device->session_count);
+
 	/* Refuses while a session is open; new opens are refused from here on. */
 	mutex_lock(&device->lock);
 
@@ -241,8 +259,9 @@ ghci_device_stop(
 	ghci_cp_stop(device);
 	ghci_service_stop(device);
 
-	/* The executor's heap and staging ring go back with the rest. */
+	/* The executor's heap and staging ring go back with the rest, and the firmware's image and diagnostics' buffers. */
 	ghci_vk_engine_stop(device);
+	ghci_firmware_release(device);
 
 	/* Gives every allocation that waited for the GPU back, and the allocators' tables. */
 	mutex_lock(&device->lock);
@@ -385,6 +404,31 @@ ghci_firmware_start(
 		GHCI_CPFW_STATUS_READY | GHCI_CPFW_STATUS_FAULT | GHCI_CPFW_STATUS_STOPPED,
 		GHCI_CPFW_STATUS_READY,
 		GHCI_FIRMWARE_WAIT_MS);
+	if (error != 0) {
+		/*
+		 * Seen on the KC705 after the host lost power with the firmware
+		 * running: the core stays stopped (CPFW_STATUS 9).  RUN is let go,
+		 * the processor reset once more, and RUN set again.
+		 */
+		status = ghci_read(device, registers + CPFW_STATUS_OFFSET);
+		kern_logf("ghci: %s: firmware did not start (CPFW_STATUS %08x, CPFW_CTRL %08x, status %08x); resetting once more\n",
+		    device->name,
+		    (unsigned)status,
+		    (unsigned)ghci_read(device, registers),
+		    (unsigned)ghci_read(device, GHCI_STATUS));
+		ghci_write(device, registers, 0U);
+		ghci_write(device, GHCI_CTRL, GHCI_CTRL_RESET);
+		(void)ghci_poll(device, GHCI_CTRL, GHCI_CTRL_RESET, 0U, GHCI_RESET_WAIT_MS);
+		ghci_write(device, registers, GHCI_CPFW_CTRL_RUN);
+		error = ghci_poll(
+			device,
+			registers + CPFW_STATUS_OFFSET,
+			GHCI_CPFW_STATUS_READY | GHCI_CPFW_STATUS_FAULT | GHCI_CPFW_STATUS_STOPPED,
+			GHCI_CPFW_STATUS_READY,
+			GHCI_FIRMWARE_WAIT_MS);
+	}
+
+	/* A firmware that still does not run. */
 	if (error != 0) {
 		status = ghci_read(device, registers + CPFW_STATUS_OFFSET);
 		kern_logf("ghci: %s: firmware did not start (CPFW_STATUS %08x)\n", device->name, (unsigned)status);
@@ -736,8 +780,9 @@ gpu_open(
 
 	mutex_unlock(&device->lock);
 
-	/* An open that was refused leaves nothing behind. */
+	/* An open that was refused leaves nothing behind, and says why. */
 	if (error != 0) {
+		kern_logf("ghci: %s: open refused (%d)\n", device->name, error);
 		kern_free(session);
 		return error;
 	}
@@ -1054,10 +1099,26 @@ gpu_command(
 	int superuser;
 	int error;
 
-	/* Only the native command comes this way; a kernel without it takes none. */
+	/* The native command, the diagnostics and the firmware's reload come this way. */
 	words = stream;
 	if (bytes < 4U)
 		return EINVAL;
+
+	/* The diagnostics and the reload reach memory and stop the GPU's work, so only root sends them. */
+	if (words[0] == GPU_OP_GHCI_DIAG || words[0] == GPU_OP_GHCI_FIRMWARE) {
+		credentials = cred_current();
+		superuser = cred_is_superuser(credentials);
+		if (!superuser)
+			return EPERM;
+		error = ghci_firmware_command(private_data, opaque, stream, bytes);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the diagnostics passed, or the image was taken. */
+		return 0;
+	}
+
+	/* A kernel without the native command takes nothing else. */
 	if (words[0] != GPU_OP_GHCI_NATIVE)
 		return ENOTSUP;
 	if (!CONFIG_GHCI_NATIVE)

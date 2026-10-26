@@ -1,0 +1,78 @@
+pcie1: PLDA at 2c000000, configuration 9c0000000, interrupt 57
+pcie1: MSI at 190 (register 0), 32 vectors
+pcie1: firmware left the link down
+pcie1: link up
+pcie1: 01:00.0 BAR0 at 38000000 (131072 bytes)
+pcie1: 01:00.0 BAR1 at 38020000 (65536 bytes)
+ghci: polled every 1 ms (CONFIG_GHCI_POLL)
+ghci: ghci:AMAT:ATG1: session protection: 31 sessions, 64 grants
+ghci: ghci:AMAT:ATG1: firmware init: token d7797b1e, reply at 40236000
+ghci: ghci:AMAT:ATG1: firmware init: firmware 00020000 predates INIT; answered FEATURE_NOT_PRESENT through the ring and host memory, but has no diagnostics: load a newer one (ghcictl fwload)
+ghci: ghci:AMAT:ATG1: ready (GHCI 1.0, caps 5d661b5f, local 1024 MiB, window 0 MiB, display 1, vulkan 1)
+ghci: ghci:AMAT:ATG1: diag: 2 rounds, host buffer 444ca000 (cached view, and an uncached alias), local buffer 80000000, firmware 00020000 features 0, seed 254589d4
+ghci: ghci:AMAT:ATG1: diag: register 2 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-read 2 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-write 2 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-write-other 2 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-local 2 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-echo not run
+ghci: ghci:AMAT:ATG1: diag: fw-host-write not run
+ghci: ghci:AMAT:ATG1: diag: fw-host-write-other not run
+ghci: ghci:AMAT:ATG1: diag: fw-host-sum not run
+ghci: ghci:AMAT:ATG1: diag: fw-host-sum-other not run
+ghci: ghci:AMAT:ATG1: diag: fw-local not run
+ghci: ghci:AMAT:ATG1: diag: PASS
+ghci: ghci:AMAT:ATG1: diag: 2 rounds, host buffer 444ca000 (cached view, and an uncached alias), local buffer 80000000, firmware 00020000 features 0, seed 25458930
+ghci: ghci:AMAT:ATG1: diag: register 2 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-read 2 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-write 2 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-write-other 2 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-local 2 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-echo not run
+ghci: ghci:AMAT:ATG1: diag: fw-host-write not run
+ghci: ghci:AMAT:ATG1: diag: fw-host-write-other not run
+ghci: ghci:AMAT:ATG1: diag: fw-host-sum not run
+ghci: ghci:AMAT:ATG1: diag: fw-host-sum-other not run
+ghci: ghci:AMAT:ATG1: diag: fw-local not run
+ghci: ghci:AMAT:ATG1: diag: PASS
+ghci: ghci:AMAT:ATG1: firmware reload: 16721 IMEM words, 912 DMEM words, from 446c9000
+ghci: ghci:AMAT:ATG1: firmware reload: status 00011900 fault 00000000 (kind 0, block 0, tag 0) at 00000000; resetting
+ghci: ghci:AMAT:ATG1: ring rptr 00000059 wptr 00000059, fence last 00000009 page 00000009 issued 00000009, irq 00000114
+ghci: ghci:AMAT:ATG1: firmware load: IMEM 16721 words at 446c9000, DMEM 912 words at 446e9000
+ghci: ghci:AMAT:ATG1: firmware load: done (CPFW_STATUS 00000009)
+ghci: ghci:AMAT:ATG1: firmware init: token 7521f2f6, reply at 40236000
+ghci: ghci:AMAT:ATG1: firmware init: firmware 2.1, protocol 1.0, features 7, line 64, sessions 32, packet read at 40216004
+ghci: ghci:AMAT:ATG1: diag: 100 rounds, host buffer 444ca000 (cached view, and an uncached alias), local buffer 80000000, firmware 00020001 features 7, seed 2544b42a
+ghci: ghci:AMAT:ATG1: diag: round 0: fw-host-sum-other at 444ca000: result 00000000 bytes 00004000, sum 02349800 weighted 5f5b0000 (the CPU's efa2f000 d86ac000), first 67decb06 d153aa7f last 4c617b8d (the CPU wrote a1eb40b4 98346dbe last 3e72b3aa)
+ghci: ghci:AMAT:ATG1: diag: round 1: fw-host-sum-other at 444ca000: result 00000000 bytes 00004000, sum 0b302800 weighted 63662800 (the CPU's 35ad1000 2b061800), first 9b6275bb 0add0b2c last d53ef04a (the CPU wrote 8741d8fb bec4154f last 7384dca7)
+ghci: ghci:AMAT:ATG1: diag: round 2: fw-host-sum-other at 444ca000: result 00000000 bytes 00004000, sum 0a0ed800 weighted 83d68800 (the CPU's f34df000 f96f2800), first d5784343 549237ee last f5a8fe98 (the CPU wrote 701a39cd 436e03a9 last d9642ff1)
+ghci: ghci:AMAT:ATG1: diag: round 3: fw-host-sum-other at 444ca000: result 00000000 bytes 00004000, sum 2c055b20 weighted 01072cc0 (the CPU's b6889800 4d73c800), first 4bffba3b 77a7c2c2 last a0e021b4 (the CPU wrote 7da746bb b925331e last 20ef8a58)
+ghci: ghci:AMAT:ATG1: diag: register 100 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-read 100 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-write 100 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-write-other 100 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-local 100 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-echo 100 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-host-write 100 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-host-write-other 100 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-host-sum 100 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-host-sum-other 0 passed, 100 failed
+ghci: ghci:AMAT:ATG1: diag: fw-local 100 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: FAIL (100 failures)
+ghci: ghci:AMAT:ATG1: diag: 1000 rounds, host buffer 444ca000 (cached view, and an uncached alias), local buffer 80000000, firmware 00020001 features 7, seed 25445641
+ghci: ghci:AMAT:ATG1: diag: round 0: fw-host-sum-other at 444ca000: result 00000000 bytes 00004000, sum 48940b90 weighted f63c9d08 (the CPU's dea75800 38743000), first f82332f3 4a01d760 last 908b5e86 (the CPU wrote 2f3b9e44 f1d0d5e1 last c02036a7)
+ghci: ghci:AMAT:ATG1: diag: round 1: fw-host-sum-other at 444ca000: result 00000000 bytes 00004000, sum 0474d9c0 weighted 31a78ab0 (the CPU's fcfab800 8dfee800), first b83c6849 4bdb70fc last 15288f96 (the CPU wrote 23a36f17 aa181dee last e81c3040)
+ghci: ghci:AMAT:ATG1: diag: round 2: fw-host-sum-other at 444ca000: result 00000000 bytes 00004000, sum 02876bd8 weighted 8789a4b8 (the CPU's e569f000 64e68800), first 14f7d8e8 27b725a5 last f7045c2b (the CPU wrote 9e3ab409 7e00aedd last 1e21f935)
+ghci: ghci:AMAT:ATG1: diag: round 3: fw-host-sum-other at 444ca000: result 00000000 bytes 00004000, sum 1ab1d800 weighted 3c9fc000 (the CPU's a10b7800 43f3b000), first 2a8e708e a1f60b6f last 2cd4e5ad (the CPU wrote 0344e77c 6e132505 last 7c4f39f3)
+ghci: ghci:AMAT:ATG1: diag: register 1000 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-read 1000 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-write 1000 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-host-write-other 1000 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: dbg-local 1000 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-echo 1000 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-host-write 1000 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-host-write-other 1000 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-host-sum 1000 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: fw-host-sum-other 0 passed, 1000 failed
+ghci: ghci:AMAT:ATG1: diag: fw-local 1000 passed, 0 failed
+ghci: ghci:AMAT:ATG1: diag: FAIL (1000 failures)

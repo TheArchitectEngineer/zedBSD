@@ -1,0 +1,16 @@
+pcie1: PLDA at 2c000000, configuration 9c0000000, interrupt 57
+pcie1: MSI at 190 (register 0), 32 vectors
+pcie1: firmware left the link down
+pcie1: link up
+pcie1: 01:00.0 BAR0 at 38000000 (131072 bytes)
+pcie1: 01:00.0 BAR1 at 38020000 (65536 bytes)
+ghci: host memory reached uncached (bus DMA coherent)
+ghci: polled every 1 ms (CONFIG_GHCI_POLL)
+ghci: ghci:AMAT:ATG1: session protection: 31 sessions, 64 grants
+ghci: ghci:AMAT:ATG1: firmware init: token d7797b15, reply at 40237000
+ghci: ghci:AMAT:ATG1: no fence after the gpu-op: fence 00000001; fence last 00000001 page 00000000, ring rptr 00000009 wptr 00000009, status 00011900 irq 00000104, CPFW_STATUS 00000205, fault 00000000 at 00000000
+ghci: ghci:AMAT:ATG1: firmware init: no answer (42)
+ghci: ghci:AMAT:ATG1: the firmware did not answer INIT; the device is not started
+ghci: ghci:AMAT:ATG1: display did not go dark in time
+ghci: ghci:AMAT:ATG1: last fence not reached at the stop (42)
+ghci: function not started (5)

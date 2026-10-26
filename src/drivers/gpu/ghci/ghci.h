@@ -388,6 +388,14 @@ struct ghci_display {
 	int cursor_image;
 	int cursor_copying;
 
+	/*
+	 * The driver's idle frame (local memory, the largest mode), which is
+	 * scanned out when a sink is connected and no lease holds the display;
+	 * idle_generation is the output's generation it was last lit for.
+	 */
+	struct ghci_allocation *idle_frame;
+	uint64_t idle_generation;
+
 	/* The scan-out errors: the count of this second, the mask and the reads that kept failing. */
 	unsigned error_count;
 	uint64_t error_tick;
@@ -512,6 +520,44 @@ struct ghci_device {
 	int lost;
 
 	/*
+	 * The firmware (firmware.c).  fw_page holds the replies of INIT and of
+	 * the diagnostics (with the ring, from ghci_cp_start to ghci_cp_stop).
+	 * fw_version and fw_features are INIT's last answer (fw_features 0: a
+	 * firmware without INIT, or none); fw_tokens counts the INITs sent, so
+	 * each carries a token of its own.  The service thread and the start
+	 * write them, one at a time.
+	 */
+	struct ghci_allocation *fw_page;
+	uint32_t fw_version;
+	uint32_t fw_features;
+	uint32_t fw_tokens;
+
+	/*
+	 * A firmware image staged for a reload (device lock): fw_image holds
+	 * IMEM's words and then DMEM's, fw_iwords and fw_dwords how many of
+	 * each were sent; fw_image_local is the copy's memory of a reload
+	 * through local memory; fw_ibase and fw_dbase are where the load reads
+	 * them.  The memory is kept until the detach.
+	 */
+	struct ghci_allocation *fw_image;
+	struct ghci_allocation *fw_image_local;
+	uint32_t fw_iwords;
+	uint32_t fw_dwords;
+	uint32_t fw_ibase;
+	uint32_t fw_dbase;
+
+	/*
+	 * The diagnostics' buffers, kept until the detach (device lock):
+	 * diag_alias is an uncached view of diag_host beside the direct map
+	 * (NULL where the driver's view is uncached, or the kernel has none);
+	 * diag_running says a run goes on.
+	 */
+	struct ghci_allocation *diag_host;
+	struct ghci_allocation *diag_local;
+	void *diag_alias;
+	int diag_running;
+
+	/*
 	 * What the interrupt and the service thread share (irq_lock).
 	 * irq_mask is the IRQ_ENABLE the handler restores after it masked
 	 * the interrupt: set before the ring starts, zero once it stops.
@@ -561,6 +607,31 @@ int ghci_poll(struct ghci_device *device, uint32_t offset, uint32_t mask, uint32
 int ghci_firmware_start(struct ghci_device *device);
 
 /*
+ * The firmware's handshake, diagnostics and reload (firmware.c).
+ */
+
+/* Sends GHCI_INIT and checks the reply: 0, or EIO or ETIMEDOUT with the reason logged. */
+int ghci_firmware_init(struct ghci_device *device);
+
+/* Runs the diagnostics a number of rounds, logging every step: 0 when all passed, EIO when one failed. */
+int ghci_firmware_diag(struct ghci_device *device, unsigned rounds);
+
+/* Takes GPU_OP_GHCI_DIAG or GPU_OP_GHCI_FIRMWARE from root. */
+int ghci_firmware_command(struct ghci_device *device, struct ghci_session *session, const void *stream, uint32_t bytes);
+
+/* Logs the display's report and the firmware's sum of the idle frame's first megabyte. */
+int ghci_firmware_report(struct ghci_device *device);
+
+/* Paints the display's idle frame with colour bands and grey steps and has the firmware read it back: 0, EIO or ENOENT. */
+int ghci_firmware_paint(struct ghci_device *device);
+
+/* Loads the staged image into the processor's memories after a reset: 0 or EIO. */
+int ghci_firmware_load(struct ghci_device *device);
+
+/* Gives back the staged image and the diagnostics' buffers at the detach. */
+void ghci_firmware_release(struct ghci_device *device);
+
+/*
  * The command processor (cp.c).
  */
 
@@ -569,6 +640,9 @@ int ghci_cp_start(struct ghci_device *device);
 
 /* Waits for the driver's last fence and halts the command processor. */
 void ghci_cp_stop(struct ghci_device *device);
+
+/* Resets the processor, loads the staged firmware image, starts it and sends INIT: 0, or EIO. */
+int ghci_cp_reload(struct ghci_device *device);
 
 /*
  * Writes packets for a session (NULL: the driver's own work) into the
@@ -725,6 +799,15 @@ void ghci_display_service(struct ghci_device *device, unsigned work);
 
 /* Takes the display's lock before a reset of the command processor. */
 void ghci_display_recover_begin(struct ghci_device *device);
+
+/* Logs the display controller's registers, its frame rate and the HDMI transmitter's registers. */
+void ghci_display_report(struct ghci_device *device);
+
+/* Logs the ADV7511's format, timing and status registers; the display's lock is held. */
+void ghci_adv7511_report(struct ghci_device *device, uint32_t registers);
+
+/* Gives the driver's idle frame, its mode and whether it is shown now: 0, or ENOENT. */
+int ghci_display_idle_frame(struct ghci_device *device, uint32_t *address, uint32_t *width, uint32_t *height, uint32_t *stride, int *shown);
 
 /* Counts the display's flips again while the reset processor is idle; cp_lock is held. */
 void ghci_display_recover_count(struct ghci_device *device);
