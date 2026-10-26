@@ -22,7 +22,11 @@
  * of its storage and uniform buffers, the image and sampler descriptors
  * of its sampled images, and the vertex program's vertex buffer
  * descriptors, where the compiler placed each), the target, the viewport,
- * scissor, blend and culling, and the programs.  A copy, a blit, a copy
+ * scissor, blend and culling, the depth control, and the programs; an
+ * indexed draw reads its indices from the bound index buffer.  A pass with
+ * a depth attachment sets the depth unit's surface, and a pass that clears
+ * it clears it with its colour in one quad whose depth is the clear value
+ * (the viewport's depth range is that one value).  A copy, a blit, a copy
  * between a buffer and an image, a clear and a pass's clear are drawn
  * too: a quad of the executor's own programs samples the source (in
  * pixel coordinates) into the destination, or writes one colour.  A copy
@@ -151,8 +155,9 @@ struct amdrdna_vk_execute {
 };
 
 /*
- * What a command buffer's records have bound so far, and the pass they
- * are in.
+ * What a command buffer's records have bound so far (the index buffer,
+ * its offset and VkIndexType among them), and the pass they are in (its
+ * colour target, and its depth target when depth_on).
  */
 struct execute_state {
 	const struct amdrdna_vk_pipeline *pipeline;
@@ -164,9 +169,14 @@ struct execute_state {
 	const struct amdrdna_vk_buffer *buffers[AMDRDNA_VK_VERTEX_BINDINGS_MAX];
 	uint64_t offsets[AMDRDNA_VK_VERTEX_BINDINGS_MAX];
 	uint8_t push[AMDRDNA_VK_PUSH_BYTES];
+	const struct amdrdna_vk_buffer *index_buffer;
+	uint64_t index_offset;
+	uint32_t index_type;
 	bool in_pass;
 	struct amdrdna_vk_target target;
 	bool target_written;
+	bool depth_on;
+	struct amdrdna_vk_target depth;
 	VkRect2D area;
 	const struct amdrdna_vk_pipeline *kernel_pipeline;
 	const struct amdrdna_vk_descriptor_set *kernel_sets[AMDRDNA_VK_SETS_MAX];
@@ -176,7 +186,9 @@ struct execute_state {
  * One quad an internal draw makes: the destination and its region; the
  * source texture (a linear image at source, its size and format), its
  * region in pixels and its filter, or the one colour (four float words)
- * when textured is clear.
+ * when textured is clear.  A quad of a pass's clear may also clear the
+ * pass's depth to depth_value (its float's bits) when depth_clear is set,
+ * and write no colour when colour_off is set.
  */
 struct execute_quad {
 	struct amdrdna_vk_target target;
@@ -195,6 +207,9 @@ struct execute_quad {
 	int32_t v1;
 	uint32_t filter;
 	uint32_t colour[4];
+	bool depth_clear;
+	bool colour_off;
+	uint32_t depth_value;
 };
 
 static int execute_open(struct amdrdna_vk_session *session, struct amdrdna_vk_execute **execute);
@@ -214,12 +229,15 @@ static int execute_kernel_resources(const struct amdrdna_gfx10_program *program,
 static int execute_part(struct amdrdna_vk_execute *execute, uint32_t bytes, uint8_t **cpu, uint64_t *va);
 static int execute_begin_pass(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_draw(struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
+static int execute_draw_call(struct amdrdna_vk_execute *execute, const struct execute_state *state, const struct amdrdna_vk_record *record);
+static int execute_pass_view(const struct amdrdna_vk_framebuffer *framebuffer, uint32_t attachment, const struct amdrdna_vk_view **view);
 static int execute_table(struct amdrdna_vk_execute *execute, const struct amdrdna_gfx10_program *program, uint8_t **cpu, uint64_t *va);
 static int execute_resources(const struct amdrdna_gfx10_program *program, const struct execute_state *state, uint8_t *table);
 static int execute_buffer_slot(const struct amdrdna_vk_descriptor_slot *slot, uint32_t size, uint32_t *words);
 static int execute_texture_slot(const struct amdrdna_vk_descriptor_slot *slot, uint32_t *image_words, uint32_t *sampler_words);
 static void execute_vertex_input(const struct amdrdna_vk_execute *execute, const struct amdrdna_vk_pipeline *pipeline, const struct execute_state *state, uint8_t *table, uint32_t *instance_mask);
 static int execute_transfer(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
+static int execute_copy_buffers(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_copy_images(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_buffer_image(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_move_rows(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_image *image, uint64_t buffer_va, const VkBufferImageCopy *region, bool to_image);
@@ -699,6 +717,7 @@ execute_record(
 	case GPU_OP_CMD_SET_SCISSOR:
 	case GPU_OP_CMD_BIND_DESCRIPTOR_SETS:
 	case GPU_OP_CMD_BIND_VERTEX_BUFFERS:
+	case GPU_OP_CMD_BIND_INDEX_BUFFER:
 	case GPU_OP_CMD_PUSH_CONSTANTS:
 		execute_bind(state, record);
 		break;
@@ -710,11 +729,13 @@ execute_record(
 		execute_barrier(execute);
 		break;
 	case GPU_OP_CMD_DRAW:
+	case GPU_OP_CMD_DRAW_INDEXED:
 		error = execute_draw(execute, state, record);
 		break;
 	case GPU_OP_CMD_DISPATCH:
 		error = execute_dispatch(execute, state, record);
 		break;
+	case GPU_OP_CMD_COPY_BUFFER:
 	case GPU_OP_CMD_COPY_IMAGE:
 	case GPU_OP_CMD_BLIT_IMAGE:
 	case GPU_OP_CMD_COPY_BUFFER_TO_IMAGE:
@@ -769,6 +790,11 @@ execute_bind(
 			state->offsets[record->first + index] = record->offsets[index];
 		}
 		break;
+	case GPU_OP_CMD_BIND_INDEX_BUFFER:
+		state->index_buffer = record->objects[0]->payload;
+		state->index_offset = record->offsets[0];
+		state->index_type = record->values[0];
+		break;
 	case GPU_OP_CMD_PUSH_CONSTANTS:
 		kern_memcpy(state->push + record->first, record->push, record->count);
 		break;
@@ -817,6 +843,7 @@ execute_graphics_only(
 	case GPU_OP_CMD_BEGIN_RENDER_PASS:
 	case GPU_OP_CMD_END_RENDER_PASS:
 	case GPU_OP_CMD_DRAW:
+	case GPU_OP_CMD_DRAW_INDEXED:
 	case GPU_OP_CMD_COPY_IMAGE:
 	case GPU_OP_CMD_BLIT_IMAGE:
 	case GPU_OP_CMD_COPY_BUFFER_TO_IMAGE:
@@ -970,9 +997,11 @@ execute_part(
 }
 
 /*
- * Begins a pass: its framebuffer's view's image is the target from now on,
- * and a pass whose attachment loads by clearing clears its render area
- * with a quad of the clear colour.
+ * Begins a pass: its colour target (the view of its colour attachment)
+ * and its depth target (the view of its depth attachment), and the clear
+ * of each that loads by clearing: one quad over the area that writes the
+ * clear colour (or no colour) and, with the depth unit's surface set and
+ * the viewport's depth range the clear value, the clear depth.
  */
 static int
 execute_begin_pass(
@@ -984,7 +1013,12 @@ execute_begin_pass(
 	const struct amdrdna_vk_render_pass *pass;
 	const struct amdrdna_vk_framebuffer *framebuffer;
 	const struct amdrdna_vk_view *view;
+	const struct amdrdna_vk_image *image;
+	struct amdrdna_vk_image level;
 	struct execute_quad quad;
+	uint8_t *cpu;
+	bool clear_colour;
+	bool clear_depth;
 	int32_t x1;
 	int32_t y1;
 	int error;
@@ -994,24 +1028,51 @@ execute_begin_pass(
 	pass = record->objects[0]->payload;
 	framebuffer = record->objects[1]->payload;
 
-	/* A pass that writes no attachment draws nothing that stays. */
+	/* In the pass; nothing written yet. */
 	state->in_pass = true;
 	state->target_written = false;
 	state->area = record->rect;
-	if (pass->colour == 0U || framebuffer->view == NULL) {
-		state->target.address = 0U;
-		return 0;
-	}
+	state->target.address = 0U;
+	state->depth_on = false;
 
-	/* The target: the view's image, in the view's format. */
-	view = framebuffer->view->payload;
-	error = execute_image_target(view->image->payload, view->format, &state->target);
+	/* A pass that writes no colour attachment draws nothing that stays. */
+	if (pass->colour == 0U)
+		return 0;
+
+	/* The colour target: the view's first level, in the view's format. */
+	error = execute_pass_view(framebuffer, pass->colour_attachment, &view);
+	if (error != 0)
+		return error;
+	error = amdrdna_vk_image_level(view->image->payload, view->base_level, &level);
+	if (error == 0)
+		error = execute_image_target(&level, view->format, &state->target);
 	if (error != 0)
 		return error;
 
-	/* A pass loading by clearing clears its area, within the framebuffer and the image. */
-	if (pass->load_op != VK_ATTACHMENT_LOAD_OP_CLEAR)
+	/* The depth target: the depth image, whole. */
+	if (pass->depth != 0U) {
+		error = execute_pass_view(framebuffer, pass->depth_attachment, &view);
+		if (error != 0)
+			return error;
+		image = view->image->payload;
+		if (!image->depth)
+			return EINVAL;
+		error = amdrdna_vk_image_address(image, &state->depth.address, &cpu);
+		if (error != 0)
+			return error;
+		state->depth.width = image->width;
+		state->depth.height = image->height;
+		state->depth.format = image->format;
+		state->depth_on = true;
+	}
+
+	/* A pass loading neither by clearing has nothing more to do. */
+	clear_colour = (pass->load_op == VK_ATTACHMENT_LOAD_OP_CLEAR);
+	clear_depth = (state->depth_on && pass->depth_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR && record->values[5] != 0U);
+	if (!clear_colour && !clear_depth)
 		return 0;
+
+	/* The clear's area, within the framebuffer and the targets. */
 	x1 = state->area.offset.x + (int32_t)state->area.extent.width;
 	y1 = state->area.offset.y + (int32_t)state->area.extent.height;
 	if (x1 > (int32_t)framebuffer->width)
@@ -1022,10 +1083,21 @@ execute_begin_pass(
 		x1 = (int32_t)state->target.width;
 	if (y1 > (int32_t)state->target.height)
 		y1 = (int32_t)state->target.height;
+	if (state->depth_on && x1 > (int32_t)state->depth.width)
+		x1 = (int32_t)state->depth.width;
+	if (state->depth_on && y1 > (int32_t)state->depth.height)
+		y1 = (int32_t)state->depth.height;
 	if (state->area.offset.x < 0 || state->area.offset.y < 0 || x1 <= state->area.offset.x || y1 <= state->area.offset.y)
 		return 0;
 
-	/* The clear colour's quad over the area. */
+	/* The depth unit's surface for the clear (the draws set it again). */
+	if (clear_depth) {
+		error = amdrdna_vk_state_depth_target(&execute->pm4, &state->depth);
+		if (error != 0)
+			return error;
+	}
+
+	/* The clear's quad over the area: the colour, or none; the depth, or none. */
 	kern_memset(&quad, 0, sizeof(quad));
 	quad.target = state->target;
 	quad.x0 = state->area.offset.x;
@@ -1033,19 +1105,41 @@ execute_begin_pass(
 	quad.x1 = x1;
 	quad.y1 = y1;
 	kern_memcpy(quad.colour, record->values, sizeof(quad.colour));
+	quad.colour_off = !clear_colour;
+	quad.depth_clear = clear_depth;
+	quad.depth_value = record->values[4];
 	error = execute_quad(execute, &quad);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the pass draws into its target; the draws write it again. */
+	/* Succeeded: the pass draws into its targets; the draws write them again. */
 	state->target_written = false;
 	return 0;
 }
 
 /*
- * Runs a draw in a pass: the resource tables of its two programs, the
- * target when not written yet, the viewport and scissor, the blend and
- * culling, the programs and the draw.
+ * Gives the view of a framebuffer's attachment by number.  Returns 0, or
+ * EINVAL for an attachment the framebuffer does not have.
+ */
+static int
+execute_pass_view(
+	const struct amdrdna_vk_framebuffer *framebuffer,
+	uint32_t attachment,
+	const struct amdrdna_vk_view **view)
+{
+	/* An attachment the framebuffer holds. */
+	if (attachment >= framebuffer->count || framebuffer->views[attachment] == NULL)
+		return EINVAL;
+
+	/* Succeeded: the attachment's view. */
+	*view = framebuffer->views[attachment]->payload;
+	return 0;
+}
+
+/*
+ * Runs a draw or an indexed draw in a pass: the resource tables of its two
+ * programs, the targets when not written yet, the viewport and scissor,
+ * the blend, culling and depth control, the programs and the draw.
  */
 static int
 execute_draw(
@@ -1062,18 +1156,30 @@ execute_draw(
 	uint64_t vertex_va;
 	uint64_t fragment_va;
 	uint32_t instance_mask;
+	uint32_t base_vertex;
+	uint32_t first_instance;
 	int32_t x0;
 	int32_t y0;
 	int32_t x1;
 	int32_t y1;
 	int error;
 
-	/* A draw in a pass with a target, with a pipeline. */
+	/* A draw in a pass with a target, with a pipeline; an indexed one with an index buffer. */
 	pipeline = state->pipeline;
 	if (!state->in_pass || pipeline == NULL)
 		return EINVAL;
+	if (record->opcode == GPU_OP_CMD_DRAW_INDEXED && state->index_buffer == NULL)
+		return EINVAL;
 	if (state->target.address == 0U || record->values[0] == 0U || record->values[1] == 0U)
 		return 0;
+
+	/* The first vertex (an indexed draw's vertex offset) and the first instance. */
+	base_vertex = record->values[2];
+	first_instance = record->values[3];
+	if (record->opcode == GPU_OP_CMD_DRAW_INDEXED) {
+		base_vertex = record->values[3];
+		first_instance = record->values[4];
+	}
 
 	/* The two programs' resource tables. */
 	error = execute_table(execute, pipeline->vertex.compiled, &vertex_table, &vertex_va);
@@ -1106,9 +1212,13 @@ execute_draw(
 	if (x1 <= x0 || y1 <= y0)
 		return 0;
 
-	/* The target, once in a buffer. */
+	/* The targets, once in a buffer: the colour target, and the depth unit's surface or none. */
 	if (!state->target_written) {
 		error = amdrdna_vk_state_target(&execute->pm4, &state->target);
+		if (error == 0 && state->depth_on)
+			error = amdrdna_vk_state_depth_target(&execute->pm4, &state->depth);
+		if (error == 0 && !state->depth_on)
+			error = amdrdna_vk_state_depth_target(&execute->pm4, NULL);
 		if (error != 0)
 			return error;
 		state->target_written = true;
@@ -1135,15 +1245,73 @@ execute_draw(
 		return error;
 	amdrdna_vk_state_raster(&execute->pm4, pipeline->cull_mode, pipeline->front_face);
 
+	/* The depth test and write of the pipeline, in a pass with a depth target. */
+	amdrdna_vk_state_depth(&execute->pm4, state->depth_on && pipeline->depth_test != 0U, state->depth_on && pipeline->depth_write != 0U,
+			       pipeline->depth_compare);
+
 	/* The programs with their tables, the first vertex and instance, and the draw. */
-	amdrdna_vk_state_programs(&execute->pm4, &pipeline->vertex, &pipeline->fragment, vertex_va, fragment_va, record->values[2],
-				  record->values[3], instance_mask);
-	error = amdrdna_vk_state_draw(&execute->pm4, pipeline->topology, record->values[0], record->values[1]);
+	amdrdna_vk_state_programs(&execute->pm4, &pipeline->vertex, &pipeline->fragment, vertex_va, fragment_va, base_vertex, first_instance,
+				  instance_mask);
+	error = execute_draw_call(execute, state, record);
 	if (error != 0)
 		return error;
 	execute->draws++;
 
 	/* Succeeded: the draw is written. */
+	return 0;
+}
+
+/*
+ * Writes a draw's packets: the generated vertices of a draw, or the
+ * indices of an indexed draw from the bound index buffer (from its first
+ * index on; the buffer's indices from there are the most it may read).
+ * Returns 0, or EINVAL for an index buffer without storage or a first
+ * index past its end.
+ */
+static int
+execute_draw_call(
+	struct amdrdna_vk_execute *execute,
+	const struct execute_state *state,
+	const struct amdrdna_vk_record *record)
+{
+	const struct amdrdna_vk_pipeline *pipeline;
+	uint64_t indices;
+	uint64_t room;
+	uint64_t start;
+	uint8_t *cpu;
+	uint32_t size;
+	int error;
+
+	/* A draw of generated vertices. */
+	pipeline = state->pipeline;
+	if (record->opcode != GPU_OP_CMD_DRAW_INDEXED) {
+		error = amdrdna_vk_state_draw(&execute->pm4, pipeline->topology, record->values[0], record->values[1]);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* The index buffer's storage, the first index's address and the indices from it. */
+	error = amdrdna_vk_buffer_address(state->index_buffer, &indices, &cpu);
+	if (error != 0)
+		return error;
+	size = 4U;
+	if (state->index_type == VK_INDEX_TYPE_UINT16)
+		size = 2U;
+	start = state->index_offset + (uint64_t)record->values[2] * size;
+	if (start >= state->index_buffer->size)
+		return EINVAL;
+	room = (state->index_buffer->size - start) / size;
+	if (room > 0xffffffffU)
+		room = 0xffffffffU;
+
+	/* The indexed draw. */
+	error = amdrdna_vk_state_draw_indexed(&execute->pm4, pipeline->topology, state->index_type, indices + start, (uint32_t)room,
+					      record->values[0], record->values[1]);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the draw's packets are written. */
 	return 0;
 }
 
@@ -1304,10 +1472,11 @@ execute_texture_slot(
 	if (error != 0)
 		return error;
 
-	/* The two descriptors. */
+	/* The two descriptors; the image's from the start of its mip chain, with the view's levels. */
 	error = amdrdna_vk_image_descriptor(va, image->width, image->height, view->format, view->swizzle, image_words);
 	if (error != 0)
 		return error;
+	amdrdna_vk_image_descriptor_levels(image_words, view->base_level, view->base_level + view->level_count - 1U, image->levels);
 	amdrdna_vk_sampler_descriptor(slot->sampler->payload, sampler_words);
 
 	/* Succeeded: the binding's descriptors are written. */
@@ -1412,7 +1581,9 @@ execute_transfer(
 	execute_barrier(execute);
 
 	/* The transfer. */
-	if (record->opcode == GPU_OP_CMD_COPY_IMAGE || record->opcode == GPU_OP_CMD_BLIT_IMAGE) {
+	if (record->opcode == GPU_OP_CMD_COPY_BUFFER) {
+		error = execute_copy_buffers(session, execute, state, record);
+	} else if (record->opcode == GPU_OP_CMD_COPY_IMAGE || record->opcode == GPU_OP_CMD_BLIT_IMAGE) {
 		error = execute_copy_images(session, execute, state, record);
 	} else if (record->opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
 		error = execute_clear_image(session, execute, state, record);
@@ -1427,6 +1598,57 @@ execute_transfer(
 	state->target_written = false;
 
 	/* Succeeded: the transfer is written. */
+	return 0;
+}
+
+/*
+ * Copies regions between two buffers (vkCmdCopyBuffer) with the command
+ * processor's moves.  Returns 0, or EINVAL for a buffer without storage or
+ * a region outside a buffer.
+ */
+static int
+execute_copy_buffers(
+	struct amdrdna_vk_session *session,
+	struct amdrdna_vk_execute *execute,
+	struct execute_state *state,
+	const struct amdrdna_vk_record *record)
+{
+	const struct amdrdna_vk_buffer *source;
+	const struct amdrdna_vk_buffer *destination;
+	const VkBufferCopy *regions;
+	uint64_t source_va;
+	uint64_t destination_va;
+	uint8_t *cpu;
+	uint32_t index;
+	int error;
+
+	source = record->objects[0]->payload;
+	destination = record->objects[1]->payload;
+
+	/* The two buffers, with storage. */
+	error = amdrdna_vk_buffer_address(source, &source_va, &cpu);
+	if (error == 0)
+		error = amdrdna_vk_buffer_address(destination, &destination_va, &cpu);
+	if (error != 0)
+		return error;
+
+	/* Each region, inside both buffers, moved. */
+	regions = record->regions;
+	for (index = 0U; index < record->region_count; index++) {
+		if (regions[index].srcOffset > source->size || regions[index].size > source->size - regions[index].srcOffset)
+			return EINVAL;
+		if (regions[index].dstOffset > destination->size || regions[index].size > destination->size - regions[index].dstOffset)
+			return EINVAL;
+		error = execute_move(session, execute, state, source_va + regions[index].srcOffset, destination_va + regions[index].dstOffset,
+				     regions[index].size);
+		if (error != 0)
+			return error;
+
+		/* Counted for the node. */
+		amdrdna_vk_gpu_copied(session->owner, regions[index].size);
+	}
+
+	/* Succeeded: the regions are copied. */
 	return 0;
 }
 
@@ -1447,9 +1669,13 @@ execute_copy_images(
 	const struct amdrdna_vk_image *destination;
 	const VkImageCopy *copies;
 	const VkImageBlit *blits;
+	struct amdrdna_vk_image source_level;
+	struct amdrdna_vk_image destination_level;
 	struct execute_quad quad;
 	uint8_t *cpu;
 	uint32_t index;
+	uint32_t from;
+	uint32_t to;
 	int32_t dx0;
 	int32_t dy0;
 	int32_t dx1;
@@ -1466,17 +1692,9 @@ execute_copy_images(
 	source = record->objects[0]->payload;
 	destination = record->objects[1]->payload;
 
-	/* The two images, with storage. */
+	/* Copied by quads that sample the source, nearest unless a blit says. */
 	kern_memset(&quad, 0, sizeof(quad));
-	error = execute_image_target(destination, destination->format, &quad.target);
-	if (error == 0)
-		error = amdrdna_vk_image_address(source, &quad.source, &cpu);
-	if (error != 0)
-		return error;
 	quad.textured = true;
-	quad.source_width = source->width;
-	quad.source_height = source->height;
-	quad.source_format = source->format;
 	quad.filter = VK_FILTER_NEAREST;
 	if (record->opcode == GPU_OP_CMD_BLIT_IMAGE)
 		quad.filter = record->values[0];
@@ -1495,6 +1713,8 @@ execute_copy_images(
 			sy0 = copies[index].srcOffset.y;
 			sx1 = sx0 + (int32_t)copies[index].extent.width;
 			sy1 = sy0 + (int32_t)copies[index].extent.height;
+			from = copies[index].srcSubresource.mipLevel;
+			to = copies[index].dstSubresource.mipLevel;
 		} else {
 			dx0 = blits[index].dstOffsets[0].x;
 			dy0 = blits[index].dstOffsets[0].y;
@@ -1504,7 +1724,23 @@ execute_copy_images(
 			sy0 = blits[index].srcOffsets[0].y;
 			sx1 = blits[index].srcOffsets[1].x;
 			sy1 = blits[index].srcOffsets[1].y;
+			from = blits[index].srcSubresource.mipLevel;
+			to = blits[index].dstSubresource.mipLevel;
 		}
+
+		/* The two levels, with storage: the destination's a target, the source's a texture. */
+		error = amdrdna_vk_image_level(destination, to, &destination_level);
+		if (error == 0)
+			error = amdrdna_vk_image_level(source, from, &source_level);
+		if (error == 0)
+			error = execute_image_target(&destination_level, destination->format, &quad.target);
+		if (error == 0)
+			error = amdrdna_vk_image_address(&source_level, &quad.source, &cpu);
+		if (error != 0)
+			return error;
+		quad.source_width = source_level.width;
+		quad.source_height = source_level.height;
+		quad.source_format = source->format;
 
 		/* The quad covers the destination's region in order; a reversed edge swaps the source's. */
 		quad.x0 = dx0;
@@ -1554,6 +1790,8 @@ execute_buffer_image(
 	const struct amdrdna_vk_image *image;
 	const VkBufferImageCopy *regions;
 	const VkBufferImageCopy *region;
+	const struct amdrdna_vk_image *whole;
+	struct amdrdna_vk_image level;
 	struct execute_quad quad;
 	bool to_image;
 	uint64_t buffer_va;
@@ -1567,25 +1805,29 @@ execute_buffer_image(
 	bool inside;
 	int error;
 
-	/* The buffer and the image, with storage. */
+	/* The buffer and the image, the buffer with storage. */
 	to_image = (record->opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE);
 	if (to_image) {
 		buffer = record->objects[0]->payload;
-		image = record->objects[1]->payload;
+		whole = record->objects[1]->payload;
 	} else {
-		image = record->objects[0]->payload;
+		whole = record->objects[0]->payload;
 		buffer = record->objects[1]->payload;
 	}
 	error = amdrdna_vk_buffer_address(buffer, &buffer_va, &buffer_cpu);
-	if (error == 0)
-		error = amdrdna_vk_image_address(image, &image_va, &image_cpu);
 	if (error != 0)
 		return error;
 
-	/* Each region. */
+	/* Each region, of a level of the image (with storage). */
 	regions = record->regions;
 	for (index = 0U; index < record->region_count; index++) {
 		region = &regions[index];
+		error = amdrdna_vk_image_level(whole, region->imageSubresource.mipLevel, &level);
+		if (error == 0)
+			error = amdrdna_vk_image_address(&level, &image_va, &image_cpu);
+		if (error != 0)
+			return error;
+		image = &level;
 
 		/* Inside the image; the buffer's rows (a row length of zero is the region's width). */
 		inside = execute_region_inside(region->imageOffset.x, region->imageOffset.y, region->imageExtent.width,
@@ -1782,7 +2024,7 @@ execute_move(
 	return 0;
 }
 
-/* Clears a whole image to a colour (it has one level and one layer) with a quad of the colour. */
+/* Clears level 0 of an image to a colour (its one layer) with a quad of the colour. */
 static int
 execute_clear_image(
 	struct amdrdna_vk_session *session,
@@ -1791,6 +2033,7 @@ execute_clear_image(
 	const struct amdrdna_vk_record *record)
 {
 	const struct amdrdna_vk_image *image;
+	struct amdrdna_vk_image level;
 	struct execute_quad quad;
 	int error;
 
@@ -1799,9 +2042,11 @@ execute_clear_image(
 
 	image = record->objects[0]->payload;
 
-	/* The image as a target, its whole rectangle, the colour. */
+	/* Level 0 of the image as a target, its whole rectangle, the colour. */
 	kern_memset(&quad, 0, sizeof(quad));
-	error = execute_image_target(image, image->format, &quad.target);
+	error = amdrdna_vk_image_level(image, 0U, &level);
+	if (error == 0)
+		error = execute_image_target(&level, image->format, &quad.target);
 	if (error != 0)
 		return error;
 	quad.x1 = (int32_t)quad.target.width;
@@ -1899,21 +2144,30 @@ execute_quad(
 			execute_put32(fragment_table, AMDRDNA_QUAD_PUSH_COLOUR + component * 4U, quad->colour[component]);
 	}
 
-	/* The target, the viewport and the scissor its region. */
+	/* The target, the viewport (its depth range the clear depth, for a pass's clear of depth) and the scissor its region. */
 	error = amdrdna_vk_state_target(&execute->pm4, &quad->target);
 	if (error != 0)
 		return error;
 	execute_full_viewport(viewport, quad->x0, quad->y0, quad->x1, quad->y1);
+	if (quad->depth_clear) {
+		viewport[4] = quad->depth_value;
+		viewport[5] = quad->depth_value;
+	}
 	amdrdna_vk_state_viewport(&execute->pm4, viewport);
 	amdrdna_vk_state_scissor(&execute->pm4, (uint32_t)quad->x0, (uint32_t)quad->y0, (uint32_t)quad->x1, (uint32_t)quad->y1);
 
-	/* No blending, every channel, no culling. */
+	/* No blending, every channel (none for a clear of depth alone), no culling. */
 	kern_memset(&blend, 0, sizeof(blend));
 	blend.write_mask = 0xfU;
+	if (quad->colour_off)
+		blend.write_mask = 0U;
 	error = amdrdna_vk_state_blend(&execute->pm4, &blend);
 	if (error != 0)
 		return error;
 	amdrdna_vk_state_raster(&execute->pm4, VK_CULL_MODE_NONE, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+
+	/* The depth written everywhere for a clear of depth; left alone by any other quad. */
+	amdrdna_vk_state_depth(&execute->pm4, quad->depth_clear, quad->depth_clear, AMDRDNA_CX_DEPTH_COMPARE_ALWAYS);
 
 	/* The programs, two triangles. */
 	amdrdna_vk_state_programs(&execute->pm4, vertex, fragment, vertex_va, fragment_va, 0U, 0U, 0U);

@@ -293,6 +293,28 @@
 #define AMDRDNA_UC_COHERENCY_DELAY		0x301ecU
 
 /*
+ * The index type register (set through the indexed setter with index 2)
+ * and its values, and the draw packets of an index buffer: its size in
+ * indices, and the draw from its address.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (VGT_INDEX_TYPE 0x3090c; the enum VGT_INDEX_TYPE_MODE: VGT_INDEX_16 0,
+ * VGT_INDEX_32 1; VGT_DRAW_INITIATOR: SOURCE_SELECT, the enum
+ * VGT_DI_SOURCE_SELECT: DI_SRC_SEL_DMA 0), src/amd/common/sid.h
+ * (PKT3_INDEX_BUFFER_SIZE 0x13, PKT3_DRAW_INDEX_2 0x27) and
+ * src/amd/vulkan/radv_cmd_buffer.c (radv_emit_index_buffer: the type set
+ * with index 2 on GFX9 and later; radv_cs_emit_draw_indexed_packet: the
+ * draw's most indices, address, count and initiator).
+ */
+#define AMDRDNA_UC_INDEX_TYPE			0x3090cU
+#define AMDRDNA_UC_INDEX_TYPE_INDEX		2U
+#define AMDRDNA_INDEX_16			0U
+#define AMDRDNA_INDEX_32			1U
+#define AMDRDNA_PM4_OP_INDEX_BUFFER_SIZE	0x13U
+#define AMDRDNA_PM4_OP_DRAW_INDEXED		0x27U
+#define AMDRDNA_PM4_DRAW_FROM_MEMORY		0U
+
+/*
  * The colour target's fields: the layout's format in bits 6:2 (8, 8, 8, 8
  * is 10), number type in 10:8 (unorm 0, sRGB 6), component swap in 12:11
  * (standard 0, alternate 1), blend clamp 15 and simple float 17; the
@@ -412,6 +434,61 @@
 #define AMDRDNA_CX_DEPTH_SHADER_EARLY		(1U << 4)
 #define AMDRDNA_CX_DEPTH_SHADER_KILL		(1U << 6)
 #define AMDRDNA_CX_DEPTH_SHADER_NO_DUAL_QUAD	(1U << 15)
+
+/*
+ * The depth unit's surface (a pass with a depth attachment): its view, the
+ * two overrides (none: the viewport's depth clamp on), the hierarchical
+ * tile base, the size, the depth clear, the info word, the bases of depth and stencil (read and write, low
+ * words from 0x28048, high from 0x28068) and the hierarchical tile
+ * surface.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (DB_DEPTH_VIEW 0x28008, DB_RENDER_OVERRIDE 0x2800c, DB_RENDER_OVERRIDE2
+ * 0x28010, DB_HTILE_DATA_BASE 0x28014, DB_DEPTH_SIZE_XY 0x2801c, DB_DEPTH_CLEAR 0x2802c,
+ * DB_RESERVED_REG_2 0x2803c, DB_Z_READ_BASE 0x28048, DB_STENCIL_READ_BASE
+ * 0x2804c, DB_Z_WRITE_BASE 0x28050, DB_STENCIL_WRITE_BASE 0x28054,
+ * DB_Z_READ_BASE_HI 0x28068 .. DB_HTILE_DATA_BASE_HI 0x28078,
+ * DB_HTILE_SURFACE 0x28abc) and src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_fb_ds_state on GFX10: seven words from 0x2803c, the first
+ * its resource level, then the five high words).
+ */
+#define AMDRDNA_CX_DEPTH_VIEW			0x28008U
+#define AMDRDNA_CX_DEPTH_OVERRIDE		0x2800cU
+#define AMDRDNA_CX_DEPTH_OVERRIDE2		0x28010U
+#define AMDRDNA_CX_DEPTH_TILES_BASE		0x28014U
+#define AMDRDNA_CX_DEPTH_SIZE			0x2801cU
+#define AMDRDNA_CX_DEPTH_CLEAR			0x2802cU
+#define AMDRDNA_CX_DEPTH_INFO			0x2803cU
+#define AMDRDNA_CX_DEPTH_BASE_HIGH		0x28068U
+#define AMDRDNA_CX_DEPTH_TILES_SURFACE		0x28abcU
+
+/*
+ * The depth surface's fields: the info word's resource level 1 (31:28);
+ * the depth layout's format (1:0, Z_32_FLOAT 3) and swizzle mode (8:4,
+ * SW_64KB_Z_X 24); the size's x and y less one (13:0, 29:16); the render
+ * control's depth and stencil compression off (6, 5: the surface has no
+ * hierarchical tiles); the depth control's test (1), write (2) and
+ * compare (6:4, in VkCompareOp's order).
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (DB_RESERVED_REG_2: RESOURCE_LEVEL; DB_Z_INFO: FORMAT, SW_MODE; the enum
+ * ZFormat: Z_32_FLOAT 3; DB_DEPTH_SIZE_XY: X_MAX, Y_MAX;
+ * DB_RENDER_CONTROL: STENCIL_COMPRESS_DISABLE, DEPTH_COMPRESS_DISABLE;
+ * DB_DEPTH_CONTROL: Z_ENABLE, Z_WRITE_ENABLE, ZFUNC; the enum CompareFrag:
+ * FRAG_NEVER 0 .. FRAG_ALWAYS 7), src/amd/addrlib/inc/addrtypes.h
+ * (ADDR_SW_64KB_Z_X 24) and src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_fb_ds_state: the compression off for an uncompressed
+ * surface).
+ */
+#define AMDRDNA_CX_DEPTH_INFO_LEVEL		(1U << 28)
+#define AMDRDNA_CX_DEPTH_FORMAT_FLOAT		3U
+#define AMDRDNA_CX_DEPTH_SWIZZLE_Z		(24U << 4)
+#define AMDRDNA_CX_DEPTH_SIZE_Y_SHIFT		16U
+#define AMDRDNA_CX_DEPTH_RENDER_UNCOMPRESSED	((1U << 5) | (1U << 6))
+#define AMDRDNA_CX_DEPTH_TEST			(1U << 1)
+#define AMDRDNA_CX_DEPTH_WRITE			(1U << 2)
+#define AMDRDNA_CX_DEPTH_COMPARE_SHIFT		4U
+#define AMDRDNA_CX_DEPTH_COMPARE_ALWAYS		7U
 
 /*
  * The scissor words: x in 14:0, y in 30:16 (the screen scissor's 15:0 and
@@ -540,6 +617,7 @@ void amdrdna_vk_pm4_cache_acquire(struct amdrdna_vk_pm4 *pm4, uint32_t caches);
 void amdrdna_vk_pm4_fetcher_sync(struct amdrdna_vk_pm4 *pm4);
 void amdrdna_vk_pm4_move(struct amdrdna_vk_pm4 *pm4, uint64_t source, uint64_t destination, uint32_t bytes);
 void amdrdna_vk_pm4_draw(struct amdrdna_vk_pm4 *pm4, uint32_t vertex_count, uint32_t instance_count);
+void amdrdna_vk_pm4_draw_indexed(struct amdrdna_vk_pm4 *pm4, uint64_t indices, uint32_t index_room, uint32_t index_count, uint32_t instance_count);
 void amdrdna_vk_pm4_dispatch(struct amdrdna_vk_pm4 *pm4, uint32_t x, uint32_t y, uint32_t z);
 void amdrdna_vk_pm4_pad(struct amdrdna_vk_pm4 *pm4, uint32_t multiple);
 

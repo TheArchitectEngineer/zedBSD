@@ -86,6 +86,9 @@ int amdrdna_vk_state_blend(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_b
 void amdrdna_vk_state_raster(struct amdrdna_vk_pm4 *pm4, uint32_t cull_mode, uint32_t front_face);
 void amdrdna_vk_state_programs(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *vertex, const struct amdrdna_vk_program *fragment, uint64_t vertex_table, uint64_t fragment_table, uint32_t base_vertex, uint32_t first_instance, uint32_t instance_mask);
 int amdrdna_vk_state_draw(struct amdrdna_vk_pm4 *pm4, uint32_t topology, uint32_t vertex_count, uint32_t instance_count);
+int amdrdna_vk_state_draw_indexed(struct amdrdna_vk_pm4 *pm4, uint32_t topology, uint32_t index_type, uint64_t indices, uint32_t index_room, uint32_t index_count, uint32_t instance_count);
+int amdrdna_vk_state_depth_target(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_target *target);
+void amdrdna_vk_state_depth(struct amdrdna_vk_pm4 *pm4, bool test, bool write, uint32_t compare);
 void amdrdna_vk_state_kernel(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *kernel, uint64_t table);
 void amdrdna_vk_state_barrier(struct amdrdna_vk_pm4 *pm4, uint64_t sync_address, uint32_t sync_value);
 void amdrdna_vk_state_barrier_kernel(struct amdrdna_vk_pm4 *pm4, uint64_t sync_address, uint32_t sync_value);
@@ -94,6 +97,7 @@ uint32_t amdrdna_vk_pitch(uint32_t width);
 
 bool amdrdna_vk_image_format(uint32_t format, uint32_t *code, bool *alternate);
 int amdrdna_vk_image_descriptor(uint64_t address, uint32_t width, uint32_t height, uint32_t format, const uint32_t *swizzle, uint32_t *words);
+void amdrdna_vk_image_descriptor_levels(uint32_t *words, uint32_t base, uint32_t last, uint32_t levels);
 void amdrdna_vk_sampler_descriptor(const struct amdrdna_vk_sampler *sampler, uint32_t *words);
 bool amdrdna_vk_vertex_format(uint32_t format, uint32_t *code, uint32_t *components, uint32_t *bytes);
 

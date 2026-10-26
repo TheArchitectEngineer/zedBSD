@@ -28,12 +28,15 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk-objects.h"
+#include "drivers/gpu/amdrdna/vk/amdrdna-vk-exec.h"
 
 #include "drivers/gpu/i915/render/vulkan-codec.inc"
 
 static int resource_create_buffer(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int resource_create_image(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int resource_image_supported(const VkImageCreateInfo *info);
+static void resource_lay_out(struct amdrdna_vk_image *image);
+static uint32_t resource_level_side(uint32_t side, uint32_t level);
 static int resource_layout(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int resource_create_view(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static uint32_t resource_swizzle(VkComponentSwizzle swizzle, uint32_t identity);
@@ -125,6 +128,69 @@ amdrdna_vk_format_colour(
 	return false;
 }
 
+/* Reports whether a format is the one depth format the executor draws into: D32_SFLOAT. */
+bool
+amdrdna_vk_format_depth(
+	uint32_t format)
+{
+	/* A 32-bit float depth, no stencil. */
+	if (format == VK_FORMAT_D32_SFLOAT)
+		return true;
+
+	/* Any other format is not one. */
+	return false;
+}
+
+/*
+ * Gives one level of a colour image as an image of its own: the level's
+ * size and pitch, its offset in the memory, one level.  The levels lie in
+ * GFX10's linear mip chain: the smallest first, each level's rows its
+ * width's bytes rounded up to 256, its rows not padded.  Returns 0, or
+ * EINVAL for a level the image does not have or a depth image.
+ *
+ * Procedure referenced: Mesa 25.0.7
+ * src/amd/addrlib/src/gfx10/gfx10addrlib.cpp
+ * (Gfx10Lib::HwlComputeSurfaceInfoLinear: the levels from the last to the
+ * first, each at the sum of the ones before, its pitch the width aligned
+ * to 256 bytes) and src/amd/addrlib/src/core/addrlib2.h (GetMipSize: a
+ * side halved per level, at least 1).
+ */
+int
+amdrdna_vk_image_level(
+	const struct amdrdna_vk_image *image,
+	uint32_t level,
+	struct amdrdna_vk_image *part)
+{
+	uint64_t offset;
+	uint32_t smaller;
+	uint32_t width;
+	uint32_t height;
+
+	/* A level the colour image has. */
+	if (image->depth || level >= image->levels)
+		return EINVAL;
+
+	/* The levels smaller than it lie before it. */
+	offset = 0U;
+	for (smaller = image->levels - 1U; smaller > level; smaller--) {
+		width = resource_level_side(image->width, smaller);
+		height = resource_level_side(image->height, smaller);
+		offset += (uint64_t)amdrdna_vk_pitch(width) * height;
+	}
+
+	/* The level: its size, its pitch, where it starts, one level. */
+	*part = *image;
+	part->width = resource_level_side(image->width, level);
+	part->height = resource_level_side(image->height, level);
+	part->pitch = amdrdna_vk_pitch(part->width);
+	part->bytes = (uint64_t)part->pitch * part->height;
+	part->offset = image->offset + offset;
+	part->levels = 1U;
+
+	/* Succeeded: the level is an image of its own. */
+	return 0;
+}
+
 /* vkCreateBuffer: [device][present][VkBufferCreateInfo] and the create's tail -> the create's reply. */
 static int
 resource_create_buffer(
@@ -178,7 +244,6 @@ resource_create_image(
 	VkImageCreateInfo info;
 	struct amdrdna_vk_image *image;
 	uint64_t identity;
-	uint32_t row;
 	int supported;
 	int error;
 
@@ -207,18 +272,18 @@ resource_create_image(
 		error = ENOTSUP;
 	}
 
-	/* Lays the image out: rows of the width's pixels on the pitch boundary. */
+	/* Lays the image out: a colour image's levels pitch linear, a depth image in the depth unit's blocks. */
 	image = NULL;
 	if (error == 0) {
 		image = kern_calloc(1U, sizeof(*image));
 		if (image != NULL) {
-			row = info.extent.width * AMDRDNA_VK_PIXEL_BYTES;
 			image->format = info.format;
 			image->width = info.extent.width;
 			image->height = info.extent.height;
 			image->usage = info.usage;
-			image->pitch = (row + AMDRDNA_VK_PITCH_ALIGN - 1U) & ~(AMDRDNA_VK_PITCH_ALIGN - 1U);
-			image->bytes = (uint64_t)image->pitch * image->height;
+			image->levels = info.mipLevels;
+			image->depth = amdrdna_vk_format_depth(info.format);
+			resource_lay_out(image);
 		}
 	}
 
@@ -230,19 +295,27 @@ resource_create_image(
 }
 
 /*
- * Reports whether an image is one the executor lays out: 2D, one level,
- * one layer, one sample, a colour format, within the largest side.
+ * Reports whether an image is one the executor lays out: 2D, one layer,
+ * one sample, within the largest side; a colour format with levels down to
+ * one pixel at most, or the depth format of one level only drawn into.
  */
 static int
 resource_image_supported(
 	const VkImageCreateInfo *info)
 {
+	uint32_t largest;
 	bool colour;
+	bool depth;
 
-	/* A 2D image of one level, one layer and one sample. */
+	/* A 2D image of one layer and one sample, with at least one level. */
 	if (info->imageType != VK_IMAGE_TYPE_2D)
 		return 0;
-	if (info->mipLevels != 1U)
+	if (info->mipLevels == 0U || info->mipLevels > AMDRDNA_VK_LEVELS_MAX)
+		return 0;
+	largest = info->extent.width;
+	if (info->extent.height > largest)
+		largest = info->extent.height;
+	if ((largest >> (info->mipLevels - 1U)) == 0U)
 		return 0;
 	if (info->arrayLayers != 1U)
 		return 0;
@@ -257,7 +330,17 @@ resource_image_supported(
 	if (info->extent.height == 0U || info->extent.height > AMDRDNA_VK_IMAGE_SIDE_MAX)
 		return 0;
 
-	/* In one of the colour formats. */
+	/* The depth format: one level, only a depth attachment. */
+	depth = amdrdna_vk_format_depth(info->format);
+	if (depth) {
+		if (info->mipLevels != 1U)
+			return 0;
+		if ((info->usage & ~(uint32_t)VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U)
+			return 0;
+		return 1;
+	}
+
+	/* Otherwise one of the colour formats. */
 	colour = amdrdna_vk_format_colour(info->format);
 	if (!colour)
 		return 0;
@@ -267,10 +350,63 @@ resource_image_supported(
 }
 
 /*
+ * Lays an image out: a depth image whole blocks of the depth unit's
+ * swizzle (its pitch the block-aligned width's bytes), a colour image's
+ * levels in the linear mip chain (its pitch level 0's).
+ */
+static void
+resource_lay_out(
+	struct amdrdna_vk_image *image)
+{
+	struct amdrdna_vk_image first;
+	uint32_t width;
+	uint32_t height;
+	int error;
+
+	/* A depth image: the width and the height rounded up to the 128-pixel blocks. */
+	if (image->depth) {
+		width = (image->width + AMDRDNA_VK_DEPTH_BLOCK_SIDE - 1U) & ~(AMDRDNA_VK_DEPTH_BLOCK_SIDE - 1U);
+		height = (image->height + AMDRDNA_VK_DEPTH_BLOCK_SIDE - 1U) & ~(AMDRDNA_VK_DEPTH_BLOCK_SIDE - 1U);
+		image->pitch = width * AMDRDNA_VK_PIXEL_BYTES;
+		image->bytes = (uint64_t)image->pitch * height;
+		return;
+	}
+
+	/* A colour image: level 0 lies after every smaller level, and ends the chain. */
+	image->pitch = amdrdna_vk_pitch(image->width);
+	error = amdrdna_vk_image_level(image, 0U, &first);
+	if (error != 0) {
+		image->bytes = (uint64_t)image->pitch * image->height;
+		return;
+	}
+
+	/* Succeeded: the chain's bytes. */
+	image->bytes = first.offset - image->offset + first.bytes;
+}
+
+/* Reports a side of a level: the side halved per level, at least one pixel. */
+static uint32_t
+resource_level_side(
+	uint32_t side,
+	uint32_t level)
+{
+	uint32_t halved;
+
+	/* Halved per level. */
+	halved = side >> level;
+	if (halved == 0U)
+		return 1U;
+
+	/* Succeeded: the level's side. */
+	return halved;
+}
+
+/*
  * vkGetImageSubresourceLayout: [device][image][present]
- * [VkImageSubresource][present] -> [present][VkSubresourceLayout].  The one
- * subresource starts at 0 with the image's pitch; an unknown image or
- * subresource reports an empty layout.
+ * [VkImageSubresource][present] -> [present][VkSubresourceLayout].  A level
+ * of a colour image starts where the mip chain has it, with its own pitch;
+ * an unknown image or subresource, or a depth image, reports an empty
+ * layout.
  */
 static int
 resource_layout(
@@ -281,8 +417,10 @@ resource_layout(
 	VkImageSubresource subresource;
 	VkSubresourceLayout layout;
 	const struct amdrdna_vk_image *image;
+	struct amdrdna_vk_image part;
 	uint64_t identity;
 	uint64_t present;
+	int level;
 
 	/* The image behind the device, then the subresource when present (level 0 when absent). */
 	(void)drv_i915_wire_read_u64(reader);
@@ -297,15 +435,18 @@ resource_layout(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Level 0 of layer 0 is the whole image, rows pitch bytes apart. */
+	/* A level of layer 0 of a colour image: where it starts in the image, its rows pitch bytes apart. */
 	kern_memset(&layout, 0, sizeof(layout));
 	image = amdrdna_vk_payload(session, I915_VK_OBJ_IMAGE, identity);
-	if (image != NULL && subresource.mipLevel == 0U && subresource.arrayLayer == 0U) {
-		layout.offset = 0U;
-		layout.size = image->bytes;
-		layout.rowPitch = image->pitch;
-		layout.arrayPitch = image->bytes;
-		layout.depthPitch = image->bytes;
+	level = EINVAL;
+	if (image != NULL && subresource.arrayLayer == 0U)
+		level = amdrdna_vk_image_level(image, subresource.mipLevel, &part);
+	if (level == 0) {
+		layout.offset = part.offset - image->offset;
+		layout.size = part.bytes;
+		layout.rowPitch = part.pitch;
+		layout.arrayPitch = part.bytes;
+		layout.depthPitch = part.bytes;
 	}
 
 	/* The layout behind its presence word. */
@@ -318,8 +459,8 @@ resource_layout(
 
 /*
  * vkCreateImageView: [device][present][VkImageViewCreateInfo] and the
- * create's tail -> the create's reply.  A 2D view of the one level and
- * layer of a known image, in a colour format.
+ * create's tail -> the create's reply.  A 2D view of levels and layer 0 of
+ * a known image, in a colour format or the depth format.
  */
 static int
 resource_create_view(
@@ -331,7 +472,10 @@ resource_create_view(
 	struct amdrdna_vk_object *image;
 	struct amdrdna_vk_view *view;
 	uint64_t identity;
+	uint32_t levels;
+	uint32_t count;
 	bool colour;
+	bool depth;
 	int error;
 
 	/* The create info behind the device and its presence word. */
@@ -343,17 +487,26 @@ resource_create_view(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* A view of a known image, 2D, of its level 0 and layer 0, in a colour format. */
+	/* A view of a known image, 2D, of levels it has and layer 0, in a colour format or the depth format. */
 	error = 0;
 	image = amdrdna_vk_object_find(session, I915_VK_OBJ_IMAGE, (uint64_t)(uintptr_t)info.image);
 	colour = amdrdna_vk_format_colour(info.format);
+	depth = amdrdna_vk_format_depth(info.format);
+	levels = 0U;
+	if (image != NULL)
+		levels = ((const struct amdrdna_vk_image *)image->payload)->levels;
+	count = info.subresourceRange.levelCount;
+	if (count == VK_REMAINING_MIP_LEVELS && info.subresourceRange.baseMipLevel < levels)
+		count = levels - info.subresourceRange.baseMipLevel;
 	if (image == NULL) {
 		error = EINVAL;
 	} else if (info.viewType != VK_IMAGE_VIEW_TYPE_2D) {
 		error = ENOTSUP;
-	} else if (info.subresourceRange.baseMipLevel != 0U || info.subresourceRange.baseArrayLayer != 0U) {
+	} else if (info.subresourceRange.baseArrayLayer != 0U) {
 		error = EINVAL;
-	} else if (!colour) {
+	} else if (info.subresourceRange.baseMipLevel >= levels || count == 0U || count > levels - info.subresourceRange.baseMipLevel) {
+		error = EINVAL;
+	} else if (!colour && !depth) {
 		error = ENOTSUP;
 	}
 
@@ -375,6 +528,8 @@ resource_create_view(
 		view->swizzle[1] = resource_swizzle(info.components.g, VK_COMPONENT_SWIZZLE_G);
 		view->swizzle[2] = resource_swizzle(info.components.b, VK_COMPONENT_SWIZZLE_B);
 		view->swizzle[3] = resource_swizzle(info.components.a, VK_COMPONENT_SWIZZLE_A);
+		view->base_level = info.subresourceRange.baseMipLevel;
+		view->level_count = count;
 	}
 
 	/* Publishes the view and answers. */

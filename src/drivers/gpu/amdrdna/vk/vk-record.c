@@ -49,7 +49,9 @@ static int record_viewport(struct amdrdna_vk_session *session, struct i915_wire_
 static int record_scissor(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_sets(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_vertices(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
+static int record_indices(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_draw(struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
+static int record_draw_indexed(struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_dispatch(struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_copy(struct amdrdna_vk_session *session, uint32_t opcode, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_clear(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
@@ -92,8 +94,11 @@ amdrdna_vk_record_route(
 	case GPU_OP_CMD_SET_LINE_WIDTH:
 	case GPU_OP_CMD_BIND_DESCRIPTOR_SETS:
 	case GPU_OP_CMD_BIND_VERTEX_BUFFERS:
+	case GPU_OP_CMD_BIND_INDEX_BUFFER:
 	case GPU_OP_CMD_DRAW:
+	case GPU_OP_CMD_DRAW_INDEXED:
 	case GPU_OP_CMD_DISPATCH:
+	case GPU_OP_CMD_COPY_BUFFER:
 	case GPU_OP_CMD_COPY_IMAGE:
 	case GPU_OP_CMD_BLIT_IMAGE:
 	case GPU_OP_CMD_COPY_BUFFER_TO_IMAGE:
@@ -189,12 +194,19 @@ record_decode(
 	case GPU_OP_CMD_BIND_VERTEX_BUFFERS:
 		error = record_vertices(session, reader, record);
 		break;
+	case GPU_OP_CMD_BIND_INDEX_BUFFER:
+		error = record_indices(session, reader, record);
+		break;
 	case GPU_OP_CMD_DRAW:
 		error = record_draw(reader, record);
+		break;
+	case GPU_OP_CMD_DRAW_INDEXED:
+		error = record_draw_indexed(reader, record);
 		break;
 	case GPU_OP_CMD_DISPATCH:
 		error = record_dispatch(reader, record);
 		break;
+	case GPU_OP_CMD_COPY_BUFFER:
 	case GPU_OP_CMD_COPY_IMAGE:
 	case GPU_OP_CMD_BLIT_IMAGE:
 	case GPU_OP_CMD_COPY_BUFFER_TO_IMAGE:
@@ -529,6 +541,41 @@ record_vertices(
 	return 0;
 }
 
+/*
+ * vkCmdBindIndexBuffer: [buffer][offset][index type]; the buffer held, its
+ * offset kept as offset 0 and the type (16 or 32 bits) as value 0.
+ */
+static int
+record_indices(
+	struct amdrdna_vk_session *session,
+	struct i915_wire_reader *reader,
+	struct amdrdna_vk_record *record)
+{
+	uint64_t identity;
+	int error;
+
+	/* The buffer, the offset and the type. */
+	identity = drv_i915_wire_read_u64(reader);
+	record->offsets[0] = drv_i915_wire_read_u64(reader);
+	record->values[0] = drv_i915_wire_read_u32(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* A type of 16 or 32 bits. */
+	if (record->values[0] != VK_INDEX_TYPE_UINT16 && record->values[0] != VK_INDEX_TYPE_UINT32)
+		return ENOTSUP;
+
+	/* The record holds the buffer. */
+	error = record_hold(session, record, I915_VK_OBJ_BUFFER, identity);
+	if (error != 0)
+		return error;
+	if (record->object_count != 1U)
+		return ENOENT;
+
+	/* Succeeded: the index buffer is recorded. */
+	return 0;
+}
+
 /* vkCmdDraw: [vertex count][instance count][first vertex][first instance]. */
 static int
 record_draw(
@@ -540,6 +587,25 @@ record_draw(
 	record->values[1] = drv_i915_wire_read_u32(reader);
 	record->values[2] = drv_i915_wire_read_u32(reader);
 	record->values[3] = drv_i915_wire_read_u32(reader);
+	if (reader->error != 0)
+		return EINVAL;
+
+	/* Succeeded: the draw is recorded. */
+	return 0;
+}
+
+/* vkCmdDrawIndexed: [index count][instance count][first index][vertex offset][first instance]. */
+static int
+record_draw_indexed(
+	struct i915_wire_reader *reader,
+	struct amdrdna_vk_record *record)
+{
+	/* The five counts. */
+	record->values[0] = drv_i915_wire_read_u32(reader);
+	record->values[1] = drv_i915_wire_read_u32(reader);
+	record->values[2] = drv_i915_wire_read_u32(reader);
+	record->values[3] = drv_i915_wire_read_u32(reader);
+	record->values[4] = drv_i915_wire_read_u32(reader);
 	if (reader->error != 0)
 		return EINVAL;
 
@@ -595,7 +661,13 @@ record_copy(
 	source_kind = I915_VK_OBJ_IMAGE;
 	destination_kind = I915_VK_OBJ_IMAGE;
 	element = sizeof(VkImageCopy);
-	if (opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE) {
+	if (opcode == GPU_OP_CMD_COPY_BUFFER) {
+		source_kind = I915_VK_OBJ_BUFFER;
+		destination_kind = I915_VK_OBJ_BUFFER;
+		source = drv_i915_wire_read_u64(reader);
+		destination = drv_i915_wire_read_u64(reader);
+		element = sizeof(VkBufferCopy);
+	} else if (opcode == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE) {
 		source_kind = I915_VK_OBJ_BUFFER;
 		source = drv_i915_wire_read_u64(reader);
 		destination = drv_i915_wire_read_u64(reader);
@@ -632,7 +704,9 @@ record_copy(
 	record->regions = regions;
 	record->region_count = (uint32_t)count;
 	for (index = 0U; index < count; index++) {
-		if (opcode == GPU_OP_CMD_COPY_IMAGE) {
+		if (opcode == GPU_OP_CMD_COPY_BUFFER) {
+			i915_vkc_dec_VkBufferCopy(reader, &session->arena, (VkBufferCopy *)(void *)(regions + index * element));
+		} else if (opcode == GPU_OP_CMD_COPY_IMAGE) {
 			i915_vkc_dec_VkImageCopy(reader, &session->arena, (VkImageCopy *)(void *)(regions + index * element));
 		} else if (opcode == GPU_OP_CMD_BLIT_IMAGE) {
 			i915_vkc_dec_VkImageBlit(reader, &session->arena, (VkImageBlit *)(void *)(regions + index * element));
@@ -838,8 +912,9 @@ record_push(
 /*
  * vkCmdBeginRenderPass: [present]{[sType][pNext][pass][framebuffer]
  * [VkRect2D][count][count]{clear}}[contents].  The pass is the record's
- * object 0, the framebuffer its object 1; the render area and the first
- * attachment's clear colour are kept.  A clear is [0]{colour} or
+ * object 0, the framebuffer its object 1; the render area, the first
+ * colour clear (values 0 to 3) and the first depth clear (value 4, its
+ * float's bits; value 5 set) are kept.  A clear is [0]{colour} or
  * [1][depth][stencil].
  */
 static int
@@ -855,6 +930,8 @@ record_begin_pass(
 	uint64_t index;
 	uint32_t kind;
 	uint32_t colour[RECORD_COLOUR_WORDS];
+	uint32_t colours;
+	uint32_t depth;
 	int error;
 
 	/* The begin info. */
@@ -871,7 +948,8 @@ record_begin_pass(
 	if (reader->error != 0 || count > AMDRDNA_VK_REGIONS_MAX)
 		return EINVAL;
 
-	/* The clear values; the first one's colour is kept. */
+	/* The clear values; the first colour and the first depth are kept. */
+	colours = 0U;
 	for (index = 0U; index < count; index++) {
 		kind = drv_i915_wire_read_u32(reader);
 		if (reader->error != 0)
@@ -880,11 +958,16 @@ record_begin_pass(
 			error = record_colour(reader, colour);
 			if (error != 0)
 				return error;
-			if (index == 0U)
+			if (colours == 0U)
 				kern_memcpy(record->values, colour, sizeof(colour));
+			colours++;
 		} else if (kind == 1U) {
+			depth = drv_i915_wire_read_u32(reader);
 			(void)drv_i915_wire_read_u32(reader);
-			(void)drv_i915_wire_read_u32(reader);
+			if (record->values[5] == 0U) {
+				record->values[4] = depth;
+				record->values[5] = 1U;
+			}
 		} else {
 			return EINVAL;
 		}

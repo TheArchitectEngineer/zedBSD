@@ -190,6 +190,7 @@
 #define STATE_BARRIER_ACQUIRE		(AMDRDNA_PM4_ACQUIRE_SCALAR | AMDRDNA_PM4_ACQUIRE_VECTOR | \
 					 AMDRDNA_PM4_ACQUIRE_LEVEL1)
 
+static int state_topology(struct amdrdna_vk_pm4 *pm4, uint32_t topology);
 static void state_start_graphics(struct amdrdna_vk_pm4 *pm4);
 static void state_start_compute(struct amdrdna_vk_pm4 *pm4);
 static bool state_blend_factor(uint32_t factor, uint32_t *code);
@@ -615,45 +616,159 @@ amdrdna_vk_state_draw(
 	uint32_t vertex_count,
 	uint32_t instance_count)
 {
-	uint32_t type;
+	int error;
 
-	/*
-	 * The primitive type.
-	 *
-	 * Value referenced: Mesa 25.0.7 src/amd/registers/gfx10.json (the enum
-	 * VGT_DI_PRIM_TYPE: DI_PT_TRIFAN 5).
-	 */
-	switch (topology) {
-	case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
-		type = AMDRDNA_PRIMITIVE_POINTS;
-		break;
-	case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
-		type = AMDRDNA_PRIMITIVE_LINES;
-		break;
-	case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
-		type = AMDRDNA_PRIMITIVE_LINE_STRIP;
-		break;
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
-		type = AMDRDNA_PRIMITIVE_TRIANGLES;
-		break;
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
-		type = AMDRDNA_PRIMITIVE_TRIANGLE_STRIP;
-		break;
-	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
-		type = 5U;
-		break;
-	default:
-		return EINVAL;
-	}
+	/* The type and the groups. */
+	error = state_topology(pm4, topology);
+	if (error != 0)
+		return error;
 
-	/* The type, the groups, then the instances and the vertices. */
-	amdrdna_vk_pm4_set_user_config_indexed(pm4, AMDRDNA_UC_PRIMITIVE_TYPE, AMDRDNA_UC_PRIMITIVE_TYPE_INDEX, type);
-	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_GEOMETRY_CONTROL, AMDRDNA_UC_GEOMETRY_GROUPS);
+	/* The instances and the vertices. */
 	amdrdna_vk_pm4_draw(pm4, vertex_count, instance_count);
 
 	/* Succeeded: the draw is written. */
 	return 0;
 }
+
+/*
+ * Draws index_count indices of index_type (VkIndexType: 16 or 32 bits)
+ * read from indices, index_room of them readable there, for
+ * instance_count instances, as a VkPrimitiveTopology.  Returns 0, or
+ * EINVAL for a topology or an index type the executor does not draw.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_index_buffer: the index type through the indexed setter;
+ * radv_emit_draw_packets_indexed: the address of the first index, the
+ * indices left in the buffer from it).
+ */
+int
+amdrdna_vk_state_draw_indexed(
+	struct amdrdna_vk_pm4 *pm4,
+	uint32_t topology,
+	uint32_t index_type,
+	uint64_t indices,
+	uint32_t index_room,
+	uint32_t index_count,
+	uint32_t instance_count)
+{
+	uint32_t type;
+	int error;
+
+	/* The index type. */
+	if (index_type == VK_INDEX_TYPE_UINT16) {
+		type = AMDRDNA_INDEX_16;
+	} else if (index_type == VK_INDEX_TYPE_UINT32) {
+		type = AMDRDNA_INDEX_32;
+	} else {
+		return EINVAL;
+	}
+
+	/* The primitive type and the groups. */
+	error = state_topology(pm4, topology);
+	if (error != 0)
+		return error;
+
+	/* The index type, then the instances and the indices. */
+	amdrdna_vk_pm4_set_user_config_indexed(pm4, AMDRDNA_UC_INDEX_TYPE, AMDRDNA_UC_INDEX_TYPE_INDEX, type);
+	amdrdna_vk_pm4_draw_indexed(pm4, indices, index_room, index_count, instance_count);
+
+	/* Succeeded: the draw is written. */
+	return 0;
+}
+
+/*
+ * Writes the depth unit's surface for the draws after it: a depth
+ * target's address, size and layout (D32_SFLOAT in the 64 KiB Z swizzle,
+ * no hierarchical tiles, no stencil), or with target NULL no depth
+ * surface at all.  The depth control is the draws' (amdrdna_vk_state_depth).
+ * Returns 0, or EINVAL for an address or a size the surface cannot have.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_fb_ds_state on GFX10: the render control, the view, the
+ * hierarchical tile surface and base, the size, the info words and the
+ * bases, the stencil's on the depth's) and src/amd/common/ac_descriptors.c
+ * (ac_init_gfx9_ds_surface: the format, the swizzle mode, the size less
+ * one).
+ */
+int
+amdrdna_vk_state_depth_target(
+	struct amdrdna_vk_pm4 *pm4,
+	const struct amdrdna_vk_target *target)
+{
+	uint32_t words[7];
+	uint32_t high[5];
+	uint32_t base;
+	uint32_t base_high;
+
+	/* No depth surface: the layouts invalid, the test off. */
+	if (target == NULL) {
+		amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_LAYOUT, 0U);
+		amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STENCIL_LAYOUT, 0U);
+		amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_CONTROL, 0U);
+		return 0;
+	}
+
+	/* A size the surface holds, an address on the 64 KiB block. */
+	if (target->width == 0U || target->height == 0U || target->width > AMDRDNA_VK_IMAGE_SIDE_MAX ||
+	    target->height > AMDRDNA_VK_IMAGE_SIDE_MAX)
+		return EINVAL;
+	if (target->address == 0U || (target->address & (AMDRDNA_VK_DEPTH_ALIGN - 1U)) != 0U)
+		return EINVAL;
+
+	/* No compression, the first slice and level, no hierarchical tiles, the size. */
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_RENDER, AMDRDNA_CX_DEPTH_RENDER_UNCOMPRESSED);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_VIEW, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_TILES_SURFACE, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_OVERRIDE, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_OVERRIDE2, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_TILES_BASE, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_SIZE,
+				   (target->width - 1U) | ((target->height - 1U) << AMDRDNA_CX_DEPTH_SIZE_Y_SHIFT));
+
+	/* The info, the layouts of depth and of no stencil, the bases (the stencil's on the depth's). */
+	base = (uint32_t)(target->address >> 8);
+	base_high = (uint32_t)(target->address >> 40) & 0xffU;
+	words[0] = AMDRDNA_CX_DEPTH_INFO_LEVEL;
+	words[1] = AMDRDNA_CX_DEPTH_FORMAT_FLOAT | AMDRDNA_CX_DEPTH_SWIZZLE_Z;
+	words[2] = AMDRDNA_CX_DEPTH_SWIZZLE_Z;
+	words[3] = base;
+	words[4] = base;
+	words[5] = base;
+	words[6] = base;
+	amdrdna_vk_pm4_set_context_run(pm4, AMDRDNA_CX_DEPTH_INFO, words, 7U);
+	high[0] = base_high;
+	high[1] = base_high;
+	high[2] = base_high;
+	high[3] = base_high;
+	high[4] = 0U;
+	amdrdna_vk_pm4_set_context_run(pm4, AMDRDNA_CX_DEPTH_BASE_HIGH, high, 5U);
+
+	/* Succeeded: the draws after it test and write the surface as their depth control says. */
+	return 0;
+}
+
+/*
+ * Writes the depth control of the draws after it: the test, the write and
+ * the compare (VkCompareOp), all off without a depth surface.
+ */
+void
+amdrdna_vk_state_depth(
+	struct amdrdna_vk_pm4 *pm4,
+	bool test,
+	bool write,
+	uint32_t compare)
+{
+	uint32_t control;
+
+	/* The test with its compare, and the write. */
+	control = 0U;
+	if (test)
+		control |= AMDRDNA_CX_DEPTH_TEST | ((compare & 7U) << AMDRDNA_CX_DEPTH_COMPARE_SHIFT);
+	if (write)
+		control |= AMDRDNA_CX_DEPTH_WRITE;
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_CONTROL, control);
+}
+
 
 /*
  * Writes a compute program for the dispatches after it: its code address,
@@ -1080,4 +1195,58 @@ state_clamp(
 	if (value > STATE_SCISSOR_MAX)
 		return (uint32_t)STATE_SCISSOR_MAX;
 	return (uint32_t)value;
+}
+
+/*
+ * Writes the primitive type of a VkPrimitiveTopology and the geometry
+ * engine's groups.  Returns 0, or EINVAL for a topology the executor does
+ * not draw.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_primitive_topology: the primitive type through the indexed
+ * setter; gfx10_emit_ge_cntl) and src/amd/vulkan/radv_pipeline_graphics.h
+ * (radv_translate_prim: which topology is which type).
+ */
+static int
+state_topology(
+	struct amdrdna_vk_pm4 *pm4,
+	uint32_t topology)
+{
+	uint32_t type;
+
+	/*
+	 * The primitive type.
+	 *
+	 * Value referenced: Mesa 25.0.7 src/amd/registers/gfx10.json (the enum
+	 * VGT_DI_PRIM_TYPE: DI_PT_TRIFAN 5).
+	 */
+	switch (topology) {
+	case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
+		type = AMDRDNA_PRIMITIVE_POINTS;
+		break;
+	case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
+		type = AMDRDNA_PRIMITIVE_LINES;
+		break;
+	case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
+		type = AMDRDNA_PRIMITIVE_LINE_STRIP;
+		break;
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+		type = AMDRDNA_PRIMITIVE_TRIANGLES;
+		break;
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
+		type = AMDRDNA_PRIMITIVE_TRIANGLE_STRIP;
+		break;
+	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
+		type = 5U;
+		break;
+	default:
+		return EINVAL;
+	}
+
+	/* The type and the groups. */
+	amdrdna_vk_pm4_set_user_config_indexed(pm4, AMDRDNA_UC_PRIMITIVE_TYPE, AMDRDNA_UC_PRIMITIVE_TYPE_INDEX, type);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_GEOMETRY_CONTROL, AMDRDNA_UC_GEOMETRY_GROUPS);
+
+	/* Succeeded: the type is written. */
+	return 0;
 }
