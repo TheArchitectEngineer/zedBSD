@@ -891,6 +891,71 @@ ghci_scan_sleep(
 }
 
 /*
+ * Logs what the display controller does: its control, status, frame
+ * count (twice, 100 ms apart), the image it scans and its timing, the sum
+ * of the last frame's pixel words, and the HDMI transmitter's registers.
+ */
+void
+ghci_display_report(
+	struct ghci_device *device)
+{
+	struct ghci_display *display;
+	uint32_t registers;
+	uint32_t frames_before;
+	uint32_t frames_after;
+	uint32_t offsets[] = {
+		GHCI_DC_CTRL, GHCI_DC_STATUS, GHCI_DC_IRQ_STATUS, GHCI_DC_FB_BASE, GHCI_DC_FB_STRIDE, GHCI_DC_FB_SIZE,
+		GHCI_DC_H_ACTIVE, GHCI_DC_H_FP, GHCI_DC_H_SYNC, GHCI_DC_H_BP, GHCI_DC_V_ACTIVE, GHCI_DC_V_FP,
+		GHCI_DC_V_SYNC, GHCI_DC_V_BP, GHCI_DC_SYNC_POL, GHCI_DC_PCLK_SEL, GHCI_DC_CONNECTED,
+		GHCI_DC_SCAN_SUM, GHCI_DC_SCAN_WORDS
+	};
+	unsigned index;
+
+	/* A device without a display has nothing to report. */
+	display = &device->display;
+	if (!display->present) {
+		kern_logf("ghci: %s: report: no display\n", device->name);
+		return;
+	}
+	registers = display->registers;
+
+	/* The controller's registers, under the display's lock. */
+	mutex_lock(&display->lock);
+
+	kern_logf("ghci: %s: report: enabled %d, mode %u, stride %u, shown %08x, connected %d, errors %u, underflows %u, read errors %u\n",
+	    device->name,
+	    display->enabled,
+	    display->mode,
+	    (unsigned)display->stride,
+	    (unsigned)display->shown.base,
+	    display->connected,
+	    display->error_count,
+	    display->underflows,
+	    display->read_errors);
+	for (index = 0U; index < sizeof(offsets) / sizeof(offsets[0]); index++) {
+		kern_logf("ghci: %s: report: DC %02x = %08x\n",
+		    device->name,
+		    (unsigned)offsets[index],
+		    (unsigned)ghci_read(device, registers + offsets[index]));
+	}
+
+	/* The frames counted in 100 ms (6 at 60 Hz). */
+	frames_before = ghci_read(device, registers + GHCI_DC_FRAME_COUNT);
+	ghci_sleep_ms(100U);
+	frames_after = ghci_read(device, registers + GHCI_DC_FRAME_COUNT);
+	kern_logf("ghci: %s: report: DC FRAME_COUNT %08x, %u frames in 100 ms\n",
+	    device->name,
+	    (unsigned)frames_after,
+	    (unsigned)(frames_after - frames_before));
+
+	/* The transmitter's registers, when the controller has one. */
+	if ((display->controller_caps & DC_CAPS_TRANSMITTER) != 0U)
+		ghci_adv7511_report(device, registers);
+
+	mutex_unlock(&display->lock);
+}
+
+/*
  * Gives the driver's idle frame and its mode, and whether the controller
  * scans it out now: 0, or ENOENT on a device without one.
  */

@@ -1,0 +1,53 @@
+[sudo] password for kei: ghcictl: /dev/gpu0: display report (each step in the kernel log)
+ghcictl: done
+ghci: polled every 1 ms (CONFIG_GHCI_POLL)
+ghci: ghci:AMAT:ATG1: session protection: 31 sessions, 64 grants
+ghci: ghci:AMAT:ATG1: firmware init: token d7797b11, reply at 40236000
+ghci: ghci:AMAT:ATG1: firmware init: firmware 2.1, protocol 1.0, features 7, line 64, sessions 32, packet read at 40216004
+ghci: ghci:AMAT:ATG1: display connected: scanning out the idle frame at 80000000, 1280x720, stride 5120
+ghci: ghci:AMAT:ATG1: ready (GHCI 1.0, caps 5d661b5f, local 1024 MiB, window 0 MiB, display 1, vulkan 1)
+ghci: ghci:AMAT:ATG1: report: enabled 1, mode 1, stride 5120, shown 80000000, connected 1, errors 31, underflows 744, read errors 0
+ghci: ghci:AMAT:ATG1: report: DC 10 = 00000041
+ghci: ghci:AMAT:ATG1: report: DC 14 = 116a0003
+ghci: ghci:AMAT:ATG1: report: DC 18 = 00000000
+ghci: ghci:AMAT:ATG1: report: DC 20 = 80000000
+ghci: ghci:AMAT:ATG1: report: DC 28 = 00001400
+ghci: ghci:AMAT:ATG1: report: DC 2c = 02d00500
+ghci: ghci:AMAT:ATG1: report: DC 30 = 00000500
+ghci: ghci:AMAT:ATG1: report: DC 34 = 0000006e
+ghci: ghci:AMAT:ATG1: report: DC 38 = 00000028
+ghci: ghci:AMAT:ATG1: report: DC 3c = 000000dc
+ghci: ghci:AMAT:ATG1: report: DC 40 = 000002d0
+ghci: ghci:AMAT:ATG1: report: DC 44 = 00000005
+ghci: ghci:AMAT:ATG1: report: DC 48 = 00000005
+ghci: ghci:AMAT:ATG1: report: DC 4c = 00000014
+ghci: ghci:AMAT:ATG1: report: DC 50 = 00000003
+ghci: ghci:AMAT:ATG1: report: DC 58 = 00000001
+ghci: ghci:AMAT:ATG1: report: DC 6c = 00000001
+ghci: ghci:AMAT:ATG1: report: DC 70 = 2896378f
+ghci: ghci:AMAT:ATG1: report: DC 74 = 0004facc
+ghci: ghci:AMAT:ATG1: report: DC FRAME_COUNT 00000832, 5 frames in 100 ms
+ghci: ghci:AMAT:ATG1: report: ADV7511 00 = 14
+ghci: ghci:AMAT:ATG1: report: ADV7511 15 = 01
+ghci: ghci:AMAT:ATG1: report: ADV7511 16 = 35
+ghci: ghci:AMAT:ATG1: report: ADV7511 17 = 02
+ghci: ghci:AMAT:ATG1: report: ADV7511 18 = 46
+ghci: ghci:AMAT:ATG1: report: ADV7511 3b = 80
+ghci: ghci:AMAT:ATG1: report: ADV7511 3c = 00
+ghci: ghci:AMAT:ATG1: report: ADV7511 3d = 04
+ghci: ghci:AMAT:ATG1: report: ADV7511 3e = 10
+ghci: ghci:AMAT:ATG1: report: ADV7511 41 = 10
+ghci: ghci:AMAT:ATG1: report: ADV7511 42 = f0
+ghci: ghci:AMAT:ATG1: report: ADV7511 96 = e0
+ghci: ghci:AMAT:ATG1: report: ADV7511 9e = 12
+ghci: ghci:AMAT:ATG1: report: ADV7511 af = 06
+ghci: ghci:AMAT:ATG1: report: ADV7511 ba = 00
+ghci: ghci:AMAT:ATG1: report: ADV7511 d6 = c0
+ghci: ghci:AMAT:ATG1: report: idle frame row 0 word 0 at 80000000: 323fac97 (0)
+ghci: ghci:AMAT:ATG1: report: idle frame row 1 word 0 at 80001400: 5e249197 (0)
+ghci: ghci:AMAT:ATG1: report: idle frame row 2 word 0 at 80002800: 8a097697 (0)
+ghci: ghci:AMAT:ATG1: report: idle frame row 8 word 0 at 8000a000: ffe3f0ff (0)
+ghci: ghci:AMAT:ATG1: report: idle frame row 100 word 0 at 8007d000: ffe3ecff (0)
+ghci: ghci:AMAT:ATG1: report: idle frame row 360 word 0 at 801c2000: ffe0e1fd (0)
+ghci: ghci:AMAT:ATG1: report: idle frame row 719 word 0 at 80382c00: ffeddce1 (0)
+ghci: ghci:AMAT:ATG1: report: idle frame 80000000 (shown): first MiB result 00000000 sum 2c4d604b weighted 6efbdbfe, words 323fac97 644873f8 96513b59 c85a02ba, last ffedddef

@@ -619,6 +619,9 @@ int ghci_firmware_diag(struct ghci_device *device, unsigned rounds);
 /* Takes GPU_OP_GHCI_DIAG or GPU_OP_GHCI_FIRMWARE from root. */
 int ghci_firmware_command(struct ghci_device *device, struct ghci_session *session, const void *stream, uint32_t bytes);
 
+/* Logs the display's report and the firmware's sum of the idle frame's first megabyte. */
+int ghci_firmware_report(struct ghci_device *device);
+
 /* Paints the display's idle frame with colour bands and grey steps and has the firmware read it back: 0, EIO or ENOENT. */
 int ghci_firmware_paint(struct ghci_device *device);
 
@@ -796,6 +799,12 @@ void ghci_display_service(struct ghci_device *device, unsigned work);
 
 /* Takes the display's lock before a reset of the command processor. */
 void ghci_display_recover_begin(struct ghci_device *device);
+
+/* Logs the display controller's registers, its frame rate and the HDMI transmitter's registers. */
+void ghci_display_report(struct ghci_device *device);
+
+/* Logs the ADV7511's format, timing and status registers; the display's lock is held. */
+void ghci_adv7511_report(struct ghci_device *device, uint32_t registers);
 
 /* Gives the driver's idle frame, its mode and whether it is shown now: 0, or ENOENT. */
 int ghci_display_idle_frame(struct ghci_device *device, uint32_t *address, uint32_t *width, uint32_t *height, uint32_t *stride, int *shown);

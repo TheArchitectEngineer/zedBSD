@@ -104,6 +104,7 @@
 /* GPU_OP_GHCI_DIAG: the words of the command, and its flag that paints the idle frame instead. */
 #define DIAG_COMMAND_WORDS		3U
 #define DIAG_FLAG_PAINT			0x1U
+#define DIAG_FLAG_REPORT		0x2U
 
 /* The idle frame's test picture: colour bands over the top two thirds, grey steps below. */
 #define PAINT_BANDS			8U
@@ -558,6 +559,70 @@ ghci_firmware_paint(
 }
 
 /*
+ * Logs the display's report and the firmware's sums of the first
+ * megabyte of the idle frame (0 for a frame of zeros).
+ */
+int
+ghci_firmware_report(
+	struct ghci_device *device)
+{
+	uint32_t arguments[3];
+	uint32_t reply[GHCI_REPLY_WORDS];
+	uint32_t base;
+	uint32_t width;
+	uint32_t height;
+	uint32_t stride;
+	uint32_t word;
+	uint32_t rows[] = { 0U, 1U, 2U, 8U, 100U, 360U, 719U };
+	unsigned index;
+	int shown;
+	int error;
+
+	/* The controller and the transmitter. */
+	ghci_display_report(device);
+
+	/* The idle frame: the first word of some rows through the debug port. */
+	error = ghci_display_idle_frame(device, &base, &width, &height, &stride, &shown);
+	if (error != 0)
+		return 0;
+	for (index = 0U; index < sizeof(rows) / sizeof(rows[0]); index++) {
+		word = 0U;
+		error = dbg_read(device, base + rows[index] * stride, &word);
+		kern_logf("ghci: %s: report: idle frame row %u word 0 at %08x: %08x (%d)\n",
+		    device->name,
+		    (unsigned)rows[index],
+		    (unsigned)(base + rows[index] * stride),
+		    (unsigned)word,
+		    error);
+	}
+
+	/* Its first megabyte, summed by the firmware. */
+	if ((device->fw_features & GHCI_INIT_F_DIAG) == 0U)
+		return 0;
+	arguments[0] = base;
+	arguments[1] = 0U;
+	arguments[2] = GHCI_DIAG_BYTES_MAX;
+	error = packet_run(device, DIAG_REPLY_OFFSET, GHCI_GPU_OP_DIAG_SUM, arguments, 3U, reply, DIAG_WAIT_MS);
+	if (error != 0)
+		return error;
+	kern_logf("ghci: %s: report: idle frame %08x (%s): first MiB result %08x sum %08x weighted %08x, words %08x %08x %08x %08x, last %08x\n",
+	    device->name,
+	    (unsigned)base,
+	    shown ? "shown" : "not shown",
+	    (unsigned)reply[0],
+	    (unsigned)reply[GHCI_DIAG_SUM_PLAIN],
+	    (unsigned)reply[GHCI_DIAG_SUM_WEIGHTED],
+	    (unsigned)reply[GHCI_DIAG_SUM_FIRST],
+	    (unsigned)reply[GHCI_DIAG_SUM_FIRST + 1U],
+	    (unsigned)reply[GHCI_DIAG_SUM_FIRST + 2U],
+	    (unsigned)reply[GHCI_DIAG_SUM_FIRST + 3U],
+	    (unsigned)reply[GHCI_DIAG_SUM_LAST]);
+
+	/* Succeeded: the report is in the log. */
+	return 0;
+}
+
+/*
  * Takes GPU_OP_GHCI_DIAG or GPU_OP_GHCI_FIRMWARE from root.
  *
  * GPU_OP_GHCI_DIAG [number][flags 0][rounds] runs the diagnostics.
@@ -593,6 +658,8 @@ ghci_firmware_command(
 			return EINVAL;
 		if (words[1] == DIAG_FLAG_PAINT) {
 			error = ghci_firmware_paint(device);
+		} else if (words[1] == DIAG_FLAG_REPORT) {
+			error = ghci_firmware_report(device);
 		} else if (words[1] == 0U) {
 			error = ghci_firmware_diag(device, words[2]);
 		} else {

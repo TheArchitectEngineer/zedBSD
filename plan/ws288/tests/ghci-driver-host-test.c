@@ -2097,7 +2097,7 @@ test_firmware(void)
 	core_superuser = 1;
 	error = core_ops->command(core_private, opaque, stream, 12U);
 	expect(error == 0, "firmware: the diagnostics from root's command");
-	stream[1] = 2U;
+	stream[1] = 4U;
 	error = core_ops->command(core_private, opaque, stream, 12U);
 	expect(error == EINVAL, "firmware: a diagnostics command with an unknown flag refused");
 

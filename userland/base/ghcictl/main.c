@@ -20,6 +20,7 @@
  *   ghcictl [list]
  *   ghcictl diag [ROUNDS]
  *   ghcictl paint
+ *   ghcictl display     (the controller's and the HDMI transmitter's registers, in the kernel log)
  *   ghcictl fwload [-l] IMEM.bin DMEM.bin
  */
 
@@ -102,7 +103,7 @@ static int open_ghci(char *path, size_t size);
 static int send_command(int fd, const uint32_t *words, uint32_t count);
 static int run_diag(int argc, char **argv);
 static int run_fwload(int argc, char **argv);
-static int run_paint(int argc);
+static int run_paint(int argc, uint32_t flags);
 static int read_image(const char *path, uint32_t *words, uint32_t limit, uint32_t *count);
 static int send_part(int fd, uint32_t part, const uint32_t *words, uint32_t count, uint32_t last_flags);
 static void usage(void);
@@ -128,7 +129,13 @@ main(
 
 	/* The idle frame's picture. */
 	if (strcmp(argv[1], "paint") == 0) {
-		status = run_paint(argc - 2);
+		status = run_paint(argc - 2, 1U);
+		return status;
+	}
+
+	/* The display's report. */
+	if (strcmp(argv[1], "display") == 0) {
+		status = run_paint(argc - 2, 2U);
 		return status;
 	}
 
@@ -362,10 +369,11 @@ run_diag(
 	return 1;
 }
 
-/* ghcictl paint: the idle frame's picture, blitted and read back. */
+/* ghcictl paint (flags 1: the idle frame's picture, blitted and read back) or display (flags 2: the report). */
 static int
 run_paint(
-	int argc)
+	int argc,
+	uint32_t flags)
 {
 	uint32_t words[3];
 	char path[32];
@@ -383,22 +391,22 @@ run_paint(
 	if (fd < 0)
 		return 1;
 
-	/* GPU_OP_GHCI_DIAG with the paint flag. */
+	/* GPU_OP_GHCI_DIAG with the paint or the report flag. */
 	words[0] = GPU_OP_GHCI_DIAG;
-	words[1] = 1U;
+	words[1] = flags;
 	words[2] = 0U;
-	printf("ghcictl: %s: paint (each step in the kernel log)\n", path);
+	printf("ghcictl: %s: %s (each step in the kernel log)\n", path, flags == 1U ? "paint" : "display report");
 	error = send_command(fd, words, 3U);
 	close(fd);
 
 	/* The outcome. */
 	if (error != 0) {
-		printf("ghcictl: paint: FAIL: %s (see the kernel log)\n", strerror(error));
+		printf("ghcictl: FAIL: %s (see the kernel log)\n", strerror(error));
 		return 1;
 	}
 
-	/* Succeeded: the picture is in the frame. */
-	printf("ghcictl: paint: PASS\n");
+	/* Succeeded: the picture is in the frame, or the report in the log. */
+	printf("ghcictl: done\n");
 	return 0;
 }
 
@@ -564,5 +572,6 @@ usage(void)
 	fprintf(stderr, "usage: ghcictl [list]\n");
 	fprintf(stderr, "       ghcictl diag [ROUNDS]\n");
 	fprintf(stderr, "       ghcictl paint\n");
+	fprintf(stderr, "       ghcictl display\n");
 	fprintf(stderr, "       ghcictl fwload [-l] IMEM.bin DMEM.bin\n");
 }
