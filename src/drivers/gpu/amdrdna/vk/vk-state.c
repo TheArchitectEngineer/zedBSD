@@ -505,8 +505,8 @@ amdrdna_vk_state_raster(
 {
 	uint32_t mode;
 
-	/* The faces culled and the face in front. */
-	mode = 0U;
+	/* Filled triangles, the faces culled and the face in front. */
+	mode = AMDRDNA_CX_RASTER_FILLED;
 	if ((cull_mode & VK_CULL_MODE_FRONT_BIT) != 0U)
 		mode |= AMDRDNA_CX_RASTER_CULL_FRONT;
 	if ((cull_mode & VK_CULL_MODE_BACK_BIT) != 0U)

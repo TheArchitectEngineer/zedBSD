@@ -619,6 +619,17 @@
 #define AMDRDNA_CX_RASTER_CLOCKWISE		(1U << 2)
 
 /*
+ * The rasteriser's polygon types of front and back faces: triangles (2 in
+ * bits 7:5 and 10:8), what RADV writes for a filled polygon mode.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (PA_SU_SC_MODE_CNTL: POLYMODE_FRONT_PTYPE, POLYMODE_BACK_PTYPE, the enum
+ * X_DRAW_TRIANGLES 2) and src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_culling: both from radv_translate_fill, line 10873).
+ */
+#define AMDRDNA_CX_RASTER_FILLED		((2U << 5) | (2U << 8))
+
+/*
  * The point size of 1.0 (8 in each 12.4 half: height 15:0, width 31:16),
  * the point limits 0 to 4095.9375 (12.4), the line width 1.0 (8), the
  * small primitive filter on (bit 0), the sample configuration and mask of
