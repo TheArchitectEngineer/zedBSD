@@ -3,7 +3,7 @@
 # ws298-p003 規約の全文の見直し
 
 - 親: [WS298](../ws.md)。担当 P1（2026-10-27、Q1 の指示「NVMe から起動して survey が PASS したら、p003（規約の全文、attach の error の連鎖を含む）へ」）。
-- Status: in-progress（見直しと直しは済み、判定は Q1）
+- Status: cleared（2026-10-27 08:34 Q1、aaa909887、NVMe からの起動 PASS）。前: in-progress（見直しと直しは済み、判定は Q1）
 - Disposition: normal
 
 ## 範囲
