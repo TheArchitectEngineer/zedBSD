@@ -26,7 +26,7 @@ cc $flags -o "$out/ghci-host-test" "$tests/ghci-host-test.c" "$ghci/check.c" "$g
 	"$ghci/state.c" "$ghci/capset.c" "$ghci/jobs.c"
 
 # The driver's files, with its Vulkan executor and the record codec the executor shares.
-driver="$ghci/ghci.c $ghci/cp.c $ghci/memory.c $ghci/blit.c $ghci/native.c $ghci/check.c $ghci/range.c $ghci/share.c \
+driver="$ghci/ghci.c $ghci/cp.c $ghci/firmware.c $ghci/memory.c $ghci/blit.c $ghci/native.c $ghci/check.c $ghci/range.c $ghci/share.c \
 $ghci/display.c $ghci/display-scan.c $ghci/adv7511.c \
 $ghci/state.c $ghci/capset.c $ghci/jobs.c $ghci/vk/vk-engine.c $ghci/vk/vk-node.c $ghci/vk/vk-session.c \
 $ghci/vk/vk-stream.c $ghci/vk/vk-device.c $ghci/vk/vk-format.c $ghci/vk/vk-memory.c $ghci/vk/vk-program.c \

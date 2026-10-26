@@ -63,6 +63,7 @@ static void refresh_completed(struct ghci_device *device);
 static int fence_window_wait(struct ghci_device *device);
 static void program_ring(struct ghci_device *device);
 static void recover(struct ghci_device *device, const char *reason);
+static int recover_run(struct ghci_device *device, const char *reason, int reload);
 static void fail_sessions(struct ghci_device *device, uint64_t generation);
 static void service_hang_check(struct ghci_device *device);
 
@@ -77,7 +78,7 @@ ghci_cp_start(
 	uint32_t status;
 	int error;
 
-	/* The ring, the fence page and the bounce buffer of the transfers. */
+	/* The ring, the fence page, the bounce buffer of the transfers and the firmware's reply page. */
 	mutex_lock(&device->lock);
 
 	error = ghci_memory_alloc(device, NULL, GHCI_USE_DRIVER, GHCI_RING_BYTES, &device->ring);
@@ -85,6 +86,8 @@ ghci_cp_start(
 		error = ghci_memory_alloc(device, NULL, GHCI_USE_DRIVER, GHCI_PAGE_BYTES, &device->fence_page);
 	if (error == 0)
 		error = ghci_memory_alloc(device, NULL, GHCI_USE_DRIVER, GHCI_BOUNCE_BYTES, &device->bounce);
+	if (error == 0)
+		error = ghci_memory_alloc(device, NULL, GHCI_USE_DRIVER, GHCI_PAGE_BYTES, &device->fw_page);
 
 	mutex_unlock(&device->lock);
 
@@ -164,20 +167,43 @@ ghci_cp_stop(
 
 	mutex_unlock(&device->cp_lock);
 
-	/* The ring, the fence page and the bounce buffer go back. */
+	/* The ring, the fence page, the bounce buffer and the reply page go back. */
 	mutex_lock(&device->lock);
 
+	if (device->fw_page != NULL)
+		ghci_memory_free(device, device->fw_page);
 	if (device->bounce != NULL)
 		ghci_memory_free(device, device->bounce);
 	if (device->fence_page != NULL)
 		ghci_memory_free(device, device->fence_page);
 	if (device->ring != NULL)
 		ghci_memory_free(device, device->ring);
+	device->fw_page = NULL;
 	device->bounce = NULL;
 	device->fence_page = NULL;
 	device->ring = NULL;
 
 	mutex_unlock(&device->lock);
+}
+
+/*
+ * Resets the processor, loads the staged firmware image, starts the
+ * firmware and sends it INIT, as a recovery does; the work in flight
+ * ends with an error.  A device lost before may come back this way.
+ */
+int
+ghci_cp_reload(
+	struct ghci_device *device)
+{
+	int error;
+
+	/* The recovery with the load between the reset and the start. */
+	error = recover_run(device, "firmware reload", 1);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the new firmware runs. */
+	return 0;
 }
 
 /*
@@ -1010,12 +1036,29 @@ recover(
 	struct ghci_device *device,
 	const char *reason)
 {
+	/* The recovery without a load; a device it loses says so in the log. */
+	(void)recover_run(device, reason, 0);
+}
+
+/*
+ * Resets the processor (and with reload, loads the staged firmware image),
+ * starts the firmware, completes every fence issued so far with an error,
+ * runs the ring again from its start and sends INIT.  Returns 0, or EIO
+ * when the device is lost (or was, and no reload was asked).
+ */
+static int
+recover_run(
+	struct ghci_device *device,
+	const char *reason,
+	int reload)
+{
 	uint32_t info;
 	uint32_t address;
 	uint32_t status;
 	uint32_t page_value;
 	uint64_t generation;
 	unsigned long irq;
+	int lost;
 	int error;
 
 	/*
@@ -1027,11 +1070,11 @@ recover(
 	/* No submission while the processor is reset. */
 	mutex_lock(&device->cp_lock);
 
-	/* A device that stopped or was already lost is left as it is. */
-	if (!device->running || device->lost) {
+	/* A device that stopped, or was already lost and is not reloaded, is left as it is. */
+	if (!device->running || (device->lost && !reload)) {
 		mutex_unlock(&device->cp_lock);
 		ghci_display_recover_end(device, 0);
-		return;
+		return EIO;
 	}
 
 	/* Says why, with the first fault's record. */
@@ -1075,6 +1118,10 @@ recover(
 	ghci_write(device, GHCI_CTRL, GHCI_CTRL_RESET);
 	error = ghci_poll(device, GHCI_CTRL, GHCI_CTRL_RESET, 0U, GHCI_RESET_WAIT_MS);
 
+	/* A reload puts the new image into the stopped processor. */
+	if (error == 0 && reload)
+		error = ghci_firmware_load(device);
+
 	/* The reset stopped the firmware too; it runs again before the ring does. */
 	if (error == 0)
 		error = ghci_firmware_start(device);
@@ -1090,8 +1137,11 @@ recover(
 	device->fault_address = 0U;
 	device->resets++;
 	device->progress_tick = clock_ticks();
-	if (error != 0)
+	if (error != 0) {
 		device->lost = 1;
+	} else {
+		device->lost = 0;
+	}
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 
@@ -1101,7 +1151,7 @@ recover(
 	 * flips were taken before the ring starts again.
 	 */
 	if (error != 0) {
-		kern_logf("ghci: %s: reset did not end; the device is lost\n", device->name);
+		kern_logf("ghci: %s: the reset, the firmware's load or its start failed; the device is lost\n", device->name);
 	} else {
 		ghci_display_recover_count(device);
 		program_ring(device);
@@ -1116,12 +1166,36 @@ recover(
 	/* The waiters see the new generation. */
 	waitq_wake_all(&device->fence_wake);
 
+	/*
+	 * The firmware that started answers INIT before anything else; one
+	 * that does not loses the device.
+	 */
+	if (error == 0) {
+		error = ghci_firmware_init(device);
+		if (error != 0) {
+			kern_logf("ghci: %s: the firmware did not answer INIT after the reset; the device is lost\n", device->name);
+			irq = spin_lock_irqsave(&device->irq_lock);
+
+			device->lost = 1;
+
+			spin_unlock_irqrestore(&device->irq_lock, irq);
+		}
+	}
+
 	/* The sessions whose work was in flight lose it. */
 	fail_sessions(device, generation);
 
 	/* The firmware restarted: the executor's frames and objects are gone, and it takes its heap again. */
 	if (error == 0)
 		ghci_vk_reset(device);
+
+	/* Reports a device the reset or INIT lost. */
+	lost = device->lost;
+	if (lost)
+		return EIO;
+
+	/* Succeeded: the processor runs the ring again. */
+	return 0;
 }
 
 /* Reports the loss to every session whose last submission belonged to an ended generation. */

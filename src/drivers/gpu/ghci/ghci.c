@@ -155,6 +155,21 @@ ghci_device_start(
 		return error;
 	}
 
+	/*
+	 * The handshake with the firmware (GHCI_INIT): its answer through the
+	 * ring and host memory proves the path every packet takes.  A device
+	 * whose firmware does not answer, or answers wrong, is not started.
+	 */
+	error = ghci_firmware_init(device);
+	if (error != 0) {
+		kern_logf("ghci: %s: the firmware did not answer INIT; the device is not started\n", device->name);
+		ghci_display_detach(device);
+		ghci_poll_stop(device);
+		ghci_cp_stop(device);
+		ghci_memory_fini(device);
+		return EIO;
+	}
+
 	/* Starts the thread that recovers from faults and gives deferred memory back. */
 	error = ghci_service_start(device);
 	if (error != 0) {
@@ -241,8 +256,9 @@ ghci_device_stop(
 	ghci_cp_stop(device);
 	ghci_service_stop(device);
 
-	/* The executor's heap and staging ring go back with the rest. */
+	/* The executor's heap and staging ring go back with the rest, and the firmware's image and diagnostics' buffers. */
 	ghci_vk_engine_stop(device);
+	ghci_firmware_release(device);
 
 	/* Gives every allocation that waited for the GPU back, and the allocators' tables. */
 	mutex_lock(&device->lock);
@@ -1054,10 +1070,26 @@ gpu_command(
 	int superuser;
 	int error;
 
-	/* Only the native command comes this way; a kernel without it takes none. */
+	/* The native command, the diagnostics and the firmware's reload come this way. */
 	words = stream;
 	if (bytes < 4U)
 		return EINVAL;
+
+	/* The diagnostics and the reload reach memory and stop the GPU's work, so only root sends them. */
+	if (words[0] == GPU_OP_GHCI_DIAG || words[0] == GPU_OP_GHCI_FIRMWARE) {
+		credentials = cred_current();
+		superuser = cred_is_superuser(credentials);
+		if (!superuser)
+			return EPERM;
+		error = ghci_firmware_command(private_data, opaque, stream, bytes);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the diagnostics passed, or the image was taken. */
+		return 0;
+	}
+
+	/* A kernel without the native command takes nothing else. */
 	if (words[0] != GPU_OP_GHCI_NATIVE)
 		return ENOTSUP;
 	if (!CONFIG_GHCI_NATIVE)

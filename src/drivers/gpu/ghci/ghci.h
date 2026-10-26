@@ -512,6 +512,38 @@ struct ghci_device {
 	int lost;
 
 	/*
+	 * The firmware (firmware.c).  fw_page holds the replies of INIT and of
+	 * the diagnostics (with the ring, from ghci_cp_start to ghci_cp_stop).
+	 * fw_version and fw_features are INIT's last answer (fw_features 0: a
+	 * firmware without INIT, or none); fw_tokens counts the INITs sent, so
+	 * each carries a token of its own.  The service thread and the start
+	 * write them, one at a time.
+	 */
+	struct ghci_allocation *fw_page;
+	uint32_t fw_version;
+	uint32_t fw_features;
+	uint32_t fw_tokens;
+
+	/*
+	 * A firmware image staged for a reload (device lock): fw_image holds
+	 * IMEM's words and then DMEM's, fw_iwords and fw_dwords how many of
+	 * each were sent; fw_image_local is the copy's memory of a reload
+	 * through local memory; fw_ibase and fw_dbase are where the load reads
+	 * them.  The memory is kept until the detach.
+	 */
+	struct ghci_allocation *fw_image;
+	struct ghci_allocation *fw_image_local;
+	uint32_t fw_iwords;
+	uint32_t fw_dwords;
+	uint32_t fw_ibase;
+	uint32_t fw_dbase;
+
+	/* The diagnostics' buffers, kept until the detach, and whether a run goes on (device lock). */
+	struct ghci_allocation *diag_host;
+	struct ghci_allocation *diag_local;
+	int diag_running;
+
+	/*
 	 * What the interrupt and the service thread share (irq_lock).
 	 * irq_mask is the IRQ_ENABLE the handler restores after it masked
 	 * the interrupt: set before the ring starts, zero once it stops.
@@ -561,6 +593,25 @@ int ghci_poll(struct ghci_device *device, uint32_t offset, uint32_t mask, uint32
 int ghci_firmware_start(struct ghci_device *device);
 
 /*
+ * The firmware's handshake, diagnostics and reload (firmware.c).
+ */
+
+/* Sends GHCI_INIT and checks the reply: 0, or EIO or ETIMEDOUT with the reason logged. */
+int ghci_firmware_init(struct ghci_device *device);
+
+/* Runs the diagnostics a number of rounds, logging every step: 0 when all passed, EIO when one failed. */
+int ghci_firmware_diag(struct ghci_device *device, unsigned rounds);
+
+/* Takes GPU_OP_GHCI_DIAG or GPU_OP_GHCI_FIRMWARE from root. */
+int ghci_firmware_command(struct ghci_device *device, struct ghci_session *session, const void *stream, uint32_t bytes);
+
+/* Loads the staged image into the processor's memories after a reset: 0 or EIO. */
+int ghci_firmware_load(struct ghci_device *device);
+
+/* Gives back the staged image and the diagnostics' buffers at the detach. */
+void ghci_firmware_release(struct ghci_device *device);
+
+/*
  * The command processor (cp.c).
  */
 
@@ -569,6 +620,9 @@ int ghci_cp_start(struct ghci_device *device);
 
 /* Waits for the driver's last fence and halts the command processor. */
 void ghci_cp_stop(struct ghci_device *device);
+
+/* Resets the processor, loads the staged firmware image, starts it and sends INIT: 0, or EIO. */
+int ghci_cp_reload(struct ghci_device *device);
 
 /*
  * Writes packets for a session (NULL: the driver's own work) into the
