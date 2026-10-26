@@ -47,7 +47,8 @@
  * VGT_MULTI_PRIM_IB_RESET_INDX 0x2840c, PA_SC_MODE_CNTL_1 0x28a4c,
  * PA_SC_AA_MASK_X0Y1_X1Y1 0x28c3c, GE_STEREO_CNTL 0x3097c,
  * PA_SU_LINE_STIPPLE_VALUE 0x30a00, PA_SC_LINE_STIPPLE_STATE 0x30a04,
- * VGT_ESGS_RING_ITEMSIZE 0x28aac, PA_SU_HARDWARE_SCREEN_OFFSET 0x28234).
+ * VGT_ESGS_RING_ITEMSIZE 0x28aac, PA_SU_HARDWARE_SCREEN_OFFSET 0x28234,
+ * VGT_MULTI_PRIM_IB_RESET_EN 0x3092c).
  */
 #define STATE_PIXEL_ACCUMULATORS	0xb0c8U
 #define STATE_VERTEX_ACCUMULATORS	0xb1c8U
@@ -67,6 +68,7 @@
 #define STATE_SCAN_MODE_MORE		0x28a4cU
 #define STATE_SAMPLE_MASK_MORE		0x28c3cU
 #define STATE_STEREO			0x3097cU
+#define STATE_RESTART_ON		0x3092cU
 #define STATE_STIPPLE_VALUE		0x30a00U
 #define STATE_STIPPLE_STATE		0x30a04U
 
@@ -1100,6 +1102,16 @@ state_start_graphics(
 	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_INDEX_MAXIMUM, 0xffffffffU);
 	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_INSTANCE_BASE, 0U);
 	amdrdna_vk_pm4_set_user_config(pm4, STATE_STEREO, 0U);
+
+	/*
+	 * No primitive restart (its reset value is on), as RADV writes it for
+	 * a pipeline without primitiveRestartEnable.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+	 * (radv_emit_primitive_restart_enable: VGT_MULTI_PRIM_IB_RESET_EN from
+	 * the dynamic state on GFX9 to GFX10.3, line 3400).
+	 */
+	amdrdna_vk_pm4_set_user_config(pm4, STATE_RESTART_ON, 0U);
 	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_USER_VGPRS, 0U);
 	amdrdna_vk_pm4_set_user_config(pm4, STATE_STIPPLE_VALUE, 0U);
 	amdrdna_vk_pm4_set_user_config(pm4, STATE_STIPPLE_STATE, 0U);
