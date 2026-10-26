@@ -413,8 +413,9 @@ i915_reset_converter_partner(
  * Holds the converter an engine uses for its reset.
  *
  * The lock goes through the engine itself when its own pipe uses the
- * converter, or, for a decode engine whose HEVC pipe uses it, through the
- * enhancement engine that shares it (Wa_14010733141).  A converter nobody
+ * converter, or, on graphics version 12, for a decode engine whose HEVC
+ * pipe uses it, through the enhancement engine that shares it
+ * (Wa_14010733141).  A converter nobody
  * uses is not held.  Once the lock was asked for, *hold names it for the
  * release, whatever else comes of it.  The converter joins *domains when,
  * after the lock, the engine that uses it is the one it was locked
@@ -445,6 +446,8 @@ i915_reset_converter_hold(
 	via_partner = false;
 	if ((drv_i915_raw_read32(mmio, engine->mmio_base + layout->use_off) & layout->use_bit) == 0U) {
 		if (engine->class != I915_VIDEO_DECODE_CLASS)
+			return 0;
+		if (gt->graphics_ver != 12)
 			return 0;
 		if ((drv_i915_raw_read32(mmio, I915_RESET_HEVC_USE(engine->mmio_base)) & I915_RESET_HEVC_USE_BIT) == 0U)
 			return 0;

@@ -82,6 +82,20 @@ static const struct i915_execlists_layout i915_execlists_gen12 = {
 	I915_GT_GEN11_GFX_DISABLE_LEGACY_MODE, 0, i915_execlists_promotes_gen12
 };
 
+/*
+ * The Gen11 layout: the ELSQ pair, the descriptor's engine fields and the
+ * Gen11 CSB of Gen12, but the CSB entries are the Gen8 events.
+ *
+ * Values referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/gt/intel_execlists_submission.c
+ * (intel_execlists_submission_setup, csb_parse: graphics versions below 12
+ * take gen8_csb_parse).
+ */
+static const struct i915_execlists_layout i915_execlists_gen11 = {
+	1, I915_GT_ICL_HWS_CSB_WRITE_INDEX, I915_GT_GEN11_CSB_ENTRIES, 1,
+	I915_GT_GEN11_GFX_DISABLE_LEGACY_MODE, 0, i915_execlists_promotes_gen9
+};
+
 /* The Gen9 layout. */
 static const struct i915_execlists_layout i915_execlists_gen9 = {
 	0, I915_GT_HWS_CSB_WRITE_INDEX, I915_GT_GEN8_CSB_ENTRIES, 0,
@@ -521,9 +535,11 @@ static const struct i915_execlists_layout *
 i915_execlists_layout_of(
 	const struct i915_gt_engine *ge)
 {
-	/* A Gen9 engine has the Gen9 layout; every other one the Gen12 layout. */
+	/* A Gen9 engine has the Gen9 layout, a Gen11 one the Gen11 layout; every other one the Gen12 layout. */
 	if (ge->info->graphics_ver == 9)
 		return &i915_execlists_gen9;
+	if (ge->info->graphics_ver == 11)
+		return &i915_execlists_gen11;
 	return &i915_execlists_gen12;
 }
 

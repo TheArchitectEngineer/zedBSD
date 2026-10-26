@@ -7,7 +7,8 @@
 
 /*
  * The logical ring context image offset tables: for the copy engine and
- * for the render engine of Gen12 and Gen9, the registers the hardware saves
+ * for the render engine of Gen12 and Gen9, and for the Gen11 render engine
+ * (whose other engines take the Gen9 table), the registers the hardware saves
  * in a context image, in the order it writes them.  Each table is a static
  * constant array, so every file that includes this header has its own copy
  * of the tables it uses.
@@ -253,6 +254,51 @@ static const uint8_t i915_lrc_gen9_xcs[] = {
 	I915_LRC_REG16(0x678),
 	I915_LRC_REG16(0x67c),
 	I915_LRC_REG(0x068),
+
+	I915_LRC_END
+};
+
+/*
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_lrc.c
+ * (gen11_rcs_offsets).
+ */
+static const uint8_t i915_lrc_gen11_rcs[] = {
+	I915_LRC_NOP(1),
+	I915_LRC_LRI(15, I915_LRC_POSTED),
+	I915_LRC_REG16(0x244),
+	I915_LRC_REG(0x034),
+	I915_LRC_REG(0x030),
+	I915_LRC_REG(0x038),
+	I915_LRC_REG(0x03c),
+	I915_LRC_REG(0x168),
+	I915_LRC_REG(0x140),
+	I915_LRC_REG(0x110),
+	I915_LRC_REG(0x11c),
+	I915_LRC_REG(0x114),
+	I915_LRC_REG(0x118),
+	I915_LRC_REG(0x1c0),
+	I915_LRC_REG(0x1c4),
+	I915_LRC_REG(0x1c8),
+	I915_LRC_REG(0x180),
+
+	I915_LRC_NOP(1),
+	I915_LRC_LRI(9, I915_LRC_POSTED),
+	I915_LRC_REG16(0x3a8),
+	I915_LRC_REG16(0x28c),
+	I915_LRC_REG16(0x288),
+	I915_LRC_REG16(0x284),
+	I915_LRC_REG16(0x280),
+	I915_LRC_REG16(0x27c),
+	I915_LRC_REG16(0x278),
+	I915_LRC_REG16(0x274),
+	I915_LRC_REG16(0x270),
+
+	I915_LRC_LRI(1, I915_LRC_POSTED),
+	I915_LRC_REG(0x1b0),
+
+	I915_LRC_NOP(10),
+	I915_LRC_LRI(1, 0),
+	I915_LRC_REG(0x0c8),
 
 	I915_LRC_END
 };

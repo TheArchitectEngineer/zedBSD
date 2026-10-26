@@ -46,28 +46,39 @@ struct i915_request_emitter {
 
 static int i915_request_flush_gen12_render(struct i915_gt_request *rq, uint32_t mode);
 static int i915_request_flush_gen12_other(struct i915_gt_request *rq, uint32_t mode);
+static int i915_request_flush_gen11_render(struct i915_gt_request *rq, uint32_t mode);
 static int i915_request_flush_gen9_render(struct i915_gt_request *rq, uint32_t mode);
 static int i915_request_flush_gen9_other(struct i915_gt_request *rq, uint32_t mode);
 static uint32_t *i915_request_seqno_pipe_control(struct i915_gt_request *rq, uint32_t *cs);
 static uint32_t *i915_request_seqno_gen12_render(struct i915_gt_request *rq, uint32_t *cs);
 static uint32_t *i915_request_seqno_gen12_other(struct i915_gt_request *rq, uint32_t *cs);
+static uint32_t *i915_request_seqno_gen11_render(struct i915_gt_request *rq, uint32_t *cs);
 static uint32_t *i915_request_seqno_gen9_render(struct i915_gt_request *rq, uint32_t *cs);
 static uint32_t *i915_request_seqno_store_dword(struct i915_gt_request *rq, uint32_t *cs);
 static uint32_t *i915_request_tail_gen12(struct i915_gt_request *rq, uint32_t *cs);
 static uint32_t *i915_request_tail_gen9(struct i915_gt_request *rq, uint32_t *cs);
 
 /*
- * The four emitters.  The breadcrumbs are 22 dwords on the render engines
+ * The five emitters.  The breadcrumbs are 22 dwords on the render engines
  * (a flushing PIPE_CONTROL 6, the seqno write 6, the tail 10), 18 on the
  * other Gen12 engines (a stalling MI_FLUSH_DW 4, the seqno write 4, the
- * tail 10) and 14 on the other Gen9 engines (the seqno write 4, the tail
- * 10).
+ * tail 10) and 14 on the other Gen9 and Gen11 engines (the seqno write 4,
+ * the tail 10).  The Gen11 engines other than render take the Gen9
+ * emitter.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/gt/intel_execlists_submission.c
+ * (rcs_submission_override, logical_ring_default_vfuncs: the
+ * GRAPHICS_VER 11 emitters).
  */
 static const struct i915_request_emitter i915_request_gen12_render = {
 	i915_request_flush_gen12_render, i915_request_seqno_gen12_render, i915_request_tail_gen12, 22U
 };
 static const struct i915_request_emitter i915_request_gen12_other = {
 	i915_request_flush_gen12_other, i915_request_seqno_gen12_other, i915_request_tail_gen12, 18U
+};
+static const struct i915_request_emitter i915_request_gen11_render = {
+	i915_request_flush_gen11_render, i915_request_seqno_gen11_render, i915_request_tail_gen9, 22U
 };
 static const struct i915_request_emitter i915_request_gen9_render = {
 	i915_request_flush_gen9_render, i915_request_seqno_gen9_render, i915_request_tail_gen9, 22U
@@ -381,6 +392,11 @@ i915_request_emitter_of(
 			return &i915_request_gen9_render;
 		return &i915_request_gen9_other;
 	}
+	if (info->graphics_ver == 11) {
+		if (info->class == I915_RENDER_CLASS)
+			return &i915_request_gen11_render;
+		return &i915_request_gen9_other;
+	}
 	if (info->class == I915_RENDER_CLASS)
 		return &i915_request_gen12_render;
 	return &i915_request_gen12_other;
@@ -558,6 +574,69 @@ i915_request_flush_gen12_other(
 }
 
 /*
+ * Writes the Gen11 render flush.
+ *
+ * The flush and the invalidate are two PIPE_CONTROLs, each written only
+ * when asked for: the flush writes back the tile, render target, depth and
+ * data caches; the invalidate drops the command, instruction, texture, VF,
+ * constant and state caches and the TLB.  Both stall the command streamer
+ * and post a write to the scratch slot.  There is no pre-parser control or
+ * AUX table on Gen11.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/gt/gen8_engine_cs.c (gen11_emit_flush_rcs).
+ */
+static int
+i915_request_flush_gen11_render(
+	struct i915_gt_request *rq,
+	uint32_t mode)
+{
+	uint32_t *cs;
+	uint32_t flags;
+
+	/* Writes back the caches. */
+	if ((mode & I915_CMD_EMIT_FLUSH) != 0U) {
+		flags = I915_CMD_PIPE_CONTROL_CS_STALL |
+			I915_CMD_PIPE_CONTROL_TILE_CACHE_FLUSH |
+			I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+			I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+			I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE |
+			I915_CMD_PIPE_CONTROL_FLUSH_ENABLE |
+			I915_CMD_PIPE_CONTROL_QW_WRITE |
+			I915_CMD_PIPE_CONTROL_STORE_DATA_INDEX;
+		cs = drv_i915_ring_reserve(rq, 6U);
+		if (cs == NULL)
+			return rq->error;
+
+		cs = i915_request_pipe_control(cs, 0U, flags, I915_GT_LRC_PPHWSP_SCRATCH_ADDR);
+		drv_i915_ring_commit(rq, cs);
+	}
+
+	/* Drops the read caches and the TLB. */
+	if ((mode & I915_CMD_EMIT_INVALIDATE) != 0U) {
+		flags = I915_CMD_PIPE_CONTROL_CS_STALL |
+			I915_CMD_PIPE_CONTROL_COMMAND_CACHE_INVALIDATE |
+			I915_CMD_PIPE_CONTROL_TLB_INVALIDATE |
+			I915_CMD_PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE |
+			I915_CMD_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+			I915_CMD_PIPE_CONTROL_VF_CACHE_INVALIDATE |
+			I915_CMD_PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+			I915_CMD_PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+			I915_CMD_PIPE_CONTROL_QW_WRITE |
+			I915_CMD_PIPE_CONTROL_STORE_DATA_INDEX;
+		cs = drv_i915_ring_reserve(rq, 6U);
+		if (cs == NULL)
+			return rq->error;
+
+		cs = i915_request_pipe_control(cs, 0U, flags, I915_GT_LRC_PPHWSP_SCRATCH_ADDR);
+		drv_i915_ring_commit(rq, cs);
+	}
+
+	/* Succeeded: the flush is in the ring. */
+	return 0;
+}
+
+/*
  * Writes the Gen9 render flush.
  *
  * One PIPE_CONTROL carries the flush and the invalidate together; Gen9
@@ -710,6 +789,33 @@ i915_request_seqno_gen12_other(
 
 	/* Writes the seqno. */
 	return i915_request_seqno_store_dword(rq, cs);
+}
+
+/*
+ * Writes the Gen11 render breadcrumb's seqno: a cache flush with the tile
+ * cache, then the seqno write.
+ *
+ * Procedure referenced: Linux v6.8.12
+ * drivers/gpu/drm/i915/gt/gen8_engine_cs.c (gen11_emit_fini_breadcrumb_rcs).
+ */
+static uint32_t *
+i915_request_seqno_gen11_render(
+	struct i915_gt_request *rq,
+	uint32_t *cs)
+{
+	/* Flushes the tile, render target, depth and data caches. */
+	cs = i915_request_pipe_control(cs,
+	    0U,
+	    I915_CMD_PIPE_CONTROL_CS_STALL |
+	    I915_CMD_PIPE_CONTROL_TLB_INVALIDATE |
+	    I915_CMD_PIPE_CONTROL_TILE_CACHE_FLUSH |
+	    I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
+	    I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH |
+	    I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE,
+	    0U);
+
+	/* Writes the seqno. */
+	return i915_request_seqno_pipe_control(rq, cs);
 }
 
 /* Writes the Gen9 render breadcrumb's seqno: a cache flush, then the seqno write. */

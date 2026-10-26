@@ -36,8 +36,8 @@ struct i915_mmio;
 /* How many engines one device can have: RCS0, BCS0, VCS0, VCS2, VECS0, and one spare. */
 #define I915_MAX_ENGINES		6
 
-/* How many subslices the SSEU masks describe. */
-#define I915_SSEU_MAX_SUBSLICES		6
+/* How many subslices the SSEU masks describe: Ice Lake has eight. */
+#define I915_SSEU_MAX_SUBSLICES		8
 
 /*
  * The engine identifiers: a block of ids for each class, the instance
@@ -73,14 +73,16 @@ struct i915_mmio;
  * The platforms whose workarounds differ.
  *
  * Every Gen12 device the driver matches shares one set, apart from the
- * rules its product row lists in I915_PLATFORM_WA_*; the Gen9 parts are
- * told apart because their workaround lists and stepping rules differ.
+ * rules its product row lists in I915_PLATFORM_WA_*; Ice Lake (Gen11) has
+ * its own lists; the Gen9 parts are told apart because their workaround
+ * lists and stepping rules differ.
  */
 #define I915_PLATFORM_GEN12		0
 #define I915_PLATFORM_SKYLAKE		1
 #define I915_PLATFORM_KABYLAKE		2
 #define I915_PLATFORM_COFFEELAKE	3
 #define I915_PLATFORM_COMETLAKE		4
+#define I915_PLATFORM_GEN11		5
 
 /*
  * The rules of the shared Gen12 lists that only some platforms take, as
@@ -107,8 +109,9 @@ struct i915_sseu {
 	uint8_t slice_mask;
 
 	/*
-	 * The (dual-)subslices of the lowest present slice.  Gen12 has one
-	 * slice; on Gen9 the subslice fuse applies to every slice alike.
+	 * The (dual-)subslices of the lowest present slice.  Gen11 and Gen12
+	 * have one slice; on Gen9 the subslice fuse applies to every slice
+	 * alike.
 	 */
 	uint16_t subslice_mask;
 
@@ -180,7 +183,7 @@ struct i915_engine_info {
  * read afterwards.  The owner keeps it for the life of the device.
  */
 struct i915_gt_info {
-	/* The graphics version the information was read for: 9 or 12. */
+	/* The graphics version the information was read for: 9, 11 or 12. */
 	int graphics_ver;
 
 	/*

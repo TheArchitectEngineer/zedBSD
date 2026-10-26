@@ -99,6 +99,9 @@ struct i915_gt_engine {
 	uint8_t sseu_max_eus_per_subslice;
 	uint16_t sseu_eu_per_subslice;
 
+	/* The subslices present: Gen11 counts them for the render power clock state. */
+	uint16_t sseu_subslice_mask;
+
 	/* Nonzero once the status page exists, and once execlists were enabled. */
 	int setup_done;
 	int resumed;

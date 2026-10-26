@@ -34,7 +34,7 @@ def read(path):
 
 def macros(text):
     """Every #define with its body, continuation lines joined."""
-    joined = text.replace("\\\n", " ")
+    joined = re.sub(r"/\*.*?\*/", " ", text.replace("\\\n", " "), flags=re.S)
     found = {}
     for match in re.finditer(r"^#define\s+(\w+)(\([^)]*\))?\s*(.*)$", joined, re.M):
         found[match.group(1)] = (match.group(2), match.group(3).strip())
@@ -145,6 +145,242 @@ def golden_rows(directory):
     return rows
 
 
+# The ICL check: the golden's Ice Lake lists against the lists Linux builds for graphics version 11.
+MASK32 = 0xffffffff
+
+
+def ctz(value):
+    count = 0
+    while value and not value & 1:
+        value >>= 1
+        count += 1
+    return count
+
+
+class Evaluator:
+    """Evaluates the register and value expressions of the Linux workaround calls."""
+
+    def __init__(self, defines):
+        self.defines = defines
+
+    def value(self, expression, depth=0):
+        expression = " ".join(expression.split())
+        expression = re.sub(r"\b(0x[0-9A-Fa-f]+|\d+)[uUlL]+\b", r"\1", expression)
+        names = {}
+        for word in set(re.findall(r"\b[A-Za-z_]\w*", expression)):
+            names[word] = self.binding(word, depth)
+        return int(eval(expression, {"__builtins__": {}}, names)) & MASK32
+
+    def binding(self, word, depth):
+        special = {
+            "REG_BIT": lambda n: 1 << n,
+            "BIT": lambda n: 1 << n,
+            "REG_GENMASK": lambda high, low: ((1 << (high - low + 1)) - 1) << low,
+            "REG_FIELD_PREP": lambda mask, value: (value << ctz(mask)) & mask,
+            "_MASKED_BIT_ENABLE": lambda a: (a << 16) | a,
+            "_MASKED_BIT_DISABLE": lambda a: a << 16,
+            "_MASKED_FIELD": lambda mask, value: (mask << 16) | value,
+            "_MMIO": lambda x: x,
+            "MCR_REG": lambda x: x,
+        }
+        if word in special:
+            return special[word]
+        if depth > 12 or word not in self.defines:
+            raise KeyError(word)
+        params, body = self.defines[word]
+        if not params:
+            return self.value(body, depth + 1)
+        names = [name.strip() for name in params[1:-1].split(",")]
+
+        def call(*args):
+            text = body
+            for name, arg in zip(names, args):
+                text = re.sub(r"\b%s\b" % re.escape(name), "(%d)" % arg, text)
+            return self.value(text, depth + 1)
+        return call
+
+
+def split_args(text):
+    args, depth, current = [], 0, ""
+    for char in text:
+        if char == "," and depth == 0:
+            args.append(current.strip())
+            current = ""
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        current += char
+    args.append(current.strip())
+    return args
+
+
+def wa_calls(body):
+    """Every wa_* call of a body: (function, arguments without the list)."""
+    calls = []
+    for match in re.finditer(r"\b(wa_\w+|whitelist_\w+)\(", body):
+        start = match.end()
+        depth = 1
+        index = start
+        while depth:
+            if body[index] == "(":
+                depth += 1
+            elif body[index] == ")":
+                depth -= 1
+            index += 1
+        args = split_args(body[start:index - 1])
+        calls.append((match.group(1), args[1:]))
+    return calls
+
+
+def block_after(body, condition):
+    """The body of the first if block whose condition is the text given."""
+    start = body.find("if (%s)" % condition)
+    if start < 0:
+        return ""
+    after = start + len("if (%s)" % condition)
+    if not body[after:].lstrip().startswith("{"):
+        return body[after:body.index(";", after) + 1]
+    index = body.index("{", after)
+    depth = 0
+    for position in range(index, len(body)):
+        if body[position] == "{":
+            depth += 1
+        elif body[position] == "}":
+            depth -= 1
+            if depth == 0:
+                return body[index + 1:position]
+    return ""
+
+
+def expected_list(calls, evaluator, base=0):
+    """The entries Linux adds, merged by register: {(register, mcr): (clr, set)}."""
+    entries = {}
+    order = []
+    for function, args in calls:
+        mcr = 1 if "_mcr_" in function or function.startswith("whitelist_mcr") else 0
+        reg = evaluator.value(args[0].replace("engine->mmio_base", str(base)))
+        name = function.replace("wa_mcr_", "wa_")
+        if name in ("wa_write_clr_set",):
+            clr, set_ = evaluator.value(args[1]), evaluator.value(args[2])
+        elif name == "wa_write":
+            clr, set_ = MASK32, evaluator.value(args[1])
+        elif name == "wa_write_or":
+            clr = set_ = evaluator.value(args[1])
+        elif name == "wa_write_clr":
+            clr, set_ = evaluator.value(args[1]), 0
+        elif name == "wa_masked_en":
+            bits = evaluator.value(args[1])
+            clr, set_ = 0, (bits << 16) | bits
+        elif name == "wa_masked_dis":
+            clr, set_ = 0, evaluator.value(args[1]) << 16
+        elif name == "wa_masked_field_set":
+            clr, set_ = 0, (evaluator.value(args[1]) << 16) | evaluator.value(args[2])
+        elif name == "wa_add":
+            clr, set_ = evaluator.value(args[1]), evaluator.value(args[2])
+        elif name.startswith("whitelist_"):
+            flags = evaluator.value(args[1]) if name.endswith("_ext") else 0
+            reg |= flags
+            clr = set_ = 0
+        else:
+            raise ValueError(function)
+        key = (reg & MASK32, mcr)
+        if key in entries:
+            old_clr, old_set = entries[key]
+            entries[key] = (old_clr | clr, ((old_set & ~clr) | set_) & MASK32)
+        else:
+            entries[key] = (clr & MASK32, set_ & MASK32)
+            order.append(key)
+    return entries
+
+
+def golden_lists(text):
+    """The golden's lists in order: [(kind, name, {(register, mcr): (clr, set)})]."""
+    lists = []
+    current = None
+    for line in text.splitlines():
+        head = re.match(r"^list (\w+) (\S+) \d+$", line)
+        if head:
+            current = {}
+            lists.append((head.group(1), head.group(2), current))
+            continue
+        entry = re.match(r"^  reg=([0-9a-f]+) clr=([0-9a-f]+) set=([0-9a-f]+) rmask=[0-9a-f]+ kind=\d+ mcr=(\d)", line)
+        if entry and current is not None:
+            current[(int(entry.group(1), 16), int(entry.group(4)))] = (int(entry.group(2), 16), int(entry.group(3), 16))
+            continue
+        current = None
+    return lists
+
+
+def compare(label, expected, actual, skip=(), by_register=False):
+    failures = 0
+    if by_register:
+        expected = {(key[0], 0): value for key, value in expected.items()}
+        actual = {(key[0], 0): value for key, value in actual.items()}
+    for key in sorted(set(expected) | set(actual)):
+        if key[0] in skip:
+            continue
+        if expected.get(key) != actual.get(key):
+            print("icl %s: register 0x%05x mcr=%d: Linux %s, golden %s" % (label, key[0], key[1], expected.get(key), actual.get(key)))
+            failures += 1
+    if failures == 0:
+        print("icl %s: %d entries as Linux" % (label, len([k for k in expected if k[0] not in skip])))
+    return failures
+
+
+def check_icl(driver, out):
+    text = read(os.path.join(out, "icl.txt"))
+    defines = {}
+    for path in ("i915_reg.h", "i915_reg_defs.h", "gt/intel_gt_regs.h", "gt/intel_engine_regs.h"):
+        defines.update(macros(read(os.path.join(driver, path))))
+    evaluator = Evaluator(defines)
+    source = read(os.path.join(driver, "gt/intel_workarounds.c"))
+    lists = golden_lists(text)
+    by_name = {}
+    engine = None
+    for kind, name, entries in lists:
+        if kind == "engine":
+            engine = name
+            by_name[("engine", name)] = entries
+        elif kind == "gt":
+            by_name[("gt", "gt")] = entries
+        elif engine is not None:
+            by_name[(kind, engine)] = entries
+    failures = 0
+
+    # The GT list: icl_gt_workarounds_init; the steering selector is checked apart (it depends on the fuses).
+    gt = expected_list(wa_calls(function_body(source, "icl_gt_workarounds_init")), evaluator)
+    failures += compare("gt", gt, by_name.get(("gt", "gt"), {}), skip=(0x0fdc,))
+    if (0x0fdc, 0) not in by_name.get(("gt", "gt"), {}):
+        print("icl gt: no steering entry")
+        failures += 1
+
+    # The render engine: the graphics version 11 render-compute and render blocks, and the per-context preemption.
+    general = block_after(function_body(source, "general_render_compute_wa_init"), "GRAPHICS_VER(i915) >= 11")
+    rcs_body = function_body(source, "rcs_engine_wa_init")
+    rcs = block_after(rcs_body, "GRAPHICS_VER(i915) == 11") + block_after(rcs_body, "GRAPHICS_VER(i915) >= 9")
+    failures += compare("rcs0 engine", expected_list(wa_calls(general + rcs), evaluator), by_name.get(("engine", "rcs0"), {}))
+
+    # The render context: icl_ctx_workarounds_init.
+    ctx_body = re.search(r"static void icl_ctx_workarounds_init\(.*?\)\s*\{(.*?)\n\}", source, re.S).group(1)
+    failures += compare("rcs0 context", expected_list(wa_calls(ctx_body), evaluator), by_name.get(("ctx", "rcs0"), {}))
+
+    # The whitelists: icl_whitelist_build, the context timestamp of every engine but render (a whitelist slot names the
+    # register only, so its multicast flag is not compared).
+    white = re.search(r"static void icl_whitelist_build\(.*?\)\s*\{(.*?)\n\}", source, re.S).group(1)
+    render = white[white.index("case RENDER_CLASS:"):white.index("case VIDEO_DECODE_CLASS:")]
+    video = white[white.index("case VIDEO_DECODE_CLASS:"):white.index("default:")]
+    failures += compare("rcs0 whitelist", expected_list(wa_calls(render), evaluator), by_name.get(("whitelist", "rcs0"), {}), by_register=True)
+    timestamp = [("whitelist_reg_ext", ["RING_CTX_TIMESTAMP(engine->mmio_base)", "RING_FORCE_TO_NONPRIV_ACCESS_RD"])]
+    for name, base in (("bcs0", 0x22000), ("vcs0", 0x1c0000), ("vcs2", 0x1d0000), ("vecs0", 0x1c8000)):
+        calls = list(timestamp)
+        if name.startswith("vcs"):
+            calls += wa_calls(video)
+        failures += compare(name + " whitelist", expected_list(calls, evaluator, base), by_name.get(("whitelist", name), {}), by_register=True)
+    return failures
+
+
 def main():
     if len(sys.argv) != 3:
         print("usage: check-linux.py <linux tree> <golden output directory>")
@@ -215,6 +451,8 @@ def main():
                           (row, ",".join(names), register, "present" if present else "absent", " ".join(taking)))
                     failures += 1
             print("%s (0x%05x): taken by %s" % (",".join(names), register, " ".join(taking)))
+    if os.path.exists(os.path.join(out, "icl.txt")):
+        failures += check_icl(driver, out)
     print("linux check: %s" % ("PASS" if failures == 0 else "FAIL"))
     return 0 if failures == 0 else 1
 

@@ -1157,6 +1157,22 @@
 #define I915_GT_GEN9_CTX_RCS_INDIRECT_CTX_OFFSET_DEFAULT	0x26
 
 /*
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_lrc_reg.h
+ * (GEN11_CTX_RCS_INDIRECT_CTX_OFFSET_DEFAULT).
+ */
+#define I915_GT_GEN11_CTX_RCS_INDIRECT_CTX_OFFSET_DEFAULT	0x1A
+
+/*
+ * The subslice count field of the power clock state.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_engine_regs.h
+ * (GEN8_RPCS_SS_CNT_ENABLE, GEN8_RPCS_SS_CNT_SHIFT, GEN8_RPCS_SS_CNT_MASK).
+ */
+#define I915_GT_GEN8_RPCS_SS_CNT_ENABLE	(1U << 11)
+#define I915_GT_GEN8_RPCS_SS_CNT_SHIFT	8
+#define I915_GT_GEN8_RPCS_SS_CNT_MASK	(0x7U << I915_GT_GEN8_RPCS_SS_CNT_SHIFT)
+
+/*
  * the registers of the Gen9 indirect
  * context batch
  *

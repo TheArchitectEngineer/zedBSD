@@ -59,6 +59,15 @@ static const struct i915_mmio_range i915_gen12_ranges[] = {
 };
 
 /*
+ * The Gen11 register-to-domain map.
+ *
+ * It covers Ice Lake and never changes, so every Gen11 device shares it.
+ */
+static const struct i915_mmio_range i915_gen11_ranges[] = {
+#include "intel/forcewake-ranges-gen11.inc"
+};
+
+/*
  * The Gen9 register-to-domain map.
  *
  * It covers Skylake, Kaby Lake, Coffee Lake and Comet Lake and never
@@ -152,6 +161,20 @@ drv_i915_mmio_gen12_ranges(
 
 	/* Succeeded: the table is static and shared. */
 	return i915_gen12_ranges;
+}
+
+/*
+ * Returns the Gen11 register-to-domain map and its length.
+ */
+const struct i915_mmio_range *
+drv_i915_mmio_gen11_ranges(
+	unsigned *count)
+{
+	/* Reports the table length alongside the table. */
+	*count = sizeof(i915_gen11_ranges) / sizeof(i915_gen11_ranges[0]);
+
+	/* Succeeded: the table is static and shared. */
+	return i915_gen11_ranges;
 }
 
 /*

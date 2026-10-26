@@ -13,7 +13,9 @@
  * hardware clears the bit when the engine is done.  On graphics version 12
  * the video decode, video enhancement and compute registers are masked (the
  * bit is written with its enable in the upper half); the others take the
- * plain bit.  On Gen9 the registers are the Gen8 ones and are not masked.
+ * plain bit.  On Gen9 and Gen11 the registers are the Gen8 ones and are
+ * not masked; Gen11's third video decode engine has its bit 2 in the first
+ * video register.
  *
  * One invalidation covers every engine of the GT: all the forcewake domains
  * are held, every engine's bit is written under the uncore lock (so a GT
@@ -128,10 +130,22 @@ static const int i915_tlb_domains_gen9[] = {
 	I915_FORCEWAKE_MEDIA_GEN9
 };
 
-/* The layouts: Gen12 has 16 instances a class and the OA unit, Gen9 one instance a class. */
+/*
+ * The layouts: Gen12 has 16 instances a class and the OA unit, Gen11 the
+ * Gen8 registers with a bit an instance and the Gen12 media domains, Gen9
+ * one instance a class.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_engine_cs.c
+ * (intel_engine_init_tlb_invalidation: graphics versions 8 to 11 take the
+ * Gen8 registers, the bit of the instance).
+ */
 static const struct i915_tlb_layout i915_tlb_gen12 = {
 	i915_tlb_controls_gen12, sizeof(i915_tlb_controls_gen12) / sizeof(i915_tlb_controls_gen12[0]), 15,
 	i915_tlb_domains_gen12, sizeof(i915_tlb_domains_gen12) / sizeof(i915_tlb_domains_gen12[0]), true
+};
+static const struct i915_tlb_layout i915_tlb_gen11 = {
+	i915_tlb_controls_gen9, sizeof(i915_tlb_controls_gen9) / sizeof(i915_tlb_controls_gen9[0]), 3,
+	i915_tlb_domains_gen12, sizeof(i915_tlb_domains_gen12) / sizeof(i915_tlb_domains_gen12[0]), false
 };
 static const struct i915_tlb_layout i915_tlb_gen9 = {
 	i915_tlb_controls_gen9, sizeof(i915_tlb_controls_gen9) / sizeof(i915_tlb_controls_gen9[0]), 0,
@@ -173,6 +187,8 @@ drv_i915_tlb_invalidate_all(
 	layout = &i915_tlb_gen12;
 	if (es->n != 0U && es->ge[0].info->graphics_ver == 9)
 		layout = &i915_tlb_gen9;
+	if (es->n != 0U && es->ge[0].info->graphics_ver == 11)
+		layout = &i915_tlb_gen11;
 
 	/* Every domain must be up, or the writes would be dropped. */
 	error = 0;

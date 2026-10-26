@@ -201,6 +201,7 @@ void drv_i915_wa_add_masked_field(struct i915_wa_list *wal, uint32_t reg, uint32
 void drv_i915_wa_add_no_verify(struct i915_wa_list *wal, uint32_t reg, uint32_t clr, uint32_t set, int is_mcr, const char *name);
 
 void drv_i915_wa_build_gt_gen12(struct i915_wa_list *wal, const struct i915_gt_info *gt);
+void drv_i915_wa_build_gt_gen11(struct i915_wa_list *wal, const struct i915_gt_info *gt);
 void drv_i915_wa_build_gt_gen9(struct i915_wa_list *wal, const struct i915_gt_info *gt);
 void drv_i915_wa_build_engine(struct i915_wa_list *wal, const struct i915_engine_info *engine, const struct i915_gt_info *gt, unsigned mocs_uc_index);
 void drv_i915_wa_build_context(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver, unsigned mocs_uc_index);
@@ -216,6 +217,7 @@ void drv_i915_mocs_program_l3cc(const struct i915_mocs *table, struct i915_mmio 
 void drv_i915_mocs_program_engine(const struct i915_mocs *table, const struct i915_engine_info *engine, struct i915_mmio *mmio, unsigned *writes);
 
 void drv_i915_pat_program_gen12(struct i915_mmio *mmio, unsigned *writes);
+void drv_i915_pat_program_gen11(struct i915_mmio *mmio, unsigned *writes);
 void drv_i915_pat_program_gen9(struct i915_mmio *mmio, unsigned *writes);
 
 void drv_i915_gt_init_tables(struct i915_gt_init *gt_init, const struct i915_gt_info *gt, int graphics_ver, struct mutex *sb_lock, struct i915_mmio *mmio);

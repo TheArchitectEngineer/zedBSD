@@ -1218,6 +1218,8 @@ i915_start_registers(
 	gt->regs_window.size = (unsigned long)gt->regs.size;
 	if (gt->graphics_ver == 9U) {
 		ranges = drv_i915_mmio_gen9_ranges(&range_count);
+	} else if (gt->graphics_ver == 11U) {
+		ranges = drv_i915_mmio_gen11_ranges(&range_count);
 	} else {
 		ranges = drv_i915_mmio_gen12_ranges(&range_count);
 	}
@@ -1862,9 +1864,9 @@ i915_start_pxp(
 
 	gt = &device->gt;
 
-	/* Gen9 has no protected-content support: the context is not created. */
-	if (gt->graphics_ver == 9U) {
-		kern_logf("i915: pxp_init: skipped (no protected content on Gen9)\n");
+	/* Gen9 and Gen11 have no protected-content support: the context is not created. */
+	if (gt->graphics_ver < 12U) {
+		kern_logf("i915: pxp_init: skipped (no protected content before Gen12)\n");
 		return;
 	}
 

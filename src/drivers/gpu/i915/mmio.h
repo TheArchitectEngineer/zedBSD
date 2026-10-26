@@ -146,6 +146,7 @@ struct i915_mmio_window {
 void drv_i915_mmio_init(struct i915_mmio *mmio, const struct i915_mmio_ops *ops, void *context, const struct i915_mmio_range *ranges, unsigned range_count, struct i915_trace *trace);
 const struct i915_mmio_ops *drv_i915_mmio_window_ops(void);
 const struct i915_mmio_range *drv_i915_mmio_gen12_ranges(unsigned *count);
+const struct i915_mmio_range *drv_i915_mmio_gen11_ranges(unsigned *count);
 const struct i915_mmio_range *drv_i915_mmio_gen9_ranges(unsigned *count);
 int drv_i915_mmio_domain_of(const struct i915_mmio *mmio, uint32_t offset);
 

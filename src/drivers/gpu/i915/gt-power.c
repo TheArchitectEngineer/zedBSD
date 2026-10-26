@@ -190,21 +190,23 @@ drv_i915_rc6_enable(
 	/* Render, media and media sampler power gating are always enabled. */
 	pg_enable = I915_GT_GEN9_RENDER_PG_ENABLE | I915_GT_GEN9_MEDIA_PG_ENABLE | I915_GT_GEN11_MEDIA_SAMPLER_PG_ENABLE;
 
-	/* Graphics version 12 also gates the HCP and MFX units of every video decode engine that exists. */
-	for (vcs = 0U; vcs < I915_MAX_VCS; vcs++) {
-		/* Looks for the video decode engine of this instance. */
-		for (engine_index = 0U; engine_index < gt->num_engines; engine_index++) {
-			/* Only a video decode engine has HCP and MFX units. */
-			if (gt->engines[engine_index].class != I915_VIDEO_DECODE_CLASS)
-				continue;
+	/* Graphics version 12 also gates the HCP and MFX units of every video decode engine that exists; Gen11 does not. */
+	if (gt->graphics_ver >= 12) {
+		for (vcs = 0U; vcs < I915_MAX_VCS; vcs++) {
+			/* Looks for the video decode engine of this instance. */
+			for (engine_index = 0U; engine_index < gt->num_engines; engine_index++) {
+				/* Only a video decode engine has HCP and MFX units. */
+				if (gt->engines[engine_index].class != I915_VIDEO_DECODE_CLASS)
+					continue;
 
-			/* Another instance is gated by its own bits. */
-			if ((unsigned)gt->engines[engine_index].instance != vcs)
-				continue;
+				/* Another instance is gated by its own bits. */
+				if ((unsigned)gt->engines[engine_index].instance != vcs)
+					continue;
 
-			/* Gates this instance's HCP and MFX units. */
-			pg_enable |= I915_GT_VDN_HCP_POWERGATE_ENABLE(vcs) | I915_GT_VDN_MFX_POWERGATE_ENABLE(vcs);
-			break;
+				/* Gates this instance's HCP and MFX units. */
+				pg_enable |= I915_GT_VDN_HCP_POWERGATE_ENABLE(vcs) | I915_GT_VDN_MFX_POWERGATE_ENABLE(vcs);
+				break;
+			}
 		}
 	}
 

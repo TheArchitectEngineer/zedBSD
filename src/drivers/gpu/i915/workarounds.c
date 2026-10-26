@@ -15,8 +15,8 @@
  * the platform and stepping under which it applies.  A few entries depend
  * on the GT's state (the steering, the video engines, the MOCS index) and
  * are added by code before or after the table.  The lists cover graphics
- * version 12 and the Gen9 parts: Skylake, Kaby Lake, Coffee Lake and Comet
- * Lake.  Every register access goes through the held accessors: the device
+ * version 12, Ice Lake (graphics version 11) and the Gen9 parts: Skylake,
+ * Kaby Lake, Coffee Lake and Comet Lake.  Every register access goes through the held accessors: the device
  * start holds every GT forcewake domain across the GT initialization and
  * resume that call these functions.
  */
@@ -57,6 +57,11 @@ static const struct i915_mocs_row i915_gen12_mocs_table[] = {
 /* The Gen9 MOCS table, which every engine is programmed with on its own.  The table never changes. */
 static const struct i915_mocs_row i915_gen9_mocs_table[] = {
 #include "intel/mocs-table-gen9.inc"
+};
+
+/* The Ice Lake MOCS table, which every engine is programmed with on its own.  The table never changes. */
+static const struct i915_mocs_row i915_gen11_mocs_table[] = {
+#include "intel/mocs-table-gen11.inc"
 };
 
 /*
@@ -119,6 +124,96 @@ static int i915_wa_push_const_fix(const struct i915_gt_info *gt);
 static int i915_wa_not_skl(const struct i915_gt_info *gt);
 static int i915_wa_cml(const struct i915_gt_info *gt);
 static int i915_wa_render_psmi(const struct i915_gt_info *gt);
+
+/*
+ * The Ice Lake GT rules, after the steering.  The last rule is not a
+ * workaround but lowers the sampler's power.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_workarounds.c
+ * (icl_gt_workarounds_init).
+ */
+static const struct i915_wa_rule i915_wa_gt_gen11[] = {
+	{ I915_WA_OP_FIELD, I915_GT_GEN11_GACB_PERF_CTRL, 0, I915_GT_GEN11_HASH_CTRL_MASK, I915_GT_GEN11_HASH_CTRL_BIT0 | I915_GT_GEN11_HASH_CTRL_BIT4, 0, NULL, "WaModifyGamTlbPartitioning" },
+	{ I915_WA_OP_OR, I915_GT_GEN11_LSN_UNSLCVC, 0, I915_GT_GEN11_LSN_UNSLCVC_GAFS_HALF_SF_MAXALLOC | I915_GT_GEN11_LSN_UNSLCVC_GAFS_HALF_CL2_MAXALLOC, 0U, 0, NULL, "Wa_1405766107" },
+	{ I915_WA_OP_OR, I915_GT_GEN8_GAMW_ECO_DEV_RW_IA, 0, I915_GT_GAMW_ECO_DEV_CTX_RELOAD_DISABLE, 0U, 0, NULL, "Wa_220166154" },
+	{ I915_WA_OP_OR, I915_GT_GAMT_CHKN_BIT_REG, 0, I915_GT_GAMT_CHKN_DISABLE_L3_COH_PIPE, 0U, 0, NULL, "Wa_1406463099" },
+	{ I915_WA_OP_OR, I915_GT_UNSLICE_UNIT_LEVEL_CLKGATE, 0, I915_GT_VSUNIT_CLKGATE_DIS | I915_GT_HSUNIT_CLKGATE_DIS, 0U, 0, NULL, "Wa_1408615072" },
+	{ I915_WA_OP_OR, I915_GT_UNSLICE_UNIT_LEVEL_CLKGATE2, 0, I915_GT_PSDUNIT_CLKGATE_DIS, 0U, 0, NULL, "Wa_1407352427" },
+	{ I915_WA_OP_OR, I915_GT_GEN11_SUBSLICE_UNIT_LEVEL_CLKGATE, 0, I915_GT_GWUNIT_CLKGATE_DIS, 0U, 1, NULL, "Wa_1406680159" },
+	{ I915_WA_OP_OR, I915_GT_GEN11_SLICE_UNIT_LEVEL_CLKGATE, 0, I915_GT_L3_CLKGATE_DIS | I915_GT_L3_CR2X_CLKGATE_DIS, 0U, 0, NULL, "Wa_1607087056" },
+	{ I915_WA_OP_FIELD, I915_GT_GEN10_DFR_RATIO_EN_AND_CHICKEN, 0, I915_GT_DFR_DISABLE, 0U, 1, NULL, "sampler power: DFR enabled" },
+};
+
+/*
+ * The Ice Lake render engine's rules: the indirect state base address
+ * override (not a workaround: sampler border colors relative to the
+ * dynamic state base), the line quality fix (not a workaround either),
+ * then the workarounds and the per-context preemption control.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_workarounds.c
+ * (general_render_compute_wa_init and rcs_engine_wa_init: the graphics
+ * version 11 entries).
+ */
+static const struct i915_wa_rule i915_wa_engine_gen11_render[] = {
+	{ I915_WA_OP_MASKED_BITS, I915_GT_GEN10_SAMPLER_MODE, 0, I915_GT_GEN11_INDIRECT_STATE_BASE_ADDR_OVERRIDE, 0U, 1, NULL, "indirect state base address override" },
+	{ I915_WA_OP_MASKED_BITS, I915_GT_GEN9_3D_CHICKEN3, 0, I915_GT_3D_CHICKEN3_AA_LINE_QUALITY_FIX_ENABLE, 0U, 0, NULL, "AA line quality fix" },
+	{ I915_WA_OP_OR, I915_GT_GEN8_GARBCNTL, 0, I915_GT_GEN11_ARBITRATION_PRIO_ORDER_MASK, 0U, 0, NULL, "Wa_1405543622" },
+	{ I915_WA_OP_FIELD, I915_GT_GEN8_GARBCNTL, 0, I915_GT_GEN11_HASH_CTRL_EXCL_MASK, I915_GT_GEN11_HASH_CTRL_EXCL_BIT0, 0, NULL, "Wa_1604223664" },
+	{ I915_WA_OP_FIELD, I915_GT_GEN11_GLBLINVL, 0, I915_GT_GEN11_BANK_HASH_ADDR_EXCL_MASK, I915_GT_GEN11_BANK_HASH_ADDR_EXCL_BIT0, 0, NULL, "Wa_1604223664" },
+	{ I915_WA_OP_OR, I915_GT_GEN8_L3SQCREG4, 0, I915_GT_GEN11_LQSC_CLEAN_EVICT_DISABLE, 0U, 1, NULL, "Wa_1405733216" },
+	{ I915_WA_OP_OR, I915_GT_GEN7_SARCHKMD, 0, I915_GT_GEN7_DISABLE_SAMPLER_PREFETCH, 0U, 0, NULL, "Wa_1606682166" },
+	{ I915_WA_OP_FIELD, I915_GT_GEN11_SCRATCH2, 0, I915_GT_GEN11_COHERENT_PARTIAL_WRITE_MERGE_ENABLE, 0U, 1, NULL, "Wa_1409178092" },
+	{ I915_WA_OP_MASKED_BITS, I915_GT_GEN9_CSFE_CHICKEN1_RCS, 0, I915_GT_GEN11_ENABLE_32_PLANE_MODE, 0U, 0, NULL, "WaEnable32PlaneMode" },
+	{ I915_WA_OP_OR, I915_GT_GEN7_FF_THREAD_MODE, 0, I915_GT_GEN12_FF_TESSELATION_DOP_GATE_DISABLE, 0U, 0, NULL, "Wa_1408767742" },
+	{ I915_WA_OP_MASKED_BITS, I915_GT_GEN9_CS_DEBUG_MODE1, 0, I915_GT_FF_DOP_CLOCK_GATE_DISABLE, 0U, 0, NULL, "Wa_22010271021" },
+	{ I915_WA_OP_MASKED_BITS, I915_GT_GEN7_FF_SLICE_CS_CHICKEN1, 0, I915_GT_GEN9_FFSC_PERCTX_PREEMPT_CTRL, 0U, 0, NULL, "perctx preempt ctrl" },
+};
+
+/*
+ * The Ice Lake render engine's context rules.  The float blend entry is
+ * write-only and the FBC upper base is written outright; neither is read
+ * back.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_workarounds.c
+ * (icl_ctx_workarounds_init).
+ */
+static const struct i915_wa_rule i915_wa_context_gen11_render[] = {
+	{ I915_WA_OP_FIELD, I915_GT_GEN8_L3CNTLREG, 0, 0xffffffffU, I915_GT_GEN8_ERRDETBCTRL, 0, NULL, "Wa_1406697149" },
+	{ I915_WA_OP_MASKED_BITS, I915_GT_ICL_HDC_MODE, 0, I915_GT_HDC_FORCE_NON_COHERENT, 0U, 1, NULL, "WaForceEnableNonCoherent" },
+	{ I915_WA_OP_NO_VERIFY, I915_GT_GEN10_CACHE_MODE_SS, 0, 0U, (I915_GT_FLOAT_BLEND_OPTIMIZATION_ENABLE << 16) | I915_GT_FLOAT_BLEND_OPTIMIZATION_ENABLE, 1, NULL, "WaEnableFloatBlendOptimization" },
+	{ I915_WA_OP_MASKED_FIELD, I915_GT_GEN8_CS_CHICKEN1, 0, I915_GT_GEN9_PREEMPT_GPGPU_LEVEL_MASK, I915_GT_GEN9_PREEMPT_GPGPU_THREAD_GROUP_LEVEL, 0, NULL, "WaDisableGPGPUMidThreadPreemption" },
+	{ I915_WA_OP_MASKED_BITS, I915_GT_GEN10_SAMPLER_MODE, 0, I915_GT_GEN11_SAMPLER_ENABLE_HEADLESS_MSG, 0U, 1, NULL, "headerless sampler messages" },
+	{ I915_WA_OP_FIELD, I915_GT_IVB_FBC_RT_BASE, 0, 0xffffffffU, 0xffffffffU & ~I915_GT_ILK_FBC_RT_VALID, 0, NULL, "Wa_1604278689" },
+	{ I915_WA_OP_NO_VERIFY, I915_GT_IVB_FBC_RT_BASE_UPPER, 0, 0U, 0xffffffffU, 0, NULL, "Wa_1604278689" },
+	{ I915_WA_OP_MASKED_BITS, I915_GT_GEN9_ROW_CHICKEN4, 0, I915_GT_GEN11_DIS_PICK_2ND_EU, 0U, 1, NULL, "Wa_1406306137" },
+};
+
+/*
+ * The Ice Lake render engine's whitelist: two sampler chickens, the state
+ * cache redirect, and the four depth and invocation counters.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_workarounds.c
+ * (icl_whitelist_build).
+ */
+static const struct i915_wa_rule i915_wa_whitelist_gen11_render[] = {
+	{ I915_WA_OP_WHITELIST, I915_GT_GEN9_HALF_SLICE_CHICKEN7, 0, 0U, 0U, 0, NULL, "WaAllowUMDToModifyHalfSliceChicken7" },
+	{ I915_WA_OP_WHITELIST, I915_GT_GEN10_SAMPLER_MODE, 0, 0U, 0U, 0, NULL, "WaAllowUMDToModifySamplerMode" },
+	{ I915_WA_OP_WHITELIST, I915_GT_GEN9_SLICE_COMMON_ECO_CHICKEN1, 0, 0U, 0U, 0, NULL, "WaEnableStateCacheRedirectToCS" },
+	{ I915_WA_OP_WHITELIST, I915_GT_PS_INVOCATION_COUNT, 0, I915_GT_RING_FORCE_TO_NONPRIV_ACCESS_RD | I915_GT_RING_FORCE_TO_NONPRIV_RANGE_4, 0U, 0, NULL, "WaAllowPMDepthAndInvocationCountAccessFromUMD" },
+};
+
+/*
+ * The Ice Lake video decode engine's whitelist after its context
+ * timestamp: the three HuC status registers, read only.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_workarounds.c
+ * (icl_whitelist_build: VIDEO_DECODE_CLASS).
+ */
+static const struct i915_wa_rule i915_wa_whitelist_gen11_video[] = {
+	{ I915_WA_OP_WHITELIST, I915_GT_HUC_STATUS(0U), 1, I915_GT_RING_FORCE_TO_NONPRIV_ACCESS_RD, 0U, 0, NULL, "HuC status" },
+	{ I915_WA_OP_WHITELIST, I915_GT_HUC_UKERNEL_HDR_INFO(0U), 1, I915_GT_RING_FORCE_TO_NONPRIV_ACCESS_RD, 0U, 0, NULL, "HuC kernel header" },
+	{ I915_WA_OP_WHITELIST, I915_GT_HUC_STATUS2(0U), 1, I915_GT_RING_FORCE_TO_NONPRIV_ACCESS_RD, 0U, 0, NULL, "HuC status 2" },
+};
 
 /*
  * The Gen12 GT rules, after the steering and the video engines' entries.
@@ -300,6 +395,10 @@ static void i915_wa_build_engine_gen9(struct i915_wa_list *wal, const struct i91
 static void i915_wa_build_context_gen9(struct i915_wa_list *wal, const struct i915_gt_info *gt, const struct i915_engine_info *engine);
 static void i915_wa_build_whitelist_gen9(struct i915_wa_list *wal, const struct i915_gt_info *gt, const struct i915_engine_info *engine);
 static void i915_gen9_gtt_write_workarounds(struct i915_mmio *mmio);
+static void i915_wa_build_engine_gen11(struct i915_wa_list *wal, const struct i915_gt_info *gt, const struct i915_engine_info *engine);
+static void i915_wa_build_context_gen11(struct i915_wa_list *wal, const struct i915_gt_info *gt, const struct i915_engine_info *engine);
+static void i915_wa_build_whitelist_gen11(struct i915_wa_list *wal, const struct i915_gt_info *gt, const struct i915_engine_info *engine);
+static void i915_gen11_gtt_write_workarounds(struct i915_mmio *mmio);
 static void i915_mocs_fill(struct i915_mocs *table, const struct i915_mocs_row *rows, unsigned row_count);
 
 /* Adds a workaround that sets bits and verifies them. */
@@ -391,6 +490,23 @@ drv_i915_wa_build_gt_gen12(
 	i915_wa_steer_gen12(wal, gt);
 	i915_wa_iecp_clock_gating(wal, gt);
 	i915_wa_add_rules(wal, i915_wa_gt_gen12, I915_WA_COUNT(i915_wa_gt_gen12), gt, 0U);
+}
+
+/*
+ * Builds the Ice Lake GT workaround list: the steering at the lowest
+ * enabled subslice, as on Gen12, then the Ice Lake rules.
+ */
+void
+drv_i915_wa_build_gt_gen11(
+	struct i915_wa_list *wal,
+	const struct i915_gt_info *gt)
+{
+	/* Starts the GT list empty. */
+	i915_wa_list_reset(wal, "gt_wa");
+
+	/* The steering, then the rules. */
+	i915_wa_steer_gen12(wal, gt);
+	i915_wa_add_rules(wal, i915_wa_gt_gen11, I915_WA_COUNT(i915_wa_gt_gen11), gt, 0U);
 }
 
 /*
@@ -749,9 +865,26 @@ drv_i915_mocs_build(
 		return;
 	}
 
-	/* Only the graphics version 9 and 12 tables exist in this driver. */
+	/*
+	 * Ice Lake takes its table with the uncached index 0 and the
+	 * unused-entries index 1, one table per engine, as Gen9 does.
+	 *
+	 * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_mocs.c
+	 * (get_mocs_settings: the GRAPHICS_VER 11 table and indices).
+	 */
+	if (graphics_ver == 11) {
+		table->n_entries = I915_GT_GEN9_NUM_MOCS_ENTRIES;
+		table->uc_index = I915_GT_GEN9_MOCS_UC_INDEX;
+		table->unused_entries_index = I915_GT_GEN9_MOCS_UNUSED_ENTRIES_INDEX;
+		table->engine_mocs = 1;
+		row_count = (unsigned)(sizeof(i915_gen11_mocs_table) / sizeof(i915_gen11_mocs_table[0]));
+		i915_mocs_fill(table, i915_gen11_mocs_table, row_count);
+		return;
+	}
+
+	/* Only the graphics version 9, 11 and 12 tables exist in this driver. */
 	if (graphics_ver < 12) {
-		kern_logf("i915: MOCS: only the gen9 and gen12 tables are ported\n");
+		kern_logf("i915: MOCS: only the gen9, gen11 and gen12 tables are ported\n");
 		return;
 	}
 
@@ -844,7 +977,11 @@ drv_i915_mocs_program_l3cc(
 }
 
 /*
- * Programs one engine's own MOCS table (Gen9).
+ * Programs one engine's own MOCS table (Gen9 and Ice Lake; Ice Lake's
+ * third video decode engine has its table elsewhere).
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_mocs.c
+ * (mocs_offset).
  *
  * A platform with global MOCS has nothing to write per engine.  The caller
  * holds every forcewake domain.
@@ -883,8 +1020,11 @@ drv_i915_mocs_program_engine(
 	case I915_VECS0:
 		base = I915_GT_GEN9_VECS0_MOCS0;
 		break;
+	case I915_VCS2:
+		base = I915_GT_GEN11_VCS2_MOCS0;
+		break;
 	default:
-		/* An engine without a Gen9 table is left alone. */
+		/* An engine without a table of its own is left alone. */
 		return;
 	}
 
@@ -939,6 +1079,35 @@ drv_i915_pat_program_gen9(
 }
 
 /*
+ * Programs the Ice Lake private PAT, one index register an entry, with the
+ * values the Gen8 PAT of Gen9 takes.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gtt.c
+ * (icl_setup_private_ppat).
+ */
+void
+drv_i915_pat_program_gen11(
+	struct i915_mmio *mmio,
+	unsigned *writes)
+{
+	/* Write-back in the LLC, write-combining, write-back as the eLLC says, and uncached. */
+	drv_i915_write32(mmio, I915_GT_GEN10_PAT_INDEX(0), I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_LLC);
+	drv_i915_write32(mmio, I915_GT_GEN10_PAT_INDEX(1), I915_GT_GEN8_PPAT_WC | I915_GT_GEN8_PPAT_LLCELLC);
+	drv_i915_write32(mmio, I915_GT_GEN10_PAT_INDEX(2), I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_ELLC_OVERRIDE);
+	drv_i915_write32(mmio, I915_GT_GEN10_PAT_INDEX(3), I915_GT_GEN8_PPAT_UC);
+
+	/* Write-back in the LLC and eLLC with the four ages. */
+	drv_i915_write32(mmio, I915_GT_GEN10_PAT_INDEX(4), I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_LLCELLC | I915_GT_GEN8_PPAT_AGE(0));
+	drv_i915_write32(mmio, I915_GT_GEN10_PAT_INDEX(5), I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_LLCELLC | I915_GT_GEN8_PPAT_AGE(1));
+	drv_i915_write32(mmio, I915_GT_GEN10_PAT_INDEX(6), I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_LLCELLC | I915_GT_GEN8_PPAT_AGE(2));
+	drv_i915_write32(mmio, I915_GT_GEN10_PAT_INDEX(7), I915_GT_GEN8_PPAT_WB | I915_GT_GEN8_PPAT_LLCELLC | I915_GT_GEN8_PPAT_AGE(3));
+
+	/* Reports that every entry was written. */
+	if (writes != NULL)
+		*writes = I915_PAT_ENTRIES;
+}
+
+/*
  * Programs the Gen12 private PAT.
  *
  * It belongs with the page tables and moves to ppgtt.c when those are
@@ -982,6 +1151,8 @@ drv_i915_gt_init_tables(
 	/* Builds the GT workaround list of the graphics version. */
 	if (graphics_ver == 9) {
 		drv_i915_wa_build_gt_gen9(&gt_init->gt_wa, gt);
+	} else if (graphics_ver == 11) {
+		drv_i915_wa_build_gt_gen11(&gt_init->gt_wa, gt);
 	} else {
 		drv_i915_wa_build_gt_gen12(&gt_init->gt_wa, gt);
 	}
@@ -993,6 +1164,14 @@ drv_i915_gt_init_tables(
 			i915_wa_build_engine_gen9(&gt_init->engine_wa[index], gt, &gt->engines[index]);
 			i915_wa_build_whitelist_gen9(&gt_init->whitelist[index], gt, &gt->engines[index]);
 			i915_wa_build_context_gen9(&gt_init->ctx_wa[index], gt, &gt->engines[index]);
+			continue;
+		}
+
+		/* An Ice Lake engine takes the Ice Lake lists. */
+		if (graphics_ver == 11) {
+			i915_wa_build_engine_gen11(&gt_init->engine_wa[index], gt, &gt->engines[index]);
+			i915_wa_build_whitelist_gen11(&gt_init->whitelist[index], gt, &gt->engines[index]);
+			i915_wa_build_context_gen11(&gt_init->ctx_wa[index], gt, &gt->engines[index]);
 			continue;
 		}
 
@@ -1032,10 +1211,12 @@ drv_i915_gt_program(
 {
 	unsigned pat_writes;
 
-	/* Programs the PAT; Gen9 has the Gen8 private PAT. */
+	/* Programs the PAT; Gen9 has the Gen8 private PAT, Ice Lake its index registers. */
 	pat_writes = 0U;
 	if (gt->graphics_ver == 9) {
 		drv_i915_pat_program_gen9(mmio, &pat_writes);
+	} else if (gt->graphics_ver == 11) {
+		drv_i915_pat_program_gen11(mmio, &pat_writes);
 	} else {
 		drv_i915_pat_program_gen12(mmio, &pat_writes);
 	}
@@ -1047,9 +1228,11 @@ drv_i915_gt_program(
 	/* Applies the GT workarounds and verifies them; the readback changes no hardware state. */
 	drv_i915_wa_list_apply(&gt_init->gt_wa, mmio, 1, &gt_init->gt_wa_applied);
 
-	/* Programs the Gen9 GTT workarounds; Gen12 has none. */
+	/* Programs the Gen9 and Ice Lake GTT workarounds; Gen12 has none. */
 	if (gt->graphics_ver == 9)
 		i915_gen9_gtt_write_workarounds(mmio);
+	if (gt->graphics_ver == 11)
+		i915_gen11_gtt_write_workarounds(mmio);
 
 	/* Programs the MOCS tables. */
 	drv_i915_mocs_program(&gt_init->mocs, mmio, &gt_init->mocs_global_writes, &gt_init->mocs_l3cc_writes);
@@ -1517,6 +1700,84 @@ i915_gen9_gtt_write_workarounds(
 	/* Lets the page walker honour the IPS bit of a PDE. */
 	value = drv_i915_read32(mmio, I915_GT_GEN8_GAMW_ECO_DEV_RW_IA);
 	drv_i915_write32(mmio, I915_GT_GEN8_GAMW_ECO_DEV_RW_IA, value | I915_GT_GAMW_ECO_ENABLE_64K_IPS_FIELD);
+
+	/* WaGttCachingOffByDefault */
+	drv_i915_write32(mmio, I915_GT_HSW_GTT_CACHE_EN, I915_GT_GTT_CACHE_EN_ALL);
+}
+
+/* Builds the workaround list of one Ice Lake engine; only the render engine has rules. */
+static void
+i915_wa_build_engine_gen11(
+	struct i915_wa_list *wal,
+	const struct i915_gt_info *gt,
+	const struct i915_engine_info *engine)
+{
+	/* Starts the engine list empty, named after the engine. */
+	i915_wa_list_reset(wal, engine->name);
+
+	/* The render engine's rules. */
+	if (engine->class == I915_RENDER_CLASS)
+		i915_wa_add_rules(wal, i915_wa_engine_gen11_render, I915_WA_COUNT(i915_wa_engine_gen11_render), gt, engine->mmio_base);
+}
+
+/* Builds the context workaround list of one Ice Lake engine; only the render engine has rules. */
+static void
+i915_wa_build_context_gen11(
+	struct i915_wa_list *wal,
+	const struct i915_gt_info *gt,
+	const struct i915_engine_info *engine)
+{
+	/* Starts the context list empty. */
+	i915_wa_list_reset(wal, "ctx_wa");
+
+	/* The render engine's rules. */
+	if (engine->class == I915_RENDER_CLASS)
+		i915_wa_add_rules(wal, i915_wa_context_gen11_render, I915_WA_COUNT(i915_wa_context_gen11_render), gt, engine->mmio_base);
+}
+
+/*
+ * Builds the register whitelist of one Ice Lake engine: the render
+ * engine's registers, or a non-render engine's context timestamp, followed
+ * on a video decode engine by its HuC status registers.
+ */
+static void
+i915_wa_build_whitelist_gen11(
+	struct i915_wa_list *wal,
+	const struct i915_gt_info *gt,
+	const struct i915_engine_info *engine)
+{
+	/* Starts the whitelist empty. */
+	i915_wa_list_reset(wal, "whitelist");
+
+	/* The render engine has its own registers. */
+	if (engine->class == I915_RENDER_CLASS) {
+		i915_wa_add_rules(wal, i915_wa_whitelist_gen11_render, I915_WA_COUNT(i915_wa_whitelist_gen11_render), gt, engine->mmio_base);
+		return;
+	}
+
+	/* Every other engine opens its context timestamp. */
+	i915_wa_add_rules(wal, i915_wa_whitelist_timestamp, I915_WA_COUNT(i915_wa_whitelist_timestamp), gt, engine->mmio_base);
+
+	/* A video decode engine also opens its HuC status registers. */
+	if (engine->class == I915_VIDEO_DECODE_CLASS)
+		i915_wa_add_rules(wal, i915_wa_whitelist_gen11_video, I915_WA_COUNT(i915_wa_whitelist_gen11_video), gt, engine->mmio_base);
+}
+
+/*
+ * Programs the Ice Lake GTT workarounds: more TLB entries for the GPGPU,
+ * and the GTT cache, which the driver may use because it maps no 2 MiB
+ * pages.  The 64 KiB page-size field of the PDE is not needed after
+ * graphics version 10.
+ *
+ * Values referenced: Linux v6.8.12 drivers/gpu/drm/i915/gt/intel_gtt.c
+ * (gtt_write_workarounds: graphics versions 9 to 11).
+ */
+static void
+i915_gen11_gtt_write_workarounds(
+	struct i915_mmio *mmio)
+{
+	/* WaIncreaseDefaultTLBEntries */
+	drv_i915_write32(mmio, I915_GT_GEN8_L3_LRA_1_GPGPU, I915_GT_GEN9_L3_LRA_1_GPGPU_DEFAULT_VALUE_SKL);
 
 	/* WaGttCachingOffByDefault */
 	drv_i915_write32(mmio, I915_GT_HSW_GTT_CACHE_EN, I915_GT_GTT_CACHE_EN_ALL);
