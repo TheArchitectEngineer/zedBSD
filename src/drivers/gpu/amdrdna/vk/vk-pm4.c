@@ -332,6 +332,41 @@ amdrdna_vk_pm4_draw(
 }
 
 /*
+ * Draws index_count indices read from indices (an address of the
+ * session's space; index_room indices may be read from it) for
+ * instance_count instances; the index type is set before.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_index_buffer: the buffer's size in indices;
+ * radv_cs_emit_draw_indexed_packet: the most indices, the address, the
+ * count and the initiator reading memory).
+ */
+void
+amdrdna_vk_pm4_draw_indexed(
+	struct amdrdna_vk_pm4 *pm4,
+	uint64_t indices,
+	uint32_t index_room,
+	uint32_t index_count,
+	uint32_t instance_count)
+{
+	/* The instances. */
+	amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_INSTANCES, 1U, false);
+	amdrdna_vk_pm4_word(pm4, instance_count);
+
+	/* How many indices the buffer holds from the address. */
+	amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_INDEX_BUFFER_SIZE, 1U, false);
+	amdrdna_vk_pm4_word(pm4, index_room);
+
+	/* The indices, read from memory. */
+	amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_DRAW_INDEXED, 5U, false);
+	amdrdna_vk_pm4_word(pm4, index_room);
+	amdrdna_vk_pm4_word(pm4, (uint32_t)indices);
+	amdrdna_vk_pm4_word(pm4, (uint32_t)(indices >> 32));
+	amdrdna_vk_pm4_word(pm4, index_count);
+	amdrdna_vk_pm4_word(pm4, AMDRDNA_PM4_DRAW_FROM_MEMORY);
+}
+
+/*
  * Dispatches x by y by z workgroups of the compute program set before, in
  * wave32.
  *

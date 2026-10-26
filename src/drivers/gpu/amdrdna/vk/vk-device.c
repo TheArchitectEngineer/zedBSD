@@ -546,8 +546,9 @@ device_families(
 }
 
 /*
- * Reports what the executor does with a format.  The images are
- * pitch-linear, so both tilings have the same features; the vertex
+ * Reports what the executor does with a format.  The colour images are
+ * pitch-linear, so both tilings have the same features; the depth format
+ * is only drawn into by the depth unit, in optimal tiling; the vertex
  * formats the compositor's quads read are a vertex buffer's.
  */
 static void
@@ -565,6 +566,10 @@ device_format_features(
 	case VK_FORMAT_R8G8B8A8_SRGB:
 		properties->optimalTilingFeatures = DEVICE_COLOUR_FEATURES;
 		properties->linearTilingFeatures = DEVICE_COLOUR_FEATURES;
+		break;
+	case VK_FORMAT_D32_SFLOAT:
+		/* The depth format: only a depth attachment, in the depth unit's own layout (optimal tiling). */
+		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
 		break;
 	default:
 		break;
@@ -612,7 +617,7 @@ device_usage_features(
 	if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U)
 		required |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
 
-	/* Rendering depth needs the depth attachment feature, which no format has. */
+	/* Rendering depth needs the depth attachment feature, which the depth format has. */
 	if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U)
 		required |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
@@ -647,7 +652,7 @@ device_format(
 
 /*
  * vkGetPhysicalDeviceImageFormatProperties: [physical][format][type][tiling][usage][flags][present]
- * -> [result][present][properties].  A 2D image of one sample and one level.
+ * -> [result][present][properties].  A 2D image of one sample, with levels.
  */
 static int
 device_image_format(
@@ -690,11 +695,13 @@ device_image_format(
 		return 0;
 	}
 
-	/* One level, one layer, one sample, up to 16384 a side and 1 GiB. */
+	/* Levels down to one pixel (one for the depth format), one layer, one sample, up to 16384 a side and 1 GiB. */
 	image.maxExtent.width = 16384U;
 	image.maxExtent.height = 16384U;
 	image.maxExtent.depth = 1U;
-	image.maxMipLevels = 1U;
+	image.maxMipLevels = AMDRDNA_VK_LEVELS_MAX;
+	if (format == VK_FORMAT_D32_SFLOAT)
+		image.maxMipLevels = 1U;
 	image.maxArrayLayers = 1U;
 	image.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
 	image.maxResourceSize = 1ULL << 30;

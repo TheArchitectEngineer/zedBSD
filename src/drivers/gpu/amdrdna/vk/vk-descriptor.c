@@ -69,6 +69,21 @@
 #define DESCRIPTOR_PERFORMANCE		(4U << 20)
 
 /*
+ * The levels of an image of several: word 3 the first and the last level
+ * read (15:12, 19:16), word 5 the image's last level (7:4), which places
+ * the levels of the linear mip chain from the descriptor's address.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10-rsrc.json
+ * (SQ_IMG_RSRC_WORD3: BASE_LEVEL, LAST_LEVEL; SQ_IMG_RSRC_WORD5: MAX_MIP)
+ * and src/amd/common/ac_descriptors.c (ac_build_gfx10_texture_descriptor:
+ * MAX_MIP the resource's levels less one).
+ */
+#define DESCRIPTOR_BASE_LEVEL_SHIFT	12U
+#define DESCRIPTOR_LAST_LEVEL_SHIFT	16U
+#define DESCRIPTOR_MAX_LEVEL_SHIFT	4U
+#define DESCRIPTOR_LEVEL_MASK		0xfU
+
+/*
  * The sampler descriptor's fields: word 0 the clamp of x, y and z (2:0,
  * 5:3, 8:6), the depth compare function (14:12), the unnormalized
  * coordinates (15) and the coordinate truncation (27); word 1 the minimum
@@ -226,6 +241,25 @@ amdrdna_vk_image_descriptor(
 	return 0;
 }
 
+/*
+ * Sets the levels an image descriptor reads: from base to last of an
+ * image of levels levels, its address the start of the mip chain.
+ */
+void
+amdrdna_vk_image_descriptor_levels(
+	uint32_t *words,
+	uint32_t base,
+	uint32_t last,
+	uint32_t levels)
+{
+	/* The first and the last level read. */
+	words[3] |= (base & DESCRIPTOR_LEVEL_MASK) << DESCRIPTOR_BASE_LEVEL_SHIFT;
+	words[3] |= (last & DESCRIPTOR_LEVEL_MASK) << DESCRIPTOR_LAST_LEVEL_SHIFT;
+
+	/* The image's last level. */
+	words[5] |= ((levels - 1U) & DESCRIPTOR_LEVEL_MASK) << DESCRIPTOR_MAX_LEVEL_SHIFT;
+}
+
 /* Writes the four words of the sampler descriptor of a VkSampler. */
 void
 amdrdna_vk_sampler_descriptor(
@@ -244,7 +278,7 @@ amdrdna_vk_sampler_descriptor(
 	if (sampler->mag_filter == VK_FILTER_NEAREST && sampler->min_filter == VK_FILTER_NEAREST)
 		words[0] |= SAMPLER_TRUNCATE;
 
-	/* Every level of detail from 0 (the image has one level). */
+	/* Every level of detail from 0 (the image's levels limit it). */
 	words[1] = SAMPLER_MAX_LOD;
 
 	/* The filters. */

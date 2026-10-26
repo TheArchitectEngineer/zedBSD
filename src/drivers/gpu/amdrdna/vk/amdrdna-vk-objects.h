@@ -9,9 +9,11 @@
  * The executor's objects: what a published identity of each kind stands for,
  * and the handlers that make them.
  *
- * Every image is linear, four bytes a pixel: the display, the image
+ * Every colour image is linear, four bytes a pixel: the display, the image
  * descriptor and the colour target all read that layout, so nothing is
- * converted between them.  A buffer or an image names the memory it is
+ * converted between them; its levels follow GFX10's linear mip chain.  A
+ * depth image (D32_SFLOAT, only drawn into by the depth unit) is laid out
+ * in the depth unit's 64 KiB Z swizzle.  A buffer or an image names the memory it is
  * bound to by holding that memory's object; the memory's storage arrives
  * with the blob libvulkan creates for it (vk-memory.c).
  */
@@ -41,6 +43,22 @@
 
 /* The widest and tallest image (the colour target's and the image descriptor's limit). */
 #define AMDRDNA_VK_IMAGE_SIDE_MAX		16384U
+
+/* The most levels an image has: down to one pixel from the widest side (the image descriptor's 4-bit level fields). */
+#define AMDRDNA_VK_LEVELS_MAX			15U
+
+/*
+ * A depth image: its depth unit's surface is 64 KiB blocks of 128 by 128
+ * pixels of four bytes (the swizzle mode SW_64KB_Z_X, the only Z mode of
+ * GFX10), on a 64 KiB boundary of its memory.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/addrlib/src/gfx10/gfx10addrlib.h
+ * (Gfx10ZSwModeMask: ADDR_SW_64KB_Z_X and ADDR_SW_VAR_Z_X) and
+ * src/amd/addrlib/inc/addrtypes.h (ADDR_SW_64KB_Z_X 24; a 64 KiB block of
+ * 4-byte elements is 128 by 128).
+ */
+#define AMDRDNA_VK_DEPTH_BLOCK_SIDE		128U
+#define AMDRDNA_VK_DEPTH_ALIGN			65536U
 
 /*
  * The memory types the executor reports: device local only (VRAM the CPU
@@ -81,9 +99,11 @@ struct amdrdna_vk_buffer {
 };
 
 /*
- * A VkImage: a 2D image of one level, one layer and one sample, pitch
- * linear with rows pitch bytes apart, bytes long; once bound the memory
- * object it holds and its offset in that memory.
+ * A VkImage: a 2D image of one layer and one sample, bytes long; once
+ * bound the memory object it holds and its offset in that memory.  A
+ * colour image has levels levels, pitch linear, level 0's rows pitch bytes
+ * apart (amdrdna_vk_image_level gives each level); a depth image (depth
+ * set) has one level, in the depth unit's layout.
  */
 struct amdrdna_vk_image {
 	uint32_t format;
@@ -91,6 +111,8 @@ struct amdrdna_vk_image {
 	uint32_t height;
 	uint32_t usage;
 	uint32_t pitch;
+	uint32_t levels;
+	bool depth;
 	uint64_t bytes;
 	struct amdrdna_vk_object *memory;
 	uint64_t offset;
@@ -98,13 +120,16 @@ struct amdrdna_vk_image {
 
 /*
  * A VkImageView: the image object it holds, the format it reads the image
- * as, and where each of red, green, blue and alpha comes from
- * (VkComponentSwizzle, identity resolved).
+ * as, where each of red, green, blue and alpha comes from
+ * (VkComponentSwizzle, identity resolved), and the levels it reads (the
+ * first and how many).
  */
 struct amdrdna_vk_view {
 	struct amdrdna_vk_object *image;
 	uint32_t format;
 	uint32_t swizzle[4];
+	uint32_t base_level;
+	uint32_t level_count;
 };
 
 /*
@@ -197,21 +222,33 @@ struct amdrdna_vk_descriptor_set {
 };
 
 /*
- * A VkRenderPass of one subpass writing at most one colour attachment:
- * the attachment's format and load operation, and whether the subpass
- * writes it at all.
+ * A VkRenderPass of one subpass writing at most one colour attachment and
+ * at most one depth attachment: whether the subpass writes each, its
+ * attachment number, format and load operation.
  */
 struct amdrdna_vk_render_pass {
 	uint32_t colour;
 	uint32_t format;
 	uint32_t load_op;
+	uint32_t colour_attachment;
+	uint32_t depth;
+	uint32_t depth_format;
+	uint32_t depth_load_op;
+	uint32_t depth_attachment;
 };
 
-/* A VkFramebuffer: its size and the view of its one attachment, held (NULL with none). */
+/* The attachments a framebuffer holds. */
+#define AMDRDNA_VK_ATTACHMENTS_MAX	2U
+
+/*
+ * A VkFramebuffer: its size and the views of its attachments by number,
+ * held (count of them).
+ */
 struct amdrdna_vk_framebuffer {
 	uint32_t width;
 	uint32_t height;
-	struct amdrdna_vk_object *view;
+	uint32_t count;
+	struct amdrdna_vk_object *views[AMDRDNA_VK_ATTACHMENTS_MAX];
 };
 
 /*
@@ -245,8 +282,8 @@ struct amdrdna_vk_vertex_attribute {
  * (code_token names the run to the node): a graphics pipeline's vertex and
  * fragment programs, or a compute pipeline's one; for a graphics pipeline
  * the vertex input, the topology, the culling, the blend of the colour
- * attachment, and the viewport and scissor unless they are dynamic (floats
- * as their bits).
+ * attachment, the viewport and scissor unless they are dynamic (floats as
+ * their bits), and the depth test, write and compare (VkCompareOp).
  */
 struct amdrdna_vk_pipeline {
 	void *code_token;
@@ -274,6 +311,9 @@ struct amdrdna_vk_pipeline {
 	uint32_t dynamic_scissor;
 	uint32_t viewport[6];
 	VkRect2D scissor;
+	uint32_t depth_test;
+	uint32_t depth_write;
+	uint32_t depth_compare;
 };
 
 /* The regions one copy, blit or clear records. */
@@ -357,6 +397,8 @@ void *amdrdna_vk_payload(struct amdrdna_vk_session *session, enum i915_vk_object
 int amdrdna_vk_free_payload(struct amdrdna_vk_session *session, void *payload);
 
 bool amdrdna_vk_format_colour(uint32_t format);
+bool amdrdna_vk_format_depth(uint32_t format);
+int amdrdna_vk_image_level(const struct amdrdna_vk_image *image, uint32_t level, struct amdrdna_vk_image *part);
 int amdrdna_vk_buffer_address(const struct amdrdna_vk_buffer *buffer, uint64_t *va, uint8_t **cpu);
 int amdrdna_vk_image_address(const struct amdrdna_vk_image *image, uint64_t *va, uint8_t **cpu);
 

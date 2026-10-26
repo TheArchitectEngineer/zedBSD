@@ -386,11 +386,16 @@ pipeline_decode(
 			refused = ENOTSUP;
 	}
 
-	/* The depth state is read (no pass of the executor's has depth). */
+	/* The depth state: its test, write and compare (a pass without a depth attachment does not use them); no stencil. */
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U) {
 		kern_memset(&depth, 0, sizeof(depth));
 		i915_vkc_dec_VkPipelineDepthStencilStateCreateInfo(reader, &session->arena, &depth);
+		pipeline->depth_test = depth.depthTestEnable;
+		pipeline->depth_write = depth.depthWriteEnable;
+		pipeline->depth_compare = (uint32_t)depth.depthCompareOp;
+		if ((depth.stencilTestEnable != 0U || depth.depthBoundsTestEnable != 0U) && refused == 0)
+			refused = ENOTSUP;
 	}
 
 	/* The colour blend; without it every channel is written unblended. */

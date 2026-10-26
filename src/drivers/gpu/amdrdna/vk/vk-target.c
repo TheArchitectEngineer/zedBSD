@@ -9,8 +9,8 @@
  * The executor's render passes and framebuffers.
  *
  * A render pass is one subpass writing at most one colour attachment and
- * no depth; anything else is refused by name.  A framebuffer holds the
- * view of its one attachment.
+ * at most one depth attachment (D32_SFLOAT); anything else is refused by
+ * name.  A framebuffer holds the views of its attachments.
  */
 
 #include <stdbool.h>
@@ -118,7 +118,7 @@ target_create_pass(
 		error = ENOTSUP;
 	}
 
-	/* The pass keeps whether it writes a colour attachment, its format and its load operation. */
+	/* The pass keeps whether it writes a colour and a depth attachment, their numbers, formats and load operations. */
 	pass = NULL;
 	if (error == 0) {
 		pass = kern_calloc(1U, sizeof(*pass));
@@ -127,8 +127,18 @@ target_create_pass(
 			attachment = subpass->pColorAttachments[0].attachment;
 			if (attachment != VK_ATTACHMENT_UNUSED) {
 				pass->colour = 1U;
+				pass->colour_attachment = attachment;
 				pass->format = info.pAttachments[attachment].format;
 				pass->load_op = info.pAttachments[attachment].loadOp;
+			}
+		}
+		if (pass != NULL && subpass->pDepthStencilAttachment != NULL) {
+			attachment = subpass->pDepthStencilAttachment->attachment;
+			if (attachment != VK_ATTACHMENT_UNUSED) {
+				pass->depth = 1U;
+				pass->depth_attachment = attachment;
+				pass->depth_format = info.pAttachments[attachment].format;
+				pass->depth_load_op = info.pAttachments[attachment].loadOp;
 			}
 		}
 	}
@@ -142,7 +152,8 @@ target_create_pass(
 
 /*
  * Reports whether a render pass is one subpass writing at most one colour
- * attachment, in a colour format, and nothing else.
+ * attachment, in a colour format, and at most one depth attachment, in the
+ * depth format, and nothing else.
  */
 static int
 target_pass_supported(
@@ -151,17 +162,16 @@ target_pass_supported(
 	const VkSubpassDescription *subpass;
 	uint32_t attachment;
 	bool colour;
+	bool depth;
 
-	/* One subpass, at most one attachment. */
+	/* One subpass, at most a colour and a depth attachment. */
 	if (info->subpassCount != 1U || info->pSubpasses == NULL)
 		return 0;
-	if (info->attachmentCount > 1U)
+	if (info->attachmentCount > AMDRDNA_VK_ATTACHMENTS_MAX)
 		return 0;
 
-	/* No depth, no inputs, no resolves, at most one colour attachment. */
+	/* No inputs, no resolves, at most one colour attachment. */
 	subpass = &info->pSubpasses[0];
-	if (subpass->pDepthStencilAttachment != NULL)
-		return 0;
 	if (subpass->inputAttachmentCount != 0U)
 		return 0;
 	if (subpass->pResolveAttachments != NULL)
@@ -183,14 +193,28 @@ target_pass_supported(
 			return 0;
 	}
 
-	/* Succeeded: the pass has the one supported shape. */
+	/* The depth attachment, when there is one, is the pass's attachment in the depth format. */
+	if (subpass->pDepthStencilAttachment != NULL) {
+		attachment = subpass->pDepthStencilAttachment->attachment;
+		if (attachment == VK_ATTACHMENT_UNUSED)
+			return 1;
+		if (attachment >= info->attachmentCount || info->pAttachments == NULL)
+			return 0;
+		depth = amdrdna_vk_format_depth(info->pAttachments[attachment].format);
+		if (!depth)
+			return 0;
+		if (info->pAttachments[attachment].samples != VK_SAMPLE_COUNT_1_BIT)
+			return 0;
+	}
+
+	/* Succeeded: the pass has a supported shape. */
 	return 1;
 }
 
 /*
  * vkCreateFramebuffer: [device][present][VkFramebufferCreateInfo] and the
- * create's tail -> the create's reply.  The framebuffer holds the view of
- * its one attachment.
+ * create's tail -> the create's reply.  The framebuffer holds the views of
+ * its attachments.
  */
 static int
 target_create_framebuffer(
@@ -200,9 +224,11 @@ target_create_framebuffer(
 {
 	VkFramebufferCreateInfo info;
 	struct amdrdna_vk_framebuffer *framebuffer;
-	struct amdrdna_vk_object *view;
+	struct amdrdna_vk_object *views[AMDRDNA_VK_ATTACHMENTS_MAX];
 	uint64_t identity;
 	uint64_t view_id;
+	uint32_t index;
+	uint32_t held;
 	int error;
 
 	/* The create info behind the device and its presence word. */
@@ -214,38 +240,47 @@ target_create_framebuffer(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* At most one attachment, a known view, of a size an image may have. */
+	/* At most two attachments, known views, of a size an image may have. */
 	error = 0;
-	view = NULL;
-	if (info.attachmentCount > 1U) {
+	kern_memset(views, 0, sizeof(views));
+	if (info.attachmentCount > AMDRDNA_VK_ATTACHMENTS_MAX) {
 		error = ENOTSUP;
 	} else if (info.width == 0U || info.width > AMDRDNA_VK_IMAGE_SIDE_MAX) {
 		error = EINVAL;
 	} else if (info.height == 0U || info.height > AMDRDNA_VK_IMAGE_SIDE_MAX) {
 		error = EINVAL;
-	} else if (info.attachmentCount == 1U) {
+	}
+	for (index = 0U; error == 0 && index < info.attachmentCount; index++) {
 		/* The decoded handles are the wire's 64-bit identities. */
-		kern_memcpy(&view_id, info.pAttachments, sizeof(view_id));
-		view = amdrdna_vk_object_find(session, I915_VK_OBJ_IMAGE_VIEW, view_id);
-		if (view == NULL)
+		kern_memcpy(&view_id, (const uint8_t *)info.pAttachments + (size_t)index * sizeof(view_id), sizeof(view_id));
+		views[index] = amdrdna_vk_object_find(session, I915_VK_OBJ_IMAGE_VIEW, view_id);
+		if (views[index] == NULL)
 			error = EINVAL;
 	}
 
-	/* The framebuffer holds its view. */
-	if (error == 0 && view != NULL)
-		error = amdrdna_vk_object_retain(view);
+	/* The framebuffer holds its views. */
+	held = 0U;
+	for (index = 0U; error == 0 && index < info.attachmentCount; index++) {
+		error = amdrdna_vk_object_retain(views[index]);
+		if (error == 0)
+			held++;
+	}
 	framebuffer = NULL;
-	if (error == 0) {
+	if (error == 0)
 		framebuffer = kern_calloc(1U, sizeof(*framebuffer));
-		if (framebuffer == NULL)
-			(void)amdrdna_vk_object_release(view);
+
+	/* A framebuffer that could not be made lets the views it took go. */
+	if (framebuffer == NULL) {
+		for (index = 0U; index < held; index++)
+			(void)amdrdna_vk_object_release(views[index]);
 	}
 
-	/* Its size and its view. */
+	/* Its size and its views. */
 	if (framebuffer != NULL) {
 		framebuffer->width = info.width;
 		framebuffer->height = info.height;
-		framebuffer->view = view;
+		framebuffer->count = info.attachmentCount;
+		kern_memcpy(framebuffer->views, views, sizeof(views));
 	}
 
 	/* Publishes the framebuffer and answers. */
@@ -283,21 +318,28 @@ target_granularity(
 	return 0;
 }
 
-/* Destroys a framebuffer nothing holds: it lets its view go. */
+/* Destroys a framebuffer nothing holds: it lets its views go. */
 static int
 target_framebuffer_destroy(
 	struct amdrdna_vk_session *session,
 	void *payload)
 {
 	struct amdrdna_vk_framebuffer *framebuffer;
+	uint32_t index;
+	int released;
 	int error;
 
 	UNUSED_PARAMETER(session);
 
 	framebuffer = payload;
 
-	/* The view may go with it when nothing else holds the view. */
-	error = amdrdna_vk_object_release(framebuffer->view);
+	/* Each view may go with it when nothing else holds the view; the first failure is reported. */
+	error = 0;
+	for (index = 0U; index < framebuffer->count; index++) {
+		released = amdrdna_vk_object_release(framebuffer->views[index]);
+		if (released != 0 && error == 0)
+			error = released;
+	}
 	kern_free(framebuffer);
 
 	/* Reports a view whose destruction failed. */
