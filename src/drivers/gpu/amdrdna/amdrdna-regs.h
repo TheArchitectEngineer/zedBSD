@@ -176,6 +176,22 @@
 #define AMDRDNA_GC_FRAME_BUFFER_SHIFT		24U
 
 /*
+ * The graphics block's other status words (GC window 0): the second
+ * word (the command processors, the caches, the memory hub) and those of
+ * shader engines 0 and 1, which say which units still work when a run
+ * does not end.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (GRBM_STATUS 0x8010, GRBM_STATUS2 0x8008, GRBM_STATUS_SE0 0x8014,
+ * GRBM_STATUS_SE1 0x8018).
+ * derived: each byte offset / 4 less the window's base 0x1260 (0x8010 / 4
+ * - 0x1260 = 0x0da4, mmGRBM_STATUS).
+ */
+#define AMDRDNA_GC_REG_BLOCK_STATUS2		0x0da2U
+#define AMDRDNA_GC_REG_ENGINE0_STATUS		0x0da5U
+#define AMDRDNA_GC_REG_ENGINE1_STATUS		0x0da6U
+
+/*
  * The flash ROM's address and data registers (SMUIO window 0); each read
  * of the data register returns the next dword of the ROM.
  *

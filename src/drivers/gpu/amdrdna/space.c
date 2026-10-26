@@ -97,6 +97,7 @@ static int space_leaf(struct amdrdna_space *space, uint64_t address, struct amdr
 static void space_clear(struct amdrdna_space *space, uint64_t address, uint64_t bytes);
 static void space_changed(struct amdrdna_space *space);
 static void space_lose(struct amdrdna_space *space, int error);
+static void space_mark_status(struct amdrdna_device *device);
 static void space_hang(struct amdrdna_space *space, const struct amdrdna_space_ticket *ticket);
 static bool space_dropped_locked(struct amdrdna_device *device, const struct amdrdna_space_ticket *ticket);
 static void space_reset(struct amdrdna_device *device, unsigned tracked, unsigned context);
@@ -1694,8 +1695,29 @@ space_lose(
 	if (!first)
 		return;
 	amdrdna_mark("space %u lost: its run did not end (%d)", (unsigned)space->id, error);
+	space_mark_status(device);
 	if (session != NULL)
 		amdrdna_node_session_lost(device, session, EIO);
+}
+
+/* Marks the graphics block's status words, which say which units still work. */
+static void
+space_mark_status(
+	struct amdrdna_device *device)
+{
+	uint32_t status;
+	uint32_t status2;
+	uint32_t engine0;
+	uint32_t engine1;
+
+	/* The four words, read as they are. */
+	status = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_BLOCK_STATUS);
+	status2 = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_BLOCK_STATUS2);
+	engine0 = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_ENGINE0_STATUS);
+	engine1 = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_ENGINE1_STATUS);
+
+	/* Says them. */
+	amdrdna_mark("gc status 0x%08x status2 0x%08x se0 0x%08x se1 0x%08x", status, status2, engine0, engine1);
 }
 
 /*

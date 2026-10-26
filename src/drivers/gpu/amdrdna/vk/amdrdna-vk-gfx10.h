@@ -348,15 +348,6 @@
 #define AMDRDNA_UC_COHERENCY_DELAY		0x301ecU
 
 /*
- * The parameter cache's oversubscription of a primitive shader (none).
- *
- * Value referenced: Mesa 25.0.7 src/amd/registers/gfx10.json (GE_PC_ALLOC
- * 0x30980) and src/amd/vulkan/radv_shader.c (ge_pc_alloc: OVERSUB_EN off
- * without late allocation).
- */
-#define AMDRDNA_UC_PARAMETER_CACHE		0x30980U
-
-/*
  * The index type register (set through the indexed setter with index 2)
  * and its values, and the draw packets of an index buffer: its size in
  * indices, and the draw from its address.

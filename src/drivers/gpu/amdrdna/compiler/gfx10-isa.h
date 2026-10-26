@@ -595,7 +595,7 @@
  * s[0:1] as for every program (the driver puts it in the stage's user data
  * address registers), the hardware puts the subgroup's vertex count (bits
  * 20:12) and primitive count (bits 30:22) in s2 and the wave's vertex
- * count (bits 7:0) and primitive count (bits 15:8) in s3, and the user
+ * count (bits 6:0) and primitive count (bits 14:8) in s3, and the user
  * SGPRs follow the hardware's eight from s8: the base vertex, the first
  * instance, the mask of the locations fetched by instance.  The VGPRs: v0
  * the primitive (in the passthrough mode already the export's word, else
@@ -612,7 +612,7 @@
  * src/amd/common/nir/ac_nir_lower_intrinsics_to_args.c (gs_tg_info's
  * fields 12/9 and 22/9, lines 190-193), src/amd/compiler/
  * aco_instruction_selection.cpp (merged_wave_info_to_mask: the wave's
- * counts 8 bits each from bit 8 i) and src/amd/vulkan/radv_queue.c (the
+ * counts in bits 6:0 of byte i) and src/amd/vulkan/radv_queue.c (the
  * user data address of the geometry stage on GFX10, R_00B208, line 597).
  * The field selectors below are s_bfe_u32's second source: the offset in
  * bits 4:0, the width in bits 22:16 (the RDNA1 ISA's S_BFE_U32).
@@ -625,8 +625,8 @@
 #define AMDRDNA_GFX10_NGG_USER_SGPRS	3U
 #define AMDRDNA_GFX10_NGG_SUBGROUP_VERTICES (12U | (9U << 16))
 #define AMDRDNA_GFX10_NGG_SUBGROUP_PRIMITIVES (22U | (9U << 16))
-#define AMDRDNA_GFX10_NGG_WAVE_VERTICES	(0U | (8U << 16))
-#define AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES (8U | (8U << 16))
+#define AMDRDNA_GFX10_NGG_WAVE_VERTICES	(0U | (7U << 16))
+#define AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES (8U | (7U << 16))
 #define AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR 0U
 #define AMDRDNA_GFX10_NGG_VERTEX_ID_VGPR 5U
 #define AMDRDNA_GFX10_NGG_INSTANCE_ID_VGPR 8U

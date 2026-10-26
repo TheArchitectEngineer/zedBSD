@@ -39,6 +39,7 @@
  *
  * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
  * (SPI_SHADER_USER_ACCUM_PS_0 0xb0c8, SPI_SHADER_USER_ACCUM_VS_0 0xb1c8,
+ * SPI_SHADER_USER_ACCUM_ESGS_0 0xb2c8,
  * COMPUTE_USER_ACCUM_0 0xb890, DB_DFSM_CONTROL 0x28038,
  * DB_RMI_L2_CACHE_CONTROL 0x2807c, CB_RMI_GL2_CACHE_CONTROL 0x28410,
  * PA_SC_BINNER_CNTL_1 0x28c48, PA_SC_NGG_MODE_CNTL 0x28c50,
@@ -49,6 +50,7 @@
  */
 #define STATE_PIXEL_ACCUMULATORS	0xb0c8U
 #define STATE_VERTEX_ACCUMULATORS	0xb1c8U
+#define STATE_PRIMITIVE_ACCUMULATORS	0xb2c8U
 #define STATE_KERNEL_ACCUMULATORS	0xb890U
 #define STATE_ACCUMULATORS		4U
 #define STATE_DEPTH_PUNCH_OUT		0x28038U
@@ -687,7 +689,6 @@ state_primitive_shader(
 	/* Every CU, no late allocation. */
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PRIMITIVE_UNITS, AMDRDNA_SH_UNITS_ALL);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
-	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_PARAMETER_CACHE, 0U);
 
 	/* The subgroup: its size, its output, one primitive from each, the primitive export's format, no instancing. */
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_SIZE, AMDRDNA_CX_SUBGROUP_SIZE_ONE_WAVE);
@@ -1010,6 +1011,7 @@ state_start_graphics(
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_REQUESTS, 0U);
 	amdrdna_vk_pm4_set_shader_run(pm4, STATE_VERTEX_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
+	amdrdna_vk_pm4_set_shader_run(pm4, STATE_PRIMITIVE_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
 
 	/* The depth unit's punch-out off, both units' cache policies. */
 	amdrdna_vk_pm4_set_context(pm4, STATE_DEPTH_PUNCH_OUT, STATE_PUNCH_OUT_OFF);
