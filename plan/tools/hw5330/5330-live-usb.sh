@@ -73,6 +73,7 @@ write)
 	img=$LIVE/disk.img
 	[ -s "$img" ] || { say "FAIL: no $img (run build)"; exit 1; }
 	stick_ok || { say "FAIL: /dev/sda is not the removable TransMemory USB disk"; exit 1; }
+	lin 'mkdir -p ws245' || { say "FAIL: mkdir ws245"; exit 1; }
 	T=1200 timeout 1200 scp -q "$img" "$HOST:ws245/live-sysrescue.img" || { say "FAIL: copy"; exit 1; }
 	T=1500 lin 'sudo -n dd if=$HOME/ws245/live-sysrescue.img of=/dev/sda bs=4M conv=fsync status=none && sync && sudo -n partprobe /dev/sda' 2> /dev/null ||
 	    { say "FAIL: dd"; exit 1; }
