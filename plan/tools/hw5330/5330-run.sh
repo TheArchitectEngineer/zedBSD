@@ -7,6 +7,11 @@
 # (keiland-shot, an image built with plan/tools/hw5330/config-5330.mk), reboots back to Linux and compares the survey
 # with a reference (5330-survey-diff.py).
 #   sh plan/tools/hw5330/5330-run.sh --image IMG | --kernel VMUNIX | --none  NAME [REFERENCE]
+#   sh plan/tools/hw5330/5330-run.sh --nvme-image IMG | --nvme-kernel VMUNIX | --nvme-none  NAME [REFERENCE]
+# The --nvme modes (q1612, WS298) start zedBSD from the NVMe's own zedBSD partitions instead of the stick, through the
+# UEFI entry "zedBSD NVMe" of \EFI\zedbsd\BOOTX64.EFI on the Debian ESP (made when missing).  5330-nvme-write.sh, run
+# on the 5330's Debian, writes them (the image's root, swap, kernel, logo and loader; or only the kernel).  They need
+# a kernel with the VMD driver (WS298).  DEBUG and CFG_ADD then edit the NVMe's zedbsd.cfg (p4).
 # REFERENCE: a reference kernel log or survey .md (default the 2026-10-17 merged main, evidence/t1229i21-...).
 # DEBUG=1 adds i915.debug=display to the stick's zedbsd.cfg for this start and puts the file back afterwards;
 # CFG_ADD='WORD ...' adds those words the same way (for example CFG_ADD=pci.vmd=off, WS298).
@@ -15,10 +20,17 @@
 # script takes /tmp/i915-hw.lock.  Nothing is removed on either machine.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-MODE=${1:?usage: 5330-run.sh --image IMG | --kernel VMUNIX | --none NAME [REFERENCE]}
+MODE=${1:?usage: 5330-run.sh --[nvme-]image IMG | --[nvme-]kernel VMUNIX | --[nvme-]none NAME [REFERENCE]}
 case "$MODE" in
---none) FILE= ; shift ;;
+--none | --nvme-none) FILE= ; shift ;;
 *) FILE=${2:?the file}; shift 2 ;;
+esac
+# The boot FAT the configuration lines go to: the stick's, or the NVMe's p4 (5330-nvme-write.sh) and its ESP.
+NV_BOOT=/dev/disk/by-partuuid/d4dbe962-cc37-4f27-8529-bb7446730178
+NV_ESP_UUID=08ab575f-f718-4eff-a3c9-10d80b1217ea
+case "$MODE" in
+--nvme-*) BOOTFAT=$NV_BOOT ;;
+*) BOOTFAT=/dev/sda2 ;;
 esac
 NAME=${1:?NAME}
 cd "$(dirname "$0")/../../.."
@@ -41,8 +53,17 @@ say() {
 	echo "5330-run: $*"
 }
 
-# The stick must be a removable USB disk, not the Linux disk.
-lin 'test "$(lsblk -dn -o TRAN,RM /dev/sda | tr -s " ")" = "usb 1"' || { say "FAIL: /dev/sda is not a removable USB disk"; exit 1; }
+case "$MODE" in
+--nvme-*)
+	# The NVMe's zedBSD partitions must be where and what the helper expects.
+	T=60 timeout 60 scp -q plan/tools/hw5330/5330-nvme-write.sh "$HOST:ws245/5330-nvme-write.sh" || { say "FAIL: copy of the helper"; exit 1; }
+	lin 'sudo -n sh $HOME/ws245/5330-nvme-write.sh check' > /dev/null || { say "FAIL: the NVMe's zedBSD partitions are not as expected"; exit 1; }
+	;;
+*)
+	# The stick must be a removable USB disk, not the Linux disk.
+	lin 'test "$(lsblk -dn -o TRAN,RM /dev/sda | tr -s " ")" = "usb 1"' || { say "FAIL: /dev/sda is not a removable USB disk"; exit 1; }
+	;;
+esac
 
 case "$MODE" in
 --image)
@@ -58,21 +79,48 @@ case "$MODE" in
 	    { say "FAIL: kernel install"; exit 1; }
 	say "kernel installed ($(sha256sum "$FILE" | cut -c1-16)), the one before is vmunix.old"
 	;;
+--nvme-image)
+	base=$(basename "$FILE")
+	T=1200 timeout 1200 scp -q "$FILE" "$HOST:ws245/$NAME-$base" || { say "FAIL: copy"; exit 1; }
+	T=1500 lin "sudo -n sh \$HOME/ws245/5330-nvme-write.sh image \$HOME/ws245/$NAME-$base" > /dev/null || { say "FAIL: NVMe write"; exit 1; }
+	say "image written to the NVMe partitions ($(sha256sum "$FILE" | cut -c1-16))"
+	;;
+--nvme-kernel)
+	T=120 timeout 120 scp -q "$FILE" "$HOST:ws245/vmunix-$NAME" || { say "FAIL: copy"; exit 1; }
+	lin "sudo -n sh \$HOME/ws245/5330-nvme-write.sh kernel \$HOME/ws245/vmunix-$NAME" > /dev/null || { say "FAIL: kernel install"; exit 1; }
+	say "kernel installed on the NVMe ($(sha256sum "$FILE" | cut -c1-16)), the one before is vmunix.old"
+	;;
 esac
 
-# The UEFI entry of the stick's EFI partition (made when missing).
-uuid=$(lin 'lsblk -no PARTUUID /dev/sda1')
-entry=$(lin "sudo -n efibootmgr" | grep -i "$uuid" | sed -n 's/^Boot\([0-9A-F]\{4\}\).*/\1/p' | head -1)
-if [ -z "$entry" ]; then
-	lin 'sudo -n efibootmgr --create-only -d /dev/sda -p 1 -L "zedBSD USB ws245" -l "\EFI\BOOT\BOOTX64.EFI"' > /dev/null
+case "$MODE" in
+--nvme-*)
+	# The UEFI entry of the zedBSD loader on the Debian ESP (made when missing).
+	find_entry() {
+		lin "sudo -n efibootmgr -v" | grep -i "$NV_ESP_UUID" | grep -i 'zedbsd.BOOTX64' | sed -n 's/^Boot\([0-9A-F]\{4\}\).*/\1/p' | head -1
+	}
+	entry=$(find_entry)
+	if [ -z "$entry" ]; then
+		lin 'sudo -n efibootmgr --create-only -d /dev/nvme0n1 -p 1 -L "zedBSD NVMe" -l "\EFI\zedbsd\BOOTX64.EFI"' > /dev/null
+		entry=$(find_entry)
+	fi
+	[ -n "$entry" ] || { say "FAIL: no UEFI entry for the NVMe"; exit 1; }
+	;;
+*)
+	# The UEFI entry of the stick's EFI partition (made when missing).
+	uuid=$(lin 'lsblk -no PARTUUID /dev/sda1')
 	entry=$(lin "sudo -n efibootmgr" | grep -i "$uuid" | sed -n 's/^Boot\([0-9A-F]\{4\}\).*/\1/p' | head -1)
-fi
-[ -n "$entry" ] || { say "FAIL: no UEFI entry for the stick"; exit 1; }
+	if [ -z "$entry" ]; then
+		lin 'sudo -n efibootmgr --create-only -d /dev/sda -p 1 -L "zedBSD USB ws245" -l "\EFI\BOOT\BOOTX64.EFI"' > /dev/null
+		entry=$(lin "sudo -n efibootmgr" | grep -i "$uuid" | sed -n 's/^Boot\([0-9A-F]\{4\}\).*/\1/p' | head -1)
+	fi
+	[ -n "$entry" ] || { say "FAIL: no UEFI entry for the stick"; exit 1; }
+	;;
+esac
 
 if [ "${DEBUG:-0}" = 1 ] || [ -n "${CFG_ADD:-}" ]; then
 	add=${CFG_ADD:-}
 	[ "${DEBUG:-0}" = 1 ] && add="$add i915.debug=display"
-	lin "sudo -n mount /dev/sda2 /mnt/zb && sudo -n cp /mnt/zb/zedbsd.cfg \$HOME/ws245/zedbsd.cfg.$NAME && for w in $add; do grep -qx \"\$w\" /mnt/zb/zedbsd.cfg || echo \"\$w\" | sudo -n tee -a /mnt/zb/zedbsd.cfg > /dev/null; done && sync && sudo -n umount /mnt/zb" ||
+	lin "sudo -n mount $BOOTFAT /mnt/zb && sudo -n cp /mnt/zb/zedbsd.cfg \$HOME/ws245/zedbsd.cfg.$NAME && for w in $add; do grep -qx \"\$w\" /mnt/zb/zedbsd.cfg || echo \"\$w\" | sudo -n tee -a /mnt/zb/zedbsd.cfg > /dev/null; done && sync && sudo -n umount /mnt/zb" ||
 	    { say "FAIL: cfg lines"; exit 1; }
 	say "cfg lines added for this start:$add"
 fi
@@ -104,7 +152,7 @@ until T=8 lin hostname 2> /dev/null | grep -q chaos; do
 	sleep 5
 done
 if [ "${DEBUG:-0}" = 1 ] || [ -n "${CFG_ADD:-}" ]; then
-	lin "sudo -n mount /dev/sda2 /mnt/zb && sudo -n cp \$HOME/ws245/zedbsd.cfg.$NAME /mnt/zb/zedbsd.cfg && sync && sudo -n umount /mnt/zb" || say "cfg lines not put back"
+	lin "sudo -n mount $BOOTFAT /mnt/zb && sudo -n cp \$HOME/ws245/zedbsd.cfg.$NAME /mnt/zb/zedbsd.cfg && sync && sudo -n umount /mnt/zb" || say "cfg lines not put back"
 fi
 
 # The summary.
