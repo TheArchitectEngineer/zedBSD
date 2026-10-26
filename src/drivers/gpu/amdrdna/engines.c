@@ -30,6 +30,7 @@
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
+#include <kern/waitq.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/amdrdna/amdrdna-private.h"
@@ -344,10 +345,11 @@ amdrdna_engines_interrupt(
 		return;
 	}
 
-	/* Counts the ring's event. */
+	/* Counts the ring's event and wakes the waiters of its fence, which the event follows. */
 	irq = spin_lock_irqsave(&ring->lock);
 
 	ring->interrupts++;
+	waitq_wake_all(&ring->fences);
 
 	spin_unlock_irqrestore(&ring->lock, irq);
 }

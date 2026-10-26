@@ -616,6 +616,60 @@ amdrdna_vk_gpu_alloc(
 }
 
 /*
+ * Allocates a run of the executor's own memory in system memory: a run
+ * the CPU writes through its cache and the session's address space maps
+ * at *va, for what the CPU writes anew for every submission (the indirect
+ * buffers and the resource tables), which the CPU's window would make
+ * slow to write.
+ */
+int
+amdrdna_vk_gpu_alloc_system(
+	void *owner,
+	uint64_t bytes,
+	void **token,
+	uint8_t **cpu,
+	uint64_t *va)
+{
+	struct amdrdna_session *session;
+	struct vk_node_run *run;
+	uint64_t started_us;
+	int error;
+
+	/* The node session the executor names, and when the making began. */
+	session = owner;
+	started_us = amdrdna_display_now_us();
+
+	/* The record. */
+	run = kern_calloc(1U, sizeof(*run));
+	if (run == NULL)
+		return ENOMEM;
+
+	/* The system memory, cleared. */
+	error = amdrdna_backing_create_system(session->node->device, bytes, &run->backing);
+	if (error != 0) {
+		kern_free(run);
+		return error;
+	}
+
+	/* And in the session's address space. */
+	error = amdrdna_space_map(session->space, run->backing, &run->va);
+	if (error != 0) {
+		amdrdna_backing_put(session->node->device, run->backing);
+		kern_free(run);
+		return error;
+	}
+
+	/* Timed with its bytes. */
+	vk_node_count(session->node, VK_NODE_MEMORY, started_us, bytes);
+
+	/* Succeeded: the run is the executor's. */
+	*token = run;
+	*cpu = (uint8_t *)(uintptr_t)amdrdna_backing_cpu(session->node->device, run->backing);
+	*va = run->va;
+	return 0;
+}
+
+/*
  * Frees a run of the executor's own GPU memory; no submitted work reads it
  * (every run waited for its work), unless the session's work never ended,
  * in which case the VRAM is kept for good.
