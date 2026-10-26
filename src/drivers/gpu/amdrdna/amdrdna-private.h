@@ -20,6 +20,7 @@
 #include <drivers/generic/dma.h>
 #include <drivers/pci/pci.h>
 #include <kern/lock.h>
+#include <kern/pmem.h>
 #include <kern/waitq.h>
 
 #include "drivers/gpu/amdrdna/amdrdna-hw.h"
@@ -521,8 +522,9 @@ struct amdrdna_display {
  * vram is its offset and bytes its size in whole pages; asked is the size
  * it was made for; cpu says it lies in the CPU's window (else in the VRAM
  * only the GPU reaches).  A run of system memory (system set) has no VRAM:
- * dma is its contiguous run, which the CPU writes through its cache and
- * the GPU reads coherently with it.  refs counts its holders (the blob, every export and
+ * ram is its contiguous run and system_cpu its view through the direct
+ * map, which the CPU writes through its cache and the GPU reads coherently
+ * with it at its physical address.  refs counts its holders (the blob, every export and
  * import of it, every address space it is mapped in for the executor),
  * under the address spaces' lock; the last one gives the VRAM back unless
  * kept is set: GPU work nobody could stop may still touch it.
@@ -534,7 +536,8 @@ struct amdrdna_backing {
 	uint32_t refs;
 	bool cpu;
 	bool system;
-	struct drv_dma_buffer dma;
+	struct kern_pmem ram;
+	uint8_t *system_cpu;
 	bool kept;
 };
 
