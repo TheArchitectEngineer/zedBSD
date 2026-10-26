@@ -43,7 +43,11 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 | [p002a](phase002a/phase.md) | amdrdna の executor に depth・index の draw・mip の texture（mview が動くまで） | p002 の Linux の基準 | cleared（2026-10-27 00:43 Q1。in-progress（実装済み、実機で Linux と pixel 一致。Q1 の判定待ち）） |
 | [p003](phase003/phase.md) | RDNA: 投入の経路（vkQueueSubmit が GPU の完了を待たない非同期、record の 1 command と submit の費用を削る）。big-N・subs-N で Linux に近づける | p002 | cleared（2026-10-27 04:31 Q1） |
 | [p004](phase004/phase.md) | RDNA: PA の small primitive filter・back-face cull・VGT の vertex reuse を RADV の値に、scene-6500 の GPU の ms | p003 | in-progress（q1609。設定は既に RADV と同じ、driver の変更なし。Linux の RADV_DEBUG=nongg 42.5 ms・nonggc 41.7 ms が zedBSD 42.2 ms と同じで、差は NGG の culling だけ。NGG の見積もりを記録、Q1 の判定待ち） |
-| p005〜p009 | RDNA: NGG（primitive shader、別 WS 規模なら設計から）、HTILE、tiled の texture | p004 | — |
+| p005 | RDNA: NGG A（passthrough、wave32 1 つの subgroup） | p004 | in-progress（q1611） |
+| p006 | RDNA: NGG B（primitive の culling: w の符号・画面外・裏面・小さい三角形） | p005 | planned |
+| p007 | RDNA: NGG C（vertex の詰め直しと属性の後回し、wave をまたぐ subgroup）、目標 GPU 約 20 ms | p006 | planned |
+| p008〜p009 | RDNA: HTILE、guard band、CPU 側の record（2.3 ms）の短縮 | p007 | — |
+- 2026-10-27 04:44 ユーザー（Q1 の問い「NGG の A〜C をどう進めますか？」へのクリック）「A〜C を今進める（推し）」。
 | p010 | NVIDIA: GPU の入れ替え（ユーザー）、desktop の計測と 60 fps | RDNA の Phase の全部、P2 | planned |
 | p011 | NVIDIA: Linux で約 50 fps の scene での差の計測と 50 fps（p012〜p019 は改善の予備） | p010 | planned |
 | p020 | PowerVR（VF2）: model の 50 fps（RDNA で確立した手順、P3） | RDNA の手順の確立（p002 と最初の改善） | planned |
