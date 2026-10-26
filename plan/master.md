@@ -11,6 +11,7 @@
 -->
 
 <!-- master:agents:start -->
+- **2026-10-26 23:17 i915（WS244・WS245・WS252）**: P4 が q1597 → q1598 → q1599、実機 5330（10.0.30.3）。
 - **2026-10-26 23:05 WS291（RDNA の描画の速さ）**: P2 が [ws291-p001](ws291/phase001/phase.md)（q1595、実機 10.0.10.3、desktop の計測から）。
 - **2026-10-26 22:57 WS288 を closed、WS290 を新設**: ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。…」。amaterrace-gpu は読み取り専用（plan/ は読んでよい、計画は am-ws001 のように書く）。zedBSD の GHCI の driver を GHCI 2.0 だけに書き直す [WS290](ws290/ws.md)。担当: P1 が [ws290-p001](ws290/phase001/phase.md)（設計、q1594）。
 - zedBSD の main は記録の commit の先頭。amaterrace-gpu は Q1 も担当も書かない（worktree・branch の片付けもしない）。
@@ -29,7 +30,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1596、WS292、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1600、WS292、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS290（GHCI 2.0 の driver）: p001 の設計 → ghci.md の疑問をユーザーに示す → 実装の Phase。試験は zedBSD の host 試験だけ（amaterrace-gpu の sim・firmware は使わない、ユーザー 2026-10-26）。WS288 の古い引き継ぎ（ws288/q1-handover-20261026.md）の「消してよい物」のうち amaterrace の物は、読み取り専用になったので消さない。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -639,6 +640,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-26 23:17 ユーザー「P4を立てて、WS244, WS245, WS252の実装を終わらせます。今から5330を起動するので、それにアクセスしてテストしてほしいです。」→ P4（phase-runner）に q1597（WS245 の 5330 の回帰と残り）→ q1598（WS244）→ q1599（WS252）。5330（10.0.30.3）の試験は P4 が直に行う（ユーザーの指示、T1 を通さない）。q1596 は P2 の ws291-p002 の予約。
 - 2026-10-26 23:10 ユーザー「zedBSDでは、graphicalログインは必要なく、graphicalログインをするなら、direct scanoutで限界まで3D性能を正しく計測しましょう。USBはまるごと書き換えてOKです。」→ WS291: login=graphical は不要、3D は fullscreen の direct scanout で限界まで計測、10.0.10.3 の USB は丸ごと書き換え可。P2 に伝えた。
 - 2026-10-26 23:09 ユーザー「VF2はssh kei@10.0.30.2で、パスワード（略）です。VF2はSwitchbotで電源を入れられます。」→ WS291 p020（P3）で使う。以前の「SwitchBot は ZYBO 用に付け替える予定で VF2 は遠隔で再起動しない」は改める。
 - 2026-10-26 23:08 ユーザー「WS291にさらにフェーズを追加して、DebianマシンでGPUを入れ替えて、NVIDIAでも同様に、デスクトップの60fpsと、モデルの50fpsをやります。これはP2がamdrnaの作業を終えてからです。また、さらにフェーズを増やして、PowerVRのドライバでも、50fpsをやります。VF2での作業は、RDNAで作業手順を確立したあとで、P3に依頼します。」→ WS291 に p010・p011（NVIDIA、P2、RDNA の後）と p020（PowerVR、P3、RDNA の手順の確立の後）を追加。

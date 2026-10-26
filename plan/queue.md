@@ -990,3 +990,15 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | --- | --- | --- | --- | --- |
 | q1594 / q1594-i01 | P1（kernel-and-driver-designer、worktree `/home/awe/zedBSD-worktrees/p1-ws290`・branch `agent/p1-ws290`、基点 main） | [ws290-p001](ws290/phase001/phase.md) | 設計（ghci.md 2.0 と今の driver の照合、構成、host 試験の model、Phase の分割、ghci.md の疑問の一覧）、design-reviewer。code は書かない | in-progress |
 | q1595 / q1595-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291`・branch `agent/p2-ws291`、基点 main） | [ws291-p001](ws291/phase001/phase.md) | desktop の計測と 60 fps、実機 10.0.10.3（BootNext で USB の zedBSD）。承認: 2026-10-26 23:05 ユーザー「P2も立てます。…amdrdnaドライバの改善を行ってほしいです。…」 | in-progress |
+| q1596 / q1596-i01 | P2（同じ worktree p2-ws291） | ws291-p002 | Linux で約 50 fps の 3D の scene を決め、zedBSD との差を測る（予約、p001 の後） | pending |
+
+## 2026-10-26 23:17: i915 の残り（q1597〜）
+
+承認: 2026-10-26 23:17 ユーザー「P4を立てて、WS244, WS245, WS252の実装を終わらせます。今から5330を起動するので、それにアクセスしてテストしてほしいです。」
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1597 / q1597-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-i915`・branch `agent/p4-i915`、基点 main） | [WS245](ws245/ws.md) の残り（p041〜p045・p050d4c ほか） | main の tip で 5330 の実機の回帰、FAIL は二分探索で原因の段を特定して直す、残りの実装、p044・p045 の受け入れの読み替えはユーザーに示す | in-progress |
+| q1598 / q1598-i01 | P4 | [WS244](ws244/ws.md) の残り | Gen9 の display・GT の出典の直し（ws.md の再開点）、5330 で回帰 | pending |
+| q1599 / q1599-i01 | P4 | [WS252](ws252/ws.md) p002〜p008 | RKL・ADL-S/RPL-S・ICL の GT。実機が無い物は host 試験まで（D5「無いまま」）、5330 で退行が無いこと | pending |
+
