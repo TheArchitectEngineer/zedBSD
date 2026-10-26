@@ -45,9 +45,9 @@
 
 /*
  * How the vertex programs run when the boot line does not say
- * (amdrdna.vk.ngg): 1, as primitive shaders.
+ * (amdrdna.vk.ngg): 0, as legacy vertex programs.
  */
-#define VK_NODE_GEOMETRY_DEFAULT	1U
+#define VK_NODE_GEOMETRY_DEFAULT	0U
 
 /* The opcodes the timing keeps apart; a larger one is counted with the last. */
 #define VK_NODE_TIMED_OPCODES		256U

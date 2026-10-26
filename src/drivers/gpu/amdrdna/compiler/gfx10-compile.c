@@ -3351,8 +3351,12 @@ prologue_vertex(
  * (ac_nir_lower_ngg_nogs, the passthrough path: the allocation from the
  * subgroup's counts by the first wave, the early export of the packed
  * primitive by each primitive lane, then the vertex program on the vertex
- * lanes) and src/amd/common/nir/ac_nir_prerast_utils.c
- * (ac_nir_export_primitive: the primitive's export is marked done).
+ * lanes), src/amd/common/nir/ac_nir_prerast_utils.c
+ * (ac_nir_export_primitive: the primitive's export is marked done) and
+ * src/amd/compiler/aco_instruction_selection.cpp (select_shader: on GFX10
+ * an NGG program without a geometry stage starts with s_barrier, so that
+ * every wave has launched before the allocation request, a Navi1x
+ * hardware bug, lines 11380-11386).
  */
 static void
 prologue_primitive(
@@ -3363,6 +3367,12 @@ prologue_primitive(
 	unsigned primitives;
 	unsigned wave_count;
 	unsigned sources[4];
+
+	/* Every wave of the subgroup launched before the request. */
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_CONTROL;
+	inst.opcode = AMDRDNA_GFX10_S_BARRIER;
+	emit(lowering, &inst);
 
 	/* The subgroup's vertex and primitive counts, the primitives moved to their place in the request. */
 	vertices = next_scalar_temp(lowering);

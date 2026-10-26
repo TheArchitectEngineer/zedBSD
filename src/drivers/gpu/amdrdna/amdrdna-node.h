@@ -155,8 +155,8 @@ struct amdrdna_vk_timing;
  * executor's work and marks it once a period; NULL leaves it untimed.
  * vk_geometry, set at the binding from the boot line (amdrdna.vk.ngg),
  * says how the executor runs a pipeline's vertex program: 0 as a legacy
- * vertex program, 1 as a primitive shader that passes every primitive
- * through.
+ * vertex program (the default), 1 as a primitive shader that passes
+ * every primitive through.
  *
  * The display (present.c, stage A8 on, when display is set): the lease of
  * one open at a time and the frames it presents.  present_lock puts the
