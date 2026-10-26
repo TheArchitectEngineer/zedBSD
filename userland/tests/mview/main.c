@@ -29,6 +29,10 @@
 /* The turn of the spin demonstration, in degrees per second (one revolution in ten seconds). */
 #define MAIN_SPIN_RATE		36.0
 
+/* The most copies of the model (--copies) and submissions of a frame (--submits). */
+#define MAIN_COPIES_MAX		65536U
+#define MAIN_SUBMITS_MAX	4096U
+
 /* How many consecutive out-of-date swapchains are tolerated before giving up. */
 #define MAIN_RECREATE_LIMIT	16U
 
@@ -59,6 +63,12 @@ struct main_options {
 
 	/* How many copies of the model each frame draws (--copies, one by default). */
 	uint32_t copies;
+
+	/* Nonzero when each copy is its own draws (--draws=each) instead of one instanced draw a group. */
+	int each_draw;
+
+	/* How many submissions draw a frame (--submits, one by default). */
+	uint32_t submits;
 };
 
 /* The frame-rate measurement of the spin demonstration. */
@@ -135,7 +145,7 @@ main(
 	/* Argument failure starts no connection or GPU namespace. */
 	status = options_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: mview [--display=NAME] [--model=DIR] [--token=NAME] [--frames=N] [--timeout-s=N] [--spin=SECONDS] [--shading=vertex|pixel] [--windowed] [--size=WxH] [--content=none|video|game] [--present=fifo|mailbox|immediate] [--copies=N]\n");
+		fprintf(stderr, "usage: mview [--display=NAME] [--model=DIR] [--token=NAME] [--frames=N] [--timeout-s=N] [--spin=SECONDS] [--shading=vertex|pixel] [--windowed] [--size=WxH] [--content=none|video|game] [--present=fifo|mailbox|immediate] [--copies=N] [--draws=instanced|each] [--submits=N]\n");
 		return 2;
 	}
 
@@ -179,7 +189,7 @@ main(
 	fflush(stdout);
 
 	/* Creates renderer ownership only after the native surface is configured. */
-	result = mview_renderer_open(&renderer, &window, options.pixel_shading, options.present, options.copies);
+	result = mview_renderer_open(&renderer, &window, options.pixel_shading, options.present, options.copies, options.each_draw, options.submits);
 	operation = renderer.operation;
 	if (result != VK_SUCCESS) {
 		status = -1;
@@ -188,11 +198,13 @@ main(
 
 	/* The presentation mode the swapchain took, the copies drawn and the content said (for the harness). */
 	printf(
-		"MVIEW PRESENT run=%s asked=%s mode=%s copies=%u content=%u content_manager=%d\n",
+		"MVIEW PRESENT run=%s asked=%s mode=%s copies=%u draws=%s submits=%u content=%u content_manager=%d\n",
 		options.token,
 		main_present_name(options.present),
 		main_present_name(renderer.present_mode),
 		options.copies,
+		options.each_draw != 0 ? "each" : "instanced",
+		options.submits,
 		options.content,
 		window.content_manager != NULL ? 1 : 0);
 	fflush(stdout);
@@ -403,6 +415,7 @@ options_parse(
 	options->content = WP_CONTENT_TYPE_V1_TYPE_NONE;
 	options->present = VK_PRESENT_MODE_FIFO_KHR;
 	options->copies = 1U;
+	options->submits = 1U;
 
 	/* Applies each explicit option in command-line order. */
 	for (index = 1; index < argc; index++) {
@@ -514,10 +527,33 @@ options_parse(
 		/* The copies of the model drawn each frame, at least one. */
 		match = strncmp(argv[index], "--copies=", 9U);
 		if (match == 0) {
-			status = option_number(argv[index] + 9U, 4096U, &options->copies);
+			status = option_number(argv[index] + 9U, MAIN_COPIES_MAX, &options->copies);
 			if (status != 0)
 				return -1;
 			if (options->copies == 0U)
+				return -1;
+			continue;
+		}
+
+		/* One instanced draw a material group, or each copy its own draws. */
+		match = strcmp(argv[index], "--draws=instanced");
+		if (match == 0) {
+			options->each_draw = 0;
+			continue;
+		}
+		match = strcmp(argv[index], "--draws=each");
+		if (match == 0) {
+			options->each_draw = 1;
+			continue;
+		}
+
+		/* The submissions of a frame, at least one. */
+		match = strncmp(argv[index], "--submits=", 10U);
+		if (match == 0) {
+			status = option_number(argv[index] + 10U, MAIN_SUBMITS_MAX, &options->submits);
+			if (status != 0)
+				return -1;
+			if (options->submits == 0U)
 				return -1;
 			continue;
 		}

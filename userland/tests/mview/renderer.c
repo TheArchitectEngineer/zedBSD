@@ -41,6 +41,15 @@
 /* The byte offset of the texture coordinate inside one vertex record. */
 #define RENDERER_UV_OFFSET	24U
 
+/* One copy's place in the per-instance buffer: its shift in clip space and in view space (two floats each). */
+#define RENDERER_INSTANCE_STRIDE	16U
+
+/* The kinds of render pass: a whole frame, and the first, a middle and the last part of a frame of several submissions. */
+#define RENDERER_PASS_WHOLE		0U
+#define RENDERER_PASS_FIRST		1U
+#define RENDERER_PASS_MIDDLE		2U
+#define RENDERER_PASS_LAST		3U
+
 static VkResult renderer_device(struct mview_renderer *renderer);
 static VkResult renderer_formats(struct mview_renderer *renderer);
 static VkResult renderer_swapchain(struct mview_renderer *renderer, VkSwapchainKHR old);
@@ -64,7 +73,9 @@ static VkResult renderer_upload_buffer(struct mview_renderer *renderer, struct m
 static VkResult renderer_upload_texture(struct mview_renderer *renderer, struct mview_image *image, const uint8_t *pixels, uint32_t width, uint32_t height);
 static VkResult renderer_descriptors(struct mview_renderer *renderer);
 static void renderer_barrier(VkCommandBuffer command, VkImage image, uint32_t level, uint32_t count, VkImageLayout old_layout, VkImageLayout new_layout, VkAccessFlags source_access, VkAccessFlags destination_access, VkPipelineStageFlags source_stage, VkPipelineStageFlags destination_stage);
-static void renderer_record(struct mview_renderer *renderer, const struct mview_model *model, const struct mview_camera *camera, uint32_t image);
+static void renderer_record(struct mview_renderer *renderer, const struct mview_model *model, const struct mview_camera *camera, uint32_t image, uint32_t part);
+static VkResult renderer_pass_kind(struct mview_renderer *renderer, uint32_t kind, VkRenderPass *pass);
+static void renderer_instances(struct mview_renderer *renderer, const struct mview_camera *view, uint32_t columns, uint32_t rows, float spacing);
 static uint32_t renderer_levels(uint32_t width, uint32_t height);
 static VkDeviceSize renderer_chain_bytes(uint32_t width, uint32_t height, uint32_t levels);
 static void renderer_downsample(const uint8_t *source, uint32_t width, uint32_t height, uint8_t *destination);
@@ -82,7 +93,9 @@ mview_renderer_open(
 	struct mview_window *window,
 	int pixel_shading,
 	VkPresentModeKHR present_mode,
-	uint32_t copies)
+	uint32_t copies,
+	int each_draw,
+	uint32_t submits)
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
@@ -97,6 +110,8 @@ mview_renderer_open(
 	renderer->pixel_shading = pixel_shading;
 	renderer->wanted_present = present_mode;
 	renderer->copies = copies;
+	renderer->each_draw = each_draw;
+	renderer->submits = submits;
 
 	/* The application requests only standard instance extensions. */
 	extensions[0] = VK_KHR_SURFACE_EXTENSION_NAME;
@@ -306,8 +321,10 @@ mview_renderer_draw(
 	VkResult acquired;
 	VkResult presented;
 	VkResult error;
+	VkFence fence;
 	uint64_t mark;
 	uint32_t image;
+	uint32_t part;
 
 	/* The acquire semaphore is signaled only after the compositor releases an image. */
 	mark = renderer_cycles();
@@ -317,46 +334,60 @@ mview_renderer_draw(
 		return acquired;
 	renderer_stage(renderer, MVIEW_STAGE_ACQUIRE, &mark);
 
-	/* Retires the prior recording before describing the next acquired image. */
-	error = renderer_begin(renderer);
-	if (error != VK_SUCCESS)
-		return error;
-
-	/* Records the pass that draws every material group. */
-	renderer_record(renderer, model, camera, image);
-
-	/* Finishes the render stream before it can be submitted. */
-	renderer->operation = "vkEndCommandBuffer";
-	error = vkEndCommandBuffer(renderer->command);
-	if (error != VK_SUCCESS)
-		return error;
-
-	renderer_stage(renderer, MVIEW_STAGE_RECORD, &mark);
-
-	/* The fence of the previous submission has been waited on and can be reused. */
+	/* The fence of the previous frame has been waited on and can be reused. */
 	renderer->operation = "vkResetFences";
 	error = vkResetFences(renderer->device, 1U, &renderer->fence);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Acquire must finish before the colour attachment is first written. */
-	stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	/*
+	 * Records and submits each part of the frame in order (one part unless
+	 * --submits asks for more): the first waits for the acquired image,
+	 * the last signals the image's present semaphore and the fence.
+	 */
+	for (part = 0U; part < renderer->submits; part++) {
+		/* Retires the part's prior recording before describing the next one. */
+		renderer->command = renderer->commands[part];
+		error = renderer_begin(renderer);
+		if (error != VK_SUCCESS)
+			return error;
 
-	/* Orders acquired-image access and signals this image's present semaphore. */
-	memset(&submit, 0, sizeof(submit));
-	submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-	submit.waitSemaphoreCount = 1U;
-	submit.pWaitSemaphores = &renderer->acquired;
-	submit.pWaitDstStageMask = &stage;
-	submit.commandBufferCount = 1U;
-	submit.pCommandBuffers = &renderer->command;
-	submit.signalSemaphoreCount = 1U;
-	submit.pSignalSemaphores = &renderer->targets[image].rendered;
-	renderer->operation = "vkQueueSubmit";
-	error = vkQueueSubmit(renderer->queue, 1U, &submit, renderer->fence);
-	if (error != VK_SUCCESS)
-		return error;
-	renderer_stage(renderer, MVIEW_STAGE_SUBMIT, &mark);
+		/* Records the pass that draws the part's copies of every material group. */
+		renderer_record(renderer, model, camera, image, part);
+
+		/* Finishes the render stream before it can be submitted. */
+		renderer->operation = "vkEndCommandBuffer";
+		error = vkEndCommandBuffer(renderer->command);
+		if (error != VK_SUCCESS)
+			return error;
+		renderer_stage(renderer, MVIEW_STAGE_RECORD, &mark);
+
+		/* Acquire must finish before the colour attachment is first written. */
+		stage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+		memset(&submit, 0, sizeof(submit));
+		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+		if (part == 0U) {
+			submit.waitSemaphoreCount = 1U;
+			submit.pWaitSemaphores = &renderer->acquired;
+			submit.pWaitDstStageMask = &stage;
+		}
+		submit.commandBufferCount = 1U;
+		submit.pCommandBuffers = &renderer->command;
+		fence = VK_NULL_HANDLE;
+		if (part + 1U == renderer->submits) {
+			submit.signalSemaphoreCount = 1U;
+			submit.pSignalSemaphores = &renderer->targets[image].rendered;
+			fence = renderer->fence;
+		}
+
+		/* Submits the part; the queue runs the parts in order. */
+		renderer->operation = "vkQueueSubmit";
+		error = vkQueueSubmit(renderer->queue, 1U, &submit, fence);
+		if (error != VK_SUCCESS)
+			return error;
+		renderer_stage(renderer, MVIEW_STAGE_SUBMIT, &mark);
+	}
+	renderer->command = renderer->commands[0];
 
 	/* Transfers the completed acquired image to the surface. */
 	memset(&present, 0, sizeof(present));
@@ -509,6 +540,7 @@ mview_renderer_close(
 		renderer_buffer_free(renderer, &renderer->indices);
 		renderer_buffer_free(renderer, &renderer->staging);
 		renderer_buffer_free(renderer, &renderer->scene);
+		renderer_buffer_free(renderer, &renderer->instances);
 
 		/* Releases attachments before the objects referenced by their recorded rendering. */
 		renderer_targets_free(renderer);
@@ -521,6 +553,11 @@ mview_renderer_close(
 		/* The pass no longer has live application framebuffers. */
 		if (renderer->pass != VK_NULL_HANDLE)
 			vkDestroyRenderPass(renderer->device, renderer->pass, NULL);
+		for (index = 0U; index < 3U; index++) {
+			if (renderer->part_passes[index] != VK_NULL_HANDLE)
+				vkDestroyRenderPass(renderer->device, renderer->part_passes[index], NULL);
+		}
+		free(renderer->commands);
 
 		/* The acquire semaphore has no future render submission to serve. */
 		if (renderer->acquired != VK_NULL_HANDLE)
@@ -877,10 +914,50 @@ renderer_swapchain(
 	return VK_SUCCESS;
 }
 
-/* Creates the one pass: clear colour and depth, keep colour for presentation. */
+/*
+ * Creates the pass that draws a frame whole, and with more than one
+ * submission a frame the passes of its parts: the first, the middle ones
+ * and the last.
+ */
 static VkResult
 renderer_pass(
 	struct mview_renderer *renderer)
+{
+	uint32_t kind;
+	VkResult error;
+
+	/* The whole frame's pass: clear, draw, present. */
+	error = renderer_pass_kind(renderer, RENDERER_PASS_WHOLE, &renderer->pass);
+	if (error != VK_SUCCESS)
+		return error;
+
+	/* A frame of one submission needs no other. */
+	if (renderer->submits <= 1U)
+		return VK_SUCCESS;
+
+	/* The parts' passes. */
+	for (kind = RENDERER_PASS_FIRST; kind <= RENDERER_PASS_LAST; kind++) {
+		error = renderer_pass_kind(renderer, kind, &renderer->part_passes[kind - RENDERER_PASS_FIRST]);
+		if (error != VK_SUCCESS)
+			return error;
+	}
+
+	/* Succeeded: every pass a frame uses exists. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Creates one pass of a kind: the whole frame (clear colour and depth,
+ * keep colour for presentation), the first part (clear, keep both for the
+ * next part), a middle part (load and keep both) or the last part (load,
+ * keep colour for presentation).  Passes of every kind are compatible, so
+ * the framebuffers serve them all.
+ */
+static VkResult
+renderer_pass_kind(
+	struct mview_renderer *renderer,
+	uint32_t kind,
+	VkRenderPass *pass)
 {
 	VkAttachmentDescription attachments[2];
 	VkAttachmentReference color;
@@ -910,6 +987,20 @@ renderer_pass(
 	attachments[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
 	attachments[1].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	attachments[1].finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	/* A part after the first loads what the part before kept. */
+	if (kind == RENDERER_PASS_MIDDLE || kind == RENDERER_PASS_LAST) {
+		attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		attachments[0].initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		attachments[1].loadOp = VK_ATTACHMENT_LOAD_OP_LOAD;
+		attachments[1].initialLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+	}
+
+	/* A part before the last keeps both attachments for the next. */
+	if (kind == RENDERER_PASS_FIRST || kind == RENDERER_PASS_MIDDLE) {
+		attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+		attachments[1].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	}
 
 	/* The subpass writes both attachments. */
 	color.attachment = 0U;
@@ -945,11 +1036,11 @@ renderer_pass(
 	create.dependencyCount = 1U;
 	create.pDependencies = &dependency;
 	renderer->operation = "vkCreateRenderPass";
-	error = vkCreateRenderPass(renderer->device, &create, NULL, &renderer->pass);
+	error = vkCreateRenderPass(renderer->device, &create, NULL, pass);
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* Succeeded: the render pass clears, draws and presents. */
+	/* Succeeded: the render pass of the kind exists. */
 	return VK_SUCCESS;
 }
 
@@ -1132,16 +1223,22 @@ renderer_commands(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* One primary command buffer records uploads and then every frame. */
+	/* One primary command buffer a submission of a frame; the first also records the uploads. */
+	renderer->commands = calloc(renderer->submits, sizeof(*renderer->commands));
+	if (renderer->commands == NULL) {
+		renderer->operation = "calloc";
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
 	memset(&command, 0, sizeof(command));
 	command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	command.commandPool = renderer->pool;
 	command.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	command.commandBufferCount = 1U;
+	command.commandBufferCount = renderer->submits;
 	renderer->operation = "vkAllocateCommandBuffers";
-	error = vkAllocateCommandBuffers(renderer->device, &command, &renderer->command);
+	error = vkAllocateCommandBuffers(renderer->device, &command, renderer->commands);
 	if (error != VK_SUCCESS)
 		return error;
+	renderer->command = renderer->commands[0];
 
 	/* Creates the completion fence used before command reuse. */
 	memset(&fence, 0, sizeof(fence));
@@ -1258,6 +1355,12 @@ renderer_layout(
 			return error;
 	}
 
+	/* The copies' places: one mapped per-instance vertex buffer, written when the grid's shift changes. */
+	error = renderer_buffer(renderer, &renderer->instances, (VkDeviceSize)renderer->copies * RENDERER_INSTANCE_STRIDE, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 1);
+	if (error != VK_SUCCESS)
+		return error;
+	renderer->instance_basis[0] = -1.0f;
+
 	/* Succeeded: descriptors and push constants have a layout. */
 	return VK_SUCCESS;
 }
@@ -1368,8 +1471,8 @@ renderer_pipeline(
 		VK_DYNAMIC_STATE_SCISSOR
 	};
 	VkPipelineShaderStageCreateInfo stages[2];
-	VkVertexInputBindingDescription binding;
-	VkVertexInputAttributeDescription attributes[3];
+	VkVertexInputBindingDescription bindings[2];
+	VkVertexInputAttributeDescription attributes[4];
 	VkPipelineVertexInputStateCreateInfo vertices;
 	VkPipelineInputAssemblyStateCreateInfo assembly;
 	VkPipelineViewportStateCreateInfo view;
@@ -1396,10 +1499,15 @@ renderer_pipeline(
 		stages[1].module = renderer->cutout_shader;
 
 	/* One interleaved 32-byte record supplies each vertex. */
-	memset(&binding, 0, sizeof(binding));
-	binding.binding = 0U;
-	binding.stride = RENDERER_VERTEX_STRIDE;
-	binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+	memset(bindings, 0, sizeof(bindings));
+	bindings[0].binding = 0U;
+	bindings[0].stride = RENDERER_VERTEX_STRIDE;
+	bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+	/* Each copy's place, one record an instance. */
+	bindings[1].binding = 1U;
+	bindings[1].stride = RENDERER_INSTANCE_STRIDE;
+	bindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
 
 	/* Position, normal and texture coordinate, in record order. */
 	memset(attributes, 0, sizeof(attributes));
@@ -1415,13 +1523,17 @@ renderer_pipeline(
 	attributes[2].binding = 0U;
 	attributes[2].format = VK_FORMAT_R32G32_SFLOAT;
 	attributes[2].offset = RENDERER_UV_OFFSET;
+	attributes[3].location = 3U;
+	attributes[3].binding = 1U;
+	attributes[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+	attributes[3].offset = 0U;
 
 	/* Matches vertex fetch to the model's vertex records. */
 	memset(&vertices, 0, sizeof(vertices));
 	vertices.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-	vertices.vertexBindingDescriptionCount = 1U;
-	vertices.pVertexBindingDescriptions = &binding;
-	vertices.vertexAttributeDescriptionCount = 3U;
+	vertices.vertexBindingDescriptionCount = 2U;
+	vertices.pVertexBindingDescriptions = bindings;
+	vertices.vertexAttributeDescriptionCount = 4U;
 	vertices.pVertexAttributeDescriptions = attributes;
 
 	/* Indices name independent triangles. */
@@ -2196,13 +2308,15 @@ renderer_record(
 	struct mview_renderer *renderer,
 	const struct mview_model *model,
 	const struct mview_camera *camera,
-	uint32_t image)
+	uint32_t image,
+	uint32_t part)
 {
 	VkRenderPassBeginInfo pass;
 	VkClearValue clear[2];
 	VkViewport viewport;
 	VkRect2D scissor;
-	VkDeviceSize offset;
+	VkBuffer buffers[2];
+	VkDeviceSize offsets[2];
 	VkPipeline bound;
 	struct mview_push push;
 	struct mview_camera view;
@@ -2214,6 +2328,10 @@ renderer_record(
 	uint32_t copy;
 	uint32_t columns;
 	uint32_t rows;
+	uint32_t draws;
+	uint32_t instances;
+	uint32_t first;
+	uint32_t last;
 	float spacing;
 
 	/* A neutral dark grey background and the far depth plane. */
@@ -2228,6 +2346,14 @@ renderer_record(
 	memset(&pass, 0, sizeof(pass));
 	pass.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
 	pass.renderPass = renderer->pass;
+	if (renderer->submits > 1U) {
+		/* A part of a frame of several submissions: the first clears, the last presents. */
+		pass.renderPass = renderer->part_passes[1];
+		if (part == 0U)
+			pass.renderPass = renderer->part_passes[0];
+		if (part + 1U == renderer->submits)
+			pass.renderPass = renderer->part_passes[2];
+	}
 	pass.framebuffer = renderer->targets[image].framebuffer;
 	pass.renderArea.extent = renderer->extent;
 	pass.clearValueCount = 2U;
@@ -2244,9 +2370,12 @@ renderer_record(
 	scissor.extent = renderer->extent;
 	vkCmdSetScissor(renderer->command, 0U, 1U, &scissor);
 
-	/* One vertex buffer and one index buffer serve every group. */
-	offset = 0U;
-	vkCmdBindVertexBuffers(renderer->command, 0U, 1U, &renderer->vertices.buffer, &offset);
+	/* The model's vertices, the copies' places and one index buffer serve every group. */
+	buffers[0] = renderer->vertices.buffer;
+	buffers[1] = renderer->instances.buffer;
+	offsets[0] = 0U;
+	offsets[1] = 0U;
+	vkCmdBindVertexBuffers(renderer->command, 0U, 2U, buffers, offsets);
 	vkCmdBindIndexBuffer(renderer->command, renderer->indices.buffer, 0U, VK_INDEX_TYPE_UINT32);
 
 	/*
@@ -2269,17 +2398,30 @@ renderer_record(
 	if (renderer->pixel_shading != 0)
 		mview_camera_scene(&view, renderer->extent.width, renderer->extent.height, (struct mview_scene *)renderer->scene.mapping);
 
-	/* Draws every copy, each shifted in the view plane to its place in the grid. */
+	/* The copies' places, written again only when the grid's shift changed. */
+	renderer_instances(renderer, &view, columns, rows, spacing);
+
+	/* The transforms are the same for every group and copy; the colour changes per material. */
+	mview_camera_push(&view, renderer->extent.width, renderer->extent.height, &push);
+
+	/*
+	 * One instanced draw a group draws every copy; with --draws=each every
+	 * copy is its own run of draws, its instance the first and only one.
+	 */
+	first = (uint32_t)((uint64_t)renderer->copies * part / renderer->submits);
+	last = (uint32_t)((uint64_t)renderer->copies * (part + 1U) / renderer->submits);
+	draws = first + 1U;
+	instances = last - first;
+	if (renderer->each_draw != 0) {
+		draws = last;
+		instances = 1U;
+	}
+
+	/* Draws each group with its material's pipeline, texture and colour (the part's copies only). */
 	bound = VK_NULL_HANDLE;
-	for (copy = 0U; copy < renderer->copies; copy++) {
-		/* The copy's place: its column and row about the grid's centre. */
-		view.pan[0] = camera->pan[0] + ((float)(copy % columns) - 0.5f * (float)(columns - 1U)) * spacing;
-		view.pan[1] = camera->pan[1] - ((float)(copy / columns) - 0.5f * (float)(rows - 1U)) * spacing;
-
-		/* The transforms are the same for every group of the copy; the colour changes per material. */
-		mview_camera_push(&view, renderer->extent.width, renderer->extent.height, &push);
-
-		/* Draws each group with its material's pipeline, texture and colour. */
+	if (last == first)
+		draws = first;
+	for (copy = first; copy < draws; copy++) {
 		for (index = 0U; index < model->group_count; index++) {
 			group = &model->groups[index];
 			material = &model->materials[group->material];
@@ -2309,8 +2451,8 @@ renderer_record(
 				(uint32_t)sizeof(push),
 				&push);
 
-			/* Draws the group's triangles. */
-			vkCmdDrawIndexed(renderer->command, group->count, 1U, group->first, 0, 0U);
+			/* Draws the group's triangles for the copies (or the one copy). */
+			vkCmdDrawIndexed(renderer->command, group->count, instances, group->first, 0, copy);
 		}
 	}
 
@@ -2318,6 +2460,72 @@ renderer_record(
 	vkCmdEndRenderPass(renderer->command);
 
 	/* Succeeded: the frame is recorded. */
+	return;
+}
+
+/*
+ * Writes the copies' places into the per-instance buffer: each copy's
+ * column and row about the grid's centre, as a shift of the clip position
+ * (the clip shift of one column and of one row, taken from the transforms
+ * of the view moved by one spacing) and of the view-space position.  The
+ * buffer is written again only when those shifts changed; the previous
+ * frame's fence was waited on, so no GPU work reads it meanwhile.
+ */
+static void
+renderer_instances(
+	struct mview_renderer *renderer,
+	const struct mview_camera *view,
+	uint32_t columns,
+	uint32_t rows,
+	float spacing)
+{
+	struct mview_camera moved;
+	struct mview_push base;
+	struct mview_push shifted;
+	float basis[6];
+	float column;
+	float row;
+	float *place;
+	uint32_t copy;
+	int same;
+
+	/* The clip position of the view as it is. */
+	mview_camera_push(view, renderer->extent.width, renderer->extent.height, &base);
+
+	/* One column to the right: its clip shift. */
+	moved = *view;
+	moved.pan[0] += spacing;
+	mview_camera_push(&moved, renderer->extent.width, renderer->extent.height, &shifted);
+	basis[0] = shifted.clip[12] - base.clip[12];
+	basis[1] = shifted.clip[13] - base.clip[13];
+
+	/* One row down: its clip shift. */
+	moved = *view;
+	moved.pan[1] -= spacing;
+	mview_camera_push(&moved, renderer->extent.width, renderer->extent.height, &shifted);
+	basis[2] = shifted.clip[12] - base.clip[12];
+	basis[3] = shifted.clip[13] - base.clip[13];
+	basis[4] = spacing;
+	basis[5] = (float)columns;
+
+	/* Unchanged shifts leave the places as they are. */
+	same = memcmp(basis, renderer->instance_basis, sizeof(basis));
+	if (same == 0)
+		return;
+	memcpy(renderer->instance_basis, basis, sizeof(basis));
+
+	/* Each copy's column and row about the centre, in clip space and in view space. */
+	place = (float *)renderer->instances.mapping;
+	for (copy = 0U; copy < renderer->copies; copy++) {
+		column = (float)(copy % columns) - 0.5f * (float)(columns - 1U);
+		row = (float)(copy / columns) - 0.5f * (float)(rows - 1U);
+		place[copy * 4U + 0U] = column * basis[0] + row * basis[2];
+		place[copy * 4U + 1U] = column * basis[1] + row * basis[3];
+		place[copy * 4U + 2U] = column * spacing;
+		place[copy * 4U + 3U] = -row * spacing;
+	}
+
+	/* Succeeded: the places match the view. */
 	return;
 }
 

@@ -20,6 +20,10 @@
 #                                            on weston's kiosk shell on the DRM backend (seatd, started when not
 #                                            running), its MVIEW lines and weston's composition per repaint
 #                                            ("plane-only" is the direct scanout) printed, OUT/mview.log
+#     measure.sh bench zedbsd|linux OUT [LIST]
+#                                            every run of LIST (default bench.list beside this script) on the one
+#                                            system, mview copied first (USB_MVIEW, LINUX_MVIEW); OUT/bench.log and
+#                                            the table of fps and the frame's stages (printed, OUT/table.txt)
 #
 # The environment: ZEDBSD_MAC, ZEDBSD_SUBNET (a /24, as 10.0.30), ZEDBSD_BOOT (the UEFI entry), DEBIAN (user@host),
 # KEY (the zedBSD root key).  A candidate for Master's Tools (the same steps serve other GPUs' boards).
@@ -190,6 +194,34 @@ linux_mview() {
 	cat "$out/mview-planes.log"
 }
 
+bench() {
+	system=$1
+	bout=$2
+	list=${3:-$(dirname "$0")/bench.list}
+	mkdir -p "$bout"
+	: > "$bout/bench.log"
+	if [ "$system" = zedbsd ]; then
+		ip=$(to_zedbsd) || return 1
+		zcp "${USB_MVIEW:-build/ws291/usb/bin/mview}" "root@$ip:/tmp/mview" || return 1
+		zs "$ip" "cp /tmp/mview /bin/mview" || return 1
+	else
+		to_linux || return 1
+		timeout 120 scp -q -r $SSHOPT "${LINUX_MVIEW:-build/ws291/linux-mview}/." "$DEBIAN:linux-mview/" || return 1
+	fi
+	grep -v '^#' "$list" | while IFS='|' read -r blabel boptions; do
+		[ -n "$blabel" ] || continue
+		echo "RUN $blabel $boptions" >> "$bout/bench.log"
+		if [ "$system" = zedbsd ]; then
+			mview "$bout/$blabel" --token="$blabel" --spin=8 --content=game --present=mailbox $boptions > "$bout/$blabel.txt" 2>&1 < /dev/null
+		else
+			linux_mview "$bout/$blabel" --token="$blabel" --spin=8 --content=game --present=mailbox $boptions > "$bout/$blabel.txt" 2>&1 < /dev/null
+		fi
+		cat "$bout/$blabel.txt" >> "$bout/bench.log"
+	done
+	python3 -I "$(dirname "$0")/mview-table.py" "$bout/bench.log" > "$bout/table.txt"
+	cat "$bout/table.txt"
+}
+
 command=${1:-}
 [ $# -gt 0 ] && shift
 case $command in
@@ -200,5 +232,6 @@ deploy) deploy "$@" ;;
 desktop) desktop "$@" ;;
 mview) mview "$@" ;;
 linux-mview) linux_mview "$@" ;;
-*) sed -n '2,29p' "$0"; exit 2 ;;
+bench) bench "$@" ;;
+*) sed -n '2,33p' "$0"; exit 2 ;;
 esac

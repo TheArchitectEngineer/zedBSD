@@ -148,8 +148,27 @@ struct mview_renderer {
 	VkPresentModeKHR wanted_present;
 	VkPresentModeKHR present_mode;
 
-	/* How many copies of the model each frame draws, side by side in a grid (--copies). */
+	/*
+	 * How many copies of the model each frame draws, side by side in a grid
+	 * (--copies), and whether each copy is its own draws (--draws=each)
+	 * instead of one instanced draw a material group.  The copies' places
+	 * are a per-instance vertex buffer of four floats each (the shift in
+	 * clip space, then in view space), rewritten only when the shift of
+	 * one column or one row (basis) changes.
+	 */
 	uint32_t copies;
+	int each_draw;
+
+	/*
+	 * How many submissions draw a frame (--submits), each its own command
+	 * buffer and its own part of the copies; with more than one, the
+	 * passes that open (clear), continue and close (present) a frame.
+	 */
+	uint32_t submits;
+	VkCommandBuffer *commands;
+	VkRenderPass part_passes[3];
+	struct mview_buffer instances;
+	float instance_basis[6];
 	uint32_t max_texture_side;
 	int blit_mipmaps;
 	int linear_filter;
@@ -162,7 +181,7 @@ int mview_window_dispatch(struct mview_window *window, int timeout);
 void mview_window_close(struct mview_window *window);
 
 /* Renderer cleanup releases Vulkan ownership before the native window closes. */
-VkResult mview_renderer_open(struct mview_renderer *renderer, struct mview_window *window, int pixel_shading, VkPresentModeKHR present_mode, uint32_t copies);
+VkResult mview_renderer_open(struct mview_renderer *renderer, struct mview_window *window, int pixel_shading, VkPresentModeKHR present_mode, uint32_t copies, int each_draw, uint32_t submits);
 VkResult mview_renderer_load(struct mview_renderer *renderer, const struct mview_model *model);
 VkResult mview_renderer_draw(struct mview_renderer *renderer, const struct mview_model *model, const struct mview_camera *camera);
 VkResult mview_renderer_recreate(struct mview_renderer *renderer, uint32_t width, uint32_t height);

@@ -1,0 +1,14 @@
+# ws291: the mview runs measure.sh bench makes, one a line: LABEL|OPTIONS (each with --spin=8 --content=game
+# --present=mailbox added).  scene: the heavy 3D scene, instanced (the vertices, indices and places stay in
+# buffers; 16 draws a frame).  big-N: one submission of N copies drawn one by one (16 N draws).  subs-N: N
+# submissions of one copy each (16 draws each).
+scene-1|--copies=1
+scene-1500|--copies=1500
+scene-6500|--copies=6500
+big-1|--draws=each --copies=1
+big-10|--draws=each --copies=10
+big-100|--draws=each --copies=100
+big-1000|--draws=each --copies=1000
+subs-10|--draws=each --copies=10 --submits=10
+subs-100|--draws=each --copies=100 --submits=100
+subs-1000|--draws=each --copies=1000 --submits=1000

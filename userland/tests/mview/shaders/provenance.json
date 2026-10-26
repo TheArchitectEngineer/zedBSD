@@ -9,10 +9,10 @@
     "mview.vert": {
       "stage": "vertex",
       "array": "mview_vertex_shader",
-      "source_sha256": "9ec70f524c734821e86d03b15e31f9c44bd71c5842383c3c84dd33323e6ee979",
+      "source_sha256": "9829e31932337e7e693ebf6e3f265afbfa7cd916615703f915a966694f8608ff",
       "binary": "mview.vert.spv",
-      "binary_sha256": "667ccae49f6af25555d3153b3013600f6462af2abf0e03e4f075400f0e560914",
-      "bytes": 2892
+      "binary_sha256": "dd20bf4e65370880228f564460cd465887ed4f48f84e43838a385764a85c27ca",
+      "bytes": 3096
     },
     "mview.frag": {
       "stage": "fragment",
@@ -33,10 +33,10 @@
     "pixel.vert": {
       "stage": "vertex",
       "array": "mview_pixel_vertex_shader",
-      "source_sha256": "51cb5c5086ac0ea24afe09c94434ca3f5a8b056feedcc36e81605f6c9515222c",
+      "source_sha256": "05fb4b9e3b7a2b321db888525290f1457bfd09c95d39a1ce736700551ca221e5",
       "binary": "pixel.vert.spv",
-      "binary_sha256": "f0c5318249c02f01e3614a18f68687e745ad9605e659981f099be22f8a34e19f",
-      "bytes": 2644
+      "binary_sha256": "97fdd1d7e0b91d76fe5d4d267479557f55506a197be7b672e7b2838371df18a5",
+      "bytes": 2848
     },
     "pixel.frag": {
       "stage": "fragment",

@@ -11,12 +11,16 @@
  * The clip transform and the normal rotation arrive as columns so no matrix
  * type is needed.  Lambert lighting from a fixed view-space direction plus an
  * ambient term gives a per-vertex shade that the fragment stage multiplies in.
+ * Each instance is one copy of the model (--copies): its place in the grid is
+ * a shift of the clip position (xy of the per-instance offset; zw is the same
+ * shift in view space, which the per-pixel shading uses).
  */
 #version 450
 
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec2 texture_position;
+layout(location = 3) in vec4 copy_offset;
 
 layout(location = 0) out vec2 texture_coordinate;
 layout(location = 1) out float shade;
@@ -44,5 +48,6 @@ void main()
     gl_Position = position.x * view.clip_x +
                   position.y * view.clip_y +
                   position.z * view.clip_z +
-                  view.clip_w;
+                  view.clip_w +
+                  vec4(copy_offset.xy, 0.0, 0.0);
 }
