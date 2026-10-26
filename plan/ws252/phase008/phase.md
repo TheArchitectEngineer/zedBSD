@@ -2,7 +2,7 @@
 
 # ws252-p008: 規約の全文の見直し
 
-Status: in-progress（2026-10-27 q1599 P4: 見直しと修正・build・host 試験まで。cleared は Q1）
+Status: cleared（2026-10-27 00:52 Q1、merge 636a82593）。前: in-progress（2026-10-27 q1599 P4: 見直しと修正・build・host 試験まで。cleared は Q1）
 Parent: [WS252](../ws.md)
 Queue: q1599-i01（P4）
 
