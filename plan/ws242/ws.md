@@ -3,7 +3,7 @@
 # WS242: nvrtx の RTX 20/30/40 の全モデルの対応
 
 <!-- awesome-plan-current:start -->
-Status: incomplete・保留（止まったまま）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 は 2026-10-15 に P2 の途中の WIP、p002 は host・build まで。実機（RTX 30/40）は「ユーザーの指示で無し」、2026-10-15 から止まっている）。旧: incomplete（2026-10-15 Q1 作成、ユーザー「20/30/40対応も独立したWSにして、今から作業します。」）。残り・制限: p001 の再開点 1〜4、GTX 16・RTX 30・40 の既定の有効（ユーザーの決定、未実装）
+Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「すぐ取り組むものの一つです。」）。旧: incomplete・保留（止まったまま）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 は 2026-10-15 に P2 の途中の WIP、p002 は host・build まで。実機（RTX 30/4…
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx の本体、RTX 2070 で desktop）、[WS240](../ws240/ws.md)（RTX 50、まだ開始しない）

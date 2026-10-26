@@ -3,7 +3,7 @@
 # WS221: Jumbo frame（Ethernet の L2 の大きな MTU）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13 を待ったまま 2026-10-13 から止まっている）。旧: incomplete（2026-10-13 Q1 作成。P2 が p001 を実行: 設計 [phase001/phase.md](phase001/phase.md) の第 2 版（review-1 の 31 件に対応）を書いた。design-reviewer の review-2 とユーザーの判断（phase.md…。残り・制限: p001 の判断から
+Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」）。旧: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13…
 Resume point: p001 の review-2 → §9 の判断（特に Q1・Q4・Q11・Q12・Q13）→ p002（kernel + ifconfig + ping）と p004（設定）を Queue に、p003 の前に descriptor の読み（phase.md §4.1）
 Primary Milestone: MG005
 Related Milestones: なし

@@ -3,7 +3,7 @@
 # WS207: Raspberry Pi 4 のオーディオ（再生と録音）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete・保留（Pi 4 の完了の範囲の外）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-12 ユーザー「…そのあと、RPi4のWiFiとBluetoothを実装し、RPi4は完了です。」（音は含まれない）。p001 は F1〜F3 の判断待ち、p003・p004 は未着手）。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-11 Q1 作成、P1 の予約の Queue））。残り・制限: p001 の判断、p002 の実機、p003・p004
+Status: completed（2026-10-27 ユーザーの回答（クリック）「completed」。実機の確認は未実施の物がある）。旧: incomplete・保留（Pi 4 の完了の範囲の外）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-12 ユーザー「…そのあと、RPi4のWiFiとBluetoothを実装し、RPi4は完了です。」…
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)

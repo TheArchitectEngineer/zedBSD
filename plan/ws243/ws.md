@@ -3,7 +3,7 @@
 # WS243: nvrtx の NVDEC で H.264 の decode（Vulkan Video）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete・保留（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-15 ユーザーの指示で一時停止（ws243/ws.md「p001 を途中で一時停止、実機の debug は WS241 の後」））。旧: incomplete（2026-10-15 作成、p001 を P6 が途中まで実施し、ユーザーの指示で一時停止。code だけ先に書き、実機の debug は [WS241](../ws241/ws.md) の完了の後）。残り・制限: p001 の design.md から
+Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「すぐ取り組むものの一つです。」）。旧: incomplete・保留（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-15 ユーザーの指示で一時停止（ws243/ws.md「p001 を途中で一時停止、実機の debug は WS241 の後」）…
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)

@@ -3,7 +3,7 @@
 # WS068: EGL と OpenGL ES を Vulkan と display 拡張の上に実装する
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: incomplete（継続、空き時間だけ。2026-10-27 ユーザーの回答（クリック）「継続」）。旧: incomplete
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1, O2

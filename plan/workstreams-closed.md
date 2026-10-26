@@ -177,7 +177,9 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS202](ws202/ws.md) | MG006 | libavcodec なしで libmedia だけで mp4（H.264 は Vulkan Video・AAC-LC は自前）と .m4a を再生（Video Player・Music）（2026-10-11 ユーザー、設計だけ、実装は別のセッション） | completed（2026-10-27 精査 q1608） | BUG-300（スライダー）は Bug で、p014 の規約は一括の見直しへ、実機の全項目は未確認 |
 | [WS203](ws203/ws.md) | MG005 | Raspberry Pi 4 内蔵 Ethernet (BCM2711 GENET v5) | completed（2026-10-27 精査 q1608） | 実機の確認は未実施 |
 | [WS206](ws206/ws.md) | MG005 | Raspberry Pi 4 の WiFi（2026-10-11 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認（scan・WPA2・DHCP）は未実施、p007 の規約は一括の見直しへ |
+| [WS207](ws207/ws.md) | MG006 | Raspberry Pi 4 のオーディオ（再生・録音）（2026-10-11 ユーザー） | completed（2026-10-27 ユーザーの回答「completed」） | p001 の判断、p002 の実機、p003・p004 |
 | [WS208](ws208/ws.md) | MG008 | arm64 の HAL の SMP（Pi 4 の 4 core）（2026-10-11 ユーザー） | completed（2026-10-27 精査 q1608） | p005 の reboot 10 回は未実施、p006 の規約は一括の見直しへ |
+| [WS210](ws210/ws.md) | MG006 | Keiland の app の描画を GPU へ（libkeiland の canvas・文字・画像を Vulkan で）（2026-10-12 ユーザー） | completed（2026-10-27 ユーザー「これはすでにVF2での最適化で完了しています。completedにしてください。」） | p001 の確認から（Guardrail「画像の処理は GPU で」の残り） |
 | [WS211](ws211/ws.md) | MG006 | Pi 4 の compositor の描画の削減（App Home の遷移のクロスフェード、draw の束ね）（2026-10-12 ユーザー） | completed（2026-10-27 精査 q1608） | p002（クロスフェード）は終了の時に未実装、p004 の規約は一括の見直しへ |
 | [WS213](ws213/ws.md) | MG006 | compositor の thread 化（入力・cursor と描画の分離、重いコマの間も入力と cursor が止まらない）（2026-10-12 ユーザー） | completed（2026-10-27 精査 q1608） | p006 の規約は一括の見直しへ、box_lag の数値は未確認 |
 | [WS214](ws214/ws.md) | MG006 | 窓をディスプレイの重ね合わせ（HVS の plane）に載せる（Pi 4、drag・dock の間 GPU が窓を描き直さない）（2026-10-12 ユーザー「ぜんぶやりましょう。」） | completed（2026-10-27 精査 q1608） | p005・p006（案、未投入）は終了、p002 の規約と類似の監査は一括の見直しへ |
@@ -209,6 +211,7 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS252](ws252/ws.md) | MG006 | i915 の RKL・ADL-S/RPL-S・ICL の GT の対応（2026-10-15 ユーザー、WS245 §7 #20） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施 |
 | [WS253](ws253/ws.md) | MG001 | 起動の時間の短縮: 通常の起動は sessiond（Wayland）を先に、network・audio・sshd などは後に。debug の起動は今のまま（2026-10-16 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施、p002 の規約は一括の見直しへ |
 | [WS254](ws254/ws.md) | MG001 | networkd: DHCP の失敗の後に 1 分おきに取り直す（2026-10-16 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施、p002 の規約は一括の見直しへ |
+| [WS255](ws255/ws.md) | MG001 | 試験機（5330・RDNA 機）の zedBSD の試験の image を静的な IP に（2026-10-16 ユーザー） | canceled（2026-10-27 ユーザーの回答「取り下げ」、WS254 の DHCP の取り直しで足りる、BUG-328 は Bug に残す） | BUG-328 の直し |
 | [WS256](ws256/ws.md) | MG008 | StarFive VisionFive 2（JH7110、RISC-V）への移植（2026-10-18 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認（音・coherency・PERST）は未実施、p018 の ssh |
 | [WS258](ws258/ws.md) | MG001 | 全ドライバの出典の表記を guardrail に（file の先頭から block へ）（2026-10-18 ユーザー） | completed（2026-10-18、残りは WS244・WS259） | — |
 | [WS259](ws259/ws.md) | MG005 | RTL8822B の表（rtl8822b-tables.inc）を値の引用に書き換える（2026-10-18 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施、package の directory の削除は Q1 |
