@@ -18,6 +18,8 @@
 #include <wayland-client.h>
 #include <xdg-shell-client-protocol.h>
 
+#include "userland/desktop/libwayland/content-type-v1-client-protocol.h"
+
 #include "model.h"
 
 /* One configured fullscreen role, owned until Vulkan surface destruction. */
@@ -45,6 +47,10 @@ struct mview_window {
 	/* The largest size the compositor lets the window choose (xdg-shell 4; zero: not known). */
 	uint32_t bounds_width;
 	uint32_t bounds_height;
+
+	/* The compositor's content-type manager and this surface's object, when the viewer names its content (--content). */
+	struct wp_content_type_manager_v1 *content_manager;
+	struct wp_content_type_v1 *content_type;
 
 	int configured;
 	int resized;
@@ -137,6 +143,13 @@ struct mview_renderer {
 	/* Nonzero for per-pixel lighting (--shading=pixel): the scene block in a uniform buffer, binding 1 of every set. */
 	int pixel_shading;
 	struct mview_buffer scene;
+
+	/* The presentation mode asked for (--present) and the one the swapchain uses (FIFO when the asked one is not offered). */
+	VkPresentModeKHR wanted_present;
+	VkPresentModeKHR present_mode;
+
+	/* How many copies of the model each frame draws, side by side in a grid (--copies). */
+	uint32_t copies;
 	uint32_t max_texture_side;
 	int blit_mipmaps;
 	int linear_filter;
@@ -144,12 +157,12 @@ struct mview_renderer {
 };
 
 /* Window lifetime encloses all renderer use of the borrowed native surface. */
-int mview_window_open(struct mview_window *window, const char *display, struct mview_input *input, uint32_t width, uint32_t height, int fullscreen);
+int mview_window_open(struct mview_window *window, const char *display, struct mview_input *input, uint32_t width, uint32_t height, int fullscreen, uint32_t content);
 int mview_window_dispatch(struct mview_window *window, int timeout);
 void mview_window_close(struct mview_window *window);
 
 /* Renderer cleanup releases Vulkan ownership before the native window closes. */
-VkResult mview_renderer_open(struct mview_renderer *renderer, struct mview_window *window, int pixel_shading);
+VkResult mview_renderer_open(struct mview_renderer *renderer, struct mview_window *window, int pixel_shading, VkPresentModeKHR present_mode, uint32_t copies);
 VkResult mview_renderer_load(struct mview_renderer *renderer, const struct mview_model *model);
 VkResult mview_renderer_draw(struct mview_renderer *renderer, const struct mview_model *model, const struct mview_camera *camera);
 VkResult mview_renderer_recreate(struct mview_renderer *renderer, uint32_t width, uint32_t height);

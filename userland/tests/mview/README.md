@@ -29,6 +29,9 @@ It shows a model converted by `tools/fbx2mview.py` (format:
 | `--shading=vertex\|pixel` | lighting per vertex (default, the p013 images) or per pixel (see Rendering) |
 | `--windowed` | a window the compositor places instead of asking for fullscreen |
 | `--size=WxH` | the window's size when the compositor leaves it to the viewer (64–4096 each, default 640x480) |
+| `--content=none\|video\|game` | the content type the window says it shows (`wp_content_type_v1`, when the compositor offers it); `game` lets Keiland show a fullscreen window straight on the display (default `none`) |
+| `--present=fifo\|mailbox\|immediate` | the swapchain's presentation mode; FIFO when the surface does not offer the one asked (default `fifo`) |
+| `--copies=N` | draws N copies of the model (1–4096) side by side in a grid, the viewer moved back so the grid shows: a heavier scene for measuring (default 1) |
 
 ## Controls
 
@@ -49,6 +52,7 @@ synthesized. Without a `wl_seat` the viewer still renders, without input.
 
 ```
 MVIEW START run=<t> model=<dir> vertices=<n> triangles=<m> materials=<k> textures=<t>[ shading=pixel]
+MVIEW PRESENT run=<t> asked=<mode> mode=<mode> copies=<n> content=<type> content_manager=0|1
 MVIEW INPUT run=<t> kind=motion|button|axis|key <event fields> yaw=<deg> pitch=<deg> distance=<d> pan=<x>,<y>
 MVIEW FRAME run=<t> frame=<n> yaw=<deg> pitch=<deg> distance=<d> pan=<x>,<y>
 MVIEW DONE run=<t> frames=<n> reason=quit|closed|timeout|frames

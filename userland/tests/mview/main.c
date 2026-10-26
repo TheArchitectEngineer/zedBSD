@@ -50,6 +50,15 @@ struct main_options {
 	int windowed;
 	uint32_t width;
 	uint32_t height;
+
+	/* The content the window says it shows (--content, a wp_content_type_v1 type; none by default). */
+	uint32_t content;
+
+	/* The presentation mode asked for (--present, FIFO by default). */
+	VkPresentModeKHR present;
+
+	/* How many copies of the model each frame draws (--copies, one by default). */
+	uint32_t copies;
 };
 
 /* The frame-rate measurement of the spin demonstration. */
@@ -80,6 +89,9 @@ static int options_parse(int argc, char **argv, struct main_options *options);
 static int option_number(const char *text, uint32_t maximum, uint32_t *number);
 static int option_token(const char *token);
 static int option_size(const char *text, uint32_t *width, uint32_t *height);
+static int option_content(const char *text, uint32_t *content);
+static int option_present(const char *text, VkPresentModeKHR *present);
+static const char *main_present_name(VkPresentModeKHR present);
 static int main_expired(const struct timespec *start, uint32_t timeout);
 static void main_frame_log(const char *token, uint32_t frame, const struct mview_camera *camera);
 static double main_seconds(const struct timespec *from, const struct timespec *to);
@@ -123,7 +135,7 @@ main(
 	/* Argument failure starts no connection or GPU namespace. */
 	status = options_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: mview [--display=NAME] [--model=DIR] [--token=NAME] [--frames=N] [--timeout-s=N] [--spin=SECONDS] [--shading=vertex|pixel] [--windowed] [--size=WxH]\n");
+		fprintf(stderr, "usage: mview [--display=NAME] [--model=DIR] [--token=NAME] [--frames=N] [--timeout-s=N] [--spin=SECONDS] [--shading=vertex|pixel] [--windowed] [--size=WxH] [--content=none|video|game] [--present=fifo|mailbox|immediate] [--copies=N]\n");
 		return 2;
 	}
 
@@ -158,7 +170,7 @@ main(
 
 	/* Creates the configured fullscreen window and binds the seat if there is one. */
 	operation = "mview_window_open";
-	status = mview_window_open(&window, options.display, &input, options.width, options.height, !options.windowed);
+	status = mview_window_open(&window, options.display, &input, options.width, options.height, !options.windowed, options.content);
 	if (status != 0)
 		goto cleanup;
 
@@ -167,12 +179,23 @@ main(
 	fflush(stdout);
 
 	/* Creates renderer ownership only after the native surface is configured. */
-	result = mview_renderer_open(&renderer, &window, options.pixel_shading);
+	result = mview_renderer_open(&renderer, &window, options.pixel_shading, options.present, options.copies);
 	operation = renderer.operation;
 	if (result != VK_SUCCESS) {
 		status = -1;
 		goto cleanup;
 	}
+
+	/* The presentation mode the swapchain took, the copies drawn and the content said (for the harness). */
+	printf(
+		"MVIEW PRESENT run=%s asked=%s mode=%s copies=%u content=%u content_manager=%d\n",
+		options.token,
+		main_present_name(options.present),
+		main_present_name(renderer.present_mode),
+		options.copies,
+		options.content,
+		window.content_manager != NULL ? 1 : 0);
+	fflush(stdout);
 
 	/* Uploads geometry and textures. */
 	result = mview_renderer_load(&renderer, &model);
@@ -377,6 +400,9 @@ options_parse(
 	options->token = "manual";
 	options->width = 640U;
 	options->height = 480U;
+	options->content = WP_CONTENT_TYPE_V1_TYPE_NONE;
+	options->present = VK_PRESENT_MODE_FIFO_KHR;
+	options->copies = 1U;
 
 	/* Applies each explicit option in command-line order. */
 	for (index = 1; index < argc; index++) {
@@ -467,6 +493,35 @@ options_parse(
 			continue;
 		}
 
+		/* The content the window says it shows. */
+		match = strncmp(argv[index], "--content=", 10U);
+		if (match == 0) {
+			status = option_content(argv[index] + 10U, &options->content);
+			if (status != 0)
+				return -1;
+			continue;
+		}
+
+		/* The presentation mode asked of the swapchain. */
+		match = strncmp(argv[index], "--present=", 10U);
+		if (match == 0) {
+			status = option_present(argv[index] + 10U, &options->present);
+			if (status != 0)
+				return -1;
+			continue;
+		}
+
+		/* The copies of the model drawn each frame, at least one. */
+		match = strncmp(argv[index], "--copies=", 9U);
+		if (match == 0) {
+			status = option_number(argv[index] + 9U, 4096U, &options->copies);
+			if (status != 0)
+				return -1;
+			if (options->copies == 0U)
+				return -1;
+			continue;
+		}
+
 		/* Zero seconds means no deadline. */
 		match = strncmp(argv[index], "--timeout-s=", 12U);
 		if (match == 0) {
@@ -511,6 +566,89 @@ option_size(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/* Parses the content type's name: none, video or game. */
+static int
+option_content(
+	const char *text,
+	uint32_t *content)
+{
+	int match;
+
+	/* No content type said. */
+	match = strcmp(text, "none");
+	if (match == 0) {
+		*content = WP_CONTENT_TYPE_V1_TYPE_NONE;
+		return 0;
+	}
+
+	/* A video. */
+	match = strcmp(text, "video");
+	if (match == 0) {
+		*content = WP_CONTENT_TYPE_V1_TYPE_VIDEO;
+		return 0;
+	}
+
+	/* A game: the compositor may show the fullscreen window straight on the display. */
+	match = strcmp(text, "game");
+	if (match == 0) {
+		*content = WP_CONTENT_TYPE_V1_TYPE_GAME;
+		return 0;
+	}
+
+	/* Anything else is refused. */
+	return -1;
+}
+
+/* Parses the presentation mode's name: fifo, mailbox or immediate. */
+static int
+option_present(
+	const char *text,
+	VkPresentModeKHR *present)
+{
+	int match;
+
+	/* One image a display refresh, the default. */
+	match = strcmp(text, "fifo");
+	if (match == 0) {
+		*present = VK_PRESENT_MODE_FIFO_KHR;
+		return 0;
+	}
+
+	/* The newest image replaces a waiting one: the frame rate is the GPU's. */
+	match = strcmp(text, "mailbox");
+	if (match == 0) {
+		*present = VK_PRESENT_MODE_MAILBOX_KHR;
+		return 0;
+	}
+
+	/* Every image shown at once, tearing allowed. */
+	match = strcmp(text, "immediate");
+	if (match == 0) {
+		*present = VK_PRESENT_MODE_IMMEDIATE_KHR;
+		return 0;
+	}
+
+	/* Anything else is refused. */
+	return -1;
+}
+
+/* Names a presentation mode as --present does. */
+static const char *
+main_present_name(
+	VkPresentModeKHR present)
+{
+	/* The three modes the option names. */
+	if (present == VK_PRESENT_MODE_FIFO_KHR)
+		return "fifo";
+	if (present == VK_PRESENT_MODE_MAILBOX_KHR)
+		return "mailbox";
+	if (present == VK_PRESENT_MODE_IMMEDIATE_KHR)
+		return "immediate";
+
+	/* Succeeded: another mode, which the viewer never asks for. */
+	return "other";
 }
 
 /* Rejects signs, overflow and trailing input before an option changes runtime bounds. */
