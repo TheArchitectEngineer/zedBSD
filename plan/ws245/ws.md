@@ -3,7 +3,7 @@
 # WS245: i915 の Gen12 系（display 12・13）の display の書き直し
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-26 q1597 P4: main の tip 684a5243f で 5330 の素の起動の回帰 PASS（下の「q1597」）、in-progress の Phase の判定は Q1。2026-10-15 作成。p001 の [design.md](design.md) は改訂 6 で cleared（2026-10-16 Q1）。q1218（P1、2026-10-16）で段の実装を開始: p047（証拠の道具）cleared、p016（OpRegion）・p017（VBT の解析）は 5330 の素の起動の回帰に合格し main に merge（p016）/ merge の依頼済み（p017）。p019〜p050a は branch agent/p1-ws245 に実装済み（5330 は全部の段の後に 1 回））
+Status: incomplete（2026-10-26 23:40 Q1: 全部の Phase が cleared（SV7 の分は除く、2026-10-19 ユーザー）。WS の完了の形への書き直しは P4 の q1598・q1599 の後に。2026-10-26 q1597 P4: main の tip 684a5243f で 5330 の素の起動の回帰 PASS（下の「q1597」）、in-progress の Phase の判定は Q1。2026-10-15 作成。p001 の [design.md](design.md) は改訂 6 で cleared（2026-10-16 Q1）。q1218（P1、2026-10-16）で段の実装を開始: p047（証拠の道具）cleared、p016（OpRegion）・p017（VBT の解析）は 5330 の素の起動の回帰に合格し main に merge（p016）/ merge の依頼済み（p017）。p019〜p050a は branch agent/p1-ws245 に実装済み（5330 は全部の段の後に 1 回））
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
