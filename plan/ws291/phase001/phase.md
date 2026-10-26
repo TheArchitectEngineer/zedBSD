@@ -3,7 +3,7 @@
 # ws291-p001 desktop の計測と 60 fps
 
 - 親: [WS291](../ws.md)。
-- 状態: in-progress（2026-10-26 23:40 P2、q1595-i01）。既に 60 fps、直す所は無し（下の結果）。T1 に頼む試験は無い（実機の計測はこの WS の本体で担当が直に行う）。
+- 状態: cleared（2026-10-26 23:45 Q1: 2 回とも全段 60 fps（scroll・hover は入力の間隔で決まる、ws270-p007 と同じ）、直す所は無し。d29a59f6b、merge bad29b52f）
 
 ## 範囲
 
@@ -52,3 +52,4 @@ frame-ops（`plan/tools/frame-ops/frame-ops.sh`、起動直後の session、fram
 Debian からの BootNext と zedBSD の IP の待ち（MAC から ip neigh、無ければ subnet の ping の sweep）、zedBSD への file・kernel の配置と再起動、
 frame-ops の実行・log の回収・frame-times.py の表、mview の実行と `KWL SCANOUT` の行の抜き出しをし、要約だけを出す。長い log は OUT に残す。
 RDNA で確立し、NVIDIA・PowerVR の板には MAC・subnet・Debian・boot の項目の環境変数を変えて使う見込み。
+- 2026-10-26 23:45 Q1: cleared（上の状態）。

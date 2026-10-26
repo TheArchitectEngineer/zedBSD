@@ -3,7 +3,7 @@
 # WS244: i915 の Linux 由来の code の書き直し（データだけを引用で残す）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-26 q1598: p009 の 5330 の実機 PASS、SV7 は未。2026-10-15 作成、p001 を P7 が途中まで実施して中断。2026-10-18 ユーザーの指示で P1 が再開、q1250）
+Status: incomplete（2026-10-26 23:45 Q1: p009 cleared（5330 だけ、SV7 は試さない）。2026-10-26 q1598: p009 の 5330 の実機 PASS。2026-10-15 作成、p001 を P7 が途中まで実施して中断。2026-10-18 ユーザーの指示で P1 が再開、q1250）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
@@ -42,7 +42,7 @@ Resume point: p001 の棚卸しは途中（plan/ws244/inventory.md、P7 5a352c47
 | [p006](phase006/phase.md) | GT の電源と WA: gt-power.c・workarounds.c・verify-workarounds.c の書き直し | cleared（2026-10-19 Q1） |
 | [p007](phase007/phase.md) | compiler・render: genxml*・eu-encoding-*・null-state-gen9 の header（判断 1 に従う）と eu.c・compile.c・*.inc・render の Mesa の言及を Procedure/Values referenced に | cleared（2026-10-19 Q1） |
 | [p008](phase008/phase.md) | display の残り: internal.h の古い comment、xd-dp.h ほかの言及の掃除 | cleared（2026-10-19 Q1） |
-| [p009](phase009/phase.md) | license の package（userland/base/licenses/i915-driver/）の整理（判断 2）、規約の全文の見直し、T1 への実機の試験の依頼 | in-progress（2026-10-26 q1598 P4: 5330 の実機 PASS、directory は削除済み。SV7 は未実施。判定は Q1） |
+| [p009](phase009/phase.md) | license の package（userland/base/licenses/i915-driver/）の整理（判断 2）、規約の全文の見直し、T1 への実機の試験の依頼 | cleared（2026-10-26 23:45、5330 の実機 PASS、SV7 は試さない（ユーザー）） |
 
 ## ユーザーの決定（2026-10-18、クリック）
 

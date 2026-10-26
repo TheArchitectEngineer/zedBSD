@@ -2,7 +2,7 @@
 
 # ws244-p009 license の package を外す・規約の見直し・log の文言・実機の試験の依頼
 
-Status: in-progress（2026-10-26 q1598 P4: 5330 の実機の回帰 PASS（下の「q1598」）、package の directory は main で削除済み。SV7 は未実施（10.0.10.27 に届かない）。cleared は Q1）
+Status: cleared（2026-10-26 23:45 Q1、5330 だけ、SV7 は試さない）。前: in-progress（2026-10-26 q1598 P4: 5330 の実機の回帰 PASS（下の「q1598」）、package の directory は main で削除済み。SV7 は未実施（10.0.10.27 に届かない）。cleared は Q1）
 
 - 親: [WS244](../ws.md)。ユーザーの決定 2（2026-10-18、クリック）: 書き直しの後 `userland/base/licenses/i915-driver/` は「外す」。
 
@@ -46,3 +46,4 @@ Status: in-progress（2026-10-26 q1598 P4: 5330 の実機の回帰 PASS（下の
   - GPU の描画: compositor の present が GPU の submit で通る（`perf:` の行 4、例 40 submits・24 batches、per submit 3.60 ms）。vkcube 相当の単独の program は流していない（未実施）。
 - `userland/base/licenses/i915-driver/` は main に無い（Q1 が削除済み、89f0c3d9d）。
 - 未実施: SV7（Gen9、10.0.10.27 は 2026-10-26 23:4x に No route to host）。plan/ws129 の写しの扱いは Q1。
+- 2026-10-26 23:45 Q1: cleared。ユーザー（Q1 の問い「SV7 に届きません。どうしますか？」へ）「SV7は試しません。clearedの条件は5330のみにします。」→ 5330 の PASS（P4 q1598、7dc936a23）で cleared。
