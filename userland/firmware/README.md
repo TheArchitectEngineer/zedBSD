@@ -24,10 +24,13 @@ RTL8822C support owns a separate `rtl8822c/` entry. RTL8822B uses its frozen Git
 acquisition mirror. AX211 uses the official `linux-firmware` tag `20260410`
 dereferenced commit and installs the exact `-89.ucode`, PNVM, complete Intel
 license, WHENCE, and manifest. `i915/` (package `i915-firmware`) uses the same
-official commit and installs the Intel display DMC firmware
-`i915/adlp_dmc.bin` (ADL-P, v2.20) and `i915/tgl_dmc_ver2_12.bin` (TGL, v2.12)
-below `/lib/firmware/i915/`, byte-identical to the blobs the i915 driver was
-brought up with, together with the complete `LICENSE.i915`, WHENCE, and
+official commit and installs every Intel display DMC program the i915 driver
+names below `/lib/firmware/i915/`: `adlp_dmc.bin` (ADL-P, v2.20, and its
+fallback `adlp_dmc_ver2_16.bin`, v2.16), `tgl_dmc_ver2_12.bin` (TGL, v2.12),
+`rkl_dmc_ver2_03.bin` (RKL, v2.03), `adls_dmc_ver2_01.bin` (ADL-S and RPL-S,
+v2.01) and `icl_dmc_ver1_09.bin` (ICL, v1.09); the ADL-P and TGL ones are
+byte-identical to the blobs the driver was brought up with. It installs them
+together with the complete `LICENSE.i915`, WHENCE, and
 manifest. `LICENSE.i915` permits redistribution of the unmodified binaries
 only, with its notice, so these bytes belong to this package and not to the
 kernel. Its focused check is
