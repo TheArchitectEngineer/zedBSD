@@ -204,6 +204,7 @@
  * masks, the wave limit 0x3f and the request control).
  */
 #define AMDRDNA_SH_UNITS_ALL			(0xffffU | (0x3fU << 16))
+#define AMDRDNA_SH_UNITS_INDEX			3U
 #define AMDRDNA_SH_UNITS_HIGH_ALL		0xffffU
 #define AMDRDNA_SH_PIXEL_REQUEST_CONTROL	(1U | (3U << 1))
 #define AMDRDNA_SH_DISPATCH_START		(1U | (1U << 2) | (1U << 6) | (1U << 15))
@@ -765,6 +766,7 @@ void amdrdna_vk_pm4_set_shader(struct amdrdna_vk_pm4 *pm4, uint32_t reg, uint32_
 void amdrdna_vk_pm4_set_shader_run(struct amdrdna_vk_pm4 *pm4, uint32_t reg, const uint32_t *values, uint32_t count);
 void amdrdna_vk_pm4_set_user_config(struct amdrdna_vk_pm4 *pm4, uint32_t reg, uint32_t value);
 void amdrdna_vk_pm4_set_user_config_indexed(struct amdrdna_vk_pm4 *pm4, uint32_t reg, uint32_t index, uint32_t value);
+void amdrdna_vk_pm4_set_shader_indexed(struct amdrdna_vk_pm4 *pm4, uint32_t reg, uint32_t index, uint32_t value);
 void amdrdna_vk_pm4_event(struct amdrdna_vk_pm4 *pm4, uint32_t event, uint32_t index);
 void amdrdna_vk_pm4_event_fence(struct amdrdna_vk_pm4 *pm4, uint32_t event, uint32_t caches, uint64_t address, uint32_t value);
 void amdrdna_vk_pm4_wait_value(struct amdrdna_vk_pm4 *pm4, uint64_t address, uint32_t value);

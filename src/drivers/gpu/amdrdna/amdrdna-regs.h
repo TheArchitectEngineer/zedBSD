@@ -192,6 +192,22 @@
 #define AMDRDNA_GC_REG_ENGINE1_STATUS		0x0da6U
 
 /*
+ * More status words of the graphics block (GC window 0): the third
+ * status word, the command processor's busy and status words, and the
+ * clipper's and the setup unit's (busy in bit 31).
+ *
+ * Values referenced: Linux v6.12
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmGRBM_STATUS3 0x0da7, mmCP_BUSY_STAT 0x0f3f, mmCP_STAT 0x0f40,
+ * mmPA_CL_CNTL_STATUS 0x1024, mmPA_SU_CNTL_STATUS 0x1034).
+ */
+#define AMDRDNA_GC_REG_BLOCK_STATUS3		0x0da7U
+#define AMDRDNA_GC_REG_CP_BUSY			0x0f3fU
+#define AMDRDNA_GC_REG_CP_STATUS		0x0f40U
+#define AMDRDNA_GC_REG_CLIP_STATUS		0x1024U
+#define AMDRDNA_GC_REG_SETUP_STATUS		0x1034U
+
+/*
  * The shader sequencer's indirect window on a wave of the array the
  * array select names (GC window 0): the index word (the wave in bits 4:0,
  * the register in 31:16) and the data word; and the wave registers read

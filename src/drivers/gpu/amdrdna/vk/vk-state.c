@@ -700,8 +700,8 @@ state_primitive_shader(
 	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_USER_DATA, words, 3U);
 
 	/* RADV's CUs and late allocation, the parameter cache oversubscribed. */
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PRIMITIVE_UNITS, AMDRDNA_SH_PRIMITIVE_UNITS_NGG);
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH_NGG);
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PRIMITIVE_UNITS, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_PRIMITIVE_UNITS_NGG);
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH_NGG);
 	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_PARAMETER_CACHE, AMDRDNA_UC_PARAMETER_CACHE_NGG);
 
 	/* The subgroup: its size, its output, one primitive from each, the primitive export's format, one instance. */
@@ -1016,12 +1016,12 @@ state_start_graphics(
 	static const uint32_t guard_band[4] = { STATE_FLOAT_ONE, STATE_FLOAT_ONE, STATE_FLOAT_ONE, STATE_FLOAT_ONE };
 
 	/* The programs run on every CU; the pixel program's requests; no accumulators; no late allocation. */
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_UNITS, AMDRDNA_SH_UNITS_ALL);
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PIXEL_UNITS, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_UNITS_ALL);
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PIXEL_UNITS_HIGH, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_UNITS_HIGH_ALL);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_REQUESTS, AMDRDNA_SH_PIXEL_REQUEST_CONTROL);
 	amdrdna_vk_pm4_set_shader_run(pm4, STATE_PIXEL_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_UNITS, AMDRDNA_SH_UNITS_ALL);
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_VERTEX_UNITS, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_UNITS_ALL);
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_VERTEX_UNITS_HIGH, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_UNITS_HIGH_ALL);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_REQUESTS, 0U);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_LATE_ALLOC, 0U);
 	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_PARAMETER_CACHE, AMDRDNA_UC_PARAMETER_CACHE_PLAIN);

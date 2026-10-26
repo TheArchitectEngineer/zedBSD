@@ -70,12 +70,12 @@
 
 /*
  * What a wave scan covers: two shader engines of two arrays each, the
- * instances (compute units and their SIMDs) 0 .. 15 of an array, 20 wave
+ * instances (workgroup processors and their SIMDs) 0 .. 31 of an array, 20 wave
  * slots each; and the most waves marked.
  */
 #define SPACE_SHADER_ENGINES		2U
 #define SPACE_SHADER_ARRAYS		2U
-#define SPACE_WAVE_INSTANCES		16U
+#define SPACE_WAVE_INSTANCES		32U
 #define SPACE_WAVE_SLOTS		20U
 #define SPACE_WAVES_MARKED		24U
 
@@ -934,15 +934,34 @@ amdrdna_spaces_mark_status(
 	uint32_t status2;
 	uint32_t engine0;
 	uint32_t engine1;
+	uint32_t status3;
+	uint32_t cp_busy;
+	uint32_t cp_status;
+	uint32_t clip;
+	uint32_t setup;
 
-	/* The four words, read as they are. */
+	/* The words, read as they are. */
 	status = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_BLOCK_STATUS);
 	status2 = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_BLOCK_STATUS2);
 	engine0 = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_ENGINE0_STATUS);
 	engine1 = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_ENGINE1_STATUS);
+	status3 = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_BLOCK_STATUS3);
+	cp_busy = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_CP_BUSY);
+	cp_status = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_CP_STATUS);
+	clip = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_CLIP_STATUS);
+	setup = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_SETUP_STATUS);
 
 	/* Says them. */
-	amdrdna_mark("gc status 0x%08x status2 0x%08x se0 0x%08x se1 0x%08x", status, status2, engine0, engine1);
+	amdrdna_mark("gc status 0x%08x status2 0x%08x status3 0x%08x se0 0x%08x se1 0x%08x cp 0x%08x/0x%08x pa 0x%08x/0x%08x",
+		     status,
+		     status2,
+		     status3,
+		     engine0,
+		     engine1,
+		     cp_busy,
+		     cp_status,
+		     clip,
+		     setup);
 }
 
 /*

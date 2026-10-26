@@ -443,6 +443,12 @@ decode_buffer(const uint32_t *words, uint32_t count, uint32_t run)
 		case 0x79U:
 			decode_set(registers.user, words[at + 1U], &words[at + 2U], body - 1U);
 			break;
+		case 0x9bU:
+			/* ws291: a CU enable register through the indexed shader setter, index 3. */
+			if ((words[at + 1U] >> 28) != 3U)
+				decode_errors++;
+			decode_set(registers.shader, words[at + 1U] & 0xffffU, &words[at + 2U], body - 1U);
+			break;
 		case 0x7aU:
 			if ((words[at + 1U] >> 28) != 1U)
 				decode_errors++;
