@@ -3,7 +3,7 @@
 # WS130: IPv6 の network stack
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p009。p008 の 5330 の UAT は上の指示で cleared）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001 を cleared。2026-10-08 q910 P2 の照合: p002〜p007 cleared、p008 は T1-316 PASS で 5330 の DHCPv6 の UAT 待ち、p001（設計）は Q1 の判定（後続が実装済み））（2026-10-06: p001・p002 cleared（p002 は T1-206b PASS）、p003 cleared（T1-243）、次は p004 libc））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p008 cleared（p008 の 5330 は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedに…」））。旧: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p009。p008 の 5330 の UAT は上の指示で cleare…。残り・制限: p009 の規約の全文は一括の見直しへ（2026-10-08 ユーザー「規約の整形…はベータ3」）
 Primary Milestone: MG005
 Related Milestones: MG002（POSIX の socket API）
 Objectives: O1, O3

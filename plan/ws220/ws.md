@@ -3,7 +3,7 @@
 # WS220: TCP の転送の速さの安定（継続の転送ですぐ 1 MB/s 未満に落ちる、window の制御の直し）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-13 Q1 作成。P1 が p001 を実行: 読み・net.tcpstats・host の模型・直しの設計は済み、T1 の基線の測りと design-reviewer 待ち）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 落ちる仕組みの直しは main: p003（送りの packet の不足）・p004（RTO）・p005（NewReno・persist）cleared（T1-581・T1-577・T1-585、損失 0.1 % で up 3.66 MB/s）、2026-10-13 夜 ユーザー（AskUserQuestion）「main に残し、直しを急ぐ」。p002（剰余の比較ほか）も c13a8413f で main）。旧: incomplete（2026-10-13 Q1 作成。P1 が p001 を実行: 読み・net.tcpstats・host の模型・直しの設計は済み、T1 の基線の測りと design-reviewer 待ち）。残り・制限: p002 の QEMU の確かめは未実施、p006〜p009 は案のまま（BUG-222 の USB LAN の遅さは Bug で）
 Resume point: [p001](phase001/phase.md) の §6（T1 の依頼 A・B）と §8（ユーザーの判断: QEMU の網、RTO の最小）→ 基線の後に目標の値をここに書き、p002 以後を Queue に
 Primary Milestone: MG005
 Related Milestones: なし

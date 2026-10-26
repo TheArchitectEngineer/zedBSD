@@ -3,7 +3,7 @@
 # WS206: Raspberry Pi 4 の WiFi（BCM43455、SDIO）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p001 は第 3 版の review-3 と E2・E4・E6 の回答の後、clearance は Q1 の判断待ち。p002a は実装・host・build 済み（dc2504ff2）、T1 待ち。p002b in-progress（2026-10-13 P1、実装・host・build 済み、Pi の実機と T1 待ち））（2026-10-11 Q1 作成、P1 の予約の Queue）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p003 cleared、p002a・p002b・p004・p005・p008 は実装・host 試験・build 済み（main）。残りは Pi 4 の実機の確かめ（p006）だけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（p001 は第 3 版の review-3 と E2・E4・E6 の回答の後、clearance は Q1 の判断待ち。p002a は実装・host・build 済み（dc2504ff2）、T1 待ち。p002b in-progress（2026-10-13 P1、実装・host・build 済み…。残り・制限: 実機の確認（scan・WPA2・DHCP）は未実施、p007 の規約は一括の見直しへ
 Primary Milestone: MG005
 Related Milestones: —
 Parent: [Master](../master.md)

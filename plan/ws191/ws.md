@@ -3,7 +3,7 @@
 # WS191: 再生の音を libkeiland の audio stream の口へ（compositor・backend、3 OS）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-13 P2 q964 の照合: p001〜p004 は各 phase.md で cleared（2026-10-08 Q1、T1-444・T1-448・T1-454）、残りは p005（規約、ベータ3）。ベータ2 の範囲は完了の見込み、判定は Q1）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p005 cleared（kl_audio_、zedBSD・Linux・FreeBSD の backend、videoplayer・music の移行））。旧: incomplete（2026-10-13 P2 q964 の照合: p001〜p004 は各 phase.md で cleared（2026-10-08 Q1、T1-444・T1-448・T1-454）、残りは p005（規約、ベータ3）。ベータ2 の範囲は完了の見込み、判定は Q1）
 Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2

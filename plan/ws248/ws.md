@@ -3,7 +3,7 @@
 # WS248: Intel AX211 の driver の出典の表記と規約の整理
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。p001・p002 cleared。WS の完了の判定は Q1）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001・p002 cleared（main 285c55e39、T1-698・T1-700）。残りは 5330 の素の起動での接続（U9）の実機の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-15 作成。p001・p002 cleared。WS の完了の判定は Q1）。残り・制限: 実機の確認は未実施
 Primary Milestone: MG005
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」、[coding-style.md](../coding-style.md)、[WS004](../ws004/ws.md)（AX211 の試験は plan/ws004/tests/）、[WS247](../ws247/ws.md)（nvrtx での同じ整理）

@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws173 -->
 # WS173: AAT（Agent Acceptance Test）— エージェントが素の実機を SSH で操作して受け入れを確かめる枠組み
 
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001・p002・p003・p006 を cleared。残りは p005（素の 5330 の AAT）。2026-10-08 q910 P2 の照合: p004 cleared（表を直した）、p001・p002（T1-200 PASS）と p003・p006（test-done）は Q1 の判定、p005（素の 5330 の AAT）が残り）（2026-10-05 追加、最優先。p001〜p003 は QEMU で PASS、p004 のシナリオ 75 本・runner・補助と p006 の選択は merge 済みで T1-202 待ち。5330 の AAT はその後）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p004・p006 cleared（/dev/input-inject・keiland-shot・plan/tools/aat/）。残りは p005（素の 5330 での AAT）の実機の確認だけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001・p002・p003・p006 を cleared。残りは p005（素の 5330 の AAT）。2026-10-08 q910 P2 の照合: p004 cleared（表を直した）、p001・p002（T1…。残り・制限: 実機の確認は未実施（p005）
 Master: [master](../master.md)
 Primary Milestone: MG006
 

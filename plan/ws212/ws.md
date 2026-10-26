@@ -3,7 +3,7 @@
 # WS212: Wiseview の作り直し（仮想デスクトップと display の矩形、窓の移動、display のローテーション）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-12 Q1 作成、ユーザーの要望）
+Status: planning・保留（着手はユーザーが決める）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: ws212/ws.md「未割当（ユーザーが着手を決める）」、2026-10-12 の作成から手が付いていない）。旧: planning（2026-10-12 Q1 作成、ユーザーの要望）。残り・制限: p001〜p005
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)

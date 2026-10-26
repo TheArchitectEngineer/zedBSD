@@ -3,7 +3,7 @@
 # WS287 EHCI の full-speed・low-speed の device（split transaction）
 
 - Master: [plan/master.md](../master.md)（2026-10-23 作成、着手は後日）。Primary Milestone: MG008。Related: WS286（ZYBO の ChipIdea の USB）。
-- Status: planning
+- Status: planning・保留（後日）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-23 ユーザー「USBは後回しにして、full speed, low speedはWSを作ってあとで対処し、今はFPGAブロックを動作させるということをゴールにして最短で進みましょう。」）。旧: planning
 - 出典: 2026-10-23 ユーザー「USBは後回しにして、full speed, low speedはWSを作ってあとで対処し、今はFPGAブロックを動作させるということをゴールにして最短で進みましょう。」
 
 ## 背景と目的（案）

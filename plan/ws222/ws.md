@@ -3,7 +3,7 @@
 # WS222: 画像・PDF・字形の library を menuconfig の Desktop へ戻す（PNG・PDF・JPEG・TrueType）
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-10-13 Q1 作成。ユーザーの指示で、今の作業が全部終わってから取り組む。優先度は最後）
+Status: planned・保留（後日）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-13 ユーザー「…でも、あとでいいです。今の作業が全部終わってから取り組むWSを作ってください。」）。旧: planned（2026-10-13 Q1 作成。ユーザーの指示で、今の作業が全部終わってから取り組む。優先度は最後）。残り・制限: p001
 Primary Milestone: MG006
 Related Milestones: なし
 <!-- awesome-plan-current:end -->

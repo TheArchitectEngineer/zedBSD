@@ -3,7 +3,7 @@
 # WS143: Bluetooth（Settings の Bluetooth の頁の実体、ベータ2）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p004 cleared。p003・p005 は i02 以降まで保留。次は q904（p005 i02、P1）。 2026-10-08 q902 P1 の照合: p001・p002 cleared、p003〜p006 は一部実装・試験済み）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-10 ユーザー「Bluetoothはキーボード、マウスについて接続確認、利用可能であることを確認できました。」→ ws143-p008 cleared、ベータ2 の release に入った。p001・p002・p004 cleared）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p004 cleared。p003・p005 は i02 以降まで保留。次は q904（p005 i02、P1）。 2026-10-08 q902 P1 の照合: p001・p002 cleared、p003〜p006 は…。残り・制限: p003・p005・p006 の Phase の印、p007 Linux の backend の T1 の再試験、p009 規約は一括の見直しへ。A2DP・PAN は F-082
 Primary Milestone: MG006
 Related Milestones: MG005
 Parent: [Master](../master.md)

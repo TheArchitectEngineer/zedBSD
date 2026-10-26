@@ -3,7 +3,7 @@
 # WS004: hardware expansion
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 主な USB・WLAN・NVMe の経路は完了（ws004/ws.md）。残りの p005・p006・p021・p025・p028〜p030・p038・p051 は実機の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」。AX211 は WS248・U9 で実機の接続）。旧: incomplete。残り・制限: 実機の確認は未実施。p034（QEMU の ECM、test-wait）、p035（deferred）・p039（任意の共通化）
 Primary Milestone: MG003
 Related Milestones: MG004, MG008
 Objectives: O1, O2, O4

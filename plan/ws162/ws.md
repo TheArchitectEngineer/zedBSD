@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws162 -->
 # WS162: FIDO2 の login
 
-Status: incomplete（2026-10-05 夜のユーザーの決定で **WS172 に吸収**。未着手の p002〜p004 は cancel して WS172 p003 に移した。この WS では以後実行しない。もとは 2026-10-05 追加、ベータ2、q771）
+Status: completed（WS172・WS199 で達成）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-05 夜 ユーザーの決定で WS172 に吸収（未着手の p002〜p004 は canceled → WS172 p003）。FIDO2 の login は 2026-10-10 ユーザーの UAT「FIDO2 の鍵の登録と login ができた（BUG-279 close）」（WS199））。旧: incomplete（2026-10-05 夜のユーザーの決定で **WS172 に吸収**。未着手の p002〜p004 は cancel して WS172 p003 に移した。この WS では以後実行しない。もとは 2026-10-05 追加、ベータ2、q771）
 Master: [master](../master.md)
 Primary Milestone: MG006
 

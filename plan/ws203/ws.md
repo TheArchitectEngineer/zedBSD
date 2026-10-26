@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws203 -->
 # WS203: Raspberry Pi 4 内蔵 Ethernet (BCM2711 GENET v5)
 
-Status: incomplete
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001・p002・p004 cleared（GENET と BCM54213PE の driver、main 7b16e364c）。残りの p003 は Pi 4 の実機の有線 LAN・DHCP・SSH の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete。残り・制限: 実機の確認は未実施
 Primary Milestone: MG005
 Related Milestones: MG003, MG008
 Parent: [Master](../master.md)

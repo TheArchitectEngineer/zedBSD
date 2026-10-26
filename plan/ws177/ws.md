@@ -2,7 +2,7 @@
 
 # WS177: ベータ2 積み残し（準正常系・異常系）
 
-Status: incomplete（2026-10-08 q902 P1 の照合: 19 Phase のうち 12 cleared、p016〜p018 は Q1 の判定待ち、p002・p003・p006・p011 は実機・UAT、p019 の残りはベータ3。旧: planning（2026-10-06 Q1 が作成））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p018・p020〜p046 cleared（準正常系・異常系の積み残し、p002・p006 は 2026-10-10 ユーザーの 5330 の UAT「WS177 はOK」）。p019 の残り（Browser の IME (b)(d)）はベータ3 に回した（beta2.md））。旧: incomplete（2026-10-08 q902 P1 の照合: 19 Phase のうち 12 cleared、p016〜p018 は Q1 の判定待ち、p002・p003・p006・p011 は実機・UAT、p019 の残りはベータ3。旧: planning（2026-10-06 Q1 が作成））。残り・制限: p019 の残り（Browser、WS074 と一緒）
 Master: [master](../master.md)
 Primary Milestone: MG006（関係: MG002・MG003・MG005）
 段: ベータ2

@@ -3,7 +3,7 @@
 # WS250: nvrtx の終わらない GPU の仕事の取り消しと復帰（system は動き続ける）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成、p001 を P4 が q1206 で設計中）
+Status: incomplete・保留（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-15 夜 ユーザーの即時中断で止めた（ws250/ws.md）、「nvrtx の取り消しと復帰（WS250）は止めたまま」（decisions-log、2026-10-15 夜））。旧: incomplete（2026-10-15 作成、p001 を P4 が q1206 で設計中）。残り・制限: p001 の設計（草稿は main 64f05b2c7）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx）、[WS241](../ws241/ws.md)（RTX の描画の速さ、work channel を触る）、`src/drivers/gpu/gpu.c`（共通の GPU の層の監視と drv_gpu_recovery_ops）、`src/drivers/gpu/i915/reset.c`（isolate・reset を持つ手本）

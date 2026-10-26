@@ -3,7 +3,7 @@
 # WS154: Settings の Languages の頁で IME を選ぶ（日本語・SKK・なし=英語）と、SKK の IME の新しい実装
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、Phase は未作成。5330 の UAT（SKK の操作感）は上の指示で OK、SKK の記号の範囲は 2026-10-05 夜に決定済み（Future Work、2026-10-13 ユーザーの確認））。旧: incomplete（2026-10-08 q910 P2 の照合: p001〜p004 は cleared（表を直した）。残りは 5330 の UAT（SKK の操作感）と範囲の判断（`>`・`/`・`#`・Tab・注釈）、規約（ベータ3）））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p004 cleared（Languages の頁と SKK）、UAT は 2026-10-13 ユーザー「UATの結果待ちのものは…clearedに」。SKK の >・/・#・Tab・注釈は F-079（2026-10-05 夜 ユーザー「後回し」））。旧: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、Phase は未作成。5330 の UAT（SKK の操作感）は上の指示…。残り・制限: 規約の全文は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)

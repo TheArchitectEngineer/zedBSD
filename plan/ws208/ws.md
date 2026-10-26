@@ -3,7 +3,7 @@
 # WS208: arm64 の HAL の SMP（Raspberry Pi 4 の 4 core）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-13 P6: p007 で Pi の 4 core の固まりの検出（stall watch）と SMP の 2 つの直し。Pi の再現待ち）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-13 朝 ユーザー「実機動作OKです」（4 core）、4 core の固まりの直し（p007）は 2026-10-13 ユーザー「修正されたことを確認しました」→ main）。旧: incomplete（2026-10-13 P6: p007 で Pi の 4 core の固まりの検出（stall watch）と SMP の 2 つの直し。Pi の再現待ち）。残り・制限: p005 の reboot 10 回は未実施、p006 の規約は一括の見直しへ
 Primary Milestone: MG008
 Related Milestones: MG006
 Parent: [Master](../master.md)

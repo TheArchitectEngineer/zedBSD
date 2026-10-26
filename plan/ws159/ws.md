@@ -3,7 +3,7 @@
 # WS159: native のタッチパッド（Intel LPSS の I2C・ACPI の I2C-HID・HID の touchpad）と compositor のタッチパッドの層
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p005 の後半（全文規約）。p002・p006 の 5330 の確認と p005 の UAT の分は上の指示で OK）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001 を cleared。2026-10-08 q910 P2 の照合: p003・p004 cleared、p001（設計）は Q1 の判定、p002・p006 は実装・host・T1-113 の boot まで（実機の I2C・GPIO の割り込みは WS183 と一緒に 5330）、p005 は実機の UAT。旧: planning））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p004・p006 cleared、p005 の実機の UAT の分は 2026-10-13 ユーザー「UATの結果待ちのものは…clearedに」。2026-10-08 夜 ユーザー「Touchpadは動作確認できたので、下記をすべてclose します。」）。旧: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p005 の後半（全文規約）。p002・p006 の 5330 の確認と…。残り・制限: p005 の規約の全文は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG003
 Parent: [Master](../master.md)

@@ -3,7 +3,7 @@
 # WS235: Realtek RTL8127・8125・8126・8122・8121・8120 の共通の Ethernet driver（まず PCIe の RTL8127 10GbE）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-14 起票。見積もりだけで、まだ実施しない）
+Status: planning・保留（見積もりだけ）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: ws235/ws.md「2026-10-14 起票。見積もりだけで、まだ実施しない」）。旧: planning（2026-10-14 起票。見積もりだけで、まだ実施しない）。残り・制限: p001〜p007
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 <!-- awesome-plan-current:end -->

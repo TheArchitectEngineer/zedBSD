@@ -3,7 +3,7 @@
 # WS051: USB-C の DisplayPort Alternate Mode
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p001・p004a・p004b・p005a cleared。 2026-10-08 q902 P1 の照合: p002〜p003 cleared、p004a〜p005b は実装済み）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p005a cleared、p004c は 2026-10-13 ユーザーの一括の cleared。2026-10-08 ユーザー「USB-C DPでディスプレイ出力ができました！」「拡張モードで出力されました。」「ミラーもうまくいきました。」。残りの p005b（抜けの停止・IRQ_HPD の retrain）と p006 の対象の旧 file（tc.c・dp-ext 等）は WS245 p039・p040・p052 で xd に書き直し（5330 の回帰 PASS、WS245 completed 2026-10-27））。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p001・p004a・p004b・p005a cleared。 2026-10-08 q902 P1 の照合: p002〜p003 cleared、p004a〜p005b は実装済み）。残り・制限: S0ix の口（WS052 と一緒、ベータ3）
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2

@@ -3,7 +3,7 @@
 # WS080: `ld.coff` — Win64 PE/COFF の動的ローダ
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: incomplete）
+Status: incomplete・保留（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-14 夜 ユーザー「作業が増えたので、ld.coffはふたたびペンディングにします。」（ws080/ws.md））。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: incomplete）。残り・制限: p002 は agent/p1 の a06d5d75d・6c7c991b1（未 merge）、p003〜p012
 Primary Milestone: MG002
 Related Milestones: MG006
 Objectives: O1

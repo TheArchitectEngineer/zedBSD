@@ -3,7 +3,7 @@
 # WS252: i915 の Rocket Lake・Alder Lake-S/Raptor Lake-S・Ice Lake の GT（描画の engine）の対応
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。2026-10-19 p001 cleared（q1265、design.md 版 3.1））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p006・p008 は実装・host 試験・5330 の回帰 PASS（2026-10-26 q1599 P4）。残りの p007 は RKL・ADL-S・ICL の実機の確かめだけ（実機が無い） → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-15 作成。2026-10-19 p001 cleared（q1265、design.md 版 3.1））。残り・制限: 実機の確認は未実施
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS245](../ws245/ws.md)（Gen12 の display の書き直し、§7 #18・#20・#21）

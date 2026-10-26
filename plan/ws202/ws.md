@@ -3,7 +3,7 @@
 # WS202: libavcodec なしの H.264＋AAC の mp4 と .m4a の再生（libmedia の自前の decoder、Video Player・Music）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（native再生softwareをmainへ統合、実機と全受入matrixは未確認）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: native の再生（libmedia の H.264・AAC）の software を main に統合、p013 の UAT は 2026-10-13 ユーザー「WS202のp013はUAT OKでした。」。p012 の残りは実機と T1 の確かめ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（native再生softwareをmainへ統合、実機と全受入matrixは未確認）。残り・制限: BUG-300（スライダー）は Bug で、p014 の規約は一括の見直しへ、実機の全項目は未確認
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2

@@ -3,7 +3,7 @@
 # WS190: 文字の欄と Text Editor の指での選択（ダブルタップ・端の drag・コピーの popup）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p003 は各 phase.md で cleared（T1-443・T1-445・T1-449 PASS）、p004 も cleared（2026-10-18 Q1）。ws.md の表が古かった（beta2.md「記録のずれ」））。旧: incomplete
 Primary Milestone: MG006
 Objectives: O2
 Parent: [Master](../master.md)

@@ -3,7 +3,7 @@
 # WS075: i915 の高度化（今のデスクトップとグラフィックスを 5330 の i915 のネイティブ実行器で）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 q910 P2 の照合: 空き時間だけの WS（master の Focus）。p006・p007a・p007b は in-progress（中断）、p017〜p031 の uncleared は描画の高速化の再開待ち）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: L1・L2 は達成（C6 中央値 67.3 ms、p027・p029）、MRT・GS などの実行器の範囲は WS031（2026-10-27 00:09 ユーザー「WS031をcompletedにしてください。」、未完の Phase は取り下げ）と同じ扱い。描画の高速化は 2026-09-30 ユーザー「いったん描画の高速化はラップアップして…」で p031 を中断、シェーダは 2026-10-07 ユーザー「シェーダはやることがないときに取り組んでほしいです。」）。旧: incomplete（2026-10-08 q910 P2 の照合: 空き時間だけの WS（master の Focus）。p006・p007a・p007b は in-progress（中断）、p017〜p031 の uncleared は描画の高速化の再開待ち）。残り・制限: p006・p007a/b（中断）、p017・p018・p022・p031（速さ）、p010 規約は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2

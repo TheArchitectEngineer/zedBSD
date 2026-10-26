@@ -3,7 +3,7 @@
 # WS215: Raspberry Pi 4 の Bluetooth（内蔵の BCM43455 の Bluetooth）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-12 Q1 作成。2026-10-13 P3: p001 の第 2 版を review-2 が「p002 可、p003 は条件つき」と判定、第 3 版の補いで中-B〜F・軽微を入れた。p002 を実行（build・host 試験済み、T1 と実機の確かめ待ち）。p004 を実行（brcmbt-firmware の package、host 試験済み）。P2: p003 を実行（kernel の PL011 の transport、build warning 0・host 試験 PASS、T1 と実機の確かめ待ち））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p002〜p005 は実装・host 試験・build 済み（UART の HCI・firmware・Broadcom の始動）。残りは Pi 4 の実機の確かめ（p006）だけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」。Pi の BT は config で既定 n（ユーザー、Master の merge の block））。旧: incomplete（2026-10-12 Q1 作成。2026-10-13 P3: p001 の第 2 版を review-2 が「p002 可、p003 は条件つき」と判定、第 3 版の補いで中-B〜F・軽微を入れた。p002 を実行（build・host 試験済み、T1 と実機の確かめ待ち）。p004 を実行（b…。残り・制限: 実機の確認は未実施。p008（SCO と HFP）は HFP と一緒にベータ3
 Primary Milestone: MG005
 Related Milestones: MG006
 Parent: [Master](../master.md)

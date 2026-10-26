@@ -3,7 +3,7 @@
 # WS158: Keiland 本体と Keiland の app の翻訳（英語が基準、日本語はベータ2）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: incomplete・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-08 ユーザー「…翻訳はベータ3に回します。」（ws158/ws.md Target））。旧: incomplete。残り・制限: p002〜p005 の T1・ユーザーの日本語の review、p006
 Primary Milestone: MG006
 Related Milestones: MG007
 Parent: [Master](../master.md)

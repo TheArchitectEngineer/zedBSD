@@ -3,7 +3,7 @@
 # WS256 StarFive VisionFive 2（JH7110、RISC-V）への移植
 
 - ID: ws256、Master: [master.md](../master.md)、Primary Milestone: MG008（関係: MG003）
-- Status: incomplete（2026-10-18 Q1 作成、p002 は Q1 が実施。他の Phase は詳細を Q1 とユーザーで決めてから P2 が開始する）
+- Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: VF2 の移植は板で動く: 2026-10-20 ユーザー「画面がつきました！」（HDMI・USB keyboard の login、p015）、LAN は 2026-10-20 ユーザー「pingはOKです。」（p018）、NVMe p024・MSI p026 cleared（2026-10-26）、p006 規約 cleared。残りの p019（音）・p023（coherency）・p022 は実機の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-18 Q1 作成、p002 は Q1 が実施。他の Phase は詳細を Q1 とユーザーで決めてから P2 が開始する）。残り・制限: 実機の確認（音・coherency・PERST）は未実施、p018 の ssh
 - 起点（2026-10-18 ユーザー）:「WSを作成します。Vision Five 2ボードに移植します。HALにディレクトリだけ作りました。こちらをP2で実行しますが、さきに詳細をメインエージェントQ1と私で詰めてからにします。」
 - ユーザーが作った空の directory: `src/hal/riscv64/bsp-visionfive2/`。
 - 担当: P2（開始は詳細の合意の後）。

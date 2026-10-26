@@ -3,7 +3,7 @@
 # WS125: vim の package
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）
+Status: canceled（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: vi は zedBSD 独自の vi（WS228、2026-10-14 completed、ユーザー「ここまでがベータ2ですね。」、/bin/vi）で入った。vim の package（p001・p003・p004）は未着手のまま、Target は 2026-10-05 ユーザー「…WS125… は、ベータ4以降」。共通の p002（`--subtree`）は WS126 が使う）。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）
 Primary Milestone: MG002
 Objectives: O2
 Parent: [Master](../master.md)

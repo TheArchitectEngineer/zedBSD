@@ -3,7 +3,7 @@
 # WS101: GPU の compute（i915 の Vulkan の compute、GLES 3.1 の compute、Noct の自動並列化が 5330 の GPU で動く）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 目標の「Noct の自動並列化が 5330 の GPU で動く」は L1 で達成（p015 S13 cleared、2026-09-30、5330 の passthrough）。最適化は 2026-09-30 ユーザー「GPUでは疎通できたので、最適化の優先度を下げます」）。旧: incomplete。残り・制限: p017（3 倍）・p012・p018（素の 5330）、p013 の規約は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O2

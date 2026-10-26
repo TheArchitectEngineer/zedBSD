@@ -1,7 +1,7 @@
 # WS255 試験機の zedBSD の試験の image を静的な IP にする
 
 - ID: ws255、Master: [master.md](../master.md)、Primary Milestone: MG001
-- Status: incomplete（p001 を q1227 で実行中: 手引き [static-ip.md](static-ip.md)、QEMU PASS。起動で gateway・DNS が入らない依存を Q1 に報告、判定待ち）
+- Status: incomplete・保留（BUG-328 待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 の手引きと QEMU は PASS。static の default route と DNS が起動の後に入らない BUG-328（tracking、未割当）待ちで 2026-10-16 から止まっている）。旧: incomplete（p001 を q1227 で実行中: 手引き [static-ip.md](static-ip.md)、QEMU PASS。起動で gateway・DNS が入らない依存を Q1 に報告、判定待ち）。残り・制限: BUG-328 の直し
 - 起点（2026-10-16 ユーザー）:「さらに、テスト機ではstatic IPにすることで、自律ループを維持しやすくできると考えます。」
 - 対象: 5330（Latitude 5330、zedBSD の試験の起動、今は DHCP で 10.0.30.3）と RDNA 機（RX 5600 XT、zedBSD は DHCP で 10.0.30.5）。Linux・Debian の側の設定は変えない。
 

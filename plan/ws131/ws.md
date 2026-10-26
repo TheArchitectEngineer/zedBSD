@@ -3,7 +3,7 @@
 # WS131: libkeiland-backend の分離と libkeiui の吸収
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p013 を cleared（後続の証拠で）。p002 は D7 の確認まで保留。2026-10-08 q910 P2 の照合: p001・p003〜p012・p014〜p023・p025〜p027 cleared（p003 の表を直した）。p002（設計、ユーザーのレビュー済み、D7 は確認中）と p013（T1-085 は流さない指示のまま、kl_ の改名は後の p021 で済み）は Q1 の判定、p024（規約と 3 OS の回帰）は規約がベータ3・Linux/FreeBSD が 10/13 以降。旧: planning（構成は決定、移行計画 [design.md](design.md) は p002 で作成、ユーザーのレビュー待ち））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001・p003〜p023・p025〜p027 cleared（libkeiland-backend の分離、libkeiui の吸収、kl_/kwl_ の改名、app の移行）。p002 の設計の D7 は後続の Phase の実施で決着）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p013 を cleared（後続の証拠で）。p002 は D7 の確認まで保留。2026-10-08 q910 P2 の照合: p001・p003〜p012・p014〜p023・p025〜p027 cleared（p0…。残り・制限: p024 の規約の全文と 3 OS の回帰は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG007（Linux・FreeBSD の Keiland）
 Objectives: O2, O3

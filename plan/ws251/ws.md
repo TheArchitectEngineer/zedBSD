@@ -3,7 +3,7 @@
 # WS251: source の tree 全体から開発の管理情報を削除する
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。2026-10-17 ユーザーの指示で GPU ドライバから着手: p002、P1）
+Status: incomplete・保留（作業対象になった時）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p002（GPU ドライバ）cleared。2026-10-15 ユーザー「開発管理はすべてのソースから削除しますが、今は作業対象になったときに削除するだけでいいです。…独立したWSを作って、あとで…」。src/drivers の gpu/ 以外は WS296 に移した（2026-10-27 00:22））。旧: incomplete（2026-10-15 作成。2026-10-17 ユーザーの指示で GPU ドライバから着手: p002、P1）。残り・制限: p001 の棚卸し、drivers の外の群
 Primary Milestone: MG001
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「source の中の開発の管理情報」、[WS247](../ws247/ws.md)（nvrtx で済み）、[WS248](../ws248/ws.md)（AX211、管理番号が残る）、[WS249](../ws249/ws.md)（BCM43455、削除を含む）

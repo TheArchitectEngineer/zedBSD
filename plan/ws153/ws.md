@@ -3,7 +3,7 @@
 # WS153: Settings の Apps の頁と third-party の app の repository（package の仕組み）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）
+Status: incomplete・保留（ユーザーが検討中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: WS153 U2〜U15 は「ユーザーが検討中（質問しない、決まるまで WS153 の p002 以降は止める）」（decisions-log、Master の未決））。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）。残り・制限: U2〜U15 の決定の後に p002 以降
 Primary Milestone: MG007
 Related Milestones: MG006、MG002
 Parent: [Master](../master.md)

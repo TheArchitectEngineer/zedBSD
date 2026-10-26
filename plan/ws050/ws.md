@@ -3,7 +3,7 @@
 # WS050: USB-C の UCSI driver
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p006 の全文規約の分。p006 の実機の確認の分は上の指示で OK、p001・p005 は 2026-10-08 Q1 の判定で cleared（表を phase.md に合わせた））。旧: incomplete）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p005 cleared、実機は 2026-10-08 夜 ユーザー「WS050・WS051…は実機で動作を確認」と 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。残りの p006 の規約の全文は 2026-10-08 ユーザー「規約の整形…はベータ3」で一括の見直しへ）。旧: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p006 の全文規約の分。p006 の実機の確認の分は上の指示で OK、…。残り・制限: 規約の全文は一括の見直しへ
 Primary Milestone: MG003
 Related Milestones: MG006
 Objectives: O2

@@ -3,7 +3,7 @@
 # WS129: ベータ1 のリリース作業
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p014の限定CI修正を実行。WS全体のrelease受入は未完）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: fg019 ベータ2（＝最初の公開ベータ）のリリースは 2026-10-17 OSC で達成（2026-10-23 user「OSCデモは完了した」、Master の達成した Focused Goal）。release notes は docs/release/zedbsd-1.0.0-beta2.md）。旧: incomplete（p014の限定CI修正を実行。WS全体のrelease受入は未完）
 Primary Milestone: MG007
 Related Milestones: MG003, MG006
 Objectives: O1, O2

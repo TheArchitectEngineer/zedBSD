@@ -2,7 +2,7 @@
 # WS174: 起動時の Ctrl / Shift で boot の選択を変える
 
 Master: [master](../master.md)
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p003 を cleared（C3 の間欠は BUG-272）。2026-10-08 q910 P2 の照合: p003 は T1-214 の再試行で全 cell PASS（1 回目は C3 だけ FAIL）→ Q1 の判定（間欠の C3 を Bug にするか）。実機（UEFI の 5330）は UAT）（2026-10-06 P1: p002・p005 の実装と記録。p003 は T1-213 が FAIL（key の検出・試験の sysctl）、同日直して T1 の再試験待ち。2026-10-05 夜 追加。設計の第 3 版まで。ユーザーが仕様を変更: Ctrl = kmsg を console（logo なし、640x480 の希望）、Shift = login を console、config の形式は変えず UEFI の bootloader だけ。ユーザーの実装の指示あり（BIOS は後日））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p003・p005 cleared（UEFI の loader の Ctrl・Shift）。p004（BIOS）はユーザー「BIOSは後日でよいです」で後日の案、UEFI の 5330 は実機の確認だけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p003 を cleared（C3 の間欠は BUG-272）。2026-10-08 q910 P2 の照合: p003 は T1-214 の再試行で全 cell PASS（1 回目は C3 だけ FAIL）→ Q1 の…。残り・制限: p004 BIOS（後日、ユーザー）、実機の確認は未実施
 Primary Milestone: MG003
 Related: MG006（graphical boot）
 

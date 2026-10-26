@@ -2,7 +2,7 @@
 
 # WS233: firmware を awemorris/zedBSD-firmware から取る
 
-Status: incomplete（2026-10-14 Q1 起動、P1）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-14 ユーザー「WS233はユーザの方で確認できました。CIが通ればOKとします。CI成果物で最終UATする予定です。」。firmware は全部 zedBSD-firmware から取っている（Master の merge の block））。旧: incomplete（2026-10-14 Q1 起動、P1）。残り・制限: p002 の license の画面の端末での目視は未実施
 Primary Milestone: MG002
 Parent: [Master](../master.md)
 Source: 2026-10-14 ユーザー「リポジトリ awemorris/zedBSD-firmware を作って、RPi4のコンパイル済みファームウェアを含め、再配布してよいバイナリであることを確認してそこにすべて入れて、GitHubから落とす形にできませんか？」。きっかけは CI の run 38531306764 が git.kernel.org の 503 で intelbt の firmware を取れず失敗したこと（retry は 6fd32c175 で入れた）。

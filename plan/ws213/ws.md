@@ -3,7 +3,7 @@
 # WS213: compositor の thread 化（入力・cursor と描画の分離）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-12 Q1 作成、ユーザーの承認））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p002〜p005・p007 の実装は main（I・C・R の thread、作業 thread）。2026-10-12 ユーザー「place23（WS213 p004 の I・C・R＋WS211 p008 の client の damage）で『非常に快適です』」、2026-10-13 ユーザー「いや、これ以上詰めなくていいです。」で最適化を終えた）。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-12 Q1 作成、ユーザーの承認））。残り・制限: p006 の規約は一括の見直しへ、box_lag の数値は未確認
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)

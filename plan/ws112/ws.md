@@ -2,7 +2,7 @@
 
 # WS112: Debian の package（Debian 13・Ubuntu 26.04 共通の amd64・arm64 と Raspberry Pi OS の arm64）
 
-Status: incomplete
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-06 夜 ユーザーの新しいゴール（3 つの deb）を p002・p003 で生成（cleared 2026-10-07）。Fedora・Arch・CI の p004〜p006 は canceled）。旧: incomplete。残り・制限: p007 の規約の全文は WS の外の一括の見直しへ
 Primary Milestone: MG007
 Related Milestones: MG001（追跡可能なbuild/配布記録）、MG006（既存Keilandの配布）
 Parent: [Master](../master.md)

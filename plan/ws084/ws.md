@@ -3,7 +3,7 @@
 # WS084: i915 の firmware の画面の引き継ぎ（素の実機の UEFI の起動でデスクトップを出す）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1: p004 は今は何もしない。2026-10-08 q910 P2 の照合: p003（再起動の 10 回）は 5330 の実機、p004 は乖離 1・3 を直すかの Q1 の判断待ち）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 目標（素の 5330 の UEFI の起動で desktop）は p002（2026-09-29 ユーザー「完璧です」）と p003（2026-10-13 ユーザーの実機の確かめ「OKでした」、10 回の起動）で達成。残りの p004（旧 takeover の parity の乖離）は WS245 p036・p037・p050a で takeover を xd に書き直し旧 file を削除したので対象が無くなった（WS245 completed 2026-10-27））。旧: incomplete（2026-10-08 Q1: p004 は今は何もしない。2026-10-08 q910 P2 の照合: p003（再起動の 10 回）は 5330 の実機、p004 は乖離 1・3 を直すかの Q1 の判断待ち）
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O1

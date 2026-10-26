@@ -3,7 +3,7 @@
 # WS134: システムモニターのアプリ（Analytic Spatial UI）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p007・p013 を cleared。2026-10-08 q910 P2 の照合: p007（T1-066 PASS）・p013（T1-070 PASS）は Q1 の判定、p003 は uncleared（fps・GPU の名前の 2 点）、p010 は規約（ベータ3）と実機の i915 の値）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p008・p011〜p013 cleared、p003 は実機の fps 21（UAT 2026-10-04）で cleared。p009・p010 の実機の分は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedに…」で OK。Pi 5 でも 2026-10-22 ユーザー「System Monitor を開いて、中身が出ました。」）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p007・p013 を cleared。2026-10-08 q910 P2 の照合: p007（T1-066 PASS）・p013（T1-070 PASS）は Q1 の判定、p003 は uncleared（fps・G…。残り・制限: p010 の規約の全文は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2

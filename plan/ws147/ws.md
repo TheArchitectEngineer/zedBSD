@@ -3,7 +3,7 @@
 # WS147: Microsoft OneDrive の client（Settings の Sharing の頁から設定）
 
 <!-- awesome-plan-current:start -->
-Status: planning（最初に「アイディアだけ描く」Phase を実行しユーザーと議論、2026-10-05 ユーザー）。以前: planning
+Status: planning・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-05 ユーザー「…WS146,WS147… は、ベータ4以降としてください。」）。旧: planning（最初に「アイディアだけ描く」Phase を実行しユーザーと議論、2026-10-05 ユーザー）。以前: planning。残り・制限: p001 から（WS150 の後）
 Primary Milestone: MG006
 Related Milestones: MG005
 Parent: [Master](../master.md)

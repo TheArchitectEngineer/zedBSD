@@ -3,7 +3,7 @@
 # WS037: nvrtx — NVIDIA GeForce RTX 2000 以降（Turing〜Blackwell）の GPU driver
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-14 開始。2026-10-15: パススルーで R8b〜R8d・R9v・R9k が PASS（desktop の描画）、方法 A（素の起動）で desktop の session 5/5（T1-684）、その後 T1-691 で P4m の間欠の失敗が再発。描画の速さは [WS241](../ws241/ws.md)、RTX 20/30/40 は [WS242](../ws242/ws.md)、NVDEC は [WS243](../ws243/ws.md)、compiler のまとめは [WS246](../ws246/ws.md)、出典の整理は [WS247](../ws247/ws.md) に独立。2026-10-15 記録の整合の点検で更新）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: nvrtx は main にあり既定で on（config/ci/config-amd64.mk）。RTX 2070 で passthrough の desktop（R8b〜R9k PASS、T1-678）と素の起動の desktop の session 5/5（T1-684）。速さは WS291（NVIDIA の p010・p011）、RTX 20/30/40 は WS242、NVDEC は WS243、取り消しと復帰は WS250 に分けてある）。旧: incomplete（2026-10-14 開始。2026-10-15: パススルーで R8b〜R8d・R9v・R9k が PASS（desktop の描画）、方法 A（素の起動）で desktop の session 5/5（T1-684）、その後 T1-691 で P4m の間欠の失敗が再発。描画の速さは [WS2…。残り・制限: P4m の間欠の失敗（T1-691）、p001・p003〜p008 の Phase の印、p009 規約は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2

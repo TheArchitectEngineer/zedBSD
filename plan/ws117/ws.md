@@ -3,7 +3,7 @@
 # WS117: Linux の本物の Qt6 の動作を調査し、素の Qt6 アプリが動くように compositor を改良する
 
 <!-- awesome-plan-current:start -->
-Status: planned（2026-10-07 ユーザー（クリック）: ベータ3 以降）
+Status: planned・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-07 ユーザー（クリック）「WS180…と WS117（Qt6 の Linux の互換）は『どちらもベータ3 以降』」）。旧: planned（2026-10-07 ユーザー（クリック）: ベータ3 以降）。残り・制限: p001〜p006
 Primary Milestone: MG006
 Related Milestones: MG002（WS115/WS116 の移植の前提）
 Objectives: O2

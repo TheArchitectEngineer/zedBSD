@@ -2,7 +2,7 @@
 
 # WS113: Keilandの外部ディスプレイ・複数画面設定
 
-Status: incomplete
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p008・p011〜p015 cleared（p008・p012〜p014 は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedに…」）。2026-10-08 ユーザーの UAT「HDMIに出力されました。extendもmirrorも動いています。」。p010（Linux・FreeBSD の KMS）は 2026-10-04 ユーザー「KMSでのLinux・FreeBSD用互換実装は、あとまわしにしてよいです（別Phaseにする）」）。旧: incomplete。残り・制限: p010（後回し、ユーザー）、p009 の規約の全文は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG001（GPU/API契約と回帰証拠）
 Parent: [Master](../master.md)

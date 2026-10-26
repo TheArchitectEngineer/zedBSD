@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws169 -->
 # WS169: メーラの app と compositor のメールの API
 
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p000 を cleared。2026-10-08 q910 P2 の照合: p002〜p005 cleared（T1-298・302）、p000（mock）は T1-181 の撮影の後に p002 以降で実装され Q1 の判定、p006 は作らない、p007（規約）はベータ3。準正常系は WS177 の案 N）（2026-10-07 q831 で p001〜p005 を実装、T1 の QEMU 待ち。p006 は今回作らない、p007 は規約の見直し（後回し）。2026-10-05 追加。まず UI の mock（p000）を優先、q744。段は未定（ユーザーに確認）、見積もり 6 LW（Q1 の概算: 設計 1・API 1・IMAP/SMTP 2・app 2。Gmail・Outlook は別に））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p000〜p005 cleared（IMAP・SMTP、メールの API、認証 code の自動入力）。p006 の OAuth2 は 2026-10-06 夜 ユーザー（クリック）「今は IMAP/SMTP だけ」で作らない）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p000 を cleared。2026-10-08 q910 P2 の照合: p002〜p005 cleared（T1-298・302）、p000（mock）は T1-181 の撮影の後に p002 以降で実装され Q1…。残り・制限: p007 の規約の全文は一括の見直しへ
 Master: [master](../master.md)
 Primary Milestone: MG006
 

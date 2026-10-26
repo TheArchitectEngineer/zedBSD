@@ -3,7 +3,7 @@
 # WS211: Pi 4 の compositor の描画の削減（App Home の遷移のクロスフェード、draw の束ね）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-12 Q1 作成））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p003・p005〜p011 の実装は main（Pi で確認）。2026-10-12 ユーザー（Pi の試し）「めちゃくちゃ速くなりました」「非常に快適です」、2026-10-13 ユーザー「コンポジタ、アプリ、CSE/DCE、すべてが効いて、これまでに見たこともないようななめらかなデスクトップです。」。2026-10-13 ユーザー「いや、これ以上詰めなくていいです。」で最適化を終えた）。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-12 Q1 作成））。残り・制限: p002（クロスフェード）は終了の時に未実装、p004 の規約は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)

@@ -3,7 +3,7 @@
 # WS009: documentation
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: incomplete・保留（DOC-54）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p008 は completed。残りの DOC-54（/dev/gpu の UAPI の文書）は ws009/ws.md で「Producer manual hold」のまま、GPU の UAPI は今も WS290 などで変わっている）。旧: incomplete。残り・制限: DOC-54（docs/ に /dev/gpu の参照の文書は無い）
 Primary Milestone: MG001
 Related Milestones: MG006, MG008, MG009
 Objectives: O2, O4, O5

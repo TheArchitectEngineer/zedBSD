@@ -3,7 +3,7 @@
 # WS126: Python 3 の package
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）
+Status: incomplete・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-06 夜 ユーザー「WS115 GTK4・WS116 Qt6・WS126 Python はベータ3 へ（…script 言語は Noct がある）」。p002・p003 cleared、p004 は 2026-10-09 ユーザー（クリック）「今は足さない」）。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）。残り・制限: p005 の guest の受け入れ（test-wait）、p006 規約
 Primary Milestone: MG002
 Objectives: O2
 Parent: [Master](../master.md)

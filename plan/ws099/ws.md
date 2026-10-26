@@ -3,7 +3,7 @@
 # WS099: Keiland の compositor（zdesktop）のデモの基準
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p023・p034・p035・p038 を cleared。2026-10-08 q910 P2 の照合: p019（T1-220）は cleared（表を直した）、p023（q609 で P2 が cleared を提案）・p034（p034b cleared）・p035（b〜d、T1-229・231）・p038（T1-264 の PNG、T1-277 PASS）は Q1 の判定待ち。残り: p012（5330 の目視、ユーザー）、p022 の回帰（T1-401 の p072 の FAIL は image が古かったため、criteria.sh の C9 の一覧からは 621197e04 で外れている）、p006（C6、記録だけ））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p022 以外の Phase は cleared（p012 は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedに…」）、fg010 の OSC のデモ（2026-10-17）で compositor を使った。p006 は C6 の記録だけ（速さは F-072））。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p023・p034・p035・p038 を cleared。2026-10-08 q910 P2 の照合: p019（T1-220）は cleared（表を直した）、p023（q609 で P2 が cleared を提…。残り・制限: p006（案）、p022 の規約は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O2

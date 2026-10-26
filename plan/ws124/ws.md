@@ -3,7 +3,7 @@
 # WS124: GNU Emacs の package
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: canceled（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: Emacs は GNU Emacs の package でなく base の REmacs（/bin/emacs）で入った: 2026-10-07 ユーザー（make menuconfig）「emacs は base（packages/editors の分類をやめた）」、ws129-p012（REmacs のコマンド名を /bin/emacs に、2026-10-04 user）。Target も 2026-10-05 ユーザー「…WS124… は、ベータ4以降」）。旧: planning
 Primary Milestone: MG002
 Objectives: O2
 Parent: [Master](../master.md)

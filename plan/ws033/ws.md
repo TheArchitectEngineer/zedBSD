@@ -3,7 +3,7 @@
 # WS033: networking サービスと有線インタフェースの管理
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 q910 P2 の照合: p001 は uncleared（q598-i01 で中断、表を phase.md に合わせた）。残り: p001 の QEMU の USB の LAN の後挿し、p002 は実機、p003 は規約（ベータ3））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 有線 LAN の後挿し・抜去・networking.wait は p001 cleared（2026-10-14 Q1、T1-480・T1-513・T1-517）で、code は main（managed-lan.c・net lan・net startup）。p002 は実機の立会いだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」。p003 の規約は 2026-10-08 ユーザー「規約の整形（各 WS の全文規約の Phase）はベータ3」で一括の見直しへ）。旧: incomplete（2026-10-08 q910 P2 の照合: p001 は uncleared（q598-i01 で中断、表を phase.md に合わせた）。残り: p001 の QEMU の USB の LAN の後挿し、p002 は実機、p003 は規約（ベータ3））。残り・制限: 実機の確認は未実施、規約の全文は一括の見直しへ
 Primary Milestone: MG005
 Related Milestones: MG003
 Objectives: O1, O2, O3

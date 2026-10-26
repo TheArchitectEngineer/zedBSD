@@ -3,7 +3,7 @@
 # WS079: 手書きノート（Notes）と PDF Viewer、上の右端からのスワイプ
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p017 は ws175-p010 と一緒に PNG の目視まで保留。2026-10-08 q910 P2 の照合: p012 は表の cleared（main 2026-09-28）に phase.md を合わせた。p017 は ws175-p010 の T1-265b（needs-person 2、fail 0）で Q1 の判定待ち。残りは S8・S9 の実機（ユーザー））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 全 Phase cleared（p009 の規約の全文を含む）。p017（text box）は実装 main・T1-265b fail 0 で人の目視だけ残り、S8・S9 の実機はユーザーの確かめ → 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。fg010 の OSC のデモ（S8 Notes・S9 PDF Viewer）は 2026-10-17 に完了（2026-10-23 user））。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p017 は ws175-p010 と一緒に PNG の目視まで保留。2026-10-08 q910 P2 の照合: p012 は表の cleared（main 2026-09-28）に phase.md を合わせた。p…。残り・制限: L3 の実機のペン（機材なし、未実施）
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1
