@@ -1007,4 +1007,4 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | q1602 / q1602-i01 | P4 | [ws293-p001](ws293/ws.md) | i915 の render/ を vk/ に改名（動作は不変）、build・host 試験・5330 の回帰。承認: 2026-10-27 00:06 ユーザー「vk/に揃えたいです。」 | cleared（2026-10-27 01:39: c766c36ee、merge 3eef78c3e、5330 PASS） |
 | q1603 / q1603-i01 | P2（phase-runner、worktree p2-ws291） | ws291-p003 | 投入の経路の改善（非同期の submit、record・submit の費用）、measure.sh bench で Linux と比べる。承認: 2026-10-27 00:44 ユーザー「投入の経路から（推し）」 | in-progress |
 | q1604 / q1604-i01 | P4 | WS233 の試験の追従 | plan/ws031/tests/run-i915-firmware-package-test.sh を DMC 6 file・新しい cache の名前に直し、host の rm -rf を fresh_out に替え、完了した WS031 から plan/ws233/tests/ へ移す（WS233 p001 が参照、試験の整理の基準で残す物）。q1602 の後 | cleared（2026-10-27 01:44: 2f56e7a66、PASS） |
-| q1605 / q1605-i01 | P4 | ws031 の試験（WS075 が使う） | plan/ws031/tests の lower・compile の期待値を今の mview の shader に合わせる（試験の側だけ）。q1604 の後 | pending |
+| q1605 / q1605-i01 | P4 | ws031 の試験（WS075 が使う） | plan/ws031/tests の lower・compile の期待値を今の mview の shader に合わせる（試験の側だけ）。q1604 の後 | cleared（2026-10-27 01:51: 2c8ae752c、run-vk-host-tests.sh 全部 PASS） |
