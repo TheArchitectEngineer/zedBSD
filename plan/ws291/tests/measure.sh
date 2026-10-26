@@ -99,7 +99,7 @@ to_zedbsd() {
 	say "Debian: BootNext $ZEDBSD_BOOT, reboot"
 	deb "sudo efibootmgr -q -n $ZEDBSD_BOOT && (sleep 1; sudo systemctl reboot) > /dev/null 2>&1 &" || return 1
 	sleep 30
-	wait_for zedbsd 300 || return 1
+	wait_for zedbsd 300 > /dev/null || return 1
 	ip=$(zedbsd_ip)
 	# The session's compositor starts after the network; wait for its log.
 	end=$(($(date +%s) + 120))
