@@ -2,7 +2,7 @@
 
 # ws245-p045: display 11（Ice Lake）
 
-Status: in-progress（2026-10-17 P6、q1236-i02: 下の「この attempt で作った物」は実装・host 試験・build 済み。受け入れの「eDP（transcoder EDP）・HDMI（combo B）・DP-TC（MG）の**列**」は、enable/disable の順を組む xd-output（P1 の p050b・p050c）に display 11 の分岐が入るまで作れないので残る。実機は無い（「未確認」））
+Status: cleared（2026-10-26 23:40 Q1: 5330 の自動の回帰 PASS（P4 q1597、main 684a5243f、[evidence](../tests/evidence/p4-main-684a5243f-20261026.md)）。2026-10-19 ユーザー「WS245は5330で自動テスト合格ならそれでいいです。」により受け入れの読み替えは不要、SV7 の分は除く）。前: in-progress（2026-10-17 P6、q1236-i02: 下の「この attempt で作った物」は実装・host 試験・build 済み。受け入れの「eDP（transcoder EDP）・HDMI（combo B）・DP-TC（MG）の**列**」は、enable/disable の順を組む xd-output（P1 の p050b・p050c）に display 11 の分岐が入るまで作れないので残る。実機は無い（「未確認」））
 Parent: [WS245](../ws.md)
 Queue: q1236-i02（P6。P1 の p050b〜d と並行: 2026-10-16 ユーザー「P1,P3の処理で、並列にオフロードできる実装があれば、それぞれ1エージェントずつ追加してほしいです。…並列な実装は完璧でなくてもよく、あとでマージするときに整合が必要でもOKです。」）。q1236-i01 は p040・p044 の後にコンテキストの都合で未着手のまま返した
 Branch: agent/p6-ws245（p044 の aa14ff623 の上: 711f64b33、31cd4eaaf）
@@ -120,3 +120,4 @@ P1 の見立て（Status は変えない。判定は Q1）: cleared にしない
 - 確かめた事: `run-xd-host-tests.sh build/p2-ws245-host` all passed（takeover 88・cover 111）、amd64 vmunix rc=0・warning 0・check PASS、`git diff --check` 空。QEMU・実機は未実施。
 - 残り: WM の read latency（xd に latency を読む部品がまだ無い。旧 `watermark.c` が読む）。enable/disable の列を Linux と書き込みの 1 つずつで比べる事（p044 と同じ）。
 - 追加の証拠（2026-10-19 P2）: ICL の eDP（transcoder EDP）・HDMI（combo B）・DP-TC（MG）・TBT の light/dark の要の書き込みの順を Linux の順と比べる試験を `host-xd-output-test` の `i915_xd_ot_test_order` に足した（display 11・12・13 を並べて。詳細は [p044](../phase044/phase.md) の「追加の証拠 2」）。全部通る。受け入れの「列が Linux の手順と一致」をこの anchor の比べで読み替えるかは朝にユーザーへ（Q1）。
+- 2026-10-26 23:40 Q1: cleared（上の Status）。

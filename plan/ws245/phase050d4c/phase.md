@@ -2,7 +2,7 @@
 
 # ws245-p050d4c: 始まりと終わり（eDP の device・nogem・setup_outputs・VGA・world）
 
-Status: in-progress（2026-10-17 q1229-i12 で実装・host 試験・build 済み（43c3ed47c・f491cfcad）、5330 は全部の段の後に 1 回。world の削除は d4d へ）
+Status: cleared（2026-10-26 23:40 Q1: 5330 の自動の回帰 PASS（P4 q1597、main 684a5243f、[evidence](../tests/evidence/p4-main-684a5243f-20261026.md)）。2026-10-19 ユーザー「WS245は5330で自動テスト合格ならそれでいいです。」により受け入れの読み替えは不要、SV7 の分は除く）。前: in-progress（2026-10-17 q1229-i12 で実装・host 試験・build 済み（43c3ed47c・f491cfcad）、5330 は全部の段の後に 1 回。world の削除は d4d へ）
 Parent: [WS245](../ws.md)
 Queue: q1229-i11（P1）
 設計: [design.md](../design.md) §6.2 の p050 の行、§3.6。分け方は [phase050d4](../phase050d4/phase.md)
@@ -66,3 +66,4 @@ Q1 に頼む削除（中身を空にした file）: `src/drivers/gpu/i915/displa
 - 終わり（reboot の止める道 `stop: display power released`）は i20 で log が届かず未確認
 
 P1 の見立て（Status は変えない。判定は Q1）: 保留（止める道が未確認）。止める道を T1 の次の 5330 で確かめれば cleared。
+- 2026-10-26 23:40 Q1: cleared（上の Status）。

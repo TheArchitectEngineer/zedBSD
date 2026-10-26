@@ -2,7 +2,7 @@
 
 # ws245-p041: suspend の戻り
 
-Status: in-progress（2026-10-17 q1229-i14 で実装・host 試験・build 済み（4045c6b0b）。5330 は全部の段の後に 1 回（T1）。節目: suspend → resume → desktop、backlight の値、resume の後の HDMI の plug はユーザーの一覧）
+Status: cleared（2026-10-26 23:40 Q1: 5330 の自動の回帰 PASS（P4 q1597、main 684a5243f、[evidence](../tests/evidence/p4-main-684a5243f-20261026.md)）。2026-10-19 ユーザー「WS245は5330で自動テスト合格ならそれでいいです。」により受け入れの読み替えは不要、SV7 の分は除く）。前: in-progress（2026-10-17 q1229-i14 で実装・host 試験・build 済み（4045c6b0b）。5330 は全部の段の後に 1 回（T1）。節目: suspend → resume → desktop、backlight の値、resume の後の HDMI の plug はユーザーの一覧）
 Parent: [WS245](../ws.md)
 Queue: q1229-i14（P1）
 設計: [design.md](../design.md) §6.2 の p041 の行、§2.14（suspend・resume の列）、§3.6（段の表の suspend_begin/end・resume_begin/end）
@@ -51,3 +51,4 @@ Queue: q1229-i14（P1）
 - Phase の受け入れの全部（suspend → resume → desktop、backlight、`hpd suspend`・`TC<n> resume`・`resume: vga`・`hpd resume`、resume 後の plug、寝ている間の unplug）: ユーザーの一覧（beta2.md の U19〜U23）の項目で、未実施
 
 P1 の見立て（Status は変えない。判定は Q1）: cleared にしない（実機の証拠が無い。ユーザーの suspend の試験か、Q1 の判断で ユーザーの一覧へ移す決定が要る）。
+- 2026-10-26 23:40 Q1: cleared（上の Status）。

@@ -2,7 +2,7 @@
 
 # ws245-p042: display.c の段の縮約・log の文言・xd-diag
 
-Status: in-progress（2026-10-17 q1229-i15 で実装・host 試験・build 済み（93ec4f94a）。5330・SV7 は全部の段の後に 1 回（T1））
+Status: cleared（2026-10-26 23:40 Q1: 5330 の自動の回帰 PASS（P4 q1597、main 684a5243f、[evidence](../tests/evidence/p4-main-684a5243f-20261026.md)）。2026-10-19 ユーザー「WS245は5330で自動テスト合格ならそれでいいです。」により受け入れの読み替えは不要、SV7 の分は除く）。前: in-progress（2026-10-17 q1229-i15 で実装・host 試験・build 済み（93ec4f94a）。5330・SV7 は全部の段の後に 1 回（T1））
 Parent: [WS245](../ws.md)
 Queue: q1229-i14（P1、調べだけ）、q1229-i15（P1、実装）
 設計: [design.md](../design.md) §6.2 の p042 の行、§3.6（段の表）、§4.2 の末尾（`struct i915_display` から消える field）、§4.4（残す・捨てる log）、§7 #12（ユーザー「この WS で縮める」）
@@ -80,3 +80,4 @@ Q1 の判断: 段の縮約は (a)（GT と display の挟まりは変えず、�
 - SV7（Gen9 の `N0-lite (gen9)`）は未実施
 
 P1 の見立て（Status は変えない。判定は Q1）: 保留（止める道と SV7 が未確認）。
+- 2026-10-26 23:40 Q1: cleared（上の Status）。

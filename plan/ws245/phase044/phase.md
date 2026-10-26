@@ -2,7 +2,7 @@
 
 # ws245-p044: platform の網羅（display 12 の行）と TGL の TC（流れ B、host だけ）
 
-Status: in-progress（2026-10-17 P6: 下の「この attempt で作った物」は実装・host 試験・build 済み。受け入れの「9 行 × {eDP、HDMI、DP-TC、TBT} の **enable → disable の列**」は、screen の step の中身（P1 の p050b・p050c）が xd の部品の直の呼びになるまで作れないので残る。5330 の回帰は全部の段の後に 1 回）
+Status: cleared（2026-10-26 23:40 Q1: 5330 の自動の回帰 PASS（P4 q1597、main 684a5243f、[evidence](../tests/evidence/p4-main-684a5243f-20261026.md)）。2026-10-19 ユーザー「WS245は5330で自動テスト合格ならそれでいいです。」により受け入れの読み替えは不要、SV7 の分は除く）。前: in-progress（2026-10-17 P6: 下の「この attempt で作った物」は実装・host 試験・build 済み。受け入れの「9 行 × {eDP、HDMI、DP-TC、TBT} の **enable → disable の列**」は、screen の step の中身（P1 の p050b・p050c）が xd の部品の直の呼びになるまで作れないので残る。5330 の回帰は全部の段の後に 1 回）
 Parent: [WS245](../ws.md)
 Queue: q1236-i01（P6。P1 の p050b〜d と並行: 2026-10-16 ユーザー「P1,P3の処理で、並列にオフロードできる実装があれば、それぞれ1エージェントずつ追加してほしいです。…並列な実装は完璧でなくてもよく、あとでマージするときに整合が必要でもOKです。」）
 Branch: agent/p6-ws245（p040 の 806e0b063 の上）
@@ -102,3 +102,4 @@ P1 の見立て（Status は変えない。判定は Q1）: cleared にしない
 - 確かめた事: `run-xd-host-tests.sh build/p2-ws245-host` all passed（output 406）、warning 0。試験だけの変更。
 - 範囲の外: 行ごとの全部の書き込みの 1 つずつの一致（受け入れの読み替えは朝にユーザーへ: Q1）。RKL・ADL-S・ADL-N・RPL の行は版 12・13 と同じ道（版の分岐だけを見る試験なので代表の 3 行）。
 - 使い捨ての出力 `build/p2-ws245-mut/`（上の確かめの build）が worktree に残る（消すなら Q1 に）。
+- 2026-10-26 23:40 Q1: cleared（上の Status）。

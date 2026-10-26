@@ -207,19 +207,19 @@ Resume point: 2026-10-16 の方針（ユーザー「i915は、実装だけ先に
 | [p050d4](phase050d4/phase.md) | 口 xd.h と own の file の付け替え、旧 file と旧 host 試験・ktest の削除（oracle を xd の試験へ） | 4 段に分けた（2026-10-17 Q1、q1229-i11）: 下の p050d4a〜d4d |
 | [p050d4a](phase050d4a/phase.md) | 画面の口: 新しい xd-picture.c に画面の object と prepare・light・dark・plane・flip・status・retained・backlight を own の型で、head.c・present.c・backlight.c を付け替え | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p050d4b](phase050d4b/phase.md) | 走らせ方の口: resident run・show run・kernel の binding を own の resident.c へ（fill が picture の config を直に）、output.c の link を xd-screen の plan_link に | cleared（2026-10-18 Q1、5330 の i20・i21） |
-| [p050d4c](phase050d4c/phase.md) | 始まりと終わり: port の表（xd）、eDP の device を own の edp-device.c へ、始まりの前半を xd の部品で、VGA を own の vga.c へ、takeover.c を空に | in-progress（2026-10-17 q1229-i12 で実装・host 試験・build 済み（43c3ed47c・f491cfcad）、5330 は全部の段の後に 1 回。world の削除は d4d へ） |
+| [p050d4c](phase050d4c/phase.md) | 始まりと終わり: port の表（xd）、eDP の device を own の edp-device.c へ、始まりの前半を xd の部品で、VGA を own の vga.c へ、takeover.c を空に | cleared（2026-10-26 23:40、5330 の自動の回帰 PASS、q1597。前: in-progress（2026-10-17 q1229-i12 で実装・hos） |
 | [p050d4d](phase050d4d/phase.md) | 旧 file の削除と旧 host 試験・fake の終わり（size、`I915_XD_STRICT`、5320・SV7・QEMU の節目） | cleared（2026-10-19 Q1、T1-719） |
 | [p039](phase039/phase.md) | hotplug（xd-hpd。hotplug.c を消す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p051](phase051/phase.md) | own の output.c の port の規則と head-rules の pipe の規則を platform の記述に（hdmi.c・hdmi-mode.c・head-rules.c を消す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p040](phase040/phase.md) | Dekel の窓と TC PHY、TC PLL（xd-tc の窓を dkl-phy.c と一緒に入れ替える、clock.c の残りを消す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
 | [p052](phase052/phase.md) | Type-C の状態機械（流れ A）と USB-C の DP（UCSI、DP-ext の probe。tc.c・tc-kern.c・dp-ext*.c を消す） | cleared（2026-10-18 Q1、5330 の i20・i21） |
-| [p041](phase041/phase.md) | suspend の戻り（xd-display） | in-progress（4 LW。2026-10-17 q1229-i14 で実装・host 試験・build 済み（4045c6b0b）、5330 は全部の段の後に 1 回。suspend はユーザーの一覧） |
-| [p042](phase042/phase.md) | display.c の段の縮約（§7 #12）・log の文言・xd-diag | in-progress（4 LW。2026-10-17 q1229-i15 で実装・host 試験・build 済み（93ec4f94a: 段の縮約は Q1 の判断 (a)、DRM・PM demand・modeset/flip の workqueue を消した、diagnostics.c を xd-diag.c と own の run-log.c に、log の一覧は design §6.4.1）、5330・SV7 は全部の段の後に 1 回） |
-| [p043](phase043/phase.md) | 旧 code の残りの削除・試験の整理・出典の監査 | 2 段に分けた（2026-10-17 Q1、q1229-i15）: 下の p043a・p043b |
-| [p043a](phase043/phase.md) | 試験の整理・intel/ の Gen12 だけの header・PCH の判定・clock.c・§5.4 の監査 | in-progress（2026-10-17 q1229-i15 で実装・host 試験・build 済み（35b24c912・7de79d444）、5330・SV7 は全部の段の後に 1 回） |
-| [p043b](phase043/phase.md) | watermark.c の帯域を xd に（段の境 1）、power.c の domain 層を xd-power に（段の境 2）、Derived の表示の削除 | in-progress（2026-10-17 q1229-i15 で帯域を実装・host 試験・build 済み（d16688474）、q1229-i16 で power を実装・host 試験・build 済み（57967dfb0: own の display-power.c）、5330・SV7 は全部の段の後に 1 回） |
-| [p044](phase044/phase.md) | platform の網羅（display 12 の行）と TGL の TC（流れ B、host だけ）。#21 で全部 xd | in-progress（4 LW。2026-10-17 P6 が q1236-i01 で一部（流れ A・B の部品と connect、TGL の TC_cold_off、kind の分岐の除去、9 行の plan の試験）を実装（aa14ff623）、P1 の branch に merge（bd91827a5）。残り: 9 行 × 出力の enable/disable の列の比べ、RKL・ADL-S の takeover の列、流れ B の配線（p052）。5320 はユーザーの一覧） |
-| [p045](phase045/phase.md) | display 11（Ice Lake） | in-progress（8 LW。実機は無い。2026-10-17 P6 が q1236-i02 で部品を実装（c85e8569e）、P1 が q1229-i10 で merge（c3d27ec57）し xd-output に display 11 の分岐（88e99dbe2）。残りは phase045 の「P1 の branch との合わせ」） |
+| [p041](phase041/phase.md) | suspend の戻り（xd-display） | cleared（2026-10-26 23:40、5330 の自動の回帰 PASS、q1597。前: in-progress（4 LW。2026-10-17 q1229-i14 で実） |
+| [p042](phase042/phase.md) | display.c の段の縮約（§7 #12）・log の文言・xd-diag | cleared（2026-10-26 23:40、5330 の自動の回帰 PASS、q1597。前: in-progress（4 LW。2026-10-17 q1229-i15 で実） |
+| [p043](phase043/phase.md) | 旧 code の残りの削除・試験の整理・出典の監査 | cleared（2026-10-26 23:40、5330 の自動の回帰 PASS、q1597。前: 2 段に分けた（2026-10-17 Q1、q1229-i15）: 下の p04） |
+| [p043a](phase043/phase.md) | 試験の整理・intel/ の Gen12 だけの header・PCH の判定・clock.c・§5.4 の監査 | cleared（2026-10-26 23:40、5330 の自動の回帰 PASS、q1597） |
+| [p043b](phase043/phase.md) | watermark.c の帯域を xd に（段の境 1）、power.c の domain 層を xd-power に（段の境 2）、Derived の表示の削除 | cleared（2026-10-26 23:40、5330 の自動の回帰 PASS、q1597） |
+| [p044](phase044/phase.md) | platform の網羅（display 12 の行）と TGL の TC（流れ B、host だけ）。#21 で全部 xd | cleared（2026-10-26 23:40、5330 の自動の回帰 PASS、q1597。前: in-progress（4 LW。2026-10-17 P6 が q1236-i） |
+| [p045](phase045/phase.md) | display 11（Ice Lake） | cleared（2026-10-26 23:40、5330 の自動の回帰 PASS、q1597。前: in-progress（8 LW。実機は無い。2026-10-17 P6 が q） |
 | [p046](phase046/phase.md) | 規約の全文の見直しと p045 の出典の監査 | cleared（2026-10-19 Q1） |
 合計 38 段、161 LW（±40 %。改訂 6 の 159 に、p018 を p018・p053 に分けた +2: 2026-10-16 q1223）。5330 の素の起動は段の kernel で最少 37 回、基準の起動と `i915.debug=display` の起動を含めて見込み約 50 回（最大 70〜85 回、design.md §6.6）。
 

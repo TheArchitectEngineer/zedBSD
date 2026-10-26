@@ -2,7 +2,7 @@
 
 # ws245-p043: 旧 code の残りの削除・試験の整理・出典の監査
 
-Status: in-progress（2026-10-17 q1229-i15: p043a 実装・host 試験・build 済み（35b24c912・7de79d444）、p043b の帯域済み（d16688474）。q1229-i16: p043b の power（段の境 2）済み（57967dfb0）。5330・SV7 は全部の段の後に 1 回）
+Status: cleared（2026-10-26 23:40 Q1: 5330 の自動の回帰 PASS（P4 q1597、main 684a5243f、[evidence](../tests/evidence/p4-main-684a5243f-20261026.md)）。2026-10-19 ユーザー「WS245は5330で自動テスト合格ならそれでいいです。」により受け入れの読み替えは不要、SV7 の分は除く）。前: in-progress（2026-10-17 q1229-i15: p043a 実装・host 試験・build 済み（35b24c912・7de79d444）、p043b の帯域済み（d16688474）。q1229-i16: p043b の power（段の境 2）済み（57967dfb0）。5330・SV7 は全部の段の後に 1 回）
 Parent: [WS245](../ws.md)
 Queue: q1229-i15（P1）、q1229-i16（P1、p043b の power）
 設計: [design.md](../design.md) §6.2 の p043 の行、§5.4（引用の規則）、§6.4（今の試験の扱い）、guardrail「MIT・GPL の出典のデータの引用」
@@ -117,3 +117,4 @@ P1 の見立て（Status は変えない。判定は Q1）: p043a は cleared �
 - 残りの 9 つの well の状態は両方で同じ: PW_1（0 users / refcount=0、on）、DC_off 3、PW_2・PW_A〜PW_D 2、DDI_IO_A 0（on）、AUX_A 1。survey の PWR_WELL_CTL も同じ（phase の「判定の材料」）。よって takeover の前後とも hardware の状態は同じで、差は常に 1（8−7、3−2）。不具合ではない。
 - 証拠の場所: t1 の worktree の `plan/ws245/temp/5330/`（git の外）。比べは grep（`wells on|well .*users|refcount=`）。
 - p043b の保留の残り: DC6 の H6（`DC_STATE_EN=0x00000002` 未観測）、SV7 の backlight・suspend の DC9（ユーザーの一覧、実機待ち）。
+- 2026-10-26 23:40 Q1: cleared（上の Status）。
