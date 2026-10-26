@@ -11,6 +11,7 @@
 -->
 
 <!-- master:agents:start -->
+- **2026-10-26 23:05 WS291（RDNA の描画の速さ）**: P2 が [ws291-p001](ws291/phase001/phase.md)（q1595、実機 10.0.10.3、desktop の計測から）。
 - **2026-10-26 22:57 WS288 を closed、WS290 を新設**: ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。…」。amaterrace-gpu は読み取り専用（plan/ は読んでよい、計画は am-ws001 のように書く）。zedBSD の GHCI の driver を GHCI 2.0 だけに書き直す [WS290](ws290/ws.md)。担当: P1 が [ws290-p001](ws290/phase001/phase.md)（設計、q1594）。
 - zedBSD の main は記録の commit の先頭。amaterrace-gpu は Q1 も担当も書かない（worktree・branch の片付けもしない）。
 <!-- master:agents:end -->
@@ -28,7 +29,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1595、WS291、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1596、WS292、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS290（GHCI 2.0 の driver）: p001 の設計 → ghci.md の疑問をユーザーに示す → 実装の Phase。試験は zedBSD の host 試験だけ（amaterrace-gpu の sim・firmware は使わない、ユーザー 2026-10-26）。WS288 の古い引き継ぎ（ws288/q1-handover-20261026.md）の「消してよい物」のうち amaterrace の物は、読み取り専用になったので消さない。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -143,7 +144,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 <!-- master:priority:start -->
 2026-10-26 22:57 ユーザー（WS288 の終了）: zedBSD の側に集中。
-1. WS290: p001 設計 → 実装 → 規約の全文。
+1. WS290: p001 設計 → 実装 → 規約の全文。WS291（RDNA の速さ、P2）は並べて進める。
 2. Pi 5 の残り（WS278・WS279）: ユーザーの指示の時。
 3. 設計だけの物（WS282〜WS285、WS281 malloc、WS287 EHCI の LS/FS、WS280 H.264）、SA（fw-sa-*）: 後日。
 - それ以前の優先順は付録の history-log と git の履歴。
@@ -588,6 +589,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS287](ws287/ws.md) | MG008 | EHCI の full-speed・low-speed の device（split transaction、ZYBO の ChipIdea を含む） | planning | 着手は後日 |
 | [WS288](ws288/ws.md) | MG008 | FPGA の GPU の IP（display controller・command processor・blitter・vertex fetcher・rasterizer・shader unit・texture unit・ROP・memory controller）、ZYBO で workflow、本命は KC705 | closed（2026-10-26 22:57、ユーザーの指示。amaterrace-gpu は他の担当へ、zedBSD の driver は WS290） | 2026-10-24 ユーザーの決定で目標の板は KC705 だけ、RTL を揃えるのを優先（板は p024、timing は p025）。cleared p002〜p005・p007・p008・p012・p017・p023、in-progress p001・p006（branch）・p009。引き継ぎ [handover-20261024-2230.md](ws288/handover-20261024-2230.md) |
 | [WS289](ws289/ws.md) | MG008 | ZYBO の単独起動: SD（SDIO0）・LAN（GEM0 + RTL8211E、SSH）・SD からの起動（BOOT.BIN）。root を SD に。SDHCI・Cadence GEM の共通の部分を汎用の driver に分ける | completed | 2026-10-23 completed。実機の ZYBO が SD の BOOT.BIN → SPL Falcon → FIT kernel で単独起動し、root は SD、LAN 1000 Mbps・DHCP・SSH、`deploy.sh` で kernel 更新と reboot ができる。汎用の SDHCI・Cadence GEM の core を Pi 4/Pi 5/ZYBO の glue に分けた。100/10 Mbps は未確認 |
+| [WS291](ws291/ws.md) | MG006 | AMD RDNA（amdrdna）の描画の速さ: desktop 60 fps、Linux で約 50 fps の重い 3D を zedBSD で Linux 以上に（実機 10.0.10.3） | planned | p001 desktop の計測（q1595、P2） |
 | [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 2.0（amaterrace-gpu の docs/ghci.md）だけに書き直す。試験は host だけ | planning | p001 の設計（q1594、P1） |
 | [WS279](ws279/ws.md) | MG008 | Raspberry Pi 5 の GPU（V3D 7.1）と display（HVS6）（2026-10-21 ユーザー） | incomplete | p001 design.md（約 47〜64 LW の Phase 表）、ユーザーの判断 D1〜D4 待ち |
 | [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | incomplete | p001 設計・p002 起動 image は main（6757ac6f2）、実機の確認待ち（plan/ws278/tests/rpi5-hw-test.md）、判断 D1〜D3 待ち |
@@ -637,6 +639,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-26 23:05 ユーザー「P2も立てます。ssh 10.0.10.3で、RDNAの接続されたDebianに入れます。…デスクトップで60fpsをまずは達成します。…重たい3DシーンをLinuxドライバと同じfpsで描画できるように調整します。…Linuxよりよくなるまでプロファイルベースで改善します。できそうですか？」→ WS291 を新設、P2 に ws291-p001（q1595）。原文の全文は ws291/ws.md。
 - 2026-10-26 22:57 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。amaterrace-gpuのディレクトリは読み取り専用とします。amaterrace-gpuのplan/は読んでもかまいません。am-ws001のような書き方をしてくれれば私は理解できます。」→ WS288 を closed（未完の Phase は canceled）、fg022 を取り下げ、WS290 を新設。amaterrace-gpu は読み取り専用。
 - 2026-10-26 22:57 ユーザー（Q1 の問いへのクリック）: 新しい driver の対象は「2.0 だけ」（ghci.md の GHCI 2.0 の TO-BE。1.1 は捨てる。2.0 のハードウェアは am-ws001-p007 の予定）。端から端の試験に amaterrace-gpu の Verilator・firmware は「使わない」（zedBSD の host 試験だけ）。
 - 2026-10-26 16:30 ユーザー: define の名前は SYNTH_KINTEX7。(i) を採る: p042 では am_mul に DSP48E1 の版を足すだけ（LAT の parameter で 0 = register なし〜3 = 全段を切り替え、LAT 0 は AREG・BREG・MREG・PREG 0 の組合せの形で機能の一致を確かめる移行の段）、汎用の版（`*`）と DSP48E1 の版の一致を単体の sim で。呼び出し側の LAT 3 化は SU → TU → ROP … の順に block ごとの後の Phase で、各 block の timing を Vivado で見ながら。（ユーザーの言う「p043 以降」は番号が既にあるので新しい番号で立てる、Q1。）

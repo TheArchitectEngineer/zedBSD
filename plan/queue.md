@@ -989,3 +989,4 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
 | q1594 / q1594-i01 | P1（kernel-and-driver-designer、worktree `/home/awe/zedBSD-worktrees/p1-ws290`・branch `agent/p1-ws290`、基点 main） | [ws290-p001](ws290/phase001/phase.md) | 設計（ghci.md 2.0 と今の driver の照合、構成、host 試験の model、Phase の分割、ghci.md の疑問の一覧）、design-reviewer。code は書かない | in-progress |
+| q1595 / q1595-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291`・branch `agent/p2-ws291`、基点 main） | [ws291-p001](ws291/phase001/phase.md) | desktop の計測と 60 fps、実機 10.0.10.3（BootNext で USB の zedBSD）。承認: 2026-10-26 23:05 ユーザー「P2も立てます。…amdrdnaドライバの改善を行ってほしいです。…」 | in-progress |
