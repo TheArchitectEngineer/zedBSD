@@ -135,6 +135,14 @@ endif
 ifeq ($(CONFIG_DRIVER_PCI_AHCI),y)
 AMD64_NVME_SOURCES += src/drivers/pci/pci-ahci.c
 endif
+# The Intel VMD driver (WS298) shows the NVMe disks a VMD hides (firmware storage mode RAID).
+# Its BAR placement uses pci-window.c, which the ACPI build already links.
+ifeq ($(CONFIG_DRIVER_PCI_VMD),y)
+AMD64_NVME_SOURCES += src/drivers/pci/pci-vmd.c src/drivers/pci/pci-vmd-plan.c
+ifneq ($(CONFIG_DRIVER_ACPI),y)
+AMD64_NVME_SOURCES += src/drivers/pci/pci-window.c
+endif
+endif
 AMD64_HDA_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_HDA),y)
 AMD64_HDA_SOURCES += src/drivers/pci/pci-hda.c
