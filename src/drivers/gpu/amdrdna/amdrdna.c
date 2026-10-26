@@ -199,10 +199,15 @@ amdrdna_attach(
 	(void)mutex_init(&device->engines.select, LOCK_RANK_DEVICE, "amdrdna select");
 	(void)mutex_init(&device->engines.scheduler_lock, LOCK_RANK_DEVICE, "amdrdna kiq");
 	spin_init(&device->engines.scheduler.lock, LOCK_RANK_DEVICE, "amdrdna ring");
+	waitq_init(&device->engines.scheduler.fences, "amdrdna fence");
 	spin_init(&device->engines.graphics.lock, LOCK_RANK_DEVICE, "amdrdna ring");
-	for (index = 0U; index < AMDRDNA_COMPUTE_QUEUES; index++)
+	waitq_init(&device->engines.graphics.fences, "amdrdna fence");
+	for (index = 0U; index < AMDRDNA_COMPUTE_QUEUES; index++) {
 		spin_init(&device->engines.compute[index].lock, LOCK_RANK_DEVICE, "amdrdna ring");
+		waitq_init(&device->engines.compute[index].fences, "amdrdna fence");
+	}
 	spin_init(&device->engines.copy.lock, LOCK_RANK_DEVICE, "amdrdna ring");
+	waitq_init(&device->engines.copy.fences, "amdrdna fence");
 	spin_init(&device->display.lock, LOCK_RANK_DEVICE, "amdrdna display");
 	waitq_init(&device->display.waitq, "amdrdna display");
 	(void)mutex_init(&device->display.mode_lock, LOCK_RANK_DEVICE, "amdrdna mode");

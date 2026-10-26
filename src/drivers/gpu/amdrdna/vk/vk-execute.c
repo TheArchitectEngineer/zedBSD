@@ -8,10 +8,10 @@
 /*
  * The running of a command buffer's records on the GPU.
  *
- * Each session has a run of the executor's GPU memory for its
- * submissions: an indirect buffer of command packets, the resource tables
- * of its draws, the word its barriers write and wait for, a zero page and
- * the corners of a quad.  The records are turned into packets in order
+ * Each session has a run of the executor's memory for its submissions, in
+ * system memory the CPU writes through its cache: an indirect buffer of
+ * command packets, the resource tables of its draws, the word its barriers
+ * write and wait for, a zero page and the corners of a quad.  The records are turned into packets in order
  * (vk-state.c) and the indirect buffer is run on the graphics queue when
  * it is full and at the end; each
  * run is waited for, so the run's memory is free again after it and
@@ -477,7 +477,7 @@ execute_open(
 	opened = kern_calloc(1U, sizeof(*opened));
 	if (opened == NULL)
 		return ENOMEM;
-	error = amdrdna_vk_gpu_alloc(session->owner, EXECUTE_RUN_BYTES, &opened->token, &opened->cpu, &opened->va);
+	error = amdrdna_vk_gpu_alloc_system(session->owner, EXECUTE_RUN_BYTES, &opened->token, &opened->cpu, &opened->va);
 	if (error != 0) {
 		kern_free(opened);
 		return error;

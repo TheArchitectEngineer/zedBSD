@@ -330,7 +330,10 @@ enum amdrdna_ring_kind {
  * write_pointer counts every word ever written (dwords, or what the copy
  * engine counts in bytes is four times it) and only grows.  lock
  * serializes the writers of the ring, its sequence and its counts; the
- * interrupt thread takes it to count the ring's interrupts.  image_copy
+ * interrupt thread takes it to count the ring's interrupts.  fences is
+ * woken under lock at each of the ring's end-of-pipe events, so a waiter
+ * for its fence wakes when the fence is written rather than at the next
+ * tick (amdrdna_ring_wait()).  image_copy
  * keeps the queue image as it was filled, for a later reset.  up says the
  * engine runs the ring.  The buffers live as long as the GPU may touch
  * them, which is the record's life.
@@ -350,6 +353,7 @@ struct amdrdna_ring {
 	uint64_t write_pointer;
 	uint32_t sequence;
 	uint64_t interrupts;
+	struct wait_queue fences;
 	bool up;
 };
 
@@ -510,12 +514,15 @@ struct amdrdna_display {
 };
 
 /*
- * A run of VRAM that GPU work reads and writes: a blob of a session, the
- * executor's own memory, or a check's buffer.
+ * A run of memory that GPU work reads and writes: VRAM of a blob of a
+ * session, of the executor's own memory or of a check's buffer, or system
+ * memory the executor's command buffers are written in.
  *
  * vram is its offset and bytes its size in whole pages; asked is the size
  * it was made for; cpu says it lies in the CPU's window (else in the VRAM
- * only the GPU reaches).  refs counts its holders (the blob, every export and
+ * only the GPU reaches).  A run of system memory (system set) has no VRAM:
+ * dma is its contiguous run, which the CPU writes through its cache and
+ * the GPU reads coherently with it.  refs counts its holders (the blob, every export and
  * import of it, every address space it is mapped in for the executor),
  * under the address spaces' lock; the last one gives the VRAM back unless
  * kept is set: GPU work nobody could stop may still touch it.
@@ -526,6 +533,8 @@ struct amdrdna_backing {
 	uint64_t asked;
 	uint32_t refs;
 	bool cpu;
+	bool system;
+	struct drv_dma_buffer dma;
 	bool kept;
 };
 
@@ -1225,6 +1234,12 @@ amdrdna_backing_create(
 	struct amdrdna_device *device,
 	uint64_t bytes,
 	bool cpu,
+	struct amdrdna_backing **result);
+
+int
+amdrdna_backing_create_system(
+	struct amdrdna_device *device,
+	uint64_t bytes,
 	struct amdrdna_backing **result);
 
 void

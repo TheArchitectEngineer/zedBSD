@@ -18,7 +18,7 @@
 # The revision is a full commit SHA of the repository.  While it is empty
 # no package consults the mirror and each one fetches from its upstream
 # alone, as before the repository existed.
-override ZEDBSD_FIRMWARE_REPOSITORY_REVISION := e13c96fc71f274cd8c94860ad0d9e55e93e1999f
+override ZEDBSD_FIRMWARE_REPOSITORY_REVISION := fcdfccfa00130d90d77d2ca9eb45fc4357458f03
 override ZEDBSD_FIRMWARE_REPOSITORY_BASE_URL := https://raw.githubusercontent.com/awemorris/zedBSD-firmware
 
 ifneq ($(ZEDBSD_FIRMWARE_REPOSITORY_REVISION),)

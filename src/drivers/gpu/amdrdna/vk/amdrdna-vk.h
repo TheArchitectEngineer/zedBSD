@@ -193,6 +193,13 @@ int amdrdna_vk_memory_create(void *owner, uint64_t bytes, uint64_t *va, void **b
  * what the CPU wrote visible to the GPU before each run.
  */
 int amdrdna_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va);
+
+/*
+ * The same in system memory (provided by the node): a run the CPU writes
+ * through its cache and the GPU reads coherently with it, for what the CPU
+ * writes anew for every submission.  amdrdna_vk_gpu_free() gives it back.
+ */
+int amdrdna_vk_gpu_alloc_system(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va);
 void amdrdna_vk_gpu_free(void *owner, void *token);
 
 /*
