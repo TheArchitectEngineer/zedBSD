@@ -19,11 +19,11 @@
 
 ## Record locations
 
-Master `master.md`; all-agent Queue Board `queue.md` and per-agent lanes `agents/P<番号>/queue.md` (created on assignment); Guardrail `guardrail.md`; Future
+Master `master.md` (current state and open WSs; closed WSs in `workstreams-closed.md`); all-agent Queue Board `queue.md` and per-agent lanes `agents/P<番号>/queue.md` (created on assignment); Guardrail `guardrail.md`; Future
 `future-work.md`; Bug Board `known-bugs.md`（tickets `bugs/BUG-NNN.md`）; Past Log `history/index.md`
 （Queue history `history/queue-qNNN.md`）. WS `wsXXX/ws.md`; Phase `wsXXX/phaseYYY/phase.md`;
 Phase-specific tests in the owning WS `tests/`; shared regression tools in `tools/`
-(registered in the Master Tools section). Completed WSs keep only `ws.md` and design
+(registered in `tools.md`). Completed WSs keep only `ws.md` and design
 documents; their Phase directories and scripts were removed on 2026-09-24 and remain
 in git history. IDs (`wsXXX-pYYY`, `BUG-NNN`, `F-NNN`, `qNNN`) are retained.
 Native milestones: `milestones.json`; Issue paths/URLs: `records.json`;

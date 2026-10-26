@@ -3,7 +3,7 @@
 Last updated: 2026-09-09
 
 masterから分離した継続的な設計方針・決定の参照資料です。個別の完了時点や旧milestoneの説明は決定当時の文脈です。
-現在のWS状態・Priority・Future Listは [master](master.md) を正とします。
+現在の WS の状態・優先順位は [master](master.md)、将来の案は [future-work.md](future-work.md) を正とします。全体に効く決定は §11。
 WS013/WS015の長期目標は将来項目であり、現行インストール作業のRuntime依存ではありません。
 旧VLAN/bridgeモデルは現行WS011の完了条件ではありません。
 
@@ -276,3 +276,42 @@ Stop the active Phase and update its state before changing the plan when:
 3. 優先: パフォーマンス問題の修正、バグ修正、上記の観点の修正を続ける。
 4. 直近の目標（2026-09-25、ユーザー）: **expat の configure と compile を Linux と同等の水準にする**ことを focused goal（fg011）とし、修正と改修をここに集中する。
 5. 優先（2026-09-25、ユーザー）: **新規実装より bug 修正と性能改善を優先する**（それらに付随する新規実装は行う）。bug 修正は積極的に。
+
+## 11. 全体に効く決定（今も有効な形、2026-10-27 に master.md から移した）
+
+WS に固有の決定はその ws.md にある。ここは複数の WS・OS 全体に効く物だけ。決定の原文と経緯は git の履歴（2026-10-27 より前の plan/master.md）。
+
+- **名前**: プロジェクトの名前は Kei Operating System。kernel の内部名は zedbsd、desktop の内部名は Keiland（desktop 環境と呼ばない）。
+  OS の見える所から zedBSD・zed・z の名前を外していく（`/bin/wayland`・`/bin/xserver`・`/bin/browser`）。kernel・driver・UAPI の symbol の
+  prefix は `ZEDBSD_` でなく `KERN_`。logo などは必ず「Kei」の 3 文字（K だけにしない）。（WS078）
+- **compat の library の置き場**: `libz-compat` は `userland/base`（全 platform、header `include/libc/compat/zlib/zlib.h`）。
+  `libpng-compat`・`libgif-compat`・`libjpeg-compat`・`libpdf` の source は `userland/desktop/`（menu も Desktop、WS227）。header は
+  `include/libc/compat/`（`jpeglib.h`、`png/` など）のまま。
+- **retro**: X11 の program は `userland/retro/`、`zedinst` は `userland/retro/zedinst`。Wayland の installer の作り直しは低い優先度。
+- **文字の符号**: UTF-8 だけを扱う。ls などは locale に関わらず名前を UTF-8 として扱い、表示できる文字を escape しない（escape は制御文字と不正な byte だけ）。
+- **既定の image と login**: base の passwd・group・shadow に kei（uid 1000、network group、password kei）、root の password は root。
+  sessiond が `/etc/keiland/autologin`（既定 kei、root は拒む）の利用者で起動の時に 1 回 login し、Log Out の後は greeter。
+  make の既定の `hdd-image.img` で desktop を試せる（menuconfig の既定は amd64、Venus・i915 は amd64 で既定 y）。
+- **表示の build の既定**: image は logo と `kmsg=quiet`。GPU の driver を直す Phase だけ `ZEDBSD_GRAPHICAL_BOOT=n`
+  `"ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical"`（logo を消し kernel の message を画面に残す）。graphical boot が有効な時に
+  `login=graphical` を extra の行へ重ねない（起動が止まる）。
+- **UEFI の loader**: GOP の 1920x1080 を求め、足りない所は黒い帯（mode の選び方の見直しはユーザーの未決、master.md）。
+- **文字を編集する view の touch**: 1 本指の drag は選択、scroll は 2 本指（libkeiui の共通の部品）。Files・Image Viewer などの 1 本指の pan は変えない。
+- **file picker**（Open・Save As）は app ごとに持たず共有の library に置く。
+- **古いグラフィックの試験の driver**（venus-backend-test など）は回帰の対象にしない（desktop の起動が代わり）。i915 の executor の試験の driver は残す。
+- **時間の単位**: tick 周期は `include/hal/arch/<arch>.h` の `HAL_TIMER_FREQUENCY`。時間の計算は `kern_ms_to_ticks()`・`kern_ticks_to_ms()`・
+  `KERN_MS_TO_TICKS()` で行い、tick の数を数字で書かない（WS040）。
+
+### 11.1 対象 platform
+
+`config/ci/` の config と `HAL_TIMER_FREQUENCY`（2026-10-27 の main）。位置付けの欄の「要確認」は 2026-10-27 の整理で Q1 がユーザーに確かめる物。
+
+| arch | config（config/ci/） | 位置付け | tick |
+| --- | --- | --- | --- |
+| amd64 | config-amd64.mk・config-amd64-server.mk（ユーザーの物）・config-intelmac.mk | 主対象（desktop・GPU・app） | 1000 Hz |
+| aarch64 | config-rpi4.mk・config-rpi4-server.mk・config-rpi5.mk | 主対象 | 1000 Hz |
+| riscv64 | config-visionfive2.mk・config-visionfive2-keiland.mk・config-riscv64-virt.mk | VisionFive 2（fg020 は保留）。位置付けは要確認 | 1000 Hz |
+| armv7 | config-zybo.mk・config-armv7-virt.mk | ZYBO（fg021 達成）。位置付けは要確認 | 1000 Hz |
+| i386 | config-pcat.mk・config-pc98.mk | デモ用のおまけ（基本のコマンドと Xzed、性能は考えない） | 100 Hz |
+| riscv32・ppc32・ppc64・m68k（virt）・mips32・mips64 | config-riscv32-virt.mk・config-ppc32-mac99.mk・config-ppc64-pseries.mk・config-m68k-virt.mk（mips は plan/tools/ports/ の config） | QEMU の port（2026-10-18〜19 のユーザーの指示）。位置付けは要確認 | riscv32・mips 1000 Hz、他 100 Hz |
+| sparcv9（sun4u）・m68k（x68k） | plan/tools/ports/ の config | 2026-09-24 にサポート外（code は残す）。その後 sun4u の表示（WS275）を進めた。位置付けは要確認 | 100 Hz |
