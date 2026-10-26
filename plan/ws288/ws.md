@@ -75,6 +75,7 @@
 | [p041](phase041/phase.md) | SU の clock の領域（CDC、sclk ↔ gclk。U109 で p025 から分けた） | p025 の T2 と並べられる | planned（2026-10-26 新設） |
 | [p042](phase042/phase.md) | RTL の階層（rtl/bsp・rtl/library・rtl/gpu）と FP の演算器の重複の整理（fadd・fmul・FMA・変換を rtl/library/fp に、機能は不変） | 実機の検証の後、p025 の T2 の前 | planned（2026-10-26 新設） |
 | [p043](phase043/phase.md) | GHCI の driver を VisionFive 2（riscv64）の M.2 の KC705 で（INTx・非一貫の DMA・BAR2 の窓・riscv64 の build、実機の最初の検証） | WS256 p024、p024 の bitstream | in-progress（2026-10-26 新設） |
+| [p044](phase044/phase.md) | CP の初期化・診断の command（driver の attach で CP と往復）と、段を追った実機の確かめ（初期化・診断 → HOTPLUG で scanout → VRAM の blit を目視 → host の memory の blit を CPU で） | p043 | in-progress（2026-10-26 新設） |
 | [p010](phase010/phase.md) | compiler の backend（zedBSD `isa/gsi1/`）、`gsi1_isa.h` と interface の表の確定（design §8） | p008、p027 | cleared（2026-10-25 07:12: GSI1 の backend、gsi1_isa.h と interface の表の確定、host 試験 29/29。vmunix の link は p006） |
 | [p018](phase018/phase.md) | firmware の Vulkan の object model と draw/dispatch（design §8）。GHCI §7.2・§11.6 への firmware の追従を含む | p017、p009、p010、p027、p030 | cleared（2026-10-25 10:16: firmware の Vulkan の object model、Verilator の firmware の harness 6 case 一致、amaterrace-gpu 252a11e） |
 | [p019](phase019/phase.md) | zedBSD の `vk/`（検証する中継、design §8） | p010、p017、p006、p027 | cleared（2026-10-25 10:00: vk/ の executor、host 試験 126・76・137、vmunix の warning 0。firmware の上は p011） |
