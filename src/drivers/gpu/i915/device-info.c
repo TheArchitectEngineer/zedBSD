@@ -502,6 +502,8 @@ i915_info_sseu_gen11(
 			sseu->eu_mask[i] = eus;
 		sseu->eu_total = (uint16_t)(sseu->eu_total + i915_info_bits(sseu->eu_mask[i]));
 	}
+
+	/* One subslice's EUs. */
 	sseu->eu_per_subslice = (uint16_t)i915_info_bits(eus);
 
 	/* Slices, subslices and EUs can each be power gated. */

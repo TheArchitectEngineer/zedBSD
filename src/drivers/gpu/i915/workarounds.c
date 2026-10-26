@@ -1175,6 +1175,7 @@ drv_i915_gt_init_tables(
 			continue;
 		}
 
+		/* A Gen12 engine takes the Gen12 lists. */
 		drv_i915_wa_build_engine(&gt_init->engine_wa[index], &gt->engines[index], gt, gt_init->mocs.uc_index);
 		drv_i915_wa_build_whitelist(&gt_init->whitelist[index], &gt->engines[index], graphics_ver);
 		drv_i915_wa_build_context(&gt_init->ctx_wa[index], &gt->engines[index], graphics_ver, gt_init->mocs.uc_index);
