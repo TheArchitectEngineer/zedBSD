@@ -112,9 +112,8 @@ struct amdrdna_gfx10_program {
 	uint32_t dual_source;
 
 	/*
-	 * A vertex program: whether it runs as a primitive shader (one wave32
-	 * to a subgroup, exporting its primitives too) rather than as a legacy
-	 * vertex program.
+	 * A vertex program: whether it runs as a primitive shader (exporting
+	 * its primitives too) rather than as a legacy vertex program.
 	 */
 	uint32_t primitive_shader;
 

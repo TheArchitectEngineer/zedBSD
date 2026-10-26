@@ -460,6 +460,7 @@ static void prologue_vertex(struct gfx10_lowering *lowering);
 static void prologue_primitive(struct gfx10_lowering *lowering);
 static void emit_lanes_below(struct gfx10_lowering *lowering, unsigned count);
 static void emit_field(struct gfx10_lowering *lowering, unsigned dst, unsigned source, uint32_t selector);
+static void emit_scalar_literal(struct gfx10_lowering *lowering, unsigned opcode, unsigned dst, unsigned source, uint32_t literal);
 static void plan_input_lifetimes(struct gfx10_lowering *lowering);
 static void return_inputs(struct gfx10_lowering *lowering, uint32_t upto);
 static uint32_t cache_chunk(struct gfx10_lowering *lowering, uint32_t slot, uint32_t offset, int spare);
@@ -3343,9 +3344,9 @@ prologue_vertex(
 
 /*
  * Starts a primitive shader: asks for the space of the subgroup's vertices
- * and primitives, exports the wave's primitives as the hardware packed
- * them, and leaves the lanes of the wave's vertices running for the vertex
- * program.  The subgroup is this one wave, so the wave asks for the space.
+ * and primitives (the subgroup's first wave alone), exports the wave's
+ * primitives as the hardware packed them, and leaves the lanes of the
+ * wave's vertices running for the vertex program.
  *
  * Procedure referenced: Mesa 25.0.7 src/amd/common/nir/ac_nir_lower_ngg.c
  * (ac_nir_lower_ngg_nogs, the passthrough path: the allocation from the
@@ -3367,12 +3368,24 @@ prologue_primitive(
 	unsigned primitives;
 	unsigned wave_count;
 	unsigned sources[4];
+	uint32_t skip_label;
 
 	/* Every wave of the subgroup launched before the request. */
 	kern_memset(&inst, 0, sizeof(inst));
 	inst.kind = AMDRDNA_GFX10_KIND_CONTROL;
 	inst.opcode = AMDRDNA_GFX10_S_BARRIER;
 	emit(lowering, &inst);
+
+	/* Only the subgroup's first wave asks: the others branch past the request. */
+	skip_label = lowering->next_label;
+	lowering->next_label++;
+	wave_count = next_scalar_temp(lowering);
+	emit_scalar_literal(lowering,
+			    AMDRDNA_GFX10_S_AND_B32,
+			    wave_count,
+			    AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO),
+			    AMDRDNA_GFX10_NGG_WAVE_NUMBER);
+	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_SCC1, skip_label);
 
 	/* The subgroup's vertex and primitive counts, the primitives moved to their place in the request. */
 	vertices = next_scalar_temp(lowering);
@@ -3398,6 +3411,7 @@ prologue_primitive(
 	inst.opcode = AMDRDNA_GFX10_S_SENDMSG;
 	inst.immediate = AMDRDNA_GFX10_MESSAGE_GS_ALLOC;
 	emit(lowering, &inst);
+	emit_label(lowering, skip_label);
 
 	/* Each primitive lane exports the word the hardware packed in v0, which ends the primitive's exports. */
 	wave_count = next_scalar_temp(lowering);
@@ -3459,16 +3473,29 @@ emit_field(
 	unsigned source,
 	uint32_t selector)
 {
+	/* The extraction, the selector as the literal. */
+	emit_scalar_literal(lowering, AMDRDNA_GFX10_S_BFE_U32, dst, source, selector);
+}
+
+/* Appends dst = source op literal, a two-source scalar operation on a 32-bit constant. */
+static void
+emit_scalar_literal(
+	struct gfx10_lowering *lowering,
+	unsigned opcode,
+	unsigned dst,
+	unsigned source,
+	uint32_t literal)
+{
 	struct amdrdna_gfx10_inst inst;
 
-	/* Builds the extraction, the selector as the literal. */
+	/* Builds the operation, the constant as the literal. */
 	kern_memset(&inst, 0, sizeof(inst));
 	inst.kind = AMDRDNA_GFX10_KIND_SCALAR_TWO;
-	inst.opcode = AMDRDNA_GFX10_S_BFE_U32;
+	inst.opcode = (uint16_t)opcode;
 	inst.dst = (uint16_t)dst;
 	inst.src[0] = (uint16_t)source;
 	inst.src[1] = AMDRDNA_GFX10_LITERAL;
-	inst.literal = selector;
+	inst.literal = literal;
 
 	/* Places it. */
 	emit(lowering, &inst);

@@ -2740,11 +2740,11 @@ test_units(void)
 	      "units: a fan of five vertices, two instances");
 	check(amdrdna_vk_state_draw(&pm4, VK_PRIMITIVE_TOPOLOGY_PATCH_LIST, false, 3, 1) == EINVAL, "units: a patch list is refused");
 
-	/* ws291: a primitive shader's draw has the groups of its one-wave subgroup (32 primitives, 30 - 5 vertices). */
+	/* ws291: a primitive shader's draw has the groups of its subgroup (128 primitives, 126 - 5 vertices). */
 	log_reset();
 	amdrdna_vk_pm4_start(&pm4, words, 256);
 	check(amdrdna_vk_state_draw(&pm4, VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, true, 4, 1) == 0 && decode_buffer(words, pm4.count, 0) == 0 &&
-	    draw_count == 1 && reg(&draw_log[0], 0x3096cU) == (32U | (25U << 9)) && reg(&draw_log[0], 0x28a6cU) == 1U,
+	    draw_count == 1 && reg(&draw_log[0], 0x3096cU) == (128U | (121U << 9)) && reg(&draw_log[0], 0x28a6cU) == 1U,
 	      "units: a primitive shader's line strip");
 
 	/* A buffer too small: the packet that does not fit is not written, nor any after it. */

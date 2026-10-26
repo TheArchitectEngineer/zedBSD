@@ -605,14 +605,15 @@
 #define AMDRDNA_UC_GEOMETRY_GROUPS		(128U | (256U << 9))
 
 /*
- * A primitive shader of one wave32 to a subgroup: the stages (the export
- * stage real, 2 in 4:3; the primitive generator, 13; two primitive groups
- * a wave, 18:15; the geometry stage in wave32, 22; the passthrough mode,
- * 25), and the subgroup's size.  GFX10 counts a subgroup's vertices only
- * after it has taken a whole triangle, so a subgroup of 32 vertices is
- * asked for as 30; the geometry engine's vertex group is that less 5 (a
- * GFX10 hang otherwise), its primitive group 32.  The primitive export is
- * one channel; one primitive comes from each input primitive.
+ * A primitive shader in wave32: the stages (the export stage real, 2 in
+ * 4:3; the primitive generator, 13; two primitive groups a wave, 18:15;
+ * the geometry stage in wave32, 22; the passthrough mode, 25), and the
+ * subgroup's size, RADV's for a vertex program (128 vertices and 128
+ * primitives, four waves).  GFX10 counts a subgroup's vertices only after
+ * it has taken a whole triangle, so a subgroup of 128 vertices is asked
+ * for as 126; the geometry engine's vertex group is that less 5 (a GFX10
+ * hang otherwise), its primitive group 128.  The primitive export is one
+ * channel; one primitive comes from each input primitive.
  *
  * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
  * (VGT_SHADER_STAGES_EN: ES_EN, PRIMGEN_EN, MAX_PRIMGRP_IN_WAVE,
@@ -625,14 +626,15 @@
  * (radv_emit_vgt_shader_config_gfx6: the NGG stages; radv_emit_hw_ngg: the
  * GFX10 VERT_GRP_SIZE of hw_max_esverts less 5) and
  * src/amd/vulkan/radv_shader_info.c (gfx10_get_ngg_info: GFX10's
- * hw_max_esverts of max_esverts - max_verts_per_prim + 1, lines 1646-1654).
+ * max_esverts_base and max_gsprims_base 128, GFX10's hw_max_esverts of
+ * max_esverts - max_verts_per_prim + 1, lines 1486-1654).
  */
 #define AMDRDNA_CX_STAGES_PRIMITIVE		((2U << 3) | (1U << 13) | (2U << 15) | (1U << 22))
 #define AMDRDNA_CX_STAGES_PASSTHROUGH		(1U << 25)
-#define AMDRDNA_NGG_VERTICES			32U
-#define AMDRDNA_NGG_PRIMITIVES			32U
+#define AMDRDNA_NGG_VERTICES			128U
+#define AMDRDNA_NGG_PRIMITIVES			128U
 #define AMDRDNA_NGG_VERTICES_ASKED		(AMDRDNA_NGG_VERTICES - 3U + 1U)
-#define AMDRDNA_CX_SUBGROUP_SIZE_ONE_WAVE	(AMDRDNA_NGG_VERTICES_ASKED | (AMDRDNA_NGG_PRIMITIVES << 11) | (AMDRDNA_NGG_PRIMITIVES << 22))
+#define AMDRDNA_CX_SUBGROUP_SIZE_NGG	(AMDRDNA_NGG_VERTICES_ASKED | (AMDRDNA_NGG_PRIMITIVES << 11) | (AMDRDNA_NGG_PRIMITIVES << 22))
 #define AMDRDNA_UC_GEOMETRY_GROUPS_NGG		(AMDRDNA_NGG_PRIMITIVES | ((AMDRDNA_NGG_VERTICES_ASKED - 5U) << 9))
 #define AMDRDNA_CX_SUBGROUP_ONE_PRIMITIVE	1U
 #define AMDRDNA_CX_PRIMITIVE_EXPORT_ONE		1U

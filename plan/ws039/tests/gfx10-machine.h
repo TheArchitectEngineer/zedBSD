@@ -76,12 +76,13 @@ struct machine_result {
  * instance, the instance mask), lanes run vertex ids from first_vertex_id
  * (v0) with the instance id (v3) for every lane, `lanes` of them.
  *
- * A primitive shader wave (ws291, `primitive_shader` set): the subgroup is
- * this wave, of `lanes` vertices and `primitives` primitives; s2 and s3
- * carry those counts, user[0..7] are s8..s15, v0 and v1 each lane's
- * primitive words, v5 the vertex ids from first_vertex_id and v8 the
- * instance id.  The allocation request it sends is kept (alloc_requests,
- * and its counts).
+ * A primitive shader wave (ws291, `primitive_shader` set): wave
+ * wave_number of a subgroup of subgroup_vertices vertices and
+ * subgroup_primitives primitives (s2), with `lanes` vertices and
+ * `primitives` primitives of its own (s3); user[0..7] are s8..s15, v0 and
+ * v1 each lane's primitive words, v5 the vertex ids from first_vertex_id
+ * and v8 the instance id.  The allocation request it sends is kept
+ * (alloc_requests, and its counts).
  *
  * A pixel wave: `coverage` lanes run; each lane has its barycentrics, its
  * position (x, y, z, w) and face, and the primitive whose attributes it
@@ -91,6 +92,9 @@ struct machine_graphics {
 	uint32_t user[8];
 	uint32_t primitive_shader;
 	uint32_t primitives;
+	uint32_t wave_number;
+	uint32_t subgroup_vertices;
+	uint32_t subgroup_primitives;
 	uint32_t primitive_word[2][MACHINE_LANES];
 	uint32_t alloc_requests;
 	uint32_t alloc_vertices;

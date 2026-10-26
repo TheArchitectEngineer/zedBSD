@@ -646,8 +646,7 @@ state_vertex_program(
 }
 
 /*
- * Writes a vertex program run as a primitive shader of one wave32 to a
- * subgroup: its code, counts and inputs, the table in the stage's user
+ * Writes a vertex program run as a primitive shader in wave32: its code, counts and inputs, the table in the stage's user
  * data address, its three user SGPRs, the CUs it runs on, the subgroup's
  * size and output, and the stages of a passthrough primitive shader.
  *
@@ -691,7 +690,7 @@ state_primitive_shader(
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
 
 	/* The subgroup: its size, its output, one primitive from each, the primitive export's format, no instancing. */
-	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_SIZE, AMDRDNA_CX_SUBGROUP_SIZE_ONE_WAVE);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_SIZE, AMDRDNA_CX_SUBGROUP_SIZE_NGG);
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_OUTPUT, AMDRDNA_NGG_VERTICES);
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_CONTROL, AMDRDNA_CX_SUBGROUP_ONE_PRIMITIVE);
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_PRIMITIVE_EXPORT_FORMAT, AMDRDNA_CX_PRIMITIVE_EXPORT_ONE);

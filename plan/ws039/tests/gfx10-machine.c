@@ -1712,8 +1712,8 @@ machine_run_graphics(
 	/* A primitive shader wave: the counts in s2 and s3, s8 .. s15, v0 and v1 the primitive words, v5 the vertex id, v8 the instance id. */
 	if (pixel == 0 && graphics->primitive_shader != 0U) {
 		graphics->alloc_requests = 0U;
-		wave.s[2] = (graphics->lanes << 12) | (graphics->primitives << 22);
-		wave.s[3] = graphics->lanes | (graphics->primitives << 8);
+		wave.s[2] = (graphics->subgroup_vertices << 12) | (graphics->subgroup_primitives << 22);
+		wave.s[3] = graphics->lanes | (graphics->primitives << 8) | (graphics->wave_number << 24);
 		for (index = 0U; index < 8U; index++)
 			wave.s[8U + index] = graphics->user[index];
 		wave.s[CODE_EXEC] = 0xffffffffU;
@@ -1792,8 +1792,8 @@ export_access(
 	target = (word0 >> 4) & 0x3fU;
 	mask = word0 & 0xfU;
 
-	/* A primitive shader exports only after its allocation request; only it exports a primitive. */
-	if (run->graphics->primitive_shader != 0U && run->graphics->alloc_requests == 0U)
+	/* A primitive shader's first wave exports only after its allocation request; only it exports a primitive. */
+	if (run->graphics->primitive_shader != 0U && run->graphics->wave_number == 0U && run->graphics->alloc_requests == 0U)
 		return fail(run, "a primitive shader's export before its allocation request");
 	if (target == 20U && run->graphics->primitive_shader == 0U)
 		return fail(run, "a primitive export outside a primitive shader");

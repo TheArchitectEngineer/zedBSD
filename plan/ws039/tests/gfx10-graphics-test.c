@@ -525,9 +525,16 @@ vertex_trial(
 			for (lane = 0U; lane < 32U; lane++)
 				graphics.primitive_id[lane] = random_word(state) % 1000U;
 
-			/* A primitive shader's subgroup: 1 .. 32 primitives, each lane's packed primitive word. */
+			/*
+			 * A primitive shader's wave: 1 .. 32 primitives of its own, each
+			 * lane's packed primitive word; the first or a later wave of a
+			 * subgroup of up to 128 vertices and primitives.
+			 */
 			graphics.primitive_shader = program->primitive_shader;
 			graphics.primitives = 1U + random_word(state) % 32U;
+			graphics.wave_number = random_word(state) % 4U;
+			graphics.subgroup_vertices = graphics.lanes + 32U * graphics.wave_number + random_word(state) % 8U;
+			graphics.subgroup_primitives = graphics.primitives + 32U * graphics.wave_number + random_word(state) % 8U;
 			for (lane = 0U; lane < 32U; lane++) {
 				graphics.primitive_word[0][lane] = random_word(state) & 0x3ff7fdffU;
 				graphics.primitive_word[1][lane] = random_word(state);
@@ -626,8 +633,14 @@ check_primitive_wave(void)
 	uint32_t lane;
 	uint32_t target;
 
-	/* One request, for the subgroup's vertices and primitives. */
-	if (graphics.alloc_requests != 1U || graphics.alloc_vertices != graphics.lanes || graphics.alloc_primitives != graphics.primitives) {
+	/* The first wave alone asks, for the subgroup's vertices and primitives. */
+	if (graphics.wave_number != 0U && graphics.alloc_requests != 0U) {
+		printf("  wave %u asked for the space\n", graphics.wave_number);
+		return 1;
+	}
+	if (graphics.wave_number == 0U &&
+	    (graphics.alloc_requests != 1U || graphics.alloc_vertices != graphics.subgroup_vertices ||
+	     graphics.alloc_primitives != graphics.subgroup_primitives)) {
 		printf("  the allocation request: %u requests, %u vertices, %u primitives\n",
 		       graphics.alloc_requests, graphics.alloc_vertices, graphics.alloc_primitives);
 		return 1;
