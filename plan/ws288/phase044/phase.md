@@ -3,7 +3,7 @@
 # ws288-p044 CP の初期化・診断の command と、段を追った実機の確かめ
 
 - 親: [WS288](../ws.md)。関係: [p043](../phase043/phase.md)（VF2 の M.2 の KC705、attach まで）、[p024](../phase024/phase.md)（KC705 の板、MIG）。
-- 状態: in-progress（2026-10-26 11:10 Q1 新設）
+- 状態: uncleared、disposition canceled（2026-10-26 22:53 Q1、WS288 の終了）。前の状態: in-progress（2026-10-26 11:10 Q1 新設）
 - 由来（2026-10-26 11:10 ユーザー）: 「はい、ドライバの初期化時に、CPと通信していないのが、非常に設計としてまずいです。初期化コマンドを実装してください。・初期化コマンドと診断コマンドを実装 ・初期化と診断のコマンドが通るのを確認 ＝コマンドを置いたホストメモリへのアクセス経路と、CPファームウェアの正常動作を確認 ・HDMI接続の通知を受けて、scanoutを開始。 ＝AXIやDDR3アクセスの正常性を確認。DC回路の正常性を確認。 ・VRAMへのblitをscanout目視でチェック ・ホストメモリへのblitをCPUリードでチェック」
 - 前の段の問題（Q1 の判断不足）: driver の attach（ghci_cp_start）は ring と fence の page を置いて CP の状態 RUNNING を待つだけで、CP と command の往復をしていなかった。p043 の確かめは blitter（host の memory）から始めてしまい、変数が多すぎた。
 
@@ -39,3 +39,5 @@
     - `ghcictl diag 1000`（23 秒）: register・dbg-host-read・dbg-host-write・dbg-host-write-other・dbg-local（VRAM）・fw-echo・fw-host-write（firmware の 16 KiB を CPU が読む）・fw-host-write-other（別名）・fw-host-sum（CPU の 16 KiB を firmware が足す）・fw-local（VRAM 16 KiB 書き＋和）が各 1000/1000。fw-host-sum-other（CPU が別名で書く）だけ 0/1000 ＝上の L2 の観察（失敗に数えない形にした）。100 回でも同じ。
     - 板で見つけた別の不具合 2 つを直した: (a) vk の node に stop_begin/stop_poll が無く、GPU の core が session の close の度に device 全体の fault にして、2 回目以降の open が ENODEV → vk-node.c に stop の契約。(b) VF2 の電源断の後の起動で時々「firmware did not start (CPFW_STATUS 9)」→ ghci_firmware_start が 1 回だけ reset と RUN をやり直す（log 付き。その後の起動では再発せず、やり直しの効き目は未確認）。
   - 範囲 3 の準備: display に driver の idle frame（VRAM、最大の mode）、接続があり lease が無い時に 1280x720 で 1 接続に 1 回 scanout（lease が取った接続では再点灯しない）。範囲 4 の `ghcictl paint`: blitter で上 2/3 に 8 本の色帯（白・黄・シアン・緑・マゼンタ・赤・青・黒）、下 1/3 に 16 段の灰、firmware の DIAG_SUM で読み戻して比べる。HDMI に出す前に Q1 に聞いた（返事待ち）。新しい kernel は板の /boot/boot0/vmunix に置いたが、まだ起動していない。
+- 2026-10-26 22:53 Q1: 取り下げ（canceled）。WS288 の終了（2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。」）。amaterrace-gpu 側の作業は amaterrace-gpu の plan（am-ws001 など）へ、zedBSD の GHCI の driver は [WS290](../../ws290/ws.md) へ。この Phase の成果と記録はここと git の履歴に残す。
+  - zedBSD の driver の部分（INIT・DIAG の往復）は WS290 の設計で GHCI の現行の ghci.md と照らして引き継ぐかを決める。

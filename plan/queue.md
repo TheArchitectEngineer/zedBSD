@@ -977,7 +977,15 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | q1588 / q1588-i01 | P3（phase-runner、新しい起動、zedBSD の worktree `~/zedBSD-worktrees/p3-p043`（main から）） | [ws288-p043](ws288/phase043/phase.md) の 1・2（GHCI の driver の riscv64・VF2 への移植、build と host の試験）。実機の 3 はユーザーの KC705 の接続の連絡の後 | 承認: ユーザー 2026-10-26「P2がWS256 p024を終えたら、VF2にAmaterrace GPUのドライバを入れて、電源をオフにしてください。」 | cleared（範囲 1・2: b4aee91e0 を main に。host 試験 134・195・166 PASS、e2e 9 PASS、amd64・VF2 の vmunix warning 0。範囲 3（実機）は KC705 の接続の後） |
 | q1589 / q1589-i01 | P2（同じ起動、worktree `~/zedBSD-worktrees/p2-ws256p024`） | [ws256-p026](ws256/phase026/phase.md) PLDA の MSI | 承認: ユーザー 2026-10-26「では、まだ時間があるので、MSIを実装したらどうでしょう。」 | cleared（2026-10-26 07:30: 565ac7991 を main に = 7ec661a6e） |
 | q1590 / q1590-i01 | P1（phase-runner、新しい起動） | [ws288-p024](ws288/phase024/phase.md): KC705 を JTAG で構成して DONE を上げる（startup が phase 4 で止まる原因の切り分けと直し）、その後 VF2 の M.2 での attach（p043）へ | 承認: ユーザー 2026-10-26「KC705の電源を入れました。プログラムしてオーケーです」、2026-10-26「…そのあと電源ONして、シリアルとSSHを使ってデバッグを開始してください。」 | uncleared（ユーザーの中断で止まった。DONE=1 まで: Vivado の hw_server、openFPGALoader は startup を phase 4 で残す。MIG の calibration は未） |
-| q1590 / q1590-i02 | P1（phase-runner、新しい起動） | ws288-p024: KC705 の MIG の calibration（SPD を I2C で読む、DCI・reset・clock・pin、作り直して LED3） | 承認: ユーザー 2026-10-26「はい、お願いします」 | in-progress |
-| q1591 / q1591-i01 | P3（phase-runner、新しい起動） | ws288-p043 の範囲 3: VF2 + KC705 の実機の debug（KC705 の attach の後に SD の読みが失敗し init が EIO、BAR1 64 KiB・window 0・no Vulkan executor (42)・display disconnected） | 承認: ユーザー 2026-10-26「…そのあと電源ONして、シリアルとSSHを使ってデバッグを開始してください。」「MIGが動いてボードのスタートアップがJTAGから確認できたら…動作確認して大丈夫です。」 | in-progress |
-| q1592 / q1592-i01 | P3（phase-runner、新しい起動） | [ws288-p044](ws288/phase044/phase.md) 1〜5 | 承認: ユーザー 2026-10-26「初期化コマンドを実装してください。…」 | in-progress |
+| q1590 / q1590-i02 | P1（phase-runner、新しい起動） | ws288-p024: KC705 の MIG の calibration（SPD を I2C で読む、DCI・reset・clock・pin、作り直して LED3） | 承認: ユーザー 2026-10-26「はい、お願いします」 | uncleared（2026-10-26 22:57 WS288 の終了で取り下げ） |
+| q1591 / q1591-i01 | P3（phase-runner、新しい起動） | ws288-p043 の範囲 3: VF2 + KC705 の実機の debug（KC705 の attach の後に SD の読みが失敗し init が EIO、BAR1 64 KiB・window 0・no Vulkan executor (42)・display disconnected） | 承認: ユーザー 2026-10-26「…そのあと電源ONして、シリアルとSSHを使ってデバッグを開始してください。」「MIGが動いてボードのスタートアップがJTAGから確認できたら…動作確認して大丈夫です。」 | uncleared（2026-10-26 22:57 WS288 の終了で取り下げ） |
+| q1592 / q1592-i01 | P3（phase-runner、新しい起動） | [ws288-p044](ws288/phase044/phase.md) 1〜5 | 承認: ユーザー 2026-10-26「初期化コマンドを実装してください。…」 | uncleared（2026-10-26 22:57 WS288 の終了で取り下げ） |
 | q1593 / q1593-i01 | P1（phase-runner、新しい起動） | [ws288-p045](ws288/phase045/phase.md) 1〜3 | 承認: ユーザー 2026-10-26「クロックドメインを分割して、DCを本来の200MHzにしてください」 | uncleared（ユーザーの「いったん停止してください」で止めた。設計は未、見立ては phase045 の記録） |
+
+## 2026-10-26 22:57: WS290（q1594〜）
+
+承認: 2026-10-26 22:57 ユーザー「…新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。…」と、同日の決定（GHCI 2.0 だけ、host 試験だけ）。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1594 / q1594-i01 | P1（kernel-and-driver-designer、worktree `/home/awe/zedBSD-worktrees/p1-ws290`・branch `agent/p1-ws290`、基点 main） | [ws290-p001](ws290/phase001/phase.md) | 設計（ghci.md 2.0 と今の driver の照合、構成、host 試験の model、Phase の分割、ghci.md の疑問の一覧）、design-reviewer。code は書かない | in-progress |

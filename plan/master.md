@@ -11,14 +11,14 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-26 夕方 ラップアップ（全担当は停止）**: WS288 の引き継ぎは [ws288/q1-handover-20261026.md](ws288/q1-handover-20261026.md)。**ユーザー「今から勝手に進めず、私と相談しながら進めましょう。」**: 担当の起動・build・板の操作は案を示して承認を得てから。次は p042（演算器の整理と am_mul の DSP48E1 の版、計画の承認待ち）と p045（DC を 200 MHz）。
-- zedBSD の main は d4d3b7474、amaterrace-gpu の main は c7af33f（未 merge: p3-p044 c62fddb）。どちらも 2026-10-26 02:2x 以降は push していない。
+- **2026-10-26 22:57 WS288 を closed、WS290 を新設**: ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。…」。amaterrace-gpu は読み取り専用（plan/ は読んでよい、計画は am-ws001 のように書く）。zedBSD の GHCI の driver を GHCI 2.0 だけに書き直す [WS290](ws290/ws.md)。担当: P1 が [ws290-p001](ws290/phase001/phase.md)（設計、q1594）。
+- zedBSD の main は記録の commit の先頭。amaterrace-gpu は Q1 も担当も書かない（worktree・branch の片付けもしない）。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
 
 <!-- master:merge:start -->
-- 全担当の成果は main に merge 済み（2026-10-24 22:30）。未 merge は zedBSD の branch `agent/p2-ws288-p006`（WS288 p006、停止中）だけ。
+- 全担当の成果は main に merge 済み。未 merge の branch `agent/p2-ws288-p006`（WS288 p006 の ZYBO 向け）は WS288 の終了で使わない（WS290 の設計で参照するだけ）。
 - 既定の config の注意: Pi の BT は config-rpi4.mk・config-rpi5.mk で n（ユーザー）、Pi 5 の GPU（CONFIG_DRIVER_BCM2712_GPU）は CI では n、fan（CONFIG_DRIVER_RPI5_FAN）は y、CI の VF2 は CONFIG_POWERVR_DEBUG n。
 - firmware は全部 zedBSD-firmware（rev e13c96f）から取る（VF2 の dtb、Pi 5 の起動の dtb、NVIDIA の GSP を含む）。
 <!-- master:merge:end -->
@@ -28,8 +28,8 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1594、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
-4. WS288 の次: [q1-handover-20261026.md](ws288/q1-handover-20261026.md)（古い引き継ぎ: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5、推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
+3. 次の番号: BUG-346、q1595、WS291、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+4. WS290（GHCI 2.0 の driver）: p001 の設計 → ghci.md の疑問をユーザーに示す → 実装の Phase。試験は zedBSD の host 試験だけ（amaterrace-gpu の sim・firmware は使わない、ユーザー 2026-10-26）。WS288 の古い引き継ぎ（ws288/q1-handover-20261026.md）の「消してよい物」のうち amaterrace の物は、読み取り専用になったので消さない。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
 
@@ -46,17 +46,16 @@
 ### Focus
 
 <!-- master:focus:start -->
-- **fg022 KC705 の PCIe の GPU の board（2026-10-25 01:09〜、[WS288](ws288/ws.md)）**: DDR3 を VRAM にした KC705 を host の QEMU に VFIO で passthrough し、guest の zedBSD から Vulkan を動かす（[p028](ws288/phase028/phase.md)）。順: p009 part F → p027 MSAA → p031 ZYBO を外す → p030 core の残り → p010 → p018 → p019 → p006 → p011 → p024 → p013 → p028 → p029（host の memory だけ）。timing（p025）は driver の後、最後。
+- **fg023 zedBSD の GHCI 2.0 の driver（2026-10-26 22:57〜、[WS290](ws290/ws.md)）**: amaterrace-gpu の docs/ghci.md の GHCI 2.0 だけに従う driver に書き直し、host 試験で確かめる。
 - **Pi 5 の仕上げ（WS278・WS279）**: 残りは BT・BUG-345・GPU の速さ。
-- 達成・終了: fg021 ZYBO（2026-10-23）、fg019 ベータ2（2026-10-17 OSC）、fg010 OSC のデモ。fg020 VF2 は保留。
+- 終了: fg022 KC705 の PCIe の GPU の board（WS288 の終了で取り下げ、2026-10-26 22:57）。達成: fg021 ZYBO（2026-10-23）、fg019 ベータ2（2026-10-17 OSC）、fg010 OSC のデモ。fg020 VF2 は保留。
 <!-- master:focus:end -->
 
 ### 止まっている物
 
 <!-- master:blocked:start -->
-- WS288 の板（p024）と timing（p025）: ユーザーが始めると言うまで待つ（実装を優先）。
-- WS288 p006: ZYBO 向けに書き始めた branch のまま。KC705 だけの方針と GHCI §11・§15 に合わせた見直しが先。
-- VF2: 遠隔の電源（SwitchBot）は ZYBO 用に付け替える予定で、VF2 の板は遠隔で再起動しない。
+- WS290 の実機の試験: GHCI 2.0 のハードウェア（am-ws001-p007）ができるまで無い。
+- VF2: 遠隔の電源（SwitchBot）は ZYBO 用に付け替える予定で、VF2 の板は遠隔で再起動しない。VF2 の zedbsd.cfg は login=graphical を外したまま（元は zedbsd.cfg.p044orig）。
 - GitHub への公開は push の指示の時だけ。
 <!-- master:blocked:end -->
 
@@ -99,7 +98,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 
 | Goal | 当面の成果 | Milestone | 担当の WS | 出典 |
 | --- | --- | --- | --- | --- |
-| **fg022** | KC705（DDR3 を VRAM）を PCIe の GPU の board にし、QEMU の VFIO の passthrough の guest の zedBSD から Vulkan を動かす | MG006 | [WS288](ws288/ws.md) p028 | 2026-10-25 01:09 user（原文は decisions-log） |
+| **fg023** | zedBSD の GHCI の driver を GHCI 2.0（amaterrace-gpu の docs/ghci.md）だけに合わせて書き直し、host 試験で確かめる | MG006 | [WS290](ws290/ws.md) | 2026-10-26 22:57 user（WS288 の終了の指示） |
+| **fg022**（2026-10-26 22:57 取り下げ） | KC705（DDR3 を VRAM）を PCIe の GPU の board にし、QEMU の VFIO の passthrough の guest の zedBSD から Vulkan を動かす | MG006 | [WS288](ws288/ws.md) p028 | 2026-10-25 01:09 user（原文は decisions-log） |
 | **fg021** | 初代 ZYBO（Zynq Z-7010）で JTAG から起動し、PL（FPGA）の block を zedBSD から動かす | MG008 | [WS286](ws286/ws.md) | 2026-10-23 user（2026-10-23 達成、WS286 completed） |
 | **fg020** | VisionFive 2 で OS を完全に動かす（framebuffer・SD・rootfs・USB keyboard・LAN・sound・NVMe の実機、PowerVR の driver、Keiland） | MG008 | [WS256](ws256/ws.md)、[WS269](ws269/ws.md)、[WS277](ws277/ws.md)、[WS270](ws270/ws.md) | 2026-10-19 22:58 ユーザー「VisionFive 2にフォーカスします.」 |
 | **fg018** | Linux 標準 GTK4 の実測と互換性の改善 | MG006 | [WS114](ws114/ws.md) | 2026-10-02 user。p007・p008 まで達成 |
@@ -142,10 +142,10 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 依存による実行の順とは別のもの。Queue の権限は変えない。古い順位（2026-10-03〜04）は付録の history-log。
 
 <!-- master:priority:start -->
-2026-10-25 01:09 ユーザー（fg022）: 最優先は WS288 の最初のゴール（KC705 の PCIe の GPU の board で guest の zedBSD から Vulkan）。
-1. WS288: p009 part F（TU の core の必須）→ p027 MSAA → p030 core の残り → p010 compiler → p018 firmware → p019 `vk/` → p006 driver → p011 Verilator の端から端 → p024 板 → p013 PCIe → p028 ゴール → p025 timing。
+2026-10-26 22:57 ユーザー（WS288 の終了）: zedBSD の側に集中。
+1. WS290: p001 設計 → 実装 → 規約の全文。
 2. Pi 5 の残り（WS278・WS279）: ユーザーの指示の時。
-3. 設計だけの物（WS282〜WS285、WS281 malloc、WS287 EHCI の LS/FS、WS280 H.264）、SA（fw-sa-*）、VRAM を host の memory に（fw-kc705-hostmem）: 後日。
+3. 設計だけの物（WS282〜WS285、WS281 malloc、WS287 EHCI の LS/FS、WS280 H.264）、SA（fw-sa-*）: 後日。
 - それ以前の優先順は付録の history-log と git の履歴。
 <!-- master:priority:end -->
 
@@ -586,8 +586,9 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS285](ws285/ws.md) | MG006 | camera の object detection の demo の app（WS282〜WS284 の上） | planning | p001 の設計 |
 | [WS286](ws286/ws.md) | MG008 | Digilent ZYBO（初代、Zynq Z-7010）への移植: ARMv7-A の HAL と JTAG の起動、PL（FPGA）の block を動かすまで（USB は外す） | completed | 2026-10-23 完了: 実機の ZYBO で JTAG の起動・UART の login・`fpgaload`/`fpgareg` で PL の block（ID・SCRATCH・COUNTER・LED・IRQ 61）。残り（PL310/L2、SMP の CPU1、armv7 の struct stat の詰めた timespec、ptrace の user VA の icache）は ws.md |
 | [WS287](ws287/ws.md) | MG008 | EHCI の full-speed・low-speed の device（split transaction、ZYBO の ChipIdea を含む） | planning | 着手は後日 |
-| [WS288](ws288/ws.md) | MG008 | FPGA の GPU の IP（display controller・command processor・blitter・vertex fetcher・rasterizer・shader unit・texture unit・ROP・memory controller）、ZYBO で workflow、本命は KC705 | incomplete | 2026-10-24 ユーザーの決定で目標の板は KC705 だけ、RTL を揃えるのを優先（板は p024、timing は p025）。cleared p002〜p005・p007・p008・p012・p017・p023、in-progress p001・p006（branch）・p009。引き継ぎ [handover-20261024-2230.md](ws288/handover-20261024-2230.md) |
+| [WS288](ws288/ws.md) | MG008 | FPGA の GPU の IP（display controller・command processor・blitter・vertex fetcher・rasterizer・shader unit・texture unit・ROP・memory controller）、ZYBO で workflow、本命は KC705 | closed（2026-10-26 22:57、ユーザーの指示。amaterrace-gpu は他の担当へ、zedBSD の driver は WS290） | 2026-10-24 ユーザーの決定で目標の板は KC705 だけ、RTL を揃えるのを優先（板は p024、timing は p025）。cleared p002〜p005・p007・p008・p012・p017・p023、in-progress p001・p006（branch）・p009。引き継ぎ [handover-20261024-2230.md](ws288/handover-20261024-2230.md) |
 | [WS289](ws289/ws.md) | MG008 | ZYBO の単独起動: SD（SDIO0）・LAN（GEM0 + RTL8211E、SSH）・SD からの起動（BOOT.BIN）。root を SD に。SDHCI・Cadence GEM の共通の部分を汎用の driver に分ける | completed | 2026-10-23 completed。実機の ZYBO が SD の BOOT.BIN → SPL Falcon → FIT kernel で単独起動し、root は SD、LAN 1000 Mbps・DHCP・SSH、`deploy.sh` で kernel 更新と reboot ができる。汎用の SDHCI・Cadence GEM の core を Pi 4/Pi 5/ZYBO の glue に分けた。100/10 Mbps は未確認 |
+| [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 2.0（amaterrace-gpu の docs/ghci.md）だけに書き直す。試験は host だけ | planning | p001 の設計（q1594、P1） |
 | [WS279](ws279/ws.md) | MG008 | Raspberry Pi 5 の GPU（V3D 7.1）と display（HVS6）（2026-10-21 ユーザー） | incomplete | p001 design.md（約 47〜64 LW の Phase 表）、ユーザーの判断 D1〜D4 待ち |
 | [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | incomplete | p001 設計・p002 起動 image は main（6757ac6f2）、実機の確認待ち（plan/ws278/tests/rpi5-hw-test.md）、判断 D1〜D3 待ち |
 | [WS275](ws275/ws.md) | MG008 | sun4u に /dev/graphics を実装し Xzed を動かす（2026-10-19 ユーザー） | incomplete（2026-10-19 停止、BUG-337。p001〜p005 cleared・main に merge 50bd10c5f） | BUG-337 |
@@ -636,6 +637,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-26 22:57 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。amaterrace-gpuのディレクトリは読み取り専用とします。amaterrace-gpuのplan/は読んでもかまいません。am-ws001のような書き方をしてくれれば私は理解できます。」→ WS288 を closed（未完の Phase は canceled）、fg022 を取り下げ、WS290 を新設。amaterrace-gpu は読み取り専用。
+- 2026-10-26 22:57 ユーザー（Q1 の問いへのクリック）: 新しい driver の対象は「2.0 だけ」（ghci.md の GHCI 2.0 の TO-BE。1.1 は捨てる。2.0 のハードウェアは am-ws001-p007 の予定）。端から端の試験に amaterrace-gpu の Verilator・firmware は「使わない」（zedBSD の host 試験だけ）。
 - 2026-10-26 16:30 ユーザー: define の名前は SYNTH_KINTEX7。(i) を採る: p042 では am_mul に DSP48E1 の版を足すだけ（LAT の parameter で 0 = register なし〜3 = 全段を切り替え、LAT 0 は AREG・BREG・MREG・PREG 0 の組合せの形で機能の一致を確かめる移行の段）、汎用の版（`*`）と DSP48E1 の版の一致を単体の sim で。呼び出し側の LAT 3 化は SU → TU → ROP … の順に block ごとの後の Phase で、各 block の timing を Vivado で見ながら。（ユーザーの言う「p043 以降」は番号が既にあるので新しい番号で立てる、Q1。）
 - 2026-10-26 16:26 ユーザーとの相談（WS288、手順の変更と乗算器）: 順を p042（重複する演算器のまとめ）→ SU の下位の部品の pipeline 化に。演算器の中で `*` による合成をやめる（ユーザー: その記述では 200 MHz の合成が事実上できないことがプロの間で知られている）。決めた事: (1) 幅の広い乗算は DSP48E1 の primitive を直に使い、PCOUT → PCIN の cascade（17 bit の shift、OPMODE・ALUMODE）で部分積を DSP の中で足す（MULT_MACRO の分割と fabric の am_add は取らない）。24×24 unsigned は DSP 2 個、33×33 signed は 4 個の tile（UG479）。(2) LAT の既定は 3（A/B の入力 1 + MREG 1 + PREG 1）、4 は DSP の前段の register を足す形。汎用の版（`*` の記述）も LAT 段の register で cycle まで同じにする。(3) iverilog・Verilator は汎用の版、DSP48E1 の版は unisim（glbl.v と DSP48E1.v）を読ませた iverilog か xsim で乱数の試験をし、汎用の版と同じ cycle で bit 単位で一致することを assertion で比べる試験を 1 本作る。(4) 加算・shifter は fabric のまま（CARRY4・LUT）、DSP に寄せない。shifter は最低 1 段の register を確保する。未決: define の名前（USE_UNIMACRO か USE_DSP48 か）、DC（p045）の位置。
 - 2026-10-26 16:01 ユーザー「今から勝手に進めず、私と相談しながら進めましょう。200MHzはこのボードのシステムクロックです。PLLはいりません。それはわかりますか？」→ WS288 の板の作業は、Q1 も担当も一段ごとにユーザーと相談してから進める（担当の起動・板の操作・build も含めて、先に案を示して承認を得る）。DC の 200 MHz は KC705 の SYSCLK（200 MHz の差動の発振器、AD12/AD11）をそのまま使い、PLL/MMCM は要らない。

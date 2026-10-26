@@ -3,7 +3,7 @@
 # ws288-p028 QEMU の passthrough の guest の zedBSD から KC705 の GPU で Vulkan（最初のゴール）
 
 - 親: [WS288](../ws.md)。
-- 状態: planned（2026-10-25 01:08 Q1 新設）
+- 状態: planned、disposition canceled（2026-10-26 22:53 Q1、WS288 の終了）。前の状態: planned（2026-10-25 01:08 Q1 新設）
 - 依存: p011（Verilator の端から端）、p013（PCIe）、p006（PCIe の driver）、p019（`vk/`）、p024（板）。
 - 承認: 2026-10-25 ユーザー「了解です。SAはfuture workに回します。p009, msaaを優先して実装してください。そのあと、p010,p018,p019,p006,p011を実装します。KC705のDDR3をVRAMにしてPCIeのGPUボードにすることで、QEMUからパススルーで利用し、ゲストのzedBSDからVulkanを動作させることを、最初のゴールにします。必要なphaseは作成してください。」
 
@@ -24,3 +24,4 @@ guest の zedBSD から Vulkan の program が KC705 の GPU で動き、readbac
 - 2026-10-26 04:4x ユーザー「Core i5 12400Fのマシンなので、GPUを抜いたらUEFIが起動を拒む可能性があります。念のためリスクとして。」→ リスクとして記録: host の PC（Core i5-12400F）は内蔵 GPU が無い。GPU を抜くと UEFI が POST で止まる恐れ。対策の案（Q1）: 今の GPU を x16 の slot に残して host の Linux の表示に使い、KC705 は別の slot（chipset の x4 など。x8 の card は端の開いた slot か riser）に挿して vfio-pci に渡す。確かめる事: KC705 の slot の IOMMU group が他の装置と分かれているか（chipset の slot は group を共有しがち、ACS）、KC705 の bitstream を電源の前に flash から読む（PC は UEFI の起動時に link が要る）。
 - 2026-10-26 04:5x ユーザー「とても安いマザーボードなので、PCIe x16が1つと、PCIe x1が1つしかないんです。スロット形状。」→ Q1 の案（推し A）: A) KC705 を x16 の slot（CPU の root port、IOMMU の group が分かれやすい）、表示の GPU を x1 の slot に x1 → x16 の riser で（表示だけなら x1 で足りる）か x1 の安い GPU。B) GPU を x16 のまま、KC705 を x1 の slot に riser で（Gen2 x1 約 500 MB/s、chipset の slot は IOMMU の group を共有しがち）。C) GPU を抜いて headless（12400F は POST で止まる恐れ、試すだけ）。ユーザーの選びを待つ。
 - 2026-10-26 04:59 ユーザー「ライザーは今注文したので、今日の夜には届きます。まずは既存GPUを取り外してKC705を装着して起動してみることにします。だめならライザーを使います。IOMMUのグループについては了解です。」→ 順: まず C（GPU を抜いて KC705 を x16）で起動を試す、POST で止まれば A（riser で GPU を x1、KC705 を x16）。riser は 2026-10-26 夜に届く。bitstream は q1586（P1）の build の後。
+- 2026-10-26 22:53 Q1: 取り下げ（canceled）。WS288 の終了（2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。」）。amaterrace-gpu 側の作業は amaterrace-gpu の plan（am-ws001 など）へ、zedBSD の GHCI の driver は [WS290](../../ws290/ws.md) へ。この Phase の成果と記録はここと git の履歴に残す。

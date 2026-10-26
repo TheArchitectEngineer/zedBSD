@@ -135,3 +135,4 @@
 | P1 / 2026-10-19 | phase-runner（Opus 5.5、low、子なし） | WS244 → WS251 p002 → WS252 p001（q1260） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1260` | q1260 | — | returned（2026-10-19、コンテキスト） | 最後 c670aab05 → main f5a4904da |
 | P1 / 2026-10-19 (2) | phase-runner（Opus 5.5、low、子なし） | WS244 p007〜 → WS251 p002 → WS252 p001（q1260-i02） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1260b` | q1260-i02 | — | returned（2026-10-19） | 最後 0736bcc7b → main 731dc0a65 |
 | P1 / 2026-10-19 (3) | phase-runner（Opus 5.5、low、子なし） | WS252 p001（q1262） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1262` | q1262 | — | returned（2026-10-19） | 最後 8ef2d626d → main 62abf8bab |
+| P1 / 2026-10-26 (WS290) | kernel-and-driver-designer | WS290 p001（q1594） | `/home/awe/zedBSD-worktrees/p1-ws290` / `agent/p1-ws290` | q1594 | — | running | — |

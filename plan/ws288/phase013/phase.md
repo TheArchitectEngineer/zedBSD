@@ -3,7 +3,7 @@
 # ws288-p013 KC705 の PCIe（GPU の board として host に出す）
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) §8 の p013 の行・§9.2（host link A'）。
-- 状態: in-progress（2026-10-25 15:49 Q1、q1579 P2: 板の要らない部分 = bridge の RTL と sim を先に。板の部分は p024 と一緒）
+- 状態: uncleared、disposition canceled（2026-10-26 22:53 Q1、WS288 の終了）。前の状態: in-progress（2026-10-25 15:49 Q1、q1579 P2: 板の要らない部分 = bridge の RTL と sim を先に。板の部分は p024 と一緒）
 - 依存: p012、p024（板の bring-up）、p006（driver の PCIe の attach は p006 の範囲）。
 - 承認: 2026-10-25 ユーザー「了解です。SAはfuture workに回します。p009, msaaを優先して実装してください。そのあと、p010,p018,p019,p006,p011を実装します。KC705のDDR3をVRAMにしてPCIeのGPUボードにすることで、QEMUからパススルーで利用し、ゲストのzedBSDからVulkanを動作させることを、最初のゴールにします。必要なphaseは作成してください。」
 
@@ -48,3 +48,4 @@ host の Linux で KC705 が PCIe の device として見え、BAR0 の GHCI の
 - 2026-10-25 17:31 Q1（ユーザーの問い「BARが32bitなのは、どういう制限ですか？」への説明）: axi_pcie 2.9 は BAR の幅が全部 32 bit か全部 64 bit の一括（C_PCIEBAR_AS）で、prefetchable の選択が無い（P2 の Vivado の読み戻し、PG055 は未読）。影響: BAR2 は host で cache 無し（UC）の map になり CPU からの大きな書き込みが遅い、64 MiB の窓なら 32 bit で足りる。GHCI §15.2 からの逸脱として記録し、p028 にはこのまま進める（Q1 の推し）。
 - 2026-10-25 17:51 Q1: GHCI の修正（ユーザーの決定、Master の decisions-log）を P1 が p1-ghci d2e2e2a・d0beb7d で行い、Q1 が amaterrace-gpu の main に merge = 8533ca6（docs/ghci.md だけ、+18 −23）。§6.1 ring は host memory、§6.3 doorbell の順序は DMA の同期 → store barrier → RING_WPTR だけ、§9.1 fence は host memory、§11.1 local window は frame buffer 専用（WC で map した window に書いた後の doorbell の前に最後の word を読み返す規則は frame buffer の向けに残した）、§11.3 の表の ring・command buffer・fence は両方 host memory、§15.2 BAR2 は 32 bit か 64 bit（BAR の型の bit、GHCI の capability 無し）・prefetchable は推奨で必須でない、Appendix A の手順 4。fw・rtl・spec などに local の ring を前提にした code・文は無い（P1 の grep）。KC705 の axi_pcie の 32 bit・prefetchable 無しの BAR2 は規則の範囲内になった。
 - 2026-10-25 17:51 Q1（ユーザーの問い「scanoutバッファをGPUドライバが変更した場合、ファームウェアが初期化したBAR2は使わなくなりますが、この扱いはどうするのがスマートですか？」への推し、未決定）: 窓は専用の memory でなく local の memory の見え方。attach で DC の register から今の scanout を読み範囲を予約（flicker-free の引き継ぎ）、driver の最初の flip が TAKEN になったら allocator に返す、以後の窓は普通の local（scanout の buffer を優先して窓に置き console・panic の画面に使う）。起動の frame buffer の console の driver からの取り上げは GPU の core の共通の仕組みに。KC705 は option ROM が無く今は不要 → Future Work か §11.3 の Phase の一項目。
+- 2026-10-26 22:53 Q1: 取り下げ（canceled）。WS288 の終了（2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。」）。amaterrace-gpu 側の作業は amaterrace-gpu の plan（am-ws001 など）へ、zedBSD の GHCI の driver は [WS290](../../ws290/ws.md) へ。この Phase の成果と記録はここと git の履歴に残す。

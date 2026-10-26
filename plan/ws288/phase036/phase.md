@@ -3,7 +3,7 @@
 # ws288-p036 KC705 に GPU が入る面積（LUT）
 
 - 親: [WS288](../ws.md)。
-- 状態: in-progress（2026-10-25 09:43 q1571 P2: 測定と原因の段）
+- 状態: uncleared、disposition canceled（2026-10-26 22:53 Q1、WS288 の終了）。前の状態: in-progress（2026-10-25 09:43 q1571 P2: 測定と原因の段）
 - 出所: T1-776 の `make oxc-core`（yosys、KC705 の SU の形: NSU 1・SU_NPHYS 16・SU_VARY_WORDS 64、CPU・RX・ROP あり）で **LUT 245,292**（LUT2 69,445・LUT5 68,653 が多い）、FDRE 63,278、RAMB36E1 25・RAMB18E1 53。XC7K325T の LUT は 203,800 なので、yosys の数では 1 SU でも入らない（120%）。p024（板）の前に解く。
 - 依存: p030・p027 の RTL（main 5262af6 の候補）。
 - 承認: 2026-10-25 ユーザー「ゴールまで推しで進んでよいです。判断に迷ったら、Vulkan 1.0の原則論で進めてください。…」（最初のゴールの p024・p028 に要る）。製品の形の parameter（NPHYS・FPU の lane の数・SU の数・機能を外す）を変える判断はユーザーに諮る（U 項目）。
@@ -43,3 +43,4 @@ Vivado の測定の結果と module の内訳、機能を変えない削減の�
   - 追加の削減: 212bb3f・fe4aca5（U85、wpix/wb/ds の offset は ps の倍数、GHCI 8.5）ROP 40,481 → 31,665。fe4aca5 tu_lod を 1 cycle に 1 軸 4,656 → 1,767、TU 37.4k → 31.7k。03626b1・3ab8fe9・dcb6dd3 ffilt の ETC を unpack 経由・FIN を lane ごと・1 cycle に 1 成分、vf_conv も 1 成分ずつ、VF 7,063 → 4,853。d94076c（SU_PK_SHARED=1）の全体の合成を実行中。
 - 2026-10-25 13:46 P2 区切り（q1571-i02、p2-p036 d94076c、Q1 が commit を確かめた）。Q1 が Vivado の report で確かめた: d94076c（KC705 の形、NPHYS 8、PK_SHARED 1、NSU 1、flatten none）の合成 **LUT 167,293（82.09%）**、合成の見積もり WNS −39.223 ns → 約 22.9 MHz（ffilt の経路に ETC の decode が入って悪化）。証拠 [evidence/ooc-kc705-fin-utilization.rpt](evidence/ooc-kc705-fin-utilization.rpt)・[_hier](evidence/ooc-kc705-fin-utilization_hier.rpt)・[params](evidence/ooc-kc705-fin-params.txt)。P2 の申告: FF 78,371・BRAM 106.5・DSP 146、block ごと SU 60,272（FPU 20.8k・PK 3.0k・lane 7.5k）・ROP 30,032・TU 27,824・VF 4,747・RX 16,976・BLT 16,751。MIG・DC・XDMA（約 20k）を足して約 187k（92%）の見込み。残り: RX・BLT は未着手、rx cpoly pb の BRAM 化、tu_addr の乗算の共有、TU/ROP/RX/FPU/PK/fmt の am_ の形（p037）、pipeline（p025）。T1-791 に回した。
 - 2026-10-25 15:22 Q1: T1-791 PASS（Q1 が流し直した: make sim 98・msaa 16・verilator 7・fw-run 6 case 0 differ・lint 128 clean・ghci-e2e 8 PASS mismatch 0）→ d94076c を amaterrace-gpu の main に merge = 5eb6508（親 73d8dc2 d94076c、衝突なし）。merge の後の lint・sim-quick を Q1 が実行中。
+- 2026-10-26 22:53 Q1: 取り下げ（canceled）。WS288 の終了（2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。」）。amaterrace-gpu 側の作業は amaterrace-gpu の plan（am-ws001 など）へ、zedBSD の GHCI の driver は [WS290](../../ws290/ws.md) へ。この Phase の成果と記録はここと git の履歴に残す。

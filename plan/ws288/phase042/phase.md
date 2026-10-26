@@ -3,7 +3,7 @@
 # ws288-p042 RTL の階層（bsp・library・gpu）と FP の演算器の重複の整理
 
 - 親: [WS288](../ws.md)。設計: [design.md](../design.md) §19.5.5。作業手順書: [work-spec.md](work-spec.md)（2026-10-26 17:08 ユーザー添付の原文）。
-- 状態: planned（2026-10-26 05:44 Q1 新設。2026-10-26 範囲・詳細を改めた、ユーザーの承認待ち）
+- 状態: planned、disposition canceled（2026-10-26 22:53 Q1、WS288 の終了）。前の状態: planned（2026-10-26 05:44 Q1 新設。2026-10-26 範囲・詳細を改めた、ユーザーの承認待ち）
 - 由来: 2026-10-26 ユーザー「atg_su_fpu atg_rx_fadd atg_su_fadd atg_su_ffma_p このあたりは、core/ primitive/ fpu/ fma/ みたいな階層に分けて、FPGAやASICのプロセスごとに突き詰めて最適化するのもありと思いました。どうでしょうか。すぐやってほしいわけではないです。」「すみません、core/じゃなくてcommon/です。rtl/ bsp/ --> JTAGとか library/ gpu/ みたいなのがいいと思いました。どう思いますか？」「はい、では重複している演算をまとめるのも含めて、そのphaseを追加してください。」
 - 依存・順: 今すぐ。p042 → SU の下位の部品の pipeline 化（新しい Phase、SU → TU → ROP … の順に block ごと）。DC の 200 MHz（p045）は並べて進める。名前の移動は多くの file に触れるので、p042 の担当以外は amaterrace の rtl/common・FP の module を触らない。
 - 進め方（2 段階のマイルストーン）:
@@ -99,3 +99,4 @@
 - 2026-10-26 16:26 ユーザーとの相談（WS288、手順の変更と乗算器）: 順を p042（重複する演算器のまとめ）→ SU の下位の部品の pipeline 化に。演算器の中で `*` による合成をやめる（ユーザー: その記述では 200 MHz の合成が事実上できないことがプロの間で知られている）。決めた事: (1) 幅の広い乗算は DSP48E1 の primitive を直に使い、PCOUT → PCIN の cascade（17 bit の shift、OPMODE・ALUMODE）で部分積を DSP の中で足す（MULT_MACRO の分割と fabric の am_add は取らない）。24×24 unsigned は DSP 2 個、33×33 signed は 4 個の tile（UG479）。(2) LAT の既定は 3（A/B の入力 1 + MREG 1 + PREG 1）、4 は DSP の前段の register を足す形。汎用の版（`*` の記述）も LAT 段の register で cycle まで同じにする。(3) iverilog・Verilator は汎用の版、DSP48E1 の版は unisim（glbl.v と DSP48E1.v）を読ませた iverilog か xsim で乱数の試験をし、汎用の版と同じ cycle で bit 単位で一致することを assertion で比べる試験を 1 本作る。(4) 加算・shifter は fabric のまま（CARRY4・LUT）、DSP に寄せない。shifter は最低 1 段の register を確保する。未決: define の名前（USE_UNIMACRO か USE_DSP48 か）、DC（p045）の位置。
 - 2026-10-26 16:30 ユーザー: define の名前は SYNTH_KINTEX7。(i) を採る: p042 では am_mul に DSP48E1 の版を足すだけ（LAT の parameter で 0 = register なし〜3 = 全段を切り替え、LAT 0 は AREG・BREG・MREG・PREG 0 の組合せの形で機能の一致を確かめる移行の段）、汎用の版（`*`）と DSP48E1 の版の一致を単体の sim で。呼び出し側の LAT 3 化は SU → TU → ROP … の順に block ごとの後の Phase で、各 block の timing を Vivado で見ながら。（ユーザーの言う「p043 以降」は番号が既にあるので新しい番号で立てる、Q1。）
 - 2026-10-26 17:08 ユーザー「計画を更新します。phase定義書と、今回の作業手順書を添付します。」→ 範囲・確かめ・受け入れ・進め方（Step A・B）を添付の phase 定義書に置き換え、作業手順書を [work-spec.md](work-spec.md) に原文で保存（Q1）。承認と担当の起動は未。
+- 2026-10-26 22:53 Q1: 取り下げ（canceled）。WS288 の終了（2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。」）。amaterrace-gpu 側の作業は amaterrace-gpu の plan（am-ws001 など）へ、zedBSD の GHCI の driver は [WS290](../../ws290/ws.md) へ。この Phase の成果と記録はここと git の履歴に残す。

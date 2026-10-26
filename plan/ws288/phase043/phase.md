@@ -3,7 +3,7 @@
 # ws288-p043 GHCI の driver を VisionFive 2（riscv64）の M.2 の KC705 で
 
 - 親: [WS288](../ws.md)。関係: [WS256 p024](../../ws256/phase024/phase.md)（VF2 の PCIe1・NVMe）、[p024](../phase024/phase.md)（KC705 の板）、[p013](../phase013/phase.md)（PCIe の bridge）、[p028](../phase028/phase.md)（PC の VFIO、後に）。
-- 状態: in-progress（2026-10-26 06:13 Q1 新設）
+- 状態: uncleared、disposition canceled（2026-10-26 22:53 Q1、WS288 の終了）。前の状態: in-progress（2026-10-26 06:13 Q1 新設）
 - 由来: ユーザーの指示（Master の decisions-log の 2026-10-26 06:13）。
 
 ## 範囲
@@ -57,3 +57,5 @@ VF2 の zedBSD が KC705 の GHCI の GPU を attach し、fill・copy の結果
   - BAR1 64 KiB・window 0 MiB の原因（amaterrace の read only）: P1 の build（`p1-kc705cfg/build/ip-off/atg_kc705_pcie_ip`）の AXI-PCIe の IP は `BAR1_ENABLED false`・`BAR2_ENABLED true` から `C_PCIEBAR_NUM(2)` を作り、hard block の `.BAR0(32'hFFFE0000)`（128 KiB）`.BAR1(32'hFFFF0000)`（64 KiB、`C_PCIEBAR2AXIBAR_1 0xFFFFFFFF`）`.BAR2(32'h00000000)`（無効）になる。つまり IP は BAR を詰めて数え、64 MiB の窓（`C_PCIEBAR_LEN_2 26`、AXI 0x8000_0000）は PCIe に出ていない。直す案: ip.tcl を BAR0 + BAR1（64 MiB → 0x8000_0000）にして driver の窓の BAR の番号を合わせるか、IP の BAR の詰め方を確かめる（amaterrace の担当へ）。
   - 未実施: VRAM の fill の present、ghci-display、vkdemo、「no Vulkan executor (42)」の調べ、KC705 の link down の起動との比較。板の今の状態: /boot/boot0/vmunix = 79dcab66…（e10cec2c4 の tree の GHCI の kernel）、vmunix.p026・vmunix.old = P2 の kernel、vmunix.ghci = Q1 の 5b187919… の kernel。VF2 は起動したまま（SSH 可）。
 - 2026-10-26 11:10 Q1: P1（agent/p1-kc705cfg 3b02de2a2、warning の一覧）と P3（agent/p3-p043 c56cd7182: dw-mmc の直し 537849d56・GHCI の recover の log e10cec2c4・記録）を main に merge（記録の衝突は両方を残した）= 0e7f41983。amaterrace main を p1-kc705cfg c7af33f に fast-forward（MIG の clock の直し・MIG_DEBUG・板の register 0x1F000・build の script・docs/style.md の Board clocking・Board builds）。範囲 3 の続きは p044 へ。BAR2 が PCIe に出ない件（ip.tcl を BAR0 + BAR1 に）は残り。
+- 2026-10-26 22:53 Q1: 取り下げ（canceled）。WS288 の終了（2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。」）。amaterrace-gpu 側の作業は amaterrace-gpu の plan（am-ws001 など）へ、zedBSD の GHCI の driver は [WS290](../../ws290/ws.md) へ。この Phase の成果と記録はここと git の履歴に残す。
+  - zedBSD の driver の部分（VF2 の riscv64 の移植）は WS290 の設計で GHCI の現行の ghci.md と照らして引き継ぐかを決める。

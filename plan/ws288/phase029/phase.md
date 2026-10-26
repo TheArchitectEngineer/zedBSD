@@ -3,7 +3,7 @@
 # ws288-p029 PCIe の board で host の memory だけを使う（unified memory の検証）
 
 - 親: [WS288](../ws.md)。GHCI §11.3（unified と discrete は buffer の確保の場所の違いだけ）。
-- 状態: planned（2026-10-25 02:06 Q1 新設）
+- 状態: planned、disposition canceled（2026-10-26 22:53 Q1、WS288 の終了）。前の状態: planned（2026-10-25 02:06 Q1 新設）
 - 依存: p028（DDR3 を VRAM にした discrete の形で guest の zedBSD から Vulkan が動いた）。
 - 承認: 2026-10-25 02:06 ユーザー「了解です。MIGの検証コストが低いなら、むしろdiscrete VRAMを先に検証して、あとでCPUができる前にUnified memoryでも動く検証としてPCIeだけどホストメモリだけ使う検証を行うのがよさそうです。」
 
@@ -21,3 +21,4 @@ p028 と同じ Vulkan の program が、host の memory だけを使う構成で
 ## 記録
 
 - 2026-10-25 02:06 Q1: 新設（ユーザーの決定）。DDR3 を VRAM にした discrete の形（p013・p028）が先。
+- 2026-10-26 22:53 Q1: 取り下げ（canceled）。WS288 の終了（2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。」）。amaterrace-gpu 側の作業は amaterrace-gpu の plan（am-ws001 など）へ、zedBSD の GHCI の driver は [WS290](../../ws290/ws.md) へ。この Phase の成果と記録はここと git の履歴に残す。
