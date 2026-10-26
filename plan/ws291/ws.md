@@ -21,6 +21,10 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 - 計測: `plan/tools/frame-ops/`（frame-ops.sh・frame-times.py・key-latency.py・shot-diff.py）、mview の `--spin=N`（fps の報告）。Linux の基準は Debian の上の同じ mview（Wayland の上の Vulkan、RADV）を同じ解像度・同じ model で。
 - 試験の方針（AGENTS.md）の例外: 実機の計測はこの WS の本体なので担当が直に行う（WS039 と同じ）。QEMU は使わない。
 
+## 計測の決定
+
+- 2026-10-26 23:10 ユーザー「zedBSDでは、graphicalログインは必要なく、graphicalログインをするなら、direct scanoutで限界まで3D性能を正しく計測しましょう。USBはまるごと書き換えてOKです。」→ login=graphical の起動は要らない。3D（mview）の計測は fullscreen の direct scanout（compositor が合成しない）で限界の性能を測り、direct scanout であることを確かめて記録する。Linux 側も同じ条件で比べる。10.0.10.3 の USB は丸ごと書き換えてよい。VF2（p020）でも同じ。
+
 ## 受け入れ
 
 - desktop: frame-ops の各段が 60 fps（ws270-p007 の基準の表と同じ形で記録）。
@@ -43,7 +47,7 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 - 2026-10-26 23:09 ユーザー「VF2はssh kei@10.0.30.2で、パスワード（略）です。VF2はSwitchbotで電源を入れられます。」→ VF2 は ssh kei@10.0.30.2（password は tree に書かない、Q1 が担当に渡す）。電源は SwitchBot のプラグ（AC276E42B252）で Q1 が `plan/tools/switchbot.py` で入れ切りする（担当は Q1 に頼む）。serial は host の /dev/ttyUSB0。
 - 2026-10-26 23:09 ユーザー「VF2には現在、PowerVRドライバのカーネルやファームウェアが入っていないと思うので、SSH経由で更新が必要です。」→ p020 の最初に、main の config-visionfive2.mk（desktop の構成、PowerVR の driver あり）で vmunix と PowerVR の firmware（zedBSD-firmware から）・desktop の package を作り、ssh で VF2 の /boot/boot0/vmunix などを入れ替える（今の vmunix は WS288 の GHCI の kernel、P3 の ac7ee7d64 の物。入れ替える前の物は .old 等で残す）。起動の後に PowerVR の attach と firmware の load を確かめてから計測する。
-- WS288 の作業で VF2 の zedbsd.cfg から login=graphical を外したまま（元は zedbsd.cfg.p044orig）。desktop・mview の計測の前に戻す。
+- WS288 の作業で VF2 の zedbsd.cfg から login=graphical を外したまま（元は zedbsd.cfg.p044orig）。上の計測の決定で login=graphical は要らないので戻さない。
 
 ## 未決（その Phase の前に確かめる）
 
