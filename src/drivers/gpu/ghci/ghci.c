@@ -228,6 +228,9 @@ ghci_device_stop(
 {
 	int error;
 
+	/* Says that the detach asks the device to stop. */
+	kern_logf("ghci: %s: stop asked (sessions %u)\n", device->name, device->session_count);
+
 	/* Refuses while a session is open; new opens are refused from here on. */
 	mutex_lock(&device->lock);
 
@@ -401,6 +404,31 @@ ghci_firmware_start(
 		GHCI_CPFW_STATUS_READY | GHCI_CPFW_STATUS_FAULT | GHCI_CPFW_STATUS_STOPPED,
 		GHCI_CPFW_STATUS_READY,
 		GHCI_FIRMWARE_WAIT_MS);
+	if (error != 0) {
+		/*
+		 * Seen on the KC705 after the host lost power with the firmware
+		 * running: the core stays stopped (CPFW_STATUS 9).  RUN is let go,
+		 * the processor reset once more, and RUN set again.
+		 */
+		status = ghci_read(device, registers + CPFW_STATUS_OFFSET);
+		kern_logf("ghci: %s: firmware did not start (CPFW_STATUS %08x, CPFW_CTRL %08x, status %08x); resetting once more\n",
+		    device->name,
+		    (unsigned)status,
+		    (unsigned)ghci_read(device, registers),
+		    (unsigned)ghci_read(device, GHCI_STATUS));
+		ghci_write(device, registers, 0U);
+		ghci_write(device, GHCI_CTRL, GHCI_CTRL_RESET);
+		(void)ghci_poll(device, GHCI_CTRL, GHCI_CTRL_RESET, 0U, GHCI_RESET_WAIT_MS);
+		ghci_write(device, registers, GHCI_CPFW_CTRL_RUN);
+		error = ghci_poll(
+			device,
+			registers + CPFW_STATUS_OFFSET,
+			GHCI_CPFW_STATUS_READY | GHCI_CPFW_STATUS_FAULT | GHCI_CPFW_STATUS_STOPPED,
+			GHCI_CPFW_STATUS_READY,
+			GHCI_FIRMWARE_WAIT_MS);
+	}
+
+	/* A firmware that still does not run. */
 	if (error != 0) {
 		status = ghci_read(device, registers + CPFW_STATUS_OFFSET);
 		kern_logf("ghci: %s: firmware did not start (CPFW_STATUS %08x)\n", device->name, (unsigned)status);
@@ -752,8 +780,9 @@ gpu_open(
 
 	mutex_unlock(&device->lock);
 
-	/* An open that was refused leaves nothing behind. */
+	/* An open that was refused leaves nothing behind, and says why. */
 	if (error != 0) {
+		kern_logf("ghci: %s: open refused (%d)\n", device->name, error);
 		kern_free(session);
 		return error;
 	}

@@ -251,8 +251,12 @@ open_ghci(
 	for (index = 0; index < NODES_MAX; index++) {
 		snprintf(path, size, "/dev/gpu%d", index);
 		fd = open(path, O_RDWR | O_CLOEXEC);
-		if (fd < 0)
+		if (fd < 0) {
+			/* A node that is there but does not open says why. */
+			if (errno != ENOENT)
+				fprintf(stderr, "ghcictl: %s: %s\n", path, strerror(errno));
 			continue;
+		}
 		memset(&info, 0, sizeof(info));
 		info.version = GPU_ABI_VERSION;
 		info.size = sizeof(info);

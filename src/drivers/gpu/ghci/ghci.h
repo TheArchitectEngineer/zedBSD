@@ -538,9 +538,15 @@ struct ghci_device {
 	uint32_t fw_ibase;
 	uint32_t fw_dbase;
 
-	/* The diagnostics' buffers, kept until the detach, and whether a run goes on (device lock). */
+	/*
+	 * The diagnostics' buffers, kept until the detach (device lock):
+	 * diag_alias is an uncached view of diag_host beside the direct map
+	 * (NULL where the driver's view is uncached, or the kernel has none);
+	 * diag_running says a run goes on.
+	 */
 	struct ghci_allocation *diag_host;
 	struct ghci_allocation *diag_local;
+	void *diag_alias;
 	int diag_running;
 
 	/*

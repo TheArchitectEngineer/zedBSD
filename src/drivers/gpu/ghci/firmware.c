@@ -21,9 +21,12 @@
  * memory, the firmware's echo, a pattern the firmware writes into host
  * memory and the CPU reads, a pattern the CPU writes and the firmware
  * sums, and a pattern the firmware writes into local memory and sums.
- * Where the CPU reaches host memory through an uncached view, the cached
- * direct map is read and written as well, so a difference between the two
- * shows where the GPU's accesses land.  Every step is logged.
+ * Host memory is also read and written through a second view, the one
+ * the driver does not use (the cached direct map beside an uncached view,
+ * an uncached view beside the direct map), with no cache operation, so a
+ * difference between the two shows where the GPU's accesses land (in
+ * memory, or in a cache the uncached view does not see).  Every step is
+ * logged.
  *
  * A reload stages the image (IMEM words, then DMEM words) in host memory
  * sent by root in pieces, resets the processor, loads the image with the
@@ -116,21 +119,20 @@
 #define CPFW_VERSION_OFFSET		(GHCI_CPFW_VERSION - GHCI_CPFW_CTRL)
 
 /*
- * The steps of a round of the diagnostics.  The _CACHED steps reach host
- * memory through the cached direct map; they run only where the driver's
- * own view is an uncached one.
+ * The steps of a round of the diagnostics.  The _OTHER steps reach host
+ * memory through the view the driver does not use (struct diag_run).
  */
 enum diag_step {
 	DIAG_REGISTER = 0,
 	DIAG_DBG_HOST_READ,
 	DIAG_DBG_HOST_WRITE,
-	DIAG_DBG_HOST_WRITE_CACHED,
+	DIAG_DBG_HOST_WRITE_OTHER,
 	DIAG_DBG_LOCAL,
 	DIAG_ECHO,
 	DIAG_FW_HOST_WRITE,
-	DIAG_FW_HOST_WRITE_CACHED,
+	DIAG_FW_HOST_WRITE_OTHER,
 	DIAG_FW_HOST_SUM,
-	DIAG_FW_HOST_SUM_CACHED,
+	DIAG_FW_HOST_SUM_OTHER,
 	DIAG_FW_LOCAL,
 	DIAG_STEPS
 };
@@ -139,15 +141,17 @@ enum diag_step {
  * One run of the diagnostics: the device, the buffers and their views,
  * the seed of the patterns and what each step counted.
  *
- * host is the driver's view of the host buffer; cached the direct map of
- * it when that is a different view (an uncached one is the driver's),
- * else NULL.  local_address is 0 on a GPU without local memory.  The run
+ * host is the driver's view of the host buffer; other the view it does
+ * not use: the cached direct map beside an uncached view, an uncached
+ * view (device->diag_alias) beside the direct map, NULL where the kernel
+ * has no uncached views; other_cached says other is the direct map.  local_address is 0 on a GPU without local memory.  The run
  * lives on the caller's stack for one call of ghci_firmware_diag().
  */
 struct diag_run {
 	struct ghci_device *device;
 	volatile uint32_t *host;
-	volatile uint32_t *cached;
+	volatile uint32_t *other;
+	int other_cached;
 	uint32_t host_address;
 	uint32_t local_address;
 	uint32_t seed;
@@ -163,13 +167,13 @@ static const char *const diag_step_names[DIAG_STEPS] = {
 	"register",
 	"dbg-host-read",
 	"dbg-host-write",
-	"dbg-host-write-cached",
+	"dbg-host-write-other",
 	"dbg-local",
 	"fw-echo",
 	"fw-host-write",
-	"fw-host-write-cached",
+	"fw-host-write-other",
 	"fw-host-sum",
-	"fw-host-sum-cached",
+	"fw-host-sum-other",
 	"fw-local"
 };
 
@@ -182,6 +186,15 @@ static const char *const diag_step_names[DIAG_STEPS] = {
  */
 extern void kern_dcache_clean_range(const void *address, size_t size) __attribute__((weak));
 extern void kern_dcache_invalidate_range(const void *address, size_t size) __attribute__((weak));
+
+/*
+ * The uncached views of RAM.
+ *
+ * A HAL without them leaves them out of the kernel; the diagnostics then
+ * have no second view beside the direct map.
+ */
+extern int kern_pmem_map_uncached(const struct kern_pmem *run, void **mapped) __attribute__((weak));
+extern int kern_pmem_unmap_uncached(void *mapped, size_t size) __attribute__((weak));
 
 static int packet_run(struct ghci_device *device, uint32_t offset, uint32_t opcode, const uint32_t *arguments, uint32_t count, uint32_t *reply, unsigned milliseconds);
 static void log_state(struct ghci_device *device, const char *what, uint32_t fence);
@@ -204,7 +217,7 @@ static void diag_dbg_host(struct diag_run *run);
 static void diag_dbg_local(struct diag_run *run);
 static int diag_echo(struct diag_run *run);
 static int diag_fw_write(struct diag_run *run);
-static int diag_fw_sum(struct diag_run *run, int cached);
+static int diag_fw_sum(struct diag_run *run, int other);
 static int diag_fw_local(struct diag_run *run);
 static unsigned diag_compare(struct diag_run *run, enum diag_step step, volatile uint32_t *view, uint32_t pattern, uint32_t step_value);
 static void diag_sums(uint32_t pattern, uint32_t step_value, uint32_t words, uint32_t *plain, uint32_t *weighted);
@@ -263,7 +276,7 @@ ghci_firmware_init(
 	    reply[1] == 0U &&
 	    version < INIT_FIRST_VERSION) {
 		device->fw_version = version;
-		kern_logf("ghci: %s: firmware init: firmware %08x predates GHCI_INIT; it answered through the ring and host memory, "
+		kern_logf("ghci: %s: firmware init: firmware %08x predates INIT; answered FEATURE_NOT_PRESENT through the ring and host memory, "
 		    "but has no diagnostics: load a newer one (ghcictl fwload)\n",
 		    device->name,
 		    (unsigned)version);
@@ -371,9 +384,12 @@ ghci_firmware_diag(
 	run.device = device;
 	run.host = (volatile uint32_t *)device->diag_host->view;
 	run.host_address = device->diag_host->gpu_address;
-	run.cached = NULL;
-	if (device->host_uncached)
-		run.cached = (volatile uint32_t *)kern_pmem_to_kernel(device->diag_host->physical);
+	run.other = (volatile uint32_t *)device->diag_alias;
+	run.other_cached = 0;
+	if (device->host_uncached) {
+		run.other = (volatile uint32_t *)kern_pmem_to_kernel(device->diag_host->physical);
+		run.other_cached = 1;
+	}
 	run.local_address = 0U;
 	if (device->diag_local != NULL)
 		run.local_address = device->diag_local->gpu_address;
@@ -383,7 +399,7 @@ ghci_firmware_diag(
 	    rounds,
 	    (unsigned)run.host_address,
 	    device->host_uncached ? "uncached" : "cached",
-	    run.cached != NULL ? ", and the cached direct map" : "",
+	    run.other == NULL ? "" : (run.other_cached ? ", and the cached direct map" : ", and an uncached alias"),
 	    (unsigned)run.local_address,
 	    (unsigned)device->fw_version,
 	    (unsigned)device->fw_features,
@@ -560,6 +576,9 @@ ghci_firmware_release(
 		ghci_memory_free(device, device->fw_image);
 	if (device->fw_image_local != NULL)
 		ghci_memory_free(device, device->fw_image_local);
+	if (device->diag_alias != NULL && kern_pmem_unmap_uncached != NULL)
+		(void)kern_pmem_unmap_uncached(device->diag_alias, DIAG_HOST_BYTES);
+	device->diag_alias = NULL;
 	if (device->diag_host != NULL)
 		ghci_memory_free(device, device->diag_host);
 	if (device->diag_local != NULL)
@@ -646,6 +665,7 @@ log_state(
 	uint32_t registers;
 	uint32_t firmware;
 	uint32_t page;
+	uint32_t page_cached;
 	int error;
 
 	/* The firmware's status, when the GPU has the CPFW capability. */
@@ -654,17 +674,21 @@ log_state(
 	if (error == 0)
 		firmware = ghci_read(device, registers + CPFW_STATUS_OFFSET);
 
-	/* The fence page's word, as the CPU sees it. */
+	/* The fence page's word, as the CPU sees it, and through the cached direct map beside an uncached view. */
 	page = ((volatile uint32_t *)device->fence_page->view)[0];
+	page_cached = page;
+	if (device->host_uncached)
+		page_cached = ((volatile uint32_t *)kern_pmem_to_kernel(device->fence_page->physical))[0];
 
 	/* One line with all of it. */
-	kern_logf("ghci: %s: %s: fence %08x; fence last %08x page %08x, ring rptr %08x wptr %08x, "
+	kern_logf("ghci: %s: %s: fence %08x; fence last %08x page %08x (direct map %08x), ring rptr %08x wptr %08x, "
 	    "status %08x irq %08x, CPFW_STATUS %08x, fault %08x at %08x\n",
 	    device->name,
 	    what,
 	    (unsigned)fence,
 	    (unsigned)ghci_read(device, GHCI_FENCE_LAST),
 	    (unsigned)page,
+	    (unsigned)page_cached,
 	    (unsigned)ghci_read(device, GHCI_RING_RPTR),
 	    (unsigned)ghci_read(device, GHCI_RING_WPTR),
 	    (unsigned)ghci_read(device, GHCI_STATUS),
@@ -852,6 +876,7 @@ static int
 diag_buffers(
 	struct ghci_device *device)
 {
+	void *mapped;
 	int error;
 
 	/* The host buffer, which the CPU and the GPU both reach. */
@@ -859,6 +884,14 @@ diag_buffers(
 		error = ghci_memory_alloc(device, NULL, GHCI_USE_DRIVER, DIAG_HOST_BYTES, &device->diag_host);
 		if (error != 0)
 			return error;
+	}
+
+	/* Beside the direct map, an uncached view of it, when the kernel has such views (none: no second view). */
+	if (!device->host_uncached && device->diag_alias == NULL && kern_pmem_map_uncached != NULL) {
+		mapped = NULL;
+		error = kern_pmem_map_uncached(&device->diag_host->run, &mapped);
+		if (error == 0)
+			device->diag_alias = mapped;
 	}
 
 	/* The local buffer, which only the GPU reaches. */
@@ -898,11 +931,11 @@ diag_round(
 	if (error != 0)
 		return error;
 
-	/* The CPU writes host memory, through its view and then through the cached one, and the firmware sums it. */
+	/* The CPU writes host memory, through its view and then through the other one, and the firmware sums it. */
 	error = diag_fw_sum(run, 0);
 	if (error != 0)
 		return error;
-	if (run->cached != NULL) {
+	if (run->other != NULL) {
 		error = diag_fw_sum(run, 1);
 		if (error != 0)
 			return error;
@@ -913,9 +946,9 @@ diag_round(
 	if (error != 0)
 		return error;
 
-	/* The direct map's lines go, so the next round's cached reads come from memory again. */
-	if (run->cached != NULL)
-		cache_invalidate(run->cached, DIAG_HOST_BYTES);
+	/* The direct map's lines go, so the next round's reads through it come from memory again. */
+	if (run->other != NULL && run->other_cached)
+		cache_invalidate(run->other, DIAG_HOST_BYTES);
 
 	/* Succeeded: every step of the round ran. */
 	return 0;
@@ -998,7 +1031,7 @@ diag_register(
 
 /*
  * The debug port and host memory: the GPU reads a word the CPU wrote, and
- * writes one the CPU reads (through its view, and through the cached
+ * writes one the CPU reads (through its view, and through the other
  * direct map where that is another view).
  */
 static void
@@ -1060,16 +1093,16 @@ diag_dbg_host(
 		    (unsigned)value);
 	}
 
-	/* The same word through the cached direct map, with no cache operation. */
-	if (run->cached == NULL || error != 0)
+	/* The same word through the other view, with no cache operation. */
+	if (run->other == NULL || error != 0)
 		return;
-	read = run->cached[DIAG_DBG_OFFSET / 4U + 1U];
+	read = run->other[DIAG_DBG_OFFSET / 4U + 1U];
 	passed = 0;
 	if (read == value)
 		passed = 1;
-	diag_count(run, DIAG_DBG_HOST_WRITE_CACHED, passed);
-	if (!passed && diag_shown(run, DIAG_DBG_HOST_WRITE_CACHED)) {
-		kern_logf("ghci: %s: diag: round %u: dbg-host-write-cached at %08x: the cached map reads %08x, the GPU wrote %08x\n",
+	diag_count(run, DIAG_DBG_HOST_WRITE_OTHER, passed);
+	if (!passed && diag_shown(run, DIAG_DBG_HOST_WRITE_OTHER)) {
+		kern_logf("ghci: %s: diag: round %u: dbg-host-write-other at %08x: the other view reads %08x, the GPU wrote %08x\n",
 		    run->device->name,
 		    run->round,
 		    (unsigned)address,
@@ -1170,7 +1203,7 @@ diag_echo(
 
 /*
  * The firmware writes a pattern into host memory; the CPU reads it
- * through its view, and through the cached direct map where that is
+ * through its view, and through the other view where there is one
  * another view.
  */
 static int
@@ -1227,14 +1260,14 @@ diag_fw_write(
 		passed = 1;
 	diag_count(run, DIAG_FW_HOST_WRITE, passed);
 
-	/* The cached direct map, with no cache operation. */
-	if (run->cached == NULL)
+	/* The other view, with no cache operation. */
+	if (run->other == NULL)
 		return 0;
-	wrong = diag_compare(run, DIAG_FW_HOST_WRITE_CACHED, run->cached, pattern, step_value);
+	wrong = diag_compare(run, DIAG_FW_HOST_WRITE_OTHER, run->other, pattern, step_value);
 	passed = 0;
 	if (wrong == 0U)
 		passed = 1;
-	diag_count(run, DIAG_FW_HOST_WRITE_CACHED, passed);
+	diag_count(run, DIAG_FW_HOST_WRITE_OTHER, passed);
 
 	/* Succeeded: the packet was answered. */
 	return 0;
@@ -1242,13 +1275,13 @@ diag_fw_write(
 
 /*
  * The CPU writes a pattern into host memory (through its view, or with
- * cached nonzero through the cached direct map with no cache operation)
- * and the firmware sums it.
+ * other nonzero through the other view with no cache operation) and the
+ * firmware sums it.
  */
 static int
 diag_fw_sum(
 	struct diag_run *run,
-	int cached)
+	int other)
 {
 	uint32_t arguments[3];
 	uint32_t reply[GHCI_REPLY_WORDS];
@@ -1265,9 +1298,9 @@ diag_fw_sum(
 	/* The view the CPU writes through, and the step it counts as. */
 	view = run->host;
 	step = DIAG_FW_HOST_SUM;
-	if (cached) {
-		view = run->cached;
-		step = DIAG_FW_HOST_SUM_CACHED;
+	if (other) {
+		view = run->other;
+		step = DIAG_FW_HOST_SUM_OTHER;
 	}
 
 	/* The pattern, made visible to the GPU (a clean only on the driver's view). */
@@ -1275,7 +1308,7 @@ diag_fw_sum(
 	step_value = diag_random(run);
 	for (index = 0U; index < DIAG_PATTERN_WORDS; index++)
 		view[index] = pattern + index * step_value;
-	if (!cached)
+	if (!other)
 		view_clean(run->device, view, DIAG_PATTERN_BYTES);
 	kern_io_write_barrier();
 

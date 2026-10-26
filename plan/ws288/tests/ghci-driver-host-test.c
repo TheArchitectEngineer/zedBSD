@@ -2078,7 +2078,8 @@ test_firmware(void)
 	model_diags = 0U;
 	error = ghci_firmware_diag(&device, 3U);
 	expect(error == 0, "firmware: the diagnostics pass");
-	expect(model_diags == 3U * 5U, "firmware: five gpu-ops of the diagnostics a round (echo, write, sum, local write and sum)");
+	expect(model_diags == 3U * 6U, "firmware: six gpu-ops of the diagnostics a round (echo, write, sum through both views, local write and sum)");
+	expect(device.diag_alias != NULL, "firmware: an uncached view of the host buffer beside the direct map");
 	expect(model_registers[GHCI_SCRATCH / 4U] != 0U, "firmware: the register step wrote SCRATCH");
 	error = ghci_firmware_diag(&device, 0U);
 	expect(error == EINVAL, "firmware: no rounds refused");
