@@ -3,7 +3,7 @@
 # 5330's Linux (ssh alias solaris10-man), copies ~/ws245/<kernel> over the USB's ZEDBSD partition's vmunix, boots it
 # once through the UEFI entry ENTRY (BootNext; the boot order is not changed), waits for zedBSD's ssh, lets the session
 # settle for 60 s, takes the evidence with 5330-survey.sh as <name>, and reboots back to Linux.
-#   ENTRY=0008 sh plan/ws245/tests/5330-bootcycle.sh <kernel file in ~/ws245 on the 5330> <name>
+#   ENTRY=0008 sh plan/tools/hw5330/5330-bootcycle.sh <kernel file in ~/ws245 on the 5330> <name>
 # EARLY / EARLY_OUT: a script run right after the first ssh answer, its output file; EXTRA / EXTRA_OUT: one run after
 # the 60 s.  DEBUG=1 adds i915.debug=display to the USB's zedbsd.cfg for this start (the whole list of the display
 # writes) and puts the file back afterwards.  Hold /tmp/i915-hw.lock around it (flock).  Exit 2: zedBSD did not answer
@@ -31,7 +31,7 @@ echo "zedBSD up after $(( $(date +%s) - start + 20 ))s"; date
 [ -n "${EARLY:-}" ] && sh "$EARLY" > "$EARLY_OUT" 2>&1
 sleep 60
 [ -n "${EXTRA:-}" ] && sh "$EXTRA" > "$EXTRA_OUT" 2>&1
-timeout 150 sh plan/ws245/tests/5330-survey.sh 10.0.30.3 "$NAME" 2>/dev/null | tail -1
+timeout 150 sh plan/tools/hw5330/5330-survey.sh 10.0.30.3 "$NAME" 2>/dev/null | tail -1
 timeout 15 sshpass -p kei ssh $SO kei@10.0.30.3 'echo kei | sudo -S reboot' > /dev/null 2>&1
 start=$(date +%s)
 until timeout 8 ssh -o BatchMode=yes -o ConnectTimeout=5 solaris10-man hostname 2>/dev/null | grep -q chaos; do

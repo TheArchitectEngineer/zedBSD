@@ -9,7 +9,7 @@
 #     /* ... */;
 #   - a "referenced:" names its source (Linux v6.8.12 or v6.19 and a path, an Intel or VESA, CTA or NIST document, this
 #     tree's headers).
-#   python3 -I plan/ws245/tests/check-sources.py [TREE]   (TREE defaults to src/drivers/gpu/i915)
+#   python3 -I plan/tools/i915-display/check-sources.py [TREE]   (TREE defaults to src/drivers/gpu/i915)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import os
 import re

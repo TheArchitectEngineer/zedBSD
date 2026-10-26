@@ -4,12 +4,12 @@
 # the USB's vmunix, keeping the one before as vmunix.old (--kernel), boots the USB once through UEFI BootNext (the
 # boot order is not changed; the entry for the stick's EFI partition is made when there is none), waits for zedBSD's
 # SSH, lets the session settle, takes the evidence (5330-survey.sh), the screen as the compositor shows it
-# (keiland-shot, an image built with plan/ws245/tests/config-5330.mk), reboots back to Linux and compares the survey
+# (keiland-shot, an image built with plan/tools/hw5330/config-5330.mk), reboots back to Linux and compares the survey
 # with a reference (5330-survey-diff.py).
-#   sh plan/ws245/tests/5330-run.sh --image IMG | --kernel VMUNIX | --none  NAME [REFERENCE]
+#   sh plan/tools/hw5330/5330-run.sh --image IMG | --kernel VMUNIX | --none  NAME [REFERENCE]
 # REFERENCE: a reference kernel log or survey .md (default the 2026-10-17 merged main, evidence/t1229i21-...).
 # DEBUG=1 adds i915.debug=display to the stick's zedbsd.cfg for this start and puts the file back afterwards.
-# Output: plan/ws245/tests/evidence/NAME.md (the survey), LOGS (default plan/ws245/temp/5330, not in git) holds the
+# Output: plan/tools/hw5330/evidence/NAME.md (the survey), LOGS (default build/hw5330/logs, not in git) holds the
 # whole logs, NAME.png and NAME-diff.txt.  The last line is "5330-run: PASS|FAIL|...".  Hold no lock yourself: the
 # script takes /tmp/i915-hw.lock.  Nothing is removed on either machine.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -21,8 +21,8 @@ case "$MODE" in
 esac
 NAME=${1:?NAME}
 cd "$(dirname "$0")/../../.."
-REF=${2:-plan/ws245/tests/evidence/t1229i21-main-merged-20261017.md}
-LOGS=${LOGS:-plan/ws245/temp/5330}
+REF=${2:-plan/tools/hw5330/evidence/t1229i21-main-merged-20261017.md}
+LOGS=${LOGS:-build/hw5330/logs}
 HOST=solaris10-man
 ZB=10.0.30.3
 SO='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=5 -o LogLevel=ERROR'
@@ -85,7 +85,7 @@ until zb 'uname -s' 2> /dev/null | grep -qi zedbsd; do
 done
 say "zedBSD up after $(($(date +%s) - start + 20)) s"
 sleep "${SETTLE:-60}"
-BACKLIGHT_PROBE=${BACKLIGHT_PROBE:-build/p4-5330/bin/backlight-probe} T=150 timeout 150 sh plan/ws245/tests/5330-survey.sh "$ZB" "$NAME" > /dev/null 2>&1 ||
+BACKLIGHT_PROBE=${BACKLIGHT_PROBE:-build/p4-5330/bin/backlight-probe} T=150 timeout 150 sh plan/tools/hw5330/5330-survey.sh "$ZB" "$NAME" > /dev/null 2>&1 ||
     say "survey failed"
 zb "echo kei | sudo -S /bin/keiland-shot /tmp/$NAME.png" > "$LOGS/$NAME-shot.txt" 2>&1
 timeout 60 sshpass -p kei scp $SO "kei@$ZB:/tmp/$NAME.png" "$LOGS/$NAME.png" > /dev/null 2>&1 || say "no screen shot ($(tail -1 "$LOGS/$NAME-shot.txt"))"
@@ -104,14 +104,14 @@ if [ "${DEBUG:-0}" = 1 ]; then
 fi
 
 # The summary.
-md=plan/ws245/tests/evidence/$NAME.md
+md=plan/tools/hw5330/evidence/$NAME.md
 dm=$LOGS/$NAME-dmesg.txt
 [ -s "$dm" ] || { say "FAIL: no kernel log"; exit 3; }
 grep -E '^(kern.boot.login|lease 1 claimed|picture up|device lost|error or warn lines):' "$md"
 grep -cE 'SESSION start' "$md" | sed 's/^/session starts: /'
 grep -E 'i915: survey: ' "$dm" | head -2
 grep -iE 'i915:.*(fail|timeout|timed out|not lock|did not)' "$dm" | head -8
-python3 -I plan/ws245/tests/5330-survey-diff.py "$REF" "$dm" > "$LOGS/$NAME-diff.txt" 2>&1
+python3 -I plan/tools/hw5330/5330-survey-diff.py "$REF" "$dm" > "$LOGS/$NAME-diff.txt" 2>&1
 grep -vE '^\s*$' "$LOGS/$NAME-diff.txt" | tail -6
 [ -s "$LOGS/$NAME.png" ] && echo "screen: $LOGS/$NAME.png"
 verdict=$(tail -1 "$LOGS/$NAME-diff.txt")

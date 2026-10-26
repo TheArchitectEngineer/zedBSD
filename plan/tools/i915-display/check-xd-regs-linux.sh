@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws245-p002: checks every value of the xd register headers (src/drivers/gpu/i915/intel/display-regs-xd*.h) against
 # the Linux v6.8.12 register headers it was taken from, through the pair list tests/display/xd-regs-map.h.
-#   sh plan/ws245/tests/check-xd-regs-linux.sh [LINUX_TREE] [OUT]
+#   sh plan/tools/i915-display/check-xd-regs-linux.sh [LINUX_TREE] [OUT]
 # LINUX_TREE is an unpacked linux-6.8.12 (default build/ws229-p001/linux/linux-6.8.12, verified by WS229 p001);
 # the Linux headers are only read.  Every pair must find its Linux name: the count of pairs is printed and a pair
 # missing from the Linux side fails the check.
@@ -16,9 +16,9 @@ mkdir -p "$(dirname "$OUT")"
 fresh_out "$OUT.objects"
 MAP=src/drivers/gpu/i915/tests/display/xd-regs-map.h
 ${CC:-cc} -std=gnu11 -O0 -Wall -Wno-unused-macros \
-	-Iplan/ws245/tests/linux-stub -I"$LINUX/drivers/gpu/drm/i915" -Isrc/drivers/gpu/i915 \
+	-Iplan/tools/i915-display/linux-stub -I"$LINUX/drivers/gpu/drm/i915" -Isrc/drivers/gpu/i915 \
 	-Isrc/drivers/gpu/i915/tests/display \
-	-o "$OUT.objects/check" plan/ws245/tests/check-xd-regs-linux.c
+	-o "$OUT.objects/check" plan/tools/i915-display/check-xd-regs-linux.c
 "$OUT.objects/check"
 # Every pair of the list was compiled: the list has as many pairs as the check counted.
 pairs=$(grep -c '^I915_XD_MAP_' "$MAP")

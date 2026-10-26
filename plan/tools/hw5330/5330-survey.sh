@@ -5,9 +5,9 @@
 # log bytes, the backlight device read, set to 100 and read again, and the userland's evidence of what the screen did
 # later (the compositor's screen off, sleep, failures and exits in /var/log/messages, greeter.log and session.log),
 # with the previous start's kernel log (/var/log/kernel.log.old) for a start that could not be reached.
-#   sh plan/ws245/tests/5330-survey.sh <zedBSD address> <name> [OUT]
-#     The summary goes to OUT/<name>.md (default OUT plan/ws245/tests/evidence, kept in git) and the whole kernel log
-#     to LOGS/<name>-dmesg.txt (default LOGS plan/ws245/temp/5330, not in git).  plan/ws245/tests/5330-survey-diff.py
+#   sh plan/tools/hw5330/5330-survey.sh <zedBSD address> <name> [OUT]
+#     The summary goes to OUT/<name>.md (default OUT plan/tools/hw5330/evidence, kept in git) and the whole kernel log
+#     to LOGS/<name>-dmesg.txt (default LOGS build/hw5330/logs, not in git).  plan/tools/hw5330/5330-survey-diff.py
 #     compares two whole kernel logs.
 # The account is kei (password kei, sudo with the same password); sshpass must be installed.  The backlight probe
 # is copied from BACKLIGHT_PROBE (default Q1's build/q1/blp/bin/backlight-probe of the main checkout).
@@ -17,8 +17,8 @@ set -eu
 cd "$(dirname "$0")/../../.."
 HOST=${1:?usage: 5330-survey.sh <zedBSD address> <name> [OUT]}
 NAME=${2:?usage: 5330-survey.sh <zedBSD address> <name> [OUT]}
-OUT=${3:-plan/ws245/tests/evidence}
-LOGS=${LOGS:-plan/ws245/temp/5330}
+OUT=${3:-plan/tools/hw5330/evidence}
+LOGS=${LOGS:-build/hw5330/logs}
 PROBE=${BACKLIGHT_PROBE:-/home/awe/zedBSD-claude1/build/q1/blp/bin/backlight-probe}
 PASS=kei
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR"

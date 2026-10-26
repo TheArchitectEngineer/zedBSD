@@ -2,7 +2,7 @@
 # they were taken from: the CD clock steps, the combo DPLL DisplayPort words, the TBT PLL words, the compensation
 # references, the bandwidth buddy masks, the steppings, the PCI ids, the swing tables, the display buffer rules and
 # (p004) the VBT numbering tables.
-#   python3 -I plan/ws245/tests/check-xd-tables-linux.py [LINUX_TREE]   (default build/ws229-p001/linux/linux-6.8.12)
+#   python3 -I plan/tools/i915-display/check-xd-tables-linux.py [LINUX_TREE]   (default build/ws229-p001/linux/linux-6.8.12)
 # The Linux files are only read.  Prints one line per table and FAILED with the differences when a table differs.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import re
