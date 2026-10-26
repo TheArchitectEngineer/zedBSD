@@ -64,7 +64,7 @@ P2 の依頼（T1-085）で足された 2 本も同じ demo の image で流す:
 
 ### B. Linux（Debian 13 の QEMU+KVM guest）
 
-手順の詳細は [keiland-linux/README.md](tools/keiland-linux/README.md)。
+手順の詳細は [keiland-linux/README.md](../tools/keiland-linux/README.md)。
 
 ```sh
 make keiland-linux 2>&1 | tee build/tq-1/linux-build.log      # gcc。exit 0、"warning:" が 0
@@ -81,7 +81,7 @@ guest で gdm を止め、compositor を `KEILAND_SEAT=direct` で起動し（RE
 
 ### C. FreeBSD（QEMU+KVM guest）
 
-手順の詳細は [keiland-freebsd/README.md](tools/keiland-freebsd/README.md)。
+手順の詳細は [keiland-freebsd/README.md](../tools/keiland-freebsd/README.md)。
 
 ```sh
 sh plan/tools/keiland-freebsd/backend-test.sh build/tq-1/freebsd     # guest の起動・停止も script が行う

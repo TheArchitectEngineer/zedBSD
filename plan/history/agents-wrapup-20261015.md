@@ -4,9 +4,9 @@
 
 | 担当 | 仕事 | base（worktree・branch） | patch | 状態 |
 | --- | --- | --- | --- | --- |
-| P1 | WS037 nvrtx の既定 on（GSP・display の段を既定で、試験の段は off、opt-out）と方法 A（USB から素で起動） | 0e33f93cf（p1、agent/p1-ws037c） | [p1/wrapup-20261015.patch](p1/wrapup-20261015.patch) | 途中（scanout の step の待ちを試験の時だけにする所） |
-| P2 | WS237 Gen9 の full の既定の安全化（失敗時に下の段へ、最後は copy） | 73476664c（p2、agent/p2-ws215） | [p2/wrapup-20261015.patch](p2/wrapup-20261015.patch) | 途中（gen9-display.c の実装） |
-| P3 | WS037 p007 R7d の SPH の Graphics Exception の直し | e1e8cad65（p3、agent/p3-ws037b） | [p3/wrapup-20261015.patch](p3/wrapup-20261015.patch) | 途中（gsp の host 試験と build の前） |
+| P1 | WS037 nvrtx の既定 on（GSP・display の段を既定で、試験の段は off、opt-out）と方法 A（USB から素で起動） | 0e33f93cf（p1、agent/p1-ws037c） | [p1/wrapup-20261015.patch](agents-p1/wrapup-20261015.patch) | 途中（scanout の step の待ちを試験の時だけにする所） |
+| P2 | WS237 Gen9 の full の既定の安全化（失敗時に下の段へ、最後は copy） | 73476664c（p2、agent/p2-ws215） | [p2/wrapup-20261015.patch](agents-p2/wrapup-20261015.patch) | 途中（gen9-display.c の実装） |
+| P3 | WS037 p007 R7d の SPH の Graphics Exception の直し | e1e8cad65（p3、agent/p3-ws037b） | [p3/wrapup-20261015.patch](agents-p3/wrapup-20261015.patch) | 途中（gsp の host 試験と build の前） |
 | T3 | T1-655 WS239 p002 の QEMU 試験 | a01fbeea7（t3） | なし | 未完（結果なし） |
 | bug-analyzer | BUG-317 Pi の停止の解析 | — | — | 途中で停止、結論なし |
 

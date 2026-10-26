@@ -1,6 +1,6 @@
 # Keilandデスクトップ高度化の作業一覧（2026-10-02）
 
-この一覧は[Master](../master.md)と各WSの再開点をP9専任枠向けに投影したOutlook。順番は既存のdemo critical順位と実行可能な前提を考慮した候補で、Queue承認やWS優先順位の変更ではない。P9は機能/計測/規約の高度化を担当する。発見したバグはmainが[Bug Board](../known-bugs.md)へ照合・記録し、[P8](registry.md)へ回す。同じsource/実機を使う時はmainが編集/試験を直列化する。
+この一覧は[Master](../master.md)と各WSの再開点をP9専任枠向けに投影したOutlook。順番は既存のdemo critical順位と実行可能な前提を考慮した候補で、Queue承認やWS優先順位の変更ではない。P9は機能/計測/規約の高度化を担当する。発見したバグはmainが[Bug Board](../known-bugs.md)へ照合・記録し、[P8](../agents/registry.md)へ回す。同じsource/実機を使う時はmainが編集/試験を直列化する。
 
 | 対象 | 次の作業と状態 | 前提・担当境界 |
 | --- | --- | --- |
@@ -20,4 +20,4 @@
 
 ## 最新指定 / 2026-10-02
 
-ユーザーがP9の次作業をGTK4移植のWSに指定。q578 C10はcleared。次は[q580 / WS114 p001](P9/queue.md)でLinux標準GTK4実測/機能表の証拠化、その後ユーザー行別レビュー→採用compositor/portal改善→WS115 upstream移植。WS090/094等を先に実行する旧候補順をこのlaneでは置き換える。既存demo全体の相対優先順は保持。
+ユーザーがP9の次作業をGTK4移植のWSに指定。q578 C10はcleared。次は[q580 / WS114 p001](../agents/P9/queue.md)でLinux標準GTK4実測/機能表の証拠化、その後ユーザー行別レビュー→採用compositor/portal改善→WS115 upstream移植。WS090/094等を先に実行する旧候補順をこのlaneでは置き換える。既存demo全体の相対優先順は保持。
