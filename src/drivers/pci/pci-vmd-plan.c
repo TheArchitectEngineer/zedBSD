@@ -1052,18 +1052,21 @@ size_bar(
 	if (*wide) {
 		(void)config_write(access, bus, device, function, offset + 4U, 4U, 0xffffffffU);
 		(void)config_read(access, bus, device, function, offset + 4U, 4U, &high_mask);
-	} else {
-		/* A 32-bit BAR's address bits above 31 do not exist. */
-		high_mask = 0xffffffffU;
 	}
 
 	/* An unimplemented BAR keeps none of the address bits. */
 	mask = ((uint64_t)high_mask << 32) | (low_mask & VMD_BAR_MEMORY_MASK);
-	if ((low_mask & VMD_BAR_MEMORY_MASK) == 0 && (!*wide || high_mask == 0))
+	if (!*wide)
+		mask &= 0xffffffffU;
+	if (mask == 0)
 		return 0;
 
-	/* The size is the lowest address bit that sticks. */
-	*size = ~mask + 1U;
+	/*
+	 * The size is the lowest address bit that sticks.  A function that
+	 * implements fewer than 64 address bits reads zeros above them, so the
+	 * inverted mask plus one would be wrong.
+	 */
+	*size = mask & (~mask + 1U);
 	return 0;
 }
 

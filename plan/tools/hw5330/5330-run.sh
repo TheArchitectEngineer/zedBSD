@@ -89,7 +89,7 @@ until zb 'uname -s' 2> /dev/null | grep -qi zedbsd; do
 done
 say "zedBSD up after $(($(date +%s) - start + 20)) s"
 sleep "${SETTLE:-60}"
-BACKLIGHT_PROBE=${BACKLIGHT_PROBE:-build/p4-5330/bin/backlight-probe} T=150 timeout 150 sh plan/tools/hw5330/5330-survey.sh "$ZB" "$NAME" > /dev/null 2>&1 ||
+T=150 timeout 150 sh plan/tools/hw5330/5330-survey.sh "$ZB" "$NAME" > /dev/null 2>&1 ||
     say "survey failed"
 zb "echo kei | sudo -S /bin/keiland-shot /tmp/$NAME.png" > "$LOGS/$NAME-shot.txt" 2>&1
 timeout 60 sshpass -p kei scp $SO "kei@$ZB:/tmp/$NAME.png" "$LOGS/$NAME.png" > /dev/null 2>&1 || say "no screen shot ($(tail -1 "$LOGS/$NAME-shot.txt"))"

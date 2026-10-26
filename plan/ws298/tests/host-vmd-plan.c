@@ -51,6 +51,7 @@ struct model_function {
 	uint8_t space[4096];
 	uint64_t bar_size[6];
 	unsigned bar_kind[6];
+	uint32_t upper_keep[6];
 	struct model_write log[MODEL_LOG];
 	unsigned log_count;
 };
@@ -240,6 +241,7 @@ model_bar(
 	if (kind == BAR_MEM64 || kind == BAR_MEM64_PREFETCH) {
 		function->bar_kind[index + 1U] = BAR_UPPER;
 		function->bar_size[index + 1U] = size;
+		function->upper_keep[index + 1U] = 0xffffffffU;
 		put32(function, 0x14 + index * 4U, (uint32_t)(address >> 32));
 	}
 }
@@ -324,7 +326,7 @@ model_write(
 			return 0;
 		case BAR_UPPER:
 			mask = ~(found->bar_size[index] - 1U);
-			put32(found, offset, (uint32_t)(mask >> 32) & value);
+			put32(found, offset, (uint32_t)(mask >> 32) & value & found->upper_keep[index]);
 			return 0;
 		default:
 			mask = ~(found->bar_size[index] - 1U);
@@ -474,6 +476,15 @@ test_5330(void)
 	check(plan.ports[0].bar_count == 1 && plan.ports[0].bars[0].size == 0x4000U && plan.ports[0].bars[0].wide, "5330: the NVMe BAR0 is 64-bit 16 KiB");
 	check(get(nvme, 0x10, 4) == 0x72000004U && get(nvme, 0x14, 4) == 0, "5330: the NVMe BAR0 is 0x72000000");
 	check((get(nvme, 0x04, 2) & 0x7U) == 0, "5330: the NVMe decodes nothing until its driver enables it");
+
+	/* A function with 42 address bits reads zeros above them; the size must not take them in. */
+	memset(&model, 0, sizeof(model));
+	(void)add_root_port(&model, 6);
+	nvme = add_nvme(&model, 0xe1);
+	nvme->upper_keep[1] = 0x3ffU;
+	check(drv_pci_vmd_plan_domain(&access, &domain, &plan) == 0, "42-bit: the plan succeeds");
+	check(plan.ports[0].bar_count == 1 && plan.ports[0].bars[0].size == 0x4000U, "42-bit: the BAR is still 16 KiB");
+	check(get(nvme, 0x10, 4) == 0x72000004U, "42-bit: the BAR is placed");
 
 	/* The windows are closed in the order and with the widths of the procedure. */
 	found = 0;
