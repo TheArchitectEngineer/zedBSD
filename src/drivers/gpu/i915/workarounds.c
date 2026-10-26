@@ -118,6 +118,7 @@ static int i915_wa_kbl_sema_poll(const struct i915_gt_info *gt);
 static int i915_wa_push_const_fix(const struct i915_gt_info *gt);
 static int i915_wa_not_skl(const struct i915_gt_info *gt);
 static int i915_wa_cml(const struct i915_gt_info *gt);
+static int i915_wa_render_psmi(const struct i915_gt_info *gt);
 
 /*
  * The Gen12 GT rules, after the steering and the video engines' entries.
@@ -152,6 +153,9 @@ static const struct i915_wa_rule i915_wa_gt_gen9[] = {
 /*
  * The Gen12 render engine's rules.
  *
+ * The PSMI rule (Wa_1607297627) applies only to the platforms whose product
+ * row lists it.
+ *
  * Values referenced: Linux v6.19 drivers/gpu/drm/i915/gt/intel_workarounds.c
  * (rcs_engine_wa_init: the graphics version 12 entries).
  */
@@ -163,7 +167,7 @@ static const struct i915_wa_rule i915_wa_engine_gen12_render[] = {
 	/* Merges into the ROW_CHICKEN2 entry above. */
 	{ I915_WA_OP_MASKED_BITS, I915_GT_GEN8_ROW_CHICKEN2, 0, I915_GT_GEN12_PUSH_CONST_DEREF_HOLD_DIS, 0U, 1, NULL, "Wa_1409804808" },
 	{ I915_WA_OP_MASKED_BITS, I915_GT_GEN9_ROW_CHICKEN4, 0, I915_GT_GEN12_DISABLE_TDL_PUSH, 0U, 1, NULL, "Wa_14010229206" },
-	{ I915_WA_OP_MASKED_BITS, I915_GT_RING_PSMI_CTL(0U), 1, I915_GT_GEN12_WAIT_FOR_EVENT_POWER_DOWN_DISABLE | I915_GT_GEN8_RC_SEMA_IDLE_MSG_DISABLE, 0U, 0, NULL, "Wa_1607297627" },
+	{ I915_WA_OP_MASKED_BITS, I915_GT_RING_PSMI_CTL(0U), 1, I915_GT_GEN12_WAIT_FOR_EVENT_POWER_DOWN_DISABLE | I915_GT_GEN8_RC_SEMA_IDLE_MSG_DISABLE, 0U, 0, i915_wa_render_psmi, "Wa_1607297627" },
 };
 
 /*
@@ -418,14 +422,14 @@ void
 drv_i915_wa_build_engine(
 	struct i915_wa_list *wal,
 	const struct i915_engine_info *engine,
-	int graphics_ver,
+	const struct i915_gt_info *gt,
 	unsigned mocs_uc_index)
 {
 	/* Starts the engine list empty, named after the engine. */
 	i915_wa_list_reset(wal, engine->name);
 
 	/* Graphics versions before 4 have no engine workarounds. */
-	if (graphics_ver < 4)
+	if (gt->graphics_ver < 4)
 		return;
 
 	/* The default MOCS entry of the command streamer. */
@@ -442,10 +446,10 @@ drv_i915_wa_build_engine(
 		return;
 
 	/* The render engine's rules. */
-	i915_wa_add_rules(wal, i915_wa_engine_gen12_render, I915_WA_COUNT(i915_wa_engine_gen12_render), NULL, engine->mmio_base);
+	i915_wa_add_rules(wal, i915_wa_engine_gen12_render, I915_WA_COUNT(i915_wa_engine_gen12_render), gt, engine->mmio_base);
 
 	/* Graphics version 9 and later: per-context preemption control. */
-	if (graphics_ver >= 9)
+	if (gt->graphics_ver >= 9)
 		drv_i915_wa_add_masked_bits(wal, I915_GT_GEN7_FF_SLICE_CS_CHICKEN1, I915_GT_GEN9_FFSC_PERCTX_PREEMPT_CTRL, 0, "perctx preempt ctrl");
 }
 
@@ -992,7 +996,7 @@ drv_i915_gt_init_tables(
 			continue;
 		}
 
-		drv_i915_wa_build_engine(&gt_init->engine_wa[index], &gt->engines[index], graphics_ver, gt_init->mocs.uc_index);
+		drv_i915_wa_build_engine(&gt_init->engine_wa[index], &gt->engines[index], gt, gt_init->mocs.uc_index);
 		drv_i915_wa_build_whitelist(&gt_init->whitelist[index], &gt->engines[index], graphics_ver);
 		drv_i915_wa_build_context(&gt_init->ctx_wa[index], &gt->engines[index], graphics_ver, gt_init->mocs.uc_index);
 	}
@@ -1298,6 +1302,19 @@ i915_wa_cml(
 {
 	/* The newest Gen9 platform. */
 	return gt->platform == I915_PLATFORM_COMETLAKE;
+}
+
+/* The Gen12 platforms whose render engine takes the PSMI rule. */
+static int
+i915_wa_render_psmi(
+	const struct i915_gt_info *gt)
+{
+	/* The product row says whether the platform takes it. */
+	if ((gt->platform_wa & I915_PLATFORM_WA_RENDER_PSMI) == 0U)
+		return 0;
+
+	/* Succeeded: the platform takes the rule. */
+	return 1;
 }
 
 /* Returns the lowest set bit of a mask below limit, or 0 when none is set. */

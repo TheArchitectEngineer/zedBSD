@@ -94,9 +94,11 @@ struct i915_gt {
 	 */
 	unsigned graphics_ver;
 
-	/* The display version and platform, told from the PCI device id. */
+	/* The display version, told from the PCI device id. */
 	unsigned display_ver;
-	int is_alderlake_p;
+
+	/* The engines the platform is built with before the fuses take some away, from its product row. */
+	uint32_t platform_engine_mask;
 
 	/* The GT and engine information read from the fuses. */
 	struct i915_gt_info info;

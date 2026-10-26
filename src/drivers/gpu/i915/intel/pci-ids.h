@@ -6,9 +6,9 @@
  */
 
 /*
- * The PCI device ids of the Skylake to Comet Lake, Tiger Lake and Alder
- * Lake graphics devices.  Each list applies its argument, a macro, to every
- * id.
+ * The PCI device ids of the Skylake to Comet Lake, Tiger Lake, Rocket
+ * Lake, Alder Lake and Raptor Lake graphics devices.  Each list applies its
+ * argument, a macro, to every id.
  */
 
 #ifndef DRIVERS_GPU_I915_INTEL_PCI_IDS_H
@@ -36,6 +36,40 @@
 /* Values referenced: Linux v6.19 include/drm/intel/pciids.h (INTEL_TGL_IDS). */
 #define I915_PCI_TGL_IDS(MACRO__)	I915_PCI_TGL_GT1_IDS(MACRO__), \
 	I915_PCI_TGL_GT2_IDS(MACRO__)
+/*
+ * Values referenced: Linux v6.8.12 include/drm/i915_pciids.h
+ * (INTEL_RKL_IDS).
+ */
+#define I915_PCI_RKL_IDS(MACRO__)	MACRO__(0x4C80), \
+	MACRO__(0x4C8A), \
+	MACRO__(0x4C8B), \
+	MACRO__(0x4C8C), \
+	MACRO__(0x4C90), \
+	MACRO__(0x4C9A)
+/*
+ * Values referenced: Linux v6.8.12 include/drm/i915_pciids.h
+ * (INTEL_ADLS_IDS).
+ */
+#define I915_PCI_ADLS_IDS(MACRO__)	MACRO__(0x4680), \
+	MACRO__(0x4682), \
+	MACRO__(0x4688), \
+	MACRO__(0x468A), \
+	MACRO__(0x468B), \
+	MACRO__(0x4690), \
+	MACRO__(0x4692), \
+	MACRO__(0x4693)
+/*
+ * Values referenced: Linux v6.8.12 include/drm/i915_pciids.h
+ * (INTEL_RPLS_IDS).
+ */
+#define I915_PCI_RPLS_IDS(MACRO__)	MACRO__(0xA780), \
+	MACRO__(0xA781), \
+	MACRO__(0xA782), \
+	MACRO__(0xA783), \
+	MACRO__(0xA788), \
+	MACRO__(0xA789), \
+	MACRO__(0xA78A), \
+	MACRO__(0xA78B)
 /*
  * Values referenced: Linux v6.19 include/drm/intel/pciids.h (INTEL_ADLP_IDS).
  */

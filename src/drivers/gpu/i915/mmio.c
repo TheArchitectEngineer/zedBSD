@@ -51,8 +51,8 @@
 /*
  * The Gen12 register-to-domain map.
  *
- * It covers Tiger Lake and Alder Lake-P and never changes, so every
- * device shares it.
+ * It covers every graphics version 12 platform (Tiger Lake, Rocket Lake,
+ * Alder Lake and Raptor Lake) and never changes, so every device shares it.
  */
 static const struct i915_mmio_range i915_gen12_ranges[] = {
 #include "intel/forcewake-ranges.inc"
