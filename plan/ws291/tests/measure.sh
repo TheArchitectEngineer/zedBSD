@@ -15,6 +15,11 @@
 #                                            (printed), session.log, marks, frame-ops.out, shot.png
 #     measure.sh mview OUT [MVIEW-OPTION]... mview in the session (the kei user): its MVIEW lines and the
 #                                            compositor's KWL SCANOUT lines of the run (printed), OUT/mview.log
+#     measure.sh linux-mview OUT [MVIEW-OPTION]...
+#                                            the Linux reference: mview (linux/build-mview.sh, copied to ~/linux-mview)
+#                                            on weston's kiosk shell on the DRM backend (seatd, started when not
+#                                            running), its MVIEW lines and weston's composition per repaint
+#                                            ("plane-only" is the direct scanout) printed, OUT/mview.log
 #
 # The environment: ZEDBSD_MAC, ZEDBSD_SUBNET (a /24, as 10.0.30), ZEDBSD_BOOT (the UEFI entry), DEBIAN (user@host),
 # KEY (the zedBSD root key).  A candidate for Master's Tools (the same steps serve other GPUs' boards).
@@ -172,6 +177,19 @@ mview() {
 	head -5 "$out/mview-scanout.log"
 }
 
+linux_mview() {
+	out=$1
+	shift
+	mkdir -p "$out"
+	to_linux || return 1
+	# weston on the display, its DRM backend's log telling where each repaint put the window.
+	deb "test -S /run/user/1000/wayland-1 && pgrep -x weston > /dev/null || (export XDG_RUNTIME_DIR=/run/user/1000 LIBSEAT_BACKEND=seatd; nohup weston --backend=drm --shell=kiosk --continue-without-input --socket=wayland-1 --log=/tmp/weston.log --logger-scopes=log,drm-backend > /tmp/weston.out 2>&1 < /dev/null & sleep 5)" || return 1
+	ZS_TIMEOUT=600 deb "export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-1; n=\$(wc -l < /tmp/weston.log); ~/linux-mview/bin/mview --model=\$HOME/linux-mview/share/mview/qs40 $* > /tmp/mview.log 2>&1 < /dev/null; tail -n +\$n /tmp/weston.log | grep -E 'Using (plane-only|mixed|renderer)' | sed -E 's/^\[[0-9:.]+\][[:space:]]*//' | sort | uniq -c > /tmp/mview-planes.log"
+	timeout 60 scp $SSHOPT "$DEBIAN:/tmp/mview.log" "$DEBIAN:/tmp/mview-planes.log" "$out/" || return 1
+	grep -vE 'MVIEW (FRAME|INPUT)' "$out/mview.log"
+	cat "$out/mview-planes.log"
+}
+
 command=${1:-}
 [ $# -gt 0 ] && shift
 case $command in
@@ -181,5 +199,6 @@ linux) to_linux && echo linux ;;
 deploy) deploy "$@" ;;
 desktop) desktop "$@" ;;
 mview) mview "$@" ;;
-*) sed -n '2,24p' "$0"; exit 2 ;;
+linux-mview) linux_mview "$@" ;;
+*) sed -n '2,29p' "$0"; exit 2 ;;
 esac
