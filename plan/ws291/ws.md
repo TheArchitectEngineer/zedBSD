@@ -42,7 +42,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 | [p002](phase002/phase.md) | Linux で約 50 fps の 3D の scene を決める（mview の拡張を含む）、zedBSD との差を測る | p001、p002a | cleared（2026-10-27 00:43 Q1。in-progress（測定済み: qs40 ×6500 instanced で zedBSD 20.1・Linux 50.1 fps、command の重さの組 big-N・subs-N も。Q1 の判定待ち）） |
 | [p002a](phase002a/phase.md) | amdrdna の executor に depth・index の draw・mip の texture（mview が動くまで） | p002 の Linux の基準 | cleared（2026-10-27 00:43 Q1。in-progress（実装済み、実機で Linux と pixel 一致。Q1 の判定待ち）） |
 | [p003](phase003/phase.md) | RDNA: 投入の経路（vkQueueSubmit が GPU の完了を待たない非同期、record の 1 command と submit の費用を削る）。big-N・subs-N で Linux に近づける | p002 | cleared（2026-10-27 04:31 Q1） |
-| p004〜p009 | RDNA: GPU 側（NGG の小さい三角形の culling、HTILE、tiled の texture）と game mode の 60 fps の上限 | p003 | — |
+| p004 | RDNA: PA の small primitive filter・back-face cull・VGT の vertex reuse を RADV の値に、scene-6500 の GPU の ms | p003 | in-progress（q1609） |
+| p005〜p009 | RDNA: NGG（primitive shader、別 WS 規模なら設計から）、HTILE、tiled の texture | p004 | — |
 | p010 | NVIDIA: GPU の入れ替え（ユーザー）、desktop の計測と 60 fps | RDNA の Phase の全部、P2 | planned |
 | p011 | NVIDIA: Linux で約 50 fps の scene での差の計測と 50 fps（p012〜p019 は改善の予備） | p010 | planned |
 | p020 | PowerVR（VF2）: model の 50 fps（RDNA で確立した手順、P3） | RDNA の手順の確立（p002 と最初の改善） | planned |

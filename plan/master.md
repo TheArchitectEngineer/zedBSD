@@ -30,7 +30,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-347、q1609、WS297、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-347、q1610、WS297、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS290（GHCI 2.0 の driver）: p001 の設計 → ghci.md の疑問をユーザーに示す → 実装の Phase。試験は zedBSD の host 試験だけ（amaterrace-gpu の sim・firmware は使わない、ユーザー 2026-10-26）。WS288 の古い引き継ぎ（ws288/q1-handover-20261026.md）の「消してよい物」のうち amaterrace の物は、読み取り専用になったので消さない。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
