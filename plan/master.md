@@ -176,7 +176,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS027](ws027/ws.md) | キャンセル | MG008 | 8 | PowerPC 移植 |
 | [WS028](ws028/ws.md) | キャンセル | MG003 | 1.5 | インストーラの実機（4 機種） |
 | [WS029](ws029/ws.md) | ベータ2 | MG006 | 3 | cold VFIO attach の停止ほか |
-| [WS031](ws031/ws.md) | ベータ2（2026-10-05 移動） | MG006 | 8 | p015〜p048 の native Vulkan 実行器 |
+| [WS031](ws031/ws.md) | 完了（2026-10-27 00:09） | MG006 | 0 | p015〜p048 の native Vulkan 実行器 |
 | [WS033](ws033/ws.md) | ベータ1 | MG005 | 1 | USB LAN の後挿し（BUG-168・169）・抜き差しの実機 |
 | [WS034](ws034/ws.md) | キャンセル | MG002 | 4 | package の導入と kernel・libc の是正 |
 | [WS037](ws037/ws.md) | 要検討（ブロック） | MG006 | 16 | nvrtx（文書の後、GSP の起動・channel・display・executor） |
@@ -335,7 +335,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS028](ws028/ws.md) | MG003 | インストーラの実機動作（4 機種） | canceled（2026-10-05 ユーザー） | NVMe の未動作の切り分け |
 | [WS029](ws029/ws.md) | MG006 | i915 native GPU driver | completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）） | cold VFIO attach の間欠的な停止ほか |
 | [WS030](ws030/ws.md) | MG006 | 標準 Vulkan 1.0 と直接表示 | completed | — |
-| [WS031](ws031/ws.md) | MG006 | i915 native Vulkan 実行器 | incomplete | p015〜p048 planning |
+| [WS031](ws031/ws.md) | MG006 | i915 native Vulkan 実行器 | completed（2026-10-27 00:09 ユーザーの判断、未完の Phase は取り下げ） | — |
 | [WS032](ws032/ws.md) | MG002 | 外部 package のクロスビルド（clang・OpenSSL・OpenSSH） | completed | — |
 | [WS033](ws033/ws.md) | MG005 | networking サービスと有線インタフェースの管理 | incomplete | 抜き差しの実機確認 |
 | [WS034](ws034/ws.md) | MG002 | アプリケーション拡充と kernel・libc の是正 | canceled（2026-10-05） | package の導入 |
@@ -642,6 +642,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-27 00:09 ユーザー「WS031のうち、すでに他のWSで片付いているものもある気がします。」→（Q1 の問いへのクリック）「一回クローズ」→「WS031をcompletedにしてください。」→ WS031 を completed（ユーザーの判断）、cleared の候補 5 つは cleared、残りは取り下げ。Phase の dir・試験の整理（他から参照される ws031/tests は plan/tools へ）は別の作業。
 - 2026-10-27 00:06 ユーザー「drivers/gpu/i915には他のGPUドライバと違ってvk/ディレクトリがないですね」→ Q1: render/ が同じ役 →「vk/に揃えたいです。ws031の残り作業って何ですか？」→ WS293 を新設、P4 の q1602（WS252・q1601 の後）。
 - 2026-10-26 23:58 ユーザー「DMCファームウェアはマザーボードに入っているものであって、我々がOSSに入れるものではないのでは？」（Q1 が OS の driver が読み込む物で、既に任意の package i915-firmware にあると説明）→「了解です。zedBSD-firmware/ツリーに、i915の依存としてすべて入れられませんか？」→ driver が名指す DMC の全部（既存の adlp・tgl に rkl_dmc_ver2_03・adls_dmc_ver2_01・icl_dmc_ver1_09）を zedBSD-firmware の i915/ と i915-firmware の package に。P4 の q1601（WS252 p004 の後）。zedBSD-firmware の push はユーザーの指示の時。
 - 2026-10-26 23:54 ユーザー「コマンド投入がzedBSDでは遅い可能性もあるので、コマンドが大きいか、コマンドがたくさんあるか、は、RDNAのLinuxとzedBSDで比較できるといいですね。」→ WS291 の投入の benchmark を (a) 大きな command・(b) 多数の submit の 2 軸で Linux と zedBSD を比べる。P2 に伝えた。

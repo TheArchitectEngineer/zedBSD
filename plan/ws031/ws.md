@@ -3,7 +3,7 @@
 # WS031: i915ネイティブVulkan実行器
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 q910 P2 の照合: 空き時間だけの WS（master の Focus）。p015〜p048 は planning、p024 は合間の仕事で中断中）
+Status: completed（2026-10-27 00:09 ユーザーの判断「WS031をcompletedにしてください。」。cleared の候補の p019・p020・p032・p033・p039 は cleared、残りの未完の Phase（p021〜p024・p026・p028・p029・p036・p037・p042・p043・p046〜p048・p051）は取り下げ（canceled）。WS の受け入れの全部の確認ではなくユーザーの判断による完了。Phase の dir と試験の整理（plan/tools への移動・削除）は別の作業で。前: incomplete（2026-10-08 q910 P2 の照合: 空き時間だけの WS（master の Focus）。p015〜p048 は planning、p024 は合間の仕事で中断中）
 Primary Milestone: MG006
 Related Milestones: MG003
 Objectives: O1, O2
@@ -56,14 +56,14 @@ WS029のdisplay/scanout後続（[ws029-f003](https://github.com/awemorris/zedBSD
 | ws031-p008 | cmdbuf: command buffer→GENバッチ変換・draw・WS029 RCS0投入（[phase008](phase008/phase.md)） | cleared | 300 分 |
 | ws031-p009 | sync: fence/semaphore/query/timeline→completion接続（[phase009](phase009/phase.md)） | cleared | 180 分 |
 | ws031-p010 | wsi: KMS/modeset・scanout・swapchain present（`VK_KHR_display`/`swapchain`）（[phase010](phase010/phase.md)） | cleared | 300 分 |
-| ws031-p011 | 統合: build-passing 達成／実機描画はビッグバンテスト（[phase011](phase011/phase.md)） | big-bang待ち | 360 分 |
+| ws031-p011 | 統合: build-passing 達成／実機描画はビッグバンテスト（[phase011](phase011/phase.md)） | canceled（2026-10-27 00:09、WS031 の完了。前: big-bang待ち） | 360 分 |
 | ws031-p012 | レビュー: 静的解析・規約全文確認・回帰・制限整理（[phase012](phase012/phase.md)） | cleared | 180 分 |
 | ws031-p013 | Wayland モデルビューア（Venus）: FBX 変換・zwl の seat/pointer/keyboard・mview（[phase013](phase013/phase.md)） | cleared（Venus） | 3 日 |
 | ws031-p014 | モデルビューアを i915 で・シェーダー一通り: executor（索引描画・mip・push・blend）と compiler（制御フロー・discard・行列・UBO）（[phase014](phase014/phase.md)） | cleared（A0・A・B・C・D・E1・E2・E3・性能第 2 回。残りは p015〜p018 へ） | 約 7.5 日（A–E） |
-| ws031-p015 | 準正常系・異常系の確認と小さな欠落の修正（[phase015](phase015/phase.md)） | planning / canceled（2026-09-23 p022〜p029 へ分割） | — |
-| ws031-p016 | executor の未実装機能（[phase016](phase016/phase.md)） | planning / canceled（2026-09-23 p030〜p037 へ分割） | — |
-| ws031-p017 | compiler の未実装機能（[phase017](phase017/phase.md)） | planning / canceled（2026-09-23 p038〜p043 へ分割） | — |
-| ws031-p018 | 性能の構造改善（[phase018](phase018/phase.md)） | planning / canceled（2026-09-23 p044〜p047 と p027 へ分割） | — |
+| ws031-p015 | 準正常系・異常系の確認と小さな欠落の修正（[phase015](phase015/phase.md)） | canceled（2026-10-27 00:09、WS031 の完了。前: planning / canceled（2026-09-23） | — |
+| ws031-p016 | executor の未実装機能（[phase016](phase016/phase.md)） | canceled（2026-10-27 00:09、WS031 の完了。前: planning / canceled（2026-09-23） | — |
+| ws031-p017 | compiler の未実装機能（[phase017](phase017/phase.md)） | canceled（2026-10-27 00:09、WS031 の完了。前: planning / canceled（2026-09-23） | — |
+| ws031-p018 | 性能の構造改善（[phase018](phase018/phase.md)） | canceled（2026-10-27 00:09、WS031 の完了。前: planning / canceled（2026-09-23） | — |
 
 ### 残課題のブレークダウン（2026-09-23）
 
@@ -74,37 +74,37 @@ p015〜p018は大きすぎるため、1 Queueのスロットで終わる大き�
 
 | Combined ID | Phase | Status | 依存 | 元 | 主なファイル範囲 |
 | --- | --- | --- | --- | --- | --- |
-| ws031-p022 | 確認と修正: 画像・samplerの境界（小さいmip、非正方・奇数寸法、15 level、`maxLod < minLod`、端数LOD） | planning | WS035のrefactor（p002〜p004、p023） | p015 | `render/` |
-| ws031-p023 | 確認と修正: blend・UBOの境界（`SRC_ALPHA_SATURATE`等、float target、動的定数、dynamic offset範囲外、短いUBO range） | planning | 同上 | p015 | `render/` |
-| [ws031-p024](phase024/phase.md) | 確認と修正: compilerの境界（0除算・`INT_MIN/-1`、mod・FRem、ループ内discard・sample、shift、入れ子、SBE属性0、spillの組合せ） | blocked（UAT 待ち）（2026-10-09 P1: host の分は全部済み、実機 vke2 は T1-190b PASS。spill の組み合わせの実機の step が残り） | 同上 | p015 | `compiler/` |
+| ws031-p022 | 確認と修正: 画像・samplerの境界（小さいmip、非正方・奇数寸法、15 level、`maxLod < minLod`、端数LOD） | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | WS035のrefactor（p002〜p004、p023） | p015 | `render/` |
+| ws031-p023 | 確認と修正: blend・UBOの境界（`SRC_ALPHA_SATURATE`等、float target、動的定数、dynamic offset範囲外、短いUBO range） | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | 同上 | p015 | `render/` |
+| [ws031-p024](phase024/phase.md) | 確認と修正: compilerの境界（0除算・`INT_MIN/-1`、mod・FRem、ループ内discard・sample、shift、入れ子、SBE属性0、spillの組合せ） | canceled（2026-10-27 00:09、WS031 の完了。前: blocked（UAT 待ち）（2026-10-09 P1:） | 同上 | p015 | `compiler/` |
 | [ws031-p025](phase025/phase.md) | 異常系: 範囲外index/offset、command buffer 65536超、descriptor上限、終わらないループ（hangの扱いの記録） | cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: blocked（UAT 待ち）、host の読みと照合は済み・新しい不具合なし、終わらない loop の GPU の hang の扱いの実機（5330）の確かめが残り） | 同上 | p015 | `render/`、`vk/` |
-| [ws031-p026](phase026/phase.md) | 小さな欠落: uint8 index、非整列 `vkCmdCopyBuffer`、viewport index>0・負の高さ、compile失敗時のpipeline漏れ、discardのHALT、host試験（ws031のdisplay 6件とws029）が `perf.c` 未linkで `drv_i915_perf_*` のlinkに失敗する件（ws035-p002で発見） | blocked（UAT 待ち）（2026-10-09 P1: uint8 index・非整列の copy・負の viewport の高さ・pipeline の漏れを実装、host PASS。HALT は未着手。perf.c の件は試験が tree に無い） | 同上 | p015 | `render/`、`compiler/` |
+| [ws031-p026](phase026/phase.md) | 小さな欠落: uint8 index、非整列 `vkCmdCopyBuffer`、viewport index>0・負の高さ、compile失敗時のpipeline漏れ、discardのHALT、host試験（ws031のdisplay 6件とws029）が `perf.c` 未linkで `drv_i915_perf_*` のlinkに失敗する件（ws035-p002で発見） | canceled（2026-10-27 00:09、WS031 の完了。前: blocked（UAT 待ち）（2026-10-09 P1:） | 同上 | p015 | `render/`、`compiler/` |
 | ws031-p027 | present mode（FIFO/MAILBOX/IMMEDIATE）でvsyncを選ぶ。UAPIで運べなければ変更を事前に提示 | 移した（2026-09-27、[WS075](../ws075/ws.md) の p008） | 同上 | p015・p018 | `libvulkan`、`zwl`、i915 display |
-| ws031-p028 | 入力とmview: PS/2 keyboardのkeyがzwlに届かない件、QMP abortの回避記録、mviewの再現性・blend material・pixel shadingのLCD写真 | planning | 同上 | p015 | `zwl`、input |
-| ws031-p029 | WS031の統合回帰（p014の回帰一覧を1回） | planning | p022〜p028 | p015 | 試験のみ |
-| [ws031-p019](phase019/phase.md) | 設計: executorの未実装機能（正常系: p032・p033） | cleared 候補（2026-10-07 P1、design-reviewer の review を反映） | — | 新規 | 文書 |
-| [ws031-p020](phase020/phase.md) | 設計: compiler の 16 bit の整数（p039、2026-10-07 ユーザーの範囲。p038〜p043 の他は別の設計） | cleared 候補（2026-10-07 P1、design-reviewer の review を反映） | p024 | 新規 | 文書 |
-| ws031-p021 | 設計: 性能の構造（p044〜p047）。schedulerの扱い（本WSか新WSか）の判断を含む | planning | p029 | 新規 | 文書 |
+| ws031-p028 | 入力とmview: PS/2 keyboardのkeyがzwlに届かない件、QMP abortの回避記録、mviewの再現性・blend material・pixel shadingのLCD写真 | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | 同上 | p015 | `zwl`、input |
+| ws031-p029 | WS031の統合回帰（p014の回帰一覧を1回） | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | p022〜p028 | p015 | 試験のみ |
+| [ws031-p019](phase019/phase.md) | 設計: executorの未実装機能（正常系: p032・p033） | cleared（2026-10-27 00:09、WS031 の完了でユーザーの判断。前: cleared 候補（2026-10-07 P1、desig） | — | 新規 | 文書 |
+| [ws031-p020](phase020/phase.md) | 設計: compiler の 16 bit の整数（p039、2026-10-07 ユーザーの範囲。p038〜p043 の他は別の設計） | cleared（2026-10-27 00:09、WS031 の完了でユーザーの判断。前: cleared 候補（2026-10-07 P1、desig） | p024 | 新規 | 文書 |
+| ws031-p021 | 設計: 性能の構造（p044〜p047）。schedulerの扱い（本WSか新WSか）の判断を含む | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | p029 | 新規 | 文書 |
 | ws031-p030 | executor: mip level 0以外・array layerへの描画とattachment clear | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/` |
 | ws031-p031 | executor: 複数colour attachment（MRT） | 移した（2026-09-27、[WS075](../ws075/ws.md) の p006） | p019 | p016 | `render/` |
-| [ws031-p032](phase032/phase.md) | executor: blendのlogic op・dual source | cleared 候補（2026-10-07 P1: host PASS。dual source の feature は実機まで 0） | p019, p033 | p016 | `render/`、`compiler/` |
-| [ws031-p033](phase033/phase.md) | executor: image viewのformat読替え（MUTABLE_FORMAT）・component swizzle（usage照合は変えない、2026-10-07 範囲の変更） | cleared 候補（2026-10-07 P1、host PASS） | p019 | p016 | `render/` |
+| [ws031-p032](phase032/phase.md) | executor: blendのlogic op・dual source | cleared（2026-10-27 00:09、WS031 の完了でユーザーの判断。前: cleared 候補（2026-10-07 P1: host） | p019, p033 | p016 | `render/`、`compiler/` |
+| [ws031-p033](phase033/phase.md) | executor: image viewのformat読替え（MUTABLE_FORMAT）・component swizzle（usage照合は変えない、2026-10-07 範囲の変更） | cleared（2026-10-27 00:09、WS031 の完了でユーザーの判断。前: cleared 候補（2026-10-07 P1、host ） | p019 | p016 | `render/` |
 | ws031-p034 | executor: sampler（anisotropy、depth compare、border colour、unnormalized座標）、mirrored blit | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/` |
 | ws031-p035 | executor: descriptor配列・`vkUpdateDescriptorSets` のcopy・VSのsampled image | 移した（2026-09-27、[WS075](../ws075/ws.md) の p005） | p019 | p016 | `render/`、`vk/` |
-| ws031-p036 | executor: UBOのdataport読み出し（push dataの上限超え）とdraw間の順序 | planning | p019 | p016 | `render/`、`compiler/` |
-| ws031-p037 | executor: tiling（Y-tile/Tile4のoptimal image、copy・blit・sampling）。設計で更に分けてよい | planning | p019 | p016 | `render/`、gem |
+| ws031-p036 | executor: UBOのdataport読み出し（push dataの上限超え）とdraw間の順序 | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | p019 | p016 | `render/`、`compiler/` |
+| ws031-p037 | executor: tiling（Y-tile/Tile4のoptimal image、copy・blit・sampling）。設計で更に分けてよい | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | p019 | p016 | `render/`、gem |
 | ws031-p038 | compiler: 整数varying（Flat）と整数頂点属性 | 移した（2026-09-27、[WS075](../ws075/ws.md) の p004） | p020 | p017 | `compiler/`、`render/` |
-| [ws031-p039](phase039/phase.md) | compiler: 16 bitの整数（Int16、shaderInt16、2026-10-07 範囲の変更: 64 bit は p051、Float64・Float16 は Future Work） | cleared 候補（2026-10-07 P1、host PASS） | p020 | p017 | `compiler/` |
-| ws031-p051 | compiler: 64 bitの整数（Int64、32 bitの対のlowering、Mesa nir_lower_int64 が手本。Gen12 LP は 64 bit を持たない） | planned（2026-10-07 追加） | p039 | 新規 | `compiler/` |
+| [ws031-p039](phase039/phase.md) | compiler: 16 bitの整数（Int16、shaderInt16、2026-10-07 範囲の変更: 64 bit は p051、Float64・Float16 は Future Work） | cleared（2026-10-27 00:09、WS031 の完了でユーザーの判断。前: cleared 候補（2026-10-07 P1、host ） | p020 | p017 | `compiler/` |
+| ws031-p051 | compiler: 64 bitの整数（Int64、32 bitの対のlowering、Mesa nir_lower_int64 が手本。Gen12 LP は 64 bit を持たない） | canceled（2026-10-27 00:09、WS031 の完了。前: planned（2026-10-07 追加）） | p039 | 新規 | `compiler/` |
 | ws031-p040 | compiler: localの配列・構造体、動的index、行列の`OpPhi`、ループ内で初めてstoreするlocal | 移した（2026-09-27、[WS075](../ws075/ws.md) の p004） | p020 | p017 | `compiler/` |
 | ws031-p041 | compiler: `OpSwitch`、関数呼出し（inline化）、ループ内return、trip count 0の形 | 移した（2026-09-27、[WS075](../ws075/ws.md) の p004） | p020 | p017 | `compiler/` |
-| ws031-p042 | compiler: SWSBを依存に基づく指定へ、命令の並べ替え | planning | p020, p038〜p041 | p017 | `compiler/` |
-| ws031-p043 | compiler: spillの改善（rematerialization、cost重み付きvictim、再lowerの削減） | planning | p020 | p017 | `compiler/` |
+| ws031-p042 | compiler: SWSBを依存に基づく指定へ、命令の並べ替え | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | p020, p038〜p041 | p017 | `compiler/` |
+| ws031-p043 | compiler: spillの改善（rematerialization、cost重み付きvictim、再lowerの削減） | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | p020 | p017 | `compiler/` |
 | ws031-p044 | 性能: 完了待ちをCSBのbusy-pollからuser interruptとwaitqへ | 移した（2026-09-27、[WS075](../ws075/ws.md) の p008） | p021 | p018 | engine、request |
 | ws031-p045 | 性能: 非同期executor（submitを即座に返す、fence/semaphoreはGPU完了でsignal、heapの多重化と寿命） | 移した（2026-09-27、[WS075](../ws075/ws.md) の p008） | p021, p044, p030〜p037 | p018 | `render/`、`vk/` |
-| ws031-p046 | 性能: frame copyの削減（swapchain imageのaliasing、zdesktopの拡大copyをplane scalerかzero-copy flipへ） | planning | p021, p045, p027 | p018 | `libvulkan`、zdesktop、display |
-| ws031-p047 | 性能: scheduler wakeupの遅延（p021で本WSに収まると判断した場合だけ。収まらなければ新WSへ） | planning | p021 | p018 | kern（範囲はp021で決める） |
-| ws031-p048 | 最終確認: 変更したsource全体の全文規約確認・静的確認・統合回帰 | planning | p022〜p047 | 新規 | 全体 |
+| ws031-p046 | 性能: frame copyの削減（swapchain imageのaliasing、zdesktopの拡大copyをplane scalerかzero-copy flipへ） | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | p021, p045, p027 | p018 | `libvulkan`、zdesktop、display |
+| ws031-p047 | 性能: scheduler wakeupの遅延（p021で本WSに収まると判断した場合だけ。収まらなければ新WSへ） | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | p021 | p018 | kern（範囲はp021で決める） |
+| ws031-p048 | 最終確認: 変更したsource全体の全文規約確認・静的確認・統合回帰 | canceled（2026-10-27 00:09、WS031 の完了。前: planning） | p022〜p047 | 新規 | 全体 |
 | ws031-p049 | 失敗する GPU の host 試験 3 件の原因を調べて直す（2026-09-24 ws034-p049 の一掃で発見。今の source に対して build でき、結果が失敗する）: `plan/ws014/tests/run-venus-edid-test.sh`（`mode.count == 3` の assert）、`plan/ws030/tests/run-libvulkan-job-race-test.sh`（`race_wait` の `status == 0` の assert、112 秒で止まる）、`plan/ws030/tests/run-libvulkan-external-fence-test.sh`（`vulkan_sync_job_reserve` の確保 72 byte が LeakSanitizer で漏れ）。製品の不具合か試験の古さかを切り分け、試験が古いだけなら削除する | canceled（2026-10-07 P1: 3 つの試験の script は tree に無い（2026-10-03 の repository の作り直しで ws014・ws030 の tests は持ち越されていない）。直す対象が無いので取り消し） | — | 新規 | libvulkan、venus |
 | [ws031-p050](phase050/phase.md) | （2026-09-26 ユーザー指示）session の close で残った Vulkan の object を解放、descriptor pool の破棄でその set を解放 | cleared（q467-i01、2026-09-26） | ws035-p067 | 新規 | `render/` |
 
