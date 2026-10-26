@@ -3,7 +3,7 @@
 # ws291-p002 3D の scene を決め、Linux と zedBSD の差を測る
 
 - 親: [WS291](../ws.md)。
-- 状態: in-progress（2026-10-26 23:47 P2、q1596-i01）。両 OS を同じ条件で測った（2026-10-27 00:50）: 主の scene（qs40 ×6500 instanced）は zedBSD 20.1 fps・Linux 50.1 fps。clearance は Q1 の判定。
+- 状態: in-progress（2026-10-26 23:47 P2、q1596-i01）。両 OS を同じ条件で測った（2026-10-27 00:40）: 主の scene（qs40 ×6500 instanced）は zedBSD 20.1 fps・Linux 50.1 fps。clearance は Q1 の判定。
 - 依存: p001（cleared、main bad29b52f）、p002a（zedBSD の計測の前提、2026-10-26 ユーザー「機能を足してから比較（推し）」）。
 
 ## 範囲
@@ -73,7 +73,7 @@
 - 見た目の基準（weston-screenshooter、`--debug` の weston）: build/ws291/measure/ref/linux-shot-1.png（1 体）・linux-shot-6500.png（細かい格子、1 体が十数 pixel）。6500 copies の scene は三角形が pixel より小さい geometry の重い scene で、pixel の負荷は軽い（制限として記録。pixel の重い scene が要れば別に足す）。
 - 以前の per-copy draw の 1500 copies（50.9 fps）は「毎 frame 24000 draw を記録」の scene で、今は big-N 系がその役。
 
-### zedBSD と Linux（同じ binary の source・同じ条件、2026-10-27 00:50 頃、frame あたり ms）
+### zedBSD と Linux（同じ binary の source・同じ条件、2026-10-27 00:40 頃、frame あたり ms）
 
 zedBSD: c8ba529 ＋ p002a（b20e5545e）・scanout の import の修正（160ad707f）・mview（commands の 1 個ずつの確保）、build/ws291/measure/bench-zedbsd-2/table.txt。
 Linux: 上の環境、build/ws291/measure/bench-linux-3/table.txt。両方とも format 44（B8G8R8A8_UNORM）、MAILBOX、content game、8 秒の spin。
@@ -109,4 +109,4 @@ Linux: 上の環境、build/ws291/measure/bench-linux-3/table.txt。両方とも
 
 - 2026-10-26 23:47 P2: 新設（Q1 の指示で phase.md を作る）。mview の拡張、Linux の基準の計測。
 - 2026-10-27 00:05 P2: ユーザーの指示で benchmark を作り直し（instanced の主の scene、big-N・subs-N の command の重さの組）、Linux を再計測。scene は 6500 copies で 50.0 fps。
-- 2026-10-27 00:55 P2: p002a の後、zedBSD と Linux を同じ benchmark（bench.list）で測った。Keiland の scanout の import を直して direct scanout が動いた。改善の案を Q1 へ。
+- 2026-10-27 00:42 P2: p002a の後、zedBSD と Linux を同じ benchmark（bench.list）で測った。Keiland の scanout の import を直して direct scanout が動いた。改善の案を Q1 へ。
