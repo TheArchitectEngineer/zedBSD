@@ -174,13 +174,32 @@ desktop() {
 	cat "$out/table.txt"
 }
 
+# zrun IP: the script on standard input run on zedBSD as root, detached from the SSH session (a session that ran
+# mview in the foreground was sometimes closed by the remote side), its end polled for at most 600 seconds.
+zrun() {
+	ip=$1
+	zs "$ip" "cat > /tmp/zrun.sh && rm -f /tmp/zrun.done && { (sh /tmp/zrun.sh; echo \$? > /tmp/zrun.done) > /dev/null 2>&1 < /dev/null & }" || return 1
+	end=$(($(date +%s) + 600))
+	while [ "$(date +%s)" -lt $end ]; do
+		sleep 3
+		ZS_TIMEOUT=15 zs "$ip" "test -f /tmp/zrun.done" < /dev/null 2> /dev/null && return 0
+	done
+	say "the run did not end in 600 s"
+	return 1
+}
+
 mview() {
 	out=$1
 	shift
 	mkdir -p "$out"
 	ip=$(to_zedbsd) || return 1
 	# The run's own lines of the compositor's log follow the line count taken before it.
-	ZS_TIMEOUT=600 zs "$ip" "n=\$(wc -l < $SESSION); su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null; tail -n +\$n $SESSION | grep -E 'KWL SCANOUT' > /tmp/mview-scanout.log"
+	zrun "$ip" <<EOS || return 1
+rm -f /tmp/mview.log /tmp/mview-scanout.log
+n=\$(wc -l < $SESSION)
+su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
+tail -n +\$n $SESSION | grep -E 'KWL SCANOUT' > /tmp/mview-scanout.log
+EOS
 	zcp "root@$ip:/tmp/mview.log" "root@$ip:/tmp/mview-scanout.log" "$out/" || return 1
 	grep -vE 'MVIEW (FRAME|INPUT)' "$out/mview.log"
 	head -5 "$out/mview-scanout.log"
@@ -191,7 +210,12 @@ profile() {
 	shift
 	mkdir -p "$out"
 	ip=$(to_zedbsd) || return 1
-	ZS_TIMEOUT=600 zs "$ip" "n=\$(dmesg | wc -l); su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 VULKAN_ZEDBSD_SUBMIT_TIMING=1 /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null; dmesg | tail -n +\$n | grep 'vk timing' > /tmp/kernel.log"
+	zrun "$ip" <<EOS || return 1
+rm -f /tmp/mview.log /tmp/kernel.log
+n=\$(dmesg | wc -l)
+su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 VULKAN_ZEDBSD_SUBMIT_TIMING=1 /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
+dmesg | tail -n +\$n | grep 'vk timing' > /tmp/kernel.log
+EOS
 	zcp "root@$ip:/tmp/mview.log" "root@$ip:/tmp/kernel.log" "$out/" || return 1
 	grep -E 'MVIEW (SPIN|STAGES|FAILED)|VULKAN TIMING' "$out/mview.log" | tail -6
 	grep -E 'frames|gpu busy|op ' "$out/kernel.log" | tail -9
@@ -227,11 +251,18 @@ bench() {
 	grep -v '^#' "$list" | while IFS='|' read -r blabel boptions; do
 		[ -n "$blabel" ] || continue
 		echo "RUN $blabel $boptions" >> "$bout/bench.log"
-		if [ "$system" = zedbsd ]; then
-			mview "$bout/$blabel" --token="$blabel" --spin=8 --content=game --present=mailbox $boptions > "$bout/$blabel.txt" 2>&1 < /dev/null
-		else
-			linux_mview "$bout/$blabel" --token="$blabel" --spin=8 --content=game --present=mailbox $boptions > "$bout/$blabel.txt" 2>&1 < /dev/null
-		fi
+		# A run whose summary did not come back (the SSH session to zedBSD drops now and then) is tried again, twice.
+		tries=0
+		while [ $tries -lt 3 ]; do
+			if [ "$system" = zedbsd ]; then
+				mview "$bout/$blabel" --token="$blabel" --spin=8 --content=game --present=mailbox $boptions > "$bout/$blabel.txt" 2>&1 < /dev/null
+			else
+				linux_mview "$bout/$blabel" --token="$blabel" --spin=8 --content=game --present=mailbox $boptions > "$bout/$blabel.txt" 2>&1 < /dev/null
+			fi
+			grep -q "MVIEW SPIN run=$blabel " "$bout/$blabel.txt" && break
+			tries=$((tries + 1))
+			sleep 20
+		done
 		cat "$bout/$blabel.txt" >> "$bout/bench.log"
 	done
 	python3 -I "$(dirname "$0")/mview-table.py" "$bout/bench.log" > "$bout/table.txt"

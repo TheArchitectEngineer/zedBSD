@@ -384,9 +384,18 @@ amdrdna_vk_blob(
 			break;
 	}
 
-	/* Refuses a number the session has no blob for, or a blob the CPU's window does not hold. */
+	/* Refuses a number the session has no blob for. */
 	if (resource == NULL)
 		return ENOENT;
+
+	/* A blob only the CPU touches is read in its RAM, through the CPU's cache. */
+	if (resource->kind == AMDRDNA_RESOURCE_STORAGE) {
+		*cpu = resource->cpu;
+		*bytes = resource->bytes;
+		return 0;
+	}
+
+	/* Refuses a blob the CPU's window does not hold. */
 	if (!resource->backing->cpu)
 		return EINVAL;
 
@@ -500,9 +509,11 @@ amdrdna_vk_memory_import(
 			break;
 	}
 
-	/* A blob of the session's that holds the whole memory. */
+	/* A blob of the session's in VRAM (not one only the CPU touches) that holds the whole memory. */
 	if (resource == NULL)
 		return ENOENT;
+	if (resource->kind != AMDRDNA_RESOURCE_BLOB)
+		return EINVAL;
 	held = resource->backing;
 	if (held->bytes < bytes)
 		return EINVAL;

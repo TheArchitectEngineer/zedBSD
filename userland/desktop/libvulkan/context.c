@@ -645,8 +645,13 @@ vulkan_context_storage(
 	if (storage == NULL)
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 
+	/*
+	 * Only this process and the renderer's decoder touch the transport's
+	 * streams and replies, so a device that can back them in cached host
+	 * memory does (the framework drops the flag for one that cannot).
+	 */
 	storage->bytes = bytes;
-	error = vulkan_resource_blob(context, bytes, 0, &storage->handle, &storage->resource);
+	error = vulkan_resource_blob_flags(context, bytes, 0, GPU_BLOB_MAPPABLE | GPU_BLOB_HOST, &storage->handle, &storage->resource);
 	if (error != VK_SUCCESS) {
 		free(storage);
 		return error;

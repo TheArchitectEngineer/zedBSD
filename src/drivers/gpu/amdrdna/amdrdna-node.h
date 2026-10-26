@@ -57,7 +57,10 @@ struct amdrdna_node;
  * Storage is a contiguous run of RAM the CPU reads and writes directly.  A
  * blob holds a reference to a backing in the VRAM; an import is a blob
  * naming another open's backing.  A blob has a protocol number and a
- * place in its session's list of blobs (session NULL: not listed).
+ * place in its session's list of blobs (session NULL: not listed).  A
+ * blob only the CPU touches (GPU_BLOB_HOST: a transport's streams and
+ * replies) is storage too, numbered and listed as a blob, so the executor
+ * finds it and reads it through the CPU's cache.
  */
 struct amdrdna_resource {
 	uint32_t kind;
