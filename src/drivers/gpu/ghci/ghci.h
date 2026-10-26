@@ -388,6 +388,14 @@ struct ghci_display {
 	int cursor_image;
 	int cursor_copying;
 
+	/*
+	 * The driver's idle frame (local memory, the largest mode), which is
+	 * scanned out when a sink is connected and no lease holds the display;
+	 * idle_generation is the output's generation it was last lit for.
+	 */
+	struct ghci_allocation *idle_frame;
+	uint64_t idle_generation;
+
 	/* The scan-out errors: the count of this second, the mask and the reads that kept failing. */
 	unsigned error_count;
 	uint64_t error_tick;
@@ -611,6 +619,9 @@ int ghci_firmware_diag(struct ghci_device *device, unsigned rounds);
 /* Takes GPU_OP_GHCI_DIAG or GPU_OP_GHCI_FIRMWARE from root. */
 int ghci_firmware_command(struct ghci_device *device, struct ghci_session *session, const void *stream, uint32_t bytes);
 
+/* Paints the display's idle frame with colour bands and grey steps and has the firmware read it back: 0, EIO or ENOENT. */
+int ghci_firmware_paint(struct ghci_device *device);
+
 /* Loads the staged image into the processor's memories after a reset: 0 or EIO. */
 int ghci_firmware_load(struct ghci_device *device);
 
@@ -785,6 +796,9 @@ void ghci_display_service(struct ghci_device *device, unsigned work);
 
 /* Takes the display's lock before a reset of the command processor. */
 void ghci_display_recover_begin(struct ghci_device *device);
+
+/* Gives the driver's idle frame, its mode and whether it is shown now: 0, or ENOENT. */
+int ghci_display_idle_frame(struct ghci_device *device, uint32_t *address, uint32_t *width, uint32_t *height, uint32_t *stride, int *shown);
 
 /* Counts the display's flips again while the reset processor is idle; cp_lock is held. */
 void ghci_display_recover_count(struct ghci_device *device);

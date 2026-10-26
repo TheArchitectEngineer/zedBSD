@@ -287,6 +287,7 @@ static void test_unified(void);
 static void test_display(void);
 static void test_polled_uncached(void);
 static void test_firmware(void);
+static void test_idle_frame(void);
 static int firmware_start(struct ghci_device *device, int mode);
 #endif
 
@@ -765,6 +766,7 @@ main(void)
 	test_display();
 	test_polled_uncached();
 	test_firmware();
+	test_idle_frame();
 	expect(lock_errors == 0U, "no mutex locked twice");
 
 	/* Reports the counts of the checks. */
@@ -2095,9 +2097,9 @@ test_firmware(void)
 	core_superuser = 1;
 	error = core_ops->command(core_private, opaque, stream, 12U);
 	expect(error == 0, "firmware: the diagnostics from root's command");
-	stream[1] = 1U;
+	stream[1] = 2U;
 	error = core_ops->command(core_private, opaque, stream, 12U);
-	expect(error == EINVAL, "firmware: a diagnostics command with flags refused");
+	expect(error == EINVAL, "firmware: a diagnostics command with an unknown flag refused");
 
 	/* A reset sends INIT again before the ring takes other work. */
 	inits = model_inits;
@@ -2193,6 +2195,73 @@ test_firmware(void)
 	error = ghci_device_stop(&device);
 	expect(error == 0, "firmware: stop of the older firmware");
 	model_init_mode = MODEL_INIT_RIGHT;
+	model_device = NULL;
+}
+
+/*
+ * The idle frame: a connected display with no lease is lit on the driver's
+ * frame in 1280 x 720 at the first service round, once; a lease then
+ * takes the display as from a lit one.
+ */
+static void
+test_idle_frame(void)
+{
+	static struct ghci_device device;
+	struct gpu_display_claim claim;
+	uint8_t *memory;
+	uint32_t word;
+	int error;
+	void *opaque;
+
+	/* A display that is connected from the start. */
+	model_setup_display();
+	memset(&device, 0, sizeof(device));
+	device.registers = (volatile uint8_t *)model_registers;
+	device.register_bytes = sizeof(model_registers);
+	device.window = model_window_guard;
+	device.window_physical = MODEL_WINDOW_PHYSICAL;
+	device.window_bytes = MODEL_WINDOW_BYTES;
+	model_device = &device;
+	error = ghci_device_start(&device);
+	expect(error == 0 && device.display.idle_frame != NULL, "idle: start with an idle frame");
+	expect((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U, "idle: dark before the service");
+
+	/* The service lights it on the idle frame in 1280 x 720. */
+	ghci_service_step(&device, GHCI_WORK_DISPLAY);
+	expect((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) != 0U, "idle: lit by the service");
+	expect(model_dc[GHCI_DC_FB_BASE / 4U] == device.display.idle_frame->gpu_address, "idle: the idle frame scanned out");
+	expect(model_dc[GHCI_DC_H_ACTIVE / 4U] == 1280U && model_dc[GHCI_DC_V_ACTIVE / 4U] == 720U, "idle: 1280 x 720");
+
+	/* The picture in the idle frame, read back by the model firmware's sums. */
+	model_registers[GHCI_CAPS / 4U] |= GHCI_CAPS_FIRMWARE;
+	device.fw_features = GHCI_INIT_F_DIAG;
+	error = ghci_firmware_paint(&device);
+	expect(error == 0, "idle: the picture painted and read back");
+	memory = model_memory(device.display.idle_frame->gpu_address + 5120U * 10U + 4U * 170U, 4U);
+	word = 0U;
+	if (memory != NULL)
+		memcpy(&word, memory, 4U);
+	expect(word == 0x00ffff00U, "idle: the second band is yellow");
+	memory = model_memory(device.display.idle_frame->gpu_address + 5120U * 700U + 4U * 1279U, 4U);
+	word = 0U;
+	if (memory != NULL)
+		memcpy(&word, memory, 4U);
+	expect(word == 0x00ffffffU, "idle: the last grey step is white");
+	model_registers[GHCI_CAPS / 4U] &= ~GHCI_CAPS_FIRMWARE;
+
+	/* A lease is taken as from a lit display, and its release leaves it dark. */
+	core_ops->open(core_private, &opaque);
+	memset(&claim, 0, sizeof(claim));
+	claim.display_id = 1U;
+	claim.generation = 1U;
+	error = core_ops->display->claim(core_private, opaque, &claim);
+	expect(error == 0, "idle: a lease is taken");
+	core_ops->close(core_private, opaque);
+	ghci_service_step(&device, GHCI_WORK_DISPLAY);
+	ghci_service_step(&device, GHCI_WORK_DISPLAY);
+	expect((model_dc[GHCI_DC_CTRL / 4U] & GHCI_DC_CTRL_ENABLE) == 0U && !device.display.ending, "idle: dark after the lease, not lit again");
+	error = ghci_device_stop(&device);
+	expect(error == 0, "idle: stop");
 	model_device = NULL;
 }
 

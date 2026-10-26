@@ -122,6 +122,8 @@ static void errors_serve(struct ghci_device *device);
 static void irq_mask_set(struct ghci_device *device, int masked);
 static int connection_serve(struct ghci_device *device);
 static void topology_move(struct ghci_device *device);
+static unsigned idle_mode(const struct ghci_display *display);
+static void idle_serve(struct ghci_device *device);
 
 /*
  * Finds the display controller and sets it dark, before the command
@@ -132,9 +134,12 @@ ghci_display_attach(
 	struct ghci_device *device)
 {
 	struct ghci_display *display;
+	uint64_t idle_bytes;
 	uint32_t registers;
 	uint32_t version;
 	uint32_t connected_word;
+	uint32_t idle_stride;
+	unsigned largest;
 	int error;
 
 	/* A GPU without a display controller in its window has no display. */
@@ -199,6 +204,27 @@ ghci_display_attach(
 		if (error != 0)
 			kern_logf("ghci: %s: HDMI transmitter not set up (%d)\n", device->name, error);
 	}
+
+	/*
+	 * The driver's idle frame, which the controller scans out when a sink
+	 * is connected and no lease holds the display: the largest mode in
+	 * local memory.  Without it the display only lights for a lease.
+	 */
+	largest = ghci_scan_largest_mode(display);
+	idle_stride = ghci_scan_stride(device, display->modes[largest].width);
+	idle_bytes = (uint64_t)idle_stride * display->modes[largest].height;
+	mutex_lock(&device->lock);
+
+	display->idle_frame = NULL;
+	error = ghci_memory_alloc(device, NULL, GHCI_USE_DEVICE, idle_bytes, &display->idle_frame);
+
+	mutex_unlock(&device->lock);
+
+	if (error != 0) {
+		kern_logf("ghci: %s: no idle frame for the display (%d)\n", device->name, error);
+		display->idle_frame = NULL;
+	}
+	display->idle_generation = 0U;
 
 	/* The display exists, dark and without a lease, at its first generation and topology. */
 	display->generation = GHCI_DISPLAY_FIRST_GENERATION;
@@ -307,6 +333,9 @@ ghci_display_detach(
 	if (display->staging != NULL)
 		ghci_memory_free(device, display->staging);
 	display->staging = NULL;
+	if (display->idle_frame != NULL)
+		ghci_memory_free(device, display->idle_frame);
+	display->idle_frame = NULL;
 
 	mutex_unlock(&device->lock);
 }
@@ -383,8 +412,9 @@ ghci_display_service(
 	(void)work;
 	errors_serve(device);
 
-	/* The connection, and the records and what waits for the controller. */
+	/* The connection, the idle frame of a connected display, and the records and what waits for the controller. */
 	changed = connection_serve(device);
+	idle_serve(device);
 	ghci_scan_update(device);
 	if (display->adopted != adopted)
 		changed = 1;
@@ -858,6 +888,55 @@ ghci_scan_sleep(
 	(void)waitq_sleep(&device->display.flip_wake, &device->irq_lock, mark, wake, 0U);
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
+}
+
+/*
+ * Gives the driver's idle frame and its mode, and whether the controller
+ * scans it out now: 0, or ENOENT on a device without one.
+ */
+int
+ghci_display_idle_frame(
+	struct ghci_device *device,
+	uint32_t *address,
+	uint32_t *width,
+	uint32_t *height,
+	uint32_t *stride,
+	int *shown)
+{
+	struct ghci_display *display;
+	unsigned mode;
+	int error;
+
+	/* What the display has, under its lock. */
+	display = &device->display;
+	if (!display->present)
+		return ENOENT;
+	mutex_lock(&display->lock);
+
+	error = 0;
+	if (display->idle_frame == NULL) {
+		error = ENOENT;
+	} else {
+		mode = idle_mode(display);
+		*address = display->idle_frame->gpu_address;
+		*width = display->modes[mode].width;
+		*height = display->modes[mode].height;
+		*stride = ghci_scan_stride(device, display->modes[mode].width);
+		*shown = 0;
+		if (display->enabled && display->flips[0].placed && display->flips[0].image.base == *address)
+			*shown = 1;
+		if (display->enabled && display->shown.base == *address)
+			*shown = 1;
+	}
+
+	mutex_unlock(&display->lock);
+
+	/* A display without an idle frame. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the frame and its mode. */
+	return 0;
 }
 
 /*
@@ -1619,4 +1698,80 @@ topology_move(
 	device->display.topology++;
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
+}
+
+/* Reports the mode the idle frame is scanned out in: 1280 x 720 when the controller has it, else its largest. */
+static unsigned
+idle_mode(
+	const struct ghci_display *display)
+{
+	unsigned index;
+
+	/* The HDMI mode every monitor takes. */
+	for (index = 0U; index < display->mode_count; index++) {
+		if (display->modes[index].width == 1280U && display->modes[index].height == 720U)
+			return index;
+	}
+
+	/* Otherwise the largest. */
+	index = ghci_scan_largest_mode(display);
+	return index;
+}
+
+/*
+ * Lights the controller on the driver's idle frame once a sink is
+ * connected and no lease holds the display, once for each generation of
+ * the output (a connection): a lease that ends leaves it dark.  The lock
+ * is held.
+ */
+static void
+idle_serve(
+	struct ghci_device *device)
+{
+	struct ghci_display *display;
+	struct ghci_display_image image;
+	unsigned mode;
+	int usable;
+	int error;
+
+	/* A connected sink, no lease, nothing lit, an idle frame, not yet for this connection. */
+	display = &device->display;
+	if (!display->connected)
+		return;
+	if (display->owner != NULL || display->ending)
+		return;
+	if (display->enabled)
+		return;
+	if (display->idle_frame == NULL)
+		return;
+	if (display->idle_generation == display->generation)
+		return;
+
+	/* The ring must take the controller's packets. */
+	usable = ghci_scan_ring_usable(device);
+	if (!usable)
+		return;
+
+	/* The idle frame in its mode, rows on the memory line, the controller's own format; the driver's frame is not held. */
+	mode = idle_mode(display);
+	image_clear(&image);
+	image.base = display->idle_frame->gpu_address;
+	image.stride = ghci_scan_stride(device, display->modes[mode].width);
+	image.format = GHCI_DC_FMT_BGRA8;
+	image.mode = mode;
+	image.memory = NULL;
+
+	/* Lit once for this connection, whatever comes of it. */
+	display->idle_generation = display->generation;
+	error = light(device, &image);
+	if (error != 0) {
+		kern_logf("ghci: %s: display connected: the idle frame not lit (%d)\n", device->name, error);
+		return;
+	}
+	kern_logf("ghci: %s: display connected: scanning out the idle frame at %08x, %ux%u, stride %u\n",
+	    device->name,
+	    (unsigned)image.base,
+	    (unsigned)display->modes[mode].width,
+	    (unsigned)display->modes[mode].height,
+	    (unsigned)image.stride);
 }

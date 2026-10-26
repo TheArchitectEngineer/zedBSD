@@ -315,6 +315,9 @@ display_claim(
 		display->uncertain = 0;
 		display->cursor_image = 0;
 		request->lease = display->lease;
+
+		/* The idle frame is not lit again for this connection once a lease has held it. */
+		display->idle_generation = display->generation;
 	}
 
 	mutex_unlock(&display->lock);

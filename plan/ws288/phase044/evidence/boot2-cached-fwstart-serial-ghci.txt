@@ -1,0 +1,10 @@
+pcie1: PLDA at 2c000000, configuration 9c0000000, interrupt 57
+pcie1: MSI at 190 (register 0), 32 vectors
+pcie1: firmware left the link down
+pcie1: link up
+pcie1: 01:00.0 BAR0 at 38000000 (131072 bytes)
+pcie1: 01:00.0 BAR1 at 38020000 (65536 bytes)
+ghci: polled every 1 ms (CONFIG_GHCI_POLL)
+ghci: ghci:AMAT:ATG1: session protection: 31 sessions, 64 grants
+ghci: ghci:AMAT:ATG1: firmware did not start (CPFW_STATUS 00000009)
+ghci: function not started (5)

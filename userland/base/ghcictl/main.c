@@ -12,10 +12,14 @@
  * a display, the display's modes.  As root it also runs the driver's
  * diagnostics of the paths to host and local memory (each step goes to the
  * kernel log), and loads a new image of the command processor's firmware
- * (from host memory, or with -l through the GPU's local memory).
+ * (from host memory, or with -l through the GPU's local memory).  paint
+ * blits colour bands and grey steps into the display's idle frame (the
+ * one the display scans out when a monitor is connected and nothing else
+ * holds it) and has the firmware read it back.
  *
  *   ghcictl [list]
  *   ghcictl diag [ROUNDS]
+ *   ghcictl paint
  *   ghcictl fwload [-l] IMEM.bin DMEM.bin
  */
 
@@ -98,6 +102,7 @@ static int open_ghci(char *path, size_t size);
 static int send_command(int fd, const uint32_t *words, uint32_t count);
 static int run_diag(int argc, char **argv);
 static int run_fwload(int argc, char **argv);
+static int run_paint(int argc);
 static int read_image(const char *path, uint32_t *words, uint32_t limit, uint32_t *count);
 static int send_part(int fd, uint32_t part, const uint32_t *words, uint32_t count, uint32_t last_flags);
 static void usage(void);
@@ -118,6 +123,12 @@ main(
 	/* The diagnostics. */
 	if (strcmp(argv[1], "diag") == 0) {
 		status = run_diag(argc - 2, argv + 2);
+		return status;
+	}
+
+	/* The idle frame's picture. */
+	if (strcmp(argv[1], "paint") == 0) {
+		status = run_paint(argc - 2);
 		return status;
 	}
 
@@ -351,6 +362,46 @@ run_diag(
 	return 1;
 }
 
+/* ghcictl paint: the idle frame's picture, blitted and read back. */
+static int
+run_paint(
+	int argc)
+{
+	uint32_t words[3];
+	char path[32];
+	int error;
+	int fd;
+
+	/* No arguments. */
+	if (argc != 0) {
+		usage();
+		return 2;
+	}
+
+	/* The node. */
+	fd = open_ghci(path, sizeof(path));
+	if (fd < 0)
+		return 1;
+
+	/* GPU_OP_GHCI_DIAG with the paint flag. */
+	words[0] = GPU_OP_GHCI_DIAG;
+	words[1] = 1U;
+	words[2] = 0U;
+	printf("ghcictl: %s: paint (each step in the kernel log)\n", path);
+	error = send_command(fd, words, 3U);
+	close(fd);
+
+	/* The outcome. */
+	if (error != 0) {
+		printf("ghcictl: paint: FAIL: %s (see the kernel log)\n", strerror(error));
+		return 1;
+	}
+
+	/* Succeeded: the picture is in the frame. */
+	printf("ghcictl: paint: PASS\n");
+	return 0;
+}
+
 /* ghcictl fwload [-l] IMEM.bin DMEM.bin: loads a new firmware image and starts it. */
 static int
 run_fwload(
@@ -512,5 +563,6 @@ usage(void)
 {
 	fprintf(stderr, "usage: ghcictl [list]\n");
 	fprintf(stderr, "       ghcictl diag [ROUNDS]\n");
+	fprintf(stderr, "       ghcictl paint\n");
 	fprintf(stderr, "       ghcictl fwload [-l] IMEM.bin DMEM.bin\n");
 }
