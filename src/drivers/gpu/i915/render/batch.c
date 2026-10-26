@@ -113,15 +113,15 @@ drv_i915_batch_pipe_control(
 
 	/*
 	 * Builds the header; a render target flush adds the HDC pipeline flush
-	 * to it on Gen12, and on Gen9, which has none, the data cache flush in
-	 * its place.
+	 * to it on Gen12, and before Gen12 (Gen9 and Gen11), which has none,
+	 * the data cache flush in its place.
 	 *
 	 * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_buffer.c
 	 * (the PIPE_CONTROL flush bits before Gen12).
 	 */
 	header = I915_CMD_GFX_OP_PIPE_CONTROL(6);
 	if ((flags & I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U) {
-		if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+		if (batch->graphics_ver < 12U) {
 			flags |= I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE;
 		} else {
 			header |= I915_CMD_PIPE_CONTROL0_HDC_PIPELINE_FLUSH;
@@ -143,8 +143,8 @@ drv_i915_batch_pipe_control(
  *
  * A compute dispatch ends with it before the pipeline goes back to 3D: the
  * data port's writes are flushed without a render target flush, which the
- * GPGPU pipeline does not take.  Gen9 has no HDC pipeline flush; the data
- * cache flush takes its place.
+ * GPGPU pipeline does not take.  Gen9 and Gen11 have no HDC pipeline flush;
+ * the data cache flush takes its place.
  *
  * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_buffer.c
  * (genX(flush_pipeline_select)).
@@ -157,9 +157,9 @@ drv_i915_batch_pipe_control_hdc(
 	uint32_t header;
 	unsigned index;
 
-	/* Builds the header with the HDC pipeline flush on Gen12, and the data cache flush in its place on Gen9. */
+	/* Builds the header with the HDC pipeline flush on Gen12, and the data cache flush in its place before. */
 	header = I915_CMD_GFX_OP_PIPE_CONTROL(6);
-	if (batch->graphics_ver == GEN9_GRAPHICS_VER) {
+	if (batch->graphics_ver < 12U) {
 		flags |= I915_CMD_PIPE_CONTROL_DC_FLUSH_ENABLE;
 	} else {
 		header |= I915_CMD_PIPE_CONTROL0_HDC_PIPELINE_FLUSH;

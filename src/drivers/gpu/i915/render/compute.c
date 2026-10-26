@@ -50,6 +50,7 @@
 #include "../intel/commands.h"
 #include "../intel/genxml.h"
 #include "../intel/genxml-gen9.h"
+#include "../intel/genxml-gen11.h"
 
 /*
  * PIPE_CONTROL's Stall At Pixel Scoreboard (gen120.xml, bit 33: bit 1 of
@@ -264,9 +265,9 @@ drv_i915_gfx_dispatch_write_gen(
 	kern_memset(slot, 0, I915_GFX_SLOT_BYTES);
 	dynamic = slot + I915_GFX_DYNAMIC_HEAP;
 
-	/* Turns mid-thread preemption off; Gen9 has no such bit. */
+	/* Turns mid-thread preemption off; Gen9 and Gen11 have no such bit. */
 	preemption = GEN12_IDD_PREEMPTION_DISABLE;
-	if (graphics_ver == GEN9_GRAPHICS_VER)
+	if (graphics_ver < 12U)
 		preemption = 0U;
 
 	/*
@@ -371,6 +372,7 @@ drv_i915_gfx_dispatch_build(
 	uint32_t vfe_dword3;
 	uint32_t select;
 	int gen9;
+	int pre12;
 	int shared;
 
 	/* The kernel, and its CURBE in whole pairs of registers (64-byte units). */
@@ -378,10 +380,17 @@ drv_i915_gfx_dispatch_build(
 	curbe_regs = binary->cross_thread_regs + pipeline->threads * I915_SHADER_PER_THREAD_REGS;
 	curbe_allocation = (curbe_regs + 1U) & ~1U;
 
-	/* Notes whether the batch is built for Gen9 and whether the kernel shares memory in its group. */
+	/*
+	 * Notes whether the batch is built for Gen9, or for a version before
+	 * Gen12 (Gen9 or Gen11), and whether the kernel shares memory in its
+	 * group.
+	 */
 	gen9 = 0;
 	if (batch->graphics_ver == GEN9_GRAPHICS_VER)
 		gen9 = 1;
+	pre12 = 0;
+	if (batch->graphics_ver < 12U)
+		pre12 = 1;
 	shared = 0;
 	if (binary->shared_bytes != 0U)
 		shared = 1;
@@ -399,8 +408,9 @@ drv_i915_gfx_dispatch_build(
 
 	/*
 	 * Switches 3D to GPGPU behind a stalling flush of the render target,
-	 * depth and HDC caches (TGL PRM); Gen9 also invalidates the read-only
-	 * caches with a second PIPE_CONTROL and masks in only the selection.
+	 * depth and HDC caches (TGL PRM); before Gen12 the read-only caches are
+	 * also invalidated with a second PIPE_CONTROL and only the selection is
+	 * masked in.
 	 *
 	 * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_buffer.c
 	 * (genX(flush_pipeline_select)).
@@ -410,7 +420,7 @@ drv_i915_gfx_dispatch_build(
 				    I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH |
 				    I915_CMD_PIPE_CONTROL_DEPTH_CACHE_FLUSH);
 	select = GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_GPGPU);
-	if (gen9 != 0) {
+	if (pre12 != 0) {
 		drv_i915_batch_pipe_control(batch,
 					    I915_CMD_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
 					    I915_CMD_PIPE_CONTROL_CONST_CACHE_INVALIDATE |
@@ -427,12 +437,21 @@ drv_i915_gfx_dispatch_build(
 
 	/*
 	 * The VFE's thread limit and URB entries: 112 threads a dual-subslice,
-	 * less one, and two URB entries; on Gen9, where dss_count counts
-	 * subslices, 56 threads a subslice and the gateway timer reset, set
-	 * below Gen11.
+	 * less one, and two URB entries; on Gen9 and Gen11, where dss_count
+	 * counts subslices, 56 threads a subslice, and on Gen9 the gateway
+	 * timer reset, set below Gen11.
+	 *
+	 * Values referenced: Mesa 25.0.7 src/intel/dev/intel_device_info.c
+	 * (GFX11_HW_INFO max_cs_threads).
 	 */
 	max_threads = GEN12_VFE_THREADS_PER_DSS * dss_count - 1U;
 	vfe_dword3 = (max_threads << GEN12_VFE_MAX_THREADS_SHIFT) | (GEN12_VFE_URB_ENTRIES << GEN12_VFE_URB_ENTRIES_SHIFT);
+	if (pre12 != 0) {
+		max_threads = GEN9_VFE_THREADS_PER_SUBSLICE * dss_count - 1U;
+		vfe_dword3 = (max_threads << GEN12_VFE_MAX_THREADS_SHIFT) | (GEN12_VFE_URB_ENTRIES << GEN12_VFE_URB_ENTRIES_SHIFT);
+	}
+
+	/* Gen9 also resets the gateway timer. */
 	if (gen9 != 0) {
 		max_threads = GEN9_VFE_THREADS_PER_SUBSLICE * dss_count - 1U;
 		vfe_dword3 = (max_threads << GEN12_VFE_MAX_THREADS_SHIFT) |
@@ -528,8 +547,25 @@ drv_i915_gfx_dispatch_build(
 					I915_CMD_PIPE_CONTROL_FLUSH_ENABLE);
 
 	/* Gen12 switches back to 3D at once. */
-	if (gen9 == 0) {
+	if (pre12 == 0) {
 		drv_i915_batch_emit(batch, GEN12_PIPELINE_SELECT_DWORD(GEN12_PIPELINE_SELECT_3D));
+		return;
+	}
+
+	/*
+	 * Gen11 invalidates the read-only caches with a second PIPE_CONTROL,
+	 * then selects 3D with the selection alone masked in.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/intel/vulkan/genX_cmd_buffer.c
+	 * (genX(flush_pipeline_select): before Gen12).
+	 */
+	if (gen9 == 0) {
+		drv_i915_batch_pipe_control(batch,
+					    I915_CMD_PIPE_CONTROL_TEXTURE_CACHE_INVALIDATE |
+					    I915_CMD_PIPE_CONTROL_CONST_CACHE_INVALIDATE |
+					    I915_CMD_PIPE_CONTROL_STATE_CACHE_INVALIDATE |
+					    I915_CMD_PIPE_CONTROL_INSTRUCTION_CACHE_INVALIDATE);
+		drv_i915_batch_emit(batch, (GEN12_CMD_PIPELINE_SELECT << 16) | GEN9_PIPELINE_SELECT_MASK | GEN12_PIPELINE_SELECT_3D);
 		return;
 	}
 

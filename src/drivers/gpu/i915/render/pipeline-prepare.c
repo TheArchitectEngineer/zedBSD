@@ -789,7 +789,7 @@ i915_pipeline_thread_ids(
 
 /*
  * Returns the graphics version a session's kernels are compiled for: 9 on
- * a Gen9 GT, 12 on any other, and 12 without a session (the host tests
+ * a Gen9 GT, 11 on an Ice Lake GT, 12 on any other, and 12 without a session (the host tests
  * prepare pipelines with none).
  */
 static unsigned
@@ -803,6 +803,10 @@ i915_pipeline_graphics_ver(
 	/* A Gen9 GT. */
 	if (session->vk->i915->gt.graphics_ver == 9U)
 		return 9U;
+
+	/* An Ice Lake GT. */
+	if (session->vk->i915->gt.graphics_ver == 11U)
+		return 11U;
 
 	/* Every other GT the driver runs is Gen12. */
 	return 12U;

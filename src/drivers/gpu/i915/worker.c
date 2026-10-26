@@ -353,11 +353,11 @@ drv_i915_worker_create(
 
 	/*
 	 * Finds the video decode engine VCS0, which only video sessions use.
-	 * A Gen9 GT offers no video work: its VCS0 runs the Gen12 commands of
-	 * no session.
+	 * A Gen9 or Gen11 GT offers no video work: its VCS0 runs the Gen12
+	 * commands of no session.
 	 */
 	worker->video_index = -1;
-	for (index = 0U; index < engines->n && device->gt.graphics_ver != 9U; index++) {
+	for (index = 0U; index < engines->n && device->gt.graphics_ver >= 12U; index++) {
 		if (engines->ge[index].info->class == I915_VIDEO_DECODE_CLASS &&
 		    engines->ge[index].info->instance == 0) {
 			worker->video_index = (int)index;

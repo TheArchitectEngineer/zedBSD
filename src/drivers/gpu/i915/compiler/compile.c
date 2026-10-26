@@ -654,6 +654,7 @@ static void i915_compile_describe_compute(const struct i915_compile_state *state
 static void i915_compile_shared(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst);
 static void i915_compile_atomic_shared(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst);
 static void i915_compile_fence(struct i915_compile_state *state, uint32_t fences);
+static void i915_compile_fence_gen11(struct i915_compile_state *state, uint32_t fences, uint32_t reply, uint32_t descriptor);
 static void i915_compile_barrier(struct i915_compile_state *state, const struct drv_gpu_shader_ir_inst *inst);
 static int i915_compile_group_threads(const struct i915_compile_state *state);
 static void i915_compile_geometry_interface(struct i915_compile_state *state);
@@ -718,7 +719,7 @@ drv_i915_shader_compile_stage(
 
 /*
  * Compiles one shader IR into an EU binary for graphics version
- * `graphics_ver` (9 or 12).
+ * `graphics_ver` (9, 11 or 12).
  *
  * `producer` is the binary of the stage before a geometry shader, the
  * vertex kernel whose VUE the geometry shader reads its per-vertex inputs
@@ -746,8 +747,10 @@ drv_i915_shader_compile_gen(
 	/* The caller receives nothing unless the whole shader lowers. */
 	*out = NULL;
 
-	/* Only Gen9 and Gen12 have an encoding. */
-	if (graphics_ver != 9U && graphics_ver != 12U)
+	/* Only Gen9, Gen11 and Gen12 have an encoding. */
+	if (graphics_ver != 9U &&
+	    graphics_ver != 11U &&
+	    graphics_ver != 12U)
 		return ENOTSUP;
 
 	/*
@@ -3361,7 +3364,7 @@ i915_compile_texture(
  * Writes the header of a sampler message with texel offsets `offsets` into
  * register `header_grf`.
  *
- * From Gen11 on (Gen12) the header is cleared, takes the offsets in dword 2
+ * From Gen11 on (Gen11 and Gen12) the header is cleared, takes the offsets in dword 2
  * and r0.3's sampler state pointer without its low five bits in dword 3.
  * Before Gen11 (Gen9) it is a copy of r0, whose dword 3 is already the
  * sampler state pointer as the header wants it, with the offsets in dword 2.
@@ -3379,7 +3382,7 @@ i915_compile_sampler_header(
 	struct i915_eu_reg thread;
 
 	/* Gen9: r0 for all eight channels, then the offsets in dword 2. */
-	if (state->graphics_ver == 9U) {
+	if (state->graphics_ver < 11U) {
 		drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(header_grf), drv_i915_eu_grf_ud(0U));
 		dword = drv_i915_eu_grf_ud(header_grf);
 		dword.subnr = 4U * EU_SAMPLER_HEADER_OFFSET_DWORD;
@@ -3387,7 +3390,7 @@ i915_compile_sampler_header(
 		return;
 	}
 
-	/* Gen12: zeros, the offsets, the sampler state pointer without its low bits. */
+	/* Gen11 and Gen12: zeros, the offsets, the sampler state pointer without its low bits. */
 	drv_i915_eu_mov_all(&state->code, drv_i915_eu_grf_ud(header_grf), drv_i915_eu_imm_ud(0U));
 	dword = drv_i915_eu_grf_ud(header_grf);
 	dword.subnr = 4U * EU_SAMPLER_HEADER_OFFSET_DWORD;
@@ -4964,7 +4967,7 @@ i915_compile_terminate(
 
 	/* Both colours of a dual-source blend in one write to render target 0, which ends the thread. */
 	if (state->uses_second_color != 0) {
-		if (state->graphics_ver == 9U) {
+		if (state->graphics_ver < 12U) {
 			i915_compile_terminate_dual_gen9(state);
 		} else {
 			i915_compile_terminate_dual(state);
@@ -4972,9 +4975,13 @@ i915_compile_terminate(
 		return;
 	}
 
-	/* Gen9 names any render target but 0 alone in a header. */
+	/*
+	 * Gen9 names any render target but 0 alone in a header; Gen11 does the
+	 * same, since its other form of the index, the extended descriptor's
+	 * bits 15:12, is not encodable in an immediate before Gen12.
+	 */
 	outputs = i915_compile_fs_outputs(state);
-	if (state->graphics_ver == 9U && outputs != 1U) {
+	if (state->graphics_ver < 12U && outputs != 1U) {
 		i915_compile_terminate_targets_gen9(state, outputs);
 		return;
 	}

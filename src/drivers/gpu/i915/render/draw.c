@@ -1073,7 +1073,7 @@ i915_draw_build_batch(
 	drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_SCISSOR_STATE_POINTERS, I915_GFX_DYN_SCISSOR);
 
 	/* Points it at the coarse pixel state, which only Gen12 has. */
-	if (batch->graphics_ver != GEN9_GRAPHICS_VER)
+	if (batch->graphics_ver >= 12U)
 		drv_i915_batch_pointer(batch, GEN12_CMD_3DSTATE_CPS_POINTERS, I915_GFX_DYN_CPS);
 
 	/*
@@ -1129,7 +1129,7 @@ i915_draw_build_batch(
 	drv_i915_gfx_emit_geometry_shader(batch, kernels);
 
 	/* No primitive replication, which only Gen12 has. */
-	if (batch->graphics_ver != GEN9_GRAPHICS_VER)
+	if (batch->graphics_ver >= 12U)
 		drv_i915_batch_zero(batch, GEN12_CMD_3DSTATE_PRIMITIVE_REPLICATION, GEN12_3DSTATE_PRIMITIVE_REPLICATION_DWORDS);
 
 	/* Programs the clipper, setup and rasterizer, then the pixel stage. */
