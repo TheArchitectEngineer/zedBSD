@@ -2,7 +2,7 @@
 
 # ws293-p001: render/ を vk/ に改名して回帰
 
-Status: in-progress（2026-10-27 q1602 P4: 改名・build・host 試験・5330 の回帰 PASS。cleared の判定は Q1）
+Status: cleared（2026-10-27 01:39 Q1、merge 3eef78c3e、5330 PASS）。前: in-progress（2026-10-27 q1602 P4: 改名・build・host 試験・5330 の回帰 PASS。cleared の判定は Q1）
 Parent: [WS293](../ws.md)
 Queue: q1602（P4）
 出典: 2026-10-27 ユーザー「vk/に揃えたいです。」。i915 の外の変更は 2026-10-27 に Q1 が了承（path・include・build の規則・注釈の置き換えだけ。識別子と動作は変えない）
