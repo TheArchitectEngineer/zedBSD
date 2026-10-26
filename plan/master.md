@@ -30,7 +30,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1606、WS297、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1607、WS297、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS290（GHCI 2.0 の driver）: p001 の設計 → ghci.md の疑問をユーザーに示す → 実装の Phase。試験は zedBSD の host 試験だけ（amaterrace-gpu の sim・firmware は使わない、ユーザー 2026-10-26）。WS288 の古い引き継ぎ（ws288/q1-handover-20261026.md）の「消してよい物」のうち amaterrace の物は、読み取り専用になったので消さない。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -548,8 +548,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS241](ws241/ws.md) | MG006 | nvrtx（RTX）の描画の速さ（2026-10-15 ユーザー） | incomplete（p001 in-progress、T1-697 で boost が効く） | p001 の 3 節（boost を既定に、rec submit、streams） |
 | [WS242](ws242/ws.md) | MG006 | nvrtx の RTX 20/30/40 の全モデル（2026-10-15 ユーザー） | incomplete（p001・p002 in-progress、GTX 16・RTX 30・40 を既定で有効はユーザーの決定、未実装） | p001 の再開点 1〜4 |
 | [WS243](ws243/ws.md) | MG006 | nvrtx の NVDEC で H.264（Vulkan Video）（2026-10-15 ユーザー） | incomplete（p001 を途中で一時停止、実機は WS241 の後） | p001 の再開の点（design.md） |
-| [WS244](ws244/ws.md) | MG006 | i915 の Linux 由来の code の整理（Gen9 の display を guardrail に、GT・compiler・header・license）（2026-10-15 ユーザー） | incomplete（p001〜p008 cleared、p009 は code 済みで 5330・SV7 の実機の回帰待ち（T1-710 と一緒に）、2026-10-19） | T1-710 の後に p009 の判定、dev 用の *-equiv 試験の削除 |
-| [WS245](ws245/ws.md) | MG006 | i915 の Gen12 系（display 12・13、Skylake〜Raptor Lake Refresh の方針で 5330 を特別扱いしない）の display の書き直し（2026-10-15 ユーザー） | incomplete（p046 まで実装・host 試験済み、p046 cleared 2026-10-19。p041〜p045・p050d4c は 5330・SV7 の実機の回帰待ち、p044・p045 の受け入れの読み替えは判断待ち） | 実機の回帰（5330 は全部の段の後に 1 回）と判断 |
+| [WS244](ws244/ws.md) | MG006 | i915 の Linux 由来の code の整理（Gen9 の display を guardrail に、GT・compiler・header・license）（2026-10-15 ユーザー） | completed（2026-10-27 01:54、ws.md を完了の形に、5330 の自動の回帰で判定） | — |
+| [WS245](ws245/ws.md) | MG006 | i915 の Gen12 系（display 12・13、Skylake〜Raptor Lake Refresh の方針で 5330 を特別扱いしない）の display の書き直し（2026-10-15 ユーザー） | completed（2026-10-27 01:54、ws.md を完了の形に、5330 の自動の回帰で判定） | — |
 | [WS246](ws246/ws.md) | MG006 | nvrtx の compiler を sm75.h・sm75.c にまとめて refactor（2026-10-15 ユーザー）、2026-10-22 ユーザーの指示で compiler/sm75/ の 14 file に分け直した（d73ca1f65） | incomplete（p001 cleared、出典の comment は ws247-p003 で済み） | p002（latency の表、構造） |
 | [WS247](ws247/ws.md) | MG006 | nvrtx の comment・log から開発の管理情報と出典の名前を除き、出典を block ごとに（2026-10-15 ユーザー） | completed（2026-10-15） | — |
 | [WS248](ws248/ws.md) | MG005 | Intel AX211 の driver の出典の表記（block ごとの referenced:）と規約の整理（2026-10-15 ユーザー） | incomplete（p001・p002 cleared、main 285c55e39。T1-698: 5330 の VFIO で attach・firmware・scan が整理の前と同じ、T1-700: VFIO の接続は整理の前も後も失敗（差なし）） | 5330 の素の起動で接続を確かめて completed（beta2.md の U9、2026-10-15 ユーザー「実機で接続を確かめてから完了」） |
