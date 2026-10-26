@@ -1725,8 +1725,8 @@ test_eu_vertex_shaders(void)
 
 /*
  * mview's shaders through the EU model.  mview.vert has four registers of push constants and
- * three attributes: its payload reaches r17, so its values start at r19 (the interpolation
- * temporary at r18), and nothing may write the payload.  cutout.frag discards where the texel's
+ * four attributes (the last the per-instance copy offset, whose xy shifts the clip position):
+ * its payload reaches r21, and nothing may write the payload.  cutout.frag discards where the texel's
  * alpha times the pushed alpha is below one half.
  */
 static void
@@ -1739,19 +1739,19 @@ test_eu_mview(void)
 	};
 	struct i915_shader_binary *vert, *frag, *cutout;
 	struct eu_model *m;
-	uint32_t payload[16][8];
+	uint32_t payload[20][8];
 	unsigned c, k, r;
 
 	m = malloc(sizeof(*m));
 	vert = compile_file(MVIEW_SHADERS, "mview.vert.spv", DRV_GPU_STAGE_VERTEX);
 	frag = compile_file(MVIEW_SHADERS, "mview.frag.spv", DRV_GPU_STAGE_FRAGMENT);
 	cutout = compile_file(MVIEW_SHADERS, "cutout.frag.spv", DRV_GPU_STAGE_FRAGMENT);
-	assert(vert->push_regs == 4U && vert->input_count == 3U && vert->varying_count == 2U);
+	assert(vert->push_regs == 4U && vert->input_count == 4U && vert->varying_count == 2U);
 	assert(vert->grf_used > 19U);
 	assert(frag->push_regs == 4U && frag->input_count == 2U && frag->uses_kill == 0U);
 	assert(cutout->push_regs == 4U && cutout->input_count == 2U && cutout->uses_kill == 1U);
 
-	/* mview.vert: push in r2..r5 (read as scalars), position r6.., normal r10.., texture position r14.. */
+	/* mview.vert: push in r2..r5 (read as scalars), position r6.., normal r10.., texture position r14.., copy offset r18.. */
 	eu_model_init(m);
 	for (k = 0U; k < 7U; k++)
 		for (c = 0U; c < 4U; c++)
@@ -1765,6 +1765,10 @@ test_eu_mview(void)
 		mset(m, 12U, c, 0.8f);
 		mset(m, 14U, c, 0.0625f * (float)c);
 		mset(m, 15U, c, 1.0f - 0.0625f * (float)c);
+		mset(m, 18U, c, 0.03125f * (float)c);
+		mset(m, 19U, c, -0.0625f);
+		mset(m, 20U, c, 7.0f);
+		mset(m, 21U, c, 9.0f);
 	}
 	memcpy(payload, &m->grf[COMPILE_PAYLOAD_GRF], sizeof(payload));
 	eu_model_run(m, vert);
@@ -1793,6 +1797,8 @@ test_eu_mview(void)
 			clip = columns[0][k] * p[0] + columns[1][k] * p[1];
 			clip = clip + columns[2][k] * p[2];
 			clip = clip + columns[3][k];
+			if (k < 2U)
+				clip = clip + mget(m, 18U + k, c);
 			assert(fabsf(mget(m, vue_position(vert) + k, c) - clip) <= 1e-6f);
 		}
 		/* the varyings below the handles: location 0 (texture coordinate) at r119, location 1 (shade) at r123 */

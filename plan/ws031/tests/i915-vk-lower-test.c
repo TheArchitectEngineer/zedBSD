@@ -1432,7 +1432,11 @@ test_feature_shaders(void)
 	printf("  feature: mat4 uniform read as columns times a vec4 plus an offset; vec4, array element and mat4 column of a block; 3 samplers of 2 sets\n");
 }
 
-/* mview's three shaders as shipped: mview.vert against its GLSL, cutout.frag's discard at alpha 0.5. */
+/*
+ * mview's three shaders as shipped: mview.vert against its GLSL (with the
+ * per-instance copy offset whose xy shifts the clip position), cutout.frag's
+ * discard at alpha 0.5.
+ */
 static void
 test_mview_shaders(void)
 {
@@ -1442,6 +1446,7 @@ test_mview_shaders(void)
 		{ 0.0f, 0.0f, 1.0f, 0.0f }, { 1.0f, 1.0f, 1.0f, 0.5f },
 	};
 	static const float vertex[8] = { 0.5f, -1.0f, 2.0f, 0.3f, -0.6f, 0.8f, 0.25f, 0.75f };
+	static const float copy_offset[4] = { 0.0625f, -0.125f, 7.0f, 9.0f };
 	struct drv_gpu_shader_ir *vert, *frag, *cutout;
 	struct machine m;
 	float turned[3], length2, scale, lambert, shade, clip[4], want[4], rgba[4];
@@ -1450,7 +1455,7 @@ test_mview_shaders(void)
 	vert = parse_file(MVIEW_SHADERS, "mview.vert.spv", DRV_GPU_STAGE_VERTEX);
 	frag = parse_file(MVIEW_SHADERS, "mview.frag.spv", DRV_GPU_STAGE_FRAGMENT);
 	cutout = parse_file(MVIEW_SHADERS, "cutout.frag.spv", DRV_GPU_STAGE_FRAGMENT);
-	assert(vert->push_bytes == 112U && vert->input_count == 3U && vert->output_count == 2U);
+	assert(vert->push_bytes == 112U && vert->input_count == 4U && vert->output_count == 2U);
 	assert(frag->push_bytes == 128U && cutout->push_bytes == 128U);
 
 	/* mview.vert: the rotated normal lit from a fixed direction, the position through the clip columns */
@@ -1464,6 +1469,7 @@ test_mview_shaders(void)
 	m.input[1][2] = vertex[5];
 	m.input[2][0] = vertex[6];
 	m.input[2][1] = vertex[7];
+	memcpy(m.input[3], copy_offset, sizeof(copy_offset));
 	run_ir(vert, &m);
 	for (k = 0U; k < 3U; k++) {
 		turned[k] = vertex[3] * columns[4][k] + vertex[4] * columns[5][k];
@@ -1480,6 +1486,8 @@ test_mview_shaders(void)
 		clip[k] = columns[0][k] * vertex[0] + columns[1][k] * vertex[1];
 		clip[k] = clip[k] + columns[2][k] * vertex[2];
 		clip[k] = clip[k] + columns[3][k];
+		if (k < 2U)
+			clip[k] = clip[k] + copy_offset[k];
 		assert(fabsf(m.output[SLOT_POSITION][k] - clip[k]) <= 1e-6f);
 	}
 	assert(fabsf(m.output[1][0] - shade) <= 1e-6f);
