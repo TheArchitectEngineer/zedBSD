@@ -25,6 +25,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 - 2026-10-26 23:10 ユーザー「zedBSDでは、graphicalログインは必要なく、graphicalログインをするなら、direct scanoutで限界まで3D性能を正しく計測しましょう。USBはまるごと書き換えてOKです。」→ login=graphical の起動は要らない。3D（mview）の計測は fullscreen の direct scanout（compositor が合成しない）で限界の性能を測り、direct scanout であることを確かめて記録する。Linux 側も同じ条件で比べる。10.0.10.3 の USB は丸ごと書き換えてよい。VF2（p020）でも同じ。
 
+- 2026-10-26 23:52 ユーザー「そのベンチマークですが、command組み立ては毎回やってたらVF2の方がCPUが遅いので確実に遅くなります。頂点データやインデックスはバッファに入れておいて、描画コマンドの組み立て時間が最小限になるように変更してください。でないと実際のユースケースと合わないです。ただ、別途、たくさんのコマンドをキューするようなベンチマークも、必要かもしれませんね。」→ 主の 3D の benchmark は、頂点・index を device の buffer に置き、毎 frame の command の記録を最小にする形（instancing か記録済みの command buffer の再利用）に変え、Linux の基準を測り直す。別の benchmark として、毎 frame たくさんの command を記録・submit する mode も残して測る。
+
 ## 受け入れ
 
 - desktop: frame-ops の各段が 60 fps（ws270-p007 の基準の表と同じ形で記録）。
