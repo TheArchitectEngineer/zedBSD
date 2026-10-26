@@ -3,7 +3,7 @@
 # Guardrail
 
 zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可ではない。より新しく具体的なユーザーの決定が優先する。
-規則の本文（エージェントの守ること）はリポジトリ直下の [AGENTS.md](../AGENTS.md) の「プロジェクトの規則」節にもある。
+規則の本文（エージェントの守ること）はリポジトリ直下の [AGENTS.md](../AGENTS.md) にもある（§4 担当の共通の規則・§7 禁止と承認・§9 検証）。
 
 ## 範囲と構造
 
@@ -58,7 +58,7 @@ zedBSD の貢献の規則と標準の索引。Queue・backlog・実行許可で�
 - 起動の確認は `plan/tools/boot-test.sh`（画面の login prompt）。QEMU の console log・serial log を読んで判定しない。
   WS105 の Debian 13 Linux guest は SSH の疎通と QMP の `screendump` の PNG を用いる（2026-10-01 ユーザー許可、[WS105 D25](ws105/ws.md)）。SSH はホストの loopback から QEMU の転送を経て guest に接続する。zedBSD の image は `boot-test.sh` を使う。
   機能の回帰は guest を起動しない host の試験で行い、guest の操作はシリアル（`plan/tools/guest/serial.py`）か SSH
-  （`plan/tools/guest/guest.sh`）で対話する。不具合の解析は QEMU の gdbstub・monitor・QMP で行う。詳細は [Master](master.md) の Tools 節。
+  （`plan/tools/guest/guest.sh`）で対話する。不具合の解析は QEMU の gdbstub・monitor・QMP で行う。詳細は [tools.md](tools.md) の「QEMU の解析」。
 - 回帰の範囲は Phase の性質で決める。コードの意味を変えない refactor は build（warning 0）と最後の boot test だけ。
 - 表示の build（2026-09-29 ユーザー）: demo・実機の image は既定（logo を出し `kmsg=quiet`）。GPU の driver を直す Phase では logo を無効にし
   kernel の message を画面に残す（`ZEDBSD_GRAPHICAL_BOOT=n "ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical"`）。
@@ -223,7 +223,7 @@ Event ws114-gtk-qt-port-projections-20261002: user指定の順序は[全文](sta
 
 ## WiFi の制御の権限（2026-10-02）
 
-2026-10-02 user（明示の承認）:「WiFiの制御は、networkグループに入っているユーザには許可する、でどうですか？」 → networkd は `network` group の利用者に WiFi の policy の操作（on/off・join・key）を許可する。group 外は従来どおり。秘密の鍵は利用者の store に残す（networkd に鍵を渡さない境界は不変）。[ws005-p019](ws005/phase019/phase.md)。
+2026-10-02 user（明示の承認）:「WiFiの制御は、networkグループに入っているユーザには許可する、でどうですか？」 → networkd は `network` group の利用者に WiFi の policy の操作（on/off・join・key）を許可する。group 外は従来どおり。秘密の鍵は利用者の store に残す（networkd に鍵を渡さない境界は不変）。[ws005-p019](ws005/ws.md)。
 
 ## i386 の build と試験（2026-10-02）
 
