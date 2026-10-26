@@ -122,7 +122,7 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS130](ws130/ws.md) | MG005 | IPv6 の network stack（ベータ1 は計画だけ、実装はベータ2 以降。DHCPv6 は `dhcpc -6`） | completed（2026-10-27 精査 q1608） | p009 の規約の全文は一括の見直しへ（2026-10-08 ユーザー「規約の整形…はベータ3」） |
 | [WS131](ws131/ws.md) | MG006 | libkeiland を GUI toolkit 兼 desktop 機能の抽象化層にする（app の窓の作成を含む GUI の構築を共通化） | completed（2026-10-27 精査 q1608） | p024 の規約の全文と 3 OS の回帰は一括の見直しへ |
 | [WS132](ws132/ws.md) | MG006 | /dev/system の電源管理と PnP の通知（subscriber が事象を指定）、自動 mount、Files の eject | completed（2026-10-27 精査 q1608） | p008 の蓋の自動の動作は WS052（Sleep、ベータ3）と一緒、p006 の規約は一括の見直しへ |
-| [WS133](ws133/ws.md) | MG003 | 安定版 S1 の実機試験（安定版の image を実機で起動し SSH で複数の試験を詰め込む。最初の項目は ws005-p020・p024 から移した WiFi） | completed（S1、2026-10-03。2026-10-04 の UAT は WS の外で [uat.md](uat.md)・[uat/](uat/) に記録） | 安定版 S1 の内容と試験の一覧はユーザーと決める |
+| [WS133](ws133/ws.md) | MG003 | 安定版 S1 の実機試験（安定版の image を実機で起動し SSH で複数の試験を詰め込む。最初の項目は ws005-p020・p024 から移した WiFi） | completed（S1、2026-10-03。2026-10-04 の UAT は WS の外で [uat.md](history/uat-20261004.md)・[uat/](uat/) に記録） | 安定版 S1 の内容と試験の一覧はユーザーと決める |
 | [WS134](ws134/ws.md) | MG006 | システムモニターのアプリ（Analytic Spatial UI、中央の状態コア、層構造、2026-10-03 ユーザー） | completed（2026-10-27 精査 q1608） | p010 の規約の全文は一括の見直しへ |
 | [WS135](ws135/ws.md) | MG006 | 設定の読み書きを libkeiland に一本化（libkeiland が直接か compositor の拡張で解決、監視と通知の API、desktop.conf は compositor の内部で session の開始・終了だけ読み書き。BUG-162、2026-10-03 ユーザー） | completed（2026-10-04） | — |
 | [WS136](ws136/ws.md) | MG007 | 試験の image を「WS の tests/ の config.mk ＋個別の file の複写」に揃え、過去の build/ を入力にしない（2026-10-04 ユーザー） | completed（2026-10-04） | — |

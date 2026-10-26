@@ -6,7 +6,7 @@ Status: cleared（2026-10-07 Q1 の判定: T1-281（boot-test・textinput-p013�
 Disposition: normal
 Parent: [WS131](../ws.md)
 Queue: q820（P1）
-依存: **ws131-p013・p014 が main に統合済み**（agent/p2 40b242a、[test-queue](../../test-queue.md) の TQ-1 の PASS の後に Q1 が merge）。統合前に始めない。
+依存: **ws131-p013・p014 が main に統合済み**（agent/p2 40b242a、[test-queue](../../history/test-queue-20261004.md) の TQ-1 の PASS の後に Q1 が merge）。統合前に始めない。
 目安: 3〜4h。実行者は 1 人（他の担当が `userland/desktop/` の header を触っていない時に。WS131 の D8 の単独走行）。
 
 ## ユーザーの指示と決定
@@ -172,7 +172,7 @@ git grep -l 'desktop/include/\(keiland\|keiland-ui\|truetype\|browser\)\.h' -- .
 
 ### 段 7: 試験の依頼（QEMU は自分で起動しない）
 
-[test-queue](../../test-queue.md) に「TQ-n: ws131-p026」を Q1 に足してもらう。中身は TQ-1 と同じ組（zedBSD の boot-test・textinput-p013・viewers-p008・demo-s8-s9・files-regress・titlebar-p010・menu-p003、Linux の app の PNG、FreeBSD の backend-test）と、FreeBSD の install に `include/keiui.h` が無いこと。
+[test-queue](../../history/test-queue-20261004.md) に「TQ-n: ws131-p026」を Q1 に足してもらう。中身は TQ-1 と同じ組（zedBSD の boot-test・textinput-p013・viewers-p008・demo-s8-s9・files-regress・titlebar-p010・menu-p003、Linux の app の PNG、FreeBSD の backend-test）と、FreeBSD の install に `include/keiui.h` が無いこと。
 
 ## 実施（2026-10-06、P1）
 

@@ -11,7 +11,7 @@ Queue: Q1 の指示（2026-10-05 夜、P2 g17 の Task 1、最優先）
 ## 範囲
 
 - UAT に残すのは機器（電源 button・蓋・USB の抜き差し・touchpad の指・YubiKey と NFC・音・Wi-Fi の電波・S0 idle）と全体の使用感。それ以外は AAT（エージェントが素の 5330 を SSH で操作）。
-- 今日の時点で実装済みの機能の AAT の項目と合否の基準。出典: [UAT の一覧（ws159-p005）](../../ws159/phase005/phase.md)、[plan/uat.md](../../uat.md)（2026-10-05 午後の所見と直した BUG-181・193・194・195〜197、ws099-p033、ws132-p009）、今日 merge した機能（Phone・Calendar・Mail の mock、dark mode、SKK と Languages、画面 keyboard の予測と絵文字、Settings の Users と Manage users、video player、account-admin）。
+- 今日の時点で実装済みの機能の AAT の項目と合否の基準。出典: [UAT の一覧（ws159-p005）](../../ws159/phase005/phase.md)、[plan/uat.md](../../history/uat-20261004.md)（2026-10-05 午後の所見と直した BUG-181・193・194・195〜197、ws099-p033、ws132-p009）、今日 merge した機能（Phone・Calendar・Mail の mock、dark mode、SKK と Languages、画面 keyboard の予測と絵文字、Settings の Users と Manage users、video player、account-admin）。
 - 形（2026-10-05 夜のユーザーの決定、Q1 の伝達）: シナリオは `tests/scenarios/{os,desktop,apps}/…` の文書（[plan/tests.md](../../tests.md) §3: header と 目的・準備・操作と確認（各操作に 操作・確認事項・正解・確認方法）・合格・注記）。**主役は人が読める文書で、エージェントが文書を読んで aat で操作する**。自動の script は補助（同じ id で `plan/tools/aat` の側）。suite は `tests/suites/`。実行の記録は `plan/ws173/runs/<日付>-<suite>.md`。最初に `plan/tools/aat/scenarios/` に項目の script を書き始めていたが、この形に移した。
 
 ## 作った物

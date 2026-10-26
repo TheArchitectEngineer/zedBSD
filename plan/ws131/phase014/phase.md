@@ -60,7 +60,7 @@ libkeiland の公開の名前（`keiland_*`・`KEILAND_*`、[rename-map.md](../r
 
 - ユーザーの承認: 「P2のp014の例外対応は問題ないです。承認します。」（互換の macro の無い共有の picture・artwork の内部の名前を kl_ に変えたため、files・imageview・settings・textedit・compositor の glass.c・ui/text.c の source も直した例外）。
 - 統合: ユーザー「P2のコミットをmainに入れたいので、最短のテストだけ実行してからマージしてください。」→ Q1 が agent/p2 40b242a で最短の確認（P2 の worktree の `build/q1-p014/`）: demo の config の zedBSD の image の build exit 0・自前の warning 0、rootfs に libkeiui 0、`plan/tools/boot-test.sh` PASS（login:、`/home/awe/zedBSD-worktrees/p2/build/boot-test/login.png`、QEMU）、`make keiland-linux`（gcc）exit 0・warning 0。→ main 5277761 に統合。
-- 回帰（QEMU の app の試験・Linux の clang と app の PNG・FreeBSD の backend-test）は [test-queue](../../test-queue.md) の TQ-1。Phase は Resume の残りと TQ-1 の後に判定する。
+- 回帰（QEMU の app の試験・Linux の clang と app の PNG・FreeBSD の backend-test）は [test-queue](../../history/test-queue-20261004.md) の TQ-1。Phase は Resume の残りと TQ-1 の後に判定する。
 
 ## Resume の残りの実施（q706、P2 generation14、2026-10-05、main 96276cf の上）
 

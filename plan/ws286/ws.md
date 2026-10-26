@@ -18,7 +18,7 @@
 ## 制限・引き継ぎ
 
 - **QEMU 10.0.11（host の Debian）の devcfg の model の限り**: machine の reset が devcfg の `UNLOCK` の post_write を値 0 で呼び、領域を無効にして PCAP の転送を完了できない（upstream の修正 b9b3ca738d は 10.0.11 に無い）。QEMU zynq での p008 の受け入れは、示せる物（`EMULATED 1` の判別、窓の EIO、DONE 無しの `--enable` の EIO、program の timeout の扱いと `error 42` の記録、その後の shell）に縮めた。PCAP の転送の成功は実機だけで確認している。QEMU を更新する時に再確認する。
-- **ユーザーの試験 U37**（LED の目視と SW・BTN。[plan/beta2.md](../beta2.md)）: LD0 と LD2 が点く、SW を動かすと `fpgareg read 0xc` が変わる、BTN を押すと `fpgareg wait` が戻る。LED の pin の正しさと SW・BTN の入力は register の読み戻しまでしか見ていない（実機の目視は未実施）。
+- **ユーザーの試験 U37**（LED の目視と SW・BTN。[plan/beta2.md](../history/beta2.md)）: LD0 と LD2 が点く、SW を動かすと `fpgareg read 0xc` が変わる、BTN を押すと `fpgareg wait` が戻る。LED の pin の正しさと SW・BTN の入力は register の読み戻しまでしか見ていない（実機の目視は未実施）。
 - 別の WS に移した物: SD と SD の起動・LAN と SSH・FIT の起動は [WS289](../ws289/ws.md)。USB（EHCI の split transaction、ZYBO の ChipIdea）は [WS287](../ws287/ws.md)。SwitchBot は ZYBO に未接続（板は USB 給電、reset は JTAG か SLCR）。
 - 未着手の残件（今の WS は無い。必要になった時に Q1 が WS を立てる）:
   - PL310（L2 cache）は off のまま。outer cache の操作は無い（design §3.7・§3.11）。

@@ -10,7 +10,7 @@
 - 写し（Master の WS の一覧、ws.md の Phase の表、Queue Board、Bug Board）が本体とずれた。
   - 10-05 に 20〜30 件、10-06〜10-08 の並列の作業の時期に 50 件台に増え、その後は横ばい。
   - 新しい WS・Queue・Bug の行が足されないままになった。
-- 詳しくは [audit-20261015/report.md](agents/audit-20261015/report.md)。
+- 詳しくは [audit-20261015/report.md](history/agents-audit-20261015/report.md)。
 
 ## 1. 書く前に、出力で確かめる
 
@@ -64,4 +64,4 @@
 
 ## 5. 既知の残り
 
-[audit-20261015/report.md](agents/audit-20261015/report.md) の「次の session で直す物」。
+[audit-20261015/report.md](history/agents-audit-20261015/report.md) の「次の session で直す物」。
