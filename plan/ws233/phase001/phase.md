@@ -126,7 +126,8 @@ QEMU・実機は使っていない（build の取り方だけの変更で、imag
 
 未実施:
 
-- 既存の package の試験（`plan/ws031/tests/run-i915-firmware-package-test.sh`・`plan/ws004/tests/run-intelax211-firmware-package-test.sh`・`plan/ws143/tests/intelbt-firmware-package-test.sh`・`plan/ws215/tests/brcmbt-firmware-package-test.sh`・`plan/ws206/tests/bcm43455-firmware-package-test.sh`）: script の中に host の `rm -rf`（trap）があり、担当は流さない（2026-10-06・10-07 の規則）。読んだ範囲では、fixture は既定で聞かず（`*_LICENSE_PROMPT ?= n`）、`*_ZEDBSD_URL` は既定で空、production の値の grep の行は変えていないので通るはず（推測）。Q1 か T1 に流してもらう。
+- 既存の package の試験（`plan/ws233/tests/run-i915-firmware-package-test.sh`・`plan/ws004/tests/run-intelax211-firmware-package-test.sh`・`plan/ws143/tests/intelbt-firmware-package-test.sh`・`plan/ws215/tests/brcmbt-firmware-package-test.sh`・`plan/ws206/tests/bcm43455-firmware-package-test.sh`）: script の中に host の `rm -rf`（trap）があり、担当は流さない（2026-10-06・10-07 の規則）。読んだ範囲では、fixture は既定で聞かず（`*_LICENSE_PROMPT ?= n`）、`*_ZEDBSD_URL` は既定で空、production の値の grep の行は変えていないので通るはず（推測）。Q1 か T1 に流してもらう。
+  - 2026-10-27 q1604（P4）: i915 の試験を `plan/ws031/tests/` から `plan/ws233/tests/` へ移した。DMC 6 file と新しい cache の名前（`<revision>-all-dmc`）に合わせ、host の `rm -rf` の trap をやめて `plan/tools/fresh-out.sh` の `build/tmp/ws233-i915-firmware` に替えた。今の設計にも合わせた: 取得の retry、一覧の platform の列、driver が on なら既定で選ばれること（firmware.list）。P4 が流して PASS。
 - 端末（tty）からの対話の確かめ（agent の shell に tty が無い）。
 - image の build（disk-image）と RPi4 の image の中身の比較（`check-rpi4-hdd-image.py`）、QEMU の boot: T1 に依頼する（下の 6）。
 - GitHub の repo からの実際の取得（repo が未公開）。

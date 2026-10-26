@@ -34,7 +34,7 @@ together with the complete `LICENSE.i915`, WHENCE, and
 manifest. `LICENSE.i915` permits redistribution of the unmodified binaries
 only, with its notice, so these bytes belong to this package and not to the
 kernel. Its focused check is
-`plan/ws031/tests/run-i915-firmware-package-test.sh`. `intelbt/` (package
+`plan/ws233/tests/run-i915-firmware-package-test.sh`. `intelbt/` (package
 `intelbt-firmware`) uses the same official commit and installs the whole
 Solar block of WHENCE (`BT_Solar_REL82122_23.50.26053.82122`): the three
 `intel/ibt-*-0041.{sfi,ddc}` pairs that bluetoothd loads into an AX211's
