@@ -3,7 +3,7 @@
 # ws291-p003 RDNA の投入の経路（非同期の submit、record・submit の費用）
 
 - 親: [WS291](../ws.md)。
-- 状態: in-progress（2026-10-27 00:50 P2、q1603-i01）。受け入れの条件を満たした（下の結果、2026-10-27 04:30）。clearance は Q1 の判定。
+- 状態: cleared（2026-10-27 04:31 Q1、merge 5914a9074）。前: in-progress（2026-10-27 00:50 P2、q1603-i01）。受け入れの条件を満たした（下の結果、2026-10-27 04:30）。clearance は Q1 の判定。
 - 出典: 2026-10-27 00:44 ユーザー（Q1 の問い「改善をどの順で？」へのクリック）「投入の経路から（推し）」。GPU 側（NGG の culling・HTILE・tiled）は後の Phase。
 - 依存: p002（cleared）・p002a（cleared）。
 
