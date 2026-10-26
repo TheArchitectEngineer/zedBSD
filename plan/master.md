@@ -534,7 +534,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS227](ws227/ws.md) | MG002 | menuconfig の Base・Desktop の表示名の整理、画像と PDF の library を Desktop へ、Linux・FreeBSD に zedBSD 独自の base の命令（2026-10-14 ユーザー） | completed（2026-10-14） | — |
 | [WS228](ws228/ws.md) | MG002 | 独自実装の簡単な vi を base に足す（2026-10-14 ユーザー、ベータ2 の最後の機能） | completed（2026-10-14） | — |
 | [WS229](ws229/ws.md) | MG006 | i915 を Gen9・Gen9.5（Core の 6〜10 世代の iGPU）に対応（GOP のままで GT と EU → 最後に display controller）（2026-10-14 ユーザー、ベータ2 に入る、既定で有効） | incomplete（p001〜p005・p007 cleared、display controller の p006 はベータ3） | P1（q976 p001） |
-| [WS230](ws230/ws.md) | MG006 | i915 の GuC 対応（2026-10-14 ユーザー、ベータ3） | planning | 未割当 |
+| [WS230](ws230/ws.md) | MG006 | i915 の GuC 対応（2026-10-14 ユーザー、ベータ3） | canceled（2026-10-27 04:13 Q1: 2026-10-27 ユーザー「i915のGuCは実装せず、xeドライバを開発するときにGuC対応を実装することにします。」、WS295 へ） | 未割当 |
 | [WS231](ws231/ws.md) | MG002 | AHCI（SATA）の driver（2026-10-14 ユーザー、ベータ2 に入る） | incomplete（p001・p002 cleared、NCQ・TRIM・hotplug・ATAPI は後） | — |
 | [WS232](ws232/ws.md) | MG002 | menuconfig に i386（PC-9800・PC/AT）と Retro の menu（Xzed・zwm・zshell・zterm）（2026-10-14 ユーザー） | incomplete（2026-10-14 P1: p004 を追加・実行中） | — |
 | [WS233](ws233/ws.md) | MG002 | firmware を awemorris/zedBSD-firmware から取る | incomplete（2026-10-14 Q1 起動、P1） | — |

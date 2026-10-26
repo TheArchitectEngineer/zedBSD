@@ -3,7 +3,7 @@
 # WS230: i915 の GuC 対応（GuC の firmware の読み込み・投入・電源の管理）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-14 Q1 作成）
+Status: canceled（2026-10-27 04:13 Q1、i915 の GuC は実装しない（ユーザー）、GuC は WS295 の xe で）。前: planning（2026-10-14 Q1 作成）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O1
