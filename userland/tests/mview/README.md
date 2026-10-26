@@ -31,7 +31,9 @@ It shows a model converted by `tools/fbx2mview.py` (format:
 | `--size=WxH` | the window's size when the compositor leaves it to the viewer (64–4096 each, default 640x480) |
 | `--content=none\|video\|game` | the content type the window says it shows (`wp_content_type_v1`, when the compositor offers it); `game` lets Keiland show a fullscreen window straight on the display (default `none`) |
 | `--present=fifo\|mailbox\|immediate` | the swapchain's presentation mode; FIFO when the surface does not offer the one asked (default `fifo`) |
-| `--copies=N` | draws N copies of the model (1–4096) side by side in a grid, the viewer moved back so the grid shows: a heavier scene for measuring (default 1) |
+| `--copies=N` | draws N copies of the model (1–65536) side by side in a grid, the viewer moved back so the grid shows: a heavier scene for measuring (default 1).  Each copy's place is a per-instance vertex attribute (location 3) |
+| `--draws=instanced\|each` | one instanced draw per material group for all copies (default), or each copy its own draws (16 per copy for qs40): many commands in one command buffer |
+| `--submits=N` | splits each frame into N command buffers submitted one by one (1–4096; the first clears, the last presents), the copies shared out among them |
 
 ## Controls
 
@@ -52,7 +54,7 @@ synthesized. Without a `wl_seat` the viewer still renders, without input.
 
 ```
 MVIEW START run=<t> model=<dir> vertices=<n> triangles=<m> materials=<k> textures=<t>[ shading=pixel]
-MVIEW PRESENT run=<t> asked=<mode> mode=<mode> copies=<n> content=<type> content_manager=0|1
+MVIEW PRESENT run=<t> asked=<mode> mode=<mode> copies=<n> draws=instanced|each submits=<n> content=<type> content_manager=0|1
 MVIEW INPUT run=<t> kind=motion|button|axis|key <event fields> yaw=<deg> pitch=<deg> distance=<d> pan=<x>,<y>
 MVIEW FRAME run=<t> frame=<n> yaw=<deg> pitch=<deg> distance=<d> pan=<x>,<y>
 MVIEW DONE run=<t> frames=<n> reason=quit|closed|timeout|frames

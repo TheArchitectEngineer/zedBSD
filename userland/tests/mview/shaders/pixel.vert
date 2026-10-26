@@ -10,13 +10,16 @@
  *
  * The model, view and projection matrices and the normal matrix come from
  * the scene's uniform buffer.  The vertex passes its view-space position and
- * normal on; the fragment stage lights every pixel.
+ * normal on; the fragment stage lights every pixel.  Each instance is one
+ * copy of the model (--copies), shifted in view space by the zw of its
+ * per-instance offset.
  */
 #version 450
 
 layout(location = 0) in vec3 position;
 layout(location = 1) in vec3 normal;
 layout(location = 2) in vec2 texture_position;
+layout(location = 3) in vec4 copy_offset;
 
 layout(location = 0) out vec2 texture_coordinate;
 layout(location = 1) out vec3 view_position;
@@ -35,7 +38,7 @@ layout(set = 0, binding = 1) uniform Scene {
 
 void main()
 {
-    vec4 eye = scene.view * (scene.model * vec4(position, 1.0));
+    vec4 eye = scene.view * (scene.model * vec4(position, 1.0)) + vec4(copy_offset.zw, 0.0, 0.0);
 
     view_position = eye.xyz;
     view_normal = (scene.normal_matrix * vec4(normal, 0.0)).xyz;

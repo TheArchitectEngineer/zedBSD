@@ -4,7 +4,7 @@
 
 - Master: [plan/master.md](../master.md)（2026-10-26 23:05 作成）。Primary Milestone: MG006。前提: [WS039](../ws039/ws.md)（amdrdna の driver、display・executor・desktop は実機で動く）。手本: [ws270-p007](../ws270/phase007/phase.md)（VF2 の PowerVR の desktop の速さ）。
 - 追加（2026-10-26 23:08 ユーザー「WS291にさらにフェーズを追加して、DebianマシンでGPUを入れ替えて、NVIDIAでも同様に、デスクトップの60fpsと、モデルの50fpsをやります。これはP2がamdrnaの作業を終えてからです。また、さらにフェーズを増やして、PowerVRのドライバでも、50fpsをやります。VF2での作業は、RDNAで作業手順を確立したあとで、P3に依頼します。」）: NVIDIA（同じ Debian の機械で GPU を入れ替え、P2、RDNA の後）と PowerVR（VF2、P3、RDNA で手順を確立した後）を同じ WS に足す。
-- Status: planned（2026-10-26 23:05 新設）
+- Status: incomplete（2026-10-26 23:05 新設、p001 cleared）
 - 出典: 2026-10-26 23:05 ユーザー「P2も立てます。ssh 10.0.10.3で、RDNAの接続されたDebianに入れます。USBメモリにはzedBSDが入っています。この環境でカーネルをアップデートしてUEFIの起動項目を変更しながら再起動し、amdrdnaドライバの改善を行ってほしいです。要領としては、PowerVRのドライバの改善のときと同じようにコンポジタを操作して時間を計測し、改善できる部分を改善してほしいです。デスクトップで60fpsをまずは達成します。スクリプトは既存のものがあると思います。もしかしたらすでに60fpsになっているかもしれません。そのあと、Vulkan Model Viewerを使ったり、その改良版を作ったりして、重たい3DシーンをLinuxドライバと同じfpsで描画できるように調整します。一つのやり方として思うのは、Linuxで60fpsを切るような重さに3Dモデルの量を調整し、たとえば50fpsにします。これをzedBSDでも50fps達成できるように調整し、できれば55fpsくらいまで、Linuxよりよくなるまでプロファイルベースで改善します。できそうですか？」
 
 ## 単一の到達目標
@@ -39,7 +39,7 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | desktop の計測と 60 fps（既に 60 fps なら記録して閉じる） | WS039 p009 | cleared（2026-10-26 23:45、main bad29b52f、全段 60 fps） |
-| [p002](phase002/phase.md) | Linux で約 50 fps の 3D の scene を決める（mview の拡張を含む）、zedBSD との差を測る | p001、zedBSD の計測は p002a | in-progress（Linux 50.9 fps: qs40 ×1500、MAILBOX、1920x1080） |
+| [p002](phase002/phase.md) | Linux で約 50 fps の 3D の scene を決める（mview の拡張を含む）、zedBSD との差を測る | p001、zedBSD の計測は p002a | in-progress（Linux 50.0 fps: qs40 ×6500 instanced、MAILBOX、1920x1080。command の重さの組 big-N・subs-N も測った） |
 | [p002a](phase002a/phase.md) | amdrdna の executor に depth の attachment・index の draw（DrawIndexed）・mip の texture を足す（mview が動く 3D の機能、2026-10-26 23:45 ユーザー「機能を足してから比較」） | p002 の Linux の基準 | planned |
 | p003〜p009 | RDNA: profile による改善（p002 の結果で立てる） | p002 | — |
 | p010 | NVIDIA: GPU の入れ替え（ユーザー）、desktop の計測と 60 fps | RDNA の Phase の全部、P2 | planned |
