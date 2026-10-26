@@ -22,7 +22,7 @@
 <!-- master:merge:start -->
 - 全担当の成果は main に merge 済み。未 merge の branch `agent/p2-ws288-p006`（WS288 p006 の ZYBO 向け）は WS288 の終了で使わない（WS290 の設計で参照するだけ）。
 - 既定の config の注意: Pi の BT は config-rpi4.mk・config-rpi5.mk で n（ユーザー）、Pi 5 の GPU（CONFIG_DRIVER_BCM2712_GPU）は CI では n、fan（CONFIG_DRIVER_RPI5_FAN）は y、CI の VF2 は CONFIG_POWERVR_DEBUG n。
-- firmware は全部 zedBSD-firmware（rev e13c96f）から取る（VF2 の dtb、Pi 5 の起動の dtb、NVIDIA の GSP を含む）。
+- firmware は全部 zedBSD-firmware（rev fcdfccf、2026-10-27 i915 の DMC 6 file を push）から取る（VF2 の dtb、Pi 5 の起動の dtb、NVIDIA の GSP を含む）。
 <!-- master:merge:end -->
 
 ### Q1 の次の手順
@@ -645,6 +645,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-27 01:24 ユーザー（Q1 の問い「zedBSD-firmware の fcdfccf を push して zedbsd-firmware.mk の revision を上げてよいですか？」へ）「push してよい」→ co-authored-by 0・WIP だけを確かめて push（e13c96f..fcdfccf）、zedbsd-firmware.mk を fcdfccf に。
 - 2026-10-27 01:00 Q1 の技術判断（WS291 p003、P2 の相談）: libvulkan の command の stream を VRAM の blob に置き UC の窓で読む所（5.4 MB/s）を消すため、uapi/gpu.h に CPU だけが触る blob の flag を 1 bit 足し（案 A、未対応の driver は無視）、libvulkan の transport だけで使う。HAL は変えない。plan/ws039/tests/amdrdna-vk-host-test.c の古い check は P2 が直す。
 - 2026-10-27 00:44 ユーザー（Q1 の問い「RDNA の改善をどの順で？」へのクリック）「投入の経路から（推し）」→ WS291 p003（q1603、P2）: 非同期の submit、record・submit の費用。GPU 側は p004 以降。
 - 2026-10-27 00:22 ユーザー「drivers全体で、開発の管理情報が含まれているコードが多く残っています。たとえばusb-bt.cです。usb/はコーディングスタイルへのフィットもXXX:で指摘されています。drivers以下で、gpu/はすでにやったので除いて、開発管理情報をコメントから削除するタスクをWSとして追加してください。」 → WS296 を新設（WS251 の drivers の残りを移す）、18 LW。
