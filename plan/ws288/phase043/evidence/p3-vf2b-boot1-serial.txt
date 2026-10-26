@@ -1,0 +1,408 @@
+
+U-Boot SPL 2021.10 (Oct 10 2025 - 11:25:33 +0800)
+LPDDR4: 8G version: g8ad50857.
+Trying to boot from SPI
+
+OpenSBI v1.2
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|___/_____|
+        | |
+        |_|
+
+Platform Name             : StarFive VisionFive V2
+Platform Features         : medeleg
+Platform HART Count       : 5
+Platform IPI Device       : aclint-mswi
+Platform Timer Device     : aclint-mtimer @ 4000000Hz
+Platform Console Device   : uart8250
+Platform HSM Device       : ---
+Platform PMU Device       : ---
+Platform Reboot Device    : pm-reset
+Platform Shutdown Device  : pm-reset
+Platform Suspend Device   : ---
+Firmware Base             : 0x40000000
+Firmware Size             : 248 KB
+Firmware RW Offset        : 0x20000
+Runtime SBI Version       : 1.0
+
+Domain0 Name              : root
+Domain0 Boot HART         : 1
+Domain0 HARTs             : 0*,1*,2*,3*,4*
+Domain0 Region00          : 0x0000000002000000-0x000000000200ffff M: (I,R,W) S/U: ()
+Domain0 Region01          : 0x0000000040000000-0x000000004001ffff M: (R,X) S/U: ()
+Domain0 Region02          : 0x0000000040020000-0x000000004003ffff M: (R,W) S/U: ()
+Domain0 Region03          : 0x0000000000000000-0xffffffffffffffff M: (R,W,X) S/U: (R,W,X)
+Domain0 Next Address      : 0x0000000040200000
+Domain0 Next Arg1         : 0x0000000042200000
+Domain0 Next Mode         : S-mode
+Domain0 SysReset          : yes
+Domain0 SysSuspend        : yes
+
+Boot HART ID              : 1
+Boot HART Domain          : root
+Boot HART Priv Version    : v1.11
+Boot HART Base ISA        : rv64imafdcbx
+Boot HART ISA Extensions  : none
+Boot HART PMP Count       : 8
+Boot HART PMP Granularity : 4096
+Boot HART PMP Address Bits: 34
+Boot HART MHPM Count      : 2
+Boot HART MIDELEG         : 0x0000000000000222
+Boot HART MEDELEG         : 0x000000000000b109
+
+
+U-Boot 2021.10 (Oct 10 2025 - 11:25:33 +0800), Build: jenkins-github_visionfive2_6.12-16
+
+CPU:   rv64imacu_zba_zbb
+Model: StarFive VisionFive V2
+DRAM:  8 GiB
+MMC:   sdio0@16010000: 0, sdio1@16020000: 1
+Loading Environment from SPIFlash... SF: Detected gd25lq128 with page size 256 Bytes, erase size 4 KiB, total 16 MiB
+*** Warning - bad CRC, using default environment
+
+StarFive EEPROM format v2
+
+--------EEPROM INFO--------
+Vendor : StarFive Technology Co., Ltd.
+Product full SN: VF7110B1-2253-D008E000-00005015
+data version: 0x2
+PCB revision: 0xb2
+BOM revision: A
+Ethernet MAC0 address: 6c:cf:39:00:4a:8a
+Ethernet MAC1 address: 6c:cf:39:00:4a:8b
+--------EEPROM INFO--------
+
+In:    serial
+Out:   serial
+Err:   serial
+Model: StarFive VisionFive V2
+Net:   eth0: ethernet@16030000, eth1: ethernet@16040000
+Hit any key to stop autoboot:  2  1  0 
+switch to partitions #0, OK
+mmc1 is current device
+Try booting from MMC1 ...
+490 bytes read in 2 ms (239.3 KiB/s)
+zedBSD: loading from the SD card or eMMC
+24576 bytes read in 4 ms (5.9 MiB/s)
+32040 bytes read in 4 ms (7.6 MiB/s)
+7[r[999;999H[6n8Card did not respond to voltage select! : -110
+** Unable to read file ubootefi.var **
+Failed to load EFI variables
+RV64 UEFI ENTRY
+RV64 HART protocol 0x0000000000000001
+RV64 GOP mode 0 of 1 0x0 format 1 scanline 0 base 0x00000000fe000000 size 0x0000000000000000
+RV64 GOP not handed over: empty mode
+RV64 VOLUME 5A45-4253
+RV64 KERNEL vmunix
+RV64 PARAMS boot0=UUID=5A45-4253 rootpart=PARTLABEL=zedBSD-root login=graphical
+RV64 KERNEL 0x0000000080200000
+RV64 ENTRY 0x0000000080200000
+RV64 FDT 0x00000000f66ab000
+RV64 INITRD 0x0000000000000000
+RV64 INITRD SIZE 0x0000000000000000
+RV64 HANDOFF 0x00000000f66aa000
+RV64 RESERVED 0x0000000047f00000 size 0x000000000000b000
+RV64 RESERVED 0x00000000f66c2000 size 0x0000000000001000
+RV64 RESERVED 0x00000000f66c6000 size 0x0000000000003000
+RV64 RESERVED 0x00000000f66ca000 size 0x0000000000004000
+RV64 RESERVED 0x00000000f7efd000 size 0x0000000000001000
+RV64 UEFI EXIT
+clk u0_mipitx_dphy_clk_txesc already disabled
+RISCV64 LOADER handoff=f66aa000 fdt=f66ab000 initrd=0+0
+RISCV64 LOADER layout=2 reserved=5 kept=5
+RISCV64 ENTRY hart=1 image=80200000
+RISCV64 SBI v1.0 impl 1 version 10002 srst 1 dbcn 1
+RISCV64 FDT PASS phys=f66ab000 size=32768 timebase=4000000
+RISCV64 BOARD visionfive2 ccache=2010000
+RISCV64 FRAMEBUFFER unavailable (2); firmware console only
+RISCV64 SMP 4 CPUs (device tree 4 usable of 5, limit 8)
+RISCV64 MEMORY base=40000000 total=4096 MiB free=4086 MiB
+RISCV64 PAGING PASS
+RISCV64 W^X PASS
+RISCV64 CONTEXT PASS
+RISCV64 PLIC sources=136 context=2
+RISCV64 TRAP READY
+boot: kernel heap, process, and scheduler initialization
+RISCV64 SMP cpu 1 online (hart 2)
+RISCV64 SMP cpu 2 online (hart 3)
+RISCV64 SMP cpu 3 online (hart 4)
+RISCV64 HAL READY SBI v1.0 PAGING PASS TIMER TICK
+RISCV64 SMP 4 ONLINE
+I/O pool large=16 small=16 resident=1118208 budget=67108864
+boot: HAL initialized successfully. [cpu 4, memory 4096MB, timer 1ms]
+boot: CPUs ready: 4
+boot: at 29 ms: the HAL and the CPUs are ready
+boot: platform device discovery
+boot: at 37 ms: the platform's devices are being discovered
+visionfive2: no framebuffer (6)
+visionfive2: ccache at 0x2010000, cache maintenance on
+visionfive2: pll0 1000000000 Hz (0), pll1 1066000000 Hz (0), pll2 1188000000 Hz (0)
+visionfive2: axi_cfg0 396000000 Hz (0), sdcard 49500000 Hz (0)
+visionfive2: SD card present (gpio 41)
+usb: URB completion contract q009-release-acquire-v1
+pcie0: PLDA at 2b000000, configuration 940000000, interrupt 56
+pcie0: firmware left the link down
+pcie0: link up
+pcie0: 01:00.0 BAR0 at 30000000 (4096 bytes)
+xhci: pci 0000:01:00.0 id=1106:3483 sub=1106:3483 rev=01 parent=0000:00:00.0
+xhci: pci 0000:01:00.0 BAR0 type=64 size=00000000:00001000 original=00000000:30000000/00000000:30000004 final=00000000:30000000/00000000:30000004 mapped=4096
+xhci: pci 0000:01:00.0 command=0000->0002 (MEM on, MASTER off)
+xhci: pci 0000:01:00.0 caps len=20 version=0100 hcs1=05000420 hcs2=fc000031 hcc1=002841eb dboff=00000100 rtsoff=00000200 reject=00000000:ok
+usb0: xHCI, 5 root ports
+xhci: PCI controller, version=100 ports=5 slots=32 irq=1 INTx
+pcie1: PLDA at 2c000000, configuration 9c0000000, interrupt 57
+pcie1: MSI at 190 (register 0), 32 vectors
+pcie1: firmware left the link down
+pcie1: link up
+pcie1: 01:00.0 BAR0 at 38000000 (131072 bytes)
+pcie1: 01:00.0 BAR1 at 38020000 (65536 bytes)
+ghci: host memory reached uncached (bus DMA coherent)
+ghci: polled every 1 ms (CONFIG_GHCI_POLL)
+ghci: ghci:AMAT:ATG1: session protection: 31 sessions, 64 grants
+ghci: ghci:AMAT:ATG1: no Vulkan executor (42)
+ghci: ghci:AMAT:ATG1: ready (GHCI 1.0, caps 5d661b5f, local 1024 MiB, window 0 MiB, display 1, vulkan 0)
+dw-axi-dmac: 16050000, 4 channels, irq 73, coherent
+vf2-pwmdac: sample clock 12122448 Hz, 47353 samples/s
+vf2-pwmdac: 100b0000, DMA request 22
+powervr: no display: no boot framebuffer (6)
+vf2-pmu: domain 2 on, state 3 -> 7
+vf2-gpu: clock 20 isp_2x: 594000000 Hz (error 0)
+vf2-gpu: clock 21 isp_axi: 297000000 Hz (error 0)
+vf2-gpu: clock 45 gpu_core: 594000000 Hz (error 0)
+vf2-gpu: clock 46 gpu_core_clk: 594000000 Hz (error 0)
+vf2-gpu: clock 47 gpu_sys_clk: 297000000 Hz (error 0)
+vf2-gpu: clock 48 gpu_apb: 49500000 Hz (error 0)
+vf2-gpu: clock 49 gpu_rtc_toggle: 2000000 Hz (error 0)
+vf2-gpu: clock 50 noc_bus_gpu_axi: 594000000 Hz (error 0)
+vf2-gpu: pll 2: 1188000000 Hz (error 0)
+powervr: BXE 36.50.54.182 at 594000000 Hz, ALIAS OK
+boot: at 5793 ms: a GPU device began attaching
+vf2-pmu: domain 4 on, state 7 -> 17
+powervr: firmware: file start
+dc8200: own mode 1920x1080@60 clock 148500 kHz model 8200 rev 5720 cid 30e fb 40260000/7680 format 2
+vf2-mmc: sample phase 0, sysreg 9c field 0
+dw-mmc: mmcblk0 controller version 5342290a, FIFO 32 x 4 bytes, ciu 49500000 Hz
+dw-mmc: mmcblk0 SDXC card SA128, manufacturer 02, OEM TM, revision 7.6, serial 4a378939
+dw-mmc: mmcblk0 244023296 blocks of 512 bytes (119152 MiB)
+dw-mmc: mmcblk0 bus 4-bit, 49500000 Hz, high speed
+visionfive2: SD card is mmcblk0
+vf2-ethernet: bus clock 198000000 Hz (0)
+dw-eqos: en0 version 4152 irq 7
+dw-eqos: en0 PHY 0 id 4f51e91b (YT8531)
+yt8531: rx delay step 10, tx delay step 10, drive clock 6 data 3
+dw-eqos: en0 ready, MAC 6c:cf:39:00:4a:8a, DMA 40 bit, coherent
+visionfive2: Ethernet is en0
+visionfive2: no ramdisk; the boot device is mmcblk0
+boot: platform devices detected: 1
+boot: at 6159 ms: the platform's devices are attached
+gpt: mmcblk0 protective MBR extent mismatch: advertised-last=804863 gpt-last=244023295; using GPT
+visionfive2: mmcblk0 has 5 partitions
+visionfive2: mmcblk0 partition 1 start 4096 blocks 4096 (2 MiB) "reserved"
+visionfive2: mmcblk0 partition 2 start 8192 blocks 8192 (4 MiB) "reserved"
+visionfive2: mmcblk0 partition 3 start 16384 blocks 131072 (64 MiB) "EFI system", EFI system
+visionfive2: mmcblk0 partition 4 start 147456 blocks 524288 (256 MiB) "zedBSD-root"
+visionfive2: mmcblk0 partition 5 start 671744 blocks 131072 (64 MiB) "zedBSD-scratch"
+boot: at 6217 ms: the boot storage is discovered
+boot: parameters: boot0=UUID=5A45-4253 rootpart=PARTLABEL=zedBSD-root login=graphical
+boot: VFS initialization
+vfs: boot BIOS=80 MBR partition=1 devices=1
+vfs: native boot disk=mmcblk0 physical disks=1
+xhci: port 1 reset complete portsc=40000e03
+gpt: mmcblk0 protective MBR extent mismatch: advertised-last=804863 gpt-last=244023295; using GPT
+vfs: scan mmcblk0 geometry error=21: 5 entries
+vfs: mmcblk0 partition 1 start=00000000:00001000 data=00000000:00001000 blocks=00000000:00001000
+usb0: device 1 port 1 2109:3431 class 09 configuration=1 configured
+vfs: mmcblk0 partition 2 start=00000000:00002000 data=00000000:00002000 blocks=00000000:00002000
+usb0: device 1 interface 0 class 09/00/00 driver=usb-hub
+vfs: mmcblk0 partition 3 start=00000000:00004000 data=00000000:00004000 blocks=00000000:00020000
+vfs: mmcblk0 partition 4 start=00000000:00024000 data=00000000:00024000 blocks=00000000:00080000
+vfs: mmcblk0 partition 5 start=00000000:000A4000 data=00000000:000A4000 blocks=00000000:00020000
+vfs: boot0 UUID=5A45-4253 -> /dev/mmcblk0p3 (private FAT)
+vfs: rootpart selector PARTLABEL=zedBSD-root resolved to /dev/mmcblk0p4
+usb0: hub 1, 4 ports
+vfs: mounting runtime filesystems...
+vfs: runtime filesystems mounted
+vfs: boot0 (ESP) published at /boot/boot0
+boot: at 7133 ms: the VFS is initialized
+boot: memory 4194304 KiB total, 4172424 KiB free, 9976 KiB reserved
+boot: at 7142 ms: init is starting
+boot: starting init /sbin/init
+
+dw-mmc: read of 32 blocks at 175600 failed (5, status a4), try 1 (errors 1)
+dw-mmc: sample phase 1 (phases 1-1 read)
+dw-mmc: read of 32 blocks at 175600 failed (5, status a4), try 2 (errors 2)
+dw-mmc: data errors at high speed, card clock down to 24750000 Hz
+powervr: firmware: file done (1492 ms)
+powervr: firmware: image start
+powervr: firmware: image done (2 ms)
+powervr: firmware: processor start
+powervr: firmware: processor done (3 ms)
+powervr: firmware: memory start
+powervr: firmware: system flags 0x00000010, os flags 0x00000000, core clock 594000000 Hz
+powervr: firmware: memory done (13 ms)
+powervr: firmware: interrupt start
+powervr: firmware: interrupt done (3 ms)
+powervr: firmware: start start
+powervr: firmware: start: out of reset but the Garten; cache
+powervr: firmware: start: MIPS wrapper
+powervr: firmware: start: processor out of reset (started flag before 0x0)
+powervr: firmware: start done (20 ms)
+powervr: firmware: boot start
+powervr: firmware: boot: started 0x1 at 3718102, marker 1, hardware identity 3/0x3600b6, firmware identity 3/0x3600b6
+powervr: firmware: boot done (13 ms)
+powervr: firmware: health check start
+powervr: firmware: health check done (4 ms)
+powervr: firmware 1.1 build 6976702 running, health check ok, 1 iintnietrr: upsttas,rt 0e dr ebpoolitleosg
+ ppoiwde r4vr:
+ fiinrmiwt:ar gee: totyk_
+copnowsoelrevr r:e fpliracmweda rbey:  rgernedeeterr no
+de start
+init: started syslogd pid 5
+powervr: fiirnmiwta: res:t arstloedt  v9:o luremtedu rpni 0dx 6dead0090 not seen, execu
+ted count 138 reachineid;t :t astkearnt easd  aeuxdecioutde pdid
+ 7
+dw-mmc: read of 16 blocks at 170944 failed (5, status a4), try 1 (errors 3)
+audiod: /dev/dsp0, 48000 Hz, 1024 frames a period, mmapVOLUMED READY volumedsw=-0mm
+c: r
+ead of 128 blocks at 157600 failed (5, status a4), try 1 (errors 4)
+dw-mmc: read of 128 blocks at 176160 failed (5, status a4), try 1 (errors 5)
+init: started networkd pid 9
+networkd: auth result=admitted role=root-all pid=10 euid=0 egid=0
+bootlog: keeping the kernel log in /boot/boot0/log/boot-000075.txt
+networkd: lo0: IPv6 on
+networkd: auth result=admitted role=root-all pid=10 euid=0 egid=0
+networkd: auth result=admitted role=root-all pid=10 euid=0 egid=0
+dw-eqos: en0 RX/TX enabled
+networkd: auth result=admitted role=root-all pid=15 euid=0 egid=0
+init: started sshd pid 16
+init: started cron pid 17
+init: started greeter pid 18
+init: started netclock pid 19
+init: system running
+dw-mmc: read of 8 blocks at 255216 failed (5, status a4), try 1 (errors 6)
+dw-mmc: read of 16 blocks at 211040 failed (5, status a4), try 1 (errors 7)
+dw-mmc: read of 16 blocks at 213040 failed (5, status a4), try 1 (errors 8)
+dw-mmc: read of 16 blocks at 212896 failed (5, status a4), try 1 (errors 9)
+dw-eqos: en0 link unep t1w0or00k dM:b epsn 0:fu lIPl v6du oplnex
+
+powervr: coherency (firmware writes): NOT COHERENT, control INCONCLUSIVE, 0/8 rounds, 58592 stale, 0 missing
+powervr: session context 0x1 memory context 0xc002b000 page catalogue 0x40e28000
+powervr: coherency (firmware reads of cached writes): seen after a clean only
+powervr: render node ready (self-test ok: empty job, fence, memory)
+powervr: firmware: render node done (2184 ms)
+powervr: render-node: ok
+boot: at 9580 ms: a GPU device finished attaching
+networkd: auth result=admitted role=root-all pid=25 euid=0 egid=0
+networkd: Wi-Fi store of account 1000 is a candidate (session open)
+powervr: session context 0x2 memory context 0xc002b000 page catalogue 0x42eca000
+dw-mmc: read of 128 blocks at 286800 failed (5, status a4), try 1 (errors 10)
+dw-mmc: read of 64 blocks at 286992 failed (5, status a4), try 1 (errors 11)
+powervr: session context 0x3 memory context 0xc0030000 page catalogue 0x4309d000
+dw-mmc: read of 128 blocks at 287184 failed (5, status a4), try 1 (errors 12)
+dw-mmc: read of 128 blocks at 287312 failed (5, status a4), try 1 (errors 13)
+dw-mmc: read of 128 blocks at 287824 failed (5, status a4), try 1 (errors 14)
+powervr: transfer: ok
+dw-mmc: read of 128 blocks at 288080 failed (5, status a4), try 1 (errors 15)
+dhcpc: en0: offered 10.0.30.2 by 10.0.0.1
+dhcpc: en0: address 10.0.30.2/16
+dhcpc: en0: default route 10.0.0.1
+dhcpc: en0: dns 10.0.0.1
+dhcpc: en0: lease 86400 seconds
+dhcpc: en0: bound 10.0.30.2/16 lease 86400 seconds
+networkd: default route and resolver: en0 (wired preferred)
+networkd: default route and resolver: en0 (wired preferred)
+networkd: IPv6 default route: en0
+networkd: /etc/resolv.conf: the IPv6 DNS servers put in
+networkd: en0: router advertisement prefixes=1 router=3600 dns=1
+networkd: auth result=admitted role=network-member pid=23 euid=1000 egid=1000
+dw-mmc: read of 112 blocks at 150416 failed (5, status a4), try 1 (errors 16)
+dw-mmc: read of 8 blocks at 156912 failed (5, status 408c), try 1 (errors 17)
+dw-mmc: read of 104 blocks at 156920 failed (5, status a4), try 1 (errors 18)
+dw-mmc: read of 104 blocks at 156920 failed (5, status a4), try 2 (errors 19)
+dw-mmc: read of 64 blocks at 157104 failed (5, status 84), try 1 (errors 20)
+dw-mmc: read of 128 blocks at 276992 failed (5, status a4), try 1 (errors 21)
+dw-mmc: read of 128 blocks at 276992 failed (5, status a4), try 2 (errors 22)
+dw-mmc: read of 128 blocks at 276992 failed (5, status a4), try 3 (errors 23)
+dw-mmc: read of 128 blocks at 277120 failed (5, status a4), try 1 (errors 24)
+dw-mmc: read of 128 blocks at 277120 failed (5, status a4), try 2 (errors 25)
+dw-mmc: read of 128 blocks at 277120 failed (5, status a4), try 3 (errors 26)
+dw-mmc: read of 128 blocks at 277120 failed (5, status a4), try 4 (errors 27)
+dw-mmc: read of 16 blocks at 157280 failed (5, status a4), try 1 (errors 28)
+dw-mmc: read of 16 blocks at 157280 failed (5, status a4), try 2 (errors 29)
+dw-mmc: read of 16 blocks at 157280 failed (5, status a4), try 3 (errors 30)
+dw-mmc: read of 128 blocks at 277376 failed (5, status a4), try 1 (errors 31)
+dw-mmc: read of 16 blocks at 171904 failed (5, status a4), try 1 (errors 32)
+dw-mmc: read of 16 blocks at 171920 failed (5, status a4), try 1 (errors 33)
+dw-mmc: read of 128 blocks at 277632 failed (5, status 84), try 1 (errors 34)
+dw-mmc: read of 128 blocks at 277632 failed (5, status a4), try 2 (errors 35)
+dw-mmc: read of 128 blocks at 277632 failed (5, status a4), try 3 (errors 36)
+dw-mmc: read of 128 blocks at 277760 failed (5, status a4), try 1 (errors 37)
+dw-mmc: read of 128 blocks at 278912 failed (5, status a4), try 1 (errors 38)
+dw-mmc: read of 128 blocks at 279168 failed (5, status a4), try 1 (errors 39)
+dw-mmc: read of 128 blocks at 279552 failed (5, status a4), try 1 (errors 40)
+dw-mmc: read of 128 blocks at 279552 failed (5, status a4), try 2 (errors 41)
+dw-mmc: read of 128 blocks at 279552 failed (5, status a4), try 3 (errors 42)
+powervr: ta: ok
+dw-mmc: read of 128 blocks at 279552 failed (5, status a4), try 4 (errors 43)
+powervr: 3d: ok
+dw-mmc: read of 128 blocks at 284864 failed (5, status a4), try 1 (errors 44)
+dw-mmc: read of 64 blocks at 284992 failed (5, status a4), try 1 (errors 45)
+dw-mmc: read of 128 blocks at 280192 failed (5, status a4), try 1 (errors 46)
+dw-mmc: read of 64 blocks at 285056 failed (5, status a4), try 1 (errors 47)
+dw-mmc: read of 128 blocks at 285120 failed (5, status a4), try 1 (errors 48)
+dw-mmc: read of 128 blocks at 285120 failed (5, status a4), try 2 (errors 49)
+dw-mmc: read of 128 blocks at 285120 failed (5, status a4), try 3 (errors 50)
+dw-mmc: read of 128 blocks at 280704 failed (5, status a4), try 1 (errors 51)
+dw-mmc: read of 128 blocks at 280704 failed (5, status a4), try 2 (errors 52)
+dw-mmc: read of 128 blocks at 285248 failed (5, status a4), try 1 (errors 53)
+dw-mmc: read of 64 blocks at 285632 failed (5, status a4), try 1 (errors 54)
+dw-mmc: read of 128 blocks at 281344 failed (5, status a4), try 1 (errors 55)
+dw-mmc: read of 128 blocks at 281600 failed (5, status a4), try 1 (errors 56)
+dw-mmc: read of 128 blocks at 281600 failed (5, status a4), try 2 (errors 57)
+dw-mmc: read of 128 blocks at 281600 failed (5, status a4), try 3 (errors 58)
+dw-mmc: read of 128 blocks at 281600 failed (5, status a4), try 4 (errors 59)
+dw-mmc: read of 128 blocks at 281600 failed (5, status a4), try 5 (errors 60)
+dw-mmc: read of 128 blocks at 281600 moved a block at a time (errors 60, split runs 1)
+dw-mmc: read of 128 blocks at 282880 failed (5, status a4), try 1 (errors 61)
+dw-mmc: read of 128 blocks at 283136 failed (5, status a4), try 1 (errors 62)
+dw-mmc: read of 128 blocks at 283264 failed (5, status a4), try 1 (errors 63)
+dw-mmc: read of 128 blocks at 283392 failed (5, status a4), try 1 (errors 64)
+dw-mmc: read of 128 blocks at 283520 failed (5, status a4), try 1 (errors 65)
+dw-mmc: read of 128 blocks at 283648 failed (5, status a4), try 1 (errors 66)
+dw-mmc: read of 128 blocks at 283776 failed (5, status a4), try 1 (errors 67)
+dw-mmc: read of 128 blocks at 284032 failed (5, status a4), try 1 (errors 68)
+powervr: session context 0x6 memory context 0xc007c000 page catalogue 0x4ed4c000
+powervr: session context 0x7 memory context 0xc0089000 page catalogue 0x4ed8e000
+dw-mmc: read of 16 blocks at 172000 failed (5, status a4), try 1 (errors 69)
+ghci: ghci:AMAT:ATG1: present 4 not adopted in time
+riscv64: kernel stack high water 24944 of 32768 bytes
+ntpdate: clock set to 1792978751.721607808
+ghci: ghci:AMAT:ATG1: display lease ended before the controller went dark
+networkd: auth result=admitted role=root-all pid=39 euid=0 egid=0
+networkd: Wi-Fi store of account 1000 is no candidate (session closed)
+powervr: session context 0xa memory context 0xc002b000 page catalogue 0x42ccf000
+powervr: session context 0xb memory context 0xc0030000 page catalogue 0x42f7d000
+dw-mmc: read of 8 blocks at 230016 failed (5, status a4), try 1 (errors 70)
+ghci: ghci:AMAT:ATG1: present 1 not adopted in time
+ghci: ghci:AMAT:ATG1: display lease ended before the controller went dark
+powervr: session context 0xe memory context 0xc002b000 page catalogue 0x42d79000
+powervr: session context 0xf memory context 0xc0030000 page catalogue 0x42fa9000
+powervr: session context 0x12 memory context 0xc002b000 page catalogue 0x42dc7000
+powervr: session context 0x13 memory context 0xc0030000 page catalogue 0x42fb9000
+networkd: en0: router advertisement prefixes=1 router=3600 dns=1
+powervr: session context 0x16 memory context 0xc002b000 page catalogue 0x41ca4000
+powervr: session context 0x17 memory context 0xc0030000 page catalogue 0x41e3a000
+ghci: ghci:AMAT:ATG1: present 1 not adopted in time
+ghci: ghci:AMAT:ATG1: fault: status 00045300 fault 13003000 (kind 3, block 0, tag 19) at 40216620; resetting
+powervr: session context 0x1a memory context 0xc002b000 page catalogue 0x41ca8000
+powervr: session context 0x1b memory context 0xc0030000 page catalogue 0x41ebd000
+networkd: en0: router advertisement prefixes=1 router=3600 dns=1
+ghci: ghci:AMAT:ATG1: present 1 not adopted in time
+ghci: ghci:AMAT:ATG1: display lease ended before the controller went dark
+ghci: ghci:AMAT:ATG1: no progress: status 00011900 fault 00000000 (kind 0, block 0, tag 0) at 00000000; resetting
+powervr: session context 0x1e memory context 0xc002b000 page catalogue 0x41ca7000
+powervr: session context 0x1f memory context 0xc0030000 page catalogue 0x41f40000

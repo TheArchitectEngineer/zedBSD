@@ -1,0 +1,247 @@
+
+
+U-Boot SPL 2021.10 (Oct 10 2025 - 11:25:33 +0800)
+LPDDR4: 8G version: g8ad50857.
+Trying to boot from SPI
+
+OpenSBI v1.2
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|___/_____|
+        | |
+        |_|
+
+Platform Name             : StarFive VisionFive V2
+Platform Features         : medeleg
+Platform HART Count       : 5
+Platform IPI Device       : aclint-mswi
+Platform Timer Device     : aclint-mtimer @ 4000000Hz
+Platform Console Device   : uart8250
+Platform HSM Device       : ---
+Platform PMU Device       : ---
+Platform Reboot Device    : pm-reset
+Platform Shutdown Device  : pm-reset
+Platform Suspend Device   : ---
+Firmware Base             : 0x40000000
+Firmware Size             : 248 KB
+Firmware RW Offset        : 0x20000
+Runtime SBI Version       : 1.0
+
+Domain0 Name              : root
+Domain0 Boot HART         : 1
+Domain0 HARTs             : 0*,1*,2*,3*,4*
+Domain0 Region00          : 0x0000000002000000-0x000000000200ffff M: (I,R,W) S/U: ()
+Domain0 Region01          : 0x0000000040000000-0x000000004001ffff M: (R,X) S/U: ()
+Domain0 Region02          : 0x0000000040020000-0x000000004003ffff M: (R,W) S/U: ()
+Domain0 Region03          : 0x0000000000000000-0xffffffffffffffff M: (R,W,X) S/U: (R,W,X)
+Domain0 Next Address      : 0x0000000040200000
+Domain0 Next Arg1         : 0x0000000042200000
+Domain0 Next Mode         : S-mode
+Domain0 SysReset          : yes
+Domain0 SysSuspend        : yes
+
+Boot HART ID              : 1
+Boot HART Domain          : root
+Boot HART Priv Version    : v1.11
+Boot HART Base ISA        : rv64imafdcbx
+Boot HART ISA Extensions  : none
+Boot HART PMP Count       : 8
+Boot HART PMP Granularity : 4096
+Boot HART PMP Address Bits: 34
+Boot HART MHPM Count      : 2
+Boot HART MIDELEG         : 0x0000000000000222
+Boot HART MEDELEG         : 0x000000000000b109
+
+
+U-Boot 2021.10 (Oct 10 2025 - 11:25:33 +0800), Build: jenkins-github_visionfive2_6.12-16
+
+CPU:   rv64imacu_zba_zbb
+Model: StarFive VisionFive V2
+DRAM:  8 GiB
+MMC:   sdio0@16010000: 0, sdio1@16020000: 1
+Loading Environment from SPIFlash... SF: Detected gd25lq128 with page size 256 Bytes, erase size 4 KiB, total 16 MiB
+*** Warning - bad CRC, using default environment
+
+StarFive EEPROM format v2
+
+--------EEPROM INFO--------
+Vendor : StarFive Technology Co., Ltd.
+Product full SN: VF7110B1-2253-D008E000-00005015
+data version: 0x2
+PCB revision: 0xb2
+BOM revision: A
+Ethernet MAC0 address: 6c:cf:39:00:4a:8a
+Ethernet MAC1 address: 6c:cf:39:00:4a:8b
+--------EEPROM INFO--------
+
+In:    serial
+Out:   serial
+Err:   serial
+Model: StarFive VisionFive V2
+Net:   eth0: ethernet@16030000, eth1: ethernet@16040000
+Hit any key to stop autoboot:  2  1  0 
+switch to partitions #0, OK
+mmc1 is current device
+Try booting from MMC1 ...
+490 bytes read in 1 ms (478.5 KiB/s)
+zedBSD: loading from the SD card or eMMC
+24576 bytes read in 3 ms (7.8 MiB/s)
+32040 bytes read in 5 ms (6.1 MiB/s)
+7[r[999;999H[6n8Card did not respond to voltage select! : -110
+** Unable to read file ubootefi.var **
+Failed to load EFI variables
+RV64 UEFI ENTRY
+RV64 HART protocol 0x0000000000000001
+RV64 GOP mode 0 of 1 0x0 format 1 scanline 0 base 0x00000000fe000000 size 0x0000000000000000
+RV64 GOP not handed over: empty mode
+RV64 VOLUME 5A45-4253
+RV64 KERNEL vmunix
+RV64 PARAMS boot0=UUID=5A45-4253 rootpart=PARTLABEL=zedBSD-root login=graphical
+RV64 KERNEL 0x0000000080200000
+RV64 ENTRY 0x0000000080200000
+RV64 FDT 0x00000000f66ab000
+RV64 INITRD 0x0000000000000000
+RV64 INITRD SIZE 0x0000000000000000
+RV64 HANDOFF 0x00000000f66aa000
+RV64 RESERVED 0x0000000047f00000 size 0x000000000000b000
+RV64 RESERVED 0x00000000f66c2000 size 0x0000000000001000
+RV64 RESERVED 0x00000000f66c6000 size 0x0000000000003000
+RV64 RESERVED 0x00000000f66ca000 size 0x0000000000004000
+RV64 RESERVED 0x00000000f7efd000 size 0x0000000000001000
+RV64 UEFI EXIT
+clk u0_mipitx_dphy_clk_txesc already disabled
+RISCV64 LOADER handoff=f66aa000 fdt=f66ab000 initrd=0+0
+RISCV64 LOADER layout=2 reserved=5 kept=5
+RISCV64 ENTRY hart=1 image=80200000
+RISCV64 SBI v1.0 impl 1 version 10002 srst 1 dbcn 1
+RISCV64 FDT PASS phys=f66ab000 size=32768 timebase=4000000
+RISCV64 BOARD visionfive2 ccache=2010000
+RISCV64 FRAMEBUFFER unavailable (2); firmware console only
+RISCV64 SMP 4 CPUs (device tree 4 usable of 5, limit 8)
+RISCV64 MEMORY base=40000000 total=4096 MiB free=4086 MiB
+RISCV64 PAGING PASS
+RISCV64 W^X PASS
+RISCV64 CONTEXT PASS
+RISCV64 PLIC sources=136 context=2
+RISCV64 TRAP READY
+boot: kernel heap, process, and scheduler initialization
+RISCV64 SMP cpu 1 online (hart 2)
+RISCV64 SMP cpu 2 online (hart 3)
+RISCV64 SMP cpu 3 online (hart 4)
+RISCV64 HAL READY SBI v1.0 PAGING PASS TIMER TICK
+RISCV64 SMP 4 ONLINE
+I/O pool large=16 small=16 resident=1118208 budget=67108864
+boot: HAL initialized successfully. [cpu 4, memory 4096MB, timer 1ms]
+boot: CPUs ready: 4
+boot: at 29 ms: the HAL and the CPUs are ready
+boot: platform device discovery
+boot: at 37 ms: the platform's devices are being discovered
+visionfive2: no framebuffer (6)
+visionfive2: ccache at 0x2010000, cache maintenance on
+visionfive2: pll0 1000000000 Hz (0), pll1 1066000000 Hz (0), pll2 1188000000 Hz (0)
+visionfive2: axi_cfg0 396000000 Hz (0), sdcard 49500000 Hz (0)
+visionfive2: SD card present (gpio 41)
+usb: URB completion contract q009-release-acquire-v1
+pcie0: PLDA at 2b000000, configuration 940000000, interrupt 56
+pcie0: firmware left the link down
+pcie0: link up
+pcie0: 01:00.0 BAR0 at 30000000 (4096 bytes)
+xhci: pci 0000:01:00.0 id=1106:3483 sub=1106:3483 rev=01 parent=0000:00:00.0
+xhci: pci 0000:01:00.0 BAR0 type=64 size=00000000:00001000 original=00000000:30000000/00000000:30000004 final=00000000:30000000/00000000:30000004 mapped=4096
+xhci: pci 0000:01:00.0 command=0000->0002 (MEM on, MASTER off)
+xhci: pci 0000:01:00.0 caps len=20 version=0100 hcs1=05000420 hcs2=fc000031 hcc1=002841eb dboff=00000100 rtsoff=00000200 reject=00000000:ok
+usb0: xHCI, 5 root ports
+xhci: PCI controller, version=100 ports=5 slots=32 irq=1 INTx
+pcie1: PLDA at 2c000000, configuration 9c0000000, interrupt 57
+pcie1: MSI at 190 (register 0), 32 vectors
+pcie1: firmware left the link down
+pcie1: link up
+pcie1: 01:00.0 BAR0 at 38000000 (131072 bytes)
+pcie1: 01:00.0 BAR1 at 38020000 (65536 bytes)
+ghci: host memory reached uncached (bus DMA coherent)
+ghci: polled every 1 ms (CONFIG_GHCI_POLL)
+ghci: ghci:AMAT:ATG1: session protection: 31 sessions, 64 grants
+ghci: ghci:AMAT:ATG1: firmware did not start (CPFW_STATUS 00000009)
+ghci: function not started (5)
+dw-axi-dmac: 16050000, 4 channels, irq 73, coherent
+vf2-pwmdac: sample clock 12122448 Hz, 47353 samples/s
+vf2-pwmdac: 100b0000, DMA request 22
+powervr: no display: no boot framebuffer (6)
+vf2-pmu: domain 2 on, state 3 -> 7
+vf2-gpu: clock 20 isp_2x: 594000000 Hz (error 0)
+vf2-gpu: clock 21 isp_axi: 297000000 Hz (error 0)
+vf2-gpu: clock 45 gpu_core: 594000000 Hz (error 0)
+vf2-gpu: clock 46 gpu_core_clk: 594000000 Hz (error 0)
+vf2-gpu: clock 47 gpu_sys_clk: 297000000 Hz (error 0)
+vf2-gpu: clock 48 gpu_apb: 49500000 Hz (error 0)
+vf2-gpu: clock 49 gpu_rtc_toggle: 2000000 Hz (error 0)
+vf2-gpu: clock 50 noc_bus_gpu_axi: 594000000 Hz (error 0)
+vf2-gpu: pll 2: 1188000000 Hz (error 0)
+powervr: BXE 36.50.54.182 at 594000000 Hz, ALIAS OK
+boot: at 1709 ms: a GPU device began attaching
+vf2-pmu: domain 4 on, state 7 -> 17
+powervr: firmware: file start
+dc8200: own mode 1920x1080@60 clock 148500 kHz model 8200 rev 5720 cid 30e fb 40230000/7680 format 2
+vf2-mmc: sample phase 0, sysreg 9c field 0
+dw-mmc: mmcblk0 controller version 5342290a, FIFO 32 x 4 bytes, ciu 49500000 Hz
+dw-mmc: mmcblk0 SDXC card SA128, manufacturer 02, OEM TM, revision 7.6, serial 4a378939
+dw-mmc: mmcblk0 244023296 blocks of 512 bytes (119152 MiB)
+dw-mmc: mmcblk0 bus 4-bit, 49500000 Hz, high speed
+visionfive2: SD card is mmcblk0
+vf2-ethernet: bus clock 198000000 Hz (0)
+dw-eqos: en0 version 4152 irq 7
+dw-eqos: en0 PHY 0 id 4f51e91b (YT8531)
+yt8531: rx delay step 10, tx delay step 10, drive clock 6 data 3
+dw-eqos: en0 ready, MAC 6c:cf:39:00:4a:8a, DMA 40 bit, coherent
+visionfive2: Ethernet is en0
+visionfive2: no ramdisk; the boot device is mmcblk0
+boot: platform devices detected: 1
+boot: at 2075 ms: the platform's devices are attached
+gpt: mmcblk0 protective MBR extent mismatch: advertised-last=804863 gpt-last=244023295; using GPT
+visionfive2: mmcblk0 has 5 partitions
+visionfive2: mmcblk0 partition 1 start 4096 blocks 4096 (2 MiB) "reserved"
+visionfive2: mmcblk0 partition 2 start 8192 blocks 8192 (4 MiB) "reserved"
+visionfive2: mmcblk0 partition 3 start 16384 blocks 131072 (64 MiB) "EFI system", EFI system
+visionfive2: mmcblk0 partition 4 start 147456 blocks 524288 (256 MiB) "zedBSD-root"
+visionfive2: mmcblk0 partition 5 start 671744 blocks 131072 (64 MiB) "zedBSD-scratch"
+boot: at 2134 ms: the boot storage is discovered
+boot: parameters: boot0=UUID=5A45-4253 rootpart=PARTLABEL=zedBSD-root login=graphical
+boot: VFS initialization
+vfs: boot BIOS=80 MBR partition=1 devices=1
+vfs: native boot disk=mmcblk0 physical disks=1
+xhci: port 1 reset complete portsc=40000e03
+gpt: mmcblk0 protective MBR extent mismatch: advertised-last=804863 gpt-last=244023295; using GPT
+vfs: scan mmcblk0 geometry error=21: 5 entries
+vfs: mmcblk0 partition 1 start=00000000:00001000 data=00000000:00001000 blocks=00000000:00001000
+usb0: device 1 port 1 2109:3431 class 09 configuration=1 configured
+vfs: mmcblk0 partition 2 start=00000000:00002000 data=00000000:00002000 blocks=00000000:00002000
+usb0: device 1 interface 0 class 09/00/00 driver=usb-hub
+vfs: mmcblk0 partition 3 start=00000000:00004000 data=00000000:00004000 blocks=00000000:00020000
+vfs: mmcblk0 partition 4 start=00000000:00024000 data=00000000:00024000 blocks=00000000:00080000
+vfs: mmcblk0 partition 5 start=00000000:000A4000 data=00000000:000A4000 blocks=00000000:00020000
+vfs: boot0 UUID=5A45-4253 -> /dev/mmcblk0p3 (private FAT)
+vfs: rootpart selector PARTLABEL=zedBSD-root resolved to /dev/mmcblk0p4
+usb0: hub 1, 4 ports
+vfs: mounting runtime filesystems...
+vfs: runtime filesystems mounted
+dw-mmc: read of 128 blocks at 165088 failed (5, status a4), try 1 (errors 1)
+dw-eqos: en0 link up 1000 Mbps full duplex
+powervr: firmware: still in file after 5 s
+dw-mmc: the card did not come back while the sample phase was tuned (42); it is taken as gone
+powvfs: publiserhv br:oo tfi0 ramwt a/reb:oo tf/ibloeo tf0a ifleaid le(5d) ( earfrtoerr  55)36; 2 itm sst
+vafy2s- pprmuiv:a dtoem
+ain 2 off, state 17 -> 13
+boot: at 7087 ms: the VFS is initialized
+powervr: firmware file failed (5); powered down
+boot: memory 4194304 KiB total, 4172608 KiB free, 9972 KiB reserved
+powervr: firmware: fail(error)
+boot: at 7103 ms: init is starting
+boot: at 7106 ms: a GPU device finished attaching
+boot: starting init /sbin/init
+
+exec: resolve executable failed for /sbin/init (5)
+init /sbin/init not started (5); entering idle.
+init /sbin/init not started (5); entering idle.
