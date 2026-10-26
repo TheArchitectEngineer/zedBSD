@@ -313,8 +313,10 @@ vmd_attach(
 	drv_pci_vmd_messages_init(&host->messages);
 
 	/* Lets the VMD decode its BARs. */
+	kern_logf("vmd: attaching (stage %u)\n", (unsigned)stage);
 	error = drv_pci_device_enable_memory(device);
 	if (error != 0) {
+		kern_logf("vmd: memory decoding cannot be enabled (%d)\n", error);
 		kern_free(host);
 		return error;
 	}
@@ -322,6 +324,7 @@ vmd_attach(
 	/* Lets the VMD forward its children's DMA. */
 	error = drv_pci_device_set_bus_master(device, true);
 	if (error != 0) {
+		kern_logf("vmd: bus mastering cannot be enabled (%d)\n", error);
 		kern_free(host);
 		return error;
 	}
@@ -365,6 +368,7 @@ vmd_attach(
 	/* Arranges the buses behind the VMD. */
 	error = vmd_plan(host);
 	if (error != 0) {
+		kern_logf("vmd: buses cannot be arranged (%d)\n", error);
 		vmd_release(host);
 		return error;
 	}
@@ -380,6 +384,7 @@ vmd_attach(
 	/* Creates the root bus behind the VMD. */
 	error = drv_pci_bus_create_root(host->segment, (uint8_t)host->domain.bus_start, &vmd_bus_ops, host, drv_pci_device_dma(device), &host->root);
 	if (error != 0) {
+		kern_logf("vmd: root bus cannot be created (%d)\n", error);
 		vmd_release(host);
 		return error;
 	}
@@ -886,32 +891,41 @@ vmd_read_windows(
 	/* Claims each BAR, so that nothing else maps the VMD's windows. */
 	for (index = 0; index < 3U; index++) {
 		error = drv_pci_device_claim_bar(host->device, bars[index]);
-		if (error != 0)
+		if (error != 0) {
+			kern_logf("vmd: BAR%u cannot be claimed (%d)\n", bars[index], error);
 			return error;
+		}
 		host->claimed[index] = 1;
 	}
 
 	/* Reads the three BARs. */
 	error = drv_pci_device_bar(host->device, VMD_BAR_CONFIG, &config);
-	if (error != 0)
+	if (error == 0)
+		error = drv_pci_device_bar(host->device, VMD_BAR_MEMORY1, &host->membar1);
+	if (error == 0)
+		error = drv_pci_device_bar(host->device, VMD_BAR_MEMORY2, &host->membar2);
+	if (error != 0) {
+		kern_logf("vmd: BARs cannot be read (%d)\n", error);
 		return error;
-	error = drv_pci_device_bar(host->device, VMD_BAR_MEMORY1, &host->membar1);
-	if (error != 0)
-		return error;
-	error = drv_pci_device_bar(host->device, VMD_BAR_MEMORY2, &host->membar2);
-	if (error != 0)
-		return error;
+	}
 
 	/* Refuses a CFGBAR smaller than one bus, or a MEMBAR2 with no room past its head. */
-	if (config.size < VMD_CFGBAR_MIN)
+	if (config.size < VMD_CFGBAR_MIN || host->membar2.size <= VMD_MEMBAR2_HEAD) {
+		kern_logf("vmd: CFGBAR size 0x%llx or MEMBAR2 size 0x%llx too small\n",
+			  (unsigned long long)config.size,
+			  (unsigned long long)host->membar2.size);
 		return ENODEV;
-	if (host->membar2.size <= VMD_MEMBAR2_HEAD)
-		return ENODEV;
+	}
 
 	/* Maps the configuration space behind the VMD. */
 	error = drv_pci_device_map_bar(host->device, VMD_BAR_CONFIG, DRV_PCI_MAP_READ | DRV_PCI_MAP_WRITE | DRV_PCI_MAP_NOCACHE, &host->cfgbar);
-	if (error != 0)
+	if (error != 0) {
+		kern_logf("vmd: CFGBAR 0x%llx/0x%llx cannot be mapped (%d)\n",
+			  (unsigned long long)config.bus_address,
+			  (unsigned long long)config.size,
+			  error);
 		return error;
+	}
 	host->cfgbar_size = config.size;
 
 	/* Records the windows: MEMBAR1 whole, MEMBAR2 past the VMD's own head. */
@@ -939,11 +953,12 @@ vmd_read_buses(
 
 	/* Reads the capability and configuration registers. */
 	error = drv_pci_device_config_read16(host->device, VMD_REG_CAPABILITY, &capability);
-	if (error != 0)
+	if (error == 0)
+		error = drv_pci_device_config_read16(host->device, VMD_REG_CONFIGURATION, &configuration);
+	if (error != 0) {
+		kern_logf("vmd: registers cannot be read (%d)\n", error);
 		return error;
-	error = drv_pci_device_config_read16(host->device, VMD_REG_CONFIGURATION, &configuration);
-	if (error != 0)
-		return error;
+	}
 
 	/* Finds the first bus. */
 	error = drv_pci_vmd_bus_start(capability, configuration, &start);
