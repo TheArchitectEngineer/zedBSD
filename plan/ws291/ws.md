@@ -27,7 +27,7 @@
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | desktop の計測と 60 fps（既に 60 fps なら記録して閉じる） | WS039 p009 | cleared（2026-10-26、main bad29b52f、全段 60 fps） |
-| [p002](phase002/phase.md) | Linux で約 50 fps の 3D の scene を決める（mview の拡張を含む）、zedBSD との差を測る | p001、p002a | in-progress（Linux 50.0 fps: qs40 ×6500 instanced、MAILBOX、1920x1080。command の重さの組 big-N・subs-N も測った） |
-| [p002a](phase002a/phase.md) | amdrdna の executor に depth・index の draw・mip の texture（mview が動くまで） | p002 の Linux の基準 | planned |
+| [p002](phase002/phase.md) | Linux で約 50 fps の 3D の scene を決める（mview の拡張を含む）、zedBSD との差を測る | p001、p002a | in-progress（測定済み: qs40 ×6500 instanced で zedBSD 20.1・Linux 50.1 fps、command の重さの組 big-N・subs-N も。Q1 の判定待ち） |
+| [p002a](phase002a/phase.md) | amdrdna の executor に depth・index の draw・mip の texture（mview が動くまで） | p002 の Linux の基準 | in-progress（実装済み、実機で Linux と pixel 一致。Q1 の判定待ち） |
 | p003〜 | profile による改善（p002 の結果で立てる） | p002 | — |
 | 最後 | 規約の全文の見直し | 実装の全部 | — |

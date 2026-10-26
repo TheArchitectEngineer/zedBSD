@@ -1216,6 +1216,7 @@ renderer_commands(
 	VkCommandBufferAllocateInfo command;
 	VkFenceCreateInfo fence;
 	VkSemaphoreCreateInfo semaphore;
+	uint32_t index;
 	VkResult error;
 
 	/* The pool's family is the same graphics/presentation family selected for the device. */
@@ -1228,7 +1229,11 @@ renderer_commands(
 	if (error != VK_SUCCESS)
 		return error;
 
-	/* One primary command buffer a submission of a frame; the first also records the uploads. */
+	/*
+	 * One primary command buffer a submission of a frame, allocated one
+	 * by one (a driver may bound how many one call makes); the first also
+	 * records the uploads.
+	 */
 	renderer->commands = calloc(renderer->submits, sizeof(*renderer->commands));
 	if (renderer->commands == NULL) {
 		renderer->operation = "calloc";
@@ -1238,11 +1243,13 @@ renderer_commands(
 	command.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
 	command.commandPool = renderer->pool;
 	command.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-	command.commandBufferCount = renderer->submits;
+	command.commandBufferCount = 1U;
 	renderer->operation = "vkAllocateCommandBuffers";
-	error = vkAllocateCommandBuffers(renderer->device, &command, renderer->commands);
-	if (error != VK_SUCCESS)
-		return error;
+	for (index = 0U; index < renderer->submits; index++) {
+		error = vkAllocateCommandBuffers(renderer->device, &command, &renderer->commands[index]);
+		if (error != VK_SUCCESS)
+			return error;
+	}
 	renderer->command = renderer->commands[0];
 
 	/* Creates the completion fence used before command reuse. */
