@@ -19,7 +19,7 @@ Queue: q1599-i01（P4）
 
 - `sh plan/ws252/tests/gen12-golden/run.sh`: `gen12 golden PASS: 543 lines identical to 684a5243f`、`gen9 smoke: 202 register writes, 24 steps rc=0, 0 steps failed`、`linux check: PASS`（5 行の ID と engine が Linux の info と一致、RKL・ADL-S・RPL-S の ID の表が Linux と一致、Wa_1607297627（0x02050）は tgl rkl adlp だけ、他の 6 block は 5 行全部）。検出の確かめ: ADL-S の rcs0 の list に 0x02050 を足した写しで `linux check: FAIL`（試験の側が誤りを捉える）。
 - build: 既定・`I915_TESTS=y I915_TEST_SET=execution`・`vke2` の 3 組 rc=0、warning 0、amd64 vmunix check PASS。`run-xd-host-tests.sh` all passed。`git diff --check` 空。
-- 5330（素の起動、2026-10-26、kernel だけ差し替え、`plan/ws245/tests/5330-run.sh --kernel`）: ssh まで 44 s、survey lit、基準（q1229-i21）と steady の差 0、書き込みの digest が基準と同じ → PASS。証拠 `plan/ws245/tests/evidence/p4-ws252-f8b65c839-20261026.md`、画面 `plan/ws245/temp/5330/p4-ws252-f8b65c839-20261026.png`（git の外）。
+- 5330（素の起動、2026-10-26、kernel だけ差し替え、`plan/tools/hw5330/5330-run.sh --kernel`）: ssh まで 44 s、survey lit、基準（q1229-i21）と steady の差 0、書き込みの digest が基準と同じ → PASS。証拠 `plan/tools/hw5330/evidence/p4-ws252-f8b65c839-20261026.md`、画面 `plan/ws245/temp/5330/p4-ws252-f8b65c839-20261026.png`（git の外）。
 
 ## 制限
 

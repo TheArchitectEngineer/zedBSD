@@ -15,7 +15,7 @@ Status: in-progress（2026-10-18 q1253-i01、P1。cleared は Q1）
 ## 確かめ（2026-10-18）
 
 - `sh plan/ws260/tests/run-xd9-host-tests.sh build/tmp/ws260-p003-a`: xd_display9_host_test 24 checks, 0 failures。
-- `sh plan/ws245/tests/run-xd-host-tests.sh build/tmp/ws260-p003-xd`: all passed（display 11〜13 は変わらない）。
+- `sh plan/tools/i915-display/run-xd-host-tests.sh build/tmp/ws260-p003-xd`: all passed（display 11〜13 は変わらない）。
 - `sh plan/ws260/tests/run-golden.sh build/tmp/ws260-p003-g`: 4 つとも same。
 - `sh plan/ws260/tests/kbuild.sh p003`: 3 組とも rc 0、warning 0。
 

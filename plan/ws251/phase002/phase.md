@@ -37,10 +37,10 @@ Parent: [WS251](../ws.md)
   QMP pmemsave・host harness、internal.h の「test machine」、edp-device.c の「5330」、resident.c の「QEMU monitor」、survey.c・display.c の「test build」）。
   display.c の QEMU の emulated bridge の ID は hardware の事実なので残す。xd-edp・display-power・vbt-shell・vga の `*_STAGE` は code の段（trace・eDP の手順）なので残す。
 - 変えた log の文字列（gen9-firmware.c の 7 行）: `"i915: N0-lite (gen9): ..."` → `"i915: gen9 firmware display: ..."`。照合する試験・道具は無い
-  （plan/tools・plan/ws*/tests・tests/ を grep。`plan/ws245/tests/run-xd-host-tests.sh` の検査は gen9- の file を除外しており、新しい語は禁止の語に当たらない）。
+  （plan/tools・plan/ws*/tests・tests/ を grep。`plan/tools/i915-display/run-xd-host-tests.sh` の検査は gen9- の file を除外しており、新しい語は禁止の語に当たらない）。
 - 確かめた事: build 3 組（`sh build/tmp/kbuild.sh ws251p002-g1`）default・vke2・execution とも rc=0 warning 0。基準（`ws251p002-base`、e9157f2c2）と
   `build/tmp/ws251-objcmp.sh ws251p002-base ws251p002-g1` で src/drivers/gpu の object（270/273/280）を比べ、違うのは log を変えた gen9-firmware.o だけ。
-  `sh plan/ws245/tests/run-xd-host-tests.sh build/ws251p002-xd` all passed、`sh plan/ws075/tests/hdmi/host-output-test.sh build/ws251p002-h2` 80 checks, 0 failures。
+  `sh plan/tools/i915-display/run-xd-host-tests.sh build/ws251p002-xd` all passed、`sh plan/ws075/tests/hdmi/host-output-test.sh build/ws251p002-h2` 80 checks, 0 failures。
 - 未確認: WS237 の gen9 の host 試験（`plan/ws237/tests/run-gen9-*-host-test.sh`）と WS229 の `run-bootfb-host-test.sh`（ラップアップで未実施）。
 
 ### 群 2: i915 render（`src/drivers/gpu/i915/render/`）— 済み（2026-10-18 q1242、P1）

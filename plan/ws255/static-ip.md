@@ -56,7 +56,7 @@ sh plan/ws039/tests/hw-run.sh write build/p3/usb/hdd-image.img /dev/sdX
 その後の `hw-run.sh collect` は `AMDRDNA_ZED=root@10.0.30.5` のまま使える（address は DHCP の時と同じ）。
 `hw-run.sh` の既定 `root@10.0.10.3` を `root@10.0.30.5` に直すのは P3 の WS の変更なので、Q1 が P3 に頼む。
 
-### 2.2 Latitude 5330（P1、`plan/ws245/tests/5330-bootcycle.sh`）
+### 2.2 Latitude 5330（P1、`plan/tools/hw5330/5330-bootcycle.sh`）
 
 P1 の 5330 の USB は `make -j16 ZEDBSD_CONFIG=config/ci/config-amd64.mk disk-image` の image を 5330 の Linux から dd した物（`plan/ws245/phase047/phase.md`）。
 image を作り直す時は、同じ make に複写を足す（`ZEDBSD_TEST_IMAGE_TAG` は複写を足した image の rootfs の cache を分けるために要る、`platform/amd64/vmunix.mk` の E-127 の注記）:

@@ -20,7 +20,7 @@ Status: in-progress（2026-10-18 q1253-i01、P1。cleared は Q1）
 
 - `sh plan/ws260/tests/run-golden.sh build/tmp/ws260-g6`・`-g7`（記録の後に 2 回）: 4 つとも same（modeset 299 行、outputs 606、backlight 17、table 95,619）。2 回流して同じ。
 - gen9 の host 試験 5 本: flip 48・backlight 21・mode 71・modeset 80・outputs 29、全部 0 failures。
-- `plan/ws245/tests/run-xd-host-tests.sh`（host-kernel.c を変えたため）: all passed。
+- `plan/tools/i915-display/run-xd-host-tests.sh`（host-kernel.c を変えたため）: all passed。
 - `sh plan/ws260/tests/kbuild.sh p002`: 3 組とも rc 0、warning 0。
 
 ## 残り・注意

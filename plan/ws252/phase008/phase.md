@@ -20,7 +20,7 @@ WS252 が base 684a5243f から足した・変えた C（`src/drivers/gpu/i915/`
 
 - build: 既定（`config/ci/config-amd64.mk`）・`I915_TESTS=y I915_TEST_SET=execution`・`I915_TEST_SET=vke2` の vmunix、どれも rc 0・warning 0。
 - `plan/ws252/tests/gen12-golden/run.sh`: Gen12 の 543 行が 684a5243f と同一、Linux 由来の照合 PASS。
-- `plan/ws252/tests/render-host/run.sh` PASS、`plan/ws252/tests/eu-gen11/run.sh` PASS、`plan/ws245/tests/run-xd-host-tests.sh` all passed、`git diff --check` 差無し。
+- `plan/ws252/tests/render-host/run.sh` PASS、`plan/ws252/tests/eu-gen11/run.sh` PASS、`plan/tools/i915-display/run-xd-host-tests.sh` all passed、`git diff --check` 差無し。
 - 5330 は流していない（注釈だけの変更で、生成物の挙動は変わらない。直前の 5330 PASS は 557c9de05）。
 
 ## 残り

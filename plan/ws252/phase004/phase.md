@@ -23,7 +23,7 @@ Queue: q1599-i01（P4）
 
 - `sh plan/ws252/tests/gen12-golden/run.sh`: Gen12 の 543 行が 684a5243f と一致、`icl smoke: 292 register writes, 30 steps rc=0, 0 steps failed`、`linux check: PASS` — ICL の GT の list 9 件・rcs0 の engine 11 件・context 8 件・whitelist（rcs0 4・bcs0 1・vcs0 4・vcs2 4・vecs0 1）が Linux v6.8.12 の `icl_gt_workarounds_init`・`general_render_compute_wa_init`・`rcs_engine_wa_init`（版 11 と版 9 以上の block）・`icl_ctx_workarounds_init`・`icl_whitelist_build` から機械で計算した register・clr・set と一致（`check-linux.py` の `check_icl`）。
 - build（既定・execution・vke2）warning 0、`run-xd-host-tests.sh` all passed。
-- 5330（素の起動、kernel e68361995、2026-10-26）: PASS（survey lit、i21 の基準と steady の差 0、書き込みの digest 同じ）。証拠 `plan/ws245/tests/evidence/p4-ws252-p004-e68361995.md`。
+- 5330（素の起動、kernel e68361995、2026-10-26）: PASS（survey lit、i21 の基準と steady の差 0、書き込みの digest 同じ）。証拠 `plan/tools/hw5330/evidence/p4-ws252-p004-e68361995.md`。
 
 ## 制限・未確認
 
