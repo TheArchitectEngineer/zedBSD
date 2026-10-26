@@ -786,6 +786,9 @@ control(
 	case 0x0cU:
 		note_wait(wave, word & 0xffffU);
 		break;
+	case 0x0fU:
+		/* s_setprio: the wave's priority, which the machine does not model. */
+		break;
 	case 0x10U:
 		/* s_sendmsg: only a primitive shader's allocation request, once, before any export. */
 		if ((word & 0xffffU) != 9U || run->graphics == NULL || run->graphics->primitive_shader == 0U)

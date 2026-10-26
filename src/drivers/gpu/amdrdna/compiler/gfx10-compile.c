@@ -3364,7 +3364,8 @@ prologue_vertex(
  * src/amd/compiler/aco_instruction_selection.cpp (select_shader: on GFX10
  * an NGG program without a geometry stage starts with s_barrier, so that
  * every wave has launched before the allocation request, a Navi1x
- * hardware bug, lines 11380-11386).
+ * hardware bug, lines 11380-11386; a vertex program first raises its wave's
+ * priority to 3, line 11374).
  */
 static void
 prologue_primitive(
@@ -3376,6 +3377,13 @@ prologue_primitive(
 	unsigned wave_count;
 	unsigned sources[4];
 	uint32_t skip_label;
+
+	/* The wave's priority raised, as a vertex program's is. */
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_CONTROL;
+	inst.opcode = AMDRDNA_GFX10_S_SETPRIO;
+	inst.immediate = 3U;
+	emit(lowering, &inst);
 
 	/* Every wave of the subgroup launched before the request. */
 	kern_memset(&inst, 0, sizeof(inst));
