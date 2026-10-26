@@ -20,6 +20,6 @@ Intel VMD（5330 の 8086:467f、Alder Lake の VMD）の下にある NVMe を�
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 設計（VMD の register・bus の列挙・窓・MSI-X の付け替え・zedBSD の PCI の枠組みへの載せ方）と design-reviewer | — | planned |
+| [p001](phase001/phase.md) | 設計（VMD の register・bus の列挙・窓・MSI-X の付け替え・zedBSD の PCI の枠組みへの載せ方）と design-reviewer。[design.md](design.md) 版 2（[review](design-review.md) 反映、§12 の D1・D2 待ち） | — | in-progress |
 | p002 | 実装、host 試験、5330 の実機で NVMe が見える（physical disks=2）・読める | p001 | planned |
 | p003 | 規約の全文の見直し | p002 | planned |
