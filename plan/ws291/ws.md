@@ -35,9 +35,9 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | desktop の計測と 60 fps（既に 60 fps なら記録して閉じる） | WS039 p009 | cleared（2026-10-26 23:45、全段 60 fps） |
-| p002a | amdrdna の executor に depth の attachment・index の draw（DrawIndexed）・mip の texture を足す（mview が動く 3D の機能） | p001 | planned（2026-10-26 23:45 ユーザー「機能を足してから比較」） |
-| p002 | Linux で約 50 fps の 3D の scene を決める（mview の拡張を含む）、zedBSD との差を測る | p001、zedBSD の計測は p002a | — |
+| [p001](phase001/phase.md) | desktop の計測と 60 fps（既に 60 fps なら記録して閉じる） | WS039 p009 | cleared（2026-10-26 23:45、main bad29b52f、全段 60 fps） |
+| [p002](phase002/phase.md) | Linux で約 50 fps の 3D の scene を決める（mview の拡張を含む）、zedBSD との差を測る | p001、zedBSD の計測は p002a | in-progress（Linux 50.9 fps: qs40 ×1500、MAILBOX、1920x1080） |
+| [p002a](phase002a/phase.md) | amdrdna の executor に depth の attachment・index の draw（DrawIndexed）・mip の texture を足す（mview が動く 3D の機能、2026-10-26 23:45 ユーザー「機能を足してから比較」） | p002 の Linux の基準 | planned |
 | p003〜p009 | RDNA: profile による改善（p002 の結果で立てる） | p002 | — |
 | p010 | NVIDIA: GPU の入れ替え（ユーザー）、desktop の計測と 60 fps | RDNA の Phase の全部、P2 | planned |
 | p011 | NVIDIA: Linux で約 50 fps の scene での差の計測と 50 fps（p012〜p019 は改善の予備） | p010 | planned |

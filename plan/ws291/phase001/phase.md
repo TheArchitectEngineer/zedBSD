@@ -42,7 +42,7 @@ frame-ops（`plan/tools/frame-ops/frame-ops.sh`、起動直後の session、fram
 
 - 全段で work（frame の描画）が 16 ms 以下（max 15 ms）、work>16 の frame は 0。動きのある段は period p50 16〜17 ms（60 fps）。scroll・hover の fps は試験の入力の間隔で決まり（ws270-p007 と同じ）、描画の速さではない。period の max 83〜95 ms は段の切れ目（入力の休み）。
 - 見た目: keiland-shot の PNG（`build/ws291/measure/` の shot、Settings の初回の窓と Terminal、正常）。
-- 再現（2026-10-26 23:55、`measure.sh` の再起動の後の新しい session、build/ws291/measure/desktop-3/table.txt）: launch 62（work max 42 が 1 frame、他は 16 以下）・type 61・output 45（9 frames、period p50 15）・scroll 20・hover 23・drag 58・home 62・wiseview 59。1 回目と同じ形。
+- 再現（2026-10-26 23:44、`measure.sh` の再起動の後の新しい session、build/ws291/measure/desktop-3/table.txt）: launch 62（work max 42 が 1 frame、他は 16 以下）・type 61・output 45（9 frames、period p50 15）・scroll 20・hover 23・drag 58・home 62・wiseview 59。1 回目と同じ形。
 - 判定: desktop は既に 60 fps。amdrdna・Keiland に直す所は無し。
 - 2 回目（Terminal を開いたままの session で続けて流した）は launch・scroll・home の段が成り立たない（Terminal は新しい窓を出さない、wheel の先が違う）。frame-ops は起動直後の session で流す: `measure.sh desktop` は既定で zedBSD を再起動してから流す。
 
