@@ -980,4 +980,4 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | q1590 / q1590-i02 | P1（phase-runner、新しい起動） | ws288-p024: KC705 の MIG の calibration（SPD を I2C で読む、DCI・reset・clock・pin、作り直して LED3） | 承認: ユーザー 2026-10-26「はい、お願いします」 | in-progress |
 | q1591 / q1591-i01 | P3（phase-runner、新しい起動） | ws288-p043 の範囲 3: VF2 + KC705 の実機の debug（KC705 の attach の後に SD の読みが失敗し init が EIO、BAR1 64 KiB・window 0・no Vulkan executor (42)・display disconnected） | 承認: ユーザー 2026-10-26「…そのあと電源ONして、シリアルとSSHを使ってデバッグを開始してください。」「MIGが動いてボードのスタートアップがJTAGから確認できたら…動作確認して大丈夫です。」 | in-progress |
 | q1592 / q1592-i01 | P3（phase-runner、新しい起動） | [ws288-p044](ws288/phase044/phase.md) 1〜5 | 承認: ユーザー 2026-10-26「初期化コマンドを実装してください。…」 | in-progress |
-| q1593 / q1593-i01 | P1（phase-runner、新しい起動） | [ws288-p045](ws288/phase045/phase.md) 1〜3 | 承認: ユーザー 2026-10-26「クロックドメインを分割して、DCを本来の200MHzにしてください」 | in-progress |
+| q1593 / q1593-i01 | P1（phase-runner、新しい起動） | [ws288-p045](ws288/phase045/phase.md) 1〜3 | 承認: ユーザー 2026-10-26「クロックドメインを分割して、DCを本来の200MHzにしてください」 | uncleared（ユーザーの「いったん停止してください」で止めた。設計は未、見立ては phase045 の記録） |
