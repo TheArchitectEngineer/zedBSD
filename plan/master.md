@@ -56,7 +56,7 @@
 
 <!-- master:blocked:start -->
 - WS290 の実機の試験: GHCI 2.0 のハードウェア（am-ws001-p007）ができるまで無い。
-- VF2: 遠隔の電源（SwitchBot）は ZYBO 用に付け替える予定で、VF2 の板は遠隔で再起動しない。VF2 の zedbsd.cfg は login=graphical を外したまま（元は zedbsd.cfg.p044orig）。
+- VF2: ssh kei@10.0.30.2、電源は SwitchBot（AC276E42B252）で入れられる（2026-10-26 23:09 ユーザー）。VF2 の zedbsd.cfg は login=graphical を外したまま（元は zedbsd.cfg.p044orig）。
 - GitHub への公開は push の指示の時だけ。
 <!-- master:blocked:end -->
 
@@ -639,6 +639,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-26 23:09 ユーザー「VF2はssh kei@10.0.30.2で、パスワード（略）です。VF2はSwitchbotで電源を入れられます。」→ WS291 p020（P3）で使う。以前の「SwitchBot は ZYBO 用に付け替える予定で VF2 は遠隔で再起動しない」は改める。
 - 2026-10-26 23:08 ユーザー「WS291にさらにフェーズを追加して、DebianマシンでGPUを入れ替えて、NVIDIAでも同様に、デスクトップの60fpsと、モデルの50fpsをやります。これはP2がamdrnaの作業を終えてからです。また、さらにフェーズを増やして、PowerVRのドライバでも、50fpsをやります。VF2での作業は、RDNAで作業手順を確立したあとで、P3に依頼します。」→ WS291 に p010・p011（NVIDIA、P2、RDNA の後）と p020（PowerVR、P3、RDNA の手順の確立の後）を追加。
 - 2026-10-26 23:05 ユーザー「P2も立てます。ssh 10.0.10.3で、RDNAの接続されたDebianに入れます。…デスクトップで60fpsをまずは達成します。…重たい3DシーンをLinuxドライバと同じfpsで描画できるように調整します。…Linuxよりよくなるまでプロファイルベースで改善します。できそうですか？」→ WS291 を新設、P2 に ws291-p001（q1595）。原文の全文は ws291/ws.md。
 - 2026-10-26 22:57 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。amaterrace-gpuのディレクトリは読み取り専用とします。amaterrace-gpuのplan/は読んでもかまいません。am-ws001のような書き方をしてくれれば私は理解できます。」→ WS288 を closed（未完の Phase は canceled）、fg022 を取り下げ、WS290 を新設。amaterrace-gpu は読み取り専用。
