@@ -8,14 +8,19 @@
 /*
  * The running of a command buffer's records on the GPU.
  *
- * Each session has a run of the executor's memory for its submissions, in
- * system memory the CPU writes through its cache: an indirect buffer of
- * command packets, the resource tables of its draws, the word its barriers
- * write and wait for, a zero page and the corners of a quad.  The records are turned into packets in order
- * (vk-state.c) and the indirect buffer is run on the graphics queue when
- * it is full and at the end; each
- * run is waited for, so the run's memory is free again after it and
- * nothing a submission names is in use by the GPU once it returns.
+ * Each session has up to EXECUTE_SLOTS runs of the executor's memory for
+ * its submissions (slots), in system memory the CPU writes through its
+ * cache: each an indirect buffer of command packets, the resource tables
+ * of its draws, the word its barriers write and wait for, a zero page and
+ * the corners of a quad.  The records are turned into packets in order
+ * (vk-state.c) and the indirect buffer is put on the graphics queue when
+ * it is full and at the end, without waiting for the GPU: the next buffer
+ * is written in a slot whose run has ended (a new slot is made while one
+ * is to be had, else the oldest run is waited for).  The submission's
+ * fence and the node's marker after it end once the GPU has done the
+ * runs; what a command buffer's records name stays held by its records,
+ * and the packets and tables were copied into the slot, so a command
+ * buffer may be recorded again as soon as its submission returns.
  *
  * A draw writes everything it uses: for each of its two programs a
  * resource table of its own (the push constants, the buffer descriptors
@@ -56,7 +61,10 @@
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk-objects.h"
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk-exec.h"
 
-/* The session's run: its size and where each of its parts starts. */
+/* The runs (slots) a session writes its submissions in at most, one being written while the GPU reads the others. */
+#define EXECUTE_SLOTS			4U
+
+/* A run's size and where each of its parts starts. */
 #define EXECUTE_RUN_BYTES		(2U * 1024U * 1024U)
 #define EXECUTE_BUFFER_AT		0U
 #define EXECUTE_BUFFER_BYTES		(1024U * 1024U)
@@ -129,18 +137,38 @@
 #define EXECUTE_TRIAL_UNDRAWN		0x5a5a5a5aU
 
 /*
- * The executor's own programs and the session's run.
- *
- * token names the run to the node, cpu and va its two views; pm4 writes
- * its indirect buffer, tables is how much of its tables' part the buffer
- * uses, draws and quads how many application draws and own quads it
- * holds (for the node's counts), sync the last value a barrier wrote.
- * The quad programs are compiled once, into a run of their own.
+ * One run of the executor's memory a session writes submissions in: the
+ * token that names it to the node (NULL until it is made), its two views,
+ * and the GPU's run of the last indirect buffer written in it, which must
+ * end before the slot is written again.
  */
-struct amdrdna_vk_execute {
+struct execute_slot {
 	void *token;
 	uint8_t *cpu;
 	uint64_t va;
+	struct amdrdna_vk_ticket ticket;
+};
+
+/*
+ * The executor's own programs and the session's runs.
+ *
+ * slots are the runs, slot the one being written; token, cpu and va are
+ * that slot's.  pm4 writes its indirect buffer, tables is how much of its
+ * tables' part the buffer uses, draws and quads how many application
+ * draws and own quads it holds (for the node's counts), sync the last
+ * value a barrier wrote (it only grows, so a slot's word never holds the
+ * value a barrier waits for before the barrier writes it).  last names the
+ * newest run put on each queue (0 the graphics queue, 1 the compute
+ * queue), which a submission's fence waits for.  The quad programs are
+ * compiled once, into a run of their own.
+ */
+struct amdrdna_vk_execute {
+	struct execute_slot slots[EXECUTE_SLOTS];
+	uint32_t slot;
+	void *token;
+	uint8_t *cpu;
+	uint64_t va;
+	struct amdrdna_vk_ticket last[2];
 	struct amdrdna_vk_pm4 pm4;
 	uint32_t tables;
 	uint32_t draws;
@@ -215,7 +243,8 @@ struct execute_quad {
 static int execute_open(struct amdrdna_vk_session *session, struct amdrdna_vk_execute **execute);
 static int execute_programs(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
 static int execute_compile(struct amdrdna_quad_ir *program, struct amdrdna_vk_program *compiled);
-static void execute_start(struct amdrdna_vk_execute *execute);
+static int execute_start(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
+static int execute_slot_make(struct amdrdna_vk_session *session, struct execute_slot *slot);
 static int execute_flush(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
 static int execute_room(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state);
 static void execute_barrier(struct amdrdna_vk_execute *execute);
@@ -289,9 +318,8 @@ amdrdna_vk_execute(
 	execute->kernel_queue = (pool != NULL && pool->family == AMDRDNA_VK_FAMILY_COMPUTE);
 
 	/* Each record in order, the indirect buffer started over when it fills. */
-	execute_start(execute);
-	error = 0;
-	for (index = 0U; index < command->record_count; index++) {
+	error = execute_start(session, execute);
+	for (index = 0U; error == 0 && index < command->record_count; index++) {
 		error = execute_room(session, execute, state);
 		if (error != 0)
 			break;
@@ -300,7 +328,7 @@ amdrdna_vk_execute(
 			break;
 	}
 
-	/* The rest of the indirect buffer; the next buffer is the graphics queue's unless said. */
+	/* The rest of the indirect buffer, put on its queue; the next buffer is the graphics queue's unless said. */
 	if (error == 0)
 		error = execute_flush(session, execute);
 	kern_free(state);
@@ -310,11 +338,29 @@ amdrdna_vk_execute(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the GPU has done the command buffer. */
+	/* Succeeded: the command buffer's runs are on their queue. */
 	return 0;
 }
 
-/* Gives back a closing session's run and programs. */
+/*
+ * Gives the newest run a session's executor put on each queue (0 the
+ * graphics queue, 1 the compute queue); no run when it put none.
+ */
+void
+amdrdna_vk_execute_last(
+	struct amdrdna_vk_session *session,
+	struct amdrdna_vk_ticket *last)
+{
+	/* No executor yet, no run. */
+	kern_memset(last, 0, 2U * sizeof(*last));
+	if (session->execute == NULL)
+		return;
+
+	/* The two queues' newest runs. */
+	kern_memcpy(last, session->execute->last, sizeof(session->execute->last));
+}
+
+/* Gives back a closing session's runs and programs, once the GPU has done what they hold. */
 void
 amdrdna_vk_execute_close(
 	struct amdrdna_vk_session *session)
@@ -326,9 +372,15 @@ amdrdna_vk_execute_close(
 	if (execute == NULL)
 		return;
 
-	/* The runs, the compiled quad programs, then the record. */
-	if (execute->token != NULL)
-		amdrdna_vk_gpu_free(session->owner, execute->token);
+	/* Each slot once its last run ended (a run that does not end keeps its memory with the node). */
+	for (index = 0U; index < EXECUTE_SLOTS; index++) {
+		if (execute->slots[index].token == NULL)
+			continue;
+		(void)amdrdna_vk_gpu_wait(session->owner, &execute->slots[index].ticket);
+		amdrdna_vk_gpu_free(session->owner, execute->slots[index].token);
+	}
+
+	/* The compiled quad programs, then the record. */
 	if (execute->program_token != NULL)
 		amdrdna_vk_gpu_free(session->owner, execute->program_token);
 	for (index = 0U; index < EXECUTE_QUAD_PROGRAMS; index++) {
@@ -385,7 +437,11 @@ amdrdna_vk_execute_trial(
 		execute_put32(cpu, at, EXECUTE_TRIAL_UNDRAWN);
 
 	/* The first image blue, then the red square. */
-	execute_start(execute);
+	error = execute_start(session, execute);
+	if (error != 0) {
+		amdrdna_vk_gpu_free(session->owner, token);
+		return error;
+	}
 	kern_memset(&quad, 0, sizeof(quad));
 	quad.target.address = va;
 	quad.target.width = EXECUTE_TRIAL_SIDE;
@@ -429,6 +485,10 @@ amdrdna_vk_execute_trial(
 	if (error == 0)
 		error = execute_flush(session, execute);
 
+	/* The GPU has drawn them. */
+	if (error == 0)
+		error = amdrdna_vk_gpu_wait(session->owner, &execute->last[0]);
+
 	/* Every pixel of both images compared. */
 	if (error == 0)
 		execute_trial_compare(cpu, pitch, trial);
@@ -441,9 +501,8 @@ amdrdna_vk_execute_trial(
 }
 
 /*
- * Gives the session's run, made at its first submission: the zero page,
- * the quad's corners and the barrier's word written once, and the
- * executor's programs.
+ * Gives the session's runs and programs, made at its first submission:
+ * the first slot and the executor's programs.
  */
 static int
 execute_open(
@@ -451,14 +510,6 @@ execute_open(
 	struct amdrdna_vk_execute **execute)
 {
 	struct amdrdna_vk_execute *opened;
-	static const uint32_t corners[EXECUTE_CORNERS * 2U] = {
-		0U, 0U,
-		EXECUTE_FLOAT_ONE, 0U,
-		0U, EXECUTE_FLOAT_ONE,
-		EXECUTE_FLOAT_ONE, 0U,
-		EXECUTE_FLOAT_ONE, EXECUTE_FLOAT_ONE,
-		0U, EXECUTE_FLOAT_ONE
-	};
 	int error;
 
 	/* Made once; programs that did not compile are tried again. */
@@ -473,20 +524,15 @@ execute_open(
 		return 0;
 	}
 
-	/* The record and the run. */
+	/* The record and its first slot. */
 	opened = kern_calloc(1U, sizeof(*opened));
 	if (opened == NULL)
 		return ENOMEM;
-	error = amdrdna_vk_gpu_alloc_system(session->owner, EXECUTE_RUN_BYTES, &opened->token, &opened->cpu, &opened->va);
+	error = execute_slot_make(session, &opened->slots[0]);
 	if (error != 0) {
 		kern_free(opened);
 		return error;
 	}
-
-	/* The zero page, the barrier's word, and the corners: (0,0) (1,0) (0,1), (1,0) (1,1) (0,1). */
-	kern_memset(opened->cpu + EXECUTE_ZERO_AT, 0, EXECUTE_ZERO_BYTES);
-	execute_put32(opened->cpu, EXECUTE_SYNC_AT, 0U);
-	execute_put_words(opened->cpu, EXECUTE_CORNERS_AT, corners, EXECUTE_CORNERS * 2U);
 
 	/* The executor's programs. */
 	session->execute = opened;
@@ -589,14 +635,66 @@ execute_compile(
 }
 
 /*
- * Starts an indirect buffer: the state every draw shares and the caches
- * emptied (vk-state.c); nothing of the tables is used yet.
+ * Starts an indirect buffer in a slot whose run has ended: the current
+ * slot, another one made earlier, a new one while one is to be had, or
+ * else the current one once its run ends.  The buffer starts with the
+ * state every draw shares and the caches emptied (vk-state.c); nothing of
+ * the tables is used yet.  Returns 0, or the error of the slot's making or
+ * of the wait (the run did not end).
  */
-static void
+static int
 execute_start(
+	struct amdrdna_vk_session *session,
 	struct amdrdna_vk_execute *execute)
 {
-	/* The buffer over its part of the run. */
+	struct execute_slot *slot;
+	uint32_t index;
+	uint32_t chosen;
+	bool passed;
+	int error;
+
+	/* The current slot when its run ended, else another made one whose run ended. */
+	chosen = EXECUTE_SLOTS;
+	for (index = 0U; index < EXECUTE_SLOTS; index++) {
+		slot = &execute->slots[(execute->slot + index) % EXECUTE_SLOTS];
+		if (slot->token == NULL)
+			continue;
+		passed = amdrdna_vk_gpu_passed(session->owner, &slot->ticket);
+		if (passed) {
+			chosen = (execute->slot + index) % EXECUTE_SLOTS;
+			break;
+		}
+	}
+
+	/* Else a new slot, while one is to be had. */
+	for (index = 0U; chosen == EXECUTE_SLOTS && index < EXECUTE_SLOTS; index++) {
+		if (execute->slots[index].token != NULL)
+			continue;
+		error = execute_slot_make(session, &execute->slots[index]);
+		if (error == 0)
+			chosen = index;
+		break;
+	}
+
+	/* Else the first made slot from the current one on (the first slot is always made), once its run ended. */
+	if (chosen == EXECUTE_SLOTS) {
+		chosen = execute->slot;
+		while (execute->slots[chosen].token == NULL)
+			chosen = (chosen + 1U) % EXECUTE_SLOTS;
+		error = amdrdna_vk_gpu_wait(session->owner, &execute->slots[chosen].ticket);
+		if (error != 0)
+			return error;
+	}
+
+	/* The slot is the one written now; its run is over. */
+	slot = &execute->slots[chosen];
+	execute->slot = chosen;
+	execute->token = slot->token;
+	execute->cpu = slot->cpu;
+	execute->va = slot->va;
+	kern_memset(&slot->ticket, 0, sizeof(slot->ticket));
+
+	/* The buffer over its part of the slot. */
 	amdrdna_vk_pm4_start(&execute->pm4, (uint32_t *)(void *)(execute->cpu + EXECUTE_BUFFER_AT), EXECUTE_BUFFER_WORDS);
 	if (execute->kernel_queue)
 		amdrdna_vk_state_start_kernel(&execute->pm4);
@@ -607,18 +705,63 @@ execute_start(
 	execute->tables = 0U;
 	execute->draws = 0U;
 	execute->quads = 0U;
+
+	/* Succeeded: the buffer is started. */
+	return 0;
 }
 
 /*
- * Runs the indirect buffer written so far, after a barrier that leaves
- * everything it wrote in memory, and waits for it; then starts the next
- * one.  Returns the run's error.
+ * Makes a slot: a run of system memory with its zero page, the barrier's
+ * word and the quad's corners written once.  Returns 0 or the node's
+ * error.
+ */
+static int
+execute_slot_make(
+	struct amdrdna_vk_session *session,
+	struct execute_slot *slot)
+{
+	static const uint32_t corners[EXECUTE_CORNERS * 2U] = {
+		0U, 0U,
+		EXECUTE_FLOAT_ONE, 0U,
+		0U, EXECUTE_FLOAT_ONE,
+		EXECUTE_FLOAT_ONE, 0U,
+		EXECUTE_FLOAT_ONE, EXECUTE_FLOAT_ONE,
+		0U, EXECUTE_FLOAT_ONE
+	};
+	int error;
+
+	/* The run. */
+	error = amdrdna_vk_gpu_alloc_system(session->owner, EXECUTE_RUN_BYTES, &slot->token, &slot->cpu, &slot->va);
+	if (error != 0) {
+		slot->token = NULL;
+		return error;
+	}
+
+	/* The zero page, the barrier's word, and the corners: (0,0) (1,0) (0,1), (1,0) (1,1) (0,1). */
+	kern_memset(slot->cpu + EXECUTE_ZERO_AT, 0, EXECUTE_ZERO_BYTES);
+	execute_put32(slot->cpu, EXECUTE_SYNC_AT, 0U);
+	execute_put_words(slot->cpu, EXECUTE_CORNERS_AT, corners, EXECUTE_CORNERS * 2U);
+
+	/* No run of it yet. */
+	kern_memset(&slot->ticket, 0, sizeof(slot->ticket));
+
+	/* Succeeded: the slot is made. */
+	return 0;
+}
+
+/*
+ * Puts the indirect buffer written so far on its queue, after a barrier
+ * that leaves everything it wrote in memory, without waiting for it; the
+ * run is the slot's and the queue's newest, and the next slot is the
+ * current one (execute_start() starts the next buffer).  Returns the
+ * error of the run's putting.
  */
 static int
 execute_flush(
 	struct amdrdna_vk_session *session,
 	struct amdrdna_vk_execute *execute)
 {
+	struct amdrdna_vk_ticket ticket;
 	int error;
 
 	/* The barrier at the end, the buffer padded. */
@@ -627,17 +770,20 @@ execute_flush(
 	if (execute->pm4.full)
 		return ENOSPC;
 
-	/* Counts its draws, then runs it. */
+	/* Counts its draws, then puts it on the queue. */
 	amdrdna_vk_gpu_drawn(session->owner, execute->draws, execute->quads);
-	if (execute->kernel_queue)
-		error = amdrdna_vk_gpu_run_kernel(session->owner, execute->va + EXECUTE_BUFFER_AT, execute->pm4.count * 4U);
-	else
-		error = amdrdna_vk_gpu_run(session->owner, execute->va + EXECUTE_BUFFER_AT, execute->pm4.count * 4U);
+	error = amdrdna_vk_gpu_submit(session->owner, execute->va + EXECUTE_BUFFER_AT, execute->pm4.count * 4U, execute->kernel_queue, &ticket);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the GPU has done it; the next buffer starts. */
-	execute_start(execute);
+	/* The slot's run, and its queue's newest. */
+	execute->slots[execute->slot].ticket = ticket;
+	execute->last[ticket.queue] = ticket;
+
+	/* The next buffer goes in the next slot, unless another one's run ends first. */
+	execute->slot = (execute->slot + 1U) % EXECUTE_SLOTS;
+
+	/* Succeeded: the run is on its queue. */
 	return 0;
 }
 
@@ -664,8 +810,10 @@ execute_room(
 	if (!full)
 		return 0;
 
-	/* Runs what there is. */
+	/* Puts what there is on the queue and starts the next buffer. */
 	error = execute_flush(session, execute);
+	if (error == 0)
+		error = execute_start(session, execute);
 	if (error != 0)
 		return error;
 
@@ -2001,6 +2149,8 @@ execute_move(
 		/* A buffer near its end runs first; the next one starts with its caches emptied. */
 		if (execute->pm4.count + AMDRDNA_PM4_MOVE_WORDS > EXECUTE_BUFFER_WORDS - EXECUTE_RECORD_WORDS) {
 			error = execute_flush(session, execute);
+			if (error == 0)
+				error = execute_start(session, execute);
 			if (error != 0)
 				return error;
 			state->target_written = false;

@@ -87,7 +87,7 @@ static int device_image_format(struct i915_wire_reader *reader, struct i915_wire
 static int device_create(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int device_queue(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int device_destroy(struct amdrdna_vk_session *session, enum i915_vk_object_kind kind, struct i915_wire_reader *reader);
-static int device_wait_idle(struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int device_wait_idle(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int device_token_destroy(struct amdrdna_vk_session *session, void *payload);
 static int device_remember(struct amdrdna_vk_session *session, enum i915_vk_object_kind kind, uint64_t identity);
 static void device_set_float(float *destination, uint32_t bits);
@@ -147,7 +147,7 @@ amdrdna_vk_device_route(
 		break;
 	case GPU_OP_QUEUE_WAIT_IDLE:
 	case GPU_OP_DEVICE_WAIT_IDLE:
-		error = device_wait_idle(reader, reply);
+		error = device_wait_idle(session, reader, reply);
 		break;
 	case GPU_OP_GET_DEVICE_QUEUE2:
 		error = device_queue(session, reader, reply);
@@ -827,22 +827,37 @@ device_destroy(
 }
 
 /*
- * vkQueueWaitIdle and vkDeviceWaitIdle: [handle] -> [result].  The work
- * of a frame finishes before the frame's later commands run, so the queue
- * is idle when this is decoded.
+ * vkQueueWaitIdle and vkDeviceWaitIdle: [handle] -> [result].  The
+ * session's newest runs on both queues are waited for; a run that did not
+ * end in time loses the device.
  */
 static int
 device_wait_idle(
+	struct amdrdna_vk_session *session,
 	struct i915_wire_reader *reader,
 	struct i915_wire_writer *reply)
 {
+	struct amdrdna_vk_ticket last[2];
+	uint32_t result;
+	uint32_t queue;
+	int error;
+
 	/* The queue or device. */
 	(void)drv_i915_wire_read_u64(reader);
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Replies success. */
-	drv_i915_wire_reply_u32(reply, VK_SUCCESS);
+	/* Waits for each queue's newest run. */
+	result = (uint32_t)VK_SUCCESS;
+	amdrdna_vk_execute_last(session, last);
+	for (queue = 0U; queue < 2U; queue++) {
+		error = amdrdna_vk_gpu_wait(session->owner, &last[queue]);
+		if (error != 0)
+			result = (uint32_t)VK_ERROR_DEVICE_LOST;
+	}
+
+	/* Replies whether the work did its work. */
+	drv_i915_wire_reply_u32(reply, result);
 
 	/* Succeeded: the queue is idle. */
 	return 0;

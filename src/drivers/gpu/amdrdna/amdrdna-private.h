@@ -586,6 +586,20 @@ struct amdrdna_space {
 };
 
 /*
+ * A run put on a ring for an address space, which amdrdna_space_wait()
+ * and amdrdna_space_passed() look for: the tracked ring, the fence value
+ * after the run, the hub context it runs in and the ring's resets when it
+ * was put on it.  issued is clear for no run (nothing to wait for).
+ */
+struct amdrdna_space_ticket {
+	unsigned tracked;
+	uint32_t sequence;
+	unsigned context;
+	uint32_t resets;
+	bool issued;
+};
+
+/*
  * The GPU's address spaces (stage A5s on).
  *
  * lock (an IRQ-safe spinlock, never held across a wait) guards the pool
@@ -598,9 +612,23 @@ struct amdrdna_space {
  * runs submitted, the spaces lost and the queues' resets (graphics and compute).
  * stamped says the graphics ring's runs write the GPU's timestamp counter
  * at their start and end, for the executor's timing.
+ *
+ * submit_lock (a mutex, taken before lock) keeps the runs' submissions
+ * and the queues' resets apart: a queue is reset only while nothing is
+ * put on a ring.  Under lock, for each tracked ring: last_space and
+ * last_sequence name the space of the newest run and its fence value (a
+ * run of another space waits for it); resets_of counts the ring's resets,
+ * and the last one dropped the runs after dropped_after up to
+ * dropped_last.
  */
 struct amdrdna_spaces {
 	struct spinlock lock;
+	struct mutex submit_lock;
+	uint32_t last_space[AMDRDNA_TRACKED_RINGS];
+	uint32_t last_sequence[AMDRDNA_TRACKED_RINGS];
+	uint32_t resets_of[AMDRDNA_TRACKED_RINGS];
+	uint32_t dropped_after[AMDRDNA_TRACKED_RINGS];
+	uint32_t dropped_last[AMDRDNA_TRACKED_RINGS];
 	struct amdrdna_context_pool pool;
 	struct amdrdna_space_ids ids;
 	struct amdrdna_space *list;
@@ -1196,6 +1224,30 @@ amdrdna_space_run(
 	uint64_t address,
 	uint32_t words,
 	unsigned milliseconds);
+
+int
+amdrdna_space_submit(
+	struct amdrdna_space *space,
+	unsigned tracked,
+	uint64_t address,
+	uint32_t words,
+	struct amdrdna_space_ticket *ticket);
+
+int
+amdrdna_space_wait(
+	struct amdrdna_space *space,
+	const struct amdrdna_space_ticket *ticket,
+	unsigned milliseconds);
+
+bool
+amdrdna_space_passed(
+	struct amdrdna_space *space,
+	const struct amdrdna_space_ticket *ticket);
+
+bool
+amdrdna_space_newest(
+	struct amdrdna_space *space,
+	const struct amdrdna_space_ticket *ticket);
 
 bool
 amdrdna_space_quiet(

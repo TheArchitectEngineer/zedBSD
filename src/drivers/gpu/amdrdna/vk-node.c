@@ -21,10 +21,11 @@
  *
  * With amdrdna.vk.timing=N on the boot line, the executor's work is timed
  * and marked by the first frame after each N milliseconds: the frames,
- * the commands by opcode, the waits for the GPU, the command streams read
- * through the window, the memory made, and the copies moved.  The runs
- * also write the GPU's timestamp counter at their start and end, so the
- * time the GPU spent on them is told apart from the wait.
+ * the commands by opcode, the runs put on the rings (the time to put
+ * them; nothing waits for the GPU there), the command streams read, the
+ * memory made, and the copies moved.  The runs also write the GPU's
+ * timestamp counter at their start and end; the GPU's time is counted
+ * when the executor itself waits for its newest run.
  */
 
 #include <stdbool.h>
@@ -112,6 +113,7 @@ struct amdrdna_vk_timing {
 	struct vk_node_busy busy;
 };
 
+static void vk_node_ticket_run(const struct amdrdna_vk_ticket *ticket, struct amdrdna_space_ticket *run);
 static int vk_node_execute(struct amdrdna_session *session, const void *wire, uint32_t bytes);
 static uint64_t vk_node_timelines(struct amdrdna_session *session);
 static int vk_node_dispatch(struct amdrdna_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -725,67 +727,151 @@ amdrdna_vk_gpu_run(
 	uint64_t va,
 	uint32_t bytes)
 {
-	struct amdrdna_session *session;
-	uint64_t started_us;
+	struct amdrdna_vk_ticket ticket;
 	int error;
 
-	/* The node session the executor names. */
-	session = owner;
-
-	/* Whole dwords. */
-	if (bytes == 0U || (bytes & 3U) != 0U)
-		return EINVAL;
-
-	/* Runs the buffer in the session's space and waits for it, timed with its bytes and the GPU's own time. */
-	started_us = amdrdna_display_now_us();
-	error = amdrdna_space_run(session->space, AMDRDNA_TRACKED_GRAPHICS, va, bytes / 4U, VK_NODE_RUN_MS);
-	vk_node_count(session->node, VK_NODE_RUNS, started_us, bytes);
-	if (error == 0)
-		vk_node_count_busy(session, started_us);
-	if (error == EINVAL)
-		return EINVAL;
+	/* The run on the graphics queue. */
+	error = amdrdna_vk_gpu_submit(owner, va, bytes, false, &ticket);
 	if (error != 0)
-		return EIO;
+		return error;
+
+	/* Its end. */
+	error = amdrdna_vk_gpu_wait(owner, &ticket);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the GPU has done the work. */
 	return 0;
 }
 
 /*
- * Runs an indirect buffer of bytes at va on the compute queue of the
- * compute queue family (the first compute queue) in the session's address
- * space and waits until the GPU has done it.  Returns as
- * amdrdna_vk_gpu_run() does; a run that does not finish resets only that
- * queue.
+ * Puts an indirect buffer of bytes at va on the graphics queue, or on the
+ * compute queue of the compute queue family (kernel_queue), in the
+ * session's address space, without waiting for it; ticket names the run.
+ * The session's newest run on the other queue is waited for first when it
+ * still runs (one queue's work never overtakes the other's).  The run is
+ * the session's newest on its queue from now on.
+ *
+ * Returns 0, EINVAL for a buffer that is not whole dwords, or EIO when the
+ * session is lost, the device failed, or the run could not be put on the
+ * ring.
  */
 int
-amdrdna_vk_gpu_run_kernel(
+amdrdna_vk_gpu_submit(
 	void *owner,
 	uint64_t va,
-	uint32_t bytes)
+	uint32_t bytes,
+	bool kernel_queue,
+	struct amdrdna_vk_ticket *ticket)
 {
 	struct amdrdna_session *session;
+	struct amdrdna_space_ticket run;
+	unsigned queue;
+	unsigned other;
+	unsigned tracked;
 	uint64_t started_us;
+	bool passed;
 	int error;
 
-	/* The node session the executor names. */
+	/* The node session the executor names; no run yet. */
 	session = owner;
+	kern_memset(ticket, 0, sizeof(*ticket));
 
 	/* Whole dwords. */
 	if (bytes == 0U || (bytes & 3U) != 0U)
 		return EINVAL;
 
-	/* Runs the buffer in the session's space and waits for it, timed with its bytes. */
+	/* The queue, and the other one. */
+	queue = AMDRDNA_NODE_QUEUE_GRAPHICS;
+	other = AMDRDNA_NODE_QUEUE_COMPUTE;
+	tracked = AMDRDNA_TRACKED_GRAPHICS;
+	if (kernel_queue) {
+		queue = AMDRDNA_NODE_QUEUE_COMPUTE;
+		other = AMDRDNA_NODE_QUEUE_GRAPHICS;
+		tracked = AMDRDNA_TRACKED_COMPUTE;
+	}
+
+	/* The other queue's work ends first. */
+	passed = amdrdna_space_passed(session->space, &session->runs[other]);
+	if (!passed) {
+		error = amdrdna_space_wait(session->space, &session->runs[other], VK_NODE_RUN_MS);
+		if (error != 0)
+			return EIO;
+	}
+
+	/* Puts the buffer on the ring, timed with its bytes. */
 	started_us = amdrdna_display_now_us();
-	error = amdrdna_space_run(session->space, AMDRDNA_TRACKED_COMPUTE, va, bytes / 4U, VK_NODE_RUN_MS);
+	error = amdrdna_space_submit(session->space, tracked, va, bytes / 4U, &run);
 	vk_node_count(session->node, VK_NODE_RUNS, started_us, bytes);
 	if (error == EINVAL)
 		return EINVAL;
 	if (error != 0)
 		return EIO;
 
-	/* Succeeded: the GPU has done the work. */
+	/* The session's newest run on the queue. */
+	session->runs[queue] = run;
+
+	/* Succeeded: the ticket names the run. */
+	ticket->queue = queue;
+	ticket->sequence = run.sequence;
+	ticket->context = run.context;
+	ticket->resets = run.resets;
+	ticket->issued = true;
 	return 0;
+}
+
+/*
+ * Waits until the GPU has done a run of the session's (a ticket of no run
+ * has nothing to wait for).  Returns 0, or EIO when the run did not
+ * finish in time (the session is then lost) or did no work.
+ */
+int
+amdrdna_vk_gpu_wait(
+	void *owner,
+	const struct amdrdna_vk_ticket *ticket)
+{
+	struct amdrdna_session *session;
+	struct amdrdna_space_ticket run;
+	uint64_t started_us;
+	bool newest;
+	int error;
+
+	/* The node session the executor names, and the run the ticket names. */
+	session = owner;
+	vk_node_ticket_run(ticket, &run);
+
+	/* Waits for it, timed; the GPU's own time when nothing ran after it. */
+	started_us = amdrdna_display_now_us();
+	newest = amdrdna_space_newest(session->space, &run);
+	error = amdrdna_space_wait(session->space, &run, VK_NODE_RUN_MS);
+	if (error == 0 && newest)
+		vk_node_count_busy(session, started_us);
+	if (error != 0)
+		return EIO;
+
+	/* Succeeded: the GPU has done the run. */
+	return 0;
+}
+
+/* Reports whether a run of the session's is no longer running (a ticket of no run is not). */
+bool
+amdrdna_vk_gpu_passed(
+	void *owner,
+	const struct amdrdna_vk_ticket *ticket)
+{
+	struct amdrdna_session *session;
+	struct amdrdna_space_ticket run;
+	bool passed;
+
+	/* The node session the executor names, and the run the ticket names. */
+	session = owner;
+	vk_node_ticket_run(ticket, &run);
+
+	/* The run's fence against the ring's. */
+	passed = amdrdna_space_passed(session->space, &run);
+
+	/* Succeeded: the answer. */
+	return passed;
 }
 
 /* Counts a copy between a buffer and an image the command processor moved. */
@@ -848,6 +934,23 @@ amdrdna_vk_blob_read(
 	/* One stream more, and its bytes. */
 	(void)__atomic_fetch_add(&session->node->streams, 1U, __ATOMIC_RELAXED);
 	(void)__atomic_fetch_add(&session->node->stream_bytes, length, __ATOMIC_RELAXED);
+}
+
+/* Gives the address space's run an executor's ticket names. */
+static void
+vk_node_ticket_run(
+	const struct amdrdna_vk_ticket *ticket,
+	struct amdrdna_space_ticket *run)
+{
+	/* The ring of the ticket's queue and the run's fence value, context and the ring's resets then. */
+	kern_memset(run, 0, sizeof(*run));
+	run->tracked = AMDRDNA_TRACKED_GRAPHICS;
+	if (ticket->queue == AMDRDNA_NODE_QUEUE_COMPUTE)
+		run->tracked = AMDRDNA_TRACKED_COMPUTE;
+	run->sequence = ticket->sequence;
+	run->context = ticket->context;
+	run->resets = ticket->resets;
+	run->issued = ticket->issued;
 }
 
 /* Runs one command frame of an open through its executor session (the node's lock is held). */

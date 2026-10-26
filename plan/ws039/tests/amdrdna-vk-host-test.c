@@ -246,6 +246,8 @@ static struct state_entry dispatch_log[2];
 static unsigned dispatch_count;
 static unsigned decode_errors;
 static uint32_t ib_words_total;
+static uint32_t gpu_submits;
+static uint32_t gpu_waits;
 
 int
 amdrdna_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va)
@@ -484,6 +486,8 @@ decode_buffer(const uint32_t *words, uint32_t count, uint32_t run)
 }
 
 /* Decodes a run's indirect buffer (a whole number of eight words) into the logs. */
+static int fake_run_kernel(void *owner, uint64_t va, uint32_t bytes);
+
 int
 amdrdna_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes)
 {
@@ -521,8 +525,8 @@ static const char *kernel_replay_error;
 
 static void replay_dispatch(const struct state_entry *state);
 
-int
-amdrdna_vk_gpu_run_kernel(void *owner, uint64_t va, uint32_t bytes)
+static int
+fake_run_kernel(void *owner, uint64_t va, uint32_t bytes)
 {
 	const uint8_t *buffer;
 	uint64_t room;
@@ -558,6 +562,45 @@ amdrdna_vk_gpu_run_kernel(void *owner, uint64_t va, uint32_t bytes)
 	for (; first < dispatch_count; first++)
 		replay_dispatch(&dispatch_log[first]);
 	return 0;
+}
+
+/* Puts a run on a queue: the fake GPU does it at once, so its ticket has always passed. */
+int
+amdrdna_vk_gpu_submit(void *owner, uint64_t va, uint32_t bytes, bool kernel_queue, struct amdrdna_vk_ticket *ticket)
+{
+	int error;
+
+	memset(ticket, 0, sizeof(*ticket));
+	if (kernel_queue)
+		error = fake_run_kernel(owner, va, bytes);
+	else
+		error = amdrdna_vk_gpu_run(owner, va, bytes);
+	if (error != 0)
+		return error;
+	gpu_submits++;
+	ticket->queue = kernel_queue ? 1U : 0U;
+	ticket->sequence = gpu_submits;
+	ticket->issued = true;
+	return 0;
+}
+
+/* Waits for a run the fake GPU has done already. */
+int
+amdrdna_vk_gpu_wait(void *owner, const struct amdrdna_vk_ticket *ticket)
+{
+	(void)owner;
+	(void)ticket;
+	gpu_waits++;
+	return 0;
+}
+
+/* Every run of the fake GPU has passed. */
+bool
+amdrdna_vk_gpu_passed(void *owner, const struct amdrdna_vk_ticket *ticket)
+{
+	(void)owner;
+	(void)ticket;
+	return true;
 }
 
 /* A register of a logged state, by its byte offset. */

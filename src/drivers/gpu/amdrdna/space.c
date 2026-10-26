@@ -71,8 +71,21 @@
 /* The most words a run puts on its ring: a sync, a drop, the indirect buffer and a timed run's two timestamps. */
 #define SPACE_RUN_COMMANDS		64U
 
+/* How long the work of a run may take before the space is lost and its queue reset (the waits of another space's runs take twice it). */
+#define SPACE_RUN_MS			2000U
+
+/* How many runs of system memory say where they are. */
+#define SPACE_SYSTEM_MARKS		8U
+
 /* How often a run waits for a context before giving up. */
 #define SPACE_GRANT_TRIES		32U
+
+/*
+ * How many runs of system memory have said where they are; only the first
+ * SPACE_SYSTEM_MARKS do.  Counted without a lock: a count off by one only
+ * changes how many lines are shown.
+ */
+static unsigned space_system_marks;
 
 static struct amdrdna_ring *space_ring(struct amdrdna_device *device, unsigned tracked);
 static void space_passed(struct amdrdna_device *device, uint32_t *passed);
@@ -84,6 +97,8 @@ static int space_leaf(struct amdrdna_space *space, uint64_t address, struct amdr
 static void space_clear(struct amdrdna_space *space, uint64_t address, uint64_t bytes);
 static void space_changed(struct amdrdna_space *space);
 static void space_lose(struct amdrdna_space *space, int error);
+static void space_hang(struct amdrdna_space *space, const struct amdrdna_space_ticket *ticket);
+static bool space_dropped_locked(struct amdrdna_device *device, const struct amdrdna_space_ticket *ticket);
 static void space_reset(struct amdrdna_device *device, unsigned tracked, unsigned context);
 static uint64_t space_table_word(struct amdrdna_device *device, uint64_t vram);
 static bool space_quiet_locked(struct amdrdna_space *space);
@@ -102,6 +117,7 @@ amdrdna_spaces_init(
 	/* The lock, the pool and the identifiers. */
 	spaces = &device->spaces;
 	spin_init(&spaces->lock, LOCK_RANK_DEVICE, "amdrdna spaces");
+	(void)mutex_init(&spaces->submit_lock, LOCK_RANK_DEVICE, "amdrdna submit");
 	amdrdna_context_pool_init(&spaces->pool);
 	amdrdna_space_ids_init(&spaces->ids);
 
@@ -113,6 +129,13 @@ amdrdna_spaces_init(
 	spaces->faulted = false;
 	spaces->runs = 0U;
 	spaces->lost = 0U;
+
+	/* No ring has a run or a reset yet. */
+	kern_memset(spaces->last_space, 0, sizeof(spaces->last_space));
+	kern_memset(spaces->last_sequence, 0, sizeof(spaces->last_sequence));
+	kern_memset(spaces->resets_of, 0, sizeof(spaces->resets_of));
+	kern_memset(spaces->dropped_after, 0, sizeof(spaces->dropped_after));
+	kern_memset(spaces->dropped_last, 0, sizeof(spaces->dropped_last));
 }
 
 /* Lets the address spaces run work once the rings run (stage A5s). */
@@ -442,27 +465,9 @@ amdrdna_space_unmap(
 /*
  * Runs words dwords of commands at address of an address space on a
  * tracked ring (AMDRDNA_TRACKED_*) and waits up to milliseconds for them
- * to end.
+ * to end: amdrdna_space_submit() and amdrdna_space_wait().
  *
- * The power side hears that the GPU works, and the CPU's writes to VRAM
- * are made visible.  The space gets a hub
- * context; when the context's translations are stale they are dropped on
- * the ring before the commands (the context pointed at the space's root
- * table, the drop waited for, the interrupt controller told which space
- * the context's faults belong to).  The commands run as an indirect
- * buffer in the context, and the ring's fence after them is waited for.
- * A run that does not end in time loses the space.
- *
- * Returns 0, EINVAL for a bad buffer, ENOTSUP for the copy engine, ENODEV
- * for a ring that does not run,
- * EIO for a space that is lost or a device that failed (or a run that did
- * not end), EBUSY when the ring is full, ETIMEDOUT when no context became
- * free.
- *
- * Procedure referenced: Linux v6.19
- * drivers/gpu/drm/amd/amdgpu/amdgpu_vm.c (amdgpu_vm_flush: the pipeline
- * sync, the drop, then the space's identifier for the context) and
- * amdgpu_ib.c (amdgpu_ib_schedule).
+ * Returns 0, or the error of either.
  */
 int
 amdrdna_space_run(
@@ -471,6 +476,58 @@ amdrdna_space_run(
 	uint64_t address,
 	uint32_t words,
 	unsigned milliseconds)
+{
+	struct amdrdna_space_ticket ticket;
+	int error;
+
+	/* The run on its ring. */
+	error = amdrdna_space_submit(space, tracked, address, words, &ticket);
+	if (error != 0)
+		return error;
+
+	/* Its end. */
+	error = amdrdna_space_wait(space, &ticket, milliseconds);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the run ended. */
+	return 0;
+}
+
+/*
+ * Puts words dwords of commands at address of an address space on a
+ * tracked ring (AMDRDNA_TRACKED_*) without waiting for them; ticket names
+ * the run for amdrdna_space_wait() and amdrdna_space_passed().
+ *
+ * The power side hears that the GPU works, and the CPU's writes to VRAM
+ * are made visible.  Work another space put on the ring and the GPU has
+ * not finished is waited for first, at most twice the run time
+ * SPACE_RUN_MS: a queue reset after a run that does not end drops what is
+ * queued behind it, so one session's hang never takes another's work with
+ * it.  The space gets a hub context; when the context's translations are
+ * stale they are dropped on the ring before the commands (the context
+ * pointed at the space's root table, the drop waited for, the interrupt
+ * controller told which space the context's faults belong to).  The
+ * commands run as an indirect buffer in the context, and the ring writes
+ * its fence after them.
+ *
+ * Returns 0, EINVAL for a bad buffer, ENOTSUP for the copy engine, ENODEV
+ * for a ring that does not run, EIO for a space that is lost or a device
+ * that failed, EBUSY when the ring is full, ETIMEDOUT when no context
+ * became free.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_vm.c (amdgpu_vm_flush: the pipeline
+ * sync, the drop, then the space's identifier for the context) and
+ * amdgpu_ib.c (amdgpu_ib_schedule).
+ */
+int
+amdrdna_space_submit(
+	struct amdrdna_space *space,
+	unsigned tracked,
+	uint64_t address,
+	uint32_t words,
+	struct amdrdna_space_ticket *ticket)
 {
 	uint32_t commands[SPACE_RUN_COMMANDS];
 	uint32_t passed[AMDRDNA_TRACKED_RINGS];
@@ -481,10 +538,15 @@ amdrdna_space_run(
 	struct amdrdna_ring *waited;
 	unsigned long irq;
 	uint32_t sequence;
+	uint32_t other_sequence;
 	unsigned count;
 	unsigned tries;
 	bool submitted;
+	bool other;
 	int error;
+
+	/* No run yet. */
+	kern_memset(ticket, 0, sizeof(*ticket));
 
 	/* A command ring that runs (the copy engine reads other packets), and a buffer of whole dwords. */
 	device = space->device;
@@ -496,17 +558,30 @@ amdrdna_space_run(
 	if (words == 0U || (address & 3U) != 0U)
 		return EINVAL;
 
+	/* Another space's newest run on the ring, when it is still there. */
+	irq = spin_lock_irqsave(&device->spaces.lock);
+
+	other = (device->spaces.last_space[tracked] != 0U && device->spaces.last_space[tracked] != space->id);
+	other_sequence = device->spaces.last_sequence[tracked];
+
+	spin_unlock_irqrestore(&device->spaces.lock, irq);
+
+	/* Waits for it to end, or for a reset to drop it; a run that is not done by then is queued behind it all the same. */
+	if (other)
+		(void)amdrdna_ring_wait(device, ring, other_sequence, SPACE_RUN_MS * 2U);
+
 	/* Tells the power side the GPU works, so the graphics clock is raised for it. */
 	amdrdna_power_busy(device);
 
 	/* The GPU must read what the CPU wrote to VRAM. */
 	amdrdna_host_path_flush(device);
 
-	/* Gets a context and submits the run, waiting for a context when none is free. */
+	/* Gets a context and submits the run, waiting for a context when none is free; no queue is reset meanwhile. */
 	submitted = false;
 	sequence = 0U;
 	error = 0;
 	for (tries = 0U; tries < SPACE_GRANT_TRIES; tries++) {
+		mutex_lock(&device->spaces.submit_lock);
 		irq = spin_lock_irqsave(&device->spaces.lock);
 
 		/* A failed device or a lost space runs nothing. */
@@ -514,6 +589,7 @@ amdrdna_space_run(
 		    device->spaces.faulted ||
 		    space->lost) {
 			spin_unlock_irqrestore(&device->spaces.lock, irq);
+			mutex_unlock(&device->spaces.submit_lock);
 			return EIO;
 		}
 
@@ -527,15 +603,17 @@ amdrdna_space_run(
 		error = amdrdna_context_grant(&device->spaces.pool, &request, passed, &grant);
 		if (error != 0) {
 			spin_unlock_irqrestore(&device->spaces.lock, irq);
+			mutex_unlock(&device->spaces.submit_lock);
 			return error;
 		}
 
-		/* No context is free: waits for one without the lock, then asks again. */
+		/* No context is free: waits for one without the locks, then asks again. */
 		if (grant.wait) {
 			spin_unlock_irqrestore(&device->spaces.lock, irq);
+			mutex_unlock(&device->spaces.submit_lock);
 			waited = space_ring(device, grant.wait_ring);
 			if (waited != NULL)
-				(void)amdrdna_ring_wait(device, waited, grant.wait_sequence, milliseconds);
+				(void)amdrdna_ring_wait(device, waited, grant.wait_sequence, SPACE_RUN_MS);
 			continue;
 		}
 
@@ -546,10 +624,14 @@ amdrdna_space_run(
 			amdrdna_context_submitted(&device->spaces.pool, grant.context, &request, sequence, grant.flush);
 			space->context = grant.context;
 			device->spaces.runs++;
+			device->spaces.last_space[tracked] = space->id;
+			device->spaces.last_sequence[tracked] = sequence;
+			ticket->resets = device->spaces.resets_of[tracked];
 			submitted = true;
 		}
 
 		spin_unlock_irqrestore(&device->spaces.lock, irq);
+		mutex_unlock(&device->spaces.submit_lock);
 		break;
 	}
 
@@ -561,24 +643,126 @@ amdrdna_space_run(
 	if (!submitted)
 		return ETIMEDOUT;
 
-	/*
-	 * Waits for the fence after the run.  A run that does not end loses
-	 * the space, and its queue is reset so the other sessions go on (the
-	 * graphics queue every session shares, or a compute queue); a queue
-	 * that cannot be reset fails the device.
-	 */
-	error = amdrdna_ring_wait(device, ring, sequence, milliseconds);
+	/* Succeeded: the ring runs it; the ticket names it. */
+	ticket->tracked = tracked;
+	ticket->sequence = sequence;
+	ticket->context = grant.context;
+	ticket->issued = true;
+	return 0;
+}
+
+/*
+ * Waits up to milliseconds for a run of an address space to end.  A run
+ * that does not end loses the space, and its queue is reset so the other
+ * sessions go on (a queue that cannot be reset fails the device); a run
+ * a reset dropped, or of a space that was lost, failed too.  A ticket of
+ * no run has nothing to wait for.
+ *
+ * Returns 0 once the run ended (the CPU then reads what it wrote), or EIO.
+ */
+int
+amdrdna_space_wait(
+	struct amdrdna_space *space,
+	const struct amdrdna_space_ticket *ticket,
+	unsigned milliseconds)
+{
+	struct amdrdna_device *device;
+	struct amdrdna_ring *ring;
+	unsigned long irq;
+	bool dropped;
+	bool lost;
+	int error;
+
+	/* No run, nothing to wait for. */
+	if (!ticket->issued)
+		return 0;
+
+	/* The ring the run is on. */
+	device = space->device;
+	ring = space_ring(device, ticket->tracked);
+	if (ring == NULL)
+		return EIO;
+
+	/* Waits for the fence after the run; a run that does not end hangs the queue. */
+	error = amdrdna_ring_wait(device, ring, ticket->sequence, milliseconds);
 	if (error != 0) {
-		space_lose(space, ETIMEDOUT);
-		space_reset(device, tracked, grant.context);
+		space_hang(space, ticket);
 		return EIO;
 	}
+
+	/* A run a reset dropped, or of a lost space, did not do its work. */
+	irq = spin_lock_irqsave(&device->spaces.lock);
+
+	dropped = space_dropped_locked(device, ticket);
+	lost = space->lost;
+
+	spin_unlock_irqrestore(&device->spaces.lock, irq);
+
+	/* Reports a run that did not do its work. */
+	if (dropped || lost)
+		return EIO;
 
 	/* The CPU reads what the GPU wrote to VRAM, not what the host path held. */
 	amdrdna_host_path_drop(device);
 
 	/* Succeeded: the run ended. */
 	return 0;
+}
+
+/*
+ * Reports whether a run of an address space is no longer running: its
+ * ring's fence passed it (it ended, or a reset dropped it).  A ticket of
+ * no run has passed.  Nothing waits.
+ */
+bool
+amdrdna_space_passed(
+	struct amdrdna_space *space,
+	const struct amdrdna_space_ticket *ticket)
+{
+	struct amdrdna_ring *ring;
+	uint32_t fence;
+
+	/* No run has passed. */
+	if (!ticket->issued)
+		return true;
+
+	/* A ring that does not run any more runs nothing. */
+	ring = space_ring(space->device, ticket->tracked);
+	if (ring == NULL)
+		return true;
+
+	/* The fence against the run's value (the difference handles the wrap). */
+	fence = amdrdna_ring_fence(space->device, ring);
+	if ((int32_t)(fence - ticket->sequence) < 0)
+		return false;
+
+	/* Succeeded: the run is no longer running. */
+	return true;
+}
+
+/* Reports whether a ticket's run is the newest on its ring (the ring's last run stamps are its own then). */
+bool
+amdrdna_space_newest(
+	struct amdrdna_space *space,
+	const struct amdrdna_space_ticket *ticket)
+{
+	struct amdrdna_ring *ring;
+	uint32_t newest;
+
+	/* No run, or a ring that does not run, is no newest run. */
+	if (!ticket->issued)
+		return false;
+	ring = space_ring(space->device, ticket->tracked);
+	if (ring == NULL)
+		return false;
+
+	/* The ring's newest submission. */
+	newest = amdrdna_ring_sequence(ring);
+	if (newest != ticket->sequence)
+		return false;
+
+	/* Succeeded: nothing was put on the ring after it. */
+	return true;
 }
 
 /*
@@ -992,6 +1176,12 @@ amdrdna_backing_create_system(
 
 	/* Cleared, so no earlier contents show. */
 	kern_memset(backing->system_cpu, 0, (size_t)whole);
+
+	/* The first few runs say where they are (whether the GPU reads RAM above 4 GiB shows in their work). */
+	if (space_system_marks < SPACE_SYSTEM_MARKS) {
+		space_system_marks++;
+		amdrdna_mark("system run at physical 0x%llx, %llu KiB", (unsigned long long)backing->ram.paddr, (unsigned long long)(whole >> 10));
+	}
 
 	/* One holder: the caller. */
 	backing->bytes = whole;
@@ -1506,6 +1696,90 @@ space_lose(
 	amdrdna_mark("space %u lost: its run did not end (%d)", (unsigned)space->id, error);
 	if (session != NULL)
 		amdrdna_node_session_lost(device, session, EIO);
+}
+
+/*
+ * Takes a run that did not end in time: unless its fence came meanwhile
+ * (it ended late, or another waiter's reset dropped it), the space is lost
+ * and the run's queue reset, once, with no run submitted meanwhile.  The
+ * reset drops every run queued on the ring; the fence then passes them
+ * all, and the values from just after the fence then to the newest run
+ * are kept, so their waiters know their runs did no work.
+ */
+static void
+space_hang(
+	struct amdrdna_space *space,
+	const struct amdrdna_space_ticket *ticket)
+{
+	struct amdrdna_device *device;
+	struct amdrdna_ring *ring;
+	unsigned long irq;
+	uint32_t fence;
+	uint32_t newest;
+
+	/* The ring the run is on. */
+	device = space->device;
+	ring = space_ring(device, ticket->tracked);
+	if (ring == NULL)
+		return;
+
+	/* One reset at a time, and no run put on a ring meanwhile. */
+	mutex_lock(&device->spaces.submit_lock);
+
+	/* A run that passed meanwhile needs no reset. */
+	fence = amdrdna_ring_fence(device, ring);
+	if ((int32_t)(fence - ticket->sequence) >= 0) {
+		mutex_unlock(&device->spaces.submit_lock);
+		return;
+	}
+
+	/* The runs the reset drops: after the fence up to the newest. */
+	newest = amdrdna_ring_sequence(ring);
+	irq = spin_lock_irqsave(&device->spaces.lock);
+
+	device->spaces.dropped_after[ticket->tracked] = fence;
+	device->spaces.dropped_last[ticket->tracked] = newest;
+	device->spaces.resets_of[ticket->tracked]++;
+
+	spin_unlock_irqrestore(&device->spaces.lock, irq);
+
+	/* The space is lost, and its queue reset so the other sessions go on. */
+	space_lose(space, ETIMEDOUT);
+	space_reset(device, ticket->tracked, ticket->context);
+
+	mutex_unlock(&device->spaces.submit_lock);
+}
+
+/*
+ * Reports whether the last reset of a ticket's ring dropped its run: the
+ * ring was reset after the run was put on it, and its value lies after
+ * the fence at the reset, up to the newest run then.  The caller holds
+ * the spaces' lock.
+ */
+static bool
+space_dropped_locked(
+	struct amdrdna_device *device,
+	const struct amdrdna_space_ticket *ticket)
+{
+	uint32_t after;
+	uint32_t last;
+
+	/* A ring not reset since the run was put on it dropped nothing of it. */
+	if (device->spaces.resets_of[ticket->tracked] == ticket->resets)
+		return false;
+
+	/* A run the fence had passed at the reset had ended. */
+	after = device->spaces.dropped_after[ticket->tracked];
+	if ((int32_t)(ticket->sequence - after) <= 0)
+		return false;
+
+	/* A run put on the ring after the reset was not dropped by it. */
+	last = device->spaces.dropped_last[ticket->tracked];
+	if ((int32_t)(ticket->sequence - last) > 0)
+		return false;
+
+	/* Succeeded: the reset dropped the run. */
+	return true;
 }
 
 /*
