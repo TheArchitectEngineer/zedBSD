@@ -13,7 +13,7 @@
 ## 受け入れ
 
 - `render/` が無く、build の規則・host 試験・execution の試験・文書の参照（WS031 などの未完の Phase の `render/` の列を含む）が新しい path を指す。
-- build（既定と I915_TESTS=y）の warning 0、i915 の host 試験 PASS、5330 の素の起動の回帰 PASS（P4 の plan/ws245/tests/5330-run.sh）。
+- build（既定と I915_TESTS=y）の warning 0、i915 の host 試験 PASS、5330 の素の起動の回帰 PASS（P4 の plan/tools/hw5330/5330-run.sh）。
 
 ## Phase
 

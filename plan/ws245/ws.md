@@ -20,8 +20,8 @@ Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理）、
 
 - display 11〜13（ICL・TGL・RKL・ADL-S・RPL-S・ADL-P の系列）の display を、`src/drivers/gpu/i915/display/` の xd の部品（`xd-*.c`: core・power・DMC・clock・DPLL・DDI・DP・AUX・TC・pipe・plane・DBUF・帯域・HPD・takeover・screen・picture・output・diag）と自前の殻（`display.c`・`head.c`・`resident.c`・`present.c`・`edp-device.c`・`hpd.c`・`tc-port.c`・`display-power.c`・`run-log.c` ほか）に書き直した。設計は [design.md](design.md)（改訂 6）。
 - Linux の code・comment・構造を写した旧 file（modeset・state・ddi・dp・pipe・plane・panel・edid・takeover・hotplug・tc・watermark・power・dc9・diagnostics・intel/ の Linux 型の header ほか）は全部消した（段ごとに中身を空にし、merge の時に Q1 が削除）。register・表はデータとして block ごとの「Value(s) referenced:」で残す。
-- 段ごとの 5330 の回帰（T1 の i18〜i21、P4 の q1597）: 起動・GOP の引き継ぎ・内蔵 panel（eDP）・backlight・compositor の画面が書き直しの前と同じ（survey の steady の register の差 0）。最後は main 684a5243f（2026-10-26、q1597）で PASS、以後も WS252・WS293 の kernel で PASS（`plan/ws245/tests/evidence/`）。
-- host 試験: `plan/ws245/tests/run-xd-host-tests.sh`（xd の部品の model の試験の全部、check-sources・check-display-steps の監査を含む）all passed（2026-10-27 の WS252 p008 でも）。
+- 段ごとの 5330 の回帰（T1 の i18〜i21、P4 の q1597）: 起動・GOP の引き継ぎ・内蔵 panel（eDP）・backlight・compositor の画面が書き直しの前と同じ（survey の steady の register の差 0）。最後は main 684a5243f（2026-10-26、q1597）で PASS、以後も WS252・WS293 の kernel で PASS（`plan/tools/hw5330/evidence/`）。
+- host 試験: `plan/tools/i915-display/run-xd-host-tests.sh`（xd の部品の model の試験の全部、check-sources・check-display-steps の監査を含む）all passed（2026-10-27 の WS252 p008 でも）。
 
 ## 制限と移管
 
@@ -32,8 +32,8 @@ Related: [WS244](../ws244/ws.md)（i915 の Linux 由来の code の整理）、
 
 ## 試験と道具
 
-- 回帰に使う物（plan/tools への移動を Q1 に提案中、2026-10-27）: `tests/run-xd-host-tests.sh`（`check-sources.py`・`check-display-steps.py`・`check-xd-regs-linux.sh`/`.c`・`linux-stub/` を使う）、5330 の実機の `tests/5330-run.sh`（`5330-survey.sh`・`5330-survey-diff.py`・`config-5330.mk`・基準 `evidence/t1229i21-main-merged-20261017.md`）と `tests/5330-bootcycle.sh`。
-- Phase の dir、`temp/`、WS だけの試験・証拠は削除を Q1 に依頼した（2026-10-27）。
+- 回帰に使う物は 2026-10-27（q1606）に plan/tools へ移した: `plan/tools/i915-display/`（`run-xd-host-tests.sh` と、それが使う `check-sources.py`・`check-display-steps.py`・`check-xd-regs-linux.sh`/`.c`・`linux-stub/`、Linux の tree と照らす `check-xd-tables-linux.py`・`check-xd-vbt-layout-linux.sh`/`.c`）、`plan/tools/hw5330/`（5330 の実機の `5330-run.sh`・`5330-survey.sh`・`5330-survey-diff.py`・`5330-bootcycle.sh`・`5330-ws253-*.sh`・`config-5330.mk`、`evidence/` に基準 `t1229i21-main-merged-20261017.md` と P4 の回帰の証拠）。
+- Phase の dir、`temp/`、WS だけの試験・証拠は 2026-10-27 に Q1 が削除した（main 2a6fa1306）。
 
 ## Phase
 

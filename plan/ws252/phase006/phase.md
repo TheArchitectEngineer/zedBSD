@@ -19,4 +19,4 @@ Queue: q1599-i01（P4）
 
 ## 確かめた事
 
-- build warning 0。5330（素の起動、kernel 557c9de05 = p004〜p006 の全部、2026-10-26）: ssh まで 30 s、survey lit（frames +135、CRC 2 回同値、underrun 0）、i21 の基準と steady の差 0 → PASS。書き込みの digest は 13594 → 13591（display の code は変えていない。起動ごとに揺れる: 同じ main の 1 回目は 13602）。画面（keiland-shot）は desktop と Settings の初回の画面。証拠 `plan/ws245/tests/evidence/p4-ws252-p006-557c9de05.md`、PNG `plan/ws245/temp/5330/p4-ws252-p006-557c9de05.png`（git の外）。ICL の実機での attach・起動・表示・desktop は未確認（p007）。
+- build warning 0。5330（素の起動、kernel 557c9de05 = p004〜p006 の全部、2026-10-26）: ssh まで 30 s、survey lit（frames +135、CRC 2 回同値、underrun 0）、i21 の基準と steady の差 0 → PASS。書き込みの digest は 13594 → 13591（display の code は変えていない。起動ごとに揺れる: 同じ main の 1 回目は 13602）。画面（keiland-shot）は desktop と Settings の初回の画面。証拠 `plan/tools/hw5330/evidence/p4-ws252-p006-557c9de05.md`、PNG `plan/ws245/temp/5330/p4-ws252-p006-557c9de05.png`（git の外）。ICL の実機での attach・起動・表示・desktop は未確認（p007）。
