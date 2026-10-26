@@ -455,6 +455,33 @@ mac0=xx:xx:xx:xx:xx:xx   a unicast address, not all zeros
   the boot.
 - Other boards ignore it; their ports have addresses of their own.
 
+## 7f. Leaving Intel VMDs alone: pci.vmd=off
+
+`pci.vmd=off` keeps the Intel VMD driver (amd64, `CONFIG_DRIVER_PCI_VMD`)
+from binding.  A PC whose firmware storage mode is RAID hides its NVMe disks
+behind a VMD; the driver numbers the buses behind it, places their BARs in
+its windows and publishes them as a PCI segment of their own (`ffff`), so
+the NVMe driver finds the disks.  With the token the VMD is left as the
+firmware set it, the disks behind it are not seen, and the kernel log says
+`vmd: disabled by pci.vmd=off`.  It is the way to boot a machine on which
+the driver stops the boot.
+
+Two more values stop the driver at a stage, to find which stage stops a
+machine that has no serial console:
+
+```text
+pci.vmd=off      the driver does not bind
+pci.vmd=read     it maps the VMD's configuration space, logs what the
+                 firmware left behind it (vmd: firmware ...), and stops;
+                 it writes nothing
+pci.vmd=noscan   it arranges the buses and takes its interrupt vector,
+                 but publishes no bus, so no driver binds behind it
+```
+
+The tokens are read as whole words of the command line, like `kmsg=quiet`,
+not through the parameter table, so `boot: ignored 1 unknown parameter` is
+also logged.
+
 ## 8. Valid and invalid examples
 
 Current-layout overlay root using loader-origin FAT:

@@ -36,6 +36,7 @@
 #endif
 #if CONFIG_DRIVER_PCI_NVME
 #include <drivers/pci/pci-nvme.h>
+#include <drivers/pci/pci-vmd.h>
 #endif
 #if CONFIG_DRIVER_PCI_AHCI
 #include <drivers/pci/pci-ahci.h>
@@ -324,6 +325,11 @@ kern_platform_init(
 	ahci_error = drv_pci_ahci_driver_register();
 	if (ahci_error != 0)
 		kern_logf("ahci: PCI driver registration failed\n");
+#endif
+#if CONFIG_DRIVER_PCI_VMD
+	/* Binds Intel VMDs, whose attach publishes the NVMe disks hidden behind them. */
+	if (drv_pci_vmd_driver_register() != 0)
+		kern_logf("vmd: PCI driver registration failed\n");
 #endif
 #if CONFIG_DRIVER_PCI_VENUS
 	/* Binds Venus through the same PCI lifecycle as other devices. */

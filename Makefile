@@ -294,6 +294,9 @@ CONFIG_DRIVER_PCI_NVME ?= y
 # The AHCI (SATA) driver builds on amd64 (ws231).
 CONFIG_DRIVER_PCI_AHCI ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 
+# The Intel VMD driver builds on amd64 (WS298).
+CONFIG_DRIVER_PCI_VMD ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
+
 # The GPU drivers are on by default where they build (amd64), so the default
 # image starts the desktop: Venus on QEMU, the i915 on Intel machines.
 CONFIG_DRIVER_PCI_VENUS ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
@@ -814,6 +817,7 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_PCI_XHCI=$(if $(filter y,$(CONFIG_DRIVER_PCI_XHCI)),1,0) \
 	-DCONFIG_DRIVER_PCI_NVME=$(if $(filter y,$(CONFIG_DRIVER_PCI_NVME)),1,0) \
 	-DCONFIG_DRIVER_PCI_AHCI=$(if $(filter y,$(CONFIG_DRIVER_PCI_AHCI)),1,0) \
+	-DCONFIG_DRIVER_PCI_VMD=$(if $(filter y,$(CONFIG_DRIVER_PCI_VMD)),1,0) \
 	-DCONFIG_DRIVER_PCI_VENUS=$(if $(filter y,$(CONFIG_DRIVER_PCI_VENUS)),1,0) \
 	-DCONFIG_DRIVER_PCI_I915=$(if $(filter y,$(CONFIG_DRIVER_PCI_I915)),1,0) \
 	-DCONFIG_DRIVER_PCI_NVRTX=$(if $(filter y,$(CONFIG_DRIVER_PCI_NVRTX)),1,0) \

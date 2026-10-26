@@ -152,7 +152,7 @@ firmware（RST の UEFI driver）の割り当てを当てにせず、毎回同�
 
 ### 7.1 attach
 
-0. 起動の引数に `pci.vmd=off` の語があれば何もせず ENODEV（log `vmd: disabled by pci.vmd=off`）。`hal_get_arch_handoff("boot.command-line")` を語単位で読む（`src/kern/platform/pcat.c` の `boot_fat_uuid` と同じ読み方。parameter の表には入れないので `boot: ignored 1 unknown parameter` も出る、`fpga.no-pl-wait` と同じ扱い）。`docs/reference/kernel-boot-parameters.md` に 1 節足す。5330 で VMD の attach が止まる時の逃げ道（§10）。
+0. 起動の引数に `pci.vmd=off` の語があれば何もせず ENODEV（p002 で `pci.vmd=read`（firmware の状態を読んで log に出すだけ）・`pci.vmd=noscan`（bus を公開しない）を足した。docs §7f）（log `vmd: disabled by pci.vmd=off`）。`hal_get_arch_handoff("boot.command-line")` を語単位で読む（`src/kern/platform/pcat.c` の `boot_fat_uuid` と同じ読み方。parameter の表には入れないので `boot: ignored 1 unknown parameter` も出る、`fpga.no-pl-wait` と同じ扱い）。`docs/reference/kernel-boot-parameters.md` に 1 節足す。5330 で VMD の attach が止まる時の逃げ道（§10）。
 1. `drv_pci_device_enable_memory()`・`drv_pci_device_set_bus_master()`（FreeBSD `pci_enable_busmaster`）。
 2. BAR0・2・4 を `drv_pci_device_bar()` で読み、`drv_pci_device_claim_bar()` で 3 つとも claim（他の利用を防ぐ、`drv_pci_device_map_bar()` は claim していない BAR を EINVAL にする、`pci.c` 1645）。CFGBAR を `drv_pci_device_map_bar()` で map。MEMBAR1・2 は map しない（範囲を窓として使うだけ）。
 3. VMCAP・VMCONFIG を読み bus_start・bus_end を決める。VMCONFIG の bit 9:8 が 3 なら失敗。vendor capability の "SHDW" を見る（§1.2）。
@@ -238,7 +238,7 @@ design-reviewer は U1〜U9 に全部賛成（条件つき: U1 は使わない p
 | U5 | Linux の BIOS_PM_QUIRK（LTR・ASPM）をしない | 推し: しない（機能に要らない）。5330 の電池の消費が悪くなりうるので Future Work に記録 | する |
 | U6 | segment を 0xffff − instance | 推し: その通り（FreeBSD と同じ） | 0x1000 から上 |
 | U7 | VMD の suspend は EBUSY（S0 idle は毎回失敗） | 推し: その通り（5330 の S0 idle は今の範囲の外） | root port の状態を保存・復元する |
-| U8 | HAL・PCI core を変えない | 推し: 変えない（hook で足りる） | — |
+| U8 | HAL・PCI core を変えない | 推し: 変えない（hook で足りる）。**p002 の追記**: 5330 の VMD が上位の address を 42 bit しか実装しないため、core の 64 bit の BAR の大きさの計算（`~mask + 1`）の bug が出た。core の 1 か所を「最も下の立った bit」に直した（Q1 了承、2026-10-27） | — |
 | U9 | Intel の公開の register の文書を探していない | 推し: FreeBSD（BSD-2）と Linux の照合で値が一致、と記録 | Intel の datasheet で確かめる |
 
 ## 12. 人の判断が要る事（p002 の前・merge の前）

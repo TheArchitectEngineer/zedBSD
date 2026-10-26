@@ -2733,6 +2733,7 @@ read_device(
 {
 	uint32_t high, high_mask;
 	uint32_t original, mask;
+	uint64_t wide_mask;
 	struct drv_pci_bar *bar;
 	unsigned offset;
 	uint32_t value;
@@ -2804,9 +2805,17 @@ read_device(
 				(void)cfg_write(device->bus, &device->address,
 						offset + 4U, 4, high);
 				bar->bus_address |= (uint64_t)high << 32;
-				bar->size = ~(((uint64_t)high_mask << 32) |
-					      (mask & ~15U)) +
-					    1U;
+
+				/*
+				 * The size is the lowest address bit that sticks.
+				 * A function that implements fewer address bits
+				 * than 64 reads zeros above them (the Latitude
+				 * 5330's VMD keeps 42), so the inverted mask
+				 * plus one would carry those zeros into the size.
+				 */
+				wide_mask = ((uint64_t)high_mask << 32) |
+					    (mask & ~15U);
+				bar->size = wide_mask & (~wide_mask + 1U);
 				index++;
 			}
 		}

@@ -8,7 +8,8 @@
 # with a reference (5330-survey-diff.py).
 #   sh plan/tools/hw5330/5330-run.sh --image IMG | --kernel VMUNIX | --none  NAME [REFERENCE]
 # REFERENCE: a reference kernel log or survey .md (default the 2026-10-17 merged main, evidence/t1229i21-...).
-# DEBUG=1 adds i915.debug=display to the stick's zedbsd.cfg for this start and puts the file back afterwards.
+# DEBUG=1 adds i915.debug=display to the stick's zedbsd.cfg for this start and puts the file back afterwards;
+# CFG_ADD='WORD ...' adds those words the same way (for example CFG_ADD=pci.vmd=off, WS298).
 # Output: plan/tools/hw5330/evidence/NAME.md (the survey), LOGS (default build/hw5330/logs, not in git) holds the
 # whole logs, NAME.png and NAME-diff.txt.  The last line is "5330-run: PASS|FAIL|...".  Hold no lock yourself: the
 # script takes /tmp/i915-hw.lock.  Nothing is removed on either machine.
@@ -68,9 +69,12 @@ if [ -z "$entry" ]; then
 fi
 [ -n "$entry" ] || { say "FAIL: no UEFI entry for the stick"; exit 1; }
 
-if [ "${DEBUG:-0}" = 1 ]; then
-	lin "sudo -n mount /dev/sda2 /mnt/zb && sudo -n cp /mnt/zb/zedbsd.cfg \$HOME/ws245/zedbsd.cfg.$NAME && (grep -q '^i915.debug=' /mnt/zb/zedbsd.cfg || echo i915.debug=display | sudo -n tee -a /mnt/zb/zedbsd.cfg > /dev/null) && sync && sudo -n umount /mnt/zb" ||
-	    { say "FAIL: debug line"; exit 1; }
+if [ "${DEBUG:-0}" = 1 ] || [ -n "${CFG_ADD:-}" ]; then
+	add=${CFG_ADD:-}
+	[ "${DEBUG:-0}" = 1 ] && add="$add i915.debug=display"
+	lin "sudo -n mount /dev/sda2 /mnt/zb && sudo -n cp /mnt/zb/zedbsd.cfg \$HOME/ws245/zedbsd.cfg.$NAME && for w in $add; do grep -qx \"\$w\" /mnt/zb/zedbsd.cfg || echo \"\$w\" | sudo -n tee -a /mnt/zb/zedbsd.cfg > /dev/null; done && sync && sudo -n umount /mnt/zb" ||
+	    { say "FAIL: cfg lines"; exit 1; }
+	say "cfg lines added for this start:$add"
 fi
 lin "sudo -n efibootmgr -n $entry > /dev/null && sudo -n systemctl reboot" > /dev/null 2>&1
 say "BootNext $entry, rebooting"
@@ -85,7 +89,7 @@ until zb 'uname -s' 2> /dev/null | grep -qi zedbsd; do
 done
 say "zedBSD up after $(($(date +%s) - start + 20)) s"
 sleep "${SETTLE:-60}"
-BACKLIGHT_PROBE=${BACKLIGHT_PROBE:-build/p4-5330/bin/backlight-probe} T=150 timeout 150 sh plan/tools/hw5330/5330-survey.sh "$ZB" "$NAME" > /dev/null 2>&1 ||
+T=150 timeout 150 sh plan/tools/hw5330/5330-survey.sh "$ZB" "$NAME" > /dev/null 2>&1 ||
     say "survey failed"
 zb "echo kei | sudo -S /bin/keiland-shot /tmp/$NAME.png" > "$LOGS/$NAME-shot.txt" 2>&1
 timeout 60 sshpass -p kei scp $SO "kei@$ZB:/tmp/$NAME.png" "$LOGS/$NAME.png" > /dev/null 2>&1 || say "no screen shot ($(tail -1 "$LOGS/$NAME-shot.txt"))"
@@ -99,8 +103,8 @@ until T=8 lin hostname 2> /dev/null | grep -q chaos; do
 	fi
 	sleep 5
 done
-if [ "${DEBUG:-0}" = 1 ]; then
-	lin "sudo -n mount /dev/sda2 /mnt/zb && sudo -n cp \$HOME/ws245/zedbsd.cfg.$NAME /mnt/zb/zedbsd.cfg && sync && sudo -n umount /mnt/zb" || say "debug line not put back"
+if [ "${DEBUG:-0}" = 1 ] || [ -n "${CFG_ADD:-}" ]; then
+	lin "sudo -n mount /dev/sda2 /mnt/zb && sudo -n cp \$HOME/ws245/zedbsd.cfg.$NAME /mnt/zb/zedbsd.cfg && sync && sudo -n umount /mnt/zb" || say "cfg lines not put back"
 fi
 
 # The summary.

@@ -428,7 +428,7 @@ ls build/wsNNN/pNNN-hw/shots/*-live.png
 
 ## 素の起動の回帰（2026-10-27 に plan/ws245/tests から移した）
 
-- `5330-run.sh --image IMG | --kernel VMUNIX | --none NAME [REFERENCE]`: 5330 の Linux から、USB（TransMemory、`/dev/sda`、TRAN usb・RM 1 を確かめる）へ image を dd するか kernel を差し替え（前の物は `vmunix.old`）、UEFI の BootNext で 1 回起動 → zedBSD の ssh を待ち 60 秒 → `5330-survey.sh` と `keiland-shot` の PNG → Linux に戻す → `5330-survey-diff.py` で基準と比べ、最後の行が `5330-run: PASS|FAIL`。`flock /tmp/i915-hw.lock` の下。BootOrder は変えない。
+- `5330-run.sh --image IMG | --kernel VMUNIX | --none NAME [REFERENCE]`: 5330 の Linux から、USB（TransMemory、`/dev/sda`、TRAN usb・RM 1 を確かめる）へ image を dd するか kernel を差し替え（前の物は `vmunix.old`）、UEFI の BootNext で 1 回起動 → zedBSD の ssh を待ち 60 秒 → `5330-survey.sh` と `keiland-shot` の PNG → Linux に戻す → `5330-survey-diff.py` で基準と比べ、最後の行が `5330-run: PASS|FAIL`。`flock /tmp/i915-hw.lock` の下。BootOrder は変えない。`DEBUG=1`（`i915.debug=display`）と `CFG_ADD='語 …'`（例 `CFG_ADD=pci.vmd=off`、WS298）はその 1 回だけ USB の `zedbsd.cfg` に行を足し、終わりに元へ戻す。
 - image は `config-5330.mk`（CI の amd64 ＋ 撮影 ＋ keiland-shot・backlight-probe）: `make ZEDBSD_CONFIG=plan/tools/hw5330/config-5330.mk BUILD=<dir> disk-image`。
 - 証拠の要約は `evidence/NAME.md`（git の中）、kernel の log と PNG は `build/hw5330/logs/`（git の外、`LOGS` で変えられる）。既定の基準は `evidence/t1229i21-main-merged-20261017.md`（2026-10-17 の WS245 の merge の後の main）。
 - `5330-bootcycle.sh`（段ごとの 1 回の起動、`~/ws245` の kernel を使う）、`5330-ws253-early.sh`・`5330-ws253-collect.sh`（WS253 の起動時間の読み取り）。

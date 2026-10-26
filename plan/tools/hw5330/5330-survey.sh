@@ -10,7 +10,8 @@
 #     to LOGS/<name>-dmesg.txt (default LOGS build/hw5330/logs, not in git).  plan/tools/hw5330/5330-survey-diff.py
 #     compares two whole kernel logs.
 # The account is kei (password kei, sudo with the same password); sshpass must be installed.  The backlight probe
-# is copied from BACKLIGHT_PROBE (default Q1's build/q1/blp/bin/backlight-probe of the main checkout).
+# is the image's /bin/backlight-probe (config-5330.mk builds it in); BACKLIGHT_PROBE names a host file to copy to the
+# machine's /tmp and use instead.
 # Nothing on the host or the machine is removed.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -19,7 +20,8 @@ HOST=${1:?usage: 5330-survey.sh <zedBSD address> <name> [OUT]}
 NAME=${2:?usage: 5330-survey.sh <zedBSD address> <name> [OUT]}
 OUT=${3:-plan/tools/hw5330/evidence}
 LOGS=${LOGS:-build/hw5330/logs}
-PROBE=${BACKLIGHT_PROBE:-/home/awe/zedBSD-claude1/build/q1/blp/bin/backlight-probe}
+PROBE=${BACKLIGHT_PROBE:-}
+TARGET_PROBE=/bin/backlight-probe
 PASS=kei
 SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR"
 mkdir -p "$OUT" "$LOGS"
@@ -36,8 +38,12 @@ for log in /var/log/kernel.log.old /var/log/messages /var/log/greeter.log /run/u
 	remote "echo $PASS | sudo -S cat $log" > "$LOGS/$NAME-$(basename "$log")" 2> /dev/null || true
 done
 
-# The backlight probe, copied to the machine's /tmp.
-sshpass -p "$PASS" scp $SSH_OPTS "$PROBE" "kei@$HOST:/tmp/backlight-probe" > /dev/null
+# The backlight probe: the image's own, or the one BACKLIGHT_PROBE names copied to the machine's /tmp.
+if [ -n "$PROBE" ]; then
+	sshpass -p "$PASS" scp $SSH_OPTS "$PROBE" "kei@$HOST:/tmp/backlight-probe" > /dev/null
+	remote "chmod +x /tmp/backlight-probe"
+	TARGET_PROBE=/tmp/backlight-probe
+fi
 
 {
 	echo "# 5330 bare start: $NAME"
@@ -55,7 +61,7 @@ sshpass -p "$PASS" scp $SSH_OPTS "$PROBE" "kei@$HOST:/tmp/backlight-probe" > /de
 	echo "## backlight (read, set 100, read)"
 	echo
 	echo '```'
-	remote "chmod +x /tmp/backlight-probe; /tmp/backlight-probe -f /dev/backlight/backlight0; /tmp/backlight-probe -f /dev/backlight/backlight0 100; /tmp/backlight-probe -f /dev/backlight/backlight0" 2>&1
+	remote "$TARGET_PROBE -f /dev/backlight/backlight0; $TARGET_PROBE -f /dev/backlight/backlight0 100; $TARGET_PROBE -f /dev/backlight/backlight0" 2>&1
 	echo '```'
 	echo
 	echo "## i915 lines"
