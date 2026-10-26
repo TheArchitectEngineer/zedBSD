@@ -51,6 +51,24 @@
 #define GFX10_COUNTS_ORDERED_COMPUTE	(1U << 30)
 
 /*
+ * A primitive shader's register words: the vector memory order bit of its
+ * count word (25), the count of the vertex program's input VGPRs the
+ * hardware fills less one (bits 17:16 of the inputs word: 3 for v5 .. v8,
+ * the vertex and the instance numbers), and of the primitive's (bits 30:29
+ * of the count word: 0 for v0 alone).
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (SPI_SHADER_PGM_RSRC1_GS: MEM_ORDERED, GS_VGPR_COMP_CNT;
+ * SPI_SHADER_PGM_RSRC2_GS: ES_VGPR_COMP_CNT) and
+ * src/amd/vulkan/radv_shader.c (radv_postprocess_binary_config: the NGG
+ * vertex program's es_vgpr_comp_cnt 3 with the instance number, and
+ * gs_vgpr_comp_cnt 0 in the passthrough mode, lines 2135-2186).
+ */
+#define GFX10_COUNTS_ORDERED_PRIMITIVE	(1U << 25)
+#define GFX10_INPUTS_VERTEX_VGPRS_SHIFT	16U
+#define GFX10_COUNTS_PRIMITIVE_VGPRS_SHIFT 29U
+
+/*
  * The inputs word: the user SGPR count in bits 5:1; a compute program's
  * workgroup id x, y, z enables in bits 7, 8, 9, its local id VGPR count
  * less one in 12:11, and its shared memory in blocks of 512 bytes in
@@ -188,7 +206,9 @@ amdrdna_gfx10_program_registers(
 	registers->counts |= GFX10_COUNTS_NAN_CLAMP;
 
 	/* The vector memory counter in order, in the stage's own bit. */
-	if (program->stage == DRV_GPU_STAGE_VERTEX) {
+	if (program->stage == DRV_GPU_STAGE_VERTEX && program->primitive_shader != 0U) {
+		registers->counts |= GFX10_COUNTS_ORDERED_PRIMITIVE;
+	} else if (program->stage == DRV_GPU_STAGE_VERTEX) {
 		registers->counts |= GFX10_COUNTS_ORDERED_VERTEX;
 	} else if (program->stage == DRV_GPU_STAGE_FRAGMENT) {
 		registers->counts |= GFX10_COUNTS_ORDERED_PIXEL;
@@ -207,9 +227,20 @@ amdrdna_gfx10_program_registers(
 		registers->inputs |= shared_blocks << GFX10_INPUTS_SHARED_SHIFT;
 	}
 
-	/* A vertex program: v0 .. v3 delivered, the parameters, the positions and the point size. */
-	if (program->stage == DRV_GPU_STAGE_VERTEX) {
+	/*
+	 * A vertex program: v0 .. v3 delivered (a primitive shader: v0 and
+	 * v5 .. v8), the parameters, the positions and the point size.
+	 */
+	if (program->stage == DRV_GPU_STAGE_VERTEX && program->primitive_shader != 0U) {
+		registers->primitive_shader = 1U;
+		registers->inputs |= 3U << GFX10_INPUTS_VERTEX_VGPRS_SHIFT;
+		registers->counts |= 0U << GFX10_COUNTS_PRIMITIVE_VGPRS_SHIFT;
+	} else if (program->stage == DRV_GPU_STAGE_VERTEX) {
 		registers->counts |= 3U << GFX10_COUNTS_VERTEX_VGPRS_SHIFT;
+	}
+
+	/* A vertex program's parameters, positions and point size. */
+	if (program->stage == DRV_GPU_STAGE_VERTEX) {
 
 		/* At least one parameter is counted; none exported is said apart. */
 		parameters = highest_bit_count(program->parameter_outputs);

@@ -64,6 +64,16 @@
 #define AMDRDNA_PM4_EVENT_CACHES_FLUSHED	20U
 #define AMDRDNA_PM4_EVENT_COLOUR_META_FLUSHED	46U
 #define AMDRDNA_PM4_EVENT_INDEX_DRAIN		4U
+
+/*
+ * The flush of the geometry engine (index 0), which GFX10 needs between a
+ * draw by a primitive shader and a later draw by a legacy vertex program.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json (the enum
+ * VGT_EVENT_TYPE: VGT_FLUSH 36) and src/amd/vulkan/radv_cs.c
+ * (gfx10_cs_emit_cache_flush: VGT_FLUSH at index 0, line 494).
+ */
+#define AMDRDNA_PM4_EVENT_GEOMETRY_FLUSHED	36U
 #define AMDRDNA_PM4_EVENT_INDEX_TIMESTAMP	5U
 #define AMDRDNA_PM4_RELEASE_METADATA_WRITE_BACK	(1U << 12)
 #define AMDRDNA_PM4_RELEASE_METADATA_INVALIDATE	(1U << 13)
@@ -151,6 +161,31 @@
 #define AMDRDNA_SH_KERNEL_UNITS_ENGINE1		0xb85cU
 #define AMDRDNA_SH_KERNEL_UNITS_ENGINE2		0xb864U
 #define AMDRDNA_SH_KERNEL_UNITS_ENGINE3		0xb868U
+
+/*
+ * The shader registers of a primitive shader (bytes from 0): its code
+ * address (low, high), its two resource words, the table's address (the
+ * stage's user data address, low and high), its first user SGPR (s8), and
+ * its CU masks (two, the second with the late allocation).
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (SPI_SHADER_PGM_LO_ES 0xb320, SPI_SHADER_PGM_HI_ES 0xb324,
+ * SPI_SHADER_PGM_RSRC1_GS 0xb228, SPI_SHADER_PGM_RSRC2_GS 0xb22c,
+ * SPI_SHADER_USER_DATA_ADDR_LO_GS 0xb208, SPI_SHADER_USER_DATA_ADDR_HI_GS
+ * 0xb20c, SPI_SHADER_USER_DATA_GS_0 0xb230, SPI_SHADER_PGM_RSRC3_GS
+ * 0xb21c, SPI_SHADER_PGM_RSRC4_GS 0xb204) and src/amd/vulkan/radv_shader.c
+ * (the NGG program's registers on GFX10: the code at
+ * R_00B320_SPI_SHADER_PGM_LO_ES, the resources at RSRC1_GS and RSRC2_GS,
+ * lines 1763-1772).
+ */
+#define AMDRDNA_SH_PRIMITIVE_CODE_LOW		0xb320U
+#define AMDRDNA_SH_PRIMITIVE_CODE_HIGH		0xb324U
+#define AMDRDNA_SH_PRIMITIVE_RESOURCES		0xb228U
+#define AMDRDNA_SH_PRIMITIVE_INPUTS		0xb22cU
+#define AMDRDNA_SH_PRIMITIVE_TABLE		0xb208U
+#define AMDRDNA_SH_PRIMITIVE_USER_DATA		0xb230U
+#define AMDRDNA_SH_PRIMITIVE_UNITS		0xb21cU
+#define AMDRDNA_SH_PRIMITIVE_UNITS_HIGH		0xb204U
 
 /*
  * The CU masks the programs may run on (all, and a wave limit of 63), the
@@ -271,6 +306,26 @@
 #define AMDRDNA_CX_VERTEX_REUSE			0x28c58U
 
 /*
+ * The context registers of a primitive shader: the primitive export's
+ * format, the most vertices one subgroup exports, the subgroup's
+ * amplification, its vertex and primitive counts, the instancing of a
+ * geometry program, and the type of the primitives it exports.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (SPI_SHADER_IDX_FORMAT 0x28708, GE_MAX_OUTPUT_PER_SUBGROUP 0x287fc,
+ * GE_NGG_SUBGRP_CNTL 0x28b4c, VGT_GS_ONCHIP_CNTL 0x28a44,
+ * VGT_GS_INSTANCE_CNT 0x28b90, VGT_GS_OUT_PRIM_TYPE 0x28a6c) and
+ * src/amd/vulkan/radv_cmd_buffer.c (radv_emit_hw_ngg: the registers it
+ * sets on GFX10, lines 2081-2196).
+ */
+#define AMDRDNA_CX_PRIMITIVE_EXPORT_FORMAT	0x28708U
+#define AMDRDNA_CX_SUBGROUP_OUTPUT		0x287fcU
+#define AMDRDNA_CX_SUBGROUP_CONTROL		0x28b4cU
+#define AMDRDNA_CX_SUBGROUP_SIZE		0x28a44U
+#define AMDRDNA_CX_GEOMETRY_INSTANCES		0x28b90U
+#define AMDRDNA_CX_OUTPUT_PRIMITIVE		0x28a6cU
+
+/*
  * The user configuration registers (bytes from 0x30000 on): the primitive
  * type (set through the indexed setter with index 1), the geometry
  * engine's control and its index limits and offset, the instance base,
@@ -291,6 +346,15 @@
 #define AMDRDNA_UC_INSTANCE_BASE		0x30968U
 #define AMDRDNA_UC_USER_VGPRS			0x30988U
 #define AMDRDNA_UC_COHERENCY_DELAY		0x301ecU
+
+/*
+ * The parameter cache's oversubscription of a primitive shader (none).
+ *
+ * Value referenced: Mesa 25.0.7 src/amd/registers/gfx10.json (GE_PC_ALLOC
+ * 0x30980) and src/amd/vulkan/radv_shader.c (ge_pc_alloc: OVERSUB_EN off
+ * without late allocation).
+ */
+#define AMDRDNA_UC_PARAMETER_CACHE		0x30980U
 
 /*
  * The index type register (set through the indexed setter with index 2)
@@ -550,6 +614,52 @@
 #define AMDRDNA_UC_GEOMETRY_GROUPS		(128U | (256U << 9))
 
 /*
+ * A primitive shader of one wave32 to a subgroup: the stages (the export
+ * stage real, 2 in 4:3; the primitive generator, 13; two primitive groups
+ * a wave, 18:15; the geometry stage in wave32, 22; the passthrough mode,
+ * 25), and the subgroup's size.  GFX10 counts a subgroup's vertices only
+ * after it has taken a whole triangle, so a subgroup of 32 vertices is
+ * asked for as 30; the geometry engine's vertex group is that less 5 (a
+ * GFX10 hang otherwise), its primitive group 32.  The primitive export is
+ * one channel; one primitive comes from each input primitive.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (VGT_SHADER_STAGES_EN: ES_EN, PRIMGEN_EN, MAX_PRIMGRP_IN_WAVE,
+ * GS_W32_EN, PRIMGEN_PASSTHRU_EN, the enum VGT_STAGES_ES_EN: ES_STAGE_REAL
+ * 2; VGT_GS_ONCHIP_CNTL: ES_VERTS_PER_SUBGRP 10:0, GS_PRIMS_PER_SUBGRP
+ * 21:11, GS_INST_PRIMS_IN_SUBGRP 31:22; GE_CNTL: PRIM_GRP_SIZE 8:0,
+ * VERT_GRP_SIZE 17:9; GE_NGG_SUBGRP_CNTL: PRIM_AMP_FACTOR 8:0;
+ * SPI_SHADER_IDX_FORMAT: IDX0_EXPORT_FORMAT, the enum SPI_SHADER_FORMAT:
+ * SPI_SHADER_1COMP 1), src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_vgt_shader_config_gfx6: the NGG stages; radv_emit_hw_ngg: the
+ * GFX10 VERT_GRP_SIZE of hw_max_esverts less 5) and
+ * src/amd/vulkan/radv_shader_info.c (gfx10_get_ngg_info: GFX10's
+ * hw_max_esverts of max_esverts - max_verts_per_prim + 1, lines 1646-1654).
+ */
+#define AMDRDNA_CX_STAGES_PRIMITIVE		((2U << 3) | (1U << 13) | (2U << 15) | (1U << 22))
+#define AMDRDNA_CX_STAGES_PASSTHROUGH		(1U << 25)
+#define AMDRDNA_NGG_VERTICES			32U
+#define AMDRDNA_NGG_PRIMITIVES			32U
+#define AMDRDNA_NGG_VERTICES_ASKED		(AMDRDNA_NGG_VERTICES - 3U + 1U)
+#define AMDRDNA_CX_SUBGROUP_SIZE_ONE_WAVE	(AMDRDNA_NGG_VERTICES_ASKED | (AMDRDNA_NGG_PRIMITIVES << 11) | (AMDRDNA_NGG_PRIMITIVES << 22))
+#define AMDRDNA_UC_GEOMETRY_GROUPS_NGG		(AMDRDNA_NGG_PRIMITIVES | ((AMDRDNA_NGG_VERTICES_ASKED - 5U) << 9))
+#define AMDRDNA_CX_SUBGROUP_ONE_PRIMITIVE	1U
+#define AMDRDNA_CX_PRIMITIVE_EXPORT_ONE		1U
+
+/*
+ * The type of the primitives a primitive shader exports: points 0, line
+ * strips 1, triangle strips 2.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json (the enum
+ * VGT_GS_OUTPRIM_TYPE: POINTLIST 0, LINESTRIP 1, TRISTRIP 2) and
+ * src/amd/vulkan/radv_pipeline_graphics.h (radv_conv_prim_to_gs_out: the
+ * lists and strips of each kind to the strip type).
+ */
+#define AMDRDNA_OUTPUT_POINTS			0U
+#define AMDRDNA_OUTPUT_LINES			1U
+#define AMDRDNA_OUTPUT_TRIANGLES		2U
+
+/*
  * The binner of GFX10 off: binning disabled with the new scan converter
  * (2 in 1:0), bins of 128 by 128 (2 in 6:4 and 9:7), no start of
  * primitive (18) and a flush on a binning transition (28).
@@ -592,12 +702,17 @@
  * An indirect buffer of packets being written: its words, how many are
  * written, and its capacity.  A packet that would pass the end is not
  * written and full is set; the writer is then used no more.
+ * primitive_shader_drawn says that a draw by a primitive shader may be in
+ * the geometry engine since its last flush: set at the start (the buffer
+ * before is not known) and by each such draw, cleared by the flush a
+ * legacy vertex program's draw needs after one.
  */
 struct amdrdna_vk_pm4 {
 	uint32_t *words;
 	uint32_t count;
 	uint32_t capacity;
 	bool full;
+	bool primitive_shader_drawn;
 };
 
 void amdrdna_vk_pm4_start(struct amdrdna_vk_pm4 *pm4, uint32_t *words, uint32_t capacity);

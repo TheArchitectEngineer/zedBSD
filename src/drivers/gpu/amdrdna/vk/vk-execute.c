@@ -1428,12 +1428,14 @@ execute_draw_call(
 	uint64_t start;
 	uint8_t *cpu;
 	uint32_t size;
+	bool primitive_shader;
 	int error;
 
-	/* A draw of generated vertices. */
+	/* A draw of generated vertices, by a primitive shader or a legacy vertex program. */
 	pipeline = state->pipeline;
+	primitive_shader = pipeline->vertex.registers.primitive_shader != 0U;
 	if (record->opcode != GPU_OP_CMD_DRAW_INDEXED) {
-		error = amdrdna_vk_state_draw(&execute->pm4, pipeline->topology, record->values[0], record->values[1]);
+		error = amdrdna_vk_state_draw(&execute->pm4, pipeline->topology, primitive_shader, record->values[0], record->values[1]);
 		if (error != 0)
 			return error;
 		return 0;
@@ -1454,7 +1456,7 @@ execute_draw_call(
 		room = 0xffffffffU;
 
 	/* The indexed draw. */
-	error = amdrdna_vk_state_draw_indexed(&execute->pm4, pipeline->topology, state->index_type, indices + start, (uint32_t)room,
+	error = amdrdna_vk_state_draw_indexed(&execute->pm4, pipeline->topology, primitive_shader, state->index_type, indices + start, (uint32_t)room,
 					      record->values[0], record->values[1]);
 	if (error != 0)
 		return error;
@@ -2321,7 +2323,7 @@ execute_quad(
 
 	/* The programs, two triangles. */
 	amdrdna_vk_state_programs(&execute->pm4, vertex, fragment, vertex_va, fragment_va, 0U, 0U, 0U);
-	error = amdrdna_vk_state_draw(&execute->pm4, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, EXECUTE_CORNERS, 1U);
+	error = amdrdna_vk_state_draw(&execute->pm4, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, false, EXECUTE_CORNERS, 1U);
 	if (error != 0)
 		return error;
 	execute->quads++;

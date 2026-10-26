@@ -47,13 +47,14 @@ void *kern_calloc(size_t count, size_t size);
 void kern_free(void *pointer);
 
 static int test_module(const char *outdir, const char *path);
-static int test_variant(const char *outdir, const char *name, const struct drv_gpu_shader_ir *ir, const uint32_t *words, size_t word_count, enum drv_gpu_shader_stage stage, uint32_t pass_primitive_number);
+static int test_variant(const char *outdir, const char *name, const struct drv_gpu_shader_ir *ir, const uint32_t *words, size_t word_count, enum drv_gpu_shader_stage stage, uint32_t pass_primitive_number, uint32_t primitive_shader);
 static int vertex_trial(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_program *program, uint32_t *state);
 static int pixel_trial(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_program *program, uint32_t *state);
 static void setup_textures(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_program *program, struct machine_memory *memory, uint8_t *table_bytes, uint32_t *state);
 static void reference_sample(void *context, uint32_t set, uint32_t binding, const struct texture_request *request, uint32_t *out);
 static void setup_uniforms(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_program *program, struct machine_memory *memory, struct reference_memory *reference, uint8_t *table, uint32_t *state);
 static int compare_slot(const char *what, uint32_t lane, uint32_t channel, uint32_t gpu, uint32_t ref);
+static int check_primitive_wave(void);
 static int compare_storage(const struct drv_gpu_shader_ir *ir);
 static uint32_t random_word(uint32_t *state);
 static float random_float(uint32_t *state);
@@ -159,10 +160,12 @@ test_module(
 		free(words);
 		return 1;
 	}
-	/* The module as it is; a vertex module also exporting the primitive number. */
-	error = test_variant(outdir, name, ir, words, word_count, stage, 0U);
+	/* The module as it is; a vertex module also exporting the primitive number, and as a primitive shader (ws291). */
+	error = test_variant(outdir, name, ir, words, word_count, stage, 0U, 0U);
 	if (error == 0 && stage == DRV_GPU_STAGE_VERTEX)
-		error = test_variant(outdir, name, ir, words, word_count, stage, 1U);
+		error = test_variant(outdir, name, ir, words, word_count, stage, 1U, 0U);
+	if (error == 0 && stage == DRV_GPU_STAGE_VERTEX)
+		error = test_variant(outdir, name, ir, words, word_count, stage, 0U, 1U);
 	free(words);
 	drv_gpu_shader_ir_free(ir);
 	return error;
@@ -177,7 +180,8 @@ test_variant(
 	const uint32_t *words,
 	size_t word_count,
 	enum drv_gpu_shader_stage stage,
-	uint32_t pass_primitive_number)
+	uint32_t pass_primitive_number,
+	uint32_t primitive_shader)
 {
 	char name[4200];
 	char hex_path[8200];
@@ -193,9 +197,10 @@ test_variant(
 	int error;
 	FILE *hex;
 
-	snprintf(name, sizeof(name), "%s%s", module, pass_primitive_number != 0U ? "+primitive" : "");
+	snprintf(name, sizeof(name), "%s%s%s", module, pass_primitive_number != 0U ? "+primitive" : "", primitive_shader != 0U ? "+ngg" : "");
 	memset(&options, 0, sizeof(options));
 	options.pass_primitive_number = pass_primitive_number;
+	options.primitive_shader = primitive_shader;
 	program = NULL;
 	memset(&diagnostic, 0, sizeof(diagnostic));
 	error = amdrdna_gfx10_compile(words, word_count, stage, &options, &program, &diagnostic);
@@ -225,7 +230,15 @@ test_variant(
 	error = 0;
 	if (((registers.inputs >> 1) & 0x1fU) != program->user_sgprs)
 		error = 1;
-	if (stage == DRV_GPU_STAGE_VERTEX) {
+	if (stage == DRV_GPU_STAGE_VERTEX && primitive_shader != 0U) {
+		/* A primitive shader: the geometry stage's order bit (25), v5 .. v8 (16:17), v0 alone (29:30). */
+		if (registers.primitive_shader != 1U || program->primitive_shader != 1U)
+			error = 1;
+		if ((registers.counts & (1U << 25)) == 0U || ((registers.counts >> 29) & 3U) != 0U || ((registers.inputs >> 16) & 3U) != 3U)
+			error = 1;
+		if (program->user_sgprs != AMDRDNA_GFX10_NGG_USER_SGPRS || (registers.position_formats & 0xfU) != 4U)
+			error = 1;
+	} else if (stage == DRV_GPU_STAGE_VERTEX) {
 		if (((registers.counts >> 24) & 3U) != 3U || (registers.counts & (1U << 27)) == 0U || (registers.position_formats & 0xfU) != 4U)
 			error = 1;
 		if (program->parameter_outputs == 0U && registers.vertex_export_config != 0x80U)
@@ -511,6 +524,14 @@ vertex_trial(
 			graphics.lanes = TEST_VERTICES - first < 32U ? TEST_VERTICES - first : 32U;
 			for (lane = 0U; lane < 32U; lane++)
 				graphics.primitive_id[lane] = random_word(state) % 1000U;
+
+			/* A primitive shader's subgroup: 1 .. 32 primitives, each lane's packed primitive word. */
+			graphics.primitive_shader = program->primitive_shader;
+			graphics.primitives = 1U + random_word(state) % 32U;
+			for (lane = 0U; lane < 32U; lane++) {
+				graphics.primitive_word[0][lane] = random_word(state) & 0x3ff7fdffU;
+				graphics.primitive_word[1][lane] = random_word(state);
+			}
 			machine_run_graphics(&dispatch, &memory, 0, &graphics, &result);
 			if (result.error != NULL) {
 				printf("  GFX10: %s at word %u (0x%08x)\n", result.error, result.error_pc, result.error_word);
@@ -588,9 +609,56 @@ vertex_trial(
 				printf("  position 0 without the valid mask bit\n");
 				failed = 1;
 			}
+
+			/* A primitive shader: its request for the subgroup, the vertex lanes' exports, each primitive lane's word, marked done. */
+			if (failed == 0 && program->primitive_shader != 0U)
+				failed = check_primitive_wave();
 		}
 	}
 	return failed;
+}
+
+/* Checks what a primitive shader wave sent and exported besides its vertices' outputs; 1 when it is wrong. */
+static int
+check_primitive_wave(void)
+{
+	uint32_t lanes;
+	uint32_t lane;
+	uint32_t target;
+
+	/* One request, for the subgroup's vertices and primitives. */
+	if (graphics.alloc_requests != 1U || graphics.alloc_vertices != graphics.lanes || graphics.alloc_primitives != graphics.primitives) {
+		printf("  the allocation request: %u requests, %u vertices, %u primitives\n",
+		       graphics.alloc_requests, graphics.alloc_vertices, graphics.alloc_primitives);
+		return 1;
+	}
+
+	/* The positions and parameters come from the vertex lanes only. */
+	lanes = graphics.lanes >= 32U ? 0xffffffffU : (1U << graphics.lanes) - 1U;
+	for (target = AMDRDNA_GFX10_EXPORT_POSITION; target < MACHINE_TARGETS; target++) {
+		if (target == AMDRDNA_GFX10_EXPORT_PRIMITIVE || (graphics.export_flags[target] & 1U) == 0U)
+			continue;
+		if (graphics.export_lanes[target] != lanes) {
+			printf("  target %u exported by lanes 0x%08x, not 0x%08x\n", target, graphics.export_lanes[target], lanes);
+			return 1;
+		}
+	}
+
+	/* The primitive: each primitive lane's word, as the hardware packed it, marked done. */
+	target = AMDRDNA_GFX10_EXPORT_PRIMITIVE;
+	lanes = graphics.primitives >= 32U ? 0xffffffffU : (1U << graphics.primitives) - 1U;
+	if ((graphics.export_flags[target] & 3U) != 3U || graphics.export_lanes[target] != lanes || graphics.export_channels[target] != 1U) {
+		printf("  the primitive export: flags %u, lanes 0x%08x, channels %u\n",
+		       graphics.export_flags[target], graphics.export_lanes[target], graphics.export_channels[target]);
+		return 1;
+	}
+	for (lane = 0U; lane < graphics.primitives; lane++) {
+		if (graphics.exported[target][lane][0] != graphics.primitive_word[0][lane]) {
+			printf("  the primitive of lane %u: 0x%08x, not 0x%08x\n", lane, graphics.exported[target][lane][0], graphics.primitive_word[0][lane]);
+			return 1;
+		}
+	}
+	return 0;
 }
 
 /* Runs one wave of pixels on both; 1 when a colour or the pixels alive differ. */

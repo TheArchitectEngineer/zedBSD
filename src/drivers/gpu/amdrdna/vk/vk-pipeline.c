@@ -661,7 +661,9 @@ pipeline_decode_dynamic(
  * Compiles a pipeline's two modules and copies the programs into a run of
  * the executor's GPU memory: the vertex program first, the fragment
  * program on the next boundary.  The fragment program is compiled first,
- * so that the vertex program exports the primitive number it reads.
+ * so that the vertex program exports the primitive number it reads; the
+ * vertex program is a primitive shader as the node asks, unless it exports
+ * the primitive number.
  */
 static int
 pipeline_compile(
@@ -672,6 +674,7 @@ pipeline_compile(
 	struct amdrdna_gfx10_compile_options options;
 	uint8_t *cpu;
 	uint64_t va;
+	uint32_t geometry;
 	uint32_t vertex_bytes;
 	uint32_t fragment_bytes;
 	int error;
@@ -683,6 +686,11 @@ pipeline_compile(
 		return error;
 	if (pipeline->fragment.compiled->primitive_id_attribute != AMDRDNA_GFX10_NO_ATTRIBUTE)
 		options.pass_primitive_number = 1U;
+
+	/* The vertex program runs as a primitive shader when the node says so and no vertex exports the primitive number. */
+	geometry = amdrdna_vk_geometry_mode(session->owner);
+	if (geometry != 0U && options.pass_primitive_number == 0U)
+		options.primitive_shader = 1U;
 	error = pipeline_compile_stage(build->vertex_module, DRV_GPU_STAGE_VERTEX, &options, &pipeline->vertex);
 	if (error != 0)
 		return error;

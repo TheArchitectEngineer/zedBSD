@@ -358,6 +358,10 @@ amdrdna_gfx10_describe(
 
 		break;
 	case AMDRDNA_GFX10_KIND_CONTROL:
+		/* A message carries its data in M0. */
+		if (inst->opcode == AMDRDNA_GFX10_S_SENDMSG)
+			add_read(access, AMDRDNA_GFX10_M0, 1U);
+		break;
 	case AMDRDNA_GFX10_KIND_LABEL:
 		break;
 	case AMDRDNA_GFX10_KIND_BRANCH:

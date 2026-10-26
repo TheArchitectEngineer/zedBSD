@@ -43,6 +43,9 @@ amdrdna_vk_pm4_start(
 	pm4->count = 0U;
 	pm4->capacity = capacity;
 	pm4->full = false;
+
+	/* What drew before this buffer is not known, so a legacy draw flushes first. */
+	pm4->primitive_shader_drawn = true;
 }
 
 /*

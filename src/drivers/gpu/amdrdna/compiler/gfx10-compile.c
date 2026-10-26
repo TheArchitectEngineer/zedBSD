@@ -88,8 +88,13 @@
  */
 #define GFX10_RECIPROCAL_SCALE		0x4f7ffffeU
 
-/* The first SGPR the compiler hands out for itself (after the user and the system SGPRs), a multiple of four. */
+/*
+ * The first SGPR the compiler hands out for itself (after the user and the
+ * system SGPRs), a multiple of four: of every program but a primitive
+ * shader, and of a primitive shader (whose user SGPRs start at s8).
+ */
 #define GFX10_SGPR_FIRST_FREE		8U
+#define GFX10_SGPR_FIRST_FREE_NGG	12U
 
 /* The VGPRs a compute program's local invocation id x, y and z arrive in. */
 #define GFX10_CS_LOCAL_ID_X		0U
@@ -313,6 +318,22 @@ struct gfx10_lowering {
 	uint32_t vertex_sgpr[AMDRDNA_GFX10_LOCATIONS];
 
 	/*
+	 * A vertex program: the SGPRs its base vertex, first instance and
+	 * instance mask arrive in, the VGPRs of its vertex and instance numbers
+	 * as the hardware delivers them, and the VGPRs the hardware fills,
+	 * which differ between a legacy vertex program and a primitive shader.
+	 */
+	uint32_t base_vertex_sgpr;
+	uint32_t first_instance_sgpr;
+	uint32_t instance_mask_sgpr;
+	uint32_t vertex_id_input;
+	uint32_t instance_id_input;
+	uint32_t hardware_vgprs;
+
+	/* The first SGPR after the user and the system SGPRs, a multiple of four. */
+	uint32_t sgpr_first_free;
+
+	/*
 	 * A vertex program: the IR instruction (plus one) after which each
 	 * fetched location's VGPRs, and the vertex and instance numbers', are
 	 * read no more (0: only by the start); their VGPRs go back then.  The
@@ -436,6 +457,9 @@ static const struct drv_gpu_shader_ir_io *find_input(const struct drv_gpu_shader
 static int plan_registers(struct gfx10_lowering *lowering);
 static uint32_t reserve_vgprs(struct gfx10_lowering *lowering, uint32_t count);
 static void prologue_vertex(struct gfx10_lowering *lowering);
+static void prologue_primitive(struct gfx10_lowering *lowering);
+static void emit_lanes_below(struct gfx10_lowering *lowering, unsigned count);
+static void emit_field(struct gfx10_lowering *lowering, unsigned dst, unsigned source, uint32_t selector);
 static void plan_input_lifetimes(struct gfx10_lowering *lowering);
 static void return_inputs(struct gfx10_lowering *lowering, uint32_t upto);
 static uint32_t cache_chunk(struct gfx10_lowering *lowering, uint32_t slot, uint32_t offset, int spare);
@@ -1417,19 +1441,43 @@ plan_registers(
 	program = lowering->program;
 	error = 0;
 
-	/* The inputs the hardware delivers, by the stage. */
+	/* The inputs the hardware delivers, by the stage; the compiler's own SGPRs start after them. */
+	lowering->sgpr_first_free = GFX10_SGPR_FIRST_FREE;
 	if (lowering->ir->stage == DRV_GPU_STAGE_COMPUTE) {
 		/* The table address and the workgroup id in s0 .. s4, the local ids in v0 .. v2. */
 		program->user_sgprs = AMDRDNA_GFX10_ABI_USER_SGPRS;
 		lowering->vgpr_first = GFX10_CS_INPUT_VGPRS;
+	} else if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX && program->primitive_shader != 0U) {
+		/*
+		 * The table in s0 .. s1, the counts in s2 and s3, the base vertex,
+		 * the first instance and the instance mask in s8 .. s10; v0 .. v8,
+		 * taken until the start has read them.
+		 */
+		program->user_sgprs = AMDRDNA_GFX10_NGG_USER_SGPRS;
+		lowering->base_vertex_sgpr = AMDRDNA_GFX10_NGG_BASE_VERTEX;
+		lowering->first_instance_sgpr = AMDRDNA_GFX10_NGG_FIRST_INSTANCE;
+		lowering->instance_mask_sgpr = AMDRDNA_GFX10_NGG_INSTANCE_MASK;
+		lowering->vertex_id_input = AMDRDNA_GFX10_NGG_VERTEX_ID_VGPR;
+		lowering->instance_id_input = AMDRDNA_GFX10_NGG_INSTANCE_ID_VGPR;
+		lowering->hardware_vgprs = AMDRDNA_GFX10_NGG_INPUT_VGPRS;
+		lowering->sgpr_first_free = GFX10_SGPR_FIRST_FREE_NGG;
+		lowering->vgpr_first = 0U;
+		for (index = 0U; index < lowering->hardware_vgprs; index++)
+			lowering->taken[index] = 1U;
 	} else if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
 		/*
 		 * The table, the base vertex, the first instance and the instance
 		 * mask in s0 .. s4; v0 .. v3, taken until the start has read them.
 		 */
 		program->user_sgprs = AMDRDNA_GFX10_ABI_USER_SGPRS_VS;
+		lowering->base_vertex_sgpr = AMDRDNA_GFX10_ABI_BASE_VERTEX;
+		lowering->first_instance_sgpr = AMDRDNA_GFX10_ABI_FIRST_INSTANCE;
+		lowering->instance_mask_sgpr = AMDRDNA_GFX10_ABI_INSTANCE_MASK;
+		lowering->vertex_id_input = GFX10_VS_VERTEX_ID;
+		lowering->instance_id_input = GFX10_VS_INSTANCE_ID;
+		lowering->hardware_vgprs = GFX10_VS_INPUT_VGPRS;
 		lowering->vgpr_first = 0U;
-		for (index = 0U; index < GFX10_VS_INPUT_VGPRS; index++)
+		for (index = 0U; index < lowering->hardware_vgprs; index++)
 			lowering->taken[index] = 1U;
 	} else {
 		/* The table in s0 .. s1, the primitive mask in s2; the enabled inputs packed from v0. */
@@ -1449,7 +1497,7 @@ plan_registers(
 
 	/* A vertex program takes its vertex and instance numbers and fetched locations until their last read. */
 	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
-		lowering->vgpr_highest = GFX10_VS_INPUT_VGPRS;
+		lowering->vgpr_highest = lowering->hardware_vgprs;
 
 		/* The primitive number, copied at the start into the register its export reads. */
 		if (program->exports_primitive_id != 0U) {
@@ -1476,7 +1524,7 @@ plan_registers(
 	}
 
 	/* The descriptors, four SGPRs each from a multiple of four. */
-	sgpr = GFX10_SGPR_FIRST_FREE;
+	sgpr = lowering->sgpr_first_free;
 	for (index = 0U; index < program->storage_used; index++) {
 		lowering->storage_sgpr[index] = sgpr;
 		sgpr += 4U;
@@ -1572,6 +1620,10 @@ prologue(
 
 	/* Names the program being set up. */
 	program = lowering->program;
+
+	/* A primitive shader first has its space given and its primitives exported. */
+	if (program->primitive_shader != 0U)
+		prologue_primitive(lowering);
 
 	/* Each storage buffer's descriptor. */
 	for (index = 0U; index < program->storage_used; index++) {
@@ -1682,7 +1734,7 @@ prologue(
 
 	/* A vertex program's hardware inputs, and the inputs only the start read, go back. */
 	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
-		for (index = 0U; index < GFX10_VS_INPUT_VGPRS; index++)
+		for (index = 0U; index < lowering->hardware_vgprs; index++)
 			give_vgpr(lowering, index);
 		return_inputs(lowering, 0U);
 	}
@@ -3139,6 +3191,17 @@ prepare_graphics(
 		program->exports_primitive_id = 1U;
 	}
 
+	/* A vertex program asked to run as a primitive shader, which has no primitive number of a vertex to export. */
+	if (ir->stage == DRV_GPU_STAGE_VERTEX && lowering->options.primitive_shader != 0U) {
+		if (program->exports_primitive_id != 0U) {
+			error = refuse(lowering, ENOTSUP, "a primitive shader does not export the primitive number");
+			return error;
+		}
+
+		/* Marks the program as a primitive shader. */
+		program->primitive_shader = 1U;
+	}
+
 	/* Succeeded: the interface is known. */
 	lowering->index = 0U;
 	return 0;
@@ -3212,20 +3275,20 @@ prologue_vertex(
 			    0U);
 	}
 
-	/* The numbers: v0 plus the base vertex, v3 plus the first instance. */
+	/* The numbers: the delivered vertex number plus the base vertex, the instance number plus the first instance. */
 	emit_vector(lowering,
 		    AMDRDNA_GFX10_KIND_VECTOR_TWO,
 		    AMDRDNA_GFX10_V_ADD_NC_U32,
 		    AMDRDNA_GFX10_V(lowering->vertex_index_vgpr),
-		    AMDRDNA_GFX10_S(AMDRDNA_GFX10_ABI_BASE_VERTEX),
-		    AMDRDNA_GFX10_V(GFX10_VS_VERTEX_ID),
+		    AMDRDNA_GFX10_S(lowering->base_vertex_sgpr),
+		    AMDRDNA_GFX10_V(lowering->vertex_id_input),
 		    0U);
 	emit_vector(lowering,
 		    AMDRDNA_GFX10_KIND_VECTOR_TWO,
 		    AMDRDNA_GFX10_V_ADD_NC_U32,
 		    AMDRDNA_GFX10_V(lowering->instance_index_vgpr),
-		    AMDRDNA_GFX10_S(AMDRDNA_GFX10_ABI_FIRST_INSTANCE),
-		    AMDRDNA_GFX10_V(GFX10_VS_INSTANCE_ID),
+		    AMDRDNA_GFX10_S(lowering->first_instance_sgpr),
+		    AMDRDNA_GFX10_V(lowering->instance_id_input),
 		    0U);
 
 	/* Each fetched location. */
@@ -3248,7 +3311,7 @@ prologue_vertex(
 			    AMDRDNA_GFX10_KIND_SCALAR_COMPARE,
 			    AMDRDNA_GFX10_S_BITCMP1_B32,
 			    0U,
-			    AMDRDNA_GFX10_S(AMDRDNA_GFX10_ABI_INSTANCE_MASK),
+			    AMDRDNA_GFX10_S(lowering->instance_mask_sgpr),
 			    bit_number);
 		emit_scalar(lowering,
 			    AMDRDNA_GFX10_KIND_SCALAR_TWO,
@@ -3276,6 +3339,129 @@ prologue_vertex(
 		inst.count = 4U;
 		emit(lowering, &inst);
 	}
+}
+
+/*
+ * Starts a primitive shader: asks for the space of the subgroup's vertices
+ * and primitives, exports the wave's primitives as the hardware packed
+ * them, and leaves the lanes of the wave's vertices running for the vertex
+ * program.  The subgroup is this one wave, so the wave asks for the space.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/common/nir/ac_nir_lower_ngg.c
+ * (ac_nir_lower_ngg_nogs, the passthrough path: the allocation from the
+ * subgroup's counts by the first wave, the early export of the packed
+ * primitive by each primitive lane, then the vertex program on the vertex
+ * lanes) and src/amd/common/nir/ac_nir_prerast_utils.c
+ * (ac_nir_export_primitive: the primitive's export is marked done).
+ */
+static void
+prologue_primitive(
+	struct gfx10_lowering *lowering)
+{
+	struct amdrdna_gfx10_inst inst;
+	unsigned vertices;
+	unsigned primitives;
+	unsigned wave_count;
+	unsigned sources[4];
+
+	/* The subgroup's vertex and primitive counts, the primitives moved to their place in the request. */
+	vertices = next_scalar_temp(lowering);
+	primitives = next_scalar_temp(lowering);
+	emit_field(lowering, vertices, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_SUBGROUP_INFO), AMDRDNA_GFX10_NGG_SUBGROUP_VERTICES);
+	emit_field(lowering, primitives, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_SUBGROUP_INFO), AMDRDNA_GFX10_NGG_SUBGROUP_PRIMITIVES);
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_TWO,
+		    AMDRDNA_GFX10_S_LSHL_B32,
+		    primitives,
+		    primitives,
+		    constant_operand(AMDRDNA_GFX10_ALLOC_PRIMITIVE_SHIFT));
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_TWO,
+		    AMDRDNA_GFX10_S_OR_B32,
+		    AMDRDNA_GFX10_M0,
+		    vertices,
+		    primitives);
+
+	/* The request, which the hardware must have before any export. */
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_CONTROL;
+	inst.opcode = AMDRDNA_GFX10_S_SENDMSG;
+	inst.immediate = AMDRDNA_GFX10_MESSAGE_GS_ALLOC;
+	emit(lowering, &inst);
+
+	/* Each primitive lane exports the word the hardware packed in v0, which ends the primitive's exports. */
+	wave_count = next_scalar_temp(lowering);
+	emit_field(lowering, wave_count, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES);
+	emit_lanes_below(lowering, wave_count);
+	sources[0] = AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR);
+	sources[1] = 0U;
+	sources[2] = 0U;
+	sources[3] = 0U;
+	emit_export(lowering, AMDRDNA_GFX10_EXPORT_PRIMITIVE, sources, 0x1U, AMDRDNA_GFX10_FLAG_LAST);
+
+	/* The vertex lanes run the rest of the program. */
+	wave_count = next_scalar_temp(lowering);
+	emit_field(lowering, wave_count, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_VERTICES);
+	emit_lanes_below(lowering, wave_count);
+}
+
+/*
+ * Narrows the lanes run to the first `count` (an SGPR holding 0 .. 32):
+ * the mask of that many low bits, or all lanes for 32, which the bit-mask
+ * operation cannot make.
+ */
+static void
+emit_lanes_below(
+	struct gfx10_lowering *lowering,
+	unsigned count)
+{
+	unsigned mask;
+
+	/* The low bits, and SCC set when every lane is meant. */
+	mask = next_scalar_temp(lowering);
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_TWO,
+		    AMDRDNA_GFX10_S_BFM_B32,
+		    mask,
+		    count,
+		    AMDRDNA_GFX10_ZERO);
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_COMPARE,
+		    AMDRDNA_GFX10_S_CMP_EQ_U32,
+		    0U,
+		    count,
+		    constant_operand(32U));
+
+	/* The lane mask: every lane, or the low bits. */
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_TWO,
+		    AMDRDNA_GFX10_S_CSELECT_B32,
+		    AMDRDNA_GFX10_EXEC_LO,
+		    constant_operand(GFX10_TRUE),
+		    mask);
+}
+
+/* Appends dst = the unsigned bit field of source that selector (its offset, and its width from bit 16) names. */
+static void
+emit_field(
+	struct gfx10_lowering *lowering,
+	unsigned dst,
+	unsigned source,
+	uint32_t selector)
+{
+	struct amdrdna_gfx10_inst inst;
+
+	/* Builds the extraction, the selector as the literal. */
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_SCALAR_TWO;
+	inst.opcode = AMDRDNA_GFX10_S_BFE_U32;
+	inst.dst = (uint16_t)dst;
+	inst.src[0] = (uint16_t)source;
+	inst.src[1] = AMDRDNA_GFX10_LITERAL;
+	inst.literal = selector;
+
+	/* Places it. */
+	emit(lowering, &inst);
 }
 
 /* Lowers the read of a vertex or pixel program's input. */

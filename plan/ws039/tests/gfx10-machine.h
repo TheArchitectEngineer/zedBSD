@@ -65,7 +65,7 @@ struct machine_result {
 	uint32_t error_word;
 };
 
-/* The export targets by code (colours 0..7, nothing 9, positions 12..15, parameters 32..63). */
+/* The export targets by code (colours 0..7, nothing 9, positions 12..15, the primitive 20, parameters 32..63). */
 #define MACHINE_TARGETS		64U
 
 /*
@@ -76,12 +76,25 @@ struct machine_result {
  * instance, the instance mask), lanes run vertex ids from first_vertex_id
  * (v0) with the instance id (v3) for every lane, `lanes` of them.
  *
+ * A primitive shader wave (ws291, `primitive_shader` set): the subgroup is
+ * this wave, of `lanes` vertices and `primitives` primitives; s2 and s3
+ * carry those counts, user[0..7] are s8..s15, v0 and v1 each lane's
+ * primitive words, v5 the vertex ids from first_vertex_id and v8 the
+ * instance id.  The allocation request it sends is kept (alloc_requests,
+ * and its counts).
+ *
  * A pixel wave: `coverage` lanes run; each lane has its barycentrics, its
  * position (x, y, z, w) and face, and the primitive whose attributes it
  * interpolates: attribute[primitive][location][channel][vertex].
  */
 struct machine_graphics {
-	uint32_t user[3];
+	uint32_t user[8];
+	uint32_t primitive_shader;
+	uint32_t primitives;
+	uint32_t primitive_word[2][MACHINE_LANES];
+	uint32_t alloc_requests;
+	uint32_t alloc_vertices;
+	uint32_t alloc_primitives;
 	uint32_t primitive_id[MACHINE_LANES];
 	uint32_t lanes;
 	uint32_t first_vertex_id;
@@ -102,7 +115,7 @@ struct machine_graphics {
 	uint32_t export_count;
 };
 
-/* Runs one wave of a vertex (stage 0) or pixel (stage 1) program. */
+/* Runs one wave of a vertex (stage 0, a primitive shader when graphics->primitive_shader) or pixel (stage 1) program. */
 void machine_run_graphics(const struct machine_dispatch *dispatch, struct machine_memory *memory, int pixel, struct machine_graphics *graphics, struct machine_result *result);
 
 /* Runs one compute workgroup; result->error says why it stopped early. */

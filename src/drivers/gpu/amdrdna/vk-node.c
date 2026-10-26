@@ -43,6 +43,12 @@
 /* How long an indirect buffer may run before the executor calls the session lost. */
 #define VK_NODE_RUN_MS			2000U
 
+/*
+ * How the vertex programs run when the boot line does not say
+ * (amdrdna.vk.ngg): 1, as primitive shaders.
+ */
+#define VK_NODE_GEOMETRY_DEFAULT	1U
+
 /* The opcodes the timing keeps apart; a larger one is counted with the last. */
 #define VK_NODE_TIMED_OPCODES		256U
 
@@ -138,6 +144,10 @@ amdrdna_vk_node_bind(
 
 	/* The executor's frame runner and its record of its queues' timelines. */
 	amdrdna_runtime_bind(node, vk_node_execute, vk_node_timelines);
+
+	/* The vertex programs run as primitive shaders unless the boot line asks for the legacy stage. */
+	node->vk_geometry = amdrdna_parameter_number("amdrdna.vk.ngg", VK_NODE_GEOMETRY_DEFAULT);
+	amdrdna_mark("vk: vertex programs run as %s", node->vk_geometry != 0U ? "primitive shaders" : "legacy vertex programs");
 
 	/* Timed only when the boot line asks for it. */
 	period_ms = amdrdna_parameter_number("amdrdna.vk.timing", 0U);
@@ -422,6 +432,20 @@ amdrdna_vk_device_id(
 
 	/* The product the attach read. */
 	return session->node->device->product;
+}
+
+/* Gives how the executor runs a pipeline's vertex program (the node's vk_geometry). */
+uint32_t
+amdrdna_vk_geometry_mode(
+	void *owner)
+{
+	struct amdrdna_session *session;
+
+	/* The node session the executor names. */
+	session = owner;
+
+	/* The mode the binding read from the boot line. */
+	return session->node->vk_geometry;
 }
 
 /*

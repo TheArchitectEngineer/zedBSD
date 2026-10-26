@@ -153,6 +153,10 @@ struct amdrdna_vk_timing;
  * command streams read.  vk_timing, made at the binding when the boot line
  * asks for it (amdrdna.vk.timing, a period in milliseconds), times the
  * executor's work and marks it once a period; NULL leaves it untimed.
+ * vk_geometry, set at the binding from the boot line (amdrdna.vk.ngg),
+ * says how the executor runs a pipeline's vertex program: 0 as a legacy
+ * vertex program, 1 as a primitive shader that passes every primitive
+ * through.
  *
  * The display (present.c, stage A8 on, when display is set): the lease of
  * one open at a time and the frames it presents.  present_lock puts the
@@ -192,6 +196,7 @@ struct amdrdna_node {
 	uint64_t streams;
 	uint64_t stream_bytes;
 	struct amdrdna_vk_timing *vk_timing;
+	uint32_t vk_geometry;
 	int display;
 	struct mutex present_lock;
 	struct mutex display_lock;
@@ -247,6 +252,7 @@ int amdrdna_vk_node_blob_attach(struct amdrdna_session *session, uint64_t blob_i
  */
 int amdrdna_vk_blob(void *owner, uint32_t resource_id, uint8_t **cpu, uint64_t *bytes);
 uint32_t amdrdna_vk_device_id(void *owner);
+uint32_t amdrdna_vk_geometry_mode(void *owner);
 uint64_t amdrdna_vk_heap_bytes(void *owner, bool cpu);
 void amdrdna_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t bytes);
 int amdrdna_vk_memory_import(void *owner, uint32_t resource_id, uint64_t bytes, uint8_t **cpu, uint64_t *va, void **backing);

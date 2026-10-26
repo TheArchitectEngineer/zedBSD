@@ -704,8 +704,19 @@ scalar_alu(
 			value = a >> (b & 31U);
 			wave->scc = value != 0U;
 			break;
+		case 0x24U:
+			/* s_bfm_b32: the mask of a bits at bit b. */
+			value = ((1U << (a & 31U)) - 1U) << (b & 31U);
+			break;
 		case 0x26U:
 			value = a * b;
+			break;
+		case 0x27U:
+			/* s_bfe_u32: the field of a at b's offset (4:0), of b's width (22:16). */
+			value = a >> (b & 31U);
+			if (((b >> 16) & 0x7fU) < 32U)
+				value &= (1U << ((b >> 16) & 0x7fU)) - 1U;
+			wave->scc = value != 0U;
 			break;
 		default:
 			return fail(run, "a scalar two-source opcode the machine does not know");
@@ -774,6 +785,18 @@ control(
 		return 0;
 	case 0x0cU:
 		note_wait(wave, word & 0xffffU);
+		break;
+	case 0x10U:
+		/* s_sendmsg: only a primitive shader's allocation request, once, before any export. */
+		if ((word & 0xffffU) != 9U || run->graphics == NULL || run->graphics->primitive_shader == 0U)
+			return fail(run, "a message the machine does not know");
+		if (check_scalar_read(run, wave, CODE_M0) != 0)
+			return 1;
+		if (run->graphics->alloc_requests != 0U || run->graphics->export_count != 0U)
+			return fail(run, "an allocation request twice or after an export");
+		run->graphics->alloc_requests++;
+		run->graphics->alloc_vertices = wave->s[CODE_M0] & 0x7ffU;
+		run->graphics->alloc_primitives = (wave->s[CODE_M0] >> 12) & 0x7ffU;
 		break;
 	case 0x1fU:
 		return fail(run, "the end-of-code padding was run");
@@ -1686,8 +1709,22 @@ machine_run_graphics(
 			wave.v[index][lane] = 0xdeadbeefU ^ (index * 77U + lane);
 	}
 
-	/* A vertex wave: s2 .. s4, v0 the vertex id, v3 the instance id. */
-	if (pixel == 0) {
+	/* A primitive shader wave: the counts in s2 and s3, s8 .. s15, v0 and v1 the primitive words, v5 the vertex id, v8 the instance id. */
+	if (pixel == 0 && graphics->primitive_shader != 0U) {
+		graphics->alloc_requests = 0U;
+		wave.s[2] = (graphics->lanes << 12) | (graphics->primitives << 22);
+		wave.s[3] = graphics->lanes | (graphics->primitives << 8);
+		for (index = 0U; index < 8U; index++)
+			wave.s[8U + index] = graphics->user[index];
+		wave.s[CODE_EXEC] = 0xffffffffU;
+		for (lane = 0U; lane < MACHINE_LANES; lane++) {
+			wave.v[0][lane] = graphics->primitive_word[0][lane];
+			wave.v[1][lane] = graphics->primitive_word[1][lane];
+			wave.v[5][lane] = graphics->first_vertex_id + lane;
+			wave.v[8][lane] = graphics->instance_id;
+		}
+	} else if (pixel == 0) {
+		/* A vertex wave: s2 .. s4, v0 the vertex id, v3 the instance id. */
 		wave.s[2] = graphics->user[0];
 		wave.s[3] = graphics->user[1];
 		wave.s[4] = graphics->user[2];
@@ -1754,6 +1791,12 @@ export_access(
 		return fail(run, "an export in a compute program");
 	target = (word0 >> 4) & 0x3fU;
 	mask = word0 & 0xfU;
+
+	/* A primitive shader exports only after its allocation request; only it exports a primitive. */
+	if (run->graphics->primitive_shader != 0U && run->graphics->alloc_requests == 0U)
+		return fail(run, "a primitive shader's export before its allocation request");
+	if (target == 20U && run->graphics->primitive_shader == 0U)
+		return fail(run, "a primitive export outside a primitive shader");
 
 	/*
 	 * The registers of the enabled channels are ready; they stay read until
