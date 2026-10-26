@@ -66,6 +66,16 @@
 
 `sudo lspci -vvv -xxxx -s 00:0e.0`・`-s 10000:e0:06.0`・`-s 10000:e1:00.0` と `/sys/bus/pci/devices/0000:00:0e.0/resource`。確かめる事: CFGBAR・MEMBAR1・MEMBAR2 の address と大きさと 64/32 bit・prefetchable、MEMBAR1 が 4 GiB の下か、VMD の MSI-X の entry の数と table の BAR・offset、VMCAP・VMCONFIG の値（`-xxxx` の 0x40・0x44）、root port と NVMe の BAR と MSI-X の entry の数。§5 の窓の選び方の前提（4 GiB の下に 1 MiB 以上の窓がある）をここで確かめる。前提が崩れたら p002 を止めて設計を直す。
 
+**読んだ結果（2026-10-27、p002 の最初、Debian 6.19 の vmd の driver が付いた状態、全文は P1 の worktree の `build/hw5330/ws298/lspci-vmd.txt`、git の外）**:
+
+| 物 | 値 |
+| --- | --- |
+| VMD `00:0e.0` 8086:467f | BAR0 CFGBAR `0x6052000000` 64 bit 32 MiB（bus 32 本 = e0〜ff）、BAR2 MEMBAR1 `0x72000000` **32 bit** non-prefetchable 32 MiB、BAR4 MEMBAR2 `0x6055100000` 64 bit 1 MiB。MSI-X 19 entry、table は BAR4 の +0、PBA は BAR4 の +0x1000。VMCAP（0x40）= 0x0001、VMCONFIG（0x44）= 0xfe01（bit 9:8 = 2 → bus 224、bit 1 = 0 → remap が有効）。vendor capability は無い（"SHDW" 無し） |
+| root port `e0:06.0` 8086:464d | header type 0x81（多機能の bit が立つ）、BAR0・1 は 0、MSI（Linux の pcieport が有効にした）、PCIe の Root Port（Slot+）。Linux の下で bus primary=00 secondary=e1 subordinate=e1、memory の窓 `0x72000000-0x720fffff` |
+| NVMe `e1:00.0` 1e0f:000c | BAR0 `0x72000000` 64 bit non-prefetchable 16 KiB、MSI-X 65 entry（table は BAR0 の +0x2000）、MSI 32 |
+
+前提は成り立つ: MEMBAR1 が 4 GiB の下で 32 MiB（§5.1 の 8 の窓はここに入る、MEMBAR2 は 4 GiB の上なので使われない）、MSI-X の entry は 19（≥ 2）、bus の開始は 224。§5 の規則の結果は Linux の割り当て（窓 `0x72000000` の 1 MiB、NVMe の BAR0 `0x72000000`）と同じになる見込み。
+
 ## 3. zedBSD の PCI の枠組みへの載せ方
 
 PCI core は host bridge ごとに `struct drv_pci_bus_ops` を取る（`pci.h`）。VMD は「PCI の function の driver が作る host bridge」として、既存の hook だけで載る:
@@ -232,6 +242,8 @@ design-reviewer は U1〜U9 に全部賛成（条件つき: U1 は使わない p
 | U9 | Intel の公開の register の文書を探していない | 推し: FreeBSD（BSD-2）と Linux の照合で値が一致、と記録 | Intel の datasheet で確かめる |
 
 ## 12. 人の判断が要る事（p002 の前・merge の前）
+
+**決定（2026-10-27、Q1 の技術判断、ユーザーへ報告）**: D1 は (b)、D2 は (a)。D1 は同日 P1 が実施した（5330 の Debian で `sfdisk --part-label`、p4〜p6 を `zedBSD-nvme-boot`・`zedBSD-nvme-root`・`zedBSD-nvme-swap` に。[hw5330 の README](../tools/hw5330/README.md) の区画の表）。
 
 ### D1. 同じ PARTLABEL が二つになる（重大、design-review の 1）
 

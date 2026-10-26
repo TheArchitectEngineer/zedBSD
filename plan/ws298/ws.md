@@ -8,7 +8,9 @@
 
 ## 単一の到達目標
 
-Intel VMD（5330 の 8086:467f、Alder Lake の VMD）の下にある NVMe を、BIOS の設定を変えずに zedBSD から使えるようにする: VMD の CFGBAR を ECAM として下の bus を列挙し、MEMBAR の窓で device の BAR を扱い、MSI-X の割り込みを VMD を通して届ける。既存の pci-nvme の driver がその下の NVMe に付き、5330 の NVMe の区画から root を mount できる。
+Intel VMD（5330 の 8086:467f、Alder Lake の VMD）の下にある NVMe を、BIOS の設定を変えずに zedBSD から使えるようにする: VMD の CFGBAR を ECAM として下の bus を列挙し、MEMBAR の窓で device の BAR を扱い、MSI-X の割り込みを VMD を通して届ける。既存の pci-nvme の driver がその下の NVMe に付き、zedBSD から NVMe が見えて読める（`physical disks=2`、NVMe の GPT と連続の読み）。
+
+範囲の改め（2026-10-27、design §12 D2、Q1 の判断 (a)）: 前は「5330 の NVMe の区画から root を mount できる」まで。NVMe から起動して root を mount するのは q1612 の後段（`5330-run.sh` の NVMe の mode）で確かめる。
 
 ## 制約
 
@@ -20,6 +22,6 @@ Intel VMD（5330 の 8086:467f、Alder Lake の VMD）の下にある NVMe を�
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（VMD の register・bus の列挙・窓・MSI-X の付け替え・zedBSD の PCI の枠組みへの載せ方）と design-reviewer。[design.md](design.md) 版 2（[review](design-review.md) 反映、§12 の D1・D2 待ち） | — | in-progress |
-| p002 | 実装、host 試験、5330 の実機で NVMe が見える（physical disks=2）・読める | p001 | planned |
+| [p001](phase001/phase.md) | 設計（VMD の register・bus の列挙・窓・MSI-X の付け替え・zedBSD の PCI の枠組みへの載せ方）と design-reviewer。[design.md](design.md) 版 2（[review](design-review.md) 反映、D1 (b)・D2 (a) 決定） | — | cleared |
+| p002 | 実装、host 試験、5330 の実機で NVMe が見える（physical disks=2）・読める | p001 | in-progress |
 | p003 | 規約の全文の見直し | p002 | planned |

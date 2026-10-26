@@ -3,7 +3,7 @@
 # ws298-p001 Intel VMD の driver の設計
 
 - 親: [WS298](../ws.md)。Queue: q1613 / q1613-i01（担当 P1、2026-10-27）。
-- Status: in-progress（設計の版 2、design-reviewer の反映済み。§12 の D1・D2 の判断待ち）
+- Status: cleared（2026-10-27。設計の版 2、design-reviewer の反映済み。§12 の D1・D2 は Q1 が決定: D1 (b)、D2 (a)）
 - Disposition: normal
 
 ## 目的・受け入れ
@@ -21,4 +21,4 @@ VMD（8086:467f）の CFGBAR を ECAM として下の bus を列挙し、MEMBAR 
 - 5330 の VMD の BAR・MSI-X の数・VMCAP/VMCONFIG の値は未読（5330 は P3 が q1612 で使用中）。p002 の最初に読む（design.md §2.3）。
 - Intel の公開の register の文書は未確認（U9）。
 - design-reviewer: 実施（2026-10-27）。重大 1（同じ PARTLABEL、D1）・中 5・軽 12。U1〜U9 に全部賛成（条件つき、版 2 に反映）。
-- 人の判断待ち: D1（NVMe の区画の PARTLABEL、推し (b) 名前を変える）、D2（WS298 の目標を「見えて読める」に絞る、推し (a)）。design.md §12。clearance はこの 2 つの決定の後。
+- 人の判断待ち: D1（NVMe の区画の PARTLABEL、推し (b) 名前を変える）、D2（WS298 の目標を「見えて読める」に絞る、推し (a)）。design.md §12。→ 2026-10-27 Q1 が決定（D1 (b)、D2 (a)）。D1 は P1 が 5330 で実施。

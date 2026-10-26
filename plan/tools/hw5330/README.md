@@ -442,15 +442,15 @@ Debian の ext4（`nvme0n1p2`）を 16 GiB 縮め、p2 と swap（p3）の間に
 | --- | --- | --- | --- | --- | --- |
 | p1 | 2048 | 1998848（976 MiB） | EFI System | — | Debian の ESP（`40DD-CFBF`、変えていない） |
 | p2 | 2000896 | 448432128（218961 MiB、前は 481986560） | Linux filesystem | — | Debian の `/`（ext4 `034701e3-…`、PARTUUID `c8421e56-…`） |
-| p4 | 450433024 | 524288（256 MiB） | Microsoft basic data `EBD0A0A2-…` | `zedBSD-boot`・FAT32 label `ZEDBSD` | 空（`F2E9-0F41`）。`/zedbsd.cfg` と kernel を置く所 |
-| p5 | 450957312 | 30932992（15104 MiB） | FreeBSD UFS `516E7CB6-…` | `zedBSD-root` | 型だけ（UFS は未書き込み） |
-| p6 | 481890304 | 2097152（1 GiB） | FreeBSD swap `516E7CB5-…` | `zedBSD-swap` | 型だけ（mkswap しない。Linux の swap の型にしない） |
+| p4 | 450433024 | 524288（256 MiB） | Microsoft basic data `EBD0A0A2-…` | `zedBSD-nvme-boot`・FAT32 label `ZEDBSD` | 空（`F2E9-0F41`）。`/zedbsd.cfg` と kernel を置く所 |
+| p5 | 450957312 | 30932992（15104 MiB） | FreeBSD UFS `516E7CB6-…` | `zedBSD-nvme-root` | 型だけ（UFS は未書き込み） |
+| p6 | 481890304 | 2097152（1 GiB） | FreeBSD swap `516E7CB5-…` | `zedBSD-nvme-swap` | 型だけ（mkswap しない。Linux の swap の型にしない） |
 | p3 | 483987456 | 16130048（7.7 GiB） | Linux swap | — | Debian の swap（変えていない） |
 
 - 型は `tools/build/zedimage-host.c` の image と同じ。区画の番号は disk の順でない（sfdisk は「not in disk order」と言う）。並べ替えない（p3 の名前が変わる）。
 - 前後の区画表・dumpe2fs・各段の出力は centris の P3 の worktree の `build/hw5330/resize/`（git の外）。
 - まだ無い物: NVMe から zedBSD を起動する UEFI の entry、p4・p5 への書き込み、`5330-run.sh` の NVMe 化。今の zedBSD の kernel は Intel VMD（RST）の後ろの NVMe を見られない（WS298）。
-  USB と NVMe の両方に `PARTLABEL=zedBSD-root` がある時の kernel の選び方は WS298 の後に確かめる。
+- PARTLABEL（2026-10-27、WS298 の design §12 D1、Q1 の判断 (b)）: p4〜p6 の名前を `zedBSD-boot`・`zedBSD-root`・`zedBSD-swap` から `zedBSD-nvme-boot`・`zedBSD-nvme-root`・`zedBSD-nvme-swap` に変えた（`sfdisk --part-label`、Debian の上で。位置・型・PARTUUID は不変、`sfdisk -V` No errors）。USB の試験の image の `zedbsd.cfg`（`rootpart=PARTLABEL=zedBSD-root`）と同じ名前が二つになると、VMD の driver（WS298）で NVMe が見えた時に kernel の root の解決が EEXIST で失敗するため。NVMe から起動する時の `zedbsd.cfg` は `zedBSD-nvme-root`・`zedBSD-nvme-swap` を指す。前後の `sfdisk -d` は P1 の worktree の `build/hw5330/ws298/sfdisk-{before,after}-label.txt`（git の外）。
 
 ### 手順（live USB、`5330-live-usb.sh`）
 
