@@ -8,12 +8,14 @@
 /*
  * The executor's submissions, fences and semaphores.
  *
- * vkQueueSubmit runs its command buffers on the GPU in order and waits
- * for them before it answers (vk-execute.c), so a submission's work is
- * done when its reply is written: its fence is signaled then, and the
- * marker libvulkan reserved for it, queued after this frame, completes
- * after the work.  A semaphore orders nothing more than the one queue's
- * order already does: waits and signals are read and kept as nothing.
+ * vkQueueSubmit puts its command buffers' runs on the GPU in order and
+ * answers without waiting for them (vk-execute.c): its fence keeps the
+ * newest run of each queue then and is signaled once they have ended, and
+ * the marker libvulkan reserved for it, queued after this frame, completes
+ * once the GPU has done them (runtime.c).  A semaphore orders nothing more
+ * than the queues' order already does (a run waits for the other queue's
+ * runs before it is put on its own): waits and signals are read and kept
+ * as nothing.
  */
 
 #include <stdbool.h>
@@ -39,6 +41,7 @@ static uint32_t queue_result(int error);
 static int queue_create_sync(struct amdrdna_vk_session *session, enum i915_vk_object_kind kind, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int queue_reset_fences(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int queue_fence_status(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static bool queue_runs_ended(struct amdrdna_vk_session *session, const struct amdrdna_vk_ticket *runs);
 
 /*
  * Runs a submission, fence or semaphore command; *handled stays clear for
@@ -96,8 +99,8 @@ amdrdna_vk_queue_route(
 
 /*
  * vkQueueSubmit: [queue][count][count]{submit}[fence] -> [result].  Every
- * submit is read first; then each command buffer runs in order, and the
- * fence is signaled once all of them did.
+ * submit is read first; then each command buffer's runs are put on the GPU
+ * in order, and the fence waits for the newest runs then.
  */
 static int
 queue_submit(
@@ -137,7 +140,7 @@ queue_submit(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Runs each command buffer; the first that fails ends the submission. */
+	/* Puts each command buffer's runs on the GPU; the first that fails ends the submission. */
 	error = 0;
 	for (index = 0U; index < command_count; index++) {
 		command = amdrdna_vk_payload(session, I915_VK_OBJ_COMMAND_BUFFER, commands[index]);
@@ -153,10 +156,13 @@ queue_submit(
 		}
 	}
 
-	/* The work is done: the fence is signaled. */
+	/* The fence is signaled once the runs on the queues now have ended. */
 	fence = amdrdna_vk_payload(session, I915_VK_OBJ_FENCE, fence_id);
-	if (error == 0 && fence != NULL)
-		fence->signaled = true;
+	if (error == 0 && fence != NULL) {
+		fence->signaled = false;
+		fence->submitted = true;
+		amdrdna_vk_execute_last(session, fence->runs);
+	}
 
 	/* The submission's result. */
 	result = queue_result(error);
@@ -316,12 +322,15 @@ queue_reset_fences(
 	if (reader->error != 0 || count > QUEUE_ITEMS_MAX * QUEUE_SUBMITS_MAX)
 		return EINVAL;
 
-	/* Each known fence is unsignaled. */
+	/* Each known fence is unsignaled, waiting for no run. */
 	for (index = 0U; index < count; index++) {
 		identity = drv_i915_wire_read_u64(reader);
 		fence = amdrdna_vk_payload(session, I915_VK_OBJ_FENCE, identity);
-		if (fence != NULL)
+		if (fence != NULL) {
 			fence->signaled = false;
+			fence->submitted = false;
+			kern_memset(fence->runs, 0, sizeof(fence->runs));
+		}
 	}
 	if (reader->error != 0)
 		return EINVAL;
@@ -340,7 +349,7 @@ queue_fence_status(
 	struct i915_wire_reader *reader,
 	struct i915_wire_writer *reply)
 {
-	const struct amdrdna_vk_fence *fence;
+	struct amdrdna_vk_fence *fence;
 	uint64_t identity;
 	uint32_t result;
 
@@ -350,13 +359,35 @@ queue_fence_status(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Signaled, or not yet. */
+	/* Signaled, or submitted and its runs have ended since (it stays signaled then), or not yet. */
 	result = (uint32_t)VK_NOT_READY;
 	fence = amdrdna_vk_payload(session, I915_VK_OBJ_FENCE, identity);
+	if (fence != NULL && !fence->signaled && fence->submitted)
+		fence->signaled = queue_runs_ended(session, fence->runs);
 	if (fence != NULL && fence->signaled)
 		result = (uint32_t)VK_SUCCESS;
 	drv_i915_wire_reply_u32(reply, result);
 
 	/* Succeeded: the reply carries the status. */
 	return 0;
+}
+
+/* Reports whether a fence's runs (one of each queue) are no longer running. */
+static bool
+queue_runs_ended(
+	struct amdrdna_vk_session *session,
+	const struct amdrdna_vk_ticket *runs)
+{
+	bool passed;
+	uint32_t queue;
+
+	/* Each queue's run. */
+	for (queue = 0U; queue < 2U; queue++) {
+		passed = amdrdna_vk_gpu_passed(session->owner, &runs[queue]);
+		if (!passed)
+			return false;
+	}
+
+	/* Succeeded: both have ended. */
+	return true;
 }

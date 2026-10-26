@@ -203,6 +203,20 @@ int amdrdna_vk_gpu_alloc_system(void *owner, uint64_t bytes, void **token, uint8
 void amdrdna_vk_gpu_free(void *owner, void *token);
 
 /*
+ * A run of an indirect buffer the node put on a queue: the queue (0 the
+ * graphics queue, 1 the compute queue), the fence value after it, the hub
+ * context it runs in and the queue's resets when it was put on it, all
+ * the node's; issued is clear for no run (nothing to wait for).
+ */
+struct amdrdna_vk_ticket {
+	uint32_t queue;
+	uint32_t sequence;
+	uint32_t context;
+	uint32_t resets;
+	bool issued;
+};
+
+/*
  * Runs an indirect buffer of command packets of bytes at va on the
  * graphics queue in the session's address space, and waits until the GPU
  * has done it (provided by the node: the queue, the address space's
@@ -212,10 +226,22 @@ void amdrdna_vk_gpu_free(void *owner, void *token);
 int amdrdna_vk_gpu_run(void *owner, uint64_t va, uint32_t bytes);
 
 /*
- * The same on the compute queue the compute queue family's command
- * buffers run on (provided by the node).
+ * Puts an indirect buffer of bytes at va on the graphics queue, or on the
+ * compute queue the compute queue family's command buffers run on
+ * (kernel_queue), without waiting for it; ticket names the run (provided
+ * by the node).  Returns 0, EINVAL for a buffer that is not whole dwords,
+ * or EIO when the session is lost or the run could not be put on the queue.
  */
-int amdrdna_vk_gpu_run_kernel(void *owner, uint64_t va, uint32_t bytes);
+int amdrdna_vk_gpu_submit(void *owner, uint64_t va, uint32_t bytes, bool kernel_queue, struct amdrdna_vk_ticket *ticket);
+
+/*
+ * Waits until the GPU has done a run (provided by the node).  Returns 0,
+ * or EIO when the run did not finish in time or did no work.
+ */
+int amdrdna_vk_gpu_wait(void *owner, const struct amdrdna_vk_ticket *ticket);
+
+/* Reports whether a run is no longer running, without waiting (provided by the node). */
+bool amdrdna_vk_gpu_passed(void *owner, const struct amdrdna_vk_ticket *ticket);
 
 /*
  * Counts a copy between a buffer and an image the command processor

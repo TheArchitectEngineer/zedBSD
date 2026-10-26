@@ -44,6 +44,12 @@
 #define AMDRDNA_ENTRY_RESERVED		1U
 #define AMDRDNA_ENTRY_QUEUED		2U
 #define AMDRDNA_ENTRY_RUNNING		3U
+#define AMDRDNA_ENTRY_PARKED		4U
+
+/* The queues an executor puts runs on: the graphics queue and the compute queue. */
+#define AMDRDNA_NODE_QUEUES		2U
+#define AMDRDNA_NODE_QUEUE_GRAPHICS	0U
+#define AMDRDNA_NODE_QUEUE_COMPUTE	1U
 
 /* The two kinds of resource: ordinary storage in RAM, a blob in the VRAM. */
 #define AMDRDNA_RESOURCE_STORAGE	1U
@@ -81,6 +87,9 @@ struct amdrdna_resource {
  * pending counts its queued frames and its reserved or queued markers and
  * stopping refuses its new work (both under the node's queue_lock);
  * isolated says the core isolated it: what it held stays the device's.
+ * runs names the newest run its executor put on each of its queues
+ * (AMDRDNA_NODE_QUEUE_*), under the node's lock: a marker queued after
+ * the session's frames completes once they have ended.
  */
 struct amdrdna_session {
 	struct amdrdna_node *node;
@@ -90,12 +99,14 @@ struct amdrdna_session {
 	uint32_t pending;
 	int stopping;
 	int isolated;
+	struct amdrdna_space_ticket runs[AMDRDNA_NODE_QUEUES];
 };
 
 /*
  * One entry of the renderer's queue: a frame (a copy of its wire, freed
  * once run) or a marker of a supervised job (one of the node's, reused).
- * error is the result a marker completes with.
+ * error is the result a marker completes with; runs, for a marker
+ * parked until the GPU ends its session's runs, names those runs.
  */
 struct amdrdna_node_entry {
 	struct amdrdna_node_entry *next;
@@ -106,6 +117,7 @@ struct amdrdna_node_entry {
 	int error;
 	uint32_t bytes;
 	uint8_t *wire;
+	struct amdrdna_space_ticket runs[AMDRDNA_NODE_QUEUES];
 };
 
 /* Runs one command frame of a session through the bound executor. */
@@ -131,7 +143,10 @@ struct amdrdna_vk_timing;
  * head to tail, the markers, every session's pending count and stopping,
  * and faulted; available wakes the worker, retired the drains.  faulted
  * is set by the core's fault or the stop: nothing new is taken and what
- * is queued completes with EIO.
+ * is queued completes with EIO.  A marker whose session's runs the GPU
+ * has not ended is parked, from parked_head to parked_tail under
+ * queue_lock, for the completer thread, which parked_more wakes; parked
+ * markers complete in the order they were parked.
  *
  * The counts the executor adds with relaxed atomics: copies between a
  * buffer and an image the command processor moved, draws and quads,
@@ -165,6 +180,9 @@ struct amdrdna_node {
 	struct wait_queue retired;
 	struct amdrdna_node_entry *head;
 	struct amdrdna_node_entry *tail;
+	struct wait_queue parked_more;
+	struct amdrdna_node_entry *parked_head;
+	struct amdrdna_node_entry *parked_tail;
 	struct amdrdna_node_entry markers[AMDRDNA_NODE_MARKERS];
 	int faulted;
 	uint64_t copies;

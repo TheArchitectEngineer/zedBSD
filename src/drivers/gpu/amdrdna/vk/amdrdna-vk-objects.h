@@ -325,9 +325,16 @@ struct amdrdna_vk_pipeline {
 #define AMDRDNA_VK_COMMAND_EXECUTABLE	2U
 #define AMDRDNA_VK_COMMAND_INVALID	3U
 
-/* A VkFence: whether it is signaled (a submission that names it signals it once its work is done). */
+/*
+ * A VkFence: whether it is signaled (created so, or its submission's runs
+ * have ended); submitted says a submission named it since its last reset,
+ * and runs are that submission's (the newest run of each queue then),
+ * which signal it once they have ended.
+ */
 struct amdrdna_vk_fence {
 	bool signaled;
+	bool submitted;
+	struct amdrdna_vk_ticket runs[2];
 };
 
 /*
@@ -388,6 +395,7 @@ int amdrdna_vk_record_route(struct amdrdna_vk_session *session, uint32_t opcode,
 void amdrdna_vk_command_reset(struct amdrdna_vk_command_buffer *command);
 int amdrdna_vk_queue_route(struct amdrdna_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int amdrdna_vk_execute(struct amdrdna_vk_session *session, struct amdrdna_vk_command_buffer *command);
+void amdrdna_vk_execute_last(struct amdrdna_vk_session *session, struct amdrdna_vk_ticket *last);
 
 uint32_t amdrdna_vk_result(int error);
 uint64_t amdrdna_vk_create_tail(struct i915_wire_reader *reader);

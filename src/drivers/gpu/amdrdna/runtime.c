@@ -13,8 +13,12 @@
  * queued with a completion), and takes supervised jobs whose completion
  * markers follow the frames queued before them.  One worker thread runs
  * the queue in order: a frame through the executor under the node's lock,
- * a marker by completing it.  A fault stops new work: frames and markers
- * still queued complete with EIO, and no address space runs anything new.
+ * a marker by completing it.  The executor's submissions do not wait for
+ * the GPU, so a marker whose session's runs the GPU has not ended yet is
+ * parked, and the completer thread completes the parked markers in order
+ * as their runs end (a run that does not end completes its marker with
+ * EIO).  A fault stops new work: frames and markers still queued complete
+ * with EIO, and no address space runs anything new.
  * The stop of a session and the device's fault are there whether an
  * executor is bound or not.
  *
@@ -69,6 +73,9 @@
 /* The timelines a queue may name (1 to 63; 0 is the context's own). */
 #define RUNTIME_TIMELINES		64U
 
+/* How long a parked marker's run may take before its space is lost and its queue reset. */
+#define RUNTIME_RUN_MS			2000U
+
 /* What a queue entry is. */
 #define RUNTIME_ENTRY_FRAME		1U
 #define RUNTIME_ENTRY_MARKER		2U
@@ -87,6 +94,10 @@ static int runtime_isolate(void *private_data, void *session);
 static void runtime_fault(void *private_data, int error);
 static int runtime_reset(void *private_data);
 static void runtime_worker(void *argument);
+static void runtime_completer(void *argument);
+static bool runtime_park(struct amdrdna_node *node, struct amdrdna_node_entry *entry);
+static int runtime_runs_wait(struct amdrdna_session *session, const struct amdrdna_space_ticket *runs, unsigned milliseconds);
+static void runtime_retire(struct amdrdna_node *node, struct amdrdna_node_entry *entry);
 static int runtime_execute(struct amdrdna_node *node, struct amdrdna_session *session, const void *wire, uint32_t bytes);
 static void runtime_enqueue(struct amdrdna_node *node, struct amdrdna_node_entry *entry);
 static struct amdrdna_node_entry *runtime_marker(struct amdrdna_node *node, struct amdrdna_session *session, void *token, struct drv_gpu_completion *completion);
@@ -147,6 +158,9 @@ amdrdna_runtime_prepare(
 	spin_init(&node->queue_lock, LOCK_RANK_DEVICE, "amdrdna queue");
 	waitq_init(&node->available, "amdrdna queue available");
 	waitq_init(&node->retired, "amdrdna queue retired");
+	waitq_init(&node->parked_more, "amdrdna queue parked");
+	node->parked_head = NULL;
+	node->parked_tail = NULL;
 
 	/* The stop of a session and the device's fault, and its reset when the boot allows it. */
 	allowed = amdrdna_reset_allowed(node->device);
@@ -189,18 +203,24 @@ amdrdna_runtime_start(
 	struct amdrdna_node *node)
 {
 	struct thread *worker;
+	struct thread *completer;
 	unsigned long enabled;
 	int error;
 
-	/* The worker. */
+	/* The worker, then the completer of the parked markers. */
 	error = kthread_create(runtime_worker, node, SCHED_PRIORITY_DEFAULT, &worker);
 	if (error == 0) {
 		worker->detached = 1;
 		thread_start(worker);
+		error = kthread_create(runtime_completer, node, SCHED_PRIORITY_DEFAULT, &completer);
+	}
+	if (error == 0) {
+		completer->detached = 1;
+		thread_start(completer);
 		return;
 	}
 
-	/* No worker: the renderer takes nothing. */
+	/* No worker or no completer: the renderer takes nothing. */
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
 	node->faulted = 1;
@@ -208,7 +228,7 @@ amdrdna_runtime_start(
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
 	/* Says why the renderer takes nothing. */
-	amdrdna_mark("gpu device: no renderer worker (%d)", error);
+	amdrdna_mark("gpu device: no renderer worker or completer (%d)", error);
 }
 
 /*
@@ -856,6 +876,7 @@ runtime_worker(
 	struct drv_gpu_completion *completion;
 	unsigned long enabled;
 	uint64_t observed;
+	bool parked;
 	int faulted;
 	int error;
 
@@ -895,31 +916,198 @@ runtime_worker(
 			error = EIO;
 		}
 
+		/* A marker whose session's runs have not all ended goes to the completer. */
+		if (entry->kind == RUNTIME_ENTRY_MARKER && error == 0) {
+			parked = runtime_park(node, entry);
+			if (parked)
+				continue;
+
+			/* The runs ended: whether they did their work. */
+			error = runtime_runs_wait(entry->session, entry->runs, RUNTIME_RUN_MS);
+		}
+
 		/* Delivers the completion. */
 		completion = entry->completion;
 		drv_gpu_complete(completion, error);
 
 		/* Retires the entry: a frame is freed, a marker is free again. */
+		runtime_retire(node, entry);
+	}
+}
+
+/*
+ * Completes the parked markers in the order they were parked, for the
+ * node's life: each once its session's runs have ended, with EIO when
+ * one did not end in time, did not do its work, or the device faulted.
+ */
+static void
+runtime_completer(
+	void *argument)
+{
+	struct amdrdna_node *node;
+	struct amdrdna_node_entry *entry;
+	unsigned long enabled;
+	uint64_t observed;
+	int faulted;
+	int error;
+
+	/* The node the completer serves. */
+	node = argument;
+
+	/* Takes the oldest parked marker, sleeping while none is parked. */
+	for (;;) {
 		enabled = spin_lock_irqsave(&node->queue_lock);
 
-		entry->session->pending--;
-		if (entry->kind == RUNTIME_ENTRY_MARKER) {
-			entry->state = AMDRDNA_ENTRY_FREE;
-			entry->session = NULL;
-			entry->completion = NULL;
+		while (node->parked_head == NULL) {
+			observed = waitq_sequence(&node->parked_more);
+			(void)waitq_sleep(&node->parked_more, &node->queue_lock, observed, 0U, 0U);
 		}
 
-		/* The drains look again. */
-		waitq_wake_all(&node->retired);
+		/* The head stays parked (counted pending) until it is completed. */
+		entry = node->parked_head;
+		faulted = node->faulted;
 
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
 
-		/* A frame's copy goes; a marker's freeing is capacity. */
-		if (entry->kind == RUNTIME_ENTRY_FRAME) {
-			kern_free(entry);
-		} else {
-			drv_gpu_capacity_changed(node->gpu);
-		}
+		/* Waits for its runs, unless the device faulted. */
+		error = EIO;
+		if (faulted == 0)
+			error = runtime_runs_wait(entry->session, entry->runs, RUNTIME_RUN_MS);
+
+		/* Delivers the completion. */
+		drv_gpu_complete(entry->completion, error);
+
+		/* Takes it off the parked list, then retires it. */
+		enabled = spin_lock_irqsave(&node->queue_lock);
+
+		node->parked_head = entry->next;
+		if (node->parked_head == NULL)
+			node->parked_tail = NULL;
+		entry->next = NULL;
+
+		spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+		runtime_retire(node, entry);
+	}
+}
+
+/*
+ * Parks a marker the worker took when its session's runs have not all
+ * ended, or when markers are parked already (markers complete in order).
+ * Returns true when parked: the completer completes it.
+ */
+static bool
+runtime_park(
+	struct amdrdna_node *node,
+	struct amdrdna_node_entry *entry)
+{
+	unsigned long enabled;
+	unsigned queue;
+	bool running;
+	bool passed;
+
+	/* The session's newest runs, as its frames before the marker left them. */
+	mutex_lock(&node->lock);
+
+	kern_memcpy(entry->runs, entry->session->runs, sizeof(entry->runs));
+
+	mutex_unlock(&node->lock);
+
+	/* Whether any of them still runs. */
+	running = false;
+	for (queue = 0U; queue < AMDRDNA_NODE_QUEUES; queue++) {
+		passed = amdrdna_space_passed(entry->session->space, &entry->runs[queue]);
+		if (!passed)
+			running = true;
+	}
+
+	/* Parks it behind the parked ones when it must wait, or when others wait already. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	if (!running && node->parked_head == NULL) {
+		spin_unlock_irqrestore(&node->queue_lock, enabled);
+		return false;
+	}
+	entry->state = AMDRDNA_ENTRY_PARKED;
+	entry->next = NULL;
+	if (node->parked_tail == NULL) {
+		node->parked_head = entry;
+	} else {
+		node->parked_tail->next = entry;
+	}
+	node->parked_tail = entry;
+	waitq_wake_one(&node->parked_more);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* Succeeded: the completer has it. */
+	return true;
+}
+
+/*
+ * Waits up to milliseconds for each of a session's runs to end.  Returns
+ * 0 when all did their work, EIO when one did not end in time (its space
+ * is then lost and its queue reset) or did not do its work.
+ */
+static int
+runtime_runs_wait(
+	struct amdrdna_session *session,
+	const struct amdrdna_space_ticket *runs,
+	unsigned milliseconds)
+{
+	unsigned queue;
+	int failed;
+	int error;
+
+	/* Each queue's run in turn. */
+	failed = 0;
+	for (queue = 0U; queue < AMDRDNA_NODE_QUEUES; queue++) {
+		error = amdrdna_space_wait(session->space, &runs[queue], milliseconds);
+		if (error != 0)
+			failed = EIO;
+	}
+
+	/* Reports a run that failed. */
+	if (failed != 0)
+		return EIO;
+
+	/* Succeeded: every run did its work. */
+	return 0;
+}
+
+/*
+ * Retires an entry whose completion was delivered: the session's pending
+ * count falls, a frame is freed and a marker is free again (capacity).
+ */
+static void
+runtime_retire(
+	struct amdrdna_node *node,
+	struct amdrdna_node_entry *entry)
+{
+	unsigned long enabled;
+	uint32_t kind;
+
+	/* The session's count, and a marker free again. */
+	kind = entry->kind;
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	entry->session->pending--;
+	if (kind == RUNTIME_ENTRY_MARKER) {
+		entry->state = AMDRDNA_ENTRY_FREE;
+		entry->session = NULL;
+		entry->completion = NULL;
+	}
+
+	/* The drains look again. */
+	waitq_wake_all(&node->retired);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* A frame's copy goes; a marker's freeing is capacity. */
+	if (kind == RUNTIME_ENTRY_FRAME) {
+		kern_free(entry);
+	} else {
+		drv_gpu_capacity_changed(node->gpu);
 	}
 }
 

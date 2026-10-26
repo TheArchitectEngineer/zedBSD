@@ -25,6 +25,15 @@
 #                                            (VULKAN_ZEDBSD_SUBMIT_TIMING) and the kernel's amdrdna.vk.timing marks of
 #                                            the run (the boot line must carry amdrdna.vk.timing=N): the MVIEW, VULKAN
 #                                            TIMING and vk timing lines (printed), OUT/mview.log, OUT/kernel.log
+#     measure.sh shot OUT COPIES             mview's still view of COPIES copies (FIFO, composed: the compositor is
+#                                            not active while a game holds the display) captured by
+#                                            keiland-shot 6 s in: OUT/shot.png, compared with the Linux reference
+#                                            build/ws291/measure/ref/linux-shot-COPIES.png (printed: shot-diff.py and the
+#                                            pixels 16 or more levels apart)
+#     measure.sh hang OUT                    the hang check: vkhang (a draw that never ends: its app alone loses the
+#                                            device, the queue is reset), then vkhang --loops, vkhang --compute --loops
+#                                            and a short mview run, and the desktop captured: their lines and the
+#                                            kernel's lines of the loss and the reset (printed), OUT/desktop.png
 #     measure.sh bench zedbsd|linux OUT [LIST]
 #                                            every run of LIST (default bench.list beside this script) on the one
 #                                            system, mview copied first (USB_MVIEW, LINUX_MVIEW); OUT/bench.log and
@@ -42,6 +51,10 @@ ZEDBSD_BOOT=${ZEDBSD_BOOT:-0005}
 DEBIAN=${DEBIAN:-awe@10.0.10.3}
 KEY=${KEY:-$top/plan/tmp/guest/id_ed25519}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+# The commands to zedBSD share one SSH connection, used again and again (its sshd leaves sessions stuck now and then,
+# and enough stuck ones make it refuse every new connection: BUG-346; 2026-10-27 user: one SSH session reused).
+mkdir -p "$top/build/tmp"
+ZSSHOPT="$SSHOPT -o ControlMaster=auto -o ControlPath=$top/build/tmp/ssh-%h -o ControlPersist=600"
 SESSION=/run/user/1000/session.log
 
 say() {
@@ -52,11 +65,33 @@ say() {
 zs() {
 	ip=$1
 	shift
-	timeout "${ZS_TIMEOUT:-60}" ssh -i "$KEY" $SSHOPT "root@$ip" "$@"
+	timeout "${ZS_TIMEOUT:-60}" ssh -i "$KEY" $ZSSHOPT "root@$ip" "$@"
 }
 
+# zcp: scp with the zedBSD key, in the old SCP protocol; a copy that failed is tried again, twice.
 zcp() {
-	timeout 120 scp -i "$KEY" $SSHOPT "$@"
+	for try in 1 2 3; do
+		timeout 120 scp -O -i "$KEY" $ZSSHOPT "$@" && return 0
+		sleep 5
+	done
+	return 1
+}
+
+# zget IP DIR REMOTE...: each remote file into DIR, read with cat over SSH (an scp from zedBSD sometimes hangs), each
+# tried again twice.
+zget() {
+	gip=$1
+	gdir=$2
+	shift 2
+	for gfile in "$@"; do
+		gok=0
+		for try in 1 2 3; do
+			ZS_TIMEOUT=60 zs "$gip" "cat $gfile" > "$gdir/$(basename "$gfile")" < /dev/null && { gok=1; break; }
+			sleep 5
+		done
+		[ $gok = 1 ] || return 1
+	done
+	return 0
 }
 
 deb() {
@@ -167,12 +202,18 @@ desktop() {
 	zcp plan/tools/frame-ops/frame-ops.sh "root@$ip:/tmp/frame-ops.sh" || return 1
 	# The input daemon frame-ops starts keeps no descriptor of the SSH session.
 	ZS_TIMEOUT=400 zs "$ip" "sh /tmp/frame-ops.sh $SESSION /tmp/marks 1920 1080 > /tmp/frame-ops.out 2>&1 < /dev/null; keiland-shot /tmp/shot.png > /dev/null 2>&1 < /dev/null"
-	zcp "root@$ip:$SESSION" "root@$ip:/tmp/marks" "root@$ip:/tmp/frame-ops.out" "root@$ip:/tmp/shot.png" "$out/" || return 1
+	zget "$ip" "$out" "$SESSION" /tmp/marks /tmp/frame-ops.out /tmp/shot.png || return 1
 	python3 -I plan/tools/frame-ops/frame-times.py "$out/session.log" "$out/marks" > "$out/table.txt" 2>&1
 	uname=$(zs "$ip" uname -v)
 	echo "zedBSD $ip $uname"
 	cat "$out/table.txt"
 }
+
+# The lines a zedBSD run starts with: a pointer move through the test input (started when it is not), so the
+# desktop's idle time starts over and the screen stays on and unlocked (it goes off after 15 minutes without input).
+WAKE="[ -S /run/aat-input.sock ] || { aat-input start --width 1920 --height 1080 > /dev/null 2>&1; sleep 3; }
+aat-input move-to 960 600 > /dev/null 2>&1
+aat-input move-to 962 602 > /dev/null 2>&1"
 
 # zrun IP: the script on standard input run on zedBSD as root, detached from the SSH session (a session that ran
 # mview in the foreground was sometimes closed by the remote side), its end polled for at most 600 seconds.
@@ -195,12 +236,13 @@ mview() {
 	ip=$(to_zedbsd) || return 1
 	# The run's own lines of the compositor's log follow the line count taken before it.
 	zrun "$ip" <<EOS || return 1
+$WAKE
 rm -f /tmp/mview.log /tmp/mview-scanout.log
 n=\$(wc -l < $SESSION)
 su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
 tail -n +\$n $SESSION | grep -E 'KWL SCANOUT' > /tmp/mview-scanout.log
 EOS
-	zcp "root@$ip:/tmp/mview.log" "root@$ip:/tmp/mview-scanout.log" "$out/" || return 1
+	zget "$ip" "$out" /tmp/mview.log /tmp/mview-scanout.log || return 1
 	grep -vE 'MVIEW (FRAME|INPUT)' "$out/mview.log"
 	head -5 "$out/mview-scanout.log"
 }
@@ -211,14 +253,60 @@ profile() {
 	mkdir -p "$out"
 	ip=$(to_zedbsd) || return 1
 	zrun "$ip" <<EOS || return 1
+$WAKE
 rm -f /tmp/mview.log /tmp/kernel.log
 n=\$(dmesg | wc -l)
 su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 VULKAN_ZEDBSD_SUBMIT_TIMING=1 /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
 dmesg | tail -n +\$n | grep 'vk timing' > /tmp/kernel.log
 EOS
-	zcp "root@$ip:/tmp/mview.log" "root@$ip:/tmp/kernel.log" "$out/" || return 1
+	zget "$ip" "$out" /tmp/mview.log /tmp/kernel.log || return 1
 	grep -E 'MVIEW (SPIN|STAGES|FAILED)|VULKAN TIMING' "$out/mview.log" | tail -6
 	grep -E 'frames|gpu busy|op ' "$out/kernel.log" | tail -9
+}
+
+shot() {
+	out=$1
+	copies=$2
+	mkdir -p "$out"
+	ip=$(to_zedbsd) || return 1
+	zrun "$ip" <<EOS || return 1
+$WAKE
+rm -f /tmp/shot.png /tmp/mview-shot.log
+su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=shot --frames=900 --content=none --present=fifo --copies=$copies' > /tmp/mview-shot.log 2>&1 < /dev/null &
+sleep 6
+env XDG_RUNTIME_DIR=/run/user/1000 keiland-shot /tmp/shot.png > /dev/null 2>&1 < /dev/null
+wait
+EOS
+	zget "$ip" "$out" /tmp/shot.png /tmp/mview-shot.log || return 1
+	grep -E 'MVIEW (DONE|FAILED)' "$out/mview-shot.log"
+	python3 -I plan/tools/frame-ops/shot-diff.py "build/ws291/measure/ref/linux-shot-$copies.png" "$out/shot.png"
+	python3 -I -c 'import sys, numpy
+from PIL import Image
+a = numpy.asarray(Image.open(sys.argv[1]).convert("RGB"), dtype=numpy.int16)
+b = numpy.asarray(Image.open(sys.argv[2]).convert("RGB"), dtype=numpy.int16)
+print("over15", int((numpy.abs(a - b).max(axis=2) >= 16).sum()))' "build/ws291/measure/ref/linux-shot-$copies.png" "$out/shot.png"
+}
+
+hang() {
+	out=$1
+	mkdir -p "$out"
+	ip=$(to_zedbsd) || return 1
+	zcp "${USB_VKHANG:-build/ws291/usb/bin/vkhang}" "root@$ip:/tmp/vkhang" || return 1
+	zrun "$ip" <<EOS || return 1
+$WAKE
+rm -f /tmp/hang.log /tmp/desktop.png
+n=\$(dmesg | wc -l)
+chmod 755 /tmp/vkhang
+for args in '' '--loops' '--compute --loops'; do
+	su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /tmp/vkhang \$args" >> /tmp/hang.log 2>&1 < /dev/null
+done
+su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=after-hang --spin=2 --content=game --present=mailbox --copies=1' >> /tmp/hang.log 2>&1 < /dev/null
+sleep 2
+keiland-shot /tmp/desktop.png > /dev/null 2>&1 < /dev/null
+dmesg | tail -n +\$n | grep -E 'lost|reset|fence|isolat|fault' >> /tmp/hang.log
+EOS
+	zget "$ip" "$out" /tmp/hang.log /tmp/desktop.png || return 1
+	grep -E 'VKHANG|MVIEW (SPIN|FAILED)|lost|reset|fence|isolat|fault' "$out/hang.log"
 }
 
 linux_mview() {
@@ -279,7 +367,9 @@ deploy) deploy "$@" ;;
 desktop) desktop "$@" ;;
 mview) mview "$@" ;;
 profile) profile "$@" ;;
+shot) shot "$@" ;;
+hang) hang "$@" ;;
 linux-mview) linux_mview "$@" ;;
 bench) bench "$@" ;;
-*) sed -n '2,38p' "$0"; exit 2 ;;
+*) sed -n '2,46p' "$0"; exit 2 ;;
 esac
