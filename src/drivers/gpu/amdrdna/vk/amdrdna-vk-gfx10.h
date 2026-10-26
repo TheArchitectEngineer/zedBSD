@@ -367,6 +367,25 @@
 #define AMDRDNA_UC_PARAMETER_CACHE_PLAIN	(0x3ffU << 1)
 
 /*
+ * A primitive shader's late allocation as RADV sets it on this board: the
+ * parameter cache oversubscribed by 256 lines (a quarter of its 1024),
+ * the geometry stage's late allocation of 32 waves, and CUs 2 and 3 of
+ * each array left out of the geometry stage (GFX10 deadlocks otherwise).
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/vulkan/radv_shader.c
+ * (radv_precompute_registers_hw_ngg: ge_pc_alloc with OVERSUB_EN and
+ * pc_lines / 4 - 1, spi_shader_pgm_rsrc3_gs and _rsrc4_gs from
+ * ac_compute_late_alloc), src/amd/common/ac_shader_util.c
+ * (ac_compute_late_alloc: CUs 2 and 3 masked on GFX10) and the registers
+ * RADV left while it drew NGG on the RX 5600 XT (MMIO reads 2026-10-27:
+ * GE_PC_ALLOC 0x1ff, SPI_SHADER_PGM_RSRC3_GS 0x003ffff3,
+ * SPI_SHADER_PGM_RSRC4_GS 0x0020ffff).
+ */
+#define AMDRDNA_UC_PARAMETER_CACHE_NGG		(1U | (0xffU << 1))
+#define AMDRDNA_SH_PRIMITIVE_UNITS_NGG		(0xfff3U | (0x3fU << 16))
+#define AMDRDNA_SH_PRIMITIVE_UNITS_HIGH_NGG	(0xffffU | (32U << 16))
+
+/*
  * The index type register (set through the indexed setter with index 2)
  * and its values, and the draw packets of an index buffer: its size in
  * indices, and the draw from its address.

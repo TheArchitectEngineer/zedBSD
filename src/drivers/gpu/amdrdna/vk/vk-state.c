@@ -629,6 +629,9 @@ state_vertex_program(
 		pm4->vertex_stage = AMDRDNA_VK_STAGE_LEGACY;
 	}
 
+	/* The parameter cache not oversubscribed. */
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_PARAMETER_CACHE, AMDRDNA_UC_PARAMETER_CACHE_PLAIN);
+
 	/* The code, counts and inputs. */
 	words[0] = (uint32_t)(vertex->va >> AMDRDNA_SH_CODE_LOW_SHIFT);
 	words[1] = (uint32_t)(vertex->va >> AMDRDNA_SH_CODE_HIGH_SHIFT) & 0xffU;
@@ -696,9 +699,10 @@ state_primitive_shader(
 	words[2] = instance_mask;
 	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_USER_DATA, words, 3U);
 
-	/* Every CU, no late allocation. */
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PRIMITIVE_UNITS, AMDRDNA_SH_UNITS_ALL);
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
+	/* RADV's CUs and late allocation, the parameter cache oversubscribed. */
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PRIMITIVE_UNITS, AMDRDNA_SH_PRIMITIVE_UNITS_NGG);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH_NGG);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_PARAMETER_CACHE, AMDRDNA_UC_PARAMETER_CACHE_NGG);
 
 	/* The subgroup: its size, its output, one primitive from each, the primitive export's format, one instance. */
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_SIZE, AMDRDNA_CX_SUBGROUP_SIZE_NGG);
