@@ -100,9 +100,13 @@ static void test_membar2_head(void);
 static void test_messages(void);
 static int run_nothing(void *argument);
 
+/*
+ * Runs every test and reports the verdict on the last line.
+ */
 int
 main(void)
 {
+	/* Runs the tests, each counting its own failures. */
 	test_bus_start();
 	test_config_offset();
 	test_5330();
@@ -112,11 +116,13 @@ main(void)
 	test_membar2_head();
 	test_messages();
 
+	/* Reports a failed run. */
 	if (failures != 0) {
 		printf("host-vmd-plan: FAIL (%u)\n", failures);
 		return 1;
 	}
 
+	/* Succeeded: every check held. */
 	printf("host-vmd-plan: PASS\n");
 	return 0;
 }
@@ -127,9 +133,11 @@ check(
 	int condition,
 	const char *what)
 {
+	/* A check that holds says nothing. */
 	if (condition)
 		return;
 
+	/* Names the failed check and counts it. */
 	printf("FAIL: %s\n", what);
 	failures++;
 }
@@ -144,6 +152,7 @@ model_find(
 {
 	unsigned index;
 
+	/* Looks at each function the model holds. */
 	for (index = 0; index < model->count; index++) {
 		if (model->functions[index].bus == bus &&
 		    model->functions[index].device == device &&
@@ -151,6 +160,7 @@ model_find(
 			return &model->functions[index];
 	}
 
+	/* Nothing answers at the address. */
 	return NULL;
 }
 
@@ -211,9 +221,12 @@ get(
 	uint32_t value;
 	unsigned index;
 
+	/* Gathers the bytes, the lowest first. */
 	value = 0;
 	for (index = 0; index < width; index++)
 		value |= (uint32_t)function->space[offset + index] << (8U * index);
+
+	/* Reports the register. */
 	return value;
 }
 
@@ -335,8 +348,11 @@ model_write(
 		}
 	}
 
+	/* Stores any other register byte by byte. */
 	for (byte = 0; byte < width; byte++)
 		found->space[offset + byte] = (uint8_t)(value >> (8U * byte));
+
+	/* Succeeded: the register is written. */
 	return 0;
 }
 

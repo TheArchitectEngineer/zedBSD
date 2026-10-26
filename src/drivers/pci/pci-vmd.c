@@ -105,16 +105,6 @@
 /* Marks a parameter an operation of the table does not need. */
 #define UNUSED_PARAMETER(parameter)	((void)(parameter))
 
-/*
- * How far the driver goes with a VMD, as the boot parameters ask.
- */
-enum vmd_stage {
-	VMD_STAGE_OFF = 0,
-	VMD_STAGE_READ,
-	VMD_STAGE_NOSCAN,
-	VMD_STAGE_FULL
-};
-
 /* The segment of the first VMD's bus; later ones count down from it. */
 #define VMD_SEGMENT_FIRST	0xffffU
 
@@ -141,6 +131,16 @@ enum vmd_stage {
 #define VMD_HEADER_MULTI	0x80U
 #define VMD_HEADER_KIND		0x7fU
 #define VMD_HEADER_BRIDGE	0x01U
+
+/*
+ * How far the driver goes with a VMD, as the boot parameters ask.
+ */
+enum vmd_stage {
+	VMD_STAGE_OFF = 0,
+	VMD_STAGE_READ,
+	VMD_STAGE_NOSCAN,
+	VMD_STAGE_FULL
+};
 
 /*
  * One VMD this driver serves.
@@ -705,6 +705,7 @@ host_msi_disestablish(
 	void *argument;
 	int error;
 
+	/* The context is the host whose table holds the message. */
 	host = context;
 
 	/* Empties the slot so that no new interrupt runs it. */
@@ -810,6 +811,7 @@ vmd_log_firmware(
 		if ((header & VMD_HEADER_MULTI) != 0)
 			functions = VMD_FUNCTIONS;
 
+		/* Logs each function of the slot, and what is behind a bridge. */
 		for (function = 0; function < functions; function++) {
 			/* Passes over a function that does not answer. */
 			(void)vmd_config_read(host, host->domain.bus_start, device, function, 0x00U, 4U, &identity);
@@ -827,6 +829,7 @@ vmd_log_firmware(
 			if (secondary <= host->domain.bus_start || secondary > host->domain.bus_end)
 				continue;
 
+			/* Logs each slot of the bus behind the bridge. */
 			for (below = 0; below < VMD_SLOTS; below++) {
 				/* Logs the first function of each slot that answers. */
 				(void)vmd_config_read(host, secondary, below, 0, 0x00U, 4U, &identity);
@@ -898,22 +901,36 @@ vmd_read_windows(
 		host->claimed[index] = 1;
 	}
 
-	/* Reads the three BARs. */
+	/* Reads the CFGBAR. */
 	error = drv_pci_device_bar(host->device, VMD_BAR_CONFIG, &config);
-	if (error == 0)
-		error = drv_pci_device_bar(host->device, VMD_BAR_MEMORY1, &host->membar1);
-	if (error == 0)
-		error = drv_pci_device_bar(host->device, VMD_BAR_MEMORY2, &host->membar2);
 	if (error != 0) {
-		kern_logf("vmd: BARs cannot be read (%d)\n", error);
+		kern_logf("vmd: BAR%u cannot be read (%d)\n", VMD_BAR_CONFIG, error);
 		return error;
 	}
 
-	/* Refuses a CFGBAR smaller than one bus, or a MEMBAR2 with no room past its head. */
-	if (config.size < VMD_CFGBAR_MIN || host->membar2.size <= VMD_MEMBAR2_HEAD) {
-		kern_logf("vmd: CFGBAR size 0x%llx or MEMBAR2 size 0x%llx too small\n",
-			  (unsigned long long)config.size,
-			  (unsigned long long)host->membar2.size);
+	/* Reads MEMBAR1. */
+	error = drv_pci_device_bar(host->device, VMD_BAR_MEMORY1, &host->membar1);
+	if (error != 0) {
+		kern_logf("vmd: BAR%u cannot be read (%d)\n", VMD_BAR_MEMORY1, error);
+		return error;
+	}
+
+	/* Reads MEMBAR2. */
+	error = drv_pci_device_bar(host->device, VMD_BAR_MEMORY2, &host->membar2);
+	if (error != 0) {
+		kern_logf("vmd: BAR%u cannot be read (%d)\n", VMD_BAR_MEMORY2, error);
+		return error;
+	}
+
+	/* Refuses a CFGBAR smaller than one bus. */
+	if (config.size < VMD_CFGBAR_MIN) {
+		kern_logf("vmd: CFGBAR size 0x%llx is less than one bus\n", (unsigned long long)config.size);
+		return ENODEV;
+	}
+
+	/* Refuses a MEMBAR2 with no room past the VMD's own head. */
+	if (host->membar2.size <= VMD_MEMBAR2_HEAD) {
+		kern_logf("vmd: MEMBAR2 size 0x%llx leaves no window\n", (unsigned long long)host->membar2.size);
 		return ENODEV;
 	}
 
@@ -951,12 +968,17 @@ vmd_read_buses(
 	unsigned start;
 	int error;
 
-	/* Reads the capability and configuration registers. */
+	/* Reads the capability register. */
 	error = drv_pci_device_config_read16(host->device, VMD_REG_CAPABILITY, &capability);
-	if (error == 0)
-		error = drv_pci_device_config_read16(host->device, VMD_REG_CONFIGURATION, &configuration);
 	if (error != 0) {
-		kern_logf("vmd: registers cannot be read (%d)\n", error);
+		kern_logf("vmd: the capability register cannot be read (%d)\n", error);
+		return error;
+	}
+
+	/* Reads the configuration register. */
+	error = drv_pci_device_config_read16(host->device, VMD_REG_CONFIGURATION, &configuration);
+	if (error != 0) {
+		kern_logf("vmd: the configuration register cannot be read (%d)\n", error);
 		return error;
 	}
 
@@ -1311,6 +1333,7 @@ vmd_interrupt(
 	int work;
 	int found;
 
+	/* The argument is the host the vector was established for. */
 	host = argument;
 
 	/* Takes the held messages out of the table. */
@@ -1371,6 +1394,7 @@ vmd_config_read(
 	uint64_t position;
 	int error;
 
+	/* The context is the host whose CFGBAR is read. */
 	host = context;
 
 	/* An access the CFGBAR does not decode reads as nothing there. */
@@ -1423,6 +1447,7 @@ vmd_config_write(
 	uint64_t position;
 	int error;
 
+	/* The context is the host whose CFGBAR is written. */
 	host = context;
 
 	/* Refuses an access the CFGBAR does not decode. */

@@ -215,6 +215,9 @@ kern_platform_init(
 #if CONFIG_DRIVER_PCI_AHCI
 	int ahci_error;
 #endif
+#if CONFIG_DRIVER_PCI_VMD
+	int vmd_error;
+#endif
 #if CONFIG_DRIVER_PCI_I915
 	int i915_error;
 #endif
@@ -328,7 +331,8 @@ kern_platform_init(
 #endif
 #if CONFIG_DRIVER_PCI_VMD
 	/* Binds Intel VMDs, whose attach publishes the NVMe disks hidden behind them. */
-	if (drv_pci_vmd_driver_register() != 0)
+	vmd_error = drv_pci_vmd_driver_register();
+	if (vmd_error != 0)
 		kern_logf("vmd: PCI driver registration failed\n");
 #endif
 #if CONFIG_DRIVER_PCI_VENUS

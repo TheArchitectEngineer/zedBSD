@@ -954,6 +954,7 @@ close_port_windows(
 	unsigned device;
 	unsigned function;
 
+	/* Names the port's place on the first bus. */
 	device = port->device;
 	function = port->function;
 
@@ -1021,6 +1022,7 @@ size_bar(
 	unsigned offset;
 	int error;
 
+	/* Starts from a BAR of no size, and finds its register. */
 	*size = 0;
 	*wide = false;
 	*prefetchable = false;
@@ -1218,6 +1220,7 @@ order_bars(
 
 	/* Inserts each BAR after the ones at least as large. */
 	for (index = 0; index < port->bar_count; index++) {
+		/* Moves the smaller BARs listed so far one place down. */
 		place = index;
 		while (place > 0 && port->bars[order[place - 1U]].size < port->bars[index].size) {
 			order[place] = order[place - 1U];
@@ -1291,6 +1294,7 @@ place_port(
 	/* Lists the windows of the ports placed before this one. */
 	busy_count = 0;
 	for (index = 0; index < plan->port_count; index++) {
+		/* Stops at this port; a port without a window takes no room. */
 		if (&plan->ports[index] == port)
 			break;
 		if (plan->ports[index].window_length == 0)
