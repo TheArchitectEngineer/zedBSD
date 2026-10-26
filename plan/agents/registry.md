@@ -142,3 +142,4 @@
 | P4 / 2026-10-27 (i915) (2) | phase-runner | WS245・WS244 の道具の移動（q1606） | `/home/awe/zedBSD-worktrees/p4-i915` / `agent/p4-i915` | q1606 | — | returned（二重の書き手に気づいて停止、2d4d09c63） | main 400b4ffff |
 | P2 / 2026-10-27 (WS291) (3) | phase-runner | WS291 p003（q1603） | `/home/awe/zedBSD-worktrees/p2-ws291` / `agent/p2-ws291` | q1603 | — | running | — |
 | P1 / 2026-10-27 (BUG-346) | bug-fixer | BUG-346（q1607） | `/home/awe/zedBSD-worktrees/p1-bug346` / `agent/p1-bug346` | q1607 | — | running | — |
+| P3 / 2026-10-27 (WS audit) | phase-runner | WS の精査（q1608） | `/home/awe/zedBSD-worktrees/p3-wsaudit` / `agent/p3-wsaudit` | q1608 | — | running | — |
