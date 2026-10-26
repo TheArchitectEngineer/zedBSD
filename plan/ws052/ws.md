@@ -3,7 +3,7 @@
 # WS052: 電源管理（S0i3、modern standby）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-05: HAL の差分の案は専門家のレビューを受けて第 2 版 H1v2・H3v2・H4v2・H5（[proposed/README-v2.md](proposed/README-v2.md)）、承認待ち。p003・p004 cleared、p005・p009 は実機の UAT 待ち）
+Status: incomplete・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-07 ユーザー「下記をベータ3に移動します。…Sleep」（ws052/ws.md Target））。旧: incomplete（2026-10-05: HAL の差分の案は専門家のレビューを受けて第 2 版 H1v2・H3v2・H4v2・H5（[proposed/README-v2.md](proposed/README-v2.md)）、承認待ち。p003・p004 cleared、p005・p009 は実機の UAT 待…。残り・制限: p001・p002 の HAL の差分の承認、p005〜p012 の実機・QEMU
 Primary Milestone: MG003
 Related Milestones: MG004, MG006
 Objectives: O2

@@ -3,7 +3,7 @@
 # WS229: i915 を Gen9・Gen9.5（Core の 6〜10 世代の iGPU）に対応させる
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-14 p001 cleared、p002〜p004 を並行で実装）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p005・p007 cleared（Gen9 の GT・EU・3D と compute、既定で有効でベータ2 に入った）。p006（Gen9 の display controller）は WS237（2026-10-15 ユーザー「Gen9は残りの安全策の作業をマージしたら終了です」、completed）と WS260（gen9 の display の書き直し）で達成）。旧: incomplete（2026-10-14 p001 cleared、p002〜p004 を並行で実装）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O1

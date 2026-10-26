@@ -3,7 +3,7 @@
 # WS260 i915 の Gen9 の display（gen9-*.c）を xd と同じく自前で書き直す
 
 - ID: ws260、Master: [master.md](../master.md)、Primary Milestone: MG006
-- Status: incomplete（2026-10-18 Q1 作成。p001 を P1、q1252。p002〜 を P1、q1253）
+- Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 cleared、p002〜p015 は実装済み（gen9-*.c を xd に書き直し）。残りは T1-710 の SV7・5330 の実機の回帰だけ（U24・U25） → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-18 Q1 作成。p001 を P1、q1252。p002〜 を P1、q1253）。残り・制限: 実機の確認は未実施
 - 起点（2026-10-18 ユーザー）:「i915由来のdisplayのソースコードをすべて書き直す件は、どうなったんですか？」→ Q1 の報告（display 12・13 は WS245 で書き直し済み、Gen9 は 2026-10-15 の決定で「ガードレールにそって修正」とし、出典の表記だけを WS258 で直し、写しの点検は未実施）→ ユーザー（クリック）「xd と同じく書き直す」。
 - 対象: `src/drivers/gpu/i915/display/gen9-*.c`・`*.h`（22 file、display 9: Skylake・Kaby Lake・Coffee Lake・Comet Lake）と、それだけが使う intel/ の header。
 - 手本: [WS245](../ws245/ws.md) の xd（Intel の PRM と hardware の振る舞いから自前で書き、Linux の行ごとの言い換えをしない。値は block ごとに `Values referenced:`、手順は `Procedure referenced:`。PRM に載る名前は使ってよい（2026-10-18 WS244 の決定））。

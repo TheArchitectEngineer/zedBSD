@@ -2,7 +2,7 @@
 
 # WS239: Wayland（compositor）の起動の失敗時に text console の login へ戻す
 
-- Status: incomplete（2026-10-15: p001 の実装・host 試験済み、QEMU の確かめ p002 待ち）
+- Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 の実装（/dev/system の KERN_SYSTEM_SHOW_CONSOLE、sessiond の失敗の時の console への戻し）は main（include/uapi/system.h・src/drivers/generic/system-device.c・userland/desktop/sessiond/main.c））。旧: incomplete（2026-10-15: p001 の実装・host 試験済み、QEMU の確かめ p002 待ち）。残り・制限: p002 の QEMU の確かめは未実施
 - Master: [master.md](../master.md)
 - Primary Milestone: MG002（ベータ2）
 - 由来: 2026-10-15 ユーザー「あと、Waylandが起動に失敗したとき、/dev/systemを通じて、カーネルメッセージをコンソール出力につなぎ直し、グラフィカルブートを解除してttyのログインを表示してほしいです。」

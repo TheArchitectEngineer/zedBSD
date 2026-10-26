@@ -3,7 +3,7 @@
 # WS225: Vulkan の header を仕様から導ける内容だけで書き直し、Khronos の著作権表示を外す
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-13 Q1 作成。**blocked**: ユーザーの指示で着手しない。ベータ2 で実装する）
+Status: planning・保留（ブロック）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-13 ユーザー「…これはまだ着手せず、ブロッキングにしておきます。」「さきほどの、独自VulkanヘッダにするWSはブロッキングのままです。」）。旧: planning（2026-10-13 Q1 作成。**blocked**: ユーザーの指示で着手しない。ベータ2 で実装する）。残り・制限: p001
 Primary Milestone: MG006
 Related Milestones: なし
 <!-- awesome-plan-current:end -->

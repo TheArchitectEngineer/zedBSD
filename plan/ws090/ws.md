@@ -3,7 +3,7 @@
 # WS090: widget・control の共有 library（慣性の smooth scroll を含む）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: libkeiland の widget・慣性の scroll・Mahora の font は main（p001〜p008・p010・p011・p013〜p017・p019〜p025 cleared、p020・p021 は 2026-10-13 ユーザー「今の外観で OK」）。2026-10-08 夜 ユーザー「WS050・WS051・WS090・WS183 は実機で動作を確認」。p009・p018 は T1 PASS で判定だけ）。旧: incomplete。残り・制限: p026 の層 3（任意の速さ）、p012 の規約は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG006
 Objectives: O2

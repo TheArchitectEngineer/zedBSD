@@ -3,7 +3,7 @@
 # WS116: upstream Qt6 の移植範囲を検討し、zedBSD packageへ移植する
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-06 夜 ユーザー「WS115 GTK4・WS116 Qt6・WS126 Python はベータ3 へ（…既存の toolkit は core competence でない…）」）。旧: planning。残り・制限: p001〜p005（WS117 の後）
 Primary Milestone: MG002
 Related Milestones: MG006（GUI動作、compositor互換性）
 Parent: [Master](../master.md)

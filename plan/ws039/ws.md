@@ -3,7 +3,7 @@
 # WS039: AMD RDNA GPU対応
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 開始・一時停止の後、同日夕にユーザーの指示で再開。p001〜p005 cleared、p011 は P3 が q1216、p007（P5）は停止のまま）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: amdrdna は main。RX 5600 XT で Keiland の desktop が描ける（p009 ユーザーの目視「RDNAは黄色の問題が解決しました。目視です。」）、p001〜p005・p008・p011・p013・p014・p016・p017 cleared。速さは WS291（P2、継続、p001 で全段 60 fps））。旧: incomplete（2026-10-15 開始・一時停止の後、同日夕にユーザーの指示で再開。p001〜p005 cleared、p011 は P3 が q1216、p007（P5）は停止のまま）。残り・制限: p006・p007・p012・p015・p019 の Phase の印、p018、p010 規約は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2

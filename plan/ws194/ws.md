@@ -3,7 +3,7 @@
 # WS194: make keiland-linux・keiland-freebsd の必要な package の確認と導入、build 後の install の確認
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planned から直した。旧: planned）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001・p002 cleared（2026-10-10 Q1: T1-498・T1-506、ユーザーの UAT「WS194はOK」））。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planned から直した。旧: planned）。残り・制限: p003 の規約の全文は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2

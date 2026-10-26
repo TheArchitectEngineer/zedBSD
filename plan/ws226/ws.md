@@ -3,7 +3,7 @@
 # WS226: Khronos の Vulkan 1.3 の header をそのまま使い、libvulkan で Vulkan 1.3 の API を実装しきる
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-13 Q1 作成。担当は次に空いた P、まず調べと設計）
+Status: planning・保留（止まったまま）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 1 版（2026-10-13）の review-1 の待ちのまま担当が付かず止まっている）。旧: planning（2026-10-13 Q1 作成。担当は次に空いた P、まず調べと設計）。残り・制限: p001 の review から
 Primary Milestone: MG006
 Related Milestones: なし
 <!-- awesome-plan-current:end -->

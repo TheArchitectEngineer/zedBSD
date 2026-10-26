@@ -3,7 +3,7 @@
 # WS156: app の通知（画面の下の中央を流れる headline の popup と、ring の形の通知の log）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p004 cleared（popup と ring の log）、p005 の実機の UAT は 2026-10-13 ユーザー「UATの結果待ちのものは…clearedに」。p006（Linux の D-Bus）は 2026-10-05 ユーザー「実装はあと回しでいいです。」）。旧: incomplete。残り・制限: p006 の T1、規約の全文は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)

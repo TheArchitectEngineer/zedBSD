@@ -3,7 +3,7 @@
 # WS232: menuconfig に i386（PC-9800・PC/AT）と Retro の menu を足す
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-14 P1: p004 を追加・実行中。以下は p001〜p003 の完了の時点の記録）（2026-10-14 Q1: menuconfig の i386（PC-9800・PC/AT、Desktop を自動で外す）と Retro の menu、config-pc98.mk の build（rtld の tlsdesc_slot）、T1-607 で pc98 の image が ~/qemu-pc98 の QEMU で login まで起動（PASS）。i386 PC/AT の image の build と実機は未実施）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p003 cleared（i386・Retro の menu、pc98 の build）。p004 は host 試験 PASS で Pi の実機の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-14 P1: p004 を追加・実行中。以下は p001〜p003 の完了の時点の記録）（2026-10-14 Q1: menuconfig の i386（PC-9800・PC/AT、Desktop を自動で外す）と Retro の menu、config-pc98.mk の bu…。残り・制限: 実機の確認は未実施
 Primary Milestone: MG002
 Related Milestones: なし
 Objectives: O1

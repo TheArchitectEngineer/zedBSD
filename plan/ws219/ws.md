@@ -3,7 +3,7 @@
 # WS219: Venus の protocol の op の流用の整理（定数名の付け直し、Venus の著作権表示を外し、引用の明記に留める）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-13 P2 が p001 を実施、判断待ち。旧: planning（2026-10-13 Q1 作成））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p003 cleared、p002 は実装・host 試験済みで T1-572 PASS（beta2.md）、p001 の監査（表現の写し無し））。旧: incomplete（2026-10-13 P2 が p001 を実施、判断待ち。旧: planning（2026-10-13 Q1 作成））
 Primary Milestone: MG006
 Related Milestones: なし
 <!-- awesome-plan-current:end -->

@@ -3,7 +3,7 @@
 # WS106: テスト用アプリを userland/tests/ に集約
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: fg013（test・見本を userland/tests へ）は 2026-10-01 達成（Master の達成した Focused Goal）。p002 の ime-probe は 2026-10-07 の make menuconfig の整理（ユーザー: desktop の下の試験の program は tree ごと tests へ）で userland/tests/ime-probe に移った（2026-10-09 P1 の照合））。旧: incomplete。残り・制限: p003 の規約の全文・最終 boot は WS の外の一括の見直しへ
 Primary Milestone: MG001
 Related Milestones: MG006
 Parent: [Master](../master.md)

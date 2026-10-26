@@ -3,7 +3,7 @@
 # WS249: BCM43455（Raspberry Pi 4 の WiFi）の driver の出典の表記と規約の整理
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 作成。p001・p002 cleared。実機（Pi 4）の WiFi の確かめが T の結果待ち）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001・p002 cleared（main 331d314be）。残りは Pi 4 の実機の WiFi の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-15 作成。p001・p002 cleared。実機（Pi 4）の WiFi の確かめが T の結果待ち）。残り・制限: 実機の確認は未実施
 Primary Milestone: MG005
 Parent: [Master](../master.md)
 Related: [Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」、[coding-style.md](../coding-style.md)、[WS248](../ws248/ws.md)（AX211 での同じ整理、手順の手本）、[WS215](../ws215/ws.md)（Pi 4 の Bluetooth、同じ chip）

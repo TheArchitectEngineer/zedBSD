@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws161 -->
 # WS161: YubiKey のサポート
 
-Status: incomplete（2026-10-08 q902 P1 の照合: p002〜p005 cleared。残りは p006 の実機の UAT と p001 の判定。旧: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 4 LW → 第 2 版で 6〜7 LW（U5）。p001 の設計の第 2 版（§9）あり、q770））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p005 cleared、p006 の実機の UAT は OK（2026-10-13）。Linux・FreeBSD の FIDO2 は 2026-10-13 夜 ユーザー「Linux/FreeBSDではFIDO2はまだ入れなくていいです。…ベータ3にします。」）。旧: incomplete（2026-10-08 q902 P1 の照合: p002〜p005 cleared。残りは p006 の実機の UAT と p001 の判定。旧: planning（2026-10-05 追加、**ベータ2**（2026-10-05 ユーザー）、見積もり 4 LW → 第 2 版で 6〜7 LW（…。残り・制限: Linux・FreeBSD の FIDO2（ベータ3）、p007 規約は一括の見直しへ
 Master: [master](../master.md)
 Primary Milestone: MG006
 

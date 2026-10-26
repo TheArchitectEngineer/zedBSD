@@ -3,7 +3,7 @@
 # WS141: Raspberry Pi 4 のグラフィックス driver（VideoCore VI: HVS・pixelvalve・HDMI の display と V3D 4.2）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（display/V1〜V10/二device share/Normal NC/worker/SPIR-V compiler/typed Vulkan/native draw-transfer/QueueSubmitとpublic runtimeを実装。host/build/whole ordinary stack/p007 software監査 PASS。main統合済み。Keiland実機確認待ち）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: Pi 4 の display・V3D・Vulkan・Keiland の desktop が動く: 2026-10-13 ユーザー「動作OKです」（main 1392d52 の image）、ユーザー「見た目は大丈夫です。描画は2.5倍くらい速くなりました。」「おお、カーソルは60fpsです！」。p007〜p012 cleared。同じ driver は Pi 5（WS279）でも使っている）。旧: incomplete（display/V1〜V10/二device share/Normal NC/worker/SPIR-V compiler/typed Vulkan/native draw-transfer/QueueSubmitとpublic runtimeを実装。host/build/whole ordina…。残り・制限: p013〜p019 の速さ・機能の残り（stencil は Pi 5 で ok）、p001〜p006 の Phase の印
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)

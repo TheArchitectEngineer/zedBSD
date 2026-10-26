@@ -3,7 +3,7 @@
 # WS013: CPAR container partitioning
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: incomplete・保留（Future Work F-002）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: ws013/ws.md「残り…は Future Work F-002 に保留し、昇格されるまで再開しない」、future-work.md F-002 deferred）。旧: incomplete。残り・制限: F-002（runtime の隔離・CLI・service container）
 Primary Milestone: MG007
 Related Milestones: MG002
 Objectives: O1, O2

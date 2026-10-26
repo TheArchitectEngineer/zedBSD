@@ -3,7 +3,7 @@
 # WS269 VisionFive 2 の GPU（Imagination PowerVR BXE-4-32）の driver
 
 - ID: ws269、Master: [master.md](../master.md)、Primary Milestone: MG008（関係: MG006）
-- Status: incomplete（2026-10-19 Q1 作成。設計 p001 を 2026-10-19 に P2 が開始、実装は WS256 の実機の確認の後）
+- Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: VF2 の板で Keiland の desktop が PowerVR で動く（beta2.md U36、2026-10-21: desktop・3 window・lockup 無し・vkmatrix 36/36、gpu-selftest 13/13）。2026-10-21 ユーザー「表示内容自体は完璧です」）。旧: incomplete（2026-10-19 Q1 作成。設計 p001 を 2026-10-19 に P2 が開始、実装は WS256 の実機の確認の後）。残り・制限: p004〜p017 の Phase の印と実機の行の確かめ（実機の確認は未実施の行あり）、速さは WS291（PowerVR の model 50 fps）
 - 起点（2026-10-19 ユーザー）: 「VisionFive2はまずフレームバッファ、SDカードを実装して、rootfsから起動できるところまで持って行きます。USBキーボードで操作できるようにします。LANとサウンドとNVMeも使えるようにします。NVMe SSDがボードにつけてあり、テスト可能です。ここまでのphaseを作ってください。そのあと、PowerVRのドライバを独立WSで作ります。最終的に、VF2でkeilandを動かして、OSを完全に動作させます。」
 - 担当: P2（設計 p001、2026-10-19 q1316）。
 

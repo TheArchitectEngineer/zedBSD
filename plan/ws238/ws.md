@@ -3,7 +3,7 @@
 # WS238: amd64 の native の image を ESP（loader だけ）・FAT32（kernel と boot の設定）・UFS の root・swap の構成にする
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-14 夜 ユーザー指示、ベータ2 に入れる）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 の実装（ESP・FAT32 ZEDBSD・UFS・swap の layout）は main。U1 の UAT（/boot/boot0・/boot/efi、Windows・macOS で ZEDBSD の区画）は実機の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-14 夜 ユーザー指示、ベータ2 に入れる）。残り・制限: 実機の確認は未実施
 Primary Milestone: MG004
 Parent: [Master](../master.md)
 Related: [WS062](../ws062/ws.md)（今の native の layout: ESP に vmunix・zedbsd.cfg）、[F-014](../future-work.md)

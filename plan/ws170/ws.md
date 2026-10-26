@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws170 -->
 # WS170: Phone の app（連絡先・SMS/MMS/RCS・VoIP を統合したタイムライン）
 
-Status: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p005）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p000 を cleared。2026-10-08 q910 P2 の照合: p002〜p004 cleared（T1-298）、p000（mock）は T1-177b の撮影の後に実装され Q1 の判定、p005（規約）はベータ3。準正常系は WS177 の案 P）（2026-10-07 q831 で p001〜p004 を実装、T1 の QEMU 待ち。p005 は規約の見直し（後回し）。2026-10-05 追加。まず UI の mock（p000）を優先、q743。段は未定（ユーザーに確認）。最初の範囲（連絡先からタイムラインの表示まで）の見積もり 4 LW（Q1 の概算: 設計 1・連絡先と保存 1・タイムラインの UI 1.5・API の骨格 0.5）。本物の送受信・通話は後の Phase））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p000〜p004 cleared（連絡先とタイムライン）、UAT は 2026-10-13 ユーザーの一括の cleared。本物の SMS・通話は WS197）。旧: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p005）。旧: incomplete（2026-10-08 Q1 の判…。残り・制限: p005 の規約の全文は一括の見直しへ
 Master: [master](../master.md)
 Primary Milestone: MG006
 

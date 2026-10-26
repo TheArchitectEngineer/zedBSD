@@ -3,7 +3,7 @@
 # WS201: /home の暗号化（UFS の key slot、FIDO2 の hmac-secret／PRF と回復のパスワード）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-10 ユーザー「ベータ3でホームディレクトリの暗号化を行います。WSだけ追加してください。検討は今は不要です。」）。旧: planning。残り・制限: p001 設計
 Primary Milestone: MG002
 Related Milestones: MG006
 Objectives: O2

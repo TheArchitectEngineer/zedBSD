@@ -3,7 +3,7 @@
 # WS234: libkeiland の DLL 版（zedBSD 用と Windows 用）で、同じ .exe が zedBSD と Windows の両方で動く
 
 <!-- awesome-plan-current:start -->
-Status: planning・**保留**（2026-10-14 ユーザーが起票。同日「すみません、WS080とWS234はいったん保留します。」で保留。p001 の設計は始めた直後に止めた、成果なし）
+Status: planning・保留（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-14 ユーザー「すみません、WS080とWS234はいったん保留します。」）。旧: planning・**保留**（2026-10-14 ユーザーが起票。同日「すみません、WS080とWS234はいったん保留します。」で保留。p001 の設計は始めた直後に止めた、成果なし）。残り・制限: p001
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)

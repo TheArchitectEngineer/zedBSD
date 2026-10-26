@@ -3,7 +3,7 @@
 # WS236: Raspberry Pi 4（VideoCore VI）の動画の再生の hardware 支援
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-14 着手、P3。2026-10-15 ユーザー: VCHIQ・VIDEO を既定で on（config/ci/config-rpi4.mk は y）。Pi 4 の再生は 720p30 が限界でゴールは 720p30 を遅れなく（T1-690 で達成の扱い）、1080p・60 fps は要件から外した、A3・A1 は revert（[phase012](phase012/phase.md) canceled）。2026-10-15 記録の整合の点検で更新）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: ゴールの 720p30 を遅れなく再生は T1-690 で達成の扱い（ws236/ws.md、2026-10-15 ユーザーが Pi 4 の再生の限界を 720p30 と決めた）。VCHIQ・VIDEO は既定で on。p012 は 2026-10-15 ユーザーの決定で canceled）。旧: incomplete（2026-10-14 着手、P3。2026-10-15 ユーザー: VCHIQ・VIDEO を既定で on（config/ci/config-rpi4.mk は y）。Pi 4 の再生は 720p30 が限界でゴールは 720p30 を遅れなく（T1-690 で達成の扱い）、1080p・60 fp…。残り・制限: p001〜p005・p007・p011 の Phase の印、1080p・60 fps は範囲の外
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)

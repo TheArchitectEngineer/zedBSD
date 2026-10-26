@@ -3,7 +3,7 @@
 # WS223: 全画面は compositor の合成で、game mode は Wayland の拡張で求められた時だけ（Video Player は game mode をやめる）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-13 Q1 作成。P3 が p001 の第 1 版 [phase001/phase.md](phase001/phase.md)（agent/p3）。design-reviewer と、ユーザーの D1〜D6 待ち）
+Status: planning・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 1 版の後、design-reviewer とユーザーの D1〜D6 を待ったまま 2026-10-13 から止まっている）。旧: planning（2026-10-13 Q1 作成。P3 が p001 の第 1 版 [phase001/phase.md](phase001/phase.md)（agent/p3）。design-reviewer と、ユーザーの D1〜D6 待ち）。残り・制限: p001 の判断から
 Resume point: p001 の review の後、D1（求めの形、推奨は `wp_content_type_v1` の `game`）と D2（Video Player の `KL_CONTENT_VIDEO` の呼びを残すか）が決まれば p002 を開始できる。p003（wltest の `--content-type`、game mode の AAT と host 試験）は p002 の後。WS217 p012 は p002・p003 に依存。
 Primary Milestone: MG006
 Related Milestones: なし

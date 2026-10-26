@@ -3,7 +3,7 @@
 # WS098: IME の変換のニューラル化（同音異義語の選択と、ひらがな列の形態素解析）
 
 <!-- awesome-plan-current:start -->
-Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: planning
+Status: planning・保留（要検討・ブロック）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-05 ユーザー「要検討状態にしてブロックする」（ws098/ws.md））。旧: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: planning。残り・制限: p001 設計（WS095 の後、corpus と license はユーザー）
 Primary Milestone: MG006
 Related Milestones: MG006
 Objectives: O2

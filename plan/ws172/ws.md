@@ -2,7 +2,7 @@
 # WS172: passkey の認証の枠組み（/sbin/passkey と /etc/passkey、sessiond は外部の program で認証）
 
 Target: **ベータ2**（2026-10-13 ユーザー「WS196、WS172、WS009はベータ2に入れます。」。旧: ベータ3（2026-10-08 ユーザー「WS172はベータ3に回します。」）。p002 の PIN の実装は main に入ったまま、T1 の結果を受けて判定する）
-Status: incomplete（2026-10-05 追加、ベータ2。p001 設計 cleared、p002 PIN の login は cleared（T1-210、2026-10-05 夜）、p003 FIDO2 は段 A（passkey-fido2）を実装、2026-10-06。WS162・WS163 を吸収）
+Status: incomplete・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-13 夜 ユーザー「済みません、ベータ2では設計までです。設計までと言うことなら、推奨でOKです。」。p002（PIN）・p003（FIDO2）は cleared）。旧: incomplete（2026-10-05 追加、ベータ2。p001 設計 cleared、p002 PIN の login は cleared（T1-210、2026-10-05 夜）、p003 FIDO2 は段 A（passkey-fido2）を実装、2026-10-06。WS162・WS163 を吸収）。残り・制限: p004b の TPM の設計、p005 OpenSSL の置き換え、p007・p011 の試験、p006 規約
 Master: [master](../master.md)
 Primary Milestone: MG006
 Related: [WS161](../ws161/ws.md)（hidraw・smartcard・libpasskey）、[WS162](../ws162/ws.md)（FIDO2 の login）、[WS163](../ws163/ws.md)（PIN の login）

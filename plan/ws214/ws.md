@@ -3,7 +3,7 @@
 # WS214: 窓をディスプレイの重ね合わせ（HVS の plane）に載せる（Pi 4）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-12 Q1 作成、ユーザーの承認））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p003a・p003b・p004 の実装は main（114e7c68c、UAPI は 2026-10-12 ユーザーの承認）。2026-10-13 ユーザー「いや、これ以上詰めなくていいです。」で描画の最適化を終えた）。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-12 Q1 作成、ユーザーの承認））。残り・制限: p005・p006（案、未投入）は終了、p002 の規約と類似の監査は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)

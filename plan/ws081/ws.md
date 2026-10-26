@@ -3,7 +3,7 @@
 # WS081: touch の操作の質（慣性のある scroll と、低い fps の touch の補間）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 q910 P2 の照合: 残りは Windows の機械での touch の計測（ユーザー）と L3 の p017（planned））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 慣性の scroll と touch の補間の library と全 app への適用は p001〜p006・p010〜p016・p019 cleared（main）。残りの L3（p017 の計測・p007 の実物の調整）は 2026-09-30 午後 ユーザー「では、いったん描画の高速化はラップアップして…」で優先を下げた物）。旧: incomplete（2026-10-08 q910 P2 の照合: 残りは Windows の機械での touch の計測（ユーザー）と L3 の p017（planned））。残り・制限: p017・p007（L3）、p009 規約は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1

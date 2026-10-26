@@ -3,7 +3,7 @@
 # WS121: Web ブラウザでのアクセラレーションつきのビデオ再生
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.3）: **ベータ3**（browser と一緒、WS074）。p001 は cleared。残りの p003（Range）はベータ3。2026-10-08 q910 P2 の照合: p002・p004〜p006 cleared（T1-315）、p001（設計、U0〜U7 は既定で進めた）は Q1 の判定、p003（Range）は未着手。browser はベータ3（2026-10-08 ユーザー）なので WS121 の残りもベータ3 か Q1 が決める）（2026-10-07 q831 P2: U0〜U7 は既定（推奨）で進めた。p002・p004〜p006 を実装、p003（Range）は後）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001・p002・p004〜p006 cleared（2026-10-07 T1-315: libmedia、`<video>`、JS の HTMLMediaElement、音と controls）。H.264 の hardware decode の土台は WS083（Vulkan Video）、native の再生は WS202 で main に統合）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.3）: **ベータ3**（browser と一緒、WS074）。p001 は cleared。残りの p003（Range）はベータ3。2026-10-08 q910 P2 の照合: p002・p004〜p006 clear…。残り・制限: p003（Range の loader）は後回しのまま（browser 本体は WS074 の Codex のセッション）
 Primary Milestone: MG006
 Objectives: O2
 Parent: [Master](../master.md)

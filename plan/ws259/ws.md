@@ -3,7 +3,7 @@
 # WS259 RTL8822B の表（rtl8822b-tables.inc）を値の引用に書き換える
 
 - ID: ws259、Master: [master.md](../master.md)、Primary Milestone: MG005
-- Status: incomplete（2026-10-19 P2 q1267。p001 の書き換え・値の比べ・build・license の package の取り外しは済み、package の directory の削除は Q1、実機の WiFi は実機待ち）
+- Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 の表の書き換え（13 配列とも値が同一、merge ee2de1f9d）と license の package の外し、p002 の規約 cleared。残りは実機の WiFi の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-19 P2 q1267。p001 の書き換え・値の比べ・build・license の package の取り外しは済み、package の directory の削除は Q1、実機の WiFi は実機待ち）。残り・制限: 実機の確認は未実施、package の directory の削除は Q1
 - 起点（2026-10-18 ユーザー、クリック）: WS258 の監査で、`src/drivers/wifi/rtl8822b/rtl8822b-tables.inc` の先頭に上流の著作権表示と抜粋の宣言があった件に「WS244 と同じく書き換える」。
 - 規則: [Guardrail](../guardrail.md) の「MIT・GPL の出典のデータの引用」。値はデータとして block ごとに `Values referenced:` で引用し、上流の名前は zedBSD の名前に、file の先頭の表示・出典の一覧を外す。AGENTS.md の「RTL8822B の `.inc` は license を分けるために独立させており、別の file のまま保つ」は守る（file は分けたまま）。
 

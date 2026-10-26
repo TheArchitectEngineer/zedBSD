@@ -3,7 +3,7 @@
 # WS281 libc の malloc を速くする
 
 - Master: [plan/master.md](../master.md)（2026-10-22 作成、着手は後日）。Primary Milestone: MG002。Related: MG006（desktop の応答）。
-- Status: planning
+- Status: planning・保留（後日）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-22 ユーザー「mallocは速くないと思います。これはWSを作って、後日取り組みましょう。」）。旧: planning
 - 出典: 2026-10-22 ユーザー「mallocは速くないと思います。これはWSを作って、後日取り組みましょう。」
 
 ## 背景

@@ -3,7 +3,7 @@
 # WS094: desktop の file の icon
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 Q1 の判定: p009（L3 の数値）はベータ3 の性能の Phase へ。2026-10-08 q910 P2 の照合: p007（規約と回帰、規約はベータ3）・p009（L3 の数値、uncleared、Q1 の判断）・p012（5330 の実機）が残り。実装の残りは無い）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 実装の残りは無い（ws094/ws.md）。p012 の L1 のユーザーの操作は 2026-10-13 ユーザー「UATの結果待ちのものは…clearedに」で OK。L3 の数値（p009）は 2026-10-03 ユーザー「C5の200msは問題視しません。clearでOKです。理由は、あとでパフォーマンス改善のチケットを作ってまとめて改善するからです。」（F-072））。旧: incomplete（2026-10-08 Q1 の判定: p009（L3 の数値）はベータ3 の性能の Phase へ。2026-10-08 q910 P2 の照合: p007（規約と回帰、規約はベータ3）・p009（L3 の数値、uncleared、Q1 の判断）・p012（5330 の実機）が残り。実装の残りは無…。残り・制限: p009・p015（速さ、F-072）、p007 の規約は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG006
 Objectives: O2

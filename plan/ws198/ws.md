@@ -3,7 +3,7 @@
 # WS198: zedBSD の上で zedBSD を self-build する（host の clang を使う）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）
+Status: incomplete・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-09 ユーザー（クリック）「ベータ3 で S1、推しどおり」）。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning）。残り・制限: p001 の判定から
 Primary Milestone: MG002
 Related Milestones: MG001
 Objectives: O1

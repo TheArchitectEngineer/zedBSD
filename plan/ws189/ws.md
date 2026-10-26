@@ -3,7 +3,7 @@
 # WS189: app の間の drag and drop（画像・受け入れの見た目・dock・desktop・画面をまたぐ）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-08 q902 P1 の照合: p001・p004 cleared、p002・p003 は T1 の手操作で大半を確認、残りの項目は T1 の束）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001・p004 cleared、p002・p003 は実装済み（main）で T1 の手操作の大半を確認（T1-433〜T1-442: early-receive・refused-mark・dock-spring・text-between-windows・photo-to-notes 1〜2・browser の image-drag））。旧: incomplete（2026-10-08 q902 P1 の照合: p001・p004 cleared、p002・p003 は T1 の手操作で大半を確認、残りの項目は T1 の束）。残り・制限: T1 の残りの項目（across-displays・pdfviewer の drag-out・photo-to-notes 3〜4）は未確認
 Primary Milestone: MG006
 Objectives: O2
 Parent: [Master](../master.md)

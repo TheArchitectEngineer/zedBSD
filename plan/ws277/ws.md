@@ -3,7 +3,7 @@
 # WS277 VisionFive 2 の DC8200 の display driver（zero copy の scanout）
 
 - ID: ws277、Master: [master.md](../master.md)、Primary Milestone: MG008（fg020）
-- Status: incomplete（2026-10-20 01:13 Q1 作成、設計 p001 を開始）
+- Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: DC8200 の zero copy の flip と hardware cursor が板で動く（beta2.md U36 の 2026-10-21 09:55）。p002・p003・p005 は実装済みで実機の行の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-20 01:13 Q1 作成、設計 p001 を開始）。残り・制限: U0〜U11 の行の確認は未実施
 - 起点（2026-10-20 ユーザー）: 「PowerVRはタイルとRGBAと両方の書き出しができると思いますが、VF2のLinuxドライバはもしかするとタイルしかないかも？だからスキャンアウトのバッファにCPUでコピーしてて、GNOMEがむちゃくちゃ遅くて使い物にならなかったと思います。」→（クリック）DC8200 の自前の driver は「新しい WS で設計から」。
 - Q1 が確かめた事（~/visionfive-linux、vendor の 6.12）: DC8200 の plane の modifier は `DRM_FORMAT_MOD_LINEAR` と Vivante の tile・DEC の形（`drivers/gpu/drm/verisilicon/vs_dc_hw.c:412-432`）。PowerVR の twiddled・tiled の形は無い。よって zero copy には PowerVR が線形で書く事が要る（PBE の線形の書き出しは未確認）。
 - 担当: P1（設計 p001）。

@@ -3,7 +3,7 @@
 # WS246: nvrtx の shader compiler を sm75.h・sm75.c にまとめて refactor し、出典を定数・構造体・関数ごとに明記する
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 ユーザー「残り使用量でできそうです。今やってください。」→ Q1 が p001 を実施）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 cleared、2026-10-22 ユーザーの指示で compiler/sm75/ の 14 file に分け直した（d73ca1f65）、出典の comment は ws247-p003 で済み（Master の WS の一覧））。旧: incomplete（2026-10-15 ユーザー「残り使用量でできそうです。今やってください。」→ Q1 が p001 を実施）。残り・制限: p002 の latency の表への直しは残す、p003 の規約は一括の見直しへ
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md) p008（compiler）、[WS242](../ws242/ws.md) p002（SM86・SM89）、[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」

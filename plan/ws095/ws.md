@@ -3,7 +3,7 @@
 # WS095: IME（Wayland の標準の方法、まず日本語）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（p001〜p005 cleared（p005 は q604-i01）。2026-10-06: p006（Terminal の password の時の IME の停止）・p007（Text Editor の試験）を P1 が実装、T1 待ち）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: IME（日本語・辞書・候補の窓・status・app ごとの記憶）は main、p001〜p008・p012・p014〜p017 cleared。p009（Browser の欄の IME）は ws090-p025（2026-10-07 Q1、T1-328・T1-338）で達成。p010 は JIS の PS/2 の利用者が出た時（F-058））。旧: incomplete（p001〜p005 cleared（p005 は q604-i01）。2026-10-06: p006（Terminal の password の時の IME の停止）・p007（Text Editor の試験）を P1 が実装、T1 待ち）。残り・制限: p010（条件つき）、p011 の規約は一括の見直しへ
 Primary Milestone: MG006
 Related Milestones: MG006
 Objectives: O2

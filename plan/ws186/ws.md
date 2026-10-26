@@ -3,7 +3,7 @@
 # WS186: Realtek RTL8822CE（PCIe の WiFi、Latitude 5320）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-07 ユーザー「RTL8822Cは、WSを立てて、ベータ3にしておきます。けど、ベータ2が期日前に完成したら、やるかもしれません。」）。旧: planning。残り・制限: p001 調査と設計から
 Primary Milestone: MG003
 Related Milestones: —
 Objectives: O2

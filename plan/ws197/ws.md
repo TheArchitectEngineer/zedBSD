@@ -3,7 +3,7 @@
 # WS197: Bluetooth のスマホ連携（SMS の MAP、通話の HFP、連絡先の PBAP）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-11 Q1 照合: SMS・MMS の受信と表示、PBAP の連絡先・通話の履歴、Bluetooth の自動復旧まで main に統合済み。残りは HFP（p006・p007）、MMS の写真・動画の送信（p010 の残り）、実機の UAT（p008）、規約の全文（p009、ベータ3）
+Status: incomplete・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: SMS・MMS の受信、PBAP、Bluetooth の自動復旧は main（p001〜p005・p011〜p013 cleared）、UAT は 2026-10-13 ユーザーで済み。2026-10-13 ユーザー（AskUserQuestion）「HFP 全体をベータ3」）。旧: incomplete（2026-10-11 Q1 照合: SMS・MMS の受信と表示、PBAP の連絡先・通話の履歴、Bluetooth の自動復旧まで main に統合済み。残りは HFP（p006・p007）、MMS の写真・動画の送信（p010 の残り）、実機の UAT（p008）、規約の全文（p009、ベータ…。残り・制限: p006・p007 HFP、p010 の MMS の送信、p014、p008 実機、p009 規約
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2

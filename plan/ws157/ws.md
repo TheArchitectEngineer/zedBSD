@@ -3,7 +3,7 @@
 # WS157: Keiland の app: 写真の管理
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-13: UAT はユーザーが OK、T1 待ちの Phase が残る。旧: 2026-10-08 q902 P1 の照合: p001・p004・p005 cleared（2026-10-07 Q1、T1-331）。ベータ2 の範囲の残りは無い、続きはベータ3）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-13 ユーザー「WS157はベータ2に入れます。UATは終わっています。OKでした。」。p001・p004〜p010 cleared、p015・p017 は 2026-10-13 Q1 判定で cleared（T1-584））。旧: incomplete（2026-10-13: UAT はユーザーが OK、T1 待ちの Phase が残る。旧: 2026-10-08 q902 P1 の照合: p001・p004・p005 cleared（2026-10-07 Q1、T1-331）。ベータ2 の範囲の残りは無い、続きはベータ3）。残り・制限: p011〜p014・p016 の Phase の印（実装は main、T1 と Q1 の判定）
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)

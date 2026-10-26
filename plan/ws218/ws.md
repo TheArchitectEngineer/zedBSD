@@ -3,7 +3,7 @@
 # WS218: Intel WiFi（AX211）driver の license の表示を実態に合わせる（OpenBSD・Intel の license の削除の監査）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 Q1 訂正: p001 は監査を実施済み・判定待ちの記録のまま、p002 は実装・build・host 試験済みで AX211 の QEMU・実機の試験待ち。旧: planning（2026-10-13 Q1 作成））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 の監査は済み、p002 は実装・build・host 試験・機械比較済み（AX211 の出典の整理は WS248 と同じ）。残りは AX211 の QEMU・実機の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-15 Q1 訂正: p001 は監査を実施済み・判定待ちの記録のまま、p002 は実装・build・host 試験済みで AX211 の QEMU・実機の試験待ち。旧: planning（2026-10-13 Q1 作成））。残り・制限: 実機の確認は未実施
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->

@@ -3,7 +3,7 @@
 # WS082: Linux の `/dev/kvm` の移植の検討
 
 <!-- awesome-plan-current:start -->
-Status: planning（最初に「アイディアだけ描く」Phase を実行しユーザーと議論、2026-10-05 ユーザー）。以前: incomplete
+Status: planning・保留（要検討）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-05 ユーザーの段の整理「最初にアイディアの Phase を実行してユーザーと議論 WS144・119・147・082・146」。p001（study.md）cleared、§10 の 11 項目はユーザーの判断待ち）。旧: planning（最初に「アイディアだけ描く」Phase を実行しユーザーと議論、2026-10-05 ユーザー）。以前: incomplete。残り・制限: ユーザーの判断（study.md §10）
 Primary Milestone: MG002
 Related Milestones: —
 Objectives: O1

@@ -3,7 +3,7 @@
 # WS026: テスト資産の整理
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-08 ユーザー「ベータ3にします：WS009・026・106 文書・試験の整理・試験アプリの集約、WS139 デスクトップの速さ」）。旧: planning。残り・制限: Phase 未定義
 Primary Milestone: MG001
 Related Milestones: MG009
 Objectives: O4, O5

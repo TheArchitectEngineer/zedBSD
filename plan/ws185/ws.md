@@ -3,7 +3,7 @@
 # WS185: ゲームパッドの OSK とゲームコンソールモード（Arcade モード）
 
 <!-- awesome-plan-current:start -->
-Status: planning
+Status: planning・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, …」）。旧: planning。残り・制限: p001 設計から
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O1

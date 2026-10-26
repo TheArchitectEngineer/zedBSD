@@ -3,7 +3,7 @@
 # WS089: 設定のアプリ（Settings）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-13 P2 q964 の照合: p001〜p010・p012・p013・p016・p017・p019〜p027 cleared、p015 canceled（WS158）。残りは p011（5330 の passthrough の S7）・p014（5330 の Wi-Fi で Network の頁、UAT の記録で判定できる見込み）・p018（規約、ベータ3）。旧: 2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p012・p013・p019 は cleared、p014 は 5330 の Wi-Fi の driver 次第で保留）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p017・p019〜p027 cleared（p011・p014 は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedに…」）、p015 canceled（WS158））。旧: incomplete（2026-10-13 P2 q964 の照合: p001〜p010・p012・p013・p016・p017・p019〜p027 cleared、p015 canceled（WS158）。残りは p011（5330 の passthrough の S7）・p014（5330 の Wi-Fi で Ne…。残り・制限: p018 の規約の全文は一括の見直しへ（2026-10-08 ユーザー「規約の整形…はベータ3」）
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O2

@@ -3,7 +3,7 @@
 # WS240: nvrtx に RTX 50（Blackwell、SM120、GB20x）を足す
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-15 Q1 作成、ユーザーの指示。「50はまだ開始しないでください。」）
+Status: planning・保留（開始しない）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-15 ユーザー「50はまだ開始しないでください。」）。旧: planning（2026-10-15 Q1 作成、ユーザーの指示。「50はまだ開始しないでください。」）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx、RTX 20/30/40）

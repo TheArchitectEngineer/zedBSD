@@ -3,7 +3,7 @@
 # WS278 Raspberry Pi 5 対応
 
 - ID: ws278、Master: [plan/master.md](../master.md)、Primary Milestone: MG008（異種機での実証）。Related: MG003。
-- Status: incomplete（2026-10-21 開始。p001〜p008 を実装と host の確認まで、実機の一括の試験の待ち）
+- Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: Pi 5 の image で起動し desktop・USB の mouse が動く（WS279 の 2026-10-22 のユーザーの確かめ）。D1〜D3 は 2026-10-21 ユーザーが回答済み（「D1: serialは不要です。 D2: 分けましょう。 D3: Pi5 2GBです。…」、Master の「D1〜D3 待ち」は古い）。BT は 2026-10-22 ユーザー「BTはPi4でも動作していないため、いったんドライバを無効にしてください。」で無効）。旧: incomplete（2026-10-21 開始。p001〜p008 を実装と host の確認まで、実機の一括の試験の待ち）。残り・制限: p001〜p009 の Phase の印（実機の行の確かめは未実施）、BT（無効）、BUG-345
 - 出典: 2026-10-21 ユーザー「もう1つサブエージェントを追加して、Raspberry Pi 5対応を行ってほしいです。config/ci/config-rpi5.mkを作成して、イメージを生成できるようにしてほしいです。必要ならGPUドライバの対応、WiFiドライバの対応を行ってほしいです。」「Pi5の対応は、Fableによるレビューは不要です。Opus 5.5で対応しましょう。」
 
 ## 目的と完了の条件

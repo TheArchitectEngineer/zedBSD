@@ -3,7 +3,7 @@
 # WS241: nvrtx（RTX）の描画の速さ
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-15 Q1 作成、ユーザー「RTXの最適化は独立WSにして、今から作業します。」）
+Status: canceled（WS291 へ）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: RTX の描画の速さは WS291（2026-10-26 23:08 ユーザー「WS291にさらにフェーズを追加して、DebianマシンでGPUを入れ替えて、NVIDIAでも同様に、デスクトップの60fpsと、モデルの50fpsをやります。」）の p010・p011 に引き継いだ）。旧: incomplete（2026-10-15 Q1 作成、ユーザー「RTXの最適化は独立WSにして、今から作業します。」）。残り・制限: WS291 p010・p011
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx の本体）、[WS242](../ws242/ws.md)（RTX 20/30/40 の対応）

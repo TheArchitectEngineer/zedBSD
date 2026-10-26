@@ -3,7 +3,7 @@
 # WS231: AHCI（SATA）の driver
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-18 Q1: Phase を実行済みなので planned から直した。旧: planned（2026-10-14 Q1 作成））
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001・p002 cleared（基本の AHCI の driver、2026-10-14 のコードフリーズに入った））。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planned から直した。旧: planned（2026-10-14 Q1 作成））。残り・制限: NCQ・TRIM・hotplug・ATAPI は後（ws231/ws.md）、実機の SATA は未確認
 Primary Milestone: MG002
 Related Milestones: なし
 Objectives: O1

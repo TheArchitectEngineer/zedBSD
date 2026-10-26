@@ -3,7 +3,7 @@
 # WS150: userland の file system の kernel の枠組み（FUSE に当たる物、クラウドストレージの前提）
 
 <!-- awesome-plan-current:start -->
-Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: planning
+Status: planning・保留（要検討・ブロック）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-05 ユーザー「要検討状態にしてブロックする」（ws150/ws.md））。旧: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: planning。残り・制限: p001 から
 Primary Milestone: MG004
 Related Milestones: MG002、MG006
 Parent: [Master](../master.md)

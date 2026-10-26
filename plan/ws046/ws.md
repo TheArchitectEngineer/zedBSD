@@ -3,7 +3,7 @@
 # WS046: GNU 互換の make（autotools の出力を実行できる範囲）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-13 夜 ユーザー: WS046 p014 は「満たしたとみなす」→ cleared、p007 は T1-050 の証拠で cleared（decisions-log）。p008 の coreutils の cross build は p013 で通った、p011 は p012・p014 で置き換え。残りの p005 の規約の全文は 2026-10-08 ユーザー「規約の整形（各 WS の全文規約の Phase）はベータ3」で一括の見直しへ）。旧: incomplete。残り・制限: 規約の全文は一括の見直しへ
 Primary Milestone: MG002
 Related Milestones: MG001
 Objectives: O1, O2
