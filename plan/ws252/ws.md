@@ -7,7 +7,7 @@ Status: incomplete（2026-10-15 作成。2026-10-19 p001 cleared（q1265、desig
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS245](../ws245/ws.md)（Gen12 の display の書き直し、§7 #18・#20・#21）
-Resume point: 2026-10-26 q1599（P4、ユーザー「P4を立てて、WS244, WS245, WS252の実装を終わらせます。…」）で p002〜p008 を host 試験まで実装（実機の Phase は実機が無く未確認のまま）。p002・p003 済み（f8b65c839、5330 PASS）、次は p004（ICL の GT の core）。p001 cleared。判断は 2026-10-19 回答済み: D2「実機ができたら全部」（ICL を含む）、D1-R・D1-I「C 既定で付ける」、D3「Meteor Lake対応のときに入れます。」（この WS では GuC・HuC を使わない）、D5「無いまま」。受け入れは下の表の D2=全部・C の行。
+Resume point: 2026-10-26 q1599（P4、ユーザー「P4を立てて、WS244, WS245, WS252の実装を終わらせます。…」）で p002〜p008 を host 試験まで実装（実機の Phase は実機が無く未確認のまま）。p002・p003 済み（f8b65c839、5330 PASS）、p004〜p006 済み（e68361995・4e316feac・557c9de05、host 試験と 5330 PASS）。次は p008（規約の全文）、p007 は実機が無く未実施のまま。p001 cleared。判断は 2026-10-19 回答済み: D2「実機ができたら全部」（ICL を含む）、D1-R・D1-I「C 既定で付ける」、D3「Meteor Lake対応のときに入れます。」（この WS では GuC・HuC を使わない）、D5「無いまま」。受け入れは下の表の D2=全部・C の行。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（2026-10-15、クリック）
@@ -28,9 +28,9 @@ WS245 design.md §7 #20「RKL・ADL-S・ICL の GT（描画の engine）は起�
 | p001 | 調べと設計: 今の Gen12 の GT（TGL・ADL-P）の code との差（RKL の GT は Gen12 系、ADL-S は Gen12、ICL は Gen11）、engine・firmware・WA、実機の有無、Phase の分割。design-reviewer を通す。[phase001](phase001/phase.md)、[design.md](design.md) | cleared（q1265、版 3.1、[design-review-3.md](design-review-3.md) の Minor 1〜9 に対応） |
 | [p002](phase002/phase.md) | Gen12 の platform の記述の行（TGL・ADL-P・RKL・ADL-S・RPL-S）、ID は足さない、gen12-golden を直して platform ごとに、Linux から期待を抜き出す script（design.md §4・§5・§6.1）。xd の表との統合は WS245 と合わせる（Q1） | in-progress（2026-10-26 q1599 P4: f8b65c839、golden・Linux の照合・build・5330 PASS） |
 | [p003](phase003/phase.md) | RKL・ADL-S・RPL-S の attach: `identifiers[]` と `device.c` に ID（xd の表は既にある）、D1-R の値に従う（A: config.mk の build option、前例 `CONFIG_AMDRDNA_CONTROL`。共有の Makefile・kernel-options.list・MAC-T001 の追従は Q1 と調整／B: 起動の語／C: 既定）、DMC | in-progress（2026-10-26 q1599 P4: 既定で attach（C）、DMC は Future Work、実機は未確認） |
-| p004 | ICL の GT の core と WA の list（D2=全部のとき） | planned（実機・D2） |
-| p005 | ICL の compiler と state（Gen11 の EU、gen110） | planned（p004） |
-| p006 | ICL の video・PXP の除外・attach（D1-I）・DMC | planned（p005） |
+| [p004](phase004/phase.md) | ICL の GT の core と WA の list（D2=全部のとき） | in-progress（2026-10-26 q1599 P4: e68361995、Linux 照合・5330 PASS、実機は未確認） |
+| [p005](phase005/phase.md) | ICL の compiler と state（Gen11 の EU、gen110） | in-progress（2026-10-26 q1599 P4: 4e316feac、render-host・eu-gen11 PASS、実機は未確認） |
+| [p006](phase006/phase.md) | ICL の video・PXP の除外・attach（D1-I）・DMC | in-progress（2026-10-26 q1599 P4: 557c9de05 で既定で attach、5330 PASS、DMC は q1601、実機は未確認） |
 | p007 | 実機の通し（GT・Vulkan・blit・video、5330 の回帰）。RKL・ADL-S 3 LW ＋ ICL 1〜3 LW。依存は design.md §5 の群ごとの表 | planned（実機） |
 | p008 | 規約の全文の見直し | planned（最後の実装） |
 - 決定（2026-10-19 ユーザー、クリック）: D2「実機ができたら全部」、D1-R「C 既定で付ける」、D1-I「C 既定で付ける」、D3「Meteor Lake対応のときに入れます。」、D5「無いまま」。
