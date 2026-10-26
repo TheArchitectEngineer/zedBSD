@@ -7,8 +7,8 @@
 
 /*
  * Host fixture for shader modules and graphics pipelines
- * (render/pipeline.c, pipeline-prepare.c) and the shader state a draw emits
- * for a pipeline (render/state.c).
+ * (vk/vk-pipeline.c, vk-pipeline-prepare.c) and the shader state a draw emits
+ * for a pipeline (vk/vk-state.c).
  *
  * vkCreateShaderModule and vkCreateGraphicsPipelines are driven through the
  * wire with the vkdemo shaders, so the pipeline's kernels come from the
@@ -23,9 +23,9 @@
 #include "i915-vk-render-stubs.inc"
 
 #include "../../../src/drivers/gpu/i915/compiler/compiler.h"
-#include "../../../src/drivers/gpu/i915/render/batch.h"
-#include "../../../src/drivers/gpu/i915/render/heap.h"
-#include "../../../src/drivers/gpu/i915/render/state.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-batch.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-heap.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-state.h"
 
 #include "../../../src/drivers/gpu/i915/intel/genxml.h"
 

@@ -32,7 +32,7 @@
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/vk/vk.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The usages an image may have. */
 #define IMAGE_USAGES		(VK_IMAGE_USAGE_TRANSFER_SRC_BIT | \

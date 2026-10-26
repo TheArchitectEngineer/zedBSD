@@ -151,7 +151,7 @@ RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/platform/visionfive2/vf2-pmu
 	src/drivers/gpu/powervr/render-draw.c \
 	src/drivers/gpu/powervr/render-depth.c \
 	src/drivers/gpu/powervr/vk/vk-draw.c \
-	src/drivers/gpu/i915/render/codec.c
+	src/drivers/gpu/i915/vk/vk-codec.c
 # The test kernel's check of the core's compute path (ws269-p008).
 ifeq ($(CONFIG_POWERVR_COMPUTE_CHECK),y)
 RISCV64_PLATFORM_SOURCES_visionfive2 += src/drivers/gpu/powervr/compute-check.c
@@ -263,7 +263,7 @@ RISCV64_PCI_DEVICE_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/p
 	src/drivers/gpu/ghci/vk/vk-session.c src/drivers/gpu/ghci/vk/vk-stream.c src/drivers/gpu/ghci/vk/vk-device.c \
 	src/drivers/gpu/ghci/vk/vk-format.c src/drivers/gpu/ghci/vk/vk-memory.c src/drivers/gpu/ghci/vk/vk-program.c \
 	src/drivers/gpu/ghci/vk/vk-relay.c \
-	$(filter-out $(RISCV64_PLATFORM_SOURCES_$(ZEDBSD_BOARD)),src/drivers/gpu/i915/render/codec.c)
+	$(filter-out $(RISCV64_PLATFORM_SOURCES_$(ZEDBSD_BOARD)),src/drivers/gpu/i915/vk/vk-codec.c)
 ifeq ($(CONFIG_GHCI_NATIVE),y)
 RISCV64_PCI_DEVICE_SOURCES += src/drivers/gpu/ghci/native.c
 endif

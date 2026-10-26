@@ -29,7 +29,7 @@
 
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 static int resource_create_buffer(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int resource_create_image(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);

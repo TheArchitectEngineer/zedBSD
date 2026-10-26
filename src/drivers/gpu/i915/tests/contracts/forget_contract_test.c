@@ -8,7 +8,7 @@
 /*
  * The executor's object lifetime contract, checked on the host.
  *
- * Runs render/forget.c, render/object.c and render/descriptor.c's pool
+ * Runs vk/vk-forget.c, vk/vk-object.c and vk/vk-descriptor.c's pool
  * free with objects that name each other, destroyed against the Vulkan
  * rules before what names them: an image before its views (and the set and
  * the framebuffer that name a view of it), a view, a buffer before its
@@ -23,11 +23,11 @@
 #include "contract.h"
 #include "host_render.h"
 
-#include "../../render/descriptor.h"
-#include "../../render/forget.h"
-#include "../../render/gfx.h"
-#include "../../render/internal.h"
-#include "../../render/object.h"
+#include "../../vk/vk-descriptor.h"
+#include "../../vk/vk-forget.h"
+#include "../../vk/vk-gfx.h"
+#include "../../vk/vk-internal.h"
+#include "../../vk/vk-object.h"
 
 #include <kern/lock.h>
 

@@ -92,7 +92,7 @@ keeps one check per old check otherwise, so the counts stay comparable.
 | --- | --- |
 | `selftest.c`: `drv_i915_selftest`, clear, RCS, RT, compute and draw selftests, golden run, power probe, statistics read, engine WA application | legacy-hardware selftests of the retired legacy engine/GGTT/LRC code; the draw/texture fixtures they carried moved to `tests/fixtures/draw-fixture.c` byte-for-byte |
 | `probe.c` `PARITY_*_TEST` branches | replaced by the runner's scenarios `eu`, `draw`, `r1`, `tex`, `t3`, `bl` |
-| Reference-kernel build (`I915_VK_REFERENCE_KERNELS`, `vkref-generated.inc`) and gfx census | not provided: the render path has only the after-draw checkpoint (`drv_i915_gfx_draw_checkpoint`); substituting reference kernels changes the kernels, the URB entry size and the 3DSTATE_VS/SBE/WM/PS words at several places in `render/`, which needs new production seams.  The generated table is kept in `tests/fixtures/vkref-generated.inc` |
+| Reference-kernel build (`I915_VK_REFERENCE_KERNELS`, `vkref-generated.inc`) and gfx census | not provided: the render path has only the after-draw checkpoint (`drv_i915_gfx_draw_checkpoint`); substituting reference kernels changes the kernels, the URB entry size and the 3DSTATE_VS/SBE/WM/PS words at several places in `vk/`, which needs new production seams.  The generated table is kept in `tests/fixtures/vkref-generated.inc` |
 
 ### ktest-gt.c
 

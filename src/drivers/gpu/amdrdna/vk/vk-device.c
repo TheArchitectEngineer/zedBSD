@@ -32,7 +32,7 @@
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk-objects.h"
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /*
  * The bits of the float constants the limits are filled with: 1, 16,

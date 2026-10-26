@@ -31,7 +31,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/i915/render/codec.h"
+#include "drivers/gpu/i915/vk/vk-codec.h"
 #include "drivers/gpu/powervr/descriptor-set.h"
 #include "drivers/gpu/powervr/image-state.h"
 #include "drivers/gpu/powervr/compiler/shader.h"

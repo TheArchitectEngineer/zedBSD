@@ -32,7 +32,7 @@
 
 #include "drivers/gpu/powervr/vk/vk.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The command buffers one call carries, the barriers one barrier command carries, and a recording's first room. */
 #define COMMAND_BATCH_MAX		32U

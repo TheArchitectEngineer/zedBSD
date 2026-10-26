@@ -43,7 +43,7 @@
  * Where the code is.  Paths in the entries are short:
  *
  *   libvulkan/  userland/desktop/libvulkan/, the sender;
- *   i915/       src/drivers/gpu/i915/render/, the native i915 executor;
+ *   i915/       src/drivers/gpu/i915/vk/, the native i915 executor;
  *   bcm2711/    src/drivers/gpu/bcm2711/, the native V3D executor;
  *   venus/      src/drivers/gpu/venus/, the virtual machine's driver.
  *

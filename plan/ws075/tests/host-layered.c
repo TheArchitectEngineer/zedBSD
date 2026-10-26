@@ -20,9 +20,9 @@
 
 #include "../../ws031/tests/i915-vk-render-stubs.inc"
 
-#include "../../../src/drivers/gpu/i915/render/batch.h"
-#include "../../../src/drivers/gpu/i915/render/heap.h"
-#include "../../../src/drivers/gpu/i915/render/state.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-batch.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-heap.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-state.h"
 
 #include "../../../src/drivers/gpu/i915/intel/genxml.h"
 

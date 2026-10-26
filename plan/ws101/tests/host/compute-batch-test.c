@@ -6,7 +6,7 @@
  */
 
 /*
- * ws101-p004: a dispatch's slot and commands (render/compute.c), on the
+ * ws101-p004: a dispatch's slot and commands (vk/vk-compute.c), on the
  * host.
  *
  * Compute pipelines are made through the wire from add.spv (push constants
@@ -26,13 +26,13 @@
 #include "../../../ws031/tests/i915-vk-render-stubs.inc"
 
 #include "../../../../src/drivers/gpu/i915/compiler/compiler.h"
-#include "../../../../src/drivers/gpu/i915/render/batch.h"
-#include "../../../../src/drivers/gpu/i915/render/heap.h"
-#include "../../../../src/drivers/gpu/i915/render/state.h"
+#include "../../../../src/drivers/gpu/i915/vk/vk-batch.h"
+#include "../../../../src/drivers/gpu/i915/vk/vk-heap.h"
+#include "../../../../src/drivers/gpu/i915/vk/vk-state.h"
 
 /* The stub file stands in for the dispatch; the one under test is compute.c's, under another name. */
 #define drv_i915_gfx_dispatch test_dispatch_under_test
-#include "../../../../src/drivers/gpu/i915/render/compute.c"
+#include "../../../../src/drivers/gpu/i915/vk/vk-compute.c"
 
 /* The wire opcodes the test sends. */
 #define TEST_CREATE_SHADER_MODULE	59U

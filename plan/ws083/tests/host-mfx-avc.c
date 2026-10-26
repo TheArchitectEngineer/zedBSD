@@ -8,7 +8,7 @@
 /*
  * The host golden of the MFX AVC builder (ws083-p004, design §8.1, D24).
  *
- * Each case builds one decode with render/video-mfx.c and writes the batch
+ * Each case builds one decode with vk/vk-video-mfx.c and writes the batch
  * and the fields it expects to a directory: CASE.bin (the dwords) and
  * CASE.expect (genxml-decode.py's checks).  The expected values are worked
  * out here from the StdVideo inputs of the case, with their own zig-zag
@@ -18,7 +18,7 @@
  *   host-mfx-avc DIRECTORY
  */
 
-#include "../../../src/drivers/gpu/i915/render/video-mfx.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-video-mfx.h"
 
 #include <assert.h>
 #include <stdint.h>

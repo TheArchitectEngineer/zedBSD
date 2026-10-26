@@ -29,7 +29,7 @@
 #include "display/display.h"
 #include "display/run-log.h"
 #include "display/xd9-flip.h"
-#include "render/render.h"
+#include "vk/vk.h"
 #include <kern/kcrt.h>
 #include <kern/sysctl.h>
 

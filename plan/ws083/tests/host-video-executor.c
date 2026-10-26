@@ -19,8 +19,8 @@
 
 #include "../../ws031/tests/i915-vk-render-stubs.inc"
 
-#include "../../../src/drivers/gpu/i915/render/instance.h"
-#include "../../../src/drivers/gpu/i915/render/video.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-instance.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-video.h"
 #include "../../../src/drivers/gpu/i915/intel/genxml-video.h"
 
 #define FIXTURE_QUEUE_SUBMIT			18U

@@ -29,7 +29,7 @@
 
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The bits of the float constants the limits are filled with. */
 #define DEVICE_F32_ONE			0x3f800000U

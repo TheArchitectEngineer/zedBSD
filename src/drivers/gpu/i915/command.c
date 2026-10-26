@@ -26,8 +26,8 @@
 #include "request-queue.h"
 #include "session.h"
 #include "worker.h"
-#include "render/render.h"
-#include "render/transport.h"
+#include "vk/vk.h"
+#include "vk/vk-transport.h"
 #include <kern/kcrt.h>
 
 #include <drivers/gpu/gpu.h>

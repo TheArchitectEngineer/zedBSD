@@ -6,9 +6,9 @@
  */
 
 /*
- * Host fixture for synchronization: fences (render/fence.c) and semaphores
- * (render/sync.c), and the refusal of the sync commands that were not
- * ported (render/dispatch.c).
+ * Host fixture for synchronization: fences (vk/vk-fence.c) and semaphores
+ * (vk/vk-sync.c), and the refusal of the sync commands that were not
+ * ported (vk/vk-dispatch.c).
  *
  * A fence is a latch: vkQueueSubmit runs its work to the end before it
  * replies and then signals the fence, so a fence is either signalled or
@@ -17,7 +17,7 @@
 
 #include "i915-vk-render-stubs.inc"
 
-#include "../../../src/drivers/gpu/i915/render/fence.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-fence.h"
 
 /* The wire opcodes the fixture sends, as libvulkan numbers them. */
 #define FIXTURE_CREATE_FENCE		35U
@@ -163,7 +163,7 @@ test_fence(void)
 	status = fixture_fence_status(FIXTURE_UNKNOWN);
 	assert(status == (uint32_t)VK_ERROR_INITIALIZATION_FAILED);
 
-	/* A finished submission signals its fence (render/command.c calls this). */
+	/* A finished submission signals its fence (vk/vk-command.c calls this). */
 	fence = drv_i915_object_lookup(stub_session, I915_VK_OBJ_FENCE, FIXTURE_FENCE);
 	assert(fence != NULL);
 	drv_i915_fence_signal(fence);

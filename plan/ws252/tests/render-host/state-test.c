@@ -9,8 +9,8 @@
  * The 3D and compute state of the render path for Gen12, Gen9 and Ice Lake
  * (Gen11), on the host.
  *
- * The draw (render/draw.c), the rectangle (render/blit.c) and the dispatch
- * (render/compute.c) are built into batches as the kernel builds them, once
+ * The draw (vk/vk-draw.c), the rectangle (vk/vk-blit.c) and the dispatch
+ * (vk/vk-compute.c) are built into batches as the kernel builds them, once
  * with a batch of each graphics version, and the state they point at (a
  * render target's and a texture's surface states, a sampler, an interface
  * descriptor) is written beside them.  Every batch and structure is written
@@ -31,10 +31,18 @@
 #include "../../../ws031/tests/i915-vk-render-stubs.inc"
 
 #include "../../../../src/drivers/gpu/i915/compiler/compiler.h"
+/* The base tree (TEST_BASELINE) has the executor under render/, the new one under vk/. */
+#ifdef TEST_BASELINE
 #include "../../../../src/drivers/gpu/i915/render/batch.h"
 #include "../../../../src/drivers/gpu/i915/render/compute.h"
 #include "../../../../src/drivers/gpu/i915/render/heap.h"
 #include "../../../../src/drivers/gpu/i915/render/state.h"
+#else
+#include "../../../../src/drivers/gpu/i915/vk/vk-batch.h"
+#include "../../../../src/drivers/gpu/i915/vk/vk-compute.h"
+#include "../../../../src/drivers/gpu/i915/vk/vk-heap.h"
+#include "../../../../src/drivers/gpu/i915/vk/vk-state.h"
+#endif
 #include "../../../../src/drivers/gpu/i915/tests/fixtures/draw-fixture.h"
 
 /*
@@ -70,9 +78,15 @@ int drv_i915_gfx_draw(struct i915_render_session *session, const struct i915_gfx
 int drv_i915_gfx_rect(struct i915_render_session *session, const struct i915_gfx_surface *dst, const struct i915_gfx_rect *dst_rect, const struct i915_gfx_surface *src, const struct i915_gfx_rect *src_rect, const uint32_t clear[4], int linear);
 int drv_i915_gfx_dispatch(struct i915_render_session *session, const struct i915_gfx_draw_state *state, const struct i915_gfx_grid *grid);
 
+#ifdef TEST_BASELINE
 #include "../../../../src/drivers/gpu/i915/render/draw.c"
 #include "../../../../src/drivers/gpu/i915/render/blit.c"
 #include "../../../../src/drivers/gpu/i915/render/compute.c"
+#else
+#include "../../../../src/drivers/gpu/i915/vk/vk-draw.c"
+#include "../../../../src/drivers/gpu/i915/vk/vk-blit.c"
+#include "../../../../src/drivers/gpu/i915/vk/vk-compute.c"
+#endif
 
 /* Where the test's objects are in the GPU's address space. */
 #define TEST_SLOT_VA		0x0000000123450000ULL

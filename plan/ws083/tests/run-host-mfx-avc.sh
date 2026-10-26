@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws083-p004: the host golden of the MFX AVC builder (design §8.1, D24).  host-mfx-avc.c builds decodes
-# with render/video-mfx.c and writes each batch with the fields it expects; genxml-decode.py reads the
+# with vk/vk-video-mfx.c and writes each batch with the fields it expects; genxml-decode.py reads the
 # batches back through Mesa's genxml (pinned by SHA-256, read as data) and compares.  Plain and
 # ASan/UBSan, in a new directory under build/tmp (nothing is removed here; Q1's plan/tools/q1-clean.sh
 # removes the runs build/tmp/ws083-mfx-avc does not point at).
@@ -16,8 +16,8 @@ fresh_out "$repo/build/tmp/ws083-mfx-avc"
 work=$fresh_dir
 compiler=${CC:-cc}
 decoder="$repo/plan/ws083/tests/genxml-decode.py"
-render=$repo/src/drivers/gpu/i915/render
-sources="$repo/plan/ws083/tests/host-mfx-avc.c $render/video-mfx.c $render/video-h264-tables.c $render/batch.c"
+vk=$repo/src/drivers/gpu/i915/vk
+sources="$repo/plan/ws083/tests/host-mfx-avc.c $vk/vk-video-mfx.c $vk/vk-video-h264-tables.c $vk/vk-batch.c"
 base="-std=gnu89 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_ABI_LP64 -I$repo/include -I$repo -idirafter $repo/include/libc"
 
 # The decoder resolves the genxml imports as Gen12 needs them.

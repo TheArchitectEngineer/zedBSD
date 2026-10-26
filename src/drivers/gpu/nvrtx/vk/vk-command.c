@@ -28,7 +28,7 @@
 
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The most command buffers one allocation or free names. */
 #define COMMAND_BATCH_MAX		64U

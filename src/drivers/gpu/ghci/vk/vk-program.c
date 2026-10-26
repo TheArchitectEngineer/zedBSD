@@ -35,7 +35,7 @@
 #include "vk.h"
 #include "vk-engine.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The FourCC of the standard shader ISA. */
 #define ISA_GSI1			GHCI_FOURCC('G', 'S', 'I', '1')

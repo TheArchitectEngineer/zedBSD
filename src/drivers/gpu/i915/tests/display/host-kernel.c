@@ -37,7 +37,7 @@
 #include "../../sync.h"
 #include "../../worker.h"
 #include "../../workqueue.h"
-#include "../../render/blit.h"
+#include "../../vk/vk-blit.h"
 
 #include "drivers/platform/pcat/graphics/backend.h"
 

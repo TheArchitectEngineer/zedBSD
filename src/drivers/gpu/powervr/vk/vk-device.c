@@ -26,7 +26,7 @@
 #include "drivers/gpu/powervr/render-private.h"
 #include "drivers/gpu/powervr/vk/vk.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /*
  * The bits of the float constants of the limits: 1 and 2048.

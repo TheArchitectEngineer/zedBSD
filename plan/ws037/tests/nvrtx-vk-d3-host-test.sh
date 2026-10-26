@@ -28,5 +28,5 @@ cc -std=gnu11 -D_POSIX_C_SOURCE=200809L -DKERN_USER_ABI_LP64 -include time.h -Wa
 	"$src/vk/vk-command.c" "$src/vk/vk-record.c" "$src/vk/vk-execute.c" "$src/vk/vk-queue.c" "$src/vk/exec-push.c" "$src/draw-push.c" "$src/wire.c" \
 	"$src/compiler/sm75"/*.c "$repo/src/drivers/gpu/compiler/spirv.c" \
 	"$repo/src/drivers/gpu/compiler/optimize.c" \
-	"$repo/src/drivers/gpu/i915/render/codec.c" "$repo/userland/desktop/libvulkan/wire.c" "$out/client-codec.c" -lm
+	"$repo/src/drivers/gpu/i915/vk/vk-codec.c" "$repo/userland/desktop/libvulkan/wire.c" "$out/client-codec.c" -lm
 "$out/vk-d3-test" "$out"

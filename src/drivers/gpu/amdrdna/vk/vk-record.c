@@ -30,7 +30,7 @@
 
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk-objects.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The records a command buffer's array starts with; it doubles as it fills. */
 #define RECORD_FIRST_CAPACITY		64U

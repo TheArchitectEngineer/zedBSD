@@ -8,8 +8,8 @@
 /*
  * Host fixture for the executor's resources: device memory and its blob
  * storage, buffers, images and their layout, the surface state an image
- * is drawn through, and descriptors (render/memory.c, image.c,
- * descriptor.c, state.c).
+ * is drawn through, and descriptors (vk/vk-memory.c, vk-image.c,
+ * vk-descriptor.c, vk-state.c).
  *
  * The objects are created through the wire, as libvulkan creates them; the
  * checks then look at the objects the executor published and at the
@@ -18,8 +18,8 @@
 
 #include "i915-vk-render-stubs.inc"
 
-#include "../../../src/drivers/gpu/i915/render/heap.h"
-#include "../../../src/drivers/gpu/i915/render/state.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-heap.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-state.h"
 
 /* The wire opcodes the fixture sends, as libvulkan numbers them. */
 #define FIXTURE_ALLOCATE_MEMORY			21U

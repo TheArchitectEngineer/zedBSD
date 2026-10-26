@@ -23,7 +23,7 @@
 #include "ppgtt.h"
 #include "resource.h"
 #include "session.h"
-#include "render/render.h"
+#include "vk/vk.h"
 #include <kern/kcrt.h>
 
 #include <drivers/gpu/gpu.h>

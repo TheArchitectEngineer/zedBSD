@@ -48,9 +48,9 @@ sources_for() {
 	rps)
 		echo "$here/rps_contract_test.c $here/mock_mmio.c $here/host_kernel.c $here/host_thread.c $driver/gt-power.c $driver/workqueue.c $driver/mmio.c $driver/trace.c" ;;
 	memory)
-		echo "$here/memory_contract_test.c $here/host_render.c $driver/render/memory.c $driver/render/object.c $driver/render/codec.c $driver/render/reply.c" ;;
+		echo "$here/memory_contract_test.c $here/host_render.c $driver/vk/vk-memory.c $driver/vk/vk-object.c $driver/vk/vk-codec.c $driver/vk/vk-reply.c" ;;
 	forget)
-		echo "$here/forget_contract_test.c $here/host_render.c $driver/render/forget.c $driver/render/object.c $driver/render/descriptor.c $driver/render/codec.c $driver/render/reply.c" ;;
+		echo "$here/forget_contract_test.c $here/host_render.c $driver/vk/vk-forget.c $driver/vk/vk-object.c $driver/vk/vk-descriptor.c $driver/vk/vk-codec.c $driver/vk/vk-reply.c" ;;
 	reset)
 		echo "$here/reset_contract_test.c $here/mock_mmio.c $driver/reset.c $driver/mmio.c $driver/trace.c" ;;
 	*)

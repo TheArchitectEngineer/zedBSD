@@ -62,7 +62,7 @@
 #include "../memory.h"
 #include "../session.h"
 #include "../worker.h"
-#include "../render/blit.h"
+#include "../vk/vk-blit.h"
 
 #include <drivers/gpu/gpu.h>
 #include <drivers/gpu/gpu-display.h>
@@ -1376,7 +1376,7 @@ i915_present_release_locked(
 
 /*
  * Builds the GPU copy of a shared frame into a panel buffer: scaled by the
- * largest whole factor that fits, centred (the render/blit contract).
+ * largest whole factor that fits, centred (the vk/vk-blit contract).
  */
 static int
 i915_present_blit_build(

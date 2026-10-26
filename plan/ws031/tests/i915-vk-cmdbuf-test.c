@@ -7,8 +7,8 @@
 
 /*
  * Host fixture for command pools and buffers, recording and vkQueueSubmit
- * (render/command.c), and for the commands a draw ends its batch with
- * (render/state.c).
+ * (vk/vk-command.c), and for the commands a draw ends its batch with
+ * (vk/vk-state.c).
  *
  * A command buffer is recorded as a list of operations and runs at
  * vkQueueSubmit: clears and copies as GPU rectangles, draws as GPU draws.
@@ -21,9 +21,9 @@
 
 #include "i915-vk-render-stubs.inc"
 
-#include "../../../src/drivers/gpu/i915/render/batch.h"
-#include "../../../src/drivers/gpu/i915/render/heap.h"
-#include "../../../src/drivers/gpu/i915/render/state.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-batch.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-heap.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-state.h"
 
 #include "../../../src/drivers/gpu/i915/intel/commands.h"
 #include "../../../src/drivers/gpu/i915/intel/genxml.h"
@@ -108,7 +108,7 @@
 #define FIXTURE_MIP_OFFSET	8192U
 #define FIXTURE_MIP_PITCH	128U
 
-/* How many operations one command buffer records at most (render/command.c). */
+/* How many operations one command buffer records at most (vk/vk-command.c). */
 #define FIXTURE_MAX_OPS		65536U
 
 /* How many draws one stream of the fixture carries: each is 32 bytes. */
@@ -1945,7 +1945,7 @@ test_view_format_swizzle(void)
 
 /*
  * The state a draw writes for blending, sampled images and uniform blocks
- * (render/state.c): BLEND_STATE and the blend constants of COLOR_CALC_STATE
+ * (vk/vk-state.c): BLEND_STATE and the blend constants of COLOR_CALC_STATE
  * as the pipeline or the dynamic state says, 3DSTATE_PS_BLEND agreeing with
  * BLEND_STATE; one binding table entry, surface state and sampler per
  * sampled image of the kernel, each from its own set and binding; and the

@@ -39,7 +39,7 @@
 #include "drivers/gpu/powervr/transfer-job.h"
 #include "drivers/gpu/powervr/vk/vk.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 static int allocate(struct powervr_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int allocate_storage(struct powervr_vk_session *session, const struct powervr_vk_memory_chain *chain, uint64_t bytes, uint32_t type, struct powervr_resource **storage);

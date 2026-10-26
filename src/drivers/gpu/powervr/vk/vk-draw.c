@@ -31,7 +31,7 @@
 #include "drivers/gpu/powervr/vk/vk-draw.h"
 #include "drivers/gpu/powervr/vk/vk.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The most bytes of one compiled shader. */
 #define GRAPHICS_CODE_MAX	(64U * 1024U)
@@ -53,7 +53,7 @@ static int record_push(struct i915_wire_reader *reader, struct powervr_vk_record
  * varyings between them.  EINVAL when the record did not decode,
  * ENOTSUP for one the executor does not run.
  *
- * Procedure referenced: i915/render/pipeline.c (i915_gfx_decode_pipeline,
+ * Procedure referenced: i915/vk/vk-pipeline.c (i915_gfx_decode_pipeline,
  * the same wire form).
  */
 int

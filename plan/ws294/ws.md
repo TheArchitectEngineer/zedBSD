@@ -12,7 +12,7 @@ i915 の Gen12 以降（TGL・RKL・ADL-S/RPL-S・ADL-P）で、kernel の optio
 
 ## 制約
 
-- 今の execlists の submission と Vulkan の executor（render/、WS293 で vk/）は残し、既定は execlists。
+- 今の execlists の submission と Vulkan の executor（vk/、WS293 で render/ から改名）は残し、既定は execlists。
 - Linux の i915（GPL）・Mesa（MIT）は値・表・手順の参照だけ。code は写さず、block ごとに「Value(s) referenced: …」「Procedure referenced: …」（[Guardrail](../guardrail.md)「MIT・GPL の出典のデータの引用」）。GuC の interface の値（H2G・G2H の action の番号、ADS・CTB の layout、WOPCM の値）は linux の固定の版（6.8.12 の tarball、WS252 で検証済み）から。
 - GuC の firmware は zedBSD-firmware の i915/ と i915-firmware の package（WS252 q1601 と同じ形、push はユーザーの指示）。HuC は使わない。
 - HAL の API は変えない。

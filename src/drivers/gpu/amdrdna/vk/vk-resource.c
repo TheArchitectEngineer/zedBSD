@@ -30,7 +30,7 @@
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk-objects.h"
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk-exec.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 static int resource_create_buffer(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int resource_create_image(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);

@@ -26,7 +26,7 @@
 #include "drivers/gpu/powervr/vk/vk-draw.h"
 #include "drivers/gpu/powervr/vk/vk.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The clear values one begin keeps (one an attachment of a pass). */
 #define BEGIN_CLEARS_MAX	64U
@@ -287,7 +287,7 @@ framebuffer_destroy(
  * The record holds the pass and the framebuffer and keeps the area and
  * the first clear values.
  *
- * Procedure referenced: i915/render/command.c (i915_record_begin_pass,
+ * Procedure referenced: i915/vk/vk-command.c (i915_record_begin_pass,
  * the same wire form).
  */
 int
@@ -376,7 +376,7 @@ powervr_vk_record_begin_pass(
  * vkCmdClearAttachments: [u32][u64 count]{aspects, colour index, clear
  * value}[u32][u64 rects]{VkClearRect}.
  *
- * Procedure referenced: i915/render/command.c
+ * Procedure referenced: i915/vk/vk-command.c
  * (i915_record_clear_attachments, the same wire form).
  */
 int

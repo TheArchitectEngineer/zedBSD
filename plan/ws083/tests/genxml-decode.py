@@ -12,7 +12,7 @@
 # the imported item of the same tag and name, an <exclude> drops one, the
 # imports are resolved depth first), and decodes a batch of dwords back into
 # instructions and field values.  The builder in the kernel
-# (src/drivers/gpu/i915/render/video-mfx.c) is checked against what this
+# (src/drivers/gpu/i915/vk/vk-video-mfx.c) is checked against what this
 # decoder reads, so a wrong bit position in the builder's transcription
 # (intel/genxml-video.h) is not hidden by a golden made from the same
 # transcription.  Nothing of Mesa is copied into the tree: the XML is read

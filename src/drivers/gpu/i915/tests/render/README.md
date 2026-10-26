@@ -1,6 +1,6 @@
 # i915 render tests: the shader test suite
 
-The GPU scenarios of this directory drive the Vulkan executor (`../../render/`)
+The GPU scenarios of this directory drive the Vulkan executor (`../../vk/`)
 and its SPIR-V compiler (`../../compiler/`) on the hardware once the node is
 served.  They are linked only into the test build (`I915_TESTS=y`) and are
 started by the runner of `../execution/` (see its README for how a scenario
