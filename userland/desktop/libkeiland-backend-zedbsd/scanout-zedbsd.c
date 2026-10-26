@@ -205,16 +205,22 @@ kl_backend_scanout_present(
 	record = *owned;
 
 	/* The output's size, and a description the kernel's record holds. */
-	if (record->width != scanout->width || record->height != scanout->height)
+	if (record->width != scanout->width || record->height != scanout->height) {
+		printf("KL SCANOUT refused step=size buffer=%ux%u output=%ux%u\n", record->width, record->height, scanout->width, scanout->height);
 		return EINVAL;
-	if (record->description_size != sizeof(image))
+	}
+	if (record->description_size != sizeof(image)) {
+		printf("KL SCANOUT refused step=description size=%u\n", (unsigned)record->description_size);
 		return EINVAL;
+	}
 
 	/* Imported into the scanout's fd once. */
 	if (record->handle == 0U || record->claim != scanout->claim) {
 		error = scanout_import(scanout, record);
-		if (error != 0)
+		if (error != 0) {
+			printf("KL SCANOUT refused step=import errno=%d\n", error);
 			return error;
+		}
 	}
 
 	/* The image as it is: its rows, its format, blob scanout at the display's pace. */
@@ -234,8 +240,13 @@ kl_backend_scanout_present(
 	present.flags = GPU_DISPLAY_PRESENT_FIFO | GPU_DISPLAY_PRESENT_BLOB;
 	present.generation = scanout->generation;
 	error = ioctl(scanout->gpu, GPU_DISPLAY_PRESENT, &present);
-	if (error != 0)
-		return errno;
+	if (error != 0) {
+		error = errno;
+		printf("KL SCANOUT refused step=present errno=%d format=%u stride=%u offset=%llu %ux%u refresh=%u\n", error, (unsigned)present.format,
+		       (unsigned)present.stride, (unsigned long long)present.offset, (unsigned)present.width, (unsigned)present.height,
+		       (unsigned)present.refresh_millihz);
+		return error;
+	}
 
 	/* Succeeded: the display shows the buffer. */
 	scanout->frame++;
@@ -365,12 +376,14 @@ scanout_import(
 	struct gpu_resource_import import;
 	int error;
 
-	/* The fd and the description. */
+	/*
+	 * The fd alone: the kernel takes the image's description from the
+	 * export and refuses one the importer supplies (gpu_import_ioctl).
+	 */
 	memset(&import, 0, sizeof(import));
 	import.version = GPU_ABI_VERSION;
 	import.size = sizeof(import);
 	import.fd = record->descriptor;
-	memcpy(&import.image, record->description, sizeof(import.image));
 	error = ioctl(scanout->gpu, GPU_RESOURCE_IMPORT, &import);
 	if (error != 0)
 		return errno;

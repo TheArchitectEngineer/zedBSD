@@ -198,10 +198,11 @@ main(
 
 	/* The presentation mode the swapchain took, the copies drawn and the content said (for the harness). */
 	printf(
-		"MVIEW PRESENT run=%s asked=%s mode=%s copies=%u draws=%s submits=%u content=%u content_manager=%d\n",
+		"MVIEW PRESENT run=%s asked=%s mode=%s format=%u copies=%u draws=%s submits=%u content=%u content_manager=%d\n",
 		options.token,
 		main_present_name(options.present),
 		main_present_name(renderer.present_mode),
+		(unsigned)renderer.format,
 		options.copies,
 		options.each_draw != 0 ? "each" : "instanced",
 		options.submits,

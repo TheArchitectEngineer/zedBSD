@@ -54,7 +54,7 @@ synthesized. Without a `wl_seat` the viewer still renders, without input.
 
 ```
 MVIEW START run=<t> model=<dir> vertices=<n> triangles=<m> materials=<k> textures=<t>[ shading=pixel]
-MVIEW PRESENT run=<t> asked=<mode> mode=<mode> copies=<n> draws=instanced|each submits=<n> content=<type> content_manager=0|1
+MVIEW PRESENT run=<t> asked=<mode> mode=<mode> format=<VkFormat> copies=<n> draws=instanced|each submits=<n> content=<type> content_manager=0|1
 MVIEW INPUT run=<t> kind=motion|button|axis|key <event fields> yaw=<deg> pitch=<deg> distance=<d> pan=<x>,<y>
 MVIEW FRAME run=<t> frame=<n> yaw=<deg> pitch=<deg> distance=<d> pan=<x>,<y>
 MVIEW DONE run=<t> frames=<n> reason=quit|closed|timeout|frames

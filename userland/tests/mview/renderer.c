@@ -807,15 +807,20 @@ renderer_swapchain(
 		return error;
 	}
 
-	/* Selects an RGBA or BGRA UNORM format in the standard sRGB colour space. */
+	/*
+	 * Selects a BGRA UNORM format in the standard sRGB colour space, the
+	 * displays' own (a compositor can show it straight), or else RGBA.
+	 */
 	renderer->format = VK_FORMAT_UNDEFINED;
 	for (index = 0U; index < count; index++) {
-		if ((formats[index].format == VK_FORMAT_R8G8B8A8_UNORM ||
-		     formats[index].format == VK_FORMAT_B8G8R8A8_UNORM) &&
-		    formats[index].colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
+		if (formats[index].colorSpace != VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
+			continue;
+		if (formats[index].format == VK_FORMAT_B8G8R8A8_UNORM) {
 			renderer->format = formats[index].format;
 			break;
 		}
+		if (formats[index].format == VK_FORMAT_R8G8B8A8_UNORM && renderer->format == VK_FORMAT_UNDEFINED)
+			renderer->format = formats[index].format;
 	}
 
 	/* Retains the chosen format while releasing its enumeration storage. */
