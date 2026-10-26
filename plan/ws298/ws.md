@@ -3,7 +3,7 @@
 # WS298 Intel VMD（Volume Management Device）の driver
 
 - Master: [plan/master.md](../master.md)（2026-10-27 06:57 作成）。Primary Milestone: MG003。関係: q1612（5330 の NVMe に zedBSD）。
-- Status: incomplete（2026-10-27 06:57 新設、P1）
+- Status: completed（2026-10-27 08:33 Q1: p001〜p003 cleared。素の 5330 で VMD の下の NVMe が見えて読め、NVMe から zedBSD が起動する。残り: 512 MiB を超えると読みが遅い（Future Work の候補）、VMD の S0 idle の suspend は EBUSY）
 - 出典: 2026-10-27 06:57 Q1 の問い「5330 の NVMe は Intel VMD（RST、RAID On）の後ろにあり、今の zedBSD からは見えません。どうしますか？」へのユーザーのクリック「zedBSD に VMD の driver を書く」。
 
 ## 単一の到達目標
@@ -24,4 +24,4 @@ Intel VMD（5330 の 8086:467f、Alder Lake の VMD）の下にある NVMe を�
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（VMD の register・bus の列挙・窓・MSI-X の付け替え・zedBSD の PCI の枠組みへの載せ方）と design-reviewer。[design.md](design.md) 版 2（[review](design-review.md) 反映、D1 (b)・D2 (a) 決定） | — | cleared |
 | [p002](phase002/phase.md) | 実装、host 試験、5330 の実機で NVMe が見える（physical disks=2）・読める。素の 5330 で D・G PASS（f0effe7ad） | p001 | cleared（2026-10-27 08:23） |
-| [p003](phase003/phase.md) | 規約の全文の見直し。直しは aaa909887、host 試験・build・素の 5330（NVMe から）PASS、判定待ち | p002 | in-progress |
+| [p003](phase003/phase.md) | 規約の全文の見直し。直しは aaa909887、host 試験・build・素の 5330（NVMe から）PASS、判定待ち | p002 | cleared（2026-10-27 08:33） |
