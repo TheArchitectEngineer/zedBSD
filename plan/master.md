@@ -11,8 +11,8 @@
 -->
 
 <!-- master:agents:start -->
-- **2026-10-25 10:16 自走中（ユーザーは就寝、推しで進める。判断の記録 [ws288/q1-decisions-20261025.md](ws288/q1-decisions-20261025.md)）**: WS288。cleared: p009・p010・p026・p027・p031・p006・p018・p019・**p011（2026-10-25 11:32、vkdemo の 1 frame が Verilator の上で oracle と一致）**。p030 は S11（P1）。p036（P2）: Vivado で LUT 422k = KC705 の 207%、形を変える削減はユーザーに諮る。
-- amaterrace-gpu の main は 252a11e（T1-783: make sim 97・firmware の harness 6 case 一致）。zedBSD・amaterrace-gpu とも push していない。
+- **2026-10-26 夕方 ラップアップ（全担当は停止）**: WS288 の引き継ぎは [ws288/q1-handover-20261026.md](ws288/q1-handover-20261026.md)。**ユーザー「今から勝手に進めず、私と相談しながら進めましょう。」**: 担当の起動・build・板の操作は案を示して承認を得てから。次は p042（演算器の整理と am_mul の DSP48E1 の版、計画の承認待ち）と p045（DC を 200 MHz）。
+- zedBSD の main は d4d3b7474、amaterrace-gpu の main は c7af33f（未 merge: p3-p044 c62fddb）。どちらも 2026-10-26 02:2x 以降は push していない。
 <!-- master:agents:end -->
 
 ### 統合と試験の待ち
@@ -29,7 +29,7 @@
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
 3. 次の番号: BUG-346、q1594、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
-4. WS288 の次: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
+4. WS288 の次: [q1-handover-20261026.md](ws288/q1-handover-20261026.md)（古い引き継ぎ: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
 
