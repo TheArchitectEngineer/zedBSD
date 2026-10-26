@@ -1102,6 +1102,9 @@ state_start_graphics(
 	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_INDEX_MAXIMUM, 0xffffffffU);
 	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_INSTANCE_BASE, 0U);
 	amdrdna_vk_pm4_set_user_config(pm4, STATE_STEREO, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_USER_VGPRS, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, STATE_STIPPLE_VALUE, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, STATE_STIPPLE_STATE, 0U);
 
 	/*
 	 * No primitive restart (its reset value is on), as RADV writes it for
@@ -1112,9 +1115,6 @@ state_start_graphics(
 	 * the dynamic state on GFX9 to GFX10.3, line 3400).
 	 */
 	amdrdna_vk_pm4_set_user_config(pm4, STATE_RESTART_ON, 0U);
-	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_USER_VGPRS, 0U);
-	amdrdna_vk_pm4_set_user_config(pm4, STATE_STIPPLE_VALUE, 0U);
-	amdrdna_vk_pm4_set_user_config(pm4, STATE_STIPPLE_STATE, 0U);
 }
 
 /*
