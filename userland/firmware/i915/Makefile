@@ -18,6 +18,14 @@ I915_FIRMWARE_ADLP_DMC_SIZE ?= 79088
 I915_FIRMWARE_ADLP_DMC_SHA256 ?= 3516de2e134ddcf3b319c75d2e437779fecbd58cbb77234bd6f297c544e92ccb
 I915_FIRMWARE_TGL_DMC_SIZE ?= 19760
 I915_FIRMWARE_TGL_DMC_SHA256 ?= 3c013ef0ad96ba73aee8e5bd04a8e27cc9b1c6e9183b1a83ce124485f325afca
+I915_FIRMWARE_ADLP_FALLBACK_DMC_SIZE ?= 77084
+I915_FIRMWARE_ADLP_FALLBACK_DMC_SHA256 ?= 2da482ea46a40e54c9ca3b54185959177f393eff98ece21acdac7eb6cacb0fcb
+I915_FIRMWARE_ADLS_DMC_SIZE ?= 18704
+I915_FIRMWARE_ADLS_DMC_SHA256 ?= 96e426ed7e80f0cc6644ada1928f4d02b163ff59b14b2339aa28a374d65a5b19
+I915_FIRMWARE_ICL_DMC_SIZE ?= 25952
+I915_FIRMWARE_ICL_DMC_SHA256 ?= aafad1967679baa36e971e5331da73eea31c68239416432df83e71332755dc01
+I915_FIRMWARE_RKL_DMC_SIZE ?= 18476
+I915_FIRMWARE_RKL_DMC_SHA256 ?= 139ce0eb873a13679a4685463cdacf6d247073ce286c8a5bca443ef1d17ee2ac
 I915_FIRMWARE_LICENSE_SIZE ?= 2080
 I915_FIRMWARE_LICENSE_SHA256 ?= 8542aeabf2761935122d693561e16766ce1bcc2b0d003204f9040b7d6d929f2e
 I915_FIRMWARE_WHENCE_SIZE ?= 425450
@@ -31,8 +39,11 @@ I915_FIRMWARE_FETCH ?= curl --fail --location --silent --show-error --retry 3 --
 else
 # Production callers cannot replace the source, accepted bytes, verifier, or
 # installed mapping from the command line while the static manifest continues
-# to describe this reviewed package.  The accepted DMC bytes are the ones the
-# i915 driver was brought up with (the former embedded reference blobs).
+# to describe this reviewed package.  The package holds every DMC program the
+# driver names: the platforms' own (display-tables-xd.h) and the older Alder
+# Lake-P one it falls back to (dmc-shell.c).  The Alder Lake-P and Tiger Lake
+# bytes are the ones the driver was brought up with (the former embedded
+# reference blobs).
 override I915_FIRMWARE_BASE_URL := https://git.kernel.org/pub/scm/linux/kernel/git/firmware/linux-firmware.git/plain
 override I915_FIRMWARE_REVISION := dc85ccedc9c973682fbcf4d628ca61174bcc3120
 override I915_FIRMWARE_URL_SUFFIX := ?id=dc85ccedc9c973682fbcf4d628ca61174bcc3120
@@ -40,6 +51,14 @@ override I915_FIRMWARE_ADLP_DMC_SIZE := 79088
 override I915_FIRMWARE_ADLP_DMC_SHA256 := 3516de2e134ddcf3b319c75d2e437779fecbd58cbb77234bd6f297c544e92ccb
 override I915_FIRMWARE_TGL_DMC_SIZE := 19760
 override I915_FIRMWARE_TGL_DMC_SHA256 := 3c013ef0ad96ba73aee8e5bd04a8e27cc9b1c6e9183b1a83ce124485f325afca
+override I915_FIRMWARE_ADLP_FALLBACK_DMC_SIZE := 77084
+override I915_FIRMWARE_ADLP_FALLBACK_DMC_SHA256 := 2da482ea46a40e54c9ca3b54185959177f393eff98ece21acdac7eb6cacb0fcb
+override I915_FIRMWARE_ADLS_DMC_SIZE := 18704
+override I915_FIRMWARE_ADLS_DMC_SHA256 := 96e426ed7e80f0cc6644ada1928f4d02b163ff59b14b2339aa28a374d65a5b19
+override I915_FIRMWARE_ICL_DMC_SIZE := 25952
+override I915_FIRMWARE_ICL_DMC_SHA256 := aafad1967679baa36e971e5331da73eea31c68239416432df83e71332755dc01
+override I915_FIRMWARE_RKL_DMC_SIZE := 18476
+override I915_FIRMWARE_RKL_DMC_SHA256 := 139ce0eb873a13679a4685463cdacf6d247073ce286c8a5bca443ef1d17ee2ac
 override I915_FIRMWARE_LICENSE_SIZE := 2080
 override I915_FIRMWARE_LICENSE_SHA256 := 8542aeabf2761935122d693561e16766ce1bcc2b0d003204f9040b7d6d929f2e
 override I915_FIRMWARE_WHENCE_SIZE := 425450
@@ -53,15 +72,28 @@ override I915_FIRMWARE_TAG := 20260410
 override I915_FIRMWARE_TAG_OBJECT := 4585dd5a5f0cee08990d754701d8866d9e9266e6
 override I915_FIRMWARE_ADLP_DMC_PATH := i915/adlp_dmc.bin
 override I915_FIRMWARE_TGL_DMC_PATH := i915/tgl_dmc_ver2_12.bin
+override I915_FIRMWARE_ADLP_FALLBACK_DMC_PATH := i915/adlp_dmc_ver2_16.bin
+override I915_FIRMWARE_ADLS_DMC_PATH := i915/adls_dmc_ver2_01.bin
+override I915_FIRMWARE_ICL_DMC_PATH := i915/icl_dmc_ver1_09.bin
+override I915_FIRMWARE_RKL_DMC_PATH := i915/rkl_dmc_ver2_03.bin
 override I915_FIRMWARE_LICENSE_PATH := LICENSE.i915
 override I915_FIRMWARE_WHENCE_PATH := WHENCE
 override I915_FIRMWARE_VERSION := 20260410
 override I915_FIRMWARE_SHA256_COMMAND := sha256sum
 
 I915_FIRMWARE_CACHE_ROOT ?= $(if $(ZEDBSD_TOPLEVEL_BUILD),build,$(ZEDBSD_REPO_ROOT)/build)/sources/firmware/i915
-override I915_FIRMWARE_CACHE_DIR := $(I915_FIRMWARE_CACHE_ROOT)/$(I915_FIRMWARE_REVISION)
+# The cache of one revision holds one set of files.  The set grew from two
+# DMC programs to every one the driver names on 2026-10-27, so the larger set
+# has a directory of its own and a verified cache of the two-program set is
+# left alone rather than reported as corrupt.
+override I915_FIRMWARE_CACHE_SET := all-dmc
+override I915_FIRMWARE_CACHE_DIR := $(I915_FIRMWARE_CACHE_ROOT)/$(I915_FIRMWARE_REVISION)-$(I915_FIRMWARE_CACHE_SET)
 override I915_FIRMWARE_CACHE_ADLP_DMC := $(I915_FIRMWARE_CACHE_DIR)/adlp_dmc.bin
 override I915_FIRMWARE_CACHE_TGL_DMC := $(I915_FIRMWARE_CACHE_DIR)/tgl_dmc_ver2_12.bin
+override I915_FIRMWARE_CACHE_ADLP_FALLBACK_DMC := $(I915_FIRMWARE_CACHE_DIR)/adlp_dmc_ver2_16.bin
+override I915_FIRMWARE_CACHE_ADLS_DMC := $(I915_FIRMWARE_CACHE_DIR)/adls_dmc_ver2_01.bin
+override I915_FIRMWARE_CACHE_ICL_DMC := $(I915_FIRMWARE_CACHE_DIR)/icl_dmc_ver1_09.bin
+override I915_FIRMWARE_CACHE_RKL_DMC := $(I915_FIRMWARE_CACHE_DIR)/rkl_dmc_ver2_03.bin
 override I915_FIRMWARE_CACHE_LICENSE := $(I915_FIRMWARE_CACHE_DIR)/LICENSE.i915
 override I915_FIRMWARE_CACHE_WHENCE := $(I915_FIRMWARE_CACHE_DIR)/WHENCE
 override I915_FIRMWARE_MANIFEST := userland/firmware/i915/i915-firmware.manifest
@@ -69,6 +101,10 @@ override I915_FIRMWARE_MANIFEST := userland/firmware/i915/i915-firmware.manifest
 override I915_FIRMWARE_DATA := \
 	/lib/firmware/i915/adlp_dmc.bin=$(I915_FIRMWARE_CACHE_ADLP_DMC) \
 	/lib/firmware/i915/tgl_dmc_ver2_12.bin=$(I915_FIRMWARE_CACHE_TGL_DMC) \
+	/lib/firmware/i915/adlp_dmc_ver2_16.bin=$(I915_FIRMWARE_CACHE_ADLP_FALLBACK_DMC) \
+	/lib/firmware/i915/adls_dmc_ver2_01.bin=$(I915_FIRMWARE_CACHE_ADLS_DMC) \
+	/lib/firmware/i915/icl_dmc_ver1_09.bin=$(I915_FIRMWARE_CACHE_ICL_DMC) \
+	/lib/firmware/i915/rkl_dmc_ver2_03.bin=$(I915_FIRMWARE_CACHE_RKL_DMC) \
 	/usr/share/licenses/i915-firmware/LICENSE.i915=$(I915_FIRMWARE_CACHE_LICENSE) \
 	/usr/share/licenses/i915-firmware/WHENCE=$(I915_FIRMWARE_CACHE_WHENCE) \
 	/usr/share/zedbsd/packages/i915-firmware.manifest=$(I915_FIRMWARE_MANIFEST)
@@ -103,6 +139,10 @@ endif
 
 i915-firmware: $(I915_FIRMWARE_CACHE_ADLP_DMC) \
 	$(I915_FIRMWARE_CACHE_TGL_DMC) \
+	$(I915_FIRMWARE_CACHE_ADLP_FALLBACK_DMC) \
+	$(I915_FIRMWARE_CACHE_ADLS_DMC) \
+	$(I915_FIRMWARE_CACHE_ICL_DMC) \
+	$(I915_FIRMWARE_CACHE_RKL_DMC) \
 	$(I915_FIRMWARE_CACHE_LICENSE) \
 	$(I915_FIRMWARE_CACHE_WHENCE)
 
@@ -110,7 +150,7 @@ i915-firmware-fixture-cache: i915-firmware-cache
 
 # A selected build revalidates the complete cache.  Existing corruption is an
 # error rather than an implicit update.  A missing cache is acquired in a
-# sibling directory and published with one rename only after all four files
+# sibling directory and published with one rename only after all eight files
 # pass exact type, size, and SHA-256 checks.
 i915-firmware-cache:
 	@set -eu; \
@@ -135,12 +175,16 @@ i915-firmware-cache:
 	verify_cache() { \
 		directory="$$1"; \
 		entry_count=$$(find "$$directory" -mindepth 1 -maxdepth 1 -print | wc -l | tr -d '[:space:]'); \
-		if test "$$entry_count" != 4; then \
-			echo "i915-firmware: cache must contain exactly four files: $$directory" >&2; \
+		if test "$$entry_count" != 8; then \
+			echo "i915-firmware: cache must contain exactly eight files: $$directory" >&2; \
 			return 1; \
 		fi; \
 		verify_file "$$directory/adlp_dmc.bin" '$(I915_FIRMWARE_ADLP_DMC_SIZE)' '$(I915_FIRMWARE_ADLP_DMC_SHA256)'; \
 		verify_file "$$directory/tgl_dmc_ver2_12.bin" '$(I915_FIRMWARE_TGL_DMC_SIZE)' '$(I915_FIRMWARE_TGL_DMC_SHA256)'; \
+		verify_file "$$directory/adlp_dmc_ver2_16.bin" '$(I915_FIRMWARE_ADLP_FALLBACK_DMC_SIZE)' '$(I915_FIRMWARE_ADLP_FALLBACK_DMC_SHA256)'; \
+		verify_file "$$directory/adls_dmc_ver2_01.bin" '$(I915_FIRMWARE_ADLS_DMC_SIZE)' '$(I915_FIRMWARE_ADLS_DMC_SHA256)'; \
+		verify_file "$$directory/icl_dmc_ver1_09.bin" '$(I915_FIRMWARE_ICL_DMC_SIZE)' '$(I915_FIRMWARE_ICL_DMC_SHA256)'; \
+		verify_file "$$directory/rkl_dmc_ver2_03.bin" '$(I915_FIRMWARE_RKL_DMC_SIZE)' '$(I915_FIRMWARE_RKL_DMC_SHA256)'; \
 		verify_file "$$directory/LICENSE.i915" '$(I915_FIRMWARE_LICENSE_SIZE)' '$(I915_FIRMWARE_LICENSE_SHA256)'; \
 		verify_file "$$directory/WHENCE" '$(I915_FIRMWARE_WHENCE_SIZE)' '$(I915_FIRMWARE_WHENCE_SHA256)'; \
 	}; \
@@ -190,6 +234,10 @@ i915-firmware-cache:
 	suffix='$(I915_FIRMWARE_URL_SUFFIX)'; \
 	fetch adlp_dmc.bin "$$base/$(I915_FIRMWARE_ADLP_DMC_PATH)$$suffix"; \
 	fetch tgl_dmc_ver2_12.bin "$$base/$(I915_FIRMWARE_TGL_DMC_PATH)$$suffix"; \
+	fetch adlp_dmc_ver2_16.bin "$$base/$(I915_FIRMWARE_ADLP_FALLBACK_DMC_PATH)$$suffix"; \
+	fetch adls_dmc_ver2_01.bin "$$base/$(I915_FIRMWARE_ADLS_DMC_PATH)$$suffix"; \
+	fetch icl_dmc_ver1_09.bin "$$base/$(I915_FIRMWARE_ICL_DMC_PATH)$$suffix"; \
+	fetch rkl_dmc_ver2_03.bin "$$base/$(I915_FIRMWARE_RKL_DMC_PATH)$$suffix"; \
 	fetch LICENSE.i915 "$$base/$(I915_FIRMWARE_LICENSE_PATH)$$suffix"; \
 	fetch WHENCE "$$base/$(I915_FIRMWARE_WHENCE_PATH)$$suffix"; \
 	verify_cache "$$temporary"; \
@@ -201,6 +249,10 @@ i915-firmware-cache:
 
 $(I915_FIRMWARE_CACHE_ADLP_DMC) \
 $(I915_FIRMWARE_CACHE_TGL_DMC) \
+$(I915_FIRMWARE_CACHE_ADLP_FALLBACK_DMC) \
+$(I915_FIRMWARE_CACHE_ADLS_DMC) \
+$(I915_FIRMWARE_CACHE_ICL_DMC) \
+$(I915_FIRMWARE_CACHE_RKL_DMC) \
 $(I915_FIRMWARE_CACHE_LICENSE) \
 $(I915_FIRMWARE_CACHE_WHENCE): i915-firmware-cache
 	@test -f "$@"

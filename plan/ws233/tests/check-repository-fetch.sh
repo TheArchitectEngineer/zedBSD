@@ -65,7 +65,7 @@ run i915 I915_FIRMWARE_BASE_URL=$nowhere I915_FIRMWARE_REVISION=r \
 	I915_FIRMWARE_ZEDBSD_URL=file://$repo/i915 \
 	I915_FIRMWARE_CACHE_ROOT=$out/cache/i915 I915_FIRMWARE_FETCH=$fetcher \
 	i915-firmware-fixture-cache
-check i915 "$out/cache/i915/r"
+check i915 "$out/cache/i915/r-all-dmc"
 run intelax211 INTEL_AX211_FIRMWARE_BASE_URL=$nowhere INTEL_AX211_FIRMWARE_REVISION=r \
 	INTEL_AX211_FIRMWARE_ZEDBSD_URL=file://$repo/intelax211 \
 	INTEL_AX211_FIRMWARE_CACHE_ROOT=$out/cache/intelax211 INTEL_AX211_FIRMWARE_FETCH=$fetcher \
