@@ -3,7 +3,7 @@
 # ws291-p004 RDNA の GPU 側の最初の改善（PA・VGT の設定を RADV に、scene-6500 の GPU の ms）
 
 - 親: [WS291](../ws.md)。
-- 状態: in-progress（2026-10-27 04:33 P2、q1609-i01）。結果は下（2026-10-27 04:50）。clearance は Q1 の判定。
+- 状態: cleared（2026-10-27 04:43 Q1、driver の変更なし、差は NGG の culling と判明）。前: in-progress（2026-10-27 04:33 P2、q1609-i01）。結果は下（2026-10-27 04:50）。clearance は Q1 の判定。
 - 依存: p003（cleared、merge 5914a9074）。
 
 ## 範囲
