@@ -84,7 +84,7 @@ struct i915_ppgtt;
 /* The largest contiguous session object handed to a session. */
 #define I915_MAX_RESOURCE_BYTES		(16U * 1024U * 1024U)
 
-/* The highest physical address the GPU reaches on Alder Lake-P (39 bits, dma_mask_size). */
+/* The highest physical address the GPU reaches: every supported platform addresses 39 bits of DMA space. */
 #define I915_DMA_MAX_ADDRESS		((1ULL << 39) - 1ULL)
 
 /*

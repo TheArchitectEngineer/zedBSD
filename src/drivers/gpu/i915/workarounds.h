@@ -202,7 +202,7 @@ void drv_i915_wa_add_no_verify(struct i915_wa_list *wal, uint32_t reg, uint32_t 
 
 void drv_i915_wa_build_gt_gen12(struct i915_wa_list *wal, const struct i915_gt_info *gt);
 void drv_i915_wa_build_gt_gen9(struct i915_wa_list *wal, const struct i915_gt_info *gt);
-void drv_i915_wa_build_engine(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver, unsigned mocs_uc_index);
+void drv_i915_wa_build_engine(struct i915_wa_list *wal, const struct i915_engine_info *engine, const struct i915_gt_info *gt, unsigned mocs_uc_index);
 void drv_i915_wa_build_context(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver, unsigned mocs_uc_index);
 void drv_i915_wa_build_whitelist(struct i915_wa_list *wal, const struct i915_engine_info *engine, int graphics_ver);
 

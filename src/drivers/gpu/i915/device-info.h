@@ -72,7 +72,8 @@ struct i915_mmio;
 /*
  * The platforms whose workarounds differ.
  *
- * Every Gen12 device the driver matches shares one set; the Gen9 parts are
+ * Every Gen12 device the driver matches shares one set, apart from the
+ * rules its product row lists in I915_PLATFORM_WA_*; the Gen9 parts are
  * told apart because their workaround lists and stepping rules differ.
  */
 #define I915_PLATFORM_GEN12		0
@@ -80,6 +81,15 @@ struct i915_mmio;
 #define I915_PLATFORM_KABYLAKE		2
 #define I915_PLATFORM_COFFEELAKE	3
 #define I915_PLATFORM_COMETLAKE		4
+
+/*
+ * The rules of the shared Gen12 lists that only some platforms take, as
+ * bits of i915_gt_info's platform_wa.
+ *
+ * RENDER_PSMI keeps the render engine from powering down while it waits
+ * for an event and from sending the semaphore idle message (Wa_1607297627).
+ */
+#define I915_PLATFORM_WA_RENDER_PSMI	(1U << 0)
 
 /*
  * The slice, subslice and EU layout that survived fusing.
@@ -180,6 +190,9 @@ struct i915_gt_info {
 	 */
 	int platform;
 	unsigned revision;
+
+	/* The workaround rules of the shared lists the platform takes (I915_PLATFORM_WA_*), filled with the platform. */
+	uint32_t platform_wa;
 
 	/* The command streamer timestamp frequency in Hz, and its period. */
 	uint32_t clock_frequency;

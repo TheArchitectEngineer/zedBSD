@@ -906,6 +906,7 @@ i915_ktest_gt_workarounds(
 	/* Builds a GT whose lowest live DSS is 1 (DSS 1 to 5 present). */
 	i915_ktest_gt_fuses_open(t, 0x3eU);
 	kern_memset(&t->wa_gt, 0, sizeof(t->wa_gt));
+	t->wa_gt.platform_wa = I915_PLATFORM_WA_RENDER_PSMI;
 	(void)drv_i915_gt_init_mmio(&t->wa_gt, 12, I915_KTEST_ADLP_ENGINES, &t->mmio);
 
 	/* Finds the render and copy engines. */
@@ -1046,7 +1047,7 @@ i915_ktest_gt_wa_render_list(
 	int perctx;
 
 	/* Builds the render list with MOCS uncached index 3. */
-	drv_i915_wa_build_engine(&t->wa_init.engine_wa[0], &t->wa_gt.engines[rcs], 12, 3U);
+	drv_i915_wa_build_engine(&t->wa_init.engine_wa[0], &t->wa_gt.engines[rcs], &t->wa_gt, 3U);
 
 	/* Looks for each expected entry. */
 	cctl = 0;
@@ -1138,7 +1139,7 @@ i915_ktest_gt_wa_context_lists(
 	int tdc;
 
 	/* A non-render engine only gets the fake CMD_CCTL entry. */
-	drv_i915_wa_build_engine(&t->wa_init.engine_wa[1], &t->wa_gt.engines[bcs], 12, 3U);
+	drv_i915_wa_build_engine(&t->wa_init.engine_wa[1], &t->wa_gt.engines[bcs], &t->wa_gt, 3U);
 	drv_i915_ktest_check(
 		ktest,
 		t->wa_init.engine_wa[1].count == 1U && t->wa_init.engine_wa[1].list[0].reg == 0x220c4U,

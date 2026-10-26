@@ -48,13 +48,6 @@
 #include <stddef.h>
 
 #include "intel/gt-regs.h"
-#include "intel/pci-ids.h"
-
-/* The Alder Lake-P engines the GT is brought up with: RCS0, BCS0, VCS0, VCS2 and VECS0. */
-#define I915_START_ENGINE_MASK	((1U << 0) | (1U << 1) | (1U << 8) | (1U << 10) | (1U << 16))
-
-/* The engines a Gen9 device runs: RCS0, BCS0, VCS0 and VECS0 (the second video engine is unused). */
-#define I915_START_ENGINE_MASK_GEN9	((1U << 0) | (1U << 1) | (1U << 8) | (1U << 16))
 
 /* The GPU addresses 39 bits of DMA space. */
 #define I915_START_DMA_MASK	((((uint64_t)1) << 39) - 1U)
@@ -100,9 +93,6 @@
 #define I915_GEN9_SDEIMR	0xc4004U
 #define I915_GEN9_SDEIIR	0xc4008U
 #define I915_GEN9_SDEIER	0xc400cU
-
-/* Turns an id-list entry into the bare product id. */
-#define I915_ID_VALUE(product)	(product)
 
 /*
  * The devices that attached and the kernel's readiness.
@@ -245,7 +235,6 @@ static void i915_stop_hardware(struct i915_device *device);
 static int i915_forcewake_get_all(struct i915_gt *gt, unsigned *held);
 static void i915_forcewake_put_all(struct i915_gt *gt, unsigned held);
 static void i915_start_dump_trace(struct i915_gt *gt);
-static int i915_product_listed(uint16_t product, const uint16_t *list, unsigned count);
 static const int *i915_start_domain_list(const struct i915_gt *gt, unsigned *count);
 static unsigned i915_popcount32(uint32_t value);
 static unsigned i915_cpu_physical_bits(void);
@@ -734,94 +723,6 @@ drv_i915_device_attach_settled(
 	spin_unlock_irqrestore(&i915_start_registry.lock, enabled);
 }
 
-/*
- * Tells the graphics version, display version and platform of a PCI device id.
- *
- * The table is explicit: Tiger Lake (12, 12), Alder Lake-P and -N and Raptor
- * Lake-P and -U (12, 13), Skylake, Kaby Lake, Coffee Lake and Comet Lake
- * (9, 9).  Returns 0, or ENODEV for an id in no list, which the device start
- * refuses rather than guessing its registers.
- */
-int
-drv_i915_product_kind(
-	uint16_t product,
-	struct i915_product_kind *kind)
-{
-	static const uint16_t tigerlake[] = { I915_PCI_TGL_IDS(I915_ID_VALUE) };
-	static const uint16_t alderlake[] = {
-		I915_PCI_ADLP_IDS(I915_ID_VALUE),
-		I915_PCI_ADLN_IDS(I915_ID_VALUE),
-		I915_PCI_RPLU_IDS(I915_ID_VALUE),
-		I915_PCI_RPLP_IDS(I915_ID_VALUE)
-	};
-	static const uint16_t skylake[] = { I915_PCI_SKL_IDS(I915_ID_VALUE) };
-	static const uint16_t kabylake[] = { I915_PCI_KBL_IDS(I915_ID_VALUE) };
-	static const uint16_t coffeelake[] = { I915_PCI_CFL_IDS(I915_ID_VALUE) };
-	static const uint16_t cometlake[] = { I915_PCI_CML_IDS(I915_ID_VALUE) };
-	int listed;
-
-	/* Starts from a Gen9 part, the shape every Gen9 list shares. */
-	kind->graphics_ver = 9U;
-	kind->display_ver = 9U;
-	kind->is_alderlake_p = 0;
-
-	/* Tiger Lake: Gen12 with display version 12. */
-	listed = i915_product_listed(product, tigerlake, sizeof(tigerlake) / sizeof(tigerlake[0]));
-	if (listed != 0) {
-		kind->graphics_ver = 12U;
-		kind->display_ver = 12U;
-		kind->platform = I915_PLATFORM_GEN12;
-		kind->name = "Tiger Lake";
-		return 0;
-	}
-
-	/* Alder Lake-P and -N, Raptor Lake-P and -U: Gen12 with XE_LPD (display version 13). */
-	listed = i915_product_listed(product, alderlake, sizeof(alderlake) / sizeof(alderlake[0]));
-	if (listed != 0) {
-		kind->graphics_ver = 12U;
-		kind->display_ver = 13U;
-		kind->is_alderlake_p = 1;
-		kind->platform = I915_PLATFORM_GEN12;
-		kind->name = "Alder Lake-P class (XE_LPD)";
-		return 0;
-	}
-
-	/* Skylake. */
-	listed = i915_product_listed(product, skylake, sizeof(skylake) / sizeof(skylake[0]));
-	if (listed != 0) {
-		kind->platform = I915_PLATFORM_SKYLAKE;
-		kind->name = "Skylake (Gen9, display kept as the firmware left it)";
-		return 0;
-	}
-
-	/* Kaby Lake. */
-	listed = i915_product_listed(product, kabylake, sizeof(kabylake) / sizeof(kabylake[0]));
-	if (listed != 0) {
-		kind->platform = I915_PLATFORM_KABYLAKE;
-		kind->name = "Kaby Lake (Gen9, display kept as the firmware left it)";
-		return 0;
-	}
-
-	/* Coffee Lake. */
-	listed = i915_product_listed(product, coffeelake, sizeof(coffeelake) / sizeof(coffeelake[0]));
-	if (listed != 0) {
-		kind->platform = I915_PLATFORM_COFFEELAKE;
-		kind->name = "Coffee Lake (Gen9.5, display kept as the firmware left it)";
-		return 0;
-	}
-
-	/* Comet Lake. */
-	listed = i915_product_listed(product, cometlake, sizeof(cometlake) / sizeof(cometlake[0]));
-	if (listed != 0) {
-		kind->platform = I915_PLATFORM_COMETLAKE;
-		kind->name = "Comet Lake (Gen9.5, display kept as the firmware left it)";
-		return 0;
-	}
-
-	/* An id in no list has no known registers. */
-	return ENODEV;
-}
-
 /* Initializes the registry lock the first time the registry is used. */
 static void
 i915_start_registry_init(void)
@@ -1151,8 +1052,9 @@ i915_start_prepare(
 	drv_i915_pci_init(&gt->pci, drv_i915_pci_device_ops(), &gt->pci_context, &gt->trace);
 
 	/*
-	 * Tells the graphics and display versions from the device id, as the
-	 * PCI driver matches it: Tiger Lake and Alder Lake have a Gen12 GT,
+	 * Tells the graphics and display versions, the engines and the
+	 * workaround rules from the device id, as the PCI driver matches it:
+	 * Tiger Lake, Rocket Lake, Alder Lake and Raptor Lake have a Gen12 GT,
 	 * Skylake to Comet Lake a Gen9 one.  The revision is the stepping some
 	 * Gen9 workarounds depend on.
 	 */
@@ -1168,8 +1070,9 @@ i915_start_prepare(
 	/* Records the versions and the platform the product belongs to. */
 	gt->graphics_ver = kind.graphics_ver;
 	gt->display_ver = kind.display_ver;
-	gt->is_alderlake_p = kind.is_alderlake_p;
 	gt->info.platform = kind.platform;
+	gt->info.platform_wa = kind.platform_wa;
+	gt->platform_engine_mask = kind.engine_mask;
 
 	/* Reports the product that was recognised. */
 	kern_logf("i915: display device: 8086:%04x rev 0x%02x -> graphics version %u, display version %u, %s\n",
@@ -1379,10 +1282,8 @@ i915_start_gt_info(
 
 	gt = &device->gt;
 
-	/* Picks the engine set of the platform. */
-	engine_mask = I915_START_ENGINE_MASK;
-	if (gt->graphics_ver == 9U)
-		engine_mask = I915_START_ENGINE_MASK_GEN9;
+	/* Takes the engine set the platform's product row lists. */
+	engine_mask = gt->platform_engine_mask;
 
 	/* Wakes GT and render: the fuse and clock registers read all-ones while asleep. */
 	device->stage = "forcewake_gt_init_mmio";
@@ -2329,24 +2230,6 @@ i915_start_dump_trace(
 	}
 }
 
-/* Reports nonzero when a PCI device id is in a list. */
-static int
-i915_product_listed(
-	uint16_t product,
-	const uint16_t *list,
-	unsigned count)
-{
-	unsigned index;
-
-	/* Looks the id up in the list. */
-	for (index = 0U; index < count; index++) {
-		if (list[index] == product)
-			return 1;
-	}
-
-	/* Not in the list. */
-	return 0;
-}
 
 /* Counts the set bits of a word. */
 static unsigned
