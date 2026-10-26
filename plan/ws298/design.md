@@ -1,6 +1,6 @@
 # WS298 の設計: Intel VMD の driver（pci-vmd）
 
-- Phase: [ws298-p001](phase001/phase.md)（Queue q1613、担当 P1）。版 1: 2026-10-27。
+- Phase: [ws298-p001](phase001/phase.md)（Queue q1613、担当 P1）。版 1: 2026-10-27（89cea113b）。版 2: 2026-10-27、design-reviewer の 18 件（[design-review.md](design-review.md)）を反映。人の判断が要る 2 件は §12。
 - 親: [WS298](ws.md)。関係: q1612（Latitude 5330 の NVMe に zedBSD の区画を作り、USB 無しで起動する）。
 - この文書は設計だけ。source は変えていない。
 
@@ -34,6 +34,8 @@
 - 子の INTx は無い（VMD は legacy の割り込みを通さない）。
 - hot plug・AER・DPC・secondary bus reset はしない。
 - HAL の API（`include/hal/hal.h`）は変えない。PCI core（`pci.c`・`pci.h`）も変えない（§3 の通り既存の hook で足りる）。
+- 素の機械だけ: Linux の client 向けの機能の MEMBAR_SHADOW_VSCAP（vendor capability に "SHDW" があれば MEMBAR の物理の offset を読む、hypervisor の下の物）は扱わない。VMD の vendor capability（id 0x09）の +4 が 0x53484457 なら log して attach を失敗にする。Values referenced: Linux 6.12.5 drivers/pci/controller/vmd.c（`vmd_get_phys_offsets` の "SHDW" の値）。
+- match は 467f だけ。FreeBSD・Linux が同じ扱い（bus の制限、first vector 1）にしている client の ID（4c3d・7d0b・9a0b・a77f・ad0b、Linux は b60b・b06f も）は試せる機械が無いので入れない（Future Work）。28c0（server）は MEMBAR2 の shadow で窓が +0x2010 になり bypass もあるので対象外。
 
 ## 2. hardware の事実
 
@@ -80,8 +82,9 @@ PCI core は host bridge ごとに `struct drv_pci_bus_ops` を取る（`pci.h`�
 
 root bus は `drv_pci_bus_create_root(segment, bus_start, &ops, vmd, dma, &root)` で作り、`drv_pci_bus_scan_tree(root)` で列挙する（`rp1-usb.c` の `publish_bus` と同じ順）。
 
-- **入れ子の scan**: VMD の attach は pcat の bus 0 の scan の途中（`drv_pci_bus_scan` → `drv_pci_device_probe` → attach）で呼ばれる。`drv_pci_bus_create_root` は新しい bus を `root_buses` の先頭に足すだけで、外側の `drv_pci_scan_all` の for は今の bus の `next` を辿るので新しい bus を二度 scan しない。core に lock は無く、boot の scan は 1 本の thread（確かめた: `pci.c` 295〜560 行）。
-- **driver の登録の順**: VMD の attach の中で子が probe されるので、pci-nvme（と AHCI）の driver は VMD より先に登録されている必要がある。`src/kern/platform/pcat.c` で `drv_pci_nvme_driver_register()`・AHCI の後に `drv_pci_vmd_driver_register()` を置く。
+- **入れ子の scan**: VMD の attach は pcat の bus 0 の scan の途中（`drv_pci_bus_scan` → `drv_pci_device_probe` → attach）で呼ばれる。`drv_pci_bus_create_root` は新しい bus を `root_buses` の先頭に足すだけ（`pci.c` 328-329）で、外側の `drv_pci_scan_all` の for は今の bus の `next` を辿る（`pci.c` 546）ので新しい bus を二度 scan しない。core に lock は無い。scan が 1 本の thread で走ることは呼び手の順（`src/kern/platform/pcat.c` の `drv_pci_pcat_init()`、387 行）による。
+- **driver の登録の順**: 全部の PCI driver の登録は `drv_pci_pcat_init()`（scan）の前に済む。VMD も `#if CONFIG_DRIVER_PCI_VMD` で、その前の PCI driver の登録の並び（NVMe・AHCI の後）に置く。scan の時には NVMe の driver も登録済みなので、VMD の attach の中の子の probe で NVMe が付く。
+- **列挙の順が変わる**: VMD の bus は `root_buses` の先頭に入るので、`/dev/system` の PCI の一覧・`drv_pci_foreach_*`・5330 の survey の順が変わる。T1 の survey の参照（`plan/tools/hw5330/evidence/` の基準と `5330-survey-diff.py`）の更新を p002 に入れる。
 - **disk の probe**: NVMe の namespace は scan の後の `probe_fixed_disks()`（`drv_pci_nvme_probe_namespaces()`）で読まれる。VMD の下の NVMe も scan の中で attach 済みなので、そのまま拾われる見込み（p002 で `physical disks=2` を確かめる）。
 - **shutdown**: `drv_pci_shutdown()` は `root_buses` の順に回る。VMD の bus は先頭なので NVMe の shutdown が VMD より先。VMD 自身の shutdown は何もしない。
 - **DMA**: 子の DMA は VMD を通って host の memory へそのまま届く（translation 無し）。root bus の dma は VMD の function の `drv_pci_device_dma()` をそのまま使う。
@@ -100,34 +103,38 @@ firmware（RST の UEFI driver）の割り当てを当てにせず、毎回同�
 
 ### 5.1 順
 
-1. **見つける**: bus_start の 32 slot × function（header type の bit 7 で多機能）を CFGBAR で読む。vendor が 0xffff なら無い。
-2. **止める**: 見つけた function の command（0x04）の memory・I/O・bus master を落とす（BAR を書き換える間に decode・DMA させない）。
-3. **root port の窓を閉じる**: type 1 header（header type の bit 6:0 = 1、class 0x0604）の I/O・memory・prefetchable の窓を「base > limit」にする。値: I/O base/limit（0x1c）= 0x00f0、I/O の上位（0x30）= 0x0000ffff を一度書いてから 0、memory base/limit（0x20）= 0x0000fff0、prefetchable base/limit（0x24）= 0x0000fff0、上位 base（0x28）= 0xffffffff、上位 limit（0x2c）= 0。Procedure referenced: Linux vmd.c（`vmd_domain_reset`）。offset は PCI-to-PCI Bridge Spec 1.2。
-4. **bus 番号**: root port を見つけた順に、primary（0x18）= bus_start、secondary（0x19）= subordinate（0x1a）= 次の空き番号（bus_start + 1 から）。番号が bus_end を超えたらその root port は使わない（log）。
-5. **下を見つける**: 各 root port の secondary の bus の function を列挙する。**下に type 1 header（switch）があればその root port は扱わない**（log して窓を閉じたまま。深さ 1 だけを扱う、§11 の U4）。
-6. **BAR の大きさ**: 下の endpoint の BAR0〜5 を、全部 1 を書いて読み戻す標準の手順で測る（64 bit の BAR は 2 つの register）。I/O の BAR は割り当てない（VMD は I/O を通さない。FreeBSD の `vmd_get_rman` は I/O に NULL）。ROM の BAR は触らない。
-7. **root port の窓を置く**: root port ごとに、下の memory の BAR の大きさを、BAR の大きさ（最小 4 KiB）に揃えて足した量を 2 の冪（最小 1 MiB）に丸めた大きさの窓を、`drv_pci_window_place()`（`pci-window.c`）で置く。windows = { MEMBAR1 全体、MEMBAR2 の +0x2000 から終わりまで }、busy = それまでに置いた窓、`wide = false`（bridge の memory の窓は 32 bit なので 4 GiB の下だけ）。置けなければその root port は使わない（log）。
-8. **BAR を置く**: 窓の中に、大きい BAR から順に `drv_pci_window_place()`（windows = その窓、busy = 置いた BAR、`wide = false`）で置き、BAR に書く（64 bit の BAR の上位は 0）。prefetchable の BAR も non-prefetchable の窓に置く（prefetchable の窓は使わない。どちらに置いても正しい）。
-9. **窓を開ける**: root port の memory base/limit（0x20/0x22）に窓を書き（1 MiB 単位、上位 12 bit）、command の memory と bus master を立てる。endpoint の command は落としたまま（driver が `drv_pci_device_enable()` で立てる）。
+1. **見つける（bus_start）**: bus_start の 32 slot × function（header type の bit 7 で多機能）を CFGBAR で読む。vendor が 0xffff なら無い。firmware が残した値（root port の bus 番号と窓、下の function の BAR）をここで 1 行ずつ log に書く（解析用）。
+2. **root port を止める**: bus_start の function の command（0x04、16 bit）の memory・I/O・bus master を落とす。type 1 header（header type の bit 6:0 = 1、class 0x0604）の root port では、さらに MSI・MSI-X の enable（capability の control）と、PCIe capability の slot control の hot-plug の割り込みの enable・root control の PME の割り込みの enable を落とす（driver の無い root port が firmware の設定で message を出すのを防ぐ）。
+3. **root port の窓を閉じる**（base > limit）: 次の順と幅で書く。I/O: 0x30（32 bit）に 0x0000ffff → 0x1c（**16 bit**、0x1e の secondary status は RW1C なので 32 bit で書かない）に 0x00f0 → 0x30 に 0。memory: 0x20（32 bit）に 0x0000fff0。prefetchable: 0x2c（32 bit）に 0 → 0x24（32 bit）に 0x0000fff0 → 0x28（32 bit）に 0xffffffff。Values referenced と Procedure referenced: Linux 6.12.5 drivers/pci/controller/vmd.c（`vmd_domain_reset` の値と順）。offset の意味は PCI-to-PCI Bridge Spec 1.2。
+4. **bus 番号**: root port を見つけた順に、primary（0x18）= bus_start、secondary（0x19）= subordinate（0x1a）= 次の空き番号（bus_start + 1 から）。番号が bus_end を超える port は**使わない port** にする。
+5. **下を見つけて止める**: 各 root port の secondary の bus の function を列挙し、endpoint の command の memory・I/O・bus master を BAR を測る前に落とす。PMCSR（PM capability + 4）の bit 1:0 が D0 でなければ log する（D0 に戻さず、その port を使わない port にする）。**下に type 1 header（switch）があれば、その root port は使わない port にする**（深さ 1 だけ、U4）。
+6. **BAR の大きさ**: 下の endpoint の BAR0〜5 と、**root port 自身の BAR0・1** を、全部 1 を書いて読み戻す標準の手順で測る（64 bit の BAR は 2 つの register）。I/O の BAR は割り当てない（VMD は I/O を通さない。FreeBSD の `vmd_get_rman` は I/O に NULL）で 0 を書く。ROM の BAR は触らない。root port 自身の memory の BAR の大きさが 0 でなければ、その port を使わない port にする（Intel の root port は普通 BAR を持たない見込み、推測）。
+7. **使わない port の始末**: primary・secondary・subordinate を 0 に書く（core の `drv_pci_bus_scan()` は secondary が 0 の bridge の下を作らない、`pci.c` 471-481）。窓は 3 で閉じたまま、command は 2 で落としたまま。log に理由。
+8. **root port の窓を置く**: 使う root port ごとに、下の memory の BAR の大きさ（最小 4 KiB）を大きい順に、それぞれの大きさに揃えて足した量を 2 の冪（最小 1 MiB）に丸めた大きさの窓を、`drv_pci_window_place()`（`pci-window.c`）で置く。windows = { MEMBAR1 全体、MEMBAR2 の +0x2000 から終わりまで }、busy = それまでに置いた窓、`wide = false`（bridge の memory の窓は 32 bit なので 4 GiB の下だけ）。置けなければその port を使わない port にする（7 の始末）。
+9. **BAR を置く**: 窓の中に、大きい BAR から順に `drv_pci_window_place()`（windows = その窓、busy = 置いた BAR、`wide = false`）で置き、BAR に書く（64 bit の BAR の上位は 0）。prefetchable の BAR も non-prefetchable の窓に置く（prefetchable の窓は使わない。どちらに置いても正しい）。
+10. **窓を開ける**: root port の memory base/limit（0x20/0x22）に窓を書き（1 MiB 単位、上位 12 bit）、command の memory と bus master を立てる。endpoint の command は落としたまま（driver が `drv_pci_device_enable()` で立てる）。
 
 ### 5.2 純な関数に分ける
 
-5.1 の 1〜9 は `pci-vmd-plan.c` の純な関数にし、設定空間の access を関数の表（read・write の callback）で受ける。kernel では §4 の access を渡し、host 試験では配列の上の模型を渡す（§9.1）。hardware を触る部分（MMIO・割り込み・PCI core の呼び出し）は `pci-vmd.c` に置く。
+5.1 の 1〜10 は `pci-vmd-plan.c` の純な関数にし、設定空間の access を関数の表（read・write の callback）で受ける。§6.2 の子の message の slot の表（establish・disestablish・dispatch の数え方）も同じ file の純な部分にする（lock と待ちは callback）。kernel では §4 の access を渡し、host 試験では配列の上の模型を渡す（§9.1）。hardware を触る部分（MMIO・割り込み・PCI core の呼び出し）は `pci-vmd.c` に置く。
 
 ## 6. 割り込み
 
 ### 6.1 VMD 自身の MSI-X
 
-- attach で `drv_pci_device_allocate_irqs(vmd, DRV_PCI_IRQ_ALLOW_MSIX, 1, 1, &irq, &n)` で記録を 1 つ得て、`irq.index` を first vector（467f は 1）に変えてから `drv_pci_device_establish_irq()` で handler を付ける。core の `establish_msix` は `irq->index` の entry の table を map して書く（`pci.c` 1870 行・3523 行）。entry 0 は使わない（467f は entry 0 を子の remap に使わない、§2.1）。
-- MSI-X が無い、または entry が 2 つ未満なら attach を失敗にする（remap ができないので子は割り込みを持てない）。
+- 先に `drv_pci_device_map_msix_table()`（`pci.c` 1699）で VMD の MSI-X の table を map して entry の数を得る。2 未満なら attach を失敗にする（remap ができないので子は割り込みを持てない。core の allocate・`map_msix_entry` は数を確かめない）。first vector 以外の**全部の entry** の vector control の bit 0（mask）を立ててから table を unmap する（firmware が残した entry を止める）。
+- `drv_pci_device_allocate_irqs(vmd, DRV_PCI_IRQ_ALLOW_MSIX, 1, 1, &irq, &n)` で記録を 1 つ得て、`irq.index` を first vector（467f は 1）に変えてから `drv_pci_device_establish_irq()` で handler を付ける。core の `establish_msix` は `irq->index` の entry を map して書く（`pci.c` 1870・3650）。この使い方は今の core で動くが契約として文書に無いので、`pci-vmd.c` の該当の所に理由を書く（U8）。entry 0 は使わない（467f は entry 0 を子の remap に使わない、§2.1）。
+- establish の後に VMD の BAR2・BAR4 を読み直し、attach の初めの値と違えば失敗にする（`pcat_map_bar` は `kern_device_map` が失敗すると 16 MiB 以下の BAR を移すことがある、`pci-pcat.c` 478-505。MEMBAR2 が動くと窓が壊れる。5330 では起きない見込み）。
 - 子の remap を使うので VMCONFIG の bit 1（bypass）を 0 にする（FreeBSD `vmd_set_msi_bypass(dev, false)`、Linux `vmd_set_msi_remapping(vmd, true)` と同じ向き）。
-- 子は全部この 1 つの entry を共有する（§11 の U2）。FreeBSD は entry ごとに利用者を数えて最も空いた entry を選び、Linux は NVMe だけを空いた entry に分ける。5330 の下は NVMe が 1 つ（の見込み）なので 1 つで足りる。
+- 子は全部この 1 つの entry を共有する（U2）。FreeBSD は entry ごとに利用者を数えて最も空いた entry を選び、Linux は NVMe だけを空いた entry に分ける。5330 の下は NVMe が 1 つ（の見込み）なので 1 つで足りる。
+- handler が呼ばれた回数を数え、kernel log の `vmd:` の行で出す（最初の 1 回の時と shutdown の時の合計。p002 の受け入れで読む、§9.3）。
 
 ### 6.2 子の message（`msi_establish` / `msi_disestablish`）
 
-- 表: 子の message の slot を固定の数（16）持つ。各 slot に run・argument・in_flight。
-- `msi_establish`: 空いた slot（run が NULL で in_flight が 0）を取り、run・argument を入れる。handle = slot の番号、address = 0xfee00000 | (first vector ≪ 12)、data = 0。
-- VMD の entry の handler: lock の下で使用中の slot の in_flight を上げて run を取り出し、lock を外して各 run を呼び、lock の下で in_flight を下げる。どれかが仕事を見つけたら 1 を返す。end of interrupt は core（VMD の MSI-X の dispatch）が出す。
+- 表: 子の message の slot を固定の数（16）持つ。各 slot に run・argument・in_flight。表の lock は設定空間の lock（§4）と別の spinlock（割り込みの handler が取るのは表の lock だけ）。
+- **初期化の順**: 表と lock を初期化してから VMD の MSI-X の handler を付ける（unmask の直後に割り込みが来うる）。
+- `msi_establish`: 空いた slot（run が NULL で in_flight が 0）を取り、run・argument を入れる。handle = slot の番号、address = 0xfee00000 | (first vector ≪ 12)、data = 0。Values referenced: FreeBSD 15.0 sys/dev/vmd/vmd.c（`vmd_map_msi`）。
+- VMD の entry の handler: 表の lock の下で使用中の slot の in_flight を上げて run を取り出し、lock を外して各 run を呼び、lock の下で in_flight を下げる。どれかが仕事を見つけたら 1 を返す。end of interrupt は core（VMD の MSI-X の dispatch、`pci.c` 3861-3871）が出す。
 - `msi_disestablish`: slot を空け、in_flight が 0 になるまで 1 ms ずつ最大 1 秒待つ。戻らなければ slot を元に戻し EBUSY（`pci-plda.c` の `host_msi_disestablish` と同じ契約、`pci.h` の msi_establish の comment）。
 - 子の MSI（MSI-X でない）も同じ address・data になる。FreeBSD は MSI を 1 つに限る（`vmd_max_msi = 1`）。zedBSD の allocate_irqs も 1 つだけを返す。
 
@@ -135,23 +142,24 @@ firmware（RST の UEFI driver）の割り当てを当てにせず、毎回同�
 
 ### 7.1 attach
 
+0. 起動の引数に `pci.vmd=off` の語があれば何もせず ENODEV（log `vmd: disabled by pci.vmd=off`）。`hal_get_arch_handoff("boot.command-line")` を語単位で読む（`src/kern/platform/pcat.c` の `boot_fat_uuid` と同じ読み方。parameter の表には入れないので `boot: ignored 1 unknown parameter` も出る、`fpga.no-pl-wait` と同じ扱い）。`docs/reference/kernel-boot-parameters.md` に 1 節足す。5330 で VMD の attach が止まる時の逃げ道（§10）。
 1. `drv_pci_device_enable_memory()`・`drv_pci_device_set_bus_master()`（FreeBSD `pci_enable_busmaster`）。
-2. BAR0・2・4 を `drv_pci_device_bar()` で読み、CFGBAR を `drv_pci_device_map_bar()` で map。MEMBAR1・2 は map しない（範囲を窓として使うだけ）。
-3. VMCAP・VMCONFIG を読み bus_start・bus_end を決める。VMCONFIG の bit 9:8 が 3 なら失敗。
+2. BAR0・2・4 を `drv_pci_device_bar()` で読み、`drv_pci_device_claim_bar()` で 3 つとも claim（他の利用を防ぐ、`drv_pci_device_map_bar()` は claim していない BAR を EINVAL にする、`pci.c` 1645）。CFGBAR を `drv_pci_device_map_bar()` で map。MEMBAR1・2 は map しない（範囲を窓として使うだけ）。
+3. VMCAP・VMCONFIG を読み bus_start・bus_end を決める。VMCONFIG の bit 9:8 が 3 なら失敗。vendor capability の "SHDW" を見る（§1.2）。
 4. log: `vmd: 0000:00:0e.0 8086:467f buses e0-ff cfgbar ... membar1 ... membar2 ... vmcap .... vmconfig .... msix N`。
-5. MSI-X の entry を付け（§6.1）、bypass を切る。
-6. 割り当て（§5）。root port ごとに log: `vmd: root port ffff:e0:06.0 bus e1 window ...-...` と BAR ごとに `vmd: ffff:e1:00.0 BAR0 ... size ...`。firmware が残していた値も 1 行。
+5. 子の message の表を初期化し、MSI-X の entry を付け（§6.1）、bypass を切る。
+6. 割り当て（§5）。root port ごとに log: `vmd: root port ffff:e0:06.0 bus e1 window ...-...` と BAR ごとに `vmd: ffff:e1:00.0 BAR0 ... size ...`。firmware が残していた値と、使わない port の理由も 1 行ずつ。
 7. root bus を作り scan（§3）。
-8. 失敗は途中までを戻す（MSI-X の handler を外す、CFGBAR を unmap）。root bus を作った後の失敗は無い（scan の結果は問わない）。
+8. 失敗は途中までを戻す（MSI-X の handler を外す、CFGBAR を unmap、BAR を release）。root bus を作った後の失敗は無い（scan の結果は問わない）。
 
 ### 7.2 detach・shutdown
 
 - detach: 子が付いている間は EBUSY。boot の後に VMD を外す経路は無いので、子の detach から順に戻す一般の手順は作らない。
-- shutdown: 何もしない（子の shutdown は core が先に呼ぶ）。
+- shutdown: 何もしない（子の shutdown は core が先に呼ぶ、`pci.c` 287）。VMCONFIG・bus 番号・窓は書いたまま残る。reboot の後の firmware（RST の UEFI driver）と Debian が NVMe から起動できることを §9.3 で確かめる。
 
 ### 7.3 suspend・resume（S0 idle）
 
-VMD の domain の root port は zedBSD の PCI core から見ると driver の無い bridge で、D3 からの戻りで窓・bus 番号が消えると子が見えなくなる。p002 では VMD の `suspend` が EBUSY を返して S0 idle に入らないようにする（`drv_pci_suspend_all` が失敗を返す function を報告する。5330 の S0 idle は p002 の範囲の外）。§11 の U7。
+VMD の domain の root port は zedBSD の PCI core から見ると driver の無い bridge で、D3 からの戻りで窓・bus 番号が消えると子が見えなくなる。p002 では VMD の `suspend` が EBUSY を返す。`drv_pci_suspend_all` は深い物から suspend する（`pci-power.c` 806）ので、NVMe（深さ 2）と深さ 1 の一部が先に suspend され、VMD の EBUSY で全体が失敗し、先に suspend された物が resume で戻される。つまり**この driver の入った 5330 では S0 idle は毎回失敗する**（WS052 は保留なので実害は小さい）。U7。
 
 ## 8. file と結線
 
@@ -159,10 +167,11 @@ VMD の domain の root port は zedBSD の PCI core から見ると driver の�
 | --- | --- |
 | `include/drivers/pci/pci-vmd.h` | `drv_pci_vmd_driver_register()`、plan の型（host 試験も使う） |
 | `src/drivers/pci/pci-vmd.c` | driver（match・attach・bus の ops・割り込み） |
-| `src/drivers/pci/pci-vmd-plan.c` | §5 の純な割り当て（hardware に触らない、host 試験がそのまま compile する） |
-| `platform/amd64/vmunix.mk` | `CONFIG_DRIVER_PCI_VMD` が y の時に 2 つの .c を足す（`pci-window.c` は既に入っている） |
+| `src/drivers/pci/pci-vmd-plan.c` | §5 の純な割り当てと §6.2 の slot の表（hardware に触らない、host 試験がそのまま compile する） |
+| `platform/amd64/vmunix.mk` | `CONFIG_DRIVER_PCI_VMD` が y の時に 2 つの .c と `pci-window.c` を足す（`pci-window.c` は今 `CONFIG_DRIVER_ACPI=y` の時だけ link される、353-355 行。二重にならないよう `$(sort ...)`） |
 | `Makefile` | `CONFIG_DRIVER_PCI_VMD ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)` と `-DCONFIG_DRIVER_PCI_VMD=` |
-| `src/kern/platform/pcat.c` | NVMe・AHCI の登録の後に `drv_pci_vmd_driver_register()` |
+| `src/kern/platform/pcat.c` | `drv_pci_pcat_init()` の前の PCI driver の登録の並び（NVMe・AHCI の後）に `drv_pci_vmd_driver_register()` |
+| `docs/reference/kernel-boot-parameters.md` | `pci.vmd=off` の節 |
 | `plan/ws298/tests/host-vmd-plan.c`・`run-host-vmd.sh` | §9.1 |
 
 規約は [plan/coding-style.md](../coding-style.md) の全文。出典は block ごとに複数行の comment で `Values referenced: FreeBSD 15.0 sys/dev/vmd/vmd.c (...)`・`Procedure referenced: Linux 6.12.5 drivers/pci/controller/vmd.c (...)` の形、file の先頭には書かない（Guardrail）。名前は FreeBSD・Linux の symbol を写さず自分で付ける。
@@ -171,48 +180,74 @@ VMD の domain の root port は zedBSD の PCI core から見ると driver の�
 
 ### 9.1 host 試験（p002、短い）
 
-配列の上の CFGBAR の模型: bus_start 224、slot 6 に root port（type 1、class 0x0604、窓は firmware の値の入った状態）、その下の bus に NVMe（BAR0 64 bit 16 KiB、全部 1 を書いた時に大きさの mask を返す）。確かめる事:
+配列の上の CFGBAR の模型（bus_start 224、全部 1 を書いた BAR が大きさの mask を返す）で、`pci-vmd-plan.c` を kernel と同じ flag で compile して確かめる（`plan/ws159/tests/run-host-pci-window.sh` と同じ形）:
 
-1. 設定空間の offset の計算と範囲の外（bus 223・256 相当、CFGBAR の終わりを越える access）。
+1. 設定空間の offset の計算と範囲の外（bus 223・bus_end + 1、CFGBAR の終わりを越える access）。範囲の外の read が幅に合わせて 0xff・0xffff・0xffffffff になる事。
 2. VMCONFIG の bit 9:8 の 0・1・2・3 の扱い。
-3. 割り当ての結果: root port の bus 番号（e0/e1/e1）、窓（MEMBAR1 の中、1 MiB 揃え、4 GiB の下）、NVMe の BAR0（窓の中、16 KiB 揃え、上位 0）、窓を閉じる値、command の bit。
-4. MEMBAR2 の先頭 0x2000 に何も置かない。MEMBAR1 が 4 GiB の上で MEMBAR2 が小さい時に「置けない」を返す。
-5. 下に switch がある root port を扱わない。
-6. 子の MSI の address が 0xfee01000（first vector 1）、data 0。
+3. 5330 の形（slot 6 の root port、下に NVMe の BAR0 64 bit 16 KiB）: root port の bus 番号（e0/e1/e1）、窓（MEMBAR1 の中、1 MiB 揃え、4 GiB の下）、NVMe の BAR0（窓の中、16 KiB 揃え、上位 0）、窓を閉じる値と順と幅、command の bit、MSI・hot-plug・PME の enable が落ちる事。
+4. 一つの endpoint の複数の BAR（32 bit・64 bit・prefetchable 64 bit・I/O・4 KiB 未満）: 大きい順に詰める、I/O は 0、4 KiB 未満は 4 KiB を取る。
+5. 二つの root port、下が空の port、bus_end を超える port、firmware の古い番号の残った switch の下の port、BAR を持つ root port、D0 でない endpoint: 使わない port の bus 番号が 0 になり窓が閉じたままである事。
+6. MEMBAR2 の先頭 0x2000 に何も置かない。MEMBAR1 が 4 GiB の上で MEMBAR2 が小さい時に「置けない」を返す。
+7. 子の message の表: address が 0xfee01000（first vector 1）・data 0、establish の再利用、in_flight の残る slot の disestablish が EBUSY で元に戻る事、表が満ちた時の ENOSPC。
 
 ### 9.2 build
 
-`make ZEDBSD_CONFIG=plan/tools/hw5330/config-5330.mk BUILD=<自分の dir> disk-image`（または kernel だけの target）で warning 0。
+`make ZEDBSD_CONFIG=plan/tools/hw5330/config-5330.mk BUILD=<自分の dir> disk-image`（または kernel だけの target）で warning 0。`CONFIG_DRIVER_ACPI=n` の amd64 の構成でも link が通る事（`pci-window.c` の結線）。
 
-### 9.3 素の 5330（p002 の受け入れ）
+### 9.3 素の 5330（p002 の受け入れ、T1 に依頼）
 
-q1612 の手順と同じ 5330 の USB（または q1612 が済んでいれば NVMe の区画）から起動し、kernel log で:
+実装の担当は 5330 を起動しない（AGENTS.md の試験の方針）。T1 に、§12 D1 が決まった形の USB の image（`--image` で zedBSD の image を書き戻す。今の USB は SystemRescue）で 1 回の起動を依頼する。`plan/tools/hw5330/5330-run.sh` は 5330 の Linux へ戻るので、その戻りで reboot の後の確認もできる。読む事:
 
-- `vmd:` の行（bus の範囲、root port、NVMe の BAR）。
-- `nvme:` の attach が segment ffff の function で出る。
-- `vfs: native boot disk=... physical disks=2`。
-- zedBSD の ssh から NVMe の disk の先頭を読み、GPT の署名（LBA 1 の `EFI PART`）を確かめる（device の名前は p002 で確かめる）。書き込みはしない。
+- kernel log の `vmd:` の行（bus の範囲、root port、NVMe の BAR、使わない port が無い事）と handler の回数の行。
+- `nvme:` の attach が segment ffff の function で出る。nvme の timeout・recovery・quarantine の行が 0。
+- `vfs: native boot disk=... physical disks=2`。root が USB の root の区画に解決される（D1 の形で）。
+- `EXTRA` の command で、zedBSD から NVMe の disk の先頭を読み LBA 1 の `EFI PART` を確かめ、続けて数十 MiB 以上を連続して読む（読むだけ。device の名前は p002 で確かめる）。
+- zedBSD から reboot した後、Debian が NVMe から普通に上がる（5330-run.sh の Linux への戻り）。
+- survey の参照の差（§3 の列挙の順）は参照を更新してから判定する。
 
-この試験は 5330 を 1 回起動する（`plan/tools/hw5330/5330-run.sh --kernel` で USB の kernel を差し替え、`EXTRA` で読み取りの command）。QEMU の確認は無い（QEMU に VMD の model が無い）。
+QEMU の確認は無い（QEMU に VMD の model が無い）。
 
-## 10. p002 の順
+## 10. p002 の順と止め方
 
-1. §2.3 を読む（5330 が空いてから、読むだけ）。前提を確かめる。
+1. §2.3 を読む（5330 の使用を Q1 と調整してから、Debian で読むだけ）。前提（4 GiB の下に 1 MiB 以上の窓、MSI-X の entry が 2 以上、VMCONFIG の bus の開始が 2）が崩れたら p002 を止め、設計を直して Q1 に返す。
 2. `pci-vmd-plan.c` と host 試験。
-3. `pci-vmd.c`、結線、build。
-4. 5330 で 1 回（§9.3）。だめなら kernel log の `vmd:` の行で段を切り分ける（設定空間・割り当て・MSI-X・NVMe の reset）。
-5. 記録、commit、Q1 へ。
+3. `pci-vmd.c`、結線、`pci.vmd=off`、build。
+4. T1 に 5330 の 1 回を依頼（§9.3）。止まった時（ssh が戻らない）はユーザーの電源の入れ直しが要る。次の起動では `pci.vmd=off` を付けて切り分ける（5330-run.sh の DEBUG の行の足し方と同じ形で cfg に足す）。だめなら kernel log の `vmd:` の行で段を切り分ける（設定空間・割り当て・MSI-X・NVMe の reset）。
+5. 記録、commit、Q1 へ。merge は §12 D1 が決まり、USB の回帰が壊れない事を確かめてから。
 
 ## 11. 判断の項目（design-reviewer とユーザーへ）
 
+design-reviewer は U1〜U9 に全部賛成（条件つき: U1 は使わない port の bus 番号を 0 にする事、U7 は §7.3 の記述、U8 は `irq.index` の理由を code に書く事。いずれも版 2 に入れた）。
+
 | ID | 項目 | 推し | 他の案 |
 | --- | --- | --- | --- |
-| U1 | firmware の割り当てを捨てて毎回割り当てる（§5） | 推し: 毎回割り当て（Linux と同じ向き、試験しやすい） | firmware の値が正しければ使う（FreeBSD の向き）。firmware の値の形が分からないので検証の分岐が増える |
-| U2 | 子の割り込みは VMD の entry 1 つを共有 | 推し: 1 つ（5330 は NVMe だけ） | entry ごとに利用者を数えて分ける（FreeBSD・Linux）。NVMe が複数の機械で要る |
-| U3 | secondary bus reset をしない | 推し: しない（FreeBSD もしない。NVMe の driver が controller を reset する） | Linux は probe で root port の下を reset する（約 1 秒かかる） |
-| U4 | root port の下は深さ 1（switch は扱わない） | 推し: 深さ 1 | 再帰で switch も扱う |
-| U5 | Linux の BIOS_PM_QUIRK（LTR・ASPM）をしない | 推し: しない（機能に要らない。電力は後） | する |
+| U1 | firmware の割り当てを捨てて毎回割り当てる（§5） | 推し: 毎回割り当て（Linux と同じ向き、試験しやすい）。firmware の値は log に残す | firmware の値が正しければ使う（FreeBSD の向き）。firmware の値の形が分からないので検証の分岐が増える |
+| U2 | 子の割り込みは VMD の entry 1 つを共有 | 推し: 1 つ（5330 は NVMe だけ） | entry ごとに利用者を数えて分ける（FreeBSD・Linux）。NVMe が複数の機械で要る（Future Work） |
+| U3 | secondary bus reset をしない | 推し: しない（FreeBSD もしない。NVMe の driver が controller を reset する） | Linux は probe で root port の下を reset する（約 1 秒かかる）。NVMe の attach が失敗した時の回復として Future Work |
+| U4 | root port の下は深さ 1（switch は扱わない） | 推し: 深さ 1（使わない port の始末つき） | 再帰で switch も扱う |
+| U5 | Linux の BIOS_PM_QUIRK（LTR・ASPM）をしない | 推し: しない（機能に要らない）。5330 の電池の消費が悪くなりうるので Future Work に記録 | する |
 | U6 | segment を 0xffff − instance | 推し: その通り（FreeBSD と同じ） | 0x1000 から上 |
-| U7 | S0 idle の間 VMD は EBUSY で止める | 推し: 止める（5330 の S0 idle は今の範囲の外） | root port の状態を保存・復元する |
+| U7 | VMD の suspend は EBUSY（S0 idle は毎回失敗） | 推し: その通り（5330 の S0 idle は今の範囲の外） | root port の状態を保存・復元する |
 | U8 | HAL・PCI core を変えない | 推し: 変えない（hook で足りる） | — |
-| U9 | Intel の公開の register の文書を探していない | 推し: FreeBSD（BSD-2）と Linux の照合で足りる、と記録 | Intel の datasheet で確かめる |
+| U9 | Intel の公開の register の文書を探していない | 推し: FreeBSD（BSD-2）と Linux の照合で値が一致、と記録 | Intel の datasheet で確かめる |
+
+## 12. 人の判断が要る事（p002 の前・merge の前）
+
+### D1. 同じ PARTLABEL が二つになる（重大、design-review の 1）
+
+q1612 で NVMe に作った区画は p5 `zedBSD-root`・p6 `zedBSD-swap`。5330 の試験の USB の image の `zedbsd.cfg` は `rootpart=PARTLABEL=zedBSD-root swap0=PARTLABEL=zedBSD-swap`。VMD の driver で NVMe が見えると、`block_identity_resolve()` が二つめの一致で EEXIST を返し（`src/kern/block-identity.c` 188）、vfs が root の selector の解決で失敗する（`src/kern/vfs.c` 2135-2138）。**この driver が main に入った時点で 5330 の USB の回帰（5330-run.sh）が全部落ちる**。止まると遠隔の電源が無い。案:
+
+- (a) 5330 の試験の USB の image の cfg を PARTUUID か device の名前で指す（image を書いた後に cfg を書き換える。5330-run.sh の仕事）。
+- (b) NVMe の区画の PARTLABEL を別の名前にする（例 `zedBSD-nvme-root`・`zedBSD-nvme-swap`、中身はまだ無いので名前を変えるだけ。NVMe の区画の `zedbsd.cfg` はその名前を指す）。
+- (c) boot0（loader が読んだ FAT）と同じ disk の区画を優先する（vfs・block-identity の変更、別の WS）。
+
+推し: (b)。今すぐ・安く・USB の image と 5330-run.sh を変えずに済む。(c) は複数の zedBSD の disk を持つ機械の一般の解として Future Work。
+
+### D2. WS298 の到達目標と q1612 の後段（design-review の 3）
+
+WS298 の目標は「5330 の NVMe の区画から root を mount できる」だが、p002 の受け入れは「見えて読める」まで。NVMe の区画への書き込み・NVMe からの起動は q1612 の後段（plan/queue.md: zedBSD の起動は WS298 の後）。案:
+
+- (a) WS298 の目標を「VMD の下の NVMe が見えて読める」に絞り、NVMe からの起動は q1612 の後段（5330-run.sh の `--nvme`）で確かめる。
+- (b) WS298 に p004「NVMe の区画に書き、NVMe から起動して root を mount する」を足す。
+
+推し: (a)。起動の手順は q1612 の道具（5330-run.sh・live USB）の仕事で、driver の WS と分けた方が依存が単純。
