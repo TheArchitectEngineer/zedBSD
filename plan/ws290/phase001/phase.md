@@ -3,7 +3,7 @@
 # ws290-p001 設計: GHCI 2.0 の driver の書き直し
 
 - 親: [WS290](../ws.md)。
-- 状態: planned（2026-10-26 Q1 新設）
+- 状態: in-progress（2026-10-26 P1、q1594-i01。design.md 版 2 と review の反映まで済み。受け入れの「疑問の一覧がユーザーに示されている」は Q1 の提示を待つ）
 - 由来: WS290 の出典と決定（ws.md）。
 
 ## 範囲（code は書かない）
@@ -30,3 +30,9 @@
 ## 記録
 
 - 2026-10-26 Q1: 新設。
+- 2026-10-26 P1（q1594-i01、worktree `/home/awe/zedBSD-worktrees/p1-ws290`、branch agent/p1-ws290）:
+  - 読んだ物: amaterrace-gpu `docs/ghci.md`（**4d12da1**、`git show` だけ。読んだ時点の main be3cf15 と `docs/`・`include/` に差なし）、同 `include/ghci2_regs.h`・`ghci_cmd.h`・`ghci_layout.h`・`gsi1_isa.h`、同 `plan/ws001/ws.md`・`phase004`・`phase005`・`phase007`、zedBSD の `src/drivers/gpu/ghci/`（49 file、33136 行）、`include/uapi/gpu-op.h`・`include/drivers/gpu/gpu.h`・`include/drivers/generic/dma.h`、platform の vmunix.mk、`pcat.c`・`vf2-pcie.c`、userland の ghcictl・ghci-blit・ghci-display、`plan/ws288/tests/`、amdrdna の `vk/`、WS288 design §6。amaterrace-gpu には書き込み・build・git の状態の変更をしていない。
+  - 書いた物: [design.md](../design.md)（版 1 2721c49fc → 版 2）。構成（§4）、流れ・状態・寿命・lock・割り込み・DMA・失敗（§5〜§10）、executor（§11）、compiler（§12）、表示（§13）、host 試験（§15）、Phase p002〜p013（196 LW、§18）、ghci.md の疑問 G01〜G39（§19）、ghci.md 以外の判断 U1〜U7（§20）。
+  - design-reviewer: 28 件（Critical 1・High 6・Medium 17・Low 4）、本文 [design-review.md](../design-review.md)。全部を版 2 に反映（design.md §23）。
+  - 確かめ: `git diff --check -- plan/ws290/` で出力なし。source は変えていない（`git status` で plan/ws290/ の外に差なし）。build・host 試験・QEMU・実機は対象外（設計の Phase）で未実施。
+  - 残り: Q1 が §19 の G01〜G39 と §20 の U1〜U7 をユーザーに示す。Q1 が p002 以降の phase.md を design §18 から立てる。WS288 の 1.1 の試験の削除は p003・p004 で path を Q1 に送る。
