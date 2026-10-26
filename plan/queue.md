@@ -1003,3 +1003,4 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | q1599 / q1599-i01 | P4 | [WS252](ws252/ws.md) p002〜p008 | RKL・ADL-S/RPL-S・ICL の GT。実機が無い物は host 試験まで（D5「無いまま」）、5330 で退行が無いこと | pending |
 
 | q1600 / q1600-i01 | P2（同じ worktree p2-ws291） | ws291-p002a | amdrdna の executor に depth・index draw・mip（mview が動く 3D）。承認: ユーザー「機能を足してから比較（推し）」 | pending |
+| q1601 / q1601-i01 | P4 | WS252（firmware） | driver が名指す DMC の全部（rkl・adls・icl を足す）を zedBSD-firmware の i915/（SHA256SUMS・LICENSE）と userland/firmware/i915（Makefile の照合・manifest・WS233 の firmware-inventory）に。zedBSD-firmware は local の commit まで、push はユーザーの指示の時。承認: 2026-10-26 23:58 ユーザー「zedBSD-firmware/ツリーに、i915の依存としてすべて入れられませんか？」 | pending（p004 の後） |

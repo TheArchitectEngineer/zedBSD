@@ -144,4 +144,4 @@ Future Work は実行を許可しない。
 
 2026-10-05 Q1（WS140 の結果の反映）: F-070（ld.so の上限の動的化）は WS140 で実装した（0484201b・360c7dbe・a555c47a、T1-164 PASS、amd64）。ws115-p010 の手順 1（定数を上げる）は不要になったので、再開の時は gtk4-widget-factory の起動から確かめる。
 
-| fw-i915-dmc-rkl-adls-icl | RKL・ADL-S・ICL の DMC firmware（rkl_dmc_ver2_03.bin・adls_dmc_ver2_01.bin・icl_dmc_ver1_09.bin）を i915-firmware の package に | 表示の省電力（DC5/DC6）。無くても表示は動く。userland/firmware/i915/Makefile の cache の照合・manifest・WS233 の firmware-inventory・mirror の追従が要る | 2026-10-26 23:54 WS252 p002（P4 の推し、Q1 の判断: 実機が無いので WS252 では足さない） | deferred | その platform の実機が手に入った時 | [WS252](ws252/ws.md) |
+| fw-i915-dmc-rkl-adls-icl | RKL・ADL-S・ICL の DMC firmware（rkl_dmc_ver2_03.bin・adls_dmc_ver2_01.bin・icl_dmc_ver1_09.bin）を i915-firmware の package に | 表示の省電力（DC5/DC6）。無くても表示は動く。userland/firmware/i915/Makefile の cache の照合・manifest・WS233 の firmware-inventory・mirror の追従が要る | 2026-10-26 23:54 WS252 p002（P4 の推し、Q1 の判断: 実機が無いので WS252 では足さない） | promoted（2026-10-26 23:58 ユーザー「zedBSD-firmware/ツリーに、i915の依存としてすべて入れられませんか？」→ WS252 の q1601） | — | [WS252](ws252/ws.md) |
