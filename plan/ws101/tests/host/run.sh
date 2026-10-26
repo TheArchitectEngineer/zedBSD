@@ -11,7 +11,7 @@
 # 4. compute-lower.c runs each module's IR on a small interpreter, dispatch by dispatch, and compares the buffers with
 #    what C computes on its own.
 # 5. executor-test.c (ws101-p003) creates compute pipelines and records dispatches through the executor's wire.
-# 6. compute-batch-test.c (ws101-p004) writes dispatches' slots and commands (render/compute.c) and checks the slots;
+# 6. compute-batch-test.c (ws101-p004) writes dispatches' slots and commands (vk/vk-compute.c) and checks the slots;
 #    genxml-check.py decodes the commands and the interface descriptors with Mesa's genxml (gen120.xml) and checks
 #    their fields.
 #
@@ -104,7 +104,10 @@ driver=$repo/src/drivers/gpu/i915
 executor=""
 for part in codec object dispatch transport instance vulkan fence objects reply memory image descriptor pipeline \
     pipeline-prepare render-pass sync state batch math forget video video-mfx video-h264-tables; do
-	executor="$executor $driver/render/$part.c"
+	case $part in
+	vulkan) executor="$executor $driver/vk/vk.c" ;;
+	*) executor="$executor $driver/vk/vk-$part.c" ;;
+	esac
 done
 executor="$executor $repo/src/drivers/gpu/compiler/spirv.c"
 for part in compile eu; do
@@ -118,7 +121,7 @@ cc -std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_AB
 # ws101-p004: the dispatch's slot and commands, compute.c inside the test itself, on the same stand-ins.
 cc -std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_ABI_LP64 -DVK_REPO="\"$repo\"" \
 	-I"$repo/include" -I"$repo" -idirafter "$repo/include/libc" -o "$work/batch" "$here/compute-batch-test.c" \
-	$executor "$driver/render/command.c" -lm || exit 1
+	$executor "$driver/vk/vk-command.c" -lm || exit 1
 "$work/batch" "$work" "$work/dispatch" || status=1
 if [ $decode -eq 1 ]; then
 	for name in add ids indirect reduce; do

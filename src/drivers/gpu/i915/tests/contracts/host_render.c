@@ -13,7 +13,7 @@
 #include "contract.h"
 #include "host_render.h"
 
-#include "../../render/state.h"
+#include "../../vk/vk-state.h"
 
 #include <kern/klog.h>
 #include <kern/kmem.h>

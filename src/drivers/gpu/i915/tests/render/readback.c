@@ -16,8 +16,8 @@
  * the first target as a small brightness map.
  */
 
-#include "../../render/gfx.h"
-#include "../../render/memory.h"
+#include "../../vk/vk-gfx.h"
+#include "../../vk/vk-memory.h"
 
 #include <kern/klog.h>
 

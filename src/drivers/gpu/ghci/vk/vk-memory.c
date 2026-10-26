@@ -35,7 +35,7 @@
 #include "vk.h"
 #include "vk-engine.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The flags of GHCI_MEMORY: the memory is host visible, and it is another session's. */
 #define MEMORY_HOST_VISIBLE		0x1U

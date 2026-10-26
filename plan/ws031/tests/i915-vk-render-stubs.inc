@@ -10,7 +10,7 @@
  * cmdbuf, sync).
  *
  * run-vk-host-tests.sh links each fixture with the executor's own objects:
- * every file of src/drivers/gpu/i915/render/ that decodes, records or
+ * every file of src/drivers/gpu/i915/vk/ that decodes, records or
  * emits, and the shader compiler, each built as its own translation unit
  * exactly as the kernel builds it.  This file supplies what those objects
  * take from the rest of the kernel, and the fixture session they run in:
@@ -43,13 +43,13 @@
 #include "../../../src/drivers/gpu/i915/i915.h"
 #include "../../../src/drivers/gpu/i915/memory.h"
 #include "../../../src/drivers/gpu/i915/session.h"
-#include "../../../src/drivers/gpu/i915/render/codec.h"
-#include "../../../src/drivers/gpu/i915/render/draw.h"
-#include "../../../src/drivers/gpu/i915/render/gfx.h"
-#include "../../../src/drivers/gpu/i915/render/internal.h"
-#include "../../../src/drivers/gpu/i915/render/object.h"
-#include "../../../src/drivers/gpu/i915/render/render.h"
-#include "../../../src/drivers/gpu/i915/render/transport.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-codec.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-draw.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-gfx.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-internal.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-object.h"
+#include "../../../src/drivers/gpu/i915/vk/vk.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-transport.h"
 
 /* The largest stream one fixture command is built into. */
 #define STUB_WIRE_BYTES		65536U
@@ -881,6 +881,7 @@ stub_session_open(
 	/* The device an Alder Lake-P executor serves. */
 	memset(&stub_device, 0, sizeof(stub_device));
 	stub_device.product = 0x46a6U;
+	stub_device.gt.graphics_ver = 12U;
 
 	/* The reply blob, whose physical address is its host pointer. */
 	memset(&stub_reply_object, 0, sizeof(stub_reply_object));
@@ -1008,11 +1009,11 @@ stub_allocate(
 }
 
 /*
- * ws101-p004: the dispatch of a compute pipeline (render/compute.c), which
+ * ws101-p004: the dispatch of a compute pipeline (vk/vk-compute.c), which
  * command.c calls, stands in here as the draw does: it records the call and
  * the groups and reports success.
  */
-#include "../../../src/drivers/gpu/i915/render/compute.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-compute.h"
 
 /* How many dispatches ran, and the groups of the last one (its indirect counts' address, ws101-p007: 0 for none). */
 static unsigned stub_dispatch_calls;

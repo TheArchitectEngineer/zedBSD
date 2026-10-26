@@ -39,8 +39,8 @@ variant held.
 | `pte` | `ggtt.c`, `ppgtt.c` (encoders only) |
 | `sync` | `sync.c` (completion only), `workqueue.c`, `mmio.c`, `trace.c` |
 | `rps` | `gt-power.c` (RPS: enable, start, interrupt, work, boost, stop), `workqueue.c`, `mmio.c`, `trace.c` |
-| `memory` | `render/memory.c` (vkFreeMemory before what is bound to it), `render/object.c`, `render/codec.c`, `render/reply.c` |
-| `forget` | `render/forget.c` (an object destroyed before the views, sets, framebuffers and command buffers that name it), `render/object.c`, `render/descriptor.c`, `render/codec.c`, `render/reply.c` |
+| `memory` | `vk/vk-memory.c` (vkFreeMemory before what is bound to it), `vk/vk-object.c`, `vk/vk-codec.c`, `vk/vk-reply.c` |
+| `forget` | `vk/vk-forget.c` (an object destroyed before the views, sets, framebuffers and command buffers that name it), `vk/vk-object.c`, `vk/vk-descriptor.c`, `vk/vk-codec.c`, `vk/vk-reply.c` |
 | `reset` | `reset.c` (the reset of one engine: VCS0 through GEN11_GRDOM_MEDIA with the ready handshake and the converter lock; the checked reset's quarantine release with the retained video records), `mmio.c`, `trace.c` |
 
 ## Host build notes

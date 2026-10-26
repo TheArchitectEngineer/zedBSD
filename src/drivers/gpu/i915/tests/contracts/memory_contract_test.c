@@ -8,7 +8,7 @@
 /*
  * The executor's VkDeviceMemory lifetime contract, checked on the host.
  *
- * Runs render/memory.c and render/object.c with the wire commands
+ * Runs vk/vk-memory.c and vk/vk-object.c with the wire commands
  * libvulkan sends: buffers and an image are bound to an allocation, and
  * the allocation is freed before them (against the Vulkan rules, as a bad
  * application may).  The buffers and the image bound to it let go of it,
@@ -24,11 +24,11 @@
 
 #include "../../i915.h"
 #include "../../memory.h"
-#include "../../render/gfx.h"
-#include "../../render/internal.h"
-#include "../../render/memory.h"
-#include "../../render/object.h"
-#include "../../render/state.h"
+#include "../../vk/vk-gfx.h"
+#include "../../vk/vk-internal.h"
+#include "../../vk/vk-memory.h"
+#include "../../vk/vk-object.h"
+#include "../../vk/vk-state.h"
 
 #include <kern/lock.h>
 

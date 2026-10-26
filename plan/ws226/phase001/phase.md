@@ -54,11 +54,11 @@ Prerequisites: 無し（調べの段）。
 
 | 事実 | 所在 |
 | --- | --- |
-| i915 の executor は `apiVersion = 1.1`（注記「library が native の 1.1 を要る」）、limit は `standardSampleLocations`・copy の alignment 2 つ・`nonCoherentAtomSize` だけを書き、他は 0（注記「XXX: Gen12 が楽に満たす値、hardware の最大の写しではない」）。features は `vertexPipelineStoresAndAtomics`・`logicOp`・`shaderInt16`・`geometryShader` の 4 つだけ（`robustBufferAccess` も無い） | `src/drivers/gpu/i915/render/instance.c:280-330, 450-500` |
+| i915 の executor は `apiVersion = 1.1`（注記「library が native の 1.1 を要る」）、limit は `standardSampleLocations`・copy の alignment 2 つ・`nonCoherentAtomSize` だけを書き、他は 0（注記「XXX: Gen12 が楽に満たす値、hardware の最大の写しではない」）。features は `vertexPipelineStoresAndAtomics`・`logicOp`・`shaderInt16`・`geometryShader` の 4 つだけ（`robustBufferAccess` も無い） | `src/drivers/gpu/i915/vk/vk-instance.c:280-330, 450-500` |
 | bcm2711 の executor は `apiVersion = 1.1`、limit は一部を書く: `maxImageArrayLayers 1`、`maxColorAttachments 1`、`maxFragmentOutputAttachments 1`、`maxFramebufferLayers 1`、`framebufferColorSampleCounts` は 1 だけ、`maxPerStageResources 20`、`maxDrawIndirectCount 0` ほか（Vulkan 1.0 の最小は 256・4・4・256・1\|4・128・1） | `src/drivers/gpu/bcm2711/vulkan-query.c:290-375` |
 | 共有の SPIR-V の前段は `OpCapability`・`OpExtension`・`OpMemoryModel` を読み飛ばし、訳せない命令を断る（能力の宣言で断るのではなく、命令で断る） | `src/drivers/gpu/compiler/spirv.c:1600-1650` |
 | venus の kernel の driver は command の stream を中を見ずに運ぶ（private の framing の検査だけ） | `src/drivers/gpu/venus/transport.c:591`、`share.c:427` |
-| i915 の executor の opcode の振り分けは範囲で行う（file の中の名前の grep では数えられない）。bcm2711 は opcode の名前で振り分ける（grep の目安で 83 の opcode、indexed の draw・compute の dispatch・query の名前が見当たらない。数は p003 で道具を作って測る） | `i915/render/dispatch.c:1-60`、`bcm2711/*.c` |
+| i915 の executor の opcode の振り分けは範囲で行う（file の中の名前の grep では数えられない）。bcm2711 は opcode の名前で振り分ける（grep の目安で 83 の opcode、indexed の draw・compute の dispatch・query の名前が見当たらない。数は p003 で道具を作って測る） | `i915/vk/vk-dispatch.c:1-60`、`bcm2711/*.c` |
 
 ### 1.4 外の事実（取得した物と公開の情報）
 

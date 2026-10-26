@@ -27,7 +27,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/i915/render/codec.h"
+#include "drivers/gpu/i915/vk/vk-codec.h"
 
 /* Names a parameter a function does not use (as the driver's other files do). */
 #ifndef UNUSED_PARAMETER

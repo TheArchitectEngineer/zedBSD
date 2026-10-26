@@ -18,7 +18,7 @@
 #include "drivers/gpu/bcm2711/render-device.h"
 
 /* Generated device-independent Zlib record encoding remains shared read-only source. */
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* Driver-owned limits bound the implemented single-sample, one-layer graphics path. */
 #define VULKAN_IMAGE_SIDE 4096U

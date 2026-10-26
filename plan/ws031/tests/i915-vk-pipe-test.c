@@ -7,8 +7,8 @@
 
 /*
  * Host fixture for shader modules and graphics pipelines
- * (render/pipeline.c, pipeline-prepare.c) and the shader state a draw emits
- * for a pipeline (render/state.c).
+ * (vk/vk-pipeline.c, vk-pipeline-prepare.c) and the shader state a draw emits
+ * for a pipeline (vk/vk-state.c).
  *
  * vkCreateShaderModule and vkCreateGraphicsPipelines are driven through the
  * wire with the vkdemo shaders, so the pipeline's kernels come from the
@@ -23,9 +23,9 @@
 #include "i915-vk-render-stubs.inc"
 
 #include "../../../src/drivers/gpu/i915/compiler/compiler.h"
-#include "../../../src/drivers/gpu/i915/render/batch.h"
-#include "../../../src/drivers/gpu/i915/render/heap.h"
-#include "../../../src/drivers/gpu/i915/render/state.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-batch.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-heap.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-state.h"
 
 #include "../../../src/drivers/gpu/i915/intel/genxml.h"
 
@@ -591,6 +591,7 @@ test_graphics_pipeline(void)
 	batch.count = 0U;
 	batch.capacity = 256U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	drv_i915_gfx_emit_vertex_shader(&batch, &kernels);
 	drv_i915_gfx_emit_pixel_shader(&batch, &kernels);
 	assert(batch.overflow == 0);
@@ -701,6 +702,7 @@ test_dynamic_push_pipeline(void)
 	batch.count = 0U;
 	batch.capacity = 256U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	drv_i915_gfx_emit_constants(&batch, 0x123450000ULL, kernels.vs_push_regs, 0x123450c00ULL, 0U, 0x123450400ULL, kernels.ps_push_regs, 0x6U);
 	drv_i915_gfx_emit_pixel_shader(&batch, &kernels);
 	assert(batch.overflow == 0);
@@ -813,6 +815,7 @@ test_varying_routing(void)
 	batch.count = 0U;
 	batch.capacity = 256U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	drv_i915_gfx_emit_pixel_shader(&batch, &kernels);
 	assert(batch.overflow == 0);
 
@@ -1118,6 +1121,7 @@ test_geometry_interfaces(void)
 	batch.count = 0U;
 	batch.capacity = 256U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 	drv_i915_gfx_emit_pixel_shader(&batch, &kernels);
 	assert(batch.overflow == 0);
 	used = batch.count;
@@ -1193,6 +1197,7 @@ test_geometry_state(void)
 	batch.count = 0U;
 	batch.capacity = 512U;
 	batch.overflow = 0;
+	batch.graphics_ver = 12U;
 
 	/* 3DSTATE_GS: dwords 1, 3 and 6 to 9. */
 	drv_i915_gfx_emit_geometry_shader(&batch, &kernels);

@@ -7,7 +7,7 @@ Status: incomplete（2026-10-15 作成、p001 を P6 が途中まで実施し、
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
-Related: [WS037](../ws037/ws.md)（nvrtx、GSP-RM・channel・Vulkan の executor）、[WS083](../ws083/ws.md)（Vulkan Video の拡張と i915 の H.264、`src/drivers/gpu/i915/render/video.c`）、[WS236](../ws236/ws.md)（Pi 4 の Vulkan Video、`src/drivers/gpu/bcm2711/vulkan-video.c`）、[WS202](../ws202/ws.md)（libmedia の `media_vkvideo_ops`）、[WS242](../ws242/ws.md)（RTX 20/30/40）
+Related: [WS037](../ws037/ws.md)（nvrtx、GSP-RM・channel・Vulkan の executor）、[WS083](../ws083/ws.md)（Vulkan Video の拡張と i915 の H.264、`src/drivers/gpu/i915/vk/vk-video.c`）、[WS236](../ws236/ws.md)（Pi 4 の Vulkan Video、`src/drivers/gpu/bcm2711/vulkan-video.c`）、[WS202](../ws202/ws.md)（libmedia の `media_vkvideo_ops`）、[WS242](../ws242/ws.md)（RTX 20/30/40）
 Resume point: [p001](phase001/phase.md) の「再開の点」（調べた事実と設計の案から design.md を書く → design-reviewer）。再開はユーザーの指示で、担当は Q1 が割り当てる。
 <!-- awesome-plan-current:end -->
 

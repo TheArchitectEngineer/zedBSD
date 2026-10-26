@@ -19,7 +19,7 @@
 #endif
 
 /* Existing generated record decoding is device-independent Zlib code, without a Gen12 resource implementation. */
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The queried native subset has one allocation type, one level/layer/sample and 4096-square colour images. */
 #define VULKAN_RESOURCE_BYTES (256ULL << 20)

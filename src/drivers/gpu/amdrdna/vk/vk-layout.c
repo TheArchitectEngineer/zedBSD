@@ -29,7 +29,7 @@
 
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk-objects.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The largest SPIR-V module, the most sets one allocation hands out, and the most items of one update. */
 #define LAYOUT_SHADER_BYTES		(256U * 1024U)

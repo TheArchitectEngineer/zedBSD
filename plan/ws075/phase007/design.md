@@ -55,7 +55,7 @@ glxtest `--gl32` の `geometry-points`・`geometry-modes`・`layered`（`userlan
 - Gen12 の GS の thread の payload と URB の読み書き（入力は pull、出力は頂点ごとの per-slot offset の URB write、control data header の cut bit、最後の頂点の数の write と EOT）。
 - draw が programming に要る値を `struct i915_shader_binary` に出す。
 
-### 1.3 p007b（実行器、`src/drivers/gpu/i915/render/`）
+### 1.3 p007b（実行器、`src/drivers/gpu/i915/vk/`）
 
 - pipeline の 3 stage（decode・compile・interface の照合・instruction window）。
 - 3DSTATE_GS、3DSTATE_URB_ALLOC_GS / VS の分配、3DSTATE_CONSTANT_GS と GS の push data、SBE と CLIP を GS の出力の VUE から、SF の deref block、adjacency の topology。
@@ -104,10 +104,10 @@ tessellation、transform feedback の GS、複数 stream、`gl_ViewportIndex`（
 
 | 事実 | 所 |
 | --- | --- |
-| pipeline は vertex と fragment の 2 stage。他の stage は「XXX pipeline stage 0x%x is not run」の log で捨てる | `render/pipeline.c` 596〜612、`render/gfx.h` 404〜410 |
-| prepare は VS・FS を compile し、FS の入力の location が VS の varying にあるか照合（`i915_pipeline_kernels_fit`）。VS は sampler を持てない（binding table が無い） | `render/pipeline-prepare.c` 52〜115、370〜432 |
-| instruction window: VS 0x0000、PS 0x4000、window 0xc000、32 window（kernel object 1.5 MiB）。`drv_i915_gfx_window` が vs/ps の code を写す | `render/heap.h` 93〜102、`render/draw.c` 246〜306 |
-| draw ごとの batch: URB（`drv_i915_gfx_emit_urb`）、constants（VS と PS だけ、HS/DS/GS は空）、VS、HS/TE/DS を 0、STREAMOUT、**3DSTATE_GS を 0**、PRIMITIVE_REPLICATION 0、raster、PS、blend、depth、3DPRIMITIVE | `render/draw.c` 896〜1048（987〜1008）、`render/state.c` 1221〜1312 |
+| pipeline は vertex と fragment の 2 stage。他の stage は「XXX pipeline stage 0x%x is not run」の log で捨てる | `vk/vk-pipeline.c` 596〜612、`vk/vk-gfx.h` 404〜410 |
+| prepare は VS・FS を compile し、FS の入力の location が VS の varying にあるか照合（`i915_pipeline_kernels_fit`）。VS は sampler を持てない（binding table が無い） | `vk/vk-pipeline-prepare.c` 52〜115、370〜432 |
+| instruction window: VS 0x0000、PS 0x4000、window 0xc000、32 window（kernel object 1.5 MiB）。`drv_i915_gfx_window` が vs/ps の code を写す | `vk/vk-heap.h` 93〜102、`vk/vk-draw.c` 246〜306 |
+| draw ごとの batch: URB（`drv_i915_gfx_emit_urb`）、constants（VS と PS だけ、HS/DS/GS は空）、VS、HS/TE/DS を 0、STREAMOUT、**3DSTATE_GS を 0**、PRIMITIVE_REPLICATION 0、raster、PS、blend、depth、3DPRIMITIVE | `vk/vk-draw.c` 896〜1048（987〜1008）、`vk/vk-state.c` 1221〜1312 |
 | URB: push constant 32 KiB を VS と PS に 16 KiB ずつ、VS は chunk 4 から `GEN12_URB_VS_BYTES`（3576×64）分の entry、HS/DS/GS は entry 0・start 5。entry 数は 8 の倍数に切り下げ | `state.c` 1221〜1258、`intel/genxml.h` 322〜330 |
 | CLIP dword 3 = (1<<17) \| (2047<<6): Force Zero RTA Index Enable（bit 5）は 0 のまま → VUE header の layer が RTAI に使われる前提の値（VS は header を 0 で埋めるので layer 0） | `state.c` 1366〜1371 |
 | SF dword 2 の deref block size は `GEN12_URB_DEREF_BLOCK_SIZE_32`（0） | `state.c` 1385 |
@@ -115,10 +115,10 @@ tessellation、transform feedback の GS、複数 stream、`gl_ViewportIndex`（
 | SBE: 属性数 = varyings（GS が無いので VS の）、read offset 1（slot 2 から）、SBE_SWIZ は `i915_state_input_slot` で routing。PrimitiveID の override は無い | `state.c` 1594〜1655 |
 | render target の surface: `i915_state_target_range` が **layer_count 1**（view の base_layer から 1 層）→ Render Target View Extent 0。`i915_image_surface_write` 自体は range の layer_count を view extent に書ける（2088〜2160） | `state.c` 2335〜2347、2088〜2160 |
 | depth buffer は view の base_layer から image の全 slice（Depth = slices − 1） | `state.c` 1501〜1524 |
-| framebuffer は width・height・views だけ保持、`layers` を捨てる | `render/render-pass.c` 161〜170、`gfx.h` 373〜381 |
-| pass begin の clear と vkCmdClearAttachments は view の **最初の layer だけ**（「XXX: a view of several layers is written at its first layer only」、「The layers are not acted on」）。clear_attachment の op に layer の field が無い | `render/command.c` 1290、2157〜2178、1340〜1360、`gfx.h` 752〜765 |
-| features: vertexPipelineStoresAndAtomics・logicOp・shaderInt16 だけ。`maxFramebufferLayers` 1、`maxGeometry*` は 0（未設定）、`maxViewports` 1 | `render/instance.c` 440〜447、387、364 |
-| scratch の stage は VERTEX・PIXEL・COMPUTE の 3 つ（`scratch_per_thread[3]`） | `render/draw.h` 100〜103、`draw.c` 757〜865 |
+| framebuffer は width・height・views だけ保持、`layers` を捨てる | `vk/vk-render-pass.c` 161〜170、`gfx.h` 373〜381 |
+| pass begin の clear と vkCmdClearAttachments は view の **最初の layer だけ**（「XXX: a view of several layers is written at its first layer only」、「The layers are not acted on」）。clear_attachment の op に layer の field が無い | `vk/vk-command.c` 1290、2157〜2178、1340〜1360、`gfx.h` 752〜765 |
+| features: vertexPipelineStoresAndAtomics・logicOp・shaderInt16 だけ。`maxFramebufferLayers` 1、`maxGeometry*` は 0（未設定）、`maxViewports` 1 | `vk/vk-instance.c` 440〜447、387、364 |
+| scratch の stage は VERTEX・PIXEL・COMPUTE の 3 つ（`scratch_per_thread[3]`） | `vk/vk-draw.h` 100〜103、`draw.c` 757〜865 |
 | host の fixture の stub は `plan/ws031/tests/i915-vk-render-stubs.inc`（draw.c・blit.c を link しない） | `plan/ws031/tests/run-vk-host-tests.sh` 22〜35 |
 
 ### 2.3 libglesv2（GL 3.2 の経路が実行器に投げる物。WS068 p032・p033 で Venus では PASS 済み）

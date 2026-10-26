@@ -34,7 +34,7 @@
 
 #include "drivers/gpu/powervr/vk/vk.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The largest module, the sets and command items one call carries, and the pipelines one create makes. */
 #define LAYOUT_SHADER_BYTES		(64U * 1024U)

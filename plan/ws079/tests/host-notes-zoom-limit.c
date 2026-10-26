@@ -12,7 +12,7 @@
  * whole page's scale needs more, so vkAllocateMemory fails and Notes used
  * to end.  This test drives Notes' touch screen (touch.c, the production
  * code) on the 5330's window and models the device the way the executor
- * lays the picture out (src/drivers/gpu/i915/render/image.c: the colour
+ * lays the picture out (src/drivers/gpu/i915/vk/vk-image.c: the colour
  * image is linear rows of 4 bytes, the D32_SFLOAT_S8_UINT stencil buffer
  * a Y-tiled depth plane and, on the next page, a Y-tiled stencil plane),
  * and main.c's app_picture as it meets a refusal: the zoom is held to three

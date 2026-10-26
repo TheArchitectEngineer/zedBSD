@@ -48,10 +48,10 @@
 #include "../../memory.h"
 #include "../../session.h"
 #include "../../sync.h"
-#include "../../render/gfx.h"
-#include "../../render/internal.h"
-#include "../../render/object.h"
-#include "../../render/render.h"
+#include "../../vk/vk-gfx.h"
+#include "../../vk/vk-internal.h"
+#include "../../vk/vk-object.h"
+#include "../../vk/vk.h"
 
 #include <drivers/gpu/gpu.h>
 #include <kern/clock.h>

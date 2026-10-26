@@ -35,7 +35,15 @@ link_list() {
 	list=""
 	for part in codec object dispatch transport instance vulkan fence objects reply memory image descriptor pipeline \
 	    pipeline-prepare render-pass sync state batch math forget video video-mfx video-h264-tables command; do
-		list="$list $tree/src/drivers/gpu/i915/render/$part.c"
+		# The executor moved from render/X.c to vk/vk-X.c (vulkan.c to vk.c); BASE has the old names.
+		if [ -d "$tree/src/drivers/gpu/i915/vk" ]; then
+			case $part in
+			vulkan) list="$list $tree/src/drivers/gpu/i915/vk/vk.c" ;;
+			*) list="$list $tree/src/drivers/gpu/i915/vk/vk-$part.c" ;;
+			esac
+		else
+			list="$list $tree/src/drivers/gpu/i915/render/$part.c"
+		fi
 	done
 	list="$list $tree/src/drivers/gpu/compiler/spirv.c"
 	list="$list $tree/src/drivers/gpu/i915/tests/fixtures/draw-fixture.c"

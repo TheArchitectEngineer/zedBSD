@@ -36,7 +36,7 @@
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
 #include "drivers/gpu/nvrtx/compiler/sm75/sm75.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The most pipelines one create makes, and the most stages one pipeline lists. */
 #define PIPELINE_CREATED_MAX		8U

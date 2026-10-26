@@ -59,7 +59,7 @@
 #include "../perf.h"
 #include "../ppgtt.h"
 #include "../session.h"
-#include "../render/blit.h"
+#include "../vk/vk-blit.h"
 
 #include <drivers/gpu/gpu.h>
 #include <drivers/gpu/gpu-display.h>

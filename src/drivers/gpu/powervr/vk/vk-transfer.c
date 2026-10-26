@@ -27,7 +27,7 @@
 
 #include "drivers/gpu/powervr/transfer-job.h"
 #include "drivers/gpu/powervr/vk/vk.h"
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The most regions one transfer command records. */
 #define TRANSFER_REGIONS_MAX		8U

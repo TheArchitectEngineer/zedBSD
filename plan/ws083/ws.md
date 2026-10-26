@@ -60,16 +60,16 @@ blocking 無し。MFX の命令列（順・opcode・長さ・全 field）・slic
 
 | ID | 内容 | 所在 | 案 |
 | --- | --- | --- | --- |
-| R-S1 | bitstream の Upper Bound が 4 KiB に整列していない（PRM は bits 47:12 の見込み、未確認）。ANV は 0 を書く | render/video.c（`bitstream_end`）、video-mfx.c | 4 KiB に切り上げるか ANV と同じ 0、U18 は実機で |
-| R-S2 | video が止まった後の EIO（何も走らせない）を hang と見て無関係な session を quarantine | worker.c（`video_dead` で EIO）、render/video.c（EIO → quarantine） | 止まっている時は別の errno、quarantine は wait の ETIMEDOUT・EIO だけ |
-| R-S3 | quarantine の session が新しい video session を作り decode を続けられる（hang の上限 3 を 1 つの app が使い切れる） | render/video.c の session create・`drv_i915_video_submit` | quarantined なら submit は DEVICE_LOST、create は INITIALIZATION_FAILED |
+| R-S1 | bitstream の Upper Bound が 4 KiB に整列していない（PRM は bits 47:12 の見込み、未確認）。ANV は 0 を書く | vk/vk-video.c（`bitstream_end`）、video-mfx.c | 4 KiB に切り上げるか ANV と同じ 0、U18 は実機で |
+| R-S2 | video が止まった後の EIO（何も走らせない）を hang と見て無関係な session を quarantine | worker.c（`video_dead` で EIO）、vk/vk-video.c（EIO → quarantine） | 止まっている時は別の errno、quarantine は wait の ETIMEDOUT・EIO だけ |
+| R-S3 | quarantine の session が新しい video session を作り decode を続けられる（hang の上限 3 を 1 つの app が使い切れる） | vk/vk-video.c の session create・`drv_i915_video_submit` | quarantined なら submit は DEVICE_LOST、create は INITIALIZATION_FAILED |
 | R-S4 | ready-to-reset が来ないと engine reset を諦める（R1） | reset.c | VCS0 だけ handshake を省いた 2 回目の GDRST 0x20、実機で |
 | R-S5 | VCS も RCS 用の 10 秒の timeout、worker 1 本なので desktop が止まる | worker.c | VCS0 は 1 秒程度 |
 | R-S6 | 試験の空白: libvulkan の native の経路（context.c の 176 byte、`physical_load_video`、D3、device.c の依存）は host 試験が無い／D17 の 1〜4・7〜9 の境界試験が無い／Tile Y の試験は同じ関数で往復／golden は同じ判断（D21・upper bound・MOCS）から | plan/ws083/tests | native の経路の stub の host 試験、D17 の境界試験、実機で 64x64 の tile 0 の生の bytes を ffmpeg の plane と比べる手順 |
-| R-M1〜M9 | setup の slot が参照と同じでも拒まない、4 byte の start code の直後の次の slice で BSD の長さ 0、skew＋開始の 29 bit の切り捨てを検べない、1 submit に session 5 つ以上で DEVICE_LOST、`i915_video_write` の ENOSPC が DEVICE_LOST、skip の log の static の数え上げ（32 回で無言）、parameters NULL の decode が skip（D18 が筋）、design §3.2 の event・ExecuteCommands と実装の違い、§6.2 の flush と 1 decode ごとの run | render/video.c ほか | 各々の案は review の原文（Q1 への報告）に |
+| R-M1〜M9 | setup の slot が参照と同じでも拒まない、4 byte の start code の直後の次の slice で BSD の長さ 0、skew＋開始の 29 bit の切り捨てを検べない、1 submit に session 5 つ以上で DEVICE_LOST、`i915_video_write` の ENOSPC が DEVICE_LOST、skip の log の static の数え上げ（32 回で無言）、parameters NULL の decode が skip（D18 が筋）、design §3.2 の event・ExecuteCommands と実装の違い、§6.2 の flush と 1 decode ごとの run | vk/vk-video.c ほか | 各々の案は review の原文（Q1 への報告）に |
 
 対応（q897、2026-10-08 午後 P2、host・build）:
-- R-S1（p004 の直し）: `render/video.c` の upper bound を buffer の終わりの page の終わりに切り上げ（memory は page で bind されるので同じ memory の中）。試験: roundtrip で 4000 byte の buffer の `MFX_IND_OBJ_BASE_ADDR_STATE` の upper bound が page の終わり。
+- R-S1（p004 の直し）: `vk/vk-video.c` の upper bound を buffer の終わりの page の終わりに切り上げ（memory は page で bind されるので同じ memory の中）。試験: roundtrip で 4000 byte の buffer の `MFX_IND_OBJ_BASE_ADDR_STATE` の upper bound が page の終わり。
 - R-S2（p007 の直し）: worker は video が止まった後の VCS0 の request を `ECANCELED`（何も走らせない）で返し、`i915_video_run` は ECANCELED を quarantine にせず EIO（submit は DEVICE_LOST）。試験: roundtrip（quarantine にならない、log）、vcs-worker（止まった後の run は ECANCELED）。
 - R-S3（p007 の直し）: quarantine の session は video の submit が DEVICE_LOST（log）、video session の create が INITIALIZATION_FAILED。試験: roundtrip（hang の後、engine が戻っても submit・create を拒む）。render の側の quarantine の門は WS083 の外（未対応、Q1 へ）。
 - R-S5（p007 の直し）: VCS0 の request の timeout を 1 秒（`I915_WORKER_VIDEO_TIMEOUT_MS`）、RCS は 10 秒のまま。hang の log の ms は使った timeout。
@@ -77,7 +77,7 @@ blocking 無し。MFX の命令列（順・opcode・長さ・全 field）・slic
 - 他の WS の runner: `plan/ws101/tests/host/run.sh` の executor の list に `forget`（BUG-260 で増えた file、無いと link できない、main の時点で壊れていた）を足した。
 - 確認: run-host-libvulkan-native・-status・-video、run-host-video-roundtrip（2026-10-13 削除: src/drivers/gpu/i915/compiler/spirv.c が無くなり build できず、Tools・未完了の Phase から参照が無いため、試験の整理の基準）、run-host-mfx-avc、run-host-vcs-worker、run-host-boot-video、ws031 run-vk-host-tests、ws075 run-host-layered、ws101 host/run.sh すべて PASS。`make -j16 BUILD=build/p2-k ZEDBSD_CONFIG=config/ci/config-amd64.mk ZEDBSD_USER_PROGRAMS="libvulkan vkvideo-probe" build/p2-k/vmunix build/p2-k/dynamic/libvulkan.so build/p2-k/bin/vkvideo-probe` warning 0。実機は未。
 
-残件（2026-10-08 Q1 の指示で記録）: render 側の quarantine の門。hang した session（quarantined）でも render の stream の入口（`render/command.c` の `i915_command_render`）は quarantine を見ず、graphics の family の submit・新しい resource は続けられる（design §6.1 の「quarantine はその session の新しい resource・job を拒む」に届いていない）。R-S3 は video の submit と video session の create だけを拒む。直すなら WS031（i915 の Vulkan 実行器）の側の別 Queue。
+残件（2026-10-08 Q1 の指示で記録）: render 側の quarantine の門。hang した session（quarantined）でも render の stream の入口（`vk/vk-command.c` の `i915_command_render`）は quarantine を見ず、graphics の family の submit・新しい resource は続けられる（design §6.1 の「quarantine はその session の新しい resource・job を拒む」に届いていない）。R-S3 は video の submit と video session の create だけを拒む。直すなら WS031（i915 の Vulkan 実行器）の側の別 Queue。
 
 ## 制限（p008、2026-10-10 P2）
 

@@ -5,7 +5,7 @@
 #
 # cmd, spirv, lower, eu and compile include the files they test.  res,
 # resdispatch, pipe, cmdbuf and sync are linked with the executor as the
-# kernel builds it: every file of render/ that decodes, records or emits, and
+# kernel builds it: every file of vk/ that decodes, records or emits, and
 # the shader compiler, each its own translation unit.  They take the kernel
 # services and the GPU runs from i915-vk-render-stubs.inc.
 set -eu
@@ -19,13 +19,16 @@ compiler=${CC:-cc}
 tests=${1:-"cmd spirv lower res resdispatch sync eu compile pipe cmdbuf"}
 base="-std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -DKERN_USER_ABI_LP64 -DVK_REPO=\"$repo\" -I$repo/include -I$repo/src -I$repo -idirafter $repo/include/libc"
 
-# The executor's objects: everything but draw.c and blit.c, which run work on the GPU.
+# The executor's objects (vk/vk-X.c, vk/vk.c for vulkan): everything but vk-draw.c and vk-blit.c, which run work on the GPU.
 driver=$repo/src/drivers/gpu/i915
 executor=""
 for part in codec object dispatch transport instance vulkan fence objects reply \
     memory image descriptor forget pipeline pipeline-prepare render-pass sync command \
     state batch math video video-mfx video-h264-tables; do
-    executor="$executor $driver/render/$part.c"
+    case $part in
+    vulkan) executor="$executor $driver/vk/vk.c" ;;
+    *) executor="$executor $driver/vk/vk-$part.c" ;;
+    esac
 done
 executor="$executor $repo/src/drivers/gpu/compiler/spirv.c"
 for part in compile eu; do

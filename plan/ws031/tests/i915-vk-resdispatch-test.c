@@ -10,8 +10,8 @@
  * for vkAllocateMemory/vkFreeMemory, vkCreateBuffer/vkBindBufferMemory/
  * vkDestroyBuffer and vkCreateImage/vkBindImageMemory/vkDestroyImage
  * exactly as userland/desktop/libvulkan does, drives them through the node's
- * entry (render/vulkan.c) and the router into the resource objects
- * (render/objects.c, memory.c, image.c), and checks the object table and
+ * entry (vk/vk.c) and the router into the resource objects
+ * (vk/vk-objects.c, vk-memory.c, vk-image.c), and checks the object table and
  * the reply framing: opcode echo, VkResult, output identity, and a reply
  * region selected and positioned by the transport commands.  The format
  * queries report only what the executor implements.
@@ -19,7 +19,7 @@
 
 #include "i915-vk-render-stubs.inc"
 
-#include "../../../src/drivers/gpu/i915/render/state.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-state.h"
 
 /* The wire opcodes the fixture sends, as libvulkan numbers them. */
 #define FIXTURE_FORMAT_PROPERTIES	4U

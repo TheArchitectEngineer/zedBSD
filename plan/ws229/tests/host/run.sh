@@ -3,7 +3,7 @@
 #
 # 1. state-test.c builds a depth-stencil draw, an indexed draw with a geometry kernel, a fill and a copy rectangle, a
 #    dispatch with shared memory and an indirect dispatch, and the surface states, samplers and interface descriptors
-#    they point at, once for graphics version 12 and once for 9 (render/draw.c, blit.c, compute.c, state.c).
+#    they point at, once for graphics version 12 and once for 9 (vk/vk-draw.c, vk-blit.c, vk-compute.c, vk-state.c).
 # 2. The same test is built with -DTEST_BASELINE against the tree of BASE (the commit before ws229-p004) and its
 #    version 12 files must be the new tree's byte for byte: the Gen12 state does not change.
 # 3. gen9-check.py decodes every version 12 file with Mesa's gen120.xml and every version 9 file with gen90.xml
@@ -40,7 +40,15 @@ link_list() {
 	list=""
 	for part in codec object dispatch transport instance vulkan fence objects reply memory image descriptor pipeline \
 	    pipeline-prepare render-pass sync state batch math forget video video-mfx video-h264-tables command; do
-		list="$list $tree/src/drivers/gpu/i915/render/$part.c"
+		# The executor moved from render/X.c to vk/vk-X.c (vulkan.c to vk.c); BASE has the old names.
+		if [ -d "$tree/src/drivers/gpu/i915/vk" ]; then
+			case $part in
+			vulkan) list="$list $tree/src/drivers/gpu/i915/vk/vk.c" ;;
+			*) list="$list $tree/src/drivers/gpu/i915/vk/vk-$part.c" ;;
+			esac
+		else
+			list="$list $tree/src/drivers/gpu/i915/render/$part.c"
+		fi
 	done
 	list="$list $tree/src/drivers/gpu/compiler/spirv.c"
 	list="$list $tree/src/drivers/gpu/i915/tests/fixtures/draw-fixture.c"

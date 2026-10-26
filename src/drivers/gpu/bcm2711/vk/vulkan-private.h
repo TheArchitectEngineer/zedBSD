@@ -14,7 +14,7 @@
 #include <stdint.h>
 
 /* The existing Zlib wire cursors and generated record codec are device-independent read-only source. */
-#include "drivers/gpu/i915/render/codec.h"
+#include "drivers/gpu/i915/vk/vk-codec.h"
 
 struct bcm2711_render_session;
 struct bcm2711_vulkan_object;

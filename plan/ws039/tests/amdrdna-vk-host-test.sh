@@ -34,7 +34,7 @@ cc -std=gnu11 -O1 -g -D_POSIX_C_SOURCE=200809L -DKERN_USER_ABI_LP64 -include tim
 	"$vk/vk-descriptor.c" "$vk/vk-quad.c" "$vk/vk-float.c" "$repo/src/drivers/gpu/amdrdna/command-format.c" \
 	"$compiler/gfx10-compile.c" "$compiler/gfx10-wait.c" "$compiler/gfx10-encode.c" "$compiler/gfx10-program.c" \
 	"$repo/src/drivers/gpu/compiler/spirv.c" "$repo/src/drivers/gpu/compiler/optimize.c" \
-	"$repo/src/drivers/gpu/i915/render/codec.c" "$repo/userland/desktop/libvulkan/wire.c" "$out/client-codec.c" -lm
+	"$repo/src/drivers/gpu/i915/vk/vk-codec.c" "$repo/userland/desktop/libvulkan/wire.c" "$out/client-codec.c" -lm
 if "$out/amdrdna-vk-host-test" "$out"; then
 	echo "PASS amdrdna-vk-host-test ($out)"
 else

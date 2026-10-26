@@ -74,14 +74,14 @@ kern_logf(const char *format, ...)
 	va_end(arguments);
 }
 
-#include "../../../src/drivers/gpu/i915/render/codec.c"
-#include "../../../src/drivers/gpu/i915/render/object.c"
-#include "../../../src/drivers/gpu/i915/render/dispatch.c"
-#include "../../../src/drivers/gpu/i915/render/transport.c"
-#include "../../../src/drivers/gpu/i915/render/instance.c"
-#include "../../../src/drivers/gpu/i915/render/vulkan.c"
-#include "../../../src/drivers/gpu/i915/render/fence.c"
-#include "../../../src/drivers/gpu/i915/render/batch.c"
+#include "../../../src/drivers/gpu/i915/vk/vk-codec.c"
+#include "../../../src/drivers/gpu/i915/vk/vk-object.c"
+#include "../../../src/drivers/gpu/i915/vk/vk-dispatch.c"
+#include "../../../src/drivers/gpu/i915/vk/vk-transport.c"
+#include "../../../src/drivers/gpu/i915/vk/vk-instance.c"
+#include "../../../src/drivers/gpu/i915/vk/vk.c"
+#include "../../../src/drivers/gpu/i915/vk/vk-fence.c"
+#include "../../../src/drivers/gpu/i915/vk/vk-batch.c"
 
 /*
  * The video decode engine's state (ws083-p003b): ENODEV (no VCS0) unless a
@@ -327,6 +327,7 @@ fixture_open(void)
 
 	memset(&fixture_device, 0, sizeof(fixture_device));
 	fixture_device.product = 0x46a6U;
+	fixture_device.gt.graphics_ver = 12U;
 	memset(&fixture_gpu, 0, sizeof(fixture_gpu));
 
 	memset(&reply_object, 0, sizeof(reply_object));

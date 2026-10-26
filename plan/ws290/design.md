@@ -141,7 +141,7 @@
 | `include/uapi/gpu-op.h` 2016〜2077 行の `GPU_OP_GHCI_*` | 外す（U1） | p012 |
 | `include/drivers/pci/pci-ghci.h`、`pcat.c`、`vf2-pcie.c` | 残す（`drv_pci_ghci_driver_register` の形は同じ） | — |
 | `src/drivers/gpu/compiler/`（共有） | 残す（GHCI の feature の bit は今のまま使う） | — |
-| `src/drivers/gpu/i915/render/codec.c` | 残す（wire の codec を共有） | — |
+| `src/drivers/gpu/i915/vk/vk-codec.c` | 残す（wire の codec を共有） | — |
 | `userland/base/ghcictl` | 直す: `list`・`display` を残し `diag`・`paint`・`fwload` を外す | p012 |
 | `userland/tests/ghci-blit` | 捨てる（`GPU_OP_GHCI_NATIVE` の試験） | p012 |
 | `userland/tests/ghci-display` | 残す（汎用の display の ioctl だけ。実機でだけ動く） | — |
@@ -450,7 +450,7 @@ ring へ書く → store barrier → `RING_WPTR`。coherent な bus では DMA �
 
 ### 11.1 方針
 
-今の `vk/` は「検証する中継」（Vulkan の object の意味は firmware の物、WS288 design §6.7）。2.0 には firmware の gpu-op が無いので、**Vulkan の object を driver が持ち、記録を submit で `CMD_*` に直す**（amdrdna の `vk/` と同じ型、`vk-execute.c` 2083 行の先頭の注「The records are turned into packets」）。wire の decode は i915 の codec（`src/drivers/gpu/i915/render/codec.c`）を今のまま共有する。
+今の `vk/` は「検証する中継」（Vulkan の object の意味は firmware の物、WS288 design §6.7）。2.0 には firmware の gpu-op が無いので、**Vulkan の object を driver が持ち、記録を submit で `CMD_*` に直す**（amdrdna の `vk/` と同じ型、`vk-execute.c` 2083 行の先頭の注「The records are turned into packets」）。wire の decode は i915 の codec（`src/drivers/gpu/i915/vk/vk-codec.c`）を今のまま共有する。
 
 ### 11.2 file
 

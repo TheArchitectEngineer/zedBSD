@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # ws075-p001: the Vulkan commands each client calls that the i915 executor does not take (static).  A client's calls are
 # the vk*( names in its C sources; the Kei GPU command protocol (include/uapi/gpu-op.h) numbers them; the
-# executor's commands are the case labels of its opcode switches (src/drivers/gpu/i915/render/*.c: switch (opcode)),
+# executor's commands are the case labels of its opcode switches (src/drivers/gpu/i915/vk/*.c: switch (opcode)),
 # less those whose body refuses (EOPNOTSUPP, ENOTSUP or "unported").  A call with no opcode stays in libvulkan (WSI,
 # queries of the loader) and is not counted.  Creation-time parameters (formats, samples, pipeline stages) are not seen.
 #
@@ -42,7 +42,7 @@ def executor(root):
 	"""Returns the opcodes the executor's switches take, and those whose case refuses."""
 	taken = set()
 	refused = set()
-	for path in glob.glob(os.path.join(root, 'src/drivers/gpu/i915/render/*.c')):
+	for path in glob.glob(os.path.join(root, 'src/drivers/gpu/i915/vk/*.c')):
 		text = open(path, encoding='utf-8').read()
 		names = {name: number for name, number in re.findall(r'#define\s+(\w+)\s+(\d+)U', text)}
 		names.update(protocol(root)[0])
@@ -100,7 +100,7 @@ def main():
 
 	# The recording range: command.c records every vkCmd* opcode it knows in i915_record_command.
 	recorded = set()
-	text = open(os.path.join(root, 'src/drivers/gpu/i915/render/command.c'), encoding='utf-8').read()
+	text = open(os.path.join(root, 'src/drivers/gpu/i915/vk/vk-command.c'), encoding='utf-8').read()
 	match = re.search(r'\ni915_record_command\((.*?)\n}\n', text, re.S)
 	if match:
 		recorded = {int(n) for n in re.findall(r'case (\d+)U:', match.group(1))}

@@ -16,7 +16,10 @@ executor=""
 for part in codec object dispatch transport instance vulkan fence objects reply \
     memory image descriptor forget pipeline pipeline-prepare render-pass sync command \
     state batch math video video-mfx video-h264-tables; do
-	executor="$executor $driver/render/$part.c"
+	case $part in
+	vulkan) executor="$executor $driver/vk/vk.c" ;;
+	*) executor="$executor $driver/vk/vk-$part.c" ;;
+	esac
 done
 executor="$executor $repo/src/drivers/gpu/compiler/spirv.c"
 for part in compile eu; do

@@ -38,7 +38,7 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 
 ## 分かっていること（2026-09-30 main の調べ）
 
-- **i915**: device の情報は queue に `VK_QUEUE_COMPUTE_BIT` を立て、compute の上限値も報告するが、実行器（`src/drivers/gpu/i915/render/command.c`）は
+- **i915**: device の情報は queue に `VK_QUEUE_COMPUTE_BIT` を立て、compute の上限値も報告するが、実行器（`src/drivers/gpu/i915/vk/vk-command.c`）は
   `vkCmdDispatch`・`vkCmdDispatchIndirect`（opcode 110・111）を扱わず ENOTSUP で拒む。compiler（`compiler/spirv.c`）は GLCompute を扱わない。
   kernel の試験（`tests/execution/eu-test.c`）は GPGPU_WALKER で compute のスレッドを実機で走らせている（Alder Lake は Gen12 の GPGPU_WALKER の世代）。
 - **libglesv2**: GLES 3.1 の compute は ws068-p035（planning・保留）。
@@ -59,7 +59,7 @@ subgroup の操作（`subgroupAdd` 等）、image load/store、atomic counter �
 | [ws101-p001](phase001/phase.md) | 設計: compiler（GLCompute・ID・SLM・barrier・atomic）、実行器（PIPELINE_SELECT GPGPU・MEDIA_VFE_STATE・interface descriptor・CURBE・GPGPU_WALKER・indirect）、GLES 3.1 の compute、Noct の accel を有効にする build の変更の案、試験と G3 の見本と N・倍率 | cleared（2026-09-30。[design.md](design.md)） | — |
 | [ws101-p002](phase002/phase.md) | compiler の核: GLCompute、LocalSize・LocalSizeId、built-in（LOAD_SYSTEM、GlobalInvocationID、NumWorkgroups の A64 の読み）、compute の register の約束と binary、thread spawner への EOT、LOAD_STORAGE の predicate、効果なしの decoration、OpArrayLength、stage の分岐の見直し、SSBO の A64 の atomic、複数の動的な index、拒否（design §1） | cleared（2026-09-30。host の試験 PASS、kernel の build PASS。GPU は p005） | p001 |
 | [ws101-p003](phase003/phase.md) | 実行器の object と記録: vkCreateComputePipelines（66）、bind point の分離、vkCmdDispatch（110）の記録（design §2.1） | cleared（2026-09-30。host の試験 PASS、kernel の build PASS。dispatch は p004 まで ENOTSUP） | p002 |
-| [ws101-p004](phase004/phase.md) | 実行器の batch: `render/compute.c`（IDD・CURBE・NumWorkgroups の置き場所・VFE・walker・3D への戻り・scratch 768 thread 分）、transfer_pending（dispatch と SSBO を書く draw）、HDC だけの PIPE_CONTROL、storage の range、WS101 の genxml の dumper（design §2.2〜§2.4） | cleared（2026-09-30。host の試験 PASS（Mesa の genxml で batch と IDD を decode）、kernel の build PASS。IDD の SLM・barrier は p006、GPU は p005） | p003 |
+| [ws101-p004](phase004/phase.md) | 実行器の batch: `vk/vk-compute.c`（IDD・CURBE・NumWorkgroups の置き場所・VFE・walker・3D への戻り・scratch 768 thread 分）、transfer_pending（dispatch と SSBO を書く draw）、HDC だけの PIPE_CONTROL、storage の range、WS101 の genxml の dumper（design §2.2〜§2.4） | cleared（2026-09-30。host の試験 PASS（Mesa の genxml で batch と IDD を decode）、kernel の build PASS。IDD の SLM・barrier は p006、GPU は p005） | p003 |
 | [ws101-p005](phase005/phase.md) | 実機の bring-up と kernel の試験の場面 `vkcs`（ADD・ID・ODD・PUSH・ATOMIC-SSBO・MIXED・MANYOPS・SPILL）。eu-test の 1 thread の設定から段階的に（design §2.6・§5.1） | cleared（2026-09-30。5330 の passthrough で vkcs 9/9 PASS、回帰 vkx・vke1・vke2・vkc PASS。試験の kernel の大きさの残りが 6.6 KB） | p004 |
 | [ws101-p006](phase006/phase.md) | SLM・barrier・fence・SLM の atomic（IR・parser・EU、barrier の一様性の検査）、binary の SLM・barrier と IDD の field（p004 の XXX）、vkcs の SHARED・REDUCE・ODD-BARRIER・ATOMIC-SHARED・LOOP・REFUSE | cleared（2026-09-30。試験の build の分割（I915_TEST_SET、main の判断）、5330 の passthrough で vkcs 15/15 PASS、回帰 PASS） | p005 |
 | [ws101-p007](phase007/phase.md) | vkCmdDispatchIndirect（111）、0 の group、vkcs の INDIRECT・LENGTH・MANY、G1 の passthrough での受け入れの run（design §2.5） | cleared（2026-09-30。5330 の passthrough で vkcs 21/21（INDIRECT・INDIRECT-ID・INDIRECT-GPU・INDIRECT-ZERO・LENGTH・MANY N=4,000,000）、回帰 PASS、glescompute の indirect PASS） | p006 |

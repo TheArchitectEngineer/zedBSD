@@ -20,9 +20,9 @@
 
 #include "../../ws031/tests/i915-vk-render-stubs.inc"
 
-#include "../../../src/drivers/gpu/i915/render/batch.h"
-#include "../../../src/drivers/gpu/i915/render/heap.h"
-#include "../../../src/drivers/gpu/i915/render/state.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-batch.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-heap.h"
+#include "../../../src/drivers/gpu/i915/vk/vk-state.h"
 
 #include "../../../src/drivers/gpu/i915/intel/genxml.h"
 
@@ -447,6 +447,7 @@ test_depth_state(void)
 	memset(&batch, 0, sizeof(batch));
 	batch.cmds = commands;
 	batch.capacity = 1024U;
+	batch.graphics_ver = 12U;
 	error = drv_i915_gfx_emit_depth(&batch, &state, depth, 0x1000U, 0x6U);
 	assert(error == 0 && batch.overflow == 0);
 	found = 0;

@@ -21,7 +21,7 @@
 #include "../../../ws031/tests/i915-vk-render-stubs.inc"
 
 #include "../../../../src/drivers/gpu/i915/compiler/compiler.h"
-#include "../../../../src/drivers/gpu/i915/render/command.c"
+#include "../../../../src/drivers/gpu/i915/vk/vk-command.c"
 
 /* The wire opcodes the test sends, as libvulkan numbers them. */
 #define TEST_CREATE_SHADER_MODULE	59U

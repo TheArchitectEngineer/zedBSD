@@ -43,7 +43,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "drivers/gpu/i915/render/codec.h"
+#include "drivers/gpu/i915/vk/vk-codec.h"
 
 #include "../ghci.h"
 #include "../layout.h"

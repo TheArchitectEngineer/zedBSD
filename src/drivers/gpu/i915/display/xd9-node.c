@@ -50,7 +50,7 @@
 #include "../session.h"
 #include "../sync.h"
 #include "../workqueue.h"
-#include "../render/blit.h"
+#include "../vk/vk-blit.h"
 #include "../intel/display-regs-xd9.h"
 
 #include <drivers/gpu/gpu.h>

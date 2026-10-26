@@ -34,7 +34,7 @@ for file in vk/vk-object vk/vk-stream vk/vk-device vk/vk-memory vk/vk-image imag
 	objects="$objects $out/vk/$name.o"
 done
 cc -std=c11 -O1 -Wall -Wextra -Werror $define -I"$root/include" -I"$root/src" \
-	-c "$root/src/drivers/gpu/i915/render/codec.c" -o "$out/vk/i915-codec.o"
+	-c "$root/src/drivers/gpu/i915/vk/vk-codec.c" -o "$out/vk/i915-codec.o"
 cc -std=c11 -O1 -Wall -Wextra -Werror $define -I"$root/include" -I"$root/src" -I"$here" \
 	-c "$here/vk-host-test.c" -o "$out/vk/vk-host-test.o"
 cc -o "$out/vk-host-test" "$out/vk/vk-host-test.o" $objects "$out/vk/i915-codec.o" \

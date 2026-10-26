@@ -22,7 +22,7 @@
  * was first programmed.
  *
  * The single-colour draw also has a Gen9 form: the same command
- * list in Gen9's packets (the forms render/state.c programs for Gen9), a
+ * list in Gen9's packets (the forms vk/vk-state.c programs for Gen9), a
  * Gen9 pixel shader that does what the Gen12 one does, and Gen9's uncached
  * MOCS entry.  The Gen12 bytes are unchanged.  The textured draws stay
  * Gen12 only: their shaders and surface states were generated for Gen12.
@@ -31,7 +31,7 @@
 #include "draw-fixture.h"
 #include <kern/kcrt.h>
 
-#include "../../render/heap.h"
+#include "../../vk/vk-heap.h"
 
 #include <stdint.h>
 
@@ -239,7 +239,7 @@ static const uint32_t i915_draw_const_color_ps_gen9[] = {
 
 /*
  * The Gen9 thread-ending instruction the room after the Gen9 shader is
- * carpeted with: the end-of-thread render target write render/state.c
+ * carpeted with: the end-of-thread render target write vk/vk-state.c
  * clears an instruction window with.
  */
 static const uint32_t i915_draw_eot_only_gen9[4] = {
@@ -1239,7 +1239,7 @@ i915_draw_emit_pipe_control(
 	/*
 	 * A render target flush also needs the HDC pipeline flush on Gen12;
 	 * Gen9 has no such bit and flushes the data cache in its place, as
-	 * render/batch.c does.
+	 * vk/vk-batch.c does.
 	 */
 	header = I915_CMD_GFX_OP_PIPE_CONTROL(6);
 	if ((flags & I915_CMD_PIPE_CONTROL_RENDER_TARGET_CACHE_FLUSH) != 0U) {
@@ -1488,7 +1488,7 @@ i915_draw_emit_urb(
  * Appends the push constant and URB allocation in Gen9's packets.
  *
  * The push constants are the Gen12 ones (the pixel stage keeps the first
- * 32 KiB); the vertex stage gets the chunks render/state.c gives it on Gen9
+ * 32 KiB); the vertex stage gets the chunks vk/vk-state.c gives it on Gen9
  * (from chunk 4) with one 64-byte entry per vertex, which holds the two
  * 16-byte elements the fetcher writes, and GT1's 928 entries, the fewest of
  * the family.  The other stages start past them with no entries.

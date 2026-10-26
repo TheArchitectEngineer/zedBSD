@@ -17,7 +17,7 @@
 #endif
 
 /* Only device-independent generated record decoding is reused; native payload construction is separate. */
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* Copied SPIR-V cannot consume the whole per-command arena or create unbounded retained source storage. */
 #define VULKAN_MODULE_BYTES (128U << 10)

@@ -9,7 +9,7 @@
  * Vulkan Video H.264 decode on the Raspberry Pi 4 (see vulkan-video.h).
  *
  * The wire is libvulkan's (userland/desktop/libvulkan/video.c), the same
- * the i915 executor reads (i915/render/video.c); the readers here follow
+ * the i915 executor reads (i915/vk/vk-video.c); the readers here follow
  * that file.  What differs is the decoder: the VideoCore firmware's, which
  * is stateful.  A decode command becomes one access unit for it -- the
  * sequence and picture parameter sets rebuilt from their StdVideo fields

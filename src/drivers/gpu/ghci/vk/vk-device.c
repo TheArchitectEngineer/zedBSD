@@ -33,7 +33,7 @@
 #include "vk.h"
 #include "vk-engine.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /*
  * The bits of the float values of the limits.

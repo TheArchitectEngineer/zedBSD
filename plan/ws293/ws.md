@@ -3,7 +3,7 @@
 # WS293 i915 の Vulkan の executor を render/ から vk/ に揃える
 
 - Master: [plan/master.md](../master.md)（2026-10-27 00:06 作成）。Primary Milestone: MG006。Related: [WS031](../ws031/ws.md)（i915 native Vulkan 実行器）。
-- Status: planned（2026-10-27 00:06 新設）
+- Status: incomplete（2026-10-27 00:06 新設、同日 P4 が p001 を実施）
 - 出典: 2026-10-27 00:06 ユーザー「drivers/gpu/i915には他のGPUドライバと違ってvk/ディレクトリがないですね」→（Q1: render/ が同じ役）→「vk/に揃えたいです。」
 
 ## 単一の到達目標
@@ -19,4 +19,4 @@
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 改名（git mv、file 名・include・build の規則・試験・文書の参照）と回帰 | P4 の WS252・q1601 の後（i915 の source を同時に触らない） | planned |
+| [p001](phase001/phase.md) | 改名（git mv、file 名・include・build の規則・試験・文書の参照）と回帰 | P4 の WS252・q1601 の後（i915 の source を同時に触らない） | in-progress（2026-10-27 P4: 改名・build warning 0・host 試験・5330 PASS、cleared は Q1） |

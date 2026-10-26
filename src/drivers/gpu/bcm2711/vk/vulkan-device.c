@@ -15,7 +15,7 @@
 #include "drivers/gpu/bcm2711/vk/vulkan-device.h"
 
 /* The existing Zlib record codec is device-independent and remains unchanged. */
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* A graphics-only device exposes one serialized native queue, without compute/video families. */
 #define VULKAN_NATIVE_QUEUES 1U

@@ -59,5 +59,5 @@ src/drivers/gpu/bcm2711/compiler/shader-schedule.c
 src/drivers/gpu/compiler/optimize.c
 src/drivers/gpu/bcm2711/compiler/qpu.c
 src/drivers/gpu/compiler/spirv.c
-src/drivers/gpu/i915/render/codec.c
+src/drivers/gpu/i915/vk/vk-codec.c
 "

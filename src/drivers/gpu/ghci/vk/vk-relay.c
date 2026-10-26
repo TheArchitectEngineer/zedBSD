@@ -29,7 +29,7 @@
 #include "vk.h"
 #include "vk-engine.h"
 
-#include "drivers/gpu/i915/render/vulkan-codec.inc"
+#include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /* The most elements of one array a command carries. */
 #define ARRAY_MAX			65536U
