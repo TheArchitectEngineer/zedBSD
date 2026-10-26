@@ -66,6 +66,7 @@ static int fail(const char *name);
 static int fail_errno(const char *name);
 static int same_signal_action(const struct sigaction *left, const struct sigaction *right);
 static int test_pty_line_discipline(int master, int slave);
+static int test_unix_dgram_space_wakeup(void);
 static void atfork_prepare(void);
 static void atfork_parent(void);
 static void atfork_child(void);
@@ -735,6 +736,10 @@ main(
 		return function_result;
 	}
 	(void)close(pair[1]);
+
+	/* Checks that a sender blocked on a full datagram queue wakes when it drains. */
+	if (test_unix_dgram_space_wakeup() != 0)
+		return 1;
 	memset(&local, 0, sizeof(local));
 	local.sun_family = AF_UNIX;
 	strcpy(local.sun_path, "/tmp/posix-r2.sock");
@@ -1767,6 +1772,81 @@ fail_errno(
 
 	/* Reports operation failure. */
 	return 1;
+}
+
+/*
+ * Tests that a datagram sender blocked on a full receiver wakes once the
+ * receiver reads (BUG-346: syslog() senders slept on a drained /run/log).
+ */
+static int
+test_unix_dgram_space_wakeup(
+	void)
+{
+	char byte;
+	int pair[2];
+	int status;
+	int polls;
+	ssize_t sent;
+	pid_t child;
+	pid_t waited;
+
+	byte = 'w';
+
+	/* Creates the pair whose second end is to be filled. */
+	if (socketpair(AF_UNIX, SOCK_DGRAM, 0, pair) != 0)
+		return fail_errno("unix-dgram-space-pair");
+
+	/* Fills the second end's queue until a non-blocking send is refused. */
+	do {
+		sent = send(pair[0], &byte, 1, MSG_DONTWAIT);
+	} while (sent == 1);
+	if (errno != EAGAIN)
+		return fail_errno("unix-dgram-space-fill");
+
+	/* Starts a child whose send waits for room; the alarm ends a hang. */
+	child = fork();
+	if (child < 0)
+		return fail_errno("unix-dgram-space-fork");
+	if (child == 0) {
+		(void)alarm(10);
+		sent = send(pair[0], &byte, 1, 0);
+		_exit(sent == 1 ? 0 : 1);
+	}
+
+	/* Lets the child block, then makes room for one datagram. */
+	(void)usleep(300000);
+	if (recv(pair[1], &byte, 1, 0) != 1) {
+		(void)kill(child, SIGKILL);
+		(void)waitpid(child, &status, 0);
+		return fail_errno("unix-dgram-space-recv");
+	}
+
+	/* Gives the woken child five seconds to finish its send. */
+	waited = 0;
+	for (polls = 0; polls < 100; polls++) {
+		waited = waitpid(child, &status, WNOHANG);
+		if (waited != 0)
+			break;
+		(void)usleep(50000);
+	}
+
+	/* Refuses a child that still sleeps with room in the queue. */
+	if (waited == 0) {
+		(void)kill(child, SIGKILL);
+		(void)waitpid(child, &status, 0);
+		(void)close(pair[0]);
+		(void)close(pair[1]);
+		return fail("unix-dgram-space-wake");
+	}
+
+	/* Refuses a send that ended without delivering its datagram. */
+	(void)close(pair[0]);
+	(void)close(pair[1]);
+	if (waited != child || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		return fail("unix-dgram-space-send");
+
+	/* Succeeded: the blocked sender woke and sent. */
+	return 0;
 }
 
 /* Supports the same signal action operation. */

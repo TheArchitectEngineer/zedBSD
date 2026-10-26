@@ -827,14 +827,21 @@ unix_socket_receive_commit(
 			endpoint->stream_bytes = 0;
 	}
 
-	/* Releases the reservation and wakes the waiters. */
-	if (transaction->datagram) {
+	/* Releases the reservation. */
+	if (transaction->datagram)
 		endpoint->reserved_packet = NULL;
-	} else {
+	else
 		endpoint->reserved_stream = NULL;
-		waitq_wake_all(&socket->receive_space_waitq);
-	}
 
+	/*
+	 * Wakes the senders waiting for room as well as the other receivers.
+	 * A datagram sender sleeps on this socket's space queue when the queue
+	 * is full, and nothing else wakes it once the receiver drains it: a
+	 * syslog() blocked on a full /run/log then slept until a signal, and
+	 * sshd's listener, logging with SIGCHLD blocked, slept for good
+	 * (BUG-346).
+	 */
+	waitq_wake_all(&socket->receive_space_waitq);
 	waitq_wake_all(&socket->receive_waitq);
 
 	spin_unlock_irqrestore(&socket->lock, irq);
