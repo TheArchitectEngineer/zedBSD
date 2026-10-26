@@ -1,14 +1,19 @@
 <!-- awesome-plan project=zedbsd record=ws291 -->
 
-# WS291 AMD RDNA（amdrdna）の描画の速さ: desktop 60 fps と重い 3D で Linux 以上
+# WS291 GPU の driver の描画の速さ: desktop 60 fps と重い 3D（AMD RDNA → NVIDIA → PowerVR）
 
 - Master: [plan/master.md](../master.md)（2026-10-26 23:05 作成）。Primary Milestone: MG006。前提: [WS039](../ws039/ws.md)（amdrdna の driver、display・executor・desktop は実機で動く）。手本: [ws270-p007](../ws270/phase007/phase.md)（VF2 の PowerVR の desktop の速さ）。
+- 追加（2026-10-26 23:08 ユーザー「WS291にさらにフェーズを追加して、DebianマシンでGPUを入れ替えて、NVIDIAでも同様に、デスクトップの60fpsと、モデルの50fpsをやります。これはP2がamdrnaの作業を終えてからです。また、さらにフェーズを増やして、PowerVRのドライバでも、50fpsをやります。VF2での作業は、RDNAで作業手順を確立したあとで、P3に依頼します。」）: NVIDIA（同じ Debian の機械で GPU を入れ替え、P2、RDNA の後）と PowerVR（VF2、P3、RDNA で手順を確立した後）を同じ WS に足す。
 - Status: planned（2026-10-26 23:05 新設）
 - 出典: 2026-10-26 23:05 ユーザー「P2も立てます。ssh 10.0.10.3で、RDNAの接続されたDebianに入れます。USBメモリにはzedBSDが入っています。この環境でカーネルをアップデートしてUEFIの起動項目を変更しながら再起動し、amdrdnaドライバの改善を行ってほしいです。要領としては、PowerVRのドライバの改善のときと同じようにコンポジタを操作して時間を計測し、改善できる部分を改善してほしいです。デスクトップで60fpsをまずは達成します。スクリプトは既存のものがあると思います。もしかしたらすでに60fpsになっているかもしれません。そのあと、Vulkan Model Viewerを使ったり、その改良版を作ったりして、重たい3DシーンをLinuxドライバと同じfpsで描画できるように調整します。一つのやり方として思うのは、Linuxで60fpsを切るような重さに3Dモデルの量を調整し、たとえば50fpsにします。これをzedBSDでも50fps達成できるように調整し、できれば55fpsくらいまで、Linuxよりよくなるまでプロファイルベースで改善します。できそうですか？」
 
 ## 単一の到達目標
 
-実機 10.0.10.3（Navi10 の RX 5600 XT、Debian 13 と USB の zedBSD）で、(1) Keiland の desktop の操作（ws270-p007 の frame-ops の段）が 60 fps、(2) Linux（Debian の RADV）で約 50 fps になる重さの 3D の scene（mview か改良版）を、zedBSD の amdrdna で Linux と同じ fps、できれば 55 fps 前後の Linux 超えまで、profile を見て改善する。
+GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps）で driver の描画の速さを揃える。最初は AMD RDNA で手順を確立し、NVIDIA・PowerVR に当てる。
+
+- AMD RDNA: 実機 10.0.10.3（Navi10 の RX 5600 XT、Debian 13 と USB の zedBSD）で、(1) Keiland の desktop の操作（ws270-p007 の frame-ops の段）が 60 fps、(2) Linux（Debian の RADV）で約 50 fps になる重さの 3D の scene（mview か改良版）を、zedBSD の amdrdna で Linux と同じ fps、できれば 55 fps 前後の Linux 超えまで、profile を見て改善する。
+- NVIDIA（nvrtx、10.0.10.3 で GPU を入れ替え）: desktop 60 fps と model 50 fps（RDNA と同じ形）。
+- PowerVR（VF2）: model 50 fps（desktop の 60 fps は ws270-p007 で済み）。
 
 ## 手順と道具
 
@@ -28,5 +33,13 @@
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | desktop の計測と 60 fps（既に 60 fps なら記録して閉じる） | WS039 p009 | planned |
 | p002 | Linux で約 50 fps の 3D の scene を決める（mview の拡張を含む）、zedBSD との差を測る | p001 | — |
-| p003〜 | profile による改善（p002 の結果で立てる） | p002 | — |
+| p003〜p009 | RDNA: profile による改善（p002 の結果で立てる） | p002 | — |
+| p010 | NVIDIA: GPU の入れ替え（ユーザー）、desktop の計測と 60 fps | RDNA の Phase の全部、P2 | planned |
+| p011 | NVIDIA: Linux で約 50 fps の scene での差の計測と 50 fps（p012〜p019 は改善の予備） | p010 | planned |
+| p020 | PowerVR（VF2）: model の 50 fps（RDNA で確立した手順、P3） | RDNA の手順の確立（p002 と最初の改善） | planned |
 | 最後 | 規約の全文の見直し | 実装の全部 | — |
+
+## 未決（その Phase の前に確かめる）
+
+- NVIDIA の Linux の基準の driver（NVIDIA の proprietary か nouveau/NVK か）と、入れる GPU の型番。GPU の入れ替えはユーザー。
+- PowerVR の 50 fps の基準: Linux との比較か、50 fps の絶対値か（VF2 の Linux の PowerVR の driver の有無で決まる）。
