@@ -10,8 +10,8 @@ Phase に固有の試験は各 WS の `tests/`、シナリオ試験（AAT）は 
 | 機械 | 接続 | 注意 |
 | --- | --- | --- |
 | Dell Latitude 5330（i915） | `10.0.30.3`（SSH、UEFI の BootNext で USB から起動） | host key が焼き直しで変わる時は消して受け直してよい |
-| VisionFive 2（riscv64） | `ssh kei@10.0.30.2`、serial `/dev/ttyUSB0` | 電源は SwitchBot のプラグ `AC276E42B252`（2026-10-20〜）。`zedbsd.cfg` は login=graphical を外したまま |
-| AMD RDNA の機械（RX 5600 XT） | `10.0.10.3`（BootNext で USB の zedBSD） | sshd の子の回収漏れ（BUG-346）の間は SSH の 1 本の接続を使い回す |
+| VisionFive 2（riscv64） | `ssh kei@10.0.30.2`、serial `/dev/ttyUSB0` | SwitchBot は 2026-10-27 に外した（遠隔の電源の入り切りは無い、止まったらユーザーに頼む）。`zedbsd.cfg` は login=graphical を外したまま |
+| AMD RDNA の機械（RX 5600 XT） | `10.0.10.3`（Debian、BootNext で USB の zedBSD、zedBSD は DHCP の 10.0.30.5） | 電源は SwitchBot のプラグ `AC276E42B252`（2026-10-27〜、UEFI で電源の復帰時に自動で on）。Q1 が `switchbot.py cycle AC276E42B252` で入れ直してよい（ユーザー、2026-10-27）。担当は Q1 に頼む。SSH は 1 本の接続を使い回す |
 | SV7 | `10.0.10.27` | 5330 と入れ替えで起動することがある |
 | Raspberry Pi 5 | `10.0.30.5`（DHCP、2026-10-23 の時点） | この IP は前に 5320・13400F だった |
 | 実機の資格情報 | WiFi の試験の鍵は tree の `.wifi`（git に入れない、plan・log・commit に書き写さない） | SwitchBot の token は `~/.config/switchbot/credentials` だけ |
