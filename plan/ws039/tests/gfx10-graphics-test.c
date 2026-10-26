@@ -234,7 +234,7 @@ test_variant(
 		/* A primitive shader: the geometry stage's order bit (25), v5 .. v8 (16:17), v0 alone (29:30). */
 		if (registers.primitive_shader != 1U || program->primitive_shader != 1U)
 			error = 1;
-		if ((registers.counts & (1U << 25)) == 0U || ((registers.counts >> 29) & 3U) != 0U || ((registers.inputs >> 16) & 3U) != 3U)
+		if ((registers.counts & (1U << 25)) == 0U || (registers.counts & (1U << 27)) == 0U || ((registers.counts >> 29) & 3U) != 0U || ((registers.inputs >> 16) & 3U) != 3U)
 			error = 1;
 		if (program->user_sgprs != AMDRDNA_GFX10_NGG_USER_SGPRS || (registers.position_formats & 0xfU) != 4U)
 			error = 1;

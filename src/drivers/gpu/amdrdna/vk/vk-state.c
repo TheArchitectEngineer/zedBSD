@@ -689,12 +689,12 @@ state_primitive_shader(
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PRIMITIVE_UNITS, AMDRDNA_SH_UNITS_ALL);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
 
-	/* The subgroup: its size, its output, one primitive from each, the primitive export's format, no instancing. */
+	/* The subgroup: its size, its output, one primitive from each, the primitive export's format, one instance. */
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_SIZE, AMDRDNA_CX_SUBGROUP_SIZE_NGG);
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_OUTPUT, AMDRDNA_NGG_VERTICES);
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_CONTROL, AMDRDNA_CX_SUBGROUP_ONE_PRIMITIVE);
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_PRIMITIVE_EXPORT_FORMAT, AMDRDNA_CX_PRIMITIVE_EXPORT_ONE);
-	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GEOMETRY_INSTANCES, 0U);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GEOMETRY_INSTANCES, AMDRDNA_CX_GEOMETRY_ONE_INSTANCE);
 
 	/* The stages of a passthrough primitive shader in wave32; the geometry engine holds its work now. */
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, AMDRDNA_CX_STAGES_PRIMITIVE | AMDRDNA_CX_STAGES_PASSTHROUGH);

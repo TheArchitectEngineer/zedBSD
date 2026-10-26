@@ -52,19 +52,22 @@
 
 /*
  * A primitive shader's register words: the vector memory order bit of its
- * count word (25), the count of the vertex program's input VGPRs the
+ * count word (25), the workgroup processor mode (27, which RADV uses for
+ * an NGG vertex program on GFX10), the count of the vertex program's input VGPRs the
  * hardware fills less one (bits 17:16 of the inputs word: 3 for v5 .. v8,
  * the vertex and the instance numbers), and of the primitive's (bits 30:29
  * of the count word: 0 for v0 alone).
  *
  * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
- * (SPI_SHADER_PGM_RSRC1_GS: MEM_ORDERED, GS_VGPR_COMP_CNT;
+ * (SPI_SHADER_PGM_RSRC1_GS: MEM_ORDERED, WGP_MODE, GS_VGPR_COMP_CNT;
  * SPI_SHADER_PGM_RSRC2_GS: ES_VGPR_COMP_CNT) and
  * src/amd/vulkan/radv_shader.c (radv_postprocess_binary_config: the NGG
  * vertex program's es_vgpr_comp_cnt 3 with the instance number, and
- * gs_vgpr_comp_cnt 0 in the passthrough mode, lines 2135-2186).
+ * gs_vgpr_comp_cnt 0 in the passthrough mode, lines 2135-2186;
+ * radv_should_use_wgp_mode: an NGG vertex program on GFX10, line 1358).
  */
 #define GFX10_COUNTS_ORDERED_PRIMITIVE	(1U << 25)
+#define GFX10_COUNTS_WORKGROUP_PROCESSOR (1U << 27)
 #define GFX10_INPUTS_VERTEX_VGPRS_SHIFT	16U
 #define GFX10_COUNTS_PRIMITIVE_VGPRS_SHIFT 29U
 
@@ -235,6 +238,7 @@ amdrdna_gfx10_program_registers(
 		registers->primitive_shader = 1U;
 		registers->inputs |= 3U << GFX10_INPUTS_VERTEX_VGPRS_SHIFT;
 		registers->counts |= 0U << GFX10_COUNTS_PRIMITIVE_VGPRS_SHIFT;
+		registers->counts |= GFX10_COUNTS_WORKGROUP_PROCESSOR;
 	} else if (program->stage == DRV_GPU_STAGE_VERTEX) {
 		registers->counts |= 3U << GFX10_COUNTS_VERTEX_VGPRS_SHIFT;
 	}

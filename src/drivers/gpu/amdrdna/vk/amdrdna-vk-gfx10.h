@@ -641,7 +641,8 @@
  * 21:11, GS_INST_PRIMS_IN_SUBGRP 31:22; GE_CNTL: PRIM_GRP_SIZE 8:0,
  * VERT_GRP_SIZE 17:9; GE_NGG_SUBGRP_CNTL: PRIM_AMP_FACTOR 8:0;
  * SPI_SHADER_IDX_FORMAT: IDX0_EXPORT_FORMAT, the enum SPI_SHADER_FORMAT:
- * SPI_SHADER_1COMP 1), src/amd/vulkan/radv_cmd_buffer.c
+ * SPI_SHADER_1COMP 1; VGT_GS_INSTANCE_CNT: CNT 8:2, one instance as RADV's
+ * gs_num_invocations of 1), src/amd/vulkan/radv_cmd_buffer.c
  * (radv_emit_vgt_shader_config_gfx6: the NGG stages; radv_emit_hw_ngg: the
  * GFX10 VERT_GRP_SIZE of hw_max_esverts less 5),
  * src/amd/vulkan/radv_pipeline_graphics.c (radv_get_vgt_shader_key: the
@@ -658,6 +659,7 @@
 #define AMDRDNA_CX_SUBGROUP_SIZE_NGG	(AMDRDNA_NGG_VERTICES_ASKED | (AMDRDNA_NGG_PRIMITIVES << 11) | (AMDRDNA_NGG_PRIMITIVES << 22))
 #define AMDRDNA_UC_GEOMETRY_GROUPS_NGG		(AMDRDNA_NGG_PRIMITIVES | ((AMDRDNA_NGG_VERTICES_ASKED - 5U) << 9))
 #define AMDRDNA_CX_SUBGROUP_ONE_PRIMITIVE	1U
+#define AMDRDNA_CX_GEOMETRY_ONE_INSTANCE	(1U << 2)
 #define AMDRDNA_CX_PRIMITIVE_EXPORT_ONE		1U
 
 /*
