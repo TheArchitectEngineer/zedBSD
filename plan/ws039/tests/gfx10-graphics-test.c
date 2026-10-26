@@ -531,7 +531,7 @@ vertex_trial(
 			 * subgroup of up to 128 vertices and primitives.
 			 */
 			graphics.primitive_shader = program->primitive_shader;
-			graphics.primitives = 1U + random_word(state) % 32U;
+			graphics.primitives = random_word(state) % 33U;
 			graphics.wave_number = random_word(state) % 4U;
 			graphics.subgroup_vertices = graphics.lanes + 32U * graphics.wave_number + random_word(state) % 8U;
 			graphics.subgroup_primitives = graphics.primitives + 32U * graphics.wave_number + random_word(state) % 8U;
@@ -622,6 +622,27 @@ vertex_trial(
 				failed = check_primitive_wave();
 		}
 	}
+	/* ws291: a primitive shader's wave without vertices (a later wave of a subgroup) exports only its primitives. */
+	if (failed == 0 && program->primitive_shader != 0U) {
+		memset(&graphics, 0, sizeof(graphics));
+		graphics.user[0] = base_vertex;
+		graphics.user[1] = first_instance;
+		graphics.user[2] = instance_mask;
+		graphics.primitive_shader = 1U;
+		graphics.primitives = 1U + random_word(state) % 32U;
+		graphics.wave_number = 1U;
+		graphics.subgroup_vertices = 40U;
+		graphics.subgroup_primitives = 32U + graphics.primitives;
+		machine_run_graphics(&dispatch, &memory, 0, &graphics, &result);
+		if (result.error != NULL) {
+			printf("  GFX10 (a wave without vertices): %s at word %u (0x%08x)\n", result.error, result.error_pc, result.error_word);
+			return 1;
+		}
+		if (graphics.export_count != 1U) {
+			printf("  a wave without vertices made %u exports\n", graphics.export_count);
+			return 1;
+		}
+	}
 	return failed;
 }
 
@@ -657,8 +678,17 @@ check_primitive_wave(void)
 		}
 	}
 
-	/* The primitive: each primitive lane's word, as the hardware packed it, marked done. */
+	/* A wave without primitives exports none. */
 	target = AMDRDNA_GFX10_EXPORT_PRIMITIVE;
+	if (graphics.primitives == 0U) {
+		if (graphics.export_flags[target] != 0U) {
+			printf("  a wave without primitives exported one\n");
+			return 1;
+		}
+		return 0;
+	}
+
+	/* The primitive: each primitive lane's word, as the hardware packed it, marked done. */
 	lanes = graphics.primitives >= 32U ? 0xffffffffU : (1U << graphics.primitives) - 1U;
 	if ((graphics.export_flags[target] & 3U) != 3U || graphics.export_lanes[target] != lanes || graphics.export_channels[target] != 1U) {
 		printf("  the primitive export: flags %u, lanes 0x%08x, channels %u\n",

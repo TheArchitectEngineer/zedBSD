@@ -360,6 +360,9 @@ struct gfx10_lowering {
 	uint32_t live_sgpr;
 	uint32_t early_end_label;
 
+	/* A primitive shader: the label of its end, which a wave without vertices goes to at once. */
+	uint32_t vertices_end_label;
+
 	/*
 	 * A pixel program that samples with derivatives runs whole quads:
 	 * the helper lanes run with the alive ones, and only the alive lanes
@@ -3346,14 +3349,18 @@ prologue_vertex(
  * Starts a primitive shader: asks for the space of the subgroup's vertices
  * and primitives (the subgroup's first wave alone), exports the wave's
  * primitives as the hardware packed them, and leaves the lanes of the
- * wave's vertices running for the vertex program.
+ * wave's vertices running for the vertex program.  A wave without
+ * primitives or without vertices exports none of them: an export with no
+ * lane running is not skipped on GFX10.
  *
  * Procedure referenced: Mesa 25.0.7 src/amd/common/nir/ac_nir_lower_ngg.c
  * (ac_nir_lower_ngg_nogs, the passthrough path: the allocation from the
  * subgroup's counts by the first wave, the early export of the packed
  * primitive by each primitive lane, then the vertex program on the vertex
  * lanes), src/amd/common/nir/ac_nir_prerast_utils.c
- * (ac_nir_export_primitive: the primitive's export is marked done) and
+ * (ac_nir_export_primitive: the primitive's export is marked done), RADV
+ * 25.0.7's NGG vertex program as ACO writes it on Navi10 (the primitive
+ * export and the vertex part each behind s_cbranch_execz) and
  * src/amd/compiler/aco_instruction_selection.cpp (select_shader: on GFX10
  * an NGG program without a geometry stage starts with s_barrier, so that
  * every wave has launched before the allocation request, a Navi1x
@@ -3417,16 +3424,23 @@ prologue_primitive(
 	wave_count = next_scalar_temp(lowering);
 	emit_field(lowering, wave_count, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES);
 	emit_lanes_below(lowering, wave_count);
+	skip_label = lowering->next_label;
+	lowering->next_label++;
+	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, skip_label);
 	sources[0] = AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR);
 	sources[1] = 0U;
 	sources[2] = 0U;
 	sources[3] = 0U;
 	emit_export(lowering, AMDRDNA_GFX10_EXPORT_PRIMITIVE, sources, 0x1U, AMDRDNA_GFX10_FLAG_LAST);
+	emit_label(lowering, skip_label);
 
-	/* The vertex lanes run the rest of the program. */
+	/* The vertex lanes run the rest of the program; a wave without vertices ends at once, exporting nothing. */
 	wave_count = next_scalar_temp(lowering);
 	emit_field(lowering, wave_count, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_VERTICES);
 	emit_lanes_below(lowering, wave_count);
+	lowering->vertices_end_label = lowering->next_label;
+	lowering->next_label++;
+	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, lowering->vertices_end_label);
 }
 
 /*
@@ -4945,6 +4959,10 @@ finish(
 	error = finish_exports(lowering);
 	if (error != 0)
 		return error;
+
+	/* A primitive shader's wave without vertices comes here. */
+	if (program->primitive_shader != 0U)
+		emit_label(lowering, lowering->vertices_end_label);
 
 	/* The program ends. */
 	kern_memset(&inst, 0, sizeof(inst));

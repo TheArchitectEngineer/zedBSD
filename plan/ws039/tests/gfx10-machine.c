@@ -1798,6 +1798,10 @@ export_access(
 	if (target == 20U && run->graphics->primitive_shader == 0U)
 		return fail(run, "a primitive export outside a primitive shader");
 
+	/* A primitive shader's export with no lane running is not skipped on GFX10 (ws291). */
+	if (run->graphics->primitive_shader != 0U && wave->s[CODE_EXEC] == 0U)
+		return fail(run, "a primitive shader's export with no lane running");
+
 	/*
 	 * The registers of the enabled channels are ready; they stay read until
 	 * the export counter.  A compressed export's first two registers each
