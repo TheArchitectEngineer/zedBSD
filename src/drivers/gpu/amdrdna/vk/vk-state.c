@@ -46,7 +46,8 @@
  * PA_CL_NGG_CNTL 0x28838, PA_SU_LINE_STIPPLE_SCALE 0x28828,
  * VGT_MULTI_PRIM_IB_RESET_INDX 0x2840c, PA_SC_MODE_CNTL_1 0x28a4c,
  * PA_SC_AA_MASK_X0Y1_X1Y1 0x28c3c, GE_STEREO_CNTL 0x3097c,
- * PA_SU_LINE_STIPPLE_VALUE 0x30a00, PA_SC_LINE_STIPPLE_STATE 0x30a04).
+ * PA_SU_LINE_STIPPLE_VALUE 0x30a00, PA_SC_LINE_STIPPLE_STATE 0x30a04,
+ * VGT_ESGS_RING_ITEMSIZE 0x28aac, PA_SU_HARDWARE_SCREEN_OFFSET 0x28234).
  */
 #define STATE_PIXEL_ACCUMULATORS	0xb0c8U
 #define STATE_VERTEX_ACCUMULATORS	0xb1c8U
@@ -58,6 +59,8 @@
 #define STATE_COLOUR_CACHE		0x28410U
 #define STATE_BINNER_LIMITS		0x28c48U
 #define STATE_PRIMITIVE_SHADER_MODE	0x28c50U
+#define STATE_EXPORT_ITEM_SIZE		0x28aacU
+#define STATE_SCREEN_OFFSET		0x28234U
 #define STATE_CLIP_NGG			0x28838U
 #define STATE_STIPPLE_SCALE		0x28828U
 #define STATE_RESTART_INDEX		0x2840cU
@@ -1033,6 +1036,18 @@ state_start_graphics(
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_VERTEX_REUSE, 14U);
 	amdrdna_vk_pm4_set_context(pm4, STATE_CLIP_NGG, 0U);
 	amdrdna_vk_pm4_set_context(pm4, STATE_RESTART_INDEX, STATE_RESTART_ALL);
+
+	/*
+	 * The export stage's item size of one word and no screen offset, as
+	 * RADV's preamble has them.
+	 *
+	 * Values referenced: Mesa 25.0.7 src/amd/common/ac_cmdbuf.c
+	 * (gfx10_init_graphics_preamble_state: VGT_ESGS_RING_ITEMSIZE 1, line
+	 * 480) and src/amd/vulkan/radv_queue.c (radv_emit_graphics:
+	 * PA_SU_HARDWARE_SCREEN_OFFSET 0, line 771).
+	 */
+	amdrdna_vk_pm4_set_context(pm4, STATE_EXPORT_ITEM_SIZE, 1U);
+	amdrdna_vk_pm4_set_context(pm4, STATE_SCREEN_OFFSET, 0U);
 
 	/* The window and screen scissors over everything, the generic one until a draw sets it. */
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_WINDOW_OFFSET, 0U);
