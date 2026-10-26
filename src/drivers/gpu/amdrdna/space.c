@@ -378,7 +378,7 @@ amdrdna_space_map(
 		/* The page's entry: its VRAM's physical address and the bits, or its system page's bus address and the system bits. */
 		amdrdna_vm_split(start + page, index);
 		if (backing->system) {
-			entry = amdrdna_vm_leaf_entry(backing->dma.device_address + page, system_access);
+			entry = amdrdna_vm_leaf_entry(backing->ram.paddr + page, system_access);
 		} else {
 			entry = amdrdna_vm_leaf_entry(backing->vram + page + device->frame_buffer_physical, access);
 		}
@@ -944,6 +944,12 @@ amdrdna_backing_create(
  * 64 KiB steps, the CPU writes through its cache and the GPU reads
  * coherently with it, held once by the caller.
  *
+ * The run is plain RAM, not the bus's DMA memory: that is the memory
+ * below 4 GiB every PCI device shares (the USB network adapter among
+ * them) and counts against the caches' budget, and the executor's runs
+ * would take megabytes of it.  The GPU reaches all of RAM, at its
+ * physical address (the PC's bus maps it one to one).
+ *
  * Returns 0, EINVAL for no bytes, or ENOMEM.
  */
 int
@@ -956,6 +962,8 @@ amdrdna_backing_create_system(
 	uint64_t whole;
 	int error;
 
+	UNUSED_PARAMETER(device);
+
 	/* Some bytes, in whole steps. */
 	*result = NULL;
 	if (bytes == 0U)
@@ -967,15 +975,23 @@ amdrdna_backing_create_system(
 	if (backing == NULL)
 		return ENOMEM;
 
-	/* The run, on the mapping boundary, where the GPU reaches it. */
-	error = drv_dma_alloc_coherent(device->dma, (size_t)whole, SPACE_MAPPING_ALIGN, &backing->dma);
+	/* The run, on the mapping boundary. */
+	error = kern_pmem_alloc((size_t)whole, SPACE_MAPPING_ALIGN, &backing->ram);
 	if (error != 0) {
 		kern_free(backing);
 		return ENOMEM;
 	}
 
+	/* Its view through the direct map. */
+	backing->system_cpu = kern_pmem_to_kernel(backing->ram.paddr);
+	if (backing->system_cpu == NULL) {
+		(void)kern_pmem_free(&backing->ram);
+		kern_free(backing);
+		return ENOMEM;
+	}
+
 	/* Cleared, so no earlier contents show. */
-	kern_memset(backing->dma.address, 0, (size_t)whole);
+	kern_memset(backing->system_cpu, 0, (size_t)whole);
 
 	/* One holder: the caller. */
 	backing->bytes = whole;
@@ -1034,7 +1050,7 @@ amdrdna_backing_put(
 
 	/* The memory goes back unless it is kept for good: the system run, or the VRAM. */
 	if (!kept && backing->system) {
-		drv_dma_free_coherent(device->dma, &backing->dma);
+		(void)kern_pmem_free(&backing->ram);
 	} else if (!kept) {
 		amdrdna_vram_give(device, backing->cpu, backing->vram, backing->bytes);
 	}
@@ -1073,7 +1089,7 @@ amdrdna_backing_cpu(
 
 	/* A run of system memory is written through the CPU's own view of it. */
 	if (backing->system)
-		return backing->dma.address;
+		return backing->system_cpu;
 
 	/* The window's view of the VRAM. */
 	cpu = amdrdna_vram_cpu(device, backing->vram);
