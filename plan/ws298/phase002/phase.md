@@ -3,7 +3,7 @@
 # ws298-p002 Intel VMD の driver の実装と 5330 での確かめ
 
 - 親: [WS298](../ws.md)。Queue: q1613 / q1613-i01（担当 P1、2026-10-27）。設計: [design.md](../design.md) 版 2。
-- Status: in-progress（実装と素の 5330 の確かめは済み、受け入れの判定は Q1）
+- Status: cleared（2026-10-27 08:23、Q1 の判定。実装と素の 5330 の確かめは P1）
 - Disposition: normal
 
 ## 受け入れ
