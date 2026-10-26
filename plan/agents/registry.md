@@ -137,5 +137,5 @@
 | P1 / 2026-10-19 (3) | phase-runner（Opus 5.5、low、子なし） | WS252 p001（q1262） | `/home/awe/zedBSD-worktrees/p1` / `agent/p1-q1262` | q1262 | — | returned（2026-10-19） | 最後 8ef2d626d → main 62abf8bab |
 | P1 / 2026-10-26 (WS290) | kernel-and-driver-designer | WS290 p001（q1594） | `/home/awe/zedBSD-worktrees/p1-ws290` / `agent/p1-ws290` | q1594 | — | returned | 9050ae0fd → main 593c6e5be |
 | P2 / 2026-10-26 (WS291) | phase-runner | WS291 p001（q1595） | `/home/awe/zedBSD-worktrees/p2-ws291` / `agent/p2-ws291` | q1595 | p002 | returned（途中、image を 10.0.10.3 の USB に dd・BootNext 0005 で起動まで） | 未 commit |
-| P2 / 2026-10-26 (WS291) (2) | phase-runner | WS291 p001 → p002（q1595・q1596） | `/home/awe/zedBSD-worktrees/p2-ws291` / `agent/p2-ws291` | q1595 | q1596 | running | — |
+| P2 / 2026-10-26 (WS291) (2) | phase-runner | WS291 p001 → p002（q1595・q1596） | `/home/awe/zedBSD-worktrees/p2-ws291` / `agent/p2-ws291` | q1595 | q1596 | returned | d571d21a3 → main 4cdbf1b7a |
 | P4 / 2026-10-26 (i915) | phase-runner | WS245 → WS244 → WS252（q1597〜q1599） | `/home/awe/zedBSD-worktrees/p4-i915` / `agent/p4-i915` | q1597 | q1598, q1599 | running | — |

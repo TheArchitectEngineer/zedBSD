@@ -3,7 +3,7 @@
 # ws291-p002 3D の scene を決め、Linux と zedBSD の差を測る
 
 - 親: [WS291](../ws.md)。
-- 状態: in-progress（2026-10-26 23:47 P2、q1596-i01）。両 OS を同じ条件で測った（2026-10-27 00:40）: 主の scene（qs40 ×6500 instanced）は zedBSD 20.1 fps・Linux 50.1 fps。clearance は Q1 の判定。
+- 状態: cleared（2026-10-27 00:43 Q1、main 4cdbf1b7a）。前: in-progress（2026-10-26 23:47 P2、q1596-i01）。両 OS を同じ条件で測った（2026-10-27 00:40）: 主の scene（qs40 ×6500 instanced）は zedBSD 20.1 fps・Linux 50.1 fps。clearance は Q1 の判定。
 - 依存: p001（cleared、main bad29b52f）、p002a（zedBSD の計測の前提、2026-10-26 ユーザー「機能を足してから比較（推し）」）。
 
 ## 範囲

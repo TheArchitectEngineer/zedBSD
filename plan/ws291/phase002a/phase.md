@@ -3,7 +3,7 @@
 # ws291-p002a amdrdna の executor に depth・index の draw・mip の texture を足す（mview が動くまで）
 
 - 親: [WS291](../ws.md)。
-- 状態: in-progress（2026-10-27 00:42 P2、q1600）。受け入れの条件は満たした（下の結果）、clearance は Q1 の判定。
+- 状態: cleared（2026-10-27 00:43 Q1、main 4cdbf1b7a）。前: in-progress（2026-10-27 00:42 P2、q1600）。受け入れの条件は満たした（下の結果）、clearance は Q1 の判定。
 - 出典: 2026-10-26 ユーザー「機能を足してから比較（推し）」（Q1 経由、3D の比較の進め方の a/b/c の a）。
 - 依存: p002 の Linux の基準（済み）。後続: p002 の zedBSD の計測。
 

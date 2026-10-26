@@ -990,7 +990,7 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | --- | --- | --- | --- | --- |
 | q1594 / q1594-i01 | P1（kernel-and-driver-designer、worktree `/home/awe/zedBSD-worktrees/p1-ws290`・branch `agent/p1-ws290`、基点 main） | [ws290-p001](ws290/phase001/phase.md) | 設計（ghci.md 2.0 と今の driver の照合、構成、host 試験の model、Phase の分割、ghci.md の疑問の一覧）、design-reviewer。code は書かない | 担当の作業は終了（design.md 版 2、review 28 件反映、9050ae0fd、merge 593c6e5be、P1 は返却）。p001 の clearance は G01〜G39・U1〜U7 のユーザーへの提示の後 |
 | q1595 / q1595-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291`・branch `agent/p2-ws291`、基点 main） | [ws291-p001](ws291/phase001/phase.md) | desktop の計測と 60 fps、実機 10.0.10.3（BootNext で USB の zedBSD）。結果: cleared（全段 60 fps、d29a59f6b、merge bad29b52f）。承認: 2026-10-26 23:05 ユーザー「P2も立てます。…amdrdnaドライバの改善を行ってほしいです。…」 | in-progress |
-| q1596 / q1596-i01 | P2（同じ worktree p2-ws291） | ws291-p002 | Linux で約 50 fps の 3D の scene を決め、zedBSD との差を測る（予約、p001 の後） | pending |
+| q1596 / q1596-i01 | P2（同じ worktree p2-ws291） | ws291-p002 | Linux で約 50 fps の 3D の scene を決め、zedBSD との差を測る（予約、p001 の後） | cleared（2026-10-27 00:43: scene-6500 zedBSD 20.1 fps・Linux 50.1 fps、merge 4cdbf1b7a） |
 
 ## 2026-10-26 23:17: i915 の残り（q1597〜）
 
@@ -1002,6 +1002,6 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | q1598 / q1598-i01 | P4 | [WS244](ws244/ws.md) の残り | Gen9 の display・GT の出典の直し（ws.md の再開点）、5330 で回帰 | cleared（5330 の分 PASS、7dc936a23、merge 1c7c926d3。SV7 は試さない、2026-10-26 23:45 ユーザー） |
 | q1599 / q1599-i01 | P4 | [WS252](ws252/ws.md) p002〜p008 | RKL・ADL-S/RPL-S・ICL の GT。実機が無い物は host 試験まで（D5「無いまま」）、5330 で退行が無いこと | pending |
 
-| q1600 / q1600-i01 | P2（同じ worktree p2-ws291） | ws291-p002a | amdrdna の executor に depth・index draw・mip（mview が動く 3D）。承認: ユーザー「機能を足してから比較（推し）」 | pending |
+| q1600 / q1600-i01 | P2（同じ worktree p2-ws291） | ws291-p002a | amdrdna の executor に depth・index draw・mip（mview が動く 3D）。承認: ユーザー「機能を足してから比較（推し）」 | cleared（2026-10-27 00:43: 1 体で Linux と pixel 一致、b20e5545e、merge 5b654104f） |
 | q1601 / q1601-i01 | P4 | WS252（firmware） | driver が名指す DMC の全部（rkl・adls・icl を足す）を zedBSD-firmware の i915/（SHA256SUMS・LICENSE）と userland/firmware/i915（Makefile の照合・manifest・WS233 の firmware-inventory）に。zedBSD-firmware は local の commit まで、push はユーザーの指示の時。承認: 2026-10-26 23:58 ユーザー「zedBSD-firmware/ツリーに、i915の依存としてすべて入れられませんか？」 | pending（p004 の後） |
 | q1602 / q1602-i01 | P4 | [ws293-p001](ws293/ws.md) | i915 の render/ を vk/ に改名（動作は不変）、build・host 試験・5330 の回帰。承認: 2026-10-27 00:06 ユーザー「vk/に揃えたいです。」 | pending（WS252・q1601 の後） |
