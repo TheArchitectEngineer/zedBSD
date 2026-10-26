@@ -476,6 +476,7 @@ static int transfer_run(struct dw_mmc_unit *unit, int write, uint64_t block, uin
 static int transfer_run_recovering(struct dw_mmc_unit *unit, int write, uint64_t block, uint32_t count, uint8_t *data);
 static int transfer_run_tries(struct dw_mmc_unit *unit, int write, uint64_t block, uint32_t count, uint8_t *data);
 static int recover_card(struct dw_mmc_unit *unit);
+static int recover_card_tries(struct dw_mmc_unit *unit, const char *during);
 static int adapt_bus(struct dw_mmc_unit *unit, int write, uint64_t block, uint32_t count, uint8_t *data);
 static int tune_sample_phase(struct dw_mmc_unit *unit, uint64_t block, uint32_t count, uint8_t *data);
 static void set_sample_phase(struct dw_mmc_unit *unit, uint32_t phase);
@@ -2151,7 +2152,6 @@ transfer_run_tries(
 	uint8_t *data)
 {
 	unsigned attempt;
-	unsigned again;
 	int recovered;
 	int error;
 
@@ -2175,11 +2175,8 @@ transfer_run_tries(
 			  (unsigned long long)unit->errors);
 
 		/* Brings the card back to the transfer state, a few times; a card that never comes back is failed. */
-		recovered = EIO;
-		for (again = 0; again < DW_MMC_RECOVER_TRIES && recovered != 0; again++)
-			recovered = recover_card(unit);
+		recovered = recover_card_tries(unit, "after a failed run");
 		if (recovered != 0) {
-			kern_logf("dw-mmc: the card did not come back (%d); it is taken as gone\n", recovered);
 			unit->failed = 1;
 			break;
 		}
@@ -2238,6 +2235,36 @@ recover_card(
 	error = wait_card_ready(unit);
 	if (error != 0)
 		return error;
+
+	/* Succeeded: the card is back in the transfer state. */
+	return 0;
+}
+
+/*
+ * Brings the card back to the transfer state up to DW_MMC_RECOVER_TRIES
+ * times; reports a card that never comes back, naming when it was tried.
+ *
+ * Returns 0, or the errno of the last recovery.
+ */
+static int
+recover_card_tries(
+	struct dw_mmc_unit *unit,
+	const char *during)
+{
+	unsigned again;
+	int error;
+
+	/* Tries the recovery until it succeeds or the tries run out. */
+	error = EIO;
+	for (again = 0; again < DW_MMC_RECOVER_TRIES && error != 0; again++)
+		error = recover_card(unit);
+	if (error != 0) {
+		kern_logf("dw-mmc: the card did not come back %s (%d, status %x); it is taken as gone\n",
+			  during,
+			  error,
+			  unit->last_status);
+		return error;
+	}
 
 	/* Succeeded: the card is back in the transfer state. */
 	return 0;
@@ -2348,9 +2375,16 @@ tune_sample_phase(
 			continue;
 		}
 
-		/* A phase that fails ends the stretch, and the card is brought back. */
+		/*
+		 * A phase that fails ends the stretch, and the card is brought
+		 * back at the phase it had before the tuning, so that the
+		 * recovery's own commands are not sampled at the failing phase,
+		 * with the same tries as after a failed run: one recovery that a
+		 * noisy bus fails must not take the card as gone.
+		 */
 		length = 0;
-		error = recover_card(unit);
+		set_sample_phase(unit, unit->card.sample_phase);
+		error = recover_card_tries(unit, "while the sample phase was tuned");
 		if (error != 0)
 			return -1;
 	}
