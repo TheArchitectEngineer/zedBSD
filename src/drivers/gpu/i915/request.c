@@ -392,11 +392,15 @@ i915_request_emitter_of(
 			return &i915_request_gen9_render;
 		return &i915_request_gen9_other;
 	}
+
+	/* An Ice Lake engine takes the Gen11 render emitter or the Gen9 one. */
 	if (info->graphics_ver == 11) {
 		if (info->class == I915_RENDER_CLASS)
 			return &i915_request_gen11_render;
 		return &i915_request_gen9_other;
 	}
+
+	/* Every other engine takes a Gen12 emitter. */
 	if (info->class == I915_RENDER_CLASS)
 		return &i915_request_gen12_render;
 	return &i915_request_gen12_other;
@@ -608,6 +612,7 @@ i915_request_flush_gen11_render(
 		if (cs == NULL)
 			return rq->error;
 
+		/* Writes it with its post-sync write to the scratch slot. */
 		cs = i915_request_pipe_control(cs, 0U, flags, I915_GT_LRC_PPHWSP_SCRATCH_ADDR);
 		drv_i915_ring_commit(rq, cs);
 	}
@@ -628,6 +633,7 @@ i915_request_flush_gen11_render(
 		if (cs == NULL)
 			return rq->error;
 
+		/* Writes it with its post-sync write to the scratch slot. */
 		cs = i915_request_pipe_control(cs, 0U, flags, I915_GT_LRC_PPHWSP_SCRATCH_ADDR);
 		drv_i915_ring_commit(rq, cs);
 	}

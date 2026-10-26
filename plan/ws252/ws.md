@@ -7,7 +7,7 @@ Status: incomplete（2026-10-15 作成。2026-10-19 p001 cleared（q1265、desig
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS245](../ws245/ws.md)（Gen12 の display の書き直し、§7 #18・#20・#21）
-Resume point: 2026-10-26 q1599（P4、ユーザー「P4を立てて、WS244, WS245, WS252の実装を終わらせます。…」）で p002〜p008 を host 試験まで実装（実機の Phase は実機が無く未確認のまま）。p002・p003 済み（f8b65c839、5330 PASS）、p004〜p006 済み（e68361995・4e316feac・557c9de05、host 試験と 5330 PASS）。次は p008（規約の全文）、p007 は実機が無く未実施のまま。p001 cleared。判断は 2026-10-19 回答済み: D2「実機ができたら全部」（ICL を含む）、D1-R・D1-I「C 既定で付ける」、D3「Meteor Lake対応のときに入れます。」（この WS では GuC・HuC を使わない）、D5「無いまま」。受け入れは下の表の D2=全部・C の行。
+Resume point: 2026-10-26 q1599（P4、ユーザー「P4を立てて、WS244, WS245, WS252の実装を終わらせます。…」）で p002〜p008 を host 試験まで実装（実機の Phase は実機が無く未確認のまま）。p002・p003 済み（f8b65c839、5330 PASS）、p004〜p006 済み（e68361995・4e316feac・557c9de05、host 試験と 5330 PASS）。p008（規約の全文）は 2026-10-27 に見直し・build・host 試験まで済み。p007 は実機が無く未実施のまま。p001 cleared。判断は 2026-10-19 回答済み: D2「実機ができたら全部」（ICL を含む）、D1-R・D1-I「C 既定で付ける」、D3「Meteor Lake対応のときに入れます。」（この WS では GuC・HuC を使わない）、D5「無いまま」。受け入れは下の表の D2=全部・C の行。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（2026-10-15、クリック）
@@ -32,7 +32,7 @@ WS245 design.md §7 #20「RKL・ADL-S・ICL の GT（描画の engine）は起�
 | [p005](phase005/phase.md) | ICL の compiler と state（Gen11 の EU、gen110） | in-progress（2026-10-26 q1599 P4: 4e316feac、render-host・eu-gen11 PASS、実機は未確認） |
 | [p006](phase006/phase.md) | ICL の video・PXP の除外・attach（D1-I）・DMC | in-progress（2026-10-26 q1599 P4: 557c9de05 で既定で attach、5330 PASS、DMC は q1601、実機は未確認） |
 | p007 | 実機の通し（GT・Vulkan・blit・video、5330 の回帰）。RKL・ADL-S 3 LW ＋ ICL 1〜3 LW。依存は design.md §5 の群ごとの表 | planned（実機） |
-| p008 | 規約の全文の見直し | planned（最後の実装） |
+| [p008](phase008/phase.md) | 規約の全文の見直し | in-progress（2026-10-27 P4: 注釈の修正・build warning 0・host 試験 PASS、cleared は Q1） |
 - 決定（2026-10-19 ユーザー、クリック）: D2「実機ができたら全部」、D1-R「C 既定で付ける」、D1-I「C 既定で付ける」、D3「Meteor Lake対応のときに入れます。」、D5「無いまま」。
 - 決定（2026-10-19 ユーザー、クリック）: 「設計まで」（実機が無いので p001 の設計で止める。実装は実機ができてから）。
 
