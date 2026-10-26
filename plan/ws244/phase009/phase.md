@@ -2,7 +2,7 @@
 
 # ws244-p009 license の package を外す・規約の見直し・log の文言・実機の試験の依頼
 
-Status: in-progress（2026-10-19 q1260-i02 P1。code の範囲は済み、package の directory の削除は Q1、実機の試験は T1 待ち。cleared は Q1）
+Status: in-progress（2026-10-26 q1598 P4: 5330 の実機の回帰 PASS（下の「q1598」）、package の directory は main で削除済み。SV7 は未実施（10.0.10.27 に届かない）。cleared は Q1）
 
 - 親: [WS244](../ws.md)。ユーザーの決定 2（2026-10-18、クリック）: 書き直しの後 `userland/base/licenses/i915-driver/` は「外す」。
 
@@ -36,3 +36,13 @@ Status: in-progress（2026-10-19 q1260-i02 P1。code の範囲は済み、packag
 ## 残り
 
 - Q1: `userland/base/licenses/i915-driver/` の削除、plan/ws129 の写しの扱い、T1 への依頼、実機の結果の判定。
+
+## q1598（P4、2026-10-26）: 5330 の実機
+
+- main 684a5243f（WS244 の p002〜p009 を全部含む）の image（`plan/ws245/tests/config-5330.mk`）で 5330 を素の起動（WS245 の q1597 と同じ 1 回、`plan/ws245/tests/5330-run.sh`、証拠 `plan/ws245/tests/evidence/p4-main-684a5243f-20261026.md`）。
+  - (1) 起動と desktop: `kern.boot.login: graphical`、SESSION start、compositor の画面（keiland-shot の PNG、`plan/ws245/temp/5330/p4-main-684a5243f-20261026.png`、git の外）に desktop と Settings の初回の画面。
+  - (2) 内蔵 LCD: survey `lit`（PP_STATUS on、backlight の PWM on、frame counter +325、SURFLIVE が resident の buffer、CRC 2 回同値、underrun 0）、backlight-probe の get/set 100/get が 100。
+  - (3) dmesg の i915 の行に `failed`・`rc=-` が 0（grep で数えた）。新しい文言（"irq install"・"vbt:" など）の下で起動の段が全部通る。
+  - GPU の描画: compositor の present が GPU の submit で通る（`perf:` の行 4、例 40 submits・24 batches、per submit 3.60 ms）。vkcube 相当の単独の program は流していない（未実施）。
+- `userland/base/licenses/i915-driver/` は main に無い（Q1 が削除済み、89f0c3d9d）。
+- 未実施: SV7（Gen9、10.0.10.27 は 2026-10-26 23:4x に No route to host）。plan/ws129 の写しの扱いは Q1。

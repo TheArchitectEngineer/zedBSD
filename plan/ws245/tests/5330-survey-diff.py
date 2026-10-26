@@ -57,6 +57,14 @@ def read(path):
     return values, headers, verdict, digest, writes
 
 
+# The panel's VDD override (PP_CONTROL bit 3) is let go 3 s after the panel's start (WS245 phase046, H7), so a survey
+# taken around that time reads it either way: a PP_CONTROL that differs only in that bit is listed apart.
+def vdd_only(register, before, after):
+    if register != "PP_CONTROL" or not before.startswith("0x") or not after.startswith("0x"):
+        return False
+    return int(before, 16) ^ int(after, 16) == 0x8
+
+
 def main():
     if len(sys.argv) != 3:
         print(__doc__ or "usage: 5330-survey-diff.py <reference dmesg> <stage dmesg>")
@@ -72,6 +80,8 @@ def main():
         if before == after:
             continue
         kind = "moves" if key[1] in MOVING else "steady"
+        if kind == "steady" and vdd_only(key[1], before, after):
+            kind = "vdd timing"
         if kind == "steady":
             steady_differs += 1
         print("| %s | %s | %s | %s | %s |" % (key[0], key[1], before, after, kind))
