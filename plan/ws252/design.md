@@ -75,7 +75,7 @@
 
 QEMU は Intel の GPU を模倣しない（GVT-g・passthrough も実機を要る）。QEMU では i915 が付かないので、QEMU の起動は p002 以降の変更を通らず、受け入れの証拠にしない。
 
-1. **host の golden（既存の物を直して使う、p002 の作業）**: `plan/ws229/tests/gen12-golden/run.sh`（`golden.c`・`stubs.c`）は、基準の commit と今の tree の両方の i915 の source に golden を build し、Gen12 の GT の初期化の全部の register の書き込み、WA の list、context の image、request の ring、submission の書き込みを順に出して比べる（`run.sh` の冒頭の注記で確かめた。`plan/ws229/phase002/phase.md:41` で 543 行の PASS、レビュー 2 の引用）。新しい harness は作らず、これを p002 で次のように直す（レビュー 2 m-a）:
+1. **host の golden（既存の物を直して使う、p002 の作業）**: `plan/ws252/tests/gen12-golden/run.sh`（`golden.c`・`stubs.c`）は、基準の commit と今の tree の両方の i915 の source に golden を build し、Gen12 の GT の初期化の全部の register の書き込み、WA の list、context の image、request の ring、submission の書き込みを順に出して比べる（`run.sh` の冒頭の注記で確かめた。`plan/ws229/phase002/phase.md:41` で 543 行の PASS、レビュー 2 の引用）。新しい harness は作らず、これを p002 で次のように直す（レビュー 2 m-a）:
    - WS244 の書き直しの後の今の tree で build・PASS するかは**未確認**（今回は走らせていない）。直す量が見えるのは p002 の初め。
    - platform（TGL・ADL-P・RKL・ADL-S・RPL-S、ICL の時は ICL）ごとに記述を選ぶ引数を足す。
    - WS229 の Phase の中に置かず、`plan/tools/` か tests/ のシナリオに移して Master の試験の一覧に登録する（2026-10-06 の試験の整理の基準）。移す path と登録は Q1 に頼む。
@@ -223,7 +223,7 @@ grep（`src/drivers/gpu/i915/` の `graphics_ver` と 9・11・12・`GEN9_GRAPHI
 
 - 版 1・版 2 は design-reviewer を通した（design-review-1.md・design-review-2.md）。版 3 の短い確認（design-review-3.md）は Blocker・Major 無しで、Minor 1〜9 を版 3.1 で当てた。p001 は cleared。
 - Linux の値は 6.8.12 で読んだ（版 2 で確かめた分と、版 3.1 でレビュー 3 の scratchpad の tree で開いた `intel_ggtt.c:207,250-258,1275-1278`・`intel_workarounds.c:885-913`・`intel_gt.c:364-373`・`intel_engine_cs.c:1218-1223`・`intel_reset.c:1640-1644`・`intel_renderstate.c:15-31`・`intel_gtt.c:455-461`）。`intel_engine_cs.c:1247,1666-1668`・`intel_reset.c:1633-1639` はレビュー 3 の値で未確認。v6.19 の pciids との差は未確認。
-- `plan/ws229/tests/gen12-golden/run.sh` が今の tree で build・PASS するか、Mesa の `brw_asm`・`brw_disasm` が host で build できるかは未確認（試していない）。
+- `plan/ws252/tests/gen12-golden/run.sh` が今の tree で build・PASS するか、Mesa の `brw_asm`・`brw_disasm` が host で build できるかは未確認（試していない）。
 - `irq.c:714` の Linux 側（ICL の割込みが Gen11 の系統か）は未確認（`i915_irq.c` を開いていない）。`engine.c:168`・`defaults.c:326`・`workarounds.c:470,1047`・`ggtt.c:257` は版 3.1 で解けた（§6.2）。
 - build option の仕組みは前例 `CONFIG_AMDRDNA_CONTROL` がある（§3、確かめた）。共有の Makefile の調整は p003 で Q1 と。
 - 抜き出しの script（§4-2）はまだ無い。書けるかは p002 の初めに分かる。
@@ -257,7 +257,7 @@ grep（`src/drivers/gpu/i915/` の `graphics_ver` と 9・11・12・`GEN9_GRAPHI
 | N2 | 直した。grep（`graphics_ver` と 9・11・12・`GEN9_GRAPHICS_VER`）の全部の行（試験の `eu-test.c` を除く）を自分で開いて、p004・p005・p006 の「直す」、「正しい（理由）」、display 側に分けた。WA の list（979・988）・whitelist（496）・MOCS の build（738・749）・copy の MOCS（470）・PAT（1033）・GTT の WA（1047）・RPS（1009）を p004 に。`device.c:1316` が forcewake の範囲の選びである事を書いた。`render/state.c` は 18 か所あり、行の全部の列挙は p005 の初めで数え直す | §6.2 |
 | N3 | 直した。引用を GT 系 8 LW に。WS229 p001 の 2〜3 LW との差（分岐の数を数えていない／Gen9 の encoder の流用は 2〜3 LW の側を支える）を書き、ICL を 14 LW（通しを含め約 15〜17）に出し直した。WS229 の実績 LW は記録に無く未確認 | §6.3・§5 |
 | N4 | 直した。ICL の attach を D1 に含め（RKL・ADL-S/RPL-S と ICL を別々に聞ける形）、p006 の依存に D1（ICL）を書いた | §3・§5・§8 D1 |
-| m-a | 直した。新しい harness をやめ、`plan/ws229/tests/gen12-golden/run.sh` を直して使う（Master の試験の一覧への登録は Q1 に依頼）。compiler は Mesa 25.0.7 の `brw_asm`・`brw_disasm`（`--gen=icl`）と `gen110.xml` を使う（source が worktree の `build/mesa-tools/mesa-25.0.7` にある事を確かめた）。build・PASS は未確認。golden の LW を 2 → 1 | §4-1・§4-4・§5 |
+| m-a | 直した。新しい harness をやめ、`plan/ws252/tests/gen12-golden/run.sh` を直して使う（Master の試験の一覧への登録は Q1 に依頼）。compiler は Mesa 25.0.7 の `brw_asm`・`brw_disasm`（`--gen=icl`）と `gen110.xml` を使う（source が worktree の `build/mesa-tools/mesa-25.0.7` にある事を確かめた）。build・PASS は未確認。golden の LW を 2 → 1 | §4-1・§4-4・§5 |
 | m-b | 直した。3 つ目の表 `i915.c:76-88` の `identifiers[]`（開いて確かめた）を §1・§6.1 と p003 の作業に | §1・§5・§6.1 |
 | m-c | 直した。D6 を朝の一覧から外し「決定済み、Q1 が入れたい理由のある時だけ聞く」に。D5 の既定は決定の解釈と書き分けた | §3・§8 |
 | m-d | 外す方に揃えた。entry 63 と TGL の MOCS は WS252 の外（Bug の候補）として §2.1 に残し、D4 と p002 の MOCS の作業と ws.md の D4 の受け入れを外した。Bug の起票（5320・5330 の両方の回帰が要る事を含めて）を Q1 に依頼 | §2.1・§8・ws.md |
