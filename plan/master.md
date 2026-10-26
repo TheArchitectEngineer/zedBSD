@@ -30,7 +30,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1603、WS295、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1603、WS296、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS290（GHCI 2.0 の driver）: p001 の設計 → ghci.md の疑問をユーザーに示す → 実装の Phase。試験は zedBSD の host 試験だけ（amaterrace-gpu の sim・firmware は使わない、ユーザー 2026-10-26）。WS288 の古い引き継ぎ（ws288/q1-handover-20261026.md）の「消してよい物」のうち amaterrace の物は、読み取り専用になったので消さない。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -180,7 +180,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS033](ws033/ws.md) | ベータ1 | MG005 | 1 | USB LAN の後挿し（BUG-168・169）・抜き差しの実機 |
 | [WS034](ws034/ws.md) | キャンセル | MG002 | 4 | package の導入と kernel・libc の是正 |
 | [WS037](ws037/ws.md) | 要検討（ブロック） | MG006 | 16 | nvrtx（文書の後、GSP の起動・channel・display・executor） |
-| [WS038](ws038/ws.md) | 要検討（ブロック） | MG006 | 16 | Intel Arc dGPU |
+| [WS038](ws038/ws.md) | キャンセル（2026-10-27 00:18、WS295 へ） | MG006 | 0 | Intel Arc dGPU |
 | [WS039](ws039/ws.md) | 進行中（2026-10-16） | MG006 | 75〜111 | AMD RDNA（amdrdna、RX 5600 XT。p001 設計・p002 A0〜A1v・p003 A2・p004 A3t/A3/A4・p005 A5・p011 A5s・p008 A9（Vulkan の描画）は実機で ok。次は p009 desktop（p006 display の後）、p012 の実機、compiler p007 は途中） |
 | [WS044](ws044/ws.md) | 要検討（ブロック） | MG008 | 1.5 | rpi4 の font・FAT32・lldb |
 | [WS045](ws045/ws.md) | ベータ1 | MG002 | 0 | 完了（2026-10-05） |
@@ -342,7 +342,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | completed | 2026-09-30 ユーザーの判断で閉じた（目標が 2026-09-23 のまま古く、ゴールが不明確）。p001〜p138: compositor・sessiond・greeter・lock・Keiland の app・audiod・起動の短縮ほか。Chromium は取り消し（ユーザー「独自にBrowserを書いているから」）。デモまでの仕上げは WS099。`plan/ws035/tests/` は共有の道具として残す（plan/tools への移動は後の整理） |
 | [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | completed | 2026-09-27 完了（p021 全 platform の回帰と規約、p026〜p029、p027 は案 A: boot の parameter の parser を緩めた）。実機は未実施。toolchain の cache（zedbsd8）は 2026-09-27 に rev-0 へ upload 済み |
 | [WS037](ws037/ws.md) | MG006 | **nvrtx**: NVIDIA RTX 2000 以降（Turing〜Blackwell、GTX 16xx を含む）の GPU driver。WS141 の vc4 と同じ進め方（文書が先、GPL の作業の文書は commit しない、定数の一括の改名、最後に類似の監査、GSP の firmware は userland/firmware）。Pascal 以前は範囲の外（2026-10-04 ユーザー） | incomplete（2026-10-14 開始） | 独立。試験は centris に挿す NVIDIA の GPU の VFIO |
-| [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | planning | 番号のみ |
+| [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | canceled（2026-10-27 00:18、WS295 の xe に含める） | — |
 | [WS039](ws039/ws.md) | MG006 | AMD RDNA GPU（amdrdna） | incomplete（p001〜p005・p007 の一部・p008・p011 cleared、vkquad が RX 5600 XT で描ける（amdrdna.vk=1）。p012 の code は P4 の branch） | p006（display の引き継ぎ）→ p009（desktop）、p012 の実機 |
 | [WS040](ws040/ws.md) | MG008 | 時間の単位を tick 周期から導く | completed | — |
 | [WS041](ws041/ws.md) | MG006 | 起きた thread の即時実行 | completed | — |
@@ -591,7 +591,8 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 | [WS288](ws288/ws.md) | MG008 | FPGA の GPU の IP（display controller・command processor・blitter・vertex fetcher・rasterizer・shader unit・texture unit・ROP・memory controller）、ZYBO で workflow、本命は KC705 | closed（2026-10-26 22:57、ユーザーの指示。amaterrace-gpu は他の担当へ、zedBSD の driver は WS290） | 2026-10-24 ユーザーの決定で目標の板は KC705 だけ、RTL を揃えるのを優先（板は p024、timing は p025）。cleared p002〜p005・p007・p008・p012・p017・p023、in-progress p001・p006（branch）・p009。引き継ぎ [handover-20261024-2230.md](ws288/handover-20261024-2230.md) |
 | [WS289](ws289/ws.md) | MG008 | ZYBO の単独起動: SD（SDIO0）・LAN（GEM0 + RTL8211E、SSH）・SD からの起動（BOOT.BIN）。root を SD に。SDHCI・Cadence GEM の共通の部分を汎用の driver に分ける | completed | 2026-10-23 completed。実機の ZYBO が SD の BOOT.BIN → SPL Falcon → FIT kernel で単独起動し、root は SD、LAN 1000 Mbps・DHCP・SSH、`deploy.sh` で kernel 更新と reboot ができる。汎用の SDHCI・Cadence GEM の core を Pi 4/Pi 5/ZYBO の glue に分けた。100/10 Mbps は未確認 |
 | [WS291](ws291/ws.md) | MG006 | GPU の driver の描画の速さ（desktop 60 fps・重い 3D の model 50 fps）: AMD RDNA（P2）→ NVIDIA（P2、GPU を入れ替え）→ PowerVR（VF2、P3） | planned | p001 desktop の計測（q1595、P2） |
-| [WS294](ws294/ws.md) | MG006 | i915 の GuC による submission（Gen12 以降、kernel の option で有効、execlists も残す） | planning | 計画と見積もり 54 LW（SLPC で 59）、承認待ち |
+| [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
+| [WS294](ws294/ws.md) | MG006 | i915 の GuC による submission | canceled（2026-10-27 00:18、GuC は WS295 の xe で） | — |
 | [WS293](ws293/ws.md) | MG006 | i915 の Vulkan の executor を render/ から vk/ に揃える（動作は不変） | planned | p001（q1602、P4、WS252 の後） |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 2.0（amaterrace-gpu の docs/ghci.md）だけに書き直す。試験は host だけ | planning | p001 の設計（q1594、P1） |
@@ -643,6 +644,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-27 00:18 ユーザー「了解です。Meteor Lakeを持っておらず、Lunar Lakeは持っています。Meteor Lakeは入手したら後日やります。i915のGuCは実装せず、xeドライバを開発するときにGuC対応を実装することにします。xeドライバはMeteor Lake以降のiGPUと、DiscreteのArcのためのものとします。既存i915の利用できるところはコピーして、重複させて作ります。調査のphaseから始めて、全体のphaseをあとで追加します。WSだけ立てておいてください。」 → WS294（i915 の GuC）を取り下げ、WS295（xe）を新設（p001 の調査だけ）、WS038（Arc の予約）は WS295 に含めて取り下げ。
 - 2026-10-27 00:11 ユーザー「新しいWSを立てて、GuCによる描画に対応します。既存のexecutorも残して、カーネルのオプションをつけると、Gen12以降でだけGuCを有効にします。LinuxのドライバやMesaを見て、値だけ引用を明示して著作権は影響を受けない、既存のガードレールをそのまま適用します。計画を立てて工数を見積もってください。」→ WS294 を新設、計画と見積もり（54 LW、SLPC で 59）。WS252 の D3（GuC は Meteor Lake の時）はこの指示で改める。
 - 2026-10-27 00:09 ユーザー「WS031のうち、すでに他のWSで片付いているものもある気がします。」→（Q1 の問いへのクリック）「一回クローズ」→「WS031をcompletedにしてください。」→ WS031 を completed（ユーザーの判断）、cleared の候補 5 つは cleared、残りは取り下げ。Phase の dir・試験の整理（他から参照される ws031/tests は plan/tools へ）は別の作業。
 - 2026-10-27 00:06 ユーザー「drivers/gpu/i915には他のGPUドライバと違ってvk/ディレクトリがないですね」→ Q1: render/ が同じ役 →「vk/に揃えたいです。ws031の残り作業って何ですか？」→ WS293 を新設、P4 の q1602（WS252・q1601 の後）。

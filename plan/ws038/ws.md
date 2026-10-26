@@ -3,7 +3,7 @@
 # WS038: Intel Arc dGPU対応
 
 <!-- awesome-plan-current:start -->
-Status: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: planning
+Status: canceled（2026-10-27 00:18 Q1: discrete の Arc は xe の driver の [WS295](../ws295/ws.md) に含める（ユーザー「xeドライバはMeteor Lake以降のiGPUと、DiscreteのArcのためのものとします。」）。前: planning（要検討・ブロック、2026-10-05 ユーザー「要検討状態にしてブロックする」）。以前: planning
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2

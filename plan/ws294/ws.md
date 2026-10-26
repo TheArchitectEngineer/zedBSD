@@ -3,7 +3,7 @@
 # WS294 i915 の GuC による描画の submission（Gen12 以降、kernel の option で有効）
 
 - Master: [plan/master.md](../master.md)（2026-10-27 00:11 作成）。Primary Milestone: MG006。Related: [WS245](../ws245/ws.md)、[WS252](../ws252/ws.md)（D3「Meteor Lake対応のときに入れます。」はこの WS の指示で改める）、[WS293](../ws293/ws.md)（render/ → vk/）。
-- Status: planning（2026-10-27 00:11 新設。計画と見積もりをユーザーに提示、承認待ち）
+- Status: canceled（2026-10-27 00:18 ユーザー「了解です。Meteor Lakeを持っておらず、Lunar Lakeは持っています。Meteor Lakeは入手したら後日やります。i915のGuCは実装せず、xeドライバを開発するときにGuC対応を実装することにします。xeドライバはMeteor Lake以降のiGPUと、DiscreteのArcのためのものとします。既存i915の利用できるところはコピーして、重複させて作ります。調査のphaseから始めて、全体のphaseをあとで追加します。WSだけ立てておいてください。」 → i915 の GuC は実装しない、GuC は xe の driver（[WS295](../ws295/ws.md)）で）。前: planning（2026-10-27 00:11 新設。計画と見積もりをユーザーに提示、承認待ち）
 - 出典: 2026-10-27 00:11 ユーザー「新しいWSを立てて、GuCによる描画に対応します。既存のexecutorも残して、カーネルのオプションをつけると、Gen12以降でだけGuCを有効にします。LinuxのドライバやMesaを見て、値だけ引用を明示して著作権は影響を受けない、既存のガードレールをそのまま適用します。計画を立てて工数を見積もってください。」
 
 ## 単一の到達目標
