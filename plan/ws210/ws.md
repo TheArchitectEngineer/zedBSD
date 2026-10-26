@@ -3,7 +3,7 @@
 # WS210: Keiland の app の描画を GPU へ（libkeiland の canvas・文字・画像を Vulkan の draw に）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete・保留（描画の最適化の終了）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-13 ユーザー「いや、これ以上詰めなくていいです。SMPに進みます。…」→ 描画の最適化はここで終える（decisions-log）。p003〜p012（GPU の canvas）は未着手、p001・p002・p013・p014 は途中）。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-12 Q1 作成））。残り・制限: p001 の確認から（Guardrail「画像の処理は GPU で」の残り）
+Status: completed（2026-10-27 ユーザー「これはすでにVF2での最適化で完了しています。completedにしてください。」）。旧: incomplete・保留（描画の最適化の終了）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-13 ユーザー「いや、これ以上詰めなくていいです。SMPに進みます。…」→ 描画の最適化はここで終える（d…
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)

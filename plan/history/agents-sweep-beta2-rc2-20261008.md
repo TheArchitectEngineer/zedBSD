@@ -1,6 +1,6 @@
 # ベータ2 の残りの照合の後半（2026-10-08 夜、P2 q910）
 
-前半の [sweep-beta2-rc-20261008.md](sweep-beta2-rc-20261008.md)（P1 q902、優先の 17 WS）が範囲の外にしたベータ2 の WS を照合した報告。base は main 8d314a170（agent/p2 に merge）。
+前半の [sweep-beta2-rc-20261008.md](agents-sweep-beta2-rc-20261008.md)（P1 q902、優先の 17 WS）が範囲の外にしたベータ2 の WS を照合した報告。base は main 8d314a170（agent/p2 に merge）。
 照らした物: master の工数の表（「ベータ1」「ベータ2」の行、まだ completed でない物と、表に無いベータ2 の WS178〜WS182）、各 ws.md・phase.md、T1・T2 の台帳（T1-475 まで）、master の decisions-log。source は変えていない。
 
 範囲から除いた物:

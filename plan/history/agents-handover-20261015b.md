@@ -2,7 +2,7 @@
 
 ユーザー:「ハーネスが壊れてきたようです。記録の整合性が壊れる異常があったため、しかたないです。一度ラップアップしましょう。」「Q1を（自分自身を）ラップアップしてください。」
 
-新しい Q1 は AGENTS.md → この file → plan/master.md の先頭の block の順に読む。前の引き継ぎ [handover-20261015.md](handover-20261015.md) の「次にやる事」は、下の「残っている仕事」に引き継いだ。
+新しい Q1 は AGENTS.md → この file → plan/master.md の先頭の block の順に読む。前の引き継ぎ [handover-20261015.md](agents-handover-20261015.md) の「次にやる事」は、下の「残っている仕事」に引き継いだ。
 
 ## 最初に: この session で起きた異常
 
@@ -84,7 +84,7 @@ p3 の worktree（agent/p3-ws245、9b860c6d0）は使っていない。担当の
 ## 最終（2026-10-15 16:00 ごろ、Q1 のラップアップ）
 
 - 動いている担当は無い。全 worktree に未 merge の commit は無い（t1・t2・t3 に未追跡の作業 file だけ）。上の「動いていた担当」の節は古い。
-- 記録の調査の結果: [audit-20261015/report.md](audit-20261015/report.md)。この session で直した物と、次の session で直す物（担当に分ける、ユーザーの合意）の一覧がある。
+- 記録の調査の結果: [audit-20261015/report.md](agents-audit-20261015/report.md)。この session で直した物と、次の session で直す物（担当に分ける、ユーザーの合意）の一覧がある。
 - 記録の整合の手順: [plan/record-integrity.md](../record-integrity.md)、AGENTS.md の「記録の整合」、点検の道具 `plan/tools/record-audit/status.py`（Master の Tools に登録）。
 - 今日のユーザーの決定は Master の decisions-log の先頭に入れた。
 - 次の session の最初: (1) report.md の「次の session で直す物」を担当に分ける、(2) WS245 はレビュー 2 の反映・display 12 の差・display 11 の Phase で design.md を改訂、(3) WS247 の判断 2 点、(4) WS242 の既定 on の実装。

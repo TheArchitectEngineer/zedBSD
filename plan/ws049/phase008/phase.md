@@ -68,7 +68,7 @@ host の模擬の memory は 0 を返すので、評価の値は実機の値で�
 
 ### image の作り方
 
-前回の UAT（[uat.md](../../uat.md)）と同じ作り方で、この Phase の commit を含む main から作る:
+前回の UAT（[uat.md](../../history/uat-20261004.md)）と同じ作り方で、この Phase の commit を含む main から作る:
 
 ```
 plan/tools/guest/test-image.sh --no-harness plan/uat/config-uat.mk build/uat-3 \

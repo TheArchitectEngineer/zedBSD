@@ -87,7 +87,7 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 ## 引き継ぎ（2026-10-15 夜、Q1、サーバの再起動の前）
 
 - 2026-10-15 ユーザー: Gen9・Gen9.5 の display の制御を既定で on → `I915_GEN9_DISPLAY_DEFAULT` を FULL（main、647d43d37）。実機（SV7）では copy より上の段が未確認。
-- P2 の作業中の patch（plan/agents/p2/wrapup-20261015.patch、base 73476664c）: 上の段が失敗した時に下の段、最後は copy に戻す安全化。未完。リリースまでに入れるか、既定を下げるかの判断が要る。
+- P2 の作業中の patch（plan/history/agents-p2/wrapup-20261015.patch、base 73476664c）: 上の段が失敗した時に下の段、最後は copy に戻す安全化。未完。リリースまでに入れるか、既定を下げるかの判断が要る。
 - SV7 で起動していたのは古い image（8e2115b）。main の image で確かめる（ユーザーの試験の一覧 U1）。
 
 ## ユーザーの実機の結果（2026-10-15）
@@ -95,13 +95,13 @@ Related: [WS229](../ws229/ws.md)（Gen9 の GT と Vulkan、display は GOP の�
 - ユーザー（原文）:「i5 7000系, i5 8000系、ともにi915のディスプレイコントローラOK,Keiland使用できました。記録と計画の更新をお願いします。」
 - 第 7 世代（Kaby Lake、Gen9.5）と第 8 世代（Gen9.5）の Core i5 の実機で、i915 の display controller の制御で Keiland が使えた。段の指定は報告に無いので、main の既定（`I915_GEN9_DISPLAY_DEFAULT` = FULL、647d43d37）の image と見る。
 - 判定（Q1）: p002（readout と flip）は cleared。p003（backlight の明るさ）・p004（外部の DP・HDMI）・p005（sleep）は個別の確かめの報告が無いので in-progress のまま、ユーザーの試験の一覧（plan/beta2.md の U5）に載せた。既定の FULL は保つ。
-- P2 の安全化の patch（失敗時に下の段・最後は copy）は、既定 FULL が 2 機種で通ったので急がない。p003〜p005 の実機で崩れた時に再開する（patch は plan/agents/p2/wrapup-20261015.patch、P2 の worktree の stash `ws237-wrapup-20261015`）。
+- P2 の安全化の patch（失敗時に下の段・最後は copy）は、既定 FULL が 2 機種で通ったので急がない。p003〜p005 の実機で崩れた時に再開する（patch は plan/history/agents-p2/wrapup-20261015.patch、P2 の worktree の stash `ws237-wrapup-20261015`）。
 - 残り: p003〜p005 の実機、p006（規約の全文）。第 6 世代（Skylake）・第 9・10 世代は未確認。
 - 2026-10-15 ユーザーの決定（原文）:「Gen9は残りの安全策の作業をマージしたら終了です。UATは不要です。」→ P3 の安全化（上の段が失敗したら下の段、最後は copy）を merge したら WS237 を completed にする。p003〜p005 の実機の確かめ（U5）は不要（beta2.md の U5 を外した）。
 
 ## 既定 full の安全化（2026-10-15 P3、ユーザー「はい、ではそれを安全にマージして下さい。」）
 
-P2 の途中の patch（plan/agents/p2/wrapup-20261015.patch）を完成させた。patch の中の bootfb.c は空の file（書き換えの途中で止まった跡）だったので、bootfb.c は main から戻して結線を書き直した。
+P2 の途中の patch（plan/history/agents-p2/wrapup-20261015.patch）を完成させた。patch の中の bootfb.c は空の file（書き換えの途中で止まった跡）だったので、bootfb.c は main から戻して結線を書き直した。
 
 - 段の上限: `drv_i915_gen9_display_step()` = 起動の行（無ければ既定 full）の段を、失敗した段の一つ下で抑えた物。上限は下がるだけで、その boot の間は戻らない（`drv_i915_gen9_display_fail()`、compare and exchange で同時の失敗でも上がらない）。失敗した時は 1 行 `i915: gen9 display: <段> failed (<理由>[: <error>]); using <段>`、bind の最後に 1 行 `i915: gen9 display: using <段> (asked for <段> by i915.gen9.display= | the default)`。
 - flip の失敗 → copy: 始め（readout の不一致、display window・buffer が取れない）、実行中（flip が 100 ms で latch しない、plane の fault 割り込み（新、bit 7）、buffer を session の空間に map できない）、lease の終わりに firmware の surface が戻らない。実行中の失敗は、その frame を copy で出し、以後 copy（bootfb.c）。backlight の device と外部の display は flip が始めに失敗すると出さない（copy = WS237 の前の表示）。
