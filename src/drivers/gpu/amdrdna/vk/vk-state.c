@@ -1001,7 +1001,7 @@ state_start_graphics(
 	static const uint32_t zeros[STATE_ACCUMULATORS] = { 0U, 0U, 0U, 0U };
 	static const uint32_t guard_band[4] = { STATE_FLOAT_ONE, STATE_FLOAT_ONE, STATE_FLOAT_ONE, STATE_FLOAT_ONE };
 
-	/* The programs run on every CU; the pixel program's requests; no accumulators. */
+	/* The programs run on every CU; the pixel program's requests; no accumulators; no late allocation. */
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_UNITS, AMDRDNA_SH_UNITS_ALL);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_REQUESTS, AMDRDNA_SH_PIXEL_REQUEST_CONTROL);
@@ -1009,6 +1009,8 @@ state_start_graphics(
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_UNITS, AMDRDNA_SH_UNITS_ALL);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_REQUESTS, 0U);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_LATE_ALLOC, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_PARAMETER_CACHE, AMDRDNA_UC_PARAMETER_CACHE_PLAIN);
 	amdrdna_vk_pm4_set_shader_run(pm4, STATE_VERTEX_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
 	amdrdna_vk_pm4_set_shader_run(pm4, STATE_PRIMITIVE_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
 

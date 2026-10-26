@@ -348,6 +348,24 @@
 #define AMDRDNA_UC_COHERENCY_DELAY		0x301ecU
 
 /*
+ * The vertex programs' late allocation (the legacy stage's limit, and the
+ * geometry engine's parameter cache oversubscription): none, the cache's
+ * line count field all ones as RADV writes it without oversubscription.
+ * Written at every start, so nothing another driver left there is used
+ * (late allocation on all CUs can deadlock GFX10).
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (SPI_SHADER_LATE_ALLOC_VS 0xb11c; GE_PC_ALLOC 0x30980: OVERSUB_EN 0,
+ * NUM_PC_LINES 10:1) and src/amd/vulkan/radv_shader.c (ge_pc_alloc with
+ * oversub_pc_lines 0: S_030980_NUM_PC_LINES(0 - 1), lines 1457-1463) and
+ * src/amd/common/ac_shader_util.c (ac_compute_late_alloc: on GFX10 late
+ * allocation needs CUs 2 and 3 masked, a hardware deadlock otherwise).
+ */
+#define AMDRDNA_SH_VERTEX_LATE_ALLOC		0xb11cU
+#define AMDRDNA_UC_PARAMETER_CACHE		0x30980U
+#define AMDRDNA_UC_PARAMETER_CACHE_PLAIN	(0x3ffU << 1)
+
+/*
  * The index type register (set through the indexed setter with index 2)
  * and its values, and the draw packets of an index buffer: its size in
  * indices, and the draw from its address.
