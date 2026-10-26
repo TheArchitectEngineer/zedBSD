@@ -1,0 +1,14 @@
+#!/bin/sh
+# zedBSD on the Latitude 5330's NVMe (q1614, 2026-10-27): a GRUB menu entry that chain-loads the zedBSD loader the
+# NVMe partitions use (5330-nvme-write.sh puts it at \EFI\zedbsd\BOOTX64.EFI on the Debian ESP, 40DD-CFBF).  The
+# default stays Debian (GRUB_DEFAULT=0 is not changed; this file sorts after 10_linux).  Installed as
+# /etc/grub.d/42_zedbsd; run update-grub afterwards.  The source is plan/tools/hw5330/debian/42_zedbsd.
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+exec tail -n +8 "$0"
+menuentry 'zedBSD (NVMe)' --class zedbsd --class os --id zedbsd-nvme {
+	insmod part_gpt
+	insmod fat
+	insmod chain
+	search --no-floppy --fs-uuid --set=root 40DD-CFBF
+	chainloader /EFI/zedbsd/BOOTX64.EFI
+}

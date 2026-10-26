@@ -468,3 +468,22 @@ USB（`/dev/sda`）は SystemRescue 13.02 になっている（zedBSD の image 
 
 戻し方: 5 の前は区画表が無傷（`resize2fs` で伸ばし直す）。5 の後は保存した dump を `sfdisk /dev/nvme0n1 < dump` で書き戻して `resize2fs`。
 Debian が起動しない時は遠隔の電源が無いので、ユーザーが F12 で USB の SystemRescue を選ぶ。
+
+## Debian と zedBSD の切り替え（2026-10-27、q1614）
+
+ユーザーの指示（2026-10-27）「5330のgrubにzedBSDの起動項目を追加したいです。デフォルトはDebianとします。」「Debianに、次回1回だけzedBSDから起動するようにするスクリプトを ~/boot-zedbsd.sh として作成してほしいです。」
+どちらも NVMe の zedBSD の区画（上の節）の loader、Debian の ESP の `\EFI\zedbsd\BOOTX64.EFI` を起動する。原本は `plan/tools/hw5330/debian/`。
+
+| 口 | 入れ方 | 働き |
+| --- | --- | --- |
+| GRUB の menu の項目「zedBSD (NVMe)」 | `debian/42_zedbsd` を 5330 の `/etc/grub.d/42_zedbsd`（root、755）に置き `sudo update-grub` | `search --fs-uuid 40DD-CFBF` で ESP を探し `chainloader /EFI/zedbsd/BOOTX64.EFI`。id は `zedbsd-nvme`。Debian の項目の後に並び、既定は Debian のまま（`GRUB_DEFAULT=0`、`/etc/default/grub` と `40_custom` は変えていない）。入れる前の `grub.cfg` は `/boot/grub/grub.cfg.orig` |
+| `~/boot-zedbsd.sh` | `debian/boot-zedbsd.sh` を 5330 の `~/boot-zedbsd.sh`（awe、755）に | UEFI の entry `zedBSD NVMe`（2026-10-27 は `Boot000C`、BootOrder の外）を名前・ESP の PARTUUID・loader の path で探し、`efibootmgr --bootnext` を付けて reboot。`--no-reboot` は BootNext だけ、`--cancel` は BootNext を消す。BootOrder は変えないので、その次の起動は Debian |
+
+- 二つは同じ loader を別の経路で起動するだけで、互いを書き換えない（script は GRUB に触らず、GRUB の項目は UEFI の変数に触らない）。手で選ぶ時は GRUB の menu（5 秒）、遠隔で 1 回だけは `~/boot-zedbsd.sh`。
+- GRUB の項目を遠隔で 1 回だけ試す時は `sudo grub-reboot zedbsd-nvme && sudo systemctl reboot`（`grub.cfg` の 00_header の `next_entry` は `GRUB_DEFAULT` が 0 でも効く。GRUB が起動の時に消す）。
+- zedBSD から Debian に戻すのは zedBSD の `sudo reboot`（BootNext は 1 回で消え、BootOrder の先頭の `0003 debian` に戻る）。
+- 実機の確認（2026-10-27、`/tmp/i915-hw.lock` の下、zedBSD の kernel 1ee7b7d、q1612 で NVMe に書いた物）:
+  - `~/boot-zedbsd.sh`: BootNext 000C → zedBSD の ssh まで 17 秒（`uname` zedBSD、`/dev/nvme0n1p5 on /`）→ zedBSD の `sudo reboot` → Debian が 28 秒で戻り、BootNext 無し、`systemctl is-system-running` が running。
+  - GRUB の項目: `grub-reboot zedbsd-nvme`（BootNext 無し、BootOrder の先頭は debian の shim → GRUB）→ zedBSD の ssh まで 26 秒 → `sudo reboot` → Debian、`next_entry=` は空に戻った。
+  - 画面の GRUB の menu を目で見る確認はしていない（未実施、`grub.cfg` の中身と `grub-script-check` だけ）。
+- 2026-10-27 の確認の時、USB の stick（`/dev/sda`）は 5330 に挿さっておらず、firmware の自動の entry `Boot0001`（TransMemory）は BootOrder から消えていた。`5330-run.sh` の USB の mode（`--image`・`--kernel`・`--none`）は stick を挿してから。
