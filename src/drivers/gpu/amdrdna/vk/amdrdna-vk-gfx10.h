@@ -625,7 +625,8 @@
 /*
  * A primitive shader in wave32: the stages (the export stage real, 2 in
  * 4:3; the primitive generator, 13; two primitive groups a wave, 18:15;
- * the geometry stage in wave32, 22; the passthrough mode, 25), and the
+ * the geometry stage in wave32, 22, and the vertex stage's wave32 bit, 23,
+ * which RADV sets with it; the passthrough mode, 25), and the
  * subgroup's size, RADV's for a vertex program (128 vertices and 128
  * primitives, four waves).  GFX10 counts a subgroup's vertices only after
  * it has taken a whole triangle, so a subgroup of 128 vertices is asked
@@ -635,19 +636,21 @@
  *
  * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
  * (VGT_SHADER_STAGES_EN: ES_EN, PRIMGEN_EN, MAX_PRIMGRP_IN_WAVE,
- * GS_W32_EN, PRIMGEN_PASSTHRU_EN, the enum VGT_STAGES_ES_EN: ES_STAGE_REAL
+ * GS_W32_EN, VS_W32_EN, PRIMGEN_PASSTHRU_EN, the enum VGT_STAGES_ES_EN: ES_STAGE_REAL
  * 2; VGT_GS_ONCHIP_CNTL: ES_VERTS_PER_SUBGRP 10:0, GS_PRIMS_PER_SUBGRP
  * 21:11, GS_INST_PRIMS_IN_SUBGRP 31:22; GE_CNTL: PRIM_GRP_SIZE 8:0,
  * VERT_GRP_SIZE 17:9; GE_NGG_SUBGRP_CNTL: PRIM_AMP_FACTOR 8:0;
  * SPI_SHADER_IDX_FORMAT: IDX0_EXPORT_FORMAT, the enum SPI_SHADER_FORMAT:
  * SPI_SHADER_1COMP 1), src/amd/vulkan/radv_cmd_buffer.c
  * (radv_emit_vgt_shader_config_gfx6: the NGG stages; radv_emit_hw_ngg: the
- * GFX10 VERT_GRP_SIZE of hw_max_esverts less 5) and
+ * GFX10 VERT_GRP_SIZE of hw_max_esverts less 5),
+ * src/amd/vulkan/radv_pipeline_graphics.c (radv_get_vgt_shader_key: the
+ * vertex and geometry wave sizes both the last stage's) and
  * src/amd/vulkan/radv_shader_info.c (gfx10_get_ngg_info: GFX10's
  * max_esverts_base and max_gsprims_base 128, GFX10's hw_max_esverts of
  * max_esverts - max_verts_per_prim + 1, lines 1486-1654).
  */
-#define AMDRDNA_CX_STAGES_PRIMITIVE		((2U << 3) | (1U << 13) | (2U << 15) | (1U << 22))
+#define AMDRDNA_CX_STAGES_PRIMITIVE		((2U << 3) | (1U << 13) | (2U << 15) | (1U << 22) | (1U << 23))
 #define AMDRDNA_CX_STAGES_PASSTHROUGH		(1U << 25)
 #define AMDRDNA_NGG_VERTICES			128U
 #define AMDRDNA_NGG_PRIMITIVES			128U
