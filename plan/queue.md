@@ -1002,3 +1002,4 @@ WS074 の記録の q590・q594〜q598（Codex の browser3）は main の同じ�
 | q1598 / q1598-i01 | P4 | [WS244](ws244/ws.md) の残り | Gen9 の display・GT の出典の直し（ws.md の再開点）、5330 で回帰 | cleared（5330 の分 PASS、7dc936a23、merge 1c7c926d3。SV7 は試さない、2026-10-26 23:45 ユーザー） |
 | q1599 / q1599-i01 | P4 | [WS252](ws252/ws.md) p002〜p008 | RKL・ADL-S/RPL-S・ICL の GT。実機が無い物は host 試験まで（D5「無いまま」）、5330 で退行が無いこと | pending |
 
+| q1600 / q1600-i01 | P2（同じ worktree p2-ws291） | ws291-p002a | amdrdna の executor に depth・index draw・mip（mview が動く 3D）。承認: ユーザー「機能を足してから比較（推し）」 | pending |
