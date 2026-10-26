@@ -3,7 +3,7 @@
 # order: the display's start before the interrupts, its interrupt half around the install, its outputs after the
 # install, its serve after the GT; its serving stopped before the GT stops, its outputs released after, its stop after
 # the interrupt uninstall, its destroy last; the suspend's and the resume's begin before their end.
-#   python3 -I plan/ws245/tests/check-display-steps.py src/drivers/gpu/i915/device.c
+#   python3 -I plan/tools/i915-display/check-display-steps.py src/drivers/gpu/i915/device.c
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 import re
 import sys

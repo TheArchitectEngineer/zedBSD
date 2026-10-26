@@ -300,7 +300,7 @@ sort BUILD/zedbsd-native-uefi-*.cfg | cut -d= -f1 | uniq -d      # 何か出た�
 - i915 の試験の kernel の組（`I915_TEST_SET`、`platform/amd64/vmunix.mk`）: 全ての場面を入れた kernel は
   `AMD64_KERNEL_MAX_BYTES`（16 MiB）を超えるので、場面ごとの組に分けた（q762）: `vkx`・`vkc`・`vke1`・`vke2`（それぞれ 1 つ）、
   `compute`（vkcs）、`execution`（ktest eu draw r1 tex t3 bl）。`display`・`display_ktest`・`display_ktest2` は WS245 の merge（2026-10-17）で
-  無くなり（旧 modeset の場面）、display は `plan/ws245/tests/run-xd-host-tests.sh` と 5330 の survey で確かめる。`vkloop-hw.sh` が場面から選ぶ。旧名 `boundary` は `vke2`、`render` は `vkx`。`all` は無い。
+  無くなり（旧 modeset の場面）、display は `plan/tools/i915-display/run-xd-host-tests.sh` と 5330 の survey で確かめる。`vkloop-hw.sh` が場面から選ぶ。旧名 `boundary` は `vke2`、`render` は `vkx`。`all` は無い。
 - passthrough では COM1 は 5330 の `~/bigbang/h4/serial.log` になり、`fetch` が `OUTDIR/serial.log` に写す（`h4-qemu.sh:29`、`hdmi-h4-hw.sh:71`）。
 - AGENTS.md は serial の log を判定にも解析にも使うことを禁じる。2026-09-30 にユーザーが「シリアルCOM1にdmesgをコピー出力するコンフィグがあります。
   それを使えば、エラーをつかめると思います。」と言い、その切り分けに限り解析に使った（判定には使っていない）。前例の image は
@@ -425,3 +425,10 @@ ls build/wsNNN/pNNN-hw/shots/*-live.png
 **注意（2026-10-03）**: iGPU と AX211 を同じ QEMU に同時に passthrough しない（host の hard hang の危険、[Guardrail](../../guardrail.md)）。
 
 **注意（2026-10-03）**: iGPU の passthrough は i915 の driver の改善の Phase だけ（描画の性能の改善は 5330 の Venus）（[Guardrail](../../guardrail.md)）。
+
+## 素の起動の回帰（2026-10-27 に plan/ws245/tests から移した）
+
+- `5330-run.sh --image IMG | --kernel VMUNIX | --none NAME [REFERENCE]`: 5330 の Linux から、USB（TransMemory、`/dev/sda`、TRAN usb・RM 1 を確かめる）へ image を dd するか kernel を差し替え（前の物は `vmunix.old`）、UEFI の BootNext で 1 回起動 → zedBSD の ssh を待ち 60 秒 → `5330-survey.sh` と `keiland-shot` の PNG → Linux に戻す → `5330-survey-diff.py` で基準と比べ、最後の行が `5330-run: PASS|FAIL`。`flock /tmp/i915-hw.lock` の下。BootOrder は変えない。
+- image は `config-5330.mk`（CI の amd64 ＋ 撮影 ＋ keiland-shot・backlight-probe）: `make ZEDBSD_CONFIG=plan/tools/hw5330/config-5330.mk BUILD=<dir> disk-image`。
+- 証拠の要約は `evidence/NAME.md`（git の中）、kernel の log と PNG は `build/hw5330/logs/`（git の外、`LOGS` で変えられる）。既定の基準は `evidence/t1229i21-main-merged-20261017.md`（2026-10-17 の WS245 の merge の後の main）。
+- `5330-bootcycle.sh`（段ごとの 1 回の起動、`~/ws245` の kernel を使う）、`5330-ws253-early.sh`・`5330-ws253-collect.sh`（WS253 の起動時間の読み取り）。

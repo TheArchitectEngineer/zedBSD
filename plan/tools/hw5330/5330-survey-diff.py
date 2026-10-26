@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # ws245: compares the regression evidence of two bare starts of the Latitude 5330 (design.md §6.3): the surveys of
 # the first picture, their judgement and the digest of the display writes, read from two whole kernel logs taken by
-# plan/ws245/tests/5330-survey.sh.
-#   python3 -I plan/ws245/tests/5330-survey-diff.py <reference dmesg> <stage dmesg>
+# plan/tools/hw5330/5330-survey.sh.
+#   python3 -I plan/tools/hw5330/5330-survey-diff.py <reference dmesg> <stage dmesg>
 # Prints a table of every surveyed register whose value differs (the frame counter, the scanline, the CRC result
 # and the live surface move between any two starts and are listed apart), the two judgements and the two digests,
 # and ends with PASS when the stage's judgement is "lit" and no steady register differs, FAIL otherwise.

@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws245: the host tests of the xd display (display 11 to 13, src/drivers/gpu/i915/display/xd-*.c) on the own register
 # model (src/drivers/gpu/i915/tests/display/xd-fake-regs.c), under ASan/UBSan, with the lock order record.
-#   sh plan/ws245/tests/run-xd-host-tests.sh [OUT]   (default build/ws245-host)
+#   sh plan/tools/i915-display/run-xd-host-tests.sh [OUT]   (default build/ws245-host)
 # Each test is built with the display host library (every display source as production, host-kernel.c's stand-ins;
 # plan/ws084/tests/display-host-lib.sh).  The tests:
 #   host-xd-io-test        the register window: access, waits, the write record, the mailbox, the lock order
@@ -101,9 +101,9 @@
 #   host-output-link-test  an output's planned link (display/output.c): the 5330's USB-C monitor at the link Linux
 #                          trained, the fallback's limits, a branch's depth and dot clock, an HDMI mode's link and PLL;
 #                          the firmware's output by the platform's ports
-# The source audit (plan/ws245/tests/check-sources.py) runs last: no file of the display 11 to 13 code names a source at
+# The source audit (plan/tools/i915-display/check-sources.py) runs last: no file of the display 11 to 13 code names a source at
 # its head or carries a copied notice, and every referenced: block is a multi-line comment naming its source.
-# The check against the Linux tree itself is plan/ws245/tests/check-xd-regs-linux.sh (needs the unpacked tree).
+# The check against the Linux tree itself is plan/tools/i915-display/check-xd-regs-linux.sh (needs the unpacked tree).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e
 cd "$(dirname "$0")/../../.."
@@ -137,7 +137,7 @@ if grep -nE '(->|\.)kind (==|!=) I915_XD_KIND_|(->|\.)verified\b' src/drivers/gp
 fi
 # The display's steps in the device start and stop come in their order (device.c): start, the interrupt half, the
 # outputs, serve; and stop serving, the outputs, stop, destroy.
-if ! python3 -I plan/ws245/tests/check-display-steps.py src/drivers/gpu/i915/device.c; then
+if ! python3 -I plan/tools/i915-display/check-display-steps.py src/drivers/gpu/i915/device.c; then
 	failed=1
 fi
 # The log words of the display (design.md section 6.4): the development stage symbols and the old run prefix are gone
@@ -156,7 +156,7 @@ for line in 'resident display: buffers %ux%u pitch %u: A surf 0x%08x cpu %p, B s
 	fi
 done
 # The source audit of the display 11 to 13 files (design.md section 5.4).
-if ! python3 -I plan/ws245/tests/check-sources.py src/drivers/gpu/i915; then
+if ! python3 -I plan/tools/i915-display/check-sources.py src/drivers/gpu/i915; then
 	failed=1
 fi
 if [ "$failed" -ne 0 ]; then
