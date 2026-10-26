@@ -28,7 +28,7 @@
 <!-- master:next:start -->
 1. 新しい Q1 は AGENTS.md・この block を読む。**ユーザーへは日本語で、聞かれた 1 件だけを答える。ユーザーに試験を頼まない。**
 2. **merge・試験の出力は必ず読んで確かめてから記録・報告する**（merge の後に `git log -1 --format='%h %p'`、担当の SHA は `git cat-file -t`）。担当の branch に捨てた変更が残っていないか（例: 2026-10-22 の P2 の buffer の使い回し）を diff の file の一覧で確かめ、必要なら cherry-pick。
-3. 次の番号: BUG-346、q1593、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
+3. 次の番号: BUG-346、q1594、WS290、KL_VERSION 96。古い q・T1 の番号の経緯は git の履歴（2026-10-23 以前の master.md）。
 4. WS288 の次: [handover-20261024-2230.md](ws288/handover-20261024-2230.md) の §5（推し: p009 の残りを閉じる → p018・p010 → p006 の見直し）。担当には amaterrace-gpu の worktree を作って渡し、Q1 が `--no-ff` で merge する。
 5. 日付は host の `date`。記録の整合は [record-integrity.md](record-integrity.md)。1 LW ≈ 実時間 15〜25 分。
 <!-- master:next:end -->
@@ -636,6 +636,7 @@ Milestone の達成は所属 WS の完了数ではなく、到達点の証拠で
 - 2026-10-12 ユーザー:「いったんデフォルトの解像度を1024x600にします。OSC Tokyoでのデモはこの解像度のタッチLCDを購入してのぞみます。」→ platform/arm64/config.txt の既定を 1024x600 60Hz（hdmi_mode 87＋hdmi_cvt）に（Q1）。ディスプレイ本来の解像度（1920x1200）で出す件は後回し。デモの機材は 1024x600 のタッチ LCD（touch の入力の確かめが要る）。
 - 2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・driver の decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」→ 1 は WS211 p009（P3）、3 は WS211 p010（P4）、4 は WS210 p013（P1、Calendar の後）、2 は新しい WS214（P2、p001 設計から）。800x480 の試し: compositor の draw→shown p50 38ms・submit→shown p50 11ms（place23）。Notes の起動の失敗（stencil format failed -11）は WS141 p017 を (b) の前に回すかをユーザーに問い中。
 <!-- master:decisions-log:start -->
+- 2026-10-26 15:57 ユーザー 「すみません、gclkが20MHzなんですか？それだとDCは成立しないです。このまま小手先の対応をしてもだめです。クロックドメインを分割して、DCを本来の200MHzにしてください」 → WS288 p045 を新設、P1 に。U102 の DC の memory の側を gclk に置く案を改める。
 - 2026-10-26 11:10 ユーザー 「はい、ドライバの初期化時に、CPと通信していないのが、非常に設計としてまずいです。初期化コマンドを実装してください。・初期化コマンドと診断コマンドを実装 ・初期化と診断のコマンドが通るのを確認 ＝コマンドを置いたホストメモリへのアクセス経路と、CPファームウェアの正常動作を確認 ・HDMI接続の通知を受けて、scanoutを開始。 ＝AXIやDDR3アクセスの正常性を確認。DC回路の正常性を確認。 ・VRAMへのblitをscanout目視でチェック ・ホストメモリへのblitをCPUリードでチェック」 → WS288 p044 を新設、P3 に。
 - 2026-10-26 09:48 ユーザー「えーと、5つもビルドしなくていいよ。1つ合成が通って、warningがなければ、それでいいよ。warningがあったら、ぜんぶ見せて。きちんと原因を説明するので。」→ strategy の探索をやめ、Debug OFF・直の clock・Default の 1 本だけ。その build の warning を全部（合成・実装・DRC・critical・methodology、ID ごとの数と全文）plan/ws288/phase024/evidence/ に置いてユーザーに見せる（原因はユーザーが説明、P1・Q1 は自分で無害と決めない）。JTAG の DONE・MEM_READY・再 calibration 50 回は確かめる。
 - 2026-10-26 09:08 ユーザー（説明）: MIG の debug の core を入れたら動いたのは、debug の回路で netlist の大きさと形が変わり、P&R の探索（heuristic、NP 困難）の道が変わって偶然 MIG の critical な経路がうまく配線された配置を引いただけ（probe effect）。論理の正しさの証明ではなく、margin が極小の危険の印。DDR3 などの高速の PHY の密な FPGA では Vivado の版（minor・build の番号）で router の重みが変わり、通っていた配置配線が破綻し得る。プロの実践: debug の core なしで配置配線の seed・strategy の探索（Multi-Pass / Explore）をして安定に制約を満たす構成を見つけ、その構成と Vivado の版を固定（freeze）し、再現できる build の script（Tcl）に記録して進む。理由を RTL の論理だけに求めるのは誤り。→ P1: Debug OFF・直の clock で strategy・directive の探索（Performance_Explore・ExtraTimingOpt・Congestion_SpreadLogic_high・既定など）、候補ごとに板で MEM_READY と再 calibration の多数回（例 50）、全 MIG の clock の WNS・WHS と DRC の一覧、最も堅い物を選び、Vivado 2026.1（build 6511674）・strategy・directive を tools/vivado-build.tcl に固定、docs/style.md に「板の bitstream は固定の Vivado の版と記録した strategy で作る、debug の core を入れたら動いたは警告の印」を記す。
