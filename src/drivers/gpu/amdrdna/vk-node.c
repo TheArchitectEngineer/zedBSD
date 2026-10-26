@@ -1276,6 +1276,9 @@ vk_node_report_clocks(
 	    report.gfx_activity_top,
 	    (unsigned long long)report.boosts,
 	    report.boosted ? " raised" : "");
+
+	/* The graphics block's status words, which say which units are working. */
+	amdrdna_spaces_mark_status(node->device);
 }
 
 /* Marks the VK_NODE_TIMED_SHOWN opcodes of a period that took the most time, the longest first. */

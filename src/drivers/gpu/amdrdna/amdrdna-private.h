@@ -1262,6 +1262,10 @@ amdrdna_spaces_stamp(
 	struct amdrdna_device *device,
 	bool on);
 
+void
+amdrdna_spaces_mark_status(
+	struct amdrdna_device *device);
+
 uint64_t
 amdrdna_space_run_ticks(
 	struct amdrdna_space *space,
