@@ -37,6 +37,8 @@
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
+#include <kern/sched.h>
+#include <kern/waitq.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/amdrdna/amdrdna-private.h"
@@ -607,8 +609,13 @@ amdrdna_ring_submit(
 }
 
 /*
- * Waits until a ring's fence reaches sequence: a short spin, then sleeps,
- * for at most milliseconds.
+ * Waits until a ring's fence reaches sequence, for at most milliseconds.
+ *
+ * The waiter sleeps on the ring's fence queue, which the interrupt thread
+ * wakes at each end-of-pipe event of the ring, so it wakes as soon as the
+ * fence is written.  Every sleep also ends at the next tick, so a fence
+ * whose event does not come (the interrupt ring off, a ring that writes
+ * its fence without one) is still seen within a tick.
  *
  * Returns 0, or ETIMEDOUT when the fence did not come.
  */
@@ -620,37 +627,51 @@ amdrdna_ring_wait(
 	unsigned milliseconds)
 {
 	volatile uint32_t *fence;
+	unsigned long irq;
 	uint64_t started;
 	uint64_t now;
+	uint64_t observed;
 	uint32_t value;
+	bool reached;
 
 	/* The fence word. */
 	fence = amdrdna_ring_word(device, ring, CP_WORD_FENCE);
 
-	/* Looks, then sleeps, until the fence passes the sequence or the time is up. */
+	/* Looks, then sleeps until the next event or tick, until the fence passes the sequence or the time is up. */
+	reached = false;
 	started = clock_milliseconds(NULL);
+	irq = spin_lock_irqsave(&ring->lock);
+
 	for (;;) {
+		/* The queue's sequence first, so an event after the look ends the sleep at once. */
+		observed = waitq_sequence(&ring->fences);
+
 		/* Stops once the fence reached the sequence (the difference handles the wrap). */
 		value = *fence;
-		if ((int32_t)(value - sequence) >= 0)
-			return 0;
+		if ((int32_t)(value - sequence) >= 0) {
+			reached = true;
+			break;
+		}
 
 		/* Stops when the time is up. */
 		now = clock_milliseconds(NULL);
 		if (now - started >= milliseconds)
 			break;
 
-		/* Spins the first 2 ms, then sleeps a millisecond at a time. */
-		if (now - started < 2U) {
-			kern_usleep_range(CP_POLL_MIN_US, CP_POLL_MAX_US);
-		} else {
-			kern_usleep_range(1000U, 1500U);
-		}
+		/* Sleeps until the ring's next event, or the next tick at the latest. */
+		(void)waitq_sleep(&ring->fences, &ring->lock, observed, sched_ticks() + 1U, 0U);
 	}
 
-	/* The fence never came. */
-	amdrdna_mark("%s fence %u not reached (at %u)", ring->name, (unsigned)sequence, (unsigned)*fence);
-	return ETIMEDOUT;
+	spin_unlock_irqrestore(&ring->lock, irq);
+
+	/* Reports a fence that never came. */
+	if (!reached) {
+		amdrdna_mark("%s fence %u not reached (at %u)", ring->name, (unsigned)sequence, (unsigned)*fence);
+		return ETIMEDOUT;
+	}
+
+	/* Succeeded: the fence passed the sequence. */
+	return 0;
 }
 
 /*

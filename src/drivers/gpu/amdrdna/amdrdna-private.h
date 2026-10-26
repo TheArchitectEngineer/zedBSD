@@ -330,7 +330,10 @@ enum amdrdna_ring_kind {
  * write_pointer counts every word ever written (dwords, or what the copy
  * engine counts in bytes is four times it) and only grows.  lock
  * serializes the writers of the ring, its sequence and its counts; the
- * interrupt thread takes it to count the ring's interrupts.  image_copy
+ * interrupt thread takes it to count the ring's interrupts.  fences is
+ * woken under lock at each of the ring's end-of-pipe events, so a waiter
+ * for its fence wakes when the fence is written rather than at the next
+ * tick (amdrdna_ring_wait()).  image_copy
  * keeps the queue image as it was filled, for a later reset.  up says the
  * engine runs the ring.  The buffers live as long as the GPU may touch
  * them, which is the record's life.
@@ -350,6 +353,7 @@ struct amdrdna_ring {
 	uint64_t write_pointer;
 	uint32_t sequence;
 	uint64_t interrupts;
+	struct wait_queue fences;
 	bool up;
 };
 

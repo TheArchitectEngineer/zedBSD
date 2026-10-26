@@ -20,6 +20,11 @@
 #                                            on weston's kiosk shell on the DRM backend (seatd, started when not
 #                                            running), its MVIEW lines and weston's composition per repaint
 #                                            ("plane-only" is the direct scanout) printed, OUT/mview.log
+#     measure.sh profile OUT [MVIEW-OPTION]...
+#                                            mview in the session with libvulkan's submission timing
+#                                            (VULKAN_ZEDBSD_SUBMIT_TIMING) and the kernel's amdrdna.vk.timing marks of
+#                                            the run (the boot line must carry amdrdna.vk.timing=N): the MVIEW, VULKAN
+#                                            TIMING and vk timing lines (printed), OUT/mview.log, OUT/kernel.log
 #     measure.sh bench zedbsd|linux OUT [LIST]
 #                                            every run of LIST (default bench.list beside this script) on the one
 #                                            system, mview copied first (USB_MVIEW, LINUX_MVIEW); OUT/bench.log and
@@ -181,6 +186,17 @@ mview() {
 	head -5 "$out/mview-scanout.log"
 }
 
+profile() {
+	out=$1
+	shift
+	mkdir -p "$out"
+	ip=$(to_zedbsd) || return 1
+	ZS_TIMEOUT=600 zs "$ip" "n=\$(dmesg | wc -l); su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 VULKAN_ZEDBSD_SUBMIT_TIMING=1 /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null; dmesg | tail -n +\$n | grep 'vk timing' > /tmp/kernel.log"
+	zcp "root@$ip:/tmp/mview.log" "root@$ip:/tmp/kernel.log" "$out/" || return 1
+	grep -E 'MVIEW (SPIN|STAGES|FAILED)|VULKAN TIMING' "$out/mview.log" | tail -6
+	grep -E 'frames|gpu busy|op ' "$out/kernel.log" | tail -9
+}
+
 linux_mview() {
 	out=$1
 	shift
@@ -231,7 +247,8 @@ linux) to_linux && echo linux ;;
 deploy) deploy "$@" ;;
 desktop) desktop "$@" ;;
 mview) mview "$@" ;;
+profile) profile "$@" ;;
 linux-mview) linux_mview "$@" ;;
 bench) bench "$@" ;;
-*) sed -n '2,33p' "$0"; exit 2 ;;
+*) sed -n '2,38p' "$0"; exit 2 ;;
 esac
