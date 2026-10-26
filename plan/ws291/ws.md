@@ -42,6 +42,7 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 ## VF2（p020）の実機
 
 - 2026-10-26 23:09 ユーザー「VF2はssh kei@10.0.30.2で、パスワード（略）です。VF2はSwitchbotで電源を入れられます。」→ VF2 は ssh kei@10.0.30.2（password は tree に書かない、Q1 が担当に渡す）。電源は SwitchBot のプラグ（AC276E42B252）で Q1 が `plan/tools/switchbot.py` で入れ切りする（担当は Q1 に頼む）。serial は host の /dev/ttyUSB0。
+- 2026-10-26 23:09 ユーザー「VF2には現在、PowerVRドライバのカーネルやファームウェアが入っていないと思うので、SSH経由で更新が必要です。」→ p020 の最初に、main の config-visionfive2.mk（desktop の構成、PowerVR の driver あり）で vmunix と PowerVR の firmware（zedBSD-firmware から）・desktop の package を作り、ssh で VF2 の /boot/boot0/vmunix などを入れ替える（今の vmunix は WS288 の GHCI の kernel、P3 の ac7ee7d64 の物。入れ替える前の物は .old 等で残す）。起動の後に PowerVR の attach と firmware の load を確かめてから計測する。
 - WS288 の作業で VF2 の zedbsd.cfg から login=graphical を外したまま（元は zedbsd.cfg.p044orig）。desktop・mview の計測の前に戻す。
 
 ## 未決（その Phase の前に確かめる）
