@@ -583,8 +583,10 @@ present_present(
 		blob = true;
 
 	/* The frame has the display's format. */
-	if (request->format != GPU_PIXEL_BGRA8888)
+	if (request->format != GPU_PIXEL_BGRA8888) {
+		amdrdna_mark("present refused: format %u", (unsigned)request->format);
 		return EINVAL;
+	}
 
 	/* One presentation at a time; the lease cannot end while it runs. */
 	mutex_lock(&node->present_lock);
@@ -609,6 +611,8 @@ present_present(
 	/* Reports a frame the lease or the display does not take. */
 	if (error != 0) {
 		mutex_unlock(&node->present_lock);
+		amdrdna_mark("present refused (%d): blob %u stride %u offset %llu %ux%u", error, (unsigned)blob, (unsigned)request->stride,
+			  (unsigned long long)request->offset, (unsigned)request->width, (unsigned)request->height);
 		return error;
 	}
 

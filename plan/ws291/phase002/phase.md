@@ -3,7 +3,7 @@
 # ws291-p002 3D の scene を決め、Linux と zedBSD の差を測る
 
 - 親: [WS291](../ws.md)。
-- 状態: in-progress（2026-10-26 23:47 P2、q1596-i01）。Linux の基準は測った（2026-10-27 00:00 作り直しの benchmark で再計測）。zedBSD 側は [p002a](../phase002a/phase.md)（amdrdna の executor に depth・index draw・mip を足す）の後。
+- 状態: in-progress（2026-10-26 23:47 P2、q1596-i01）。両 OS を同じ条件で測った（2026-10-27 00:40）: 主の scene（qs40 ×6500 instanced）は zedBSD 20.1 fps・Linux 50.1 fps。clearance は Q1 の判定。
 - 依存: p001（cleared、main bad29b52f）、p002a（zedBSD の計測の前提、2026-10-26 ユーザー「機能を足してから比較（推し）」）。
 
 ## 範囲
@@ -73,7 +73,35 @@
 - 見た目の基準（weston-screenshooter、`--debug` の weston）: build/ws291/measure/ref/linux-shot-1.png（1 体）・linux-shot-6500.png（細かい格子、1 体が十数 pixel）。6500 copies の scene は三角形が pixel より小さい geometry の重い scene で、pixel の負荷は軽い（制限として記録。pixel の重い scene が要れば別に足す）。
 - 以前の per-copy draw の 1500 copies（50.9 fps）は「毎 frame 24000 draw を記録」の scene で、今は big-N 系がその役。
 
-### zedBSD
+### zedBSD と Linux（同じ binary の source・同じ条件、2026-10-27 00:40 頃、frame あたり ms）
+
+zedBSD: c8ba529 ＋ p002a（b20e5545e）・scanout の import の修正（160ad707f）・mview（commands の 1 個ずつの確保）、build/ws291/measure/bench-zedbsd-2/table.txt。
+Linux: 上の環境、build/ws291/measure/bench-linux-3/table.txt。両方とも format 44（B8G8R8A8_UNORM）、MAILBOX、content game、8 秒の spin。
+
+| run | zedBSD fps | Linux fps | zedBSD record / submit / GPU 待ち | Linux record / submit / GPU 待ち |
+| --- | --- | --- | --- | --- |
+| scene-1 | 58.4 | 9604 | 0.26 / 2.75 / 0.04（acquire 12.1） | 0.01 / 0.02 / 0.06 |
+| scene-1500 | 57.5 | 201 | 0.63 / 12.8 / 0.03 | 0.11 / 0.10 / 4.62 |
+| **scene-6500** | **20.1** | **50.1** | 1.90 / 44.7 / 0.03 | 0.14 / 0.10 / 19.5 |
+| big-1（16 draw） | 58.1 | 9345 | 0.35 / 2.48 / 0.07 | 0.01 / 0.02 / 0.06 |
+| big-10（160） | 57.6 | 2660 | 0.69 / 8.26 / 0.03 | 0.11 / 0.03 / 0.21 |
+| big-100（1600） | 6.06 | 533 | 89.6 / 69.4 / 0.02 | 0.76 / 0.04 / 1.02 |
+| big-1000（16000） | 0.53 | 86.9 | 918 / 666 / 0.04 | 5.42 / 0.02 / 6.01 |
+| subs-10 | 41.7 | 3797 | 2.24 / 19.2 / 0.03 | 0.06 / 0.10 / 0.09 |
+| subs-100 | 4.35 | 521 | 21.0 / 193 / 0.02 | 0.59 / 0.91 / 0.39 |
+| subs-1000 | 0.37 | 58.2 | 210 / 1806 / 0.01 | 6.63 / 10.1 / 0.36 |
+
+- 読み方: zedBSD の executor は vkQueueSubmit の中で GPU の完了まで待つ（indirect buffer ごとに待つ、vk-execute.c）ので、zedBSD の submit は GPU の時間を含み、fence は 0 に近い。Linux は submit が返ってから fence で待つ。
+- direct scanout: zedBSD は `KWL SCANOUT direct=1`（scene-6500 で switch_ms=84）。Linux は weston の plane-only 264・mixed 61。
+- zedBSD の direct scanout は Keiland の game mode が flip ごとに vblank を待つ（GPU_DISPLAY_PRESENT の FIFO、amdrdna の present が flip を待つ）ので、MAILBOX でも 60 fps が上限（scene-1・big-1 は 58 で acquire が 12 ms）。zedBSD の WSI は IMMEDIATE を持たない（FIFO に落ちる）。60 fps 未満の scene-6500・big-100 以上・subs はこの上限に掛からない。
+- 差の大きい所（改善の案は Q1 へ送った、p003 以降）:
+  1. scene-6500（GPU の重さ）: 44.7 ms 対 19.5 ms（2.3 倍）。RADV は Navi10 で NGG の primitive の culling（小さい三角形を shader で捨てる）を使う。amdrdna は legacy の vertex program で culling が無い。他に HiZ（HTILE）無し、texture が linear。
+  2. 記録（big-100: 1600 draw で 90 ms、Linux 0.76 ms）: kernel の executor の record の decode（object の lookup・record ごとの kern_malloc・append）が 1 command 約 14 µs。
+  3. submit（subs-100: 1 submit 約 1.9 ms、Linux 0.009 ms）: submit ごとに indirect buffer を作り、state を全部書き、GPU の完了を待つ。draw ごとに全 state と 2 つの resource table を書く。
+  4. 60 fps の上限（game mode の flip の待ち）: mailbox 相当（新しい image が来たら待っている方を返す）と待たない flip。
+- 試験の補助で直した所（p002 の範囲で必要だった物）: mview は B8G8R8A8_UNORM を先に選ぶ（amdrdna の scanout が BGRA だけを受ける。Linux も同じ format で測った）、command buffer を 1 個ずつ確保（executor は 1 回 64 個まで）。Keiland の zedBSD の scanout backend が import に image の記述を渡していて kernel（gpu_import_ioctl「Never trust receiver-supplied descriptions」）が EINVAL で断っていた → 渡さないよう直した（160ad707f、全 GPU の game mode に効く）。refused の段を `KL SCANOUT refused step=...`、amdrdna の present の拒否を kernel の log に出すようにした。
+
+### zedBSD（以前の記録）
 
 - 2026-10-26 23:20 実機: mview が `MVIEW FAILED api=depth format result=-11`。amdrdna の executor（src/drivers/gpu/amdrdna/vk）は depth の format を持たない（vk-device.c）、render pass は colour 1 枚だけ（vk-target.c）、image は 1 level・pitch linear（vk-resource.c）、BindIndexBuffer・DrawIndexed を記録しない（vk-record.c）。→ p002a。
 
@@ -81,3 +109,4 @@
 
 - 2026-10-26 23:47 P2: 新設（Q1 の指示で phase.md を作る）。mview の拡張、Linux の基準の計測。
 - 2026-10-27 00:05 P2: ユーザーの指示で benchmark を作り直し（instanced の主の scene、big-N・subs-N の command の重さの組）、Linux を再計測。scene は 6500 copies で 50.0 fps。
+- 2026-10-27 00:42 P2: p002a の後、zedBSD と Linux を同じ benchmark（bench.list）で測った。Keiland の scanout の import を直して direct scanout が動いた。改善の案を Q1 へ。
