@@ -105,6 +105,16 @@
 /* Marks a parameter an operation of the table does not need. */
 #define UNUSED_PARAMETER(parameter)	((void)(parameter))
 
+/*
+ * How far the driver goes with a VMD, as the boot parameters ask.
+ */
+enum vmd_stage {
+	VMD_STAGE_OFF = 0,
+	VMD_STAGE_READ,
+	VMD_STAGE_NOSCAN,
+	VMD_STAGE_FULL
+};
+
 /* The segment of the first VMD's bus; later ones count down from it. */
 #define VMD_SEGMENT_FIRST	0xffffU
 
@@ -115,12 +125,22 @@
 #define VMD_DRAIN_POLLS		1000U
 #define VMD_DRAIN_POLL_US	1000U
 
-/* The boot parameter that leaves every VMD alone. */
-#define VMD_DISABLE_TOKEN	"pci.vmd=off"
+/*
+ * The boot parameters that stop the driver at a stage, to find on a
+ * machine without a serial console which stage stops its boot: leave every
+ * VMD alone; only read and log what the firmware left behind it; arrange
+ * everything but publish no bus.
+ */
+#define VMD_TOKEN_OFF		"pci.vmd=off"
+#define VMD_TOKEN_READ		"pci.vmd=read"
+#define VMD_TOKEN_NOSCAN	"pci.vmd=noscan"
 
-/* The interrupt counts at which the driver says how many it has served. */
-#define VMD_INTERRUPT_REPORT_FIRST	1U
-#define VMD_INTERRUPT_REPORT_LATER	1000U
+/* The slots of a bus, the functions of a slot, and a type 1 header's kind. */
+#define VMD_SLOTS		32U
+#define VMD_FUNCTIONS		8U
+#define VMD_HEADER_MULTI	0x80U
+#define VMD_HEADER_KIND		0x7fU
+#define VMD_HEADER_BRIDGE	0x01U
 
 /*
  * One VMD this driver serves.
@@ -220,7 +240,9 @@ static struct drv_pci_driver vmd_driver = {
  */
 static unsigned vmd_instances;
 
-static int vmd_boot_disabled(void);
+static enum vmd_stage vmd_boot_stage(void);
+static void vmd_log_firmware(struct vmd_host *host);
+static void vmd_log_function(struct vmd_host *host, unsigned bus, unsigned device, unsigned function);
 static int vmd_read_windows(struct vmd_host *host);
 static int vmd_read_buses(struct vmd_host *host);
 static int vmd_refuse_shadow(struct vmd_host *host);
@@ -260,15 +282,15 @@ vmd_attach(
 	const struct drv_pci_id *id)
 {
 	struct vmd_host *host;
-	int disabled;
+	enum vmd_stage stage;
 	int error;
 
 	UNUSED_PARAMETER(id);
 
 	/* Leaves the VMD alone when the boot line asks, so a machine that stops here can still boot. */
-	disabled = vmd_boot_disabled();
-	if (disabled) {
-		kern_logf("vmd: disabled by %s\n", VMD_DISABLE_TOKEN);
+	stage = vmd_boot_stage();
+	if (stage == VMD_STAGE_OFF) {
+		kern_logf("vmd: disabled by %s\n", VMD_TOKEN_OFF);
 		return ENODEV;
 	}
 
@@ -325,6 +347,14 @@ vmd_attach(
 		return error;
 	}
 
+	/* Logs what the firmware left behind the VMD, and stops there when asked. */
+	vmd_log_firmware(host);
+	if (stage == VMD_STAGE_READ) {
+		kern_logf("vmd: stopped after reading (%s)\n", VMD_TOKEN_READ);
+		vmd_release(host);
+		return ENODEV;
+	}
+
 	/* Takes the VMD vector the children's messages are caught into. */
 	error = vmd_take_vector(host);
 	if (error != 0) {
@@ -337,6 +367,14 @@ vmd_attach(
 	if (error != 0) {
 		vmd_release(host);
 		return error;
+	}
+
+	/* Publishes no bus when asked; the VMD keeps its vector and its arrangement. */
+	if (stage == VMD_STAGE_NOSCAN) {
+		kern_logf("vmd: %04x: no bus published (%s)\n", host->segment, VMD_TOKEN_NOSCAN);
+		vmd_instances++;
+		(void)drv_pci_device_set_driver_data(device, host);
+		return 0;
 	}
 
 	/* Creates the root bus behind the VMD. */
@@ -603,28 +641,39 @@ host_msi_establish(
 	uint64_t *address,
 	uint32_t *data)
 {
+	struct drv_pci_address location;
 	struct vmd_host *host;
 	unsigned long enabled;
+	unsigned long served;
 	unsigned slot;
 	int error;
-
-	UNUSED_PARAMETER(device);
 
 	/* Refuses missing arguments. */
 	host = context;
 	if (run == NULL || handle == NULL || address == NULL || data == NULL)
 		return EINVAL;
 
-	/* Fills a free slot of the message table. */
+	/* Fills a free slot of the message table, and reads how many interrupts came so far. */
 	enabled = spin_lock_irqsave(&host->message_lock);
 
 	error = drv_pci_vmd_message_take(&host->messages, run, argument, &slot);
+	served = host->interrupts;
 
 	spin_unlock_irqrestore(&host->message_lock, enabled);
 
 	/* Reports a full table. */
 	if (error != 0)
 		return error;
+
+	/* Logs the message, and the interrupts the VMD vector has served before it. */
+	drv_pci_device_address(device, &location);
+	kern_logf("vmd: %04x:%02x:%02x.%u message %u (%lu interrupts served so far)\n",
+		  location.segment,
+		  location.bus,
+		  location.device,
+		  location.function,
+		  slot,
+		  served);
 
 	/* Succeeded: the slot is the handle, and the message selects the VMD vector. */
 	*handle = slot;
@@ -698,26 +747,127 @@ host_msi_disestablish(
 	return 0;
 }
 
-/* Tells whether the boot line holds the token that leaves every VMD alone. */
-static int
-vmd_boot_disabled(
+/* Reads from the boot line how far the driver is to go. */
+static enum vmd_stage
+vmd_boot_stage(
 	void)
 {
 	const char *line;
 	int present;
 
-	/* Reads the line the loader handed over. */
+	/* Reads the line the loader handed over; without one the driver goes all the way. */
 	line = kern_boot_handoff("boot.command-line");
 	if (line == NULL)
-		return 0;
+		return VMD_STAGE_FULL;
 
-	/* Looks for the whole token. */
-	present = kern_boot_parameters_token_present(line, VMD_DISABLE_TOKEN);
+	/* Looks for each whole token, the one that does least first. */
+	present = kern_boot_parameters_token_present(line, VMD_TOKEN_OFF);
 	if (present)
-		return 1;
+		return VMD_STAGE_OFF;
+	present = kern_boot_parameters_token_present(line, VMD_TOKEN_READ);
+	if (present)
+		return VMD_STAGE_READ;
+	present = kern_boot_parameters_token_present(line, VMD_TOKEN_NOSCAN);
+	if (present)
+		return VMD_STAGE_NOSCAN;
 
-	/* Reports the VMD as wanted. */
-	return 0;
+	/* Reports the whole driver as wanted. */
+	return VMD_STAGE_FULL;
+}
+
+/*
+ * Logs every function on the VMD's first bus, and on the buses its root
+ * ports had been given, as the firmware left them.  It only reads.
+ */
+static void
+vmd_log_firmware(
+	struct vmd_host *host)
+{
+	uint32_t identity;
+	uint32_t header;
+	uint32_t buses;
+	unsigned device;
+	unsigned function;
+	unsigned functions;
+	unsigned secondary;
+	unsigned below;
+
+	/* Looks at each slot of the first bus. */
+	for (device = 0; device < VMD_SLOTS; device++) {
+		/* A slot whose first function does not answer is empty. */
+		(void)vmd_config_read(host, host->domain.bus_start, device, 0, 0x00U, 4U, &identity);
+		if ((identity & 0xffffU) == 0xffffU)
+			continue;
+
+		/* A multi-function device may answer on all eight. */
+		(void)vmd_config_read(host, host->domain.bus_start, device, 0, 0x0eU, 1U, &header);
+		functions = 1U;
+		if ((header & VMD_HEADER_MULTI) != 0)
+			functions = VMD_FUNCTIONS;
+
+		for (function = 0; function < functions; function++) {
+			/* Passes over a function that does not answer. */
+			(void)vmd_config_read(host, host->domain.bus_start, device, function, 0x00U, 4U, &identity);
+			if ((identity & 0xffffU) == 0xffffU)
+				continue;
+
+			vmd_log_function(host, host->domain.bus_start, device, function);
+
+			/* Looks behind a bridge whose secondary bus the CFGBAR decodes. */
+			(void)vmd_config_read(host, host->domain.bus_start, device, function, 0x0eU, 1U, &header);
+			if ((header & VMD_HEADER_KIND) != VMD_HEADER_BRIDGE)
+				continue;
+			(void)vmd_config_read(host, host->domain.bus_start, device, function, 0x18U, 4U, &buses);
+			secondary = (buses >> 8) & 0xffU;
+			if (secondary <= host->domain.bus_start || secondary > host->domain.bus_end)
+				continue;
+
+			for (below = 0; below < VMD_SLOTS; below++) {
+				/* Logs the first function of each slot that answers. */
+				(void)vmd_config_read(host, secondary, below, 0, 0x00U, 4U, &identity);
+				if ((identity & 0xffffU) == 0xffffU)
+					continue;
+
+				vmd_log_function(host, secondary, below, 0);
+			}
+		}
+	}
+}
+
+/* Logs one function's identity, command, header, bus numbers or first BARs, and window. */
+static void
+vmd_log_function(
+	struct vmd_host *host,
+	unsigned bus,
+	unsigned device,
+	unsigned function)
+{
+	uint32_t identity;
+	uint32_t command;
+	uint32_t header;
+	uint32_t first;
+	uint32_t second;
+	uint32_t window;
+
+	/* Reads the registers the log shows. */
+	(void)vmd_config_read(host, bus, device, function, 0x00U, 4U, &identity);
+	(void)vmd_config_read(host, bus, device, function, 0x04U, 4U, &command);
+	(void)vmd_config_read(host, bus, device, function, 0x0cU, 4U, &header);
+	(void)vmd_config_read(host, bus, device, function, 0x10U, 4U, &first);
+	(void)vmd_config_read(host, bus, device, function, 0x18U, 4U, &second);
+	(void)vmd_config_read(host, bus, device, function, 0x20U, 4U, &window);
+
+	/* One line per function: 0x18 holds a bridge's bus numbers, an endpoint's BAR2. */
+	kern_logf("vmd: firmware %02x:%02x.%u id %08x command %08x header %08x bar0 %08x reg18 %08x reg20 %08x\n",
+		  bus,
+		  device,
+		  function,
+		  identity,
+		  command,
+		  header,
+		  first,
+		  second,
+		  window);
 }
 
 /*
@@ -1141,7 +1291,6 @@ vmd_interrupt(
 	struct drv_pci_vmd_pending pending[DRV_PCI_VMD_MESSAGES_MAX];
 	struct vmd_host *host;
 	unsigned long enabled;
-	unsigned long served;
 	unsigned count;
 	unsigned index;
 	int work;
@@ -1154,9 +1303,11 @@ vmd_interrupt(
 
 	count = drv_pci_vmd_messages_collect(&host->messages, pending);
 
-	/* The count is reported at a few points so the log shows the vector working. */
+	/*
+	 * The count is logged from thread context (host_msi_establish), never
+	 * from here: the console may not be entered from an interrupt.
+	 */
 	host->interrupts++;
-	served = host->interrupts;
 
 	spin_unlock_irqrestore(&host->message_lock, enabled);
 
@@ -1174,10 +1325,6 @@ vmd_interrupt(
 	drv_pci_vmd_messages_release(&host->messages, pending, count);
 
 	spin_unlock_irqrestore(&host->message_lock, enabled);
-
-	/* Reports the first interrupt and the thousandth. */
-	if (served == VMD_INTERRUPT_REPORT_FIRST || served == VMD_INTERRUPT_REPORT_LATER)
-		kern_logf("vmd: %04x: %lu interrupts served\n", host->segment, served);
 
 	/* Reports whether a child found work. */
 	return found;
