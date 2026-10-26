@@ -32,10 +32,11 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（GHC
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: ghci.md（2.0）と今の driver（33k 行）の照合、残す物（GSI1 の compiler など）・捨てる物・書き直す物、新しい構成、host 試験の model、Phase の分割、ghci.md の疑問の一覧。design-reviewer を通す。code は書かない | — | planned |
+| [p001](phase001/phase.md) | 設計: ghci.md（2.0）と今の driver（33k 行）の照合、残す物（GSI1 の compiler など）・捨てる物・書き直す物、新しい構成、host 試験の model、Phase の分割、ghci.md の疑問の一覧。design-reviewer を通す。code は書かない | — | in-progress（2026-10-26 [design.md](design.md) 版 2、review 28 件を反映。疑問 G01〜G39 のユーザーへの提示待ち） |
 | p002〜 | 実装（p001 の設計で立てる） | p001 | — |
 | 最後 | 規約の全文の見直し | 実装の全部 | — |
 
 ## 現在の状態・再開点
 
 - 2026-10-26: 新設。次は p001（設計）。
+- 2026-10-26 P1: p001 の [design.md](design.md) 版 2（Phase p002〜p013、196 LW、ghci.md の疑問 G01〜G39、判断 U1〜U7）。次: Q1 が G・U をユーザーに示し、design §18 から p002 以降を立てる。p002・p003 は回答なしで始められ、p004 は G04 の回答が要る。
