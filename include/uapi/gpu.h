@@ -27,12 +27,29 @@
 #define GPU_CAP_MAPPING			64U
 #define GPU_CAP_SHARE			256U
 #define GPU_CAP_NOTIFICATION		512U
+
+/*
+ * The device backs a blob created with GPU_BLOB_HOST in memory the CPU
+ * reaches through its cache.  Without it the framework clears the flag
+ * before the device sees the request, so asking for it is always safe.
+ */
+#define GPU_CAP_HOST_BLOB		65536U
 #define GPU_COMMAND_CONTEXT_FENCE	1U
 #define GPU_WAIT_CONSUME			1U
 #define GPU_SUBMIT_MAX			64U
 #define GPU_BLOB_MAPPABLE		1U
 #define GPU_BLOB_SHAREABLE		2U
 #define GPU_BLOB_CROSS_DEVICE		4U
+
+/*
+ * Only the CPU touches the blob: the process through its mapping and the
+ * renderer's decoder in the kernel (a transport's command streams and
+ * replies), never GPU work, a display or another device.  A device that
+ * reports GPU_CAP_HOST_BLOB may then back it with cached system memory,
+ * which the CPU reads far faster than a device's memory window; any other
+ * device makes it as it makes every blob.
+ */
+#define GPU_BLOB_HOST			8U
 #define GPU_IMAGE_LINEAR		1U
 #define GPU_HANDLE_CLOEXEC		1U
 #define GPU_HANDLE_CLOFORK		2U

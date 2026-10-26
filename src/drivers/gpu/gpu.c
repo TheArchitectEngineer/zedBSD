@@ -1021,7 +1021,8 @@ gpu_ops_validate(
 	    GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_COMMAND |
 	    GPU_CAP_PRESENT | GPU_CAP_MAPPING | GPU_CAP_DISPLAY | GPU_CAP_SHARE |
 	    GPU_CAP_NOTIFICATION | GPU_CAP_ALLOCATION_SHARE | GPU_CAP_FENCE |
-	    GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)) != 0)
+	    GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY |
+	    GPU_CAP_HOST_BLOB)) != 0)
 		return EOPNOTSUPP;
 
 	/* Supervised jobs require reservation, publication, cancellation and callback drain together. */
@@ -3029,9 +3030,20 @@ gpu_blob_ioctl(
 	if (constrained != 0U && device->ops->blob_create_placed == NULL)
 		return ENOTSUP;
 
-	/* Blob flags select mapping and independent sharing without changing their wire values. */
-	if ((request.flags & ~(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE)) != 0)
+	/* Blob flags select mapping, independent sharing and host memory without changing their wire values. */
+	if ((request.flags & ~(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE | GPU_BLOB_HOST)) != 0)
 		return EINVAL;
+
+	/* A blob only the CPU touches is never shared. */
+	if ((request.flags & GPU_BLOB_HOST) != 0U &&
+	    (request.flags & (GPU_BLOB_SHAREABLE | GPU_BLOB_CROSS_DEVICE)) != 0U)
+		return EINVAL;
+
+	/* A device that cannot back a blob in host memory never sees the flag: it makes the blob as any other. */
+	if ((device->ops->capabilities & GPU_CAP_HOST_BLOB) == 0U) {
+		request.flags &= ~GPU_BLOB_HOST;
+		extended.blob.flags = request.flags;
+	}
 
 	/* A cross-device renderer export must also be explicitly shareable. */
 	if ((request.flags & GPU_BLOB_CROSS_DEVICE) != 0 &&
