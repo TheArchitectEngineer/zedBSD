@@ -144,3 +144,4 @@
 | P2 / 2026-10-27 (WS291) (4) | phase-runner | WS291 p004（q1609） | `/home/awe/zedBSD-worktrees/p2-ws291` / `agent/p2-ws291` | q1609 | — | running | — |
 | P1 / 2026-10-27 (BUG-346) | bug-fixer | BUG-346（q1607） | `/home/awe/zedBSD-worktrees/p1-bug346` / `agent/p1-bug346` | q1607 | — | running | — |
 | P3 / 2026-10-27 (WS audit) | phase-runner | WS の精査（q1608） | `/home/awe/zedBSD-worktrees/p3-wsaudit` / `agent/p3-wsaudit` | q1608 | — | running | — |
+| P4 / 2026-10-27 (plan) | phase-runner | plan の形式の最適化（q1610） | `/home/awe/zedBSD-worktrees/p4-plan` / `agent/p4-plan` | q1610 | — | running | — |
