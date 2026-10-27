@@ -15,15 +15,15 @@
 ### 動いている担当と Queue
 
 <!-- master:agents:start -->
-2026-10-27 04:45 時点（詳細は [queue.md](queue.md)）。
+2026-10-28 02:58 時点（ハンドオーバー）。**動いている担当は無い**（全員返却、成果は main に merge 済み）。再開の手順は各 WS の再開点と [queue.md](queue.md)。
 
-| 担当 | Queue | 仕事 | worktree / branch |
-| --- | --- | --- | --- |
-| P1 | q1607 | [BUG-346](bugs/BUG-346.md)（unix の datagram の受信が送り手を起こさず sshd が止まる）を VF2（10.0.30.2）で修正 | `p1-bug346` / `agent/p1-bug346` |
-| P2 | q1611 | [ws291](ws291/ws.md) p005〜p007: RDNA の NGG（A passthrough → B culling → C 詰め直し）、実機 10.0.10.3。SSH は 1 本の接続を使い回す | `p2-ws291` / `agent/p2-ws291` |
-| P4 | q1610 | plan/ 一式・AGENTS.md・.claude/ の形の整理 | `p4-plan` / `agent/p4-plan` |
-
-- P3 の q1608（未完の WS の精査）は終了、main に merge 済み。結果は [ws-audit.md](agents/P3/ws-audit.md)。ユーザーに 9 件を質問中。
+| WS | 止めた所 | 再開の時 |
+| --- | --- | --- |
+| [WS290](ws290/ws.md) GHCI 1.0 の driver | 仕様の疑問は全部解決（ghci.md 89529de、[ghci-review.md](ws290/ghci-review.md) 第 9 版）。GHCI の担当とのやり取りは終了 | p001 の design 版 4 の仕上げ → p002〜（新しい Queue、承認の後） |
+| [WS291](ws291/ws.md) GPU の描画速度（RDNA） | p005 cleared、p006（culling + compaction、p007 を統合）は実機で止まらず 6500 体 30.68 ms（Linux 約 20 ms）。q1623 で改善点の調査 [rdna-next.md](ws291/rdna-next.md) | 属性の後回し・BAR の WC の map などの順。RDNA の機械は zedBSD（stick は vmunix-compact1・ngg=2）か Debian で起動 |
+| [WS299](ws299/ws.md) 5330 の NVMe の速さ | p002・p003 cleared、p004 は測る口と設計の案まで（q1617 paused） | p004 の範囲の判断（Q1）→ design-reviewer → 実装 |
+| [WS306](ws306/ws.md) ゲーム最適化の UAPI | planning。WS291 で RDNA の最適化をやりきった後に始める | p001 の設計 |
+| [WS305](ws305/ws.md) VFIO・[WS304](ws304/ws.md) Pi 5 の NVMe | P4・P3 が中断の記録を残して返却 | 各 ws.md の再開点 |
 <!-- master:agents:end -->
 
 ### 統合の注意
@@ -62,17 +62,21 @@
 
 <!-- master:open-decisions:start -->
 - 保留の WS の整理（以前のベータ3・4 の中身を含む）。Q1 とユーザー。
-- WS290: design.md の ghci.md の疑問 G01〜G39・U1〜U7（Q1 がユーザーに示す）。
+- WS291: 次の改善（属性の後回しなど）に進む時期（使用量が戻ってから）。
+- WS299: p004 の範囲の変更（複数の queue と VMD の vector を後へ、書きは p005 へ）は Q1 の判断待ち。p009 の判定も Q1。
+- WS304: Raspberry Pi OS で同じ HAT・FFC・NVMe の link を見るか（ハードの切り分け）。
+- WS306: ゲーム最適化の環境変数の名前と書式、知らない option の扱い（p001 の設計で推しを示す）。
 - WS282〜WS285: 実装を始める時期（ユーザー「設計だけ残してラップアップして、後日実装することにします。」）。再開の時に WS282 の試験の画面を出す PC（D11）と買う webcam（D12）。
 - WS286 の後の物: openXC7 の host への導入。LLVM の cache の asset を GitHub の release に upload してよいか（toolchain の変更の時に確かめる）。
 - BUG-345（Pi 5 の click が画面に出ない窓）: 再発したら再起動の前に Q1 に知らせてもらう。
-- 以前からの物: UEFI の loader の GOP の mode の選び方、BUG-222（ue0 の SCP が約 10 Mbps、tracking）、WS153 U2〜U15（ユーザーが検討中、聞かない）。（WS037 の nvrtx は 2026-10-15 ユーザーの決定で既定 on、未決ではない）
+- 以前からの物: UEFI の loader の GOP の mode の選び方、BUG-222（ue0 の SCP が約 10 Mbps、tracking）、WS153 U2〜U15（ユーザーが検討中、聞かない）。
 <!-- master:open-decisions:end -->
 
 ### 止まっている物
 
 <!-- master:blocked:start -->
-- WS290 の実機の試験: GHCI 2.0 のハードウェア（am-ws001-p007）ができるまで無い。試験は zedBSD の host 試験だけ（amaterrace-gpu の sim・firmware は使わない）。
+- WS290 の実機の試験: GHCI 1.0 のハードウェアができるまで無い。試験は zedBSD の host 試験だけ（amaterrace-gpu の sim・firmware は使わない）。
+- 完了の WS の Phase の directory の片付け（record-audit の COMPLETED_WITH_PHASES 89 件）は未着手。
 - VF2 の zedbsd.cfg は login=graphical を外したまま（元は zedbsd.cfg.p044orig、戻さない）。
 - GitHub への公開は push の指示の時だけ。
 <!-- master:blocked:end -->
