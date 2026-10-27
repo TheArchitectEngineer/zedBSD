@@ -3,7 +3,7 @@
 # WS290 zedBSD の GHCI の driver を GHCI 1.0（ghci.md 89529de）に書き直す
 
 - Master: [plan/master.md](../master.md)（2026-10-26 作成）。Primary Milestone: MG006。Related: MG008。前身: [WS288](../ws288/ws.md)（closed、zedBSD の driver は ws288-p006・p010・p018・p019・p035・p040・p043・p044 などで作った）。
-- Status: incomplete（2026-10-28 P3 が q1636 で p001 の仕上げから再開。仕様の疑問は全部解決（ghci.md **89529de**、[ghci-review.md](ghci-review.md) 第 9 版）。次は p001 の設計の仕上げ（版 4）から。版の語の「2.0」は誤りで、仕様は単一の GHCI 1.0（G01 の回答））
+- Status: incomplete（2026-10-28 03:29 P3（q1636-i01）が design 版 4 の本文を書き終えた所で、ユーザー「P3はいったん待機してください。GHCI仕様をアップデートします。」で待機。design-reviewer は未実施。再開は仕様の更新の後、下の「再開点（2026-10-28 待機、P3）」から）
 - 出典: 2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。amaterrace-gpuのディレクトリは読み取り専用とします。amaterrace-gpuのplan/は読んでもかまいません。am-ws001のような書き方をしてくれれば私は理解できます。」
 - 決定（2026-10-26、Q1 の問いへのユーザーの回答）:
   - （G01 の回答で置き換え: 仕様は単一の GHCI 1.0。下の行は当時の記録）対象の版は **GHCI 2.0 だけ**（ghci.md の TO-BE: 19 の register、in-memory の PSO・descriptor、`CMD_*` の構造化 command、CP の自律 MMU）。1.1（§3.1.1 の 128 KiB の register、class 2 の gpu-op の中継、STATE、KICK、APERTURE）は捨てる。2.0 のハードウェアは am-ws001-p007 で作られる予定。
@@ -48,7 +48,7 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: ghci.md 89529de（単一の GHCI 1.0）を正本に design を版 4 に仕上げる。版 2・版 3 の register 前提・2.0/1.1 の分岐を捨て、command と capability で組む。§24 の capability → Vulkan の対応、[design-review-v3.md](design-review-v3.md) の V01〜V25 の反映、design-reviewer、§18 の Phase の分割を確定して下の表と phase.md を立てる。code は書かない | — | in-progress（2026-10-28 仕様が確定、仕上げ待ち） |
+| [p001](phase001/phase.md) | 設計: ghci.md 89529de（単一の GHCI 1.0）を正本に design を版 4 に仕上げる。版 2・版 3 の register 前提・2.0/1.1 の分岐を捨て、command と capability で組む。§24 の capability → Vulkan の対応、[design-review-v3.md](design-review-v3.md) の V01〜V25 の反映、design-reviewer、§18 の Phase の分割を確定して下の表と phase.md を立てる。code は書かない | — | in-progress（2026-10-28 版 4 の本文を書いた、design-reviewer の前に待機。仕様の更新待ち） |
 | p002 | 語の層: `ghci-regs.h`・`ghci-cmd.h`・`cmd.c`（全 command の encoder、PSO・descriptor・render pass の記述）。host の words 試験 | p001 | planned（内容は p001 の版 4 で確定） |
 | p003 | host の model の枠: register・ring・FENCE（64 bit）・session・VM_MAP・reset・IRQ・fault の注入・capability の profile | p002 | planned |
 | p004 | core: identify・capability、attach、ring・doorbell・fence・IRQ・watchdog・fault（session の fault と device の FAULTED）・reset、detach | p003 | planned |
@@ -81,3 +81,11 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 
 - ユーザー（2026-10-28）「P3はGHCIドライバを作成します。まずはホストで開発しますが、私が今からVF2ボードを準備して、新しいSwitchbotで制御できるようにします。VF2はKC705 FPGAボードに接続されており、プログラミングは私が行いますので、そのあと実機検証が可能です。Fableのレビューは不要です。」
 - 解釈（Q1）: p001 の版 4 → p002 以降の実装を host 試験で進める。VF2（riscv64）＋ KC705 の GHCI の実機は、ユーザーが VF2 と新しい SwitchBot・KC705 の書き込みを済ませて伝えた後に Q1 が割り当てる（それまで実機の試験は無し）。U4（riscv64 は build だけ）は、実機で動かす事に変わる（riscv64 の attach の経路を設計に含める）。KC705 の bitstream の build・書き込みはユーザーがする（担当は `plan/tools/kc705/` を使わない）。設計のレビューは design-reviewer だけで、Fable のレビューはしない。
+
+## 再開点（2026-10-28 待機、P3）
+
+- 2026-10-28 ユーザー（Q1 経由）「P3はいったん待機してください。GHCI仕様をアップデートします。」→ q1636-i01 を通常のラップアップで止めた（worktree `/home/awe/zedBSD-worktrees/p3-ws290b`、branch agent/p3-ws290b、基点 main 6e6ebf830）。
+- 読んだ仕様: amaterrace-gpu `docs/ghci.md` **89529de**（2026-10-28 02:48、2677 行）と同じ SHA の `include/`（20 file）、参考に `fw/cp/ghci_cmd.c`・`cmd.c`。読んだ時点の main は **4549f18** で、89529de..4549f18 に `docs/ghci.md`・`include/` の差は無い（`git log 89529de..HEAD -- docs/ghci.md include/` が空）。amaterrace-gpu には書いていない。
+- 版 4 の進み具合: [design.md](design.md) を 89529de で全面に書き直した（§0〜§23: 要件の表、file の行き先、型と番地の 3 空間、attach・submit・IRQ・session の fault と装置の fault・reset と再生・session と VM（2 MiB の chunk、CP_HEAP 8.25 MiB の上限の勘定）・unified/discrete・detach、executor と descriptor／constant bank の取り決め、compiler の作り直し、DISP2、試験の profile と Phase ごとの場面、capability → Vulkan の表、riscv64 の実機、Phase p002〜p014（234 LW。p013 = 実機、p014 = 規約の全文）、S01・S02、U5・U8〜U11、版 3 の G と V01〜V25 の扱い）。**未実施**: design-reviewer、§18 の Phase の確定に合わせたこの表と p002 以降の phase.md の作成、source の変更（何もしていない）、build・試験。
+- 見つけた仕様の欠け（design §19）: **S01** — §12.10（2264 行）が interface 表（kind 1〜14）を廃止したが、それが担っていた vertex shader の入力（属性が届く register、VertexIndex・InstanceIndex）、position・point size・varying の export の番号、fragment の `lda` の即値の意味が本文に無い（`include/gsi1_isa.h` 89529de は 1.1 の番号と interface 表のまま）。compute と fragment の入出力は本文で足りる。推しは design §19。**S02**（低）— MAX_MRT は 8 まで、§12.12 の export は k = 0〜3。他に Q1・ユーザーへの判断: U5 の読み直し（CAP_PROT = 1 の session の fault の回収は WS290、protected context は WS292）、U8〜U11（design §20）。
+- 再開の手順: (1) 更新後の ghci.md・include の SHA を `git show` で読み、89529de との差を読む（S01・S02 が解けたかを含む）。(2) design 版 4 を差に合わせて直す。(3) design-reviewer に通して反映（Fable のレビューはしない）。(4) §18 で Phase を確定し、この表と p002 以降の phase.md を立てる。(5) p002 から実装（host 試験と amd64・riscv64 の build）。

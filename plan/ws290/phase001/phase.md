@@ -3,7 +3,7 @@
 # ws290-p001 設計: GHCI 1.0（ghci.md 89529de）の driver の書き直し
 
 - 親: [WS290](../ws.md)。
-- 状態: in-progress（2026-10-28 仕様の疑問は全部解決、正本は ghci.md 89529de。次は design 版 4 の仕上げ（手順は [ws.md](../ws.md) の「再開点（2026-10-28 ハンドオーバー）」）。前: 2026-10-27 q1621-i01 P3 で版 3 を書きかけて中断、2026-10-26 q1594-i01 P1 で版 2）
+- 状態: in-progress（2026-10-28 03:29 P3 q1636-i01 が design 版 4 の本文を書き、design-reviewer の前にユーザーの待機の指示で中断。再開は [ws.md](../ws.md) の「再開点（2026-10-28 待機、P3）」）
 - 由来: WS290 の出典と決定（ws.md）。
 
 ## 範囲（code は書かない）
@@ -46,3 +46,8 @@
 - **再開**: 条件はユーザーが ghci.md（と資料全般）の修正の終わりを伝えた時。手順は [ws.md](../ws.md) の「再開の手順」（修正後の ghci.md と ghci-answers-hw を読む → 版 3 を G01 の回答で仕上げ、design-review-v3 を確かめて反映 → design-reviewer → p002 以降の phase.md → 実装）。
 
 - 2026-10-28 Q1: GHCI の担当との疑問のやり取りを終了（レビュー 第 9 版で N01〜N36 が全部解決、ghci.md 89529de）。受け入れの「疑問の一覧がユーザーに示されている」は満たした。残りは design 版 4 の仕上げ・design-reviewer・Phase の確定。
+- 2026-10-28 P3（q1636-i01、worktree `/home/awe/zedBSD-worktrees/p3-ws290b`、branch agent/p3-ws290b、基点 main 6e6ebf830）:
+  - 読んだ物: amaterrace-gpu `docs/ghci.md` 89529de（2677 行）と `include/`（同 SHA）、`fw/cp/ghci_cmd.c`・`cmd.c`（参考）。main 4549f18 まで docs/・include/ の差なし。zedBSD の driver（compiler の interface 表の使い方、pci-attach の match、riscv64 の build の list）。
+  - 書いた物: [design.md](../design.md) 版 4（89529de で全面の書き直し。仕様の欠け S01・S02、判断 U5・U8〜U11、Phase p002〜p014 234 LW）。
+  - 未実施: design-reviewer、Phase の表と phase.md の確定、build・試験（設計の Phase）。source は変えていない。
+  - 中断: 2026-10-28 ユーザー「P3はいったん待機してください。GHCI仕様をアップデートします。」（Q1 経由）。
