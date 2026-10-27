@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | P1 | q1634 | [WS299](ws299/ws.md) 5330 の NVMe の速さ: p004 raw の先読み → p005 UFS → p006 HMB → p007 受け入れ → p008 規約 | 5330（遠隔の電源は無い） |
 | P2 | q1635 | [WS291](ws291/ws.md) RDNA の描画の速さ: NGG などで Linux 以上 → その後 [WS306](ws306/ws.md) で option に分け直す | 10.0.10.3（SwitchBot AC276E42B252） |
-| P3 | q1636 | [WS290](ws290/ws.md) GHCI 1.0 の driver: p001 の design 版 4 → p002〜p012（host 試験） | 待機（ユーザーが GHCI の仕様を更新中、2026-10-28）。再開は更新の後 |
+| P3 | q1637 | [WS290](ws290/ws.md) GHCI の仕様担当とのレビューのやり取り（ghci-review.md ⇄ ghci-review-reply.md、DONE、60 秒）と design 版 4 の追従 | host |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
 <!-- master:agents:end -->
@@ -82,7 +82,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-347 · q1637 · WS307 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-347 · q1638 · WS307 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的

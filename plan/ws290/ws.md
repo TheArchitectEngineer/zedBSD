@@ -89,3 +89,9 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - 版 4 の進み具合: [design.md](design.md) を 89529de で全面に書き直した（§0〜§23: 要件の表、file の行き先、型と番地の 3 空間、attach・submit・IRQ・session の fault と装置の fault・reset と再生・session と VM（2 MiB の chunk、CP_HEAP 8.25 MiB の上限の勘定）・unified/discrete・detach、executor と descriptor／constant bank の取り決め、compiler の作り直し、DISP2、試験の profile と Phase ごとの場面、capability → Vulkan の表、riscv64 の実機、Phase p002〜p014（234 LW。p013 = 実機、p014 = 規約の全文）、S01・S02、U5・U8〜U11、版 3 の G と V01〜V25 の扱い）。**未実施**: design-reviewer、§18 の Phase の確定に合わせたこの表と p002 以降の phase.md の作成、source の変更（何もしていない）、build・試験。
 - 見つけた仕様の欠け（design §19）: **S01** — §12.10（2264 行）が interface 表（kind 1〜14）を廃止したが、それが担っていた vertex shader の入力（属性が届く register、VertexIndex・InstanceIndex）、position・point size・varying の export の番号、fragment の `lda` の即値の意味が本文に無い（`include/gsi1_isa.h` 89529de は 1.1 の番号と interface 表のまま）。compute と fragment の入出力は本文で足りる。推しは design §19。**S02**（低）— MAX_MRT は 8 まで、§12.12 の export は k = 0〜3。他に Q1・ユーザーへの判断: U5 の読み直し（CAP_PROT = 1 の session の fault の回収は WS290、protected context は WS292）、U8〜U11（design §20）。
 - 再開の手順: (1) 更新後の ghci.md・include の SHA を `git show` で読み、89529de との差を読む（S01・S02 が解けたかを含む）。(2) design 版 4 を差に合わせて直す。(3) design-reviewer に通して反映（Fable のレビューはしない）。(4) §18 で Phase を確定し、この表と p002 以降の phase.md を立てる。(5) p002 から実装（host 試験と amd64・riscv64 の build）。
+
+## 2026-10-28 仕様担当とのやり取りの再開（q1637、P3）
+
+- 2026-10-28 03:33 ユーザー「GHCI仕様担当とのメッセージングについてです。P3は、下記のプロトコルでGHCIドライバ担当とやりとりします。…受信は60秒おきにファイルをチェックします。以後、仕様担当とP3がお互いに納得できる回答が得られるまで、 このプロトコルで通信します。お互いに納得が得られた後は、一次停止しますが、指示があれば、送信や受信ポーリングを再開します。」
+- 取り決め（ユーザーの説明の要約）: P3 は main の checkout の `plan/ws290/ghci-review.md` に上書き（1 行目を前の版と変え、末尾 `DONE`）。仕様担当は ghci.md を直し、`~/amaterrace-gpu/docs/ghci-review-reply.md` に返信（1 行目を変え、末尾 `DONE`）。双方 60 秒ごとに見る。納得したら一時停止、指示があれば再開。ghci-review.md の commit は Q1。
+
