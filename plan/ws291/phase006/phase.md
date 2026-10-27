@@ -38,3 +38,20 @@
 
 - 2026-10-27 13:55 P2: 着手。Mesa 25.0.7 の ac_nir_lower_ngg.c（add_deferred_attribute_culling）、ac_nir_cull.c、radv_cmd_buffer.c
   （radv_emit_ngg_culling_state、radv_get_ngg_culling_settings、NGG の LDS_SIZE）を読んだ。
+- 2026-10-27 14:05 設計の敵対的レビュー（design-reviewer、範囲は設計の節だけ）の要点: (1) passthrough のまま null の bit が効くかは Mesa に前例が無い
+  （Mesa は culling と passthrough を組まない。passthrough でも export の語は PA が読む: edge flag の OR）。PA も同じ primitive を落とすので pixel 差 0 では
+  null の bit が効いた証明にならない → GPU の ms の変化か、全部 null にする診断で確かめる。(2) 順（export → barrier → late prim export）は Mesa の late
+  export と同じ形。GS_ALLOC_REQ は Navi1x で必須のまま。(3) LDS は RSRC2_GS の LDS_SIZE だけ、頂点の番号の対応は Mesa と同じ（確認済み）。模型は 1 wave
+  なので wave をまたぐ LDS は試験されない。(4) 無効にする条件（conservative・sample locations・複数 viewport・polygon mode）は今の executor に無い機能
+  （塗りつぶしの三角形・1 sample・viewport 1 つ）なので、三角形の topology だけを条件にした。
+- 2026-10-27 14:30 実装 commit b73115761: compiler（place_for_culling・cull_primitives、v_mbcnt_lo を encoder に、culling の user SGPR と LDS）、
+  executor（amdrdna_vk_state_culling、s11〜s16 を draw ごと、`amdrdna.vk.ngg=2`）、模型（graphics の run に LDS、v_mbcnt、s16）、試験（+nggc の
+  variant、参照の判定 reference_culled、小さい三角形が効く viewport の幅）。host: compiler host test 58 PASS（+nggc 6 本）。変異の確かめ: 参照の表の向きを
+  反転すると +nggc が 5 本 FAIL、小さい三角形の判定を外すと 2 本 FAIL（試験が判定を見ている）。vk host test PASS。vmunix warning 0（sha256 先頭 43af3dfafe0bb94b）。
+- 2026-10-27 14:40 実機 1 回目（ngg=2）: desktop は描ける。nggshape は全部 ok（`--indexed --triangles=16` drawn 58311、同 `--repeat=1000`、
+  `--triangles=50000 --indexed --depth` drawn 64828、`--cull --allback` drawn 0、`--tiny` drawn 0、`--cull --allback --tail` drawn 65536）。
+  mview の shot（1 体、FIFO、合成）の最初の描画で GPU が止まり、queue の reset も失敗（kiq の fence が進まない）、compositor は device lost で終わった。
+  止まった時: GRBM_STATUS 0xa2611028（GE・SPI・PA busy、SX は立たない）、waves valid 0、PA_SU busy。kernel の mark: build/ws291/measure/p006/hang1-dmesg2.txt。
+  → 入れ直しを Q1 に依頼。次は診断 kernel（commit しない、build/ws291/measure/p006/diag1.patch、vmunix-diag1）の boot 行 `amdrdna.vk.nggx`:
+  1 = culling の flag を 0（LDS・barrier・late prim export の形だけ）、2 = 全部落とす、4 = 小さい三角形を切る、8 = 面の cull を切る。まず 1 で mview を見て、
+  形が原因か null の判定が原因かを分ける。
