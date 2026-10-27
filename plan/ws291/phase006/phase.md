@@ -370,3 +370,8 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
   この遅れを除けば scene-6500 の GPU の時間は約 19.2 ms で Linux（19.5〜19.7）を下回る見込み。直す所の候補: amdrdna の中では EOP の処理（IH の thread）
   から run の通過した parked の marker を直に完了して completer の起床を省く（順序を保つ）、kern の側では起床する thread を空いた CPU へ（scheduler は
   amdrdna の外、Q1 へ）。
+- 確かめ（08:00、診断 kernel vmunix-spin1、commit しない: build/tmp/spinwait.patch）: amdrdna_ring_wait を眠らず fence を回し読みにしても scene-1 の
+  fence 1.31 ms・big-1 1.32 ms・scene-6500 20.80 ms で変わらない → ring の待ちの眠りは遅れの元でない。残る候補は IH の thread の起床、completer の
+  起床、core から user の thread への起床、または GPU 側の run ごとの固定の仕事（始めの ACQUIRE_MEM の GL2 の WB+INV など）。区間ごとの時刻を
+  取る計測が次（EOP の割り込みの時刻と marker の完了の時刻、GPU の timestamp の始めと終わり）。
+- 機械（08:05）: stick は vmunix-feat1（1b9cc7865 の動作、cksum 1397306155）、zedBSD で起動中、SMU 正常。入れ直しは今日 P2 が 2 回（06:45:47、07:10:00）。
