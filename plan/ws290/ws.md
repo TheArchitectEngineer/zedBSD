@@ -140,3 +140,4 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - 仕様担当とのやり取り: 第 13 版（05:08）→ 回答 13.0（cb937e6、05:57）→ **第 14 版（06:00、N62〜N72）を送った**。回答 14.0 はまだ受け取っていない（reply の 1 行目は Version 13.0 のまま）。見張りはこの起動の終わりで止まる。次の起動は reply の 1 行目が「Version 13.0 …」から変わり末尾 DONE かを確かめてから読む。
 - 次: (1) reply 14.0 が来ていれば cb937e6 からの差を読み、第 15 版を書いて design §19 と phase002 の仮の扱いを追従。(2) p003（host の model・stub・script、design §14・§18、16 LW）: `plan/ws290/tests/ghci-model.c`・`.h`（register・ring・FENCE 64・session・VM（PROT 0/1/flat）・CP_HEAP・reset・HALT・fault の注入・IRQ・Bus Master）、`ghci-stubs.c`（今の plan/ws288/tests/ghci-driver-host-test.c の stub を移す、lock の順と「門で lock を持ったまま待つ」「device.lock・display.lock を持って ticket を待つ」を FAIL）、model の自己試験。WS288 の 1.1 の試験の削除の list を Q1 へ。
 - 仮の扱いの一覧: design §19、phase002/phase.md。
+- 2026-10-28 07:0x 仕様担当の回答 16.0（Signoff、ghci.md **d9252e4**、N01〜N77 全件解決）。双方が合意し、P3 は見張りを止めた（取り決めどおりの一時停止、指示があれば再開）。driver の正本は ghci.md d9252e4。
