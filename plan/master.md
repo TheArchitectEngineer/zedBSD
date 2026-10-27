@@ -22,7 +22,7 @@
 | P1 | q1646 | [WS299](ws299/ws.md) 5330 の NVMe: p010 O_DIRECT → 乱読み QD32 → UFS の書き → p007 → p008（自律） | 5330 |
 | P2 | q1645 | [WS291](ws291/ws.md) RDNA: scene-6500 44.7 fps（Linux 50.2）、fence の固定の遅れ・vertex・CPU の往復を詰める（自律、Fable は何度でも） | 10.0.10.3（プラグミニ 1 は P2 が入れ直す） |
 | P3 | q1644 | [WS290](ws290/ws.md) GHCI 1.0 の driver: p001〜p004・p013 cleared、p005（session・VM）から | host（VF2＋KC705 は書き込みの知らせの後） |
-| P4 | q1647 | [WS307](ws307/ws.md) 仕様（spec.md、U1〜U29 回答済み）の残りの review → [BUG-347](bugs/BUG-347.md) の直し | — |
+| P4 | q1648 | [WS307](ws307/ws.md) 仕様の 3 回目の review と J1〜J4 の反映（BUG-347 は resolved） | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
 <!-- master:agents:end -->
@@ -84,7 +84,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-348 · q1648 · WS308 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-348 · q1649 · WS308 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的

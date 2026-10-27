@@ -131,3 +131,5 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 ユーザー「P4に伝えてください。起動ロゴ画像を含めて、KeiというOS名を削除して、zedBSDに統一します。インストーラだけでなくすべてに影響します。そういうphaseをこのWSに追加してください。」 → WS307 に OS 名を zedBSD に統一する Phase（tree 全体、起動の logo を含む）を足す（P4、q1643）。
 - U28: 2026-10-28 ユーザー「Keilandの名前はそのままです。libkeilandもそのままです。KeiというOS名は、予定ではzedBSDに変更ですが、OSディストリビューション名が変更になる可能性があります。zedBSDはカーネル名です。OS名にするかは未定ですが、現状ではOS名もzedBSDに仮決めしておきます。libkeiland以外にlibkei*があるなら、変更を検討します。」
 - U29「推し」（担当が同じ様式で zedBSD の logo を作り、PNG をユーザーに見せてから入れる）。
+- 2026-10-28 3 回目の design-reviewer の結果（[design-review3.md](design-review3.md)、blocker 1・major 6・minor 10）の J1〜J4 へのユーザーのクリック（原文）: J1「live の password を非公開に」（推しと違う: installer の image の live の利用者の password を公開しない。U26 の「user/user」は installer の image では変わる）、J2「userland/base の外へ移す (推し)」、J3「これらも変える」（推しと違う: GPU の protocol の UAPI の識別子・mark の絵・license の記録の文・GitHub の release の asset の名前も zedBSD に変える。取得の道も直す）、J4「許す (推し)」。
+
