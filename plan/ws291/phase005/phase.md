@@ -3,7 +3,7 @@
 # ws291-p005 RDNA の NGG A: passthrough の primitive shader（正しさの土台）
 
 - 親: [WS291](../ws.md)。
-- 状態: in-progress（2026-10-27 05:00 P2、q1611-i01）。
+- 状態: cleared（2026-10-27 13:52 Q1 判定。P2 q1611-i01 の 13:49 の受け入れの確認: 修正 6beeeab3e、1 体 pixel 差 0、6500 体 8 pixel（基準どおり）、desktop 正常、hang 回復 5 ms、GPU 41.37 ms（legacy 42.18）。既定は legacy のまま、p007 の後に決める）。
 - 出典: 2026-10-27 04:44 ユーザー（Q1 の問い「NGG の A〜C をどう進めますか？」へのクリック）「A〜C を今進める（推し）」。
 - 依存: p004（cleared）。
 
@@ -73,9 +73,33 @@ host 試験: `plan/ws039/tests/amdrdna-compiler-host-test.sh` PASS（vertex の 
 - stick の /boot/boot0/vmunix は vmunix-diag12（診断）、zedbsd.cfg は `amdrdna.vk.ngg=3`・`amdrdna.vk.nggx=256`。次の世代は Debian を mount して（/dev/sda2）通常の kernel と `amdrdna.vk.ngg=0`、nggx の行を外すこと。
 - 入れ直し（SwitchBot）で Debian に戻る。機械の操作は host の /tmp/zedbsd-desktop.lock を flock で取る（P4 と共用）。
 
+### 原因と修正（2026-10-27 13:35〜13:49、P2 第 6 世代、Fable 5.1 High の助言 2: build/review/ws291-ngg-advice-fable-2.md）
+
+- 原因: NGG の prologue の `exp prim … done` の直後に exec を頂点の lane に書き換えており、間に `s_waitcnt expcnt(0)` が無かった。GFX10 の export は EXEC を発行時でなく許可された時に読む（Mesa 25.0.7 aco_insert_waitcnt.cpp の gen の Format::EXP、LLVM SIInsertWaitcnts.cpp）。wave の primitive 数 > 頂点数の時（頂点 15・primitive 16）、最後の primitive の export が落ち、その export 領域が返らず（SX_BUSY の残留）、溜まって止まる。
+- 修正（一般の形、助言の (a)）: commit 6beeeab3e。`gfx10-wait.c` の note_issued で、export の読みのうち VGPR に加えて EXEC_LO も export counter に hold する → exec を書く命令の前に place_waits が `s_waitcnt expcnt(0)` を自動で置く。模型 `plan/ws039/tests/gfx10-machine.c`: export が EXEC を pending にし、その間の exec の書き込み（s_cselect・s_mov・s_and_saveexec）を「an exec write before the export counter」で fail。
+- host: 修正前（模型だけ新しい）は +ngg の 6 variant（basic・query・shapes・sparse・textured・quad）が上の理由で FAIL、修正後 `amdrdna-compiler-host-test.sh` PASS（52、build/tmp/p005-hosttest-after.txt）、`amdrdna-vk-host-test.sh` 197 checks 0 failures。disassembly: `exp prim v0 … done` → `s_bfe/s_bfm/s_cmp` → `s_waitcnt expcnt(0)` → `s_cselect_b32 exec_lo`。+ngg の期待の語は変更不要だった。amd64 vmunix warning 0（build/ws291/p005-fix-vmunix.log、sha256 先頭 f86cad802a3ab423）。
+
+### 受け入れ（実機 10.0.10.3、RX 5600 XT、2026-10-27 13:42〜13:49、kernel f86cad802a3ab423、boot 行 `amdrdna.vk.ngg=1`・`amdrdna.vk.timing=2000`、nggx 無し）
+
+| 確認 | 結果 | 証拠 |
+| --- | --- | --- |
+| desktop の後の GRBM_STATUS（vk timing の mark） | 0x00003028（SX_BUSY 無し。修正前は起動直後から 0xa0103028）。mview・hang の後の idle も 0x00003028 | 実機の klog の mark（SSH の dmesg） |
+| `nggshape --indexed --triangles=16 --map` | ok drawn=58311（修正前 54656） | SSH の出力 |
+| 同 `--repeat=1000`（`--map` 付きも） | ok drawn=58311、止まらない（修正前は 4〜5 回目で hang） | 同 |
+| mview qs40 1 体の shot（Linux 比） | pixel 差 0（max 0、over15 0） | build/ws291/measure/p005/fix-shot-1b（1 回目の fix-shot-1 は 6 s の時点で mview が未表示で desktop を撮った。mview は 900 frame DONE） |
+| mview 6500 体の shot | over15 8 pixel（基準 8 から悪化なし） | build/ws291/measure/p005/fix-shot-6500 |
+| desktop の keiland-shot | 正常（壁紙・panel） | fix-hang/desktop.png、fix-shot-1/shot.png |
+| `measure.sh hang` | vkhang lost → queue reset 5 ms → vkhang・compute の loops ok、mview 58.4 fps | build/ws291/measure/p005/fix-hang |
+| GPU の ms（`--spin=8 --content=game --present=mailbox`、direct scanout） | scene-1 99.4 fps fence 1.22 ms、scene-1500 61.0 fps fence 11.18 ms、scene-6500 22.4 fps fence 41.37 ms（legacy p003: 42.18 ms、21.9 fps） | fix-scene-1・1500・6500 |
+
+- mview の shot の run が `vkAcquireNextImageKHR` の -1000000000（errno 42）で 317 frame 目に終わるのは legacy でも同じ（legacy-shot-1: 316 frame）で、NGG と無関係（shot の取り方の既存の挙動）。
+- 既定は legacy のまま（`amdrdna.vk.ngg=1` で NGG）。passthrough の差は 0.8 ms と小さく、既定を NGG にするかは culling（p006・p007）の後に desktop の frame-ops と合わせて決める。
+- 前の世代の「残り」1〜4（diag13 の 0x100、PA の register、exp prim の VSRC・FLOAT_MODE、SQ_NON_EVENT）は不要として閉じる（最後の primitive の消失は上の wait で説明・解消した）。VGT_VERTEX_REUSE_BLOCK_CNTL・guard band・binning は性能の段（p008）へ。
+- stick の状態（13:49）: /boot/boot0/vmunix = f86cad802a3ab423（修正入り）、zedbsd.cfg は `amdrdna.vk.timing=2000`・`amdrdna.vk.ngg=1`、vmunix.old は 08:37 の物。zedBSD で起動中。
+
 ## 残り・再開の条件
 
-- 失われる最後の primitive の原因を見つける。次に試すつもりだった事（それぞれ boot 行の診断 bit で 1 kernel にまとめる）:
+- （解決済み、上の「原因と修正」）失われる最後の primitive の原因を見つける。次に試すつもりだった事（それぞれ boot 行の診断 bit で 1 kernel にまとめる）:
   1. 単一 wave の subgroup で、wave の primitive 数（s3[14:8]）と subgroup の数（s2[30:22]）が食い違うかを見る（diag13.patch の bit 0x100: wave 0 で subgroup の primitive が 32 以下なら s2 の数を使う。build 済みの vmunix-diag13、未実機）。
   2. RADV と違う PA の register を RADV の値に: PA_SU_PRIM_FILTER_CNTL 0xc0000000、PA_SC_MODE_CNTL_0 の ALTERNATE_RBS_PER_TILE、guard band、binner。
   3. exp prim の未使用の VSRC を ACO と同じ 0x80 に、FLOAT_MODE を RADV の 0xc0 に。
