@@ -54,7 +54,10 @@ static void setup_textures(const struct drv_gpu_shader_ir *ir, const struct amdr
 static void reference_sample(void *context, uint32_t set, uint32_t binding, const struct texture_request *request, uint32_t *out);
 static void setup_uniforms(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_program *program, struct machine_memory *memory, struct reference_memory *reference, uint8_t *table, uint32_t *state);
 static int compare_slot(const char *what, uint32_t lane, uint32_t channel, uint32_t gpu, uint32_t ref);
-static int check_primitive_wave(void);
+static int check_primitive_wave(const struct amdrdna_gfx10_program *program);
+static uint32_t reference_culled(uint32_t word);
+static void culling_words(uint32_t lane, uint32_t noise);
+static uint32_t culling_packed(uint32_t lane);
 static int compare_storage(const struct drv_gpu_shader_ir *ir);
 static uint32_t random_word(uint32_t *state);
 static float random_float(uint32_t *state);
@@ -70,6 +73,9 @@ static uint8_t table[TEST_TABLE_BYTES];
 static uint8_t push[256];
 static float attributes[TEST_PRIMITIVES][32][4][3];
 static struct machine_graphics graphics;
+
+/* A culling primitive shader's three vertex numbers of each primitive lane. */
+static uint32_t culling_vertex[32][3];
 
 /* The sampled images of one trial: their texels and descriptors, by the program's texture slot. */
 static uint8_t texture_bytes[AMDRDNA_GFX10_TEXTURE_MAX][65536];
@@ -160,12 +166,14 @@ test_module(
 		free(words);
 		return 1;
 	}
-	/* The module as it is; a vertex module also exporting the primitive number, and as a primitive shader (ws291). */
+	/* The module as it is; a vertex module also exporting the primitive number, as a primitive shader, and as one that culls. */
 	error = test_variant(outdir, name, ir, words, word_count, stage, 0U, 0U);
 	if (error == 0 && stage == DRV_GPU_STAGE_VERTEX)
 		error = test_variant(outdir, name, ir, words, word_count, stage, 1U, 0U);
 	if (error == 0 && stage == DRV_GPU_STAGE_VERTEX)
 		error = test_variant(outdir, name, ir, words, word_count, stage, 0U, 1U);
+	if (error == 0 && stage == DRV_GPU_STAGE_VERTEX)
+		error = test_variant(outdir, name, ir, words, word_count, stage, 0U, 2U);
 	free(words);
 	drv_gpu_shader_ir_free(ir);
 	return error;
@@ -197,10 +205,12 @@ test_variant(
 	int error;
 	FILE *hex;
 
-	snprintf(name, sizeof(name), "%s%s%s", module, pass_primitive_number != 0U ? "+primitive" : "", primitive_shader != 0U ? "+ngg" : "");
+	snprintf(name, sizeof(name), "%s%s%s%s", module, pass_primitive_number != 0U ? "+primitive" : "", primitive_shader != 0U ? "+ngg" : "",
+		 primitive_shader == 2U ? "c" : "");
 	memset(&options, 0, sizeof(options));
 	options.pass_primitive_number = pass_primitive_number;
-	options.primitive_shader = primitive_shader;
+	options.primitive_shader = primitive_shader != 0U;
+	options.primitive_culling = primitive_shader == 2U;
 	program = NULL;
 	memset(&diagnostic, 0, sizeof(diagnostic));
 	error = amdrdna_gfx10_compile(words, word_count, stage, &options, &program, &diagnostic);
@@ -234,9 +244,17 @@ test_variant(
 		/* A primitive shader: the geometry stage's order bit (25), v5 .. v8 (16:17), v0 alone (29:30). */
 		if (registers.primitive_shader != 1U || program->primitive_shader != 1U)
 			error = 1;
-		if ((registers.counts & (1U << 25)) == 0U || (registers.counts & (1U << 27)) == 0U || ((registers.counts >> 29) & 3U) != 0U || ((registers.inputs >> 16) & 3U) != 3U)
+		if ((registers.counts & (1U << 25)) == 0U || (registers.counts & (1U << 27)) == 0U || ((registers.counts >> 29) & 3U) != (primitive_shader == 2U ? 1U : 0U) ||
+		    ((registers.inputs >> 16) & 3U) != 3U)
 			error = 1;
-		if (program->user_sgprs != AMDRDNA_GFX10_NGG_USER_SGPRS || (registers.position_formats & 0xfU) != 4U)
+		if ((registers.position_formats & 0xfU) != 4U)
+			error = 1;
+		if (primitive_shader == 1U && (program->user_sgprs != AMDRDNA_GFX10_NGG_USER_SGPRS || ((registers.inputs >> 19) & 0xffU) != 0U))
+			error = 1;
+
+		/* One that culls: the culling's user SGPRs, three 512-byte blocks of LDS. */
+		if (primitive_shader == 2U &&
+		    (program->user_sgprs != AMDRDNA_GFX10_NGG_CULL_USER_SGPRS || registers.primitive_culling != 1U || ((registers.inputs >> 19) & 0xffU) != 3U))
 			error = 1;
 	} else if (stage == DRV_GPU_STAGE_VERTEX) {
 		if (((registers.counts >> 24) & 3U) != 3U || (registers.counts & (1U << 27)) == 0U || (registers.position_formats & 0xfU) != 4U)
@@ -510,6 +528,7 @@ vertex_trial(
 	dispatch.code_words = program->code_words;
 	dispatch.table = memory.regions[0].address;
 	dispatch.vgpr_count = program->vgpr_count;
+	dispatch.shared_bytes = program->shared_bytes;
 
 	/* Two instances, two waves each. */
 	failed = 0;
@@ -538,6 +557,27 @@ vertex_trial(
 			for (lane = 0U; lane < 32U; lane++) {
 				graphics.primitive_word[0][lane] = random_word(state) & 0x3ff7fdffU;
 				graphics.primitive_word[1][lane] = random_word(state);
+			}
+
+			/*
+			 * One that culls: a random viewport and flags (culling on
+			 * mostly), the precision of one sample, each primitive of three
+			 * of the wave's own vertices.
+			 */
+			if (program->primitive_culling != 0U) {
+				graphics.user[3] = float_bits((float)(1U + random_word(state) % 1000U) / ((random_word(state) & 1U) != 0U ? 1.0f : 1000.0f));
+				graphics.user[4] = float_bits((random_word(state) & 1U) != 0U ? -0.4f : 300.0f);
+				graphics.user[5] = float_bits((float)(random_word(state) % 1000U));
+				graphics.user[6] = float_bits((float)(random_word(state) % 1000U) - 500.0f);
+				graphics.user[7] = float_bits(1.0f / 256.0f);
+				graphics.user[8] = random_word(state) & 0x1fU;
+				if ((random_word(state) & 3U) != 0U)
+					graphics.user[8] |= AMDRDNA_GFX10_CULL_ENABLED;
+				for (lane = 0U; lane < 32U; lane++) {
+					for (channel = 0U; channel < 3U; channel++)
+						culling_vertex[lane][channel] = 32U * graphics.wave_number + random_word(state) % graphics.lanes;
+					culling_words(lane, random_word(state));
+				}
 			}
 			machine_run_graphics(&dispatch, &memory, 0, &graphics, &result);
 			if (result.error != NULL) {
@@ -619,7 +659,7 @@ vertex_trial(
 
 			/* A primitive shader: its request for the subgroup, the vertex lanes' exports, each primitive lane's word, marked done. */
 			if (failed == 0 && program->primitive_shader != 0U)
-				failed = check_primitive_wave();
+				failed = check_primitive_wave(program);
 		}
 	}
 	/* ws291: a primitive shader's wave without vertices (a later wave of a subgroup) exports only its primitives. */
@@ -633,6 +673,14 @@ vertex_trial(
 		graphics.wave_number = 1U;
 		graphics.subgroup_vertices = 40U;
 		graphics.subgroup_primitives = 32U + graphics.primitives;
+		if (program->primitive_culling != 0U) {
+			graphics.user[8] = AMDRDNA_GFX10_CULL_ENABLED | AMDRDNA_GFX10_CULL_SMALL;
+			for (lane = 0U; lane < 32U; lane++) {
+				for (channel = 0U; channel < 3U; channel++)
+					culling_vertex[lane][channel] = random_word(state) % 40U;
+				culling_words(lane, random_word(state));
+			}
+		}
 		machine_run_graphics(&dispatch, &memory, 0, &graphics, &result);
 		if (result.error != NULL) {
 			printf("  GFX10 (a wave without vertices): %s at word %u (0x%08x)\n", result.error, result.error_pc, result.error_word);
@@ -648,11 +696,17 @@ vertex_trial(
 
 /* Checks what a primitive shader wave sent and exported besides its vertices' outputs; 1 when it is wrong. */
 static int
-check_primitive_wave(void)
+check_primitive_wave(
+	const struct amdrdna_gfx10_program *program)
 {
 	uint32_t lanes;
 	uint32_t lane;
 	uint32_t target;
+	uint32_t expected;
+	uint32_t culling;
+	uint32_t all_culled;
+
+	culling = program->primitive_culling;
 
 	/* The first wave alone asks, for the subgroup's vertices and primitives. */
 	if (graphics.wave_number != 0U && graphics.alloc_requests != 0U) {
@@ -695,13 +749,132 @@ check_primitive_wave(void)
 		       graphics.export_flags[target], graphics.export_lanes[target], graphics.export_channels[target]);
 		return 1;
 	}
+	/* A wave whose primitives are all culled exports its first as the degenerate triangle of vertex 0. */
+	all_culled = culling;
+	for (lane = 0U; lane < graphics.primitives && all_culled != 0U; lane++) {
+		if (reference_culled(culling_packed(lane)) == 0U)
+			all_culled = 0U;
+	}
 	for (lane = 0U; lane < graphics.primitives; lane++) {
-		if (graphics.exported[target][lane][0] != graphics.primitive_word[0][lane]) {
-			printf("  the primitive of lane %u: 0x%08x, not 0x%08x\n", lane, graphics.exported[target][lane][0], graphics.primitive_word[0][lane]);
+		expected = graphics.primitive_word[0][lane];
+		if (culling != 0U)
+			expected = culling_packed(lane) | reference_culled(culling_packed(lane));
+		if (all_culled != 0U && lane == 0U)
+			expected = 0U;
+		if (graphics.exported[target][lane][0] != expected) {
+			printf("  the primitive of lane %u: 0x%08x, not 0x%08x\n", lane, graphics.exported[target][lane][0], expected);
 			return 1;
 		}
 	}
 	return 0;
+}
+
+/*
+ * A culling primitive shader's lane: its vertex numbers delivered as the
+ * hardware does without passthrough, the first two in the halves of v0,
+ * the third in the low half of v1 (noise in the high half).
+ */
+static void
+culling_words(
+	uint32_t lane,
+	uint32_t noise)
+{
+	graphics.primitive_word[0][lane] = culling_vertex[lane][0] | (culling_vertex[lane][1] << 16);
+	graphics.primitive_word[1][lane] = culling_vertex[lane][2] | (noise << 16);
+}
+
+/* The primitive's word a culling primitive shader exports before the null bit: 9 bits each, 10 apart. */
+static uint32_t
+culling_packed(
+	uint32_t lane)
+{
+	return culling_vertex[lane][0] | (culling_vertex[lane][1] << 10) | (culling_vertex[lane][2] << 20);
+}
+
+/*
+ * The null bit a culling primitive shader gives a primitive of the wave's
+ * vertices (from their exported positions): as Mesa 25.0.7
+ * src/amd/common/nir/ac_nir_cull.c decides, with the flags and viewport in
+ * graphics.user[3 .. 8].
+ */
+static uint32_t
+reference_culled(
+	uint32_t word)
+{
+	float x[3];
+	float y[3];
+	float w[3];
+	float position;
+	float low[2];
+	float high[2];
+	float lo;
+	float hi;
+	float det;
+	float scale;
+	float offset;
+	float precision;
+	uint32_t flags;
+	uint32_t vertex;
+	uint32_t index;
+	uint32_t channel;
+	int negative;
+	int reflected;
+	int all_bad;
+	int front;
+	int face;
+	int outside;
+
+	/* Without the flag nothing is culled. */
+	flags = graphics.user[8];
+	if ((flags & AMDRDNA_GFX10_CULL_ENABLED) == 0U)
+		return 0U;
+
+	/* The places: x / w and y / w by the reciprocal, and w. */
+	negative = 0;
+	reflected = 0;
+	all_bad = 1;
+	for (vertex = 0U; vertex < 3U; vertex++) {
+		index = ((word >> (10U * vertex)) & 0x1ffU) - 32U * graphics.wave_number;
+		memcpy(&w[vertex], &graphics.exported[AMDRDNA_GFX10_EXPORT_POSITION][index][3], 4U);
+		memcpy(&position, &graphics.exported[AMDRDNA_GFX10_EXPORT_POSITION][index][0], 4U);
+		x[vertex] = position * (1.0f / w[vertex]);
+		memcpy(&position, &graphics.exported[AMDRDNA_GFX10_EXPORT_POSITION][index][1], 4U);
+		y[vertex] = position * (1.0f / w[vertex]);
+		negative |= w[vertex] < 0.0f;
+		reflected ^= w[vertex] < 0.0f;
+		all_bad &= !(w[vertex] > 0.0f);
+	}
+
+	/* The face, a zero area, for a finite determinant. */
+	det = (x[2] - x[0]) * (y[1] - y[0]) - (x[0] - x[1]) * (y[0] - y[2]);
+	front = reflected != 0 ? det < 0.0f : det > 0.0f;
+	if ((flags & AMDRDNA_GFX10_CULL_FRONT_CCW) == 0U)
+		front = !front;
+	face = front != 0 ? (flags & AMDRDNA_GFX10_CULL_FRONT) != 0U : (flags & AMDRDNA_GFX10_CULL_BACK) != 0U;
+	face |= det == 0.0f;
+	face &= isfinite(det);
+	if (all_bad != 0 || face != 0)
+		return AMDRDNA_GFX10_NGG_NULL_PRIMITIVE;
+
+	/* The box: outside the view, or (with the flag) round to one sample centre. */
+	low[0] = fminf(fminf(x[0], x[1]), x[2]);
+	high[0] = fmaxf(fmaxf(x[0], x[1]), x[2]);
+	low[1] = fminf(fminf(y[0], y[1]), y[2]);
+	high[1] = fmaxf(fmaxf(y[0], y[1]), y[2]);
+	outside = high[0] < -1.0f || low[0] > 1.0f || high[1] < -1.0f || low[1] > 1.0f;
+	if ((flags & AMDRDNA_GFX10_CULL_SMALL) != 0U) {
+		memcpy(&precision, &graphics.user[7], 4U);
+		for (channel = 0U; channel < 2U; channel++) {
+			memcpy(&scale, &graphics.user[3U + channel], 4U);
+			memcpy(&offset, &graphics.user[5U + channel], 4U);
+			lo = rintf(fmaf(low[channel], scale, offset) - precision);
+			hi = rintf(fmaf(high[channel], scale, offset) + precision);
+			outside |= lo == hi;
+		}
+	}
+	if (outside != 0 && negative == 0)
+		return AMDRDNA_GFX10_NGG_NULL_PRIMITIVE;
+	return 0U;
 }
 
 /* Runs one wave of pixels on both; 1 when a colour or the pixels alive differ. */

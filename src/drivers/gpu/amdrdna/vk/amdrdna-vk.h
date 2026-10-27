@@ -196,9 +196,11 @@ int amdrdna_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cp
 
 /*
  * How the executor runs a pipeline's vertex program, from the node: 0 as
- * a legacy vertex program, 1 as a primitive shader (the boot line's
- * amdrdna.vk.ngg).
+ * a legacy vertex program, 1 as a primitive shader,
+ * AMDRDNA_VK_GEOMETRY_CULLING (2) as a primitive shader that culls its
+ * primitives (the boot line's amdrdna.vk.ngg).
  */
+#define AMDRDNA_VK_GEOMETRY_CULLING	2U
 uint32_t amdrdna_vk_geometry_mode(void *owner);
 
 /*

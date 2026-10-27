@@ -89,7 +89,7 @@ struct machine_result {
  * interpolates: attribute[primitive][location][channel][vertex].
  */
 struct machine_graphics {
-	uint32_t user[8];
+	uint32_t user[9];
 	uint32_t primitive_shader;
 	uint32_t primitives;
 	uint32_t wave_number;

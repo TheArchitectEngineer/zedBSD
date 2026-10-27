@@ -1128,6 +1128,12 @@ vector_alu(
 			continue;
 		}
 
+		/* The count of the lanes below this one set in the first source, added to the second. */
+		if (wide != 0 && opcode == 0x365U) {
+			wave->v[dst - 256U][lane] = (uint32_t)__builtin_popcount(values[0] & ((1U << lane) - 1U)) + values[1];
+			continue;
+		}
+
 		/* The first lane's value goes to a scalar register. */
 		if (opcode == 0x182U) {
 			wave->s[dst] = values[0];
@@ -1691,6 +1697,7 @@ machine_run_graphics(
 	struct machine_result *result)
 {
 	static struct wave wave;
+	static uint8_t shared[65536];
 	struct run run;
 	uint32_t lane;
 	uint32_t index;
@@ -1700,6 +1707,7 @@ machine_run_graphics(
 	memset(result, 0, sizeof(*result));
 	memset(&run, 0, sizeof(run));
 	memset(&wave, 0, sizeof(wave));
+	memset(shared, 0, sizeof(shared));
 	memset(graphics->exported, 0, sizeof(graphics->exported));
 	memset(graphics->export_channels, 0, sizeof(graphics->export_channels));
 	memset(graphics->export_lanes, 0, sizeof(graphics->export_lanes));
@@ -1710,6 +1718,7 @@ machine_run_graphics(
 	run.result = result;
 	run.wave = &wave;
 	run.graphics = graphics;
+	run.shared = shared;
 
 	/* The table address and the user SGPRs; the VGPRs past the inputs are garbage. */
 	wave.s[0] = (uint32_t)dispatch->table;
@@ -1719,12 +1728,12 @@ machine_run_graphics(
 			wave.v[index][lane] = 0xdeadbeefU ^ (index * 77U + lane);
 	}
 
-	/* A primitive shader wave: the counts in s2 and s3, s8 .. s15, v0 and v1 the primitive words, v5 the vertex id, v8 the instance id. */
+	/* A primitive shader wave: the counts in s2 and s3, s8 .. s16, v0 and v1 the primitive words, v5 the vertex id, v8 the instance id. */
 	if (pixel == 0 && graphics->primitive_shader != 0U) {
 		graphics->alloc_requests = 0U;
 		wave.s[2] = (graphics->subgroup_vertices << 12) | (graphics->subgroup_primitives << 22);
 		wave.s[3] = graphics->lanes | (graphics->primitives << 8) | (graphics->wave_number << 24);
-		for (index = 0U; index < 8U; index++)
+		for (index = 0U; index < 9U; index++)
 			wave.s[8U + index] = graphics->user[index];
 		wave.s[CODE_EXEC] = 0xffffffffU;
 		for (lane = 0U; lane < MACHINE_LANES; lane++) {

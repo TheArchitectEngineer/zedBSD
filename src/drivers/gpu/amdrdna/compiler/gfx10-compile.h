@@ -113,9 +113,12 @@ struct amdrdna_gfx10_program {
 
 	/*
 	 * A vertex program: whether it runs as a primitive shader (exporting
-	 * its primitives too) rather than as a legacy vertex program.
+	 * its primitives too) rather than as a legacy vertex program, and
+	 * whether that primitive shader culls its primitives (it then takes
+	 * the culling's user SGPRs and shared_bytes of LDS).
 	 */
 	uint32_t primitive_shader;
+	uint32_t primitive_culling;
 
 	/* The storage buffers, the uniform buffers and the sampled images, and where their descriptors go. */
 	struct amdrdna_gfx10_binding storage[AMDRDNA_GFX10_STORAGE_MAX];
@@ -130,12 +133,14 @@ struct amdrdna_gfx10_program {
  * What a pipeline asks of a compile beyond the module: a vertex program
  * that also exports the primitive number as parameter
  * AMDRDNA_GFX10_PRIMITIVE_ID_PARAMETER, because the pixel program reads it;
- * and a vertex program compiled as a primitive shader (refused together
- * with the primitive number).
+ * a vertex program compiled as a primitive shader (refused together
+ * with the primitive number); and a primitive shader that culls its
+ * primitives.
  */
 struct amdrdna_gfx10_compile_options {
 	uint32_t pass_primitive_number;
 	uint32_t primitive_shader;
+	uint32_t primitive_culling;
 };
 
 /*

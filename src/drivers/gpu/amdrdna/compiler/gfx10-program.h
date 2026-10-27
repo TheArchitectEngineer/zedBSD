@@ -50,11 +50,13 @@
  * control word per attribute, the interpolation control (the point sprite
  * coordinate's channels), and whether it discards (the depth unit's kill
  * enable, which the driver sets).  A vertex program run as a primitive
- * shader says so; its count and inputs words are then those of the
- * geometry stage's registers.
+ * shader says so, and whether it culls (the driver then loads its culling
+ * user SGPRs); its count and inputs words are then those of the geometry
+ * stage's registers.
  */
 struct amdrdna_gfx10_registers {
 	uint32_t primitive_shader;
+	uint32_t primitive_culling;
 	uint32_t counts;
 	uint32_t inputs;
 	uint32_t vertex_export_config;

@@ -95,6 +95,10 @@
  */
 #define GFX10_SGPR_FIRST_FREE		8U
 #define GFX10_SGPR_FIRST_FREE_NGG	12U
+#define GFX10_SGPR_FIRST_FREE_CULL	20U
+
+/* The lane masks a culling primitive shader works its primitives' tests out in. */
+#define GFX10_CULL_SGPRS		8U
 
 /* The VGPRs a compute program's local invocation id x, y and z arrive in. */
 #define GFX10_CS_LOCAL_ID_X		0U
@@ -304,6 +308,9 @@ struct gfx10_lowering {
 	uint32_t scalar_temp[GFX10_SCALAR_TEMPS];
 	uint32_t scalar_temp_next;
 
+	/* A culling primitive shader's lane masks of its primitives' tests. */
+	uint32_t cull_sgpr[GFX10_CULL_SGPRS];
+
 	/* One past the highest SGPR the program uses. */
 	uint32_t sgpr_highest;
 
@@ -461,6 +468,8 @@ static int plan_registers(struct gfx10_lowering *lowering);
 static uint32_t reserve_vgprs(struct gfx10_lowering *lowering, uint32_t count);
 static void prologue_vertex(struct gfx10_lowering *lowering);
 static void prologue_primitive(struct gfx10_lowering *lowering);
+static int place_for_culling(struct gfx10_lowering *lowering);
+static int cull_primitives(struct gfx10_lowering *lowering);
 static void emit_lanes_below(struct gfx10_lowering *lowering, unsigned count);
 static void emit_field(struct gfx10_lowering *lowering, unsigned dst, unsigned source, uint32_t selector);
 static void emit_scalar_literal(struct gfx10_lowering *lowering, unsigned opcode, unsigned dst, unsigned source, uint32_t literal);
@@ -1133,7 +1142,8 @@ prepare(
 	lowering->program->local_size[0] = ir->local_size[0];
 	lowering->program->local_size[1] = ir->local_size[1];
 	lowering->program->local_size[2] = ir->local_size[2];
-	lowering->program->shared_bytes = ir->shared_bytes;
+	if (lowering->program->primitive_culling == 0U)
+		lowering->program->shared_bytes = ir->shared_bytes;
 	lowering->program->uses_barrier = ir->uses_barrier;
 
 	/* Succeeded: the program can be lowered. */
@@ -1458,6 +1468,8 @@ plan_registers(
 		 * taken until the start has read them.
 		 */
 		program->user_sgprs = AMDRDNA_GFX10_NGG_USER_SGPRS;
+		if (program->primitive_culling != 0U)
+			program->user_sgprs = AMDRDNA_GFX10_NGG_CULL_USER_SGPRS;
 		lowering->base_vertex_sgpr = AMDRDNA_GFX10_NGG_BASE_VERTEX;
 		lowering->first_instance_sgpr = AMDRDNA_GFX10_NGG_FIRST_INSTANCE;
 		lowering->instance_mask_sgpr = AMDRDNA_GFX10_NGG_INSTANCE_MASK;
@@ -1465,6 +1477,8 @@ plan_registers(
 		lowering->instance_id_input = AMDRDNA_GFX10_NGG_INSTANCE_ID_VGPR;
 		lowering->hardware_vgprs = AMDRDNA_GFX10_NGG_INPUT_VGPRS;
 		lowering->sgpr_first_free = GFX10_SGPR_FIRST_FREE_NGG;
+		if (program->primitive_culling != 0U)
+			lowering->sgpr_first_free = GFX10_SGPR_FIRST_FREE_CULL;
 		lowering->vgpr_first = 0U;
 		for (index = 0U; index < lowering->hardware_vgprs; index++)
 			lowering->taken[index] = 1U;
@@ -1588,6 +1602,14 @@ plan_registers(
 	for (index = 0U; index < GFX10_SCALAR_TEMPS; index++) {
 		lowering->scalar_temp[index] = sgpr;
 		sgpr++;
+	}
+
+	/* A culling primitive shader's lane masks. */
+	if (program->primitive_culling != 0U) {
+		for (index = 0U; index < GFX10_CULL_SGPRS; index++) {
+			lowering->cull_sgpr[index] = sgpr;
+			sgpr++;
+		}
 	}
 
 	/* Everything fits below VCC. */
@@ -1736,10 +1758,18 @@ prologue(
 		}
 	}
 
-	/* A vertex program's hardware inputs, and the inputs only the start read, go back. */
+	/*
+	 * A vertex program's hardware inputs, and the inputs only the start
+	 * read, go back; a culling primitive shader keeps its primitive's
+	 * vertex numbers (v0 and v1) for the end.
+	 */
 	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
-		for (index = 0U; index < lowering->hardware_vgprs; index++)
+		for (index = 0U; index < lowering->hardware_vgprs; index++) {
+			if (program->primitive_culling != 0U &&
+			    (index == AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR || index == AMDRDNA_GFX10_NGG_VERTEX_PAIR_VGPR))
+				continue;
 			give_vgpr(lowering, index);
+		}
 		return_inputs(lowering, 0U);
 	}
 
@@ -3202,8 +3232,12 @@ prepare_graphics(
 			return error;
 		}
 
-		/* Marks the program as a primitive shader. */
+		/* Marks the program as a primitive shader, one that culls when asked, with its vertices' places in LDS. */
 		program->primitive_shader = 1U;
+		if (lowering->options.primitive_culling != 0U) {
+			program->primitive_culling = 1U;
+			program->shared_bytes = AMDRDNA_GFX10_NGG_CULL_SHARED_BYTES;
+		}
 	}
 
 	/* Succeeded: the interface is known. */
@@ -3428,27 +3462,522 @@ prologue_primitive(
 	emit(lowering, &inst);
 	emit_label(lowering, skip_label);
 
-	/* Each primitive lane exports the word the hardware packed in v0, which ends the primitive's exports. */
-	wave_count = next_scalar_temp(lowering);
-	emit_field(lowering, wave_count, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES);
-	emit_lanes_below(lowering, wave_count);
-	skip_label = lowering->next_label;
-	lowering->next_label++;
-	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, skip_label);
-	sources[0] = AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR);
-	sources[1] = 0U;
-	sources[2] = 0U;
-	sources[3] = 0U;
-	emit_export(lowering, AMDRDNA_GFX10_EXPORT_PRIMITIVE, sources, 0x1U, AMDRDNA_GFX10_FLAG_LAST);
-	emit_label(lowering, skip_label);
+	/*
+	 * Each primitive lane exports the word the hardware packed in v0,
+	 * which ends the primitive's exports; a culling program exports it at
+	 * its end.
+	 */
+	if (lowering->program->primitive_culling == 0U) {
+		wave_count = next_scalar_temp(lowering);
+		emit_field(lowering, wave_count, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES);
+		emit_lanes_below(lowering, wave_count);
+		skip_label = lowering->next_label;
+		lowering->next_label++;
+		emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, skip_label);
+		sources[0] = AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR);
+		sources[1] = 0U;
+		sources[2] = 0U;
+		sources[3] = 0U;
+		emit_export(lowering, AMDRDNA_GFX10_EXPORT_PRIMITIVE, sources, 0x1U, AMDRDNA_GFX10_FLAG_LAST);
+		emit_label(lowering, skip_label);
+	}
 
-	/* The vertex lanes run the rest of the program; a wave without vertices ends at once, exporting nothing. */
+	/*
+	 * The vertex lanes run the rest of the program; a wave without
+	 * vertices goes to its end at once (a culling one to its primitives).
+	 */
 	wave_count = next_scalar_temp(lowering);
 	emit_field(lowering, wave_count, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_VERTICES);
 	emit_lanes_below(lowering, wave_count);
 	lowering->vertices_end_label = lowering->next_label;
 	lowering->next_label++;
 	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, lowering->vertices_end_label);
+}
+
+/*
+ * Leaves a culling primitive shader's vertex places for its primitives:
+ * each vertex lane writes x / w, y / w and w of its position to LDS at its
+ * number in the subgroup (the wave's number times 32 and its lane).
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/common/nir/ac_nir_lower_ngg.c
+ * (add_deferred_attribute_culling: the ES threads store the position's
+ * w and x / w, y / w at their invocation index, lines 1222-1235).
+ */
+static int
+place_for_culling(
+	struct gfx10_lowering *lowering)
+{
+	struct amdrdna_gfx10_inst inst;
+	unsigned position[4];
+	unsigned values[3];
+	unsigned first;
+	uint32_t address;
+	uint32_t reciprocal;
+	uint32_t x;
+	uint32_t y;
+	uint32_t channel;
+	int error;
+
+	/* The position's channels where the exports read them. */
+	for (channel = 0U; channel < 4U; channel++) {
+		error = export_source(lowering, GFX10_OUTPUT_POSITION + channel, &position[channel]);
+		if (error != 0)
+			return error;
+	}
+
+	/* The registers of the place: its address, 1 / w, x / w and y / w. */
+	error = take_vgpr(lowering, &address);
+	if (error == 0)
+		error = take_vgpr(lowering, &reciprocal);
+	if (error == 0)
+		error = take_vgpr(lowering, &x);
+	if (error == 0)
+		error = take_vgpr(lowering, &y);
+	if (error != 0)
+		return error;
+
+	/* The vertex's number in the subgroup, then its byte address. */
+	first = next_scalar_temp(lowering);
+	emit_field(lowering, first, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_NUMBER_FIELD);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_LSHL_B32, first, first, constant_operand(5U));
+	emit_vector(lowering,
+		    AMDRDNA_GFX10_KIND_VECTOR_WIDE,
+		    AMDRDNA_GFX10_V_MBCNT_LO_U32_B32,
+		    AMDRDNA_GFX10_V(address),
+		    constant_operand(GFX10_TRUE),
+		    first,
+		    0U);
+	emit_multiply_add(lowering,
+			  AMDRDNA_GFX10_V(address),
+			  AMDRDNA_GFX10_V(address),
+			  AMDRDNA_GFX10_NGG_CULL_VERTEX_BYTES,
+			  AMDRDNA_GFX10_ZERO);
+
+	/* x / w and y / w by the reciprocal of w. */
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_RCP_F32, AMDRDNA_GFX10_V(reciprocal), position[3], 0U, 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_MUL_F32, AMDRDNA_GFX10_V(x), position[0], AMDRDNA_GFX10_V(reciprocal), 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_MUL_F32, AMDRDNA_GFX10_V(y), position[1], AMDRDNA_GFX10_V(reciprocal), 0U);
+
+	/* The three words of the place. */
+	values[0] = AMDRDNA_GFX10_V(x);
+	values[1] = AMDRDNA_GFX10_V(y);
+	values[2] = position[3];
+	for (channel = 0U; channel < 3U; channel++) {
+		kern_memset(&inst, 0, sizeof(inst));
+		inst.kind = AMDRDNA_GFX10_KIND_SHARED;
+		inst.opcode = AMDRDNA_GFX10_DS_WRITE_B32;
+		inst.src[0] = (uint16_t)AMDRDNA_GFX10_V(address);
+		inst.src[1] = (uint16_t)values[channel];
+		inst.immediate = 4U * channel;
+		emit(lowering, &inst);
+	}
+
+	/* Succeeded: the place is on its way to LDS. */
+	return 0;
+}
+
+/* Appends dst = a OR b, or dst = b when first is set, of two lane masks. */
+static void
+emit_mask_or(
+	struct gfx10_lowering *lowering,
+	unsigned dst,
+	unsigned mask,
+	int first)
+{
+	/* The first mask is taken as it is. */
+	if (first != 0) {
+		emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, dst, mask, 0U);
+		return;
+	}
+
+	/* A later one is added. */
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_OR_B32, dst, dst, mask);
+}
+
+/* Appends dst = all lanes when the culling flag `bit` is set, else none. */
+static void
+emit_flag_mask(
+	struct gfx10_lowering *lowering,
+	unsigned dst,
+	uint32_t bit)
+{
+	/* The flag into SCC, SCC into the mask. */
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_COMPARE,
+		    AMDRDNA_GFX10_S_BITCMP1_B32,
+		    0U,
+		    AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_CULL_FLAGS),
+		    constant_operand(bit));
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_TWO,
+		    AMDRDNA_GFX10_S_CSELECT_B32,
+		    dst,
+		    constant_operand(GFX10_TRUE),
+		    AMDRDNA_GFX10_ZERO);
+}
+
+/* Appends a load of the word at `offset` of a vertex place into a VGPR. */
+static void
+emit_place_load(
+	struct gfx10_lowering *lowering,
+	uint32_t dst,
+	uint32_t address,
+	uint32_t offset)
+{
+	struct amdrdna_gfx10_inst inst;
+
+	/* The shared-memory read. */
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_SHARED;
+	inst.opcode = AMDRDNA_GFX10_DS_READ_B32;
+	inst.dst = (uint16_t)AMDRDNA_GFX10_V(dst);
+	inst.src[0] = (uint16_t)AMDRDNA_GFX10_V(address);
+	inst.immediate = offset;
+	emit(lowering, &inst);
+}
+
+/*
+ * Ends a culling primitive shader: once every wave of the subgroup has
+ * left its vertices' places, each primitive lane reads its three vertices
+ * and exports its primitive's word, marked null (bit 31) when the
+ * primitive is culled: when every w is zero, negative or not a number;
+ * by its face, or its zero area, when its area is finite; when its box is
+ * outside the view, or (with the flag) holds no sample's centre, unless a
+ * w is negative.  A wave whose primitives are all culled exports its
+ * first as a degenerate triangle instead.  The program runs without the
+ * hardware's passthrough mode, so the word is packed here from the vertex
+ * numbers; without the culling flag (a topology of points or lines) it
+ * goes out as packed.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/common/nir/ac_nir_cull.c
+ * (analyze_position_w, cull_face_triangle, calc_bbox_triangle,
+ * cull_frustrum, cull_small_primitive_triangle and ac_nir_cull_triangle,
+ * lines 21-160), src/amd/common/nir/ac_nir_lower_ngg.c
+ * (add_deferred_attribute_culling: the barrier after the stores, lines
+ * 1242-1290; ngg_nogs_init_vertex_indices_vars: without passthrough the
+ * vertex numbers in the 16-bit halves of v0 and v1, lines 115-128; culling
+ * never with passthrough, line 1645), src/amd/common/nir/ac_nir_prerast_utils.c
+ * (ac_nir_pack_ngg_prim_exp_arg: 9 bits each, 10 apart, the null bit 31), src/amd/common/ac_gpu_info.c (has_ngg_fully_culled_bug
+ * on GFX10, line 1316) and src/amd/common/nir/ac_nir_prerast_utils.c
+ * (ac_nir_ngg_alloc_vertices_fully_culled_workaround: one degenerate
+ * triangle of vertex 0 exported instead of none), and
+ * src/amd/compiler/aco_insert_waitcnt.cpp (a workgroup barrier waits for
+ * the shared-memory stores first).
+ */
+static int
+cull_primitives(
+	struct gfx10_lowering *lowering)
+{
+	struct amdrdna_gfx10_inst inst;
+	unsigned sources[4];
+	unsigned culled;
+	unsigned negative;
+	unsigned reflected;
+	unsigned positive;
+	unsigned test;
+	unsigned other;
+	unsigned front;
+	unsigned outside;
+	unsigned wave_count;
+	uint32_t place[3][3];
+	uint32_t address;
+	uint32_t word;
+	uint32_t temp[4];
+	uint32_t vertex;
+	uint32_t channel;
+	uint32_t index;
+	uint32_t end_label;
+	uint32_t export_label;
+	uint32_t small_label;
+	int error;
+
+	/* The lane masks of the tests. */
+	culled = AMDRDNA_GFX10_S(lowering->cull_sgpr[0]);
+	negative = AMDRDNA_GFX10_S(lowering->cull_sgpr[1]);
+	reflected = AMDRDNA_GFX10_S(lowering->cull_sgpr[2]);
+	positive = AMDRDNA_GFX10_S(lowering->cull_sgpr[3]);
+	test = AMDRDNA_GFX10_S(lowering->cull_sgpr[4]);
+	other = AMDRDNA_GFX10_S(lowering->cull_sgpr[5]);
+	front = AMDRDNA_GFX10_S(lowering->cull_sgpr[6]);
+	outside = AMDRDNA_GFX10_S(lowering->cull_sgpr[7]);
+
+	/* The registers: the three places, an address, the word, four temporaries. */
+	error = 0;
+	for (vertex = 0U; vertex < 3U && error == 0; vertex++) {
+		for (channel = 0U; channel < 3U && error == 0; channel++)
+			error = take_vgpr(lowering, &place[vertex][channel]);
+	}
+	if (error == 0)
+		error = take_vgpr(lowering, &address);
+	if (error == 0)
+		error = take_vgpr(lowering, &word);
+	for (index = 0U; index < 4U && error == 0; index++)
+		error = take_vgpr(lowering, &temp[index]);
+	if (error != 0)
+		return error;
+
+	/* Every lane, once the places are written, waits for every wave of the subgroup. */
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, AMDRDNA_GFX10_EXEC_LO, constant_operand(GFX10_TRUE), 0U);
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_CONTROL;
+	inst.opcode = AMDRDNA_GFX10_S_WAITCNT;
+	inst.immediate = AMDRDNA_GFX10_WAIT_NONE & ~AMDRDNA_GFX10_WAIT_SCALAR_MASK;
+	emit(lowering, &inst);
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_CONTROL;
+	inst.opcode = AMDRDNA_GFX10_S_BARRIER;
+	emit(lowering, &inst);
+
+	/* The primitive lanes; a wave without primitives ends. */
+	end_label = lowering->next_label;
+	lowering->next_label++;
+	export_label = lowering->next_label;
+	lowering->next_label++;
+	small_label = lowering->next_label;
+	lowering->next_label++;
+	wave_count = next_scalar_temp(lowering);
+	emit_field(lowering, wave_count, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES);
+	emit_lanes_below(lowering, wave_count);
+	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, end_label);
+
+	/*
+	 * The primitive's word, packed from its three vertex numbers (the
+	 * halves of v0 and the low half of v1), 9 bits each 10 apart; without
+	 * the culling flag it goes out so.
+	 */
+	for (vertex = 0U; vertex < 3U; vertex++) {
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+			    AMDRDNA_GFX10_V_LSHRREV_B32,
+			    AMDRDNA_GFX10_V(temp[vertex]),
+			    constant_operand(vertex == 1U ? 16U : 0U),
+			    AMDRDNA_GFX10_V(vertex == 2U ? AMDRDNA_GFX10_NGG_VERTEX_PAIR_VGPR : AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR),
+			    0U);
+		emit_vector_literal(lowering,
+				    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+				    AMDRDNA_GFX10_V_AND_B32,
+				    AMDRDNA_GFX10_V(temp[vertex]),
+				    AMDRDNA_GFX10_LITERAL,
+				    AMDRDNA_GFX10_V(temp[vertex]),
+				    AMDRDNA_GFX10_NGG_VERTEX_NUMBER_MASK);
+		if (vertex == 0U) {
+			emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, AMDRDNA_GFX10_V(word), AMDRDNA_GFX10_V(temp[0]), 0U, 0U);
+			continue;
+		}
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+			    AMDRDNA_GFX10_V_LSHLREV_B32,
+			    AMDRDNA_GFX10_V(address),
+			    constant_operand(10U * vertex),
+			    AMDRDNA_GFX10_V(temp[vertex]),
+			    0U);
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+			    AMDRDNA_GFX10_V_OR_B32,
+			    AMDRDNA_GFX10_V(word),
+			    AMDRDNA_GFX10_V(address),
+			    AMDRDNA_GFX10_V(word),
+			    0U);
+	}
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_COMPARE,
+		    AMDRDNA_GFX10_S_BITCMP1_B32,
+		    0U,
+		    AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_CULL_FLAGS),
+		    constant_operand(4U));
+	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_SCC0, export_label);
+
+	/* Each vertex's place: its address by its number, its three words. */
+	for (vertex = 0U; vertex < 3U; vertex++) {
+		emit_multiply_add(lowering,
+				  AMDRDNA_GFX10_V(address),
+				  AMDRDNA_GFX10_V(temp[vertex]),
+				  AMDRDNA_GFX10_NGG_CULL_VERTEX_BYTES,
+				  AMDRDNA_GFX10_ZERO);
+		for (channel = 0U; channel < 3U; channel++)
+			emit_place_load(lowering, place[vertex][channel], address, 4U * channel);
+	}
+
+	/* The w tests: any w above zero, any below, and the reflection of an odd count below. */
+	for (vertex = 0U; vertex < 3U; vertex++) {
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_COMPARE,
+			    AMDRDNA_GFX10_V_CMP_LT_F32,
+			    test,
+			    AMDRDNA_GFX10_ZERO,
+			    AMDRDNA_GFX10_V(place[vertex][2]),
+			    0U);
+		emit_mask_or(lowering, positive, test, vertex == 0U);
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_COMPARE,
+			    AMDRDNA_GFX10_V_CMP_LT_F32,
+			    test,
+			    AMDRDNA_GFX10_V(place[vertex][2]),
+			    AMDRDNA_GFX10_ZERO,
+			    0U);
+		emit_mask_or(lowering, negative, test, vertex == 0U);
+		if (vertex == 0U) {
+			emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, reflected, test, 0U);
+		} else {
+			emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_XOR_B32, reflected, reflected, test);
+		}
+	}
+
+	/* Culled so far: no w above zero. */
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_NOT_B32, culled, positive, 0U);
+
+	/* The determinant (x2 - x0)(y1 - y0) - (x0 - x1)(y0 - y2) in temp[0]. */
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_SUB_F32, AMDRDNA_GFX10_V(temp[0]), AMDRDNA_GFX10_V(place[2][0]), AMDRDNA_GFX10_V(place[0][0]), 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_SUB_F32, AMDRDNA_GFX10_V(temp[1]), AMDRDNA_GFX10_V(place[1][1]), AMDRDNA_GFX10_V(place[0][1]), 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_MUL_F32, AMDRDNA_GFX10_V(temp[0]), AMDRDNA_GFX10_V(temp[0]), AMDRDNA_GFX10_V(temp[1]), 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_SUB_F32, AMDRDNA_GFX10_V(temp[1]), AMDRDNA_GFX10_V(place[0][0]), AMDRDNA_GFX10_V(place[1][0]), 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_SUB_F32, AMDRDNA_GFX10_V(temp[2]), AMDRDNA_GFX10_V(place[0][1]), AMDRDNA_GFX10_V(place[2][1]), 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_MUL_F32, AMDRDNA_GFX10_V(temp[1]), AMDRDNA_GFX10_V(temp[1]), AMDRDNA_GFX10_V(temp[2]), 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_SUB_F32, AMDRDNA_GFX10_V(temp[0]), AMDRDNA_GFX10_V(temp[0]), AMDRDNA_GFX10_V(temp[1]), 0U);
+
+	/* Counter-clockwise: the determinant above zero, or below it under a reflection. */
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_COMPARE, AMDRDNA_GFX10_V_CMP_LT_F32, test, AMDRDNA_GFX10_ZERO, AMDRDNA_GFX10_V(temp[0]), 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_COMPARE, AMDRDNA_GFX10_V_CMP_LT_F32, other, AMDRDNA_GFX10_V(temp[0]), AMDRDNA_GFX10_ZERO, 0U);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_AND_B32, other, other, reflected);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_ANDN2_B32, test, test, reflected);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_OR_B32, front, test, other);
+
+	/* Front facing: counter-clockwise when the front is, else clockwise. */
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_NOT_B32, test, front, 0U);
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_COMPARE,
+		    AMDRDNA_GFX10_S_BITCMP1_B32,
+		    0U,
+		    AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_CULL_FLAGS),
+		    constant_operand(2U));
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_CSELECT_B32, front, front, test);
+
+	/* The face culled: the front when it is culled, the back when it is, or a zero area. */
+	emit_flag_mask(lowering, test, 0U);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_AND_B32, test, test, front);
+	emit_flag_mask(lowering, other, 1U);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_ANDN2_B32, other, other, front);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_OR_B32, test, test, other);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_COMPARE, AMDRDNA_GFX10_V_CMP_EQ_F32, other, AMDRDNA_GFX10_V(temp[0]), AMDRDNA_GFX10_ZERO, 0U);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_OR_B32, test, test, other);
+
+	/* Only for a finite determinant (d - d is zero), then added to the culled. */
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_SUB_F32, AMDRDNA_GFX10_V(temp[1]), AMDRDNA_GFX10_V(temp[0]), AMDRDNA_GFX10_V(temp[0]), 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_COMPARE, AMDRDNA_GFX10_V_CMP_EQ_F32, other, AMDRDNA_GFX10_V(temp[1]), AMDRDNA_GFX10_ZERO, 0U);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_AND_B32, test, test, other);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_OR_B32, culled, culled, test);
+
+	/* The box: x from temp[0] to temp[1], y from temp[2] to temp[3]. */
+	for (channel = 0U; channel < 2U; channel++) {
+		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_MIN_F32, AMDRDNA_GFX10_V(temp[2U * channel]), AMDRDNA_GFX10_V(place[0][channel]), AMDRDNA_GFX10_V(place[1][channel]), 0U);
+		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_MIN_F32, AMDRDNA_GFX10_V(temp[2U * channel]), AMDRDNA_GFX10_V(temp[2U * channel]), AMDRDNA_GFX10_V(place[2][channel]), 0U);
+		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_MAX_F32, AMDRDNA_GFX10_V(temp[2U * channel + 1U]), AMDRDNA_GFX10_V(place[0][channel]), AMDRDNA_GFX10_V(place[1][channel]), 0U);
+		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_MAX_F32, AMDRDNA_GFX10_V(temp[2U * channel + 1U]), AMDRDNA_GFX10_V(temp[2U * channel + 1U]), AMDRDNA_GFX10_V(place[2][channel]), 0U);
+	}
+
+	/* Outside the view: a box wholly below -1 or above 1 in x or y. */
+	for (channel = 0U; channel < 2U; channel++) {
+		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_COMPARE, AMDRDNA_GFX10_V_CMP_LT_F32, test, AMDRDNA_GFX10_V(temp[2U * channel + 1U]), AMDRDNA_GFX10_MINUS_ONE, 0U);
+		emit_mask_or(lowering, outside, test, channel == 0U);
+		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_COMPARE, AMDRDNA_GFX10_V_CMP_LT_F32, test, AMDRDNA_GFX10_ONE, AMDRDNA_GFX10_V(temp[2U * channel]), 0U);
+		emit_mask_or(lowering, outside, test, 0);
+	}
+
+	/*
+	 * With the flag, a box that holds no sample's centre: its ends on the
+	 * screen, widened by the precision, round to the same number.
+	 */
+	emit_scalar(lowering,
+		    AMDRDNA_GFX10_KIND_SCALAR_COMPARE,
+		    AMDRDNA_GFX10_S_BITCMP1_B32,
+		    0U,
+		    AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_CULL_FLAGS),
+		    constant_operand(3U));
+	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_SCC0, small_label);
+	for (channel = 0U; channel < 2U; channel++) {
+		for (index = 0U; index < 2U; index++) {
+			emit_vector(lowering,
+				    AMDRDNA_GFX10_KIND_VECTOR_WIDE,
+				    AMDRDNA_GFX10_V_FMA_F32,
+				    AMDRDNA_GFX10_V(temp[2U * channel + index]),
+				    AMDRDNA_GFX10_V(temp[2U * channel + index]),
+				    AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_CULL_VIEWPORT + channel),
+				    AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_CULL_VIEWPORT + 2U + channel));
+			emit_vector(lowering,
+				    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+				    index == 0U ? AMDRDNA_GFX10_V_SUB_F32 : AMDRDNA_GFX10_V_ADD_F32,
+				    AMDRDNA_GFX10_V(temp[2U * channel + index]),
+				    AMDRDNA_GFX10_V(temp[2U * channel + index]),
+				    AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_CULL_PRECISION),
+				    0U);
+			emit_vector(lowering,
+				    AMDRDNA_GFX10_KIND_VECTOR_ONE,
+				    AMDRDNA_GFX10_V_RNDNE_F32,
+				    AMDRDNA_GFX10_V(temp[2U * channel + index]),
+				    AMDRDNA_GFX10_V(temp[2U * channel + index]),
+				    0U,
+				    0U);
+		}
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_COMPARE,
+			    AMDRDNA_GFX10_V_CMP_EQ_F32,
+			    test,
+			    AMDRDNA_GFX10_V(temp[2U * channel]),
+			    AMDRDNA_GFX10_V(temp[2U * channel + 1U]),
+			    0U);
+		emit_mask_or(lowering, outside, test, 0);
+	}
+	emit_label(lowering, small_label);
+
+	/* The box's test counts only when no w is negative. */
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_ANDN2_B32, outside, outside, negative);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_OR_B32, culled, culled, outside);
+
+	/*
+	 * A wave whose primitives are all culled keeps its first one, made the
+	 * degenerate triangle of the subgroup's vertex 0 (which the hardware
+	 * then draws nothing of): GFX10 can hang when a subgroup exports no
+	 * primitive.
+	 */
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_AND_B32, test, culled, AMDRDNA_GFX10_EXEC_LO);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_COMPARE, AMDRDNA_GFX10_S_CMP_EQ_U32, 0U, test, AMDRDNA_GFX10_EXEC_LO);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_CSELECT_B32, other, constant_operand(1U), AMDRDNA_GFX10_ZERO);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_ANDN2_B32, culled, culled, other);
+
+	/* The word, marked null when culled, or the degenerate triangle. */
+	emit_vector_literal(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+			    AMDRDNA_GFX10_V_OR_B32,
+			    AMDRDNA_GFX10_V(temp[0]),
+			    AMDRDNA_GFX10_LITERAL,
+			    AMDRDNA_GFX10_V(word),
+			    AMDRDNA_GFX10_NGG_NULL_PRIMITIVE);
+	emit_vector(lowering,
+		    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+		    AMDRDNA_GFX10_V_CNDMASK_B32,
+		    AMDRDNA_GFX10_V(word),
+		    AMDRDNA_GFX10_V(word),
+		    AMDRDNA_GFX10_V(temp[0]),
+		    culled);
+	emit_vector(lowering,
+		    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+		    AMDRDNA_GFX10_V_CNDMASK_B32,
+		    AMDRDNA_GFX10_V(word),
+		    AMDRDNA_GFX10_V(word),
+		    AMDRDNA_GFX10_ZERO,
+		    other);
+
+	/* The primitive's export, which ends its exports. */
+	emit_label(lowering, export_label);
+	sources[0] = AMDRDNA_GFX10_V(word);
+	sources[1] = 0U;
+	sources[2] = 0U;
+	sources[3] = 0U;
+	emit_export(lowering, AMDRDNA_GFX10_EXPORT_PRIMITIVE, sources, 0x1U, AMDRDNA_GFX10_FLAG_LAST);
+	emit_label(lowering, end_label);
+
+	/* Succeeded: the primitives are out. */
+	return 0;
 }
 
 /*
@@ -4968,9 +5497,21 @@ finish(
 	if (error != 0)
 		return error;
 
-	/* A primitive shader's wave without vertices comes here. */
+	/* A culling primitive shader's vertices leave their places for its primitives. */
+	if (program->primitive_culling != 0U) {
+		error = place_for_culling(lowering);
+		if (error != 0)
+			return error;
+	}
+
+	/* A primitive shader's wave without vertices comes here; a culling one's primitives are tested and exported. */
 	if (program->primitive_shader != 0U)
 		emit_label(lowering, lowering->vertices_end_label);
+	if (program->primitive_culling != 0U) {
+		error = cull_primitives(lowering);
+		if (error != 0)
+			return error;
+	}
 
 	/* The program ends. */
 	kern_memset(&inst, 0, sizeof(inst));

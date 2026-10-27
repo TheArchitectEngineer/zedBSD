@@ -691,6 +691,8 @@ pipeline_compile(
 	geometry = amdrdna_vk_geometry_mode(session->owner);
 	if (geometry != 0U && options.pass_primitive_number == 0U)
 		options.primitive_shader = 1U;
+	if (geometry == AMDRDNA_VK_GEOMETRY_CULLING && options.primitive_shader != 0U)
+		options.primitive_culling = 1U;
 	error = pipeline_compile_stage(build->vertex_module, DRV_GPU_STAGE_VERTEX, &options, &pipeline->vertex);
 	if (error != 0)
 		return error;

@@ -118,6 +118,10 @@
 					 (1U << 25) | (1U << 26) | (7U << 28))
 #define STATE_FLOAT_ONE			0x3f800000U
 
+/* A float's sign bit, and 1 / 256 (the small-primitive precision of one sample). */
+#define STATE_FLOAT_SIGN		0x80000000U
+#define STATE_SMALL_PRIMITIVE_PRECISION	0x3b800000U
+
 /*
  * The compute program's start values: the coherency start delay of 0x20,
  * every CU of shader arrays 0 and 1 of shader engines 0 and 1 (Navi10 has
@@ -199,7 +203,7 @@
 
 static int state_topology(struct amdrdna_vk_pm4 *pm4, uint32_t topology, bool primitive_shader);
 static void state_vertex_program(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *vertex, uint64_t vertex_table, uint32_t base_vertex, uint32_t first_instance, uint32_t instance_mask);
-static void state_primitive_shader(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *vertex, uint64_t vertex_table, uint32_t base_vertex, uint32_t first_instance, uint32_t instance_mask);
+static void state_primitive_shader(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *vertex, uint64_t vertex_table, uint32_t base_vertex, uint32_t first_instance, uint32_t instance_mask, const uint32_t *culling);
 static void state_start_graphics(struct amdrdna_vk_pm4 *pm4);
 static void state_start_compute(struct amdrdna_vk_pm4 *pm4);
 static bool state_blend_factor(uint32_t factor, uint32_t *code);
@@ -335,6 +339,87 @@ amdrdna_vk_state_target(
 }
 
 /*
+ * Works out a viewport's x and y transform as floats (as bits): the x
+ * scale, x offset, y scale and y offset, half the size about the middle.
+ */
+static void
+state_screen_transform(
+	const uint32_t *viewport,
+	uint32_t *transform)
+{
+	int64_t x;
+	int64_t y;
+	int64_t width;
+	int64_t height;
+
+	/* The floats in fixed point, then half the size and the middle. */
+	x = amdrdna_vk_fixed(viewport[0], STATE_FRACTION);
+	y = amdrdna_vk_fixed(viewport[1], STATE_FRACTION);
+	width = amdrdna_vk_fixed(viewport[2], STATE_FRACTION);
+	height = amdrdna_vk_fixed(viewport[3], STATE_FRACTION);
+	transform[0] = amdrdna_vk_float_fixed(width, STATE_FRACTION + 1U);
+	transform[1] = amdrdna_vk_float_fixed(2 * x + width, STATE_FRACTION + 1U);
+	transform[2] = amdrdna_vk_float_fixed(height, STATE_FRACTION + 1U);
+	transform[3] = amdrdna_vk_float_fixed(2 * y + height, STATE_FRACTION + 1U);
+}
+
+/*
+ * Works out the six words of a culling primitive shader's user SGPRs for
+ * a draw: the viewport's x and y scale and x and y offset (a viewport
+ * flipped in y turned back), the small-primitive precision of one sample
+ * (1 / 256, the vertex rounding's quantum), and the flags: the faces the
+ * pipeline culls, whether the front face is counter-clockwise on the
+ * screen (the pipeline's front face, turned by a flip), the small-primitive
+ * test, and culling at all for a topology of triangles.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_get_ngg_culling_settings and radv_emit_ngg_culling_state, lines
+ * 10329-10425: no culling for points and lines, the counter-clockwise
+ * front turned by the flip, the precision as samples / 2^8, the scale and
+ * offset of y negated for a flip; one sample here).
+ */
+void
+amdrdna_vk_state_culling(
+	const uint32_t *viewport,
+	uint32_t topology,
+	uint32_t cull_mode,
+	uint32_t front_face,
+	uint32_t *words)
+{
+	uint32_t transform[4];
+	uint32_t flags;
+	bool flipped;
+	bool counter_clockwise;
+
+	/* The transform, y turned back when the viewport is flipped (its y scale negative). */
+	state_screen_transform(viewport, transform);
+	flipped = (transform[2] & STATE_FLOAT_SIGN) != 0U;
+	if (flipped) {
+		transform[2] ^= STATE_FLOAT_SIGN;
+		transform[3] ^= STATE_FLOAT_SIGN;
+	}
+	words[0] = transform[0];
+	words[1] = transform[2];
+	words[2] = transform[1];
+	words[3] = transform[3];
+	words[4] = STATE_SMALL_PRIMITIVE_PRECISION;
+
+	/* The faces, the front's turn, the small primitives; only triangles are culled. */
+	flags = AMDRDNA_GFX10_CULL_SMALL;
+	if ((cull_mode & VK_CULL_MODE_FRONT_BIT) != 0U)
+		flags |= AMDRDNA_GFX10_CULL_FRONT;
+	if ((cull_mode & VK_CULL_MODE_BACK_BIT) != 0U)
+		flags |= AMDRDNA_GFX10_CULL_BACK;
+	counter_clockwise = front_face == VK_FRONT_FACE_COUNTER_CLOCKWISE;
+	if (counter_clockwise != flipped)
+		flags |= AMDRDNA_GFX10_CULL_FRONT_CCW;
+	if (topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
+	    topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN)
+		flags |= AMDRDNA_GFX10_CULL_ENABLED;
+	words[5] = flags;
+}
+
+/*
  * Writes viewport 0 from a VkViewport's floats (as bits: x, y, width,
  * height, minimum and maximum depth): the transform, the depth range, and
  * the viewport's scissor around it.
@@ -371,10 +456,7 @@ amdrdna_vk_state_viewport(
 	far = amdrdna_vk_fixed(viewport[5], STATE_DEPTH_FRACTION);
 
 	/* x: half the width about its middle; y the same; z from the near depth to the far. */
-	transform[0] = amdrdna_vk_float_fixed(width, STATE_FRACTION + 1U);
-	transform[1] = amdrdna_vk_float_fixed(2 * x + width, STATE_FRACTION + 1U);
-	transform[2] = amdrdna_vk_float_fixed(height, STATE_FRACTION + 1U);
-	transform[3] = amdrdna_vk_float_fixed(2 * y + height, STATE_FRACTION + 1U);
+	state_screen_transform(viewport, transform);
 	transform[4] = amdrdna_vk_float_fixed(far - near, STATE_DEPTH_FRACTION);
 	transform[5] = viewport[4];
 	amdrdna_vk_pm4_set_context_run(pm4, AMDRDNA_CX_VIEWPORT_TRANSFORM, transform, 6U);
@@ -524,7 +606,8 @@ amdrdna_vk_state_raster(
  * vertex export, the pixel inputs, the colour exports and the depth unit.
  *
  * A vertex program run as a primitive shader is written in the geometry
- * stage's registers instead.
+ * stage's registers instead; one that culls also takes the six words of
+ * amdrdna_vk_state_culling() (culling, which it then may not be NULL).
  *
  * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
  * (radv_emit_hw_vs, radv_emit_fragment_shader_state, radv_emit_ps_inputs,
@@ -540,7 +623,8 @@ amdrdna_vk_state_programs(
 	uint64_t fragment_table,
 	uint32_t base_vertex,
 	uint32_t first_instance,
-	uint32_t instance_mask)
+	uint32_t instance_mask,
+	const uint32_t *culling)
 {
 	const struct amdrdna_gfx10_registers *vs;
 	const struct amdrdna_gfx10_registers *ps;
@@ -552,7 +636,7 @@ amdrdna_vk_state_programs(
 
 	/* The vertex program, as a primitive shader or a legacy one. */
 	if (vs->primitive_shader != 0U) {
-		state_primitive_shader(pm4, vertex, vertex_table, base_vertex, first_instance, instance_mask);
+		state_primitive_shader(pm4, vertex, vertex_table, base_vertex, first_instance, instance_mask, culling);
 	} else {
 		state_vertex_program(pm4, vertex, vertex_table, base_vertex, first_instance, instance_mask);
 	}
@@ -655,7 +739,7 @@ state_vertex_program(
 
 /*
  * Writes a vertex program run as a primitive shader in wave32: its code, counts and inputs, the table in the stage's user
- * data address, its three user SGPRs, the CUs it runs on, the subgroup's
+ * data address, its three user SGPRs (nine when it culls), the CUs it runs on, the subgroup's
  * size and output, and the stages of a passthrough primitive shader.
  * After a legacy vertex program's draw (or at the buffer's first draw) the
  * geometry engine is flushed first.
@@ -674,9 +758,13 @@ state_primitive_shader(
 	uint64_t vertex_table,
 	uint32_t base_vertex,
 	uint32_t first_instance,
-	uint32_t instance_mask)
+	uint32_t instance_mask,
+	const uint32_t *culling)
 {
-	uint32_t words[3];
+	uint32_t words[AMDRDNA_GFX10_NGG_CULL_USER_SGPRS];
+	uint32_t count;
+	uint32_t index;
+	uint32_t stages;
 
 	/* The flush after a legacy vertex program's draws, or at the buffer's first draw. */
 	if (pm4->vertex_stage != AMDRDNA_VK_STAGE_PRIMITIVE) {
@@ -692,14 +780,23 @@ state_primitive_shader(
 	words[1] = vertex->registers.inputs;
 	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_RESOURCES, words, 2U);
 
-	/* The table in s[0:1]; the base vertex, the first instance and the instance mask in s8 .. s10. */
+	/*
+	 * The table in s[0:1]; the base vertex, the first instance and the
+	 * instance mask in s8 .. s10; the culling's words in s11 .. s16.
+	 */
 	words[0] = (uint32_t)vertex_table;
 	words[1] = (uint32_t)(vertex_table >> 32);
 	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_TABLE, words, 2U);
 	words[0] = base_vertex;
 	words[1] = first_instance;
 	words[2] = instance_mask;
-	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_USER_DATA, words, 3U);
+	count = AMDRDNA_GFX10_NGG_USER_SGPRS;
+	if (vertex->registers.primitive_culling != 0U) {
+		for (index = 0U; index < AMDRDNA_GFX10_NGG_CULL_USER_SGPRS - AMDRDNA_GFX10_NGG_USER_SGPRS; index++)
+			words[AMDRDNA_GFX10_NGG_USER_SGPRS + index] = culling[index];
+		count = AMDRDNA_GFX10_NGG_CULL_USER_SGPRS;
+	}
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_USER_DATA, words, count);
 
 	/* RADV's CUs and late allocation, the parameter cache oversubscribed. */
 	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PRIMITIVE_UNITS, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_PRIMITIVE_UNITS_NGG);
@@ -713,8 +810,11 @@ state_primitive_shader(
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_PRIMITIVE_EXPORT_FORMAT, AMDRDNA_CX_PRIMITIVE_EXPORT_ONE);
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GEOMETRY_INSTANCES, AMDRDNA_CX_GEOMETRY_ONE_INSTANCE);
 
-	/* The stages of a passthrough primitive shader in wave32. */
-	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, AMDRDNA_CX_STAGES_PRIMITIVE | AMDRDNA_CX_STAGES_PASSTHROUGH);
+	/* The stages of a primitive shader in wave32: passthrough, unless it culls (it packs its own primitives then). */
+	stages = AMDRDNA_CX_STAGES_PRIMITIVE | AMDRDNA_CX_STAGES_PASSTHROUGH;
+	if (vertex->registers.primitive_culling != 0U)
+		stages = AMDRDNA_CX_STAGES_PRIMITIVE;
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, stages);
 }
 
 /*
