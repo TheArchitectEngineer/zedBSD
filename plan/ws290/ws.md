@@ -13,6 +13,7 @@
 - ghci.md の版: 4d12da1 の後に 3af62ca（2026-10-26 23:49、§6.0 の UMD/KMD だけの差）。
 - 正本（2026-10-27 18:08 ユーザー「仕様がアップデートされたので、ghci.mdが正本となります。」）: 仕様は amaterrace-gpu の docs/ghci.md だけに従う。一次〜K の回答（ghci-answers-hw-*.md・ghci-questions-round*.md）は経緯であって正本ではない。再開の時は、その時の ghci.md の SHA を読んで記録し、L01〜L06 などの残る点も ghci.md の本文で確かめる。
 - 2026-10-27 19:12 GHCI の担当が M01〜M58（[ghci-review-8035b4a.md](ghci-review-8035b4a.md)）に答え、docs/ghci.md を **eb296d1** に改訂（回答の要約はユーザーが伝えた。正本は ghci.md）。要約で触れていない M: M26・M33〜M36・M42・M45・M46・M50〜M53・M56・M57。要約の M39〜M49 の番号は質問の番号とずれている（例: 要約の M39 は mesh、質問の M39 は render pass の記述）。次は eb296d1 の本文で M01〜M58 を照合し、design 版 3 を仕上げる。
+- DONE の取り決め（2026-10-27 ユーザー「GHCI側は ~/amaterrace-gpu/docs/ghci-review-reply.md に返信を書いています。末尾にDONEが書かれたら完了です。これからはDONEのプロトコルを使います。」）: こちらの疑問の file（plan/ws290/ghci-review-<SHA>.md）は書き終えたら末尾に `DONE` の行を書く。GHCI の側の返信は ~/amaterrace-gpu/docs/ghci-review-reply.md で、末尾に `DONE` がある時だけ完了として読む（読み取り専用）。
 - ghci.md の更新（2026-10-27 13:15 の f718918 まで、q1621 で P3 が読む）についてのユーザーの説明（2026-10-27）「コマンドベースの通信に変化して、レジスタ群がばっさりなくなりました。また、capabilityが導入され、capフラグがあるときだけ使える機能がたくさんできました。Vulkanのextなどとして見せるかどうかにマッピングが必要です。」 → design を command の通信の形に作り直し、capability の flag ごとに Vulkan の extension・feature などへの対応表を作る（flag の有無の両方を host 試験）。指示: 2026-10-27 13:55「P3で、~/amaterrace-gpu/docs/ghci.md の更新を読んで、GHCIドライバを更新してください。」
 
 - 2026-10-27 ユーザーの補足（Q1 経由の原文）: 「コマンドベースの通信に変化して、レジスタ群がばっさりなくなりました。また、capabilityが導入され、capフラグがあるときだけ使える機能がたくさんできました。Vulkanのextなどとして見せるかどうかにマッピングが必要です。」
