@@ -1,9 +1,9 @@
 <!-- awesome-plan project=zedbsd record=ws290 -->
 
-# WS290 zedBSD の GHCI の driver を GHCI 1.0（ghci.md 89529de）に書き直す
+# WS290 zedBSD の GHCI の driver を GHCI 1.0（ghci.md cb937e6）に書き直す
 
 - Master: [plan/master.md](../master.md)（2026-10-26 作成）。Primary Milestone: MG006。Related: MG008。前身: [WS288](../ws288/ws.md)（closed、zedBSD の driver は ws288-p006・p010・p018・p019・p035・p040・p043・p044 などで作った）。
-- Status: incomplete（2026-10-28 03:49 P3（q1637-i01）: GHCI の担当とのレビューは第 12 版「疑問は残っていない」と回答 第 12.0 版（Final Signoff）で双方合意し一時停止。正本は ghci.md **cf8be08**（include の gsi1_isa.h は bea1ef9）。design 版 4 は cf8be08 に追従、design-reviewer は未実施。再開点は末尾の「再開点（2026-10-28 レビュー再開、P3）」）
+- Status: incomplete（2026-10-28 P3（q1638-i01）: p001 cleared、design 版 4.5（ghci.md cb937e6）の §18 で Phase p002〜p015 を確定。p002 から実装中。仕様担当との第 14 版のやり取りは並行。下の「2026-10-28 Phase の確定と実装」）
 - 出典: 2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。amaterrace-gpuのディレクトリは読み取り専用とします。amaterrace-gpuのplan/は読んでもかまいません。am-ws001のような書き方をしてくれれば私は理解できます。」
 - 決定（2026-10-26、Q1 の問いへのユーザーの回答）:
   - （G01 の回答で置き換え: 仕様は単一の GHCI 1.0。下の行は当時の記録）対象の版は **GHCI 2.0 だけ**（ghci.md の TO-BE: 19 の register、in-memory の PSO・descriptor、`CMD_*` の構造化 command、CP の自律 MMU）。1.1（§3.1.1 の 128 KiB の register、class 2 の gpu-op の中継、STATE、KICK、APERTURE）は捨てる。2.0 のハードウェアは am-ws001-p007 で作られる予定。
@@ -48,19 +48,21 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: ghci.md 89529de（単一の GHCI 1.0）を正本に design を版 4 に仕上げる。版 2・版 3 の register 前提・2.0/1.1 の分岐を捨て、command と capability で組む。§24 の capability → Vulkan の対応、[design-review-v3.md](design-review-v3.md) の V01〜V25 の反映、design-reviewer、§18 の Phase の分割を確定して下の表と phase.md を立てる。code は書かない | — | in-progress（2026-10-28 版 4 の本文を書いた、design-reviewer の前に待機。仕様の更新待ち） |
-| p002 | 語の層: `ghci-regs.h`・`ghci-cmd.h`・`cmd.c`（全 command の encoder、PSO・descriptor・render pass の記述）。host の words 試験 | p001 | planned（内容は p001 の版 4 で確定） |
-| p003 | host の model の枠: register・ring・FENCE（64 bit）・session・VM_MAP・reset・IRQ・fault の注入・capability の profile | p002 | planned |
-| p004 | core: identify・capability、attach、ring・doorbell・fence・IRQ・watchdog・fault（session の fault と device の FAULTED）・reset、detach | p003 | planned |
-| p005 | session と VM: SESSION_OPEN/CLOSE・BIND_SESSION・VM_MAP/UNMAP、CP_HEAP と MMU_OOM、resource・blob・map | p004 | planned |
-| p006 | GSI1 の compiler の接続（texf・texl の返す値、descriptor の基の c24〜c31 など 89529de の規則） | p002・p004 | planned |
-| p007 | Vulkan の executor の土台と capability → Vulkan の対応（vk-caps） | p005・p006 | planned |
-| p008 | pipeline（PSO 128 byte）と descriptor | p007 | planned |
-| p009 | 記録と実行: render pass・draw・indirect・dispatch・barrier・copy/blit/resolve・query・dynamic state | p008 | planned |
-| p010 | discrete: local memory と host の振り分け | p005・p009 | planned |
-| p011 | 表示（DISP2、DISP_SET・FLIP、scanout の物理番地） | p007・p009 | planned |
-| p012 | userland と UAPI の整理（`GPU_OP_GHCI_*`・ghcictl など、U1・U6） | p004 | planned |
-| p013 | 規約の全文の見直し（WS が変えた C の全部、全 host 試験、amd64・riscv64 の build の warning 0） | p002〜p012 | planned |
+| [p001](phase001/phase.md) | 設計: design 版 4.5（ghci.md cb937e6、U5・U8〜U11 の反映、design-reviewer（Opus 5.5）3 回の反映、§18 の Phase の確定）。code は書かない | — | cleared（2026-10-28 P3 q1638-i01。仕様の残りの疑問 N62〜N72 は ghci-review 第 14 版でやり取り中、driver は design §19 の仮の扱いで進める（ユーザー 2026-10-28「はい、P3は仮の扱いで実装を行ってよいです。」）） |
+| [p002](phase002/phase.md) | 語の層: `ghci-regs.h`・`ghci-cmd.h`・`cmd.c`（§4.4 の全部）・`caps.c`（decode と CP_HEAP の勘定）・ring の計画と fence64・EXTCAP の走査（`check.c` に新しい名前で足す）。build に入る今の file は変えない（新しい file は build に入れない）。`ghci-ref-host-test.c`（§14、R23）（受け入れ: words と ref の試験 PASS、新しい file を amd64 と riscv64 の kernel の flag で compile して warning 0（R23）、`CONFIG_DRIVER_PCI_GHCI=y` の amd64 が今のまま build、14 LW） | p001 | planned |
+| [p003](phase003/phase.md) | model・stub・script（§14）。WS288 の 1.1 の試験の削除の list を Q1 へ（受け入れ: model の自己試験 PASS、16 LW） | p002 | planned |
+| [p004](phase004/phase.md) | core: pci-attach（match・Bus Master の順）、identify・caps・CP_HEAP（flat は 16 KiB）・ring・fence・IRQ・poll・watchdog、fault（FAULTED に依らず reset、犯人の記録、U5）・reset・LOST、detach。1.1 の file（firmware・native・state・blit・frame・packets・hcr）と vk/・display・compiler を build から外し、呼ぶ所を消す。capability は p004 で callback を全部実装した物だけを出す（`gpu.h` の「Optional capabilities require their complete callback pair」。resource・blob・map は p005 で足す。R17）（受け入れ: amd64・riscv64 の build の warning 0、p004 の場面 PASS、build に入る file に 1.1 の名前が無い（grep）、22 LW） | p003 | planned |
+| [p005](phase005/phase.md) | session・VM（chunk・勘定・map・unmap・close・再生、flat の恒等の VA）、memory（host、4 GiB の上限）、resource・blob・map・read・write、share・import。local は ENOTSUP。+ `SHARE | ALLOCATION_SHARE`（受け入れ: p005 の場面 PASS、build の warning 0、26 LW） | p004 | planned |
+| [p006](phase006/phase.md) | compiler: header・interface 表を捨て §12 の ABI（`gsi1-abi.h`）、資源の表、options、`compiler/gsi1_isa.h` を bea1ef9 の値（`GSI1_COLOR_ATTACHMENTS` 8、`GSI1_EXP_COLOR0_SRC1`、`GSI1_VS_REG_*`、lda の word 0〜3）に直す（R18）、FS の key に primitive の種類（R08）、compiler を build に戻す、gsi1 の試験と tools を移す（受け入れ: gsi1 の試験 PASS、build の warning 0。graphics の I/O は cf8be08 §12.10.3 で、22 LW） | p002・p004 | planned |
+| [p007](phase007/phase.md) | executor の土台: vk.h・stream・node・object・reply・vk-caps・device・format（FMT）・memory（heap）・command・queue（空の submit、fence・semaphore・event）。libvulkan が送る op の全部（`userland/desktop/libvulkan/` の `GPU_OP_*`、1.1 の `*2`・`EXTERNAL_*`・`GET_DEVICE_QUEUE2`・`RECORD_QUEUE_TIMELINE` を含む）の表を作り、op ごとに答える・記録する・断るを決める（R21）。session の番号は `GPU_OP_CREATE_DEVICE` で取る（R16）。+ `CAPSET | COMMAND | NOTIFICATION | FENCE | JOB | JOB_CAPACITY` と recovery（受け入れ: p007 の場面 PASS、30 LW） | p005・p006 | planned |
+| [p008](phase008/phase.md) | pipeline と descriptor: vk-pipeline・vk-layout・layout.h（受け入れ: p008 の場面 PASS、20 LW） | p007 | planned |
+| [p009](phase009/phase.md) | 記録と実行: vk-pass・vk-record・vk-execute、draw・indirect・dispatch・barrier・dynamic state・転送・query・event・clear（受け入れ: p009 の場面 PASS、amd64・riscv64 の build の warning 0、36 LW） | p008 | planned |
+| [p010](phase010/phase.md) | 転送の shader による代替（§11.6、U10）: `vk-meta.c`（内部の shader を IR で組む）、compute の copy・fill・update・query・buffer と image の写し・resolve、描画の blit、転送の後の bind の置き直し。gsi1model.py での試験（受け入れ: p010 の場面 PASS、build の warning 0、20 LW） | p009 | planned |
+| [p011](phase011/phase.md) | discrete: local memory、heap 2 つ、window と boot framebuffer（受け入れ: p011 の場面 PASS、12 LW） | p005・p009・p010 | planned |
+| [p012](phase012/phase.md) | 表示: DISP_SET・FLIP、DISP_IRQ、copied・cursor の写し、reset の数え直し、panic、boot framebuffer、adv7511。+ `DISPLAY | DISPLAY_EVENTS`（受け入れ: p012 の場面 PASS、22 LW） | p007・p009・p011 | planned |
+| [p013](phase013/phase.md) | userland と UAPI: `GPU_OP_GHCI_*`・`CONFIG_GHCI_NATIVE` を外す、ghcictl、ghci-blit を削除の list に（受け入れ: ghcictl の build、amd64 の build の warning 0、4 LW） | p004 | planned |
+| [p014](phase014/phase.md) | 実機の確かめ（VF2 + KC705、§16.2）。段ごとに Q1 の割当で（受け入れ: 段ごとの要約。KC705 の側の未実装は記録して切り分ける、12 LW） | p004（段 1）、p009（段 2）、p012（段 3）、ユーザーの hardware の用意 | planned |
+| [p015](phase015/phase.md) | 規約の全文の見直し: WS が変えた C の全部、全 host 試験、amd64・riscv64 の warning 0、tree に 1.1 の code が無い grep、stub の `drv_gpu_register` を `gpu.c` と照合、試験を `plan/tools.md` に登録を Q1 に依頼（受け入れ: 規約の違反 0、全 PASS、warning 0、10 LW） | p002〜p014 | planned |
 
 ## 現在の状態・再開点
 
@@ -124,3 +126,10 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - 仕様の不備: [ghci-review.md](ghci-review.md) 第 13 版（N47〜N60、main 1b88e6d24 で Q1 が commit）。2026-10-28 ユーザー「GHCI仕様担当が、レビューを受け取って、仕様をアップデートしています。プロトコルに従って相互アップデートを開始します。P3は自律的に仕様アップデートを受け取ってレビューを返し、相互に解決するまで継続してください。」→ 05:39 から reply（既読 Version 12.0）を 60 秒ごとに見張る。第 14 版に入れる新しい疑問の下書き: N61（DISP_SET の大きさ）・N62（texture slot が draw 全体で 16）・N63（8 byte の color attachment・A2B10G10R10）・N64（swizzle・unnormalized の field）・N65（attribute 60 語）・N66（viewport・subpixel の limit）・N67（文書の中の食い違い 4 件）。材料は main の plan/ws290/vk10-fixed-gaps.md（Q1）。
 - Phase の確定と実装（p002〜）: まだ始めない（ユーザーの答え待ち。条件は仕様に不備が無く approve できた時）。
 - 次: reply を受信 → 仕様の差を読む → 第 14 版を main の checkout の ghci-review.md に上書き（1 行目を変え末尾 DONE、commit は Q1）→ design を追従して WIP commit → Q1 に知らせる。双方が納得したら polling を止める。
+
+## 2026-10-28 Phase の確定と実装（q1638、P3）
+
+- ユーザー（2026-10-28、Q1 経由）「はい、P3は仮の扱いで実装を行ってよいです。」→ 仕様の残りの疑問（ghci-review 第 14 版 N62〜N72）を待たず、design §19 の仮の扱いで実装する。仮の所は各 Phase の phase.md に一覧で残し、仕様が変われば直す。
+- ユーザー（2026-10-28、Q1 経由）「GHCI仕様担当が、レビューを受け取って、仕様をアップデートしています。プロトコルに従って相互アップデートを開始します。P3は自律的に仕様アップデートを受け取ってレビューを返し、相互に解決するまで継続してください。」→ 第 13 版（05:08）→ 回答 第 13.0 版（cb937e6、05:57）→ 第 14 版（06:00）。回答の見張りを続ける。
+- p001 cleared。Phase の表は上（design §18 の p002〜p015、266 LW）。
+

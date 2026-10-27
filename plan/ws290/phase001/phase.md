@@ -3,7 +3,7 @@
 # ws290-p001 設計: GHCI 1.0（ghci.md 89529de）の driver の書き直し
 
 - 親: [WS290](../ws.md)。
-- 状態: in-progress（2026-10-28 05:14 P3 q1638-i01: design 版 4.2。U の回答と design-reviewer（Opus 5.5）の H 6・M 18・L 10 を反映。仕様の不備 14 件を ghci-review 第 13 版に用意し、ユーザーの判断待ち（仕様に不備が無い時だけ Phase を確定する条件）。再レビュー中）
+- 状態: cleared（2026-10-28 P3 q1638-i01: design 版 4.5（cb937e6）、design-reviewer 3 回を反映、§18 で p002〜p015 を確定。ユーザー「はい、P3は仮の扱いで実装を行ってよいです。」）
 - 由来: WS290 の出典と決定（ws.md）。
 
 ## 範囲（code は書かない）
@@ -57,3 +57,4 @@
   - 書いた物: [design.md](../design.md) 版 4.1（2ee693d0f、U5「全部 WS292」・U8・U9「どちらも出す」・U10「shader で代える」（Phase p010 を新設し以後を 1 つずつ繰り下げ、p015 = 規約）・U11）、版 4.2（0370d23f3・ed801f3be、design-reviewer の指摘の反映、§24 に一覧）。
   - design-reviewer（Opus 5.5、1 回目）: H 6・M 18・L 10 と仕様の不備 14 件。判定「H を直し仕様の不備を用意すれば p002〜p005 は approve 可」。仕様の不備は spec の写しで行を確かめ、main の checkout の `plan/ws290/ghci-review.md` を第 13 版（N47〜N60、H 1・M 6・L 7、末尾 DONE）に上書きし、Q1 に知らせた（commit は Q1、送るのはユーザーの指示の後）。
   - 未実施: 再レビューの結果、Phase の確定（ユーザーの条件「仕様に不備が見つからず」を満たしていないため判断待ち）、source の変更、build・試験。
+  - 追記: 仕様担当との相互の更新（第 13 版 → 回答 13.0 の cb937e6 → 第 14 版）、design 版 4.5（67269c977）。ユーザーの許可で Phase を確定（ws.md の表と phase002〜015）し、p001 を cleared にした。受け入れの「疑問の一覧がユーザーに示されている」は第 13・14 版で満たす。
