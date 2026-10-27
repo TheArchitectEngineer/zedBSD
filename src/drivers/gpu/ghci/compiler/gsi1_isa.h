@@ -6,137 +6,23 @@
  */
 
 /*
- * gsi1_isa.h: the GHCI standard shader ISA GSI1 for C (docs/ghci.md
- * section 12): the program binary's header and interface table (12.10),
- * the operand numbers (12.3), the instruction fields (12.4), the opcodes
- * (12.5) and the export targets and fragment inputs (12.11, 12.12).  The
- * CP's firmware checks programs with it and an OS driver's compiler
- * writes them with it; both copy this file.  It has no dependency but
- * the C integer constants.  tools/gsi1asm.py holds the same encoding.
+ * gsi1_isa.h: the GHCI standard shader ISA GSI1 for C: the operand
+ * numbers, the instruction fields, the opcodes, and the registers and
+ * export targets of the vertex and fragment stages.  A program is the
+ * code alone, without a header or an interface table; how the driver
+ * binds its resources is in gsi1-abi.h.  It has no dependency but the C
+ * integer constants.
  */
 
 #ifndef GSI1_ISA_H
 #define GSI1_ISA_H
 
 /*
- * The program binary (section 12.10): a 16-word header, the interface
- * table and the code.  Word numbers of the header.
+ * Operand numbers.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 12.3
+ * "Operands"), checked against amaterrace-gpu d9252e4 include/gsi1_isa.h.
  */
-#define GSI1_MAGIC 0x47534931u		/* "GSI1", word 0 */
-#define GSI1_VERSION 1u
-#define GSI1_HEADER_WORDS 16u
-#define GSI1_H_MAGIC 0u
-#define GSI1_H_VERSION 1u
-#define GSI1_H_STAGE 2u
-#define GSI1_H_FLAGS 3u
-#define GSI1_H_CODE_WORDS 4u		/* 2 per instruction */
-#define GSI1_H_CODE_OFFSET 5u		/* words from the header's start, even */
-#define GSI1_H_NREGS 6u			/* the highest r used + 1 */
-#define GSI1_H_LDS_BYTES 7u
-#define GSI1_H_WG_SIZE 8u		/* x | y << 8 | z << 16 */
-#define GSI1_H_CONST_WORDS 9u		/* constant-bank words the program reads */
-#define GSI1_H_IFACE_OFFSET 10u		/* words from the header's start */
-#define GSI1_H_IFACE_ENTRIES 11u
-#define GSI1_H_ENTRY 12u		/* instruction index */
-#define GSI1_H_ISA_MIN_VERSION 13u
-#define GSI1_H_PUSH_BYTES 14u
-#define GSI1_H_RESERVED 15u		/* 0 */
-
-/* Stages (word 2). */
-#define GSI1_STAGE_VERTEX 0u
-#define GSI1_STAGE_FRAGMENT 1u
-#define GSI1_STAGE_COMPUTE 2u
-
-/*
- * Flags (word 3).  [0]-[4] say what the program needs of the GPU (CAPS);
- * [5]-[9] are what a fragment program asks of the pipeline's state.
- */
-#define GSI1_FLAG_PACKED (1u << 0)	/* packed fp16/int16 (CAPS[28]) */
-#define GSI1_FLAG_SUBGROUP (1u << 1)	/* shfl, vote, ballot (CAPS[24]) */
-#define GSI1_FLAG_LDS (1u << 2)		/* lds, sts, bar */
-#define GSI1_FLAG_ATOMIC (1u << 3)	/* atom */
-#define GSI1_FLAG_SYSTOLIC (1u << 4)	/* rq, sactl (CAPS[25], reserved) */
-#define GSI1_FLAG_CENTROID (1u << 5)	/* reads r7-r9: set MS_CTRL[4] */
-#define GSI1_FLAG_DEPTH (1u << 6)	/* exports DEPTH (0x104) */
-#define GSI1_FLAG_SAMPLE_MASK (1u << 7)	/* exports a SAMPLE_MASK of its own */
-#define GSI1_FLAG_KILL (1u << 8)	/* may discard (kill) */
-#define GSI1_FLAG_POINTS (1u << 9)	/* built for points: r0, r1 = PointCoord */
-#define GSI1_FLAG_SAMPLE_IN (1u << 10)	/* reads r6 (the sample mask in) */
-
-/*
- * The interface table: entries of 4 words, kind, set, binding or
- * location, and the kind-specific word below.
- */
-#define GSI1_IFACE_WORDS 4u
-#define GSI1_IF_KIND 0u
-#define GSI1_IF_SET 1u
-#define GSI1_IF_BINDING 2u
-#define GSI1_IF_SPECIFIC 3u
-
-/* Kinds (word 0 of an entry). */
-#define GSI1_KIND_ATTRIBUTE 1u		/* location; first register | components << 8 */
-#define GSI1_KIND_VARYING_IN 2u		/* location; GSI1_VARY_* */
-#define GSI1_KIND_OUTPUT 3u		/* location; GSI1_VARY_* (vertex) or GSI1_OUT_* (fragment) */
-#define GSI1_KIND_UNIFORM_BLOCK 4u	/* GSI1_UBO_* */
-#define GSI1_KIND_SAMPLED_IMAGE 5u	/* GSI1_TEX_* */
-#define GSI1_KIND_STORAGE_BUFFER 6u	/* bank word of {address, bytes} */
-#define GSI1_KIND_PUSH_CONSTANT 7u	/* bank word of the first push word */
-#define GSI1_KIND_SHARED 8u		/* bytes */
-#define GSI1_KIND_INPUT_ATTACHMENT 9u	/* bank word of {base, row bytes, samples | pixel bytes << 8} */
-#define GSI1_KIND_STORAGE_IMAGE 10u	/* bank word of {base, row bytes, w | h << 16, layers, layer bytes} */
-#define GSI1_KIND_TEXEL_BUFFER 11u	/* bank word of {base, elements}: a storage texel buffer */
-#define GSI1_KIND_UNIFORM_MEMORY 12u	/* bank word of {address, bytes}: a uniform buffer read with lw */
-#define GSI1_KIND_SYSTEM 13u		/* binding: GSI1_SYSTEM_*; the register it arrives in */
-#define GSI1_KIND_SCRATCH 14u		/* binding: the bank word of the scratch memory's address; bytes per warp */
-
-/*
- * The kind-specific word of a varying (kind 2, and kind 3 of a vertex
- * program): the first varying word (export target 0x010 + word, PT word
- * 4 + word), the components, and how a fragment program reads it.
- */
-#define GSI1_VARY_WORD_MASK 0x3Fu
-#define GSI1_VARY_COMPONENTS_SHIFT 8u	/* 1-4 */
-#define GSI1_VARY_FLAT (1u << 16)
-#define GSI1_VARY_NOPERSPECTIVE (1u << 17)
-#define GSI1_VARY_CENTROID (1u << 18)
-
-/*
- * The kind-specific word of a fragment program's output (kind 3): the
- * colour attachment's first export target and the components written
- * (bit c: component c).  The binding word is the attachment.
- */
-#define GSI1_OUT_TARGET_MASK 0xFFFu
-#define GSI1_OUT_COMPONENTS_SHIFT 16u
-
-/*
- * The kind-specific word of a uniform block (kind 4): the bank words
- * [7:0] the block's first word goes to, the number of words [16:8] (1 to
- * 256) and the first word of the buffer they are copied from [28:17].
- */
-#define GSI1_UBO_BANK_MASK 0xFFu
-#define GSI1_UBO_WORDS_SHIFT 8u
-#define GSI1_UBO_WORDS_MASK 0x1FFu
-#define GSI1_UBO_FIRST_SHIFT 17u
-#define GSI1_UBO_FIRST_MASK 0xFFFu
-
-/*
- * The kind-specific word of a sampled image (kind 5): the texture slot;
- * for a uniform texel buffer [8] and the bank word [23:16] that holds its
- * element count (the slot is then a 2D image 256 texels wide).
- */
-#define GSI1_TEX_SLOT_MASK 0xFu
-#define GSI1_TEX_BUFFER (1u << 8)
-#define GSI1_TEX_COUNT_SHIFT 16u
-#define GSI1_TEX_COUNT_MASK 0xFFu
-
-/* Texel buffers through a texture slot are 2D images this wide. */
-#define GSI1_TEXEL_BUFFER_WIDTH 256u
-
-/* The system inputs (kind 13, the binding word). */
-#define GSI1_SYSTEM_VERTEX_INDEX 0u	/* index + vertexOffset, or firstVertex + n */
-#define GSI1_SYSTEM_INSTANCE_INDEX 1u	/* firstInstance + i */
-
-/* Operand numbers (section 12.3). */
 #define GSI1_R(n) (n)			/* r0-r62 */
 #define GSI1_RQ 63u
 #define GSI1_C(n) (64u + (n))		/* c0-c31 */
@@ -165,9 +51,33 @@
 #define GSI1_NWGZ 117u
 #define GSI1_ONEH2 118u
 #define GSI1_MASK 119u
+#define GSI1_VTX_INDEX 120u		/* gl_VertexIndex, a vertex warp's only */
+#define GSI1_INST_INDEX 121u		/* gl_InstanceIndex, a vertex warp's only */
 #define GSI1_REGISTERS_MAX 63u		/* r0-r62 */
 
-/* The fragment warp's inputs (section 12.11). */
+/*
+ * A vertex warp's fixed registers: the vertex fetcher also writes the
+ * vertex and instance index to r60 and r61 when used_regs is 62 or more
+ * (a compiler reads operands 120 and 121 instead), and never writes r62.
+ * The attributes arrive packed from r0, at most 60 registers.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+ * 12.10.3, "Vertex Shader Input Conventions"), checked against
+ * amaterrace-gpu d9252e4 include/ghci_cmd.h (GHCI_VS_REG_*).
+ */
+#define GSI1_VS_REG_VERTEX_INDEX 60u
+#define GSI1_VS_REG_INSTANCE_INDEX 61u
+#define GSI1_VS_REG_SCRATCH 62u
+#define GSI1_VS_ATTRIBUTE_REGISTERS 60u
+
+/*
+ * The fragment warp's inputs.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+ * 12.10.3, "Fragment Shader Input Interface"; section 12.11, "Fragment
+ * program inputs and outputs"), checked against amaterrace-gpu d9252e4
+ * include/ghci_cmd.h (GHCI_FS_REG_*).
+ */
 #define GSI1_IN_B0 0u
 #define GSI1_IN_B1 1u
 #define GSI1_IN_B2 2u
@@ -175,25 +85,39 @@
 #define GSI1_IN_X 4u			/* x + 0.5 */
 #define GSI1_IN_Y 5u			/* y + 0.5 */
 #define GSI1_IN_SAMPLE_MASK 6u
-#define GSI1_IN_CENTROID_B0 7u		/* r7-r9 with MS_CTRL[4] */
-#define GSI1_IN_POINT_S 0u		/* a point's PointCoord (section 12.12) */
+#define GSI1_IN_CENTROID_B0 7u		/* r7-r9 with fs_centroid (PSO dw15 [16]) */
+#define GSI1_IN_COUNT 10u		/* r0-r9 */
+#define GSI1_IN_POINT_S 0u		/* a point's PointCoord */
 #define GSI1_IN_POINT_T 1u
 
-/* Export targets (S immediate of exp). */
+/*
+ * Export targets (S immediate of exp).
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+ * 12.10.3, the export tables of the vertex and fragment stages; section
+ * 12.12, "Export targets of a fragment warp"), checked against
+ * amaterrace-gpu d9252e4 include/ghci_cmd.h (GHCI_EXP_*).
+ */
 #define GSI1_EXP_POS(c) (0x000u + (c))
 #define GSI1_EXP_POINT_SIZE 0x004u
 #define GSI1_EXP_VARYING(w) (0x010u + (w))
-#define GSI1_EXP_COLOR(k, c) (0x100u + 16u * (k) + (c))
+#define GSI1_EXP_COLOR(k, c) (0x100u + 16u * ((k) & 7u) + (c))
 #define GSI1_EXP_DEPTH 0x104u
 #define GSI1_EXP_SAMPLE_MASK 0x105u
-#define GSI1_COLOR_ATTACHMENTS 4u
+#define GSI1_EXP_COLOR0_SRC1(c) (0x108u + (c))
+#define GSI1_COLOR_ATTACHMENTS 8u
 
 /*
- * lda's immediate (section 12.10): the PT word in [8:2] (varying w at
- * 4 + w; words 0-3 read 0) and the vertex in [1:0].  A GPU with CAPS[30]
- * has the varying words 0-63 (Vulkan's 64 output and input components).
+ * lda's immediate: the PT word in [8:2] (words 0-3 the clip-space
+ * position x, y, z, w; varying w at 4 + w) and the vertex in [1:0]
+ * (vertex 0 is the provoking vertex).  There are 64 varying words (0-63,
+ * Vulkan's 64 output and input components).
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+ * 12.10.3, "Varying Interpolation" and "Varying Slot Mapping").
  */
 #define GSI1_LDA(word, vertex) ((((word) & 0x7Fu) << 2) | ((vertex) & 3u))
+#define GSI1_PT_POSITION(c) (c)
 #define GSI1_PT_VARYING(w) (4u + (w))
 #define GSI1_VARYING_WORDS 64u
 
@@ -205,7 +129,9 @@
  * Values referenced: The RISC-V Instruction Set Manual, Volume I:
  * Unprivileged ISA, version 20240411, chapter "RV32I Base Integer
  * Instruction Set" (the R, I, S, B and U formats), and chapter "F"
- * (the R4 format).
+ * (the R4 format); amaterrace-gpu d9252e4 docs/ghci.md (section 12.4
+ * "Instruction format", the word1 fields and the texture slots of section
+ * 12.9), checked against amaterrace-gpu d9252e4 include/gsi1_isa.h.
  */
 #define GSI1_W0_OPCODE_SHIFT 0u
 #define GSI1_W0_RD_SHIFT 7u
@@ -229,6 +155,9 @@
 #define GSI1_W1_SAT (1u << 14)
 #define GSI1_W1_HSEL_SHIFT 15u
 #define GSI1_W1_SUB_SHIFT 17u
+#define GSI1_W1_TEX_SLOT_SHIFT 17u	/* texture forms: sub[3:0], the texture slot (set 0) */
+#define GSI1_W1_SAMP_SLOT_SHIFT 6u	/* texture R forms: [9:6], the sampler slot (set 1) */
+#define GSI1_TEX_SLOTS 16u
 #define GSI1_W1_IMM_HI_SHIFT 22u	/* I/S/B: + sext(imm_hi) << 12 */
 #define GSI1_W1_MOVI_SHIFT 2u		/* U: movi's imm[11:0] */
 #define GSI1_W1_TEX_DU_SHIFT 22u	/* texture R forms: texel offsets */
@@ -374,7 +303,7 @@
 #define GSI1_TEXSZ_SIZE 0u		/* {height, width} of level rs1 */
 #define GSI1_TEXSZ_LEVELS 1u		/* texsz.l */
 #define GSI1_TEXSZ_DEPTH 2u		/* texsz.d: depth or layers of level rs1 */
-#define GSI1_TEXSZ_SAMPLES 3u		/* texsz.s (CAPS[29]) */
+#define GSI1_TEXSZ_SAMPLES 3u		/* texsz.s (DEVICE_CAPS[31]) */
 #define GSI1_QD_DX 0u			/* fine, lane ^ 1 */
 #define GSI1_QD_DY 1u			/* fine, lane ^ 2 */
 #define GSI1_QD_SWAP1 2u

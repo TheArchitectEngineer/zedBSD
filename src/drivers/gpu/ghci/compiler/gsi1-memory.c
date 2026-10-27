@@ -9,21 +9,23 @@
  * The GSI1 compiler's uniforms, buffers, shared memory and
  * synchronization.
  *
- * Everything a program binds is reached through the constant bank, whose
- * words the command processor fills from the descriptors as the interface
- * table says: the push constants from word 0 (so that they are the c0-c31
- * operands), then two words for each storage buffer ({address, bytes}) and
- * the words each storage image, texel buffer and input attachment needs,
- * then the words of the uniform blocks the program reads.  A uniform block
- * that does not fit is read from memory with lw, through two words of its
- * own like a storage buffer's.  Each sampled image takes a texture slot.
+ * Everything a program binds is reached the way gsi1-abi.h says.  A
+ * sampled image takes a texture slot and a sampler slot (a uniform texel
+ * buffer a texture slot and a resource table entry for its element
+ * count); every other uniform takes an entry of the resource table, a
+ * buffer descriptor or a copy of a texture descriptor, which the program
+ * reads with lw from the table's address in the constant bank.  The
+ * vertex and fragment programs of a pipeline share the slots and the
+ * table: a binding the other program already took is found again, and a
+ * new one is added after the others.  The push constants and the dynamic
+ * offsets are constant-bank words.
  *
- * A buffer access adds the byte offset to the buffer's address.  With
- * robustBufferAccess, and for a load the IR does not predicate in a
- * graphics stage, the offset is first clamped to the buffer's last word,
- * so that an access stays within the range the descriptor bound.  An
- * access the IR predicates narrows EXEC to the predicate's lanes for that
- * one instruction.
+ * A buffer access adds the byte offset (and the dynamic offset) to the
+ * buffer's address.  With robustBufferAccess, and for a load the IR does
+ * not predicate in a graphics stage, the offset is first clamped to the
+ * buffer's last word, so that an access stays within the range the
+ * descriptor bound.  An access the IR predicates narrows EXEC to the
+ * predicate's lanes for that one instruction.
  */
 
 #include "gsi1-private.h"
@@ -34,21 +36,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The words a storage buffer's (or a uniform buffer read from memory's) descriptor takes: its address and its bytes. */
-#define GSI1_BUFFER_WORDS		2U
-
-/* The words of a storage image's, a storage texel buffer's and an input attachment's descriptor. */
-#define GSI1_STORAGE_IMAGE_WORDS	5U
-#define GSI1_TEXEL_BUFFER_WORDS		2U
-#define GSI1_INPUT_ATTACHMENT_WORDS	3U
-
-/* The texture slots of a GPU (CAPS2 says how many it has; GSI1 has room for 16). */
-#define GSI1_TEXTURE_SLOTS		16U
-
-static int place_descriptors(struct gsi1_lowering *lowering);
-static int place_blocks(struct gsi1_lowering *lowering);
+static int place_uniform(struct gsi1_lowering *lowering, uint32_t index);
+static int place_sampled_image(struct gsi1_lowering *lowering, uint32_t index, struct gsi1_binding *binding);
+static int take_slot(struct gsi1_lowering *lowering, struct ghci_gsi1_slot *slots, uint32_t *count, uint32_t limit, uint32_t kind, const struct drv_gpu_shader_ir_uniform *uniform, uint32_t *slot);
+static int take_entry(struct gsi1_lowering *lowering, uint32_t kind, const struct drv_gpu_shader_ir_uniform *uniform, uint32_t *entry);
+static uint32_t find_dynamic(const struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_uniform *uniform);
 static int reads_texel_buffer(const struct gsi1_lowering *lowering, uint32_t uniform);
-static int take_bank(struct gsi1_lowering *lowering, uint32_t words, uint32_t *first);
+static int read_entry_word(struct gsi1_lowering *lowering, uint32_t reg, uint32_t offset);
 static int lower_uniform_word(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static int lower_storage(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static int lower_atomic(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
@@ -62,74 +56,48 @@ static void predicate_end(struct gsi1_lowering *lowering, uint32_t save);
 static void emit_fence(struct gsi1_lowering *lowering, uint32_t fences);
 
 /*
- * Lays out the constant bank and the texture slots: the push constants,
- * the descriptors, then the uniform blocks.
+ * Gives the uniforms their slots, resource table entries and dynamic
+ * offsets, after the tables the pipeline's other program took.
  */
 int
 gsi1_memory_prepare(
 	struct gsi1_lowering *lowering)
 {
 	const struct drv_gpu_shader_ir *ir;
-	uint32_t push_words;
+	const struct ghci_gsi1_bindings *bindings;
+	uint32_t index;
 	int error;
 
-	/* Names the module being laid out. */
+	/* Names the module and the tables being laid out. */
 	ir = lowering->ir;
+	bindings = &lowering->bindings;
 
-	/*
-	 * The push constants from the first word the program may use (word 0
-	 * unless the pipeline's other stage takes the words below: one bank
-	 * serves the vertex and the fragment warps of a draw).
-	 */
-	if (lowering->options.bank_first >= lowering->options.bank_words) {
-		error = gsi1_refuse(lowering, EINVAL, "the first constant-bank word is past the bank");
+	/* The tables handed in are the pipeline's: within their bounds. */
+	if (bindings->texture_count > GHCI_GSI1_TEXTURE_SLOTS ||
+	    bindings->sampler_count > GHCI_GSI1_SAMPLER_SLOTS ||
+	    bindings->resource_count > GHCI_GSI1_RESOURCES ||
+	    bindings->resource_bytes > GSI1_ABI_RESOURCE_TABLE_BYTES ||
+	    lowering->options.dynamic_count > GHCI_GSI1_DYNAMIC_OFFSETS) {
+		error = gsi1_refuse(lowering, EINVAL, "the pipeline's tables are past their bounds");
 		return error;
 	}
-	lowering->push_bank = lowering->options.bank_first;
-	push_words = (ir->push_bytes + 3U) / 4U;
-	if (push_words > lowering->options.bank_words - lowering->push_bank) {
-		error = gsi1_refuse(lowering, ENOTSUP, "more push constants than the constant bank holds");
+
+	/* The push constants are 128 bytes at most (c0-c23 and c32-c39). */
+	if (ir->push_bytes > GSI1_ABI_PUSH_BYTES) {
+		error = gsi1_refuse(lowering, ENOTSUP, "more than 128 bytes of push constants");
 		return error;
 	}
-	lowering->bank_used = lowering->push_bank + push_words;
 
-	/* The push constants' entry. */
-	if (push_words != 0U) {
-		error = gsi1_add_interface(lowering, GSI1_KIND_PUSH_CONSTANT, 0U, 0U, lowering->push_bank);
+	/* Each uniform in the order of the IR's list. */
+	for (index = 0U; index < ir->uniform_count; index++) {
+		lowering->index = index;
+		error = place_uniform(lowering, index);
 		if (error != 0)
 			return error;
 	}
-
-	/* The descriptors and the texture slots. */
-	error = place_descriptors(lowering);
-	if (error != 0)
-		return error;
-
-	/* The word of the scratch memory's address, for a compile that spills. */
-	if (lowering->spill.enabled != 0) {
-		error = take_bank(lowering, 1U, &lowering->spill.bank);
-		if (error != 0)
-			return error;
-	}
-
-	/* The uniform blocks. */
-	error = place_blocks(lowering);
-	if (error != 0)
-		return error;
-
-	/* A compute program's shared memory. */
-	if (ir->stage == DRV_GPU_STAGE_COMPUTE && ir->shared_bytes != 0U) {
-		error = gsi1_add_interface(lowering, GSI1_KIND_SHARED, 0U, 0U, ir->shared_bytes);
-		if (error != 0)
-			return error;
-		lowering->flags |= GSI1_FLAG_LDS;
-	}
-
-	/* A barrier needs the workgroup's warps together. */
-	if (ir->uses_barrier != 0U)
-		lowering->flags |= GSI1_FLAG_LDS;
 
 	/* Succeeded: every uniform has its place. */
+	lowering->index = 0U;
 	return 0;
 }
 
@@ -217,21 +185,142 @@ gsi1_bank_operand(
 }
 
 /*
+ * Reads a field of a uniform's resource table entry into a scratch
+ * register: lw from the table's address (c28) plus the entry's offset
+ * plus the field's, with the field's bits taken out of a shared word and
+ * a texel buffer's elements divided out of its bytes and stride.
+ */
+int
+gsi1_resource_field(
+	struct gsi1_lowering *lowering,
+	const struct gsi1_binding *binding,
+	uint32_t field,
+	uint32_t *operand)
+{
+	uint32_t reg;
+	uint32_t stride;
+	uint32_t offset;
+	uint32_t mask;
+	int error;
+
+	/* A uniform without an entry has no field to read. */
+	if (binding->entry == GSI1_NOT_DEFINED) {
+		error = gsi1_refuse(lowering, EINVAL, "a descriptor field of a binding without a resource table entry");
+		return error;
+	}
+
+	/* Takes the scratch register of the field. */
+	error = gsi1_scratch(lowering, &reg);
+	if (error != 0)
+		return error;
+
+	/* The field's word within the entry, and the bits of it the field has. */
+	mask = 0U;
+	switch (field) {
+	case GSI1_FIELD_BASE:
+		offset = GSI1_ABI_BUFFER_BASE;
+		break;
+	case GSI1_FIELD_BYTES:
+	case GSI1_FIELD_ELEMENTS:
+		offset = GSI1_ABI_BUFFER_SIZE;
+		break;
+	case GSI1_FIELD_ROW_BYTES:
+		offset = GSI1_ABI_TEXTURE_ROW_PITCH;
+		break;
+	case GSI1_FIELD_LAYER_BYTES:
+		offset = GSI1_ABI_TEXTURE_SLICE_PITCH;
+		break;
+	case GSI1_FIELD_EXTENT:
+		offset = GSI1_ABI_TEXTURE_EXTENT;
+		break;
+	case GSI1_FIELD_LAYERS:
+		offset = GSI1_ABI_TEXTURE_DEPTH;
+		mask = GSI1_ABI_LOW_HALF;
+		break;
+	case GSI1_FIELD_SAMPLES:
+		offset = GSI1_ABI_TEXTURE_SAMPLES;
+		mask = GSI1_ABI_LOW_BYTE;
+		break;
+	default:
+		error = gsi1_refuse(lowering, EINVAL, "a descriptor field the compiler does not read");
+		return error;
+	}
+
+	/* The word. */
+	error = read_entry_word(lowering, reg, binding->entry + offset);
+	if (error != 0)
+		return error;
+
+	/* The field's bits of a shared word. */
+	if (mask != 0U)
+		gsi1_emit_alu_immediate(lowering, GSI1_F3_AND, reg, reg, (int32_t)mask);
+
+	/* A texel buffer's elements: its bytes over its stride (the low half of the next word). */
+	if (field == GSI1_FIELD_ELEMENTS) {
+		error = gsi1_scratch(lowering, &stride);
+		if (error != 0)
+			return error;
+		error = read_entry_word(lowering, stride, binding->entry + GSI1_ABI_BUFFER_STRIDE);
+		if (error != 0)
+			return error;
+		gsi1_emit_alu_immediate(lowering, GSI1_F3_AND, stride, stride, (int32_t)GSI1_ABI_LOW_HALF);
+		gsi1_emit_alu(lowering, GSI1_F3_DIVU, GSI1_F7_MULDIV, reg, reg, stride);
+	}
+
+	/* Succeeded: the field is in the scratch register. */
+	*operand = reg;
+	return 0;
+}
+
+/*
+ * Reads a word of the driver's table (set 3) into a scratch register: lw
+ * from the table's address (c30) plus the word's offset.
+ */
+int
+gsi1_driver_word(
+	struct gsi1_lowering *lowering,
+	uint32_t offset,
+	uint32_t *operand)
+{
+	uint32_t table;
+	uint32_t reg;
+	int error;
+
+	/* Takes the scratch register of the word. */
+	error = gsi1_scratch(lowering, &reg);
+	if (error != 0)
+		return error;
+
+	/* The table's address, the low word of its mirror. */
+	error = gsi1_bank_operand(lowering, GSI1_ABI_BANK_SET(GSI1_ABI_SET_DRIVER), &table);
+	if (error != 0)
+		return error;
+
+	/* lw from it. */
+	gsi1_emit(lowering, gsi1_encode_i(GSI1_OP_LOAD, GSI1_F3_LW, reg, table, (int32_t)offset, 0U));
+
+	/* Succeeded: the word is in the scratch register. */
+	*operand = reg;
+	return 0;
+}
+
+/*
  * Computes the address of a buffer access into a scratch register: the
- * buffer's address (bank word `bank`) plus the byte offset (an operand),
- * the offset first clamped to the buffer's last word (bank word bank + 1
- * holds its bytes) when `clamp` is nonzero.
+ * buffer's address plus its dynamic offset (a bank word) plus the byte
+ * offset (an operand), the offset first clamped to the buffer's last word
+ * when `clamp` is nonzero.
  */
 int
 gsi1_buffer_address(
 	struct gsi1_lowering *lowering,
-	uint32_t bank,
+	const struct gsi1_binding *binding,
 	uint32_t offset,
 	int clamp,
 	uint32_t *address)
 {
 	uint32_t base;
 	uint32_t bytes;
+	uint32_t dynamic;
 	uint32_t reg;
 	int error;
 
@@ -242,7 +331,7 @@ gsi1_buffer_address(
 
 	/* The clamp: the offset of the buffer's last word is its bytes less four. */
 	if (clamp != 0) {
-		error = gsi1_bank_operand(lowering, bank + 1U, &bytes);
+		error = gsi1_resource_field(lowering, binding, GSI1_FIELD_BYTES, &bytes);
 		if (error != 0)
 			return error;
 
@@ -253,12 +342,20 @@ gsi1_buffer_address(
 	}
 
 	/* The buffer's address. */
-	error = gsi1_bank_operand(lowering, bank, &base);
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_BASE, &base);
 	if (error != 0)
 		return error;
 
 	/* address = base + offset. */
 	gsi1_emit_alu(lowering, GSI1_F3_ADD, GSI1_F7_BASE, reg, base, offset);
+
+	/* Plus the dynamic offset of a dynamic buffer. */
+	if (binding->dynamic != GSI1_NOT_DEFINED) {
+		error = gsi1_bank_operand(lowering, GSI1_ABI_BANK_DYNAMIC + binding->dynamic, &dynamic);
+		if (error != 0)
+			return error;
+		gsi1_emit_alu(lowering, GSI1_F3_ADD, GSI1_F7_BASE, reg, reg, dynamic);
+	}
 
 	/* Succeeded: the address is in the scratch register. */
 	*address = reg;
@@ -266,182 +363,278 @@ gsi1_buffer_address(
 }
 
 /*
- * Places the descriptors in the constant bank and gives the sampled images
- * their texture slots, in the order of the IR's uniform list.
+ * Gives one uniform its place: slots for a sampled image, a resource
+ * table entry for the others, and a buffer's dynamic offset.
  */
 static int
-place_descriptors(
-	struct gsi1_lowering *lowering)
+place_uniform(
+	struct gsi1_lowering *lowering,
+	uint32_t index)
 {
-	const struct drv_gpu_shader_ir *ir;
 	const struct drv_gpu_shader_ir_uniform *uniform;
 	struct gsi1_binding *binding;
-	uint32_t index;
-	uint32_t specific;
-	uint32_t words;
 	uint32_t kind;
-	int buffer;
+	uint32_t resource;
 	int error;
 
-	/* Names the module being laid out. */
-	ir = lowering->ir;
+	/* Names the uniform and its binding, which starts with nothing. */
+	uniform = &lowering->ir->uniforms[index];
+	binding = &lowering->binding[index];
+	binding->kind = GSI1_NO_BINDING;
+	binding->entry = GSI1_NOT_DEFINED;
+	binding->dynamic = GSI1_NOT_DEFINED;
+	binding->format = uniform->format;
+	binding->samples = uniform->multisampled;
 
-	/* Each uniform but the uniform blocks. */
-	for (index = 0U; index < ir->uniform_count; index++) {
-		uniform = &ir->uniforms[index];
-		binding = &lowering->binding[index];
-		lowering->index = index;
+	/* The system buffer of a compute program is read through special operands. */
+	if (uniform->kind == DRV_GPU_IR_UNIFORM_STORAGE && uniform->set == DRV_GPU_IR_SYSTEM_SET)
+		return 0;
 
-		/* The system buffer of a compute program is read through special operands. */
-		if (uniform->kind == DRV_GPU_IR_UNIFORM_STORAGE && uniform->set == DRV_GPU_IR_SYSTEM_SET)
-			continue;
-
-		/* A sampled image takes the next texture slot. */
-		if (uniform->kind == DRV_GPU_IR_UNIFORM_SAMPLED_IMAGE) {
-			if (lowering->slots_used == GSI1_TEXTURE_SLOTS) {
-				error = gsi1_refuse(lowering, ENOTSUP, "more sampled images than the texture slots");
-				return error;
-			}
-			binding->kind = GSI1_KIND_SAMPLED_IMAGE;
-			binding->count_bank = GSI1_NOT_DEFINED;
-			binding->slot = lowering->slots_used;
-			lowering->slots_used++;
-			specific = binding->slot;
-
-			/* A uniform texel buffer also has a bank word of its element count. */
-			buffer = reads_texel_buffer(lowering, index);
-			if (buffer != 0) {
-				error = take_bank(lowering, 1U, &binding->count_bank);
-				if (error != 0)
-					return error;
-				specific |= GSI1_TEX_BUFFER | (binding->count_bank << GSI1_TEX_COUNT_SHIFT);
-			}
-
-			/* The image's entry. */
-			error = gsi1_add_interface(lowering, GSI1_KIND_SAMPLED_IMAGE, uniform->set, uniform->binding, specific);
-			if (error != 0)
-				return error;
-			continue;
-		}
-
-		/* The descriptor words of the other kinds. */
-		if (uniform->kind == DRV_GPU_IR_UNIFORM_STORAGE) {
-			kind = GSI1_KIND_STORAGE_BUFFER;
-			words = GSI1_BUFFER_WORDS;
-		} else if (uniform->kind == DRV_GPU_IR_UNIFORM_STORAGE_IMAGE) {
-			kind = GSI1_KIND_STORAGE_IMAGE;
-			words = GSI1_STORAGE_IMAGE_WORDS;
-		} else if (uniform->kind == DRV_GPU_IR_UNIFORM_TEXEL_BUFFER) {
-			kind = GSI1_KIND_TEXEL_BUFFER;
-			words = GSI1_TEXEL_BUFFER_WORDS;
-		} else if (uniform->kind == DRV_GPU_IR_UNIFORM_INPUT_ATTACHMENT) {
-			kind = GSI1_KIND_INPUT_ATTACHMENT;
-			words = GSI1_INPUT_ATTACHMENT_WORDS;
-		} else {
-			continue;
-		}
-
-		/* Takes the descriptor's words. */
-		error = take_bank(lowering, words, &binding->bank);
+	/* A sampled image takes slots. */
+	if (uniform->kind == DRV_GPU_IR_UNIFORM_SAMPLED_IMAGE) {
+		error = place_sampled_image(lowering, index, binding);
 		if (error != 0)
 			return error;
-		binding->kind = kind;
-		binding->format = uniform->format;
-		binding->samples = uniform->multisampled;
 
-		/* The descriptor's entry; an input attachment is named by its index as well. */
-		error = gsi1_add_interface(lowering, kind, uniform->set, uniform->binding, binding->bank);
-		if (error != 0)
-			return error;
+		/* Succeeded: the image has its slots. */
+		return 0;
 	}
 
-	/* Succeeded: the descriptors have their words and slots. */
-	lowering->index = 0U;
+	/* The kind of the others, and of their entries; a uniform block the program does not read takes nothing. */
+	switch (uniform->kind) {
+	case DRV_GPU_IR_UNIFORM_BLOCK:
+		if (uniform->size == 0U)
+			return 0;
+		kind = GSI1_BINDING_UNIFORM_BUFFER;
+		resource = GHCI_GSI1_RESOURCE_UNIFORM_BUFFER;
+		break;
+	case DRV_GPU_IR_UNIFORM_STORAGE:
+		kind = GSI1_BINDING_STORAGE_BUFFER;
+		resource = GHCI_GSI1_RESOURCE_STORAGE_BUFFER;
+		break;
+	case DRV_GPU_IR_UNIFORM_STORAGE_IMAGE:
+		kind = GSI1_BINDING_STORAGE_IMAGE;
+		resource = GHCI_GSI1_RESOURCE_STORAGE_IMAGE;
+		break;
+	case DRV_GPU_IR_UNIFORM_TEXEL_BUFFER:
+		kind = GSI1_BINDING_TEXEL_BUFFER;
+		resource = GHCI_GSI1_RESOURCE_STORAGE_TEXEL_BUFFER;
+		break;
+	case DRV_GPU_IR_UNIFORM_INPUT_ATTACHMENT:
+		kind = GSI1_BINDING_INPUT_ATTACHMENT;
+		resource = GHCI_GSI1_RESOURCE_INPUT_ATTACHMENT;
+		break;
+	default:
+		error = gsi1_refuse(lowering, ENOTSUP, "a kind of uniform GSI1 does not bind");
+		return error;
+	}
+
+	/* The resource table entry. */
+	error = take_entry(lowering, resource, uniform, &binding->entry);
+	if (error != 0)
+		return error;
+	binding->kind = kind;
+
+	/* A buffer's dynamic offset, when the pipeline layout makes it dynamic. */
+	if (kind == GSI1_BINDING_UNIFORM_BUFFER || kind == GSI1_BINDING_STORAGE_BUFFER) {
+		binding->dynamic = find_dynamic(lowering, uniform);
+		if (binding->dynamic != GSI1_NOT_DEFINED)
+			lowering->dynamic_used |= 1U << binding->dynamic;
+	}
+
+	/* Succeeded: the uniform has its entry. */
 	return 0;
 }
 
 /*
- * Places the uniform blocks: in the bank while it has room for them and
- * for the two words each later block would take if it did not fit, in
- * memory otherwise.
+ * Gives a sampled image its texture slot and its sampler slot; a uniform
+ * texel buffer, which texf reads without a sampler, takes a texture slot
+ * and a resource table entry for its element count instead.
  */
 static int
-place_blocks(
-	struct gsi1_lowering *lowering)
+place_sampled_image(
+	struct gsi1_lowering *lowering,
+	uint32_t index,
+	struct gsi1_binding *binding)
 {
-	const struct drv_gpu_shader_ir *ir;
 	const struct drv_gpu_shader_ir_uniform *uniform;
-	struct gsi1_binding *binding;
-	uint32_t remaining;
-	uint32_t index;
-	uint32_t words;
-	uint32_t first;
-	uint32_t specific;
+	struct ghci_gsi1_bindings *bindings;
+	int buffer;
 	int error;
 
-	/* Names the module being laid out. */
-	ir = lowering->ir;
+	/* Names the uniform and the pipeline's tables. */
+	uniform = &lowering->ir->uniforms[index];
+	bindings = &lowering->bindings;
+	binding->kind = GSI1_BINDING_SAMPLED_IMAGE;
+	binding->sampler = 0U;
 
-	/* The blocks the program reads, counted for the room they may take in memory. */
-	remaining = 0U;
-	for (index = 0U; index < ir->uniform_count; index++) {
-		if (ir->uniforms[index].kind == DRV_GPU_IR_UNIFORM_BLOCK)
-			remaining++;
-	}
-
-	/* Each uniform block in turn. */
-	for (index = 0U; index < ir->uniform_count; index++) {
-		uniform = &ir->uniforms[index];
-		binding = &lowering->binding[index];
-		lowering->index = index;
-		if (uniform->kind != DRV_GPU_IR_UNIFORM_BLOCK)
-			continue;
-		remaining--;
-
-		/* The words of the bytes it reads, from its first word read. */
-		first = uniform->offset / 4U;
-		words = (uniform->offset + uniform->size + 3U) / 4U - first;
-
-		/* A block the program does not read takes nothing. */
-		if (uniform->size == 0U)
-			continue;
-
-		/* The block goes into the bank while room is left for the others' memory words. */
-		if (words <= GSI1_UBO_WORDS_MASK &&
-		    first <= GSI1_UBO_FIRST_MASK &&
-		    lowering->bank_used + words + GSI1_BUFFER_WORDS * remaining <= lowering->options.bank_words &&
-		    lowering->bank_used + words <= GSI1_UBO_BANK_MASK + 1U) {
-			binding->kind = GSI1_KIND_UNIFORM_BLOCK;
-			binding->bank = lowering->bank_used;
-			binding->words = words;
-			binding->first = first;
-			lowering->bank_used += words;
-
-			/* The block's entry: its bank word, its words, and the buffer's word they come from. */
-			specific = binding->bank;
-			specific |= words << GSI1_UBO_WORDS_SHIFT;
-			specific |= first << GSI1_UBO_FIRST_SHIFT;
-			error = gsi1_add_interface(lowering, GSI1_KIND_UNIFORM_BLOCK, uniform->set, uniform->binding, specific);
-			if (error != 0)
-				return error;
-			continue;
-		}
-
-		/* Otherwise the block is read from memory, through its address and its bytes. */
-		error = take_bank(lowering, GSI1_BUFFER_WORDS, &binding->bank);
+	/* A uniform texel buffer: a texture slot and the entry of its view. */
+	buffer = reads_texel_buffer(lowering, index);
+	if (buffer != 0) {
+		error = take_slot(lowering,
+				  bindings->texture,
+				  &bindings->texture_count,
+				  GHCI_GSI1_TEXTURE_SLOTS,
+				  GHCI_GSI1_TEXTURE_TEXEL_BUFFER,
+				  uniform,
+				  &binding->slot);
 		if (error != 0)
 			return error;
-		binding->kind = GSI1_KIND_UNIFORM_MEMORY;
-
-		/* The block's entry. */
-		error = gsi1_add_interface(lowering, GSI1_KIND_UNIFORM_MEMORY, uniform->set, uniform->binding, binding->bank);
+		error = take_entry(lowering, GHCI_GSI1_RESOURCE_UNIFORM_TEXEL_BUFFER, uniform, &binding->entry);
 		if (error != 0)
 			return error;
+
+		/* Succeeded: the texel buffer has its slot and its entry. */
+		return 0;
 	}
 
-	/* Succeeded: the blocks have their places. */
-	lowering->index = 0U;
+	/* An image: its texture slot. */
+	error = take_slot(lowering,
+			  bindings->texture,
+			  &bindings->texture_count,
+			  GHCI_GSI1_TEXTURE_SLOTS,
+			  GHCI_GSI1_TEXTURE_IMAGE,
+			  uniform,
+			  &binding->slot);
+	if (error != 0)
+		return error;
+
+	/* And its sampler's slot. */
+	error = take_slot(lowering,
+			  bindings->sampler,
+			  &bindings->sampler_count,
+			  GHCI_GSI1_SAMPLER_SLOTS,
+			  GHCI_GSI1_SAMPLER_COMBINED,
+			  uniform,
+			  &binding->sampler);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the image has its slots. */
 	return 0;
+}
+
+/*
+ * Finds the slot of a binding in a table of slots, or takes the next one;
+ * the pipeline's programs together have at most `limit`.
+ */
+static int
+take_slot(
+	struct gsi1_lowering *lowering,
+	struct ghci_gsi1_slot *slots,
+	uint32_t *count,
+	uint32_t limit,
+	uint32_t kind,
+	const struct drv_gpu_shader_ir_uniform *uniform,
+	uint32_t *slot)
+{
+	uint32_t index;
+	int error;
+
+	/* A slot the pipeline already has for the binding. */
+	for (index = 0U; index < *count; index++) {
+		if (slots[index].kind != kind)
+			continue;
+		if (slots[index].set != uniform->set || slots[index].binding != uniform->binding)
+			continue;
+		*slot = index;
+		return 0;
+	}
+
+	/* The pipeline's stages share the slots. */
+	if (*count == limit) {
+		error = gsi1_refuse(lowering, ENOTSUP, "the pipeline's stages need more than 16 texture or sampler slots");
+		return error;
+	}
+
+	/* The next slot. */
+	index = *count;
+	slots[index].kind = kind;
+	slots[index].set = uniform->set;
+	slots[index].binding = uniform->binding;
+	*count = index + 1U;
+
+	/* Succeeded: the binding has its slot. */
+	*slot = index;
+	return 0;
+}
+
+/*
+ * Finds the resource table entry of a binding, or adds one after the
+ * table's last: a buffer descriptor takes one 16-byte unit, a texture
+ * descriptor two.
+ */
+static int
+take_entry(
+	struct gsi1_lowering *lowering,
+	uint32_t kind,
+	const struct drv_gpu_shader_ir_uniform *uniform,
+	uint32_t *entry)
+{
+	struct ghci_gsi1_bindings *bindings;
+	struct ghci_gsi1_resource *resource;
+	uint32_t index;
+	uint32_t bytes;
+	int error;
+
+	/* Names the pipeline's tables. */
+	bindings = &lowering->bindings;
+
+	/* An entry the pipeline already has for the binding. */
+	for (index = 0U; index < bindings->resource_count; index++) {
+		resource = &bindings->resource[index];
+		if (resource->kind != kind)
+			continue;
+		if (resource->set != uniform->set || resource->binding != uniform->binding || resource->element != 0U)
+			continue;
+		*entry = resource->offset;
+		return 0;
+	}
+
+	/* The descriptor's bytes. */
+	bytes = GSI1_ABI_BUFFER_BYTES;
+	if (kind == GHCI_GSI1_RESOURCE_STORAGE_IMAGE || kind == GHCI_GSI1_RESOURCE_INPUT_ATTACHMENT)
+		bytes = GSI1_ABI_TEXTURE_BYTES;
+
+	/* The table has a bound. */
+	if (bindings->resource_count == GHCI_GSI1_RESOURCES ||
+	    bindings->resource_bytes + bytes > GSI1_ABI_RESOURCE_TABLE_BYTES) {
+		error = gsi1_refuse(lowering, ENOTSUP, "the pipeline binds more than its resource table holds");
+		return error;
+	}
+
+	/* The new entry. */
+	resource = &bindings->resource[bindings->resource_count];
+	resource->kind = kind;
+	resource->set = uniform->set;
+	resource->binding = uniform->binding;
+	resource->element = 0U;
+	resource->offset = bindings->resource_bytes;
+	bindings->resource_count++;
+	bindings->resource_bytes += bytes;
+
+	/* Succeeded: the binding has its entry. */
+	*entry = resource->offset;
+	return 0;
+}
+
+/* Finds the index of a buffer's dynamic offset in the pipeline layout's list, or GSI1_NOT_DEFINED. */
+static uint32_t
+find_dynamic(
+	const struct gsi1_lowering *lowering,
+	const struct drv_gpu_shader_ir_uniform *uniform)
+{
+	uint32_t index;
+
+	/* Each dynamic buffer of the layout. */
+	for (index = 0U; index < lowering->options.dynamic_count; index++) {
+		if (lowering->options.dynamic[index].set == uniform->set &&
+		    lowering->options.dynamic[index].binding == uniform->binding)
+			return index;
+	}
+
+	/* The buffer is not dynamic. */
+	return GSI1_NOT_DEFINED;
 }
 
 /* Reports whether a texture instruction fetches a sampled image as a texel buffer. */
@@ -474,32 +667,32 @@ reads_texel_buffer(
 	return 0;
 }
 
-/* Takes words of the constant bank. */
+/* Emits lw of a word of the resource table (c28 plus the byte offset) into a register. */
 static int
-take_bank(
+read_entry_word(
 	struct gsi1_lowering *lowering,
-	uint32_t words,
-	uint32_t *first)
+	uint32_t reg,
+	uint32_t offset)
 {
+	uint32_t table;
 	int error;
 
-	/* The bank has a bound. */
-	if (lowering->bank_used + words > lowering->options.bank_words) {
-		error = gsi1_refuse(lowering, ENOTSUP, "the program binds more than the constant bank holds");
+	/* The table's address, the low word of its mirror. */
+	error = gsi1_bank_operand(lowering, GSI1_ABI_BANK_SET(GSI1_ABI_SET_RESOURCES), &table);
+	if (error != 0)
 		return error;
-	}
 
-	/* The words are the caller's. */
-	*first = lowering->bank_used;
-	lowering->bank_used += words;
+	/* lw from it. */
+	gsi1_emit(lowering, gsi1_encode_i(GSI1_OP_LOAD, GSI1_F3_LW, reg, table, (int32_t)offset, 0U));
 
-	/* Succeeded: the words are taken. */
+	/* Succeeded: the word is in the register. */
 	return 0;
 }
 
 /*
- * Lowers a push-constant word or a uniform block's word that is not a c
- * operand: lwc from the bank, or lw from a block read from memory.
+ * Lowers a push-constant word that is not a c operand, from the bank's
+ * second part (lwc), and a uniform block's word, with lw from the
+ * block's address.
  */
 static int
 lower_uniform_word(
@@ -510,7 +703,9 @@ lower_uniform_word(
 	const struct drv_gpu_shader_ir *ir;
 	const struct gsi1_binding *binding;
 	uint32_t word;
-	uint32_t base;
+	uint32_t offset;
+	uint32_t address;
+	uint32_t dynamic;
 	int error;
 
 	/* A word that is a c operand needs no instruction. */
@@ -518,39 +713,53 @@ lower_uniform_word(
 		return 0;
 	ir = lowering->ir;
 
-	/* A push-constant word: its bank word. */
+	/* A push-constant word: bytes 0-95 are c0-c23, bytes 96-127 c32-c39. */
 	if (instruction->op == DRV_GPU_IR_LOAD_PUSH) {
-		word = lowering->push_bank + instruction->immediate / 4U;
+		word = instruction->immediate / 4U;
+		if (word >= GSI1_ABI_PUSH_LOW_WORDS + GSI1_ABI_PUSH_HIGH_WORDS) {
+			error = gsi1_refuse(lowering, EINVAL, "a push-constant word past 128 bytes");
+			return error;
+		}
+		if (word >= GSI1_ABI_PUSH_LOW_WORDS)
+			word = GSI1_ABI_BANK_PUSH_HIGH + word - GSI1_ABI_PUSH_LOW_WORDS;
 		gsi1_emit(lowering, gsi1_encode_i(GSI1_OP_LOAD, GSI1_F3_LWC, dst, GSI1_ZERO, (int32_t)word, 0U));
 		return 0;
 	}
 
 	/* A uniform block's word: its block is one of the program's. */
-	if (instruction->location >= ir->uniform_count) {
+	if (instruction->location >= ir->uniform_count ||
+	    lowering->binding[instruction->location].kind != GSI1_BINDING_UNIFORM_BUFFER) {
 		error = gsi1_refuse(lowering, EINVAL, "a uniform word of a block the program does not have");
 		return error;
 	}
 	binding = &lowering->binding[instruction->location];
 
-	/* A block read from memory: lw from its address. */
-	if (binding->kind == GSI1_KIND_UNIFORM_MEMORY) {
-		error = gsi1_bank_operand(lowering, binding->bank, &base);
+	/* With robustBufferAccess the word's offset is clamped to the block like a storage buffer's. */
+	if (lowering->options.robust_buffer_access != 0U) {
+		error = gsi1_scratch(lowering, &offset);
 		if (error != 0)
 			return error;
-		gsi1_emit(lowering, gsi1_encode_i(GSI1_OP_LOAD, GSI1_F3_LW, dst, base, (int32_t)(instruction->immediate & ~3U), 0U));
+		gsi1_emit_constant(lowering, offset, instruction->immediate & ~3U);
+		error = gsi1_buffer_address(lowering, binding, offset, 1, &address);
+		if (error != 0)
+			return error;
+		gsi1_emit(lowering, gsi1_encode_i(GSI1_OP_LOAD, GSI1_F3_LW, dst, address, 0, 0U));
 		return 0;
 	}
 
-	/* A word outside what the block copies is malformed. */
-	if (binding->kind != GSI1_KIND_UNIFORM_BLOCK ||
-	    instruction->immediate < ir->uniforms[instruction->location].offset) {
-		error = gsi1_refuse(lowering, EINVAL, "a uniform word outside the block's range");
+	/* The block's address, plus its dynamic offset. */
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_BASE, &address);
+	if (error != 0)
 		return error;
+	if (binding->dynamic != GSI1_NOT_DEFINED) {
+		error = gsi1_bank_operand(lowering, GSI1_ABI_BANK_DYNAMIC + binding->dynamic, &dynamic);
+		if (error != 0)
+			return error;
+		gsi1_emit_alu(lowering, GSI1_F3_ADD, GSI1_F7_BASE, address, address, dynamic);
 	}
 
-	/* The bank word the block's word was copied to. */
-	word = binding->bank + (instruction->immediate - ir->uniforms[instruction->location].offset) / 4U;
-	gsi1_emit(lowering, gsi1_encode_i(GSI1_OP_LOAD, GSI1_F3_LWC, dst, GSI1_ZERO, (int32_t)word, 0U));
+	/* lw at the word's offset from it. */
+	gsi1_emit(lowering, gsi1_encode_i(GSI1_OP_LOAD, GSI1_F3_LW, dst, address, (int32_t)(instruction->immediate & ~3U), 0U));
 
 	/* Succeeded: the uniform word is in dst. */
 	return 0;
@@ -590,7 +799,7 @@ lower_storage(
 
 	/* The size: the descriptor's bytes. */
 	if (instruction->op == DRV_GPU_IR_STORAGE_SIZE) {
-		error = gsi1_bank_operand(lowering, binding->bank + 1U, &bytes);
+		error = gsi1_resource_field(lowering, binding, GSI1_FIELD_BYTES, &bytes);
 		if (error != 0)
 			return error;
 		gsi1_emit_move(lowering, dst, bytes);
@@ -617,7 +826,7 @@ lower_storage(
 		clamp = 1;
 
 	/* The address. */
-	error = gsi1_buffer_address(lowering, binding->bank, offset, clamp, &address);
+	error = gsi1_buffer_address(lowering, binding, offset, clamp, &address);
 	if (error != 0)
 		return error;
 
@@ -702,8 +911,8 @@ lower_atomic(
 			return error;
 		sub |= GSI1_ATOM_SHARED;
 	} else if (instruction->location < lowering->ir->uniform_count &&
-	    (lowering->binding[instruction->location].kind == GSI1_KIND_STORAGE_IMAGE ||
-	     lowering->binding[instruction->location].kind == GSI1_KIND_TEXEL_BUFFER)) {
+	    (lowering->binding[instruction->location].kind == GSI1_BINDING_STORAGE_IMAGE ||
+	     lowering->binding[instruction->location].kind == GSI1_BINDING_TEXEL_BUFFER)) {
 		error = gsi1_image_texel(lowering, instruction, &lowering->binding[instruction->location], &address, &inside);
 		if (error != 0)
 			return error;
@@ -721,7 +930,7 @@ lower_atomic(
 		clamp = 0;
 		if (lowering->options.robust_buffer_access != 0U)
 			clamp = 1;
-		error = gsi1_buffer_address(lowering, binding->bank, offset, clamp, &address);
+		error = gsi1_buffer_address(lowering, binding, offset, clamp, &address);
 		if (error != 0)
 			return error;
 	}
@@ -765,7 +974,6 @@ lower_atomic(
 	kern_memset(&extra, 0, sizeof(extra));
 	extra.sub = sub;
 	gsi1_emit(lowering, gsi1_encode_r4(GSI1_OP_CUSTOM0, GSI1_F3_ATOM, dst, address, data, compare, &extra));
-	lowering->flags |= GSI1_FLAG_ATOMIC;
 
 	/* EXEC comes back. */
 	if (save != GSI1_NO_OPERAND)
@@ -797,9 +1005,6 @@ shared_atomic_address(
 	if (error != 0)
 		return error;
 
-	/* The program uses shared memory. */
-	lowering->flags |= GSI1_FLAG_LDS;
-
 	/* Succeeded: the address is in a register or an operand. */
 	return 0;
 }
@@ -829,7 +1034,6 @@ lower_shared(
 		error = gsi1_refuse(lowering, EINVAL, "shared memory outside a compute shader");
 		return error;
 	}
-	lowering->flags |= GSI1_FLAG_LDS;
 
 	/* A constant offset goes into the immediate, from zero. */
 	immediate = 0;
@@ -910,7 +1114,6 @@ lower_sync(
 	/* bar. */
 	kern_memset(&extra, 0, sizeof(extra));
 	gsi1_emit(lowering, gsi1_encode_r(GSI1_OP_CUSTOM0, GSI1_F3_BAR, 0U, 0U, 0U, 0U, &extra));
-	lowering->flags |= GSI1_FLAG_LDS;
 
 	/* What the others wrote to global memory is read again after the barrier. */
 	if ((fences & DRV_GPU_IR_FENCE_GLOBAL) != 0U)
@@ -983,7 +1186,7 @@ storage_binding(
 
 	/* The uniform is one of the program's storage buffers. */
 	if (uniform >= lowering->ir->uniform_count ||
-	    lowering->binding[uniform].kind != GSI1_KIND_STORAGE_BUFFER) {
+	    lowering->binding[uniform].kind != GSI1_BINDING_STORAGE_BUFFER) {
 		error = gsi1_refuse(lowering, EINVAL, "an access to something that is not a storage buffer of the program");
 		return error;
 	}

@@ -18,8 +18,11 @@
  * fragment program's only (texb takes it from the quad); elsewhere a sample
  * reads level 0.  Explicit gradients are turned into a level of detail
  * here: lambda = log2 of the larger of the two scaled gradients' lengths,
- * computed from their squares.  A uniform texel buffer is a 2D image 256
- * texels wide; a fetch past its element count reads zero.
+ * computed from their squares.  The texture slot names the image's
+ * descriptor in set 0 and the sampler slot its sampler's in set 1.  A
+ * uniform texel buffer is a 2D image 256 texels wide in its texture slot;
+ * a fetch past its element count, which its resource table entry gives,
+ * reads zero.
  */
 
 #include "gsi1-private.h"
@@ -70,6 +73,7 @@ struct gsi1_sample {
 	int32_t offset[3];
 	uint32_t channel;
 	uint32_t slot;
+	uint32_t sampler;
 	int three;
 	int compare;
 	int gathered;
@@ -77,7 +81,7 @@ struct gsi1_sample {
 	int fetch;
 };
 
-static int find_slot(struct gsi1_lowering *lowering, uint32_t set, uint32_t binding_number, uint32_t *slot, uint32_t *uniform);
+static int find_slot(struct gsi1_lowering *lowering, uint32_t set, uint32_t binding_number, struct gsi1_sample *sample, uint32_t *uniform);
 static int read_message(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, struct gsi1_sample *sample);
 static void read_coordinates(const struct drv_gpu_shader_ir_inst *instruction, struct gsi1_sample *sample, uint32_t first, int with_gradients);
 static uint32_t param(const struct drv_gpu_shader_ir_inst *instruction, uint32_t index);
@@ -110,12 +114,12 @@ gsi1_texture_lower(
 
 	/* The image's slot, or the uniform of a storage image a size query reads. */
 	uniform = 0U;
-	error = find_slot(lowering, instruction->location, instruction->immediate, &sample.slot, &uniform);
+	error = find_slot(lowering, instruction->location, instruction->immediate, &sample, &uniform);
 	if (error != 0)
 		return error;
 
 	/* A query of a storage image or texel buffer reads its descriptor's words. */
-	if (lowering->binding[uniform].kind != GSI1_KIND_SAMPLED_IMAGE) {
+	if (lowering->binding[uniform].kind != GSI1_BINDING_SAMPLED_IMAGE) {
 		error = lower_storage_query(lowering, instruction, uniform, dst);
 		if (error != 0)
 			return error;
@@ -222,14 +226,14 @@ gsi1_texture_lower(
 
 /*
  * Finds the uniform of a set and binding a texture instruction names, and
- * a sampled image's texture slot.
+ * a sampled image's texture and sampler slots.
  */
 static int
 find_slot(
 	struct gsi1_lowering *lowering,
 	uint32_t set,
 	uint32_t binding_number,
-	uint32_t *slot,
+	struct gsi1_sample *sample,
 	uint32_t *uniform)
 {
 	const struct drv_gpu_shader_ir *ir;
@@ -247,13 +251,14 @@ find_slot(
 		if (ir->uniforms[index].binding != binding_number)
 			continue;
 		kind = lowering->binding[index].kind;
-		if (kind != GSI1_KIND_SAMPLED_IMAGE &&
-		    kind != GSI1_KIND_STORAGE_IMAGE &&
-		    kind != GSI1_KIND_TEXEL_BUFFER)
+		if (kind != GSI1_BINDING_SAMPLED_IMAGE &&
+		    kind != GSI1_BINDING_STORAGE_IMAGE &&
+		    kind != GSI1_BINDING_TEXEL_BUFFER)
 			continue;
 
-		/* The uniform and its slot. */
-		*slot = lowering->binding[index].slot;
+		/* The uniform and its slots. */
+		sample->slot = lowering->binding[index].slot;
+		sample->sampler = lowering->binding[index].sampler;
 		*uniform = index;
 		return 0;
 	}
@@ -766,13 +771,9 @@ lower_query(
 		return 0;
 	}
 
-	/* A uniform texel buffer's size is its element count, a bank word. */
+	/* A uniform texel buffer's size is its element count, from its entry. */
 	if ((sample->shape & DRV_GPU_IR_IMAGE_KIND_MASK) == DRV_GPU_IR_IMAGE_BUFFER) {
-		if (binding->count_bank == GSI1_NOT_DEFINED) {
-			error = gsi1_refuse(lowering, EINVAL, "a texel buffer's size without its count");
-			return error;
-		}
-		error = gsi1_bank_operand(lowering, binding->count_bank, &level);
+		error = gsi1_resource_field(lowering, binding, GSI1_FIELD_ELEMENTS, &level);
 		if (error != 0)
 			return error;
 		gsi1_emit_move(lowering, dst, level);
@@ -813,8 +814,8 @@ lower_query(
 
 /*
  * Lowers a fetch from a uniform texel buffer: element i is texel (i mod
- * 256, i / 256) of level 0; an element past the buffer's count (a bank
- * word the command processor fills) reads zero.
+ * 256, i / 256) of level 0; an element past the buffer's count (from its
+ * resource table entry) reads zero.
  */
 static int
 lower_buffer_fetch(
@@ -843,8 +844,8 @@ lower_buffer_fetch(
 		return error;
 
 	/* x = i & 255, y = i >> 8. */
-	gsi1_emit_alu_immediate(lowering, GSI1_F3_AND, block, element, (int32_t)(GSI1_TEXEL_BUFFER_WIDTH - 1U));
-	gsi1_emit(lowering, gsi1_encode_shift(GSI1_F3_SRL, GSI1_F7_BASE, block + 1U, element, 8U));
+	gsi1_emit_alu_immediate(lowering, GSI1_F3_AND, block, element, (int32_t)(GSI1_ABI_TEXEL_BUFFER_WIDTH - 1U));
+	gsi1_emit(lowering, gsi1_encode_shift(GSI1_F3_SRL, GSI1_F7_BASE, block + 1U, element, GSI1_ABI_TEXEL_BUFFER_SHIFT));
 
 	/* The texel of level 0. */
 	sample->three = 0;
@@ -854,13 +855,9 @@ lower_buffer_fetch(
 	sample->offset[2] = 0;
 	emit_texture(lowering, GSI1_F3_TEXF, 0U, sample, dst, block, GSI1_ZERO);
 
-	/* Without its count the fetch is not checked. */
-	binding = &lowering->binding[uniform];
-	if (binding->count_bank == GSI1_NOT_DEFINED)
-		return 0;
-
 	/* Whether the element is inside the buffer: i < count, unsigned. */
-	error = gsi1_bank_operand(lowering, binding->count_bank, &count);
+	binding = &lowering->binding[uniform];
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_ELEMENTS, &count);
 	if (error != 0)
 		return error;
 
@@ -880,8 +877,8 @@ lower_buffer_fetch(
 
 /*
  * Lowers the size query of a storage image or a storage texel buffer from
- * its descriptor's words: {base, row bytes, width | height << 16, layers,
- * layer bytes} of an image, {base, elements} of a texel buffer.
+ * its resource table entry: an image's width and height and layers, a
+ * texel buffer's elements.
  */
 static int
 lower_storage_query(
@@ -902,8 +899,8 @@ lower_storage_query(
 	binding = &lowering->binding[uniform];
 
 	/* A texel buffer: its elements. */
-	if (binding->kind == GSI1_KIND_TEXEL_BUFFER) {
-		error = gsi1_bank_operand(lowering, binding->bank + 1U, &word);
+	if (binding->kind == GSI1_BINDING_TEXEL_BUFFER) {
+		error = gsi1_resource_field(lowering, binding, GSI1_FIELD_ELEMENTS, &word);
 		if (error != 0)
 			return error;
 		gsi1_emit_move(lowering, dst, word);
@@ -914,7 +911,7 @@ lower_storage_query(
 	}
 
 	/* An image: width and height from the packed word. */
-	error = gsi1_bank_operand(lowering, binding->bank + 2U, &word);
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_EXTENT, &word);
 	if (error != 0)
 		return error;
 	gsi1_emit(lowering, gsi1_encode_shift(GSI1_F3_SRL, GSI1_F7_BASE, dst + 1U, word, 16U));
@@ -922,7 +919,7 @@ lower_storage_query(
 	gsi1_emit(lowering, gsi1_encode_shift(GSI1_F3_SRL, GSI1_F7_BASE, dst, dst, 16U));
 
 	/* The layers (or a 3D image's depth). */
-	error = gsi1_bank_operand(lowering, binding->bank + 3U, &word);
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_LAYERS, &word);
 	if (error != 0)
 		return error;
 	gsi1_emit_move(lowering, dst + 2U, word);
@@ -947,9 +944,10 @@ emit_texture(
 {
 	struct gsi1_extra extra;
 
-	/* The slot and the texel offsets. */
+	/* The slots and the texel offsets. */
 	kern_memset(&extra, 0, sizeof(extra));
 	extra.sub = sample->slot;
+	extra.sampler = sample->sampler;
 	extra.offset_u = sample->offset[0];
 	extra.offset_v = sample->offset[1];
 	extra.offset_w = sample->offset[2];

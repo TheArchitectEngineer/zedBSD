@@ -10,14 +10,14 @@
  * programs, the standard shader ISA every GHCI GPU with a shader unit
  * runs.
  *
- * The result is the program binary the PROGRAM gpu-op hands to the GPU: a
- * header, the interface table that binds the program to the pipeline's
- * descriptors, and the code.  The interface table is the only contract
- * between the program and the command processor: it says which registers
- * the vertex attributes arrive in, which varying words the program reads
- * and writes, which constant-bank words hold the push constants, the
- * uniform blocks and the descriptors of the buffers and images, and which
- * texture slot each sampled image takes.
+ * A program is GSI1 code alone; the pipeline state carries its register
+ * count, shared memory, workgroup size, varying count and fragment flags.
+ * It reaches its resources the way gsi1-abi.h says, and the compile tells
+ * the executor what to put where: the texture and sampler slots of sets 0
+ * and 1, the entries of the resource table (set 2), the dynamic offsets
+ * and push constants of the constant bank, and the scratch memory.  The
+ * vertex and fragment programs of a pipeline share those tables: the
+ * second one is compiled with the first one's tables and extends them.
  */
 
 #ifndef DRIVERS_GPU_GHCI_COMPILER_GSI1_COMPILE_H
@@ -28,67 +28,128 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The user locations a vertex program writes and a fragment program reads. */
+/* The user locations a vertex program reads and writes and a fragment program reads. */
 #define GHCI_GSI1_LOCATIONS		16U
 
 /* The input attachments a fragment program may read (maxPerStageDescriptorInputAttachments). */
 #define GHCI_GSI1_INPUT_ATTACHMENTS	8U
 
-/* A varying word that is not given. */
-#define GHCI_GSI1_NO_WORD		0xffffffffU
+/* The texture and sampler slots of a pipeline (sets 0 and 1), the resource table's entries, and the dynamic offsets. */
+#define GHCI_GSI1_TEXTURE_SLOTS		16U
+#define GHCI_GSI1_SAMPLER_SLOTS		16U
+#define GHCI_GSI1_RESOURCES		64U
+#define GHCI_GSI1_DYNAMIC_OFFSETS	32U
+
+/* The primitive a fragment program is compiled for: its inputs differ (a point's are vertex 0's, a line has no vertex 2). */
+#define GHCI_GSI1_PRIMITIVE_TRIANGLE	0U
+#define GHCI_GSI1_PRIMITIVE_LINE	1U
+#define GHCI_GSI1_PRIMITIVE_POINT	2U
+
+/* What the executor writes into a texture slot: an image view, or a uniform texel buffer's view as gsi1-abi.h lays it out. */
+#define GHCI_GSI1_TEXTURE_IMAGE		1U
+#define GHCI_GSI1_TEXTURE_TEXEL_BUFFER	2U
+
+/* What the executor writes into a sampler slot: the sampler of a combined image sampler. */
+#define GHCI_GSI1_SAMPLER_COMBINED	1U
+
+/*
+ * What the executor writes at a resource table entry: a buffer
+ * descriptor (one 16-byte unit) of a uniform buffer, a storage buffer or
+ * the view of a uniform or storage texel buffer (stride = the texel's
+ * bytes, format = the view's), or a texture descriptor (two units) of a
+ * storage image's or an input attachment's view.
+ */
+#define GHCI_GSI1_RESOURCE_UNIFORM_BUFFER	1U
+#define GHCI_GSI1_RESOURCE_STORAGE_BUFFER	2U
+#define GHCI_GSI1_RESOURCE_UNIFORM_TEXEL_BUFFER	3U
+#define GHCI_GSI1_RESOURCE_STORAGE_TEXEL_BUFFER	4U
+#define GHCI_GSI1_RESOURCE_STORAGE_IMAGE	5U
+#define GHCI_GSI1_RESOURCE_INPUT_ATTACHMENT	6U
+
+/* The fragment program's flags (PSO dw15): it reads the centroid barycentrics, exports the depth, may discard. */
+#define GHCI_GSI1_FLAG_CENTROID		(1U << 0)
+#define GHCI_GSI1_FLAG_DEPTH_EXPORT	(1U << 1)
+#define GHCI_GSI1_FLAG_DISCARD		(1U << 2)
+
+/* A fragment program's colour outputs: bit k for attachment k, and the second colour of attachment 0. */
+#define GHCI_GSI1_OUTPUT_SECOND_COLOR	(1U << 8)
+
+/* One texture or sampler slot: what fills it (0: free) and the Vulkan binding it comes from. */
+struct ghci_gsi1_slot {
+	uint32_t kind;
+	uint32_t set;
+	uint32_t binding;
+};
+
+/*
+ * One entry of the resource table: what fills it, the Vulkan binding and
+ * array element it comes from, and its byte offset from the table's
+ * address.
+ */
+struct ghci_gsi1_resource {
+	uint32_t kind;
+	uint32_t set;
+	uint32_t binding;
+	uint32_t element;
+	uint32_t offset;
+};
+
+/*
+ * The tables a pipeline's programs share: the texture and sampler slots
+ * in use and the resource table's entries, with the bytes the table
+ * takes.  A zeroed record is an empty pipeline.
+ */
+struct ghci_gsi1_bindings {
+	struct ghci_gsi1_slot texture[GHCI_GSI1_TEXTURE_SLOTS];
+	uint32_t texture_count;
+	struct ghci_gsi1_slot sampler[GHCI_GSI1_SAMPLER_SLOTS];
+	uint32_t sampler_count;
+	struct ghci_gsi1_resource resource[GHCI_GSI1_RESOURCES];
+	uint32_t resource_count;
+	uint32_t resource_bytes;
+};
+
+/* A dynamic uniform or storage buffer of the pipeline layout. */
+struct ghci_gsi1_dynamic {
+	uint32_t set;
+	uint32_t binding;
+};
 
 /*
  * What a pipeline tells a compile beyond the module.
  *
- * A zeroed record is a valid request for a GPU with 32 registers per
- * lane, one sample per pixel and the plain varying layout (location L
- * component c in varying word 4 L + c).
+ * A zeroed record is a valid request: 63 registers, one sample per pixel,
+ * triangles, each attribute location the vertex program declares bound
+ * with its variable's components, no dynamic buffers and an empty
+ * pipeline.
  */
 struct ghci_gsi1_options {
-	/* The registers per lane of the GPU (32 or 64; 0 reads as 32). */
+	/* The registers per lane the program may use: min(63, RESIDENT_WARPS[23:16]); 0 reads as 63. */
 	uint32_t registers;
 
-	/* The constant-bank words of the GPU (0 reads as 256). */
-	uint32_t bank_words;
-
-	/*
-	 * The varying words per vertex of the GPU (VARYING_COUNT's limit: 64
-	 * with CAPS[30], 16 without; 0 and values above 64 read as 64).
-	 */
-	uint32_t varying_words;
-
-	/*
-	 * The first constant-bank word the program may use.  The vertex and
-	 * the fragment program of a pipeline share one bank, so the fragment
-	 * program is compiled from the vertex program's header word 9 (its
-	 * words used) on.
-	 */
-	uint32_t bank_first;
-
-	/* Nonzero when the GPU writes the sample mask in r6 (CAPS[29]). */
+	/* Nonzero when the GPU writes the sample mask in r6 (DEVICE_CAPS[31]). */
 	uint32_t sample_mask_input;
 
-	/* A fragment program: the pipeline's samples per pixel (1 or 4; 0 reads as 1). */
+	/* A fragment program: the pipeline's samples per pixel (1, 2 or 4; 0 reads as 1). */
 	uint32_t samples;
 
-	/* A fragment program of a pipeline that draws points: its inputs are vertex 0's. */
-	uint32_t points;
+	/* A fragment program: the primitive it is compiled for (GHCI_GSI1_PRIMITIVE_*). */
+	uint32_t primitive;
 
 	/* Nonzero when the device was created with robustBufferAccess. */
 	uint32_t robust_buffer_access;
 
 	/*
-	 * The varying words: nonzero has_varying_map gives each location's
-	 * first word (GHCI_GSI1_NO_WORD for none) instead of 4 L; w_word is the
-	 * varying word a vertex program also writes the position's w to and
-	 * a fragment program reads it from, for noperspective inputs and
-	 * FragCoord.w (GHCI_GSI1_NO_WORD for none; zero is a word when
-	 * has_w_word is nonzero).
+	 * A vertex program: nonzero has_attribute_map gives each location's
+	 * bound attribute's components (its format's, 1 to 4; 0 for a
+	 * location without an attribute), in place of the variables'; bit L
+	 * of attribute_integer says that location L's format is an integer
+	 * one (a component it lacks reads 0, and the fourth integer 1, not
+	 * 1.0).
 	 */
-	uint32_t has_varying_map;
-	uint32_t varying_word[GHCI_GSI1_LOCATIONS];
-	uint32_t has_w_word;
-	uint32_t w_word;
+	uint32_t has_attribute_map;
+	uint32_t attribute_components[GHCI_GSI1_LOCATIONS];
+	uint32_t attribute_integer;
 
 	/*
 	 * A fragment program's input attachments, by InputAttachmentIndex:
@@ -97,26 +158,60 @@ struct ghci_gsi1_options {
 	 */
 	uint32_t input_attachment_format[GHCI_GSI1_INPUT_ATTACHMENTS];
 	uint32_t input_attachment_samples[GHCI_GSI1_INPUT_ATTACHMENTS];
+
+	/* The pipeline layout's dynamic buffers, in the order of its dynamic offsets (bank word 40 + index). */
+	uint32_t dynamic_count;
+	struct ghci_gsi1_dynamic dynamic[GHCI_GSI1_DYNAMIC_OFFSETS];
+
+	/* The tables the pipeline's other program already took (zero for none). */
+	struct ghci_gsi1_bindings bindings;
 };
 
 /*
- * One compiled program: the binary the PROGRAM gpu-op points at.
+ * One compiled program.
  *
  * Made by ghci_gsi1_compile() and owned by the caller, who copies the
- * words into GPU memory (8-byte aligned) and frees the record with
+ * code into GPU memory (8-byte aligned), puts the record's numbers into
+ * the pipeline state and the executor's tables, and frees the record with
  * ghci_gsi1_program_free().
  */
 struct ghci_gsi1_program {
 	/* The stage the program runs in. */
 	enum drv_gpu_shader_stage stage;
 
-	/* The binary: header, interface table and code, in 32-bit words. */
+	/* The code, two 32-bit words to an instruction (word0, then word1). */
 	uint32_t *words;
 	uint32_t word_count;
-
-	/* The instructions of the code (two words each) and the registers it uses. */
 	uint32_t instruction_count;
-	uint32_t register_count;
+
+	/* used_regs of the PSO (1 to 63). */
+	uint32_t used_regs;
+
+	/* A compute program: the shared memory's bytes and the workgroup's size. */
+	uint32_t lds_bytes;
+	uint32_t local_size[3];
+
+	/* A fragment program's GHCI_GSI1_FLAG_*. */
+	uint32_t flags;
+
+	/* The vec4 varyings the program writes (vertex) or reads (fragment): PSO varying_count. */
+	uint32_t varying_count;
+
+	/* A vertex program: the attribute registers the fetcher writes (at most 60). */
+	uint32_t attribute_registers;
+
+	/* A fragment program: the colour attachments it exports (bit k) and GHCI_GSI1_OUTPUT_SECOND_COLOR. */
+	uint32_t color_outputs;
+
+	/* The push-constant bytes it reads, and the dynamic offsets (bit i: bank word 40 + i). */
+	uint32_t push_bytes;
+	uint32_t dynamic_used;
+
+	/* The scratch memory's bytes per warp (0: none); its address is in the driver's table. */
+	uint32_t scratch_bytes;
+
+	/* The pipeline's tables with this program's slots and entries. */
+	struct ghci_gsi1_bindings bindings;
 };
 
 /*
