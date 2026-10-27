@@ -62,6 +62,28 @@
 #define NVME_IO_PAGE_COMMAND_BYTES (256U * 1024U)
 
 /*
+ * The Host Memory Buffer given to a controller that asks for one (a
+ * DRAM-less drive keeps its mapping tables there): at most
+ * NVME_HMB_MAX_BYTES, in up to NVME_HMB_CHUNKS_MAX chunks of a power of two
+ * up to NVME_HMB_CHUNK_BYTES (one DMA allocation of a PC's 32-bit PCI DMA
+ * reaches 16 MiB), halved when memory is short down to NVME_HMB_CHUNK_FLOOR.
+ */
+#ifndef NVME_HMB_MAX_BYTES
+#define NVME_HMB_MAX_BYTES (64U * 1024U * 1024U)
+#endif
+#define NVME_HMB_CHUNK_BYTES (16U * 1024U * 1024U)
+#define NVME_HMB_CHUNK_FLOOR (2U * 1024U * 1024U)
+#define NVME_HMB_CHUNKS_MAX 16U
+
+/* Where the controller's Host Memory Buffer stands. */
+enum nvme_hmb_state {
+	NVME_HMB_NONE,		/* none was given */
+	NVME_HMB_READY,		/* memory held, the controller does not use it */
+	NVME_HMB_ENABLED,	/* the controller uses it */
+	NVME_HMB_UNKNOWN	/* an enable went unanswered: held until the controller is reset */
+};
+
+/*
  * How wide a DMA address an NVMe controller takes: PRP entries are 64-bit
  * (NVMe Base Specification 2.0, PRP entry), wider than the 32-bit default of
  * a PC's PCI bus (ws299, 2026-10-27 Q1).
@@ -283,6 +305,20 @@ struct nvme_controller {
 	struct drv_dma_buffer admin_submission_dma;
 	struct drv_dma_buffer admin_completion_dma;
 	struct drv_dma_buffer identify_dma;
+
+	/*
+	 * The Host Memory Buffer: what Identify Controller asked for, the
+	 * chunks and their descriptor list, and where it stands.  Changed only
+	 * by the probe, a recovery or a resume, which own the controller then;
+	 * freed only with the other DMA memory, after the controller is
+	 * disabled.
+	 */
+	struct drv_nvme_controller_profile hmb_profile;
+	struct drv_dma_buffer hmb_chunks[NVME_HMB_CHUNKS_MAX];
+	unsigned hmb_chunk_count;
+	struct drv_dma_buffer hmb_list_dma;
+	uint32_t hmb_pages;
+	enum nvme_hmb_state hmb_state;
 	volatile struct drv_nvme_command *admin_submission;
 	volatile struct drv_nvme_completion *admin_completion;
 	unsigned submission_tail;
@@ -562,6 +598,10 @@ static int nvme_irq(void *argument);
 static int nvme_admin_execute_mode(struct nvme_controller *controller, struct drv_nvme_command *command, uint32_t *result, int recovery_command);
 static int nvme_admin_execute(struct nvme_controller *controller, struct drv_nvme_command *command, uint32_t *result);
 static int nvme_identify(struct nvme_controller *controller, uint32_t namespace_id, uint8_t selector);
+static void nvme_hmb_setup(struct nvme_controller *controller);
+static int nvme_hmb_enable(struct nvme_controller *controller, int recovery_command, int memory_return);
+static void nvme_hmb_reenable(struct nvme_controller *controller, int recovery_command);
+static void nvme_hmb_free(struct nvme_controller *controller, struct drv_dma_device *dma);
 static int nvme_io_wait_locked(struct nvme_controller *controller, struct wait_queue *waitq, uint64_t deadline, unsigned long *irq);
 static int nvme_io_ensure_online(struct nvme_controller *controller);
 static int nvme_io_begin_bio(struct nvme_controller *controller, enum bio_op operation, int *owned);
@@ -2424,6 +2464,9 @@ nvme_resume_steps(
 	if (error != 0)
 		return error;
 
+	/* Gives back the Host Memory Buffer the reset took away. */
+	nvme_hmb_reenable(controller, 0);
+
 	/* Succeeded: the controller runs. */
 	return 0;
 }
@@ -3561,6 +3604,9 @@ nvme_dma_free(
 		nvme_io_slot_dma_free(dma, &controller->io_slots[slot]);
 	}
 
+	/* Gives back the Host Memory Buffer, which the disabled controller no longer uses. */
+	nvme_hmb_free(controller, dma);
+
 	/* Handles the address availability. */
 	if (controller->io_completion_dma.address != NULL)
 		drv_dma_free_coherent(dma, &controller->io_completion_dma);
@@ -4295,6 +4341,170 @@ nvme_identify(
 
 	/* Returns the computed result. */
 	return error;
+}
+
+/*
+ * Gives a controller that asks for a Host Memory Buffer as much of it as
+ * memory allows (see NVME_HMB_MAX_BYTES), and enables it.  Anything short
+ * of what the controller needs leaves it without one; it works either way.
+ */
+static void
+nvme_hmb_setup(
+	struct nvme_controller *controller)
+{
+	struct drv_dma_device *dma;
+	uint64_t target;
+	uint64_t chunk;
+	uint64_t smallest;
+	uint64_t minimum;
+	uint64_t total;
+	uint64_t size;
+	unsigned most;
+	unsigned index;
+	uint8_t *list;
+	int error;
+
+	/* Plans the buffer from what the controller asked for. */
+	if (controller->hmb_state != NVME_HMB_NONE || controller->page_size == 0U ||
+	    !drv_nvme_hmb_plan(&controller->hmb_profile, NVME_HMB_MAX_BYTES, NVME_HMB_CHUNK_BYTES,
+	    NVME_HMB_CHUNK_FLOOR, NVME_HMB_CHUNKS_MAX, &target, &chunk, &smallest, &most, &minimum) ||
+	    target == 0U)
+		return;
+	if (chunk < controller->page_size || most * DRV_NVME_HMB_DESCRIPTOR_SIZE > controller->page_size)
+		return;
+
+	/* Takes the chunks, halving them while memory is short. */
+	dma = drv_pci_device_dma(controller->pci);
+	total = 0;
+	while (total < target && controller->hmb_chunk_count < most && chunk >= smallest) {
+		size = chunk;
+		if (size > target - total)
+			size = target - total;
+		size -= size % controller->page_size;
+		if (size < smallest)
+			break;
+		error = drv_dma_alloc_coherent(dma, (size_t)size, controller->page_size,
+		    &controller->hmb_chunks[controller->hmb_chunk_count]);
+		if (error != 0) {
+			chunk /= 2U;
+			continue;
+		}
+		kern_memset(controller->hmb_chunks[controller->hmb_chunk_count].address, 0, (size_t)size);
+		controller->hmb_chunk_count++;
+		total += size;
+	}
+
+	/* The descriptor list, one page. */
+	error = ENOMEM;
+	if (total >= minimum && total != 0U)
+		error = drv_dma_alloc_coherent(dma, controller->page_size, controller->page_size,
+		    &controller->hmb_list_dma);
+	if (error != 0) {
+		kern_logf("nvme: host memory buffer of %llu MiB not given (%llu MiB taken)\n",
+		    (unsigned long long)(target >> 20), (unsigned long long)(total >> 20));
+		nvme_hmb_free(controller, dma);
+		return;
+	}
+	list = controller->hmb_list_dma.address;
+	kern_memset(list, 0, controller->page_size);
+	for (index = 0; index < controller->hmb_chunk_count; index++) {
+		drv_nvme_hmb_descriptor(list + index * DRV_NVME_HMB_DESCRIPTOR_SIZE,
+		    controller->hmb_chunks[index].device_address,
+		    (uint32_t)(controller->hmb_chunks[index].size / controller->page_size));
+	}
+	controller->hmb_pages = (uint32_t)(total / controller->page_size);
+	controller->hmb_state = NVME_HMB_READY;
+
+	/* Enables it; a refusal gives the memory back, an unanswered command keeps it. */
+	error = nvme_hmb_enable(controller, 0, 0);
+	if (error == 0) {
+		kern_logf("nvme: host memory buffer %llu MiB in %u chunks\n",
+		    (unsigned long long)(total >> 20), controller->hmb_chunk_count);
+		return;
+	}
+	kern_logf("nvme: host memory buffer refused (%d)\n", error);
+	if (controller->hmb_state == NVME_HMB_READY)
+		nvme_hmb_free(controller, dma);
+}
+
+/*
+ * Sends the Set Features that enables the Host Memory Buffer, giving back
+ * the buffer the controller had (memory_return) or a fresh one.  A refusal
+ * leaves it ready and unused; a command that goes unanswered leaves it
+ * unknown, so that the memory is held until the controller is reset.
+ */
+static int
+nvme_hmb_enable(
+	struct nvme_controller *controller,
+	int recovery_command,
+	int memory_return)
+{
+	struct drv_nvme_command command;
+	int error;
+
+	/* Builds the command over the descriptor list. */
+	if (controller->hmb_chunk_count == 0U ||
+	    !drv_nvme_set_hmb_command(&command, 0, 1, memory_return, controller->hmb_pages,
+	    controller->hmb_list_dma.device_address, controller->hmb_chunk_count))
+		return EINVAL;
+	kern_io_write_barrier();
+
+	/* Sends it and records where the buffer stands. */
+	error = nvme_admin_execute_mode(controller, &command, NULL, recovery_command);
+	if (error == 0)
+		controller->hmb_state = NVME_HMB_ENABLED;
+	else if (error == ETIMEDOUT)
+		controller->hmb_state = NVME_HMB_UNKNOWN;
+	else
+		controller->hmb_state = NVME_HMB_READY;
+
+	/* Reports the outcome. */
+	return error;
+}
+
+/*
+ * Enables the Host Memory Buffer again after the controller was reset (a
+ * recovery or a resume), which disabled it: the same memory, unchanged,
+ * is given back, or, when the controller refuses that, given as new.
+ */
+static void
+nvme_hmb_reenable(
+	struct nvme_controller *controller,
+	int recovery_command)
+{
+	int error;
+
+	/* Only a buffer the controller was given before is given again. */
+	if (controller->hmb_chunk_count == 0U)
+		return;
+	controller->hmb_state = NVME_HMB_READY;
+	error = nvme_hmb_enable(controller, recovery_command, 1);
+	if (error != 0 && error != ETIMEDOUT)
+		error = nvme_hmb_enable(controller, recovery_command, 0);
+	if (error != 0)
+		kern_logf("nvme: host memory buffer not enabled again (%d)\n", error);
+}
+
+/*
+ * Gives the Host Memory Buffer back.  The caller has made sure the
+ * controller does not use it: it was never enabled, the enable was
+ * refused, or the controller is disabled.
+ */
+static void
+nvme_hmb_free(
+	struct nvme_controller *controller,
+	struct drv_dma_device *dma)
+{
+	unsigned index;
+
+	/* Frees the chunks, then the list. */
+	for (index = 0; index < controller->hmb_chunk_count; index++)
+		drv_dma_free_coherent(dma, &controller->hmb_chunks[index]);
+	controller->hmb_chunk_count = 0;
+	if (controller->hmb_list_dma.address != NULL)
+		drv_dma_free_coherent(dma, &controller->hmb_list_dma);
+	controller->hmb_pages = 0;
+	controller->hmb_state = NVME_HMB_NONE;
 }
 
 /* Waits for one I/O command to complete. */
@@ -5603,6 +5813,7 @@ nvme_probe_namespace(
 		return EOPNOTSUPP;
 	}
 
+	controller->hmb_profile = controller_profile;
 	controller->namespace_id = namespace_id;
 	controller->namespace_blocks = namespace_profile.block_count;
 	controller->namespace_block_size =
@@ -5627,6 +5838,9 @@ nvme_probe_namespace(
 	error = nvme_io_queue_create(controller, 0);
 	if (error != 0)
 		return error;
+
+	/* Gives the controller the Host Memory Buffer it asks for, if any; it works without. */
+	nvme_hmb_setup(controller);
 
 	/* Handles the disk availability. */
 	disk = disk_alloc();
@@ -6394,6 +6608,9 @@ nvme_io_recover(
 	error = nvme_io_queue_create(controller, 1);
 	if (error != 0)
 		goto fail;
+
+	/* Gives back the Host Memory Buffer the reset took away. */
+	nvme_hmb_reenable(controller, 1);
 	irq = spin_lock_irqsave(&controller->command_lock);
 
 	controller->io_recovery_busy = 0;
