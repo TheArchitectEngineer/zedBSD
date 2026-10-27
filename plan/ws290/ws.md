@@ -3,7 +3,7 @@
 # WS290 zedBSD の GHCI の driver を GHCI 1.0（ghci.md 89529de）に書き直す
 
 - Master: [plan/master.md](../master.md)（2026-10-26 作成）。Primary Milestone: MG006。Related: MG008。前身: [WS288](../ws288/ws.md)（closed、zedBSD の driver は ws288-p006・p010・p018・p019・p035・p040・p043・p044 などで作った）。
-- Status: incomplete（2026-10-28 03:46 P3（q1637-i01）: GHCI の担当とのレビュー第 11 版（ghci.md 1a1fa85 に対する L 2 件）を送り回答待ち。design 版 4 は 1a1fa85 に追従、design-reviewer は未実施。再開点は末尾の「再開点（2026-10-28 レビュー再開、P3）」）
+- Status: incomplete（2026-10-28 03:49 P3（q1637-i01）: GHCI の担当とのレビューは第 12 版「疑問は残っていない」と回答 第 12.0 版（Final Signoff）で双方合意し一時停止。正本は ghci.md **cf8be08**（include の gsi1_isa.h は bea1ef9）。design 版 4 は cf8be08 に追従、design-reviewer は未実施。再開点は末尾の「再開点（2026-10-28 レビュー再開、P3）」）
 - 出典: 2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。amaterrace-gpuのディレクトリは読み取り専用とします。amaterrace-gpuのplan/は読んでもかまいません。am-ws001のような書き方をしてくれれば私は理解できます。」
 - 決定（2026-10-26、Q1 の問いへのユーザーの回答）:
   - （G01 の回答で置き換え: 仕様は単一の GHCI 1.0。下の行は当時の記録）対象の版は **GHCI 2.0 だけ**（ghci.md の TO-BE: 19 の register、in-memory の PSO・descriptor、`CMD_*` の構造化 command、CP の自律 MMU）。1.1（§3.1.1 の 128 KiB の register、class 2 の gpu-op の中継、STATE、KICK、APERTURE）は捨てる。2.0 のハードウェアは am-ws001-p007 で作られる予定。
@@ -97,4 +97,6 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - 2026-10-28 03:38 レビュー **第 10 版**（[ghci-review.md](ghci-review.md)）: N37（S01）は一部解決、残り N38〜N45（H 1・M 5・L 2）。design 版 4 の §0・§12・§15.2・§19 を bc7df9e に追従させた。
 - 2026-10-28 03:41 回答 **第 10.0 版**（reply e4355be、仕様 **1a1fa85**）: N38〜N44 は推しどおり本文に入った（属性は有効な slot の成分の数で詰める・合計 60、r60/r61 は `used_regs_vs` ≥ 62、`lda` の word 0〜3 は clip の POS、vertex 0 が provoking、Vulkan の clip/viewport、point size 1、MRT k = 0〜7、SRC1 0x108〜0x10B）。
 - 2026-10-28 03:45 レビュー **第 11 版**: 残り L 2 件（N45 の gsi1_isa.h の header・interface 表・旧 CAPS の残り、N46 の `VK_ERROR_INITIALIZATION_FAILED`）。driver と compiler の待ちは無い。design 版 4 を 1a1fa85 に追従（§0・§12 の 3・§15.2・§19・§20 の U8・§22・§23）。
-- 次: reply の 1 行目が「# GHCI Review Reply - Version 10.0 (2026-10-28) - Commit: 1a1fa85 (N37〜N45 Fully Resolved)」と違い末尾が DONE になったら、reply と新しい ghci.md・include の差を読み、第 12 版を書く。双方が納得したら polling を止める。その後 design-reviewer（Fable は使わない）→ §18 で Phase を確定 → p002 以降の phase.md。ユーザーの判断 U5・U8〜U11（design §20）は仕様担当に送らず Q1 へ。
+- 2026-10-28 03:44 回答 **第 11.0 版**（reply 4188a4c、仕様 **cf8be08**）: N45（gsi1_isa.h の header・interface 表に pre-1.0 と明記、CAPS の名前）・N46（2298 行から Vulkan の戻り値の名前を除く）が解決。
+- 2026-10-28 03:47 レビュー **第 12 版**「疑問は残っていない」（N01〜N46 全部解決、参考に gsi1_isa.h の旧名 1 か所を返信不要で）。03:46 に回答 **第 12.0 版**「Final Signoff: N01〜N46 Fully Resolved」（reply 0018f88、gsi1_isa.h bea1ef9 で参考の 1 か所も直した）。双方が合意したので、ユーザーの取り決めどおり送信と受信の polling を止めた（指示があれば再開）。
+- 次（p001 の残り、新しい Queue で）: design 版 4（cf8be08 に追従済み、§19 の仕様の欠けは無し）を design-reviewer に通す（Fable は使わない）→ §18 で Phase を確定し上の表と p002 以降の phase.md を立てる → p002 から実装（host 試験と amd64・riscv64 の build）。ユーザーの判断 U5・U8〜U11（design §20）は Q1 へ。双方が納得したら polling を止める。その後 design-reviewer（Fable は使わない）→ §18 で Phase を確定 → p002 以降の phase.md。ユーザーの判断 U5・U8〜U11（design §20）は仕様担当に送らず Q1 へ。

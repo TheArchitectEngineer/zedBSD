@@ -1,16 +1,16 @@
-# WS290 の設計: zedBSD の GHCI の driver を GHCI 1.0（ghci.md 1a1fa85）に書き直す
+# WS290 の設計: zedBSD の GHCI の driver を GHCI 1.0（ghci.md cf8be08）に書き直す
 
 - Phase: [ws290-p001](phase001/phase.md)。版 1・2: 2026-10-26（P1、q1594）。版 3: 2026-10-27（P3、q1621、書きかけで中断）。**版 4: 2026-10-28（P3、q1636-i01）**。版 3 までの本文は git の履歴（f5fea4c2e など）にあり、この版は 89529de を正本に全部を書き直した。
 - 親: [WS290](ws.md)。前身の設計: [WS288 design](../ws288/design.md) §6（1.1 の driver）。
 - この文書は設計だけ。source は変えていない。
-- **状態（2026-10-28 03:46）: 版 4 は本文を書き終え、仕様の更新 bc7df9e・1a1fa85（§12.10.3 の追加と N38〜N46 の改訂）に §0・§12・§15.2・§19 を追従させた。GHCI の担当とのレビューは第 11 版（残り L 2 件、driver の待ち無し）の回答待ち。design-reviewer には未だ通していない。**
+- **状態（2026-10-28 03:48）: 版 4 は本文を書き終え、仕様の更新 bc7df9e・1a1fa85・cf8be08（§12.10.3 の追加と N38〜N46 の改訂）に §0・§12・§15.2・§19 を追従させた。GHCI の担当とのレビューは第 12 版で「疑問は残っていない」、回答 第 12.0 版（03:46、Final Signoff）で双方合意し、やり取りは一時停止。design-reviewer には未だ通していない。**
 
 ## 0. 正本・読んだ物・確認の水準
 
 | 読んだ物 | 版 | 使い方 |
 | --- | --- | --- |
-| amaterrace-gpu `docs/ghci.md`（2782 行） | **1a1fa85**（2026-10-28 03:40、`git show 1a1fa85:docs/ghci.md`）。89529de（2677 行）からの差は bc7df9e の §12.10.3「Shader Stage Register & Export Conventions」の追加と、1a1fa85 の N38〜N45 の改訂（§8.4 の dual-source、§12.1・§12.5・§12.6・§12.8・§12.10・§12.11・§12.12 の参照と CAPS の名前）。main の先頭 e4355be は回答の file だけの差 | driver の要件の唯一の正本。下の「§n」はこの版の節。「n 行」は特に断らなければ **89529de の行**（1425 行までは 1a1fa85 と同じ。§12 は 1a1fa85 で番号がずれるので、§12.10.3 の行は 1a1fa85 の物と書く） |
-| 同 `include/`（ghci_regs.h・ghci_cmd.h・ghci_packets.h・ghci_frame.h・ghci_layout.h・gsi1_isa.h など 20 file） | 1a1fa85（89529de からの差は ghci_cmd.h の `GHCI_VS_REG_*`・`GHCI_FS_REG_*`・`GHCI_EXP_*` と gsi1_isa.h の export・system の register・`GSI1_COLOR_ATTACHMENTS 8`。gsi1_isa.h は header・interface 表の定義を残したまま（N45）） | ghci.md との照合だけ。値は ghci.md から起こす（§17）。`gsi1_isa.h` は今の `compiler/gsi1_isa.h` と先頭の著作の行以外同じ（`diff` で確認） |
+| amaterrace-gpu `docs/ghci.md`（2782 行） | **cf8be08**（2026-10-28 03:44、`git show cf8be08:docs/ghci.md`）。89529de（2677 行）からの差は bc7df9e の §12.10.3「Shader Stage Register & Export Conventions」の追加、1a1fa85 の N38〜N45 の改訂（§8.4 の dual-source、§12.1・§12.5・§12.6・§12.8・§12.10・§12.11・§12.12 の参照と CAPS の名前）、cf8be08 の 2298 行（Vulkan の戻り値の名前を除く）。main の先頭 4188a4c は回答の file だけの差 | driver の要件の唯一の正本。下の「§n」はこの版の節。「n 行」は特に断らなければ **89529de の行**（1917 行までは cf8be08 と同じ。§12 は cf8be08 で番号がずれるので、§12.10.3 の行は cf8be08 の物と書く） |
+| 同 `include/`（ghci_regs.h・ghci_cmd.h・ghci_packets.h・ghci_frame.h・ghci_layout.h・gsi1_isa.h など 20 file） | cf8be08（gsi1_isa.h は bea1ef9 で注記 1 行だけ直った。89529de からの差は ghci_cmd.h の `GHCI_VS_REG_*`・`GHCI_FS_REG_*`・`GHCI_EXP_*` と gsi1_isa.h の export・system の register・`GSI1_COLOR_ATTACHMENTS 8`・注記。gsi1_isa.h の header・interface 表の定義は「pre-1.0、1.0 では使わない」と明記されて残る） | ghci.md との照合だけ。値は ghci.md から起こす（§17）。`gsi1_isa.h` は今の `compiler/gsi1_isa.h` と先頭の著作の行以外同じ（`diff` で確認） |
 | 同 `fw/cp/ghci_cmd.c`・`cmd.c`（参考） | 89529de | CP の firmware はまだ §8.2 の PSO の配置に合っていない（`fw_cmd_bind_pipeline_pso` は `pso.cull_mode` など §8.2 に無い field を読む）。実機は仕様より遅れ得る（§16.2） |
 | zedBSD `src/drivers/gpu/ghci/`（49 file、33136 行）、`include/uapi/gpu-op.h`、`include/drivers/gpu/gpu.h`、platform の vmunix.mk、`pcat.c`、`vf2-pcie.c`、`userland/base/ghcictl`、`plan/ws288/tests/` | main 6e6ebf830 | file の行き先（§3） |
 
@@ -432,7 +432,7 @@ HW が決める物（§8.4）: texture の slot k は set 0 の k 番目（32 by
 
 1. **出力**: `struct ghci_gsi1_program` は code の語、`used_regs`、`lds_bytes`、`local_size`、flag（depth export・discard・centroid・sample shading）、varying の数、そして **executor への資源の表**（GPU には渡さない: texture・sampler の slot の組、set 2 の各 entry の Vulkan の set・binding・要素・種類、dynamic offset の語、push constant の範囲、scratch の bytes per warp）を持つ。header・interface 表を作る code（`gsi1_add_interface` など）を捨てる。
 2. **資源の読み方**: UBO・SSBO・texel buffer は set 2 の buffer descriptor（c28〜c29 の base + entry の offset）を `ld.64` で読み、`lw`・`sw`・`atom` で触る（robustBufferAccess は size で検査）。storage image・input attachment は set 2 の 32 byte の記述から番地を計算（今の kind 9・10 の計算を移す）。sampled image は slot（§11.4）。push constant と dynamic offset は §11.4 の bank の語。scratch の base は set 3 の語。
-3. **stage の I/O**: 1a1fa85 §12.10.3（1a1fa85 の 2283〜2392 行）に従う。vertex の属性は PSO の slot i（format ≠ 0 が有効）ごとに、前の有効な slot の成分の数の累積和 base_i から C_i 個（format の成分の数）の register r[base_i..base_i + C_i − 1] に届く（足りない成分の (0, 0, 0, 1) は compiler が補う。合計 60 を超える pipeline は driver が作成で断り、`VK_ERROR_OUT_OF_DEVICE_MEMORY` と log）。driver は SPIR-V の Location を slot 0 から詰めて付け直し、その表を compiler に渡す。VertexIndex r60・InstanceIndex r61 は `used_regs_vs` ≥ 62 の時だけ届く（使う program は 62 以上にする）、r62 は compiler の物。export は POS 0x000〜0x003・POINT_SIZE 0x004（無視、大きさ 1）・VARYING 0x010 + w（w = 4L + c、PSO dw13 `varying_count` は vec4 の数）。`lda` の即値は [8:2] PT word（0〜3 = clip の POS、4 + w = varying）・[1:0] 頂点（vertex k は b_k の頂点、Vulkan の順、vertex 0 が provoking で flat はそれを読む）。補間は b0〜b2 と `lda` の積和、noperspective と FragCoord.w は word 3 の w から compiler が作る。clip・割り算・viewport は Vulkan の規則（depth clamp は PSO flags[4]）。fragment の入力 r0〜r9、export COLOR 0x100 + 16k + c（k = 0〜7）・DEPTH 0x104・SAMPLE_MASK 0x105・COLOR0_SRC1 0x108〜0x10B。値は ghci_cmd.h の `GHCI_VS_REG_*`・`GHCI_FS_REG_*`・`GHCI_EXP_*` と照合し、`gsi1-abi.h` の一か所に置く。
+3. **stage の I/O**: cf8be08 §12.10.3（cf8be08 の 2283〜2392 行）に従う。vertex の属性は PSO の slot i（format ≠ 0 が有効）ごとに、前の有効な slot の成分の数の累積和 base_i から C_i 個（format の成分の数）の register r[base_i..base_i + C_i − 1] に届く（足りない成分の (0, 0, 0, 1) は compiler が補う。合計 60 を超える pipeline は driver が作成で断り、`VK_ERROR_OUT_OF_DEVICE_MEMORY` と log）。driver は SPIR-V の Location を slot 0 から詰めて付け直し、その表を compiler に渡す。VertexIndex r60・InstanceIndex r61 は `used_regs_vs` ≥ 62 の時だけ届く（使う program は 62 以上にする）、r62 は compiler の物。export は POS 0x000〜0x003・POINT_SIZE 0x004（無視、大きさ 1）・VARYING 0x010 + w（w = 4L + c、PSO dw13 `varying_count` は vec4 の数）。`lda` の即値は [8:2] PT word（0〜3 = clip の POS、4 + w = varying）・[1:0] 頂点（vertex k は b_k の頂点、Vulkan の順、vertex 0 が provoking で flat はそれを読む）。補間は b0〜b2 と `lda` の積和、noperspective と FragCoord.w は word 3 の w から compiler が作る。clip・割り算・viewport は Vulkan の規則（depth clamp は PSO flags[4]）。fragment の入力 r0〜r9、export COLOR 0x100 + 16k + c（k = 0〜7）・DEPTH 0x104・SAMPLE_MASK 0x105・COLOR0_SRC1 0x108〜0x10B。値は ghci_cmd.h の `GHCI_VS_REG_*`・`GHCI_FS_REG_*`・`GHCI_EXP_*` と照合し、`gsi1-abi.h` の一か所に置く。
 4. **options**: registers = min(63, `RESIDENT_WARPS[23:16]`（0 なら 63）)、samples は CAP_MSAA の時 4（2・4）、sample mask の入力は CAP_MSAA、subgroup・fp16 の命令は出さない（Vulkan 1.0 の SPIR-V では使えない。WS226 で）。
 5. **捨てる制約**: §12.9「Not in version 1」（anisotropic・cube array・MinLod・gather の動的 offset）は compiler が断る（今と同じ）。
 6. 試験: `plan/ws288/tests/gsi1-*`・`gsi1/` を `plan/ws290/tests/` へ移し、参照の python は U2 で `plan/ws290/tests/gsi1-tools/` に 89529de の物を写す。
@@ -571,7 +571,7 @@ GPL の参照は無い。他の driver（amdrdna）からは分け方だけを�
 | p003 | model・stub・script（§14）。WS288 の 1.1 の試験の削除の list を Q1 へ | p002 | model の自己試験 PASS | 16 |
 | p004 | core: pci-attach（match・Bus Master の順）、identify・caps・CP_HEAP・ring・fence・IRQ・poll・watchdog、session の fault と装置の fault・reset・LOST、detach。1.1 の file（firmware・native・state・blit・frame・packets・hcr）と vk/・display・compiler を build から外し、呼ぶ所を消す。capability は `RESOURCE | BLOB | TRANSFER | MAPPING` | p003 | amd64・riscv64 の build の warning 0、p004 の場面 PASS、build に入る file に 1.1 の名前が無い（grep） | 24 |
 | p005 | session・VM（chunk・勘定・map・unmap・close・再生）、memory（host、4 GiB の上限）、resource・blob・map・read・write、share・import。local は ENOTSUP。+ `SHARE | ALLOCATION_SHARE` | p004 | p005 の場面 PASS、build の warning 0 | 24 |
-| p006 | compiler: header・interface 表を捨て §12 の ABI（`gsi1-abi.h`）、資源の表、options、compiler を build に戻す、gsi1 の試験と tools を移す | p002・p004 | gsi1 の試験 PASS、build の warning 0。graphics の I/O は 1a1fa85 §12.10.3 で | 22 |
+| p006 | compiler: header・interface 表を捨て §12 の ABI（`gsi1-abi.h`）、資源の表、options、compiler を build に戻す、gsi1 の試験と tools を移す | p002・p004 | gsi1 の試験 PASS、build の warning 0。graphics の I/O は cf8be08 §12.10.3 で | 22 |
 | p007 | executor の土台: vk.h・stream・node・object・reply・vk-caps・device・format（FMT）・memory（heap）・command・queue（空の submit、fence・semaphore・event）。+ `CAPSET | COMMAND | NOTIFICATION | FENCE | JOB | JOB_CAPACITY` と recovery | p005・p006 | p007 の場面 PASS | 30 |
 | p008 | pipeline と descriptor: vk-pipeline・vk-layout・layout.h | p007 | p008 の場面 PASS | 20 |
 | p009 | 記録と実行: vk-pass・vk-record・vk-execute、draw・indirect・dispatch・barrier・dynamic state・転送・query・event・clear | p008 | p009 の場面 PASS、amd64・riscv64 の build の warning 0 | 36 |
@@ -597,14 +597,9 @@ p001 → p002 → p003 → p004 → p005 → p007 → p008 → p009 → p010 →
 
 WS の受け入れ（ws.md）との対応: 1.1 の code が無い = p004・p007・p011・p012 の後に p014 の grep。amd64 の warning 0 = 各 Phase と p014。host 試験 = §14。規約 = p014。他の platform = §16（riscv64 は実機、p013）。
 
-## 19. 仕様の欠け（GHCI の担当へのレビュー、推し付き）
+## 19. 仕様の欠け
 
-GHCI の担当へは [ghci-review.md](ghci-review.md) で送る。版 4 の S01（stage の I/O が未定義）と S02（MRT の数）は、レビュー第 10 版（N37〜N45、2026-10-28 03:38）と回答 第 10.0 版で 1a1fa85 §12.10.3 に入り解決した（推しを全部採用、§12 の 3）。残りはレビュー第 11 版（03:45）の L 2 件で、driver と compiler は待たない。
-
-| ID | 重さ | 事実 | 推し | 止まる所 |
-| --- | --- | --- | --- | --- |
-| N45 | L | `include/gsi1_isa.h`（1a1fa85）が、廃止した program の header・interface 表と kind 1〜14・旧 CAPS[n] の注記を持ったまま | 消すか pre-1.0 と明記。driver は include を写さず ghci.md から `gsi1-abi.h` を起こすので影響しない | 無し |
-| N46 | L | 1a1fa85 2298 行が pipeline を断る時の戻り値を `VK_ERROR_INITIALIZATION_FAILED` とする（Vulkan 1.0 の `vkCreateGraphicsPipelines` には無い値） | 文から消す。driver は `VK_ERROR_OUT_OF_DEVICE_MEMORY` | 無し |
+無し。版 4 の S01（stage の I/O が未定義）と S02（MRT の数）は、GHCI の担当とのレビュー第 10〜12 版（N37〜N46、2026-10-28 03:38〜03:47）で ghci.md に入り（推しを全部採用、§12 の 3）、cf8be08 で残る疑問は 0（[ghci-review.md](ghci-review.md) 第 12 版）。参考に gsi1_isa.h の注記の旧名 1 か所（`GSI1_TEXSZ_SAMPLES` の CAPS[29]）を返信不要で伝えた（driver は include を写さないので影響しない）。
 
 ## 20. ghci.md 以外の判断（Q1・ユーザーへ）
 
@@ -640,7 +635,7 @@ GHCI の担当へは [ghci-review.md](ghci-review.md) で送る。版 4 の S01�
 
 ## 22. 版 3 の G・V の扱い
 
-- **G01〜G49**（版 3 の ghci.md の疑問）: G01 はユーザーの回答（単一の 1.0）。他は GHCI の担当とのやり取り（H・J・K・L・M・N、ghci-review.md 第 9 版で全部解決）を経て 89529de の本文で決まった。N37〜N44 は 1a1fa85 で解決し、残る欠けは L の N45・N46（§19）。版 3 の G41（`CMD_QUERY_CAPS` の block）は 89529de の register（0x080・0x084・EXTCAP）で不要になった。
+- **G01〜G49**（版 3 の ghci.md の疑問）: G01 はユーザーの回答（単一の 1.0）。他は GHCI の担当とのやり取り（H・J・K・L・M・N、ghci-review.md 第 9 版で全部解決）を経て 89529de の本文で決まった。N37〜N46 は cf8be08 までに解決し、残る欠けは無い（§19）。版 3 の G41（`CMD_QUERY_CAPS` の block）は 89529de の register（0x080・0x084・EXTCAP）で不要になった。
 - **design-review-v3 の V01〜V25**:
 
 | V | 89529de での扱い |
