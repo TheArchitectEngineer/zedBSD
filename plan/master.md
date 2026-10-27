@@ -19,7 +19,7 @@
 
 | 担当 | Queue | WS | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1634 | [WS299](ws299/ws.md) 5330 の NVMe の速さ: p004 raw の先読み → p005 UFS → p006 HMB → p007 受け入れ → p008 規約 | 5330（遠隔の電源は無い） |
+| P1 | — | 返却（q1634: p004 raw の先読みで 5330 の raw の読み 1.7〜2.2 GB/s、p005 は計画だけ）。[WS299](ws299/ws.md) の再開点 | 5330（Debian に戻っている） |
 | P2 | — | 返却（q1635 uncleared: scene-6500 は GPU 30.6 ms のまま、Linux 約 20 ms）。[WS291](ws291/ws.md) の再開点（GRBM_STATUS の busy の比較・FLOAT_MODE・hang の件） | 10.0.10.3（zedBSD で起動中） |
 | P3 | q1638 | [WS290](ws290/ws.md) GHCI 1.0 の driver: design 版 4 の review（Opus 5.5）→ approve で Phase を確定 → p002〜（host 試験） | host（VF2＋KC705 は書き込みの知らせの後） |
 
