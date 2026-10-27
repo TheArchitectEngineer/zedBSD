@@ -25,7 +25,8 @@
  * so the two can be compared.  Past the limit (the board's edge limit, or
  * 95 degrees Celsius without one), on a high alert, on the
  * critical-temperature trip, or when the firmware stops answering, the
- * driver faults the GPU: it marks the fault and the GPU takes no more
+ * driver faults the GPU: it marks the fault, drives the fan at full duty
+ * itself and fails the device, so the GPU takes no more
  * work; the system keeps running.  The firmware's own trip protects the
  * GPU at the hardware limit.
  *
@@ -227,6 +228,7 @@
 static int power_firmware_running(struct amdrdna_device *device);
 static int power_versions(struct amdrdna_device *device);
 static int power_fan(struct amdrdna_device *device);
+static int power_fan_duty(struct amdrdna_device *device, unsigned percent);
 static int power_table_prepare(struct amdrdna_device *device, uint8_t *table);
 static int power_table_from_firmware(struct amdrdna_device *device, const uint8_t *board, size_t board_bytes, uint8_t *table);
 static int power_features(struct amdrdna_device *device, const uint8_t *table);
@@ -807,20 +809,45 @@ static int
 power_fan(
 	struct amdrdna_device *device)
 {
-	struct amdrdna_thermal *thermal;
-	uint32_t limits;
-	uint32_t old;
-	uint32_t word;
 	unsigned percent;
 	int error;
-
-	/* The power side's state. */
-	thermal = &device->thermal;
 
 	/* The duty asked for, at most 100 %. */
 	percent = amdrdna_parameter_number("amdrdna.fan.duty", THERMAL_DEFAULT_DUTY);
 	if (percent > 100U)
 		percent = 100U;
+
+	/* The controller at that duty. */
+	error = power_fan_duty(device, percent);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the controller drives the static duty. */
+	return 0;
+}
+
+/*
+ * Drives the fan at percent of the controller's full duty, the
+ * driver's from then on (the firmware's fan control left out): the duty
+ * word first, then the mode word that makes the controller use it.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_set_fan_speed_pwm, smu_v11_0_set_fan_static_mode).
+ */
+static int
+power_fan_duty(
+	struct amdrdna_device *device,
+	unsigned percent)
+{
+	struct amdrdna_thermal *thermal;
+	uint32_t limits;
+	uint32_t old;
+	uint32_t word;
+	int error;
+
+	/* The power side's state. */
+	thermal = &device->thermal;
 
 	/* The duty word for that percentage of the controller's full duty. */
 	limits = thermal_read(device, AMDRDNA_THM_REG_FAN_LIMITS);
@@ -1880,8 +1907,10 @@ power_read(
 }
 
 /*
- * Faults the GPU for a thermal reason: marks it once and logs why.  The
- * GPU takes no more work; the system keeps running.
+ * Faults the GPU for a thermal reason: marks it once and logs why, drives
+ * the fan at full duty through the thermal block, and fails the device so
+ * the running work stops and the GPU takes no more; the system keeps
+ * running.
  */
 static void
 power_fault(
@@ -1891,6 +1920,7 @@ power_fault(
 	struct amdrdna_thermal *thermal;
 	unsigned long irq;
 	bool first;
+	int error;
 
 	/* The power side's state. */
 	thermal = &device->thermal;
@@ -1903,14 +1933,28 @@ power_fault(
 
 	spin_unlock_irqrestore(&thermal->lock, irq);
 
-	/* Logs the first fault with the readings. */
-	if (first) {
-		amdrdna_mark("thermal fault: %s (temp %uC, limit %uC, fan %urpm); the GPU takes no more work",
-		    why,
-		    thermal->temperature,
-		    thermal->limit,
-		    (unsigned)thermal->fan_speed);
-	}
+	/* Only the first fault acts. */
+	if (!first)
+		return;
+
+	/* Logs it with the readings. */
+	amdrdna_mark("thermal fault: %s (temp %uC, limit %uC, fan %urpm); the GPU takes no more work",
+	    why,
+	    thermal->temperature,
+	    thermal->limit,
+	    (unsigned)thermal->fan_speed);
+
+	/*
+	 * The fan at full duty through the thermal block itself: the
+	 * firmware that drove it may have stopped (a hung unit leaves the fan
+	 * as it last set it, which may be off).
+	 */
+	error = power_fan_duty(device, 100U);
+	if (error != 0)
+		amdrdna_mark("thermal fault: the fan could not be driven (%d)", error);
+
+	/* The work stops: the running sessions fail and nothing new runs, so the GPU cools down. */
+	amdrdna_node_device_failed(device, EIO);
 }
 
 /* Starts the watch thread. */
