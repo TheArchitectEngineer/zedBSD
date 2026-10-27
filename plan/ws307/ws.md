@@ -3,7 +3,7 @@
 # WS307 Keiland のアプリとしての zedBSD のグラフィカルなインストーラ
 
 - Status: planning（2026-10-28 新設。p001 で仕様を確定中、q1643 P4）
-- 仕様: [spec.md](spec.md)（U1〜U18 は回答済み。追加の指示（loader が UFS から kernel を読む）の U19〜U21 は回答待ち。design-reviewer の 1 回目の指摘を反映済み、2 回目のレビュー中）。
+- 仕様: [spec.md](spec.md)（ユーザーの確認事項 U1〜U21 は全て回答済み。design-reviewer の 1 回目の指摘を反映済み、2 回目のレビューの反映待ち）。
 - Resume point: p001 の手順 3〜5（回答の反映、design-reviewer の指摘の反映、実装の Phase の表の確定）。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
@@ -83,6 +83,9 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 U17「WS307 で 4096 byte に対応」: mkfs（FAT32・UFS）・mkswap・diskpart（と要れば kernel の FAT・UFS・swap）の 4096 byte の sector の対応を WS307 に含める。
 - 2026-10-28 U18「一覧を出し同意で入れる (推し)」: Firmware の license の一覧を S7 で出し、同意しないと入れない。
 - 2026-10-28 追加の指示「P4に、ESPにカーネルをインストールすると回答してしまいましたが、ブートローダがUFSからカーネルをロードできるようにしたいです。そのphaseを作ってほしいです。」: loader が root の UFS から kernel を読む Phase（p006）を足す。導入先の kernel は UFS の上（`/boot/vmunix`）、ESP は loader（と cfg）。U4・U4b の「ESP に全部」は kernel を除いた形に読み替える（ESP 512 MiB は U4 のまま、Q1 の解釈）。
+- 2026-10-28 U19「ESP（FAT）のまま (推し)」: `zedbsd.cfg` は ESP。loader の探し方を変えない。
+- 2026-10-28 U20「root の UFS（/boot/logo.ppm） (推し)」: 起動の logo は root の UFS。
+- 2026-10-28 U21「image は今のまま (推し)」: 今の disk image（hdd-image・installer の image）は WS238 の形のまま。新しい形は導入先だけ。
 
 ## Phase
 
