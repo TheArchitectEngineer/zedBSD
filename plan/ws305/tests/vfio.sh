@@ -128,8 +128,16 @@ push)
 	deb "mkdir -p ws305" || exit 1
 	timeout 900 scp -q $SSHOPT "$1" "$DEBIAN:ws305/hdd-image.img"
 	;;
-status|bind|stop|qmp|reset-method)
+status|bind|stop|qmp)
 	hostpy "$action" "$@"
+	;;
+reset-method)
+	# Quoted for the host's shell: an empty method (no reset by the host) is a word of its own.
+	if [ $# -gt 0 ]; then
+		hostpy reset-method "'$1'"
+	else
+		hostpy reset-method
+	fi
 	;;
 rom)
 	hostpy rom "/home/${DEBIAN%@*}/ws305/$1"
