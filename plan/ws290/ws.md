@@ -132,3 +132,11 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - ユーザー（2026-10-28、Q1 経由）「はい、P3は仮の扱いで実装を行ってよいです。」→ 仕様の残りの疑問（ghci-review 第 14 版 N62〜N72）を待たず、design §19 の仮の扱いで実装する。仮の所は各 Phase の phase.md に一覧で残し、仕様が変われば直す。
 - ユーザー（2026-10-28、Q1 経由）「GHCI仕様担当が、レビューを受け取って、仕様をアップデートしています。プロトコルに従って相互アップデートを開始します。P3は自律的に仕様アップデートを受け取ってレビューを返し、相互に解決するまで継続してください。」→ 第 13 版（05:08）→ 回答 第 13.0 版（cb937e6、05:57）→ 第 14 版（06:00）。回答の見張りを続ける。
 - p001 cleared。Phase の表は上（design §18 の p002〜p015、266 LW）。
+
+## 再開点（2026-10-28 06:15、P3 q1638-i01 のラップアップ）
+
+- branch agent/p3-ws290d（worktree `/home/awe/zedBSD-worktrees/p3-ws290d`、基点 main c8e8bfae1）。主な SHA: design 版 4.1 2ee693d0f → 4.5 67269c977、Phase の確定 dd074cfc5、p002 85e090501。
+- 済み: p001 cleared（design 版 4.5、ghci.md cb937e6）、p002 cleared（語の層と host 試験。phase002/phase.md）。
+- 仕様担当とのやり取り: 第 13 版（05:08）→ 回答 13.0（cb937e6、05:57）→ **第 14 版（06:00、N62〜N72）を送った**。回答 14.0 はまだ受け取っていない（reply の 1 行目は Version 13.0 のまま）。見張りはこの起動の終わりで止まる。次の起動は reply の 1 行目が「Version 13.0 …」から変わり末尾 DONE かを確かめてから読む。
+- 次: (1) reply 14.0 が来ていれば cb937e6 からの差を読み、第 15 版を書いて design §19 と phase002 の仮の扱いを追従。(2) p003（host の model・stub・script、design §14・§18、16 LW）: `plan/ws290/tests/ghci-model.c`・`.h`（register・ring・FENCE 64・session・VM（PROT 0/1/flat）・CP_HEAP・reset・HALT・fault の注入・IRQ・Bus Master）、`ghci-stubs.c`（今の plan/ws288/tests/ghci-driver-host-test.c の stub を移す、lock の順と「門で lock を持ったまま待つ」「device.lock・display.lock を持って ticket を待つ」を FAIL）、model の自己試験。WS288 の 1.1 の試験の削除の list を Q1 へ。
+- 仮の扱いの一覧: design §19、phase002/phase.md。
