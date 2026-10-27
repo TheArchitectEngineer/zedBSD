@@ -3,7 +3,7 @@
 # WS307 インストーラの仕様
 
 - 親: [WS307](ws.md)。作成: [ws307-p001](phase001/phase.md)（P4、2026-10-28）。
-- 状態: **案**（U1〜U21 は回答済み、§15 に原文。`make installer-image` の指示で U22〜U24 を回答待ち。design-reviewer の 1 回目の指摘は §17 で反映済み、2 回目のレビューの反映待ち）。
+- 状態: **案**（U1〜U21 は回答済み、§15 に原文。`make installer-image` の指示の U22〜U24 は回答済み、U25 を回答待ち。design-reviewer の 1 回目の指摘は §17 で反映済み、2 回目のレビューの反映待ち）。
 - 正はユーザーの原文（[ws.md](ws.md) の「ユーザーの指示と希望の仕様」）。この文書は原文のブラッシュアップで、原文と食い違えば原文が正。
 - 調査の出典は file:行（基点 main 5300ea917）。
 
@@ -135,8 +135,9 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
   | 　libavcodec | `multimedia/libavcodec` | 無選択 |
   | 　curl | `network/curl`（依存 openssl・zlib・ca-certificates） | 無選択 |
   | 　Python | `lang/python3`（依存 zlib・openssl・ca-certificates、`userland/packages/lang/python3/Makefile:209-210`）。U8 の回答で追加 | 無選択 |
+  | 　その他 | 上の項目に入らない `userland/packages/` の amd64 の全 package（glib・cairo・zlib・expat など）を 1 つずつの下位の行で（U22 の回答「9 項目＋「その他」で個別」）。依存で入る物は灰色の印 | 無選択 |
 
-- Firmware の license（U18 の回答「一覧を出し同意で入れる」）: Firmware の行に「license を見る」を置き、配布の unit に入っている firmware ごとの名前と license の全文（`/usr/share/licenses/<pkg>/`、index の一覧）を出す。同意の check を入れないと Firmware を選んだまま次へ進めない（外せば進める）。Firmware の unit の中身は → U24（推し: menuconfig の kernel の driver が選ぶ firmware、`config/drivers/firmware.list`。今の CI の kernel の config では i915・intelax211・intelbt・nvidia-gsp・amd-navi・rtl8822b）。
+- Firmware の license（U18 の回答「一覧を出し同意で入れる」）: Firmware の行に「license を見る」を置き、配布の unit に入っている firmware ごとの名前と license の全文（`/usr/share/licenses/<pkg>/`、index の一覧）を出す。同意の check を入れないと Firmware を選んだまま次へ進めない（外せば進める）。Firmware の unit の中身は menuconfig の kernel の driver が選ぶ firmware（`config/drivers/firmware.list`。U24 の回答。今の CI の kernel の config では i915・intelax211・intelbt・nvidia-gsp・amd-navi・rtl8822b）。
 - Desktop・Firmware を外す時の警告（U8 の回答「外そうとすると警告」）: `kl_dialog` で「外すと、入れた system は console の login だけになります（graphical の desktop がありません）」「外すと、Wi-Fi・GPU などの firmware が要る device が動かないことがあります」を出し、「外す」「やめる」を選ばせる。
 - ca-certificates は原文で「OpenSSL (+cacertificate)」の 1 項目、U8 の回答では既定の名前に別に挙がる。1 つの項目（OpenSSL＋CA 証明書）のまま、既定で選択とした（§16 T13）。
 
@@ -316,10 +317,10 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 - そこで build を変える（p002）:
   1. **file の manifest**: 登録の macro が package ごとの変数（写す file・subtree・link）を持ち、root の tree を作る時に「導入先の path → 持ち主の package → mode」の manifest（`$(BUILD)/rootfs.manifest`）を書く。sysroot の開発の file は、それを sysroot に入れた package（libc・base の library は base、curl の header は `network/curl` など）に付ける。
   2. **重なりの規則**: 同じ path を 2 つの package が入れる時、中身が同じなら依存される側（例 clang と base の libc の header は base）に付け、違えば build を失敗させる。
-  3. **unit**: manifest の持ち主の package の menu（第 8 引数）で振り分ける: base → `base`、desktop → `desktop`、firmware → `firmware`、`userland/packages/<category>/<name>` → `<category>-<name>`。platform の `--file`（`rc.conf`・`os-release` など）は `base`。menu が tests・x11-applications・x11-servers の package と `ZEDBSD_EXTRA_FILES`・試験の上書きは、`installer-image` の build で選ばない（→ U24）。
+  3. **unit**: manifest の持ち主の package の menu（第 8 引数）で振り分ける: base → `base`、desktop → `desktop`、firmware → `firmware`、`userland/packages/<category>/<name>` → `<category>-<name>`。platform の `--file`（`rc.conf`・`os-release` など）は `base`。menu が tests・x11-applications・x11-servers の package と `ZEDBSD_EXTRA_FILES`・試験の上書きは、`installer-image` の build で選ばない（U24 の回答「tests・X11 無し」）。
   4. **検査**: 全ての file がちょうど 1 つの unit に属し、unit の和が root の tree と一致する。
 - package の header（U13 の回答「WS307 で header も入れる」）: 今 header を入れない package（gtk4・cairo・pango・glib・harfbuzz・fribidi・fontconfig・freetype・gdk-pixbuf・graphene・libepoxy・libxkbcommon・pixman・libpng・libtiff・libjpeg-turbo・libavcodec・libcxx の `c++/v1` など。`userland/packages/libs/fontconfig/Makefile:115-117`、`desktop/gtk4/Makefile` の「development packages later」の注記、`multimedia/libavcodec/Makefile:117-118`）にも、stage の `usr/include`・`usr/lib/pkgconfig/*.pc`・開発の symlink（`lib*.so`）をその package の file として入れる。`.pc` の `prefix` は導入先の `/usr`。受け入れ: 導入先で GTK4 の小さな app を clang と `pkg-config gtk4` で build して動く。guest に pkg-config は無い（`userland/packages/` に無い）ので、外部の package として pkgconf（ISC の license）を `devel/pkgconf` に足し、Clang の項目の依存にする（U13 の「GTK4 の app を build できる」に要る手段、§16 T18）。
-- 1 つの BUILD で作る（§11.2 の `make installer-image`）: menuconfig の userland・package の選択に依らず、`installer-image` の決まった選択（base の全部、desktop の menu の全部、firmware、`userland/packages/` の amd64 の全 package、→ U22・U24）で root の tree（全部入り）を作り、その manifest から unit を作る。live の image の root は、manifest から `base`・`desktop`・`firmware` の unit の file と installer・install-admin・`/opt/installer` だけを取った別の tree から作る（package は live の system に入れない。tree を 2 回 build しない）。
+- 1 つの BUILD で作る（§11.2 の `make installer-image`）: menuconfig の userland・package の選択に依らず、`installer-image` の決まった選択（base の全部、desktop の menu の全部、kernel の driver が選ぶ firmware、`userland/packages/` の amd64 の全 package。U22・U24 の回答）で root の tree（全部入り）を作り、その manifest から unit を作る。live の image の root は、manifest から `base`・`desktop`・`firmware` の unit の file と installer・install-admin・`/opt/installer` だけを取った別の tree から作る（package は live の system に入れない。tree を 2 回 build しない）。
 - installer 自身（app と helper）と `/opt/installer` は、どの unit にも入れない（導入先に installer を残さない）。
 - base の全部を入れると fidoctl・passkey-fido2（base、menuconfig の既定は n）も入り、Base が `security/openssl` を要る（`userland/base/fidoctl/Makefile:12`、`userland/base/passkey-fido2/Makefile:15`）。その時 OpenSSL は依存で必ず入る（S7 で灰色）。
 
@@ -433,10 +434,10 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 - 指示（2026-10-28 ユーザー、原文、Q1 の中継）:「make menuconfigは、インストーラ作成の場合、カーネルのコンフィグには使いますが、make installer-imageでは、すべてのパッケージをビルドしますし、イメージの形式（kernelのパーティション）が異なります。」U1 の「menuconfig で選ぶ」はこの形に読み替える（Q1 の中継の解釈）。
 - `make installer-image`:
   - kernel（`vmunix`）と loader は menuconfig の config（kernel の driver など）で build する。導入先に入る kernel と同じ物。
-  - userland・package は menuconfig の選択に依らず、決まった選択で全部を build する（§6.2、→ U22・U24）。
+  - userland・package は menuconfig の選択に依らず、決まった選択で全部を build する（§6.2、U22・U24）。
   - 全 unit・index・`/opt/installer` を作り（§6）、live の root（base・desktop・firmware の unit と installer・install-admin・`/opt/installer`）を作る。
   - 出力は `$(BUILD)/installer-image.img`。普通の `hdd-image.img`（`make disk-image`）とは別の target で、`hdd-image.img` の形・大きさ（WS238 の形、`AMD64_NATIVE_ROOT_MIB` 1024、CI の 2 GiB、`platform/amd64/vmunix.mk:1333`・`:1344`）は変えない（U21 の「image は今のまま」は `hdd-image.img` の事）。
-- installer の image の形（kernel の partition）: → U23（推し A: 導入先と同じ形。ESP に loader と `zedbsd.cfg`、root の UFS に `/boot/vmunix`・`/boot/logo.ppm`・`/opt/installer`、swap。loader の UFS の読み（§5.10、p006）が前提）。root の大きさは unit の合計に合わせる。
+- installer の image の形（U23 の回答「インストーライメージでは、ESPにブートローダ、BOOT FAT32にカーネルとzedbsd.cfg、rootfs, swapのパーティションを置きます。」）: ESP（loader）、BOOT の FAT32（`vmunix`・`zedbsd.cfg`）、root の UFS（`/opt/installer` を含む）、swap の 4 つ。loader の UFS の読み（p006）を待たずに作れる。logo と BOOT の FAT32 の型・volume label は → U25（推し: 今の `hdd-image.img` の ZEDBSD の FAT32 と同じく Basic Data の型、logo.ppm も BOOT の FAT32）。root の大きさは unit の合計に合わせる。導入先の形（ESP に loader・cfg、kernel は root の UFS、§5.4）とは違う。
 - live の image の起動の選び方: 今の native の image は `rootpart=PARTLABEL=zedBSD-root`・`swap0=PARTLABEL=zedBSD-swap`（`platform/amd64/zedbsd-native-uefi.cfg`）で、同じ image を dd した disk が付いていると EEXIST で起動しない（`src/kern/block-identity.c:184-190`）。installer の image は build ごとに乱数の PARTUUID を作り、その値を `rootpart=PARTUUID=`・`swap0=PARTUUID=` として cfg に書く（zedimage-host に PARTUUID を外から渡す形を足す）。同じ image の file を 2 台に dd した時の曖昧さは残る（loader の disk を優先する kernel の規則は Future）。
 - 起動時に自動で開く（U1 の回答）: compositor の Welcome の自動起動（`userland/desktop/wayland/desktop.c:857-880`）と同じ仕組みで、`/opt/installer/index` がある時に 1 回 `installer` を起動する。Settings の Welcome と重ならないよう、installer がある時は Welcome を出さない。
 
@@ -518,9 +519,10 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | U12 | rootfs・swap に選べる partition（U2・U3 の後に書き直した問い） | A: 型が「未割り当て」の物だけ | 2026-10-28「ESP 以外の既存も選べる」→ B（選んだ時に「中身を消す」確認） |
 | U13 | package の header | A: 今の package のまま | 2026-10-28「WS307 で header も入れる」→ B（GTK4 などの package に header と `.pc`、入れた system で GTK4 の app を build できる） |
 | U15 | （U5 の回答から）作った Boot#### の BootOrder の位置 | A: 先頭に入れる（再起動で導入先から起動）。B: 末尾に足す（firmware の menu に名前で出るだけ） | 2026-10-28「末尾に足します。また、KeiではなくzedBSDです。Keiの名前はプロジェクトから削除予定です。」→ B、名前は「zedBSD」。spec と UI の文言で「Kei」の名を使わない |
-| U22 | （installer-image の指示から）「すべてのパッケージ」と S7 の項目 | A: 全 package を unit に、S7 は 9 項目＋「その他」の下位に他の package | 未回答 |
-| U23 | （installer-image の指示から）installer の image の形（kernel の partition） | A: 導入先と同じ形（kernel は root の UFS） | 未回答 |
-| U24 | （installer-image の指示から）Base・Desktop・Firmware の中身 | A: base の全部、desktop の menu の全部、firmware は kernel の driver が選ぶ物。tests・X11 は入れない | 未回答 |
+| U22 | （installer-image の指示から）「すべてのパッケージ」と S7 の項目 | A: 全 package を unit に、S7 は 9 項目＋「その他」の下位に他の package | 2026-10-28「9 項目＋「その他」で個別 (推し)」→ A |
+| U23 | （installer-image の指示から）installer の image の形（kernel の partition） | A: 導入先と同じ形（kernel は root の UFS） | 2026-10-28「インストーライメージでは、ESPにブートローダ、BOOT FAT32にカーネルとzedbsd.cfg、rootfs, swapのパーティションを置きます。」→ 別の形（§11.2） |
+| U25 | （U23 の回答から）installer の image の logo の置き場と BOOT の FAT32 の型・label | A: 今の hdd-image の ZEDBSD の FAT32 と同じ（Basic Data、logo も FAT32） | 未回答 |
+| U24 | （installer-image の指示から）Base・Desktop・Firmware の中身 | A: base の全部、desktop の menu の全部、firmware は kernel の driver が選ぶ物。tests・X11 は入れない | 2026-10-28「FW は driver の選択、tests・X11 無し (推し)」→ A |
 | U19 | （追加の指示から）`zedbsd.cfg` の置き場 | A: ESP（loader の探し方を変えない） | 2026-10-28「ESP（FAT）のまま (推し)」→ A |
 | U20 | （追加の指示から）起動の logo の置き場 | A: root の UFS の `/boot/logo.ppm` | 2026-10-28「root の UFS（/boot/logo.ppm） (推し)」→ A |
 | U21 | （追加の指示から）今の disk image（hdd-image・installer の image）の形 | A: 導入先だけ新しい形、image は WS238 の形のまま | 2026-10-28「image は今のまま (推し)」→ A |
