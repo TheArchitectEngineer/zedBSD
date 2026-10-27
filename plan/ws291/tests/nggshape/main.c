@@ -13,11 +13,11 @@
  * shared ones, with or without a depth target, of one or more instances.
  * The submission is waited for (10 s at most); one line says the end:
  *
- *   NGGSHAPE ok after=<ms> pixel=<B8G8R8A8 word at the centre> <shape>
+ *   NGGSHAPE ok after=<ms> pixel=<B8G8R8A8 word at the centre> drawn=<pixels not the clear colour> <shape>
  *   NGGSHAPE lost after=<ms> <shape>
  *   NGGSHAPE fail <step> <VkResult>
  *
- * usage: nggshape [--triangles=N] [--indexed] [--index16] [--depth] [--instances=N] [--draws=N] [--blit] [--outside] [--cross] [--cull] [--blend] [--heavy] [--mview] [--shuffle] [--tiny] [--allback] [--tail]
+ * usage: nggshape [--triangles=N] [--indexed] [--index16] [--depth] [--instances=N] [--draws=N] [--blit] [--outside] [--cross] [--cull] [--blend] [--heavy] [--mview] [--shuffle] [--tiny] [--allback] [--tail] [--cluster=P] [--mesh=FILE] [--repeat=N] [--texture] [--push=FILE]
  *
  * --index16 reads the indices as 16 bits; --draws splits the triangles into N draws; --blit then
  * blits the target into each level of a 9-level image (256x256 down to 1x1), linearly filtered;
@@ -29,7 +29,12 @@
  * place, normal and texture place, its per-instance offset, its push constants) and a pixel program
  * reading its two outputs; --shuffle (indexed) scatters the triangles' order over the index buffer;
  * --tiny shrinks each cell into a fifth of a pixel off its centre (no pixel drawn), --allback with --cull
- * leaves every cell facing away (all culled, a --tail cell turned to be drawn), --tail makes the last cell cover the whole target.
+ * leaves every cell facing away (all culled, a --tail cell turned to be drawn), --tail makes the last cell cover the whole target; --cluster=P (a list) puts every corner at
+ * random within P pixels of the centre at a random depth (small triangles over each other); --mesh=FILE
+ * draws the vertices (x y in clip space) and the triangles (a b c) of a file, indexed (32-bit); --repeat=N
+ * submits the same command buffer N times more, each waited for; --texture (with --mview) draws with mview's own
+ * pixel program, sampling a 9-level checker texture; --push=FILE takes mview's 32-number push block from a file.
+ * The --mesh file starts "V T K": K numbers a vertex line, 2 (x y) or 8 (mview's place, normal, texture place).
  */
 
 #include <stdbool.h>
@@ -60,6 +65,7 @@
 #define SHAPE_OFFSETS_AT	0x080000U
 #define SHAPE_INDICES_AT	0x100000U
 #define SHAPE_VERTICES_AT	0x400000U
+#define SHAPE_STAGING_AT	0xf00000U
 #define SHAPE_MEMORY_BYTES	0x1000000U
 
 /* What one run draws. */
@@ -81,6 +87,11 @@ struct shape_options {
 	bool tiny;
 	bool allback;
 	bool tail;
+	uint32_t cluster;
+	const char *mesh;
+	uint32_t repeat;
+	bool texture;
+	const char *push;
 };
 
 /* The objects of the run, freed together at its end. */
@@ -98,6 +109,12 @@ struct shape {
 	VkImage levels;
 	VkDeviceMemory levels_memory;
 	VkImageView depth_view;
+	VkImageView texture_view;
+	VkSampler sampler;
+	VkBuffer staging;
+	VkDescriptorSetLayout set_layout;
+	VkDescriptorPool descriptor_pool;
+	VkDescriptorSet set;
 	VkBuffer vertices;
 	VkBuffer offsets;
 	VkBuffer indices;
@@ -115,6 +132,7 @@ struct shape {
 };
 
 static VkResult shape_device(struct shape *shape);
+static VkResult shape_texture(struct shape *shape);
 static uint32_t shape_memory_type(const VkPhysicalDeviceMemoryProperties *memory, uint32_t mask, VkMemoryPropertyFlags wanted);
 static VkResult shape_resources(struct shape *shape, const struct shape_options *options);
 static VkResult shape_pipeline(struct shape *shape, const struct shape_options *options);
@@ -136,6 +154,8 @@ main(
 	VkSubmitInfo submit;
 	VkResult status;
 	uint64_t started;
+	uint32_t repeat;
+	uint32_t drawn;
 	uint32_t pixel;
 	char name[96];
 	int argument;
@@ -163,6 +183,18 @@ main(
 			options.tiny = true;
 		} else if (strcmp(argv[argument], "--allback") == 0) {
 			options.allback = true;
+		} else if (strncmp(argv[argument], "--push=", 7) == 0) {
+			options.push = argv[argument] + 7;
+		} else if (strcmp(argv[argument], "--texture") == 0) {
+			options.texture = true;
+			options.mview = true;
+		} else if (strncmp(argv[argument], "--repeat=", 9) == 0) {
+			options.repeat = (uint32_t)strtoul(argv[argument] + 9, NULL, 10);
+		} else if (strncmp(argv[argument], "--mesh=", 7) == 0) {
+			options.mesh = argv[argument] + 7;
+			options.indexed = true;
+		} else if (strncmp(argv[argument], "--cluster=", 10) == 0) {
+			options.cluster = (uint32_t)strtoul(argv[argument] + 10, NULL, 10);
 		} else if (strcmp(argv[argument], "--tail") == 0) {
 			options.tail = true;
 		} else if (strcmp(argv[argument], "--shuffle") == 0) {
@@ -194,8 +226,8 @@ main(
 		fprintf(stderr, "nggshape: 1 .. %u triangles, 1 .. %u instances\n", SHAPE_TRIANGLES_MAX, SHAPE_INSTANCES_MAX);
 		return 2;
 	}
-	snprintf(name, sizeof(name), "tiny=%d allback=%d tail=%d shuffle=%d triangles=%u instances=%u indexed=%d index16=%d depth=%d draws=%u blit=%d outside=%d cross=%d cull=%d blend=%d heavy=%d mview=%d",
-		 (int)options.tiny, (int)options.allback, (int)options.tail, (int)options.shuffle, options.triangles, options.instances, (int)options.indexed, (int)options.index16, (int)options.depth, options.draws,
+	snprintf(name, sizeof(name), "cluster=%u tiny=%d allback=%d tail=%d shuffle=%d triangles=%u instances=%u indexed=%d index16=%d depth=%d draws=%u blit=%d outside=%d cross=%d cull=%d blend=%d heavy=%d mview=%d",
+		 options.cluster, (int)options.tiny, (int)options.allback, (int)options.tail, (int)options.shuffle, options.triangles, options.instances, (int)options.indexed, (int)options.index16, (int)options.depth, options.draws,
 		 (int)options.blit, (int)options.outside, (int)options.cross, (int)options.cull, (int)options.blend, (int)options.heavy, (int)options.mview);
 
 	/* The device, the resources, the pipeline and the commands. */
@@ -232,6 +264,15 @@ main(
 	if (status == VK_SUCCESS)
 		status = vkWaitForFences(shape.device, 1U, &shape.fence, VK_TRUE, SHAPE_WAIT_NS);
 
+	/* --repeat=N: the same submission N times more, each waited for. */
+	for (repeat = 0U; status == VK_SUCCESS && repeat < options.repeat; repeat++) {
+		status = vkResetFences(shape.device, 1U, &shape.fence);
+		if (status == VK_SUCCESS)
+			status = vkQueueSubmit(shape.queue, 1U, &submit, shape.fence);
+		if (status == VK_SUCCESS)
+			status = vkWaitForFences(shape.device, 1U, &shape.fence, VK_TRUE, SHAPE_WAIT_NS);
+	}
+
 	/* The end: lost, or ended with the pixel at the centre. */
 	if (status == VK_ERROR_DEVICE_LOST || status == VK_TIMEOUT) {
 		printf("NGGSHAPE lost after=%llu result=%d %s\n", (unsigned long long)(shape_now_ms() - started), (int)status, name);
@@ -244,7 +285,12 @@ main(
 		return 1;
 	}
 	memcpy(&pixel, shape.mapping + SHAPE_READBACK_AT + ((SHAPE_TARGET / 2U) * SHAPE_TARGET + SHAPE_TARGET / 2U) * SHAPE_PIXEL, sizeof(pixel));
-	printf("NGGSHAPE ok after=%llu pixel=%08x %s\n", (unsigned long long)(shape_now_ms() - started), (unsigned)pixel, name);
+	drawn = 0U;
+	for (repeat = 0U; repeat < SHAPE_TARGET * SHAPE_TARGET; repeat++) {
+		if (((const uint32_t *)(const void *)(shape.mapping + SHAPE_READBACK_AT))[repeat] != 0xff0000ffU)
+			drawn++;
+	}
+	printf("NGGSHAPE ok after=%llu pixel=%08x drawn=%u %s\n", (unsigned long long)(shape_now_ms() - started), (unsigned)pixel, drawn, name);
 	shape_free(&shape);
 	return 0;
 }
@@ -404,7 +450,7 @@ shape_resources(
 	}
 
 	/* The 9-level image the target is blitted into, in a memory of its own. */
-	if (status == VK_SUCCESS && options->blit) {
+	if (status == VK_SUCCESS && (options->blit || options->texture)) {
 		image.format = VK_FORMAT_B8G8R8A8_UNORM;
 		image.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
 		image.mipLevels = 9U;
@@ -439,6 +485,9 @@ shape_resources(
 		status = vkCreateBuffer(shape->device, &buffer, NULL, &shape->indices);
 	if (status == VK_SUCCESS)
 		status = vkBindBufferMemory(shape->device, shape->indices, shape->memory, SHAPE_INDICES_AT);
+	/* With --texture: the levels' texels (one checker for all), the view of all levels, the sampler and the set. */
+	if (status == VK_SUCCESS && options->texture)
+		status = shape_texture(shape);
 	buffer.size = SHAPE_TARGET * SHAPE_TARGET * SHAPE_PIXEL;
 	buffer.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	if (status == VK_SUCCESS)
@@ -447,6 +496,114 @@ shape_resources(
 		status = vkBindBufferMemory(shape->device, shape->readback, shape->memory, SHAPE_READBACK_AT);
 	if (status != VK_SUCCESS)
 		printf("NGGSHAPE fail resources %d\n", (int)status);
+	return status;
+}
+
+/*
+ * With --texture: a checker of 8-texel squares in the staging buffer (each
+ * level copies its corner of it), the view of the 9 levels, a linear
+ * sampler with linear levels, and the set of binding 0 with them.
+ */
+static VkResult
+shape_texture(
+	struct shape *shape)
+{
+	VkBufferCreateInfo buffer;
+	VkImageViewCreateInfo view;
+	VkSamplerCreateInfo sampler;
+	VkDescriptorSetLayoutBinding binding;
+	VkDescriptorSetLayoutCreateInfo set_layout;
+	VkDescriptorPoolSize size;
+	VkDescriptorPoolCreateInfo pool;
+	VkDescriptorSetAllocateInfo allocate;
+	VkDescriptorImageInfo image;
+	VkWriteDescriptorSet write;
+	uint32_t *texels;
+	uint32_t x;
+	uint32_t y;
+	VkResult status;
+
+	/* The checker. */
+	texels = (uint32_t *)(shape->mapping + SHAPE_STAGING_AT);
+	for (y = 0U; y < SHAPE_TARGET; y++) {
+		for (x = 0U; x < SHAPE_TARGET; x++)
+			texels[y * SHAPE_TARGET + x] = (((x / 8U) + (y / 8U)) % 2U) != 0U ? 0xffffffffU : 0xff406080U;
+	}
+	memset(&buffer, 0, sizeof(buffer));
+	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer.size = SHAPE_TARGET * SHAPE_TARGET * SHAPE_PIXEL;
+	buffer.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+	status = vkCreateBuffer(shape->device, &buffer, NULL, &shape->staging);
+	if (status == VK_SUCCESS)
+		status = vkBindBufferMemory(shape->device, shape->staging, shape->memory, SHAPE_STAGING_AT);
+
+	/* The view of every level. */
+	memset(&view, 0, sizeof(view));
+	view.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+	view.image = shape->levels;
+	view.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	view.format = VK_FORMAT_B8G8R8A8_UNORM;
+	view.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	view.subresourceRange.levelCount = 9U;
+	view.subresourceRange.layerCount = 1U;
+	if (status == VK_SUCCESS)
+		status = vkCreateImageView(shape->device, &view, NULL, &shape->texture_view);
+
+	/* The sampler. */
+	memset(&sampler, 0, sizeof(sampler));
+	sampler.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+	sampler.magFilter = VK_FILTER_LINEAR;
+	sampler.minFilter = VK_FILTER_LINEAR;
+	sampler.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+	sampler.addressModeU = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
+	sampler.maxLod = 8.0f;
+	if (status == VK_SUCCESS)
+		status = vkCreateSampler(shape->device, &sampler, NULL, &shape->sampler);
+
+	/* The set's layout, its pool and the set. */
+	memset(&binding, 0, sizeof(binding));
+	binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	binding.descriptorCount = 1U;
+	binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+	memset(&set_layout, 0, sizeof(set_layout));
+	set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	set_layout.bindingCount = 1U;
+	set_layout.pBindings = &binding;
+	if (status == VK_SUCCESS)
+		status = vkCreateDescriptorSetLayout(shape->device, &set_layout, NULL, &shape->set_layout);
+	memset(&size, 0, sizeof(size));
+	size.type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	size.descriptorCount = 1U;
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool.maxSets = 1U;
+	pool.poolSizeCount = 1U;
+	pool.pPoolSizes = &size;
+	if (status == VK_SUCCESS)
+		status = vkCreateDescriptorPool(shape->device, &pool, NULL, &shape->descriptor_pool);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocate.descriptorPool = shape->descriptor_pool;
+	allocate.descriptorSetCount = 1U;
+	allocate.pSetLayouts = &shape->set_layout;
+	if (status == VK_SUCCESS)
+		status = vkAllocateDescriptorSets(shape->device, &allocate, &shape->set);
+	memset(&image, 0, sizeof(image));
+	image.sampler = shape->sampler;
+	image.imageView = shape->texture_view;
+	image.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+	memset(&write, 0, sizeof(write));
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet = shape->set;
+	write.descriptorCount = 1U;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+	write.pImageInfo = &image;
+	if (status == VK_SUCCESS)
+		vkUpdateDescriptorSets(shape->device, 1U, &write, 0U, NULL);
+	if (status != VK_SUCCESS)
+		printf("NGGSHAPE fail texture %d\n", (int)status);
 	return status;
 }
 
@@ -495,6 +652,10 @@ shape_pipeline(
 	status = vkCreateShaderModule(shape->device, &module, NULL, &shape->vertex_module);
 	module.codeSize = options->mview ? sizeof(nggshape_mview_frag) : sizeof(nggshape_shape_frag);
 	module.pCode = options->mview ? nggshape_mview_frag : nggshape_shape_frag;
+	if (options->texture) {
+		module.codeSize = sizeof(nggshape_mview_real_frag);
+		module.pCode = nggshape_mview_real_frag;
+	}
 	if (status == VK_SUCCESS)
 		status = vkCreateShaderModule(shape->device, &module, NULL, &shape->fragment_module);
 	memset(&layout, 0, sizeof(layout));
@@ -505,6 +666,11 @@ shape_pipeline(
 	if (options->mview) {
 		layout.pushConstantRangeCount = 1U;
 		layout.pPushConstantRanges = &range;
+	}
+	if (options->texture) {
+		range.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+		layout.setLayoutCount = 1U;
+		layout.pSetLayouts = &shape->set_layout;
 	}
 	if (status == VK_SUCCESS)
 		status = vkCreatePipelineLayout(shape->device, &layout, NULL, &shape->layout);
@@ -672,6 +838,40 @@ shape_pipeline(
 	return status;
 }
 
+/* The whole of a file, ended by a zero byte (NULL when it cannot be read); the caller frees it. */
+static char *
+shape_read(
+	const char *path)
+{
+	FILE *file;
+	char *text;
+	size_t size;
+	size_t got;
+
+	file = fopen(path, "r");
+	if (file == NULL)
+		return NULL;
+	size = 1U << 20;
+	text = malloc(size + 1U);
+	got = 0U;
+	if (text != NULL)
+		got = fread(text, 1U, size, file);
+	fclose(file);
+	if (text != NULL)
+		text[got] = '\0';
+	return text;
+}
+
+/* A number from -1 to 1 of a fixed sequence (a linear congruential generator). */
+static float
+shape_random(void)
+{
+	static uint32_t state = 12345U;
+
+	state = state * 1664525U + 1013904223U;
+	return (float)(state >> 8) / (float)(1U << 23) - 1.0f;
+}
+
 /*
  * Where triangle number of count triangles goes with --shuffle: a
  * multiplication by a number prime to the count, so neighbours lie far
@@ -744,6 +944,60 @@ shape_geometry(
 	for (cell = 0U; cell < options->instances; cell++) {
 		offsets[2U * cell] = 0.001f * (float)cell;
 		offsets[2U * cell + 1U] = 0.0f;
+	}
+
+	/*
+	 * With --mesh=FILE the vertices and triangles of a file: "V T", then V
+	 * lines "x y" (clip space), then T lines "a b c".
+	 */
+	if (options->mesh != NULL) {
+		char *text;
+		char *cursor;
+		float *full;
+		uint32_t count;
+		uint32_t triangle_count;
+		uint32_t floats;
+		uint32_t part;
+		float x;
+		float y;
+
+		/* The counts: vertices, triangles, and the numbers a vertex line holds (2, or 8 in mview's layout). */
+		shape->draw_count = 0U;
+		text = shape_read(options->mesh);
+		cursor = text;
+		if (text != NULL) {
+			count = (uint32_t)strtoul(cursor, &cursor, 10);
+			triangle_count = (uint32_t)strtoul(cursor, &cursor, 10);
+			floats = (uint32_t)strtoul(cursor, &cursor, 10);
+		}
+		if (text == NULL || count > 100000U || triangle_count > SHAPE_TRIANGLES_MAX || (floats != 2U && floats != 8U)) {
+			printf("NGGSHAPE fail mesh %s\n", options->mesh);
+			free(text);
+			return;
+		}
+		full = calloc((size_t)count * 8U, sizeof(*full));
+		if (full == NULL) {
+			free(text);
+			return;
+		}
+		for (cell = 0U; cell < count; cell++) {
+			for (part = 0U; part < floats; part++)
+				full[8U * cell + part] = strtof(cursor, &cursor);
+			x = full[8U * cell];
+			y = full[8U * cell + 1U];
+			shape_vertex(vertices + 4U * cell, x, y, cell, options);
+		}
+		for (slot = 0U; slot < 3U * triangle_count; slot++)
+			indices[slot] = (uint32_t)strtoul(cursor, &cursor, 10);
+		free(text);
+		shape->draw_count = slot;
+		shape_mview_vertices(shape, options, count);
+
+		/* Eight numbers a vertex: mview's own vertex as the file gives it. */
+		if (floats == 8U && options->mview)
+			memcpy(shape->mapping + SHAPE_VERTICES_AT + SHAPE_MVIEW_AT, full, (size_t)count * 8U * sizeof(*full));
+		free(full);
+		return;
 	}
 
 	/* Indexed: the shared corners, then six indices a cell. */
@@ -832,6 +1086,14 @@ shape_geometry(
 		}
 		for (corner = 0U; corner < 6U; corner++)
 			shape_vertex(vertices + 4U * (6U * cell + corner), place[corner][0], place[corner][1], 6U * cell + corner, options);
+		/* With --cluster=P every corner lies at random within P pixels of the centre, at a random depth. */
+		if (options->cluster != 0U) {
+			for (corner = 0U; corner < 6U; corner++) {
+				vertices[4U * (6U * cell + corner)] = shape_random() * (float)options->cluster * (2.0f / (float)SHAPE_TARGET);
+				vertices[4U * (6U * cell + corner) + 1U] = shape_random() * (float)options->cluster * (2.0f / (float)SHAPE_TARGET);
+				vertices[4U * (6U * cell + corner) + 2U] = 0.5f + 0.2f * shape_random();
+			}
+		}
 	}
 	shape->draw_count = options->triangles * 3U;
 	shape_mview_vertices(shape, options, 6U * cells);
@@ -924,6 +1186,40 @@ shape_record(
 		return status;
 	}
 
+	/* With --texture: the checker into each level, then the levels ready for sampling. */
+	if (options->texture) {
+		memset(&barrier, 0, sizeof(barrier));
+		barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+		barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+		barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+		barrier.image = shape->levels;
+		barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+		barrier.subresourceRange.levelCount = 9U;
+		barrier.subresourceRange.layerCount = 1U;
+		vkCmdPipelineBarrier(shape->command, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0U, 0U, NULL, 0U, NULL,
+				     1U, &barrier);
+		for (level = 0U; level < 9U; level++) {
+			memset(&copy, 0, sizeof(copy));
+			copy.bufferRowLength = SHAPE_TARGET;
+			copy.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+			copy.imageSubresource.mipLevel = level;
+			copy.imageSubresource.layerCount = 1U;
+			copy.imageExtent.width = SHAPE_TARGET >> level;
+			copy.imageExtent.height = SHAPE_TARGET >> level;
+			copy.imageExtent.depth = 1U;
+			vkCmdCopyBufferToImage(shape->command, shape->staging, shape->levels, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1U, &copy);
+		}
+		barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+		barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+		barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+		barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+		vkCmdPipelineBarrier(shape->command, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0U, 0U, NULL, 0U,
+				     NULL, 1U, &barrier);
+	}
+
 	/* The pass, cleared to blue and the far depth, with the draw. */
 	memset(clears, 0, sizeof(clears));
 	clears[0].color.float32[2] = 1.0f;
@@ -959,7 +1255,22 @@ shape_record(
 		push[29] = 1.0f;
 		push[30] = 1.0f;
 		push[31] = 1.0f;
-		vkCmdPushConstants(shape->command, shape->layout, VK_SHADER_STAGE_VERTEX_BIT, 0U, SHAPE_MVIEW_PUSH_BYTES, push);
+		/* --push=FILE: the 32 numbers of the block from a file. */
+		if (options->push != NULL) {
+			char *text;
+			char *cursor;
+
+			text = shape_read(options->push);
+			cursor = text;
+			for (count = 0U; text != NULL && count < SHAPE_MVIEW_PUSH_BYTES / 4U; count++)
+				push[count] = strtof(cursor, &cursor);
+			free(text);
+		}
+		vkCmdPushConstants(shape->command, shape->layout,
+				   options->texture ? VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT : VK_SHADER_STAGE_VERTEX_BIT, 0U,
+				   SHAPE_MVIEW_PUSH_BYTES, push);
+		if (options->texture)
+			vkCmdBindDescriptorSets(shape->command, VK_PIPELINE_BIND_POINT_GRAPHICS, shape->layout, 0U, 1U, &shape->set, 0U, NULL);
 	}
 	if (options->indexed)
 		vkCmdBindIndexBuffer(shape->command, shape->indices, 0U, options->index16 ? VK_INDEX_TYPE_UINT16 : VK_INDEX_TYPE_UINT32);
@@ -1087,6 +1398,16 @@ shape_free(
 			vkDestroyBuffer(shape->device, shape->offsets, NULL);
 		if (shape->vertices != VK_NULL_HANDLE)
 			vkDestroyBuffer(shape->device, shape->vertices, NULL);
+		if (shape->descriptor_pool != VK_NULL_HANDLE)
+			vkDestroyDescriptorPool(shape->device, shape->descriptor_pool, NULL);
+		if (shape->set_layout != VK_NULL_HANDLE)
+			vkDestroyDescriptorSetLayout(shape->device, shape->set_layout, NULL);
+		if (shape->sampler != VK_NULL_HANDLE)
+			vkDestroySampler(shape->device, shape->sampler, NULL);
+		if (shape->texture_view != VK_NULL_HANDLE)
+			vkDestroyImageView(shape->device, shape->texture_view, NULL);
+		if (shape->staging != VK_NULL_HANDLE)
+			vkDestroyBuffer(shape->device, shape->staging, NULL);
 		if (shape->depth_view != VK_NULL_HANDLE)
 			vkDestroyImageView(shape->device, shape->depth_view, NULL);
 		if (shape->depth != VK_NULL_HANDLE)

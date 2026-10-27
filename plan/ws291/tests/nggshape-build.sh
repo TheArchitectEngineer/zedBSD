@@ -11,7 +11,7 @@ CC=$TOP/build/llvm/bin/clang
 OBJ=$BUILD/dynamic/obj/plan/ws291/tests/nggshape
 mkdir -p "$OBJ" "$BUILD/bin"
 {
-	echo "/* Made by plan/ws291/tests/nggshape-build.sh from nggshape/shape.vert, heavy.vert, shape.frag, mview-like.frag and mview's mview.vert; do not edit. */"
+	echo "/* Made by plan/ws291/tests/nggshape-build.sh from nggshape/shape.vert, heavy.vert, shape.frag, mview-like.frag and mview's mview.vert and mview.frag; do not edit. */"
 	for stage in vert frag; do
 		glslc -mfmt=c "plan/ws291/tests/nggshape/shape.$stage" -o "$OBJ/shape-$stage.inc"
 		echo "static const uint32_t nggshape_shape_${stage}[] ="
@@ -25,6 +25,10 @@ mkdir -p "$OBJ" "$BUILD/bin"
 	glslc -mfmt=c "userland/tests/mview/shaders/mview.vert" -o "$OBJ/mview-vert.inc"
 	echo "static const uint32_t nggshape_mview_vert[] ="
 	cat "$OBJ/mview-vert.inc"
+	echo ";"
+	glslc -mfmt=c "userland/tests/mview/shaders/mview.frag" -o "$OBJ/mview-frag.inc"
+	echo "static const uint32_t nggshape_mview_real_frag[] ="
+	cat "$OBJ/mview-frag.inc"
 	echo ";"
 	glslc -mfmt=c "plan/ws291/tests/nggshape/mview-like.frag" -o "$OBJ/mview-like-frag.inc"
 	echo "static const uint32_t nggshape_mview_frag[] ="
