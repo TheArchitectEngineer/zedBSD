@@ -68,3 +68,27 @@
   radv_shader.c:2165-2186）、primitive の語は shader が組む（9 bit ずつ 10 おき、edge flag 0: ac_nir_pack_ngg_prim_exp_arg、RADV の初期 edge flag 0）、
   VGT_SHADER_STAGES_EN の PRIMGEN_PASSTHRU_EN を落とす（内部の quad は passthrough のまま）。commit 9b7a462c3、host 58 PASS、vk host PASS、
   vmunix warning 0（17be55e347012025）。3 回目の入れ直しを Q1 に依頼。
+- 2026-10-27 14:55 9b7a462c3（culling の時は passthrough を切る）の実機: `--triangles=50000 --indexed --cull --allback` は同じく止まる。止まった時
+  GRBM_STATUS 0xa2711028（SX・GE・SPI・PA busy）、waves valid 0（build/ws291/measure/p006/hang3-dmesg.txt）。Q1 の指示（「これでも止まる場合は、
+  闇雲に試行を重ねず、一度止めて phase006 に結果と仮説を書き、Q1 に報告」）でここで止めた。機械は止まったまま（入れ直しが要る）。stick は
+  vmunix-cull3（17be55e347012025）と `amdrdna.vk.ngg=2` のまま → 次に起動する前に Debian から ngg=0 か 1 に戻すこと。
+
+### 結果のまとめと仮説（2026-10-27 14:55）
+
+| 条件 | 結果 |
+| --- | --- |
+| culling の形だけ（LDS・barrier・late prim export、判定を飛ばす、nggx=1） | 止まらない。mview 1 体 pixel 差 0、6500 体 8 pixel、fence 41.27 ms |
+| 判定あり・passthrough のまま | nggshape 16 三角 ×1000・5 万 三角（見える）・2 三角の全部 null は ok。5 万 三角の全部裏（全部 null）と mview で止まる |
+| + wave の primitive が全部落ちる時に先頭を退化三角形で残す | 5 万 三角の全部裏で止まる |
+| + passthrough を切る（Mesa と同じ mode、語は shader が組む） | 5 万 三角の全部裏で止まる（SX も busy） |
+
+- 仮説 A（最有力、推測）: GFX10 では、位置を export した頂点が null でない primitive から 1 つも参照されないと、その頂点の export の領域が返らない
+  （p005 の「primitive の export が 1 つ落ちると SX_BUSY が残り、繰り返すと止まる」と同じ形）。hardware が自分で作る subgroup では全頂点が
+  どれかの primitive に使われるので起きない。null を立てるとこの前提が崩れ、多くの subgroup で溜まって止まる（2 三角では溜まらない）。
+  Mesa は culling を必ず compaction（生き残った primitive が使う頂点だけを詰め、GS_ALLOC_REQ の頂点数も減らす、ac_nir_lower_ngg.c の
+  add_deferred_attribute_culling・compact_vertices_after_culling）と組にしており、compaction 無しの culling は Mesa に無い。
+- 仮説 B（低）: null の primitive の数そのもの（PA 側の数え方）。仮説 A と区別するには「全部 null だが全頂点を参照する退化三角形を足す」形の試行が要る。
+- 帰結（判断が要る）: 仮説 A が正しければ p006（compaction 無しの culling）は GFX10 で成り立たず、culling は p007 の compaction と一緒に入れる
+  （Mesa の形: 位置だけの前半 → LDS → 判定 → 生き残った頂点の詰め直しと GS_ALLOC_REQ の数の更新 → 属性の後半）。p006 と p007 を 1 つにまとめるか、
+  p006 を「Mesa の形の culling + compaction」に範囲を変えるかは Q1・ユーザーの判断。
+- commit 済みの物（b73115761・bec5dc26f・9b7a462c3）は `amdrdna.vk.ngg=2` の時だけ効き、既定（legacy）と ngg=1 には影響しない。
