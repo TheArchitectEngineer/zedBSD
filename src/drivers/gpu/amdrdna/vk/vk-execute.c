@@ -1310,6 +1310,7 @@ execute_draw(
 	struct amdrdna_vk_blend blend;
 	const uint32_t *viewport;
 	const VkRect2D *scissor;
+	uint32_t culling[AMDRDNA_GFX10_NGG_CULL_USER_SGPRS - AMDRDNA_GFX10_NGG_USER_SGPRS];
 	uint8_t *vertex_table;
 	uint8_t *fragment_table;
 	uint64_t vertex_va;
@@ -1408,9 +1409,10 @@ execute_draw(
 	amdrdna_vk_state_depth(&execute->pm4, state->depth_on && pipeline->depth_test != 0U, state->depth_on && pipeline->depth_write != 0U,
 			       pipeline->depth_compare);
 
-	/* The programs with their tables, the first vertex and instance, and the draw. */
+	/* The programs with their tables, the first vertex and instance, the culling of a primitive shader that culls, and the draw. */
+	amdrdna_vk_state_culling(viewport, pipeline->topology, pipeline->cull_mode, pipeline->front_face, culling);
 	amdrdna_vk_state_programs(&execute->pm4, &pipeline->vertex, &pipeline->fragment, vertex_va, fragment_va, base_vertex, first_instance,
-				  instance_mask);
+				  instance_mask, culling);
 	error = execute_draw_call(execute, state, record);
 	if (error != 0)
 		return error;
@@ -2333,7 +2335,7 @@ execute_quad(
 	amdrdna_vk_state_depth(&execute->pm4, quad->depth_clear, quad->depth_clear, AMDRDNA_CX_DEPTH_COMPARE_ALWAYS);
 
 	/* The programs, two triangles. */
-	amdrdna_vk_state_programs(&execute->pm4, vertex, fragment, vertex_va, fragment_va, 0U, 0U, 0U);
+	amdrdna_vk_state_programs(&execute->pm4, vertex, fragment, vertex_va, fragment_va, 0U, 0U, 0U, NULL);
 	error = amdrdna_vk_state_draw(&execute->pm4,
 				     VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
 				     vertex->registers.primitive_shader != 0U,

@@ -90,6 +90,15 @@
 #define GFX10_INPUTS_SHARED_BLOCK	512U
 
 /*
+ * The geometry stage's LDS size (bits 26:19 of its second resource word,
+ * in the same 512-byte blocks).
+ *
+ * Value referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (SPI_SHADER_PGM_RSRC2_GS: LDS_SIZE).
+ */
+#define GFX10_INPUTS_PRIMITIVE_SHARED_SHIFT 19U
+
+/*
  * A vertex program's parameter export count less one (bits 5:1) and the
  * bit that says it exports none (7); the 4-component position export
  * format of position 0 (bits 3:0) and position 1 (7:4); and the output
@@ -236,6 +245,9 @@ amdrdna_gfx10_program_registers(
 	 */
 	if (program->stage == DRV_GPU_STAGE_VERTEX && program->primitive_shader != 0U) {
 		registers->primitive_shader = 1U;
+		registers->primitive_culling = program->primitive_culling;
+		shared_blocks = (program->shared_bytes + GFX10_INPUTS_SHARED_BLOCK - 1U) / GFX10_INPUTS_SHARED_BLOCK;
+		registers->inputs |= shared_blocks << GFX10_INPUTS_PRIMITIVE_SHARED_SHIFT;
 		registers->inputs |= 3U << GFX10_INPUTS_VERTEX_VGPRS_SHIFT;
 		registers->counts |= 0U << GFX10_COUNTS_PRIMITIVE_VGPRS_SHIFT;
 		registers->counts |= GFX10_COUNTS_WORKGROUP_PROCESSOR;

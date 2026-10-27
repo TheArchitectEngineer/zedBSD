@@ -84,7 +84,8 @@ void amdrdna_vk_state_viewport(struct amdrdna_vk_pm4 *pm4, const uint32_t *viewp
 void amdrdna_vk_state_scissor(struct amdrdna_vk_pm4 *pm4, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 int amdrdna_vk_state_blend(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_blend *blend);
 void amdrdna_vk_state_raster(struct amdrdna_vk_pm4 *pm4, uint32_t cull_mode, uint32_t front_face);
-void amdrdna_vk_state_programs(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *vertex, const struct amdrdna_vk_program *fragment, uint64_t vertex_table, uint64_t fragment_table, uint32_t base_vertex, uint32_t first_instance, uint32_t instance_mask);
+void amdrdna_vk_state_culling(const uint32_t *viewport, uint32_t topology, uint32_t cull_mode, uint32_t front_face, uint32_t *words);
+void amdrdna_vk_state_programs(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *vertex, const struct amdrdna_vk_program *fragment, uint64_t vertex_table, uint64_t fragment_table, uint32_t base_vertex, uint32_t first_instance, uint32_t instance_mask, const uint32_t *culling);
 int amdrdna_vk_state_draw(struct amdrdna_vk_pm4 *pm4, uint32_t topology, bool primitive_shader, uint32_t vertex_count, uint32_t instance_count);
 int amdrdna_vk_state_draw_indexed(struct amdrdna_vk_pm4 *pm4, uint32_t topology, bool primitive_shader, uint32_t index_type, uint64_t indices, uint32_t index_room, uint32_t index_count, uint32_t instance_count);
 int amdrdna_vk_state_depth_target(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_target *target);
