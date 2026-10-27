@@ -44,6 +44,19 @@
 
 #define DRV_NVME_FEATURE_NUMBER_OF_QUEUES	0x07U
 
+/*
+ * The Host Memory Buffer feature and its descriptor list entry.
+ * Values referenced: NVM Express Base Specification 1.4c, Set Features
+ * Feature Identifier 0Dh (Host Memory Buffer: CDW11 EHM bit 0 and MR bit 1,
+ * CDW12 HSIZE, CDW13 HMDLLA, CDW14 HMDLUA, CDW15 HMDLEC) and the Host
+ * Memory Buffer Descriptor Entry (BADD bytes 7:0, BSIZE bytes 11:8, both in
+ * units of the memory page size CC.MPS).
+ */
+#define DRV_NVME_FEATURE_HOST_MEMORY_BUFFER	0x0DU
+#define DRV_NVME_HMB_ENABLE			(1U << 0)
+#define DRV_NVME_HMB_MEMORY_RETURN		(1U << 1)
+#define DRV_NVME_HMB_DESCRIPTOR_SIZE		16U
+
 #define DRV_NVME_NVM_FLUSH		0x00U
 #define DRV_NVME_NVM_WRITE		0x01U
 #define DRV_NVME_NVM_READ		0x02U
@@ -130,9 +143,18 @@ enum drv_nvme_identify_controller_reason {
 	DRV_NVME_ID_CTRL_NO_NAMESPACES = 1U << 3
 };
 
+/*
+ * What Identify Controller tells of the controller: the namespace count, MDTS,
+ * and the Host Memory Buffer it would take (HMPRE, HMMIN and HMMINDS in
+ * 4 KiB units, HMMAXD entries; zero is no preference, no minimum, no limit).
+ */
 struct drv_nvme_controller_profile {
 	uint32_t namespace_count;
 	uint8_t maximum_transfer_shift;
+	uint32_t hmb_preferred;
+	uint32_t hmb_minimum;
+	uint32_t hmb_minimum_descriptor;
+	uint16_t hmb_maximum_descriptors;
 };
 
 enum drv_nvme_active_namespace_reason {
@@ -423,6 +445,100 @@ drv_nvme_set_queue_count_command(struct drv_nvme_command *command,
 	return 1;
 }
 
+/*
+ * Builds the Set Features command that enables (with memory_return when the
+ * buffer the controller had before is given back unchanged) or disables the
+ * Host Memory Buffer of pages memory pages, described by count entries at
+ * list (16-byte aligned).
+ */
+static inline int
+drv_nvme_set_hmb_command(struct drv_nvme_command *command, uint16_t command_id,
+	int enable, int memory_return, uint32_t pages, uint64_t list, uint32_t count)
+{
+	if (command == NULL || (list & 15U) != 0U ||
+	    (enable && (pages == 0U || count == 0U || list == 0U)))
+		return 0;
+	drv_nvme_command_clear(command);
+	command->cdw0 = DRV_NVME_ADMIN_SET_FEATURES | ((uint32_t)command_id << 16);
+	command->cdw10 = DRV_NVME_FEATURE_HOST_MEMORY_BUFFER;
+	command->cdw11 = (enable ? DRV_NVME_HMB_ENABLE : 0U) |
+	    (enable && memory_return ? DRV_NVME_HMB_MEMORY_RETURN : 0U);
+	command->cdw12 = enable ? pages : 0U;
+	command->cdw13 = enable ? (uint32_t)list : 0U;
+	command->cdw14 = enable ? (uint32_t)(list >> 32) : 0U;
+	command->cdw15 = enable ? count : 0U;
+	return 1;
+}
+
+/* Writes one Host Memory Buffer descriptor: a page-aligned address and its size in memory pages. */
+static inline void
+drv_nvme_hmb_descriptor(uint8_t *entry, uint64_t address, uint32_t pages)
+{
+	unsigned index;
+
+	for (index = 0; index < 8U; index++)
+		entry[index] = (uint8_t)(address >> (8U * index));
+	for (index = 0; index < 4U; index++)
+		entry[8U + index] = (uint8_t)(pages >> (8U * index));
+	for (index = 12U; index < DRV_NVME_HMB_DESCRIPTOR_SIZE; index++)
+		entry[index] = 0;
+}
+
+/*
+ * Plans the Host Memory Buffer to give a controller: up to the smaller of
+ * its preference and limit bytes, in chunks of a power of two up to
+ * chunk_limit bytes, no smaller than its minimum descriptor size nor
+ * floor bytes, and no more than count_limit of them (or HMMAXD).  Reports
+ * the total to aim at (zero: give none), the first chunk size, the
+ * smallest chunk size, the most chunks and the least total the controller
+ * accepts.
+ */
+static inline int
+drv_nvme_hmb_plan(const struct drv_nvme_controller_profile *profile,
+	uint64_t limit, uint64_t chunk_limit, uint64_t floor, unsigned count_limit,
+	uint64_t *target, uint64_t *chunk, uint64_t *smallest, unsigned *count,
+	uint64_t *minimum)
+{
+	uint64_t wanted, size, least;
+	unsigned most;
+
+	if (profile == NULL || target == NULL || chunk == NULL ||
+	    smallest == NULL || count == NULL || minimum == NULL)
+		return 0;
+	*target = 0;
+	*chunk = 0;
+	*smallest = 0;
+	*count = 0;
+	*minimum = 0;
+	if (profile->hmb_preferred == 0U || chunk_limit == 0U || count_limit == 0U)
+		return 1;
+	wanted = (uint64_t)profile->hmb_preferred * 4096U;
+	if (wanted > limit)
+		wanted = limit;
+	least = (uint64_t)profile->hmb_minimum * 4096U;
+	if (least > wanted || wanted == 0U)
+		return 1;
+	size = 1;
+	while (size * 2U <= wanted && size * 2U <= chunk_limit)
+		size *= 2U;
+	floor = floor > (uint64_t)profile->hmb_minimum_descriptor * 4096U ?
+	    floor : (uint64_t)profile->hmb_minimum_descriptor * 4096U;
+	if (floor > size)
+		return 1;
+	if (least == 0U)
+		least = floor;
+	most = count_limit;
+	if (profile->hmb_maximum_descriptors != 0U &&
+	    profile->hmb_maximum_descriptors < most)
+		most = profile->hmb_maximum_descriptors;
+	*target = wanted;
+	*chunk = size;
+	*smallest = floor;
+	*count = most;
+	*minimum = least;
+	return 1;
+}
+
 static inline int
 drv_nvme_queue_count_result(uint32_t result, unsigned *submission_count,
 	unsigned *completion_count)
@@ -699,6 +815,10 @@ drv_nvme_identify_controller_validate(const uint8_t *identify, size_t size,
 		if (profile != NULL) {
 			profile->namespace_count = 0;
 			profile->maximum_transfer_shift = 0;
+			profile->hmb_preferred = 0;
+			profile->hmb_minimum = 0;
+			profile->hmb_minimum_descriptor = 0;
+			profile->hmb_maximum_descriptors = 0;
 		}
 		return DRV_NVME_ID_CTRL_BUFFER_SHORT;
 	}
@@ -714,6 +834,15 @@ drv_nvme_identify_controller_validate(const uint8_t *identify, size_t size,
 	if (profile != NULL) {
 		profile->namespace_count = namespaces;
 		profile->maximum_transfer_shift = identify[77U];
+		/*
+		 * Values referenced: NVM Express Base Specification 1.4c,
+		 * Identify Controller: HMPRE bytes 275:272, HMMIN 279:276,
+		 * HMMINDS 335:332, HMMAXD 337:336.
+		 */
+		profile->hmb_preferred = drv_nvme_load_le32(identify + 272U);
+		profile->hmb_minimum = drv_nvme_load_le32(identify + 276U);
+		profile->hmb_minimum_descriptor = drv_nvme_load_le32(identify + 332U);
+		profile->hmb_maximum_descriptors = drv_nvme_load_le16(identify + 336U);
 	}
 	return reasons;
 }

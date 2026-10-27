@@ -43,6 +43,9 @@ struct mount;
 #define VM_OBJECT_BACKING_SNAPSHOT_MAX	1024U
 #define VM_OBJECT_CACHE_OBJECTS		256U
 #define VM_OBJECT_CACHE_PAGES		16U /* Bounded transfer vector, not retention. */
+/* A read with at least MIN bytes left goes to its buffer in runs of up to MAX bytes, not through pages. */
+#define VM_OBJECT_READ_THROUGH_MIN	(256U * 1024U)
+#define VM_OBJECT_READ_THROUGH_MAX	(1024U * 1024U)
 #define VM_OBJECT_HASH_BITS		10U
 #define VM_OBJECT_HASH_BUCKETS		(1U << VM_OBJECT_HASH_BITS)
 

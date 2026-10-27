@@ -1,4 +1,4 @@
-# ws299-p001: summarizes the NVMe measurement logs of nvme-bench-5330.sh (bench-zedbsd.sh, bench-debian.sh).
+# ws299: summarizes the NVMe measurement logs of nvme-bench-5330.sh (bench-zedbsd.sh, bench-debian.sh).
 #   python3 -I plan/ws299/tests/summary.py LOGS NAME
 # For each LOGS/NAME-MODE.txt it prints one row a timed step: MB/s (10^6 bytes a second), and for zedBSD the dd's
 # system time against its real time, the buffer cache's size after the step and the step's changes of the cache and
@@ -14,6 +14,9 @@ EVENTS = ["IO_DRIVER_READ", "IO_DRIVER_WRITE", "IO_BUF_RUN_READ", "IO_BUF_RUN_WR
 SHORT = {"IO_DRIVER_READ": "drv_rd", "IO_DRIVER_WRITE": "drv_wr", "IO_BUF_RUN_READ": "run_rd",
          "IO_BUF_RUN_WRITE": "run_wr", "IO_BUF_SINGLE_GEOMETRY": "1_geom", "IO_BUF_SINGLE_MEMORY": "1_mem",
          "IO_BUF_SINGLE_BUSY": "1_busy", "IO_BUF_SINGLE_HIT": "1_hit"}
+
+PATWRITE = re.compile(r"patwrite mib=\d+ write_ms=(\d+) sync_ms=(\d+) MBps=(\d+) MBps_nosync=(\d+)")
+RANDREAD = re.compile(r"randread bs=\d+ qd=\d+ reads=\d+ MBps=([\d.]+) iops=(\d+) mean_us=([\d.]+)")
 
 
 def event_numbers(header):
@@ -98,6 +101,19 @@ def zedbsd_rows(lines, numbers):
         match = re.match(r"(real|user|sys) ([\d.]+)", line)
         if match and step is not None:
             step[match.group(1)] = float(match.group(2))
+        match = RANDREAD.match(line)
+        if match and step is not None:
+            step["rand"] = match.groups()
+        match = PATWRITE.match(line)
+        if match and step is not None:
+            step["real"] = (int(match.group(1)) + int(match.group(2))) / 1000.0
+            step["pat"] = match.groups()
+    # The raw pieces and their sync as one write.
+    pieces = [row for row in rows if re.match(r"raw\d+$", row["name"]) or row["name"] == "rawsync"]
+    if pieces:
+        total = {"name": "rawtotal", "bytes": sum(row["bytes"] for row in pieces),
+                 "real": sum(row.get("real", 0.0) for row in pieces), "sys": sum(row.get("sys", 0.0) for row in pieces)}
+        rows.append(total)
     table = []
     header = "| step | MB/s | real s | sys s | cache MiB | misses | evict | cap_fail | " + \
         " | ".join(SHORT[name] for name in EVENTS) + " | cpu sys s | cm_refusals | cm_reclaimed MiB |"
@@ -108,7 +124,13 @@ def zedbsd_rows(lines, numbers):
         rate = "-"
         if real > 0 and row["bytes"] > 0:
             rate = "%.1f" % (row["bytes"] / real / 1e6)
-        cells = [row["name"], rate, "%.2f" % real, "%.2f" % row.get("sys", 0.0)]
+        name = row["name"]
+        if "pat" in row:
+            name += " (write %s ms + sync %s ms; %s MB/s before the sync)" % (row["pat"][0], row["pat"][1], row["pat"][3])
+        if "rand" in row:
+            rate = row["rand"][0]
+            name += " (%s IOPS, mean %s us)" % (row["rand"][1], row["rand"][2])
+        cells = [name, rate, "%.2f" % real, "%.2f" % row.get("sys", 0.0)]
         if "after" not in row:
             table.append("| " + " | ".join(cells) + " |")
             continue
@@ -146,6 +168,17 @@ def debian_rows(lines):
             table.append("| %s | %s s, %s |" % (step, match.group(1), match.group(2)))
             step = None
             continue
+        match = PATWRITE.match(line)
+        if match:
+            table.append("| %s | write %s MB/s with the sync (%s ms + sync %s ms; %s MB/s before it) |" % (
+                step, match.group(3), match.group(1), match.group(2), match.group(4)))
+            step = None
+            continue
+        match = RANDREAD.match(line)
+        if match:
+            table.append("| %s | read %s MB/s, %s IOPS, %s us |" % (step, match.group(1), match.group(2), match.group(3)))
+            step = None
+            continue
         match = re.match(r"(read|write) bw_kib=(\d+) iops=(\d+) lat_us=([\d.]+)", line)
         if match:
             table.append("| %s | %s %.1f MB/s, %s IOPS, %s us |" % (
@@ -166,7 +199,8 @@ def main():
         out.append("### " + os.path.basename(path))
         out.append("")
         heads = [line for line in lines if line.startswith(("Linux", "zedBSD", "hmb ", "hw.ncpu", "swapoff",
-                                                             "budget", "bench done", "bench-debian"))]
+                                                             "budget", "bench done", "bench-debian",
+                                                             "region", "no randread", "making"))]
         out.extend("    " + line for line in heads[:8])
         out.append("")
         if any(line.startswith("snap ") for line in lines):
