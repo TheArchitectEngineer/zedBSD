@@ -106,7 +106,7 @@
   p006 を「Mesa の形の culling + compaction」に範囲を変えるかは Q1・ユーザーの判断。
 - commit 済みの物（b73115761・bec5dc26f・9b7a462c3）は `amdrdna.vk.ngg=2` の時だけ効き、既定（legacy）と ngg=1 には影響しない。
 
-### 統合後の実装と実機（2026-10-27 14:55〜15:30）
+### 統合後の実装と実機（2026-10-27 14:52〜15:08）
 
 - 実装 commit f54203c87（Mesa の形、ac_nir_lower_ngg.c の add_deferred_attribute_culling・compact_vertices_after_culling、ac_nir.c の
   ac_nir_repack_invocations_in_workgroup、ac_nir_prerast_utils.c の fully culled の回避に合わせた）:
