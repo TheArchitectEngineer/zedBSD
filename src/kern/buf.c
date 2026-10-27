@@ -48,9 +48,10 @@
 
 /*
  * The longest run, in page-sized lines, sent as one physical page list to a
- * disk whose driver moves pages itself (DISK_PAGE_VECTOR): 256 KiB.
+ * disk whose driver moves pages itself (DISK_PAGE_VECTOR): 1 MiB.  Dirty
+ * lines written back together (a cluster) are bounded the same way.
  */
-#define BUF_RUN_PAGE_LINES	64U
+#define BUF_RUN_PAGE_LINES	256U
 
 /*
  * Delayed writes of write-cached disks.
@@ -60,12 +61,21 @@
  * has been dirty for BUF_FLUSH_AGE ticks, oldest first, then flushes the
  * devices it wrote to (at most BUF_FLUSH_LEAVES of them, and at most
  * BUF_FLUSH_PASS_MAX buffers a pass).  A short-lived file is usually gone
- * before then.  While more than BUF_DIRTY_LIMIT bytes are dirty a write goes
- * through at once, so dirty memory stays bounded however fast a writer is.
+ * before then.
+ *
+ * Dirty memory is bounded by a 1/BUF_DIRTY_SHARE part of the cache, so it
+ * never fills a small cache.  Past half of the bound the read-ahead workers
+ * also write the oldest dirty lines back while they have no read to do,
+ * down to a quarter of the bound; past the bound a writer first writes some
+ * back itself, and only when it can write none goes through at once, so
+ * dirty memory stays bounded however fast a writer is.  Write-back sends
+ * the adjacent dirty lines of a line along with it, as one page list, and
+ * looks at BUF_WRITEBACK_SCAN lines from the oldest for one to start at.
  */
 #define BUF_FLUSH_INTERVAL	(KERN_CLOCK_HZ)
 #define BUF_FLUSH_AGE		(2U * KERN_CLOCK_HZ)
-#define BUF_DIRTY_LIMIT		(UINT64_C(32) * 1024U * 1024U)
+#define BUF_DIRTY_SHARE		4U
+#define BUF_WRITEBACK_SCAN	64U
 #define BUF_FLUSH_LEAVES	8U
 #define BUF_FLUSH_PASS_MAX	65536U
 
@@ -81,7 +91,7 @@
  *
  * A sequential reader of an open block device gets up to
  * BUF_READAHEAD_BYTES past its last read (an eighth of the cache at most)
- * read by BUF_READAHEAD_WORKERS threads, one run of BUF_RUN_PAGE_LINES lines
+ * read by BUF_READAHEAD_WORKERS threads, one run of BUF_READAHEAD_RUN_LINES lines
  * a job, so that the device reads the next runs while the reader copies.
  * BUF_READAHEAD_QUEUE jobs wait at most, BUF_READAHEAD_STREAMS readers are
  * followed at once, and a log line sums up every BUF_READAHEAD_LOG_EVERY
@@ -92,7 +102,8 @@
 #define BUF_READAHEAD_QUEUE	16U
 #define BUF_READAHEAD_STREAMS	8U
 #define BUF_READAHEAD_LOG_EVERY	1024U
-#define BUF_READAHEAD_RUN_BYTES	((uint64_t)BUF_RUN_PAGE_LINES * KERN_PAGE_SIZE)
+#define BUF_READAHEAD_RUN_LINES	64U
+#define BUF_READAHEAD_RUN_BYTES	((uint64_t)BUF_READAHEAD_RUN_LINES * KERN_PAGE_SIZE)
 #define BUF_READAHEAD_SPLIT_MAX	(BUF_READAHEAD_BYTES / BUF_READAHEAD_RUN_BYTES + 1U)
 
 /* How many lines from the LRU tail a miss in a full cache looks at to take one over. */
@@ -120,6 +131,22 @@ struct buf_run_scratch {
 	struct buf *lines[BUF_RUN_PAGE_LINES];
 	uint64_t generations[BUF_RUN_PAGE_LINES];
 	uint64_t pages[BUF_RUN_PAGE_LINES];
+};
+
+/*
+ * Dirty lines written back together: the slots hold the lines before the
+ * first one taken (from the middle down), it, and the lines after it, so
+ * that the taken run is contiguous in the slots; lines points at its first
+ * line, own at the line the caller owns.  Taken from the heap for each
+ * cluster, too large for every port's kernel stack.
+ */
+struct buf_cluster {
+	struct buf *slots[2U * BUF_RUN_PAGE_LINES - 1U];
+	uint64_t generations[BUF_RUN_PAGE_LINES];
+	uint64_t pages[BUF_RUN_PAGE_LINES];
+	struct buf **lines;
+	unsigned count;
+	unsigned own;
 };
 
 /*
@@ -249,6 +276,12 @@ static uint64_t cache_metadata_bytes;
 static volatile uint64_t cache_dirty_bytes;
 
 /*
+ * The bound of dirty memory, a 1/BUF_DIRTY_SHARE part of the cache's cap;
+ * written under cache_lock with the cap, read atomically.
+ */
+static volatile uint64_t dirty_limit_bytes;
+
+/*
  * The flusher's thread.
  *
  * It is made by the first buf_flusher_start() and runs until the machine
@@ -368,6 +401,14 @@ static unsigned readahead_ready;
 static atomic_uint_t readahead_started;
 
 /*
+ * Whether the workers are asked to write the oldest dirty lines back, and
+ * whether a thread is gathering a cluster (others wait on
+ * readahead_changed, so that two do not split one run); readahead_lock.
+ */
+static unsigned writeback_wanted;
+static unsigned cluster_picking;
+
+/*
  * What read-ahead did, for its log line: jobs queued and finished, bytes
  * read, and jobs that read nothing because the queue was full, read-ahead
  * was stopped, the stream had moved on, the first line was already there,
@@ -480,6 +521,20 @@ static uint64_t readahead_now_ns(void);
 static void readahead_account(uint64_t *sum, uint64_t value);
 static uint32_t copy_cached_lines(struct disk *disk, uint64_t block, uint64_t remaining, uint8_t *out);
 static struct buf *recycle_line_locked(struct disk *disk, uint64_t line_block, uint64_t line_blocks, uint64_t line_bytes);
+static uint64_t dirty_limit_for(uint64_t cap);
+static int cluster_line_locked(const struct buf *buffer, uint64_t line_blocks);
+static int cluster_take(struct buf *buffer, uint64_t line_blocks);
+static int cluster_pick_begin(void);
+static void cluster_pick_end(void);
+static void cluster_gather(struct buf *buffer, struct buf_cluster *cluster, uint64_t line_blocks);
+static void cluster_release(struct buf_cluster *cluster);
+static int cluster_write(struct buf_cluster *cluster, uint64_t line_blocks, int *sent);
+static int writeback_cluster(struct buf *buffer);
+static struct buf *writeback_oldest(void);
+static int writeback_oldest_cluster(struct disk **leaf);
+static void writeback_assist(const struct disk *disk, const struct io_context *context);
+static void writeback_kick(void);
+static void writeback_background(void);
 
 /*
  * Initializes the buffer cache with its default byte cap.
@@ -533,6 +588,7 @@ buf_init(
 		value = BUF_MIN_BYTES;
 	value &= ~(uint64_t)(KERN_PAGE_SIZE - 1U);
 	cache_max_bytes = value;
+	atomic_u64_store_release(&dirty_limit_bytes, dirty_limit_for(value));
 
 	/* Allocates the first header slab. */
 	cache_initialized = 1;
@@ -679,8 +735,8 @@ buf_writeback(
 {
 	int error;
 
-	/* Writes the line back on behalf of whoever dirtied it earlier. */
-	error = writeback_line(buffer, NULL, 1);
+	/* Writes the line back on behalf of whoever dirtied it earlier, with its dirty neighbours. */
+	error = writeback_cluster(buffer);
 	if (error != 0)
 		return error;
 
@@ -988,6 +1044,7 @@ buf_write_context(
 		 * to the device.
 		 */
 		run_blocks = 0;
+		writeback_assist(disk, context);
 		delayed = writes_delayed(disk, context);
 		error = 0;
 		if (!delayed)
@@ -1038,6 +1095,8 @@ buf_write_context(
 		if (!delayed)
 			error = buf_writeback_context(buffer, context);
 		buf_release(buffer);
+		if (delayed)
+			writeback_kick();
 
 		if (error != 0)
 			return error;
@@ -1326,6 +1385,7 @@ buf_set_max_bytes(
 
 	old = cache_max_bytes;
 	cache_max_bytes = value;
+	atomic_u64_store_release(&dirty_limit_bytes, dirty_limit_for(value));
 
 	spin_unlock_irqrestore(&cache_lock, irq);
 
@@ -1339,6 +1399,7 @@ buf_set_max_bytes(
 		if (buf_reclaim((size_t)(current - value), BUF_RECLAIM_WRITE) == 0) {
 			irq = spin_lock_irqsave(&cache_lock);
 			cache_max_bytes = old;
+			atomic_u64_store_release(&dirty_limit_bytes, dirty_limit_for(old));
 			spin_unlock_irqrestore(&cache_lock, irq);
 			result = EBUSY;
 			break;
@@ -3733,7 +3794,7 @@ writes_delayed(
 
 	/* Past the bound a write goes through at once, which bounds dirty memory. */
 	dirty = atomic_u64_load_acquire(&cache_dirty_bytes);
-	if (dirty > BUF_DIRTY_LIMIT)
+	if (dirty > atomic_u64_load_acquire(&dirty_limit_bytes))
 		return 0;
 
 	/* Succeeded: reports that the write may wait in the cache. */
@@ -3982,6 +4043,559 @@ writeback_line(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/* The bound of dirty memory for a cache whose cap is cap bytes: a share of it, in whole pages. */
+static uint64_t
+dirty_limit_for(
+	uint64_t cap)
+{
+	uint64_t limit;
+
+	/* Takes the share, at least one page. */
+	limit = cap / BUF_DIRTY_SHARE;
+	limit &= ~(uint64_t)(KERN_PAGE_SIZE - 1U);
+	if (limit < KERN_PAGE_SIZE)
+		limit = KERN_PAGE_SIZE;
+
+	/* Succeeded: the bound. */
+	return limit;
+}
+
+/*
+ * Reports whether a line can go in a cluster: one whole page, dirty and
+ * valid, pinned by no journal, and not being read or written; b_lock is
+ * held.
+ */
+static int
+cluster_line_locked(
+	const struct buf *buffer,
+	uint64_t line_blocks)
+{
+	/* A line of another shape, or one not ready to write, goes alone. */
+	if (buffer->b_block_count != line_blocks ||
+	    buffer->b_memory.size != KERN_PAGE_SIZE ||
+	    (buffer->b_flags & (BUF_DIRTY | BUF_VALID)) != (BUF_DIRTY | BUF_VALID) ||
+	    buffer->b_journal_pin != 0 ||
+	    buffer->b_io_inflight)
+		return 0;
+
+	/* Succeeded: the line can be written with others. */
+	return 1;
+}
+
+/* Takes a line's busy ownership for a cluster when nobody has it and it fits, without waiting. */
+static int
+cluster_take(
+	struct buf *buffer,
+	uint64_t line_blocks)
+{
+	unsigned long irq;
+	int taken;
+
+	/* Takes the line only as it is now. */
+	irq = spin_lock_irqsave(&buffer->b_lock);
+
+	taken = !buffer->b_busy && cluster_line_locked(buffer, line_blocks);
+	if (taken)
+		buffer->b_busy = 1;
+
+	spin_unlock_irqrestore(&buffer->b_lock, irq);
+
+	/* Reports whether the line joined. */
+	return taken;
+}
+
+/*
+ * Becomes the only thread gathering a cluster, so that two writers do not
+ * split one run of dirty lines between them.  The gatherer never waits, so
+ * the wait is short.  Reports EINTR when the wait is interrupted.
+ */
+static int
+cluster_pick_begin(
+	void)
+{
+	uint64_t sequence;
+	unsigned long irq;
+	int error;
+
+	/* Waits for the gatherer before this one. */
+	irq = spin_lock_irqsave(&readahead_lock);
+
+	while (cluster_picking) {
+		sequence = waitq_sequence(&readahead_changed);
+		error = waitq_sleep(&readahead_changed, &readahead_lock, sequence, 0, 0);
+		if (error != 0 && error != EAGAIN) {
+			spin_unlock_irqrestore(&readahead_lock, irq);
+			return error;
+		}
+	}
+	cluster_picking = 1;
+
+	spin_unlock_irqrestore(&readahead_lock, irq);
+
+	/* Succeeded: this thread gathers. */
+	return 0;
+}
+
+/* Lets the next gatherer in. */
+static void
+cluster_pick_end(
+	void)
+{
+	unsigned long irq;
+
+	/* Clears the mark and wakes whoever waits for it. */
+	irq = spin_lock_irqsave(&readahead_lock);
+
+	cluster_picking = 0;
+	waitq_wake_all(&readahead_changed);
+
+	spin_unlock_irqrestore(&readahead_lock, irq);
+}
+
+/*
+ * Gathers the dirty lines on both sides of a line the caller owns: up to
+ * BUF_RUN_PAGE_LINES adjacent lines of its disk, those before it first, so
+ * that a run is written from its start.  The neighbours are referenced
+ * under one hold of the cache lock and taken nearest first without
+ * waiting; the first that cannot join ends that side.
+ */
+static void
+cluster_gather(
+	struct buf *buffer,
+	struct buf_cluster *cluster,
+	uint64_t line_blocks)
+{
+	struct buf *line;
+	uint64_t block;
+	unsigned middle;
+	unsigned before;
+	unsigned after;
+	unsigned taken_before;
+	unsigned taken_after;
+	unsigned index;
+	unsigned long irq;
+
+	/* References the neighbours the cache holds, before and then after. */
+	middle = BUF_RUN_PAGE_LINES - 1U;
+	cluster->slots[middle] = buffer;
+	block = buffer->b_block;
+	before = 0;
+	after = 0;
+	irq = spin_lock_irqsave(&cache_lock);
+
+	while (before < BUF_RUN_PAGE_LINES - 1U &&
+	       block >= (uint64_t)(before + 1U) * line_blocks) {
+		line = hash_find_locked(buffer->b_disk, block - (uint64_t)(before + 1U) * line_blocks);
+		if (line == NULL)
+			break;
+		refcount_get(&line->b_refs);
+		lru_remove_locked(line);
+		cluster->slots[middle - 1U - before] = line;
+		before++;
+	}
+	while (before + after < BUF_RUN_PAGE_LINES - 1U) {
+		line = hash_find_locked(buffer->b_disk, block + (uint64_t)(after + 1U) * line_blocks);
+		if (line == NULL)
+			break;
+		refcount_get(&line->b_refs);
+		lru_remove_locked(line);
+		cluster->slots[middle + 1U + after] = line;
+		after++;
+	}
+
+	spin_unlock_irqrestore(&cache_lock, irq);
+
+	/* Takes the neighbours nearest first, and lets go of those past the first that cannot join. */
+	for (taken_before = 0; taken_before < before; taken_before++) {
+		if (!cluster_take(cluster->slots[middle - 1U - taken_before], line_blocks))
+			break;
+	}
+	for (index = taken_before; index < before; index++)
+		drop_caller_reference(cluster->slots[middle - 1U - index]);
+	for (taken_after = 0; taken_after < after; taken_after++) {
+		if (!cluster_take(cluster->slots[middle + 1U + taken_after], line_blocks))
+			break;
+	}
+	for (index = taken_after; index < after; index++)
+		drop_caller_reference(cluster->slots[middle + 1U + index]);
+
+	/* Succeeded: the run of taken lines. */
+	cluster->lines = &cluster->slots[middle - taken_before];
+	cluster->count = taken_before + 1U + taken_after;
+	cluster->own = taken_before;
+}
+
+/* Gives back the lines of a cluster other than the caller's own. */
+static void
+cluster_release(
+	struct buf_cluster *cluster)
+{
+	unsigned index;
+
+	/* Releases each neighbour's ownership and reference. */
+	for (index = 0; index < cluster->count; index++) {
+		if (index != cluster->own)
+			buf_release(cluster->lines[index]);
+	}
+}
+
+/*
+ * Writes a cluster's lines to the disk as one page list, as the filesystem
+ * would (a delayed write-back), and publishes each line's outcome.  When
+ * nothing could be sent (the range is guarded, or the driver turned the
+ * page list down) the lines are left as they were and *sent is zero.
+ * Reports the outcome of the caller's own line.
+ */
+static int
+cluster_write(
+	struct buf_cluster *cluster,
+	uint64_t line_blocks,
+	int *sent)
+{
+	struct backing_mutation_guard guard;
+	struct disk *disk;
+	uint64_t start;
+	uint64_t blocks;
+	uint32_t completed;
+	unsigned index;
+	unsigned long irq;
+	int error;
+	int line_error;
+	int own_error;
+
+	/* Marks every line as being written, remembering the data's generation. */
+	*sent = 0;
+	disk = cluster->lines[0]->b_disk;
+	start = cluster->lines[0]->b_block;
+	blocks = (uint64_t)cluster->count * line_blocks;
+	for (index = 0; index < cluster->count; index++) {
+		irq = spin_lock_irqsave(&cluster->lines[index]->b_lock);
+		cluster->generations[index] = cluster->lines[index]->b_dirty_generation;
+		cluster->lines[index]->b_io_state = BUF_IO_WRITING;
+		cluster->lines[index]->b_io_inflight = 1;
+		cluster->pages[index] = cluster->lines[index]->b_memory.paddr;
+		spin_unlock_irqrestore(&cluster->lines[index]->b_lock, irq);
+	}
+
+	/* Sends the run under the filesystem's guard, as one line's write-back would be. */
+	completed = 0;
+	error = backing_mutation_begin_disk_filesystem(disk, start, blocks, &guard);
+	if (error == 0) {
+		stat_add(&stat_write_bios, 1);
+		io_stats_record(IO_BUF_RUN_WRITE, blocks * disk->d_block_size);
+		error = disk_transfer_pages_context(disk, BIO_WRITE, start, (uint32_t)blocks,
+		    cluster->pages, cluster->count, &completed, NULL);
+		backing_mutation_end(&guard);
+		if (error != EOPNOTSUPP || completed != 0)
+			*sent = 1;
+	}
+
+	/* Nothing went: the lines are as they were, for the caller's other path. */
+	if (!*sent) {
+		for (index = 0; index < cluster->count; index++) {
+			irq = spin_lock_irqsave(&cluster->lines[index]->b_lock);
+			cluster->lines[index]->b_io_state = BUF_IO_IDLE;
+			cluster->lines[index]->b_io_inflight = 0;
+			waitq_wake_all(&cluster->lines[index]->b_waitq);
+			spin_unlock_irqrestore(&cluster->lines[index]->b_lock, irq);
+		}
+		return error;
+	}
+
+	/* Publishes the confirmed prefix as clean; the rest stays dirty with the error. */
+	own_error = 0;
+	for (index = 0; index < cluster->count; index++) {
+		line_error = 0;
+		if ((uint64_t)(index + 1U) * line_blocks > completed)
+			line_error = error != 0 ? error : EIO;
+		finish_run_line(cluster->lines[index], cluster->generations[index], 1, line_error);
+		if (index == cluster->own)
+			own_error = line_error;
+	}
+
+	/* Reports the caller's line. */
+	return own_error;
+}
+
+/*
+ * Writes back a dirty line the caller owns, with the dirty lines beside it
+ * as one page list when its disk takes page lists, and alone otherwise (a
+ * line of another shape, a journal's pinned line, blocks another claim
+ * owns, early boot).
+ */
+static int
+writeback_cluster(
+	struct buf *buffer)
+{
+	struct buf_cluster *cluster;
+	const struct backing_claim *foreign;
+	struct disk *disk;
+	uint64_t line_blocks;
+	unsigned long irq;
+	int eligible;
+	int error;
+	int sent;
+
+	/* Takes the cluster path only for a page-list disk and a thread that may wait. */
+	disk = buffer->b_disk;
+	if (thread_current() == NULL ||
+	    disk->d_block_size == 0 ||
+	    disk->d_block_size > KERN_PAGE_SIZE ||
+	    KERN_PAGE_SIZE % disk->d_block_size != 0 ||
+	    !disk_page_vector_supported(disk))
+		return writeback_line(buffer, NULL, 1);
+	line_blocks = KERN_PAGE_SIZE / disk->d_block_size;
+
+	/* A line that cannot be in a cluster goes the line's own way. */
+	irq = spin_lock_irqsave(&buffer->b_lock);
+	eligible = cluster_line_locked(buffer, line_blocks);
+	spin_unlock_irqrestore(&buffer->b_lock, irq);
+	if (!eligible)
+		return writeback_line(buffer, NULL, 1);
+
+	/* Gathers the neighbours, one gatherer at a time. */
+	cluster = kern_malloc(sizeof(*cluster));
+	if (cluster == NULL)
+		return writeback_line(buffer, NULL, 1);
+	if (cluster_pick_begin() != 0) {
+		kern_free(cluster);
+		return writeback_line(buffer, NULL, 1);
+	}
+	cluster_gather(buffer, cluster, line_blocks);
+	cluster_pick_end();
+
+	/* A lone line, or a run with blocks another claim owns (BUG-073), goes the line's own way. */
+	foreign = NULL;
+	error = 0;
+	if (cluster->count > 1U)
+		error = backing_claim_find_extent_owner(disk, cluster->lines[0]->b_block,
+		    (uint64_t)cluster->count * line_blocks, NULL, &foreign);
+	if (cluster->count == 1U || error != 0 || foreign != NULL) {
+		cluster_release(cluster);
+		kern_free(cluster);
+		return writeback_line(buffer, NULL, 1);
+	}
+
+	/* Writes the run; when nothing could be sent, the line goes its own way. */
+	error = cluster_write(cluster, line_blocks, &sent);
+	cluster_release(cluster);
+	kern_free(cluster);
+	if (!sent)
+		return writeback_line(buffer, NULL, 1);
+
+	/* Reports the caller's line. */
+	return error;
+}
+
+/*
+ * Takes the oldest dirty line that no journal pins and nobody uses, busy
+ * and referenced, looking at BUF_WRITEBACK_SCAN lines from the oldest
+ * (lines being written stay on the list until they are clean).  NULL when
+ * there is none.
+ */
+static struct buf *
+writeback_oldest(
+	void)
+{
+	struct buf *candidate;
+	unsigned long irq;
+	unsigned seen;
+	int taken;
+
+	/* Walks the dirty list, in the order lines became dirty; busy and pin are only hints here. */
+	irq = spin_lock_irqsave(&dirty_index_lock);
+
+	candidate = dirty_head;
+	for (seen = 0; candidate != NULL && seen < BUF_WRITEBACK_SCAN; seen++) {
+		if (candidate->b_journal_pin == 0 &&
+		    !candidate->b_busy &&
+		    !candidate->b_io_inflight) {
+			refcount_get(&candidate->b_refs);
+			break;
+		}
+		candidate = candidate->b_dirty_next;
+	}
+	if (seen == BUF_WRITEBACK_SCAN)
+		candidate = NULL;
+
+	spin_unlock_irqrestore(&dirty_index_lock, irq);
+
+	/* Nothing is free to write. */
+	if (candidate == NULL)
+		return NULL;
+
+	/* Takes the line off the reclaim list, then its ownership without waiting. */
+	irq = spin_lock_irqsave(&cache_lock);
+
+	lru_remove_locked(candidate);
+
+	spin_unlock_irqrestore(&cache_lock, irq);
+
+	irq = spin_lock_irqsave(&candidate->b_lock);
+
+	taken = !candidate->b_busy;
+	if (taken)
+		candidate->b_busy = 1;
+
+	spin_unlock_irqrestore(&candidate->b_lock, irq);
+
+	/* Another thread took it meanwhile. */
+	if (!taken) {
+		drop_caller_reference(candidate);
+		return NULL;
+	}
+
+	/* Succeeded: the line, owned. */
+	return candidate;
+}
+
+/*
+ * Writes back the oldest dirty line that can be written, with its
+ * neighbours, and reports its disk.  ENOENT when there is none.
+ */
+static int
+writeback_oldest_cluster(
+	struct disk **leaf)
+{
+	struct buf *buffer;
+	int error;
+
+	/* Takes the line. */
+	buffer = writeback_oldest();
+	if (buffer == NULL)
+		return ENOENT;
+
+	/* Writes it and its neighbours, then gives it back. */
+	*leaf = buffer->b_disk;
+	error = writeback_cluster(buffer);
+	buf_release(buffer);
+
+	/* Reports the outcome. */
+	return error;
+}
+
+/*
+ * Before a delayed write past the dirty bound, writes back some of the
+ * oldest dirty lines in the writer's thread, down to seven eighths of the
+ * bound, so that the write can stay in the cache.  The writer owns no line
+ * here and never waits for one.  A failure is left to the flusher (the
+ * lines stay dirty and marked); the writer's own write is not failed by it.
+ */
+static void
+writeback_assist(
+	const struct disk *disk,
+	const struct io_context *context)
+{
+	struct disk *leaf;
+	uint64_t limit;
+	unsigned written;
+
+	/* Only a write that would stay in the cache helps. */
+	if ((disk->d_flags & DISK_WRITE_CACHED) == 0 ||
+	    (context != NULL && context->claim != NULL) ||
+	    thread_current() == NULL)
+		return;
+
+	/* Writes clusters while dirty memory is past the mark, a bounded number of them. */
+	limit = atomic_u64_load_acquire(&dirty_limit_bytes);
+	if (atomic_u64_load_acquire(&cache_dirty_bytes) <= limit)
+		return;
+	for (written = 0; written < BUF_FLUSH_LEAVES; written++) {
+		if (atomic_u64_load_acquire(&cache_dirty_bytes) <= limit - limit / 8U)
+			break;
+		if (writeback_oldest_cluster(&leaf) != 0)
+			break;
+	}
+}
+
+/*
+ * Asks the read-ahead workers to write the oldest dirty lines back once
+ * dirty memory is past half of its bound, making the workers if there are
+ * none yet.
+ */
+static void
+writeback_kick(
+	void)
+{
+	unsigned long irq;
+
+	/* Below half of the bound there is nothing to ask. */
+	if (atomic_u64_load_acquire(&cache_dirty_bytes) <=
+	    atomic_u64_load_acquire(&dirty_limit_bytes) / 2U ||
+	    thread_current() == NULL)
+		return;
+
+	/* The workers are made by the first read-ahead or write-back. */
+	if (readahead_start() != 0)
+		return;
+
+	/* Wakes the workers once. */
+	irq = spin_lock_irqsave(&readahead_lock);
+
+	if (!writeback_wanted) {
+		writeback_wanted = 1;
+		waitq_wake_all(&readahead_work);
+	}
+
+	spin_unlock_irqrestore(&readahead_lock, irq);
+}
+
+/*
+ * Writes back the oldest dirty lines in a worker until dirty memory is a
+ * quarter of its bound, nothing can be written, or a read-ahead job waits;
+ * then flushes the devices written to, as the flusher does after a pass.
+ */
+static void
+writeback_background(
+	void)
+{
+	struct disk *leaves[BUF_FLUSH_LEAVES];
+	struct disk *leaf;
+	unsigned long irq;
+	unsigned count;
+	unsigned index;
+	int known;
+	int error;
+
+	/* Writes clusters from the oldest. */
+	count = 0;
+	error = 0;
+	while (atomic_u64_load_acquire(&cache_dirty_bytes) >
+	       atomic_u64_load_acquire(&dirty_limit_bytes) / 4U) {
+		/* A read-ahead job goes first. */
+		irq = spin_lock_irqsave(&readahead_lock);
+		known = readahead_queue_count != 0;
+		spin_unlock_irqrestore(&readahead_lock, irq);
+		if (known)
+			break;
+
+		error = writeback_oldest_cluster(&leaf);
+		if (error != 0)
+			break;
+
+		/* Remembers a new device, so that it is flushed at the end. */
+		known = 0;
+		for (index = 0; index < count; index++) {
+			if (leaves[index] == leaf)
+				known = 1;
+		}
+		if (!known && count < BUF_FLUSH_LEAVES)
+			leaves[count++] = leaf;
+	}
+
+	/* Makes what was written durable on each device. */
+	for (index = 0; index < count; index++)
+		(void)bio_flush(leaves[index]);
+
+	/* Stops asking when done, or when nothing could be written; the next dirtying asks again. */
+	if (error != 0 || atomic_u64_load_acquire(&cache_dirty_bytes) <=
+	    atomic_u64_load_acquire(&dirty_limit_bytes) / 4U) {
+		irq = spin_lock_irqsave(&readahead_lock);
+		writeback_wanted = 0;
+		spin_unlock_irqrestore(&readahead_lock, irq);
+	}
 }
 
 /*
@@ -4309,9 +4923,16 @@ readahead_worker(
 	for (;;) {
 		irq = spin_lock_irqsave(&readahead_lock);
 
-		while (readahead_queue_count == 0) {
+		while (readahead_queue_count == 0 && !writeback_wanted) {
 			sequence = waitq_sequence(&readahead_work);
 			(void)waitq_sleep(&readahead_work, &readahead_lock, sequence, 0, 0);
+		}
+
+		/* With no read to do, writes dirty lines back as asked. */
+		if (readahead_queue_count == 0) {
+			spin_unlock_irqrestore(&readahead_lock, irq);
+			writeback_background();
+			continue;
 		}
 		job = readahead_queue[readahead_queue_head];
 		readahead_queue_head = (readahead_queue_head + 1U) % BUF_READAHEAD_QUEUE;

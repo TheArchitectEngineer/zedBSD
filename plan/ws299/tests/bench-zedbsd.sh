@@ -1,27 +1,33 @@
 #!/bin/sh
-# ws299-p001: the NVMe read/write measurement on the Latitude 5330's zedBSD, run as root by nvme-bench-5330.sh.
-#   [PAUSE=SECONDS] sh bench-zedbsd.sh read | write     (PAUSE: an idle wait before each chunk of the curve)
-# read:  /dev/zero and cold reads of /dev/nvme0n1 at three block sizes, then the curve: CHUNKS reads of CHUNK_MIB MiB each,
-#        one after another from OFF_GIB GiB, with the cache and I/O counters after every chunk ("snap" blocks), and
-#        a re-read of the last chunk (a cache hit).  Only reads; the NVMe is not written.
-# write: a file of UFS_MIB MiB on the root UFS (p5, zedBSD's own) in 256 MiB pieces and a sync, then, when the
-#        swap on p6 (zedBSD's own) can be turned off, WRITE_MIB MiB of zeros onto p6 (the caller puts p6 back from
-#        Debian).  Debian's partitions are never written.
+# ws299: the NVMe read/write measurement on the Latitude 5330's zedBSD, run as root by nvme-bench-5330.sh.
+#   sh bench-zedbsd.sh read | write
+# read:  /dev/zero at three block sizes; random 4 KiB reads at depth 1 and 32 (randread, copied to RANDREAD);
+#        the UFS file WFILE read cold (the write mode of an earlier boot wrote it); reads of /dev/nvme0n1 at three
+#        block sizes and the curve of CHUNKS reads of CHUNK_MIB MiB, all inside the data region R0_MIB..+R_MIB
+#        (blocks of a Debian file of random bytes, the same blocks bench-debian.sh reads), with the cache and I/O
+#        counters after every step ("snap" blocks), and a re-read of the last chunk (a cache hit).  Only reads.
+# write: REST seconds before each step.  WFILE (1 GiB on the root UFS, p5, zedBSD's own) written over in place
+#        and synced; WFILE_NEW removed and written anew (new blocks: UFS sends no TRIM) and synced; then, when the
+#        swap on p6 (zedBSD's own, discarded by the caller before this boot) can be turned off, 1 GiB of zeros onto
+#        p6 in four pieces of 256 MiB and a sync (the caller puts the swap header back from Debian).  Debian's
+#        partitions are never written.
 # Every timed step prints "step NAME bytes=N" and the /bin/time lines (real/user/sys); the summary is made on the
-# build host (summary.py).  Nothing is removed.
+# build host (summary.py).  The only file removed is WFILE_NEW, inside zedBSD, before it is written again.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 MODE=${1:?read|write}
 DEV=/dev/nvme0n1
 SWAP=/dev/nvme0n1p6
-OFF_GIB=${OFF_GIB:-100}
+R0_MIB=${R0_MIB:-25681}
+R_MIB=${R_MIB:-8064}
 CHUNK_MIB=${CHUNK_MIB:-256}
 CHUNKS=${CHUNKS:-16}
-BUDGET=${BUDGET:-900}
-WRITE_MIB=${WRITE_MIB:-1024}
-UFS_MIB=${UFS_MIB:-512}
-PAUSE=${PAUSE:-0}
+REST=${REST:-30}
+RAND_SECONDS=${RAND_SECONDS:-15}
+RANDREAD=${RANDREAD:-/tmp/randread-zedbsd}
+FILE_MIB=${FILE_MIB:-1024}
 WFILE=${WFILE:-/home/kei/ws299-w.bin}
+WFILE_NEW=${WFILE_NEW:-/home/kei/ws299-n.bin}
 
 snap() {
 	echo "snap $1"
@@ -40,10 +46,17 @@ step() {
 	/bin/time dd "$@" 2>&1 | grep -E '^(real|user|sys) |^dd:|records|time:'
 }
 
+# shstep NAME BYTES COMMAND: one timed shell command (a write and its sync together).
+shstep() {
+	echo "step $1 bytes=$2"
+	/bin/time sh -c "$3" 2>&1 | grep -E '^(real|user|sys) |^dd:|time:'
+}
+
 echo "bench mode=$MODE"
 uname -a
 sysctl hw.ncpu
 sysctl hw.memory.stats
+echo "region ${R0_MIB}+${R_MIB} MiB"
 snap start
 
 case "$MODE" in
@@ -54,53 +67,74 @@ read)
 	step zero4m $((512 * 1048576)) if=/dev/zero of=/dev/null bs=4096k count=128
 	snap zero
 
-	# Cold reads at three block sizes, 128 MiB each, at offsets the curve does not touch.
-	base=$(((OFF_GIB - 3) * 1024))
-	step bs64k $((128 * 1048576)) if=$DEV of=/dev/null bs=64k skip=$((base * 16)) count=2048
-	step bs1m $((128 * 1048576)) if=$DEV of=/dev/null bs=1024k skip=$((base + 1024)) count=128
-	step bs4m $((128 * 1048576)) if=$DEV of=/dev/null bs=4096k skip=$(((base + 2048) / 4)) count=32
+	# Random reads first, while nothing of the region is cached.
+	if [ -x "$RANDREAD" ]; then
+		echo "step rand4k-qd1 bytes=0"
+		"$RANDREAD" $DEV 4096 1 "$RAND_SECONDS" "$R0_MIB" "$R_MIB"
+		snap rand4k-qd1
+		echo "step rand4k-qd32 bytes=0"
+		"$RANDREAD" $DEV 4096 32 "$RAND_SECONDS" "$R0_MIB" "$R_MIB"
+		snap rand4k-qd32
+	else
+		echo "no randread at $RANDREAD"
+	fi
+
+	# The UFS file, cold.
+	if [ -f "$WFILE" ]; then
+		step ufsread $(($(wc -c < "$WFILE"))) if="$WFILE" of=/dev/null bs=1024k
+		snap ufsread
+	fi
+
+	# Block sizes, 128 MiB each.
+	step bs64k $((128 * 1048576)) if=$DEV of=/dev/null bs=64k skip=$((R0_MIB * 16)) count=2048
+	step bs1m $((128 * 1048576)) if=$DEV of=/dev/null bs=1024k skip=$((R0_MIB + 128)) count=128
+	step bs4m $((128 * 1048576)) if=$DEV of=/dev/null bs=4096k skip=$(((R0_MIB + 256) / 4)) count=32
 	snap bs
 
 	# The curve.
-	started=$(date +%s)
 	i=0
 	while [ "$i" -lt "$CHUNKS" ]; do
-		[ "$PAUSE" -gt 0 ] && sleep "$PAUSE"
 		step "chunk$i" $((CHUNK_MIB * 1048576)) if=$DEV of=/dev/null bs=1024k \
-		    skip=$((OFF_GIB * 1024 + i * CHUNK_MIB)) count=$CHUNK_MIB
+		    skip=$((R0_MIB + 512 + i * CHUNK_MIB)) count=$CHUNK_MIB
 		snap "chunk$i"
 		i=$((i + 1))
-		if [ $(($(date +%s) - started)) -gt "$BUDGET" ]; then
-			echo "budget spent after $i chunks"
-			break
-		fi
 	done
 
 	# The last chunk again, which the cache should hold.
 	last=$((i - 1))
 	step reread $((CHUNK_MIB * 1048576)) if=$DEV of=/dev/null bs=1024k \
-	    skip=$((OFF_GIB * 1024 + last * CHUNK_MIB)) count=$CHUNK_MIB
+	    skip=$((R0_MIB + 512 + last * CHUNK_MIB)) count=$CHUNK_MIB
 	snap reread
 	;;
 write)
-	# A file on the root UFS, in 256 MiB pieces, then the sync that puts it on the NVMe.  The root is the image's
-	# UFS, smaller than p5, so the file is UFS_MIB long.
 	df /home/kei
-	i=0
-	while [ $((i * 256)) -lt "$UFS_MIB" ]; do
-		step "ufs$i" $((256 * 1048576)) if=/dev/zero of=$WFILE bs=1024k seek=$((i * 256)) count=256 conv=notrunc
-		snap "ufs$i"
-		i=$((i + 1))
-	done
-	echo "step ufssync bytes=0"
-	/bin/time sync 2>&1 | grep -E '^(real|user|sys) '
-	snap ufssync
+	bytes=$((FILE_MIB * 1048576))
+	# WFILE must be whole before it is written over, or the write would allocate.
+	have=0
+	[ -f "$WFILE" ] && have=$(($(wc -c < "$WFILE")))
+	if [ "$have" -lt "$bytes" ]; then
+		echo "making $WFILE"
+		dd if=/dev/zero of="$WFILE" bs=1024k count="$FILE_MIB" 2>&1 | grep -E '^dd:'
+		sync
+	fi
+	snap prepared
+
+	sleep "$REST"
+	shstep ufsover "$bytes" "dd if=/dev/zero of=$WFILE bs=1024k count=$FILE_MIB conv=notrunc && sync"
+	snap ufsover
+
+	rm -f "$WFILE_NEW"
+	sync
+	sleep "$REST"
+	shstep ufsnew "$bytes" "dd if=/dev/zero of=$WFILE_NEW bs=1024k count=$FILE_MIB && sync"
+	snap ufsnew
 
 	# The raw swap partition, when zedBSD lets go of it.
 	if swapoff $SWAP; then
 		echo "swapoff ok"
+		sleep "$REST"
 		i=0
-		while [ $((i * 256)) -lt "$WRITE_MIB" ]; do
+		while [ "$i" -lt 4 ]; do
 			step "raw$i" $((256 * 1048576)) if=/dev/zero of=$SWAP bs=1024k seek=$((i * 256)) count=256
 			snap "raw$i"
 			i=$((i + 1))
