@@ -11,6 +11,7 @@
 
 - 判断 U1〜U7 への回答（2026-10-26 23:50 ユーザー）「* U1: 消してよいです。* U2: 写してよいです。* U3: G28は決まったのでは。* U4: OKです。* U5: PROT は実装しませんが、WSを立てて、あとで実装します。* U6: 消してOKです。* U7: UMDの記述はGHCI側でUMD/KMDに変更しました。」 → U1 `GPU_OP_GHCI_*` と `CONFIG_GHCI_NATIVE` を消す、U2 amaterrace の `tools/gsi1*.py` を `plan/ws290/tests/gsi1-tools/` に写す、U4 riscv64 は build だけ、U5 PROT は WS290 では実装せず [WS292](../ws292/ws.md) で後で、U6 ghci-blit と ghcictl の diag・paint・fwload を消す、U7 ghci.md は amaterrace-gpu 3af62ca で §6.0 を「UMD or KMD」に直した（driver は KMD が ring を書く形で整合）。U3（G28 の表示）は Q1 がユーザーに確認中。
 - ghci.md の版: 4d12da1 の後に 3af62ca（2026-10-26 23:49、§6.0 の UMD/KMD だけの差）。
+- 正本（2026-10-27 18:08 ユーザー「仕様がアップデートされたので、ghci.mdが正本となります。」）: 仕様は amaterrace-gpu の docs/ghci.md だけに従う。一次〜K の回答（ghci-answers-hw-*.md・ghci-questions-round*.md）は経緯であって正本ではない。再開の時は、その時の ghci.md の SHA を読んで記録し、L01〜L06 などの残る点も ghci.md の本文で確かめる。
 - ghci.md の更新（2026-10-27 13:15 の f718918 まで、q1621 で P3 が読む）についてのユーザーの説明（2026-10-27）「コマンドベースの通信に変化して、レジスタ群がばっさりなくなりました。また、capabilityが導入され、capフラグがあるときだけ使える機能がたくさんできました。Vulkanのextなどとして見せるかどうかにマッピングが必要です。」 → design を command の通信の形に作り直し、capability の flag ごとに Vulkan の extension・feature などへの対応表を作る（flag の有無の両方を host 試験）。指示: 2026-10-27 13:55「P3で、~/amaterrace-gpu/docs/ghci.md の更新を読んで、GHCIドライバを更新してください。」
 
 - 2026-10-27 ユーザーの補足（Q1 経由の原文）: 「コマンドベースの通信に変化して、レジスタ群がばっさりなくなりました。また、capabilityが導入され、capフラグがあるときだけ使える機能がたくさんできました。Vulkanのextなどとして見せるかどうかにマッピングが必要です。」
