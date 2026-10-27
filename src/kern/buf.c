@@ -491,7 +491,8 @@ static void stat_add(volatile uint64_t *counter, uint64_t value);
 static void flusher(void *argument);
 static struct buf *oldest_aged(uint64_t cutoff);
 static int flush_aged(uint64_t cutoff);
-static int writes_delayed(const struct disk *disk, const struct io_context *context);
+static int writes_delayed(const struct disk *disk, const struct io_context *context, int raw);
+static int write_range(struct disk *disk, uint64_t block, uint32_t count, const void *data, const struct io_context *context, int raw);
 static int writeback_line(struct buf *buffer, const struct io_context *context, int delayed);
 static int writeback_line_whole(struct buf *buffer, const struct io_context *drain, int delayed);
 static int writeback_line_runs(struct buf *buffer, const struct io_context *drain, const struct backing_claim *writer);
@@ -552,7 +553,7 @@ static struct buf *writeback_oldest(struct disk *leaf, int worker);
 static void writeback_flush_note(struct disk *leaf);
 static void writeback_flush_noted(void);
 static int writeback_oldest_cluster(struct disk *leaf, struct buf_readahead_worker *worker);
-static void writeback_assist(const struct disk *disk, struct disk *leaf, const struct io_context *context);
+static void writeback_assist(const struct disk *disk, struct disk *leaf, const struct io_context *context, int raw);
 static void writeback_kick(const struct disk *disk);
 static void writeback_background(struct buf_readahead_worker *worker);
 
@@ -1021,6 +1022,54 @@ buf_write_context(
 	const void *data,
 	const struct io_context *context)
 {
+	int error;
+
+	/* Writes as the disk's own delay allows. */
+	error = write_range(disk, block, count, data, context, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Writes blocks of a raw block device that its opener alone uses, leaving
+ * them dirty in the cache as a write-cached disk's would be (the flusher,
+ * the write-back workers, fsync and the last close write them), so that a
+ * writer's copies and the device's writes overlap.
+ */
+int
+buf_write_delayed(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count,
+	const void *data)
+{
+	int error;
+
+	/* Writes with the delay a raw writer may have. */
+	error = write_range(disk, block, count, data, NULL, 1);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Writes blocks through the cache: delayed on a write-cached disk, or for a
+ * raw writer (raw), and otherwise written through.
+ */
+static int
+write_range(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count,
+	const void *data,
+	const struct io_context *context,
+	int raw)
+{
 	struct disk *leaf;
 	uint64_t mapped;
 	uint64_t end;
@@ -1064,8 +1113,8 @@ buf_write_context(
 		 * to the device.
 		 */
 		run_blocks = 0;
-		writeback_assist(disk, leaf, context);
-		delayed = writes_delayed(disk, context);
+		writeback_assist(disk, leaf, context, raw);
+		delayed = writes_delayed(disk, context, raw);
 		error = 0;
 		if (!delayed)
 			error = transfer_run(leaf, mapped, end - mapped, (void *)in, 1, &run_blocks, context);
@@ -1110,10 +1159,10 @@ buf_write_context(
 		 * pin on the line would otherwise hold back (ws073-p053).
 		 */
 		mark_dirty(buffer, offset_blocks, amount_blocks, 0);
-		delayed = writes_delayed(disk, context);
-		if (!delayed && (disk->d_flags & DISK_WRITE_CACHED) != 0) {
-			writeback_assist(disk, leaf, context);
-			delayed = writes_delayed(disk, context);
+		delayed = writes_delayed(disk, context, raw);
+		if (!delayed && ((disk->d_flags & DISK_WRITE_CACHED) != 0 || raw)) {
+			writeback_assist(disk, leaf, context, raw);
+			delayed = writes_delayed(disk, context, raw);
 		}
 		error = 0;
 		if (!delayed)
@@ -3907,12 +3956,13 @@ flush_aged(
 static int
 writes_delayed(
 	const struct disk *disk,
-	const struct io_context *context)
+	const struct io_context *context,
+	int raw)
 {
 	uint64_t dirty;
 
-	/* A write-through disk sends every write to the device. */
-	if ((disk->d_flags & DISK_WRITE_CACHED) == 0)
+	/* A write-through disk sends every write to the device, but for a raw writer's. */
+	if ((disk->d_flags & DISK_WRITE_CACHED) == 0 && !raw)
 		return 0;
 
 	/*
@@ -4779,13 +4829,14 @@ static void
 writeback_assist(
 	const struct disk *disk,
 	struct disk *leaf,
-	const struct io_context *context)
+	const struct io_context *context,
+	int raw)
 {
 	uint64_t limit;
 	unsigned written;
 
 	/* Only a write that would stay in the cache helps, on a device that takes page lists. */
-	if ((disk->d_flags & DISK_WRITE_CACHED) == 0 ||
+	if (((disk->d_flags & DISK_WRITE_CACHED) == 0 && !raw) ||
 	    (context != NULL && context->claim != NULL) ||
 	    !leaf_takes_pages(leaf) ||
 	    thread_current() == NULL)

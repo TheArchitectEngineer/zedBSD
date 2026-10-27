@@ -38,6 +38,8 @@
 #include <kern/kcrt.h>
 #include <uapi/system.h>
 
+/* disk_cached_transfer()'s write that may stay in the cache for a raw writer. */
+#define DISK_CACHED_WRITE_DELAYED 2
 #define DISK_ALLOCATED		1U
 #define DISK_LIVE		2U
 #define DISK_GONE		3U
@@ -2585,6 +2587,42 @@ disk_write_context(
 }
 
 /*
+ * Writes blocks of a raw block device for its opener: left dirty in the
+ * cache (buf_write_delayed()) while the opener alone uses the blocks, and
+ * written through as disk_write() does otherwise.
+ */
+int
+disk_write_delayed(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count,
+	const void *data)
+{
+	struct backing_mutation_guard guard;
+	int error;
+
+	/* Shared blocks are written through. */
+	if (!disk_readahead_private(disk, block, count)) {
+		error = disk_write(disk, block, count, data);
+		if (error != 0)
+			return error;
+		return 0;
+	}
+
+	/* Excludes conflicting claims on the range for the write. */
+	error = backing_mutation_begin_disk(disk, block, count, NULL, &guard);
+	if (error != 0)
+		return error;
+	error = disk_cached_transfer(disk, block, count, (void *)data, DISK_CACHED_WRITE_DELAYED, NULL, NULL);
+	backing_mutation_end(&guard);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the blocks wait in the cache. */
+	return 0;
+}
+
+/*
  * Writes blocks through the buffer cache on behalf of a mounted filesystem.
  */
 int
@@ -3752,7 +3790,9 @@ disk_cached_transfer(
 	error = disk_cache_enter(disk, &leaf);
 	if (error != 0)
 		return error;
-	if (write)
+	if (write == DISK_CACHED_WRITE_DELAYED)
+		error = buf_write_delayed(disk, block, count, data);
+	else if (write)
 		error = buf_write_context(disk, block, count, data, context);
 	else if (view != NULL)
 		error = buf_read_view(disk, block, count, data, view);

@@ -1607,6 +1607,15 @@ block_close(
 	/* Forgets the description's read-ahead stream. */
 	buf_readahead_forget(file);
 
+	/*
+	 * Writes back what a writer of the raw device left in the cache, as
+	 * its last act on the device (a failure stays with the lines, for the
+	 * flusher to retry).
+	 */
+	if (file->f_data != NULL && file->f_block_claim == NULL &&
+	    (file_status_flags_get(file) & O_ACCMODE) != O_RDONLY)
+		(void)buf_sync(file->f_data);
+
 	/* Final close owns the description; no ioctl or I/O can still borrow it. */
 	if (file->f_block_claim != NULL) {
 		disk_admin_end(file->f_data, file->f_block_claim);
@@ -1838,7 +1847,7 @@ block_pwrite_data(
 				error = disk_write_direct_claimed(disk, block, run,
 				    input + total, file->f_block_claim);
 			else
-				error = disk_write(disk, block, run, input + total);
+				error = disk_write_delayed(disk, block, run, input + total);
 			if (error != 0) {
 				backing_mutation_end(&guard);
 				if (total != 0)

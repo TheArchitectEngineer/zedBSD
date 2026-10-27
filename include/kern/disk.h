@@ -230,6 +230,7 @@ int disk_page_vector_supported(struct disk *disk);
  * opener: no other open disk on the same device overlaps the range.
  */
 int disk_readahead_private(struct disk *disk, uint64_t block, uint64_t count);
+int disk_write_delayed(struct disk *disk, uint64_t block, uint32_t count, const void *data);
 
 #define DISK_VECTOR_MAX 32U
 struct disk_vector {

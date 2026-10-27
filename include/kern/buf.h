@@ -241,6 +241,7 @@ int buf_discard_media(struct disk *disk);
 void buf_readahead_observe(const void *owner, struct disk *disk, uint64_t block, uint32_t count);
 void buf_readahead_forget(const void *owner);
 uint32_t buf_prefetch(struct disk *disk, uint64_t block, uint32_t count);
+int buf_write_delayed(struct disk *disk, uint64_t block, uint32_t count, const void *data);
 uint64_t buf_prefetch_window(void);
 int buf_readahead_stop(struct disk *disk, int wait);
 void buf_readahead_resume(struct disk *disk);
