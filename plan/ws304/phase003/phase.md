@@ -3,7 +3,7 @@
 # ws304-p003 実機（Pi 5 ＋ M.2 の NVMe）での確かめ
 
 - 親: [WS304](../ws.md)。依存: p002、実機の用意（ユーザー: 新しい SwitchBot、2026-10-27 の夜の予定）。
-- Status: uncleared（q1620-i02、2026-10-27 P3。pcie1 の link が上がらない。rescal の実験の前に権限の判定で停止、再開の条件は下の「q1620-i02 の結果」）
+- Status: uncleared（q1620-i03、2026-10-27 P3。rescal を RP1 の link の下で実行しても pcie1 の link は上がらない。次はハード側の切り分け、再開の条件は下の「q1620-i03 の結果」）
 - Disposition: normal
 
 ## 目的・受け入れ
@@ -54,4 +54,19 @@ Pi 5 に M.2 HAT と NVMe を付けた実機で、pcie1 の link が上がり、
 - 12:00 前後の不通は、ユーザーの FFC の付け直しの電源断。hang ではない。
 - 停止: rescal の実験の安全網（RP1 が死んでも次の起動で元の kernel に戻す一回きりの service を Pi の /etc に置き、rc.conf に足す）が権限の判定（Unauthorized Persistence）で止められ、実行されなかった（Pi の /etc は変わっていない）。回避せず停止。
 - 再開の条件: ユーザーが (a) 安全網の service を許すか、(b) 安全網なしで rescal の実験をする（RP1 が死ぬと SSH が切れ、SD を外して vmunix を戻す必要）か、(c) tryboot（firmware の一回きりの起動、zedBSD には reboot の flag を渡す code が無いので mailbox の SET_REBOOT_FLAGS の実装が要る）を選ぶ。rescal でも上がらなければ、FFC・HAT・NVMe の組の確かめ（Raspberry Pi OS の lspci）。
+- 未実施: NVMe の読みの試験、NVMe への install、NVMe からの起動、Pi 4 の確かめ。
+
+## q1620-i03 の結果（2026-10-27 12:15〜12:28、P3、実機 Pi 5 10.0.30.6 ＋ Geekworm X1001 ＋ NVMe）
+
+実機の証拠だけ（QEMU は無し）。ユーザーの決定「備え無しで rescal を試す」に従い、安全網なしで実験した（Pi の /etc・rc.conf は変えていない）。
+
+- 実験の kernel: main c89378b6a の上に `plan/ws304/temp/p003-experiments.patch`（sha256 43e537bc…、rescal を RP1 の link の下でも実行し前後で RP1 の link の status を log、link down の後に PERST# の再試行 2 回）を当て、`make -j16 ZEDBSD_CONFIG=config/ci/config-rpi5.mk vmunix`（exit 0、warning 0、`arm64 vmunix check: PASS`）。vmunix sha256 ac9460b5…、cksum 12195165 7589888。source は実験の後に戻した（commit しない）。
+- 配置と回収: `SSHPASS=kei BACKUP=build/tmp/pi5-backup sh plan/ws304/tests/p003-pi5.sh 10.0.30.6 build/tmp/vmunix.rescal-exp build/tmp/p003-rescal`。reboot 後 SSH は戻った。
+- 結果（dmesg）:
+  - `rpi5-pcie: experiment: calibrating with RP1 at up; start 0 status 0; RP1 link 3e0b0` → `rpi5-pcie: PHY calibration done; RP1 link 3e0b0`。rescal は done になり、RP1 の link の status は前後で同じ。RP1 の USB（DWC3 2 つ）・Ethernet（SSH）は従来どおり動いた。
+  - pcie1 は従来と同じ: `pcie: brcmstb link down (status 1e08f, control 4, debug 80, LTSSM 09808109 80810980 81098081 09808109)`。PERST# の再試行（1 秒、refclk の常時出力あり・なし）でも LTSSM は Detect（0x80/0x81）と Polling.Active（0x09）を往復し、link down。
+  - `rpi5: SError pending after rpi5-wifi: routing the pins` が出るが、実験なしの 47abe7538 の kernel でも同じく出る（下の戻しの後の dmesg）。rescal・pcie1 とは関係しない既知の行（WS278 の記録にある）。
+- 戻し: Pi の vmunix を 47abe7538 の kernel（host の `build/tmp/pi5-backup/vmunix.47abe7538`、cksum 2863750003 7585792、sha256 6fa42642…）に戻し、config.txt は今のもの（`dtparam=pciex1`・`pciex1_tperst_clk_ms=10`・`pciex1_gen=1` 入り、host の写し `build/tmp/pi5-current/config.txt` cksum 924932728 847）のまま。`p003-pi5.sh ... --restore`（BACKUP=build/tmp/pi5-current）で reboot し、SSH・RP1 は正常、Pi の `cksum /boot/boot0/vmunix` は 2863750003 7585792。
+- 判断: Linux との手順の差として残っていた rescal は原因ではない（rescal をしても同じ LTSSM の型）。相手の終端は見えるが TS の交換が通らない状態で、手順の差の候補は尽きた。FFC・HAT（X1001）・NVMe の組のハード側を疑う。
+- 再開の条件: ユーザーが Raspberry Pi OS（別の SD）で同じ HAT・FFC・NVMe を付けて `lspci` と `dmesg | grep -i pcie` を見る。Linux でも link が上がらなければハード側（FFC の向き・挿し込み、HAT の LED、NVMe の別の物）。Linux で上がるなら、Linux の起動時の pcie1 の register（`HARD_DEBUG`・`PCIE_CTRL`・MDIO の値）を比べる計画を立て直す。
 - 未実施: NVMe の読みの試験、NVMe への install、NVMe からの起動、Pi 4 の確かめ。
