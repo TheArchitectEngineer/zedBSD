@@ -51,7 +51,7 @@
 
 - 担当は自分で試験を流す（[AGENTS.md](../../AGENTS.md) §9）。計測・実機の回帰は 1 本の script（配置 → 起動 → 実行 → 回収 → 要約）。
 - QEMU は担当ごとに名前・port・directory を分ける。image の build が重なる時は `flock /tmp/zedbsd-image-build.lock`。
-- 実機は Q1 が一度に一人に割り当てる（[tools.md](../tools.md) の「実機」）。電源の入れ直しは Q1 が `plan/tools/switchbot.py`（ユーザーから委任済み）。
+- 実機は Q1 が一度に一人に割り当てる（[tools.md](../tools.md) の「実機」）。電源の入れ直しは原則 Q1 が `plan/tools/switchbot.py`（担当が自分で入れ直してよい機械は [tools.md](../tools.md) の「実機」）（ユーザーから委任済み）。
   入れ直しても戻らなければ Q1 がユーザーに知らせる。
 - 試験の担当 T を使う時: 実装の担当は試験の依頼（image の作り方、流す試験、合否の基準）を Q1 に送り、Q1 が `plan/agents/T<n>/requests.md` に積む。
   実装の担当は結果を待たず次の Queue へ移り、その Phase の Status に `test-wait（T<n>-NNN）` と書く。Q1 が結果で印を外す（PASS → cleared、FAIL → 直す attempt）。

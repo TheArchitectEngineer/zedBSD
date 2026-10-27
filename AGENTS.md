@@ -131,7 +131,7 @@
 - **細かい修正ごとに回帰試験を回さない**。実装を自分で丁寧にレビューし、確信が持てたら build（warning 0）と変えた所の短い host 試験まで。
   QEMU・実機の試験は WS の最後か意味のまとまった単位で行う。
 - **試験は担当が自分で流す**（Q1 が割り当てた QEMU・実機）。計測・実機の回帰は 1 本の script（配置 → 起動 → 実行 → 回収 → 要約）にまとめ、
-  担当は要約だけを読む。QEMU は担当ごとに名前・port・directory を分ける。実機は Q1 が一度に一人に割り当てる（電源の入れ直しは Q1）。
+  担当は要約だけを読む。QEMU は担当ごとに名前・port・directory を分ける。実機は Q1 が一度に一人に割り当てる（電源の入れ直しは原則 Q1。割り当てた機械の SwitchBot を担当が自分で入れ直してよい場合は [plan/tools.md](plan/tools.md) の「実機」）。
   試験の担当 T を立てた時の規則は [protocol](plan/agents/protocol.md)。
 - **起動の確認**は `plan/tools/boot-test.sh`（画面を撮って login prompt を読む）。撮れた PNG は Q1 がユーザーに見せる。
 - **QEMU の console log・serial log を読んで判定しない**（解析・回帰・受け入れのどれでも）。guest の操作はシリアル（`plan/tools/guest/serial.py`）か
