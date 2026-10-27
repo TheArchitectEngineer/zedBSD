@@ -1318,7 +1318,7 @@ prepare(
 	if (error != 0)
 		return error;
 
-	/* The uniforms' constant-bank words and texture slots. */
+	/* The uniforms' slots, resource table entries and dynamic offsets. */
 	error = gsi1_memory_prepare(lowering);
 	if (error != 0)
 		return error;

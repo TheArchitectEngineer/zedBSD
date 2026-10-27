@@ -116,8 +116,8 @@ gsi1_spill_prepare(
 
 /*
  * Computes, at the program's start, the lane's address in its warp's part
- * of the scratch memory into a register kept to the end, and adds the
- * scratch memory's interface entry.  The words per warp are filled in by
+ * of the scratch memory into a register kept to the end, from the
+ * address in the driver's table.  The words per warp are filled in by
  * gsi1_spill_finish().
  */
 int

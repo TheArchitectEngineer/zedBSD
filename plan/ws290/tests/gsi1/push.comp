@@ -1,0 +1,11 @@
+#version 450
+// Push constants across all 128 bytes: c0-c23 and, from byte 96, c32-c39.
+layout(local_size_x = 32) in;
+layout(push_constant) uniform Push { uint w[32]; } push;
+layout(std430, set = 0, binding = 0) buffer Out { uint r[]; } dst;
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	dst.r[i] = push.w[0] + push.w[23] * i + push.w[24];
+	dst.r[i + 32u] = (push.w[31] ^ i) + push.w[27];
+}
