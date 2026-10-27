@@ -2210,8 +2210,18 @@ leaf_flags(
 	if (attr & HAL_SPACE_WRITETHRU)
 		flags |= AMD64_PTE_WRITETHRU;
 
-	/* Treats device mappings as uncached. */
-	if (attr & HAL_SPACE_DEVICE)
+	/*
+	 * Treats device mappings as uncached, or write-combining when asked:
+	 * PAT index 4 (PAT set, PCD and PWT clear), which amd64_cpu_init()
+	 * programs as WC.
+	 *
+	 * Values referenced: Intel SDM Vol. 3A, Page Attribute Table
+	 * ("Selecting a Memory Type from the PAT": the PAT, PCD and PWT bits
+	 * of a 4-KByte PTE form the index).
+	 */
+	if ((attr & (HAL_SPACE_DEVICE | HAL_SPACE_WC)) == (HAL_SPACE_DEVICE | HAL_SPACE_WC))
+		flags |= AMD64_PTE_PAT_4K;
+	else if (attr & HAL_SPACE_DEVICE)
 		flags |= AMD64_PTE_NOCACHE;
 
 	/* Disables execution unless explicitly requested. */
@@ -2705,9 +2715,14 @@ user_page_allowed(
 		if ((attr & HAL_SPACE_EXEC) != 0 || ram_present)
 			return HAL_ERR_INVALID;
 
-		/* Matches the cache bits used by the kernel's device view. */
+		/* Matches the cache bits used by the kernel's device view; write-combining excludes the others. */
 		if ((attr & HAL_SPACE_WRITETHRU) != 0)
 			return HAL_ERR_UNSUPPORTED;
+		if ((attr & HAL_SPACE_WC) != 0 && (attr & HAL_SPACE_NOCACHE) != 0)
+			return HAL_ERR_INVALID;
+	} else if ((attr & HAL_SPACE_WC) != 0) {
+		/* Write-combining is offered for device pages alone. */
+		return HAL_ERR_UNSUPPORTED;
 	} else if (!ram_present || (entry & AMD64_PTE_WRITE) == 0) {
 		/* Untagged mappings retain the original RAM-only contract. */
 		return HAL_ERR_INVALID;
