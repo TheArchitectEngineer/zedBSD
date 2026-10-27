@@ -3,6 +3,8 @@
 # WS307 Keiland のアプリとしての zedBSD のグラフィカルなインストーラ
 
 - Status: planning（2026-10-28 新設。p001 で仕様を確定中、q1643 P4）
+- 仕様: [spec.md](spec.md)（案。ユーザーの確認事項 U1〜U13 の回答待ち）。
+- Resume point: p001 の手順 3〜5（回答の反映、design-reviewer の指摘の反映、実装の Phase の表の確定）。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
 
@@ -64,5 +66,19 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 仕様の確定（調査、spec.md、ユーザーの確認事項、design-reviewer、実装の Phase の案） | — | in-progress（q1643、P4） |
+
+### 実装の Phase の案（p001 の成果、[spec.md](spec.md) による。ユーザーの回答で変わりうる。Phase の directory はまだ作らない）
+
+| Phase | 内容 | 依存 | 見積もり | 状態 |
+| --- | --- | --- | --- | --- |
+| p002 | base の道具: `mkswap` の partition の mode、`diskpart` の batch の mode（spec §11.3）。host の試験と QEMU の短い確認 | p001 | 6 LW | planning |
+| p003 | （U9 が B の時）kernel: NVMe・AHCI・USB の disk の model・serial を UAPI に出す（HAL の API は変えない） | p001 | 6 LW | planning |
+| p004 | build: unit の振り分け・tarball（ustar＋deflate、所有者・mode は image の manifest から）・index と依存・`/opt/installer`・`ZEDBSD_INSTALLER` の config・漏れと重複の検査（spec §6・§11） | p001 | 10 LW | planning |
+| p005 | helper `install-admin`: probe・install（計画の再検査、partition・format・展開・設定・公開、進みと中止の protocol）。host の試験と QEMU の SSH での導入（NVMe・SATA・USB の導入先、導入先だけの起動）（spec §5・§7〜§9） | p002・p004（p003 は任意） | 14 LW | planning |
+| p006 | installer の app: S1〜S11（と U7 の利用者の画面）、計画の組み立てと検査、翻訳（ja）、App Home、自動起動、AAT の log（spec §4・§10） | p005 の protocol | 14 LW | planning |
+| p007 | 通しの試験: AAT で GUI の導入（全体・選ぶ・共存・swap 無し・キャンセル・失敗）、導入先の起動、`plan/ws307/tests/` の 1 本の script（spec §12） | p006 | 8 LW | planning |
+| p008 | 文書: `docs/howto/boot-and-storage.md` の古い zedinst の節を新しい installer に置き換え、`docs/reference` に install-admin・mkswap・diskpart の追加 | p007 | 3 LW | planning |
+| p009 | 規約の全文の見直し（WS307 が変えた C） | p008 | 4 LW | planning |
+| p010 | 実機の導入（Q1 の割り当て、ユーザーの試験の一覧） | p007 | 2 LW | planning |
 
 - 2026-10-28 ユーザー「P4を立てて、WS307の仕様検討を行ってもらってください。ユーザ確認事項があれば回答させていただきます。仕様を確定させたいです。そのためのphaseをQ1が作り、P4に実行させてください。」

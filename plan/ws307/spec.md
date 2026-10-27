@@ -301,7 +301,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 ### 9.1 形
 
 - installer は利用者（live の session の kei）で動き、権限を持たない（`docs/architecture/security.md:11-30` の原則）。
-- root の仕事は新しい set-user-ID root の helper `/usr/libexec/install-admin`（mode 4555、`account-admin` と同じ形。呼び出し元が wheel かは helper が自分で確かめるの 1 つの仕事だけの program、`userland/base/account-admin/main.c:8-45`）。
+- root の仕事は新しい set-user-ID root の helper `/usr/libexec/install-admin`（mode 4555、`account-admin` と同じ形の 1 つの仕事だけの program、`userland/base/account-admin/main.c:8-45`。呼び出し元が wheel かは helper が自分で確かめる）。
 - installer が helper を子として起動する（U6-A。zedBSD の UEFI PC だけの app なので compositor を通さない。Guardrail の「app 自身の機能のための OS の依存」、D14）。
 - 要求の種類:
   - `probe`: 読むだけ（disk・partition・ESP の空き・RAM・UEFI の起動か）。呼び出し元が wheel なら password 無し（変更が無いため）。
