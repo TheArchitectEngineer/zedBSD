@@ -51,6 +51,14 @@
 #define GSI1_ABI_BANK_DYNAMIC		40U
 #define GSI1_ABI_PUSH_BYTES		128U
 
+/*
+ * The most shared memory a workgroup has (PSO dw15 lds_bytes).
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 8.2,
+ * compute_lds_and_flags [15:0] lds_bytes 0..16384).
+ */
+#define GSI1_ABI_LDS_BYTES		16384U
+
 /* The four hardware descriptor sets as the driver uses them. */
 #define GSI1_ABI_SET_TEXTURES		0U
 #define GSI1_ABI_SET_SAMPLERS		1U

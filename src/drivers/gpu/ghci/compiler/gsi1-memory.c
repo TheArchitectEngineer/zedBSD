@@ -88,6 +88,12 @@ gsi1_memory_prepare(
 		return error;
 	}
 
+	/* A workgroup's shared memory is 16 KiB at most. */
+	if (ir->shared_bytes > GSI1_ABI_LDS_BYTES) {
+		error = gsi1_refuse(lowering, ENOTSUP, "more than 16 KiB of shared memory");
+		return error;
+	}
+
 	/* Each uniform in the order of the IR's list. */
 	for (index = 0U; index < ir->uniform_count; index++) {
 		lowering->index = index;
@@ -768,7 +774,7 @@ lower_uniform_word(
 /*
  * Lowers a storage buffer's load, store and size: lw and sw at the
  * buffer's address plus the offset, predicated and clamped as the
- * header comment says; the size is the descriptor's second word.
+ * file's first comment says; the size is the descriptor's bytes.
  */
 static int
 lower_storage(

@@ -81,6 +81,17 @@ else
 	echo "PASS ghci-old-names ($(echo $built | wc -w) sources, 4 headers)"
 fi
 
+# The shader compiler (gsi1-host-test.sh: the compiler's sources under the flags above, the harness,
+# the reference tools of gsi1-tools/ and the model; its own new directory below build/tmp), and the
+# choice of ISA and options (isa.c) compiled under the flags above.
+if cc $flags -I"$repo" -Wmissing-prototypes -c -o "$out/isa.o" "$ghci/isa.c"; then
+	echo "PASS ghci-isa (isa.c compiles)"
+else
+	echo "FAIL ghci-isa: isa.c does not compile"
+	status=1
+fi
+timeout 900 sh "$tests/gsi1-host-test.sh" || status=1
+
 if [ "$status" -ne 0 ]; then
 	echo "FAIL ghci290-host-test ($out)"
 	exit 1
