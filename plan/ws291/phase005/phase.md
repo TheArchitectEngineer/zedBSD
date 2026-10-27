@@ -3,7 +3,7 @@
 # ws291-p005 RDNA の NGG A: passthrough の primitive shader（正しさの土台）
 
 - 親: [WS291](../ws.md)。
-- 状態: in-progress（2026-10-27 05:00 P2、q1611-i01。2026-10-27 14:20 受け入れを全部確認、Q1 の判定待ち）。
+- 状態: in-progress（2026-10-27 05:00 P2、q1611-i01。2026-10-27 13:49 受け入れを全部確認、Q1 の判定待ち）。
 - 出典: 2026-10-27 04:44 ユーザー（Q1 の問い「NGG の A〜C をどう進めますか？」へのクリック）「A〜C を今進める（推し）」。
 - 依存: p004（cleared）。
 
@@ -73,13 +73,13 @@ host 試験: `plan/ws039/tests/amdrdna-compiler-host-test.sh` PASS（vertex の 
 - stick の /boot/boot0/vmunix は vmunix-diag12（診断）、zedbsd.cfg は `amdrdna.vk.ngg=3`・`amdrdna.vk.nggx=256`。次の世代は Debian を mount して（/dev/sda2）通常の kernel と `amdrdna.vk.ngg=0`、nggx の行を外すこと。
 - 入れ直し（SwitchBot）で Debian に戻る。機械の操作は host の /tmp/zedbsd-desktop.lock を flock で取る（P4 と共用）。
 
-### 原因と修正（2026-10-27 13:40〜14:20、P2 第 6 世代、Fable 5.1 High の助言 2: build/review/ws291-ngg-advice-fable-2.md）
+### 原因と修正（2026-10-27 13:35〜13:49、P2 第 6 世代、Fable 5.1 High の助言 2: build/review/ws291-ngg-advice-fable-2.md）
 
 - 原因: NGG の prologue の `exp prim … done` の直後に exec を頂点の lane に書き換えており、間に `s_waitcnt expcnt(0)` が無かった。GFX10 の export は EXEC を発行時でなく許可された時に読む（Mesa 25.0.7 aco_insert_waitcnt.cpp の gen の Format::EXP、LLVM SIInsertWaitcnts.cpp）。wave の primitive 数 > 頂点数の時（頂点 15・primitive 16）、最後の primitive の export が落ち、その export 領域が返らず（SX_BUSY の残留）、溜まって止まる。
 - 修正（一般の形、助言の (a)）: commit 6beeeab3e。`gfx10-wait.c` の note_issued で、export の読みのうち VGPR に加えて EXEC_LO も export counter に hold する → exec を書く命令の前に place_waits が `s_waitcnt expcnt(0)` を自動で置く。模型 `plan/ws039/tests/gfx10-machine.c`: export が EXEC を pending にし、その間の exec の書き込み（s_cselect・s_mov・s_and_saveexec）を「an exec write before the export counter」で fail。
 - host: 修正前（模型だけ新しい）は +ngg の 6 variant（basic・query・shapes・sparse・textured・quad）が上の理由で FAIL、修正後 `amdrdna-compiler-host-test.sh` PASS（52、build/tmp/p005-hosttest-after.txt）、`amdrdna-vk-host-test.sh` 197 checks 0 failures。disassembly: `exp prim v0 … done` → `s_bfe/s_bfm/s_cmp` → `s_waitcnt expcnt(0)` → `s_cselect_b32 exec_lo`。+ngg の期待の語は変更不要だった。amd64 vmunix warning 0（build/ws291/p005-fix-vmunix.log、sha256 先頭 f86cad802a3ab423）。
 
-### 受け入れ（実機 10.0.10.3、RX 5600 XT、2026-10-27 14:00〜14:20、kernel f86cad802a3ab423、boot 行 `amdrdna.vk.ngg=1`・`amdrdna.vk.timing=2000`、nggx 無し）
+### 受け入れ（実機 10.0.10.3、RX 5600 XT、2026-10-27 13:42〜13:49、kernel f86cad802a3ab423、boot 行 `amdrdna.vk.ngg=1`・`amdrdna.vk.timing=2000`、nggx 無し）
 
 | 確認 | 結果 | 証拠 |
 | --- | --- | --- |
@@ -95,7 +95,7 @@ host 試験: `plan/ws039/tests/amdrdna-compiler-host-test.sh` PASS（vertex の 
 - mview の shot の run が `vkAcquireNextImageKHR` の -1000000000（errno 42）で 317 frame 目に終わるのは legacy でも同じ（legacy-shot-1: 316 frame）で、NGG と無関係（shot の取り方の既存の挙動）。
 - 既定は legacy のまま（`amdrdna.vk.ngg=1` で NGG）。passthrough の差は 0.8 ms と小さく、既定を NGG にするかは culling（p006・p007）の後に desktop の frame-ops と合わせて決める。
 - 前の世代の「残り」1〜4（diag13 の 0x100、PA の register、exp prim の VSRC・FLOAT_MODE、SQ_NON_EVENT）は不要として閉じる（最後の primitive の消失は上の wait で説明・解消した）。VGT_VERTEX_REUSE_BLOCK_CNTL・guard band・binning は性能の段（p008）へ。
-- stick の状態（14:20）: /boot/boot0/vmunix = f86cad802a3ab423（修正入り）、zedbsd.cfg は `amdrdna.vk.timing=2000`・`amdrdna.vk.ngg=1`、vmunix.old は 08:37 の物。zedBSD で起動中。
+- stick の状態（13:49）: /boot/boot0/vmunix = f86cad802a3ab423（修正入り）、zedbsd.cfg は `amdrdna.vk.timing=2000`・`amdrdna.vk.ngg=1`、vmunix.old は 08:37 の物。zedBSD で起動中。
 
 ## 残り・再開の条件
 
