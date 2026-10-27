@@ -266,3 +266,53 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 2. FLOAT_MODE を RADV と同じ 0xc0 にした kernel（compiler の GFX10_COUNTS_FLOAT_DENORMS）の 1 回の計測。
 3. vertex buffer の descriptor と index の cache の方針（descriptor の word 3、GE の index の取り込み）を RADV の descriptor と比べる。
 4. hang の試験を続けて流すと desktop が落ちる件を、変更の前の kernel（compact1）で続けて流して比べる。
+
+## q1639（2026-10-28 P2、worktree p2-ws291c、基点 main d3de756ca）
+
+- 承認（ユーザー 2026-10-28）:「P2は自律的にループして、Linuxと同等以上の性能をゴールに、継続してください。hangが繰り返し起きるなら調査して修正してください。30分調査してわからなかった場合は、Fable 5.1 Highのサブエージェントを作成して、事情を説明した上で解決までどういう進め方をすればいいかのアドバイスを得て、さらに継続してください。どうしても解決できない場合、停止してユーザに判断を求めてください。これらはP2が自律的に行います。」
+
+### VRAM の page entry の fragment（commit eb0ec22fd）
+
+- 原因: VRAM の page entry に fragment の欄（bits 11:7、Linux の AMDGPU_PTE_FRAG）が無く、4 KiB ごとの translation だった。scene-6500 は 1 frame に
+  index 2.9 GB（111000 個 ×4 B ×6500 instance、index buffer 444 KB を instance ごとに読み直す）を GE が読み、vertex の fetch も同じ buffer を回る。
+  全部を落としても・VALU を足しても 30.6 ms のままだったのは、この translation の待ちで決まっていたため。
+- 修正（space.c・amdrdna-hw.h）: 各 page の entry に、VA と VRAM が同じ境界に揃い mapping の中に収まる最大の連続の run（最大 2^9 page = 2 MiB）の
+  fragment を書く（Linux v6.19 amdgpu_vm_pt.c amdgpu_vm_pte_fragment・amdgpu_vm_ptes_update、gmc_v10_0.c の fragment 9）。backing の VRAM と GPU の
+  address は大きさ以下の最大の 2 冪（64 KiB〜2 MiB）の境界に（VRAM の空きが無ければ 64 KiB に戻る）。
+- host: amdrdna-host-test PASS（410 行 PASS）、vmunix warning 0（886c81d3dddbce6e）。
+- 実機（vmunix-frag1 = 同じ動作で style の前の build、build/ws291/measure/frag1r/）: nggshape 14 種 ok、shot 1 体 差 0、6500 体 max 1・over15 0、hang 回復 ok。
+
+| run | 前（lat1） | frag1 | Linux（bench-linux-3 / cull-l） |
+| --- | --- | --- | --- |
+| scene-1 fps / fence | 108.4 / 1.27 | 125.0 / 1.32 | 9604 / 0.06 |
+| scene-1500 fps / fence | 65.9 / 8.92 | 70.7 / 6.80 | 200 / 4.65 |
+| scene-6500 fps / frame / fence | 30.7 / 32.41 / 30.64 | 44.7 / 22.29 / 20.45 | 49.7 / 20.08 / 19.70 |
+| big-1000 fps（record / submit） | 18.2（33.3 / 16.7） | 17.7（35.3 / 17.2） | 86.9（5.42 / 0.02） |
+| subs-1000 fps（record / submit） | 3.5（144.7 / 117.0） | 4.06（138.3 / 100.8） | 58.2（6.63 / 10.1） |
+
+### 頂点の側だけの時間（mview `--cull=all`、commit fc7a3d077）
+
+- mview に `--cull=all`（全 pipeline が両面を落とす、raster 無し）を足した。zedBSD（frag1b）と Linux で並べた（build/ws291/measure/cull-z・cull-l）:
+
+| run（fence ms） | zedBSD | Linux |
+| --- | --- | --- |
+| scene-6500 / cull-6500 | 20.62 / 20.46 | 19.70 / 19.66 |
+| scene-1500 / cull-1500 | 7.13 / 6.93 | 4.65 / 4.81 |
+
+- 読み方: 両方とも GPU の時間は頂点の側（culling part と GE）で決まり、画素の側はほぼ 0。scene-6500 の差は頂点の側の約 0.8 ms（4 %）と、CPU 側の
+  acquire・record・submit・present の合計 1.5 ms 対 Linux 0.35 ms。scene-1500 は frame の半分を acquire（7〜9 ms）で待つので GPU の clock が上がり切らない見込み（未確かめ）。
+
+### hang の調べ（06:16〜）
+
+- frag1 の session（06:09 起動、nggshape・shot・bench・hang を流した後）で、hang の確認を 6 回続けると 2 回、reset の直後の `vkhang --compute --loops` が
+  `lost after=2`（kernel の行なし、A）。その後の compute の連続で `steps=0` が 3 回（fence は終わり、CPU が読む値が 0、B）。lat1 の前の round でも A が 1 回。
+- 新しい boot の後は lat1・frag1b とも compute 40 回 ×3、hang 16 回、bench の後で再現しない（間欠）。
+- 30 分で分からず、Fable 5.1 High に進め方の助言を求めた（要点）: GPU の cache・TLB の扱いは amdgpu と同じ（各 run の始めの ACQUIRE_MEM で GL2 の WB+INV、
+  fence は RELEASE_MEM の GL2_WB、新しい space は必ず flush）。A は EIO を黙って返す所（submit の拒否、wait の dropped・lost、hang の時の fence が後から
+  通った場合、runtime の stopping、core の commit の ESTALE）に mark を足して次の発生で特定する。B の本命は graphics の queue reset が終わらない wave を
+  殺さない（compute の reset は殺す）ことで残った wave が GL2 を汚し、次の process の VRAM を上書きする事。次に WC・HDP の見え方。
+- 確かめ: 診断の mark（commit fc7a3d077: submit の拒否、wait の dropped・lost、hang の fence が後から通った時、reset の後の status と wave）を入れた
+  kernel（vmunix-marks1）で hang: reset の後の wave は 0（`waves valid 0`、reset の前は 76）、gc status は idle。→ 残る wave の仮説は外れ。
+  長い session の再現（nggshape・shot・bench・hang 6 回・compute 40 回）を流して mark を待つ。
+- 実機の入れ直し: 06:37 の Debian からの BootNext の再起動の後、両 OS が 8 分応答せず（04:10 と同じ症状の再発、2 回目）。06:45:47 に P2 が SwitchBot で
+  入れ直し（1 回）、Debian に戻った。直前は frag1b で hang 16 回と bench の後。
