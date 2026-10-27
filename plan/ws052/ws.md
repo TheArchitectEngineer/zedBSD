@@ -18,6 +18,8 @@ Target: 段は無い（2026-10-27 ユーザー「ベータ3，ベータ4とい�
 -->
 <!-- awesome-plan-current:end -->
 
+- 2026-10-27 09:39 ユーザー（クリック）: residency を返す UAPI（KERN_SYSTEM_SLEEP_INFO）は可、MSR の counter を読む HAL の口は差分の案を見てから承認。5330 で S0ix を試すのはユーザーが居る時に、事前に Q1 が声をかける。S0ix は WS052 で行う（WS300 には移さない）。
+
 ## 目標
 
 ACPI の S0i3（modern standby、S0 low power idle）に入り、wake の event で戻る。操作は `/dev/system` から行う。

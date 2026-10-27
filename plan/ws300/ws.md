@@ -8,6 +8,8 @@
   「そもそもS0ixが動作した実績がないので、これに対応するWSを作成してやってほしいです。（上記WSでやってほしいです）」（S0ix 自体は既存の WS052 で、Q1 の割り当て）
 - 全体の依存と着手の順: [plan/agents/P1/pm-plan.md](../agents/P1/pm-plan.md)。
 
+- 2026-10-27 09:39 ユーザー（クリック）: 動作中の省電力（NVMe の APST、PCIe の ASPM L1.2・LTR）も入れる（docs/architecture/power-management.md の「runtime の省電力は対応外」を直す）。
+
 ## 単一の到達目標
 
 5330 で NVMe から起動した zedBSD が、(1) S0 idle（WS052）の時に VMD とその下の root port・NVMe を suspend して resume でき（今は `vmd_suspend` が常に EBUSY）、

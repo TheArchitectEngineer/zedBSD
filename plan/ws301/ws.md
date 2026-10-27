@@ -15,6 +15,8 @@
   補足（2026-10-27 ユーザー、Q1 経由の原文）「DVFSとP-core/E-coreは、/dev/systemに入れるのが適切ならそれでもいいですとお伝えください。ファン制御もあるといいですね。」
 - 全体の依存と着手の順: [plan/agents/P1/pm-plan.md](../agents/P1/pm-plan.md)。
 
+- 2026-10-27 09:39 ユーザー（クリック）: UAPI は /dev/system、設定は domain ごとの min・max・desired・EPP、設定できるのは root だけ、HAL の差分の案を作る（承認は差分ごと）。対象はまず amd64（5330 の HWP）、arm64・riscv64 は枠だけ。fan は別の WS（[WS303](../ws303/ws.md)）。
+
 ## 単一の到達目標
 
 kernel に CPU の性能と電力の枠組み（provider の登録の口）を作り、5330（Alder Lake-P、i5-1245U、P-core 2 と E-core 8 の hybrid）で

@@ -18,6 +18,8 @@
   - まずはどういった情報からどういったバランシングができるかを検討する」
 - 全体の依存と着手の順: [plan/agents/P1/pm-plan.md](../agents/P1/pm-plan.md)。
 
+- 2026-10-27 09:39 ユーザー（クリック）: CONFIG_DTB の既定は off、nice は core の選択に加えて sched の priority にも効かせる。
+
 ## 単一の到達目標
 
 config（`CONFIG_DTB`）で有効にできる DTB を kernel に入れ、5330（P-core 2・E-core 8）で、HID・GPU・process/thread の統計と nice から thread の性質を見分けて
