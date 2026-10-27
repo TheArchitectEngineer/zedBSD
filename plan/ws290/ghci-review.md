@@ -1,24 +1,33 @@
-# GHCI レビュー 第 9 版（ghci.md 89529de に対する疑問 N01〜N36、回答 第 8 版を反映、2026-10-28 02:50）
+# GHCI レビュー 第 10 版（ghci.md bc7df9e に対する疑問 N37〜N45、§12.10.3 を読んで、2026-10-28 03:38）
 
-- 対象: `git -C /home/awe/amaterrace-gpu show 89529de:docs/ghci.md`（2677 行）と同じ commit の `include/ghci_cmd.h`。行の番号はこの版の物。差は `git diff 35b89af 89529de -- docs/ghci.md include/ghci_cmd.h` で読んだ（ghci.md の 3 行だけ、ghci_cmd.h は変わらない）。
-- 読んだ回答: `docs/ghci-review-reply.md`（commit 5d5eb66）、1 行目「# GHCI Review Reply - Version 8.0 (2026-10-28) - Commit: 89529de (Target: N01〜N36)」、73 行、md5 b37ea3a850453597ad86a4e64ccf702b、末尾 DONE。Q1 が見た物と同じ。読み始めと読み終わり（02:50）で同じ。
-- 回答の番号は、こちらの N の番号と合っている。
+- 対象: `git -C /home/awe/amaterrace-gpu show bc7df9e:docs/ghci.md`（2772 行）と同じ commit の `include/ghci_cmd.h`・`include/gsi1_isa.h`。行の番号はこの版の物。89529de からの差は `git diff 89529de bc7df9e -- docs/ghci.md include/`（§12.10.3 の 95 行と ghci_cmd.h の 37 行の追加だけ）。
+- 回答の file: `docs/ghci-review-reply.md` の 1 行目は「# GHCI Review Reply - Version 9.0 (2026-10-28) - Commit: 89529de (Final Signoff…)」で既読のまま。03:34 に一時「Version 10.0 … bc7df9e (Shader Stage Register & Export Conventions: N37)」の 1 行目が見えたが、03:34:41 に第 9.0 版へ戻ったので、回答としては読んでいない。この版は bc7df9e の本文だけを読んで書いた。
+- 番号: 新しい §12.10.3 が N37 を名乗っているので、N37 はこちらの「shader の stage の I/O が未定義」の件とし、残る点を N38〜N45 に分けた。
 
 ## 要約
 
-- 判定（第 8 版の残り 3）: **今回の解決 3**（N12・N35・N36）。改訂の差で新しく生じた矛盾は無い（N37 以降は無し）。
-- 残る疑問 **0 件: C 0・H 0・M 0・L 0**。**疑問は残っていない。**
-- **driver の実装**: 文書の疑問による driver と shader の compiler の待ちは無い。
+- N37（stage の I/O）: **一部解決**。§12.10.3 で vertex の入力の register、VertexIndex・InstanceIndex、export の番号、`lda` の即値、fragment の入出力、compute の operand が定まった。残りは N38〜N42。
+- 残る疑問 **8 件: C 0・H 1・M 5・L 2**。
+- **driver の実装**: H の N38 は graphics の vertex shader の compiler（設計の p006）の前に答えが要る。M は推しで仮に進められる。compute・ring・memory・PSO の encoder は待たない。
 
 ## 残る疑問
 
 重さ: C＝その部分の driver が書けない、H＝その部分を書く前に答えが要る、M＝仮の扱いで進められるが答えが要る、L＝文書の整理。
 
-| ID | 重さ | 判定 | 疑問 | 根拠 |
+| ID | 重さ | 疑問 | 根拠 | 推し |
 | --- | --- | --- | --- | --- |
+| N38 | H | vertex の属性の slot と register の対応が、16 個の属性と合わない。(1) 2292 行は Location L ∈ [0, 14]（r[4L..4L+3]）だが、PSO は `attributes[16]`（1225 行）、§8.6 は `maxVertexInputAttributes` 16（1534 行、Vulkan 1.0 の最小も 16）。L = 15 は r60〜r63 になり VertexIndex（r60）・InstanceIndex（r61）・`rq`（63）と重なる。(2) L は PSO の slot の番号 i（`attributes[i]`）か、SPIR-V の Location か（PSO の entry に location の field は無い）。(3) 使わない slot の印（format = 0 = `VK_FORMAT_UNDEFINED` で無効か）。(4) 2300 行「The driver programs hardware state `ATTR_DST[L]`」: PSO に ATTR_DST の field は無く、2382 行は driver が `SET_REG` を出さないとする。driver は何をするのか | 1225、1247〜1251、1534、2292〜2300、2382 行 | (2) L は PSO の slot の番号 i（driver が SPIR-V の Location を slot に詰めて付け直す）。(3) format = 0 の slot は無効で register を書かない。(4) 2300 行を消し、CP が `attributes[i].format` から決めると書く。(1) 16 個を収めるため、slot i の register を「前の有効な slot の成分の数の和」から詰めて置く（成分の数は format の物、足りない成分の (0, 0, 0, 1) は compiler が補う）。合計が r0〜r59 に収まらない pipeline は driver が作成で断る。4L の固定を保つなら、slot 15 を使えないことと `maxVertexInputAttributes` を 15 にすることを §8.6 に書く（ただし Vulkan 1.0 の最小 16 を割る） |
+| N39 | M | VertexIndex・InstanceIndex は「when referenced by the vertex program」に r60・r61 へ届く（2311 行）が、program に header も reflection も無い（12.10.1）ので hardware は参照を知り得ない。`used_regs_vs`（dw13 [7:0]）が 62 未満の時、r60・r61 は書かれるのか（その register は割り当ての外）。r62（2308 行「reserved for compiler spill」）は hardware が書かない compiler の取り決めか | 1222、2248〜2259、2304〜2311 行 | VF は `used_regs_vs` ≥ 62 の時だけ r60・r61 を書き、それ未満では書かない（compiler は VertexIndex か InstanceIndex を使う時 `used_regs_vs` を 62 以上にする）。r62 は hardware が書かない、と書く |
+| N40 | M | PT の word の割り当て: (1) POINT_SIZE は「PT Word 4 (special)」、VARYING(0) も「PT Word 4 + w」= 4 で重なる（2322・2324 行）。(2) `lda` の word 0〜3 は POS.x〜w を読むのか（表は POS を PT word 0〜3 に置く。`include/gsi1_isa.h` 192〜193 行は「words 0-3 read 0」）。(3) 2330 行は noperspective・FragCoord.w のために Position.w を varying にも export するとするが、そうすると Vulkan 1.0 の最小 `maxVertexOutputComponents`・`maxFragmentInputComponents` 64 を満たせない（varying は 64 word で全部） | 2318〜2330、`gsi1_isa.h` 192〜198 行 | `lda` の word 0〜3 が頂点の clip の POS.x〜w を返す（compiler は word 3 で w を得るので varying に写さない）。POINT_SIZE は `lda` で読めない別の場所で、PT word 4 は VARYING(0)。`gsi1_isa.h` の「words 0-3 read 0」を直す |
+| N41 | M | `lda` の頂点の番号 0・1・2（2346 行）と primitive の頂点の対応が無い: (1) b0・b1・b2（r0〜r2）と同じ頂点か。(2) topology ごとに Vulkan の頂点の順（triangle strip の奇数番目など）と provoking vertex（flat の補間は vertex 0 を読めばよいか）。(3) line の vertex 2、point の vertex 1・2 の値 | 2340〜2348、2461〜2466 行 | vertex k は b_k の頂点で、Vulkan の「Primitive Topologies」の順の k 番目、vertex 0 が provoking vertex（first vertex convention）。line の vertex 2 と point の vertex 1・2 は未定義（compiler は読まない） |
+| N42 | M | clip から window への変換が書かれていない: POS は「Clip-space」（2319〜2322 行）だが、clip の体積（Vulkan の −w ≤ x, y ≤ w、0 ≤ z ≤ w）、w での割り算、`CMD_SET_VIEWPORT`（796〜807 行）の写像（y の向き、z = minDepth + z_d × (maxDepth − minDepth)）、depth clamp（PSO flags[4]）の時の z の clip の扱いが無い。また POINT_SIZE を hardware が使うか（2463 行は「points of size 1」、§8.6 に `pointSizeRange` が無い） | 796〜807、1217、2318〜2323、2463 行 | Vulkan の規則どおり（clip の体積・割り算・viewport の式、depth clamp の時は z の clip をせず値を [minDepth, maxDepth] に clamp）と書く。POINT_SIZE は version 1 では無視して大きさ 1（`largePoints` = false、`pointSizeRange` = [1, 1]）と §8.6 に書く。driver は回答まで両方をこの推しで扱う |
+| N43 | M | 色の attachment の数（前の版の外の S02）: export は k = 0〜3（2355 行、§12.12 2453〜2455 行）で `GHCI_EXP_COLOR(k, c)` は k を `& 3` で畳む（k = 4 は attachment 0 になる）。一方 `MAX_MRT` は 1〜8 で「reports 8 on standard Amaterrace GPU」（293・307 行）、§8.6 `maxColorAttachments` 8（1538 行）、render pass は 8 個（1340 行）、blend の動的 state は attachment 0〜7（836 行）。また §12.12 の頭書き「With CAPS[30] (and `DEVICE_CAPS[26]` ROP Path 2 packer)」（2451 行）は、attachment 1〜3 の export が CAP_ROP_PACK を要るとも読める | 293、307、836、1340、1538、2355、2451〜2455 行、ghci_cmd.h の `GHCI_EXP_COLOR` | どちらかに揃える: (a) export を k = 0〜7（0x100 + 16k + c、0x173 まで 12 bit に収まる）にし `& 3` を `& 7` に、(b) MAX_MRT を 4 以下と定め §8.6・293・307 行を 4 に。MRT の export は CAP_ROP_PACK に依らない（ROP_PACK は整数と 32 bit float の path 2 だけ）と書く。driver は回答まで `maxColorAttachments` = min(MAX_MRT, 4) |
+| N44 | L | dual-source の 2 つ目の色: §8.4 1426 行は SRC1 を export 0x101 とするが、0x101 は COLOR0 の G（2355 行）で、§12.10.3（2358 行）と §12.12 は 0x108〜0x10B（`GHCI_EXP_COLOR0_SRC1`） | 1426、2358、2455〜2456 行 | 1426 行を 0x108〜0x10B に直す |
+| N45 | L | 1.0 で無くなった物への古い参照: (1) §12.8 2133 行「section 12.10, kind 14」（scratch）、(2) §12.12 2471〜2474 行「Interface kinds 9-11 (section 12.10) … the command processor's firmware writes the constant-bank words of the kind-specific word」は 12.10.2（interface 表の廃止、資源は descriptor table）と食い違う、(3) 2259 行「`lda` instruction, §12.8」は §12.10.3、(4) 旧 GSI1 の CAPS[24]・[25]・[28]・[29]・[30]（2042、2052〜2054、2078、2380、2407、2440、2451 行）。§12.1（1913〜1917 行）の対応表に CAPS[25]（systolic array）が無い、(5) `include/gsi1_isa.h` は header・interface 表・kind 1〜14 の定義、`lda` の「words 0-3 read 0」、`GSI1_COLOR_ATTACHMENTS 4` を持ったまま | 列挙の行 | (1)(3) 参照先を直す。(2) 段落を消す（storage image・texel buffer は set の buffer descriptor から compiler が番地を計算、§12.10.2）。(4) DEVICE_CAPS・EXT_CAP_FEATURE の名前に置き換え、CAPS[25] の対応（予約、常に 0 など）を §12.1 に足す。(5) gsi1_isa.h を §12.10.3 に合わせる（ghci_cmd.h の `GHCI_VS_REG_*`・`GHCI_EXP_*` と二重の定義にしない） |
 
 ## 解決した N
 
-N01〜N36（今回: N12 は §11.3 1789 行が「strictly binary」で [LOCAL_BASE, LOCAL_BASE + LOCAL_SIZE) の外は全て host、「local DRAM aperture」の文は消え、bus の decode error は Kind 5 `GHCI_FAULT_KIND_AXI_ERROR`（§3.5 419 行と一致）、§7.3 960 行・970 行とも一致。N35 は §7.3 844 行が 0x12 で 717 行・1098 行・1668 行・ghci_cmd.h 34 行と一致。N36 は §12.9 2192 行が `texf` も形式ごとの規則（UNORM・SNORM は正規化した fp32）で返し、通らないのはフィルタ・LOD・深さの比較だけ）。
+- N01〜N36（第 9 版まで）。
+- N37 の解決した部分（§12.10.3）: vertex の属性の register の形（r[4L + c]、足りない成分の (0, 0, 0, 1)）、VertexIndex r60・InstanceIndex r61 の値（`first_vertex + n`、`index + vertex_offset`、`first_instance + i`）、vertex の export（POS 0x000〜0x003、POINT_SIZE 0x004、VARYING 0x010 + w、w = 4L + c、`varying_count` は vec4 の数 0〜16）、`lda` の即値（[8:2] PT word = 4 + w、[1:0] 頂点）と補間の式、fragment の入力 r0〜r9、export 0x100 + 16k + c・DEPTH 0x104・SAMPLE_MASK 0x105・COLOR0_SRC1 0x108〜0x10B、compute の operand（102〜117）。ghci_cmd.h の `GHCI_VS_REG_*`・`GHCI_FS_REG_*`・`GHCI_EXP_*` は本文と一致する（`GHCI_EXP_COLOR` の `& 3` は N43）。
 
 DONE
