@@ -447,6 +447,8 @@ struct ufs_j3 {
 
 /* Share internal object layouts with production-linked lifetime fixtures. */
 struct ufs_mount_state {
+	/* Guards the read-ahead state of the mount's inodes (ra_*); nothing is taken under it. */
+	struct spinlock readahead_lock;
 	/* Each borrowed context is protected by its corresponding I/O lock. */
 	struct ufs_io_owner journal_io;
 	struct ufs_io_owner snapshot_io;
@@ -506,6 +508,14 @@ struct ufs_inode_info {
 	uint64_t blocks;
 	uint32_t generation;
 	uint8_t shortlink[120];
+	/*
+	 * The file's sequential reader, for read-ahead: where its last read
+	 * ended, how far ahead blocks were asked for, and how many reads in a
+	 * row were near the last; under the mount's readahead_lock.
+	 */
+	uint64_t ra_next;
+	uint64_t ra_issued;
+	unsigned ra_sequential;
 };
 
 enum ufs_initial_block_kind { UFS_INITIAL_XATTR, UFS_INITIAL_DIRECTORY };
@@ -778,6 +788,7 @@ static int ufs_file_metadata_extents(struct file *file, file_metadata_extent_cb 
 static int bmap_ensure(struct inode *inode, uint64_t logical, uint64_t *result);
 static int pread_edge(struct inode *inode, uint64_t fragment, size_t within, size_t wanted, uint8_t *buffer, size_t *amount);
 static ssize_t pread_inode(struct inode *inode, void *buffer, size_t length, off_t offset);
+static void read_ahead(struct inode *inode, uint64_t offset, size_t length);
 static void metadata_images_init(struct ufs_metadata_images *images, struct mount *mountp, uint8_t *memory, size_t bytes);
 static int metadata_image_get(struct ufs_metadata_images *images, uint64_t fragment, uint8_t **result);
 static int metadata_image_inode(struct ufs_metadata_images *images, struct inode *prepared);
@@ -6100,6 +6111,126 @@ content_run_bytes(
 }
 
 /*
+ * Follows the sequential reader of a file and asks the buffer cache to read
+ * the file's next blocks ahead of it (buf_prefetch()).
+ *
+ * A read that starts within the window of the last read's end counts as
+ * sequential (the VM's own read-ahead reads a little ahead of its reader,
+ * through here too); from the second such read on, the blocks from where
+ * the last request stopped up to a window past this read are mapped and
+ * asked for in runs of contiguous blocks.  Holes, a mapping error or a
+ * full queue end the request early; the next read goes on from there.
+ */
+static void
+read_ahead(
+	struct inode *inode,
+	uint64_t offset,
+	size_t length)
+{
+	struct ufs_mount_state *ms;
+	struct ufs_inode_info *ui;
+	const struct ufs_super *super;
+	uint64_t window;
+	uint64_t end;
+	uint64_t from;
+	uint64_t to;
+	uint64_t logical;
+	uint64_t last;
+	uint64_t fragment;
+	uint64_t run_first;
+	uint64_t run_blocks;
+	uint64_t reached;
+	uint64_t run_max;
+	uint32_t sectors;
+	uint32_t queued;
+	unsigned long irq;
+	int full;
+
+	/* Reads ahead only where the cache can hold a window. */
+	window = buf_prefetch_window();
+	if (window == 0 || length == 0)
+		return;
+	ms = state(inode->i_mount);
+	ui = info(inode);
+	super = &ms->super;
+	end = offset + length;
+
+	/* Follows the stream and plans the request. */
+	from = 0;
+	to = 0;
+	irq = spin_lock_irqsave(&ms->readahead_lock);
+
+	if (ui->ra_sequential != 0 && offset + window >= ui->ra_next && offset <= ui->ra_next + window) {
+		if (ui->ra_sequential < 2U)
+			ui->ra_sequential++;
+	} else {
+		ui->ra_sequential = 1;
+		ui->ra_issued = end;
+	}
+	if (end > ui->ra_next || ui->ra_sequential == 1U)
+		ui->ra_next = end;
+	if (ui->ra_sequential >= 2U) {
+		from = ui->ra_issued > end ? ui->ra_issued : end;
+		to = end + window;
+		if (to > (uint64_t)inode->i_size)
+			to = (uint64_t)inode->i_size;
+		/* Asks again only once a run's worth has been read since. */
+		if (to <= from || to - from < window / 4U)
+			to = from;
+		else
+			ui->ra_issued = to;
+	}
+
+	spin_unlock_irqrestore(&ms->readahead_lock, irq);
+
+	if (to <= from)
+		return;
+
+	/* Maps the whole blocks of [from, to) and asks for each contiguous run. */
+	logical = (from + super->bsize - 1U) / super->bsize;
+	last = (to + super->bsize - 1U) / super->bsize;
+	run_max = KERN_IO_BATCH_MAX * 4U / super->bsize;
+	run_first = 0;
+	run_blocks = 0;
+	reached = logical;
+	full = 0;
+	for (; logical < last && !full; logical++) {
+		if (bmap(inode, logical, &fragment) != 0 || fragment == 0)
+			break;
+		if (run_blocks != 0 && fragment == run_first + run_blocks * super->frag && run_blocks < run_max) {
+			run_blocks++;
+			continue;
+		}
+		if (run_blocks != 0) {
+			sectors = (uint32_t)(run_blocks * super->bsize / UFS_SECTOR_SIZE);
+			queued = buf_prefetch(inode->i_mount->m_disk, run_first << super->fsbtodb, sectors);
+			if (queued != sectors)
+				full = 1;
+			else
+				reached = logical;
+		}
+		run_first = fragment;
+		run_blocks = 1;
+	}
+	if (!full && run_blocks != 0) {
+		sectors = (uint32_t)(run_blocks * super->bsize / UFS_SECTOR_SIZE);
+		queued = buf_prefetch(inode->i_mount->m_disk, run_first << super->fsbtodb, sectors);
+		if (queued == sectors)
+			reached = logical;
+		else
+			full = 1;
+	}
+
+	/* What was not asked for is asked for by a later read. */
+	if (reached * super->bsize < to) {
+		irq = spin_lock_irqsave(&ms->readahead_lock);
+		if (ui->ra_issued == to)
+			ui->ra_issued = reached * super->bsize;
+		spin_unlock_irqrestore(&ms->readahead_lock, irq);
+	}
+}
+
+/*
  * Reads full mapped runs directly and retains block scratch for edges and
  * holes.
  */
@@ -6135,6 +6266,10 @@ pread_inode(
 	/* Clamps the run to what is left of the file. */
 	if ((uint64_t)length > (uint64_t)inode->i_size - (uint64_t)offset)
 		length = (size_t)((uint64_t)inode->i_size - (uint64_t)offset);
+
+	/* Asks for the blocks a sequential reader of a file reads next. */
+	if (inode->i_type == INODE_REG)
+		read_ahead(inode, (uint64_t)offset, length);
 
 	/*
 	 * Uses caller storage for complete blocks in each validated mapped run.
@@ -17542,6 +17677,7 @@ ufs_mount_steps(
 
 	(void)mutex_init(&ms->namespace_lock, LOCK_RANK_NAMESPACE, "ufs namespace");
 	spin_init(&ms->namespace_guard, LOCK_RANK_NAMESPACE, "ufs namespace readers");
+	spin_init(&ms->readahead_lock, LOCK_RANK_DISK, "ufs read-ahead");
 	ms->namespace_readers = 0;
 	waitq_init(&ms->namespace_drained, "ufs namespace drained");
 	(void)mutex_init(&ms->load_lock, LOCK_RANK_INODE_IO, "ufs inode load");

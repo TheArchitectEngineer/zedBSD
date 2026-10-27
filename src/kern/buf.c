@@ -99,7 +99,9 @@
  * Read-ahead of raw block devices.
  *
  * A sequential reader of an open block device gets up to
- * BUF_READAHEAD_BYTES past its last read (an eighth of the cache at most)
+ * BUF_READAHEAD_BYTES past its last read (an eighth of the cache at most),
+ * and a file system may ask for BUF_FS_READAHEAD_BYTES of its own blocks
+ * past its reader (buf_prefetch()),
  * read by BUF_READAHEAD_WORKERS threads, one run of BUF_READAHEAD_RUN_LINES lines
  * a job, so that the device reads the next runs while the reader copies.
  * BUF_READAHEAD_QUEUE jobs wait at most, BUF_READAHEAD_STREAMS readers are
@@ -107,8 +109,9 @@
  * jobs.
  */
 #define BUF_READAHEAD_BYTES	(2U * 1024U * 1024U)
+#define BUF_FS_READAHEAD_BYTES	(4U * 1024U * 1024U)
 #define BUF_READAHEAD_WORKERS	4U
-#define BUF_READAHEAD_QUEUE	16U
+#define BUF_READAHEAD_QUEUE	32U
 #define BUF_READAHEAD_STREAMS	8U
 #define BUF_READAHEAD_LOG_EVERY	1024U
 #define BUF_READAHEAD_RUN_LINES	64U
@@ -1995,6 +1998,110 @@ buf_readahead_observe(
 		disk_release(disk);
 	stat_add(&readahead_queued, queued);
 	stat_add(&readahead_full, job_count - queued);
+}
+
+/*
+ * How far ahead of its reader a file system should read: BUF_FS_READAHEAD_BYTES,
+ * an eighth of the cache at most, in whole runs; zero when the cache is too
+ * small for read-ahead.
+ */
+uint64_t
+buf_prefetch_window(
+	void)
+{
+	uint64_t window;
+
+	/* Takes the smaller bound, in whole runs. */
+	window = BUF_FS_READAHEAD_BYTES;
+	if (window > cache_max_bytes / 8U)
+		window = cache_max_bytes / 8U;
+	window -= window % BUF_READAHEAD_RUN_BYTES;
+
+	/* Succeeded: the window. */
+	return window;
+}
+
+/*
+ * Reads ahead blocks a file system knows hold data it is about to read: up
+ * to count blocks of disk from block, as read-ahead jobs of whole runs.
+ * The blocks are the file system's own, read through the cache as its
+ * reads are, so the reader-private check of a raw device does not apply;
+ * a stopped device, a full queue or a disk without page lists reads less.
+ * Reports how many blocks from block were queued.
+ */
+uint32_t
+buf_prefetch(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count)
+{
+	struct buf_readahead_job *job;
+	struct disk *leaf;
+	struct disk *resolved;
+	uint64_t mapped;
+	uint64_t unit;
+	uint64_t position;
+	uint64_t end;
+	uint64_t next;
+	uint64_t now;
+	unsigned long irq;
+	int error;
+	int fits;
+
+	/* Reads ahead only of a page-or-smaller block size, through a driver that moves pages. */
+	if (!cache_initialized || disk == NULL || count == 0 ||
+	    disk->d_block_size == 0 ||
+	    disk->d_block_size > KERN_PAGE_SIZE ||
+	    KERN_PAGE_SIZE % disk->d_block_size != 0 ||
+	    !leaf_takes_pages(disk))
+		return 0;
+	error = disk_resolve_range(disk, block, count, &resolved, &mapped);
+	if (error != 0 || readahead_start() != 0)
+		return 0;
+	leaf = readahead_leaf(disk);
+	unit = BUF_READAHEAD_RUN_BYTES / disk->d_block_size;
+
+	/* Queues one job a run of the device, until the queue is full. */
+	now = readahead_now_ns();
+	position = block;
+	end = block + count;
+	while (position < end) {
+		next = position + (unit - (mapped + (position - block)) % unit);
+		if (next > end)
+			next = end;
+
+		/* Each job holds the disk, taken outside the read-ahead lock. */
+		disk_ref(disk);
+
+		irq = spin_lock_irqsave(&readahead_lock);
+
+		fits = readahead_queue_count < BUF_READAHEAD_QUEUE && leaf->d_readahead_stops == 0;
+		if (fits) {
+			job = &readahead_queue[(readahead_queue_head + readahead_queue_count) % BUF_READAHEAD_QUEUE];
+			job->owner = NULL;
+			job->disk = disk;
+			job->leaf = leaf;
+			job->block = position;
+			job->count = (uint32_t)(next - position);
+			job->generation = 0;
+			job->queued_ns = now;
+			readahead_queue_count++;
+			waitq_wake_all(&readahead_work);
+		}
+
+		spin_unlock_irqrestore(&readahead_lock, irq);
+
+		if (!fits) {
+			disk_release(disk);
+			stat_add(&readahead_full, 1);
+			break;
+		}
+		stat_add(&readahead_queued, 1);
+		position = next;
+	}
+
+	/* Succeeded: the blocks queued. */
+	return (uint32_t)(position - block);
 }
 
 /*
@@ -5105,8 +5212,10 @@ readahead_worker(
 
 		/* The job runs only while its stream and its device still want it. */
 		current = 0;
-		entry = readahead_current(job.owner, job.generation);
-		if (entry != NULL && job.leaf->d_readahead_stops == 0)
+		entry = NULL;
+		if (job.owner != NULL)
+			entry = readahead_current(job.owner, job.generation);
+		if ((job.owner == NULL || entry != NULL) && job.leaf->d_readahead_stops == 0)
 			current = 1;
 		worker->running = job.leaf;
 
@@ -5157,6 +5266,9 @@ readahead_run(
 	uint64_t prepare_ns;
 	uint64_t transfer_ns;
 	uint32_t transferred;
+	uint32_t step;
+	uint64_t done;
+	uint64_t line_blocks;
 	unsigned long irq;
 	int error;
 
@@ -5167,13 +5279,24 @@ readahead_run(
 		return;
 	}
 
-	/* Reads the missing lines of the run straight into their pages. */
+	/*
+	 * Reads the missing lines of the run straight into their pages.  A
+	 * file system's job steps over lines already there (its reader's own
+	 * reads may have made the first ones) to the first missing one.
+	 */
 	transferred = 0;
 	error = disk_resolve_range(job->disk, job->block, job->count, &leaf, &mapped);
-	if (error == 0) {
-		error = transfer_run_lines(leaf, mapped, job->count, NULL, 0, &transferred, NULL,
+	done = 0;
+	line_blocks = KERN_PAGE_SIZE / job->disk->d_block_size;
+	while (error == 0 && done < job->count) {
+		step = 0;
+		error = transfer_run_lines(leaf, mapped + done, job->count - done, NULL, 0, &step, NULL,
 		    worker->scratch->lines, worker->scratch->generations, worker->scratch->pages,
 		    BUF_RUN_PAGE_LINES, 1);
+		transferred += step;
+		if (job->owner != NULL)
+			break;
+		done += step != 0 ? step : line_blocks - (mapped + done) % line_blocks;
 	}
 	disk_cache_release(token);
 
