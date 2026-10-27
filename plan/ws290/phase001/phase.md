@@ -3,7 +3,7 @@
 # ws290-p001 設計: GHCI 1.0（ghci.md 89529de）の driver の書き直し
 
 - 親: [WS290](../ws.md)。
-- 状態: in-progress（2026-10-28 05:35 P3 q1638-i01: design 版 4.2。U の回答と design-reviewer（Opus 5.5）の H 6・M 18・L 10 を反映。仕様の不備 14 件を ghci-review 第 13 版に用意し、ユーザーの判断待ち（仕様に不備が無い時だけ Phase を確定する条件）。再レビュー中）
+- 状態: in-progress（2026-10-28 05:14 P3 q1638-i01: design 版 4.2。U の回答と design-reviewer（Opus 5.5）の H 6・M 18・L 10 を反映。仕様の不備 14 件を ghci-review 第 13 版に用意し、ユーザーの判断待ち（仕様に不備が無い時だけ Phase を確定する条件）。再レビュー中）
 - 由来: WS290 の出典と決定（ws.md）。
 
 ## 範囲（code は書かない）
