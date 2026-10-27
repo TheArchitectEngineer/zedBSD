@@ -781,6 +781,7 @@ vm_object_cache_read_missing(
 	unsigned long irq;
 	int error;
 	int publish;
+	int through;
 
 	/* Leaves already resident pages to the existing coherent fault path. */
 	*handled = 0;
@@ -812,8 +813,13 @@ vm_object_cache_read_missing(
 
 	/*
 	 * Bounds the run by requested bytes, EOF and the first resident page.
+	 * A long read goes straight to the caller's buffer, up to
+	 * VM_OBJECT_READ_THROUGH_MAX bytes a run, without making the pages
+	 * resident: they would be copied twice more and then be no more use
+	 * than the device cache's copy of the blocks.
 	 */
-	wanted = KERN_IO_BATCH_MAX - in_page;
+	through = length >= VM_OBJECT_READ_THROUGH_MIN;
+	wanted = (through ? VM_OBJECT_READ_THROUGH_MAX : KERN_IO_BATCH_MAX) - in_page;
 
 	if (wanted > length)
 		wanted = length;
@@ -851,7 +857,8 @@ vm_object_cache_read_missing(
 	 * Borrows only when both halves of the pool are present, because a
 	 * buffer that cannot be given back must not be taken.
 	 */
-	if (io_pool_borrow != NULL &&
+	if (!through &&
+	    io_pool_borrow != NULL &&
 	    io_pool_release != NULL)
 		scratch = io_pool_borrow(transfer, &capacity);
 
