@@ -1,0 +1,45 @@
+#!/bin/sh
+# ws305: the "Debian VFIO" grub entry of the desktop host (installed as /etc/grub.d/41_zedbsd_vfio by vfio.sh
+# setup-grub, made into grub.cfg by update-grub).  The default entry is not changed; this one is chosen for one boot
+# with "grub-reboot zedbsd-vfio".  It boots the newest kernel with the default entry's command line and: amdgpu and
+# nouveau not loaded (the GPU waits for vfio-pci, plan/ws305/tests/vfio-host.py bind), the firmware's framebuffer
+# not taken by efifb or simpledrm (initcall_blacklist=sysfb_init, so vfio-pci gets the GPU's BARs), the IOMMU in
+# pass-through for the host (iommu=pt; intel_iommu=on on an Intel CPU), and a word that vfio.sh mode reads.
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+set -e
+
+prefix="/usr"
+exec_prefix="/usr"
+datarootdir="/usr/share"
+. "$pkgdatadir/grub-mkconfig_lib"
+
+kernel=$(ls /boot/vmlinuz-* 2>/dev/null | grep -v '\.old$' | version_sort -r | head -n 1)
+[ -n "$kernel" ] || exit 0
+version=${kernel#/boot/vmlinuz-}
+initrd=/boot/initrd.img-$version
+[ -f "$initrd" ] || exit 0
+
+iommu="iommu=pt"
+if grep -q GenuineIntel /proc/cpuinfo; then
+	iommu="intel_iommu=on $iommu"
+fi
+extra="$iommu modprobe.blacklist=amdgpu,nouveau initcall_blacklist=sysfb_init zedbsd.vfio=1"
+
+if [ -n "$GRUB_DEVICE_UUID" ]; then
+	root="UUID=$GRUB_DEVICE_UUID"
+else
+	root=$GRUB_DEVICE
+fi
+
+echo "Found zedBSD VFIO entry: $version" >&2
+cat << EOF
+menuentry 'Debian VFIO (zedBSD passthrough, $version)' --id zedbsd-vfio {
+	load_video
+	insmod gzio
+EOF
+prepare_grub_to_access_device "$GRUB_DEVICE_BOOT" | sed -e 's/^/\t/'
+cat << EOF
+	linux	$(make_system_path_relative_to_its_root "$kernel") root=$root ro $GRUB_CMDLINE_LINUX $GRUB_CMDLINE_LINUX_DEFAULT $extra
+	initrd	$(make_system_path_relative_to_its_root "$initrd")
+}
+EOF
