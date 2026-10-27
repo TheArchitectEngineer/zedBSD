@@ -1,4 +1,4 @@
-# GHCI レビュー 第 16 版（ghci.md d9252e4 に対する、回答 第 15.0 版の確かめ。残る疑問なし、2026-10-28 06:55）
+# GHCI レビュー 第 16 版（ghci.md d9252e4 に対する、回答 第 15.0 版の確かめ。残る疑問なし、2026-10-28 06:35）
 
 - 対象: `git -C /home/awe/amaterrace-gpu show d9252e4:docs/ghci.md`（2836 行）と同じ commit の `include/ghci_regs.h`（`include/ghci_cmd.h`・`include/gsi1_isa.h` は 20bf888 から変わらず）。差は `git diff 20bf888 d9252e4 -- docs/ghci.md include/` で読んだ。main の先頭 808dc6b は回答の file だけの差。
 - 読んだ回答: `docs/ghci-review-reply.md`（808dc6b）、1 行目「# GHCI Review Reply - Version 15.0 (2026-10-28) - Commit: d9252e4 (Resolving N73〜N77 and Final Signoff Readiness)」、63 行、md5 e4924ba040e74c9a69ffb9882e83da0b、末尾 DONE。

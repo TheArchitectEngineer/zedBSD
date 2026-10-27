@@ -4,17 +4,20 @@
 # and the reference test of the layouts against amaterrace-gpu's include/ghci_cmd.h
 # (ghci-ref-host-test.c + ghci-ref-layout.c). The reference header is written to a
 # new directory for the run only; without amaterrace-gpu the reference test FAILS.
+# Then the self-test of the GPU model and the kernel stubs (ghci-model-host-test.c with
+# ghci-model.c and ghci-stubs.c); the stubs' registration checks are gpu_ops_validate,
+# taken out of src/drivers/gpu/gpu.c for the run so that they stay the same as gpu.c's.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws290/tests/ghci-host-test.sh   (from anywhere)
-# Environment: GHCI_SPEC_REPO (default ~/amaterrace-gpu), GHCI_SPEC_REV (default cb937e6).
+# Environment: GHCI_SPEC_REPO (default ~/amaterrace-gpu), GHCI_SPEC_REV (default d9252e4).
 # Needs cc and git. Output goes to a new directory below build/tmp; nothing is removed.
 set -eu
 repo=$(cd "$(dirname "$0")/../../.." && pwd)
 tests="$repo/plan/ws290/tests"
 ghci="$repo/src/drivers/gpu/ghci"
 spec_repo=${GHCI_SPEC_REPO:-$HOME/amaterrace-gpu}
-spec_rev=${GHCI_SPEC_REV:-cb937e6}
+spec_rev=${GHCI_SPEC_REV:-d9252e4}
 mkdir -p "$repo/build/tmp"
 out=$(mktemp -d "$repo/build/tmp/ghci290-host.XXXXXX")
 export TMPDIR="$out"
@@ -32,6 +35,22 @@ if git -C "$spec_repo" show "$spec_rev:include/ghci_cmd.h" > "$out/ref/ghci_cmd.
 	timeout 60 "$out/ghci-ref-host-test" || status=1
 else
 	echo "FAIL ghci-ref-host-test: no $spec_rev:include/ghci_cmd.h in $spec_repo"
+	status=1
+fi
+
+# The registration checks of gpu.c, as a function the stubs call.
+validate="$out/gpu-ops-validate.c"
+{
+	printf '#include <stddef.h>\n#include "drivers/gpu/gpu.h"\n#include "drivers/gpu/gpu-scanout.h"\n#include "uapi/gpu-allocation.h"\n#include "uapi/gpu-fence.h"\n#include "uapi/gpu-job.h"\n#include "drivers/gpu/gpu-fence.h"\n#include "uapi/errno.h"\n#include "ghci-stubs.h"\n\n'
+	awk 'found == 0 && /^gpu_ops_validate\($/ { found = 1; print "int"; print "stub_gpu_ops_validate("; next }
+	     found == 1 { print; if ($0 ~ /^}$/) exit }' "$repo/src/drivers/gpu/gpu.c"
+} > "$validate"
+if grep -q '^stub_gpu_ops_validate($' "$validate"; then
+	cc $flags -I"$tests" -o "$out/ghci-model-host-test" "$tests/ghci-model-host-test.c" "$tests/ghci-model.c" \
+		"$tests/ghci-stubs.c" "$validate" "$ghci/caps.c" "$ghci/cmd.c"
+	timeout 120 "$out/ghci-model-host-test" || status=1
+else
+	echo "FAIL ghci-model-host-test: gpu_ops_validate not found in src/drivers/gpu/gpu.c"
 	status=1
 fi
 

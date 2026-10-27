@@ -1,9 +1,9 @@
 <!-- awesome-plan project=zedbsd record=ws290 -->
 
-# WS290 zedBSD の GHCI の driver を GHCI 1.0（ghci.md cb937e6）に書き直す
+# WS290 zedBSD の GHCI の driver を GHCI 1.0（ghci.md d9252e4）に書き直す
 
 - Master: [plan/master.md](../master.md)（2026-10-26 作成）。Primary Milestone: MG006。Related: MG008。前身: [WS288](../ws288/ws.md)（closed、zedBSD の driver は ws288-p006・p010・p018・p019・p035・p040・p043・p044 などで作った）。
-- Status: incomplete（2026-10-28 P3（q1638-i01）: p001 cleared、design 版 4.5（ghci.md cb937e6）の §18 で Phase p002〜p015 を確定。p002 から実装中。仕様担当との第 14 版のやり取りは並行。下の「2026-10-28 Phase の確定と実装」）
+- Status: incomplete（2026-10-28 P3（q1641-i01）: p001・p002・p003 cleared。仕様担当とのレビューは d9252e4（回答 第 16.0 版）で N01〜N77 が全部解決して閉じた。design 版 4.7。p004 から実装。下の「2026-10-28 仕様の Signoff と p003」）
 - 出典: 2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。amaterrace-gpuのディレクトリは読み取り専用とします。amaterrace-gpuのplan/は読んでもかまいません。am-ws001のような書き方をしてくれれば私は理解できます。」
 - 決定（2026-10-26、Q1 の問いへのユーザーの回答）:
   - （G01 の回答で置き換え: 仕様は単一の GHCI 1.0。下の行は当時の記録）対象の版は **GHCI 2.0 だけ**（ghci.md の TO-BE: 19 の register、in-memory の PSO・descriptor、`CMD_*` の構造化 command、CP の自律 MMU）。1.1（§3.1.1 の 128 KiB の register、class 2 の gpu-op の中継、STATE、KICK、APERTURE）は捨てる。2.0 のハードウェアは am-ws001-p007 で作られる予定。
@@ -50,7 +50,7 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計: design 版 4.5（ghci.md cb937e6、U5・U8〜U11 の反映、design-reviewer（Opus 5.5）3 回の反映、§18 の Phase の確定）。code は書かない | — | cleared（2026-10-28 P3 q1638-i01。仕様の残りの疑問 N62〜N72 は ghci-review 第 14 版でやり取り中、driver は design §19 の仮の扱いで進める（ユーザー 2026-10-28「はい、P3は仮の扱いで実装を行ってよいです。」）） |
 | [p002](phase002/phase.md) | 語の層: `ghci-regs.h`・`ghci-cmd.h`・`cmd.c`（§4.4 の全部）・`caps.c`（decode と CP_HEAP の勘定）・ring の計画と fence64・EXTCAP の走査（`check.c` に新しい名前で足す）。build に入る今の file は変えない（新しい file は build に入れない）。`ghci-ref-host-test.c`（§14、R23）（受け入れ: words と ref の試験 PASS、新しい file を amd64 と riscv64 の kernel の flag で compile して warning 0（R23）、`CONFIG_DRIVER_PCI_GHCI=y` の amd64 が今のまま build、14 LW） | p001 | cleared（2026-10-28、host 試験 141 + 56 PASS、amd64・riscv64 の compile warning 0） |
-| [p003](phase003/phase.md) | model・stub・script（§14）。WS288 の 1.1 の試験の削除の list を Q1 へ（受け入れ: model の自己試験 PASS、16 LW） | p002 | planned |
+| [p003](phase003/phase.md) | model・stub・script（§14）。WS288 の 1.1 の試験の削除の list を Q1 へ（受け入れ: model の自己試験 PASS、16 LW） | p002 | cleared |
 | [p004](phase004/phase.md) | core: pci-attach（match・Bus Master の順）、identify・caps・CP_HEAP（flat は 16 KiB）・ring・fence・IRQ・poll・watchdog、fault（FAULTED に依らず reset、犯人の記録、U5）・reset・LOST、detach。1.1 の file（firmware・native・state・blit・frame・packets・hcr）と vk/・display・compiler を build から外し、呼ぶ所を消す。capability は p004 で callback を全部実装した物だけを出す（`gpu.h` の「Optional capabilities require their complete callback pair」。resource・blob・map は p005 で足す。R17）（受け入れ: amd64・riscv64 の build の warning 0、p004 の場面 PASS、build に入る file に 1.1 の名前が無い（grep）、22 LW） | p003 | planned |
 | [p005](phase005/phase.md) | session・VM（chunk・勘定・map・unmap・close・再生、flat の恒等の VA）、memory（host、4 GiB の上限）、resource・blob・map・read・write、share・import。local は ENOTSUP。+ `SHARE | ALLOCATION_SHARE`（受け入れ: p005 の場面 PASS、build の warning 0、26 LW） | p004 | planned |
 | [p006](phase006/phase.md) | compiler: header・interface 表を捨て §12 の ABI（`gsi1-abi.h`）、資源の表、options、`compiler/gsi1_isa.h` を bea1ef9 の値（`GSI1_COLOR_ATTACHMENTS` 8、`GSI1_EXP_COLOR0_SRC1`、`GSI1_VS_REG_*`、lda の word 0〜3）に直す（R18）、FS の key に primitive の種類（R08）、compiler を build に戻す、gsi1 の試験と tools を移す（受け入れ: gsi1 の試験 PASS、build の warning 0。graphics の I/O は cf8be08 §12.10.3 で、22 LW） | p002・p004 | planned |
@@ -141,3 +141,9 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - 次: (1) reply 14.0 が来ていれば cb937e6 からの差を読み、第 15 版を書いて design §19 と phase002 の仮の扱いを追従。(2) p003（host の model・stub・script、design §14・§18、16 LW）: `plan/ws290/tests/ghci-model.c`・`.h`（register・ring・FENCE 64・session・VM（PROT 0/1/flat）・CP_HEAP・reset・HALT・fault の注入・IRQ・Bus Master）、`ghci-stubs.c`（今の plan/ws288/tests/ghci-driver-host-test.c の stub を移す、lock の順と「門で lock を持ったまま待つ」「device.lock・display.lock を持って ticket を待つ」を FAIL）、model の自己試験。WS288 の 1.1 の試験の削除の list を Q1 へ。
 - 仮の扱いの一覧: design §19、phase002/phase.md。
 - 2026-10-28 07:0x 仕様担当の回答 16.0（Signoff、ghci.md **d9252e4**、N01〜N77 全件解決）。双方が合意し、P3 は見張りを止めた（取り決めどおりの一時停止、指示があれば再開）。driver の正本は ghci.md d9252e4。
+
+## 2026-10-28 仕様の Signoff と p003（q1641、P3）
+
+- 仕様担当とのやり取り: 回答 14.0（20bf888）→ 第 15 版（N73〜N77）→ 回答 15.0（d9252e4、N73〜N77 全部解決）→ 第 16 版（残る疑問なし）→ 回答 16.0（Signoff、「GHCI 1.0 正本仕様策定およびドライバ担当とのプロトコル相互レビューを完了・クローズ」）。driver の正本は **ghci.md d9252e4**。見張りは止めた。既読の reply の 1 行目: 「# GHCI Review Reply - Version 16.0 (2026-10-28) - Commit: d9252e4 (Signoff Achieved: N01〜N77 Fully Resolved & Review Concluded)」。main の checkout の ghci-review.md は第 16 版（commit は Q1）。
+- design 版 4.6（20bf888 に追従）・4.7（d9252e4、§19 は「仕様の残りは無い」）。`ghci-regs.h` の kind 6・10 の名前、`GHCI_IRQ_HALTED`・`GHCI_FAULT_WRITE`。
+- p003 cleared（model・stub・自己試験、[phase003](phase003/phase.md)）。WS288 の 1.1 の試験の削除の list を Q1 に送った。
