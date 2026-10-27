@@ -434,6 +434,19 @@ ls build/wsNNN/pNNN-hw/shots/*-live.png
 - 証拠の要約は `evidence/NAME.md`（git の中）、kernel の log と PNG は `build/hw5330/logs/`（git の外、`LOGS` で変えられる）。既定の基準は `evidence/t1229i21-main-merged-20261017.md`（2026-10-17 の WS245 の merge の後の main）。
 - `5330-bootcycle.sh`（段ごとの 1 回の起動、`~/ws245` の kernel を使う）、`5330-ws253-early.sh`・`5330-ws253-collect.sh`（WS253 の起動時間の読み取り）。
 
+## NVMe からの起動の手順のまとめ（2026-10-28、ユーザー「5330をUSBでなくNVMe起動にした手順について…メモを残しておいてほしいです。」）
+
+2026-10-27 に USB のメモリでの起動から、5330 の内蔵の NVMe での起動に切り替えた（USB のメモリは外した。ユーザー「以降は特別な理由がない限り使いません」）。詳しくは下の各節。
+
+1. **VMD の driver**: 5330 の NVMe は Intel VMD（8086:467f）の後ろにあり、zedBSD から見えなかった。WS298 で VMD の driver（`src/drivers/pci/pci-vmd.c`）を書いて `/dev/nvme0n1` が見えるようにした。NVMe から起動する kernel にはこの driver が要る。
+2. **区画を作る**（下の「NVMe の zedBSD の区画」）: SystemRescue の live USB（`5330-live-usb.sh`）で起動し、Debian の ext4（p2）を `resize2fs` で 16 GiB 縮め、空いた所に p4 `zedBSD-nvme-boot`（FAT32 256 MiB）・p5 `zedBSD-nvme-root`（UFS 15104 MiB）・p6 `zedBSD-nvme-swap`（1 GiB）を作った。p1・p3 と Debian の UUID は変えていない。PARTLABEL は USB の image の `zedBSD-root` などと重ならない名前にした（重なると root の解決が EEXIST で失敗する）。
+3. **zedBSD を書く**: build の host から `5330-run.sh --nvme-image IMG NAME`（kernel だけなら `--nvme-kernel VMUNIX`）。5330 の Debian の上で `5330-nvme-write.sh` が走り、root の UFS を p5 に書いて `ufs-grow.py` で p5 いっぱいに広げ、swap を p6、vmunix と `zedbsd.cfg`（`rootpart=PARTLABEL=zedBSD-nvme-root`・`swap0=PARTLABEL=zedBSD-nvme-swap`）を p4、loader を Debian の ESP の `\EFI\zedbsd\BOOTX64.EFI` に置く。UEFI の entry `zedBSD NVMe` も作る（BootOrder は変えない）。
+4. **起動の切り替え**（下の「Debian と zedBSD の切り替え」）: 既定は Debian のまま。
+   - 手で選ぶ: GRUB の menu の「zedBSD (NVMe)」（`/etc/grub.d/42_zedbsd`、原本 `debian/42_zedbsd`）。
+   - 遠隔で 1 回だけ: Debian で `~/boot-zedbsd.sh`（UEFI の BootNext を立てて reboot、原本 `debian/boot-zedbsd.sh`）。次の起動は Debian に戻る。
+   - zedBSD から Debian へは `sudo reboot`。
+5. **止まった時の備え**: 遠隔の電源が無いので、`/etc/default/grub` に `GRUB_RECORDFAIL_TIMEOUT=5` を入れた（前の起動が途中で止まっても GRUB の menu で待ち続けず 5 秒で Debian に進む。[plan/tools.md](../../tools.md) の 5330 の行）。Debian が起動しない時はユーザーが F12 で SystemRescue の USB を選ぶ。
+
 ## NVMe の zedBSD の区画（2026-10-27、q1612）
 
 ユーザーの指示（2026-10-27）「5330で、Linuxのext4をリサイズして領域を空けて、nvmeにパーティションを作って、zedBSDを起動できるようにしたいです。」（大きさは 16 GB）。
