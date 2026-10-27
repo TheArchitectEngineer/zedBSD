@@ -590,6 +590,11 @@ scalar_alu(
 			value = ~a;
 			wave->scc = value != 0U;
 			break;
+		case 0x0fU:
+			/* The count of the bits set. */
+			value = (uint32_t)__builtin_popcount(a);
+			wave->scc = value != 0U;
+			break;
 		case 0x09U:
 			/* Every quad of lanes with any lane set becomes whole. */
 			value = 0U;
@@ -683,6 +688,10 @@ scalar_alu(
 			break;
 		case 0x02U:
 			value = a + b;
+			break;
+		case 0x07U:
+			value = a < b ? a : b;
+			wave->scc = a < b;
 			break;
 		case 0x0aU:
 			value = wave->scc ? a : b;
@@ -1732,7 +1741,7 @@ machine_run_graphics(
 	if (pixel == 0 && graphics->primitive_shader != 0U) {
 		graphics->alloc_requests = 0U;
 		wave.s[2] = (graphics->subgroup_vertices << 12) | (graphics->subgroup_primitives << 22);
-		wave.s[3] = graphics->lanes | (graphics->primitives << 8) | (graphics->wave_number << 24);
+		wave.s[3] = graphics->lanes | (graphics->primitives << 8) | (graphics->wave_number << 24) | (graphics->wave_count << 28);
 		for (index = 0U; index < 9U; index++)
 			wave.s[8U + index] = graphics->user[index];
 		wave.s[CODE_EXEC] = 0xffffffffU;

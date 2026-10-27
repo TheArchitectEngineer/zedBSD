@@ -1,13 +1,26 @@
 <!-- awesome-plan project=zedbsd record=ws291-p006 -->
 
-# ws291-p006 RDNA の NGG B: primitive の culling（w の符号・画面外・裏面・小さい三角形）
+# ws291-p006 RDNA の NGG B+C: primitive の culling と頂点の詰め直し（Mesa の形）
 
 - 親: [WS291](../ws.md)。
 - 状態: in-progress（2026-10-27 13:55 P2、q1611-i01）。
 - 出典: 2026-10-27 04:44 ユーザー（Q1 の問い「NGG の A〜C をどう進めますか？」へのクリック）「A〜C を今進める（推し）」。
 - 依存: p005（cleared 2026-10-27 13:52 Q1）。
+- 範囲の変更（2026-10-27 14:50 Q1 の判断、承認済みの A〜C の範囲の中の技術の判断）: 「仮説 A を採り、culling は p007 の compaction と組にして
+  Mesa の形（ac_nir_lower_ngg.c の culling + compaction、GS_ALLOC_REQ の数も生き残りに合わせる）で入れる。p006 は範囲を変えて p007 と一緒に進め」
+  「Fable の助言は今回は取りません」。→ compaction 無しの culling は GFX10 で止まる（仮説 A、証拠は下の記録）ので p007 と統合した。下の「範囲」「設計」の
+  1 と 5 は統合前の物で、新しい範囲は「範囲（統合後）」。
 
-## 範囲
+## 範囲（統合後、2026-10-27 14:50）
+
+1. Mesa 25.0.7 の ac_nir_lower_ngg.c（add_deferred_attribute_culling、compact_vertices_after_culling）に忠実に: 位置だけを計算する前半 → LDS → 判定 →
+   生き残った primitive が使う頂点だけを wave をまたいで詰め直す（prefix の数え方、exporter の番号）→ GS_ALLOC_REQ の数を生き残りに合わせる
+   （0 なら GFX10 の fully culled の回避）→ 生き残った頂点だけが属性を含む後半を走らせて export。
+2. host の模型に、参照されない頂点の export（export の領域が返らない形）を検出できるなら規則を足す。
+3. 受け入れ: mview 1 体 pixel 差 0、6500 体 8 pixel から悪化しない、desktop、`measure.sh hang` の回復、scene-6500 の GPU の ms（目標 約 20 ms）。
+   実機は 1 回にまとめる。
+
+## 範囲（統合前）
 
 1. primitive shader に culling を足す: 頂点の lane が位置（x/w・y/w・w）を LDS に置き、subgroup の s_barrier の後、primitive の lane が 3 頂点を読んで
    判定し、落とす primitive は export の語の null の bit（bit 31）を立てる。頂点の詰め直し（compaction）と属性の後回しは p007。
@@ -92,3 +105,32 @@
   （Mesa の形: 位置だけの前半 → LDS → 判定 → 生き残った頂点の詰め直しと GS_ALLOC_REQ の数の更新 → 属性の後半）。p006 と p007 を 1 つにまとめるか、
   p006 を「Mesa の形の culling + compaction」に範囲を変えるかは Q1・ユーザーの判断。
 - commit 済みの物（b73115761・bec5dc26f・9b7a462c3）は `amdrdna.vk.ngg=2` の時だけ効き、既定（legacy）と ngg=1 には影響しない。
+
+### 統合後の実装と実機（2026-10-27 14:52〜15:08）
+
+- 実装 commit f54203c87（Mesa の形、ac_nir_lower_ngg.c の add_deferred_attribute_culling・compact_vertices_after_culling、ac_nir.c の
+  ac_nir_repack_invocations_in_workgroup、ac_nir_prerast_utils.c の fully culled の回避に合わせた）:
+  頂点の lane が x/w・y/w・w と「残す」印 0 を LDS へ → barrier → primitive の lane が判定（三角形の時だけ。points・lines は全部残す）、残す primitive が
+  自分の頂点（topology の数だけ）に印 → barrier → 頂点の lane が印を読み、wave ごとの残る数（s_bcnt1）を LDS の wave の語へ → barrier → 各 wave が全 wave
+  の数を読み、前の wave の和（新しい番号の始まり）と subgroup の和（残る頂点数）→ wave 0 が GS_ALLOC_REQ（残る頂点数・全 primitive。0 なら 1・1 を要求し
+  lane 0 が vertex 0 の三角形と NaN の位置を export）→ 残る頂点が新しい番号を自分の場所に、出力（位置・point size・parameter）を新しい番号の場所に
+  書く → barrier → 先頭の lane（残る数だけ）が出力を読んで export → primitive の lane が頂点の新しい番号で語を組んで export（捨てた物は null）。
+  Mesa と違う点: 属性の後回し（位置だけの前半と属性の後半で VS を 2 回走らせる）はせず、VS を 1 回走らせて出力を LDS で運ぶ（hardware に見える
+  export の数・番号・要求の数は Mesa と同じ）。LDS は 128 頂点 × 場所の大きさ + 16 byte（64 KiB を超える program は culling しない）。
+  `s_bcnt1_i32_b32`・`s_min_u32` を encoder と模型に足した。
+- host: compiler host test 58 PASS（+nggc 6 本は 1 wave の subgroup で、参照の判定・残す頂点の番号・要求の数・出力の並び・primitive の語を比べる。
+  「export した頂点はどれかの null でない primitive が使う」の規則も試験で見る）。変異の確かめ: 新しい番号を lane の番号にすると +nggc が FAIL、
+  何も残らない時の要求の頂点数を 2 にすると FAIL。vk host test PASS。vmunix warning 0（sha256 先頭 24b0f273d50f74d7）。
+- 実機（ngg=2、Debian から stick に入れて 1 回の起動）:
+
+| 確認 | 結果 | 証拠 |
+| --- | --- | --- |
+| nggshape 13 種（16 三角 ×1000、5 万 三角の depth・全部裏・tiny・outside・cross・shuffle・cluster・mview・mview+cull・heavy、degenerate、texture） | 全部 ok、止まらない（全部裏の 5 万 三角は drawn 0） | SSH の出力 |
+| mview 1 体の shot（Linux 比） | pixel 差 0 | build/ws291/measure/p006/compact-shot-1 |
+| mview 6500 体の shot | max 1、over15 0（基準 8 pixel より良い） | compact-shot-6500 |
+| scene-1 / 1500 / 6500（`--spin=8 --content=game --present=mailbox`） | 105.3 fps（fence 1.23 ms）/ 64.8 fps（9.06 ms）/ 29.2 fps（fence 30.68 ms、frame 34.08 ms） | compact-scene-1b・1500・6500（scene-1 の 1 回目は起動直後の 792 ms の frame を含む 53 fps） |
+| `measure.sh hang` | vkhang lost → reset 4 ms → loops ok、mview 58 fps、desktop 正常 | compact-hang |
+
+- scene-6500 の GPU: passthrough 41.37 ms → 30.68 ms（−26 %）。Linux（RADV の NGG culling）約 20 ms には届かない。残りの候補: 属性の後回し
+  （捨てる頂点の属性の計算を省く）、LDS の大きさ（6500 体の mview の場所の大きさによる占有の低下）、VGPR の数、guard band・binning（p008）。
+- 未実施: desktop の frame-ops の計測（既定を NGG にするかの判断の材料）、属性の後回し。stick は vmunix-compact1 と ngg=2 で zedBSD 起動中。

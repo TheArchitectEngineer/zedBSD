@@ -370,7 +370,8 @@ state_screen_transform(
  * (1 / 256, the vertex rounding's quantum), and the flags: the faces the
  * pipeline culls, whether the front face is counter-clockwise on the
  * screen (the pipeline's front face, turned by a flip), the small-primitive
- * test, and culling at all for a topology of triangles.
+ * test, culling at all for a topology of triangles, and the vertices a
+ * primitive of the topology has.
  *
  * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
  * (radv_get_ngg_culling_settings and radv_emit_ngg_culling_state, lines
@@ -415,7 +416,9 @@ amdrdna_vk_state_culling(
 		flags |= AMDRDNA_GFX10_CULL_FRONT_CCW;
 	if (topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP ||
 	    topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN)
-		flags |= AMDRDNA_GFX10_CULL_ENABLED;
+		flags |= AMDRDNA_GFX10_CULL_ENABLED | AMDRDNA_GFX10_CULL_VERTEX_1 | AMDRDNA_GFX10_CULL_VERTEX_2;
+	if (topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP)
+		flags |= AMDRDNA_GFX10_CULL_VERTEX_1;
 	words[5] = flags;
 }
 

@@ -54,10 +54,10 @@ static void setup_textures(const struct drv_gpu_shader_ir *ir, const struct amdr
 static void reference_sample(void *context, uint32_t set, uint32_t binding, const struct texture_request *request, uint32_t *out);
 static void setup_uniforms(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_program *program, struct machine_memory *memory, struct reference_memory *reference, uint8_t *table, uint32_t *state);
 static int compare_slot(const char *what, uint32_t lane, uint32_t channel, uint32_t gpu, uint32_t ref);
-static int check_primitive_wave(const struct amdrdna_gfx10_program *program);
-static uint32_t reference_culled(uint32_t word);
+static int check_primitive_wave(void);
+static int check_culling_wave(const struct amdrdna_gfx10_program *program);
+static uint32_t reference_culled(uint32_t lane);
 static void culling_words(uint32_t lane, uint32_t noise);
-static uint32_t culling_packed(uint32_t lane);
 static int compare_storage(const struct drv_gpu_shader_ir *ir);
 static uint32_t random_word(uint32_t *state);
 static float random_float(uint32_t *state);
@@ -252,9 +252,10 @@ test_variant(
 		if (primitive_shader == 1U && (program->user_sgprs != AMDRDNA_GFX10_NGG_USER_SGPRS || ((registers.inputs >> 19) & 0xffU) != 0U))
 			error = 1;
 
-		/* One that culls: the culling's user SGPRs, three 512-byte blocks of LDS. */
+		/* One that culls: the culling's user SGPRs, its LDS in 512-byte blocks. */
 		if (primitive_shader == 2U &&
-		    (program->user_sgprs != AMDRDNA_GFX10_NGG_CULL_USER_SGPRS || registers.primitive_culling != 1U || ((registers.inputs >> 19) & 0xffU) != 3U))
+		    (program->user_sgprs != AMDRDNA_GFX10_NGG_CULL_USER_SGPRS || registers.primitive_culling != 1U || program->shared_bytes == 0U ||
+		     ((registers.inputs >> 19) & 0xffU) != (program->shared_bytes + 511U) / 512U))
 			error = 1;
 	} else if (stage == DRV_GPU_STAGE_VERTEX) {
 		if (((registers.counts >> 24) & 3U) != 3U || (registers.counts & (1U << 27)) == 0U || (registers.position_formats & 0xfU) != 4U)
@@ -570,12 +571,21 @@ vertex_trial(
 				graphics.user[5] = float_bits((float)(random_word(state) % 1000U));
 				graphics.user[6] = float_bits((float)(random_word(state) % 1000U) - 500.0f);
 				graphics.user[7] = float_bits(1.0f / 256.0f);
-				graphics.user[8] = random_word(state) & 0x1fU;
-				if ((random_word(state) & 3U) != 0U)
-					graphics.user[8] |= AMDRDNA_GFX10_CULL_ENABLED;
+				graphics.user[8] = random_word(state) & 0x0fU;
+				if ((random_word(state) & 3U) != 0U) {
+					graphics.user[8] |= AMDRDNA_GFX10_CULL_ENABLED | AMDRDNA_GFX10_CULL_VERTEX_1 | AMDRDNA_GFX10_CULL_VERTEX_2;
+				} else if ((random_word(state) & 1U) != 0U) {
+					graphics.user[8] |= AMDRDNA_GFX10_CULL_VERTEX_1;
+				}
+
+				/* A subgroup of this one wave, its primitives of its own vertices. */
+				graphics.wave_number = 0U;
+				graphics.wave_count = 1U;
+				graphics.subgroup_vertices = graphics.lanes;
+				graphics.subgroup_primitives = graphics.primitives;
 				for (lane = 0U; lane < 32U; lane++) {
 					for (channel = 0U; channel < 3U; channel++)
-						culling_vertex[lane][channel] = 32U * graphics.wave_number + random_word(state) % graphics.lanes;
+						culling_vertex[lane][channel] = random_word(state) % graphics.lanes;
 					culling_words(lane, random_word(state));
 				}
 			}
@@ -615,6 +625,12 @@ vertex_trial(
 			}
 			if (undefined != 0)
 				continue;
+
+			/* One that culls: its kept vertices compacted, its primitives renumbered or null. */
+			if (program->primitive_culling != 0U) {
+				failed = check_culling_wave(program);
+				continue;
+			}
 
 			/* Every channel the reference wrote: the position, the point size, each parameter. */
 			for (lane = 0U; lane < graphics.lanes && failed == 0; lane++) {
@@ -659,11 +675,11 @@ vertex_trial(
 
 			/* A primitive shader: its request for the subgroup, the vertex lanes' exports, each primitive lane's word, marked done. */
 			if (failed == 0 && program->primitive_shader != 0U)
-				failed = check_primitive_wave(program);
+				failed = check_primitive_wave();
 		}
 	}
-	/* ws291: a primitive shader's wave without vertices (a later wave of a subgroup) exports only its primitives. */
-	if (failed == 0 && program->primitive_shader != 0U) {
+	/* A passthrough primitive shader's wave without vertices (a later wave of a subgroup) exports only its primitives. */
+	if (failed == 0 && program->primitive_shader != 0U && program->primitive_culling == 0U) {
 		memset(&graphics, 0, sizeof(graphics));
 		graphics.user[0] = base_vertex;
 		graphics.user[1] = first_instance;
@@ -673,14 +689,6 @@ vertex_trial(
 		graphics.wave_number = 1U;
 		graphics.subgroup_vertices = 40U;
 		graphics.subgroup_primitives = 32U + graphics.primitives;
-		if (program->primitive_culling != 0U) {
-			graphics.user[8] = AMDRDNA_GFX10_CULL_ENABLED | AMDRDNA_GFX10_CULL_SMALL;
-			for (lane = 0U; lane < 32U; lane++) {
-				for (channel = 0U; channel < 3U; channel++)
-					culling_vertex[lane][channel] = random_word(state) % 40U;
-				culling_words(lane, random_word(state));
-			}
-		}
 		machine_run_graphics(&dispatch, &memory, 0, &graphics, &result);
 		if (result.error != NULL) {
 			printf("  GFX10 (a wave without vertices): %s at word %u (0x%08x)\n", result.error, result.error_pc, result.error_word);
@@ -696,17 +704,12 @@ vertex_trial(
 
 /* Checks what a primitive shader wave sent and exported besides its vertices' outputs; 1 when it is wrong. */
 static int
-check_primitive_wave(
-	const struct amdrdna_gfx10_program *program)
+check_primitive_wave(void)
 {
 	uint32_t lanes;
 	uint32_t lane;
 	uint32_t target;
 	uint32_t expected;
-	uint32_t culling;
-	uint32_t all_culled;
-
-	culling = program->primitive_culling;
 
 	/* The first wave alone asks, for the subgroup's vertices and primitives. */
 	if (graphics.wave_number != 0U && graphics.alloc_requests != 0U) {
@@ -749,18 +752,8 @@ check_primitive_wave(
 		       graphics.export_flags[target], graphics.export_lanes[target], graphics.export_channels[target]);
 		return 1;
 	}
-	/* A wave whose primitives are all culled exports its first as the degenerate triangle of vertex 0. */
-	all_culled = culling;
-	for (lane = 0U; lane < graphics.primitives && all_culled != 0U; lane++) {
-		if (reference_culled(culling_packed(lane)) == 0U)
-			all_culled = 0U;
-	}
 	for (lane = 0U; lane < graphics.primitives; lane++) {
 		expected = graphics.primitive_word[0][lane];
-		if (culling != 0U)
-			expected = culling_packed(lane) | reference_culled(culling_packed(lane));
-		if (all_culled != 0U && lane == 0U)
-			expected = 0U;
 		if (graphics.exported[target][lane][0] != expected) {
 			printf("  the primitive of lane %u: 0x%08x, not 0x%08x\n", lane, graphics.exported[target][lane][0], expected);
 			return 1;
@@ -783,23 +776,149 @@ culling_words(
 	graphics.primitive_word[1][lane] = culling_vertex[lane][2] | (noise << 16);
 }
 
-/* The primitive's word a culling primitive shader exports before the null bit: 9 bits each, 10 apart. */
-static uint32_t
-culling_packed(
-	uint32_t lane)
+/*
+ * Checks a culling primitive shader's single-wave subgroup; 1 when it is
+ * wrong.  The primitives kept (by the reference's test of the reference's
+ * positions; all without the culling flag) keep their vertices (those the
+ * topology has); the kept vertices are numbered afresh in order, the
+ * request asks for them and every primitive (one and one when none is
+ * kept), the first lanes export their outputs, and each primitive lane
+ * exports its renumbered primitive or a null one.  With none kept, lane 0
+ * exports the triangle of vertex 0 and a NaN position alone.  Every vertex
+ * exported is one a primitive exported uses: an exported vertex no
+ * primitive uses keeps its export space on GFX10.
+ */
+static int
+check_culling_wave(
+	const struct amdrdna_gfx10_program *program)
 {
-	return culling_vertex[lane][0] | (culling_vertex[lane][1] << 10) | (culling_vertex[lane][2] << 20);
+	uint32_t kept_vertex[32];
+	uint32_t number[32];
+	uint32_t vertex_of[32];
+	uint32_t used[32];
+	uint32_t vertices;
+	uint32_t live;
+	uint32_t lane;
+	uint32_t vertex;
+	uint32_t channel;
+	uint32_t slot;
+	uint32_t target;
+	uint32_t expected;
+	uint32_t word;
+	uint32_t lanes;
+	uint32_t flags;
+
+	/* The vertices each primitive has, and those the kept primitives keep. */
+	flags = graphics.user[8];
+	vertices = 1U;
+	if ((flags & AMDRDNA_GFX10_CULL_VERTEX_1) != 0U)
+		vertices = 2U;
+	if ((flags & AMDRDNA_GFX10_CULL_VERTEX_2) != 0U)
+		vertices = 3U;
+	memset(kept_vertex, 0, sizeof(kept_vertex));
+	for (lane = 0U; lane < graphics.primitives; lane++) {
+		if (reference_culled(lane) != 0U)
+			continue;
+		for (vertex = 0U; vertex < vertices; vertex++)
+			kept_vertex[culling_vertex[lane][vertex]] = 1U;
+	}
+	live = 0U;
+	for (vertex = 0U; vertex < graphics.lanes; vertex++) {
+		if (kept_vertex[vertex] == 0U)
+			continue;
+		number[vertex] = live;
+		vertex_of[live] = vertex;
+		live++;
+	}
+
+	/* None kept: one vertex and one primitive, the triangle of vertex 0 at a NaN place. */
+	if (live == 0U) {
+		if (graphics.alloc_requests != 1U || graphics.alloc_vertices != 1U || graphics.alloc_primitives != 1U ||
+		    graphics.export_count != 2U ||
+		    graphics.export_lanes[AMDRDNA_GFX10_EXPORT_PRIMITIVE] != 1U || graphics.exported[AMDRDNA_GFX10_EXPORT_PRIMITIVE][0][0] != 0U ||
+		    graphics.export_lanes[AMDRDNA_GFX10_EXPORT_POSITION] != 1U || graphics.exported[AMDRDNA_GFX10_EXPORT_POSITION][0][0] != 0xffffffffU) {
+			printf("  nothing kept: %u requests of %u and %u, %u exports\n",
+			       graphics.alloc_requests, graphics.alloc_vertices, graphics.alloc_primitives, graphics.export_count);
+			return 1;
+		}
+		return 0;
+	}
+
+	/* The request: the kept vertices and every primitive. */
+	if (graphics.alloc_requests != 1U || graphics.alloc_vertices != live || graphics.alloc_primitives != graphics.primitives) {
+		printf("  the allocation request: %u requests, %u vertices (%u kept), %u primitives\n",
+		       graphics.alloc_requests, graphics.alloc_vertices, live, graphics.alloc_primitives);
+		return 1;
+	}
+
+	/* The first lanes export the kept vertices' outputs, in order. */
+	lanes = live >= 32U ? 0xffffffffU : (1U << live) - 1U;
+	for (lane = 0U; lane < live; lane++) {
+		vertex = vertex_of[lane];
+		for (slot = 0U; slot < REFERENCE_SLOTS; slot++) {
+			target = AMDRDNA_GFX10_EXPORT_PARAMETER + slot;
+			if (slot == REFERENCE_SLOT_POSITION)
+				target = AMDRDNA_GFX10_EXPORT_POSITION;
+			if (slot == REFERENCE_SLOT_POINT_SIZE)
+				target = AMDRDNA_GFX10_EXPORT_POSITION + 1U;
+			for (channel = 0U; channel < 4U; channel++) {
+				if (reference_state.written[vertex][slot][channel] == 0U)
+					continue;
+				if ((graphics.export_channels[target] & (1U << channel)) == 0U || graphics.export_lanes[target] != lanes) {
+					printf("  slot %u channel %u: lanes 0x%08x, not 0x%08x\n", slot, channel, graphics.export_lanes[target], lanes);
+					return 1;
+				}
+				if (compare_slot("kept vertex", lane, channel + 4U * slot, graphics.exported[target][lane][channel],
+						 reference_state.output[vertex][slot][channel]) != 0)
+					return 1;
+			}
+		}
+	}
+
+	/* Each primitive lane: renumbered when kept, null when culled; every exported vertex used. */
+	memset(used, 0, sizeof(used));
+	target = AMDRDNA_GFX10_EXPORT_PRIMITIVE;
+	lanes = graphics.primitives >= 32U ? 0xffffffffU : (1U << graphics.primitives) - 1U;
+	if (graphics.primitives != 0U && graphics.export_lanes[target] != lanes) {
+		printf("  the primitive export: lanes 0x%08x, not 0x%08x\n", graphics.export_lanes[target], lanes);
+		return 1;
+	}
+	for (lane = 0U; lane < graphics.primitives; lane++) {
+		expected = AMDRDNA_GFX10_NGG_NULL_PRIMITIVE;
+		if (reference_culled(lane) == 0U) {
+			expected = 0U;
+			for (vertex = 0U; vertex < vertices; vertex++)
+				expected |= number[culling_vertex[lane][vertex]] << (10U * vertex);
+		}
+		word = graphics.exported[target][lane][0];
+		if (word != expected) {
+			printf("  the primitive of lane %u: 0x%08x, not 0x%08x\n", lane, word, expected);
+			return 1;
+		}
+		if ((word & AMDRDNA_GFX10_NGG_NULL_PRIMITIVE) != 0U)
+			continue;
+		for (vertex = 0U; vertex < vertices; vertex++)
+			used[(word >> (10U * vertex)) & 0x1ffU & 31U] = 1U;
+	}
+	for (lane = 0U; lane < live; lane++) {
+		if (used[lane] == 0U) {
+			printf("  vertex %u is exported but no primitive uses it\n", lane);
+			return 1;
+		}
+	}
+	(void)program;
+	return 0;
 }
 
 /*
- * The null bit a culling primitive shader gives a primitive of the wave's
- * vertices (from their exported positions): as Mesa 25.0.7
+ * The null bit a culling primitive shader gives the primitive of a lane
+ * (from the reference's positions of its vertices): as Mesa 25.0.7
  * src/amd/common/nir/ac_nir_cull.c decides, with the flags and viewport in
  * graphics.user[3 .. 8].
  */
 static uint32_t
 reference_culled(
-	uint32_t word)
+	uint32_t lane)
 {
 	float x[3];
 	float y[3];
@@ -834,11 +953,11 @@ reference_culled(
 	reflected = 0;
 	all_bad = 1;
 	for (vertex = 0U; vertex < 3U; vertex++) {
-		index = ((word >> (10U * vertex)) & 0x1ffU) - 32U * graphics.wave_number;
-		memcpy(&w[vertex], &graphics.exported[AMDRDNA_GFX10_EXPORT_POSITION][index][3], 4U);
-		memcpy(&position, &graphics.exported[AMDRDNA_GFX10_EXPORT_POSITION][index][0], 4U);
+		index = culling_vertex[lane][vertex];
+		memcpy(&w[vertex], &reference_state.output[index][REFERENCE_SLOT_POSITION][3], 4U);
+		memcpy(&position, &reference_state.output[index][REFERENCE_SLOT_POSITION][0], 4U);
 		x[vertex] = position * (1.0f / w[vertex]);
-		memcpy(&position, &graphics.exported[AMDRDNA_GFX10_EXPORT_POSITION][index][1], 4U);
+		memcpy(&position, &reference_state.output[index][REFERENCE_SLOT_POSITION][1], 4U);
 		y[vertex] = position * (1.0f / w[vertex]);
 		negative |= w[vertex] < 0.0f;
 		reflected ^= w[vertex] < 0.0f;

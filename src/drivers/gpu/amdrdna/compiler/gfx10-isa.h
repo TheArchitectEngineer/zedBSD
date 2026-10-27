@@ -134,6 +134,7 @@
 #define AMDRDNA_GFX10_S_ADD_U32		0x00U
 #define AMDRDNA_GFX10_S_SUB_U32		0x01U
 #define AMDRDNA_GFX10_S_ADD_I32		0x02U
+#define AMDRDNA_GFX10_S_MIN_U32		0x07U
 #define AMDRDNA_GFX10_S_CSELECT_B32	0x0aU
 #define AMDRDNA_GFX10_S_AND_B32		0x0eU
 #define AMDRDNA_GFX10_S_OR_B32		0x10U
@@ -162,6 +163,7 @@
  */
 #define AMDRDNA_GFX10_S_MOV_B32		0x03U
 #define AMDRDNA_GFX10_S_NOT_B32		0x07U
+#define AMDRDNA_GFX10_S_BCNT1_I32_B32	0x0fU
 #define AMDRDNA_GFX10_S_WQM_B32		0x09U
 #define AMDRDNA_GFX10_S_AND_SAVEEXEC_B32 0x3cU
 
@@ -633,6 +635,7 @@
 #define AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES (8U | (7U << 16))
 #define AMDRDNA_GFX10_NGG_WAVE_NUMBER	0x0f000000U
 #define AMDRDNA_GFX10_NGG_WAVE_NUMBER_FIELD (24U | (4U << 16))
+#define AMDRDNA_GFX10_NGG_WAVE_COUNT_FIELD (28U | (4U << 16))
 #define AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR 0U
 #define AMDRDNA_GFX10_NGG_VERTEX_PAIR_VGPR 1U
 #define AMDRDNA_GFX10_NGG_VERTEX_NUMBER_MASK 0x1ffU
@@ -646,9 +649,9 @@
  * s11 .. s14 (in samples, the y of a flipped viewport turned back), the
  * small-primitive precision in s15 (a float), and the culling flags in
  * s16 (the faces to cull, whether the front face is counter-clockwise on
- * the screen, the small-primitive test, and culling at all, which only
- * triangles have).  Each vertex leaves its place for the primitives in
- * LDS: x / w, y / w and w, 12 bytes at its number in the subgroup.
+ * the screen, the small-primitive test, culling at all (only triangles),
+ * and whether a primitive has a second and a third vertex (lines and
+ * triangles, triangles)).
  *
  * Values referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
  * (radv_get_ngg_culling_settings and radv_emit_ngg_culling_state: the
@@ -656,7 +659,8 @@
  * precision as samples / 2^8, the viewport corrected for the flip and the
  * samples; lines 10329-10425) and src/amd/common/nir/ac_nir_lower_ngg.c
  * (the positions of the culling stored as x / w, y / w and w, lines
- * 1225-1232).
+ * 1225-1232) and src/amd/common/nir/ac_nir_lower_intrinsics_to_args.c
+ * (the subgroup's wave count in bits 31:28 of merged_wave_info, line 97).
  */
 #define AMDRDNA_GFX10_NGG_CULL_USER_SGPRS	9U
 #define AMDRDNA_GFX10_NGG_CULL_VIEWPORT	11U
@@ -667,9 +671,9 @@
 #define AMDRDNA_GFX10_CULL_FRONT_CCW	0x04U
 #define AMDRDNA_GFX10_CULL_SMALL	0x08U
 #define AMDRDNA_GFX10_CULL_ENABLED	0x10U
-#define AMDRDNA_GFX10_NGG_CULL_VERTEX_BYTES 12U
+#define AMDRDNA_GFX10_CULL_VERTEX_1	0x20U
+#define AMDRDNA_GFX10_CULL_VERTEX_2	0x40U
 #define AMDRDNA_GFX10_NGG_NULL_PRIMITIVE	0x80000000U
-#define AMDRDNA_GFX10_NGG_CULL_SHARED_BYTES (128U * AMDRDNA_GFX10_NGG_CULL_VERTEX_BYTES)
 
 /*
  * The parameter a vertex program exports the primitive number in when it
