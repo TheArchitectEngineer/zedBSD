@@ -167,3 +167,33 @@
 - 読み方: scene-6500 の GPU は 30.68 → 30.78 ms（変わらない）、scene-1500 は 9.06 → 8.98。属性の仕事（normal・uv の fetch、lighting、LDS で運ぶ出力）は
   律速でなかった。残りの差（約 11 ms）は culling part そのもの（wave32 で RADV の wave64 の 2 倍の wave、wave ごとの scalar・barrier・LDS の固定の仕事）か
   後段と見て、診断の kernel（boot の行 `amdrdna.vk.nggx`: 2 = 全部を面で落とす、8 = GS の late alloc 64、1 = culling の flag を切る）で切り分ける。
+
+### 切り分け（2026-10-28 03:50〜04:10、診断 kernel は commit しない: build/tmp/diag2/diag2.patch・build/tmp/diag3/pad64.patch、`plan/ws291/tests/nowc-build.sh` で WC を除いた tree から build）
+
+| 条件（scene-6500 / 1500 の GPU の fence ms） | 6500 | 1500 |
+| --- | --- | --- |
+| 基準（defer、nggx=0） | 30.69 | 9.06 |
+| nggx=2: 全部の三角形を面で落とす（raster も deferred part も無し） | 30.69 | 9.00 |
+| nggx=8: GS の late alloc 32 → 64 | 30.76 | 8.94 |
+| nggx=1: culling の判定を切る（全部残す） | 41.53 | 11.15 |
+| culling part に VALU を 64 命令足す（pad64） | 30.77 | 9.05 |
+| Linux RADV（既定 wave64 / RADV_PERFTEST=gewave32、shader は exec_lo の wave32 を確認） | 19.87 / 19.87 | — |
+
+- 読み方: 時間は全部 culling part にあるが、VALU を足しても変わらず、wave32 でも RADV は 19.9 ms → 命令の数や wave の大きさでなく、同時に走る subgroup の数
+  （GE の割り当て）で決まっている見込み。
+- RADV の culling の時の IB（`plan/ws291/tests/linux/ibdump.c` を host で build して Debian に置き、mview scene-6500 の frame の IB を
+  `pm4-decode.py` で読んだ。build/ws291/measure/lin-ib/all/ib.21.dec）: VGT_GS_ONCHIP_CNTL 0x2004007e・GE_CNTL 0xf280・RSRC3_GS は我々と同じ。違いは
+  **GE_PC_ALLOC 0x3ff**（parameter cache の oversubscription 512 行、我々 0x1ff）と **SPI_SHADER_PGM_RSRC4_GS 0x0040ffff**（late alloc 64、我々 32）。
+  Mesa の radv_precompute_registers_hw_ngg は culling の時 oversub_pc_lines に 2〜4 倍（parameter の数で）を掛ける。
+- 実装 commit 816a13ee2: culling の program の時だけ GE_PC_ALLOC を 256 × factor − 1（parameter ≤2 で 2、≤4 で 3、他 4）と OVERSUB、late alloc 64。
+  registers に parameter_count を足した。host: compiler 58 PASS、vk 197 PASS。実機は未実施（下）。
+
+### WC の map（ユーザー承認 2026-10-28「P2 の WC の変更は承認します。」）
+
+- commit 779020ee6（gpu.h・gpu.c・vm-device.h・vm/device.c・hal/amd64/space.c）と cfcd07066（amdrdna/node.c）。amd64 の user の map で DEVICE|WC を PAT index 4
+  （Intel SDM Vol. 3A の Page Attribute Table、"Selecting a Memory Type from the PAT"）、device の WC|NOCACHE は HAL_ERR_INVALID、RAM への WC は
+  HAL_ERR_UNSUPPORTED。WC を受けるのは amd64 だけ（vm_device_create が他の port では ENOTSUP。arm64・armv7 の user の map は DEVICE|WC を黙って Device にし、
+  i386 は WC を見ないため）。WC は DEVICE と組の時だけ（UNCACHED_RAM との組は gpu.c と vm/device.c で EINVAL）。
+- i915 の ktest-sync の WC の期待（src/drivers/gpu/i915/tests/execution/ktest-sync.c 700-715: hal_space_map_device の WC|NOCACHE と WC|DEVICE が
+  HAL_ERR_INVALID）: 779020ee6 は hal_space_map_device（src/hal/amd64/space.c 336-343 の検査）を変えていないので崩れない（コードの上の確かめ、ktest は未実行）。
+- build: amd64 vmunix・rpi4・visionfive2 とも warning 0。
