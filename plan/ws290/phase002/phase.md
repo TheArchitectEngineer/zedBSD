@@ -3,7 +3,7 @@
 # ws290-p002 語の層
 
 - 親: [WS290](../ws.md)。設計: [design.md](../design.md) §18 の p002（版 4.5、ghci.md cb937e6）。
-- 状態: planned
+- 状態: cleared（2026-10-28 P3 q1638-i01）
 - 依存: p001
 
 ## 範囲
@@ -20,8 +20,17 @@
 
 ## 仕様の仮の扱い（ghci-review の回答で変われば直す）
 
-design §19 の表のうち、この Phase の code に効く物を着手の時にここへ写す。
+- N70（DISP_SET の大きさ）: `ghci_cmd_disp_set` は 1 + 2N dword（本文の配置）。仕様が 2 + 2N（dword 1 に N）と答えれば直す。
+- N63（FAULT_INFO の kind の別名）: `ghci-regs.h` の kind の名前は cb937e6 の主な名前（6 = PAGE_WRITE など）。kind の分け方は p004 で KIND と UNIT の組にする。
+- N62（sampler の独立 index）: p002 の encoder には効かない（GSI1 の命令の encoding は p006）。
+- N47（attachment は linear、mip・layer は 0、layers は 1）: `ghci_render_pass_desc_encode` は layers ≠ 1 を断り、mip・layer を 0 で書く（cb937e6 で決まった形）。
 
 ## 記録
 
 - 2026-10-28 P3（q1638-i01）: design §18 から立てた。
+- 2026-10-28 P3: 実装。
+  - 新しい file（build には入れない。build に入る file は変えていない: `git status` で src は新しい 4 file だけ）: `src/drivers/gpu/ghci/ghci-regs.h`（register・bit・EXTCAP・`struct ghci_caps`）、`caps.c`（identify、decode、`ghci_caps_has`、EXTCAP の走査（8 個まで、範囲・重複を拒む）、CP_HEAP の大きさ、WDT_CYCLES、reset の待ち）、`ghci-cmd.h`（opcode・dword 数・flag・記録の offset・encoder の宣言）、`cmd.c`（全 command の encoder、PSO・texture・sampler・buffer・render pass の encoder、fence64）。ring の計画は今の `check.c` の `ghci_ring_plan`（1.0 の規則と同じ）を使う。design §18 の「`check.c` に新しい名前で足す」は、build に入る file を変えないため `cmd.c`・`caps.c` に置いた。
+  - 試験: `plan/ws290/tests/ghci-host-test.sh` → `ghci-words-host-test: 141 passed, 0 failed`、`ghci-ref-host-test: 56 passed, 0 failed`（amaterrace-gpu cb937e6 の include/ghci_cmd.h の sizeof・offsetof と driver の定数を比べる。header は build/tmp の新しい directory に出すだけ）、`PASS ghci290-host-test`。
+  - kernel の flag の compile: `make -n` の check.c の行を caps.c・cmd.c に替えて、amd64（plan/ws288/tests/config-amd64-ghci.mk）と riscv64（config-visionfive2-ghci.mk、-flto）の clang -Werror で compile、出力無し（warning 0）、object を build/tmp/p002-kcc/ に。
+  - 未実施: `CONFIG_DRIVER_PCI_GHCI=y` の amd64 vmunix の build（build に入る file を変えていないので今のまま。build/amd64 の sysroot がこの worktree に無い）。
+
