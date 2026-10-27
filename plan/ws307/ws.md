@@ -3,8 +3,8 @@
 # WS307 Keiland のアプリとしての zedBSD のグラフィカルなインストーラ
 
 - Status: planning（2026-10-28 新設。p001 で仕様を確定中、q1643 P4）
-- 仕様: [spec.md](spec.md)（U1〜U27 は回答済み、OS 名の統一の U28・U29 は回答待ち。design-reviewer の 1 回目・2 回目の指摘を反映済み）。
-- Resume point: p001 の手順 3〜5（回答の反映、design-reviewer の指摘の反映、実装の Phase の表の確定）。
+- 仕様: [spec.md](spec.md)（確定。ユーザーの確認事項 U1〜U29 は全て回答済み。design-reviewer の 1 回目・2 回目の指摘を反映済み）。
+- Resume point: p001 は受け入れを満たした（2026-10-28、P4。Q1 の cleared の判断待ち）。次は実装の p002（OS 名の統一）か p003（build と installer-image）。p003・p004 は toolchain の許可、p007 は HAL の承認が要る。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
 
@@ -94,18 +94,20 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 U26「すべてのイメージで、ユーザ名をuser, パスワードをuserに変更します。インストーラはsetuidのヘルパーを使うので、パスワード認証を不要にします。これは特別なインストーライメージのみです。」: 全 image の既定の利用者を user/user に（p002）。installer の image では helper は password を聞かない（呼べる者の制限は spec §9.1）。
 - 2026-10-28 U27「今後keiの名前は削除しますので、zedbsdにします。」: 導入先の hostname の既定は zedbsd（S7a の欄は技術の判断で足す）。base の既定の hostname も zedbsd に（p002）。
 - 2026-10-28 指示「P4に伝えてください。起動ロゴ画像を含めて、KeiというOS名を削除して、zedBSDに統一します。インストーラだけでなくすべてに影響します。そういうphaseをこのWSに追加してください。」: p002 を足した（spec §13a）。git mv・大量の rename は Phase の中で Q1 に一覧を出してから（Q1 の補い）。
+- 2026-10-28 U28「Keilandの名前はそのままです。libkeilandもそのままです。KeiというOS名は、予定ではzedBSDに変更ですが、OSディストリビューション名が変更になる可能性があります。zedBSDはカーネル名です。OS名にするかは未定ですが、現状ではOS名もzedBSDに仮決めしておきます。libkeiland以外にlibkei*があるなら、変更を検討します。」: Keiland・libkeiland と内部名は残す。OS 名は zedBSD に仮決めし、1 か所（`ZEDBSD_OS_NAME` → os-release）で定義する。libkeiland の系の外の libkei* は無い（旧名 libkeiui は統合済み、spec §13a）。
+- 2026-10-28 U29「推し」: 担当が今の logo と同じ様式で「zedBSD」の文字の画像を作り、PNG を Q1 経由でユーザーに見せてから入れる。
 
 ## Phase
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 仕様の確定（調査、spec.md、ユーザーの確認事項、design-reviewer、実装の Phase の案） | — | in-progress（q1643、P4） |
+| [p001](phase001/phase.md) | 仕様の確定（調査、spec.md、ユーザーの確認事項、design-reviewer、実装の Phase の案） | — | in-progress（q1643、P4。受け入れを満たした、Q1 の確認待ち） |
 
 ### 実装の Phase の案（p001 の成果、[spec.md](spec.md) による。ユーザーの回答で変わりうる。Phase の directory はまだ作らない）
 
 | Phase | 内容 | 依存 | 見積もり | 状態 |
 | --- | --- | --- | --- | --- |
-| p002 | OS 名「Kei」を削除して zedBSD に統一する（tree 全体、起動の logo の画像を含む。既定の利用者 user/user（U26）と hostname zedbsd（U27）も）。棚卸し → 一覧を Q1 に出して git mv・rename の所有と衝突を調整 → 変更 → 試験（spec §13a） | p001（範囲は U28、logo は U29） | 12 LW | planning |
+| p002 | OS 名「Kei」を削除して zedBSD に統一する（tree 全体、起動の logo の画像を含む。既定の利用者 user/user（U26）と hostname zedbsd（U27）も）。棚卸し → 一覧を Q1 に出して git mv・rename の所有と衝突を調整 → 変更 → 試験（spec §13a） | p001 | 12 LW | planning |
 | p003 | build: `make installer-image`（menuconfig は kernel の config だけ、userland・package は決まった選択で全部）、file の manifest（持ち主の package・mode）、重なりの規則、unit の tarball（ustar＋deflate、所有者 0:0、mode の正規化、set-user-ID の許可の一覧）、index（SHA-256・file の数・依存・項目・firmware の license）、manifest から mode を正規化した live の tree、installer の image（ESP＋ZEDBSD の FAT32＋root＋swap、build ごとの PARTUUID）、漏れと重複の検査（spec §6・§11.2）。sysroot の持ち主の付け方は toolchain（`toolchain/llvm/sysroot.mk`）に触れるので Q1 の許可が要る | p001 | 14 LW | planning |
 | p004 | package の header と `.pc`（gtk4・cairo・pango・glib・libavcodec・libcxx など）と pkgconf の package。導入先で GTK4 の app を build する確認（spec §6.2、U13）。`lang/clang`・`devel/libcxx` は toolchain なので Q1 の許可が要る | p003 | 8 LW | planning |
 | p005 | base の道具: `mkswap` の partition の mode（ZEDSWAP2 64 bit）、`diskpart` の batch（add・delete、型・名前・PARTUUID・attribute の変更）と「未割り当て」の型 GUID、`mkfs -t fat32` の乱数の serial、UFS の inode の密度、道具の側の 4096 byte の sector（mkfs の FAT32・UFS の fragment 4096 の profile、mkswap、diskpart）（spec §5.9・§11.3）。host の試験と QEMU の短い確認 | p001 | 12 LW | planning |

@@ -3,7 +3,7 @@
 # WS307 インストーラの仕様
 
 - 親: [WS307](ws.md)。作成: [ws307-p001](phase001/phase.md)（P4、2026-10-28）。
-- 状態: **案**（U1〜U27 は回答済み、§15 に原文。OS 名の統一の U28・U29 を回答待ち。design-reviewer の 1 回目・2 回目の指摘は §17 で反映済み）。
+- 状態: **確定**（ユーザーの確認事項 U1〜U29 は全て回答済み、§15 に原文。design-reviewer の 1 回目・2 回目の指摘は §17 で反映済み。実装の Phase の表は ws.md）。
 - 正はユーザーの原文（[ws.md](ws.md) の「ユーザーの指示と希望の仕様」）。この文書は原文のブラッシュアップで、原文と食い違えば原文が正。
 - 調査の出典は file:行（基点 main 5300ea917）。
 
@@ -59,7 +59,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 
 ### 4.1 S1 Welcome
 
-- 表示: zedBSD のロゴ、「zedBSD をこのコンピュータに入れます」の説明（U15 の回答で「Kei」の名は使わない）、注意（導入先の disk の内容が消えうる、data の backup を勧める）、言語（desktop の `ui.language` に従う、§10）。
+- 表示: OS の logo、「<OS 名> をこのコンピュータに入れます」の説明（OS 名は `/etc/os-release` の `NAME`、今は zedBSD。U15・U28、§13a）、注意（導入先の disk の内容が消えうる、data の backup を勧める）、言語（desktop の `ui.language` に従う、§10）。
 - 検査: helper の `probe` が成功している（失敗なら理由と「再試行」を出し、次へは無効）。UEFI で起動していない時（boot provenance の `kern.boot.firmware_partition`、`docs/reference/boot-provenance.md`。`/boot/efi` の有無は MBR の USB からの UEFI の起動で出ないので使わない、`src/kern/vfs.c:1189-1285`）は「UEFI で起動した時だけ使える」と出して次へを無効にする。
 - 遷移: 次へ → S2。
 
@@ -507,12 +507,15 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 ## 13a. OS 名「Kei」を zedBSD に統一する（p002）
 
 - 指示（2026-10-28 ユーザー、原文、Q1 の中継）:「P4に伝えてください。起動ロゴ画像を含めて、KeiというOS名を削除して、zedBSDに統一します。インストーラだけでなくすべてに影響します。そういうphaseをこのWSに追加してください。」と U15「Keiの名前はプロジェクトから削除予定です」。
-- 範囲: OS 名の「Kei」（画面の文言・起動の logo の画像・`/etc/os-release`・UEFI の名前・文書・release の道具の名前）、既定の利用者 `kei`/`kei` → `user`/`user`（U26。`/etc/passwd`・`/etc/shadow`・`/etc/group` の wheel・network・`/etc/keiland/autologin`・`/home/kei`）、既定の hostname `kei` → `zedbsd`（U27、`userland/base/etc/rc.conf:2`）。desktop の名前 Keiland と内部名（libkeiland・kl_* など）を含むかは → U28（推し: 含めない）。logo の画像は → U29。
+- 範囲: OS 名の「Kei」（画面の文言・起動の logo の画像・`/etc/os-release`・UEFI の名前・文書・release の道具の名前）、既定の利用者 `kei`/`kei` → `user`/`user`（U26。`/etc/passwd`・`/etc/shadow`・`/etc/group` の wheel・network・`/etc/keiland/autologin`・`/home/kei`）、既定の hostname `kei` → `zedbsd`（U27、`userland/base/etc/rc.conf:2`）。desktop の名前 Keiland と libkeiland（と Keiland の内部名: libkeiland-backend-*・libkeiland-compat・kl_*・`/etc/keiland`・`/usr/share/keiland` など）は残す（U28 の回答）。logo の画像は U29 の回答（担当が今の logo と同じ様式で「zedBSD」の文字の画像を作り、PNG を Q1 経由でユーザーに見せて確かめてから入れる）。
+- U28 の回答（原文）:「Keilandの名前はそのままです。libkeilandもそのままです。KeiというOS名は、予定ではzedBSDに変更ですが、OSディストリビューション名が変更になる可能性があります。zedBSDはカーネル名です。OS名にするかは未定ですが、現状ではOS名もzedBSDに仮決めしておきます。libkeiland以外にlibkei*があるなら、変更を検討します。」
+- **OS 名を 1 か所で定義する**（distribution 名が後で変わり得るため）: build の変数 `ZEDBSD_OS_NAME`（今の仮の値 `zedBSD`）を 1 つ置き、`/etc/os-release` の `NAME`・`PRETTY_NAME` をそこから作る（今は `NAME="zedBSD"`・`PRETTY_NAME="Kei/zedBSD …"` を Makefile が直に書く、`Makefile:1259-1266`）。画面に OS 名を出す program（installer・Settings の About・greeter など）は `/etc/os-release` の `NAME` を読んで出し、source に OS 名の文字列を書かない。kernel の名前（`uname` の zedBSD、`ZEDBSD_VERSION` の行）は kernel 名なので別に保つ。UEFI の Boot#### の名前（§5.8）と loader の文言は os-release を読めないので、build の時に同じ変数から入れる。logo の画像は絵なので変数にできない（名前が変われば作り直す）。
+- libkei* の棚卸し（U28 の「libkeiland以外にlibkei*があるなら」）: 今の tree の library は libkeiland の系（libkeiland・libkeiland-backend・-backend-zedbsd・-linux・-freebsd・libkeiland-compat）だけ。旧名 `libkeiui` は libkeiland に統合済みで、残るのは comment の経緯（`userland/desktop/libkeiland/ui/window.h:316`・`:474` など）と、Linux・FreeBSD の host から古い file を消す一覧（`userland/desktop/keiland-linux.mk:171`・`keiland-freebsd.mk:176` の `lib/libkeiui.so`・`include/keiui.h`）だけ。別の libkei* は無いので、変える物は無い。
 - 棚卸し: `git grep -I -i -w kei`（`plan/` を除く）で、2026-10-28 の基点で約 460 行・約 200 file（`userland/desktop` 73・`tests/scenarios` 59・`userland/base` 37・`src/drivers` 9・`tools/release` 7 など）。ほかに binary（logo の画像、`bootloader/uefi/logo.c`・`bootloader/bios/logo.c` の参照する絵、`platform/amd64` の boot-logo）、file の名前・directory の名前（`git ls-files | grep -i kei`）。分類: 文言、利用者名・home の path、hostname、logo、file の名前、試験（scenarios・AAT・guest の login）、文書。`plan/` の履歴は直さない（Q1 が今も有効な規則の文だけを直す。master-design-policy §11 の「logo は必ず Kei」も）。
 - 手順: (1) 棚卸しの一覧と、git mv・大量の rename の一覧を Q1 に出し、所有と他の担当の作業との衝突を調整してから変える（Q1 の補い）。(2) 文言・設定・試験の道具を変える。(3) logo（U29）。(4) build と試験。
 - 順: installer の実装の前（p002）。installer の画面・live の image の利用者・hostname がこの Phase の後の名前を前提にする。ただし installer の helper は既定の利用者の名前に依らない（`/etc/keiland/autologin` と uid 1000 で見つける）ので、p003 以降はこの Phase の完了を待たずに進めてよい（通しの試験 p011 は待つ）。
 - 試験: build（warning 0）、変えた所の host の試験、boot-test.sh の login prompt の PNG（新しい logo と login の画面）、AAT の login（user/user）と既存の scenario の利用者名の追従、`git grep -i -w kei` の残りが範囲外（U28 で残す物と `plan/`）だけであること。
-- 見積もり: 12 LW（logo の画像の作り直しを含む。U28 が C なら大きく増える）。
+- 見積もり: 12 LW（logo の画像の作り直しと `ZEDBSD_OS_NAME` を含む）。
 
 ## 14. 原文との対応
 
@@ -564,8 +567,8 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | U21 | （追加の指示から）今の disk image（hdd-image・installer の image）の形 | A: 導入先だけ新しい形、image は WS238 の形のまま | 2026-10-28「image は今のまま (推し)」→ A |
 | U26 | （2 回目のレビュー #9）live の system の password の案内 | A: dialog に既定の password（kei）を書く | 2026-10-28「すべてのイメージで、ユーザ名をuser, パスワードをuserに変更します。インストーラはsetuidのヘルパーを使うので、パスワード認証を不要にします。これは特別なインストーライメージのみです。」→ installer の image では password 無し（§9.1）。全 image の既定の利用者を user/user に（§13a、p002） |
 | U27 | （2 回目のレビュー #23）導入先の hostname | A: S7a に欄、既定 `zedbsd` | 2026-10-28「今後keiの名前は削除しますので、zedbsdにします。」→ 既定 `zedbsd`。S7a の欄は技術の判断で足す（Q1） |
-| U28 | （OS 名の統一の指示から）名前を変える範囲 | A: OS 名の Kei だけ。Keiland と内部名は残す | 未回答 |
-| U29 | （OS 名の統一の指示から）起動の logo の画像 | A: 担当が同じ様式で zedBSD の画像を作り、ユーザーに見せて確かめる | 未回答 |
+| U28 | （OS 名の統一の指示から）名前を変える範囲 | A: OS 名の Kei だけ。Keiland と内部名は残す | 2026-10-28「Keilandの名前はそのままです。libkeilandもそのままです。KeiというOS名は、予定ではzedBSDに変更ですが、OSディストリビューション名が変更になる可能性があります。zedBSDはカーネル名です。OS名にするかは未定ですが、現状ではOS名もzedBSDに仮決めしておきます。libkeiland以外にlibkei*があるなら、変更を検討します。」→ A。OS 名は 1 か所（`ZEDBSD_OS_NAME`）で定義（§13a） |
+| U29 | （OS 名の統一の指示から）起動の logo の画像 | A: 担当が同じ様式で zedBSD の画像を作り、ユーザーに見せて確かめる | 2026-10-28「推し」→ A |
 | U4b | （design-reviewer の指摘 14）U4 の答えと WS238 の決定（ESP は loader だけ、kernel・設定・logo は Windows で mount できる ZEDBSD の FAT32）の食い違い | B: 導入先も WS238 の形（ESP＋ZEDBSD の FAT32＋swap＋root） | 2026-10-28「U4 のまま ESP に全部」→ A（導入先は WS238 の image の形と違う、§5.4） |
 | U16 | 既存の ESP が小さい・使えない disk で「partition を選ぶ」 | A: その disk では「partition を選ぶ」を無効 | 2026-10-28「その disk では無効にする (推し)」→ A |
 | U17 | 4Kn の disk | A: 選べない（Future） | 2026-10-28「WS307 で 4096 byte に対応」→ B（§5.9） |
