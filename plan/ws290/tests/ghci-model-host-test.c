@@ -603,7 +603,7 @@ scene_vm_shared(void)
 	push(packet, GHCI_DW_VM_UNMAP);
 	expect(model_lookup(1U, TEST_VA) == NULL, "vm: unmapped part gone");
 	expect(model_lookup(1U, TEST_VA + 0x100000U) != NULL, "vm: the rest stays");
-	expect(model_heap_bytes() == GHCI_ROOT_BYTES_VA32 + 2U * GHCI_TABLE_BYTES, "vm: tables follow the mappings");
+	expect(model_heap_bytes() == GHCI_ROOT_BYTES_VA32 + 3U * GHCI_TABLE_BYTES, "vm: VM_UNMAP keeps the L0 tables (d9252e4 section 11.6)");
 
 	/* CLOSE of session 1 keeps the shared PTEs (N49); the session is gone. */
 	ghci_cmd_session_close(packet, 1U);
@@ -668,7 +668,10 @@ scene_vm_protected(void)
 	expect(model_heap_bytes() == 3U * GHCI_ROOT_BYTES_VA32 + 2U * GHCI_TABLE_BYTES, "prot: three roots and two L0");
 	expect(model_lookup(2U, TEST_VA)->phys == MODEL_HOST_BASE + 0x2000U, "prot: session 2 has its own table");
 
-	/* CLOSE returns the session's root and tables (N48). */
+	/* VM_UNMAP keeps the tables; CLOSE returns the session's root and tables (N48). */
+	ghci_cmd_vm_unmap(packet, 1U, TEST_VA, 0x1000U);
+	push(packet, GHCI_DW_VM_UNMAP);
+	expect(model_heap_bytes() == 3U * GHCI_ROOT_BYTES_VA32 + 2U * GHCI_TABLE_BYTES, "prot: VM_UNMAP keeps the L0 table");
 	ghci_cmd_session_close(packet, 1U);
 	push(packet, GHCI_DW_SESSION_CLOSE);
 	expect(model_heap_bytes() == 2U * GHCI_ROOT_BYTES_VA32 + GHCI_TABLE_BYTES, "prot: CLOSE returned the tables");

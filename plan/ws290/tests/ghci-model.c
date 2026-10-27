@@ -280,10 +280,15 @@ static const uint32_t block_offsets[] = {
 struct model model;
 
 /*
- * The scratch bitmaps of the page table count: one bit per 2 MiB chunk
- * and per 1 GiB region of a table.  Only heap_count uses them.
+ * The L0 tables each page table has built: one bit per 2 MiB chunk a
+ * mapping has touched since the table's root was made.  VM_UNMAP leaves
+ * the bits (the CP returns tables only at SESSION_CLOSE and at a reset,
+ * d9252e4 docs/ghci.md section 11.6 and 5.2); closing a PROT session and
+ * a reset clear them.  marks_saved holds one row while a map may be
+ * rolled back, and region_bits is heap_count's scratch.
  */
-static uint8_t chunk_bits[MODEL_CHUNKS_MAX / 8U];
+static uint8_t table_marks[MODEL_TABLES][MODEL_CHUNKS_MAX / 8U];
+static uint8_t marks_saved[MODEL_CHUNKS_MAX / 8U];
 static uint8_t region_bits[MODEL_REGIONS_MAX / 8U];
 
 static uint32_t window_word(uint32_t offset);
@@ -310,6 +315,7 @@ static void irq_check(void);
 static uint32_t table_of(uint32_t session);
 static uint32_t root_bytes(void);
 static uint64_t heap_count(void);
+static void marks_add(uint32_t table, uint64_t va, uint64_t bytes);
 static uint64_t heap_capacity(void);
 static int table_overlaps(uint32_t table, uint64_t va, uint64_t bytes);
 static void table_remove(uint32_t table, uint64_t va, uint64_t bytes, uint32_t session, int by_session);
@@ -1031,6 +1037,7 @@ do_reset(void)
 	for (table = 0U; table < MODEL_TABLES; table++) {
 		model.table_mappings[table] = 0U;
 		model.table_root[table] = 0;
+		memset(table_marks[table], 0, sizeof(table_marks[table]));
 	}
 	model.heap_used = 0U;
 	model.heap_leaked = 0U;
@@ -1326,6 +1333,7 @@ run_session_open(
 	if ((window_word(GHCI_REG_DEVICE_CAPS) & GHCI_CAP_PROT) != 0U) {
 		model.table_root[session] = 1;
 		model.table_mappings[session] = 0U;
+		memset(table_marks[session], 0, sizeof(table_marks[session]));
 		model.heap_used = heap_count() + model.heap_leaked;
 		if (model.heap_used > heap_capacity()) {
 			model.table_root[session] = 0;
@@ -1362,6 +1370,7 @@ run_session_close(
 		before = heap_count();
 		model.table_root[session] = 0;
 		model.table_mappings[session] = 0U;
+		memset(table_marks[session], 0, sizeof(table_marks[session]));
 		if (model.switches.close_keeps_heap)
 			model.heap_leaked += before - heap_count();
 	} else if (model.switches.prot0_close_clears) {
@@ -1428,10 +1437,15 @@ run_vm_map(
 	mapping->session = session;
 	model.table_mappings[table]++;
 
+	/* Marks the L0 tables the map builds, keeping the row for a roll-back. */
+	memcpy(marks_saved, table_marks[table], sizeof(marks_saved));
+	marks_add(table, va, bytes);
+
 	/* Counts the tables; without room the map is rolled back and faults (N09). */
 	model.heap_used = heap_count() + model.heap_leaked;
 	if (model.heap_used > heap_capacity()) {
 		model.table_mappings[table]--;
+		memcpy(table_marks[table], marks_saved, sizeof(marks_saved));
 		model.heap_used = heap_count() + model.heap_leaked;
 		return raise_fault(GHCI_FAULT_KIND_MMU_OOM, GHCI_UNIT_CP, session, va);
 	}
@@ -1469,9 +1483,8 @@ run_vm_unmap(
 	if (bytes == 0U || ((va | bytes) & (GHCI_PAGE_BYTES - 1U)) != 0U)
 		return raise_fault(GHCI_FAULT_KIND_INVALID_OP, GHCI_UNIT_CP, session, va);
 
-	/* Removes what the range covers; emptied tables go back to CP_HEAP (N48). */
+	/* Removes what the range covers; the L0 tables stay until SESSION_CLOSE or a reset. */
 	table_remove(table_of(session), va, bytes, session, 0);
-	model.heap_used = heap_count() + model.heap_leaked;
 
 	/* Succeeded: the range is unmapped. */
 	return PACKET_NEXT;
@@ -1666,15 +1679,12 @@ root_bytes(void)
 /*
  * Counts the CP_HEAP bytes of every table with a root: the root, a 4 KiB
  * L1 table per 1 GiB region (40-bit VA) and a 4 KiB L0 table per 2 MiB
- * chunk that a mapping touches (section 11.2, N64).
+ * chunk a mapping has touched since the root was made (section 11.2, N64).
  */
 static uint64_t
 heap_count(void)
 {
-	const struct model_mapping *mapping;
 	uint64_t total;
-	uint64_t chunk;
-	uint64_t last;
 	uint32_t table;
 	uint32_t index;
 	uint32_t va_bits;
@@ -1689,25 +1699,15 @@ heap_count(void)
 		if (!model.table_root[table])
 			continue;
 
-		/* Marks the chunks and regions the table's mappings touch. */
-		memset(chunk_bits, 0, sizeof(chunk_bits));
+		/* Counts the table's L0 tables and the 1 GiB regions they lie in. */
 		memset(region_bits, 0, sizeof(region_bits));
-		for (index = 0U; index < model.table_mappings[table]; index++) {
-			/* Marks each 2 MiB chunk of the range, and its 1 GiB region. */
-			mapping = &model.tables[table][index];
-			last = (mapping->va + mapping->bytes - 1U) >> 21;
-			for (chunk = mapping->va >> 21; chunk <= last && chunk < MODEL_CHUNKS_MAX; chunk++) {
-				chunk_bits[chunk / 8U] |= (uint8_t)(1U << (chunk % 8U));
-				region_bits[(chunk >> 9) / 8U] |= (uint8_t)(1U << ((chunk >> 9) % 8U));
-			}
-		}
-
-		/* Counts the marks. */
 		chunks = 0U;
 		for (index = 0U; index < MODEL_CHUNKS_MAX; index++) {
-			/* One L0 table per marked chunk. */
-			if ((chunk_bits[index / 8U] & (1U << (index % 8U))) != 0U)
-				chunks++;
+			/* One L0 table per marked chunk, and its region. */
+			if ((table_marks[table][index / 8U] & (1U << (index % 8U))) == 0U)
+				continue;
+			chunks++;
+			region_bits[(index >> 9) / 8U] |= (uint8_t)(1U << ((index >> 9) % 8U));
 		}
 		regions = 0U;
 		for (index = 0U; index < MODEL_REGIONS_MAX; index++) {
@@ -1725,6 +1725,22 @@ heap_count(void)
 
 	/* Succeeded: the bytes in use. */
 	return total;
+}
+
+/* Marks the 2 MiB chunks a range touches in a table's L0 bitmap. */
+static void
+marks_add(
+	uint32_t table,
+	uint64_t va,
+	uint64_t bytes)
+{
+	uint64_t chunk;
+	uint64_t last;
+
+	/* Marks each chunk from the first to the last the range touches. */
+	last = (va + bytes - 1U) >> 21;
+	for (chunk = va >> 21; chunk <= last && chunk < MODEL_CHUNKS_MAX; chunk++)
+		table_marks[table][chunk / 8U] |= (uint8_t)(1U << (chunk % 8U));
 }
 
 /* The bytes CP_HEAP_BASE and CP_HEAP_LIMIT give; 0 when the heap is not set. */
