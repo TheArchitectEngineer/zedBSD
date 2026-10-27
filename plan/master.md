@@ -62,7 +62,7 @@
 ### ユーザーの未決
 
 <!-- master:open-decisions:start -->
-- 名前の変更（2026-10-28 ユーザー「Keiの名前はプロジェクトから削除予定です。」）: 既存の Kei の名前（Keiland・libkei*・/etc/keiland など）をどこまで・いつ消すか。既定の利用者を user/user に変える作業（全 image）をどの WS で行うか。
+- 名前の変更（2026-10-28 ユーザー「…KeiというOS名を削除して、zedBSDに統一します。インストーラだけでなくすべてに影響します。…」、WS307 の Phase）: 内部名（Keiland・libkei*・/etc/keiland など）を含むか。既定の利用者を user/user に変える作業（全 image）をどの WS で行うか。
 - 保留の WS の整理（以前のベータ3・4 の中身を含む）。Q1 とユーザー。
 - WS304: Raspberry Pi OS で同じ HAT・FFC・NVMe の link を見るか（ハードの切り分け）。
 - WS306: ゲーム最適化の環境変数の名前と書式、知らない option の扱い（p001 の設計で推しを示す）。
