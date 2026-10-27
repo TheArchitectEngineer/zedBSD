@@ -6,7 +6,7 @@
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
 | P1 | phase-runner | WS299 5330 の NVMe の速さ、fstrim の後に測り直して受け入れまで（q1640） | `/home/awe/zedBSD-worktrees/p1-ws299b` / `agent/p1-ws299b` | running（2026-10-28 06:0x〜、5330） | cc1869b7c（q1634） |
-| P2 | phase-runner | WS291 RDNA の描画の速さ、Linux 以上まで自律（q1639） | `/home/awe/zedBSD-worktrees/p2-ws291c` / `agent/p2-ws291c` | running（2026-10-28 06:xx〜、10.0.10.3） | cd763014d（q1635） |
+| P2 | phase-runner | WS291 RDNA の描画の速さ、Linux 以上まで自律（q1645） | `/home/awe/zedBSD-worktrees/p2-ws291d` / `agent/p2-ws291d` | running（2026-10-28 08:5x〜、10.0.10.3） | dc0e46e09（q1639） |
 | P3 | phase-runner | WS290 p005〜p012（q1644） | `/home/awe/zedBSD-worktrees/p3-ws290g` / `agent/p3-ws290g` | running（2026-10-28 08:xx〜） | bb020cf80（q1642） |
 | P4 | phase-runner | WS307 インストーラの仕様の確定（q1643） | `/home/awe/zedBSD-worktrees/p4-ws307` / `agent/p4-ws307` | running（2026-10-28 07:1x〜） | 0a3f17258（q1610） |
 
