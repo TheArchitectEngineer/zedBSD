@@ -30,6 +30,17 @@
 #include "vmspace-internal.h"
 
 /*
+ * Whether this port's user translations write-combine device pages: amd64
+ * alone (its HAL maps them through a PAT entry); the other ports would
+ * make them Device or cached pages, so such a mapping is refused there.
+ */
+#if defined(HAL_ARCH_AMD64)
+#define VM_DEVICE_WC_SUPPORTED 1
+#else
+#define VM_DEVICE_WC_SUPPORTED 0
+#endif
+
+/*
  * Creates one immutable mapping owner without allocating or freeing its storage.
  */
 int
@@ -77,9 +88,15 @@ vm_device_create(
 		return EOVERFLOW;
 
 	/* MMIO and Normal non-cacheable RAM are mutually exclusive storage identities. */
-	if ((attributes & ~(VM_DEVICE_MMIO | VM_DEVICE_UNCACHED_RAM)) != 0 ||
-	    attributes == (VM_DEVICE_MMIO | VM_DEVICE_UNCACHED_RAM))
+	if ((attributes & ~(VM_DEVICE_MMIO | VM_DEVICE_UNCACHED_RAM | VM_DEVICE_WRITE_COMBINE)) != 0 ||
+	    (attributes & (VM_DEVICE_MMIO | VM_DEVICE_UNCACHED_RAM)) == (VM_DEVICE_MMIO | VM_DEVICE_UNCACHED_RAM))
 		return EINVAL;
+
+	/* Write-combining is a cache policy of MMIO alone, on a port that has it. */
+	if ((attributes & VM_DEVICE_WRITE_COMBINE) != 0 && attributes != (VM_DEVICE_MMIO | VM_DEVICE_WRITE_COMBINE))
+		return EINVAL;
+	if ((attributes & VM_DEVICE_WRITE_COMBINE) != 0 && VM_DEVICE_WC_SUPPORTED == 0)
+		return ENOTSUP;
 
 	/* The original device open grants only a nonempty subset of read and write. */
 	if (max_prot == 0 || (max_prot & ~(KERN_PROT_READ | KERN_PROT_WRITE)) != 0)
@@ -159,6 +176,10 @@ uint32_t
 vm_device_page_attributes(
 	const struct vm_device_mapping *mapping)
 {
+	/* Write-combined MMIO keeps device identity; a port without the policy refuses the mapping. */
+	if ((mapping->attributes & VM_DEVICE_WRITE_COMBINE) != 0)
+		return HAL_SPACE_DEVICE | HAL_SPACE_WC;
+
 	/* MMIO pages keep explicit device identity and uncached translations. */
 	if ((mapping->attributes & VM_DEVICE_MMIO) != 0)
 		return HAL_SPACE_DEVICE | HAL_SPACE_NOCACHE;

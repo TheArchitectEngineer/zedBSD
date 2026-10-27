@@ -19,6 +19,8 @@
 #define VM_DEVICE_MMIO 1U
 /* Normal non-cacheable RAM remains managed memory and permits ordinary byte copies. */
 #define VM_DEVICE_UNCACHED_RAM 2U
+/* MMIO whose user translations write-combine (only together with VM_DEVICE_MMIO). */
+#define VM_DEVICE_WRITE_COMBINE 4U
 
 struct file;
 

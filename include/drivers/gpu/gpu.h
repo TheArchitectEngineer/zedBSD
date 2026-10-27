@@ -23,6 +23,8 @@
 #define DRV_GPU_MAPPING_DEVICE		1U
 /* Normal non-cacheable RAM keeps ordinary byte access and managed-memory identity. */
 #define DRV_GPU_MAPPING_UNCACHED_RAM	2U
+/* Device memory whose user view write-combines (only together with DRV_GPU_MAPPING_DEVICE). */
+#define DRV_GPU_MAPPING_WRITE_COMBINE	4U
 
 struct drv_gpu_device;
 struct drv_gpu_completion;

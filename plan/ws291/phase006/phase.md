@@ -134,3 +134,135 @@
 - scene-6500 の GPU: passthrough 41.37 ms → 30.68 ms（−26 %）。Linux（RADV の NGG culling）約 20 ms には届かない。残りの候補: 属性の後回し
   （捨てる頂点の属性の計算を省く）、LDS の大きさ（6500 体の mview の場所の大きさによる占有の低下）、VGPR の数、guard band・binning（p008）。
 - 未実施: desktop の frame-ops の計測（既定を NGG にするかの判断の材料）、属性の後回し。stick は vmunix-compact1 と ngg=2 で zedBSD 起動中。
+
+## q1635 の続き（2026-10-28 P2、worktree p2-ws291b、基点 main 6e6ebf830）
+
+### 属性の後回し（Mesa の deferred attribute culling の形）
+
+- 実装 commit aba6e9a97（gfx10-compile.c）: culling の時は IR を 2 つの part で lower して 1 つの program に並べる。culling part は position 以外の
+  STORE_OUTPUT を NOP にした写し（normal・uv の fetch と lighting は不要の命令として落ちる）→ LDS（x/w・y/w・w・印・新しい番号、20 B/頂点）→ 判定 →
+  compaction → 残る頂点が自分の vertex・instance 番号を新しい番号の場所へ → primitive の lane が語を v0 に → 新しい番号の lane が番号を v5・v8 に読む。
+  deferred part は VS 全体を新しい番号の lane だけで走らせて export し、最後に primitive の lane が v0 を export。LDS は 68 B → 20 B/頂点（2576 B）。
+  memory に書く VS（storage・shared・atomic）は 2 回走らせないため culling しない。出典は Mesa 25.0.7 ac_nir_lower_ngg.c（add_deferred_attribute_culling、
+  compact_vertices_after_culling）。
+- host: compiler host test 58 PASS（+nggc 6 本、新しい番号の場所から読む番号を instance にずらす変異で 6 本 FAIL）、vk host 197 PASS、vmunix warning 0
+  （00322fad8ae84b83）。mview の program は 640 語、31 VGPR（culling part 側が最大）。
+- 実機（vmunix-defer1、ngg=2、`plan/ws291/tests/round.sh`、build/ws291/measure/defer1b/）:
+
+| 確認 | 結果 |
+| --- | --- |
+| nggshape 14 種 | 全部 ok（止まらない）。`--indexed --cull --allback --tail` の drawn 0 は nggshape の --tail が list の時だけ効くため（試験の誤り、measure.sh の list を直した） |
+| shot 6500 | max 1、over15 0 |
+| shot 1 | 撮れたのは desktop（mview の窓が 6 s で出る前、起動直後の 1 回目）。未判定、撮り直す |
+| hang | vkhang lost → reset 4 ms → loops ok、mview 58 fps |
+
+| run | fps | frame | acquire | record | submit | fence |
+| --- | --- | --- | --- | --- | --- | --- |
+| scene-1 | 58.3 | 17.11 | 15.48 | 0.26 | 0.11 | 1.10 |
+| scene-1500 | 59.0 | 16.90 | 6.79 | 0.74 | 0.17 | 8.98 |
+| scene-6500 | 29.3 | 33.97 | 0.71 | 2.17 | 0.17 | 30.78 |
+| big-1000 | 18.8 | 52.93 | 0.63 | 31.82 | 15.96 | 3.12 |
+| subs-1000 | 3.8 | 252.22 | 0.01 | 139.25 | 112.74 | 0.02 |
+
+- 読み方: scene-6500 の GPU は 30.68 → 30.78 ms（変わらない）、scene-1500 は 9.06 → 8.98。属性の仕事（normal・uv の fetch、lighting、LDS で運ぶ出力）は
+  律速でなかった。残りの差（約 11 ms）は culling part そのもの（wave32 で RADV の wave64 の 2 倍の wave、wave ごとの scalar・barrier・LDS の固定の仕事）か
+  後段と見て、診断の kernel（boot の行 `amdrdna.vk.nggx`: 2 = 全部を面で落とす、8 = GS の late alloc 64、1 = culling の flag を切る）で切り分ける。
+
+### 切り分け（2026-10-28 03:50〜04:10、診断 kernel は commit しない: build/tmp/diag2/diag2.patch・build/tmp/diag3/pad64.patch、`plan/ws291/tests/nowc-build.sh` で WC を除いた tree から build）
+
+| 条件（scene-6500 / 1500 の GPU の fence ms） | 6500 | 1500 |
+| --- | --- | --- |
+| 基準（defer、nggx=0） | 30.69 | 9.06 |
+| nggx=2: 全部の三角形を面で落とす（raster も deferred part も無し） | 30.69 | 9.00 |
+| nggx=8: GS の late alloc 32 → 64 | 30.76 | 8.94 |
+| nggx=1: culling の判定を切る（全部残す） | 41.53 | 11.15 |
+| culling part に VALU を 64 命令足す（pad64） | 30.77 | 9.05 |
+| Linux RADV（既定 wave64 / RADV_PERFTEST=gewave32、shader は exec_lo の wave32 を確認） | 19.87 / 19.87 | — |
+
+- 読み方: 時間は全部 culling part にあるが、VALU を足しても変わらず、wave32 でも RADV は 19.9 ms → 命令の数や wave の大きさでなく、同時に走る subgroup の数
+  （GE の割り当て）で決まっている見込み。
+- RADV の culling の時の IB（`plan/ws291/tests/linux/ibdump.c` を host で build して Debian に置き、mview scene-6500 の frame の IB を
+  `pm4-decode.py` で読んだ。build/ws291/measure/lin-ib/all/ib.21.dec）: VGT_GS_ONCHIP_CNTL 0x2004007e・GE_CNTL 0xf280・RSRC3_GS は我々と同じ。違いは
+  **GE_PC_ALLOC 0x3ff**（parameter cache の oversubscription 512 行、我々 0x1ff）と **SPI_SHADER_PGM_RSRC4_GS 0x0040ffff**（late alloc 64、我々 32）。
+  Mesa の radv_precompute_registers_hw_ngg は culling の時 oversub_pc_lines に 2〜4 倍（parameter の数で）を掛ける。
+- 実装 commit 816a13ee2: culling の program の時だけ GE_PC_ALLOC を 256 × factor − 1（parameter ≤2 で 2、≤4 で 3、他 4）と OVERSUB、late alloc 64。
+  registers に parameter_count を足した。host: compiler 58 PASS、vk 197 PASS。実機は未実施（下）。
+
+### WC の map（ユーザー承認 2026-10-28「P2 の WC の変更は承認します。」）
+
+- commit 779020ee6（gpu.h・gpu.c・vm-device.h・vm/device.c・hal/amd64/space.c）と cfcd07066（amdrdna/node.c）。amd64 の user の map で DEVICE|WC を PAT index 4
+  （Intel SDM Vol. 3A の Page Attribute Table、"Selecting a Memory Type from the PAT"）、device の WC|NOCACHE は HAL_ERR_INVALID、RAM への WC は
+  HAL_ERR_UNSUPPORTED。WC を受けるのは amd64 だけ（vm_device_create が他の port では ENOTSUP。arm64・armv7 の user の map は DEVICE|WC を黙って Device にし、
+  i386 は WC を見ないため）。WC は DEVICE と組の時だけ（UNCACHED_RAM との組は gpu.c と vm/device.c で EINVAL）。
+- i915 の ktest-sync の WC の期待（src/drivers/gpu/i915/tests/execution/ktest-sync.c 700-715: hal_space_map_device の WC|NOCACHE と WC|DEVICE が
+  HAL_ERR_INVALID）: 779020ee6 は hal_space_map_device（src/hal/amd64/space.c 336-343 の検査）を変えていないので崩れない（コードの上の確かめ、ktest は未実行）。
+- build: amd64 vmunix・rpi4・visionfive2 とも warning 0。
+
+### WC・parameter cache・LDS の待ちの実機（2026-10-28 04:10〜04:40）
+
+- 04:10 の Debian の BootNext の再起動の後、zedBSD も Debian も 10 分応答せず（stick は 1 度正常に起動した診断の kernel pad64 のまま、新しい kernel を入れる前）。
+  Q1 が 04:2x に SwitchBot で入れ直し、Debian に戻った（入れ直し 1 回）。kernel 由来か firmware 由来かは不明（同じ事は 1 回だけ）。
+- kernel: vmunix-pc1（c0c1edcd14597cf3、WC 779020ee6・cfcd07066 + guard band 8ed8a285e + parameter cache 816a13ee2）、vmunix-lat1（+ 90a88f057:
+  wave の数の 4 つの LDS 読みと primitive の語の 3 つの LDS 読みを先に並べて待ちを 1 回に）。boot の行は ngg=2。
+
+| run（fence と record の ms） | defer1b（前） | pc1（WC+PC） | lat1 |
+| --- | --- | --- | --- |
+| scene-6500 frame / record / fence | 33.97 / 2.17 / 30.78 | 32.11 / 0.31 / 30.63 | 32.41 / 0.39 / 30.64 |
+| scene-1500 frame / record / fence | 16.90 / 0.74 / 8.98 | 15.27 / 0.35 / 8.98 | 15.15 / 0.34 / 8.92 |
+| scene-6500 fps | 29.3 | 31.0 | 30.7 |
+
+- WC: record は scene-6500 で 2.17 → 0.31 ms（instance の 104 KB の書き込み）、frame −1.9 ms。parameter cache の oversubscription と LDS の待ちは
+  GPU の時間を変えない（30.6〜30.8 ms）。
+- lat1 の全体の確認（`round.sh ... nggshape shot bench hang`、build/ws291/measure/lat1r/）: nggshape 14 種 全部 ok（`--cull --allback --tail` drawn 65536）、
+  shot 1 体 Linux と差 0（max 0）、6500 体 max 1・over15 0、bench は下の表。hang: 1 回目は vkhang lost → reset 5 ms → `--loops` ok だが
+  `--compute --loops` が lost after=2（device lost）、2〜4 回目は全部 ok、5 回目は vkhang が device 0 個・mview が窓を開けない（Keiland の session が
+  終わっていた: session.log の最後が `KWL FAILED site=park errno=42 thread=cursor step=stop`）。hang の試験を続けて流すと desktop が落ちる事がある。
+  前の kernel（defer1b）では 1 回だけ流して全部 ok。変更の前から有るかは未確認（compact1 の kernel で続けて流して比べるのが次の確かめ）。
+
+| run | fps | frame | acquire | record | submit | fence |
+| --- | --- | --- | --- | --- | --- | --- |
+| scene-1 | 108.4 | 9.21 | 7.29 | 0.28 | 0.16 | 1.27 |
+| scene-1500 | 65.9 | 15.15 | 5.47 | 0.34 | 0.23 | 8.92 |
+| scene-6500 | 30.7 | 32.41 | 0.95 | 0.39 | 0.27 | 30.64 |
+| big-100 | 68.6 | 14.55 | 6.43 | 3.42 | 1.49 | 2.87 |
+| big-1000 | 18.2 | 54.54 | 0.71 | 33.31 | 16.68 | 3.10 |
+| subs-100 | 33.6 | 29.62 | 0.54 | 15.62 | 13.27 | 0.03 |
+| subs-1000 | 3.5 | 276.41 | 14.55 | 144.65 | 116.98 | 0.02 |
+
+Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 201 fps・4.62、big-1000 86.9 fps（record 5.42・submit 0.02）、subs-1000 58.2 fps
+（record 6.63・submit 10.12）。
+
+### 残りの見立て（2026-10-28 04:40）
+
+- scene-6500 の GPU 30.6 ms は culling part の中の命令・LDS の待ち・raster・deferred part・late alloc・parameter cache のどれにも動かない（全部落としても
+  同じ）。RADV は wave32（gewave32）でも 19.9 ms で、NGG の register（GE_CNTL・VGT_GS_ONCHIP_CNTL・RSRC1〜4_GS・GE_PC_ALLOC・stages）は今は一致。
+  残る候補（未確かめ）: (1) 我々の IB の実際の値を RADV の ib.21.dec と突き合わせる（診断で IB を klog に出す p005 の方法、culling の時の
+  VGT_SHADER_STAGES_EN・PA_CL_*・DB の HTILE を含む全部）、(2) subgroup ごとの固定の仕事（始めの s_barrier、descriptor の s_load、vertex の fetch の
+  memory の待ち）を RADV の並びに近づける、(3) GE の index の処理（RADV と同じ draw の packet か）。
+- CPU 側: big-N・subs-N の record と submit が Linux の 6〜20 倍（big-1000 record 33 ms 対 5.4、submit 16.7 対 0.02）。p008〜p009 の CPU の record の短縮の
+  本体（vk-execute の draw ごとの全 state の書き直し、record の wire の decode）。
+- acquire（scene-1 で 7.3 ms）は libvulkan の WSI と Keiland の側（amdrdna の外）。
+
+### 我々の IB と RADV の culling の IB（2026-10-28 04:50〜05:05）
+
+- 診断 kernel（commit しない: build/tmp/diag4/ibd.patch、`KEEP_WC=1 PATCHES=... plan/ws291/tests/nowc-build.sh`）が、culling の program で instance
+  1000 以上の最初の draw までの PM4 を klog に出す。mview scene-6500 の 1 frame（687 語）を `pm4-decode.py` で読み、RADV の ib.21.dec と突き合わせた
+  （build/ws291/measure/ibd1/ours.dec・ours.regs・radv.regs）。
+- 同じ: VGT_SHADER_STAGES_EN（wave32 の bit を除く）、VGT_GS_ONCHIP_CNTL 0x2004007e、GE_CNTL 0xf280、GE_MAX_OUTPUT_PER_SUBGROUP、GE_NGG_SUBGRP_CNTL、
+  SPI_SHADER_IDX/POS_FORMAT、VGT_GS_INSTANCE_CNT、PA_CL_NGG_CNTL、PA_SC_NGG_MODE_CNTL、GE_PC_ALLOC 0x3ff・RSRC4_GS 0x0040ffff（816a13ee2 の後）、
+  guard band（8ed8a285e の後、RADV と小数の末尾まで同じ）、draw の packet（DRAW_INDEX_2、NUM_INSTANCES 6500）。
+- 違う: PA_SC_MODE_CNTL_0（我々 0x2、RADV 0x22: ALTERNATE_RBS_PER_TILE）、PA_SC_BINNER_CNTL_0（我々は binning 無し、RADV 0x19fc01b0）、
+  depth の HTILE（RADV は DB_Z_INFO の TILE_SURFACE_ENABLE と HTILE、我々は無し）、RSRC1_GS の FLOAT_MODE（我々 0xf0 = fp32 の denorm あり、RADV 0xc0）、
+  user SGPR の数（我々 9、RADV 17）、LDS（我々 2576 B、RADV 3584 B）。どれも全部を落とした時の 30.7 ms（raster が無い）を説明しない見込み
+  （FLOAT_MODE は未確かめ）。
+- 機械: 05:05 に stick を vmunix-lat1（cksum 4171145425）に戻し、zedBSD で起動中。IB の診断 kernel の deploy の途中で zedBSD の /boot/boot0 への cp が
+  60 s で返らなかった事が 1 回（hang の試験を続けた後の状態。Debian から /dev/sda2 を mount して見ると cp は終わっていた）。
+
+### 次の確かめ（再開する担当へ）
+
+1. GPU のどの block が busy かを測る: scene-6500 の間に GRBM_STATUS・GRBM_STATUS_SE0〜3・GRBM_STATUS2 を amdrdna の制御（amdrdnactl）か診断 kernel で
+   数千回読み、GE・SPI・PA・SX・TA の busy の割合を RADV（Linux の umr か /sys の amdgpu_regs）と比べる。全部落としても 30.7 ms なので GE か SPI の
+   どちらかの見込み。
+2. FLOAT_MODE を RADV と同じ 0xc0 にした kernel（compiler の GFX10_COUNTS_FLOAT_DENORMS）の 1 回の計測。
+3. vertex buffer の descriptor と index の cache の方針（descriptor の word 3、GE の index の取り込み）を RADV の descriptor と比べる。
+4. hang の試験を続けて流すと desktop が落ちる件を、変更の前の kernel（compact1）で続けて流して比べる。

@@ -35,11 +35,14 @@
 #                                            device, the queue is reset), then vkhang --loops, vkhang --compute --loops
 #                                            and a short mview run, and the desktop captured: their lines and the
 #                                            kernel's lines of the loss and the reset (printed), OUT/desktop.png
+#     measure.sh nggshape OUT                the vertex stage's draw shapes (nggshape, ws291-p005/p006) one by one, each
+#                                            waited for 10 s at most: their NGGSHAPE lines (printed), OUT/nggshape.log
 #     measure.sh bench zedbsd|linux OUT [LIST]
 #                                            every run of LIST (default bench.list beside this script) on the one
 #                                            system, mview copied first (USB_MVIEW, LINUX_MVIEW); OUT/bench.log and
 #                                            the table of fps and the frame's stages (printed, OUT/table.txt)
 #
+# The programs copied in: USB_MVIEW, USB_NGGSHAPE, USB_VKHANG (default build/ws291/usb/bin/...).
 # The environment: ZEDBSD_MAC, ZEDBSD_SUBNET (a /24, as 10.0.30), ZEDBSD_BOOT (the UEFI entry), DEBIAN (user@host),
 # KEY (the zedBSD root key).  A candidate for Master's Tools (the same steps serve other GPUs' boards).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -310,6 +313,38 @@ EOS
 	grep -E 'VKHANG|MVIEW (SPIN|FAILED)|lost|reset|fence|isolat|fault' "$out/hang.log"
 }
 
+nggshape() {
+	out=$1
+	mkdir -p "$out"
+	ip=$(to_zedbsd) || return 1
+	zcp "${USB_NGGSHAPE:-build/ws291/usb/bin/nggshape}" "root@$ip:/tmp/nggshape" || return 1
+	zrun "$ip" <<EOS || return 1
+$WAKE
+rm -f /tmp/nggshape.log
+chmod 755 /tmp/nggshape
+while read -r args; do
+	su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 /tmp/nggshape \$args" >> /tmp/nggshape.log 2>&1 < /dev/null
+done <<'LIST'
+--indexed --triangles=16 --repeat=1000
+--triangles=50000 --indexed --depth
+--triangles=50000 --indexed --cull --allback
+--triangles=50000 --cull --allback --tail
+--triangles=50000 --tiny
+--triangles=50000 --outside
+--triangles=50000 --cross --depth
+--triangles=50000 --indexed --shuffle
+--triangles=50000 --cluster=4 --depth
+--triangles=50000 --mview
+--triangles=50000 --mview --cull
+--triangles=50000 --heavy
+--triangles=50000 --degenerate=3
+--triangles=50000 --mview --texture
+LIST
+EOS
+	zget "$ip" "$out" /tmp/nggshape.log || return 1
+	grep NGGSHAPE "$out/nggshape.log"
+}
+
 linux_mview() {
 	out=$1
 	shift
@@ -372,5 +407,6 @@ shot) shot "$@" ;;
 hang) hang "$@" ;;
 linux-mview) linux_mview "$@" ;;
 bench) bench "$@" ;;
-*) sed -n '2,46p' "$0"; exit 2 ;;
+nggshape) nggshape "$@" ;;
+*) sed -n '2,49p' "$0"; exit 2 ;;
 esac

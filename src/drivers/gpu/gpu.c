@@ -3471,8 +3471,11 @@ gpu_map_ioctl(
 		    view.bytes == 0 ||
 		    view.bytes < resource->bytes ||
 		    view.bytes > SIZE_MAX ||
-		    (view.attributes & ~(DRV_GPU_MAPPING_DEVICE | DRV_GPU_MAPPING_UNCACHED_RAM)) != 0 ||
-		    view.attributes == (DRV_GPU_MAPPING_DEVICE | DRV_GPU_MAPPING_UNCACHED_RAM))
+		    (view.attributes & ~(DRV_GPU_MAPPING_DEVICE | DRV_GPU_MAPPING_UNCACHED_RAM | DRV_GPU_MAPPING_WRITE_COMBINE)) != 0 ||
+		    (view.attributes & (DRV_GPU_MAPPING_DEVICE | DRV_GPU_MAPPING_UNCACHED_RAM)) ==
+		    (DRV_GPU_MAPPING_DEVICE | DRV_GPU_MAPPING_UNCACHED_RAM) ||
+		    ((view.attributes & DRV_GPU_MAPPING_WRITE_COMBINE) != 0 &&
+		     view.attributes != (DRV_GPU_MAPPING_DEVICE | DRV_GPU_MAPPING_WRITE_COMBINE)))
 			return EIO;
 
 		/* Every alias and extent must represent whole pages for the VM insertion. */
@@ -3603,6 +3606,10 @@ gpu_mmap(
 	attributes = 0U;
 	if ((resource->mapping.attributes & DRV_GPU_MAPPING_DEVICE) != 0)
 		attributes = VM_DEVICE_MMIO;
+
+	/* Device memory the backend asked to write-combine keeps that policy in the user translation. */
+	if ((resource->mapping.attributes & DRV_GPU_MAPPING_WRITE_COMBINE) != 0)
+		attributes |= VM_DEVICE_WRITE_COMBINE;
 
 	/* Normal uncached RAM keeps the backend's cache policy in every user translation. */
 	if ((resource->mapping.attributes & DRV_GPU_MAPPING_UNCACHED_RAM) != 0)

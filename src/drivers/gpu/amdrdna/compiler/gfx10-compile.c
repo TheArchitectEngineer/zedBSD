@@ -117,21 +117,38 @@
 
 /*
  * A culling primitive shader's vertex place in LDS (bytes): x / w, y / w,
- * w, the kept mark, the new number, then the outputs; the places of the
- * subgroup's most vertices, then a word for each of its most waves.  The
- * most output channels moved (the position, the point size, every
- * parameter's four).
+ * w, the kept mark and the new number; after the culling the place of a
+ * new number holds the vertex and instance numbers its vertex arrived
+ * with (in the words of x / w and y / w, read no more by then).  The
+ * places of the subgroup's most vertices, then a word for each of its
+ * most waves.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/common/nir/ac_nir_lower_ngg.c
+ * (the lds_es_* layout and compact_vertices_after_culling: the position
+ * and the repacked arguments stored at the exporter's place, lines
+ * 86-105 and 609-680).
  */
 #define GFX10_CULL_X			0U
 #define GFX10_CULL_Y			4U
 #define GFX10_CULL_W			8U
 #define GFX10_CULL_KEPT			12U
 #define GFX10_CULL_NUMBER		16U
-#define GFX10_CULL_OUTPUTS		20U
+#define GFX10_CULL_VERTEX_ID		0U
+#define GFX10_CULL_INSTANCE_ID		4U
+#define GFX10_CULL_PLACE_BYTES		20U
 #define GFX10_CULL_PLACES		128U
 #define GFX10_CULL_MOST_WAVES		4U
-#define GFX10_CULL_CHANNELS		(5U + 4U * AMDRDNA_GFX10_LOCATIONS)
-#define GFX10_CULL_SHARED_MAX		65536U
+
+/*
+ * The parts a culling primitive shader is lowered in: the whole program
+ * of any other; the culling part (the program's position alone, the
+ * culling and the compaction); the deferred part (the whole vertex
+ * program, run again by the lanes of the vertices kept, then the
+ * primitives' export).
+ */
+#define GFX10_PART_WHOLE		0U
+#define GFX10_PART_CULL			1U
+#define GFX10_PART_DEFERRED		2U
 
 /* The culling flags' bit numbers (AMDRDNA_GFX10_CULL_*) the program tests. */
 #define GFX10_CULL_FLAG_BIT_ENABLED	4U
@@ -346,14 +363,12 @@ struct gfx10_lowering {
 	uint32_t scalar_temp_next;
 
 	/*
-	 * A culling primitive shader's SGPRs, the bytes of its vertex place,
-	 * and the output channels it moves (their VGPRs and offsets).
+	 * The part of the program lowered (GFX10_PART_*); a culling part's
+	 * SGPRs and the VGPRs its position is exported from.
 	 */
+	uint32_t part;
 	uint32_t cull_sgpr[GFX10_CULL_SGPRS];
-	uint32_t cull_place_bytes;
-	uint16_t cull_codes[GFX10_CULL_CHANNELS];
-	uint16_t cull_offsets[GFX10_CULL_CHANNELS];
-	uint32_t cull_channel_count;
+	uint16_t cull_position[4];
 
 	/* One past the highest SGPR the program uses. */
 	uint32_t sgpr_highest;
@@ -500,6 +515,10 @@ struct gfx10_sample {
 };
 
 static int refuse(struct gfx10_lowering *lowering, int error, const char *reason);
+static int lower_part(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_compile_options *options, uint32_t part, uint32_t first_label, struct amdrdna_gfx10_diagnostic *diagnostic, struct gfx10_lowering *lowering);
+static void release_lowering(struct gfx10_lowering *lowering);
+static int writes_memory(const struct drv_gpu_shader_ir *ir);
+static int compile_culling(const struct drv_gpu_shader_ir *ir, const struct amdrdna_gfx10_compile_options *options, struct amdrdna_gfx10_program **program, struct amdrdna_gfx10_diagnostic *diagnostic);
 static int ir_sources(const struct drv_gpu_shader_ir_inst *instruction, uint32_t *sources);
 static int ir_defines(const struct drv_gpu_shader_ir_inst *instruction);
 static int prepare(struct gfx10_lowering *lowering);
@@ -512,7 +531,6 @@ static int plan_registers(struct gfx10_lowering *lowering);
 static uint32_t reserve_vgprs(struct gfx10_lowering *lowering, uint32_t count);
 static void prologue_vertex(struct gfx10_lowering *lowering);
 static void prologue_primitive(struct gfx10_lowering *lowering);
-static uint32_t cull_place_bytes(const struct amdrdna_gfx10_program *program);
 static int place_for_culling(struct gfx10_lowering *lowering);
 static int cull_and_compact(struct gfx10_lowering *lowering);
 static int finish_exports(struct gfx10_lowering *lowering);
@@ -560,6 +578,7 @@ static int lower_shared(struct gfx10_lowering *lowering, const struct drv_gpu_sh
 static void lower_sync(struct gfx10_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static void emit_waits(struct gfx10_lowering *lowering, uint32_t fences);
 static int finish(struct gfx10_lowering *lowering);
+static int finish_code(struct gfx10_lowering *lowering);
 static void guard_begin(struct gfx10_lowering *lowering, uint32_t predicate);
 static int guard_writes(struct gfx10_lowering *lowering, uint32_t predicate);
 static void guard_end(struct gfx10_lowering *lowering);
@@ -688,6 +707,12 @@ amdrdna_gfx10_compile(
 /*
  * Compiles a parsed program.
  *
+ * A vertex program asked to cull as a primitive shader is lowered in two
+ * parts, which run one after the other in the one program: its position
+ * alone, the culling and the compaction, then the whole program again on
+ * the vertices kept (a program that writes memory, which must not run
+ * twice, does not cull).
+ *
  * Returns 0 with the program in *program, EINVAL for a malformed program,
  * ENOTSUP for one the compiler does not cover (both with the diagnostic),
  * or ENOMEM.
@@ -699,12 +724,8 @@ amdrdna_gfx10_compile_ir(
 	struct amdrdna_gfx10_program **program,
 	struct amdrdna_gfx10_diagnostic *diagnostic)
 {
-	struct gfx10_lowering lowering;
-	const struct drv_gpu_shader_ir_inst *instruction;
-	uint32_t dst;
-	uint32_t index;
-	uint32_t block;
-	int defines;
+	struct gfx10_lowering *lowering;
+	struct amdrdna_gfx10_compile_options whole_options;
 	int error;
 
 	/* A refused compile never leaves an old output pointer live. */
@@ -712,39 +733,95 @@ amdrdna_gfx10_compile_ir(
 		return EINVAL;
 	*program = NULL;
 
-	/* The state, empty. */
-	kern_memset(&lowering, 0, sizeof(lowering));
-	lowering.ir = ir;
-	lowering.diagnostic = diagnostic;
+	/* A vertex program that culls is lowered in its two parts. */
+	kern_memset(&whole_options, 0, sizeof(whole_options));
 	if (options != NULL)
-		lowering.options = *options;
+		whole_options = *options;
+	if (ir->stage == DRV_GPU_STAGE_VERTEX && whole_options.primitive_shader != 0U && whole_options.primitive_culling != 0U) {
+		if (writes_memory(ir) == 0)
+			return compile_culling(ir, &whole_options, program, diagnostic);
+		whole_options.primitive_culling = 0U;
+	}
+
+	/* The state, too large for a kernel stack. */
+	lowering = kern_calloc(1U, sizeof(*lowering));
+	if (lowering == NULL)
+		return ENOMEM;
+
+	/* The program in one part, its waits and its code. */
+	error = lower_part(ir, &whole_options, GFX10_PART_WHOLE, 0U, diagnostic, lowering);
+	if (error == 0)
+		error = finish_code(lowering);
+	release_lowering(lowering);
+
+	/* A refused program is never handed over. */
+	if (error != 0) {
+		amdrdna_gfx10_program_free(lowering->program);
+		kern_free(lowering);
+		return error;
+	}
+
+	/* Succeeded: the caller owns the program. */
+	*program = lowering->program;
+	kern_free(lowering);
+	return 0;
+}
+
+/*
+ * Lowers a program, or one part of it, into lowering: its instruction
+ * list (labels numbered from first_label) and its program, which the
+ * caller frees, with release_lowering() for the rest.
+ */
+static int
+lower_part(
+	const struct drv_gpu_shader_ir *ir,
+	const struct amdrdna_gfx10_compile_options *options,
+	uint32_t part,
+	uint32_t first_label,
+	struct amdrdna_gfx10_diagnostic *diagnostic,
+	struct gfx10_lowering *lowering)
+{
+	const struct drv_gpu_shader_ir_inst *instruction;
+	uint32_t dst;
+	uint32_t index;
+	uint32_t block;
+	int defines;
+	int error;
+
+	/* The state, empty. */
+	kern_memset(lowering, 0, sizeof(*lowering));
+	lowering->ir = ir;
+	lowering->diagnostic = diagnostic;
+	lowering->options = *options;
+	lowering->part = part;
+	lowering->next_label = first_label;
 
 	/* The result. */
-	lowering.program = kern_calloc(1U, sizeof(*lowering.program));
-	if (lowering.program == NULL)
+	lowering->program = kern_calloc(1U, sizeof(*lowering->program));
+	if (lowering->program == NULL)
 		return ENOMEM;
-	lowering.program->stage = ir->stage;
-	lowering.program->point_coord_attribute = AMDRDNA_GFX10_NO_ATTRIBUTE;
-	lowering.program->primitive_id_attribute = AMDRDNA_GFX10_NO_ATTRIBUTE;
+	lowering->program->stage = ir->stage;
+	lowering->program->point_coord_attribute = AMDRDNA_GFX10_NO_ATTRIBUTE;
+	lowering->program->primitive_id_attribute = AMDRDNA_GFX10_NO_ATTRIBUTE;
 
 	/* Checks the program, finds the last reads, maps the uniforms and places the registers. */
-	error = prepare(&lowering);
+	error = prepare(lowering);
 
 	/* Loads what every lane shares. */
 	if (error == 0)
-		error = prologue(&lowering);
+		error = prologue(lowering);
 
 	/* Lowers every instruction in order. */
 	for (index = 0U; error == 0 && index < ir->instruction_count; index++) {
 		instruction = &ir->instructions[index];
-		lowering.index = index;
+		lowering->index = index;
 
 		/* An instruction whose results nothing reads is not lowered. */
-		if (lowering.dead[index] != 0U)
+		if (lowering->dead[index] != 0U)
 			continue;
 
 		/* A constant or a uniform word with an operand of its own needs no instruction. */
-		defines = has_operand(&lowering, instruction);
+		defines = has_operand(lowering, instruction);
 		if (defines != 0)
 			continue;
 
@@ -753,71 +830,196 @@ amdrdna_gfx10_compile_ir(
 		defines = ir_defines(instruction);
 		if (defines == 4) {
 			/* A sample's channels in a block of their own. */
-			error = take_vgpr_block(&lowering, 4U, &dst);
+			error = take_vgpr_block(lowering, 4U, &dst);
 			if (error != 0)
 				break;
 			for (block = 0U; block < 4U; block++)
-				lowering.vgpr[instruction->dst + block] = (uint16_t)(dst + block);
-		} else if (defines != 0 && lowering.condition_only[instruction->dst] != 0U) {
+				lowering->vgpr[instruction->dst + block] = (uint16_t)(dst + block);
+		} else if (defines != 0 && lowering->condition_only[instruction->dst] != 0U) {
 			/* A Boolean used only as a condition stays in VCC_LO. */
 			dst = GFX10_NO_REG;
 		} else if (defines != 0) {
-			if (lowering.vgpr[instruction->dst] == GFX10_NO_REG) {
-				error = take_vgpr(&lowering, &dst);
+			if (lowering->vgpr[instruction->dst] == GFX10_NO_REG) {
+				error = take_vgpr(lowering, &dst);
 				if (error != 0)
 					break;
-				lowering.vgpr[instruction->dst] = (uint16_t)dst;
+				lowering->vgpr[instruction->dst] = (uint16_t)dst;
 			}
 
 			/* Takes the register the value now lives in. */
-			dst = lowering.vgpr[instruction->dst];
+			dst = lowering->vgpr[instruction->dst];
 		}
 
 		/* The instruction's GFX10 instructions. */
-		error = lower(&lowering, instruction, dst);
+		error = lower(lowering, instruction, dst);
 		if (error != 0)
 			break;
 
 		/* A list that could not grow fails the compile. */
-		if (lowering.out_of_memory != 0) {
+		if (lowering->out_of_memory != 0) {
 			error = ENOMEM;
 			break;
 		}
 
 		/* A condition expected in VCC_LO that was not there is the compiler's own fault, refused. */
-		if (lowering.lost_condition != 0) {
-			error = refuse(&lowering, ENOTSUP, "a condition was not kept where the compiler expected it");
+		if (lowering->lost_condition != 0) {
+			error = refuse(lowering, ENOTSUP, "a condition was not kept where the compiler expected it");
 			break;
 		}
 
 		/* The scratch VGPRs, and the VGPRs of values no later instruction reads, go back. */
-		give_scratch(&lowering);
-		retire(&lowering, instruction);
-		return_inputs(&lowering, index + 1U);
+		give_scratch(lowering);
+		retire(lowering, instruction);
+		return_inputs(lowering, index + 1U);
 	}
 
-	/* The end of the program, its waits and its code. */
+	/* The end of the program or of the part. */
 	if (error == 0)
-		error = finish(&lowering);
+		error = finish(lowering);
 
-	/* The per-value and per-uniform arrays and the list are only the compilation's. */
-	kern_free(lowering.vgpr);
-	kern_free(lowering.last_use);
-	kern_free(lowering.operand_code);
-	kern_free(lowering.moved);
-	kern_free(lowering.condition_only);
-	kern_free(lowering.dead);
-	kern_free(lowering.slot);
-	kern_free(lowering.list);
+	/* Reports the outcome; the caller releases the state. */
+	return error;
+}
+
+/* Frees what a lowering allocated but its program: the per-value and per-uniform arrays and the list. */
+static void
+release_lowering(
+	struct gfx10_lowering *lowering)
+{
+	/* Each array, NULL when it was never allocated. */
+	kern_free(lowering->vgpr);
+	kern_free(lowering->last_use);
+	kern_free(lowering->operand_code);
+	kern_free(lowering->moved);
+	kern_free(lowering->condition_only);
+	kern_free(lowering->dead);
+	kern_free(lowering->slot);
+	kern_free(lowering->list);
+	lowering->vgpr = NULL;
+	lowering->last_use = NULL;
+	lowering->operand_code = NULL;
+	lowering->moved = NULL;
+	lowering->condition_only = NULL;
+	lowering->dead = NULL;
+	lowering->slot = NULL;
+	lowering->list = NULL;
+}
+
+/* Reports nonzero when a program writes memory (a storage or shared store, an atomic): it must run once a vertex. */
+static int
+writes_memory(
+	const struct drv_gpu_shader_ir *ir)
+{
+	uint32_t index;
+	uint32_t op;
+
+	/* Each instruction's operation. */
+	for (index = 0U; index < ir->instruction_count; index++) {
+		op = ir->instructions[index].op;
+		if (op == DRV_GPU_IR_STORE_STORAGE || op == DRV_GPU_IR_STORE_SHARED || op == DRV_GPU_IR_ATOMIC)
+			return 1;
+	}
+
+	/* Nothing is written. */
+	return 0;
+}
+
+/*
+ * Compiles a vertex program that culls as a primitive shader in its two
+ * parts: the culling part lowers a copy of the program whose outputs but
+ * the position are dropped (their computation goes with them), the
+ * deferred part the whole program; the deferred part's code follows the
+ * culling part's, its labels numbered after them, and the program takes
+ * the deferred part's interface with the culling part's user SGPRs and
+ * LDS, and the registers of the larger of the two.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/common/nir/ac_nir_lower_ngg.c
+ * (add_deferred_attribute_culling: the top part a clone of the shader
+ * with every output but the position removed, lines 1170-1210;
+ * remove_culling_shader_outputs).
+ */
+static int
+compile_culling(
+	const struct drv_gpu_shader_ir *ir,
+	const struct amdrdna_gfx10_compile_options *options,
+	struct amdrdna_gfx10_program **program,
+	struct amdrdna_gfx10_diagnostic *diagnostic)
+{
+	struct gfx10_lowering *cull;
+	struct gfx10_lowering *deferred;
+	struct drv_gpu_shader_ir position_ir;
+	struct drv_gpu_shader_ir_inst *instructions;
+	struct amdrdna_gfx10_compile_options deferred_options;
+	uint32_t index;
+	int error;
+
+	/* The two states, too large for a kernel stack, nothing lowered yet; a copy of the instructions. */
+	cull = kern_calloc(1U, sizeof(*cull));
+	deferred = kern_calloc(1U, sizeof(*deferred));
+	instructions = kern_calloc(ir->instruction_count + 1U, sizeof(*instructions));
+	if (cull == NULL || deferred == NULL || instructions == NULL) {
+		kern_free(cull);
+		kern_free(deferred);
+		kern_free(instructions);
+		return ENOMEM;
+	}
+
+	/* The position part: the copy with every other output's store dropped. */
+	for (index = 0U; index < ir->instruction_count; index++) {
+		instructions[index] = ir->instructions[index];
+		if (instructions[index].op == DRV_GPU_IR_STORE_OUTPUT && instructions[index].location != DRV_GPU_IR_LOCATION_POSITION)
+			instructions[index].op = DRV_GPU_IR_NOP;
+	}
+	position_ir = *ir;
+	position_ir.instructions = instructions;
+
+	/* The two parts, the deferred one's labels after the culling one's. */
+	error = lower_part(&position_ir, options, GFX10_PART_CULL, 0U, diagnostic, cull);
+	if (error == 0) {
+		deferred_options = *options;
+		deferred_options.primitive_culling = 0U;
+		error = lower_part(ir, &deferred_options, GFX10_PART_DEFERRED, cull->next_label, diagnostic, deferred);
+	}
+
+	/* The deferred part's code after the culling part's, in the deferred part's lowering. */
+	for (index = 0U; error == 0 && index < deferred->count; index++)
+		emit(cull, &deferred->list[index]);
+	if (error == 0 && cull->out_of_memory != 0)
+		error = ENOMEM;
+	if (error == 0) {
+		kern_free(deferred->list);
+		deferred->list = cull->list;
+		deferred->count = cull->count;
+		deferred->capacity = cull->capacity;
+		cull->list = NULL;
+		if (cull->vgpr_highest > deferred->vgpr_highest)
+			deferred->vgpr_highest = cull->vgpr_highest;
+		if (cull->sgpr_highest > deferred->sgpr_highest)
+			deferred->sgpr_highest = cull->sgpr_highest;
+		deferred->program->user_sgprs = cull->program->user_sgprs;
+		deferred->program->shared_bytes = cull->program->shared_bytes;
+		deferred->program->primitive_culling = 1U;
+		error = finish_code(deferred);
+	}
+
+	/* The culling part's program and both lowerings' state go; the position part's copy too. */
+	release_lowering(cull);
+	release_lowering(deferred);
+	amdrdna_gfx10_program_free(cull->program);
+	kern_free(instructions);
 
 	/* A refused program is never handed over. */
 	if (error != 0) {
-		amdrdna_gfx10_program_free(lowering.program);
+		amdrdna_gfx10_program_free(deferred->program);
+		kern_free(cull);
+		kern_free(deferred);
 		return error;
 	}
 
 	/* Succeeded: the caller owns the program. */
-	*program = lowering.program;
+	*program = deferred->program;
+	kern_free(cull);
+	kern_free(deferred);
 	return 0;
 }
 
@@ -1806,13 +2008,17 @@ prologue(
 
 	/*
 	 * A vertex program's hardware inputs, and the inputs only the start
-	 * read, go back; a culling primitive shader keeps its primitive's
-	 * vertex numbers (v0 and v1) for the end.
+	 * read, go back; a culling part keeps its primitive's vertex numbers
+	 * (v0 and v1) and the vertex and instance numbers for its end, a
+	 * deferred part the primitive's word in v0.
 	 */
 	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
 		for (index = 0U; index < lowering->hardware_vgprs; index++) {
-			if (program->primitive_culling != 0U &&
-			    (index == AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR || index == AMDRDNA_GFX10_NGG_VERTEX_PAIR_VGPR))
+			if (lowering->part == GFX10_PART_CULL &&
+			    (index == AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR || index == AMDRDNA_GFX10_NGG_VERTEX_PAIR_VGPR ||
+			     index == AMDRDNA_GFX10_NGG_VERTEX_ID_VGPR || index == AMDRDNA_GFX10_NGG_INSTANCE_ID_VGPR))
+				continue;
+			if (lowering->part == GFX10_PART_DEFERRED && index == AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR)
 				continue;
 			give_vgpr(lowering, index);
 		}
@@ -3278,17 +3484,11 @@ prepare_graphics(
 			return error;
 		}
 
-		/*
-		 * Marks the program as a primitive shader, one that culls when
-		 * asked and its vertices' places fit in LDS.
-		 */
+		/* Marks the program as a primitive shader; its culling part culls, in the vertices' places in LDS. */
 		program->primitive_shader = 1U;
-		if (lowering->options.primitive_culling != 0U) {
-			lowering->cull_place_bytes = cull_place_bytes(program);
-			if (GFX10_CULL_PLACES * lowering->cull_place_bytes + 4U * GFX10_CULL_MOST_WAVES <= GFX10_CULL_SHARED_MAX) {
-				program->primitive_culling = 1U;
-				program->shared_bytes = GFX10_CULL_PLACES * lowering->cull_place_bytes + 4U * GFX10_CULL_MOST_WAVES;
-			}
+		if (lowering->part == GFX10_PART_CULL) {
+			program->primitive_culling = 1U;
+			program->shared_bytes = GFX10_CULL_PLACES * GFX10_CULL_PLACE_BYTES + 4U * GFX10_CULL_MOST_WAVES;
 		}
 	}
 
@@ -3464,6 +3664,17 @@ prologue_primitive(
 	unsigned sources[4];
 	uint32_t skip_label;
 
+	/*
+	 * A deferred part starts on the lanes the culling part left running
+	 * (none: to the primitives' export at once).
+	 */
+	if (lowering->part == GFX10_PART_DEFERRED) {
+		lowering->vertices_end_label = lowering->next_label;
+		lowering->next_label++;
+		emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, lowering->vertices_end_label);
+		return;
+	}
+
 	/* The wave's priority raised, as a vertex program's is. */
 	kern_memset(&inst, 0, sizeof(inst));
 	inst.kind = AMDRDNA_GFX10_KIND_CONTROL;
@@ -3553,100 +3764,32 @@ prologue_primitive(
 }
 
 /*
- * The bytes of a culling primitive shader's vertex place in LDS: x / w,
- * y / w and w, whether a kept primitive uses the vertex, the vertex's
- * number after the compaction, then its outputs (the position, the point
- * size, four channels for each parameter) for the vertex that exports
- * them.
- */
-static uint32_t
-cull_place_bytes(
-	const struct amdrdna_gfx10_program *program)
-{
-	uint32_t bytes;
-
-	/* The fixed part, the position, the point size and the parameters. */
-	bytes = GFX10_CULL_OUTPUTS + 16U;
-	if (program->writes_point_size != 0U)
-		bytes += 4U;
-	bytes += 16U * (uint32_t)__builtin_popcount(program->parameter_outputs);
-	return bytes;
-}
-
-/*
- * Lists the output channels a culling primitive shader moves through LDS
- * in the compaction (in lowering->cull_codes and cull_offsets): the VGPR
- * each is exported from and its byte offset in the vertex place, the
- * channels finish_exports() exports.  Their VGPRs stay taken, so the
- * culling's own VGPRs do not overwrite them.
+ * Finds the VGPRs a culling part's position is exported from (in
+ * lowering->cull_position).  They stay taken to the end, so the culling's
+ * own VGPRs do not overwrite them.
  */
 static int
 cull_channels(
 	struct gfx10_lowering *lowering)
 {
-	struct amdrdna_gfx10_program *program;
 	unsigned code;
-	uint16_t *codes;
-	uint16_t *offsets;
-	uint32_t *count;
-	uint32_t location;
 	uint32_t channel;
-	uint32_t offset;
-	uint32_t index;
+	uint32_t reg;
 	int error;
 
-	codes = lowering->cull_codes;
-	offsets = lowering->cull_offsets;
-	count = &lowering->cull_channel_count;
-
-	/* The position's four channels, then the point size. */
-	program = lowering->program;
-	*count = 0U;
-	offset = GFX10_CULL_OUTPUTS;
+	/* The position's four channels, each in a VGPR kept to the end. */
 	for (channel = 0U; channel < 4U; channel++) {
 		error = export_source(lowering, GFX10_OUTPUT_POSITION + channel, &code);
 		if (error != 0)
 			return error;
-		codes[*count] = (uint16_t)code;
-		offsets[*count] = (uint16_t)(offset + 4U * channel);
-		(*count)++;
-	}
-	offset += 16U;
-	if (program->writes_point_size != 0U) {
-		error = export_source(lowering, GFX10_OUTPUT_POINT_SIZE, &code);
-		if (error != 0)
-			return error;
-		codes[*count] = (uint16_t)code;
-		offsets[*count] = (uint16_t)offset;
-		(*count)++;
-		offset += 4U;
+		lowering->cull_position[channel] = (uint16_t)code;
+		reg = code - AMDRDNA_GFX10_VGPR_FIRST;
+		lowering->taken[reg] = 1U;
+		if (reg + 1U > lowering->vgpr_highest)
+			lowering->vgpr_highest = reg + 1U;
 	}
 
-	/* Each parameter's channels the program writes, at four channels a parameter. */
-	for (location = 0U; location < AMDRDNA_GFX10_LOCATIONS; location++) {
-		if ((program->parameter_outputs & (1U << location)) == 0U)
-			continue;
-		for (channel = 0U; channel < 4U; channel++) {
-			if (lowering->output_written[GFX10_OUTPUT_LOCATIONS + 4U * location + channel] == 0U)
-				continue;
-			error = export_source(lowering, GFX10_OUTPUT_LOCATIONS + 4U * location + channel, &code);
-			if (error != 0)
-				return error;
-			codes[*count] = (uint16_t)code;
-			offsets[*count] = (uint16_t)(offset + 4U * channel);
-			(*count)++;
-		}
-		offset += 16U;
-	}
-
-	/* The VGPRs the channels live in stay taken to the end, past the takes of the culling. */
-	for (index = 0U; index < *count; index++) {
-		lowering->taken[codes[index] - AMDRDNA_GFX10_VGPR_FIRST] = 1U;
-		if (codes[index] - AMDRDNA_GFX10_VGPR_FIRST + 1U > lowering->vgpr_highest)
-			lowering->vgpr_highest = codes[index] - AMDRDNA_GFX10_VGPR_FIRST + 1U;
-	}
-
-	/* Succeeded: every channel exported is listed. */
+	/* Succeeded: the position's VGPRs are known. */
 	return 0;
 }
 
@@ -3715,7 +3858,7 @@ emit_own_place(
 		    constant_operand(GFX10_TRUE),
 		    first,
 		    0U);
-	emit_multiply_add(lowering, AMDRDNA_GFX10_V(address), AMDRDNA_GFX10_V(address), lowering->cull_place_bytes, AMDRDNA_GFX10_ZERO);
+	emit_multiply_add(lowering, AMDRDNA_GFX10_V(address), AMDRDNA_GFX10_V(address), GFX10_CULL_PLACE_BYTES, AMDRDNA_GFX10_ZERO);
 }
 
 /*
@@ -3740,12 +3883,12 @@ place_for_culling(
 	uint32_t channel;
 	int error;
 
-	/* The channels the compaction moves, the position's four first. */
+	/* The position's VGPRs. */
 	error = cull_channels(lowering);
 	if (error != 0)
 		return error;
 	for (channel = 0U; channel < 4U; channel++)
-		position[channel] = lowering->cull_codes[channel];
+		position[channel] = lowering->cull_position[channel];
 
 	/* The registers of the place: its address, 1 / w, x / w and y / w (y / w holds the cleared mark after). */
 	error = take_vgpr(lowering, &address);
@@ -4014,25 +4157,31 @@ emit_cull_tests(
 }
 
 /*
- * Ends a culling primitive shader, once its vertex lanes have left their
- * places: its primitive lanes test their primitives and mark the vertices
- * of those kept; the vertices kept are numbered afresh through the
- * subgroup (each wave's count in LDS, the waves before it summed), the
- * subgroup's first wave asks for the space of the kept vertices and every
- * primitive (none when no vertex is kept: then one degenerate triangle of
- * NaN positions, the GFX10 hang's workaround), each kept vertex moves its
- * outputs to the place of its new number, the first lanes export them,
- * and each primitive lane exports its primitive with the new vertex
- * numbers, or as null when it is culled.  Every step that reads what
- * another wave wrote waits at the subgroup's barrier first.  Without the
- * culling flag every primitive is kept; the vertex numbers a topology of
- * points or lines does not have are left out.
+ * Ends a culling primitive shader's culling part, once its vertex lanes
+ * have left their places: its primitive lanes test their primitives and
+ * mark the vertices of those kept; the vertices kept are numbered afresh
+ * through the subgroup (each wave's count in LDS, the waves before it
+ * summed), the subgroup's first wave asks for the space of the kept
+ * vertices and every primitive (none when no vertex is kept: then one
+ * degenerate triangle of NaN positions, the GFX10 hang's workaround, and
+ * the program ends), each kept vertex leaves the vertex and instance
+ * numbers it arrived with at the place of its new number, each primitive
+ * lane packs its primitive with the new vertex numbers into v0 (null when
+ * it is culled), and the first lanes, one for each new number of the
+ * wave, take the numbers left at their places in the VGPRs the hardware
+ * delivers them in: the deferred part runs the whole vertex program on
+ * them alone.  Every step that reads what another wave wrote waits at the
+ * subgroup's barrier first.  Without the culling flag every primitive is
+ * kept; the vertex numbers a topology of points or lines does not have
+ * are left out.
  *
  * Procedure referenced: Mesa 25.0.7 src/amd/common/nir/ac_nir_lower_ngg.c
- * (add_deferred_attribute_culling, lines 1209-1350: the kept mark set by
- * each kept primitive, the vertex count of the request, the primitive
- * count all or none; compact_vertices_after_culling, lines 600-690: the
- * new number stored at the old place and the outputs at the new; without
+ * (add_deferred_attribute_culling, lines 1119-1420: the position part
+ * first, the kept mark set by each kept primitive, the vertex count of the
+ * request, the primitive count all or none, the vertex and instance
+ * numbers repacked and the vertex program's arguments overwritten with
+ * them; compact_vertices_after_culling, lines 600-690: the new number
+ * stored at the old place and the repacked arguments at the new; without
  * the passthrough mode the vertex numbers in the 16-bit halves of v0 and
  * v1, lines 115-128), src/amd/common/nir/ac_nir.c
  * (ac_nir_repack_invocations_in_workgroup: each wave's count in LDS, the
@@ -4050,8 +4199,6 @@ cull_and_compact(
 	struct gfx10_lowering *lowering)
 {
 	struct amdrdna_gfx10_inst inst;
-	const uint16_t *codes;
-	const uint16_t *offsets;
 	unsigned sources[4];
 	unsigned kept;
 	unsigned vertex_kept;
@@ -4068,7 +4215,6 @@ cull_and_compact(
 	uint32_t number;
 	uint32_t word;
 	uint32_t data;
-	uint32_t channels;
 	uint32_t vertex;
 	uint32_t channel;
 	uint32_t index;
@@ -4077,7 +4223,6 @@ cull_and_compact(
 	uint32_t skip_label;
 	uint32_t tested_label;
 	uint32_t empty_label;
-	uint32_t packed_label;
 	int error;
 
 	/* The scalar registers: the kept primitives, the kept vertices, the waves' counts. */
@@ -4089,7 +4234,7 @@ cull_and_compact(
 	count = AMDRDNA_GFX10_S(lowering->cull_sgpr[GFX10_CULL_COUNT]);
 	waves = AMDRDNA_GFX10_S(lowering->cull_sgpr[GFX10_CULL_WAVE_MASK]);
 
-	/* The VGPRs: the places, four temporaries, the three vertex places, the own place, a number, the word, a value. */
+	/* The VGPRs: the places, four temporaries, the three vertex places, the own place, a number, a value; the word is v0. */
 	error = 0;
 	for (vertex = 0U; vertex < 3U && error == 0; vertex++) {
 		for (channel = 0U; channel < 3U && error == 0; channel++)
@@ -4104,16 +4249,14 @@ cull_and_compact(
 	if (error == 0)
 		error = take_vgpr(lowering, &number);
 	if (error == 0)
-		error = take_vgpr(lowering, &word);
-	if (error == 0)
 		error = take_vgpr(lowering, &data);
 	if (error != 0)
 		return error;
+	word = AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR;
 	end_label = lowering->next_label;
 	tested_label = lowering->next_label + 1U;
 	empty_label = lowering->next_label + 2U;
-	packed_label = lowering->next_label + 3U;
-	lowering->next_label += 4U;
+	lowering->next_label += 3U;
 
 	/* The places are written; every lane's own place. */
 	emit_subgroup_barrier(lowering);
@@ -4149,7 +4292,7 @@ cull_and_compact(
 		emit_multiply_add(lowering,
 				  AMDRDNA_GFX10_V(vertex_place[vertex]),
 				  AMDRDNA_GFX10_V(vertex_place[vertex]),
-				  lowering->cull_place_bytes,
+				  GFX10_CULL_PLACE_BYTES,
 				  AMDRDNA_GFX10_ZERO);
 	}
 	emit_flag_branch(lowering, GFX10_CULL_FLAG_BIT_ENABLED, tested_label);
@@ -4190,7 +4333,7 @@ cull_and_compact(
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_BCNT1_I32_B32, count, vertex_kept, 0U);
 	emit_field(lowering, scratch, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_NUMBER_FIELD);
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_LSHL_B32, scratch, scratch, constant_operand(2U));
-	emit_scalar_literal(lowering, AMDRDNA_GFX10_S_ADD_U32, scratch, scratch, GFX10_CULL_PLACES * lowering->cull_place_bytes);
+	emit_scalar_literal(lowering, AMDRDNA_GFX10_S_ADD_U32, scratch, scratch, GFX10_CULL_PLACES * GFX10_CULL_PLACE_BYTES);
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, AMDRDNA_GFX10_EXEC_LO, constant_operand(1U), 0U);
 	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, AMDRDNA_GFX10_V(number), scratch, 0U, 0U);
 	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, AMDRDNA_GFX10_V(data), count, 0U, 0U);
@@ -4208,16 +4351,17 @@ cull_and_compact(
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, before, AMDRDNA_GFX10_ZERO, 0U);
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, live, AMDRDNA_GFX10_ZERO, 0U);
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, AMDRDNA_GFX10_EXEC_LO, constant_operand(1U), 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, AMDRDNA_GFX10_V(number), AMDRDNA_GFX10_ZERO, 0U, 0U);
 	for (wave = 0U; wave < GFX10_CULL_MOST_WAVES; wave++) {
-		emit_vector_literal(lowering,
-				    AMDRDNA_GFX10_KIND_VECTOR_ONE,
-				    AMDRDNA_GFX10_V_MOV_B32,
-				    AMDRDNA_GFX10_V(number),
-				    AMDRDNA_GFX10_LITERAL,
-				    0U,
-				    GFX10_CULL_PLACES * lowering->cull_place_bytes + 4U * wave);
-		emit_shared_access(lowering, AMDRDNA_GFX10_DS_READ_B32, AMDRDNA_GFX10_V(data), number, 0U, 0U);
-		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_READFIRSTLANE_B32, count, AMDRDNA_GFX10_V(data), 0U, 0U);
+		emit_shared_access(lowering,
+				   AMDRDNA_GFX10_DS_READ_B32,
+				   AMDRDNA_GFX10_V(place[wave / 3U][wave % 3U]),
+				   number,
+				   0U,
+				   GFX10_CULL_PLACES * GFX10_CULL_PLACE_BYTES + 4U * wave);
+	}
+	for (wave = 0U; wave < GFX10_CULL_MOST_WAVES; wave++) {
+		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_READFIRSTLANE_B32, count, AMDRDNA_GFX10_V(place[wave / 3U][wave % 3U]), 0U, 0U);
 		emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_COMPARE, AMDRDNA_GFX10_S_BITCMP1_B32, 0U, waves, constant_operand(wave));
 		emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_CSELECT_B32, AMDRDNA_GFX10_S(lowering->cull_sgpr[GFX10_CULL_TEMP]), count, AMDRDNA_GFX10_ZERO);
 		emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_ADD_U32, before, before, AMDRDNA_GFX10_S(lowering->cull_sgpr[GFX10_CULL_TEMP]));
@@ -4253,7 +4397,7 @@ cull_and_compact(
 	emit(lowering, &inst);
 	emit_branch(lowering, AMDRDNA_GFX10_S_BRANCH, skip_label);
 
-	/* Nothing kept: one vertex, one primitive, exported by the first lane; the other waves end. */
+	/* Nothing kept: one vertex, one primitive, exported by the first lane; the program ends. */
 	emit_label(lowering, empty_label);
 	emit_scalar_literal(lowering, AMDRDNA_GFX10_S_OR_B32, AMDRDNA_GFX10_M0, AMDRDNA_GFX10_ZERO, 1U | (1U << AMDRDNA_GFX10_ALLOC_PRIMITIVE_SHIFT));
 	kern_memset(&inst, 0, sizeof(inst));
@@ -4274,7 +4418,11 @@ cull_and_compact(
 	sources[2] = AMDRDNA_GFX10_V(data);
 	sources[3] = AMDRDNA_GFX10_V(data);
 	emit_export(lowering, AMDRDNA_GFX10_EXPORT_POSITION, sources, 0xfU, AMDRDNA_GFX10_FLAG_LAST | AMDRDNA_GFX10_FLAG_VALID_MASK);
-	emit_branch(lowering, AMDRDNA_GFX10_S_BRANCH, end_label);
+	emit_label(lowering, end_label);
+	kern_memset(&inst, 0, sizeof(inst));
+	inst.kind = AMDRDNA_GFX10_KIND_CONTROL;
+	inst.opcode = AMDRDNA_GFX10_S_ENDPGM;
+	emit(lowering, &inst);
 	emit_label(lowering, skip_label);
 
 	/* The other waves end too when nothing is kept. */
@@ -4283,24 +4431,62 @@ cull_and_compact(
 
 	/*
 	 * The kept vertices: the new number (the waves before and the kept
-	 * lanes below) at their own place, their outputs at the new number's.
+	 * lanes below) at their own place, the vertex and instance numbers
+	 * they arrived with at the new number's.
 	 */
-	codes = lowering->cull_codes;
-	offsets = lowering->cull_offsets;
-	channels = lowering->cull_channel_count;
 	skip_label = lowering->next_label;
 	lowering->next_label++;
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, AMDRDNA_GFX10_EXEC_LO, vertex_kept, 0U);
 	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, skip_label);
 	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_MBCNT_LO_U32_B32, AMDRDNA_GFX10_V(number), vertex_kept, before, 0U);
 	emit_shared_access(lowering, AMDRDNA_GFX10_DS_WRITE_B32, 0U, own, AMDRDNA_GFX10_V(number), GFX10_CULL_NUMBER);
-	emit_multiply_add(lowering, AMDRDNA_GFX10_V(number), AMDRDNA_GFX10_V(number), lowering->cull_place_bytes, AMDRDNA_GFX10_ZERO);
-	for (index = 0U; index < channels; index++)
-		emit_shared_access(lowering, AMDRDNA_GFX10_DS_WRITE_B32, 0U, number, codes[index], offsets[index]);
+	emit_multiply_add(lowering, AMDRDNA_GFX10_V(number), AMDRDNA_GFX10_V(number), GFX10_CULL_PLACE_BYTES, AMDRDNA_GFX10_ZERO);
+	emit_shared_access(lowering, AMDRDNA_GFX10_DS_WRITE_B32, 0U, number, AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_VERTEX_ID_VGPR), GFX10_CULL_VERTEX_ID);
+	emit_shared_access(lowering, AMDRDNA_GFX10_DS_WRITE_B32, 0U, number, AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_INSTANCE_ID_VGPR), GFX10_CULL_INSTANCE_ID);
 	emit_label(lowering, skip_label);
 	emit_subgroup_barrier(lowering);
 
-	/* The first lanes, one for each kept vertex from the wave's first number on, read and export the outputs. */
+	/*
+	 * The primitive lanes: a kept primitive's new vertex numbers from its
+	 * vertices' places, packed into v0; a culled one is null.
+	 */
+	skip_label = lowering->next_label;
+	lowering->next_label++;
+	wave_count = next_scalar_temp(lowering);
+	emit_field(lowering, wave_count, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES);
+	emit_lanes_below(lowering, wave_count);
+	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, skip_label);
+	emit_vector_literal(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_ONE,
+			    AMDRDNA_GFX10_V_MOV_B32,
+			    AMDRDNA_GFX10_V(word),
+			    AMDRDNA_GFX10_LITERAL,
+			    0U,
+			    AMDRDNA_GFX10_NGG_NULL_PRIMITIVE);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_AND_B32, AMDRDNA_GFX10_EXEC_LO, AMDRDNA_GFX10_EXEC_LO, kept);
+	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, skip_label);
+	for (vertex = 0U; vertex < 3U; vertex++)
+		emit_shared_access(lowering, AMDRDNA_GFX10_DS_READ_B32, AMDRDNA_GFX10_V(place[0][vertex]), vertex_place[vertex], 0U, GFX10_CULL_NUMBER);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, AMDRDNA_GFX10_V(word), AMDRDNA_GFX10_V(place[0][0]), 0U, 0U);
+	for (vertex = 1U; vertex < 3U; vertex++) {
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+			    AMDRDNA_GFX10_V_LSHLREV_B32,
+			    AMDRDNA_GFX10_V(data),
+			    constant_operand(10U * vertex),
+			    AMDRDNA_GFX10_V(place[0][vertex]),
+			    0U);
+		emit_flag_mask(lowering, scratch, GFX10_CULL_FLAG_BIT_VERTEX_1 + vertex - 1U);
+		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_CNDMASK_B32, AMDRDNA_GFX10_V(data), AMDRDNA_GFX10_ZERO, AMDRDNA_GFX10_V(data), scratch);
+		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_OR_B32, AMDRDNA_GFX10_V(word), AMDRDNA_GFX10_V(data), AMDRDNA_GFX10_V(word), 0U);
+	}
+	emit_label(lowering, skip_label);
+
+	/*
+	 * The first lanes, one for each new number from the wave's first on,
+	 * take the vertex and instance numbers left at their places; the
+	 * deferred part runs on these lanes.
+	 */
 	skip_label = lowering->next_label;
 	lowering->next_label++;
 	emit_field(lowering, AMDRDNA_GFX10_S(lowering->cull_sgpr[GFX10_CULL_TEMP]), AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_NUMBER_FIELD);
@@ -4315,63 +4501,11 @@ cull_and_compact(
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_MIN_U32, count, count, constant_operand(32U));
 	emit_lanes_below(lowering, count);
 	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, skip_label);
-	for (index = 0U; index < channels; index++) {
-		if (codes[index] < AMDRDNA_GFX10_VGPR_FIRST)
-			continue;
-		emit_shared_access(lowering, AMDRDNA_GFX10_DS_READ_B32, codes[index], own, 0U, offsets[index]);
-	}
-	error = finish_exports(lowering);
-	if (error != 0)
-		return error;
+	emit_shared_access(lowering, AMDRDNA_GFX10_DS_READ_B32, AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_VERTEX_ID_VGPR), own, 0U, GFX10_CULL_VERTEX_ID);
+	emit_shared_access(lowering, AMDRDNA_GFX10_DS_READ_B32, AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_INSTANCE_ID_VGPR), own, 0U, GFX10_CULL_INSTANCE_ID);
 	emit_label(lowering, skip_label);
 
-	/*
-	 * The primitive lanes: a kept primitive's new vertex numbers from its
-	 * vertices' places, packed; a culled one is null.
-	 */
-	wave_count = next_scalar_temp(lowering);
-	emit_field(lowering, wave_count, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES);
-	emit_lanes_below(lowering, wave_count);
-	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, end_label);
-	emit_vector_literal(lowering,
-			    AMDRDNA_GFX10_KIND_VECTOR_ONE,
-			    AMDRDNA_GFX10_V_MOV_B32,
-			    AMDRDNA_GFX10_V(word),
-			    AMDRDNA_GFX10_LITERAL,
-			    0U,
-			    AMDRDNA_GFX10_NGG_NULL_PRIMITIVE);
-	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, AMDRDNA_GFX10_S(lowering->cull_sgpr[GFX10_CULL_TEMP]), AMDRDNA_GFX10_EXEC_LO, 0U);
-	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_AND_B32, AMDRDNA_GFX10_EXEC_LO, AMDRDNA_GFX10_EXEC_LO, kept);
-	skip_label = lowering->next_label;
-	lowering->next_label++;
-	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, skip_label);
-	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, AMDRDNA_GFX10_V(word), AMDRDNA_GFX10_ZERO, 0U, 0U);
-	for (vertex = 0U; vertex < 3U; vertex++) {
-		if (vertex != 0U)
-			emit_flag_branch(lowering, GFX10_CULL_FLAG_BIT_VERTEX_1 + vertex - 1U, packed_label);
-		emit_shared_access(lowering, AMDRDNA_GFX10_DS_READ_B32, AMDRDNA_GFX10_V(data), vertex_place[vertex], 0U, GFX10_CULL_NUMBER);
-		if (vertex != 0U) {
-			emit_vector(lowering,
-				    AMDRDNA_GFX10_KIND_VECTOR_TWO,
-				    AMDRDNA_GFX10_V_LSHLREV_B32,
-				    AMDRDNA_GFX10_V(data),
-				    constant_operand(10U * vertex),
-				    AMDRDNA_GFX10_V(data),
-				    0U);
-		}
-		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_OR_B32, AMDRDNA_GFX10_V(word), AMDRDNA_GFX10_V(data), AMDRDNA_GFX10_V(word), 0U);
-	}
-	emit_label(lowering, packed_label);
-	emit_label(lowering, skip_label);
-	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, AMDRDNA_GFX10_EXEC_LO, AMDRDNA_GFX10_S(lowering->cull_sgpr[GFX10_CULL_TEMP]), 0U);
-	sources[0] = AMDRDNA_GFX10_V(word);
-	sources[1] = 0U;
-	sources[2] = 0U;
-	sources[3] = 0U;
-	emit_export(lowering, AMDRDNA_GFX10_EXPORT_PRIMITIVE, sources, 0x1U, AMDRDNA_GFX10_FLAG_LAST);
-	emit_label(lowering, end_label);
-
-	/* Succeeded: the kept vertices and every primitive are out. */
+	/* Succeeded: the deferred part follows on the lanes of the kept vertices. */
 	return 0;
 }
 
@@ -5871,26 +6005,28 @@ emit_export(
 	emit(lowering, &inst);
 }
 
-/* Ends the program, places its waits and writes its code. */
+/*
+ * Ends the program's list, or the list of the part of it lowered, for
+ * finish_code() (a culling part and a deferred part go to it together).
+ */
 static int
 finish(
 	struct gfx10_lowering *lowering)
 {
 	struct amdrdna_gfx10_program *program;
 	struct amdrdna_gfx10_inst inst;
-	struct amdrdna_gfx10_inst *waited;
 	unsigned nothing[4];
-	uint32_t waited_count;
-	uint32_t failed;
+	unsigned sources[4];
+	unsigned wave_count;
+	uint32_t skip_label;
 	int error;
 
 	/* Names the program being finished. */
 	program = lowering->program;
 
 	/*
-	 * A graphics program exports its results; a culling primitive
-	 * shader's vertices leave their places for its primitives instead, and
-	 * export at the end of the culling.
+	 * A graphics program exports its results; a culling part's vertices
+	 * leave their places for its primitives instead.
 	 */
 	if (program->primitive_culling == 0U) {
 		error = finish_exports(lowering);
@@ -5900,13 +6036,40 @@ finish(
 	if (error != 0)
 		return error;
 
-	/* A primitive shader's wave without vertices comes here; a culling one's primitives are tested and compacted. */
+	/*
+	 * A primitive shader's wave without vertices comes here; a culling
+	 * part's primitives are tested and compacted, and the deferred part
+	 * follows.
+	 */
 	if (program->primitive_shader != 0U)
 		emit_label(lowering, lowering->vertices_end_label);
 	if (program->primitive_culling != 0U) {
 		error = cull_and_compact(lowering);
 		if (error != 0)
 			return error;
+		if (lowering->out_of_memory != 0)
+			return ENOMEM;
+		return 0;
+	}
+
+	/*
+	 * A deferred part's primitive lanes export the word the culling part
+	 * packed in v0, after the vertices' exports (none in a wave without
+	 * primitives: an export with no lane running is not skipped).
+	 */
+	if (lowering->part == GFX10_PART_DEFERRED) {
+		wave_count = next_scalar_temp(lowering);
+		emit_field(lowering, wave_count, AMDRDNA_GFX10_S(AMDRDNA_GFX10_NGG_WAVE_INFO), AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES);
+		emit_lanes_below(lowering, wave_count);
+		skip_label = lowering->next_label;
+		lowering->next_label++;
+		emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, skip_label);
+		sources[0] = AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR);
+		sources[1] = 0U;
+		sources[2] = 0U;
+		sources[3] = 0U;
+		emit_export(lowering, AMDRDNA_GFX10_EXPORT_PRIMITIVE, sources, 0x1U, AMDRDNA_GFX10_FLAG_LAST);
+		emit_label(lowering, skip_label);
 	}
 
 	/* The program ends. */
@@ -5943,6 +6106,24 @@ finish(
 	/* A list that could not grow fails the compile. */
 	if (lowering->out_of_memory != 0)
 		return ENOMEM;
+
+	/* Succeeded: the list is complete. */
+	return 0;
+}
+
+/* Places the waits of a lowered program and writes its code and its register counts. */
+static int
+finish_code(
+	struct gfx10_lowering *lowering)
+{
+	struct amdrdna_gfx10_program *program;
+	struct amdrdna_gfx10_inst *waited;
+	uint32_t waited_count;
+	uint32_t failed;
+	int error;
+
+	/* Names the program being written. */
+	program = lowering->program;
 
 	/* The waits and the hazard breaks. */
 	error = amdrdna_gfx10_place_waits(lowering->list, lowering->count, &waited, &waited_count);
