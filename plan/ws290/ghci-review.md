@@ -1,31 +1,29 @@
-# GHCI レビュー 第 7 版（ghci.md bc3b4e6 に対する疑問 N01〜N34、回答 第 6 版を反映、2026-10-28 02:38）
+# GHCI レビュー 第 8 版（ghci.md 35b89af に対する疑問 N01〜N36、回答 第 7 版を反映、2026-10-28 02:45）
 
-- 対象: `git -C /home/awe/amaterrace-gpu show bc3b4e6:docs/ghci.md`（2669 行）と同じ commit の `include/ghci_cmd.h`。行の番号はこの版の物。差は `git diff fcd97e1 bc3b4e6 -- docs/ghci.md include/ghci_cmd.h` で読んだ。
-- 読んだ回答: `docs/ghci-review-reply.md`（commit 5613e82）、1 行目「# GHCI Review Reply - Version 6.0 (2026-10-28) - Commit: bc3b4e6 (Target: N01〜N33)」、127 行、md5 b19904cdac56083fae5d97fc6407869f、末尾 DONE。読み始め（02:36）と読み終わり（02:38）で同じ。
+- 対象: `git -C /home/awe/amaterrace-gpu show 35b89af:docs/ghci.md`（2677 行）と同じ commit の `include/ghci_cmd.h`。行の番号はこの版の物。差は `git diff bc3b4e6 35b89af -- docs/ghci.md include/ghci_cmd.h` で読んだ。
+- 読んだ回答: `docs/ghci-review-reply.md`（commit 17e3d0d）、1 行目「# GHCI Review Reply - Version 7.0 (2026-10-28) - Commit: 35b89af (Target: N01〜N34)」、95 行、md5 d5bd5fa9542d06e7bb8eeffbd96110be、末尾 DONE。読み始め（02:44）と読み終わり（02:45）で同じ。
 - 回答の番号は、こちらの N の番号と合っている。
 
 ## 要約
 
-- 判定（第 6 版の残り 7）: **今回の解決 4**（N02・N16・N21・N25）、一部 3（N12・N14・N33、いずれも L に下げた）。
-  回答と本文の食い違い 1（N33: 回答は centroid の bit を本文で直したと言うが §12.11 2278 行は今も `flags[16]`）。
-  改訂で新しく生じた矛盾 1: N34（§12.9 の format の戻り値）。
-- 残る疑問 **4 件: C 0・H 0・M 1・L 3**。
-- **driver の実装**: 残る疑問は全て仮の扱いで書ける。答え待ちで仮の扱いになるのは、SNORM・整数・float の texture を `texl` が返す値（N34、shader の compiler に効く）だけ。
+- 判定（第 7 版の残り 4）: **今回の解決 3**（N14・N33・N34）、一部 1（N12、回答と本文の食い違いを含む）。
+  改訂で新しく生じた矛盾 2: N35（`CMD_SESSION_OPEN` の opcode）、N36（`texf` の「raw」と形式ごとの戻り値）。
+- 残る疑問 **3 件: C 0・H 0・M 0・L 3**。
+- **driver の実装**: 残る疑問は全て文書の整理で、driver と shader の compiler は答えを待たずに書ける（N12 は driver が使わない番地の扱い、N35 は opcode の表の 0x12 で読める、N36 は形式ごとの規則で読める）。
 - 前回と同じく、回答が挙げた本文の行に無い事は解決に数えていない。
 
 ## 残る疑問
 
 重さ: C＝その部分の driver が書けない、H＝その部分を書く前に答えが要る、M＝仮の扱いで進められるが答えが要る、L＝文書の整理。
 
-| ID | 重さ | 判定 | 疑問 | 根拠（ghci.md bc3b4e6・回答 第 6 版） |
+| ID | 重さ | 判定 | 疑問 | 根拠（ghci.md 35b89af・回答 第 7 版） |
 | --- | --- | --- | --- | --- |
-| N34 | M | 新規 | §12.9 は読める format を §8.5.1 の表に委ね、「UNORM RGBA8, BGRA8, RGB565, and floating-point formats return [0, 1] normalized values」とする。§8.5.1 の Sampled の列には SNORM（R8_SNORM など）、UINT・SINT（R8_UINT・R32_SINT など）、SFLOAT（R16_SFLOAT・R32_SFLOAT など）がある。(1) float の format は [0, 1] に丸めるのか、格納された値をそのまま返すのか。(2) SNORM は [-1, 1] か。(3) UINT・SINT を `texl`・`texf` で読んだ時、rd..rd+3 は fp32（2152〜2153 行）に変換した値か、整数のビット列か。(4) R・RG の format で欠けた成分（G・B・A）は何を返すか。 | §12.9 2152〜2154 行・2184 行、§8.5.1 1434 行・1437 行・1438 行・1453 行・1458 行。回答 N33 (3) |
-| N12 | L | 一部 | `fence_addr` の振り分け（§7.3 959 行）と FLIP の 32 bit は決まった。残り: (1) 959 行は「[LOCAL_BASE, LOCAL_BASE + LOCAL_SIZE) の外は全て host」、§11.3 1787 行は「LOCAL_BASE 以上は local」で、LOCAL_BASE + LOCAL_SIZE 以上の 32 bit の番地の行き先が二つの節で違う。どちらが正か。(2) 959 行は「HOST_LIMIT に制限されない」、1787 行は「IOMMU が無く 32 bit の DMA の system では host の番地は HOST_LIMIT より下」。後者の system で `fence_addr` も HOST_LIMIT より下に限るか。(3) 959 行の振り分けは CMD_WAIT_FENCE の `fence_addr` にも同じく当てはまるか（959 行は CMD_FENCE の節にだけある）。 | §7.3 959 行・962〜966 行、§6.0 620 行、§11.3 1787 行。回答 N12 (1) |
-| N14 | L | 一部 | 初期値（stencil の mask 0xFF・reference 0、depth bias 0、blend constants 1.0）、PSO との後勝ち、`CAP_MRT_BLEND` = 0 の fault は §7.3 に入った。残り: 「Initial / Reset Defaults」はいつこの値に戻るか（電源投入・CTRL.RESET だけか、ring の submission・session の切替・CMD_BIND_PIPELINE でも戻るか）。戻らないなら、ある session の dynamic state は次の session の draw に残るか。 | §7.3 843〜846 行。回答 N14 (1)(2) |
-| N33 | L | 一部・食い違い | alpha to one は §12.11 から消え（回路が無い）、`texsz.s`・`texsz.l` は descriptor の field を返すと決まった。残り: §12.11 2278 行は今も centroid を「`flags[16]` `fs_centroid`」と書く（`flags` は dw8 で、`fs_centroid` は dw15 [16]。2250 行・2281 行・2305 行は dw15）。回答は本文で明確にしたと言う: 2278 行も dw15 に直すか。 | §12.11 2278 行・2281 行・2305 行、§12.10 2250 行、§8.2 1215 行（dw8）・1222 行（dw15）。回答 N33 (2) |
+| N12 | L | 一部・食い違い | HOST_LIMIT の下への制約（32 bit の DMA で IOMMU 無し）と CMD_WAIT_FENCE への同じ振り分けは本文に入った。残り: (1) 回答は「LOCAL_BASE + LOCAL_SIZE 以上の番地は host へ行かず fault」と言い、§11.3 1789 行も「≥ LOCAL_BASE + LOCAL_SIZE within the local DRAM aperture are invalid」と書くが、同じ 1789 行の前の文と §7.3 960 行・970 行は「[LOCAL_BASE, LOCAL_BASE + LOCAL_SIZE) の外は host」。「local DRAM aperture」の範囲は本文のどこで決まるか。LOCAL_BASE + LOCAL_SIZE 以上のある番地が host へ行くか fault かは何で決まるか。(2) 1789 行は fault を「Kind 4」とし、回答は「Kind 4 `GHCI_FAULT_KIND_AXI_ERROR`」と言うが、§3.5 の FAULT_INFO の表では 4 は `WATCHDOG`、`AXI_ERROR` は 5。どちらの Kind か。 | §7.3 960 行・970 行、§11.3 1789 行、§3.5 418〜419 行。回答 N12 (1) |
+| N35 | L | 新規 | §7.3 844 行（dynamic state の初期化の契機）は `CMD_SESSION_OPEN` を「0x01」と書き、回答 N14 も「opcode 0x01」と言う。opcode の表（717 行）・1098 行・1668 行は 0x12。844 行の 0x01 は 0x12 の誤りか。 | 717 行・844 行・1098 行・1668 行。回答 N14 (1) |
+| N36 | L | 新規 | §12.9 の「Return values written to rd..rd+3 depend on format data type」（2186 行）の下に、UNORM は [0, 1] の fp32 などの規則と並んで「`texf` returns raw texel values」（2192 行）がある。`texf` で UNORM・SNORM の形式を読んだ時、rd..rd+3 は 2187〜2188 行の正規化した fp32 か、格納されたままのビット列か（「raw」はフィルタと深さの比較を通らない意味だけか）。 | §12.9 2155 行・2186〜2192 行。回答 N34 |
 
 ## 解決した N
 
-N01〜N11・N13・N15〜N32（今回: N02 は TU が CMD_BIND_DESCRIPTOR_TABLE で受けた SET_TABLE_ADDR[0..1] を使い c24〜c31 の上書きに影響されない・c[32..511] は CMD_LOAD_CONST・texture を set 0・sampler を set 1 に束ねる、§8.4 1413〜1418 行。N16 は MEM_CACHE_CFG [15:0] が L2 の KiB・§12.9 の draft と CAPS[26] の撤廃、§11.3 1789 行・§12.9。N21 は §3.4 405 行が DISP_IRQ_STATUS の名前。N25 は §13.2 2520 行が IMMEDIATE を含む）。
+N01〜N11・N13〜N34（今回: N14 は初期値への復帰が電源投入・CTRL.RESET・`CMD_SESSION_OPEN`、submission では戻らず、dynamic state は session ごとで `CMD_BIND_SESSION` で切り替わる、§7.3 844〜845 行。N33 は §12.11 2286 行が `compute_lds_and_flags[16]`（dw15）で §8.2 1224 行と一致。N34 は UNORM [0, 1]・SNORM [-1, 1]・float はそのまま・UINT/SINT は整数のビット列・欠けた成分は (0, 0, 1)、§12.9 2155 行・2186〜2191 行）。
 
 DONE
