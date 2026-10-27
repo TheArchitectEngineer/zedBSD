@@ -77,9 +77,10 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 | [p002](phase002/phase.md) | buffer cache: header の確保を O(1)（空きの list）にし、irq を止める区間を短く。evict を run 単位に。host 試験で計算量 | p001 | 4 | cleared（2026-10-27 11:41） |
 | [p003](phase003/phase.md) | NVMe の大きな転送: MDTS に合わせた command、PRP list（bounce を使わず page に直接、使う所だけ bounce）、BIO の上限を上げる（`d_max_transfer_blocks`） | p001・p002 | 6 | cleared（2026-10-27、Q1 判定。raw の読み中央値 583 MB/s = p002 の後の 1.52 倍、書き 1.5 倍） |
 | [p004](phase004/phase.md) | raw の block device の先読み（buffer cache の worker で device の待ちと CPU の仕事を重ねる）。複数の queue・VMD の vector は p007 の乱読みの測定の後に要否（2026-10-28 Q1） | p003 | 6 | in-progress（実装・QEMU・5330 済み、raw の読み 4 GiB 中央値 1917 MB/s。Q1 の判定待ち、q1634） |
-| [p005](phase005/phase.md) | 連続の読み書き: UFS の file の readahead の窓と cluster の読み書き、書きの合流（raw の先読みは p004 へ、2026-10-28 Q1） | p002 | 4 | planning（調べと案、2026-10-28 P1） |
-| p006 | HMB（DRAM-less の BG5、p001 で効果が見込める時だけ。見込めなければ取り消し） | p003 | 4 | planned |
-| p007 | 5330 の測定の受け入れと回帰（QEMU の nvme・USB の起動は T、5330 は 1 本の script） | p002〜p006 | 2 | planned |
+| [p005](phase005/phase.md) | 連続の読み書き: UFS の file の readahead の窓と cluster の読み書き、書きの合流（raw の先読みは p004 へ、2026-10-28 Q1） | p002・p004 | 4 | in-progress（raw 書き 119%・raw 読み 150%・UFS 読み 126%、UFS 書き 55% で未達、2026-10-28 P1） |
+| [p006](phase006/phase.md) | HMB（DRAM-less の BG5） | p003 | 4 | in-progress（実装・5330 で動作、QD1 98%。QD32 は 44% で未達、2026-10-28 P1） |
+| [p010](phase010/phase.md) | block device の O_DIRECT（2026-10-28 ユーザー「O_DIRECT を UAPI に足す」、Q1 が p010 に確定、p007 の前） | p004・p005 | 4 | planning（設計・design-reviewer 済み、実装は未着手） |
+| p007 | 5330 の測定の受け入れと回帰（QEMU の nvme・USB の起動は T、5330 は 1 本の script） | p002〜p006・p010 | 2 | planned |
 | p008 | 規約の全文の見直し | p007 | 2 | planned |
 | [p009](phase009/phase.md) | 5330 の NVMe の root を p5 いっぱいに（`ufs-grow.py`、UFS の群の探しを O(1)）と、大きな file の sync の 2 乗の直し（reboot が止まった） | p002 | 2 | cleared（2026-10-28 Q1 判定: 受け入れ 3 点を QEMU・5330 で確かめた。xattr・msync の道を狙う試験は未実施のまま） |
 
@@ -105,3 +106,11 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 - 実装（WIP commit）: 40cc0c334・de51615b6（p005 D1〜D4）、6e3119ad6（UFS 先読み）、91eaa1c51（VM 直読み）、28ad3e40e（p006 HMB）、bmap の memo（間接の sector を 1 回の読みで 1 度）、114f6d405（raw の block device の書きを遅らせる: 開いた者だけが使う範囲は cache に dirty で残し、cluster・worker・fsync・最後の close で書く）。
 - ユーザーの決定（2026-10-28、Q1 経由）: 「O_DIRECT を UAPI に足す」（block device、Linux と同じ意味）。設計は kernel-and-driver-designer に依頼中、design-reviewer を通す。
 - 残り: UFS の書き（root と同じ batched journal の volume を p7 に置いて測る `p7ufswrite`、tail journal の volume の flush の多さは mkfs の既定の問題として Q1 へ）、UFS の読みの CPU（bmap の memo の効果）、raw の書き（遅らせる書きの効果）、乱読み QD32 の頭打ち（buffer cache・NVMe の 1 queue・VMD の 1 vector のどれか、O_DIRECT の後に direct で測る）、O_DIRECT、p007（QEMU・5330 の回帰、`5330-run.sh` の素の起動）、p008。
+
+### 再開点（2026-10-28、P1 のラップアップ、q1640）
+
+- 最後の commit: d847e644f（agent/p1-ws299b、基点 b1add2a6c）。QEMU の回帰 6 本 PASS は d173b958e の tree（d847e644f はそこから UFS の allocation run の定数を戻しただけ、build warning 0）。
+- 5330 の状態: p2 149.8 GiB、p7 `zedBSD-nvme-bench` 32 GiB、p5 32 GiB（zedBSD の root、`5330-run.sh --nvme-image` で起動 PASS）。p4 の kernel は `build/p1-p005f/vmunix`（d173b958e の 1 MiB の run 入り。次の測定は自分の kernel を入れる）。p7 は root と同じ形の UFS（`bench-debian.sh p7ufs`）が載っている。USB の stick は SystemRescue。
+- 受け入れ（Debian の 95%）の今: 達＝raw の連続の書き（1837/1549）・読み（cache 経由 1.80/1.2 GB/s）、UFS の file の読み（1518/1200）、乱読み QD1（56.5/57.8）。未達＝UFS の file の書き（983/1775、55%）、乱読み QD32（424/964、44%）、direct の読み書き（O_DIRECT が未実装）。
+- 次の順（推し）: (1) p010 O_DIRECT の実装（[phase010](phase010/phase.md) の設計と review の反映方針どおり、a 正しさ → b 速さ）。(2) 乱読み QD32 の頭打ち（device の待ち 78 µs で出ている command が平均 8 本、CPU 42 µs/IO。`randread.c` に `fdeach`（thread ごとに open）を足してある: 共有の fd の lock か、buffer cache・`disk_lock`・NVMe の `command_lock`・VMD の 1 vector かを切り分ける。O_DIRECT の後は direct でも測る）。(3) UFS の書きの CPU（書き手 1 本が律速、allocation run ごとの CG・inode の更新と metadata の buf の読み書き。run を 1 MiB にしても効かなかった）。(4) p007（QEMU の回帰 `build/tmp/qemu-suite.sh` の形を `plan/ws299/tests/` に移す、`5330-run.sh` の素の起動、他機種）。(5) p008 規約（source の `ws299` などの開発の管理情報、`buf: readahead` と nvme の測る口の log を消すか CONFIG にするか）。
+- 片付け（Q1 に頼む）: 5330 の `/home/awe/ws299/data.bin`（12 GiB）は乱読みと data の範囲の読みにまだ使うので残す。build/tmp/src-73135a9ec（73135a9ec の kernel の build の一時物）、build/tmp/qemu-* の古い run は消してよい。

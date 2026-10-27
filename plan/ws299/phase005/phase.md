@@ -97,10 +97,12 @@
 | file 4 GiB 書き（fsync 込み） | ext4 1775 | UFS native（tail journal）7 | UFS（root と同じ batched journal、p7ufs）983（p006a・p006c） | 55% |
 | file 4 GiB 冷えた読み | ext4 1.2 GB/s | 330 | 1518（p006c、bmap の memo の後。memo の前の p006a 1060、p005d 956） | 126% |
 
-- 書きの経路の数（`zb7-e-p7ufswrite`）: driver の書き 10037 回・平均 430 KiB（cluster）、flush 30 回。書き手は CPU で律速（write 4024 ms、sys は約 1.4 CPU）。allocation run（64 KiB ごとの CG・inode の更新、`IO_UFS_ALLOC_BEGIN` 67922 回、UFS の metadata の buf_read 50 万回・buf_write 34 万回）が重い。→ run を 1 MiB にした（d173b958e、QEMU 回帰中、5330 未測定）。
+- allocation run を 1 MiB にした kernel（d173b958e、`zb7-g`）: UFS 書き 849 MB/s（64 KiB の 983 より遅い）、読み 1.55 GB/s。効かないので戻した（d847e644f、ufs.c は d173b958e の前と同じ）。
+- tail journal の観測（Q1 が別に扱う）: zedBSD で `echo "FORMAT nvme0n1p7:8" | mkfs -t ufs --profile=native nvme0n1p7`（32 GiB）→ `mount -t ufs /dev/nvme0n1p7 /mnt/bench7` → `patwrite /mnt/bench7/f.bin 4096`: 566811 ms（7 MB/s）、`IO_DRIVER_FLUSH` 728057、`IO_UFS_ALLOCATE` 524811、`IO_UFS_WRITE` 1191860 回・13.2 GB（`build/hw5330/ws299/zb7-d-p7fswrite.txt`、main の kernel `zb7-basefs` も 567209 ms）。冷えた読みは main 330 MB/s、p005d 956 MB/s。
+- 書きの経路の数（`zb7-e-p7ufswrite`）: driver の書き 10037 回・平均 430 KiB（cluster）、flush 30 回。書き手は CPU で律速（write 4024 ms、sys は約 1.4 CPU）。allocation run（64 KiB ごとの CG・inode の更新、`IO_UFS_ALLOC_BEGIN` 67922 回、UFS の metadata の buf_read 50 万回・buf_write 34 万回）が重い。→ run を 1 MiB にしても速くならなかった（上）。残りの差は未解決。
 - `mkfs -t ufs --profile=native` の volume は tail journal（`journal_enabled`）で write-through になり（`write_cached_intended`、ufs.c）、block の割当ごとに `order_barrier` の flush（4 GiB で `IO_DRIVER_FLUSH` 728057 回）、書き 7 MB/s。zedBSD の root（image の UFS）は batched journal で遅らせる書き。mkfs の既定の形は userland の mkfs（所有の外）の事として Q1 に知らせた。
 - raw の書きを遅らせる（114f6d405）: devfs の claim の無い open の書きは、開いた者だけが使う範囲（`disk_readahead_private`）なら `disk_write_delayed` → `buf_write_delayed` で cache に dirty で残し、cluster・worker・fsync・最後の close（`buf_sync`）で書く。共有の範囲は今どおり write-through。
-- QEMU（`build/tmp/qemu-suite.sh` の形、2026-10-28）: boot-test rc 0、`qemu-readahead`・`qemu-nvme-shapes`・`qemu-grow-reboot`・`qemu-cache-stress`・`qemu-cache32-write` PASS（bmap の memo の tree まで。遅らせる raw の書きと 1 MiB の run の tree は回帰中）。
+- QEMU（`build/tmp/qemu-suite.sh` の形、2026-10-28）: boot-test rc 0、`qemu-readahead`・`qemu-nvme-shapes`・`qemu-grow-reboot`・`qemu-cache-stress`・`qemu-cache32-write` PASS（d173b958e の tree: 遅らせる raw の書き・HMB・bmap の memo・1 MiB の run まで全部 PASS。run を戻した d847e644f は build だけ）。build（d173b958e 以降）: config-5330・pcat・visionfive2・rpi4・m68k-virt で rc 0・warning 0。
 - 未実施: 誤りの注入、crash の整合、claim の隣、NVMe 以外の機種の書きの時間（build だけ）。
 
 ## 変えない物
