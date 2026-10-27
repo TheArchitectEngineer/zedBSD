@@ -45,6 +45,7 @@
 - 達成: fg021 ZYBO（2026-10-23）、fg020 VisionFive 2（WS256・WS269・WS270・WS277、2026-10-22 ユーザー「すばらしい。実用スピードです。」）、
   fg019 ベータ2（2026-10-17 OSC）、fg018 Linux 標準 GTK4（WS114）、fg010 OSC のデモ、fg012〜fg016。Pi 5（WS278・WS279）も completed。
   取り下げ: fg022 KC705 の GPU の board（WS288 の終了）。
+- 実機の使い分け（2026-10-27 10:49 ユーザー）: デスクトップは GPU の driver の開発（今後は Linux＋VFIO の passthrough）、Keiland の app は VM で開発して VF2 で速さを詰める、5330 は Intel GPU・電源管理・Alder Lake の時に。Pi 4・Pi 5・VF2・デスクトップは個別の SwitchBot で同時に自動制御の予定。表は [tools.md](tools.md) の「実機」。
 <!-- master:focus:end -->
 
 <!-- master:priority:start -->

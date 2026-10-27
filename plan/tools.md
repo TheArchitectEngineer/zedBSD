@@ -5,6 +5,17 @@ Phase に固有の試験は各 WS の `tests/`、シナリオ試験（AAT）は 
 
 ## 実機
 
+**実機の使い分け**（2026-10-27 10:49 ユーザー「今後の見込みですが、Pi4, Pi5, VF2, デスクトップマシン(RDNA or RTX 排他利用)については個別のSwitchbotで同時に自動制御できるようになりそうです。デスクトップマシンはデバイスドライバの開発でLinux+パススルーで使っていこうと思います。Keilandのデスクトップアプリの開発はVMで開発しつつ、一番遅いVF2で速度を最適化していく形にしようと思っています。5330は主にIntel GPUや電源管理、Alder Lakeプラットフォーム対応で必要なときに使っていこうと思います。」）
+
+| 機械 | 用途 | 電源 |
+| --- | --- | --- |
+| デスクトップ（10.0.10.3、AMD RDNA か NVIDIA RTX を差し替えて排他で使う） | GPU の device driver の開発。今後は Linux（Debian）＋ VFIO の passthrough で使う方針 | SwitchBot（今は AC276E42B252） |
+| VisionFive 2 | Keiland の desktop の app の速さの最適化（一番遅い機械） | 個別の SwitchBot の予定 |
+| Raspberry Pi 4・Pi 5 | 各 platform（Pi 5 は NVMe の HAT を付けた、WS304） | 個別の SwitchBot の予定（Pi 5 は今夜の新しい SwitchBot） |
+| Latitude 5330 | Intel GPU・電源管理・Alder Lake の platform の対応で、要る時に | 遠隔の電源は無い |
+| VM（QEMU） | Keiland の desktop の app の開発 | — |
+
+
 担当が実機を使うのは Q1 が割り当てた時だけ（一度に一人）。電源の入れ直しは Q1（[switchbot.py](tools/switchbot.py)）。IP は DHCP で変わることがあるので、使う前に `uname -a` で機種を確かめる。
 
 | 機械 | 接続 | 注意 |
