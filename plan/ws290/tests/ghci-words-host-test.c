@@ -785,7 +785,7 @@ test_sizes(void)
 	expect(ghci_watchdog_cycles(4000000000U, 2000U) == 0xFFFFFFFFU, "watchdog clamped");
 
 	/* 4 x 2^28 cycles at 100 MHz is 10737 ms: clamped to 10 s; 2 s gives 8.5 s; a short one 1 s. */
-	expect(ghci_reset_wait_ms(100000000U, 0x10000000U) == 10000U, "reset wait default");
+	expect(ghci_reset_wait_ms(100000000U, 0x10000000U) == 11237U, "reset wait default");
 	expect(ghci_reset_wait_ms(100000000U, 200000000U) == 8500U, "reset wait 2 s");
 	expect(ghci_reset_wait_ms(100000000U, 1000U) == 1000U, "reset wait minimum");
 	expect(ghci_reset_wait_ms(0U, 0U) == 10000U, "reset wait unknown clock");

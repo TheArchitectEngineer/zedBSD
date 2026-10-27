@@ -72,6 +72,8 @@ static struct ghci_device device;
 static int test_polled;
 static int test_master_found;
 static int test_master_broken;
+static unsigned test_release_busy;
+static uint32_t test_ring_bytes;
 
 /*
  * What the fake bus saw: the calls, and the state of the model at the
@@ -85,6 +87,8 @@ static unsigned master_off_calls;
 static int irq_after_reset;
 static int master_before_run;
 static int ring_before_master;
+static int release_after_quiet;
+static int master_off_after_release;
 
 /*
  * The scene's action at each sleep of the driver, the number of sleeps
@@ -105,11 +109,13 @@ static void check_locks(const char *name);
 static void model_irq(void *argument);
 static void sleep_hook(unsigned sleep, void *argument);
 static int fake_interrupt_take(struct ghci_device *target);
-static void fake_interrupt_release(struct ghci_device *target);
+static int fake_interrupt_release(struct ghci_device *target);
 static int fake_bus_master(struct ghci_device *target, int on);
 static int submit_nops(uint32_t dwords, struct ghci_ticket *ticket);
 static void action_recover(void);
 static void action_stall_then_fault(void);
+static void action_session_fault(void);
+static void action_session_fault_once(void);
 static uint32_t heap_bytes(void);
 static void scene_versions(void);
 static void scene_attach_checks(void);
@@ -125,6 +131,7 @@ static void scene_room_wait(void);
 static void scene_gate(void);
 static void scene_lost(void);
 static void scene_storm(void);
+static void scene_check_fails(void);
 static void scene_detach(void);
 
 /*
@@ -160,6 +167,7 @@ main(void)
 	scene_gate();
 	scene_lost();
 	scene_storm();
+	scene_check_fails();
 	scene_detach();
 	model_fini();
 
@@ -262,6 +270,8 @@ prepare_scene(
 	irq_after_reset = 0;
 	master_before_run = 0;
 	ring_before_master = 0;
+	release_after_quiet = 1;
+	master_off_after_release = 1;
 	scene_action = NULL;
 	scene_action_after = 0U;
 	scene_action_running = 0;
@@ -283,6 +293,7 @@ start_device(void)
 	device.pci_vendor = TEST_PCI_VENDOR;
 	device.pci_device = TEST_PCI_DEVICE;
 	device.bus_master_found = test_master_found;
+	device.ring_bytes = test_ring_bytes;
 
 	/* Starts it. */
 	error = ghci_device_start(&device);
@@ -310,6 +321,8 @@ end_scene(
 	test_polled = 0;
 	test_master_found = 0;
 	test_master_broken = 0;
+	test_release_busy = 0U;
+	test_ring_bytes = 0U;
 }
 
 /* Checks that the driver kept its lock order and its rules on waits, and holds nothing. */
@@ -332,11 +345,18 @@ check_locks(
 	expect(stub.mmio_errors == 0U, label);
 }
 
-/* The model's interrupt line, wired to the driver's handler. */
+/*
+ * The model's interrupt line, wired to the driver's handler.  While the
+ * driver holds its interrupt lock (it writes IRQ_ENABLE inside it) the
+ * handler would spin on another processor; here the line stays high and
+ * the next tick of the model calls the handler.
+ */
 static void
 model_irq(
 	void *argument)
 {
+	if (stub_holds("ghci interrupt"))
+		return;
 	(void)ghci_cp_interrupt(argument);
 }
 
@@ -377,14 +397,25 @@ fake_interrupt_take(
 	return 0;
 }
 
-/* Lets the interrupt go. */
-static void
+/* Lets the interrupt go, or answers EBUSY as many times as the scene says. */
+static int
 fake_interrupt_release(
 	struct ghci_device *target)
 {
 	(void)target;
+
+	/* A handler still running elsewhere. */
+	if (test_release_busy != 0U) {
+		test_release_busy--;
+		return EBUSY;
+	}
+
+	/* The device is reset and quiet when its interrupt goes. */
 	interrupt_releases++;
+	if (model.ctrl != 0U || model_read(GHCI_REG_IRQ_ENABLE) != 0U)
+		release_after_quiet = 0;
 	model_set_irq_handler(NULL, NULL);
+	return 0;
 }
 
 /* Turns bus mastering on or off in the model; records the order. */
@@ -395,9 +426,11 @@ fake_bus_master(
 {
 	(void)target;
 
-	/* Off. */
+	/* Off, after the interrupt went. */
 	if (!on) {
 		master_off_calls++;
+		if (model.irq_handler != NULL)
+			master_off_after_release = 0;
 		model_set_bus_master(0);
 		return 0;
 	}
@@ -455,6 +488,21 @@ action_stall_then_fault(void)
 		stub.ticks += kern_ms_to_ticks(GHCI_HANG_MS);
 	if (scene_action_runs == 100U)
 		model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x2000U, 0);
+}
+
+/* The scene's action: a session's fault under PROT (the processor goes on), each time. */
+static void
+action_session_fault(void)
+{
+	model_inject(GHCI_FAULT_KIND_PAGE_FAULT, GHCI_UNIT_SU, 1U, 0x4000U, 0);
+}
+
+/* The scene's action: a session's fault under PROT, the first time only. */
+static void
+action_session_fault_once(void)
+{
+	if (scene_action_runs == 1U)
+		action_session_fault();
 }
 
 /* Reports the bytes of CP_HEAP the driver gave the model. */
@@ -535,6 +583,24 @@ scene_attach_checks(void)
 	error = start_scene(MODEL_KC705_UMA, &switches);
 	expect(error == EIO && interrupt_takes == 0U, "attach: reset stuck");
 	end_scene("attach: reset stuck");
+
+	/*
+	 * The first reset waits for the quiesce of the watchdog a kernel before
+	 * left (2^28 cycles at 100 MHz: 4 x 2684 ms + 500 ms = 11237 ms), so a
+	 * reset that takes 10.5 s is not refused.
+	 */
+	memset(&switches, 0, sizeof(switches));
+	switches.reset_reads = 10500U;
+	error = start_scene(MODEL_KC705_UMA, &switches);
+	expect(error == 0, "attach: reset wait from the old WDT_CYCLES");
+	end_scene("attach: reset wait from the old WDT_CYCLES");
+
+	/* An unknown clock leaves WDT_CYCLES at its default and waits 10 s for a reset. */
+	prepare_scene(MODEL_KC705_UMA, NULL);
+	model.window[GHCI_REG_GCLK_HZ / 4U] = 0U;
+	error = start_device();
+	expect(error == 0 && device.reset_wait_ms == 10000U && model_read(GHCI_REG_WDT_CYCLES) == 0x10000000U, "attach: unknown clock");
+	end_scene("attach: unknown clock");
 
 	/*
 	 * The watchdog and the reset's wait: 2000 ms at 100 MHz, and four
@@ -651,6 +717,35 @@ scene_submit(void)
 	error = ghci_cp_wait(&device, &ticket, TEST_WAIT_MS);
 	expect(error == 0 && model.faults == 0U, "submit: larger than the ring passed");
 	end_scene("submit");
+
+	/* A 4 KiB ring: a thousand submissions meet its end, its full state and its one free slot. */
+	test_ring_bytes = 4096U;
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0 && model_read(GHCI_REG_RING_SIZE) == 4096U, "small ring: started");
+	failures = 0;
+	wraps = 0U;
+	last = device.ring.wptr;
+	for (index = 0U; index < TEST_SUBMITS; index++) {
+		error = submit_nops(TEST_SUBMIT_DWORDS, &ticket);
+		if (error == 0)
+			error = ghci_cp_wait(&device, &ticket, TEST_WAIT_MS);
+		if (error != 0)
+			failures++;
+		if (device.ring.wptr < last)
+			wraps++;
+		last = device.ring.wptr;
+	}
+	expect(failures == 0 && wraps >= 100U && model.faults == 0U, "small ring: every ticket passed");
+	model_hold(1);
+	error = submit_nops(TEST_SUBMIT_DWORDS, &ticket);
+	scene_action = NULL;
+	expect(error == 0, "small ring: placed while held");
+	model_hold(0);
+	error = submit_nops(TEST_LARGE_DWORDS, &ticket);
+	if (error == 0)
+		error = ghci_cp_wait(&device, &ticket, TEST_WAIT_MS);
+	expect(error == 0 && model.faults == 0U, "small ring: larger than the ring passed");
+	end_scene("small ring");
 }
 
 /* A polled device: no interrupt is enabled, the poll moves the fences. */
@@ -1072,9 +1167,20 @@ scene_detach(void)
 	expect(model.ctrl == 0U && model_read(GHCI_REG_IRQ_ENABLE) == 0U, "detach: reset and quiet");
 	expect(interrupt_releases == 1U && model.irq_handler == NULL, "detach: interrupt let go");
 	expect(master_off_calls == 1U && model.bus_master == 0, "detach: bus master off");
+	expect(release_after_quiet && master_off_after_release, "detach: reset, quiet, interrupt, then bus master");
 	expect(device.ring.memory == NULL && device.fence_page == NULL && device.heap == NULL, "detach: memory given back");
 	expect(stub.unregistrations == 1U, "detach: unregistered");
 	end_scene("detach");
+
+	/* An interrupt whose handler may still run keeps the device and its memory; a second try ends. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0, "detach: busy started");
+	test_release_busy = 1U;
+	error = ghci_device_stop(&device);
+	expect(error == EBUSY && device.ring.memory != NULL && device.interrupt_taken, "detach: handler busy, kept");
+	error = ghci_device_stop(&device);
+	expect(error == 0 && device.ring.memory == NULL && interrupt_releases == 1U, "detach: second try");
+	end_scene("detach: busy");
 
 	/* Bus mastering the firmware left on stays on. */
 	test_master_found = 1;
@@ -1093,4 +1199,39 @@ scene_detach(void)
 	scene_action = NULL;
 	expect(error == 0 && device.resets == 1U && device.state == GHCI_STATE_DETACHED, "detach: after the recovery");
 	end_scene("detach: recovery");
+}
+
+/*
+ * The last checks of a recovery: a session's fault that latches during
+ * the reset leaves FAULT_INFO set after the fence comes back, so the
+ * recovery goes round again; one at every pass loses the device.
+ */
+static void
+scene_check_fails(void)
+{
+	struct model_switches switches;
+	int error;
+
+	/* A device fault, and a session's fault while the reset runs. */
+	memset(&switches, 0, sizeof(switches));
+	switches.reset_reads = 5U;
+	error = start_scene(MODEL_PROT, &switches);
+	expect(error == 0, "check: started");
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	scene_action = action_session_fault_once;
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	scene_action = NULL;
+	expect(device.resets == 2U && device.state == GHCI_STATE_RUNNING, "check: second pass recovered");
+	expect(device.recovery_failures == 0U && device.recovering == 0, "check: failures cleared");
+	end_scene("check");
+
+	/* A session's fault at every pass: the device is lost. */
+	error = start_scene(MODEL_PROT, &switches);
+	expect(error == 0, "check: every pass started");
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	scene_action = action_session_fault;
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	scene_action = NULL;
+	expect(device.state == GHCI_STATE_LOST && stub.errors_reported == 1U, "check: lost");
+	end_scene("check: every pass");
 }

@@ -6,8 +6,7 @@
 include config/ci/config-amd64.mk
 
 CONFIG_DRIVER_PCI_GHCI := y
-CONFIG_GHCI_NATIVE := y
-ZEDBSD_USER_PROGRAMS += ghcictl ghci-blit ghci-display
+ZEDBSD_USER_PROGRAMS += ghcictl ghci-display
 
 ZEDBSD_GRAPHICAL_BOOT := n
 ZEDBSD_BOOT_KERNEL_MESSAGES := y

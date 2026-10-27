@@ -419,8 +419,8 @@ ghci_reset_wait_ms(
 	milliseconds += RESET_WAIT_MARGIN_MS;
 	if (milliseconds < RESET_WAIT_MIN_MS)
 		return RESET_WAIT_MIN_MS;
-	if (milliseconds > RESET_WAIT_UNKNOWN_MS)
-		return RESET_WAIT_UNKNOWN_MS;
+	if (milliseconds > 0xFFFFFFFFULL)
+		return 0xFFFFFFFFU;
 
 	/* Succeeded: the wait covers quiesce. */
 	return (uint32_t)milliseconds;

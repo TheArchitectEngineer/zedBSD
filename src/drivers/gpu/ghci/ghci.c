@@ -37,6 +37,7 @@ static int read_caps(struct ghci_device *device);
 static void choose_policy(struct ghci_device *device);
 static int register_device(struct ghci_device *device);
 static void init_locks(struct ghci_device *device);
+static void restart_service(struct ghci_device *device);
 static int gpu_open(void *private_data, void **result);
 static void gpu_close(void *private_data, void *opaque);
 static int gpu_get_info(void *private_data, void *opaque, struct gpu_info *info);
@@ -90,7 +91,7 @@ ghci_device_start(
 	/* The service thread, which recovers from faults and hangs. */
 	error = ghci_service_start(device);
 	if (error != 0) {
-		ghci_cp_stop(device);
+		(void)ghci_cp_stop(device);
 		return error;
 	}
 
@@ -98,7 +99,7 @@ ghci_device_start(
 	error = ghci_poll_start(device);
 	if (error != 0) {
 		ghci_service_stop(device);
-		ghci_cp_stop(device);
+		(void)ghci_cp_stop(device);
 		return error;
 	}
 
@@ -106,7 +107,7 @@ ghci_device_start(
 	error = register_device(device);
 	if (error != 0) {
 		ghci_service_stop(device);
-		ghci_cp_stop(device);
+		(void)ghci_cp_stop(device);
 		return error;
 	}
 
@@ -123,8 +124,8 @@ ghci_device_start(
  * Stops a started device once no session is open.
  *
  * Returns 0 once the GPU is reset, its interrupt let go and its memory
- * given back, or EBUSY while a session is open; the bus glue then keeps
- * the device.
+ * given back, or EBUSY while a session is open or the interrupt cannot be
+ * let go yet; the bus glue then keeps the device and may try again.
  */
 int
 ghci_device_stop(
@@ -147,31 +148,34 @@ ghci_device_stop(
 	if (error != 0)
 		return error;
 
+	/* A recovery in progress ends first, so that the detach and the recovery do not both drive CTRL. */
+	ghci_recover_wait(device);
+
+	/*
+	 * The service thread leaves before the node goes: it reports a lost
+	 * device to the core through the registration, which the core frees
+	 * once it is unregistered.
+	 */
+	ghci_service_stop(device);
+
 	/* The node goes; the core keeps the device while a session it opened lingers. */
 	if (device->gpu != NULL) {
 		error = drv_gpu_unregister(device->gpu);
 		if (error != 0) {
-			mutex_lock(&device->lock);
-
-			device->withdrawing = 0;
-
-			mutex_unlock(&device->lock);
+			restart_service(device);
 			return error;
 		}
 		device->gpu = NULL;
 	}
 
-	/* A recovery in progress ends first, so the detach and the recovery do not both drive CTRL. */
-	ghci_recover_wait(device);
-
-	/* The service thread leaves; nothing recovers from here. */
-	ghci_service_stop(device);
-
 	/*
 	 * The processor halts and resets, the interrupt and bus mastering go,
-	 * the poll thread leaves, and the memory goes with them.
+	 * the poll thread leaves, and the memory goes with them; an interrupt
+	 * that cannot be let go yet keeps the device for another try.
 	 */
-	ghci_cp_stop(device);
+	error = ghci_cp_stop(device);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the device holds nothing of the GPU. */
 	return 0;
@@ -312,6 +316,29 @@ init_locks(
 	waitq_init(&device->gate_wake, "ghci gate");
 	waitq_init(&device->service_wake, "ghci service");
 	waitq_init(&device->poll_wake, "ghci poll");
+}
+
+/*
+ * Starts the service thread again and opens the device again after a
+ * detach the core refused.
+ */
+static void
+restart_service(
+	struct ghci_device *device)
+{
+	int error;
+
+	/* The thread that recovers from faults. */
+	error = ghci_service_start(device);
+	if (error != 0)
+		kern_logf("ghci: %s: service thread not restarted (%d)\n", device->name, error);
+
+	/* Opens are taken again. */
+	mutex_lock(&device->lock);
+
+	device->withdrawing = 0;
+
+	mutex_unlock(&device->lock);
 }
 
 /* Refuses a window whose magic is not GHCI or whose major version is not 1. */

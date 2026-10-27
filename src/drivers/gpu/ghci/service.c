@@ -8,8 +8,8 @@
 /*
  * The start of the GHCI device's service thread, which recovers from
  * faults and hangs and gives deferred memory back (ghci_service_main in
- * cp.c), and of the poll thread of a device that takes no interrupt
- * (ghci_poll_main in cp.c).
+ * recover.c), and of the poll thread of a device that takes no interrupt
+ * (ghci_poll_main in recover.c).
  */
 
 #include <stddef.h>
