@@ -390,6 +390,13 @@ static volatile uint64_t readahead_skip_busy;
 static volatile uint64_t readahead_skip_hit;
 
 /*
+ * Where a prefetch's time goes, in nanoseconds since the last log line:
+ * taking and allocating its lines, and the device transfer.
+ */
+static volatile uint64_t readahead_prepare_ns;
+static volatile uint64_t readahead_transfer_ns;
+
+/*
  * How long jobs waited in the queue and ran, in nanoseconds, summed and at
  * most, over the jobs since the last log line; readahead_lock.
  */
@@ -467,6 +474,8 @@ static void readahead_worker(void *argument);
 static void readahead_run(struct buf_readahead_worker *worker, const struct buf_readahead_job *job);
 static int readahead_running(struct disk *leaf);
 static uint64_t readahead_now_ns(void);
+static uint32_t copy_cached_lines(struct disk *disk, uint64_t block, uint64_t remaining, uint8_t *out);
+static struct buf *recycle_line_locked(struct disk *disk, uint64_t line_block, uint64_t line_blocks, uint64_t line_bytes);
 
 /*
  * Initializes the buffer cache with its default byte cap.
@@ -864,6 +873,14 @@ buf_read(
 	/* Copies out of each cached line in turn. */
 	end = mapped + count;
 	while (mapped < end) {
+		/* Copies a run of lines already in the cache, a few at a time. */
+		run_blocks = copy_cached_lines(leaf, mapped, end - mapped, out);
+		if (run_blocks != 0) {
+			mapped += run_blocks;
+			out += (size_t)run_blocks * leaf->d_block_size;
+			continue;
+		}
+
 		error = transfer_run(leaf, mapped, end - mapped, out, 0, &run_blocks, NULL);
 		if (error != 0)
 			return error;
@@ -2700,6 +2717,22 @@ reference_line(
 			return 0;
 		}
 
+		/*
+		 * A miss in a full cache takes over the least recently used
+		 * idle line of the same disk and size instead of freeing one
+		 * line and allocating another.
+		 */
+		if (candidate == NULL) {
+			buffer = recycle_line_locked(disk, line_block, line_blocks, line_bytes);
+			if (buffer != NULL) {
+				spin_unlock_irqrestore(&cache_lock, irq);
+				stat_add(&stat_misses, 1);
+				stat_add(&stat_evictions, 1);
+				*result = buffer;
+				return 0;
+			}
+		}
+
 		spin_unlock_irqrestore(&cache_lock, irq);
 
 		/* A miss: prepares a candidate line unlocked. */
@@ -2894,6 +2927,13 @@ transfer_run_lines(
 	int error;
 	int line_error;
 	uint8_t *bytes;
+	uint64_t started_ns;
+	uint64_t sent_ns;
+
+	/* Times a prefetch for the read-ahead log. */
+	started_ns = 0;
+	if (prefetch)
+		started_ns = readahead_now_ns();
 
 	/* Leaves partial lines and small requests to the single-line path. */
 	*transferred = 0;
@@ -3037,6 +3077,11 @@ transfer_run_lines(
 	 */
 	stat_add(write ? &stat_write_bios : &stat_read_bios, 1);
 	run_record(prefetch, write ? IO_BUF_RUN_WRITE : IO_BUF_RUN_READ, count * line_bytes);
+	sent_ns = 0;
+	if (prefetch) {
+		sent_ns = readahead_now_ns();
+		stat_add(&readahead_prepare_ns, sent_ns - started_ns);
+	}
 	completed = 0;
 	error = EOPNOTSUPP;
 	if (pages != NULL) {
@@ -3048,6 +3093,8 @@ transfer_run_lines(
 		error = disk_transfer_progress_context(disk, write ? BIO_WRITE : BIO_READ, block,
 		    count * line_blocks, data, &completed, context);
 	}
+	if (prefetch)
+		stat_add(&readahead_transfer_ns, readahead_now_ns() - sent_ns);
 
 	/*
 	 * Publishes only complete lines in the confirmed prefix; uncertainty
@@ -4361,7 +4408,8 @@ readahead_run(
 		kern_logf("buf: readahead %llu jobs: queued %llu read %llu MiB, "
 			  "full %llu stopped %llu stale %llu present %llu (geometry %llu memory %llu busy %llu hit %llu) "
 			  "refused %llu errors %llu, "
-			  "queue wait avg %llu us max %llu us, run avg %llu us max %llu us\n",
+			  "queue wait avg %llu us max %llu us, run avg %llu us max %llu us "
+			  "(prepare %llu us transfer %llu us)\n",
 			  (unsigned long long)finished,
 			  (unsigned long long)readahead_queued,
 			  (unsigned long long)(readahead_read_bytes / (1024U * 1024U)),
@@ -4378,7 +4426,11 @@ readahead_run(
 			  (unsigned long long)(wait_ns / BUF_READAHEAD_LOG_EVERY / 1000U),
 			  (unsigned long long)(wait_max_ns / 1000U),
 			  (unsigned long long)(run_ns / BUF_READAHEAD_LOG_EVERY / 1000U),
-			  (unsigned long long)(run_max_ns / 1000U));
+			  (unsigned long long)(run_max_ns / 1000U),
+			  (unsigned long long)(atomic_u64_fetch_add_relaxed(&readahead_prepare_ns, 0) / BUF_READAHEAD_LOG_EVERY / 1000U),
+			  (unsigned long long)(atomic_u64_fetch_add_relaxed(&readahead_transfer_ns, 0) / BUF_READAHEAD_LOG_EVERY / 1000U));
+		readahead_prepare_ns = 0;
+		readahead_transfer_ns = 0;
 	}
 }
 
@@ -4399,4 +4451,183 @@ readahead_now_ns(
 	/* Succeeded: whole seconds, then the rest, so the product does not overflow. */
 	return (counter / frequency) * 1000000000ULL +
 	    (counter % frequency) * 1000000000ULL / frequency;
+}
+
+
+/*
+ * Copies out the valid whole lines at the start of a range, up to
+ * BUF_RUN_LINES of them, and reports the blocks copied.
+ *
+ * The lines are looked up and given back under one hold of the cache lock
+ * each; a line that is missing, not valid, or in use ends the run without
+ * waiting, and zero leaves the range to the paths that read and wait.
+ */
+static uint32_t
+copy_cached_lines(
+	struct disk *disk,
+	uint64_t block,
+	uint64_t remaining,
+	uint8_t *out)
+{
+	struct buf *lines[BUF_RUN_LINES];
+	uint64_t line_blocks;
+	unsigned count;
+	unsigned found;
+	unsigned copied;
+	unsigned index;
+	unsigned long irq;
+	int usable;
+
+	/* Takes whole page-sized lines only, from a line's start. */
+	if (disk->d_block_size == 0 || disk->d_block_size > KERN_PAGE_SIZE)
+		return 0;
+	line_blocks = KERN_PAGE_SIZE / disk->d_block_size;
+	if (block % line_blocks != 0 || remaining < line_blocks)
+		return 0;
+	count = BUF_RUN_LINES;
+	if (remaining / line_blocks < count)
+		count = (unsigned)(remaining / line_blocks);
+
+	/* References the lines that are there, from the first, under one hold. */
+	found = 0;
+	irq = spin_lock_irqsave(&cache_lock);
+
+	for (index = 0; index < count; index++) {
+		lines[index] = hash_find_locked(disk, block + index * line_blocks);
+		if (lines[index] == NULL)
+			break;
+		refcount_get(&lines[index]->b_refs);
+		lru_remove_locked(lines[index]);
+		found++;
+	}
+
+	spin_unlock_irqrestore(&cache_lock, irq);
+
+	/* Copies each valid idle line while owning it, stopping at the first other one. */
+	copied = 0;
+	for (index = 0; index < found; index++) {
+		irq = spin_lock_irqsave(&lines[index]->b_lock);
+		usable = 0;
+		if (!lines[index]->b_busy &&
+		    !lines[index]->b_io_inflight &&
+		    (lines[index]->b_flags & BUF_VALID) != 0 &&
+		    lines[index]->b_block_count == line_blocks &&
+		    lines[index]->b_memory.size == KERN_PAGE_SIZE) {
+			lines[index]->b_busy = 1;
+			usable = 1;
+		}
+		spin_unlock_irqrestore(&lines[index]->b_lock, irq);
+		if (!usable)
+			break;
+
+		kern_memcpy(out + (size_t)index * KERN_PAGE_SIZE, lines[index]->b_data, KERN_PAGE_SIZE);
+
+		irq = spin_lock_irqsave(&lines[index]->b_lock);
+
+		lines[index]->b_busy = 0;
+		waitq_wake_all(&lines[index]->b_waitq);
+
+		spin_unlock_irqrestore(&lines[index]->b_lock, irq);
+		copied++;
+	}
+
+	/* Gives every reference back under one hold. */
+	irq = spin_lock_irqsave(&cache_lock);
+
+	for (index = 0; index < found; index++) {
+		if (refcount_put_not_last(&lines[index]->b_refs) == 1)
+			lru_add_locked(lines[index]);
+	}
+
+	spin_unlock_irqrestore(&cache_lock, irq);
+
+	/* Succeeded: the blocks of the lines copied. */
+	stat_add(&stat_hits, found);
+	return (uint32_t)(copied * line_blocks);
+}
+
+/*
+ * Takes over an idle line for another block when the cache is full;
+ * cache_lock is held and the block is known to be missing.
+ *
+ * Only a clean, unreferenced line of the same disk and the same size near
+ * the LRU tail is taken, so that its memory, its accounting and its disk
+ * pin carry over unchanged.  The line comes back hashed under its new
+ * block, invalid, with the cache's reference and the caller's.
+ */
+static struct buf *
+recycle_line_locked(
+	struct disk *disk,
+	uint64_t line_block,
+	uint64_t line_blocks,
+	uint64_t line_bytes)
+{
+	struct buf *buffer;
+	struct buf saved;
+	unsigned long birq;
+	unsigned long dirty_irq;
+	unsigned bucket;
+	unsigned looked;
+	int idle;
+
+	/* Recycles only when another line would not fit under the cap. */
+	if (cache_current_bytes <= cache_max_bytes &&
+	    cache_reserved_bytes <= cache_max_bytes - cache_current_bytes &&
+	    line_bytes <= cache_max_bytes - cache_current_bytes - cache_reserved_bytes)
+		return NULL;
+
+	/* Looks at a few lines from the LRU tail for an idle one of this disk and size. */
+	looked = 0;
+	for (buffer = lru_tail; buffer != NULL && looked < 8U; buffer = buffer->b_lru_prev) {
+		looked++;
+		if (buffer->b_disk != disk ||
+		    buffer->b_block_count != line_blocks ||
+		    buffer->b_memory.size != line_bytes ||
+		    refcount_load(&buffer->b_refs) != 1)
+			continue;
+
+		/* An idle, clean line is taken out of the LRU and the hash table. */
+		birq = spin_lock_irqsave(&buffer->b_lock);
+		dirty_irq = spin_lock_irqsave(&dirty_index_lock);
+		idle = 1;
+		if (buffer->b_busy ||
+		    buffer->b_io_inflight ||
+		    (buffer->b_flags & BUF_DIRTY) ||
+		    buffer->b_dirty_linked ||
+		    buffer->b_journal_pin != 0)
+			idle = 0;
+		spin_unlock_irqrestore(&dirty_index_lock, dirty_irq);
+		spin_unlock_irqrestore(&buffer->b_lock, birq);
+		if (!idle)
+			continue;
+		lru_remove_locked(buffer);
+		hash_remove_locked(buffer);
+
+		/* Starts the header afresh, keeping its slab slot, memory, disk and generation. */
+		saved = *buffer;
+		kern_memset(buffer, 0, sizeof(*buffer));
+		buffer->b_disk = disk;
+		buffer->b_size = saved.b_size;
+		buffer->b_memory = saved.b_memory;
+		buffer->b_data = saved.b_data;
+		buffer->b_slab = saved.b_slab;
+		buffer->b_slab_slot = saved.b_slab_slot;
+		buffer->b_generation = saved.b_generation;
+		buffer->b_block = line_block;
+		buffer->b_block_count = (uint32_t)line_blocks;
+		refcount_init(&buffer->b_refs, 2);
+		spin_init(&buffer->b_lock, LOCK_RANK_BUF, "buffer");
+		waitq_init(&buffer->b_waitq, "buffer state");
+
+		/* Publishes it under the new block. */
+		bucket = buf_hash_key(disk, line_block);
+		buffer->b_hash_next = cache_hash[bucket];
+		cache_hash[bucket] = buffer;
+
+		/* Succeeded: the line is the caller's to fill. */
+		return buffer;
+	}
+
+	/* No line near the tail could be taken over. */
+	return NULL;
 }

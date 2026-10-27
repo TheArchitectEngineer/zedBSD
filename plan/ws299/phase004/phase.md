@@ -3,7 +3,7 @@
 # ws299-p004 待ちを重ねる: 連続の読みの先読みを非同期の worker で（raw の block device）
 
 - 親: [WS299](../ws.md)。Queue: q1617 / q1617-i01（担当 P1、2026-10-27）。前提: p003（cleared 2026-10-27、main be47a24df）。
-- Status: in-progress（測る口と測定は済み。範囲は 2026-10-28 Q1 が決定。design-reviewer から再開、q1634）
+- Status: in-progress（実装・QEMU・5330 の測定は済み（下の「結果」）。D5 の design-reviewer の結果待ち、q1634）
 - Disposition: normal
 
 ## 測った事（2026-10-27、5330、kernel は main be47a24df ＋ 下の測る口、`nvme-bench-5330.sh zedbsd zb-p004m … read`）
@@ -89,6 +89,13 @@
 - M1 → demand の側の縮め、仕事の格子。M2 → owner ごとの流れ、捨てた時の `issued` の巻き戻し、使い回しで generation。M3 → 先読みの形の NULL の道と io_stats。M4 → 4 GiB の曲線（`nvme-bench-5330.sh` の chunk の 16 段 = 4 GiB）と待ちの数。M5 → 割り込める待ち。M6 → 受け入れの試験を足した（下）。
 - L2: ws.md の受け入れ 3 の「single の落ち込み」は `IO_BUF_SINGLE_MEMORY` とする（先読み済みの line の読みは `SINGLE_HIT` が増えるのが正しい）。L3: 既存の file の先読み（readahead.c）との統合は p005 で見る。L5: 先読みの誤りは数と log で分ける。
 
+### D5. 実装の中で足した物（5330 の測定で cache_lock の取り合いが分かった後、2026-10-28）
+
+- 最初の実装（ded5ae2e9）の 5330 の曲線は、最初の 256 MiB 1.79 GB/s から最後 0.89 GB/s へ下がった（`evidence/zb-p004a-summary.md`）。測る口で、worker の line の準備の時間が 1 run 25 µs → 600 µs に伸び、物理の allocator（`hw.memory.stats` の scan_words は一定）でも LRU の walk（evict 1 回に 1 個）でもなく、`cache_lock` の取り合いが 1024 run ごとに約 40 万回・合計 0.4 秒と分かった（一時の測る口、消した）。line ごとに cache_lock を約 10 回（確保・reserve・evict・free・commit・挿入）、reader の hit の道も 1 line に約 4 回取っていた。
+- 直し 1 `recycle_line_locked`: cache が上限の時の miss は、LRU の末尾近く（8 個まで）の、同じ disk・同じ大きさの clean で参照の無い line を、その場で新しい block に付け替える（memory・計上・disk の pin はそのまま、header を新しくする）。free + 確保の代わり。
+- 直し 2 `copy_cached_lines`: `buf_read` は先に、cache に有る valid な line を最大 16 個、cache_lock の 1 回の保持で参照し、1 個ずつ busy を取って写し、1 回の保持で返す。無い・valid でない・使用中の line で止まり、そこからは今の道（読む・待つ）。
+- 結果: 4 GiB の曲線が 1.68〜2.24 GB/s で平ら（`evidence/zb-p004f-summary.md`）、reread 2.24〜2.44 GB/s。
+
 ## 変えない物
 
 - HAL の API、UAPI、NVMe の driver の同期の形と recovery、書きの道（書きの重ねは p005）、UFS の file の先読み（p005）。
@@ -101,9 +108,30 @@
 4. build の warning 0（5330・pcat・visionfive2・rpi4・m68k-virt の代表）。
 5. host 試験: 流れの計画（連続・飛び・作り直し・disk の終わり・満ちた後の巻き戻し・unit 未満）を純粋な関数で。
 
+## 結果（2026-10-28、P1）
+
+| 確かめ | コマンド | 結果 |
+| --- | --- | --- |
+| host 試験 | `cc -O2 -Wall -Wextra -I include -o build/tmp/buf-readahead-test plan/ws299/tests/host/buf-readahead-test.c && build/tmp/buf-readahead-test`、同じく `buf-slab-test.c` | `buf-readahead-test: PASS`、`buf-slab-test: PASS` |
+| build | `make ZEDBSD_CONFIG=<config> BUILD=build/p1-p004-<name> build/p1-p004-<name>/vmunix`（`plan/tools/hw5330/config-5330.mk`・pcat・visionfive2・rpi4・m68k-virt） | 全部 rc 0、warning 0 |
+| QEMU 起動 | `OUTPUT=build/p1-qemu-p004-boot2 plan/tools/boot-test.sh build/p1-qemu-p004/hdd-image.img`（`plan/tools/posix/config-amd64-serial.mk`） | rc 0 |
+| QEMU 先読み | `sh plan/ws299/tests/qemu-readahead.sh build/p1-qemu-p004/hdd-image.img` | `PASS (6 equal checksums, new data seen, 0 reloads refused)`。冷えた 200 MiB の読みで先読みが 200 MiB を読んだ（`buf: readahead 1024 jobs: … read 200 MiB`）、2 本同時の cksum 一致、読みの直後の `diskpart reload` 10 回で拒否 0 |
+| QEMU NVMe の形 | `sh plan/ws299/tests/qemu-nvme-shapes.sh build/p1-qemu-p004/hdd-image.img` | `PASS (5 checksums equal)` |
+| QEMU 大きな file と reboot | `sh plan/ws299/tests/qemu-grow-reboot.sh build/p1-qemu-p004/hdd-image.img 3` | `PASS reset after 2 s`、rand.bin の cksum が読みの前後で一致 |
+| 5330 読み・書き | `sh plan/ws299/tests/nvme-bench-5330.sh zedbsd zb-p004f build/p1-p004a/vmunix read write`（kernel sha256 1c17a790…） | raw の連続の読み 4 GiB（chunk 16 段）: 1677〜2237 MB/s、中央値 1917 MB/s、最初と最後の比 1.0（p003c は中央値 583）。bs64k・1m・4m 1677〜1917。reread 2237。raw の書き 926〜1032 MB/s（p003c 926〜959）、UFS の書き 353・378 MB/s（p003c 373・433、p005 の対象） |
+
+- 受け入れ（上）との照合: 1 は達（Debian の b-chunk の定常 1.1 GB/s の 1.7 倍、d-chunk 1.4〜1.6 GB/s も越える）。2 の乱読みは未実施（dd では作れない。p007 で道具を決める）。先読みを頼まないのは「連続 2 回」の条件と host 試験で確かめた。3 は (a)〜(e) PASS。hot unplug は driver に PCIe の hotplug が無いので未実施。4・5 は達。
+- 5330 の証拠は zedBSD を NVMe から起動して ssh で測った物（`nvme-bench-5330.sh`）。`5330-run.sh` の素の起動（i915 の survey）は未実施（p007）。
+- `vfs.bufcache.stats` の misses には先読みの line が入る。io-stats の `IO_BUF_SINGLE_HIT` は、cache に有る line を `copy_cached_lines` が写すようになったので減った（落ち込みの指標は `IO_BUF_SINGLE_MEMORY` とする）。
+- 測る口: nvme の command の時刻（p004m）と `buf: readahead …` の 1024 job ごとの log（待ち・run・prepare・transfer の時間、捨てた理由）は残した。p008 で CONFIG にするか消すかを決める。
+
 ## 出典
 
 - 無し（zedBSD の中の仕組みだけ。Linux・FreeBSD の readahead の code・値は見ていない）。
+
+## 再開点（2026-10-28、P1）
+
+- 実装・host・QEMU・5330 は済み（上の「結果」）。残り: D5 の design-reviewer の指摘の反映（あれば直して QEMU の 4 本と 5330 を流し直す）、Q1 の判定。
 
 ## 再開点（2026-10-27 ラップアップ、P1）
 
