@@ -375,6 +375,10 @@ check_write(
 	if (code == CODE_NULL || (code >= 128U && code < 256U))
 		return 0;
 
+	/* The lane mask an export reads late is written before the export counter. */
+	if (code == CODE_EXEC && (wave->pending[code] & PENDING_EXPORT) != 0U)
+		return fail(run, "an exec write before the export counter");
+
 	/* A pending register is written before its wait. */
 	if (wave->pending[code] != 0U)
 		return fail(run, "a register is written before the wait for it");
@@ -598,6 +602,9 @@ scalar_alu(
 		case 0x3cU:
 			/* The old lane mask to the destination, the source ANDed into the lane mask. */
 			error = check_write(run, wave, dst);
+			if (error != 0)
+				return error;
+			error = check_write(run, wave, CODE_EXEC);
 			if (error != 0)
 				return error;
 			if (wave->read_by_load[CODE_EXEC] || wave->read_by_store[CODE_EXEC] || wave->read_by_shared[CODE_EXEC])
@@ -1801,7 +1808,7 @@ export_access(
 	if (target == 20U && run->graphics->primitive_shader == 0U)
 		return fail(run, "a primitive export outside a primitive shader");
 
-	/* A primitive shader's export with no lane running is not skipped on GFX10 (ws291). */
+	/* A primitive shader's export with no lane running is not skipped on GFX10. */
 	if (run->graphics->primitive_shader != 0U && wave->s[CODE_EXEC] == 0U)
 		return fail(run, "a primitive shader's export with no lane running");
 
@@ -1834,6 +1841,14 @@ export_access(
 		}
 		wave->pending[code] |= PENDING_EXPORT;
 	}
+
+	/*
+	 * The export reads the lane mask only once it is granted, so the lane
+	 * mask stays read until the export counter, like its registers.  The
+	 * lanes are taken at issue, which is right only while nothing writes
+	 * the lane mask before that wait.
+	 */
+	wave->pending[CODE_EXEC] |= PENDING_EXPORT;
 	if ((run->graphics->export_flags[target] & 1U) != 0U)
 		return fail(run, "a target exported twice");
 	run->graphics->export_channels[target] = mask;

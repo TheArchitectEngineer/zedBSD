@@ -16,8 +16,8 @@
  * they were issued, so a register filled by one of them is ready once the
  * counter is no more than the number of those issued after it; a scalar
  * load may finish in any order and an export is only followed to its
- * end, so theirs wait for zero.  The export reads its registers late, so a
- * write to one of them waits for the export counter.
+ * end, so theirs wait for zero.  The export reads its registers and the
+ * lane mask late, so a write to one of them waits for the export counter.
  *
  * The hazards: GFX10.1 has four sequences the hardware does not guard,
  * each broken by an instruction placed between their two halves (the
@@ -950,10 +950,19 @@ note_issued(
 		if (ordered != 0)
 			count_behind(state, counter);
 
-		/* The writes of a load, and the VGPRs an export reads (the lane mask it reads at once). */
+		/*
+		 * The writes of a load, and the VGPRs and the lane mask an export
+		 * reads: an export reads the lane mask only once it is granted,
+		 * well after it is issued, so the lane mask is held like its VGPRs.
+		 *
+		 * Procedure referenced: Mesa 25.0.7
+		 * src/amd/compiler/aco_insert_waitcnt.cpp (gen, Format::EXP: the
+		 * exec mask is entered as read by the export).
+		 */
 		if (counter == AMDRDNA_GFX10_COUNTER_EXPORT) {
 			for (index = 0U; index < access->reads_used; index++) {
-				if (access->reads[index].first >= GFX10_SCALAR_CODES)
+				if (access->reads[index].first >= GFX10_SCALAR_CODES ||
+				    access->reads[index].first == AMDRDNA_GFX10_EXEC_LO)
 					hold_range(state, &access->reads[index], counter, ordered);
 			}
 		} else {
