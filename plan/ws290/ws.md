@@ -116,4 +116,4 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
   - U9「どちらも出す」: flat の device（HW_WALKER=0）にも PROT=0 の device にも Vulkan を出す（process 間の memory の保護は無くなる）。
   - U10「shader で代える」: CAP_BLT が無い時、copy・blit・resolve を compute か描画の shader で代える。
   - U11「hardware の上限の 15 個」: client に使える 15 個まで、超えたら vkCreateDevice を断る。
-
+- 2026-10-28 ユーザー「はい、P3は仮の扱いで実装を行ってよいです。」→ 仕様の回答を待つ点は design の仮の扱いで実装する（仮の所は phase.md に一覧）。仕様担当とのやり取りは並べて続ける。
