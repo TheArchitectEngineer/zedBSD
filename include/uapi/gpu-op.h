@@ -2010,70 +2010,7 @@ enum gpu_op {
 	 * the buffer is submitted on the video decode queue family.
 	 * Order: inside a coding scope (GPU_OP_CMD_BEGIN_VIDEO_CODING).
 	 */
-	GPU_OP_CMD_DECODE_VIDEO = 0x1000d,
-
-	/*
-	 * The GHCI gpu-ops: the generic driver of a GPU with the GPU Host
-	 * Controller Interface (ghci/) writes them into the GPU's command ring
-	 * as class 2 packets, which the GPU's command processor firmware
-	 * decodes (GHCI 1.0 section 7.2, draft numbers).  libvulkan never
-	 * sends them; the driver makes SESSION_OPEN, SESSION_CLOSE, MEMORY,
-	 * PROGRAM, FRAME, BUFFER_GRANT and BUFFER_REVOKE itself.
-	 *   SESSION_OPEN  [u32 tag][u32 flags][u64 heap limit in bytes]
-	 *   SESSION_CLOSE [u32 tag]
-	 *   MEMORY        [u64 memory][u64 GPU address][u64 bytes][u32 flags]
-	 *   PROGRAM       [u64 pipeline][u32 stage][u32 ISA][u64 address][u32 bytes][u32 flags]
-	 *   FRAME         [u64 staging address][u32 bytes][u32 result page][u32 records]
-	 *   BUFFER_GRANT  [u32 session][u32 access][u64 GPU address][u64 bytes]
-	 *   BUFFER_REVOKE [u32 session][u64 GPU address][u64 bytes]
-	 *   HEAP          [u64 GPU address][u64 bytes][u32 warps]
-	 *
-	 * GPU_OP_GHCI_NATIVE alone is sent by userland, and only by root on a
-	 * kernel built with CONFIG_GHCI_NATIVE (the test images), through
-	 * GPU_COMMAND: [u32 number][u32 flags 0][u32 count][count class 0
-	 * packets of the GHCI ring].  The driver checks it (a few standard
-	 * micro-operations, every blitter rectangle and fence inside the
-	 * session's memory), gives every packet the session's job tag and
-	 * copies the packets into the ring followed by a fence of its own.
-	 * The GPU address of a blob of a GHCI device is its resource id.
-	 * Sent by: userland/tests/ghci-blit.
-	 * Decoded by: ghci/native.c: ghci_native_command, ghci/check.c:
-	 * ghci_native_prepare.
-	 *
-	 * GPU_OP_GHCI_DIAG and GPU_OP_GHCI_FIRMWARE are commands to the GHCI
-	 * driver, not gpu-ops of the ring, sent by root only through
-	 * GPU_COMMAND on every kernel:
-	 *   DIAG     [u32 number][u32 flags 0][u32 rounds 1..100000]: the
-	 *            diagnostics of the paths to host and local memory (the
-	 *            register window, the debug port, and the firmware's
-	 *            DIAG_ECHO, DIAG_WRITE and DIAG_SUM), each step logged;
-	 *            the command fails with EIO when a step failed.  flags [0]
-	 *            PAINT instead blits colour bands and grey steps into the
-	 *            display's idle frame (scanned out while a monitor is
-	 *            connected and no lease holds the display) and has the
-	 *            firmware sum it back (rounds 0).
-	 *   FIRMWARE [u32 number][u32 flags][u32 part][u32 offset][u32 count]
-	 *            [count words]: words of a firmware image staged in the
-	 *            driver (part 0 IMEM, 1 DMEM; offset and count in words).
-	 *            flags [0] LOAD: then reset the GPU, load the staged image
-	 *            with the CPFW capability, start it and check its
-	 *            GHCI_INIT (only while the sender's session is the only
-	 *            one); [1] through local memory: the image is first copied
-	 *            into the GPU's local memory with the debug port.
-	 * Sent by: userland/base/ghcictl (diag, paint, fwload).
-	 * Decoded by: ghci/firmware.c: ghci_firmware_command.
-	 */
-	GPU_OP_GHCI_SESSION_OPEN = 0x10100,
-	GPU_OP_GHCI_SESSION_CLOSE = 0x10101,
-	GPU_OP_GHCI_MEMORY = 0x10102,
-	GPU_OP_GHCI_PROGRAM = 0x10103,
-	GPU_OP_GHCI_NATIVE = 0x10104,
-	GPU_OP_GHCI_FRAME = 0x10105,
-	GPU_OP_GHCI_BUFFER_GRANT = 0x10106,
-	GPU_OP_GHCI_BUFFER_REVOKE = 0x10107,
-	GPU_OP_GHCI_HEAP = 0x10108,
-	GPU_OP_GHCI_DIAG = 0x10180,
-	GPU_OP_GHCI_FIRMWARE = 0x10181
+	GPU_OP_CMD_DECODE_VIDEO = 0x1000d
 };
 
 #endif
