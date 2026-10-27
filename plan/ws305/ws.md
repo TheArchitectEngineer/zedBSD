@@ -3,7 +3,8 @@
 # WS305 デスクトップの GPU の passthrough の試験環境（Linux ＋ VFIO ＋ QEMU）
 
 - Master: [plan/master.md](../master.md)（2026-10-27 10:55 作成）。Primary Milestone: MG006。関係: [WS291](../ws291/ws.md)（RDNA の速さ、P2 は素の起動で作業中）、WS039（amdrdna）、WS037・WS242（nvrtx）、[plan/tools.md](../tools.md)「実機」。
-- Status: planning（2026-10-27 10:55 新設、P4）
+- Status: incomplete（2026-10-27 10:55 新設、11:00 P4 が q1619-i01 で p001 に着手、11:57 ラップアップ: 設計と script・image は済み、host（10.0.10.3）は不達のまま未着手）
+- 再開点（2026-10-27 11:57）: lock `/tmp/zedbsd-desktop.lock` が空き Debian が答える時に、p001 の「状態と再開点」（host の事実の読み取り）→ p002 の手順 1〜7（`plan/ws305/tests/vfio.sh`）。
 - 出典: 2026-10-27 10:55 ユーザー「デスクトップマシンはデバイスドライバの開発でLinux+パススルーで使っていこうと思います。」→（Q1 の提案「passthrough の環境を用意する作業を立てませんか？」）「はい、パススルーの環境を立てていいと思います。ただ、今回の作業はコールドリセットが必要かもなあとも思います。使い分けていきましょう。」
 
 ## 単一の到達目標
@@ -21,6 +22,6 @@
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 調査と設計: IOMMU の group、GPU（と HDMI audio）の分離、reset の方法（RDNA1 の reset の問題、vendor-reset の要否）、QEMU の構成（OVMF、q35、guest の image、display の取り出し）、script の形、素の起動との使い分けの手順 | — | planned |
-| p002 | 環境の構築と script（vm-start・stop・reset・screendump・ssh）、RDNA で guest の zedBSD の amdrdna が付き desktop が出る | p001 | planned |
+| p001 | 調査と設計: IOMMU の group、GPU（と HDMI audio）の分離、reset の方法（RDNA1 の reset の問題、vendor-reset の要否）、QEMU の構成（OVMF、q35、guest の image、display の取り出し）、script の形、素の起動との使い分けの手順 | — | uncleared（q1619-i01: 設計は Q1 の OK、host の事実は未読） |
+| p002 | 環境の構築と script（vm-start・stop・reset・screendump・ssh）、RDNA で guest の zedBSD の amdrdna が付き desktop が出る | p001 | planned（script・image は用意済み、host は未実施） |
 | p003 | RTX でも同じ（GPU を差し替えた時） | p002、ユーザーの差し替え | planned |
