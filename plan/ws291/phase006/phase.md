@@ -62,3 +62,9 @@
   → GFX10 の「NGG が primitive を出さない subgroup で止まる」（Mesa の has_ngg_fully_culled_bug、ac_gpu_info.c:1316。Mesa は数 0 の時に vertex 0 の
   退化三角形を 1 つ出す）と同種と見て、wave の primitive が全部落ちる時は先頭の lane を vertex 0 の退化三角形（語 0、null でない）で出す回避を入れた
   （commit bec5dc26f。試験の参照も同じ規則、規則を外すと +nggc が 6 本 FAIL）。vmunix sha256 先頭 a4d993852143aa70。再び入れ直しを Q1 に依頼。
+- 2026-10-27 14:50 回避 bec5dc26f の実機: `--triangles=50000 --indexed --cull --allback` はまだ止まる（wave ごとの退化三角形では足りない）。
+  → passthrough の mode のまま null を立てる事自体を疑い（Mesa は culling を passthrough と組まない: ac_nir_lower_ngg.c:1645 の assert、
+  radv_shader_info.c:1729）、culling の program だけ passthrough を切った: 頂点の番号は v0 の 16 bit の半分 2 つと v1 の下半分（GS_VGPR_COMP_CNT 1、
+  radv_shader.c:2165-2186）、primitive の語は shader が組む（9 bit ずつ 10 おき、edge flag 0: ac_nir_pack_ngg_prim_exp_arg、RADV の初期 edge flag 0）、
+  VGT_SHADER_STAGES_EN の PRIMGEN_PASSTHRU_EN を落とす（内部の quad は passthrough のまま）。commit 9b7a462c3、host 58 PASS、vk host PASS、
+  vmunix warning 0（17be55e347012025）。3 回目の入れ直しを Q1 に依頼。
