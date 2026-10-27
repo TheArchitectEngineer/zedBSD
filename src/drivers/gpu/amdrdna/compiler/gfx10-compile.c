@@ -4351,16 +4351,17 @@ cull_and_compact(
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, before, AMDRDNA_GFX10_ZERO, 0U);
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, live, AMDRDNA_GFX10_ZERO, 0U);
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_MOV_B32, AMDRDNA_GFX10_EXEC_LO, constant_operand(1U), 0U);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, AMDRDNA_GFX10_V(number), AMDRDNA_GFX10_ZERO, 0U, 0U);
 	for (wave = 0U; wave < GFX10_CULL_MOST_WAVES; wave++) {
-		emit_vector_literal(lowering,
-				    AMDRDNA_GFX10_KIND_VECTOR_ONE,
-				    AMDRDNA_GFX10_V_MOV_B32,
-				    AMDRDNA_GFX10_V(number),
-				    AMDRDNA_GFX10_LITERAL,
-				    0U,
-				    GFX10_CULL_PLACES * GFX10_CULL_PLACE_BYTES + 4U * wave);
-		emit_shared_access(lowering, AMDRDNA_GFX10_DS_READ_B32, AMDRDNA_GFX10_V(data), number, 0U, 0U);
-		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_READFIRSTLANE_B32, count, AMDRDNA_GFX10_V(data), 0U, 0U);
+		emit_shared_access(lowering,
+				   AMDRDNA_GFX10_DS_READ_B32,
+				   AMDRDNA_GFX10_V(place[wave / 3U][wave % 3U]),
+				   number,
+				   0U,
+				   GFX10_CULL_PLACES * GFX10_CULL_PLACE_BYTES + 4U * wave);
+	}
+	for (wave = 0U; wave < GFX10_CULL_MOST_WAVES; wave++) {
+		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_READFIRSTLANE_B32, count, AMDRDNA_GFX10_V(place[wave / 3U][wave % 3U]), 0U, 0U);
 		emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_COMPARE, AMDRDNA_GFX10_S_BITCMP1_B32, 0U, waves, constant_operand(wave));
 		emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_CSELECT_B32, AMDRDNA_GFX10_S(lowering->cull_sgpr[GFX10_CULL_TEMP]), count, AMDRDNA_GFX10_ZERO);
 		emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_ADD_U32, before, before, AMDRDNA_GFX10_S(lowering->cull_sgpr[GFX10_CULL_TEMP]));
@@ -4464,20 +4465,19 @@ cull_and_compact(
 			    AMDRDNA_GFX10_NGG_NULL_PRIMITIVE);
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_AND_B32, AMDRDNA_GFX10_EXEC_LO, AMDRDNA_GFX10_EXEC_LO, kept);
 	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, skip_label);
-	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, AMDRDNA_GFX10_V(word), AMDRDNA_GFX10_ZERO, 0U, 0U);
-	for (vertex = 0U; vertex < 3U; vertex++) {
-		if (vertex != 0U)
-			emit_flag_branch(lowering, GFX10_CULL_FLAG_BIT_VERTEX_1 + vertex - 1U, skip_label);
-		emit_shared_access(lowering, AMDRDNA_GFX10_DS_READ_B32, AMDRDNA_GFX10_V(data), vertex_place[vertex], 0U, GFX10_CULL_NUMBER);
-		if (vertex != 0U) {
-			emit_vector(lowering,
-				    AMDRDNA_GFX10_KIND_VECTOR_TWO,
-				    AMDRDNA_GFX10_V_LSHLREV_B32,
-				    AMDRDNA_GFX10_V(data),
-				    constant_operand(10U * vertex),
-				    AMDRDNA_GFX10_V(data),
-				    0U);
-		}
+	for (vertex = 0U; vertex < 3U; vertex++)
+		emit_shared_access(lowering, AMDRDNA_GFX10_DS_READ_B32, AMDRDNA_GFX10_V(place[0][vertex]), vertex_place[vertex], 0U, GFX10_CULL_NUMBER);
+	emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, AMDRDNA_GFX10_V(word), AMDRDNA_GFX10_V(place[0][0]), 0U, 0U);
+	for (vertex = 1U; vertex < 3U; vertex++) {
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+			    AMDRDNA_GFX10_V_LSHLREV_B32,
+			    AMDRDNA_GFX10_V(data),
+			    constant_operand(10U * vertex),
+			    AMDRDNA_GFX10_V(place[0][vertex]),
+			    0U);
+		emit_flag_mask(lowering, scratch, GFX10_CULL_FLAG_BIT_VERTEX_1 + vertex - 1U);
+		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_CNDMASK_B32, AMDRDNA_GFX10_V(data), AMDRDNA_GFX10_ZERO, AMDRDNA_GFX10_V(data), scratch);
 		emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_TWO, AMDRDNA_GFX10_V_OR_B32, AMDRDNA_GFX10_V(word), AMDRDNA_GFX10_V(data), AMDRDNA_GFX10_V(word), 0U);
 	}
 	emit_label(lowering, skip_label);
