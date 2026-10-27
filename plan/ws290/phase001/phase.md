@@ -1,9 +1,9 @@
 <!-- awesome-plan project=zedbsd record=ws290-p001 -->
 
-# ws290-p001 設計: GHCI 2.0 の driver の書き直し
+# ws290-p001 設計: GHCI 1.0（ghci.md 89529de）の driver の書き直し
 
 - 親: [WS290](../ws.md)。
-- 状態: in-progress（2026-10-27 中断、q1621-i01 P3: GHCI の仕様の調整中。design 版 3 は書きかけ。再開は下の「再開」。前: 2026-10-26 P1 q1594-i01 で版 2 と review の反映まで）
+- 状態: in-progress（2026-10-28 仕様の疑問は全部解決、正本は ghci.md 89529de。次は design 版 4 の仕上げ（手順は [ws.md](../ws.md) の「再開点（2026-10-28 ハンドオーバー）」）。前: 2026-10-27 q1621-i01 P3 で版 3 を書きかけて中断、2026-10-26 q1594-i01 P1 で版 2）
 - 由来: WS290 の出典と決定（ws.md）。
 
 ## 範囲（code は書かない）
@@ -44,3 +44,5 @@
   - ユーザーの G01 の回答（原文は [ws.md](../ws.md)）で「単一の GHCI 1.0、版で分岐しない」と決まり、「そのほかは仕様を調整中です。いったん作業を終了していいです。」で中断。hardware の担当の一次回答は main の `plan/ws290/ghci-answers-hw-20261027.md`（ecd4407e8）に Q1 が置いた（未反映、ユーザー「回答は修正されるかもしれません」）。
   - 確かめ: `git diff --check -- plan/ws290/` 出力なし。build・host 試験・QEMU・実機は対象外で未実施。
 - **再開**: 条件はユーザーが ghci.md（と資料全般）の修正の終わりを伝えた時。手順は [ws.md](../ws.md) の「再開の手順」（修正後の ghci.md と ghci-answers-hw を読む → 版 3 を G01 の回答で仕上げ、design-review-v3 を確かめて反映 → design-reviewer → p002 以降の phase.md → 実装）。
+
+- 2026-10-28 Q1: GHCI の担当との疑問のやり取りを終了（レビュー 第 9 版で N01〜N36 が全部解決、ghci.md 89529de）。受け入れの「疑問の一覧がユーザーに示されている」は満たした。残りは design 版 4 の仕上げ・design-reviewer・Phase の確定。

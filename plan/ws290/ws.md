@@ -1,9 +1,9 @@
 <!-- awesome-plan project=zedbsd record=ws290 -->
 
-# WS290 zedBSD の GHCI の driver を GHCI 2.0 に書き直す
+# WS290 zedBSD の GHCI の driver を GHCI 1.0（ghci.md 89529de）に書き直す
 
 - Master: [plan/master.md](../master.md)（2026-10-26 作成）。Primary Milestone: MG006。Related: MG008。前身: [WS288](../ws288/ws.md)（closed、zedBSD の driver は ws288-p006・p010・p018・p019・p035・p040・p043・p044 などで作った）。
-- Status: incomplete（2026-10-27 中断: GHCI の仕様（ghci.md）の調整中。p001 の design 版 3 は書きかけ。再開の条件は下の「現在の状態・再開点」。前: 2026-10-26 新設、p001 を実行、G01〜G39 の回答待ち）
+- Status: incomplete（2026-10-28 仕様の疑問は全部解決（ghci.md **89529de**、[ghci-review.md](ghci-review.md) 第 9 版）。次は p001 の設計の仕上げ（版 4）から。版の語の「2.0」は誤りで、仕様は単一の GHCI 1.0（G01 の回答））
 - 出典: 2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。amaterrace-gpuのディレクトリは読み取り専用とします。amaterrace-gpuのplan/は読んでもかまいません。am-ws001のような書き方をしてくれれば私は理解できます。」
 - 決定（2026-10-26、Q1 の問いへのユーザーの回答）:
   - 対象の版は **GHCI 2.0 だけ**（ghci.md の TO-BE: 19 の register、in-memory の PSO・descriptor、`CMD_*` の構造化 command、CP の自律 MMU）。1.1（§3.1.1 の 128 KiB の register、class 2 の gpu-op の中継、STATE、KICK、APERTURE）は捨てる。2.0 のハードウェアは am-ws001-p007 で作られる予定。
@@ -48,9 +48,19 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（GHC
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: ghci.md（2.0）と今の driver（33k 行）の照合、残す物（GSI1 の compiler など）・捨てる物・書き直す物、新しい構成、host 試験の model、Phase の分割、ghci.md の疑問の一覧。design-reviewer を通す。code は書かない | — | in-progress（2026-10-27 中断: 仕様の調整中。design 版 3 は書きかけ、[design-review-v3.md](design-review-v3.md) の V01〜V25 は未反映。再開の条件は下） |
-| p002〜 | 実装（p001 の設計で立てる） | p001 | — |
-| 最後 | 規約の全文の見直し | 実装の全部 | — |
+| [p001](phase001/phase.md) | 設計: ghci.md 89529de（単一の GHCI 1.0）を正本に design を版 4 に仕上げる。版 2・版 3 の register 前提・2.0/1.1 の分岐を捨て、command と capability で組む。§24 の capability → Vulkan の対応、[design-review-v3.md](design-review-v3.md) の V01〜V25 の反映、design-reviewer、§18 の Phase の分割を確定して下の表と phase.md を立てる。code は書かない | — | in-progress（2026-10-28 仕様が確定、仕上げ待ち） |
+| p002 | 語の層: `ghci-regs.h`・`ghci-cmd.h`・`cmd.c`（全 command の encoder、PSO・descriptor・render pass の記述）。host の words 試験 | p001 | planned（内容は p001 の版 4 で確定） |
+| p003 | host の model の枠: register・ring・FENCE（64 bit）・session・VM_MAP・reset・IRQ・fault の注入・capability の profile | p002 | planned |
+| p004 | core: identify・capability、attach、ring・doorbell・fence・IRQ・watchdog・fault（session の fault と device の FAULTED）・reset、detach | p003 | planned |
+| p005 | session と VM: SESSION_OPEN/CLOSE・BIND_SESSION・VM_MAP/UNMAP、CP_HEAP と MMU_OOM、resource・blob・map | p004 | planned |
+| p006 | GSI1 の compiler の接続（texf・texl の返す値、descriptor の基の c24〜c31 など 89529de の規則） | p002・p004 | planned |
+| p007 | Vulkan の executor の土台と capability → Vulkan の対応（vk-caps） | p005・p006 | planned |
+| p008 | pipeline（PSO 128 byte）と descriptor | p007 | planned |
+| p009 | 記録と実行: render pass・draw・indirect・dispatch・barrier・copy/blit/resolve・query・dynamic state | p008 | planned |
+| p010 | discrete: local memory と host の振り分け | p005・p009 | planned |
+| p011 | 表示（DISP2、DISP_SET・FLIP、scanout の物理番地） | p007・p009 | planned |
+| p012 | userland と UAPI の整理（`GPU_OP_GHCI_*`・ghcictl など、U1・U6） | p004 | planned |
+| p013 | 規約の全文の見直し（WS が変えた C の全部、全 host 試験、amd64・riscv64 の build の warning 0） | p002〜p012 | planned |
 
 ## 現在の状態・再開点
 
@@ -58,3 +68,11 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（GHC
 - 2026-10-26 P1: p001 の [design.md](design.md) 版 2（Phase p002〜p013、196 LW、ghci.md の疑問 G01〜G39、判断 U1〜U7）。次: Q1 が G・U をユーザーに示し、design §18 から p002 以降を立てる。p002・p003 は回答なしで始められ、p004 は G04 の回答が要る。
 - 2026-10-27 P3（q1621-i01、worktree `/home/awe/zedBSD-worktrees/p3-ws290`、branch agent/p3-ws290）: ghci.md ce9725a（docs/・include/ の最後の差 f718918）を読み design 版 3 を書きかけ（§0.1 改訂の要旨、§24 capability と Vulkan への対応、G の状態と G40〜G49、U8、Phase の表 212 LW）。design-reviewer 25 件（[design-review-v3.md](design-review-v3.md)）は V20 以外未反映。ユーザーの G01 の回答と「いったん作業を終了していいです」で中断。
 - **再開の条件**: ユーザーが ghci.md（と資料全般）の修正の終わりを伝えた時。**再開の手順**: (1) その時の amaterrace-gpu main の `docs/ghci.md`・`include/` を `git show` で読み、SHA を記録（ce9725a からの差を読む）。(2) main の [ghci-answers-hw-20261027.md](ghci-answers-hw-20261027.md)（修正されていればその版）を読む。(3) design 版 3 を仕上げる: G01 の回答（単一の GHCI 1.0、版で分岐しない、機能は capability の flag だけ）を全体に、hardware の回答と修正後の ghci.md で G02〜G49 の状態を直し、design-review-v3 の各指摘が残るかを確かめて反映。(4) 改訂部分を design-reviewer に通して反映。(5) design §18 から p002 以降の phase.md を立て、この表を直す。(6) p002 から順に実装（host 試験だけ）。
+
+- **再開点（2026-10-28 ハンドオーバー、Q1）**: GHCI の担当との疑問のやり取りは終了（ユーザー「では、GHCIチームとのやりとりを終了します。」）。正本は amaterrace-gpu の docs/ghci.md **89529de**（2026-10-28 02:48）。次の一手は p001 の仕上げ:
+  1. `git -C /home/awe/amaterrace-gpu show 89529de:docs/ghci.md` を読み（読み取り専用）、[design.md](design.md) を版 4 に直す。版 2・3 の register 前提、2.0・1.1 の版の分岐、G・H・J・K・L・M・N の経緯の記述は捨てるか短くし、89529de の規則（3 つの番地の空間、session の fault、64 bit の fence、PSO・render pass・descriptor の配置、capability の bit）で組み直す。
+  2. §24（capability → Vulkan）と [design-review-v3.md](design-review-v3.md) の V01〜V25 を 89529de に照らして反映。U8 などユーザーの判断が要る点は推しを添えて Q1 へ。
+  3. design-reviewer を通し、§18 で Phase を確定、上の表と p002 以降の phase.md を立てる。
+  4. その後 p002 から実装（試験は host だけ。ユーザーの決定）。
+- 経緯の file（正本ではない）: ghci-questions*.md、ghci-answers-hw-*.md、ghci-review-<SHA>.md、[ghci-review.md](ghci-review.md)（第 9 版で「疑問は残っていない」）。
+- Queue: 実装の Queue はまだ無い。p001 の仕上げは新しい Queue でユーザーの承認の後（q1621 は 2026-10-27 に paused のまま）。

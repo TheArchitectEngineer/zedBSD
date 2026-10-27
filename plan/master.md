@@ -39,7 +39,7 @@
 
 <!-- master:focus:start -->
 - 公開は rev.5 まで（実質のベータ2）。次に何をやるか（以前の「ベータ3・ベータ4」の段は取り消し）は Q1 とユーザーが整理中。下の「保留の WS」はその整理の対象。
-- **fg023 zedBSD の GHCI 2.0 の driver**（[WS290](ws290/ws.md)）: amaterrace-gpu の `docs/ghci.md` の GHCI 2.0 だけに従う driver に書き直し、host 試験で確かめる。
+- **fg023 zedBSD の GHCI 1.0 の driver**（[WS290](ws290/ws.md)）: amaterrace-gpu の `docs/ghci.md`（正本、89529de）だけに従う driver に書き直し、host 試験で確かめる。仕様の疑問は 2026-10-28 に全部解決、次は design 版 4。
 - **GPU の描画の速さ**（[WS291](ws291/ws.md)、P2）: AMD RDNA → NVIDIA → PowerVR。Linux よりよくなるまで profile を見て直す。
 - **5330 の電源と性能**（P1、2026-10-27 ユーザー「P1は、しばらくはさっきお願いした内容で進めていきますので、master.mdに書いておいてください。」）: [WS299](ws299/ws.md) NVMe の速さ → [WS300](ws300/ws.md) NVMe・VMD の低電力 → [WS052](ws052/ws.md) S0ix → [WS301](ws301/ws.md) CPU の DVFS・P/E core → [WS302](ws302/ws.md) DTB → 熱と fan。順と依存は [pm-plan.md](agents/P1/pm-plan.md)。
 - 達成: fg021 ZYBO（2026-10-23）、fg020 VisionFive 2（WS256・WS269・WS270・WS277、2026-10-22 ユーザー「すばらしい。実用スピードです。」）、
@@ -50,7 +50,7 @@
 
 <!-- master:priority:start -->
 優先順位（依存による順とは別。Queue の権限は変えない）:
-1. WS290: p001 の設計 → ghci.md の疑問（G01〜G39・U1〜U7）をユーザーへ → 実装 → 規約の全文。WS291（P2）は並べて進める。
+1. WS290: p001 の design 版 4（ghci.md 89529de）→ p002〜p012 の実装（host 試験）→ p013 規約の全文。WS291（P2）は並べて進める。
 2. P1 は 5330 の電源と性能の線（WS299 → WS300 → WS052 → WS301 → WS302 → 熱と fan、[pm-plan.md](agents/P1/pm-plan.md) の順）。BUG-346 は resolved。
 3. すぐ取り組む物（2026-10-27 ユーザー）: WS221（Jumbo frame）、WS242（RTX 30/40）・WS243（NVDEC）・WS250（nvrtx の取り消しと復帰）、WS223（全画面は合成、推しで実装）、WS009 の DOC-54（/dev/gpu の UAPI の文書）。
 4. WS226（Vulkan 1.3 相当を全 GPU driver で）は WS290 の後。WS292（GHCI の PROT）も WS290 の後。
@@ -142,7 +142,7 @@ BUG-347 · q1634 · WS307 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS242](ws242/ws.md) | MG006 | nvrtx の RTX 20/30/40 の全モデル（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の再開点 1〜4、GTX 16・RTX 30・40 の既定の有効（ユーザーの決定、未実装） |
 | [WS243](ws243/ws.md) | MG006 | nvrtx の NVDEC で H.264（Vulkan Video）（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の design.md から |
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の設計（草稿は main 64f05b2c7） |
-| [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 2.0（amaterrace-gpu の docs/ghci.md）だけに書き直す。試験は host だけ | incomplete（p001 の設計は済み、ghci-questions.md の回答待ち） | p001 の設計（q1594、P1） |
+| [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 1.0（amaterrace-gpu の docs/ghci.md 89529de）だけに書き直す。試験は host だけ | incomplete（仕様の疑問は全部解決 2026-10-28） | 次は p001 の design 版 4 の仕上げ（新しい Queue、ユーザーの承認の後） |
 | [WS291](ws291/ws.md) | MG006 | GPU の driver の描画の速さ（desktop 60 fps・重い 3D の model 50 fps）: AMD RDNA（P2）→ NVIDIA（P2、GPU を入れ替え）→ PowerVR（VF2、P3） | incomplete（p001〜p005 cleared。NGG A は export の EXEC の wait の修正で hang が直った） | p006・p007 NGG（q1611、P2） |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
