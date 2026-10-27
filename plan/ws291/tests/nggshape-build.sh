@@ -11,13 +11,17 @@ CC=$TOP/build/llvm/bin/clang
 OBJ=$BUILD/dynamic/obj/plan/ws291/tests/nggshape
 mkdir -p "$OBJ" "$BUILD/bin"
 {
-	echo "/* Made by plan/ws291/tests/nggshape-build.sh from nggshape/shape.vert, heavy.vert, shape.frag, mview-like.frag and mview's mview.vert and mview.frag; do not edit. */"
+	echo "/* Made by plan/ws291/tests/nggshape-build.sh from nggshape/shape.vert, heavy.vert, probe.vert, shape.frag, mview-like.frag and mview's mview.vert and mview.frag; do not edit. */"
 	for stage in vert frag; do
 		glslc -mfmt=c "plan/ws291/tests/nggshape/shape.$stage" -o "$OBJ/shape-$stage.inc"
 		echo "static const uint32_t nggshape_shape_${stage}[] ="
 		cat "$OBJ/shape-$stage.inc"
 		echo ";"
 	done
+	glslc -mfmt=c "plan/ws291/tests/nggshape/probe.vert" -o "$OBJ/probe-vert.inc"
+	echo "static const uint32_t nggshape_probe_vert[] ="
+	cat "$OBJ/probe-vert.inc"
+	echo ";"
 	glslc -mfmt=c "plan/ws291/tests/nggshape/heavy.vert" -o "$OBJ/heavy-vert.inc"
 	echo "static const uint32_t nggshape_heavy_vert[] ="
 	cat "$OBJ/heavy-vert.inc"

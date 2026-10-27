@@ -14,10 +14,10 @@
  * The submission is waited for (10 s at most); one line says the end:
  *
  *   NGGSHAPE ok after=<ms> pixel=<B8G8R8A8 word at the centre> drawn=<pixels not the clear colour> <shape>
- *   NGGSHAPE lost after=<ms> <shape>
+ *   NGGSHAPE lost after=<ms> result=<VkResult> at=<the repeat that did not end> <shape>
  *   NGGSHAPE fail <step> <VkResult>
  *
- * usage: nggshape [--triangles=N] [--indexed] [--index16] [--depth] [--instances=N] [--draws=N] [--blit] [--outside] [--cross] [--cull] [--blend] [--heavy] [--mview] [--shuffle] [--tiny] [--allback] [--tail] [--cluster=P] [--mesh=FILE] [--repeat=N] [--texture] [--push=FILE]
+ * usage: nggshape [--triangles=N] [--indexed] [--index16] [--depth] [--instances=N] [--draws=N] [--blit] [--outside] [--cross] [--cull] [--blend] [--heavy] [--mview] [--shuffle] [--tiny] [--allback] [--tail] [--cluster=P] [--mesh=FILE] [--repeat=N] [--texture] [--push=FILE] [--degenerate=N] [--corner] [--discard] [--map] [--probe] [--keep]
  *
  * --index16 reads the indices as 16 bits; --draws splits the triangles into N draws; --blit then
  * blits the target into each level of a 9-level image (256x256 down to 1x1), linearly filtered;
@@ -34,6 +34,11 @@
  * draws the vertices (x y in clip space) and the triangles (a b c) of a file, indexed (32-bit); --repeat=N
  * submits the same command buffer N times more, each waited for; --texture (with --mview) draws with mview's own
  * pixel program, sampling a 9-level checker texture; --push=FILE takes mview's 32-number push block from a file.
+ * --keep loads the target instead of clearing it (no clear before the draw; the host fills it with the colour);
+ * --probe draws with probe.vert, which counts each vertex number's runs in a storage buffer (printed).
+ * --corner keeps only the target's first pixel in the scissor; --discard turns the rasterizer off; --map prints the
+ * target in 8-pixel blocks.
+ * --degenerate=N (a list) gives the first triangle of every Nth cell no area (its corners on a line).
  * The --mesh file starts "V T K": K numbers a vertex line, 2 (x y) or 8 (mview's place, normal, texture place).
  */
 
@@ -65,6 +70,8 @@
 #define SHAPE_OFFSETS_AT	0x080000U
 #define SHAPE_INDICES_AT	0x100000U
 #define SHAPE_VERTICES_AT	0x400000U
+#define SHAPE_PROBE_AT		0xe00000U
+#define SHAPE_PROBE_BYTES	0x10000U
 #define SHAPE_STAGING_AT	0xf00000U
 #define SHAPE_MEMORY_BYTES	0x1000000U
 
@@ -92,6 +99,12 @@ struct shape_options {
 	uint32_t repeat;
 	bool texture;
 	const char *push;
+	uint32_t degenerate;
+	bool corner;
+	bool discard;
+	bool map;
+	bool probe;
+	bool keep;
 };
 
 /* The objects of the run, freed together at its end. */
@@ -112,6 +125,7 @@ struct shape {
 	VkImageView texture_view;
 	VkSampler sampler;
 	VkBuffer staging;
+	VkBuffer probe;
 	VkDescriptorSetLayout set_layout;
 	VkDescriptorPool descriptor_pool;
 	VkDescriptorSet set;
@@ -133,6 +147,7 @@ struct shape {
 
 static VkResult shape_device(struct shape *shape);
 static VkResult shape_texture(struct shape *shape);
+static VkResult shape_probe(struct shape *shape);
 static uint32_t shape_memory_type(const VkPhysicalDeviceMemoryProperties *memory, uint32_t mask, VkMemoryPropertyFlags wanted);
 static VkResult shape_resources(struct shape *shape, const struct shape_options *options);
 static VkResult shape_pipeline(struct shape *shape, const struct shape_options *options);
@@ -183,6 +198,18 @@ main(
 			options.tiny = true;
 		} else if (strcmp(argv[argument], "--allback") == 0) {
 			options.allback = true;
+		} else if (strcmp(argv[argument], "--keep") == 0) {
+			options.keep = true;
+		} else if (strcmp(argv[argument], "--probe") == 0) {
+			options.probe = true;
+		} else if (strcmp(argv[argument], "--map") == 0) {
+			options.map = true;
+		} else if (strcmp(argv[argument], "--corner") == 0) {
+			options.corner = true;
+		} else if (strcmp(argv[argument], "--discard") == 0) {
+			options.discard = true;
+		} else if (strncmp(argv[argument], "--degenerate=", 13) == 0) {
+			options.degenerate = (uint32_t)strtoul(argv[argument] + 13, NULL, 10);
 		} else if (strncmp(argv[argument], "--push=", 7) == 0) {
 			options.push = argv[argument] + 7;
 		} else if (strcmp(argv[argument], "--texture") == 0) {
@@ -260,6 +287,7 @@ main(
 	submit.commandBufferCount = 1U;
 	submit.pCommandBuffers = &shape.command;
 	started = shape_now_ms();
+	repeat = 0U;
 	status = vkQueueSubmit(shape.queue, 1U, &submit, shape.fence);
 	if (status == VK_SUCCESS)
 		status = vkWaitForFences(shape.device, 1U, &shape.fence, VK_TRUE, SHAPE_WAIT_NS);
@@ -275,7 +303,7 @@ main(
 
 	/* The end: lost, or ended with the pixel at the centre. */
 	if (status == VK_ERROR_DEVICE_LOST || status == VK_TIMEOUT) {
-		printf("NGGSHAPE lost after=%llu result=%d %s\n", (unsigned long long)(shape_now_ms() - started), (int)status, name);
+		printf("NGGSHAPE lost after=%llu result=%d at=%u %s\n", (unsigned long long)(shape_now_ms() - started), (int)status, repeat, name);
 		shape_free(&shape);
 		return 0;
 	}
@@ -291,6 +319,43 @@ main(
 			drawn++;
 	}
 	printf("NGGSHAPE ok after=%llu pixel=%08x drawn=%u %s\n", (unsigned long long)(shape_now_ms() - started), (unsigned)pixel, drawn, name);
+
+	/* --probe: the runs of the first 64 vertex numbers. */
+	if (options.probe) {
+		const uint32_t *runs;
+		uint32_t number;
+
+		runs = (const uint32_t *)(const void *)(shape.mapping + SHAPE_PROBE_AT);
+		printf("NGGSHAPE probe");
+		for (number = 0U; number < 64U; number++)
+			printf(" %u", runs[number]);
+		printf("\n");
+	}
+
+	/* --map: the target in 32 by 32 blocks of 8 pixels, '#' where most are drawn, from the top row of memory. */
+	if (options.map) {
+		uint32_t bx;
+		uint32_t by;
+		uint32_t count;
+		uint32_t x;
+		uint32_t y;
+		char row[33];
+
+		for (by = 0U; by < 32U; by++) {
+			for (bx = 0U; bx < 32U; bx++) {
+				count = 0U;
+				for (y = by * 8U; y < by * 8U + 8U; y++) {
+					for (x = bx * 8U; x < bx * 8U + 8U; x++) {
+						if (((const uint32_t *)(const void *)(shape.mapping + SHAPE_READBACK_AT))[y * SHAPE_TARGET + x] != 0xff0000ffU)
+							count++;
+					}
+				}
+				row[bx] = count > 32U ? '#' : '.';
+			}
+			row[32] = '\0';
+			printf("NGGSHAPE map %s\n", row);
+		}
+	}
 	shape_free(&shape);
 	return 0;
 }
@@ -488,6 +553,8 @@ shape_resources(
 	/* With --texture: the levels' texels (one checker for all), the view of all levels, the sampler and the set. */
 	if (status == VK_SUCCESS && options->texture)
 		status = shape_texture(shape);
+	if (status == VK_SUCCESS && options->probe)
+		status = shape_probe(shape);
 	buffer.size = SHAPE_TARGET * SHAPE_TARGET * SHAPE_PIXEL;
 	buffer.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
 	if (status == VK_SUCCESS)
@@ -607,6 +674,75 @@ shape_texture(
 	return status;
 }
 
+/* With --probe: the counts of each vertex number's runs (zero first), and the set of binding 0 with them. */
+static VkResult
+shape_probe(
+	struct shape *shape)
+{
+	VkBufferCreateInfo buffer;
+	VkDescriptorSetLayoutBinding binding;
+	VkDescriptorSetLayoutCreateInfo set_layout;
+	VkDescriptorPoolSize size;
+	VkDescriptorPoolCreateInfo pool;
+	VkDescriptorSetAllocateInfo allocate;
+	VkDescriptorBufferInfo info;
+	VkWriteDescriptorSet write;
+	VkResult status;
+
+	/* The counts, zero. */
+	memset(shape->mapping + SHAPE_PROBE_AT, 0, SHAPE_PROBE_BYTES);
+	memset(&buffer, 0, sizeof(buffer));
+	buffer.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+	buffer.size = SHAPE_PROBE_BYTES;
+	buffer.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+	status = vkCreateBuffer(shape->device, &buffer, NULL, &shape->probe);
+	if (status == VK_SUCCESS)
+		status = vkBindBufferMemory(shape->device, shape->probe, shape->memory, SHAPE_PROBE_AT);
+
+	/* The set's layout, its pool and the set. */
+	memset(&binding, 0, sizeof(binding));
+	binding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	binding.descriptorCount = 1U;
+	binding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+	memset(&set_layout, 0, sizeof(set_layout));
+	set_layout.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+	set_layout.bindingCount = 1U;
+	set_layout.pBindings = &binding;
+	if (status == VK_SUCCESS)
+		status = vkCreateDescriptorSetLayout(shape->device, &set_layout, NULL, &shape->set_layout);
+	memset(&size, 0, sizeof(size));
+	size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	size.descriptorCount = 1U;
+	memset(&pool, 0, sizeof(pool));
+	pool.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+	pool.maxSets = 1U;
+	pool.poolSizeCount = 1U;
+	pool.pPoolSizes = &size;
+	if (status == VK_SUCCESS)
+		status = vkCreateDescriptorPool(shape->device, &pool, NULL, &shape->descriptor_pool);
+	memset(&allocate, 0, sizeof(allocate));
+	allocate.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+	allocate.descriptorPool = shape->descriptor_pool;
+	allocate.descriptorSetCount = 1U;
+	allocate.pSetLayouts = &shape->set_layout;
+	if (status == VK_SUCCESS)
+		status = vkAllocateDescriptorSets(shape->device, &allocate, &shape->set);
+	memset(&info, 0, sizeof(info));
+	info.buffer = shape->probe;
+	info.range = SHAPE_PROBE_BYTES;
+	memset(&write, 0, sizeof(write));
+	write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+	write.dstSet = shape->set;
+	write.descriptorCount = 1U;
+	write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+	write.pBufferInfo = &info;
+	if (status == VK_SUCCESS)
+		vkUpdateDescriptorSets(shape->device, 1U, &write, 0U, NULL);
+	if (status != VK_SUCCESS)
+		printf("NGGSHAPE fail probe %d\n", (int)status);
+	return status;
+}
+
 /* The pass (cleared, kept), the framebuffer and the pipeline. */
 static VkResult
 shape_pipeline(
@@ -649,6 +785,10 @@ shape_pipeline(
 		module.codeSize = sizeof(nggshape_mview_vert);
 		module.pCode = nggshape_mview_vert;
 	}
+	if (options->probe) {
+		module.codeSize = sizeof(nggshape_probe_vert);
+		module.pCode = nggshape_probe_vert;
+	}
 	status = vkCreateShaderModule(shape->device, &module, NULL, &shape->vertex_module);
 	module.codeSize = options->mview ? sizeof(nggshape_mview_frag) : sizeof(nggshape_shape_frag);
 	module.pCode = options->mview ? nggshape_mview_frag : nggshape_shape_frag;
@@ -672,6 +812,10 @@ shape_pipeline(
 		layout.setLayoutCount = 1U;
 		layout.pSetLayouts = &shape->set_layout;
 	}
+	if (options->probe) {
+		layout.setLayoutCount = 1U;
+		layout.pSetLayouts = &shape->set_layout;
+	}
 	if (status == VK_SUCCESS)
 		status = vkCreatePipelineLayout(shape->device, &layout, NULL, &shape->layout);
 
@@ -679,11 +823,11 @@ shape_pipeline(
 	memset(attachments, 0, sizeof(attachments));
 	attachments[0].format = VK_FORMAT_B8G8R8A8_UNORM;
 	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
-	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[0].loadOp = options->keep ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
 	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
 	attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 	attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachments[0].initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachments[0].initialLayout = options->keep ? VK_IMAGE_LAYOUT_GENERAL : VK_IMAGE_LAYOUT_UNDEFINED;
 	attachments[0].finalLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
 	attachments[1] = attachments[0];
 	attachments[1].format = VK_FORMAT_D32_SFLOAT;
@@ -782,6 +926,10 @@ shape_pipeline(
 	memset(&scissor_value, 0, sizeof(scissor_value));
 	scissor_value.extent.width = SHAPE_TARGET;
 	scissor_value.extent.height = SHAPE_TARGET;
+	if (options->corner) {
+		scissor_value.extent.width = 1U;
+		scissor_value.extent.height = 1U;
+	}
 	memset(&viewport, 0, sizeof(viewport));
 	viewport.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
 	viewport.viewportCount = 1U;
@@ -790,6 +938,7 @@ shape_pipeline(
 	viewport.pScissors = &scissor_value;
 	memset(&raster, 0, sizeof(raster));
 	raster.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+	raster.rasterizerDiscardEnable = options->discard ? VK_TRUE : VK_FALSE;
 	raster.polygonMode = VK_POLYGON_MODE_FILL;
 	raster.cullMode = options->cull ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
 	raster.lineWidth = 1.0f;
@@ -1069,6 +1218,11 @@ shape_geometry(
 				place[corner][1] = (corner == 2U || corner == 4U || corner == 5U) ? 1.0f : -1.0f;
 			}
 		}
+		/* With --degenerate=N the first triangle of every Nth cell has no area: its third corner halfway along the first two. */
+		if (options->degenerate != 0U && (cell % options->degenerate) == 0U) {
+			place[2][0] = 0.5f * (place[0][0] + place[1][0]);
+			place[2][1] = 0.5f * (place[0][1] + place[1][1]);
+		}
 		/* With --cull every other cell turns around (with --allback none but a --tail, so all others are culled): its corners 1 and 2, 4 and 5 swapped. */
 		if (options->cull && (((cell % 2U) != 0U && !options->allback) || (options->allback && options->tail && cell + 1U == cells))) {
 			x0 = place[1][0];
@@ -1220,6 +1374,16 @@ shape_record(
 				     NULL, 1U, &barrier);
 	}
 
+	/* --keep: the target filled with the clear colour by the host (one colour: the same in any tiling). */
+	if (options->keep) {
+		uint32_t *texels;
+		uint32_t texel;
+
+		texels = (uint32_t *)(void *)(shape->mapping + SHAPE_TARGET_AT);
+		for (texel = 0U; texel < SHAPE_TARGET * SHAPE_TARGET; texel++)
+			texels[texel] = 0xff0000ffU;
+	}
+
 	/* The pass, cleared to blue and the far depth, with the draw. */
 	memset(clears, 0, sizeof(clears));
 	clears[0].color.float32[2] = 1.0f;
@@ -1240,6 +1404,8 @@ shape_record(
 	offsets[0] = options->mview ? SHAPE_MVIEW_AT : 0U;
 	offsets[1] = 0U;
 	vkCmdBindVertexBuffers(shape->command, 0U, 2U, buffers, offsets);
+	if (options->probe)
+		vkCmdBindDescriptorSets(shape->command, VK_PIPELINE_BIND_POINT_GRAPHICS, shape->layout, 0U, 1U, &shape->set, 0U, NULL);
 
 	/* mview's view: the clip transform the identity, the normal rotation the identity, white. */
 	if (options->mview) {
@@ -1406,6 +1572,8 @@ shape_free(
 			vkDestroySampler(shape->device, shape->sampler, NULL);
 		if (shape->texture_view != VK_NULL_HANDLE)
 			vkDestroyImageView(shape->device, shape->texture_view, NULL);
+		if (shape->probe != VK_NULL_HANDLE)
+			vkDestroyBuffer(shape->device, shape->probe, NULL);
 		if (shape->staging != VK_NULL_HANDLE)
 			vkDestroyBuffer(shape->device, shape->staging, NULL);
 		if (shape->depth_view != VK_NULL_HANDLE)

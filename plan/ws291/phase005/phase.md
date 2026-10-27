@@ -58,7 +58,27 @@ host 試験: `plan/ws039/tests/amdrdna-compiler-host-test.sh` PASS（vertex の 
 - nggshape は全部通る: 5 万 triangle・indexed・depth・mview の VS・16 draw、index の再利用を悪くした並び（--shuffle）、全部 pixel に掛からない tiny な triangle（--tiny）、全部 cull される draw（--cull --allback）、その後の通常の draw（--tail）。→ 全部 culled の subgroup・局所性の悪い index は原因でない。
 - mview の model（qs40）を削って切り分け（material は全部 opaque・cull none にしても hang）: 小さい test model は 60 frame 通る。mesh 別に laukku は通り、Face（4043 頂点・7076 triangle）は hang、texture を外した Face も hang → geometry に依る。Face の triangle の範囲で二分している。
 
+### 最小の再現（2026-10-27 10:00〜13:30、診断の kernel は commit しない: build/ws291/measure/p005/diag10〜13.patch、diag13-full.patch が最後の全部）
+
+- mview の Face の mesh を nggshape に読ませる（`--mesh=FILE`）と、nggshape だけで GPU が止まる。texture・depth・pixel（scissor で全部外す `--corner`）に依らない。Face の 27 triangle → 15 → 頂点 10・primitive 13（三角 0〜8 と三角 0 の重複 4 個）まで絞れた。
+- もっと単純な再現: **`nggshape --indexed --triangles=16 --repeat=1000`**（3×3 の格子の 8 cell、頂点 15・primitive 16 の 1 subgroup）。zedBSD の NGG では 4〜5 回目の submit で止まる。1 回だけなら止まらないが、**最後の三角形（primitive 15 = 頂点 10・14・13、新しい頂点 14 を最後に持ち込む三角形）が描かれない**（drawn 54656、正しくは 58311。`--map` で確認）。legacy（ngg=0）と Linux RADV（`RADV_PERFTEST=gewave32 RADV_DEBUG=nonggc`、pswave32 でも）は 58311 で、1000 回でも止まらない。→ 失われた primitive の export 領域が返らず（SX_BUSY の残留）、溜まって止まる、と読める。
+- 並びの依存: 同じ 16 三角形で、primitive 15 を先頭に回すと全部描かれる。先頭を末尾に回しても全部描かれる。`--draws=2`（8 個ずつ）も全部描かれる。`--probe`（probe.vert、頂点ごとの実行回数を storage buffer に数える）では頂点 0〜14 が各 1 回走っている（頂点の lane は全部走る）。→ 失われるのは primitive の側（最後の primitive の export）の見込み。
+- 否定した仮説（nggshape で全部通る）: 全部 culled の subgroup（`--cull --allback`）、pixel に掛からない tiny な三角形（`--tiny`）、重なる小さな三角形（`--cluster`）、面積 0（`--degenerate`）、再利用の悪い index（`--shuffle`）、texture の sampling（`--texture`、mview の pixel program）、mview の変換（`--push`）、繰り返し（`--repeat`）、compositor との並行、legacy→NGG の切り替え（mode 1 でも同じ）、clear の draw（`--keep` でも同じ）。
+- register の変種（診断 kernel、boot 行 `amdrdna.vk.nggx`）: bit 0（CU mask 全部・late alloc 0）+ bit 1（GE_PC_ALLOC を oversubscription なし 0x7fe）→ 変わらず hang。
+- RADV との IB の突き合わせ: LD_PRELOAD の plan/ws291/tests/linux/ibdump.c で RADV の IB（preamble を含む）を取り、plan/ws291/tests/linux/pm4-decode.py で register 名に直した（build/ws291/measure/p005/radv-ib/ib16b.dec）。我々の IB は診断 kernel で klog に出した（radv-ib/ours16.dec）。NGG の register（VGT_GS_ONCHIP_CNTL 0x2004007e、GE_CNTL 0xf280、VGT_SHADER_STAGES_EN 0x02c12010、GE_MAX_OUTPUT・GE_NGG_SUBGRP_CNTL・IDX/POS_FORMAT・RSRC2/3/4_GS・GE_PC_ALLOC・PA_SC_NGG_MODE_CNTL、preamble）は一致。違うのは PA_CL_GB_*_CLIP_ADJ（RADV 255、我々 1.0）、PA_SC_MODE_CNTL_0（RADV 0x22 = ALTERNATE_RBS_PER_TILE）、PA_SU_PRIM_FILTER_CNTL（RADV 0xc0000000）、PA_SC_BINNER_CNTL_0（RADV は binning を使う）、RSRC1_GS の VGPR 数・FLOAT_MODE、PS の wave64、RADV が primitive restart の書き込みの前に出す SQ_NON_EVENT（has_prim_restart_sync_bug）。shader（ACO の dump と我々の encoding）は機能的に同じ（ACO は exp prim の未使用の VSRC を 0x80、我々は v0）。
+
+### 機械の状態（2026-10-27 13:30）
+
+- 10.0.10.3 は zedBSD（USB）で起動中で GPU が止まっている（diag12 の nggx=0x100 の試行の結果。0x100・0x200 の変種は多 wave の subgroup に正しくない設計で、desktop が即座に止まった。結果は判定に使わない）。
+- stick の /boot/boot0/vmunix は vmunix-diag12（診断）、zedbsd.cfg は `amdrdna.vk.ngg=3`・`amdrdna.vk.nggx=256`。次の世代は Debian を mount して（/dev/sda2）通常の kernel と `amdrdna.vk.ngg=0`、nggx の行を外すこと。
+- 入れ直し（SwitchBot）で Debian に戻る。機械の操作は host の /tmp/zedbsd-desktop.lock を flock で取る（P4 と共用）。
+
 ## 残り・再開の条件
 
-- NGG の hang の原因（register の差）を見つける。Q1 経由の助言役（RADV 25.0.7 と Linux 6.8.12 の突き合わせ）の一覧を待つ。
+- 失われる最後の primitive の原因を見つける。次に試すつもりだった事（それぞれ boot 行の診断 bit で 1 kernel にまとめる）:
+  1. 単一 wave の subgroup で、wave の primitive 数（s3[14:8]）と subgroup の数（s2[30:22]）が食い違うかを見る（diag13.patch の bit 0x100: wave 0 で subgroup の primitive が 32 以下なら s2 の数を使う。build 済みの vmunix-diag13、未実機）。
+  2. RADV と違う PA の register を RADV の値に: PA_SU_PRIM_FILTER_CNTL 0xc0000000、PA_SC_MODE_CNTL_0 の ALTERNATE_RBS_PER_TILE、guard band、binner。
+  3. exp prim の未使用の VSRC を ACO と同じ 0x80 に、FLOAT_MODE を RADV の 0xc0 に。
+  4. primitive restart の書き込み前の SQ_NON_EVENT。
 - 見つかったら: mview の 1 体・6500 体の shot、desktop、hang の確かめ、GPU の ms を測り、既定を NGG にするか決める。
+- 試験の道具（commit 済み）: `nggshape --indexed --triangles=16 [--map] [--probe] [--repeat=N]` が最小の再現。Linux は `gcc -O2 -I<build の nggshape-programs.h の dir> plan/ws291/tests/nggshape/main.c -lvulkan` で build でき、`LD_PRELOAD=ibdump.so IBDUMP=<dir>/ib` で RADV の IB が取れる。
