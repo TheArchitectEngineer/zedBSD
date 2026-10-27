@@ -227,6 +227,21 @@ buf_invalidate_disk(
 /* Retirement-only: caller excludes external users of the revoked physical disk.
  * Never submits writeback; referenced/in-flight buffers remain owned on EBUSY. */
 int buf_discard_media(struct disk *disk);
+
+/*
+ * Read-ahead of raw block devices.
+ *
+ * observe records a completed read of an open block device (owner is the
+ * open description) and reads ahead of a sequential reader; forget drops
+ * the owner's stream when it closes.  stop keeps read-ahead off a disk's
+ * physical device until the matching resume; with wait it sleeps until the
+ * read-ahead running there has ended, otherwise it reports EBUSY while
+ * some does.
+ */
+void buf_readahead_observe(const void *owner, struct disk *disk, uint64_t block, uint32_t count);
+void buf_readahead_forget(const void *owner);
+int buf_readahead_stop(struct disk *disk, int wait);
+void buf_readahead_resume(struct disk *disk);
 size_t
 buf_reclaim(
 	size_t target_bytes,

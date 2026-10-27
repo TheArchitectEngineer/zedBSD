@@ -273,6 +273,11 @@ disk_admin_begin(
 	bool enabled;
 	int error;
 
+	/* Lets read-ahead on the device end, so that the idle check does not see it. */
+	error = buf_readahead_stop(parent, 1);
+	if (error != 0)
+		return error;
+
 	enabled = disk_lock();
 	if (parent == NULL || owner == NULL || disk_index(parent) < 0) {
 		error = EINVAL;
@@ -297,7 +302,16 @@ disk_admin_begin(
 		}
 	}
 	disk_unlock(enabled);
-	return error;
+
+	/* Read-ahead may run again; the new owner keeps it off the disk. */
+	buf_readahead_resume(parent);
+
+	/* Reports why the disk could not be reserved. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the caller owns the disk. */
+	return 0;
 }
 
 /* Permits one serialized syscall to use the reserved disk and its cache. */
@@ -375,6 +389,11 @@ disk_reload_begin_claimed(
 	bool enabled;
 	int error;
 
+	/* Lets read-ahead on the device end, so that the idle check does not see it. */
+	error = buf_readahead_stop(parent, 1);
+	if (error != 0)
+		return error;
+
 	/* Pins the reload to the current thread under the registry lock. */
 	owner = thread_current != NULL ? thread_current() : NULL;
 	enabled = disk_lock();
@@ -397,6 +416,9 @@ disk_reload_begin_claimed(
 	}
 
 	disk_unlock(enabled);
+
+	/* Read-ahead may run again; the reload owner keeps it off the disk. */
+	buf_readahead_resume(parent);
 
 	/* Reports whether this caller acquired the admission gate. */
 	if (error != 0)
@@ -824,13 +846,24 @@ disk_gone_if_idle(
 	bool enabled;
 	int error;
 
-	/* Rejects a missing disk or one whose backing cannot be quiesced. */
+	/* Rejects a missing disk. */
 	if (disk == NULL)
 		return EINVAL;
+
+	/* Keeps read-ahead off the device; read-ahead still running makes it busy. */
+	error = buf_readahead_stop(disk, 0);
+	if (error != 0) {
+		buf_readahead_resume(disk);
+		return error;
+	}
+
+	/* Rejects a disk whose backing cannot be quiesced. */
 	error = backing_mutation_begin_disk(disk, 0, disk->d_block_count, NULL,
 					    &guard);
-	if (error != 0)
+	if (error != 0) {
+		buf_readahead_resume(disk);
 		return error;
+	}
 
 	/* A first idle check avoids flushing a disk that is plainly busy. */
 	enabled = disk_lock();
@@ -903,6 +936,7 @@ disk_gone_if_idle(
 
 out:
 	backing_mutation_end(&guard);
+	buf_readahead_resume(disk);
 
 	/* Reports why the removal failed. */
 	if (error != 0)
@@ -1800,10 +1834,19 @@ disk_media_retire(
 	bool enabled;
 	int error, index;
 
+	/* Keeps read-ahead off the device; read-ahead still running makes it busy. */
+	error = buf_readahead_stop(disk, 0);
+	if (error != 0) {
+		buf_readahead_resume(disk);
+		return error;
+	}
+
 	/* Excludes every claim on the device before retiring it. */
 	error = backing_mutation_begin_retired_disk(disk, &guard);
-	if (error != 0)
+	if (error != 0) {
+		buf_readahead_resume(disk);
 		return error;
+	}
 
 	enabled = disk_lock();
 
@@ -1812,6 +1855,7 @@ disk_media_retire(
 	if (error != 0) {
 		disk_unlock(enabled);
 		backing_mutation_end(&guard);
+		buf_readahead_resume(disk);
 		return error;
 	}
 
@@ -1856,6 +1900,7 @@ disk_media_retire(
 
 	disk_unlock(enabled);
 	backing_mutation_end(&guard);
+	buf_readahead_resume(disk);
 
 	/* Reports the failure. */
 	if (error != 0)
@@ -3374,7 +3419,7 @@ bio_admit(
 
 	/*
 	 * A transfer names its data one way only: b_data, or a page list whose
-	 * pages hold exactly its blocks (ws299).  A flush names neither.
+	 * pages hold exactly its blocks.  A flush names neither.
 	 */
 	if (bio->b_op != BIO_FLUSH && bio->b_pages != NULL) {
 		if (bio->b_data != NULL)
@@ -4065,6 +4110,80 @@ disk_page_vector_supported(
 
 	/* Succeeded: reports the leaf's capability. */
 	return supported;
+}
+
+/*
+ * Reports whether reading ahead a block range of a disk can only be seen by
+ * its one opener.
+ *
+ * A block read ahead stays in the cache, and writes that bypass the cache
+ * (a filesystem's journal, swap) do not refresh it, so the range must not
+ * belong to anything else that is open on the same device: a mounted
+ * partition, a swap partition, or another reader.
+ */
+int
+disk_readahead_private(
+	struct disk *disk,
+	uint64_t block,
+	uint64_t count)
+{
+	struct disk *leaf;
+	struct disk *other;
+	struct disk *other_leaf;
+	struct disk *ancestor;
+	uint64_t first;
+	uint64_t other_first;
+	bool enabled;
+	int private;
+
+	/* A missing disk or an empty range is nobody's to read ahead. */
+	if (disk == NULL || count == 0)
+		return 0;
+
+	enabled = disk_lock();
+
+	/* The reader must be the disk's only opener of a live disk. */
+	private = 1;
+	if (disk_index(disk) < 0 ||
+	    disk->d_state != DISK_LIVE ||
+	    disk->d_open_count != 1 ||
+	    disk->d_opening != 0)
+		private = 0;
+	if (private && disk_admin_span(disk, block, count, &leaf, &first) != 0)
+		private = 0;
+
+	/* Looks for another open disk of the same device that overlaps the range. */
+	for (other = disk_head; private && other != NULL; other = other->d_next) {
+		/* The disk itself was checked above. */
+		if (other == disk)
+			continue;
+
+		/* An ancestor of the disk holds it, not a range of its own. */
+		for (ancestor = disk->d_parent; ancestor != NULL; ancestor = ancestor->d_parent) {
+			if (ancestor == other)
+				break;
+		}
+		if (ancestor != NULL)
+			continue;
+
+		/* A disk that is not open, or that is elsewhere, is not in the way. */
+		if (other->d_open_count == 0 && other->d_opening == 0)
+			continue;
+		if (disk_admin_span(other, 0, other->d_block_count, &other_leaf, &other_first) != 0)
+			continue;
+		if (other_leaf != leaf ||
+		    first >= other_first + other->d_block_count ||
+		    other_first >= first + count)
+			continue;
+
+		/* An open disk overlaps the range. */
+		private = 0;
+	}
+
+	disk_unlock(enabled);
+
+	/* Succeeded: reports whether the range is the opener's alone. */
+	return private;
 }
 
 /*

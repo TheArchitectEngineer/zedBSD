@@ -6,20 +6,18 @@
  */
 
 /*
- * The buffer cache's index of header slabs that have a free slot
- * (ws299-p002).
+ * The buffer cache's index of header slabs that have a free slot.
  *
  * Buffer headers live in page-sized slabs of at most 64 slots, each slab
  * with a mask of its free slots.  Taking a header used to walk every slab
  * from the newest under the cache lock with interrupts off, so a cache of a
  * million lines spent a millisecond a header once eviction had scattered
- * the free slots (plan/ws299/phase001/phase.md).  Here only the slabs with
+ * the free slots.  Here only the slabs with
  * a free slot are linked, so taking and giving back a header is a constant
  * number of steps however many slabs exist.
  *
  * Pure bookkeeping on the slabs' records, with no lock and no memory of its
- * own, kept apart so that the host can test it
- * (plan/ws299/tests/host/buf-slab-test.c).  The caller holds the cache lock
+ * own, kept apart so that the host can test it.  The caller holds the cache lock
  * around every call.
  */
 

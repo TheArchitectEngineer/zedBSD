@@ -37,7 +37,7 @@
 #define DISK_WRITE_CACHED	0x00000020U
 /*
  * The driver moves a transfer to and from a list of physical pages
- * (struct bio's b_pages) by DMA, without b_data (ws299).  Only a leaf disk's
+ * (struct bio's b_pages) by DMA, without b_data.  Only a leaf disk's
  * driver sets it; the block layer refuses a page list for any other disk.
  */
 #define DISK_PAGE_VECTOR	0x00000040U
@@ -119,6 +119,11 @@ struct disk {
 	unsigned d_cache_users;
 	/* Resident buffer pins are distinct from external users; registry lock. */
 	unsigned d_buffer_refs;
+	/*
+	 * How many management operations have stopped the buffer cache's
+	 * read-ahead on this physical device; the read-ahead lock protects it.
+	 */
+	unsigned d_readahead_stops;
 	/* Protected by d_lock; outstanding links never retain completed BIOs. */
 	struct bio *d_write_head;
 	struct bio *d_write_tail;
@@ -196,7 +201,7 @@ struct bio {
 	/* When the request was submitted, in nanoseconds, for its disk's hw.diskstats times (ws134-p006). */
 	uint64_t b_submitted_ns;
 	/*
-	 * The data as physical pages instead of b_data (ws299): the address of
+	 * The data as physical pages instead of b_data: the address of
 	 * each KERN_PAGE_SIZE page in transfer order, b_page_count of them,
 	 * together exactly b_block_count blocks.  Only for a disk whose leaf
 	 * has DISK_PAGE_VECTOR; b_data is then NULL.  The caller owns the pages
@@ -214,12 +219,17 @@ int disk_write_filesystem_context(struct disk *disk, uint64_t block, uint32_t co
 int disk_write_direct_context(struct disk *disk, uint64_t block, uint32_t count, const void *data, const struct io_context *context);
 int disk_transfer_progress_context(struct disk *disk, enum bio_op op, uint64_t block, uint32_t count, void *data, uint32_t *completed, const struct io_context *context);
 /*
- * Moves whole physical pages by DMA when the disk's leaf has DISK_PAGE_VECTOR
- * (ws299); EOPNOTSUPP otherwise, before anything is sent.  The pages hold
+ * Moves whole physical pages by DMA when the disk's leaf has
+ * DISK_PAGE_VECTOR; EOPNOTSUPP otherwise, before anything is sent.  The pages hold
  * exactly count blocks; completed reports the confirmed prefix in blocks.
  */
 int disk_transfer_pages_context(struct disk *disk, enum bio_op op, uint64_t block, uint32_t count, const uint64_t *pages, uint32_t page_count, uint32_t *completed, const struct io_context *context);
 int disk_page_vector_supported(struct disk *disk);
+/*
+ * Whether reading ahead a block range of a disk can only be seen by its one
+ * opener: no other open disk on the same device overlaps the range.
+ */
+int disk_readahead_private(struct disk *disk, uint64_t block, uint64_t count);
 
 #define DISK_VECTOR_MAX 32U
 struct disk_vector {
