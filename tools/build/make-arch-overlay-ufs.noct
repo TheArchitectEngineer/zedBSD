@@ -59,7 +59,12 @@ func main(args){
     }
     var root=output+".root.tmp";
     var dirs=["bin","sbin","lib","etc","var","root","home","usr/bin","dev","boot","tmp","run","shm","var/empty","usr/sbin","usr/libexec","etc/ssh"];
-    var prepare="rm -rf "+zbShellQuote(root)+" && mkdir -p";
+    // Everything is written with the file creation mask 022, whatever the
+    // builder's is: the image's inodes take the staged modes and belong to
+    // root:wheel, so a mask of 002 would let the wheel group rewrite the
+    // system's files.  Group and other write bits come only from --mode, and
+    // the files are copied without -p so that the mask applies to them.
+    var prepare="umask 022 && rm -rf "+zbShellQuote(root)+" && mkdir -p";
     for(i in 0..Array.size(dirs)){prepare=prepare+" "+zbShellQuote(root+"/"+dirs[i]);}
     // A directory is made with the mode it should have rather than the one
     // the builder's file creation mask happens to leave.  A group-writable
@@ -71,11 +76,12 @@ func main(args){
             " && chmod 1777 "+zbShellQuote(root+"/tmp")+" "+zbShellQuote(root+"/shm");
     if(System.shell(prepare)!=0){zbFail("cannot prepare architecture staging root");}
     FileUtil.writeText(root+"/lib/arch.id",profile+"\n"); FileUtil.writeText(root+"/etc/zedbsd-root","zedBSD ufs root v1\n");
+    if(System.shell("chmod 0644 "+zbShellQuote(root+"/lib/arch.id")+" "+zbShellQuote(root+"/etc/zedbsd-root"))!=0){zbFail("cannot set the root marker's mode");}
     var haveSh=false;
-    for(i in 0..Array.size(files)){var pair=splitSpec(files[i],"--file");var dest=pair[0];var source=pair[1];if(dest=="/bin/sh"){haveSh=true;}var target=root+dest;if(System.shell("mkdir -p "+zbShellQuote(zbParent(target))+" && cp -p "+zbShellQuote(source)+" "+zbShellQuote(target))!=0){zbFail("cannot install manifest file: "+dest);}}
+    for(i in 0..Array.size(files)){var pair=splitSpec(files[i],"--file");var dest=pair[0];var source=pair[1];if(dest=="/bin/sh"){haveSh=true;}var target=root+dest;if(System.shell("umask 022 && mkdir -p "+zbShellQuote(zbParent(target))+" && cp "+zbShellQuote(source)+" "+zbShellQuote(target))!=0){zbFail("cannot install manifest file: "+dest);}}
     if(!haveSh){zbFail("profile manifest must contain /bin/sh");}
-    // Each directory's files keep their modes, and its symbolic links stay links (cp -RPp).
-    for(i in 0..Array.size(subtrees)){var tpair=splitSpec(subtrees[i],"--subtree");var tdir=root+tpair[0];if(System.shell("test -d "+zbShellQuote(tpair[1])+" && mkdir -p "+zbShellQuote(tdir)+" && cp -RPp "+zbShellQuote(tpair[1]+"/.")+" "+zbShellQuote(tdir+"/"))!=0){zbFail("cannot install manifest directory: "+tpair[0]);}}
+    // Each directory's files keep their modes less the mask, and its symbolic links stay links (cp -RP).
+    for(i in 0..Array.size(subtrees)){var tpair=splitSpec(subtrees[i],"--subtree");var tdir=root+tpair[0];if(System.shell("umask 022 && test -d "+zbShellQuote(tpair[1])+" && mkdir -p "+zbShellQuote(tdir)+" && cp -RP "+zbShellQuote(tpair[1]+"/.")+" "+zbShellQuote(tdir+"/"))!=0){zbFail("cannot install manifest directory: "+tpair[0]);}}
     for(i in 0..Array.size(modes)){var pair=splitSpec(modes[i],"--mode");if(System.shell("chmod "+zbShellQuote(pair[1])+" "+zbShellQuote(root+pair[0]))!=0){zbFail("cannot apply mode: "+modes[i]);}}
     // The directories made for the files (/lib/firmware and the like) take
     // 0755 as the prepared ones do, not the builder's file creation mask;

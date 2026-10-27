@@ -1392,6 +1392,15 @@ ZEDBSD_ROOTFS_STICKY_DIRECTORIES := tmp shm
 # package's files (/lib/firmware, /usr/share/licenses/...) would
 # otherwise take the builder's file creation mask.
 #
+# The files are written with the file creation mask 022, whatever the
+# builder's is: the image's inodes take the staged modes as they are
+# and belong to root:wheel, so a builder's mask of 002 would let the
+# wheel group rewrite /lib/libc.so and the rest of the system.  A
+# file's group and other write bits therefore come only from an
+# explicit --mode (the sticky directories are made 1777 by chmod), and
+# the package's directories are copied without -p so that the mask
+# applies to them too.
+#
 # The packages' files are expanded when the recipe runs, after the
 # packages have been staged, not when this rule is evaluated: a
 # package whose file list is read from its own stage has an empty list
@@ -1402,27 +1411,27 @@ ZEDBSD_ROOTFS_STICKY_DIRECTORIES := tmp shm
 # at DEST: Python's standard library, vim's runtime and Emacs's lisp
 # are thousands of files, and a --file for each would make this
 # recipe, which is one argument of the shell, longer than the 128 KiB
-# the kernel allows one argument.  The files keep their modes and
-# symbolic links stay links.  What the directory holds is not part of
-# the selection's stamp, so the package names a stamp of its stage
-# among ZEDBSD_PACKAGE_INPUTS, and the root is staged again when the
-# package is.
+# the kernel allows one argument.  The files keep their modes less
+# the mask 022, and symbolic links stay links.  What the directory
+# holds is not part of the selection's stamp, so the package names a
+# stamp of its stage among ZEDBSD_PACKAGE_INPUTS, and the root is
+# staged again when the package is.
 #
 
 define ZEDBSD_ROOTFS_TREE_RULE
 $(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
 	$(ZEDBSD_PACKAGE_INPUTS) $(ZEDBSD_ROOTFS_DEVELOPMENT_INPUTS)
 	@rm -rf $(BUILD)/rootfs
-	@mkdir -p $(BUILD)/rootfs $(addprefix $(BUILD)/rootfs/,\
+	@umask 022; mkdir -p $(BUILD)/rootfs $(addprefix $(BUILD)/rootfs/,\
  $(ZEDBSD_ROOTFS_DIRECTORIES) $(ZEDBSD_ROOTFS_STICKY_DIRECTORIES))
 	@chmod 0755 $(BUILD)/rootfs $(addprefix $(BUILD)/rootfs/,\
  $(ZEDBSD_ROOTFS_DIRECTORIES))
 	@chmod 1777 $(addprefix $(BUILD)/rootfs/,\
  $(ZEDBSD_ROOTFS_STICKY_DIRECTORIES))
 	@ln -s ../run $(BUILD)/rootfs/var/run
-	@printf '%s\n' '$(1)' > $(BUILD)/rootfs/lib/arch.id
-	@printf 'zedBSD ufs root v1\n' > $(BUILD)/rootfs/etc/zedbsd-root
-	@set -e; for pass in file mode; do \
+	@umask 022; printf '%s\n' '$(1)' > $(BUILD)/rootfs/lib/arch.id
+	@umask 022; printf 'zedBSD ufs root v1\n' > $(BUILD)/rootfs/etc/zedbsd-root
+	@set -e; umask 022; for pass in file mode; do \
  set -- $(3) $$(ZEDBSD_PACKAGE_FILES); while test $$$$# -gt 0; do \
  option=$$$$1; specification=$$$$2; shift 2; \
  path=$$$${specification%%=*}; value=$$$${specification#*=}; \
@@ -1434,7 +1443,7 @@ $(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
  test -d "$$$$value" || { \
  echo "rootfs: --subtree names no directory: $$$$value" >&2; \
  exit 2; }; \
- mkdir -p "$$$$destination"; cp -RPp "$$$$value/." "$$$$destination/" ;; \
+ mkdir -p "$$$$destination"; cp -RP "$$$$value/." "$$$$destination/" ;; \
  --mode) test "$$$$pass" = mode || continue; \
  test -e "$$$$destination" || { \
  echo "rootfs: --mode names a file nothing installed: /$$$$path" >&2; \
@@ -1444,7 +1453,7 @@ $(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
  esac; \
  done; \
 	done
-	@set -e; for specification in $(ZEDBSD_PACKAGE_LINKS); do \
+	@set -e; umask 022; for specification in $(ZEDBSD_PACKAGE_LINKS); do \
  path=$$$${specification%%=*}; target=$$$${specification#*=}; \
  path=$$$${path#/}; destination=$(BUILD)/rootfs/$$$$path; \
  mkdir -p "$$$${destination%/*}"; ln -sfn "$$$$target" "$$$$destination"; \
@@ -1452,7 +1461,7 @@ $(BUILD)/rootfs/.stamp: $(ZEDBSD_ROOTFS_CONFIG_STAMP) $(2) \
 	@$$(call ZEDBSD_ROOTFS_INSTALL_DEVELOPMENT,$(BUILD)/rootfs)
 	@find $(BUILD)/rootfs \( -path $(BUILD)/rootfs/tmp -o -path $(BUILD)/rootfs/shm \) \
  -prune -o -type d -exec chmod 0755 {} +
-	@touch $$@
+	@umask 022; touch $$@
 endef
 
 #
@@ -1518,9 +1527,9 @@ ifeq ($(ZEDBSD_ROOTFS_DEVELOPMENT),y)
 ZEDBSD_ROOTFS_DEVELOPMENT_INPUTS := \
 	$(ZEDBSD_TARGET_SYSROOT)/.zedbsd-sysroot-complete
 define ZEDBSD_ROOTFS_INSTALL_DEVELOPMENT
-	mkdir -p $(1)/usr/include $(1)/usr/lib
-	cp -R $(ZEDBSD_TARGET_SYSROOT)/usr/include/. $(1)/usr/include/
-	cp -R $(ZEDBSD_TARGET_SYSROOT)/usr/lib/. $(1)/usr/lib/
+	umask 022; mkdir -p $(1)/usr/include $(1)/usr/lib
+	umask 022; cp -R $(ZEDBSD_TARGET_SYSROOT)/usr/include/. $(1)/usr/include/
+	umask 022; cp -R $(ZEDBSD_TARGET_SYSROOT)/usr/lib/. $(1)/usr/lib/
 	chmod -R u+w $(1)/usr/include $(1)/usr/lib
 endef
 else
