@@ -85,6 +85,12 @@
 #define SYSCALL_IO_CHUNK 512U
 /* The largest bounce buffer a pipe, socket or device transfer allocates. */
 #define SYSCALL_STREAM_CHUNK (64U * 1024U)
+/*
+ * The largest bounce buffer a regular file or block device transfer
+ * allocates, so a long read or write reaches the disk as one long request
+ * instead of 64 KiB ones (ws299, 2026-10-27 Q1).
+ */
+#define SYSCALL_LARGE_CHUNK (1024U * 1024U)
 #define SYSCALL_SOCKET_BUFFER_MAX (64U * 1024U)
 #define SOCKET_SEND_FLAGS (MSG_DONTWAIT | MSG_NOSIGNAL)
 #define SOCKET_RECV_FLAGS (MSG_DONTWAIT | MSG_PEEK | MSG_TRUNC | MSG_WAITALL)
@@ -193,7 +199,7 @@ static intptr_t sys_open_call(const uintptr_t args[6], int at);
 static intptr_t sys_close_call(const uintptr_t args[6]);
 static SYSCALL_EXT intptr_t sys_read_call(const uintptr_t args[6]);
 static uint8_t *syscall_io_buffer(struct file *file, size_t length, uint8_t *fallback, size_t *capacity);
-static void syscall_io_buffer_release(struct file *file, uint8_t *buffer, uint8_t *fallback);
+static void syscall_io_buffer_release(struct file *file, uint8_t *buffer, uint8_t *fallback, size_t capacity);
 static SYSCALL_EXT intptr_t sys_write_call(const uintptr_t args[6]);
 static intptr_t sys_lseek_call(const uintptr_t args[6]);
 static intptr_t sys_fstat_call(const uintptr_t args[6]);
@@ -2817,13 +2823,16 @@ sys_close_call(
 /*
  * Picks the bounce buffer of one transfer.
  *
- * A short transfer uses the caller's stack buffer.  A regular file borrows
- * shared scratch without allocation or waiting.  A pipe, socket or device
- * gets a heap buffer of up to SYSCALL_STREAM_CHUNK: it may block while it
- * holds it, so it does not take from the shared pool, and a read of it ends
- * after one backend transfer, so a stack-sized buffer would cut every read
- * to SYSCALL_IO_CHUNK bytes.  Any buffer it cannot get falls back to the
- * stack one.
+ * A short transfer uses the caller's stack buffer.  A transfer of a regular
+ * file or a block device longer than one pool batch first gets a heap buffer
+ * of up to SYSCALL_LARGE_CHUNK, so the disk sees long requests (ws299).
+ * Otherwise a regular file borrows shared scratch without allocation or
+ * waiting.  A pipe, socket or device gets a heap buffer of up to
+ * SYSCALL_STREAM_CHUNK: it may block while it holds it, so it does not take
+ * from the shared pool, and a read of it ends after one backend transfer, so
+ * a stack-sized buffer would cut every read to SYSCALL_IO_CHUNK bytes.  Any
+ * buffer it cannot get falls back to the next choice and at last to the
+ * stack one.  A capacity above KERN_IO_BATCH_MAX names a large heap buffer.
  */
 static uint8_t *
 syscall_io_buffer(struct file *file, size_t length, uint8_t *fallback,
@@ -2831,10 +2840,29 @@ syscall_io_buffer(struct file *file, size_t length, uint8_t *fallback,
 {
 	uint8_t *buffer;
 	size_t size;
+	int large;
 
 	*capacity = SYSCALL_IO_CHUNK;
 	if (length <= SYSCALL_IO_CHUNK)
 		return fallback;
+
+	/* A long transfer of a file or a disk tries one large heap buffer first. */
+	large = 0;
+	if (file->f_inode != NULL && length > KERN_IO_BATCH_MAX) {
+		if (file->f_inode->i_type == INODE_REG)
+			large = 1;
+		else if (file->f_inode->i_type == INODE_BLOCK)
+			large = 1;
+	}
+	if (large) {
+		size = length < SYSCALL_LARGE_CHUNK ? length : SYSCALL_LARGE_CHUNK;
+		buffer = kern_malloc(size);
+		if (buffer != NULL) {
+			*capacity = size;
+			return buffer;
+		}
+	}
+
 	if (file->f_inode != NULL && file->f_inode->i_type == INODE_REG) {
 		buffer = io_pool_borrow(length, capacity);
 		if (buffer == NULL)
@@ -2849,13 +2877,23 @@ syscall_io_buffer(struct file *file, size_t length, uint8_t *fallback,
 	return buffer;
 }
 
-/* Gives back a bounce buffer syscall_io_buffer() picked for the same file. */
+/*
+ * Gives back a bounce buffer syscall_io_buffer() picked for the same file,
+ * with the capacity it reported.
+ */
 static void
 syscall_io_buffer_release(struct file *file, uint8_t *buffer,
-	uint8_t *fallback)
+	uint8_t *fallback, size_t capacity)
 {
 	if (buffer == fallback)
 		return;
+
+	/* A large heap buffer goes back to the heap whatever the file is. */
+	if (capacity > KERN_IO_BATCH_MAX) {
+		kern_free(buffer);
+		return;
+	}
+
 	if (file->f_inode != NULL && file->f_inode->i_type == INODE_REG)
 		io_pool_release(buffer);
 	else
@@ -2901,7 +2939,7 @@ sys_read_call(
 	buffer = syscall_io_buffer(file, length, small_buffer, &capacity);
 	error = file_io_begin(file, FILE_IO_READ, 0, 0, &io);
 	if (error != 0) {
-		syscall_io_buffer_release(file, buffer, small_buffer);
+		syscall_io_buffer_release(file, buffer, small_buffer, capacity);
 		uaccess_unpin(&pin);
 		(void)file_close(file);
 		return -error;
@@ -2960,7 +2998,7 @@ sys_read_call(
 	result = (intptr_t)done;
 out:
 	result = file_io_complete(&io, result);
-	syscall_io_buffer_release(file, buffer, small_buffer);
+	syscall_io_buffer_release(file, buffer, small_buffer, capacity);
 	uaccess_unpin(&pin);
 	(void)file_close(file);
 	return result;
@@ -3007,7 +3045,7 @@ sys_write_call(
 	error = file_io_begin_cred(file, FILE_IO_WRITE, 0, 0, process->cred,
 	    &io);
 	if (error != 0) {
-		syscall_io_buffer_release(file, buffer, small_buffer);
+		syscall_io_buffer_release(file, buffer, small_buffer, capacity);
 		uaccess_unpin(&pin);
 		(void)file_close(file);
 		return -error;
@@ -3057,7 +3095,7 @@ sys_write_call(
 	result = (intptr_t)done;
 out:
 	result = file_io_complete(&io, result);
-	syscall_io_buffer_release(file, buffer, small_buffer);
+	syscall_io_buffer_release(file, buffer, small_buffer, capacity);
 	uaccess_unpin(&pin);
 	(void)file_close(file);
 	return result;
@@ -4650,7 +4688,7 @@ sys_positional_call(
 	buffer = syscall_io_buffer(file, length, small_buffer, &capacity);
 	error = file_io_begin_cred(file, operation, offset, 0, credential, &io);
 	if (error != 0) {
-		syscall_io_buffer_release(file, buffer, small_buffer);
+		syscall_io_buffer_release(file, buffer, small_buffer, capacity);
 		uaccess_unpin(&pin);
 		(void)file_close(file);
 		return -error;
@@ -4717,7 +4755,7 @@ copy_error:
 		result = -error;
 out:
 	result = file_io_complete(&io, result);
-	syscall_io_buffer_release(file, buffer, small_buffer);
+	syscall_io_buffer_release(file, buffer, small_buffer, capacity);
 	uaccess_unpin(&pin);
 	(void)file_close(file);
 	return result;
@@ -4913,7 +4951,7 @@ fail:
 out:
 	if (io_started)
 		total = file_io_complete(&io, total);
-	syscall_io_buffer_release(file, buffer, small_buffer);
+	syscall_io_buffer_release(file, buffer, small_buffer, capacity);
 	if (file != NULL)
 		(void)file_close(file);
 	while (pinned != 0) {
