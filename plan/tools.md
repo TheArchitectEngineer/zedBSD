@@ -9,7 +9,7 @@ Phase に固有の試験は各 WS の `tests/`、シナリオ試験（AAT）は 
 
 | 機械 | 接続 | 注意 |
 | --- | --- | --- |
-| Dell Latitude 5330（i915） | `10.0.30.3`（SSH、UEFI の BootNext で USB から起動） | host key が焼き直しで変わる時は消して受け直してよい |
+| Dell Latitude 5330（i915） | `10.0.30.3`（Debian、SSH）。zedBSD は NVMe（p4〜p6、`5330-run.sh --nvme-*`、`~/boot-zedbsd.sh`、grub の「zedBSD (NVMe)」） | 2026-10-27 から USB メモリは外した（特別な理由が無い限り使わない、ユーザー）。host key が焼き直しで変わる時は消して受け直してよい。遠隔の電源は無い |
 | VisionFive 2（riscv64） | `ssh kei@10.0.30.2`、serial `/dev/ttyUSB0` | SwitchBot は 2026-10-27 に外した（遠隔の電源の入り切りは無い、止まったらユーザーに頼む）。`zedbsd.cfg` は login=graphical を外したまま |
 | AMD RDNA の機械（RX 5600 XT） | `10.0.10.3`（Debian、BootNext で USB の zedBSD、zedBSD は DHCP の 10.0.30.5） | 電源は SwitchBot のプラグ `AC276E42B252`（2026-10-27〜、UEFI で電源の復帰時に自動で on）。Q1 が `switchbot.py cycle AC276E42B252` で入れ直してよい（ユーザー、2026-10-27）。担当は Q1 に頼む。SSH は 1 本の接続を使い回す |
 | SV7 | `10.0.10.27` | 5330 と入れ替えで起動することがある |
