@@ -5,7 +5,9 @@
 # hubs and disks, its Ethernet port is en0, and the onboard Wi-Fi is wlan0
 # with the bcm43455-firmware package.  The onboard Bluetooth's driver is
 # off (CONFIG_DRIVER_RPI5_BT).  The fan connector follows the processor's
-# temperature (CONFIG_DRIVER_RPI5_FAN).  The GPU is not bound yet, so the
+# temperature (CONFIG_DRIVER_RPI5_FAN).  An NVMe drive on an M.2 HAT
+# behind the external PCIe port (config.txt's dtparam=pciex1) is a disk
+# (CONFIG_DRIVER_PCI_NVME).  The GPU is not bound yet, so the
 # login is the text console's, and the Pi 4's chip drivers are off (the
 # Pi 5's are part of its board).
 ZEDBSD_MENU_VERSION := 3
@@ -33,7 +35,7 @@ CONFIG_DRIVER_NE2000 := n
 CONFIG_DRIVER_PCI_UHCI := n
 CONFIG_DRIVER_PCI_EHCI := n
 CONFIG_DRIVER_PCI_XHCI := y
-CONFIG_DRIVER_PCI_NVME := n
+CONFIG_DRIVER_PCI_NVME := y
 CONFIG_DRIVER_PCI_AHCI := n
 CONFIG_DRIVER_PCI_INTEL_AX211 := n
 CONFIG_DRIVER_PCI_VENUS := n
