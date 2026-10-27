@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | P1 | q1640 | [WS299](ws299/ws.md) 5330 の NVMe: fstrim の後に書きを測り直し → p005 UFS → p006 HMB → p007 → p008 | 5330 |
 | P2 | q1639 | [WS291](ws291/ws.md) RDNA: Linux と同等以上まで自律で継続（hang は調べて直す、30 分で分からなければ Fable 5.1 High に助言を求める） | 10.0.10.3（プラグミニ 1 は P2 が入れ直す） |
-| P3 | q1638 | [WS290](ws290/ws.md) GHCI 1.0 の driver: design 版 4 の review（Opus 5.5）→ approve で Phase を確定 → p002〜（host 試験） | host（VF2＋KC705 は書き込みの知らせの後） |
+| P3 | q1638 | [WS290](ws290/ws.md) GHCI 1.0 の driver: p001 cleared、Phase は p002〜p015（266 LW）に確定、p002 語の層から実装（仮の扱いあり）。仕様担当とのやり取りを並べて継続（第 14 版） | host（VF2＋KC705 は書き込みの知らせの後） |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
 <!-- master:agents:end -->
