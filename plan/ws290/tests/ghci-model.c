@@ -522,6 +522,7 @@ model_write(
 		if ((value & GHCI_CTRL_HALT) != 0U && (old_ctrl & GHCI_CTRL_HALT) == 0U && model.state == MODEL_RUNNING) {
 			/* The model's packets are whole, so the halt is at once; STATUS may show it later. */
 			model.state = MODEL_HALTED;
+			model.halts++;
 			model.halt_reads_left = model.switches.halt_reads;
 			model.irq_status |= GHCI_IRQ_HALTED;
 		}
@@ -558,6 +559,11 @@ model_write(
 			break;
 		}
 		window_set(offset, value);
+		break;
+	case GHCI_REG_SCRATCH:
+		/* A stuck window keeps what it read before. */
+		if (!model.switches.scratch_stuck)
+			window_set(offset, value);
 		break;
 	case GHCI_REG_RING_WPTR:
 		/* The doorbell: the processor reads up to the new write index. */

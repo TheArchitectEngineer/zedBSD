@@ -8,21 +8,18 @@
 /*
  * The GHCI device: what every GHCI GPU has in common, whatever its bus.
  *
- * The start identifies the GPU from its registers, resets it, sets up its
- * memory and ring, finds its display controller and registers the device
- * with the GPU core, which publishes /dev/gpuN named
- * "ghci:<vendor>:<device>".  The sessions of the device allocate GPU
- * memory, copy to and from it, map it, and on a test kernel submit
- * checked native packets.
+ * The start identifies the GPU from its registers, resets it, checks
+ * SCRATCH, reads its capabilities, starts the ring (cp.c) and registers
+ * the device with the GPU core, which publishes /dev/gpuN named
+ * "ghci:<PCI vendor>:<PCI device>".  The detach undoes it in the reverse
+ * order once no session is open.
  */
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include <drivers/gpu/gpu.h>
-#include <drivers/gpu/gpu-share.h>
 #include <kern/clock.h>
-#include <kern/cred.h>
 #include <kern/device-io.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
@@ -30,60 +27,27 @@
 #include <kern/sched.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
-#include <uapi/gpu-allocation.h>
-#include <uapi/gpu-display.h>
-#include <uapi/gpu-op.h>
 
 #include "ghci.h"
-#include "hcr.h"
-#include "packets.h"
-#include "vk/vk-node.h"
-
-/* The major version of GHCI the driver knows. */
-#define KNOWN_MAJOR			1U
-
-/* The smallest memory line the driver aligns to (2^5 bytes, the smallest GHCI defines). */
-#define LINE_LOG2_MIN			5U
-
-/* CPFW_STATUS from the CPFW capability's registers, whose first is CPFW_CTRL. */
-#define CPFW_STATUS_OFFSET		(GHCI_CPFW_STATUS - GHCI_CPFW_CTRL)
-
-/*
- * The capabilities of every device: storage, blobs, transfers, processor
- * mappings, and the sharing of memory between its sessions.
- */
-#define BASE_CAPABILITIES		(GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | \
-					 GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE)
-
-/* The blob flags a device takes: mapping and sharing within the device (not with another device). */
-#define BLOB_FLAGS			(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE)
 
 static int identify(struct ghci_device *device);
-static void identify_memory(struct ghci_device *device);
-static void name_device(struct ghci_device *device);
-static void put_fourcc(char *out, uint32_t fourcc);
-static int reset_hardware(struct ghci_device *device);
+static int reset_device(struct ghci_device *device);
+static int check_scratch(struct ghci_device *device);
+static int read_caps(struct ghci_device *device);
+static void choose_policy(struct ghci_device *device);
 static int register_device(struct ghci_device *device);
-static int tag_take(struct ghci_device *device, uint32_t *tag);
-static void tag_give(struct ghci_device *device, uint32_t tag);
+static void init_locks(struct ghci_device *device);
 static int gpu_open(void *private_data, void **result);
 static void gpu_close(void *private_data, void *opaque);
 static int gpu_get_info(void *private_data, void *opaque, struct gpu_info *info);
-static int gpu_resource_create(void *private_data, void *opaque, const struct gpu_resource_create *request, void **result);
-static void gpu_resource_destroy(void *private_data, void *opaque, void *object);
-static int gpu_blob_create(void *private_data, void *opaque, const struct gpu_blob_create *request, void **result, uint32_t *resource_id);
-static int gpu_resource_read(void *private_data, void *opaque, void *object, uint64_t offset, void *bytes, uint32_t length);
-static int gpu_resource_write(void *private_data, void *opaque, void *object, uint64_t offset, const void *bytes, uint32_t length);
-static int gpu_resource_map(void *private_data, void *opaque, void *object, struct drv_gpu_mapping *mapping);
-static int gpu_command(void *private_data, void *opaque, const void *stream, uint32_t bytes);
-static int allocation_make(struct ghci_device *device, struct ghci_session *session, enum ghci_memory_use use, uint64_t bytes, int blob, struct ghci_allocation **result);
-static int blob_of_memory(struct ghci_device *device, struct ghci_session *session, uint64_t identity, struct ghci_allocation **result);
-static void session_give_back(struct ghci_device *device, struct ghci_session *session);
-static int allocation_range(const struct ghci_allocation *allocation, uint64_t offset, uint32_t length);
-static void allocation_unlist(struct ghci_session *session, struct ghci_allocation *allocation);
 
 /*
- * Starts a device whose bus fields are filled.
+ * Starts a GHCI device whose bus fields the glue has filled.
+ *
+ * Returns 0 with the device registered, ENODEV for a window that is not
+ * GHCI 1.0, EIO for a GPU that does not reset or run, or the error of
+ * the step that failed; a failed start leaves the GPU reset and idle and
+ * gives back what it took.
  */
 int
 ghci_device_start(
@@ -91,136 +55,76 @@ ghci_device_start(
 {
 	int error;
 
-	/* The locks and wait queues the rest of the start already uses. */
-	error = mutex_init(&device->lock, LOCK_RANK_DEVICE, "ghci device");
-	if (error != 0)
-		return error;
+	/* The locks and wait queues every later step uses. */
+	init_locks(device);
+	device->state = GHCI_STATE_ATTACHING;
 
-	error = mutex_init(&device->cp_lock, LOCK_RANK_DEVICE, "ghci ring");
-	if (error != 0)
-		return error;
-
-	error = mutex_init(&device->display.lock, LOCK_RANK_DEVICE, "ghci display");
-	if (error != 0)
-		return error;
-
-	spin_init(&device->irq_lock, LOCK_RANK_DEVICE, "ghci interrupt");
-	waitq_init(&device->fence_wake, "ghci fence");
-	waitq_init(&device->service_wake, "ghci service");
-	waitq_init(&device->poll_wake, "ghci poll");
-	waitq_init(&device->display.flip_wake, "ghci flip");
-
-	/* Reads what the GPU is and has; a window that is not GHCI 1 is left alone. */
+	/* Reads what the GPU is; a window that is not GHCI 1.0 is left alone. */
 	error = identify(device);
 	if (error != 0)
 		return error;
 
-	/* Resets the GPU and waits for its memory. */
-	error = reset_hardware(device);
+	/* Resets the GPU and waits for its memory; whatever a kernel before this one left running stops. */
+	error = reset_device(device);
 	if (error != 0)
 		return error;
 
-	/* Sets up the allocators of local memory. */
-	error = ghci_memory_init(device);
+	/* The window answers writes as a register file should. */
+	error = check_scratch(device);
 	if (error != 0)
 		return error;
 
-	/*
-	 * Finds the display controller, if the GPU has one, and sets it dark.
-	 * This comes before the processor runs: once it runs, the host no
-	 * longer writes the controller's scan-out registers (the ring does).
-	 */
-	error = ghci_display_attach(device);
+	/* What the GPU can do, from the capability registers and the extended capability list. */
+	error = read_caps(device);
 	if (error != 0)
-		kern_logf("ghci: %s: display controller not started (%d)\n", device->name, error);
+		return error;
 
-	/* Starts the ring, the fences and the interrupt; the processor then runs. */
+	/* Whether the device gets the Vulkan executor, and what isolation its sessions have. */
+	choose_policy(device);
+
+	/* CP_HEAP, the ring, the fence page, the interrupt and the first fence. */
 	error = ghci_cp_start(device);
-	if (error != 0) {
-		ghci_display_detach(device);
-		ghci_memory_fini(device);
+	if (error != 0)
 		return error;
-	}
 
-	/*
-	 * Starts the poll thread of a device that takes no interrupt, which
-	 * stands in for the handler from here on (the executor's start below
-	 * already waits for the firmware's results).
-	 */
-	error = ghci_poll_start(device);
-	if (error != 0) {
-		ghci_display_detach(device);
-		ghci_cp_stop(device);
-		ghci_memory_fini(device);
-		return error;
-	}
-
-	/*
-	 * The handshake with the firmware (GHCI_INIT): its answer through the
-	 * ring and host memory proves the path every packet takes.  A device
-	 * whose firmware does not answer, or answers wrong, is not started.
-	 */
-	error = ghci_firmware_init(device);
-	if (error != 0) {
-		kern_logf("ghci: %s: the firmware did not answer INIT; the device is not started\n", device->name);
-		ghci_display_detach(device);
-		ghci_poll_stop(device);
-		ghci_cp_stop(device);
-		ghci_memory_fini(device);
-		return EIO;
-	}
-
-	/* Starts the thread that recovers from faults and gives deferred memory back. */
+	/* The service thread, which recovers from faults and hangs. */
 	error = ghci_service_start(device);
 	if (error != 0) {
-		ghci_display_detach(device);
-		ghci_poll_stop(device);
 		ghci_cp_stop(device);
-		ghci_memory_fini(device);
 		return error;
 	}
 
-	/*
-	 * The Vulkan executor, when the command processor has firmware that
-	 * decodes gpu-ops and the GPU has a shader unit.  A GPU without one
-	 * still serves its memory, its native commands and its display.
-	 */
-	error = ghci_vk_engine_start(device);
-	if (error != 0)
-		kern_logf("ghci: %s: no Vulkan executor (%d)\n", device->name, error);
+	/* The poll thread of a device without an interrupt. */
+	error = ghci_poll_start(device);
+	if (error != 0) {
+		ghci_service_stop(device);
+		ghci_cp_stop(device);
+		return error;
+	}
 
-	/* Publishes the device. */
+	/* Publishes /dev/gpuN. */
 	error = register_device(device);
 	if (error != 0) {
-		ghci_display_detach(device);
-		ghci_poll_stop(device);
-		ghci_cp_stop(device);
 		ghci_service_stop(device);
-		ghci_vk_engine_stop(device);
-		ghci_memory_fini(device);
+		ghci_cp_stop(device);
 		return error;
 	}
 
-	/* The driver does not use the local window: it is closed while the driver has the device. */
-	ghci_memory_window_set(device, 0);
-
-	/* Says what the device is: its version, capabilities, memory, display and executor. */
-	kern_logf("ghci: %s: ready (GHCI %u.%u, caps %08x, local %u MiB, window %u MiB, display %u, vulkan %u)\n",
+	/* Succeeded: the device runs and is published. */
+	kern_logf("ghci: %s: GHCI %u.%u, %s\n",
 	    device->name,
-	    (unsigned)(device->version >> 16),
+	    (unsigned)(device->version >> GHCI_VERSION_MAJOR_SHIFT),
 	    (unsigned)(device->version & 0xffffU),
-	    (unsigned)device->caps,
-	    (unsigned)(device->local_size >> 20),
-	    (unsigned)(device->local_window >> 20),
-	    (unsigned)device->display.present,
-	    (unsigned)(device->vk != NULL));
-
-	/* Succeeded: the device is published. */
+	    device->polled ? "polled" : "interrupt");
 	return 0;
 }
 
 /*
- * Stops a started device for the detach.
+ * Stops a started device once no session is open.
+ *
+ * Returns 0 once the GPU is reset, its interrupt let go and its memory
+ * given back, or EBUSY while a session is open; the bus glue then keeps
+ * the device.
  */
 int
 ghci_device_stop(
@@ -228,54 +132,48 @@ ghci_device_stop(
 {
 	int error;
 
-	/* Says that the detach asks the device to stop. */
-	kern_logf("ghci: %s: stop asked (sessions %u)\n", device->name, device->session_count);
-
-	/* Refuses while a session is open; new opens are refused from here on. */
+	/* Refuses while a session is open, and refuses new opens from here. */
 	mutex_lock(&device->lock);
 
-	if (device->session_count != 0U) {
-		mutex_unlock(&device->lock);
-		return EBUSY;
-	}
-
-	device->withdrawing = 1;
+	error = 0;
+	if (device->session_count != 0U)
+		error = EBUSY;
+	else
+		device->withdrawing = 1;
 
 	mutex_unlock(&device->lock);
 
-	/* Withdraws the node; a session opened in between makes the detach wait for its close. */
-	error = drv_gpu_unregister(device->gpu);
+	/* A session still open keeps the device. */
 	if (error != 0)
 		return error;
 
-	/*
-	 * Quiets the hardware: the display first, then the processor, then the
-	 * threads.  The poll stops before the ring and the fence page it reads
-	 * go back; the processor's stop looks at the fence page itself.
-	 */
-	device->gpu = NULL;
-	ghci_display_detach(device);
-	ghci_poll_stop(device);
-	ghci_cp_stop(device);
+	/* The node goes; the core keeps the device while a session it opened lingers. */
+	if (device->gpu != NULL) {
+		error = drv_gpu_unregister(device->gpu);
+		if (error != 0) {
+			mutex_lock(&device->lock);
+
+			device->withdrawing = 0;
+
+			mutex_unlock(&device->lock);
+			return error;
+		}
+		device->gpu = NULL;
+	}
+
+	/* A recovery in progress ends first, so the detach and the recovery do not both drive CTRL. */
+	ghci_recover_wait(device);
+
+	/* The service thread leaves; nothing recovers from here. */
 	ghci_service_stop(device);
 
-	/* The executor's heap and staging ring go back with the rest, and the firmware's image and diagnostics' buffers. */
-	ghci_vk_engine_stop(device);
-	ghci_firmware_release(device);
+	/*
+	 * The processor halts and resets, the interrupt and bus mastering go,
+	 * the poll thread leaves, and the memory goes with them.
+	 */
+	ghci_cp_stop(device);
 
-	/* Gives every allocation that waited for the GPU back, and the allocators' tables. */
-	mutex_lock(&device->lock);
-
-	(void)ghci_memory_reclaim(device);
-
-	mutex_unlock(&device->lock);
-
-	ghci_memory_fini(device);
-
-	/* The local window opens again, as after a reset, for whoever has the device next. */
-	ghci_memory_window_set(device, 1);
-
-	/* Succeeded: the bus glue may release the bus resources. */
+	/* Succeeded: the device holds nothing of the GPU. */
 	return 0;
 }
 
@@ -287,13 +185,13 @@ ghci_read(
 	struct ghci_device *device,
 	uint32_t offset)
 {
-	uint32_t value;
+	uint32_t word;
 
-	/* One aligned 32-bit access, which never waits for the GPU's memory. */
-	value = kern_mmio_read32(device->registers + offset);
+	/* One aligned 32-bit access; reading a GHCI register has no side effect. */
+	word = kern_mmio_read32(device->registers + offset);
 
-	/* Reports the register's value. */
-	return value;
+	/* Succeeded: the register's value. */
+	return word;
 }
 
 /*
@@ -307,24 +205,6 @@ ghci_write(
 {
 	/* One aligned 32-bit access. */
 	kern_mmio_write32(device->registers + offset, value);
-}
-
-/*
- * Reads one register of the window through an opaque device pointer, for
- * the walk of the extended capability list.
- */
-uint32_t
-ghci_read_context(
-	void *context,
-	uint32_t offset)
-{
-	uint32_t word;
-
-	/* The walk only reads registers. */
-	word = ghci_read(context, offset);
-
-	/* Reports the register's value. */
-	return word;
 }
 
 /*
@@ -343,9 +223,11 @@ ghci_sleep_ms(
 
 /*
  * Waits up to a time for a register's masked bits to hold a value.
+ *
+ * Returns 0 once they do, or ETIMEDOUT.
  */
 int
-ghci_poll(
+ghci_wait_register(
 	struct ghci_device *device,
 	uint32_t offset,
 	uint32_t mask,
@@ -361,6 +243,7 @@ ghci_poll(
 		if ((word & mask) == value)
 			return 0;
 
+		/* Sleeps for a millisecond before the next read. */
 		ghci_sleep_ms(1U);
 	}
 
@@ -369,270 +252,252 @@ ghci_poll(
 }
 
 /*
- * Starts the command processor's firmware after a reset.
- *
- * CTRL.RESET stops the firmware's processor (CPFW_CTRL.RUN reads 0
- * after it), so the driver sets RUN after every reset and waits until
- * the image is ready and the processor runs.  A GPU with firmware but no
- * CPFW capability starts its firmware itself.
+ * Reads the 64-bit fence the device writes into the fence page.
  */
-int
-ghci_firmware_start(
+uint64_t
+ghci_fence_read(
 	struct ghci_device *device)
 {
-	uint32_t registers;
-	uint32_t version;
-	uint32_t status;
-	int error;
+	volatile uint32_t *word;
+	uint64_t low;
+	uint64_t high;
+	uint64_t again;
 
-	/* A command processor without firmware has nothing to start. */
-	if ((device->caps & GHCI_CAPS_FIRMWARE) == 0U)
-		return 0;
+	/*
+	 * The two halves of the little-endian word: the high half is read
+	 * around the low one, so that a write between the reads is seen.
+	 */
+	word = (volatile uint32_t *)(void *)device->fence_page->view;
+	high = word[1];
+	low = word[0];
+	again = word[1];
+	if (again != high)
+		low = word[0];
 
-	/* Finds the CPFW capability; without one, the firmware runs on its own. */
-	error = ghci_extcap_find(ghci_read_context, device, device->extcap, device->register_bytes, GHCI_XCAP_CPFW, &registers, &version);
-	if (error != 0)
-		return 0;
-
-	/* RUN (CPFW_CTRL, the capability's first register) lets the processor out of its stop; the image stays as the reset left it. */
-	ghci_write(device, registers, GHCI_CPFW_CTRL_RUN);
-
-	/* The firmware runs once its image is ready, with no fault, and the processor is not held. */
-	error = ghci_poll(
-		device,
-		registers + CPFW_STATUS_OFFSET,
-		GHCI_CPFW_STATUS_READY | GHCI_CPFW_STATUS_FAULT | GHCI_CPFW_STATUS_STOPPED,
-		GHCI_CPFW_STATUS_READY,
-		GHCI_FIRMWARE_WAIT_MS);
-	if (error != 0) {
-		/*
-		 * Seen on the KC705 after the host lost power with the firmware
-		 * running: the core stays stopped (CPFW_STATUS 9).  RUN is let go,
-		 * the processor reset once more, and RUN set again.
-		 */
-		status = ghci_read(device, registers + CPFW_STATUS_OFFSET);
-		kern_logf("ghci: %s: firmware did not start (CPFW_STATUS %08x, CPFW_CTRL %08x, status %08x); resetting once more\n",
-		    device->name,
-		    (unsigned)status,
-		    (unsigned)ghci_read(device, registers),
-		    (unsigned)ghci_read(device, GHCI_STATUS));
-		ghci_write(device, registers, 0U);
-		ghci_write(device, GHCI_CTRL, GHCI_CTRL_RESET);
-		(void)ghci_poll(device, GHCI_CTRL, GHCI_CTRL_RESET, 0U, GHCI_RESET_WAIT_MS);
-		ghci_write(device, registers, GHCI_CPFW_CTRL_RUN);
-		error = ghci_poll(
-			device,
-			registers + CPFW_STATUS_OFFSET,
-			GHCI_CPFW_STATUS_READY | GHCI_CPFW_STATUS_FAULT | GHCI_CPFW_STATUS_STOPPED,
-			GHCI_CPFW_STATUS_READY,
-			GHCI_FIRMWARE_WAIT_MS);
-	}
-
-	/* A firmware that still does not run. */
-	if (error != 0) {
-		status = ghci_read(device, registers + CPFW_STATUS_OFFSET);
-		kern_logf("ghci: %s: firmware did not start (CPFW_STATUS %08x)\n", device->name, (unsigned)status);
-		return EIO;
-	}
-
-	/* Succeeded: the firmware runs. */
-	return 0;
+	/* Succeeded: the fence as the device last wrote it. */
+	return (again << 32) | low;
 }
 
-/* Reads the identification and capabilities, and refuses a window that is not GHCI 1 with a ring. */
+/*
+ * Writes the 64-bit fence of the fence page, as the reset's completion does.
+ */
+void
+ghci_fence_write(
+	struct ghci_device *device,
+	uint64_t value)
+{
+	volatile uint32_t *word;
+
+	/* The low half, then the high half; the processor does not run while the driver writes it. */
+	word = (volatile uint32_t *)(void *)device->fence_page->view;
+	word[0] = (uint32_t)value;
+	word[1] = (uint32_t)(value >> 32);
+	kern_io_write_barrier();
+}
+
+/* Sets up the locks and wait queues of the device. */
+static void
+init_locks(
+	struct ghci_device *device)
+{
+	/* The mutexes, in the order they are taken, and the interrupt's spinlock. */
+	(void)mutex_init(&device->lock, LOCK_RANK_DEVICE, "ghci device");
+	(void)mutex_init(&device->display_lock, LOCK_RANK_DEVICE, "ghci display");
+	(void)mutex_init(&device->cp_lock, LOCK_RANK_DEVICE, "ghci ring");
+	spin_init(&device->irq_lock, LOCK_RANK_DEVICE, "ghci interrupt");
+
+	/* The wait queues: tickets, the ring's room, the gate, the service and the poll. */
+	waitq_init(&device->fence_wake, "ghci fence");
+	waitq_init(&device->ring_wake, "ghci room");
+	waitq_init(&device->gate_wake, "ghci gate");
+	waitq_init(&device->service_wake, "ghci service");
+	waitq_init(&device->poll_wake, "ghci poll");
+}
+
+/* Refuses a window whose magic is not GHCI or whose major version is not 1. */
 static int
 identify(
 	struct ghci_device *device)
 {
-	uint32_t magic;
-	uint32_t line_log2;
+	uint32_t window[2];
+	int error;
 
-	/* The window must say GHCI. */
-	magic = ghci_read(device, GHCI_MAGIC);
-	if (magic != GHCI_MAGIC_VALUE)
-		return ENODEV;
+	/* The two identification registers, read only. */
+	window[0] = ghci_read(device, GHCI_REG_MAGIC);
+	window[1] = ghci_read(device, GHCI_REG_VERSION);
+	device->version = window[1];
 
-	/* Only a major version the driver knows; a minor version only adds. */
-	device->version = ghci_read(device, GHCI_VERSION);
-	if ((device->version >> 16) != KNOWN_MAJOR) {
-		kern_logf("ghci: GHCI version %u.%u is not known\n",
-		    (unsigned)(device->version >> 16),
-		    (unsigned)(device->version & 0xffffU));
-		return ENODEV;
-	}
-
-	/* The identification. */
-	device->vendor_id = ghci_read(device, GHCI_VENDOR_ID);
-	device->device_id = ghci_read(device, GHCI_DEVICE_ID);
-	device->isa_id = ghci_read(device, GHCI_ISA_ID);
-	device->device_version = ghci_read(device, GHCI_DEVICE_VERSION);
-	device->extcap = ghci_read(device, GHCI_EXTCAP);
-	device->gclk_hz = ghci_read(device, GHCI_GCLK_HZ);
-	device->caps = ghci_read(device, GHCI_CAPS);
-	device->caps2 = ghci_read(device, GHCI_CAPS2);
-	name_device(device);
-
-	/* The driver runs the ring; a window with only a display controller is not a GPU device. */
-	if ((device->caps & GHCI_CAPS_CP) == 0U) {
-		kern_logf("ghci: %s: no command processor, not taken\n", device->name);
+	/* GHCI 1.0, any minor version. */
+	error = ghci_caps_identify(window);
+	if (error != 0) {
+		kern_logf("ghci: %04x:%04x: not GHCI 1.0 (magic %08x, version %08x)\n",
+		    (unsigned)device->pci_vendor,
+		    (unsigned)device->pci_device,
+		    (unsigned)window[0],
+		    (unsigned)window[1]);
 		return ENODEV;
 	}
 
-	/* The memory line, never smaller than GHCI's smallest. */
-	line_log2 = GHCI_CAPS_LINE_LOG2(device->caps);
-	if (line_log2 < LINE_LOG2_MIN)
-		line_log2 = LINE_LOG2_MIN;
-	device->line_bytes = 1U << line_log2;
+	/* Names the device after its function, for the log and the node. */
+	(void)kern_snprintf(device->name, sizeof(device->name), "ghci:%04x:%04x",
+	    (unsigned)device->pci_vendor,
+	    (unsigned)device->pci_device);
 
-	/* The local memory and the session protection, from the extended capabilities. */
-	identify_memory(device);
-
-	/* The compiler of the shader ISA; a GPU without one still blits. */
-	device->isa = ghci_isa_select(device->caps, device->isa_id);
-	if ((device->caps & GHCI_CAPS_SHADER) != 0U && device->isa == NULL)
-		kern_logf("ghci: %s: no compiler for its shader ISA\n", device->name);
-
-	/* Succeeded: the device is a GHCI 1 GPU. */
+	/* Succeeded: the window is GHCI 1.0. */
 	return 0;
 }
 
-/* Reads the MEM and PROT capabilities: the local memory, its window, the host's limit and the protection. */
-static void
-identify_memory(
+/*
+ * Resets the GPU and waits for the reset to end and the memory to be
+ * ready.  The wait covers the quiesce, which may take four watchdog
+ * periods of whatever WDT_CYCLES a kernel before this one left.
+ */
+static int
+reset_device(
 	struct ghci_device *device)
 {
-	uint32_t registers;
-	uint32_t version;
-	uint64_t local_end;
-	uint64_t window;
-	uint32_t caps;
+	uint32_t gclk_hz;
+	uint32_t wdt_cycles;
+	uint32_t status;
 	int error;
-
-	/* No local memory unless the MEM capability says so: the GPU is unified. */
-	device->local_base = 0U;
-	device->local_size = 0U;
-	device->local_window = 0U;
-	device->hardware_window = 0U;
-	device->host_limit = 0U;
-	device->mem_registers = 0U;
-
-	/* Finds the MEM capability. */
-	error = ghci_extcap_find(ghci_read_context, device, device->extcap, device->register_bytes, GHCI_XCAP_MEM, &registers, &version);
-	if (error == 0) {
-		device->mem_registers = registers;
-		device->local_base = ghci_read(device, registers + GHCI_MEM_LOCAL_BASE);
-		device->local_size = ghci_read(device, registers + GHCI_MEM_LOCAL_SIZE);
-		window = ghci_read(device, registers + GHCI_MEM_WINDOW_SIZE);
-
-		/* The GPU's window, which WINDOW_CTRL switches even when the bus did not map it. */
-		device->hardware_window = window;
-
-		/* The end of the GPU addresses that reach the host (0: all of them). */
-		device->host_limit = ghci_read(device, registers + GHCI_MEM_HOST_LIMIT);
-
-		/* The window shows no more than local memory, and no more than the bus mapped. */
-		if (window > device->local_size)
-			window = device->local_size;
-		if (window > device->window_bytes)
-			window = device->window_bytes;
-		device->local_window = window;
-	}
-
-	/* Local memory that runs past the 32-bit GPU address space is cut at its end. */
-	local_end = (uint64_t)device->local_base + device->local_size;
-	if (local_end > 0x100000000ULL) {
-		kern_logf("ghci: %s: local memory past 4 GiB is not used\n", device->name);
-		device->local_size = 0x100000000ULL - device->local_base;
-	}
 
 	/*
-	 * Session protection (section 11.6): its registers, and the open of
-	 * the sessions of other users than root PROTECTED.  Only a GPU whose
-	 * granule is 4 KiB (the driver's page) is used protected.
+	 * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+	 * 10, quiesce within 4 x WDT_CYCLES; Appendix A step 3, MEM_READY
+	 * before the ring is set).
 	 */
-	error = ghci_extcap_find(ghci_read_context, device, device->extcap, device->register_bytes, GHCI_XCAP_PROT, &registers, &version);
-	device->protection = 0;
-	device->prot_registers = 0U;
-	if (error == 0) {
-		caps = ghci_read(device, registers + GHCI_PROT_CAPS);
-		if (GHCI_PROT_GRANULE_LOG2(caps) == 12U && GHCI_PROT_SESSIONS(caps) != 0U) {
-			device->protection = 1;
-			device->prot_registers = registers;
-			kern_logf("ghci: %s: session protection: %u sessions, %u grants\n", device->name,
-			    (unsigned)GHCI_PROT_SESSIONS(caps), (unsigned)GHCI_PROT_GRANTS(caps));
-		} else {
-			kern_logf("ghci: %s: session protection of granule 2^%u not used\n", device->name,
-			    (unsigned)GHCI_PROT_GRANULE_LOG2(caps));
-		}
-	}
-}
+	gclk_hz = ghci_read(device, GHCI_REG_GCLK_HZ);
+	wdt_cycles = ghci_read(device, GHCI_REG_WDT_CYCLES);
+	device->reset_wait_ms = ghci_reset_wait_ms(gclk_hz, wdt_cycles);
 
-/* Names the device "ghci:<vendor>:<device>" from its FourCCs. */
-static void
-name_device(
-	struct ghci_device *device)
-{
-	char vendor[5];
-	char product[5];
-
-	/* The FourCCs as text, with anything unprintable shown as '?'. */
-	put_fourcc(vendor, device->vendor_id);
-	put_fourcc(product, device->device_id);
-	(void)kern_snprintf(device->name, sizeof(device->name), "ghci:%s:%s", vendor, product);
-}
-
-/* Writes a FourCC (its first letter in bits 31:24) as four characters and a terminator. */
-static void
-put_fourcc(
-	char *out,
-	uint32_t fourcc)
-{
-	unsigned index;
-	char letter;
-
-	/* The letters from the high byte down. */
-	for (index = 0U; index < 4U; index++) {
-		letter = (char)((fourcc >> (24U - 8U * index)) & 0xffU);
-
-		/* Only printable ASCII is kept in the name. */
-		if (letter < 0x20 || letter > 0x7e)
-			letter = '?';
-		out[index] = letter;
+	/* RESET is self-clearing and falls when the reset is done. */
+	ghci_write(device, GHCI_REG_CTRL, GHCI_CTRL_RESET);
+	error = ghci_wait_register(device, GHCI_REG_CTRL, GHCI_CTRL_RESET, 0U, device->reset_wait_ms);
+	status = ghci_read(device, GHCI_REG_STATUS);
+	if (error != 0 || (status & GHCI_STATUS_AXI_STUCK) != 0U) {
+		kern_logf("ghci: %s: reset did not end (status %08x)\n", device->name, (unsigned)status);
+		return EIO;
 	}
 
-	/* The terminator. */
-	out[4] = '\0';
+	/* The memory must be ready before the ring is set. */
+	error = ghci_wait_register(device, GHCI_REG_STATUS, GHCI_STATUS_MEM_READY, GHCI_STATUS_MEM_READY, GHCI_MEMORY_WAIT_MS);
+	if (error != 0) {
+		status = ghci_read(device, GHCI_REG_STATUS);
+		kern_logf("ghci: %s: memory not ready (status %08x)\n", device->name, (unsigned)status);
+		return EIO;
+	}
+
+	/* Succeeded: the GPU is idle with its memory ready. */
+	return 0;
 }
 
-/* Resets the GPU and waits for the reset to end and the memory to be ready. */
+/* Writes two patterns to SCRATCH and reads each back. */
 static int
-reset_hardware(
+check_scratch(
 	struct ghci_device *device)
 {
+	uint32_t first;
+	uint32_t second;
+
+	/* Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 14, the SCRATCH check). */
+	ghci_write(device, GHCI_REG_SCRATCH, GHCI_SCRATCH_FIRST);
+	first = ghci_read(device, GHCI_REG_SCRATCH);
+	ghci_write(device, GHCI_REG_SCRATCH, GHCI_SCRATCH_SECOND);
+	second = ghci_read(device, GHCI_REG_SCRATCH);
+
+	/* A window that does not keep what is written is not a working GPU. */
+	if (first != GHCI_SCRATCH_FIRST || second != GHCI_SCRATCH_SECOND) {
+		kern_logf("ghci: %s: SCRATCH reads %08x and %08x\n", device->name, (unsigned)first, (unsigned)second);
+		return EIO;
+	}
+
+	/* Succeeded: the window answers. */
+	return 0;
+}
+
+/*
+ * Reads the capabilities from a copy of the first 1 KiB of the window:
+ * the capability registers, the extended capability list and the blocks
+ * it names.
+ */
+static int
+read_caps(
+	struct ghci_device *device)
+{
+	uint32_t *window;
+	uint32_t offset;
 	int error;
 
-	/* RESET is write-1-to-set, and falls when the reset is done. */
-	ghci_write(device, GHCI_CTRL, GHCI_CTRL_RESET);
-	error = ghci_poll(device, GHCI_CTRL, GHCI_CTRL_RESET, 0U, GHCI_RESET_WAIT_MS);
-	if (error != 0) {
-		kern_logf("ghci: %s: reset did not end (status %08x)\n", device->name, (unsigned)ghci_read(device, GHCI_STATUS));
-		return EIO;
-	}
+	/* A copy of the window the decode reads; reading a register has no side effect. */
+	window = kern_calloc(GHCI_WINDOW_WORDS, sizeof(*window));
+	if (window == NULL)
+		return ENOMEM;
 
-	/* The memory controller's calibration must be done before the ring is set. */
-	error = ghci_poll(device, GHCI_STATUS, GHCI_STATUS_MEM_READY, GHCI_STATUS_MEM_READY, GHCI_MEMORY_WAIT_MS);
-	if (error != 0) {
-		kern_logf("ghci: %s: memory not ready (status %08x)\n", device->name, (unsigned)ghci_read(device, GHCI_STATUS));
-		return EIO;
-	}
+	/* Every word of the first 1 KiB, the window GHCI 1.0 uses. */
+	for (offset = 0U; offset < GHCI_WINDOW_BYTES; offset += 4U)
+		window[offset / 4U] = ghci_read(device, offset);
 
-	/* The firmware of the command processor, which the reset stopped. */
-	error = ghci_firmware_start(device);
-	if (error != 0)
+	/* The capabilities, with DEVICE_CAPS above its mirrors. */
+	error = ghci_caps_decode(window, &device->caps);
+	kern_free(window);
+	if (error != 0) {
+		kern_logf("ghci: %s: capabilities not read (%d)\n", device->name, error);
 		return error;
+	}
 
-	/* Succeeded: the GPU is idle with its memory ready and its firmware running. */
+	/* A mirror that disagrees with DEVICE_CAPS is only logged. */
+	if (device->caps.mismatches != 0U)
+		kern_logf("ghci: %s: EXT_CAP_FEATURE disagrees with DEVICE_CAPS (bits %08x); DEVICE_CAPS used\n",
+		    device->name,
+		    (unsigned)device->caps.mismatches);
+
+	/* The GPU's own identification, when it has the VEND block. */
+	if (device->caps.vendor[0] != 0U || device->caps.vendor[1] != 0U)
+		kern_logf("ghci: %s: vendor %08x device %08x\n",
+		    device->name,
+		    (unsigned)device->caps.vendor[0],
+		    (unsigned)device->caps.vendor[1]);
+
+	/* Succeeded: the capabilities are read. */
 	return 0;
+}
+
+/*
+ * Decides whether the device gets the Vulkan executor, and says what
+ * isolation its sessions have.
+ */
+static void
+choose_policy(
+	struct ghci_device *device)
+{
+	int walker;
+	int protection;
+	int shader;
+	int units;
+
+	/* The capabilities the decision reads. */
+	walker = ghci_caps_has(&device->caps, GHCI_HAS_HW_WALKER);
+	protection = ghci_caps_has(&device->caps, GHCI_HAS_PROT);
+	shader = ghci_caps_has(&device->caps, GHCI_HAS_GSI1);
+	units = ghci_caps_has(&device->caps, GHCI_HAS_SHADER_UNITS);
+
+	/* A GPU without a shader unit or GSI1 runs the display only. */
+	device->executor = 0;
+	if (shader && units)
+		device->executor = 1;
+	if (!device->executor)
+		kern_logf("ghci: %s: no shader unit or no GSI1; display only\n", device->name);
+
+	/*
+	 * Neither a GPU without a walker (every session reaches all of
+	 * memory) nor one without PROT (the sessions share one address
+	 * space) keeps the sessions apart; the executor is offered all the
+	 * same, and the log says so.
+	 */
+	if (!walker)
+		kern_logf("ghci: %s: GPU memory isolation: none (flat)\n", device->name);
+	else if (!protection)
+		kern_logf("ghci: %s: GPU memory isolation: shared VA (PROT=0)\n", device->name);
 }
 
 /* Fills the operations table and registers the device with the GPU core. */
@@ -640,54 +505,20 @@ static int
 register_device(
 	struct ghci_device *device)
 {
-	int native;
 	int error;
 
-	/* The table every device has. */
+	/*
+	 * The table every device has: the sessions and the information.
+	 * No optional capability is offered until its callbacks are all
+	 * there.
+	 */
 	kern_memset(&device->ops, 0, sizeof(device->ops));
 	device->ops.version = DRV_GPU_INTERFACE_VERSION;
 	device->ops.size = sizeof(device->ops);
-	device->ops.capabilities = BASE_CAPABILITIES;
+	device->ops.capabilities = 0U;
 	device->ops.open = gpu_open;
 	device->ops.close = gpu_close;
 	device->ops.get_info = gpu_get_info;
-	device->ops.resource_create = gpu_resource_create;
-	device->ops.resource_destroy = gpu_resource_destroy;
-	device->ops.blob_create = gpu_blob_create;
-	device->ops.resource_read = gpu_resource_read;
-	device->ops.resource_write = gpu_resource_write;
-	device->ops.resource_map = gpu_resource_map;
-	device->ops.share = &ghci_share_ops;
-
-	/*
-	 * The command operation: a test kernel's native command, for root
-	 * only.  libvulkan needs the capability too, but sends its frames
-	 * through the queued submission of the executor.
-	 */
-	native = 0;
-	if (CONFIG_GHCI_NATIVE && ghci_native_command != NULL)
-		native = 1;
-	if (native || device->vk != NULL) {
-		device->ops.capabilities |= GPU_CAP_COMMAND;
-		device->ops.command = gpu_command;
-	}
-
-	/* The Vulkan executor's capset, frames, jobs and recovery, when the device has one. */
-	if (device->vk != NULL)
-		ghci_vk_node_bind(device);
-
-	/*
-	 * The display controller's operations, when the GPU has one: with the
-	 * cursor's when the controller has a cursor plane, and the scan-out
-	 * query that lets libvulkan choose the shared or the copied route.
-	 */
-	if (device->display.present) {
-		device->ops.capabilities |= GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS;
-		device->ops.display = &ghci_display_ops;
-		if ((device->display.controller_caps & GHCI_DC_CAPS_CURSOR) != 0U)
-			device->ops.display = &ghci_display_cursor_ops;
-		device->ops.scanout = &ghci_scanout_ops;
-	}
 
 	/* Publishes the node. */
 	error = drv_gpu_register(&device->ops, device, &device->gpu);
@@ -700,42 +531,7 @@ register_device(
 	return 0;
 }
 
-/* Takes the lowest free job tag of a session (1 to 255). */
-static int
-tag_take(
-	struct ghci_device *device,
-	uint32_t *tag)
-{
-	uint32_t candidate;
-	uint32_t word;
-	uint32_t bit;
-
-	/* Looks for a tag no session holds. */
-	for (candidate = 1U; candidate <= GHCI_TAG_MAX; candidate++) {
-		word = candidate / 32U;
-		bit = 1U << (candidate % 32U);
-		if ((device->tags[word] & bit) == 0U) {
-			device->tags[word] |= bit;
-			*tag = candidate;
-			return 0;
-		}
-	}
-
-	/* Every tag is held: as many sessions as GHCI can name are open. */
-	return EBUSY;
-}
-
-/* Gives a job tag back. */
-static void
-tag_give(
-	struct ghci_device *device,
-	uint32_t tag)
-{
-	/* The tag's bit is clear again. */
-	device->tags[tag / 32U] &= ~(1U << (tag % 32U));
-}
-
-/* Opens a session with a job tag of its own. */
+/* Opens a session of the device. */
 static int
 gpu_open(
 	void *private_data,
@@ -743,6 +539,8 @@ gpu_open(
 {
 	struct ghci_device *device;
 	struct ghci_session *session;
+	enum ghci_device_state state;
+	unsigned long irq;
 	int error;
 
 	/* The session's record. */
@@ -751,28 +549,23 @@ gpu_open(
 	if (session == NULL)
 		return ENOMEM;
 
-	/* Refuses an open once the detach began or the hardware is lost, and takes a tag. */
+	/* The device's life, as the interrupt and the recovery last set it. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	state = device->state;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Refuses an open once the detach began or the hardware is lost, and lists the session. */
 	mutex_lock(&device->lock);
 
 	error = 0;
 	if (device->withdrawing) {
 		error = ENODEV;
-	} else if (device->lost) {
+	} else if (state == GHCI_STATE_LOST) {
 		error = EIO;
 	} else {
-		error = tag_take(device, &session->tag);
-	}
-
-	/* The session's executor, which opens the firmware's session of the tag. */
-	session->device = device;
-	if (error == 0 && device->vk != NULL) {
-		error = ghci_vk_session_open(device, session);
-		if (error != 0)
-			tag_give(device, session->tag);
-	}
-
-	/* Lists the session with the device. */
-	if (error == 0) {
+		session->device = device;
 		session->next = device->sessions;
 		device->sessions = session;
 		device->session_count++;
@@ -780,9 +573,8 @@ gpu_open(
 
 	mutex_unlock(&device->lock);
 
-	/* An open that was refused leaves nothing behind, and says why. */
+	/* An open that was refused leaves nothing behind. */
 	if (error != 0) {
-		kern_logf("ghci: %s: open refused (%d)\n", device->name, error);
 		kern_free(session);
 		return error;
 	}
@@ -792,7 +584,7 @@ gpu_open(
 	return 0;
 }
 
-/* Closes a session: its lease ends, its memory goes back once the GPU is done with it. */
+/* Closes a session; it holds nothing of the GPU yet, so nothing waits. */
 static void
 gpu_close(
 	void *private_data,
@@ -802,39 +594,24 @@ gpu_close(
 	struct ghci_session *session;
 	struct ghci_session **position;
 
+	/* The device and the session. */
 	device = private_data;
 	session = opaque;
 
-	/* Everything of the session is given back under the device's lock. */
+	/* The session leaves the device's list. */
 	mutex_lock(&device->lock);
 
-	/* The display lease ends first, so its frame is no longer scanned from the session's memory. */
-	ghci_display_session_close(device, session);
-
-	/* The executor closes the firmware's session and forgets its objects. */
-	if (session->vk != NULL)
-		ghci_vk_session_close(device, session);
-
-	/* Each allocation goes back now, or after the session's last fence. */
-	session_give_back(device, session);
-
-	/* Finds the session on the device's list. */
 	position = &device->sessions;
 	while (*position != NULL && *position != session)
 		position = &(*position)->next;
-
-	/* The session leaves the list. */
-	if (*position == session)
+	if (*position == session) {
 		*position = session->next;
-
-	/* Its tag is free for the next open. */
-	tag_give(device, session->tag);
-	device->session_count--;
+		device->session_count--;
+	}
 
 	mutex_unlock(&device->lock);
 
-	/* The deferred memory goes back from the service thread. */
-	ghci_service_wake(device, GHCI_WORK_RECLAIM);
+	/* The record goes. */
 	kern_free(session);
 }
 
@@ -852,585 +629,11 @@ gpu_get_info(
 	/* The capability snapshot of the device. */
 	device = private_data;
 	info->capabilities = device->ops.capabilities;
-	info->max_resources = GHCI_SESSION_RESOURCES;
-	info->max_resource_bytes = GHCI_RESOURCE_MAX_BYTES;
+	info->max_resources = 0U;
+	info->max_resource_bytes = 0U;
 	kern_memset(info->driver_name, 0, sizeof(info->driver_name));
 	kern_memcpy(info->driver_name, device->name, sizeof(device->name) - 1U);
 
 	/* Succeeded: the snapshot is filled. */
 	return 0;
-}
-
-/* Makes a storage resource: cleared memory the processor reaches and the display can scan. */
-static int
-gpu_resource_create(
-	void *private_data,
-	void *opaque,
-	const struct gpu_resource_create *request,
-	void **result)
-{
-	struct ghci_allocation *allocation;
-	int error;
-
-	/* Only storage, and no flags. */
-	if (request->usage != GPU_RESOURCE_USAGE_STORAGE)
-		return EINVAL;
-	if (request->flags != 0U)
-		return EINVAL;
-
-	/* Memory the processor maps. */
-	error = allocation_make(private_data, opaque, GHCI_USE_MAPPABLE, request->bytes, 0, &allocation);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the resource is the session's. */
-	*result = allocation;
-	return 0;
-}
-
-/* Destroys a resource: its memory goes back once the GPU is done with it. */
-static void
-gpu_resource_destroy(
-	void *private_data,
-	void *opaque,
-	void *object)
-{
-	struct ghci_device *device;
-	struct ghci_allocation *allocation;
-
-	device = private_data;
-	allocation = object;
-
-	/*
-	 * Off the session's list, then back now or after the session's last
-	 * fence.  A blob the display scans is held by the display, and goes
-	 * back once the controller no longer scans it.
-	 */
-	mutex_lock(&device->lock);
-
-	ghci_allocation_drop(device, opaque, allocation);
-
-	mutex_unlock(&device->lock);
-
-	/* The deferred memory goes back from the service thread. */
-	ghci_service_wake(device, GHCI_WORK_RECLAIM);
-}
-
-/*
- * Makes a blob: device-local memory, or memory the processor maps when
- * the blob is mappable.  Its resource id is its GPU address, which the
- * session's native packets name.
- */
-static int
-gpu_blob_create(
-	void *private_data,
-	void *opaque,
-	const struct gpu_blob_create *request,
-	void **result,
-	uint32_t *resource_id)
-{
-	struct ghci_allocation *allocation;
-	enum ghci_memory_use use;
-	int error;
-
-	/* Mapping and sharing within the device; another device cannot import this memory. */
-	if ((request->flags & ~BLOB_FLAGS) != 0U)
-		return ENOTSUP;
-
-	/* A blob of a Vulkan memory object shows that object's memory. */
-	if (request->blob_id != 0U) {
-		error = blob_of_memory(private_data, opaque, request->blob_id, &allocation);
-		if (error != 0)
-			return error;
-
-		/* Succeeded: the blob is the session's, named by the memory's GPU address. */
-		*result = allocation;
-		*resource_id = allocation->gpu_address;
-		return 0;
-	}
-
-	/* A mappable blob is memory the processor reaches; another is the GPU's own. */
-	use = GHCI_USE_DEVICE;
-	if ((request->flags & GPU_BLOB_MAPPABLE) != 0U)
-		use = GHCI_USE_MAPPABLE;
-
-	/* The cleared memory, on the session's list. */
-	error = allocation_make(private_data, opaque, use, request->bytes, 1, &allocation);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the blob is the session's, named by its GPU address. */
-	*result = allocation;
-	*resource_id = allocation->gpu_address;
-	return 0;
-}
-
-/* Copies bytes out of a resource. */
-static int
-gpu_resource_read(
-	void *private_data,
-	void *opaque,
-	void *object,
-	uint64_t offset,
-	void *bytes,
-	uint32_t length)
-{
-	struct ghci_device *device;
-	struct ghci_allocation *allocation;
-	int error;
-
-	(void)opaque;
-
-	/* Refuses a range outside the resource. */
-	device = private_data;
-	allocation = object;
-	error = allocation_range(allocation, offset, length);
-	if (error != 0)
-		return error;
-
-	/* Memory the processor reaches is copied directly. */
-	if (allocation->view != NULL) {
-		kern_memcpy(bytes, allocation->view + offset, length);
-		return 0;
-	}
-
-	/* Other memory comes through the bounce buffer, by the blitter. */
-	mutex_lock(&device->lock);
-
-	error = ghci_blit_transfer(device, allocation, offset, bytes, length, 0);
-
-	mutex_unlock(&device->lock);
-
-	/* Reports a copy the GPU did not finish. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the bytes are copied. */
-	return 0;
-}
-
-/* Copies bytes into a resource. */
-static int
-gpu_resource_write(
-	void *private_data,
-	void *opaque,
-	void *object,
-	uint64_t offset,
-	const void *bytes,
-	uint32_t length)
-{
-	struct ghci_device *device;
-	struct ghci_allocation *allocation;
-	int error;
-
-	(void)opaque;
-
-	/* Refuses a range outside the resource. */
-	device = private_data;
-	allocation = object;
-	error = allocation_range(allocation, offset, length);
-	if (error != 0)
-		return error;
-
-	/* Memory the processor reaches is copied directly. */
-	if (allocation->view != NULL) {
-		kern_memcpy(allocation->view + offset, bytes, length);
-		return 0;
-	}
-
-	/* Other memory goes through the bounce buffer, by the blitter. */
-	mutex_lock(&device->lock);
-
-	error = ghci_blit_transfer(device, allocation, offset, (void *)bytes, length, 1);
-
-	mutex_unlock(&device->lock);
-
-	/* Reports a copy the GPU did not finish. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the bytes are copied. */
-	return 0;
-}
-
-/* Describes the processor's view of a resource for a user mapping. */
-static int
-gpu_resource_map(
-	void *private_data,
-	void *opaque,
-	void *object,
-	struct drv_gpu_mapping *mapping)
-{
-	struct ghci_device *device;
-	struct ghci_allocation *allocation;
-
-	(void)opaque;
-
-	/* Memory only the GPU reaches cannot be mapped. */
-	device = private_data;
-	allocation = object;
-	if (allocation->view == NULL)
-		return EINVAL;
-
-	/* Only host memory has a view: ordinary RAM. */
-	mapping->physical = allocation->physical;
-	mapping->address = allocation->view;
-	mapping->bytes = allocation->bytes;
-	mapping->attributes = 0U;
-
-	/* Where the GPU does not snoop the caches, the user's mapping is uncached like the kernel's view. */
-	if (device->host_uncached)
-		mapping->attributes = DRV_GPU_MAPPING_UNCACHED_RAM;
-
-	/* Succeeded: the view is described. */
-	return 0;
-}
-
-/* Takes one native command of a test kernel, from root only. */
-static int
-gpu_command(
-	void *private_data,
-	void *opaque,
-	const void *stream,
-	uint32_t bytes)
-{
-	const struct ucred *credentials;
-	const uint32_t *words;
-	int superuser;
-	int error;
-
-	/* The native command, the diagnostics and the firmware's reload come this way. */
-	words = stream;
-	if (bytes < 4U)
-		return EINVAL;
-
-	/* The diagnostics and the reload reach memory and stop the GPU's work, so only root sends them. */
-	if (words[0] == GPU_OP_GHCI_DIAG || words[0] == GPU_OP_GHCI_FIRMWARE) {
-		credentials = cred_current();
-		superuser = cred_is_superuser(credentials);
-		if (!superuser)
-			return EPERM;
-		error = ghci_firmware_command(private_data, opaque, stream, bytes);
-		if (error != 0)
-			return error;
-
-		/* Succeeded: the diagnostics passed, or the image was taken. */
-		return 0;
-	}
-
-	/* A kernel without the native command takes nothing else. */
-	if (words[0] != GPU_OP_GHCI_NATIVE)
-		return ENOTSUP;
-	if (!CONFIG_GHCI_NATIVE)
-		return ENOTSUP;
-	if (ghci_native_command == NULL)
-		return ENOTSUP;
-
-	/* Native packets reach memory directly, so only root sends them. */
-	credentials = cred_current();
-	superuser = cred_is_superuser(credentials);
-	if (!superuser)
-		return EPERM;
-
-	/* Checks and submits the packets. */
-	error = ghci_native_command(private_data, opaque, stream, bytes);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the packets are in the ring. */
-	return 0;
-}
-
-/* Makes a cleared allocation for a session and lists it, under the device's lock. */
-static int
-allocation_make(
-	struct ghci_device *device,
-	struct ghci_session *session,
-	enum ghci_memory_use use,
-	uint64_t bytes,
-	int blob,
-	struct ghci_allocation **result)
-{
-	int error;
-
-	/*
-	 * Everything is done under the device's lock.  A protected session's
-	 * resource is its own memory to the firmware (no vkAllocateMemory
-	 * names it).
-	 */
-	mutex_lock(&device->lock);
-
-	error = ghci_allocation_make(device, session, use, bytes, blob, result);
-	if (error == 0) {
-		error = ghci_vk_prot_own(device, session, *result, 0);
-		if (error != 0)
-			ghci_allocation_drop(device, session, *result);
-	}
-
-	mutex_unlock(&device->lock);
-
-	/* Reports memory that could not be had. */
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the allocation is the session's. */
-	return 0;
-}
-
-/*
- * Makes a cleared allocation for a session and lists it.
- */
-int
-ghci_allocation_make(
-	struct ghci_device *device,
-	struct ghci_session *session,
-	enum ghci_memory_use use,
-	uint64_t bytes,
-	int blob,
-	struct ghci_allocation **result)
-{
-	struct ghci_allocation *allocation;
-	struct ghci_ticket ticket;
-	int error;
-
-	/* Refuses an empty resource and one past the limit. */
-	if (bytes == 0U)
-		return EINVAL;
-	if (bytes > GHCI_RESOURCE_MAX_BYTES)
-		return EINVAL;
-
-	/* Refuses a session that holds as many resources as it may. */
-	if (session->allocation_count >= GHCI_SESSION_RESOURCES)
-		return ENOSPC;
-
-	/* The memory. */
-	error = ghci_memory_alloc(device, session, use, bytes, &allocation);
-	if (error != 0)
-		return error;
-
-	/*
-	 * The memory may hold what another session left: it is cleared
-	 * before the session sees it, by the blitter in local memory and by
-	 * the processor in host memory.
-	 */
-	error = 0;
-	if (allocation->kind == GHCI_MEMORY_HOST) {
-		kern_memset(allocation->view, 0, allocation->bytes);
-	} else {
-		error = ghci_blit_clear(device, allocation->gpu_address, allocation->bytes);
-	}
-
-	/*
-	 * Memory that could not be cleared goes back unseen: at once when the
-	 * blit failed to start, after the newest fence when it may still run.
-	 */
-	if (error != 0) {
-		ghci_cp_last(device, &ticket);
-		ghci_memory_defer(device, allocation, &ticket);
-		ghci_service_wake(device, GHCI_WORK_RECLAIM);
-		return error;
-	}
-
-	/* Lists the allocation with the session. */
-	allocation->blob = blob;
-	allocation->next = session->allocations;
-	session->allocations = allocation;
-	session->allocation_count++;
-
-	/* Succeeded: the allocation is the session's. */
-	*result = allocation;
-	return 0;
-}
-
-/*
- * Takes an allocation off its session's list and gives it back.
- */
-void
-ghci_allocation_drop(
-	struct ghci_device *device,
-	struct ghci_session *session,
-	struct ghci_allocation *allocation)
-{
-	/*
-	 * Off the list, what session protection gave it taken back (after the
-	 * session's work in the ring), then back now, after the session's last
-	 * fence, or after its last user.
-	 */
-	allocation_unlist(session, allocation);
-	ghci_vk_prot_release(device, session, allocation);
-	ghci_memory_release(device, allocation);
-}
-
-/*
- * Finds a blob of a session by its resource id.
- */
-struct ghci_allocation *
-ghci_allocation_blob(
-	struct ghci_session *session,
-	uint32_t resource_id)
-{
-	struct ghci_allocation *allocation;
-
-	/* Zero names nothing. */
-	if (resource_id == 0U)
-		return NULL;
-
-	/* Looks at each of the session's allocations for a blob of that address. */
-	for (allocation = session->allocations;
-	     allocation != NULL;
-	     allocation = allocation->next) {
-		/* Storage and Vulkan memory are not blobs. */
-		if (!allocation->blob)
-			continue;
-
-		/* The blob the id names. */
-		if (allocation->gpu_address == resource_id)
-			return allocation;
-	}
-
-	/* No blob of the session has that id. */
-	return NULL;
-}
-
-/*
- * Makes the blob of a Vulkan memory object: a record that shows the
- * memory's allocation and holds it, so the memory stays while the blob
- * is mapped even when the memory object is freed first.
- */
-static int
-blob_of_memory(
-	struct ghci_device *device,
-	struct ghci_session *session,
-	uint64_t identity,
-	struct ghci_allocation **result)
-{
-	struct ghci_allocation *backing;
-	struct ghci_allocation *alias;
-	int error;
-
-	/* The blob's record. */
-	alias = kern_calloc(1U, sizeof(*alias));
-	if (alias == NULL)
-		return ENOMEM;
-
-	/* The memory object, under the device's lock. */
-	mutex_lock(&device->lock);
-
-	error = 0;
-	backing = NULL;
-	if (device->vk == NULL) {
-		error = EINVAL;
-	} else if (session->allocation_count >= GHCI_SESSION_RESOURCES) {
-		error = ENOSPC;
-	} else {
-		error = ghci_vk_memory_blob(device, session, identity, &backing);
-	}
-
-	/* The blob shows the same memory and holds it; it is listed as the session's. */
-	if (error == 0) {
-		alias->session = session;
-		alias->kind = backing->kind;
-		alias->gpu_address = backing->gpu_address;
-		alias->bytes = backing->bytes;
-		alias->requested = backing->requested;
-		alias->view = backing->view;
-		alias->physical = backing->physical;
-		alias->blob = 1;
-		alias->backing = backing;
-		ghci_memory_hold(backing);
-		alias->next = session->allocations;
-		session->allocations = alias;
-		session->allocation_count++;
-	}
-
-	mutex_unlock(&device->lock);
-
-	/* A memory object the session does not have. */
-	if (error != 0) {
-		kern_free(alias);
-		return error;
-	}
-
-	/* Succeeded: the blob is the session's. */
-	*result = alias;
-	return 0;
-}
-
-/*
- * Gives every allocation of a closing session back: the blobs that show
- * Vulkan memory first, so the memory they hold is let go before it is
- * given back itself.  The device's lock is held.
- */
-static void
-session_give_back(
-	struct ghci_device *device,
-	struct ghci_session *session)
-{
-	struct ghci_allocation **position;
-	struct ghci_allocation *allocation;
-
-	/* The blobs of Vulkan memory. */
-	position = &session->allocations;
-	while (*position != NULL) {
-		allocation = *position;
-		if (allocation->backing == NULL) {
-			position = &allocation->next;
-			continue;
-		}
-
-		/* Unlinks it and lets the memory it shows go. */
-		*position = allocation->next;
-		session->allocation_count--;
-		ghci_memory_release(device, allocation);
-	}
-
-	/* Then everything else, now or after the session's last fence. */
-	while (session->allocations != NULL) {
-		allocation = session->allocations;
-		session->allocations = allocation->next;
-		session->allocation_count--;
-		ghci_memory_release(device, allocation);
-	}
-}
-
-/* Checks that a copy stays inside what the caller asked the allocation for. */
-static int
-allocation_range(
-	const struct ghci_allocation *allocation,
-	uint64_t offset,
-	uint32_t length)
-{
-	/* Refuses a start past the end. */
-	if (offset > allocation->requested)
-		return EINVAL;
-
-	/* Refuses a length that runs past the end. */
-	if (length > allocation->requested - offset)
-		return EINVAL;
-
-	/* Succeeded: the range is inside. */
-	return 0;
-}
-
-/* Takes an allocation off its session's list; the device's lock is held. */
-static void
-allocation_unlist(
-	struct ghci_session *session,
-	struct ghci_allocation *allocation)
-{
-	struct ghci_allocation **position;
-
-	/* Finds the allocation on the list. */
-	position = &session->allocations;
-	while (*position != NULL && *position != allocation)
-		position = &(*position)->next;
-
-	/* An allocation that is not listed is left as it is. */
-	if (*position == NULL)
-		return;
-
-	/* Unlinks it. */
-	*position = allocation->next;
-	allocation->next = NULL;
-	session->allocation_count--;
 }

@@ -101,6 +101,7 @@ struct model_switches {
 	int reset_stuck;		/* a reset never ends and STATUS.AXI_STUCK reads 1 */
 	unsigned halt_reads;		/* reads of STATUS before HALTED shows after HALT */
 	unsigned mem_ready_reads;	/* reads of STATUS before MEM_READY shows after a reset */
+	int scratch_stuck;		/* SCRATCH ignores writes (a window that does not answer) */
 };
 
 /*
@@ -188,6 +189,7 @@ struct model {
 	unsigned irq_left_high;
 	unsigned doorbells;
 	unsigned resets;
+	unsigned halts;
 	unsigned faults;
 	unsigned dma_without_master;
 	unsigned locked_writes;
