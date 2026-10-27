@@ -346,6 +346,12 @@ vector_cases(void)
 	inst = make(AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_PACK_B32_F16, V(1), V(2), V(3), 0U);
 	failed |= emit("v_pack_b32_f16 v1, v2, v3", &inst);
 
+	inst = make(AMDRDNA_GFX10_KIND_SCALAR_ONE, AMDRDNA_GFX10_S_BCNT1_I32_B32, S(1), S(2), 0U, 0U);
+	failed |= emit("s_bcnt1_i32_b32 s1, s2", &inst);
+
+	inst = make(AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_MIN_U32, S(1), S(2), S(3), 0U);
+	failed |= emit("s_min_u32 s1, s2, s3", &inst);
+
 	inst = make(AMDRDNA_GFX10_KIND_VECTOR_WIDE, AMDRDNA_GFX10_V_MBCNT_LO_U32_B32, V(1), AMDRDNA_GFX10_NEG_FIRST, AMDRDNA_GFX10_ZERO, 0U);
 	failed |= emit("v_mbcnt_lo_u32_b32 v1, -1, 0", &inst);
 

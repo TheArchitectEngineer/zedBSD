@@ -93,6 +93,7 @@ struct machine_graphics {
 	uint32_t primitive_shader;
 	uint32_t primitives;
 	uint32_t wave_number;
+	uint32_t wave_count;
 	uint32_t subgroup_vertices;
 	uint32_t subgroup_primitives;
 	uint32_t primitive_word[2][MACHINE_LANES];
