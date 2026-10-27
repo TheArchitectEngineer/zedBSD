@@ -3,7 +3,7 @@
 # ws299-p004 待ちを重ねる: 連続の読みの先読みを非同期の worker で（raw の block device）
 
 - 親: [WS299](../ws.md)。Queue: q1617 / q1617-i01（担当 P1、2026-10-27）。前提: p003（cleared 2026-10-27、main be47a24df）。
-- Status: in-progress（2026-10-28 Q1 の判定: 実装・review・QEMU・5330 の読みは受け入れを満たす。main bce0883be で visionfive2・rpi4 の vmunix も rc 0・warning 0（Q1、build/q1-p004-*）。残り: 乱読み（p007 の道具）と、review の後の書きの後半 440〜560 MB/s の原因の確かめ）
+- Status: in-progress（2026-10-28 Q1 の判定: 実装・review・QEMU・5330 の読みは受け入れを満たす。main bce0883be で visionfive2・rpi4 の vmunix も rc 0・warning 0（Q1、build/q1-p004-*）。残りの 2 点は 2026-10-28 P1 が確かめた（下の「残りの確かめ」）: 書きの後半の低下は drive の状態、乱読みは HMB off の Debian と同じ。Q1 の判定待ち）
 - Disposition: normal
 
 ## 測った事（2026-10-27、5330、kernel は main be47a24df ＋ 下の測る口、`nvme-bench-5330.sh zedbsd zb-p004m … read`）
@@ -127,6 +127,13 @@
 - 5330 の証拠は zedBSD を NVMe から起動して ssh で測った物（`nvme-bench-5330.sh`）。`5330-run.sh` の素の起動（i915 の survey）は未実施（p007）。
 - `vfs.bufcache.stats` の misses には先読みの line が入る。io-stats の `IO_BUF_SINGLE_HIT` は、cache に有る line を `copy_cached_lines` が写すようになったので減った（落ち込みの指標は `IO_BUF_SINGLE_MEMORY` とする）。
 - 測る口: nvme の command の時刻（p004m）と `buf: readahead …` の 1024 job ごとの log（待ち・run・prepare・transfer の時間、捨てた理由）は残した。p008 で CONFIG にするか消すかを決める。
+
+## 残りの確かめ（2026-10-28、P1、q1640）
+
+- 書きの後半の 440〜560 MB/s: 測る前に Debian で `fstrim -av`、書きの先の p6 を `blkdiscard`（swap の頭 4 KiB を戻す）、休み 30〜60 秒の条件で、同じ main の kernel（p004 の review の反映の後、`build/p1-base/vmunix`）の raw の書き 1 GiB を 256 MiB ずつ測り直した（`zb-base`）: 1118・1074・994・959 MB/s で後半の落ち込みは無い。前の落ち込みは drive の状態（同じ日に p6 を何度も書いた後の DRAM-less の BG5 の書きの遅れ）で、review の後の直しではない。
+- 乱読み: `plan/ws299/tests/randread.c`（thread の数 = 深さ、Linux と zedBSD で同じ道具）で、Debian の ext4 の 12 GiB の乱数の file の範囲（trim されていない flash）を 4 KiB で 15 秒ずつ（`zb7-base-read`、`deb2-read`）。zedBSD（main の kernel）QD1 35.9 MB/s（113.5 µs）、QD32 445 MB/s（108653 IOPS）。Debian は HMB on で 57.8・964、HMB off で 36.4・448（fio も同じ数）。zedBSD は HMB off の Debian と同じで、差は HMB（p006）。複数の queue・VMD の vector は QD32 で HMB off の Debian と同じ数が出るので、今は要らない。
+- 32 MiB の buffer cache で UFS の 200 MiB の書きが止まる件: p004 の前の main（73135a9ec）の kernel でも同じく止まり（`qemu-cache32-write.sh`、exec が ENOMEM、dirty の上限 32 MiB が cache と同じ）、p004 の退行ではない。p005 の D1（dirty の上限を cache の 1/4）で直り PASS。
+- 以前の読みの測定（disk の 100 GiB の辺り）は trim 済みの空きの block を読んでいた（p005 の「測定の条件」）。trim されていない範囲での raw の連続の読み（`zb-base`）は 1.58〜1.79 GB/s で、同じ範囲の Debian の page cache 経由 1.5 GB/s を越える（受け入れ 1 は満たしたまま）。
 
 ## 出典
 
