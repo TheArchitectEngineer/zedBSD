@@ -197,3 +197,48 @@
 - i915 の ktest-sync の WC の期待（src/drivers/gpu/i915/tests/execution/ktest-sync.c 700-715: hal_space_map_device の WC|NOCACHE と WC|DEVICE が
   HAL_ERR_INVALID）: 779020ee6 は hal_space_map_device（src/hal/amd64/space.c 336-343 の検査）を変えていないので崩れない（コードの上の確かめ、ktest は未実行）。
 - build: amd64 vmunix・rpi4・visionfive2 とも warning 0。
+
+### WC・parameter cache・LDS の待ちの実機（2026-10-28 04:10〜04:40）
+
+- 04:10 の Debian の BootNext の再起動の後、zedBSD も Debian も 10 分応答せず（stick は 1 度正常に起動した診断の kernel pad64 のまま、新しい kernel を入れる前）。
+  Q1 が 04:2x に SwitchBot で入れ直し、Debian に戻った（入れ直し 1 回）。kernel 由来か firmware 由来かは不明（同じ事は 1 回だけ）。
+- kernel: vmunix-pc1（c0c1edcd14597cf3、WC 779020ee6・cfcd07066 + guard band 8ed8a285e + parameter cache 816a13ee2）、vmunix-lat1（+ 90a88f057:
+  wave の数の 4 つの LDS 読みと primitive の語の 3 つの LDS 読みを先に並べて待ちを 1 回に）。boot の行は ngg=2。
+
+| run（fence と record の ms） | defer1b（前） | pc1（WC+PC） | lat1 |
+| --- | --- | --- | --- |
+| scene-6500 frame / record / fence | 33.97 / 2.17 / 30.78 | 32.11 / 0.31 / 30.63 | 32.41 / 0.39 / 30.64 |
+| scene-1500 frame / record / fence | 16.90 / 0.74 / 8.98 | 15.27 / 0.35 / 8.98 | 15.15 / 0.34 / 8.92 |
+| scene-6500 fps | 29.3 | 31.0 | 30.7 |
+
+- WC: record は scene-6500 で 2.17 → 0.31 ms（instance の 104 KB の書き込み）、frame −1.9 ms。parameter cache の oversubscription と LDS の待ちは
+  GPU の時間を変えない（30.6〜30.8 ms）。
+- lat1 の全体の確認（`round.sh ... nggshape shot bench hang`、build/ws291/measure/lat1r/）: nggshape 14 種 全部 ok（`--cull --allback --tail` drawn 65536）、
+  shot 1 体 Linux と差 0（max 0）、6500 体 max 1・over15 0、bench は下の表。hang: 1 回目は vkhang lost → reset 5 ms → `--loops` ok だが
+  `--compute --loops` が lost after=2（device lost）、2〜4 回目は全部 ok、5 回目は vkhang が device 0 個・mview が窓を開けない（Keiland の session が
+  終わっていた: session.log の最後が `KWL FAILED site=park errno=42 thread=cursor step=stop`）。hang の試験を続けて流すと desktop が落ちる事がある。
+  前の kernel（defer1b）では 1 回だけ流して全部 ok。変更の前から有るかは未確認（compact1 の kernel で続けて流して比べるのが次の確かめ）。
+
+| run | fps | frame | acquire | record | submit | fence |
+| --- | --- | --- | --- | --- | --- | --- |
+| scene-1 | 108.4 | 9.21 | 7.29 | 0.28 | 0.16 | 1.27 |
+| scene-1500 | 65.9 | 15.15 | 5.47 | 0.34 | 0.23 | 8.92 |
+| scene-6500 | 30.7 | 32.41 | 0.95 | 0.39 | 0.27 | 30.64 |
+| big-100 | 68.6 | 14.55 | 6.43 | 3.42 | 1.49 | 2.87 |
+| big-1000 | 18.2 | 54.54 | 0.71 | 33.31 | 16.68 | 3.10 |
+| subs-100 | 33.6 | 29.62 | 0.54 | 15.62 | 13.27 | 0.03 |
+| subs-1000 | 3.5 | 276.41 | 14.55 | 144.65 | 116.98 | 0.02 |
+
+Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 201 fps・4.62、big-1000 86.9 fps（record 5.42・submit 0.02）、subs-1000 58.2 fps
+（record 6.63・submit 10.12）。
+
+### 残りの見立て（2026-10-28 04:40）
+
+- scene-6500 の GPU 30.6 ms は culling part の中の命令・LDS の待ち・raster・deferred part・late alloc・parameter cache のどれにも動かない（全部落としても
+  同じ）。RADV は wave32（gewave32）でも 19.9 ms で、NGG の register（GE_CNTL・VGT_GS_ONCHIP_CNTL・RSRC1〜4_GS・GE_PC_ALLOC・stages）は今は一致。
+  残る候補（未確かめ）: (1) 我々の IB の実際の値を RADV の ib.21.dec と突き合わせる（診断で IB を klog に出す p005 の方法、culling の時の
+  VGT_SHADER_STAGES_EN・PA_CL_*・DB の HTILE を含む全部）、(2) subgroup ごとの固定の仕事（始めの s_barrier、descriptor の s_load、vertex の fetch の
+  memory の待ち）を RADV の並びに近づける、(3) GE の index の処理（RADV と同じ draw の packet か）。
+- CPU 側: big-N・subs-N の record と submit が Linux の 6〜20 倍（big-1000 record 33 ms 対 5.4、submit 16.7 対 0.02）。p008〜p009 の CPU の record の短縮の
+  本体（vk-execute の draw ごとの全 state の書き直し、record の wire の decode）。
+- acquire（scene-1 で 7.3 ms）は libvulkan の WSI と Keiland の側（amdrdna の外）。

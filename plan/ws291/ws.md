@@ -44,7 +44,7 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 | [p003](phase003/phase.md) | RDNA: 投入の経路（vkQueueSubmit が GPU の完了を待たない非同期、record の 1 command と submit の費用を削る）。big-N・subs-N で Linux に近づける | p002 | cleared（2026-10-27 04:31 Q1） |
 | [p004](phase004/phase.md) | RDNA: PA の small primitive filter・back-face cull・VGT の vertex reuse を RADV の値に、scene-6500 の GPU の ms | p003 | cleared（2026-10-27 08:34、driver の変更なし、差は NGG の culling） |
 | [p005](phase005/phase.md) | RDNA: NGG A（passthrough、wave32 1 つの subgroup） | p004 | cleared（2026-10-27 13:52 Q1 判定、q1611。受け入れ: export の EXEC の wait の修正、1 体 pixel 差 0、6500 体 8 pixel、hang 回復、GPU 41.4 ms） |
-| [p006](phase006/phase.md) | RDNA: NGG B+C（primitive の culling と頂点の詰め直し・属性の後回しを Mesa の形で一緒に。2026-10-27 14:50 Q1: compaction 無しの culling は GFX10 で止まる（仮説 A）ので p007 と統合） | p005 | in-progress（q1611 で culling + compaction は実機で止まらず 6500 体 30.68 ms。続きは q1635、2026-10-28） |
+| [p006](phase006/phase.md) | RDNA: NGG B+C（primitive の culling と頂点の詰め直し・属性の後回しを Mesa の形で一緒に。2026-10-27 14:50 Q1: compaction 無しの culling は GFX10 で止まる（仮説 A）ので p007 と統合） | p005 | in-progress（q1635: 属性の後回し・WC の map・guard band・parameter cache を実装、実機で scene-6500 30.7 fps・GPU 30.6 ms。目標 約 20 ms に未達、原因の切り分けの途中） |
 | p007 | RDNA: NGG C（vertex の詰め直しと属性の後回し、wave をまたぐ subgroup）、目標 GPU 約 20 ms | p006 | p006 に統合（2026-10-27 14:50 Q1。目標 GPU 約 20 ms は p006 の受け入れへ） |
 | p008〜p009 | RDNA: HTILE、guard band、CPU 側の record（2.3 ms）の短縮 | p007 | — |
 | p010 | NVIDIA: GPU の入れ替え（ユーザー）、desktop の計測と 60 fps | RDNA の Phase の全部、P2 | planned |
@@ -72,3 +72,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 - 2026-10-28 ユーザー「P2はRDNAマシンで作業します。RDNAの高速化をお願いします。まずNGGなどの高速化を取り入れてLinuxと同等以上の描画速度を達成して、そのあとで、ゲーム用最適化をオプションに分けていく段取りになっているので、確認してください。」
 - 確かめ（Q1）: 段取りは記録のとおり。WS291 で RDNA の最適化（NGG の culling・compaction・属性の後回しなど）を今の形で入れて Linux 以上（scene-6500 で GPU 約 20 ms 以下、fps が Linux 以上）にし、その後に [WS306](../ws306/ws.md) で各要素をゲーム最適化の option に移して実装し直す。q1635 は p006 の続き → p008〜p009（[rdna-next.md](rdna-next.md) の順）。
+
+- 再開点（2026-10-28 04:45 P2、q1635、worktree p2-ws291b）: 実装と実機の数は [phase006](phase006/phase.md) の「q1635 の続き」以下。scene-6500 は
+  29.3 → 30.7 fps（WC で record −1.9 ms）、GPU 30.6 ms は動かず。次は phase006 の「残りの見立て」の (1)（我々の IB を RADV の culling の IB と全部突き合わせる）。
+  道具: `plan/ws291/tests/round.sh`（deploy・nggshape・shot・bench・hang）、`plan/ws291/tests/nowc-build.sh`（診断 patch を当てた tree の build）、
+  build/ws291/linux-ibdump/ibdump.so（host で build、Debian の /tmp に置く）。機械: stick は vmunix-lat1 と ngg=2（cfg に診断の nggx=0 の行、無害）。
