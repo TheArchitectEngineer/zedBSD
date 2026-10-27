@@ -69,7 +69,7 @@ p7_check() {
 # Erases the whole of p7.
 p7_fresh() {
 	p7_check
-	blkdiscard "$P7" || fail "blkdiscard p7"
+	blkdiscard -f "$P7" || fail "blkdiscard p7"
 }
 
 patstep() {
