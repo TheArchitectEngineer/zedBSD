@@ -176,6 +176,65 @@
 #define AMDRDNA_GC_FRAME_BUFFER_SHIFT		24U
 
 /*
+ * The graphics block's other status words (GC window 0): the second
+ * word (the command processors, the caches, the memory hub) and those of
+ * shader engines 0 and 1, which say which units still work when a run
+ * does not end.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
+ * (GRBM_STATUS 0x8010, GRBM_STATUS2 0x8008, GRBM_STATUS_SE0 0x8014,
+ * GRBM_STATUS_SE1 0x8018).
+ * derived: each byte offset / 4 less the window's base 0x1260 (0x8010 / 4
+ * - 0x1260 = 0x0da4, mmGRBM_STATUS).
+ */
+#define AMDRDNA_GC_REG_BLOCK_STATUS2		0x0da2U
+#define AMDRDNA_GC_REG_ENGINE0_STATUS		0x0da5U
+#define AMDRDNA_GC_REG_ENGINE1_STATUS		0x0da6U
+
+/*
+ * More status words of the graphics block (GC window 0): the third
+ * status word, the command processor's busy and status words, and the
+ * clipper's and the setup unit's (busy in bit 31).
+ *
+ * Values referenced: Linux v6.12
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmGRBM_STATUS3 0x0da7, mmCP_BUSY_STAT 0x0f3f, mmCP_STAT 0x0f40,
+ * mmPA_CL_CNTL_STATUS 0x1024, mmPA_SU_CNTL_STATUS 0x1034).
+ */
+#define AMDRDNA_GC_REG_BLOCK_STATUS3		0x0da7U
+#define AMDRDNA_GC_REG_CP_BUSY			0x0f3fU
+#define AMDRDNA_GC_REG_CP_STATUS		0x0f40U
+#define AMDRDNA_GC_REG_CLIP_STATUS		0x1024U
+#define AMDRDNA_GC_REG_SETUP_STATUS		0x1034U
+
+/*
+ * The shader sequencer's indirect window on a wave of the array the
+ * array select names (GC window 0): the index word (the wave in bits 4:0,
+ * the register in 31:16) and the data word; and the wave registers read
+ * through it: the status (valid in bit 16, in a barrier 12, export ready
+ * 8, must export 27), the program counter's low and high words, the
+ * instruction at it, the lane mask and the hardware identity.
+ *
+ * Values referenced: Linux v6.12
+ * drivers/gpu/drm/amd/include/asic_reg/gc/gc_10_1_0_offset.h
+ * (mmSQ_IND_INDEX 0x1118, mmSQ_IND_DATA 0x1119, ixSQ_WAVE_STATUS 0x0102,
+ * ixSQ_WAVE_PC_LO 0x0108, ixSQ_WAVE_PC_HI 0x0109, ixSQ_WAVE_INST_DW0
+ * 0x010a, ixSQ_WAVE_HW_ID1 0x0117, ixSQ_WAVE_EXEC_LO 0x027e) and
+ * gc_10_1_0_sh_mask.h (SQ_IND_INDEX__WAVE_ID__SHIFT 0,
+ * SQ_IND_INDEX__INDEX__SHIFT 16, SQ_WAVE_STATUS__VALID__SHIFT 16).
+ */
+#define AMDRDNA_GC_REG_WAVE_INDEX		0x1118U
+#define AMDRDNA_GC_REG_WAVE_DATA		0x1119U
+#define AMDRDNA_GC_WAVE_REGISTER_SHIFT		16U
+#define AMDRDNA_WAVE_STATUS			0x0102U
+#define AMDRDNA_WAVE_PC_LOW			0x0108U
+#define AMDRDNA_WAVE_PC_HIGH			0x0109U
+#define AMDRDNA_WAVE_INSTRUCTION		0x010aU
+#define AMDRDNA_WAVE_IDENTITY			0x0117U
+#define AMDRDNA_WAVE_EXEC			0x027eU
+#define AMDRDNA_WAVE_STATUS_VALID		(1U << 16)
+
+/*
  * The flash ROM's address and data registers (SMUIO window 0); each read
  * of the data register returns the next dword of the ROM.
  *

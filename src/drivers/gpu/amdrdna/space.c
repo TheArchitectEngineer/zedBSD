@@ -68,6 +68,17 @@
 #define SPACE_ENGINE_GRAPHICS		0U
 #define SPACE_ENGINE_COMPUTE_FIRST	4U
 
+/*
+ * What a wave scan covers: two shader engines of two arrays each, the
+ * instances (workgroup processors and their SIMDs) 0 .. 31 of an array, 20 wave
+ * slots each; and the most waves marked.
+ */
+#define SPACE_SHADER_ENGINES		2U
+#define SPACE_SHADER_ARRAYS		2U
+#define SPACE_WAVE_INSTANCES		32U
+#define SPACE_WAVE_SLOTS		20U
+#define SPACE_WAVES_MARKED		24U
+
 /* The most words a run puts on its ring: a sync, a drop, the indirect buffer and a timed run's two timestamps. */
 #define SPACE_RUN_COMMANDS		64U
 
@@ -97,6 +108,7 @@ static int space_leaf(struct amdrdna_space *space, uint64_t address, struct amdr
 static void space_clear(struct amdrdna_space *space, uint64_t address, uint64_t bytes);
 static void space_changed(struct amdrdna_space *space);
 static void space_lose(struct amdrdna_space *space, int error);
+static uint32_t space_wave_read(struct amdrdna_device *device, uint32_t wave, uint32_t index);
 static void space_hang(struct amdrdna_space *space, const struct amdrdna_space_ticket *ticket);
 static bool space_dropped_locked(struct amdrdna_device *device, const struct amdrdna_space_ticket *ticket);
 static void space_reset(struct amdrdna_device *device, unsigned tracked, unsigned context);
@@ -824,6 +836,132 @@ amdrdna_spaces_stamp(
 	device->spaces.stamped = on;
 
 	spin_unlock_irqrestore(&device->spaces.lock, irq);
+}
+
+/*
+ * Marks the waves still on the shader arrays when a run did not end: each
+ * valid wave's place, status, program counter, the instruction there and
+ * its lane mask (at most SPACE_WAVES_MARKED of them), so that the
+ * instruction the waves wait at is known.
+ *
+ * Procedure referenced: Linux v6.12
+ * drivers/gpu/drm/amd/amdgpu/gfx_v10_0.c (wave_read_ind: the index word
+ * with the wave and the register, then the data word;
+ * gfx_v10_0_read_wave_data: the registers read; the array selected first
+ * through GRBM_GFX_INDEX and every array selected again after) and
+ * drivers/gpu/drm/amd/amdgpu/amdgpu_debugfs.c (amdgpu_debugfs_wave_read:
+ * the shader engine, the array and the instance selected).
+ */
+void
+amdrdna_spaces_mark_waves(
+	struct amdrdna_device *device)
+{
+	uint32_t engine;
+	uint32_t array;
+	uint32_t instance;
+	uint32_t wave;
+	uint32_t select;
+	uint32_t status;
+	uint32_t pc_low;
+	uint32_t pc_high;
+	uint32_t instruction;
+	uint32_t exec;
+	uint32_t identity;
+	uint32_t marked;
+	uint32_t seen;
+
+	/* Every engine, array, instance and wave slot, read in turn. */
+	marked = 0U;
+	seen = 0U;
+	for (engine = 0U; engine < SPACE_SHADER_ENGINES; engine++) {
+		for (array = 0U; array < SPACE_SHADER_ARRAYS; array++) {
+			for (instance = 0U; instance < SPACE_WAVE_INSTANCES; instance++) {
+				/* The array and the instance the window reads. */
+				select = instance << AMDRDNA_GC_SELECT_INSTANCE_SHIFT;
+				select |= array << AMDRDNA_GC_SELECT_ARRAY_SHIFT;
+				select |= engine << AMDRDNA_GC_SELECT_ENGINE_INDEX_SHIFT;
+				amdrdna_block_write(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_SECOND, AMDRDNA_GC_REG_ARRAY_SELECT, select);
+
+				/* Each wave slot: its status, and the rest of a valid one. */
+				for (wave = 0U; wave < SPACE_WAVE_SLOTS; wave++) {
+					status = space_wave_read(device, wave, AMDRDNA_WAVE_STATUS);
+					if ((status & AMDRDNA_WAVE_STATUS_VALID) == 0U)
+						continue;
+					seen++;
+					if (marked == SPACE_WAVES_MARKED)
+						continue;
+
+					/* Reads where the wave is and what it runs. */
+					pc_low = space_wave_read(device, wave, AMDRDNA_WAVE_PC_LOW);
+					pc_high = space_wave_read(device, wave, AMDRDNA_WAVE_PC_HIGH);
+					instruction = space_wave_read(device, wave, AMDRDNA_WAVE_INSTRUCTION);
+					exec = space_wave_read(device, wave, AMDRDNA_WAVE_EXEC);
+					identity = space_wave_read(device, wave, AMDRDNA_WAVE_IDENTITY);
+					amdrdna_mark("wave se%u sa%u i%u w%u status 0x%08x pc 0x%x%08x inst 0x%08x exec 0x%08x id 0x%08x",
+						     engine,
+						     array,
+						     instance,
+						     wave,
+						     status,
+						     pc_high,
+						     pc_low,
+						     instruction,
+						     exec,
+						     identity);
+					marked++;
+				}
+			}
+		}
+	}
+
+	/* Every array again, as the rest of the driver writes them. */
+	select = AMDRDNA_GC_SELECT_ALL_INSTANCES | AMDRDNA_GC_SELECT_ALL_ARRAYS | AMDRDNA_GC_SELECT_ALL_ENGINES;
+	amdrdna_block_write(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_SECOND, AMDRDNA_GC_REG_ARRAY_SELECT, select);
+
+	/* Says how many there were. */
+	amdrdna_mark("waves valid %u, marked %u", seen, marked);
+}
+
+/*
+ * Marks the graphics block's status words, which say which units still
+ * work: when a run did not end, and with the executor's timing.
+ */
+void
+amdrdna_spaces_mark_status(
+	struct amdrdna_device *device)
+{
+	uint32_t status;
+	uint32_t status2;
+	uint32_t engine0;
+	uint32_t engine1;
+	uint32_t status3;
+	uint32_t cp_busy;
+	uint32_t cp_status;
+	uint32_t clip;
+	uint32_t setup;
+
+	/* The words, read as they are. */
+	status = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_BLOCK_STATUS);
+	status2 = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_BLOCK_STATUS2);
+	engine0 = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_ENGINE0_STATUS);
+	engine1 = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_ENGINE1_STATUS);
+	status3 = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_BLOCK_STATUS3);
+	cp_busy = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_CP_BUSY);
+	cp_status = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_CP_STATUS);
+	clip = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_CLIP_STATUS);
+	setup = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_SETUP_STATUS);
+
+	/* Says them. */
+	amdrdna_mark("gc status 0x%08x status2 0x%08x status3 0x%08x se0 0x%08x se1 0x%08x cp 0x%08x/0x%08x pa 0x%08x/0x%08x",
+		     status,
+		     status2,
+		     status3,
+		     engine0,
+		     engine1,
+		     cp_busy,
+		     cp_status,
+		     clip,
+		     setup);
 }
 
 /*
@@ -1694,6 +1832,8 @@ space_lose(
 	if (!first)
 		return;
 	amdrdna_mark("space %u lost: its run did not end (%d)", (unsigned)space->id, error);
+	amdrdna_spaces_mark_status(device);
+	amdrdna_spaces_mark_waves(device);
 	if (session != NULL)
 		amdrdna_node_session_lost(device, session, EIO);
 }
@@ -1894,5 +2034,24 @@ space_hub_read(
 	value = amdrdna_read(device, index);
 
 	/* Succeeded: the value. */
+	return value;
+}
+
+/* Reads one register of a wave of the selected array through the shader sequencer's window. */
+static uint32_t
+space_wave_read(
+	struct amdrdna_device *device,
+	uint32_t wave,
+	uint32_t index)
+{
+	uint32_t word;
+	uint32_t value;
+
+	/* The wave and the register, then the data. */
+	word = wave | (index << AMDRDNA_GC_WAVE_REGISTER_SHIFT);
+	amdrdna_block_write(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_WAVE_INDEX, word);
+	value = amdrdna_block_read(device, AMDRDNA_BLOCK_GC, AMDRDNA_GC_WINDOW_MAIN, AMDRDNA_GC_REG_WAVE_DATA);
+
+	/* The register's value. */
 	return value;
 }

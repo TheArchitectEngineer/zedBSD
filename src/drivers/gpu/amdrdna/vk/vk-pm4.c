@@ -43,6 +43,9 @@ amdrdna_vk_pm4_start(
 	pm4->count = 0U;
 	pm4->capacity = capacity;
 	pm4->full = false;
+
+	/* What drew before this buffer is not known, so the first draw flushes first. */
+	pm4->vertex_stage = AMDRDNA_VK_STAGE_UNKNOWN;
 }
 
 /*
@@ -183,6 +186,29 @@ amdrdna_vk_pm4_set_user_config_indexed(
 	/* The register's place and its index, then the value. */
 	amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_USER_REGISTERS_INDEXED, 2U, false);
 	amdrdna_vk_pm4_word(pm4, ((reg >> 2) - AMDRDNA_PM4_USER_FIRST) | (index << AMDRDNA_PM4_REGISTER_INDEX_SHIFT));
+	amdrdna_vk_pm4_word(pm4, value);
+}
+
+/*
+ * Sets one shader register through the indexed setter, the index above
+ * the register's place: index 3 has the command processor apply its CU
+ * mask to a CU enable register.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cs.h
+ * (radeon_set_sh_reg_idx: PKT3_SET_SH_REG_INDEX on GFX10, the index from
+ * bit 28) and src/amd/vulkan/radv_cmd_buffer.c (the CU enable words
+ * SPI_SHADER_PGM_RSRC3 and RSRC4 written with index 3).
+ */
+void
+amdrdna_vk_pm4_set_shader_indexed(
+	struct amdrdna_vk_pm4 *pm4,
+	uint32_t reg,
+	uint32_t index,
+	uint32_t value)
+{
+	/* The register's place and its index, then the value. */
+	amdrdna_vk_pm4_packet(pm4, AMDRDNA_PM4_OP_SHADER_REGISTERS_INDEXED, 2U, false);
+	amdrdna_vk_pm4_word(pm4, ((reg >> 2) - AMDRDNA_PM4_SHADER_FIRST) | (index << AMDRDNA_PM4_REGISTER_INDEX_SHIFT));
 	amdrdna_vk_pm4_word(pm4, value);
 }
 

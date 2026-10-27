@@ -884,6 +884,19 @@ break_hazards(
 	if (inst->kind == AMDRDNA_GFX10_KIND_INTERPOLATE && state->m0_written != 0)
 		append_control(output, AMDRDNA_GFX10_S_NOP, 0U);
 
+	/*
+	 * A message right after a scalar write of M0 is given one idle
+	 * instruction between them.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/amd/compiler/aco_insert_NOPs.cpp
+	 * (NOP_ctx_gfx6: a SALU write of M0 followed by s_sendmsg needs one wait
+	 * state, line 95).
+	 */
+	if (inst->kind == AMDRDNA_GFX10_KIND_CONTROL &&
+	    inst->opcode == AMDRDNA_GFX10_S_SENDMSG &&
+	    state->m0_written != 0)
+		append_control(output, AMDRDNA_GFX10_S_NOP, 0U);
+
 	/* A vector write of a scalar register is noted for the lane mask hazard. */
 	writes_sgpr = writes_scalar(access);
 	if (vector_alu != 0 && writes_sgpr != 0)

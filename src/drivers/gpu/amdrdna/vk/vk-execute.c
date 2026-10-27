@@ -242,7 +242,7 @@ struct execute_quad {
 
 static int execute_open(struct amdrdna_vk_session *session, struct amdrdna_vk_execute **execute);
 static int execute_programs(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
-static int execute_compile(struct amdrdna_quad_ir *program, struct amdrdna_vk_program *compiled);
+static int execute_compile(struct amdrdna_quad_ir *program, const struct amdrdna_gfx10_compile_options *options, struct amdrdna_vk_program *compiled);
 static int execute_start(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
 static int execute_slot_make(struct amdrdna_vk_session *session, struct execute_slot *slot);
 static int execute_flush(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
@@ -549,14 +549,18 @@ execute_open(
  * Compiles the executor's quad programs (the corners placed by the push
  * constants' rectangle, the texture read at the push constants' texture
  * rectangle, or the push constants' colour) into a run of their own, each
- * on a 256-byte boundary.
+ * on a 256-byte boundary.  The vertex program runs as the pipelines' do: a
+ * primitive shader when the node says so, so that the draws never change
+ * between the two kinds of vertex stage.
  */
 static int
 execute_programs(
 	struct amdrdna_vk_session *session,
 	struct amdrdna_vk_execute *execute)
 {
+	struct amdrdna_gfx10_compile_options options;
 	struct amdrdna_quad_ir *program;
+	uint32_t geometry;
 	uint32_t index;
 	uint32_t at;
 	uint32_t bytes;
@@ -567,19 +571,25 @@ execute_programs(
 	if (program == NULL)
 		return ENOMEM;
 
+	/* The vertex program a primitive shader when the node's pipelines' are. */
+	kern_memset(&options, 0, sizeof(options));
+	geometry = amdrdna_vk_geometry_mode(session->owner);
+	if (geometry != 0U)
+		options.primitive_shader = 1U;
+
 	/* The three programs (kept from a try that did not finish). */
 	error = 0;
 	if (execute->quad[EXECUTE_QUAD_VERTEX].compiled == NULL) {
 		amdrdna_quad_vertex_ir(program, 1);
-		error = execute_compile(program, &execute->quad[EXECUTE_QUAD_VERTEX]);
+		error = execute_compile(program, &options, &execute->quad[EXECUTE_QUAD_VERTEX]);
 	}
 	if (error == 0 && execute->quad[EXECUTE_QUAD_TEXTURED].compiled == NULL) {
 		amdrdna_quad_fragment_ir(program, 1);
-		error = execute_compile(program, &execute->quad[EXECUTE_QUAD_TEXTURED]);
+		error = execute_compile(program, NULL, &execute->quad[EXECUTE_QUAD_TEXTURED]);
 	}
 	if (error == 0 && execute->quad[EXECUTE_QUAD_COLOUR].compiled == NULL) {
 		amdrdna_quad_fragment_ir(program, 0);
-		error = execute_compile(program, &execute->quad[EXECUTE_QUAD_COLOUR]);
+		error = execute_compile(program, NULL, &execute->quad[EXECUTE_QUAD_COLOUR]);
 	}
 	kern_free(program);
 	if (error != 0)
@@ -608,10 +618,11 @@ execute_programs(
 	return 0;
 }
 
-/* Compiles one quad program and its register values. */
+/* Compiles one quad program with the options (NULL for none) and its register values. */
 static int
 execute_compile(
 	struct amdrdna_quad_ir *program,
+	const struct amdrdna_gfx10_compile_options *options,
 	struct amdrdna_vk_program *compiled)
 {
 	struct amdrdna_gfx10_diagnostic diagnostic;
@@ -619,7 +630,7 @@ execute_compile(
 
 	/* Compiled for GFX10. */
 	kern_memset(&diagnostic, 0, sizeof(diagnostic));
-	error = amdrdna_gfx10_compile_ir(&program->ir, NULL, &compiled->compiled, &diagnostic);
+	error = amdrdna_gfx10_compile_ir(&program->ir, options, &compiled->compiled, &diagnostic);
 	if (error != 0) {
 		kern_logf("amdrdna: vk: a quad program did not compile (%d: %s)\n", error,
 			  (diagnostic.reason != NULL) ? diagnostic.reason : "?");
@@ -1428,12 +1439,14 @@ execute_draw_call(
 	uint64_t start;
 	uint8_t *cpu;
 	uint32_t size;
+	bool primitive_shader;
 	int error;
 
-	/* A draw of generated vertices. */
+	/* A draw of generated vertices, by a primitive shader or a legacy vertex program. */
 	pipeline = state->pipeline;
+	primitive_shader = pipeline->vertex.registers.primitive_shader != 0U;
 	if (record->opcode != GPU_OP_CMD_DRAW_INDEXED) {
-		error = amdrdna_vk_state_draw(&execute->pm4, pipeline->topology, record->values[0], record->values[1]);
+		error = amdrdna_vk_state_draw(&execute->pm4, pipeline->topology, primitive_shader, record->values[0], record->values[1]);
 		if (error != 0)
 			return error;
 		return 0;
@@ -1454,7 +1467,7 @@ execute_draw_call(
 		room = 0xffffffffU;
 
 	/* The indexed draw. */
-	error = amdrdna_vk_state_draw_indexed(&execute->pm4, pipeline->topology, state->index_type, indices + start, (uint32_t)room,
+	error = amdrdna_vk_state_draw_indexed(&execute->pm4, pipeline->topology, primitive_shader, state->index_type, indices + start, (uint32_t)room,
 					      record->values[0], record->values[1]);
 	if (error != 0)
 		return error;
@@ -2321,7 +2334,11 @@ execute_quad(
 
 	/* The programs, two triangles. */
 	amdrdna_vk_state_programs(&execute->pm4, vertex, fragment, vertex_va, fragment_va, 0U, 0U, 0U);
-	error = amdrdna_vk_state_draw(&execute->pm4, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, EXECUTE_CORNERS, 1U);
+	error = amdrdna_vk_state_draw(&execute->pm4,
+				     VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
+				     vertex->registers.primitive_shader != 0U,
+				     EXECUTE_CORNERS,
+				     1U);
 	if (error != 0)
 		return error;
 	execute->quads++;

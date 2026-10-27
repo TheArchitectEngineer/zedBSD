@@ -39,16 +39,20 @@
  *
  * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10.json
  * (SPI_SHADER_USER_ACCUM_PS_0 0xb0c8, SPI_SHADER_USER_ACCUM_VS_0 0xb1c8,
+ * SPI_SHADER_USER_ACCUM_ESGS_0 0xb2c8,
  * COMPUTE_USER_ACCUM_0 0xb890, DB_DFSM_CONTROL 0x28038,
  * DB_RMI_L2_CACHE_CONTROL 0x2807c, CB_RMI_GL2_CACHE_CONTROL 0x28410,
  * PA_SC_BINNER_CNTL_1 0x28c48, PA_SC_NGG_MODE_CNTL 0x28c50,
  * PA_CL_NGG_CNTL 0x28838, PA_SU_LINE_STIPPLE_SCALE 0x28828,
  * VGT_MULTI_PRIM_IB_RESET_INDX 0x2840c, PA_SC_MODE_CNTL_1 0x28a4c,
  * PA_SC_AA_MASK_X0Y1_X1Y1 0x28c3c, GE_STEREO_CNTL 0x3097c,
- * PA_SU_LINE_STIPPLE_VALUE 0x30a00, PA_SC_LINE_STIPPLE_STATE 0x30a04).
+ * PA_SU_LINE_STIPPLE_VALUE 0x30a00, PA_SC_LINE_STIPPLE_STATE 0x30a04,
+ * VGT_ESGS_RING_ITEMSIZE 0x28aac, PA_SU_HARDWARE_SCREEN_OFFSET 0x28234,
+ * VGT_MULTI_PRIM_IB_RESET_EN 0x3092c).
  */
 #define STATE_PIXEL_ACCUMULATORS	0xb0c8U
 #define STATE_VERTEX_ACCUMULATORS	0xb1c8U
+#define STATE_PRIMITIVE_ACCUMULATORS	0xb2c8U
 #define STATE_KERNEL_ACCUMULATORS	0xb890U
 #define STATE_ACCUMULATORS		4U
 #define STATE_DEPTH_PUNCH_OUT		0x28038U
@@ -56,12 +60,15 @@
 #define STATE_COLOUR_CACHE		0x28410U
 #define STATE_BINNER_LIMITS		0x28c48U
 #define STATE_PRIMITIVE_SHADER_MODE	0x28c50U
+#define STATE_EXPORT_ITEM_SIZE		0x28aacU
+#define STATE_SCREEN_OFFSET		0x28234U
 #define STATE_CLIP_NGG			0x28838U
 #define STATE_STIPPLE_SCALE		0x28828U
 #define STATE_RESTART_INDEX		0x2840cU
 #define STATE_SCAN_MODE_MORE		0x28a4cU
 #define STATE_SAMPLE_MASK_MORE		0x28c3cU
 #define STATE_STEREO			0x3097cU
+#define STATE_RESTART_ON		0x3092cU
 #define STATE_STIPPLE_VALUE		0x30a00U
 #define STATE_STIPPLE_STATE		0x30a04U
 
@@ -190,7 +197,9 @@
 #define STATE_BARRIER_ACQUIRE		(AMDRDNA_PM4_ACQUIRE_SCALAR | AMDRDNA_PM4_ACQUIRE_VECTOR | \
 					 AMDRDNA_PM4_ACQUIRE_LEVEL1)
 
-static int state_topology(struct amdrdna_vk_pm4 *pm4, uint32_t topology);
+static int state_topology(struct amdrdna_vk_pm4 *pm4, uint32_t topology, bool primitive_shader);
+static void state_vertex_program(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *vertex, uint64_t vertex_table, uint32_t base_vertex, uint32_t first_instance, uint32_t instance_mask);
+static void state_primitive_shader(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *vertex, uint64_t vertex_table, uint32_t base_vertex, uint32_t first_instance, uint32_t instance_mask);
 static void state_start_graphics(struct amdrdna_vk_pm4 *pm4);
 static void state_start_compute(struct amdrdna_vk_pm4 *pm4);
 static bool state_blend_factor(uint32_t factor, uint32_t *code);
@@ -496,8 +505,8 @@ amdrdna_vk_state_raster(
 {
 	uint32_t mode;
 
-	/* The faces culled and the face in front. */
-	mode = 0U;
+	/* Filled triangles, the faces culled and the face in front. */
+	mode = AMDRDNA_CX_RASTER_FILLED;
 	if ((cull_mode & VK_CULL_MODE_FRONT_BIT) != 0U)
 		mode |= AMDRDNA_CX_RASTER_CULL_FRONT;
 	if ((cull_mode & VK_CULL_MODE_BACK_BIT) != 0U)
@@ -513,6 +522,9 @@ amdrdna_vk_state_raster(
  * vertex program's base vertex, first instance and the mask of the
  * locations fetched by instance), and what the two programs decide of the
  * vertex export, the pixel inputs, the colour exports and the depth unit.
+ *
+ * A vertex program run as a primitive shader is written in the geometry
+ * stage's registers instead.
  *
  * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
  * (radv_emit_hw_vs, radv_emit_fragment_shader_state, radv_emit_ps_inputs,
@@ -532,24 +544,18 @@ amdrdna_vk_state_programs(
 {
 	const struct amdrdna_gfx10_registers *vs;
 	const struct amdrdna_gfx10_registers *ps;
-	uint32_t words[5];
+	uint32_t words[4];
 	uint32_t depth;
 
 	vs = &vertex->registers;
 	ps = &fragment->registers;
 
-	/* The vertex program: its code, counts and inputs, its five user SGPRs. */
-	words[0] = (uint32_t)(vertex->va >> AMDRDNA_SH_CODE_LOW_SHIFT);
-	words[1] = (uint32_t)(vertex->va >> AMDRDNA_SH_CODE_HIGH_SHIFT) & 0xffU;
-	words[2] = vs->counts;
-	words[3] = vs->inputs;
-	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_VERTEX_CODE_LOW, words, 4U);
-	words[0] = (uint32_t)vertex_table;
-	words[1] = (uint32_t)(vertex_table >> 32);
-	words[2] = base_vertex;
-	words[3] = first_instance;
-	words[4] = instance_mask;
-	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_VERTEX_USER_DATA, words, 5U);
+	/* The vertex program, as a primitive shader or a legacy one. */
+	if (vs->primitive_shader != 0U) {
+		state_primitive_shader(pm4, vertex, vertex_table, base_vertex, first_instance, instance_mask);
+	} else {
+		state_vertex_program(pm4, vertex, vertex_table, base_vertex, first_instance, instance_mask);
+	}
 
 	/* The pixel program: its code, counts and inputs, its two user SGPRs. */
 	words[0] = (uint32_t)(fragment->va >> AMDRDNA_SH_CODE_LOW_SHIFT);
@@ -593,9 +599,122 @@ amdrdna_vk_state_programs(
 		depth |= AMDRDNA_CX_DEPTH_SHADER_KILL;
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_DEPTH_SHADER_CONTROL, depth);
 
-	/* A legacy vertex program in wave32, no geometry program. */
-	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, AMDRDNA_CX_STAGES_LEGACY_VERTEX);
+	/* No geometry program. */
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GEOMETRY_MODE, 0U);
+}
+
+/*
+ * Writes a legacy vertex program: its code, counts and inputs, its five
+ * user SGPRs, and the stages of a legacy vertex program in wave32.  After
+ * a primitive shader's draw (or at the buffer's first draw) the geometry
+ * engine is flushed first, which GFX10 needs.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_hw_vs; radv_CmdBindPipeline: VGT_FLUSH on a change from NGG
+ * to legacy, lines 7958-7967) and src/amd/common/ac_gpu_info.c
+ * (has_vgt_flush_ngg_legacy_bug on GFX10, line 1256).
+ */
+static void
+state_vertex_program(
+	struct amdrdna_vk_pm4 *pm4,
+	const struct amdrdna_vk_program *vertex,
+	uint64_t vertex_table,
+	uint32_t base_vertex,
+	uint32_t first_instance,
+	uint32_t instance_mask)
+{
+	uint32_t words[5];
+
+	/* The flush after a primitive shader's draws, or at the buffer's first draw. */
+	if (pm4->vertex_stage != AMDRDNA_VK_STAGE_LEGACY) {
+		amdrdna_vk_pm4_event(pm4, AMDRDNA_PM4_EVENT_GEOMETRY_FLUSHED, 0U);
+		pm4->vertex_stage = AMDRDNA_VK_STAGE_LEGACY;
+	}
+
+	/* The parameter cache not oversubscribed. */
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_PARAMETER_CACHE, AMDRDNA_UC_PARAMETER_CACHE_PLAIN);
+
+	/* The code, counts and inputs. */
+	words[0] = (uint32_t)(vertex->va >> AMDRDNA_SH_CODE_LOW_SHIFT);
+	words[1] = (uint32_t)(vertex->va >> AMDRDNA_SH_CODE_HIGH_SHIFT) & 0xffU;
+	words[2] = vertex->registers.counts;
+	words[3] = vertex->registers.inputs;
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_VERTEX_CODE_LOW, words, 4U);
+
+	/* The table, the base vertex, the first instance and the instance mask. */
+	words[0] = (uint32_t)vertex_table;
+	words[1] = (uint32_t)(vertex_table >> 32);
+	words[2] = base_vertex;
+	words[3] = first_instance;
+	words[4] = instance_mask;
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_VERTEX_USER_DATA, words, 5U);
+
+	/* A legacy vertex program in wave32. */
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, AMDRDNA_CX_STAGES_LEGACY_VERTEX);
+}
+
+/*
+ * Writes a vertex program run as a primitive shader in wave32: its code, counts and inputs, the table in the stage's user
+ * data address, its three user SGPRs, the CUs it runs on, the subgroup's
+ * size and output, and the stages of a passthrough primitive shader.
+ * After a legacy vertex program's draw (or at the buffer's first draw) the
+ * geometry engine is flushed first.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_hw_ngg, the GFX10 path; radv_emit_vgt_shader_config_gfx6,
+ * the NGG stages) and src/amd/vulkan/radv_shader.c
+ * (radv_precompute_registers_hw_ngg: the CU masks with a wave limit of 63,
+ * the primitive export of one channel, one primitive from each, no
+ * geometry instancing).
+ */
+static void
+state_primitive_shader(
+	struct amdrdna_vk_pm4 *pm4,
+	const struct amdrdna_vk_program *vertex,
+	uint64_t vertex_table,
+	uint32_t base_vertex,
+	uint32_t first_instance,
+	uint32_t instance_mask)
+{
+	uint32_t words[3];
+
+	/* The flush after a legacy vertex program's draws, or at the buffer's first draw. */
+	if (pm4->vertex_stage != AMDRDNA_VK_STAGE_PRIMITIVE) {
+		amdrdna_vk_pm4_event(pm4, AMDRDNA_PM4_EVENT_GEOMETRY_FLUSHED, 0U);
+		pm4->vertex_stage = AMDRDNA_VK_STAGE_PRIMITIVE;
+	}
+
+	/* The code: its address, then the counts and inputs words. */
+	words[0] = (uint32_t)(vertex->va >> AMDRDNA_SH_CODE_LOW_SHIFT);
+	words[1] = (uint32_t)(vertex->va >> AMDRDNA_SH_CODE_HIGH_SHIFT) & 0xffU;
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_CODE_LOW, words, 2U);
+	words[0] = vertex->registers.counts;
+	words[1] = vertex->registers.inputs;
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_RESOURCES, words, 2U);
+
+	/* The table in s[0:1]; the base vertex, the first instance and the instance mask in s8 .. s10. */
+	words[0] = (uint32_t)vertex_table;
+	words[1] = (uint32_t)(vertex_table >> 32);
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_TABLE, words, 2U);
+	words[0] = base_vertex;
+	words[1] = first_instance;
+	words[2] = instance_mask;
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_USER_DATA, words, 3U);
+
+	/* RADV's CUs and late allocation, the parameter cache oversubscribed. */
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PRIMITIVE_UNITS, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_PRIMITIVE_UNITS_NGG);
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH_NGG);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_PARAMETER_CACHE, AMDRDNA_UC_PARAMETER_CACHE_NGG);
+
+	/* The subgroup: its size, its output, one primitive from each, the primitive export's format, one instance. */
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_SIZE, AMDRDNA_CX_SUBGROUP_SIZE_NGG);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_OUTPUT, AMDRDNA_NGG_VERTICES);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_CONTROL, AMDRDNA_CX_SUBGROUP_ONE_PRIMITIVE);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_PRIMITIVE_EXPORT_FORMAT, AMDRDNA_CX_PRIMITIVE_EXPORT_ONE);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GEOMETRY_INSTANCES, AMDRDNA_CX_GEOMETRY_ONE_INSTANCE);
+
+	/* The stages of a passthrough primitive shader in wave32. */
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, AMDRDNA_CX_STAGES_PRIMITIVE | AMDRDNA_CX_STAGES_PASSTHROUGH);
 }
 
 /*
@@ -613,13 +732,14 @@ int
 amdrdna_vk_state_draw(
 	struct amdrdna_vk_pm4 *pm4,
 	uint32_t topology,
+	bool primitive_shader,
 	uint32_t vertex_count,
 	uint32_t instance_count)
 {
 	int error;
 
 	/* The type and the groups. */
-	error = state_topology(pm4, topology);
+	error = state_topology(pm4, topology, primitive_shader);
 	if (error != 0)
 		return error;
 
@@ -645,6 +765,7 @@ int
 amdrdna_vk_state_draw_indexed(
 	struct amdrdna_vk_pm4 *pm4,
 	uint32_t topology,
+	bool primitive_shader,
 	uint32_t index_type,
 	uint64_t indices,
 	uint32_t index_room,
@@ -664,7 +785,7 @@ amdrdna_vk_state_draw_indexed(
 	}
 
 	/* The primitive type and the groups. */
-	error = state_topology(pm4, topology);
+	error = state_topology(pm4, topology, primitive_shader);
 	if (error != 0)
 		return error;
 
@@ -896,15 +1017,18 @@ state_start_graphics(
 	static const uint32_t zeros[STATE_ACCUMULATORS] = { 0U, 0U, 0U, 0U };
 	static const uint32_t guard_band[4] = { STATE_FLOAT_ONE, STATE_FLOAT_ONE, STATE_FLOAT_ONE, STATE_FLOAT_ONE };
 
-	/* The programs run on every CU; the pixel program's requests; no accumulators. */
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_UNITS, AMDRDNA_SH_UNITS_ALL);
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
+	/* The programs run on every CU; the pixel program's requests; no accumulators; no late allocation. */
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PIXEL_UNITS, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_UNITS_ALL);
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PIXEL_UNITS_HIGH, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_UNITS_HIGH_ALL);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_PIXEL_REQUESTS, AMDRDNA_SH_PIXEL_REQUEST_CONTROL);
 	amdrdna_vk_pm4_set_shader_run(pm4, STATE_PIXEL_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_UNITS, AMDRDNA_SH_UNITS_ALL);
-	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_UNITS_HIGH, AMDRDNA_SH_UNITS_HIGH_ALL);
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_VERTEX_UNITS, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_UNITS_ALL);
+	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_VERTEX_UNITS_HIGH, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_UNITS_HIGH_ALL);
 	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_REQUESTS, 0U);
+	amdrdna_vk_pm4_set_shader(pm4, AMDRDNA_SH_VERTEX_LATE_ALLOC, 0U);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_PARAMETER_CACHE, AMDRDNA_UC_PARAMETER_CACHE_PLAIN);
 	amdrdna_vk_pm4_set_shader_run(pm4, STATE_VERTEX_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
+	amdrdna_vk_pm4_set_shader_run(pm4, STATE_PRIMITIVE_ACCUMULATORS, zeros, STATE_ACCUMULATORS);
 
 	/* The depth unit's punch-out off, both units' cache policies. */
 	amdrdna_vk_pm4_set_context(pm4, STATE_DEPTH_PUNCH_OUT, STATE_PUNCH_OUT_OFF);
@@ -918,6 +1042,18 @@ state_start_graphics(
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_VERTEX_REUSE, 14U);
 	amdrdna_vk_pm4_set_context(pm4, STATE_CLIP_NGG, 0U);
 	amdrdna_vk_pm4_set_context(pm4, STATE_RESTART_INDEX, STATE_RESTART_ALL);
+
+	/*
+	 * The export stage's item size of one word and no screen offset, as
+	 * RADV's preamble has them.
+	 *
+	 * Values referenced: Mesa 25.0.7 src/amd/common/ac_cmdbuf.c
+	 * (gfx10_init_graphics_preamble_state: VGT_ESGS_RING_ITEMSIZE 1, line
+	 * 480) and src/amd/vulkan/radv_queue.c (radv_emit_graphics:
+	 * PA_SU_HARDWARE_SCREEN_OFFSET 0, line 771).
+	 */
+	amdrdna_vk_pm4_set_context(pm4, STATE_EXPORT_ITEM_SIZE, 1U);
+	amdrdna_vk_pm4_set_context(pm4, STATE_SCREEN_OFFSET, 0U);
 
 	/* The window and screen scissors over everything, the generic one until a draw sets it. */
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_WINDOW_OFFSET, 0U);
@@ -969,6 +1105,16 @@ state_start_graphics(
 	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_USER_VGPRS, 0U);
 	amdrdna_vk_pm4_set_user_config(pm4, STATE_STIPPLE_VALUE, 0U);
 	amdrdna_vk_pm4_set_user_config(pm4, STATE_STIPPLE_STATE, 0U);
+
+	/*
+	 * No primitive restart (its reset value is on), as RADV writes it for
+	 * a pipeline without primitiveRestartEnable.
+	 *
+	 * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+	 * (radv_emit_primitive_restart_enable: VGT_MULTI_PRIM_IB_RESET_EN from
+	 * the dynamic state on GFX9 to GFX10.3, line 3400).
+	 */
+	amdrdna_vk_pm4_set_user_config(pm4, STATE_RESTART_ON, 0U);
 }
 
 /*
@@ -1210,9 +1356,12 @@ state_clamp(
 static int
 state_topology(
 	struct amdrdna_vk_pm4 *pm4,
-	uint32_t topology)
+	uint32_t topology,
+	bool primitive_shader)
 {
 	uint32_t type;
+	uint32_t output;
+	uint32_t groups;
 
 	/*
 	 * The primitive type.
@@ -1223,29 +1372,41 @@ state_topology(
 	switch (topology) {
 	case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
 		type = AMDRDNA_PRIMITIVE_POINTS;
+		output = AMDRDNA_OUTPUT_POINTS;
 		break;
 	case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
 		type = AMDRDNA_PRIMITIVE_LINES;
+		output = AMDRDNA_OUTPUT_LINES;
 		break;
 	case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
 		type = AMDRDNA_PRIMITIVE_LINE_STRIP;
+		output = AMDRDNA_OUTPUT_LINES;
 		break;
 	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
 		type = AMDRDNA_PRIMITIVE_TRIANGLES;
+		output = AMDRDNA_OUTPUT_TRIANGLES;
 		break;
 	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
 		type = AMDRDNA_PRIMITIVE_TRIANGLE_STRIP;
+		output = AMDRDNA_OUTPUT_TRIANGLES;
 		break;
 	case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
 		type = 5U;
+		output = AMDRDNA_OUTPUT_TRIANGLES;
 		break;
 	default:
 		return EINVAL;
 	}
 
-	/* The type and the groups. */
+	/* The groups: a primitive shader's subgroup, or the legacy groups. */
+	groups = AMDRDNA_UC_GEOMETRY_GROUPS;
+	if (primitive_shader)
+		groups = AMDRDNA_UC_GEOMETRY_GROUPS_NGG;
+
+	/* The type, the type a primitive shader exports, and the groups. */
 	amdrdna_vk_pm4_set_user_config_indexed(pm4, AMDRDNA_UC_PRIMITIVE_TYPE, AMDRDNA_UC_PRIMITIVE_TYPE_INDEX, type);
-	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_GEOMETRY_CONTROL, AMDRDNA_UC_GEOMETRY_GROUPS);
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_OUTPUT_PRIMITIVE, output);
+	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_GEOMETRY_CONTROL, groups);
 
 	/* Succeeded: the type is written. */
 	return 0;

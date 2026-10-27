@@ -136,6 +136,14 @@ amdrdna_vk_device_id(void *owner)
 	return 0x1f02U;
 }
 
+/* ws291: the node's geometry mode; the pipelines of these tests run legacy vertex programs. */
+uint32_t
+amdrdna_vk_geometry_mode(void *owner)
+{
+	(void)owner;
+	return 0U;
+}
+
 uint64_t
 amdrdna_vk_heap_bytes(void *owner, bool cpu)
 {
@@ -434,6 +442,12 @@ decode_buffer(const uint32_t *words, uint32_t count, uint32_t run)
 			break;
 		case 0x79U:
 			decode_set(registers.user, words[at + 1U], &words[at + 2U], body - 1U);
+			break;
+		case 0x9bU:
+			/* ws291: a CU enable register through the indexed shader setter, index 3. */
+			if ((words[at + 1U] >> 28) != 3U)
+				decode_errors++;
+			decode_set(registers.shader, words[at + 1U] & 0xffffU, &words[at + 2U], body - 1U);
 			break;
 		case 0x7aU:
 			if ((words[at + 1U] >> 28) != 1U)
@@ -2726,10 +2740,18 @@ test_units(void)
 	/* Topologies: a fan is type 5, a strip 6; a patch list is refused. */
 	log_reset();
 	amdrdna_vk_pm4_start(&pm4, words, 256);
-	check(amdrdna_vk_state_draw(&pm4, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN, 5, 2) == 0 && decode_buffer(words, pm4.count, 0) == 0 &&
+	check(amdrdna_vk_state_draw(&pm4, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN, false, 5, 2) == 0 && decode_buffer(words, pm4.count, 0) == 0 &&
 	    draw_count == 1 && draw_log[0].vertices == 5 && draw_log[0].instances == 2 && reg(&draw_log[0], 0x30908U) == 5U &&
-	    reg(&draw_log[0], 0x3096cU) == (128U | (256U << 9)), "units: a fan of five vertices, two instances");
-	check(amdrdna_vk_state_draw(&pm4, VK_PRIMITIVE_TOPOLOGY_PATCH_LIST, 3, 1) == EINVAL, "units: a patch list is refused");
+	    reg(&draw_log[0], 0x3096cU) == (128U | (256U << 9)) && reg(&draw_log[0], 0x28a6cU) == 2U,
+	      "units: a fan of five vertices, two instances");
+	check(amdrdna_vk_state_draw(&pm4, VK_PRIMITIVE_TOPOLOGY_PATCH_LIST, false, 3, 1) == EINVAL, "units: a patch list is refused");
+
+	/* ws291: a primitive shader's draw has the groups of its subgroup (128 primitives, 126 - 5 vertices). */
+	log_reset();
+	amdrdna_vk_pm4_start(&pm4, words, 256);
+	check(amdrdna_vk_state_draw(&pm4, VK_PRIMITIVE_TOPOLOGY_LINE_STRIP, true, 4, 1) == 0 && decode_buffer(words, pm4.count, 0) == 0 &&
+	    draw_count == 1 && reg(&draw_log[0], 0x3096cU) == (128U | (121U << 9)) && reg(&draw_log[0], 0x28a6cU) == 1U,
+	      "units: a primitive shader's line strip");
 
 	/* A buffer too small: the packet that does not fit is not written, nor any after it. */
 	amdrdna_vk_pm4_start(&pm4, words, 5);

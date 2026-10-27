@@ -141,7 +141,9 @@
 #define AMDRDNA_GFX10_S_ANDN2_B32	0x14U
 #define AMDRDNA_GFX10_S_LSHL_B32	0x1eU
 #define AMDRDNA_GFX10_S_LSHR_B32	0x20U
+#define AMDRDNA_GFX10_S_BFM_B32		0x24U
 #define AMDRDNA_GFX10_S_MUL_I32		0x26U
+#define AMDRDNA_GFX10_S_BFE_U32		0x27U
 
 /*
  * The scalar operations with a 16-bit constant.
@@ -190,8 +192,23 @@
 #define AMDRDNA_GFX10_S_CBRANCH_EXECNZ	0x09U
 #define AMDRDNA_GFX10_S_BARRIER		0x0aU
 #define AMDRDNA_GFX10_S_WAITCNT		0x0cU
+#define AMDRDNA_GFX10_S_SETPRIO		0x0fU
+#define AMDRDNA_GFX10_S_SENDMSG		0x10U
 #define AMDRDNA_GFX10_S_CODE_END	0x1fU
 #define AMDRDNA_GFX10_S_WAITCNT_DEPCTR	0x23U
+
+/*
+ * The message a primitive shader's first wave sends to have the space of
+ * its subgroup's vertices and primitives given: M0 holds the vertex count
+ * in bits 10:0 and the primitive count in bits 22:12.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/common/ac_shader_util.h
+ * (AC_SENDMSG_GS_ALLOC_REQ 9, line 26) and
+ * src/amd/common/nir/ac_nir_prerast_utils.c
+ * (ac_nir_ngg_alloc_vertices_and_primitives: the payload's fields).
+ */
+#define AMDRDNA_GFX10_MESSAGE_GS_ALLOC	9U
+#define AMDRDNA_GFX10_ALLOC_PRIMITIVE_SHIFT 12U
 
 /*
  * ==== Scalar memory opcodes ====
@@ -492,16 +509,17 @@
 /*
  * ==== Export targets ====
  *
- * Colour target 0 (the others follow it), nothing, position 0 and
- * parameter 0.
+ * Colour target 0 (the others follow it), nothing, position 0, the
+ * primitive (of a primitive shader) and parameter 0.
  *
  * Values referenced: Mesa 25.0.7 src/amd/registers/gfx10-rsrc.json
- * (the enum of the export targets, lines 169-174: 0, 9, 12 and 32).
+ * (the enum of the export targets, lines 169-174: 0, 9, 12, 20 and 32).
  * Checked against llvm-mc 19.
  */
 #define AMDRDNA_GFX10_EXPORT_COLOR	0U
 #define AMDRDNA_GFX10_EXPORT_NOTHING	9U
 #define AMDRDNA_GFX10_EXPORT_POSITION	12U
+#define AMDRDNA_GFX10_EXPORT_PRIMITIVE	20U
 #define AMDRDNA_GFX10_EXPORT_PARAMETER	32U
 
 /*
@@ -571,6 +589,52 @@
 #define AMDRDNA_GFX10_ABI_INSTANCE_MASK	4U
 #define AMDRDNA_GFX10_ABI_USER_SGPRS	2U
 #define AMDRDNA_GFX10_ABI_USER_SGPRS_VS	5U
+
+/*
+ * A vertex program run as a primitive shader (the next-generation
+ * geometry path, in wave32): the table's address is in
+ * s[0:1] as for every program (the driver puts it in the stage's user data
+ * address registers), the hardware puts the subgroup's vertex count (bits
+ * 20:12) and primitive count (bits 30:22) in s2 and the wave's vertex
+ * count (bits 6:0), primitive count (bits 14:8) and number in the
+ * subgroup (bits 27:24) in s3, and the user
+ * SGPRs follow the hardware's eight from s8: the base vertex, the first
+ * instance, the mask of the locations fetched by instance.  The VGPRs: v0
+ * the primitive (in the passthrough mode already the export's word, else
+ * its first two vertices' numbers in the subgroup, 16 bits each, the third
+ * in the low half of v1), v5 the vertex number and v8 the instance number.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/vulkan/radv_shader_args.c
+ * (declare_shader_args, the merged geometry stage: the ring offsets in
+ * s[0:1], gs_tg_info, merged_wave_info and four more system SGPRs, the
+ * user SGPRs from s8, lines 564-567 and 745-756; the VGPRs gs_vtx_offset[0],
+ * gs_vtx_offset[1], gs_prim_id, gs_invocation_id, gs_vtx_offset[2], lines
+ * 803-807; declare_vs_input_vgprs, the NGG vertex program: vertex_id, two
+ * user VGPRs, instance_id, lines 170-175),
+ * src/amd/common/nir/ac_nir_lower_intrinsics_to_args.c (gs_tg_info's
+ * fields 12/9 and 22/9, lines 190-193, and merged_wave_info's wave
+ * number 24/4, line 71), src/amd/compiler/
+ * aco_instruction_selection.cpp (merged_wave_info_to_mask: the wave's
+ * counts in bits 6:0 of byte i) and src/amd/vulkan/radv_queue.c (the
+ * user data address of the geometry stage on GFX10, R_00B208, line 597).
+ * The field selectors below are s_bfe_u32's second source: the offset in
+ * bits 4:0, the width in bits 22:16 (the RDNA1 ISA's S_BFE_U32).
+ */
+#define AMDRDNA_GFX10_NGG_SUBGROUP_INFO	2U
+#define AMDRDNA_GFX10_NGG_WAVE_INFO	3U
+#define AMDRDNA_GFX10_NGG_BASE_VERTEX	8U
+#define AMDRDNA_GFX10_NGG_FIRST_INSTANCE 9U
+#define AMDRDNA_GFX10_NGG_INSTANCE_MASK	10U
+#define AMDRDNA_GFX10_NGG_USER_SGPRS	3U
+#define AMDRDNA_GFX10_NGG_SUBGROUP_VERTICES (12U | (9U << 16))
+#define AMDRDNA_GFX10_NGG_SUBGROUP_PRIMITIVES (22U | (9U << 16))
+#define AMDRDNA_GFX10_NGG_WAVE_VERTICES	(0U | (7U << 16))
+#define AMDRDNA_GFX10_NGG_WAVE_PRIMITIVES (8U | (7U << 16))
+#define AMDRDNA_GFX10_NGG_WAVE_NUMBER	0x0f000000U
+#define AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR 0U
+#define AMDRDNA_GFX10_NGG_VERTEX_ID_VGPR 5U
+#define AMDRDNA_GFX10_NGG_INSTANCE_ID_VGPR 8U
+#define AMDRDNA_GFX10_NGG_INPUT_VGPRS	9U
 
 /*
  * The parameter a vertex program exports the primitive number in when it
