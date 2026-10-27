@@ -3,7 +3,7 @@
 # ws305-p001 passthrough の調査と設計
 
 - 親: [WS305](../ws.md)。Queue q1619 / q1619-i01（P4）。
-- 状態: in-progress（2026-10-27 11:00 P4 着手。host の事実の読み取りは Debian が上がるのを待つ）
+- 状態: uncleared（q1619-i01、2026-10-27 11:57 ユーザーの指示のラップアップ。設計・問いは Q1 の OK 済み、host の事実（下の「host の事実」）が未読のまま。再開点は末尾）
 
 ## 範囲
 
@@ -140,3 +140,14 @@ qemu-system-x86_64 -accel kvm -machine q35 -cpu host -smp 8 -m 8G \
 - 2026-10-27 11:05 P4: 草案を Q1 へ（28ea66ed5）。11:10 Q1: 方向と問い 1〜3 を了解（上の答え）。
 - 2026-10-27 11:30 P4: script と image の config を作成（9c15842ac）。41_zedbsd_vfio は build host で dry-run（grub-mkconfig の環境を手で渡し、menuentry の出力を確認、install はしていない）。
   image は build/ws305/vm/hdd-image.img（sysroot は Q1 の指示で P2 の build/amd64/sysroot を複写、zedBSD の source の warning 0）。
+- 2026-10-27 11:57 P4: ラップアップ（ユーザーの指示、Q1 経由）。11:00〜11:57 の間 10.0.10.3 は ssh 不達（No route to host、P2 が lock を持ち zedBSD を BootNext で起動中）。機械には一度も触っていない。
+
+## 状態と再開点（2026-10-27 11:57）
+
+- 済み: 設計（上）と Q1 の答え 1〜3。script と image の config（`plan/ws305/tests/`）。
+- 未確認（host で未実施）: CPU（AMD-Vi か VT-d）、IOMMU の有効と GPU（`1002:731f`）・HDMI audio（`1002:ab38`）の group、grub の構成（/boot の分割、GRUB_DEFAULT）、qemu・OVMF の有無、RAM、resizable BAR の大きさ。
+- 再開: lock（build host の `/tmp/zedbsd-desktop.lock`）が空き、`ssh awe@10.0.10.3` が答える時に、Q1 に「使う」と送って OK の後、
+  1. 読むだけ: `lscpu | head`、`lspci -nnk -D`、`for g in /sys/kernel/iommu_groups/*; do ls $g/devices; done`、`dmesg | grep -iE 'AMD-Vi|DMAR|IOMMU'`、`cat /proc/cmdline`、`grep GRUB_ /etc/default/grub`、`free -g`。
+     → この節の「host の事実」に書き、group に GPU の 2 function（と bridge）以外が混ざっていたら止めて Q1 へ（slot を変える。ACS override は使わない）。
+  2. Intel なら 41_zedbsd_vfio の `intel_iommu=on` が効く。AMD で IOMMU が無効なら UEFI の設定が要る（ユーザーへ、Q1 経由）。
+  3. p001 を cleared にする判断を Q1 に頼み、p002 へ（p002 の phase.md の手順）。
