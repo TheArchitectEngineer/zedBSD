@@ -166,6 +166,13 @@ struct mview_renderer {
 	 */
 	uint32_t submits;
 	VkCommandBuffer *commands;
+
+	/*
+	 * Nonzero when every pipeline culls both faces (--cull=all): the
+	 * vertex work alone, nothing rasterized, for measuring the geometry
+	 * side of the scene.
+	 */
+	int cull_all;
 	VkRenderPass part_passes[3];
 	struct mview_buffer instances;
 	float instance_basis[6];
@@ -181,7 +188,7 @@ int mview_window_dispatch(struct mview_window *window, int timeout);
 void mview_window_close(struct mview_window *window);
 
 /* Renderer cleanup releases Vulkan ownership before the native window closes. */
-VkResult mview_renderer_open(struct mview_renderer *renderer, struct mview_window *window, int pixel_shading, VkPresentModeKHR present_mode, uint32_t copies, int each_draw, uint32_t submits);
+VkResult mview_renderer_open(struct mview_renderer *renderer, struct mview_window *window, int pixel_shading, VkPresentModeKHR present_mode, uint32_t copies, int each_draw, uint32_t submits, int cull_all);
 VkResult mview_renderer_load(struct mview_renderer *renderer, const struct mview_model *model);
 VkResult mview_renderer_draw(struct mview_renderer *renderer, const struct mview_model *model, const struct mview_camera *camera);
 VkResult mview_renderer_recreate(struct mview_renderer *renderer, uint32_t width, uint32_t height);

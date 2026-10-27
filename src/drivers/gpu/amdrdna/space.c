@@ -621,12 +621,14 @@ amdrdna_space_submit(
 		mutex_lock(&device->spaces.submit_lock);
 		irq = spin_lock_irqsave(&device->spaces.lock);
 
-		/* A failed device or a lost space runs nothing. */
+		/* A failed device or a lost space runs nothing (said, since the session only sees EIO). */
 		if (!device->spaces.ready ||
 		    device->spaces.faulted ||
 		    space->lost) {
 			spin_unlock_irqrestore(&device->spaces.lock, irq);
 			mutex_unlock(&device->spaces.submit_lock);
+			amdrdna_mark("space %u: run on ring %u refused (ready %d faulted %d lost %d)", (unsigned)space->id, tracked,
+			    (int)device->spaces.ready, (int)device->spaces.faulted, (int)space->lost);
 			return EIO;
 		}
 
@@ -706,6 +708,9 @@ amdrdna_space_wait(
 	struct amdrdna_device *device;
 	struct amdrdna_ring *ring;
 	unsigned long irq;
+	uint32_t resets;
+	uint32_t after;
+	uint32_t last;
 	bool dropped;
 	bool lost;
 	int error;
@@ -732,12 +737,19 @@ amdrdna_space_wait(
 
 	dropped = space_dropped_locked(device, ticket);
 	lost = space->lost;
+	resets = device->spaces.resets_of[ticket->tracked];
+	after = device->spaces.dropped_after[ticket->tracked];
+	last = device->spaces.dropped_last[ticket->tracked];
 
 	spin_unlock_irqrestore(&device->spaces.lock, irq);
 
-	/* Reports a run that did not do its work. */
-	if (dropped || lost)
+	/* Reports a run that did not do its work, and says why (the session only sees EIO). */
+	if (dropped || lost) {
+		amdrdna_mark("space %u: run %u on ring %u did no work (dropped %d: resets %u then %u, dropped %u..%u; lost %d)",
+		    (unsigned)space->id, (unsigned)ticket->sequence, ticket->tracked, (int)dropped, (unsigned)ticket->resets,
+		    (unsigned)resets, (unsigned)after, (unsigned)last, (int)lost);
 		return EIO;
+	}
 
 	/* The CPU reads what the GPU wrote to VRAM, not what the host path held. */
 	amdrdna_host_path_drop(device);
@@ -1960,10 +1972,12 @@ space_hang(
 	/* One reset at a time, and no run put on a ring meanwhile. */
 	mutex_lock(&device->spaces.submit_lock);
 
-	/* A run that passed meanwhile needs no reset. */
+	/* A run that passed meanwhile needs no reset (it ended late, or another waiter's reset dropped it). */
 	fence = amdrdna_ring_fence(device, ring);
 	if ((int32_t)(fence - ticket->sequence) >= 0) {
 		mutex_unlock(&device->spaces.submit_lock);
+		amdrdna_mark("space %u: run %u on ring %u passed after its time (fence %u)", (unsigned)space->id, (unsigned)ticket->sequence,
+		    ticket->tracked, (unsigned)fence);
 		return;
 	}
 
@@ -1980,6 +1994,10 @@ space_hang(
 	/* The space is lost, and its queue reset so the other sessions go on. */
 	space_lose(space, ETIMEDOUT);
 	space_reset(device, ticket->tracked, ticket->context);
+
+	/* What still works after the reset: the units' status and the waves left. */
+	amdrdna_spaces_mark_status(device);
+	amdrdna_spaces_mark_waves(device);
 
 	mutex_unlock(&device->spaces.submit_lock);
 }

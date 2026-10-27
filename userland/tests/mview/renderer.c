@@ -95,7 +95,8 @@ mview_renderer_open(
 	VkPresentModeKHR present_mode,
 	uint32_t copies,
 	int each_draw,
-	uint32_t submits)
+	uint32_t submits,
+	int cull_all)
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
@@ -112,6 +113,7 @@ mview_renderer_open(
 	renderer->copies = copies;
 	renderer->each_draw = each_draw;
 	renderer->submits = submits;
+	renderer->cull_all = cull_all;
 
 	/* The application requests only standard instance extensions. */
 	extensions[0] = VK_KHR_SURFACE_EXTENSION_NAME;
@@ -1566,6 +1568,10 @@ renderer_pipeline(
 	raster.cullMode = VK_CULL_MODE_BACK_BIT;
 	if (cull == MVIEW_CULL_NONE)
 		raster.cullMode = VK_CULL_MODE_NONE;
+
+	/* Both faces culled when asked (--cull=all): only the vertex work runs. */
+	if (renderer->cull_all != 0)
+		raster.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
 
 	raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	raster.lineWidth = 1.0f;
