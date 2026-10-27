@@ -9,6 +9,11 @@
 #                                      in $DIR/p6-save.img), so a write starts on erased flash and zedBSD's swap
 #                                      still configures
 #   sh bench-debian.sh p6save          keeps zedBSD's p6 in $DIR/p6-save.img (once; only its header is used)
+#   sh bench-debian.sh p7fresh         discards p7 (zedBSD-nvme-bench, the 32 GiB partition for measurements)
+#   sh bench-debian.sh p7raw           p7 discarded, P7_MIB MiB of patwrite's data written to it (page cache and
+#                                      fsync), then read back cold, through the page cache and direct
+#   sh bench-debian.sh p7fs            p7 discarded, an ext4 made on it, a file of P7_MIB MiB written (fsync) and
+#                                      read back cold; p7 is left unmounted
 # The data region: R0_MIB..R0_MIB+R_MIB of the disk lies inside the extents of $DIR/data.bin (12 GiB of random
 # bytes on Debian's ext4, never removed), so every read there reads mapped flash, not trimmed blocks that the
 # drive answers without reading.  The partition written is found by PARTUUID and its label and number are
@@ -16,7 +21,7 @@
 # its result line.  REST seconds pass before every write step.  Nothing is removed.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-MODE=${1:?read|write|p6fresh|p6save}
+MODE=${1:?read|write|p6fresh|p6save|p7fresh|p7raw|p7fs}
 DEV=/dev/nvme0n1
 P6=/dev/disk/by-partuuid/a26f52a1-fed3-4073-b577-1bc61322882f
 HMB=/sys/class/nvme/nvme0/hmb
@@ -28,6 +33,10 @@ CHUNKS=${CHUNKS:-16}
 REST=${REST:-30}
 RAND_SECONDS=${RAND_SECONDS:-15}
 RANDREAD=${RANDREAD:-$(dirname "$0")/randread-linux}
+PATWRITE=${PATWRITE:-$(dirname "$0")/patwrite-linux}
+P7=/dev/disk/by-partuuid/1beb91c6-dedf-4af0-b132-4770ccf2954d
+P7_MIB=${P7_MIB:-4096}
+P7_MNT=/mnt/bench7
 
 fail() {
 	echo "bench-debian: $*" >&2
@@ -42,6 +51,28 @@ p6_check() {
 	grep -q "^$dev " /proc/swaps && fail "p6 is a Debian swap"
 	findmnt -S "$dev" > /dev/null && fail "p6 is mounted"
 	return 0
+}
+
+# p7 must be the NVMe's measurement partition, unmounted and no swap.
+p7_check() {
+	dev=$(readlink -f "$P7")
+	[ "$dev" = /dev/nvme0n1p7 ] || fail "p7 is $dev"
+	[ "$(lsblk -no PARTLABEL "$dev")" = zedBSD-nvme-bench ] || fail "p7 is not labelled zedBSD-nvme-bench"
+	grep -q "^$dev " /proc/swaps && fail "p7 is a swap"
+	findmnt -S "$dev" > /dev/null && fail "p7 is mounted"
+	return 0
+}
+
+# Erases the whole of p7.
+p7_fresh() {
+	p7_check
+	blkdiscard "$P7" || fail "blkdiscard p7"
+}
+
+patstep() {
+	echo "step $1"
+	shift
+	"$PATWRITE" "$@"
 }
 
 # Erases p6 and puts the swap header back.
@@ -99,6 +130,11 @@ p6save)
 p6fresh)
 	p6_fresh
 	echo "p6 fresh"
+	exit 0
+	;;
+p7fresh)
+	p7_fresh
+	echo "p7 fresh"
 	exit 0
 	;;
 esac
@@ -188,6 +224,29 @@ write)
 	# The ext4 file, written again (dd truncates it first), as zedBSD's UFS file.
 	sleep "$REST"
 	ddstep ext4-w1m if=/dev/zero of="$DIR/w.bin" bs=1M count=1024 conv=fsync
+	;;
+p7raw)
+	p7_fresh
+	sleep "$REST"
+	patstep p7-rawwrite "$P7" "$P7_MIB"
+	sleep "$REST"
+	drop
+	ddstep p7-rawread if="$P7" of=/dev/null bs=1M count="$P7_MIB"
+	ddstep p7-rawread-direct if="$P7" of=/dev/null bs=1M count="$P7_MIB" iflag=direct
+	;;
+p7fs)
+	p7_fresh
+	sleep "$REST"
+	mkfs.ext4 -q -F -E nodiscard,lazy_itable_init=0,lazy_journal_init=0 "$P7" || fail "mkfs.ext4"
+	mkdir -p "$P7_MNT"
+	mount "$P7" "$P7_MNT" || fail "mount p7"
+	df -k "$P7_MNT" | tail -1
+	sleep "$REST"
+	patstep p7-fswrite "$P7_MNT/f.bin" "$P7_MIB"
+	sleep "$REST"
+	drop
+	ddstep p7-fsread if="$P7_MNT/f.bin" of=/dev/null bs=1M
+	umount "$P7_MNT" || fail "umount p7"
 	;;
 esac
 echo "bench done"

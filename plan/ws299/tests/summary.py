@@ -15,6 +15,7 @@ SHORT = {"IO_DRIVER_READ": "drv_rd", "IO_DRIVER_WRITE": "drv_wr", "IO_BUF_RUN_RE
          "IO_BUF_RUN_WRITE": "run_wr", "IO_BUF_SINGLE_GEOMETRY": "1_geom", "IO_BUF_SINGLE_MEMORY": "1_mem",
          "IO_BUF_SINGLE_BUSY": "1_busy", "IO_BUF_SINGLE_HIT": "1_hit"}
 
+PATWRITE = re.compile(r"patwrite mib=\d+ write_ms=(\d+) sync_ms=(\d+) MBps=(\d+) MBps_nosync=(\d+)")
 RANDREAD = re.compile(r"randread bs=\d+ qd=\d+ reads=\d+ MBps=([\d.]+) iops=(\d+) mean_us=([\d.]+)")
 
 
@@ -103,6 +104,10 @@ def zedbsd_rows(lines, numbers):
         match = RANDREAD.match(line)
         if match and step is not None:
             step["rand"] = match.groups()
+        match = PATWRITE.match(line)
+        if match and step is not None:
+            step["real"] = (int(match.group(1)) + int(match.group(2))) / 1000.0
+            step["pat"] = match.groups()
     # The raw pieces and their sync as one write.
     pieces = [row for row in rows if re.match(r"raw\d+$", row["name"]) or row["name"] == "rawsync"]
     if pieces:
@@ -120,6 +125,8 @@ def zedbsd_rows(lines, numbers):
         if real > 0 and row["bytes"] > 0:
             rate = "%.1f" % (row["bytes"] / real / 1e6)
         name = row["name"]
+        if "pat" in row:
+            name += " (write %s ms + sync %s ms; %s MB/s before the sync)" % (row["pat"][0], row["pat"][1], row["pat"][3])
         if "rand" in row:
             rate = row["rand"][0]
             name += " (%s IOPS, mean %s us)" % (row["rand"][1], row["rand"][2])
@@ -159,6 +166,12 @@ def debian_rows(lines):
         match = re.search(r"copied, ([\d.]+) s, ([\d.]+ [kMG]?B/s)", line)
         if match:
             table.append("| %s | %s s, %s |" % (step, match.group(1), match.group(2)))
+            step = None
+            continue
+        match = PATWRITE.match(line)
+        if match:
+            table.append("| %s | write %s MB/s with the sync (%s ms + sync %s ms; %s MB/s before it) |" % (
+                step, match.group(3), match.group(1), match.group(2), match.group(4)))
             step = None
             continue
         match = RANDREAD.match(line)

@@ -64,18 +64,27 @@
  * before then.
  *
  * Dirty memory is bounded by a 1/BUF_DIRTY_SHARE part of the cache, so it
- * never fills a small cache.  Past half of the bound the read-ahead workers
+ * never fills a small cache, and by BUF_DIRTY_SMALL as well for a write to a
+ * disk that writes one line at a time (no page lists), so that such a disk
+ * is not left with more to write at a sync than before.  Past half of the
+ * bound the read-ahead workers
  * also write the oldest dirty lines back while they have no read to do,
  * down to a quarter of the bound; past the bound a writer first writes some
  * back itself, and only when it can write none goes through at once, so
- * dirty memory stays bounded however fast a writer is.  Write-back sends
- * the adjacent dirty lines of a line along with it, as one page list, and
- * looks at BUF_WRITEBACK_SCAN lines from the oldest for one to start at.
+ * dirty memory stays bounded however fast a writer is.  A writer helps only
+ * with its own device; the workers skip a device read-ahead is stopped on
+ * and lines whose last write failed (the flusher retries those), and leave
+ * the device flush to the flusher.  Write-back sends the adjacent dirty
+ * lines of a line along with it, as one page list, gathered at most
+ * BUF_GATHER_HOLD at a time under the cache lock, and looks at
+ * BUF_WRITEBACK_SCAN lines from the oldest for one to start at.
  */
 #define BUF_FLUSH_INTERVAL	(KERN_CLOCK_HZ)
 #define BUF_FLUSH_AGE		(2U * KERN_CLOCK_HZ)
 #define BUF_DIRTY_SHARE		4U
-#define BUF_WRITEBACK_SCAN	64U
+#define BUF_DIRTY_SMALL		(UINT64_C(32) * 1024U * 1024U)
+#define BUF_WRITEBACK_SCAN	1024U
+#define BUF_GATHER_HOLD		64U
 #define BUF_FLUSH_LEAVES	8U
 #define BUF_FLUSH_PASS_MAX	65536U
 
@@ -405,8 +414,12 @@ static atomic_uint_t readahead_started;
  * whether a thread is gathering a cluster (others wait on
  * readahead_changed, so that two do not split one run); readahead_lock.
  */
-static unsigned writeback_wanted;
+static volatile unsigned writeback_wanted;
 static unsigned cluster_picking;
+
+/* The devices the workers wrote to since the flusher's last interval, referenced; readahead_lock. */
+static struct disk *writeback_unflushed[BUF_FLUSH_LEAVES];
+static unsigned writeback_unflushed_count;
 
 /*
  * What read-ahead did, for its log line: jobs queued and finished, bytes
@@ -530,11 +543,15 @@ static void cluster_gather(struct buf *buffer, struct buf_cluster *cluster, uint
 static void cluster_release(struct buf_cluster *cluster);
 static int cluster_write(struct buf_cluster *cluster, uint64_t line_blocks, int *sent);
 static int writeback_cluster(struct buf *buffer);
-static struct buf *writeback_oldest(void);
-static int writeback_oldest_cluster(struct disk **leaf);
-static void writeback_assist(const struct disk *disk, const struct io_context *context);
-static void writeback_kick(void);
-static void writeback_background(void);
+static int leaf_takes_pages(const struct disk *disk);
+static uint64_t dirty_limit_of(const struct disk *disk);
+static struct buf *writeback_oldest(struct disk *leaf, int worker);
+static void writeback_flush_note(struct disk *leaf);
+static void writeback_flush_noted(void);
+static int writeback_oldest_cluster(struct disk *leaf, struct buf_readahead_worker *worker);
+static void writeback_assist(const struct disk *disk, struct disk *leaf, const struct io_context *context);
+static void writeback_kick(const struct disk *disk);
+static void writeback_background(struct buf_readahead_worker *worker);
 
 /*
  * Initializes the buffer cache with its default byte cap.
@@ -1044,7 +1061,7 @@ buf_write_context(
 		 * to the device.
 		 */
 		run_blocks = 0;
-		writeback_assist(disk, context);
+		writeback_assist(disk, leaf, context);
 		delayed = writes_delayed(disk, context);
 		error = 0;
 		if (!delayed)
@@ -1091,12 +1108,16 @@ buf_write_context(
 		 */
 		mark_dirty(buffer, offset_blocks, amount_blocks, 0);
 		delayed = writes_delayed(disk, context);
+		if (!delayed && (disk->d_flags & DISK_WRITE_CACHED) != 0) {
+			writeback_assist(disk, leaf, context);
+			delayed = writes_delayed(disk, context);
+		}
 		error = 0;
 		if (!delayed)
 			error = buf_writeback_context(buffer, context);
 		buf_release(buffer);
 		if (delayed)
-			writeback_kick();
+			writeback_kick(disk);
 
 		if (error != 0)
 			return error;
@@ -3653,6 +3674,9 @@ flusher(
 		now = sched_ticks();
 		if (now > BUF_FLUSH_AGE)
 			(void)flush_aged(now - BUF_FLUSH_AGE);
+
+		/* Makes what the workers wrote durable. */
+		writeback_flush_noted();
 	}
 }
 
@@ -3794,7 +3818,7 @@ writes_delayed(
 
 	/* Past the bound a write goes through at once, which bounds dirty memory. */
 	dirty = atomic_u64_load_acquire(&cache_dirty_bytes);
-	if (dirty > atomic_u64_load_acquire(&dirty_limit_bytes))
+	if (dirty > dirty_limit_of(disk))
 		return 0;
 
 	/* Succeeded: reports that the write may wait in the cache. */
@@ -4062,6 +4086,38 @@ dirty_limit_for(
 	return limit;
 }
 
+/* Reports whether a disk's physical device takes page lists; read without the registry lock. */
+static int
+leaf_takes_pages(
+	const struct disk *disk)
+{
+	const struct disk *leaf;
+
+	/* Walks up the partitions, which stay while the disk is referenced. */
+	leaf = disk;
+	while (leaf->d_parent != NULL)
+		leaf = leaf->d_parent;
+
+	/* Succeeded: the device's capability. */
+	return (leaf->d_flags & DISK_PAGE_VECTOR) != 0;
+}
+
+/* The bound of dirty memory a delayed write to a disk is held to. */
+static uint64_t
+dirty_limit_of(
+	const struct disk *disk)
+{
+	uint64_t limit;
+
+	/* A disk that writes one line at a time keeps the small bound. */
+	limit = atomic_u64_load_acquire(&dirty_limit_bytes);
+	if (!leaf_takes_pages(disk) && limit > BUF_DIRTY_SMALL)
+		limit = BUF_DIRTY_SMALL;
+
+	/* Succeeded: the bound. */
+	return limit;
+}
+
 /*
  * Reports whether a line can go in a cluster: one whole page, dirty and
  * valid, pinned by no journal, and not being read or written; b_lock is
@@ -4175,37 +4231,58 @@ cluster_gather(
 	unsigned taken_before;
 	unsigned taken_after;
 	unsigned index;
+	unsigned held;
 	unsigned long irq;
+	int ended;
 
-	/* References the neighbours the cache holds, before and then after. */
+	/*
+	 * References the dirty neighbours the cache holds, before and then
+	 * after, BUF_GATHER_HOLD lookups to a hold of the cache lock.  The
+	 * dirty flag is only a hint here; cluster_take() looks again.
+	 */
 	middle = BUF_RUN_PAGE_LINES - 1U;
 	cluster->slots[middle] = buffer;
 	block = buffer->b_block;
 	before = 0;
 	after = 0;
-	irq = spin_lock_irqsave(&cache_lock);
+	ended = 0;
+	while (!ended && before < BUF_RUN_PAGE_LINES - 1U) {
+		irq = spin_lock_irqsave(&cache_lock);
 
-	while (before < BUF_RUN_PAGE_LINES - 1U &&
-	       block >= (uint64_t)(before + 1U) * line_blocks) {
-		line = hash_find_locked(buffer->b_disk, block - (uint64_t)(before + 1U) * line_blocks);
-		if (line == NULL)
-			break;
-		refcount_get(&line->b_refs);
-		lru_remove_locked(line);
-		cluster->slots[middle - 1U - before] = line;
-		before++;
-	}
-	while (before + after < BUF_RUN_PAGE_LINES - 1U) {
-		line = hash_find_locked(buffer->b_disk, block + (uint64_t)(after + 1U) * line_blocks);
-		if (line == NULL)
-			break;
-		refcount_get(&line->b_refs);
-		lru_remove_locked(line);
-		cluster->slots[middle + 1U + after] = line;
-		after++;
-	}
+		for (held = 0; held < BUF_GATHER_HOLD && before < BUF_RUN_PAGE_LINES - 1U; held++) {
+			line = NULL;
+			if (block >= (uint64_t)(before + 1U) * line_blocks)
+				line = hash_find_locked(buffer->b_disk, block - (uint64_t)(before + 1U) * line_blocks);
+			if (line == NULL || (line->b_flags & BUF_DIRTY) == 0) {
+				ended = 1;
+				break;
+			}
+			refcount_get(&line->b_refs);
+			lru_remove_locked(line);
+			cluster->slots[middle - 1U - before] = line;
+			before++;
+		}
 
-	spin_unlock_irqrestore(&cache_lock, irq);
+		spin_unlock_irqrestore(&cache_lock, irq);
+	}
+	ended = 0;
+	while (!ended && before + after < BUF_RUN_PAGE_LINES - 1U) {
+		irq = spin_lock_irqsave(&cache_lock);
+
+		for (held = 0; held < BUF_GATHER_HOLD && before + after < BUF_RUN_PAGE_LINES - 1U; held++) {
+			line = hash_find_locked(buffer->b_disk, block + (uint64_t)(after + 1U) * line_blocks);
+			if (line == NULL || (line->b_flags & BUF_DIRTY) == 0) {
+				ended = 1;
+				break;
+			}
+			refcount_get(&line->b_refs);
+			lru_remove_locked(line);
+			cluster->slots[middle + 1U + after] = line;
+			after++;
+		}
+
+		spin_unlock_irqrestore(&cache_lock, irq);
+	}
 
 	/* Takes the neighbours nearest first, and lets go of those past the first that cannot join. */
 	for (taken_before = 0; taken_before < before; taken_before++) {
@@ -4344,7 +4421,7 @@ writeback_cluster(
 	    disk->d_block_size == 0 ||
 	    disk->d_block_size > KERN_PAGE_SIZE ||
 	    KERN_PAGE_SIZE % disk->d_block_size != 0 ||
-	    !disk_page_vector_supported(disk))
+	    !leaf_takes_pages(disk))
 		return writeback_line(buffer, NULL, 1);
 	line_blocks = KERN_PAGE_SIZE / disk->d_block_size;
 
@@ -4390,32 +4467,39 @@ writeback_cluster(
 }
 
 /*
- * Takes the oldest dirty line that no journal pins and nobody uses, busy
- * and referenced, looking at BUF_WRITEBACK_SCAN lines from the oldest
- * (lines being written stay on the list until they are clean).  NULL when
- * there is none.
+ * Takes the oldest dirty line of a device (of any, when leaf is NULL) that
+ * no journal pins, nobody uses and whose last write did not fail, busy and
+ * referenced, looking at BUF_WRITEBACK_SCAN lines from the oldest (lines
+ * being written stay on the list until they are clean).  A worker also
+ * passes over a device whose medium is gone or whose read-ahead is
+ * stopped.  NULL when there is none.
  */
 static struct buf *
 writeback_oldest(
-	void)
+	struct disk *leaf,
+	int worker)
 {
 	struct buf *candidate;
+	struct disk *device;
 	unsigned long irq;
 	unsigned seen;
 	int taken;
 
-	/* Walks the dirty list, in the order lines became dirty; busy and pin are only hints here. */
+	/* Walks a dirty list, in the order lines became dirty; the fields read are only hints here. */
 	irq = spin_lock_irqsave(&dirty_index_lock);
 
-	candidate = dirty_head;
+	candidate = leaf != NULL ? leaf->d_dirty_buffers : dirty_head;
 	for (seen = 0; candidate != NULL && seen < BUF_WRITEBACK_SCAN; seen++) {
+		device = candidate->b_disk;
 		if (candidate->b_journal_pin == 0 &&
 		    !candidate->b_busy &&
-		    !candidate->b_io_inflight) {
+		    !candidate->b_io_inflight &&
+		    (candidate->b_flags & BUF_ERROR) == 0 &&
+		    (!worker || (device->d_media_revoked == 0 && device->d_readahead_stops == 0))) {
 			refcount_get(&candidate->b_refs);
 			break;
 		}
-		candidate = candidate->b_dirty_next;
+		candidate = leaf != NULL ? candidate->b_device_dirty_next : candidate->b_dirty_next;
 	}
 	if (seen == BUF_WRITEBACK_SCAN)
 		candidate = NULL;
@@ -4435,13 +4519,13 @@ writeback_oldest(
 
 	irq = spin_lock_irqsave(&candidate->b_lock);
 
-	taken = !candidate->b_busy;
+	taken = !candidate->b_busy && (candidate->b_flags & BUF_ERROR) == 0;
 	if (taken)
 		candidate->b_busy = 1;
 
 	spin_unlock_irqrestore(&candidate->b_lock, irq);
 
-	/* Another thread took it meanwhile. */
+	/* Another thread took it meanwhile, or its write failed meanwhile. */
 	if (!taken) {
 		drop_caller_reference(candidate);
 		return NULL;
@@ -4452,60 +4536,162 @@ writeback_oldest(
 }
 
 /*
- * Writes back the oldest dirty line that can be written, with its
- * neighbours, and reports its disk.  ENOENT when there is none.
+ * Remembers a device a worker wrote to, so that the flusher flushes it at
+ * its next interval; the list holds a reference to each device.  A device
+ * that does not fit is flushed here.
+ */
+static void
+writeback_flush_note(
+	struct disk *leaf)
+{
+	unsigned long irq;
+	unsigned index;
+	int kept;
+
+	/* Takes a reference for the list before the lock. */
+	disk_ref(leaf);
+	kept = 0;
+
+	irq = spin_lock_irqsave(&readahead_lock);
+
+	for (index = 0; index < writeback_unflushed_count; index++) {
+		if (writeback_unflushed[index] == leaf)
+			kept = 2;
+	}
+	if (kept == 0 && writeback_unflushed_count < BUF_FLUSH_LEAVES) {
+		writeback_unflushed[writeback_unflushed_count++] = leaf;
+		kept = 1;
+	}
+
+	spin_unlock_irqrestore(&readahead_lock, irq);
+
+	/* A device already listed keeps one reference; one that did not fit is flushed now. */
+	if (kept == 0)
+		(void)bio_flush(leaf);
+	if (kept != 1)
+		disk_release(leaf);
+}
+
+/* Flushes the devices the workers wrote to since the last interval; the flusher calls it. */
+static void
+writeback_flush_noted(
+	void)
+{
+	struct disk *leaves[BUF_FLUSH_LEAVES];
+	unsigned long irq;
+	unsigned count;
+	unsigned index;
+
+	/* Takes the list over. */
+	irq = spin_lock_irqsave(&readahead_lock);
+
+	count = writeback_unflushed_count;
+	for (index = 0; index < count; index++)
+		leaves[index] = writeback_unflushed[index];
+	writeback_unflushed_count = 0;
+
+	spin_unlock_irqrestore(&readahead_lock, irq);
+
+	/* Flushes each device and gives its reference back. */
+	for (index = 0; index < count; index++) {
+		(void)bio_flush(leaves[index]);
+		disk_release(leaves[index]);
+	}
+}
+
+/*
+ * Writes back the oldest dirty line that can be written (of one device, or
+ * of any), with its neighbours.  A worker marks the device as the one it
+ * runs on while it writes, so that a stopper waits for it, and gives up a
+ * line of a device stopped meanwhile.  ENOENT when there is nothing to
+ * write.
  */
 static int
 writeback_oldest_cluster(
-	struct disk **leaf)
+	struct disk *leaf,
+	struct buf_readahead_worker *worker)
 {
 	struct buf *buffer;
+	struct disk *device;
+	unsigned long irq;
+	int stopped;
 	int error;
 
 	/* Takes the line. */
-	buffer = writeback_oldest();
+	buffer = writeback_oldest(leaf, worker != NULL);
 	if (buffer == NULL)
 		return ENOENT;
+	device = buffer->b_disk;
 
-	/* Writes it and its neighbours, then gives it back. */
-	*leaf = buffer->b_disk;
+	/* A worker runs on the device only while it is not stopped. */
+	if (worker != NULL) {
+		irq = spin_lock_irqsave(&readahead_lock);
+
+		stopped = device->d_readahead_stops != 0;
+		if (!stopped)
+			worker->running = device;
+
+		spin_unlock_irqrestore(&readahead_lock, irq);
+
+		if (stopped) {
+			buf_release(buffer);
+			return ENOENT;
+		}
+	}
+
+	/* Writes the line and its neighbours, then gives it back. */
 	error = writeback_cluster(buffer);
 	buf_release(buffer);
+
+	/* Lets a stopper go on, and leaves the device flush to the flusher. */
+	if (worker != NULL) {
+		irq = spin_lock_irqsave(&readahead_lock);
+
+		worker->running = NULL;
+		waitq_wake_all(&readahead_changed);
+
+		spin_unlock_irqrestore(&readahead_lock, irq);
+
+		if (error == 0)
+			writeback_flush_note(device);
+	}
 
 	/* Reports the outcome. */
 	return error;
 }
 
 /*
- * Before a delayed write past the dirty bound, writes back some of the
- * oldest dirty lines in the writer's thread, down to seven eighths of the
- * bound, so that the write can stay in the cache.  The writer owns no line
- * here and never waits for one.  A failure is left to the flusher (the
- * lines stay dirty and marked); the writer's own write is not failed by it.
+ * Before or after a delayed write past the dirty bound, writes back some
+ * of the oldest dirty lines of the writer's own device in the writer's
+ * thread, down to seven eighths of the bound, so that the write can stay
+ * in the cache.  The writer may own one line here; it never waits for
+ * another.  A failure is left to the flusher (the lines stay dirty and
+ * marked); the writer's own write is not failed by it.
  */
 static void
 writeback_assist(
 	const struct disk *disk,
+	struct disk *leaf,
 	const struct io_context *context)
 {
-	struct disk *leaf;
 	uint64_t limit;
 	unsigned written;
 
-	/* Only a write that would stay in the cache helps. */
+	/* Only a write that would stay in the cache helps, on a device that takes page lists. */
 	if ((disk->d_flags & DISK_WRITE_CACHED) == 0 ||
 	    (context != NULL && context->claim != NULL) ||
+	    !leaf_takes_pages(leaf) ||
 	    thread_current() == NULL)
 		return;
 
 	/* Writes clusters while dirty memory is past the mark, a bounded number of them. */
-	limit = atomic_u64_load_acquire(&dirty_limit_bytes);
+	limit = dirty_limit_of(disk);
 	if (atomic_u64_load_acquire(&cache_dirty_bytes) <= limit)
 		return;
 	for (written = 0; written < BUF_FLUSH_LEAVES; written++) {
 		if (atomic_u64_load_acquire(&cache_dirty_bytes) <= limit - limit / 8U)
 			break;
-		if (writeback_oldest_cluster(&leaf) != 0)
+		if (writeback_oldest_cluster(leaf, NULL) != 0)
 			break;
 	}
 }
@@ -4513,17 +4699,17 @@ writeback_assist(
 /*
  * Asks the read-ahead workers to write the oldest dirty lines back once
  * dirty memory is past half of its bound, making the workers if there are
- * none yet.
+ * none yet.  The caller owns no line and holds no lock.
  */
 static void
 writeback_kick(
-	void)
+	const struct disk *disk)
 {
 	unsigned long irq;
 
-	/* Below half of the bound there is nothing to ask. */
-	if (atomic_u64_load_acquire(&cache_dirty_bytes) <=
-	    atomic_u64_load_acquire(&dirty_limit_bytes) / 2U ||
+	/* Below half of the bound, or already asked, there is nothing to do. */
+	if (writeback_wanted ||
+	    atomic_u64_load_acquire(&cache_dirty_bytes) <= dirty_limit_of(disk) / 2U ||
 	    thread_current() == NULL)
 		return;
 
@@ -4544,58 +4730,37 @@ writeback_kick(
 
 /*
  * Writes back the oldest dirty lines in a worker until dirty memory is a
- * quarter of its bound, nothing can be written, or a read-ahead job waits;
- * then flushes the devices written to, as the flusher does after a pass.
+ * quarter of its bound, nothing can be written, a write fails, or a
+ * read-ahead job waits.
  */
 static void
 writeback_background(
-	void)
+	struct buf_readahead_worker *worker)
 {
-	struct disk *leaves[BUF_FLUSH_LEAVES];
-	struct disk *leaf;
 	unsigned long irq;
-	unsigned count;
-	unsigned index;
-	int known;
+	int waiting;
 	int error;
 
 	/* Writes clusters from the oldest. */
-	count = 0;
 	error = 0;
 	while (atomic_u64_load_acquire(&cache_dirty_bytes) >
 	       atomic_u64_load_acquire(&dirty_limit_bytes) / 4U) {
 		/* A read-ahead job goes first. */
 		irq = spin_lock_irqsave(&readahead_lock);
-		known = readahead_queue_count != 0;
+		waiting = readahead_queue_count != 0;
 		spin_unlock_irqrestore(&readahead_lock, irq);
-		if (known)
-			break;
+		if (waiting)
+			return;
 
-		error = writeback_oldest_cluster(&leaf);
+		error = writeback_oldest_cluster(NULL, worker);
 		if (error != 0)
 			break;
-
-		/* Remembers a new device, so that it is flushed at the end. */
-		known = 0;
-		for (index = 0; index < count; index++) {
-			if (leaves[index] == leaf)
-				known = 1;
-		}
-		if (!known && count < BUF_FLUSH_LEAVES)
-			leaves[count++] = leaf;
 	}
 
-	/* Makes what was written durable on each device. */
-	for (index = 0; index < count; index++)
-		(void)bio_flush(leaves[index]);
-
-	/* Stops asking when done, or when nothing could be written; the next dirtying asks again. */
-	if (error != 0 || atomic_u64_load_acquire(&cache_dirty_bytes) <=
-	    atomic_u64_load_acquire(&dirty_limit_bytes) / 4U) {
-		irq = spin_lock_irqsave(&readahead_lock);
-		writeback_wanted = 0;
-		spin_unlock_irqrestore(&readahead_lock, irq);
-	}
+	/* Stops asking; the next delayed write past half of the bound asks again. */
+	irq = spin_lock_irqsave(&readahead_lock);
+	writeback_wanted = 0;
+	spin_unlock_irqrestore(&readahead_lock, irq);
 }
 
 /*
@@ -4931,7 +5096,7 @@ readahead_worker(
 		/* With no read to do, writes dirty lines back as asked. */
 		if (readahead_queue_count == 0) {
 			spin_unlock_irqrestore(&readahead_lock, irq);
-			writeback_background();
+			writeback_background(worker);
 			continue;
 		}
 		job = readahead_queue[readahead_queue_head];

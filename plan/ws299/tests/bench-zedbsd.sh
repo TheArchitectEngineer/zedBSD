@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws299: the NVMe read/write measurement on the Latitude 5330's zedBSD, run as root by nvme-bench-5330.sh.
-#   sh bench-zedbsd.sh read | write
+#   sh bench-zedbsd.sh read | write | p7rawwrite | p7rawread | p7fswrite | p7fsread
 # read:  /dev/zero at three block sizes; random 4 KiB reads at depth 1 and 32 (randread, copied to RANDREAD);
 #        the UFS file WFILE read cold (the write mode of an earlier boot wrote it); reads of /dev/nvme0n1 at three
 #        block sizes and the curve of CHUNKS reads of CHUNK_MIB MiB, all inside the data region R0_MIB..+R_MIB
@@ -11,11 +11,14 @@
 #        swap on p6 (zedBSD's own, discarded by the caller before this boot) can be turned off, 1 GiB of zeros onto
 #        p6 in four pieces of 256 MiB and a sync (the caller puts the swap header back from Debian).  Debian's
 #        partitions are never written.
+# p7*:  the 32 GiB measurement partition p7 (zedBSD-nvme-bench; the caller discards it from Debian before the write
+#        boots): P7_MIB MiB of patwrite's data written raw and synced, read back raw in the next boot; a UFS made
+#        on p7 (mkfs), a file of P7_MIB MiB written and synced, read back in the next boot.
 # Every timed step prints "step NAME bytes=N" and the /bin/time lines (real/user/sys); the summary is made on the
 # build host (summary.py).  The only file removed is WFILE_NEW, inside zedBSD, before it is written again.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-MODE=${1:?read|write}
+MODE=${1:?read|write|p7rawwrite|p7rawread|p7fswrite|p7fsread}
 DEV=/dev/nvme0n1
 SWAP=/dev/nvme0n1p6
 R0_MIB=${R0_MIB:-25681}
@@ -28,6 +31,10 @@ RANDREAD=${RANDREAD:-/tmp/randread-zedbsd}
 FILE_MIB=${FILE_MIB:-1024}
 WFILE=${WFILE:-/home/kei/ws299-w.bin}
 WFILE_NEW=${WFILE_NEW:-/home/kei/ws299-n.bin}
+PATWRITE=${PATWRITE:-/tmp/patwrite-zedbsd}
+P7=/dev/nvme0n1p7
+P7_MIB=${P7_MIB:-4096}
+P7_MNT=/mnt/bench7
 
 snap() {
 	echo "snap $1"
@@ -145,6 +152,34 @@ write)
 	else
 		echo "swapoff failed: raw write skipped"
 	fi
+	;;
+p7rawwrite)
+	echo "step p7-rawwrite bytes=$((P7_MIB * 1048576))"
+	"$PATWRITE" $P7 "$P7_MIB"
+	snap p7-rawwrite
+	;;
+p7rawread)
+	step p7-rawread $((P7_MIB * 1048576)) if=$P7 of=/dev/null bs=1024k count="$P7_MIB"
+	snap p7-rawread
+	;;
+p7fswrite)
+	mkfs -t ufs --profile=native nvme0n1p7 || { echo "mkfs failed"; exit 1; }
+	mkdir -p $P7_MNT
+	mount -t ufs $P7 $P7_MNT || { echo "mount failed"; exit 1; }
+	df $P7_MNT
+	snap prepared
+	sleep "$REST"
+	echo "step p7-fswrite bytes=$((P7_MIB * 1048576))"
+	"$PATWRITE" $P7_MNT/f.bin "$P7_MIB"
+	snap p7-fswrite
+	umount $P7_MNT
+	;;
+p7fsread)
+	mkdir -p $P7_MNT
+	mount -t ufs $P7 $P7_MNT || { echo "mount failed"; exit 1; }
+	step p7-fsread $((P7_MIB * 1048576)) if=$P7_MNT/f.bin of=/dev/null bs=1024k
+	snap p7-fsread
+	umount $P7_MNT
 	;;
 esac
 echo "bench done"

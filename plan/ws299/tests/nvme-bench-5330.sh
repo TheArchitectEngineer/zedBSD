@@ -32,7 +32,7 @@ SO='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeou
 RANDREAD_DIR=${RANDREAD_DIR:-build/tmp/randread}
 ENVS="REST=${REST:-30} RAND_SECONDS=${RAND_SECONDS:-15}"
 mkdir -p "$LOGS"
-[ -x "$RANDREAD_DIR/randread-zedbsd" ] && [ -x "$RANDREAD_DIR/randread-linux" ] ||
+[ -x "$RANDREAD_DIR/patwrite-zedbsd" ] && [ -x "$RANDREAD_DIR/patwrite-linux" ] ||
 	sh $T/build-randread.sh "$RANDREAD_DIR" > /dev/null || { echo "nvme-bench: FAIL: randread build"; exit 1; }
 
 say() {
@@ -58,7 +58,8 @@ debian_up() {
 exec 9> /tmp/i915-hw.lock
 flock 9
 debian_up
-TO=60 timeout 60 scp -q $T/bench-debian.sh "$RANDREAD_DIR/randread-linux" plan/tools/hw5330/5330-nvme-write.sh "$HOST:ws245/" ||
+TO=60 timeout 60 scp -q $T/bench-debian.sh "$RANDREAD_DIR/randread-linux" "$RANDREAD_DIR/patwrite-linux" \
+    plan/tools/hw5330/5330-nvme-write.sh "$HOST:ws245/" ||
 	{ say "FAIL: copy of the helpers"; exit 1; }
 lin 'sudo -n sh $HOME/ws245/bench-debian.sh p6save' > /dev/null || { say "FAIL: p6 save"; exit 1; }
 
@@ -94,6 +95,10 @@ entry=$(lin "sudo -n efibootmgr -v" | grep -i 08ab575f-f718-4eff-a3c9-10d80b1217
 
 for mode in $MODES; do
 	[ "$mode" = write ] && p6fresh
+	case "$mode" in
+	p7rawwrite | p7fswrite)
+		lin 'sudo -n sh $HOME/ws245/bench-debian.sh p7fresh' > /dev/null || { say "FAIL: p7 fresh"; exit 1; } ;;
+	esac
 	settle
 	lin "sudo -n efibootmgr -n $entry > /dev/null && sudo -n systemctl reboot" > /dev/null 2>&1
 	sleep 20
@@ -107,7 +112,8 @@ for mode in $MODES; do
 	done
 	say "zedBSD up after $(($(date +%s) - start + 20)) s ($mode)"
 	sleep "${SETTLE:-30}"
-	TO=60 timeout 60 sshpass -p kei scp $SO $T/bench-zedbsd.sh "$RANDREAD_DIR/randread-zedbsd" "kei@$ZB:/tmp/" ||
+	TO=60 timeout 60 sshpass -p kei scp $SO $T/bench-zedbsd.sh "$RANDREAD_DIR/randread-zedbsd" "$RANDREAD_DIR/patwrite-zedbsd" \
+	    "kei@$ZB:/tmp/" ||
 		say "copy to zedBSD failed"
 	TO=1500 zb "echo kei | sudo -S env $ENVS sh /tmp/bench-zedbsd.sh $mode" > "$LOGS/$NAME-$mode.txt" 2>&1
 	say "zedbsd $mode rc=$? ($(tail -1 "$LOGS/$NAME-$mode.txt"))"
