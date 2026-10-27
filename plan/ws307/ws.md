@@ -69,3 +69,4 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 ユーザー「P4に、ESPにカーネルをインストールすると回答してしまいましたが、ブートローダがUFSからカーネルをロードできるようにしたいです。そのphaseを作ってほしいです。」→ boot loader が UFS から kernel を読む Phase を足す（P4 が spec と Phase の表に、q1643）。
 - 2026-10-28 U19「ESP（FAT）のまま (推し)」、U20「root の UFS（/boot/logo.ppm） (推し)」、U21「image は今のまま (推し)」（ユーザーのクリック、Q1 経由）。
 - 2026-10-28 ユーザー「P4に伝えて下さい。make menuconfigは、インストーラ作成の場合、カーネルのコンフィグには使いますが、make installer-imageでは、すべてのパッケージをビルドしますし、イメージの形式（kernelのパーティション）が異なります。」→ installer の image は `make installer-image`（全 package を build、image の形は hdd-image.img と違う）。menuconfig は kernel の config だけ。
+- 2026-10-28 U22「9 項目＋「その他」で個別 (推し)」、U23「インストーライメージでは、ESPにブートローダ、BOOT FAT32にカーネルとzedbsd.cfg、rootfs, swapのパーティションを置きます。」、U24「FW は driver の選択、tests・X11 無し (推し)」（ユーザー、Q1 経由）。
