@@ -162,8 +162,13 @@
 
 #define UFS_QUOTA_XATTR			"system.zedbsd.quota"
 
-#define UFS_ALLOCATION_BLOCKS		16U
-#define UFS_ALLOCATION_BYTES		65536U
+/*
+ * The most one allocation run of a file write covers: the blocks it
+ * allocates, records in the cylinder group and the inode, and publishes
+ * together, so that a long write updates them once a run.
+ */
+#define UFS_ALLOCATION_BLOCKS		128U
+#define UFS_ALLOCATION_BYTES		(1024U * 1024U)
 
 #define SECTOR_SIZE			512U
 
