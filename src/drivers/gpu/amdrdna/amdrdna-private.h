@@ -321,6 +321,9 @@ enum amdrdna_ring_kind {
 	AMDRDNA_RING_COPY
 };
 
+/* The fenced submissions a ring remembers the end of (more than a full ring of them holds). */
+#define AMDRDNA_RING_HISTORY		64U
+
 /*
  * One ring of commands the driver writes and an engine reads.
  *
@@ -334,7 +337,11 @@ enum amdrdna_ring_kind {
  * interrupt thread takes it to count the ring's interrupts.  fences is
  * woken under lock at each of the ring's end-of-pipe events, so a waiter
  * for its fence wakes when the fence is written rather than at the next
- * tick (amdrdna_ring_wait()).  image_copy
+ * tick (amdrdna_ring_wait()).  done_value and done_pointer keep, for the
+ * last AMDRDNA_RING_HISTORY fenced submissions, each one's fence value and
+ * the write pointer after it: once a fence has passed, the engine has read
+ * up to there, whatever read pointer it last reported (it reports it only
+ * now and then).  image_copy
  * keeps the queue image as it was filled, for a later reset.  up says the
  * engine runs the ring.  The buffers live as long as the GPU may touch
  * them, which is the record's life.
@@ -353,6 +360,8 @@ struct amdrdna_ring {
 	struct spinlock lock;
 	uint64_t write_pointer;
 	uint32_t sequence;
+	uint32_t done_value[AMDRDNA_RING_HISTORY];
+	uint64_t done_pointer[AMDRDNA_RING_HISTORY];
 	uint64_t interrupts;
 	struct wait_queue fences;
 	bool up;

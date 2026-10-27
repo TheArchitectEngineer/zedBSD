@@ -565,7 +565,9 @@ amdrdna_ring_submit(
 	room = ring_room(device, ring);
 	if (count + fence_words + block > room) {
 		spin_unlock_irqrestore(&ring->lock, irq);
-		amdrdna_mark("%s ring full: %u words, room %u", ring->name, count + fence_words, room);
+		amdrdna_mark("%s ring full: %u words, room %u (read %u, write %llu, fence %u of %u)", ring->name, count + fence_words, room,
+		    (unsigned)*amdrdna_ring_word(device, ring, CP_WORD_READ), (unsigned long long)ring->write_pointer,
+		    (unsigned)*amdrdna_ring_word(device, ring, CP_WORD_FENCE), (unsigned)ring->sequence);
 		return EBUSY;
 	}
 
@@ -593,9 +595,11 @@ amdrdna_ring_submit(
 		ring->write_pointer++;
 	}
 
-	/* The fence's value is the ring's newest. */
+	/* The fence's value is the ring's newest; the engine has read up to here once it passes. */
 	if (sequence != NULL) {
 		ring->sequence = value;
+		ring->done_value[value % AMDRDNA_RING_HISTORY] = value;
+		ring->done_pointer[value % AMDRDNA_RING_HISTORY] = ring->write_pointer;
 		*sequence = value;
 	}
 
@@ -1779,6 +1783,8 @@ amdrdna_cp_graphics_reset(
 	for (index = 0U; index < ring->bytes / 4U; index++)
 		slots[index] = amdrdna_pm4_filler();
 	ring->write_pointer = 0U;
+	kern_memset(ring->done_value, 0, sizeof(ring->done_value));
+	kern_memset(ring->done_pointer, 0, sizeof(ring->done_pointer));
 	*amdrdna_ring_word(device, ring, CP_WORD_READ) = 0U;
 	amdrdna_ring_word(device, ring, CP_WORD_WRITE)[0] = 0U;
 	amdrdna_ring_word(device, ring, CP_WORD_WRITE)[1] = 0U;
@@ -1923,6 +1929,8 @@ amdrdna_cp_compute_reset(
 	for (slot = 0U; slot < ring->bytes / 4U; slot++)
 		slots[slot] = amdrdna_pm4_filler();
 	ring->write_pointer = 0U;
+	kern_memset(ring->done_value, 0, sizeof(ring->done_value));
+	kern_memset(ring->done_pointer, 0, sizeof(ring->done_pointer));
 	*amdrdna_ring_word(device, ring, CP_WORD_READ) = 0U;
 	amdrdna_ring_word(device, ring, CP_WORD_WRITE)[0] = 0U;
 	amdrdna_ring_word(device, ring, CP_WORD_WRITE)[1] = 0U;
@@ -1953,14 +1961,23 @@ amdrdna_cp_compute_reset(
 	return 0;
 }
 
-/* Reports the words a ring can take before it would overwrite what the engine has not read. */
+/*
+ * Reports the words a ring can take before it would overwrite what the
+ * engine has not read: what lies after the read pointer it reported, or
+ * after the end of the newest submission whose fence has passed when that
+ * is less (the engine reports its read pointer only now and then, so the
+ * report may lag the work done).
+ */
 static unsigned
 ring_room(
 	struct amdrdna_device *device,
 	const struct amdrdna_ring *ring)
 {
 	uint32_t read_pointer;
+	uint32_t fence;
+	uint32_t slot;
 	uint32_t used;
+	uint32_t pending;
 	uint32_t words;
 
 	/* The engine's read pointer: dwords, or bytes for the copy engine. */
@@ -1968,9 +1985,20 @@ ring_room(
 	if (ring->kind == AMDRDNA_RING_COPY)
 		read_pointer >>= 2;
 
-	/* What the engine has not read yet. */
+	/* What the engine has not read yet, by its report. */
 	words = ring->bytes / 4U;
 	used = ((uint32_t)ring->write_pointer - read_pointer) & (words - 1U);
+
+	/* Less when the newest passed fence is remembered: the engine read everything up to its submission's end. */
+	fence = *amdrdna_ring_word(device, ring, CP_WORD_FENCE);
+	slot = fence % AMDRDNA_RING_HISTORY;
+	if (fence != 0U &&
+	    ring->done_value[slot] == fence &&
+	    ring->write_pointer - ring->done_pointer[slot] < words) {
+		pending = (uint32_t)(ring->write_pointer - ring->done_pointer[slot]);
+		if (pending < used)
+			used = pending;
+	}
 
 	/* Succeeded: the rest, less one word that keeps a full ring from looking empty. */
 	return words - used - 1U;

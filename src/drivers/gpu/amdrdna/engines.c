@@ -616,6 +616,8 @@ engines_ring(
 	 */
 	ring->write_pointer = 0U;
 	ring->sequence = 0U;
+	kern_memset(ring->done_value, 0, sizeof(ring->done_value));
+	kern_memset(ring->done_pointer, 0, sizeof(ring->done_pointer));
 	ring->up = false;
 
 	/* A ring without a queue image is done. */
