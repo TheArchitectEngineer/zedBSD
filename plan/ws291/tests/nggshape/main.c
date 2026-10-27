@@ -17,7 +17,7 @@
  *   NGGSHAPE lost after=<ms> <shape>
  *   NGGSHAPE fail <step> <VkResult>
  *
- * usage: nggshape [--triangles=N] [--indexed] [--index16] [--depth] [--instances=N] [--draws=N] [--blit] [--outside] [--cross] [--cull] [--blend] [--heavy] [--mview]
+ * usage: nggshape [--triangles=N] [--indexed] [--index16] [--depth] [--instances=N] [--draws=N] [--blit] [--outside] [--cross] [--cull] [--blend] [--heavy] [--mview] [--shuffle] [--tiny] [--allback] [--tail]
  *
  * --index16 reads the indices as 16 bits; --draws splits the triangles into N draws; --blit then
  * blits the target into each level of a 9-level image (256x256 down to 1x1), linearly filtered;
@@ -27,7 +27,9 @@
  * --blend blends with the target by the source alpha; --heavy draws with a vertex program of many
  * live values (heavy.vert); --mview draws with mview's own vertex program (its vertex layout of
  * place, normal and texture place, its per-instance offset, its push constants) and a pixel program
- * reading its two outputs.
+ * reading its two outputs; --shuffle (indexed) scatters the triangles' order over the index buffer;
+ * --tiny shrinks each cell into a fifth of a pixel off its centre (no pixel drawn), --allback with --cull
+ * leaves every cell facing away (all culled, a --tail cell turned to be drawn), --tail makes the last cell cover the whole target.
  */
 
 #include <stdbool.h>
@@ -75,6 +77,10 @@ struct shape_options {
 	bool blend;
 	bool heavy;
 	bool mview;
+	bool shuffle;
+	bool tiny;
+	bool allback;
+	bool tail;
 };
 
 /* The objects of the run, freed together at its end. */
@@ -153,6 +159,15 @@ main(
 			options.draws = (uint32_t)strtoul(argv[argument] + 8, NULL, 10);
 		} else if (strcmp(argv[argument], "--outside") == 0) {
 			options.outside = true;
+		} else if (strcmp(argv[argument], "--tiny") == 0) {
+			options.tiny = true;
+		} else if (strcmp(argv[argument], "--allback") == 0) {
+			options.allback = true;
+		} else if (strcmp(argv[argument], "--tail") == 0) {
+			options.tail = true;
+		} else if (strcmp(argv[argument], "--shuffle") == 0) {
+			options.indexed = true;
+			options.shuffle = true;
 		} else if (strcmp(argv[argument], "--mview") == 0) {
 			options.mview = true;
 		} else if (strcmp(argv[argument], "--heavy") == 0) {
@@ -179,8 +194,8 @@ main(
 		fprintf(stderr, "nggshape: 1 .. %u triangles, 1 .. %u instances\n", SHAPE_TRIANGLES_MAX, SHAPE_INSTANCES_MAX);
 		return 2;
 	}
-	snprintf(name, sizeof(name), "triangles=%u instances=%u indexed=%d index16=%d depth=%d draws=%u blit=%d outside=%d cross=%d cull=%d blend=%d heavy=%d mview=%d",
-		 options.triangles, options.instances, (int)options.indexed, (int)options.index16, (int)options.depth, options.draws,
+	snprintf(name, sizeof(name), "tiny=%d allback=%d tail=%d shuffle=%d triangles=%u instances=%u indexed=%d index16=%d depth=%d draws=%u blit=%d outside=%d cross=%d cull=%d blend=%d heavy=%d mview=%d",
+		 (int)options.tiny, (int)options.allback, (int)options.tail, (int)options.shuffle, options.triangles, options.instances, (int)options.indexed, (int)options.index16, (int)options.depth, options.draws,
 		 (int)options.blit, (int)options.outside, (int)options.cross, (int)options.cull, (int)options.blend, (int)options.heavy, (int)options.mview);
 
 	/* The device, the resources, the pipeline and the commands. */
@@ -658,6 +673,36 @@ shape_pipeline(
 }
 
 /*
+ * Where triangle number of count triangles goes with --shuffle: a
+ * multiplication by a number prime to the count, so neighbours lie far
+ * apart and the vertex reuse inside a subgroup is small.
+ */
+static uint32_t
+shape_shuffled(
+	uint32_t number,
+	uint32_t count)
+{
+	uint64_t factor;
+	uint64_t a;
+	uint64_t b;
+	uint64_t rest;
+
+	/* The first factor from 7919 on that is prime to the count. */
+	for (factor = 7919U;; factor += 2U) {
+		a = factor;
+		b = count;
+		while (b != 0U) {
+			rest = a % b;
+			a = b;
+			b = rest;
+		}
+		if (a == 1U)
+			break;
+	}
+	return (uint32_t)(((uint64_t)number * factor) % count);
+}
+
+/*
  * Writes the grid: square cells of two triangles each over the target in
  * clip space, as six vertices a cell or, indexed, as six indices into the
  * grid's shared corners; and each instance's offset (a small shift).
@@ -721,6 +766,8 @@ shape_geometry(
 				if (corner == 4U)
 					value = (row + 1U) * (side + 1U) + column + 1U;
 				slot = 6U * cell + corner;
+				if (options->shuffle)
+					slot = 3U * shape_shuffled(2U * cell + corner / 3U, 2U * cells) + corner % 3U;
 				if (options->index16) {
 					short_indices[slot] = (uint16_t)value;
 				} else {
@@ -749,8 +796,27 @@ shape_geometry(
 		place[4][1] = y0 + size;
 		place[5][0] = x0;
 		place[5][1] = y0 + size;
-		/* With --cull every other cell turns around: its corners 1 and 2, 4 and 5 swapped. */
-		if (options->cull && (cell % 2U) != 0U) {
+		/*
+		 * With --tiny each cell lies inside a fifth of one pixel, away from
+		 * its centre (no pixel is covered); with --tail the last cell
+		 * covers the whole target.
+		 */
+		if (options->tiny) {
+			x0 = -1.0f + (2.0f / (float)SHAPE_TARGET) * ((float)(cell % SHAPE_TARGET) + 0.1f);
+			y0 = -1.0f + (2.0f / (float)SHAPE_TARGET) * ((float)((cell / SHAPE_TARGET) % SHAPE_TARGET) + 0.1f);
+			for (corner = 0U; corner < 6U; corner++) {
+				place[corner][0] = x0 + (place[corner][0] - (-1.0f + size * (float)(cell % side))) / size * (0.4f / (float)SHAPE_TARGET);
+				place[corner][1] = y0 + (place[corner][1] - (-1.0f + size * (float)(cell / side))) / size * (0.4f / (float)SHAPE_TARGET);
+			}
+		}
+		if (options->tail && cell + 1U == cells) {
+			for (corner = 0U; corner < 6U; corner++) {
+				place[corner][0] = (corner == 1U || corner == 3U || corner == 4U) ? 1.0f : -1.0f;
+				place[corner][1] = (corner == 2U || corner == 4U || corner == 5U) ? 1.0f : -1.0f;
+			}
+		}
+		/* With --cull every other cell turns around (with --allback none but a --tail, so all others are culled): its corners 1 and 2, 4 and 5 swapped. */
+		if (options->cull && (((cell % 2U) != 0U && !options->allback) || (options->allback && options->tail && cell + 1U == cells))) {
 			x0 = place[1][0];
 			place[1][0] = place[2][0];
 			place[2][0] = x0;
