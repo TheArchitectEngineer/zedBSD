@@ -4,7 +4,7 @@
 
 - Status: planning（2026-10-28 新設。p001 で仕様を確定中、q1643 P4）
 - 仕様: [spec.md](spec.md)（確定。ユーザーの確認事項 U1〜U29 は全て回答済み。design-reviewer の 1 回目・2 回目の指摘を反映済み）。
-- Resume point: p001 は受け入れを満たした（2026-10-28、P4。Q1 の cleared の判断待ち）。次は実装の p002（OS 名の統一）か p003（build と installer-image）。p003・p004 は toolchain の許可、p007 は HAL の承認が要る。
+- Resume point: p001 は受け入れを満たした（2026-10-28、P4。Q1 の cleared の判断待ち）。q1647（P4、2026-10-28）: 2 回目の後の変更（§5.10・§11.1〜11.2・U26〜U29・§13a）の 3 回目の design-reviewer（opus）を起動したが、結果を受け取る前に P4 が返却した。指摘の反映（spec §17.3）は未実施で、次の起動で 3 回目のレビューをやり直して反映する。次は実装の p002（OS 名の統一）か p003（build と installer-image）。p003・p004 は toolchain の許可、p007 は HAL の承認が要る。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
 
