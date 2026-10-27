@@ -3,7 +3,7 @@
 # ws290-p001 設計: GHCI 2.0 の driver の書き直し
 
 - 親: [WS290](../ws.md)。
-- 状態: in-progress（2026-10-26 P1、q1594-i01。design.md 版 2 と review の反映まで済み。受け入れの「疑問の一覧がユーザーに示されている」は Q1 の提示を待つ）
+- 状態: in-progress（2026-10-27 中断、q1621-i01 P3: GHCI の仕様の調整中。design 版 3 は書きかけ。再開は下の「再開」。前: 2026-10-26 P1 q1594-i01 で版 2 と review の反映まで）
 - 由来: WS290 の出典と決定（ws.md）。
 
 ## 範囲（code は書かない）
@@ -36,3 +36,11 @@
   - design-reviewer: 28 件（Critical 1・High 6・Medium 17・Low 4）、本文 [design-review.md](../design-review.md)。全部を版 2 に反映（design.md §23）。
   - 確かめ: `git diff --check -- plan/ws290/` で出力なし。source は変えていない（`git status` で plan/ws290/ の外に差なし）。build・host 試験・QEMU・実機は対象外（設計の Phase）で未実施。
   - 残り: Q1 が §19 の G01〜G39 と §20 の U1〜U7 をユーザーに示す。Q1 が p002 以降の phase.md を design §18 から立てる。WS288 の 1.1 の試験の削除は p003・p004 で path を Q1 に送る。
+- 2026-10-27 P3（q1621-i01、worktree `/home/awe/zedBSD-worktrees/p3-ws290`、branch agent/p3-ws290、main 706f1ee5e を merge）:
+  - 2026-10-27 13:55 ユーザー「P3で、~/amaterrace-gpu/docs/ghci.md の更新を読んで、GHCIドライバを更新してください。」（q1621）。補足（Q1 経由）「コマンドベースの通信に変化して、レジスタ群がばっさりなくなりました。また、capabilityが導入され、capフラグがあるときだけ使える機能がたくさんできました。Vulkanのextなどとして見せるかどうかにマッピングが必要です。」
+  - 読んだ物: amaterrace-gpu の `git diff 3af62ca ce9725a -- docs/ include/`（19 file、+4109/−977。ghci.md・ghci_regs.h・ghci2_regs.h・ghci_cmd.h・ghci_frame.h を読んだ）、読んだ時点の main **ce9725a**（2026-10-27 13:56）、docs/・include/ の最後の差 **f718918**（13:15。f718918..ce9725a は config/minimal.mk・plan/ws003/minimal_fit_report.md・tools/vivado-synth-l2.tcl）、`plan/ws001`〜`ws004` の ws.md の差、`plan/ws003/phase006`、`config.mk.template`、`rtl/gpu/cp/atg_cp_regs.v`。`git show`・`git diff`・`git log` だけで、amaterrace-gpu には書いていない。
+  - 見つけた主な食い違い（design 版 3 §0.1・§19.2）: TO-BE の VERSION が 0x00010000 に（legacy 1.1 は 0x00010001）、CAPS・CAPS2 が 0x020・0x024 と書かれ 19 register の RING_BASE_LO/HI と衝突（G41）、EXT_CAP_FMT0・FEATURE が include と RTL だけ（G42）、RTL の slim の EXTCAP_PTR = 0（G43）、CMD_DRAW_MESH_TASKS が include だけ（G44）、重なる flag（G45）、flag の無い build option（G48）、DISP_SET・FLIP の opcode が無い（G49）。design-reviewer は RTL の DEVICE_CAPS が CAPS の layout を返す事（V07）も見つけた。
+  - 書いた物: [design.md](../design.md) 版 3（書きかけ: §0.1、§1.1、§2・§3・§4・§5.1・§11.6・§12・§13・§15・§18 の版 3 の部分、§19.1・§19.2、U8、§24 capability と Vulkan への対応、§25）、[ghci-questions.md](../ghci-questions.md)（各 G の状態、G40〜G49、行の番号の直し）、[design-review-v3.md](../design-review-v3.md)（25 件、V20 以外未反映）。source は変えていない。
+  - ユーザーの G01 の回答（原文は [ws.md](../ws.md)）で「単一の GHCI 1.0、版で分岐しない」と決まり、「そのほかは仕様を調整中です。いったん作業を終了していいです。」で中断。hardware の担当の一次回答は main の `plan/ws290/ghci-answers-hw-20261027.md`（ecd4407e8）に Q1 が置いた（未反映、ユーザー「回答は修正されるかもしれません」）。
+  - 確かめ: `git diff --check -- plan/ws290/` 出力なし。build・host 試験・QEMU・実機は対象外で未実施。
+- **再開**: 条件はユーザーが ghci.md（と資料全般）の修正の終わりを伝えた時。手順は [ws.md](../ws.md) の「再開の手順」（修正後の ghci.md と ghci-answers-hw を読む → 版 3 を G01 の回答で仕上げ、design-review-v3 を確かめて反映 → design-reviewer → p002 以降の phase.md → 実装）。
