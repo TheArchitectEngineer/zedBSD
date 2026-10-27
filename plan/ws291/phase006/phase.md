@@ -68,12 +68,12 @@
   radv_shader.c:2165-2186）、primitive の語は shader が組む（9 bit ずつ 10 おき、edge flag 0: ac_nir_pack_ngg_prim_exp_arg、RADV の初期 edge flag 0）、
   VGT_SHADER_STAGES_EN の PRIMGEN_PASSTHRU_EN を落とす（内部の quad は passthrough のまま）。commit 9b7a462c3、host 58 PASS、vk host PASS、
   vmunix warning 0（17be55e347012025）。3 回目の入れ直しを Q1 に依頼。
-- 2026-10-27 14:55 9b7a462c3（culling の時は passthrough を切る）の実機: `--triangles=50000 --indexed --cull --allback` は同じく止まる。止まった時
+- 2026-10-27 14:47 9b7a462c3（culling の時は passthrough を切る）の実機: `--triangles=50000 --indexed --cull --allback` は同じく止まる。止まった時
   GRBM_STATUS 0xa2711028（SX・GE・SPI・PA busy）、waves valid 0（build/ws291/measure/p006/hang3-dmesg.txt）。Q1 の指示（「これでも止まる場合は、
   闇雲に試行を重ねず、一度止めて phase006 に結果と仮説を書き、Q1 に報告」）でここで止めた。機械は止まったまま（入れ直しが要る）。stick は
   vmunix-cull3（17be55e347012025）と `amdrdna.vk.ngg=2` のまま → 次に起動する前に Debian から ngg=0 か 1 に戻すこと。
 
-### 結果のまとめと仮説（2026-10-27 14:55）
+### 結果のまとめと仮説（2026-10-27 14:47）
 
 | 条件 | 結果 |
 | --- | --- |
