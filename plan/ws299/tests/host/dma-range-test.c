@@ -62,6 +62,23 @@ main(void)
 	fits = drv_dma_range_bus_address(64U, TEST_SEGMENT, TEST_SEGMENT, 0U, 0U, 0x1f800ULL, TEST_PAGE, &bus);
 	check(!fits, "a page crossing a segment boundary");
 
+	/*
+	 * A device that takes 64-bit addresses behind a bus whose default is
+	 * 32 bits (NVMe on a PC, 2026-10-27 Q1): a page above 4 GiB that the
+	 * 32-bit default refuses is reached at 64 bits, and the platform's
+	 * physical limit still applies, inside and just outside.
+	 */
+	fits = drv_dma_range_bus_address(32U, TEST_SEGMENT, 0U, 0U, 0x27fffffffULL, 0x200000000ULL, TEST_PAGE, &bus);
+	check(!fits, "a page above 4 GiB at the 32-bit default");
+	fits = drv_dma_range_bus_address(64U, TEST_SEGMENT, 0U, 0U, 0x27fffffffULL, 0x200000000ULL, TEST_PAGE, &bus);
+	check(fits && bus == 0x200000000ULL, "the same page at 64 bits inside the platform limit");
+	fits = drv_dma_range_bus_address(64U, TEST_SEGMENT, 0U, 0U, 0x27fffffffULL, 0x27ffff000ULL, TEST_PAGE, &bus);
+	check(fits, "a 64-bit page ending at the platform limit");
+	fits = drv_dma_range_bus_address(64U, TEST_SEGMENT, 0U, 0U, 0x27fffffffULL, 0x280000000ULL, TEST_PAGE, &bus);
+	check(!fits, "a 64-bit page past the platform limit");
+	fits = drv_dma_range_bus_address(64U, TEST_SEGMENT, 0U, 0x40000000ULL, 0x27fffffffULL, 0x200000000ULL, TEST_PAGE, &bus);
+	check(fits && bus == 0x240000000ULL, "a 64-bit page through a bus offset");
+
 	/* Empty, oversized and wrapping ranges, and a bad width, are refused. */
 	check(!drv_dma_range_bus_address(64U, TEST_SEGMENT, 0U, 0U, 0U, 0x1000ULL, 0U, &bus), "an empty range");
 	check(!drv_dma_range_bus_address(64U, TEST_PAGE, 0U, 0U, 0U, 0x1000ULL, TEST_PAGE + 1U, &bus), "a range over max_segment_size");

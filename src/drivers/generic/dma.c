@@ -670,14 +670,22 @@ drv_dma_map(
  * case, and a range outside the device's reach, fails, and the caller moves
  * the data through its own bounce memory instead.  The caller keeps the
  * memory until the device has finished with it.
+ *
+ * device_address_bits names how wide an address the device itself takes,
+ * when the caller knows it from the device's own specification; the DMA
+ * device's width is the bus's default for every device behind it and may be
+ * narrower.  Zero keeps that default.  The bus offset, the platform's
+ * physical limit and the segment boundary apply either way (2026-10-27 Q1).
  */
 int
 drv_dma_physical_address(
 	struct drv_dma_device *device,
 	uint64_t paddr,
 	size_t size,
+	unsigned device_address_bits,
 	uint64_t *bus_address)
 {
+	unsigned address_bits;
 	int reachable;
 	int error;
 
@@ -696,8 +704,13 @@ drv_dma_physical_address(
 		return EINVAL;
 	}
 
-	/* Translates the range under every limit the device was created with. */
-	reachable = drv_dma_range_bus_address(device->constraints.address_bits,
+	/* Takes the device's own address width when the caller names one. */
+	address_bits = device->constraints.address_bits;
+	if (device_address_bits != 0U)
+		address_bits = device_address_bits;
+
+	/* Translates the range under the width and every limit of the platform. */
+	reachable = drv_dma_range_bus_address(address_bits,
 					      device->constraints.max_segment_size,
 					      device->constraints.segment_boundary,
 					      device->bus_offset,
