@@ -328,7 +328,7 @@ done <<'LIST'
 --indexed --triangles=16 --repeat=1000
 --triangles=50000 --indexed --depth
 --triangles=50000 --indexed --cull --allback
---triangles=50000 --indexed --cull --allback --tail
+--triangles=50000 --cull --allback --tail
 --triangles=50000 --tiny
 --triangles=50000 --outside
 --triangles=50000 --cross --depth

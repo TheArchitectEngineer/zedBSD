@@ -134,3 +134,36 @@
 - scene-6500 の GPU: passthrough 41.37 ms → 30.68 ms（−26 %）。Linux（RADV の NGG culling）約 20 ms には届かない。残りの候補: 属性の後回し
   （捨てる頂点の属性の計算を省く）、LDS の大きさ（6500 体の mview の場所の大きさによる占有の低下）、VGPR の数、guard band・binning（p008）。
 - 未実施: desktop の frame-ops の計測（既定を NGG にするかの判断の材料）、属性の後回し。stick は vmunix-compact1 と ngg=2 で zedBSD 起動中。
+
+## q1635 の続き（2026-10-28 P2、worktree p2-ws291b、基点 main 6e6ebf830）
+
+### 属性の後回し（Mesa の deferred attribute culling の形）
+
+- 実装 commit aba6e9a97（gfx10-compile.c）: culling の時は IR を 2 つの part で lower して 1 つの program に並べる。culling part は position 以外の
+  STORE_OUTPUT を NOP にした写し（normal・uv の fetch と lighting は不要の命令として落ちる）→ LDS（x/w・y/w・w・印・新しい番号、20 B/頂点）→ 判定 →
+  compaction → 残る頂点が自分の vertex・instance 番号を新しい番号の場所へ → primitive の lane が語を v0 に → 新しい番号の lane が番号を v5・v8 に読む。
+  deferred part は VS 全体を新しい番号の lane だけで走らせて export し、最後に primitive の lane が v0 を export。LDS は 68 B → 20 B/頂点（2576 B）。
+  memory に書く VS（storage・shared・atomic）は 2 回走らせないため culling しない。出典は Mesa 25.0.7 ac_nir_lower_ngg.c（add_deferred_attribute_culling、
+  compact_vertices_after_culling）。
+- host: compiler host test 58 PASS（+nggc 6 本、新しい番号の場所から読む番号を instance にずらす変異で 6 本 FAIL）、vk host 197 PASS、vmunix warning 0
+  （00322fad8ae84b83）。mview の program は 640 語、31 VGPR（culling part 側が最大）。
+- 実機（vmunix-defer1、ngg=2、`plan/ws291/tests/round.sh`、build/ws291/measure/defer1b/）:
+
+| 確認 | 結果 |
+| --- | --- |
+| nggshape 14 種 | 全部 ok（止まらない）。`--indexed --cull --allback --tail` の drawn 0 は nggshape の --tail が list の時だけ効くため（試験の誤り、measure.sh の list を直した） |
+| shot 6500 | max 1、over15 0 |
+| shot 1 | 撮れたのは desktop（mview の窓が 6 s で出る前、起動直後の 1 回目）。未判定、撮り直す |
+| hang | vkhang lost → reset 4 ms → loops ok、mview 58 fps |
+
+| run | fps | frame | acquire | record | submit | fence |
+| --- | --- | --- | --- | --- | --- | --- |
+| scene-1 | 58.3 | 17.11 | 15.48 | 0.26 | 0.11 | 1.10 |
+| scene-1500 | 59.0 | 16.90 | 6.79 | 0.74 | 0.17 | 8.98 |
+| scene-6500 | 29.3 | 33.97 | 0.71 | 2.17 | 0.17 | 30.78 |
+| big-1000 | 18.8 | 52.93 | 0.63 | 31.82 | 15.96 | 3.12 |
+| subs-1000 | 3.8 | 252.22 | 0.01 | 139.25 | 112.74 | 0.02 |
+
+- 読み方: scene-6500 の GPU は 30.68 → 30.78 ms（変わらない）、scene-1500 は 9.06 → 8.98。属性の仕事（normal・uv の fetch、lighting、LDS で運ぶ出力）は
+  律速でなかった。残りの差（約 11 ms）は culling part そのもの（wave32 で RADV の wave64 の 2 倍の wave、wave ごとの scalar・barrier・LDS の固定の仕事）か
+  後段と見て、診断の kernel（boot の行 `amdrdna.vk.nggx`: 2 = 全部を面で落とす、8 = GS の late alloc 64、1 = culling の flag を切る）で切り分ける。
