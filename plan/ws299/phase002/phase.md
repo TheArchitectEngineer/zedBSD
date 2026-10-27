@@ -3,7 +3,7 @@
 # ws299-p002 buffer cache の header の確保を一定の手数に（512 MiB の崖の直し）
 
 - 親: [WS299](../ws.md)。Queue: q1616 / q1616-i01（担当 P1、2026-10-27）。前提: [p001](../phase001/phase.md)（H1 が崖の原因）。
-- Status: in-progress（実装・host 試験・build・素の 5330 の前後の測定と起動の回帰、QEMU の回帰（2026-10-27 q1617、P1 自身）は済み。Q1 の判定待ち）
+- Status: cleared（2026-10-27 11:58 Q1: QEMU の回帰 PASS・5330 の実機 PASS、merge ab83e018c）。前: in-progress（実装・host 試験・build・素の 5330 の前後の測定と起動の回帰、QEMU の回帰（2026-10-27 q1617、P1 自身）は済み。Q1 の判定待ち）
 - Disposition: normal
 
 ## 受け入れ
