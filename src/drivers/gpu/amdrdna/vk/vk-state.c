@@ -179,6 +179,16 @@
 #define STATE_DEPTH_FRACTION		24U
 
 /*
+ * The guard band: twice the rasteriser's range of 32767 pixels, and the
+ * widest point (8191.875 pixels), in the viewport's fixed point.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_guardband_state: max_range 32767.0, the point size 8191.875).
+ */
+#define STATE_GUARD_RANGE_TWICE		((int64_t)2 * 32767 << STATE_FRACTION)
+#define STATE_GUARD_POINT_PIXELS	((int64_t)8191875 * 65536 / 1000)
+
+/*
  * The cache actions of the start of a buffer: everything the CPU wrote
  * since the last buffer (programs, tables, descriptors) read anew; and of
  * a barrier, after the colour unit's caches are written back.
@@ -420,6 +430,94 @@ amdrdna_vk_state_culling(
 	if (topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP)
 		flags |= AMDRDNA_GFX10_CULL_VERTEX_1;
 	words[5] = flags;
+}
+
+/*
+ * Works out one axis of the guard band in fixed point (STATE_FRACTION
+ * bits) from twice the viewport's scale and twice its offset (both in
+ * fixed point): the clip adjustment, how far past the viewport (in its
+ * half sizes) a primitive is left to the rasteriser's own clipping, up to
+ * the 32767 pixels of its range; and the discard adjustment, past which a
+ * primitive is dropped whole, 1.0 widened by half the widest point or line
+ * of the topology, never past the clip adjustment.
+ */
+static void
+state_guard_axis(
+	int64_t scale2,
+	int64_t offset2,
+	int64_t pixels,
+	int64_t *clip,
+	int64_t *discard)
+{
+	int64_t one;
+	int64_t room;
+
+	/* The scale no smaller than half a pixel, the offset's size. */
+	one = (int64_t)1 << STATE_FRACTION;
+	if (scale2 < 0)
+		scale2 = -scale2;
+	if (offset2 < 0)
+		offset2 = -offset2;
+	if (scale2 < one)
+		scale2 = one;
+
+	/* The clip adjustment: the room left in the range over the scale, at least 1.0. */
+	room = STATE_GUARD_RANGE_TWICE - offset2;
+	*clip = one;
+	if (room > scale2)
+		*clip = (room << STATE_FRACTION) / scale2;
+
+	/* The discard adjustment: half the widest primitive over the scale added to 1.0. */
+	*discard = one + (pixels << STATE_FRACTION) / scale2;
+	if (*discard > *clip)
+		*discard = *clip;
+}
+
+/*
+ * Writes the guard band of viewport 0 for a topology: the clip and
+ * discard adjustments of y, then of x, as floats.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/amd/vulkan/radv_cmd_buffer.c
+ * (radv_emit_guardband_state, lines 4698-4760: the range 32767 less the
+ * offset over the scale (at least 0.5); the discard 1.0, widened for
+ * points by 8191.875 pixels and for lines by their width over twice the
+ * scale, at most the clip; PA_CL_GB_VERT_CLIP_ADJ, VERT_DISC_ADJ,
+ * HORZ_CLIP_ADJ, HORZ_DISC_ADJ in that order).
+ */
+void
+amdrdna_vk_state_guard_band(
+	struct amdrdna_vk_pm4 *pm4,
+	const uint32_t *viewport,
+	uint32_t topology)
+{
+	uint32_t words[4];
+	int64_t x;
+	int64_t y;
+	int64_t width;
+	int64_t height;
+	int64_t pixels;
+	int64_t clip;
+	int64_t discard;
+
+	/* The widest primitive: a point of the largest size, a line of width 1.0, or none. */
+	pixels = 0;
+	if (topology == VK_PRIMITIVE_TOPOLOGY_POINT_LIST)
+		pixels = STATE_GUARD_POINT_PIXELS;
+	if (topology == VK_PRIMITIVE_TOPOLOGY_LINE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_LINE_STRIP)
+		pixels = (int64_t)1 << STATE_FRACTION;
+
+	/* The viewport in fixed point: twice the scale is the size, twice the offset the start doubled plus the size. */
+	x = amdrdna_vk_fixed(viewport[0], STATE_FRACTION);
+	y = amdrdna_vk_fixed(viewport[1], STATE_FRACTION);
+	width = amdrdna_vk_fixed(viewport[2], STATE_FRACTION);
+	height = amdrdna_vk_fixed(viewport[3], STATE_FRACTION);
+	state_guard_axis(height, 2 * y + height, pixels, &clip, &discard);
+	words[0] = amdrdna_vk_float_fixed(clip, STATE_FRACTION);
+	words[1] = amdrdna_vk_float_fixed(discard, STATE_FRACTION);
+	state_guard_axis(width, 2 * x + width, pixels, &clip, &discard);
+	words[2] = amdrdna_vk_float_fixed(clip, STATE_FRACTION);
+	words[3] = amdrdna_vk_float_fixed(discard, STATE_FRACTION);
+	amdrdna_vk_pm4_set_context_run(pm4, AMDRDNA_CX_GUARD_BAND, words, 4U);
 }
 
 /*
@@ -1176,7 +1274,7 @@ state_start_graphics(
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_VIEWPORT_ENABLE, AMDRDNA_CX_VIEWPORT_ALL);
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_RASTER_MODE, 0U);
 
-	/* The vertex rounding, the guard band of 1.0, one sample with every bit of the mask. */
+	/* The vertex rounding, the guard band of 1.0 until a draw's viewport widens it, one sample with every bit of the mask. */
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SAMPLE_CONFIG, 0U);
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_VERTEX_ROUNDING, AMDRDNA_CX_VERTEX_ROUNDING_PLAIN);
 	amdrdna_vk_pm4_set_context_run(pm4, AMDRDNA_CX_GUARD_BAND, guard_band, 4U);

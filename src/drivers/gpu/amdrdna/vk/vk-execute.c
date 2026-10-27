@@ -1389,6 +1389,7 @@ execute_draw(
 	if (pipeline->dynamic_viewport != 0U && state->viewport_set)
 		viewport = state->viewport;
 	amdrdna_vk_state_viewport(&execute->pm4, viewport);
+	amdrdna_vk_state_guard_band(&execute->pm4, viewport, pipeline->topology);
 	amdrdna_vk_state_scissor(&execute->pm4, (uint32_t)x0, (uint32_t)y0, (uint32_t)x1, (uint32_t)y1);
 
 	/* The blend and the culling. */
@@ -2319,6 +2320,7 @@ execute_quad(
 		viewport[5] = quad->depth_value;
 	}
 	amdrdna_vk_state_viewport(&execute->pm4, viewport);
+	amdrdna_vk_state_guard_band(&execute->pm4, viewport, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST);
 	amdrdna_vk_state_scissor(&execute->pm4, (uint32_t)quad->x0, (uint32_t)quad->y0, (uint32_t)quad->x1, (uint32_t)quad->y1);
 
 	/* No blending, every channel (none for a clear of depth alone), no culling. */

@@ -81,6 +81,7 @@ void amdrdna_vk_state_start(struct amdrdna_vk_pm4 *pm4);
 void amdrdna_vk_state_start_kernel(struct amdrdna_vk_pm4 *pm4);
 int amdrdna_vk_state_target(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_target *target);
 void amdrdna_vk_state_viewport(struct amdrdna_vk_pm4 *pm4, const uint32_t *viewport);
+void amdrdna_vk_state_guard_band(struct amdrdna_vk_pm4 *pm4, const uint32_t *viewport, uint32_t topology);
 void amdrdna_vk_state_scissor(struct amdrdna_vk_pm4 *pm4, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 int amdrdna_vk_state_blend(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_blend *blend);
 void amdrdna_vk_state_raster(struct amdrdna_vk_pm4 *pm4, uint32_t cull_mode, uint32_t front_face);
