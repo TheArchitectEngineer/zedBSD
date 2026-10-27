@@ -387,6 +387,25 @@
 #define AMDRDNA_SH_PRIMITIVE_UNITS_HIGH_NGG	(0xffffU | (32U << 16))
 
 /*
+ * A culling primitive shader's: the parameter cache oversubscribed by its
+ * quarter (256 lines) times 2, 3 or 4 by the parameters each vertex
+ * exports (up to 2, up to 4, more: most vertices are culled and export
+ * none), and the geometry stage's late allocation of 64 waves.
+ *
+ * Values referenced: Mesa 25.0.7 src/amd/vulkan/radv_shader.c
+ * (radv_precompute_registers_hw_ngg: oversub_pc_lines times the culling
+ * factor; ac_compute_late_alloc in src/amd/common/ac_shader_util.c: ten
+ * waves a good CU with culling, at most 64 on GFX10) and the registers
+ * RADV wrote culling mview's scene on the RX 5600 XT (its command
+ * buffer, 2026-10-28: GE_PC_ALLOC 0x3ff, SPI_SHADER_PGM_RSRC4_GS
+ * 0x0040ffff).
+ */
+#define AMDRDNA_NGG_CULL_PARAMETER_LINES	256U
+#define AMDRDNA_UC_PARAMETER_CACHE_OVERSUB	1U
+#define AMDRDNA_UC_PARAMETER_CACHE_LINES_SHIFT	1U
+#define AMDRDNA_SH_PRIMITIVE_UNITS_HIGH_CULL	(0xffffU | (64U << 16))
+
+/*
  * The index type register (set through the indexed setter with index 2)
  * and its values, and the draw packets of an index buffer: its size in
  * indices, and the draw from its address.

@@ -866,6 +866,7 @@ state_primitive_shader(
 	uint32_t count;
 	uint32_t index;
 	uint32_t stages;
+	uint32_t factor;
 
 	/* The flush after a legacy vertex program's draws, or at the buffer's first draw. */
 	if (pm4->vertex_stage != AMDRDNA_VK_STAGE_PRIMITIVE) {
@@ -899,10 +900,27 @@ state_primitive_shader(
 	}
 	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_USER_DATA, words, count);
 
-	/* RADV's CUs and late allocation, the parameter cache oversubscribed. */
+	/*
+	 * RADV's CUs and late allocation, the parameter cache oversubscribed;
+	 * more of both when the program culls.
+	 */
 	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PRIMITIVE_UNITS, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_PRIMITIVE_UNITS_NGG);
-	amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH_NGG);
-	amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_PARAMETER_CACHE, AMDRDNA_UC_PARAMETER_CACHE_NGG);
+	if (vertex->registers.primitive_culling != 0U) {
+		factor = 2U;
+		if (vertex->registers.parameter_count > 4U) {
+			factor = 4U;
+		} else if (vertex->registers.parameter_count > 2U) {
+			factor = 3U;
+		}
+		amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH_CULL);
+		amdrdna_vk_pm4_set_user_config(pm4,
+					       AMDRDNA_UC_PARAMETER_CACHE,
+					       AMDRDNA_UC_PARAMETER_CACHE_OVERSUB |
+					       ((AMDRDNA_NGG_CULL_PARAMETER_LINES * factor - 1U) << AMDRDNA_UC_PARAMETER_CACHE_LINES_SHIFT));
+	} else {
+		amdrdna_vk_pm4_set_shader_indexed(pm4, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH, AMDRDNA_SH_UNITS_INDEX, AMDRDNA_SH_PRIMITIVE_UNITS_HIGH_NGG);
+		amdrdna_vk_pm4_set_user_config(pm4, AMDRDNA_UC_PARAMETER_CACHE, AMDRDNA_UC_PARAMETER_CACHE_NGG);
+	}
 
 	/* The subgroup: its size, its output, one primitive from each, the primitive export's format, one instance. */
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_SUBGROUP_SIZE, AMDRDNA_CX_SUBGROUP_SIZE_NGG);

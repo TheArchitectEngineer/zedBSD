@@ -266,6 +266,7 @@ amdrdna_gfx10_program_registers(
 
 		/* At least one parameter is counted; none exported is said apart. */
 		parameters = highest_bit_count(program->parameter_outputs);
+		registers->parameter_count = parameters;
 		if (parameters == 0U) {
 			registers->vertex_export_config = GFX10_VERTEX_NO_PARAMETERS;
 		} else {
