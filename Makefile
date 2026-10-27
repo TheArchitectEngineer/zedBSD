@@ -310,14 +310,12 @@ CONFIG_DRIVER_PCI_AMDRDNA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 CONFIG_AMDRDNA_CONTROL ?= y
 
 # The generic GHCI GPU driver (a PCIe GPU with the GPU Host Controller
-# Interface) is off by default; CONFIG_GHCI_NATIVE adds the root-only native
-# command of the test images.  CONFIG_GHCI_POLL has the driver poll the GPU
+# Interface) is off by default.  CONFIG_GHCI_POLL has the driver poll the GPU
 # instead of taking its interrupt (a host such as the VisionFive 2's PLDA root
 # complex offers no MSI); it polls by itself when no interrupt can be taken.
 # CONFIG_GHCI_HOST_UNCACHED has the processor reach the host memory the GPU
 # uses through an uncached view even where the bus says DMA is coherent.
 CONFIG_DRIVER_PCI_GHCI ?= n
-CONFIG_GHCI_NATIVE ?= n
 CONFIG_GHCI_POLL ?= n
 CONFIG_GHCI_HOST_UNCACHED ?= n
 
@@ -824,7 +822,6 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_PCI_AMDRDNA=$(if $(filter y,$(CONFIG_DRIVER_PCI_AMDRDNA)),1,0) \
 	-DCONFIG_AMDRDNA_CONTROL=$(if $(filter y,$(CONFIG_AMDRDNA_CONTROL)),1,0) \
 	-DCONFIG_DRIVER_PCI_GHCI=$(if $(filter y,$(CONFIG_DRIVER_PCI_GHCI)),1,0) \
-	-DCONFIG_GHCI_NATIVE=$(if $(filter y,$(CONFIG_GHCI_NATIVE)),1,0) \
 	-DCONFIG_GHCI_POLL=$(if $(filter y,$(CONFIG_GHCI_POLL)),1,0) \
 	-DCONFIG_GHCI_HOST_UNCACHED=$(if $(filter y,$(CONFIG_GHCI_HOST_UNCACHED)),1,0) \
 	-DCONFIG_DRIVER_PCI_HDA=$(if $(filter y,$(CONFIG_DRIVER_PCI_HDA)),1,0) \
