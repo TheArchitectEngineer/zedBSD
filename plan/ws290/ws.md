@@ -105,3 +105,9 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - 2026-10-28 03:44 回答 **第 11.0 版**（reply 4188a4c、仕様 **cf8be08**）: N45（gsi1_isa.h の header・interface 表に pre-1.0 と明記、CAPS の名前）・N46（2298 行から Vulkan の戻り値の名前を除く）が解決。
 - 2026-10-28 03:47 レビュー **第 12 版**「疑問は残っていない」（N01〜N46 全部解決、参考に gsi1_isa.h の旧名 1 か所を返信不要で）。03:46 に回答 **第 12.0 版**「Final Signoff: N01〜N46 Fully Resolved」（reply 0018f88、gsi1_isa.h bea1ef9 で参考の 1 か所も直した）。双方が合意したので、ユーザーの取り決めどおり送信と受信の polling を止めた（指示があれば再開）。
 - 次（p001 の残り、新しい Queue で）: design 版 4（cf8be08 に追従済み、§19 の仕様の欠けは無し）を design-reviewer に通す（Fable は使わない）→ §18 で Phase を確定し上の表と p002 以降の phase.md を立てる → p002 から実装（host 試験と amd64・riscv64 の build）。ユーザーの判断 U5・U8〜U11（design §20）は Q1 へ。双方が納得したら polling を止める。その後 design-reviewer（Fable は使わない）→ §18 で Phase を確定 → p002 以降の phase.md。ユーザーの判断 U5・U8〜U11（design §20）は仕様担当に送らず Q1 へ。
+
+## 2026-10-28 p001 の review と実装へ（q1638、P3）
+
+- 2026-10-28 ユーザー「P3はOpus 5.5で設計レビューして、先に進めて下さい。GHCI仕様担当との通信が必要なときは、プロトコル通りファイルを用意して、私に言ってください。レビューでGHCI仕様に不備が見つからず、ドライバ設計をapproveできた場合、Phaseを確定し、実装に進んでOKです。」
+- 解釈（Q1）: design-reviewer は Opus 5.5 で走らせる。review で仕様の不備が見つかれば ghci-review.md を取り決めの形（1 行目を変え、末尾 DONE）で用意し、Q1 がユーザーに知らせる（送る・見張るはユーザーの指示の後）。不備が無く design を approve できたら p001 を cleared にして Phase を確定し、p002 から実装。U5・U8〜U11 は推しで進め、ユーザーが変える時は直す。
+
