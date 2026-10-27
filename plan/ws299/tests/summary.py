@@ -90,6 +90,9 @@ def zedbsd_rows(lines, numbers):
             continue
         match = re.match(r"step (\S+) bytes=(\d+)", line)
         if match:
+            # A step with no snap of its own shares the next step's snap: it has only its times.
+            if step is not None:
+                rows.append(step)
             step = {"name": match.group(1), "bytes": int(match.group(2))}
             continue
         match = re.match(r"(real|user|sys) ([\d.]+)", line)
@@ -101,14 +104,17 @@ def zedbsd_rows(lines, numbers):
     table.append(header)
     table.append("|" + " --- |" * (header.count("|") - 1))
     for row in rows:
-        before = row["before"]
-        after = row["after"]
         real = row.get("real", 0.0)
         rate = "-"
         if real > 0 and row["bytes"] > 0:
             rate = "%.1f" % (row["bytes"] / real / 1e6)
-        cells = [row["name"], rate, "%.2f" % real, "%.2f" % row.get("sys", 0.0),
-                 "%.0f" % (after.get("current", 0) / 1048576.0)]
+        cells = [row["name"], rate, "%.2f" % real, "%.2f" % row.get("sys", 0.0)]
+        if "after" not in row:
+            table.append("| " + " | ".join(cells) + " |")
+            continue
+        before = row["before"]
+        after = row["after"]
+        cells.append("%.0f" % (after.get("current", 0) / 1048576.0))
         for key in ("misses", "evictions", "capacity_failures"):
             cells.append(str(after.get(key, 0) - before.get(key, 0)))
         for name in EVENTS:

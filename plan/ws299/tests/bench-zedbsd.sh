@@ -4,7 +4,7 @@
 # read:  /dev/zero and cold reads of /dev/nvme0n1 at three block sizes, then the curve: CHUNKS reads of CHUNK_MIB MiB each,
 #        one after another from OFF_GIB GiB, with the cache and I/O counters after every chunk ("snap" blocks), and
 #        a re-read of the last chunk (a cache hit).  Only reads; the NVMe is not written.
-# write: a file of WRITE_MIB MiB on the root UFS (p5, zedBSD's own) in 256 MiB pieces and a sync, then, when the
+# write: a file of UFS_MIB MiB on the root UFS (p5, zedBSD's own) in 256 MiB pieces and a sync, then, when the
 #        swap on p6 (zedBSD's own) can be turned off, WRITE_MIB MiB of zeros onto p6 (the caller puts p6 back from
 #        Debian).  Debian's partitions are never written.
 # Every timed step prints "step NAME bytes=N" and the /bin/time lines (real/user/sys); the summary is made on the
@@ -19,6 +19,7 @@ CHUNK_MIB=${CHUNK_MIB:-256}
 CHUNKS=${CHUNKS:-16}
 BUDGET=${BUDGET:-900}
 WRITE_MIB=${WRITE_MIB:-1024}
+UFS_MIB=${UFS_MIB:-512}
 WFILE=${WFILE:-/home/kei/ws299-w.bin}
 
 snap() {
@@ -80,9 +81,11 @@ read)
 	snap reread
 	;;
 write)
-	# A file on the root UFS, in 256 MiB pieces, then the sync that puts it on the NVMe.
+	# A file on the root UFS, in 256 MiB pieces, then the sync that puts it on the NVMe.  The root is the image's
+	# UFS, smaller than p5, so the file is UFS_MIB long.
+	df /home/kei
 	i=0
-	while [ $((i * 256)) -lt "$WRITE_MIB" ]; do
+	while [ $((i * 256)) -lt "$UFS_MIB" ]; do
 		step "ufs$i" $((256 * 1048576)) if=/dev/zero of=$WFILE bs=1024k seek=$((i * 256)) count=256 conv=notrunc
 		snap "ufs$i"
 		i=$((i + 1))

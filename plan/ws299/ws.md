@@ -3,7 +3,7 @@
 # WS299 5330 の NVMe の読み書きを速くする
 
 - Master: [plan/master.md](../master.md)（2026-10-27 作成、q1615 P1 の計画）。Primary Milestone: MG004。Related: MG003（[WS298](../ws298/ws.md) VMD の driver、q1612 NVMe から起動）。
-- Status: planning（2026-10-27 新設。計画だけ、実装は Queue の承認の後）
+- Status: incomplete（2026-10-27 新設、q1616 で p001・p002 を実行中。現在の状態は下の「現在の状態」）
 - 出典: 2026-10-27 ユーザー「5330でNVMeの最適化（速度向上）をWSを立ててやってほしいです。（あとで順番にやってほしいです）」「新規WSはまず計画を広く進めて、全体の依存関係を見ましょう。」
 - 全体の依存と着手の順: [plan/agents/P1/pm-plan.md](../agents/P1/pm-plan.md)。
 
@@ -29,8 +29,14 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
     （256→512 MiB で約 4 倍＝1 秒→5 秒に合う）、上限に達した後は 1 line ごとに約 1.7 万 slab を歩く（約 1 ms/4 KiB ＝約 4 MB/s に合う）。割り込みも止める。
   - H2: 上限の後の line ごとの evict と、確保の失敗で 4 KiB・深さ 1 の同期の読み（`buf.c:2383-2389 → 2110`）に落ちる。
   - H3: NVMe の driver の天井（4 KiB・bounce の写し・深さ 4・1 queue・1 vector）。量に依らない上限（約 250 MB/s）で、崖の説明ではない。
-  - H4: BG5 は DRAM-less で HMB（Host Memory Buffer）の対応が無い。遠い LBA の読みに効くが、量に依る遅さは説明しない。
+  - H4: BG5 は DRAM-less で、zedBSD は HMB（Host Memory Buffer）を渡していない（BG5 は HMB に対応、Linux は 64 MiB を渡す。p001 で確かめた）。遠い LBA の読みに効くが、量に依る遅さは説明しない。
 - 数える口: `vfs.bufcache.{max_bytes,current_bytes,stats}`・`vfs.io.stats`（`IO_BUF_SINGLE_MEMORY` など）・`vfs.readahead.stats`（`src/kern/sysctl.c:68-79`）。
+
+## 現在の状態（2026-10-27 10:30、P1）
+
+- p001（測定）: H1（`alloc_metadata` の slab の線形の walk）が崖の原因と確かめた（cache 128 MiB の kernel で崖が消える、sys ≈ real）。H2・H5 は否、H3（driver）が次の天井、H4（HMB）は連続には効かない。受け入れの数の案と HMB の推し（WS299 では行わない）を [phase001](phase001/phase.md) に。ユーザーの判断待ち。
+- p002（直し）: header の確保を O(1) の index に。5330 の連続の読み 4 GiB が 320〜384 MB/s で一定（前は上限の後 3.3〜21）、raw の書き 597〜655 MB/s（前 4〜14）。QEMU の回帰（T）が残り。
+- 再開点: 受け入れの数と HMB の決定 → p003（大きな転送）。
 
 ## 範囲
 
@@ -56,16 +62,16 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 
 ## Phase の案と見積もり（LW、±50%）
 
-| Phase | 内容 | 依存 | LW |
-| --- | --- | --- | --- |
-| p001 | 調査と設計: 測定の script（5330 の Debian と zedBSD で同じ大きさ・位置、counter を前後で取る）、Debian の基準、H1〜H4 の確かめ（`CONFIG_BUF_CACHE_KIB` を小さくして崖が動くか、`alloc_metadata` の時間）、直しの順と受け入れの数、design-reviewer | WS298（済） | 4 |
-| p002 | buffer cache: header の確保を O(1)（空きの list）にし、irq を止める区間を短く。evict を run 単位に。host 試験で計算量 | p001 | 4 |
-| p003 | NVMe の大きな転送: MDTS に合わせた command、PRP list（bounce を使わず page に直接、使う所だけ bounce）、BIO の上限を上げる（`d_max_transfer_blocks`） | p001 | 6 |
-| p004 | NVMe の queue と割り込み: 深さを上げ、BIO を待たずに続ける（非同期の BIO）、queue を CPU ごとか数本、VMD の MSI-X の vector を子に配る | p003 | 6 |
-| p005 | 連続の読み書き: readahead の窓（raw と UFS）、UFS の cluster の読み書き、書きの合流 | p002 | 4 |
-| p006 | HMB（DRAM-less の BG5、p001 で効果が見込める時だけ。見込めなければ取り消し） | p003 | 4 |
-| p007 | 5330 の測定の受け入れと回帰（QEMU の nvme・USB の起動は T、5330 は 1 本の script） | p002〜p006 | 2 |
-| p008 | 規約の全文の見直し | p007 | 2 |
+| Phase | 内容 | 依存 | LW | 状態 |
+| --- | --- | --- | --- | --- |
+| [p001](phase001/phase.md) | 調査と設計: 測定の script（5330 の Debian と zedBSD で同じ大きさ・位置、counter を前後で取る）、Debian の基準、H1〜H4 の確かめ（`CONFIG_BUF_CACHE_KIB` を小さくして崖が動くか、`alloc_metadata` の時間）、直しの順と受け入れの数、design-reviewer | WS298（済） | 4 | in-progress（測定済み、数の決定待ち） |
+| [p002](phase002/phase.md) | buffer cache: header の確保を O(1)（空きの list）にし、irq を止める区間を短く。evict を run 単位に。host 試験で計算量 | p001 | 4 | in-progress（実機済み、QEMU の回帰待ち） |
+| p003 | NVMe の大きな転送: MDTS に合わせた command、PRP list（bounce を使わず page に直接、使う所だけ bounce）、BIO の上限を上げる（`d_max_transfer_blocks`） | p001 | 6 | planned |
+| p004 | NVMe の queue と割り込み: 深さを上げ、BIO を待たずに続ける（非同期の BIO）、queue を CPU ごとか数本、VMD の MSI-X の vector を子に配る | p003 | 6 | planned |
+| p005 | 連続の読み書き: readahead の窓（raw と UFS）、UFS の cluster の読み書き、書きの合流 | p002 | 4 | planned |
+| p006 | HMB（DRAM-less の BG5、p001 で効果が見込める時だけ。見込めなければ取り消し） | p003 | 4 | planned |
+| p007 | 5330 の測定の受け入れと回帰（QEMU の nvme・USB の起動は T、5330 は 1 本の script） | p002〜p006 | 2 | planned |
+| p008 | 規約の全文の見直し | p007 | 2 | planned |
 
 合計 約 32 LW（p006 を取り消せば 28）。
 
