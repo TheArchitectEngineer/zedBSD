@@ -1,0 +1,64 @@
+<!-- awesome-plan project=zedbsd record=ws307 -->
+
+# WS307 Keiland のアプリとしての zedBSD のグラフィカルなインストーラ
+
+- Status: planning（2026-10-28 新設。仕様はユーザーがブラッシュアップする前の希望を記録した段階。実行の Queue は無い）
+- Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
+- 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
+
+## ユーザーの指示と希望の仕様（原文、2026-10-28）
+
+指示:「WSを新しく作成します。Keilandアプリとして、zedBSDのインストーラを新たに作成します。既存のインストーラ作成WSがあれば、それらはキャンセルを理由にcloseしておいてください。」「下記の仕様が私の希望なのですが、ブラッシュアップしたいです。まずは記録しておいてください。」
+
+```
+・グラフィカルなインストーラをKeilandアプリで作成する。インストーラはUEFI+ACPIなPC用で、他のプラットフォームは考慮しない。
+・インストール先はNVMe, USB Mass Storage, SATA HDDなどのサポートされたディスクです。
+・ウィザード形式で、次へで進める形式。画面は下記にします。
+　・Welcome画面。
+　・インストール先のディスク選択の画面。
+　・ディスクのパーティションの扱いを選択する画面。ディスク全体を使う、パーティションを選ぶ、のどちらか。
+　・パーティションを選ぶ場合に進む、簡易的なパーティション編集画面。パーティション一覧が表示される。選択されたパーティションを削除するボタンがある。パーティションを作成するボタンがある。パーティションの作成は、サイズのみ聞かれる。パーティションは未使用でマークされ、OSのIDはない状態で作成される。パーティションを作成するとき、EFIパーティションがなければ、自動で作成する。EFIを作成できなければパーティション作成も失敗する。次の画面に進むとき、EFIパーティションが存在することをバリデーションする。十分なサイズのEFIパーティションがないときは次の画面に進めない。
+　・パーティションを選ぶ場合に、簡易的なパーティション編集画面のあとに表示される、rootfsパーティション選択画面。選択されたパーティションをUFSとマークして、mkfsして初期化する。
+ィションがないときは次の画面に進めない。
+　・パーティションを選ぶ場合に、rootfsパーティション選択画面のあとに表示される、swapパーティションの選択画面。選択されたパーティションをswapとマークして、mkswapして初期化する。swapパーティションは選択しなくてもいいが、確認はされる。swapパーティションがない場合、UFS上にloopback swapfileが作成される。
+　・ここで、ディスク全体を使う、パーティションを選ぶ、の両方が合流する画面。インストールする項目の選択画面。選択項目は、Base System (ヘッダファイル込み）、Keiland Desktop、Firmware、Packages。Packagesには下位項目があり、Clang, OpenSSH, OpenSSL (+cacertificate), GTK4, Fonts, libavcodec, curlがある。依存ライブラリは自動選択で、libc++やcairoなども依存で入る。
+　・最終確認の画面。
+　・インストールのprogressの画面。
+　・インストール失敗の画面。progressだけでなく、キャンセルや失敗時にここに飛ぶ。
+　・インストール終了の画面。再起動ボタンがある。そのまま終了してデスクトップを使い続けられる。
+
+base, desktop, firmwareはtarballにしておいて、/opt/installer以下に置く。packagesはuserland/packages/のパッケージ単位でtarballにしておき、選択項目＋依存関係のあるものをインストールする。
+```
+
+（原文の「ィションがないときは次の画面に進めない。」の行は、貼り付けの時の重複の断片と見られる。意味はユーザーのブラッシュアップの時に確かめる。）
+
+## 目標（希望の仕様からの要約、Q1。正は上の原文）
+
+UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザード形式のグラフィカルなインストーラを作る。対応する disk（NVMe・USB Mass Storage・SATA など）に、disk 全体か選んだ partition へ zedBSD を入れる。入れる物は base（header 込み）・Keiland Desktop・Firmware・Packages（clang・OpenSSH・OpenSSL＋CA 証明書・GTK4・Fonts・libavcodec・curl と依存）。base・desktop・firmware は tarball で `/opt/installer` の下、packages は `userland/packages/` の package ごとの tarball。
+
+## 画面の流れ（原文の順）
+
+1. Welcome
+2. インストール先の disk の選択
+3. partition の扱い: disk 全体を使う／partition を選ぶ
+4. （選ぶ時）簡易の partition の編集: 一覧・削除・作成（大きさだけ、未使用の印・OS の ID 無し）。ESP が無ければ作成の時に自動で作る（作れなければ作成も失敗）。次へ進む時に十分な大きさの ESP があるかを検査
+5. （選ぶ時）rootfs の partition の選択: UFS の印を付け mkfs
+6. （選ぶ時）swap の partition の選択: swap の印を付け mkswap。選ばなくてもよいが確認する。無ければ UFS の上に loopback の swapfile
+7. 入れる項目の選択（3 の両方の道が合流）
+8. 最終確認
+9. progress
+10. 失敗（キャンセル・失敗の時もここ）
+11. 終了: 再起動のボタン、または終えて desktop を使い続ける
+
+## ブラッシュアップで決める点（Q1 の気付き、未決。ユーザーと詰める）
+
+- 「disk 全体を使う」の時の partition の配置（ESP・root・swap の大きさ）と、既存の data の消去の確認。
+- ESP の「十分な大きさ」の値、既存の ESP を共有する時（他の OS と共存）の loader の置き方と UEFI の boot entry の作り方。
+- インストーラ自身の起動の形（live の USB の image か、インストール済みの desktop から起動するのか）と、`/opt/installer` の tarball の作り方（build の target、署名・検査）。
+- package の依存の解決の元（userland/packages の Makefile の依存か、別の manifest か）と、入れた後の package の管理（WS153 の Apps の頁との関係）。
+- 権限（インストーラは root の操作が要る: sessiond・passkey との関係）、ロケール（WS158 の翻訳）。
+- 試験の方法（QEMU の OVMF＋NVMe・USB・SATA、実機）。
+
+## Phase
+
+未定義（ユーザーのブラッシュアップの後に p001 の要件と設計から）。

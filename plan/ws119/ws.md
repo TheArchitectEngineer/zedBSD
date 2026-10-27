@@ -3,7 +3,7 @@
 # WS119: インストーラの作り直し
 
 <!-- awesome-plan-current:start -->
-Status: planning・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-05 ユーザー「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, … は、ベータ4以降としてください。」（ws119/ws.md Target）。アイディアの Phase の後の議論も未着手）。旧: planning（最初に「アイディアだけ描く」Phase を実行しユーザーと議論、2026-10-05 ユーザー）。以前: planning。残り・制限: p001 要件の案から
+Status: canceled（2026-10-28 ユーザー「WSを新しく作成します。Keilandアプリとして、zedBSDのインストーラを新たに作成します。既存のインストーラ作成WSがあれば、それらはキャンセルを理由にcloseしておいてください。」→ 新しい [WS307](../ws307/ws.md) へ）
 Primary Milestone: MG003
 Related Milestones: MG006
 Objectives: O2

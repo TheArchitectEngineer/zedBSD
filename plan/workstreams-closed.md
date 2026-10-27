@@ -239,3 +239,4 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS293](ws293/ws.md) | MG006 | i915 の Vulkan の executor を render/ から vk/ に揃える（動作は不変） | completed（2026-10-27 01:39） | — |
 | [WS294](ws294/ws.md) | MG006 | i915 の GuC による submission | canceled（2026-10-27 00:18、GuC は WS295 の xe で） | — |
 | [WS298](ws298/ws.md) | MG003 | Intel VMD の driver（5330 の NVMe を BIOS を変えずに使う） | completed（2026-10-27 08:33） | NVMe から zedBSD が起動 |
+| [WS119](ws119/ws.md) | MG003 | インストーラの作り直し | canceled（2026-10-28 ユーザー、Keiland のアプリの新しいインストーラ WS307 へ） | — |
