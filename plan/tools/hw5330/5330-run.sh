@@ -56,7 +56,7 @@ say() {
 case "$MODE" in
 --nvme-*)
 	# The NVMe's zedBSD partitions must be where and what the helper expects.
-	T=60 timeout 60 scp -q plan/tools/hw5330/5330-nvme-write.sh "$HOST:ws245/5330-nvme-write.sh" || { say "FAIL: copy of the helper"; exit 1; }
+	T=60 timeout 60 scp -q plan/tools/hw5330/5330-nvme-write.sh plan/tools/hw5330/ufs-grow.py "$HOST:ws245/" || { say "FAIL: copy of the helper"; exit 1; }
 	lin 'sudo -n sh $HOME/ws245/5330-nvme-write.sh check' > /dev/null || { say "FAIL: the NVMe's zedBSD partitions are not as expected"; exit 1; }
 	;;
 *)
