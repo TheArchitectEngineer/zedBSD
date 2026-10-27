@@ -46,3 +46,4 @@
 | q1613 / q1613-i01 | P1（同じ worktree p1-5330nvme） | [ws298](ws298/ws.md) p001→p002 | Intel VMD の driver の設計と実装、5330 で NVMe が見える。承認: 2026-10-27 06:57 ユーザー「zedBSD に VMD の driver を書く」 | cleared（2026-10-27 08:33: 133176679） |
 | q1614 / q1614-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-pm`・branch `agent/p1-pm`） | 5330 の起動の道具 | grub に zedBSD の項目（既定は Debian）、~/boot-zedbsd.sh（次の 1 回だけ zedBSD）。承認: 2026-10-27 08:44 ユーザーの指示（すぐ） | cleared（2026-10-27 08:59: e272ef967、実機 2 回 PASS） |
 | q1615 / q1615-i01 | P1 | WS299・WS300・WS052・WS301・WS302 の計画 | 新しい WS の計画を広く（調査・設計の Phase の案と全体の依存関係）。実装は後で順に。承認: 2026-10-27 08:44 ユーザー「新規WSはまず計画を広く進めて、全体の依存関係を見ましょう。」 | pending（q1614 の後） |
+| q1616 / q1616-i01 | P1（phase-runner、worktree p1-pm） | [ws299](ws299/ws.md) p001 → p002 | NVMe の速さの測定と設計、buffer cache の直し。承認: 2026-10-27 09:39 ユーザー「P1は、しばらくはさっきお願いした内容で進めていきます」「質問に答えたらP1を開始してよいです」 | in-progress |
