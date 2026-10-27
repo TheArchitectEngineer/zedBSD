@@ -3,7 +3,7 @@
 # WS307 インストーラの仕様
 
 - 親: [WS307](ws.md)。作成: [ws307-p001](phase001/phase.md)（P4、2026-10-28）。
-- 状態: **案**（U1〜U15 は回答済み、U4b・U16〜U18 は回答待ち。回答は §15 に原文で引用し、本文の「→ U<n>」の所を直す）。
+- 状態: **確定の案**（ユーザーの確認事項 U1〜U18 は全て回答済み、§15 に原文。design-reviewer の指摘は §17 で反映済み）。
 - 正はユーザーの原文（[ws.md](ws.md) の「ユーザーの指示と希望の仕様」）。この文書は原文のブラッシュアップで、原文と食い違えば原文が正。
 - 調査の出典は file:行（基点 main 5300ea917）。
 
@@ -19,7 +19,7 @@
 
 | 語 | 意味 |
 | --- | --- |
-| live の system | installer が動いている system（導入元。USB の image など → U1） |
+| live の system | installer が動いている system（導入元。`ZEDBSD_INSTALLER=y` の USB の image、U1） |
 | 導入先 | 選ばれた disk と、その上の partition |
 | unit | `/opt/installer` に置く tarball の単位。Base・Desktop・Firmware の 3 つと、`userland/packages/` の package ごと |
 | helper | root の権限で disk の操作と展開を行う program（`install-admin`、§9） |
@@ -69,7 +69,6 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 - 選べない disk は灰色で理由を出す:
   - live の system が使っている disk: 全ての mount の source、boot の slot（`boot0`〜`boot3`）、`/boot/efi`、有効な swap の source、loop の裏の file の disk（`volumed` の求め方は `/` だけで loop の root を辿らない、`userland/base/volumed/main.c:480-540`。helper はこれらを全て親の disk まで辿る）。
   - 読み取り専用（`KERN_BLOCK_READ_ONLY`）、file を裏に持つ物（`loopN`・ramdisk）。
-  - logical sector が 512 byte でない（4Kn）: 今の `mkfs` の device の mode が 512 byte だけ（`userland/base/mkfs/block-command.c:144-148`）。→ U17。
   - 小さすぎる（§5.6 の最小）。
 - disk の抜き差し: helper の `probe` を「再読み込み」ボタンで取り直す（自動の追従は Future）。
 - 検査: 1 台を選んでいる。
@@ -85,7 +84,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
   - diskpart が編集できない GPT: backup の header が最後の LBA に無い（小さい image を dd した USB に多い）、entry の大きさが 128 でない、header が 92 でない、hybrid MBR、protective MBR の大きさの不一致、片方の copy が壊れている（`userland/base/diskpart/table.c:364-397`。`dp_add`・`dp_delete` は EOPNOTSUPP、`:416`・`:449`）。
   - 使っている entry が 16（diskpart の上限、`userland/base/diskpart/main.c:401`）。17 以上は kernel が 1 つも出さない（`src/drivers/disklabel/gpt.c:1316-1319`）。
   - 別の zedBSD がある disk: disk のどれかの FAT の root に `/zedbsd.cfg` がある（loader は同じ disk の FAT を順に探し最初の `zedbsd.cfg` を使う、`bootloader/uefi/bootx64.c:1502`・`:1668-1673`・`:1815`。今の native の image は `zedbsd.cfg` を ESP でなく ZEDBSD の FAT に置く）。共存させると古い loader が新しい方を起動し、古い方が起動しなくなるため。
-  - 既存の ESP があり、それが「十分な ESP」（§5.4）でない（→ U16 推し A）。
+  - 既存の ESP があり、それが「十分な ESP」（§5.4）でない（U16 の回答「その disk では無効にする」）。
 - 検査: どちらかを選んでいる。
 - 遷移: 戻る → S2。全体 → S7。選ぶ → S4。
 
@@ -137,6 +136,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
   | 　curl | `network/curl`（依存 openssl・zlib・ca-certificates） | 無選択 |
   | 　Python | `lang/python3`（依存 zlib・openssl・ca-certificates、`userland/packages/lang/python3/Makefile:209-210`）。U8 の回答で追加 | 無選択 |
 
+- Firmware の license（U18 の回答「一覧を出し同意で入れる」）: Firmware の行に「license を見る」を置き、配布の unit に入っている firmware ごとの名前と license の全文（`/usr/share/licenses/<pkg>/`、index の一覧）を出す。同意の check を入れないと Firmware を選んだまま次へ進めない（外せば進める）。Firmware の unit は配布用の config で選んだ firmware（今の CI の config: i915・intelax211・intelbt・nvidia-gsp・amd-navi・rtl8822b）。
 - Desktop・Firmware を外す時の警告（U8 の回答「外そうとすると警告」）: `kl_dialog` で「外すと、入れた system は console の login だけになります（graphical の desktop がありません）」「外すと、Wi-Fi・GPU などの firmware が要る device が動かないことがあります」を出し、「外す」「やめる」を選ばせる。
 - ca-certificates は原文で「OpenSSL (+cacertificate)」の 1 項目、U8 の回答では既定の名前に別に挙がる。1 つの項目（OpenSSL＋CA 証明書）のまま、既定で選択とした（§16 T13）。
 
@@ -177,7 +177,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 
 ### 4.11 S11 終了
 
-- 表示: 完了の message、入れた物、導入先から起動する方法（§5.8。loader を fallback の path に置いた時は「USB を外して再起動」。`\EFI\ZEDBSD\` に置いた時は「firmware の boot menu で選ぶ」（U5 の回答）。Boot#### を作った時はその名前と BootOrder の位置（→ U15））、作った利用者の名前。
+- 表示: 完了の message、入れた物、導入先から起動する方法（§5.8）: Boot#### を BootOrder の末尾に作るので（U15）、既定の起動の順は変わらない。そこで「再起動して firmware の boot menu で『zedBSD』を選ぶ（firmware の設定で順を変えれば既定にできる）」を出す。loader を `\EFI\ZEDBSD\` に置いた時は U5 の回答の文「firmware の boot menu で選ぶ」を必ず出す。Boot#### を作れなかった時は「boot menu で導入先の disk（または `\EFI\ZEDBSD\BOOTX64.EFI`）を選ぶ」、作った利用者の名前。
 - 「再起動」: `kl_system_power_action(…, KL_POWER_REBOOT, …)`（`userland/desktop/include/keiland/keiland.h:2293`。sessiond が root か wheel の session だけに許す、`sessiond/power-rules.c:8-16`。kei は wheel、`userland/base/etc/group:1`）。
 - 「閉じる」: installer を閉じ、live の desktop をそのまま使える（原文）。
 
@@ -197,7 +197,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 
 - GPT だけを書く。1 MiB 境界。protective MBR と primary・backup の GPT（diskpart の `init`・`add`・`delete` の既存の動作、`docs/reference/block-administration.md`）。
 - 「disk 全体を使う」: `diskpart init` で表を置き換える（disk GUID・PARTUUID は helper が乱数で作る）。
-- 「partition を選ぶ」: S4 の 1 つの操作ごとに書く（U2 の回答）。削除は `diskpart delete`、作成は `diskpart add`。ESP の自動作成は ESP と新しい partition の 2 つの entry を 1 回で書く（diskpart に複数の add を 1 回の確認・書き込みで行う batch の mode を足す、§11.3。2 回に分けると間で止まった時に ESP だけが残るため）。触らない entry は byte 単位で保つ（GPT の attribute を含む。diskpart の add・delete は他の entry を書き換えない）。型の印（root・swap）は最終確認の後に、型を変える batch で書く（→ U14）。
+- 「partition を選ぶ」: S4 の 1 つの操作ごとに書く（U2 の回答）。削除は `diskpart delete`、作成は `diskpart add`。ESP の自動作成は ESP と新しい partition の 2 つの entry を 1 回で書く（diskpart に複数の add を 1 回の確認・書き込みで行う batch の mode を足す、§11.3。2 回に分けると間で止まった時に ESP だけが残るため）。触らない entry は byte 単位で保つ（GPT の attribute を含む。diskpart の add・delete は他の entry を書き換えない）。型の印（root・swap）は最終確認の後に、型を変える batch で書く（U14 の回答）。
 - 書いた後 `BLKREREADPART` で reload する。導入先の disk の partition が mount 中だと EBUSY になる（`src/kern/partition.c:316-377`）ので、helper は書く前に導入先の disk の partition の mount（Files などから `volumed` に頼んで mount された物。`volumed` は自分では mount しない、`userland/base/volumed/main.c:9-24`）を外し、外せなければ書かずに失敗する。
 - 段と段の間（reload の後、mkfs の前など）に、利用者が Files から導入先の新しい partition を mount しうる（`volumed` は root の disk だけを除く）。helper は各々の子の program を起動する前に導入先の disk の mount を確かめ直し、有れば外すか失敗する。`volumed` に導入先の disk を一時に隠す要求を足すのは Future。
 - 同時に 2 つの installer（helper）が動かないよう、helper は `/run/install-admin/lock` を排他で取る（`/run/install-admin` は symlink を辿らずに作る）。
@@ -217,7 +217,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 ### 5.4 ESP
 
 - 新しく作る ESP の大きさ: 512 MiB（U4 の回答。FAT32 の最小は約 33 MiB、`userland/base/mkfs/fat32-format.c:66`）。
-- ESP に置く物: loader（`BOOTX64.EFI`、今 29 KiB）、`vmunix`（今 約 4 MiB）、`zedbsd.cfg`、`logo.ppm`（U4 の回答: ESP に全部。今の image のような別の ZEDBSD の FAT は作らない）。loader は同じ disk の全ての FAT から root の `/zedbsd.cfg` を探す（`bootloader/uefi/bootx64.c:1815` 付近）ので ESP の root に置けば足りる。
+- ESP に置く物: loader（`BOOTX64.EFI`、今 29 KiB）、`vmunix`（今 約 4 MiB）、`zedbsd.cfg`、`logo.ppm`（U4 の回答: ESP に全部。U4b で WS238 の決定（今の image は ESP に loader だけ、kernel・設定・logo は Windows・macOS で mount できる ZEDBSD の FAT32、`plan/ws238/ws.md`）との違いを示した上で、ユーザーは「U4 のまま ESP に全部」を選んだ。導入先は今の image の形と違い、別の ZEDBSD の FAT は作らない）。loader は同じ disk の全ての FAT から root の `/zedbsd.cfg` を探す（`bootloader/uefi/bootx64.c:1815` 付近）ので ESP の root に置けば足りる。
 - 「十分な ESP」（S4 の検査）: 型が ESP、loader が受け付ける FAT（FAT16 か FAT32、serial が 0 でない、block の大きさが loader の扱える物、`bootloader/uefi/bootx64.c:1555`）、かつ
   - 計画で新しく作る ESP: 上の大きさ。
   - 既存の ESP: 空き ≥ 置く物の合計＋16 MiB（`/opt/installer` の index に置く物の大きさを書く。旧 zedinst の `max(64 MiB, loader＋kernel＋FAT の overhead＋16 MiB)` に倣う）。既に `zedbsd.cfg` がある disk は §4.3 で「partition を選ぶ」を無効にする（§13）。
@@ -255,6 +255,18 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
   4. UAPI: `/dev/system` に変数の読み書きの要求（root だけ）。base の道具 `efiboot`（`list`・`create`・`delete`・`order`）。
 - **HAL の API に触る場合**: 3 の「専用の page table への切り替え」「FPU・SIMD の状態の保存」などに、今の HAL の宣言（`include/hal/hal.h`）で足りない物があれば、その差分の案を該当の Phase の plan に置き、ユーザーの承認を得てから適用する（AGENTS.md §7）。承認が得られるまで Boot#### の作成は無効のまま、installer は loader の配置と S11 の案内だけを行う。
 - installer の使い方: §7.2 の段 11 で、導入先の ESP の PARTUUID・partition の番号・開始・大きさと loader の path から device path（`HD(番号, GPT, PARTUUID, 開始, 大きさ)/File(\EFI\…\BOOTX64.EFI)`）を作り、名前「zedBSD」の `Boot####` を書き、BootOrder の末尾に足す（U15 の回答）。同じ device path の既存の entry があれば作り直さずに使う。書けなければ失敗にせず、S11 で「boot menu で選ぶ」を出す（loader は置いてあるので起動はできる）。
+
+### 5.9 4096 byte の logical sector（U17 の回答「WS307 で 4096 byte に対応」）
+
+- 導入先に logical sector が 4096 byte の disk（4Kn）も選べる。今は `mkfs` の device の mode が 512 byte だけ（`userland/base/mkfs/block-command.c:144-148`、4Kn は EOPNOTSUPP）。
+- 対応する物（p004）:
+  - `mkfs -t fat32`: sector 4096 byte の FAT32（cluster の数の下限 65525 から、最小は約 256 MiB。ESP 512 MiB は満たす）。
+  - `mkfs -t ufs --profile=native`: fragment・block の大きさと sector の換算。
+  - `mkswap` の partition の mode: header の page（4096 byte）と sector の整合。
+  - `diskpart`: GPT の初期化は既に 512・4096 を扱う（`dp_initialize_gpt`、`userland/base/diskpart/table.c:235-310`）。add・delete・batch・1 MiB 境界の計算を 4096 で確かめる。
+  - kernel: partition の reload は 4096 を扱う（`src/kern/partition.c:329-334`）。FAT・UFS の driver と swap の partition を 4096 の disk で mount・使えるかを確かめ、足りなければ直す（kernel の driver の修正。HAL の API には触れない見込み）。
+  - loader: 4096 byte の block を読める（`bootloader/uefi/bootx64.c:41`・`:1425-1437`、buffer 4096）。OVMF で確かめる。
+- 試験: QEMU の `-device nvme,logical_block_size=4096,physical_block_size=4096` と `usb-storage` の同じ設定の導入先に、全体・選ぶの両方で入れて起動する。
 
 ## 6. 入れる物（payload）
 
@@ -297,7 +309,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 
 ### 6.3 index と依存
 
-- `/opt/installer/index` は build が作る text（1 行 1 unit、TAB 区切り）: unit 名、表示名、group（base・desktop・firmware・package）、版、tarball の大きさ、展開後の大きさ、file の数、SHA-256、依存の unit（空白区切り）。ほかに boot の file の行、set-user-ID の許可の一覧、firmware の license の一覧（→ U18）。S7 の項目と下位の項目の対応（項目 → unit の一覧）も index に書く（項目を増やす時に installer を変えない）。
+- `/opt/installer/index` は build が作る text（1 行 1 unit、TAB 区切り）: unit 名、表示名、group（base・desktop・firmware・package）、版、tarball の大きさ、展開後の大きさ、file の数、SHA-256、依存の unit（空白区切り）。ほかに boot の file の行、set-user-ID の許可の一覧、firmware の license の一覧（U18、§4.7）。S7 の項目と下位の項目の対応（項目 → unit の一覧）も index に書く（項目を増やす時に installer を変えない）。
 - 依存の元は `ZEDBSD_USERLAND_PACKAGE` の第 10 引数（REQUIRE、`Makefile:521-532` が展開する物）。group を跨ぐ依存（desktop の compositor → `fonts/*`、`gtk4` → `desktop/libwayland`）は unit の依存に写す（package の依存が desktop の unit の中の package を指せば `desktop` に、base の中を指せば `base` に）。
 - installer は選んだ項目の unit の閉包を index から求める（循環は build の検査で拒む）。
 
@@ -435,7 +447,6 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 - partition の大きさの変更・移動、MBR から GPT への変換、空の disk に GPT を作って partition を選ぶ（U10 の回答で「disk 全体を使う」だけ）。
 - disk の型番・serial の表示（U9 の回答）。
 - network からの導入、package の後からの追加・削除・更新（§6.4 の記録だけを残す）。
-- 4Kn の disk（→ U17）。
 - 同じ disk に 2 つ目の zedBSD を入れる（disk のどれかの FAT に `zedbsd.cfg` があれば「partition を選ぶ」を無効にする、§4.3）。
 - 導入の間の電源の操作（再起動・電源断・suspend）を止める口。
 - `volumed` に導入先の disk を隠す要求。
@@ -485,10 +496,10 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | U12 | rootfs・swap に選べる partition（U2・U3 の後に書き直した問い） | A: 型が「未割り当て」の物だけ | 2026-10-28「ESP 以外の既存も選べる」→ B（選んだ時に「中身を消す」確認） |
 | U13 | package の header | A: 今の package のまま | 2026-10-28「WS307 で header も入れる」→ B（GTK4 などの package に header と `.pc`、入れた system で GTK4 の app を build できる） |
 | U15 | （U5 の回答から）作った Boot#### の BootOrder の位置 | A: 先頭に入れる（再起動で導入先から起動）。B: 末尾に足す（firmware の menu に名前で出るだけ） | 2026-10-28「末尾に足します。また、KeiではなくzedBSDです。Keiの名前はプロジェクトから削除予定です。」→ B、名前は「zedBSD」。spec と UI の文言で「Kei」の名を使わない |
-| U4b | （design-reviewer の指摘 14）U4 の答えと WS238 の決定（ESP は loader だけ、kernel・設定・logo は Windows で mount できる ZEDBSD の FAT32）の食い違い | B: 導入先も WS238 の形（ESP＋ZEDBSD の FAT32＋swap＋root） | 未回答 |
-| U16 | 既存の ESP が小さい・使えない disk で「partition を選ぶ」 | A: その disk では「partition を選ぶ」を無効 | 未回答 |
-| U17 | 4Kn の disk | A: 選べない（Future） | 未回答 |
-| U18 | Firmware の license | A: 配布の config の firmware、S7 で license を表示し同意を求める | 未回答 |
+| U4b | （design-reviewer の指摘 14）U4 の答えと WS238 の決定（ESP は loader だけ、kernel・設定・logo は Windows で mount できる ZEDBSD の FAT32）の食い違い | B: 導入先も WS238 の形（ESP＋ZEDBSD の FAT32＋swap＋root） | 2026-10-28「U4 のまま ESP に全部」→ A（導入先は WS238 の image の形と違う、§5.4） |
+| U16 | 既存の ESP が小さい・使えない disk で「partition を選ぶ」 | A: その disk では「partition を選ぶ」を無効 | 2026-10-28「その disk では無効にする (推し)」→ A |
+| U17 | 4Kn の disk | A: 選べない（Future） | 2026-10-28「WS307 で 4096 byte に対応」→ B（§5.9） |
+| U18 | Firmware の license | A: 配布の config の firmware、S7 で license を表示し同意を求める | 2026-10-28「一覧を出し同意で入れる (推し)」→ A（§4.7） |
 | U14 | （U2 の回答から）S5・S6 の root・swap の型の印と mkfs・mkswap の時期 | A: 最終確認の後（progress の中）。B: S5・S6 の次へでその場で | 2026-10-28「最終確認の後 (推し)」→ A |
 
 ## 16. 担当が決めた技術の判断（理由）
@@ -531,16 +542,16 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | 11 | major | inode の数を見ていない | §5.6、§6.3、§11.3 |
 | 12 | major | T1 が原文と違う | §4 共通・§4.10・T1（全てのキャンセルを S10 へ） |
 | 13 | major | U3（独自の型）は「OS の ID 無し」と食い違う | U3 は選択肢の文「zedBSD 独自の未割り当ての型」でユーザーが選んだ。GPT は型 0 の使用中の entry を持てない事は問いに書いた。追加の確認はしない |
-| 14 | major | U4 は WS238 の決定と違う | U4b としてユーザーに聞く |
+| 14 | major | U4 は WS238 の決定と違う | U4b でユーザーに聞き「U4 のまま」。§5.4 に明記 |
 | 15 | major | diskpart が編集できない GPT | §4.3、§5.1、§12 |
-| 16 | major | 既存の ESP が小さい disk で行き詰まる | U16 としてユーザーに聞く、§4.3 |
+| 16 | major | 既存の ESP が小さい disk で行き詰まる | U16 の回答で「partition を選ぶ」を無効、§4.3 |
 | 17 | major | 段の間に disk を守れない、2 つの installer | §5.2（子の前の mount の確かめ直し、lock）、§7.2 段 2、§13（volumed の隠す要求は Future） |
 | 18 | major | 段の途中で helper が死ぬ | §9.1（signal を無視し段の終わりまで） |
 | 19 | major | 実装の Phase の表、BLKGETINFO の版 | ws.md の表を並べ直し、§11.3 |
 | 20 | minor | `/boot/efi` で UEFI を判定できない | §4.1（boot provenance） |
 | 21 | minor | AHCI の kind は IDE | §4.2 |
 | 22 | minor | live の disk の除外が `/` だけ | §4.2 |
-| 23 | minor | 4Kn を技術の判断で狭めた | U17、T7 を取り下げ |
+| 23 | minor | 4Kn を技術の判断で狭めた | U17 の回答で 4096 byte に対応（§5.9）、T7 を取り下げ |
 | 24 | minor | slot と使用中の entry の混同 | §4.4 |
 | 25 | minor | kernel・loader が unit の外で検査が無い | §6.1（boot の file を index に） |
 | 26 | minor | 十分な ESP は loader の受け入れの規則で | §5.4 |
@@ -553,7 +564,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | 33 | minor | 既定の image の大きさを変える | §11.2（別の target） |
 | 34 | minor | fidoctl などで OpenSSL が必ず要る | §6.2 |
 | 35 | minor | 展開の symlink・hard link・名前の長さ | §6.1 |
-| 36 | minor | firmware の license | U18 |
+| 36 | minor | firmware の license | U18 の回答、§4.7 |
 | 37 | minor | 導入の間の電源の操作 | §4.9、§13 |
 | 38 | minor | 古い文書 | ws.md の p008 |
 | 39 | minor | 試験の抜け | §12 |

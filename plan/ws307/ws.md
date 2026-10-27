@@ -3,7 +3,7 @@
 # WS307 Keiland のアプリとしての zedBSD のグラフィカルなインストーラ
 
 - Status: planning（2026-10-28 新設。p001 で仕様を確定中、q1643 P4）
-- 仕様: [spec.md](spec.md)（案。U1〜U15 回答済み、U4b・U16〜U18 回答待ち。design-reviewer の指摘を反映済み）。
+- 仕様: [spec.md](spec.md)（ユーザーの確認事項 U1〜U18 は全て回答済み。design-reviewer の指摘を反映済み）。
 - Resume point: p001 の手順 3〜5（回答の反映、design-reviewer の指摘の反映、実装の Phase の表の確定）。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
@@ -78,6 +78,10 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 U13「WS307 で header も入れる」: GTK4・cairo・pango・glib・libavcodec・libc++ などの package に header と .pc を入れ、入れた system で GTK4 の app を build できるようにする。
 - 2026-10-28 U14「最終確認の後 (推し)」: root・swap の型の印と mkfs・mkswap は最終確認の後。
 - 2026-10-28 U15「末尾に足します。また、KeiではなくzedBSDです。Keiの名前はプロジェクトから削除予定です。」: Boot#### は BootOrder の末尾、名前は「zedBSD」。spec と UI の文言で「Kei」の名を使わない。
+- 2026-10-28 U4b「U4 のまま ESP に全部」: WS238 の決定（今の image は ESP に loader だけ、kernel・設定・logo は ZEDBSD の FAT32）との違いを示した上で、導入先は ESP 512 MiB に全部。導入先は今の image の形と違う。
+- 2026-10-28 U16「その disk では無効にする (推し)」: 既存の ESP が小さい・使えない disk では「partition を選ぶ」を無効にする。
+- 2026-10-28 U17「WS307 で 4096 byte に対応」: mkfs（FAT32・UFS）・mkswap・diskpart（と要れば kernel の FAT・UFS・swap）の 4096 byte の sector の対応を WS307 に含める。
+- 2026-10-28 U18「一覧を出し同意で入れる (推し)」: Firmware の license の一覧を S7 で出し、同意しないと入れない。
 
 ## Phase
 
@@ -89,9 +93,9 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 
 | Phase | 内容 | 依存 | 見積もり | 状態 |
 | --- | --- | --- | --- | --- |
-| p002 | build: file の manifest（持ち主の package・mode）、重なりの規則、unit（base・desktop・firmware・package ごと）の tarball（ustar＋deflate、所有者 0:0、mode の正規化、set-user-ID の許可の一覧）、index（SHA-256・file の数・依存・項目）、`ZEDBSD_INSTALLER`、installer の image の別の target（manifest から live の tree、build ごとの PARTUUID の cfg）、漏れと重複の検査（spec §6・§11.2）。他の全ての Phase の前提 | p001 | 12 LW | planning |
+| p002 | build: file の manifest（持ち主の package・mode）、重なりの規則、unit（base・desktop・firmware・package ごと）の tarball（ustar＋deflate、所有者 0:0、mode の正規化、set-user-ID の許可の一覧）、index（SHA-256・file の数・依存・項目・firmware の license の一覧）、`ZEDBSD_INSTALLER`、installer の image の別の target（manifest から live の tree、build ごとの PARTUUID の cfg）、漏れと重複の検査（spec §6・§11.2）。他の全ての Phase の前提 | p001 | 12 LW | planning |
 | p003 | package の header と `.pc`（gtk4・cairo・pango・glib・libavcodec・libcxx など）と pkgconf の package。導入先で GTK4 の app を build する確認（spec §6.2、U13） | p002 | 8 LW | planning |
-| p004 | base の道具: `mkswap` の partition の mode（ZEDSWAP2 64 bit）、`diskpart` の batch（複数の add、型と名前の変更）と「未割り当て」の型 GUID、`mkfs -t fat32` の乱数の serial、UFS の inode の密度の量り（spec §11.3）。host の試験と QEMU の短い確認 | p001 | 8 LW | planning |
+| p004 | base の道具: `mkswap` の partition の mode（ZEDSWAP2 64 bit）、`diskpart` の batch（複数の add、型と名前の変更）と「未割り当て」の型 GUID、`mkfs -t fat32` の乱数の serial、UFS の inode の密度の量り、4096 byte の sector の対応（mkfs・mkswap・diskpart と kernel の FAT・UFS・swap の確認、U17）（spec §5.9・§11.3）。host の試験と QEMU の短い確認（512・4096 の disk） | p001 | 14 LW | planning |
 | p005 | UEFI の runtime services: loader の handoff、HAL の名前の値、amd64 の module の GetVariable・SetVariable、`/dev/system` の UAPI、`efiboot`（spec §5.8、U5・U15）。HAL の API の差分が要れば案を置きユーザーの承認を待つ。QEMU の OVMF で Boot#### を書いて読み戻す | p001 | 12 LW | planning |
 | p006 | helper `install-admin`: probe・session（edit・install）、計画の再検査、lock、signal、index の hash の照合、展開（安全な path）、利用者の設定（account の core の導入先の root）、ESP の公開、Boot####（p005 の後）。host の敵対的な計画の試験と、QEMU の SSH での導入（NVMe・SATA・USB の導入先、導入先だけの起動）（spec §5・§7〜§9） | p002・p004（Boot#### は p005） | 16 LW | planning |
 | p007 | installer の app: S1〜S11 と S7a、検査、確認の dialog、翻訳（ja）、App Home、自動起動、AAT の log（spec §4・§10・§11.2） | p006 の protocol | 14 LW | planning |
