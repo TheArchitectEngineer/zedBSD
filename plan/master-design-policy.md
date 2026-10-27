@@ -281,7 +281,7 @@ Stop the active Phase and update its state before changing the plan when:
 
 WS に固有の決定はその ws.md にある。ここは複数の WS・OS 全体に効く物だけ。決定の原文と経緯は git の履歴（2026-10-27 より前の plan/master.md）。
 
-- **名前（2026-10-28 に変わった）**: ユーザー「KeiではなくzedBSDです。Keiの名前はプロジェクトから削除予定です。」「今後keiの名前は削除しますので、zedbsdにします。」→ OS の名前は zedBSD。新しい物（UEFI の boot entry・hostname・文言など）に「Kei」の名を使わない。2026-10-28 ユーザー「P4に伝えてください。起動ロゴ画像を含めて、KeiというOS名を削除して、zedBSDに統一します。インストーラだけでなくすべてに影響します。そういうphaseをこのWSに追加してください。」 → 起動の logo を含め OS 名 Kei を消して zedBSD に統一する（tree 全体、WS307 の Phase で）。内部名（Keiland・libkei* など）を含むかは未決（WS307 で確かめる）。下の旧い決定（WS078）はこれで置き換わる。
+- **名前（2026-10-28 に変わった）**: ユーザー「KeiではなくzedBSDです。Keiの名前はプロジェクトから削除予定です。」「今後keiの名前は削除しますので、zedbsdにします。」→ OS の名前は zedBSD。新しい物（UEFI の boot entry・hostname・文言など）に「Kei」の名を使わない。2026-10-28 ユーザー「P4に伝えてください。起動ロゴ画像を含めて、KeiというOS名を削除して、zedBSDに統一します。インストーラだけでなくすべてに影響します。そういうphaseをこのWSに追加してください。」 → 起動の logo を含め OS 名 Kei を消して zedBSD に統一する（tree 全体、WS307 の Phase で）。2026-10-28 ユーザー「Keilandの名前はそのままです。libkeilandもそのままです。KeiというOS名は、予定ではzedBSDに変更ですが、OSディストリビューション名が変更になる可能性があります。zedBSDはカーネル名です。OS名にするかは未定ですが、現状ではOS名もzedBSDに仮決めしておきます。libkeiland以外にlibkei*があるなら、変更を検討します。」 → Keiland・libkeiland は残す。OS 名は zedBSD に仮決め（distribution 名は変わり得る。zedBSD は kernel 名）。libkeiland 以外の libkei* は変えるかを検討。下の旧い決定（WS078）はこれで置き換わる。
 - **名前（旧、WS078、上で置き換え）**: プロジェクトの名前は Kei Operating System。kernel の内部名は zedbsd、desktop の内部名は Keiland（desktop 環境と呼ばない）。
   OS の見える所から zedBSD・zed・z の名前を外していく（`/bin/wayland`・`/bin/xserver`・`/bin/browser`）。kernel・driver・UAPI の symbol の
   prefix は `ZEDBSD_` でなく `KERN_`。logo などは必ず「Kei」の 3 文字（K だけにしない）。（WS078）
