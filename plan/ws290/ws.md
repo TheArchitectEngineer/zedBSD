@@ -133,7 +133,7 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - ユーザー（2026-10-28、Q1 経由）「GHCI仕様担当が、レビューを受け取って、仕様をアップデートしています。プロトコルに従って相互アップデートを開始します。P3は自律的に仕様アップデートを受け取ってレビューを返し、相互に解決するまで継続してください。」→ 第 13 版（05:08）→ 回答 第 13.0 版（cb937e6、05:57）→ 第 14 版（06:00）。回答の見張りを続ける。
 - p001 cleared。Phase の表は上（design §18 の p002〜p015、266 LW）。
 
-## 再開点（2026-10-28 06:20 ごろ、P3 q1638-i01 のラップアップ）
+## 再開点（2026-10-28 06:15、P3 q1638-i01 のラップアップ）
 
 - branch agent/p3-ws290d（worktree `/home/awe/zedBSD-worktrees/p3-ws290d`、基点 main c8e8bfae1）。主な SHA: design 版 4.1 2ee693d0f → 4.5 67269c977、Phase の確定 dd074cfc5、p002 85e090501。
 - 済み: p001 cleared（design 版 4.5、ghci.md cb937e6）、p002 cleared（語の層と host 試験。phase002/phase.md）。
