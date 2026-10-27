@@ -1,13 +1,26 @@
 <!-- awesome-plan project=zedbsd record=ws291-p006 -->
 
-# ws291-p006 RDNA の NGG B: primitive の culling（w の符号・画面外・裏面・小さい三角形）
+# ws291-p006 RDNA の NGG B+C: primitive の culling と頂点の詰め直し（Mesa の形）
 
 - 親: [WS291](../ws.md)。
 - 状態: in-progress（2026-10-27 13:55 P2、q1611-i01）。
 - 出典: 2026-10-27 04:44 ユーザー（Q1 の問い「NGG の A〜C をどう進めますか？」へのクリック）「A〜C を今進める（推し）」。
 - 依存: p005（cleared 2026-10-27 13:52 Q1）。
+- 範囲の変更（2026-10-27 14:50 Q1 の判断、承認済みの A〜C の範囲の中の技術の判断）: 「仮説 A を採り、culling は p007 の compaction と組にして
+  Mesa の形（ac_nir_lower_ngg.c の culling + compaction、GS_ALLOC_REQ の数も生き残りに合わせる）で入れる。p006 は範囲を変えて p007 と一緒に進め」
+  「Fable の助言は今回は取りません」。→ compaction 無しの culling は GFX10 で止まる（仮説 A、証拠は下の記録）ので p007 と統合した。下の「範囲」「設計」の
+  1 と 5 は統合前の物で、新しい範囲は「範囲（統合後）」。
 
-## 範囲
+## 範囲（統合後、2026-10-27 14:50）
+
+1. Mesa 25.0.7 の ac_nir_lower_ngg.c（add_deferred_attribute_culling、compact_vertices_after_culling）に忠実に: 位置だけを計算する前半 → LDS → 判定 →
+   生き残った primitive が使う頂点だけを wave をまたいで詰め直す（prefix の数え方、exporter の番号）→ GS_ALLOC_REQ の数を生き残りに合わせる
+   （0 なら GFX10 の fully culled の回避）→ 生き残った頂点だけが属性を含む後半を走らせて export。
+2. host の模型に、参照されない頂点の export（export の領域が返らない形）を検出できるなら規則を足す。
+3. 受け入れ: mview 1 体 pixel 差 0、6500 体 8 pixel から悪化しない、desktop、`measure.sh hang` の回復、scene-6500 の GPU の ms（目標 約 20 ms）。
+   実機は 1 回にまとめる。
+
+## 範囲（統合前）
 
 1. primitive shader に culling を足す: 頂点の lane が位置（x/w・y/w・w）を LDS に置き、subgroup の s_barrier の後、primitive の lane が 3 頂点を読んで
    判定し、落とす primitive は export の語の null の bit（bit 31）を立てる。頂点の詰め直し（compaction）と属性の後回しは p007。
