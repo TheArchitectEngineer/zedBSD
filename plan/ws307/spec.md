@@ -3,7 +3,7 @@
 # WS307 インストーラの仕様
 
 - 親: [WS307](ws.md)。作成: [ws307-p001](phase001/phase.md)（P4、2026-10-28）。
-- 状態: **確定の案**（ユーザーの確認事項 U1〜U18 は全て回答済み、§15 に原文。design-reviewer の指摘は §17 で反映済み）。
+- 状態: **案**（U1〜U18 は回答済み、§15 に原文。2026-10-28 の追加の指示（loader が UFS から kernel を読む）で U19〜U21 を回答待ち。design-reviewer の指摘は §17 で反映済み、2 回目のレビュー中）。
 - 正はユーザーの原文（[ws.md](ws.md) の「ユーザーの指示と希望の仕様」）。この文書は原文のブラッシュアップで、原文と食い違えば原文が正。
 - 調査の出典は file:行（基点 main 5300ea917）。
 
@@ -209,7 +209,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | ESP | `C12A7328-F81F-11D2-BA4B-00A0C93EC93B` | `EFI System` |
 | root | `516E7CB6-6ECF-11D6-8FF8-00022D09712B`（今の image と同じ） | `zedBSD installed root` |
 | swap | `516E7CB5-6ECF-11D6-8FF8-00022D09712B`（同） | `zedBSD installed swap` |
-| 未割り当て（S4 で作った物。root・swap に選ばれるまで） | zedBSD 独自の GUID（U3 の回答）。値は p002 で乱数の v4 GUID を 1 つ決め、`include/uapi/` の header と diskpart の型の名前の表に置く | 無し |
+| 未割り当て（S4 で作った物。root・swap に選ばれるまで） | zedBSD 独自の GUID（U3 の回答）。値は p004 で乱数の v4 GUID を 1 つ決め、`include/uapi/` の header と diskpart の型の名前の表に置く | 無し |
 
 - label は今の image の `zedBSD-root`・`zedBSD-swap` と違う名前にする。今の image の cfg は `PARTLABEL=zedBSD-root` で選ぶので、同じ label の導入先の disk が付いていると、今の image の方が曖昧で起動しなくなるため。
 - 起動の設定の root・swap は PARTLABEL でなく PARTUUID で選ぶ（§7.3）。今の image は `PARTLABEL=zedBSD-root` で、同じ label の disk が 2 台あると曖昧で起動が失敗する（`src/kern/block-identity.c:184-190`、[WS062](../ws062/ws.md) の「制限・移管」）。live の USB を挿したまま導入先から起動しても曖昧にならないようにする。
@@ -217,10 +217,12 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 ### 5.4 ESP
 
 - 新しく作る ESP の大きさ: 512 MiB（U4 の回答。FAT32 の最小は約 33 MiB、`userland/base/mkfs/fat32-format.c:66`）。
-- ESP に置く物: loader（`BOOTX64.EFI`、今 29 KiB）、`vmunix`（今 約 4 MiB）、`zedbsd.cfg`、`logo.ppm`（U4 の回答: ESP に全部。U4b で WS238 の決定（今の image は ESP に loader だけ、kernel・設定・logo は Windows・macOS で mount できる ZEDBSD の FAT32、`plan/ws238/ws.md`）との違いを示した上で、ユーザーは「U4 のまま ESP に全部」を選んだ。導入先は今の image の形と違い、別の ZEDBSD の FAT は作らない）。loader は同じ disk の全ての FAT から root の `/zedbsd.cfg` を探す（`bootloader/uefi/bootx64.c:1815` 付近）ので ESP の root に置けば足りる。
+- ESP に置く物: loader（`BOOTX64.EFI`、今 29 KiB）と `zedbsd.cfg`（→ U19 推し A）。kernel は root の UFS の `/boot/vmunix`、logo は `/boot/logo.ppm`（→ U20 推し A）に置き、loader が UFS から読む（§5.10、2026-10-28 ユーザーの追加の指示「ブートローダがUFSからカーネルをロードできるようにしたいです」）。
+  - U4・U4b の「ESP に全部」は、この追加の指示で kernel（と logo）を除いた形に読み替える（Q1 の中継の解釈）。ESP の大きさ 512 MiB は U4 のまま。別の ZEDBSD の FAT は作らない（WS238 の今の image の形とは違う。WS238 は ESP に loader だけ、kernel・設定・logo は Windows・macOS で mount できる ZEDBSD の FAT32、`plan/ws238/ws.md`）。
+  - loader は同じ disk の全ての FAT から root の `/zedbsd.cfg` を探す（`bootloader/uefi/bootx64.c:1815` 付近）ので ESP の root に置けば足りる。
 - 「十分な ESP」（S4 の検査）: 型が ESP、loader が受け付ける FAT（FAT16 か FAT32、serial が 0 でない、block の大きさが loader の扱える物、`bootloader/uefi/bootx64.c:1555`）、かつ
   - 計画で新しく作る ESP: 上の大きさ。
-  - 既存の ESP: 空き ≥ 置く物の合計＋16 MiB（`/opt/installer` の index に置く物の大きさを書く。旧 zedinst の `max(64 MiB, loader＋kernel＋FAT の overhead＋16 MiB)` に倣う）。既に `zedbsd.cfg` がある disk は §4.3 で「partition を選ぶ」を無効にする（§13）。
+  - 既存の ESP: 空き ≥ 置く物の合計＋16 MiB（`/opt/installer` の index に置く物の大きさを書く。旧 zedinst の `max(64 MiB, loader＋kernel＋FAT の overhead＋16 MiB)` に倣う。kernel が UFS に移るので ESP に要る量は loader と cfg だけになる）。既に `zedbsd.cfg` がある disk は §4.3 で「partition を選ぶ」を無効にする（§13）。
 - loader の path（U5 の回答）: `\EFI\BOOT\BOOTX64.EFI` が無ければそこに置く。有れば上書きせず `\EFI\ZEDBSD\BOOTX64.EFI` に置き、S11 で firmware の boot menu から選ぶよう案内する。UEFI の `Boot####` も作る（§5.8）。
 - 新しい ESP は `mkfs -t fat32` で作る。今の mkfs は FAT の serial に disk の登録番号を使い（`userland/base/mkfs/block-command.c:157`、`fat32-format.c:156-158`）、他の disk と重なりうる。そこで mkfs に乱数の serial を使う形を足す（§11.3）。`zedbsd.cfg` に `boot0=` は書かず、loader が自動で足す `boot0=UUID=<serial>`（`bootloader/uefi/zedbsd-config.c:157-173`）に任せる。kernel は `boot0=UUID=` の時だけ、その FAT の disk を待って固定の disk を先に調べる（`src/kern/platform/pcat.c:147`・`:490-541`・`:830-900`）。`boot0=PARTUUID=` にするとこの待ちが無くなり、毎回 5 秒待つか、USB の disk が 2 台ある時に root が見つからないことがある（§16 T4）。
 
@@ -233,7 +235,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 ### 5.6 大きさの検査
 
 - root の最小 = 選んだ unit の展開後の合計 × 1.1 ＋ swap file（作る時）＋ 1 GiB。S5 では Base だけの値、S7 で選んだ物の値で確かめる。
-- inode: native の UFS は cylinder group（最大 63,936 KiB）ごとに 256 の inode で、1 MiB に約 4 つ（`userland/base/mkfs/ufs-format.c:25-28`・`:39`・`:523-536`。1 GiB で約 4,200）。index に unit ごとの file の数を書き、選んだ unit の file の数の合計 × 1.2 が、その大きさの root の inode の数（`--check-size` の出力）以下であることも確かめる。足りなければ必要な大きさを出す。小さな root でも足りるよう、mkfs に inode の密な形を足すかは p002 で量って決める（§11.3）。
+- inode: native の UFS は cylinder group（最大 63,936 KiB）ごとに 256 の inode で、1 MiB に約 4 つ（`userland/base/mkfs/ufs-format.c:25-28`・`:39`・`:523-536`。1 GiB で約 4,200）。index に unit ごとの file の数を書き、選んだ unit の file の数の合計 × 1.2 が、その大きさの root の inode の数（`--check-size` の出力）以下であることも確かめる。足りなければ必要な大きさを出す。小さな root でも足りるよう、mkfs に inode の密な形を足すかは p004 で量って決める（§11.3）。
 - `mkfs -t ufs --profile=native --check-size BYTES` で、その大きさが UFS にできるかを helper の probe で確かめる（`docs/reference/image-formatters.md`）。
 - 「disk 全体を使う」の disk の最小 = ESP ＋ swap（作る時）＋ root の最小。
 
@@ -268,6 +270,20 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
   - loader: 4096 byte の block を読める（`bootloader/uefi/bootx64.c:41`・`:1425-1437`、buffer 4096）。OVMF で確かめる。
 - 試験: QEMU の `-device nvme,logical_block_size=4096,physical_block_size=4096` と `usb-storage` の同じ設定の導入先に、全体・選ぶの両方で入れて起動する。
 
+### 5.10 loader が UFS から kernel を読む（2026-10-28 ユーザーの追加の指示）
+
+- 指示（原文、Q1 の中継）:「P4に、ESPにカーネルをインストールすると回答してしまいましたが、ブートローダがUFSからカーネルをロードできるようにしたいです。そのphaseを作ってほしいです。」
+- 今: UEFI の loader は firmware の FAT の driver（`EFI_SIMPLE_FILE_SYSTEM_PROTOCOL`）で cfg・kernel・logo を開く（`bootloader/uefi/bootx64.c:1563-1599` の cfg の探索、`:2865-2960` の `load_kernel` は cfg の FAT の `root->Open`）。UFS は読めない。future-work の F-014（UFS からの直接の load、2026-09-25 ユーザー）の UEFI の部分に当たる。
+- 作る物（実装の Phase、ws.md の p006）:
+  1. **file の源の抽象**: loader の中で「開く・大きさ・offset からの読み」の 3 つの操作の口を作り、今の FAT（`EFI_FILE_PROTOCOL`）と新しい UFS の両方をその口で読む。`load_kernel`・`show_logo` はこの口を使う。
+  2. **UFS の reader**（読み取り専用、freestanding、`bootloader/common/` に置き BIOS の loader でも後に使える形）: superblock（offset 65536、magic `0x19540119`、`userland/base/mkfs/ufs-disk.h`）、cylinder group の inode の位置、256 byte の dinode、直接の 12 block と 1・2・3 段の間接 block、fragment、directory（`UFS_DIRBLKSIZ` 512）の名前の照合、path の成分ごとの lookup。symlink は辿らない（kernel の path に symlink があれば失敗）。拡張属性・journal は読まない。block の大きさ・sector の大きさ（512・4096、§5.9）の換算。範囲外の block 番号・循環・大きすぎる値は失敗にする（壊れた disk で loader を暴走させない）。
+  3. **root の partition の見つけ方**: cfg の `rootpart=` を loader も読む（今は kernel に渡すだけ）。`PARTUUID=` だけを受け付け（`PARTLABEL=` などは曖昧さを避けるため loader では拒む）、loader が起動した disk と同じ物理 disk の partition の handle のうち、device path の `HD()` の node の signature（GPT の PARTUUID）が一致する物を探し、`EFI_BLOCK_IO_PROTOCOL`（と要れば `EFI_DISK_IO_PROTOCOL`）で読む。0 個・2 個以上は失敗。
+  4. **cfg の書き方**: `kernel=rootpart:/boot/vmunix`（`rootpart:` の接頭辞は「`rootpart=` の partition の UFS の絶対 path」）。接頭辞の無い `kernel=vmunix` は今どおり cfg の FAT の相対 path（今の image・WS238 の形はそのまま動く）。`logo=` も同じ規則（→ U20）。
+  5. **失敗**: 今の方針（隠れた fallback 無し、`docs/howto/boot-and-storage.md` の「a missing file does not select a hidden direct-kernel fallback」）どおり、`A64 KERN UFS <理由>` を画面に出して止まる。FAT の kernel に戻らない。
+  6. **一貫性**: loader は journal を再生しない。UFS の上の kernel は、置いた後に sync して journal が checkpoint された状態でだけ正しく読める。installer は段 8 で unmount と sync をする。kernel の更新（Future）は新しい名前に書いて sync してから rename する規則にする。superblock の clean の印が無い（前の起動が落ちた）時も読むが、警告を 1 行出す。
+- HAL・kernel: kernel は今どおり `rootpart=` で root を mount する。loader → HAL の handoff は変えない（kernel の位置と大きさは今の handoff のまま）。HAL の API に触れない。
+- 試験: host で、`mkfs`（`mkfs -t ufs --profile=native` を file に）・`zedimage-host` で作った UFS に大きな kernel（間接 block を使う 20 MiB 以上）・fragment・深い directory を置き、reader で読んで byte を照らす。壊した superblock・inode・間接 block で失敗すること。QEMU の OVMF で、ESP（loader・cfg）＋ root の UFS（`/boot/vmunix`）の disk を 512・4096 の sector で起動して login prompt（boot-test.sh）。
+
 ## 6. 入れる物（payload）
 
 ### 6.1 置き場所と形
@@ -276,9 +292,9 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 
   ```text
   /opt/installer/index              unit の一覧（§6.3）
-  /opt/installer/boot/BOOTX64.EFI   loader
-  /opt/installer/boot/vmunix        kernel
-  /opt/installer/boot/logo.ppm      起動の logo
+  /opt/installer/boot/BOOTX64.EFI   loader（導入先の ESP へ）
+  /opt/installer/boot/vmunix        kernel（導入先の root の /boot/vmunix へ）
+  /opt/installer/boot/logo.ppm      起動の logo（導入先の root の /boot/logo.ppm へ、→ U20）
   /opt/installer/units/base.tar.gz
   /opt/installer/units/desktop.tar.gz
   /opt/installer/units/firmware.tar.gz
@@ -297,7 +313,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 ### 6.2 unit の分け方（build）
 
 - 今の root の tree の rule（`Makefile:1415-1459` の `ZEDBSD_ROOTFS_TREE_RULE`）は、全ての package の file を 1 つの `ZEDBSD_PACKAGE_FILES` の一覧・`--subtree`・`ZEDBSD_PACKAGE_LINKS` で写し、その後に sysroot の `/usr/include`・`/usr/lib` を丸ごと写す（`Makefile:1520-1528`）。どの file がどの package の物かが残らない。sysroot には他の package の file（`/usr/include/curl`・`libcurl.so`・`libssl.so` など）も入る。clang は sysroot の header・`libc.so`・`crt1.o` を自分でも入れる（`userland/packages/lang/clang/Makefile:272-289`）。
-- そこで build を変える（p004）:
+- そこで build を変える（p002）:
   1. **file の manifest**: 登録の macro が package ごとの変数（写す file・subtree・link）を持ち、root の tree を作る時に「導入先の path → 持ち主の package → mode」の manifest（`$(BUILD)/rootfs.manifest`）を書く。sysroot の開発の file は、それを sysroot に入れた package（libc・base の library は base、curl の header は `network/curl` など）に付ける。
   2. **重なりの規則**: 同じ path を 2 つの package が入れる時、中身が同じなら依存される側（例 clang と base の libc の header は base）に付け、違えば build を失敗させる。
   3. **unit**: manifest の持ち主の package の menu（第 8 引数）で振り分ける: base → `base`、desktop → `desktop`、firmware → `firmware`、`userland/packages/<category>/<name>` → `<category>-<name>`。platform の `--file`（`rc.conf`・`os-release` など）は `base`。menu が tests・x11-applications・x11-servers の package と `ZEDBSD_EXTRA_FILES`・試験の上書きは、配布用の config で選ばない。選ばれていれば build を失敗させる。
@@ -340,15 +356,15 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 7. **設定**: `/etc/fstab`（swap file の時）、`/var/db/installer/`、swap file（§5.5）、利用者と root の password と自動 login（§4.7a）。live の system の `/etc` は写さない（base の unit の既定）。Desktop を入れない時は graphical の login を設定しない（`zedbsd.cfg` に `login=graphical` を書かない）。
    - 既知の password を残さない: base の unit の `/etc/shadow` は root と kei に固定の hash を持つ（`userland/base/etc/shadow:1,5`）。helper は S7a の入力で root と利用者の hash を必ず書き換え、kei を入力の利用者に置き換える（kei のまま残す時も password は入力の物）。書き換えた後、導入先の shadow の root・利用者の行が base の物と違うことを確かめる。
    - OpenSSH を入れた時: package の `sshd_config` は `PermitRootLogin yes`・`PasswordAuthentication yes`・全ての address で待つ（`userland/packages/network/openssh/files/sshd_config:6,11,12`）。導入先では `PermitRootLogin no` に書き換える（§16 T14）。
-   - 利用者の file の編集: 共有の account の core は `/etc` の path を固定で持つ（`userland/base/common/account.h:48-57`）ので、導入先の root を前提に開く形を足す（p005）。hostname は base の既定のまま（入力は Future）。
+   - 利用者の file の編集: 共有の account の core は `/etc` の path を固定で持つ（`userland/base/common/account.h:48-57`）ので、導入先の root を前提に開く形を足す（p007）。hostname は base の既定のまま（入力は Future）。
 8. **root の unmount と sync**。
-9. **ESP の公開**: ESP を mount し、`vmunix`・`logo.ppm` を書いてから loader（§5.4 の path）、最後に `zedbsd.cfg` を一時の名前で書いて rename。`zedbsd.cfg` の中身:
+9. **ESP の公開**: kernel（`/boot/vmunix`）と logo（`/boot/logo.ppm`）は段 6 で root の UFS に置き、段 8 で sync 済み。ESP を mount し、loader（§5.4 の path）を書き、最後に `zedbsd.cfg` を一時の名前で書いて rename。`zedbsd.cfg` の中身（kernel・logo の書き方は §5.10）:
 
    ```text
-   kernel=vmunix
+   kernel=rootpart:/boot/vmunix
    rootpart=PARTUUID=<root>
    swap0=PARTUUID=<swap>        （swap の partition の時だけ）
-   logo=logo.ppm                （live の system の設定に倣う）
+   logo=rootpart:/boot/logo.ppm （live の system の設定に倣う）
    login=graphical              （Desktop を入れた時だけ）
    kmsg=quiet
    ```
@@ -421,7 +437,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 ### 11.3 base の道具に足す物
 
 - `mkswap` の partition の mode: `mkswap DEVICE`（block device、`BLKRESERVE`、`FORMAT name:registration` の phrase、書いた後の検証、ZEDSWAP2 の 64 bit の大きさの検査）。今は regular file だけ（`userland/base/common/format-file.c:48`）。
-- `mkfs -t fat32` の乱数の serial（今は disk の登録番号、`userland/base/mkfs/block-command.c:157`）。既定を乱数にするか option にするかは p002 で決める（他の利用者が今の値に頼っていないかを確かめる）。
+- `mkfs -t fat32` の乱数の serial（今は disk の登録番号、`userland/base/mkfs/block-command.c:157`）。既定を乱数にするか option にするかは p004 で決める（他の利用者が今の値に頼っていないかを確かめる）。
 - （§5.6 の量りの結果で）`mkfs -t ufs --profile=native` の inode の密度。
 - `diskpart` の batch の mode: 複数の操作（add、型と名前の変更）を 1 回の確認（`WRITE name:registration`）で 1 回書き、触らない entry を保つ。型と名前の変更は今の diskpart に無い（add・delete・init だけ、`userland/base/diskpart/main.c:73-90`）。
 
@@ -433,7 +449,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | QEMU の helper | live の image（`ZEDBSD_INSTALLER=y`）を USB で起動、導入先の空の disk を `guest.py start --qemu-extra` で足す（NVMe `-device nvme`、SATA は q35 の ich9-ahci に `-device ide-hd`、USB `-device usb-storage`）。SSH で `install-admin` を直に流す（GUI 無し） |
 | QEMU の GUI | AAT（`plan/tools/aat/`、`aat-input`・`keiland-shot`）で S1〜S11 を操作。installer の READY・画面・control の log で操作する |
 | 導入先の起動 | 導入先の disk の file だけで `plan/tools/boot-test.sh`（`BOOT_MODE=uefi-nvme`）の login prompt。USB の image を付けたままの起動でも root が導入先になる（PARTUUID） |
-| 共存 | 前もって「他の OS」の GPT（ESP に `\EFI\BOOT\BOOTX64.EFI` と別の file、Basic Data の partition に file）を作った disk に「partition を選ぶ」で入れ、触らない partition の byte の hash が変わらないこと、既存の fallback の loader が残り `\EFI\ZEDBSD\` に置かれること、Boot#### が書かれ OVMF の変数に残ること（p003b の後） |
+| 共存 | 前もって「他の OS」の GPT（ESP に `\EFI\BOOT\BOOTX64.EFI` と別の file、Basic Data の partition に file）を作った disk に「partition を選ぶ」で入れ、触らない partition の byte の hash が変わらないこと、既存の fallback の loader が残り `\EFI\ZEDBSD\` に置かれること、Boot#### が書かれ OVMF の変数に残ること（p005 の後） |
 | 「partition を選ぶ」を拒む場合 | 古い native の zedBSD（ZEDBSD の FAT に `zedbsd.cfg`）がある disk、未割り当ての partition に古い FAT が残る disk（0 埋めの確認）、diskpart が編集できない GPT（backup が途中にある・degraded）、使っている entry が 16 の disk、空・MBR の disk（U10） |
 | 起動の識別 | 同じ image を dd した disk を 2 台目に付けて live の installer の image を起動、USB の導入先と別の USB の disk を付けての導入先の起動（boot0 の待ち） |
 | helper の堅さ | 敵対的な計画（live の disk・範囲外・重なり・触らない entry の変更）を helper に与える host の試験、改ざんした `/opt/installer`（index と tarball）、段の途中で installer を kill、2 つの installer を同時に、inode の不足 |
@@ -496,6 +512,9 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | U12 | rootfs・swap に選べる partition（U2・U3 の後に書き直した問い） | A: 型が「未割り当て」の物だけ | 2026-10-28「ESP 以外の既存も選べる」→ B（選んだ時に「中身を消す」確認） |
 | U13 | package の header | A: 今の package のまま | 2026-10-28「WS307 で header も入れる」→ B（GTK4 などの package に header と `.pc`、入れた system で GTK4 の app を build できる） |
 | U15 | （U5 の回答から）作った Boot#### の BootOrder の位置 | A: 先頭に入れる（再起動で導入先から起動）。B: 末尾に足す（firmware の menu に名前で出るだけ） | 2026-10-28「末尾に足します。また、KeiではなくzedBSDです。Keiの名前はプロジェクトから削除予定です。」→ B、名前は「zedBSD」。spec と UI の文言で「Kei」の名を使わない |
+| U19 | （追加の指示から）`zedbsd.cfg` の置き場 | A: ESP（loader の探し方を変えない） | 未回答 |
+| U20 | （追加の指示から）起動の logo の置き場 | A: root の UFS の `/boot/logo.ppm` | 未回答 |
+| U21 | （追加の指示から）今の disk image（hdd-image・installer の image）の形 | A: 導入先だけ新しい形、image は WS238 の形のまま | 未回答 |
 | U4b | （design-reviewer の指摘 14）U4 の答えと WS238 の決定（ESP は loader だけ、kernel・設定・logo は Windows で mount できる ZEDBSD の FAT32）の食い違い | B: 導入先も WS238 の形（ESP＋ZEDBSD の FAT32＋swap＋root） | 2026-10-28「U4 のまま ESP に全部」→ A（導入先は WS238 の image の形と違う、§5.4） |
 | U16 | 既存の ESP が小さい・使えない disk で「partition を選ぶ」 | A: その disk では「partition を選ぶ」を無効 | 2026-10-28「その disk では無効にする (推し)」→ A |
 | U17 | 4Kn の disk | A: 選べない（Future） | 2026-10-28「WS307 で 4096 byte に対応」→ B（§5.9） |
@@ -566,7 +585,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | 35 | minor | 展開の symlink・hard link・名前の長さ | §6.1 |
 | 36 | minor | firmware の license | U18 の回答、§4.7 |
 | 37 | minor | 導入の間の電源の操作 | §4.9、§13 |
-| 38 | minor | 古い文書 | ws.md の p008 |
+| 38 | minor | 古い文書 | ws.md の p010 |
 | 39 | minor | 試験の抜け | §12 |
 
 ## 18. 未決・残り

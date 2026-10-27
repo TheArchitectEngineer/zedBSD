@@ -3,7 +3,7 @@
 # WS307 Keiland のアプリとしての zedBSD のグラフィカルなインストーラ
 
 - Status: planning（2026-10-28 新設。p001 で仕様を確定中、q1643 P4）
-- 仕様: [spec.md](spec.md)（ユーザーの確認事項 U1〜U18 は全て回答済み。design-reviewer の指摘を反映済み）。
+- 仕様: [spec.md](spec.md)（U1〜U18 は回答済み。追加の指示（loader が UFS から kernel を読む）の U19〜U21 は回答待ち。design-reviewer の 1 回目の指摘を反映済み、2 回目のレビュー中）。
 - Resume point: p001 の手順 3〜5（回答の反映、design-reviewer の指摘の反映、実装の Phase の表の確定）。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
@@ -82,6 +82,7 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 U16「その disk では無効にする (推し)」: 既存の ESP が小さい・使えない disk では「partition を選ぶ」を無効にする。
 - 2026-10-28 U17「WS307 で 4096 byte に対応」: mkfs（FAT32・UFS）・mkswap・diskpart（と要れば kernel の FAT・UFS・swap）の 4096 byte の sector の対応を WS307 に含める。
 - 2026-10-28 U18「一覧を出し同意で入れる (推し)」: Firmware の license の一覧を S7 で出し、同意しないと入れない。
+- 2026-10-28 追加の指示「P4に、ESPにカーネルをインストールすると回答してしまいましたが、ブートローダがUFSからカーネルをロードできるようにしたいです。そのphaseを作ってほしいです。」: loader が root の UFS から kernel を読む Phase（p006）を足す。導入先の kernel は UFS の上（`/boot/vmunix`）、ESP は loader（と cfg）。U4・U4b の「ESP に全部」は kernel を除いた形に読み替える（ESP 512 MiB は U4 のまま、Q1 の解釈）。
 
 ## Phase
 
@@ -97,11 +98,12 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 | p003 | package の header と `.pc`（gtk4・cairo・pango・glib・libavcodec・libcxx など）と pkgconf の package。導入先で GTK4 の app を build する確認（spec §6.2、U13） | p002 | 8 LW | planning |
 | p004 | base の道具: `mkswap` の partition の mode（ZEDSWAP2 64 bit）、`diskpart` の batch（複数の add、型と名前の変更）と「未割り当て」の型 GUID、`mkfs -t fat32` の乱数の serial、UFS の inode の密度の量り、4096 byte の sector の対応（mkfs・mkswap・diskpart と kernel の FAT・UFS・swap の確認、U17）（spec §5.9・§11.3）。host の試験と QEMU の短い確認（512・4096 の disk） | p001 | 14 LW | planning |
 | p005 | UEFI の runtime services: loader の handoff、HAL の名前の値、amd64 の module の GetVariable・SetVariable、`/dev/system` の UAPI、`efiboot`（spec §5.8、U5・U15）。HAL の API の差分が要れば案を置きユーザーの承認を待つ。QEMU の OVMF で Boot#### を書いて読み戻す | p001 | 12 LW | planning |
-| p006 | helper `install-admin`: probe・session（edit・install）、計画の再検査、lock、signal、index の hash の照合、展開（安全な path）、利用者の設定（account の core の導入先の root）、ESP の公開、Boot####（p005 の後）。host の敵対的な計画の試験と、QEMU の SSH での導入（NVMe・SATA・USB の導入先、導入先だけの起動）（spec §5・§7〜§9） | p002・p004（Boot#### は p005） | 16 LW | planning |
-| p007 | installer の app: S1〜S11 と S7a、検査、確認の dialog、翻訳（ja）、App Home、自動起動、AAT の log（spec §4・§10・§11.2） | p006 の protocol | 14 LW | planning |
-| p008 | 通しの試験: installer の image、AAT で GUI の導入（全体・選ぶ・共存・既存の partition を root に・swap 無し・キャンセル・失敗・拒む disk・dd した disk との同居）、導入先の起動、`plan/ws307/tests/` の 1 本の script（spec §12） | p003・p007 | 10 LW | planning |
-| p009 | 文書: `docs/howto/boot-and-storage.md` の古い zedinst の節を新しい installer に置き換え、`docs/reference` に install-admin・efiboot・mkswap・diskpart・mkfs の追加 | p008 | 3 LW | planning |
-| p010 | 規約の全文の見直し（WS307 が変えた C） | p009 | 4 LW | planning |
-| p011 | 実機の導入（Q1 の割り当て、ユーザーの試験の一覧） | p008 | 2 LW | planning |
+| p006 | boot loader が UFS から kernel を読む（spec §5.10）: loader の file の源の抽象（FAT と UFS）、`bootloader/common/` の読み取り専用の UFS の reader（superblock・inode・直接と 1〜3 段の間接 block・fragment・directory の lookup、512・4096 の sector、壊れた値の拒否）、cfg の `rootpart=PARTUUID=` で同じ disk の partition を device path の HD の signature で探す、`kernel=rootpart:/boot/vmunix`・`logo=rootpart:…`、失敗は画面に止める。host の試験（mkfs・zedimage-host の UFS に大きな kernel・壊した値）と QEMU の OVMF の起動（512・4096）。HAL の API・handoff は変えない | p001（4096 は p004） | 12 LW | planning |
+| p007 | helper `install-admin`: probe・session（edit・install）、計画の再検査、lock、signal、index の hash の照合、展開（安全な path）、利用者の設定（account の core の導入先の root）、kernel と logo を root の /boot に、ESP の公開（loader・cfg）、Boot####（p005 の後）。host の敵対的な計画の試験と、QEMU の SSH での導入（NVMe・SATA・USB の導入先、導入先だけの起動）（spec §5・§7〜§9） | p002・p004・p006（Boot#### は p005） | 16 LW | planning |
+| p008 | installer の app: S1〜S11 と S7a、検査、確認の dialog、翻訳（ja）、App Home、自動起動、AAT の log（spec §4・§10・§11.2） | p007 の protocol | 14 LW | planning |
+| p009 | 通しの試験: installer の image、AAT で GUI の導入（全体・選ぶ・共存・既存の partition を root に・swap 無し・キャンセル・失敗・拒む disk・dd した disk との同居）、導入先の起動、`plan/ws307/tests/` の 1 本の script（spec §12） | p003・p008 | 10 LW | planning |
+| p010 | 文書: `docs/howto/boot-and-storage.md` の古い zedinst の節を新しい installer に置き換え、`docs/reference` に install-admin・efiboot・mkswap・diskpart・mkfs の追加 | p009 | 3 LW | planning |
+| p011 | 規約の全文の見直し（WS307 が変えた C） | p010 | 4 LW | planning |
+| p012 | 実機の導入（Q1 の割り当て、ユーザーの試験の一覧） | p009 | 2 LW | planning |
 
 - 2026-10-28 ユーザー「P4を立てて、WS307の仕様検討を行ってもらってください。ユーザ確認事項があれば回答させていただきます。仕様を確定させたいです。そのためのphaseをQ1が作り、P4に実行させてください。」
