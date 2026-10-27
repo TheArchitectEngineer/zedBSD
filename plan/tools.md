@@ -12,7 +12,7 @@ Phase に固有の試験は各 WS の `tests/`、シナリオ試験（AAT）は 
 | デスクトップ（10.0.10.3、AMD RDNA か NVIDIA RTX を差し替えて排他で使う） | GPU の device driver の開発。今後は Linux（Debian）＋ VFIO の passthrough で使う方針 | SwitchBot（今は AC276E42B252） |
 | VisionFive 2 | Keiland の desktop の app の速さの最適化（一番遅い機械） | 個別の SwitchBot の予定 |
 | Raspberry Pi 4・Pi 5 | 各 platform（Pi 5 は NVMe の HAT を付けた、WS304） | 個別の SwitchBot の予定（Pi 5 は今夜の新しい SwitchBot） |
-| Latitude 5330 | Intel GPU・電源管理・Alder Lake の platform の対応で、要る時に | 遠隔の電源は無い |
+| Latitude 5330 | Intel GPU・電源管理・Alder Lake の platform の対応で、要る時に | 遠隔の電源は無い。2026-10-27 Q1: /etc/default/grub に GRUB_RECORDFAIL_TIMEOUT=5（不正な停止の後に GRUB の menu で止まらないように、元は /etc/default/grub.orig-q1） |
 | VM（QEMU） | Keiland の desktop の app の開発 | — |
 
 
