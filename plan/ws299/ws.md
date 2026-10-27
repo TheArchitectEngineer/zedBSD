@@ -93,4 +93,4 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 
 - 2026-10-28 ユーザー「P1はfstrimを使った上で、SSDの消去の影響をなるべく排除して、再度目標達成まで継続してください。」
 - 解釈（Q1）: 測る前に 5330 の Debian で `fstrim -av`、書きの試験の先の p6（zedBSD の swap、1 GiB）だけ `blkdiscard`。p1〜p5 は discard しない。測定の間に休みを置き、同じ条件で Debian の基準も取り直す。
-
+- 2026-10-28 ユーザー「P1は、UFSのパーティションが非常に小さいため、そこへの読み書きでは正確な計測ができないです。32GBくらいの空のパーティションを作って、それに対する読み書きをDebianとzedBSDで比較する必要がありそうです。」→ 約 32 GiB の測定用の区画を作り、raw と file system（Debian は ext4、zedBSD は UFS）の読み書きを同じ区画で比べる。空きが足りず ext4 を縮める（live OS の起動が要る）時はユーザーに確かめる。
