@@ -88,4 +88,4 @@
 
 | q1645 / q1645-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291d`・branch `agent/p2-ws291d`、基点 main） | [ws291](ws291/ws.md) p006 の続き → p008〜p009 | q1639 の続き（同じ承認: 自律で Linux と同等以上まで、hang は直す、Fable は何度でも、解けなければユーザーへ）。2026-10-28 Q1 が所有に追加: fence の遅れの原因が kernel の scheduler・起床の道にあればその直し、big-N・subs-N の libvulkan ↔ gpu core の往復（共有の code）の直し。どちらも先に案を Q1 に送り、他の GPU の driver（i915・nvrtx・PowerVR）の build と回帰を確かめる。HAL の API は変えない | in-progress |
 
-| q1646 / q1646-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws299c`・branch `agent/p1-ws299c`、基点 main） | [ws299](ws299/ws.md) p010 O_DIRECT → QD32 → UFS の書き → p007 → p008 | q1640 の続き（同じ承認: fstrim の条件で Debian の 95% 以上まで自律、O_DIRECT を UAPI に足す（ユーザー）） | in-progress |
+| q1646 / q1646-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws299c`・branch `agent/p1-ws299c`、基点 main） | [ws299](ws299/ws.md) p010 O_DIRECT → QD32 → UFS の書き → p007 → p008 | q1640 の続き（同じ承認: fstrim の条件で Debian の 95% 以上まで自律、O_DIRECT を UAPI に足す（ユーザー））。2026-10-28 Q1 が所有に追加: src/kern/file.c・syscall.c・include/kern/file.h（O_DIRECT の open の検査・F_SETFL・bounce の振り分け・pdirect） | in-progress |
