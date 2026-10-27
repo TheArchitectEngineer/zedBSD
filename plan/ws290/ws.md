@@ -117,3 +117,10 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
   - U10「shader で代える」: CAP_BLT が無い時、copy・blit・resolve を compute か描画の shader で代える。
   - U11「hardware の上限の 15 個」: client に使える 15 個まで、超えたら vkCreateDevice を断る。
 
+
+## 再開点（2026-10-28 05:50、P3 q1638）
+
+- design 版 4.4（3ba1b7b6d）: U5・U8〜U11 の反映、design-reviewer（Opus 5.5）3 回（H 6・M 18・L 10 → H 4・M 12・L 9 → §5〜§8 の H 4・M 8・L 4）を全部反映（design §24）。3 回目の判定は「T01〜T04・T09・T11 を直せば p004・p005 は approve 可」で、直した版はまだ再確認していない。
+- 仕様の不備: [ghci-review.md](ghci-review.md) 第 13 版（N47〜N60、main 1b88e6d24 で Q1 が commit）。2026-10-28 ユーザー「GHCI仕様担当が、レビューを受け取って、仕様をアップデートしています。プロトコルに従って相互アップデートを開始します。P3は自律的に仕様アップデートを受け取ってレビューを返し、相互に解決するまで継続してください。」→ 05:39 から reply（既読 Version 12.0）を 60 秒ごとに見張る。第 14 版に入れる新しい疑問の下書き: N61（DISP_SET の大きさ）・N62（texture slot が draw 全体で 16）・N63（8 byte の color attachment・A2B10G10R10）・N64（swizzle・unnormalized の field）・N65（attribute 60 語）・N66（viewport・subpixel の limit）・N67（文書の中の食い違い 4 件）。材料は main の plan/ws290/vk10-fixed-gaps.md（Q1）。
+- Phase の確定と実装（p002〜）: まだ始めない（ユーザーの答え待ち。条件は仕様に不備が無く approve できた時）。
+- 次: reply を受信 → 仕様の差を読む → 第 14 版を main の checkout の ghci-review.md に上書き（1 行目を変え末尾 DONE、commit は Q1）→ design を追従して WIP commit → Q1 に知らせる。双方が納得したら polling を止める。
