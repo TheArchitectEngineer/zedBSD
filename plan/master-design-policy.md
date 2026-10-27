@@ -281,7 +281,8 @@ Stop the active Phase and update its state before changing the plan when:
 
 WS に固有の決定はその ws.md にある。ここは複数の WS・OS 全体に効く物だけ。決定の原文と経緯は git の履歴（2026-10-27 より前の plan/master.md）。
 
-- **名前**: プロジェクトの名前は Kei Operating System。kernel の内部名は zedbsd、desktop の内部名は Keiland（desktop 環境と呼ばない）。
+- **名前（2026-10-28 に変わった）**: ユーザー「KeiではなくzedBSDです。Keiの名前はプロジェクトから削除予定です。」「今後keiの名前は削除しますので、zedbsdにします。」→ OS の名前は zedBSD。新しい物（UEFI の boot entry・hostname・文言など）に「Kei」の名を使わない。既存の Kei の名前を消す作業の範囲と順（Keiland・libkei* などの内部名を含むか）は未決（ユーザーに確かめる）。下の旧い決定（WS078）はこれで置き換わる。
+- **名前（旧、WS078、上で置き換え）**: プロジェクトの名前は Kei Operating System。kernel の内部名は zedbsd、desktop の内部名は Keiland（desktop 環境と呼ばない）。
   OS の見える所から zedBSD・zed・z の名前を外していく（`/bin/wayland`・`/bin/xserver`・`/bin/browser`）。kernel・driver・UAPI の symbol の
   prefix は `ZEDBSD_` でなく `KERN_`。logo などは必ず「Kei」の 3 文字（K だけにしない）。（WS078）
 - **compat の library の置き場**: `libz-compat` は `userland/base`（全 platform、header `include/libc/compat/zlib/zlib.h`）。
@@ -289,6 +290,7 @@ WS に固有の決定はその ws.md にある。ここは複数の WS・OS 全�
   `include/libc/compat/`（`jpeglib.h`、`png/` など）のまま。
 - **retro**: X11 の program は `userland/retro/`、`zedinst` は `userland/retro/zedinst`。Wayland の installer の作り直しは低い優先度。
 - **文字の符号**: UTF-8 だけを扱う。ls などは locale に関わらず名前を UTF-8 として扱い、表示できる文字を escape しない（escape は制御文字と不正な byte だけ）。
+- **既定の利用者（2026-10-28 に変える決定）**: ユーザー「すべてのイメージで、ユーザ名をuser, パスワードをuserに変更します。インストーラはsetuidのヘルパーを使うので、パスワード認証を不要にします。これは特別なインストーライメージのみです。」→ 全 image の既定の利用者を user/user に変える（未実施。下の kei の記述は実施までの今の姿）。installer の image に限り、installer の setuid の helper は password を聞かない（WS307）。hostname の既定は zedbsd（WS307 U27）。
 - **既定の image と login**: base の passwd・group・shadow に kei（uid 1000、network group、password kei）、root の password は root。
   sessiond が `/etc/keiland/autologin`（既定 kei、root は拒む）の利用者で起動の時に 1 回 login し、Log Out の後は greeter。
   make の既定の `hdd-image.img` で desktop を試せる（menuconfig の既定は amd64、Venus・i915 は amd64 で既定 y）。
