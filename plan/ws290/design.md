@@ -3,7 +3,7 @@
 - Phase: [ws290-p001](phase001/phase.md)。版 1・2: 2026-10-26（P1、q1594）。版 3: 2026-10-27（P3、q1621、書きかけで中断）。**版 4: 2026-10-28（P3、q1636-i01）**。版 3 までの本文は git の履歴（f5fea4c2e など）にあり、この版は 89529de を正本に全部を書き直した。
 - 親: [WS290](ws.md)。前身の設計: [WS288 design](../ws288/design.md) §6（1.1 の driver）。
 - この文書は設計だけ。source は変えていない。
-- **状態（2026-10-28 06:40、q1641 P3）: 版 4.7。U の回答（版 4.1）、design-reviewer（Opus 5.5）3 回の指摘（版 4.2〜4.4、§24）を反映し、仕様 cb937e6（回答 第 13.0 版）に追従（版 4.5: N48 で計画の reset を外し、N47・N49・N50・N51・N59・swizzle・unnormalized を使う）。版 4.6: 仕様 20bf888（回答 第 14.0 版）に追従（N62 の sampler の独立の slot `w1[9:6]`、N63 の kind の 1 対 1、N66 の operand 120・121、N70 の DISP_SET 1 + 2N、§11.4 の `maxDescriptorSet*` を 96 に）。版 4.7: 仕様 d9252e4（回答 第 15.0 版）で N73〜N77 が全部解決し、第 16 版で「残る疑問なし」を送った（§19）。**
+- **状態（2026-10-28、q1641 P3）: 版 4.8（design-reviewer（Opus 5.5）の 4 回目、T01〜T16 の反映の確かめと p004・p005 の穴 H1〜H3・M1〜M9・L1〜L5 を §5・§6・§7・§8・§10・§14 に反映。§24 の「4 回目」）。版 4.7 まで: U の回答（版 4.1）、design-reviewer（Opus 5.5）3 回の指摘（版 4.2〜4.4、§24）を反映し、仕様 cb937e6（回答 第 13.0 版）に追従（版 4.5: N48 で計画の reset を外し、N47・N49・N50・N51・N59・swizzle・unnormalized を使う）。版 4.6: 仕様 20bf888（回答 第 14.0 版）に追従（N62 の sampler の独立の slot `w1[9:6]`、N63 の kind の 1 対 1、N66 の operand 120・121、N70 の DISP_SET 1 + 2N、§11.4 の `maxDescriptorSet*` を 96 に）。版 4.7: 仕様 d9252e4（回答 第 15.0 版）で N73〜N77 が全部解決し、第 16 版で「残る疑問なし」を送った（§19）。**
 
 ## 0. 正本・読んだ物・確認の水準
 
@@ -168,7 +168,7 @@ struct ghci_ring {
 /* One GHCI session (1..15) that an executor session holds. */
 struct ghci_vm {
 	uint32_t session_id;
-	enum ghci_vm_state state;	/* OPEN, FAULTED, CLOSING, RETIRED (section 6.2) */
+	enum ghci_vm_state state;	/* OPEN, FAULTED, REPLAY_WAIT, DEAD, CLOSING, RETIRED (section 6.2) */
 	struct ghci_mapping *mappings;
 	struct ghci_range_map addresses;/* the VA inside the chunks the session owns */
 	uint32_t chunks;		/* 2 MiB chunks owned (section 5.5) */
@@ -230,7 +230,7 @@ struct ghci_mapping {
 
 **lock の順**（§8）: `device.lock`（mutex）→ `display.lock`（mutex）→ `cp_lock`（mutex）→ `irq_lock`（spin）。
 
-**回復の印と門（R02・Q02・Q03・Q08）**: handler が IRQ_FAULT・IRQ_WATCHDOG を見た時、service が hang・liveness の失敗を決めた時に、irq_lock の中で `recovering` = 1 にする。ring に packet を置く全ての経路（submit、VM の map・unmap、session の open・close、表示）は、自分の外側の lock を取った後に `ghci_cp_enter` で cp_lock を取る。`ghci_cp_enter` は `recovering` が 1 なら cp_lock と呼び手の持つ外側の lock（device.lock・display.lock）を全部離し、門の counter `gate_generation`（fault の記録の `recovery_generation` とは別、T07）が進むのを待って **RETRY** を返す。device が LOST なら待たずに **LOST** を返し、LOST になった時は門で待つ thread を全部起こす（T04）。service thread が回復以外の仕事で ring を使う時は待たない enter（RETRY を即に返すだけ）を使う（自分を待たない、T08）。呼び手は最初からやり直し、状態を読み直す。**門を通る前には何も記録しない**: VM・session の状態の変更と packet の配置は、門を通った後の 1 区間（device.lock → cp_lock）で行い、全部を置けた時だけ状態を変える。ring の空きを待つ loop は、RPTR が進んだ時か `recovering` が立った時だけ抜ける（timeout の経路を持たない。CP が止まれば service の hang の判定が `recovering` を立てる。T03）。回復をする service thread だけが門を通らない。
+**回復の印と門（R02・Q02・Q03・Q08）**: handler が IRQ_FAULT・IRQ_WATCHDOG を見た時、service が hang・liveness の失敗を決めた時に、irq_lock の中で `recovering` = 1 にする。ring に packet を置く全ての経路（submit、VM の map・unmap、session の open・close、表示）は、自分の外側の lock を取った後に `ghci_cp_enter` で cp_lock を取る。`ghci_cp_enter` は `recovering` が 1 なら cp_lock と呼び手の持つ外側の lock（device.lock・display.lock）を全部離し、門の counter `gate_generation`（fault の記録の `recovery_generation` とは別、T07）が進むのを待って **RETRY** を返す。device が LOST なら待たずに **LOST** を返し、LOST になった時は門で待つ thread を全部起こす（T04）。service thread が回復以外の仕事で ring を使う時は待たない enter（RETRY を即に返すだけ）を使う（自分を待たない、T08）。呼び手は最初からやり直し、状態を読み直す。**門を通る前には何も記録しない**: VM・session の状態の変更と packet の配置は、門を通った後の 1 区間（device.lock → cp_lock）で行い、全部を置けた時だけ状態を変える。ring の空きを待つ loop は、RPTR が進んだ時か `recovering` が立った時だけ抜ける（timeout の経路を持たない。CP が止まれば service の hang の判定が `recovering` を立てる。T03）。待ちは FENCE の IRQ と、`GHCI_POLL_MS` ごとの RPTR の読みで起きる。submit は vm の状態（OPEN か）を cp_lock の中で読む。回復をする service thread だけが門を通らない。
 
 `ghci_cp_submit(device, vm, packets, dwords, ticket)`: 門で cp_lock を取る。packet の前に `CMD_BIND_SESSION(vm の番号)`（driver 自身の仕事は 0。flat は置かない）、後に `CMD_FENCE`（device の fence page、seq = 前 + 1、MEM_WRITE | IRQ）、最後に `CMD_BIND_SESSION(0)`（後の driver の packet が client の session で動かないように。flat は置かない）を置く。1 つの submit は cp_lock を持ったまま全部置く（D15）: 余地が無ければ cp_lock を持ったまま（device.lock は持たない）RPTR を待ち、ring より大きい submit は packet の境で分けて doorbell ごとに待つ。一部を置いた後に `recovering` で抜けた submit は、置いた部分が reset で捨てられる（reset は ring を空にする）ので、やり直さず `EIO`（その executor の session の error。その submit の参照する物は submit の ticket（generation が古く、reset の成功で返す）で守る）。ticket = {seq（64 bit）, generation}。submit ごとに [start, end)・持ち主の `ghci_vm`・fence の seq を `submit_log`（未完の物）に残す（flat の犯人の判定、§5.4）。doorbell は §9.3 の順。
 
@@ -238,13 +238,13 @@ struct ghci_mapping {
 
 handler（irq_lock の spin）: `IRQ_ENABLE` = 0 → `IRQ_STATUS` を読む → 扱う bit を W1C → `IRQ_ENABLE` を戻す。bit は FAULT・WATCHDOG を FENCE より先に扱う（Q05）:
 - FAULT・WATCHDOG（2 つ同時の watchdog、1603 行、は 1 つの事象）: `recovering` = 1。`STATUS`・`FAULT_INFO`・`FAULT_ADDR`・`SESSION_ACTIVE`・`RING_RPTR`・`DIAG_CP_PC`・`DIAG_CP_STATUS` と、その時の fence の語を、今の `recovery_generation` を付けて記録する（Q06）。handler は `fault_count` を 1 進める（T01）。PROT = 1 の client の fault で CP が動き続け、その session の FENCE が書かれても仕事は NOP なので、**`recovering` の間は FENCE の経路で ticket を成功で完了しない**（completed の値だけを記録し、完了は §5.4 の 4 でまとめて行う。T05）。service に FAULT。
-- FENCE: fence page を読み、`recovering` でなければ completed を進め service に RECLAIM（`recovering` の間は語を記録するだけ）。
+- FENCE: fence page を読み、その後に `IRQ_STATUS` の FAULT・WATCHDOG を読み直す（fault の latch と後の FENCE の書き込みの間の競合を閉じる。版 4.8）。どちらも立たず `recovering` でなければ completed を進め service に RECLAIM（立っていれば FAULT の経路にし、語を記録するだけ）。
 - DISPLAY: service に DISPLAY（p012、`DISP_IRQ_STATUS` を読み W1C してから IRQ_STATUS[3] を W1C、1567 行）。
 `CTRL` は handler で触らない。`drv_gpu_complete` は service thread が呼ぶ。
 
 ### 5.4 fault・watchdog・reset（p004・p005）
 
-U5（「全部 WS292」）により、WS290 は session だけの回収（§3.3 の N05 の手順）をしない。**IRQ_FAULT・IRQ_WATCHDOG・hang・liveness の失敗は、`STATUS.FAULTED` に依らず全部、装置の reset で回復する**（CAP_PROT = 1 の device も CAP_PROT = 0 と同じ扱い）。reset は「どの状態からでも」受け付けられる（§5.2 の RESETTING）。回復は service thread だけが行う。p004 は session 0 だけの回復（reset・ticket・門・liveness・hang・LOST）、p005 は client の session の犯人・DEAD・再生・計画の reset を足す（T11）。
+U5（「全部 WS292」）により、WS290 は session だけの回収（§3.3 の N05 の手順）をしない。**IRQ_FAULT・IRQ_WATCHDOG・hang・liveness の失敗は、`STATUS.FAULTED` に依らず全部、装置の reset で回復する**（CAP_PROT = 1 の device も CAP_PROT = 0 と同じ扱い）。reset は「どの状態からでも」受け付けられる（§5.2 の RESETTING）。回復は service thread だけが行う。p004 は session 0 だけの回復（reset・ticket・門・liveness・hang・LOST）、p005 は client の session の犯人・DEAD・再生を足す（T11）。
 
 | 段 | 持つ lock | 中身 |
 | --- | --- | --- |
@@ -254,16 +254,16 @@ U5（「全部 WS292」）により、WS290 は session だけの回収（§3.3 
 | 9・10 | 無し | 門を開ける、session への報告 |
 
 1. **記録**: service は handler の記録を取り出し、`recovery_generation` が今の物より古い記録は捨てる（reset の前に積まれた古い事象、Q06）。
-2. **HALT と犯人**（p005 で犯人）: device.lock → display.lock → cp_lock を取る。`STATUS.FAULTED` でなければ `CTRL.HALT` を書き `STATUS.HALTED` を有界に待つ（PROT = 1 の CP を止めてから読む。T05）。`fault_count` の値を覚える（8 の確かめに使う、T01）。`FAULT_INFO`（KIND・UNIT・SESSION_ID だけを解き、stage と syndrome は生の値。N50）・`SESSION_ACTIVE`・`FAULT_ADDR`・`DIAG_*`・fence の語を読み log。
-   - **client に帰せる fault**（20bf888 の N63 で kind は 1 対 1、d9252e4 の N73 で書き分けも決まった）: `UNIT` が VF・SU・RX・TU・ROP・BLT（≠ CP）で `KIND` が 1（INVALID_OP、ISA の fault を含む）・6（PROT_FAULT）・9（PAGE_FAULT、read・write は FAULT_INFO[20]）・10（PERM_FAULT）、または `KIND` 4（watchdog）。`UNIT` = CP の物（1・2・3・6・7、8 = MMU_OOM。driver は secondary を使わないので CP の 6 も driver の誤り）と `KIND` 5 は driver の誤りか装置の fault で帰せない。
+2. **HALT と犯人**（p005 で犯人）: device.lock → display.lock → cp_lock を取る。`STATUS.FAULTED` でなければ `CTRL.HALT` を書き `STATUS.HALTED` を有界に待つ（PROT = 1 の CP を止めてから読む。T05。待ち切れなければ（HALTING は今の packet が終わるまで続く、d9252e4 の 560・1644 行）`SESSION_ACTIVE` を読まず、犯人は (a) だけで 3 へ進む。版 4.8）。`fault_count` の値を覚える（8 の確かめに使う、T01）。`FAULT_INFO`（KIND・UNIT・SESSION_ID だけを解き、stage と syndrome は生の値。N50）・`SESSION_ACTIVE`・`FAULT_ADDR`・`DIAG_*`・fence の語を読み log。
+   - **client に帰せる fault**（20bf888 の N63 で kind は 1 対 1、d9252e4 の N73 で書き分けも決まった）: `UNIT` が VF・SU・RX・TU・ROP・BLT（≠ CP）で `KIND` が 1（INVALID_OP、ISA の fault を含む）・6（PROT_FAULT）・9（PAGE_FAULT、read・write は FAULT_INFO[20]）・10（PERM_FAULT）、または `KIND` 4（watchdog）。`UNIT` = CP の物（1・2・3・6・7・9・10、8 = MMU_OOM。driver は secondary を使わないので CP の 6 も、VA の衝突などの CP の 9・10 も driver の誤り）と `KIND` 5 は driver の誤りか装置の fault で帰せない。FAULT_INFO が UNIT = CP の MMU_OOM の時は、(b) の `SESSION_ACTIVE` で落ちた session も犯人にしない（client の MMU_OOM は session を落とすが driver の勘定の外れ。d9252e4 の 1738 行。版 4.8）。
    - **犯人（Q04・T05）**: flat でない device は (a) `FAULT_INFO.SESSION_ID` = s が 1〜15 で OPEN の `ghci_vm`（帰せる fault の時）、(b) PROT = 1 では、OPEN で「SESSION_OPEN の後の fence が過ぎた」（CP が開いたと確かめた）のに `SESSION_ACTIVE[s]` = 0 の session（`FAULT_INFO` は最初の fault だけを latch する、410 行。2 つ目以降の犯人もこれで拾う）。s = 0 は driver の packet なので装置の fault（1605 行の「Session 0 の watchdog は FAULTED」）。flat は全 client が session 0 なので、ここで読んだ fence の語より seq が大きい `submit_log` の最初の submit の持ち主（driver の submit なら装置の fault）。
    - 犯人の `ghci_vm` を FAULTED にする。犯人の無い fault（帰せない物、AXI_STUCK、hang）は**装置の fault**。
 3. **reset**: `CTRL.RESET` を書き、0 に戻るのを `GHCI_RESET_WAIT_MS` 待つ。戻らない・`STATUS.AXI_STUCK` = 1 なら即 LOST（1609〜1611 行）。reset は `RING_BASE`・`RING_SIZE`・`CP_HEAP_*`・`WDT_CYCLES`・`IRQ_ENABLE`・`SCRATCH` を保ち、`RING_WPTR`・`RPTR`・`IRQ_STATUS`・`FAULT_*`・`CTRL` の実行の bit・`SESSION_ACTIVE`・TLB・CP_HEAP の割当を消す（565〜566 行）。driver は保たれる register を読んで確かめ（違えば書き直す）、`ring.wptr` = 0、`submit_log` を空にする。
 4. **ticket**（irq_lock の中、T06）: ticket の完了は eager（完了の時に waiter ごとに OK か ERROR を記録し、後から seq で判定し直さない）。(a) fence の語を読み、その値までの ticket を OK で完了する（reset の前に書かれ IRQ が未処理だった物。ただし FAULTED の session の物は ERROR）、(b) generation を進め、(a) の値より後の古い ticket と job marker を ERROR で完了する、(c) fence の語に最後に置いた seq を書く（574 行）。reset が成功した（quiesce した）ので、ERROR で終わった ticket が守っていた物理も返してよい。**reset の前に ERROR で終わった ticket（PROT = 1 の犯人の物）は物理を返さず、次の成功した reset まで hold する**。
 5. （p012 の後）CP が IDLE の間に DISP2 の `STATUS[31]` が落ちるのを待ち `TAKEN0/1` を読み数え直す（2543〜2545 行。今の code と同じく display.lock の中、Q03）。display.lock を離す。
-6. **session の状態と RUN**（p005 で session）: 犯人（FAULTED）と、(b) で ERROR に終わった ticket（submit・VM の操作・close のどれでも）を持っていた session は **DEAD**（hardware の session は無いが、番号・chunk・mapping の記録は executor の close まで持つ。Q01）。CLOSING は RETIRED。他の OPEN は「再生待ち」。CP_HEAP の勘定を DEAD でない session の物だけで作り直す（「数えた」印も作り直す、T12。reset は heap の割当を BASE に戻す、566 行）。`CTRL` = IRQ_GLOBAL | WDT_EN | RUN。liveness: driver の `CMD_FENCE`（attach の 10 と同じ）を置き、有界に待つ（flat は再生が無いので CP の生死はこれで見る。Q07）。通らなければ 2 に戻る。
-7. **再生**（p005）: まず session 0 の mapping（`vm[0]` の記録。表示の一時の写しなど）を `CMD_VM_MAP(0, …)` で置き直し（574 行・2781 行の「re-map Session 0」）、次に「再生待ち」の各 `ghci_vm` について `CMD_SESSION_OPEN(s)` と LIVE の mapping の `CMD_VM_MAP` を置く（RPTR を待ちながら。待ちは RPTR が進むか `fault_count` が変われば抜ける）。flat は session も mapping も置かない。
-8. **最後の確かめ**（T01）: driver の `CMD_FENCE` を置いて有界に待ち、(a) `fault_count` が 2 で覚えた値から変わっていない、(b) `FAULT_INFO` = 0、(c) flat でなければ `SESSION_ACTIVE` が「OPEN と session 0」の集合と一致する、を確かめる。どれかが違えば 1 に戻る（新しい fault の記録として扱う）。6 の liveness の失敗とこの確かめの失敗が**続けて 3 回**なら LOST。全部が通れば「再生待ち」を OPEN に、`recovering` = 0、`recovery_generation` と `gate_generation` を進める。
+6. **session の状態と RUN**（p005 で session）: 先に CLOSING を RETIRED にする（close の ticket が ERROR でも。版 4.8）。次に犯人（FAULTED）と、(b) で ERROR に終わった **submit** の ticket を持っていた session は **DEAD**（hardware の session は無いが、番号・chunk・mapping の記録は executor の close まで持つ。Q01。VM の操作の ticket だけが ERROR の session は仕事を失っていないので DEAD にしない。版 4.8）。他の OPEN は「再生待ち」（REPLAY_WAIT）。CP_HEAP の勘定を DEAD でない session の物だけで作り直す（「数えた」印も作り直す、T12。reset は heap の割当を BASE に戻す、566 行）。`CTRL` = IRQ_GLOBAL | WDT_EN | RUN。liveness: driver の `CMD_FENCE`（attach の 10 と同じ）を置き、有界に待つ（flat は再生が無いので CP の生死はこれで見る。Q07）。通らなければ 2 に戻る。
+7. **再生**（p005）: まず session 0 の mapping（`vm[0]` の記録。表示の一時の写しなど）を `CMD_VM_MAP(0, …)` で置き直し（574 行・2781 行の「re-map Session 0」）、次に「再生待ち」の各 `ghci_vm` について `CMD_SESSION_OPEN(s)` と LIVE の mapping の `CMD_VM_MAP` を置く（RPTR を待ちながら。待ちは RPTR が進むか `fault_count` が変われば抜け、上限は `GHCI_HANG_MS`。切れたら 6・8 の失敗として数える。版 4.8）。flat は session も mapping も置かない。
+8. **最後の確かめ**（T01）: driver の `CMD_FENCE` を置いて有界に待ち、(a) `fault_count` が 2 で覚えた値から変わっていない、(b) `FAULT_INFO` = 0、(c) flat でなければ `SESSION_ACTIVE` が「OPEN と session 0」の集合と一致する、を確かめる。どれかが違えば 1 に戻る（新しい fault の記録として扱う）。6 の liveness の失敗とこの確かめの失敗が**続けて 3 回**なら LOST。全部が通れば、**irq_lock の 1 区間で** `fault_count` をもう一度比べ、同じなら「再生待ち」を OPEN に、`recovering` = 0、`recovery_generation` と `gate_generation` を進める。違えば（確かめと区間の間に fault が来た）1 に戻る（版 4.8）。
 9. lock を全部離し、門で待つ thread を起こす。
 10. DEAD にした session に `drv_gpu_report_session_error`（その session の ticket は 4 で全部終わっているので、core の `stop_poll` は即に 0 を返せる。T09）。
 
@@ -272,25 +272,25 @@ U5（「全部 WS292」）により、WS290 は session だけの回収（§3.3 
 | core の call | driver |
 | --- | --- |
 | `stop_begin`・`stop_poll`（session） | irq_lock の状態だけで答える（device.lock を取らない）。DEAD・RETIRED、または未完の ticket が無い session は 0、回復の途中で未完の物があれば EAGAIN |
-| `isolate`（session） | その session の未完の ticket・callback を irq_lock の中で ERROR で終え、物理を device の hold に移し（次の成功した reset で返す）、以後の submit を断る。0 を返す（回復が core の `CONFIG_GPU_JOB_STOP_MS` より長くても装置全体の fault に上がらない） |
+| `isolate`（session） | その session の未完の ticket・callback を irq_lock の中で ERROR で終え、`ghci_vm` を DEAD にし（以後の unmap・close は packet を置かず hardware に触れない、gpu.h の isolate の約束）、物理を device の hold に移し（次に成功した driver の reset か core の reset で返す）、以後の submit を断る。0 を返す（回復が core の `CONFIG_GPU_JOB_STOP_MS` より長くても装置全体の fault に上がらない） |
 | `fault`（device） | LOST にする（下）。何度呼ばれても同じ |
-| `reset`（device） | 古い持ち主が全部去った後に、2〜6（session 無し）と liveness を行い、通れば LOST から RUNNING に戻し 0、通らなければ LOST のまま error |
+| `reset`（device） | 古い持ち主が全部去った後に、service に頼んで（回復は service だけ）2〜6（session 無し）と liveness を行い、通れば `recovering` = 0、`gate_generation` を進め、quarantine と isolate の hold を返し、LOST から RUNNING に戻して 0。通らなければ LOST のまま error |
 
 **LOST**: 以後の submit・VM の操作は `EIO`、`drv_gpu_report_error`。門で待つ thread を全部起こし、`ghci_cp_enter` は LOST を返す（T04）。LOST の device の unmap・close は packet を置かずに即に終わり、物理は返さず `quarantined` に記録する（GPU がまだ DMA し得る）。detach は Bus Master を切った後にだけ quarantine を返す。LOST になる時（Q07・T02）: (a) 3 の RESET が落ちない・AXI_STUCK、(b) 6・8 の失敗が続けて 3 回、(c) **装置の fault**（犯人の無い物、hang を含む。MMU_OOM を除く）が `GHCI_FAULT_STORM_MS`（60 s）の中で 3 回、(d) MMU_OOM が 60 s の中で 2 回（勘定の外れが直らない時に reset を繰り返さないため。T02）。犯人の有る fault は数えない（犯人は DEAD で二度と submit しない。session を開き直して fault を繰り返す client は他の client の未完の仕事を DEVICE_LOST にし得る。隔離の無い間（WS292 まで）の制限、§23）。
 
 **hang**（Q07・T13）: fence の語が最後に置いた seq より小さく（submit・VM の操作・close のどれでも）、`GHCI_HANG_MS`（10 s）の間 fence の語も `RING_RPTR` も進まない時（長い正当な submit は RPTR が進むので hang にしない）。判定は service が irq_lock と register の読みだけで行う（device.lock を要らない。VM の操作が device.lock を持って ring を待つため。T03）。犯人は無し。
 
-**計画の reset**: 版 4.4 にあったが、cb937e6 で CLOSE・UNMAP が table を返す（N48）ので外した（T07 の手順は不要）。`gate_generation` と `recovery_generation` を分ける事（T07）は残す。
+**計画の reset**: 版 4.4 にあったが、CLOSE が table を返し（d9252e4 の 1931 行、N48）、勘定の上限が決まる（§5.5）ので外した（T07 の手順は不要）。`gate_generation` と `recovery_generation` を分ける事（T07）は残す。
 
 ### 5.5 session と VM（p005、§11.2・§11.6）
 
 - **session の番号**: 0 は driver、1〜15 を executor の session に。executor が `GPU_OP_CREATE_DEVICE`（vkCreateDevice）を受けた時に、その VkDevice 1 つに 1 つ取る（1 つの fd で VkDevice を 2 つ作れば 2 つ。Q21）。取るのは門を通った 1 区間で、番号と `CMD_SESSION_OPEN(s, 0)` を同時に（Q02）。RETIRED になるまで再利用しない（R16。fd を開いただけ・資源だけの session は番号を取らない。Venus の transport の blob は VM_MAP しない。device より前に作られた・import された resource は、その device の VkDeviceMemory に結ばれた時にその session に VM_MAP する）。16 番目は `EBUSY`、vkCreateDevice は `VK_ERROR_TOO_MANY_OBJECTS`（U11「hardware の上限の 15 個」）。`CAP_PROT` = 0・1 の device は同じに番号を使う（dynamic state は session ごと、845 行）。flat は全 client が session 0 で動くが、数の上限は同じ 15。
-- **状態**（§6.2）: OPEN・CLOSING・RETIRED に、reset の後の **DEAD**（Q01）。DEAD の unmap・close は packet を置かず、reset の成功を ticket として即に完了し、物理・VA・chunk・勘定・番号を返す（close で RETIRED）。
+- **状態**（§6.2）: OPEN・CLOSING・RETIRED に、reset の後の **DEAD**（Q01）。DEAD の unmap・close は packet を置かず、reset の成功を ticket として即に完了し、物理・VA・chunk・番号を返す（close で RETIRED。勘定は §5.4 の 6 で DEAD を外して作り直してあるので返さない。版 4.8）。
 - **VA**: v1 は 32 bit の範囲だけ使う（VA_BITS = 40 の device も上位を 0 に。`gpu_va_hi` = 0）。device に 1 つの **2 MiB の chunk の表**（2048 個、chunk 0 と最後は使わない）を持ち、chunk は 1 つの session だけが持つ。session の中は自分の chunk の上の range allocator（`range.c`）で取る。2 MiB を超える allocation は連続した chunk の run を first-fit で取り、取れなければ `ENOMEM`（詰め直しはしない、v1）。理由: CAP_PROT = 0 は page table を全 session で共有し（1852 行）、CAP_PROT = 1 は session ごと（1853 行）。chunk の持ち主を一つにすると (a) どちらでも VA が重ならず、(b) 1 つの L0 table（2 MiB）が 1 つの session だけに属し、CP_HEAP の勘定が上限で決まる。
-- **CP_HEAP の勘定**（cb937e6 の N48: root は VA 32 bit で 16 KiB・40 bit で 8 KiB（628 行）、`CMD_SESSION_CLOSE` は root と中間の table を、`CMD_VM_UNMAP` は空になった中間の table を CP_HEAP の free list に返し再利用する（1915 行））: CP の内部の割当は driver に見えないので上限で数える: session ごとに root と中間の table（VA_BITS 32 は root 16 KiB。40 は root 8 KiB と、4 GiB を覆う L1 の 4 KiB が 1 GiB ごとに最大 4 枚、計 24 KiB）、(session, chunk) ごとに L0 の 4 KiB（PROT = 1 は session ごとに別の table。PROT = 0 は共有の table なので chunk ごと。T12）。勘定は SESSION_CLOSE・VM_UNMAP の fence の後に返す。`GHCI_HEAP_BYTES` = 16 × 24 KiB + 2048 × 4 KiB + 64 KiB（仕様の式の余裕、1919〜1921 行）= **8.44 MiB**（取れなければ半分ずつ減らす。仕様の式は L0 を少なく数えている、ghci-review 第 14 版 N64）。勘定を超える要求（新しい session、新しい chunk）は `ENOMEM`（Vulkan は OUT_OF_DEVICE_MEMORY）・`EBUSY`。MMU_OOM（KIND 8 と UNIT = CP）が来れば §5.4 の reset で heap ごと回収し、犯人にせず、嵐とは別に 60 s に 2 回で LOST（T02）。版 4.4 の悲観の勘定と計画の reset は、N48 の答えで要らなくなったので外した。
+- **CP_HEAP の勘定**（d9252e4: root は VA 32 bit で 16 KiB・40 bit で 8 KiB（629 行）、`CMD_SESSION_CLOSE` は root と中間の table を CP_HEAP の free list に返し再利用する（1931 行）。`CMD_VM_UNMAP` は table を返さず、reset がまとめて回収する（567 行）。版 4.8 で直した）: CP の内部の割当は driver に見えないので上限で数える: session ごとに root と中間の table（VA_BITS 32 は root 16 KiB。40 は root 8 KiB と、4 GiB を覆う L1 の 4 KiB が 1 GiB ごとに最大 4 枚、計 24 KiB）、(session, chunk) ごとに L0 の 4 KiB（PROT = 1 は session ごとに別の table。PROT = 0 は共有の table なので chunk ごと。T12）。勘定は SESSION_CLOSE の fence の後に、PROT = 1 はその session の root・L1・L0 を返す。PROT = 0 は共有の table の L0 を返さない（「数えた」印は chunk ごとに 1 回で、reset まで残る）。VM_UNMAP では返さない。chunk の持ち主が変わっても、PROT = 1 の前の持ち主の L0 の勘定はその session の CLOSE まで残る。`GHCI_HEAP_BYTES` = 16 × 24 KiB + 2048 × 4 KiB + 64 KiB（仕様の式の余裕、d9252e4 の 1933〜1937 行）= **8.44 MiB**（取れなければ半分ずつ減らす。式は d9252e4 で N64 の形に直った）。勘定を超える要求（新しい session、新しい chunk）は `ENOMEM`（Vulkan は OUT_OF_DEVICE_MEMORY）・`EBUSY`。MMU_OOM（KIND 8 と UNIT = CP）が来れば §5.4 の reset で heap ごと回収し、犯人にせず、嵐とは別に 60 s に 2 回で LOST（T02）。版 4.4 の悲観の勘定と計画の reset は、N48 の答えで要らなくなったので外した。
 - **map**: `ghci_memory_alloc` で物理 → 門を通った 1 区間（device.lock → cp_lock）で chunk と VA を取り `CMD_VM_MAP(s, flags, va, bus, bytes)` を置き、置けた時だけ mapping を LIVE として記録する（Q02）。完了は待たない（packet は in-order、706 行）。flags: host は READ | WRITE | COHERENT（WC は付けない、§11.4 の「GPU は coherence を外さない」）、code は | EXEC、local は | LOCAL。
 - **unmap**: 門を通った 1 区間で `CMD_VM_UNMAP` と `CMD_FENCE` を置き、mapping を UNMAPPING（その ticket）にする。ticket が過ぎたら VA を返し、物理は他の mapping・hold が無ければ返す（685 行「fence で守る」）。RETRY の間は LIVE のまま物理を hold する。VM_UNMAP は GPU の drain を待つ（1723〜1728 行）ので、map・unmap は VkDeviceMemory・blob・import と executor の heap の単位だけにする（D14）。
-- **close**（R01）: 失敗できない（`gpu.h`）。門を通った 1 区間で、LIVE の全 mapping の `CMD_VM_UNMAP` → `CMD_SESSION_CLOSE(s)` → `CMD_FENCE` の順に置き、`CLOSING`。ring が足りなければ cp_lock を持ったまま RPTR を待ち（ring より大きければ VM_UNMAP の途中で分ける）、RETRY なら最初から（reset の後は再生された session に置き直すか、DEAD なら packet 無し）。SESSION_CLOSE を最後の VM_UNMAP より前に置かない（N49）。その fence の ticket の後に物理・chunk・番号を返し `RETIRED`（勘定は悲観の読みで reset まで残す）。
+- **close**（R01）: 失敗できない（`gpu.h`）。門を通った 1 区間で、LIVE の全 mapping の `CMD_VM_UNMAP` → `CMD_SESSION_CLOSE(s)` → `CMD_FENCE` の順に置き、`CLOSING`。ring が足りなければ cp_lock を持ったまま RPTR を待ち（ring より大きければ VM_UNMAP の途中で分ける）、RETRY なら最初から（reset の後は再生された session に置き直すか、DEAD なら packet 無し）。SESSION_CLOSE を最後の VM_UNMAP より前に置かない（N49）。その fence の ticket の後に物理・chunk・番号を返し `RETIRED`（勘定は §5.5 の CP_HEAP の勘定の通り、PROT = 1 はこの fence の後に返す）。
 - **flat（HW_WALKER = 0、U9）**: `CMD_SESSION_OPEN`・`CLOSE`・`VM_MAP`・`VM_UNMAP` は KICK_ABSENT の fault になる（1851 行）ので置かない。`ghci_vm` は数と mapping の記録のためだけに作り（`session_id` = 0、`flat` = 1）、map は VA = bus address（恒等、packet 無し、chunk も CP_HEAP の勘定も使わない）、unmap は packet 無しで、cp_lock の中で読んだ「今まで置いた最後の fence の seq」を ticket にする（Q21。GPU が参照し得る submit は全部その前）。VA = bus なので executor は VA を 64 bit で持ち、32 bit に入らない番地の物は flat では確保しない（host は 4 GiB 未満、D8。discrete の flat は v1 では local を使わず unified と同じ扱い）。全 client が session 0 を共有するので、executor は submit に要る bind と dynamic state を全部その submit の中で置く（§11.3 の 2）。
 - **番地の上限**: GPU に渡す host memory は bus address が `2^PA_BITS` 未満。v1 は全部を 4 GiB 未満（MEM の HOST_LIMIT が 0 でなければその下）に取る（`kern_pmem_alloc_limited`。CP_HEAP・FB・flip の record は 32 bit の物理なので必須、他は簡単のため。D8）。
 
@@ -307,7 +307,7 @@ U5（「全部 WS292」）により、WS290 は session だけの回収（§3.3 
 
 ### 5.7 detach（p004）
 
-session が残れば `EBUSY`。(0) service thread に止まるよう頼み、回復の途中なら回復の終わりか LOST を待ってから止める（detach と回復が CTRL を二重に書かないように。T16）。(1) p012 の後: 表示が driver の framebuffer を scan していれば boot framebuffer に戻すか ENABLE = 0 にして `STATUS.idle` を待つ。(2) RUNNING なら `CTRL.HALT` → `STATUS.HALTED` を有界に待つ（FAULTED・LOST は飛ばす）。(3) `CTRL.RESET`、`IRQ_ENABLE` = 0、`CTRL` = 0。(4) Bus Master を切る（表示が boot framebuffer を scan していれば切らず、ring・heap を参照しない状態（RESET 済みで RUN = 0）で残す）。(5) poll の thread を止め、ring・fence・CP_HEAP・quarantine の物理を返す。
+session が残れば `EBUSY`。(0) service thread に止まるよう頼み、回復の途中なら回復の終わりか LOST を待ってから止める（detach と回復が CTRL を二重に書かないように。T16）。(1) p012 の後: 表示が driver の framebuffer を scan していれば boot framebuffer に戻すか ENABLE = 0 にして `STATUS.idle` を待つ。(2) RUNNING なら `CTRL.HALT` → `STATUS.HALTED` を有界に待つ（FAULTED・LOST は飛ばす）。(3) `CTRL.RESET`、`IRQ_ENABLE` = 0、`CTRL` = 0、割り込みを返す（handler の解除。遅れた handler が ring・fence page に触れないように。版 4.8）。(4) Bus Master を切る（表示が boot framebuffer を scan していれば切らず、ring・heap を参照しない状態（RESET 済みで RUN = 0）で残す。ただし LOST で RESET が落ちなかった device は表示に依らず切る。切れなければ quarantine・ring・heap の物理を返さない。版 4.8）。(5) poll の thread を止め、ring・fence・CP_HEAP・quarantine の物理を返す。
 
 ## 6. 状態遷移
 
@@ -318,7 +318,7 @@ ATTACHING --identify・reset・liveness OK--> RUNNING
 RUNNING --IRQ_FAULT・IRQ_WATCHDOG（FAULTED に依らず）・hang--> RECOVERING --reset と liveness OK--> REPLAYING --最後の確かめ OK--> RUNNING
 REPLAYING --最後の確かめの失敗--> RECOVERING（liveness と合わせて 3 回続けば LOST）
 RECOVERING --liveness の失敗--> RECOVERING（3 回続けば LOST）
-REPLAYING --fault・hang・ring の待ちの timeout--> RECOVERING（再生をやり直す。R34）
+REPLAYING --fault・hang・再生の待ちの上限（`GHCI_HANG_MS`）--> RECOVERING（再生をやり直す。R34）
 RECOVERING --RESET が落ちない・AXI_STUCK--> LOST
 RUNNING|REPLAYING --60 s に犯人の無い装置の fault 3 回（MMU_OOM を除く）、60 s に MMU_OOM 2 回--> LOST
 LOST --core の reset（古い持ち主が全部去った後）と liveness OK--> RUNNING
@@ -330,7 +330,7 @@ driver は `STATUS.RUNNING`・`HALTED`・`FAULTED`・`AXI_STUCK`・`CP_STATE` �
 
 ### 6.2 session（ghci_vm）
 
-`(無し)` → `OPEN`（番号を取り SESSION_OPEN を置いた、同じ区間）→ `CLOSING`（VM_UNMAP・SESSION_CLOSE・FENCE を置いた）→ `RETIRED`（ticket の後、番号・chunk を返す）。`OPEN` → `FAULTED`（§5.4 の 1 の犯人）→ reset で `DEAD`。reset で、仕事を失った `OPEN` も `DEAD`、他の `OPEN` は再生されて `OPEN`、`CLOSING` は `RETIRED`。`DEAD` → executor の close で packet 無しに `RETIRED`（Q01）。flat の `ghci_vm` は session の packet を置かず、close で直に `CLOSING`（最後の fence の ticket）→ `RETIRED`。
+`(無し)` → `OPEN`（番号を取り SESSION_OPEN を置いた、同じ区間）→ `CLOSING`（VM_UNMAP・SESSION_CLOSE・FENCE を置いた）→ `RETIRED`（ticket の後、番号・chunk を返す）。`OPEN` → `FAULTED`（§5.4 の 2 の犯人）→ reset で `DEAD`。reset で、submit を失った `OPEN` も `DEAD`、他の `OPEN` は `REPLAY_WAIT` を経て再生されて `OPEN`、`CLOSING` は `RETIRED`。`OPEN` → isolate で `DEAD`。`DEAD` → executor の close で packet 無しに `RETIRED`（Q01）。flat の `ghci_vm` は session の packet を置かず、close で直に `CLOSING`（最後の fence の ticket）→ `RETIRED`。
 
 ### 6.3 allocation と mapping
 
@@ -347,7 +347,7 @@ LOST の device: どの状態からも FREED にしない（quarantine）
 | --- | --- | --- |
 | ring・fence page・CP_HEAP | device | detach の Bus Master を切った後 |
 | session の番号・chunk | `ghci_vm` | `RETIRED` の時: SESSION_CLOSE の ticket の後、reset が CLOSING を終えた時、DEAD の session の executor の close の時（T14） |
-| CP_HEAP の勘定 | device | reset の数え直し（§5.5 の悲観の読み） |
+| CP_HEAP の勘定 | device | SESSION_CLOSE の fence の後（PROT = 1 の session の分）と reset の数え直し（§5.5） |
 | VA | session の allocator | UNMAPPING の ticket の後 |
 | resource・blob の物理 | drv_gpu の session（export の record も hold） | 全 mapping の unmap の ticket の後 |
 | executor の heap（session ごと） | vk の session | session の close（heap の unmap の ticket の後） |
@@ -361,9 +361,10 @@ LOST の device: どの状態からも FREED にしない（quarantine）
 順: `device.lock`（mutex: session、allocator、chunk、mapping、寿命、heap の勘定）→ `display.lock`（mutex: 表示）→ `cp_lock`（mutex: ring、doorbell、reset、`submit_log`）→ `irq_lock`（spin: completed、generation、`recovering`・`recovery_generation`・`gate_generation`・`fault_count`、fault の記録、service の仕事）。外側の lock を後から取らない（離すのは順に依らない）。
 - ring に置く経路は §5.2 の門を通り、待つ時は持つ lock を全部離す（device.lock・display.lock も。Q02・Q03）。門の前に状態を記録しない。
 - 回復（§5.4）は service thread だけで、段ごとの lock は §5.4 の表。表示の数え直しは今の code と同じく display.lock → cp_lock（`cp.c` の `ghci_display_recover_begin`、Q03）。
-- ring の空きの待ちは cp_lock（VM の操作では device.lock も）を持ったまま、上限 `GHCI_RING_WAIT_MS` で、`recovering` で即に抜ける（Q08）。
+- ring の空きの待ちは cp_lock（VM の操作では device.lock も）を持ったまま、RPTR が進むか `recovering` で抜ける（上限の時計は持たず、止まった CP は service の hang の判定が `recovering` を立てる。Q08・T03）。
 - 内部の shader（§11.6）の compile は device.lock・cp_lock の外で行い、結果を device.lock の中で登録する。
 - device.lock・display.lock を持ったまま ticket・fence を待たない（回復の 2 がその lock を取れなくなる。T10）。待つ時は lock を離し、戻ったら状態を読み直す。
+- **3 つの世代**（版 4.8）: ticket の `generation` は §5.4 の 4 の (b) で進め、それより古い ticket を ERROR にする。`recovery_generation` は 8 の終わり（irq_lock の 1 区間）で進め、それより古い fault の記録を 1 で捨てる。`gate_generation` も 8 の終わり（と core の reset の成功）で進め、門で待つ thread を起こす。`mapping.replayed` は再生した時の `recovery_generation`。
 - host 試験の stub は lock の順の違反、「門で lock を持ったまま待つ」、「device.lock・display.lock を持って ticket を待つ」を FAIL にする（§14）。
 
 ## 9. 割り込みと DMA
@@ -390,7 +391,7 @@ ring へ書く → store barrier → `RING_WPTR`（dword の index）。非 cohe
 | fault・watchdog（FAULTED に依らない、U5） | handler | §5.4 の reset と再生 | 犯人と未完の仕事を失った session は DEVICE_LOST、他は続く |
 | hang | service | 同上（犯人は無し） | 同上 |
 | reset の失敗・AXI_STUCK・犯人の無い fault の嵐 | §5.4 | LOST（物理を返さない） | 以後 EIO |
-| ring の満 | ring_plan | cp_lock を持ったまま有界に待つ | timeout で submit の失敗 |
+| ring の満 | ring_plan | cp_lock を持ったまま RPTR か `recovering` を待つ | hang の判定 → 回復。回復の途中で一部を置いた submit は `EIO` |
 | VM_UNMAP を門で待つ | vm.c | LIVE のまま物理を hold し、呼び手（service でない）が RETRY でやり直す | 無し |
 | VA・chunk・CP_HEAP の勘定・物理の不足 | allocator | 遅延の解放を回収し 1 回やり直す | `ENOMEM` |
 | 16 個目の executor の session（U11） | vm.c | 断る | `EBUSY`（vkCreateDevice の失敗） |
@@ -531,10 +532,10 @@ Phase ごとの場面（すべて PASS が受け入れ）:
 | --- | --- |
 | p002 | 全 encoder（境界: NOP 255 超、vertex buffer 16、LOAD_CONST 32、DISP_SET n）、PSO・descriptor・render pass の byte、ring の計画（端・満・1 slot）、fence64 の比較（回り込み）、EXTCAP の走査（正常・環・窓の外・32 個）、caps の decode（全 bit、VA_BITS・PA_BITS の符号化、鏡の食い違い）、CP_HEAP の勘定の関数 |
 | p003 | model の自己試験（手で組んだ列、reset の表、IRQ、VM の 3 つの段、session の fault と装置の fault の注入、MMU_OOM、Bus Master、stub の lock の順の検出） |
-| p004 | session 0 だけで: attach（VERSION 0x00010000・0x00010003 を受け 0x00020000・0 を拒む、MAGIC、SCRATCH、MEM_READY、reset の待ちの上限を WDT_CYCLES と GCLK_HZ から、liveness の失敗 → EIO、FAULTED・RUNNING で残った device、no-su は executor を出さず flat・prot は出す、flat の CP_HEAP は 16 KiB）、register の順、submit・fence・IRQ・poll、4 KiB の ring で 1000 回、ring より大きい submit、装置の fault → HALT → reset → 古い ticket が ERROR → 次が動く、fence が書かれ IRQ が未処理のまま fault（その ticket は OK、R06）、session 0 の packet の watchdog（装置の fault、Q04）、reset の前に積まれた古い fault の事象を捨てる（Q06）、長い正当な submit を hang にしない・VM の fence だけが残った停止も hang（T13）、liveness・最後の確かめが 3 回続けて通らず LOST（Q07・T01）、ring の空きを待つ間の fault で待ちが即に抜け、timeout の経路が無い（Q08・T03）、門で lock を持ったまま待たない・device.lock を持って ticket を待たない（Q02・Q03・T10）、LOST で門が開き close が packet 無しで終わる（T04）、core の stop_poll・isolate・fault・reset（T09）、嵐 → LOST、MMU_OOM 2 回 → LOST、detach（回復の途中の detach、T16）、lock の順の違反 0 |
-| p005 | session の open（16 個目 EBUSY）、VM_MAP（VA・bus・flag が model の表に一致、chunk の持ち主が一つ）、PROT 0 と 1 の両方で VA が重ならない、flat は packet 無しで VA = bus・unmap は最後の fence の ticket、CP_HEAP の勘定を超える要求が ENOMEM で MMU_OOM が起きない、unmap → fence の後に物理が返る、置き損じ → 置き直し、import、close → RETIRED まで番号を再利用しない、reset の後の再生（SESSION_OPEN と VM_MAP、ring より大きい再生、犯人の session は再生しない）、flat は再生しない、犯人（DEAD）の後の destroy・close と別の client の open で番号・VA が二重に使われない（Q01）、再生の途中の map・close・open が RETRY でやり直され重複の SESSION_OPEN・閉じた session への操作が出ない（Q02）、CP_HEAP の勘定が尽きた時の計画の reset（Q10）、client の犯人（T11 で p004 から移す）: prot の client の fault（FAULTED = 0）でも HALT → reset され犯人だけが DEAD・他は再生されて続く、2 つ目の犯人を SESSION_ACTIVE で拾い、SESSION_OPEN の fence の前の session は犯人にしない（T05）、PROT = 1 の犯人の fence が OK にならず物理を reset まで返さない（Q05・T06）、犯人の有る fault は嵐に数えない、再生の途中の fault（PERM_FAULT・MMU_OOM）を最後の確かめで見つける（T01）、heap の勘定を超える要求は ENOMEM・EBUSY で MMU_OOM が起きない、CLOSE・UNMAP の fence の後に勘定が返る（N48）、L0 を (session, chunk) ごとに数える（T12） |
+| p004 | session 0 だけで: attach（VERSION 0x00010000・0x00010003 を受け 0x00020000・0 を拒む、MAGIC、SCRATCH、MEM_READY、reset の待ちの上限を WDT_CYCLES と GCLK_HZ から、liveness の失敗 → EIO、FAULTED・RUNNING で残った device、no-su は executor を出さず flat・prot は出す、flat の CP_HEAP は 16 KiB）、register の順、submit・fence・IRQ・poll、4 KiB の ring で 1000 回、ring より大きい submit、装置の fault → HALT → reset → 古い ticket が ERROR → 次が動く、fence が書かれ IRQ が未処理のまま fault（その ticket は OK、R06）、session 0 の packet の watchdog（装置の fault、Q04）、reset の前に積まれた古い fault の事象を捨てる（Q06）、長い正当な submit を hang にしない・VM の fence だけが残った停止も hang（T13）、liveness・最後の確かめが 3 回続けて通らず LOST（Q07・T01）、ring の空きを待つ間の fault で待ちが即に抜け、timeout の経路が無い（Q08・T03）、門で lock を持ったまま待たない・device.lock を持って ticket を待たない（Q02・Q03・T10）、LOST で門が開き close が packet 無しで終わる（T04）、嵐 → LOST、MMU_OOM 2 回 → LOST、detach（回復の途中の detach、T16）、lock の順の違反 0 |
+| p005 | session の open（16 個目 EBUSY）、VM_MAP（VA・bus・flag が model の表に一致、chunk の持ち主が一つ）、PROT 0 と 1 の両方で VA が重ならない、flat は packet 無しで VA = bus・unmap は最後の fence の ticket、CP_HEAP の勘定を超える要求が ENOMEM で MMU_OOM が起きない、unmap → fence の後に物理が返る、置き損じ → 置き直し、import、close → RETIRED まで番号を再利用しない、reset の後の再生（SESSION_OPEN と VM_MAP、ring より大きい再生、犯人の session は再生しない）、flat は再生しない、犯人（DEAD）の後の destroy・close と別の client の open で番号・VA が二重に使われない（Q01）、再生の途中の map・close・open が RETRY でやり直され重複の SESSION_OPEN・閉じた session への操作が出ない（Q02）、client の犯人（T11 で p004 から移す）: prot の client の fault（FAULTED = 0）でも HALT → reset され犯人だけが DEAD・他は再生されて続く、2 つ目の犯人を SESSION_ACTIVE で拾い、SESSION_OPEN の fence の前の session は犯人にしない（T05）、PROT = 1 の犯人の fence が OK にならず物理を reset まで返さない（Q05・T06）、犯人の有る fault は嵐に数えない、再生の途中の fault（PERM_FAULT・MMU_OOM）を最後の確かめで見つける（T01）、heap の勘定を超える要求は ENOMEM・EBUSY で MMU_OOM が起きない、CLOSE の fence の後に PROT = 1 の session の勘定が返り、UNMAP では返らない（d9252e4 の 1931 行）、DEAD の close で勘定を二重に返さない、MMU_OOM の後に落ちた session を犯人にしない、L0 を (session, chunk) ごとに数える（T12） |
 | p006 | gsi1 の回帰（移した試験）、code に header が無い、資源の表、§11.4 の bank と set の読み方、§12.10.3 の I/O（属性の詰め方と 60 の上限、r60・r61 と `used_regs_vs`、`lda` の word 0〜3、flat の vertex 0、MRT 8） |
-| p007 | profile ごとの feature・limit・format・queue・memory の型、flag ごとの差、FMT の register を読む・無い時の表、vkCreateDevice の超過は FEATURE_NOT_PRESENT、memory・buffer・image、fence、capset、16 個目の device の失敗（U11）、flat・prot でも device が出る |
+| p007 | core の recovery ops（stop_begin・stop_poll・isolate で DEAD と hold・fault・reset で quarantine を返す。p004 から移した、版 4.8）、profile ごとの feature・limit・format・queue・memory の型、flag ごとの差、FMT の register を読む・無い時の表、vkCreateDevice の超過は FEATURE_NOT_PRESENT、memory・buffer・image、fence、capset、16 個目の device の失敗（U11）、flat・prot でも device が出る |
 | p008 | 代表の pipeline（三角形・blend・depth・stencil・MSAA・compute）の PSO の 128 byte、slot の表、HW の set の byte、flag の無い profile で断る pipeline |
 | p009 | 1 frame の記録 → model の `CMD_*` の列、indirect（no-indirect で断る）、barrier、転送（BLT の有る profile）、query・timestamp・event、clear、bind の無い draw を断る、大きな submit。no-blt の転送は p010 まで ENOTSUP で断る |
 | p010 | no-blt: §11.6 の各転送の packet の列、compute の内部の shader の結果（gsi1model.py）、転送の後の client の bind の置き直し、shader で扱えない format を断る、CopyQueryPoolResults（BLT の有無の両方） |
@@ -867,3 +868,24 @@ design-reviewer（Opus 5.5、3 回目、8de3751d9 を対象）: H 4・M 8・L 4�
 | T14 | L | 表と本文、§6.1、§7 | 反映 |
 | T15 | L | 1621 行 → 1605 行 | 反映 |
 | T16 | L | detach と回復 | 反映 §5.7 |
+
+### 4 回目（版 4.7 → 4.8、T01〜T16 の反映の確かめと p004・p005 の穴）
+
+design-reviewer（Opus 5.5、4 回目、a6f961c89 を対象、2026-10-28）: T01〜T16 の大半は本文に入っていたが、版 4.5 で計画の reset を外した時の古い文と、T03 の後の §6.1・§8・§10 の timeout の文が残っていた。指摘と対応（全部を本文に反映した）:
+
+| ID | 重さ | 指摘 | 対応 |
+| --- | --- | --- | --- |
+| H1 | H | 8 の確かめと `recovering` = 0 の間に来た fault が 1 で捨てられる | 8 の終わりを irq_lock の 1 区間にし、`fault_count` を比べ直す（§5.4 の 8） |
+| H2 | H | 勘定の返しが 3 通りに食い違う（UNMAP で返す・reset まで残す・DEAD で二重） | CLOSE の fence の後（PROT = 1）と reset だけ。UNMAP では返さない（d9252e4 の 1931 行）。DEAD は返さない（§5.5、§7、§14 p005） |
+| H3 | H | 再生の RPTR の待ちに上限が無い | `GHCI_HANG_MS` の上限、切れたら 6・8 の失敗として数える（§5.4 の 7、§6.1） |
+| M1 | M | client の MMU_OOM が (b) で犯人になる、UNIT = CP の 9・10 の分類が無い | MMU_OOM の時は (b) を使わない、CP の 9・10 は driver の誤り（§5.4 の 2） |
+| M2 | M | HALTED を待ち切れない時 | `SESSION_ACTIVE` を読まず (a) だけで 3 へ（§5.4 の 2） |
+| M3 | M | handler の FENCE と fault の latch の競合 | fence の語の後に IRQ_STATUS の FAULT・WATCHDOG を読み直す（§5.3） |
+| M4 | M | ERROR の close の ticket を持つ CLOSING | 先に RETIRED（§5.4 の 6） |
+| M5 | M | isolate の後の close が packet を置く | isolate で DEAD、hold は次に成功した reset で返す（§5.4 の表、§6.2） |
+| M6 | M | core の reset の後の門の戻し | service に頼み、通れば `recovering` = 0・`gate_generation`・quarantine（§5.4 の表） |
+| M7 | M | detach の割り込みの解除、LOST の Bus Master | (3) で割り込みを返す、RESET が落ちない LOST は Bus Master を切り、切れなければ物理を返さない（§5.7） |
+| M8 | M | 3 つの世代の役 | §8 に表 |
+| M9 | M | recovery ops の試験が p004 にある | p007 の場面へ移した（§14） |
+| L1〜L5 | L | 計画の reset の残り、cb937e6 の行、enum と §6.2、RPTR の待ちの起こし方、VM の操作の ticket で DEAD | 直した（§4.3 の enum に REPLAY_WAIT・DEAD、§5.2、§5.4 の 6、§5.5 の行を d9252e4 に）。§24 の T02・T07 の「対応」の列の計画の reset は版 4.5 で外れた（この節が正） |
+
