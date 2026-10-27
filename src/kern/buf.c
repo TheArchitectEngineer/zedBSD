@@ -19,6 +19,7 @@
 #include "kern/backing-claim.h"
 #include "kern/buf.h"
 #include "kern/buf-unjournaled.h"
+#include "kern/buf-slab.h"
 #include "kern/io-stats.h"
 #include "kern/io-pool.h"
 #include "kern/disk.h"
@@ -67,14 +68,15 @@
 #endif
 
 /*
- * XXX: 説明を入れる。
+ * One page of buffer headers.
+ *
+ * The record comes first, so the slab index (kern/buf-slab.h) and the slab
+ * name the same address.  The page lives while a header in it is in use,
+ * or while the index keeps it as a spare empty slab.
  */
 struct buf_slab {
+	struct buf_slab_record record;
 	struct kern_pmem memory;
-	struct buf_slab *next;
-	uint64_t free_mask;
-	unsigned capacity;
-	unsigned used;
 };
 
 /* XXX: これはincludeに置き換えできるかも？. */
@@ -128,9 +130,12 @@ static struct buf *lru_head;
 static struct buf *lru_tail;
 
 /*
- * XXX: 説明を入れる。
+ * The header slabs that have a free slot.
+ *
+ * Changed only under cache_lock.  A full slab is on no list; its headers
+ * lead back to it.  Zero is an index with no slab.
  */
-static struct buf_slab *slabs;
+static struct buf_slab_index slab_index;
 
 /*
  * XXX: 説明を入れる。
@@ -1874,6 +1879,7 @@ slab_grow(
 	size_t charged;
 	unsigned capacity;
 	int error;
+	int inserted;
 	unsigned long irq;
 
 	header = slab_header_size();
@@ -1884,33 +1890,33 @@ slab_grow(
 		return error;
 	charged = memory.size;
 	capacity = (unsigned)((BUF_SLAB_BYTES - header) / sizeof(struct buf));
-	if (capacity == 0 || capacity > 64U) {
+	if (capacity == 0 || capacity > BUF_SLAB_SLOTS_MAX) {
 		if (hal_pmem_free(&memory.paddr, memory.size) != HAL_OK)
 			HAL_FATAL("buffer slab rollback failed");
 		cancel_reservation(charged, 1);
 		return EOVERFLOW;
 	}
 
-	/* Initializes the slab with every slot free. */
+	/* Clears the page and records the memory the slab came from. */
 	kern_memset(hal_pmem_to_kernel(memory.paddr), 0, BUF_SLAB_BYTES);
 	slab = hal_pmem_to_kernel(memory.paddr);
 	slab->memory = memory;
-	slab->capacity = capacity;
-	if (capacity == 64U)
-		slab->free_mask = UINT64_MAX;
-	else
-		slab->free_mask = ((uint64_t)1 << capacity) - 1U;
+
+	/* Counts the page as the cache's metadata. */
 	commit_reservation(memory.size, 1);
 
-	/* Publishes the slab. */
+	/* Publishes the slab with every slot free; the capacity was checked above. */
 	irq = spin_lock_irqsave(&cache_lock);
 
-	slab->next = slabs;
-	slabs = slab;
+	inserted = buf_slab_insert(&slab_index, &slab->record, capacity);
 
 	spin_unlock_irqrestore(&cache_lock, irq);
 
-	/* Reports the added slab. */
+	/* A capacity the index refuses cannot happen after the check above. */
+	if (inserted != 0)
+		HAL_FATAL("buffer slab capacity refused");
+
+	/* Succeeded: the slab's headers can be taken. */
 	return 0;
 }
 
@@ -1919,37 +1925,45 @@ static struct buf *
 alloc_metadata(
 	void)
 {
+	struct buf_slab_record *record;
 	struct buf_slab *slab;
+	struct buf *buffer;
 	unsigned long irq;
 	unsigned slot;
+	int taken;
+	int error;
 
-	/* Retries after growing until a slot is found or growth fails. */
+	/* Retries after growing until a slot is taken or growth fails. */
 	for (;;) {
+		/* Takes a free slot from the first slab that has one, in a constant number of steps. */
 		irq = spin_lock_irqsave(&cache_lock);
-		for (slab = slabs; slab != NULL; slab = slab->next) {
-			if (slab->free_mask != 0) {
-				for (slot = 0; slot < slab->capacity; slot++) {
-					if (slab->free_mask & ((uint64_t)1 << slot))
-						break;
-				}
 
-				slab->free_mask &= ~((uint64_t)1 << slot);
-				slab->used++;
-				spin_unlock_irqrestore(&cache_lock, irq);
-				kern_memset(slab_slot(slab, slot), 0, sizeof(struct buf));
-				slab_slot(slab, slot)->b_slab = slab;
-				slab_slot(slab, slot)->b_slab_slot = slot;
-				return slab_slot(slab, slot);
-			}
-		}
+		taken = buf_slab_take(&slab_index, &record, &slot);
 
 		spin_unlock_irqrestore(&cache_lock, irq);
-		if (slab_grow() != 0)
+
+		/* A slot was taken: the header in it is the caller's. */
+		if (taken == 0)
+			break;
+
+		/* No slab has a free slot: adds one, or gives up when memory is short. */
+		error = slab_grow();
+		if (error != 0)
 			return NULL;
 	}
+
+	/* Clears the header and records the slot it came from. */
+	slab = (struct buf_slab *)record;
+	buffer = slab_slot(slab, slot);
+	kern_memset(buffer, 0, sizeof(struct buf));
+	buffer->b_slab = slab;
+	buffer->b_slab_slot = slot;
+
+	/* Succeeded: a zeroed header. */
+	return buffer;
 }
 
-/* Returns a buffer header to its slab, freeing an emptied non-head slab. */
+/* Returns a buffer header to its slab, retiring a slab the index lets go of. */
 static void
 free_metadata(
 	struct buf *buffer)
@@ -1960,40 +1974,31 @@ free_metadata(
 	int free_slab;
 	size_t released_bytes;
 	unsigned long irq;
-	struct buf_slab **link;
 
 	slab = buffer->b_slab;
 	slot = buffer->b_slab_slot;
-	free_slab = 0;
 
 	/* Ignores a header that is not in a slab. */
-	if (slab == NULL || slot >= slab->capacity)
+	if (slab == NULL)
 		return;
 
-	/* Frees the slot, and the slab when it emptied and is not the first. */
+	/*
+	 * Gives the slot back; a slab left with no header in use beyond the
+	 * spare the index keeps has left the index, and its page is retired.
+	 */
 	irq = spin_lock_irqsave(&cache_lock);
 
-	slab->free_mask |= (uint64_t)1 << slot;
-	if (slab->used != 0)
-		slab->used--;
-	if (slab->used == 0 && slabs != slab) {
-		for (link = &slabs; *link != NULL; link = &(*link)->next) {
-			if (*link == slab) {
-				*link = slab->next;
-				break;
-			}
-		}
-
+	free_slab = buf_slab_put(&slab_index, &slab->record, slot);
+	if (free_slab == 1) {
 		release = slab->memory;
 		cache_current_bytes -= release.size;
 		cache_metadata_bytes -= release.size;
-		free_slab = 1;
 	}
 
 	spin_unlock_irqrestore(&cache_lock, irq);
 
 	/* Releases the slab memory unlocked. */
-	if (free_slab) {
+	if (free_slab == 1) {
 		released_bytes = release.size;
 		if (hal_pmem_free(&release.paddr, release.size) != HAL_OK)
 			HAL_FATAL("buffer metadata retirement failed");
