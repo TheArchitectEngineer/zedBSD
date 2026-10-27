@@ -44,11 +44,11 @@
   export と同じ形。GS_ALLOC_REQ は Navi1x で必須のまま。(3) LDS は RSRC2_GS の LDS_SIZE だけ、頂点の番号の対応は Mesa と同じ（確認済み）。模型は 1 wave
   なので wave をまたぐ LDS は試験されない。(4) 無効にする条件（conservative・sample locations・複数 viewport・polygon mode）は今の executor に無い機能
   （塗りつぶしの三角形・1 sample・viewport 1 つ）なので、三角形の topology だけを条件にした。
-- 2026-10-27 14:30 実装 commit b73115761: compiler（place_for_culling・cull_primitives、v_mbcnt_lo を encoder に、culling の user SGPR と LDS）、
+- 2026-10-27 14:08 実装 commit b73115761: compiler（place_for_culling・cull_primitives、v_mbcnt_lo を encoder に、culling の user SGPR と LDS）、
   executor（amdrdna_vk_state_culling、s11〜s16 を draw ごと、`amdrdna.vk.ngg=2`）、模型（graphics の run に LDS、v_mbcnt、s16）、試験（+nggc の
   variant、参照の判定 reference_culled、小さい三角形が効く viewport の幅）。host: compiler host test 58 PASS（+nggc 6 本）。変異の確かめ: 参照の表の向きを
   反転すると +nggc が 5 本 FAIL、小さい三角形の判定を外すと 2 本 FAIL（試験が判定を見ている）。vk host test PASS。vmunix warning 0（sha256 先頭 43af3dfafe0bb94b）。
-- 2026-10-27 14:40 実機 1 回目（ngg=2）: desktop は描ける。nggshape は全部 ok（`--indexed --triangles=16` drawn 58311、同 `--repeat=1000`、
+- 2026-10-27 14:12 実機 1 回目（ngg=2）: desktop は描ける。nggshape は全部 ok（`--indexed --triangles=16` drawn 58311、同 `--repeat=1000`、
   `--triangles=50000 --indexed --depth` drawn 64828、`--cull --allback` drawn 0、`--tiny` drawn 0、`--cull --allback --tail` drawn 65536）。
   mview の shot（1 体、FIFO、合成）の最初の描画で GPU が止まり、queue の reset も失敗（kiq の fence が進まない）、compositor は device lost で終わった。
   止まった時: GRBM_STATUS 0xa2611028（GE・SPI・PA busy、SX は立たない）、waves valid 0、PA_SU busy。kernel の mark: build/ws291/measure/p006/hang1-dmesg2.txt。

@@ -3642,8 +3642,9 @@ emit_place_load(
  * primitive is culled: when every w is zero, negative or not a number;
  * by its face, or its zero area, when its area is finite; when its box is
  * outside the view, or (with the flag) holds no sample's centre, unless a
- * w is negative.  Without the culling flag (a topology of points or
- * lines) the word goes out as the hardware packed it.
+ * w is negative.  A wave whose primitives are all culled exports its
+ * first as a degenerate triangle instead.  Without the culling flag (a
+ * topology of points or lines) the word goes out as the hardware packed it.
  *
  * Procedure referenced: Mesa 25.0.7 src/amd/common/nir/ac_nir_cull.c
  * (analyze_position_w, cull_face_triangle, calc_bbox_triangle,
@@ -3651,8 +3652,12 @@ emit_place_load(
  * lines 21-160), src/amd/common/nir/ac_nir_lower_ngg.c
  * (add_deferred_attribute_culling: the barrier after the stores, the
  * vertex numbers 9 bits apart by 10 in the passthrough word, lines 115-124
- * and 1242-1290) and src/amd/compiler/aco_insert_waitcnt.cpp (a workgroup
- * barrier waits for the shared-memory stores first).
+ * and 1242-1290), src/amd/common/ac_gpu_info.c (has_ngg_fully_culled_bug
+ * on GFX10, line 1316) and src/amd/common/nir/ac_nir_prerast_utils.c
+ * (ac_nir_ngg_alloc_vertices_fully_culled_workaround: one degenerate
+ * triangle of vertex 0 exported instead of none), and
+ * src/amd/compiler/aco_insert_waitcnt.cpp (a workgroup barrier waits for
+ * the shared-memory stores first).
  */
 static int
 cull_primitives(
@@ -3902,9 +3907,22 @@ cull_primitives(
 	}
 	emit_label(lowering, small_label);
 
-	/* The box's test counts only when no w is negative; then the word, marked null when culled. */
+	/* The box's test counts only when no w is negative. */
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_ANDN2_B32, outside, outside, negative);
 	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_OR_B32, culled, culled, outside);
+
+	/*
+	 * A wave whose primitives are all culled keeps its first one, made the
+	 * degenerate triangle of the subgroup's vertex 0 (which the hardware
+	 * then draws nothing of): GFX10 can hang when a subgroup exports no
+	 * primitive.
+	 */
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_AND_B32, test, culled, AMDRDNA_GFX10_EXEC_LO);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_COMPARE, AMDRDNA_GFX10_S_CMP_EQ_U32, 0U, test, AMDRDNA_GFX10_EXEC_LO);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_CSELECT_B32, other, constant_operand(1U), AMDRDNA_GFX10_ZERO);
+	emit_scalar(lowering, AMDRDNA_GFX10_KIND_SCALAR_TWO, AMDRDNA_GFX10_S_ANDN2_B32, culled, culled, other);
+
+	/* The word, marked null when culled, or the degenerate triangle. */
 	emit_vector_literal(lowering,
 			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
 			    AMDRDNA_GFX10_V_OR_B32,
@@ -3919,6 +3937,13 @@ cull_primitives(
 		    AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR),
 		    AMDRDNA_GFX10_V(temp[0]),
 		    culled);
+	emit_vector(lowering,
+		    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+		    AMDRDNA_GFX10_V_CNDMASK_B32,
+		    AMDRDNA_GFX10_V(word),
+		    AMDRDNA_GFX10_V(word),
+		    AMDRDNA_GFX10_ZERO,
+		    other);
 
 	/* The primitive's export, which ends its exports. */
 	emit_label(lowering, export_label);

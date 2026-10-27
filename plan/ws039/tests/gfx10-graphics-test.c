@@ -695,6 +695,7 @@ check_primitive_wave(
 	uint32_t target;
 	uint32_t expected;
 	uint32_t culling;
+	uint32_t all_culled;
 
 	culling = program->primitive_culling;
 
@@ -739,10 +740,18 @@ check_primitive_wave(
 		       graphics.export_flags[target], graphics.export_lanes[target], graphics.export_channels[target]);
 		return 1;
 	}
+	/* A wave whose primitives are all culled exports its first as the degenerate triangle of vertex 0. */
+	all_culled = culling;
+	for (lane = 0U; lane < graphics.primitives && all_culled != 0U; lane++) {
+		if (reference_culled(graphics.primitive_word[0][lane]) == 0U)
+			all_culled = 0U;
+	}
 	for (lane = 0U; lane < graphics.primitives; lane++) {
 		expected = graphics.primitive_word[0][lane];
 		if (culling != 0U)
 			expected |= reference_culled(expected);
+		if (all_culled != 0U && lane == 0U)
+			expected = 0U;
 		if (graphics.exported[target][lane][0] != expected) {
 			printf("  the primitive of lane %u: 0x%08x, not 0x%08x\n", lane, graphics.exported[target][lane][0], expected);
 			return 1;
