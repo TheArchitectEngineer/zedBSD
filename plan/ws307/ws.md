@@ -3,7 +3,7 @@
 # WS307 Keiland のアプリとしての zedBSD のグラフィカルなインストーラ
 
 - Status: planning（2026-10-28 新設。p001 で仕様を確定中、q1643 P4）
-- 仕様: [spec.md](spec.md)（U1〜U25 は回答済み、U26・U27 は回答待ち。design-reviewer の 1 回目・2 回目の指摘を反映済み）。
+- 仕様: [spec.md](spec.md)（U1〜U27 は回答済み、OS 名の統一の U28・U29 は回答待ち。design-reviewer の 1 回目・2 回目の指摘を反映済み）。
 - Resume point: p001 の手順 3〜5（回答の反映、design-reviewer の指摘の反映、実装の Phase の表の確定）。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
@@ -82,7 +82,7 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 U16「その disk では無効にする (推し)」: 既存の ESP が小さい・使えない disk では「partition を選ぶ」を無効にする。
 - 2026-10-28 U17「WS307 で 4096 byte に対応」: mkfs（FAT32・UFS）・mkswap・diskpart（と要れば kernel の FAT・UFS・swap）の 4096 byte の sector の対応を WS307 に含める。
 - 2026-10-28 U18「一覧を出し同意で入れる (推し)」: Firmware の license の一覧を S7 で出し、同意しないと入れない。
-- 2026-10-28 追加の指示「P4に、ESPにカーネルをインストールすると回答してしまいましたが、ブートローダがUFSからカーネルをロードできるようにしたいです。そのphaseを作ってほしいです。」: loader が root の UFS から kernel を読む Phase（p006）を足す。導入先の kernel は UFS の上（`/boot/vmunix`）、ESP は loader（と cfg）。U4・U4b の「ESP に全部」は kernel を除いた形に読み替える（ESP 512 MiB は U4 のまま、Q1 の解釈）。
+- 2026-10-28 追加の指示「P4に、ESPにカーネルをインストールすると回答してしまいましたが、ブートローダがUFSからカーネルをロードできるようにしたいです。そのphaseを作ってほしいです。」: loader が root の UFS から kernel を読む Phase（p007）を足す。導入先の kernel は UFS の上（`/boot/vmunix`）、ESP は loader（と cfg）。U4・U4b の「ESP に全部」は kernel を除いた形に読み替える（ESP 512 MiB は U4 のまま、Q1 の解釈）。
 - 2026-10-28 U19「ESP（FAT）のまま (推し)」: `zedbsd.cfg` は ESP。loader の探し方を変えない。
 - 2026-10-28 U20「root の UFS（/boot/logo.ppm） (推し)」: 起動の logo は root の UFS。
 - 2026-10-28 U21「image は今のまま (推し)」: 今の disk image（hdd-image・installer の image）は WS238 の形のまま。新しい形は導入先だけ。
@@ -91,6 +91,9 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 U23「インストーライメージでは、ESPにブートローダ、BOOT FAT32にカーネルとzedbsd.cfg、rootfs, swapのパーティションを置きます。」: installer の image は ESP（loader）＋BOOT の FAT32（kernel・cfg）＋root＋swap。
 - 2026-10-28 U24「FW は driver の選択、tests・X11 無し (推し)」: Firmware は kernel の driver が選ぶ firmware。tests・X11 の package は入れない。
 - 2026-10-28 U25「今の hdd-image と同じ (推し)」: installer の image の BOOT の FAT32 は Basic Data の型・label「ZEDBSD」、logo.ppm もその FAT32。
+- 2026-10-28 U26「すべてのイメージで、ユーザ名をuser, パスワードをuserに変更します。インストーラはsetuidのヘルパーを使うので、パスワード認証を不要にします。これは特別なインストーライメージのみです。」: 全 image の既定の利用者を user/user に（p002）。installer の image では helper は password を聞かない（呼べる者の制限は spec §9.1）。
+- 2026-10-28 U27「今後keiの名前は削除しますので、zedbsdにします。」: 導入先の hostname の既定は zedbsd（S7a の欄は技術の判断で足す）。base の既定の hostname も zedbsd に（p002）。
+- 2026-10-28 指示「P4に伝えてください。起動ロゴ画像を含めて、KeiというOS名を削除して、zedBSDに統一します。インストーラだけでなくすべてに影響します。そういうphaseをこのWSに追加してください。」: p002 を足した（spec §13a）。git mv・大量の rename は Phase の中で Q1 に一覧を出してから（Q1 の補い）。
 
 ## Phase
 
@@ -102,17 +105,18 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 
 | Phase | 内容 | 依存 | 見積もり | 状態 |
 | --- | --- | --- | --- | --- |
-| p002 | build: `make installer-image`（menuconfig は kernel の config だけ、userland・package は決まった選択で全部）、file の manifest（持ち主の package・mode）、重なりの規則、unit の tarball（ustar＋deflate、所有者 0:0、mode の正規化、set-user-ID の許可の一覧）、index（SHA-256・file の数・依存・項目・firmware の license）、manifest から mode を正規化した live の tree、installer の image（ESP＋ZEDBSD の FAT32＋root＋swap、build ごとの PARTUUID）、漏れと重複の検査（spec §6・§11.2）。sysroot の持ち主の付け方は toolchain（`toolchain/llvm/sysroot.mk`）に触れるので Q1 の許可が要る | p001 | 14 LW | planning |
-| p003 | package の header と `.pc`（gtk4・cairo・pango・glib・libavcodec・libcxx など）と pkgconf の package。導入先で GTK4 の app を build する確認（spec §6.2、U13）。`lang/clang`・`devel/libcxx` は toolchain なので Q1 の許可が要る | p002 | 8 LW | planning |
-| p004 | base の道具: `mkswap` の partition の mode（ZEDSWAP2 64 bit）、`diskpart` の batch（add・delete、型・名前・PARTUUID・attribute の変更）と「未割り当て」の型 GUID、`mkfs -t fat32` の乱数の serial、UFS の inode の密度、道具の側の 4096 byte の sector（mkfs の FAT32・UFS の fragment 4096 の profile、mkswap、diskpart）（spec §5.9・§11.3）。host の試験と QEMU の短い確認 | p001 | 12 LW | planning |
-| p005 | kernel の 4096 byte の sector: FAT・UFS の driver、swap の partition、swap file の extent、fs の識別（spec §5.9、U17。`fat.c:911`・`ufs.c:60`・`swap-source.c:246`・`file.c:2920`）。QEMU の 4096 の NVMe・USB で mount・swap・起動 | p004 | 10 LW | planning |
-| p006 | UEFI の runtime services と Boot####（spec §5.8、U5・U15）。**最初の段で HAL の差分の案（handoff の名前の追加、runtime の呼び出しの関数）を plan に置き、ユーザーの承認を待つ**。承認の後: loader の handoff、HAL、`/dev/system` の UAPI（形・版・上限を先に決める）、`efiboot`。QEMU の OVMF で Boot#### を書いて読み戻す | p001 | 12 LW（承認待ちを除く） | planning |
-| p007 | boot loader が UFS から kernel を読む（spec §5.10）: file の源の抽象、`bootloader/common/` の UFS の reader、cfg の `rootpart=PARTUUID=` の照合、`kernel=rootpart:/boot/vmunix`・`logo=rootpart:…`、失敗は画面に止める。host の試験と QEMU の OVMF の起動（512、p005 の後に 4096）。HAL の API・handoff は変えない | p001（4096 は p005） | 12 LW | planning |
-| p008 | helper `install-admin`: probe・session（edit・install、lock、disk への結び付け、S8 での password の聞き直し）、4 つ組の照合、signal と `setresuid`、index の hash（同じ fd）、展開（安全な path、nosuid の mount）、利用者（kei の置き換え）・hostname・sshd の設定、kernel と logo を root の /boot に、ESP の公開（loader・cfg）、Boot####（p006 の承認の後）。host の敵対的な計画の試験と、QEMU の SSH での導入（NVMe・SATA・USB、導入先だけの起動）（spec §5・§7〜§9） | p002・p004・p007（4096 は p005、Boot#### は p006） | 18 LW | planning |
-| p009 | installer の app: S1〜S11 と S7a、検査、確認の dialog、選択の無効化、翻訳（ja）、App Home、自動起動、AAT の log（spec §4・§10・§11.2） | p008 の protocol | 14 LW | planning |
-| p010 | 通しの試験: installer の image、AAT で GUI の導入（全体・選ぶ・共存・既存の partition を root に・swap 無し・キャンセル・失敗・拒む disk・dd した disk との同居・4096 の disk）、導入先の起動、`plan/ws307/tests/` の 1 本の script（spec §12）。p006 の承認が無い間は Boot#### の確認を「未実施（承認待ち）」と記録 | p003・p009（4096 は p005） | 12 LW | planning |
-| p011 | 実機の導入（Q1 の割り当て、ユーザーの試験の一覧） | p010 | 2 LW | planning |
-| p012 | 文書: `docs/howto/boot-and-storage.md` の古い zedinst の節を新しい installer に置き換え、`docs/reference` に install-admin・efiboot・mkswap・diskpart・mkfs・loader の UFS の追加 | p011 | 3 LW | planning |
-| p013 | 規約の全文の見直し（WS307 が変えた C）。WS の最後 | p012 | 5 LW | planning |
+| p002 | OS 名「Kei」を削除して zedBSD に統一する（tree 全体、起動の logo の画像を含む。既定の利用者 user/user（U26）と hostname zedbsd（U27）も）。棚卸し → 一覧を Q1 に出して git mv・rename の所有と衝突を調整 → 変更 → 試験（spec §13a） | p001（範囲は U28、logo は U29） | 12 LW | planning |
+| p003 | build: `make installer-image`（menuconfig は kernel の config だけ、userland・package は決まった選択で全部）、file の manifest（持ち主の package・mode）、重なりの規則、unit の tarball（ustar＋deflate、所有者 0:0、mode の正規化、set-user-ID の許可の一覧）、index（SHA-256・file の数・依存・項目・firmware の license）、manifest から mode を正規化した live の tree、installer の image（ESP＋ZEDBSD の FAT32＋root＋swap、build ごとの PARTUUID）、漏れと重複の検査（spec §6・§11.2）。sysroot の持ち主の付け方は toolchain（`toolchain/llvm/sysroot.mk`）に触れるので Q1 の許可が要る | p001 | 14 LW | planning |
+| p004 | package の header と `.pc`（gtk4・cairo・pango・glib・libavcodec・libcxx など）と pkgconf の package。導入先で GTK4 の app を build する確認（spec §6.2、U13）。`lang/clang`・`devel/libcxx` は toolchain なので Q1 の許可が要る | p003 | 8 LW | planning |
+| p005 | base の道具: `mkswap` の partition の mode（ZEDSWAP2 64 bit）、`diskpart` の batch（add・delete、型・名前・PARTUUID・attribute の変更）と「未割り当て」の型 GUID、`mkfs -t fat32` の乱数の serial、UFS の inode の密度、道具の側の 4096 byte の sector（mkfs の FAT32・UFS の fragment 4096 の profile、mkswap、diskpart）（spec §5.9・§11.3）。host の試験と QEMU の短い確認 | p001 | 12 LW | planning |
+| p006 | kernel の 4096 byte の sector: FAT・UFS の driver、swap の partition、swap file の extent、fs の識別（spec §5.9、U17。`fat.c:911`・`ufs.c:60`・`swap-source.c:246`・`file.c:2920`）。QEMU の 4096 の NVMe・USB で mount・swap・起動 | p005 | 10 LW | planning |
+| p007 | UEFI の runtime services と Boot####（spec §5.8、U5・U15）。**最初の段で HAL の差分の案（handoff の名前の追加、runtime の呼び出しの関数）を plan に置き、ユーザーの承認を待つ**。承認の後: loader の handoff、HAL、`/dev/system` の UAPI（形・版・上限を先に決める）、`efiboot`。QEMU の OVMF で Boot#### を書いて読み戻す | p001 | 12 LW（承認待ちを除く） | planning |
+| p008 | boot loader が UFS から kernel を読む（spec §5.10）: file の源の抽象、`bootloader/common/` の UFS の reader、cfg の `rootpart=PARTUUID=` の照合、`kernel=rootpart:/boot/vmunix`・`logo=rootpart:…`、失敗は画面に止める。host の試験と QEMU の OVMF の起動（512、p006 の後に 4096）。HAL の API・handoff は変えない | p001（4096 は p006） | 12 LW | planning |
+| p009 | helper `install-admin`: probe・session（edit・install、lock、disk への結び付け、S8 での password の聞き直し）、4 つ組の照合、signal と `setresuid`、index の hash（同じ fd）、展開（安全な path、nosuid の mount）、利用者（kei の置き換え）・hostname・sshd の設定、kernel と logo を root の /boot に、ESP の公開（loader・cfg）、Boot####（p007 の承認の後）。host の敵対的な計画の試験と、QEMU の SSH での導入（NVMe・SATA・USB、導入先だけの起動）（spec §5・§7〜§9） | p003・p005・p008（4096 は p006、Boot#### は p007） | 18 LW | planning |
+| p010 | installer の app: S1〜S11 と S7a、検査、確認の dialog、選択の無効化、翻訳（ja）、App Home、自動起動、AAT の log（spec §4・§10・§11.2） | p009 の protocol | 14 LW | planning |
+| p011 | 通しの試験: installer の image、AAT で GUI の導入（全体・選ぶ・共存・既存の partition を root に・swap 無し・キャンセル・失敗・拒む disk・dd した disk との同居・4096 の disk）、導入先の起動、`plan/ws307/tests/` の 1 本の script（spec §12）。p007 の承認が無い間は Boot#### の確認を「未実施（承認待ち）」と記録 | p002・p004・p010（4096 は p006） | 12 LW | planning |
+| p012 | 実機の導入（Q1 の割り当て、ユーザーの試験の一覧） | p011 | 2 LW | planning |
+| p013 | 文書: `docs/howto/boot-and-storage.md` の古い zedinst の節を新しい installer に置き換え、`docs/reference` に install-admin・efiboot・mkswap・diskpart・mkfs・loader の UFS の追加 | p012 | 3 LW | planning |
+| p014 | 規約の全文の見直し（WS307 が変えた C）。WS の最後 | p013 | 5 LW | planning |
 
 - 2026-10-28 ユーザー「P4を立てて、WS307の仕様検討を行ってもらってください。ユーザ確認事項があれば回答させていただきます。仕様を確定させたいです。そのためのphaseをQ1が作り、P4に実行させてください。」
