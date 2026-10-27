@@ -41,6 +41,7 @@
 - 公開は rev.5 まで（実質のベータ2）。次に何をやるか（以前の「ベータ3・ベータ4」の段は取り消し）は Q1 とユーザーが整理中。下の「保留の WS」はその整理の対象。
 - **fg023 zedBSD の GHCI 2.0 の driver**（[WS290](ws290/ws.md)）: amaterrace-gpu の `docs/ghci.md` の GHCI 2.0 だけに従う driver に書き直し、host 試験で確かめる。
 - **GPU の描画の速さ**（[WS291](ws291/ws.md)、P2）: AMD RDNA → NVIDIA → PowerVR。Linux よりよくなるまで profile を見て直す。
+- **5330 の電源と性能**（P1、2026-10-27 ユーザー「P1は、しばらくはさっきお願いした内容で進めていきますので、master.mdに書いておいてください。」）: [WS299](ws299/ws.md) NVMe の速さ → [WS300](ws300/ws.md) NVMe・VMD の低電力 → [WS052](ws052/ws.md) S0ix → [WS301](ws301/ws.md) CPU の DVFS・P/E core → [WS302](ws302/ws.md) DTB → 熱と fan。順と依存は [pm-plan.md](agents/P1/pm-plan.md)。
 - 達成: fg021 ZYBO（2026-10-23）、fg020 VisionFive 2（WS256・WS269・WS270・WS277、2026-10-22 ユーザー「すばらしい。実用スピードです。」）、
   fg019 ベータ2（2026-10-17 OSC）、fg018 Linux 標準 GTK4（WS114）、fg010 OSC のデモ、fg012〜fg016。Pi 5（WS278・WS279）も completed。
   取り下げ: fg022 KC705 の GPU の board（WS288 の終了）。
@@ -49,7 +50,7 @@
 <!-- master:priority:start -->
 優先順位（依存による順とは別。Queue の権限は変えない）:
 1. WS290: p001 の設計 → ghci.md の疑問（G01〜G39・U1〜U7）をユーザーへ → 実装 → 規約の全文。WS291（P2）は並べて進める。
-2. BUG-346（P1）。
+2. P1 は 5330 の電源と性能の線（WS299 → WS300 → WS052 → WS301 → WS302 → 熱と fan、[pm-plan.md](agents/P1/pm-plan.md) の順）。BUG-346 は resolved。
 3. すぐ取り組む物（2026-10-27 ユーザー）: WS221（Jumbo frame）、WS242（RTX 30/40）・WS243（NVDEC）・WS250（nvrtx の取り消しと復帰）、WS223（全画面は合成、推しで実装）、WS009 の DOC-54（/dev/gpu の UAPI の文書）。
 4. WS226（Vulkan 1.3 相当を全 GPU driver で）は WS290 の後。WS292（GHCI の PROT）も WS290 の後。
 5. WS295（xe、p001 の調査だけ）・WS296（drivers の comment の整理）: 担当の起動はユーザーの指示の時。WS068 は空き時間だけ。
