@@ -55,6 +55,13 @@
 #define NVME_IO_MAX_BIO_BYTES (1024U * 1024U)
 
 /*
+ * The most one command of a page list carries, so that a request of 1 MiB
+ * goes as several commands the device works on at once (the pipeline below
+ * keeps up to NVME_IO_PIPELINE_DEPTH of them posted).
+ */
+#define NVME_IO_PAGE_COMMAND_BYTES (256U * 1024U)
+
+/*
  * How wide a DMA address an NVMe controller takes: PRP entries are 64-bit
  * (NVMe Base Specification 2.0, PRP entry), wider than the 32-bit default of
  * a PC's PCI bus (ws299, 2026-10-27 Q1).
@@ -5277,7 +5284,7 @@ nvme_io_pipeline(
 			if (pages != NULL) {
 				count = drv_nvme_io_chunk_blocks(remaining,
 				    controller->namespace_block_size,
-				    controller->maximum_transfer_bytes,
+				    NVME_IO_PAGE_COMMAND_BYTES,
 				    controller->maximum_transfer_bytes);
 				count -= count % blocks_per_page;
 			} else {

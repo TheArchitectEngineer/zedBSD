@@ -67,6 +67,27 @@
 
 - 4 KiB の書きごとの間接 block の窓の読み（`IO_UFS_INDIRECT_WINDOW`）を、D1〜D3 の後の測定で sys の時間が目立つ時だけ減らす。
 
+### レビュー（2026-10-28、design-reviewer）の反映
+
+- H1（書けない line で worker が回る・他の device に縛られる）→ 書き手の手伝いは自分の leaf の line だけ（`d_dirty_buffers`）。worker と手伝いは `BUF_ERROR` の line を選ばない（flusher が今どおり次の間隔に試す）、worker は `d_media_revoked`・止め（`d_readahead_stops`）の leaf を選ばない。書きに失敗したら worker の pass を終え、`writeback_wanted` を下げる（次の遅らせる書きが上限の半分を越えた時にまた頼む）。手伝いの誤りは書き手に返さない（line は dirty・error のまま）。
+- H2（管理の操作の偽 EBUSY）→ worker は書く間 `worker->running = leaf` を立て（止める側の wait=1 は待てる、wait=0 は今どおり EBUSY で再試行）、line を取った後に readahead_lock の下で止めを見直し、止められていれば line を返して書かない。`buf_invalidate*` には今どおり止めを入れない（flusher も同じ窓を作る。試験は下）。
+- M1 → `mark_dirty` の後に上限を越えた時も、まず手伝い、それでも越えていればその line を今どおり同期で書く（最後の道）。行の先頭の write-through（上限越えの `transfer_run`）の前にも手伝う。
+- M2 → worker は最初の先読みか、遅らせる書きが上限の半分を越えた時（`writeback_kick`、lock を持たず line も持たない所、`buf_release` の後）に作る。`writeback_wanted` は lock の外で先に見て、既に頼んであれば lock を取らない。
+- M7 → worker は device を flush しない。書いた leaf を（`disk_ref` を持って）記録し、flusher が次の間隔（1 秒）に `bio_flush` して release する（耐久の遅れは今の flusher と同じ 1〜3 秒）。
+- M8 → worker の探しは古い方から 1024 line（`BUF_WRITEBACK_SCAN`）まで見る（他の worker が書いている 256 line の cluster を越えて次の run を見つける）。cluster の集めは一人ずつ（`cluster_picking`、集める者は待たないので待ちは短い）なので、二人が一つの run を分けない。
+- M9 → cluster の参照は cache_lock の 1 回の保持で 64 個まで（`BUF_GATHER_HOLD`）、dirty でない line で止める（印は hint、`cluster_take` が b_lock の下で見直す）。
+- M10 → 上限を cache/4 にするのは page 列を受ける disk への書きだけ。他の disk（SD・USB・virtio 等）への遅らせる書きは今の 32 MiB（`BUF_DIRTY_SMALL`、cache/4 の方が小さければそれ）を保つ。
+- M11 → 受け入れ 1 に raw の連続の読み 4 GiB と reread の回帰なしを足す。
+- M3〜M6（D5・D6）→ 読みの設計は p7 の区画での測定（下）の後に書き直す。io_pool の slot が 64 KiB 固定なので D6 の「256 KiB の scratch」は成り立たない。代わりに大きな読み（残り 256 KiB 以上）は VM の page に載せず caller の buffer に直に読む（既存の非公開の道、写しが 2 回減る）案と、UFS が自分の data の block の先読みを buffer cache に頼む口（owner 無しの仕事、止めだけを見る）を検討する。
+- 低 1・2・4・6 は実装で守った（呼び手の line は release しない、b_lock を dirty_index_lock の下で取らない、claim は範囲全体を `backing_claim_find_extent_owner(…, NULL, …)` で見る、cluster の数は `IO_BUF_RUN_WRITE`）。低 3（範囲の呼び手の cluster が範囲の外へ広がる）は正しさを変えないので受け入れ、fsync の遅れは測る。低 8 の開発の管理情報は p008 で消す。
+- 欠けている試験 → 32 MiB の cache の書き（`qemu-cache32-write.sh`、元の kernel 73135a9ec でも止まる事を確かめた）、書きの最中の reload・admin open（`qemu-cache-stress.sh` に UFS の書きと reload が入っている）、QEMU の boot・nvme-shapes・grow-reboot・readahead。誤りの注入・crash の整合・claim の隣・NVMe 以外の機種の書きの時間は未実施（下の結果に書く）。
+
+## 測定の区画（2026-10-28、ユーザー「P1は、UFSのパーティションが非常に小さいため、そこへの読み書きでは正確な計測ができないです。32GBくらいの空のパーティションを作って、それに対する読み書きをDebianとzedBSDで比較する必要がありそうです。」「USBメモリを挿入しましたので自由に書き換えて起動していいです。ext4を縮小して32GBの空きパーティションを作ってください。容量に余裕があれば、zedBSDのUFSも32GBで作り直すのがいいと思います。」）
+
+- SystemRescue の live USB（`5330-live-usb.sh`、stick に `~/ws245/live-sysrescue.img` を書き直した）で: `e2fsck -f -p` → `resize2fs 148480M` → p2 を 314214400 sectors（149.8 GiB、start・UUID 不変）→ `resize2fs`（満たす）→ `e2fsck -f -n` clean。p7 `zedBSD-nvme-bench`（start 316215296、67108864 sectors = 32 GiB、Linux filesystem 型、PARTUUID `1BEB91C6-DEDF-4AF0-B132-4770CCF2954D`）を足し、p5 `zedBSD-nvme-root` を同じ番号・PARTUUID・名前のまま start 383324160・32 GiB に移した（前の 14.75 GiB の場所 450957312〜481890303 は空き）。p1・p3・p4・p6 は不変。`sfdisk -V` No errors。Debian は起動し `/` rw・147G・p3 の swap・running。前後の表は worktree の `build/hw5330/part/`（git の外）。
+- `5330-run.sh --nvme-image build/p1-5330img/hdd-image.img p1-q1640-p5-32g` で zedBSD を新しい p5 に書き、NVMe から起動して `5330-run: PASS`（ssh まで 20 秒、i915 の survey PASS）。
+- 測定（`nvme-bench-5330.sh … p7raw p7fs`・`p7rawwrite p7rawread p7fswrite p7fsread`）: 書きの前に Debian から p7 を `blkdiscard`。`patwrite.c`（両方の OS で同じ、1 MiB の write で 4 KiB ごとに番号を入れた疑似乱数、最後に fsync）で P7_MIB（4096）MiB を raw に書き、次に（zedBSD は次の起動で）冷えた読み。file system は Debian が ext4（`mkfs.ext4 -E nodiscard,lazy_itable_init=0,lazy_journal_init=0`）、zedBSD が UFS（`mkfs -t ufs --profile=native`）を p7 に作り、4 GiB の file を書いて（fsync）冷えた読み。
+
 ## 変えない物
 
 - HAL の API、UAPI（io-stats の事象は増やさない）、UFS の形式・journal の順序（pin の line は書かない）、NVMe の recovery。
