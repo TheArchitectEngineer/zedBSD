@@ -56,6 +56,8 @@ static void setup_uniforms(const struct drv_gpu_shader_ir *ir, const struct amdr
 static int compare_slot(const char *what, uint32_t lane, uint32_t channel, uint32_t gpu, uint32_t ref);
 static int check_primitive_wave(const struct amdrdna_gfx10_program *program);
 static uint32_t reference_culled(uint32_t word);
+static void culling_words(uint32_t lane, uint32_t noise);
+static uint32_t culling_packed(uint32_t lane);
 static int compare_storage(const struct drv_gpu_shader_ir *ir);
 static uint32_t random_word(uint32_t *state);
 static float random_float(uint32_t *state);
@@ -71,6 +73,9 @@ static uint8_t table[TEST_TABLE_BYTES];
 static uint8_t push[256];
 static float attributes[TEST_PRIMITIVES][32][4][3];
 static struct machine_graphics graphics;
+
+/* A culling primitive shader's three vertex numbers of each primitive lane. */
+static uint32_t culling_vertex[32][3];
 
 /* The sampled images of one trial: their texels and descriptors, by the program's texture slot. */
 static uint8_t texture_bytes[AMDRDNA_GFX10_TEXTURE_MAX][65536];
@@ -239,7 +244,8 @@ test_variant(
 		/* A primitive shader: the geometry stage's order bit (25), v5 .. v8 (16:17), v0 alone (29:30). */
 		if (registers.primitive_shader != 1U || program->primitive_shader != 1U)
 			error = 1;
-		if ((registers.counts & (1U << 25)) == 0U || (registers.counts & (1U << 27)) == 0U || ((registers.counts >> 29) & 3U) != 0U || ((registers.inputs >> 16) & 3U) != 3U)
+		if ((registers.counts & (1U << 25)) == 0U || (registers.counts & (1U << 27)) == 0U || ((registers.counts >> 29) & 3U) != (primitive_shader == 2U ? 1U : 0U) ||
+		    ((registers.inputs >> 16) & 3U) != 3U)
 			error = 1;
 		if ((registers.position_formats & 0xfU) != 4U)
 			error = 1;
@@ -568,9 +574,9 @@ vertex_trial(
 				if ((random_word(state) & 3U) != 0U)
 					graphics.user[8] |= AMDRDNA_GFX10_CULL_ENABLED;
 				for (lane = 0U; lane < 32U; lane++) {
-					graphics.primitive_word[0][lane] = 0U;
 					for (channel = 0U; channel < 3U; channel++)
-						graphics.primitive_word[0][lane] |= (32U * graphics.wave_number + random_word(state) % graphics.lanes) << (10U * channel);
+						culling_vertex[lane][channel] = 32U * graphics.wave_number + random_word(state) % graphics.lanes;
+					culling_words(lane, random_word(state));
 				}
 			}
 			machine_run_graphics(&dispatch, &memory, 0, &graphics, &result);
@@ -669,8 +675,11 @@ vertex_trial(
 		graphics.subgroup_primitives = 32U + graphics.primitives;
 		if (program->primitive_culling != 0U) {
 			graphics.user[8] = AMDRDNA_GFX10_CULL_ENABLED | AMDRDNA_GFX10_CULL_SMALL;
-			for (lane = 0U; lane < 32U; lane++)
-				graphics.primitive_word[0][lane] = (random_word(state) % 40U) | (random_word(state) % 40U) << 10 | (random_word(state) % 40U) << 20;
+			for (lane = 0U; lane < 32U; lane++) {
+				for (channel = 0U; channel < 3U; channel++)
+					culling_vertex[lane][channel] = random_word(state) % 40U;
+				culling_words(lane, random_word(state));
+			}
 		}
 		machine_run_graphics(&dispatch, &memory, 0, &graphics, &result);
 		if (result.error != NULL) {
@@ -743,13 +752,13 @@ check_primitive_wave(
 	/* A wave whose primitives are all culled exports its first as the degenerate triangle of vertex 0. */
 	all_culled = culling;
 	for (lane = 0U; lane < graphics.primitives && all_culled != 0U; lane++) {
-		if (reference_culled(graphics.primitive_word[0][lane]) == 0U)
+		if (reference_culled(culling_packed(lane)) == 0U)
 			all_culled = 0U;
 	}
 	for (lane = 0U; lane < graphics.primitives; lane++) {
 		expected = graphics.primitive_word[0][lane];
 		if (culling != 0U)
-			expected |= reference_culled(expected);
+			expected = culling_packed(lane) | reference_culled(culling_packed(lane));
 		if (all_culled != 0U && lane == 0U)
 			expected = 0U;
 		if (graphics.exported[target][lane][0] != expected) {
@@ -758,6 +767,28 @@ check_primitive_wave(
 		}
 	}
 	return 0;
+}
+
+/*
+ * A culling primitive shader's lane: its vertex numbers delivered as the
+ * hardware does without passthrough, the first two in the halves of v0,
+ * the third in the low half of v1 (noise in the high half).
+ */
+static void
+culling_words(
+	uint32_t lane,
+	uint32_t noise)
+{
+	graphics.primitive_word[0][lane] = culling_vertex[lane][0] | (culling_vertex[lane][1] << 16);
+	graphics.primitive_word[1][lane] = culling_vertex[lane][2] | (noise << 16);
+}
+
+/* The primitive's word a culling primitive shader exports before the null bit: 9 bits each, 10 apart. */
+static uint32_t
+culling_packed(
+	uint32_t lane)
+{
+	return culling_vertex[lane][0] | (culling_vertex[lane][1] << 10) | (culling_vertex[lane][2] << 20);
 }
 
 /*

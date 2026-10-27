@@ -241,7 +241,12 @@ amdrdna_gfx10_program_registers(
 
 	/*
 	 * A vertex program: v0 .. v3 delivered (a primitive shader: v0 and
-	 * v5 .. v8), the parameters, the positions and the point size.
+	 * v5 .. v8, and v1 too when it culls: its third vertex number), the
+	 * parameters, the positions and the point size.
+	 *
+	 * Value referenced: Mesa 25.0.7 src/amd/vulkan/radv_shader.c
+	 * (GS_VGPR_COMP_CNT 1 when the vertex offset 2 in VGPR1 is needed,
+	 * lines 2165-2186).
 	 */
 	if (program->stage == DRV_GPU_STAGE_VERTEX && program->primitive_shader != 0U) {
 		registers->primitive_shader = 1U;
@@ -249,7 +254,8 @@ amdrdna_gfx10_program_registers(
 		shared_blocks = (program->shared_bytes + GFX10_INPUTS_SHARED_BLOCK - 1U) / GFX10_INPUTS_SHARED_BLOCK;
 		registers->inputs |= shared_blocks << GFX10_INPUTS_PRIMITIVE_SHARED_SHIFT;
 		registers->inputs |= 3U << GFX10_INPUTS_VERTEX_VGPRS_SHIFT;
-		registers->counts |= 0U << GFX10_COUNTS_PRIMITIVE_VGPRS_SHIFT;
+		if (program->primitive_culling != 0U)
+			registers->counts |= 1U << GFX10_COUNTS_PRIMITIVE_VGPRS_SHIFT;
 		registers->counts |= GFX10_COUNTS_WORKGROUP_PROCESSOR;
 	} else if (program->stage == DRV_GPU_STAGE_VERTEX) {
 		registers->counts |= 3U << GFX10_COUNTS_VERTEX_VGPRS_SHIFT;

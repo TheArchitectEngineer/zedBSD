@@ -764,6 +764,7 @@ state_primitive_shader(
 	uint32_t words[AMDRDNA_GFX10_NGG_CULL_USER_SGPRS];
 	uint32_t count;
 	uint32_t index;
+	uint32_t stages;
 
 	/* The flush after a legacy vertex program's draws, or at the buffer's first draw. */
 	if (pm4->vertex_stage != AMDRDNA_VK_STAGE_PRIMITIVE) {
@@ -809,8 +810,11 @@ state_primitive_shader(
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_PRIMITIVE_EXPORT_FORMAT, AMDRDNA_CX_PRIMITIVE_EXPORT_ONE);
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_GEOMETRY_INSTANCES, AMDRDNA_CX_GEOMETRY_ONE_INSTANCE);
 
-	/* The stages of a passthrough primitive shader in wave32. */
-	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, AMDRDNA_CX_STAGES_PRIMITIVE | AMDRDNA_CX_STAGES_PASSTHROUGH);
+	/* The stages of a primitive shader in wave32: passthrough, unless it culls (it packs its own primitives then). */
+	stages = AMDRDNA_CX_STAGES_PRIMITIVE | AMDRDNA_CX_STAGES_PASSTHROUGH;
+	if (vertex->registers.primitive_culling != 0U)
+		stages = AMDRDNA_CX_STAGES_PRIMITIVE;
+	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, stages);
 }
 
 /*

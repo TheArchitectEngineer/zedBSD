@@ -1760,12 +1760,13 @@ prologue(
 
 	/*
 	 * A vertex program's hardware inputs, and the inputs only the start
-	 * read, go back; a culling primitive shader keeps its primitive's word
-	 * for the end.
+	 * read, go back; a culling primitive shader keeps its primitive's
+	 * vertex numbers (v0 and v1) for the end.
 	 */
 	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
 		for (index = 0U; index < lowering->hardware_vgprs; index++) {
-			if (program->primitive_culling != 0U && index == AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR)
+			if (program->primitive_culling != 0U &&
+			    (index == AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR || index == AMDRDNA_GFX10_NGG_VERTEX_PAIR_VGPR))
 				continue;
 			give_vgpr(lowering, index);
 		}
@@ -3643,16 +3644,20 @@ emit_place_load(
  * by its face, or its zero area, when its area is finite; when its box is
  * outside the view, or (with the flag) holds no sample's centre, unless a
  * w is negative.  A wave whose primitives are all culled exports its
- * first as a degenerate triangle instead.  Without the culling flag (a
- * topology of points or lines) the word goes out as the hardware packed it.
+ * first as a degenerate triangle instead.  The program runs without the
+ * hardware's passthrough mode, so the word is packed here from the vertex
+ * numbers; without the culling flag (a topology of points or lines) it
+ * goes out as packed.
  *
  * Procedure referenced: Mesa 25.0.7 src/amd/common/nir/ac_nir_cull.c
  * (analyze_position_w, cull_face_triangle, calc_bbox_triangle,
  * cull_frustrum, cull_small_primitive_triangle and ac_nir_cull_triangle,
  * lines 21-160), src/amd/common/nir/ac_nir_lower_ngg.c
- * (add_deferred_attribute_culling: the barrier after the stores, the
- * vertex numbers 9 bits apart by 10 in the passthrough word, lines 115-124
- * and 1242-1290), src/amd/common/ac_gpu_info.c (has_ngg_fully_culled_bug
+ * (add_deferred_attribute_culling: the barrier after the stores, lines
+ * 1242-1290; ngg_nogs_init_vertex_indices_vars: without passthrough the
+ * vertex numbers in the 16-bit halves of v0 and v1, lines 115-128; culling
+ * never with passthrough, line 1645), src/amd/common/nir/ac_nir_prerast_utils.c
+ * (ac_nir_pack_ngg_prim_exp_arg: 9 bits each, 10 apart, the null bit 31), src/amd/common/ac_gpu_info.c (has_ngg_fully_culled_bug
  * on GFX10, line 1316) and src/amd/common/nir/ac_nir_prerast_utils.c
  * (ac_nir_ngg_alloc_vertices_fully_culled_workaround: one degenerate
  * triangle of vertex 0 exported instead of none), and
@@ -3735,14 +3740,45 @@ cull_primitives(
 	emit_lanes_below(lowering, wave_count);
 	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_EXECZ, end_label);
 
-	/* The word as packed; without the culling flag it goes out so. */
-	emit_vector(lowering,
-		    AMDRDNA_GFX10_KIND_VECTOR_ONE,
-		    AMDRDNA_GFX10_V_MOV_B32,
-		    AMDRDNA_GFX10_V(word),
-		    AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR),
-		    0U,
-		    0U);
+	/*
+	 * The primitive's word, packed from its three vertex numbers (the
+	 * halves of v0 and the low half of v1), 9 bits each 10 apart; without
+	 * the culling flag it goes out so.
+	 */
+	for (vertex = 0U; vertex < 3U; vertex++) {
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+			    AMDRDNA_GFX10_V_LSHRREV_B32,
+			    AMDRDNA_GFX10_V(temp[vertex]),
+			    constant_operand(vertex == 1U ? 16U : 0U),
+			    AMDRDNA_GFX10_V(vertex == 2U ? AMDRDNA_GFX10_NGG_VERTEX_PAIR_VGPR : AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR),
+			    0U);
+		emit_vector_literal(lowering,
+				    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+				    AMDRDNA_GFX10_V_AND_B32,
+				    AMDRDNA_GFX10_V(temp[vertex]),
+				    AMDRDNA_GFX10_LITERAL,
+				    AMDRDNA_GFX10_V(temp[vertex]),
+				    AMDRDNA_GFX10_NGG_VERTEX_NUMBER_MASK);
+		if (vertex == 0U) {
+			emit_vector(lowering, AMDRDNA_GFX10_KIND_VECTOR_ONE, AMDRDNA_GFX10_V_MOV_B32, AMDRDNA_GFX10_V(word), AMDRDNA_GFX10_V(temp[0]), 0U, 0U);
+			continue;
+		}
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+			    AMDRDNA_GFX10_V_LSHLREV_B32,
+			    AMDRDNA_GFX10_V(address),
+			    constant_operand(10U * vertex),
+			    AMDRDNA_GFX10_V(temp[vertex]),
+			    0U);
+		emit_vector(lowering,
+			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
+			    AMDRDNA_GFX10_V_OR_B32,
+			    AMDRDNA_GFX10_V(word),
+			    AMDRDNA_GFX10_V(address),
+			    AMDRDNA_GFX10_V(word),
+			    0U);
+	}
 	emit_scalar(lowering,
 		    AMDRDNA_GFX10_KIND_SCALAR_COMPARE,
 		    AMDRDNA_GFX10_S_BITCMP1_B32,
@@ -3751,25 +3787,11 @@ cull_primitives(
 		    constant_operand(4U));
 	emit_branch(lowering, AMDRDNA_GFX10_S_CBRANCH_SCC0, export_label);
 
-	/* Each vertex's place: its number (9 bits, 10 apart), its address, its three words. */
+	/* Each vertex's place: its address by its number, its three words. */
 	for (vertex = 0U; vertex < 3U; vertex++) {
-		emit_vector(lowering,
-			    AMDRDNA_GFX10_KIND_VECTOR_TWO,
-			    AMDRDNA_GFX10_V_LSHRREV_B32,
-			    AMDRDNA_GFX10_V(address),
-			    constant_operand(10U * vertex),
-			    AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR),
-			    0U);
-		emit_vector_literal(lowering,
-				    AMDRDNA_GFX10_KIND_VECTOR_TWO,
-				    AMDRDNA_GFX10_V_AND_B32,
-				    AMDRDNA_GFX10_V(address),
-				    AMDRDNA_GFX10_LITERAL,
-				    AMDRDNA_GFX10_V(address),
-				    0x1ffU);
 		emit_multiply_add(lowering,
 				  AMDRDNA_GFX10_V(address),
-				  AMDRDNA_GFX10_V(address),
+				  AMDRDNA_GFX10_V(temp[vertex]),
 				  AMDRDNA_GFX10_NGG_CULL_VERTEX_BYTES,
 				  AMDRDNA_GFX10_ZERO);
 		for (channel = 0U; channel < 3U; channel++)
@@ -3928,13 +3950,13 @@ cull_primitives(
 			    AMDRDNA_GFX10_V_OR_B32,
 			    AMDRDNA_GFX10_V(temp[0]),
 			    AMDRDNA_GFX10_LITERAL,
-			    AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR),
+			    AMDRDNA_GFX10_V(word),
 			    AMDRDNA_GFX10_NGG_NULL_PRIMITIVE);
 	emit_vector(lowering,
 		    AMDRDNA_GFX10_KIND_VECTOR_TWO,
 		    AMDRDNA_GFX10_V_CNDMASK_B32,
 		    AMDRDNA_GFX10_V(word),
-		    AMDRDNA_GFX10_V(AMDRDNA_GFX10_NGG_PRIMITIVE_VGPR),
+		    AMDRDNA_GFX10_V(word),
 		    AMDRDNA_GFX10_V(temp[0]),
 		    culled);
 	emit_vector(lowering,
