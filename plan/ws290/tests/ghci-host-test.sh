@@ -7,6 +7,8 @@
 # Then the self-test of the GPU model and the kernel stubs (ghci-model-host-test.c with
 # ghci-model.c and ghci-stubs.c); the stubs' registration checks are gpu_ops_validate,
 # taken out of src/drivers/gpu/gpu.c for the run so that they stay the same as gpu.c's.
+# Then the driver's core against the model (ghci-driver-host-test.c), and a grep of the
+# files the kernel builds for the names of the interface before GHCI 1.0.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws290/tests/ghci-host-test.sh   (from anywhere)
@@ -52,6 +54,30 @@ if grep -q '^stub_gpu_ops_validate($' "$validate"; then
 else
 	echo "FAIL ghci-model-host-test: gpu_ops_validate not found in src/drivers/gpu/gpu.c"
 	status=1
+fi
+
+# The driver's core against the model (ghci-driver-host-test.c).
+if grep -q '^stub_gpu_ops_validate($' "$validate"; then
+	cc $flags -I"$tests" -o "$out/ghci-driver-host-test" "$tests/ghci-driver-host-test.c" "$tests/ghci-model.c" \
+		"$tests/ghci-stubs.c" "$validate" "$ghci/ghci.c" "$ghci/cp.c" "$ghci/recover.c" "$ghci/memory.c" \
+		"$ghci/check.c" "$ghci/caps.c" "$ghci/cmd.c"
+	timeout 300 "$out/ghci-driver-host-test" || status=1
+fi
+
+# The files the kernel builds of the driver, and the headers they include, name nothing of the
+# interface before GHCI 1.0 (the 128 KiB registers, the firmware, the native command, the aperture,
+# the packets of class 0 to 2 and their job tags).
+built=$(sed -n '/^AMD64_GHCI_SOURCES :=/,/^endif/p' "$repo/platform/amd64/vmunix.mk" | grep -o 'src/drivers/gpu/ghci/[a-z0-9/-]*\.c')
+headers="$ghci/ghci.h $ghci/ghci-regs.h $ghci/ghci-cmd.h $ghci/ghci-words.h"
+old_names='hcr\.h|packets\.h|frame\.h|GPU_OP_GHCI|CONFIG_GHCI_NATIVE|ghci_native|ghci_packet_|ghci_blit|ghci_firmware|firmware\.c|aperture|APERTURE|GHCI_CAPS_CP|GHCI_XCAP_|GHCI_CPFW|GHCI_TAG_|job tag'
+if [ -z "$built" ]; then
+	echo "FAIL ghci-old-names: no GHCI sources in platform/amd64/vmunix.mk"
+	status=1
+elif (cd "$repo" && grep -nE "$old_names" $built) || grep -nE "$old_names" $headers; then
+	echo "FAIL ghci-old-names: the files above name the interface before GHCI 1.0"
+	status=1
+else
+	echo "PASS ghci-old-names ($(echo $built | wc -w) sources, 4 headers)"
 fi
 
 if [ "$status" -ne 0 ]; then

@@ -337,16 +337,20 @@ waitq_sleep(
 	(void)observed;
 	(void)deadline;
 	(void)flags;
-	if (condition_lock != NULL)
+	if (condition_lock != NULL) {
 		held_remove(condition_lock->name);
+		condition_lock->held.value = 0U;
+	}
 
 	/* Checks the locks held across the wait, then sleeps one tick. */
 	check_wait(queue->name);
 	sleep_tick();
 
 	/* Takes the condition lock back. */
-	if (condition_lock != NULL)
+	if (condition_lock != NULL) {
+		condition_lock->held.value = 1U;
 		held_add(condition_lock->name);
+	}
 
 	/* Succeeded: woken. */
 	return 0;
@@ -555,6 +559,17 @@ drv_gpu_unregister(
 	stub.unregistrations++;
 	stub.core_ops = NULL;
 	return 0;
+}
+
+void
+drv_gpu_report_error(
+	struct drv_gpu_device *device,
+	int error)
+{
+	/* Counted. */
+	(void)device;
+	(void)error;
+	stub.errors_reported++;
 }
 
 void

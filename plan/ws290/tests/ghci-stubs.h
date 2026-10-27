@@ -59,6 +59,7 @@ struct stub_state {
 	unsigned registrations;
 	unsigned unregistrations;
 	unsigned session_errors;
+	unsigned errors_reported;
 	unsigned capacity_notes;
 	unsigned completions;
 	int last_completion_error;

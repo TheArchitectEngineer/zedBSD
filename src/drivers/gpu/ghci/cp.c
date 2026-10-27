@@ -6,16 +6,21 @@
  */
 
 /*
- * The GHCI command processor from the driver's side: the ring and its
- * doorbell, the device's fence, the interrupt, the reset after a fault or
- * a hang, and the service thread that recovers and gives deferred memory
- * back.
+ * The GHCI device's command processor: CP_HEAP, the ring, the fence
+ * page, the gate, the submissions and their tickets, and the interrupt.
  *
- * Every submission is followed in the ring by a fence of the driver's:
- * the device's one fence value, which only grows, written to the fence
- * page when everything before it has finished.  A submission is known by
- * its ticket, the fence value and the reset generation; a reset completes
- * every older ticket with an error and starts the ring again at index 0.
+ * The ring is host memory the driver alone writes; RING_WPTR is the
+ * doorbell and both indices count dwords.  A packet never crosses the
+ * end of the ring: the rest of the ring is filled with a NOP first.  A
+ * submission is placed whole under cp_lock (in pieces at packet
+ * boundaries, with a doorbell before each wait, when the ring is short of
+ * room) and ends with a CMD_FENCE of the next 64-bit sequence.  A wait
+ * for room ends only when RING_RPTR moves or a recovery begins: a
+ * processor that stopped is the hang check's to find.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 6,
+ * the ring, the doorbell and the fence; section 9, the interrupt;
+ * Appendix A, the order of the start).
  */
 
 #include <stddef.h>
@@ -26,244 +31,493 @@
 #include <kern/device-io.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
-#include <kern/sched.h>
 #include <uapi/errno.h>
 
 #include "ghci.h"
-#include "hcr.h"
-#include "packets.h"
-#include "vk/vk-node.h"
+#include "ghci-cmd.h"
+
+/* The interrupts that start a recovery, and every interrupt the handler takes. */
+#define IRQ_RECOVER			(GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG)
+#define IRQ_TAKEN			(GHCI_IRQ_FENCE | IRQ_RECOVER)
+
+/* Every bit of IRQ_STATUS, which the start clears. */
+#define IRQ_ALL				0xffffffffU
+
+static int alloc_heap(struct ghci_device *device);
+static int liveness(struct ghci_device *device, int want_interrupt);
+static void release_memory(struct ghci_device *device);
+static int ring_room(struct ghci_device *device, uint32_t need, int log_entry);
+static void ring_store(struct ghci_device *device, uint32_t index, uint32_t word);
+static void retire_log(struct ghci_device *device);
+static int packet_length(const uint32_t *packets, uint32_t left, uint32_t *length);
+static void record_fault(struct ghci_device *device, uint32_t irq_status);
+static void take_fence(struct ghci_device *device, uint32_t irq_status);
+static void log_registers(struct ghci_device *device, const char *what);
 
 /*
- * The interrupts the driver takes from the command processor: the fence,
- * a fault, the watchdog, the firmware's results of a frame, and the
- * display controller's events (a flip's record, an error, a change of
- * the connection; its vertical sync is not used).
- */
-#define IRQ_DISPLAY			(GHCI_IRQ_FLIP | GHCI_IRQ_DISP_ERROR | GHCI_IRQ_HOTPLUG)
-#define IRQ_TAKEN			(GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_RESULT | IRQ_DISPLAY)
-
-/* Every bit of IRQ_STATUS, cleared at the start. */
-#define IRQ_ALL				0x1fffU
-
-/* How often a wait for a fence looks at the fence page when no interrupt comes. */
-#define FENCE_POLL_MS			10U
-
-/* How long the stop waits for the service thread to leave. */
-#define SERVICE_STOP_MS			5000U
-
-/* How long the start waits for the processor to report RUNNING. */
-#define RUN_WAIT_MS			100U
-
-static void ring_put(struct ghci_device *device, uint32_t index, uint32_t value);
-static uint32_t ring_get(struct ghci_device *device, uint32_t index);
-static int ring_room(struct ghci_device *device, uint32_t need, uint32_t *pad);
-static int ring_write(struct ghci_device *device, struct ghci_session *session, const uint32_t *packets, uint32_t dwords, int fenced, struct ghci_ticket *ticket);
-static void refresh_completed(struct ghci_device *device);
-static int fence_window_wait(struct ghci_device *device);
-static void program_ring(struct ghci_device *device);
-static void recover(struct ghci_device *device, const char *reason);
-static int recover_run(struct ghci_device *device, const char *reason, int reload);
-static void fail_sessions(struct ghci_device *device, uint64_t generation);
-static void service_hang_check(struct ghci_device *device);
-
-/*
- * Resets nothing but sets the aperture, the ring, the fences and the
- * interrupt of a GPU that is idle after its reset, then sets RUN.
+ * Starts the command processor: CP_HEAP, the ring and the fence page,
+ * the interrupt, the watchdog, bus mastering, RUN and the first fence.
+ *
+ * Returns 0 with the ring running, or an error with the GPU reset, the
+ * interrupt let go and the memory given back.
  */
 int
 ghci_cp_start(
 	struct ghci_device *device)
 {
-	uint32_t status;
+	unsigned long irq;
+	uint32_t cycles;
+	uint32_t gclk_hz;
 	int error;
 
-	/* The ring, the fence page, the bounce buffer of the transfers and the firmware's reply page. */
-	mutex_lock(&device->lock);
+	/* CP_HEAP, which the processor's page-table walker takes its tables from. */
+	error = alloc_heap(device);
+	if (error != 0)
+		return error;
 
-	error = ghci_memory_alloc(device, NULL, GHCI_USE_DRIVER, GHCI_RING_BYTES, &device->ring);
-	if (error == 0)
-		error = ghci_memory_alloc(device, NULL, GHCI_USE_DRIVER, GHCI_PAGE_BYTES, &device->fence_page);
-	if (error == 0)
-		error = ghci_memory_alloc(device, NULL, GHCI_USE_DRIVER, GHCI_BOUNCE_BYTES, &device->bounce);
-	if (error == 0)
-		error = ghci_memory_alloc(device, NULL, GHCI_USE_DRIVER, GHCI_PAGE_BYTES, &device->fw_page);
-
-	mutex_unlock(&device->lock);
-
-	/* Without them the device cannot run. */
+	/* The ring and the fence page, in host memory below the driver's limit. */
+	error = ghci_memory_alloc(device, GHCI_RING_BYTES, 0U, &device->ring.memory);
 	if (error != 0) {
-		kern_logf("ghci: %s: no memory for the ring (%d)\n", device->name, error);
-		ghci_cp_stop(device);
+		release_memory(device);
 		return error;
 	}
-
-	/* The ring starts empty and the fence at zero. */
-	device->ring_dwords = GHCI_RING_BYTES / 4U;
-	device->fence_issued = 0U;
-	device->completed = 0U;
-	device->generation = 1U;
-	device->progress_tick = clock_ticks();
-	program_ring(device);
-
-	/* Leaves IDLE for RUNNING with the watchdog of one command on. */
-	ghci_write(device, GHCI_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_WDT_EN);
-	error = ghci_poll(device, GHCI_STATUS, 0xfU << 16, GHCI_ST_RUNNING << 16, RUN_WAIT_MS);
+	error = ghci_memory_alloc(device, GHCI_FENCE_PAGE_BYTES, 0U, &device->fence_page);
 	if (error != 0) {
-		status = ghci_read(device, GHCI_STATUS);
-		kern_logf("ghci: %s: command processor did not run (status %08x)\n", device->name, (unsigned)status);
+		release_memory(device);
+		return error;
+	}
+	device->ring.dwords = GHCI_RING_BYTES / 4U;
+	device->ring.wptr = 0U;
+	device->fence_placed = 0U;
+	device->submit_first = 0U;
+	device->submit_count = 0U;
+
+	/* The ring's place and size, written while the processor is idle. */
+	ghci_write(device, GHCI_REG_RING_BASE_LO, (uint32_t)device->ring.memory->bus);
+	ghci_write(device, GHCI_REG_RING_BASE_HI, (uint32_t)(device->ring.memory->bus >> 32));
+	ghci_write(device, GHCI_REG_RING_SIZE, GHCI_RING_BYTES);
+	ghci_write(device, GHCI_REG_RING_WPTR, 0U);
+
+	/* The interrupt, taken only now that the reset has cleared what a kernel before this one left. */
+	error = device->bus_ops->interrupt_take(device);
+	if (error != 0) {
+		release_memory(device);
+		return error;
+	}
+	device->interrupt_taken = 1;
+
+	/* The watchdog: GHCI_WATCHDOG_MS at the core clock, or the reset default when the clock is unknown. */
+	gclk_hz = ghci_read(device, GHCI_REG_GCLK_HZ);
+	cycles = ghci_watchdog_cycles(gclk_hz, GHCI_WATCHDOG_MS);
+	if (cycles != 0U)
+		ghci_write(device, GHCI_REG_WDT_CYCLES, cycles);
+	device->wdt_cycles = ghci_read(device, GHCI_REG_WDT_CYCLES);
+	device->reset_wait_ms = ghci_reset_wait_ms(gclk_hz, device->wdt_cycles);
+
+	/* The fences, the generations and the interrupts the handler takes, before any can come. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	device->irq_mask = IRQ_TAKEN;
+	device->completed = 0U;
+	device->issued = 0U;
+	device->recovering = 0;
+	device->fault_records = 0U;
+	device->progress_tick = clock_ticks();
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Nothing pending, and the interrupts the driver takes (none on a polled device). */
+	ghci_write(device, GHCI_REG_IRQ_STATUS, IRQ_ALL);
+	ghci_cp_irq_enable(device);
+
+	/* Bus mastering, unless the firmware left it on for a boot display. */
+	if (!device->bus_master_found) {
+		error = device->bus_ops->bus_master(device, 1);
+		if (error != 0) {
+			ghci_cp_stop(device);
+			return error;
+		}
+		device->bus_master_set = 1;
+	}
+
+	/* The ring runs; the processor builds session 0's root in CP_HEAP. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	device->state = GHCI_STATE_RUNNING;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+	ghci_cp_run(device);
+
+	/* One fence must be written, with its interrupt unless the device is polled. */
+	error = liveness(device, !device->polled);
+	if (error != 0) {
+		log_registers(device, "first fence not written");
 		ghci_cp_stop(device);
 		return EIO;
 	}
-
-	/* The processor takes the doorbell from here. */
-	device->running = 1;
 
 	/* Succeeded: the ring runs. */
 	return 0;
 }
 
 /*
- * Waits for the driver's last fence and halts the command processor.
+ * Stops the command processor at the detach or after a failed start: it
+ * halts, resets and stops, the interrupt and bus mastering go, the poll
+ * thread leaves, and the memory is given back unless the GPU may still
+ * reach it.
  */
 void
 ghci_cp_stop(
 	struct ghci_device *device)
 {
-	struct ghci_ticket ticket;
-	uint32_t state;
+	enum ghci_device_state state;
+	unsigned long irq;
+	uint32_t ctrl;
+	int reset_done;
+	int master_off;
 	int error;
 
-	/* The last submission finishes first, when the processor runs. */
-	if (device->running) {
-		ticket.fence = device->fence_issued;
-		ticket.generation = device->generation;
-		error = ghci_cp_wait(device, &ticket, GHCI_FENCE_WAIT_MS);
+	/* The device's life as the last recovery left it. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	state = device->state;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* A running processor halts first, between packets. */
+	if (state == GHCI_STATE_RUNNING) {
+		ctrl = ghci_read(device, GHCI_REG_CTRL);
+		ghci_write(device, GHCI_REG_CTRL, ctrl | GHCI_CTRL_HALT);
+		error = ghci_wait_register(device, GHCI_REG_STATUS, GHCI_STATUS_HALTED, GHCI_STATUS_HALTED, GHCI_HALT_WAIT_MS);
 		if (error != 0)
-			kern_logf("ghci: %s: last fence not reached at the stop (%d)\n", device->name, error);
+			kern_logf("ghci: %s: processor did not halt at the stop\n", device->name);
 	}
 
-	/* No more doorbells; the interrupt is off and stays off. */
-	mutex_lock(&device->cp_lock);
+	/* The reset stops every access to the ring and CP_HEAP. */
+	ghci_write(device, GHCI_REG_CTRL, GHCI_CTRL_RESET);
+	error = ghci_wait_register(device, GHCI_REG_CTRL, GHCI_CTRL_RESET, 0U, device->reset_wait_ms);
+	reset_done = 1;
+	if (error != 0) {
+		kern_logf("ghci: %s: reset at the stop did not end\n", device->name);
+		reset_done = 0;
+	}
 
-	device->running = 0;
+	/* No interrupt, nothing running. */
+	ghci_write(device, GHCI_REG_IRQ_ENABLE, 0U);
+	ghci_write(device, GHCI_REG_CTRL, 0U);
+	irq = spin_lock_irqsave(&device->irq_lock);
+
 	device->irq_mask = 0U;
-	ghci_write(device, GHCI_IRQ_ENABLE, 0U);
+	device->state = GHCI_STATE_DETACHED;
 
-	/* A running processor is halted first, which quiesces its memory accesses. */
-	state = GHCI_STATUS_STATE(ghci_read(device, GHCI_STATUS));
-	if (state == GHCI_ST_RUNNING) {
-		ghci_write(device, GHCI_CTRL, GHCI_CTRL_HALT);
-		error = ghci_poll(device, GHCI_STATUS, GHCI_STATUS_HALTED | GHCI_STATUS_AXI_IDLE, GHCI_STATUS_HALTED | GHCI_STATUS_AXI_IDLE, GHCI_HALT_WAIT_MS);
-		if (error != 0)
-			kern_logf("ghci: %s: did not halt (status %08x)\n", device->name, (unsigned)ghci_read(device, GHCI_STATUS));
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* The handler goes, so that a late interrupt does not reach the ring or the fence page. */
+	if (device->interrupt_taken) {
+		device->bus_ops->interrupt_release(device);
+		device->interrupt_taken = 0;
 	}
 
-	/* A reset leaves it idle; an empty aperture keeps it off the memory that goes back now. */
-	ghci_write(device, GHCI_CTRL, GHCI_CTRL_RESET);
-	(void)ghci_poll(device, GHCI_CTRL, GHCI_CTRL_RESET, 0U, GHCI_RESET_WAIT_MS);
-	ghci_write(device, GHCI_APERTURE_BASE, 0U);
-	ghci_write(device, GHCI_APERTURE_LIMIT, 0U);
+	/*
+	 * Bus mastering goes if the driver turned it on, or if the reset did
+	 * not end; one the firmware left on for a boot display stays, with
+	 * the GPU reset and its ring stopped.
+	 */
+	master_off = 0;
+	if (device->bus_master_set || !reset_done) {
+		error = device->bus_ops->bus_master(device, 0);
+		if (error == 0) {
+			master_off = 1;
+			device->bus_master_set = 0;
+		}
+	}
 
-	mutex_unlock(&device->cp_lock);
+	/* The poll thread leaves before the fence page it reads goes. */
+	ghci_poll_stop(device);
 
-	/* The ring, the fence page, the bounce buffer and the reply page go back. */
-	mutex_lock(&device->lock);
+	/* A GPU that may still reach the memory keeps it. */
+	if (!reset_done && !master_off) {
+		kern_logf("ghci: %s: GPU not stopped; its memory is kept\n", device->name);
+		return;
+	}
 
-	if (device->fw_page != NULL)
-		ghci_memory_free(device, device->fw_page);
-	if (device->bounce != NULL)
-		ghci_memory_free(device, device->bounce);
-	if (device->fence_page != NULL)
-		ghci_memory_free(device, device->fence_page);
-	if (device->ring != NULL)
-		ghci_memory_free(device, device->ring);
-	device->fw_page = NULL;
-	device->bounce = NULL;
-	device->fence_page = NULL;
-	device->ring = NULL;
-
-	mutex_unlock(&device->lock);
+	/* Succeeded: the memory goes back. */
+	release_memory(device);
 }
 
 /*
- * Resets the processor, loads the staged firmware image, starts the
- * firmware and sends it INIT, as a recovery does; the work in flight
- * ends with an error.  A device lost before may come back this way.
+ * Passes the gate of the ring: takes cp_lock unless a recovery runs or
+ * the device is lost.
+ *
+ * held names the outer locks the caller holds (GHCI_HOLD_DEVICE,
+ * GHCI_HOLD_DISPLAY).  OPEN: cp_lock is held, with the outer locks.
+ * RETRY: a recovery ran or runs; every lock the caller held has been let
+ * go, and with wait the gate has waited for the recovery to end; the
+ * caller starts again and reads its state again.  LOST: every lock has
+ * been let go and the device is lost.
  */
-int
-ghci_cp_reload(
+enum ghci_gate
+ghci_cp_enter(
+	struct ghci_device *device,
+	unsigned held,
+	int wait)
+{
+	enum ghci_gate gate;
+	unsigned long irq;
+	uint64_t generation;
+	uint64_t sequence;
+
+	/* The ring's lock, and what the recovery says under the interrupt's. */
+	mutex_lock(&device->cp_lock);
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	gate = GHCI_GATE_OPEN;
+	if (device->state == GHCI_STATE_LOST)
+		gate = GHCI_GATE_LOST;
+	else if (device->recovering)
+		gate = GHCI_GATE_RETRY;
+	generation = device->gate_generation;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Succeeded at once: the ring is the caller's. */
+	if (gate == GHCI_GATE_OPEN)
+		return GHCI_GATE_OPEN;
+
+	/* Lets go of every lock, the innermost first, so that the recovery can take them. */
+	mutex_unlock(&device->cp_lock);
+	if ((held & GHCI_HOLD_DISPLAY) != 0U)
+		mutex_unlock(&device->display_lock);
+	if ((held & GHCI_HOLD_DEVICE) != 0U)
+		mutex_unlock(&device->lock);
+
+	/* A lost device, or a caller that does not wait, is answered now. */
+	if (gate == GHCI_GATE_LOST || !wait)
+		return gate;
+
+	/* Waits for the gate to open again or the device to be lost. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	while (device->gate_generation == generation && device->state != GHCI_STATE_LOST) {
+		sequence = waitq_sequence(&device->gate_wake);
+		(void)waitq_sleep(&device->gate_wake, &device->irq_lock, sequence, 0U, 0U);
+	}
+	if (device->state == GHCI_STATE_LOST)
+		gate = GHCI_GATE_LOST;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Succeeded: the caller starts again (or hears that the device is lost). */
+	return gate;
+}
+
+/*
+ * Leaves the ring after ghci_cp_enter() opened it.
+ */
+void
+ghci_cp_leave(
 	struct ghci_device *device)
 {
-	int error;
-
-	/* The recovery with the load between the reset and the start. */
-	error = recover_run(device, "firmware reload", 1);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the new firmware runs. */
-	return 0;
+	/* The ring is free for the next caller. */
+	mutex_unlock(&device->cp_lock);
 }
 
 /*
- * Writes packets and the driver's fence into the ring and rings the
- * doorbell.  The device's lock is held when session is not NULL, since
- * the session's last fence is recorded.
- */
-int
-ghci_cp_submit(
-	struct ghci_device *device,
-	struct ghci_session *session,
-	const uint32_t *packets,
-	uint32_t dwords,
-	struct ghci_ticket *ticket)
-{
-	int error;
-
-	/* The packets and the fence after them. */
-	error = ring_write(device, session, packets, dwords, 1, ticket);
-	if (error != 0)
-		return error;
-
-	/* The session's memory now waits for this fence before it goes back. */
-	if (session != NULL) {
-		session->last_fence = ticket->fence;
-		session->last_generation = ticket->generation;
-		session->outstanding = 1;
-	}
-
-	/* Succeeded: the packets are in the ring. */
-	return 0;
-}
-
-/*
- * Writes packets of the driver's own into the ring without a fence after
- * them, and rings the doorbell.
+ * Places packets in the ring, without the doorbell.
  *
- * A flip needs no fence: its record says when it was taken, and a fence
- * would drain every unit of the GPU behind the other sessions' work.
+ * The caller holds cp_lock.  The packets are placed one at a time, each
+ * whole and never across the end of the ring; while the ring has no room
+ * the doorbell rings for what is placed and the placement waits for
+ * RING_RPTR.  Returns 0, EINVAL for a packet that is malformed or larger
+ * than the ring, or EAGAIN when a recovery began (or the device was lost)
+ * while it waited; the packets placed until then are lost to the reset.
  */
 int
-ghci_cp_submit_unfenced(
+ghci_cp_place(
 	struct ghci_device *device,
 	const uint32_t *packets,
 	uint32_t dwords)
 {
-	struct ghci_ticket ticket;
+	uint32_t length;
+	uint32_t index;
+	uint32_t done;
 	int error;
 
-	/* The packets alone. */
-	error = ring_write(device, NULL, packets, dwords, 0, &ticket);
-	if (error != 0)
-		return error;
+	/* Each packet in turn. */
+	done = 0U;
+	while (done < dwords) {
+		/* The packet's length from its header. */
+		error = packet_length(&packets[done], dwords - done, &length);
+		if (error != 0)
+			return error;
 
-	/* Succeeded: the packets are in the ring. */
+		/* Room for it, with the padding before the end of the ring. */
+		error = ring_room(device, length, 0);
+		if (error != 0)
+			return error;
+
+		/* Copies it to the ring. */
+		for (index = 0U; index < length; index++)
+			ring_store(device, device->ring.wptr + index, packets[done + index]);
+		device->ring.wptr = (device->ring.wptr + length) % device->ring.dwords;
+		done += length;
+	}
+
+	/* Succeeded: every packet is in the ring. */
 	return 0;
 }
 
 /*
- * Waits a bounded time for a ticket.
+ * Rings the doorbell for everything placed: the ring's writes become
+ * visible first, then RING_WPTR moves.  The caller holds cp_lock.
+ */
+void
+ghci_cp_doorbell(
+	struct ghci_device *device)
+{
+	/* The ring's dwords before the doorbell (section 6.3). */
+	kern_io_write_barrier();
+	ghci_write(device, GHCI_REG_RING_WPTR, device->ring.wptr);
+}
+
+/*
+ * Places the CMD_FENCE that ends a submission: the next 64-bit sequence
+ * into the fence page, with the fence interrupt.
+ *
+ * The caller holds cp_lock; start is where the submission began in the
+ * ring.  Returns 0 with the submission's ticket, or EAGAIN as
+ * ghci_cp_place() does.
+ */
+int
+ghci_cp_place_fence(
+	struct ghci_device *device,
+	uint32_t session,
+	uint32_t start,
+	struct ghci_ticket *ticket)
+{
+	struct ghci_submit_entry *entry;
+	uint32_t packet[GHCI_DW_FENCE];
+	unsigned long irq;
+	uint64_t seq;
+	uint32_t index;
+	int idle;
+	int error;
+
+	/* Room for the fence and for the submission's entry in the log. */
+	error = ring_room(device, GHCI_DW_FENCE, 1);
+	if (error != 0)
+		return error;
+
+	/* The fence of the next sequence. */
+	seq = device->fence_placed + 1U;
+	(void)ghci_cmd_fence(packet, device->fence_page->bus, seq, GHCI_FENCE_FLAG_MEM_WRITE | GHCI_FENCE_FLAG_IRQ);
+	for (index = 0U; index < GHCI_DW_FENCE; index++)
+		ring_store(device, device->ring.wptr + index, packet[index]);
+	device->ring.wptr = (device->ring.wptr + GHCI_DW_FENCE) % device->ring.dwords;
+	device->fence_placed = seq;
+
+	/* The submission's entry in the log, until its fence is seen passed. */
+	entry = &device->submit_log[(device->submit_first + device->submit_count) % GHCI_SUBMIT_LOG];
+	entry->start = start;
+	entry->end = device->ring.wptr;
+	entry->seq = seq;
+	entry->session = session;
+	device->submit_count++;
+
+	/*
+	 * The ticket, in the generation the fence was placed in, and the
+	 * last fence placed for the hang check; a ring that was idle starts
+	 * the hang check's clock now.
+	 */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	idle = ghci_fence64_passed(device->completed, device->issued);
+	if (idle)
+		device->progress_tick = clock_ticks();
+	device->issued = seq;
+	ticket->seq = seq;
+	ticket->generation = device->generation;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Succeeded: the fence is placed. */
+	return 0;
+}
+
+/*
+ * Submits packets of a session (0 for the driver's own work): binds the
+ * session, places the packets and a fence, binds session 0 again, and
+ * rings the doorbell.  A GPU without a page-table walker has no sessions
+ * to bind.
+ *
+ * Returns 0 with the ticket, EIO when the device is lost or a recovery
+ * began after part of the submission was placed (that part is lost to
+ * the reset), or EINVAL for a malformed packet.
+ */
+int
+ghci_cp_submit(
+	struct ghci_device *device,
+	uint32_t session,
+	const uint32_t *packets,
+	uint32_t dwords,
+	struct ghci_ticket *ticket)
+{
+	enum ghci_gate gate;
+	uint32_t bind[GHCI_DW_BIND_SESSION];
+	uint32_t start;
+	int walker;
+	int error;
+
+	/* Passes the gate, waiting out a recovery; nothing was placed before it. */
+	for (;;) {
+		gate = ghci_cp_enter(device, 0U, 1);
+		if (gate == GHCI_GATE_LOST)
+			return EIO;
+		if (gate == GHCI_GATE_OPEN)
+			break;
+	}
+
+	/* The session the packets run in. */
+	start = device->ring.wptr;
+	walker = ghci_caps_has(&device->caps, GHCI_HAS_HW_WALKER);
+	error = 0;
+	if (walker) {
+		(void)ghci_cmd_bind_session(bind, session);
+		error = ghci_cp_place(device, bind, GHCI_DW_BIND_SESSION);
+	}
+
+	/* The packets, and the fence that says they are done. */
+	if (error == 0)
+		error = ghci_cp_place(device, packets, dwords);
+	if (error == 0)
+		error = ghci_cp_place_fence(device, session, start, ticket);
+
+	/* Session 0 again, so that the driver's later packets do not run in the client's session. */
+	if (error == 0 && walker) {
+		(void)ghci_cmd_bind_session(bind, 0U);
+		error = ghci_cp_place(device, bind, GHCI_DW_BIND_SESSION);
+	}
+
+	/* The doorbell for what was placed, even a part a recovery will throw away. */
+	ghci_cp_doorbell(device);
+	ghci_cp_leave(device);
+
+	/* A recovery that began in the middle lost the submission. */
+	if (error == EAGAIN)
+		return EIO;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the submission is in the ring. */
+	return 0;
+}
+
+/*
+ * Waits a bounded time for a ticket.  The caller holds neither the
+ * device's lock nor the display's.
+ *
+ * Returns 0 once its fence passed, EIO when a reset or the loss of the
+ * device ended it, or ETIMEDOUT.
  */
 int
 ghci_cp_wait(
@@ -271,992 +525,609 @@ ghci_cp_wait(
 	const struct ghci_ticket *ticket,
 	unsigned milliseconds)
 {
-	uint64_t deadline;
-	uint64_t now;
-	uint64_t wake;
-	uint64_t sequence;
+	enum ghci_ticket_state state;
 	unsigned long irq;
-	int passed;
-	int error;
+	uint64_t deadline;
+	uint64_t sequence;
+	uint64_t now;
 
 	/* The wait ends at the deadline. */
 	deadline = clock_ticks() + kern_ms_to_ticks(milliseconds);
 
-	/* Looks at the fence page, sleeping between looks, until the ticket is done. */
+	/* Sleeps on the fence interrupts until the ticket is answered or the time is up. */
 	for (;;) {
-		refresh_completed(device);
-
-		/* The ticket's state, read with the interrupt's lock. */
-		irq = spin_lock_irqsave(&device->irq_lock);
-
-		error = ETIMEDOUT;
-		passed = ghci_fence_passed(device->completed, ticket->fence);
-		if (ticket->generation != device->generation) {
-			error = EIO;
-		} else if (passed) {
-			error = 0;
-		}
-
-		/* Not done: sleeps until a fence interrupt or the next look. */
-		now = clock_ticks();
-		if (error == ETIMEDOUT && now < deadline) {
-			wake = now + kern_ms_to_ticks(FENCE_POLL_MS);
-			if (wake > deadline)
-				wake = deadline;
-			sequence = waitq_sequence(&device->fence_wake);
-			(void)waitq_sleep(&device->fence_wake, &device->irq_lock, sequence, wake, 0U);
-		}
-
-		spin_unlock_irqrestore(&device->irq_lock, irq);
-
-		/* Ends at an answer, or at the deadline. */
-		if (error != ETIMEDOUT)
+		state = ghci_cp_ticket(device, ticket);
+		if (state != GHCI_TICKET_PENDING)
 			break;
+		now = clock_ticks();
 		if (now >= deadline)
 			break;
+
+		/* Sleeps until a fence interrupt, a reset or the deadline. */
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		sequence = waitq_sequence(&device->fence_wake);
+		(void)waitq_sleep(&device->fence_wake, &device->irq_lock, sequence, deadline, 0U);
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
 	}
 
-	/* Reports a ticket that a reset ended, or a wait that ran out. */
-	if (error != 0)
-		return error;
+	/* A ticket a reset ended, or a wait that ran out. */
+	if (state == GHCI_TICKET_FAILED)
+		return EIO;
+	if (state == GHCI_TICKET_PENDING)
+		return ETIMEDOUT;
 
 	/* Succeeded: the fence has passed. */
 	return 0;
 }
 
 /*
- * Reports the ticket of the newest submission.
+ * Reports the state of a ticket: pending, done, or failed because a
+ * reset or the loss of the device ended it before its fence passed.
  */
-void
-ghci_cp_last(
+enum ghci_ticket_state
+ghci_cp_ticket(
 	struct ghci_device *device,
-	struct ghci_ticket *ticket)
+	const struct ghci_ticket *ticket)
 {
+	enum ghci_ticket_state state;
+	struct ghci_reset_record *record;
 	unsigned long irq;
+	int passed;
 
-	/* The issued fence and its generation, read together. */
+	/* The fence and the generations, read together. */
 	irq = spin_lock_irqsave(&device->irq_lock);
 
-	ticket->fence = device->fence_issued;
-	ticket->generation = device->generation;
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-}
-
-/*
- * Reports the fence the GPU has completed, read afresh from the fence page.
- */
-uint32_t
-ghci_cp_completed(
-	struct ghci_device *device)
-{
-	unsigned long irq;
-	uint32_t completed;
-
-	/* The fence page may have moved without an interrupt yet. */
-	refresh_completed(device);
-
-	/* The completed value, read with the interrupt's lock. */
-	irq = spin_lock_irqsave(&device->irq_lock);
-
-	completed = device->completed;
+	state = GHCI_TICKET_FAILED;
+	if (ticket->generation == device->generation) {
+		/* A ticket of this generation is done once the accepted fence reaches it. */
+		passed = ghci_fence64_passed(device->completed, ticket->seq);
+		state = GHCI_TICKET_PENDING;
+		if (passed)
+			state = GHCI_TICKET_DONE;
+	} else if (ticket->generation < device->generation) {
+		/* An older ticket passed if the fence had reached it when the reset ended its generation. */
+		record = &device->history[ticket->generation % GHCI_RESET_HISTORY];
+		passed = ghci_fence64_passed(record->completed, ticket->seq);
+		if (record->generation == ticket->generation && passed)
+			state = GHCI_TICKET_DONE;
+	}
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 
-	/* Reports the value. */
-	return completed;
+	/* Succeeded: the ticket's state. */
+	return state;
 }
 
 /*
- * Reports whether a ticket is done.
+ * Waits a bounded time for the fence page itself to reach a sequence,
+ * whatever the recovery says; only the start and the recovery use it,
+ * for the fences they place to see that the processor runs.
+ *
+ * Returns 0, or ETIMEDOUT.
  */
 int
-ghci_cp_done(
+ghci_cp_await_fence(
 	struct ghci_device *device,
-	uint32_t fence,
-	uint64_t generation)
+	uint64_t seq,
+	unsigned milliseconds)
 {
-	unsigned long irq;
-	int done;
+	uint64_t word;
+	unsigned waited;
+	int passed;
 
-	/* The fence page may have moved without an interrupt yet. */
-	refresh_completed(device);
+	/* Reads the fence page every millisecond until it reaches the sequence or the time is up. */
+	for (waited = 0U; waited <= milliseconds; waited++) {
+		word = ghci_fence_read(device);
+		passed = ghci_fence64_passed(word, seq);
+		if (passed)
+			return 0;
 
-	/* A reset ended every ticket of an older generation; otherwise the fence decides. */
-	irq = spin_lock_irqsave(&device->irq_lock);
+		/* Sleeps for a millisecond before the next read. */
+		ghci_sleep_ms(1U);
+	}
 
-	done = 1;
-	if (generation == device->generation)
-		done = ghci_fence_passed(device->completed, fence);
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-
-	/* Reports whether the ticket is done. */
-	return done;
+	/* The fence never came. */
+	return ETIMEDOUT;
 }
 
 /*
- * The interrupt handler of the device: the fence, a fault, the watchdog,
- * the firmware's results and the display controller's events.
+ * Empties the ring as a reset left it: RING_WPTR and RING_RPTR are 0
+ * and no submission is outstanding.  The caller holds cp_lock.
+ */
+void
+ghci_cp_ring_reset(
+	struct ghci_device *device)
+{
+	/* The driver's write index follows the device's. */
+	device->ring.wptr = 0U;
+
+	/* Every submission of the log was lost to the reset. */
+	device->submit_first = 0U;
+	device->submit_count = 0U;
+}
+
+/*
+ * Lets the processor run the ring: with the watchdog, and with the
+ * interrupt unless the device is polled.  The caller holds cp_lock or
+ * owns the device alone.
+ */
+void
+ghci_cp_run(
+	struct ghci_device *device)
+{
+	uint32_t ctrl;
+
+	/* RUN and WDT_EN; IRQ_GLOBAL only when an interrupt is taken. */
+	ctrl = GHCI_CTRL_RUN | GHCI_CTRL_WDT_EN;
+	if (!device->polled)
+		ctrl |= GHCI_CTRL_IRQ_GLOBAL;
+	ghci_write(device, GHCI_REG_CTRL, ctrl);
+}
+
+/*
+ * Writes IRQ_ENABLE from irq_mask, or zero on a polled device, whose
+ * IRQ_STATUS still latches what the poll reads.
+ */
+void
+ghci_cp_irq_enable(
+	struct ghci_device *device)
+{
+	uint32_t mask;
+	unsigned long irq;
+
+	/* The mask the handler takes. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	mask = device->irq_mask;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* A polled device keeps every interrupt off. */
+	if (device->polled)
+		mask = 0U;
+	ghci_write(device, GHCI_REG_IRQ_ENABLE, mask);
+}
+
+/*
+ * The interrupt handler of the device, and the poll's work on a polled
+ * device: a fault or the watchdog starts a recovery, a fence moves the
+ * completed fence on.
+ *
+ * Returns 1 when the device had an event, 0 otherwise.
  */
 int
 ghci_cp_interrupt(
 	void *argument)
 {
 	struct ghci_device *device;
-	uint32_t status;
 	unsigned long irq;
-	int handled;
+	uint32_t status;
+	uint32_t mask;
 
-	/* The device whose interrupt, or whose poll, this is. */
+	/* The device whose interrupt, or whose poll, this is, and what it takes. */
 	device = argument;
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	mask = device->irq_mask;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
 
 	/*
-	 * A polled device raises no interrupt: its IRQ_STATUS still records
-	 * the events, of which the poll takes those the driver has enabled
-	 * (a masked scan-out error waits as it would for an interrupt).
+	 * Masks the interrupt and reads what is pending; a polled device's
+	 * IRQ_STATUS latches whatever IRQ_ENABLE says.
 	 */
-	if (device->polled) {
-		status = ghci_read(device, GHCI_IRQ_STATUS);
-		status &= device->irq_mask;
-	} else {
-		/* Masks the GPU's interrupt and reads what is pending. */
-		ghci_write(device, GHCI_IRQ_ENABLE, 0U);
-		status = ghci_read(device, GHCI_IRQ_STATUS);
-		status &= IRQ_TAKEN;
-	}
-
-	/* Clears what was pending (write 1 to clear). */
-	if (status != 0U)
-		ghci_write(device, GHCI_IRQ_STATUS, status);
-
-	/* Unmasks what the driver takes; a bit still pending then sends a new message. */
 	if (!device->polled)
-		ghci_write(device, GHCI_IRQ_ENABLE, device->irq_mask);
+		ghci_write(device, GHCI_REG_IRQ_ENABLE, 0U);
+	status = ghci_read(device, GHCI_REG_IRQ_STATUS);
+	status &= mask;
 
-	/* An interrupt with nothing pending is another device's on a shared line (or a quiet poll). */
-	handled = 0;
+	/* Clears what was pending (write 1 to clear), then unmasks; a bit still pending sends a new message. */
 	if (status != 0U)
-		handled = 1;
+		ghci_write(device, GHCI_REG_IRQ_STATUS, status);
+	if (!device->polled)
+		ghci_write(device, GHCI_REG_IRQ_ENABLE, mask);
 
-	/* Nothing of the GPU's to serve. */
+	/* Nothing of the GPU's to serve: another device's interrupt on a shared line, or a quiet poll. */
 	if (status == 0U)
-		return handled;
+		return 0;
 
-	/* A fence wrote the fence page: the waiters, the job markers and the reclaim look again. */
-	if ((status & GHCI_IRQ_FENCE) != 0U) {
-		refresh_completed(device);
-		irq = spin_lock_irqsave(&device->irq_lock);
+	/* A fault or the watchdog is taken before a fence. */
+	if ((status & IRQ_RECOVER) != 0U)
+		record_fault(device, status);
 
-		device->service_work |= GHCI_WORK_RECLAIM | GHCI_WORK_REPLY;
+	/* A fence wrote the fence page. */
+	if ((status & GHCI_IRQ_FENCE) != 0U)
+		take_fence(device, status);
 
-		spin_unlock_irqrestore(&device->irq_lock, irq);
-	}
-
-	/* The firmware wrote a frame's results: the service thread completes its replies. */
-	if ((status & GHCI_IRQ_RESULT) != 0U) {
-		irq = spin_lock_irqsave(&device->irq_lock);
-
-		device->service_work |= GHCI_WORK_REPLY;
-
-		spin_unlock_irqrestore(&device->irq_lock, irq);
-	}
-
-	/* A fault or the watchdog: the first fault is recorded and the service thread resets. */
-	if ((status & (GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG)) != 0U) {
-		irq = spin_lock_irqsave(&device->irq_lock);
-
-		if (!device->fault_pending) {
-			device->fault_info = ghci_read(device, GHCI_FAULT_INFO);
-			device->fault_address = ghci_read(device, GHCI_FAULT_ADDR);
-		}
-		device->fault_pending = 1;
-		device->service_work |= GHCI_WORK_RECOVER;
-
-		spin_unlock_irqrestore(&device->irq_lock, irq);
-	}
-
-	/*
-	 * A flip's record, a scan-out error or a change of the connection: the
-	 * service thread reads the controller, and whoever waits for a flip
-	 * reads the record page again.
-	 */
-	if ((status & IRQ_DISPLAY) != 0U) {
-		irq = spin_lock_irqsave(&device->irq_lock);
-
-		device->service_work |= GHCI_WORK_DISPLAY;
-
-		spin_unlock_irqrestore(&device->irq_lock, irq);
-
-		waitq_wake_all(&device->display.flip_wake);
-	}
-
-	/* Wakes the fence waiters and the service thread. */
+	/* Wakes the waiters of tickets and of the ring's room, and the service thread. */
 	waitq_wake_all(&device->fence_wake);
+	waitq_wake_all(&device->ring_wake);
 	waitq_wake_all(&device->service_wake);
 
 	/* Succeeded: the interrupt was the device's. */
-	return handled;
+	return 1;
 }
 
 /*
- * Writes IRQ_ENABLE from irq_mask, or zero on a polled device.
- *
- * A polled device's interrupt stays off, so that a line or a message no
- * handler serves is never raised; the poll reads IRQ_STATUS instead.
+ * Takes CP_HEAP: the bound of every session's tables on a GPU with a
+ * page-table walker, halved while it cannot be had, or session 0's root
+ * alone on one without.  CP_HEAP is 32-bit physical memory.
  */
-void
-ghci_cp_irq_enable(
+static int
+alloc_heap(
 	struct ghci_device *device)
 {
-	/* A polled device keeps every interrupt off. */
-	if (device->polled) {
-		ghci_write(device, GHCI_IRQ_ENABLE, 0U);
-		return;
-	}
+	uint64_t bytes;
+	int walker;
+	int error;
 
-	/* The interrupts the driver takes. */
-	ghci_write(device, GHCI_IRQ_ENABLE, device->irq_mask);
-}
+	/* The size the walker may need at most, or the flat root. */
+	walker = ghci_caps_has(&device->caps, GHCI_HAS_HW_WALKER);
+	bytes = GHCI_FLAT_HEAP_BYTES;
+	if (walker)
+		bytes = ghci_heap_device_bytes(device->caps.va_bits);
 
-/*
- * Stops the service thread and waits for it to leave.
- */
-void
-ghci_service_stop(
-	struct ghci_device *device)
-{
-	unsigned long irq;
-	unsigned waited;
-	int running;
-
-	/* Asks the thread to leave. */
-	ghci_service_wake(device, GHCI_WORK_STOP);
-
-	/* Waits, a bounded time, until it says it has left. */
-	for (waited = 0U; waited < SERVICE_STOP_MS; waited += 10U) {
-		irq = spin_lock_irqsave(&device->irq_lock);
-
-		running = device->service_running;
-
-		spin_unlock_irqrestore(&device->irq_lock, irq);
-
-		/* The thread has left. */
-		if (!running)
-			return;
-
-		ghci_sleep_ms(10U);
-	}
-
-	/* A thread that does not leave is reported; the device stays allocated. */
-	kern_logf("ghci: %s: service thread did not stop\n", device->name);
-}
-
-/*
- * Wakes the service thread for work.
- */
-void
-ghci_service_wake(
-	struct ghci_device *device,
-	unsigned work)
-{
-	unsigned long irq;
-
-	/* Records the work and wakes the thread. */
-	irq = spin_lock_irqsave(&device->irq_lock);
-
-	device->service_work |= work;
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-
-	waitq_wake_all(&device->service_wake);
-}
-
-/*
- * Runs the service thread: sleeps until work comes or the period ends,
- * and does it, until asked to stop.
- */
-void
-ghci_service_main(
-	void *argument)
-{
-	struct ghci_device *device;
-	uint64_t sequence;
-	uint64_t wake;
-	unsigned long irq;
-	unsigned work;
-
-	device = argument;
-
-	/* Serves work until asked to stop. */
+	/* Halves the size while the memory cannot be had, down to the smallest the driver settles for. */
 	for (;;) {
-		/* Sleeps until work comes or the period ends. */
-		irq = spin_lock_irqsave(&device->irq_lock);
-
-		if (device->service_work == 0U) {
-			wake = clock_ticks() + kern_ms_to_ticks(GHCI_SERVICE_PERIOD_MS);
-			sequence = waitq_sequence(&device->service_wake);
-			(void)waitq_sleep(&device->service_wake, &device->irq_lock, sequence, wake, 0U);
-		}
-		work = device->service_work;
-		device->service_work = 0U;
-
-		spin_unlock_irqrestore(&device->irq_lock, irq);
-
-		/* Leaves when the device stops. */
-		if ((work & GHCI_WORK_STOP) != 0U)
+		error = ghci_memory_alloc(device, bytes, 0U, &device->heap);
+		if (error == 0)
 			break;
-
-		/* The work of this round. */
-		ghci_service_step(device, work);
-	}
-
-	/* Tells the stop that the thread has left. */
-	irq = spin_lock_irqsave(&device->irq_lock);
-
-	device->service_running = 0;
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-}
-
-/*
- * Runs the poll thread of a polled device: every GHCI_POLL_MS it does the
- * interrupt handler's work (the fence page, the faults, the firmware's
- * results and the display's events), until asked to stop.
- */
-void
-ghci_poll_main(
-	void *argument)
-{
-	struct ghci_device *device;
-	uint64_t sequence;
-	uint64_t wake;
-	unsigned long irq;
-	int stop;
-
-	/* The device the thread looks at. */
-	device = argument;
-
-	/* Looks at the device until asked to stop. */
-	for (;;) {
-		/* Sleeps for one period, or until the stop asks. */
-		irq = spin_lock_irqsave(&device->irq_lock);
-
-		if (!device->poll_stop) {
-			wake = clock_ticks() + kern_ms_to_ticks(GHCI_POLL_MS);
-			sequence = waitq_sequence(&device->poll_wake);
-			(void)waitq_sleep(&device->poll_wake, &device->irq_lock, sequence, wake, 0U);
+		if (!walker || bytes / 2U < GHCI_HEAP_MIN_BYTES) {
+			kern_logf("ghci: %s: no CP_HEAP of %llu bytes\n", device->name, (unsigned long long)bytes);
+			return error;
 		}
-		stop = device->poll_stop;
-
-		spin_unlock_irqrestore(&device->irq_lock, irq);
-
-		/* Leaves when the device stops. */
-		if (stop)
-			break;
-
-		/* Does what an interrupt would have started. */
-		(void)ghci_cp_interrupt(device);
+		bytes /= 2U;
 	}
-
-	/* Tells the stop that the thread has left. */
-	irq = spin_lock_irqsave(&device->irq_lock);
-
-	device->poll_running = 0;
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-}
-
-/*
- * Stops the poll thread and waits for it to leave.
- *
- * It comes before the ring and the fence page go back, which the poll reads.
- */
-void
-ghci_poll_stop(
-	struct ghci_device *device)
-{
-	unsigned long irq;
-	unsigned waited;
-	int running;
-
-	/* Asks the thread to leave and wakes it. */
-	irq = spin_lock_irqsave(&device->irq_lock);
-
-	device->poll_stop = 1;
-	running = device->poll_running;
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-
-	/* A device that was never polled has no thread to wait for. */
-	if (!running)
-		return;
-
-	waitq_wake_all(&device->poll_wake);
-
-	/* Waits, a bounded time, until it says it has left. */
-	for (waited = 0U; waited < SERVICE_STOP_MS; waited += 10U) {
-		irq = spin_lock_irqsave(&device->irq_lock);
-
-		running = device->poll_running;
-
-		spin_unlock_irqrestore(&device->irq_lock, irq);
-
-		/* The thread has left. */
-		if (!running)
-			return;
-
-		ghci_sleep_ms(10U);
-	}
-
-	/* A thread that does not leave is reported; the device stays allocated. */
-	kern_logf("ghci: %s: poll thread did not stop\n", device->name);
-}
-
-/*
- * Does one round of the service's work: the recovery from a fault, the
- * hang check and the return of deferred memory.
- */
-void
-ghci_service_step(
-	struct ghci_device *device,
-	unsigned work)
-{
-	uint64_t given;
-
-	/* A fault resets the processor. */
-	if ((work & GHCI_WORK_RECOVER) != 0U)
-		recover(device, "fault");
-
-	/* Work that stopped moving resets it too. */
-	service_hang_check(device);
-
-	/* The display's records, errors and connection, and the end of a lease. */
-	ghci_display_service(device, work);
 
 	/*
-	 * The executor's frames whose results are in and its job markers whose
-	 * fences passed, before the reclaim: a frame's reply blob is held
-	 * until its replies are written.
+	 * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+	 * 11.2, CP_HEAP_BASE and the exclusive CP_HEAP_LIMIT, 4 KiB aligned
+	 * 32-bit physical addresses, written while the processor is idle).
 	 */
-	ghci_vk_service(device);
+	ghci_write(device, GHCI_REG_CP_HEAP_BASE, (uint32_t)device->heap->bus);
+	ghci_write(device, GHCI_REG_CP_HEAP_LIMIT, (uint32_t)(device->heap->bus + device->heap->bytes));
 
-	/* Memory the GPU is done with goes back. */
-	mutex_lock(&device->lock);
-
-	given = ghci_memory_reclaim(device);
-
-	mutex_unlock(&device->lock);
-
-	/* The core hears of the room, after the lock is let go. */
-	if (given != 0U && device->gpu != NULL)
-		drv_gpu_capacity_changed(device->gpu);
+	/* Succeeded: CP_HEAP is set. */
+	return 0;
 }
 
-/* Stores one dword of the ring. */
+/*
+ * Places one fence of the driver's and waits a bounded time for the
+ * fence page to reach it, and with want_interrupt for its interrupt too.
+ * Returns 0, or ETIMEDOUT.
+ */
+static int
+liveness(
+	struct ghci_device *device,
+	int want_interrupt)
+{
+	struct ghci_ticket ticket;
+	unsigned long irq;
+	unsigned interrupts;
+	unsigned waited;
+	int error;
+
+	/* The interrupts seen so far. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	interrupts = device->fence_interrupts;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* The fence, placed and rung under the ring's lock. */
+	mutex_lock(&device->cp_lock);
+
+	error = ghci_cp_place_fence(device, 0U, device->ring.wptr, &ticket);
+	if (error == 0)
+		ghci_cp_doorbell(device);
+
+	mutex_unlock(&device->cp_lock);
+	if (error != 0)
+		return ETIMEDOUT;
+
+	/* The fence page must reach it. */
+	error = ghci_cp_await_fence(device, ticket.seq, GHCI_LIVENESS_MS);
+	if (error != 0)
+		return ETIMEDOUT;
+
+	/* A device with an interrupt must have raised it too. */
+	for (waited = 0U; want_interrupt && waited <= GHCI_LIVENESS_MS; waited++) {
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		if (device->fence_interrupts != interrupts)
+			want_interrupt = 0;
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+
+		/* Sleeps for a millisecond while the interrupt has not come. */
+		if (want_interrupt)
+			ghci_sleep_ms(1U);
+	}
+	if (want_interrupt)
+		return ETIMEDOUT;
+
+	/* Succeeded: the processor runs and the interrupt comes. */
+	return 0;
+}
+
+/* Gives back the device's own memory: CP_HEAP, the ring, the fence page and the quarantine. */
 static void
-ring_put(
-	struct ghci_device *device,
-	uint32_t index,
-	uint32_t value)
+release_memory(
+	struct ghci_device *device)
 {
-	volatile uint32_t *ring;
+	int error;
 
-	/* The ring is the processor's view of its memory: the window or host RAM. */
-	ring = (volatile uint32_t *)device->ring->view;
-	ring[index] = value;
+	/* Each run, if it was taken; one that cannot be given back is kept in the quarantine. */
+	error = ghci_memory_free(device, device->heap);
+	if (error != 0)
+		ghci_memory_quarantine(device, device->heap);
+	device->heap = NULL;
+	error = ghci_memory_free(device, device->ring.memory);
+	if (error != 0)
+		ghci_memory_quarantine(device, device->ring.memory);
+	device->ring.memory = NULL;
+	error = ghci_memory_free(device, device->fence_page);
+	if (error != 0)
+		ghci_memory_quarantine(device, device->fence_page);
+	device->fence_page = NULL;
+
+	/* The quarantine of a lost device, now that the GPU reaches nothing. */
+	ghci_memory_release_quarantine(device);
 }
 
-/* Loads one dword of the ring. */
-static uint32_t
-ring_get(
-	struct ghci_device *device,
-	uint32_t index)
-{
-	volatile uint32_t *ring;
-	uint32_t value;
-
-	/* The same view as ring_put. */
-	ring = (volatile uint32_t *)device->ring->view;
-	value = ring[index];
-
-	/* Reports the dword. */
-	return value;
-}
-
-/* Waits for room for a run in the ring, and plans its padding.  cp_lock is held. */
+/*
+ * Waits until the ring has room for need dwords (and the padding before
+ * its end, which this writes), and with log_entry a free entry of the
+ * submission log.  The caller holds cp_lock.
+ *
+ * Returns 0, EINVAL for a run no ring of this size takes, or EAGAIN when
+ * a recovery began or the device was lost while it waited.
+ */
 static int
 ring_room(
 	struct ghci_device *device,
 	uint32_t need,
-	uint32_t *pad)
+	int log_entry)
 {
+	unsigned long irq;
+	uint64_t deadline;
+	uint64_t sequence;
+	uint32_t padding;
+	uint32_t written;
+	uint32_t index;
 	uint32_t rptr;
-	unsigned waited;
+	int stopping;
 	int error;
 
-	/* Looks at the read pointer every millisecond, a bounded time. */
-	for (waited = 0U; waited <= GHCI_RING_WAIT_MS; waited++) {
-		rptr = ghci_read(device, GHCI_RING_RPTR);
-		error = ghci_ring_plan(device->wptr, rptr, device->ring_dwords, need, pad);
-		if (error != EAGAIN)
+	/* Looks again after each fence interrupt or poll period, until there is room. */
+	for (;;) {
+		/* The submissions whose fences passed leave the log. */
+		retire_log(device);
+
+		/* The reader's index; one outside the ring leaves no room until a recovery. */
+		rptr = ghci_read(device, GHCI_REG_RING_RPTR);
+		error = EAGAIN;
+		if (rptr < device->ring.dwords)
+			error = ghci_ring_plan(device->ring.wptr, rptr, device->ring.dwords, need, &padding);
+		if (error == EINVAL)
+			return EINVAL;
+		if (error == 0 && log_entry && device->submit_count >= GHCI_SUBMIT_LOG)
+			error = EAGAIN;
+		if (error == 0)
 			break;
 
-		ghci_sleep_ms(1U);
-	}
+		/* The processor gets what is placed, so that it can make room. */
+		ghci_cp_doorbell(device);
 
-	/* A run no ring can hold, or a ring that never made room. */
-	if (error == EAGAIN)
-		return EBUSY;
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the run fits. */
-	return 0;
-}
-
-/*
- * Writes a run of packets into the ring, with the driver's fence after it
- * when fenced is nonzero (the ticket is then the fence's), and rings the
- * doorbell.
- */
-static int
-ring_write(
-	struct ghci_device *device,
-	struct ghci_session *session,
-	const uint32_t *packets,
-	uint32_t dwords,
-	int fenced,
-	struct ghci_ticket *ticket)
-{
-	uint32_t fence_packet[GHCI_FENCE_PACKET_DWORDS];
-	uint32_t index;
-	uint32_t need;
-	uint32_t pad;
-	uint32_t tag;
-	uint32_t fence;
-	uint32_t last;
-	unsigned long irq;
-	int idle;
-	int error;
-
-	/* The run is the packets and, when fenced, the fence after them. */
-	need = dwords;
-	if (fenced)
-		need = dwords + GHCI_FENCE_PACKET_DWORDS;
-	tag = GHCI_TAG_DRIVER;
-	if (session != NULL)
-		tag = session->tag;
-
-	/* One writer of the ring at a time. */
-	mutex_lock(&device->cp_lock);
-
-	/* A device that stopped or was lost takes nothing. */
-	if (!device->running || device->lost) {
-		mutex_unlock(&device->cp_lock);
-		return EIO;
-	}
-
-	/* The fence values in flight stay well inside half the circle. */
-	error = fence_window_wait(device);
-	if (error != 0) {
-		mutex_unlock(&device->cp_lock);
-		return error;
-	}
-
-	/* Waits for room, which the processor makes as it parses. */
-	error = ring_room(device, need, &pad);
-	if (error != 0) {
-		mutex_unlock(&device->cp_lock);
-		return error;
-	}
-
-	/* The padding up to the end of the ring, which the processor skips. */
-	if (pad != 0U) {
-		ring_put(device, device->wptr, GHCI_PKT_PAD(pad - 1U));
-		for (index = 1U; index < pad; index++)
-			ring_put(device, device->wptr + index, 0U);
-		device->wptr = 0U;
-	}
-
-	/* The packets. */
-	for (index = 0U; index < dwords; index++)
-		ring_put(device, device->wptr + index, packets[index]);
-
-	/* The driver's fence after them, which raises the fence interrupt. */
-	if (fenced) {
-		fence = device->fence_issued + 1U;
-		ghci_packet_fence(tag, device->fence_page->gpu_address, fence, 1, fence_packet);
-		for (index = 0U; index < GHCI_FENCE_PACKET_DWORDS; index++)
-			ring_put(device, device->wptr + dwords + index, fence_packet[index]);
-
-		/*
-		 * The fence is issued before the doorbell, so the interrupt of its
-		 * write always finds it issued; an idle device starts its hang clock
-		 * now.
-		 */
+		/* Sleeps until a fence interrupt or the poll period; a recovery ends the wait. */
 		irq = spin_lock_irqsave(&device->irq_lock);
 
-		idle = 0;
-		if (device->completed == device->fence_issued)
-			idle = 1;
-		device->fence_issued = fence;
-		if (idle)
-			device->progress_tick = clock_ticks();
-		ticket->fence = fence;
-		ticket->generation = device->generation;
+		stopping = device->recovering || device->state == GHCI_STATE_LOST;
+		if (!stopping) {
+			deadline = clock_ticks() + kern_ms_to_ticks(GHCI_POLL_MS);
+			sequence = waitq_sequence(&device->ring_wake);
+			(void)waitq_sleep(&device->ring_wake, &device->irq_lock, sequence, deadline, 0U);
+		}
 
 		spin_unlock_irqrestore(&device->irq_lock, irq);
+
+		/* The recovery takes the ring from here. */
+		if (stopping)
+			return EAGAIN;
 	}
 
-	/*
-	 * The ring's words must reach the GPU before the doorbell: a ring in
-	 * local memory is read back (the read returns after the writes), and
-	 * the write barrier orders the doorbell after them.
-	 */
-	last = device->wptr + need - 1U;
-	if (device->ring->kind != GHCI_MEMORY_HOST)
-		(void)ring_get(device, last);
-	kern_io_write_barrier();
+	/* The rest of the ring is padded with NOPs when the run does not fit before its end. */
+	while (padding != 0U) {
+		written = padding;
+		if (written > GHCI_PACKET_DWORDS_MAX)
+			written = GHCI_PACKET_DWORDS_MAX;
+		ring_store(device, device->ring.wptr, ghci_cmd_header(GHCI_OP_NOP, written, 0U));
+		for (index = 1U; index < written; index++)
+			ring_store(device, device->ring.wptr + index, 0U);
+		device->ring.wptr = (device->ring.wptr + written) % device->ring.dwords;
+		padding -= written;
+	}
 
-	/* The doorbell. */
-	device->wptr = (device->wptr + need) % device->ring_dwords;
-	ghci_write(device, GHCI_RING_WPTR, device->wptr);
-
-	mutex_unlock(&device->cp_lock);
-
-	/* Succeeded: the packets are in the ring. */
+	/* Succeeded: the run fits at the write index. */
 	return 0;
 }
 
-/* Reads the fence page and moves the completed fence forward, never back. */
+/* Stores one dword of the ring, little-endian as the GPU reads it. */
 static void
-refresh_completed(
+ring_store(
+	struct ghci_device *device,
+	uint32_t index,
+	uint32_t word)
+{
+	volatile uint32_t *ring;
+
+	/* The processor's view of the ring; the platforms the driver runs on are little-endian. */
+	ring = (volatile uint32_t *)(void *)device->ring.memory->view;
+	ring[index] = word;
+}
+
+/* Drops the submissions whose fences the driver has accepted from the log.  The caller holds cp_lock. */
+static void
+retire_log(
 	struct ghci_device *device)
 {
-	volatile uint32_t *page;
-	uint32_t value;
 	unsigned long irq;
-	int ahead;
-	int moved;
+	uint64_t completed;
+	int passed;
 
-	/* A device without its fence page has nothing to read. */
-	if (device->fence_page == NULL)
-		return;
-
-	/* The value the GPU wrote last. */
-	page = (volatile uint32_t *)device->fence_page->view;
-	value = page[0];
-
-	/* Only a value between the completed and the issued fence moves the completed one. */
+	/* The fence the driver has accepted. */
 	irq = spin_lock_irqsave(&device->irq_lock);
 
-	moved = 0;
-	ahead = ghci_fence_passed(value, device->completed);
-	if (ahead && value != device->completed) {
-		ahead = ghci_fence_passed(device->fence_issued, value);
-		if (ahead) {
-			device->completed = value;
-			device->progress_tick = clock_ticks();
-			moved = 1;
-		}
-	}
+	completed = device->completed;
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 
-	/* Wakes whoever waits for a fence. */
-	if (moved)
-		waitq_wake_all(&device->fence_wake);
+	/* The oldest entries first, while their fences have passed. */
+	while (device->submit_count != 0U) {
+		passed = ghci_fence64_passed(completed, device->submit_log[device->submit_first].seq);
+		if (!passed)
+			break;
+		device->submit_first = (device->submit_first + 1U) % GHCI_SUBMIT_LOG;
+		device->submit_count--;
+	}
 }
 
-/* Waits while the fences in flight span a quarter of the circle.  cp_lock is held. */
+/*
+ * Reads the length of the packet at the head of a run of packets.
+ * Returns 0, or EINVAL for a header of no dwords or past the run.
+ */
 static int
-fence_window_wait(
-	struct ghci_device *device)
+packet_length(
+	const uint32_t *packets,
+	uint32_t left,
+	uint32_t *length)
 {
-	struct ghci_ticket ticket;
-	uint32_t distance;
-	int error;
+	uint32_t dwords;
 
-	/* Usually far inside the window. */
-	distance = device->fence_issued - device->completed;
-	if (distance < GHCI_FENCE_WINDOW)
-		return 0;
+	/* The dwords field of the header. */
+	dwords = (packets[0] >> GHCI_HEADER_DWORDS_SHIFT) & GHCI_HEADER_DWORDS_MASK;
+	if (dwords == 0U || dwords > left)
+		return EINVAL;
 
-	/* Waits for the oldest quarter to pass. */
-	ticket.fence = device->fence_issued - GHCI_FENCE_WINDOW / 2U;
-	ticket.generation = device->generation;
-	error = ghci_cp_wait(device, &ticket, GHCI_FENCE_WAIT_MS);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the window has room again. */
+	/* Succeeded: the packet's length. */
+	*length = dwords;
 	return 0;
 }
 
 /*
- * Writes the aperture, the ring, the fences and the interrupt of an idle
- * processor, with the ring empty.
+ * Records a fault or a watchdog expiry for the service thread and closes
+ * the gate.  The registers are read before the interrupt's lock.
  */
 static void
-program_ring(
-	struct ghci_device *device)
+record_fault(
+	struct ghci_device *device,
+	uint32_t irq_status)
 {
-	volatile uint32_t *page;
+	struct ghci_fault_record record;
+	unsigned long irq;
+	uint32_t high;
 
-	/* The fence page starts at the completed value. */
-	page = (volatile uint32_t *)device->fence_page->view;
-	page[0] = device->completed;
-	kern_io_write_barrier();
+	/* What the device latched, and where its processor is. */
+	kern_memset(&record, 0, sizeof(record));
+	record.irq_status = irq_status;
+	record.status = ghci_read(device, GHCI_REG_STATUS);
+	record.fault_info = ghci_read(device, GHCI_REG_FAULT_INFO);
+	record.fault_address = ghci_read(device, GHCI_REG_FAULT_ADDR_LO);
+	high = ghci_read(device, GHCI_REG_FAULT_ADDR_HI);
+	record.fault_address |= (uint64_t)high << 32;
+	record.session_active = ghci_read(device, GHCI_REG_SESSION_ACTIVE);
+	record.rptr = ghci_read(device, GHCI_REG_RING_RPTR);
+	record.cp_pc = ghci_read(device, GHCI_REG_DIAG_CP_PC);
+	record.cp_status = ghci_read(device, GHCI_REG_DIAG_CP_STATUS);
+	record.fence = ghci_fence_read(device);
 
-	/* The memory the GPU may touch. */
-	ghci_write(device, GHCI_APERTURE_BASE, device->aperture_base);
-	ghci_write(device, GHCI_APERTURE_LIMIT, device->aperture_limit);
+	/*
+	 * Closes the gate, counts the fault (the recovery's last check sees a
+	 * new one), keeps the record in this recovery generation, and asks
+	 * the service thread to recover.
+	 */
+	irq = spin_lock_irqsave(&device->irq_lock);
 
-	/* The ring, empty. */
-	device->wptr = 0U;
-	ghci_write(device, GHCI_RING_BASE, device->ring->gpu_address);
-	ghci_write(device, GHCI_RING_SIZE, GHCI_RING_SIZE_LOG2);
+	device->recovering = 1;
+	device->fault_count++;
+	record.generation = device->recovery_generation;
+	if (device->fault_records < GHCI_FAULT_RECORDS) {
+		device->faults[device->fault_records] = record;
+		device->fault_records++;
+	} else {
+		device->faults_dropped++;
+	}
+	device->service_work |= GHCI_WORK_RECOVER;
 
-	/* The fence value the GPU continues from. */
-	ghci_write(device, GHCI_FENCE_LAST, device->completed);
-
-	/* The interrupts: everything old cleared, the driver's ones on (the handler restores the mask). */
-	device->irq_mask = IRQ_TAKEN;
-	ghci_write(device, GHCI_IRQ_STATUS, IRQ_ALL);
-	ghci_cp_irq_enable(device);
+	spin_unlock_irqrestore(&device->irq_lock, irq);
 }
 
 /*
- * Resets the processor after a fault or a hang, completes every fence
- * issued so far with an error, and runs the ring again from its start.
+ * Takes a fence interrupt: reads the fence page, then reads FAULT and
+ * WATCHDOG again, so that a fence written after a fault latched is never
+ * taken as the work's completion; the completed fence moves only while
+ * no recovery runs.
  */
 static void
-recover(
+take_fence(
 	struct ghci_device *device,
-	const char *reason)
+	uint32_t irq_status)
 {
-	/* The recovery without a load; a device it loses says so in the log. */
-	(void)recover_run(device, reason, 0);
+	unsigned long irq;
+	uint64_t word;
+	uint32_t late;
+	int newer;
+
+	/* The fence the device wrote, then any fault that latched since IRQ_STATUS was read. */
+	word = ghci_fence_read(device);
+	late = ghci_read(device, GHCI_REG_IRQ_STATUS);
+	late &= IRQ_RECOVER;
+	if ((irq_status & IRQ_RECOVER) != 0U)
+		late = 0U;
+	if (late != 0U) {
+		ghci_write(device, GHCI_REG_IRQ_STATUS, late);
+		record_fault(device, late);
+	}
+
+	/* Moves the completed fence on, unless a recovery runs or the device is lost. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	device->fence_interrupts++;
+	newer = ghci_fence64_passed(word, device->completed);
+	if (!device->recovering && device->state != GHCI_STATE_LOST && newer) {
+		device->completed = word;
+		device->service_work |= GHCI_WORK_RECLAIM;
+	}
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
 }
 
-/*
- * Resets the processor (and with reload, loads the staged firmware image),
- * starts the firmware, completes every fence issued so far with an error,
- * runs the ring again from its start and sends INIT.  Returns 0, or EIO
- * when the device is lost (or was, and no reload was asked).
- */
-static int
-recover_run(
+/* Logs the registers that say where the processor stopped. */
+static void
+log_registers(
 	struct ghci_device *device,
-	const char *reason,
-	int reload)
+	const char *what)
 {
-	uint32_t info;
-	uint32_t address;
 	uint32_t status;
-	uint32_t page_value;
-	uint64_t generation;
-	unsigned long irq;
-	int lost;
-	int error;
+	uint32_t fault_info;
+	uint32_t cp_pc;
+	uint32_t cp_status;
+	uint32_t rptr;
 
-	/*
-	 * The display's flips are counted again across the reset: its lock is
-	 * taken before the ring's, the order every presentation takes them in.
-	 */
-	ghci_display_recover_begin(device);
-
-	/* No submission while the processor is reset. */
-	mutex_lock(&device->cp_lock);
-
-	/* A device that stopped, or was already lost and is not reloaded, is left as it is. */
-	if (!device->running || (device->lost && !reload)) {
-		mutex_unlock(&device->cp_lock);
-		ghci_display_recover_end(device, 0);
-		return EIO;
-	}
-
-	/* Says why, with the first fault's record. */
-	irq = spin_lock_irqsave(&device->irq_lock);
-
-	info = device->fault_info;
-	address = device->fault_address;
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-
-	status = ghci_read(device, GHCI_STATUS);
-	kern_logf("ghci: %s: %s: status %08x fault %08x (kind %u, block %u, tag %u%s) at %08x; resetting\n",
+	/* The state, the fault, and the processor's place. */
+	status = ghci_read(device, GHCI_REG_STATUS);
+	fault_info = ghci_read(device, GHCI_REG_FAULT_INFO);
+	cp_pc = ghci_read(device, GHCI_REG_DIAG_CP_PC);
+	cp_status = ghci_read(device, GHCI_REG_DIAG_CP_STATUS);
+	rptr = ghci_read(device, GHCI_REG_RING_RPTR);
+	kern_logf("ghci: %s: %s (status %08x, fault %08x, cp pc %08x status %08x, rptr %u)\n",
 	    device->name,
-	    reason,
+	    what,
 	    (unsigned)status,
-	    (unsigned)info,
-	    (unsigned)GHCI_FAULT_KIND(info),
-	    (unsigned)GHCI_FAULT_BLOCK(info),
-	    (unsigned)GHCI_FAULT_JOB_TAG(info),
-	    (info & GHCI_FAULT_PROT) != 0U ? ", refused by session protection" : "",
-	    (unsigned)address);
-
-	/*
-	 * Where the ring and the fences stood: the GPU's last fence beside the
-	 * one the fence page in host memory holds tells a fence the GPU wrote
-	 * but the host did not see from one the GPU never reached.
-	 */
-	page_value = 0U;
-	if (device->fence_page != NULL)
-		page_value = ((volatile uint32_t *)device->fence_page->view)[0];
-	kern_logf("ghci: %s: ring rptr %08x wptr %08x, fence last %08x page %08x issued %08x, irq %08x\n",
-	    device->name,
-	    (unsigned)ghci_read(device, GHCI_RING_RPTR),
-	    (unsigned)ghci_read(device, GHCI_RING_WPTR),
-	    (unsigned)ghci_read(device, GHCI_FENCE_LAST),
-	    (unsigned)page_value,
-	    (unsigned)device->fence_issued,
-	    (unsigned)ghci_read(device, GHCI_IRQ_STATUS));
-
-	/* The reset quiesces the GPU and keeps the aperture, the ring's place and the interrupt mask. */
-	ghci_write(device, GHCI_CTRL, GHCI_CTRL_RESET);
-	error = ghci_poll(device, GHCI_CTRL, GHCI_CTRL_RESET, 0U, GHCI_RESET_WAIT_MS);
-
-	/* A reload puts the new image into the stopped processor. */
-	if (error == 0 && reload)
-		error = ghci_firmware_load(device);
-
-	/* The reset stopped the firmware too; it runs again before the ring does. */
-	if (error == 0)
-		error = ghci_firmware_start(device);
-
-	/* Every fence issued so far is done: with an error, for the generation that ends here. */
-	irq = spin_lock_irqsave(&device->irq_lock);
-
-	device->completed = device->fence_issued;
-	device->generation++;
-	generation = device->generation;
-	device->fault_pending = 0;
-	device->fault_info = 0U;
-	device->fault_address = 0U;
-	device->resets++;
-	device->progress_tick = clock_ticks();
-	if (error != 0) {
-		device->lost = 1;
-	} else {
-		device->lost = 0;
-	}
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-
-	/*
-	 * A GPU that does not come back from its reset is lost until the
-	 * detach.  One that does is idle now: the display learns which of its
-	 * flips were taken before the ring starts again.
-	 */
-	if (error != 0) {
-		kern_logf("ghci: %s: the reset, the firmware's load or its start failed; the device is lost\n", device->name);
-	} else {
-		ghci_display_recover_count(device);
-		program_ring(device);
-		ghci_write(device, GHCI_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_WDT_EN);
-	}
-
-	mutex_unlock(&device->cp_lock);
-
-	/* The display places again what the reset lost and lets its lock go. */
-	ghci_display_recover_end(device, error == 0);
-
-	/* The waiters see the new generation. */
-	waitq_wake_all(&device->fence_wake);
-
-	/*
-	 * The firmware that started answers INIT before anything else; one
-	 * that does not loses the device.
-	 */
-	if (error == 0) {
-		error = ghci_firmware_init(device);
-		if (error != 0) {
-			kern_logf("ghci: %s: the firmware did not answer INIT after the reset; the device is lost\n", device->name);
-			irq = spin_lock_irqsave(&device->irq_lock);
-
-			device->lost = 1;
-
-			spin_unlock_irqrestore(&device->irq_lock, irq);
-		}
-	}
-
-	/* The sessions whose work was in flight lose it. */
-	fail_sessions(device, generation);
-
-	/* The firmware restarted: the executor's frames and objects are gone, and it takes its heap again. */
-	if (error == 0)
-		ghci_vk_reset(device);
-
-	/* Reports a device the reset or INIT lost. */
-	lost = device->lost;
-	if (lost)
-		return EIO;
-
-	/* Succeeded: the processor runs the ring again. */
-	return 0;
-}
-
-/* Reports the loss to every session whose last submission belonged to an ended generation. */
-static void
-fail_sessions(
-	struct ghci_device *device,
-	uint64_t generation)
-{
-	struct ghci_session *session;
-
-	/* Walks the sessions under the device's lock. */
-	mutex_lock(&device->lock);
-
-	for (session = device->sessions;
-	     session != NULL;
-	     session = session->next) {
-		/* A session with nothing in flight lost nothing. */
-		if (!session->outstanding)
-			continue;
-		if (session->last_generation == generation)
-			continue;
-
-		/* The session's work is gone: its later submissions see the error. */
-		session->outstanding = 0;
-		if (device->gpu != NULL)
-			drv_gpu_report_session_error(device->gpu, session, EIO);
-	}
-
-	mutex_unlock(&device->lock);
-}
-
-/* Resets the processor when issued work has not moved the fence for too long. */
-static void
-service_hang_check(
-	struct ghci_device *device)
-{
-	uint64_t since;
-	uint64_t limit;
-	unsigned long irq;
-	int busy;
-
-	/* The fence page may have moved without an interrupt. */
-	refresh_completed(device);
-
-	/* Work is outstanding and the fence stood still since the last progress. */
-	irq = spin_lock_irqsave(&device->irq_lock);
-
-	busy = 0;
-	if (device->completed != device->fence_issued)
-		busy = 1;
-	since = clock_ticks() - device->progress_tick;
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-
-	/* A device without work, or with work that moves, is fine. */
-	limit = kern_ms_to_ticks(GHCI_HANG_MS);
-	if (!busy)
-		return;
-	if (since < limit)
-		return;
-
-	/* The work hangs. */
-	recover(device, "no progress");
+	    (unsigned)fault_info,
+	    (unsigned)cp_pc,
+	    (unsigned)cp_status,
+	    (unsigned)rptr);
 }
