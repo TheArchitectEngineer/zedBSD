@@ -61,6 +61,13 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 権限（インストーラは root の操作が要る: sessiond・passkey との関係）、ロケール（WS158 の翻訳）。
 - 試験の方法（QEMU の OVMF＋NVMe・USB・SATA、実機）。
 
+## ユーザーの決定（p001 の確認事項の回答、Q1 の中継。問いと選択肢は [spec.md](spec.md) §15）
+
+- 2026-10-28 U1「menuconfig で選び自動で開く (推し)」: installer と `/opt/installer` は menuconfig の選択（配布用の config で y）。その image で起動すると desktop で installer が自動で開き、閉じても desktop を使える。
+- 2026-10-28 U2「ボタンでその場で書く」: partition の編集の画面の削除・作成は、押した時にその場で disk に書く（キャンセルしても書いた分は残る）。
+- 2026-10-28 U3「zedBSD 独自の未割り当ての型 (推し)」: 作成した partition は zedBSD 独自の「未割り当て」の型 GUID で書く。
+- 2026-10-28 U4「ESP 512M＋swap 区画＋root (推し)」: disk 全体を使う時は ESP 512 MiB（loader・kernel・設定を ESP に）・swap の partition・残りを root。
+
 ## Phase
 
 | Phase | 内容 | 依存 | 状態 |
