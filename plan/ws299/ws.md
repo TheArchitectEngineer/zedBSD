@@ -88,3 +88,9 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 ## 判断が要る点
 
 - 1 queue を CPU ごとの queue にする時の割り込みの配り方（VMD の vector の数、IRQ の affinity）が HAL の口で足りない時は HAL の差分の案（承認）。
+
+## 2026-10-28 測り直しと継続（q1640、P1）
+
+- 2026-10-28 ユーザー「P1はfstrimを使った上で、SSDの消去の影響をなるべく排除して、再度目標達成まで継続してください。」
+- 解釈（Q1）: 測る前に 5330 の Debian で `fstrim -av`、書きの試験の先の p6（zedBSD の swap、1 GiB）だけ `blkdiscard`。p1〜p5 は discard しない。測定の間に休みを置き、同じ条件で Debian の基準も取り直す。
+
