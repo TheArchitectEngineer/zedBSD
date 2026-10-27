@@ -35,5 +35,5 @@ ws.md に記録したユーザーの希望の仕様（原文）をブラッシ�
 - 仕様: [spec.md](../spec.md)。ユーザーの原文の各項目との対応は §14。
 - ユーザーの確認事項: U1〜U27 を Q1 経由で聞いた。回答の原文は spec §15 と [ws.md](../ws.md) の「ユーザーの決定」。追加の指示（loader が UFS から kernel を読む、`make installer-image`）も反映。
 - design-reviewer（opus）: 2 回（082c46884 の版と ea2d011cc の版）。指摘と反映は spec §17。
-- 実装の Phase の表: [ws.md](../ws.md)（p002〜p013）。
+- 実装の Phase の表: [ws.md](../ws.md)（p002〜p014）。
 - code・build の変更は無い（`plan/ws307/` だけ）。
