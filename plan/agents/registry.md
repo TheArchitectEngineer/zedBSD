@@ -5,7 +5,7 @@
 
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
-| P1 | phase-runner | WS290 GHCI の回答のレビュー（q1626） | `/home/awe/zedBSD-worktrees/p1-ghci3` / `agent/p1-ghci3` | running | ab2233daa |
+| P1 | phase-runner | WS290 GHCI の回答のレビュー（q1626、済み） | `/home/awe/zedBSD-worktrees/p1-ghci3` / `agent/p1-ghci3` | returned | 916d2db9a |
 | P2 | phase-runner | WS291 RDNA の改善点の調査（q1623、済み） | `/home/awe/zedBSD-worktrees/p2-ws291` / `agent/p2-ws291` | returned | a303c3891 |
 | P3 | phase-runner | WS290 GHCI（q1621、2026-10-27 ラップアップ、仕様の修正待ち） | `/home/awe/zedBSD-worktrees/p3-ws290` / `agent/p3-ws290` | returned | cd7cfbc16 |
 | P4 | phase-runner | plan の形の整理（q1610） | `/home/awe/zedBSD-worktrees/p4-plan` / `agent/p4-plan` | running | 9a6c18aab → main 0a3f17258 |
