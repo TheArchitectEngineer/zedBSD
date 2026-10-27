@@ -1,21 +1,21 @@
-# WS290 の設計: zedBSD の GHCI の driver を GHCI 1.0（ghci.md 89529de）に書き直す
+# WS290 の設計: zedBSD の GHCI の driver を GHCI 1.0（ghci.md cf8be08）に書き直す
 
 - Phase: [ws290-p001](phase001/phase.md)。版 1・2: 2026-10-26（P1、q1594）。版 3: 2026-10-27（P3、q1621、書きかけで中断）。**版 4: 2026-10-28（P3、q1636-i01）**。版 3 までの本文は git の履歴（f5fea4c2e など）にあり、この版は 89529de を正本に全部を書き直した。
 - 親: [WS290](ws.md)。前身の設計: [WS288 design](../ws288/design.md) §6（1.1 の driver）。
 - この文書は設計だけ。source は変えていない。
-- **状態（2026-10-28）: 版 4 は本文を書き終えたが、design-reviewer に通す前にユーザーの指示（「P3はいったん待機してください。GHCI仕様をアップデートします。」）で中断。** 仕様の更新の後、新しい ghci.md との差を読んでから §19・§20 と本文を直し、design-reviewer に通す。
+- **状態（2026-10-28 03:48）: 版 4 は本文を書き終え、仕様の更新 bc7df9e・1a1fa85・cf8be08（§12.10.3 の追加と N38〜N46 の改訂）に §0・§12・§15.2・§19 を追従させた。GHCI の担当とのレビューは第 12 版で「疑問は残っていない」、回答 第 12.0 版（03:46、Final Signoff）で双方合意し、やり取りは一時停止。design-reviewer には未だ通していない。**
 
 ## 0. 正本・読んだ物・確認の水準
 
 | 読んだ物 | 版 | 使い方 |
 | --- | --- | --- |
-| amaterrace-gpu `docs/ghci.md`（2677 行） | **89529de**（2026-10-28 02:48、`git show 89529de:docs/ghci.md`）。読んだ時点の main は 4549f18 で、89529de..4549f18 に `docs/ghci.md`・`include/` の差は無い（`git log 89529de..HEAD -- docs/ghci.md include/` が空） | driver の要件の唯一の正本。下の「§n」はこの版の節、「n 行」はこの版の行 |
-| 同 `include/`（ghci_regs.h・ghci_cmd.h・ghci_packets.h・ghci_frame.h・ghci_layout.h・gsi1_isa.h など 20 file） | 89529de | ghci.md との照合だけ。値は ghci.md から起こす（§17）。`gsi1_isa.h` は今の `compiler/gsi1_isa.h` と先頭の著作の行以外同じ（`diff` で確認） |
+| amaterrace-gpu `docs/ghci.md`（2782 行） | **cf8be08**（2026-10-28 03:44、`git show cf8be08:docs/ghci.md`）。89529de（2677 行）からの差は bc7df9e の §12.10.3「Shader Stage Register & Export Conventions」の追加、1a1fa85 の N38〜N45 の改訂（§8.4 の dual-source、§12.1・§12.5・§12.6・§12.8・§12.10・§12.11・§12.12 の参照と CAPS の名前）、cf8be08 の 2298 行（Vulkan の戻り値の名前を除く）。main の先頭 4188a4c は回答の file だけの差 | driver の要件の唯一の正本。下の「§n」はこの版の節。「n 行」は特に断らなければ **89529de の行**（1917 行までは cf8be08 と同じ。§12 は cf8be08 で番号がずれるので、§12.10.3 の行は cf8be08 の物と書く） |
+| 同 `include/`（ghci_regs.h・ghci_cmd.h・ghci_packets.h・ghci_frame.h・ghci_layout.h・gsi1_isa.h など 20 file） | cf8be08（gsi1_isa.h は bea1ef9 で注記 1 行だけ直った。89529de からの差は ghci_cmd.h の `GHCI_VS_REG_*`・`GHCI_FS_REG_*`・`GHCI_EXP_*` と gsi1_isa.h の export・system の register・`GSI1_COLOR_ATTACHMENTS 8`・注記。gsi1_isa.h の header・interface 表の定義は「pre-1.0、1.0 では使わない」と明記されて残る） | ghci.md との照合だけ。値は ghci.md から起こす（§17）。`gsi1_isa.h` は今の `compiler/gsi1_isa.h` と先頭の著作の行以外同じ（`diff` で確認） |
 | 同 `fw/cp/ghci_cmd.c`・`cmd.c`（参考） | 89529de | CP の firmware はまだ §8.2 の PSO の配置に合っていない（`fw_cmd_bind_pipeline_pso` は `pso.cull_mode` など §8.2 に無い field を読む）。実機は仕様より遅れ得る（§16.2） |
 | zedBSD `src/drivers/gpu/ghci/`（49 file、33136 行）、`include/uapi/gpu-op.h`、`include/drivers/gpu/gpu.h`、platform の vmunix.mk、`pcat.c`、`vf2-pcie.c`、`userland/base/ghcictl`、`plan/ws288/tests/` | main 6e6ebf830 | file の行き先（§3） |
 
 - 仕様は**単一の GHCI 1.0**（2026-10-27 ユーザーの G01 の回答、ws.md）。driver は版で分岐せず、機能の有無は capability の flag（DEVICE_CAPS・EXT_CAP_FEATURE・EXT_CAP_FMT0・EXTCAP）だけで決める（§16「Versions & Capabilities」2644〜2654 行）。
-- GHCI の担当との疑問のやり取りは終わった（ws.md、2026-10-28）。経緯の file（ghci-questions*・ghci-answers-hw-*・ghci-review*）は正本ではない。版 3 の G01〜G49 と design-review-v3 の V01〜V25 の扱いは §22。
+- GHCI の担当とのやり取りは 2026-10-28 のユーザーの指示で再開した（ws.md、レビュー第 10 版から）。経緯の file（ghci-questions*・ghci-answers-hw-*・ghci-review*）は正本ではない。版 3 の G01〜G49 と design-review-v3 の V01〜V25 の扱いは §22。
 - 確認の水準: 上の物は `git show`・cat・grep で読んだ。amaterrace-gpu には書いていない。build・試験・QEMU・実機はこの Phase では行わない。
 
 ## 1. 責務と境界
@@ -432,7 +432,7 @@ HW が決める物（§8.4）: texture の slot k は set 0 の k 番目（32 by
 
 1. **出力**: `struct ghci_gsi1_program` は code の語、`used_regs`、`lds_bytes`、`local_size`、flag（depth export・discard・centroid・sample shading）、varying の数、そして **executor への資源の表**（GPU には渡さない: texture・sampler の slot の組、set 2 の各 entry の Vulkan の set・binding・要素・種類、dynamic offset の語、push constant の範囲、scratch の bytes per warp）を持つ。header・interface 表を作る code（`gsi1_add_interface` など）を捨てる。
 2. **資源の読み方**: UBO・SSBO・texel buffer は set 2 の buffer descriptor（c28〜c29 の base + entry の offset）を `ld.64` で読み、`lw`・`sw`・`atom` で触る（robustBufferAccess は size で検査）。storage image・input attachment は set 2 の 32 byte の記述から番地を計算（今の kind 9・10 の計算を移す）。sampled image は slot（§11.4）。push constant と dynamic offset は §11.4 の bank の語。scratch の base は set 3 の語。
-3. **stage の I/O**（vertex の属性の到着の register、VertexIndex・InstanceIndex、position・point size・varying の export の番号、`lda` の即値）: 89529de の本文に定義が無い（interface 表が担っていた）。**S01**（§19）の推しで書き、`gsi1-abi.h` の一か所に置く。fragment の入力 r0〜r9（§12.11 2304〜2313 行）、色・DEPTH・SAMPLE_MASK の export（2315〜2324 行）、補間は compiler が barycentric で行う（`lda` で頂点の語を読む、2366〜2370 行）は本文どおり。
+3. **stage の I/O**: cf8be08 §12.10.3（cf8be08 の 2283〜2392 行）に従う。vertex の属性は PSO の slot i（format ≠ 0 が有効）ごとに、前の有効な slot の成分の数の累積和 base_i から C_i 個（format の成分の数）の register r[base_i..base_i + C_i − 1] に届く（足りない成分の (0, 0, 0, 1) は compiler が補う。合計 60 を超える pipeline は driver が作成で断り、`VK_ERROR_OUT_OF_DEVICE_MEMORY` と log）。driver は SPIR-V の Location を slot 0 から詰めて付け直し、その表を compiler に渡す。VertexIndex r60・InstanceIndex r61 は `used_regs_vs` ≥ 62 の時だけ届く（使う program は 62 以上にする）、r62 は compiler の物。export は POS 0x000〜0x003・POINT_SIZE 0x004（無視、大きさ 1）・VARYING 0x010 + w（w = 4L + c、PSO dw13 `varying_count` は vec4 の数）。`lda` の即値は [8:2] PT word（0〜3 = clip の POS、4 + w = varying）・[1:0] 頂点（vertex k は b_k の頂点、Vulkan の順、vertex 0 が provoking で flat はそれを読む）。補間は b0〜b2 と `lda` の積和、noperspective と FragCoord.w は word 3 の w から compiler が作る。clip・割り算・viewport は Vulkan の規則（depth clamp は PSO flags[4]）。fragment の入力 r0〜r9、export COLOR 0x100 + 16k + c（k = 0〜7）・DEPTH 0x104・SAMPLE_MASK 0x105・COLOR0_SRC1 0x108〜0x10B。値は ghci_cmd.h の `GHCI_VS_REG_*`・`GHCI_FS_REG_*`・`GHCI_EXP_*` と照合し、`gsi1-abi.h` の一か所に置く。
 4. **options**: registers = min(63, `RESIDENT_WARPS[23:16]`（0 なら 63）)、samples は CAP_MSAA の時 4（2・4）、sample mask の入力は CAP_MSAA、subgroup・fp16 の命令は出さない（Vulkan 1.0 の SPIR-V では使えない。WS226 で）。
 5. **捨てる制約**: §12.9「Not in version 1」（anisotropic・cube array・MinLod・gather の動的 offset）は compiler が断る（今と同じ）。
 6. 試験: `plan/ws288/tests/gsi1-*`・`gsi1/` を `plan/ws290/tests/` へ移し、参照の python は U2 で `plan/ws290/tests/gsi1-tools/` に 89529de の物を写す。
@@ -462,7 +462,7 @@ HW が決める物（§8.4）: texture の slot k は set 0 の k 番目（32 by
 
 - capability の profile: `kc705`（am-ws003 の既定に当たる値。HW_WALKER・GSI1・NUM_SU 1・BLT・DISP、PROT・MSAA は profile の変種で）、`minimal`（HW_WALKER・GSI1 だけ、EXTCAP 無し）、`full`、`flat`（HW_WALKER = 0）、`prot`（CAP_PROT = 1）、`no-blt`、`no-su`、`discrete`（UMA 0 と MEM）、`mismatch`（鏡の食い違い）。
 - **flag ごとの差の試験**（p007）: §15.2 の各行で `full` とその flag だけ落とした profile の答えの差が、試験の側に手で書いた差とちょうど一致する。
-- model は driver と同じ読み方で書かれるので、試験は「driver が ghci.md（と S01 の推し）に合う packet と register の順を作る」ことの証拠で、hardware の振る舞いの証拠ではない。
+- model は driver と同じ読み方で書かれるので、試験は「driver が ghci.md（と §19 の推し）に合う packet と register の順を作る」ことの証拠で、hardware の振る舞いの証拠ではない。
 
 Phase ごとの場面（すべて PASS が受け入れ）:
 
@@ -472,7 +472,7 @@ Phase ごとの場面（すべて PASS が受け入れ）:
 | p003 | model の自己試験（手で組んだ列、reset の表、IRQ、VM の 3 つの段、session の fault と装置の fault の注入、MMU_OOM、Bus Master、stub の lock の順の検出） |
 | p004 | attach（VERSION 0x00010000・0x00010003 を受け 0x00020000・0 を拒む、MAGIC、SCRATCH、MEM_READY、liveness の失敗 → EIO、FAULTED・RUNNING で残った device、flat・no-su は executor を出さない）、register の順、submit・fence・IRQ・poll、4 KiB の ring で 1000 回、ring より大きい submit、session の fault（prot: その session だけ止まり他は続く、SESSION_CLOSE が置かれる）、装置の fault → reset → 古い ticket が ERROR → 次が動く、watchdog、hang、reset の失敗 → LOST、嵐 → LOST、detach、lock の順の違反 0 |
 | p005 | session の open（16 個目 EBUSY）、VM_MAP（VA・bus・flag が model の表に一致、chunk の持ち主が一つ）、PROT 0 と 1 の両方で VA が重ならない、CP_HEAP の勘定を超える要求が ENOMEM で MMU_OOM が起きない、unmap → fence の後に物理が返る、置き損じ → 置き直し、import、close → RETIRED まで番号を再利用しない、reset の後の再生（SESSION_OPEN と VM_MAP、ring より大きい再生）、session の fault の後の CLOSE と勘定の返却 |
-| p006 | gsi1 の回帰（移した試験）、code に header が無い、資源の表、§11.4 の bank と set の読み方、S01 の I/O |
+| p006 | gsi1 の回帰（移した試験）、code に header が無い、資源の表、§11.4 の bank と set の読み方、§12.10.3 の I/O（属性の詰め方と 60 の上限、r60・r61 と `used_regs_vs`、`lda` の word 0〜3、flat の vertex 0、MRT 8） |
 | p007 | profile ごとの feature・limit・format・queue・memory の型、flag ごとの差、FMT の register を読む・無い時の表、vkCreateDevice の超過は FEATURE_NOT_PRESENT、memory・buffer・image、fence、capset、17 個目の device の失敗 |
 | p008 | 代表の pipeline（三角形・blend・depth・stencil・MSAA・compute）の PSO の 128 byte、slot の表、HW の set の byte、flag の無い profile で断る pipeline |
 | p009 | 1 frame の記録 → model の `CMD_*` の列、indirect（no-indirect で断る）、barrier、転送（BLT と no-blt の代替・断り）、query・timestamp・event、clear、bind の無い draw を断る、大きな submit |
@@ -515,14 +515,14 @@ Phase ごとの場面（すべて PASS が受け入れ）:
 | FEATURE[13] HW_CURSOR | display の cursor（DC_CAPS[8] と両方） | DRV | 出さない |
 | FEATURE[14] COLOR_LUT | 使わない | DRV | — |
 | FEATURE[15] MRT_BLEND | `independentBlend`（SET_DYNAMIC_STATE 0x07〜0x0E） | V10 | false |
-| FEATURE[19:16] MAX_MRT | `maxColorAttachments`・`maxFragmentOutputAttachments` = min(MAX_MRT, 4)（S02） | V10 | — |
+| FEATURE[19:16] MAX_MRT | `maxColorAttachments`・`maxFragmentOutputAttachments` = MAX_MRT（1〜8。export は k = 0〜7、CAP_ROP_PACK に依らない、§12.10.3） | V10 | — |
 | FEATURE[27:20] LDS_KB | `maxComputeSharedMemorySize` = KiB × 1024（上限 16384、§8.6） | V10 | 0 なら Workgroup の変数の program を断る |
 | FEATURE[29] SUBGROUP | subgroup | V1x | — |
 | FMT0[6:0] BC1〜7 | BC の format | V10（format） | 落とす。`textureCompressionBC` は全部（BC6H を含む）が無いので false |
 | FMT0[7] ETC2 | ETC2・EAC、`textureCompressionETC2` | V10 | false |
 | FMT0[9] SRGB | sRGB の format | V10（format） | 落とす |
 
-flag に依らない答え（§8.6 と本文）: `depthClamp`（PSO flags[4]）・`depthBiasClamp`・`fillModeNonSolid`・`occlusionQueryPrecise`・`fullDrawIndexUint32`・`robustBufferAccess`（compiler）・`fragmentStoresAndAtomics`・`vertexPipelineStoresAndAtomics` は true。`imageCubeArray`・`samplerAnisotropy`・`shaderImageGatherExtended`・`shaderResourceMinLod`・`depthBounds`・`alphaToOne`・`wideLines`・`geometryShader`・`tessellationShader`・`multiViewport`・64 bit・16 bit は false（§12.9 の「Not in version 1」と PSO に field が無い物）。limit は §8.6 の表、`maxViewports` 1、`timestampPeriod` = 1e9 / GCLK_HZ（kernel は float を使わないので wire の float の bit を整数で作る）、`timestampValidBits` 64、`maxComputeWorkGroupInvocations` 256、`maxComputeWorkGroupSize` {256, 256, 64}。vendorID・deviceID は PCI の ID。`apiVersion` は 1.1 のまま（libvulkan が 1.1 未満を拒む、今の `DEVICE_API_VERSION`）。
+flag に依らない答え（§8.6 と本文）: `depthClamp`（PSO flags[4]）・`depthBiasClamp`・`fillModeNonSolid`・`occlusionQueryPrecise`・`fullDrawIndexUint32`・`robustBufferAccess`（compiler）・`fragmentStoresAndAtomics`・`vertexPipelineStoresAndAtomics` は true。`imageCubeArray`・`samplerAnisotropy`・`shaderImageGatherExtended`・`shaderResourceMinLod`・`depthBounds`・`alphaToOne`・`wideLines`・`largePoints`（`pointSizeRange` [1, 1]、§12.10.3 で POINT_SIZE は無視）・`geometryShader`・`tessellationShader`・`multiViewport`・64 bit・16 bit は false（§12.9 の「Not in version 1」と PSO に field が無い物）。limit は §8.6 の表、`maxViewports` 1、`timestampPeriod` = 1e9 / GCLK_HZ（kernel は float を使わないので wire の float の bit を整数で作る）、`timestampValidBits` 64、`maxComputeWorkGroupInvocations` 256、`maxComputeWorkGroupSize` {256, 256, 64}。vendorID・deviceID は PCI の ID。`apiVersion` は 1.1 のまま（libvulkan が 1.1 未満を拒む、今の `DEVICE_API_VERSION`）。
 
 ### 15.3 memory の型
 
@@ -571,7 +571,7 @@ GPL の参照は無い。他の driver（amdrdna）からは分け方だけを�
 | p003 | model・stub・script（§14）。WS288 の 1.1 の試験の削除の list を Q1 へ | p002 | model の自己試験 PASS | 16 |
 | p004 | core: pci-attach（match・Bus Master の順）、identify・caps・CP_HEAP・ring・fence・IRQ・poll・watchdog、session の fault と装置の fault・reset・LOST、detach。1.1 の file（firmware・native・state・blit・frame・packets・hcr）と vk/・display・compiler を build から外し、呼ぶ所を消す。capability は `RESOURCE | BLOB | TRANSFER | MAPPING` | p003 | amd64・riscv64 の build の warning 0、p004 の場面 PASS、build に入る file に 1.1 の名前が無い（grep） | 24 |
 | p005 | session・VM（chunk・勘定・map・unmap・close・再生）、memory（host、4 GiB の上限）、resource・blob・map・read・write、share・import。local は ENOTSUP。+ `SHARE | ALLOCATION_SHARE` | p004 | p005 の場面 PASS、build の warning 0 | 24 |
-| p006 | compiler: header・interface 表を捨て §12 の ABI（`gsi1-abi.h`）、資源の表、options、compiler を build に戻す、gsi1 の試験と tools を移す | p002・p004 | gsi1 の試験 PASS、build の warning 0。graphics の I/O は S01 の推しで（回答で `gsi1-abi.h` を直す） | 22 |
+| p006 | compiler: header・interface 表を捨て §12 の ABI（`gsi1-abi.h`）、資源の表、options、compiler を build に戻す、gsi1 の試験と tools を移す | p002・p004 | gsi1 の試験 PASS、build の warning 0。graphics の I/O は cf8be08 §12.10.3 で | 22 |
 | p007 | executor の土台: vk.h・stream・node・object・reply・vk-caps・device・format（FMT）・memory（heap）・command・queue（空の submit、fence・semaphore・event）。+ `CAPSET | COMMAND | NOTIFICATION | FENCE | JOB | JOB_CAPACITY` と recovery | p005・p006 | p007 の場面 PASS | 30 |
 | p008 | pipeline と descriptor: vk-pipeline・vk-layout・layout.h | p007 | p008 の場面 PASS | 20 |
 | p009 | 記録と実行: vk-pass・vk-record・vk-execute、draw・indirect・dispatch・barrier・dynamic state・転送・query・event・clear | p008 | p009 の場面 PASS、amd64・riscv64 の build の warning 0 | 36 |
@@ -592,19 +592,14 @@ p001 → p002 → p003 → p004 → p005 → p007 → p008 → p009 → p010 →
                       p004 → p012
                       p004 → p013（段 1）、p009 → p013（段 2）、p011 → p013（段 3）
              p002..p013 → p014
-外部（文脈、ここで実行しない）: S01 の回答 → p006 の graphics の I/O、ユーザーの hardware の用意 → p013
+外部（文脈、ここで実行しない）: ユーザーの hardware の用意 → p013
 ```
 
 WS の受け入れ（ws.md）との対応: 1.1 の code が無い = p004・p007・p011・p012 の後に p014 の grep。amd64 の warning 0 = 各 Phase と p014。host 試験 = §14。規約 = p014。他の platform = §16（riscv64 は実機、p013）。
 
-## 19. 仕様の欠け（ユーザーへ、推し付き）
+## 19. 仕様の欠け
 
-89529de の本文で決まらず、driver が推しで書く物。GHCI の担当とのやり取りは終わったので、ユーザーの判断を Q1 経由で聞く。
-
-| ID | 重さ | 事実 | 推し | 止まる所 |
-| --- | --- | --- | --- | --- |
-| S01 | 高（graphics） | §12.10 は interface 表（kind 1〜14）を廃止した（2264 行）が、それが担っていた vertex shader の入力（属性が届く register、VertexIndex・InstanceIndex）と、position・point size・varying の export の番号、fragment の `lda` の即値の意味を本文で定めていない。`include/gsi1_isa.h`（同じ 89529de）は 1.1 の export の番号（POS 0x000〜0x003、POINT_SIZE 0x004、VARYING 0x010 + w、`lda` の即値 = word << 2 \| vertex、PT の語 4 + w）を持ち、属性の register は interface 表で compiler が選ぶ形のまま。compute（operand の wgx・lidx など、§12.3）と fragment の入力・出力（§12.11・§12.12）は本文で足りる | (a) export と `lda` は include の番号を 1.0 の取り決めとする。(b) 属性: PSO の `attributes[i]` の format の成分の数だけ、slot の順に r0 から詰めて置く。その次の register に VertexIndex、その次に InstanceIndex（使わなくても置く）。(c) PSO の dw13 `varying_count` は varying の vec4 の数（0〜16）。driver はこれを `gsi1-abi.h` の一か所に置き、答えが違えば直す | p006 の graphics、p008・p009 の graphics の試験の期待値、p013 の段 2 の graphics |
-| S02 | 低 | 色の attachment の最大: FEATURE[19:16] は 8 まで（293 行）、§12.12 の export は k = 0〜3（2358〜2361 行）、include の `GSI1_COLOR_ATTACHMENTS` は 4 | `maxColorAttachments` = min(MAX_MRT, 4) | 無し（推しで進む） |
+無し。版 4 の S01（stage の I/O が未定義）と S02（MRT の数）は、GHCI の担当とのレビュー第 10〜12 版（N37〜N46、2026-10-28 03:38〜03:47）で ghci.md に入り（推しを全部採用、§12 の 3）、cf8be08 で残る疑問は 0（[ghci-review.md](ghci-review.md) 第 12 版）。参考に gsi1_isa.h の注記の旧名 1 か所（`GSI1_TEXSZ_SAMPLES` の CAPS[29]）を返信不要で伝えた（driver は include を写さないので影響しない）。
 
 ## 20. ghci.md 以外の判断（Q1・ユーザーへ）
 
@@ -616,7 +611,7 @@ WS の受け入れ（ws.md）との対応: 1.1 の code が無い = p004・p007�
 | U5 | PROT | 読み直しの推し: CAP_PROT = 1 の hardware の session の fault の回収（§5.4 A）は WS290、protected context と Vulkan の protected memory は WS292 | **Q1 に確認**（2026-10-26「PROT は実装しませんが、WSを立てて、あとで実装します」は 1.1 の aperture の PROT を指していた。89529de の PROT は session の隔離そのもので、fault の振る舞いが変わる） |
 | U6 | ghci-blit と ghcictl の diag・paint・fwload を消す | 消す | 決定 |
 | U7 | ring を kernel だけが書く | kernel だけ | 決定（ghci.md も primary は KMD、590 行） |
-| U8 | Vulkan 1.0 で隠せない不足（DrawIndirect に CAP_INDIRECT_DRAW、`maxDescriptorSetSampledImages` 16 < 96、`maxColorAttachments` 4、LDS が 16 KiB 未満、必須の format の欠け、転送に CAP_BLT） | Vulkan 1.0 を名乗ったまま、隠せる物は隠し、隠せない物は記録・pipeline の作成で断って log。不足の一覧を `ghcictl list` に出す | **ユーザーへ**（推しで進める。断る所は `vk-caps.c` の 1 つの検査） |
+| U8 | Vulkan 1.0 で隠せない不足（DrawIndirect に CAP_INDIRECT_DRAW、`maxDescriptorSetSampledImages` 16 < 96、MAX_MRT < 4 の時の `maxColorAttachments`、LDS が 16 KiB 未満、必須の format の欠け、転送に CAP_BLT） | Vulkan 1.0 を名乗ったまま、隠せる物は隠し、隠せない物は記録・pipeline の作成で断って log。不足の一覧を `ghcictl list` に出す | **ユーザーへ**（推しで進める。断る所は `vk-caps.c` の 1 つの検査） |
 | U9 | 保護の段: HW_WALKER = 0（flat、隔離無し）と CAP_PROT = 0（VA を全 session で共有） | flat は executor を出さない（client の shader が全物理を触れる）。PROT = 0 は executor を出す（client 間の隔離は無く、fault は装置の reset） | **ユーザーへ**（推しで進める） |
 | U10 | CAP_BLT = 0 の転送 | copy・blit・resolve・CopyQueryPoolResults は断る。UpdateBuffer・FillBuffer（8 byte 揃え）・query の reset・event は `CMD_FENCE` の書き込みで代える。compute の代替は Future Work | **ユーザーへ**（推しで進める） |
 | U11 | executor の session は hardware の上限で 15 | 16 個目の Vulkan device は失敗 | 報告（仕様の上限） |
@@ -640,7 +635,7 @@ WS の受け入れ（ws.md）との対応: 1.1 の code が無い = p004・p007�
 
 ## 22. 版 3 の G・V の扱い
 
-- **G01〜G49**（版 3 の ghci.md の疑問）: G01 はユーザーの回答（単一の 1.0）。他は GHCI の担当とのやり取り（H・J・K・L・M・N、ghci-review.md 第 9 版で全部解決）を経て 89529de の本文で決まった。残る欠けは S01・S02（§19）だけ。版 3 の G41（`CMD_QUERY_CAPS` の block）は 89529de の register（0x080・0x084・EXTCAP）で不要になった。
+- **G01〜G49**（版 3 の ghci.md の疑問）: G01 はユーザーの回答（単一の 1.0）。他は GHCI の担当とのやり取り（H・J・K・L・M・N、ghci-review.md 第 9 版で全部解決）を経て 89529de の本文で決まった。N37〜N46 は cf8be08 までに解決し、残る欠けは無い（§19）。版 3 の G41（`CMD_QUERY_CAPS` の block）は 89529de の register（0x080・0x084・EXTCAP）で不要になった。
 - **design-review-v3 の V01〜V25**:
 
 | V | 89529de での扱い |
@@ -666,7 +661,7 @@ WS の受け入れ（ws.md）との対応: 1.1 の code が無い = p004・p007�
 
 ## 23. 自己点検（版 4）
 
-1. **S01 の推しが外れたら**: graphics の I/O は `gsi1-abi.h` の一か所と model の期待値だけを直す。compute・資源・PSO・ring は影響を受けない。
+1. **§12.10.3 が後で変わったら**: graphics の I/O は `gsi1-abi.h` の一か所と model の期待値だけを直す。compute・資源・PSO・ring は影響を受けない。
 2. **CP_HEAP の 8.25 MiB が取れない**: 半分ずつ減らし、勘定で `ENOMEM` を返す（MMU_OOM を起こさない）。VF2 でも 4 GiB 未満の連続の 8 MiB は通常取れる。
 3. **chunk の 2 MiB の粒度で VA が足りない**: 4 GiB / 2 MiB = 2048 chunk。session の中は sub-allocate するので `maxMemoryAllocationCount` 4096 には chunk の数でなく VA の大きさが効く。
 4. **CAP_PROT = 0 の device で client 間の隔離が無い**: 仕様どおり（1852 行）。U9 でユーザーに示す。
