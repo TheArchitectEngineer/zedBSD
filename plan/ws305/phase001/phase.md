@@ -103,7 +103,7 @@ qemu-system-x86_64 -accel kvm -machine q35 -cpu host -smp 8 -m 8G \
   PNG を SSH で取り出す。boot の途中（amdrdna の前）は画面の証拠が無いので、SSH と QMP の `query-status` で判断する。
   → この置き換えは AGENTS.md の例外（「SSH と QMP の screendump の PNG」）の形と違うので、Q1 の判断を求める（下の「Q1 への問い」）。
 
-### 7. script（`plan/ws305/tests/vfio.sh`、build の host から 1 本で）
+### 7. script（`plan/ws305/tests/vfio.sh`、build の host から 1 本で。host の半分は `vfio-host.py`、root で）
 
 | 命令 | 動き |
 | --- | --- |
@@ -127,12 +127,16 @@ qemu-system-x86_64 -accel kvm -machine q35 -cpu host -smp 8 -m 8G \
 - guest の driver は nvrtx（WS037・WS242）。GSP の firmware を image に。VBIOS は ROM BAR から（必要なら romfile）。
 - 同じ VFIO の項目・script で、GPU の BDF だけを見つけ直す（`lspci -d ::0300` の最初の discrete）。
 
-## Q1 への問い（設計の OK と合わせて）
+## Q1 への問い と答え
 
-1. host の変更: `/etc/grub.d/40_custom` に「Debian VFIO」を足して `update-grub`（既定は不変）、`qemu-system-x86`・`ovmf` を apt で入れる（無ければ）。可か。
-2. 画面の判定を QMP screendump でなく guest の keiland-shot（SSH）にすること（passthrough の GPU は screendump に写らない）。
-3. 機械の lock の file。
+1. host の変更: 「Debian VFIO」の grub の項目と `update-grub`、`qemu-system-x86`・`ovmf` の apt。→ 2026-10-27 11:10 Q1「可: /etc/grub.d/40_custom（か 4x の新しい file）に「Debian VFIO」を足して update-grub（既定は不変、変える前の file は残す）、apt で qemu-system-x86・ovmf。」
+   → `/etc/grub.d/41_zedbsd_vfio`（生成 script、`plan/ws305/tests/41_zedbsd_vfio`）。追加の依頼（2026-10-27 11:20 Q1）: `/etc/default/grub` に `GRUB_RECORDFAIL_TIMEOUT=5`（SwitchBot の入れ直しの後に GRUB の menu で止まらない、変える前の file を残す）。
+2. 画面の判定。→ Q1「可: passthrough の画面は SSH（guest の dmesg の amdrdna の段）と guest の keiland-shot の PNG で判定（WS291 の measure.sh shot と同じ形）。PNG は Q1 に。」
+3. 機械の lock。→ Q1「可: build host の /tmp/zedbsd-desktop.lock を flock（P2 にも同じ lock を使うよう伝える）。」
 
 ## 記録
 
 - 2026-10-27 11:00 P4: 着手。host は不達（P2 の zedBSD 起動中）。amdrdna の VBIOS の取り方（VFCT か flash）と boot の reset（amdrdna.reset=1）を source で確かめ、設計の草案。
+- 2026-10-27 11:05 P4: 草案を Q1 へ（28ea66ed5）。11:10 Q1: 方向と問い 1〜3 を了解（上の答え）。
+- 2026-10-27 11:30 P4: script と image の config を作成（9c15842ac）。41_zedbsd_vfio は build host で dry-run（grub-mkconfig の環境を手で渡し、menuentry の出力を確認、install はしていない）。
+  image は build/ws305/vm/hdd-image.img（sysroot は Q1 の指示で P2 の build/amd64/sysroot を複写、zedBSD の source の warning 0）。
