@@ -20,6 +20,7 @@
 #include "kern/buf.h"
 #include "kern/buf-unjournaled.h"
 #include "kern/buf-slab.h"
+#include "kern/kmem.h"
 #include "kern/io-stats.h"
 #include "kern/io-pool.h"
 #include "kern/disk.h"
@@ -42,6 +43,12 @@
 #define BUF_MIN_BYTES		(1024U * 1024U)
 #define BUF_SLAB_BYTES		KERN_PAGE_SIZE
 #define BUF_RUN_LINES		(KERN_IO_BATCH_MAX / KERN_PAGE_SIZE)
+
+/*
+ * The longest run, in page-sized lines, sent as one physical page list to a
+ * disk whose driver moves pages itself (DISK_PAGE_VECTOR, ws299): 256 KiB.
+ */
+#define BUF_RUN_PAGE_LINES	64U
 
 /*
  * Delayed writes of write-cached disks.
@@ -77,6 +84,18 @@
 struct buf_slab {
 	struct buf_slab_record record;
 	struct kern_pmem memory;
+};
+
+/*
+ * The bookkeeping of one long run sent as a page list (ws299).
+ *
+ * It is too large for the kernel stack of every port, so one is taken from
+ * the heap for each such run and given back when the run ends.
+ */
+struct buf_run_scratch {
+	struct buf *lines[BUF_RUN_PAGE_LINES];
+	uint64_t generations[BUF_RUN_PAGE_LINES];
+	uint64_t pages[BUF_RUN_PAGE_LINES];
 };
 
 /* XXX: これはincludeに置き換えできるかも？. */
@@ -301,6 +320,7 @@ static int read_buffer(struct buf *buffer);
 static int acquire_line(struct disk *disk, uint64_t block, int read_data, struct buf **result);
 static int reference_line(struct disk *disk, uint64_t block, struct buf **result);
 static int transfer_run(struct disk *disk, uint64_t block, uint64_t remaining, void *data, int write, uint32_t *transferred, const struct io_context *context);
+static int transfer_run_lines(struct disk *disk, uint64_t block, uint64_t remaining, void *data, int write, uint32_t *transferred, const struct io_context *context, struct buf **lines, uint64_t *generations, uint64_t *pages, unsigned limit);
 static void release_run(struct buf **lines, unsigned count, unsigned busy);
 static void finish_run_line(struct buf *buffer, uint64_t generation, int write, int error);
 static int disk_cache_range(struct disk *disk, struct disk **leaf_out, uint64_t *start_out, uint64_t *end_out);
@@ -2339,7 +2359,14 @@ finish_run_line(
 	spin_unlock_irqrestore(&buffer->b_lock, irq);
 }
 
-/* Transfers full adjacent lines using caller storage, without a staging pool. */
+/*
+ * Transfers full adjacent lines using caller storage, without a staging pool.
+ *
+ * A disk whose driver moves physical pages (ws299) gets runs of up to
+ * BUF_RUN_PAGE_LINES lines sent straight to and from the lines' own pages;
+ * any other disk, or a run whose bookkeeping cannot be allocated, gets the
+ * runs of up to BUF_RUN_LINES lines through the caller's storage as before.
+ */
 static int
 transfer_run(
 	struct disk *disk,
@@ -2352,6 +2379,56 @@ transfer_run(
 {
 	struct buf *lines[BUF_RUN_LINES];
 	uint64_t generations[BUF_RUN_LINES];
+	struct buf_run_scratch *scratch;
+	int supported;
+	int error;
+
+	/* Asks whether the disk's driver moves page lists itself. */
+	supported = 0;
+	if (disk->d_block_size != 0 && disk->d_block_size <= KERN_PAGE_SIZE)
+		supported = disk_page_vector_supported(disk);
+
+	/* Takes the bookkeeping of a long page-list run, when there is memory for it. */
+	scratch = NULL;
+	if (supported)
+		scratch = kern_malloc(sizeof(*scratch));
+
+	/* Runs the transfer the way the disk and the memory allow. */
+	if (scratch != NULL) {
+		error = transfer_run_lines(disk, block, remaining, data, write, transferred, context,
+		    scratch->lines, scratch->generations, scratch->pages, BUF_RUN_PAGE_LINES);
+		kern_free(scratch);
+	} else {
+		error = transfer_run_lines(disk, block, remaining, data, write, transferred, context,
+		    lines, generations, NULL, BUF_RUN_LINES);
+	}
+
+	/* Reports why the run failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: *transferred blocks moved, or zero for the single-line path. */
+	return 0;
+}
+
+/*
+ * Transfers up to limit full adjacent lines, as a page list when pages is
+ * not NULL and through the caller's storage otherwise.
+ */
+static int
+transfer_run_lines(
+	struct disk *disk,
+	uint64_t block,
+	uint64_t remaining,
+	void *data,
+	int write,
+	uint32_t *transferred,
+	const struct io_context *context,
+	struct buf **lines,
+	uint64_t *generations,
+	uint64_t *pages,
+	unsigned limit)
+{
 	uint64_t line_bytes;
 	uint32_t line_blocks;
 	uint32_t completed;
@@ -2380,13 +2457,25 @@ transfer_run(
 		return 0;
 	}
 
-	count = (unsigned)(remaining / line_blocks > KERN_IO_BATCH_MAX / line_bytes ?
-	    KERN_IO_BATCH_MAX / line_bytes : remaining / line_blocks);
+	/* A page list carries whole page-sized lines only. */
+	if (line_bytes != KERN_PAGE_SIZE)
+		pages = NULL;
+	if (pages == NULL && limit > KERN_IO_BATCH_MAX / line_bytes)
+		limit = (unsigned)(KERN_IO_BATCH_MAX / line_bytes);
+
+	count = (unsigned)(remaining / line_blocks > limit ?
+	    limit : remaining / line_blocks);
 
 	/* Pins and allocates all lines before acquiring any busy ownership. */
 	for (index = 0; index < count; index++) {
 		error = reference_line(disk, block + (uint64_t)index * line_blocks,
 		    &lines[index]);
+
+		/* A run that already has two lines ends before the line that could not be had. */
+		if (error != 0 && index >= 2U) {
+			count = index;
+			break;
+		}
 		if (error != 0) {
 			release_run(lines, index, 0);
 			io_stats_record(IO_BUF_SINGLE_MEMORY, 0);
@@ -2453,18 +2542,51 @@ transfer_run(
 		spin_unlock_irqrestore(&lines[index]->b_lock, irq);
 	}
 
-	/* Carries a contiguous caller buffer to the device's splitting boundary. */
+	/* Names each line's own page, when the run goes as a page list. */
+	if (pages != NULL) {
+		for (index = 0; index < count; index++) {
+			if (lines[index]->b_memory.size != KERN_PAGE_SIZE)
+				pages = NULL;
+			else
+				pages[index] = lines[index]->b_memory.paddr;
+		}
+	}
+
+	/*
+	 * Sends the lines' pages to the device, or carries the contiguous
+	 * caller buffer to the device's splitting boundary.  A driver that
+	 * turns the page list down before sending anything gets the caller
+	 * buffer instead; a write's caller buffer still holds what the lines
+	 * hold.
+	 */
 	stat_add(write ? &stat_write_bios : &stat_read_bios, 1);
 	io_stats_record(write ? IO_BUF_RUN_WRITE : IO_BUF_RUN_READ, count * line_bytes);
-	error = disk_transfer_progress_context(disk, write ? BIO_WRITE : BIO_READ, block,
-	    count * line_blocks, data, &completed, context);
+	completed = 0;
+	error = EOPNOTSUPP;
+	if (pages != NULL) {
+		error = disk_transfer_pages_context(disk, write ? BIO_WRITE : BIO_READ, block,
+		    count * line_blocks, pages, count, &completed, context);
+	}
+	if (error == EOPNOTSUPP && completed == 0) {
+		pages = NULL;
+		error = disk_transfer_progress_context(disk, write ? BIO_WRITE : BIO_READ, block,
+		    count * line_blocks, data, &completed, context);
+	}
 
-	/* Publishes only complete lines in the confirmed prefix; uncertainty stays dirty. */
+	/*
+	 * Publishes only complete lines in the confirmed prefix; uncertainty
+	 * stays dirty.  A read that went to the lines' pages is copied out to
+	 * the caller; one that went to the caller's buffer is copied into the
+	 * lines.
+	 */
 	for (index = 0; index < count; index++) {
 		line_error = error;
 		if ((index + 1U) * line_blocks <= completed) {
 			line_error = 0;
-			if (!write) {
+			if (!write && pages != NULL) {
+				kern_memcpy(bytes + index * line_bytes, lines[index]->b_data,
+				    (size_t)line_bytes);
+			} else if (!write) {
 				kern_memcpy(lines[index]->b_data, bytes + index * line_bytes,
 				    (size_t)line_bytes);
 			}

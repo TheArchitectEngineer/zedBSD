@@ -821,4 +821,77 @@ drv_nvme_max_transfer_bytes(uint8_t maximum_transfer_shift,
 	return minimum_page_size << maximum_transfer_shift;
 }
 
+/*
+ * Fills the PRP entries of one read or write whose data lies in whole pages.
+ *
+ * pages holds the bus address of each page in transfer order, every one
+ * aligned to page_size.  One page goes in PRP1 alone, two in PRP1 and PRP2,
+ * and more in PRP1 and a PRP list: PRP2 is then the list's bus address and
+ * the list holds the second and later pages (NVMe Base Specification 2.0,
+ * 4.1.1).  The list never chains, so it holds at most list_capacity entries,
+ * and list_capacity is at most one page of entries.  The command's other
+ * fields are the caller's.  Reports 1 when the entries were filled and 0
+ * for inputs it refuses.
+ */
+static __inline int
+drv_nvme_prp_fill(
+	struct drv_nvme_command *command,
+	const uint64_t *pages,
+	uint32_t page_count,
+	uint32_t page_size,
+	uint64_t *list,
+	uint64_t list_bus_address,
+	uint32_t list_capacity)
+{
+	uint64_t page_mask;
+	uint32_t index;
+
+	/* Refuses a missing command, no pages, or a page size the rules cannot use. */
+	if (command == NULL || pages == NULL || page_count == 0U)
+		return 0;
+	if (!drv_nvme_power_of_two(page_size))
+		return 0;
+	page_mask = (uint64_t)page_size - 1U;
+
+	/* Refuses a page that is absent or not aligned to a page. */
+	for (index = 0; index < page_count; index++) {
+		if (pages[index] == 0U)
+			return 0;
+		if ((pages[index] & page_mask) != 0U)
+			return 0;
+	}
+
+	/* The first page is PRP1 whatever follows it. */
+	command->prp1 = pages[0];
+	command->prp2 = 0U;
+
+	/* One page needs nothing more. */
+	if (page_count == 1U)
+		return 1;
+
+	/* Two pages put the second straight in PRP2. */
+	if (page_count == 2U) {
+		command->prp2 = pages[1];
+		return 1;
+	}
+
+	/* More pages need a page-aligned list that holds all but the first without a chain. */
+	if (list == NULL || list_bus_address == 0U)
+		return 0;
+	if ((list_bus_address & page_mask) != 0U)
+		return 0;
+	if (list_capacity > page_size / 8U)
+		return 0;
+	if (page_count - 1U > list_capacity)
+		return 0;
+
+	/* Writes the second and later pages into the list, in order. */
+	for (index = 1; index < page_count; index++)
+		list[index - 1U] = pages[index];
+
+	/* Succeeded: PRP2 names the list. */
+	command->prp2 = list_bus_address;
+	return 1;
+}
+
 #endif
