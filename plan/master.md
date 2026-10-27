@@ -20,7 +20,7 @@
 | 担当 | Queue | WS | 実機 |
 | --- | --- | --- | --- |
 | P1 | — | 返却（q1634: p004 raw の先読みで 5330 の raw の読み 1.7〜2.2 GB/s、p005 は計画だけ）。[WS299](ws299/ws.md) の再開点 | 5330（Debian に戻っている） |
-| P2 | — | 返却（q1635 uncleared: scene-6500 は GPU 30.6 ms のまま、Linux 約 20 ms）。[WS291](ws291/ws.md) の再開点（GRBM_STATUS の busy の比較・FLOAT_MODE・hang の件） | 10.0.10.3（zedBSD で起動中） |
+| P2 | q1639 | [WS291](ws291/ws.md) RDNA: Linux と同等以上まで自律で継続（hang は調べて直す、30 分で分からなければ Fable 5.1 High に助言を求める） | 10.0.10.3（プラグミニ 1 は P2 が入れ直す） |
 | P3 | q1638 | [WS290](ws290/ws.md) GHCI 1.0 の driver: design 版 4 の review（Opus 5.5）→ approve で Phase を確定 → p002〜（host 試験） | host（VF2＋KC705 は書き込みの知らせの後） |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
@@ -82,7 +82,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-347 · q1639 · WS307 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-347 · q1640 · WS307 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的

@@ -6,7 +6,7 @@
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
 | P1 | phase-runner | WS299 5330 の NVMe の速さ（q1634、uncleared） | `/home/awe/zedBSD-worktrees/p1-ws299` / `agent/p1-ws299` | returned（2026-10-28、context の残り） | cc1869b7c |
-| P2 | phase-runner | WS291 RDNA の描画の速さ（q1635、uncleared） | `/home/awe/zedBSD-worktrees/p2-ws291b` / `agent/p2-ws291b` | returned（2026-10-28） | cd763014d |
+| P2 | phase-runner | WS291 RDNA の描画の速さ、Linux 以上まで自律（q1639） | `/home/awe/zedBSD-worktrees/p2-ws291c` / `agent/p2-ws291c` | running（2026-10-28 06:xx〜、10.0.10.3） | cd763014d（q1635） |
 | P3 | phase-runner | WS290 p001 の review → Phase の確定 → p002〜（q1638） | `/home/awe/zedBSD-worktrees/p3-ws290d` / `agent/p3-ws290d` | running（2026-10-28 04:4x〜、host。VF2 はプラグミニ 2） | 4c108791c（q1637） |
 
 - P4 は返却（q1610、最後の merge 0a3f17258）。同時に動かす数は 3（2026-10-28 ユーザー「N=3で作業します。」）。

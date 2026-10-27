@@ -77,3 +77,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   29.3 → 30.7 fps（WC で record −1.9 ms）、GPU 30.6 ms は動かず。次は phase006 の「残りの見立て」の (1)（我々の IB を RADV の culling の IB と全部突き合わせる）。
   道具: `plan/ws291/tests/round.sh`（deploy・nggshape・shot・bench・hang）、`plan/ws291/tests/nowc-build.sh`（診断 patch を当てた tree の build）、
   build/ws291/linux-ibdump/ibdump.so（host で build、Debian の /tmp に置く）。機械: stick は vmunix-lat1 と ngg=2（cfg に診断の nggx=0 の行、無害）。
+
+## 2026-10-28 自律の継続（q1639、P2）
+
+- 2026-10-28 ユーザー「P2は自律的にループして、Linuxと同等以上の性能をゴールに、継続してください。hangが繰り返し起きるなら調査して修正してください。30分調査してわからなかった場合は、Fable 5.1 Highのサブエージェントを作成して、事情を説明した上で解決までどういう進め方をすればいいかのアドバイスを得て、さらに継続してください。どうしても解決できない場合、停止してユーザに判断を求めてください。これらはP2が自律的に行います。」
+
