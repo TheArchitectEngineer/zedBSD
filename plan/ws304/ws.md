@@ -8,6 +8,8 @@
 
 - 2026-10-27 10:34 ユーザー「Pi5のNVMeハットを買って装着しました。Switchbotの空きがないので、今夜新しいSwitchbotが届くまでテストできないですが、コードだけ書いておくのがいいと思います。」→ p001・p002 を今（P3、q1618）、p003 の実機は新しい SwitchBot が届いた後。
 
+- 2026-10-27 11:24 ユーザー（D7 の HAT の型番）「HatはX1001というものです。」→ Geekworm X1001（M.2 の NVMe を 1 枚、PCIe switch なし）と見て、設計の前提（単一の NVMe）のまま。p003 で実物の HAT と LED を記録する。
+
 ## 今の事実（Q1 が読んだ範囲）
 
 - src/drivers/pci/pci-brcmstb.c は BCM2711（Pi 4）の Broadcom STB の PCIe の root complex（reset・SerDes・outbound/inbound の窓・link、CPU の cache を snoop しない）。
