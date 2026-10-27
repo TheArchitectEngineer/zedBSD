@@ -19,7 +19,7 @@
 
 | 担当 | Queue | WS | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1640 | [WS299](ws299/ws.md) 5330 の NVMe: fstrim の後に書きを測り直し → p005 UFS → p006 HMB → p007 → p008 | 5330 |
+| P1 | q1646 | [WS299](ws299/ws.md) 5330 の NVMe: p010 O_DIRECT → 乱読み QD32 → UFS の書き → p007 → p008（自律） | 5330 |
 | P2 | q1645 | [WS291](ws291/ws.md) RDNA: scene-6500 44.7 fps（Linux 50.2）、fence の固定の遅れ・vertex・CPU の往復を詰める（自律、Fable は何度でも） | 10.0.10.3（プラグミニ 1 は P2 が入れ直す） |
 | P3 | q1644 | [WS290](ws290/ws.md) GHCI 1.0 の driver: p001〜p004・p013 cleared、p005（session・VM）から | host（VF2＋KC705 は書き込みの知らせの後） |
 | P4 | q1643 | [WS307](ws307/ws.md) インストーラの仕様の確定（p001、ユーザーの確認事項は Q1 経由） | — |
@@ -84,7 +84,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-348 · q1646 · WS308 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-348 · q1647 · WS308 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
