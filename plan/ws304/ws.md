@@ -3,7 +3,7 @@
 # WS304 Raspberry Pi 5 の外の PCIe（pcie1、M.2）と NVMe
 
 - Master: [plan/master.md](../master.md)（2026-10-27 10:33 作成）。Primary Milestone: MG003。関係: WS278・WS279（Pi 5、completed）、WS048（Pi 4 の PCIe、src/drivers/pci/pci-brcmstb.c は BCM2711 の root complex）、[WS298](../ws298/ws.md)（5330 の NVMe）、[WS299](../ws299/ws.md)（NVMe の速さ）、Future Work fw-kc705-rpi5。
-- Status: incomplete（2026-10-27 p001・p002 を q1618-i01 で実施。実機の p003 は SwitchBot 待ち）
+- Status: incomplete（2026-10-27 p001・p002 を q1618-i01 で実施。p003 は q1620-i03 まで実機で pcie1 の link が上がらず uncleared、ハード側の切り分け待ち）
 - 出典: 2026-10-27 10:33 ユーザー「まだテストできないのですが、Pi5のNVMeも対応したいです。PCIeを使えるようにしないと。」
 
 - 2026-10-27 10:34 ユーザー「Pi5のNVMeハットを買って装着しました。Switchbotの空きがないので、今夜新しいSwitchbotが届くまでテストできないですが、コードだけ書いておくのがいいと思います。」→ p001・p002 を今（P3、q1618）、p003 の実機は新しい SwitchBot が届いた後。
