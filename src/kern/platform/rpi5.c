@@ -17,7 +17,9 @@
  * build has its driver (CONFIG_DRIVER_RPI5_BT, off by default), are probed
  * once interrupts are on and come up in the background.  The processor's
  * temperature and the fan connector, when the build has their driver
- * (CONFIG_DRIVER_RPI5_FAN, on by default), start then too.  The V3D render
+ * (CONFIG_DRIVER_RPI5_FAN, on by default), start then too.  The external
+ * PCIe port of the M.2 HATs starts after RP1 when config.txt enables it,
+ * and the NVMe drive behind it is published once interrupts are on.  The V3D render
  * engine, when the build has its driver (CONFIG_DRIVER_BCM2712_GPU, off by
  * default), is found then and waits for root to start it.
  */
@@ -37,6 +39,7 @@
 #include "drivers/platform/rpi5/rp1-ethernet.h"
 #include "drivers/platform/rpi5/rpi5-wifi.h"
 #include "drivers/platform/rpi5/rpi5-serror.h"
+#include "drivers/platform/rpi5/rpi5-pcie.h"
 #if CONFIG_DRIVER_RPI5_BT
 #include "drivers/platform/rpi5/rpi5-bt.h"
 #endif
@@ -64,6 +67,7 @@
 static uint64_t rpi5_fdt_phys;
 
 static void start_rp1(uint64_t fdt_phys);
+static void start_pcie(uint64_t fdt_phys);
 
 /*
  * Publishes the boot devices described by the Raspberry Pi 5 boot handoff.
@@ -131,6 +135,9 @@ kern_platform_init(
 	/* Starts the USB ports behind RP1; without RP1 the boot goes on. */
 	start_rp1(fdt_phys);
 
+	/* Starts the external PCIe port; without it the boot goes on. */
+	start_pcie(fdt_phys);
+
 	/* Publishes the SD card as the boot device. */
 	device = &devices[0];
 	device->device_class = KERN_DEV_SD;
@@ -174,6 +181,10 @@ kern_platform_refresh_devices(
 	/* Starts the Ethernet port's link and missed-interrupt service. */
 	drv_rp1_ethernet_refresh();
 	(void)drv_rpi5_serror_check("gem: starting the service");
+
+	/* Publishes the NVMe drive behind the external PCIe port. */
+	drv_rpi5_pcie_refresh();
+	(void)drv_rpi5_serror_check("rpi5-pcie: finding namespaces");
 
 #if CONFIG_DRIVER_RPI5_FAN
 	/*
@@ -355,4 +366,28 @@ start_rp1(
 	(void)drv_rpi5_serror_check("gem: starting the port");
 	if (error != 0)
 		kern_logf("rpi5: Ethernet unavailable (%d)\n", error);
+}
+
+/*
+ * Starts the PCIe root complexes other than RP1's: the external port of
+ * the M.2 HATs when config.txt enables it.
+ *
+ * A board without a device tree, or whose port is disabled or has no
+ * link, boots without it; the reason is in the log.
+ */
+static void
+start_pcie(
+	uint64_t fdt_phys)
+{
+	int error;
+
+	/* Leaves a boot without a device tree alone. */
+	if (fdt_phys == 0)
+		return;
+
+	/* Starts the root complexes and the drivers behind them. */
+	error = drv_rpi5_pcie_init(fdt_phys);
+	(void)drv_rpi5_serror_check("rpi5-pcie: starting the root complexes");
+	if (error != 0)
+		kern_logf("rpi5: external PCIe unavailable (%d)\n", error);
 }
