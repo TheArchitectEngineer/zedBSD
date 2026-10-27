@@ -3,7 +3,7 @@
 # WS307 インストーラの仕様
 
 - 親: [WS307](ws.md)。作成: [ws307-p001](phase001/phase.md)（P4、2026-10-28）。
-- 状態: **案**（U1〜U4 は回答済み、U5〜U14 は回答待ち。回答は §15 に原文で引用し、本文の「→ U<n>」の所を直す）。
+- 状態: **案**（U1〜U8 は回答済み、U9〜U15 は回答待ち。回答は §15 に原文で引用し、本文の「→ U<n>」の所を直す）。
 - 正はユーザーの原文（[ws.md](ws.md) の「ユーザーの指示と希望の仕様」）。この文書は原文のブラッシュアップで、原文と食い違えば原文が正。
 - 調査の出典は file:行（基点 main 5300ea917）。
 
@@ -116,24 +116,40 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 
 - 表示: check box 相当の行（`kl_switch` か選択の印の付いた行）。
 
-  | 項目 | 中身（unit） | 既定（→ U8 推し A） |
+  | 項目 | 中身（unit） | 既定（U8 の回答） |
   | --- | --- | --- |
   | Base System（header 込み） | `base`（kernel・loader・base の program・library・`/usr/include`） | 必須（外せない） |
-  | Keiland Desktop | `desktop`（compositor・sessiond・標準の app・desktop の library・font） | 選択 |
-  | Firmware | `firmware`（`/lib/firmware` と license） | 選択 |
-  | Packages | 下位の項目 | 無選択 |
+  | Keiland Desktop | `desktop`（compositor・sessiond・標準の app・desktop の library・font） | 選択。外す時に警告 |
+  | Firmware | `firmware`（`/lib/firmware` と license） | 選択。外す時に警告 |
+  | Packages | 下位の項目 | 下位の既定に従う |
   | 　Clang | `lang/clang`（依存 `devel/libcxx`） | 無選択 |
-  | 　OpenSSH | `network/openssh`（依存 `security/openssl`） | 無選択 |
-  | 　OpenSSL（＋CA 証明書） | `security/openssl`・`security/ca-certificates` | 無選択 |
+  | 　OpenSSH | `network/openssh`（依存 `security/openssl`） | 選択 |
+  | 　OpenSSL（＋CA 証明書） | `security/openssl`・`security/ca-certificates` | 選択（U8 の「OpenSSL」「ca-certificates」） |
   | 　GTK4 | `desktop/gtk4`（依存 glib・cairo・pango・harfbuzz など 15 個、`userland/packages/desktop/gtk4/Makefile:123-126`） | 無選択 |
-  | 　Fonts | `fonts/*`（noto-color-emoji・hand-hershey） | 無選択 |
+  | 　Fonts | `fonts/*`（noto-color-emoji・hand-hershey） | 選択 |
   | 　libavcodec | `multimedia/libavcodec` | 無選択 |
   | 　curl | `network/curl`（依存 openssl・zlib・ca-certificates） | 無選択 |
+  | 　Python | `lang/python3`（依存 zlib・openssl・ca-certificates、`userland/packages/lang/python3/Makefile:209-210`）。U8 の回答で追加 | 無選択 |
+
+- Desktop・Firmware を外す時の警告（U8 の回答「外そうとすると警告」）: `kl_dialog` で「外すと、入れた system は console の login だけになります（graphical の desktop がありません）」「外すと、Wi-Fi・GPU などの firmware が要る device が動かないことがあります」を出し、「外す」「やめる」を選ばせる。
+- ca-certificates は原文で「OpenSSL (+cacertificate)」の 1 項目、U8 の回答では既定の名前に別に挙がる。1 つの項目（OpenSSL＋CA 証明書）のまま、既定で選択とした（§16 T13）。
 
 - 依存は自動で選び、「依存で入る」と灰色の印で出す（外せない）。依存の元は §6.3 の index。例: Keiland Desktop は `fonts/noto-color-emoji`・`fonts/hand-hershey` を要る（`userland/desktop/wayland/Makefile:47`）ので、Desktop を選ぶと Fonts が依存で入る。GTK4 は `desktop/libwayland`（Desktop の unit）を要るので Desktop が依存で入る。
 - 下に合計（展開後の大きさ）と導入先の root の空きを出す。
 - 検査: root の大きさ ≥ 選んだ unit の展開後の合計＋swap file（作る時）＋余裕（§5.6）。足りなければ次へを無効にし、不足の量を出す。
-- 遷移: 戻る → S6（選ぶ道）か S3（全体の道）。次へ → （U7 が B なら利用者の画面 S7a →）S8。
+- 遷移: 戻る → S6（選ぶ道）か S3（全体の道）。次へ → S7a。
+
+### 4.7a S7a 利用者（U7 の回答で追加）
+
+- 表示と入力（`kl_field`。password は `secret`）:
+  - 利用者の名前（login の名前。小文字の英字で始まり、英小文字・数字・`-`・`_`、32 文字まで。`account-admin` の名前の規則に合わせる）と表示名。
+  - 利用者の password と確認。
+  - root の password と確認。
+  - 自動 login（`kl_switch`、既定は入。Desktop を入れない時は無効）。
+- 作る利用者は管理者（wheel）と network の group に入れる（今の image の kei と同じ、`userland/base/etc/group:1`）。
+- 検査: 名前が規則に合い、`root` や base の system の利用者の名前でない。password が空でなく、確認と一致する。
+- 導入先の設定（§7.2 の段 7）: base の unit の既定の利用者 kei（uid 1000）を、入力した名前・password に置き換える（名前が kei なら password だけを変える）。root の password を設定する。自動 login が入なら `/etc/keiland/autologin` に名前、切なら空にする（`userland/desktop/sessiond/main.c:201-217`）。password の hash は `account-admin` と同じ共有の account の core で作る。
+- 遷移: 戻る → S7、次へ → S8。
 
 ### 4.8 S8 最終確認
 
@@ -155,7 +171,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 
 ### 4.11 S11 終了
 
-- 表示: 完了の message、入れた物、導入先から起動する方法（loader を fallback の path に置いた時は「USB を外して再起動」、`\EFI\kei\` に置いた時は「firmware の boot menu で選ぶ」、→ U5）、利用者・password の案内（→ U7）。
+- 表示: 完了の message、入れた物、導入先から起動する方法（§5.8。loader を fallback の path に置いた時は「USB を外して再起動」。`\EFI\ZEDBSD\` に置いた時は「firmware の boot menu で選ぶ」（U5 の回答）。Boot#### を作った時はその名前と BootOrder の位置（→ U15））、作った利用者の名前。
 - 「再起動」: `kl_system_power_action(…, KL_POWER_REBOOT, …)`（`userland/desktop/include/keiland/keiland.h:2293`。sessiond が root か wheel の session だけに許す、`sessiond/power-rules.c:8-16`。kei は wheel、`userland/base/etc/group:1`）。
 - 「閉じる」: installer を閉じ、live の desktop をそのまま使える（原文）。
 
@@ -193,7 +209,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 - 「十分な ESP」（S4 の検査）: 型が ESP、FAT16 か FAT32、かつ
   - 計画で新しく作る ESP: 上の大きさ。
   - 既存の ESP: 空き ≥ 置く物の合計＋16 MiB（`/opt/installer` の index に置く物の大きさを書く。旧 zedinst の `max(64 MiB, loader＋kernel＋FAT の overhead＋16 MiB)` に倣う）。既に `zedbsd.cfg` がある ESP（別の zedBSD）は、上書きせず「既に別の Kei がある」と出して使わない（§13）。
-- loader の path（→ U5 推し A）: `\EFI\BOOT\BOOTX64.EFI` が無ければそこに置く。有れば上書きせず `\EFI\kei\BOOTX64.EFI` に置き、S11 で firmware の boot menu から選ぶよう案内する。UEFI の `Boot####` は作らない（kernel に runtime services が無い。amd64 の handoff に EFI の system table が無い、`bootloader/include/amd64-handoff.h:177-195`）。
+- loader の path（U5 の回答）: `\EFI\BOOT\BOOTX64.EFI` が無ければそこに置く。有れば上書きせず `\EFI\ZEDBSD\BOOTX64.EFI` に置き、S11 で firmware の boot menu から選ぶよう案内する。UEFI の `Boot####` も作る（§5.8）。
 - 新しい ESP は `mkfs -t fat32` で作る。その FAT の serial は disk の登録番号で永続の識別でない（`fat32-format.c:156-158`）ので、`zedbsd.cfg` に `boot0=PARTUUID=<ESP の PARTUUID>` を書く（loader の自動の `boot0=UUID=` に頼らない、`bootloader/uefi/zedbsd-config.c:157-173`）。
 
 ### 5.5 swap
@@ -215,6 +231,17 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | 1 | ESP（FAT32） | 512 MiB |
 | 2 | swap | RAM と同じ、1 GiB 以上 8 GiB 以下（RAM は sysctl の `HW_MEMORY_STATS`、`include/uapi/sysctl.h:43`）。disk が 32 GiB 未満なら 1 GiB |
 | 3 | root（UFS） | 残り全部 |
+
+### 5.8 UEFI の boot entry（U5 の回答「Boot####の作成もWSに入れる」）
+
+- 今: kernel に UEFI の runtime services の口が無い。amd64 の handoff に EFI の system table が無い（`bootloader/include/amd64-handoff.h:177-195`）。efibootmgr に当たる道具も無い。
+- 作る物:
+  1. loader → HAL: UEFI の loader が ExitBootServices の前に、EFI の system table（runtime services の table）の物理 address と、runtime の memory の範囲（`EfiRuntimeServicesCode`・`Data` の記述子と attribute）を handoff に足す（handoff の新しい版。loader → HAL の固有の構造体は `bootloader/` の header に置く、Guardrail「HAL と kernel・boot loader と HAL の受け渡し」）。
+  2. HAL → kernel: 名前の値（`hal_get_arch_handoff(name)`、例 `uefi.system_table`・`uefi.runtime_map`）で渡す。既存の API なので HAL の API は変えない。
+  3. kernel: amd64 の platform の module（`src/drivers/platform/pcat/` の下）が runtime の範囲を専用の page table に 1:1 で map し、`GetVariable`・`SetVariable`・`GetNextVariableName` を ms_abi で呼ぶ（`SetVirtualAddressMap` は呼ばない。呼び出しの間は割り込みと他の CPU からの同時の呼び出しを排他）。
+  4. UAPI: `/dev/system` に変数の読み書きの要求（root だけ）。base の道具 `efiboot`（`list`・`create`・`delete`・`order`）。
+- **HAL の API に触る場合**: 3 の「専用の page table への切り替え」「FPU・SIMD の状態の保存」などに、今の HAL の宣言（`include/hal/hal.h`）で足りない物があれば、その差分の案を該当の Phase の plan に置き、ユーザーの承認を得てから適用する（AGENTS.md §7）。承認が得られるまで Boot#### の作成は無効のまま、installer は loader の配置と S11 の案内だけを行う。
+- installer の使い方: §7.2 の段 10 で、導入先の ESP の PARTUUID・partition の番号・開始・大きさと loader の path から device path（`HD(番号, GPT, PARTUUID, 開始, 大きさ)/File(\EFI\…\BOOTX64.EFI)`）を作り、名前「Kei」の `Boot####` を書く。BootOrder の位置は → U15。同じ device path の既存の entry があれば作り直さずに使う。書けなければ失敗にせず、S11 で「boot menu で選ぶ」を出す（loader は置いてあるので起動はできる）。
 
 ## 6. 入れる物（payload）
 
@@ -278,7 +305,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 4. **format**: 新しい ESP を `mkfs -t fat32`、root を `mkfs -t ufs --profile=native`、swap の partition に `mkswap`（§11.3）。各々の確認の phrase（`FORMAT name:registration` など、`docs/reference/image-formatters.md`）は helper が自分の最終確認の後に送る（diskpart・mkfs の文書が installer に許す使い方）。
 5. **root の mount**: root を `/run/install-admin/target` に mount。
 6. **展開**: 計画の unit を依存の順（base が先）に、SHA-256 を確かめてから展開。進みを byte で報告。中止の要求は file の間で受ける。
-7. **設定**: `/etc/fstab`（swap file の時）、`/var/db/installer/`、swap file（§5.5）、利用者（→ U7）。live の system の `/etc` は写さない（base の unit の既定）。Desktop を入れない時は graphical の login を設定しない（`zedbsd.cfg` に `login=graphical` を書かない）。
+7. **設定**: `/etc/fstab`（swap file の時）、`/var/db/installer/`、swap file（§5.5）、利用者と root の password と自動 login（§4.7a）。live の system の `/etc` は写さない（base の unit の既定）。Desktop を入れない時は graphical の login を設定しない（`zedbsd.cfg` に `login=graphical` を書かない）。
 8. **root の unmount と sync**。
 9. **ESP の公開**: ESP を mount し、`vmunix`・`logo.ppm` を書いてから loader（§5.4 の path）、最後に `zedbsd.cfg` を一時の名前で書いて rename。`zedbsd.cfg` の中身:
 
@@ -292,7 +319,8 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
    kmsg=quiet
    ```
 
-10. **ESP の unmount と sync**。成功を報告。
+10. **ESP の unmount と sync**。
+11. **boot entry**: `Boot####` を書く（§5.8）。失敗は警告にとどめる。成功を報告。
 
 ### 7.3 起動の識別
 
@@ -313,13 +341,13 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 - 巻き戻しはしない（diskpart と mkfs は crash に原子的でない、`docs/reference/block-administration.md`。§4.4 の ESP の自動作成の失敗だけは作った entry を消す）。「最初からやり直す」で同じ disk に入れ直せる（全体なら表を作り直す。選ぶなら S4 で作った partition は型が「未割り当て」のまま残り、S5 で選べる、→ U12）。
 - 段 3・4 の最中のキャンセルはその段の終わりまで待つ。段 6 は file の間で止まる。
 
-## 9. 権限（→ U6 推し A）
+## 9. 権限（U6 の回答「setuid の helper、自分で起動 (推し)」）
 
 ### 9.1 形
 
 - installer は利用者（live の session の kei）で動き、権限を持たない（`docs/architecture/security.md:11-30` の原則）。
 - root の仕事は新しい set-user-ID root の helper `/usr/libexec/install-admin`（mode 4555、`account-admin` と同じ形の 1 つの仕事だけの program、`userland/base/account-admin/main.c:8-45`。呼び出し元が wheel かは helper が自分で確かめる）。
-- installer が helper を子として起動する（U6-A。zedBSD の UEFI PC だけの app なので compositor を通さない。Guardrail の「app 自身の機能のための OS の依存」、D14）。
+- installer が helper を子として起動する（U6 の回答。zedBSD の UEFI PC だけの app なので compositor を通さない。Guardrail の「app 自身の機能のための OS の依存」、D14）。
 - 要求の種類:
   - `probe`: 読むだけ（disk・partition・ESP の空き・RAM・UEFI の起動か）。呼び出し元が wheel なら password 無し（変更が無いため）。
   - `session`: 書き込みの session。最初の行の呼び出し元の password を確かめ（security.md の「管理者は変更の時に自分の password を入れる」）、installer が終わるまで stdin の要求を順に受ける: `edit`（§7.1 の 1 つの操作）と `install`（§7.2）。S4 の最初の書き込みの前（選ぶ道）か最終確認の開始（全体の道）で始める。U2 の「その場で書く」で操作ごとに password を聞くと S4 が使いにくいので、1 つの installer の実行に 1 回とする（sudo の一定時間の記憶に近い。§16 T12）。
@@ -375,7 +403,6 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 
 ## 13. 範囲外（Future の候補）
 
-- UEFI の `Boot####` の作成（kernel の runtime services が要る、→ U5）。
 - partition の大きさの変更・移動、既存の partition の format の型の変更、MBR から GPT への変換（→ U10）。
 - network からの導入、package の後からの追加・削除・更新（§6.4 の記録だけを残す）。
 - 4Kn の disk（mkfs の device の mode が 512 byte だけ）。
@@ -414,15 +441,16 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | U2 | partition の編集を disk に書く時期 | A: 最終確認の後にまとめて | 2026-10-28「ボタンでその場で書く」→ B（原文どおり、S4 の button でその場で書く。キャンセルしても書いた分は残る）。§3・§4.4・§7.1・§8・§9 に反映 |
 | U3 | 作成した「未使用」の partition の型 | A: zedBSD 独自の GUID | 2026-10-28「zedBSD 独自の未割り当ての型 (推し)」→ A |
 | U4 | disk 全体の配置 | A: ESP 512 MiB（kernel も ESP）・swap partition・root | 2026-10-28「ESP 512M＋swap 区画＋root (推し)」→ A |
-| U5 | 既存の ESP を共有する時の loader と boot entry | A: fallback が無ければそこ、有れば `\EFI\kei\`、Boot#### は Future | 未回答 |
-| U6 | root の権限 | A: setuid の helper を installer が直に起動、最終確認で password | 未回答 |
-| U7 | 利用者のアカウント | B: 最終確認の前に利用者の画面 | 未回答 |
-| U8 | 入れる項目の必須と既定 | A: Base 必須、Desktop・Firmware 既定で選択、Packages 無選択 | 未回答 |
+| U5 | 既存の ESP を共有する時の loader と boot entry | A: fallback が無ければそこ、有れば `\EFI\kei\`、Boot#### は Future | 2026-10-28「\EFI\BOOT\BOOTX64.EFIがなければそこに置く。あれば、上書きせず、\EFI\ZEDBSD\BOOTX64.EFIに置いて、完了の画面で、Frimware のboot menuで選ぶ、と出す。Boot####の作成もWSに入れる。」→ §5.4・§5.8・§4.11 |
+| U6 | root の権限 | A: setuid の helper を installer が直に起動、最終確認で password | 2026-10-28「setuid の helper、自分で起動 (推し)」→ A（password の時期は U2 に合わせ §9） |
+| U7 | 利用者のアカウント | B: 最終確認の前に利用者の画面 | 2026-10-28「「利用者」の画面を足す (推し)」→ B、§4.7a |
+| U8 | 入れる項目の必須と既定 | A: Base 必須、Desktop・Firmware 既定で選択、Packages 無選択 | 2026-10-28「Base必須、DesktopとFirmwareは規定で、外そうとすると警告、PackagesはOpenSSL, OpenSSH, ca-certificates, Fontsのみ規定。Pythonのパッケージも追記しておいてください。」→ §4.7 |
 | U9 | disk の一覧の型番 | B: kernel に model を足す | 未回答 |
 | U10 | GPT でない disk で「partition を選ぶ」 | A: 空は新しい GPT、MBR は全体だけ | 未回答 |
 | U11 | 「ィションがないときは…」の行 | A: rootfs を選ばないと進めない | 未回答 |
 | U12 | rootfs・swap に選べる partition | A: この installer で作った物だけ | 未回答 |
 | U13 | package の header | A: 今の package のまま | 未回答 |
+| U15 | （U5 の回答から）作った Boot#### の BootOrder の位置 | A: 先頭に入れる（再起動で導入先から起動）。B: 末尾に足す（firmware の menu に「Kei」で出るだけ） | 未回答 |
 | U14 | （U2 の回答から）S5・S6 の root・swap の型の印と mkfs・mkswap の時期 | A: 最終確認の後（progress の中）。B: S5・S6 の次へでその場で | 未回答 |
 
 ## 16. 担当が決めた技術の判断（理由）
@@ -440,6 +468,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | T9 | 中止は stdin の `cancel` の行 | set-user-ID の process への signal の可否に頼らない。EOF も中止 |
 | T10 | 展開の元は build の unit で、live の root を写さない | live の system の状態（log・設定・利用者の file）を導入先に持ち込まない。旧 zedinst も live の upper を写さなかった |
 | T12 | 書き込みの password は 1 回の installer の実行に 1 回（helper の session） | U2 で S4 の操作ごとに書くので、操作ごとの password は使いにくい。session は installer の終わり（stdin の EOF）で終わる |
+| T13 | 「OpenSSL（＋CA 証明書）」は 1 つの項目のまま、既定で選択 | 原文が 1 項目。U8 の回答の既定の名前（OpenSSL・ca-certificates）はどちらも選択になり食い違わない |
 | T11 | 日本語の catalog も作る | Keiland の app は `kl_tr` で翻訳する（WS158）。install の画面だけ英語にする理由が無い |
 
 ## 17. 未決・残り

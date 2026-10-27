@@ -3,7 +3,7 @@
 # WS307 Keiland のアプリとしての zedBSD のグラフィカルなインストーラ
 
 - Status: planning（2026-10-28 新設。p001 で仕様を確定中、q1643 P4）
-- 仕様: [spec.md](spec.md)（案。U1〜U4 回答済み、U5〜U14 回答待ち）。
+- 仕様: [spec.md](spec.md)（案。U1〜U8 回答済み、U9〜U15 回答待ち）。
 - Resume point: p001 の手順 3〜5（回答の反映、design-reviewer の指摘の反映、実装の Phase の表の確定）。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
@@ -67,6 +67,10 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 U2「ボタンでその場で書く」: partition の編集の画面の削除・作成は、押した時にその場で disk に書く（キャンセルしても書いた分は残る）。
 - 2026-10-28 U3「zedBSD 独自の未割り当ての型 (推し)」: 作成した partition は zedBSD 独自の「未割り当て」の型 GUID で書く。
 - 2026-10-28 U4「ESP 512M＋swap 区画＋root (推し)」: disk 全体を使う時は ESP 512 MiB（loader・kernel・設定を ESP に）・swap の partition・残りを root。
+- 2026-10-28 U5「\EFI\BOOT\BOOTX64.EFIがなければそこに置く。あれば、上書きせず、\EFI\ZEDBSD\BOOTX64.EFIに置いて、完了の画面で、Frimware のboot menuで選ぶ、と出す。Boot####の作成もWSに入れる。」: UEFI の runtime services（SetVariable）と Boot#### の作成も WS307 の範囲。HAL の API に触る場合は、その差分の案を Phase に置き、別にユーザーの承認を得る（Q1 の補い）。
+- 2026-10-28 U6「setuid の helper、自分で起動 (推し)」: 新しい setuid root の helper を installer が自分で起動する（compositor を通さない）。
+- 2026-10-28 U7「「利用者」の画面を足す (推し)」: 最終確認の前に利用者の画面（利用者の名前・password、root の password、自動 login）。
+- 2026-10-28 U8「Base必須、DesktopとFirmwareは規定で、外そうとすると警告、PackagesはOpenSSL, OpenSSH, ca-certificates, Fontsのみ規定。Pythonのパッケージも追記しておいてください。」: Packages の下位に Python を足す。
 
 ## Phase
 
@@ -80,9 +84,10 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 | --- | --- | --- | --- | --- |
 | p002 | base の道具: `mkswap` の partition の mode、`diskpart` の batch の mode（spec §11.3）。host の試験と QEMU の短い確認 | p001 | 6 LW | planning |
 | p003 | （U9 が B の時）kernel: NVMe・AHCI・USB の disk の model・serial を UAPI に出す（HAL の API は変えない） | p001 | 6 LW | planning |
+| p003b | UEFI の runtime services: loader の handoff に system table と runtime の memory、HAL の名前の値、amd64 の module の GetVariable・SetVariable、`/dev/system` の UAPI、`efiboot` の道具（spec §5.8）。HAL の API の差分が要れば案を置いてユーザーの承認を待つ。QEMU の OVMF で Boot#### を書いて読み戻す | p001 | 12 LW | planning |
 | p004 | build: unit の振り分け・tarball（ustar＋deflate、所有者・mode は image の manifest から）・index と依存・`/opt/installer`・`ZEDBSD_INSTALLER` の config・漏れと重複の検査（spec §6・§11） | p001 | 10 LW | planning |
-| p005 | helper `install-admin`: probe・install（計画の再検査、partition・format・展開・設定・公開、進みと中止の protocol）。host の試験と QEMU の SSH での導入（NVMe・SATA・USB の導入先、導入先だけの起動）（spec §5・§7〜§9） | p002・p004（p003 は任意） | 14 LW | planning |
-| p006 | installer の app: S1〜S11（と U7 の利用者の画面）、計画の組み立てと検査、翻訳（ja）、App Home、自動起動、AAT の log（spec §4・§10） | p005 の protocol | 14 LW | planning |
+| p005 | helper `install-admin`: probe・session（S4 の edit と install。計画の再検査、partition・format・展開・利用者の設定・公開・Boot####、進みと中止の protocol）。host の試験と QEMU の SSH での導入（NVMe・SATA・USB の導入先、導入先だけの起動）（spec §5・§7〜§9） | p002・p004（p003・p003b は無くても動く。Boot#### は p003b の後） | 16 LW | planning |
+| p006 | installer の app: S1〜S11 と S7a（利用者）、計画の組み立てと検査、翻訳（ja）、App Home、自動起動、AAT の log（spec §4・§10） | p005 の protocol | 14 LW | planning |
 | p007 | 通しの試験: AAT で GUI の導入（全体・選ぶ・共存・swap 無し・キャンセル・失敗）、導入先の起動、`plan/ws307/tests/` の 1 本の script（spec §12） | p006 | 8 LW | planning |
 | p008 | 文書: `docs/howto/boot-and-storage.md` の古い zedinst の節を新しい installer に置き換え、`docs/reference` に install-admin・mkswap・diskpart の追加 | p007 | 3 LW | planning |
 | p009 | 規約の全文の見直し（WS307 が変えた C） | p008 | 4 LW | planning |
