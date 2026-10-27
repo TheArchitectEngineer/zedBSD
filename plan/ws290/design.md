@@ -341,7 +341,7 @@ LOST の device: どの状態からも FREED にしない（quarantine）
 
 ### 9.2 DMA と coherence（§11.4）
 
-host memory は `kern_pmem_alloc_limited` の連続の run（D8）。CPU の view は直の map か uncached の alias（今の `host_view`・`host_uncached`、`CONFIG_GHCI_HOST_UNCACHED`。VF2 は `kern_pmem_map_uncached`）。bus address は物理と同じ（amd64・VF2）。非 coherent な platform（VF2）では、HOST_COHERENT として出す user の VkDeviceMemory・blob の `resource_map` も `DRV_GPU_MAPPING_UNCACHED_RAM`（`gpu.h`）にする（R19）。
+host memory は `kern_pmem_alloc_limited` の連続の run（D8）。CPU の view は直の map か uncached の alias（今の `host_view`・`host_uncached`、`CONFIG_GHCI_HOST_UNCACHED`）。bus address は物理と同じ（amd64・VF2）。**VF2 の M.2 の PCIe の DMA は L2 を通る coherent**（ws288-p044 の 2 段目: uncached の alias で書いた物を GPU が見ない、`plan/ws288/tests/config-visionfive2-ghci.mk` の `CONFIG_GHCI_HOST_UNCACHED := n`、`VF2_DMA_DEFAULT_COHERENT`）なので、VF2 でも cached の直の map を使う（`kern_pmem_map_uncached` の記憶は VF2 の内蔵の GPU の物で、PCIe には当たらない）。`CONFIG_GHCI_HOST_UNCACHED` = y の非 coherent な platform だけ、HOST_COHERENT として出す user の VkDeviceMemory・blob の `resource_map` を `DRV_GPU_MAPPING_UNCACHED_RAM`（`gpu.h`）にする（R19）。
 
 ### 9.3 doorbell の順（§6.3）
 
@@ -584,7 +584,7 @@ FMT の block が有れば、format ごとに `FMT_INDEX` を書き `FMT_OPTIMAL
 ### 16.1 platform
 
 - amd64（PCIe）: build と host 試験。
-- riscv64 VisionFive 2（M.2 の PCIe、`vf2-pcie.c` が `drv_pci_ghci_driver_register` を呼ぶ）: **実機で attach する**（2026-10-28 のユーザーの決定で U4 の「build だけ」を変えた）。割り込みは今の WS288 の VF2 の設定と同じく poll（`CONFIG_GHCI_POLL`）から始める。host memory は 4 GiB 未満（VF2 の DRAM は 0x4000_0000 から、§5.5）。非 coherent なので ring・fence・heap は `kern_pmem_map_uncached` の view（記憶: U74 は Svpbmt が無く `kern_device_map(UNCACHED)` は DRAM で効かない）。
+- riscv64 VisionFive 2（M.2 の PCIe、`vf2-pcie.c` が `drv_pci_ghci_driver_register` を呼ぶ）: **実機で attach する**（2026-10-28 のユーザーの決定で U4 の「build だけ」を変えた）。割り込みは今の WS288 の VF2 の設定と同じく poll（`CONFIG_GHCI_POLL`）から始める。host memory は 4 GiB 未満（VF2 の DRAM は 0x4000_0000 から、§5.5）。PCIe の DMA は L2 を通り coherent なので、ring・fence・heap も cached の直の map（`CONFIG_GHCI_HOST_UNCACHED := n`、WS288 の VF2 の設定のまま。§9.2）。
 - ZYBO・platform binding（§15.1）: 書かない（Future Work の候補）。
 - endian: little endian の platform だけ。ring の dword・PSO・descriptor は LE で書く関数を通す。
 
