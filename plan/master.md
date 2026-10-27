@@ -124,7 +124,7 @@ BUG-347 · q1621 · WS306 · KL_VERSION 96。使う前に衝突を確かめる�
 
 | WS | Primary | 内容 | 状態 | 再開点 |
 | --- | --- | --- | --- | --- |
-| [WS299](ws299/ws.md) | MG004 | 5330 の NVMe の読み書きを速くする（512 MiB の崖、転送・queue・readahead）（2026-10-27 ユーザー） | incomplete | p001・p002 済み（崖を直した、連続の読み 384 MB/s・Debian 比 0.95 の一定）、受け入れは Debian の 95% 以上・HMB はやる（ユーザー）、p002・p003 cleared（raw の読み 583 MB/s ≒ Debian の 50%、書き 59%）、次は p004（非同期の BIO・queue・vector、q1617、P1） |
+| [WS299](ws299/ws.md) | MG004 | 5330 の NVMe の読み書きを速くする（512 MiB の崖、転送・queue・readahead）（2026-10-27 ユーザー） | incomplete | p001・p002 済み（崖を直した、連続の読み 384 MB/s・Debian 比 0.95 の一定）、受け入れは Debian の 95% 以上・HMB はやる（ユーザー）、p002・p003 cleared（raw の読み 583 MB/s ≒ Debian の 50%、書き 59%）、p004 は測る口と設計の案まで（256 KiB の command 1 周 約 430 µs のうち CPU 約 160 µs が直列）、2026-10-27 ラップアップで中断（使用量の残り 6%）、再開点は ws.md |
 | [WS300](ws300/ws.md) | MG003 | NVMe と VMD の低電力（S0 idle の VMD の suspend・NVMe の状態、APST・ASPM・LTR）（2026-10-27 ユーザー） | planning | p001・p002（VMD の suspend、WS052 の前提）、約 27 LW |
 | [WS301](ws301/ws.md) | MG004 | CPU の DVFS と P/E core の相対性能の枠組み（UAPI は /dev/system 推し、fan は別 WS 案）（2026-10-27 ユーザー） | planning | p001 調査・設計・HAL と UAPI の案、約 40 LW |
 | [WS302](ws302/ws.md) | MG006 | デスクトップスレッドバランサ DTB（CONFIG_DTB、sched への hint）（2026-10-27 ユーザー） | planning | p001 検討（WS301 p001 の後）、約 32 LW |
