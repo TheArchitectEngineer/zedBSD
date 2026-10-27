@@ -105,3 +105,32 @@
   （Mesa の形: 位置だけの前半 → LDS → 判定 → 生き残った頂点の詰め直しと GS_ALLOC_REQ の数の更新 → 属性の後半）。p006 と p007 を 1 つにまとめるか、
   p006 を「Mesa の形の culling + compaction」に範囲を変えるかは Q1・ユーザーの判断。
 - commit 済みの物（b73115761・bec5dc26f・9b7a462c3）は `amdrdna.vk.ngg=2` の時だけ効き、既定（legacy）と ngg=1 には影響しない。
+
+### 統合後の実装と実機（2026-10-27 14:55〜15:30）
+
+- 実装 commit f54203c87（Mesa の形、ac_nir_lower_ngg.c の add_deferred_attribute_culling・compact_vertices_after_culling、ac_nir.c の
+  ac_nir_repack_invocations_in_workgroup、ac_nir_prerast_utils.c の fully culled の回避に合わせた）:
+  頂点の lane が x/w・y/w・w と「残す」印 0 を LDS へ → barrier → primitive の lane が判定（三角形の時だけ。points・lines は全部残す）、残す primitive が
+  自分の頂点（topology の数だけ）に印 → barrier → 頂点の lane が印を読み、wave ごとの残る数（s_bcnt1）を LDS の wave の語へ → barrier → 各 wave が全 wave
+  の数を読み、前の wave の和（新しい番号の始まり）と subgroup の和（残る頂点数）→ wave 0 が GS_ALLOC_REQ（残る頂点数・全 primitive。0 なら 1・1 を要求し
+  lane 0 が vertex 0 の三角形と NaN の位置を export）→ 残る頂点が新しい番号を自分の場所に、出力（位置・point size・parameter）を新しい番号の場所に
+  書く → barrier → 先頭の lane（残る数だけ）が出力を読んで export → primitive の lane が頂点の新しい番号で語を組んで export（捨てた物は null）。
+  Mesa と違う点: 属性の後回し（位置だけの前半と属性の後半で VS を 2 回走らせる）はせず、VS を 1 回走らせて出力を LDS で運ぶ（hardware に見える
+  export の数・番号・要求の数は Mesa と同じ）。LDS は 128 頂点 × 場所の大きさ + 16 byte（64 KiB を超える program は culling しない）。
+  `s_bcnt1_i32_b32`・`s_min_u32` を encoder と模型に足した。
+- host: compiler host test 58 PASS（+nggc 6 本は 1 wave の subgroup で、参照の判定・残す頂点の番号・要求の数・出力の並び・primitive の語を比べる。
+  「export した頂点はどれかの null でない primitive が使う」の規則も試験で見る）。変異の確かめ: 新しい番号を lane の番号にすると +nggc が FAIL、
+  何も残らない時の要求の頂点数を 2 にすると FAIL。vk host test PASS。vmunix warning 0（sha256 先頭 24b0f273d50f74d7）。
+- 実機（ngg=2、Debian から stick に入れて 1 回の起動）:
+
+| 確認 | 結果 | 証拠 |
+| --- | --- | --- |
+| nggshape 13 種（16 三角 ×1000、5 万 三角の depth・全部裏・tiny・outside・cross・shuffle・cluster・mview・mview+cull・heavy、degenerate、texture） | 全部 ok、止まらない（全部裏の 5 万 三角は drawn 0） | SSH の出力 |
+| mview 1 体の shot（Linux 比） | pixel 差 0 | build/ws291/measure/p006/compact-shot-1 |
+| mview 6500 体の shot | max 1、over15 0（基準 8 pixel より良い） | compact-shot-6500 |
+| scene-1 / 1500 / 6500（`--spin=8 --content=game --present=mailbox`） | 105.3 fps（fence 1.23 ms）/ 64.8 fps（9.06 ms）/ 29.2 fps（fence 30.68 ms、frame 34.08 ms） | compact-scene-1b・1500・6500（scene-1 の 1 回目は起動直後の 792 ms の frame を含む 53 fps） |
+| `measure.sh hang` | vkhang lost → reset 4 ms → loops ok、mview 58 fps、desktop 正常 | compact-hang |
+
+- scene-6500 の GPU: passthrough 41.37 ms → 30.68 ms（−26 %）。Linux（RADV の NGG culling）約 20 ms には届かない。残りの候補: 属性の後回し
+  （捨てる頂点の属性の計算を省く）、LDS の大きさ（6500 体の mview の場所の大きさによる占有の低下）、VGPR の数、guard band・binning（p008）。
+- 未実施: desktop の frame-ops の計測（既定を NGG にするかの判断の材料）、属性の後回し。stick は vmunix-compact1 と ngg=2 で zedBSD 起動中。
