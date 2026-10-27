@@ -12,6 +12,7 @@
 #include <drivers/pci/pci-nvme.h>
 #include <drivers/pci/pci-nvme-protocol.h>
 #include <drivers/pci/pci.h>
+#include <drivers/generic/dma.h>
 #include <kern/kcrt.h>
 
 #include <kern/atomic.h>
@@ -21,6 +22,7 @@
 #include <kern/io-pool.h>
 #include <kern/lock.h>
 #include <kern/page.h>
+#include <kern/pmem.h>
 #include <kern/sched.h>
 #include <kern/thread.h>
 #include <kern/waitq.h>
@@ -35,7 +37,25 @@
 #define NVME_ADMIN_QUEUE_REQUESTED_DEPTH 64U
 #define NVME_IO_QUEUE_REQUESTED_DEPTH 64U
 #define NVME_IO_QUEUE_ID 1U
-#define NVME_IO_BOUNCE_SIZE 4096U
+/*
+ * Each slot's bounce memory, which carries the data of a request that does
+ * not come as physical pages the device can reach (ws299: was one page).
+ */
+#define NVME_IO_BOUNCE_SIZE (64U * 1024U)
+
+/*
+ * The most one command carries, before MDTS narrows it: 2 MiB, which is one
+ * page of PRP list entries after PRP1 with 4 KiB pages, so a list never
+ * chains (ws299).
+ */
+#define NVME_IO_MAX_COMMAND_BYTES (2U * 1024U * 1024U)
+#define NVME_IO_MAX_COMMAND_PAGES (NVME_IO_MAX_COMMAND_BYTES / KERN_PAGE_SIZE)
+
+/* The most one block request carries before the block layer splits it (ws299: was 64 KiB). */
+#define NVME_IO_MAX_BIO_BYTES (1024U * 1024U)
+
+/* How many page-list commands pass between two log lines of the direct and bounced counts. */
+#define NVME_IO_PATH_LOG_EVERY 4096U
 #define NVME_IO_MAX_SLOTS (NVME_IO_QUEUE_REQUESTED_DEPTH - 1U)
 
 /*
@@ -151,10 +171,19 @@ struct drv_nvme_io_lifecycle {
 struct nvme_io_slot {
 	struct drv_nvme_io_lifecycle lifecycle;
 	struct drv_dma_buffer bounce_dma;
+	/* The page of PRP list entries a command of more than two pages names in PRP2 (ws299). */
+	struct drv_dma_buffer prp_list_dma;
+	/* The bus address of every page of the command being built, PRP1 first. */
+	uint64_t *page_bus;
 	struct wait_queue waitq;
 	uint16_t command_id;
 	uint8_t state;
 	unsigned posted;
+	/*
+	 * Set when the slot was failed while its command was posted: the device
+	 * may still move its data until the controller is proven stopped.
+	 */
+	unsigned dma_uncertain;
 	uint32_t epoch;
 	int error;
 };
@@ -163,6 +192,11 @@ struct nvme_io_slot {
 struct nvme_io_chunk {
 	struct nvme_io_slot *slot;
 	uint8_t *bytes;
+	/* The chunk's physical pages, when the request came as a page list (ws299). */
+	const uint64_t *pages;
+	uint32_t page_count;
+	/* Set when the chunk's data went through the slot's bounce memory. */
+	int bounced;
 	size_t length;
 };
 
@@ -247,6 +281,27 @@ struct nvme_controller {
 	uint64_t namespace_blocks;
 	uint32_t namespace_block_size;
 	size_t maximum_transfer_bytes;
+	/*
+	 * Set when the device can move physical pages directly: its DMA is
+	 * coherent and its memory page is the kernel's page (ws299).
+	 */
+	unsigned page_vector;
+	/*
+	 * How many times the I/O path has been proven stopped (controller or bus
+	 * mastering off and the interrupts drained).  A request whose command
+	 * failed while posted waits for it to move before giving its pages
+	 * back (ws299).  Changed under command_lock.
+	 */
+	uint64_t io_dma_quiesce_count;
+	/*
+	 * Page-list commands sent to the pages themselves and through the
+	 * bounce memory (the device could not reach a page), counted for the
+	 * measurement of ws299 and logged every NVME_IO_PATH_LOG_EVERY of them.
+	 */
+	uint64_t io_direct_commands;
+	uint64_t io_bounced_commands;
+	/* The bytes of each slot's bounce memory: NVME_IO_BOUNCE_SIZE, or a page when that much could not be had. */
+	size_t io_bounce_size;
 
 	struct spinlock command_lock;
 	struct wait_queue io_state_waitq;
@@ -483,6 +538,11 @@ static int nvme_io_post(struct nvme_controller *controller, struct nvme_io_slot 
 static int nvme_io_wait_completion(struct nvme_controller *controller, struct nvme_io_slot *slot, int *recovery_owner);
 static void nvme_io_slot_release(struct nvme_controller *controller, struct nvme_io_slot *slot);
 static int nvme_io_execute(struct nvme_controller *controller, uint8_t opcode, uint64_t first_block, uint32_t block_count, void *bytes);
+static int nvme_io_start(struct nvme_controller *controller, uint8_t opcode, uint64_t first_block, uint32_t *block_count, void *bytes, const uint64_t *pages, int may_wait, struct nvme_io_slot **result, int *bounced);
+static int nvme_io_build_command(struct nvme_controller *controller, struct nvme_io_slot *slot, uint8_t opcode, uint64_t first_block, uint32_t *block_count, void *bytes, const uint64_t *pages, struct drv_nvme_command *command, int *bounced);
+static void nvme_io_bounce_pages(struct nvme_controller *controller, struct nvme_io_slot *slot, const uint64_t *pages, uint32_t page_count, int to_bounce);
+static void nvme_io_wait_dma_quiesced(struct nvme_controller *controller, uint64_t fence);
+static void nvme_io_slot_dma_free(struct drv_dma_device *dma, struct nvme_io_slot *slot);
 static int nvme_io_flush_internal(struct nvme_controller *controller);
 static int nvme_probe_permitted(struct nvme_controller *controller);
 static int nvme_probe_namespace(struct nvme_controller *controller);
@@ -3461,11 +3521,8 @@ nvme_dma_free(
 				__builtin_trap();
 		}
 
-		/* Handles the address availability. */
-		if (controller->io_slots[slot].bounce_dma.address != NULL) {
-			drv_dma_free_coherent(
-				dma, &controller->io_slots[slot].bounce_dma);
-		}
+		/* Gives back the slot's bounce, PRP list and page addresses. */
+		nvme_io_slot_dma_free(dma, &controller->io_slots[slot]);
 	}
 
 	/* Handles the address availability. */
@@ -3811,6 +3868,9 @@ nvme_io_fail_all_locked(
 			else
 				controller->io_fault = EIO;
 			slot->posted = 0;
+
+			/* The device may still move this command's data until it is stopped. */
+			slot->dma_uncertain = 1;
 		}
 
 		waitq_wake_all(&slot->waitq);
@@ -4531,6 +4591,7 @@ nvme_io_slot_acquire(
 			slot->error = 0;
 			slot->state = NVME_IO_SLOT_ACTIVE;
 			slot->posted = 0;
+			slot->dma_uncertain = 0;
 			slot->epoch = controller->io_epoch;
 			controller->io_owned++;
 			*result = slot;
@@ -4725,16 +4786,24 @@ nvme_io_slot_release(
 	spin_unlock_irqrestore(&controller->command_lock, irq);
 }
 
-/* Acquire and post, leaving every acquired slot for the caller to retire. */
+/*
+ * Acquires a slot, builds the command and posts it.
+ *
+ * Every acquired slot is left for the caller to retire, even when the post
+ * fails.  *block_count may come back smaller when a page list has to go
+ * through the bounce memory, which holds less than one command can carry.
+ */
 static int
 nvme_io_start(
 	struct nvme_controller *controller,
 	uint8_t opcode,
 	uint64_t first_block,
-	uint32_t block_count,
+	uint32_t *block_count,
 	void *bytes,
+	const uint64_t *pages,
 	int may_wait,
-	struct nvme_io_slot **result)
+	struct nvme_io_slot **result,
+	int *bounced)
 {
 	struct drv_nvme_command command;
 	struct nvme_io_slot *slot;
@@ -4742,32 +4811,259 @@ nvme_io_start(
 	int error;
 
 	*result = NULL;
+	*bounced = 0;
+
+	/* Takes a free slot, which owns the command's DMA memory. */
 	error = nvme_io_slot_acquire(controller, result, may_wait);
 	if (error != 0)
 		return error;
 	slot = *result;
 
-	if (opcode == DRV_NVME_NVM_WRITE) {
-		kern_memcpy(slot->bounce_dma.address, bytes,
-		       (size_t)block_count * controller->namespace_block_size);
-	}
-
-	if (!drv_nvme_io_command(&command, slot->command_id, opcode,
-		controller->namespace_id, first_block, block_count,
-		opcode == DRV_NVME_NVM_FLUSH ? 0U :
-		    slot->bounce_dma.device_address) ||
-	    (opcode != DRV_NVME_NVM_FLUSH &&
-	     !drv_nvme_single_prp_transfer_valid(slot->bounce_dma.device_address,
-		controller->namespace_block_size, block_count,
-		controller->page_size))) {
+	/* Builds the command; one the rules refuse stops the queue as before. */
+	error = nvme_io_build_command(controller, slot, opcode, first_block,
+				      block_count, bytes, pages, &command,
+				      bounced);
+	if (error != 0) {
 		irq = spin_lock_irqsave(&controller->command_lock);
 		nvme_io_fail_all_locked(controller, EINVAL);
 		spin_unlock_irqrestore(&controller->command_lock, irq);
 		return EINVAL;
 	}
 
-	return nvme_io_post(controller, slot, &command,
-	    opcode != DRV_NVME_NVM_FLUSH);
+	/* Posts it; a failed post also leaves the slot to the caller. */
+	error = nvme_io_post(controller, slot, &command,
+			     opcode != DRV_NVME_NVM_FLUSH);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the command is on the queue. */
+	return 0;
+}
+
+/*
+ * Builds one command in a slot: a flush, or a read or write whose data is
+ * the caller's pages or the slot's bounce memory.
+ */
+static int
+nvme_io_build_command(
+	struct nvme_controller *controller,
+	struct nvme_io_slot *slot,
+	uint8_t opcode,
+	uint64_t first_block,
+	uint32_t *block_count,
+	void *bytes,
+	const uint64_t *pages,
+	struct drv_nvme_command *command,
+	int *bounced)
+{
+	struct drv_dma_device *dma;
+	uint32_t blocks_per_page;
+	uint32_t requested;
+	uint32_t page_count;
+	uint32_t index;
+	uint64_t total;
+	uint64_t bus;
+	size_t length;
+	int built;
+	int error;
+
+	/* A flush moves no data. */
+	if (opcode == DRV_NVME_NVM_FLUSH) {
+		built = drv_nvme_io_command(command, slot->command_id, opcode,
+					    controller->namespace_id, 0U, 0U, 0U);
+		if (!built)
+			return EINVAL;
+		return 0;
+	}
+
+	/*
+	 * Names the device's bus address of every page of a page list.  The
+	 * command stops before the first page the device cannot reach; when
+	 * that is the first page, the command carries the unreachable pages
+	 * through the bounce memory instead, up to the next reachable one.
+	 */
+	page_count = 0;
+	if (pages != NULL) {
+		blocks_per_page = controller->page_size /
+		    controller->namespace_block_size;
+		requested = *block_count / blocks_per_page;
+		dma = drv_pci_device_dma(controller->pci);
+		for (index = 0; index < requested; index++) {
+			error = drv_dma_physical_address(dma, pages[index],
+							 controller->page_size,
+							 &slot->page_bus[index]);
+			if (error != 0)
+				break;
+		}
+
+		/* A reachable prefix goes as it is. */
+		page_count = index;
+		if (page_count != 0U)
+			*block_count = page_count * blocks_per_page;
+
+		/* An unreachable first page starts a bounced run of unreachable pages. */
+		if (page_count == 0U) {
+			*bounced = 1;
+			for (index = 1; index < requested; index++) {
+				error = drv_dma_physical_address(dma, pages[index],
+								 controller->page_size,
+								 &bus);
+				if (error == 0)
+					break;
+			}
+			*block_count = index * blocks_per_page;
+		}
+
+		/* Counts the path the command takes, and now and then says how they divide. */
+		if (*bounced)
+			total = atomic_u64_fetch_add_relaxed(&controller->io_bounced_commands, 1U);
+		else
+			total = atomic_u64_fetch_add_relaxed(&controller->io_direct_commands, 1U);
+		if ((total + 1U) % NVME_IO_PATH_LOG_EVERY == 0U) {
+			kern_logf("nvme: page-list commands direct=%llu bounced=%llu\n",
+				  (unsigned long long)controller->io_direct_commands,
+				  (unsigned long long)controller->io_bounced_commands);
+		}
+	}
+
+	/*
+	 * Unreachable pages, or a request that came as one contiguous buffer,
+	 * go through the bounce memory, which holds io_bounce_size bytes.
+	 */
+	if (pages == NULL || *bounced) {
+		length = (size_t)*block_count * controller->namespace_block_size;
+		if (length > controller->io_bounce_size) {
+			*block_count = (uint32_t)(controller->io_bounce_size /
+			    controller->namespace_block_size);
+			length = (size_t)*block_count *
+			    controller->namespace_block_size;
+		}
+
+		/* A write's data goes into the bounce before the device reads it. */
+		if (opcode == DRV_NVME_NVM_WRITE && pages == NULL)
+			kern_memcpy(slot->bounce_dma.address, bytes, length);
+		if (opcode == DRV_NVME_NVM_WRITE && pages != NULL) {
+			nvme_io_bounce_pages(controller, slot, pages,
+					     (uint32_t)(length / controller->page_size), 1);
+		}
+
+		/* The bounce is one contiguous run, so its pages follow each other. */
+		page_count = (uint32_t)((length + controller->page_size - 1U) /
+					controller->page_size);
+		for (index = 0; index < page_count; index++) {
+			slot->page_bus[index] = slot->bounce_dma.device_address +
+			    (uint64_t)index * controller->page_size;
+		}
+	}
+
+	/* Builds the command around the first page, then its PRP entries. */
+	built = drv_nvme_io_command(command, slot->command_id, opcode,
+				    controller->namespace_id, first_block,
+				    *block_count, slot->page_bus[0]);
+	if (!built)
+		return EINVAL;
+	built = drv_nvme_prp_fill(command, slot->page_bus, page_count,
+				  controller->page_size,
+				  slot->prp_list_dma.address,
+				  slot->prp_list_dma.device_address,
+				  controller->page_size / 8U);
+	if (!built)
+		return EINVAL;
+
+	/* Succeeded: the command is ready to post. */
+	return 0;
+}
+
+/* Copies a page list's data into the slot's bounce memory, or back out of it. */
+static void
+nvme_io_bounce_pages(
+	struct nvme_controller *controller,
+	struct nvme_io_slot *slot,
+	const uint64_t *pages,
+	uint32_t page_count,
+	int to_bounce)
+{
+	uint8_t *bounce;
+	void *page;
+	uint32_t index;
+
+	/* Moves one whole page at a time through its kernel view. */
+	bounce = slot->bounce_dma.address;
+	for (index = 0; index < page_count; index++) {
+		page = kern_pmem_to_kernel(pages[index]);
+		if (to_bounce) {
+			kern_memcpy(bounce + (size_t)index * controller->page_size,
+				    page, controller->page_size);
+		} else {
+			kern_memcpy(page,
+				    bounce + (size_t)index * controller->page_size,
+				    controller->page_size);
+		}
+	}
+}
+
+/*
+ * Waits until the I/O path has been proven stopped since fence was read.
+ *
+ * A command that failed while posted may still move data into or out of a
+ * caller's pages; they are handed back only once no data can move.  If the
+ * controller never stops (a quarantine that could not turn the bus master
+ * off), the request keeps its pages and waits, as the bounce memory of
+ * such a controller is kept.
+ */
+static void
+nvme_io_wait_dma_quiesced(
+	struct nvme_controller *controller,
+	uint64_t fence)
+{
+	unsigned long irq;
+	uint64_t deadline;
+
+	irq = spin_lock_irqsave(&controller->command_lock);
+
+	/*
+	 * Sleeps a timeout at a time until the stop has been recorded, and
+	 * runs the recovery itself when it is needed and nobody has taken it.
+	 */
+	while (controller->io_dma_quiesce_count == fence) {
+		if (controller->io_recovery_needed &&
+		    !controller->io_recovery_busy &&
+		    !controller->detach_busy) {
+			controller->io_recovery_busy = 1;
+			spin_unlock_irqrestore(&controller->command_lock, irq);
+			(void)nvme_io_recover(controller);
+			irq = spin_lock_irqsave(&controller->command_lock);
+			continue;
+		}
+
+		deadline = sched_ticks() + controller->timeout_ticks;
+		(void)nvme_io_wait_locked(controller,
+					  &controller->io_state_waitq,
+					  deadline, &irq);
+	}
+
+	spin_unlock_irqrestore(&controller->command_lock, irq);
+}
+
+/* Gives back one slot's bounce, PRP list and page address array. */
+static void
+nvme_io_slot_dma_free(
+	struct drv_dma_device *dma,
+	struct nvme_io_slot *slot)
+{
+	/* The bounce memory. */
+	if (slot->bounce_dma.address != NULL)
+		drv_dma_free_coherent(dma, &slot->bounce_dma);
+
+	/* The PRP list page. */
+	if (slot->prp_list_dma.address != NULL)
+		drv_dma_free_coherent(dma, &slot->prp_list_dma);
+
+	/* The page address array. */
+	if (slot->page_bus != NULL) {
+		kern_free(slot->page_bus);
+		slot->page_bus = NULL;
+	}
 }
 
 /* Internal and external FLUSH share the same slot and recovery machinery. */
@@ -4781,10 +5077,11 @@ nvme_io_execute(
 {
 	struct nvme_io_slot *slot;
 	int recovery_owner;
+	int bounced;
 	int error;
 
-	error = nvme_io_start(controller, opcode, first_block, block_count,
-	    bytes, 1, &slot);
+	error = nvme_io_start(controller, opcode, first_block, &block_count,
+	    bytes, NULL, 1, &slot, &bounced);
 	if (slot == NULL)
 		return error;
 
@@ -4814,6 +5111,9 @@ nvme_io_pipeline(
 	uint64_t block = bio->b_mapped_block;
 	uint32_t remaining = bio->b_block_count;
 	uint8_t *bytes = bio->b_data;
+	const uint64_t *pages = bio->b_pages;
+	uint32_t blocks_per_page;
+	uint64_t fence;
 	uint8_t opcode;
 	uint32_t count;
 	unsigned head = 0;
@@ -4826,10 +5126,25 @@ nvme_io_pipeline(
 	int error = 0;
 	int current;
 	int claimed;
+	int bounced;
+	int dma_uncertain = 0;
 	int recovery_owner = 0;
 
 	opcode = bio->b_op == BIO_READ ? DRV_NVME_NVM_READ : DRV_NVME_NVM_WRITE;
 	*transferred = 0;
+	fence = 0;
+
+	/* A page list goes only to a controller that announced it, in whole pages. */
+	blocks_per_page = 0;
+	if (pages != NULL) {
+		if (!controller->page_vector)
+			return EINVAL;
+		blocks_per_page = controller->page_size /
+		    controller->namespace_block_size;
+		if (blocks_per_page == 0U || remaining % blocks_per_page != 0U)
+			return EINVAL;
+	}
+
 	while (remaining != 0U || pending != 0U) {
 		while (!stopped && remaining != 0U &&
 		    pending < NVME_IO_PIPELINE_DEPTH) {
@@ -4844,17 +5159,27 @@ nvme_io_pipeline(
 			if (stopped)
 				break;
 
-			count = drv_nvme_io_chunk_blocks(remaining,
-			    controller->namespace_block_size, NVME_IO_BOUNCE_SIZE,
-			    controller->maximum_transfer_bytes);
+			/* A page list's command is whole pages up to the command limit. */
+			if (pages != NULL) {
+				count = drv_nvme_io_chunk_blocks(remaining,
+				    controller->namespace_block_size,
+				    controller->maximum_transfer_bytes,
+				    controller->maximum_transfer_bytes);
+				count -= count % blocks_per_page;
+			} else {
+				count = drv_nvme_io_chunk_blocks(remaining,
+				    controller->namespace_block_size,
+				    controller->io_bounce_size,
+				    controller->maximum_transfer_bytes);
+			}
 			if (count == 0U) {
 				launch_error = EINVAL;
 				stopped = 1;
 				break;
 			}
 
-			current = nvme_io_start(controller, opcode, block, count,
-			    bytes, pending == 0U, &slot);
+			current = nvme_io_start(controller, opcode, block, &count,
+			    bytes, pages, pending == 0U, &slot, &bounced);
 			/* No blocking acquisition while this BIO has slots to drain. */
 			if (current == EAGAIN && slot == NULL && pending != 0U)
 				break;
@@ -4868,11 +5193,19 @@ nvme_io_pipeline(
 			entry = &chunks[index];
 			entry->slot = slot;
 			entry->bytes = bytes;
+			entry->pages = pages;
+			entry->page_count = 0;
+			if (pages != NULL)
+				entry->page_count = count / blocks_per_page;
+			entry->bounced = bounced;
 			entry->length = (size_t)count * controller->namespace_block_size;
 			pending++;
 			block += count;
 			remaining -= count;
-			bytes += entry->length;
+			if (pages != NULL)
+				pages += entry->page_count;
+			else
+				bytes += entry->length;
 			if (current != 0)
 				stopped = 1;
 		}
@@ -4889,12 +5222,35 @@ nvme_io_pipeline(
 				error = current;
 			stopped = 1;
 		}
+
+		/*
+		 * A page-list command that failed while posted may still move
+		 * data in the caller's pages; the request waits for the
+		 * controller to be stopped before it gives them back.  The stop
+		 * cannot have happened yet, because this request still owns the
+		 * slot and a stop waits for every slot to be given back.
+		 */
+		if (entry->pages != NULL && !entry->bounced) {
+			irq = spin_lock_irqsave(&controller->command_lock);
+			if (entry->slot->dma_uncertain && !dma_uncertain) {
+				dma_uncertain = 1;
+				fence = controller->io_dma_quiesce_count;
+			}
+			spin_unlock_irqrestore(&controller->command_lock, irq);
+		}
+
 		/* Report only the successful prefix, even if later writes completed. */
 		if (error == 0) {
-			if (opcode == DRV_NVME_NVM_READ) {
+			if (opcode == DRV_NVME_NVM_READ && entry->pages == NULL) {
 				kern_io_read_barrier();
 				kern_memcpy(entry->bytes, entry->slot->bounce_dma.address,
 				    entry->length);
+			} else if (opcode == DRV_NVME_NVM_READ && entry->bounced) {
+				kern_io_read_barrier();
+				nvme_io_bounce_pages(controller, entry->slot,
+				    entry->pages, entry->page_count, 0);
+			} else if (opcode == DRV_NVME_NVM_READ) {
+				kern_io_read_barrier();
 			}
 			*transferred += entry->length;
 		}
@@ -4906,6 +5262,11 @@ nvme_io_pipeline(
 	/* Recovery waits for io_owned == 0, including all of this BIO's slots. */
 	if (recovery_owner)
 		(void)nvme_io_recover(controller);
+
+	/* Keeps the pages until no failed command can still move their data. */
+	if (dma_uncertain)
+		nvme_io_wait_dma_quiesced(controller, fence);
+
 	if (error != 0)
 		return error;
 	return launch_error;
@@ -5127,7 +5488,7 @@ nvme_probe_namespace(
 		UINT32_C(1) << namespace_profile.block_size_shift;
 	controller->maximum_transfer_bytes = drv_nvme_max_transfer_bytes(
 		controller_profile.maximum_transfer_shift,
-		controller->page_size, NVME_IO_BOUNCE_SIZE);
+		controller->page_size, NVME_IO_MAX_COMMAND_BYTES);
 
 	/* Handles the controller condition. */
 	if (controller->maximum_transfer_bytes <
@@ -5159,7 +5520,18 @@ nvme_probe_namespace(
 	disk->d_block_size = controller->namespace_block_size;
 	disk->d_block_count = namespace_profile.block_count;
 	/* The BIO may span commands; MDTS and PRP limits apply to each chunk. */
-	disk->d_max_transfer_blocks = KERN_IO_BATCH_MAX / disk->d_block_size;
+	disk->d_max_transfer_blocks = NVME_IO_MAX_BIO_BYTES / disk->d_block_size;
+
+	/*
+	 * Takes physical page lists when the device reaches the kernel's pages
+	 * directly: coherent DMA and a memory page equal to the kernel's (ws299).
+	 */
+	controller->page_vector = 0;
+	if (drv_dma_device_is_coherent(drv_pci_device_dma(controller->pci)) &&
+	    controller->page_size == KERN_PAGE_SIZE)
+		controller->page_vector = 1;
+	if (controller->page_vector)
+		disk->d_flags |= DISK_PAGE_VECTOR;
 	disk->d_ops = &nvme_disk_ops;
 	disk->d_data = controller;
 
@@ -5285,11 +5657,8 @@ nvme_io_dma_free_unpublished(
 
 	/* Process each remaining element. */
 	for (index = 0; index < NVME_IO_MAX_SLOTS; index++) {
-		/* Handles the address availability. */
-		if (controller->io_slots[index].bounce_dma.address != NULL) {
-			drv_dma_free_coherent(
-				dma, &controller->io_slots[index].bounce_dma);
-		}
+		/* Gives back the slot's bounce, PRP list and page addresses. */
+		nvme_io_slot_dma_free(dma, &controller->io_slots[index]);
 	}
 
 	/* Handles the address availability. */
@@ -5314,6 +5683,7 @@ nvme_io_dma_allocate(
 	struct drv_dma_device *dma = drv_pci_device_dma(controller->pci);
 	size_t submission_bytes, completion_bytes;
 	unsigned index;
+	unsigned retry;
 	int error;
 
 	controller->io_queue_depth = drv_nvme_selected_queue_depth(
@@ -5346,12 +5716,28 @@ nvme_io_dma_allocate(
 				       &controller->io_completion_dma);
 	if (error != 0)
 		goto fail;
-	/* Process each remaining element. */
-	for (index = 0; index < controller->io_slot_count; index++) {
-		/* Checks the operation status. */
+
+	/*
+	 * Gives every slot its bounce, PRP list page and page address array.
+	 * When the larger bounce cannot be had for every slot, all of them
+	 * start again with one-page bounces, as before ws299.
+	 */
+	controller->io_bounce_size = NVME_IO_BOUNCE_SIZE;
+	index = 0;
+	while (index < controller->io_slot_count) {
+		/* Takes the slot's bounce memory. */
 		error = drv_dma_alloc_coherent(
-			dma, NVME_IO_BOUNCE_SIZE, controller->page_size,
+			dma, controller->io_bounce_size, controller->page_size,
 			&controller->io_slots[index].bounce_dma);
+		if (error != 0 && controller->io_bounce_size > controller->page_size) {
+			for (retry = 0; retry < index; retry++)
+				nvme_io_slot_dma_free(dma, &controller->io_slots[retry]);
+			kern_logf("nvme: no memory for %u-byte bounces; using one page each\n",
+				  (unsigned)controller->io_bounce_size);
+			controller->io_bounce_size = controller->page_size;
+			index = 0;
+			continue;
+		}
 		if (error != 0)
 			goto fail;
 
@@ -5359,10 +5745,36 @@ nvme_io_dma_allocate(
 		if ((controller->io_slots[index].bounce_dma.device_address &
 		     (controller->page_size - 1U)) != 0U ||
 		    controller->io_slots[index].bounce_dma.size <
-			    NVME_IO_BOUNCE_SIZE) {
+			    controller->io_bounce_size) {
 			error = EIO;
 			goto fail;
 		}
+
+		/* Takes the page the slot's PRP lists are written in (ws299). */
+		error = drv_dma_alloc_coherent(
+			dma, controller->page_size, controller->page_size,
+			&controller->io_slots[index].prp_list_dma);
+		if (error != 0)
+			goto fail;
+
+		/* A list must be one whole aligned page. */
+		if ((controller->io_slots[index].prp_list_dma.device_address &
+		     (controller->page_size - 1U)) != 0U ||
+		    controller->io_slots[index].prp_list_dma.size <
+			    controller->page_size) {
+			error = EIO;
+			goto fail;
+		}
+
+		/* Takes the array the bus address of each page of a command is built in. */
+		controller->io_slots[index].page_bus = kern_calloc(
+			NVME_IO_MAX_COMMAND_PAGES, sizeof(uint64_t));
+		if (controller->io_slots[index].page_bus == NULL) {
+			error = ENOMEM;
+			goto fail;
+		}
+
+		index++;
 	}
 
 	/* Handles the controller condition. */
@@ -5701,6 +6113,13 @@ nvme_io_lifecycles_quiesce(
 			error = EIO;
 		slot->posted = 0;
 	}
+
+	/*
+	 * Records the proof that no command's data moves any more, and wakes
+	 * the requests waiting for it before they give their pages back.
+	 */
+	controller->io_dma_quiesce_count++;
+	waitq_wake_all(&controller->io_state_waitq);
 
 	spin_unlock_irqrestore(&controller->command_lock, irq);
 

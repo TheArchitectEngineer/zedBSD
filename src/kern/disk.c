@@ -3372,9 +3372,27 @@ bio_admit(
 		bio->b_initialized = 1;
 	}
 
+	/*
+	 * A transfer names its data one way only: b_data, or a page list whose
+	 * pages hold exactly its blocks (ws299).  A flush names neither.
+	 */
+	if (bio->b_op != BIO_FLUSH && bio->b_pages != NULL) {
+		if (bio->b_data != NULL)
+			return EINVAL;
+		if (bio->b_page_count == 0 || disk->d_block_size == 0)
+			return EINVAL;
+		if ((uint64_t)bio->b_page_count * KERN_PAGE_SIZE !=
+		    (uint64_t)bio->b_block_count * disk->d_block_size)
+			return EINVAL;
+	} else if (bio->b_op != BIO_FLUSH && bio->b_data == NULL) {
+		return EINVAL;
+	} else if (bio->b_op == BIO_FLUSH && bio->b_pages != NULL) {
+		return EINVAL;
+	}
+
 	/* A transfer needs a range inside the disk; a flush needs none. */
 	if (bio->b_op != BIO_FLUSH) {
-		if (bio->b_block_count == 0 || bio->b_data == NULL)
+		if (bio->b_block_count == 0)
 			return EINVAL;
 		if (bio->b_block >= disk->d_block_count ||
 		    bio->b_block_count > disk->d_block_count - bio->b_block)
@@ -3401,6 +3419,11 @@ bio_admit(
 
 	if (leaf->d_ops == NULL || leaf->d_ops->submit == NULL)
 		return EOPNOTSUPP;
+
+	/* A page list reaches only a driver that moves pages itself. */
+	if (bio->b_pages != NULL && (leaf->d_flags & DISK_PAGE_VECTOR) == 0)
+		return EOPNOTSUPP;
+
 	if (bio->b_op != BIO_FLUSH &&
 	    (mapped >= leaf->d_block_count ||
 	     bio->b_block_count > leaf->d_block_count - mapped))
@@ -4010,6 +4033,159 @@ disk_transfer_direct(
 		backing_mutation_end(&guard);
 
 	/* Reports the completed transfer. */
+	return 0;
+}
+
+/*
+ * Reports whether a disk's leaf moves physical page lists itself.
+ */
+int
+disk_page_vector_supported(
+	struct disk *disk)
+{
+	struct disk *leaf;
+	bool enabled;
+	int supported;
+
+	/* A missing disk moves nothing. */
+	if (disk == NULL)
+		return 0;
+
+	/* Walks to the leaf under the registry lock and reads its capability. */
+	enabled = disk_lock();
+
+	leaf = disk;
+	while (leaf->d_parent != NULL)
+		leaf = leaf->d_parent;
+	supported = 0;
+	if ((leaf->d_flags & DISK_PAGE_VECTOR) != 0)
+		supported = 1;
+
+	disk_unlock(enabled);
+
+	/* Succeeded: reports the leaf's capability. */
+	return supported;
+}
+
+/*
+ * Transfers blocks to or from whole physical pages, waiting for each request.
+ */
+int
+disk_transfer_pages_context(
+	struct disk *disk,
+	enum bio_op op,
+	uint64_t block,
+	uint32_t count,
+	const uint64_t *pages,
+	uint32_t page_count,
+	uint32_t *completed,
+	const struct io_context *context)
+{
+	struct io_context child;
+	struct backing_mutation_guard guard;
+	struct bio bio;
+	uint32_t blocks_per_page;
+	uint32_t chunk;
+	uint32_t chunk_pages;
+	size_t expected;
+	int guarded;
+	int error;
+
+	/* Nothing is confirmed until a request completes. */
+	if (completed != NULL)
+		*completed = 0;
+
+	/* Rejects a missing operand or a page list that is not exactly the blocks. */
+	if (disk == NULL || pages == NULL || count == 0 || page_count == 0)
+		return EINVAL;
+	if (op != BIO_READ && op != BIO_WRITE)
+		return EINVAL;
+	if (disk->d_block_size == 0 || disk->d_block_size > KERN_PAGE_SIZE)
+		return EINVAL;
+	if (KERN_PAGE_SIZE % disk->d_block_size != 0)
+		return EINVAL;
+	blocks_per_page = KERN_PAGE_SIZE / disk->d_block_size;
+	if ((uint64_t)page_count * blocks_per_page != count)
+		return EINVAL;
+
+	/* Leaves a disk whose driver cannot move pages to the caller's other path. */
+	if (!disk_page_vector_supported(disk))
+		return EOPNOTSUPP;
+
+	/* Runs the requests as a drain under the caller's context. */
+	error = io_context_child(&child, context, IO_CONTEXT_DRAIN);
+	if (error != 0)
+		return error;
+
+	/* A write excludes conflicting claims on the range, as a direct write does. */
+	guarded = 0;
+	if (op == BIO_WRITE) {
+		error = backing_mutation_begin_disk(disk, block, count, NULL, &guard);
+		if (error != 0)
+			return error;
+		guarded = 1;
+	}
+
+	/* Sends whole pages at a time, splitting where the driver asks. */
+	while (count != 0) {
+		chunk = count;
+		if (disk->d_max_transfer_blocks != 0 &&
+		    chunk > disk->d_max_transfer_blocks) {
+			/* A split keeps whole pages; a limit below one page cannot be met. */
+			chunk = disk->d_max_transfer_blocks - disk->d_max_transfer_blocks % blocks_per_page;
+			if (chunk == 0) {
+				error = EINVAL;
+				break;
+			}
+		}
+		chunk_pages = chunk / blocks_per_page;
+
+		/* Describes the chunk by its pages and waits for it. */
+		kern_memset(&bio, 0, sizeof(bio));
+		bio.b_context = child;
+		bio.b_op = op;
+		bio.b_block = block;
+		bio.b_block_count = chunk;
+		bio.b_pages = pages;
+		bio.b_page_count = chunk_pages;
+		error = bio_submit(disk, &bio);
+		if (error == 0)
+			error = bio_wait(&bio);
+
+		/*
+		 * EOPNOTSUPP is the caller's sign that nothing was sent and the
+		 * other path may be taken; once a request has gone to the
+		 * driver, a refusal is an I/O error.
+		 */
+		if (error == EOPNOTSUPP)
+			error = EIO;
+		if (error != 0)
+			break;
+
+		/* A short transfer is an I/O error. */
+		expected = (size_t)chunk * disk->d_block_size;
+		if (bio.b_transferred != expected) {
+			error = EIO;
+			break;
+		}
+
+		/* Confirms the chunk and moves past it. */
+		if (completed != NULL)
+			*completed += chunk;
+		block += chunk;
+		count -= chunk;
+		pages += chunk_pages;
+	}
+
+	/* Ends the write's exclusion whatever happened. */
+	if (guarded)
+		backing_mutation_end(&guard);
+
+	/* Reports why the transfer stopped. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: every page moved. */
 	return 0;
 }
 

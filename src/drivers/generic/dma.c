@@ -10,6 +10,7 @@
  */
 
 #include <drivers/generic/dma.h>
+#include <drivers/generic/dma-range.h>
 #include <uapi/errno.h>
 #include <kern/io-stats.h>
 #include <kern/cache-memory.h>
@@ -657,6 +658,61 @@ drv_dma_map(
 
 	/* Failed. */
 	return ENOTSUP;
+}
+
+/*
+ * Gives the bus address a device uses for memory the caller owns.
+ *
+ * This is for memory outside the device's own coherent allocations whose
+ * physical address the caller knows, such as a buffer-cache page (ws299).
+ * Only a coherent device is served, because one that does not snoop the
+ * caches would need cache maintenance this call does not do; every other
+ * case, and a range outside the device's reach, fails, and the caller moves
+ * the data through its own bounce memory instead.  The caller keeps the
+ * memory until the device has finished with it.
+ */
+int
+drv_dma_physical_address(
+	struct drv_dma_device *device,
+	uint64_t paddr,
+	size_t size,
+	uint64_t *bus_address)
+{
+	int reachable;
+	int error;
+
+	/* Refuses a call that names no device or no output. */
+	if (device == NULL || bus_address == NULL)
+		return EINVAL;
+
+	/* Holds the device open against destruction while it is read. */
+	error = device_operation_begin(device, 0);
+	if (error != 0)
+		return error;
+
+	/* A device that does not snoop the caches is left to its bounce memory. */
+	if (!device->constraints.coherent) {
+		device_operation_end(device);
+		return EINVAL;
+	}
+
+	/* Translates the range under every limit the device was created with. */
+	reachable = drv_dma_range_bus_address(device->constraints.address_bits,
+					      device->constraints.max_segment_size,
+					      device->constraints.segment_boundary,
+					      device->bus_offset,
+					      device->physical_limit,
+					      paddr,
+					      size,
+					      bus_address);
+	device_operation_end(device);
+
+	/* A range the device cannot reach directly is refused. */
+	if (!reachable)
+		return EINVAL;
+
+	/* Succeeded: the device reaches the range at *bus_address. */
+	return 0;
 }
 
 /*

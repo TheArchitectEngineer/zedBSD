@@ -94,6 +94,13 @@ int drv_dma_map(struct drv_dma_device *device, void *address, size_t size,
 		struct drv_dma_mapping **result);
 void drv_dma_unmap(struct drv_dma_device *device,
 		   struct drv_dma_mapping *mapping);
+/*
+ * Gives the bus address of caller-owned memory the caller knows the physical
+ * address of.  Only a coherent device is served, and only for a range inside
+ * its reach; anything else fails and the caller uses bounce memory (ws299).
+ */
+int drv_dma_physical_address(struct drv_dma_device *device, uint64_t paddr,
+			     size_t size, uint64_t *bus_address);
 
 unsigned drv_dma_mapping_segment_count(const struct drv_dma_mapping *mapping);
 int drv_dma_mapping_segment(const struct drv_dma_mapping *mapping,
