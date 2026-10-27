@@ -81,6 +81,12 @@ struct flock_record {
 #define O_SYNC      0x20000
 #define O_NOFOLLOW  0x40000
 #define O_CLOFORK   0x80000
+/*
+ * A block device opened with O_DIRECT moves data between the caller's buffer
+ * and the device without the buffer cache.  Offsets and lengths are whole
+ * logical blocks; any other file refuses the flag.
+ */
+#define O_DIRECT    0x100000
 
 #define AT_FDCWD            (-100)
 #define AT_SYMLINK_NOFOLLOW 0x0100

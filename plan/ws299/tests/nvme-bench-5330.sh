@@ -32,7 +32,7 @@ SO='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeou
 RANDREAD_DIR=${RANDREAD_DIR:-build/tmp/randread}
 ENVS="REST=${REST:-30} RAND_SECONDS=${RAND_SECONDS:-15}"
 mkdir -p "$LOGS"
-[ -x "$RANDREAD_DIR/patwrite-zedbsd" ] && [ -x "$RANDREAD_DIR/patwrite-linux" ] ||
+[ -x "$RANDREAD_DIR/directio-zedbsd" ] && [ -x "$RANDREAD_DIR/directio-linux" ] ||
 	sh $T/build-randread.sh "$RANDREAD_DIR" > /dev/null || { echo "nvme-bench: FAIL: randread build"; exit 1; }
 
 say() {
@@ -58,7 +58,7 @@ debian_up() {
 exec 9> /tmp/i915-hw.lock
 flock 9
 debian_up
-TO=60 timeout 60 scp -q $T/bench-debian.sh "$RANDREAD_DIR/randread-linux" "$RANDREAD_DIR/patwrite-linux" \
+TO=60 timeout 60 scp -q $T/bench-debian.sh "$RANDREAD_DIR/randread-linux" "$RANDREAD_DIR/patwrite-linux" "$RANDREAD_DIR/directio-linux" \
     plan/tools/hw5330/5330-nvme-write.sh plan/tools/hw5330/ufs-grow.py "$HOST:ws245/" ||
 	{ say "FAIL: copy of the helpers"; exit 1; }
 lin 'sudo -n sh $HOME/ws245/bench-debian.sh p6save' > /dev/null || { say "FAIL: p6 save"; exit 1; }
@@ -98,7 +98,7 @@ for mode in $MODES; do
 	run=$mode
 	envrun=$ENVS
 	case "$mode" in
-	p7rawwrite | p7fswrite)
+	p7rawwrite | p7fswrite | p7direct)
 		lin 'sudo -n sh $HOME/ws245/bench-debian.sh p7fresh' > /dev/null || { say "FAIL: p7 fresh"; exit 1; } ;;
 	p7ufswrite)
 		# The root's kind of UFS on p7 (P7_IMAGE, an image on the 5330), written to without mkfs.
@@ -120,7 +120,7 @@ for mode in $MODES; do
 	done
 	say "zedBSD up after $(($(date +%s) - start + 20)) s ($mode)"
 	sleep "${SETTLE:-30}"
-	TO=60 timeout 60 sshpass -p kei scp $SO $T/bench-zedbsd.sh "$RANDREAD_DIR/randread-zedbsd" "$RANDREAD_DIR/patwrite-zedbsd" \
+	TO=60 timeout 60 sshpass -p kei scp $SO $T/bench-zedbsd.sh "$RANDREAD_DIR/randread-zedbsd" "$RANDREAD_DIR/patwrite-zedbsd" "$RANDREAD_DIR/directio-zedbsd" \
 	    "kei@$ZB:/tmp/" ||
 		say "copy to zedBSD failed"
 	TO=1500 zb "echo kei | sudo -S env $envrun sh /tmp/bench-zedbsd.sh $run" > "$LOGS/$NAME-$mode.txt" 2>&1

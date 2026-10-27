@@ -1884,6 +1884,127 @@ buf_writeback_cached(
 }
 
 /*
+ * Brings the cache's lines of a range in line with the disk before a
+ * transfer that bypasses the cache (O_DIRECT).
+ *
+ * Every dirty line the range touches is written back first; a line a
+ * journal pins keeps its journaled blocks, and only the range's ordinary
+ * blocks in it are written beneath the cache, as buf_writeback_cached()
+ * does.  With invalidate, every line of the range is also made invalid, so
+ * that the next cached read reads what the transfer wrote; a line a
+ * journal still pins cannot be, and the range is refused with EBUSY.  A
+ * line in transfer is waited for, one line at a time, owning no other.
+ * A line the cache does not hold costs one hash lookup, BUF_GATHER_HOLD
+ * of them to a hold of the cache lock.  The device is not flushed.
+ */
+int
+buf_direct_prepare(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count,
+	int invalidate)
+{
+	struct buf *lines[BUF_GATHER_HOLD];
+	struct disk *leaf;
+	uint64_t mapped;
+	uint64_t end;
+	uint64_t line_blocks;
+	uint64_t line_start;
+	unsigned found;
+	unsigned held;
+	unsigned index;
+	unsigned long irq;
+	uint64_t sequence;
+	int error;
+
+	/* An empty range has no lines. */
+	if (count == 0)
+		return 0;
+
+	/* Resolves the range to the leaf disk the lines belong to. */
+	error = disk_resolve_range(disk, block, count, &leaf, &mapped);
+	if (error != 0)
+		return error;
+
+	/* Measures a line in blocks: a page, or one block larger than a page. */
+	line_blocks = KERN_PAGE_SIZE / leaf->d_block_size;
+	if (leaf->d_block_size > KERN_PAGE_SIZE)
+		line_blocks = 1;
+
+	end = mapped + count;
+	line_start = mapped - mapped % line_blocks;
+	error = 0;
+	while (line_start < end) {
+		/* References the lines the cache holds among the next ones. */
+		found = 0;
+		irq = spin_lock_irqsave(&cache_lock);
+
+		for (held = 0; held < BUF_GATHER_HOLD && line_start < end; held++) {
+			lines[found] = hash_find_locked(leaf, line_start);
+			if (lines[found] != NULL) {
+				refcount_get(&lines[found]->b_refs);
+				lru_remove_locked(lines[found]);
+				found++;
+			}
+			line_start += line_blocks;
+		}
+
+		spin_unlock_irqrestore(&cache_lock, irq);
+
+		/* Brings each held line in line with the disk, one at a time. */
+		for (index = 0; index < found; index++) {
+			if (error != 0) {
+				drop_caller_reference(lines[index]);
+				continue;
+			}
+
+			/* Owns the line and waits until no transfer of it is in flight. */
+			error = busy_acquire(lines[index]);
+			if (error != 0) {
+				drop_caller_reference(lines[index]);
+				continue;
+			}
+			irq = spin_lock_irqsave(&lines[index]->b_lock);
+			while (lines[index]->b_io_inflight) {
+				sequence = waitq_sequence(&lines[index]->b_waitq);
+				(void)waitq_sleep(&lines[index]->b_waitq,
+				    &lines[index]->b_lock, sequence, 0, 0);
+			}
+			spin_unlock_irqrestore(&lines[index]->b_lock, irq);
+
+			/* Writes what the line holds that the disk does not have yet. */
+			error = buf_writeback(lines[index]);
+			if (error == 0)
+				error = unjournaled_write_line(lines[index], mapped, end);
+
+			/* Leaves the line to be read again, when it holds nothing unwritten. */
+			if (error == 0 && invalidate) {
+				irq = spin_lock_irqsave(&lines[index]->b_lock);
+
+				if ((lines[index]->b_flags & BUF_DIRTY) != 0) {
+					error = EBUSY;
+				} else {
+					lines[index]->b_flags &= ~(BUF_VALID | BUF_ERROR);
+					if (lines[index]->b_generation == UINT64_MAX)
+						lines[index]->b_flags |= BUF_GENERATION_EXHAUSTED;
+					lines[index]->b_generation++;
+					if (lines[index]->b_generation == 0)
+						lines[index]->b_generation++;
+				}
+
+				spin_unlock_irqrestore(&lines[index]->b_lock, irq);
+			}
+			buf_release(lines[index]);
+		}
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the disk holds everything the cache held of the range. */
+	return 0;
+}
+
+/*
  * Records a completed read of an open block device and reads ahead of a
  * sequential reader.
  *

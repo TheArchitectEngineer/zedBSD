@@ -224,6 +224,15 @@ int disk_transfer_progress_context(struct disk *disk, enum bio_op op, uint64_t b
  * exactly count blocks; completed reports the confirmed prefix in blocks.
  */
 int disk_transfer_pages_context(struct disk *disk, enum bio_op op, uint64_t block, uint32_t count, const uint64_t *pages, uint32_t page_count, uint32_t *completed, const struct io_context *context);
+/* The same under a backing claim that may own the range (a reserved raw device). */
+int disk_transfer_pages_claimed(struct disk *disk, enum bio_op op, uint64_t block, uint32_t count, const uint64_t *pages, uint32_t page_count, const struct backing_claim *claim, uint32_t *completed);
+/*
+ * Admits a transfer that bypasses the cache under the reload and lifetime
+ * barriers of a cached access, so that it may first bring the cache's lines
+ * of its range in line with the disk; disk_direct_end() takes the leaf back.
+ */
+int disk_direct_begin(struct disk *disk, struct disk **leaf);
+void disk_direct_end(struct disk *leaf);
 int disk_page_vector_supported(struct disk *disk);
 /*
  * Whether reading ahead a block range of a disk can only be seen by its one

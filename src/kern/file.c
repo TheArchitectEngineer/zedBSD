@@ -255,7 +255,7 @@ file_openat_cred(
 		return EINVAL;
 	if ((flags & ~(O_ACCMODE | O_CREAT | O_EXCL | O_TRUNC | O_APPEND |
 		       O_DIRECTORY | O_NONBLOCK | O_NOCTTY | O_NOFOLLOW |
-		       O_SYNC | O_DSYNC)) != 0 ||
+		       O_SYNC | O_DSYNC | O_DIRECT)) != 0 ||
 	    (flags & O_ACCMODE) > O_RDWR ||
 	    ((flags & O_EXCL) != 0 && (flags & O_CREAT) == 0))
 		return EINVAL;
@@ -314,6 +314,14 @@ file_openat_cred(
 			goto fail_file;
 		}
 
+		/* The regular file a creation makes cannot take O_DIRECT; nothing is created. */
+		if ((flags & O_DIRECT) != 0) {
+			mount_vfs_transaction_leave(parent.p_mount);
+			path_release(&parent);
+			error = EINVAL;
+			goto fail_file;
+		}
+
 		if (cred != NULL)
 			error = 0;
 		else
@@ -368,6 +376,18 @@ file_openat_cred(
 	if (inode->i_type == INODE_DIR && (flags & O_ACCMODE) != O_RDONLY) {
 		path_release(&found);
 		error = EISDIR;
+		goto fail_file;
+	}
+
+	/*
+	 * Only a file that moves its data without a cache takes O_DIRECT, and
+	 * it refuses before a truncation changes anything.  A descriptor alias
+	 * is checked against the description it names.
+	 */
+	if ((flags & O_DIRECT) != 0 && inode->i_descriptor_alias == 0U &&
+	    (inode->i_fop == NULL || inode->i_fop->pdirect == NULL)) {
+		path_release(&found);
+		error = EINVAL;
 		goto fail_file;
 	}
 
@@ -553,6 +573,13 @@ file_substitute_descriptor(
 	    held != O_WRONLY && held != O_RDWR) {
 		(void)file_close(target);
 		return EACCES;
+	}
+
+	/* The description already is, or is not, without a cache; open cannot change that. */
+	if ((flags & O_DIRECT) != 0 &&
+	    (file_status_flags_get(target) & O_DIRECT) == 0) {
+		(void)file_close(target);
+		return EINVAL;
 	}
 
 	/* Succeeded: the reference the lookup acquired becomes the result. */
@@ -1899,6 +1926,67 @@ resize_retry:
 		io_epoch_end(&file->f_inode->i_mount->m_write_epoch);
 	if (result > 0)
 		io->transferred = 1;
+	return result;
+}
+
+/*
+ * Reports whether a file moves its data without a cache on each transfer:
+ * it was opened, or set, with O_DIRECT, which only such a file accepts.
+ */
+int
+file_io_direct(
+	struct file *file)
+{
+	if (file == NULL || file->f_ops == NULL || file->f_ops->pdirect == NULL)
+		return 0;
+	return (file_status_flags_get(file) & O_DIRECT) != 0;
+}
+
+/*
+ * Transfers one pinned user range of an O_DIRECT transaction at its offset,
+ * straight between the caller's pages and the file.
+ *
+ * The file makes a synchronous write durable itself, by a flush of the
+ * device alone, so the transaction does not end with a sync of its cache.
+ */
+ssize_t
+file_io_transfer_pinned(
+	struct file_io *io,
+	const struct uaccess_pin *pin,
+	size_t pin_offset,
+	size_t length)
+{
+	struct file *file;
+	ssize_t result;
+	int write;
+
+	/* Rejects a transfer without an operation, a pin, or a direct file. */
+	if (io == NULL || io->file == NULL || pin == NULL)
+		return -EINVAL;
+	file = io->file;
+	if (file->f_ops == NULL || file->f_ops->pdirect == NULL)
+		return -EINVAL;
+
+	/* Counts the request as an ordinary transfer of the file. */
+	write = file_io_is_write(io->kind);
+	io_stats_record(write ? IO_FILE_WRITE : IO_FILE_READ, length);
+	io->synchronous = 0;
+
+	/* Moves the bytes at the transaction's offset and steps past them. */
+	if (length != 0 && write && file->f_inode != NULL &&
+	    file->f_inode->i_mount != NULL)
+		io_epoch_begin(&file->f_inode->i_mount->m_write_epoch);
+	result = file->f_ops->pdirect(file, write, pin, pin_offset, length,
+	    io->offset);
+	if (length != 0 && write && file->f_inode != NULL &&
+	    file->f_inode->i_mount != NULL)
+		io_epoch_end(&file->f_inode->i_mount->m_write_epoch);
+	if (result > 0) {
+		io->offset += result;
+		io->transferred = 1;
+	}
+
+	/* Reports the bytes moved or the error. */
 	return result;
 }
 

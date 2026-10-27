@@ -58,6 +58,7 @@ struct cwdinfo;
 struct ucred;
 struct file;
 struct vm_device_mapping;
+struct uaccess_pin;
 
 enum file_io_kind {
 	FILE_IO_READ,
@@ -202,6 +203,13 @@ struct file_ops {
 
 	/* Driver tokens select a shared device view; success transfers one reference the caller releases. */
 	int (*mmap)(struct file *, off_t, size_t, uint32_t, struct vm_device_mapping **);
+
+	/*
+	 * Moves bytes between a pinned user range, from its pin_offset, and
+	 * the file at an offset without any cache (O_DIRECT).  Only a file
+	 * that has it accepts O_DIRECT.  Reports the bytes moved or -errno.
+	 */
+	ssize_t (*pdirect)(struct file *, int write, const struct uaccess_pin *, size_t pin_offset, size_t, off_t);
 };
 
 struct file {
@@ -295,6 +303,22 @@ file_io_transfer(
 	struct file_io *io,
 	void *buffer,
 	size_t length);
+
+/*
+ * Transfers a pinned user range of an O_DIRECT transaction straight between
+ * the caller's pages and the file, without a bounce buffer.
+ */
+ssize_t
+file_io_transfer_pinned(
+	struct file_io *io,
+	const struct uaccess_pin *pin,
+	size_t pin_offset,
+	size_t length);
+
+/* Reports whether a file moves its data without a cache on each transfer. */
+int
+file_io_direct(
+	struct file *file);
 
 ssize_t
 file_io_complete(

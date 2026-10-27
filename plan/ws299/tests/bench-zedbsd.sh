@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws299: the NVMe read/write measurement on the Latitude 5330's zedBSD, run as root by nvme-bench-5330.sh.
-#   sh bench-zedbsd.sh read | write | p7rawwrite | p7rawread | p7fswrite | p7fsread
+#   sh bench-zedbsd.sh read | write | p7rawwrite | p7rawread | p7fswrite | p7fsread | p7direct
 # read:  /dev/zero at three block sizes; random 4 KiB reads at depth 1 and 32 (randread, copied to RANDREAD);
 #        the UFS file WFILE read cold (the write mode of an earlier boot wrote it); reads of /dev/nvme0n1 at three
 #        block sizes and the curve of CHUNKS reads of CHUNK_MIB MiB, all inside the data region R0_MIB..+R_MIB
@@ -14,11 +14,15 @@
 # p7*:  the 32 GiB measurement partition p7 (zedBSD-nvme-bench; the caller discards it from Debian before the write
 #        boots): P7_MIB MiB of patwrite's data written raw and synced, read back raw in the next boot; a UFS made
 #        on p7 (mkfs), a file of P7_MIB MiB written and synced, read back in the next boot.
+# p7direct: O_DIRECT (directio, copied to DIRECTIO): P7_MIB MiB written to p7 (discarded by the caller before the
+#        boot) in 1 MiB requests and synced, read back in 1 MiB and 4 MiB requests, P7_MIB MiB of the data region
+#        read in 1 MiB requests, and random 4 KiB reads at depth 1 and 32 (randread direct, one description and
+#        one per thread).
 # Every timed step prints "step NAME bytes=N" and the /bin/time lines (real/user/sys); the summary is made on the
 # build host (summary.py).  The only file removed is WFILE_NEW, inside zedBSD, before it is written again.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-MODE=${1:?read|write|p7rawwrite|p7rawread|p7fswrite|p7fsread}
+MODE=${1:?read|write|p7rawwrite|p7rawread|p7fswrite|p7fsread|p7direct}
 DEV=/dev/nvme0n1
 SWAP=/dev/nvme0n1p6
 R0_MIB=${R0_MIB:-25681}
@@ -32,6 +36,7 @@ FILE_MIB=${FILE_MIB:-1024}
 WFILE=${WFILE:-/home/kei/ws299-w.bin}
 WFILE_NEW=${WFILE_NEW:-/home/kei/ws299-n.bin}
 PATWRITE=${PATWRITE:-/tmp/patwrite-zedbsd}
+DIRECTIO=${DIRECTIO:-/tmp/directio-zedbsd}
 P7=/dev/nvme0n1p7
 P7_MIB=${P7_MIB:-4096}
 P7_MNT=/mnt/bench7
@@ -186,6 +191,27 @@ p7fsread)
 	step p7-fsread $((P7_MIB * 1048576)) if=$P7_MNT/f.bin of=/dev/null bs=1024k
 	snap p7-fsread
 	umount $P7_MNT
+	;;
+p7direct)
+	snap prepared
+	sleep "$REST"
+	echo "step p7-directwrite bytes=$((P7_MIB * 1048576))"
+	"$DIRECTIO" write $P7 "$P7_MIB" 1024
+	snap p7-directwrite
+	echo "step p7-directread bytes=$((P7_MIB * 1048576))"
+	"$DIRECTIO" read $P7 "$P7_MIB" 1024
+	echo "step p7-directread4m bytes=$((P7_MIB * 1048576))"
+	"$DIRECTIO" read $P7 "$P7_MIB" 4096
+	echo "step data-directread bytes=$((P7_MIB * 1048576))"
+	"$DIRECTIO" read $DEV "$P7_MIB" 1024 "$R0_MIB"
+	snap directread
+	for depth in 1 32; do
+		echo "step rand4k-direct-qd$depth bytes=0"
+		"$RANDREAD" $DEV 4096 $depth "$RAND_SECONDS" "$R0_MIB" "$R_MIB" direct
+		echo "step rand4k-direct-fdeach-qd$depth bytes=0"
+		"$RANDREAD" $DEV 4096 $depth "$RAND_SECONDS" "$R0_MIB" "$R_MIB" direct fdeach
+	done
+	snap rand-direct
 	;;
 esac
 echo "bench done"
