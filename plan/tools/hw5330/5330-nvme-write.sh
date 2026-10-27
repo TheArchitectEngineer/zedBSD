@@ -3,9 +3,10 @@
 # and runs it there as root (sudo -n sh); it is not run on the build host.
 #   sh 5330-nvme-write.sh check                 the three zedBSD partitions are the NVMe's, with the expected labels
 #   sh 5330-nvme-write.sh kernel VMUNIX         p4's vmunix becomes VMUNIX, the one before is kept as vmunix.old
-#   sh 5330-nvme-write.sh image IMG             the image's root UFS to p5, its swap to p6, its vmunix and logo to p4
-#                                               with a zedbsd.cfg naming the NVMe labels, its loader to the Debian ESP's
-#                                               \EFI\zedbsd\BOOTX64.EFI
+#   sh 5330-nvme-write.sh image IMG             the image's root UFS to p5, grown to fill p5 (ufs-grow.py, which
+#                                               5330-run.sh copies beside this script), its swap to p6, its vmunix
+#                                               and logo to p4 with a zedbsd.cfg naming the NVMe labels, its loader
+#                                               to the Debian ESP's \EFI\zedbsd\BOOTX64.EFI
 # The partitions are found by their fixed PARTUUIDs (plan/tools/hw5330/README.md, "NVMe の zedBSD の区画"); p4 keeps
 # its own FAT volume serial, so the loader's boot0= never matches the stick's FAT.  Debian's p1 (only EFI\zedbsd),
 # p2 and p3 are not written.  Nothing is removed.
@@ -66,9 +67,10 @@ image)
 	[ "$(blockdev --getsize64 "${loop}p3")" -le "$(blockdev --getsize64 "$NV_ROOT")" ] || fail "the root does not fit"
 	[ "$(blockdev --getsize64 "${loop}p4")" -le "$(blockdev --getsize64 "$NV_SWAP")" ] || fail "the swap does not fit"
 
-	# The root and the swap, whole.
+	# The root and the swap, whole; then the root's UFS grows to fill p5 (ufs-grow.py beside this script, ws299).
 	dd if="${loop}p3" of="$NV_ROOT" bs=4M conv=fsync status=none
 	dd if="${loop}p4" of="$NV_SWAP" bs=4M conv=fsync status=none
+	python3 -I "$(dirname "$0")/ufs-grow.py" "$NV_ROOT"
 
 	# The kernel, the logo and the configuration, on p4's own FAT.
 	mount -o ro "${loop}p2" "$IMAGE_MOUNT"

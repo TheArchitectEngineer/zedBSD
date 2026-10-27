@@ -3,7 +3,7 @@
 # ws299-p002 buffer cache の header の確保を一定の手数に（512 MiB の崖の直し）
 
 - 親: [WS299](../ws.md)。Queue: q1616 / q1616-i01（担当 P1、2026-10-27）。前提: [p001](../phase001/phase.md)（H1 が崖の原因）。
-- Status: in-progress（実装・host 試験・build・素の 5330 の前後の測定と起動の回帰は済み。QEMU の回帰（T）は未実施、Q1 の判定待ち）
+- Status: in-progress（実装・host 試験・build・素の 5330 の前後の測定と起動の回帰、QEMU の回帰（2026-10-27 q1617、P1 自身）は済み。Q1 の判定待ち）
 - Disposition: normal
 
 ## 受け入れ
@@ -56,7 +56,14 @@
 
 - 上限（985 MiB）の後も evictions = misses のまま一定の速さ。残りの時間の大半は driver の待ち（p003・p004 の対象）。
 
+### QEMU の回帰（2026-10-27 10:43、q1617-i01、P1、tree bb02f7b51、QEMU の証拠のみ）
+
+- image: `make ZEDBSD_CONFIG=plan/tools/posix/config-amd64-serial.mk BUILD=build/p1-qemu disk-image`（rc 0、7 分 38 秒。warning は openssl の package だけ、kernel は 0。vmunix sha256 `eb48f3d428011dbb…`）。
+- `OUTPUT=build/p1-qemu-boot-nvme plan/tools/boot-test.sh build/p1-qemu/hdd-image.img`（既定の uefi-nvme）: exit 0、画面に `login:`。PNG は P1 の worktree の `build/review/ws299/p002-qemu-nvme-login.png`。
+- `BOOT_MODE=uefi-usb`（USB の mass storage）: exit 0、画面に `login:`。PNG `build/review/ws299/p002-qemu-usb-login.png`。
+- 読み書き（`plan/tools/guest/amd64-serial.sh`、NVMe の root、8 GiB、cache の上限 1072910336）: 400 MiB の乱数の file を書いて `cksum` 2907330156 → raw の `/dev/nvme0n1` を 2000 MiB 読んで cache を一巡（current_bytes が上限、evictions 267745、writeback_errors・capacity_failures・physical_failures 0）→ 同じ file の `cksum` が同じ値 → 64k で写した file も同じ値 → 残りを `/dev/zero` で埋めて ENOSPC（`No space left on device`、df 100%）の後も stats の失敗 0。
+- virtio の disk: tree に virtio-blk の driver が無い（`virtio` は venus と m68k の framebuffer だけ）ので行えない。arm64・riscv64 などの QEMU の起動は未実施（build の warning 0 は上の表）。
+
 ## 未実施・残り
 
-- QEMU の回帰（buffer cache は全機種の kernel に効く）: T への依頼が要る（`boot-test.sh` と QEMU の nvme・virtio の読み書き）。Q1 の割り当て。
 - 規約の全文の見直しは p008 で。

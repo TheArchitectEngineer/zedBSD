@@ -742,6 +742,7 @@ static void bit_set(uint8_t *map, uint32_t bit);
 static void bit_clear(uint8_t *map, uint32_t bit);
 static uint64_t cgstart(const struct ufs_super *super, uint32_t cg);
 static uint32_t cg_ndblk(const struct ufs_super *super, uint32_t cg);
+static void cg_search_range(const struct ufs_super *super, uint64_t fragment, uint32_t *first, uint32_t *end);
 static int load_cg_image(struct mount *mountp, uint32_t cg, uint64_t fragment);
 static int cg_header_check(struct ufs_mount_state *ms, uint32_t cg, uint32_t ndblk);
 static int load_cg_locked(struct mount *mountp, uint32_t cg);
@@ -3967,6 +3968,45 @@ cg_ndblk(
 }
 
 /*
+ * Names the cylinder groups a fragment can belong to, as FIRST up to END.
+ *
+ * Groups follow one another fpg fragments apart, so only the group the
+ * fragment divided by fpg falls in can hold it; a volume grown to many groups
+ * (ws299) would otherwise be searched group by group for every block pointer.
+ * A volume that staggers its group metadata (cgoffset under a cgmask that
+ * leaves bits) moves where each group starts, so there every group is still
+ * a candidate and the caller searches them all, as before.
+ */
+static void
+cg_search_range(
+	const struct ufs_super *super,
+	uint64_t fragment,
+	uint32_t *first,
+	uint32_t *end)
+{
+	uint64_t group;
+
+	/* A staggered volume leaves every group a candidate. */
+	if (super->cgoffset != 0 && ~super->cgmask != 0U) {
+		*first = 0;
+		*end = super->ncg;
+		return;
+	}
+
+	/* A fragment past the last group belongs to none of them. */
+	group = fragment / super->fpg;
+	if (group >= super->ncg) {
+		*first = super->ncg;
+		*end = super->ncg;
+		return;
+	}
+
+	/* Otherwise the one group the fragment falls in is the only candidate. */
+	*first = (uint32_t)group;
+	*end = (uint32_t)group + 1U;
+}
+
+/*
  * Resolves the CG through immutable redo before considering cached home bytes.
  */
 static int
@@ -4256,12 +4296,15 @@ valid_inode_fragment(
 	uint64_t start;
 	uint32_t ndblk;
 	uint32_t cg;
+	uint32_t end;
 
 	/* A fragment of zero names no block. */
 	if (fragment == 0)
 		return 1;
+
 	/* Finds the cylinder group the fragment would live in. */
-	for (cg = 0; cg < super->ncg; cg++) {
+	cg_search_range(super, fragment, &cg, &end);
+	for (; cg < end; cg++) {
 		start = cgstart(super, cg);
 
 		/* The data blocks of a group end where its metadata begins. */
@@ -4887,6 +4930,7 @@ free_block(
 	uint32_t n;
 	uint32_t free;
 	uint32_t cg;
+	uint32_t end;
 	uint32_t local;
 	uint64_t old_total;
 	int already_free;
@@ -4897,7 +4941,8 @@ free_block(
 	local = 0;
 
 	/* Finds the cylinder group the block being freed lives in. */
-	for (cg = 0; cg < ms->super.ncg; cg++) {
+	cg_search_range(&ms->super, fragment, &cg, &end);
+	for (; cg < end; cg++) {
 		start = cgstart(&ms->super, cg);
 
 		/* The data blocks of a group end where its metadata begins. */
@@ -4910,7 +4955,7 @@ free_block(
 	}
 
 	/* A block that belongs to no group means the pointer is corrupt. */
-	if (cg == ms->super.ncg)
+	if (cg == end)
 		return EIO;
 
 	mutex_lock(&ms->lock);
@@ -7638,11 +7683,13 @@ xattr_release_location(
 	uint64_t start;
 	uint32_t ndblk;
 	uint32_t cg;
+	uint32_t end;
 
 	/*
 	 * Finds one complete aligned data block within the filesystem geometry.
 	 */
-	for (cg = 0; cg < super->ncg; cg++) {
+	cg_search_range(super, child, &cg, &end);
+	for (; cg < end; cg++) {
 		/* Where this cylinder group starts on the volume. */
 		start = cgstart(super, cg);
 
@@ -8864,6 +8911,7 @@ release_group_locked(
 	uint64_t fragment;
 	uint64_t current;
 	uint32_t cg;
+	uint32_t end;
 	uint32_t local;
 	uint32_t ndblk;
 	uint32_t free_blocks;
@@ -8889,7 +8937,8 @@ release_group_locked(
 		return EIO;
 
 	/* Finds the cylinder group the block being released lives in. */
-	for (cg = 0; cg < ms->super.ncg; cg++) {
+	cg_search_range(&ms->super, child, &cg, &end);
+	for (; cg < end; cg++) {
 		/* Locates where this group starts on the volume. */
 		start = cgstart(&ms->super, cg);
 
@@ -8914,7 +8963,7 @@ release_group_locked(
 	}
 
 	/* A block that belongs to no group means the pointer is corrupt. */
-	if (cg == ms->super.ncg)
+	if (cg == end)
 		return EIO;
 
 	/* Reads that cylinder group so its free map can be inspected. */

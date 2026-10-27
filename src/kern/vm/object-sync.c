@@ -831,6 +831,8 @@ vm_object_sync_range_buffer(
 	off_t write_limit;
 	uint64_t start;
 	uint64_t end;
+	uint64_t position;
+	uint64_t scan;
 	uint64_t sync_generation;
 	uint64_t sequence;
 	unsigned long irq;
@@ -956,7 +958,14 @@ vm_object_sync_range_buffer(
 	 * is dirty.  BUSY excludes pin copies and new fault publication;
 	 * draining the non-pin holds closes the pre-existing fault/publish
 	 * window.
+	 *
+	 * The pass walks the range in offset order through the page index and
+	 * resumes after the page it took last (ws299).  Searching the whole
+	 * page list from its head for every page made a sync quadratic in the
+	 * resident pages: a 3 GiB file kept the shutdown's sync running for
+	 * hours.
 	 */
+	position = start - start % PAGE_SIZE;
 	for (;;) {
 		candidate = NULL;
 		has_mappings = 0;
@@ -966,7 +975,22 @@ vm_object_sync_range_buffer(
 
 		/* Looks for the next page of the range this pass has not taken. */
 		irq = spin_lock_irqsave(&object->lock);
-		for (page = object->pages; page != NULL; page = page->next) {
+		scan = position;
+		for (;;) {
+			/* Finds the first resident page at or after the search point. */
+			page = sync_page_at_or_after(object, scan);
+			if (page == NULL)
+				break;
+
+			/* A page past the range, or one without an offset, ends the search. */
+			if (page->offset < 0 || (uint64_t)page->offset >= end) {
+				page = NULL;
+				break;
+			}
+
+			/* Moves the search point past this page whatever is decided about it. */
+			scan = (uint64_t)page->offset + PAGE_SIZE;
+
 			/* Skips a page outside the range this call names. */
 			if (!vm_object_page_overlaps(page, start, end))
 				continue;
@@ -1037,6 +1061,9 @@ vm_object_sync_range_buffer(
 		candidate->flags |= VM_OBJECT_PAGE_BUSY | VM_OBJECT_PAGE_WRITEBACK;
 		candidate->write_generation = sync_generation;
 		has_mappings = candidate->mapping_count != 0;
+
+		/* The next search starts after the page just taken. */
+		position = (uint64_t)candidate->offset + PAGE_SIZE;
 
 		spin_unlock_irqrestore(&object->lock, irq);
 
