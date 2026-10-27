@@ -3,14 +3,19 @@
 # WS052: 電源管理（S0i3、modern standby）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-07 ユーザー「下記をベータ3に移動します。…Sleep」（ws052/ws.md Target））。旧: incomplete（2026-10-05: HAL の差分の案は専門家のレビューを受けて第 2 版 H1v2・H3v2・H4v2・H5（[proposed/README-v2.md](proposed/README-v2.md)）、承認待ち。p003・p004 cleared、p005・p009 は実機の UAT 待…。残り・制限: p001・p002 の HAL の差分の承認、p005〜p012 の実機・QEMU
+Status: incomplete（2026-10-27 q1615 P1: 保留を解く案。ユーザー「そもそもS0ixが動作した実績がないので、これに対応するWSを作成してやってほしいです。（上記WSでやってほしいです）」を Q1 がこの WS に割り当てた。下の「2026-10-27 の計画の直し」で 5330 で SLP_S0 の residency を出す計画に直した。Status の確定は Q1）
 Primary Milestone: MG003
 Related Milestones: MG004, MG006
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: なし
-Resume point: p006（2026-10-05 P1 が HAL・kernel・UAPI を実装（910bc04c・ae2c61bf・58554e8b）。T1 の QEMU（S0IDLE の拒否・DEVICES の往復・拒否の試験）と 5330 の UAT（SLP_S0 の residency、電源ボタン・蓋での起床、counter と RTC）待ち）
-Target: **ベータ3**（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
+Queue: なし（q1615 は計画だけ）
+Resume point: p014（5330 の NVMe から起動した zedBSD での基準の UAT）。前提は [WS300](../ws300/ws.md) p002（VMD の suspend・resume、今は `vmd_suspend` が常に EBUSY で S0 idle が必ず中止）。並べて p015（無人で起こす RTC の wake）・p016（residency の読み）は前提なしで進められる。全体の順は [pm-plan.md](../agents/P1/pm-plan.md)
+Target: 段は無い（2026-10-27 ユーザー「ベータ3，ベータ4という概念はキャンセルされました。」）。旧 Target: ベータ3
+<!-- awesome-plan-history-of-current:
+旧 Status: incomplete・保留（ベータ3・4 の段は取り消し、何をやるかは Q1 とユーザーが整理中）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-27 ユーザー「なお、ベータ3，ベータ4という概念はキャンセルされました。…ベータ3でやること、ベータ4でやること、という内容は、今からQ1と私で整理していきます。」。元の段の出典: 2026-10-07 ユーザー「下記をベータ3に移動します。…Sleep」（ws052/ws.md Target））。旧: incomplete（2026-10-05: HAL の差分の案は専門家のレビューを受けて第 2 版 H1v2・H3v2・H4v2・H5（[proposed/README-v2.md](proposed/README-v2.md)）、承認待ち。p003・p004 cleared、p005・p009 は実機の UAT 待…。残り・制限: p001・p002 の HAL の差分の承認、p005〜p012 の実機・QEMU
+旧 Resume point: p006（2026-10-05 P1 が HAL・kernel・UAPI を実装（910bc04c・ae2c61bf・58554e8b）。T1 の QEMU（S0IDLE の拒否・DEVICES の往復・拒否の試験）と 5330 の UAT（SLP_S0 の residency、電源ボタン・蓋での起床、counter と RTC）待ち）
+旧 Target: **ベータ3**（2026-10-07 ユーザー「下記をベータ3に移動します。・左手デバイスOSK、ゲームパッドOSK, 写真の続き, カレンダーの続き, IMEの続き、POSIX, NVMe, make, RTL8822C, Sleep」）
+-->
 <!-- awesome-plan-current:end -->
 
 ## 目標
@@ -53,19 +58,62 @@ S0i1, S0i2は必要に応じてサポートを検討するが、基本的にi3�
 | [ws052-p005](phase005/phase.md) | HDA・Wi-Fi・LPSS-I2C の「止めて入る」経路 | in-progress（2026-10-05: 3 つの driver に suspend・resume、T1 の QEMU 待ち） | p004 | `pci-hda.c`、`intel-ax211.c`、`lpss-i2c.c` |
 | [ws052-p006](phase006/phase.md) | CPU の idle・tick・割り込み（承認された H1v2・H3v2・H4v2・H5 の amd64 の実装と他 arch の stub）、S0i3 の入口・出口（[README-v2 §7](proposed/README-v2.md) の流れ、spurious wake の再突入、CPU 0 の時刻の補正）、user の停止、`/dev/system` の ioctl と事象 | in-progress（2026-10-05 P1 q742: HAL の実装 910bc04c、kernel の流れ ae2c61bf、UAPI 58554e8b。vmunix の link・sleepctl の build（warning 0）まで。T1 の QEMU と 5330 の UAT 待ち） | p002 の承認（済）、p004、p005、p009、WS132 | |
 | [ws052-p007](phase007/phase.md) | Keiland の契機（蓋・電源ボタンの短押し・無操作の時間）と中止の理由の表示、networkd が sleep の前に radio を切る流れ | planning（2026-10-05: 設計の第 1 版、Q1 のレビュー待ち。code は p006 の口の後） | p006、WS132 p008、WS089 | |
-| ws052-p008 | 実機の確認と規約の全文 | planned | p007 | |
+| ws052-p008 | 実機の確認（20 回、session と network が続く、residency が増える）と規約の全文 | planned | p007、p014、p018（2026-10-27 の直し） | |
 | [ws052-p009](phase009/phase.md) | i915 の suspend・resume（display・DC9・GT の RC6・GGTT・display の core の再初期化・出力の設定の再適用）。設計から、検証は 5330 の UAT | in-progress（2026-10-05: 段 (a)(b)(c) を実装、5330 の UAT 待ち） | p004 | `src/drivers/gpu/i915/park.c`、`worker.c` |
 | [ws052-p010](phase010/phase.md) | networkd の SLEEP_PREPARE（opcode 80）・SLEEP_END（81）（p007 の設計 第 4 版 §10） | test-wait（2026-10-07 P2: 実装、build warning 0、host 20/0。QEMU・実機は p011 の後） | p007 の設計 | |
 | ws052-p011 | sessiond の sleep の子 process と backend の `POWER suspend`、kernel の CAN_SLEEP の bit（N1 = A1） | test-wait（2026-10-07 P2: kernel の CAN_SLEEP の flag・sessiond の sleep.c・backend、host 13/0・21/0、build warning 0。QEMU・実機は p012 の後） | p010、N1〜N3 | |
 | [ws052-p012](phase012/phase.md) | compositor の sleep.c（契機・lock の 2 frame・中止の理由の表示）。電源ボタンは眠らせない（WS182 の口）、外部の出力への切り替えは p004a・p011a の後 | test-wait（2026-10-07 T1-356 QEMU PASS、実機 5330 の UAT） | p011、N5〜N9 | |
 | [ws052-p013](phase013/phase.md) | Settings の Power の頁（sleep・画面の時間） | cleared（2026-10-07 T1-358） | p012、N4 | |
+| ws052-p014 | 5330 の基準の UAT（NVMe から起動、1 本の script）: `sleepctl devices` の往復（Gears を動かして、p009 の 4.1〜4.4）、`sleepctl s0idle` の入口と出口（起こすのは p015 の RTC、人の操作の蓋・電源ボタンはユーザーの試験の一覧へ）、p005・p006・p009〜p012 の実機の印をまとめて確かめる | planned（2026-10-27 q1615 の案） | WS300 p002、p015 | 実機 5330 |
+| ws052-p015 | 無人で起こす wake: ACPI の時刻の wake（AWAC の `_TIV`・`_TIP`、GPE 0x72）か、HAL・kernel の timer の wake、`sleepctl s0idle --wake-after N`（試験の口は QEMU だけの hook にしない、N10） | planned（案） | p006 | `src/drivers/acpi/`、`userland/tests/sleepctl` |
+| ws052-p016 | residency の読み: LPIT の 2 つの counter（5330 は state 0 = MSR 0x632 の PKG C10、state 1 = MMIO 0xFE00193C の SLP_S0、8197 Hz）を sleep の前後で読み、`KERN_SYSTEM_SLEEP_INFO`（design §7、UAPI の決定が要る）か sleep の結果の欄で返す。MSR の counter は HAL の口が要るかもしれない（差分の案と承認） | planned（案） | p006 | HAL（案だけ）、`src/kern/sleep.c`、`system-device.c` |
+| ws052-p017 | Intel PMC（ADL-P）の診断: S0ix の要件の表と生の状態（どの IP が SLP_S0 を止めているか）、LTR の無視の設定、PCH の device の電源の状態の一覧。読むだけの道具（`sleepctl pmc` など）から | planned（案） | p016 | `src/drivers/platform/`（新）、`userland/tests/sleepctl` |
+| ws052-p018 | S0ix の阻害の解消（p017 の表で見つけた物を 1 つずつ、上限付き）: driver の無い PCH の device（Thunderbolt・TCSS、ISH、IPU、GNA、CSME/HECI、Serial IO など）の D3・LTR、i915 の DC9、AX211・HDA の止め方、[WS300](../ws300/ws.md) の NVMe・link の状態 | planned（案、上限 12 LW、超えたら uncleared で理由と再開の条件） | p014、p017 | |
 
 ## 人間の判断が要る点
 
-- HAL（CPU の idle、timer の停止、割り込みの wake）の差分の承認（p001 が案を作る）。
+- （済）HAL（CPU の idle、timer の停止、割り込みの wake）の差分の承認: 2026-10-05 ユーザー「hal.hの追加をレビューしました。OKです。…HAL実装に進むことを承認します。」（[p006](phase006/phase.md):13、hal.h に 29f954f5 で適用）。
+  p001・p002 の Status の行と Master の再開点の「p001・p002 の HAL の差分の承認」は古い（Q1 が照合して p002 の clearance を判定する）。
+- 2026-10-27 の計画の直しで要る判断（下の節の D1〜D5）。
 
 ## 2026-10-04 予定（Q1）
 
 ユーザー「次の新規実装項目は、USB-C の DisplayPort Alternate Modeの実現を目標にします。その次が電源管理です。これらは併走できると思います。共通のpredecessorがAMLですね。」→ [queue.md](../queue.md) の q679（WS050 p001）・q680（WS051 p001）・q681（WS052 p001）。設計は WS049 の q677（BUG-165、DSDT）と並走、実装は q677・q678（ws049-p007）の後。
 
 - 2026-10-05 ユーザー「/dev/system から S0 idle に入るための UAPIの変更を承認します。docs/に電源管理のドキュメントを作成して、記録しておいてください。あとでレビュー対象にできるようにです。」→ P1 の案（`KERN_SYSTEM_SLEEP_S0IDLE`、`wake` の欄、`KERN_SYSTEM_WAKE_*`）を承認。Q1 が `docs/architecture/power-management.md` に設計と UAPI を書いた（ユーザーの review 待ち）。p006 の実装はこの文書に従う。
+
+## 2026-10-27 の計画の直し（q1615、P1）
+
+ユーザー（2026-10-27）「そもそもS0ixが動作した実績がないので、これに対応するWSを作成してやってほしいです。（上記WSでやってほしいです）」。Q1 がこの WS に割り当て、保留を解く（Q1 の確定）。
+全体の依存は [pm-plan.md](../agents/P1/pm-plan.md)。
+
+### 今の事実（2026-10-27 の調べ）
+
+- 実装は source にある: HAL（`include/hal/hal.h` の `hal_cpu_idle_suspend*`・`hal_irq_set_wake`/`suspend`/`resume`、`src/hal/amd64/bsp-pcat/idle-suspend.c`、LPIT は `bsp-pcat/acpi.c:800`）、
+  kernel（`src/kern/sleep.c` 554 行、`freeze.c`、`clock.c` の補正）、ACPI（`acpi-sleep.c` の LPS0 の `_DSM`・`_PSx`・`_DSW`、`acpi-event.c` の wake の GPE）、
+  PCI（`pci-power.c` の suspend・resume の全体）、UAPI（`include/uapi/system.h` の `KERN_SYSTEM_SLEEP`・`SLEEP_DEVICES`/`S0IDLE`・`WAKE_*`・`CAN_SLEEP`）、userland（sessiond・networkd・compositor・Settings・`sleepctl`）。
+- **5330 の実機の UAT は一度も記録が無い**（p005・p006・p009〜p012）。QEMU は T1-178（拒否と devices の往復）・T1-356 で PASS。
+- 新しい阻害: WS298（2026-10-27）で 5330 の NVMe は VMD の下になり、`vmd_suspend` が常に EBUSY（`src/drivers/pci/pci-vmd.c:422-435`）。NVMe から起動した 5330 では S0 idle は必ず中止 → [WS300](../ws300/ws.md) p002 が前提。
+- 受け入れの「SLP_S0 の residency が増える」を確かめる code が無い（0xFE00193C・MSR 0x632 を読む所が無い、`KERN_SYSTEM_SLEEP_INFO` も無い）→ p016。
+- 無人で起こす口が無い（RTC・timer の wake は未実装、phase006:485）。5330 には遠隔の電源が無く、起きないと人が要る → p015 を先に。
+- `drv_pci_device_set_wake` を呼ぶ所が無く、PME・USB の remote wake は arm されない（キーボードでの起床は未対応、受け入れは電源ボタン・蓋）。
+- 5330 の USB の stick は 2026-10-27 に挿さっていない（USB から起動して VMD を避ける回り道も今は使えない。USB の root で xHCI を suspend するのも危うい）。
+
+### 直した順（案）
+
+1. p015（無人の wake）・p016（residency の読み）を先に。どちらも 5330 を使わず host・QEMU で進められる（QEMU の S0 idle は EOPNOTSUPP なので、wake の timer は devices の往復で確かめる）。
+2. [WS300](../ws300/ws.md) p002（VMD の suspend・resume）の後に p014（5330 の基準の UAT）。ここで初めて 5330 の s0idle に入る。起きない時は Q1 → ユーザー（電源ボタン）。
+3. p017（PMC の診断）で residency が 0 の理由を出し、p018 で 1 つずつ外す。WS300 の p003〜p005（NVMe の状態・ASPM・APST）が p018 の候補の一部。
+4. p007（Keiland の契機）は設計が済み、p010〜p012 の実装は済み（test-wait）。p014 で実機の印をまとめて付ける。p008（20 回と規約の全文）が最後。
+
+### 判断が要る点
+
+- D1: `KERN_SYSTEM_SLEEP_INFO`（residency の読み）の UAPI。2026-10-05 の承認は `SLEEP_S0IDLE`・`wake`・`WAKE_*` で、SLEEP_INFO は含まれていない（P1 の読み）。ユーザーの明示の決定が要る。
+- D2: MSR の counter（PKG C10、LPIT の FFH）を読む HAL の口（hal.h の差分、承認）。MMIO の SLP_S0 の counter だけなら driver の側で足りる。
+- D3: 試験のための RTC の wake を ACPI の AWAC（5330 の GPE 0x72）でやるか、HAL の timer でやるか（p015 の設計）。
+- D4: p018 の上限（12 LW）と、5330 で起きなくなった時の扱い（ユーザーに電源ボタンを頼む頻度）。
+- D5: `docs/architecture/power-management.md`（ユーザーの review 待ち、2026-10-05）を p016・p017 と WS300 に合わせて直す時期。
+
+### 見積もり（LW、±50%）
+
+p014 3、p015 4、p016 4、p017 5、p018 12（上限）、p008 3。既存の test-wait の Phase の実機の印は p014 に含める。合計 約 31 LW（WS300 p002 の 6 LW は WS300 の側）。
