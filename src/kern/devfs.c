@@ -1604,6 +1604,9 @@ static DEVFS_HIGH int
 block_close(
 	struct file *file)
 {
+	/* Forgets the description's read-ahead stream. */
+	buf_readahead_forget(file);
+
 	/* Final close owns the description; no ioctl or I/O can still borrow it. */
 	if (file->f_block_claim != NULL) {
 		disk_admin_end(file->f_data, file->f_block_claim);
@@ -1679,6 +1682,10 @@ block_pread_data(
 					return (ssize_t)total;
 				return -error;
 			}
+
+			/* Lets the cache read ahead of a sequential reader. */
+			if (file->f_block_claim == NULL)
+				buf_readahead_observe(file, disk, block, run);
 
 			total += (size_t)run * block_size;
 			position += (uint64_t)run * block_size;

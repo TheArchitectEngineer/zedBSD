@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws299-p001: the NVMe read/write measurement on the Latitude 5330's zedBSD, run as root by nvme-bench-5330.sh.
-#   sh bench-zedbsd.sh read | write
+#   [PAUSE=SECONDS] sh bench-zedbsd.sh read | write     (PAUSE: an idle wait before each chunk of the curve)
 # read:  /dev/zero and cold reads of /dev/nvme0n1 at three block sizes, then the curve: CHUNKS reads of CHUNK_MIB MiB each,
 #        one after another from OFF_GIB GiB, with the cache and I/O counters after every chunk ("snap" blocks), and
 #        a re-read of the last chunk (a cache hit).  Only reads; the NVMe is not written.
@@ -20,11 +20,12 @@ CHUNKS=${CHUNKS:-16}
 BUDGET=${BUDGET:-900}
 WRITE_MIB=${WRITE_MIB:-1024}
 UFS_MIB=${UFS_MIB:-512}
+PAUSE=${PAUSE:-0}
 WFILE=${WFILE:-/home/kei/ws299-w.bin}
 
 snap() {
 	echo "snap $1"
-	for name in vfs.bufcache.max_bytes vfs.bufcache.current_bytes vfs.bufcache.stats vfs.cache_memory.stats vfs.io.stats hw.cputimes; do
+	for name in vfs.bufcache.max_bytes vfs.bufcache.current_bytes vfs.bufcache.stats vfs.cache_memory.stats vfs.io.stats hw.cputimes hw.memory.stats; do
 		sysctl "$name"
 	done
 	echo "endsnap $1"
@@ -64,6 +65,7 @@ read)
 	started=$(date +%s)
 	i=0
 	while [ "$i" -lt "$CHUNKS" ]; do
+		[ "$PAUSE" -gt 0 ] && sleep "$PAUSE"
 		step "chunk$i" $((CHUNK_MIB * 1048576)) if=$DEV of=/dev/null bs=1024k \
 		    skip=$((OFF_GIB * 1024 + i * CHUNK_MIB)) count=$CHUNK_MIB
 		snap "chunk$i"

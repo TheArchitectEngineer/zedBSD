@@ -89,7 +89,7 @@ for mode in $MODES; do
 	say "zedBSD up after $(($(date +%s) - start + 20)) s ($mode)"
 	sleep "${SETTLE:-30}"
 	TO=60 timeout 60 sshpass -p kei scp $SO $T/bench-zedbsd.sh "kei@$ZB:/tmp/bench-zedbsd.sh" || say "copy to zedBSD failed"
-	TO=1500 zb "echo kei | sudo -S sh /tmp/bench-zedbsd.sh $mode" > "$LOGS/$NAME-$mode.txt" 2>&1
+	TO=1500 zb "echo kei | sudo -S env PAUSE=${PAUSE:-0} sh /tmp/bench-zedbsd.sh $mode" > "$LOGS/$NAME-$mode.txt" 2>&1
 	say "zedbsd $mode rc=$? ($(tail -1 "$LOGS/$NAME-$mode.txt"))"
 	zb 'dmesg' > "$LOGS/$NAME-$mode-dmesg.txt" 2>&1
 	zb 'echo kei | sudo -S reboot' > /dev/null 2>&1
