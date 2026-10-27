@@ -110,4 +110,10 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 
 - 2026-10-28 ユーザー「P3はOpus 5.5で設計レビューして、先に進めて下さい。GHCI仕様担当との通信が必要なときは、プロトコル通りファイルを用意して、私に言ってください。レビューでGHCI仕様に不備が見つからず、ドライバ設計をapproveできた場合、Phaseを確定し、実装に進んでOKです。」
 - 解釈（Q1）: design-reviewer は Opus 5.5 で走らせる。review で仕様の不備が見つかれば ghci-review.md を取り決めの形（1 行目を変え、末尾 DONE）で用意し、Q1 がユーザーに知らせる（送る・見張るはユーザーの指示の後）。不備が無く design を approve できたら p001 を cleared にして Phase を確定し、p002 から実装。U5・U8〜U11 は推しで進め、ユーザーが変える時は直す。
+- U の回答（2026-10-28、Q1 の問いへのユーザーのクリック、選んだ選択肢の文のまま）:
+  - U5「全部 WS292」: CAP_PROT=1 に関わる物は session の fault の回収も含めて WS292 で扱う。WS290 では PROT=1 の device も PROT=0 と同じに扱う。
+  - U8「1.0 を名乗り、断って log」: Vulkan 1.0 の device として出し、出来ない操作は呼ばれた時に断って log に残す。
+  - U9「どちらも出す」: flat の device（HW_WALKER=0）にも PROT=0 の device にも Vulkan を出す（process 間の memory の保護は無くなる）。
+  - U10「shader で代える」: CAP_BLT が無い時、copy・blit・resolve を compute か描画の shader で代える。
+  - U11「hardware の上限の 15 個」: client に使える 15 個まで、超えたら vkCreateDevice を断る。
 
