@@ -59,7 +59,7 @@ exec 9> /tmp/i915-hw.lock
 flock 9
 debian_up
 TO=60 timeout 60 scp -q $T/bench-debian.sh "$RANDREAD_DIR/randread-linux" "$RANDREAD_DIR/patwrite-linux" \
-    plan/tools/hw5330/5330-nvme-write.sh "$HOST:ws245/" ||
+    plan/tools/hw5330/5330-nvme-write.sh plan/tools/hw5330/ufs-grow.py "$HOST:ws245/" ||
 	{ say "FAIL: copy of the helpers"; exit 1; }
 lin 'sudo -n sh $HOME/ws245/bench-debian.sh p6save' > /dev/null || { say "FAIL: p6 save"; exit 1; }
 
@@ -95,9 +95,17 @@ entry=$(lin "sudo -n efibootmgr -v" | grep -i 08ab575f-f718-4eff-a3c9-10d80b1217
 
 for mode in $MODES; do
 	[ "$mode" = write ] && p6fresh
+	run=$mode
+	envrun=$ENVS
 	case "$mode" in
 	p7rawwrite | p7fswrite)
 		lin 'sudo -n sh $HOME/ws245/bench-debian.sh p7fresh' > /dev/null || { say "FAIL: p7 fresh"; exit 1; } ;;
+	p7ufswrite)
+		# The root's kind of UFS on p7 (P7_IMAGE, an image on the 5330), written to without mkfs.
+		TO=900 lin "sudo -n env P7_IMAGE=${P7_IMAGE:-} sh \$HOME/ws245/bench-debian.sh p7ufs" > /dev/null ||
+			{ say "FAIL: p7 ufs"; exit 1; }
+		run="p7fswrite"
+		envrun="$ENVS MKFS=0" ;;
 	esac
 	settle
 	lin "sudo -n efibootmgr -n $entry > /dev/null && sudo -n systemctl reboot" > /dev/null 2>&1
@@ -115,7 +123,7 @@ for mode in $MODES; do
 	TO=60 timeout 60 sshpass -p kei scp $SO $T/bench-zedbsd.sh "$RANDREAD_DIR/randread-zedbsd" "$RANDREAD_DIR/patwrite-zedbsd" \
 	    "kei@$ZB:/tmp/" ||
 		say "copy to zedBSD failed"
-	TO=1500 zb "echo kei | sudo -S env $ENVS sh /tmp/bench-zedbsd.sh $mode" > "$LOGS/$NAME-$mode.txt" 2>&1
+	TO=1500 zb "echo kei | sudo -S env $envrun sh /tmp/bench-zedbsd.sh $run" > "$LOGS/$NAME-$mode.txt" 2>&1
 	say "zedbsd $mode rc=$? ($(tail -1 "$LOGS/$NAME-$mode.txt"))"
 	zb 'dmesg' > "$LOGS/$NAME-$mode-dmesg.txt" 2>&1
 	zb 'echo kei | sudo -S reboot' > /dev/null 2>&1

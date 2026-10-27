@@ -14,6 +14,9 @@
 #                                      fsync), then read back cold, through the page cache and direct
 #   sh bench-debian.sh p7fs            p7 discarded, an ext4 made on it, a file of P7_MIB MiB written (fsync) and
 #                                      read back cold; p7 is left unmounted
+#   sh bench-debian.sh p7ufs           p7 discarded, then the root UFS of the zedBSD image P7_IMAGE (as 5330-nvme-write.sh
+#                                      puts it on p5) written to it and grown to fill it (ufs-grow.py), for zedBSD's
+#                                      file measurement on a volume of the kind zedBSD's root is
 # The data region: R0_MIB..R0_MIB+R_MIB of the disk lies inside the extents of $DIR/data.bin (12 GiB of random
 # bytes on Debian's ext4, never removed), so every read there reads mapped flash, not trimmed blocks that the
 # drive answers without reading.  The partition written is found by PARTUUID and its label and number are
@@ -21,7 +24,7 @@
 # its result line.  REST seconds pass before every write step.  Nothing is removed.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-MODE=${1:?read|write|p6fresh|p6save|p7fresh|p7raw|p7fs}
+MODE=${1:?read|write|p6fresh|p6save|p7fresh|p7raw|p7fs|p7ufs}
 DEV=/dev/nvme0n1
 P6=/dev/disk/by-partuuid/a26f52a1-fed3-4073-b577-1bc61322882f
 HMB=/sys/class/nvme/nvme0/hmb
@@ -135,6 +138,18 @@ p6fresh)
 p7fresh)
 	p7_fresh
 	echo "p7 fresh"
+	exit 0
+	;;
+p7ufs)
+	[ -s "${P7_IMAGE:-}" ] || fail "no P7_IMAGE"
+	p7_fresh
+	loop=$(losetup -f --show -P -r "$P7_IMAGE") || fail "losetup"
+	dd if="${loop}p3" of="$P7" bs=4M conv=fsync status=none
+	rc=$?
+	losetup -d "$loop"
+	[ "$rc" = 0 ] || fail "dd of the root UFS"
+	python3 -I "$(dirname "$0")/ufs-grow.py" "$P7" || fail "ufs-grow"
+	echo "p7 ufs"
 	exit 0
 	;;
 esac
