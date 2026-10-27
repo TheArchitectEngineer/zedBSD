@@ -2,7 +2,7 @@
 
 # WS307 Keiland のアプリとしての zedBSD のグラフィカルなインストーラ
 
-- Status: planning（2026-10-28 新設。仕様はユーザーがブラッシュアップする前の希望を記録した段階。実行の Queue は無い）
+- Status: planning（2026-10-28 新設。p001 で仕様を確定中、q1643 P4）
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
 
@@ -61,4 +61,8 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 
 ## Phase
 
-未定義（ユーザーのブラッシュアップの後に p001 の要件と設計から）。
+| Phase | 内容 | 依存 | 状態 |
+| --- | --- | --- | --- |
+| [p001](phase001/phase.md) | 仕様の確定（調査、spec.md、ユーザーの確認事項、design-reviewer、実装の Phase の案） | — | in-progress（q1643、P4） |
+
+- 2026-10-28 ユーザー「P4を立てて、WS307の仕様検討を行ってもらってください。ユーザ確認事項があれば回答させていただきます。仕様を確定させたいです。そのためのphaseをQ1が作り、P4に実行させてください。」

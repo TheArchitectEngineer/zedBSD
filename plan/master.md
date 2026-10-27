@@ -15,13 +15,14 @@
 ### 動いている担当と Queue
 
 <!-- master:agents:start -->
-2026-10-28 03:15 から N=3（ユーザー「N=3で作業します。」）。台帳は [registry](agents/registry.md)。
+2026-10-28 03:15 から N=3（ユーザー「N=3で作業します。」）、07:1x から WS307 の仕様の P4 を足して 4。台帳は [registry](agents/registry.md)。
 
 | 担当 | Queue | WS | 実機 |
 | --- | --- | --- | --- |
 | P1 | q1640 | [WS299](ws299/ws.md) 5330 の NVMe: fstrim の後に書きを測り直し → p005 UFS → p006 HMB → p007 → p008 | 5330 |
 | P2 | q1639 | [WS291](ws291/ws.md) RDNA: Linux と同等以上まで自律で継続（hang は調べて直す、30 分で分からなければ Fable 5.1 High に助言を求める） | 10.0.10.3（プラグミニ 1 は P2 が入れ直す） |
 | P3 | q1642 | [WS290](ws290/ws.md) GHCI 1.0 の driver: 仕様は d9252e4 で Signoff、p001〜p003 cleared、p004（core）から | host（VF2＋KC705 は書き込みの知らせの後） |
+| P4 | q1643 | [WS307](ws307/ws.md) インストーラの仕様の確定（p001、ユーザーの確認事項は Q1 経由） | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
 <!-- master:agents:end -->
@@ -82,7 +83,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-347 · q1643 · WS308 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-347 · q1644 · WS308 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
@@ -149,7 +150,7 @@ BUG-347 · q1643 · WS308 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
 | [WS296](ws296/ws.md) | MG001 | src/drivers（gpu/ を除く）の comment から開発の管理情報を消し、XXX の規約の当て直し（usb など 11 file） | planned | 18 LW、担当の起動はユーザーの指示の時 |
-| [WS307](ws307/ws.md) | MG003 | Keiland のアプリとしての zedBSD のグラフィカルなインストーラ（UEFI＋ACPI の PC、ウィザード、disk 全体／partition の選択、base・desktop・firmware・packages の tarball）（2026-10-28 ユーザー） | planning（仕様のブラッシュアップ待ち） | ユーザーとのブラッシュアップ → p001 |
+| [WS307](ws307/ws.md) | MG003 | Keiland のアプリとしての zedBSD のグラフィカルなインストーラ（UEFI＋ACPI の PC、ウィザード、disk 全体／partition の選択、base・desktop・firmware・packages の tarball）（2026-10-28 ユーザー） | planning（p001 で仕様を確定中） | p001（q1643、P4） |
 
 ### 保留の WS（何をやるかは Q1 とユーザーが整理中）
 
