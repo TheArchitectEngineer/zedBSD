@@ -28,5 +28,5 @@ Pi 5 の外の PCIe（pcie1、M.2 HAT）の root complex を zedBSD が起こし
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 調査と設計（BCM2712 の pcie1 と BCM2711 の差、firmware の初期化の有無、MSI（MIP）、inbound の窓・4 GiB の上の DMA、非一貫の cache、pci-nvme の arm64 の扱い）、design-reviewer。[design.md](design.md) 版 2 | — | cleared（2026-10-27） |
 | [p002](phase002/phase.md) | 実装・host 試験・build | p001 | cleared（2026-10-27、host 試験 3 本 PASS、rpi5・rpi4 の build warning 0） |
-| [p003](phase003/phase.md) | 実機（Pi 5 ＋ M.2 の NVMe）での確かめ（手順は phase.md） | p002、実機の用意（ユーザー） | uncleared（q1620-i02: link は Polling で落ちる、rescal の実験の前に権限の判定で停止） |
+| [p003](phase003/phase.md) | 実機（Pi 5 ＋ M.2 の NVMe）での確かめ（手順は phase.md） | p002、実機の用意（ユーザー） | uncleared（q1620-i03: rescal を RP1 の下で行っても link は Polling で落ちる。次はハード側の切り分け＝Raspberry Pi OS の lspci） |
 | p004 | 規約の全文の見直し | p003 | planned |
