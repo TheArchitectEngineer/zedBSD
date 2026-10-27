@@ -21,14 +21,15 @@
 
 - RDNA: ゲーム最適化が ON の session の pipeline だけを culling 入りの NGG で compile する（三角形の少ない描画では culling を飛ばす判断は残す）。OFF の時は passthrough の NGG か従来の経路（desktop の frame-ops を測って決める）。
 - 名前と版は Vulkan の `VkPhysicalDeviceProperties`（deviceName・driverVersion）と `VkPhysicalDeviceDriverProperties`（driverName・driverInfo）にも写す。
-- 有効にする方法の推し（ユーザーの判断待ち）: アプリか launcher が Vulkan の instance を作る時に指定し、libvulkan が session の flag と option の文字列を kernel に渡す。
+- 有効にする方法（決定済み、上の 2026-10-27 の原文）: 環境変数を libvulkan が読み、session の flag と option の文字列を UAPI で kernel に渡す。環境変数の名前と option の文字列の書式は p001 で決める。
 - option の文字列は kernel で長さと書式を検査し、知らない option は無視か拒否（設計で決める）。
 
 ## Phase
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 設計: UAPI（session の flag・option の文字列・名前と版の取得）、libvulkan の指定の口、各 driver の option の表（amdrdna の NGG culling から）、design-reviewer | — | planning |
+| p001 | 設計: UAPI（session の flag・option の文字列・option の一覧・名前と版の取得）、libvulkan が読む環境変数の名前と書式、知らない option の扱い、各 driver の option の表（amdrdna の NGG culling から）、vulkaninfo への一覧の出し方、design-reviewer | — | planning |
+| p002〜 | 実装: UAPI と gpu の枠組み、libvulkan、amdrdna の option（NGG culling）、vulkaninfo の移植（userland/packages、ライセンスの監査）。p001 で分ける | p001 | planning |
 
 ## Resume point
 
