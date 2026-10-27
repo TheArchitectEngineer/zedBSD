@@ -61,6 +61,13 @@
  */
 #define NVME_DMA_ADDRESS_BITS 64U
 
+/*
+ * How many completed commands pass between two log lines of the average wait
+ * from post to the interrupt's completion and from there to the waiter
+ * running again (ws299-p004 measurement).
+ */
+#define NVME_IO_LATENCY_LOG_EVERY 4096U
+
 /* How many page-list commands pass between two log lines of the direct and bounced counts. */
 #define NVME_IO_PATH_LOG_EVERY 4096U
 #define NVME_IO_MAX_SLOTS (NVME_IO_QUEUE_REQUESTED_DEPTH - 1U)
@@ -191,6 +198,9 @@ struct nvme_io_slot {
 	 * may still move its data until the controller is proven stopped.
 	 */
 	unsigned dma_uncertain;
+	/* When the command was posted and when the interrupt saw it complete, in ns (p004 measurement). */
+	uint64_t posted_ns;
+	uint64_t done_ns;
 	uint32_t epoch;
 	int error;
 };
@@ -307,6 +317,17 @@ struct nvme_controller {
 	 */
 	uint64_t io_direct_commands;
 	uint64_t io_bounced_commands;
+	/*
+	 * Sums of the time from post to the interrupt's completion and from
+	 * there to the waiter running, over latency_count commands, logged and
+	 * cleared every NVME_IO_LATENCY_LOG_EVERY (ws299-p004).  Changed under
+	 * command_lock.
+	 */
+	uint64_t latency_device_ns;
+	uint64_t latency_wake_ns;
+	uint64_t latency_device_max_ns;
+	uint64_t latency_wake_max_ns;
+	unsigned latency_count;
 	/* The bytes of each slot's bounce memory: NVME_IO_BOUNCE_SIZE, or a page when that much could not be had. */
 	size_t io_bounce_size;
 
@@ -550,6 +571,7 @@ static int nvme_io_build_command(struct nvme_controller *controller, struct nvme
 static void nvme_io_bounce_pages(struct nvme_controller *controller, struct nvme_io_slot *slot, const uint64_t *pages, uint32_t page_count, int to_bounce);
 static void nvme_io_wait_dma_quiesced(struct nvme_controller *controller, uint64_t fence);
 static void nvme_io_slot_dma_free(struct drv_dma_device *dma, struct nvme_io_slot *slot);
+static uint64_t nvme_now_ns(void);
 static int nvme_io_flush_internal(struct nvme_controller *controller);
 static int nvme_probe_permitted(struct nvme_controller *controller);
 static int nvme_probe_namespace(struct nvme_controller *controller);
@@ -4026,6 +4048,7 @@ nvme_irq_io_locked(
 		} else {
 			slot->error = drv_nvme_completion_error(&completion);
 			slot->state = NVME_IO_SLOT_CQ_DONE;
+			slot->done_ns = nvme_now_ns();
 			slot->posted = 0;
 			controller->io_pending--;
 			waitq_wake_all(&slot->waitq);
@@ -4684,6 +4707,8 @@ nvme_io_post(
 
 	controller->io_submission_tail = next;
 	slot->posted = 1;
+	slot->posted_ns = nvme_now_ns();
+	slot->done_ns = 0;
 	controller->io_pending++;
 	controller->io_commands_posted++;
 	if (controller->io_pending > controller->io_pending_high_water)
@@ -4720,8 +4745,22 @@ nvme_io_wait_completion(
 	uint64_t deadline = sched_ticks() + controller->timeout_ticks;
 	unsigned long irq;
 	int error = 0;
+	uint64_t now;
+	uint64_t device_ns;
+	uint64_t wake_ns;
+	uint64_t log_device;
+	uint64_t log_wake;
+	uint64_t log_device_max;
+	uint64_t log_wake_max;
+	unsigned log_count;
+	int log_latency;
 
 	*recovery_owner = 0;
+	log_device = 0;
+	log_wake = 0;
+	log_device_max = 0;
+	log_wake_max = 0;
+	log_count = 0;
 	irq = spin_lock_irqsave(&controller->command_lock);
 
 	/* Continue while the operation condition remains true. */
@@ -4734,6 +4773,37 @@ nvme_io_wait_completion(
 								    ? ETIMEDOUT
 								    : EIO);
 			break;
+		}
+	}
+
+	/* Adds a completed command's two waits to the measurement (p004). */
+	log_latency = 0;
+	if (slot->state == NVME_IO_SLOT_CQ_DONE && slot->done_ns != 0U &&
+	    slot->done_ns >= slot->posted_ns) {
+		now = nvme_now_ns();
+		device_ns = slot->done_ns - slot->posted_ns;
+		wake_ns = 0;
+		if (now >= slot->done_ns)
+			wake_ns = now - slot->done_ns;
+		controller->latency_device_ns += device_ns;
+		controller->latency_wake_ns += wake_ns;
+		if (device_ns > controller->latency_device_max_ns)
+			controller->latency_device_max_ns = device_ns;
+		if (wake_ns > controller->latency_wake_max_ns)
+			controller->latency_wake_max_ns = wake_ns;
+		controller->latency_count++;
+		if (controller->latency_count >= NVME_IO_LATENCY_LOG_EVERY) {
+			log_latency = 1;
+			log_count = controller->latency_count;
+			log_device = controller->latency_device_ns / log_count;
+			log_wake = controller->latency_wake_ns / log_count;
+			log_device_max = controller->latency_device_max_ns;
+			log_wake_max = controller->latency_wake_max_ns;
+			controller->latency_device_ns = 0;
+			controller->latency_wake_ns = 0;
+			controller->latency_device_max_ns = 0;
+			controller->latency_wake_max_ns = 0;
+			controller->latency_count = 0;
 		}
 	}
 
@@ -4754,6 +4824,17 @@ nvme_io_wait_completion(
 	}
 
 	spin_unlock_irqrestore(&controller->command_lock, irq);
+
+	/* Says how the waits of the last commands divide, outside the lock. */
+	if (log_latency) {
+		kern_logf("nvme: %u commands: post to completion avg %llu us max %llu us, "
+			  "completion to waiter avg %llu us max %llu us\n",
+			  log_count,
+			  (unsigned long long)(log_device / 1000U),
+			  (unsigned long long)(log_device_max / 1000U),
+			  (unsigned long long)(log_wake / 1000U),
+			  (unsigned long long)(log_wake_max / 1000U));
+	}
 
 	/* Reports the failure. */
 	if (error != 0)
@@ -5052,6 +5133,30 @@ nvme_io_wait_dma_quiesced(
 	}
 
 	spin_unlock_irqrestore(&controller->command_lock, irq);
+}
+
+/* Reads the monotonic counter in nanoseconds, or zero without one (p004 measurement). */
+static uint64_t
+nvme_now_ns(
+	void)
+{
+	uint64_t counter;
+	uint64_t frequency;
+	uint64_t seconds;
+	uint64_t rest;
+	bool have;
+
+	/* Reads the counter; a machine without one is not measured. */
+	have = kern_rtc_read_counter(&counter, &frequency);
+	if (!have || frequency == 0U)
+		return 0;
+
+	/* Whole seconds, then the rest, so the product does not overflow. */
+	seconds = counter / frequency;
+	rest = counter % frequency;
+
+	/* Succeeded: the time in nanoseconds. */
+	return seconds * 1000000000ULL + rest * 1000000000ULL / frequency;
 }
 
 /* Gives back one slot's bounce, PRP list and page address array. */
