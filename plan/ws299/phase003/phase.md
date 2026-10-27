@@ -3,7 +3,7 @@
 # ws299-p003 NVMe の大きな転送（MDTS までの command、PRP list、bounce の写しを減らす）
 
 - 親: [WS299](../ws.md)。Queue: q1617 / q1617-i01（担当 P1、2026-10-27）。前提: p001（測定）、p002（buffer cache の崖の直し、P1 の branch の e7b3f3211 に含む。main への merge は Q1 の判定待ち。基準の 384 MB/s は p002 の後の数）。
-- Status: in-progress（実装・host・build・QEMU・5330 の測定は済み。目安の 1.5 倍に読みは届かず（1.3 倍）、原因は driver の外の read(2) の 64 KiB の staging。Q1 の判定待ち）
+- Status: cleared（2026-10-27 12:58 Q1 判定。受け入れ 1〜4 を P1 の報告で確認: host 試験・build warning 0・QEMU PASS、5330 zb-p003c で raw の読み 559〜767 MB/s（中央値 583、p002 の後 384 の 1.52 倍で目安 1.5 倍以上）、書き 926〜959（約 1.5 倍）。UFS の書きは p005 で）
 - Disposition: normal
 
 ## 目的と受け入れ
@@ -126,6 +126,23 @@
 - 読みが伸びない原因（数）: `run_rd`・`drv_rd` が 256 MiB に 4096、つまり 1 run・1 BIO が 64 KiB のまま。dd の 1 MiB の read(2) は `sys_read_call` が block device を `SYSCALL_STREAM_CHUNK`（64 KiB、`src/kern/syscall.c:87`）の staging に分けて 16 回 `block_pread` を呼ぶ（`syscall.c` の `syscall_io_buffer`）。64 KiB を QD1 で同期に読む上限（Debian の `d-bs64k` 697 MB/s）に近い。driver の command の大きさ（p003）はこれ以上効かない。
 - 次の手（p004・p005 の範囲）: block device の read(2) の staging を大きくする（syscall.c、担当の範囲の外なので Q1 に聞く）、buffer cache の run の先読み・非同期（p004・p005）。
 - UFS の書きは write-cached の mount で `transfer_run` を通らない（review L7）ので p003 では変わらない（値の揺れの内）。
+
+### read(2)・write(2) の staging を 1 MiB に（2026-10-27、Q1 が q1617 の範囲に追加）
+
+- Q1「src/kern/syscall.c の read(2)・write(2) の staging を大きくすることを q1617 の範囲に足します（Q1 の判断。WS299 の目標の中の kernel の内部の変更で、HAL の API ではありません。他の worktree は syscall.c を触っていません）。方針: block device は 1 MiB（kern_malloc が失敗したら今の 64 KiB に戻す）、regular file の io_pool も同じ考え方で。p003 の続きとして入れ、5330 で読みを測り直して p003 の判定に使ってください。」
+- 実施（`src/kern/syscall.c`）: `SYSCALL_LARGE_CHUNK` 1 MiB。regular file と block device の 64 KiB（`KERN_IO_BATCH_MAX`）より長い転送は、まず `kern_malloc` で min(長さ, 1 MiB) を取り、取れなければ今の道（file は io_pool、device は 64 KiB の heap、最後に stack）。返す時は capacity が `KERN_IO_BATCH_MAX` を超えれば heap へ（`syscall_io_buffer_release` に capacity を渡す、7 箇所）。
+- 確かめ: build（config-5330・pcat・rpi4）rc 0・warning 0。QEMU（image `build/p1-qemu5`）: boot-test PASS、`qemu-nvme-shapes.sh` PASS、`qemu-grow-reboot.sh` PASS（reset 1 秒）。
+- 5330（`zb-p003c`、kernel sha256 `1c7889176c30049f…`、要約 `plan/ws299/evidence/zb-p003c-summary.md`）: run と BIO は 256 MiB に 1024 個（= 256 KiB、前は 4096 = 64 KiB）。
+
+| 測り方 | p002 の後 | p003b | p003c | Debian | 比（p003c） |
+| --- | --- | --- | --- | --- | --- |
+| raw の連続の読み 256 MiB ×16 | 363〜384 | 463〜688（多くは約 490） | 559〜767（中央値 約 583） | 1.1〜1.2 GB/s（page cache 経由） | 約 50% |
+| raw bs 1m・4m（128 MiB） | — | 537・610 | 639・746 | 1.5・2.1 GB/s（direct） | — |
+| raw の書き 256 MiB ×4 | 597〜655 | 767〜959 | 926〜959 | 1.6 GB/s | 約 59% |
+| UFS の file の書き | 433〜479 | 455〜488 | 373〜433 | ext4 1.6 GB/s | 約 25% |
+
+- p003 の目安（読みが p002 の後の 1.5 倍以上）: 中央値 583 / 384 = 1.52 倍。書きも 1.5 倍。
+- 残りの差（p004 の入力）: 256 KiB の command が QD1 で約 440 µs（Debian の fio seq 128k QD1 は 116 µs）、sys は real の約 1/3。待ちの内訳（device・割り込み・VMD・起床）を測る口が無いので、p004 で command ごとの時刻（post・IRQ・起床）を測る。UFS の書きは line ごとの 4 KiB（`drv_wr` 57350）で、p003 の道を通らない。p002・p003a〜c の間で 373〜671 と揺れが大きく、p005 で調べる。
 
 ## 出典
 
