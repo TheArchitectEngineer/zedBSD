@@ -12,8 +12,7 @@
  *
  * Every fault is recovered by a reset of the device, whatever
  * STATUS.FAULTED says.  The recovery, which only the service thread
- * runs, goes in the steps of design section 5.4: it takes the fault
- * records, halts the processor and reads what it latched, resets the
+ * runs, goes in steps: it takes the fault records, halts the processor and reads what it latched, resets the
  * device and checks the registers the reset keeps, ends every ticket the
  * reset threw away with an error, runs the ring again and checks that a
  * fence of the driver's comes back, and opens the gate once a last
@@ -323,7 +322,8 @@ ghci_poll_stop(
 }
 
 /*
- * Runs one pass of the recovery (design section 5.4, steps 1 to 9).
+ * Runs one pass of the recovery: the records, the halt, the reset, the
+ * tickets, the ring running again, and the last check.
  */
 static enum recovery_outcome
 recover_once(
@@ -623,7 +623,7 @@ reset_and_check(
 	offsets[1] = GHCI_REG_RING_BASE_HI;
 	want[1] = (uint32_t)(device->ring.memory->bus >> 32);
 	offsets[2] = GHCI_REG_RING_SIZE;
-	want[2] = GHCI_RING_BYTES;
+	want[2] = device->ring_bytes;
 	offsets[3] = GHCI_REG_CP_HEAP_BASE;
 	want[3] = (uint32_t)device->heap->bus;
 	offsets[4] = GHCI_REG_CP_HEAP_LIMIT;

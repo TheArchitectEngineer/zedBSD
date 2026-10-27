@@ -59,7 +59,11 @@
 #include "ghci-regs.h"
 #include "ghci-words.h"
 
-/* The ring: 256 KiB of host memory (a power of two between 4 KiB and 16 MiB). */
+/*
+ * The ring the driver takes unless the bus glue asks for another size
+ * (ring_bytes): 256 KiB of host memory.  Any size is a power of two
+ * between 4 KiB and 16 MiB.
+ */
 #define GHCI_RING_BYTES			(256U * 1024U)
 
 /* The CP_HEAP of a GPU without a page-table walker: session 0's 16 KiB root only. */
@@ -128,9 +132,9 @@
 #define GHCI_HOLD_DISPLAY		2U
 
 /*
- * The life of a device (design section 6.1): the start, the ring running,
- * a recovery resetting the device and replaying what it lost, a device
- * that did not come back, and a device whose detach has finished.
+ * The life of a device: the start, the ring running, a recovery
+ * resetting the device and replaying what it lost, a device that did not
+ * come back, and a device whose detach has finished.
  */
 enum ghci_device_state {
 	GHCI_STATE_ATTACHING = 0,
@@ -196,7 +200,9 @@ struct ghci_ticket {
 /*
  * The end of one reset generation: the fence the device had written when
  * the reset ended it.  A ticket of that generation passed if its sequence
- * is at most completed, and failed otherwise.
+ * is at most completed, and failed otherwise.  The driver remembers the
+ * last GHCI_RESET_HISTORY generations; a ticket older than those is
+ * answered as failed.
  */
 struct ghci_reset_record {
 	uint64_t generation;
@@ -248,13 +254,14 @@ struct ghci_ring {
 
 /*
  * The operations the bus glue gives the start: taking the interrupt (or
- * leaving the device polled), letting it go, and turning bus mastering on
- * or off.  The start calls them only after the GPU has been reset, so no
+ * leaving the device polled), letting it go (EBUSY while a handler may
+ * still run on another processor, after which the device's memory is
+ * kept), and turning bus mastering on or off.  The start calls them only after the GPU has been reset, so no
  * interrupt or DMA a kernel before this one left behind reaches this one.
  */
 struct ghci_bus_ops {
 	int (*interrupt_take)(struct ghci_device *device);
-	void (*interrupt_release)(struct ghci_device *device);
+	int (*interrupt_release)(struct ghci_device *device);
 	int (*bus_master)(struct ghci_device *device, int on);
 };
 
@@ -280,8 +287,9 @@ struct ghci_device {
 	 * The bus, filled by the glue: its private record, its operations,
 	 * the register window, the local window, the function's IDs, whether
 	 * the device is polled, whether host memory is reached uncached (the
-	 * bus does not snoop the caches), and whether bus mastering was on
-	 * when the driver found the function (a boot display may be using it).
+	 * bus does not snoop the caches), whether bus mastering was on when
+	 * the driver found the function (a boot display may be using it), and
+	 * the ring's size in bytes (0: GHCI_RING_BYTES).
 	 */
 	void *bus;
 	const struct ghci_bus_ops *bus_ops;
@@ -295,6 +303,7 @@ struct ghci_device {
 	int polled;
 	int host_uncached;
 	int bus_master_found;
+	uint32_t ring_bytes;
 
 	/*
 	 * What the start turned on, so that the detach and a failed start
@@ -416,7 +425,8 @@ uint64_t ghci_fence_read(struct ghci_device *device);
 void ghci_fence_write(struct ghci_device *device, uint64_t value);
 
 int ghci_cp_start(struct ghci_device *device);
-void ghci_cp_stop(struct ghci_device *device);
+int ghci_cp_stop(struct ghci_device *device);
+int ghci_cp_check_packets(const uint32_t *packets, uint32_t dwords);
 enum ghci_gate ghci_cp_enter(struct ghci_device *device, unsigned held, int wait);
 void ghci_cp_leave(struct ghci_device *device);
 int ghci_cp_place(struct ghci_device *device, const uint32_t *packets, uint32_t dwords);

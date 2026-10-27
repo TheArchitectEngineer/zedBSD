@@ -73,6 +73,9 @@
 /* The largest local window the driver maps. */
 #define WINDOW_BYTES_MAX		(1ULL << 30)
 
+/* The tries at letting the handler go while it may still run on another processor, a millisecond apart. */
+#define RELEASE_TRIES			1000U
+
 /* The PCI command register and its bus master bit. */
 #define PCI_COMMAND			0x04U
 #define PCI_COMMAND_MASTER		0x0004U
@@ -101,7 +104,7 @@ static void map_window(struct ghci_pci *bus);
 static void choose_host_view(struct ghci_pci *bus);
 static int bus_master_found(struct ghci_pci *bus);
 static int interrupt_take(struct ghci_device *device);
-static void interrupt_release(struct ghci_device *device);
+static int interrupt_release(struct ghci_device *device);
 static int bus_master(struct ghci_device *device, int on);
 static void release_bus(struct ghci_pci *bus);
 
@@ -221,6 +224,12 @@ ghci_pci_attach(
 		if (error != ENODEV)
 			kern_logf("ghci: function not started (%d)\n", error);
 		(void)drv_pci_device_set_driver_data(pci, NULL);
+
+		/* A handler that may still run keeps the record it is given. */
+		if (device->interrupt_taken) {
+			kern_logf("ghci: %s: interrupt not let go; its record is kept\n", device->name);
+			return error;
+		}
 		release_bus(bus);
 		kern_free(bus);
 		return error;
@@ -272,9 +281,10 @@ ghci_pci_shutdown(
 	if (bus == NULL)
 		return;
 
-	/* No interrupt, the processor reset, no bus mastering. */
+	/* No interrupt, and the processor reset; its quiesce ends before bus mastering goes. */
 	ghci_write(&bus->device, GHCI_REG_IRQ_ENABLE, 0U);
 	ghci_write(&bus->device, GHCI_REG_CTRL, GHCI_CTRL_RESET);
+	(void)ghci_wait_register(&bus->device, GHCI_REG_CTRL, GHCI_CTRL_RESET, 0U, bus->device.reset_wait_ms);
 	(void)drv_pci_device_set_bus_master(pci, false);
 }
 
@@ -466,14 +476,14 @@ interrupt_take(
 	if (error != 0)
 		return error;
 	if (bus->irq_count != 1U) {
-		interrupt_release(device);
+		(void)interrupt_release(device);
 		return ENODEV;
 	}
 
 	/* The handler. */
 	error = drv_pci_device_establish_irq(bus->pci, &bus->irq, ghci_cp_interrupt, device, "ghci", &bus->irq_cookie);
 	if (error != 0) {
-		interrupt_release(device);
+		(void)interrupt_release(device);
 		return error;
 	}
 
@@ -485,23 +495,42 @@ interrupt_take(
 	return 0;
 }
 
-/* Lets go of the handler and the interrupt. */
-static void
+/*
+ * Lets go of the handler and the interrupt.  A handler still running on
+ * another processor is waited for a bounded time; returns 0, or EBUSY
+ * with the handler kept, after which its argument must not be freed.
+ */
+static int
 interrupt_release(
 	struct ghci_device *device)
 {
 	struct ghci_pci *bus;
+	unsigned tries;
+	int error;
 
-	/* The handler, then the vector. */
+	/* The handler first, retried while it may still run. */
 	bus = device->bus;
+	error = 0;
 	if (bus->irq_cookie != NULL) {
-		drv_pci_device_disestablish_irq(bus->pci, bus->irq_cookie);
+		for (tries = 0U; tries < RELEASE_TRIES; tries++) {
+			error = drv_pci_device_disestablish_irq_checked(bus->pci, bus->irq_cookie);
+			if (error != EBUSY)
+				break;
+			ghci_sleep_ms(1U);
+		}
+		if (error == EBUSY)
+			return EBUSY;
 		bus->irq_cookie = NULL;
 	}
+
+	/* Then the vector. */
 	if (bus->irq_count != 0U) {
 		drv_pci_device_free_irqs(bus->pci, &bus->irq, bus->irq_count);
 		bus->irq_count = 0U;
 	}
+
+	/* Succeeded: no handler of the device is left. */
+	return 0;
 }
 
 /* Turns bus mastering on or off. */
@@ -531,7 +560,7 @@ release_bus(
 	struct ghci_pci *bus)
 {
 	/* The interrupt, if the start left it. */
-	interrupt_release(&bus->device);
+	(void)interrupt_release(&bus->device);
 
 	/* The local window. */
 	if (bus->device.window != NULL) {
