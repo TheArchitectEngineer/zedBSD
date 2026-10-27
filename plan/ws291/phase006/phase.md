@@ -348,3 +348,25 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 | --- | --- | --- | --- | --- |
 | scene-1500 / scene-6500 | 199.4 / 50.2 | 0.11 / 0.15 | 0.10 / 0.10 | 4.67 / 19.49 |
 | big-1000 / subs-1000 | 86.9 / 58.6 | 5.41 / 6.25 | 0.02 / 10.28 | 6.01 / 0.46 |
+- 確かめ（vmunix-feat1、07:29〜07:36、guard の下）: nggshape 14 種 ok、bench ×3（約 5 分）、hang 回復 ok、SMU は正常のまま（hung=0・fault=0、温度 47〜50 C、
+  負荷の時 fan 828 rpm）。shot 1 体は mview の窓が出る前の desktop を撮った（起動直後の 1 回目の既知の事、未判定）。SMU が壊れたのは前は約 20 分の後
+  なので、この 1 回では直ったと言えない（以後の guard の下の試験で見続ける）。
+
+### Fable 5.1 High の助言 3 回目（残りの差、07:40）と試した事
+
+- 助言の要点: 両方とも raster を外しても同じ時間なので、律速は GE・SPI の前段（wave の起動から GS_ALLOC_REQ までの時間）。候補の順: (1) 実行の run
+  （IB・resource table）の system memory の page が MTYPE UC なので各 wave の s_load が PCIe を往復する → NC に、(2) s_barrier の数（5 対 RADV 2）、
+  (3) position の fetch を buffer_load_format_xyzw から dwordx3 に、(4) PDE0 の 2 MiB page、(6) fence の時間に起床の遅れが入っていないか、
+  (7〜10) CPU 側: acquire・submit の worker の起床、execute_draw の毎 draw の全 state、run の slot の数。
+- 試した (1): space.c の system の page を NC（Linux の cached な system page と同じ）にした kernel（vmunix-nc1）: cull-6500 20.64、scene-6500 20.78 ms
+  （前 20.45・20.58）→ 効果なし、戻した（commit しない）。
+- 試した (8): frame を、queue が空で worker が暇な時は submit した thread で直に実行する kernel（vmunix-direct1、runtime.c）: nggshape・shot（1 体 差 0、
+  6500 体 max 1）・hang は ok だが、bench は変わらず（scene-6500 22.45 ms、subs-1000 290 ms）→ 戻した（commit しない）。libvulkan の VULKAN TIMING は
+  1 ms の刻みの時計なので、小さい段の平均は粗い。kernel の op 18（vkQueueSubmit）は 1 回 17〜33 µs で、frame の CPU 側の大半は kernel の executor の外
+  （libvulkan と gpu の core の往復）。
+- 見立て（未確かめ、次の担当へ）: GPU がほぼ何もしない scene-1 でも fence が 1.35 ms（Linux 0.06 ms）、big-1 も 1.44 ms。fence の時間に約 1.3 ms の
+  固定の遅れがある。完了の通知の道は EOP の割り込み → IH の thread → ring の fence の waitq → runtime の completer の thread → core → user の thread と
+  3 回の thread の起床で、kern の sched_wakeup は thread を前に走った CPU の run queue に入れる（その CPU が忙しいと次の tick まで待つ見込み）。
+  この遅れを除けば scene-6500 の GPU の時間は約 19.2 ms で Linux（19.5〜19.7）を下回る見込み。直す所の候補: amdrdna の中では EOP の処理（IH の thread）
+  から run の通過した parked の marker を直に完了して completer の起床を省く（順序を保つ）、kern の側では起床する thread を空いた CPU へ（scheduler は
+  amdrdna の外、Q1 へ）。
