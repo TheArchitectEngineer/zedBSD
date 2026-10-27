@@ -1,15 +1,15 @@
-# WS290 の設計: zedBSD の GHCI の driver を GHCI 1.0（ghci.md 20bf888）に書き直す
+# WS290 の設計: zedBSD の GHCI の driver を GHCI 1.0（ghci.md d9252e4）に書き直す
 
 - Phase: [ws290-p001](phase001/phase.md)。版 1・2: 2026-10-26（P1、q1594）。版 3: 2026-10-27（P3、q1621、書きかけで中断）。**版 4: 2026-10-28（P3、q1636-i01）**。版 3 までの本文は git の履歴（f5fea4c2e など）にあり、この版は 89529de を正本に全部を書き直した。
 - 親: [WS290](ws.md)。前身の設計: [WS288 design](../ws288/design.md) §6（1.1 の driver）。
 - この文書は設計だけ。source は変えていない。
-- **状態（2026-10-28 06:30、q1641 P3）: 版 4.6。U の回答（版 4.1）、design-reviewer（Opus 5.5）3 回の指摘（版 4.2〜4.4、§24）を反映し、仕様 cb937e6（回答 第 13.0 版）に追従（版 4.5: N48 で計画の reset を外し、N47・N49・N50・N51・N59・swizzle・unnormalized を使う）。版 4.6: 仕様 20bf888（回答 第 14.0 版）に追従（N62 の sampler の独立の slot `w1[9:6]`、N63 の kind の 1 対 1、N66 の operand 120・121、N70 の DISP_SET 1 + 2N、§11.4 の `maxDescriptorSet*` を 96 に）。仕様の残りの疑問は [ghci-review.md](ghci-review.md) 第 15 版（N73〜N77）で、回答を待っている。driver の仮の扱いは §19。**
+- **状態（2026-10-28 06:40、q1641 P3）: 版 4.7。U の回答（版 4.1）、design-reviewer（Opus 5.5）3 回の指摘（版 4.2〜4.4、§24）を反映し、仕様 cb937e6（回答 第 13.0 版）に追従（版 4.5: N48 で計画の reset を外し、N47・N49・N50・N51・N59・swizzle・unnormalized を使う）。版 4.6: 仕様 20bf888（回答 第 14.0 版）に追従（N62 の sampler の独立の slot `w1[9:6]`、N63 の kind の 1 対 1、N66 の operand 120・121、N70 の DISP_SET 1 + 2N、§11.4 の `maxDescriptorSet*` を 96 に）。版 4.7: 仕様 d9252e4（回答 第 15.0 版）で N73〜N77 が全部解決し、第 16 版で「残る疑問なし」を送った（§19）。**
 
 ## 0. 正本・読んだ物・確認の水準
 
 | 読んだ物 | 版 | 使い方 |
 | --- | --- | --- |
-| amaterrace-gpu `docs/ghci.md`（2816 行） | **cb937e6**（2026-10-28 05:56、ghci-review 第 13 版への回答 第 13.0 版）。cf8be08 からの差: N47 attachment は linear・`*_va` は subresource の先頭・mip と layer は 0・layers は 1（1393〜1398 行）、N48 root の大きさと CLOSE・UNMAP が table を free list に返す（628・1915 行）、N49 PROT = 0 の CLOSE は PTE を消さず閉じた session への CLOSE・UNMAP は no-op（1916〜1917）、N50 FAULT_INFO の [19:16] stage・[31:20] syndrome と kind の別名（412〜439）、N51 DRAW_INDIRECT の INDEXED は header の flags[0]、N52、N53 format の追加（1447〜1520）、N54 RESIDENT_WARPS[15:0] は容量、N59 VF の範囲外は 0（779）・descriptor_count・圧縮の単位は texel、Part B（N61）texture descriptor の swizzle（1282）・sampler の unnormalized（1303）・sampler の独立 index（1338〜1340）。残る疑問は ghci-review 第 14 版 N62〜N72（§19）。**20bf888**（2026-10-28、回答 第 14.0 版）の差: N62 sampler slot は texture の R の形の `w1[9:6]`（gsi1_isa.h `GSI1_W1_SAMP_SLOT_SHIFT 6u`）、N63 FAULT_INFO.KIND は 1 対 1（6 = PROT_FAULT、9 = PAGE_FAULT で read・write は FAULT_INFO[20]、10 = PERM_FAULT）、N64 CP_HEAP の式（1930 行）、N65 texture・sampler は VS と FS の和で 16（1342 行）、N66 operand 120 `vtx_idx`・121 `inst_idx`、N67・N68・N69（IRQ_HALTED bit 6）・N70（DISP_SET 1 + 2N）・N71（§8.6 の 4 行）・N72。残りは第 15 版 N73〜N77 | driver の要件の唯一の正本。**この design の「n 行」は特に断らなければ cf8be08 の行**（cb937e6 では 168 行より後が少しずつずれる。cb937e6 の行は「cb937e6 の n 行」と書く） |
+| amaterrace-gpu `docs/ghci.md`（2816 行） | **cb937e6**（2026-10-28 05:56、ghci-review 第 13 版への回答 第 13.0 版）。cf8be08 からの差: N47 attachment は linear・`*_va` は subresource の先頭・mip と layer は 0・layers は 1（1393〜1398 行）、N48 root の大きさと CLOSE・UNMAP が table を free list に返す（628・1915 行）、N49 PROT = 0 の CLOSE は PTE を消さず閉じた session への CLOSE・UNMAP は no-op（1916〜1917）、N50 FAULT_INFO の [19:16] stage・[31:20] syndrome と kind の別名（412〜439）、N51 DRAW_INDIRECT の INDEXED は header の flags[0]、N52、N53 format の追加（1447〜1520）、N54 RESIDENT_WARPS[15:0] は容量、N59 VF の範囲外は 0（779）・descriptor_count・圧縮の単位は texel、Part B（N61）texture descriptor の swizzle（1282）・sampler の unnormalized（1303）・sampler の独立 index（1338〜1340）。残る疑問は ghci-review 第 14 版 N62〜N72（§19）。**20bf888**（2026-10-28、回答 第 14.0 版）の差: N62 sampler slot は texture の R の形の `w1[9:6]`（gsi1_isa.h `GSI1_W1_SAMP_SLOT_SHIFT 6u`）、N63 FAULT_INFO.KIND は 1 対 1（6 = PROT_FAULT、9 = PAGE_FAULT で read・write は FAULT_INFO[20]、10 = PERM_FAULT）、N64 CP_HEAP の式（1930 行）、N65 texture・sampler は VS と FS の和で 16（1342 行）、N66 operand 120 `vtx_idx`・121 `inst_idx`、N67・N68・N69（IRQ_HALTED bit 6）・N70（DISP_SET 1 + 2N）・N71（§8.6 の 4 行）・N72。**d9252e4**（回答 第 15.0 版、今の正本）の差: N73 kind の書き分け（kind 6 = PROT_FAULT / PRIVILEGED_OP、入れ子は kind 1、VM の flag の違反は kind 10、FAULT_INFO[20] が read・write）、N74 §8.6 の per stage 16・set 96、N75 51〜57 を 37〜43 と同じに受ける、N76 `lw`・`sw` は fault しない、N77 文書の整理。残る疑問は無い（第 16 版） | driver の要件の唯一の正本。**この design の「n 行」は特に断らなければ cf8be08 の行**（cb937e6 では 168 行より後が少しずつずれる。cb937e6 の行は「cb937e6 の n 行」と書く） |
 | 同（前の版、行番号の基準） | **cf8be08**（2026-10-28 03:44、`git show cf8be08:docs/ghci.md`）。89529de（2677 行）からの差は bc7df9e の §12.10.3「Shader Stage Register & Export Conventions」の追加、1a1fa85 の N38〜N45 の改訂（§8.4 の dual-source、§12.1・§12.5・§12.6・§12.8・§12.10・§12.11・§12.12 の参照と CAPS の名前）、cf8be08 の 2298 行（Vulkan の戻り値の名前を除く）。main の先頭 4188a4c は回答の file だけの差 | driver の要件の唯一の正本。下の「§n」はこの版の節。「n 行」は **1917 行までは 89529de と cf8be08 で同じ**で、§12 以降（1918 行より後）は **cf8be08 の行**（版 4.2 から統一。Q23）|
 | 同 `include/`（ghci_regs.h・ghci_cmd.h・ghci_packets.h・ghci_frame.h・ghci_layout.h・gsi1_isa.h など 20 file） | cf8be08（gsi1_isa.h は bea1ef9 で注記 1 行だけ直った。89529de からの差は ghci_cmd.h の `GHCI_VS_REG_*`・`GHCI_FS_REG_*`・`GHCI_EXP_*` と gsi1_isa.h の export・system の register・`GSI1_COLOR_ATTACHMENTS 8`・注記。gsi1_isa.h の header・interface 表の定義は「pre-1.0、1.0 では使わない」と明記されて残る） | ghci.md との照合だけ。値は ghci.md から起こす（§17）。`gsi1_isa.h`（bea1ef9）と今の `compiler/gsi1_isa.h` は 78 行違う（`GSI1_COLOR_ATTACHMENTS` 4 と 8、`GSI1_EXP_COLOR0_SRC1`、`GSI1_VS_REG_*`、lda の word 0〜3 など。版 4 の「同じ」は誤りだった、R18）。p006 で値を直す |
 | 同 `fw/cp/ghci_cmd.c`・`cmd.c`（参考） | 89529de | CP の firmware はまだ §8.2 の PSO の配置に合っていない（`fw_cmd_bind_pipeline_pso` は `pso.cull_mode` など §8.2 に無い field を読む）。実機は仕様より遅れ得る（§16.2） |
@@ -255,7 +255,7 @@ U5（「全部 WS292」）により、WS290 は session だけの回収（§3.3 
 
 1. **記録**: service は handler の記録を取り出し、`recovery_generation` が今の物より古い記録は捨てる（reset の前に積まれた古い事象、Q06）。
 2. **HALT と犯人**（p005 で犯人）: device.lock → display.lock → cp_lock を取る。`STATUS.FAULTED` でなければ `CTRL.HALT` を書き `STATUS.HALTED` を有界に待つ（PROT = 1 の CP を止めてから読む。T05）。`fault_count` の値を覚える（8 の確かめに使う、T01）。`FAULT_INFO`（KIND・UNIT・SESSION_ID だけを解き、stage と syndrome は生の値。N50）・`SESSION_ACTIVE`・`FAULT_ADDR`・`DIAG_*`・fence の語を読み log。
-   - **client に帰せる fault**（20bf888 の N63 で kind は 1 対 1。書き分けの残りは第 15 版 N73）: `UNIT` が VF・SU・RX・TU・ROP・BLT（≠ CP）で `KIND` が 1（INVALID_OP、ISA の fault を含む）・6（PROT_FAULT）・9（PAGE_FAULT、read・write は FAULT_INFO[20]）・10（PERM_FAULT）、または `KIND` 4（watchdog）。`UNIT` = CP の物（1・2・3・6・7、8 = MMU_OOM。driver は secondary を使わないので CP の 6 も driver の誤り）と `KIND` 5 は driver の誤りか装置の fault で帰せない。
+   - **client に帰せる fault**（20bf888 の N63 で kind は 1 対 1、d9252e4 の N73 で書き分けも決まった）: `UNIT` が VF・SU・RX・TU・ROP・BLT（≠ CP）で `KIND` が 1（INVALID_OP、ISA の fault を含む）・6（PROT_FAULT）・9（PAGE_FAULT、read・write は FAULT_INFO[20]）・10（PERM_FAULT）、または `KIND` 4（watchdog）。`UNIT` = CP の物（1・2・3・6・7、8 = MMU_OOM。driver は secondary を使わないので CP の 6 も driver の誤り）と `KIND` 5 は driver の誤りか装置の fault で帰せない。
    - **犯人（Q04・T05）**: flat でない device は (a) `FAULT_INFO.SESSION_ID` = s が 1〜15 で OPEN の `ghci_vm`（帰せる fault の時）、(b) PROT = 1 では、OPEN で「SESSION_OPEN の後の fence が過ぎた」（CP が開いたと確かめた）のに `SESSION_ACTIVE[s]` = 0 の session（`FAULT_INFO` は最初の fault だけを latch する、410 行。2 つ目以降の犯人もこれで拾う）。s = 0 は driver の packet なので装置の fault（1605 行の「Session 0 の watchdog は FAULTED」）。flat は全 client が session 0 なので、ここで読んだ fence の語より seq が大きい `submit_log` の最初の submit の持ち主（driver の submit なら装置の fault）。
    - 犯人の `ghci_vm` を FAULTED にする。犯人の無い fault（帰せない物、AXI_STUCK、hang）は**装置の fault**。
 3. **reset**: `CTRL.RESET` を書き、0 に戻るのを `GHCI_RESET_WAIT_MS` 待つ。戻らない・`STATUS.AXI_STUCK` = 1 なら即 LOST（1609〜1611 行）。reset は `RING_BASE`・`RING_SIZE`・`CP_HEAP_*`・`WDT_CYCLES`・`IRQ_ENABLE`・`SCRATCH` を保ち、`RING_WPTR`・`RPTR`・`IRQ_STATUS`・`FAULT_*`・`CTRL` の実行の bit・`SESSION_ACTIVE`・TLB・CP_HEAP の割当を消す（565〜566 行）。driver は保たれる register を読んで確かめ（違えば書き直す）、`ring.wptr` = 0、`submit_log` を空にする。
@@ -439,7 +439,7 @@ HW が決める物（§8.4、20bf888 1340・2204 行）: texture の命令の te
 | 2 | 資源の表: 16 byte の単位で、UBO・SSBO・texel buffer の buffer descriptor、storage image・input attachment の記述（32 byte の texture descriptor の写し） | 同上 |
 | 3 | driver の表: scratch の base、framebuffer の大きさなど | pipeline ごと |
 
-- compiler は pipeline の全 stage（VS と FS）を通して、使う image（sampled image・combined の image）に texture slot を、使う sampler（分かれた sampler・combined の sampler）に sampler slot を別々に振る（combined は texture slot と sampler slot を 1 つずつ取る）。どちらも pipeline の全 stage の和で 16 個まで。答える値は Vulkan 1.0 の最小（`maxPerStageDescriptorSampledImages`・`Samplers` = 16、`maxDescriptorSetSampledImages`・`Samplers` = 96）で、和が 16 を超える pipeline は作成で断って log（U8。ghci-review 第 15 版 N74 で stage ごとの表を頼んでいる）。
+- compiler は pipeline の全 stage（VS と FS）を通して、使う image（sampled image・combined の image）に texture slot を、使う sampler（分かれた sampler・combined の sampler）に sampler slot を別々に振る（combined は texture slot と sampler slot を 1 つずつ取る）。どちらも pipeline の全 stage の和で 16 個まで。答える値は Vulkan 1.0 の最小（`maxPerStageDescriptorSampledImages`・`Samplers` = 16、`maxDescriptorSetSampledImages`・`Samplers` = 96）で、和が 16 を超える pipeline は作成で断って log（U8。d9252e4 の 1342・1436 行と §8.6 が同じ扱いを書く、N74）。
 - constant bank（512 語）: c0〜c23 = push constant の先頭 96 byte、c24〜c31 = HW の鏡、c32〜c39 = push constant の 96〜127 byte（`lwc` で読む）、c40〜 = dynamic offset（set ごとに順）。`maxPushConstantsSize` = 128。`CMD_LOAD_CONST` は 32 語ずつ。
 - UBO は `lw` で読む（1.1 の bank への写しは無い）。`maxUniformBufferRange` 65536。
 
@@ -592,7 +592,7 @@ unified: heap 1 つ、型 1 つ（DEVICE_LOCAL・HOST_VISIBLE・HOST_COHERENT）
 
 ### 15.4 format
 
-FMT の block が有れば、format ごとに `FMT_INDEX` を書き `FMT_OPTIMAL`・`FMT_LINEAR`・`FMT_BUFFER` を読む（501 行「A driver reports its format properties from these」）。GHCI の bit → Vulkan の bit: 0 SAMPLED_IMAGE、1 SAMPLED_IMAGE_FILTER_LINEAR、2 COLOR_ATTACHMENT、3 COLOR_ATTACHMENT_BLEND、4 DEPTH_STENCIL_ATTACHMENT、5 VERTEX_BUFFER、6 BLIT_SRC、7 BLIT_DST、8 STORAGE_IMAGE（488〜498 行）。FMT が無ければ §8.5.1 の表を「Guard」の flag で絞った物。どちらの場合も driver が実装できない bit を落とす（STORAGE_IMAGE は compiler の対応、sRGB は FMT0[9]）。BLIT_* は CAP_BLT = 1 なら FMT の値のまま、CAP_BLT = 0 なら driver の能力から作る（R04、U10）: BLIT_SRC は SAMPLED の format（LINEAR の filter は SAMPLED_IMAGE_FILTER_LINEAR の有る物だけ）、BLIT_DST は COLOR_ATTACHMENT の format（§11.6 の描画の blit）。depth・stencil の BLIT は Vulkan 1.0 で必須でないので CAP_BLT = 0 では出さない。FMT の読みは attach の時に一度、表の全部の format で行い `struct ghci_caps` の外の表に持つ（`FMT_INDEX` は host が書く唯一の index なので device.lock の中）。Vulkan 1.0 の必須の format が欠ける時は U8。`A8B8G8R8_{UNORM,SNORM,UINT,SINT,SRGB}_PACK32`（51〜57）は little endian で `R8G8B8A8_*`（37〜43）と同じ byte の並びなので、driver が 37〜43 の code に置き換えて descriptor・PSO に書き、37〜43 の feature を答える（仮、ghci-review 第 15 版 N75）。`B4G4R4A4_UNORM_PACK16`・`A2B10G10R10_UINT_PACK32`・`E5B9G9R9_UFLOAT_PACK32` は答えず U8。
+FMT の block が有れば、format ごとに `FMT_INDEX` を書き `FMT_OPTIMAL`・`FMT_LINEAR`・`FMT_BUFFER` を読む（501 行「A driver reports its format properties from these」）。GHCI の bit → Vulkan の bit: 0 SAMPLED_IMAGE、1 SAMPLED_IMAGE_FILTER_LINEAR、2 COLOR_ATTACHMENT、3 COLOR_ATTACHMENT_BLEND、4 DEPTH_STENCIL_ATTACHMENT、5 VERTEX_BUFFER、6 BLIT_SRC、7 BLIT_DST、8 STORAGE_IMAGE（488〜498 行）。FMT が無ければ §8.5.1 の表を「Guard」の flag で絞った物。どちらの場合も driver が実装できない bit を落とす（STORAGE_IMAGE は compiler の対応、sRGB は FMT0[9]）。BLIT_* は CAP_BLT = 1 なら FMT の値のまま、CAP_BLT = 0 なら driver の能力から作る（R04、U10）: BLIT_SRC は SAMPLED の format（LINEAR の filter は SAMPLED_IMAGE_FILTER_LINEAR の有る物だけ）、BLIT_DST は COLOR_ATTACHMENT の format（§11.6 の描画の blit）。depth・stencil の BLIT は Vulkan 1.0 で必須でないので CAP_BLT = 0 では出さない。FMT の読みは attach の時に一度、表の全部の format で行い `struct ghci_caps` の外の表に持つ（`FMT_INDEX` は host が書く唯一の index なので device.lock の中）。Vulkan 1.0 の必須の format が欠ける時は U8。`A8B8G8R8_{UNORM,SNORM,UINT,SINT,SRGB}_PACK32`（51〜57）は hardware が 37〜43 と同じに受ける（d9252e4 の 1519〜1520 行、N75）ので、そのまま descriptor・attachment に書き、37〜43 の feature を答える。`B4G4R4A4_UNORM_PACK16`・`A2B10G10R10_UINT_PACK32`・`E5B9G9R9_UFLOAT_PACK32` は答えず U8。
 
 ### 15.5 §8.6 に無い limit・feature の答え（R20）
 
@@ -685,15 +685,17 @@ WS の受け入れ（ws.md）との対応: 1.1 の code が無い = p004・p007�
 
 ## 19. 仕様の欠け
 
-版 4 の S01・S02 は N37〜N46 で解決した（第 12 版）。版 4.1 の design-reviewer で見つけた N47〜N60 は [ghci-review.md](ghci-review.md) 第 13 版で送り、回答 第 13.0 版（cb937e6）で 10 件が解決、4 件が一部。第 14 版（N62〜N72）は回答 第 14.0 版（20bf888）で 7 件が解決（N62・N64・N66・N68・N69・N70・N71）、4 件が一部。2026-10-28 06:25 の第 15 版（N73〜N77）で続けた。今の残りと driver の仮の扱い:
+版 4 の S01・S02 は N37〜N46 で解決した（第 12 版）。版 4.1 の design-reviewer で見つけた N47〜N60 は [ghci-review.md](ghci-review.md) 第 13 版で送り、回答 第 13.0 版（cb937e6）で 10 件が解決、4 件が一部。第 14 版（N62〜N72）は回答 第 14.0 版（20bf888）で 7 件が解決、4 件が一部。第 15 版（N73〜N77）は回答 第 15.0 版（d9252e4）で全部解決した。2026-10-28 06:35 の第 16 版で「残る疑問なし」を送り（仕様担当は回答 第 16.0 版で Signoff）、やり取りを閉じた（N01〜N77 の全部が解決）。
 
-| N | 重さ | 内容 | driver の仮の扱い（design の節） |
-| --- | --- | --- | --- |
-| N73 | L | kind の書き分けの食い違い（secondary の特権 3 か 6、入れ子 3 か 1、VM の flag の違反 6 か 10、`SYNDROME[20]` の書き方） | UNIT = CP は driver の誤り、kind 6・10 は client の fault で同じ扱い（§5.4 の 2）。secondary は使わない |
-| N74 | M | texture・sampler の slot は VS と FS の和で 16（Vulkan 1.0 の stage ごとの 16・set の 96 を満たさない）、1436・§8.6 の本文 | 16・96 を答え、和が 16 を超える pipeline は作成で断る（§11.4、U8） |
-| N75 | M | 必須の format の残り（B4G4R4A4、A8B8G8R8_*、A2B10G10R10_UINT、E5B9G9R9） | A8B8G8R8_* は 37〜43 に置き換える、他は U8（§15.4） |
-| N76 | L | strict alignment の CTRL の bit が無い | 揃った番地だけ、CTRL の未定義の bit は書かない（§12） |
-| N77 | L | §12.4・§12.5・§8.4 の sampler slot の書き残し、systolic の operand、120・121 の VS 以外、ETC2 の Guard | gsi1_isa.h の `w1[9:6]` を正、120・121 は VS だけ、`CAP_ETC2` を正 |
+**仕様の残りは無い。** d9252e4 で決まった物の driver の扱い:
+
+| N | 決まった事（d9252e4） | driver（design の節） |
+| --- | --- | --- |
+| N73 | kind 6 = PROT_FAULT / PRIVILEGED_OP、secondary の入れ子は kind 1、VM の flag の違反は kind 10、read・write は FAULT_INFO[20] | UNIT = CP の 1・2・3・6・7・8 は driver の誤り、UNIT ≠ CP の 1・6・9・10 と kind 4 は client の fault（§5.4 の 2） |
+| N74 | texture・sampler の slot は VS と FS の和で 16、§8.6 は per stage 16・set 96 | 16・96 を答え、和が 16 を超える pipeline を作成で断る（§11.4、U8） |
+| N75 | 51〜57（A8B8G8R8_*）は 37〜43 と同じに受ける、B4G4R4A4・A2B10G10R10_UINT・E5B9G9R9 は shader か断り | 51〜57 をそのまま書く、残りの 3 つは U8（§15.4） |
+| N76 | `lw`・`sw` は bits 1:0 を無視し fault しない | compiler は揃った番地だけを出す（§12） |
+| N77 | §12.4・§12.5 の samp_slot、systolic の operand の削除、120・121 は VS だけ、ETC2 は `CAP_ETC2` | gsi1_isa.h の `w1[9:6]`、120・121 は VS だけ（§12） |
 
 ## 20. ghci.md 以外の判断（Q1・ユーザーへ）
 
