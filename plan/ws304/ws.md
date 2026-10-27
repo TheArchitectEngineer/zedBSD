@@ -6,6 +6,8 @@
 - Status: planning（2026-10-27 10:33 新設、実機の試験はまだできない）
 - 出典: 2026-10-27 10:33 ユーザー「まだテストできないのですが、Pi5のNVMeも対応したいです。PCIeを使えるようにしないと。」
 
+- 2026-10-27 10:34 ユーザー「Pi5のNVMeハットを買って装着しました。Switchbotの空きがないので、今夜新しいSwitchbotが届くまでテストできないですが、コードだけ書いておくのがいいと思います。」→ p001・p002 を今（P3、q1618）、p003 の実機は新しい SwitchBot が届いた後。
+
 ## 今の事実（Q1 が読んだ範囲）
 
 - src/drivers/pci/pci-brcmstb.c は BCM2711（Pi 4）の Broadcom STB の PCIe の root complex（reset・SerDes・outbound/inbound の窓・link、CPU の cache を snoop しない）。
