@@ -43,11 +43,6 @@
  * only once all of them are placed: a recovery that begins meanwhile
  * (the gate answers RETRY, or the ring's room ends with EAGAIN) leaves
  * nothing recorded, and the caller starts again.
- *
- * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 7.3,
- * CMD_VM_MAP, CMD_VM_UNMAP, CMD_SESSION_OPEN and CMD_SESSION_CLOSE;
- * section 11.2, CP_HEAP and the tables a session close returns; section
- * 11.6, the three levels of isolation).
  */
 
 #include <stddef.h>
@@ -256,7 +251,13 @@ ghci_vm_open(
 			break;
 		}
 
-		/* CMD_SESSION_OPEN and a fence that says the processor opened it. */
+		/*
+		 * CMD_SESSION_OPEN and a fence that says the processor opened it.
+		 *
+		 * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+		 * 7.3, CMD_SESSION_OPEN; section 11.2, the root a session takes
+		 * from CP_HEAP).
+		 */
 		start = device->ring.wptr;
 		(void)ghci_cmd_session_open(packet, slot, 0U);
 		error = ghci_cp_place(device, packet, GHCI_DW_SESSION_OPEN);
@@ -332,11 +333,18 @@ ghci_vm_close(
 
 		spin_unlock_irqrestore(&device->irq_lock, irq);
 
-		/* A lost device, or a session a reset killed, needs no packet. */
+		/*
+		 * A lost device, or a session a reset killed, needs no packet:
+		 * a session dies only in a reset that ended (the GPU no longer
+		 * reaches its memory), so the memory goes at once.  A session
+		 * already closing has its packets in the ring.
+		 */
 		if (lost || vm->state == GHCI_VM_DEAD) {
 			vm_retire(device, vm);
 			break;
 		}
+		if (vm->state == GHCI_VM_CLOSING)
+			break;
 
 		/* Without a walker the close waits only for the work placed until now. */
 		if (vm->flat) {
@@ -359,7 +367,14 @@ ghci_vm_close(
 			continue;
 		}
 
-		/* Every live mapping's unmap, then CMD_SESSION_CLOSE (never before the unmaps), then the fence. */
+		/*
+		 * Every live mapping's unmap, then CMD_SESSION_CLOSE (never before
+		 * the unmaps), then the fence.
+		 *
+		 * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+		 * 7.3, CMD_VM_UNMAP and CMD_SESSION_CLOSE; section 11.2, the
+		 * tables a session close returns to CP_HEAP).
+		 */
 		start = device->ring.wptr;
 		error = 0;
 		for (mapping = vm->mappings; mapping != NULL && error == 0; mapping = mapping->next) {
@@ -444,12 +459,27 @@ ghci_vm_map(
 
 	(void)ghci_vm_reclaim(device);
 
-	/* Without a walker the address is the bus address, and nothing is placed. */
+	/*
+	 * Without a walker the address is the bus address, and nothing is
+	 * placed; the gate still waits out a recovery and refuses a lost
+	 * device.
+	 */
 	if (vm->flat) {
-		error = EIO;
-		if (vm->state == GHCI_VM_OPEN) {
-			mapping->va = allocation->bus;
-			error = 0;
+		for (;;) {
+			gate = enter_ring(device);
+			if (gate == GHCI_GATE_LOST) {
+				error = EIO;
+				break;
+			}
+			if (gate == GHCI_GATE_RETRY)
+				continue;
+			error = EIO;
+			if (vm->state == GHCI_VM_OPEN) {
+				mapping->va = allocation->bus;
+				error = 0;
+			}
+			ghci_cp_leave(device);
+			break;
 		}
 	} else {
 		/* The addresses and CMD_VM_MAP in one section past the gate. */
@@ -649,25 +679,6 @@ ghci_vm_reclaim(
 }
 
 /*
- * Reports the state of a ticket of a session's work: as the fence says,
- * except that every ticket of a fault's culprit placed before the reset
- * failed, even one whose fence was written (its work was skipped).
- */
-enum ghci_ticket_state
-ghci_vm_ticket(
-	struct ghci_device *device,
-	struct ghci_vm *vm,
-	const struct ghci_ticket *ticket)
-{
-	/* The culprit's work before the reset failed. */
-	if (vm != NULL && vm->faulted && ticket->generation <= vm->fault_generation)
-		return GHCI_TICKET_FAILED;
-
-	/* Succeeded: as the fence says. */
-	return ghci_cp_ticket(device, ticket);
-}
-
-/*
  * Finds the culprits of a fault (the recovery's step 2): with a walker,
  * the session FAULT_INFO names when the fault is one a session's work
  * causes, and with PROT every confirmed open session the device no
@@ -695,7 +706,6 @@ ghci_vm_find_culprits(
 	uint32_t slot;
 	unsigned index;
 	int attributable;
-	int oom;
 	int passed;
 	int found;
 
@@ -717,7 +727,6 @@ ghci_vm_find_culprits(
 	     kind == GHCI_FAULT_KIND_PAGE_FAULT ||
 	     kind == GHCI_FAULT_KIND_PERM_FAULT))
 		attributable = 1;
-	oom = kind == GHCI_FAULT_KIND_MMU_OOM && unit == GHCI_UNIT_CP;
 
 	/* Without a walker every session runs as session 0: the first submission not done is the culprit's. */
 	found = 0;
@@ -755,10 +764,12 @@ ghci_vm_find_culprits(
 	 * With PROT a session's fault ends only that session, and FAULT_INFO
 	 * holds the first fault alone: a session the processor confirmed open
 	 * that is no longer active faulted too.  Read only of a halted
-	 * processor, and not after an exhaustion of CP_HEAP, which drops
-	 * sessions through the driver's count.
+	 * processor, and only when the first fault was a session's: after a
+	 * fault of the device's own or an exhaustion of CP_HEAP (which drops
+	 * sessions through the driver's count) the fault stays the device's,
+	 * and is counted towards the storm.
 	 */
-	if (!ghci_caps_has(&device->caps, GHCI_HAS_PROT) || !halted || oom)
+	if (!ghci_caps_has(&device->caps, GHCI_HAS_PROT) || !halted || !attributable)
 		return found;
 	for (slot = 1U; slot < GHCI_SESSIONS; slot++) {
 		/* An open session the processor confirmed opening. */
@@ -921,7 +932,8 @@ ghci_vm_replay(
 			if (mapping->state != GHCI_MAPPING_LIVE)
 				continue;
 			error = place_map(device, vm, mapping);
-			mapping->replayed = device->recovery_generation;
+			if (error == 0)
+				mapping->replayed = device->recovery_generation;
 		}
 	}
 
@@ -1185,7 +1197,14 @@ va_take(
 		}
 	}
 
-	/* A new arena: a run of free chunks, and room for their tables. */
+	/*
+	 * A new arena: a run of free chunks, and room for their tables.
+	 *
+	 * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+	 * 11.2, a 4 KiB level 0 table for each 2 MiB of addresses a page
+	 * table maps, taken from CP_HEAP; section 11.6, one table per session
+	 * with PROT and one shared table without).
+	 */
 	chunks = (uint32_t)((bytes + GHCI_L0_SPAN_BYTES - 1U) / GHCI_L0_SPAN_BYTES);
 	error = run_find(device, chunks, &first);
 	if (error != 0)
@@ -1344,8 +1363,9 @@ vm_retire(
 }
 
 /*
- * Makes a session the culprit of a fault: every ticket of its placed
- * before the reset fails.  The caller holds the device's lock and
+ * Makes a session the culprit of a fault: the reset fails every ticket of
+ * its work the device had not finished before the fault, even one whose
+ * fence the device wrote.  The caller holds the device's lock and
  * cp_lock.
  */
 static void
@@ -1353,17 +1373,7 @@ vm_fault(
 	struct ghci_device *device,
 	struct ghci_vm *vm)
 {
-	unsigned long irq;
-
-	/* The reset generation the fault ends. */
-	irq = spin_lock_irqsave(&device->irq_lock);
-
-	vm->fault_generation = device->generation;
-
-	spin_unlock_irqrestore(&device->irq_lock, irq);
-
 	/* The session is the culprit. */
-	vm->faulted = 1;
 	vm->state = GHCI_VM_FAULTED;
 	kern_logf("ghci: %s: session %u faulted\n", device->name, (unsigned)vm->slot);
 }

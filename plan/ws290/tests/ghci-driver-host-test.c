@@ -156,6 +156,8 @@ static void scene_culprit(void);
 static void scene_lost_work(void);
 static void scene_vm_retry(void);
 static void scene_resources(void);
+static void scene_vm_edges(void);
+static void action_fault_then_recover(void);
 
 /*
  * The operations of the fake bus; they live as long as the test.
@@ -202,6 +204,7 @@ main(void)
 	scene_lost_work();
 	scene_vm_retry();
 	scene_resources();
+	scene_vm_edges();
 	model_fini();
 
 	/* Reports the counts. */
@@ -1466,6 +1469,11 @@ scene_mappings(void)
 		ghci_vm_unmap(&device, big);
 		reclaim();
 
+		/* One allocation in two sessions (an import): each mapping holds it. */
+		error = ghci_vm_map(&device, two, first_memory, 0U, &big);
+		expect(error == 0 && first_memory->holds == 3U && model_lookup(two->session, big->va) != NULL &&
+		    model_lookup(two->session, big->va)->phys == first_memory->bus, "mappings: one allocation in two sessions");
+
 		/* The closes give the tables back (with PROT); the shared level 0 tables stay until a reset. */
 		ghci_vm_close(&device, one);
 		ghci_vm_close(&device, two);
@@ -1705,7 +1713,6 @@ scene_culprit(void)
 	struct ghci_allocation *memory;
 	struct ghci_mapping *mapping;
 	struct ghci_ticket ticket;
-	enum ghci_ticket_state state;
 	struct ghci_vm *one;
 	struct ghci_vm *two;
 	struct ghci_vm *three;
@@ -1736,8 +1743,8 @@ scene_culprit(void)
 	expect(device.state == GHCI_STATE_RUNNING && device.resets == 1U, "culprit: reset");
 	expect(one->state == GHCI_VM_DEAD && two->state == GHCI_VM_DEAD && three->state == GHCI_VM_OPEN, "culprit: culprits dead, the other open");
 	expect(stub.session_errors == 2U && device.storm_count == 0U, "culprit: reported, not a storm");
-	state = ghci_vm_ticket(&device, one, &ticket);
-	expect(state == GHCI_TICKET_FAILED, "culprit: its written fence failed");
+	error = ghci_cp_wait(&device, &ticket, TEST_WAIT_MS);
+	expect(error == EIO, "culprit: its written fence failed");
 	expect(model.session_active == (1U | (1U << three->session)), "culprit: only the survivor replayed");
 	error = submit_vm(one, &ticket);
 	expect(error == EIO, "culprit: a dead session submits nothing");
@@ -1820,6 +1827,25 @@ scene_lost_work(void)
 	reclaim();
 	memory_done(memory);
 	end_scene("lost work");
+
+	/* Under PROT too: the session MMU_OOM dropped from SESSION_ACTIVE is no culprit, and the exhaustion is counted. */
+	error = start_scene(MODEL_PROT, NULL);
+	expect(error == 0, "lost work: PROT started");
+	error = ghci_vm_open(&device, &owner_token, &mapper);
+	expect(error == 0, "lost work: PROT open");
+	model_inject(GHCI_FAULT_KIND_MMU_OOM, GHCI_UNIT_CP, mapper->session, 0x2000U, 0);
+	expect((model.session_active & (1U << mapper->session)) == 0U, "lost work: PROT session dropped by the model");
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(mapper->state == GHCI_VM_OPEN && device.oom_count == 1U && stub.session_errors == 0U, "lost work: PROT MMU_OOM has no culprit");
+
+	/* A device fault that also drops a session from SESSION_ACTIVE counts towards the storm, and kills nobody. */
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	model.session_active &= ~(1U << mapper->session);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(mapper->state == GHCI_VM_OPEN && device.storm_count == 1U, "lost work: device fault counted, no culprit");
+	ghci_vm_close(&device, mapper);
+	reclaim();
+	end_scene("lost work PROT");
 }
 
 /*
@@ -1969,4 +1995,92 @@ scene_resources(void)
 	device.ops.close(&device, first);
 	device.ops.close(&device, second);
 	end_scene("resources");
+}
+
+/* The scene's action: a device fault the first time, the service's recovery after. */
+static void
+action_fault_then_recover(void)
+{
+	if (scene_action_runs == 1U) {
+		model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+		return;
+	}
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+}
+
+/*
+ * The edges of the VM operations: a map whose wait for the ring's room
+ * ends in a recovery gives its new arena back and maps once after it;
+ * on a lost device an unmap and a close keep the memory the GPU was
+ * given in the quarantine until the detach turned bus mastering off.
+ */
+static void
+scene_vm_edges(void)
+{
+	struct ghci_allocation *memory;
+	struct ghci_allocation *other_memory;
+	struct ghci_mapping *mapping;
+	struct ghci_mapping *other;
+	struct ghci_ticket ticket;
+	struct ghci_vm *vm;
+	enum ghci_gate gate;
+	uint32_t free_dwords;
+	uint32_t nop;
+	unsigned chunks;
+	unsigned index;
+	unsigned maps;
+	int error;
+
+	/* A 4 KiB ring the held processor lets fill. */
+	test_ring_bytes = 4096U;
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0, "edges: started");
+	memory = host_memory(4096U);
+	other_memory = host_memory(4096U);
+	error = ghci_vm_open(&device, &owner_token, &vm);
+	expect(error == 0, "edges: open");
+	model_hold(1);
+	error = submit_nops(TEST_SUBMIT_DWORDS, &ticket);
+	gate = ghci_cp_enter(&device, 0U, 1);
+	for (;;) {
+		free_dwords = (model_read(GHCI_REG_RING_RPTR) - device.ring.wptr - 1U + device.ring.dwords) % device.ring.dwords;
+		if (free_dwords < GHCI_DW_VM_MAP || error != 0)
+			break;
+		(void)ghci_cmd_nop(&nop, 1U);
+		error = ghci_cp_place(&device, &nop, 1U);
+	}
+	ghci_cp_doorbell(&device);
+	ghci_cp_leave(&device);
+	expect(error == 0 && gate == GHCI_GATE_OPEN, "edges: ring filled");
+
+	/* The map waits for room, a fault ends the wait, and the map goes round after the recovery. */
+	maps = model_count_commands(GHCI_OP_VM_MAP);
+	scene_action = action_fault_then_recover;
+	error = ghci_vm_map(&device, vm, memory, 0U, &mapping);
+	scene_action = NULL;
+	model_hold(0);
+	expect(error == 0 && device.resets == 1U && device.state == GHCI_STATE_RUNNING, "edges: map after the recovery");
+	chunks = 0U;
+	for (index = 0U; index < GHCI_CHUNKS; index++) {
+		if (device.chunk_owner[index] != NULL)
+			chunks++;
+	}
+	expect(chunks == 1U && vm->arenas != NULL && model_count_commands(GHCI_OP_VM_MAP) == maps + 1U, "edges: one arena, one map");
+	expect(model_lookup(vm->session, mapping->va) != NULL, "edges: mapped in the model");
+
+	/* The device is lost with the memory mapped: the unmap and the close quarantine what the GPU was given. */
+	error = ghci_vm_map(&device, vm, other_memory, 0U, &other);
+	expect(error == 0, "edges: second map");
+	device.state = GHCI_STATE_LOST;
+	ghci_vm_unmap(&device, mapping);
+	memory_done(memory);
+	ghci_vm_close(&device, vm);
+	memory_done(other_memory);
+	expect(device.vm[1] == NULL && device.quarantined != NULL && device.quarantined->next != NULL &&
+	    device.quarantined->next->next == NULL, "edges: both runs in the quarantine");
+
+	/* The detach gives the quarantine back once the GPU is stopped. */
+	error = ghci_device_stop(&device);
+	expect(error == 0 && device.quarantined == NULL, "edges: quarantine given back at the detach");
+	end_scene("edges");
 }

@@ -37,13 +37,15 @@
 #include "ghci.h"
 
 /*
- * One export: the device, the memory it holds, and the image the export
- * described (has_image 0 for an allocation-only export).  It lives from
+ * One export: the device, the memory it holds, the blob flags an import
+ * gets (the exporter's: a blob not made mappable stays so), and the image
+ * the export described (has_image 0 for an allocation-only export).  It lives from
  * the export to its release, whatever happens to the sessions.
  */
 struct ghci_share {
 	struct ghci_device *device;
 	struct ghci_allocation *allocation;
+	uint32_t flags;
 	int has_image;
 	struct gpu_image_descriptor image;
 };
@@ -87,6 +89,9 @@ share_export(
 		return ENOMEM;
 	share->device = device;
 	share->allocation = resource->allocation;
+	share->flags = GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE;
+	if (resource->blob)
+		share->flags = resource->flags | GPU_BLOB_SHAREABLE;
 	if (image != NULL) {
 		share->has_image = 1;
 		share->image = *image;
@@ -127,8 +132,8 @@ share_release(
 }
 
 /*
- * Imports an export into a session: a mappable blob of the session that
- * shows the same memory and holds it.
+ * Imports an export into a session: a blob of the session, mappable when
+ * the exported resource was, that shows the same memory and holds it.
  */
 static int
 share_import(
@@ -157,7 +162,7 @@ share_import(
 	/* The blob of the session. */
 	mutex_lock(&device->lock);
 
-	error = ghci_resource_add(device, opaque, share->allocation, 1, GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE, &resource);
+	error = ghci_resource_add(device, opaque, share->allocation, 1, share->flags, &resource);
 
 	mutex_unlock(&device->lock);
 	if (error != 0)

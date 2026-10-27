@@ -1100,6 +1100,7 @@ ticket_state(
 	const struct ghci_ticket *ticket)
 {
 	struct ghci_reset_record *record;
+	unsigned index;
 	int passed;
 
 	/* A ticket of this generation is done once the accepted fence reaches it. */
@@ -1114,9 +1115,13 @@ ticket_state(
 	if (ticket->generation > device->generation)
 		return GHCI_TICKET_FAILED;
 
-	/* An older ticket passed if the fence had reached it when the reset ended its generation. */
+	/* An older ticket passed if the fence had reached it when the reset ended its generation, unless a culprit's. */
 	record = &device->history[ticket->generation % GHCI_RESET_HISTORY];
 	passed = ghci_fence64_passed(record->completed, ticket->seq);
+	for (index = 0U; index < record->failed_count && passed; index++) {
+		if (record->failed[index] == ticket->seq)
+			passed = 0;
+	}
 	if (record->generation == ticket->generation && passed)
 		return GHCI_TICKET_DONE;
 

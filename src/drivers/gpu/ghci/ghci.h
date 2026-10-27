@@ -114,6 +114,13 @@
 /* The fault records the interrupt keeps for the service thread. */
 #define GHCI_FAULT_RECORDS		8U
 
+/*
+ * The fences of culprits' submissions one reset generation remembers as
+ * failed although the device wrote them; past them, the generation's end
+ * is moved back to before the first such fence.
+ */
+#define GHCI_CULPRIT_FENCES		32U
+
 /* The ends of the reset generations the driver remembers, to answer an old ticket. */
 #define GHCI_RESET_HISTORY		16U
 
@@ -226,14 +233,18 @@ struct ghci_ticket {
 
 /*
  * The end of one reset generation: the fence the device had written when
- * the reset ended it.  A ticket of that generation passed if its sequence
- * is at most completed, and failed otherwise.  The driver remembers the
- * last GHCI_RESET_HISTORY generations; a ticket older than those is
- * answered as failed.
+ * the reset ended it, and the fences of the culprits' submissions the
+ * device wrote although it skipped their work.  A ticket of that
+ * generation passed if its sequence is at most completed and not one of
+ * failed, and failed otherwise.  The driver remembers the last
+ * GHCI_RESET_HISTORY generations; a ticket older than those is answered
+ * as failed.
  */
 struct ghci_reset_record {
 	uint64_t generation;
 	uint64_t completed;
+	uint64_t failed[GHCI_CULPRIT_FENCES];
+	unsigned failed_count;
 };
 
 /*
@@ -327,9 +338,8 @@ struct ghci_mapping {
  * as session 0).  state changes under the device's lock and cp_lock
  * together, so either one reads it.  The arenas are the runs of 2 MiB
  * chunks it owns, l0_marks the level 0 tables counted in its own page
- * table (with PROT), counted whether its tables are in CP_HEAP's count,
- * and faulted with fault_generation says that every ticket of that reset
- * generation or older failed: it was the culprit of a fault.
+ * table (with PROT), and counted whether its tables are in CP_HEAP's
+ * count.
  */
 struct ghci_vm {
 	void *owner;
@@ -339,9 +349,7 @@ struct ghci_vm {
 	enum ghci_vm_state state;
 	int counted;
 	int lost_work;
-	int faulted;
 	int reported;
-	uint64_t fault_generation;
 	struct ghci_ticket open_ticket;
 	struct ghci_ticket close_ticket;
 	struct ghci_mapping *mappings;
@@ -592,7 +600,6 @@ void ghci_vm_close(struct ghci_device *device, struct ghci_vm *vm);
 int ghci_vm_map(struct ghci_device *device, struct ghci_vm *vm, struct ghci_allocation *allocation, uint32_t flags, struct ghci_mapping **result);
 void ghci_vm_unmap(struct ghci_device *device, struct ghci_mapping *mapping);
 int ghci_vm_reclaim(struct ghci_device *device);
-enum ghci_ticket_state ghci_vm_ticket(struct ghci_device *device, struct ghci_vm *vm, const struct ghci_ticket *ticket);
 int ghci_vm_find_culprits(struct ghci_device *device, uint32_t fault_info, uint32_t active, int halted, uint64_t fence);
 void ghci_vm_mark_lost(struct ghci_device *device, uint64_t fence);
 void ghci_vm_after_reset(struct ghci_device *device);

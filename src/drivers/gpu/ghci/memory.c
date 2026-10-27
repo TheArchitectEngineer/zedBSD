@@ -248,6 +248,12 @@ ghci_memory_unhold(
 	unsigned long irq;
 	int error;
 
+	/* An allocation nobody holds is a caller's error; it is kept rather than given back twice. */
+	if (allocation->holds == 0U) {
+		kern_logf("ghci: %s: allocation let go more often than held\n", device->name);
+		return;
+	}
+
 	/* Owners remain. */
 	allocation->holds--;
 	if (allocation->holds != 0U)
