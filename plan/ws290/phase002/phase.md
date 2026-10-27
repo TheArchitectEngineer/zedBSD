@@ -20,10 +20,9 @@
 
 ## 仕様の仮の扱い（ghci-review の回答で変われば直す）
 
-- N70（DISP_SET の大きさ）: `ghci_cmd_disp_set` は 1 + 2N dword（本文の配置）。仕様が 2 + 2N（dword 1 に N）と答えれば直す。
-- N63（FAULT_INFO の kind の別名）: `ghci-regs.h` の kind の名前は cb937e6 の主な名前（6 = PAGE_WRITE など）。kind の分け方は p004 で KIND と UNIT の組にする。
-- N62（sampler の独立 index）: p002 の encoder には効かない（GSI1 の命令の encoding は p006）。
+- 20bf888（回答 第 14.0 版）で決まった: N70 の `CMD_DISP_SET` は 1 + 2N（`ghci_cmd_disp_set` のまま）、N63 の kind は 1 対 1（`ghci-regs.h` の 6 を `PROT_FAULT`、10 を `PERM_FAULT` に直し、`GHCI_IRQ_HALTED`（bit 6）と `GHCI_FAULT_WRITE`（FAULT_INFO[20]）を足した）、N62 の sampler slot は `w1[9:6]`（p002 の encoder には効かない、p006）。
 - N47（attachment は linear、mip・layer は 0、layers は 1）: `ghci_render_pass_desc_encode` は layers ≠ 1 を断り、mip・layer を 0 で書く（cb937e6 で決まった形）。
+- 第 15 版の N73〜N77 のうち p002 の code に効く物は無い（N75 の A8B8G8R8 の置き換えは p007 の `vk-caps.c`・p008 の descriptor）。
 
 ## 記録
 
@@ -33,4 +32,4 @@
   - 試験: `plan/ws290/tests/ghci-host-test.sh` → `ghci-words-host-test: 141 passed, 0 failed`、`ghci-ref-host-test: 56 passed, 0 failed`（amaterrace-gpu cb937e6 の include/ghci_cmd.h の sizeof・offsetof と driver の定数を比べる。header は build/tmp の新しい directory に出すだけ）、`PASS ghci290-host-test`。
   - kernel の flag の compile: `make -n` の check.c の行を caps.c・cmd.c に替えて、amd64（plan/ws288/tests/config-amd64-ghci.mk）と riscv64（config-visionfive2-ghci.mk、-flto）の clang -Werror で compile、出力無し（warning 0）、object を build/tmp/p002-kcc/ に。
   - 未実施: `CONFIG_DRIVER_PCI_GHCI=y` の amd64 vmunix の build（build に入る file を変えていないので今のまま。build/amd64 の sysroot がこの worktree に無い）。
-
+- 2026-10-28 P3（q1641-i01）: 仕様 20bf888 に追従。`ghci-regs.h` の kind 6・10 の名前、`GHCI_IRQ_HALTED`・`GHCI_FAULT_WRITE`、試験の既定の版を 20bf888 に。`plan/ws290/tests/ghci-host-test.sh` → words 141 passed・ref 56 passed、`PASS ghci290-host-test`。

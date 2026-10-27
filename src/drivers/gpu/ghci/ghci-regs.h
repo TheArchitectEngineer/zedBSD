@@ -139,7 +139,7 @@
 #define GHCI_STATUS_CP_STATE_MASK	0xFU
 
 /*
- * Values referenced: amaterrace-gpu cb937e6 docs/ghci.md
+ * Values referenced: amaterrace-gpu 20bf888 docs/ghci.md
  * (section 3.4, IRQ_STATUS and IRQ_ENABLE).
  */
 #define GHCI_IRQ_FENCE			(1U << 0)
@@ -147,10 +147,12 @@
 #define GHCI_IRQ_WATCHDOG		(1U << 2)
 #define GHCI_IRQ_DISPLAY		(1U << 3)
 #define GHCI_IRQ_SOFT			(1U << 5)
+#define GHCI_IRQ_HALTED			(1U << 6)
 
 /*
- * Values referenced: amaterrace-gpu cb937e6 docs/ghci.md
- * (section 3.5, FAULT_INFO kinds and units).
+ * Values referenced: amaterrace-gpu 20bf888 docs/ghci.md
+ * (section 3.5, FAULT_INFO kinds and units; bit 20 tells a write
+ * page fault from a read one).
  */
 #define GHCI_FAULT_KIND_MASK		0xFU
 #define GHCI_FAULT_UNIT_SHIFT		4U
@@ -161,17 +163,18 @@
 #define GHCI_FAULT_STAGE_MASK		0xFU
 #define GHCI_FAULT_SYNDROME_SHIFT	20U
 #define GHCI_FAULT_SYNDROME_MASK	0xFFFU
+#define GHCI_FAULT_WRITE		(1U << 20)
 #define GHCI_FAULT_KIND_NONE		0U
 #define GHCI_FAULT_KIND_INVALID_OP	1U
 #define GHCI_FAULT_KIND_KICK_ABSENT	2U
 #define GHCI_FAULT_KIND_BAD_REG		3U
 #define GHCI_FAULT_KIND_WATCHDOG	4U
 #define GHCI_FAULT_KIND_AXI_ERROR	5U
-#define GHCI_FAULT_KIND_PAGE_WRITE	6U
+#define GHCI_FAULT_KIND_PROT_FAULT	6U
 #define GHCI_FAULT_KIND_LOCKED_REG	7U
 #define GHCI_FAULT_KIND_MMU_OOM		8U
 #define GHCI_FAULT_KIND_PAGE_FAULT	9U
-#define GHCI_FAULT_KIND_MEMORY_FAULT	10U
+#define GHCI_FAULT_KIND_PERM_FAULT	10U
 #define GHCI_UNIT_CP			0U
 #define GHCI_UNIT_VF			1U
 #define GHCI_UNIT_SU			2U
