@@ -232,6 +232,23 @@ mutex_lock(
 	held_add(mutex->guard.name);
 }
 
+int
+mutex_trylock(
+	struct mutex *mutex)
+{
+	/* A mutex held (on the one thread there is, by a caller further up) is not taken. */
+	if (mutex->locked != 0U)
+		return 0;
+
+	/* Checks the order, then holds it. */
+	check_order(mutex->guard.name);
+	mutex->locked = 1U;
+	held_add(mutex->guard.name);
+
+	/* Succeeded: taken. */
+	return 1;
+}
+
 void
 mutex_unlock(
 	struct mutex *mutex)

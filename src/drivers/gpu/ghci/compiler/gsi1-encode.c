@@ -27,6 +27,9 @@
 /* The bits of a texel offset (-8 to 7). */
 #define GSI1_TEXEL_OFFSET_BITS		0xfU
 
+/* The bits of a texture or sampler slot (0 to 15). */
+#define GSI1_SLOT_BITS			0xfU
+
 /* The bits of the sub-operation field and of a 7-bit field. */
 #define GSI1_SUB_BITS			0x1fU
 #define GSI1_SEVEN_BITS			0x7fU
@@ -336,6 +339,9 @@ encode_extra(
 
 	/* The sub-operation. */
 	word1 |= (extra->sub & GSI1_SUB_BITS) << GSI1_W1_SUB_SHIFT;
+
+	/* A texture R form's sampler slot. */
+	word1 |= (extra->sampler & GSI1_SLOT_BITS) << GSI1_W1_SAMP_SLOT_SHIFT;
 
 	/* The texel offsets, four signed bits each. */
 	word1 |= ((uint32_t)extra->offset_u & GSI1_TEXEL_OFFSET_BITS) << GSI1_W1_TEX_DU_SHIFT;

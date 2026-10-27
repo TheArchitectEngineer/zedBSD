@@ -7,7 +7,7 @@
 
 /*
  * The GSI1 compiler's driver and core (gsi1-compile.h): from the shared
- * scalar IR to a GSI1 program binary.
+ * scalar IR to a GSI1 program and the record of what it needs.
  *
  * GSI1 is a scalar ISA with 32 lanes to a warp, so every IR value lives in
  * one register, one 32-bit lane per invocation.  A value gets the lowest
@@ -47,11 +47,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The registers of a lane when the options do not say, and the constant-bank words. */
-#define GSI1_DEFAULT_REGISTERS		32U
-#define GSI1_DEFAULT_BANK_WORDS		256U
-
-/* The words of the header and the instructions' two words. */
+/* The two words of an instruction. */
 #define GSI1_WORDS_PER_INSTRUCTION	2U
 
 /* All ones: the Boolean true of the IR and of GSI1. */
@@ -101,8 +97,7 @@ static void retire(struct gsi1_lowering *lowering, const struct drv_gpu_shader_i
 static void retire_inputs(struct gsi1_lowering *lowering, uint32_t upto);
 static int finish(struct gsi1_lowering *lowering);
 static int resolve_branches(struct gsi1_lowering *lowering);
-static int build_binary(struct gsi1_lowering *lowering, struct ghci_gsi1_program *program);
-static uint32_t header_stage(enum drv_gpu_shader_stage stage);
+static int build_program(struct gsi1_lowering *lowering, struct ghci_gsi1_program *program);
 static void free_tables(struct gsi1_lowering *lowering);
 
 /*
@@ -1051,36 +1046,6 @@ gsi1_emit_exec(
 	}
 }
 
-/* Adds an entry to the interface table. */
-int
-gsi1_add_interface(
-	struct gsi1_lowering *lowering,
-	uint32_t kind,
-	uint32_t set,
-	uint32_t binding,
-	uint32_t specific)
-{
-	uint32_t *entry;
-	int error;
-
-	/* The table has a bound. */
-	if (lowering->interface_count == GSI1_INTERFACE_MAX) {
-		error = gsi1_refuse(lowering, ENOTSUP, "the program binds more resources than the interface table holds");
-		return error;
-	}
-
-	/* The entry's four words. */
-	entry = &lowering->interface[lowering->interface_count * GSI1_IFACE_WORDS];
-	entry[GSI1_IF_KIND] = kind;
-	entry[GSI1_IF_SET] = set;
-	entry[GSI1_IF_BINDING] = binding;
-	entry[GSI1_IF_SPECIFIC] = specific;
-	lowering->interface_count++;
-
-	/* Succeeded: the entry is in the table. */
-	return 0;
-}
-
 /* Finds the interface record of an input location; NULL when the program has none. */
 const struct drv_gpu_shader_ir_io *
 gsi1_find_input(
@@ -1246,6 +1211,7 @@ compile_once(
 	lowering->spill.enabled = spill;
 	if (options != NULL)
 		lowering->options = *options;
+	lowering->bindings = lowering->options.bindings;
 
 	/* Allocates the result record. */
 	result = kern_calloc(1U, sizeof(*result));
@@ -1282,9 +1248,9 @@ compile_once(
 	if (error == 0)
 		error = gsi1_spill_finish(lowering);
 
-	/* The header, the interface table and the code. */
+	/* The code and the record of what the program needs. */
 	if (error == 0)
-		error = build_binary(lowering, result);
+		error = build_program(lowering, result);
 
 	/* Whether the registers ran out, for the caller's next try. */
 	*short_of_registers = lowering->short_of_registers;
@@ -1327,22 +1293,20 @@ prepare(
 		return error;
 	}
 
-	/* The registers of a lane, at most r0-r62. */
+	/* The registers of a lane: none given, or more than GSI1 has, reads as r0-r62. */
 	lowering->register_limit = lowering->options.registers;
-	if (lowering->register_limit == 0U)
-		lowering->register_limit = GSI1_DEFAULT_REGISTERS;
-	if (lowering->register_limit > GSI1_REGISTERS_MAX)
+	if (lowering->register_limit == 0U || lowering->register_limit > GSI1_REGISTERS_MAX)
 		lowering->register_limit = GSI1_REGISTERS_MAX;
 
-	/* The constant bank's words and a fragment pipeline's samples. */
-	if (lowering->options.bank_words == 0U)
-		lowering->options.bank_words = GSI1_DEFAULT_BANK_WORDS;
+	/* A fragment pipeline's samples. */
 	if (lowering->options.samples == 0U)
 		lowering->options.samples = 1U;
 
-	/* The GPU's varying words: none given, or more than GSI1 has, reads as the 64 of CAPS[30]. */
-	if (lowering->options.varying_words == 0U || lowering->options.varying_words > GSI1_VARYING_WORDS)
-		lowering->options.varying_words = GSI1_VARYING_WORDS;
+	/* A fragment program's primitive is a triangle, a line or a point. */
+	if (lowering->options.primitive > GHCI_GSI1_PRIMITIVE_POINT) {
+		error = gsi1_refuse(lowering, EINVAL, "a primitive kind GSI1 does not rasterize");
+		return error;
+	}
 
 	/* The per-value and per-instruction tables. */
 	error = allocate_tables(lowering);
@@ -1454,10 +1418,6 @@ allocate_tables(
 		lowering->output_last[index] = GSI1_NOT_DEFINED;
 	}
 
-	/* No location has a varying word yet. */
-	for (index = 0U; index < GHCI_GSI1_LOCATIONS; index++)
-		lowering->varying_word[index] = GHCI_GSI1_NO_WORD;
-
 	/* Succeeded: the tables are ready. */
 	return 0;
 }
@@ -1532,8 +1492,8 @@ check_instructions(
  * A constant takes a special operand when one has its bits, and is
  * rematerialized otherwise.  A compute program's built-in values are
  * special operands, and so are the group counts it reads from the system
- * buffer.  A push constant or a uniform block word in the first 32 words
- * of the constant bank is a c operand.  Everything else (and anything a
+ * buffer and a vertex program's vertex and instance index.  A push
+ * constant in c0-c23 is a c operand.  Everything else (and anything a
  * MOVE writes) is a register value.
  */
 static void
@@ -1643,25 +1603,27 @@ classify_values(
 			continue;
 		}
 
-		/* A push-constant word in the first 32 bank words is a c operand. */
-		if (instruction->op == DRV_GPU_IR_LOAD_PUSH && (instruction->immediate & 3U) == 0U) {
-			word = lowering->push_bank + instruction->immediate / 4U;
-			if (word < GSI1_C_COUNT) {
+		/* A vertex program's vertex and instance index are operands 120 and 121. */
+		if (instruction->op == DRV_GPU_IR_LOAD_INPUT && ir->stage == DRV_GPU_STAGE_VERTEX) {
+			special = GSI1_NO_OPERAND;
+			if (instruction->location == DRV_GPU_SHADER_LOCATION_VERTEX_INDEX) {
+				special = GSI1_VTX_INDEX;
+			} else if (instruction->location == DRV_GPU_SHADER_LOCATION_INSTANCE_INDEX) {
+				special = GSI1_INST_INDEX;
+			}
+
+			/* A system input is the operand; an attribute's component lives in a register. */
+			if (special != GSI1_NO_OPERAND) {
 				lowering->kind[dst] = GSI1_VALUE_OPERAND;
-				lowering->operand[dst] = (uint8_t)GSI1_C(word);
+				lowering->operand[dst] = (uint8_t)special;
 				continue;
 			}
 		}
 
-		/* A uniform block word copied to the first 32 bank words is a c operand. */
-		if (instruction->op == DRV_GPU_IR_LOAD_UBO &&
-		    instruction->location < ir->uniform_count &&
-		    lowering->binding[instruction->location].kind == GSI1_KIND_UNIFORM_BLOCK &&
-		    (instruction->immediate & 3U) == 0U &&
-		    instruction->immediate >= ir->uniforms[instruction->location].offset) {
-			word = lowering->binding[instruction->location].bank;
-			word += (instruction->immediate - ir->uniforms[instruction->location].offset) / 4U;
-			if (word < GSI1_C_COUNT) {
+		/* A push-constant word of c0-c23 is a c operand. */
+		if (instruction->op == DRV_GPU_IR_LOAD_PUSH && (instruction->immediate & 3U) == 0U) {
+			word = GSI1_ABI_BANK_PUSH_LOW + instruction->immediate / 4U;
+			if (word < GSI1_ABI_PUSH_LOW_WORDS) {
 				lowering->kind[dst] = GSI1_VALUE_OPERAND;
 				lowering->operand[dst] = (uint8_t)GSI1_C(word);
 				continue;
@@ -2845,7 +2807,7 @@ lower_kill(
 	/* kill rs1, and the program says that it discards. */
 	kern_memset(&extra, 0, sizeof(extra));
 	gsi1_emit(lowering, gsi1_encode_r(GSI1_OP_CUSTOM3, GSI1_F3_KILL, 0U, 0U, condition, 0U, &extra));
-	lowering->flags |= GSI1_FLAG_KILL;
+	lowering->flags |= GHCI_GSI1_FLAG_DISCARD;
 
 	/* Succeeded: the discard is lowered. */
 	return 0;
@@ -3079,18 +3041,16 @@ resolve_branches(
 }
 
 /*
- * Lays out the binary: the 16-word header, the interface table and the
- * code.
+ * Fills in the program record: the code, two words to an instruction,
+ * and what the pipeline state and the executor take from the compile.
  */
 static int
-build_binary(
+build_program(
 	struct gsi1_lowering *lowering,
 	struct ghci_gsi1_program *program)
 {
 	const struct drv_gpu_shader_ir *ir;
 	uint32_t *words;
-	uint32_t interface_words;
-	uint32_t code_offset;
 	uint32_t total;
 	uint32_t index;
 	uint32_t registers;
@@ -3098,82 +3058,59 @@ build_binary(
 	/* Names the module being written. */
 	ir = lowering->ir;
 
-	/* The sizes: the header, the table, two words per instruction. */
-	interface_words = lowering->interface_count * GSI1_IFACE_WORDS;
-	code_offset = GSI1_HEADER_WORDS + interface_words;
-	total = code_offset + lowering->count * GSI1_WORDS_PER_INSTRUCTION;
-
-	/* Allocates the binary. */
+	/* Allocates the code: two words per instruction. */
+	total = lowering->count * GSI1_WORDS_PER_INSTRUCTION;
 	words = kern_calloc(total, sizeof(*words));
 	if (words == NULL)
 		return ENOMEM;
 
 	/*
-	 * The registers: the highest the program used, and at least those the
-	 * rasterizer writes before a fragment warp starts.
+	 * The registers: the highest the program used, at least one, and at
+	 * least those the hardware writes before the warp starts (the
+	 * attributes, and a fragment warp's inputs).
 	 */
 	registers = lowering->register_highest;
+	if (registers == 0U)
+		registers = 1U;
+	if (ir->stage == DRV_GPU_STAGE_VERTEX && registers < lowering->attribute_registers)
+		registers = lowering->attribute_registers;
 	if (ir->stage == DRV_GPU_STAGE_FRAGMENT && registers < GSI1_IN_SAMPLE_MASK + 1U)
 		registers = GSI1_IN_SAMPLE_MASK + 1U;
-	if ((lowering->flags & GSI1_FLAG_CENTROID) != 0U && registers < GSI1_IN_CENTROID_B0 + 3U)
-		registers = GSI1_IN_CENTROID_B0 + 3U;
-
-	/* The header. */
-	words[GSI1_H_MAGIC] = GSI1_MAGIC;
-	words[GSI1_H_VERSION] = GSI1_VERSION;
-	words[GSI1_H_STAGE] = header_stage(ir->stage);
-	words[GSI1_H_FLAGS] = lowering->flags;
-	words[GSI1_H_CODE_WORDS] = lowering->count * GSI1_WORDS_PER_INSTRUCTION;
-	words[GSI1_H_CODE_OFFSET] = code_offset;
-	words[GSI1_H_NREGS] = registers;
-	words[GSI1_H_LDS_BYTES] = ir->shared_bytes;
-	words[GSI1_H_WG_SIZE] = 0U;
-	if (ir->stage == DRV_GPU_STAGE_COMPUTE) {
-		words[GSI1_H_WG_SIZE] = ir->local_size[0] & 0xffU;
-		words[GSI1_H_WG_SIZE] |= (ir->local_size[1] & 0xffU) << 8;
-		words[GSI1_H_WG_SIZE] |= (ir->local_size[2] & 0xffU) << 16;
-	}
-	words[GSI1_H_CONST_WORDS] = lowering->bank_used;
-	words[GSI1_H_IFACE_OFFSET] = GSI1_HEADER_WORDS;
-	words[GSI1_H_IFACE_ENTRIES] = lowering->interface_count;
-	words[GSI1_H_ENTRY] = 0U;
-	words[GSI1_H_ISA_MIN_VERSION] = GSI1_VERSION;
-	words[GSI1_H_PUSH_BYTES] = ir->push_bytes;
-	words[GSI1_H_RESERVED] = 0U;
-
-	/* The interface table. */
-	for (index = 0U; index < interface_words; index++)
-		words[GSI1_HEADER_WORDS + index] = lowering->interface[index];
+	if ((lowering->flags & GHCI_GSI1_FLAG_CENTROID) != 0U && registers < GSI1_IN_COUNT)
+		registers = GSI1_IN_COUNT;
 
 	/* The code: word0 then word1 of each instruction. */
 	for (index = 0U; index < lowering->count; index++) {
-		words[code_offset + 2U * index] = (uint32_t)lowering->code[index];
-		words[code_offset + 2U * index + 1U] = (uint32_t)(lowering->code[index] >> 32);
+		words[2U * index] = (uint32_t)lowering->code[index];
+		words[2U * index + 1U] = (uint32_t)(lowering->code[index] >> 32);
 	}
-
-	/* The program record. */
 	program->words = words;
 	program->word_count = total;
 	program->instruction_count = lowering->count;
-	program->register_count = registers;
 
-	/* Succeeded: the binary is the program's. */
+	/* The pipeline state's numbers. */
+	program->used_regs = registers;
+	program->varying_count = lowering->varying_count;
+	program->attribute_registers = lowering->attribute_registers;
+	program->flags = lowering->flags;
+	program->color_outputs = lowering->color_outputs;
+
+	/* A compute program's shared memory and workgroup. */
+	if (ir->stage == DRV_GPU_STAGE_COMPUTE) {
+		program->lds_bytes = ir->shared_bytes;
+		program->local_size[0] = ir->local_size[0];
+		program->local_size[1] = ir->local_size[1];
+		program->local_size[2] = ir->local_size[2];
+	}
+
+	/* The constant bank's words, the scratch memory and the pipeline's tables for the executor. */
+	program->push_bytes = ir->push_bytes;
+	program->dynamic_used = lowering->dynamic_used;
+	program->scratch_bytes = lowering->spill.bytes;
+	program->bindings = lowering->bindings;
+
+	/* Succeeded: the record is the program's. */
 	return 0;
-}
-
-/* Reports the header's stage number of an IR stage. */
-static uint32_t
-header_stage(
-	enum drv_gpu_shader_stage stage)
-{
-	/* The three stages GSI1 has. */
-	if (stage == DRV_GPU_STAGE_VERTEX)
-		return GSI1_STAGE_VERTEX;
-	if (stage == DRV_GPU_STAGE_FRAGMENT)
-		return GSI1_STAGE_FRAGMENT;
-
-	/* Succeeded: a compute program. */
-	return GSI1_STAGE_COMPUTE;
 }
 
 /* Frees the tables of a compilation. */

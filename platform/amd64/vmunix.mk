@@ -277,12 +277,19 @@ AMD64_AMDRDNA_VK_SOURCES += src/drivers/gpu/amdrdna/vk/vk-object.c src/drivers/g
 	$(filter-out $(AMD64_I915_SOURCES) $(AMD64_NVRTX_SOURCES),src/drivers/gpu/i915/vk/vk-codec.c)
 endif
 # The generic GHCI GPU driver (a PCIe GPU with the GPU Host Controller Interface 1.0): the device, the ring,
-# the fences, the interrupt and the recovery.
+# the fences, the interrupt, the recovery, the sessions and their GPU addresses, and the resources.
 AMD64_GHCI_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_GHCI),y)
 AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/pci-attach.c src/drivers/gpu/ghci/cp.c \
 	src/drivers/gpu/ghci/recover.c src/drivers/gpu/ghci/service.c src/drivers/gpu/ghci/memory.c \
-	src/drivers/gpu/ghci/check.c src/drivers/gpu/ghci/caps.c src/drivers/gpu/ghci/cmd.c
+	src/drivers/gpu/ghci/check.c src/drivers/gpu/ghci/caps.c src/drivers/gpu/ghci/cmd.c \
+	src/drivers/gpu/ghci/vm.c src/drivers/gpu/ghci/range.c src/drivers/gpu/ghci/share.c \
+	src/drivers/gpu/ghci/isa.c src/drivers/gpu/ghci/compiler/gsi1-compile.c \
+	src/drivers/gpu/ghci/compiler/gsi1-encode.c src/drivers/gpu/ghci/compiler/gsi1-io.c \
+	src/drivers/gpu/ghci/compiler/gsi1-memory.c src/drivers/gpu/ghci/compiler/gsi1-texture.c \
+	src/drivers/gpu/ghci/compiler/gsi1-image.c src/drivers/gpu/ghci/compiler/gsi1-schedule.c \
+	src/drivers/gpu/ghci/compiler/gsi1-spill.c \
+	$(filter-out $(AMD64_I915_SOURCES) $(AMD64_NVRTX_SOURCES) $(AMD64_AMDRDNA_COMPILER_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c)
 endif
 # The i915 test build: checkpoints the production code calls through weak symbols.
 # The runner runs the scenario -DI915_TEST_SCENARIO=<name> (in ZEDBSD_TEST_CPPFLAGS) after the start;

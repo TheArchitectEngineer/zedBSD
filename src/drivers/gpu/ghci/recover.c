@@ -41,6 +41,9 @@
 /* How long the stop of a thread waits for it to leave. */
 #define THREAD_STOP_MS			2000U
 
+/* The owners of dead sessions one recovery reports at most. */
+#define DEAD_REPORTS			GHCI_SESSIONS
+
 /* What one pass of the recovery ended in. */
 enum recovery_outcome {
 	RECOVERY_NOTHING = 0,
@@ -49,19 +52,32 @@ enum recovery_outcome {
 	RECOVERY_LOST
 };
 
+/*
+ * What the recovery read of a halted (or faulted) processor: FAULT_INFO,
+ * SESSION_ACTIVE, the fence page, and whether the processor stopped.
+ */
+struct halt_reading {
+	uint32_t fault_info;
+	uint32_t active;
+	uint64_t fence;
+	int halted;
+};
+
 static enum recovery_outcome recover_once(struct ghci_device *device);
 static unsigned take_records(struct ghci_device *device, struct ghci_fault_record *records);
-static uint32_t halt_and_read(struct ghci_device *device, unsigned *fault_seen);
-static int count_storm(struct ghci_device *device, const struct ghci_fault_record *records, unsigned count, uint32_t fault_info);
+static void halt_and_read(struct ghci_device *device, unsigned *fault_seen, struct halt_reading *reading);
+static int count_storm(struct ghci_device *device, const struct ghci_fault_record *records, unsigned count, uint32_t fault_info, int culprits);
 static int count_window(uint64_t *ticks, unsigned capacity, unsigned *count, uint64_t now);
 static int reset_and_check(struct ghci_device *device);
-static void end_tickets(struct ghci_device *device);
+static uint64_t end_tickets(struct ghci_device *device);
 static int fence_back(struct ghci_device *device);
 static int last_check(struct ghci_device *device, unsigned fault_seen);
 static enum recovery_outcome check_failed(struct ghci_device *device, const char *what);
 static void lose(struct ghci_device *device, const char *reason);
 static void hang_check(struct ghci_device *device);
 static void unlock_outer(struct ghci_device *device);
+static void placing(struct ghci_device *device, int on, unsigned fault_seen);
+static void report_dead(struct ghci_device *device, void **owners, unsigned count);
 
 /*
  * Stops the service thread and waits a bounded time for it to leave.
@@ -171,7 +187,8 @@ ghci_service_main(
 
 /*
  * Does one round of the service's work: the recovery when the gate is
- * closed, and the hang check.
+ * closed, the hang check, and the retirement of what the GPU is done
+ * with.
  */
 void
 ghci_service_step(
@@ -181,6 +198,8 @@ ghci_service_step(
 	enum recovery_outcome outcome;
 	unsigned long irq;
 	int recovering;
+	int locked;
+	int freed;
 
 	(void)work;
 
@@ -205,6 +224,23 @@ ghci_service_step(
 	/* The core hears of a lost device once every lock is let go. */
 	if (outcome == RECOVERY_LOST && device->gpu != NULL)
 		drv_gpu_report_error(device->gpu, EIO);
+
+	/*
+	 * What the GPU is done with goes back.  The device's lock is only
+	 * tried: a thread that holds it may be waiting for the ring's room,
+	 * which only this thread's hang check ends.
+	 */
+	locked = mutex_trylock(&device->lock);
+	if (!locked)
+		return;
+
+	freed = ghci_vm_reclaim(device);
+
+	mutex_unlock(&device->lock);
+
+	/* The core hears that capacity came back. */
+	if (freed && device->gpu != NULL)
+		drv_gpu_capacity_changed(device->gpu);
 }
 
 /*
@@ -330,10 +366,14 @@ recover_once(
 	struct ghci_device *device)
 {
 	struct ghci_fault_record records[GHCI_FAULT_RECORDS];
-	uint32_t fault_info;
+	struct halt_reading reading;
+	void *dead[DEAD_REPORTS];
+	uint64_t fence;
 	unsigned fault_seen;
 	unsigned count;
+	unsigned index;
 	unsigned long irq;
+	int culprits;
 	int storm;
 	int error;
 
@@ -361,11 +401,18 @@ recover_once(
 		return RECOVERY_LOST;
 	}
 
-	/* Halts the processor (unless it faulted) and reads what it latched. */
-	fault_info = halt_and_read(device, &fault_seen);
+	/* Halts the processor (unless it faulted) and reads what it latched; a fault the register lost is the interrupt's. */
+	halt_and_read(device, &fault_seen, &reading);
+	for (index = 0U; index < count && reading.fault_info == 0U; index++)
+		reading.fault_info = records[index].fault_info;
+
+	/* The sessions whose work caused the fault, when it was a session's. */
+	culprits = 0;
+	if (count != 0U)
+		culprits = ghci_vm_find_culprits(device, reading.fault_info, reading.active, reading.halted, reading.fence);
 
 	/* Faults no session caused, and exhaustions of CP_HEAP, that come too often lose the device. */
-	storm = count_storm(device, records, count, fault_info);
+	storm = count_storm(device, records, count, reading.fault_info, culprits);
 	if (storm) {
 		lose(device, "faults too often");
 		mutex_unlock(&device->cp_lock);
@@ -382,24 +429,35 @@ recover_once(
 		return RECOVERY_LOST;
 	}
 
-	/* Step 4: every ticket the reset threw away ends with an error. */
-	end_tickets(device);
+	/*
+	 * Step 4: every ticket the reset threw away ends with an error; the
+	 * sessions whose submissions were thrown away are marked before the
+	 * ring is emptied.
+	 */
+	fence = end_tickets(device);
+	ghci_vm_mark_lost(device, fence);
+	ghci_cp_ring_reset(device);
 
 	/* Step 5: the display is counted again here once it is driven; its lock goes. */
 	mutex_unlock(&device->display_lock);
 
-	/* Step 6: the ring runs again, and a fence of the driver's must come back. */
+	/* Step 6: the sessions settle, the ring runs again, and a fence of the driver's must come back. */
+	ghci_vm_after_reset(device);
+	placing(device, 1, fault_seen);
 	ghci_cp_run(device);
 	error = fence_back(device);
 	if (error != 0)
 		return check_failed(device, "no fence after the reset");
 
-	/* Step 7: the replay of the sessions comes here once there are sessions. */
+	/* Step 7: the sessions are opened and mapped again. */
 	irq = spin_lock_irqsave(&device->irq_lock);
 
 	device->state = GHCI_STATE_REPLAYING;
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
+	error = ghci_vm_replay(device);
+	if (error != 0)
+		return check_failed(device, "the replay did not finish");
 
 	/* Step 8: a last fence must find no new fault; the gate opens in the same section as the count is compared. */
 	error = last_check(device, fault_seen);
@@ -407,11 +465,16 @@ recover_once(
 		return check_failed(device, "a fault after the reset");
 
 	/* Step 9: every lock goes, and whoever waits at the gate, for room or for a ticket wakes. */
+	placing(device, 0, fault_seen);
+	count = ghci_vm_take_dead(device, dead, DEAD_REPORTS);
 	mutex_unlock(&device->cp_lock);
 	mutex_unlock(&device->lock);
 	waitq_wake_all(&device->gate_wake);
 	waitq_wake_all(&device->ring_wake);
 	waitq_wake_all(&device->fence_wake);
+
+	/* Step 10: the core hears of each session that died. */
+	report_dead(device, dead, count);
 
 	/* Succeeded: the device runs again. */
 	kern_logf("ghci: %s: recovered (reset %u)\n", device->name, device->resets);
@@ -452,12 +515,13 @@ take_records(
 /*
  * Halts a processor that has not faulted, waits a bounded time for it,
  * and reads and logs what the device latched.  Remembers the fault count
- * the last check compares.  Returns FAULT_INFO.
+ * the last check compares.
  */
-static uint32_t
+static void
 halt_and_read(
 	struct ghci_device *device,
-	unsigned *fault_seen)
+	unsigned *fault_seen,
+	struct halt_reading *reading)
 {
 	unsigned long irq;
 	uint32_t status;
@@ -474,12 +538,15 @@ halt_and_read(
 	 * in time (HALTING lasts until its packet ends) is read as it is.
 	 */
 	status = ghci_read(device, GHCI_REG_STATUS);
+	reading->halted = 1;
 	if ((status & GHCI_STATUS_FAULTED) == 0U) {
 		ctrl = ghci_read(device, GHCI_REG_CTRL);
 		ghci_write(device, GHCI_REG_CTRL, ctrl | GHCI_CTRL_HALT);
 		error = ghci_wait_register(device, GHCI_REG_STATUS, GHCI_STATUS_HALTED, GHCI_STATUS_HALTED, GHCI_HALT_WAIT_MS);
-		if (error != 0)
+		if (error != 0) {
 			kern_logf("ghci: %s: processor did not halt for the recovery\n", device->name);
+			reading->halted = 0;
+		}
 	}
 
 	/* The fault count the last check compares with. */
@@ -506,15 +573,18 @@ halt_and_read(
 	    (unsigned)cp_pc,
 	    (unsigned long long)fence);
 
-	/* Succeeded: FAULT_INFO. */
-	return fault_info;
+	/* Succeeded: what was read. */
+	reading->fault_info = fault_info;
+	reading->active = session_active;
+	reading->fence = fence;
 }
 
 /*
  * Counts this recovery's faults: an exhaustion of CP_HEAP (kind
  * MMU_OOM of the processor) in its own window, any other fault no
- * session caused (every fault, until sessions come) in the storm's.
- * A pass without records (a check that failed) counts nothing.
+ * session caused in the storm's; a fault with a culprit is not counted
+ * (the culprit is dead and submits no more).  A pass without records (a
+ * check that failed) counts nothing.
  * Returns 1 when either window is full and the device is to be lost.
  */
 static int
@@ -522,7 +592,8 @@ count_storm(
 	struct ghci_device *device,
 	const struct ghci_fault_record *records,
 	unsigned count,
-	uint32_t fault_info)
+	uint32_t fault_info,
+	int culprits)
 {
 	uint32_t info;
 	uint64_t now;
@@ -544,6 +615,10 @@ count_storm(
 		    ((info >> GHCI_FAULT_UNIT_SHIFT) & GHCI_FAULT_UNIT_MASK) == GHCI_UNIT_CP)
 			oom = 1;
 	}
+
+	/* A session's fault is the culprit's, not the device's. */
+	if (!oom && culprits != 0)
+		return 0;
 
 	/* The fault joins its window. */
 	now = clock_ticks();
@@ -646,36 +721,66 @@ reset_and_check(
 	/* IRQ_ENABLE too, from the mask the handler takes. */
 	ghci_cp_irq_enable(device);
 
-	/* The ring is empty, as the reset left it. */
-	ghci_cp_ring_reset(device);
-
-	/* Succeeded: the device is reset and idle. */
+	/* Succeeded: the device is reset and idle (the ring is emptied once its log was read). */
 	return 0;
 }
 
 /*
  * Ends the reset generation (step 4): a ticket whose fence the device
- * wrote before the reset passed, every later one failed; the fence page
- * then says the last fence placed, so that nobody waits for a fence that
- * will never be written.
+ * wrote before the reset passed, unless it is a culprit's (the device
+ * wrote the fence of work it skipped), and every later one failed; the
+ * fence page then says the last fence placed, so that nobody waits for a
+ * fence that will never be written.  The caller holds cp_lock, with the
+ * submission log as the reset found it.  Returns the fence the device had
+ * written.
  */
-static void
+static uint64_t
 end_tickets(
 	struct ghci_device *device)
 {
+	struct ghci_submit_entry *entry;
 	struct ghci_reset_record *record;
+	uint64_t failed[GHCI_CULPRIT_FENCES];
+	unsigned failed_count;
+	unsigned index;
 	unsigned long irq;
 	uint64_t word;
+	uint64_t end;
+	int passed;
 
 	/* The fence the device wrote before the reset. */
 	word = ghci_fence_read(device);
+
+	/*
+	 * The culprits' submissions whose fences the device wrote: their
+	 * work was skipped, so their tickets fail.  More of them than the
+	 * record keeps end the generation before the first one instead.
+	 */
+	end = word;
+	failed_count = 0U;
+	for (index = 0U; index < device->submit_count; index++) {
+		entry = &device->submit_log[(device->submit_first + index) % GHCI_SUBMIT_LOG];
+		passed = ghci_fence64_passed(word, entry->seq);
+		if (!passed || entry->owner == NULL || entry->owner->state != GHCI_VM_FAULTED)
+			continue;
+		if (failed_count == GHCI_CULPRIT_FENCES) {
+			end = failed[0] - 1U;
+			failed_count = 0U;
+			break;
+		}
+		failed[failed_count] = entry->seq;
+		failed_count++;
+	}
 
 	/* Ends the generation and starts the next with every fence placed counted as written. */
 	irq = spin_lock_irqsave(&device->irq_lock);
 
 	record = &device->history[device->generation % GHCI_RESET_HISTORY];
 	record->generation = device->generation;
-	record->completed = word;
+	record->completed = end;
+	record->failed_count = failed_count;
+	for (index = 0U; index < failed_count; index++)
+		record->failed[index] = failed[index];
 	device->generation++;
 	device->completed = device->fence_placed;
 	device->issued = device->fence_placed;
@@ -685,6 +790,9 @@ end_tickets(
 
 	/* The waiters of tickets look again. */
 	waitq_wake_all(&device->fence_wake);
+
+	/* Succeeded: the fence the reset ended the generation at. */
+	return word;
 }
 
 /*
@@ -699,7 +807,7 @@ fence_back(
 	int error;
 
 	/* The fence, placed and rung. */
-	error = ghci_cp_place_fence(device, 0U, device->ring.wptr, &ticket);
+	error = ghci_cp_place_fence(device, NULL, device->ring.wptr, &ticket);
 	if (error != 0)
 		return ETIMEDOUT;
 	ghci_cp_doorbell(device);
@@ -716,8 +824,9 @@ fence_back(
 /*
  * The last check of a recovery (step 8): a fence comes back, no fault
  * came since the processor halted, FAULT_INFO is clear, and (with a
- * page-table walker) only session 0 is active.  In the same section of
- * the interrupt's lock as the fault count is compared, the gate opens.
+ * page-table walker) exactly session 0 and the replayed sessions are
+ * active.  In the same section of the interrupt's lock as the fault count
+ * is compared, the replayed sessions open and the gate opens.
  * Returns 0 with the gate open, or EIO.
  */
 static int
@@ -743,7 +852,7 @@ last_check(
 	walker = ghci_caps_has(&device->caps, GHCI_HAS_HW_WALKER);
 	if (fault_info != 0U)
 		return EIO;
-	if (walker && active != 1U)
+	if (walker && active != ghci_vm_active_mask(device))
 		return EIO;
 
 	/* Opens the gate unless a fault came since the halt. */
@@ -752,6 +861,7 @@ last_check(
 
 	error = EIO;
 	if (device->fault_count == fault_seen) {
+		ghci_vm_settle(device);
 		device->recovering = 0;
 		device->recovery_generation++;
 		device->gate_generation++;
@@ -784,7 +894,8 @@ check_failed(
 {
 	enum recovery_outcome outcome;
 
-	/* One more failure in a row. */
+	/* One more failure in a row; the recovery's own placement ends. */
+	placing(device, 0, 0U);
 	device->recovery_failures++;
 	kern_logf("ghci: %s: recovery check failed: %s (%u)\n", device->name, what, device->recovery_failures);
 
@@ -826,6 +937,7 @@ lose(
 	record = &device->history[device->generation % GHCI_RESET_HISTORY];
 	record->generation = device->generation;
 	record->completed = word;
+	record->failed_count = 0U;
 	device->generation++;
 	device->state = GHCI_STATE_LOST;
 
@@ -900,6 +1012,51 @@ hang_check(
 		kern_logf("ghci: %s: hang (fence %llu, rptr %u)\n", device->name, (unsigned long long)word, (unsigned)rptr);
 		waitq_wake_all(&device->ring_wake);
 	}
+}
+
+/*
+ * Sets or ends the recovery's own placement: while it is set, a wait for
+ * the ring's room lasts until a fault newer than fault_seen or
+ * GHCI_HANG_MS from now.  The caller holds cp_lock.
+ */
+static void
+placing(
+	struct ghci_device *device,
+	int on,
+	unsigned fault_seen)
+{
+	unsigned long irq;
+	uint64_t deadline;
+
+	/* The deadline, from now. */
+	deadline = clock_ticks() + kern_ms_to_ticks(GHCI_HANG_MS);
+
+	/* The wait for room reads them under the interrupt's lock. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	device->recovery_placing = on;
+	device->recovery_faults = fault_seen;
+	device->recovery_deadline = deadline;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+}
+
+/* Tells the core of each session a recovery found dead.  The caller holds no lock. */
+static void
+report_dead(
+	struct ghci_device *device,
+	void **owners,
+	unsigned count)
+{
+	unsigned index;
+
+	/* Nothing is reported to a core the device is not registered with. */
+	if (device->gpu == NULL)
+		return;
+
+	/* Each owner in turn. */
+	for (index = 0U; index < count; index++)
+		drv_gpu_report_session_error(device->gpu, owners[index], EIO);
 }
 
 /* Lets go of the display's lock and the device's lock, in that order. */

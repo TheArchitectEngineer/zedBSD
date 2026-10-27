@@ -10,10 +10,11 @@
  *
  * gsi1-compile.c drives a compilation: it checks the IR, finds how long
  * each value lives, hands out the registers, lowers the arithmetic and
- * the control flow, and lays out the binary.  gsi1-io.c lowers the
- * inputs and outputs of the vertex and fragment stages, gsi1-memory.c
- * the uniforms, the buffers, the shared memory and the images, and
- * gsi1-texture.c the sampled images.  A program that does not fit its
+ * the control flow, and fills in the program record.  gsi1-io.c lowers
+ * the inputs and outputs of the vertex and fragment stages, gsi1-memory.c
+ * the uniforms, the buffers, the shared memory and the images (and lays
+ * out the pipeline's slots and resource table), and gsi1-texture.c the
+ * sampled images.  A program that does not fit its
  * registers is compiled again with its pure instructions moved down to
  * their readers (gsi1-schedule.c), and then with values kept in the
  * warp's scratch memory (gsi1-spill.c).
@@ -22,6 +23,7 @@
 #ifndef DRIVERS_GPU_GHCI_COMPILER_GSI1_PRIVATE_H
 #define DRIVERS_GPU_GHCI_COMPILER_GSI1_PRIVATE_H
 
+#include "gsi1-abi.h"
 #include "gsi1-compile.h"
 #include "gsi1-encode.h"
 #include "gsi1_isa.h"
@@ -43,9 +45,6 @@
 #define GSI1_MAX_SOURCES		DRV_GPU_IR_TEXTURE_MAX_PARAMS
 #define GSI1_SCRATCH_MAX		32U
 
-/* The most interface entries of a program and bindings of its uniforms. */
-#define GSI1_INTERFACE_MAX		96U
-
 /* The instructions the code list grows by when it is full, and the labels likewise. */
 #define GSI1_LIST_GROWTH		256U
 #define GSI1_LABEL_GROWTH		64U
@@ -54,14 +53,16 @@
  * The output channels a program stores, by number.  A vertex program:
  * the position (0-3), the point size (4), and four channels for each
  * location from 8.  A fragment program: four for each colour attachment
- * (0-15), the depth (16) and the sample mask (17).
+ * (0-31), the depth (32), the sample mask (33) and the four of the
+ * second colour of attachment 0 (34-37).
  */
 #define GSI1_OUTPUT_POSITION		0U
 #define GSI1_OUTPUT_POINT_SIZE		4U
 #define GSI1_OUTPUT_LOCATIONS		8U
 #define GSI1_OUTPUT_COLOR		0U
-#define GSI1_OUTPUT_DEPTH		16U
-#define GSI1_OUTPUT_SAMPLE_MASK		17U
+#define GSI1_OUTPUT_DEPTH		(4U * GSI1_COLOR_ATTACHMENTS)
+#define GSI1_OUTPUT_SAMPLE_MASK		(GSI1_OUTPUT_DEPTH + 1U)
+#define GSI1_OUTPUT_SECOND_COLOR	(GSI1_OUTPUT_SAMPLE_MASK + 1U)
 #define GSI1_OUTPUT_CHANNELS		(GSI1_OUTPUT_LOCATIONS + 4U * GHCI_GSI1_LOCATIONS)
 
 /* The IR instruction index that stands for "after the last instruction" (the exports at the end). */
@@ -111,13 +112,12 @@ struct gsi1_spill {
 	/* Nonzero when values may be kept in the scratch memory. */
 	int enabled;
 
-	/* The bank word of the scratch memory's address, and the interface entry that names it. */
-	uint32_t bank;
-	uint32_t entry;
-
 	/* The register of the lane's address in the warp's part, and the code index of its movi of the part's words. */
 	uint32_t base;
 	uint32_t patch;
+
+	/* The bytes of a warp's part, once the code is done. */
+	uint32_t bytes;
 
 	/* Each value: its scratch word plus one (0: in a register), and the first IR instruction that defines it. */
 	uint32_t *slot;
@@ -173,27 +173,54 @@ enum gsi1_input {
 	GSI1_INPUT_LINEAR_CENTROID_B1,
 	GSI1_INPUT_LINEAR_CENTROID_B2,
 	GSI1_INPUT_RECIPROCAL_W,
-	GSI1_INPUT_VERTEX_INDEX,
-	GSI1_INPUT_INSTANCE_INDEX,
 	GSI1_INPUT_ATTRIBUTE,
 	GSI1_INPUT_COUNT = GSI1_INPUT_ATTRIBUTE + 4 * GHCI_GSI1_LOCATIONS
 };
 
+/* What one uniform of the IR's list is to the program (GSI1_NO_BINDING: nothing it reaches). */
+enum gsi1_binding_kind {
+	GSI1_NO_BINDING = 0,
+	GSI1_BINDING_SAMPLED_IMAGE,
+	GSI1_BINDING_UNIFORM_BUFFER,
+	GSI1_BINDING_STORAGE_BUFFER,
+	GSI1_BINDING_STORAGE_IMAGE,
+	GSI1_BINDING_TEXEL_BUFFER,
+	GSI1_BINDING_INPUT_ATTACHMENT
+};
+
 /*
- * How the program reaches one uniform of the IR's list: its interface
- * kind, the constant-bank word of its block or its descriptor, a sampled
- * image's texture slot, a uniform block's words and the buffer's first
- * word they come from, and an image's VkFormat and samples.
+ * The descriptor fields a program reads from a resource table entry:
+ * a buffer's address and bytes, a texel buffer's elements (bytes over
+ * stride), and an image's address, row and layer bytes, width | height
+ * << 16, layers (or depth) and samples.
+ */
+enum gsi1_field {
+	GSI1_FIELD_BASE = 0,
+	GSI1_FIELD_BYTES,
+	GSI1_FIELD_ELEMENTS,
+	GSI1_FIELD_ROW_BYTES,
+	GSI1_FIELD_LAYER_BYTES,
+	GSI1_FIELD_EXTENT,
+	GSI1_FIELD_LAYERS,
+	GSI1_FIELD_SAMPLES
+};
+
+/*
+ * How the program reaches one uniform of the IR's list: its kind, the
+ * byte offset of its entry in the resource table (a sampled image has one
+ * only when it is a uniform texel buffer, for its element count;
+ * GSI1_NOT_DEFINED otherwise), a sampled image's texture and sampler
+ * slots, the index of a buffer's dynamic offset (GSI1_NOT_DEFINED for
+ * none), and an image's VkFormat and samples.
  */
 struct gsi1_binding {
 	uint32_t kind;
-	uint32_t bank;
+	uint32_t entry;
 	uint32_t slot;
-	uint32_t words;
-	uint32_t first;
+	uint32_t sampler;
+	uint32_t dynamic;
 	uint32_t format;
 	uint32_t samples;
-	uint32_t count_bank;
 };
 
 /*
@@ -273,17 +300,19 @@ struct gsi1_lowering {
 	/* Each uniform of the IR's list: how the program reaches it. */
 	struct gsi1_binding *binding;
 
-	/* The constant-bank words the program uses, the first push-constant word, and the texture slots taken. */
-	uint32_t bank_used;
-	uint32_t push_bank;
-	uint32_t slots_used;
+	/* The pipeline's slots and resource table, from the options and with this program's added. */
+	struct ghci_gsi1_bindings bindings;
 
-	/* The interface table, four words to an entry. */
-	uint32_t interface[GSI1_INTERFACE_MAX * GSI1_IFACE_WORDS];
-	uint32_t interface_count;
+	/* The dynamic offsets the program reads (bit i: bank word 40 + i). */
+	uint32_t dynamic_used;
 
-	/* The header's flags. */
+	/* The fragment program's GHCI_GSI1_FLAG_* and colour outputs. */
 	uint32_t flags;
+	uint32_t color_outputs;
+
+	/* The vec4 varyings the program writes or reads, and a vertex program's attribute registers. */
+	uint32_t varying_count;
+	uint32_t attribute_registers;
 
 	/*
 	 * Each output channel of a fragment program, exported at the end: the
@@ -304,8 +333,9 @@ struct gsi1_lowering {
 	 */
 	uint32_t output_last[GSI1_OUTPUT_CHANNELS];
 
-	/* A vertex or fragment program: each location's first varying word (GHCI_GSI1_NO_WORD for none). */
-	uint32_t varying_word[GHCI_GSI1_LOCATIONS];
+	/* A vertex program: each attribute location's first register and its bound components (0: none). */
+	uint32_t attribute_base[GHCI_GSI1_LOCATIONS];
+	uint32_t attribute_components[GHCI_GSI1_LOCATIONS];
 
 	/*
 	 * Nonzero once a register was asked for when none was free and none
@@ -396,14 +426,17 @@ void gsi1_emit_transcendental(struct gsi1_lowering *lowering, uint32_t sub, uint
 /* Emits an exec.* operation: exec.save writes rd, the others read rs1. */
 void gsi1_emit_exec(struct gsi1_lowering *lowering, uint32_t sub, uint32_t operand);
 
-/* Computes a buffer access's address, the offset clamped to the buffer when asked; the buffer's {address, bytes} are bank words. */
-int gsi1_buffer_address(struct gsi1_lowering *lowering, uint32_t bank, uint32_t offset, int clamp, uint32_t *address);
+/* Computes a buffer access's address: the descriptor's address, the dynamic offset and the offset, clamped to the buffer when asked. */
+int gsi1_buffer_address(struct gsi1_lowering *lowering, const struct gsi1_binding *binding, uint32_t offset, int clamp, uint32_t *address);
 
 /* Reads a constant-bank word as an operand: c0-c31 directly, a later word through a scratch register. */
 int gsi1_bank_operand(struct gsi1_lowering *lowering, uint32_t bank, uint32_t *operand);
 
-/* Adds an entry to the interface table. */
-int gsi1_add_interface(struct gsi1_lowering *lowering, uint32_t kind, uint32_t set, uint32_t binding, uint32_t specific);
+/* Reads a field of a uniform's resource table entry into a scratch register. */
+int gsi1_resource_field(struct gsi1_lowering *lowering, const struct gsi1_binding *binding, uint32_t field, uint32_t *operand);
+
+/* Reads a word of the driver's table (set 3) into a scratch register. */
+int gsi1_driver_word(struct gsi1_lowering *lowering, uint32_t offset, uint32_t *operand);
 
 /* Finds the interface record of an input location; NULL when the program has none. */
 const struct drv_gpu_shader_ir_io *gsi1_find_input(const struct drv_gpu_shader_ir *ir, uint32_t location);
@@ -432,7 +465,7 @@ int gsi1_io_lower_output(struct gsi1_lowering *lowering, const struct drv_gpu_sh
 /* gsi1-io.c: emits the exports at the end of the program. */
 int gsi1_io_finish(struct gsi1_lowering *lowering);
 
-/* gsi1-memory.c: lays out the constant bank and the texture slots of the uniforms. */
+/* gsi1-memory.c: gives the uniforms their slots, resource table entries and dynamic offsets. */
 int gsi1_memory_prepare(struct gsi1_lowering *lowering);
 
 /* gsi1-memory.c: lowers a uniform word, a buffer access, an atomic, a shared access or a synchronization. */

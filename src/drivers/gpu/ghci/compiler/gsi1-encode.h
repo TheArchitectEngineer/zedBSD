@@ -25,11 +25,13 @@
 /*
  * The extension word's own fields, as the encoder's callers pass them:
  * the float modifiers of the three sources, saturation and the half
- * select, the sub-operation, and the texture R forms' texel offsets.
+ * select, the sub-operation, and the texture R forms' sampler slot and
+ * texel offsets.
  */
 struct gsi1_extra {
 	uint32_t modifiers;
 	uint32_t sub;
+	uint32_t sampler;
 	int32_t offset_u;
 	int32_t offset_v;
 	int32_t offset_w;

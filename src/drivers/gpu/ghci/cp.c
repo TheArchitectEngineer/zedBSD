@@ -104,6 +104,10 @@ ghci_cp_start(
 	device->fence_placed = 0U;
 	device->submit_first = 0U;
 	device->submit_count = 0U;
+	device->recovery_placing = 0;
+
+	/* Session 0's record and what CP_HEAP may hold. */
+	ghci_vm_init(device);
 
 	/* The ring's place and size, written while the processor is idle. */
 	ghci_write(device, GHCI_REG_RING_BASE_LO, (uint32_t)device->ring.memory->bus);
@@ -269,7 +273,8 @@ ghci_cp_stop(
 		return 0;
 	}
 
-	/* Succeeded: the memory goes back. */
+	/* Succeeded: the sessions' records and the memory go back. */
+	ghci_vm_fini(device);
 	release_memory(device);
 	return 0;
 }
@@ -414,13 +419,14 @@ ghci_cp_doorbell(
  * into the fence page, with the fence interrupt.
  *
  * The caller holds cp_lock; start is where the submission began in the
- * ring.  Returns 0 with the submission's ticket, or EAGAIN as
+ * ring and owner the session whose work it ends (NULL for the driver's
+ * own).  Returns 0 with the submission's ticket, or EAGAIN as
  * ghci_cp_place() does.
  */
 int
 ghci_cp_place_fence(
 	struct ghci_device *device,
-	uint32_t session,
+	struct ghci_vm *owner,
 	uint32_t start,
 	struct ghci_ticket *ticket)
 {
@@ -450,7 +456,7 @@ ghci_cp_place_fence(
 	entry->start = start;
 	entry->end = device->ring.wptr;
 	entry->seq = seq;
-	entry->session = session;
+	entry->owner = owner;
 	device->submit_count++;
 
 	/*
@@ -474,26 +480,27 @@ ghci_cp_place_fence(
 }
 
 /*
- * Submits packets of a session (0 for the driver's own work): binds the
- * session, places the packets and a fence, binds session 0 again, and
- * rings the doorbell.  A GPU without a page-table walker has no sessions
- * to bind.
+ * Submits packets of a session (NULL for the driver's own work in
+ * session 0): binds the session, places the packets and a fence, binds
+ * session 0 again, and rings the doorbell.  A GPU without a page-table
+ * walker has no sessions to bind.
  *
- * Returns 0 with the ticket, EIO when the device is lost or a recovery
- * began after part of the submission was placed (that part is lost to
- * the reset), or EINVAL for a malformed packet, before anything is
- * placed.
+ * Returns 0 with the ticket, EIO when the device is lost, the session is
+ * not open (a reset ended it) or a recovery began after part of the
+ * submission was placed (that part is lost to the reset), or EINVAL for
+ * a malformed packet, before anything is placed.
  */
 int
 ghci_cp_submit(
 	struct ghci_device *device,
-	uint32_t session,
+	struct ghci_vm *vm,
 	const uint32_t *packets,
 	uint32_t dwords,
 	struct ghci_ticket *ticket)
 {
 	enum ghci_gate gate;
 	uint32_t bind[GHCI_DW_BIND_SESSION];
+	uint32_t session;
 	uint32_t start;
 	int walker;
 	int error;
@@ -512,7 +519,16 @@ ghci_cp_submit(
 			break;
 	}
 
+	/* Only an open session submits; its state does not change while cp_lock is held. */
+	if (vm != NULL && vm->state != GHCI_VM_OPEN) {
+		ghci_cp_leave(device);
+		return EIO;
+	}
+
 	/* The session the packets run in. */
+	session = 0U;
+	if (vm != NULL)
+		session = vm->session;
 	start = device->ring.wptr;
 	walker = ghci_caps_has(&device->caps, GHCI_HAS_HW_WALKER);
 	error = 0;
@@ -525,7 +541,7 @@ ghci_cp_submit(
 	if (error == 0)
 		error = ghci_cp_place(device, packets, dwords);
 	if (error == 0)
-		error = ghci_cp_place_fence(device, session, start, ticket);
+		error = ghci_cp_place_fence(device, vm, start, ticket);
 
 	/* Session 0 again, so that the driver's later packets do not run in the client's session. */
 	if (error == 0 && walker) {
@@ -871,7 +887,7 @@ liveness(
 	/* The fence, placed and rung under the ring's lock. */
 	mutex_lock(&device->cp_lock);
 
-	error = ghci_cp_place_fence(device, 0U, device->ring.wptr, &ticket);
+	error = ghci_cp_place_fence(device, NULL, device->ring.wptr, &ticket);
 	if (error == 0)
 		ghci_cp_doorbell(device);
 
@@ -935,7 +951,10 @@ release_memory(
  * submission log.  The caller holds cp_lock.
  *
  * Returns 0, EINVAL for a run no ring of this size takes, or EAGAIN when
- * a recovery began or the device was lost while it waited.
+ * a recovery began or the device was lost while it waited.  The
+ * recovery's own placement (recovery_placing) waits on through the
+ * recovery that runs, and ends with EAGAIN at a new fault or at its
+ * deadline.
  */
 static int
 ring_room(
@@ -950,6 +969,7 @@ ring_room(
 	uint32_t written;
 	uint32_t index;
 	uint32_t rptr;
+	uint64_t now;
 	int stopping;
 	int error;
 
@@ -974,9 +994,12 @@ ring_room(
 		ghci_cp_doorbell(device);
 
 		/* Sleeps until a fence interrupt or the poll period; a recovery ends the wait. */
+		now = clock_ticks();
 		irq = spin_lock_irqsave(&device->irq_lock);
 
 		stopping = device->recovering || device->state == GHCI_STATE_LOST;
+		if (device->recovery_placing)
+			stopping = device->fault_count != device->recovery_faults || now >= device->recovery_deadline;
 		if (!stopping) {
 			deadline = clock_ticks() + kern_ms_to_ticks(GHCI_POLL_MS);
 			sequence = waitq_sequence(&device->ring_wake);
@@ -1077,6 +1100,7 @@ ticket_state(
 	const struct ghci_ticket *ticket)
 {
 	struct ghci_reset_record *record;
+	unsigned index;
 	int passed;
 
 	/* A ticket of this generation is done once the accepted fence reaches it. */
@@ -1091,9 +1115,13 @@ ticket_state(
 	if (ticket->generation > device->generation)
 		return GHCI_TICKET_FAILED;
 
-	/* An older ticket passed if the fence had reached it when the reset ended its generation. */
+	/* An older ticket passed if the fence had reached it when the reset ended its generation, unless a culprit's. */
 	record = &device->history[ticket->generation % GHCI_RESET_HISTORY];
 	passed = ghci_fence64_passed(record->completed, ticket->seq);
+	for (index = 0U; index < record->failed_count && passed; index++) {
+		if (record->failed[index] == ticket->seq)
+			passed = 0;
+	}
 	if (record->generation == ticket->generation && passed)
 		return GHCI_TICKET_DONE;
 

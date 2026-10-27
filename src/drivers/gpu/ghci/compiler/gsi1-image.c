@@ -11,13 +11,14 @@
  * by the program.
  *
  * GSI1 has no image store, and the texture slots are the sampled images',
- * so these are buffers to the program: the command processor puts each
- * one's descriptor in the constant bank, and the program computes the
+ * so these are buffers to the program: each one has a resource table
+ * entry, and the program reads its descriptor's fields, computes the
  * texel's address and moves its words with lw and sw.  A storage image's
- * descriptor is {base, row bytes, width | height << 16, layers, layer
- * bytes} (the layers of an array, the slices of a 3D image, the faces of a
- * cube); a storage texel buffer's {base, elements}; an input attachment's
- * {base, row bytes, samples | pixel bytes << 8}.  A texel outside the
+ * and an input attachment's entry is a texture descriptor (the address,
+ * width and height, layers, row and layer bytes, samples; the layers of
+ * an array, the slices of a 3D image, the faces of a cube), a storage
+ * texel buffer's a buffer descriptor (its elements are its bytes over its
+ * stride); the texel's bytes come from the format.  A texel outside the
  * image reads zero and is not written.  An input attachment is read at the
  * fragment's own pixel (FragCoord's integer part plus the offset) and, if
  * it is multisampled, at the sample asked for, in the multisampled layout:
@@ -49,13 +50,6 @@
 
 /* The most words a texel takes (RGBA32). */
 #define GSI1_TEXEL_WORDS		4U
-
-/* The descriptor words of a storage image. */
-#define GSI1_IMAGE_BASE			0U
-#define GSI1_IMAGE_ROW_BYTES		1U
-#define GSI1_IMAGE_SIZE			2U
-#define GSI1_IMAGE_LAYERS		3U
-#define GSI1_IMAGE_LAYER_BYTES		4U
 
 /*
  * The float constants of the conversions: 2^b - 1 and its reciprocal for
@@ -224,12 +218,12 @@ gsi1_image_lower(
 	binding = &lowering->binding[instruction->location];
 
 	/* An input attachment's format is the render pass's, from the options. */
-	if (binding->kind == GSI1_KIND_INPUT_ATTACHMENT) {
+	if (binding->kind == GSI1_BINDING_INPUT_ATTACHMENT) {
 		attachment = lowering->ir->uniforms[instruction->location].input_attachment_index;
 		format = NULL;
 		if (attachment < GHCI_GSI1_INPUT_ATTACHMENTS)
 			format = find_format(lowering->options.input_attachment_format[attachment]);
-	} else if (binding->kind == GSI1_KIND_STORAGE_IMAGE || binding->kind == GSI1_KIND_TEXEL_BUFFER) {
+	} else if (binding->kind == GSI1_BINDING_STORAGE_IMAGE || binding->kind == GSI1_BINDING_TEXEL_BUFFER) {
 		format = find_format(binding->format);
 	} else {
 		error = gsi1_refuse(lowering, EINVAL, "an image access to something that is not an image of the program");
@@ -251,7 +245,7 @@ gsi1_image_lower(
 	/* The texel's address, and for a storage image whether it is inside. */
 	address = GSI1_NO_OPERAND;
 	inside = GSI1_NO_OPERAND;
-	if (binding->kind == GSI1_KIND_INPUT_ATTACHMENT) {
+	if (binding->kind == GSI1_BINDING_INPUT_ATTACHMENT) {
 		error = attachment_address(lowering, instruction, binding, format, &address);
 	} else {
 		error = image_address(lowering, instruction, binding, format, &address, &inside);
@@ -439,14 +433,14 @@ image_address(
 		return error;
 
 	/* A texel buffer: x below the elements; the address base + x x bytes. */
-	if (binding->kind == GSI1_KIND_TEXEL_BUFFER) {
-		error = gsi1_bank_operand(lowering, binding->bank + 1U, &limit);
+	if (binding->kind == GSI1_BINDING_TEXEL_BUFFER) {
+		error = gsi1_resource_field(lowering, binding, GSI1_FIELD_ELEMENTS, &limit);
 		if (error != 0)
 			return error;
 		gsi1_emit_alu(lowering, GSI1_F3_SLTU, GSI1_F7_BASE, *inside, x, limit);
 
 		/* The address. */
-		error = gsi1_bank_operand(lowering, binding->bank, &word);
+		error = gsi1_resource_field(lowering, binding, GSI1_FIELD_BASE, &word);
 		if (error != 0)
 			return error;
 		gsi1_emit_move(lowering, reg, word);
@@ -460,7 +454,7 @@ image_address(
 	}
 
 	/* The width and the height from their packed word. */
-	error = gsi1_bank_operand(lowering, binding->bank + GSI1_IMAGE_SIZE, &word);
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_EXTENT, &word);
 	if (error != 0)
 		return error;
 
@@ -483,7 +477,7 @@ image_address(
 		return error;
 
 	/* The layer below the layers. */
-	error = gsi1_bank_operand(lowering, binding->bank + GSI1_IMAGE_LAYERS, &word);
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_LAYERS, &word);
 	if (error != 0)
 		return error;
 	error = bounds_check(lowering, *inside, layer, word, 0);
@@ -491,13 +485,13 @@ image_address(
 		return error;
 
 	/* The address: base + layer x layer bytes + y x row bytes + x x texel bytes. */
-	error = gsi1_bank_operand(lowering, binding->bank + GSI1_IMAGE_BASE, &word);
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_BASE, &word);
 	if (error != 0)
 		return error;
 	gsi1_emit_move(lowering, reg, word);
 
 	/* The layer's bytes. */
-	error = gsi1_bank_operand(lowering, binding->bank + GSI1_IMAGE_LAYER_BYTES, &word);
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_LAYER_BYTES, &word);
 	if (error != 0)
 		return error;
 	error = multiply_add(lowering, reg, layer, word, 0);
@@ -505,7 +499,7 @@ image_address(
 		return error;
 
 	/* The row's bytes. */
-	error = gsi1_bank_operand(lowering, binding->bank + GSI1_IMAGE_ROW_BYTES, &word);
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_ROW_BYTES, &word);
 	if (error != 0)
 		return error;
 	error = multiply_add(lowering, reg, y, word, 0);
@@ -575,15 +569,9 @@ attachment_address(
 
 	/* A multisampled attachment: x S + s. */
 	if (binding->samples != 0U) {
-		error = gsi1_bank_operand(lowering, binding->bank + 2U, &word);
+		error = gsi1_resource_field(lowering, binding, GSI1_FIELD_SAMPLES, &samples);
 		if (error != 0)
 			return error;
-
-		/* Takes the register of the samples. */
-		error = gsi1_scratch(lowering, &samples);
-		if (error != 0)
-			return error;
-		gsi1_emit_alu_immediate(lowering, GSI1_F3_AND, samples, word, 0xff);
 		gsi1_emit_alu(lowering, GSI1_F3_MUL, GSI1_F7_MULDIV, pixel_x, pixel_x, samples);
 		error = gsi1_source(lowering, instruction->src[0] + 2U, &offset);
 		if (error != 0)
@@ -592,13 +580,13 @@ attachment_address(
 	}
 
 	/* The address: base + y x row bytes + x x texel bytes. */
-	error = gsi1_bank_operand(lowering, binding->bank, &word);
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_BASE, &word);
 	if (error != 0)
 		return error;
 	gsi1_emit_move(lowering, reg, word);
 
 	/* The row's bytes. */
-	error = gsi1_bank_operand(lowering, binding->bank + 1U, &word);
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_ROW_BYTES, &word);
 	if (error != 0)
 		return error;
 	error = multiply_add(lowering, reg, pixel_y, word, 0);

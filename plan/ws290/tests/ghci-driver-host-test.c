@@ -31,6 +31,8 @@
 #include "kern/lock.h"
 #include "uapi/errno.h"
 #include "uapi/gpu.h"
+#include "uapi/gpu-allocation.h"
+#include "uapi/gpu-scanout.h"
 #include "ghci-model.h"
 #include "ghci-stubs.h"
 
@@ -45,6 +47,9 @@
 
 /* The milliseconds the scenes wait for a ticket. */
 #define TEST_WAIT_MS			100U
+
+/* The mappings the replay scene makes: their CMD_VM_MAPs are more than a 4 KiB ring holds. */
+#define REPLAY_MAPPINGS			120U
 
 /* The PCI IDs the scenes give the device (the KC705 board). */
 #define TEST_PCI_VENDOR			0x10eeU
@@ -95,6 +100,9 @@ static int master_off_after_release;
  * it skips first, and the guard that keeps it from running inside its own
  * sleeps (a recovery sleeps too).
  */
+/* The owner the scenes give their GHCI sessions, which the core hears of when one dies. */
+static int owner_token;
+
 static void (*scene_action)(void);
 static unsigned scene_action_after;
 static int scene_action_running;
@@ -116,6 +124,7 @@ static void action_recover(void);
 static void action_stall_then_fault(void);
 static void action_session_fault(void);
 static void action_session_fault_once(void);
+static void action_replay_fault(void);
 static uint32_t heap_bytes(void);
 static void scene_versions(void);
 static void scene_attach_checks(void);
@@ -133,6 +142,22 @@ static void scene_lost(void);
 static void scene_storm(void);
 static void scene_check_fails(void);
 static void scene_detach(void);
+static struct ghci_allocation *host_memory(uint64_t bytes);
+static void memory_done(struct ghci_allocation *allocation);
+static void reclaim(void);
+static int submit_vm(struct ghci_vm *vm, struct ghci_ticket *ticket);
+static void scene_sessions(void);
+static void scene_mappings(void);
+static void scene_flat(void);
+static void scene_heap_bound(void);
+static void scene_close_order(void);
+static void scene_replay(void);
+static void scene_culprit(void);
+static void scene_lost_work(void);
+static void scene_vm_retry(void);
+static void scene_resources(void);
+static void scene_vm_edges(void);
+static void action_fault_then_recover(void);
 
 /*
  * The operations of the fake bus; they live as long as the test.
@@ -169,6 +194,17 @@ main(void)
 	scene_storm();
 	scene_check_fails();
 	scene_detach();
+	scene_sessions();
+	scene_mappings();
+	scene_flat();
+	scene_heap_bound();
+	scene_close_order();
+	scene_replay();
+	scene_culprit();
+	scene_lost_work();
+	scene_vm_retry();
+	scene_resources();
+	scene_vm_edges();
 	model_fini();
 
 	/* Reports the counts. */
@@ -466,7 +502,7 @@ submit_nops(
 	}
 
 	/* The submission. */
-	error = ghci_cp_submit(&device, 0U, packets, dwords, ticket);
+	error = ghci_cp_submit(&device, NULL, packets, dwords, ticket);
 	return error;
 }
 
@@ -619,7 +655,7 @@ scene_attach_checks(void)
 	    (GHCI_CTRL_RUN | GHCI_CTRL_WDT_EN | GHCI_CTRL_IRQ_GLOBAL), "attach: CTRL");
 	expect(model_read(GHCI_REG_IRQ_ENABLE) == (GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG), "attach: IRQ_ENABLE");
 	expect(model_count_commands(GHCI_OP_FENCE) == 1U && device.fence_interrupts == 1U, "attach: first fence and its interrupt");
-	expect(stub.registrations == 1U && stub.register_errors == 0U && device.ops.capabilities == 0U, "attach: registered without capabilities");
+	expect(stub.registrations == 1U && stub.register_errors == 0U && device.ops.capabilities == (GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE), "attach: registered with the resource capabilities");
 	expect(strcmp(device.name, "ghci:10ee:7024") == 0, "attach: name");
 	end_scene("attach: started");
 
@@ -931,7 +967,7 @@ scene_hang(void)
 
 	/* A fence alone (as a VM operation's) that is not written is a hang too. */
 	model_hold(1);
-	error = ghci_cp_submit(&device, 0U, NULL, 0U, &ticket);
+	error = ghci_cp_submit(&device, NULL, NULL, 0U, &ticket);
 	expect(error == 0, "hang: fence placed");
 	ghci_service_step(&device, 0U);
 	stub.ticks += kern_ms_to_ticks(GHCI_HANG_MS) + 1U;
@@ -960,7 +996,7 @@ scene_long_submit(void)
 	word = model_dma(word_bus, 8U);
 	for (index = 0U; index < 5U; index++)
 		(void)ghci_cmd_wait_fence(&packets[index * GHCI_DW_WAIT_FENCE], word_bus, index + 1U);
-	error = ghci_cp_submit(&device, 0U, packets, 5U * GHCI_DW_WAIT_FENCE, &ticket);
+	error = ghci_cp_submit(&device, NULL, packets, 5U * GHCI_DW_WAIT_FENCE, &ticket);
 	expect(error == 0, "long: placed");
 
 	/* Each half hang time the word moves on, and the processor with it. */
@@ -1234,4 +1270,817 @@ scene_check_fails(void)
 	scene_action = NULL;
 	expect(device.state == GHCI_STATE_LOST && stub.errors_reported == 1U, "check: lost");
 	end_scene("check: every pass");
+}
+
+/* The scene's action: a permission fault of session 1's texture unit, the first time only. */
+static void
+action_replay_fault(void)
+{
+	if (scene_action_runs == 1U)
+		model_inject(GHCI_FAULT_KIND_PERM_FAULT, GHCI_UNIT_TU, 1U, 0x8000U, 0);
+}
+
+/* Takes host memory as a resource would, holding it once. */
+static struct ghci_allocation *
+host_memory(
+	uint64_t bytes)
+{
+	struct ghci_allocation *allocation;
+	int error;
+
+	/* The run, held by the test. */
+	error = ghci_memory_alloc(&device, bytes, 0U, &allocation);
+	if (error != 0)
+		return NULL;
+	allocation->holds = 1U;
+	return allocation;
+}
+
+/* Lets the test's hold of host memory go. */
+static void
+memory_done(
+	struct ghci_allocation *allocation)
+{
+	mutex_lock(&device.lock);
+	ghci_memory_unhold(&device, allocation);
+	mutex_unlock(&device.lock);
+}
+
+/* One round of the service thread: what the GPU is done with goes back. */
+static void
+reclaim(void)
+{
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+}
+
+/* Submits a few NOPs as a session's work. */
+static int
+submit_vm(
+	struct ghci_vm *vm,
+	struct ghci_ticket *ticket)
+{
+	uint32_t packets[TEST_SUBMIT_DWORDS];
+
+	(void)ghci_cmd_nop(packets, TEST_SUBMIT_DWORDS);
+	return ghci_cp_submit(&device, vm, packets, TEST_SUBMIT_DWORDS, ticket);
+}
+
+/*
+ * The session numbers: fifteen open and the sixteenth is refused, a
+ * closing session keeps its number until its fence passes, and the
+ * tables are counted and given back.
+ */
+static void
+scene_sessions(void)
+{
+	struct ghci_vm *vms[GHCI_SESSIONS];
+	struct ghci_vm *extra;
+	uint64_t base;
+	uint64_t root;
+	unsigned opened;
+	unsigned index;
+	int error;
+
+	/* Fifteen sessions open, each with its CMD_SESSION_OPEN. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0, "sessions: started");
+	base = device.heap_used;
+	root = ghci_heap_session_bytes(device.caps.va_bits);
+	opened = 0U;
+	for (index = 1U; index < GHCI_SESSIONS; index++) {
+		error = ghci_vm_open(&device, &owner_token, &vms[index]);
+		if (error == 0 && vms[index]->session == index)
+			opened++;
+	}
+	expect(opened == 15U, "sessions: fifteen open");
+	expect(model_count_commands(GHCI_OP_SESSION_OPEN) == 15U && model.session_active == 0xFFFFU, "sessions: open in the model");
+	expect(device.heap_used == base + 15U * root, "sessions: tables counted");
+	error = ghci_vm_open(&device, &owner_token, &extra);
+	expect(error == EBUSY, "sessions: the sixteenth is refused");
+
+	/* A closing session keeps its number until its fence passes. */
+	model_hold(1);
+	ghci_vm_close(&device, vms[3]);
+	error = ghci_vm_open(&device, &owner_token, &extra);
+	expect(error == EBUSY && device.vm[3] != NULL && vms[3]->state == GHCI_VM_CLOSING, "sessions: number kept while closing");
+	model_hold(0);
+	reclaim();
+	expect(device.vm[3] == NULL && device.heap_used == base + 14U * root, "sessions: retired after the fence");
+	error = ghci_vm_open(&device, &owner_token, &extra);
+	expect(error == 0 && extra->slot == 3U, "sessions: number taken again once retired");
+	vms[3] = extra;
+
+	/* Every session closes and retires; CP_HEAP's count is session 0's again. */
+	for (index = 1U; index < GHCI_SESSIONS; index++)
+		ghci_vm_close(&device, vms[index]);
+	reclaim();
+	expect(device.heap_used == base && model.session_active == 1U, "sessions: all retired");
+	for (index = 1U; index < GHCI_SESSIONS; index++) {
+		if (device.vm[index] != NULL)
+			break;
+	}
+	expect(index == GHCI_SESSIONS, "sessions: every number free");
+	end_scene("sessions");
+}
+
+/*
+ * The mappings: CMD_VM_MAP with the address, bus address and flags the
+ * model records; two sessions' addresses never meet (without PROT and
+ * with it); an unmap gives the memory back after its fence; with PROT the
+ * level 0 tables go back at the close and not at the unmap.
+ */
+static void
+scene_mappings(void)
+{
+	struct ghci_allocation *first_memory;
+	struct ghci_allocation *second_memory;
+	struct ghci_allocation *big_memory;
+	struct ghci_mapping *first;
+	struct ghci_mapping *second;
+	struct ghci_mapping *big;
+	struct ghci_vm *one;
+	struct ghci_vm *two;
+	const struct model_mapping *seen;
+	enum model_profile profile;
+	uint64_t big_va;
+	uint64_t base;
+	uint64_t root;
+	unsigned round;
+	int error;
+
+	/* Without PROT (one shared table) and with it. */
+	for (round = 0U; round < 2U; round++) {
+		profile = MODEL_KC705_UMA;
+		if (round == 1U)
+			profile = MODEL_PROT;
+		error = start_scene(profile, NULL);
+		expect(error == 0, "mappings: started");
+		base = device.heap_used;
+		root = ghci_heap_session_bytes(device.caps.va_bits);
+
+		/* Two sessions, each with a mapping, and a mapping of three chunks. */
+		first_memory = host_memory(64U * 1024U);
+		second_memory = host_memory(64U * 1024U);
+		big_memory = host_memory(5U * 1024U * 1024U);
+		error = ghci_vm_open(&device, &owner_token, &one);
+		if (error == 0)
+			error = ghci_vm_open(&device, &owner_token, &two);
+		if (error == 0)
+			error = ghci_vm_map(&device, one, first_memory, 0U, &first);
+		if (error == 0)
+			error = ghci_vm_map(&device, two, second_memory, GHCI_VM_FLAG_EXEC, &second);
+		if (error == 0)
+			error = ghci_vm_map(&device, one, big_memory, 0U, &big);
+		expect(error == 0, "mappings: mapped");
+		if (error != 0) {
+			end_scene("mappings");
+			continue;
+		}
+
+		/* The model's tables hold them as the driver meant. */
+		seen = model_lookup(one->session, first->va);
+		expect(seen != NULL && seen->phys == first_memory->bus && seen->bytes == first->bytes &&
+		    seen->flags == (GHCI_VM_FLAG_READ | GHCI_VM_FLAG_WRITE | GHCI_VM_FLAG_COHERENT), "mappings: first in the model");
+		seen = model_lookup(two->session, second->va);
+		expect(seen != NULL && seen->phys == second_memory->bus &&
+		    seen->flags == (GHCI_VM_FLAG_READ | GHCI_VM_FLAG_WRITE | GHCI_VM_FLAG_COHERENT | GHCI_VM_FLAG_EXEC), "mappings: second in the model");
+		expect((first->va >> 21) != (second->va >> 21), "mappings: sessions on different chunks");
+		expect(device.chunk_owner[first->va >> 21] == one && device.chunk_owner[second->va >> 21] == two, "mappings: chunk owners");
+		expect((big->va >> 21) + 3U <= (first->va >> 21) || (first->va >> 21) + 1U <= (big->va >> 21), "mappings: big on chunks of its own");
+		expect(device.heap_used == base + 2U * root + 5U * GHCI_TABLE_BYTES, "mappings: level 0 tables counted");
+		expect(model.faults == 0U && first->va >= GHCI_L0_SPAN_BYTES && big->va + big->bytes <= 0xFFE00000ULL, "mappings: no fault, inside the range");
+
+		/* The unmap gives the memory back after its fence; the tables stay counted. */
+		big_va = big->va;
+		ghci_vm_unmap(&device, big);
+		expect(model_lookup(one->session, big_memory->bus) == NULL, "mappings: unmapped in the model");
+		reclaim();
+		expect(one->mappings == first && device.chunk_owner[big_va >> 21] == NULL, "mappings: unmap retired");
+		expect(big_memory->holds == 1U, "mappings: the mapping let the memory go");
+		expect(device.heap_used == base + 2U * root + 5U * GHCI_TABLE_BYTES, "mappings: unmap keeps the tables counted");
+
+		/* The other session takes the chunks given back: with PROT its own level 0 tables are counted too. */
+		error = ghci_vm_map(&device, two, big_memory, 0U, &big);
+		expect(error == 0 && (big->va >> 21) == (big_va >> 21), "mappings: chunks taken by the other session");
+		if (round == 1U)
+			expect(device.heap_used == base + 2U * root + 8U * GHCI_TABLE_BYTES, "mappings: PROT counts each session's tables");
+		else
+			expect(device.heap_used == base + 2U * root + 5U * GHCI_TABLE_BYTES, "mappings: the shared tables count once");
+		ghci_vm_unmap(&device, big);
+		reclaim();
+
+		/* One allocation in two sessions (an import): each mapping holds it. */
+		error = ghci_vm_map(&device, two, first_memory, 0U, &big);
+		expect(error == 0 && first_memory->holds == 3U && model_lookup(two->session, big->va) != NULL &&
+		    model_lookup(two->session, big->va)->phys == first_memory->bus, "mappings: one allocation in two sessions");
+
+		/* The closes give the tables back (with PROT); the shared level 0 tables stay until a reset. */
+		ghci_vm_close(&device, one);
+		ghci_vm_close(&device, two);
+		reclaim();
+		if (round == 1U)
+			expect(device.heap_used == base, "mappings: PROT close returns every table");
+		else
+			expect(device.heap_used == base + 5U * GHCI_TABLE_BYTES, "mappings: shared level 0 tables stay");
+		expect(first_memory->holds == 1U && second_memory->holds == 1U, "mappings: close let the memory go");
+		memory_done(first_memory);
+		memory_done(second_memory);
+		memory_done(big_memory);
+		end_scene("mappings");
+	}
+}
+
+/*
+ * A GPU without a walker: sessions and mappings place nothing, a mapping's
+ * address is its bus address, and an unmap waits for the last fence
+ * placed.
+ */
+static void
+scene_flat(void)
+{
+	struct ghci_allocation *memory;
+	struct ghci_mapping *mapping;
+	struct ghci_ticket ticket;
+	struct ghci_vm *vm;
+	int error;
+
+	/* A session and a mapping, with nothing placed. */
+	error = start_scene(MODEL_FLAT, NULL);
+	expect(error == 0, "flat: started");
+	memory = host_memory(16U * 1024U);
+	error = ghci_vm_open(&device, &owner_token, &vm);
+	if (error == 0)
+		error = ghci_vm_map(&device, vm, memory, 0U, &mapping);
+	expect(error == 0 && vm->session == 0U && mapping->va == memory->bus, "flat: the address is the bus address");
+	expect(model_count_commands(GHCI_OP_SESSION_OPEN) == 0U && model_count_commands(GHCI_OP_VM_MAP) == 0U && model.faults == 0U,
+	    "flat: nothing placed");
+
+	/* Work of the session, then the unmap waits for its fence. */
+	model_hold(1);
+	error = submit_vm(vm, &ticket);
+	expect(error == 0 && model_count_commands(GHCI_OP_BIND_SESSION) == 0U, "flat: submitted without a bind");
+	ghci_vm_unmap(&device, mapping);
+	expect(mapping->state == GHCI_MAPPING_UNMAPPING && mapping->ticket.seq == ticket.seq, "flat: unmap waits for the last fence");
+	reclaim();
+	expect(vm->mappings == mapping, "flat: kept until the fence");
+	model_hold(0);
+	reclaim();
+	expect(vm->mappings == NULL && memory->holds == 1U, "flat: retired after the fence");
+
+	/* A reset replays nothing on a GPU without a walker. */
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(device.state == GHCI_STATE_RUNNING && vm->state == GHCI_VM_OPEN && model_count_commands(GHCI_OP_SESSION_OPEN) == 0U &&
+	    model_count_commands(GHCI_OP_VM_MAP) == 0U, "flat: nothing replayed");
+
+	/* The close places nothing either. */
+	ghci_vm_close(&device, vm);
+	reclaim();
+	expect(device.vm[1] == NULL && model_count_commands(GHCI_OP_SESSION_CLOSE) == 0U && model.faults == 1U, "flat: closed");
+	memory_done(memory);
+	end_scene("flat");
+}
+
+/*
+ * CP_HEAP's bound: a session or a chunk past it is refused with ENOMEM
+ * before the GPU sees it, so the processor never runs out.
+ */
+static void
+scene_heap_bound(void)
+{
+	struct ghci_allocation *memory;
+	struct ghci_allocation *more;
+	struct ghci_mapping *mapping;
+	struct ghci_mapping *refused;
+	struct ghci_vm *vm;
+	struct ghci_vm *other;
+	uint64_t root;
+	int error;
+
+	/* A bound with room for one session and one level 0 table. */
+	error = start_scene(MODEL_PROT, NULL);
+	expect(error == 0, "heap: started");
+	root = ghci_heap_session_bytes(device.caps.va_bits);
+	device.heap_budget = device.heap_used + root + GHCI_TABLE_BYTES;
+	memory = host_memory(16U * 1024U);
+	more = host_memory(3U * 1024U * 1024U);
+	error = ghci_vm_open(&device, &owner_token, &vm);
+	expect(error == 0, "heap: one session fits");
+	error = ghci_vm_open(&device, &owner_token, &other);
+	expect(error == ENOMEM, "heap: a second session is refused");
+	error = ghci_vm_map(&device, vm, memory, 0U, &mapping);
+	expect(error == 0, "heap: one chunk fits");
+	error = ghci_vm_map(&device, vm, more, 0U, &refused);
+	expect(error == ENOMEM && model.faults == 0U && model_count_commands(GHCI_OP_VM_MAP) == 1U, "heap: more chunks refused, no MMU_OOM");
+
+	/* The close gives the bound back, and a session fits again. */
+	ghci_vm_close(&device, vm);
+	reclaim();
+	error = ghci_vm_open(&device, &owner_token, &other);
+	expect(error == 0, "heap: room again after the close");
+	ghci_vm_close(&device, other);
+	reclaim();
+	memory_done(memory);
+	memory_done(more);
+	end_scene("heap");
+}
+
+/*
+ * The close's packets: every live mapping's CMD_VM_UNMAP, then
+ * CMD_SESSION_CLOSE, then the fence; never the close before an unmap.
+ */
+static void
+scene_close_order(void)
+{
+	struct ghci_allocation *memory[3];
+	struct ghci_mapping *mapping[3];
+	const struct model_command *command;
+	struct ghci_vm *vm;
+	unsigned before;
+	unsigned index;
+	int ordered;
+	int error;
+
+	/* A session with three mappings. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0, "close: started");
+	error = ghci_vm_open(&device, &owner_token, &vm);
+	for (index = 0U; index < 3U && error == 0; index++) {
+		memory[index] = host_memory(8U * 1024U);
+		error = ghci_vm_map(&device, vm, memory[index], 0U, &mapping[index]);
+	}
+	expect(error == 0, "close: mapped");
+
+	/* The close. */
+	before = model.command_count;
+	ghci_vm_close(&device, vm);
+	ordered = model.command_count == before + 5U;
+	for (index = 0U; index < 5U && ordered; index++) {
+		command = &model.commands[before + index];
+		if (index < 3U && command->opcode != GHCI_OP_VM_UNMAP)
+			ordered = 0;
+		if (index == 3U && command->opcode != GHCI_OP_SESSION_CLOSE)
+			ordered = 0;
+		if (index == 4U && command->opcode != GHCI_OP_FENCE)
+			ordered = 0;
+	}
+	expect(ordered, "close: unmaps, close, fence");
+	reclaim();
+	expect(device.vm[1] == NULL && model.faults == 0U, "close: retired");
+	for (index = 0U; index < 3U; index++)
+		memory_done(memory[index]);
+	end_scene("close");
+}
+
+/*
+ * A device fault with sessions open: the reset, then the replay opens
+ * every session again and maps its live mappings again, larger than the
+ * ring when it must; nobody died.
+ */
+static void
+scene_replay(void)
+{
+	struct ghci_allocation *memory[REPLAY_MAPPINGS];
+	struct ghci_mapping *mapping[REPLAY_MAPPINGS];
+	struct ghci_vm *one;
+	struct ghci_vm *two;
+	unsigned opens;
+	unsigned maps;
+	unsigned index;
+	int error;
+
+	/* Two sessions with 60 mappings each, and a ring of 4 KiB (the replay is larger). */
+	test_ring_bytes = 4096U;
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0, "replay: started");
+	error = ghci_vm_open(&device, &owner_token, &one);
+	if (error == 0)
+		error = ghci_vm_open(&device, &owner_token, &two);
+	for (index = 0U; index < REPLAY_MAPPINGS && error == 0; index++) {
+		memory[index] = host_memory(4096U);
+		error = ghci_vm_map(&device, index < REPLAY_MAPPINGS / 2U ? one : two, memory[index], 0U, &mapping[index]);
+	}
+	expect(error == 0, "replay: mapped");
+
+	/* A fault of the device's own: no culprit. */
+	opens = model_count_commands(GHCI_OP_SESSION_OPEN);
+	maps = model_count_commands(GHCI_OP_VM_MAP);
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(device.state == GHCI_STATE_RUNNING && device.resets == 1U, "replay: recovered");
+	expect(one->state == GHCI_VM_OPEN && two->state == GHCI_VM_OPEN && stub.session_errors == 0U, "replay: both open again");
+	expect(model_count_commands(GHCI_OP_SESSION_OPEN) == opens + 2U && model_count_commands(GHCI_OP_VM_MAP) == maps + REPLAY_MAPPINGS,
+	    "replay: opens and maps placed again");
+	expect(model.session_active == 0x7U, "replay: active in the model");
+	for (index = 0U; index < REPLAY_MAPPINGS; index++) {
+		if (model_lookup(mapping[index]->vm->session, mapping[index]->va) == NULL)
+			break;
+	}
+	expect(index == REPLAY_MAPPINGS, "replay: every mapping in the model again");
+
+	/* A session's fault in the middle of the next replay: the last check finds it, and the next pass kills the culprit only. */
+	stub.ticks += kern_ms_to_ticks(GHCI_FAULT_STORM_MS + 1000U);
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	scene_action = action_replay_fault;
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	scene_action = NULL;
+	expect(device.state == GHCI_STATE_RUNNING && device.resets == 3U && scene_action_runs != 0U, "replay: fault in the replay, recovered again");
+	expect(one->state == GHCI_VM_DEAD && two->state == GHCI_VM_OPEN && stub.session_errors == 1U, "replay: the culprit of the replay died");
+	expect(model.session_active == (1U | (1U << two->session)), "replay: the other replayed");
+
+	/* The sessions go on. */
+	ghci_vm_unmap(&device, mapping[0]);
+	ghci_vm_close(&device, one);
+	ghci_vm_close(&device, two);
+	reclaim();
+	expect(device.vm[1] == NULL && device.vm[2] == NULL && model.faults == 3U, "replay: closed after");
+	for (index = 0U; index < REPLAY_MAPPINGS; index++)
+		memory_done(memory[index]);
+	end_scene("replay");
+}
+
+/*
+ * A session's fault under PROT (the processor goes on and writes the
+ * culprit's fence): the reset still comes; the culprit dies and its
+ * tickets fail, a second culprit is found by SESSION_ACTIVE, a session
+ * whose open the processor has not confirmed is not one, the others are
+ * replayed, the fault is not counted towards the storm, and a dead
+ * session closes without the GPU and its number is not reused before.
+ */
+static void
+scene_culprit(void)
+{
+	struct ghci_allocation *memory;
+	struct ghci_mapping *mapping;
+	struct ghci_ticket ticket;
+	struct ghci_vm *one;
+	struct ghci_vm *two;
+	struct ghci_vm *three;
+	struct ghci_vm *again;
+	uint64_t used;
+	unsigned closes;
+	int error;
+
+	/* Three sessions; session 1 has a mapping and work whose fence is written. */
+	error = start_scene(MODEL_PROT, NULL);
+	expect(error == 0, "culprit: started");
+	memory = host_memory(8192U);
+	error = ghci_vm_open(&device, &owner_token, &one);
+	if (error == 0)
+		error = ghci_vm_open(&device, &owner_token, &two);
+	if (error == 0)
+		error = ghci_vm_open(&device, &owner_token, &three);
+	if (error == 0)
+		error = ghci_vm_map(&device, one, memory, 0U, &mapping);
+	if (error == 0)
+		error = submit_vm(one, &ticket);
+	expect(error == 0, "culprit: set up");
+
+	/* Session 1 faults, and session 2 is no longer active either. */
+	model_inject(GHCI_FAULT_KIND_PAGE_FAULT, GHCI_UNIT_SU, one->session, 0x4000U, 0);
+	model.session_active &= ~(1U << two->session);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(device.state == GHCI_STATE_RUNNING && device.resets == 1U, "culprit: reset");
+	expect(one->state == GHCI_VM_DEAD && two->state == GHCI_VM_DEAD && three->state == GHCI_VM_OPEN, "culprit: culprits dead, the other open");
+	expect(stub.session_errors == 2U && device.storm_count == 0U, "culprit: reported, not a storm");
+	error = ghci_cp_wait(&device, &ticket, TEST_WAIT_MS);
+	expect(error == EIO, "culprit: its written fence failed");
+	expect(model.session_active == (1U | (1U << three->session)), "culprit: only the survivor replayed");
+	error = submit_vm(one, &ticket);
+	expect(error == EIO, "culprit: a dead session submits nothing");
+
+	/* The dead session keeps its number until its owner closes it. */
+	error = ghci_vm_open(&device, &owner_token, &again);
+	expect(error == 0 && again->slot != one->slot && again->slot != two->slot, "culprit: dead numbers not reused");
+	closes = model_count_commands(GHCI_OP_SESSION_CLOSE);
+	used = device.heap_used;
+	ghci_vm_unmap(&device, mapping);
+	ghci_vm_close(&device, one);
+	ghci_vm_close(&device, two);
+	expect(model_count_commands(GHCI_OP_SESSION_CLOSE) == closes && device.vm[1] == NULL && device.vm[2] == NULL,
+	    "culprit: dead sessions close without the GPU");
+	expect(memory->holds == 1U, "culprit: dead mapping let the memory go");
+	expect(device.heap_used == used, "culprit: a dead close returns no table twice");
+
+	/* A session the processor has not confirmed opening is no culprit. */
+	model_hold(1);
+	error = ghci_vm_open(&device, &owner_token, &one);
+	expect(error == 0, "culprit: open not yet confirmed");
+	model.session_active &= ~(1U << one->session);
+	model_inject(GHCI_FAULT_KIND_PAGE_FAULT, GHCI_UNIT_SU, three->session, 0x4000U, 0);
+	model_hold(0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(three->state == GHCI_VM_DEAD && one->state == GHCI_VM_OPEN && again->state == GHCI_VM_OPEN, "culprit: unconfirmed open spared");
+	ghci_vm_close(&device, one);
+	ghci_vm_close(&device, three);
+	ghci_vm_close(&device, again);
+	reclaim();
+	memory_done(memory);
+	end_scene("culprit");
+}
+
+/*
+ * A device fault while a session's work is in flight: that session lost
+ * its work and dies; a session that lost only a VM operation does not.
+ * Then a CP_HEAP exhaustion: no culprit, counted in its own window.
+ */
+static void
+scene_lost_work(void)
+{
+	struct ghci_allocation *memory;
+	struct ghci_mapping *mapping;
+	struct ghci_ticket ticket;
+	struct ghci_vm *busy;
+	struct ghci_vm *mapper;
+	int error;
+
+	/* Work of one session and a map of another, both held. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0, "lost work: started");
+	memory = host_memory(4096U);
+	error = ghci_vm_open(&device, &owner_token, &busy);
+	if (error == 0)
+		error = ghci_vm_open(&device, &owner_token, &mapper);
+	model_hold(1);
+	if (error == 0)
+		error = submit_vm(busy, &ticket);
+	if (error == 0)
+		error = ghci_vm_map(&device, mapper, memory, 0U, &mapping);
+	expect(error == 0, "lost work: placed");
+
+	/* The device faults; the busy session's work is lost, the mapper is replayed. */
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	model_hold(0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(busy->state == GHCI_VM_DEAD && mapper->state == GHCI_VM_OPEN && stub.session_errors == 1U, "lost work: only the busy one died");
+	expect(model_lookup(mapper->session, mapping->va) != NULL, "lost work: the map replayed");
+	error = ghci_cp_wait(&device, &ticket, TEST_WAIT_MS);
+	expect(error == EIO, "lost work: its ticket failed");
+
+	/* An exhaustion of CP_HEAP that drops a session: no culprit, its own window. */
+	model_inject(GHCI_FAULT_KIND_MMU_OOM, GHCI_UNIT_CP, mapper->session, 0x2000U, 0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(mapper->state == GHCI_VM_OPEN && device.oom_count == 1U, "lost work: MMU_OOM has no culprit");
+	ghci_vm_unmap(&device, mapping);
+	ghci_vm_close(&device, mapper);
+	ghci_vm_close(&device, busy);
+	reclaim();
+	memory_done(memory);
+	end_scene("lost work");
+
+	/* Under PROT too: the session MMU_OOM dropped from SESSION_ACTIVE is no culprit, and the exhaustion is counted. */
+	error = start_scene(MODEL_PROT, NULL);
+	expect(error == 0, "lost work: PROT started");
+	error = ghci_vm_open(&device, &owner_token, &mapper);
+	expect(error == 0, "lost work: PROT open");
+	model_inject(GHCI_FAULT_KIND_MMU_OOM, GHCI_UNIT_CP, mapper->session, 0x2000U, 0);
+	expect((model.session_active & (1U << mapper->session)) == 0U, "lost work: PROT session dropped by the model");
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(mapper->state == GHCI_VM_OPEN && device.oom_count == 1U && stub.session_errors == 0U, "lost work: PROT MMU_OOM has no culprit");
+
+	/* A device fault that also drops a session from SESSION_ACTIVE counts towards the storm, and kills nobody. */
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	model.session_active &= ~(1U << mapper->session);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(mapper->state == GHCI_VM_OPEN && device.storm_count == 1U, "lost work: device fault counted, no culprit");
+	ghci_vm_close(&device, mapper);
+	reclaim();
+	end_scene("lost work PROT");
+}
+
+/*
+ * A map, an unmap, an open and a close that meet a recovery at the gate:
+ * each starts again after it, places its packets once, and nothing of a
+ * closed session is placed.
+ */
+static void
+scene_vm_retry(void)
+{
+	struct ghci_allocation *memory;
+	struct ghci_mapping *mapping;
+	struct ghci_vm *vm;
+	struct ghci_vm *other;
+	unsigned opens;
+	unsigned maps;
+	int error;
+
+	/* A session, and a fault the service has not taken yet. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0, "retry: started");
+	memory = host_memory(4096U);
+	error = ghci_vm_open(&device, &owner_token, &vm);
+	expect(error == 0, "retry: open");
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+
+	/* The map waits at the gate while the recovery replays the session, then maps once. */
+	scene_action = action_recover;
+	opens = model_count_commands(GHCI_OP_SESSION_OPEN);
+	maps = model_count_commands(GHCI_OP_VM_MAP);
+	error = ghci_vm_map(&device, vm, memory, 0U, &mapping);
+	scene_action = NULL;
+	expect(error == 0 && device.resets == 1U, "retry: map after the recovery");
+	expect(model_count_commands(GHCI_OP_SESSION_OPEN) == opens + 1U && model_count_commands(GHCI_OP_VM_MAP) == maps + 1U,
+	    "retry: one replayed open, one map");
+	expect(model_lookup(vm->session, mapping->va) != NULL && model.faults == 1U, "retry: mapped");
+
+	/* An open across a recovery takes one number and places one open (each fault a minute apart, not a storm). */
+	stub.ticks += kern_ms_to_ticks(GHCI_FAULT_STORM_MS + 1000U);
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	scene_action = action_recover;
+	error = ghci_vm_open(&device, &owner_token, &other);
+	scene_action = NULL;
+	expect(error == 0 && other->slot == 2U && device.resets == 2U && model.session_active == 0x7U, "retry: open after the recovery");
+
+	/* An unmap and a close across a recovery. */
+	stub.ticks += kern_ms_to_ticks(GHCI_FAULT_STORM_MS + 1000U);
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	scene_action = action_recover;
+	ghci_vm_unmap(&device, mapping);
+	scene_action = NULL;
+	expect(mapping->state == GHCI_MAPPING_UNMAPPING && device.resets == 3U, "retry: unmap after the recovery");
+	stub.ticks += kern_ms_to_ticks(GHCI_FAULT_STORM_MS + 1000U);
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	scene_action = action_recover;
+	ghci_vm_close(&device, vm);
+	scene_action = NULL;
+	expect(device.resets == 4U && model_count_commands(GHCI_OP_SESSION_CLOSE) == 1U, "retry: close after the recovery");
+	ghci_vm_close(&device, other);
+	reclaim();
+	expect(device.vm[1] == NULL && device.vm[2] == NULL && model.faults == 4U, "retry: no fault of the driver's");
+	memory_done(memory);
+	end_scene("retry");
+}
+
+/*
+ * The resources through the core's operations: a storage resource and a
+ * blob, copies in and out, the processor's view, an export imported into
+ * another session, and the memory kept until the last owner lets it go.
+ */
+static void
+scene_resources(void)
+{
+	struct gpu_resource_create create;
+	struct gpu_blob_create blob;
+	struct drv_gpu_mapping view;
+	struct gpu_info info;
+	struct ghci_resource *storage;
+	struct ghci_resource *shown;
+	struct ghci_resource *imported;
+	void *first;
+	void *second;
+	void *object;
+	void *shared;
+	uint32_t resource_id;
+	uint8_t bytes[16];
+	int error;
+
+	/* Two sessions of the core. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0, "resources: started");
+	error = device.ops.open(&device, &first);
+	if (error == 0)
+		error = device.ops.open(&device, &second);
+	error = device.ops.get_info(&device, first, &info);
+	expect(error == 0 && info.max_resources != 0U && info.max_resource_bytes >= (64ULL << 20), "resources: limits");
+
+	/* A storage resource, written and read back. */
+	memset(&create, 0, sizeof(create));
+	create.bytes = 10000U;
+	create.usage = GPU_RESOURCE_USAGE_STORAGE;
+	error = device.ops.resource_create(&device, first, &create, &object);
+	storage = object;
+	expect(error == 0 && storage->allocation->bytes == 12288U && storage->allocation->bus < 0x100000000ULL, "resources: storage");
+	memset(bytes, 0x5a, sizeof(bytes));
+	error = device.ops.resource_write(&device, first, storage, 9990U, bytes, 10U);
+	expect(error == 0, "resources: write");
+	memset(bytes, 0, sizeof(bytes));
+	error = device.ops.resource_read(&device, first, storage, 9990U, bytes, 10U);
+	expect(error == 0 && bytes[0] == 0x5aU && bytes[9] == 0x5aU, "resources: read back");
+	error = device.ops.resource_read(&device, first, storage, 12280U, bytes, 16U);
+	expect(error == EINVAL, "resources: read past the end");
+
+	/* A mappable blob, its view, and one of a memory object refused. */
+	memset(&blob, 0, sizeof(blob));
+	blob.bytes = 4096U;
+	blob.flags = GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE;
+	error = device.ops.blob_create(&device, first, &blob, &object, &resource_id);
+	shown = object;
+	expect(error == 0 && resource_id != 0U && resource_id == shown->resource_id, "resources: blob");
+	error = device.ops.resource_map(&device, first, shown, &view);
+	expect(error == 0 && view.physical == shown->allocation->bus && view.address == shown->allocation->view && view.bytes == 4096U,
+	    "resources: view");
+	blob.blob_id = 7U;
+	error = device.ops.blob_create(&device, first, &blob, &object, &resource_id);
+	expect(error == ENOTSUP, "resources: memory object blob refused");
+	blob.blob_id = 0U;
+	blob.flags = GPU_BLOB_CROSS_DEVICE;
+	error = device.ops.blob_create(&device, first, &blob, &object, &resource_id);
+	expect(error == ENOTSUP, "resources: cross-device refused");
+
+	/* An export imported into the other session shows the same memory and outlives the original. */
+	error = device.ops.share->export_resource(&device, first, shown, NULL, &shared);
+	expect(error == 0, "resources: exported");
+	error = device.ops.share->import_resource(&device, second, shared, 0U, &object, &resource_id);
+	imported = object;
+	expect(error == 0 && imported->allocation == shown->allocation && resource_id != shown->resource_id, "resources: imported");
+	error = device.ops.share->import_resource(&device, second, shared, GPU_IMPORT_SCANOUT, &object, &resource_id);
+	expect(error == ENOTSUP, "resources: scanout import refused");
+	device.ops.resource_destroy(&device, first, shown);
+	device.ops.share->release(&device, shared);
+	expect(imported->allocation->holds == 1U, "resources: import keeps the memory");
+	device.ops.resource_destroy(&device, second, imported);
+	device.ops.resource_destroy(&device, first, storage);
+
+	/* The sessions close. */
+	device.ops.close(&device, first);
+	device.ops.close(&device, second);
+	end_scene("resources");
+}
+
+/* The scene's action: a device fault the first time, the service's recovery after. */
+static void
+action_fault_then_recover(void)
+{
+	if (scene_action_runs == 1U) {
+		model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+		return;
+	}
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+}
+
+/*
+ * The edges of the VM operations: a map whose wait for the ring's room
+ * ends in a recovery gives its new arena back and maps once after it;
+ * on a lost device an unmap and a close keep the memory the GPU was
+ * given in the quarantine until the detach turned bus mastering off.
+ */
+static void
+scene_vm_edges(void)
+{
+	struct ghci_allocation *memory;
+	struct ghci_allocation *other_memory;
+	struct ghci_mapping *mapping;
+	struct ghci_mapping *other;
+	struct ghci_ticket ticket;
+	struct ghci_vm *vm;
+	enum ghci_gate gate;
+	uint32_t free_dwords;
+	uint32_t nop;
+	unsigned chunks;
+	unsigned index;
+	unsigned maps;
+	int error;
+
+	/* A 4 KiB ring the held processor lets fill. */
+	test_ring_bytes = 4096U;
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0, "edges: started");
+	memory = host_memory(4096U);
+	other_memory = host_memory(4096U);
+	error = ghci_vm_open(&device, &owner_token, &vm);
+	expect(error == 0, "edges: open");
+	model_hold(1);
+	error = submit_nops(TEST_SUBMIT_DWORDS, &ticket);
+	gate = ghci_cp_enter(&device, 0U, 1);
+	for (;;) {
+		free_dwords = (model_read(GHCI_REG_RING_RPTR) - device.ring.wptr - 1U + device.ring.dwords) % device.ring.dwords;
+		if (free_dwords < GHCI_DW_VM_MAP || error != 0)
+			break;
+		(void)ghci_cmd_nop(&nop, 1U);
+		error = ghci_cp_place(&device, &nop, 1U);
+	}
+	ghci_cp_doorbell(&device);
+	ghci_cp_leave(&device);
+	expect(error == 0 && gate == GHCI_GATE_OPEN, "edges: ring filled");
+
+	/* The map waits for room, a fault ends the wait, and the map goes round after the recovery. */
+	maps = model_count_commands(GHCI_OP_VM_MAP);
+	scene_action = action_fault_then_recover;
+	error = ghci_vm_map(&device, vm, memory, 0U, &mapping);
+	scene_action = NULL;
+	model_hold(0);
+	expect(error == 0 && device.resets == 1U && device.state == GHCI_STATE_RUNNING, "edges: map after the recovery");
+	chunks = 0U;
+	for (index = 0U; index < GHCI_CHUNKS; index++) {
+		if (device.chunk_owner[index] != NULL)
+			chunks++;
+	}
+	expect(chunks == 1U && vm->arenas != NULL && model_count_commands(GHCI_OP_VM_MAP) == maps + 1U, "edges: one arena, one map");
+	expect(model_lookup(vm->session, mapping->va) != NULL, "edges: mapped in the model");
+
+	/* The device is lost with the memory mapped: the unmap and the close quarantine what the GPU was given. */
+	error = ghci_vm_map(&device, vm, other_memory, 0U, &other);
+	expect(error == 0, "edges: second map");
+	device.state = GHCI_STATE_LOST;
+	ghci_vm_unmap(&device, mapping);
+	memory_done(memory);
+	ghci_vm_close(&device, vm);
+	memory_done(other_memory);
+	expect(device.vm[1] == NULL && device.quarantined != NULL && device.quarantined->next != NULL &&
+	    device.quarantined->next->next == NULL, "edges: both runs in the quarantine");
+
+	/* The detach gives the quarantine back once the GPU is stopped. */
+	error = ghci_device_stop(&device);
+	expect(error == 0 && device.quarantined == NULL, "edges: quarantine given back at the detach");
+	end_scene("edges");
 }

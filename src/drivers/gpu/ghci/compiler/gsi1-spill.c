@@ -9,10 +9,10 @@
  * The GSI1 compiler's spills: values kept in the warp's scratch memory
  * when the registers of a lane do not hold them all.
  *
- * A compile that may spill gets the scratch memory's address in a
- * constant-bank word (interface kind 14) and computes, at the program's
- * start, the lane's address in its warp's part into a register of its
- * own: address + (warp x words per warp + lane) x 4.  Word s of a lane is
+ * A compile that may spill reads the scratch memory's address from the
+ * driver's table (set 3, the word of its stage) and computes, at the
+ * program's start, the lane's address in its warp's part into a register
+ * of its own: address + (warp x words per warp + lane) x 4.  Word s of a lane is
  * then 128 s from that register, so that the 32 lanes of a store or a
  * load are one run of 128 bytes.
  *
@@ -58,6 +58,7 @@ static int spillable(const struct gsi1_lowering *lowering, uint32_t value);
 static uint32_t next_read(const struct gsi1_lowering *lowering, uint32_t value);
 static int spill_value(struct gsi1_lowering *lowering, uint32_t value);
 static int take_slot(struct gsi1_lowering *lowering, uint32_t value, uint32_t *slot);
+static uint32_t scratch_word(enum drv_gpu_shader_stage stage);
 static int add_definition(struct gsi1_lowering *lowering, uint32_t value, uint32_t reg);
 static uint64_t store_word(const struct gsi1_lowering *lowering, uint32_t reg, uint32_t slot);
 
@@ -147,19 +148,13 @@ gsi1_spill_prologue(
 	gsi1_emit_alu(lowering, GSI1_F3_ADD, GSI1_F7_BASE, base, base, GSI1_LANE);
 	gsi1_emit(lowering, gsi1_encode_shift(GSI1_F3_SLL, GSI1_F7_BASE, base, base, 2U));
 
-	/* Plus the scratch memory's address, read from its bank word. */
+	/* Plus the scratch memory's address, read from the driver's table. */
 	mark = gsi1_scratch_mark(lowering);
-	error = gsi1_bank_operand(lowering, lowering->spill.bank, &address);
+	error = gsi1_driver_word(lowering, scratch_word(lowering->ir->stage), &address);
 	if (error != 0)
 		return error;
 	gsi1_emit_alu(lowering, GSI1_F3_ADD, GSI1_F7_BASE, base, base, address);
 	gsi1_scratch_release(lowering, mark);
-
-	/* The entry that names the bank word; its bytes per warp are filled in at the end. */
-	lowering->spill.entry = lowering->interface_count;
-	error = gsi1_add_interface(lowering, GSI1_KIND_SCRATCH, 0U, lowering->spill.bank, 0U);
-	if (error != 0)
-		return error;
 
 	/* A list that could not grow fails the compile. */
 	if (lowering->out_of_memory != 0)
@@ -426,24 +421,30 @@ gsi1_spill_defined(
 
 /*
  * Fills in the words of a warp's part in the start's movi and the bytes
- * per warp in the interface entry, once every spill is known.
+ * per warp of the program, once every spill is known.  A compile that
+ * may spill reads the driver's table at its start, so it asks for one
+ * scratch word at least.
  */
 int
 gsi1_spill_finish(
 	struct gsi1_lowering *lowering)
 {
 	uint32_t words;
+	uint32_t slots;
 
 	/* Only a compile that may spill has the size to fill in. */
 	if (lowering->spill.enabled == 0)
 		return 0;
 
 	/* The words of a warp's part: 32 for each scratch word. */
-	words = lowering->spill.slot_count * (GSI1_SPILL_SLOT_BYTES / 4U);
+	slots = lowering->spill.slot_count;
+	if (slots == 0U)
+		slots = 1U;
+	words = slots * (GSI1_SPILL_SLOT_BYTES / 4U);
 	lowering->code[lowering->spill.patch] = gsi1_encode_movi(lowering->spill.base, words);
 
-	/* The interface entry's bytes per warp. */
-	lowering->interface[lowering->spill.entry * GSI1_IFACE_WORDS + GSI1_IF_SPECIFIC] = words * 4U;
+	/* The program's bytes per warp. */
+	lowering->spill.bytes = words * 4U;
 
 	/* Succeeded: the scratch memory's size is in the program. */
 	return 0;
@@ -728,7 +729,8 @@ spill_value(
 	uint32_t index;
 	int error;
 
-	/* The value's scratch word. */
+	/* The value's scratch word (none until take_slot() gives one). */
+	slot = 0U;
 	error = take_slot(lowering, value, &slot);
 	if (error != 0)
 		return error;
@@ -822,6 +824,21 @@ take_slot(
 	/* Succeeded: the word is the value's. */
 	*slot = index;
 	return 0;
+}
+
+/* Reports the driver table's word that holds the scratch memory's address for a stage. */
+static uint32_t
+scratch_word(
+	enum drv_gpu_shader_stage stage)
+{
+	/* The vertex and fragment warps have parts of their own. */
+	if (stage == DRV_GPU_STAGE_VERTEX)
+		return GSI1_ABI_DRIVER_SCRATCH_VERTEX;
+	if (stage == DRV_GPU_STAGE_FRAGMENT)
+		return GSI1_ABI_DRIVER_SCRATCH_FRAGMENT;
+
+	/* Succeeded: a compute program's. */
+	return GSI1_ABI_DRIVER_SCRATCH_COMPUTE;
 }
 
 /* Adds a definition of a register value at the end of the code so far. */

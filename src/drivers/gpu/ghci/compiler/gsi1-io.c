@@ -8,26 +8,30 @@
 /*
  * The GSI1 compiler's vertex and fragment inputs and outputs.
  *
- * A vertex warp starts with each attribute's components in the registers
- * the interface table names; the program copies them where it reads them
- * and exports each component of the position, the point size and the
- * varyings right after its last store, so that no output holds a register
- * to the end.
- * Location L component c of the varyings is varying word w + c, w the
- * location's first word (4 L unless the pipeline packs them): a vertex
- * program exports it to 0x010 + w + c, and a fragment program reads it from
- * the primitive table's word 4 + w + c of each vertex with lda.
+ * A vertex warp starts with the bound attributes packed into r0 up: the
+ * driver puts the attribute locations in order into the pipeline's slots,
+ * and slot i's components (its format's) arrive from the sum of the
+ * components of the slots before it.  The program copies them where it
+ * reads them (a component the format lacks reads 0, or 1 for the fourth),
+ * reads the vertex and instance index as operands 120 and 121, and exports
+ * each component of the position, the point size and the varyings right
+ * after its last store, so that no output holds a register to the end.
+ * Location L component c of the varyings is varying word 4 L + c: a vertex
+ * program exports it to 0x010 + 4 L + c, and a fragment program reads it
+ * from the primitive table's word 4 + 4 L + c of each vertex with lda.  The
+ * table's words 0-3 are each vertex's clip-space position.
  *
  * A fragment warp starts with the barycentrics in r0-r2 (perspective
  * correct, against the primitive's vertices), the depth in r3, the pixel
  * centre in r4 and r5, the sample mask in r6 and, when the program asks for
- * it, the centroid's barycentrics in r7-r9.  A smooth input is the three
- * vertices' words weighed by the barycentrics; a flat one, and every input
- * of a point, is vertex 0's word.  A noperspective input, and FragCoord.w,
- * need each vertex's clip w, which the vertex program exports as one more
- * varying when the pipeline asks for it: the screen-linear barycentrics
- * are b_i w_i / (b_0 w_0 + b_1 w_1 + b_2 w_2), and 1 / w at the pixel is
- * the reciprocal of that sum.  The start computes them once.
+ * it, the centroid's barycentrics in r7-r9.  A smooth input is the
+ * vertices' words weighed by the barycentrics (a line's two, a triangle's
+ * three); a flat one, and every input of a point, is vertex 0's word (the
+ * provoking vertex).  A noperspective input, and FragCoord.w, need each
+ * vertex's clip w, the table's word 3: the screen-linear barycentrics are
+ * b_i w_i / (b_0 w_0 + b_1 w_1 + b_2 w_2), and 1 / w at the pixel is the
+ * reciprocal of that sum (a point's is 1 / w_0).  The start computes them
+ * once.
  *
  * Every fragment program ends, with the EXEC of its start, by exporting a
  * sample mask: the program's own, or all ones (which leaves the coverage
@@ -45,11 +49,13 @@
 #include <stddef.h>
 #include <stdint.h>
 
-/* The binding word of the varying that carries the position's w, in the interface table. */
-#define GSI1_W_LOCATION			0xffffffffU
-
-/* The first register of a fragment warp's centroid barycentrics, and of the hardware's fragment inputs. */
-#define GSI1_FRAGMENT_INPUTS		10U
+/*
+ * The bits of the float 1.0, the fourth component an attribute without
+ * one reads.
+ *
+ * Values referenced: IEEE 754-2019 (the binary32 encoding of 1.0).
+ */
+#define GSI1_IO_FLOAT_ONE		0x3f800000U
 
 /* What a fragment program reads of the barycentrics, from its inputs. */
 struct gsi1_fragment_needs {
@@ -61,9 +67,9 @@ struct gsi1_fragment_needs {
 };
 
 static int prepare_vertex(struct gsi1_lowering *lowering);
+static int prepare_attributes(struct gsi1_lowering *lowering);
 static int prepare_fragment(struct gsi1_lowering *lowering);
-static int prepare_varying_words(struct gsi1_lowering *lowering);
-static int add_varying(struct gsi1_lowering *lowering, uint32_t kind, const struct drv_gpu_shader_ir_io *io);
+static uint32_t primitive_vertices(const struct gsi1_lowering *lowering);
 static int input_interpolation(const struct gsi1_lowering *lowering, uint32_t location, uint32_t *first);
 static uint32_t output_channel(const struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction);
 static void needs_of(const struct gsi1_lowering *lowering, struct gsi1_fragment_needs *needs);
@@ -71,6 +77,7 @@ static int prologue_fragment(struct gsi1_lowering *lowering);
 static int prologue_vertex(struct gsi1_lowering *lowering);
 static int take_input(struct gsi1_lowering *lowering, uint32_t input, uint32_t reg);
 static int screen_linear(struct gsi1_lowering *lowering, uint32_t first_barycentric, uint32_t first_linear, int keep_linear, int keep_reciprocal);
+static int point_reciprocal_w(struct gsi1_lowering *lowering);
 static int lower_fragment_input(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static int lower_varying(struct gsi1_lowering *lowering, const struct drv_gpu_shader_ir_inst *instruction, uint32_t dst);
 static void emit_lda(struct gsi1_lowering *lowering, uint32_t rd, uint32_t word, uint32_t vertex);
@@ -110,26 +117,14 @@ gsi1_io_inputs(
 	location = instruction->location;
 	component = instruction->component & 3U;
 
-	/* A vertex program: an attribute's component, or the vertex and instance numbers. */
+	/* A vertex program: an attribute's component (the vertex and instance index are operands). */
 	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
 		if (location < GHCI_GSI1_LOCATIONS) {
 			inputs[0] = GSI1_INPUT_ATTRIBUTE + 4U * location + component;
 			return 1U;
 		}
 
-		/* The vertex number. */
-		if (location == DRV_GPU_SHADER_LOCATION_VERTEX_INDEX) {
-			inputs[0] = GSI1_INPUT_VERTEX_INDEX;
-			return 1U;
-		}
-
-		/* The instance number. */
-		if (location == DRV_GPU_SHADER_LOCATION_INSTANCE_INDEX) {
-			inputs[0] = GSI1_INPUT_INSTANCE_INDEX;
-			return 1U;
-		}
-
-		/* Anything else is refused where it is lowered. */
+		/* Anything else is an operand or is refused where it is lowered. */
 		return 0U;
 	}
 
@@ -161,13 +156,13 @@ gsi1_io_inputs(
 
 	/* A point's PointCoord is in r0 and r1. */
 	if (location == DRV_GPU_SHADER_LOCATION_POINT_COORD) {
-		if (lowering->options.points == 0U)
+		if (lowering->options.primitive != GHCI_GSI1_PRIMITIVE_POINT)
 			return 0U;
 		inputs[0] = GSI1_INPUT_B0 + (component & 1U);
 		return 1U;
 	}
 
-	/* A varying reads the three barycentrics its interpolation takes. */
+	/* A varying reads the barycentrics its interpolation takes: a line's two, a triangle's three. */
 	if (location >= GHCI_GSI1_LOCATIONS)
 		return 0U;
 	interpolation = input_interpolation(lowering, location, &first);
@@ -177,13 +172,14 @@ gsi1_io_inputs(
 	inputs[1] = first + 1U;
 	inputs[2] = first + 2U;
 
-	/* The three barycentrics. */
-	return 3U;
+	/* The primitive's barycentrics. */
+	return primitive_vertices(lowering);
 }
 
 /*
- * Checks a graphics program's inputs and outputs, gives the locations
- * their varying words, and adds their interface entries.
+ * Checks a graphics program's inputs and outputs and finds what the
+ * pipeline state takes from them: the attribute registers, the varyings,
+ * the colour outputs and the fragment flags.
  */
 int
 gsi1_io_prepare(
@@ -194,11 +190,6 @@ gsi1_io_prepare(
 	/* A compute program has none. */
 	if (lowering->ir->stage == DRV_GPU_STAGE_COMPUTE)
 		return 0;
-
-	/* The varying words of the locations. */
-	error = prepare_varying_words(lowering);
-	if (error != 0)
-		return error;
 
 	/* The stage's own inputs and outputs. */
 	if (lowering->ir->stage == DRV_GPU_STAGE_VERTEX) {
@@ -349,6 +340,9 @@ gsi1_io_lower_input(
 {
 	uint32_t inputs[GSI1_INPUT_COUNT];
 	uint32_t input_count;
+	uint32_t location;
+	uint32_t component;
+	uint32_t bits;
 	uint32_t reg;
 	int error;
 
@@ -368,17 +362,35 @@ gsi1_io_lower_input(
 		return error;
 	}
 
-	/* A vertex program copies the attribute's component or the number. */
+	/* The vertex and instance index are operands and need no instruction. */
+	if (dst == GSI1_NO_OPERAND)
+		return 0;
+
+	/* A vertex program copies the attribute's component. */
 	input_count = gsi1_io_inputs(lowering, instruction, inputs);
 	if (input_count != 1U) {
 		error = gsi1_refuse(lowering, ENOTSUP, "a vertex input GSI1 does not have");
 		return error;
 	}
 
-	/* The input's register: the start took one for every input read. */
+	/* A component the bound format lacks: 0, and 1 (1.0 for a float format) for the fourth. */
+	location = instruction->location;
+	component = instruction->component & 3U;
+	if (component >= lowering->attribute_components[location]) {
+		bits = 0U;
+		if (component == 3U && ((lowering->options.attribute_integer >> location) & 1U) != 0U) {
+			bits = 1U;
+		} else if (component == 3U) {
+			bits = GSI1_IO_FLOAT_ONE;
+		}
+		gsi1_emit_constant(lowering, dst, bits);
+		return 0;
+	}
+
+	/* The input's register: the start took one for every component read. */
 	reg = lowering->input_reg[inputs[0]];
 	if (reg == GSI1_NO_OPERAND) {
-		error = gsi1_refuse(lowering, ENOTSUP, "a component past the attribute's");
+		error = gsi1_refuse(lowering, ENOTSUP, "an attribute component without its register");
 		return error;
 	}
 
@@ -478,9 +490,8 @@ gsi1_io_finish(
 }
 
 /*
- * Checks a vertex program's inputs and outputs and adds the outputs'
- * interface entries (the attributes' come with their registers at the
- * start).
+ * Checks a vertex program's inputs and outputs, places its attributes,
+ * and counts the varyings it writes.
  */
 static int
 prepare_vertex(
@@ -488,15 +499,12 @@ prepare_vertex(
 {
 	const struct drv_gpu_shader_ir *ir;
 	const struct drv_gpu_shader_ir_inst *instruction;
-	const struct drv_gpu_shader_ir_io *io;
-	uint32_t written;
 	uint32_t index;
 	uint32_t location;
 	int error;
 
 	/* Names the module being scanned. */
 	ir = lowering->ir;
-	written = 0U;
 
 	/* Each input read and output written by an instruction that is lowered. */
 	for (index = 0U; index < ir->instruction_count; index++) {
@@ -506,7 +514,7 @@ prepare_vertex(
 		if (lowering->dead[index] != 0U)
 			continue;
 
-		/* An input: an attribute's location or a number. */
+		/* An input: an attribute's location or an index. */
 		if (instruction->op == DRV_GPU_IR_LOAD_INPUT) {
 			if (location >= GHCI_GSI1_LOCATIONS &&
 			    location != DRV_GPU_SHADER_LOCATION_VERTEX_INDEX &&
@@ -527,36 +535,21 @@ prepare_vertex(
 		if (location == DRV_GPU_IR_LOCATION_POINT_SIZE)
 			continue;
 
-		/* Any other output is a varying of a location that has its words. */
-		if (location >= GHCI_GSI1_LOCATIONS || lowering->varying_word[location] == GHCI_GSI1_NO_WORD) {
+		/* Any other output is a varying location's. */
+		if (location >= GHCI_GSI1_LOCATIONS) {
 			error = gsi1_refuse(lowering, ENOTSUP, "a vertex output GSI1 does not export");
 			return error;
 		}
-		written |= 1U << location;
+
+		/* The varyings run up to the highest location written. */
+		if (location + 1U > lowering->varying_count)
+			lowering->varying_count = location + 1U;
 	}
 
-	/* Each varying location written, with the components and interpolation of its record. */
-	for (location = 0U; location < GHCI_GSI1_LOCATIONS; location++) {
-		if ((written & (1U << location)) == 0U)
-			continue;
-
-		/* Adds the location's entry. */
-		io = gsi1_find_output(ir, location);
-		error = add_varying(lowering, GSI1_KIND_OUTPUT, io);
-		if (error != 0)
-			return error;
-	}
-
-	/* The position's w as one more varying, when the pipeline asks for it. */
-	if (lowering->options.has_w_word != 0U) {
-		error = gsi1_add_interface(lowering,
-					   GSI1_KIND_OUTPUT,
-					   0U,
-					   GSI1_W_LOCATION,
-					   lowering->options.w_word | (1U << GSI1_VARY_COMPONENTS_SHIFT));
-		if (error != 0)
-			return error;
-	}
+	/* The attributes' registers. */
+	error = prepare_attributes(lowering);
+	if (error != 0)
+		return error;
 
 	/* Succeeded: the vertex interface is known. */
 	lowering->index = 0U;
@@ -564,8 +557,62 @@ prepare_vertex(
 }
 
 /*
- * Checks a fragment program's inputs and outputs, adds their interface
- * entries, and sets the header's flags of what it asks of the pipeline.
+ * Places the attributes: each bound location's components (the pipeline's
+ * map, or the variable's) from the sum of the components of the bound
+ * locations below it, at most 60 registers in all.
+ */
+static int
+prepare_attributes(
+	struct gsi1_lowering *lowering)
+{
+	const struct drv_gpu_shader_ir_io *io;
+	uint32_t location;
+	uint32_t components;
+	uint32_t base;
+	int error;
+
+	/* Each location in order, as the driver fills the pipeline's slots. */
+	base = 0U;
+	for (location = 0U; location < GHCI_GSI1_LOCATIONS; location++) {
+		/* The bound attribute's components: the pipeline's, or the variable's when the pipeline gives none. */
+		components = 0U;
+		if (lowering->options.has_attribute_map != 0U) {
+			components = lowering->options.attribute_components[location];
+		} else {
+			io = gsi1_find_input(lowering->ir, location);
+			if (io != NULL) {
+				components = io->components;
+				if (components == 0U || components > 4U)
+					components = 4U;
+			}
+		}
+
+		/* A format has one to four components. */
+		if (components > 4U) {
+			error = gsi1_refuse(lowering, EINVAL, "an attribute of more than four components");
+			return error;
+		}
+
+		/* The location's registers. */
+		lowering->attribute_base[location] = base;
+		lowering->attribute_components[location] = components;
+		base += components;
+	}
+
+	/* The fetcher writes 60 registers at most. */
+	if (base > GSI1_ABI_ATTRIBUTE_REGISTERS) {
+		error = gsi1_refuse(lowering, ENOTSUP, "the attributes take more than 60 registers");
+		return error;
+	}
+
+	/* Succeeded: the attributes have their registers. */
+	lowering->attribute_registers = base;
+	return 0;
+}
+
+/*
+ * Checks a fragment program's inputs and outputs, and finds the varyings
+ * it reads, the colour attachments it exports and its flags.
  */
 static int
 prepare_fragment(
@@ -573,18 +620,13 @@ prepare_fragment(
 {
 	const struct drv_gpu_shader_ir *ir;
 	const struct drv_gpu_shader_ir_inst *instruction;
-	const struct drv_gpu_shader_ir_io *io;
 	struct gsi1_fragment_needs needs;
-	uint32_t components[GSI1_COLOR_ATTACHMENTS];
-	uint32_t read;
 	uint32_t index;
 	uint32_t location;
 	int error;
 
 	/* Names the module being scanned. */
 	ir = lowering->ir;
-	read = 0U;
-	kern_memset(components, 0, sizeof(components));
 
 	/* Each input read and output written by an instruction that is lowered. */
 	for (index = 0U; index < ir->instruction_count; index++) {
@@ -594,15 +636,15 @@ prepare_fragment(
 		if (lowering->dead[index] != 0U)
 			continue;
 
-		/* An output: a colour attachment's component, the depth or the sample mask. */
+		/* An output: a colour attachment's component, the second colour, the depth or the sample mask. */
 		if (instruction->op == DRV_GPU_IR_STORE_OUTPUT) {
 			if (location == DRV_GPU_IR_LOCATION_FRAG_DEPTH) {
-				lowering->flags |= GSI1_FLAG_DEPTH;
-			} else if (location == DRV_GPU_IR_LOCATION_SAMPLE_MASK) {
-				lowering->flags |= GSI1_FLAG_SAMPLE_MASK;
+				lowering->flags |= GHCI_GSI1_FLAG_DEPTH_EXPORT;
+			} else if (location == DRV_GPU_IR_LOCATION_SECOND_COLOR) {
+				lowering->color_outputs |= GHCI_GSI1_OUTPUT_SECOND_COLOR;
 			} else if (location < GSI1_COLOR_ATTACHMENTS) {
-				components[location] |= 1U << (instruction->component & 3U);
-			} else {
+				lowering->color_outputs |= 1U << location;
+			} else if (location != DRV_GPU_IR_LOCATION_SAMPLE_MASK) {
 				error = gsi1_refuse(lowering, ENOTSUP, "a fragment output GSI1 does not export");
 				return error;
 			}
@@ -617,168 +659,43 @@ prepare_fragment(
 		if (location == DRV_GPU_SHADER_LOCATION_FRAG_COORD ||
 		    location == DRV_GPU_SHADER_LOCATION_FRONT_FACING ||
 		    location == DRV_GPU_SHADER_LOCATION_PRIMITIVE_ID ||
-		    location == DRV_GPU_SHADER_LOCATION_POINT_COORD) {
+		    location == DRV_GPU_SHADER_LOCATION_POINT_COORD ||
+		    location == DRV_GPU_SHADER_LOCATION_SAMPLE_MASK) {
 			continue;
 		}
 
-		/* The sample mask in. */
-		if (location == DRV_GPU_SHADER_LOCATION_SAMPLE_MASK) {
-			if (lowering->options.sample_mask_input != 0U)
-				lowering->flags |= GSI1_FLAG_SAMPLE_IN;
-			continue;
-		}
-
-		/* Any other input is a varying of a location that has its words. */
-		if (location >= GHCI_GSI1_LOCATIONS || lowering->varying_word[location] == GHCI_GSI1_NO_WORD) {
+		/* Any other input is a varying location's. */
+		if (location >= GHCI_GSI1_LOCATIONS) {
 			error = gsi1_refuse(lowering, ENOTSUP, "a fragment input GSI1 does not have");
 			return error;
 		}
-		read |= 1U << location;
-	}
 
-	/* Each varying location read, with the components and interpolation of its record. */
-	for (location = 0U; location < GHCI_GSI1_LOCATIONS; location++) {
-		if ((read & (1U << location)) == 0U)
-			continue;
-
-		/* Adds the location's entry. */
-		io = gsi1_find_input(ir, location);
-		error = add_varying(lowering, GSI1_KIND_VARYING_IN, io);
-		if (error != 0)
-			return error;
-	}
-
-	/* Each colour attachment written: its first export target and its components. */
-	for (location = 0U; location < GSI1_COLOR_ATTACHMENTS; location++) {
-		if (components[location] == 0U)
-			continue;
-
-		/* Adds the attachment's entry. */
-		error = gsi1_add_interface(lowering,
-					   GSI1_KIND_OUTPUT,
-					   0U,
-					   location,
-					   GSI1_EXP_COLOR(location, 0U) | (components[location] << GSI1_OUT_COMPONENTS_SHIFT));
-		if (error != 0)
-			return error;
-	}
-
-	/* What the barycentrics are read as. */
-	needs_of(lowering, &needs);
-
-	/* A noperspective input and FragCoord.w need the clip w the vertex program exports. */
-	if (needs.linear != 0 || needs.linear_centroid != 0 || needs.reciprocal_w != 0) {
-		if (lowering->options.has_w_word == 0U) {
-			error = gsi1_refuse(lowering, ENOTSUP, "a noperspective input or FragCoord.w without the clip w varying");
-			return error;
-		}
-
-		/* The entry of the varying the w is read from. */
-		error = gsi1_add_interface(lowering,
-					   GSI1_KIND_VARYING_IN,
-					   0U,
-					   GSI1_W_LOCATION,
-					   lowering->options.w_word | (1U << GSI1_VARY_COMPONENTS_SHIFT));
-		if (error != 0)
-			return error;
+		/* The varyings run up to the highest location read. */
+		if (location + 1U > lowering->varying_count)
+			lowering->varying_count = location + 1U;
 	}
 
 	/* The centroid's barycentrics are asked of the rasterizer. */
+	needs_of(lowering, &needs);
 	if (needs.centroid != 0 || needs.linear_centroid != 0)
-		lowering->flags |= GSI1_FLAG_CENTROID;
-
-	/* A program built for points says so. */
-	if (lowering->options.points != 0U)
-		lowering->flags |= GSI1_FLAG_POINTS;
+		lowering->flags |= GHCI_GSI1_FLAG_CENTROID;
 
 	/* Succeeded: the fragment interface is known. */
 	lowering->index = 0U;
 	return 0;
 }
 
-/*
- * Gives each location its first varying word: the pipeline's packing, or
- * 4 L; a location whose words are past the GPU's varying words has none.
- */
-static int
-prepare_varying_words(
-	struct gsi1_lowering *lowering)
+/* Reports the vertices whose words a fragment program's smooth input weighs: a line's two, a triangle's three. */
+static uint32_t
+primitive_vertices(
+	const struct gsi1_lowering *lowering)
 {
-	uint32_t location;
-	uint32_t word;
-	int error;
+	/* A line has no vertex 2 (b2 is zero). */
+	if (lowering->options.primitive == GHCI_GSI1_PRIMITIVE_LINE)
+		return 2U;
 
-	/* Each location. */
-	for (location = 0U; location < GHCI_GSI1_LOCATIONS; location++) {
-		/* The pipeline's word, or the plain layout's. */
-		word = 4U * location;
-		if (lowering->options.has_varying_map != 0U)
-			word = lowering->options.varying_word[location];
-
-		/* A location without a word, or whose four words the GPU does not keep, has none. */
-		if (word == GHCI_GSI1_NO_WORD || word + 4U > lowering->options.varying_words) {
-			lowering->varying_word[location] = GHCI_GSI1_NO_WORD;
-			continue;
-		}
-
-		/* The location's first word. */
-		lowering->varying_word[location] = word;
-	}
-
-	/* The varying of the clip w is one the GPU keeps too. */
-	if (lowering->options.has_w_word != 0U && lowering->options.w_word >= lowering->options.varying_words) {
-		error = gsi1_refuse(lowering, EINVAL, "the clip w's varying word is past the GPU's varying words");
-		return error;
-	}
-
-	/* Succeeded: the locations have their words. */
-	return 0;
-}
-
-/*
- * Adds the interface entry of a varying location (an input of a fragment
- * program or an output of a vertex one): its first word, its components
- * and its interpolation.
- */
-static int
-add_varying(
-	struct gsi1_lowering *lowering,
-	uint32_t kind,
-	const struct drv_gpu_shader_ir_io *io)
-{
-	uint32_t specific;
-	uint32_t components;
-	uint32_t location;
-	int error;
-
-	/* A location without a record is not written by the parser. */
-	if (io == NULL) {
-		error = gsi1_refuse(lowering, EINVAL, "a varying without its interface record");
-		return error;
-	}
-
-	/* The components, one to four. */
-	location = io->location;
-	components = io->components;
-	if (components == 0U || components > 4U)
-		components = 4U;
-
-	/* The first word, the components and the interpolation. */
-	specific = lowering->varying_word[location] | (components << GSI1_VARY_COMPONENTS_SHIFT);
-	if (io->flat != 0U)
-		specific |= GSI1_VARY_FLAT;
-	if (io->noperspective != 0U)
-		specific |= GSI1_VARY_NOPERSPECTIVE;
-	if (io->centroid != 0U)
-		specific |= GSI1_VARY_CENTROID;
-
-	/* Adds the entry. */
-	error = gsi1_add_interface(lowering, kind, 0U, location, specific);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the varying is in the table. */
-	return 0;
+	/* Succeeded: a triangle's three. */
+	return 3U;
 }
 
 /*
@@ -796,7 +713,7 @@ input_interpolation(
 	int centroid;
 
 	/* Every input of a point is vertex 0's. */
-	if (lowering->options.points != 0U)
+	if (lowering->options.primitive == GHCI_GSI1_PRIMITIVE_POINT)
 		return 0;
 
 	/* A flat input is vertex 0's (the provoking vertex). */
@@ -857,15 +774,17 @@ output_channel(
 	if (lowering->ir->stage != DRV_GPU_STAGE_FRAGMENT)
 		return GSI1_OUTPUT_CHANNELS;
 
-	/* A fragment program: a colour attachment, the depth or the sample mask. */
+	/* A fragment program: a colour attachment, the second colour, the depth or the sample mask. */
 	if (location == DRV_GPU_IR_LOCATION_FRAG_DEPTH)
 		return GSI1_OUTPUT_DEPTH;
 	if (location == DRV_GPU_IR_LOCATION_SAMPLE_MASK)
 		return GSI1_OUTPUT_SAMPLE_MASK;
+	if (location == DRV_GPU_IR_LOCATION_SECOND_COLOR)
+		return GSI1_OUTPUT_SECOND_COLOR + component;
 	if (location < GSI1_COLOR_ATTACHMENTS)
 		return GSI1_OUTPUT_COLOR + 4U * location + component;
 
-	/* Anything else (the second colour of a dual-source blend) is not exported. */
+	/* Anything else is not exported. */
 	return GSI1_OUTPUT_CHANNELS;
 }
 
@@ -900,23 +819,29 @@ prologue_fragment(
 {
 	struct gsi1_fragment_needs needs;
 	uint32_t input;
+	uint32_t vertices;
+	int point;
 	int keep;
 	int error;
 
-	/* What the start computes. */
+	/* What the start computes, and from the barycentrics of how many vertices. */
 	needs_of(lowering, &needs);
+	vertices = primitive_vertices(lowering);
+	point = 0;
+	if (lowering->options.primitive == GHCI_GSI1_PRIMITIVE_POINT)
+		point = 1;
 
 	/*
 	 * The hardware's inputs: those an instruction reads, and the
-	 * barycentrics the start computes from.
+	 * barycentrics the start computes from (a point's 1 / w needs none).
 	 */
 	for (input = GSI1_INPUT_B0; input <= GSI1_INPUT_CENTROID_B2; input++) {
 		keep = 0;
 		if (lowering->input_until[input] != 0U)
 			keep = 1;
-		if (input <= GSI1_INPUT_B2 && (needs.linear != 0 || needs.reciprocal_w != 0))
+		if (input < GSI1_INPUT_B0 + vertices && (needs.linear != 0 || (needs.reciprocal_w != 0 && point == 0)))
 			keep = 1;
-		if (input >= GSI1_INPUT_CENTROID_B0 && needs.linear_centroid != 0)
+		if (input >= GSI1_INPUT_CENTROID_B0 && input < GSI1_INPUT_CENTROID_B0 + vertices && needs.linear_centroid != 0)
 			keep = 1;
 		if (keep == 0)
 			continue;
@@ -927,8 +852,15 @@ prologue_fragment(
 			return error;
 	}
 
+	/* A point's 1 / w is vertex 0's. */
+	if (point != 0 && needs.reciprocal_w != 0) {
+		error = point_reciprocal_w(lowering);
+		if (error != 0)
+			return error;
+	}
+
 	/* The screen-linear barycentrics and 1 / w at the centre. */
-	if (needs.linear != 0 || needs.reciprocal_w != 0) {
+	if (needs.linear != 0 || (needs.reciprocal_w != 0 && point == 0)) {
 		error = screen_linear(lowering, GSI1_INPUT_B0, GSI1_INPUT_LINEAR_B0, needs.linear, needs.reciprocal_w);
 		if (error != 0)
 			return error;
@@ -963,92 +895,34 @@ prologue_fragment(
 }
 
 /*
- * The start of a vertex program: takes each read attribute's registers (a
- * run of its components, which the vertex fetcher fills) and the vertex
- * and instance numbers', and adds their interface entries.
+ * The start of a vertex program: takes the registers of the attribute
+ * components it reads, where the fetcher writes them.
  */
 static int
 prologue_vertex(
 	struct gsi1_lowering *lowering)
 {
-	const struct drv_gpu_shader_ir_io *io;
 	uint32_t location;
 	uint32_t component;
-	uint32_t components;
-	uint32_t first;
-	uint32_t reg;
-	int read;
+	uint32_t input;
 	int error;
 
-	/* Each attribute location a lowered instruction reads. */
+	/* Each component of each attribute location that a lowered instruction reads. */
 	for (location = 0U; location < GHCI_GSI1_LOCATIONS; location++) {
-		read = 0;
 		for (component = 0U; component < 4U; component++) {
-			if (lowering->input_until[GSI1_INPUT_ATTRIBUTE + 4U * location + component] != 0U)
-				read = 1;
+			input = GSI1_INPUT_ATTRIBUTE + 4U * location + component;
+			if (lowering->input_until[input] == 0U)
+				continue;
+
+			/* A component the format lacks is made where it is read. */
+			if (component >= lowering->attribute_components[location])
+				continue;
+
+			/* The component's register is the fetcher's. */
+			error = take_input(lowering, input, lowering->attribute_base[location] + component);
+			if (error != 0)
+				return error;
 		}
-		if (read == 0)
-			continue;
-
-		/* The components the attribute's variable has. */
-		io = gsi1_find_input(lowering->ir, location);
-		components = 4U;
-		if (io != NULL && io->components >= 1U && io->components <= 4U)
-			components = io->components;
-
-		/* A run of registers for them. */
-		error = gsi1_take_block(lowering, components, &first);
-		if (error != 0)
-			return error;
-		for (component = 0U; component < components; component++)
-			lowering->input_reg[GSI1_INPUT_ATTRIBUTE + 4U * location + component] = (uint8_t)(first + component);
-
-		/* The attribute's entry: its first register and its components. */
-		error = gsi1_add_interface(lowering,
-					   GSI1_KIND_ATTRIBUTE,
-					   0U,
-					   location,
-					   first | (components << 8));
-		if (error != 0)
-			return error;
-	}
-
-	/* The vertex number, when it is read. */
-	if (lowering->input_until[GSI1_INPUT_VERTEX_INDEX] != 0U) {
-		error = gsi1_take_register(lowering, &reg);
-		if (error != 0)
-			return error;
-		lowering->input_reg[GSI1_INPUT_VERTEX_INDEX] = (uint8_t)reg;
-
-		/* The system input's entry. */
-		error = gsi1_add_interface(lowering, GSI1_KIND_SYSTEM, 0U, GSI1_SYSTEM_VERTEX_INDEX, reg);
-		if (error != 0)
-			return error;
-	}
-
-	/* The instance number, when it is read. */
-	if (lowering->input_until[GSI1_INPUT_INSTANCE_INDEX] != 0U) {
-		error = gsi1_take_register(lowering, &reg);
-		if (error != 0)
-			return error;
-		lowering->input_reg[GSI1_INPUT_INSTANCE_INDEX] = (uint8_t)reg;
-
-		/* The system input's entry. */
-		error = gsi1_add_interface(lowering, GSI1_KIND_SYSTEM, 0U, GSI1_SYSTEM_INSTANCE_INDEX, reg);
-		if (error != 0)
-			return error;
-	}
-
-	/* The components no instruction reads go back at once. */
-	for (location = 0U; location < GSI1_INPUT_COUNT; location++) {
-		if (lowering->input_reg[location] == GSI1_NO_OPERAND)
-			continue;
-		if (lowering->input_until[location] != 0U)
-			continue;
-
-		/* The component's register goes back. */
-		gsi1_give_register(lowering, lowering->input_reg[location]);
-		lowering->input_reg[location] = GSI1_NO_OPERAND;
 	}
 
 	/* Succeeded: the vertex inputs are in their registers. */
@@ -1082,8 +956,9 @@ take_input(
 
 /*
  * Computes the screen-linear barycentrics s_i = b_i w_i / D, D = b_0 w_0
- * + b_1 w_1 + b_2 w_2, from the perspective barycentrics starting at the
- * input `first_barycentric` and each vertex's clip w, into the inputs from
+ * + b_1 w_1 + b_2 w_2 (a line's two terms), from the perspective
+ * barycentrics starting at the input `first_barycentric` and each
+ * vertex's clip w (the primitive table's word 3), into the inputs from
  * `first_linear`; and 1 / D, the reciprocal of w at the pixel, when it is
  * kept.
  */
@@ -1100,14 +975,16 @@ screen_linear(
 	uint32_t sum;
 	uint32_t reg;
 	uint32_t vertex;
+	uint32_t vertices;
 	int error;
 
 	/* Each vertex's clip w, weighed by its barycentric: b_i w_i. */
-	for (vertex = 0U; vertex < 3U; vertex++) {
+	vertices = primitive_vertices(lowering);
+	for (vertex = 0U; vertex < vertices; vertex++) {
 		error = gsi1_scratch(lowering, &weighted[vertex]);
 		if (error != 0)
 			return error;
-		emit_lda(lowering, weighted[vertex], lowering->options.w_word, vertex);
+		emit_lda(lowering, weighted[vertex], GSI1_PT_POSITION(3U), vertex);
 		gsi1_emit_float(lowering,
 				GSI1_F7_FMUL,
 				GSI1_RM_RNE,
@@ -1124,7 +1001,8 @@ screen_linear(
 
 	/* The sum, w at the pixel. */
 	gsi1_emit_float(lowering, GSI1_F7_FADD, GSI1_RM_RNE, sum, weighted[0], weighted[1], 0U);
-	gsi1_emit_float(lowering, GSI1_F7_FADD, GSI1_RM_RNE, sum, sum, weighted[2], 0U);
+	if (vertices == 3U)
+		gsi1_emit_float(lowering, GSI1_F7_FADD, GSI1_RM_RNE, sum, sum, weighted[2], 0U);
 
 	/* Its reciprocal: 1 / w, kept as the input FragCoord.w reads, or scratch. */
 	if (keep_reciprocal != 0) {
@@ -1144,7 +1022,7 @@ screen_linear(
 		return 0;
 
 	/* Each one into a register of its own. */
-	for (vertex = 0U; vertex < 3U; vertex++) {
+	for (vertex = 0U; vertex < vertices; vertex++) {
 		error = gsi1_take_register(lowering, &reg);
 		if (error != 0)
 			return error;
@@ -1153,6 +1031,34 @@ screen_linear(
 	}
 
 	/* Succeeded: the screen-linear barycentrics are computed. */
+	return 0;
+}
+
+/* Computes a point's 1 / w, the reciprocal of vertex 0's clip w, into a register of its own. */
+static int
+point_reciprocal_w(
+	struct gsi1_lowering *lowering)
+{
+	uint32_t w;
+	uint32_t reciprocal;
+	int error;
+
+	/* Takes a scratch register for vertex 0's w. */
+	error = gsi1_scratch(lowering, &w);
+	if (error != 0)
+		return error;
+
+	/* Takes the register of the reciprocal, which FragCoord.w reads. */
+	error = gsi1_take_register(lowering, &reciprocal);
+	if (error != 0)
+		return error;
+	lowering->input_reg[GSI1_INPUT_RECIPROCAL_W] = (uint8_t)reciprocal;
+
+	/* rcp of the primitive table's word 3 of vertex 0. */
+	emit_lda(lowering, w, GSI1_PT_POSITION(3U), 0U);
+	gsi1_emit_transcendental(lowering, GSI1_XU_RCP, reciprocal, w);
+
+	/* Succeeded: 1 / w is in its register. */
 	return 0;
 }
 
@@ -1220,7 +1126,7 @@ lower_fragment_input(
 	/* PointCoord: r0 and r1 of a point; nothing defined otherwise (zero). */
 	if (location == DRV_GPU_SHADER_LOCATION_POINT_COORD) {
 		reg = GSI1_ZERO;
-		if (lowering->options.points != 0U)
+		if (lowering->options.primitive == GHCI_GSI1_PRIMITIVE_POINT)
 			reg = lowering->input_reg[GSI1_INPUT_B0 + (component & 1U)];
 		gsi1_emit_move(lowering, dst, reg);
 		return 0;
@@ -1236,8 +1142,9 @@ lower_fragment_input(
 }
 
 /*
- * Lowers the read of a varying: vertex 0's word, or the three vertices'
- * words weighed by the barycentrics (lda, fmul and two fmadd).
+ * Lowers the read of a varying: vertex 0's word, or the vertices' words
+ * weighed by the barycentrics (lda, fmul and an fmadd for each further
+ * vertex).
  */
 static int
 lower_varying(
@@ -1252,8 +1159,8 @@ lower_varying(
 	int interpolation;
 	int error;
 
-	/* The varying word of the location's component. */
-	word = lowering->varying_word[instruction->location] + (instruction->component & 3U);
+	/* The primitive table's word of the location's component. */
+	word = GSI1_PT_VARYING(4U * instruction->location + (instruction->component & 3U));
 
 	/* Vertex 0's word, read as it is. */
 	interpolation = input_interpolation(lowering, instruction->location, &first);
@@ -1272,13 +1179,15 @@ lower_varying(
 	if (error != 0)
 		return error;
 
-	/* v0 b0 + v1 b1 + v2 b2. */
+	/* v0 b0 + v1 b1, and + v2 b2 for a triangle (a line has no vertex 2). */
 	emit_lda(lowering, first_word, word, 0U);
 	emit_lda(lowering, second_word, word, 1U);
 	gsi1_emit_float(lowering, GSI1_F7_FMUL, GSI1_RM_RNE, dst, first_word, lowering->input_reg[first], 0U);
 	gsi1_emit_fused(lowering, GSI1_OP_MADD, dst, second_word, lowering->input_reg[first + 1U], dst, 0U);
-	emit_lda(lowering, first_word, word, 2U);
-	gsi1_emit_fused(lowering, GSI1_OP_MADD, dst, first_word, lowering->input_reg[first + 2U], dst, 0U);
+	if (primitive_vertices(lowering) == 3U) {
+		emit_lda(lowering, first_word, word, 2U);
+		gsi1_emit_fused(lowering, GSI1_OP_MADD, dst, first_word, lowering->input_reg[first + 2U], dst, 0U);
+	}
 
 	/* Succeeded: the interpolated input is in dst. */
 	return 0;
@@ -1294,8 +1203,8 @@ emit_lda(
 {
 	uint32_t immediate;
 
-	/* The varying word w is the table's word 4 + w. */
-	immediate = GSI1_LDA(GSI1_PT_VARYING(word), vertex);
+	/* The table's word and the vertex. */
+	immediate = GSI1_LDA(word, vertex);
 	gsi1_emit(lowering, gsi1_encode_i(GSI1_OP_CUSTOM1, GSI1_F3_LDA, rd, 0U, (int32_t)immediate, 0U));
 }
 
@@ -1338,9 +1247,9 @@ export_channel(
 
 /*
  * Lowers a vertex program's store to an output channel: at the channel's
- * last store, exports the value stored to the channel's target (the
- * position's w also to the pipeline's w varying); at an earlier store,
- * nothing, as the last one exports what every lane ends with.
+ * last store, exports the value stored to the channel's target; at an
+ * earlier store, nothing, as the last one exports what every lane ends
+ * with.
  */
 static int
 lower_vertex_output(
@@ -1367,10 +1276,6 @@ lower_vertex_output(
 		component = channel - GSI1_OUTPUT_POSITION;
 		emit_export(lowering, source, GSI1_EXP_POS(component));
 
-		/* The w again, as the varying the fragment program reads it from. */
-		if (component == 3U && lowering->options.has_w_word != 0U)
-			emit_export(lowering, source, GSI1_EXP_VARYING(lowering->options.w_word));
-
 		/* Succeeded: the position component is exported. */
 		return 0;
 	}
@@ -1381,10 +1286,10 @@ lower_vertex_output(
 		return 0;
 	}
 
-	/* A varying component, to its word (prepare_vertex() refused a location without words). */
+	/* A varying component, to its word 4 L + c. */
 	location = (channel - GSI1_OUTPUT_LOCATIONS) / 4U;
 	component = (channel - GSI1_OUTPUT_LOCATIONS) % 4U;
-	emit_export(lowering, source, GSI1_EXP_VARYING(lowering->varying_word[location] + component));
+	emit_export(lowering, source, GSI1_EXP_VARYING(4U * location + component));
 
 	/* Succeeded: the varying component is exported. */
 	return 0;
@@ -1392,8 +1297,8 @@ lower_vertex_output(
 
 /*
  * Exports a fragment program's outputs: the colour attachments, the
- * depth, and last the sample mask (the program's, or all ones), which
- * every lane exports.
+ * second colour of attachment 0, the depth, and last the sample mask (the
+ * program's, or all ones), which every lane exports.
  */
 static int
 finish_fragment(
@@ -1417,6 +1322,18 @@ finish_fragment(
 			if (error != 0)
 				return error;
 		}
+	}
+
+	/* Each component of the second colour written. */
+	for (component = 0U; component < 4U; component++) {
+		channel = GSI1_OUTPUT_SECOND_COLOR + component;
+		if (lowering->output_written[channel] == 0U)
+			continue;
+
+		/* Exports the component. */
+		error = export_channel(lowering, channel, GSI1_EXP_COLOR0_SRC1(component));
+		if (error != 0)
+			return error;
 	}
 
 	/* The depth the program writes. */
