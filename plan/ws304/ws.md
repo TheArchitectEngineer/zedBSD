@@ -10,6 +10,8 @@
 
 - 2026-10-27 11:24 ユーザー（D7 の HAT の型番）「HatはX1001というものです。」→ Geekworm X1001（M.2 の NVMe を 1 枚、PCIe switch なし）と見て、設計の前提（単一の NVMe）のまま。p003 で実物の HAT と LED を記録する。
 
+- 2026-10-27 11:32 ユーザー「Pi5の電源ON・OFFが必要なときに言ってください。基本、rebootコマンドでよいとは思いますが、反応がなくなったら電源ON・OFFします。NVMeのテストと動作するまでの修正、そのあとNVMeへのzedBSDインストールto」（途中で切れている）→ 範囲に、NVMe が動くまでの修正と、NVMe への zedBSD の install（EEPROM の BOOT_ORDER を変えるなら実行の前にユーザーに確かめる）を足す。電源はユーザー（Q1 経由）。
+
 ## 今の事実（Q1 が読んだ範囲）
 
 - src/drivers/pci/pci-brcmstb.c は BCM2711（Pi 4）の Broadcom STB の PCIe の root complex（reset・SerDes・outbound/inbound の窓・link、CPU の cache を snoop しない）。
