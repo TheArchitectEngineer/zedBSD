@@ -38,6 +38,16 @@
 #define RPI5_PCIE_HOSTS			2U
 
 /*
+ * Where the root complex of the external connector (the M.2 HAT's FFC)
+ * has its registers.  The firmware enables it for dtparam=pciex1; the
+ * others are not the connector's, so their being disabled needs no hint.
+ *
+ * Value referenced: zedBSD-firmware rpi5-boot bcm2712-rpi-5-b.dtb and
+ * bcm2712d0-rpi-5-b.dtb (the alias pciex1, /axi/pcie@1000110000).
+ */
+#define RPI5_PCIE_EXTERNAL_BASE		0x1000110000ULL
+
+/*
  * The SoC's reset block: one bank of 32 lines per 0x18 bytes, each bank a
  * register that asserts the lines whose bits are written and one that
  * releases them, and the wait after a release before the block behind the
@@ -107,6 +117,7 @@ static unsigned rpi5_pcie_count;
 
 static void register_drivers(void);
 static int is_rp1_root_complex(const struct drv_fdt *fdt, uint32_t node);
+static void report_disabled(uint64_t base);
 static int start_host(const struct drv_fdt *fdt, uint32_t node, struct rpi5_pcie *board);
 static int find_reset(const struct drv_fdt *fdt, uint32_t node, const char *name, uint32_t *controller, uint32_t *line);
 static int map_bridge_reset(const struct drv_fdt *fdt, uint32_t node, struct rpi5_pcie *board);
@@ -162,7 +173,7 @@ drv_rpi5_pcie_init(
 		if (!enabled) {
 			base = 0;
 			(void)drv_fdt_reg(&rpi5_pcie_fdt, node, 0, &base, &size);
-			kern_logf("rpi5-pcie: %llx disabled in the device tree (config.txt: dtparam=pciex1)\n", (unsigned long long)base);
+			report_disabled(base);
 			continue;
 		}
 
@@ -215,6 +226,21 @@ register_drivers(
 	if (error != 0)
 		kern_logf("nvme: PCI driver registration failed (%d)\n", error);
 #endif
+}
+
+/* Logs a root complex the device tree leaves disabled, with the fix for the connector's. */
+static void
+report_disabled(
+	uint64_t base)
+{
+	/* The external connector's is enabled by a line in config.txt. */
+	if (base == RPI5_PCIE_EXTERNAL_BASE) {
+		kern_logf("rpi5-pcie: %llx disabled in the device tree (config.txt: dtparam=pciex1)\n", (unsigned long long)base);
+		return;
+	}
+
+	/* Any other is simply not used on this board. */
+	kern_logf("rpi5-pcie: %llx disabled in the device tree\n", (unsigned long long)base);
 }
 
 /*
