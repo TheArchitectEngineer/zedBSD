@@ -3,7 +3,7 @@
 # WS299 5330 の NVMe の読み書きを速くする
 
 - Master: [plan/master.md](../master.md)（2026-10-27 作成、q1615 P1 の計画）。Primary Milestone: MG004。Related: MG003（[WS298](../ws298/ws.md) VMD の driver、q1612 NVMe から起動）。
-- Status: incomplete（2026-10-27 新設、q1616 で p001・p002、q1617 で p002 の回帰・p009・p003〜p006。現在の状態は下の「現在の状態」）
+- Status: incomplete（p001・p002・p003・p009 cleared。次は p004（q1634、P1）。現在の状態は下の「現在の状態」）
 - 出典: 2026-10-27 ユーザー「5330でNVMeの最適化（速度向上）をWSを立ててやってほしいです。（あとで順番にやってほしいです）」「新規WSはまず計画を広く進めて、全体の依存関係を見ましょう。」
 - 全体の依存と着手の順: [plan/agents/P1/pm-plan.md](../agents/P1/pm-plan.md)。
 
@@ -14,7 +14,7 @@
 ## 単一の到達目標
 
 Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRAM-less、PCIe）で、zedBSD の NVMe の連続の読み書きが、量に依らず一定の速さで、
-同じ機械の Debian の測定に対して決めた割合（p001 で数を決める）に届く。今の「512 MiB を超えると 10〜3.6 MB/s に落ちる」崖を無くす。
+同じ機械の Debian の測定の 95% 以上に届く（2026-10-27 ユーザー）。今の「512 MiB を超えると 10〜3.6 MB/s に落ちる」崖を無くす。
 
 ## 今の事実（2026-10-27 の調べ、根拠は file:行）
 
@@ -36,10 +36,13 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 
 ## 現在の状態（2026-10-27 10:30、P1）
 
-- p001（測定）: H1（`alloc_metadata` の slab の線形の walk）が崖の原因と確かめた（cache 128 MiB の kernel で崖が消える、sys ≈ real）。H2・H5 は否、H3（driver）が次の天井、H4（HMB）は連続には効かない。受け入れの数の案と HMB の推し（WS299 では行わない）を [phase001](phase001/phase.md) に。ユーザーの判断待ち。
-- p002（直し）: header の確保を O(1) の index に。5330 の連続の読み 4 GiB が 320〜384 MB/s で一定（前は上限の後 3.3〜21）、raw の書き 597〜655 MB/s（前 4〜14）。QEMU の回帰も PASS（2026-10-27 q1617、P1）。Q1 の判定待ち。
-- p009（root を広げる）: `ufs-grow.py` で 5330 の root を 15104 MiB に。大きな file の後の reboot が止まる、もとからある不具合（`vm_object_sync_range_buffer` の 2 乗の探し）を直した。QEMU・5330 で確かめた。Q1 の判定待ち。
-- 再開点（2026-10-27 ラップアップ）: p004 の設計（[phase004](phase004/phase.md)）の design-reviewer と Q1 の範囲の判断から。測る口で 256 KiB の command は device 約 270 µs・起床 3 µs・CPU 約 160 µs が直列と分かった（重ねる＝先読みが次の手）。p009 は Q1 の判定待ち。
+- p001（測定）: H1（`alloc_metadata` の slab の線形の walk）が崖の原因と確かめた（cache 128 MiB の kernel で崖が消える、sys ≈ real）。H2・H5 は否、H3（driver）が次の天井、H4（HMB）は連続には効かない。[phase001](phase001/phase.md)。cleared（2026-10-28 Q1。数は Debian の 95%、HMB はやる）。
+- p002（直し）: header の確保を O(1) の index に。5330 の連続の読み 4 GiB が 320〜384 MB/s で一定（前は上限の後 3.3〜21）、raw の書き 597〜655 MB/s（前 4〜14）。QEMU の回帰も PASS（2026-10-27 q1617、P1）。cleared。
+- p009（root を広げる）: `ufs-grow.py` で 5330 の root を 15104 MiB に。大きな file の後の reboot が止まる、もとからある不具合（`vm_object_sync_range_buffer` の 2 乗の探し）を直した。QEMU・5330 で確かめた。cleared（2026-10-28 Q1）。
+- 再開点（2026-10-27 ラップアップ）: p004 の設計（[phase004](phase004/phase.md)）の design-reviewer から（範囲は 2026-10-28 Q1 が決定）。測る口で 256 KiB の command は device 約 270 µs・起床 3 µs・CPU 約 160 µs が直列と分かった（重ねる＝先読みが次の手）。
+
+- **2026-10-28 Q1 の判定と範囲の決定**: p001・p009 は cleared。p004 の範囲は P1 の案のとおり「raw の block device の先読み（buffer cache の worker で device の待ちと CPU の仕事を重ねる）」に変える。複数の queue・VMD の vector の配り方は、起床が 3 µs で 1 本の流れに効かないので後へ（p007 で乱読みの QD を測った後に要否を決める）。UFS の file の先読み・書きの合流は p005。HMB（p006）はユーザーの「やる」のとおり残す。
+- 次（q1634、P1、2026-10-28 ユーザー「P1は5330で作業します。NVMeの高速化の続きをお願いします。」）: p004 の design-reviewer → 実装 → host・QEMU・5330 → p005 → p006 → p007 → p008。
 
 ## 範囲
 
@@ -67,20 +70,18 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 
 | Phase | 内容 | 依存 | LW | 状態 |
 | --- | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 調査と設計: 測定の script（5330 の Debian と zedBSD で同じ大きさ・位置、counter を前後で取る）、Debian の基準、H1〜H4 の確かめ（`CONFIG_BUF_CACHE_KIB` を小さくして崖が動くか、`alloc_metadata` の時間）、直しの順と受け入れの数、design-reviewer | WS298（済） | 4 | in-progress（測定済み、数の決定待ち） |
+| [p001](phase001/phase.md) | 調査と設計: 測定の script（5330 の Debian と zedBSD で同じ大きさ・位置、counter を前後で取る）、Debian の基準、H1〜H4 の確かめ（`CONFIG_BUF_CACHE_KIB` を小さくして崖が動くか、`alloc_metadata` の時間）、直しの順と受け入れの数、design-reviewer | WS298（済） | 4 | cleared（2026-10-28 Q1 判定。H1 を確かめ、数はユーザー「Debianの95%以上」、HMB は「やる」） |
 | [p002](phase002/phase.md) | buffer cache: header の確保を O(1)（空きの list）にし、irq を止める区間を短く。evict を run 単位に。host 試験で計算量 | p001 | 4 | cleared（2026-10-27 11:41） |
 | [p003](phase003/phase.md) | NVMe の大きな転送: MDTS に合わせた command、PRP list（bounce を使わず page に直接、使う所だけ bounce）、BIO の上限を上げる（`d_max_transfer_blocks`） | p001・p002 | 6 | cleared（2026-10-27、Q1 判定。raw の読み中央値 583 MB/s = p002 の後の 1.52 倍、書き 1.5 倍） |
-| [p004](phase004/phase.md) | NVMe の queue と割り込み: 深さを上げ、BIO を待たずに続ける（非同期の BIO）、queue を CPU ごとか数本、VMD の MSI-X の vector を子に配る（測った後の案: raw の先読みで device と CPU を重ねる、範囲は Q1 の判断待ち） | p003 | 6 | in-progress（測る口と測定済み、設計は review 前） |
-| p005 | 連続の読み書き: readahead の窓（raw と UFS）、UFS の cluster の読み書き、書きの合流 | p002 | 4 | planned |
+| [p004](phase004/phase.md) | raw の block device の先読み（buffer cache の worker で device の待ちと CPU の仕事を重ねる）。複数の queue・VMD の vector は p007 の乱読みの測定の後に要否（2026-10-28 Q1） | p003 | 6 | in-progress（測る口と測定済み。範囲は 2026-10-28 Q1 が決定（下）、設計は review 前、q1634） |
+| p005 | 連続の読み書き: UFS の file の readahead の窓と cluster の読み書き、書きの合流（raw の先読みは p004 へ、2026-10-28 Q1） | p002 | 4 | planned |
 | p006 | HMB（DRAM-less の BG5、p001 で効果が見込める時だけ。見込めなければ取り消し） | p003 | 4 | planned |
 | p007 | 5330 の測定の受け入れと回帰（QEMU の nvme・USB の起動は T、5330 は 1 本の script） | p002〜p006 | 2 | planned |
 | p008 | 規約の全文の見直し | p007 | 2 | planned |
-| [p009](phase009/phase.md) | 5330 の NVMe の root を p5 いっぱいに（`ufs-grow.py`、UFS の群の探しを O(1)）と、大きな file の sync の 2 乗の直し（reboot が止まった） | p002 | 2 | in-progress（QEMU・5330 で確かめ済み、Q1 の判定待ち） |
+| [p009](phase009/phase.md) | 5330 の NVMe の root を p5 いっぱいに（`ufs-grow.py`、UFS の群の探しを O(1)）と、大きな file の sync の 2 乗の直し（reboot が止まった） | p002 | 2 | cleared（2026-10-28 Q1 判定: 受け入れ 3 点を QEMU・5330 で確かめた。xattr・msync の道を狙う試験は未実施のまま） |
 
 合計 約 32 LW（p006 を取り消せば 28）。
 
 ## 判断が要る点
 
-- 受け入れの数（Debian に対する割合、file の速さ）: p001 の測定の後にユーザーへ。
-- HMB をやるか（p001 の数で）。
 - 1 queue を CPU ごとの queue にする時の割り込みの配り方（VMD の vector の数、IRQ の affinity）が HAL の口で足りない時は HAL の差分の案（承認）。

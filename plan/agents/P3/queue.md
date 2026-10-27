@@ -73,3 +73,7 @@ Next（予約）: ws115-p006（libpng・freetype・harfbuzz・fontconfig）〜
 - P3 の第 2 世代はここで終わり（2026-10-14、context 約 70 万 token）。
 
 2026-10-14 / P3 の第 3 世代: P2 の第 2 世代から引き継ぎ（P2 は手元の作業が残ると報告、worktree p2 には触らない）。q966 [WS171](../../ws171/ws.md) hal.h の契約の comment の差分の案（適用しない）→ q967 [WS143](../../ws143/ws.md) p007 Linux の BlueZ の backend の実装（設計 db09ac249 は main、design-reviewer の結果の後）。State: active。
+
+（2026-10-28 Q1: この lane は 2026-10-14 の後に書かれていない。上の「State: active」は全部終わっている。2026-10-15〜10-27 の Queue は [queue.md](../../queue.md) と [history](../../history/index.md)。）
+
+2026-10-28 03:15 / q1636: [WS290](../../ws290/ws.md) p001 の仕上げ → p012（GHCI 1.0 の driver、host 試験）。worktree p3-ws290b。State: active。

@@ -5,9 +5,9 @@
 
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
-| P1 | phase-runner | WS290 GHCI の回答のレビュー（q1633、済み） | `/home/awe/zedBSD-worktrees/p1-ghci3` / `agent/p1-ghci3` | returned | c7482e938 |
-| P2 | phase-runner | WS291 RDNA の改善点の調査（q1623、済み） | `/home/awe/zedBSD-worktrees/p2-ws291` / `agent/p2-ws291` | returned | a303c3891 |
-| P3 | phase-runner | WS290 GHCI（q1621、2026-10-27 ラップアップ、仕様の疑問は 2026-10-28 に解決、WS290 の再開は新しい Queue で） | `/home/awe/zedBSD-worktrees/p3-ws290` / `agent/p3-ws290` | returned | cd7cfbc16 |
-| P4 | phase-runner | plan の形の整理（q1610） | `/home/awe/zedBSD-worktrees/p4-plan` / `agent/p4-plan` | returned | 9a6c18aab → main 0a3f17258 |
+| P1 | phase-runner | WS299 5330 の NVMe の速さ p004〜p008（q1634） | `/home/awe/zedBSD-worktrees/p1-ws299` / `agent/p1-ws299` | running（2026-10-28 03:15〜、実機 5330） | — |
+| P2 | phase-runner | WS291 RDNA の描画の速さ p006 の続き〜p009（q1635） | `/home/awe/zedBSD-worktrees/p2-ws291b` / `agent/p2-ws291b` | running（2026-10-28 03:15〜、実機 10.0.10.3） | — |
+| P3 | phase-runner | WS290 GHCI 1.0 の driver p001 の仕上げ〜p012（q1636） | `/home/awe/zedBSD-worktrees/p3-ws290b` / `agent/p3-ws290b` | running（2026-10-28 03:15〜、host。VF2＋KC705 は用意の後） | — |
 
+- P4 は返却（q1610、最後の merge 0a3f17258）。同時に動かす数は 3（2026-10-28 ユーザー「N=3で作業します。」）。
 - 試験の担当 T・ブラウザの B1 は今は立てていない（以前の試験の台帳は `plan/agents/T1/requests.md`・`T2/`・`T3/`）。

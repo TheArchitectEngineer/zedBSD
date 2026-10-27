@@ -15,15 +15,15 @@
 ### 動いている担当と Queue
 
 <!-- master:agents:start -->
-2026-10-28 02:58 時点（ハンドオーバー）。**動いている担当は無い**（全員返却、成果は main に merge 済み）。再開の手順は各 WS の再開点と [queue.md](queue.md)。
+2026-10-28 03:15 から N=3（ユーザー「N=3で作業します。」）。台帳は [registry](agents/registry.md)。
 
-| WS | 止めた所 | 再開の時 |
-| --- | --- | --- |
-| [WS290](ws290/ws.md) GHCI 1.0 の driver | 仕様の疑問は全部解決（ghci.md 89529de、[ghci-review.md](ws290/ghci-review.md) 第 9 版）。GHCI の担当とのやり取りは終了 | p001 の design 版 4 の仕上げ → p002〜（新しい Queue、承認の後） |
-| [WS291](ws291/ws.md) GPU の描画速度（RDNA） | p005 cleared、p006（culling + compaction、p007 を統合）は実機で止まらず 6500 体 30.68 ms（Linux 約 20 ms）。q1623 で改善点の調査 [rdna-next.md](ws291/rdna-next.md) | 属性の後回し・BAR の WC の map などの順。RDNA の機械は zedBSD（stick は vmunix-compact1・ngg=2）か Debian で起動 |
-| [WS299](ws299/ws.md) 5330 の NVMe の速さ | p002・p003 cleared、p004 は測る口と設計の案まで（q1617 paused） | p004 の範囲の判断（Q1）→ design-reviewer → 実装 |
-| [WS306](ws306/ws.md) ゲーム最適化の UAPI | planning。WS291 で RDNA の最適化をやりきった後に始める | p001 の設計 |
-| [WS305](ws305/ws.md) VFIO・[WS304](ws304/ws.md) Pi 5 の NVMe | P4・P3 が中断の記録を残して返却 | 各 ws.md の再開点 |
+| 担当 | Queue | WS | 実機 |
+| --- | --- | --- | --- |
+| P1 | q1634 | [WS299](ws299/ws.md) 5330 の NVMe の速さ: p004 raw の先読み → p005 UFS → p006 HMB → p007 受け入れ → p008 規約 | 5330（遠隔の電源は無い） |
+| P2 | q1635 | [WS291](ws291/ws.md) RDNA の描画の速さ: NGG などで Linux 以上 → その後 [WS306](ws306/ws.md) で option に分け直す | 10.0.10.3（SwitchBot AC276E42B252） |
+| P3 | q1636 | [WS290](ws290/ws.md) GHCI 1.0 の driver: p001 の design 版 4 → p002〜p012（host 試験） | host。VF2＋KC705 はユーザーの用意の後 |
+
+止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
 <!-- master:agents:end -->
 
 ### 統合の注意
@@ -50,8 +50,8 @@
 
 <!-- master:priority:start -->
 優先順位（依存による順とは別。Queue の権限は変えない）:
-1. WS290: p001 の design 版 4（ghci.md 89529de）→ p002〜p012 の実装（host 試験）→ p013 規約の全文。WS291（P2）は並べて進める。
-2. P1 は 5330 の電源と性能の線（WS299 → WS300 → WS052 → WS301 → WS302 → 熱と fan、[pm-plan.md](agents/P1/pm-plan.md) の順）。BUG-346 は resolved。
+1. WS290（P3）: p001 の design 版 4（ghci.md 89529de）→ p002〜p012 の実装（host 試験、実機は VF2＋KC705 の用意の後）→ p013 規約の全文。WS291（P2）は並べて進め、Linux 以上の後に WS306。
+2. P1 は 5330 の電源と性能の線（WS299 p004〜 → WS300 → WS052 → WS301 → WS302 → 熱と fan、[pm-plan.md](agents/P1/pm-plan.md) の順）。BUG-346 は resolved。
 3. すぐ取り組む物（2026-10-27 ユーザー）: WS221（Jumbo frame）、WS242（RTX 30/40）・WS243（NVDEC）・WS250（nvrtx の取り消しと復帰）、WS223（全画面は合成、推しで実装）、WS009 の DOC-54（/dev/gpu の UAPI の文書）。
 4. WS226（Vulkan 1.3 相当を全 GPU driver で）は WS290 の後。WS292（GHCI の PROT）も WS290 の後。
 5. WS295（xe、p001 の調査だけ）・WS296（drivers の comment の整理）: 担当の起動はユーザーの指示の時。WS068 は空き時間だけ。
@@ -62,8 +62,6 @@
 
 <!-- master:open-decisions:start -->
 - 保留の WS の整理（以前のベータ3・4 の中身を含む）。Q1 とユーザー。
-- WS291: 次の改善（属性の後回しなど）に進む時期（使用量が戻ってから）。
-- WS299: p004 の範囲の変更（複数の queue と VMD の vector を後へ、書きは p005 へ）は Q1 の判断待ち。p009 の判定も Q1。
 - WS304: Raspberry Pi OS で同じ HAT・FFC・NVMe の link を見るか（ハードの切り分け）。
 - WS306: ゲーム最適化の環境変数の名前と書式、知らない option の扱い（p001 の設計で推しを示す）。
 - WS282〜WS285: 実装を始める時期（ユーザー「設計だけ残してラップアップして、後日実装することにします。」）。再開の時に WS282 の試験の画面を出す PC（D11）と買う webcam（D12）。
@@ -75,7 +73,7 @@
 ### 止まっている物
 
 <!-- master:blocked:start -->
-- WS290 の実機の試験: GHCI 1.0 のハードウェアができるまで無い。試験は zedBSD の host 試験だけ（amaterrace-gpu の sim・firmware は使わない）。
+- WS290 の実機の試験: VF2＋KC705（GHCI の bitstream はユーザーが書く）と新しい SwitchBot をユーザーが用意中（2026-10-28）。それまでは host 試験だけ（amaterrace-gpu の sim・firmware は使わない）。
 - 完了の WS の Phase の directory の片付け（record-audit の COMPLETED_WITH_PHASES 89 件）は未着手。
 - VF2 の zedbsd.cfg は login=graphical を外したまま（元は zedbsd.cfg.p044orig、戻さない）。
 - GitHub への公開は push の指示の時だけ。
@@ -84,7 +82,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-347 · q1634 · WS307 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-347 · q1637 · WS307 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
@@ -128,7 +126,7 @@ BUG-347 · q1634 · WS307 · KL_VERSION 96。使う前に衝突を確かめる�
 
 | WS | Primary | 内容 | 状態 | 再開点 |
 | --- | --- | --- | --- | --- |
-| [WS299](ws299/ws.md) | MG004 | 5330 の NVMe の読み書きを速くする（512 MiB の崖、転送・queue・readahead）（2026-10-27 ユーザー） | incomplete | p001・p002 済み（崖を直した、連続の読み 384 MB/s・Debian 比 0.95 の一定）、受け入れは Debian の 95% 以上・HMB はやる（ユーザー）、p002・p003 cleared（raw の読み 583 MB/s ≒ Debian の 50%、書き 59%）、p004 は測る口と設計の案まで（256 KiB の command 1 周 約 430 µs のうち CPU 約 160 µs が直列）、2026-10-27 ラップアップで中断（使用量の残り 6%）、再開点は ws.md |
+| [WS299](ws299/ws.md) | MG004 | 5330 の NVMe の読み書きを速くする（512 MiB の崖、転送・queue・readahead）（2026-10-27 ユーザー） | incomplete | p001〜p003・p009 cleared（raw の読み 583 MB/s ≒ Debian の 50%）。受け入れは Debian の 95% 以上、HMB はやる（ユーザー）。q1634（P1）で p004 raw の先読み → p005〜p008 |
 | [WS300](ws300/ws.md) | MG003 | NVMe と VMD の低電力（S0 idle の VMD の suspend・NVMe の状態、APST・ASPM・LTR）（2026-10-27 ユーザー） | planning | p001・p002（VMD の suspend、WS052 の前提）、約 27 LW |
 | [WS301](ws301/ws.md) | MG004 | CPU の DVFS と P/E core の相対性能の枠組み（UAPI は /dev/system 推し、fan は別 WS 案）（2026-10-27 ユーザー） | planning | p001 調査・設計・HAL と UAPI の案、約 40 LW |
 | [WS302](ws302/ws.md) | MG006 | デスクトップスレッドバランサ DTB（CONFIG_DTB、sched への hint）（2026-10-27 ユーザー） | planning | p001 検討（WS301 p001 の後）、約 32 LW |
@@ -146,8 +144,8 @@ BUG-347 · q1634 · WS307 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS242](ws242/ws.md) | MG006 | nvrtx の RTX 20/30/40 の全モデル（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の再開点 1〜4、GTX 16・RTX 30・40 の既定の有効（ユーザーの決定、未実装） |
 | [WS243](ws243/ws.md) | MG006 | nvrtx の NVDEC で H.264（Vulkan Video）（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の design.md から |
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の設計（草稿は main 64f05b2c7） |
-| [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 1.0（amaterrace-gpu の docs/ghci.md 89529de）だけに書き直す。試験は host だけ | incomplete（仕様の疑問は全部解決 2026-10-28） | 次は p001 の design 版 4 の仕上げ（新しい Queue、ユーザーの承認の後） |
-| [WS291](ws291/ws.md) | MG006 | GPU の driver の描画の速さ（desktop 60 fps・重い 3D の model 50 fps）: AMD RDNA（P2）→ NVIDIA（P2、GPU を入れ替え）→ PowerVR（VF2、P3） | incomplete（p001〜p005 cleared。NGG A は export の EXEC の wait の修正で hang が直った） | p006・p007 NGG（q1611、P2） |
+| [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 1.0（amaterrace-gpu の docs/ghci.md 89529de）だけに書き直す。試験は host だけ | incomplete（仕様の疑問は全部解決 2026-10-28） | q1636（P3）で p001 の design 版 4 → p002〜（host 試験、実機は VF2＋KC705 の用意の後） |
+| [WS291](ws291/ws.md) | MG006 | GPU の driver の描画の速さ（desktop 60 fps・重い 3D の model 50 fps）: AMD RDNA（P2）→ NVIDIA（P2、GPU を入れ替え）→ PowerVR（VF2、P3） | incomplete（p001〜p005 cleared、p006 in-progress） | q1635（P2）で p006 の続き → p008〜p009、Linux 以上の後に WS306 |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
 | [WS296](ws296/ws.md) | MG001 | src/drivers（gpu/ を除く）の comment から開発の管理情報を消し、XXX の規約の当て直し（usb など 11 file） | planned | 18 LW、担当の起動はユーザーの指示の時 |

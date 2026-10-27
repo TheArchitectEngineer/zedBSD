@@ -75,3 +75,7 @@ Next（予約）: debug を続ける（BUG-147 の後: 優先度の高い bug。
 - P2 の第 2 世代はここで終わり（2026-10-14、context 約 63 万 token）。q965（BUG-301）・q966（WS171）・WS143 p007 の実装（review の後）は次の世代へ。
 
 2026-10-14 / q968（P2 の第 3 世代、新しく起動）: [WS196](../../ws196/ws.md) useradd・usermod・userdel。ユーザー（2026-10-14 AskUserQuestion「WS196 の判断を今聞き、P2 が実装」）。E1〜E6 は 2026-10-09 にユーザーが全部 (a)。WS195 の cancel で account-admin は base に残るが E4 (a) の置き場（userland/base/common/）はそのまま成り立つ（Q1）。p001 の design-reviewer は Q1 が回す、p002（共有の層の切り出し、account-admin の振る舞いは不変）から。State: active。
+
+（2026-10-28 Q1: この lane は 2026-10-14 の後に書かれていない。上の「State: active」は全部終わっている。2026-10-15〜10-27 の Queue は [queue.md](../../queue.md) と [history](../../history/index.md)。）
+
+2026-10-28 03:15 / q1635: [WS291](../../ws291/ws.md) p006 の続き → p009（RDNA の描画の速さ、Linux 以上）。worktree p2-ws291b。State: active。

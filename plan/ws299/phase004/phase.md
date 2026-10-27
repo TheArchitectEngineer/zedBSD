@@ -3,7 +3,7 @@
 # ws299-p004 待ちを重ねる: 連続の読みの先読みを非同期の worker で（raw の block device）
 
 - 親: [WS299](../ws.md)。Queue: q1617 / q1617-i01（担当 P1、2026-10-27）。前提: p003（cleared 2026-10-27、main be47a24df）。
-- Status: in-progress（測る口と測定は済み。設計は案のまま、design-reviewer は未実施。2026-10-27 ラップアップで中断）
+- Status: in-progress（測る口と測定は済み。範囲は 2026-10-28 Q1 が決定。design-reviewer から再開、q1634）
 - Disposition: normal
 
 ## 測った事（2026-10-27、5330、kernel は main be47a24df ＋ 下の測る口、`nvme-bench-5330.sh zedbsd zb-p004m … read`）
@@ -21,7 +21,7 @@
 - device の時間 270 µs / 256 KiB（QD1 で約 970 MB/s）と CPU の 160 µs が直列に並んでいる。Debian の page cache 経由（1.1〜1.2 GB/s）は先読みで device と写しを重ねている。
 - 並べた時の上限の目安: CPU の側は cache の hit の読み（`reread`）が 2.4〜2.7 GB/s、device は QD を上げれば fio の QD32 で 3.1 GB/s（p001）。重ねれば 1.1 GB/s（Debian の 95% は約 1.05 GB/s）に届く見込み。
 
-## 範囲の変更（案、Q1 の判断）
+## 範囲の変更（2026-10-28 Q1 が案のとおり決定）
 
 - p004 の元の案（非同期の BIO・queue の深さ・複数の queue・VMD の vector）のうち、数が効くと示すのは「device の待ちと CPU の仕事を重ねる事」だけ。複数の queue・VMD の vector は起床 3 µs なので後へ（Future Work か、乱読みの QD32 を測る p007 の後に要否を決める）。
 - 重ねる道は「driver を完全に非同期にする（割り込みから BIO を完了）」より、「buffer cache が先の run を worker の thread で読む（先読み）」の方が小さく、今の同期の driver と recovery の決まりをそのまま使える。これは元の p005（readahead）の raw の部分に当たる。p004 = raw の block device の先読み、p005 = UFS の file の先読みの窓と cluster・書きの合流、と分け直す案。

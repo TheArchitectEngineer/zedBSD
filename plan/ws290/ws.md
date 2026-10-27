@@ -3,11 +3,11 @@
 # WS290 zedBSD の GHCI の driver を GHCI 1.0（ghci.md 89529de）に書き直す
 
 - Master: [plan/master.md](../master.md)（2026-10-26 作成）。Primary Milestone: MG006。Related: MG008。前身: [WS288](../ws288/ws.md)（closed、zedBSD の driver は ws288-p006・p010・p018・p019・p035・p040・p043・p044 などで作った）。
-- Status: incomplete（2026-10-28 仕様の疑問は全部解決（ghci.md **89529de**、[ghci-review.md](ghci-review.md) 第 9 版）。次は p001 の設計の仕上げ（版 4）から。版の語の「2.0」は誤りで、仕様は単一の GHCI 1.0（G01 の回答））
+- Status: incomplete（2026-10-28 P3 が q1636 で p001 の仕上げから再開。仕様の疑問は全部解決（ghci.md **89529de**、[ghci-review.md](ghci-review.md) 第 9 版）。次は p001 の設計の仕上げ（版 4）から。版の語の「2.0」は誤りで、仕様は単一の GHCI 1.0（G01 の回答））
 - 出典: 2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。amaterrace-gpuのディレクトリは読み取り専用とします。amaterrace-gpuのplan/は読んでもかまいません。am-ws001のような書き方をしてくれれば私は理解できます。」
 - 決定（2026-10-26、Q1 の問いへのユーザーの回答）:
-  - 対象の版は **GHCI 2.0 だけ**（ghci.md の TO-BE: 19 の register、in-memory の PSO・descriptor、`CMD_*` の構造化 command、CP の自律 MMU）。1.1（§3.1.1 の 128 KiB の register、class 2 の gpu-op の中継、STATE、KICK、APERTURE）は捨てる。2.0 のハードウェアは am-ws001-p007 で作られる予定。
-  - 試験は **zedBSD の host 試験だけ**（register・ring・memory の model）。amaterrace-gpu の Verilator の model・firmware の image は使わない。
+  - （G01 の回答で置き換え: 仕様は単一の GHCI 1.0。下の行は当時の記録）対象の版は **GHCI 2.0 だけ**（ghci.md の TO-BE: 19 の register、in-memory の PSO・descriptor、`CMD_*` の構造化 command、CP の自律 MMU）。1.1（§3.1.1 の 128 KiB の register、class 2 の gpu-op の中継、STATE、KICK、APERTURE）は捨てる。2.0 のハードウェアは am-ws001-p007 で作られる予定。
+  - 試験は **zedBSD の host 試験だけ**（register・ring・memory の model）。amaterrace-gpu の Verilator の model・firmware の image は使わない。（2026-10-28 の決定で、実機ができた後は VF2＋KC705 の実機の試験を足す。下の「2026-10-28 の再開」）
 
 - 判断 U1〜U7 への回答（2026-10-26 23:50 ユーザー）「* U1: 消してよいです。* U2: 写してよいです。* U3: G28は決まったのでは。* U4: OKです。* U5: PROT は実装しませんが、WSを立てて、あとで実装します。* U6: 消してOKです。* U7: UMDの記述はGHCI側でUMD/KMDに変更しました。」 → U1 `GPU_OP_GHCI_*` と `CONFIG_GHCI_NATIVE` を消す、U2 amaterrace の `tools/gsi1*.py` を `plan/ws290/tests/gsi1-tools/` に写す、U4 riscv64 は build だけ、U5 PROT は WS290 では実装せず [WS292](../ws292/ws.md) で後で、U6 ghci-blit と ghcictl の diag・paint・fwload を消す、U7 ghci.md は amaterrace-gpu 3af62ca で §6.0 を「UMD or KMD」に直した（driver は KMD が ring を書く形で整合）。U3（G28 の表示）は Q1 がユーザーに確認中。
 - ghci.md の版: 4d12da1 の後に 3af62ca（2026-10-26 23:49、§6.0 の UMD/KMD だけの差）。
@@ -27,7 +27,7 @@
 
 ## 単一の到達目標
 
-zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（GHCI 2.0）だけに従う driver に書き直す。attach（識別・DEVICE_CAPS・EXTCAP）、ring と doorbell、fence と割り込み、fault・watchdog・reset、GPU の仮想 memory（ring の VM の操作、2 段の page table）、PSO と descriptor、`CMD_*` の command、表示（DISP2）、Vulkan の経路（`vk/`）と GSI1 の compiler の接続までを、host 試験で確かめる。
+zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（89529de、単一の GHCI 1.0）だけに従う driver に書き直す。attach（識別・DEVICE_CAPS・EXTCAP）、ring と doorbell、fence と割り込み、fault・watchdog・reset、GPU の仮想 memory（ring の VM の操作、2 段の page table）、PSO と descriptor、`CMD_*` の command、表示（DISP2）、Vulkan の経路（`vk/`）と GSI1 の compiler の接続までを、host 試験で確かめる。
 
 ## 制約
 
@@ -35,11 +35,11 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（GHC
 - ghci.md は読んだ commit の SHA を記録する（2026-10-26 22:48 の時点で main 4d12da1）。
 - HAL の API（`include/hal/hal.h`）は変えない（変えるなら差分ごとの事前承認）。
 - 規約は [coding-style.md](../coding-style.md) の全文。試験の方針は AGENTS.md（細かい修正ごとの回帰はしない、build の warning 0 と変えた所の host 試験）。
-- 実機・QEMU の試験は無い（2.0 のハードウェアが無い）。実機の証拠は「未実施」と書く。
+- 試験はまず host 試験。実機（VF2 に KC705 をつないだ物）はユーザーが用意した後（下の「2026-10-28 の再開」）。QEMU の試験は無い。実機で確かめていない事は「未実施」と書く。
 
 ## 受け入れ
 
-- driver に GHCI 1.1 の register・command・STATE の code が残っていない。
+- driver に、GHCI 1.0（89529de）より前の形（以前の 1.1 の register・command・STATE、版の分岐）の code が残っていない。
 - amd64 の vmunix が CONFIG_DRIVER_PCI_GHCI で build でき warning 0。WS288 で入れた他の platform（VF2 の riscv64 など）の扱いは p001 の設計で決める。
 - host 試験が、p001 の設計で決めた範囲（上の到達目標の各項目）を覆い PASS。
 - 規約の全文の見直しの Phase が cleared。
@@ -76,3 +76,8 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（GHC
   4. その後 p002 から実装（試験は host だけ。ユーザーの決定）。
 - 経緯の file（正本ではない）: ghci-questions*.md、ghci-answers-hw-*.md、ghci-review-<SHA>.md、[ghci-review.md](ghci-review.md)（第 9 版で「疑問は残っていない」）。
 - Queue: 実装の Queue はまだ無い。p001 の仕上げは新しい Queue でユーザーの承認の後（q1621 は 2026-10-27 に paused のまま）。
+
+## 2026-10-28 の再開（q1636、P3）
+
+- ユーザー（2026-10-28）「P3はGHCIドライバを作成します。まずはホストで開発しますが、私が今からVF2ボードを準備して、新しいSwitchbotで制御できるようにします。VF2はKC705 FPGAボードに接続されており、プログラミングは私が行いますので、そのあと実機検証が可能です。Fableのレビューは不要です。」
+- 解釈（Q1）: p001 の版 4 → p002 以降の実装を host 試験で進める。VF2（riscv64）＋ KC705 の GHCI の実機は、ユーザーが VF2 と新しい SwitchBot・KC705 の書き込みを済ませて伝えた後に Q1 が割り当てる（それまで実機の試験は無し）。U4（riscv64 は build だけ）は、実機で動かす事に変わる（riscv64 の attach の経路を設計に含める）。KC705 の bitstream の build・書き込みはユーザーがする（担当は `plan/tools/kc705/` を使わない）。設計のレビューは design-reviewer だけで、Fable のレビューはしない。
