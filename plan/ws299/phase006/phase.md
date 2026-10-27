@@ -45,6 +45,13 @@
 3. 5330: dmesg の 1 行と、乱読み 4 KiB の QD1・QD32 が同じ条件の Debian（HMB on）の 95% 以上（ws.md の受け入れ 2）。連続の読み書きが下がらない。
 4. build の warning 0（config-5330・pcat・visionfive2・rpi4・m68k-virt）。
 
+## 結果（2026-10-28、P1）
+
+- 実装 28ad3e40e（`pci-nvme.c` の `nvme_hmb_setup`・`nvme_hmb_enable`・`nvme_hmb_reenable`・`nvme_hmb_free`、header の helper）。host 試験 `nvme-hmb-test`・`nvme-prp-test` PASS、config-5330 の build warning 0。
+- 5330（`zb7-e-read`、kernel p006a）: `nvme: host memory buffer 64 MiB in 4 chunks`。乱読み 4 KiB QD1 56.5 MB/s（71.9 µs、Debian の HMB on 57.8 の 97.8%）、QD32 424 MB/s（103603 IOPS、Debian 964 の 44%）。QD32 は zedBSD の側の頭打ち: device の post→完了の平均 78 µs で、出ている command は平均 8 本ほど（32 thread の残りは CPU・lock で待つ、CPU 約 42 µs/IO）。HMB の前（`zb7-base-read`）も 445 MB/s で同じ頭打ち。
+- QEMU（HMB の無い NVMe）: boot-test・nvme-shapes PASS（log に host memory の行が無い事は未確認）。recovery・resume の再有効化は 5330 で起こしていない（未実施）。
+- 残り: QD32 の頭打ちの原因（buffer cache の 1 IO ごとの道、`disk_lock` など大域の lock、NVMe の 1 queue・`command_lock`、VMD の 1 vector）。O_DIRECT（p010）の後に direct でも測る。
+
 ## 再開点（2026-10-28、P1）
 
-- 設計を書いた。次: header の helper と host 試験 → 有効化と free → 5330。
+- 設計・実装・5330 の QD1 は済み。QD32 の 95% は未達。

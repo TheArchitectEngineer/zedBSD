@@ -3,7 +3,7 @@
 # ws299-p005 UFS の file の連続の読み書き（先読みの窓・大きな request・書きの合流）
 
 - 親: [WS299](../ws.md)。Queue: q1634 / q1634-i01（調べ）→ q1640 / q1640-i01（設計・実装、担当 P1）。前提: p002・p004（raw の先読み）。
-- Status: in-progress（2026-10-28 P1: 設計（下の D1〜D7）、design-reviewer、実装）
+- Status: in-progress（2026-10-28 P1: 実装・QEMU・5330。raw の読み書き・file の読みは Debian 超え、file の書きは 55%（下の「結果」））
 - Disposition: normal
 
 ## 調べた事実（2026-10-28、読みだけの調べ、tree は agent/p1-ws299 36d0d7b5d）
@@ -87,6 +87,21 @@
 - SystemRescue の live USB（`5330-live-usb.sh`、stick に `~/ws245/live-sysrescue.img` を書き直した）で: `e2fsck -f -p` → `resize2fs 148480M` → p2 を 314214400 sectors（149.8 GiB、start・UUID 不変）→ `resize2fs`（満たす）→ `e2fsck -f -n` clean。p7 `zedBSD-nvme-bench`（start 316215296、67108864 sectors = 32 GiB、Linux filesystem 型、PARTUUID `1BEB91C6-DEDF-4AF0-B132-4770CCF2954D`）を足し、p5 `zedBSD-nvme-root` を同じ番号・PARTUUID・名前のまま start 383324160・32 GiB に移した（前の 14.75 GiB の場所 450957312〜481890303 は空き）。p1・p3・p4・p6 は不変。`sfdisk -V` No errors。Debian は起動し `/` rw・147G・p3 の swap・running。前後の表は worktree の `build/hw5330/part/`（git の外）。
 - `5330-run.sh --nvme-image build/p1-5330img/hdd-image.img p1-q1640-p5-32g` で zedBSD を新しい p5 に書き、NVMe から起動して `5330-run: PASS`（ssh まで 20 秒、i915 の survey PASS）。
 - 測定（`nvme-bench-5330.sh … p7raw p7fs`・`p7rawwrite p7rawread p7fswrite p7fsread`）: 書きの前に Debian から p7 を `blkdiscard`。`patwrite.c`（両方の OS で同じ、1 MiB の write で 4 KiB ごとに番号を入れた疑似乱数、最後に fsync）で P7_MIB（4096）MiB を raw に書き、次に（zedBSD は次の起動で）冷えた読み。file system は Debian が ext4（`mkfs.ext4 -E nodiscard,lazy_itable_init=0,lazy_journal_init=0`）、zedBSD が UFS（`mkfs -t ufs --profile=native`）を p7 に作り、4 GiB の file を書いて（fsync）冷えた読み。
+
+## 結果（2026-10-28、P1、5330 の p7、Debian の同じ条件の数と比べる）
+
+| 測る物 | Debian | zedBSD main（`zb7-base`） | zedBSD この Phase（kernel） | 比 |
+| --- | --- | --- | --- | --- |
+| raw 4 GiB 書き（page cache・遅らせる書き＋fsync、`patwrite`） | 1549 MB/s | 1302 | 1837（p006c、遅らせる raw の書き 114f6d405 の後） | 119% |
+| raw 4 GiB 冷えた読み（cache 経由） | 1.2 GB/s | 1.8 GB/s | 1.80 GB/s（p006c） | 150% |
+| file 4 GiB 書き（fsync 込み） | ext4 1775 | UFS native（tail journal）7 | UFS（root と同じ batched journal、p7ufs）983（p006a・p006c） | 55% |
+| file 4 GiB 冷えた読み | ext4 1.2 GB/s | 330 | 1518（p006c、bmap の memo の後。memo の前の p006a 1060、p005d 956） | 126% |
+
+- 書きの経路の数（`zb7-e-p7ufswrite`）: driver の書き 10037 回・平均 430 KiB（cluster）、flush 30 回。書き手は CPU で律速（write 4024 ms、sys は約 1.4 CPU）。allocation run（64 KiB ごとの CG・inode の更新、`IO_UFS_ALLOC_BEGIN` 67922 回、UFS の metadata の buf_read 50 万回・buf_write 34 万回）が重い。→ run を 1 MiB にした（d173b958e、QEMU 回帰中、5330 未測定）。
+- `mkfs -t ufs --profile=native` の volume は tail journal（`journal_enabled`）で write-through になり（`write_cached_intended`、ufs.c）、block の割当ごとに `order_barrier` の flush（4 GiB で `IO_DRIVER_FLUSH` 728057 回）、書き 7 MB/s。zedBSD の root（image の UFS）は batched journal で遅らせる書き。mkfs の既定の形は userland の mkfs（所有の外）の事として Q1 に知らせた。
+- raw の書きを遅らせる（114f6d405）: devfs の claim の無い open の書きは、開いた者だけが使う範囲（`disk_readahead_private`）なら `disk_write_delayed` → `buf_write_delayed` で cache に dirty で残し、cluster・worker・fsync・最後の close（`buf_sync`）で書く。共有の範囲は今どおり write-through。
+- QEMU（`build/tmp/qemu-suite.sh` の形、2026-10-28）: boot-test rc 0、`qemu-readahead`・`qemu-nvme-shapes`・`qemu-grow-reboot`・`qemu-cache-stress`・`qemu-cache32-write` PASS（bmap の memo の tree まで。遅らせる raw の書きと 1 MiB の run の tree は回帰中）。
+- 未実施: 誤りの注入、crash の整合、claim の隣、NVMe 以外の機種の書きの時間（build だけ）。
 
 ## 変えない物
 
