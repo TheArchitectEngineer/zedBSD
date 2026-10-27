@@ -43,9 +43,9 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 
 - **2026-10-28 Q1 の判定と範囲の決定**: p001・p009 は cleared。p004 の範囲は P1 の案のとおり「raw の block device の先読み（buffer cache の worker で device の待ちと CPU の仕事を重ねる）」に変える。複数の queue・VMD の vector の配り方は、起床が 3 µs で 1 本の流れに効かないので後へ（p007 で乱読みの QD を測った後に要否を決める）。UFS の file の先読み・書きの合流は p005。HMB（p006）はユーザーの「やる」のとおり残す。
 - 次（q1634、P1、2026-10-28 ユーザー「P1は5330で作業します。NVMeの高速化の続きをお願いします。」）: p004 の design-reviewer → 実装 → host・QEMU・5330 → p005 → p006 → p007 → p008。
-- p004（2026-10-28 P1、commit ded5ae2e9・36d0d7b5d）: raw の block device の先読み（buffer cache の worker 4 本、窓 2 MiB）と、cache が上限の時の line の付け替え・hit の 16 line ずつの写し（cache_lock の取り合いの直し）。5330 の raw の連続の読み 4 GiB が 1.68〜2.24 GB/s で平ら（中央値 1917 MB/s、p003 の 583 の 3.3 倍、Debian の b-chunk 1.1 GB/s・d-chunk 1.4〜1.6 GB/s を越える）、raw の書き 926〜1032 MB/s（回帰なし）。QEMU 4 本 PASS、build 5 config warning 0。乱読みと `5330-run.sh` の素の起動は未実施（p007）。[phase004](phase004/phase.md)。
+- p004（2026-10-28 P1、commit ded5ae2e9・36d0d7b5d・1e0ac531a）: raw の block device の先読み（buffer cache の worker 4 本、窓 2 MiB）と、cache が上限の時の line の付け替え・hit の 16 line ずつの写し（cache_lock の取り合いの直し）。5330 の raw の連続の読み 4 GiB が 1.68〜2.24 GB/s で平ら（中央値 1917 MB/s、p003 の 583 の 3.3 倍、Debian の b-chunk 1.1 GB/s・d-chunk 1.4〜1.6 GB/s を越える）、raw の書き 926〜1032 MB/s（回帰なし）。QEMU 4 本 PASS、build 5 config warning 0。D5（付け替え・hit の写し）は design-reviewer（重大なし）を反映し、128 MiB の cache の負荷試験（`qemu-cache-stress.sh`）PASS。review の後の 5330 の raw の書きは 1 GiB の後半で 440〜560 MB/s に落ちた（sys は同じ、device の側の待ちと見るが未確認、p006・p007）。乱読みと `5330-run.sh` の素の起動は未実施（p007）。[phase004](phase004/phase.md)。
 - p005（2026-10-28 P1）: UFS の file の読み書きの道を調べた（1 MiB の読みが 64 KiB の同期の request 16 回・写し 4 回、flusher は 4 KiB ずつ、割当は 64 KiB ごと）。測定の追加と案だけ、設計は未着手。[phase005](phase005/phase.md)。
-- 再開点（2026-10-28 P1）: p004 は D5（付け替え・hit の写し）の design-reviewer の反映の後に Q1 の判定。p005 は phase005 の「計画の案」の 1（UFS の file の読みの測定、Debian の ext4 の読み）から。p006（HMB）・p007・p008 は未着手。
+- 再開点（2026-10-28 P1）: p004 は Q1 の判定待ち。p005 は phase005 の「計画の案」の 1（UFS の file の読みの測定、Debian の ext4 の読み）から。p006（HMB）・p007・p008 は未着手。
 
 ## 範囲
 
