@@ -3,6 +3,7 @@
 # user's approval and must not run on the machine: the commit's tree exported to OUT/tree, those two commits' changes
 # taken back out there alone (the branch keeps them), the kernel built there (the shared build/ trees linked in).
 #   usage: plan/ws291/tests/nowc-build.sh OUT [COMMIT]   (from the top of the tree; prints the vmunix's path)
+# KEEP_WC=1 keeps the write-combining mapping (approved 2026-10-28), for a diagnostic build of the branch as it is.
 # PATCHES: more patches (paths) applied to the exported tree before the build (diagnostic builds).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -11,7 +12,10 @@ commit=${2:-HEAD}
 top=$(pwd)
 mkdir -p "$out/tree/build"
 git archive "$commit" | tar -x -C "$out/tree"
-git diff 779020ee6^ cfcd07066 | patch -R -p1 -d "$out/tree" > "$out/patch.log"
+: > "$out/patch.log"
+if [ "${KEEP_WC:-0}" != 1 ]; then
+	git diff 779020ee6^ cfcd07066 | patch -R -p1 -d "$out/tree" >> "$out/patch.log"
+fi
 for extra in ${PATCHES:-}; do
 	patch -p1 -d "$out/tree" < "$extra" >> "$out/patch.log"
 done

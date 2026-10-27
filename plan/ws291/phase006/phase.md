@@ -242,3 +242,27 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 - CPU 側: big-N・subs-N の record と submit が Linux の 6〜20 倍（big-1000 record 33 ms 対 5.4、submit 16.7 対 0.02）。p008〜p009 の CPU の record の短縮の
   本体（vk-execute の draw ごとの全 state の書き直し、record の wire の decode）。
 - acquire（scene-1 で 7.3 ms）は libvulkan の WSI と Keiland の側（amdrdna の外）。
+
+### 我々の IB と RADV の culling の IB（2026-10-28 04:50〜05:05）
+
+- 診断 kernel（commit しない: build/tmp/diag4/ibd.patch、`KEEP_WC=1 PATCHES=... plan/ws291/tests/nowc-build.sh`）が、culling の program で instance
+  1000 以上の最初の draw までの PM4 を klog に出す。mview scene-6500 の 1 frame（687 語）を `pm4-decode.py` で読み、RADV の ib.21.dec と突き合わせた
+  （build/ws291/measure/ibd1/ours.dec・ours.regs・radv.regs）。
+- 同じ: VGT_SHADER_STAGES_EN（wave32 の bit を除く）、VGT_GS_ONCHIP_CNTL 0x2004007e、GE_CNTL 0xf280、GE_MAX_OUTPUT_PER_SUBGROUP、GE_NGG_SUBGRP_CNTL、
+  SPI_SHADER_IDX/POS_FORMAT、VGT_GS_INSTANCE_CNT、PA_CL_NGG_CNTL、PA_SC_NGG_MODE_CNTL、GE_PC_ALLOC 0x3ff・RSRC4_GS 0x0040ffff（816a13ee2 の後）、
+  guard band（8ed8a285e の後、RADV と小数の末尾まで同じ）、draw の packet（DRAW_INDEX_2、NUM_INSTANCES 6500）。
+- 違う: PA_SC_MODE_CNTL_0（我々 0x2、RADV 0x22: ALTERNATE_RBS_PER_TILE）、PA_SC_BINNER_CNTL_0（我々は binning 無し、RADV 0x19fc01b0）、
+  depth の HTILE（RADV は DB_Z_INFO の TILE_SURFACE_ENABLE と HTILE、我々は無し）、RSRC1_GS の FLOAT_MODE（我々 0xf0 = fp32 の denorm あり、RADV 0xc0）、
+  user SGPR の数（我々 9、RADV 17）、LDS（我々 2576 B、RADV 3584 B）。どれも全部を落とした時の 30.7 ms（raster が無い）を説明しない見込み
+  （FLOAT_MODE は未確かめ）。
+- 機械: 05:05 に stick を vmunix-lat1（cksum 4171145425）に戻し、zedBSD で起動中。IB の診断 kernel の deploy の途中で zedBSD の /boot/boot0 への cp が
+  60 s で返らなかった事が 1 回（hang の試験を続けた後の状態。Debian から /dev/sda2 を mount して見ると cp は終わっていた）。
+
+### 次の確かめ（再開する担当へ）
+
+1. GPU のどの block が busy かを測る: scene-6500 の間に GRBM_STATUS・GRBM_STATUS_SE0〜3・GRBM_STATUS2 を amdrdna の制御（amdrdnactl）か診断 kernel で
+   数千回読み、GE・SPI・PA・SX・TA の busy の割合を RADV（Linux の umr か /sys の amdgpu_regs）と比べる。全部落としても 30.7 ms なので GE か SPI の
+   どちらかの見込み。
+2. FLOAT_MODE を RADV と同じ 0xc0 にした kernel（compiler の GFX10_COUNTS_FLOAT_DENORMS）の 1 回の計測。
+3. vertex buffer の descriptor と index の cache の方針（descriptor の word 3、GE の index の取り込み）を RADV の descriptor と比べる。
+4. hang の試験を続けて流すと desktop が落ちる件を、変更の前の kernel（compact1）で続けて流して比べる。
