@@ -68,7 +68,7 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 | Phase | 内容 | 依存 | LW | 状態 |
 | --- | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 調査と設計: 測定の script（5330 の Debian と zedBSD で同じ大きさ・位置、counter を前後で取る）、Debian の基準、H1〜H4 の確かめ（`CONFIG_BUF_CACHE_KIB` を小さくして崖が動くか、`alloc_metadata` の時間）、直しの順と受け入れの数、design-reviewer | WS298（済） | 4 | in-progress（測定済み、数の決定待ち） |
-| [p002](phase002/phase.md) | buffer cache: header の確保を O(1)（空きの list）にし、irq を止める区間を短く。evict を run 単位に。host 試験で計算量 | p001 | 4 | in-progress（実機・QEMU の回帰済み、Q1 の判定待ち） |
+| [p002](phase002/phase.md) | buffer cache: header の確保を O(1)（空きの list）にし、irq を止める区間を短く。evict を run 単位に。host 試験で計算量 | p001 | 4 | cleared（2026-10-27 11:41） |
 | p003 | NVMe の大きな転送: MDTS に合わせた command、PRP list（bounce を使わず page に直接、使う所だけ bounce）、BIO の上限を上げる（`d_max_transfer_blocks`） | p001 | 6 | planned |
 | p004 | NVMe の queue と割り込み: 深さを上げ、BIO を待たずに続ける（非同期の BIO）、queue を CPU ごとか数本、VMD の MSI-X の vector を子に配る | p003 | 6 | planned |
 | p005 | 連続の読み書き: readahead の窓（raw と UFS）、UFS の cluster の読み書き、書きの合流 | p002 | 4 | planned |
