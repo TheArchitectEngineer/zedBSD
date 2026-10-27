@@ -888,4 +888,3 @@ design-reviewer（Opus 5.5、4 回目、a6f961c89 を対象、2026-10-28）: T01
 | M8 | M | 3 つの世代の役 | §8 に表 |
 | M9 | M | recovery ops の試験が p004 にある | p007 の場面へ移した（§14） |
 | L1〜L5 | L | 計画の reset の残り、cb937e6 の行、enum と §6.2、RPTR の待ちの起こし方、VM の操作の ticket で DEAD | 直した（§4.3 の enum に REPLAY_WAIT・DEAD、§5.2、§5.4 の 6、§5.5 の行を d9252e4 に）。§24 の T02・T07 の「対応」の列の計画の reset は版 4.5 で外れた（この節が正） |
-
