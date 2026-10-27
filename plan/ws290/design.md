@@ -3,13 +3,13 @@
 - Phase: [ws290-p001](phase001/phase.md)。版 1・2: 2026-10-26（P1、q1594）。版 3: 2026-10-27（P3、q1621、書きかけで中断）。**版 4: 2026-10-28（P3、q1636-i01）**。版 3 までの本文は git の履歴（f5fea4c2e など）にあり、この版は 89529de を正本に全部を書き直した。
 - 親: [WS290](ws.md)。前身の設計: [WS288 design](../ws288/design.md) §6（1.1 の driver）。
 - この文書は設計だけ。source は変えていない。
-- **状態（2026-10-28 05:14、q1638 P3）: 版 4.2。ユーザーの U の回答（U5・U8〜U11）を反映（版 4.1、2ee693d0f）し、design-reviewer（Opus 5.5）の H 6・M 18・L 10 を反映した（§24）。仕様の不備 14 件は [ghci-review.md](ghci-review.md) 第 13 版（N47〜N60）として用意し、design には仮の扱いを書いた（§19）。Phase の確定と実装は、ユーザーの条件（仕様に不備が無く approve できたら）により、ユーザーの判断を待つ。**
+- **状態（2026-10-28、q1638 P3）: 版 4.3。U の回答（版 4.1）、design-reviewer（Opus 5.5）1 回目の H 6・M 18・L 10（版 4.2）、2 回目の H 4・M 12・L 9（版 4.3）を反映（§24）。仕様の不備は [ghci-review.md](ghci-review.md) 第 13 版（N47〜N60）に用意し、N61 を足す予定（§24 の末尾）。driver の仮の扱いは §19。**
 
 ## 0. 正本・読んだ物・確認の水準
 
 | 読んだ物 | 版 | 使い方 |
 | --- | --- | --- |
-| amaterrace-gpu `docs/ghci.md`（2782 行） | **cf8be08**（2026-10-28 03:44、`git show cf8be08:docs/ghci.md`）。89529de（2677 行）からの差は bc7df9e の §12.10.3「Shader Stage Register & Export Conventions」の追加、1a1fa85 の N38〜N45 の改訂（§8.4 の dual-source、§12.1・§12.5・§12.6・§12.8・§12.10・§12.11・§12.12 の参照と CAPS の名前）、cf8be08 の 2298 行（Vulkan の戻り値の名前を除く）。main の先頭 4188a4c は回答の file だけの差 | driver の要件の唯一の正本。下の「§n」はこの版の節。「n 行」は特に断らなければ **89529de の行**（1917 行までは cf8be08 と同じ。§12 は cf8be08 で番号がずれるので、§12.10.3 の行は cf8be08 の物と書く） |
+| amaterrace-gpu `docs/ghci.md`（2782 行） | **cf8be08**（2026-10-28 03:44、`git show cf8be08:docs/ghci.md`）。89529de（2677 行）からの差は bc7df9e の §12.10.3「Shader Stage Register & Export Conventions」の追加、1a1fa85 の N38〜N45 の改訂（§8.4 の dual-source、§12.1・§12.5・§12.6・§12.8・§12.10・§12.11・§12.12 の参照と CAPS の名前）、cf8be08 の 2298 行（Vulkan の戻り値の名前を除く）。main の先頭 4188a4c は回答の file だけの差 | driver の要件の唯一の正本。下の「§n」はこの版の節。「n 行」は **1917 行までは 89529de と cf8be08 で同じ**で、§12 以降（1918 行より後）は **cf8be08 の行**（版 4.2 から統一。Q23）|
 | 同 `include/`（ghci_regs.h・ghci_cmd.h・ghci_packets.h・ghci_frame.h・ghci_layout.h・gsi1_isa.h など 20 file） | cf8be08（gsi1_isa.h は bea1ef9 で注記 1 行だけ直った。89529de からの差は ghci_cmd.h の `GHCI_VS_REG_*`・`GHCI_FS_REG_*`・`GHCI_EXP_*` と gsi1_isa.h の export・system の register・`GSI1_COLOR_ATTACHMENTS 8`・注記。gsi1_isa.h の header・interface 表の定義は「pre-1.0、1.0 では使わない」と明記されて残る） | ghci.md との照合だけ。値は ghci.md から起こす（§17）。`gsi1_isa.h`（bea1ef9）と今の `compiler/gsi1_isa.h` は 78 行違う（`GSI1_COLOR_ATTACHMENTS` 4 と 8、`GSI1_EXP_COLOR0_SRC1`、`GSI1_VS_REG_*`、lda の word 0〜3 など。版 4 の「同じ」は誤りだった、R18）。p006 で値を直す |
 | 同 `fw/cp/ghci_cmd.c`・`cmd.c`（参考） | 89529de | CP の firmware はまだ §8.2 の PSO の配置に合っていない（`fw_cmd_bind_pipeline_pso` は `pso.cull_mode` など §8.2 に無い field を読む）。実機は仕様より遅れ得る（§16.2） |
 | zedBSD `src/drivers/gpu/ghci/`（49 file、33136 行）、`include/uapi/gpu-op.h`、`include/drivers/gpu/gpu.h`、platform の vmunix.mk、`pcat.c`、`vf2-pcie.c`、`userland/base/ghcictl`、`plan/ws288/tests/` | main 6e6ebf830 | file の行き先（§3） |
@@ -192,7 +192,7 @@ struct ghci_mapping {
 
 ### 4.4 encoder（`cmd.c`）
 
-全 encoder は dword の列（`uint32_t *out`）か byte の列（`uint8_t *out`）に 1 つずつ書く（struct を GPU memory に重ねない。float は wire の bit をそのまま `uint32_t` で受け、kernel は float を計算しない。D5）。値の block ごとに `Values referenced: amaterrace-gpu docs/ghci.md (cf8be08) section N`（§17、R22）。
+全 encoder は dword の列（`uint32_t *out`）か byte の列（`uint8_t *out`）に 1 つずつ書く（struct を GPU memory に重ねない。float は wire の bit をそのまま `uint32_t` で受け、kernel は float を計算しない。D5）。値の block ごとに guardrail の形の複数行の comment「Values referenced: amaterrace-gpu cf8be08 docs/ghci.md (section 7.3, CMD_VM_MAP)」（§17、R22・Q23）。
 
 | 群 | encoder | dwords / bytes |
 | --- | --- | --- |
@@ -215,7 +215,7 @@ struct ghci_mapping {
 
 1. `pci-attach.c`: class 03h（subclass 02h か 80h）か、既知の ID（KC705 の 10EE:7024、Amaterrace の 5441:4748、§3.2.3）の function を受ける（KC705 の endpoint の class code が 03h とは限らないため ID でも受ける。どちらでも識別は次の MAGIC）。BAR0 を map（4 KiB 以上）。BAR2 が有れば local window として map（discrete の boot framebuffer と CAP_BLT の無い discrete の表示の写しに使う、§13。R28）。割り込みはこの時点では取らない（前の kernel の古い IRQ を受けないよう、手順 3 の reset と IRQ_STATUS の W1C の後、手順 9 で取る。R27）。
 2. identify（読みだけ）: `GHCI_MAGIC` = 0x47484349、`GHCI_VERSION[31:16]` = 1（minor は問わない。G01）。違えば `ENODEV`。
-3. reset: `CTRL.RESET` を書き、`CTRL.RESET` = 0 を `GHCI_RESET_WAIT_MS` 待つ（§5.2 の手順 1）。前の kernel が RUNNING で残した CP もここで IDLE になる（RUN が 0 に）。Bus Master の扱い（D16、手順 9 と一つ）: 既に立っていれば（firmware の GOP の表示が使う）切らず、立っていなければ手順 9 で立てる。`STATUS.MEM_READY` = 1 を待つ（Appendix A の 3）。
+3. reset: 先に `WDT_CYCLES`（前の kernel か既定の 2^28）と `GCLK_HZ` を読み、待ちの上限を max(1000 ms, 4 × WDT_CYCLES / GCLK_HZ + 500 ms)（GCLK_HZ = 0 なら 10 s）にして（quiesce は 4 × WDT_CYCLES かかり得る、1609 行。Q20）、`CTRL.RESET` を書き `CTRL.RESET` = 0 を待つ（§5.2 の手順 1）。前の kernel が RUNNING で残した CP もここで IDLE になる（RUN が 0 に）。Bus Master の扱い（D16、手順 9 と一つ）: 既に立っていれば（firmware の GOP の表示が使う）切らず、立っていなければ手順 9 で立てる。`STATUS.MEM_READY` = 1 を待つ（Appendix A の 3）。
 4. `SCRATCH` に 0x5a5a5a5a・0xa5a5a5a5 を書いて読み戻す（§14）。
 5. capability: DEVICE_CAPS・EXT_CAP_FEATURE・EXT_CAP_FMT0・GCLK_HZ・NATIVE_ISA_ID・RESIDENT_WARPS を読み、EXTCAP_PTR が 0 でなければ list を辿る（entry 8 個まで（478 行）、環・窓の外・重なりを拒む。FMT・MEM・DISP2 は capability の version 1 だけを使い、他の version は log して無いと扱う。R26）。MEM・VEND・PROT は在れば register を読む。FMT・DISP2 は offset を記録する（FMT は p007、DISP2 は p012 で読む）。`ghci_caps_decode`（caps.c、pure）。DEVICE_CAPS と鏡（FEATURE[8]・[28]）が食い違えば DEVICE_CAPS を使い log（270〜271 行）。
 6. 方針の判定（U9「どちらも出す」）: `CAP_HW_WALKER` = 0（flat、§11.6）も `CAP_PROT` = 0 も executor を出す。どちらも client の間の memory の保護が無い（flat は client の shader が全物理を触れる）ので、attach の log に「GPU memory isolation: none (flat)」「… shared VA (PROT=0)」と出す。`NUM_SU` = 0 か `CAP_GSI1` = 0 は executor を出さない（display だけ）。
@@ -225,46 +225,61 @@ struct ghci_mapping {
 10. liveness: `CMD_FENCE`（MEM_WRITE | IRQ、seq 1）を置き doorbell。fence の語が 1 になり、割り込みが来る（poll は語だけ）のを待つ（§14）。来なければ `DIAG_CP_PC`・`DIAG_CP_STATUS`・`STATUS`・`FAULT_INFO` を log し、`CTRL.RESET`（RUN が 0 になり ring・heap への DMA は止まる）→ Bus Master は手順 9 で driver が立てた時だけ切る（firmware が立てていた物は boot の表示のため残す、D16。R27）→ memory を返して `EIO`。
 11. service・poll の thread を起こし `drv_gpu_register`。名前は `ghci:<PCI vendor>:<PCI device>`（VEND が有れば log に足す）。
 
-### 5.2 submit（p004、executor は p009）
+### 5.2 submit と門（p004、executor は p009）
 
-**門（R02）**: 再生（§5.4 の 8）以外で ring に packet を置く全ての経路（submit、VM の map・unmap、session の open・close、表示）は `ghci_cp_enter` を通る。`ghci_cp_enter` は cp_lock を取り、`replay_pending`（か RECOVERING）なら cp_lock を離して condvar で待ち、終われば取り直す（device.lock を持ったまま待たない。持っている呼び手は先に離す）。再生の途中の VM の操作は記録だけを変え（LIVE・UNMAP_WANTED）、packet は段 B が置く。段 B だけが門を通らず、`replay_owner` として cp_lock を取る。
+**lock の順**（§8）: `device.lock`（mutex）→ `display.lock`（mutex）→ `cp_lock`（mutex）→ `irq_lock`（spin）。
 
-`ghci_cp_submit(device, vm, packets, dwords, ticket)`: `ghci_cp_enter` で cp_lock を取る。submit ごとに ring の範囲 [start, end)・持ち主の `ghci_vm`・最後の fence の seq を記録の列（`submit_log`、未完の物だけ）に残す（§5.4 の犯人の判定に使う）。packet の前に `CMD_BIND_SESSION(vm の番号)`（driver 自身の仕事は 0。flat は session 0 だけなので BIND_SESSION を置かない）、後に `CMD_FENCE`（device の fence page、seq = 前 + 1、MEM_WRITE | IRQ）を置く。1 つの submit は cp_lock を持ったまま全部置く（D15）: 余地が無ければ cp_lock を持ったまま（device.lock は持たない）RPTR を有界に待ち、ring より大きい submit は packet の境で分けて doorbell ごとに待つ。前半を置いた後の timeout は hang として回復（§5.4）。doorbell は §9.3 の順。ticket = {seq（64 bit）, generation}。最後に `CMD_BIND_SESSION(0)` を置く（後の driver の packet が client の session で動かないように。flat は置かない）。
+**回復の印と門（R02・Q02・Q03・Q08）**: handler が IRQ_FAULT・IRQ_WATCHDOG を見た時、service が hang・liveness の失敗・計画の reset（§5.5）を決めた時に、irq_lock の中で `recovering` = 1 にする。ring に packet を置く全ての経路（submit、VM の map・unmap、session の open・close、表示）は、自分の外側の lock を取った後に `ghci_cp_enter` で cp_lock を取る。`ghci_cp_enter` は `recovering` が 1 なら cp_lock と呼び手の持つ外側の lock（device.lock・display.lock）を全部離し、`recovery_generation` が進むのを待って **RETRY** を返す。呼び手は最初からやり直し、状態を読み直す。**門を通る前には何も記録しない**: VM・session の状態の変更と packet の配置は、門を通った後の 1 区間（device.lock → cp_lock）で行い、全部を置けた時だけ状態を変える。ring の空きを待つ loop（上限 `GHCI_RING_WAIT_MS` = 2 × watchdog の ms + 1000）は、`recovering` が立てば即に抜けて RETRY（submit は下の規則）。回復をする service thread だけが門を通らない。
+
+`ghci_cp_submit(device, vm, packets, dwords, ticket)`: 門で cp_lock を取る。packet の前に `CMD_BIND_SESSION(vm の番号)`（driver 自身の仕事は 0。flat は置かない）、後に `CMD_FENCE`（device の fence page、seq = 前 + 1、MEM_WRITE | IRQ）、最後に `CMD_BIND_SESSION(0)`（後の driver の packet が client の session で動かないように。flat は置かない）を置く。1 つの submit は cp_lock を持ったまま全部置く（D15）: 余地が無ければ cp_lock を持ったまま（device.lock は持たない）RPTR を待ち、ring より大きい submit は packet の境で分けて doorbell ごとに待つ。一部を置いた後に `recovering` で抜けた submit は、置いた部分が reset で捨てられるので、やり直さず `EIO`（その executor の session の error）。ticket = {seq（64 bit）, generation}。submit ごとに [start, end)・持ち主の `ghci_vm`・fence の seq を `submit_log`（未完の物）に残す（flat の犯人の判定、§5.4）。doorbell は §9.3 の順。
 
 ### 5.3 割り込み（p004）
 
-handler（irq_lock の spin）: `IRQ_ENABLE` = 0 → `IRQ_STATUS` を読む → 扱う bit を W1C → `IRQ_ENABLE` を戻す。FENCE: fence page を読み completed を進め service に RECLAIM。FAULT・WATCHDOG: `STATUS`・`FAULT_INFO`・`FAULT_ADDR`・`SESSION_ACTIVE` を記録し service に FAULT。DISPLAY: service に DISPLAY（p012、`DISP_IRQ_STATUS` を読み W1C してから IRQ_STATUS[3] を W1C、1567 行）。`CTRL` は handler で触らない。`drv_gpu_complete` は service thread が呼ぶ。
+handler（irq_lock の spin）: `IRQ_ENABLE` = 0 → `IRQ_STATUS` を読む → 扱う bit を W1C → `IRQ_ENABLE` を戻す。bit は FAULT・WATCHDOG を FENCE より先に扱う（Q05）:
+- FAULT・WATCHDOG（2 つ同時の watchdog、1603 行、は 1 つの事象）: `recovering` = 1。`STATUS`・`FAULT_INFO`・`FAULT_ADDR`・`SESSION_ACTIVE`・`RING_RPTR`・`DIAG_CP_PC`・`DIAG_CP_STATUS` と、その時の fence の語を、今の `recovery_generation` を付けて記録する（Q06）。PROT = 1 の client の fault で CP が動き続け、その session の FENCE が書かれても仕事は NOP なので、`FAULT_INFO.SESSION_ID` = s（1〜15）と、`SESSION_ACTIVE` が 0 になった OPEN の session を、irq_lock の中の `faulted` の bitmap に入れ、その session の ticket と job marker は以後 fence が過ぎても ERROR で完了する（Q05）。service に FAULT。
+- FENCE: fence page を読み completed を進め service に RECLAIM。
+- DISPLAY: service に DISPLAY（p012、`DISP_IRQ_STATUS` を読み W1C してから IRQ_STATUS[3] を W1C、1567 行）。
+`CTRL` は handler で触らない。`drv_gpu_complete` は service thread が呼ぶ。
 
 ### 5.4 fault・watchdog・reset（p004・p005）
 
-U5（「全部 WS292」）により、WS290 は session だけの回収（§3.3 の N05 の手順）をしない。**IRQ_FAULT・IRQ_WATCHDOG・hang・liveness の失敗は、`STATUS.FAULTED` に依らず全部、装置の reset で回復する**（CAP_PROT = 1 の device も CAP_PROT = 0 と同じ扱い）。CAP_PROT = 1 の client の fault（FAULTED = 0、CP は動き続け、その session の draw は NOP になる）も、下の手順で reset する。reset は「どの状態からでも」受け付けられる（§5.2 の RESETTING）。
+U5（「全部 WS292」）により、WS290 は session だけの回収（§3.3 の N05 の手順）をしない。**IRQ_FAULT・IRQ_WATCHDOG・hang・liveness の失敗・計画の reset は、`STATUS.FAULTED` に依らず全部、装置の reset で回復する**（CAP_PROT = 1 の device も CAP_PROT = 0 と同じ扱い）。reset は「どの状態からでも」受け付けられる（§5.2 の RESETTING）。回復は service thread だけが行う。
 
-1. **記録と犯人**（service thread、cp_lock の前）: handler が記録した `STATUS`・`FAULT_INFO`・`FAULT_ADDR`・`SESSION_ACTIVE`・`DIAG_CP_PC`・`DIAG_CP_STATUS`・`RING_RPTR` を log（`FAULT_INFO` は KIND・UNIT・SESSION_ID だけを解き、stage と syndrome は生の値。配置が ghci_regs.h と食い違うため、ghci-review 第 13 版 N50）。IRQ_WATCHDOG と IRQ_FAULT が同時に立つ watchdog（1603 行）は 1 つの事象として扱う。
-   - **client に帰せる fault**: `UNIT` が VF・SU・RX・TU・ROP・BLT（≠ CP）で `KIND` が 1（ISA の不正）・6・9・10、または `KIND` 4（watchdog、unit を問わない）。driver の誤りで起こる物（`KIND` 2・3・5・7・8、`UNIT` = CP の物、管理の packet の syndrome）は帰せない。
-   - **持ち主**: flat でなければ `FAULT_INFO.SESSION_ID` = s（1〜15）の OPEN の `ghci_vm`。flat（全 client が session 0）と s = 0 の時は `submit_log` の最古の未完の submit の持ち主（flat と PROT = 0 は fault で CP が止まるので、最古の未完が走っていた物）。加えて PROT = 1 では `SESSION_ACTIVE[s]` = 0 になった OPEN の session も持ち主に含める（`FAULT_INFO` は最初の fault だけを latch する、410 行）。
-   - 帰せる fault の持ち主を**犯人**とする（`ghci_vm` を FAULTED、executor の session に `drv_gpu_report_session_error`、sticky で以後の submit を断る。Vulkan は DEVICE_LOST）。犯人が決まらない fault（帰せない物、AXI_STUCK、hang）は**装置の fault**として数える。
-2. cp_lock を取る。`CTRL.RESET` を書き、0 に戻るのを `GHCI_RESET_WAIT_MS` 待つ。戻らない・`STATUS.AXI_STUCK` = 1 なら即 LOST（§10、1609〜1611 行の「link の reset でしか戻らない」、R22）。
-3. reset は `RING_BASE`・`RING_SIZE`・`CP_HEAP_*`・`WDT_CYCLES`・`IRQ_ENABLE`・`SCRATCH` を保ち、`RING_WPTR`・`RPTR`・`IRQ_STATUS`・`FAULT_*`・`CTRL` の実行の bit・`SESSION_ACTIVE`・TLB・CP_HEAP の割当を消す（565〜566 行）。driver は保たれる register を読んで確かめ（違えば書き直す）、`ring.wptr` = 0。
-4. irq_lock の中で順に: (a) fence の語を読み、その値までの ticket を**正常に**完了する（reset の前に書かれ IRQ が未処理だった物）、(b) generation を進め、(a) の値より後の古い ticket と job marker を ERROR で完了する、(c) fence の語に最後に置いた seq を書く（574 行）。reset が成功した（quiesce した）ので古い ticket を待つ物理は返してよい。
-5. （p012 の後）CP が IDLE の間に DISP2 の `STATUS[31]` が落ちるのを待ち `TAKEN0/1` を読み数え直す（2543〜2545 行）。
-6. CP_HEAP の勘定を session 0 の root だけに戻す。全 `ghci_vm` を「再生待ち」にし、`replay_pending` = 1。`CTRL` = IRQ_GLOBAL | WDT_EN | RUN（CP が session 0 の root を作り直す）。cp_lock を離す。
-7. 未完の仕事を失った session（犯人を含む）に `drv_gpu_report_session_error`。
-8. 段 B（service thread、device.lock → cp_lock、門を通らない）: まず session 0 の mapping（driver が session 0 に置いた物。表示の一時の写しなど、`vm[0]` が記録する）を `CMD_VM_MAP(0, …)` で置き直し（574 行・2781 行の「re-map Session 0」）、次に生きている各 `ghci_vm`（OPEN）について `CMD_SESSION_OPEN(s)`、その LIVE・UNMAP_WANTED の mapping を全部 `CMD_VM_MAP` で置き直す（RPTR を待ちながら）。FAULTED（犯人）・CLOSING の session は置かず RETIRED にする。終われば `replay_pending` = 0 にして門の condvar を起こす。途中の fault は 1 からやり直す（`replayed` が古い物だけを次に置く）。flat は session も mapping も置かない（再生は無い）。
+| 段 | 持つ lock | 中身 |
+| --- | --- | --- |
+| 1 | device.lock | 記録の取り出しと犯人の判定 |
+| 2〜6 | device.lock → display.lock → cp_lock（4 は + irq_lock） | reset、ticket、表示の数え直し、session の状態、heap の勘定、RUN、liveness |
+| 8 | device.lock → cp_lock（display.lock は 6 の後に離す） | 再生と最後の確かめ |
+| 7・9 | 無し | session への報告、門を開ける |
 
-LOST: 以後の submit は `EIO`、`drv_gpu_report_error`。GPU がまだ DMA し得るので物理を返さない（`quarantined` に記録）。detach は Bus Master を切った後にだけ返す。**装置の fault**（犯人の無い物。MMU_OOM を除く）が `GHCI_FAULT_STORM_MS`（10 s）の中で 3 回でも LOST。犯人の有る fault は数えない（犯人の session は sticky で止まり、同じ session からは二度と起きない。別の session を開き直して fault を繰り返す client は他の client の未完の仕事を DEVICE_LOST にし得る。これは隔離の無い間（WS292 まで）の制限、§23）。
+1. **記録と犯人**: service は handler の記録を取り出し、`recovery_generation` が今の物より古い記録は捨てる（reset の前に積まれた古い事象、Q06）。log（`FAULT_INFO` は KIND・UNIT・SESSION_ID だけを解き、stage と syndrome は生の値。ghci-review 第 13 版 N50）。
+   - **client に帰せる fault**: `UNIT` が VF・SU・RX・TU・ROP・BLT（≠ CP）で `KIND` が 1・6・9・10、または `KIND` 4（watchdog）。driver の誤りで起こる物（`KIND` 2・3・5・7・8、`UNIT` = CP）は帰せない。
+   - **持ち主（Q04）**: flat でない device は `FAULT_INFO.SESSION_ID` = s が 1〜15 で OPEN の `ghci_vm`、と（PROT = 1 で）handler の `faulted` の bitmap の OPEN の session。s = 0 は driver の packet なので装置の fault（1621 行の「Session 0 の watchdog は FAULTED」）。flat は全 client が session 0 なので、handler が fault の時に irq_lock の中で読んだ fence の語より seq が大きい、`submit_log` の最初の submit の持ち主（それが driver の submit なら装置の fault）。
+   - 帰せる fault の持ち主が**犯人**: その `ghci_vm` を FAULTED、executor の session に `drv_gpu_report_session_error`（sticky、以後の submit を断る。Vulkan は DEVICE_LOST）。犯人の無い fault（帰せない物、AXI_STUCK、hang）は**装置の fault**。計画の reset（§5.5）は fault でない。
+2. device.lock → display.lock → cp_lock を取る。`CTRL.RESET` を書き、0 に戻るのを `GHCI_RESET_WAIT_MS` 待つ。戻らない・`STATUS.AXI_STUCK` = 1 なら即 LOST（1609〜1611 行の「link の reset でしか戻らない」）。
+3. reset は `RING_BASE`・`RING_SIZE`・`CP_HEAP_*`・`WDT_CYCLES`・`IRQ_ENABLE`・`SCRATCH` を保ち、`RING_WPTR`・`RPTR`・`IRQ_STATUS`・`FAULT_*`・`CTRL` の実行の bit・`SESSION_ACTIVE`・TLB・CP_HEAP の割当を消す（565〜566 行）。driver は保たれる register を読んで確かめ（違えば書き直す）、`ring.wptr` = 0、`submit_log` を空にする。
+4. irq_lock の中で順に: (a) fence の語を読み、その値までの ticket を正常に完了する（reset の前に書かれ IRQ が未処理だった物。`faulted` の session の物は ERROR）、(b) generation を進め、(a) の値より後の古い ticket と job marker を ERROR で完了する、(c) fence の語に最後に置いた seq を書く（574 行）、(d) `faulted` を空にする。reset が成功した（quiesce した）ので古い ticket を待つ物理は返してよい。
+5. （p012 の後）CP が IDLE の間に DISP2 の `STATUS[31]` が落ちるのを待ち `TAKEN0/1` を読み数え直す（2543〜2545 行。今の code と同じく display.lock の中、Q03）。
+6. session の状態: 犯人（FAULTED）と、(b) で仕事を失った session は **DEAD**（hardware の session は無いが、番号・chunk・勘定・mapping の記録は executor の close まで持つ。Q01）。CLOSING は RETIRED（close の ticket は (b) で ERROR に終わり、reset が成功したので返してよい）。OPEN は「再生待ち」。CP_HEAP の勘定を DEAD でない session の物だけで数え直す（reset は heap の割当を BASE に戻す、566 行）。`CTRL` = IRQ_GLOBAL | WDT_EN | RUN。display.lock を離す。liveness: driver の `CMD_FENCE`（attach の 10 と同じ）を置き、有界に待つ（flat は再生が無いので、CP の生死はこれで見る。Q07）。通らなければ 2 からやり直す（liveness の失敗の数に足す）。
+7. （cp_lock の外で後に）DEAD にした session に `drv_gpu_report_session_error`。
+8. **再生**（device.lock → cp_lock のまま、門を通らない）: まず session 0 の mapping（`vm[0]` の記録。表示の一時の写しなど）を `CMD_VM_MAP(0, …)` で置き直し（574 行・2781 行の「re-map Session 0」）、次に「再生待ち」の各 `ghci_vm` について `CMD_SESSION_OPEN(s)` と LIVE の mapping の `CMD_VM_MAP` を置き（RPTR を待ちながら。待ちの間に `recovering` が立てば 1 に戻る）、OPEN に戻す。flat は session も mapping も置かない。全部を置いた後、同じ区間で「再生待ちが残っていない」を確かめ、`recovering` = 0、`recovery_generation` を進める。
+9. 門で待つ thread を起こし、lock を全部離す。
 
-hang: fence が `GHCI_HANG_MS`（推し 10 s。watchdog は packet ごとで、ring 全体の進みは見ない）動かず未完がある時は上の手順（犯人は無し）。
+**LOST**: 以後の submit は `EIO`、`drv_gpu_report_error`。GPU がまだ DMA し得るので物理を返さない（`quarantined` に記録）。detach は Bus Master を切った後にだけ返す。LOST になる時（Q07）: (a) 2 の RESET が落ちない・AXI_STUCK、(b) 6 の liveness が続けて 3 回通らない、(c) **装置の fault**（犯人の無い物、hang を含む。MMU_OOM と計画の reset を除く）が `GHCI_FAULT_STORM_MS`（60 s。hang の判定 10 s と reset の待ちの和より長く取る）の中で 3 回。犯人の有る fault は数えない（犯人は DEAD で二度と submit しない。session を開き直して fault を繰り返す client は他の client の未完の仕事を DEVICE_LOST にし得る。隔離の無い間（WS292 まで）の制限、§23）。
+
+**hang**（Q07）: 未完の submit があり、`GHCI_HANG_MS`（10 s）の間 fence の語も `RING_RPTR` も進まない時（1 つの packet が watchdog より短くても、合計の長い submit は RPTR が進むので hang にしない）。犯人は無し。
 
 ### 5.5 session と VM（p005、§11.2・§11.6）
 
-- **session の番号**: 0 は driver、1〜15 を executor の session に。番号は executor が `GPU_OP_CREATE_DEVICE`（vkCreateDevice）を受けた時に取り（`CMD_SESSION_OPEN(s, 0)`）、閉じて `RETIRED` になるまで再利用しない（R16。fd を開いただけ・資源だけの session は番号を取らない。Venus の transport の blob は VM_MAP しない）。16 番目は `EBUSY`、vkCreateDevice は `VK_ERROR_TOO_MANY_OBJECTS`（U11「hardware の上限の 15 個」: client に使える 15 個まで、超えたら vkCreateDevice を断る）。`CAP_PROT` = 0・1 の device は同じに番号を使う（dynamic state は session ごと、845 行）。flat は hardware の session が 0 だけなので全 client が session 0 で動くが、数の上限は同じ 15（U11 の扱いを一つにする）。
-- **VA**: v1 は 32 bit の範囲だけ使う（VA_BITS = 40 の device も上位を 0 に。`gpu_va_hi` = 0）。device に 1 つの **2 MiB の chunk の表**（2048 個、chunk 0 と最後は使わない）を持ち、chunk は 1 つの session だけが持つ。session の中は自分の chunk の上の range allocator（`range.c`）で取る。2 MiB を超える allocation は連続した chunk の run を first-fit で取り、取れなければ `ENOMEM`（断片化の詰め直しはしない、v1）。理由: CAP_PROT = 0 は page table を全 session で共有し（1852 行）、CAP_PROT = 1 は session ごと（1853 行）。chunk の持ち主を一つにすると (a) どちらでも VA が重ならず、(b) 1 つの L0 table（2 MiB）が 1 つの session だけに属し、CP_HEAP の勘定が上限で決まる。
-- **CP_HEAP の勘定**（MMU_OOM を起こさないように数える。外れたら reset、1692〜1695 行。R09）: CP の内部の割当は driver に見えない（§11.2 冒頭）ので、上限で数える: session ごとに root と中間の table（VA_BITS 32 は root 16 KiB。40 は root 8 KiB と、v1 が使う 4 GiB を覆う L1 の 4 KiB が 1 GiB ごとに 1 枚で最大 4 枚、計 24 KiB。上限の 24 KiB で数える）、chunk ごとに L0 の 4 KiB。勘定は chunk を持った時に足し、session の CLOSE の ticket の後と reset の後に返す（root の大きさ（628 行の 4 KiB と 1701 行の 16 KiB）と CLOSE が root を返すかは仕様に無い、ghci-review 第 13 版 N48。仮に CLOSE が全部を返すと読み、余裕として root 16 個分を足す）。`GHCI_HEAP_BYTES` は session 0〜15 の root と中間の table、L0 2048 枚: 16 × 24 KiB + 2048 × 4 KiB = **8.375 MiB**（全 VA を map しても足りる。VA_BITS 32 の device は 16 × 16 KiB で 8.25 MiB）。余裕を足して **8.75 MiB**。取れなければ半分ずつ減らして試し、勘定を超える VM の要求は `ENOMEM`（Vulkan は OUT_OF_DEVICE_MEMORY）、新しい session は `EBUSY`。MMU_OOM（KIND 8）が来れば §5.4 の reset で heap ごと回収する（reset は割当を CP_HEAP_BASE に戻す、566 行）。MMU_OOM は client の犯人にせず、嵐にも数えない（heap の勘定の推測の外れで、reset で直るため）。
-- **map**: `ghci_memory_alloc` で物理 → `ghci_vm_map` で chunk と VA を取り、`CMD_VM_MAP(s, flags, va, bus, bytes)` を置く（device.lock → cp_lock）。完了は待たない（packet は in-order、706 行）。flags: host は READ | WRITE | COHERENT（WC は付けない、§11.4 の「GPU は coherence を外さない」）、code は | EXEC、local は | LOCAL。
-- **unmap**: mapping を UNMAP_WANTED → `CMD_VM_UNMAP` を置けたら UNMAPPING と後の fence の ticket → ticket が過ぎたら VA を返し、物理は他の mapping・hold が無ければ返す（685 行「fence で守る」）。置けない間（ring の満、再生の途中）は物理を hold して service が置き直す。VM_UNMAP は GPU の drain を待つ（1723〜1728 行）ので、map・unmap は VkDeviceMemory・blob・import と executor の heap の単位だけにする（D14）。
-- **close**（R01）: 失敗できない（`gpu.h`）。門を通った 1 回の cp_lock の中で、まだ unmap していない全 mapping の `CMD_VM_UNMAP` → `CMD_SESSION_CLOSE(s)` → `CMD_FENCE` の順に置き、`CLOSING`。ring が足りなければ cp_lock を持ったまま RPTR を待つ（ring より大きければ VM_UNMAP の途中で分ける）。どの場合も SESSION_CLOSE を最後の VM_UNMAP より前に置かない（PROT = 0 は CLOSE が共有の table の PTE を消すか決まっていない、ghci-review 第 13 版 N49。閉じた session への VM 操作は置かない）。その fence の ticket の後に物理・chunk・勘定・番号を返し `RETIRED`。
-- **flat（HW_WALKER = 0、U9）**: `CMD_SESSION_OPEN`・`CLOSE`・`VM_MAP`・`VM_UNMAP` は KICK_ABSENT の fault になる（1851 行）ので置かない。`ghci_vm` は数と mapping の記録のためだけに作り（`session_id` = 0、`flat` = 1）、map は VA = bus address（恒等、packet 無し、chunk も CP_HEAP の勘定も使わない）、unmap は packet 無しで「今まで置いた最後の fence の seq」を ticket にして UNMAPPING にする（その fence の後に物理を返す。GPU が参照し得る submit は全部その前）。VA = bus なので、executor は VA を 64 bit で持ち、32 bit に入らない番地の物は flat では確保しない（host は 4 GiB 未満、D8。discrete の flat は v1 では local を使わず unified と同じ扱い）。全 client が session 0 を共有するので、executor は submit に要る bind と dynamic state を全部その submit の中で置く（§11.3 の 2 で既にそうする）。
-- **番地の上限**: GPU に渡す host memory は bus address が `2^PA_BITS` 未満。v1 は扱いを一つにするため全部を 4 GiB 未満（MEM の HOST_LIMIT が 0 でなければその下）に取る（`kern_pmem_alloc_limited`。CP_HEAP・FB・flip の record は 32 bit の物理なので必須、他は簡単のため。D8）。
+- **session の番号**: 0 は driver、1〜15 を executor の session に。executor が `GPU_OP_CREATE_DEVICE`（vkCreateDevice）を受けた時に、その VkDevice 1 つに 1 つ取る（1 つの fd で VkDevice を 2 つ作れば 2 つ。Q21）。取るのは門を通った 1 区間で、番号と `CMD_SESSION_OPEN(s, 0)` を同時に（Q02）。RETIRED になるまで再利用しない（R16。fd を開いただけ・資源だけの session は番号を取らない。Venus の transport の blob は VM_MAP しない。device より前に作られた・import された resource は、その device の VkDeviceMemory に結ばれた時にその session に VM_MAP する）。16 番目は `EBUSY`、vkCreateDevice は `VK_ERROR_TOO_MANY_OBJECTS`（U11「hardware の上限の 15 個」）。`CAP_PROT` = 0・1 の device は同じに番号を使う（dynamic state は session ごと、845 行）。flat は全 client が session 0 で動くが、数の上限は同じ 15。
+- **状態**（§6.2）: OPEN・CLOSING・RETIRED に、reset の後の **DEAD**（Q01）。DEAD の unmap・close は packet を置かず、reset の成功を ticket として即に完了し、物理・VA・chunk・勘定・番号を返す（close で RETIRED）。
+- **VA**: v1 は 32 bit の範囲だけ使う（VA_BITS = 40 の device も上位を 0 に。`gpu_va_hi` = 0）。device に 1 つの **2 MiB の chunk の表**（2048 個、chunk 0 と最後は使わない）を持ち、chunk は 1 つの session だけが持つ。session の中は自分の chunk の上の range allocator（`range.c`）で取る。2 MiB を超える allocation は連続した chunk の run を first-fit で取り、取れなければ `ENOMEM`（詰め直しはしない、v1）。理由: CAP_PROT = 0 は page table を全 session で共有し（1852 行）、CAP_PROT = 1 は session ごと（1853 行）。chunk の持ち主を一つにすると (a) どちらでも VA が重ならず、(b) 1 つの L0 table（2 MiB）が 1 つの session だけに属し、CP_HEAP の勘定が上限で決まる。
+- **CP_HEAP の勘定**（悲観の読み、R09・Q10、ghci-review 第 13 版 N48 と同じ読み）: CP の内部の割当は driver に見えず、root の大きさ（628 行の 4 KiB と 1701 行の 16 KiB）も CLOSE が table を返すかも仕様に無いので、**上限で数え、閉じた session の root と中間の table、unmap した chunk の L0 は reset まで戻らない**と見なす。session ごとに root と中間の table（VA_BITS 32 は root 16 KiB。40 は root 8 KiB と、4 GiB を覆う L1 の 4 KiB が 1 GiB ごとに最大 4 枚、計 24 KiB）、chunk を初めて map した時に L0 の 4 KiB。`GHCI_HEAP_BYTES` = 16 × 24 KiB + 2048 × 4 KiB = 8.375 MiB に、閉じた session の root 16 個分の余裕を足した **8.75 MiB**（取れなければ半分ずつ減らす）。勘定が尽きる要求（新しい session、新しい chunk）は、**計画の reset** を service に頼み、未完の submit が無くなるのを有界に待って reset と再生を行い（§5.4。bind と state は毎 submit 置くので失う物は無い、§11.3）、勘定を数え直してからやり直す。待ちが切れれば `ENOMEM`（Vulkan は OUT_OF_DEVICE_MEMORY）・`EBUSY`。MMU_OOM（KIND 8）が来れば §5.4 の reset で heap ごと回収し、犯人にせず嵐にも数えない。
+- **map**: `ghci_memory_alloc` で物理 → 門を通った 1 区間（device.lock → cp_lock）で chunk と VA を取り `CMD_VM_MAP(s, flags, va, bus, bytes)` を置き、置けた時だけ mapping を LIVE として記録する（Q02）。完了は待たない（packet は in-order、706 行）。flags: host は READ | WRITE | COHERENT（WC は付けない、§11.4 の「GPU は coherence を外さない」）、code は | EXEC、local は | LOCAL。
+- **unmap**: 門を通った 1 区間で `CMD_VM_UNMAP` と `CMD_FENCE` を置き、mapping を UNMAPPING（その ticket）にする。ticket が過ぎたら VA を返し、物理は他の mapping・hold が無ければ返す（685 行「fence で守る」）。RETRY の間は LIVE のまま物理を hold する。VM_UNMAP は GPU の drain を待つ（1723〜1728 行）ので、map・unmap は VkDeviceMemory・blob・import と executor の heap の単位だけにする（D14）。
+- **close**（R01）: 失敗できない（`gpu.h`）。門を通った 1 区間で、LIVE の全 mapping の `CMD_VM_UNMAP` → `CMD_SESSION_CLOSE(s)` → `CMD_FENCE` の順に置き、`CLOSING`。ring が足りなければ cp_lock を持ったまま RPTR を待ち（ring より大きければ VM_UNMAP の途中で分ける）、RETRY なら最初から（reset の後は再生された session に置き直すか、DEAD なら packet 無し）。SESSION_CLOSE を最後の VM_UNMAP より前に置かない（N49）。その fence の ticket の後に物理・chunk・番号を返し `RETIRED`（勘定は悲観の読みで reset まで残す）。
+- **flat（HW_WALKER = 0、U9）**: `CMD_SESSION_OPEN`・`CLOSE`・`VM_MAP`・`VM_UNMAP` は KICK_ABSENT の fault になる（1851 行）ので置かない。`ghci_vm` は数と mapping の記録のためだけに作り（`session_id` = 0、`flat` = 1）、map は VA = bus address（恒等、packet 無し、chunk も CP_HEAP の勘定も使わない）、unmap は packet 無しで、cp_lock の中で読んだ「今まで置いた最後の fence の seq」を ticket にする（Q21。GPU が参照し得る submit は全部その前）。VA = bus なので executor は VA を 64 bit で持ち、32 bit に入らない番地の物は flat では確保しない（host は 4 GiB 未満、D8。discrete の flat は v1 では local を使わず unified と同じ扱い）。全 client が session 0 を共有するので、executor は submit に要る bind と dynamic state を全部その submit の中で置く（§11.3 の 2）。
+- **番地の上限**: GPU に渡す host memory は bus address が `2^PA_BITS` 未満。v1 は全部を 4 GiB 未満（MEM の HOST_LIMIT が 0 でなければその下）に取る（`kern_pmem_alloc_limited`。CP_HEAP・FB・flip の record は 32 bit の物理なので必須、他は簡単のため。D8）。
 
 ### 5.6 unified と discrete（p005・p011、§11.3）
 
@@ -287,10 +302,11 @@ session が残れば `EBUSY`。(1) p012 の後: 表示が driver の framebuffer
 
 ```
 ATTACHING --identify・reset・liveness OK--> RUNNING
-RUNNING --IRQ_FAULT・IRQ_WATCHDOG（FAULTED に依らず）・hang--> RECOVERING --reset OK--> REPLAYING --> RUNNING
+RUNNING --IRQ_FAULT・IRQ_WATCHDOG（FAULTED に依らず）・hang・計画の reset--> RECOVERING --reset と liveness OK--> REPLAYING --> RUNNING
+RECOVERING --liveness の失敗--> RECOVERING（3 回続けば LOST）
 REPLAYING --fault・hang・ring の待ちの timeout--> RECOVERING（再生をやり直す。R34）
 RECOVERING --RESET が落ちない・AXI_STUCK--> LOST
-RUNNING|REPLAYING --10 s に犯人の無い装置の fault 3 回（MMU_OOM を除く）--> LOST
+RUNNING|REPLAYING --60 s に犯人の無い装置の fault 3 回（MMU_OOM・計画の reset を除く）--> LOST
 RUNNING|LOST --stop（session 0 個）--> DETACHED
 ```
 
@@ -298,13 +314,14 @@ driver は `STATUS.RUNNING`・`HALTED`・`FAULTED`・`AXI_STUCK`・`CP_STATE` �
 
 ### 6.2 session（ghci_vm）
 
-`(無し)` → `OPEN`（SESSION_OPEN を置いた）→ `CLOSING`（SESSION_CLOSE を置いた）→ `RETIRED`（ticket の後、番号と勘定を返す）。`OPEN` → `FAULTED`（§5.4 の 1 の犯人）→ reset の再生で `RETIRED`。装置の reset で `OPEN` は再生、`FAULTED`・`CLOSING` は `RETIRED`。flat の `ghci_vm` は session の packet を置かず、close で直に `CLOSING`（最後の fence の ticket）→ `RETIRED`。
+`(無し)` → `OPEN`（番号を取り SESSION_OPEN を置いた、同じ区間）→ `CLOSING`（VM_UNMAP・SESSION_CLOSE・FENCE を置いた）→ `RETIRED`（ticket の後、番号・chunk を返す）。`OPEN` → `FAULTED`（§5.4 の 1 の犯人）→ reset で `DEAD`。reset で、仕事を失った `OPEN` も `DEAD`、他の `OPEN` は再生されて `OPEN`、`CLOSING` は `RETIRED`。`DEAD` → executor の close で packet 無しに `RETIRED`（Q01）。flat の `ghci_vm` は session の packet を置かず、close で直に `CLOSING`（最後の fence の ticket）→ `RETIRED`。
 
 ### 6.3 allocation と mapping
 
 ```
 allocation: ALLOCATED --map--> MAPPED(1..n) --mapping も hold も無い--> FREED
-mapping:    LIVE --unmap--> UNMAP_WANTED --VM_UNMAP placed--> UNMAPPING(ticket) --passed--> gone
+mapping:    （門の区間で VM_MAP を置いた）LIVE --門の区間で VM_UNMAP を置いた--> UNMAPPING(ticket) --passed--> gone
+            DEAD の session の mapping --unmap--> gone（packet 無し、reset の成功が ticket）
 LOST の device: どの状態からも FREED にしない（quarantine）
 ```
 
@@ -313,7 +330,8 @@ LOST の device: どの状態からも FREED にしない（quarantine）
 | 資源 | 持ち主 | 返す時 |
 | --- | --- | --- |
 | ring・fence page・CP_HEAP | device | detach の Bus Master を切った後 |
-| session の番号・chunk・heap の勘定 | `ghci_vm` | `RETIRED`（SESSION_CLOSE の ticket の後、か成功した reset の後） |
+| session の番号・chunk | `ghci_vm` | `RETIRED`（SESSION_CLOSE の ticket の後か、DEAD・CLOSING の executor の close の時） |
+| CP_HEAP の勘定 | device | reset の数え直し（§5.5 の悲観の読み） |
 | VA | session の allocator | UNMAPPING の ticket の後 |
 | resource・blob の物理 | drv_gpu の session（export の record も hold） | 全 mapping の unmap の ticket の後 |
 | executor の heap（session ごと） | vk の session | session の close（heap の unmap の ticket の後） |
@@ -324,12 +342,12 @@ LOST の device: どの状態からも FREED にしない（quarantine）
 
 ## 8. 並行性とロック
 
-今の順を保つ: `device.lock`（mutex: session、allocator、chunk、mapping、寿命）→ `display.lock` → `cp_lock`（mutex: ring、doorbell、reset、`replay_pending`）。`irq_lock`（spin: completed、generation、fault の記録、service の仕事）は最も内側。
-- VM の操作と再生: VA・mapping は device.lock、ring に置くのは cp_lock（device.lock → cp_lock）。
-- reset（§5.4 の 2〜6）は cp_lock だけ。session の報告と段 B（§5.4 の 8）は cp_lock を離してから。
-- ring の満の待ちは cp_lock を持ったまま有界に。cp_lock を持つ間に device.lock・display.lock を取らない。
-- 犯人の記録（§5.4 の 1）は service thread で device.lock の中（`ghci_vm` の状態）、cp_lock の前。
-- host 試験の stub は lock の順の違反を FAIL にする（§14）。
+順: `device.lock`（mutex: session、allocator、chunk、mapping、寿命、heap の勘定）→ `display.lock`（mutex: 表示）→ `cp_lock`（mutex: ring、doorbell、reset、`submit_log`）→ `irq_lock`（spin: completed、generation、`recovering`・`recovery_generation`、`faulted`、fault の記録、service の仕事）。外側の lock を後から取らない（離すのは順に依らない）。
+- ring に置く経路は §5.2 の門を通り、待つ時は持つ lock を全部離す（device.lock・display.lock も。Q02・Q03）。門の前に状態を記録しない。
+- 回復（§5.4）は service thread だけで、段ごとの lock は §5.4 の表。表示の数え直しは今の code と同じく display.lock → cp_lock（`cp.c` の `ghci_display_recover_begin`、Q03）。
+- ring の空きの待ちは cp_lock（VM の操作では device.lock も）を持ったまま、上限 `GHCI_RING_WAIT_MS` で、`recovering` で即に抜ける（Q08）。
+- 内部の shader（§11.6）の compile は device.lock・cp_lock の外で行い、結果を device.lock の中で登録する。
+- host 試験の stub は lock の順の違反と「門で lock を持ったまま待つ」を FAIL にする（§14）。
 
 ## 9. 割り込みと DMA
 
@@ -408,12 +426,15 @@ HW が決める物（§8.4）: texture の slot k は set 0 の k 番目（32 by
 - constant bank（512 語）: c0〜c23 = push constant の先頭 96 byte、c24〜c31 = HW の鏡、c32〜c39 = push constant の 96〜127 byte（`lwc` で読む）、c40〜 = dynamic offset（set ごとに順）。`maxPushConstantsSize` = 128。`CMD_LOAD_CONST` は 32 語ずつ。
 - UBO は `lw` で読む（1.1 の bank への写しは無い）。`maxUniformBufferRange` 65536。
 
-- **attachment の配置（R05、仮）**: §8.4 の attachment の記述に linear・tiled の flag も layer の pitch も無く、`mip_level`・`base_array_layer` から番地を求める方法も無い（ghci-review 第 13 版 N47、H）。答えまで: COLOR_ATTACHMENT・DEPTH_STENCIL_ATTACHMENT・INPUT_ATTACHMENT・TRANSFER_DST（blit・resolve の先）の usage の image は **linear**（§8.5.2 の 64 byte 揃えの行、subresource の配置は §8.5.2）に作り、記述の `*_va` には driver が §8.5.2 で求めた subresource（mip・layer）の先頭の番地を書き、`mip_level` = `base_array_layer` = 0、`layers` = 1。framebuffer の layers > 1 は layer 0 だけに描く（geometry shader が無いので layer を選ぶ shader は無い）。他の image は tiled にしてよい（texture の flags[0]）。答えが (b)（tiled の flag の追加）なら p008・p009 で attachment を tiled にできる。
-- **PSO に無い静的な状態（R07）**: stencil の compare・write mask・reference、depth bias の constant・slope・clamp、blend constant、independentBlend の 0x07〜0x0E は session ごとに残り、BIND_PIPELINE が戻すのは dw9・dw11 だけ（845〜846 行）。executor は BIND_PIPELINE の度に、その pipeline の静的な値（dynamic にした物は記録された値）を `SET_DYNAMIC_STATE` で全部置く。stencil は 3 つを 1 語で書くので、executor が 3 つの値を command buffer の状態として持つ。
+- **attachment の配置（R05、仮）**: §8.4 の attachment の記述に linear・tiled の flag も layer の pitch も無く、`mip_level`・`base_array_layer` から番地を求める方法も無い（ghci-review 第 13 版 N47、H）。答えまで: COLOR_ATTACHMENT・DEPTH_STENCIL_ATTACHMENT・INPUT_ATTACHMENT・TRANSFER_DST（blit・resolve の先）の usage の image は **linear**（§8.5.2 の 64 byte 揃えの行、subresource の配置は §8.5.2）に作り、記述の `*_va` には driver が §8.5.2 で求めた subresource（mip・layer）の先頭の番地を書き、`mip_level` = `base_array_layer` = 0、`layers` = 1。framebuffer の layers > 1 は layer 0 だけに描き（geometry shader が無いので layer を選ぶ shader は無い）、layer 1 以降の loadOp CLEAR と、ClearAttachments の baseArrayLayer > 0 は、layer ごとにその subresource の番地で clear だけの render pass を置く（Q12）。他の image は tiled にしてよい（texture の flags[0]）。答えが (b)（tiled の flag の追加）なら p008・p009 で attachment を tiled にできる。
+- **PSO に無い静的な状態（R07）**: stencil の compare・write mask・reference、depth bias の constant・slope・clamp、blend constant、independentBlend の 0x07〜0x0E（CAP_MRT_BLEND = 1 の時だけ置く。0 で置けば KICK_ABSENT で reset になる、848 行。Q11）は session ごとに残り、BIND_PIPELINE が戻すのは dw9・dw11 だけ（845〜846 行）。executor は BIND_PIPELINE の度に、その pipeline の静的な値（dynamic にした物は記録された値）を `SET_DYNAMIC_STATE` で全部置く。stencil は 3 つを 1 語で書くので、executor が 3 つの値を command buffer の状態として持つ。
 - **HW に field の無い Vulkan 1.0 の core（R08、U8）**: rasterizerDiscardEnable は、その pipeline の draw の scissor を 0×0 にする。sampler の unnormalizedCoordinates と image view の identity でない component swizzle は、その組を使う draw・dispatch を記録で断って log（U8）。fragment stage の無い pipeline は driver の 2 命令の FS（2432〜2434 行）を付ける。point と line（topology と polygonMode）の FS は入力の作り方が違う（2475〜2479 行）ので、FS の compile の key に primitive の種類（三角形・線・点）を入れる。
-- **host の event を待つ WaitEvents（R10）**: 単一の ring で `WAIT_FENCE` が host の SetEvent を待つと、他の client と表示が止まり watchdog にも掛からない（1598 行）。そこで、記録の時点で GPU の SetEvent が同じ submit の前に無い event の WaitEvents では submit をそこで切り、残りは kernel が持ち、host の vkSetEvent（wire）で event が立った時に置く。GPU の SetEvent を待つ物だけ `WAIT_FENCE` にする。
+- **WaitEvents（R10・Q13）**: 単一の ring で `WAIT_FENCE` が来ない SetEvent を待つと、他の client と表示が止まり watchdog にも掛からない（1598 行）。そこで WaitEvents の event ごとに、(a) 同じ submit の前に GPU の SetEvent があれば `WAIT_FENCE`（event の語、値 1）、(b) 無ければ submit をそこで切り、残りと**その client の後の submit 全部**（submission order を保つ）を kernel が保留し、event の語が 1 になった時（host の vkSetEvent か、前の submit の GPU の SetEvent。fence の IRQ ごとに event の語を読む）に続きを置く。保留の残りは、reset で DEAD になった session と executor の close では ERROR で完了する。
 - **timestamp の availability（R12）**: `WRITE_TIMESTAMP` は 8 byte だけ書く（975〜982 行）ので、直後に `CMD_FENCE`（MEM_WRITE、IRQ 無し、値 1）を slot の bus 番地 + 8 に置く（query pool は kernel の持つ host memory）。CopyQueryPoolResults の WAIT_BIT は前に `BARRIER`（WAIT_IDLE）を置く。
-- **triangle fan（R30）**: 非 indexed の fan は executor が一時の index buffer（submit の一時の memory）を作り、draw の後に client の index buffer の bind を置き直す。indexed・indirect の fan は断って log。
+- **triangle fan（R30・Q18）**: 非 indexed の fan は executor が一時の index buffer（submit の一時の memory）を作る。三角形 i の頂点は Vulkan の順（i + 1, i + 2, 0）で、provoking は i + 1（flat の値を変えない）。draw の後に client の index buffer の bind を置き直す。indexed・indirect の fan は断る。
+- **断り方（U8・Q14）**: pipeline・sampler・image などの create で分かる不足は、その create を Vulkan の結果（`VK_ERROR_FEATURE_NOT_PRESENT`・`VK_ERROR_FORMAT_NOT_SUPPORTED`、pipeline は `VK_ERROR_OUT_OF_DEVICE_MEMORY`）と log で断る。記録（vkCmd*、void で Venus は非同期）で分かる不足は、**その command を飛ばして log**（1 つの command buffer に 1 回）し、command buffer と device はそのまま使える。DEVICE_LOST にはしない。
+- **stage ごとの上限（Q15）**: texture の slot（set 0・1 の 16 個）は pipeline の全 stage で共有なので、`maxPerStageDescriptorSampledImages`・`Samplers` に 16 を答えても、VS と FS の和が 16 を超える pipeline は作れない（create で断る、U8 の一覧に載せる）。他の per-stage の値は §8.6（UBO 16・SSBO 16・storage image 8）と input attachment 4（§15.5）。
+- **robustBufferAccess（Q16）**: Vulkan 1.0 の必須の feature なので true と答える。shader の buffer の読み書きは compiler が descriptor の size で検査する。vertex fetch の範囲外は `BIND_VERTEX_BUFFERS` の `size_bytes` で VF が抑えると読む（仕様に無い、ghci-review 第 13 版 N59(3)。推測）。違えば PAGE_FAULT で reset になる（U5）ので、p009 に範囲外の vertex の場面を置き、p014 の実機で確かめる。
 
 ### 11.5 Vulkan の command と GHCI の command
 
@@ -425,7 +446,7 @@ HW が決める物（§8.4）: texture の slot k は set 0 の k 番目（32 by
 | BeginRenderPass・NextSubpass・EndRenderPass | subpass ごとに `BEGIN_RENDER_PASS`（192 byte の記述、clear は `clear_color_table_va` で 128 bit）・`END_RENDER_PASS`。subpass の間は store → load。attachment の番地は下の「attachment の配置」。color 0 の resolve は記述の `resolve`（1398 行）、color 1〜7 の subpass resolve は render pass の後に `RESOLVE_IMAGE`（CAP_BLT = 0 は §11.6）。R13 | — |
 | Draw・DrawIndexed | `DRAW`・`DRAW_INDEXED`。triangle fan は §11.4 の後の注（R30） | — |
 | DrawIndirect・DrawIndexedIndirect | `DRAW_INDIRECT`（7 dw） | CAP_INDIRECT_DRAW = 0: 記録で断る（U8） |
-| Dispatch・DispatchIndirect | `DISPATCH`・`DISPATCH_INDIRECT` | — |
+| Dispatch・DispatchIndirect | `DISPATCH`・`DISPATCH_INDIRECT` | DispatchIndirect は CAP_INDIRECT_DRAW と NUM_SU の両方が要る（N52 の仮）。無ければ U8 で飛ばして log（Q19） |
 | PipelineBarrier・WaitEvents | `BARRIER`（stage と cache の flag へ写す）。host の SetEvent を待つ時は `WAIT_FENCE`（event の 64 bit の語の bus address、値 1） | — |
 | SetEvent・ResetEvent | `FENCE`（MEM_WRITE、IRQ 無し、event の語に 1・0）。event の memory は host で driver が持つ | — |
 | BeginQuery・EndQuery | `BEGIN_QUERY`・`END_QUERY`（AVAILABILITY、16 byte の slot、PRECISE は flag から） | — |
@@ -477,8 +498,8 @@ CAP_BLT = 0 の device（と BLT の有無に依らない CopyQueryPoolResults�
 | file | 中身 |
 | --- | --- |
 | `ghci-words-host-test.c` | `cmd.c`・`check.c`・`caps.c`・`range.c`・`jobs.c`・`capset.c` を直に呼ぶ。期待値は ghci.md の表から手で書く（encoder の表から作らない） |
-| `ghci-ref-host-test.c` | 独立の照合（R23）: 試験の時に `git -C ~/amaterrace-gpu show 1a1fa85:include/ghci_cmd.h`（と cf8be08 の `ghci_regs.h`）を `build/tmp/` の新しい directory に出し、host 試験だけがそれを include して、各 packet・PSO・descriptor・render pass の struct の `sizeof`・`offsetof` と、encoder が書いた byte の位置を比べる（driver には写さない。ghci.md と header が食い違う所（FAULT_INFO の配置など、第 13 版 N50・N60）は比べない一覧に入れる）。amaterrace-gpu が無い host では SKIP |
-| `ghci-model.c`・`.h` | GHCI 1.0 の device の model: register（§3.1）と EXTCAP の block（profile で組む）、host と local の memory、doorbell で ring を読む CP（header・dwords・端・未知の opcode → kind 1、flag の無い command → kind 2）、`CMD_FENCE`（64 bit、MEM_WRITE・IRQ）、受けた `CMD_*` の記録、session（ACTIVE の bitmap、OPEN・CLOSE・BIND）、VM（session ごとか共有の表、PROT で切替、衝突 → kind 10、閉じた session → kind 1。flat は SESSION_OPEN(≥ 1)・VM_MAP・VM_UNMAP → kind 2 で VA = 物理）、PROT = 1 の client の fault（FAULTED = 0、その session の draw は NOP、fence は書く）、CP_HEAP の使用量（上限を超えれば MMU_OOM）、reset の保つ・消す、HALT、fault・watchdog の注入（session か装置）、IRQ の level、Bus Master が切れた間の DMA の検出、p012 で DISP2 |
+| `ghci-ref-host-test.c` | 独立の照合（R23）: 試験の時に `git -C ~/amaterrace-gpu show cf8be08:include/ghci_cmd.h`（1a1fa85 と同じ内容）と `cf8be08:include/ghci_regs.h` を `build/tmp/` の新しい directory に出し、host 試験だけがそれを include して、各 packet・PSO・descriptor・render pass の struct の `sizeof`・`offsetof` と、encoder が書いた byte の位置を比べる（driver には写さない。ghci.md と header が食い違う所（FAULT_INFO の配置など、第 13 版 N50・N60）と、header に struct の無い packet（BIND_VERTEX_BUFFERS の可変長、DISPATCH_INDIRECT、DISP_SET、NOP）は比べない一覧に入れる）。amaterrace-gpu が読めない時は **FAIL**（p002・p015 の受け入れが SKIP で通らないように。Q24） |
+| `ghci-model.c`・`.h` | GHCI 1.0 の device の model: register（§3.1）と EXTCAP の block（profile で組む）、host と local の memory、doorbell で ring を読む CP（header・dwords・端・未知の opcode → kind 1、flag の無い command → kind 2）、`CMD_FENCE`（64 bit、MEM_WRITE・IRQ）、受けた `CMD_*` の記録、session（ACTIVE の bitmap、OPEN・CLOSE・BIND）、VM（session ごとか共有の表、PROT で切替、衝突 → kind 10、閉じた session → kind 1。flat は SESSION_OPEN(≥ 1)・VM_MAP・VM_UNMAP → kind 2 で VA = 物理）、PROT = 1 の client の fault（FAULTED = 0、その session の draw は NOP、fence は書く）。仕様に無い読みは model の切り替えにし、driver を悲観の側で試す: CLOSE が heap を返すか（N48）、PROT = 0 の CLOSE が共有の table の PTE を消すか（N49）、閉じた session への VM_UNMAP が fault か no-op か（N49）、VF の範囲外の読み（N59）、CP_HEAP の使用量（上限を超えれば MMU_OOM）、reset の保つ・消す、HALT、fault・watchdog の注入（session か装置）、IRQ の level、Bus Master が切れた間の DMA の検出、p012 で DISP2 |
 | `ghci-stubs.c` | kernel の service と GPU core の stub（1 thread、偽の時計、lock の順の記録、待ちの途中の注入、`drv_gpu_register` の検査を `gpu.c` と同じに）。今の `plan/ws288/tests/ghci-driver-host-test.c` の stub の部分を移す |
 | `ghci-driver-host-test.c`・`ghci-vk-host-test.c` | driver（と vk/・codec）+ model + stub の場面 |
 | `ghci-host-test.sh` | build（`-std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -fsanitize=address,undefined`、出力は `build/tmp/` の新しい directory）と実行、PASS/FAIL |
@@ -493,8 +514,8 @@ Phase ごとの場面（すべて PASS が受け入れ）:
 | --- | --- |
 | p002 | 全 encoder（境界: NOP 255 超、vertex buffer 16、LOAD_CONST 32、DISP_SET n）、PSO・descriptor・render pass の byte、ring の計画（端・満・1 slot）、fence64 の比較（回り込み）、EXTCAP の走査（正常・環・窓の外・32 個）、caps の decode（全 bit、VA_BITS・PA_BITS の符号化、鏡の食い違い）、CP_HEAP の勘定の関数 |
 | p003 | model の自己試験（手で組んだ列、reset の表、IRQ、VM の 3 つの段、session の fault と装置の fault の注入、MMU_OOM、Bus Master、stub の lock の順の検出） |
-| p004 | attach（VERSION 0x00010000・0x00010003 を受け 0x00020000・0 を拒む、MAGIC、SCRATCH、MEM_READY、liveness の失敗 → EIO、FAULTED・RUNNING で残った device、no-su は executor を出さず flat・prot は出す、flat の CP_HEAP は 16 KiB）、register の順、submit・fence・IRQ・poll、4 KiB の ring で 1000 回、ring より大きい submit、prot の client の fault（FAULTED = 0）でも reset され、犯人の session だけが sticky の error・他の session は再生されて続く、犯人の有る fault は嵐に数えない、装置の fault → reset → 古い ticket が ERROR → 次が動く、watchdog、hang、reset の失敗 → LOST、嵐 → LOST、detach、lock の順の違反 0 |
-| p005 | session の open（16 個目 EBUSY）、VM_MAP（VA・bus・flag が model の表に一致、chunk の持ち主が一つ）、PROT 0 と 1 の両方で VA が重ならない、flat は packet 無しで VA = bus・unmap は最後の fence の ticket、CP_HEAP の勘定を超える要求が ENOMEM で MMU_OOM が起きない、unmap → fence の後に物理が返る、置き損じ → 置き直し、import、close → RETIRED まで番号を再利用しない、reset の後の再生（SESSION_OPEN と VM_MAP、ring より大きい再生、犯人の session は再生しない）、flat は再生しない |
+| p004 | attach（VERSION 0x00010000・0x00010003 を受け 0x00020000・0 を拒む、MAGIC、SCRATCH、MEM_READY、liveness の失敗 → EIO、FAULTED・RUNNING で残った device、no-su は executor を出さず flat・prot は出す、flat の CP_HEAP は 16 KiB）、register の順、submit・fence・IRQ・poll、4 KiB の ring で 1000 回、ring より大きい submit、prot の client の fault（FAULTED = 0）でも reset され、犯人の session だけが DEAD・他の session は再生されて続く、PROT = 1 の犯人の後の fence が SUCCESS にならない（Q05）、犯人の有る fault は嵐に数えない、fence が書かれ IRQ が未処理のまま fault（完了した submit は成功で終わり犯人にならない、R06・Q04）、session 0 の packet の watchdog（犯人無し、Q04）、reset の前に積まれた古い fault の事象を捨てる（Q06）、長い正当な submit を hang にしない・liveness が 3 回通らず LOST（Q07）、ring の空きを待つ間の fault で待ちが即に抜ける（Q08）、門で lock を持ったまま待たない（Q02・Q03）、装置の fault → reset → 古い ticket が ERROR → 次が動く、watchdog、hang、reset の失敗 → LOST、嵐 → LOST、detach、lock の順の違反 0 |
+| p005 | session の open（16 個目 EBUSY）、VM_MAP（VA・bus・flag が model の表に一致、chunk の持ち主が一つ）、PROT 0 と 1 の両方で VA が重ならない、flat は packet 無しで VA = bus・unmap は最後の fence の ticket、CP_HEAP の勘定を超える要求が ENOMEM で MMU_OOM が起きない、unmap → fence の後に物理が返る、置き損じ → 置き直し、import、close → RETIRED まで番号を再利用しない、reset の後の再生（SESSION_OPEN と VM_MAP、ring より大きい再生、犯人の session は再生しない）、flat は再生しない、犯人（DEAD）の後の destroy・close と別の client の open で番号・VA が二重に使われない（Q01）、再生の途中の map・close・open が RETRY でやり直され重複の SESSION_OPEN・閉じた session への操作が出ない（Q02）、CP_HEAP の勘定が尽きた時の計画の reset（Q10） |
 | p006 | gsi1 の回帰（移した試験）、code に header が無い、資源の表、§11.4 の bank と set の読み方、§12.10.3 の I/O（属性の詰め方と 60 の上限、r60・r61 と `used_regs_vs`、`lda` の word 0〜3、flat の vertex 0、MRT 8） |
 | p007 | profile ごとの feature・limit・format・queue・memory の型、flag ごとの差、FMT の register を読む・無い時の表、vkCreateDevice の超過は FEATURE_NOT_PRESENT、memory・buffer・image、fence、capset、16 個目の device の失敗（U11）、flat・prot でも device が出る |
 | p008 | 代表の pipeline（三角形・blend・depth・stencil・MSAA・compute）の PSO の 128 byte、slot の表、HW の set の byte、flag の無い profile で断る pipeline |
@@ -532,7 +553,7 @@ Phase ごとの場面（すべて PASS が受け入れ）:
 | [27]・[28] TASK・MESH | `taskShader`・`meshShader` | V1x | — |
 | [29] BLT | 転送の command | DRV | §11.6 の shader で代える（U10「shader で代える」）。代えられない format は断って log |
 | [30] DISP | display（DISP2 が list に在る時） | DRV | display を出さない |
-| [31] MSAA | sample count 1・2・4（framebuffer・sampled image）、`sampleRateShading`、`standardSampleLocations` | V10 | 1 だけ、false |
+| [31] MSAA | sample count 1・4（framebuffer・sampled image。2 sample は標準の位置が仕様に無いので出さない、N58）、`standardSampleLocations` = true（1 と 4、2408〜2411 行）。`sampleRateShading` は false（InterpolateAt* と interpolation offset を compiler が作らない、v1。Q17） | V10 | 1 だけ、false |
 | FEATURE[3:0]・[7:4] | VA_BITS・PA_BITS | DRV | — |
 | FEATURE[9]・[10]・[12] | COARSE_SCAN・FAST_CLEAR・EARLY_Z | DRV（log） | — |
 | FEATURE[11] LOGIC_OP | `logicOp` | V10 | false、断る |
@@ -600,9 +621,9 @@ FMT の block が有れば、format ごとに `FMT_INDEX` を書き `FMT_OPTIMAL
 
 | 出典 | SPDX | 扱い |
 | --- | --- | --- |
-| amaterrace-gpu `docs/ghci.md`（cf8be08） | Zlib | 値を driver の header に。block ごとに `Values referenced: amaterrace-gpu docs/ghci.md (cf8be08) section N`（R22）。文章は写さない |
+| amaterrace-gpu `docs/ghci.md`（cf8be08） | Zlib | 値を driver の header に。block ごとに guardrail の形の複数行の comment「Values referenced: amaterrace-gpu cf8be08 docs/ghci.md (section N, 表・packet の名前)」（R22・Q23）。文章は写さない |
 | 同 `include/ghci_regs.h`・`ghci_cmd.h` | Zlib、著作者は同じ | 写さない（float の field、struct の重ね、ghci.md と食い違う legacy の定義）。照合にだけ使う |
-| 同 `include/gsi1_isa.h` | Zlib | 今の `compiler/gsi1_isa.h` と同じ。header・interface の定義は p006 で使わなくなる |
+| 同 `include/gsi1_isa.h` | Zlib | bea1ef9 と今の `compiler/gsi1_isa.h` は 78 行違う（§0）。p006 で値を bea1ef9 に直し、header・interface の定義は使わなくなる（Q22） |
 | 同 `tools/gsi1*.py` | Zlib | 試験の参照として cf8be08 の物を写す（U2。tools は 89529de から変わっていない） |
 | Vulkan の値（VkFormat・VkBlendFactor など） | 仕様の事実 | `Values referenced:` |
 
@@ -695,7 +716,7 @@ WS の受け入れ（ws.md）との対応: 1.1 の code が無い = p004・p007�
 
 ## 22. 版 3 の G・V の扱い
 
-- **G01〜G49**（版 3 の ghci.md の疑問）: G01 はユーザーの回答（単一の 1.0）。他は GHCI の担当とのやり取り（H・J・K・L・M・N、ghci-review.md 第 9 版で全部解決）を経て 89529de の本文で決まった。N37〜N46 は cf8be08 までに解決し、残る欠けは無い（§19）。版 3 の G41（`CMD_QUERY_CAPS` の block）は 89529de の register（0x080・0x084・EXTCAP）で不要になった。
+- **G01〜G49**（版 3 の ghci.md の疑問）: G01 はユーザーの回答（単一の 1.0）。他は GHCI の担当とのやり取り（H・J・K・L・M・N、ghci-review.md 第 9 版で全部解決）を経て 89529de の本文で決まった。N37〜N46 は cf8be08 までに解決した。新しい N47〜N60 は §19（Q25）。版 3 の G41（`CMD_QUERY_CAPS` の block）は 89529de の register（0x080・0x084・EXTCAP）で不要になった。
 - **design-review-v3 の V01〜V25**:
 
 | V | 89529de での扱い |
@@ -719,17 +740,18 @@ WS の受け入れ（ws.md）との対応: 1.1 の code が無い = p004・p007�
 | V20 | 反映済み（版 3） |
 | V21〜V25（版 2 の残り・小さな抜け） | 全面の書き直しで消えた（V25 の vendorID は PCI の ID、§15.2） |
 
-## 23. 自己点検（版 4）
+## 23. 自己点検（版 4.3）
 
 1. **§12.10.3 が後で変わったら**: graphics の I/O は `gsi1-abi.h` の一か所と model の期待値だけを直す。compute・資源・PSO・ring は影響を受けない。
 2. **CP_HEAP の 8.75 MiB が取れない**: 半分ずつ減らし、勘定で `ENOMEM` を返す（MMU_OOM を起こさない）。VF2 でも 4 GiB 未満の連続の 8 MiB は通常取れる。
 3. **chunk の 2 MiB の粒度で VA が足りない**: 4 GiB / 2 MiB = 2048 chunk。session の中は sub-allocate するので `maxMemoryAllocationCount` 4096 には chunk の数でなく VA の大きさが効く。
 4. **CAP_PROT = 0 と flat の device で client 間の隔離が無い**: 仕様どおり（1852 行）。U9 でユーザーが「どちらも出す」と決めた。attach の log に出す。
+5. **実機の firmware が仕様に遅れている**: §0・§16.2。driver は仕様だけに合わせ、実機の差は p014 で記録して切り分ける。
+6. **flag ごとの差の試験が表と同じ誤りを持つ**: 期待の差は試験の側に手で書く（§14）。
 7. **U5 で client の fault が装置の reset になる**: CAP_PROT = 1 の device でも、1 つの client の fault で全 session の未完の仕事が DEVICE_LOST になる。犯人は sticky で止まるが、session を開き直して fault を繰り返す client は他の client の仕事を何度でも失わせ得る（嵐の LOST には数えないので装置は止まらない）。WS292 で session だけの回収に変える。
 8. **flat の VA = bus**: executor の VA の計算・descriptor・PSO が 64 bit の番地を扱うこと（flat の host は 4 GiB 未満なので実際は 32 bit に入る）。flat の client の shader は物理を全部触れる（U9）。
 9. **転送の shader の代替（U10）は client の session で動き client の bind を壊す**: 転送の後に bind を置き直す（§11.6）。置き直しの抜けは p010 の試験（転送の後の draw の packet の列）で見る。
-5. **実機の firmware が仕様に遅れている**: §0・§16.2。driver は仕様だけに合わせ、実機の差は p014 で記録して切り分ける。
-6. **flag ごとの差の試験が表と同じ誤りを持つ**: 期待の差は試験の側に手で書く（§14）。
+10. **CP_HEAP の悲観の勘定で計画の reset が起きる**: PROT の device で vkCreateDevice と破棄を繰り返すと、勘定が尽きた所で未完の仕事の無い時に reset と再生をする（§5.5、Q10）。仕事は失わないが、表示の数え直しと再生の時間がかかる。N48 の答えで CLOSE が table を返すと分かれば、勘定を返す形に直す。
 
 ## 24. design-reviewer の指摘と対応（版 4.1）
 
@@ -773,3 +795,37 @@ design-reviewer（Opus 5.5、2026-10-28、2ee693d0f を対象）: H 6・M 18・L
 | R34 | L | REPLAYING の遷移 | 反映 §6.1 |
 
 p009（36 LW）の分割の勧めは、p009 の着手の時に phase.md で中の区切り（描画と転送・query）を決める（番号は増やさない）。
+
+### 再レビュー（版 4.2 → 4.3）
+
+design-reviewer（Opus 5.5、2 回目、f5d542997 を対象）: H 4・M 12・L 9。判定は「p002・p003 は条件つきで approve 可、p004・p005 は H の Q01〜Q04 と M の Q05〜Q10 を文で直せば approve 可（仕様の答えを待つ物は無い）」。
+
+| Q | 重さ | 指摘 | 対応 |
+| --- | --- | --- | --- |
+| Q01 | H | reset で RETIRED にした番号・chunk が executor の session の生きたまま返る | 反映: DEAD の状態（§5.4 の 6、§5.5、§6.2、§7） |
+| Q02 | H | 門と再生と open・close の規則が二つ | 反映: 門の前に記録しない、1 区間で状態と packet、RETRY でやり直し（§5.2・§5.5） |
+| Q03 | H | display.lock・門・reset の deadlock | 反映: 門で全 lock を離す、回復は device → display → cp（§5.2・§5.4 の表・§8） |
+| Q04 | H | 犯人の判定（s = 0、IRQ 未処理の fence） | 反映: s = 0 は装置の fault、flat は handler が読んだ fence の語で（§5.4 の 1） |
+| Q05 | M | PROT = 1 の犯人の fence が成功で完了 | 反映: handler が FAULT を先に扱い `faulted` の bitmap（§5.3） |
+| Q06 | M | 古い fault の事象の二重処理 | 反映: `recovery_generation` を付けて古い物を捨てる（§5.3・§5.4 の 1） |
+| Q07 | M | hang の誤判定、LOST に着かない | 反映: hang は fence と RPTR の両方、reset の後の liveness、3 回で LOST、嵐は 60 s（§5.4） |
+| Q08 | M | 待ちが回復を遅らせる | 反映: `GHCI_RING_WAIT_MS`、`recovering` で即に抜ける（§5.2・§8） |
+| Q09 | M | 段ごとの lock | 反映: §5.4 の表 |
+| Q10 | M | CP_HEAP の仮の読みが ghci-review と逆 | 反映: 悲観の読み、計画の reset（§5.5、§23 の 10） |
+| Q11 | M | 0x07〜0x0E は CAP_MRT_BLEND の時だけ | 反映 §11.4 |
+| Q12 | M | layers > 1 の CLEAR | 反映 §11.4（layer ごとの clear の render pass） |
+| Q13 | M | WaitEvents の穴 | 反映 §11.4（event の語、後の submit も保留、ERROR で完了） |
+| Q14 | M | 断る時の見え方 | 反映 §11.4（create は VkResult、記録は飛ばして log） |
+| Q15 | M | slot の共有と per-stage の上限 | 反映 §11.4・U8 の一覧 |
+| Q16 | M | robustBufferAccess と VF の範囲外 | 反映 §11.4（推測と明記、p009・p014 で確かめる） |
+| Q17 | L | MSAA の sample の位置と sampleRateShading | 反映 §15.2（1・4 sample、sampleRateShading false） |
+| Q18 | L | fan の頂点の順 | 反映 §11.4 |
+| Q19 | L | DispatchIndirect の guard | 反映 §11.5 |
+| Q20 | L | attach の reset の待ち | 反映 §5.1 の 3 |
+| Q21 | L | 番号の単位、import の時期、flat の seq | 反映 §5.5 |
+| Q22 | L | §17 の gsi1_isa.h | 反映 §17 |
+| Q23 | L | 行の版、出典の形 | 反映 §0・§4.4・§17 |
+| Q24 | L | ref 試験の SKIP、版の名、比べない packet | 反映 §14 |
+| Q25 | L | §22 の矛盾、§23 の番号、R33 | 反映 §22・§23。R33 は Phase の確定の commit で |
+
+新しく見つけた仕様の不備（第 13 版の後、まだ ghci-review.md に無い）: **N61（M）** `CMD_DISP_SET` の大きさ。§7.2 の表と本文は「2 + 2N dword」だが、本文の配置（dword 1 + 2k に offset、2 + 2k に value）は header と N 組で 1 + 2N dword になる（1142〜1147 行）。仮の扱い: 本文の配置どおり 1 + 2N（p012 で使う。p002 の encoder は両方の読みを試験で固定せず、仮の 1 + 2N で書き、答えで直す）。次の ghci-review（第 14 版）に載せる。
