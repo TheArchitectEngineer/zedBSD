@@ -55,7 +55,7 @@
   → 入れ直しを Q1 に依頼。次は診断 kernel（commit しない、build/ws291/measure/p006/diag1.patch、vmunix-diag1）の boot 行 `amdrdna.vk.nggx`:
   1 = culling の flag を 0（LDS・barrier・late prim export の形だけ）、2 = 全部落とす、4 = 小さい三角形を切る、8 = 面の cull を切る。まず 1 で mview を見て、
   形が原因か null の判定が原因かを分ける。
-- 2026-10-27 14:40 診断（vmunix-diag1、Q1 の入れ直しの後）: `nggx=1`（flag 0: LDS・barrier・late prim export の形だけ、判定は飛ばす）で mview 1 体の shot は
+- 2026-10-27 14:20 診断（vmunix-diag1、Q1 の入れ直しの後）: `nggx=1`（flag 0: LDS・barrier・late prim export の形だけ、判定は飛ばす）で mview 1 体の shot は
   Linux と pixel 差 0（diag1-shot-1）、6500 体 over15 8 pixel（diag1-shot-6500）、scene-6500 fence 41.27 ms（passthrough 41.37 ms と同じ）、止まらない。
   → 形は正しく、止まるのは判定の側。`nggx=0`（判定あり）に戻し nggshape を危険の少ない順に流すと、最初の
   `--triangles=50000 --indexed --cull --allback`（多くの subgroup の primitive が全部 null）で止まった（2 三角形 1 subgroup の全部 null は通る）。
