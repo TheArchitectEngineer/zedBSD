@@ -222,6 +222,57 @@ ghci_memory_release_quarantine(
 }
 
 /*
+ * Adds one owner to an allocation (a resource, an export or a mapping).
+ * The caller holds the device's lock.
+ */
+void
+ghci_memory_hold(
+	struct ghci_allocation *allocation)
+{
+	/* One more owner. */
+	allocation->holds++;
+}
+
+/*
+ * Lets one owner of an allocation go; the last one gives it back.  On a
+ * lost device an allocation the GPU was ever given joins the quarantine
+ * instead, as the GPU may still reach it.  The caller holds the device's
+ * lock.
+ */
+void
+ghci_memory_unhold(
+	struct ghci_device *device,
+	struct ghci_allocation *allocation)
+{
+	enum ghci_device_state state;
+	unsigned long irq;
+	int error;
+
+	/* Owners remain. */
+	allocation->holds--;
+	if (allocation->holds != 0U)
+		return;
+
+	/* The device's life, as the recovery last set it. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	state = device->state;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Memory a lost GPU may still reach waits for bus mastering to go. */
+	if (state == GHCI_STATE_LOST && allocation->reached) {
+		ghci_memory_quarantine(device, allocation);
+		return;
+	}
+
+	/* Succeeded: the run goes back, or stays in the quarantine when its view cannot go. */
+	error = ghci_memory_free(device, allocation);
+	if (error != 0)
+		ghci_memory_quarantine(device, allocation);
+}
+
+/*
  * Reports the end of the host addresses the driver gives the GPU: 4 GiB,
  * or HOST_LIMIT when the GPU reports a lower one.
  */

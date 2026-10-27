@@ -165,7 +165,29 @@ enum ghci_memory_kind {
 	GHCI_MEMORY_LOCAL
 };
 
+/*
+ * The life of a GHCI session: open, the culprit of a fault until the
+ * reset, waiting to be opened again after a reset, dead after a reset
+ * (until its owner closes it), closing until its last fence passes, and
+ * retired (its number free again).
+ */
+enum ghci_vm_state {
+	GHCI_VM_OPEN = 1,
+	GHCI_VM_FAULTED,
+	GHCI_VM_REPLAY_WAIT,
+	GHCI_VM_DEAD,
+	GHCI_VM_CLOSING,
+	GHCI_VM_RETIRED
+};
+
+/* The life of a mapping: in the page table, or its CMD_VM_UNMAP placed and its fence not yet passed. */
+enum ghci_mapping_state {
+	GHCI_MAPPING_LIVE = 1,
+	GHCI_MAPPING_UNMAPPING
+};
+
 struct ghci_device;
+struct ghci_arena;
 
 /*
  * One run of physically contiguous memory the GPU reaches.
@@ -175,7 +197,10 @@ struct ghci_device;
  * the processor's kernel view (the direct map, or an uncached mapping on
  * a bus that does not snoop the caches) and run the RAM it is.  The
  * allocation lives until its owner gives it back after the GPU is done
- * with it; on a lost device it waits in the quarantine instead.
+ * with it; on a lost device it waits in the quarantine instead.  holds
+ * counts what keeps a shared allocation (a resource, an export, a
+ * mapping until its unmap's fence passed), and reached says the GPU was
+ * ever given its address (lock).
  */
 struct ghci_allocation {
 	struct ghci_allocation *next;
@@ -184,6 +209,8 @@ struct ghci_allocation {
 	uint64_t bytes;
 	uint8_t *view;
 	struct kern_pmem run;
+	unsigned holds;
+	int reached;
 };
 
 /*
@@ -211,15 +238,17 @@ struct ghci_reset_record {
 
 /*
  * One submission whose fence has not been seen passed: the dwords of the
- * ring it took, its fence's sequence and the session it ran in (0 for the
- * driver).  The recovery reads the log to find which submission a fault
- * of a GPU without a page-table walker belongs to.
+ * ring it took, its fence's sequence and the session whose work it was
+ * (NULL for the driver's own, which includes every VM operation).  The
+ * recovery reads the log to find which submission a fault of a GPU
+ * without a page-table walker belongs to, and which sessions lost work
+ * to a reset.
  */
 struct ghci_submit_entry {
 	uint32_t start;
 	uint32_t end;
 	uint64_t seq;
-	uint32_t session;
+	struct ghci_vm *owner;
 };
 
 /*
@@ -266,12 +295,81 @@ struct ghci_bus_ops {
 };
 
 /*
+ * One mapping of an allocation into a session's GPU addresses.
+ *
+ * va is the GPU address (the bus address on a GPU without a page-table
+ * walker), arena the run of chunks it lies in (NULL without a walker),
+ * flags its GHCI_VM_FLAG_* and replayed the recovery generation it was
+ * last placed in.  An UNMAPPING mapping's ticket is the fence after its
+ * CMD_VM_UNMAP; the mapping holds its allocation until that passes
+ * (lock).
+ */
+struct ghci_mapping {
+	struct ghci_mapping *next;
+	struct ghci_vm *vm;
+	struct ghci_allocation *allocation;
+	struct ghci_arena *arena;
+	uint64_t va;
+	uint64_t bytes;
+	uint32_t flags;
+	enum ghci_mapping_state state;
+	struct ghci_ticket ticket;
+	uint64_t replayed;
+};
+
+/*
+ * One GHCI session (a number 1 to 15, or session 0 for the driver) and
+ * the GPU addresses it has.
+ *
+ * owner is the GPU core's session to report a loss to.  slot is the
+ * number it holds among the fifteen; session is the number its packets
+ * name (0 on a GPU without a page-table walker, where every session runs
+ * as session 0).  state changes under the device's lock and cp_lock
+ * together, so either one reads it.  The arenas are the runs of 2 MiB
+ * chunks it owns, l0_marks the level 0 tables counted in its own page
+ * table (with PROT), counted whether its tables are in CP_HEAP's count,
+ * and faulted with fault_generation says that every ticket of that reset
+ * generation or older failed: it was the culprit of a fault.
+ */
+struct ghci_vm {
+	void *owner;
+	uint32_t slot;
+	uint32_t session;
+	int flat;
+	enum ghci_vm_state state;
+	int counted;
+	int lost_work;
+	int faulted;
+	int reported;
+	uint64_t fault_generation;
+	struct ghci_ticket open_ticket;
+	struct ghci_ticket close_ticket;
+	struct ghci_mapping *mappings;
+	struct ghci_arena *arenas;
+	uint8_t l0_marks[GHCI_CHUNKS / 8U];
+};
+
+/*
+ * One storage resource or blob of a session: the allocation it shows,
+ * its renderer identity and its blob flags.  It holds the allocation
+ * until it is destroyed (lock).
+ */
+struct ghci_resource {
+	struct ghci_resource *next;
+	struct ghci_allocation *allocation;
+	uint32_t resource_id;
+	uint32_t flags;
+	int blob;
+};
+
+/*
  * One open of the device by the GPU core.  The device's lock protects
- * the list it is on.
+ * the list it is on and its resources.
  */
 struct ghci_session {
 	struct ghci_device *device;
 	struct ghci_session *next;
+	struct ghci_resource *resources;
 };
 
 /*
@@ -341,6 +439,22 @@ struct ghci_device {
 	struct ghci_session *sessions;
 	unsigned session_count;
 	int withdrawing;
+	uint32_t resource_ids;
+
+	/*
+	 * The GHCI sessions and their GPU addresses (lock; a session's state
+	 * also under cp_lock): session 0's record, the record of each number
+	 * in use (vm[0] is vm0), the owner of each 2 MiB chunk of the 32-bit
+	 * GPU addresses, what CP_HEAP may hold and holds by the driver's
+	 * bound, and the level 0 tables counted in the page table every
+	 * session shares (without PROT; they stay until a reset).
+	 */
+	struct ghci_vm vm0;
+	struct ghci_vm *vm[GHCI_SESSIONS];
+	struct ghci_vm *chunk_owner[GHCI_CHUNKS];
+	uint64_t heap_budget;
+	uint64_t heap_used;
+	uint8_t l0_marks[GHCI_CHUNKS / 8U];
 
 	/*
 	 * The device's own memory: the ring, the fence page and CP_HEAP,
@@ -362,6 +476,16 @@ struct ghci_device {
 	struct ghci_submit_entry submit_log[GHCI_SUBMIT_LOG];
 	unsigned submit_first;
 	unsigned submit_count;
+
+	/*
+	 * The recovery placing packets of its own (cp_lock): while
+	 * recovery_placing is set, a wait for the ring's room does not end
+	 * for the recovery that is running, but for a new fault (the fault
+	 * count moved from recovery_faults) or at recovery_deadline.
+	 */
+	int recovery_placing;
+	unsigned recovery_faults;
+	uint64_t recovery_deadline;
 
 	/*
 	 * What the interrupt, the gate and the service share (irq_lock).
@@ -431,8 +555,8 @@ enum ghci_gate ghci_cp_enter(struct ghci_device *device, unsigned held, int wait
 void ghci_cp_leave(struct ghci_device *device);
 int ghci_cp_place(struct ghci_device *device, const uint32_t *packets, uint32_t dwords);
 void ghci_cp_doorbell(struct ghci_device *device);
-int ghci_cp_place_fence(struct ghci_device *device, uint32_t session, uint32_t start, struct ghci_ticket *ticket);
-int ghci_cp_submit(struct ghci_device *device, uint32_t session, const uint32_t *packets, uint32_t dwords, struct ghci_ticket *ticket);
+int ghci_cp_place_fence(struct ghci_device *device, struct ghci_vm *owner, uint32_t start, struct ghci_ticket *ticket);
+int ghci_cp_submit(struct ghci_device *device, struct ghci_vm *vm, const uint32_t *packets, uint32_t dwords, struct ghci_ticket *ticket);
 int ghci_cp_wait(struct ghci_device *device, const struct ghci_ticket *ticket, unsigned milliseconds);
 enum ghci_ticket_state ghci_cp_ticket(struct ghci_device *device, const struct ghci_ticket *ticket);
 int ghci_cp_await_fence(struct ghci_device *device, uint64_t seq, unsigned milliseconds);
@@ -456,5 +580,27 @@ int ghci_memory_free(struct ghci_device *device, struct ghci_allocation *allocat
 void ghci_memory_quarantine(struct ghci_device *device, struct ghci_allocation *allocation);
 void ghci_memory_release_quarantine(struct ghci_device *device);
 uint64_t ghci_memory_limit(const struct ghci_device *device);
+void ghci_memory_hold(struct ghci_allocation *allocation);
+void ghci_memory_unhold(struct ghci_device *device, struct ghci_allocation *allocation);
+
+int ghci_resource_add(struct ghci_device *device, struct ghci_session *session, struct ghci_allocation *allocation, int blob, uint32_t flags, struct ghci_resource **result);
+
+void ghci_vm_init(struct ghci_device *device);
+void ghci_vm_fini(struct ghci_device *device);
+int ghci_vm_open(struct ghci_device *device, void *owner, struct ghci_vm **result);
+void ghci_vm_close(struct ghci_device *device, struct ghci_vm *vm);
+int ghci_vm_map(struct ghci_device *device, struct ghci_vm *vm, struct ghci_allocation *allocation, uint32_t flags, struct ghci_mapping **result);
+void ghci_vm_unmap(struct ghci_device *device, struct ghci_mapping *mapping);
+int ghci_vm_reclaim(struct ghci_device *device);
+enum ghci_ticket_state ghci_vm_ticket(struct ghci_device *device, struct ghci_vm *vm, const struct ghci_ticket *ticket);
+int ghci_vm_find_culprits(struct ghci_device *device, uint32_t fault_info, uint32_t active, int halted, uint64_t fence);
+void ghci_vm_mark_lost(struct ghci_device *device, uint64_t fence);
+void ghci_vm_after_reset(struct ghci_device *device);
+int ghci_vm_replay(struct ghci_device *device);
+uint32_t ghci_vm_active_mask(struct ghci_device *device);
+void ghci_vm_settle(struct ghci_device *device);
+unsigned ghci_vm_take_dead(struct ghci_device *device, void **owners, unsigned capacity);
+
+extern const struct drv_gpu_share_ops ghci_share_ops;
 
 #endif

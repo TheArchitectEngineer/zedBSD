@@ -60,6 +60,7 @@ fi
 if grep -q '^stub_gpu_ops_validate($' "$validate"; then
 	cc $flags -I"$tests" -o "$out/ghci-driver-host-test" "$tests/ghci-driver-host-test.c" "$tests/ghci-model.c" \
 		"$tests/ghci-stubs.c" "$validate" "$ghci/ghci.c" "$ghci/cp.c" "$ghci/recover.c" "$ghci/memory.c" \
+		"$ghci/vm.c" "$ghci/range.c" "$ghci/share.c" \
 		"$ghci/check.c" "$ghci/caps.c" "$ghci/cmd.c"
 	timeout 300 "$out/ghci-driver-host-test" || status=1
 fi

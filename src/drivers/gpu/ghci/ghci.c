@@ -13,6 +13,12 @@
  * the device with the GPU core, which publishes /dev/gpuN named
  * "ghci:<PCI vendor>:<PCI device>".  The detach undoes it in the reverse
  * order once no session is open.
+ *
+ * Resources.  A storage resource or a blob is a run of host memory the
+ * processor maps and copies to and from; it reaches the GPU only through
+ * a session's mapping, which holds the memory until its unmap has
+ * passed.  Local memory is not offered yet: every resource is host
+ * memory.
  */
 
 #include <stddef.h>
@@ -27,8 +33,16 @@
 #include <kern/sched.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
+#include <uapi/gpu-allocation.h>
 
 #include "ghci.h"
+
+/* The resources one session holds at most, and the largest. */
+#define RESOURCES_MAX			4096U
+#define RESOURCE_BYTES_MAX		(256ULL << 20)
+
+/* The blob flags the device takes: mapping and sharing within the device. */
+#define BLOB_FLAGS			(GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE)
 
 static int identify(struct ghci_device *device);
 static int reset_device(struct ghci_device *device);
@@ -41,6 +55,14 @@ static void restart_service(struct ghci_device *device);
 static int gpu_open(void *private_data, void **result);
 static void gpu_close(void *private_data, void *opaque);
 static int gpu_get_info(void *private_data, void *opaque, struct gpu_info *info);
+static int gpu_resource_create(void *private_data, void *opaque, const struct gpu_resource_create *request, void **result);
+static void gpu_resource_destroy(void *private_data, void *opaque, void *object);
+static int gpu_blob_create(void *private_data, void *opaque, const struct gpu_blob_create *request, void **result, uint32_t *resource_id);
+static int gpu_resource_read(void *private_data, void *opaque, void *object, uint64_t offset, void *buffer, uint32_t bytes);
+static int gpu_resource_write(void *private_data, void *opaque, void *object, uint64_t offset, const void *buffer, uint32_t bytes);
+static int gpu_resource_map(void *private_data, void *opaque, void *object, struct drv_gpu_mapping *mapping);
+static int resource_new(struct ghci_device *device, struct ghci_session *session, uint64_t bytes, int blob, uint32_t flags, struct ghci_resource **result);
+static int resource_range(const struct ghci_resource *resource, uint64_t offset, uint32_t bytes);
 
 /*
  * Starts a GHCI device whose bus fields the glue has filled.
@@ -299,6 +321,43 @@ ghci_fence_write(
 	kern_io_write_barrier();
 }
 
+/*
+ * Adds a resource of a session that shows an allocation and holds it,
+ * with a new resource id.  The caller holds the device's lock.
+ */
+int
+ghci_resource_add(
+	struct ghci_device *device,
+	struct ghci_session *session,
+	struct ghci_allocation *allocation,
+	int blob,
+	uint32_t flags,
+	struct ghci_resource **result)
+{
+	struct ghci_resource *resource;
+
+	/* The record. */
+	resource = kern_calloc(1U, sizeof(*resource));
+	if (resource == NULL)
+		return ENOMEM;
+
+	/* A new nonzero id, the allocation it holds, and the session's list. */
+	device->resource_ids++;
+	if (device->resource_ids == 0U)
+		device->resource_ids = 1U;
+	resource->resource_id = device->resource_ids;
+	resource->allocation = allocation;
+	resource->blob = blob;
+	resource->flags = flags;
+	ghci_memory_hold(allocation);
+	resource->next = session->resources;
+	session->resources = resource;
+
+	/* Succeeded: the resource is the session's. */
+	*result = resource;
+	return 0;
+}
+
 /* Sets up the locks and wait queues of the device. */
 static void
 init_locks(
@@ -535,17 +594,26 @@ register_device(
 	int error;
 
 	/*
-	 * The table every device has: the sessions and the information.
-	 * No optional capability is offered until its callbacks are all
-	 * there.
+	 * The table every device has: the sessions, the information, the
+	 * resources and blobs with their copies and mappings, and their
+	 * sharing within the device.  No other capability is offered until
+	 * its callbacks are all there.
 	 */
 	kern_memset(&device->ops, 0, sizeof(device->ops));
 	device->ops.version = DRV_GPU_INTERFACE_VERSION;
 	device->ops.size = sizeof(device->ops);
-	device->ops.capabilities = 0U;
+	device->ops.capabilities = GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING |
+	    GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE;
 	device->ops.open = gpu_open;
 	device->ops.close = gpu_close;
 	device->ops.get_info = gpu_get_info;
+	device->ops.resource_create = gpu_resource_create;
+	device->ops.resource_destroy = gpu_resource_destroy;
+	device->ops.blob_create = gpu_blob_create;
+	device->ops.resource_read = gpu_resource_read;
+	device->ops.resource_write = gpu_resource_write;
+	device->ops.resource_map = gpu_resource_map;
+	device->ops.share = &ghci_share_ops;
 
 	/* Publishes the node. */
 	error = drv_gpu_register(&device->ops, device, &device->gpu);
@@ -611,7 +679,10 @@ gpu_open(
 	return 0;
 }
 
-/* Closes a session; it holds nothing of the GPU yet, so nothing waits. */
+/*
+ * Closes a session; nothing waits.  The core destroyed its resources
+ * first; any left are let go here.
+ */
 static void
 gpu_close(
 	void *private_data,
@@ -620,13 +691,21 @@ gpu_close(
 	struct ghci_device *device;
 	struct ghci_session *session;
 	struct ghci_session **position;
+	struct ghci_resource *resource;
 
 	/* The device and the session. */
 	device = private_data;
 	session = opaque;
 
-	/* The session leaves the device's list. */
+	/* The session leaves the device's list, and its resources let their memory go. */
 	mutex_lock(&device->lock);
+
+	while (session->resources != NULL) {
+		resource = session->resources;
+		session->resources = resource->next;
+		ghci_memory_unhold(device, resource->allocation);
+		kern_free(resource);
+	}
 
 	position = &device->sessions;
 	while (*position != NULL && *position != session)
@@ -656,11 +735,247 @@ gpu_get_info(
 	/* The capability snapshot of the device. */
 	device = private_data;
 	info->capabilities = device->ops.capabilities;
-	info->max_resources = 0U;
-	info->max_resource_bytes = 0U;
+	info->max_resources = RESOURCES_MAX;
+	info->max_resource_bytes = RESOURCE_BYTES_MAX;
 	kern_memset(info->driver_name, 0, sizeof(info->driver_name));
 	kern_memcpy(info->driver_name, device->name, sizeof(device->name) - 1U);
 
 	/* Succeeded: the snapshot is filled. */
+	return 0;
+}
+
+/* Makes a storage resource: cleared host memory of the session's. */
+static int
+gpu_resource_create(
+	void *private_data,
+	void *opaque,
+	const struct gpu_resource_create *request,
+	void **result)
+{
+	struct ghci_resource *resource;
+	int error;
+
+	/* The memory and its record. */
+	error = resource_new(private_data, opaque, request->bytes, 0, 0U, &resource);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the resource is the session's. */
+	*result = resource;
+	return 0;
+}
+
+/* Destroys a resource: it lets its memory go, which goes back once nothing else holds it. */
+static void
+gpu_resource_destroy(
+	void *private_data,
+	void *opaque,
+	void *object)
+{
+	struct ghci_device *device;
+	struct ghci_session *session;
+	struct ghci_resource *resource;
+	struct ghci_resource **position;
+
+	/* The device, the session and the resource. */
+	device = private_data;
+	session = opaque;
+	resource = object;
+
+	/* The resource leaves its session and lets its memory go. */
+	mutex_lock(&device->lock);
+
+	position = &session->resources;
+	while (*position != NULL && *position != resource)
+		position = &(*position)->next;
+	if (*position == resource)
+		*position = resource->next;
+	ghci_memory_unhold(device, resource->allocation);
+
+	mutex_unlock(&device->lock);
+
+	/* The record goes. */
+	kern_free(resource);
+}
+
+/*
+ * Makes a blob: cleared host memory that the processor maps when the
+ * blob is mappable and that the device's sessions share when it is
+ * shareable.  Its resource id names it to the session's renderer.
+ */
+static int
+gpu_blob_create(
+	void *private_data,
+	void *opaque,
+	const struct gpu_blob_create *request,
+	void **result,
+	uint32_t *resource_id)
+{
+	struct ghci_resource *resource;
+	int error;
+
+	/* Mapping and sharing within the device; another device cannot import this memory. */
+	if ((request->flags & ~BLOB_FLAGS) != 0U)
+		return ENOTSUP;
+
+	/* A blob of a renderer's memory object needs the renderer, which this device does not run yet. */
+	if (request->blob_id != 0U)
+		return ENOTSUP;
+
+	/* The memory and its record. */
+	error = resource_new(private_data, opaque, request->bytes, 1, request->flags, &resource);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the blob is the session's. */
+	*result = resource;
+	*resource_id = resource->resource_id;
+	return 0;
+}
+
+/* Copies bytes out of a resource. */
+static int
+gpu_resource_read(
+	void *private_data,
+	void *opaque,
+	void *object,
+	uint64_t offset,
+	void *buffer,
+	uint32_t bytes)
+{
+	struct ghci_resource *resource;
+	int error;
+
+	(void)private_data;
+	(void)opaque;
+
+	/* A range inside the resource. */
+	resource = object;
+	error = resource_range(resource, offset, bytes);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the bytes are copied from the processor's view. */
+	kern_memcpy(buffer, resource->allocation->view + offset, bytes);
+	return 0;
+}
+
+/* Copies bytes into a resource. */
+static int
+gpu_resource_write(
+	void *private_data,
+	void *opaque,
+	void *object,
+	uint64_t offset,
+	const void *buffer,
+	uint32_t bytes)
+{
+	struct ghci_resource *resource;
+	int error;
+
+	(void)private_data;
+	(void)opaque;
+
+	/* A range inside the resource. */
+	resource = object;
+	error = resource_range(resource, offset, bytes);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the bytes are copied into the processor's view. */
+	kern_memcpy(resource->allocation->view + offset, buffer, bytes);
+	return 0;
+}
+
+/*
+ * Gives the processor's view of a resource for a user mapping: RAM,
+ * uncached where the GPU does not snoop the processor's caches.  A blob
+ * maps only when it was made mappable.
+ */
+static int
+gpu_resource_map(
+	void *private_data,
+	void *opaque,
+	void *object,
+	struct drv_gpu_mapping *mapping)
+{
+	struct ghci_device *device;
+	struct ghci_resource *resource;
+
+	(void)opaque;
+
+	/* A blob not made mappable has no view to give. */
+	device = private_data;
+	resource = object;
+	if (resource->blob && (resource->flags & GPU_BLOB_MAPPABLE) == 0U)
+		return EINVAL;
+
+	/* Succeeded: the run and how the processor sees it. */
+	mapping->physical = resource->allocation->bus;
+	mapping->address = resource->allocation->view;
+	mapping->bytes = resource->allocation->bytes;
+	mapping->attributes = 0U;
+	if (device->host_uncached)
+		mapping->attributes = DRV_GPU_MAPPING_UNCACHED_RAM;
+	return 0;
+}
+
+/* Makes the cleared host memory of a new resource of a session. */
+static int
+resource_new(
+	struct ghci_device *device,
+	struct ghci_session *session,
+	uint64_t bytes,
+	int blob,
+	uint32_t flags,
+	struct ghci_resource **result)
+{
+	struct ghci_allocation *allocation;
+	int error;
+
+	/* An empty or too large resource is refused. */
+	if (bytes == 0U || bytes > RESOURCE_BYTES_MAX)
+		return EINVAL;
+
+	/* The memory, below the GPU's limit. */
+	error = ghci_memory_alloc(device, bytes, 0U, &allocation);
+	if (error != 0)
+		return error;
+
+	/* Its record, which holds it. */
+	mutex_lock(&device->lock);
+
+	error = ghci_resource_add(device, session, allocation, blob, flags, result);
+
+	mutex_unlock(&device->lock);
+
+	/* A record that could not be made gives the memory back. */
+	if (error != 0) {
+		mutex_lock(&device->lock);
+
+		error = ghci_memory_free(device, allocation);
+		if (error != 0)
+			ghci_memory_quarantine(device, allocation);
+
+		mutex_unlock(&device->lock);
+		return ENOMEM;
+	}
+
+	/* Succeeded: the resource is the session's. */
+	return 0;
+}
+
+/* Checks a range of a resource.  Returns 0, or EINVAL for one past its end. */
+static int
+resource_range(
+	const struct ghci_resource *resource,
+	uint64_t offset,
+	uint32_t bytes)
+{
+	/* The range lies inside the memory. */
+	if (offset > resource->allocation->bytes || bytes > resource->allocation->bytes - offset)
+		return EINVAL;
+
+	/* Succeeded. */
 	return 0;
 }
