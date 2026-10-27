@@ -3,7 +3,7 @@
 # ws299-p004 待ちを重ねる: 連続の読みの先読みを非同期の worker で（raw の block device）
 
 - 親: [WS299](../ws.md)。Queue: q1617 / q1617-i01（担当 P1、2026-10-27）。前提: p003（cleared 2026-10-27、main be47a24df）。
-- Status: in-progress（実装・QEMU・5330 の測定は済み（下の「結果」）。D5 の design-reviewer の結果待ち、q1634）
+- Status: in-progress（実装・review の反映・QEMU・5330 の測定は済み（下の「結果」）。Q1 の判定待ち、q1634）
 - Disposition: normal
 
 ## 測った事（2026-10-27、5330、kernel は main be47a24df ＋ 下の測る口、`nvme-bench-5330.sh zedbsd zb-p004m … read`）
@@ -95,6 +95,7 @@
 - 直し 1 `recycle_line_locked`: cache が上限の時の miss は、LRU の末尾近く（8 個まで）の、同じ disk・同じ大きさの clean で参照の無い line を、その場で新しい block に付け替える（memory・計上・disk の pin はそのまま、header を新しくする）。free + 確保の代わり。
 - 直し 2 `copy_cached_lines`: `buf_read` は先に、cache に有る valid な line を最大 16 個、cache_lock の 1 回の保持で参照し、1 個ずつ busy を取って写し、1 回の保持で返す。無い・valid でない・使用中の line で止まり、そこからは今の道（読む・待つ）。
 - 結果: 4 GiB の曲線が 1.68〜2.24 GB/s で平ら（`evidence/zb-p004f-summary.md`）、reread 2.24〜2.44 GB/s。
+- design-reviewer（2026-10-28、D5）: 重大な誤りは無し。反映: M1 付け替えの idle の条件に b_lock と dirty_index_lock の下での参照数の再確認を足した、L1 medium が revoke された disk では付け替えない、L2 hit の数は写した line だけ、L3 prepare・transfer の和は read-ahead の lock の下で足し戻す・差が負なら足さない、L4 何も無い時は返しの lock を取らない・lock の前に dirty の line を除く・見る数を `BUF_RECYCLE_LOOK`、Nit の空行と `BUF_GENERATION_EXHAUSTED` の引き継ぎ。勧めの負荷試験は `qemu-cache-stress.sh`（下）。
 
 ## 変えない物
 
@@ -118,8 +119,10 @@
 | QEMU 先読み | `sh plan/ws299/tests/qemu-readahead.sh build/p1-qemu-p004/hdd-image.img` | `PASS (6 equal checksums, new data seen, 0 reloads refused)`。冷えた 200 MiB の読みで先読みが 200 MiB を読んだ（`buf: readahead 1024 jobs: … read 200 MiB`）、2 本同時の cksum 一致、読みの直後の `diskpart reload` 10 回で拒否 0 |
 | QEMU NVMe の形 | `sh plan/ws299/tests/qemu-nvme-shapes.sh build/p1-qemu-p004/hdd-image.img` | `PASS (5 checksums equal)` |
 | QEMU 大きな file と reboot | `sh plan/ws299/tests/qemu-grow-reboot.sh build/p1-qemu-p004/hdd-image.img 3` | `PASS reset after 2 s`、rand.bin の cksum が読みの前後で一致 |
+| QEMU cache の上限の負荷 | `make ZEDBSD_CONFIG=plan/ws299/tests/config-qemu-cache128.mk BUILD=build/p1-qemu-c128 disk-image`、`sh plan/ws299/tests/qemu-cache-stress.sh build/p1-qemu-c128/hdd-image.img` | `PASS (7 equal raw checksums, file intact, reload busy 8 of 8)`: 128 MiB の cache で raw の読み 4 本・UFS の 128 MiB の書きと sync・1 秒ごとの reload を同時に、evictions 495472、capacity_failures 0。reload は読み手が開いている間なので EBUSY が正しい。32 MiB の cache では UFS の 200 MiB の書きが 29 MiB で止まり exec も失敗した（cache が dirty の上限 32 MiB と同じ大きさで、新しい line が取れない。付け替えは clean の line だけなので関係しない見込みだが、元の kernel では確かめていない） |
 | 5330 読み・書き | `sh plan/ws299/tests/nvme-bench-5330.sh zedbsd zb-p004f build/p1-p004a/vmunix read write`（kernel sha256 1c17a790…） | raw の連続の読み 4 GiB（chunk 16 段）: 1677〜2237 MB/s、中央値 1917 MB/s、最初と最後の比 1.0（p003c は中央値 583）。bs64k・1m・4m 1677〜1917。reread 2237。raw の書き 926〜1032 MB/s（p003c 926〜959）、UFS の書き 353・378 MB/s（p003c 373・433、p005 の対象） |
 
+- review の反映の後の kernel（sha256 6acaa1e9…、commit は下の再開点）で流し直した（2026-10-28）: QEMU の boot-test rc 0・`qemu-readahead` PASS・`qemu-nvme-shapes` PASS・`qemu-grow-reboot` PASS（reset 1 s、cksum 一致）、build（config-5330・pcat・m68k-virt）warning 0。5330（`zb-p004g`）: raw の読み 4 GiB 1678〜2237 MB/s（中央値 1790）、reread 2684、raw の書き 1032・1119・559・455、UFS の書き 312・426。書きだけをもう一度（`zb-p004h`）: raw 1220・655・440・447、UFS 340・413。raw の書きの後半の低下は、sys の時間が同じ（0.11〜0.17 s/256 MiB）で real だけが伸びているので device の側の待ち（BG5 は DRAM-less、この日に p6 を何度も書いた後）と見るが、確かめていない（p006・p007 で見る）。`evidence/zb-p004g-summary.md`・`zb-p004h-summary.md`。
 - 受け入れ（上）との照合: 1 は達（Debian の b-chunk の定常 1.1 GB/s の 1.7 倍、d-chunk 1.4〜1.6 GB/s も越える）。2 の乱読みは未実施（dd では作れない。p007 で道具を決める）。先読みを頼まないのは「連続 2 回」の条件と host 試験で確かめた。3 は (a)〜(e) PASS。hot unplug は driver に PCIe の hotplug が無いので未実施。4・5 は達。
 - 5330 の証拠は zedBSD を NVMe から起動して ssh で測った物（`nvme-bench-5330.sh`）。`5330-run.sh` の素の起動（i915 の survey）は未実施（p007）。
 - `vfs.bufcache.stats` の misses には先読みの line が入る。io-stats の `IO_BUF_SINGLE_HIT` は、cache に有る line を `copy_cached_lines` が写すようになったので減った（落ち込みの指標は `IO_BUF_SINGLE_MEMORY` とする）。
@@ -131,7 +134,8 @@
 
 ## 再開点（2026-10-28、P1）
 
-- 実装・host・QEMU・5330 は済み（上の「結果」）。残り: D5 の design-reviewer の指摘の反映（あれば直して QEMU の 4 本と 5330 を流し直す）、Q1 の判定。
+- 実装・D5 の review の反映・host・QEMU（5 本）・5330 は済み（上の「結果」）。残り: Q1 の判定。未実施: 乱読み（道具が要る、p007）、`5330-run.sh` の素の起動（p007）、元の kernel での 32 MiB の cache の書きの確かめ。
+- 一時の測る口（cache_lock の取り合いの数）は消した。`plan/ws299/tests/config-qemu-cache32.mk` は git に入れていない一時の file（消すのは Q1 に頼む）。
 
 ## 再開点（2026-10-27 ラップアップ、P1）
 

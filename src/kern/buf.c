@@ -95,6 +95,9 @@
 #define BUF_READAHEAD_RUN_BYTES	((uint64_t)BUF_RUN_PAGE_LINES * KERN_PAGE_SIZE)
 #define BUF_READAHEAD_SPLIT_MAX	(BUF_READAHEAD_BYTES / BUF_READAHEAD_RUN_BYTES + 1U)
 
+/* How many lines from the LRU tail a miss in a full cache looks at to take one over. */
+#define BUF_RECYCLE_LOOK	8U
+
 /*
  * One page of buffer headers.
  *
@@ -393,8 +396,8 @@ static volatile uint64_t readahead_skip_hit;
  * Where a prefetch's time goes, in nanoseconds since the last log line:
  * taking and allocating its lines, and the device transfer.
  */
-static volatile uint64_t readahead_prepare_ns;
-static volatile uint64_t readahead_transfer_ns;
+static uint64_t readahead_prepare_ns;
+static uint64_t readahead_transfer_ns;
 
 /*
  * How long jobs waited in the queue and ran, in nanoseconds, summed and at
@@ -474,6 +477,7 @@ static void readahead_worker(void *argument);
 static void readahead_run(struct buf_readahead_worker *worker, const struct buf_readahead_job *job);
 static int readahead_running(struct disk *leaf);
 static uint64_t readahead_now_ns(void);
+static void readahead_account(uint64_t *sum, uint64_t value);
 static uint32_t copy_cached_lines(struct disk *disk, uint64_t block, uint64_t remaining, uint8_t *out);
 static struct buf *recycle_line_locked(struct disk *disk, uint64_t line_block, uint64_t line_blocks, uint64_t line_bytes);
 
@@ -3080,7 +3084,8 @@ transfer_run_lines(
 	sent_ns = 0;
 	if (prefetch) {
 		sent_ns = readahead_now_ns();
-		stat_add(&readahead_prepare_ns, sent_ns - started_ns);
+		if (sent_ns >= started_ns)
+			readahead_account(&readahead_prepare_ns, sent_ns - started_ns);
 	}
 	completed = 0;
 	error = EOPNOTSUPP;
@@ -3093,8 +3098,11 @@ transfer_run_lines(
 		error = disk_transfer_progress_context(disk, write ? BIO_WRITE : BIO_READ, block,
 		    count * line_blocks, data, &completed, context);
 	}
-	if (prefetch)
-		stat_add(&readahead_transfer_ns, readahead_now_ns() - sent_ns);
+	if (prefetch) {
+		started_ns = readahead_now_ns();
+		if (started_ns >= sent_ns)
+			readahead_account(&readahead_transfer_ns, started_ns - sent_ns);
+	}
 
 	/*
 	 * Publishes only complete lines in the confirmed prefix; uncertainty
@@ -4360,6 +4368,8 @@ readahead_run(
 	uint64_t wait_max_ns;
 	uint64_t run_ns;
 	uint64_t run_max_ns;
+	uint64_t prepare_ns;
+	uint64_t transfer_ns;
 	uint32_t transferred;
 	unsigned long irq;
 	int error;
@@ -4402,6 +4412,10 @@ readahead_run(
 		readahead_wait_max_ns = 0;
 		readahead_run_ns = 0;
 		readahead_run_max_ns = 0;
+		prepare_ns = readahead_prepare_ns;
+		transfer_ns = readahead_transfer_ns;
+		readahead_prepare_ns = 0;
+		readahead_transfer_ns = 0;
 
 		spin_unlock_irqrestore(&readahead_lock, irq);
 
@@ -4427,10 +4441,8 @@ readahead_run(
 			  (unsigned long long)(wait_max_ns / 1000U),
 			  (unsigned long long)(run_ns / BUF_READAHEAD_LOG_EVERY / 1000U),
 			  (unsigned long long)(run_max_ns / 1000U),
-			  (unsigned long long)(atomic_u64_fetch_add_relaxed(&readahead_prepare_ns, 0) / BUF_READAHEAD_LOG_EVERY / 1000U),
-			  (unsigned long long)(atomic_u64_fetch_add_relaxed(&readahead_transfer_ns, 0) / BUF_READAHEAD_LOG_EVERY / 1000U));
-		readahead_prepare_ns = 0;
-		readahead_transfer_ns = 0;
+			  (unsigned long long)(prepare_ns / BUF_READAHEAD_LOG_EVERY / 1000U),
+			  (unsigned long long)(transfer_ns / BUF_READAHEAD_LOG_EVERY / 1000U));
 	}
 }
 
@@ -4452,7 +4464,6 @@ readahead_now_ns(
 	return (counter / frequency) * 1000000000ULL +
 	    (counter % frequency) * 1000000000ULL / frequency;
 }
-
 
 /*
  * Copies out the valid whole lines at the start of a range, up to
@@ -4531,6 +4542,10 @@ copy_cached_lines(
 		copied++;
 	}
 
+	/* Nothing was there: the caller reads. */
+	if (found == 0)
+		return 0;
+
 	/* Gives every reference back under one hold. */
 	irq = spin_lock_irqsave(&cache_lock);
 
@@ -4542,7 +4557,7 @@ copy_cached_lines(
 	spin_unlock_irqrestore(&cache_lock, irq);
 
 	/* Succeeded: the blocks of the lines copied. */
-	stat_add(&stat_hits, found);
+	stat_add(&stat_hits, copied);
 	return (uint32_t)(copied * line_blocks);
 }
 
@@ -4576,21 +4591,28 @@ recycle_line_locked(
 	    line_bytes <= cache_max_bytes - cache_current_bytes - cache_reserved_bytes)
 		return NULL;
 
+	/* A disk whose medium is gone takes no new line; the caller's admission reports it. */
+	if (disk_media_status(disk) != 0)
+		return NULL;
+
 	/* Looks at a few lines from the LRU tail for an idle one of this disk and size. */
 	looked = 0;
-	for (buffer = lru_tail; buffer != NULL && looked < 8U; buffer = buffer->b_lru_prev) {
+	for (buffer = lru_tail; buffer != NULL && looked < BUF_RECYCLE_LOOK; buffer = buffer->b_lru_prev) {
 		looked++;
 		if (buffer->b_disk != disk ||
 		    buffer->b_block_count != line_blocks ||
 		    buffer->b_memory.size != line_bytes ||
-		    refcount_load(&buffer->b_refs) != 1)
+		    refcount_load(&buffer->b_refs) != 1 ||
+		    (buffer->b_flags & BUF_DIRTY) != 0 ||
+		    buffer->b_dirty_linked)
 			continue;
 
 		/* An idle, clean line is taken out of the LRU and the hash table. */
 		birq = spin_lock_irqsave(&buffer->b_lock);
 		dirty_irq = spin_lock_irqsave(&dirty_index_lock);
 		idle = 1;
-		if (buffer->b_busy ||
+		if (refcount_load(&buffer->b_refs) != 1 ||
+		    buffer->b_busy ||
 		    buffer->b_io_inflight ||
 		    (buffer->b_flags & BUF_DIRTY) ||
 		    buffer->b_dirty_linked ||
@@ -4613,6 +4635,7 @@ recycle_line_locked(
 		buffer->b_slab = saved.b_slab;
 		buffer->b_slab_slot = saved.b_slab_slot;
 		buffer->b_generation = saved.b_generation;
+		buffer->b_flags = saved.b_flags & BUF_GENERATION_EXHAUSTED;
 		buffer->b_block = line_block;
 		buffer->b_block_count = (uint32_t)line_blocks;
 		refcount_init(&buffer->b_refs, 2);
@@ -4630,4 +4653,19 @@ recycle_line_locked(
 
 	/* No line near the tail could be taken over. */
 	return NULL;
+}
+
+/* Adds a prefetch's time to a read-ahead log sum under the read-ahead lock. */
+static void
+readahead_account(
+	uint64_t *sum,
+	uint64_t value)
+{
+	unsigned long irq;
+
+	irq = spin_lock_irqsave(&readahead_lock);
+
+	*sum += value;
+
+	spin_unlock_irqrestore(&readahead_lock, irq);
 }
