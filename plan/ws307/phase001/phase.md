@@ -28,3 +28,12 @@ ws.md に記録したユーザーの希望の仕様（原文）をブラッシ�
 - spec.md に、ユーザーの原文の各項目が漏れなく対応し、ユーザーの確認事項が全部回答済み（回答の原文を引用）。
 - design-reviewer の指摘が反映済み。
 - 実装の Phase の表がある。code・build の変更は無い。
+
+## 結果（2026-10-28、P4）
+
+- 調査: disk・partition・ESP・loader・swap（diskpart・mkfs・mkswap・kernel の partition・block-identity・swap-source・UEFI の loader）、driver（NVMe・VMD・AHCI・USB）、build と package（Makefile の登録・rootfs の rule・userland/packages・firmware）、Keiland の app・権限（account-admin・sessiond・security.md）・翻訳（WS158）・試験の道具（boot-test.sh・guest.py・AAT）を file:行で押さえ、[spec.md](../spec.md) の本文に引いた。
+- 仕様: [spec.md](../spec.md)。ユーザーの原文の各項目との対応は §14。
+- ユーザーの確認事項: U1〜U27 を Q1 経由で聞いた。回答の原文は spec §15 と [ws.md](../ws.md) の「ユーザーの決定」。追加の指示（loader が UFS から kernel を読む、`make installer-image`）も反映。
+- design-reviewer（opus）: 2 回（082c46884 の版と ea2d011cc の版）。指摘と反映は spec §17。
+- 実装の Phase の表: [ws.md](../ws.md)（p002〜p013）。
+- code・build の変更は無い（`plan/ws307/` だけ）。
