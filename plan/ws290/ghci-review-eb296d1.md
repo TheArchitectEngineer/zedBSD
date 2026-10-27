@@ -112,3 +112,5 @@
 | M56 | 一部 | DISP2 は Approved、lifecycle は M10 で決まった。EDID の経路が無い | N25 |
 | M57 | 未解決 | §13.3 は変わっていない | N29 |
 | M58 | 一部 | CAP_IOMMU の意味、§15.2 の aperture は直った。draft・64 KiB・GCLK_HZ の二か所・minor の版が残る | N28 |
+
+DONE
