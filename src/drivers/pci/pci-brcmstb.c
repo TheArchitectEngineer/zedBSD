@@ -253,6 +253,19 @@
 #define BCM2712_ROOT_CAP_L1SS_OFF	0x00000010U
 #define BCM2712_LINK_SPEED_MAX		3U
 
+/*
+ * The BCM2712's record of link training: four registers, each holding
+ * four of the link states (LTSSM) the controller last passed through, one
+ * byte each, 0xff for an entry not used yet.  Read only to report a link
+ * that did not come up.
+ *
+ * Values referenced: Raspberry Pi Linux rpi-6.12.y
+ * drivers/pci/controller/pcie-brcmstb.c (PCIE_RC_PL_LTSSM_HIST_0 and
+ * PCIE_RC_PL_LTSSM_HIST(n)).
+ */
+#define BCM2712_LTSSM_HISTORY		0x1cecU
+#define BCM2712_LTSSM_HISTORY_COUNT	4U
+
 /* The BCM2712's register block must reach the configuration index register. */
 #define BCM2712_REGISTER_SPAN		(BRCMSTB_EXT_CFG_INDEX + 4U)
 
@@ -438,6 +451,7 @@ static int set_inbound_window(struct drv_pci_brcmstb *host);
 static int inbound_size_log2(uint64_t size, unsigned *log2);
 static int train_link(struct drv_pci_brcmstb *host);
 static bool link_is_up(struct drv_pci_brcmstb *host);
+static void report_link_down(struct drv_pci_brcmstb *host);
 static void set_outbound_window(struct drv_pci_brcmstb *host);
 static void report_link(struct drv_pci_brcmstb *host);
 static int config_window(struct drv_pci_brcmstb *host, const struct drv_pci_address *address, unsigned offset, volatile uint8_t **window);
@@ -2023,7 +2037,7 @@ train_link(
 
 	/* Refuses a link that never came up; nothing answers below the root port. */
 	if (!up) {
-		kern_logf("pcie: brcmstb link down\n");
+		report_link_down(host);
 		return ETIMEDOUT;
 	}
 
@@ -2059,6 +2073,49 @@ link_is_up(
 
 	/* Reports a usable link. */
 	return true;
+}
+
+/*
+ * Reports a link that did not come up, with what the controller saw.
+ *
+ * A BCM2712 also gives its PCIe control and debug registers and its record
+ * of link training, which tells an absent or unpowered device (training
+ * never leaves detection) from one that answers but does not train.
+ */
+static void
+report_link_down(
+	struct drv_pci_brcmstb *host)
+{
+	uint32_t status;
+	uint32_t control;
+	uint32_t debug;
+	uint32_t history[BCM2712_LTSSM_HISTORY_COUNT];
+	unsigned index;
+
+	/* Reads the link state every controller has. */
+	status = register_read(host, BRCMSTB_STATUS);
+
+	/* A BCM2711 has nothing more to give. */
+	if (host->config.variant != DRV_PCI_BRCMSTB_BCM2712) {
+		kern_logf("pcie: brcmstb link down (status %x)\n", status);
+		return;
+	}
+
+	/* Reads PERST# and the clock bits, then the training record. */
+	control = register_read(host, BCM2712_PCIE_CTRL);
+	debug = register_read(host, BCM2712_HARD_DEBUG);
+	for (index = 0; index < BCM2712_LTSSM_HISTORY_COUNT; index++)
+		history[index] = register_read(host, BCM2712_LTSSM_HISTORY + index * 4U);
+
+	/* Logs them together, so one line shows how far training went. */
+	kern_logf("pcie: brcmstb link down (status %x, control %x, debug %x, LTSSM %08x %08x %08x %08x)\n",
+		  status,
+		  control,
+		  debug,
+		  history[0],
+		  history[1],
+		  history[2],
+		  history[3]);
 }
 
 /* Opens the outbound window from its CPU range to its PCI range. */
