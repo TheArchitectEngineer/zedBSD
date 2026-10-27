@@ -69,6 +69,9 @@ struct main_options {
 
 	/* How many submissions draw a frame (--submits, one by default). */
 	uint32_t submits;
+
+	/* Nonzero when every triangle is culled (--cull=all), for measuring the vertex work alone. */
+	int cull_all;
 };
 
 /* The frame-rate measurement of the spin demonstration. */
@@ -145,7 +148,7 @@ main(
 	/* Argument failure starts no connection or GPU namespace. */
 	status = options_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: mview [--display=NAME] [--model=DIR] [--token=NAME] [--frames=N] [--timeout-s=N] [--spin=SECONDS] [--shading=vertex|pixel] [--windowed] [--size=WxH] [--content=none|video|game] [--present=fifo|mailbox|immediate] [--copies=N] [--draws=instanced|each] [--submits=N]\n");
+		fprintf(stderr, "usage: mview [--display=NAME] [--model=DIR] [--token=NAME] [--frames=N] [--timeout-s=N] [--spin=SECONDS] [--shading=vertex|pixel] [--windowed] [--size=WxH] [--content=none|video|game] [--present=fifo|mailbox|immediate] [--copies=N] [--draws=instanced|each] [--submits=N] [--cull=all]\n");
 		return 2;
 	}
 
@@ -189,7 +192,8 @@ main(
 	fflush(stdout);
 
 	/* Creates renderer ownership only after the native surface is configured. */
-	result = mview_renderer_open(&renderer, &window, options.pixel_shading, options.present, options.copies, options.each_draw, options.submits);
+	result = mview_renderer_open(&renderer, &window, options.pixel_shading, options.present, options.copies, options.each_draw, options.submits,
+				     options.cull_all);
 	operation = renderer.operation;
 	if (result != VK_SUCCESS) {
 		status = -1;
@@ -545,6 +549,13 @@ options_parse(
 		match = strcmp(argv[index], "--draws=each");
 		if (match == 0) {
 			options->each_draw = 1;
+			continue;
+		}
+
+		/* Every triangle culled, for measuring the vertex work alone. */
+		match = strcmp(argv[index], "--cull=all");
+		if (match == 0) {
+			options->cull_all = 1;
 			continue;
 		}
 

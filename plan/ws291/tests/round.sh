@@ -12,6 +12,11 @@ shift 2
 steps=${*:-deploy nggshape shot bench hang}
 m=plan/ws291/tests/measure.sh
 mkdir -p "$out"
+# The steps run under the power guard (guard.sh): a hung firmware, a thermal fault or a hot GPU stops the load and
+# powers zedBSD off.
+if [ -z "${ROUND_GUARDED:-}" ]; then
+	ROUND_GUARDED=1 exec sh plan/ws291/tests/guard.sh "$out/round" sh "$0" "$out" "$kernel" $steps
+fi
 for step in $steps; do
 	echo "== $step $(date +%H:%M:%S)"
 	case $step in

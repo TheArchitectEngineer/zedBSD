@@ -44,7 +44,7 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 | [p003](phase003/phase.md) | RDNA: 投入の経路（vkQueueSubmit が GPU の完了を待たない非同期、record の 1 command と submit の費用を削る）。big-N・subs-N で Linux に近づける | p002 | cleared（2026-10-27 04:31 Q1） |
 | [p004](phase004/phase.md) | RDNA: PA の small primitive filter・back-face cull・VGT の vertex reuse を RADV の値に、scene-6500 の GPU の ms | p003 | cleared（2026-10-27 08:34、driver の変更なし、差は NGG の culling） |
 | [p005](phase005/phase.md) | RDNA: NGG A（passthrough、wave32 1 つの subgroup） | p004 | cleared（2026-10-27 13:52 Q1 判定、q1611。受け入れ: export の EXEC の wait の修正、1 体 pixel 差 0、6500 体 8 pixel、hang 回復、GPU 41.4 ms） |
-| [p006](phase006/phase.md) | RDNA: NGG B+C（primitive の culling と頂点の詰め直し・属性の後回しを Mesa の形で一緒に。2026-10-27 14:50 Q1: compaction 無しの culling は GFX10 で止まる（仮説 A）ので p007 と統合） | p005 | in-progress（q1635: 属性の後回し・WC の map・guard band・parameter cache を実装、実機で scene-6500 30.7 fps・GPU 30.6 ms。目標 約 20 ms に未達、原因の切り分けの途中） |
+| [p006](phase006/phase.md) | RDNA: NGG B+C（primitive の culling と頂点の詰め直し・属性の後回しを Mesa の形で一緒に。2026-10-27 14:50 Q1: compaction 無しの culling は GFX10 で止まる（仮説 A）ので p007 と統合） | p005 | in-progress（q1639: VRAM の page entry の fragment（eb0ec22fd）で scene-6500 30.7 → 44.7 fps・GPU 30.6 → 20.5 ms（Linux 49.7 fps・19.7 ms）。残りは頂点の側 4 % と CPU 側 1.2 ms） |
 | p007 | RDNA: NGG C（vertex の詰め直しと属性の後回し、wave をまたぐ subgroup）、目標 GPU 約 20 ms | p006 | p006 に統合（2026-10-27 14:50 Q1。目標 GPU 約 20 ms は p006 の受け入れへ） |
 | p008〜p009 | RDNA: HTILE、guard band、CPU 側の record（2.3 ms）の短縮 | p007 | — |
 | p010 | NVIDIA: GPU の入れ替え（ユーザー）、desktop の計測と 60 fps | RDNA の Phase の全部、P2 | planned |
