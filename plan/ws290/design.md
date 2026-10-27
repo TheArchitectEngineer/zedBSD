@@ -6,7 +6,15 @@
 
 ## 0.1 版 3 の改訂（2026-10-27）
 
-**読んだ物**: amaterrace-gpu の `git diff 3af62ca ce9725a -- docs/ include/`（docs/ghci.md +178 行、include/ghci_regs.h・ghci2_regs.h・ghci_cmd.h・ghci_frame.h）。読んだ時点の main は **ce9725a**（2026-10-27 13:56）。docs/・include/ の最後の差は **f718918**（13:15）で、f718918..ce9725a は `plan/ws003/minimal_fit_report.md` だけ。参考に `plan/ws003/`（am-ws003: capability と config.mk）、`plan/ws004/`（am-ws004: task・mesh shader）、`config.mk.template`、`rtl/gpu/cp/atg_cp_regs.v`（capability の bit の組み方）を `git show` で読んだ。amaterrace-gpu には書いていない。
+> **中断（2026-10-27、版 3 は書きかけ）**: ユーザーの G01 の回答で版の前提が変わり、ユーザーは「そのほかは仕様を調整中です。いったん作業を終了していいです。」と伝えた。版 3 の本文（§0.1・§24・G40〜G49 など）は ghci.md ce9725a を読んだ**書きかけ**で、G01 の回答と design-reviewer の指摘 V01〜V25（[design-review-v3.md](design-review-v3.md)）は**まだ本文に反映していない**。再開の条件と手順は [phase001/phase.md](phase001/phase.md) の「再開」。
+
+**G01 の回答（2026-10-27 ユーザー、原文）**: 「G01: GHCIはまだ策定中のドラフトで、誤ってAIハルシネーションによって2.0にされてしまいました。1.0が正しく、それ以外のバージョンは存在しません。1.0以外は予定すらされていません。2.0は誤りなので、ドライバでは2.0を考慮してはいけません。すべて単一のGHCI 1.0です。GHCIは1.0のあとはcapabilityが追加されていく予定で、決められた1.1の必須機能とかはない予定です。1.1で追加されたCAPがあって、そのCAPに対応するかはハードウェア実装次第、という形になっていきます。」「そのほかは仕様を調整中です。いったん作業を終了していいです。」
+
+**解釈（Q1、2026-10-27）**: driver は単一の GHCI 1.0 だけを扱う。「2.0」「1.1 legacy」の区別・版による分岐を設計から外す（版の値は 1.0 だけを受け、機能の有無は版でなく capability の flag だけで判断。将来の minor で足される CAP も flag で見る）。
+
+**この回答で版 3 の書きかけから直す事（再開の時）**: (1) 文書の「2.0」「TO-BE（旧称 2.0）」の語を「GHCI 1.0」に、WS の名前の扱いは Q1 と決める。(2) §0.1・§5.1 の 2・§2 の §16 の行の「minor ≥ 1 を拒む」を捨て、major 1 を受けて機能は flag だけで見る形に（将来の minor の CAP も flag）。(3) G40 は G01 の回答で閉じる（版の矛盾ではなく、1.1 の register の窓 §3.1.1 は仕様の誤りか調整の対象として ghci.md の修正を待つ）。(4) §3.1.1・§7.5 の「1.1」の記述を「legacy」と呼ぶ前提を、修正後の ghci.md で読み直す。
+
+**読んだ物**: amaterrace-gpu の `git diff 3af62ca ce9725a -- docs/ include/`（docs/ghci.md +178 行、include/ghci_regs.h・ghci2_regs.h・ghci_cmd.h・ghci_frame.h）。読んだ時点の main は **ce9725a**（2026-10-27 13:56）。docs/・include/ の最後の差は **f718918**（13:15）で、f718918..ce9725a は `config/minimal.mk`・`plan/ws003/minimal_fit_report.md`・`tools/vivado-synth-l2.tcl` の 3 file だけ（docs/・include/ の差は無い）。参考に `plan/ws003/`（am-ws003: capability と config.mk）、`plan/ws004/`（am-ws004: task・mesh shader）、`config.mk.template`、`rtl/gpu/cp/atg_cp_regs.v`（capability の bit の組み方）を `git show` で読んだ。amaterrace-gpu には書いていない。
 
 **ユーザーの補足**（2026-10-27、Q1 経由の原文）: 「コマンドベースの通信に変化して、レジスタ群がばっさりなくなりました。また、capabilityが導入され、capフラグがあるときだけ使える機能がたくさんできました。Vulkanのextなどとして見せるかどうかにマッピングが必要です。」
 
@@ -727,7 +735,7 @@ ghci.md 4d12da1 → ce9725a（と 3af62ca の §6.0）で、上の各行の事�
 
 | ID | 状態 | ce9725a で見た事 |
 | --- | --- | --- |
-| G01 | 変更 → G40 | 表題「Version 1.0 — Draft 0.2」、VERSION 0x00010000（181 行）、`ghci,ghci-1` は 1.0 と合う。新しい矛盾は G40 |
+| G01 | **回答（ユーザー、2026-10-27）** | 単一の GHCI 1.0 だけ。2.0 は誤り、1.1 の必須は無く CAP が足されていく（上の「G01 の回答」）。ce9725a の事実: 表題「Version 1.0 — Draft 0.2」、VERSION 0x00010000（181 行）、`ghci,ghci-1` は 1.0 と合う。新しい矛盾は G40 |
 | G02 | 未回答 | §11.3 は今も「BAR0 MMIO Window: Exactly 76 bytes」（996 行）。EXTCAP の置き場所は G43 に含めた |
 | G03〜G08 | 未回答 | §6.1（497〜498 行）は今も dword index、§3.1 は byte offset。VM_MAP・session・page table の記述は差なし |
 | G09 | 一部 | DEVICE_CAPS[2] の config は `CONFIG_CP_AUTONOMOUS_MMU`（257 行）。`config.mk.template` は 0 を「Static address mapping or software walk」と書くが、ghci.md に driver の扱いは無い。推しのまま（0 は拒む） |
@@ -746,7 +754,7 @@ ghci.md 4d12da1 → ce9725a（と 3af62ca の §6.0）で、上の各行の事�
 
 | ID | 重さ | 事実（節・行） | driver の推し | 止まる Phase |
 | --- | --- | --- | --- | --- |
-| G40 | M | 版の付け方: TO-BE は VERSION 0x00010000（181 行）、legacy は 0x00010001（207 行）で同じ major 1。§16（2046〜2048 行）は「minor は使っていない offset に register・capability・command を足すだけ」と書くが、1.1 の窓（§3.1.1）は 1.0 の窓と offset の意味が全く違う。§16 の版の list は 1.1 だけ（2051〜2054 行）。Appendix A 1 は「major を確かめよ」（2061 行）なので major だけを見る driver は 1.1 legacy に attach する | TO-BE の major を 2 にする（または legacy を major 0 か別の MAGIC に）。§16 に TO-BE の項を足す。driver は回答まで 0x00010000 だけを受け、minor ≥ 1 を拒む（TO-BE の将来の 1.1 も拒んでしまう） | なし（推しで進む） |
+| G40 | 閉じる（G01 の回答） | 版の付け方: TO-BE は VERSION 0x00010000（181 行）、legacy は 0x00010001（207 行）で同じ major 1。§16（2046〜2048 行）は「minor は使っていない offset に register・capability・command を足すだけ」と書くが、1.1 の窓（§3.1.1）は 1.0 の窓と offset の意味が全く違う。§16 の版の list は 1.1 だけ（2051〜2054 行）。Appendix A 1 は「major を確かめよ」（2061 行）なので major だけを見る driver は 1.1 legacy に attach する | TO-BE の major を 2 にする（または legacy を major 0 か別の MAGIC に）。§16 に TO-BE の項を足す。driver は回答まで 0x00010000 だけを受け、minor ≥ 1 を拒む（TO-BE の将来の 1.1 も拒んでしまう） | なし（推しで進む） |
 | G41 | C | CAPS・CAPS2 の場所: §3.2（247 行）は「DEVICE_CAPS（0x008）、CAPS（0x020）、CAPS2（0x024）」と書くが、§3.1（188〜189 行）の 19 register では 0x020・0x024 は RING_BASE_LO・RING_BASE_HI（RTL の slim も同じ）。§3.2.2・§3.2.3 の flag（GRAPHICS・STENCIL・MSAA・SUBGROUP・LDS_KB など）を TO-BE で読む方法が無い | **capability を command で読む**: `CMD_QUERY_CAPS`（例 opcode 0x34、3 dw: header、block の bus address の lo・hi）で CP が 16 語の capability の block（§24.2 の表: DEVICE_CAPS・CAPS・CAPS2・FMT0・FEATURE・LIMITS・session の数・MEM・vendor・device・clock）を書き、後の CMD_FENCE で完了を知る。この command を知らない GPU は kind 1 の fault（driver は reset して DEVICE_CAPS だけで動く）。register を足す案（0x04C〜）は §3.1 の「Exactly 19」に反する | p002・p004・p007（推しで進む。違えば 3 か所を直す） |
 | G42 | H | `include/ghci_regs.h`（ce9725a）と RTL（`rtl/gpu/cp/atg_cp_regs.v` の slim）は EXT_CAP_FMT0（0x080: BC1〜BC7）と EXT_CAP_FEATURE（0x084: LOGIC_OP・EARLY_Z・HW_CURSOR・COLOR_LUT・MAX_MRT[7:4]・DUAL_SOURCE・COARSE_SCAN・FAST_CLEAR）を持つが、ghci.md に無い（`grep` で 0 件）。76 byte の窓の外 | G41 の block の word 4・5 に置き、ghci.md §3.2 に bit の表を書く | p007（推しで進む） |
 | G43 | H | slim の EXTCAP: §3.1 に EXTCAP_PTR（183 行）が有るが、窓は 76 byte（169 行）で EXTCAP の list と MEM・FMT・DISP2 の register の置き場所が無い。RTL の slim は EXTCAP_PTR に 0 を返す。§4 の MEM（local memory、§11.3）・FMT・DISP2（§13.2）を TO-BE で使えるかが分からない（G02・G29 を含む） | TO-BE の EXTCAP は任意。driver は EXTCAP に頼らない: FMT は flag と driver の表（§24.4）、MEM は G41 の block の word 8〜12、DISP2 は G49。EXTCAP が有れば DISP2 だけを探す | p005（discrete）・p010・p011（推しで進む） |
