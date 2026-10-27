@@ -11,11 +11,12 @@
  * (cc -O2 -pthread) and on zedBSD (build-randread.sh), so both systems are
  * measured the same way.
  *
- *	randread FILE BLOCK DEPTH SECONDS OFFSET_MIB LENGTH_MIB [direct]
+ *	randread FILE BLOCK DEPTH SECONDS OFFSET_MIB LENGTH_MIB [direct] [fdeach]
  *
  * Each thread reads BLOCK bytes at block-aligned offsets drawn from its own
  * xorshift sequence inside [OFFSET_MIB, OFFSET_MIB + LENGTH_MIB).  "direct"
- * opens with O_DIRECT where the system has it.  One line reports the
+ * opens with O_DIRECT where the system has it; "fdeach" gives each thread
+ * its own open of FILE instead of sharing one.  One line reports the
  * reads, the bytes per second, and the mean and largest read time:
  *
  *	randread bs=4096 qd=32 reads=N MBps=X iops=Y mean_us=Z max_us=W
@@ -39,6 +40,7 @@
 
 struct worker {
 	pthread_t thread;
+	int fd;
 	uint64_t state;
 	uint64_t reads;
 	uint64_t busy_ns;
@@ -74,6 +76,7 @@ main(
 	unsigned long length_mib;
 	int depth;
 	int flags;
+	int each = 0;
 	int index;
 	struct timespec pause;
 	char line[256];
@@ -96,9 +99,15 @@ main(
 
 	flags = O_RDONLY;
 #ifdef O_DIRECT
-	if (argc > 7 && strcmp(argv[7], "direct") == 0)
-		flags |= O_DIRECT;
+	for (index = 7; index < argc; index++) {
+		if (strcmp(argv[index], "direct") == 0)
+			flags |= O_DIRECT;
+	}
 #endif
+	for (index = 7; index < argc; index++) {
+		if (strcmp(argv[index], "fdeach") == 0)
+			each = 1;
+	}
 	fd = open(argv[1], flags);
 	if (fd < 0) {
 		perror(argv[1]);
@@ -112,6 +121,11 @@ main(
 	for (index = 0; index < depth; index++) {
 		memset(&workers[index], 0, sizeof(workers[index]));
 		workers[index].state = 0x9e3779b97f4a7c15ULL * (uint64_t)(index + 1);
+		workers[index].fd = each ? open(argv[1], flags) : fd;
+		if (workers[index].fd < 0) {
+			perror(argv[1]);
+			return 1;
+		}
 		if (pthread_create(&workers[index].thread, NULL, run, &workers[index]) != 0) {
 			fprintf(stderr, "randread: pthread_create failed\n");
 			return 1;
@@ -188,7 +202,7 @@ run(
 		where = (off_t)((first_block + (x * 0x2545f4914f6cdd1dULL) % block_count) * block);
 
 		before = now_ns();
-		if (pread(fd, buffer, block, where) != (ssize_t)block) {
+		if (pread(worker->fd, buffer, block, where) != (ssize_t)block) {
 			worker->failed = 1;
 			break;
 		}
