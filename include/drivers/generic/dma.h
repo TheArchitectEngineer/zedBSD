@@ -98,9 +98,14 @@ void drv_dma_unmap(struct drv_dma_device *device,
  * Gives the bus address of caller-owned memory the caller knows the physical
  * address of.  Only a coherent device is served, and only for a range inside
  * its reach; anything else fails and the caller uses bounce memory (ws299).
+ * device_address_bits is how wide an address the device itself takes (for
+ * example 64 for NVMe, whose PRP entries are 64-bit); zero takes the DMA
+ * device's own width.  The bus offset, the platform's physical limit and
+ * the segment boundary always apply.
  */
 int drv_dma_physical_address(struct drv_dma_device *device, uint64_t paddr,
-			     size_t size, uint64_t *bus_address);
+			     size_t size, unsigned device_address_bits,
+			     uint64_t *bus_address);
 
 unsigned drv_dma_mapping_segment_count(const struct drv_dma_mapping *mapping);
 int drv_dma_mapping_segment(const struct drv_dma_mapping *mapping,

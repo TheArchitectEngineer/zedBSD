@@ -3,7 +3,7 @@
 # ws299-p003 NVMe の大きな転送（MDTS までの command、PRP list、bounce の写しを減らす）
 
 - 親: [WS299](../ws.md)。Queue: q1617 / q1617-i01（担当 P1、2026-10-27）。前提: p001（測定）、p002（buffer cache の崖の直し、P1 の branch の e7b3f3211 に含む。main への merge は Q1 の判定待ち。基準の 384 MB/s は p002 の後の数）。
-- Status: in-progress（設計・design-reviewer・実装・host 試験・build・QEMU は済み、5330 の測定中）
+- Status: in-progress（実装・host・build・QEMU・5330 の測定は済み。目安の 1.5 倍に読みは届かず（1.3 倍）、原因は driver の外の read(2) の 64 KiB の staging。Q1 の判定待ち）
 - Disposition: normal
 
 ## 目的と受け入れ
@@ -107,6 +107,25 @@
 | QEMU 読み書き | `amd64-serial.sh`: raw 1500 MiB の読み、300 MiB の乱数の file → raw 2000 MiB で cache を一巡 → cksum、64k で写す、512 byte の読み | cksum 一致、512 byte の読みは前の kernel と同じ値。raw 1500 MiB は 4.80 秒（前の kernel は 18.84 秒、QEMU の値で実機の比ではない） |
 | QEMU の形 | `sh plan/ws299/tests/qemu-nvme-shapes.sh build/p1-qemu3/hdd-image.img` | `qemu-nvme-shapes: PASS (5 checksums equal)`（MDTS 9 と 3） |
 | QEMU 大きな file と reboot | `sh plan/ws299/tests/qemu-grow-reboot.sh build/p1-qemu3/hdd-image.img 3` | `PASS reset after 1 s`、cksum 一致 |
+
+### 64 bit の DMA（2026-10-27、Q1 の判断 (A)）
+
+- Q1（技術判断）「(A) で可。drv_dma_physical_address に device 自身の address の幅を引数で渡し、NVMe は 64 を渡す。bus_offset・platform の physical_limit・segment_boundary・coherent の検査は残し、それに外れる時は必ず失敗を返して bounce に戻る（前の条件はこの形に改める）。pci-pcat の 32 bit の既定は残し他の driver は変えない。host 試験に「device 64 bit・platform の limit の内外」を足して。」
+- 実施: `drv_dma_physical_address(device, paddr, size, device_address_bits, &bus)`（0 は DMA の device の幅のまま）、NVMe は `NVME_DMA_ADDRESS_BITS` 64。`dma-range-test.c` に 32 bit の既定で断られる 4 GiB の上の page が 64 bit で通る事、platform の limit の内・端・外、bus offset を足した。
+- 確かめ: `dma-range-test: PASS`・`nvme-prp-test: PASS`、build（config-5330・pcat・visionfive2・intelmac）rc 0・warning 0、QEMU（image `build/p1-qemu4`）: boot-test PASS、`qemu-nvme-shapes.sh` PASS（`nvme: page-list commands direct=4096 bounced=0`）、`qemu-grow-reboot.sh` PASS（reset 2 秒）。
+
+### 5330 の前後（MB/s、`nvme-bench-5330.sh zedbsd zb-p003b …/vmunix read write`、kernel sha256 `5a76273812a303f6…`、要約 `plan/ws299/evidence/zb-p003b-summary.md`。p003a は 32 bit の bounce の時）
+
+| 測り方 | p002 の後 | p003a | p003b（64 bit） | Debian（同じ条件） | 比 |
+| --- | --- | --- | --- | --- | --- |
+| raw の連続の読み 256 MiB ×16 | 363〜384 | 426〜655（多くは約 460） | 463〜688（多くは約 490） | page cache 経由 1.1〜1.2 GB/s（b-chunk の冷えた段） | 約 43% |
+| raw の書き 256 MiB ×4 | 597〜655 | 639〜813 | 767〜959 | 1.6 GB/s（b-w1m） | 約 55% |
+| UFS の file の書き | 433〜479 | 571〜671 | 455〜488 | ext4 1.6 GB/s | 約 30% |
+| page 列の command | — | direct 2% | direct 100%（bounced 0） | — | — |
+
+- 読みが伸びない原因（数）: `run_rd`・`drv_rd` が 256 MiB に 4096、つまり 1 run・1 BIO が 64 KiB のまま。dd の 1 MiB の read(2) は `sys_read_call` が block device を `SYSCALL_STREAM_CHUNK`（64 KiB、`src/kern/syscall.c:87`）の staging に分けて 16 回 `block_pread` を呼ぶ（`syscall.c` の `syscall_io_buffer`）。64 KiB を QD1 で同期に読む上限（Debian の `d-bs64k` 697 MB/s）に近い。driver の command の大きさ（p003）はこれ以上効かない。
+- 次の手（p004・p005 の範囲）: block device の read(2) の staging を大きくする（syscall.c、担当の範囲の外なので Q1 に聞く）、buffer cache の run の先読み・非同期（p004・p005）。
+- UFS の書きは write-cached の mount で `transfer_run` を通らない（review L7）ので p003 では変わらない（値の揺れの内）。
 
 ## 出典
 

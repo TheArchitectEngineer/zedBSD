@@ -54,6 +54,13 @@
 /* The most one block request carries before the block layer splits it (ws299: was 64 KiB). */
 #define NVME_IO_MAX_BIO_BYTES (1024U * 1024U)
 
+/*
+ * How wide a DMA address an NVMe controller takes: PRP entries are 64-bit
+ * (NVMe Base Specification 2.0, PRP entry), wider than the 32-bit default of
+ * a PC's PCI bus (ws299, 2026-10-27 Q1).
+ */
+#define NVME_DMA_ADDRESS_BITS 64U
+
 /* How many page-list commands pass between two log lines of the direct and bounced counts. */
 #define NVME_IO_PATH_LOG_EVERY 4096U
 #define NVME_IO_MAX_SLOTS (NVME_IO_QUEUE_REQUESTED_DEPTH - 1U)
@@ -4891,6 +4898,7 @@ nvme_io_build_command(
 		for (index = 0; index < requested; index++) {
 			error = drv_dma_physical_address(dma, pages[index],
 							 controller->page_size,
+							 NVME_DMA_ADDRESS_BITS,
 							 &slot->page_bus[index]);
 			if (error != 0)
 				break;
@@ -4907,6 +4915,7 @@ nvme_io_build_command(
 			for (index = 1; index < requested; index++) {
 				error = drv_dma_physical_address(dma, pages[index],
 								 controller->page_size,
+								 NVME_DMA_ADDRESS_BITS,
 								 &bus);
 				if (error == 0)
 					break;
