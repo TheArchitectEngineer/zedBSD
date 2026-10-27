@@ -146,4 +146,13 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - 仕様担当とのやり取り: 回答 14.0（20bf888）→ 第 15 版（N73〜N77）→ 回答 15.0（d9252e4、N73〜N77 全部解決）→ 第 16 版（残る疑問なし）→ 回答 16.0（Signoff、「GHCI 1.0 正本仕様策定およびドライバ担当とのプロトコル相互レビューを完了・クローズ」）。driver の正本は **ghci.md d9252e4**。見張りは止めた。既読の reply の 1 行目: 「# GHCI Review Reply - Version 16.0 (2026-10-28) - Commit: d9252e4 (Signoff Achieved: N01〜N77 Fully Resolved & Review Concluded)」。main の checkout の ghci-review.md は第 16 版（commit は Q1）。
 - design 版 4.6（20bf888 に追従）・4.7（d9252e4、§19 は「仕様の残りは無い」）。`ghci-regs.h` の kind 6・10 の名前、`GHCI_IRQ_HALTED`・`GHCI_FAULT_WRITE`。
 - p003 cleared（model・stub・自己試験、[phase003](phase003/phase.md)）。WS288 の 1.1 の試験の削除の list を Q1 に送った。
+- design 版 4.8（d4bdcbeb1）: design-reviewer（Opus 5.5）の 4 回目で T01〜T16 の反映を本文で確かめ、p004・p005 の穴 H1〜H3・M1〜M9・L1〜L5 を直した（§24 の「4 回目」）。主な物: 8 の終わりを irq_lock の 1 区間に、CP_HEAP の勘定は CLOSE の fence の後と reset だけ（VM_UNMAP は返さない、d9252e4 の 1931 行）、再生の待ちに上限、recovery ops の試験は p007 へ。model も合わせた（08808fd79）。
+
+## 再開点（2026-10-28、P3 q1641-i01 のラップアップ）
+
+- branch agent/p3-ws290e（worktree `/home/awe/zedBSD-worktrees/p3-ws290e`、基点 main 5efe7b8d9）。SHA: 26ed472a3（design 4.6・ghci-regs.h を 20bf888 に）、a6f961c89（p003）、d4bdcbeb1（design 4.8）、08808fd79（model の L0 の勘定）、この記録の commit。
+- 済み: p001・p002・p003 cleared。仕様のレビューは閉じた（d9252e4、Signoff。見張りは止めた。既読の reply の 1 行目「# GHCI Review Reply - Version 16.0 (2026-10-28) - Commit: d9252e4 (Signoff Achieved: N01〜N77 Fully Resolved & Review Concluded)」）。main の checkout の ghci-review.md は第 16 版（commit は Q1）。ghci.md が変わった時だけ新しい版で再開する。
+- Q1 の許可（2026-10-28、q1641）: (1) WS288 の 1.1 の試験 12 file（plan/ws288/tests/ghci-driver-host-test.c・ghci-host-test.c・ghci-host-test.sh・ghci-vk-host-test.c・ghci-e2e-core.c・ghci-e2e-kernel.c・ghci-e2e-main.c・ghci-e2e-wayland.c・ghci-e2e.h・ghci-e2e.sh・ghci-e2e/scale.comp・ghci-su-board.py）を p004 で 1.1 の driver を外す時に git rm してよい（bringup-tb.*・zybo-gpu-sd.dts・gsi1-*・config-*-ghci.mk は残す）。消した後に design・ws.md の参照を直し、SHA を Q1 へ。(2) platform/amd64/vmunix.mk の AMD64_GHCI_SOURCES と platform/riscv64/vmunix.mk の RISCV64_PCI_DEVICE_SOURCES の GHCI の行だけ（p004）、Makefile の CONFIG_GHCI_NATIVE の行（-D と既定）だけ（p013）を編集してよい。他の行は触らない。それぞれ別の commit、GHCI 無しの既定の config（amd64 の CI の config・visionfive2）の build の warning 0 も確かめる。
+- 次: p004（core、design §5.1〜§5.4・§5.7・§8・§9・§10、§14 の p004 の場面、版 4.8）。test は plan/ws290/tests/ghci-model.c・ghci-stubs.c を使い `ghci-driver-host-test.c` を足す（stub の `stub_lock_order`・`stub_forbid_wait` に driver の lock の名前と門・ticket の queue の名前を与える。PCI の stub は p004 で足す）。kernel の flag の compile は `make -n … build/<dir>/vmunix` の行を継いで（`sed -e ':a' -e '/\\$/N; s/\\\n//; ta'`）使う。
+- 仕様の仮の扱い: 無い（design §19）。
 
