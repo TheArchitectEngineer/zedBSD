@@ -3,7 +3,7 @@
 # ws290-p001 設計: GHCI 1.0（ghci.md 89529de）の driver の書き直し
 
 - 親: [WS290](../ws.md)。
-- 状態: in-progress（2026-10-28 03:29 P3 q1636-i01 が design 版 4 の本文を書き、design-reviewer の前にユーザーの待機の指示で中断。再開は [ws.md](../ws.md) の「再開点（2026-10-28 待機、P3）」）
+- 状態: in-progress（2026-10-28 05:35 P3 q1638-i01: design 版 4.2。U の回答と design-reviewer（Opus 5.5）の H 6・M 18・L 10 を反映。仕様の不備 14 件を ghci-review 第 13 版に用意し、ユーザーの判断待ち（仕様に不備が無い時だけ Phase を確定する条件）。再レビュー中）
 - 由来: WS290 の出典と決定（ws.md）。
 
 ## 範囲（code は書かない）
@@ -51,3 +51,9 @@
   - 書いた物: [design.md](../design.md) 版 4（89529de で全面の書き直し。仕様の欠け S01・S02、判断 U5・U8〜U11、Phase p002〜p014 234 LW）。
   - 未実施: design-reviewer、Phase の表と phase.md の確定、build・試験（設計の Phase）。source は変えていない。
   - 中断: 2026-10-28 ユーザー「P3はいったん待機してください。GHCI仕様をアップデートします。」（Q1 経由）。
+- 2026-10-28 P3（q1638-i01、worktree `/home/awe/zedBSD-worktrees/p3-ws290d`、branch agent/p3-ws290d、基点 main c8e8bfae1）:
+  - 承認（ユーザーの原文、2026-10-28）「P3はOpus 5.5で設計レビューして、先に進めて下さい。GHCI仕様担当との通信が必要なときは、プロトコル通りファイルを用意して、私に言ってください。レビューでGHCI仕様に不備が見つからず、ドライバ設計をapproveできた場合、Phaseを確定し、実装に進んでOKです。」
+  - 仕様: amaterrace-gpu main 70a4f1e まで docs/ghci.md・ghci_cmd.h・gsi1_isa.h の差無し（cf8be08・1a1fa85・bea1ef9 のまま）。
+  - 書いた物: [design.md](../design.md) 版 4.1（2ee693d0f、U5「全部 WS292」・U8・U9「どちらも出す」・U10「shader で代える」（Phase p010 を新設し以後を 1 つずつ繰り下げ、p015 = 規約）・U11）、版 4.2（0370d23f3・ed801f3be、design-reviewer の指摘の反映、§24 に一覧）。
+  - design-reviewer（Opus 5.5、1 回目）: H 6・M 18・L 10 と仕様の不備 14 件。判定「H を直し仕様の不備を用意すれば p002〜p005 は approve 可」。仕様の不備は spec の写しで行を確かめ、main の checkout の `plan/ws290/ghci-review.md` を第 13 版（N47〜N60、H 1・M 6・L 7、末尾 DONE）に上書きし、Q1 に知らせた（commit は Q1、送るのはユーザーの指示の後）。
+  - 未実施: 再レビューの結果、Phase の確定（ユーザーの条件「仕様に不備が見つからず」を満たしていないため判断待ち）、source の変更、build・試験。
