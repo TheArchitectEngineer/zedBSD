@@ -73,7 +73,7 @@
 ### 止まっている物
 
 <!-- master:blocked:start -->
-- WS290 の実機の試験: VF2＋KC705（GHCI の bitstream はユーザーが書く）と新しい SwitchBot をユーザーが用意中（2026-10-28）。それまでは host 試験だけ（amaterrace-gpu の sim・firmware は使わない）。
+- WS290 の実機の試験: VF2＋KC705（GHCI の bitstream はユーザーが書く）、VF2 の電源は SwitchBot のプラグミニ 2（14C19FA80F86、2026-10-28）。KC705 の書き込みの済みはユーザーの知らせを待つ。それまでは host 試験だけ（amaterrace-gpu の sim・firmware は使わない）。
 - 完了の WS の Phase の directory の片付け（record-audit の COMPLETED_WITH_PHASES 89 件）は未着手。
 - VF2 の zedbsd.cfg は login=graphical を外したまま（元は zedbsd.cfg.p044orig、戻さない）。
 - GitHub への公開は push の指示の時だけ。
