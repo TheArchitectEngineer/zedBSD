@@ -3,7 +3,7 @@
 # WS307 インストーラの仕様
 
 - 親: [WS307](ws.md)。作成: [ws307-p001](phase001/phase.md)（P4、2026-10-28）。
-- 状態: **案**（U1〜U21 は回答済み、§15 に原文。`make installer-image` の指示の U22〜U24 は回答済み、U25 を回答待ち。design-reviewer の 1 回目の指摘は §17 で反映済み、2 回目のレビューの反映待ち）。
+- 状態: **案**（U1〜U21 は回答済み、§15 に原文。`make installer-image` の指示の U22〜U25 も回答済み。design-reviewer の 1 回目の指摘は §17 で反映済み、2 回目のレビューの反映待ち）。
 - 正はユーザーの原文（[ws.md](ws.md) の「ユーザーの指示と希望の仕様」）。この文書は原文のブラッシュアップで、原文と食い違えば原文が正。
 - 調査の出典は file:行（基点 main 5300ea917）。
 
@@ -437,7 +437,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
   - userland・package は menuconfig の選択に依らず、決まった選択で全部を build する（§6.2、U22・U24）。
   - 全 unit・index・`/opt/installer` を作り（§6）、live の root（base・desktop・firmware の unit と installer・install-admin・`/opt/installer`）を作る。
   - 出力は `$(BUILD)/installer-image.img`。普通の `hdd-image.img`（`make disk-image`）とは別の target で、`hdd-image.img` の形・大きさ（WS238 の形、`AMD64_NATIVE_ROOT_MIB` 1024、CI の 2 GiB、`platform/amd64/vmunix.mk:1333`・`:1344`）は変えない（U21 の「image は今のまま」は `hdd-image.img` の事）。
-- installer の image の形（U23 の回答「インストーライメージでは、ESPにブートローダ、BOOT FAT32にカーネルとzedbsd.cfg、rootfs, swapのパーティションを置きます。」）: ESP（loader）、BOOT の FAT32（`vmunix`・`zedbsd.cfg`）、root の UFS（`/opt/installer` を含む）、swap の 4 つ。loader の UFS の読み（p006）を待たずに作れる。logo と BOOT の FAT32 の型・volume label は → U25（推し: 今の `hdd-image.img` の ZEDBSD の FAT32 と同じく Basic Data の型、logo.ppm も BOOT の FAT32）。root の大きさは unit の合計に合わせる。導入先の形（ESP に loader・cfg、kernel は root の UFS、§5.4）とは違う。
+- installer の image の形（U23 の回答「インストーライメージでは、ESPにブートローダ、BOOT FAT32にカーネルとzedbsd.cfg、rootfs, swapのパーティションを置きます。」）: ESP（loader）、BOOT の FAT32（`vmunix`・`zedbsd.cfg`）、root の UFS（`/opt/installer` を含む）、swap の 4 つ。loader の UFS の読み（p006）を待たずに作れる。BOOT の FAT32 は今の `hdd-image.img` と同じく Basic Data の型・volume label「ZEDBSD」で、`logo.ppm` もその FAT32 に置く（U25 の回答）。`hdd-image.img` との違いは root の大きさ・`/opt/installer`・build ごとの PARTUUID の cfg。root の大きさは unit の合計に合わせる。導入先の形（ESP に loader・cfg、kernel は root の UFS、§5.4）とは違う。
 - live の image の起動の選び方: 今の native の image は `rootpart=PARTLABEL=zedBSD-root`・`swap0=PARTLABEL=zedBSD-swap`（`platform/amd64/zedbsd-native-uefi.cfg`）で、同じ image を dd した disk が付いていると EEXIST で起動しない（`src/kern/block-identity.c:184-190`）。installer の image は build ごとに乱数の PARTUUID を作り、その値を `rootpart=PARTUUID=`・`swap0=PARTUUID=` として cfg に書く（zedimage-host に PARTUUID を外から渡す形を足す）。同じ image の file を 2 台に dd した時の曖昧さは残る（loader の disk を優先する kernel の規則は Future）。
 - 起動時に自動で開く（U1 の回答）: compositor の Welcome の自動起動（`userland/desktop/wayland/desktop.c:857-880`）と同じ仕組みで、`/opt/installer/index` がある時に 1 回 `installer` を起動する。Settings の Welcome と重ならないよう、installer がある時は Welcome を出さない。
 
@@ -521,7 +521,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | U15 | （U5 の回答から）作った Boot#### の BootOrder の位置 | A: 先頭に入れる（再起動で導入先から起動）。B: 末尾に足す（firmware の menu に名前で出るだけ） | 2026-10-28「末尾に足します。また、KeiではなくzedBSDです。Keiの名前はプロジェクトから削除予定です。」→ B、名前は「zedBSD」。spec と UI の文言で「Kei」の名を使わない |
 | U22 | （installer-image の指示から）「すべてのパッケージ」と S7 の項目 | A: 全 package を unit に、S7 は 9 項目＋「その他」の下位に他の package | 2026-10-28「9 項目＋「その他」で個別 (推し)」→ A |
 | U23 | （installer-image の指示から）installer の image の形（kernel の partition） | A: 導入先と同じ形（kernel は root の UFS） | 2026-10-28「インストーライメージでは、ESPにブートローダ、BOOT FAT32にカーネルとzedbsd.cfg、rootfs, swapのパーティションを置きます。」→ 別の形（§11.2） |
-| U25 | （U23 の回答から）installer の image の logo の置き場と BOOT の FAT32 の型・label | A: 今の hdd-image の ZEDBSD の FAT32 と同じ（Basic Data、logo も FAT32） | 未回答 |
+| U25 | （U23 の回答から）installer の image の logo の置き場と BOOT の FAT32 の型・label | A: 今の hdd-image の ZEDBSD の FAT32 と同じ（Basic Data、logo も FAT32） | 2026-10-28「今の hdd-image と同じ (推し)」→ A |
 | U24 | （installer-image の指示から）Base・Desktop・Firmware の中身 | A: base の全部、desktop の menu の全部、firmware は kernel の driver が選ぶ物。tests・X11 は入れない | 2026-10-28「FW は driver の選択、tests・X11 無し (推し)」→ A |
 | U19 | （追加の指示から）`zedbsd.cfg` の置き場 | A: ESP（loader の探し方を変えない） | 2026-10-28「ESP（FAT）のまま (推し)」→ A |
 | U20 | （追加の指示から）起動の logo の置き場 | A: root の UFS の `/boot/logo.ppm` | 2026-10-28「root の UFS（/boot/logo.ppm） (推し)」→ A |

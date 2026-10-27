@@ -3,7 +3,7 @@
 # WS307 Keiland のアプリとしての zedBSD のグラフィカルなインストーラ
 
 - Status: planning（2026-10-28 新設。p001 で仕様を確定中、q1643 P4）
-- 仕様: [spec.md](spec.md)（U1〜U21 は回答済み。`make installer-image` の指示の U22〜U24 は回答済み、U25 は回答待ち。design-reviewer の 1 回目の指摘を反映済み、2 回目のレビューの反映待ち）。
+- 仕様: [spec.md](spec.md)（U1〜U21 は回答済み。`make installer-image` の指示の U22〜U25 も回答済み。design-reviewer の 1 回目の指摘を反映済み、2 回目のレビューの反映待ち）。
 - Resume point: p001 の手順 3〜5（回答の反映、design-reviewer の指摘の反映、実装の Phase の表の確定）。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
@@ -90,6 +90,7 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 U22「9 項目＋「その他」で個別 (推し)」: 全 package を unit にし、S7 は 9 項目と「その他」の下位に他の package を個別に。
 - 2026-10-28 U23「インストーライメージでは、ESPにブートローダ、BOOT FAT32にカーネルとzedbsd.cfg、rootfs, swapのパーティションを置きます。」: installer の image は ESP（loader）＋BOOT の FAT32（kernel・cfg）＋root＋swap。
 - 2026-10-28 U24「FW は driver の選択、tests・X11 無し (推し)」: Firmware は kernel の driver が選ぶ firmware。tests・X11 の package は入れない。
+- 2026-10-28 U25「今の hdd-image と同じ (推し)」: installer の image の BOOT の FAT32 は Basic Data の型・label「ZEDBSD」、logo.ppm もその FAT32。
 
 ## Phase
 
