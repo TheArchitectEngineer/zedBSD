@@ -1068,6 +1068,7 @@ power_features(
 	uint32_t low;
 	uint32_t high;
 	uint32_t permitted;
+	uint32_t permitted_high;
 	const char *how;
 	bool on;
 	int error;
@@ -1077,8 +1078,11 @@ power_features(
 
 	/* The three features, and the graphics clock's levels with their limits when the boot line asks. */
 	permitted = AMDRDNA_SMU_FEATURES_LOW;
-	if (thermal->clock_levels)
+	permitted_high = AMDRDNA_SMU_FEATURES_HIGH;
+	if (thermal->clock_levels) {
 		permitted |= AMDRDNA_SMU_CLOCK_FEATURES_LOW;
+		permitted_high |= AMDRDNA_SMU_CLOCK_FEATURES_HIGH;
+	}
 
 	/* No display is counted yet. */
 	error = smu_message(device, SMU_MESSAGE_DISPLAYS, 0U, NULL);
@@ -1124,7 +1128,7 @@ power_features(
 	}
 
 	/* Permits the features, the high word first. */
-	error = smu_message(device, SMU_MESSAGE_PERMIT_HIGH, AMDRDNA_SMU_FEATURES_HIGH, NULL);
+	error = smu_message(device, SMU_MESSAGE_PERMIT_HIGH, permitted_high, NULL);
 	if (error == 0)
 		error = smu_message(device, SMU_MESSAGE_PERMIT_LOW, permitted, NULL);
 	if (error != 0) {
@@ -1180,8 +1184,9 @@ power_features(
 
 	/* Says whether the graphics clock's levels run, when the boot line asked for them. */
 	if (thermal->clock_levels) {
-		amdrdna_mark("A4 features: graphics clock levels %s (permitted 0x%08x)",
+		amdrdna_mark("A4 features: graphics clock levels %s (permitted 0x%08x%08x)",
 		    (low & AMDRDNA_SMU_FEATURE_GFX_LEVELS) != 0U ? "run" : "do not run",
+		    (unsigned)permitted_high,
 		    (unsigned)permitted);
 	}
 
@@ -1944,17 +1949,17 @@ power_fault(
 	    thermal->limit,
 	    (unsigned)thermal->fan_speed);
 
+	/* The work stops first: the running sessions fail and nothing new runs, so the GPU cools down. */
+	amdrdna_node_device_failed(device, EIO);
+
 	/*
-	 * The fan at full duty through the thermal block itself: the
+	 * Then the fan at full duty through the thermal block itself: the
 	 * firmware that drove it may have stopped (a hung unit leaves the fan
 	 * as it last set it, which may be off).
 	 */
 	error = power_fan_duty(device, 100U);
 	if (error != 0)
 		amdrdna_mark("thermal fault: the fan could not be driven (%d)", error);
-
-	/* The work stops: the running sessions fail and nothing new runs, so the GPU cools down. */
-	amdrdna_node_device_failed(device, EIO);
 }
 
 /* Starts the watch thread. */

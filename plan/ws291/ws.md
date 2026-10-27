@@ -82,3 +82,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 - 2026-10-28 ユーザー「P2は自律的にループして、Linuxと同等以上の性能をゴールに、継続してください。hangが繰り返し起きるなら調査して修正してください。30分調査してわからなかった場合は、Fable 5.1 Highのサブエージェントを作成して、事情を説明した上で解決までどういう進め方をすればいいかのアドバイスを得て、さらに継続してください。どうしても解決できない場合、停止してユーザに判断を求めてください。これらはP2が自律的に行います。」
 
+- 再開点（2026-10-28 07:55 P2、q1639、worktree p2-ws291c）: [phase006](phase006/phase.md) の「q1639」節。scene-6500 は 44.4〜45.7 fps（frame 22.2 ms、fence 20.5〜20.7、
+  Linux 49.7〜50.2 fps・19.5〜19.7）。直した事: VRAM の PTE の fragment（eb0ec22fd、30.7 → 44.7 fps）、ring の空きの計算（d218e4dc7、hang の後の compute の EIO）、
+  thermal fault で仕事を止め fan を 100 %（31129fc30・1b9cc7865）、SMU の電圧の feature（1b9cc7865）、guard.sh。次: (1) fence の約 1.3 ms の固定の遅れ（完了の通知の
+  thread の起床 3 回、phase006 の見立て）、(2) 頂点の側の 0.8 ms（s_barrier の数、position の fetch）、(3) big-N・subs-N の CPU 側（executor の外の往復が大半）、
+  (4) SMU が長い負荷で壊れないかを guard の下で見続ける（壊れたら mode1 の reset と shutdown の時の reset が候補）。長い試験は必ず round.sh か guard.sh の下で。

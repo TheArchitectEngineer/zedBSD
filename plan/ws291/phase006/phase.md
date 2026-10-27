@@ -316,3 +316,62 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
   長い session の再現（nggshape・shot・bench・hang 6 回・compute 40 回）を流して mark を待つ。
 - 実機の入れ直し: 06:37 の Debian からの BootNext の再起動の後、両 OS が 8 分応答せず（04:10 と同じ症状の再発、2 回目）。06:45:47 に P2 が SwitchBot で
   入れ直し（1 回）、Debian に戻った。直前は frag1b で hang 16 回と bench の後。
+- 長い session の再現（marks1、07:00 頃）: hang 2 回目の後の compute で A が再現。kernel の行は `compute ring full: 42 words, room 71` →
+  `vk: a command buffer did not run (5)`。原因: ring の空きを engine が時々しか報告しない read pointer だけで計算していた（Linux は rptr で空きを見ない）。
+  修正 commit d218e4dc7（cp.c・engines.c・amdrdna-private.h）: ring ごとに直近 64 個の fenced submission の fence の値とその末尾の write pointer を覚え、
+  通過した fence の所までは読まれたとして空きを計算。ring full の mark に read・write・fence も出す。host PASS、warning 0。
+- B と SMU（vmunix-room1 の stress、07:05 頃）: B が多発（compute 10/40 が steps=0、描画の readback が ff000000・006f0000、mview の 1 体の画面全体に
+  点状の色化け: 16 階調以上の差 403263 pixel、build/tmp/bad-shot1.png）。kernel に `smu: message 0x12 answered 0x10410d (5)` →
+  `thermal fault: the smu firmware gave no readings ...; the GPU takes no more work`（bench の subs-1000 の頃）、amdrdnactl は fan=0rpm・hung=1・fault=1。
+  thermal fault は印を付けるだけで仕事を止めていなかった。→ 07:09 に zedBSD を poweroff、07:10:00 に P2 が SwitchBot で入れ直し（2 回目）。log は
+  build/tmp/dmesg-smu-room1.txt（worktree p2-ws291c）。BootNext の warm reboot の後に両 OS が応答しない件（04:10・06:37）も、SMU が壊れたまま
+  warm reboot した事が原因の見込み（Debian の amdgpu が初期化できない）。
+- Q1 の指示（07:15）: (1) 長い試験は温度・fan・SMU を見張り、異常で負荷を止めて poweroff、(2) driver も thermal fault で負荷を止める、(3) わざと
+  SMU を壊さない、(4) Linux で同じ負荷を比べる。→ commit 31129fc30: smu.c の power_fault が device を failed にして仕事を止め、fan を thermal block 直で
+  100 % に。plan/ws291/tests/guard.sh（20 秒ごとに amdrdnactl の power 行、hung=1・fault=1・90 C 以上・driver が回す時の fan 停止で mview・vkhang を
+  kill して poweroff）、round.sh は guard の下で走る。Linux（07:20、amdgpu）で bench の全部: SMU の error なし、48 C・fan 1170 rpm（表は下）。
+- Fable 5.1 High の助言 2 回目（SMU、要点）: mailbox・HDP・table の手順は Linux と同じで、0x10410d は結果。MP1・THM・GC が同じ秒に壊れたので電源の
+  領域の問題。本命は SMU の feature の組: gfxclk の DPM を動かしながら、Linux が常に許す電圧の保護（APCC_DFLL の droop 制御、TEMP_DEPENDENT_VMIN、
+  APCC_PLUS、GFX_SS など）を許していない → 細かい submit の多い負荷で電圧の droop → GPU と fabric の誤動作。ほか: fault の時は仕事を止めるのを先に、
+  SMU が壊れたら PSP の mode1 reset で戻す、shutdown の時に hung なら mode1 して次の OS を救う。
+- 採用: power_fault を「仕事を止める → fan」の順に。Linux が常に許す feature のうち電圧の物（APCC_PLUS 26、GFX_SS 37、TEMP_DEPENDENT_VMIN 39、
+  APCC_DFLL 42）を gfxclk の DPM と一緒に許す（amdrdna-hw.h AMDRDNA_SMU_CLOCK_FEATURES_*、Linux v6.19 navi10_ppt.c navi10_get_allowed_feature_mask）。
+  実機（vmunix-feat1）で動いたのは GFX_SS と APCC_DFLL（`features all on: 0x00000423a3800003`、vbios の表が残り 2 つを持たない）。
+  guard の下の長い stress（nggshape・shot・bench ×3・hang）で確かめる。mode1 による復帰と shutdown の時の reset は未実施（次の候補）。
+
+### 頂点の側の律速の切り分け（2026-10-28 07:25）
+
+- culling part に VALU を 64 命令足す診断（pad64、HEAD 31129fc30 に build/tmp の patch）: cull-6500 20.47 ms（前 20.45）、scene-6500 20.53（前 20.58）。
+  → fragment の修正の後も、culling part の VALU は律速でない。
+
+| Linux（07:20、build/ws291/measure/linux-q1639） | fps | record | submit | fence |
+| --- | --- | --- | --- | --- |
+| scene-1500 / scene-6500 | 199.4 / 50.2 | 0.11 / 0.15 | 0.10 / 0.10 | 4.67 / 19.49 |
+| big-1000 / subs-1000 | 86.9 / 58.6 | 5.41 / 6.25 | 0.02 / 10.28 | 6.01 / 0.46 |
+- 確かめ（vmunix-feat1、07:29〜07:36、guard の下）: nggshape 14 種 ok、bench ×3（約 5 分）、hang 回復 ok、SMU は正常のまま（hung=0・fault=0、温度 47〜50 C、
+  負荷の時 fan 828 rpm）。shot 1 体は mview の窓が出る前の desktop を撮った（起動直後の 1 回目の既知の事、未判定）。SMU が壊れたのは前は約 20 分の後
+  なので、この 1 回では直ったと言えない（以後の guard の下の試験で見続ける）。
+
+### Fable 5.1 High の助言 3 回目（残りの差、07:40）と試した事
+
+- 助言の要点: 両方とも raster を外しても同じ時間なので、律速は GE・SPI の前段（wave の起動から GS_ALLOC_REQ までの時間）。候補の順: (1) 実行の run
+  （IB・resource table）の system memory の page が MTYPE UC なので各 wave の s_load が PCIe を往復する → NC に、(2) s_barrier の数（5 対 RADV 2）、
+  (3) position の fetch を buffer_load_format_xyzw から dwordx3 に、(4) PDE0 の 2 MiB page、(6) fence の時間に起床の遅れが入っていないか、
+  (7〜10) CPU 側: acquire・submit の worker の起床、execute_draw の毎 draw の全 state、run の slot の数。
+- 試した (1): space.c の system の page を NC（Linux の cached な system page と同じ）にした kernel（vmunix-nc1）: cull-6500 20.64、scene-6500 20.78 ms
+  （前 20.45・20.58）→ 効果なし、戻した（commit しない）。
+- 試した (8): frame を、queue が空で worker が暇な時は submit した thread で直に実行する kernel（vmunix-direct1、runtime.c）: nggshape・shot（1 体 差 0、
+  6500 体 max 1）・hang は ok だが、bench は変わらず（scene-6500 22.45 ms、subs-1000 290 ms）→ 戻した（commit しない）。libvulkan の VULKAN TIMING は
+  1 ms の刻みの時計なので、小さい段の平均は粗い。kernel の op 18（vkQueueSubmit）は 1 回 17〜33 µs で、frame の CPU 側の大半は kernel の executor の外
+  （libvulkan と gpu の core の往復）。
+- 見立て（未確かめ、次の担当へ）: GPU がほぼ何もしない scene-1 でも fence が 1.35 ms（Linux 0.06 ms）、big-1 も 1.44 ms。fence の時間に約 1.3 ms の
+  固定の遅れがある。完了の通知の道は EOP の割り込み → IH の thread → ring の fence の waitq → runtime の completer の thread → core → user の thread と
+  3 回の thread の起床で、kern の sched_wakeup は thread を前に走った CPU の run queue に入れる（その CPU が忙しいと次の tick まで待つ見込み）。
+  この遅れを除けば scene-6500 の GPU の時間は約 19.2 ms で Linux（19.5〜19.7）を下回る見込み。直す所の候補: amdrdna の中では EOP の処理（IH の thread）
+  から run の通過した parked の marker を直に完了して completer の起床を省く（順序を保つ）、kern の側では起床する thread を空いた CPU へ（scheduler は
+  amdrdna の外、Q1 へ）。
+- 確かめ（08:00、診断 kernel vmunix-spin1、commit しない: build/tmp/spinwait.patch）: amdrdna_ring_wait を眠らず fence を回し読みにしても scene-1 の
+  fence 1.31 ms・big-1 1.32 ms・scene-6500 20.80 ms で変わらない → ring の待ちの眠りは遅れの元でない。残る候補は IH の thread の起床、completer の
+  起床、core から user の thread への起床、または GPU 側の run ごとの固定の仕事（始めの ACQUIRE_MEM の GL2 の WB+INV など）。区間ごとの時刻を
+  取る計測が次（EOP の割り込みの時刻と marker の完了の時刻、GPU の timestamp の始めと終わり）。
+- 機械（08:05）: stick は vmunix-feat1（1b9cc7865 の動作、cksum 1397306155）、zedBSD で起動中、SMU 正常。入れ直しは今日 P2 が 2 回（06:45:47、07:10:00）。

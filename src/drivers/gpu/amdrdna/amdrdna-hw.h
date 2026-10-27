@@ -137,18 +137,25 @@
  * word of the feature mask: the clock's prefetcher (bit 0) and its levels
  * (bit 1), and the limits that keep a raised clock within the board's
  * power (bit 23), current (bit 24), current steps (bit 25) and regulator
- * temperature (bit 29), which Linux permits whatever it asks for.  The
- * memory clock's levels stay off: the firmware's picture was timed for
- * the memory clock it has.
+ * temperature (bit 29), which Linux permits whatever it asks for; and the
+ * controls of the graphics voltage that Linux also always permits, so a
+ * raised clock under bursts of work keeps a safe voltage: the advanced
+ * power-clock control (bit 26), the spread spectrum (bit 37, bit 5 of the
+ * high word), the temperature-dependent minimum voltage (bit 39, bit 7)
+ * and the droop control (bit 42, bit 10).  The memory clock's levels stay
+ * off: the firmware's picture was timed for the memory clock it has.
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
  * (FEATURE_DPM_PREFETCHER_BIT, FEATURE_DPM_GFXCLK_BIT, FEATURE_PPT_BIT,
- * FEATURE_TDC_BIT, FEATURE_GFX_EDC_BIT, FEATURE_VR0HOT_BIT) and
+ * FEATURE_TDC_BIT, FEATURE_GFX_EDC_BIT, FEATURE_VR0HOT_BIT,
+ * FEATURE_APCC_PLUS_BIT, FEATURE_GFX_SS_BIT,
+ * FEATURE_TEMP_DEPENDENT_VMIN_BIT, FEATURE_APCC_DFLL_BIT) and
  * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
  * (navi10_get_allowed_feature_mask: the features always permitted).
  */
-#define AMDRDNA_SMU_CLOCK_FEATURES_LOW	0x23800003U
+#define AMDRDNA_SMU_CLOCK_FEATURES_LOW	0x27800003U
+#define AMDRDNA_SMU_CLOCK_FEATURES_HIGH	0x000004a0U
 
 /*
  * The graphics clock's levels, in the low word of the feature mask.
