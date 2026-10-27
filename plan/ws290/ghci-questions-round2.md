@@ -28,3 +28,8 @@
 | H21 | G38 | host memory を VM_MAP する時、driver は COHERENT を必ず付けるべきか。GPU は host memory を PCIe で snoop するか（No Snoop を付けないか）。 |
 | H22 | G11 | Timeline の 64 bit の fence（`flags[1]`）は capability の flag 付きか。CMD_FENCE の payload の配置（以前の lo 32 + hi 16 bit の形は残るか）。 |
 | H23 | 新 | texture の format の一覧（ETC2・EAC の他に、§8.3 に名前の有る BC1〜BC7・RGB565・D24S8 など）は、それぞれ対応するか、capability の flag 付きか。§8.4 に、format ごとの sampled・filter・color attachment・depth・storage・vertex の対応の表が欲しい（Vulkan の format の feature に写すため）。 |
+
+## 二次回答（2026-10-27、amaterrace-gpu 083e849 の docs・include の修正）
+
+- ユーザー「二次回答としてファイル修正が来ました。このあとH項目を通知してさらに3次回答をもらいます。」。修正の要点（ユーザーの貼った要約）: GHCI 1.0 に統一し機能は capability で検出、BAR0 128 KiB・論理 4 KiB・全 register は先頭 1 KiB、host の AXI 64 bit、RING_RPTR/WPTR は dword index、opcode を 8 bit（VM_MAP 0x10・VM_UNMAP 0x11・SESSION_OPEN 0x12・SESSION_CLOSE 0x13・BIND_SESSION 0x14・DRAW_MESH_TASKS 0x2A）、§8.5 に ETC2/EAC・image の種類・color と depth の format の表、STATUS・IRQ（[12:9] DISP2）・FAULT_INFO（[7:0] client、[11:8] flags、[15:12] kind、[23:16] source、[31:24] session）の bit。
+- Q1 の見立て（要約から。083e849 の本文との照合は未実施）: H04 は解決（`CMD_BIND_SESSION` 0x14）、H01・H09・H12・H20・H23 は一部、他は未解決。三次回答の後に本文を読んで照合する。
