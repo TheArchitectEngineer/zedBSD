@@ -55,6 +55,19 @@
 #define SPACE_MAPPING_ALIGN		(64ULL << 10)
 
 /*
+ * The largest run one page entry's fragment field names (2^9 pages, 2
+ * MiB), and the boundary a backing's VRAM and addresses are put on: the
+ * largest power of two not above its size, from 64 KiB to that run, so
+ * the fragments of a large backing reach the hubs' large translations.
+ *
+ * Values referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/gmc_v10_0.c
+ * (gmc_v10_0_sw_init: amdgpu_vm_adjust_size with the default fragment
+ * size 9) and amdgpu_vm.c (amdgpu_vm_adjust_size).
+ */
+#define SPACE_FRAGMENT_MOST		9U
+#define SPACE_LARGE_ALIGN		(2ULL << 20)
+
+/*
  * The invalidation engine each command ring drops a context's
  * translations on: the graphics ring engine 0, the compute queues of the
  * first compute engine's pipes 0 to 3 engines 4 to 7 (the scheduler's
@@ -113,6 +126,8 @@ static void space_hang(struct amdrdna_space *space, const struct amdrdna_space_t
 static bool space_dropped_locked(struct amdrdna_device *device, const struct amdrdna_space_ticket *ticket);
 static void space_reset(struct amdrdna_device *device, unsigned tracked, unsigned context);
 static uint64_t space_table_word(struct amdrdna_device *device, uint64_t vram);
+static uint64_t space_fragment(uint64_t start, uint64_t bytes, uint64_t address, uint64_t physical);
+static uint64_t space_align(uint64_t bytes);
 static bool space_quiet_locked(struct amdrdna_space *space);
 static uint32_t space_hub_read(struct amdrdna_device *device, enum amdrdna_hub_register which, unsigned instance);
 
@@ -376,6 +391,9 @@ amdrdna_space_map(
 	uint64_t system_access;
 	uint64_t start;
 	uint64_t page;
+	uint64_t physical;
+	uint64_t fragment;
+	uint64_t align;
 	uint64_t entry;
 	unsigned index[AMDRDNA_VM_LEVELS];
 	int error;
@@ -394,10 +412,11 @@ amdrdna_space_map(
 	system_access |= AMDRDNA_PAGE_SYSTEM | AMDRDNA_PAGE_COHERENT;
 	system_access |= AMDRDNA_PAGE_TYPE_UNCACHED << AMDRDNA_PAGE_TYPE_SHIFT;
 
-	/* Takes the addresses and writes one entry per page, under the space's lock. */
+	/* Takes the addresses on the backing's boundary and writes one entry per page, under the space's lock. */
+	align = space_align(backing->bytes);
 	mutex_lock(&space->lock);
 
-	error = amdrdna_pool_take(space->addresses, backing->bytes, SPACE_MAPPING_ALIGN, &start);
+	error = amdrdna_pool_take(space->addresses, backing->bytes, align, &start);
 	if (error != 0) {
 		mutex_unlock(&space->lock);
 		return ENOSPC;
@@ -410,12 +429,18 @@ amdrdna_space_map(
 		if (error != 0)
 			break;
 
-		/* The page's entry: its VRAM's physical address and the bits, or its system page's bus address and the system bits. */
+		/*
+		 * The page's entry: its system page's bus address and the system
+		 * bits, or its VRAM's physical address, the bits and the run of
+		 * contiguous VRAM it lies in.
+		 */
 		amdrdna_vm_split(start + page, index);
 		if (backing->system) {
 			entry = amdrdna_vm_leaf_entry(backing->ram.paddr + page, system_access);
 		} else {
-			entry = amdrdna_vm_leaf_entry(backing->vram + page + device->frame_buffer_physical, access);
+			physical = backing->vram + page + device->frame_buffer_physical;
+			fragment = space_fragment(start, backing->bytes, start + page, physical);
+			entry = amdrdna_vm_leaf_entry(physical, access | fragment);
 		}
 		space_table_write(device, leaf, index[SPACE_LEAF_LEVEL], entry);
 		leaf->count++;
@@ -1214,6 +1239,7 @@ amdrdna_backing_create(
 	struct amdrdna_backing *backing;
 	volatile uint8_t *window;
 	uint64_t whole;
+	uint64_t align;
 	uint64_t at;
 	int error;
 
@@ -1228,8 +1254,11 @@ amdrdna_backing_create(
 	if (backing == NULL)
 		return ENOMEM;
 
-	/* The VRAM, from the pool asked for. */
-	error = amdrdna_vram_take(device, cpu, whole, SPACE_MAPPING_ALIGN, &backing->vram);
+	/* The VRAM, from the pool asked for: on the backing's boundary, or the plain one when no run is free there. */
+	align = space_align(whole);
+	error = amdrdna_vram_take(device, cpu, whole, align, &backing->vram);
+	if (error != 0)
+		error = amdrdna_vram_take(device, cpu, whole, SPACE_MAPPING_ALIGN, &backing->vram);
 	if (error != 0) {
 		kern_free(backing);
 		return ENOMEM;
@@ -1424,6 +1453,71 @@ amdrdna_backing_cpu(
 
 	/* Succeeded: the CPU's address. */
 	return cpu;
+}
+
+/*
+ * Gives the fragment field of the entry of the page at address, VRAM at
+ * physical, in a mapping of bytes at start: the largest aligned run of
+ * 2^(12 + n) bytes around the page that lies inside the mapping and whose
+ * GPU and VRAM addresses agree below the run's size (one translation then
+ * covers it), or 0.
+ *
+ * Procedure referenced: Linux v6.19 drivers/gpu/drm/amd/amdgpu/amdgpu_vm_pt.c
+ * (amdgpu_vm_pte_fragment, amdgpu_vm_ptes_update: every entry of an
+ * aligned run of contiguous VRAM carries the run's fragment).
+ */
+static uint64_t
+space_fragment(
+	uint64_t start,
+	uint64_t bytes,
+	uint64_t address,
+	uint64_t physical)
+{
+	uint64_t run;
+	uint64_t first;
+	unsigned fragment;
+
+	/* Tries the runs from the largest down. */
+	for (fragment = SPACE_FRAGMENT_MOST; fragment > 0U; fragment--) {
+		/* The run around the page. */
+		run = (uint64_t)SPACE_PAGE_BYTES << fragment;
+		first = address & ~(run - 1U);
+
+		/* Skips a run whose VRAM is not on the same boundary. */
+		if (((address ^ physical) & (run - 1U)) != 0U)
+			continue;
+
+		/* Skips a run that reaches outside the mapping. */
+		if (first < start)
+			continue;
+		if (first + run > start + bytes)
+			continue;
+
+		/* Succeeded: the run's field. */
+		return (uint64_t)fragment << AMDRDNA_PAGE_FRAGMENT_SHIFT;
+	}
+
+	/* Only the page itself. */
+	return 0U;
+}
+
+/*
+ * Gives the boundary of a backing of bytes (whole 64 KiB steps): the
+ * largest power of two not above it, from 64 KiB to 2 MiB.
+ */
+static uint64_t
+space_align(
+	uint64_t bytes)
+{
+	uint64_t align;
+
+	/* Doubles the boundary while the backing still holds it. */
+	align = SPACE_MAPPING_ALIGN;
+	while (align < SPACE_LARGE_ALIGN && align * 2U <= bytes)
+		align *= 2U;
+
+	/* Succeeded: the boundary. */
+	return align;
 }
 
 /* Reports the ring a tracked ring stands for, or NULL when it does not run. */

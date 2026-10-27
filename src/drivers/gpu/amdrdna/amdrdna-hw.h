@@ -40,13 +40,16 @@
 /*
  * The bits of a page entry the memory hubs read: present, in system memory,
  * coherent with the CPU's caches, executable, readable and writable; the
+ * fragment (bits 11:7: the page lies in an aligned run of 2^(12 + n)
+ * bytes mapped alike and contiguously, which one translation covers); the
  * memory type in bits 50:48 (3 is uncached); the bit that makes a
  * directory entry a leaf; and the address bits of a page and of a table.
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/amdgpu/amdgpu_vm.h (AMDGPU_PTE_VALID,
  * AMDGPU_PTE_SYSTEM, AMDGPU_PTE_SNOOPED, AMDGPU_PTE_EXECUTABLE,
- * AMDGPU_PTE_READABLE, AMDGPU_PTE_WRITEABLE, AMDGPU_PTE_MTYPE_NV10,
+ * AMDGPU_PTE_READABLE, AMDGPU_PTE_WRITEABLE, AMDGPU_PTE_FRAG,
+ * AMDGPU_PTE_MTYPE_NV10,
  * AMDGPU_PDE_PTE), drivers/gpu/drm/amd/include/navi10_enum.h (MTYPE_UC),
  * drivers/gpu/drm/amd/amdgpu/amdgpu_gmc.c (amdgpu_gmc_set_pte_pde: the
  * page address mask) and gmc_v10_0.c (gmc_v10_0_get_vm_pde: a table
@@ -58,6 +61,8 @@
 #define AMDRDNA_PAGE_EXECUTE		0x0000000000000010ULL
 #define AMDRDNA_PAGE_READ		0x0000000000000020ULL
 #define AMDRDNA_PAGE_WRITE		0x0000000000000040ULL
+#define AMDRDNA_PAGE_FRAGMENT_SHIFT	7U
+#define AMDRDNA_PAGE_FRAGMENT_MASK	0x0000000000000f80ULL
 #define AMDRDNA_PAGE_TYPE_SHIFT		48U
 #define AMDRDNA_PAGE_TYPE_MASK		0x0007000000000000ULL
 #define AMDRDNA_PAGE_TYPE_UNCACHED	3ULL
