@@ -36,15 +36,18 @@
  * the log shows it once per command buffer.
  *
  * A wait for an event that nothing earlier in the submission sets cuts
- * the submission there (before the render pass it is in): the queue
- * places the packets before the cut and holds the rest back until the
- * event is set (vk-queue.c).  Cuts without events, between commands
- * outside a render pass every CUT_SPACING dwords or more (an eighth of
- * the ring at most), let a held submission go into the ring in pieces
- * the ring has room for.  The GPU may lose a session's binds between two
- * pieces (a reset, or a clear of new memory with the driver's program),
- * so a command buffer binds everything again after a cut, and after the
- * begin of a render pass, where a wait inside the pass cuts it.
+ * the submission there (before the render pass or the query begun
+ * outside a render pass it is in, so that each runs in one piece): the
+ * queue places the packets before the cut and holds the rest back until
+ * the event is set (vk-queue.c).  Cuts without events, between commands
+ * outside a render pass and outside a query every CUT_SPACING dwords or
+ * more (an eighth of the ring at most), made only in a submission that
+ * is held, let it go into the ring in pieces the ring has room for.  The
+ * GPU may lose a session's binds between two pieces (a reset, or a clear
+ * of new memory with the driver's program), so a command buffer binds
+ * everything again after a cut, after the begin of a render pass, and
+ * after the begin of the first query active outside one, where a wait
+ * inside the pass or the query cuts it.
  *
  * Without the blitter, the transfers are the driver's own compute
  * programs (vk-meta.c), and so are, on every device, the copy of query
@@ -303,8 +306,10 @@ struct event_write {
  * One submission being made: the session and device, the submission's
  * packets and temporary memory, the state of the command buffer being
  * walked and its render pass (pass_at is the dword its begin starts at),
- * the hardware tables of the bind being made, the events written, and
- * the first error, which refuses the submission.
+ * the queries begun outside a render pass and not ended yet (query_at is
+ * the dword the first of them begins at), the hardware tables of the
+ * bind being made, the events written, and the first error, which
+ * refuses the submission.
  */
 struct exec {
 	struct ghci_vk_session *session;
@@ -315,6 +320,8 @@ struct exec {
 	struct buffer_state *state;
 	struct pass_state pass;
 	uint32_t pass_at;
+	uint32_t queries;
+	uint32_t query_at;
 	struct ghci_vk_tables tables;
 	struct event_write events[EVENTS_MAX];
 	uint32_t event_count;
@@ -661,8 +668,11 @@ buffer_convert(
 	state->secondary = secondary;
 	saved = exec->state;
 	exec->state = state;
-	if (!secondary)
+	if (!secondary) {
+		/* A primary buffer begins outside a render pass, with no query of its own active. */
 		kern_memset(&exec->pass, 0, sizeof(exec->pass));
+		exec->queries = 0U;
+	}
 
 	/* Each command: [u32 number][u32 flags][u64 command buffer], then its arguments. */
 	kern_memset(&reader, 0, sizeof(reader));
@@ -953,9 +963,12 @@ put(
  * must be set before anything after it is placed (merged into a cut
  * already there); without, a cut that only lets a held submission be
  * placed in pieces, made only a spacing (CUT_SPACING, an eighth of the
- * ring at most) after the head and the last cut.  The command buffer
- * binds everything again after a cut outside a render pass.  The cuts
- * stay in order of their dwords.
+ * ring at most) after the head and the last cut, and only in a
+ * submission that is held: one made while the device holds submissions
+ * back, from its first cut with events on.  No such cut is made while a
+ * query begun outside a render pass is active, so that a query counts
+ * within one piece.  The command buffer binds everything again after a
+ * cut outside a render pass.  The cuts stay in order of their dwords.
  */
 static void
 cut_mark(
@@ -984,7 +997,11 @@ cut_mark(
 	if (spacing > CUT_SPACING || spacing == 0U)
 		spacing = CUT_SPACING;
 
-	/* A plain cut only past the spacing: not near the head, nor near the last cut. */
+	/* A plain cut only in a held submission, with no query active, past the spacing from the head and the last cut. */
+	if (count == 0U && exec->device->holds == NULL && submission->waiting == 0U)
+		return;
+	if (count == 0U && exec->queries != 0U)
+		return;
 	if (count == 0U && at < spacing)
 		return;
 	if (count == 0U && last != NULL && at - last->at < spacing)
@@ -1118,6 +1135,7 @@ temp_take(
 		submission->temp_count++;
 		submission->chunk_used = 0U;
 		submission->chunk_bytes = (uint32_t)chunk;
+		submission->temp_bytes += chunk;
 		start = 0U;
 	}
 
@@ -5036,6 +5054,7 @@ event_write(
  * submission's own that its SetEvent's fence sets.  Any other (one the
  * host sets, an earlier submission's GPU sets, or one this submission
  * reset) cuts the submission where the wait is, or where the render
+ * pass it is in begins, or where the active query begun outside a render
  * pass it is in begins: the queue places nothing after the cut until the
  * event's word is set and no placed work writes it any more, so that the
  * ring never waits for what only the host or a later look of the kernel
@@ -5093,10 +5112,18 @@ wait_events(
 		held_count++;
 	}
 
-	/* The cut: here, or where the render pass the wait is in begins. */
+	/*
+	 * The cut: here, or where the render pass the wait is in begins, or
+	 * before the first query begun outside a render pass that is active
+	 * (the occlusion counter is one for the whole device and the bind of
+	 * a session clears it, so a query runs in one piece: ghci.md 644072a
+	 * section 7.3).
+	 */
 	cut_at = exec->submission->used;
 	if (exec->pass.active)
 		cut_at = exec->pass_at;
+	if (exec->queries != 0U && exec->query_at < cut_at)
+		cut_at = exec->query_at;
 	if (held_count != 0U)
 		cut_mark(exec, cut_at, held, held_count);
 
@@ -5177,6 +5204,21 @@ query(
 	switch (number) {
 	case GPU_OP_CMD_BEGIN_QUERY:
 	case GPU_OP_CMD_END_QUERY:
+		/*
+		 * A query begun outside a render pass is active until its end,
+		 * which is outside one too.  The first one active marks where a
+		 * wait inside it cuts the submission, and what the command buffer
+		 * bound is placed again after it, since a piece may begin there.
+		 */
+		if (!exec->pass.active && number == GPU_OP_CMD_BEGIN_QUERY) {
+			if (exec->queries == 0U) {
+				exec->query_at = exec->submission->used;
+				buffer_state_dirty(exec->state);
+			}
+			exec->queries++;
+		} else if (!exec->pass.active && exec->queries != 0U) {
+			exec->queries--;
+		}
 		flags = (flags & VK_QUERY_CONTROL_PRECISE_BIT) != 0U ? GHCI_QUERY_PRECISE : 0U;
 		put(exec, words, ghci_cmd_query(words, number == GPU_OP_CMD_END_QUERY ? 1U : 0U, pool->va, first, flags | GHCI_QUERY_AVAILABILITY));
 		break;

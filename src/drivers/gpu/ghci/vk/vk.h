@@ -414,9 +414,11 @@ struct ghci_vk_retired {
  * bytes of each), the runs let go that wait for a ticket, the ticket of
  * the last work it placed in the ring, and the submissions it holds back
  * (holds, oldest first; hold_serial is the serial of the last one held
- * and hold_count how many are held).  It lives from vkCreateDevice to
- * vkDestroyDevice (or the node session's close).  next, last, submitted,
- * hold_serial and hold_count change under irq_lock; the rest belongs to
+ * and hold_count how many are held; failed_timelines has a bit for each
+ * timeline whose next context fence reports held work that failed).  It
+ * lives from vkCreateDevice to vkDestroyDevice (or the node session's
+ * close).  next, last, submitted, hold_serial, hold_count and
+ * failed_timelines change under irq_lock; the rest belongs to
  * whoever holds the session's hold_lock.  meta are the driver's transfer
  * programs placed in its code heap at their first use, which go with the
  * heap.
@@ -435,6 +437,7 @@ struct ghci_vk_device {
 	struct ghci_vk_hold *holds;
 	uint64_t hold_serial;
 	unsigned hold_count;
+	uint64_t failed_timelines;
 };
 
 /*
@@ -855,7 +858,7 @@ struct ghci_vk_cut {
  * memory they read (the hardware tables, render pass descriptions,
  * clear colours, index lists and data), taken of the device's data heap
  * a chunk at a time (chunk_used and chunk_bytes are of the one being
- * filled), the events its packets write (and the dwords of each one's
+ * filled, temp_bytes the bytes of every chunk), the events its packets write (and the dwords of each one's
  * first and last write), and its cuts in order of their dwords with the events
  * they wait for (waiting is the number of cuts with events).  The runs
  * go back once the submission's last ticket has passed, and the events
@@ -870,6 +873,7 @@ struct ghci_vk_submission {
 	uint32_t temp_capacity;
 	uint32_t chunk_used;
 	uint32_t chunk_bytes;
+	uint64_t temp_bytes;
 	uint64_t events[GHCI_VK_SUBMIT_EVENTS];
 	uint32_t event_first[GHCI_VK_SUBMIT_EVENTS];
 	uint32_t event_last[GHCI_VK_SUBMIT_EVENTS];
@@ -890,8 +894,8 @@ struct ghci_vk_submission {
  * pieces, each with its fence; ticket is the last piece's, when placed
  * says one was), the cut the next piece starts at or after, the VkFence
  * it signals (its identity, 0 for none), its serial among the device's
- * held submissions, and the host bytes it takes of the session's budget
- * while it is held.
+ * held submissions, and the bytes it takes of the session's budget while
+ * it is held (its host memory and its temporary memory in the data heap).
  */
 struct ghci_vk_hold {
 	struct ghci_vk_hold *next;
@@ -947,13 +951,15 @@ struct ghci_vk_object {
  * fence of a timeline waits for the work of the timeline's device placed
  * until it ran, after the earlier frames of its timeline.  A frame with
  * nothing to wait for has ticket.seq 0; one behind held submissions has
- * a ticket of GHCI_VK_HELD_GENERATION; failed ends it with an error.
+ * a ticket of GHCI_VK_HELD_GENERATION and held, the device that holds
+ * them; failed ends it with an error.
  */
 struct ghci_vk_frame {
 	struct ghci_vk_frame *next;
 	struct drv_gpu_completion *completion;
 	uint32_t timeline;
 	struct ghci_ticket ticket;
+	struct ghci_vk_device *held;
 	int failed;
 };
 
@@ -966,7 +972,8 @@ struct ghci_vk_frame {
  * it for each frame, and the service thread, which only tries it to
  * place the submissions the session's devices hold back.  Under
  * irq_lock: next (the executor's list), the devices, the device of each
- * timeline, the job markers (and the timeline each was reserved on), the
+ * timeline, the job markers (the timeline each was reserved on, and the
+ * device whose held submissions a committed one waits for), the
  * queued frames, completing (the completions a retirement took and has
  * not yet reported to the core), the submissions held (hold_count, of
  * every device) and the service rounds that look at them (holding), the
@@ -987,6 +994,7 @@ struct ghci_vk_session {
 	struct ghci_vk_device *timeline_device[GHCI_VK_TIMELINES];
 	struct ghci_job_table jobs;
 	uint32_t marker_timeline[GHCI_JOB_MARKERS];
+	struct ghci_vk_device *marker_device[GHCI_JOB_MARKERS];
 	struct ghci_vk_frame *frames;
 	unsigned frame_count;
 	unsigned completing;

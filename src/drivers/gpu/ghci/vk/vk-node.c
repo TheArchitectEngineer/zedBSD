@@ -325,6 +325,7 @@ node_commit(
 	unsigned long irq;
 	unsigned index;
 	int passed;
+	int held;
 	int error;
 
 	/* The marker the token names, bound under the interrupt's lock. */
@@ -344,8 +345,12 @@ node_commit(
 			if (state != GHCI_TICKET_DONE)
 				ticket = owner->last;
 		}
+		held = 0;
 		if (owner != NULL)
-			(void)ghci_vk_held_ticket(owner, &ticket);
+			held = ghci_vk_held_ticket(owner, &ticket);
+		session->marker_device[index] = NULL;
+		if (held)
+			session->marker_device[index] = owner;
 		error = ghci_jobs_commit(&session->jobs, index, completion, ticket.seq, ticket.generation, &passed);
 	}
 
@@ -444,7 +449,8 @@ node_capacity(
 
 /*
  * Begins the stop of a node session: it takes no new frame or job.  Its
- * work in the ring ends on the GPU or with a reset; nothing waits here.
+ * work in the ring ends on the GPU or with a reset, and the service
+ * thread, woken, ends the work it holds back; nothing waits here.
  */
 static int
 node_stop_begin(
@@ -466,6 +472,9 @@ node_stop_begin(
 	session->stopping = 1;
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* The service thread ends what the session holds back. */
+	ghci_service_wake(device, GHCI_WORK_RECLAIM);
 
 	/* Succeeded: the poll says when the stop is done. */
 	return 0;
@@ -578,6 +587,9 @@ node_isolate(
 	/* Each GHCI session of the node session is isolated. */
 	for (index = 0U; index < count; index++)
 		ghci_vm_isolate(device, vms[index]);
+
+	/* The service thread ends what the session holds back. */
+	ghci_service_wake(device, GHCI_WORK_RECLAIM);
 
 	/* Succeeded: the session is isolated. */
 	return 0;

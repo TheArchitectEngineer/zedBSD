@@ -30,10 +30,12 @@
  * the client writes, so a wait that never ends stops no other session
  * and not the display.  The kernel places a held submission's next
  * piece once the events of its cut are set and no placed work writes
- * them any more: when the host sets an event (on the client's thread,
- * which may wait for the ring's room) and at each round of the service
- * thread, after each fence interrupt (which only tries the session's
- * hold_lock and enters only a free ring with room now).  A fence, a job
+ * them any more: when the host sets an event, when the client polls the
+ * fence of held work and at the end of each of the client's frames (on
+ * the client's thread, which may wait for the ring's room), and at each
+ * round of the service thread, after each fence interrupt (which only
+ * tries the session's hold_lock and enters only a free ring with room
+ * now).  A fence, a job
  * marker or a frame behind held work completes once that work has run;
  * held work ends with an error when its session stops, is isolated or
  * closes, its device goes, the GPU is lost, or a reset ends the
@@ -334,7 +336,8 @@ ghci_vk_frame_new(
  * timeline 0 completes at the next retirement, since its replies are
  * already written; a context fence of a timeline waits for the work its
  * device placed or holds until now (none when the frame destroyed the
- * device).
+ * device), and ends with an error when held work of the device failed
+ * since the timeline's last context fence that reported it.
  * Returns 0, or EIO for a session the GPU core stopped or isolated, and
  * then frees the record.
  */
@@ -347,6 +350,7 @@ ghci_vk_frame_queue(
 	struct ghci_vk_device *device;
 	unsigned long irq;
 	int stopped;
+	int held;
 
 	/* The ticket it waits for, and the frame last in the session's queue. */
 	irq = spin_lock_irqsave(&session->device->irq_lock);
@@ -357,8 +361,16 @@ ghci_vk_frame_queue(
 		device = session->timeline_device[frame->timeline];
 	if (device != NULL && device->submitted)
 		frame->ticket = device->last;
+	held = 0;
 	if (device != NULL)
-		(void)ghci_vk_held_ticket(device, &frame->ticket);
+		held = ghci_vk_held_ticket(device, &frame->ticket);
+	if (held)
+		frame->held = device;
+	if (device != NULL && (device->failed_timelines & ((uint64_t)1U << frame->timeline)) != 0U) {
+		/* Held work it follows failed since the timeline's last context fence. */
+		frame->failed = 1;
+		device->failed_timelines &= ~((uint64_t)1U << frame->timeline);
+	}
 	if (!stopped) {
 		position = &session->frames;
 		while (*position != NULL)
@@ -514,6 +526,7 @@ ghci_vk_holds_fail(
 	struct ghci_vk_object *object;
 	struct ghci_vk_hold *hold;
 	unsigned long irq;
+	uint32_t timeline;
 	unsigned count;
 
 	/* Each held submission, oldest first. */
@@ -541,11 +554,19 @@ ghci_vk_holds_fail(
 	if (count == 0U)
 		return;
 
-	/* Nothing is held; what waited for it fails. */
+	/*
+	 * Nothing is held; what waited for it fails, and the next context
+	 * fence of each of the device's timelines that no failed frame
+	 * reported fails too.
+	 */
 	irq = spin_lock_irqsave(&session->device->irq_lock);
 
 	session->hold_count -= device->hold_count;
 	device->hold_count = 0U;
+	for (timeline = 1U; timeline < GHCI_VK_TIMELINES; timeline++) {
+		if (session->timeline_device[timeline] == device)
+			device->failed_timelines |= (uint64_t)1U << timeline;
+	}
 	held_resolve(session, device, 0U, NULL);
 
 	spin_unlock_irqrestore(&session->device->irq_lock, irq);
@@ -911,7 +932,10 @@ reset_fences(
 /*
  * vkGetFenceStatus: [device][fence] -> [result]: VK_SUCCESS signaled,
  * VK_NOT_READY not yet (or held back), VK_ERROR_DEVICE_LOST for work a
- * reset ended or held work that failed.
+ * reset ended or held work that failed.  A fence of held work first lets
+ * the device's held submissions go as far as they may (on the client's
+ * thread, which may wait for the ring's room), so that a client that
+ * polls its fence places what the service thread could not.
  */
 static int
 fence_status(
@@ -933,6 +957,10 @@ fence_status(
 	object = ghci_vk_object_find(session, GHCI_VK_FENCE, identity);
 	if (object == NULL)
 		return EINVAL;
+
+	/* Held work goes as far as it may now. */
+	if (object->as.fence.held)
+		(void)ghci_vk_holds_advance(session, object->device, 1);
 
 	/* Signaled on the host, by its submission's ticket, or not yet. */
 	result = (uint32_t)VK_NOT_READY;
@@ -1087,9 +1115,11 @@ retire(
 		frame = *position;
 		mark = (uint64_t)1U << frame->timeline;
 		state = GHCI_TICKET_DONE;
-		if (frame->failed)
+		if ((waiting & mark) != 0U)
+			state = GHCI_TICKET_PENDING;
+		else if (frame->failed)
 			state = GHCI_TICKET_FAILED;
-		else if ((waiting & mark) != 0U || frame->ticket.generation == GHCI_VK_HELD_GENERATION)
+		else if (frame->ticket.generation == GHCI_VK_HELD_GENERATION)
 			state = GHCI_TICKET_PENDING;
 		else if (frame->ticket.seq != 0U)
 			state = ghci_cp_ticket_locked(session->device, &frame->ticket);
@@ -1165,10 +1195,14 @@ complete(
 /*
  * Holds a submission back behind the device's held ones (or at its cut),
  * with the fence it signals, and places it as far as it may go now.  What
- * it keeps of the host's memory (its record, packets and cuts) is taken
- * of the session's budget until it is placed or fails.  Returns the
- * reply: VK_SUCCESS (placed or held), VK_ERROR_DEVICE_LOST when the held
- * work failed, or VK_ERROR_OUT_OF_HOST_MEMORY with nothing held.
+ * it keeps of the host's memory (its record, packets and cuts) and of the
+ * device's data heap (its temporary memory) is taken of the session's
+ * budget until it is placed or fails, so that a client cannot pile up
+ * held work without bound.  Returns the reply: VK_SUCCESS (placed or
+ * held), VK_ERROR_DEVICE_LOST when the held work failed, or
+ * VK_ERROR_OUT_OF_HOST_MEMORY (the host memory) or
+ * VK_ERROR_OUT_OF_DEVICE_MEMORY (the temporary memory) with nothing
+ * held.
  */
 static uint32_t
 hold_submit(
@@ -1191,6 +1225,15 @@ hold_submit(
 		ghci_vk_submission_end(device, submission, NULL, 0);
 		return (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
 	}
+
+	/* Its temporary memory in the data heap, of the same budget. */
+	error = ghci_vk_budget_take(session, submission->temp_bytes);
+	if (error != 0) {
+		ghci_vk_budget_give(session, bytes);
+		ghci_vk_submission_end(device, submission, NULL, 0);
+		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
+	}
+	bytes += submission->temp_bytes;
 
 	/* The record takes the submission over. */
 	hold = kern_calloc(1U, sizeof(*hold));
@@ -1336,12 +1379,13 @@ piece_end(
 }
 
 /*
- * Reports whether the events of a cut of a held submission are set: each
- * word 1, and no placed work writes it any more; an event the submission
- * itself writes between its first dword not placed and the cut is not
- * set yet (the piece ends at the cut, and its ticket is then waited
- * for).  Returns 0, EAGAIN when one is not yet, or EINVAL when one is
- * gone.
+ * Reports whether the events of a cut of a held submission are set: no
+ * placed work writes the event any more, and then its word is 1 (read
+ * after the ticket, so that a word placed work set and then reset is not
+ * seen at 1 between the two); an event the submission itself writes
+ * between its first dword not placed and the cut is not set yet (the
+ * piece ends at the cut, and its ticket is then waited for).  Returns 0,
+ * EAGAIN when one is not yet, or EINVAL when one is gone.
  */
 static int
 cut_ready(
@@ -1368,16 +1412,19 @@ cut_ready(
 				return EAGAIN;
 		}
 
-		/* The word, and the placed work that writes it. */
+		/* The placed work that writes it, which has finished. */
 		object = ghci_vk_object_find(session, GHCI_VK_EVENT, identity);
 		if (object == NULL)
 			return EINVAL;
+		if (object->as.event.gpu_written) {
+			state = ghci_cp_ticket(session->device, &object->as.event.written);
+			if (state == GHCI_TICKET_PENDING)
+				return EAGAIN;
+		}
+
+		/* Then the word, as that work left it (or the host set it). */
+		kern_io_read_barrier();
 		if (*object->as.event.word != 1U)
-			return EAGAIN;
-		if (!object->as.event.gpu_written)
-			continue;
-		state = ghci_cp_ticket(session->device, &object->as.event.written);
-		if (state == GHCI_TICKET_PENDING)
 			return EAGAIN;
 	}
 
@@ -1636,9 +1683,12 @@ holds_dead(
 }
 
 /*
- * Gives the job markers and frames of a device's timelines that wait for
- * its held submissions up to serial the ticket of that submission, or,
- * with no ticket, fails every one of them.  The caller holds irq_lock.
+ * Gives the job markers and frames that wait for a device's held
+ * submissions (the device they were committed or queued behind) up to
+ * serial the ticket of that submission, or, with no ticket, fails every
+ * one of them; a timeline whose last frame so failed has reported the
+ * failure (its bit in failed_timelines goes).  The caller holds
+ * irq_lock.
  */
 static void
 held_resolve(
@@ -1656,26 +1706,32 @@ held_resolve(
 		marker = &session->jobs.markers[index];
 		if (marker->state != GHCI_JOB_COMMITTED || marker->generation != GHCI_VK_HELD_GENERATION)
 			continue;
-		if (session->marker_timeline[index] >= GHCI_VK_TIMELINES || session->timeline_device[session->marker_timeline[index]] != device)
+		if (session->marker_device[index] != device)
 			continue;
 		if (ticket == NULL) {
 			marker->state = GHCI_JOB_FAILED;
+			session->marker_device[index] = NULL;
 		} else if (marker->seq <= serial) {
 			marker->seq = ticket->seq;
 			marker->generation = ticket->generation;
+			session->marker_device[index] = NULL;
 		}
 	}
 
-	/* The frames of its timelines queued behind it. */
+	/* The frames queued behind it. */
 	for (frame = session->frames; frame != NULL; frame = frame->next) {
-		if (frame->ticket.generation != GHCI_VK_HELD_GENERATION || frame->timeline == 0U)
+		if (frame->ticket.generation != GHCI_VK_HELD_GENERATION || frame->held != device)
 			continue;
-		if (frame->timeline >= GHCI_VK_TIMELINES || session->timeline_device[frame->timeline] != device)
-			continue;
-		if (ticket == NULL)
+		if (ticket == NULL) {
+			/* Failed; the last held submission before it is the device's last: it reports every failure. */
 			frame->failed = 1;
-		else if (frame->ticket.seq <= serial)
+			frame->held = NULL;
+			if (frame->ticket.seq == device->hold_serial)
+				device->failed_timelines &= ~((uint64_t)1U << frame->timeline);
+		} else if (frame->ticket.seq <= serial) {
 			frame->ticket = *ticket;
+			frame->held = NULL;
+		}
 	}
 }
 

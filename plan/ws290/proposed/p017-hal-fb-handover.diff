@@ -1,0 +1,40 @@
+HAL の契約の文の差分の案（参考。include/hal/hal.h には当てていない）
+状態: ユーザーの Q7 の答え「実装だけで直す (推し)」（2026-10-28、Q1 経由）で、hal.h の文を変えずに amd64 の実装だけで行う。
+      今の hal.h の文（:773-779、:787-789、:80-86）はこの振る舞いを既に許すと判じた（phase.md §11）。
+      この file は、Q1・ユーザーが文の明記が要ると判じた時の承認の項目の候補として置くだけ。
+対象: ws290-p017（boot framebuffer の使用終了と解放）、設計 plan/ws290/phase017/phase.md §11（2 度目の design review の M2）
+基: include/hal/hal.h の blob e7b9e0148d0adc9c6b5d6c79ce27149f0f2914a2（worktree p3-ws290g の head e18c42e75、main f8b4afd58 と同じ）
+変える物: hal_space_map_device と hal_space_unmap_device の comment（契約）だけ。宣言・型・関数は足さず変えない。
+実装: amd64 だけ（src/hal/amd64/space.c・bsp-pcat/cons.c）。契約は「may」なので、他の port は渡さないまま（今の振る舞いのまま）契約を満たす
+（i386・sun4u・rpi4・x68k は kernel の番地に渡す窓を持たない。VF2 の HAL の fbcons の device window は渡さない）。
+確かめ: git apply --check で当たる事を確かめた（2026-10-28）。
+
+--- a/include/hal/hal.h
++++ b/include/hal/hal.h
+@@ -776,6 +776,13 @@
+  * RAM is direct-mapped and needs no call; device memory is not. The
+  * HAL owns the kernel window used for device mappings, so the caller
+  * receives the address the HAL chose. attr is the OR of HAL_SPACE_*.
++ *
++ * Once kernel_putc is published, a port's own mapping of the boot
++ * framebuffer is the kernel's: a call for exactly the boot
++ * framebuffer's physical base and size with HAL_SPACE_NOCACHE may
++ * return that mapping, to at most one caller, and the HAL never draws
++ * through it again. A port whose early console draws through the RAM
++ * direct map has no such mapping to give.
+  */
+ int
+ hal_space_map_device(
+@@ -786,6 +793,12 @@
+ 
+ /*
+  * Remove a mapping made by hal_space_map_device().
++ *
++ * Removing the boot framebuffer's mapping handed over by
++ * hal_space_map_device() removes it from every CPU, global
++ * translations included. Returns HAL_ERR_BUSY, removing nothing and
++ * leaving the mapping with the caller, while another permanent HAL
++ * mapping of any part of that range remains.
+  */
+ int
+ hal_space_unmap_device(
