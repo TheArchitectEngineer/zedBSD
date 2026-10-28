@@ -72,6 +72,7 @@
 
 ## Resume point
 
+- 2026-10-29 05:0x P1（q1662-i05、branch `agent/p1-ws309e`、ラップアップ）: source の変更なし。p008 の「残り」1 から（[phase.md](phase008/phase.md) の再開点に build の手順と task の実装の案）。
 - 2026-10-29 P1（q1662-i04、branch `agent/p1-ws309d`）: p006・p007 cleared（QEMU `daemon-guest.sh`・`font-guest.sh` PASS）。p008 は queue の lock まで（6eab69097）、次は fence 付きの task（[phase.md](phase008/phase.md) の「残り」1〜6）。
 - 2026-10-29 03:28 P1（q1662-i03）: p004 cleared（io-device を全 backend で起動、電源・details・sysmon を io-device へ、machine は A2 machine-read、QEMU `plan/ws309/tests/io-device2-guest.sh` PASS）。次は p006（daemon ×5）。
 - 2026-10-29 03:1x P1（q1662-i03、branch `agent/p1-ws309c`）: p005 cleared（言語・apps.conf・account・鍵・printers の open、QEMU `plan/ws309/tests/io-read-guest.sh` PASS）。p019 cleared（P2 の q1668）。次は p004。
