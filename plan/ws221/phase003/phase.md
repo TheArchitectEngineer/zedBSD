@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p003 -->
 # ws221-p003: driver（CDC ECM・CDC NCM の jumbo）
 
-Status: in-progress（2026-10-29 P3 q1664: ECM・NCM の実装と host 試験は済み（8aa242098）、5330 の実機の試験の途中）
+Status: cleared（2026-10-29 06:07 P3 q1664: 8aa242098。host・QEMU の非退行 PASS、5330 の RTL8156 は CDC NCM で max datagram 1518（mtu_max 1504）と実機で確かめた）
 Parent: [WS221](../ws.md)
 Queue: q1664 / q1664-i01（P3）
 設計: [p001](../phase001/phase.md) §3.5（ECM）・§3.6（NCM）・§4.1（descriptor の読み）、§9 は全部推し。Q1（2026-10-29）: 「p003（RTL8156 の SET_MAX_DATAGRAM_SIZE の試し）」、主の実機は VF2、5330 は従。
@@ -23,9 +23,18 @@ Queue: q1664 / q1664-i01（P3）
 
 ## 試験
 
-（5330 の結果をここに書く）
+- host: `sh plan/ws221/tests/run-ncm-jumbo-wire-test.sh` → `ncm-jumbo-wire: PASS` × 2（上の表）。WS004 の fixture PASS × 2。
+- build: `config/ci/config-{amd64,pcat,rpi4,rpi5,zybo}.mk` の vmunix が全部 rc=0・warning 0（8aa242098 の tree）。
+- QEMU（`build/ws221-jumbo/hdd-image.img`、8aa242098 の tree）:
+  - `qemu-mtu.sh` → `qemu-mtu: PASS`（ok 12、出力 build/tmp/qemu-mtu-2.txt）。`qemu-tcp.sh … 20` → `qemu-tcp: PASS`。
+  - attach の行（SSH の `dmesg`）: `usb-cdc-ecm: ue0 mac=52:54:00:33:00:01 segment=1514 mtu_max=1500 rx_urb=1600`（bulk-in の packet が 64 byte なので 1600。§8.2 (5) の `rx_urb=2048` は 512 byte の packet の時の例）。
+  - `plan/ws033/tests/tcp-receive-speed.sh` 3 回とも cksum 一致（6.83・7.09・7.01 MB/s）、`lan-hotplug.sh` 全項目 ok、`lan-link-down.sh` は plugged・relinked が ok、link-down は「skipped: no carrier event」（QEMU の usb-net が link を伝えない、試験の想定どおり）。出力 build/tmp/ws033-reg-1/。
+- 5330 の実機（`sh plan/ws221/tests/5330-ncm.sh build/ws221-5330/hdd-image.img ncm1`、NVMe から起動、`5330-run: PASS`、21 秒で SSH、終わりに Debian に戻った。summary は build/ws221-5330/ncm1/summary.txt）:
+  - `usb-cdc-ncm: ue0 … segment=1518 ntb_in=32768 ntb_out=16384 max_datagram=1518 read_back=1518 caps=0x2b mtu_max=1504`、link 2500 Mb/s。9014 を頼んだ後の読み戻し（または 9014 の拒否の後の 1518）で 1518。**RTL8156 は CDC NCM の mode では jumbo を取らない**（最大 MTU 1504）。9000 には vendor の mode の driver が要り、本 WS の範囲の外（p001 §4.1 の 3、ユーザーの判断）。
+  - `ifconfig ue0 mtu 1504` rc=0、VF2（試験の間だけ 9000）へ `ping -s 1476` → 1484 bytes × 3、`-s 1472` → 1480 bytes × 3。
+  - 1500 で centris（10.0.10.2、route 越し）と tcp-perf 10 秒: 送り 268.6 Mbps、受け 708.2 Mbps。ue0 の後の counter: RX errors 0 dropped 0、TX errors 0 dropped 522837（NCM の送りは 1 NTB に 1 datagram、queue 8 で満杯の drop）。Linux の r8152 は 2353 Mbps。NCM の速さは本 WS の 1GbE の目標の外なので記録だけ（Future Work の候補）。
+  - VF2 の en0 は終わりに 1500 に戻した（script が読み戻した）。
 
 ## 残り
 
-- 5330 の実機: attach の log（max_datagram と read_back）、`ifconfig ue0 mtu <mtu_max>`、VF2（9000）への大きい ping、1500 での TCP の送受（2.5G の比べ）。
-- QEMU: §8.2 (5) の非退行（`qemu-mtu.sh`・`qemu-tcp.sh`、attach の log の `mtu_max=1500 rx_urb=2048`）。`tcp-receive-speed.sh`・`lan-hotplug.sh`・`lan-link-down.sh` は未実施。
+無し（p003 の範囲）。Pi 4 の UGREEN の descriptor の読みと実機は、Pi 4 が主の実機でないので行っていない（p006 で機械が決まれば）。
