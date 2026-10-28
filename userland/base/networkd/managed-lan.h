@@ -53,6 +53,8 @@ struct networkd_lan_policy {
 	char address[NETWORKD_LAN_ADDRESS_MAX];
 	char netmask[NETWORKD_LAN_ADDRESS_MAX];
 	unsigned dhcp_timeout;
+	/* The MTU set before the interface comes up, 0 for the device's own. */
+	unsigned mtu;
 };
 
 /* Where an interface has got to. */
@@ -179,6 +181,14 @@ int networkd_lan_set_policy(struct networkd_lan *,
  * not be an interface or no room for another.
  */
 int networkd_lan_set_interface(struct networkd_lan *, const struct networkd_lan_policy *);
+
+/*
+ * Records the MTU an interface was given, so that its next configuration
+ * sets the same one (0: the device's default).  Nothing is configured
+ * again.  An interface the configuration does not name is left alone.
+ * Returns 0, or -1 for a name that could not be an interface.
+ */
+int networkd_lan_set_mtu(struct networkd_lan *, const char *, unsigned);
 
 int networkd_lan_enable(struct networkd_lan *);
 int networkd_lan_disable(struct networkd_lan *);

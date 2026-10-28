@@ -113,6 +113,7 @@ static int any_interface_configured(void);
 static int wait_requested(void);
 static int wait_for_address(unsigned seconds);
 static int decimal_timeout(const char *text, unsigned *result);
+static int decimal_mtu(const char *text, unsigned *result);
 /*
  * How long a startup that was asked to wait will wait for an address.  A
  * lease takes a few seconds where there is a server and forever where
@@ -435,7 +436,12 @@ console_prompt(
 	return prompt;
 }
 
-/* Supports the confirm discard operation. */
+/*
+ * Supports the confirm discard operation.
+ *
+ * The end of the input answers too: nothing more can be read, so asking
+ * again would never end, and the changes are discarded.
+ */
 static int
 confirm_discard(
 	void)
@@ -444,8 +450,11 @@ confirm_discard(
 	int discard;
 
 	answer = readline("Discard unsaved changes? [y/N] ");
-	discard = answer != NULL &&
-		  (strcmp(answer, "y") == 0 || strcmp(answer, "yes") == 0);
+	if (answer == NULL) {
+		fprintf(stderr, "\nnet: end of input; unsaved changes discarded\n");
+		return 1;
+	}
+	discard = strcmp(answer, "y") == 0 || strcmp(answer, "yes") == 0;
 	free(answer);
 
 	/* Returns the computed result. */
@@ -567,6 +576,7 @@ console_help(
 		     "  dhcp [timeout SECONDS]\n"
 		     "  static ipv4 ADDRESS prefix-length BITS\n"
 		     "  no ipv4\n"
+		     "  mtu BYTES | no mtu\n"
 		     "  up | down\n"
 		     "  help | ? | end | exit");
 	}
@@ -818,7 +828,8 @@ backend_opcode(
 		{ "ROUTE6", NETWORKD_OP_ROUTE6 },
 		{ "ROUTE6_CLEAR", NETWORKD_OP_ROUTE6_CLEAR },
 		{ "STATIC6_REMOVE", NETWORKD_OP_STATIC6_REMOVE },
-		{ "ROUTE6_REMOVE", NETWORKD_OP_ROUTE6_REMOVE }
+		{ "ROUTE6_REMOVE", NETWORKD_OP_ROUTE6_REMOVE },
+		{ "MTU", NETWORKD_OP_MTU }
 	};
 	size_t index;
 
@@ -853,6 +864,7 @@ backend_payload(
 	unsigned count;
 	unsigned index;
 	uint32_t timeout;
+	unsigned mtu;
 	uint16_t field;
 
 	/* Splits only the legacy internal wired operands. */
@@ -882,6 +894,7 @@ backend_payload(
 	    opcode == NETWORKD_OP_STATIC6_REMOVE) && count != 2U) ||
 	    (opcode == NETWORKD_OP_ROUTE6 && count != 2U && count != 3U) ||
 	    (opcode == NETWORKD_OP_ROUTE6_REMOVE && count != 1U) ||
+	    (opcode == NETWORKD_OP_MTU && count != 2U) ||
 	    ((opcode == NETWORKD_OP_RELOAD ||
 	    opcode == NETWORKD_OP_ROUTE6_CLEAR ||
 	    opcode == NETWORKD_OP_DEFAULT_ROUTE_CLEAR ||
@@ -936,6 +949,14 @@ backend_payload(
 	} else if (opcode == NETWORKD_OP_ROUTE6_REMOVE) {
 		/* An IPv6 route taken away: its destination (ws177-p045). */
 		if (networkd_field_write(&writer, NETWORKD_FIELD_ADDRESS, item[0], strlen(item[0])) != 0)
+			return -1;
+	} else if (opcode == NETWORKD_OP_MTU) {
+		/* An interface's MTU, 0 for the device's default. */
+		if (decimal_mtu(item[1], &mtu) != 0 ||
+		    networkd_field_write(&writer, NETWORKD_FIELD_INTERFACE,
+		    item[0], strlen(item[0])) != 0 ||
+		    networkd_field_write_u32(&writer, NETWORKD_FIELD_MTU,
+		    mtu) != 0)
 			return -1;
 	} else if (opcode == NETWORKD_OP_DNS) {
 		field = NETWORKD_FIELD_DNS;
@@ -2026,6 +2047,33 @@ decimal_timeout(
 }
 
 /*
+ * Reads an MTU: 0 for the device's default, or a value within the bounds
+ * the configuration admits (the device's own limit is its to apply).
+ */
+static int
+decimal_mtu(
+	const char *text,
+	unsigned *result)
+{
+	char *end;
+	unsigned long value;
+
+	/* An unsigned decimal and nothing after it. */
+	if (text == NULL || *text < '0' || *text > '9')
+		return -1;
+	errno = 0;
+	value = strtoul(text, &end, 10);
+	if (errno != 0 || *end != '\0')
+		return -1;
+
+	/* The default, or a value within the bounds. */
+	if (value != 0U && (value < NETCONF_MTU_MIN || value > NETCONF_MTU_MAX))
+		return -1;
+	*result = (unsigned)value;
+	return 0;
+}
+
+/*
  * Supports the mask from prefix operation.
  *
  * Writes the dotted mask a prefix length stands for.  The configuration
@@ -2119,12 +2167,12 @@ lan_send_policy(
 	struct networkd_field_writer writer;
 	struct netconf configuration;
 	const struct netconf_interface *item;
+	struct networkd_lan_record record;
 	unsigned char payload[NETWORKD_REQUEST_MAX];
-	char record[128];
-	char mask[32];
+	char text[NETWORKD_LAN_RECORD_MAX];
 	char error[160] = "";
+	size_t length;
 	size_t index;
-	int length;
 
 	/* Handles a configuration that cannot be read. */
 	if (netconf_load(NETCONF_PATH, &configuration, error,
@@ -2154,38 +2202,47 @@ lan_send_policy(
 		}
 
 		/* Dispatch the selected kind of record. */
+		memset(&record, 0, sizeof(record));
+		if (strlen(item->name) >= sizeof(record.interface)) {
+			fprintf(stderr, "net: %s: the name is too long\n", item->name);
+			return 1;
+		}
+		strcpy(record.interface, item->name);
 		if (!item->enabled) {
-			length = snprintf(record, sizeof(record),
-					  "%s disabled", item->name);
+			record.mode = NETWORKD_LAN_RECORD_DISABLED;
 		} else if (item->dhcp) {
-			length = snprintf(record, sizeof(record), "%s dhcp %u",
-					  item->name,
-					  item->dhcp_timeout_set ?
-					  item->dhcp_timeout : 10U);
+			record.mode = NETWORKD_LAN_RECORD_DHCP;
+			record.dhcp_timeout = item->dhcp_timeout_set ?
+			    item->dhcp_timeout : 10U;
 		} else if (item->address_count != 0) {
 			/* Handles an address whose mask cannot be written. */
-			if (mask_from_prefix(
-			    item->addresses[0].prefix_length, mask,
-			    sizeof(mask)) != 0) {
+			if (strlen(item->addresses[0].address) >=
+			    sizeof(record.address) || mask_from_prefix(
+			    item->addresses[0].prefix_length, record.netmask,
+			    sizeof(record.netmask)) != 0) {
 				fprintf(stderr,
-					"net: %s: the prefix length cannot be used\n",
+					"net: %s: the address cannot be used\n",
 					item->name);
 				return 1;
 			}
-			length = snprintf(record, sizeof(record),
-					  "%s static %s %s", item->name,
-					  item->addresses[0].address, mask);
+			record.mode = NETWORKD_LAN_RECORD_STATIC;
+			strcpy(record.address, item->addresses[0].address);
 		} else {
 			/*
 			 * Enabled, and nothing said about an address.  There
 			 * is nothing to configure it with, so it is left for
-			 * whoever writes one.
+			 * whoever writes one (an MTU of its own as well).
 			 */
 			continue;
 		}
 
+		/* The MTU of an interface the daemon configures. */
+		if (item->enabled && item->mtu_set)
+			record.mtu = item->mtu;
+
 		/* Handles a record that did not fit. */
-		if (length < 0 || (size_t)length >= sizeof(record)) {
+		if (networkd_lan_record_format(&record, text, sizeof(text),
+		    &length) != 0) {
 			fprintf(stderr, "net: %s: the record is too long\n",
 				item->name);
 			return 1;
@@ -2193,7 +2250,7 @@ lan_send_policy(
 
 		/* Handles a payload with no room for another record. */
 		if (networkd_field_write(&writer, NETWORKD_FIELD_OUTPUT,
-					 record, (size_t)length) != 0) {
+					 text, length) != 0) {
 			fprintf(stderr, "net: too many interfaces\n");
 			return 1;
 		}
@@ -3074,6 +3131,24 @@ console_interface(
 		console->dirty = 1;
 
 		/* Reports successful completion. */
+		return 0;
+	}
+
+	/* An MTU kept in the configuration, applied on commit. */
+	if (count == 2 && strcmp(words[0], "mtu") == 0 &&
+	    decimal_mtu(words[1], &value) == 0 && value != 0U) {
+		item->mtu = value;
+		item->mtu_set = 1;
+		console->dirty = 1;
+		return 0;
+	}
+
+	/* No MTU in the configuration: the device's default. */
+	if (count == 2 && strcmp(words[0], "no") == 0 &&
+	    strcmp(words[1], "mtu") == 0) {
+		item->mtu = 0U;
+		item->mtu_set = 0;
+		console->dirty = 1;
 		return 0;
 	}
 

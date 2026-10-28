@@ -170,6 +170,11 @@ netconf_validate(
 		if (item->type != NETCONF_INTERFACE_BRIDGE &&
 		    item->member_count != 0)
 			VALIDATE_ERROR("non-bridge %s has members", item->name);
+
+		/* An MTU is within the bounds any device could take. */
+		if (item->mtu_set &&
+		    (item->mtu < NETCONF_MTU_MIN || item->mtu > NETCONF_MTU_MAX))
+			VALIDATE_ERROR("interface %s mtu is outside 1280 through 65535", item->name);
 	}
 
 	/* Process each remaining element. */
@@ -386,6 +391,7 @@ netconf_write(
 	const struct netconf_interface *item;
 	size_t index, child;
 	char error[128];
+	int written;
 
 	/* Handles an operation failure. */
 	if (stream == NULL || configuration == NULL ||
@@ -423,6 +429,13 @@ netconf_write(
 
 			/* Reports operation failure. */
 			return -1;
+
+		/* The MTU, when the file names one. */
+		if (item->mtu_set) {
+			written = fprintf(stream, "    mtu: %u\n", item->mtu);
+			if (written < 0)
+				return -1;
+		}
 
 		/* Handles the item condition. */
 		if (item->member_count != 0) {
@@ -1288,6 +1301,8 @@ interface_property(
 	int function_result;
 	char *key, *value;
 	struct netconf_interface *interface;
+	int named;
+	int parsed;
 
 	interface = parser->interface;
 
@@ -1376,6 +1391,20 @@ interface_property(
 		if (set_once(parser, &parser->interface_seen, 64U, key) != 0)
 			return -1;
 		parser->subsection = SUBSECTION_IPV6;
+	} else if (strcmp(key, "mtu") == 0) {
+		/* The MTU, named once; the device's own limit is checked when it is applied. */
+		named = set_once(parser, &parser->interface_seen, 128U, key);
+		if (named != 0)
+			return -1;
+		parsed = unsigned_value(value, NETCONF_MTU_MIN, NETCONF_MTU_MAX, &interface->mtu);
+		if (parsed != 0) {
+			(void)fail(parser, "mtu must be 1280 through 65535");
+			return -1;
+		}
+
+		/* Written down as named. */
+		interface->mtu_set = 1;
+		parser->subsection = SUBSECTION_NONE;
 	} else {
 		/* Obtains the fail result. */
 		function_result = fail(parser, "unknown interface key %s", key);
