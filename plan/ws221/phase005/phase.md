@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p005 -->
 # ws221-p005: TCP の MSS と jumbo の segment（SYN の広告、送りの大きさ、受けの窓の jumbo の上限）
 
-Status: in-progress（2026-10-29 P3 q1664-i03: 実装と host・QEMU・VF2 実機の確かめは済み。残り: 5 platform の build の確認、IPv6 と gateway 経由の IPv4 の実機の確かめは未実施）
+Status: cleared（2026-10-29 07:3x P3 q1664-i03: 7c258bfe8 まで。tcp-model・qemu-tcp PASS、VF2 実機の IPv4 の on-link で MTU 9000 と 1500、5 platform の build warning 0。IPv6・gateway 経由の IPv4・lo0 の MSS の経路は未実施、下の「確かめ」）
 Parent: [WS221](../ws.md)
 Queue: q1664 / q1664-i03（P3）
 設計: [p001](../phase001/phase.md) §3.4（`tcp_device_mss`・送る segment の大きさ・SYN の広告・受けの窓の jumbo の上限、S7 (c) の任意）、§9 Q4（IPv4 の gateway 経由は 1460）・Q13
@@ -32,7 +32,7 @@ Queue: q1664 / q1664-i03（P3）
 | VF2 実機、相手 5330 の Debian（Q1 の許可、flock /tmp/i915-hw.lock）、1500 | 受け 949.1（最遅 942.7）、送り 949.1・949.1（最遅 948.0）: 前の 8ea1d234c と同じ |
 | 同、MTU 9000（両端、`vf2-tcp.sh --mtu 9000 --peer-if`） | 受け 987.1・987.2（最遅 984.0）、送り 990.7・990.7・990.9（最遅 988.5）。理論値 8960/9038 × 1000 = 991.4。data の接続の send_mss・receive_mss 8960、再送 0、receive_refused 0、jumbo_used_max 11/32、jumbo_alloc_failures 0 |
 | `plan/ws221/tests/vf2-jumbo.sh` | PASS（ping -s 8972、UDP の jumbo の保持、pool が戻る） |
-| build | VF2 の kernel・probe warning 0、amd64 の vmunix warning 0。5 platform は流している |
+| build | VF2 の kernel・probe warning 0。amd64・pcat・rpi4・rpi5・zybo の vmunix・net・networkd: 全部 rc=0・warning 0（d17b806f1 の tree） |
 
 未実施: IPv6 の jumbo の TCP（RA の MTU と path MTU）、gateway 経由の IPv4 の 1460（実機に router の向こうの相手が無い）、lo0 の TCP の MSS 1920（自分への接続、model・QEMU では見ていない）。
 
