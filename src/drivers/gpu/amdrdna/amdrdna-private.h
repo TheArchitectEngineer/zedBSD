@@ -262,6 +262,7 @@ struct amdrdna_thermal {
 	uint32_t features_low;
 	uint32_t features_high;
 	bool clock_levels;
+	bool memory_levels;
 	unsigned mode;
 	unsigned duty_percent;
 	unsigned limit;

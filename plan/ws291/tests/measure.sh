@@ -14,6 +14,8 @@
 #                                            not, zedBSD restarted (via Debian); the marks time every command and
 #                                            cost the command-heavy runs several ms a frame, so bench runs go
 #                                            without them and profile runs with them
+#     measure.sh cfg NAME [VALUE]            the boot line NAME=VALUE in zedbsd.cfg (no VALUE: the line taken out),
+#                                            zedBSD restarted (via Debian)
 #     measure.sh deploy [--kernel VMUNIX] [DEST=SRC]...
 #                                            files copied into the running zedBSD (the kernel to /boot/boot0/vmunix,
 #                                            the old one kept as vmunix.old), then zedBSD restarted (via Debian)
@@ -222,6 +224,17 @@ timing() {
 		zs "$ip" "sed -i -e '/^amdrdna.vk.timing=/d' /boot/boot0/zedbsd.cfg && sync" || return 1
 	fi
 	zs "$ip" "grep -c '^amdrdna.vk.timing=' /boot/boot0/zedbsd.cfg" | sed 's/^/measure: timing lines /' >&2
+	to_linux || return 1
+	to_zedbsd
+}
+
+cfg() {
+	ip=$(to_zedbsd) || return 1
+	zs "$ip" "sed -i -e '/^$1=/d' /boot/boot0/zedbsd.cfg && sync" || return 1
+	if [ -n "${2:-}" ]; then
+		zs "$ip" "echo '$1=$2' >> /boot/boot0/zedbsd.cfg && sync" || return 1
+	fi
+	zs "$ip" "grep -v '^#' /boot/boot0/zedbsd.cfg" | sed 's/^/measure: cfg /' >&2
 	to_linux || return 1
 	to_zedbsd
 }
@@ -493,6 +506,7 @@ zedbsd) to_zedbsd ;;
 linux) to_linux && echo linux ;;
 deploy) deploy "$@" ;;
 timing) timing "$@" ;;
+cfg) cfg "$@" ;;
 desktop) desktop "$@" ;;
 mview) mview "$@" ;;
 profile) profile "$@" ;;

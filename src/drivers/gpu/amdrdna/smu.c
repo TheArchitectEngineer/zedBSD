@@ -344,6 +344,11 @@ amdrdna_a4_power(
 	if (amdrdna_parameter_number("amdrdna.smu.gfxclk", 1U) != 0U)
 		thermal->clock_levels = true;
 
+	/* The memory side's levels with them, held at the highest, unless amdrdna.smu.memory=0. */
+	thermal->memory_levels = false;
+	if (amdrdna_parameter_number("amdrdna.smu.memory", 1U) != 0U)
+		thermal->memory_levels = true;
+
 	/* How the clock is raised for work once it moves; nothing is raised until then. */
 	raise_mode = amdrdna_parameter_number("amdrdna.smu.boost", THERMAL_BOOST_PROFILE);
 	thermal->boost_mode = THERMAL_BOOST_NONE;
@@ -1088,6 +1093,8 @@ power_features(
 	if (thermal->clock_levels) {
 		permitted |= AMDRDNA_SMU_CLOCK_FEATURES_LOW;
 		permitted_high |= AMDRDNA_SMU_CLOCK_FEATURES_HIGH;
+		if (!thermal->memory_levels)
+			permitted &= ~AMDRDNA_SMU_MEMORY_FEATURES_LOW;
 	}
 
 	/* No display is counted yet. */
