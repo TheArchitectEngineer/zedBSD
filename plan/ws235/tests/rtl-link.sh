@@ -75,6 +75,8 @@ done
 if [ -n "$zip" ]; then
 	say "zedBSD up at $zip"
 	zs "$zip" "uname -a" > "$out/uname.txt" 2>&1
+	zs "$zip" "ifconfig -a" > "$out/ifconfig-all.txt" 2>&1
+	say "interfaces: $(awk '/^[a-z]/ {printf "%s ", $1}' "$out/ifconfig-all.txt")"
 	zs "$zip" "ifconfig $IFACE" > "$out/ifconfig-before.txt" 2>&1
 	say "before up: $(tr '\n' ' ' < "$out/ifconfig-before.txt")"
 	T=60 zs "$zip" "ifconfig $IFACE up" > "$out/ifconfig-up.txt" 2>&1
@@ -100,4 +102,10 @@ until linux_up; do
 done
 say "Debian is back"
 sh plan/ws291/tests/rdna-nvme.sh kernel "$out/vmunix.saved" | tee -a "$summary" || { say "FAIL: saved kernel not put back"; exit 1; }
+back=$(deb "sudo -n mount -o ro $NV_BOOT /mnt/ws235 && sha256sum /mnt/ws235/vmunix | cut -c1-64; sudo -n umount /mnt/ws235")
+if [ "$back" = "$(sha256sum "$out/vmunix.saved" | cut -c1-64)" ]; then
+	say "NVMe kernel is the saved one again ($(echo "$back" | cut -c1-16))"
+else
+	say "FAIL: NVMe kernel $back is not the saved one"
+fi
 say "done"
