@@ -338,13 +338,14 @@ icmp6_echo(
 	const struct in6_addr *source,
 	const struct in6_addr *destination)
 {
+	int alloc_error;
 	struct icmp6_wire *message;
 	struct packet_buf *reply;
 	struct net_device *device;
 	int multicast;
 
 	/* A copy of the request, made the reply. */
-	reply = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
+	reply = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM, packet->length, 0, &alloc_error);
 	message = NULL;
 	if (reply != NULL)
 		message = packet_buf_append(reply, packet->length);

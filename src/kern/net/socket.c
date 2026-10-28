@@ -1068,6 +1068,21 @@ socket_poll_common(
 }
 
 /*
+ * Reports the longest datagram a socket takes in one call.
+ */
+size_t
+socket_datagram_max(
+	const struct socket *socket)
+{
+	/* AF_UNIX keeps to the standard packet. */
+	if (socket->family == AF_UNIX)
+		return PACKET_BUF_STORAGE_SIZE;
+
+	/* Succeeded: the largest packet's storage. */
+	return PACKET_BUF_MAX_STORAGE_SIZE;
+}
+
+/*
  * Marks a socket as one poll or select has looked at, before the caller
  * reads its readiness.
  */

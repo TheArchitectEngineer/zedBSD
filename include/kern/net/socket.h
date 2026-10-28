@@ -180,6 +180,12 @@ void socket_close_endpoint(struct socket *socket);
 void socket_release(struct socket *socket);
 int socket_enqueue_packet(struct socket *socket, struct packet_buf *packet);
 int socket_enqueue_stream(struct socket *socket, struct packet_buf *packet);
+/*
+ * The longest datagram a socket sends or receives in one call: a packet's
+ * storage, the largest (jumbo) one for the Internet families, the standard
+ * one for AF_UNIX, whose datagrams stay standard packets.
+ */
+size_t socket_datagram_max(const struct socket *socket);
 void socket_poll_watch(struct socket *socket);
 void socket_poll_notify(struct socket *socket);
 int socket_enqueue_packet_wait(struct socket *socket, struct packet_buf *packet,

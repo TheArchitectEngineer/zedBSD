@@ -224,6 +224,7 @@ packet_sendto(
 	const struct sockaddr *address,
 	socklen_t address_length)
 {
+	int alloc_error;
 	const struct sockaddr_l2 *l2;
 	struct packet_endpoint *endpoint;
 	struct net_device *device;
@@ -260,11 +261,11 @@ packet_sendto(
 		return -EMSGSIZE;
 	}
 
-	/* Copies the frame into a packet buffer. */
-	packet = packet_buf_alloc(0);
+	/* Copies the frame into a packet buffer of the class its length needs. */
+	packet = packet_buf_alloc_for(0, length, 0, &alloc_error);
 	if (packet == NULL) {
 		net_device_release(device);
-		return -ENOBUFS;
+		return -alloc_error;
 	}
 
 	data = packet_buf_append(packet, length);

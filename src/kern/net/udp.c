@@ -685,12 +685,10 @@ udp_send_ipv4(
 		goto fail;
 	}
 
-	/* Builds the datagram. */
-	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
-	if (packet == NULL) {
-		error = ENOBUFS;
+	/* Builds the datagram in a packet of the class its length needs. */
+	packet = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM, sizeof(struct udp_wire) + length, 0, &error);
+	if (packet == NULL)
 		goto fail;
-	}
 
 	udp = packet_buf_append(packet, sizeof(*udp));
 	payload = packet_buf_append(packet, length);
@@ -811,12 +809,10 @@ udp_send_ipv6(
 		goto fail;
 	}
 
-	/* Builds the datagram. */
-	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
-	if (packet == NULL) {
-		error = ENOBUFS;
+	/* Builds the datagram in a packet of the class its length needs. */
+	packet = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM, sizeof(struct udp_wire) + length, 0, &error);
+	if (packet == NULL)
 		goto fail;
-	}
 
 	udp = packet_buf_append(packet, sizeof(*udp));
 	payload = packet_buf_append(packet, length);
