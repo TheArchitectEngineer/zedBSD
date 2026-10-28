@@ -15,7 +15,7 @@
  *
  *   1. an arena of the VRAM allocator for the space's page tables, the
  *      channel's instance block and USERD, and its own context buffers;
- *   2. an address space the driver owns over the 512 MiB of
+ *   2. an address space the driver owns over the 3.5 GiB of
  *      NVRTX_WORK_VA_BASE: the context buffers privileged at the golden
  *      context's addresses, the driver's pages (ring, semaphore, the
  *      fences' push buffers), and later the runs mapped for users;
@@ -61,11 +61,14 @@
 #define WORK_START_AT			0x10U
 #define WORK_START_TIMER_AT		0x18U
 
-/* The arena's parts: the tables, the instance block and USERD, then the channel's own context buffers. */
+/*
+ * The arena's parts: the tables (about 7 MiB for the 3.5 GiB space), the
+ * instance block and USERD, then the channel's own context buffers.
+ */
 #define WORK_TABLES_AT			0x000000ULL
-#define WORK_INSTANCE_AT		0x200000ULL
-#define WORK_USERD_AT			0x201000ULL
-#define WORK_BUFFERS_AT			0x400000ULL
+#define WORK_INSTANCE_AT		0x800000ULL
+#define WORK_USERD_AT			0x801000ULL
+#define WORK_BUFFERS_AT			0xa00000ULL
 
 /* The driver's pages in the space, in order: the ring, the semaphore, the fences' push buffers. */
 #define WORK_RING_VA			(NVRTX_WORK_VA_DRIVER + 0x0000ULL)

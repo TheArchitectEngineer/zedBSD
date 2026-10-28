@@ -9,7 +9,7 @@
  * The work channel of the nvrtx driver: the parts that touch no hardware.
  *
  * The work channel (work.c) is the graphics channel the GPU device keeps for
- * the work it is given: one address space the driver owns over the 512 MiB at
+ * the work it is given: one address space the driver owns over the 3.5 GiB at
  * NVRTX_WORK_VA_BASE, whose low part holds the graphics context's buffers at
  * the golden context's addresses, then the driver's own pages (the ring, the
  * semaphore and the fences' push buffers), then the runs the device maps for
@@ -26,14 +26,16 @@
 #include <stdint.h>
 
 /*
- * The address space: one first-level directory entry's 512 MiB.
+ * The address space: seven first-level directory entries of 512 MiB each,
+ * from 512 MiB up to the resource manager's range at 4 GiB (the users' runs
+ * take every blob of every open, far more than one entry holds).
  *
  * Value referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/mmu/vmmtu102.c (tu102_vmm, the
  * 29-bit level).
  */
 #define NVRTX_WORK_VA_BASE		0x20000000ULL
-#define NVRTX_WORK_VA_BYTES		0x20000000ULL
+#define NVRTX_WORK_VA_BYTES		0xe0000000ULL
 
 /* The driver's own pages, after the graphics context's buffers, and the first address a mapping gets. */
 #define NVRTX_WORK_VA_DRIVER		0x28000000ULL

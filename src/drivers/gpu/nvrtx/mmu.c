@@ -133,6 +133,7 @@
 static void mmu_clear(uint8_t *bytes, size_t length);
 static int mmu_region_usable(const uint8_t *static_info, size_t at);
 static int mmu_gr_range_valid(uint64_t va_base, uint64_t va_bytes);
+static size_t mmu_gr_dir0_at(uint64_t tables, uint64_t directory);
 
 /*
  * Builds the five pages of page tables for one 2 MiB range of addresses.
@@ -361,31 +362,37 @@ nvrtx_mmu_vram_pte(
 }
 
 /*
- * Reports how many bytes the graphics context's tables take for a range.
+ * Reports how many bytes the graphics context's tables take for a range: the
+ * four directories, one page table per 2 MiB, and one more double-entry
+ * directory for each 512 MiB after the first.
  */
 size_t
 nvrtx_mmu_gr_tables_bytes(
 	uint64_t va_bytes)
 {
 	size_t tables;
+	size_t directories;
 
-	/* One page table per 2 MiB, after the four directories. */
+	/* One page table per 2 MiB, after the four directories; the further directories after the tables. */
 	tables = (size_t)(va_bytes / NVRTX_MMU_RANGE_BYTES);
+	directories = (size_t)((va_bytes + MMU_GR_DIRECTORY1_SPAN - 1U) / MMU_GR_DIRECTORY1_SPAN);
 
 	/* Reports the length of the image. */
-	return MMU_GR_TABLES_FIRST_AT + tables * NVRTX_GSP_PAGE_SIZE;
+	return MMU_GR_TABLES_FIRST_AT + (tables + directories - 1U) * NVRTX_GSP_PAGE_SIZE;
 }
 
 /*
  * Builds the directories of an address space the graphics context uses.
  *
- * The range at va_base of va_bytes lies under one entry of the first-level
- * directory (512 MiB); each 2 MiB of it has its own 4 KiB-page table, in
- * order after the four directories.  The tables lie in the VRAM at block.
- * The page entries start invalid; nvrtx_mmu_gr_map() fills them.  The root
- * and the two upper directories are along the path of index 0, the one the
- * resource manager shares for its own range at 4 GiB, which it writes into
- * the same first-level directory.  Returns EINVAL for a range the tables
+ * Each 512 MiB of the range at va_base of va_bytes is one entry of the
+ * first-level directory with its own double-entry directory: the first's
+ * after the three upper directories, the others' after the page tables, so
+ * the page tables stay in one run in page order (nvrtx_mmu_gr_pte_offset()).
+ * Each 2 MiB has its own 4 KiB-page table.  The tables lie in the VRAM at
+ * block.  The page entries start invalid; nvrtx_mmu_gr_map() fills them.
+ * The root and the two upper directories are along the path of index 0, the
+ * one the resource manager shares for its own range at 4 GiB, which it writes
+ * into the same first-level directory.  Returns EINVAL for a range the tables
  * cannot hold (see mmu_gr_range_valid()).
  */
 int
@@ -398,6 +405,10 @@ nvrtx_mmu_gr_tables(
 	uint64_t entry;
 	uint64_t tables;
 	uint64_t index;
+	uint64_t va;
+	uint64_t directory;
+	uint64_t directories;
+	size_t dir0;
 	size_t at;
 	int valid;
 
@@ -415,14 +426,19 @@ nvrtx_mmu_gr_tables(
 	entry = ((block + MMU_DIR1_AT) >> MMU_ADDRESS_SHIFT) | MMU_PDE_VRAM;
 	nvrtx_put64(image, MMU_DIR2_AT + ((va_base >> 38) & 0x1ffU) * 8U, entry);
 
-	/* The first directory points at the double-entry directory of the range. */
-	entry = ((block + MMU_DIR0_AT) >> MMU_ADDRESS_SHIFT) | MMU_PDE_VRAM;
-	nvrtx_put64(image, MMU_DIR1_AT + ((va_base >> 29) & 0x1ffU) * 8U, entry);
+	/* The first directory points at each 512 MiB's double-entry directory. */
+	tables = va_bytes / NVRTX_MMU_RANGE_BYTES;
+	directories = (va_bytes + MMU_GR_DIRECTORY1_SPAN - 1U) / MMU_GR_DIRECTORY1_SPAN;
+	for (directory = 0U; directory < directories; directory++) {
+		entry = ((block + mmu_gr_dir0_at(tables, directory)) >> MMU_ADDRESS_SHIFT) | MMU_PDE_VRAM;
+		nvrtx_put64(image, MMU_DIR1_AT + (size_t)(((va_base >> 29) + directory) & 0x1ffU) * 8U, entry);
+	}
 
 	/* Each double entry's upper half points at its 2 MiB's page table. */
-	tables = va_bytes / NVRTX_MMU_RANGE_BYTES;
 	for (index = 0U; index < tables; index++) {
-		at = MMU_DIR0_AT + (size_t)(((va_base >> 21) & 0xffU) + index) * 16U + 8U;
+		va = va_base + index * NVRTX_MMU_RANGE_BYTES;
+		dir0 = mmu_gr_dir0_at(tables, (va >> 29) - (va_base >> 29));
+		at = dir0 + (size_t)((va >> 21) & 0xffU) * 16U + 8U;
 		entry = ((block + MMU_GR_TABLES_FIRST_AT + index * NVRTX_GSP_PAGE_SIZE) >> MMU_ADDRESS_SHIFT) | MMU_PDE_VRAM;
 		nvrtx_put64(image, at, entry);
 	}
@@ -668,8 +684,9 @@ mmu_clear(
 /*
  * Reports whether a range suits the graphics context's tables.
  *
- * It starts on a 2 MiB boundary, is a whole number of 2 MiB, and lies under
- * one first-level entry below the resource manager's range at 4 GiB.
+ * It starts on a 2 MiB boundary, is a whole number of 2 MiB, lies under one
+ * first-level entry or is whole first-level entries (512 MiB each) from the
+ * start of one, and ends below the resource manager's range at 4 GiB.
  */
 static int
 mmu_gr_range_valid(
@@ -682,8 +699,9 @@ mmu_gr_range_valid(
 	if (va_bytes == 0U || (va_bytes & (NVRTX_MMU_RANGE_BYTES - 1U)) != 0U)
 		return 0;
 
-	/* One first-level entry: the double-entry directory covers 512 MiB. */
-	if ((va_base & (MMU_GR_DIRECTORY1_SPAN - 1U)) + va_bytes > MMU_GR_DIRECTORY1_SPAN)
+	/* Under one first-level entry, or whole first-level entries from the start of one. */
+	if ((va_base & (MMU_GR_DIRECTORY1_SPAN - 1U)) + va_bytes > MMU_GR_DIRECTORY1_SPAN &&
+	    ((va_base & (MMU_GR_DIRECTORY1_SPAN - 1U)) != 0U || (va_bytes & (MMU_GR_DIRECTORY1_SPAN - 1U)) != 0U))
 		return 0;
 
 	/* Below the resource manager's range, along its path. */
@@ -692,6 +710,24 @@ mmu_gr_range_valid(
 
 	/* The range suits the tables. */
 	return 1;
+}
+
+/*
+ * Reports where the double-entry directory of a range's 512 MiB lies in its
+ * tables: the first after the three upper directories, each later one after
+ * the range's page tables (tables of them).
+ */
+static size_t
+mmu_gr_dir0_at(
+	uint64_t tables,
+	uint64_t directory)
+{
+	/* The first 512 MiB. */
+	if (directory == 0U)
+		return MMU_DIR0_AT;
+
+	/* Succeeded: a later one's place. */
+	return MMU_GR_TABLES_FIRST_AT + (size_t)(tables + directory - 1U) * NVRTX_GSP_PAGE_SIZE;
 }
 
 /*
