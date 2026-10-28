@@ -12,7 +12,8 @@ modes; the directories of ROOT above them and the ones ROOT has empty (/tmp,
 /home), with ROOT's modes; DIRECTORY at /opt/installer (directories 0755,
 files 0644); and each --file, which may replace a file of the units.  A
 --file has 0755 when its source is executable and 0644 when not, unless a
---mode names it.
+--mode names it; a --mode may also name a directory above a --file (a
+key's directory).
 
 Then LIVE is read back: it must hold exactly those paths, and every file it
 took from ROOT the same bytes.
@@ -93,8 +94,11 @@ def main() -> int:
 		if not os.path.isfile(source):
 			problems.append(f"--file names no file: {source}")
 		added[destination.lstrip("/")] = source
+	added_directories: set[str] = set()
+	for path in added:
+		added_directories.update(ancestors(path))
 	for destination in modes:
-		if destination not in added:
+		if destination not in added and destination not in added_directories:
 			problems.append(f"--mode names a file no --file adds: /{destination}")
 
 	# The root's directories: which hold anything, and their modes.
@@ -168,8 +172,10 @@ def main() -> int:
 	for path, source in sorted(added.items()):
 		for directory in ancestors(path):
 			if directory not in expected:
-				make_directory(arguments.output, directory, 0o755)
+				make_directory(arguments.output, directory, modes.get(directory, 0o755))
 				expected[directory] = "d"
+			elif directory in modes:
+				os.chmod(os.path.join(arguments.output, directory), modes[directory])
 		destination = os.path.join(arguments.output, path)
 		shutil.copyfile(source, destination)
 		executable = os.stat(source).st_mode & 0o111
