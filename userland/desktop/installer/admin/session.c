@@ -1738,16 +1738,25 @@ session_write_new(
 		return error;
 	}
 
-	/* The rename, then the directory to the device. */
+	/* The rename. */
 	error = renameat(directory, temporary, directory, leaf);
 	if (error != 0) {
 		error = errno;
 		(void)unlinkat(directory, temporary, 0);
 		return error;
 	}
-	error = fsync(directory);
-	if (error != 0)
-		return errno;
+
+	/*
+	 * The directory to the device; a filesystem that cannot sync a
+	 * directory alone (the FAT) has it written by the sync that ends the
+	 * step.
+	 */
+	ended = fsync(directory);
+	if (ended != 0) {
+		error = errno;
+		if (error != EOPNOTSUPP && error != EINVAL)
+			return error;
+	}
 
 	/* Succeeded: the file has its new bytes. */
 	return 0;
