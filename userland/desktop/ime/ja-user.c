@@ -46,7 +46,7 @@
 #define USER_HASH_PRIME		16777619U
 
 /* The first line of a saved file. */
-#define USER_HEADER		";; Kei input method: the user's conversions, most recent first.\n"
+#define USER_HEADER		";; zedBSD input method: the user's conversions, most recent first.\n"
 
 /*
  * The thread that writes the user dictionary's file away from the keys.

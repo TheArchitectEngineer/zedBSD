@@ -14,6 +14,8 @@
 
 #include "files.h"
 
+#include "include/kern/os-name.h"
+
 #include <string.h>
 
 /* The card's width, its padding, its header and the height of a line. */
@@ -79,7 +81,7 @@ static const struct help_line help_shortcuts[] = {
 
 /* About. */
 static const struct help_line help_about[] = {
-	{ NULL, "The file manager of Kei." },
+	{ NULL, "The file manager of " ZEDBSD_OS_NAME "." },
 	{ NULL, "" },
 	{ NULL, "Copyright (C) 2026 Awe Morris" },
 	{ NULL, "Zlib license" }

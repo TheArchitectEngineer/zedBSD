@@ -15,6 +15,8 @@
 
 #include "settings.h"
 
+#include "include/kern/os-name.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -128,6 +130,7 @@ home_tile(
 {
 	struct kl_rect tile;
 	char state[HOME_STATE];
+	char summary_text[SE_SUMMARY_TEXT];
 	const char *line;
 	kl_color ground;
 	kl_color glyph;
@@ -164,7 +167,7 @@ home_tile(
 	(void)kl_text_draw_fit(app->text, canvas, x + 16, y + 62, kl_tr(page->name), HOME_TEXT_NAME, 1, tile.width - 28, SE_COLOR_TEXT);
 
 	/* Under it the page's state now, when it has one, else its summary. */
-	line = kl_tr(page->summary);
+	line = se_named(summary_text, sizeof(summary_text), kl_tr(page->summary));
 	dot = 0;
 	live = home_state(app, page->id, state, sizeof(state), &dot);
 	if (live != 0)
@@ -325,7 +328,7 @@ home_state(
 		/* The name of the system and the machine, when known. */
 		if (app->about.machine[0] == '\0')
 			return 0;
-		(void)snprintf(text, size, "Kei \xc2\xb7 %s", app->about.machine);
+		(void)snprintf(text, size, ZEDBSD_OS_NAME " \xc2\xb7 %s", app->about.machine);
 		return 1;
 	default:
 		break;

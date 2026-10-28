@@ -119,40 +119,40 @@ main(
 	/* The engines' output is large; it lives on the heap. */
 	program.out = malloc(sizeof(*program.out));
 	if (program.out == NULL) {
-		printf("KEI-IME FAILED step=memory\n");
+		printf("ZEDBSD-IME FAILED step=memory\n");
 		return 1;
 	}
 
 	/* The connection the compositor gave (WAYLAND_SOCKET). */
 	program.display = wl_display_connect(NULL);
 	if (program.display == NULL) {
-		printf("KEI-IME FAILED step=connect errno=%d\n", errno);
+		printf("ZEDBSD-IME FAILED step=connect errno=%d\n", errno);
 		return 1;
 	}
 
 	/* The globals: the seat and the input method's own. */
 	program.registry = wl_display_get_registry(program.display);
 	if (program.registry == NULL) {
-		printf("KEI-IME FAILED step=registry\n");
+		printf("ZEDBSD-IME FAILED step=registry\n");
 		return 1;
 	}
 
 	status = wl_registry_add_listener(program.registry, &main_registry_listener, &program);
 	if (status != 0) {
-		printf("KEI-IME FAILED step=registry-listener\n");
+		printf("ZEDBSD-IME FAILED step=registry-listener\n");
 		return 1;
 	}
 
 	status = wl_display_roundtrip(program.display);
 	if (status < 0) {
-		printf("KEI-IME FAILED step=roundtrip errno=%d\n", errno);
+		printf("ZEDBSD-IME FAILED step=roundtrip errno=%d\n", errno);
 		return 1;
 	}
 
 	/* Without every global there is nothing to serve. */
 	if (program.seat == NULL || program.method_manager == NULL ||
 	    program.keyboard_manager == NULL || program.status_manager == NULL) {
-		printf("KEI-IME FAILED step=globals\n");
+		printf("ZEDBSD-IME FAILED step=globals\n");
 		return 1;
 	}
 
@@ -160,29 +160,29 @@ main(
 	method = main_method(count, arguments);
 	status = main_engines(&program, method);
 	if (status != 0) {
-		printf("KEI-IME FAILED step=engines\n");
+		printf("ZEDBSD-IME FAILED step=engines\n");
 		return 1;
 	}
 
 	/* The input method's objects. */
 	status = program_method_start(&program);
 	if (status != 0) {
-		printf("KEI-IME FAILED step=method\n");
+		printf("ZEDBSD-IME FAILED step=method\n");
 		return 1;
 	}
 
 	status = wl_display_roundtrip(program.display);
 	if (status < 0) {
-		printf("KEI-IME FAILED step=roundtrip errno=%d\n", errno);
+		printf("ZEDBSD-IME FAILED step=roundtrip errno=%d\n", errno);
 		return 1;
 	}
 
 	/* The candidate window; without it the program still converts, only the candidates are not shown. */
 	status = program_popup_start(&program);
-	printf("KEI-IME POPUP ready=%d error=%d\n", program.popup.ready, status);
+	printf("ZEDBSD-IME POPUP ready=%d error=%d\n", program.popup.ready, status);
 
 	/* Serves the keyboard until the connection ends, another input method holds the seat, or a signal stops it. */
-	printf("KEI-IME READY languages=%u\n", program.engine_count);
+	printf("ZEDBSD-IME READY languages=%u\n", program.engine_count);
 	while (!program.unavailable && !main_stopping) {
 		status = main_serve(&program);
 		if (status != 0)
@@ -193,7 +193,7 @@ main(
 	for (i = 0; i < program.engine_count; i++)
 		program.engines[i].ops->destroy(&program.engines[i]);
 
-	printf("KEI-IME DONE\n");
+	printf("ZEDBSD-IME DONE\n");
 	free(program.out);
 	kl_appearance_close(program.popup.appearance);
 	wl_display_disconnect(program.display);
@@ -335,7 +335,7 @@ main_engines(
 
 	/* One language so far, and the method chosen in the log. */
 	program->engine_count = 1;
-	printf("KEI-IME METHOD %d\n", method);
+	printf("ZEDBSD-IME METHOD %d\n", method);
 
 	/* None: direct input alone. */
 	if (method == MAIN_METHOD_NONE)
@@ -407,7 +407,7 @@ main_warm(
 
 /*
  * Gives the path of a user dictionary (by its file name), making its directory
- * (~/.config/kei/ime, the user's alone).
+ * (~/.config/zedbsd/ime, the user's alone).
  */
 static void
 main_user_path(
@@ -425,12 +425,12 @@ main_user_path(
 		return;
 	}
 
-	/* Each level of ~/.config/kei/ime, made when missing. */
+	/* Each level of ~/.config/zedbsd/ime, made when missing. */
 	snprintf(directory, sizeof(directory), "%s/.config", home);
 	(void)mkdir(directory, 0700);
-	snprintf(directory, sizeof(directory), "%s/.config/kei", home);
+	snprintf(directory, sizeof(directory), "%s/.config/zedbsd", home);
 	(void)mkdir(directory, 0700);
-	snprintf(directory, sizeof(directory), "%s/.config/kei/ime", home);
+	snprintf(directory, sizeof(directory), "%s/.config/zedbsd/ime", home);
 	(void)mkdir(directory, 0700);
 
 	/* The file in it. */

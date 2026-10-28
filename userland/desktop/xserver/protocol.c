@@ -17,6 +17,8 @@
 
 #include "userland/desktop/xserver/internal.h"
 
+#include "include/kern/os-name.h"
+
 #include <stdlib.h>
 #include <string.h>
 
@@ -83,7 +85,7 @@
 
 /* The one core font's name, and the vendor the setup names. */
 #define FONT_NAME			"zed-unicode"
-#define SERVER_VENDOR			"Kei X11"
+#define SERVER_VENDOR			ZEDBSD_OS_NAME " X11"
 
 /* The most keycodes one GetKeyboardMapping answers. */
 #define KEYBOARD_MAPPING_MAX		248U

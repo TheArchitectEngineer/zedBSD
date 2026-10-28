@@ -20,12 +20,14 @@
  * (the file manager's own list).  Everything is gathered when the
  * dashboard is shown; the hero's picture is scaled once for its size.
  *
- * The hero card carries the Kei mark and word at its upper right, as the
- * boot screen does (ws035-p108); fm_mark_draw draws the mark for the empty
- * folders too.
+ * The hero card carries the mark and the system's name at its upper
+ * right, as the boot screen does (ws035-p108); fm_mark_draw draws the mark
+ * for the empty folders too.
  */
 
 #include "files.h"
+
+#include "include/kern/os-name.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -48,7 +50,7 @@
 #define HOME_ROW_HEIGHT		44
 #define HOME_PILL_HEIGHT	32
 
-/* The largest Kei mark drawn, in pixels a side (its layers are kept rendered at the last size). */
+/* The largest mark drawn, in pixels a side (its layers are kept rendered at the last size). */
 #define HOME_MARK_MAX		128U
 
 /* The first card index of the removable devices (the folders' cards are 0.., the recent folders' 100..). */
@@ -495,7 +497,7 @@ home_hero(
 	(void)kl_text_draw_fit(app->text, canvas, x + 28, y + HOME_HERO_HEIGHT - 56, app->dashboard.greeting, 26U, 1, width - 56, KL_RGB(0xffffff));
 	(void)kl_text_draw_fit(app->text, canvas, x + 28, y + HOME_HERO_HEIGHT - 28, app->dashboard.summary, 14U, 0, width - 56, KL_RGBA(0xffffff, 230));
 
-	/* The Kei mark and word at the upper right. */
+	/* The mark and the system's name at the upper right. */
 	home_hero_brand(app, canvas, x, y, width);
 }
 
@@ -542,7 +544,7 @@ home_hero_fallback(
 		home_hero_art(&app->hero_source);
 }
 
-/* Draws the Kei mark and the word Kei (three letters, never a lone K) at the hero card's upper right. */
+/* Draws the mark and the system's name (the build's, as Files runs on Linux and FreeBSD too) at the hero card's upper right. */
 static void
 home_hero_brand(
 	struct fm_app *app,
@@ -555,7 +557,7 @@ home_hero_brand(
 	int left;
 
 	/* The word's width, and where the pair starts so that it ends at the card's right margin. */
-	word = kl_text_width(app->text, "Kei", 3U, 30U, 0);
+	word = kl_text_width(app->text, ZEDBSD_OS_NAME, strlen(ZEDBSD_OS_NAME), 30U, 0);
 	left = x + width - 24 - word - 6 - HOME_HERO_MARK;
 
 	/* A card too narrow for the pair keeps only its words. */
@@ -564,11 +566,11 @@ home_hero_brand(
 
 	/* The mark, then the word in slate beside its lower part. */
 	fm_mark_draw(canvas, left, y + 18, (unsigned)HOME_HERO_MARK, 1.0f);
-	(void)kl_text_draw(app->text, canvas, left + HOME_HERO_MARK + 6, y + 18 + HOME_HERO_MARK - 10, "Kei", 3U, 30U, 0, FM_COLOR_TITLE);
+	(void)kl_text_draw(app->text, canvas, left + HOME_HERO_MARK + 6, y + 18 + HOME_HERO_MARK - 10, ZEDBSD_OS_NAME, strlen(ZEDBSD_OS_NAME), 30U, 0, FM_COLOR_TITLE);
 }
 
 /*
- * Draws the Kei mark in a square of a size in pixels at (x, y), as opaque as
+ * Draws the mark in a square of a size in pixels at (x, y), as opaque as
  * asked (0..1): its seven layers (userland/desktop/artwork/mark.c), each in
  * its colour.  The layers are rendered once for a size and kept.
  */
@@ -625,7 +627,7 @@ fm_mark_draw(
 	}
 }
 
-/* Draws a quiet landscape into a picture in the Kei look: a bright sky, hills and a green-edged lake (when there is no wallpaper). */
+/* Draws a quiet landscape into a picture in the desktop's look: a bright sky, hills and a green-edged lake (when there is no wallpaper). */
 static void
 home_hero_art(
 	struct kl_image *image)
@@ -674,7 +676,7 @@ home_hero_art(
 	far_hills[15] = height * 0.60f;
 	kl_canvas_polygon(&canvas, far_hills, 8, KL_RGB(0xc2d6ea));
 
-	/* The near hills, young green (the Kei look, ws035-p108). */
+	/* The near hills, young green (the desktop's look, ws035-p108). */
 	near_hills[0] = 0.0f;
 	near_hills[1] = height * 0.60f;
 	near_hills[2] = width * 0.20f;

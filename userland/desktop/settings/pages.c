@@ -10,10 +10,13 @@
  * groups, each page's name, summary and picture, the word that names it
  * on the command line, the words a search finds it by, and how it is
  * drawn.  A page that is not ready shows its frame and says it comes in a
- * later version of Kei.
+ * later version of the system.  A summary's {1} is the system's name
+ * (se_named).
  */
 
 #include "settings.h"
+
+#include "include/kern/os-name.h"
 
 #include <string.h>
 
@@ -22,7 +25,7 @@
  * whole run.
  */
 const struct se_page se_pages[SE_PAGES] = {
-	{ SE_PAGE_HOME, SE_GROUP_NONE, SE_GLYPH_GRID, "Settings", "Change how Kei looks and works.", "home", "home overview all", 1, se_home_draw, NULL, NULL, NULL },
+	{ SE_PAGE_HOME, SE_GROUP_NONE, SE_GLYPH_GRID, "Settings", "Change how {1} looks and works.", "home", "home overview all", 1, se_home_draw, NULL, NULL, NULL },
 	{ SE_PAGE_WIFI, SE_GROUP_CONNECTIVITY, SE_GLYPH_WIFI, "Wi-Fi", "Join wireless networks and turn the radio on or off.", "wifi", "wifi wireless wlan network ssid join key password", 1, se_wifi_page_draw, se_network_press, se_network_key, NULL },
 	{ SE_PAGE_ETHERNET, SE_GROUP_CONNECTIVITY, SE_GLYPH_ETHERNET, "Ethernet", "Wired connections and their addresses.", "ethernet", "ethernet wired lan cable address mac dhcp static router dns", 1, se_ethernet_page_draw, se_wired_press, se_wired_key, NULL },
 	{ SE_PAGE_BLUETOOTH, SE_GROUP_CONNECTIVITY, SE_GLYPH_BLUETOOTH, "Bluetooth", "Pair and connect wireless devices.", "bluetooth", "bluetooth pair devices headphones keyboard mouse", 1, se_bluetooth_draw, se_bluetooth_press, NULL, NULL },
@@ -43,9 +46,29 @@ const struct se_page se_pages[SE_PAGES] = {
 	{ SE_PAGE_SHARING, SE_GROUP_DEVICES, SE_GLYPH_SHARE, "Sharing", "Remote Login and, later, cloud storage.", "sharing", "sharing share files remote login ssh sshd cloud", 1, se_sharing_draw, se_sharing_press, NULL, NULL },
 	{ SE_PAGE_USERS, SE_GROUP_SYSTEM, SE_GLYPH_PEOPLE, "Users", "Accounts on this computer.", "users", "users accounts people login password", 1, se_users_draw, se_users_press, se_users_key, NULL },
 	{ SE_PAGE_SECURITY_KEYS, SE_GROUP_SYSTEM, SE_GLYPH_LOCK, "Security Keys", "The PIN and the security keys you sign in with.", "security-keys", "security keys key fido2 yubikey passkey pin software sign in login unlock", 1, se_keys_draw, se_keys_press, NULL, NULL },
-	{ SE_PAGE_UPDATES, SE_GROUP_SYSTEM, SE_GLYPH_REFRESH, "Updates", "Keep Kei up to date.", "updates", "updates upgrade version software", 0, se_soon_draw, NULL, NULL, NULL },
-	{ SE_PAGE_ABOUT, SE_GROUP_SYSTEM, SE_GLYPH_INFO, "About", "This computer and the version of Kei.", "about", "about version system computer kei hardware welcome", 1, se_about_draw, se_about_press, NULL, NULL }
+	{ SE_PAGE_UPDATES, SE_GROUP_SYSTEM, SE_GLYPH_REFRESH, "Updates", "Keep {1} up to date.", "updates", "updates upgrade version software", 0, se_soon_draw, NULL, NULL, NULL },
+	{ SE_PAGE_ABOUT, SE_GROUP_SYSTEM, SE_GLYPH_INFO, "About", "This computer and the version of {1}.", "about", "about version system computer " ZEDBSD_OS_ID " hardware welcome", 1, se_about_draw, se_about_press, NULL, NULL }
 };
+
+/*
+ * Fills the system's name into a text of the language: its {1} becomes
+ * the build's name of the system (ZEDBSD_OS_NAME), and out, cut to fit
+ * and always ended, is returned.  Settings runs on Linux and FreeBSD too,
+ * so the words that name the system it belongs to take the build's name
+ * instead of the host's os-release.
+ */
+const char *
+se_named(
+	char *out,
+	size_t size,
+	const char *text)
+{
+	/* The name in its place; a text without a place is copied. */
+	(void)kl_tr_format(out, size, text, ZEDBSD_OS_NAME, (const char *)NULL);
+
+	/* The text with the name, as far as it fits. */
+	return out;
+}
 
 /*
  * Finds the page a word names (the command line's), or NULL when no page

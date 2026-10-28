@@ -17,6 +17,8 @@
 
 #include "userland/desktop/xserver/internal.h"
 
+#include "include/kern/os-name.h"
+
 #include <string.h>
 
 /* The GLX minor opcodes answered. */
@@ -32,7 +34,7 @@
 /* The version and strings of the extension. */
 #define GLX_SERVER_MAJOR		1U
 #define GLX_SERVER_MINOR		4U
-#define GLX_VENDOR_STRING		"Kei"
+#define GLX_VENDOR_STRING		ZEDBSD_OS_NAME
 #define GLX_VERSION_STRING		"1.4"
 #define GLX_EXTENSIONS_STRING		"GLX_ARB_get_proc_address"
 

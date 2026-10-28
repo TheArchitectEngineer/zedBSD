@@ -160,7 +160,7 @@ program_popup_update(
 			wl_surface_attach(popup->surface, NULL, 0, 0);
 			wl_surface_commit(popup->surface);
 			popup->shown = 0;
-			printf("KEI-IME POPUP hidden\n");
+			printf("ZEDBSD-IME POPUP hidden\n");
 		}
 
 		return;
@@ -199,7 +199,7 @@ program_popup_update(
 	wl_surface_damage(popup->surface, 0, 0, width, height);
 	wl_surface_commit(popup->surface);
 	popup->shown = 1;
-	printf("KEI-IME POPUP shown count=%lu selected=%lu width=%d height=%d\n", (unsigned long)out->candidate_count,
+	printf("ZEDBSD-IME POPUP shown count=%lu selected=%lu width=%d height=%d\n", (unsigned long)out->candidate_count,
 	       (unsigned long)out->candidate_selected, width, height);
 }
 

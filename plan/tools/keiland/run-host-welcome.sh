@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws164-p002: the Welcome of Settings on the host, through Settings' host renderer (plan/ws089/tests/host-build.sh,
 # build/ws089-host/settings-render): About's "Show Welcome again" starts it, Next goes through the six steps (Welcome,
-# Network, Look, Languages, Keys, Done) and Back returns one, "Start using Kei" sets welcome.done (the stand-in settings store) and
+# Network, Look, Languages, Keys, Done) and Back returns one, "Start using" sets welcome.done (the stand-in settings store) and
 # asks the window to close; Skip sets it from the first step.  Each step's frame is written as PNG.
 #   sh plan/tools/keiland/run-host-welcome.sh [OUTPUT]   (default build/ws164-welcome)
 # Each run gets a new directory behind OUTPUT (plan/tools/fresh-out.sh); nothing is removed.
@@ -39,7 +39,7 @@ expect "$out/steps.log" "WELCOME step=4 name=keys" "Next: Keys"
 expect "$out/steps.log" "WELCOME step=5 name=done" "Next: Done"
 lines=$(grep -c "WELCOME step=4 name=keys" "$out/steps.log" || true)
 [ "$lines" = 2 ] && echo "ok Back returns to Keys" || { echo "FAIL Back (keys lines: $lines)"; status=1; }
-expect "$out/steps.log" "WELCOME done error=0" "Start using Kei sets welcome.done"
+expect "$out/steps.log" "WELCOME done error=0" "Start using sets welcome.done"
 
 # Skip from the first step.
 timeout 120 "$render" --page=about scroll=200 control=9003 control=9002 > "$out/skip.log" 2>&1 || status=1

@@ -159,7 +159,7 @@ ja_core_open(
 
 	/*
 	 * Then the system dictionary.  Without a supplement of its own it may
-	 * be Kei's file of two parts (ws095-p017, SKK-JISYO.ja), whose first
+	 * be the system's own file of two parts (ws095-p017, SKK-JISYO.ja), whose first
 	 * part is the supplement, looked in before the system's part.
 	 */
 	if (config->supplement_dictionary == NULL) {

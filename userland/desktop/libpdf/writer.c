@@ -28,6 +28,8 @@
 
 #include "writer.h"
 
+#include "include/kern/os-name.h"
+
 /* The most images one document may hold, each an Image XObject. */
 #define PDF_WRITER_IMAGE_MAX 4096
 
@@ -1754,7 +1756,7 @@ pdf_writer_write_image_objects(
 	if (image->alpha != NULL)
 		pdf_buffer_printf(file, " /SMask %lu 0 R", (unsigned long)(image->object + 1));
 	if (image->id != 0UL)
-		pdf_buffer_printf(file, " /KeiNotesImage %lu", image->id);
+		pdf_buffer_printf(file, " /ZedBSDNotesImage %lu", image->id);
 
 	/* Writes the samples. */
 	pdf_buffer_printf(file, " /Length %lu >>\nstream\n", (unsigned long)image->size);
@@ -1824,7 +1826,7 @@ pdf_writer_write_attachment_objects(
 	pdf_buffer_printf(file, " /UF ");
 	pdf_buffer_append_literal_string(file, writer->attachment.name);
 	pdf_buffer_printf(file,
-		      " /Desc (Kei Notes edit data) /AFRelationship /Source /EF << /F %lu 0 R >> >>\nendobj\n",
+		      " /Desc (" ZEDBSD_OS_NAME " Notes edit data) /AFRelationship /Source /EF << /F %lu 0 R >> >>\nendobj\n",
 		      (unsigned long)file_object);
 }
 
@@ -2516,7 +2518,7 @@ write_information(
 		modification = now;
 
 	/* Writes the producer and the two dates. */
-	pdf_buffer_printf(file, "3 0 obj\n<< /Producer (Kei Notes) /CreationDate ");
+	pdf_buffer_printf(file, "3 0 obj\n<< /Producer (" ZEDBSD_OS_NAME " Notes) /CreationDate ");
 	pdf_buffer_append_date(file, writer->creation_time);
 	pdf_buffer_printf(file, " /ModDate ");
 	pdf_buffer_append_date(file, modification);
