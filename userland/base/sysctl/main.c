@@ -535,6 +535,8 @@ show_cputimes(
 		valid = 0;
 	} else if (header->version != CPU_TIMES_VERSION) {
 		valid = 0;
+	} else if (header->struct_size != sizeof(*header)) {
+		valid = 0;
 	} else if (header->element_size != sizeof(*entry)) {
 		valid = 0;
 	} else if (header->struct_size + (size_t)header->count * header->element_size != length) {
@@ -594,6 +596,8 @@ show_diskstats(
 	if (length < sizeof(*header)) {
 		valid = 0;
 	} else if (header->version != DISK_STATS_VERSION) {
+		valid = 0;
+	} else if (header->struct_size != sizeof(*header)) {
 		valid = 0;
 	} else if (header->element_size != sizeof(*entry)) {
 		valid = 0;
@@ -660,6 +664,8 @@ show_gputelemetry(
 		valid = 0;
 	} else if (header->version != GPU_TELEMETRY_VERSION) {
 		valid = 0;
+	} else if (header->struct_size != sizeof(*header)) {
+		valid = 0;
 	} else if (header->element_size != sizeof(*entry)) {
 		valid = 0;
 	} else if (header->struct_size + (size_t)header->count * header->element_size != length) {
@@ -723,6 +729,8 @@ show_thermal(
 	if (length < sizeof(*header)) {
 		valid = 0;
 	} else if (header->version != THERMAL_VERSION) {
+		valid = 0;
+	} else if (header->struct_size != sizeof(*header)) {
 		valid = 0;
 	} else if (header->element_size != sizeof(*entry)) {
 		valid = 0;
@@ -797,6 +805,8 @@ show_tcpstats(
 		valid = 0;
 	} else if (header->version != TCP_STATS_VERSION) {
 		valid = 0;
+	} else if (header->struct_size != sizeof(*header)) {
+		valid = 0;
 	} else if (header->element_size != sizeof(*entry)) {
 		valid = 0;
 	} else if (header->struct_size + (size_t)header->count * header->element_size != length) {
@@ -812,9 +822,12 @@ show_tcpstats(
 
 	/* The reading's time, the sockets and the packet pool. */
 	printf("net.tcpstats: time_ms=%llu sockets=%u packets_total=%u packets_used=%u packets_used_max=%u "
-	       "packet_alloc_failures=%llu\n",
+	       "packet_alloc_failures=%llu jumbo_total=%u jumbo_used=%u jumbo_used_max=%u jumbo_reserve=%u "
+	       "jumbo_alloc_failures=%llu\n",
 	       (unsigned long long)header->time_ms, header->count, header->packets_total, header->packets_used,
-	       header->packets_used_max, (unsigned long long)header->packet_alloc_failures);
+	       header->packets_used_max, (unsigned long long)header->packet_alloc_failures, header->jumbo_total,
+	       header->jumbo_used, header->jumbo_used_max, header->jumbo_reserve,
+	       (unsigned long long)header->jumbo_alloc_failures);
 
 	/* A line a socket. */
 	for (index = 0; index < header->count; index++) {
