@@ -77,6 +77,20 @@
  * ODM0_OPTC_INPUT_GLOBAL_CONTROL__OPTC_UNDERFLOW_OCCURRED_STATUS_MASK).
  */
 #define DISPLAY_PLANE_BLANK		0x00000001U
+
+/*
+ * The hub arbiter's DRAM state control: the self refresh's forced value
+ * and its force (bits 0 and 1; forced to "not allowed" stops the memory's
+ * self refresh), and the DRAM state change's forced value and its force
+ * (bits 4 and 5).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/dcn/dcn_2_0_0_sh_mask.h
+ * (DCHUBBUB_ARB_DRAM_STATE_CNTL__DCHUBBUB_ARB_ALLOW_SELF_REFRESH_FORCE_VALUE,
+ * _ENABLE, DCHUBBUB_ARB_ALLOW_PSTATE_CHANGE_FORCE_VALUE, _ENABLE).
+ */
+#define DISPLAY_DRAM_SELF_REFRESH_FORCE	0x00000003U
+#define DISPLAY_DRAM_STATE_CHANGE_ALLOW	0x00000030U
 #define DISPLAY_PLANE_IDLE		0x00000002U
 #define DISPLAY_PLANE_UNDERFLOW_SHIFT	28U
 #define DISPLAY_PLANE_UNDERFLOW_FIELD	0x00000007U
@@ -916,6 +930,49 @@ amdrdna_display_underflow(
 
 	/* Succeeded: the plane's underflow bits. */
 	return underflow;
+}
+
+/*
+ * Lets the memory clock change once while the plane scans out: the hub
+ * arbiter allows the DRAM's state change whatever its watermarks say, and
+ * the memory's self refresh is no longer kept off, as Linux leaves the
+ * arbiter once its display code has started.  Returns the arbiter's word
+ * before, which amdrdna_display_memory_switch_end() puts back.  The
+ * system-management unit's firmware waits for the arbiter while it
+ * changes the memory clock.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/display/dc/hubbub/dcn10/dcn10_hubbub.c
+ * (hubbub1_verify_allow_pstate_change_high: the forced allowing of the
+ * state change "to prevent system hang"; hubbub1_allow_self_refresh_control:
+ * the self refresh allowed with the force off).
+ */
+uint32_t
+amdrdna_display_memory_switch_begin(
+	struct amdrdna_device *device)
+{
+	uint32_t saved;
+	uint32_t word;
+
+	/* The word as the firmware or the last switch left it. */
+	saved = display_read(device, AMDRDNA_DCN_HUB_DRAM_STATE, 0U);
+
+	/* The state change allowed by force, the self refresh by the watermarks. */
+	word = (saved & ~DISPLAY_DRAM_SELF_REFRESH_FORCE) | DISPLAY_DRAM_STATE_CHANGE_ALLOW;
+	display_write(device, AMDRDNA_DCN_HUB_DRAM_STATE, 0U, word);
+
+	/* Succeeded: the word before. */
+	return saved;
+}
+
+/* Puts the hub arbiter's DRAM state control back as it was before the memory clock's change. */
+void
+amdrdna_display_memory_switch_end(
+	struct amdrdna_device *device,
+	uint32_t saved)
+{
+	/* The word before. */
+	display_write(device, AMDRDNA_DCN_HUB_DRAM_STATE, 0U, saved);
 }
 
 /*
