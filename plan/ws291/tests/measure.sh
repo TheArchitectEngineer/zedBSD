@@ -10,6 +10,10 @@
 #     measure.sh linux                       Debian running (zedBSD rebooted: BootOrder brings Debian back)
 #     measure.sh nicwatch                    puts nicwatch/ on the running zedBSD (reboots itself when its USB LAN
 #                                            adapter gets no address; to_zedbsd then boots it again, twice at most)
+#     measure.sh timing on|off               the kernel's amdrdna.vk.timing marks on the boot line (on: every 2000 ms) or
+#                                            not, zedBSD restarted (via Debian); the marks time every command and
+#                                            cost the command-heavy runs several ms a frame, so bench runs go
+#                                            without them and profile runs with them
 #     measure.sh deploy [--kernel VMUNIX] [DEST=SRC]...
 #                                            files copied into the running zedBSD (the kernel to /boot/boot0/vmunix,
 #                                            the old one kept as vmunix.old), then zedBSD restarted (via Debian)
@@ -206,6 +210,18 @@ deploy() {
 		zs "$ip" "cp /tmp/deploy.file '$dest' && sync" || return 1
 		say "$dest put in"
 	done
+	to_linux || return 1
+	to_zedbsd
+}
+
+timing() {
+	ip=$(to_zedbsd) || return 1
+	if [ "$1" = on ]; then
+		zs "$ip" "sed -i -e '/^#*amdrdna.vk.timing=/d' /boot/boot0/zedbsd.cfg && echo amdrdna.vk.timing=2000 >> /boot/boot0/zedbsd.cfg && sync" || return 1
+	else
+		zs "$ip" "sed -i -e '/^amdrdna.vk.timing=/d' /boot/boot0/zedbsd.cfg && sync" || return 1
+	fi
+	zs "$ip" "grep -c '^amdrdna.vk.timing=' /boot/boot0/zedbsd.cfg" | sed 's/^/measure: timing lines /' >&2
 	to_linux || return 1
 	to_zedbsd
 }
@@ -476,6 +492,7 @@ nicwatch) nicwatch ;;
 zedbsd) to_zedbsd ;;
 linux) to_linux && echo linux ;;
 deploy) deploy "$@" ;;
+timing) timing "$@" ;;
 desktop) desktop "$@" ;;
 mview) mview "$@" ;;
 profile) profile "$@" ;;
