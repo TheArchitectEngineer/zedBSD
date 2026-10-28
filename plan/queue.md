@@ -159,3 +159,5 @@
 | q1665 / q1665-i06 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307j`、基点 main a69e7147e） | ws307 p009 段 2 の残りから | i01 と同じ承認 | 返却（p009 段 2〜4、dc4dd958e → main 23d2741ea） |
 | q1665 / q1665-i07 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307k`、基点 main 7d2f68e67） | ws307 p009 段 5 から | i01 と同じ承認 | in-progress |
 | q1664 / q1664-i04 | P3（worktree `/home/awe/zedBSD-worktrees/p3-ws221d`、基点 main 539fd96e7） | ws221 p008・p009 の残り → p006 → p007 → WS311 p001 | i01 と同じ承認 | in-progress |
+| q1670 / q1670-i02 | P2（worktree `/home/awe/zedBSD-worktrees/p2-ws291n`、基点 main 7b297b46a） | ws291 の NVIDIA の段: VA の実機の確かめ → p010a | i01 と同じ承認 | in-progress |
+| q1669 / q1669-i03 | P1（worktree `/home/awe/zedBSD-worktrees/p1-ws235c`、基点 main 7b297b46a） | ws235 の 10G の link と rge0 だけの TCP → p005 | i01 と同じ承認 | in-progress |
