@@ -22,6 +22,7 @@
 #include "userland/desktop/wayland/kwl.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static struct kwl_input_device *backend_input(struct kwl_server *server, const char *path);
@@ -205,9 +206,9 @@ kwl_backend_power_changed(
 {
 	struct kwl_server *server;
 
-	/* The bar's state, then the extension's. */
+	/* The bar's state (read on the device I/O thread), then the extension's. */
 	server = data;
-	kwl_power_read(server);
+	kwl_power_read_later(server);
 	kwl_system_power_changed(server);
 	kwl_schedule(server);
 }
@@ -428,7 +429,31 @@ kwl_lid_screen_restore(
 }
 
 /*
- * Reads the power's state for the bar: unknown (no battery shown) when the
+ * A read of the power's state for the bar on the device I/O thread: the
+ * backend (open while the thread runs), and what it read.
+ */
+struct power_read_job {
+	struct kwl_lane_job lane;
+	struct kl_backend *backend;
+	int error;
+	struct kl_backend_power_state state;
+};
+
+static void power_apply(struct kwl_server *server, struct kl_backend_power_state *state, int error);
+static void power_read_run(struct kwl_lane_job *job);
+static void power_read_done(void *context, struct kwl_lane_job *job);
+static void power_read_drop(struct kwl_lane_job *job);
+
+/* The operations of a read of the power on the device I/O thread. */
+static const struct kwl_lane_ops power_read_ops = {
+	power_read_run,
+	power_read_done,
+	power_read_drop
+};
+
+/*
+ * Reads the power's state for the bar here (the start, and a wake whose
+ * rules need the lid as it is now): unknown (no battery shown) when the
  * backend did not open or cannot say.
  */
 void
@@ -443,19 +468,120 @@ kwl_power_read(
 	state.source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
 	state.percent = -1;
 	error = kl_backend_power_get_state(server->backend, &state);
+
+	/* Succeeded: the bar's from now. */
+	power_apply(server, &state, error);
+}
+
+/*
+ * Reads the power's state for the bar on the device I/O thread (here
+ * without it), after the power changed; a change during a read reads
+ * again once it is done.
+ */
+void
+kwl_power_read_later(
+	struct kwl_server *server)
+{
+	struct power_read_job *job;
+	int error;
+
+	/* One read at a time: the change is read when it is done. */
+	if (server->power_reading) {
+		server->power_again = 1U;
+		return;
+	}
+
+	/* The job's record; without it the power is read here. */
+	job = calloc(1U, sizeof(*job));
+	if (job == NULL) {
+		kwl_power_read(server);
+		return;
+	}
+	job->backend = server->backend;
+
+	/* The thread reads; without it, it is read here. */
+	server->power_reading = 1U;
+	error = kwl_io_device_submit(server, &job->lane, &power_read_ops, 0U);
 	if (error != 0) {
-		state.source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
-		state.percent = -1;
-		state.charging = 0U;
+		power_read_run(&job->lane);
+		power_read_done(server, &job->lane);
+	}
+}
+
+/* Makes a state read the bar's: unknown after a failure, logged, and a low battery warned of. */
+static void
+power_apply(
+	struct kwl_server *server,
+	struct kl_backend_power_state *state,
+	int error)
+{
+	/* A state that could not be read is unknown, with no action. */
+	if (error != 0) {
+		state->source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
+		state->percent = -1;
+		state->charging = 0U;
+		state->actions = 0U;
 	}
 
 	/* Kept for the bar, and written in the log. */
-	server->power = state;
-	printf("KWL POWER source=%s percent=%d charging=%u\n", power_source_text(state.source), state.percent,
-	       state.charging);
+	server->power = *state;
+	printf("KWL POWER source=%s percent=%d charging=%u\n", power_source_text(state->source), state->percent,
+	       state->charging);
 
 	/* A low battery is warned of (notify-system.c, ws156-p003). */
 	kwl_notify_battery(server);
+}
+
+/* Reads the power's state on the device I/O thread. */
+static void
+power_read_run(
+	struct kwl_lane_job *lane_job)
+{
+	struct power_read_job *job;
+	int error;
+
+	/* The backend's state, unknown unless it says. */
+	job = (struct power_read_job *)lane_job;
+	memset(&job->state, 0, sizeof(job->state));
+	job->state.source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
+	job->state.percent = -1;
+	error = kl_backend_power_get_state(job->backend, &job->state);
+	job->error = error;
+}
+
+/* Takes a read of the power, on the event loop's thread: the bar's state, and again for a change meanwhile. */
+static void
+power_read_done(
+	void *context,
+	struct kwl_lane_job *lane_job)
+{
+	struct power_read_job *job;
+	struct kwl_server *server;
+
+	/* The bar's state. */
+	server = context;
+	job = (struct power_read_job *)lane_job;
+	server->power_reading = 0U;
+	power_apply(server, &job->state, job->error);
+	free(job);
+
+	/* A change during the read is read now. */
+	if (server->power_again) {
+		server->power_again = 0U;
+		kwl_power_read_later(server);
+	}
+
+	/* Succeeded: the bar draws it at the next frame. */
+	kwl_schedule(server);
+}
+
+/* Frees a read that did not run (the thread stopped at the end); nothing waits for it. */
+static void
+power_read_drop(
+	struct kwl_lane_job *lane_job)
+{
+	/* The record. */
+	free(lane_job);
 }
 
 /*

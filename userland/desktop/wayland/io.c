@@ -7,7 +7,10 @@
 
 /*
  * The device I/O thread (io-device): the work of the compositor that may
- * wait for a device runs here, away from the event loop.
+ * wait for a device or the kernel runs here, away from the event loop: the
+ * input devices' finding and closing, and the jobs other parts give it
+ * (the power's state, the network's details, the computer's readings, the
+ * monitor's samples).
  *
  * The input devices: the event loop asks for a finding (the evdev nodes
  * not read yet are opened and their capabilities read, the open of a PS/2
@@ -79,9 +82,9 @@ static const struct kwl_lane_ops io_close_ops = {
 
 /*
  * Starts the I/O threads once the threads' wake pipe is made: the file
- * I/O thread, and the device I/O thread where the backend opens the input
- * devices itself.  Without one, its work is done in the event loop as
- * before (logged).
+ * I/O thread and the device I/O thread, which finds and closes the input
+ * devices where the backend opens them itself.  Without one, its work is
+ * done in the event loop as before (logged).
  */
 void
 kwl_io_start(
@@ -107,20 +110,18 @@ kwl_io_start(
 	if (server->io_started)
 		return;
 
-	/* A backend whose seat opens the devices needs no thread for them. */
-	supported = kl_backend_input_find_supported();
-	if (!supported)
-		return;
-
 	/* The thread, which waits for the first job. */
 	error = kwl_lane_start(&server->io_device, "io-device", 1U, server->wake[1]);
 	if (error != 0) {
-		printf("KWL IO thread=io-device errno=%d the scans wait in the event loop\n", error);
+		printf("KWL IO thread=io-device errno=%d the devices are waited for in the event loop\n", error);
 		return;
 	}
-
-	/* The scans and the closes go to the thread from now on. */
 	server->io_started = 1U;
+
+	/* The scans and the closes go to the thread from now on, unless a seat opens the devices. */
+	supported = kl_backend_input_find_supported();
+	if (supported)
+		server->io_input = 1U;
 }
 
 /*
@@ -131,7 +132,7 @@ void
 kwl_io_take(
 	struct kwl_server *server)
 {
-	/* The findings offer their nodes; the closes need nothing. */
+	/* The findings offer their nodes, the other jobs are applied; the closes need nothing. */
 	if (server->io_started)
 		(void)kwl_lane_take(&server->io_device, server);
 
@@ -159,6 +160,28 @@ kwl_io_file_submit(
 
 	/* Succeeded: the thread has it. */
 	kwl_lane_submit(&server->io_file, job, ops, key);
+	return 0;
+}
+
+/*
+ * Gives the device I/O thread a job (run there, done here at a later
+ * pass); a key other than 0 replaces the job of the same key not started
+ * yet (KWL_IO_KEY_*).  Returns 0, or ENOTSUP when the thread does not run:
+ * the caller does the work itself.
+ */
+int
+kwl_io_device_submit(
+	struct kwl_server *server,
+	struct kwl_lane_job *job,
+	const struct kwl_lane_ops *ops,
+	uint64_t key)
+{
+	/* Without the thread the caller does it. */
+	if (!server->io_started)
+		return ENOTSUP;
+
+	/* Succeeded: the thread has it. */
+	kwl_lane_submit(&server->io_device, job, ops, key);
 	return 0;
 }
 
@@ -197,6 +220,7 @@ kwl_io_stop(
 	/* The thread ends; the jobs left are dropped, which closes their descriptors. */
 	kwl_lane_stop(&server->io_device);
 	server->io_started = 0U;
+	server->io_input = 0U;
 	server->input_finding = 0U;
 }
 
@@ -212,8 +236,8 @@ kwl_io_input_find(
 {
 	struct io_find_job *job;
 
-	/* Without the thread the event loop scans. */
-	if (!server->io_started)
+	/* Without the thread, or where a seat opens the devices, the event loop scans. */
+	if (!server->io_input)
 		return ENOTSUP;
 
 	/* One finding at a time: a slow open does not gather scans behind it. */
@@ -256,7 +280,7 @@ kwl_io_input_close(
 
 	/* Without the thread, or without memory for the job, the descriptor is closed here. */
 	job = NULL;
-	if (server->io_started)
+	if (server->io_input)
 		job = calloc(1U, sizeof(*job));
 	if (job == NULL) {
 		kl_backend_input_close(server->backend, descriptor);
