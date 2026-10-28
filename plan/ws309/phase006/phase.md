@@ -3,7 +3,7 @@
 # ws309-p006 daemon ×5 の thread（audiod・networkd・bluetoothd・phone・volumed）
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §4.8。Queue: q1662-i04（P1）。
-- 状態: in-progress（2026-10-29 P1）。
+- 状態: cleared（2026-10-29 P1。実機・Linux/FreeBSD の build は未実施）。
 - 出典: ユーザーの決定 5「daemonと接続するスレッドは、daemon接続ごとに単体に分離しましょう。」、J6（Q1 の決定: main で blocking の I/O をする接続だけの 5 本）。
 - 依存: p002。
 
@@ -23,7 +23,8 @@
 - amd64・arm64・riscv64 の `bin/wayland` warning 0。
 - host: `plan/ws309/tests/daemon-link/run.sh`（ASan+UBSan と TSan: lent の maker と ended、wake、volumed の一覧・mount、accept しない volumed の間の main の呼び出し < 5 ms、networkd の EBUSY・DONE・送れない依頼の ENOENT が結果で）、
   `plan/ws143/tests/bt-desktop-host-test.sh`、`plan/ws197/tests/phone-backend-host-test.sh`（link は `plan/ws309/tests/daemon-link-inline.c`）、`plan/ws100/tests/host-audio.sh`。
-- QEMU Venus: `KWL THREADS` に 5 本（の中で開いた物）、音量・network の bar が今どおり。
+- QEMU Venus: `plan/ws309/tests/daemon-guest.sh`（最初の tick の後の `KWL THREADS` に 5 本、audiod・networkd の reachable、scan と volume の result が error=0、2 回目の dump に頼んだ音量、SIGTERM から 10 s 以内に終わる）。
+- compositor: `KWL THREADS` を READY と、bar の daemon を開く最初の tick の後（shell.c、`threads_told`）の 2 回出す。
 
 ## 記録
 
@@ -31,6 +32,12 @@
 - 2026-10-29 P1: host-audio.c の `AUDIOD_VERSION`（main で既に build が壊れていた）を `AUDIOD_PROTOCOL_VERSION_1` に、fd の検査を今の形に直した（Q1 の依頼）。`host-audio: 14/14 passed`（TSan も）。
   `plan/ws309/tests/daemon-link/run.sh` 17/17 PASS（ASan+UBSan と TSan、stall の最長 21〜31 µs）。
 
+- 2026-10-29 P1: QEMU Venus `sh plan/ws309/tests/daemon-guest.sh build/ws309/daemon2 build/ws309/img/hdd-image.img build/ws309/bins/wayland-p006a build/ws309/bins/libkeiland-p006a.so build/ws309/bins/keiland-system` → `daemon-guest: PASS`
+  （image は前の worktree `p1-ws309` の build/ws309/img/hdd-image.img の写し。`KWL THREADS count=7 names=io-file,io-device,bluetoothd,phone,volumed,networkd,audiod`、audio left=40 の後の dump、`stopped seconds=5`。
+  終了の 5 s は p005 の binary（wayland-p005b）でも同じ 5 s で、今回の変更の物ではない）。1 回目（daemon1）は試験の誤り（`--timeout=90000` が usage で拒まれ、`kill -0` が zombie を生きていると数えた）で FAIL、直して 2 回目。
+  amd64・arm64（config-rpi4）・riscv64（config-visionfive2-keiland）の bin/wayland exit 0・warning 0（shell.c の変更の後に作り直し）。
+- 未実施: 実機、Linux・FreeBSD の build（`kl_backend_options` に field を足した。Linux・FreeBSD の backend は daemon-link を使わない）、bluetoothd・volumed が居る guest での動き（この image の volumed の一覧は 0 件、bluetoothd は controller 無し）。
+
 ## 再開点
 
-- 2026-10-29 P1: 残り: arm64・riscv64 の build、QEMU（`KWL THREADS`、音量・network）、Linux/FreeBSD の build の確かめ（options に field を足した）。WS309 の完了の時は `daemon-link-inline.c` を ws197 の phone 試験のため plan/tools へ移す（Q1）。
+- 2026-10-29 P1: p006 は cleared。WS309 の完了の時は `daemon-link-inline.c` を ws197 の phone 試験のため plan/tools へ移す（Q1）。
