@@ -1489,6 +1489,7 @@ power_memory_clock(
 	uint32_t highest;
 	uint32_t saved;
 	uint32_t answer;
+	uint32_t allow;
 	int ceiling_error;
 	int floor_error;
 	int error;
@@ -1521,9 +1522,13 @@ power_memory_clock(
 	floor_error = EIO;
 	if (ceiling_error == 0)
 		floor_error = smu_message(device, SMU_MESSAGE_HARD_FLOOR, (SMU_CLOCK_MEMORY << 16) | highest, NULL);
-	if (amdrdna_parameter_number("amdrdna.smu.memory_allow", 0U) != 0U) {
+	allow = amdrdna_parameter_number("amdrdna.smu.memory_allow", 0U);
+	if (allow == 1U) {
 		/* amdrdna.smu.memory_allow=1: the arbiter keeps allowing the change. */
 		amdrdna_display_memory_switch_hold(device, saved);
+	} else if (allow == 2U) {
+		/* amdrdna.smu.memory_allow=2: the self refresh and the change as the watermarks allow them, as Linux leaves the arbiter. */
+		amdrdna_display_memory_switch_release(device, saved);
 	} else {
 		amdrdna_display_memory_switch_end(device, saved);
 	}

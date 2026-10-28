@@ -886,3 +886,22 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
   _IOWR で大きさを番号に含むので、古い amdrdnactl と新しい kernel（またはその逆）では番号が合わず control_ioctl の switch の default で ENOTTY。
   番号が合っても control_status は version と size（sizeof）を比べて EINVAL で断り、copyout しない。amdrdnactl は失敗を control_fail で言って
   終わる（壊れた値を出さない）。guard は amdrdnactl が答えない時を「no answer」と記録するだけで止めないので、kernel と amdrdnactl は一緒に入れる。
+- 再現の soak（memory=1、固定・force なし・SR は強制禁止 0x2、kernel vmunix-d3 = 240ac2197 + smu_hang_mark の handshake、libvulkan 3b、19:07〜19:47、
+  build/ws291/soak-m1）: 40 分・76 回、停止 0（scene-1500 193〜198 fps、guard の clocks の行は全部 mem=875MHz state=0x2 handshake=0x50777777
+  underflow=0）。前の 2 回の停止（16・20 分）は再現しなかった。停止は確率的で、1 回の soak では何も言えない（前の (B) の 40 分 0 回も同じく弱い）。
+- 機械は既定に戻した（19:50、cfg の amdrdna.smu.memory の行を消した、kernel は vmunix-d3、amdrdnactl は d2）。今日の P2（この担当）の SwitchBot は 0 回。
+- 未実機の追加（commit、既定の道は不変）: amdrdna.smu.memory_allow=2（固定の後、DRAM_STATE を force なし 0x0 = Linux の休みの形、
+  amdrdna_display_memory_switch_release）。build warning 0、実機は未試験。
+
+### UCLK の再開点（次の担当へ、2026-10-28 19:50）
+
+1. 増分 B: memory=1 + memory_allow=2 で起動し、clocks の行で state=0x0（SR 許可）・underflow=0 を確かめ、soak 60 分 × 2（guard の下）。停止したら dmesg の
+   「smu: hung: display memory handshake」の 4 標本で bit 31（要求）・bit 30（allow）を読む。
+2. 増分 C・D の実装（design-reviewer の B1〜M8 を入れる）: display の段を独立の関数（smu.c か新しい file）にし、A8（takeover）の終わり・
+   amdrdna_mode_set の後・reset の A4 の後から呼ぶ。順: DRAM_STATE を 0x30 → watermark の table（TABLE_WATERMARKS = 1、reader 4 行 = UCLK の段の範囲、
+   writer 1 行）→ NumOfDisplays = 1 → DCEFCLK の hard min（起動の値か 506）・SOCCLK の hard min → hub の DRAM_CLK_CHANGE の watermark を mode-plan の
+   段 0 の UCLK（memory_mts = 100×16）と 404 us で計算した値で 4 set に書く（memory_switch が 0 なら 5 us で計算し UCLK は固定のまま）→ 最後に
+   DRAM_STATE を 0x0 → UCLK の hard min を段 0（下ろすのは watermark の後）。shutdown は 0x30 → NumOfDisplays = 0 → hard max を最上段 → all off。
+   DEBUG_INDEX と DATA の読みは lock を共有する（control.c と smu_hang_mark）。
+3. 受け入れ（Q1 19:15）: soak（負荷と idle の繰り返し）2 回以上か 2 時間で停止 0・underflow 0、idle で clocks の mem が下がり負荷で上がる、
+   scene の bench が Linux の数以上（同じ条件）。既定は完成して確かめるまで memory=0。
