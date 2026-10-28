@@ -3,14 +3,14 @@
 # ws235-p001 調べと設計: RTL81xx（RTL8125 系）の共通の driver と RTL8127 の拡張
 
 - 親: [WS235](../ws.md)。
-- 状態: in-progress（2026-10-29 06:16 P1、q1669-i01）。
+- 状態: cleared（2026-10-29 07:0x P1、q1669-i02。設計・design-reviewer の反映・判断の 5 件のユーザーと Q1 の回答の記録まで。着手は 06:16、q1669-i01）。
 - 出典: 親の ws.md の「ユーザーの決定（2026-10-29）」（原文はそちら）。順はユーザーの「まずRTL81xxのドライバを、他のOSを参考にして作成して動くようにしてから、
   RTL8127の拡張部分を実装する」。
 - 依存: なし。
 
 ## 再開点
 
-- 2026-10-29 06:5x P1: 観測と資料の読みは済み（下）。設計の節を書いた。次は design-reviewer のレビュー → 指摘の反映 → ws.md の Phase の表の書き換え → cleared の判定を Q1 へ。
+- 2026-10-29 07:0x P1（q1669-i02）: 判断の 5 件の回答を末尾の「判断の回答」に記録し cleared。続きは p002・p003 の実機の attach と link（rtl-link.sh）、p004。
 
 ## 実機の観測（2026-10-29 06:17〜06:19 P1、10.0.10.3 の Debian 6.12.111、読みだけ、機械の変更なし）
 
@@ -194,6 +194,21 @@ close の順（中 10）、受け入れの循環と測り方（中 11・12）、
 4. 8122・8121・8120 を目標に残すか。
 5. 同じ機械の Linux の値（10.0.10.3 の Debian の kernel の更新か Realtek の driver）。
 
+## 判断の回答（2026-10-29、Q1 経由のユーザーのクリック。原文と解釈を分ける）
+
+1. firmware の資料 — ユーザー（原文）: 「別の mirror も可」。
+   - 解釈（Q1）: FreeBSD の `if_rge_microcode.h`・`if_rge_hw.h` は FreeBSD の公式の mirror（git の clone を含む）から取ってよい。GET・clone で、拒否・制限に当たったら止める。
+     linux-firmware の rtl8127a-1.fw の形の解釈（GPL の手順の引用）の許可は求めていない（FreeBSD の側を先に使う）。
+2. 多 vector の MSI-X — ユーザー（原文）: 「WS235 に入れる (推し)」。
+   - 解釈（Q1）: 複数の MSI-X の vector は p006 で、pcat の PCI の driver（`src/drivers/pci/pci-pcat.c`）を変える。他の driver も使える共通の口にし、HAL は変えない。
+     HAL を変える必要があると考えたら理由を具体的に Q1 へ。
+3. 受け入れと WS221 p010 の分け方 — ユーザー（原文）: 「それでよい (推し)」。
+   - 解釈（Q1）: WS235 の受け入れは、driver が律速でない事の profile と両向きの tcp-perf。7 Gbit/s までの残り（stack の律速）は WS221 p010。
+4. 8122・8121・8120 — Q1 の判断（ユーザーの回答ではない）: 目標に残す。p007 で版の表と差の hook まで（版の値・PCI の ID の出典が要る。実機は未確かめ）。
+5. 同じ機械の Linux の値 — ユーザー（原文）: 「backports の kernel (推し)」。
+   - 解釈（Q1）: 10.0.10.3 の Debian に backports の新しい kernel と firmware-realtek を入れる。起動の既定は今の kernel のまま、計測の時だけ backports の kernel で起動する。
+     導入は sudo で、RDNA 機の時間の枠の中で。
+
 ## 未実施
 - RTL8127ATF かどうか（OCP 0xd006）、PHY の ram code の版、firmware の形。
-- 同じ機械の Linux の値（ユーザーの判断待ち）。
+- 同じ機械の Linux の値（判断 5 のとおり backports の kernel で、p005 か p006 の枠で取る）。

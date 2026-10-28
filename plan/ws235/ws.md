@@ -3,7 +3,7 @@
 # WS235: Realtek RTL8127・8125・8126・8122・8121・8120 の共通の Ethernet driver（まず PCIe の RTL8127 10GbE）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-29 開き直し、P1 が RDNA 機の PCIe の RTL8127 から。下の 2026-10-29 の決定。p001 in-progress）
+Status: planning（2026-10-29 開き直し、P1 が RDNA 機の PCIe の RTL8127 から。下の 2026-10-29 の決定。p001 cleared、p002・p003 は実機の attach と link の待ち）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 <!-- awesome-plan-current:end -->
@@ -21,7 +21,8 @@ Parent: [Master](../master.md)
 
 ## Resume point
 
-- 2026-10-29 06:5x P1（q1669-i01）: p001 は設計・design-reviewer の反映まで（判断の 5 件は phase001 の末尾）。p002 の骨格は build の warning 0（amd64＋driver・amd64 の既定・pcat）。次は p003（MAC・PHY と link、firmware 無しから）と、実機の枠での attach の確かめ。
+- 2026-10-29 07:0x P1（q1669-i02、worktree p1-ws235b）: p001 cleared（判断の 5 件の回答は下の「p001 の判断」と phase001 の末尾）。p002・p003 は code と build まで。
+  次は RDNA 機の枠（P2 の 07:47 の後）で `plan/ws235/tests/rtl-link.sh` で attach と link → p004（v1 の ring）。
 
 ## Phase（2026-10-29 P1 が p001 でユーザーの順に直した。旧の表と見積もり（2026-10-14 Q1）は git の履歴に）
 
@@ -30,7 +31,7 @@ Parent: [Master](../master.md)
 
 | ID | 内容 | 見積もり | 状態 | 依存 |
 | --- | --- | --- | --- | --- |
-| [ws235-p001](phase001/phase.md) | 調べと設計: 10.0.10.3 の観測、rge（OpenBSD・FreeBSD）の作りが RTL8127 に当たるか、firmware と license、zedBSD の口、Phase の表 | 4 LW | in-progress（2026-10-29 P1。設計と design-reviewer の反映は済み、判断の 5 件を Q1 へ。cleared の判定は Q1） | — |
+| [ws235-p001](phase001/phase.md) | 調べと設計: 10.0.10.3 の観測、rge（OpenBSD・FreeBSD）の作りが RTL8127 に当たるか、firmware と license、zedBSD の口、Phase の表 | 4 LW | cleared（2026-10-29 07:0x P1、q1669-i02。判断の 5 件の回答を記録） | — |
 | [ws235-p002](phase002/phase.md) | 共通の骨格: PCI の ID、BAR2、bus master、版の判定（TXCFG）、MAC・PHY・CSI・EPHY の OCP の窓、reset、MAC address、1 vector の割り込み、net device の登録、`CONFIG_DRIVER_PCI_RTL8125`、試験の config `plan/ws235/tests/` | 6 LW | in-progress（2026-10-29 P1、build の warning 0 まで。実機の attach は未実施） | p001 |
 | [ws235-p003](phase003/phase.md) | MAC・PHY の初期化と link（共通の手順＋RTL8127 に要る MCU・EPHY・PHY の表）: firmware 無しから試し、要れば zedBSD-firmware の手順で（Q1 に先に）。auto-negotiation、link の報告（両側） | 10 LW | in-progress（2026-10-29 P1、code と build まで、実機は未実施） | p002 |
 | ws235-p004 | RX・TX の ring（v1・v2 の descriptor）、1 queue・1 vector、net の worker への接続（offload 無し） | 8 LW | planned | p002 |
@@ -40,7 +41,7 @@ Parent: [Master](../master.md)
 | ws235-p008 | 規約の全文の見直し | 2 LW | planned | 全て |
 
 - server の build の config（`config/ci/config-amd64-server.mk`、ユーザーの物）で有効にするのは、p005 の後にユーザーに頼む（担当は変えない）。
-- 要るユーザーの判断（Q1 へ、p001 の「同じ機械の Linux の値」）: 10.0.10.3 の Debian で RTL8127 を動かす方法（新しい kernel＋linux-firmware の rtl8127a-1.fw か、Realtek の driver）。
+- 同じ機械の Linux の値は下の「p001 の判断」の 5（backports の kernel）。
 
 ## ユーザーの決定（2026-10-29）
 
@@ -60,3 +61,11 @@ Parent: [Master](../master.md)
   （Intel X540-AT2、ixgbe。`enp94s0f0` は LAN の switch 側の 10G）。centris の側の設定は変えない（IP を付けるなどは先に Q1 に案を送る）、ethtool・ip の読みは自由。
   - 観測（2026-10-29 06:1x P1）: RTL8127 の PHYSTAT（MMIO 0x6c）は driver 無しで 100M full の link を示すが、centris の `enp94s0f1` は `Link detected: no`。
     食い違いは未確認として [p001](phase001/phase.md) に。X540 の広告は 100baseT・1000baseT・10000baseT（2.5G・5G は無い）。
+
+## p001 の判断（2026-10-29、Q1 経由のユーザーのクリック。原文と解釈を分ける。詳しくは [p001](phase001/phase.md) の「判断の回答」）
+
+1. ユーザー（原文）: 「別の mirror も可」→ Q1 の解釈: FreeBSD の `if_rge_microcode.h`・`if_rge_hw.h` は FreeBSD の公式の mirror（git の clone を含む）から取ってよい。GET・clone で、拒否・制限に当たったら止める。
+2. ユーザー（原文）: 「WS235 に入れる (推し)」→ Q1 の解釈: 複数の MSI-X の vector は p006 で、pcat の PCI の driver の変更、他の driver も使える共通の口、HAL は変えない（HAL を変える必要があれば理由を具体的に Q1 へ）。
+3. ユーザー（原文）: 「それでよい (推し)」→ Q1 の解釈: WS235 の受け入れは driver が律速でない事の profile と両向きの tcp-perf。7 Gbit/s までの残りは WS221 p010。
+4. Q1 の判断（ユーザーの回答ではない）: RTL8122・8121・8120 を目標に残す（p007 で版の表と差の hook まで、実機は未確かめ）。
+5. ユーザー（原文）: 「backports の kernel (推し)」→ Q1 の解釈: Linux の基準は 10.0.10.3 の Debian に backports の新しい kernel と firmware-realtek を入れ、起動の既定は今の kernel のまま、計測の時だけ backports で起動。導入は sudo で、時間の枠の中で。
