@@ -134,3 +134,8 @@ kernel に CPU の性能と電力の枠組み（provider の登録の口）を�
 
 - design.md 第 3 版の改訂 1: HAL を変えない（x86 の driver が CPUID・MSR）、相対の性能の基準を替えられる口、legacy の P-state（`_PSS`・0xCE・AMD の HwPstate と governor、p005）。Phase の表は design.md §7（p001〜p008、約 25 LW）。
 - 未決: Q301-1（HAL を変えない推しでよいか、hal-review.md）。第 3 版の design-reviewer は改訂 1 の前の版を見ている（結果は design-v3-review.md、来たら改訂 1 に照らして反映）。
+
+## ユーザーの回答（2026-10-29、Q301-1、Q1 が MSR の例外と Linux の rdmsr_safe を説明して聞き直した）
+
+- 回答（クリック）「HAL を変えず確かめで守る (推し)」→ HAL は変えない。driver の確かめ（CPUID・許可の表・hypervisor では動かない・既定は無効）で想定の外れを避け、外れた時は kernel が止まる（有効にした機械だけ）。安全網は必要になった時に別の差分で。
+- 途中のユーザーの問い（原文）「MSRを例外を期待してtryでアクセスする実装は、私は個人的には見たことがないのですが、Linuxではふつうなのですか？今の気持ちとしては、HALを変えないことに傾いていますが、再説明してください。」
