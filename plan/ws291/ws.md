@@ -188,3 +188,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 - 再開点（2026-10-29 05:05 P2、ユーザーの指示で計測を止めて返却）: [phase006](phase006/phase.md) の「q1668-i02」節の最後の再開点。
   libvulkan の private fence の直しで subs-1000 の 1 submit 約 3.5 µs 減（効果あり）、kernel の flush の barrier 無しと record の直の decode で
   big-1000 約 +2.5 %（効果あり、小さい）。案 A・B の design は reviewer 済み、実装は Q1 の OK の後。
+
+## 2026-10-29 RX 5600 XT を外した後の P2（ユーザーの決定）
+
+- 機械の変更（原文）「再起動後、RTL8127と、RTX 2070が接続されています。RX 5600 XTはPCIスロットの高さの関係で、RTL8127と排他だからです。」
+- Q1 の問い「RX 5600 XT を外している間、P2 は何をしますか？」への回答（クリック）「WS291 の NVIDIA の段 (推し)」→ RTX 2070 で desktop 60 fps と model 50 fps（計画の順どおり）。RDNA の案 A・B の実装は実機の要らない所（host・QEMU）まで並べて進め、測るのは RX 5600 XT を挿し直した時。RDNA 機は時間の枠（plan/tools.md、ネットワーク優先）で P1（WS235 の RTL8127）と分ける。
