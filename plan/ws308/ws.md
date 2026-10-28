@@ -2,12 +2,17 @@
 
 # WS308 VM の metadata の大域の lock の取り合いを無くす（read・write の syscall の並列性）
 
-- Status: incomplete（2026-10-28 新設、q1650 で P1 が p001 から。2026-10-28 P1 が目標と Phase を改訂）
+- Status: completed（2026-10-28 P1、q1654。Q1 の merge と確かめで確定）
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG004。関係: [WS299](../ws299/ws.md)（5330 の NVMe の乱読み QD32 が約 115k IOPS で頭打ち、Debian の 48%。この WS の後に WS299 に戻る）。
 
 ## ユーザーの決定（原文）
 
 - 2026-10-28 ユーザー「P1にお伝えください。フリーズは再現したときに対策を考え直します。仮想メモリのロックの変更は、P1の担当にして、一時的にそれに対応する別なWSを処理して、そのあとでNVMeのWSに戻りましょう。P1は、Fable 5.1 Highのサブエージェントに助言を求めてOKです。状況を共有して、検討の進め方を助言してもらってください。」
+- 2026-10-28 ユーザー「P1の触る範囲が広がるのはOKです。」（目標を heap・NVMe の command_lock・process の cred の lock に広げた）
+- 2026-10-28 ユーザー「WS308ですが、bufferを毎回固定するのではなくて使い回すような方法も検討の余地があると思いますので、Fable 5.1 Highへの質問事項に入れてください。それによって、WSの内容を変更してもいいです。」（評価して採らなかった、[p001](phase001/phase.md)）
+- 2026-10-28 ユーザー（クリック）: iostress で見つけた前からの不具合 3 つは「WS308 の中で P1 が直す (推し)」、p005 は「後回し（Future Work） (推し)」。
+- 2026-10-28 ユーザー「P1は、現在原因がわかっていないパフォーマンスの問題については、Fable 5.1 Highに何度でも助言を求めてOKです。」
+- 2026-10-28 Q1「fork の飢え（vmspace_fork が fault の落ち着きを待って最初からやり直す）は後回しでよい（Q1 の判断）。」
 
 ## 目標
 
@@ -15,43 +20,34 @@ read・write・pread・pwrite・vector の syscall の I/O の道の並列性を
 
 - 2026-10-28 改訂（P1、p001 の計測と Fable 5.1 High の助言による）: 当初の「VM の metadata の mutex」は QEMU の計測で主因でなかった（待ちは取りの 6〜18%、標本の 5%）。対象を、syscall ごとの kernel heap の確保（大域の spin lock）、全 syscall の process->lock（credential・signal）、VM の metadata の mutex と vmspace の lock（pin）、NVMe の command_lock（direct の道）に広げる。2026-10-28 ユーザー「P1の触る範囲が広がるのはOKです。」pin の使い回し（cache・登録の UAPI）は採らない（理由は [p001](phase001/phase.md)）。regular file の VM object の registry lock は block device の目標に要らないので、要れば別の Phase。
 
-## 事実（2026-10-28 P1 の読み。数は確かめ中）
+## 結果
 
-- 5330 の乱読み QD32 は direct でも cache 経由でも約 115k IOPS で止まり、12 CPU は 8 割 idle。全ての read/write の syscall が `uaccess_pin` で `metadata_lock` を取る。
+- 5330（10.0.30.3、同じ時間帯の Debian と）: 乱読み 4 KiB QD32 direct 224.2k IOPS（918 MB/s）＝Debian 225.8k の 99.3%、process 99.7%、cached 241.2k（988 MB/s）。始めの頭打ち（約 115k、Debian の 48%）から倍。目標（Debian の 95% 以上）を満たした。syscall だけの null call は thread QD32 610k→1.41M IOPS。
+- 直した所: kernel heap を syscall の I/O の道で取らない（p003）、NVMe の起床を command_lock の外へ・command id で slot を O(1)・空き slot の hint・完了の返却と end_bio を 1 回の保持に、amd64 の timecounter の大域の lock を外す、disk の統計の時計を disk_registry_lock の外へ（p002）、syscall ごとの process->lock を無くす thread ごとの credential（p004）。
+- 前からの不具合 3 つを直した（[p006](phase006/phase.md)）: seteuid の繰り返しで退役した credential が溜まり heap が尽きる（p004）、memory の圧迫で buffer cache が新しい行を全て断り cached の pread が ENOMEM（記録の「EINTR」は errno の読み違い）と UFS の journal の home の書きの失敗（d30136b22）、fork・munmap と O_DIRECT の user の #GP は iostress の試験の競争だった（210d2ac3d）。review で見つけた前からの credential の競争（setuid 系の更新が消える、set_id と ptrace の窓、si_uid が euid）も直した。
+- 試験: `plan/ws308/tests/` の iostress・credrace・sigexec・nvme-errors・nvme-timeout と WS299 の NVMe の試験、boot-test、全 platform の vmunix の build（warning 0）。
+
+## 制限・移管
+
+- p005（pin を大域の metadata の mutex なしで）: ユーザーの決定で Future Work（Q1 が future-work.md に）。
+- fork の飢え: direct の読みと mapper が続く間、`vmspace_fork` が「全ての fault が落ち着くまで」待ち、batch ごとに lock を放す間の layout の変化で最初からやり直すので、fork が 20〜40 s に 2〜30 回しか通らない。直すなら fork の間は新しい fault と layout の変更を待たせる設計の変更。Q1 の判断で後回し（Future Work、Q1 が future-work.md に）。
+- regular file の VM object の registry lock、heap の per-CPU の magazine、NVMe の複数 queue: 目標の数に要らなかったので行わない。
+- 未実施の試験: readv/writev の O_DIRECT の揃わない buffer、setuid の binary の exec を兄弟の thread の seteuid と競わせる試験、NVMe の stop・detach の最中の眠る者。
+- 原因の分かっていない計測の食い違い: syscall の外の 4.8 µs（目標には要らない、[p002](phase002/phase.md)）。
 
 ## Phase
 
-| Phase | 内容 | 依存 | 状態 |
-| --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 計測（QEMU の標本、5330 の 1 I/O の区間）と設計、Fable の助言、design-reviewer | — | in-progress（q1650） |
-| [p002](phase002/phase.md) | 起床の道と NVMe の command_lock（割り込みの起床を command_lock の外へ、command id で slot を O(1) で引く、amd64 の timecounter の大域の lock を外す、空き slot の hint、完了の返却と end_bio を 1 回の保持に）、disk の統計の時計を disk_registry_lock の外へ、buffer cache の 1 行の読みで heap と disk_registry_lock を取らない | p001 | in-progress（a609f74a1、5330 で direct QD32 223.8k IOPS＝同じ時間帯の Debian 225.5k の 99.3%、cached 240.4k。回帰の残りあり） |
-| [p003](phase003/phase.md) | syscall の I/O の道で heap を確保しない（pin の内の配列、block device の bounce を shared の I/O pool から） | p001 | in-progress（実装 01e701914、5330 で cached QD32 139k→172k IOPS（p002 と合わせて）） |
-| p004 | syscall ごとの process->lock を無くす（thread ごとの credential の参照と世代、signal の要約の語、user probe の数を CPU ごとに） | p001 | planned（取り下げの候補: I/O の QD32 は thread と process で同じで、数の目標は p002・p003 で達した。Q1・ユーザーの判断待ち） |
-| p005 | pin を大域の metadata の mutex なしで（vmspace ごとの rwlock、書き手の監査と lock の順） | p001 | planned（取り下げか後回しの候補: 待ちは取りの 8〜15% だが数の目標は達した。Q1・ユーザーの判断待ち） |
-| [p006](phase006/phase.md) | 回帰（QD32 の受け入れ、fork/COW・munmap/mprotect と pread の競争・swap・setuid の競争・signal と exec・readv/writev・O_DIRECT、QEMU の全 boot、全 platform の build、5330） | p002〜p005 | in-progress（NVMe の timeout・停止・bounce、iostress。WS308 の退行は無し。前からの不具合 3 つ: setuid と I/O で guest が壊れる、fork・munmap・O_DIRECT で user の #GP、圧迫で cached の読みが EINTR） |
-| p007 | 規約の全文の見直し | p006 | planned |
+| Phase | 内容 | 状態 |
+| --- | --- | --- |
+| [p001](phase001/phase.md) | 計測（QEMU の標本、5330 の 1 I/O の区間）と設計、Fable の助言、design-reviewer | cleared |
+| [p002](phase002/phase.md) | 起床の道と NVMe の command_lock、amd64 の timecounter、disk の統計の時計、buffer cache の 1 行の早い戻り | cleared（15840093d・84fd65ac6・27a02af59・a609f74a1・7aa9288b8） |
+| [p003](phase003/phase.md) | syscall の I/O の道で heap を確保しない | cleared（01e701914） |
+| [p004](phase004/phase.md) | syscall ごとの process->lock を無くす（thread ごとの credential）と credential の更新の競争 | cleared（c438ea61c・5a2746649） |
+| p005 | pin を大域の metadata の mutex なしで | canceled（Future Work、ユーザーの決定） |
+| [p006](phase006/phase.md) | 回帰、前からの不具合 3 つ、signal と exec の競争、5330 | cleared（d30136b22・210d2ac3d） |
+| p007 | 規約の全文の見直し（WS308 が変えた C の全部、conformance-reviewer） | cleared（b8ce0cdc3。書き方だけ、config-5330・rpi4・m68k-virt で warning 0、QEMU の回帰 PASS） |
 
-- p002〜p005 の順は p001 の 5330 の区間の数で決める（数が要らない Phase は取り下げる）。heap の per-CPU の magazine・NVMe の複数 queue は、p002〜p005 の後に 5330 で足りない時だけ足す。
+## 再開点
 
-## 制約
-
-- HAL の API は変えない（要れば差分の案をユーザーの承認に）。VM は全 platform・全 process に効くので、正しさ（use-after-free・競合）を最優先し、試験で確かめる。
-- 2026-10-28 ユーザー「WS308ですが、bufferを毎回固定するのではなくて使い回すような方法も検討の余地があると思いますので、Fable 5.1 Highへの質問事項に入れてください。それによって、WSの内容を変更してもいいです。」→ p001 で pin の使い回し（pin の cache・登録済みの buffer）も Fable に聞いて評価し、結果で目標・Phase を変えてよい（UAPI を足すならユーザーの判断）。
-- 2026-10-28 P1 の計測（QEMU 8 CPU）: 主因は metadata_lock でなく kernel heap の大域の lock（entry.c）・NVMe の command_lock・vm_object_registry_lock・process の cred の lock。ユーザー「P1の触る範囲が広がるのはOKです。」→ 目標をこれらの lock に広げる（P1 が目標と Phase を直す）。所有に src/kern/entry.c・process.c・vm の object registry・pci-nvme.c を追加。
-
-## 再開点（2026-10-28、P1、q1650 を 2026-10-28 ユーザー「5時間セッション上限が近いのでP1, P2は13時まで待機してください。」で区切り）
-
-- commit（agent/p1-ws308）: 3ec112dc5・7b6a2f4a3・f2d01c3e5（p001 の計測と Fable の助言）、15840093d（p002）、01e701914（p003）、84fd65ac6（p002 の review の反映）、27a02af59（command_lock の回数）、この記録の commit。
-- 今の数（5330、一時の計測の kernel）: 乱読み 4 KiB QD32 direct 214.5k IOPS・878 MB/s（Debian 964 の 91%）、cached 204.8k・839 MB/s（87%）。目標の 95% まであと少し。
-- 次の一手: (1) direct の残り（入口→post 6〜9 µs、post→CQ 126 µs は device の側か割り込みの束ね方）と cached の pin→submit 12 µs（buffer cache の道: disk_lock・cache_lock）の内訳を同じ計測（`build/tmp/exp-io-2.patch`・`build/tmp/exp-io.h` を当てて build、`nvme-bench-5330.sh zedbsd NAME VMUNIX qdprobe`）で見る。(2) submit の command_lock をさらに減らす（slot_acquire と post を 1 回の保持に、release と end_bio を 1 回に）。(3) metadata の mutex の待ち（取りの 5〜15%）→ p005。(4) p004（process->lock）は I/O の QD32 が thread と process で同じなので、この目標には効かない見込み（取り下げ候補、数で判断）。(5) 27a02af59 の他の 4 config の build、回帰の試験の残り（timeout・stop・detach の最中、TSC の無い機械）、p006 の負荷試験、p007 規約。
-- 5330 は Debian に戻した（lock は返した）。
-
-## 再開点（2026-10-28、P1、q1652）
-
-- commit（agent/p1-ws308b、基点 main 9fda28faf）: a609f74a1（NVMe の空き slot の hint・遅延の計測の間引き・完了の返却と end_bio を 1 回の保持に、disk の統計の時計を disk_registry_lock の外へ、transfer_run の 1 行の早い戻り、Debian の測り直しの道具 `plan/ws308/tests/debian-qdstat.sh`）と、この記録の commit。
-- 数（5330、同じ時間帯）: 乱読み 4 KiB QD32 direct 223.8k IOPS（916.7 MB/s）＝Debian 225.5k（923.5 MB/s）の 99.3%、process 99.6%、QD1 105%、cached QD32 240.4k（984.6 MB/s、以前の基準 964 の 102%）。今日の Debian は以前の 964 MB/s でなく 923 MB/s（[p002](phase002/phase.md)）。→ 数の目標（Debian の 95% 以上）は達した。
-- design-reviewer（a609f74a1）: High・Medium 0。Low 2 件（disk の統計の時計の preempt の穴、lifecycle の失敗で hint の bit が落ちる）を 7aa9288b8 で直した。
-- 試験（[p006](phase006/phase.md)）: QEMU の NVMe の shapes・directio・errors・readahead・grow-reboot・cache-stress・timeout（新）・bounce を強いた shapes、TSC の bit の無い CPU の boot-test は PASS。iostress（新）で前からの不具合 3 つ（WS308 の前の main でも出る）。
-- 残り: (1) 前からの不具合 3 つを Bug にするか、p004 を「setuid と I/O で credential が溜まる」の直しとして残すか（Q1・ユーザー）、(2) p005 の取り下げか後回し（Q1・ユーザー）、(3) p006 の signal と exec、(4) p007 規約の全文の見直し（a609f74a1・7aa9288b8 の pci-nvme.c・buf.c・disk.c を含む）、(5) syscall の外の 4.8 µs の計測の食い違い（目標には要らない）。
-- 消してほしい物（Q1 に頼む）: 一時の build `build/p1-m1`〜`m3`・`p1-k1`・`p1-q1`〜`q7`（q4・q7 は今の試験の image なので最後に）・`p1-o-*`・`build/tmp/base-src`（WS308 の前の main の写しと image）、未追跡の `include/kern/exp-io.h`（計測の header、`build/tmp/m3-exp-io.h` に写しあり）。
-- 2026-10-28 ユーザー（クリック）: P1 の iostress で見つけた前からの不具合 3 つ（seteuid の繰り返しで retired_creds が溜まる、direct 読み・munmap・fork の同時で user の #GP、memory 不足で cached の pread が EINTR）は「WS308 の中で P1 が直す (推し)」。p005 は「後回し（Future Work） (推し)」。 → p004 は不具合 1 の直しとして残す。p005 は Future Work へ。
+- 2026-10-28 P1: WS308 の成果は agent/p1-ws308c（基点 main af37831de、先頭はこの記録の commit）。Q1 の merge の後、P1 は [WS299](../ws299/ws.md)（q1646）の再開点へ戻る。
+- 消してほしい物（Q1 に頼む）: 一時の build `build/p1c-*`（k・g・q1〜q4・cr・cr-rpi4・cr-m68k・a・b）、`build/tmp/base-af3`（修正の前の main の写しと image）、`build/tmp/rr/data.bin`、WS308 の完了の形で Phase の directory（phase001〜phase006）。`plan/ws308/tests/` は WS299 と回帰で使う（iostress・credrace・sigexec は plan/tools.md への登録を Q1 に頼む）。

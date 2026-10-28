@@ -3,7 +3,7 @@
 # ws308-p004 syscall ごとの process->lock を無くす（thread ごとの credential）と、credential の更新の競争
 
 - 親: [WS308](../ws.md)。Queue: q1654（担当 P1）。前提: [p001](../phase001/phase.md)。
-- Status: in-progress（2026-10-28 P1: 実装 c438ea61c、review の反映 5a2746649、QEMU の試験 PASS。Q1 の review と merge 待ち）
+- Status: cleared（2026-10-28 P1: 実装 c438ea61c、review の反映 5a2746649、規約 b8ce0cdc3。QEMU の試験 PASS、5330 の null call の thread QD32 610k→1.41M IOPS（[p006](../phase006/phase.md)））
 - Disposition: normal
 - 範囲の決定: 2026-10-28 ユーザー（クリック）: iostress で見つけた前からの不具合 3 つは「WS308 の中で P1 が直す (推し)」。→ p004 は不具合 1（seteuid の繰り返しで retired_creds が溜まる）の直しとして行う。
 
