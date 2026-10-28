@@ -22,8 +22,14 @@
  * The kernel's text console draws into that surface through an uncached
  * mapping, a whole repaint for each line that scrolls.  While a frame of
  * the lease is on the screen nobody sees it, so it is kept from drawing
- * (it keeps its text) until the lease ends; a kernel message logged then
- * costs no time of the presentation's or the executor's.
+ * (it keeps its text); a kernel message logged then costs no time of the
+ * presentation's or the executor's.  Once it is stopped the surface is
+ * painted black (the boot logo goes), and it stays stopped past the
+ * lease's end: a game that takes the display over from the compositor,
+ * or gives it back, ends one lease and claims the next a few frames
+ * later, and the flip back in between shows that black, not the console.
+ * The console draws again only after PRESENT_CONSOLE_REST_MS with no
+ * lease, or at the stop for the reboot.
  *
  * The node's present lock puts the presentations, the lease's end and a
  * blob's going off the screen in one order; a presentation takes the
@@ -52,6 +58,7 @@
 #include <kern/lock.h>
 #include <kern/sched.h>
 #include <kern/text-display.h>
+#include <kern/thread.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
@@ -80,6 +87,13 @@
 
 /* The longest refresh wait: a second, as the interface bounds it. */
 #define PRESENT_REFRESH_MAX_NS		1000000000ULL
+
+/*
+ * How long the display goes without a lease before the text console draws
+ * again, and how often the rest thread looks.
+ */
+#define PRESENT_CONSOLE_REST_MS		3000U
+#define PRESENT_REST_LOOK_MS		250U
 
 static int present_query(void *private_data, void *session, struct gpu_display_info *request);
 static int present_mode(void *private_data, void *session, struct gpu_display_mode *request);
@@ -139,8 +153,10 @@ static int present_resize(struct amdrdna_node *node, const struct gpu_display_pr
 static void present_firmware_mode(struct amdrdna_node *node);
 static void present_end_lease(struct amdrdna_node *node);
 static void present_broken(struct amdrdna_node *node, int error);
-static void present_text_hold(struct amdrdna_node *node);
+static bool present_text_hold(struct amdrdna_node *node);
 static void present_text_give_back(struct amdrdna_node *node);
+static void present_console_paint(struct amdrdna_node *node);
+static void present_rest_watch(void *argument);
 static int present_cursor_check(struct amdrdna_node *node, void *session, uint64_t lease, uint64_t generation);
 static void present_cursor_copy(struct amdrdna_node *node, const struct amdrdna_resource *resource, const struct gpu_display_cursor_image *request, unsigned slot);
 
@@ -159,6 +175,7 @@ amdrdna_a8_register(
 {
 	struct amdrdna_node *node;
 	struct amdrdna_display *display;
+	struct thread *rest;
 	uint32_t capabilities;
 	bool wanted;
 	int error;
@@ -197,6 +214,8 @@ amdrdna_a8_register(
 	node->shown = NULL;
 	node->next_frame = 0U;
 	node->text_held = 0;
+	node->console_black = 0;
+	node->console_due = 0U;
 
 	/* The display's and the scanout's operations and the capabilities they make good. */
 	capabilities = node->ops.capabilities;
@@ -214,6 +233,19 @@ amdrdna_a8_register(
 		node->ops.scanout = NULL;
 		amdrdna_mark("A8 fail: gpu device not registered (%d)", error);
 		return error;
+	}
+
+	/*
+	 * The thread that lets the console draw again after a rest without a
+	 * lease.  Without it the console stays stopped from the first frame on
+	 * until the stop; the display works the same.
+	 */
+	error = kthread_create(present_rest_watch, node, SCHED_PRIORITY_DEFAULT, &rest);
+	if (error == 0) {
+		rest->detached = 1;
+		thread_start(rest);
+	} else {
+		amdrdna_mark("A8: no console rest thread (%d); the console stays stopped after the first frame", error);
 	}
 
 	/* Marks the result. */
@@ -241,7 +273,7 @@ amdrdna_present_session_close(
 	if (node->display == 0)
 		return;
 
-	/* The console comes back when the session held the lease, after a presentation still running. */
+	/* The lease ends when the session held it, after a presentation still running. */
 	mutex_lock(&node->present_lock);
 	mutex_lock(&node->display_lock);
 
@@ -307,6 +339,9 @@ amdrdna_present_stop(
 
 	if (node->owner != NULL)
 		present_end_lease(node);
+
+	/* The console's surface is on the plane: the console draws again, for the reboot's lines. */
+	present_text_give_back(node);
 	node->stopped = 1;
 
 	mutex_unlock(&node->display_lock);
@@ -524,7 +559,7 @@ present_release(
 	/* The node and what the core passed in. */
 	node = private_data;
 
-	/* Ends the lease, bringing the console back, after a presentation still running. */
+	/* Ends the lease, bringing the console's surface back, after a presentation still running. */
 	mutex_lock(&node->present_lock);
 	mutex_lock(&node->display_lock);
 
@@ -570,12 +605,14 @@ present_present(
 	uint64_t address;
 	bool blob;
 	bool resize;
+	bool held;
 	int error;
 
 	/* The node and what the core passed in. */
 	node = private_data;
 	resource = object;
 	device = node->device;
+	held = false;
 
 	/* A blob is flipped to as it is; storage is copied first. */
 	blob = false;
@@ -650,7 +687,7 @@ present_present(
 		request->sequence = node->sequence;
 
 		/* The console's surface is off the screen: its text stops drawing there. */
-		present_text_hold(node);
+		held = present_text_hold(node);
 	} else {
 		present_broken(node, error);
 		if (blob)
@@ -658,6 +695,10 @@ present_present(
 	}
 
 	mutex_unlock(&node->display_lock);
+
+	/* The console just stopped: its surface, off the screen, goes black before the lease can end. */
+	if (held)
+		present_console_paint(node);
 
 	mutex_unlock(&node->present_lock);
 
@@ -1167,8 +1208,9 @@ present_copy(
 
 /*
  * Ends the lease: the cursor goes, image and all, a powered-off plane is
- * shown again, the console comes back when a frame of the lease is up,
- * and the blob on the screen is let go (kept when the flip back failed).
+ * shown again, the console's surface (black, the console still stopped)
+ * comes back when a frame of the lease is up, and the blob on the screen
+ * is let go (kept when the flip back failed).  The console's rest starts.
  * The caller holds the node's present lock and its display lock.
  */
 static void
@@ -1191,8 +1233,10 @@ present_end_lease(
 	node->cursor_visible = 0;
 	node->powered_off = 0;
 
-	/* Flips back to the console when a frame of the lease is up. */
+	/* Flips back to the console's surface, black while the console is stopped, when a frame of the lease is up. */
 	if (node->sequence != 0U && node->broken == 0 && node->stopped == 0) {
+		if (node->console_black == 0)
+			amdrdna_mark("gpu device: the console's surface is shown without its paint");
 		error = amdrdna_display_show(device, device->display.console);
 		if (error != 0)
 			present_broken(node, error);
@@ -1212,8 +1256,9 @@ present_end_lease(
 		node->shown = NULL;
 	}
 
-	/* The console draws its text again, the lines it missed too. */
-	present_text_give_back(node);
+	/* The console stays stopped for the next lease; the rest thread lets it draw after a rest. */
+	if (node->text_held != 0)
+		node->console_due = sched_ticks() + kern_ms_to_ticks(PRESENT_CONSOLE_REST_MS);
 
 	/* The lease is free. */
 	amdrdna_mark("gpu device: display lease %llu released after %llu frames", (unsigned long long)node->lease, (unsigned long long)node->sequence);
@@ -1313,24 +1358,31 @@ present_broken(
 }
 
 /*
- * Keeps the kernel's text console from drawing while a frame of the lease
- * is on the screen, once per lease.  The caller holds the node's display
+ * Keeps the kernel's text console from drawing while frames of leases are
+ * on the screen, from the first on.  The caller holds the node's display
  * lock.
+ *
+ * Returns true when the console stopped here (its surface is to be
+ * painted), false when it was stopped already.
  */
-static void
+static bool
 present_text_hold(
 	struct amdrdna_node *node)
 {
-	/* Held already since the lease's first frame. */
+	/* The rest, if one ran, is over: a frame is up again. */
+	node->console_due = 0U;
+
+	/* Held already since an earlier frame. */
 	if (node->text_held != 0)
-		return;
+		return false;
 
 	/*
-	 * text_held tells the lease's end that the console was stopped here
-	 * and is to draw again.
+	 * text_held tells the rest and the stop that the console was stopped
+	 * here and is to draw again.
 	 */
 	kern_text_suspend();
 	node->text_held = 1;
+	return true;
 }
 
 /*
@@ -1345,9 +1397,88 @@ present_text_give_back(
 	if (node->text_held == 0)
 		return;
 
-	/* The console's surface is the one shown from now on: its text, drawn again. */
+	/* The console's surface is the one shown from now on: its text, drawn again, may cover the black. */
 	node->text_held = 0;
+	node->console_black = 0;
+	node->console_due = 0U;
 	kern_text_resume();
+}
+
+/*
+ * Paints the console's surface black once the console stopped and the
+ * plane reads a frame of the lease.  The caller holds the node's present
+ * lock (no lease ends meanwhile) but not its display lock.
+ */
+static void
+present_console_paint(
+	struct amdrdna_node *node)
+{
+	int error;
+
+	/* The paint, outside the display lock: the cursor goes on moving. */
+	error = amdrdna_display_console_clear(node->device);
+	if (error != 0)
+		amdrdna_mark("gpu device: the console's surface was not painted (%d)", error);
+
+	/* Says whether a flip back shows black. */
+	mutex_lock(&node->display_lock);
+
+	node->console_black = error == 0 ? 1 : 0;
+
+	mutex_unlock(&node->display_lock);
+}
+
+/*
+ * Lets the text console draw again once the display has gone
+ * PRESENT_CONSOLE_REST_MS without a lease (the console's surface, black,
+ * is on the plane since the last lease's end), looking every
+ * PRESENT_REST_LOOK_MS until the stop.
+ */
+static void
+present_rest_watch(
+	void *argument)
+{
+	struct amdrdna_node *node;
+	uint64_t now;
+	bool stopped;
+	bool due;
+
+	/* The node the thread watches. */
+	node = argument;
+
+	/* One look a turn. */
+	for (;;) {
+		sched_sleep(sched_ticks() + kern_ms_to_ticks(PRESENT_REST_LOOK_MS));
+
+		/* Whether the stop came, and whether the rest is over. */
+		mutex_lock(&node->display_lock);
+
+		now = sched_ticks();
+		stopped = node->stopped != 0;
+		due = node->owner == NULL && node->text_held != 0 && node->console_due != 0U && now >= node->console_due;
+
+		mutex_unlock(&node->display_lock);
+
+		/* The stop gave the console back already. */
+		if (stopped)
+			return;
+		if (!due)
+			continue;
+
+		/* Checks again in the presentations' order, then lets the console draw. */
+		mutex_lock(&node->present_lock);
+		mutex_lock(&node->display_lock);
+
+		now = sched_ticks();
+		if (node->stopped == 0 && node->owner == NULL && node->text_held != 0 && node->console_due != 0U &&
+		    now >= node->console_due) {
+			present_text_give_back(node);
+			amdrdna_mark("gpu device: the console draws again after %u ms without a lease", PRESENT_CONSOLE_REST_MS);
+		}
+
+		mutex_unlock(&node->display_lock);
+		mutex_unlock(&node->present_lock);
+	}
 }
 
 /*

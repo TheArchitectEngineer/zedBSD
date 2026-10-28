@@ -17,6 +17,12 @@
  *                                         over: its registers and counts
  *   amdrdnactl [-f DEVICE] screen FILE    writes the picture the display shows
  *                                         to FILE as a PPM image (root)
+ *   amdrdnactl [-f DEVICE] watch SECONDS  reads the surface the plane shows
+ *                                         every 2 ms and counts the reads of
+ *                                         the console's surface and the runs
+ *                                         of them; the first runs' pictures
+ *                                         are read and their pixels that are
+ *                                         not black counted (root)
  *   amdrdnactl gpu [GPU-DEVICE]           checks the GPU device the driver
  *                                         registered (/dev/gpu0 by default)
  *
@@ -43,6 +49,12 @@
 /* The bytes one request of the image copies. */
 #define CONTROL_CHUNK		4096U
 
+/* The watch's period between two reads of the display, in microseconds. */
+#define CONTROL_WATCH_US	2000U
+
+/* The runs of the console's surface whose picture the watch reads. */
+#define CONTROL_WATCH_SCREENS	3U
+
 /* The names of the stages, by number. */
 static const char *const stage_names[AMDRDNA_STAGE_COUNT] = {
 	"none", "A0", "A1", "A1v", "A2", "A3t", "A3", "A4", "A5", "A5s",
@@ -55,6 +67,8 @@ static int control_advance(int descriptor, const char *stage);
 static int control_vbios(int descriptor, const char *path);
 static int control_display(int descriptor);
 static int control_screen(int descriptor, const char *path);
+static int control_watch(int descriptor, const char *seconds);
+static void control_watch_screen(int descriptor, uint64_t console);
 static const char *stage_name(uint32_t stage);
 static int stage_number(const char *name, uint32_t *stage);
 static void usage(void);
@@ -78,6 +92,7 @@ main(
 	int is_vbios;
 	int is_display;
 	int is_screen;
+	int is_watch;
 	int is_gpu;
 	int is_modes;
 	int is_reset;
@@ -175,6 +190,7 @@ main(
 	is_vbios = strcmp(command, "vbios") == 0;
 	is_display = strcmp(command, "display") == 0;
 	is_screen = strcmp(command, "screen") == 0;
+	is_watch = strcmp(command, "watch") == 0;
 
 	/* Opens the device. */
 	descriptor = open(path, O_RDONLY);
@@ -192,6 +208,8 @@ main(
 		result = control_display(descriptor);
 	} else if (is_screen && first + 2 == argc) {
 		result = control_screen(descriptor, argv[first + 1]);
+	} else if (is_watch && first + 2 == argc) {
+		result = control_watch(descriptor, argv[first + 1]);
 	} else {
 		usage();
 		result = 2;
@@ -522,6 +540,144 @@ control_screen(
 	return 0;
 }
 
+/*
+ * Reads the display's state every CONTROL_WATCH_US for SECONDS and prints
+ * one line: the reads, those that found the plane on the console's
+ * surface, the runs of such reads, and the leases and presentations over
+ * the watch.
+ */
+static int
+control_watch(
+	int descriptor,
+	const char *seconds)
+{
+	struct amdrdna_display_state state;
+	unsigned long long first_leases;
+	unsigned long long first_presents;
+	unsigned long long samples;
+	unsigned long long console;
+	unsigned long long runs;
+	unsigned long total;
+	unsigned long turn;
+	unsigned screens;
+	int on_console;
+	int result;
+
+	/* The reads the seconds hold. */
+	total = strtoul(seconds, NULL, 10) * (1000000UL / CONTROL_WATCH_US);
+	if (total == 0UL) {
+		usage();
+		return 2;
+	}
+
+	/* Counts every read. */
+	samples = 0ULL;
+	console = 0ULL;
+	runs = 0ULL;
+	on_console = 0;
+	screens = 0U;
+	first_leases = 0ULL;
+	first_presents = 0ULL;
+	memset(&state, 0, sizeof(state));
+	for (turn = 0UL; turn < total; turn++) {
+		/* One read of the display. */
+		memset(&state, 0, sizeof(state));
+		state.version = AMDRDNA_INTERFACE_VERSION;
+		state.size = sizeof(state);
+		result = ioctl(descriptor, AMDRDNA_IOC_DISPLAY, &state);
+		if (result != 0)
+			return control_fail("watch", errno);
+		if (turn == 0UL) {
+			first_leases = (unsigned long long)state.leases;
+			first_presents = (unsigned long long)state.presents;
+		}
+
+		/* The console's surface on the plane, and where a run of it starts. */
+		samples++;
+		if (state.shown_address == state.console_address) {
+			console++;
+			if (!on_console) {
+				runs++;
+				if (screens < CONTROL_WATCH_SCREENS) {
+					control_watch_screen(descriptor, state.console_address);
+					screens++;
+				}
+			}
+			on_console = 1;
+		} else {
+			on_console = 0;
+		}
+
+		/* The next read a period later. */
+		(void)usleep(CONTROL_WATCH_US);
+	}
+
+	/* The one line. */
+	printf("watch samples=%llu console=%llu runs=%llu leases=%llu presents=%llu console_now=%d\n",
+	    samples, console, runs, (unsigned long long)state.leases - first_leases,
+	    (unsigned long long)state.presents - first_presents, on_console);
+	return 0;
+}
+
+/*
+ * Reads the picture the plane shows when it is still the console's surface
+ * and prints its pixels that are not black (the colour bytes, not the
+ * fourth).
+ */
+static void
+control_watch_screen(
+	int descriptor,
+	uint64_t console)
+{
+	struct amdrdna_screen screen;
+	unsigned long long lit;
+	unsigned long long pixels;
+	uint32_t *words;
+	uint32_t x;
+	uint32_t y;
+	size_t bytes;
+	int result;
+
+	/* A buffer for the largest picture the driver keeps: 4096 by 2160. */
+	bytes = (size_t)16384U * 2160U;
+	words = malloc(bytes);
+	if (words == NULL)
+		return;
+
+	/* Asks the driver for the rows of the surface the plane shows now. */
+	memset(&screen, 0, sizeof(screen));
+	screen.version = AMDRDNA_INTERFACE_VERSION;
+	screen.size = sizeof(screen);
+	screen.buffer = (uint64_t)(uintptr_t)words;
+	screen.length = (uint32_t)bytes;
+	result = ioctl(descriptor, AMDRDNA_IOC_SCREEN, &screen);
+	if (result != 0) {
+		printf("watch screen failed errno=%d\n", errno);
+		free(words);
+		return;
+	}
+
+	/* The plane moved on before the read: another surface was read. */
+	if (screen.address != console) {
+		printf("watch screen address=0x%llx (not the console's)\n", (unsigned long long)screen.address);
+		free(words);
+		return;
+	}
+
+	/* Counts the pixels that are not black, row by row. */
+	lit = 0ULL;
+	pixels = 0ULL;
+	for (y = 0U; y < screen.height && (size_t)(y + 1U) * screen.stride <= screen.copied; y++) {
+		for (x = 0U; x < screen.width; x++) {
+			pixels++;
+			if ((words[(size_t)y * (screen.stride / 4U) + x] & 0x00ffffffU) != 0U)
+				lit++;
+		}
+	}
+	printf("watch screen address=0x%llx pixels=%llu not_black=%llu\n", (unsigned long long)screen.address, pixels, lit);
+	free(words);
+}
+
 /* Names a stage number. */
 static const char *
 stage_name(
@@ -563,5 +719,5 @@ static void
 usage(void)
 {
 	/* The one usage line. */
-	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE | display | screen FILE] | amdrdnactl gpu|modes [GPU-DEVICE] | amdrdnactl reset [DEVICE] | amdrdnactl hotplug off|on [DEVICE] | amdrdnactl present WIDTHxHEIGHT [SECONDS] [GPU-DEVICE]\n");
+	fprintf(stderr, "usage: amdrdnactl [-f DEVICE] [status | advance STAGE | vbios FILE | display | screen FILE | watch SECONDS] | amdrdnactl gpu|modes [GPU-DEVICE] | amdrdnactl reset [DEVICE] | amdrdnactl hotplug off|on [DEVICE] | amdrdnactl present WIDTHxHEIGHT [SECONDS] [GPU-DEVICE]\n");
 }

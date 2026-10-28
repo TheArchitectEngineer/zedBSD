@@ -540,7 +540,7 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 - 機械: zedBSD は NVMe（Boot0004）、kernel は dfcaa14e5 の build（vmunix-dfcaa14）、Keiland・libvulkan は main の A・C の物、nicwatch あり。USB の stick は
   ユーザーが抜いた。今日の P2 の SwitchBot の入れ直しは 5 回（08:17:38・08:58:48・09:18:11・09:28:18・09:54:54）、全部 Debian に戻った。
 
-### 起動の logo（GOP の buffer）が試験中に見える件（2026-10-28 ユーザーの報告、未修正・手がかりだけ）
+### 起動の logo（GOP の buffer）が試験中に見える件（2026-10-28 ユーザーの報告。直しは下の「q1651」節）
 
 - ユーザー（2026-10-28）「P2のテスト中に、OSの起動ロゴ画面がちらついて表示されています。GOPの内容でしょうか？もしかして、メッセージ表示のたびにコンソールを
   書き換えていたりしますか？GPU使用中はコンソール出力は完全に止めて、内容をアップデートしないようになっているかを確認していただき、さらに、GOPのバッファが
@@ -561,3 +561,64 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 - 確かめ方の案: (a) amdrdna_display_show の各 flip で、console の address へ flip した時刻と理由を mark に出し（診断）、round・game mode の出入り・hang の
   試験で 0 回を数える、(b) display_shown_address（DCN の surface の address の register）を present の thread とは別に周期で標本化して console の address
   を見た回数を数える、(c) ユーザーに mview の試験（scene の起動・終了と game mode の出入り）を見てもらい logo が出ないかを確かめる手順を渡す。
+
+## q1651（2026-10-28 P2、worktree p2-ws291e、基点 main 414f3e73e）
+
+- 承認: q1639・q1645 と同じユーザーの文。最初の作業はユーザーの指示（2026-10-28）「GPU使用中はコンソール出力は完全に止めて、内容をアップデートしないように
+  なっているかを確認していただき、さらに、GOPのバッファが一瞬ひょうじされてしまっている理由を解析し、修正してください。」「どこかの経路で、ゲームモードに
+  切り替えるときにGOPのバッファが表示されてしまうのが仕方がないとしても、そのバッファはクリアして黒にしておいてほしいです。」
+
+### 起動の logo の直し（Q1 の OK、2026-10-28）
+
+- 確かめた事（code）: lease の frame が出ている間は kern_text_suspend で console は描かない（pcat の text.c の draw_cell_locked は text_ready 0 で
+  描かない）。quiet の起動（kmsg=quiet、この機械の cfg）では resume の後も text_hidden で cell を描かず、splash の spinner は lease の claim
+  （gpu.c の kern_text_progress_end）で止まる。よって「GPU の使用中の console の書き換え」は無い。logo が見えたのは present_end_lease が lease の
+  終わりに GOP の buffer（logo のまま）へ flip していたため（game mode の出入り・mview の起動終了・hang の回復のたびに 2〜4 frame）。
+- 直し（amdrdna の中だけ、kernel の console 側は変えない）:
+  - display.c amdrdna_display_console_clear: GOP の予約域（layout の AMDRDNA_RANGE_GOP、CPU の window の外）を VRAM BAR の一時の map（uncached）で
+    不透明の黒に塗る。present.c: console が止まった最初の present（plane は client の buffer を読んでいる）の後、present_lock の下で塗る
+    （実機 8108 KiB を 132 ms、起動の後の desktop の最初の frame で 1 回）。
+  - lease の終わりは今どおり console の surface（＝黒）へ flip するが console は止めたまま。lease の無い状態が 3 s（PRESENT_CONSOLE_REST_MS）続いた時
+    （thread present_rest_watch が 250 ms ごとに見る）と shutdown（amdrdna_present_stop）の時だけ kern_text_resume。resume した後の次の lease では
+    再び塗る。blank の案は blank 中の flip の latch が不確かで解放した blob を 1 frame 読む危険があるので採らなかった（見た目は同じ黒）。
+  - 診断の mark: 「display: the console's surface painted black」「gpu device: the console's surface is shown without its paint」（塗る前の GOP を
+    見せた）「gpu device: the console draws again after 3000 ms without a lease」。
+  - display.c amdrdna_display_screen（root の screen readout）: CPU の window の外の surface（GOP）を間接の window ではなく BAR の一時の map で読む
+    （下の SMU の件）。
+  - 道具: amdrdnactl watch SECONDS（2 ms ごとに plane の表示の address を読み、console の address を見た回数・run の数、最初の 3 run の画面を読み
+    黒でない pixel を数える）、measure.sh logo OUT（mview の game・window mode の出入り 6 回、間隔 1 s と 5 s、vkhang の hang、最後に compositor を
+    終わらせる。zedBSD は desktop が sessiond で立ち直る）。
+- 実機（NVMe の zedBSD、guard の下）:
+  - logo1（10:55、vmunix-logo1 d73b7dac）: watch 37500 回中 console 139 回・10 run（lease の切り替えごとに約 28 ms）、「shown without its paint」0。
+  - logo2（10:57）: watch の screen を間接の window（8 MB を MMIO 3 回/word）で 6 回読んだ run の途中 10:58:00〜10:58:20 に SMU が止まり（temp 0、
+    hung=1）、guard が 10:59:01 に poweroff。表示の register の読みも乱れた（console 8226 回・1127 run、plane=0x0）。P2 が 11:04:25 に SwitchBot で
+    入れ直し（今日の P2 の 6 回目、Debian に戻った）。間接の読みが原因かは未確定（1 回だけ）→ screen を BAR の map で読む形に直した。
+  - logo3（11:07、vmunix-logo2 58dd4759）: watch 37500 回中 console 48 回・6 run、その 3 run の画面（GOP）は 2073600 pixel 中 黒でない 0。
+    compositor を終わらせた時の console の 1 run（約 1.1 s、次の session の lease まで）も 黒でない 0。kernel の「shown without its paint」0、
+    「console draws again」0（3 s の rest は起きなかった）。SMU は通して正常（52〜56 C）。mview・vkhang の hang の回復は ok。
+- 未実施: 3 s の rest の後の kern_text_resume を実機で見る事（compositor を終わらせても sessiond が約 1 s で次の session を立てた。code の上では
+  quiet の resume は描かない）。shutdown の時の give back の実機。ユーザーの目の確かめ。
+- ユーザーが目で確かめる手順: desktop で `mview --spin=3 --content=game --present=mailbox --copies=1` を数回（端末から、間を 1 秒ほど空けて）と
+  window の mview（--content=none）を起動・終了し、画面の切り替えの瞬間に起動の logo が出ず黒（一瞬）になる事を見る。hang（vkhang）の後も同じ。
+
+### Fable 5.1 High の助言（CPU 時間、2026-10-28 11:00、Q1 経由のユーザーの指示「案Dがだめだったことと、状況を、…伝えて、今後の作業方針について助言をもらってOKです」）
+
+- 伝えた事: 今の数（Linux と並べて）、効いた事（PTE の fragment・WC・UCLK・A・C・B1）、効かなかった D と GPU_CAP_FENCE、libvulkan → GPU core → executor の構造。
+- 助言の要点（code を読んだ上の見立て、未確かめ）:
+  - libvulkan の vkCmd* 1 つ約 2 µs は、command ごとに vulkan_writer を作り realloc・free・memcpy 2 回（commands.c command_record_begin/finish、wire.c）。
+  - kernel の op 132 は GPU_OP_CMD_PUSH_CONSTANTS で、vk-record.c record_push の push ごとの kern_malloc が 1 µs。
+  - execute_draw は draw ごとに約 45 packet・130 dword を全部出し直す（pipeline・viewport・scissor・blend 等）。PM4 の buffer 1 MB で big-1000 は
+    1 command buffer に 8〜12 回 flush、slot 待ち（amdrdna_vk_gpu_wait）が submit の時間に入る見込み。
+  - subs-N: vkBegin・vkEnd・vkReset・vkQueueSubmit がそれぞれ同期の往復（submit + wait + worker の受け渡し、50〜80 µs）。
+  - scene-N: WSI の present の copy（wsi-swapchain.c present_copy_shared）が別の command buffer で 4〜5 往復と GPU 0.87 ms。scene-1500 4.4 + 0.87 ms →
+    189 fps 上限、scene-6500 19.0 + 0.87 → 50.3 の上限で、scene の差のほぼ全部。
+- 助言の順（期待）: (1) 案 E: Wayland でも swapchain の image を直に present（chain->direct の経路を platform の import_image がある時に許す、release を
+  image に対応、copy を省く。libvulkan の案を Q1 へ）→ scene-1500 205〜215、scene-6500 約 50.5。(2) record_push の push を record に inline（128 byte、
+  executor だけ）→ op 132 1 → 0.1 µs。(3) vkCmd* を command->recording へ直に encode（libvulkan、案）→ 2 → 0.5 µs。(4) execute_draw の state の
+  差分だけを出す・table の再利用・buffer を大きくして flush を 2〜3 回に（executor だけ）。(5) vkBegin・vkReset を返事の無い record に、submit の
+  wait を省く（libvulkan と GPU core、案、subs-N の唯一の手）。(6) FENCE の early commit は後で、Keiland の thread が最新の commit の fence だけを待ち
+  古い未 flip の buffer はすぐ release する形に。
+- 決め手の計測（助言）: M1 = amdrdna.vk.timing と libvulkan の timing で big-1000・subs-1000 を 1 回（End の待ちの割合、op 132/107/91/18、frame あたりの
+  run の数と slot 待ち）。M2 = present_copy_shared の copy を飛ばす 10 行の試し（画は誤り、E の上限を測る）。
+- 採否: まだ実施していない（13 時までの待機の指示）。次の担当は M2 → E の案を Q1 へ、並行して executor だけの (2)・(4) から。
+

@@ -15,7 +15,9 @@
  * changes only the address the plane fetches (a flip, which takes effect
  * at the next frame's update) and the hardware cursor drawn over the
  * plane.  The firmware's surface stays the text console's: giving the
- * display up flips back to it, and the console's picture is there again.
+ * display up flips back to it, and the console's picture is there again,
+ * except that the GPU device paints it black once its frames took the
+ * screen (the boot logo is not shown again between them).
  * The driver starts no output of its own.
  *
  * Stage A6 saves the plane's words, takes the frames' VRAM, measures the
@@ -51,6 +53,7 @@
 #include <uapi/errno.h>
 
 #include "drivers/gpu/amdrdna/amdrdna-private.h"
+#include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
 /*
  * The plane's pixel format of 32-bit colour (A, R, G, B from the top
@@ -194,6 +197,9 @@
 
 /* The longest row the screen readout copies, in words: 16 KiB (4096 pixels). */
 #define DISPLAY_SCREEN_ROW_WORDS	4096U
+
+/* The pages a mapping of the VRAM BAR is made of for the screen readout. */
+#define DISPLAY_SCREEN_PAGE_BYTES	4096U
 
 /* The first lines of the topology: one, before any change of the monitor. */
 #define DISPLAY_TOPOLOGY_FIRST		1U
@@ -1117,6 +1123,72 @@ amdrdna_display_blank(
 }
 
 /*
+ * Paints the console's surface (the firmware's, kept out of the VRAM pools
+ * and outside the CPU's window) opaque black, through a mapping of its
+ * range made for the paint alone.  The caller has the plane on another
+ * surface and the text console stopped, so nobody sees the paint and
+ * nothing draws there meanwhile; the boot logo is gone from it, and a later
+ * flip back to it shows black until the console draws again.
+ *
+ * Returns 0, ENOENT without the console's range, or the mapping's error.
+ */
+int
+amdrdna_display_console_clear(
+	struct amdrdna_device *device)
+{
+	const struct amdrdna_range *range;
+	struct drv_pci_mapping mapping;
+	volatile uint64_t *words;
+	uint64_t started;
+	uint64_t black;
+	size_t count;
+	size_t at;
+	unsigned index;
+	int error;
+
+	/* The range the firmware's picture keeps in the VRAM. */
+	range = NULL;
+	for (index = 0U; index < device->layout.reserved_count; index++) {
+		if (device->layout.reserved[index].reason == AMDRDNA_RANGE_GOP) {
+			range = &device->layout.reserved[index];
+			break;
+		}
+	}
+	if (range == NULL || range->end <= range->start)
+		return ENOENT;
+
+	/* Maps the range uncached for the paint. */
+	started = amdrdna_display_now_us();
+	error = drv_pci_device_map_bar_region(device->pci,
+	    AMDRDNA_BAR_VRAM,
+	    range->start,
+	    (size_t)(range->end - range->start),
+	    DRV_PCI_MAP_READ | DRV_PCI_MAP_WRITE | DRV_PCI_MAP_NOCACHE,
+	    &mapping);
+	if (error != 0)
+		return error;
+
+	/* Two black pixels a store. */
+	black = ((uint64_t)DISPLAY_BLACK << 32) | DISPLAY_BLACK;
+	words = (volatile uint64_t *)mapping.address;
+	count = (size_t)(range->end - range->start) / sizeof(uint64_t);
+	for (at = 0U; at < count; at++)
+		words[at] = black;
+
+	/* Pushes the writes past the host path before the plane may read them. */
+	amdrdna_host_path_flush(device);
+	drv_pci_device_unmap_bar(device->pci, &mapping);
+
+	/* Marks the paint and its time. */
+	amdrdna_mark("display: the console's surface painted black (%llu KiB in %llu us)",
+	    (unsigned long long)((range->end - range->start) >> 10),
+	    (unsigned long long)(amdrdna_display_now_us() - started));
+
+	/* Succeeded: the console's surface is black. */
+	return 0;
+}
+
+/*
  * Reports the display's topology sequence and whether a monitor is
  * connected.  Any context: takes only the display's IRQ-safe lock.
  */
@@ -1327,7 +1399,9 @@ amdrdna_display_report(
  * (the control device's screen readout): the picture's size, the address
  * read and the bytes copied are reported.  Each row goes through a kernel
  * bounce buffer from the CPU's window, after the host path's read cache is
- * dropped.
+ * dropped; a surface outside that window (the console's) is read through
+ * a mapping of its part of the VRAM BAR made for the copy, or, past the
+ * BAR, through the indirect window.
  *
  * Returns 0, ENOENT before the takeover, ERANGE for a surface outside the
  * CPU's window, ENOMEM, or the copy's error.
@@ -1338,15 +1412,20 @@ amdrdna_display_screen(
 	struct amdrdna_screen *screen)
 {
 	struct amdrdna_display *display;
+	struct drv_pci_mapping mapping;
 	volatile const uint32_t *source;
+	volatile const uint8_t *base;
 	uint32_t *row;
 	uint64_t address;
 	uint64_t vram;
+	uint64_t first;
+	uint64_t last;
 	uint32_t line;
 	uint32_t word;
 	uint32_t words;
 	uint32_t copied;
 	bool outside;
+	bool mapped;
 	int error;
 
 	/* The display must be the driver's. */
@@ -1381,6 +1460,22 @@ amdrdna_display_screen(
 	if (row == NULL)
 		return ENOMEM;
 
+	/* A surface outside the window: its whole pages of the BAR mapped for the copy, when the BAR reaches them. */
+	mapped = false;
+	base = NULL;
+	if (outside) {
+		first = vram & ~((uint64_t)DISPLAY_SCREEN_PAGE_BYTES - 1U);
+		last = (vram + (uint64_t)display->stride * display->height + DISPLAY_SCREEN_PAGE_BYTES - 1U) &
+		       ~((uint64_t)DISPLAY_SCREEN_PAGE_BYTES - 1U);
+		error = drv_pci_device_map_bar_region(device->pci, AMDRDNA_BAR_VRAM, first, (size_t)(last - first),
+		    DRV_PCI_MAP_READ | DRV_PCI_MAP_NOCACHE, &mapping);
+		if (error == 0) {
+			mapped = true;
+			base = (volatile const uint8_t *)mapping.address + (vram - first);
+		}
+		error = 0;
+	}
+
 	/* Copies whole rows from the top while the buffer has room. */
 	amdrdna_host_path_drop(device);
 	words = display->stride / 4U;
@@ -1391,8 +1486,12 @@ amdrdna_display_screen(
 		if (screen->length - copied < display->stride)
 			break;
 
-		/* The row through the bounce buffer: from the window, or a word at a time through the indirect window. */
-		if (outside) {
+		/* The row through the bounce buffer: from a mapping, or a word at a time through the indirect window. */
+		if (mapped) {
+			source = (volatile const uint32_t *)(volatile const void *)(base + (uint64_t)line * display->stride);
+			for (word = 0U; word < words; word++)
+				row[word] = source[word];
+		} else if (outside) {
 			amdrdna_vram_read(device, vram + (uint64_t)line * display->stride, row, display->stride);
 		} else {
 			source = (volatile const uint32_t *)(volatile const void *)amdrdna_vram_cpu(device, vram + (uint64_t)line * display->stride);
@@ -1407,8 +1506,10 @@ amdrdna_display_screen(
 		copied += display->stride;
 	}
 
-	/* The bounce buffer goes. */
+	/* The bounce buffer and the copy's mapping go. */
 	kern_free(row);
+	if (mapped)
+		drv_pci_device_unmap_bar(device->pci, &mapping);
 
 	/* Reports a copy the caller's buffer refused. */
 	if (error != 0)
