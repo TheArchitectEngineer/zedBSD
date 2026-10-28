@@ -200,13 +200,13 @@ in the kernel.
 
 Supported GPUs:
 
-| Vendor         | IP                | Confirmed on            | Description         |
-|----------------|-------------------|-------------------------|---------------------|
-| Imagination    | PowerVR           | StarFive Vision Five 2  | Desktop-optimized   |
-| Broadcom       | VideoCore VI      | Raspberry Pi 4          | Desktop-optimized   |
-| Intel          | GEN9 to GEN12     | 6th to 12th Intel Core  | Desktop-optimized   |
-| NVIDIA         | Turing or later   | NVIDIA GeForce RTX 2070 | Modest yet          |
-| AMD            | RDNA or later     | AMD Radeon RX 5600 XT   | Game-optimized      |
+| Vendor         | IP                | Confirmed on            | Description                                  |
+|----------------|-------------------|-------------------------|----------------------------------------------|
+| Imagination    | PowerVR           | StarFive Vision Five 2  | Desktop-optimized                            |
+| Broadcom       | VideoCore VI      | Raspberry Pi 4          | Desktop-optimized                            |
+| Intel          | GEN9 to GEN12     | 6th to 12th Intel Core  | Desktop-optimized                            |
+| NVIDIA         | Turing or later   | NVIDIA GeForce RTX 2070 | Modest yet                                   |
+| AMD            | RDNA or later     | AMD Radeon RX 5600 XT   | Desktop-optimized, now optimizing for gaming |
 
 ---
 
