@@ -28,6 +28,8 @@
 
 止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
 
+**ラップアップ（2026-10-29 04:5x ユーザー「P2とP3は継続、それ以外をラップアップしてください。」）: P1・P4・P5・P6 はラップアップ中、P2・P3 は継続。**
+
 **中断からの復旧（2026-10-29 04:5x、5 時間の利用の上限の見込み）**: 担当は全員こまめに WIP commit している。復旧は各 branch の先頭と phase.md の再開点から、同じ名前の新しい起動で。
 main に未 merge の branch: `agent/p2-ws291l`（WS291、merge の前に venus-reg と arm64・riscv64 の libvulkan、実機の A/B の結果を見て効果の無い ioctl は入れない）、`agent/p3-ws221`（WS221、他 platform の build を確かめてから）、`agent/p6-ws282c`・`agent/p6-ws296c`（P6、merge しない）。P1・P4・P5 は先頭まで merge 済み（P4 は試験の走行中、P5 は WS301・WS303 の review の走行中）。
 web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の hal-fw-variables.md はユーザーの review 待ち）。
