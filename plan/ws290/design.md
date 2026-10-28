@@ -3,6 +3,7 @@
 - Phase: [ws290-p001](phase001/phase.md)。版 1・2: 2026-10-26（P1、q1594）。版 3: 2026-10-27（P3、q1621、書きかけで中断）。**版 4: 2026-10-28（P3、q1636-i01）**。版 3 までの本文は git の履歴（f5fea4c2e など）にあり、この版は 89529de を正本に全部を書き直した。
 - 親: [WS290](ws.md)。前身の設計: [WS288 design](../ws288/design.md) §6（1.1 の driver）。
 - この文書は設計だけ。source は変えていない。
+- **版 4.15（2026-10-28、q1644 P3）: p012 の実装の形を §13 に（待たない門、service の try、record、quarantine、boot framebuffer と panic の v1）。**
 - **版 4.14（2026-10-28、q1644 P3）: p011 の実装の形を §5.6 に（local の allocator、boot framebuffer、window、型と heap、0 埋め）。p011 の review を受け同じ段落を直した（export も local、0 埋めの待ちに期限無し、client の local の CPU の触りは断る、window の数え方、boot の範囲 3 つ）。**
 - **版 4.13（2026-10-28、q1644 P3）: p009 の code の review を受け、§11.4 に WaitEvents の v1（(b) は断る、WAIT は kernel の語）。code の heap は GPU に WRITE を与えない（p009 の直し）。**
 - **版 4.12（2026-10-28、q1644 P3）: p008 の code の review を受け、§11.4 に heap の寿命と code・data の heap の分離（p009）、OpSpecConstantOp の畳み込み。**
@@ -528,6 +529,7 @@ CAP_BLT = 0 の device（と BLT の有無に依らない CopyQueryPoolResults�
 - panic console: `CTRL.HALT` → HALTED → host が S の register を書く（2565〜2567 行）。
 - boot framebuffer（§13.3）: attach で ENABLE = 1 なら `FB_BASE`・`FB_STRIDE`・`FB_SIZE` の範囲を確保から外し（discrete は local の allocator からその範囲を外し window を保つ。UMA の host の物理は、boot の memory map（UEFI の GOP の framebuffer は予約の領域）が既に kernel の確保から外しているので driver は何もしない。boot の後に物理を予約する kern の API は無く、足さない。R29）、最初の自分の flip が取られた後に返す（discrete だけ）。p012 までは scanout に触らない（Guardrail）。
 - adv7511.c（DC_CAPS[2] の外付けの送信器）は残す。
+- **p012 の実装（版 4.15）**: 表示の配置は待たない門。`ghci_cp_enter(…, wait = 0)` は RETRY・LOST で cp_lock だけを離し、呼び手の外側の lock は保つ（p012 の review の M1。wait = 1 の呼び手は今まで通り全部を離す）。service thread からの配置は `ghci_cp_try_enter`（cp_lock を try し、回復の間は断り、run と fence と log の entry の空きが今ある時だけ OPEN）で、display.lock・device.lock も try だけ（H1: service は表示のために block せず、hang の判定を止めない）。flip の record は fence page の +64・+80（16 byte）、detach と LOST では reset の後に DISP2 STATUS[31] = 0 を有界に待ち、落ちなければ fence page を quarantine（M2）。host による消灯・切り替えで HALTED と controller の idle を確かめられない時、走査していた memory は `scan_unsure` で quarantine（M3）。adoption の期限は `GHCI_HANG_MS` + 2 s（L6）。lease の終わりは暗転（L7、P3 の判断）。v1 は boot framebuffer を解放しない（`boot_console` = 1。kernel に firmware の framebuffer の backend を止める手段が無い）、panic の表示は呼び手が無い（`ghci_display_panic` は残す。範囲の決定はユーザーに確認中）。両方の kernel の API は Future Work の候補（phase012）。
 
 ## 14. 試験の設計
 

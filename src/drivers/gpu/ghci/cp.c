@@ -183,7 +183,9 @@ ghci_cp_start(
  * Stops the command processor at the detach or after a failed start: it
  * halts, resets and stops, the interrupt and bus mastering go, the poll
  * thread leaves, and the memory is given back unless the GPU or a late
- * handler may still reach it.
+ * handler may still reach it.  The fence page waits for the flip records
+ * the display controller still owes: one that stays due while bus
+ * mastering stays on keeps the page in the quarantine.
  *
  * Returns 0, or EBUSY when the interrupt could not be let go (a handler
  * may still run): the memory is then kept and the caller keeps the
@@ -193,10 +195,12 @@ int
 ghci_cp_stop(
 	struct ghci_device *device)
 {
+	struct ghci_allocation *record_page;
 	enum ghci_device_state state;
 	unsigned long irq;
 	uint32_t ctrl;
 	int reset_done;
+	int records_done;
 	int master_off;
 	int released;
 	int error;
@@ -224,6 +228,14 @@ ghci_cp_stop(
 	if (error != 0) {
 		kern_logf("ghci: %s: reset at the stop did not end\n", device->name);
 		reset_done = 0;
+	}
+
+	/* The display's flip records still due go to the fence page now that the processor is idle. */
+	records_done = 1;
+	error = ghci_display_records_settle(device);
+	if (error != 0) {
+		kern_logf("ghci: %s: a flip's record still due at the stop\n", device->name);
+		records_done = 0;
 	}
 
 	/* No interrupt (the handler restores nothing from here), nothing running. */
@@ -275,9 +287,24 @@ ghci_cp_stop(
 		return 0;
 	}
 
-	/* Succeeded: the sessions' records and the memory go back. */
+	/* A record that may still come while bus mastering stays on keeps the fence page out of the allocator. */
+	record_page = NULL;
+	if (!records_done && !master_off) {
+		record_page = device->fence_page;
+		device->fence_page = NULL;
+	}
+
+	/* The sessions' records and the memory go back. */
 	ghci_vm_fini(device);
 	release_memory(device);
+
+	/* The fence page waits in the quarantine, never given back while the device lives. */
+	if (record_page != NULL) {
+		kern_logf("ghci: %s: fence page kept for a record still due\n", device->name);
+		ghci_memory_quarantine(device, record_page);
+	}
+
+	/* Succeeded: the device holds nothing the GPU may reach. */
 	return 0;
 }
 
@@ -287,10 +314,12 @@ ghci_cp_stop(
  *
  * held names the outer locks the caller holds (GHCI_HOLD_DEVICE,
  * GHCI_HOLD_DISPLAY).  OPEN: cp_lock is held, with the outer locks.
- * RETRY: a recovery ran or runs; every lock the caller held has been let
- * go, and with wait the gate has waited for the recovery to end; the
- * caller starts again and reads its state again.  LOST: every lock has
- * been let go and the device is lost.
+ * RETRY: a recovery ran or runs.  With wait, every lock the caller held
+ * has been let go and the gate has waited for the recovery to end; the
+ * caller starts again and reads its state again.  Without wait, only
+ * cp_lock is let go: the caller keeps its outer locks, and with them the
+ * state it read, and lets them go itself so that the recovery can take
+ * them.  LOST: the device is lost; the locks go as for RETRY.
  */
 enum ghci_gate
 ghci_cp_enter(
@@ -320,15 +349,19 @@ ghci_cp_enter(
 	if (gate == GHCI_GATE_OPEN)
 		return GHCI_GATE_OPEN;
 
-	/* Lets go of every lock, the innermost first, so that the recovery can take them. */
+	/* The ring's lock goes; a caller that does not wait keeps its own and is answered now. */
 	mutex_unlock(&device->cp_lock);
+	if (!wait)
+		return gate;
+
+	/* A caller that waits lets go of its locks, the inner one first, so that the recovery can take them. */
 	if ((held & GHCI_HOLD_DISPLAY) != 0U)
 		mutex_unlock(&device->display_lock);
 	if ((held & GHCI_HOLD_DEVICE) != 0U)
 		mutex_unlock(&device->lock);
 
-	/* A lost device, or a caller that does not wait, is answered now. */
-	if (gate == GHCI_GATE_LOST || !wait)
+	/* A lost device is answered now. */
+	if (gate == GHCI_GATE_LOST)
 		return gate;
 
 	/* Waits for the gate to open again or the device to be lost. */
@@ -345,6 +378,67 @@ ghci_cp_enter(
 
 	/* Succeeded: the caller starts again (or hears that the device is lost). */
 	return gate;
+}
+
+/*
+ * Passes the gate of the ring without waiting for anything: takes cp_lock
+ * only when nobody holds it, no recovery runs, and the ring has room now
+ * for need dwords (with the padding before its end) and for an entry of
+ * the submission log, so that placing them and a fence of that size does
+ * not wait.  The caller's own locks stay held whatever the answer.
+ *
+ * Returns OPEN with cp_lock held, RETRY when the ring is in use,
+ * recovers or is full, or LOST for a lost device.
+ */
+enum ghci_gate
+ghci_cp_try_enter(
+	struct ghci_device *device,
+	uint32_t need)
+{
+	enum ghci_gate gate;
+	unsigned long irq;
+	uint32_t padding;
+	uint32_t rptr;
+	int locked;
+	int error;
+
+	/* The ring's lock, only when it is free: its holder may be waiting for room. */
+	locked = mutex_trylock(&device->cp_lock);
+	if (!locked)
+		return GHCI_GATE_RETRY;
+
+	/* What the recovery says, under the interrupt's lock. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	gate = GHCI_GATE_OPEN;
+	if (device->state == GHCI_STATE_LOST)
+		gate = GHCI_GATE_LOST;
+	else if (device->recovering)
+		gate = GHCI_GATE_RETRY;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+	if (gate != GHCI_GATE_OPEN) {
+		mutex_unlock(&device->cp_lock);
+		return gate;
+	}
+
+	/* The submissions whose fences passed leave the log; the room is what the reader left now. */
+	retire_log(device);
+	rptr = ghci_read(device, GHCI_REG_RING_RPTR);
+	error = EAGAIN;
+	if (rptr < device->ring.dwords)
+		error = ghci_ring_plan(device->ring.wptr, rptr, device->ring.dwords, need, &padding);
+	if (error == 0 && device->submit_count >= GHCI_SUBMIT_LOG)
+		error = EAGAIN;
+
+	/* A ring without the room is left as it is. */
+	if (error != 0) {
+		mutex_unlock(&device->cp_lock);
+		return GHCI_GATE_RETRY;
+	}
+
+	/* Succeeded: the ring is the caller's, with the room. */
+	return GHCI_GATE_OPEN;
 }
 
 /*

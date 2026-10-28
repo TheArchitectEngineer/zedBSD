@@ -152,6 +152,16 @@ static void scene_display_boot(void);
 static void scene_display_panic(void);
 static void scene_display_detach(void);
 static void scene_display_none(void);
+static void scene_display_service_nowait(void);
+static void scene_display_gate_keeps(void);
+static void scene_display_stop_records(void);
+static void scene_display_host_unsure(void);
+static void scene_display_detach_after_end(void);
+static void scene_display_light_cut(void);
+static void scene_display_frame_bytes(void);
+static void scene_display_release_wait(void);
+static void ring_fill(void);
+static void action_unhold(void);
 static void scene_versions(void);
 static void scene_attach_checks(void);
 static void scene_attach_policy(void);
@@ -256,6 +266,14 @@ main(void)
 	scene_display_panic();
 	scene_display_detach();
 	scene_display_none();
+	scene_display_service_nowait();
+	scene_display_gate_keeps();
+	scene_display_stop_records();
+	scene_display_host_unsure();
+	scene_display_detach_after_end();
+	scene_display_light_cut();
+	scene_display_frame_bytes();
+	scene_display_release_wait();
 	model_fini();
 
 	/* Reports the counts. */
@@ -3148,6 +3166,14 @@ scene_display_cursor(void)
 	error = device.ops.display->cursor_move(&device, display_open, &move);
 	expect(error == 0 && dc_read(GHCI_DC_CURSOR_POS) == ((uint32_t)(-3) & 0xffffU) + (10U << 16) &&
 	    dc_read(GHCI_DC_CURSOR_CTRL) == 1U, "display cursor: moved");
+
+	/* A place past the 16 signed bits is held at their ends, not cut. */
+	move.x = -40000;
+	move.y = 70000;
+	error = device.ops.display->cursor_move(&device, display_open, &move);
+	expect(error == 0 && dc_read(GHCI_DC_CURSOR_POS) == (0x8000U | (0x7fffU << 16)), "display cursor: held to the 16 bits");
+	move.x = -3;
+	move.y = 10;
 	memset(&hide, 0, sizeof(hide));
 	hide.lease = display_lease;
 	hide.generation = display_generation;
@@ -3529,4 +3555,350 @@ scene_display_none(void)
 	error = start_device();
 	expect(error == 0 && !device.display.present && device.ops.display == NULL, "display none: no CAP_DISP");
 	end_scene("display none: no CAP_DISP");
+}
+
+/*
+ * Fills the ring of a held processor with the driver's own NOPs until it
+ * has no room for even one dword and a fence: the submissions never wait,
+ * as each is placed only while the plan says it fits.
+ */
+static void
+ring_fill(void)
+{
+	static const uint32_t sizes[] = { 64U, 16U, 4U, 1U };
+	struct ghci_ticket ticket;
+	uint32_t padding;
+	uint32_t rptr;
+	unsigned index;
+	int error;
+
+	/* Each size, as long as it fits with its fence. */
+	for (index = 0U; index < 4U; index++) {
+		for (;;) {
+			rptr = model_read(GHCI_REG_RING_RPTR);
+			error = ghci_ring_plan(device.ring.wptr, rptr, device.ring.dwords, sizes[index] + GHCI_DW_FENCE, &padding);
+			if (error != 0)
+				break;
+			error = submit_nops(sizes[index], &ticket);
+			if (error != 0)
+				return;
+		}
+	}
+}
+
+/* The scene's action: the held processor goes on. */
+static void
+action_unhold(void)
+{
+	model_hold(0);
+}
+
+/*
+ * The service thread never waits for the display: with the ring full and
+ * the processor stopped, its round does not place the idle frame's
+ * lighting and does not sleep; the hang check then starts the recovery
+ * after the hang time, after which the lighting is placed.  A round whose
+ * display or device lock is held by another thread skips the display's
+ * work instead of waiting.
+ */
+static void
+scene_display_service_nowait(void)
+{
+	unsigned sleeps;
+	int error;
+
+	/* A small ring, filled while the processor is held; the idle frame is not lit yet. */
+	test_ring_bytes = 4096U;
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0 && !device.display.enabled && device.display.idle_frame != NULL, "display nowait: started dark");
+	model_hold(1);
+	ring_fill();
+
+	/* The round returns at once: nothing placed, no sleep. */
+	sleeps = stub.sleeps;
+	display_round();
+	expect(stub.sleeps == sleeps && !device.display.flips[0].placed && !device.display.enabled && device.resets == 0U,
+	    "display nowait: a full ring is not waited for");
+
+	/* The hang check resets the stopped processor once the hang time passed; the lighting follows. */
+	stub.ticks += kern_ms_to_ticks(GHCI_HANG_MS) + 1U;
+	display_round();
+	expect(device.resets == 1U && device.state == GHCI_STATE_RUNNING, "display nowait: the hang check recovered");
+	display_round();
+	expect(device.display.enabled && (dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) != 0U &&
+	    dc_read(GHCI_DC_FB_BASE) == (uint32_t)device.display.idle_frame->bus, "display nowait: the idle frame lit after the recovery");
+
+	/* The display's lock held elsewhere: the round skips the display and keeps its events. */
+	mutex_lock(&device.display_lock);
+	device.display.irq_events = GHCI_DC_IRQ_HOTPLUG;
+	ghci_display_service(&device, GHCI_WORK_DISPLAY);
+	expect(stub.double_locks == 0U && device.display.irq_events == GHCI_DC_IRQ_HOTPLUG, "display nowait: a held display lock skipped");
+	mutex_unlock(&device.display_lock);
+	display_round();
+	expect(device.display.irq_events == 0U, "display nowait: the events taken at the next round");
+
+	/* The device's lock held elsewhere: the round's flush leaves the drops for later. */
+	mutex_lock(&device.lock);
+	ghci_display_service(&device, GHCI_WORK_DISPLAY);
+	mutex_unlock(&device.lock);
+	expect(stub.double_locks == 0U && model.display.bad_writes == 0U, "display nowait: a held device lock skipped");
+	end_scene("display nowait");
+}
+
+/*
+ * The gate that does not wait keeps the caller's own locks: a present at
+ * a closed gate keeps the display's lock, so two presents during a
+ * recovery take two numbers.
+ */
+static void
+scene_display_gate_keeps(void)
+{
+	struct ghci_resource *first;
+	struct ghci_resource *second;
+	enum ghci_gate gate;
+	uint64_t sequence;
+	uint64_t one;
+	uint64_t two;
+	int error;
+
+	/* A lease and a first image; then a fault the service has not taken. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	if (error == 0)
+		error = display_take();
+	first = display_storage(5120U * 720U, 1);
+	second = display_storage(5120U * 720U, 1);
+	if (error == 0)
+		error = display_present(first, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	expect(error == 0, "display gate: first image");
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+
+	/* The gate without a wait answers RETRY with the display's lock still held, and only the ring's let go. */
+	mutex_lock(&device.display_lock);
+	gate = ghci_cp_enter(&device, GHCI_HOLD_DISPLAY, 0);
+	expect(gate == GHCI_GATE_RETRY && stub_holds("ghci display") && !stub_holds("ghci ring"), "display gate: the caller's lock kept");
+	mutex_unlock(&device.display_lock);
+
+	/* Two presents at the closed gate: two numbers, both waiting. */
+	one = 0U;
+	two = 0U;
+	error = display_present(second, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 0, &one);
+	if (error == 0)
+		error = display_present(first, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 0, &two);
+	expect(error == 0 && one == sequence + 1U && two == sequence + 2U && device.display.queue_count == 2U,
+	    "display gate: two presents, two numbers");
+
+	/* The recovery, then both shown in turn. */
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	error = device.ops.display->adoption_wait(&device, display_open, display_lease, &two, NULL);
+	expect(error == 0 && device.display.adopted == two && dc_read(GHCI_DC_FB_BASE) == (uint32_t)first->allocation->bus,
+	    "display gate: both placed after the recovery");
+	display_give_up();
+	end_scene("display gate");
+}
+
+/*
+ * The stop gives the fence page back only once the controller's records
+ * were written: a record that stays due while bus mastering stays on
+ * keeps the page in the quarantine; one the reset lets out does not.
+ */
+static void
+scene_display_stop_records(void)
+{
+	struct ghci_allocation *page;
+	int error;
+
+	/* Bus mastering found on (it stays at the stop); no record due: the page goes back. */
+	test_master_found = 1;
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0, "display stop: started");
+	error = ghci_device_stop(&device);
+	expect(error == 0 && device.fence_page == NULL && device.quarantined == NULL, "display stop: the page given back");
+	end_scene("display stop: settled");
+
+	/* A record that stays due: the page is kept. */
+	test_master_found = 1;
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	page = device.fence_page;
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_STATUS) / 4U] |= GHCI_DC_ST_RECORD;
+	if (error == 0)
+		error = ghci_device_stop(&device);
+	expect(error == 0 && device.fence_page == NULL && device.quarantined == page && page != NULL, "display stop: the page kept for a record due");
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_STATUS) / 4U] &= ~GHCI_DC_ST_RECORD;
+	ghci_memory_release_quarantine(&device);
+	end_scene("display stop: kept");
+
+	/* A record due but bus mastering turned off by the driver: nothing reaches the page, which goes back. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_STATUS) / 4U] |= GHCI_DC_ST_RECORD;
+	if (error == 0)
+		error = ghci_device_stop(&device);
+	expect(error == 0 && device.fence_page == NULL && device.quarantined == NULL, "display stop: given back without bus mastering");
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_STATUS) / 4U] &= ~GHCI_DC_ST_RECORD;
+	end_scene("display stop: master off");
+}
+
+/*
+ * A turn by the host that did not see the processor halt lets the image
+ * the controller scanned go through the quarantine, never back to the
+ * allocator.
+ */
+static void
+scene_display_host_unsure(void)
+{
+	struct model_switches switches;
+	struct ghci_resource *storage;
+	struct ghci_allocation *memory;
+	uint64_t sequence;
+	int error;
+
+	/* A processor whose halt never shows; a shared image on the screen, held by the display alone. */
+	memset(&switches, 0, sizeof(switches));
+	switches.halt_reads = 100000000U;
+	error = start_scene(MODEL_KC705_UMA, &switches);
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(5120U * 720U, 1);
+	if (error == 0)
+		error = display_present(storage, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	memory = storage->allocation;
+	device.ops.resource_destroy(&device, display_open, storage);
+	expect(error == 0 && memory->holds == 1U, "display unsure: held by the display");
+
+	/* The processor stops moving; the lease ends; the ring's dark packet never runs. */
+	model_hold(1);
+	device.ops.close(&device, display_open);
+	display_open = NULL;
+	ghci_display_detach(&device);
+	expect((dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) == 0U && device.display.shown.memory == NULL &&
+	    device.quarantined == memory && memory->scan_unsure, "display unsure: the image kept in the quarantine");
+	end_scene("display unsure");
+}
+
+/*
+ * The detach after a lease's end whose dark packet the service placed:
+ * the packet's ticket comes before the image it turned off is let go of.
+ */
+static void
+scene_display_detach_after_end(void)
+{
+	struct ghci_resource *storage;
+	uint64_t sequence;
+	int error;
+
+	/* A shared image on the screen; the session closes; the service places the dark packet, not yet run. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(5120U * 720U, 1);
+	if (error == 0)
+		error = display_present(storage, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	device.ops.resource_destroy(&device, display_open, storage);
+	model_hold(1);
+	device.ops.close(&device, display_open);
+	display_open = NULL;
+	display_round();
+	expect(error == 0 && device.display.ending && device.display.dark_placed == 1 && device.display.shown.memory != NULL,
+	    "display detach after end: the dark packet placed");
+
+	/* The detach waits for its ticket, then lets the image go (not through the quarantine). */
+	model_hold(0);
+	ghci_display_detach(&device);
+	expect(ghci_cp_ticket(&device, &device.display.dark_ticket) == GHCI_TICKET_DONE && device.display.shown.memory == NULL &&
+	    device.quarantined == NULL && (dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) == 0U, "display detach after end: the image let go after the ticket");
+	end_scene("display detach after end");
+}
+
+/*
+ * A lighting cut by a reset after its flip was taken but before ENABLE:
+ * the reset's count finds the controller dark, puts the image back in
+ * the queue and the controller is lit again.
+ */
+static void
+scene_display_light_cut(void)
+{
+	struct ghci_resource *storage;
+	uint64_t sequence;
+	uint32_t value;
+	int error;
+
+	/* The first present of a lease lights the controller; the held processor has not run the run. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(5120U * 720U, 1);
+	model_hold(1);
+	if (error == 0)
+		error = display_present(storage, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 0, &sequence);
+	expect(error == 0 && device.display.flips[0].placed && device.display.flips[0].light, "display light cut: the lighting placed");
+
+	/* As if the run stopped after the flip: TAKEN0 names it, ENABLE stayed off; then a fault and the recovery's round. */
+	value = device.display.flips[0].value;
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_TAKEN0) / 4U] = value;
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(device.state == GHCI_STATE_RUNNING && device.resets == 1U, "display light cut: recovered");
+
+	/* The image went back to the queue, and the service's round after the recovery lit the controller on it. */
+	display_round();
+	expect(device.display.enabled && (dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) != 0U &&
+	    dc_read(GHCI_DC_FB_BASE) == (uint32_t)storage->allocation->bus && storage->allocation->holds == 2U &&
+	    device.display.adopted == sequence, "display light cut: lit again");
+	display_give_up();
+	end_scene("display light cut");
+}
+
+/* The frames the driver takes fit every mode: the most bytes over the modes, not the mode with the most pixels. */
+static void
+scene_display_frame_bytes(void)
+{
+	static struct ghci_display table;
+
+	/* 1024 x 1000 has the most pixels; 1025 x 999 has rows of 4160 bytes and the most bytes. */
+	memset(&table, 0, sizeof(table));
+	table.mode_count = 2U;
+	table.modes[0].width = 1024U;
+	table.modes[0].height = 1000U;
+	table.modes[1].width = 1025U;
+	table.modes[1].height = 999U;
+	expect(ghci_scan_largest_mode(&table) == 0U && ghci_scan_frame_bytes(&table) == 4160ULL * 999U, "display frame bytes: every mode fits");
+}
+
+/*
+ * The release returns once the lease's memory is no longer scanned: a
+ * processor that runs the dark packet late is waited for, past a second.
+ */
+static void
+scene_display_release_wait(void)
+{
+	struct gpu_display_release release;
+	struct ghci_resource *storage;
+	struct ghci_allocation *memory;
+	uint64_t sequence;
+	int error;
+
+	/* A shared image on the screen, held by the session and the display. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(5120U * 720U, 1);
+	if (error == 0)
+		error = display_present(storage, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	memory = storage->allocation;
+	expect(error == 0 && memory->holds == 2U, "display release wait: shown");
+
+	/* The processor runs again only after more than a second of the release's sleeps. */
+	model_hold(1);
+	scene_action = action_unhold;
+	scene_action_after = stub.sleeps + (unsigned)kern_ms_to_ticks(1500U);
+	memset(&release, 0, sizeof(release));
+	release.lease = display_lease;
+	error = device.ops.display->release(&device, display_open, &release);
+	scene_action = NULL;
+	scene_action_after = 0U;
+	expect(error == 0 && !device.display.ending && device.display.shown.memory == NULL && memory->holds == 1U &&
+	    (dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) == 0U, "display release wait: returned once the image was let go");
+	device.ops.resource_destroy(&device, display_open, storage);
+	device.ops.close(&device, display_open);
+	display_open = NULL;
+	end_scene("display release wait");
 }

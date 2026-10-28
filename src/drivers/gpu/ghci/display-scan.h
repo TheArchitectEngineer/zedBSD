@@ -12,8 +12,8 @@
  * memory the controller scans.
  *
  * Every function but ghci_scan_mark, ghci_scan_sleep, ghci_scan_flush,
- * ghci_scan_alloc and ghci_scan_write is called with the display's lock
- * held.
+ * ghci_scan_alloc, ghci_scan_write and the ones that only read the mode
+ * table is called with the display's lock held.
  */
 
 #ifndef DRIVERS_GPU_GHCI_DISPLAY_SCAN_H
@@ -37,14 +37,22 @@
  */
 #define GHCI_DISPLAY_LINE_BYTES		64U
 
-/* The time a presentation's adoption may take before the output is uncertain. */
-#define GHCI_DISPLAY_ADOPTION_MS	1000U
+/*
+ * The time a presentation's adoption may take before the output is
+ * uncertain.  The flip waits in the ring behind the other sessions'
+ * work: past the hang time that work has moved or been reset, and the
+ * flip placed again.
+ */
+#define GHCI_DISPLAY_ADOPTION_MS	(GHCI_HANG_MS + 2000U)
 
 /* Reports whether the ring can take the display's packets now: 1 when it can. */
 int ghci_scan_ring_usable(struct ghci_device *device);
 
 /* Reports the index of the controller's largest mode, by its pixels. */
 unsigned ghci_scan_largest_mode(const struct ghci_display *display);
+
+/* Reports the bytes a frame of every mode fits in, its rows on the memory line. */
+uint64_t ghci_scan_frame_bytes(const struct ghci_display *display);
 
 /* Reports the bytes between the rows of a frame of a width, a multiple of the memory line. */
 uint32_t ghci_scan_stride(uint32_t width);

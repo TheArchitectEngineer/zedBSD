@@ -24,7 +24,10 @@
  *
  * Every placement passes the gate of the ring with the display's lock
  * held and does not wait for a recovery: a run the gate refuses is not
- * recorded and is placed again once the recovery has ended.  The driver
+ * recorded and is placed again once the recovery has ended.  The service
+ * thread's placements wait for nothing at all, as its hang check is what
+ * ends every other wait: it only tries the locks, and enters the ring
+ * only when it is free and has room for the run at once.  The driver
  * places a plane's next flip only once the last one's record has come,
  * so the controller's one pending flip per plane never makes the ring
  * wait; the presents in between wait in a queue of two.  A flip value is
@@ -34,7 +37,9 @@
  *
  * A lease ends by marking it ended; the controller is then turned dark by
  * the ring, and the memory it scanned is let go once the cancelled
- * records and the dark packet's fence have come.  The service thread
+ * records and the dark packet's fence have come.  Memory the host turned
+ * away from without seeing the processor halt and the controller go idle
+ * goes to the quarantine instead.  The service thread
  * reads the records, counts the scan-out errors, watches the connection
  * and finishes ended leases.  A reset of the command processor loses the
  * flips still in the ring; the driver counts them again from TAKEN0,
@@ -134,10 +139,12 @@ static int flip_cursor(struct ghci_device *device, int surface);
 static void cursor_kick(struct ghci_device *device);
 static void dark(struct ghci_device *device);
 static int wait_idle(struct ghci_device *device, int spin);
-static void dark_by_host(struct ghci_device *device);
+static void dark_by_host(struct ghci_device *device, int halted);
 static void light_by_host(struct ghci_device *device, const struct ghci_display_image *image, int spin);
 static int halt_for_host(struct ghci_device *device, int spin);
 static void flips_forget(struct ghci_device *device);
+static void scan_release(struct ghci_device *device, struct ghci_allocation *memory);
+static void scan_flush(struct ghci_device *device, int service);
 static void detach_begin(struct ghci_device *device);
 static int detach_step(struct ghci_device *device, int *turned);
 static void buffers_give_back(struct ghci_device *device);
@@ -293,6 +300,8 @@ ghci_display_detach(
 	uint64_t deadline;
 	uint64_t mark;
 	uint64_t now;
+	unsigned index;
+	int halted;
 	int turned;
 	int error;
 	int done;
@@ -339,19 +348,31 @@ ghci_display_detach(
 		error = halt_for_host(device, 0);
 		if (error != 0)
 			kern_logf("ghci: %s: processor did not halt for the display\n", device->name);
-		flips_forget(device);
+		halted = 0;
+		if (error == 0)
+			halted = 1;
+
+		/* The boot image again, or dark; what was not seen to stop being read goes to the quarantine. */
 		if (display->boot_kept) {
 			light_by_host(device, &display->boot, 0);
-			ghci_scan_drop(device, display->shown.memory);
+			if (!halted)
+				display->host_unsure = 1;
+			flips_forget(device);
+			scan_release(device, display->shown.memory);
 			display->shown = display->boot;
 			display->boot_scanning = 1;
 		} else {
-			dark_by_host(device);
-			ghci_scan_drop(device, display->shown.memory);
+			dark_by_host(device, halted);
+			flips_forget(device);
+			scan_release(device, display->shown.memory);
 			image_clear(&display->shown);
 		}
 	}
 
+	/* Presents a recovery put back meanwhile are not shown. */
+	for (index = 0U; index < display->queue_count; index++)
+		ghci_scan_drop(device, display->queue[index].memory);
+	display->queue_count = 0U;
 	display->ending = 0;
 
 	/* No display event comes any more (the host writes them in every state). */
@@ -419,11 +440,21 @@ ghci_display_service(
 	uint64_t adopted;
 	uint32_t events;
 	int changed;
+	int locked;
 
 	/* A device without a display has nothing to serve. */
 	(void)work;
 	display = &device->display;
 	if (!display->present)
+		return;
+
+	/*
+	 * The display's lock is only tried: its holder may be waiting for
+	 * the ring's room, which only this thread's hang check ends.  A round
+	 * that does not get it leaves the events for the next.
+	 */
+	locked = mutex_trylock(&device->display_lock);
+	if (!locked)
 		return;
 
 	/* The events the interrupt took since the last round. */
@@ -434,9 +465,8 @@ ghci_display_service(
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 
-	/* Everything under the display's lock; nothing here waits for the ring or a record. */
-	mutex_lock(&device->display_lock);
-
+	/* Everything places only into a free ring with room at once; nothing here waits for the ring or a record. */
+	display->service_placing = 1;
 	adopted = display->adopted;
 
 	/* A lease a closed session ended goes dark now, and is finished once it let go. */
@@ -456,11 +486,12 @@ ghci_display_service(
 	ghci_scan_update(device);
 	if (display->adopted != adopted)
 		changed = 1;
+	display->service_placing = 0;
 
 	mutex_unlock(&device->display_lock);
 
-	/* The memory let go of, and the waiters on the display's events. */
-	ghci_scan_flush(device);
+	/* The memory let go of when the locks are free, and the waiters on the display's events. */
+	scan_flush(device, 1);
 	if (changed)
 		poll_notify();
 }
@@ -497,7 +528,8 @@ ghci_display_interrupt(
 /*
  * Counts the display's flips again while the reset processor is idle and
  * the host may write the controller; cp_lock and the display's lock are
- * held.  A lighting lost with the ring lights again, whatever CTRL says.
+ * held.  A lighting lost with the ring lights again, whatever CTRL says,
+ * and so does one cut after its flip was taken but before ENABLE.
  *
  * Procedure referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
  * 13.2, the controller keeps scanning through a GPU reset, STATUS[31]
@@ -510,11 +542,13 @@ ghci_display_recover_count(
 {
 	struct ghci_display *display;
 	struct ghci_display_flip *flip;
+	struct ghci_display_image lighting_image;
 	uint32_t status;
 	uint32_t ctrl;
 	uint32_t taken_value;
 	uint32_t pending;
 	unsigned plane;
+	int lighting;
 	int cancelled;
 	int error;
 
@@ -522,6 +556,14 @@ ghci_display_recover_count(
 	display = &device->display;
 	if (!display->present)
 		return;
+
+	/* Whether plane 0's flip still placed belongs to a lighting, and its image. */
+	lighting = 0;
+	image_clear(&lighting_image);
+	if (display->flips[0].placed && display->flips[0].light) {
+		lighting = 1;
+		lighting_image = display->flips[0].image;
+	}
 
 	/* A record still to be written goes out while the processor is idle. */
 	error = ghci_wait_register(device, display->registers + GHCI_DC_STATUS, GHCI_DC_ST_RECORD, 0U, RECORD_WAIT_MS);
@@ -531,9 +573,9 @@ ghci_display_recover_count(
 	/* The records that came. */
 	records_take(device);
 
-	/* An ended lease's controller goes dark now, by the host: the dark packet may have been lost. */
+	/* An ended lease's controller goes dark now, by the host (the reset halted the processor): the dark packet may have been lost. */
 	if (display->ending) {
-		dark_by_host(device);
+		dark_by_host(device, 1);
 		flips_forget(device);
 	}
 
@@ -581,6 +623,23 @@ ghci_display_recover_count(
 		}
 	}
 
+	/*
+	 * A lighting cut after its flip was taken but before ENABLE leaves
+	 * the image shown on a dark controller, which scans nothing: the
+	 * image goes back to the head of the queue, its hold with it, and
+	 * lights the controller again.
+	 */
+	if (lighting &&
+	    !display->enabled &&
+	    !display->ending &&
+	    !display->flips[0].placed &&
+	    display->shown.base == lighting_image.base &&
+	    display->shown.sequence == lighting_image.sequence &&
+	    display->shown.copy_frame == lighting_image.copy_frame) {
+		queue_push_front(display, &display->shown);
+		image_clear(&display->shown);
+	}
+
 	/* A fault hides the cursor (its image is kept); the connection is read again by the service thread. */
 	ghci_write(device, display->registers + GHCI_DC_CURSOR_CTRL, 0U);
 	ghci_write(device, display->registers + GHCI_DC_STATUS, DC_ERRORS);
@@ -618,6 +677,32 @@ ghci_display_panic(
 
 	/* Succeeded: the controller scans the console's image. */
 	return 0;
+}
+
+/*
+ * Waits a bounded time, once the stop's reset left the processor idle,
+ * for the flip records the controller still owes (STATUS[31]) to be
+ * written, so that the fence page they go to may be given back.  Returns
+ * 0, also for a device without the controller, or ETIMEDOUT while a
+ * record may still come.
+ *
+ * Procedure referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+ * 13.2, STATUS[31] falls once the records held while HALTED or FAULTED
+ * are written in IDLE).
+ */
+int
+ghci_display_records_settle(
+	struct ghci_device *device)
+{
+	int error;
+
+	/* A device without the controller's block owes no record. */
+	if (device->display.registers == 0U)
+		return 0;
+
+	/* The records go out while the processor is idle. */
+	error = ghci_wait_register(device, device->display.registers + GHCI_DC_STATUS, GHCI_DC_ST_RECORD, 0U, RECORD_WAIT_MS);
+	return error;
 }
 
 /*
@@ -676,6 +761,30 @@ ghci_scan_ring_usable(
 
 	/* A device starting, lost or stopped. */
 	return 0;
+}
+
+/*
+ * Reports the bytes a frame of every mode fits in: the most, over the
+ * modes, of the rows on the memory line times the lines.
+ */
+uint64_t
+ghci_scan_frame_bytes(
+	const struct ghci_display *display)
+{
+	uint64_t bytes;
+	uint64_t most;
+	unsigned index;
+
+	/* Each mode's frame, the largest kept. */
+	most = 0U;
+	for (index = 0U; index < display->mode_count; index++) {
+		bytes = (uint64_t)ghci_scan_stride(display->modes[index].width) * display->modes[index].height;
+		if (bytes > most)
+			most = bytes;
+	}
+
+	/* Succeeded: the bytes. */
+	return most;
 }
 
 /*
@@ -823,6 +932,7 @@ ghci_scan_lease_done(
 	struct ghci_display *display;
 	enum ghci_ticket_state state;
 	int usable;
+	int error;
 
 	/* A lease that did not end has nothing to finish. */
 	display = &device->display;
@@ -836,8 +946,8 @@ ghci_scan_lease_done(
 	/* A ring that no longer runs answers nothing: the host turns the controller dark. */
 	usable = ghci_scan_ring_usable(device);
 	if (!usable) {
-		(void)halt_for_host(device, 0);
-		dark_by_host(device);
+		error = halt_for_host(device, 0);
+		dark_by_host(device, error == 0);
 		flips_forget(device);
 		display->dark_placed = 0;
 	}
@@ -847,15 +957,17 @@ ghci_scan_lease_done(
 	if (display->flips[0].placed || display->flips[1].placed)
 		return 0;
 
-	/* The dark packet, whose fence passes once the controller is idle. */
+	/* The dark packet, whose fence passes once the controller is idle (a failed one leaves it to the reset's count). */
 	if (display->dark_placed > 0) {
 		state = ghci_cp_ticket(device, &display->dark_ticket);
 		if (state == GHCI_TICKET_PENDING)
 			return 0;
+		if (state == GHCI_TICKET_DONE)
+			display->host_unsure = 0;
 	}
 
-	/* The controller no longer scans the image it showed: its memory goes. */
-	ghci_scan_drop(device, display->shown.memory);
+	/* The controller no longer scans the image it showed: its memory goes (to the quarantine when that was not seen). */
+	scan_release(device, display->shown.memory);
 	image_clear(&display->shown);
 	display->boot_scanning = 0;
 	display->cursor_shown = -1;
@@ -897,48 +1009,13 @@ ghci_scan_drop(
 /*
  * Lets go of the memory dropped meanwhile, and gives the boot image back
  * once the driver's first flip was taken and nothing else draws to it.
- *
- * Procedure referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
- * 13.3, the boot framebuffer released once the first flip is taken).
  */
 void
 ghci_scan_flush(
 	struct ghci_device *device)
 {
-	struct ghci_display *display;
-	struct ghci_allocation *drops[GHCI_DISPLAY_DROPS];
-	unsigned count;
-	unsigned index;
-	int release;
-
-	/* The device's lock, then the display's to take the list and the release. */
-	display = &device->display;
-	mutex_lock(&device->lock);
-	mutex_lock(&device->display_lock);
-
-	count = display->drop_count;
-	for (index = 0U; index < count; index++)
-		drops[index] = display->drops[index];
-	display->drop_count = 0U;
-	release = display->boot_release;
-	if (release) {
-		display->boot_release = 0;
-		display->boot_kept = 0;
-	}
-
-	mutex_unlock(&device->display_lock);
-
-	/* Each hold goes; memory nothing else holds goes back. */
-	for (index = 0U; index < count; index++)
-		ghci_memory_unhold(device, drops[index]);
-
-	mutex_unlock(&device->lock);
-
-	/* The boot image goes back to the allocator, with no lock held. */
-	if (release) {
-		ghci_memory_boot_release(device);
-		kern_logf("ghci: %s: boot framebuffer given back\n", device->name);
-	}
+	/* Waits for the locks as any thread but the service may. */
+	scan_flush(device, 0);
 }
 
 /*
@@ -1281,13 +1358,16 @@ value_take(
 
 /*
  * Places a run of the display's packets and a fence after them through
- * the gate, without waiting for a recovery; the display's lock is held,
- * and is held again on return.
+ * the gate, without waiting for a recovery; the display's lock is held
+ * throughout, so the state read before stays.  The service thread's
+ * placement waits for nothing: it enters only a free ring with room for
+ * the run and its fence now.
  *
- * Returns 0 with the fence's ticket; EAGAIN when a recovery runs, with
- * nothing placed, or with *placed set when the part placed before it
- * began is lost to the reset (the recovery counts its flips again); or
- * EIO when the device is lost.
+ * Returns 0 with the fence's ticket; EAGAIN when a recovery runs (or,
+ * for the service, the ring is in use or full), with nothing placed, or
+ * with *placed set when the part placed before it began is lost to the
+ * reset (the recovery counts its flips again); or EIO when the device
+ * is lost.
  */
 static int
 ring_put(
@@ -1301,15 +1381,16 @@ ring_put(
 	uint32_t start;
 	int error;
 
-	/* The gate lets go of the display's lock when a recovery runs; the lock is taken again. */
+	/* The gate, which keeps the display's lock held when it does not open. */
 	*placed = 0;
-	gate = ghci_cp_enter(device, GHCI_HOLD_DISPLAY, 0);
-	if (gate != GHCI_GATE_OPEN) {
-		mutex_lock(&device->display_lock);
-		if (gate == GHCI_GATE_LOST)
-			return EIO;
+	if (device->display.service_placing)
+		gate = ghci_cp_try_enter(device, dwords + GHCI_DW_FENCE);
+	else
+		gate = ghci_cp_enter(device, GHCI_HOLD_DISPLAY, 0);
+	if (gate == GHCI_GATE_LOST)
+		return EIO;
+	if (gate != GHCI_GATE_OPEN)
 		return EAGAIN;
-	}
 
 	/* The packets, the fence after them, and the doorbell for what was placed. */
 	start = device->ring.wptr;
@@ -1773,8 +1854,8 @@ dark(
 	display = &device->display;
 	usable = ghci_scan_ring_usable(device);
 	if (!usable) {
-		(void)halt_for_host(device, 0);
-		dark_by_host(device);
+		error = halt_for_host(device, 0);
+		dark_by_host(device, error == 0);
 		flips_forget(device);
 		display->dark_placed = 0;
 		return;
@@ -1793,8 +1874,8 @@ dark(
 
 	if (error != 0) {
 		/* A lost device: the host turns the controller dark. */
-		(void)halt_for_host(device, 0);
-		dark_by_host(device);
+		error = halt_for_host(device, 0);
+		dark_by_host(device, error == 0);
 		flips_forget(device);
 		display->dark_placed = 0;
 		return;
@@ -1839,10 +1920,14 @@ wait_idle(
 /*
  * Turns the controller dark by the host, which may write it only while
  * the command processor does not run, and waits until it reads no memory.
+ * halted says the processor was seen to halt (or was reset); without it,
+ * or when the controller does not go idle, what it scanned may still be
+ * read, and is let go of through the quarantine (host_unsure).
  */
 static void
 dark_by_host(
-	struct ghci_device *device)
+	struct ghci_device *device,
+	int halted)
 {
 	struct ghci_display *display;
 	int error;
@@ -1854,6 +1939,11 @@ dark_by_host(
 	if (error != 0)
 		kern_logf("ghci: %s: display controller not idle\n", device->name);
 	display->enabled = 0;
+
+	/* Whether the host saw everything stop. */
+	display->host_unsure = 0;
+	if (!halted || error != 0)
+		display->host_unsure = 1;
 }
 
 /*
@@ -1877,14 +1967,16 @@ light_by_host(
 	uint32_t index;
 	int error;
 
-	/* CTRL off, and the controller idle. */
+	/* CTRL off, and the controller idle; one that is not may still read what it scanned. */
 	display = &device->display;
 	registers = display->registers;
 	control = control_word(device, image->format);
 	ghci_write(device, registers + GHCI_DC_CTRL, control);
 	error = wait_idle(device, spin);
-	if (error != 0)
+	if (error != 0) {
+		display->host_unsure = 1;
 		return;
+	}
 
 	/* The timing, the rows and the size. */
 	pairs = timing_pairs(&display->modes[image->mode], image, offsets, values);
@@ -1894,6 +1986,7 @@ light_by_host(
 	/* The image at once, then the scan-out. */
 	ghci_write(device, registers + GHCI_DC_FB_NEXT, image->base);
 	ghci_write(device, registers + GHCI_DC_CTRL, control | GHCI_DC_CTRL_ENABLE);
+	display->host_unsure = 0;
 	display->enabled = 1;
 	display->mode = image->mode;
 	display->format = image->format;
@@ -1947,10 +2040,10 @@ flips_forget(
 {
 	struct ghci_display *display;
 
-	/* Plane 0's image goes; the cursor's surface is free again. */
+	/* Plane 0's image goes (to the quarantine when the host did not see the controller stop); the cursor's surface is free again. */
 	display = &device->display;
 	if (display->flips[0].placed)
-		ghci_scan_drop(device, display->flips[0].image.memory);
+		scan_release(device, display->flips[0].image.memory);
 	display->flips[0].placed = 0;
 	display->flips[1].placed = 0;
 }
@@ -1977,19 +2070,24 @@ detach_begin(
 		ghci_scan_drop(device, display->queue[index].memory);
 	display->queue_count = 0U;
 
-	/* No cursor; the host writes it in every state. */
+	/*
+	 * No cursor; the host writes it in every state.  A dark packet an
+	 * ended lease placed (or one a recovery refused) stays: its ticket
+	 * comes before the image it turned off is let go of.
+	 */
 	ghci_write(device, display->registers + GHCI_DC_CURSOR_CTRL, 0U);
 	display->cursor_image = 0;
 	display->cursor_pending = -1;
-	display->dark_placed = 0;
 }
 
 /*
  * Does one step of the detach's turn of the display, the lock held: once
- * the records of every flip placed before came, the controller is turned
- * (turned set) to the boot image again while it is kept, or dark; a boot
- * display still scanned, or a dark controller without a boot image,
- * needs nothing.  Returns 1 once the turn is done, 0 while it waits.
+ * the records of every flip placed before came and the dark packet of an
+ * ended lease ran, the controller is turned (turned set) to the boot
+ * image again while it is kept, or dark; a boot display still scanned,
+ * or a dark controller without a boot image, needs nothing.  The image a
+ * dark controller showed is let go of.  Returns 1 once the turn is done,
+ * 0 while it waits.
  */
 static int
 detach_step(
@@ -2000,24 +2098,31 @@ detach_step(
 	enum ghci_ticket_state state;
 	int error;
 
-	/* A placement a recovery refused is the host's to finish. */
-	display = &device->display;
-	if (display->dark_placed < 0)
-		return 0;
-
 	/* The records of the flips placed. */
+	display = &device->display;
 	records_take(device);
 	if (display->flips[0].placed || display->flips[1].placed)
 		return 0;
+
+	/* A dark packet a recovery refused is placed again. */
+	if (display->dark_placed < 0) {
+		dark(device);
+		return 0;
+	}
 
 	/* The dark packet, whose fence passes once the controller is idle; a failed one is the host's. */
 	if (display->dark_placed > 0) {
 		state = ghci_cp_ticket(device, &display->dark_ticket);
 		if (state != GHCI_TICKET_DONE)
 			return 0;
-		ghci_scan_drop(device, display->shown.memory);
-		image_clear(&display->shown);
+		display->host_unsure = 0;
 		display->dark_placed = 0;
+	}
+
+	/* A dark controller scans nothing: the image it showed goes. */
+	if (!display->enabled && display->shown.memory != NULL) {
+		scan_release(device, display->shown.memory);
+		image_clear(&display->shown);
 	}
 
 	/* The turn, once. */
@@ -2027,11 +2132,11 @@ detach_step(
 	if (display->boot_scanning && display->enabled)
 		return 1;
 
-	/* The boot image again, while it is kept. */
+	/* The boot image again, while it is kept; a lighting the gate refused is tried at the next step. */
 	if (display->boot_kept) {
 		error = light(device, &display->boot);
 		if (error != 0)
-			display->dark_placed = -1;
+			*turned = 0;
 		return 0;
 	}
 
@@ -2307,7 +2412,7 @@ idle_serve(
 }
 
 /*
- * Takes the idle frame (the largest mode), black: host memory below the
+ * Takes the idle frame (one any mode fits in), black: host memory below the
  * GPU's limit, which comes cleared and which the controller scans on a
  * discrete GPU as well, so that it needs neither local memory nor the
  * window before the ring runs.  Returns 0, or ENOMEM.
@@ -2318,14 +2423,12 @@ idle_frame_take(
 {
 	struct ghci_display *display;
 	struct ghci_allocation *frame;
-	const struct ghci_display_mode *largest;
 	uint64_t bytes;
 	int error;
 
-	/* The largest mode with rows on the memory line. */
+	/* A frame any mode fits in, rows on the memory line. */
 	display = &device->display;
-	largest = &display->modes[ghci_scan_largest_mode(display)];
-	bytes = (uint64_t)ghci_scan_stride(largest->width) * largest->height;
+	bytes = ghci_scan_frame_bytes(display);
 	error = ghci_memory_alloc(device, bytes, 0U, &frame);
 	if (error != 0)
 		return error;
@@ -2365,4 +2468,115 @@ scan_give_back(
 	ghci_memory_unhold(device, memory);
 
 	mutex_unlock(&device->lock);
+}
+
+/*
+ * Lets go of memory the controller scanned: at the next flush when the
+ * driver saw it stop reading it, through the quarantine otherwise (the
+ * host turned the controller without seeing the processor halt or the
+ * controller go idle).  The lock is held.
+ */
+static void
+scan_release(
+	struct ghci_device *device,
+	struct ghci_allocation *memory)
+{
+	struct ghci_display *display;
+
+	/* A driver's frame is not held. */
+	if (memory == NULL)
+		return;
+
+	/* Seen to stop: the ordinary drop. */
+	display = &device->display;
+	if (!display->host_unsure) {
+		ghci_scan_drop(device, memory);
+		return;
+	}
+
+	/* The list is as long as the drops'. */
+	if (display->unsure_count >= GHCI_DISPLAY_DROPS) {
+		kern_logf("ghci: %s: display holds more memory than it can let go of\n", device->name);
+		return;
+	}
+
+	/* The hold goes at the next flush, and the memory to the quarantine with its last owner. */
+	display->unsure[display->unsure_count] = memory;
+	display->unsure_count++;
+}
+
+/*
+ * Lets go of the memory dropped meanwhile, and gives the boot image back
+ * once the driver's first flip was taken and nothing else draws to it.
+ * The service thread only tries the locks (a holder may be waiting for
+ * the ring's room, which only its hang check ends) and leaves the boot
+ * image for a later flush; what it cannot take now waits.
+ *
+ * Procedure referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+ * 13.3, the boot framebuffer released once the first flip is taken).
+ */
+static void
+scan_flush(
+	struct ghci_device *device,
+	int service)
+{
+	struct ghci_display *display;
+	struct ghci_allocation *drops[GHCI_DISPLAY_DROPS];
+	struct ghci_allocation *unsure[GHCI_DISPLAY_DROPS];
+	unsigned count;
+	unsigned unsure_count;
+	unsigned index;
+	int release;
+	int locked;
+
+	/* The device's lock, then the display's to take the lists and the release. */
+	display = &device->display;
+	if (service) {
+		locked = mutex_trylock(&device->lock);
+		if (!locked)
+			return;
+		locked = mutex_trylock(&device->display_lock);
+		if (!locked) {
+			mutex_unlock(&device->lock);
+			return;
+		}
+	} else {
+		mutex_lock(&device->lock);
+		mutex_lock(&device->display_lock);
+	}
+
+	count = display->drop_count;
+	for (index = 0U; index < count; index++)
+		drops[index] = display->drops[index];
+	display->drop_count = 0U;
+	unsure_count = display->unsure_count;
+	for (index = 0U; index < unsure_count; index++)
+		unsure[index] = display->unsure[index];
+	display->unsure_count = 0U;
+	release = 0;
+	if (display->boot_release && !service) {
+		release = 1;
+		display->boot_release = 0;
+		display->boot_kept = 0;
+	}
+
+	mutex_unlock(&device->display_lock);
+
+	/* Each hold goes; memory nothing else holds goes back. */
+	for (index = 0U; index < count; index++)
+		ghci_memory_unhold(device, drops[index]);
+
+	/* Memory the controller may still read is marked first, so that its last owner puts it in the quarantine. */
+	for (index = 0U; index < unsure_count; index++) {
+		unsure[index]->scan_unsure = 1;
+		ghci_memory_unhold(device, unsure[index]);
+	}
+
+	mutex_unlock(&device->lock);
+
+	/* The boot image goes back to the allocator, with no lock held. */
+	if (release) {
+		ghci_memory_boot_release(device);
+		kern_logf("ghci: %s: boot framebuffer given back\n", device->name);
+	}
 }
