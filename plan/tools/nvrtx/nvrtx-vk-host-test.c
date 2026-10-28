@@ -495,7 +495,7 @@ test_device(void)
 	at = 4;
 	check(reply_word(&at) == GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES && reply_word(&at) == 1 && reply_word(&at) == 0, "device: format reply's present word");
 	check((reply_word(&at) & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0 && (reply_word(&at) & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0 && reply_word(&at) == 0, "device: BGRA renders and samples in both tilings, no buffer feature");
-	check(reply_word(&at) == GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES && reply_word(&at) == 1 && reply_word(&at) == 0 && reply_word(&at) == 0 && reply_word(&at) == 0 && reply_word(&at) == 0, "device: depth has no feature");
+	check(reply_word(&at) == GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES && reply_word(&at) == 1 && reply_word(&at) == 0 && reply_word(&at) == 0 && reply_word(&at) == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT && reply_word(&at) == 0, "device: depth is a depth attachment of optimal tiling only");
 
 	/* vkGetPhysicalDeviceMemoryProperties: one coherent device-local type. */
 	client.bytes = 0;

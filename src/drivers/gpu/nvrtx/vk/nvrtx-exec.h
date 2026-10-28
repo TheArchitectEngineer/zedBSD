@@ -37,7 +37,9 @@
 
 /*
  * A colour target: its GPU address, size, pitch (bytes between rows) and
- * VkFormat.
+ * VkFormat; and the depth target beside it (D32_SFLOAT, block linear of
+ * one-GOB blocks): its GPU address (0 for none), its row pitch in bytes
+ * and its height.
  */
 struct nvrtx_exec_target {
 	uint64_t address;
@@ -45,6 +47,16 @@ struct nvrtx_exec_target {
 	uint32_t height;
 	uint32_t pitch;
 	uint32_t format;
+	uint64_t depth_address;
+	uint32_t depth_pitch;
+	uint32_t depth_height;
+};
+
+/* The depth test of a draw: whether it tests and writes, and its VkCompareOp. */
+struct nvrtx_exec_depth {
+	uint32_t test;
+	uint32_t write;
+	uint32_t compare;
 };
 
 /*
@@ -110,7 +122,13 @@ size_t nvrtx_exec_scissor(uint8_t *push, size_t at, uint32_t x0, uint32_t y0, ui
 size_t nvrtx_exec_blend(uint8_t *push, size_t at, const struct nvrtx_exec_blend *blend);
 size_t nvrtx_exec_vertex(uint8_t *push, size_t at, const struct nvrtx_exec_vertex *vertex);
 size_t nvrtx_exec_draw(uint8_t *push, size_t at, uint32_t topology, uint32_t first, uint32_t count, uint32_t instances, uint32_t first_instance);
+size_t nvrtx_exec_draw_indexed(uint8_t *push, size_t at, uint32_t topology, uint32_t first, uint32_t count, uint32_t instances, uint32_t first_instance, int32_t vertex_offset);
+size_t nvrtx_exec_index_buffer(uint8_t *push, size_t at, uint64_t address, uint64_t bytes, uint32_t type);
+size_t nvrtx_exec_raster(uint8_t *push, size_t at, uint32_t cull_mode, uint32_t front_face);
+size_t nvrtx_exec_depth(uint8_t *push, size_t at, const struct nvrtx_exec_depth *depth);
+size_t nvrtx_exec_uniform(uint8_t *push, size_t at, uint32_t group, uint32_t slot, uint64_t address, uint32_t size);
 size_t nvrtx_exec_clear(uint8_t *push, size_t at, const uint32_t *colour, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
+size_t nvrtx_exec_clear_depth(uint8_t *push, size_t at, uint32_t depth, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 size_t nvrtx_exec_barrier(uint8_t *push, size_t at);
 void nvrtx_exec_texture_header(uint32_t *header, uint64_t address, uint32_t width, uint32_t height, uint32_t pitch, uint32_t format, const uint32_t *swizzle);
 void nvrtx_exec_sampler_words(uint32_t *words, const struct nvrtx_exec_sampler *sampler);

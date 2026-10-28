@@ -50,6 +50,7 @@ static int layout_free_sets(struct nvrtx_vk_session *session, struct i915_wire_r
 static int layout_update_sets(struct nvrtx_vk_session *session, struct i915_wire_reader *reader);
 static int layout_update_write(struct nvrtx_vk_session *session, struct i915_wire_reader *reader);
 static int layout_slot_set(struct nvrtx_vk_descriptor_slot *slot, struct nvrtx_vk_object *view, struct nvrtx_vk_object *sampler);
+static int layout_slot_buffer(struct nvrtx_vk_descriptor_slot *slot, struct nvrtx_vk_object *buffer, uint64_t offset, uint64_t range);
 static int layout_slot_clear(struct nvrtx_vk_descriptor_slot *slot);
 static int layout_set_destroy(struct nvrtx_vk_session *session, void *payload);
 
@@ -677,9 +678,9 @@ layout_update_sets(
 
 /*
  * Reads one descriptor write and applies its first combined image sampler
- * to the set's binding: [sType][pNext][set][binding][element][count][type]
- * [images]{[sampler][view][layout]}[buffers]{VkDescriptorBufferInfo}
- * [texel views]{identity}.
+ * or uniform buffer to the set's binding: [sType][pNext][set][binding]
+ * [element][count][type][images]{[sampler][view][layout]}[buffers]
+ * {VkDescriptorBufferInfo}[texel views]{identity}.
  */
 static int
 layout_update_write(
@@ -695,6 +696,7 @@ layout_update_write(
 	uint64_t item;
 	uint64_t sampler_id;
 	uint64_t view_id;
+	uint64_t buffer_id;
 	uint32_t binding;
 	uint32_t element;
 	uint32_t type;
@@ -727,7 +729,8 @@ layout_update_write(
 		if (item != 0U || element != 0U || set == NULL || binding >= NVRTX_VK_BINDINGS_MAX)
 			continue;
 		if (type != VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER) {
-			kern_logf("nvrtx: vk: vkUpdateDescriptorSets: descriptors of type %u are not bound\n", (unsigned)type);
+			if (type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+				kern_logf("nvrtx: vk: vkUpdateDescriptorSets: descriptors of type %u are not bound\n", (unsigned)type);
 			continue;
 		}
 
@@ -739,14 +742,31 @@ layout_update_write(
 			return error;
 	}
 
-	/* The buffer descriptors are read; none is bound. */
+	/* The buffer descriptors; the first uniform buffer of element 0 is bound. */
 	count = drv_i915_wire_read_u64(reader);
 	if (reader->error != 0)
 		return EINVAL;
 	if (count > LAYOUT_UPDATE_ITEMS)
 		return EINVAL;
-	for (item = 0U; item < count; item++)
+	for (item = 0U; item < count; item++) {
+		kern_memset(&buffer, 0, sizeof(buffer));
 		i915_vkc_dec_VkDescriptorBufferInfo(reader, &session->arena, &buffer);
+		if (reader->error != 0)
+			return EINVAL;
+
+		/* Only element 0 of a known set's binding, as a uniform buffer. */
+		if (item != 0U || element != 0U || set == NULL || binding >= NVRTX_VK_BINDINGS_MAX)
+			continue;
+		if (type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER)
+			continue;
+
+		/* The decoded handle is the wire's 64-bit identity; the binding reads this range from now on. */
+		kern_memcpy(&buffer_id, &buffer.buffer, sizeof(buffer_id));
+		error = layout_slot_buffer(&set->slots[binding], nvrtx_vk_object_find(session, I915_VK_OBJ_BUFFER, buffer_id),
+					   buffer.offset, buffer.range);
+		if (error != 0)
+			return error;
+	}
 
 	/* The texel buffer views are read; none is bound. */
 	count = drv_i915_wire_read_u64(reader);
@@ -759,7 +779,7 @@ layout_update_write(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Succeeded: the write is read and its combined image sampler bound. */
+	/* Succeeded: the write is read and its combined image sampler or uniform buffer bound. */
 	return 0;
 }
 
@@ -805,7 +825,44 @@ layout_slot_set(
 	return 0;
 }
 
-/* Lets go of a binding's view and sampler. */
+/*
+ * Points a binding at a buffer's range (the buffer may be NULL): the
+ * binding holds the new buffer and lets the old one, and any view and
+ * sampler, go.
+ */
+static int
+layout_slot_buffer(
+	struct nvrtx_vk_descriptor_slot *slot,
+	struct nvrtx_vk_object *buffer,
+	uint64_t offset,
+	uint64_t range)
+{
+	int error;
+
+	/* Holds the new one first: it may be the old one. */
+	if (buffer != NULL) {
+		error = nvrtx_vk_object_retain(buffer);
+		if (error != 0)
+			return error;
+	}
+
+	/* Lets the old ones go. */
+	error = layout_slot_clear(slot);
+
+	/* The binding names the new range. */
+	slot->buffer = buffer;
+	slot->offset = offset;
+	slot->range = range;
+
+	/* Reports an old one whose destruction failed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the binding names the buffer's range. */
+	return 0;
+}
+
+/* Lets go of a binding's view, sampler and buffer. */
 static int
 layout_slot_clear(
 	struct nvrtx_vk_descriptor_slot *slot)
@@ -813,13 +870,19 @@ layout_slot_clear(
 	int first_error;
 	int error;
 
-	/* The view, then the sampler; the first failure is reported. */
+	/* The view, the sampler, then the buffer; the first failure is reported. */
 	first_error = nvrtx_vk_object_release(slot->view);
 	error = nvrtx_vk_object_release(slot->sampler);
 	if (first_error == 0)
 		first_error = error;
+	error = nvrtx_vk_object_release(slot->buffer);
+	if (first_error == 0)
+		first_error = error;
 	slot->view = NULL;
 	slot->sampler = NULL;
+	slot->buffer = NULL;
+	slot->offset = 0U;
+	slot->range = 0U;
 
 	/* Reports a destruction that failed. */
 	if (first_error != 0)
@@ -829,7 +892,7 @@ layout_slot_clear(
 	return 0;
 }
 
-/* Destroys a set nothing holds: its bindings let their views and samplers go. */
+/* Destroys a set nothing holds: its bindings let their views, samplers and buffers go. */
 static int
 layout_set_destroy(
 	struct nvrtx_vk_session *session,
