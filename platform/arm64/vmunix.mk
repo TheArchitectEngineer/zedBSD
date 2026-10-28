@@ -262,6 +262,10 @@ ARM64_USB_SOURCES += src/drivers/usb/usb-rtl8822bu.c \
 	src/drivers/wifi/rtl8822b/rtl8822b.c src/drivers/wifi/rtl8822b/rtl8822b-security.c
 endif
 ARM64_KERNEL_SOURCES += $(ARM64_USB_SOURCES)
+# The camera framework, /dev/camN; the camera source drivers build on it.
+ifneq ($(filter y,$(CONFIG_DRIVER_CAMERA) $(CONFIG_DRIVER_USB_UVC)),)
+ARM64_KERNEL_SOURCES += src/drivers/camera/cam.c
+endif
 # /dev/input/bridge (ws143-p005, ws215-p002): the Bluetooth daemon's HID devices, on the HID input glue; it refuses a FIDO
 # descriptor with hidraw-describe.c.  Both come with usb-hid, or here without it.
 ifeq ($(CONFIG_INPUT_BRIDGE),y)

@@ -220,6 +220,10 @@ RISCV64_KERNEL_SOURCES += $(KERN_QUOTA_SOURCES)
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)
 RISCV64_KERNEL_SOURCES += src/drivers/generic/input-inject.c
 endif
+# The camera framework, /dev/camN; the camera source drivers build on it.
+ifneq ($(filter y,$(CONFIG_DRIVER_CAMERA) $(CONFIG_DRIVER_USB_UVC)),)
+RISCV64_KERNEL_SOURCES += src/drivers/camera/cam.c
+endif
 
 # The drivers behind a board's PCI hosts that the configuration selects:
 # xHCI with USB keyboards, and NVMe.
