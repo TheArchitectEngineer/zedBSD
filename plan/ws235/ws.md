@@ -44,3 +44,6 @@ Parent: [Master](../master.md)
 - ユーザー（原文、2026-10-29）: 「いずれにせよ、製品化されてすぐなので、学習データにないと思います。」→ Q1: P1 は記憶に頼らず、RDNA 機の観測（lspci・Debian の driver の振る舞い）と web の GET で取った資料（Linux の driver の値、BSD の rge）から設計する。記憶からの推測は「未確認」と書く。
 - Q1 の確かめ（2026-10-29 05:5x、10.0.10.3 の Debian 6.12.111、ssh で読みだけ）: `03:00.0 Ethernet controller [0200]: Realtek Semiconductor Co., Ltd. RTL8127 10GbE Controller [10ec:8127] (rev 05)`。Debian の kernel（6.12）にはこの device に bind する driver が無い（network の interface が出ない）。他に `04:00.0` RTL8111/8168（r8169、down）、USB の RTL8156（r8152、2.5G、up）、GPU は `01:00.0` TU106 RTX 2070 `[10de:1f02]`。
 - ユーザー（原文、2026-10-29）: 「なお、RTL8127は、RTL8125などのドライバでも、マルチビットのNICとしてそのまま使えるらしいです。」→ Q1: p001 で、RTL8125 系の driver（BSD の rge など）の作りが RTL8127 にそのまま当たるかを最初に確かめる（当たるなら共通の driver の骨格を RTL8125 系の形にして、RTL8127 の差を hook に）。ユーザーの伝聞なので、観測で確かめるまで「未確認」。
+- ユーザーの決定（原文、2026-10-29）: 「はい、なので、まずRTL81xxのドライバを、他のOSを参考にして作成して動くようにしてから、RTL8127の拡張部分を実装するのがいいと思います。付け加えて、このマシンはPCIeの帯域の制約があり、7Gbit/sくらいしか出ないです。」
+  - Q1 の解釈: 順は (1) 他の OS（FreeBSD・OpenBSD の rge など）を参考に RTL81xx（RTL8125 系）の共通の driver を作り、RTL8127 を RTL8125 系の multi-gig の NIC として動かす → (2) RTL8127 の拡張の部分（10GbE の速さ、chip の固有の機能）を足す。Phase の表は p001 でこの順に直す。
+  - 10.0.10.3 の PCIe の帯域の制約で、10GbE は約 7 Gbit/s が上限（ユーザーの情報）。WS235 p005 と WS221 p010 の受け入れの目標は、この上限（と同じ機械の Linux の値）に合わせる。
