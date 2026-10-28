@@ -7,7 +7,7 @@ Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「すぐ取
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx の本体、RTX 2070 で desktop）、[WS240](../ws240/ws.md)（RTX 50、まだ開始しない）
-Resume point: [p001](phase001/phase.md) の「再開点」1〜4（driver が chip の SM を compiler に渡す、Ampere/Ada の QMD V03_00、host 試験の追従）に、ユーザーの決定（GTX 16・RTX 30・40 を既定で有効）を足して次の round（Queue の承認が要る）。[p002](phase002/phase.md) は実装・host 試験・build まで済み（3efc2fe08、実機の確かめは無し）。
+Resume point（2026-10-29 P5、q1666）: 残りの設計 [design.md](design.md)（p003〜p007、24 LW、問い Q242-1・Q242-2、design-reviewer 待ち）。旧: [p001](phase001/phase.md) の「再開点」1〜4（driver が chip の SM を compiler に渡す、Ampere/Ada の QMD V03_00、host 試験の追従）に、ユーザーの決定（GTX 16・RTX 30・40 を既定で有効）を足して次の round（Queue の承認が要る）。[p002](phase002/phase.md) は実装・host 試験・build まで済み（3efc2fe08、実機の確かめは無し）。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -25,4 +25,4 @@ nvrtx が RTX 20（Turing、GTX 16xx を含む）・30（Ampere）・40（Ada）
 | --- | --- | --- |
 | ws242-p001 | driver: 全 chip の PCI id・chip id の認識、chip の世代の表、firmware の package（GA10x・AD10x）、起動・RM・class・QMD の差 | P2 |
 | ws242-p002 | compiler: SM86・SM89 の encode・latency・規則（SM75 の出力は不変） | P4 |
-| ws242-p003 | 規約の全文 | 後 |
+| ws242-p003〜p007 | host 試験の復元、SM・QMD 3.0・PCAS2_B、既定で起動と段ごとの諦め、RTX 2070 の回帰、規約の全文（[design.md](design.md) §5。旧 p003 の規約の全文は p007 へ） | 未定 |
