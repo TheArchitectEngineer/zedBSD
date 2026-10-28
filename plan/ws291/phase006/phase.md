@@ -1006,3 +1006,68 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
 - underflow: bench の間の guard の 5 回の読みで underflow=0・timing_underflow=0・hung=0、window の run の後の amdrdnactl status も 0。
 - 機械の状態（23:40）: cfg amdrdna.smu.memory=2、kernel vmunix-m2j、/lib/libvulkan.so は 7650291df の build、/bin/wayland は b574fbf6a の build
   （元は /bin/wayland.p2old）、/bin/mview は 10d72c341。
+
+## q1663（2026-10-29 P2、worktree p2-ws291j、基点 main 61630bb0b）
+
+- 承認: ユーザーの原文「P2にWS291の続き」、案 4・5 はユーザーの回答（クリック）「両方 (推し)」→ 案 5 を先に、続けて案 4。q1658 と同じ自律の承認（共有の code は Q1 に先に）。
+- 機械: zedBSD は NVMe（Boot0004）、cfg は amdrdna.vk.ngg=2・amdrdna.smu.memory=2、/bin/wayland は q1661 の build（main の物は /bin/wayland.p2b574）。
+  libvulkan・mview・amdrdnactl は main 61630bb0b の build と cksum が同じ。
+
+### 案 5: gpu.c の起床の抑制（Q1 の条件つきの OK、2026-10-29）
+
+- 前: 1 つの transaction（GPU_COMMAND_SUBMIT → GPU_COMMAND_WAIT の consume）ごとに、drv_gpu_complete と gpu_completion_observer_leave が
+  それぞれ poll_notify（system 全体で 1 本の poll の channel、眠っている poll・select を全部起こす）を呼び、gpu_capacity_changed_locked が
+  監視の thread（monitor_waitq）を起こして全 session を scan させていた。subs-1000 は 1 frame 約 1000 transaction。
+- 直し（src/drivers/gpu/gpu.c だけ）:
+  1. gpu_session に poll_scanned。gpu_poll が registry lock の下（readiness を読むのと同じ区間）で立てる。drv_gpu_complete は fence を
+     signal した時（drv_gpu_fence_signal_deferred は呼び手が notify する約束）か poll_scanned が立っている時だけ poll_notify し、notify する時に
+     下ろす。gpu_completion_observer_leave も poll_scanned の時だけ notify して下ろす。
+  2. 同じ 2 か所の gpu_capacity_changed_locked を gpu_retirement_changed_locked(session) に: capacity の sequence と capacity_waitq は
+     今どおり、monitor_waitq はその session の stop_state が REQUESTED・PENDING の時だけ起こす。
+- 条件 (a)（Q1）: 立て・下ろし・notify の判断は全部 registry lock の下。順の論証: kern_poll_wait は scan の前に channel の sequence q を読み
+  （src/kern/poll.c poll_wait_ready）、各 fd を scan してから q で眠る（sequence が q でなければ眠らない）。gpu_poll の readiness の読みと
+  印の立ては同じ lock の区間なので、completion はその前（gpu_poll が completed を見て POLLIN を返す）か後（印を見て notify、sequence が
+  q を越え、眠りは断られるか起こされる）のどちらか。印を下ろすのは notify と同じ時だけなので、「scan の後・sleep の前に completion が来る」
+  並びは後の場合に当たり、起床は失われない。複数の poll が同じ open を scan しても、1 回の notify で全部が起き、それぞれ scan し直して印を
+  立て直す。POLLERR（session・device の error）と POLLPRI（display の event）は別の道（drv_gpu_report_error・report_session_error・
+  gpu_close・gpu_job_action_ioctl・monitor の deadline・display）が今どおり無条件で notify する（code で確かめた）。fence の handle の poll は
+  fence の signal の notify で起きる（signal_deferred の呼び手は全部 notify する: 本体の 2 か所は印に関係なく signaled で notify）。
+  host の試験は無い（kern の poll と GPU の core の模型が無い）。
+- 条件 (b): stop の要求（gpu_session_fail_locked が stop_state を REQUESTED にし、末尾の gpu_capacity_changed_locked で monitor を起こす）と
+  completion は同じ registry lock の下で順が付く。completion が先なら要求の起床で monitor が scan して completed を見る。要求が先なら
+  completion は REQUESTED を見て起こす。gpu_monitor_step の stop_begin（lock の外）の間は REQUESTED のまま、終わりに PENDING にして自分で
+  monitor_waitq を起こす。monitor と gpu_monitor_close は lock の下で sequence を読んでから scan・眠りに入るので、その間の起床は眠りを断る。
+  FINISHED・QUARANTINED への移りは monitor 自身（と report_error）が起こす。→ 永久に待つ並びは無い。job の deadline は完了で 0 になり、
+  monitor が前の deadline で 1 回余分に起きて scan するだけ。
+- 条件 (c): build（-Werror）: amd64 の ws291 の config（amdrdna・nvrtx・i915・venus）、config-rpi4（bcm2711）、config-visionfive2（PowerVR）、
+  plan/ws290/tests の config-amd64-ghci・config-visionfive2-ghci（GHCI）の vmunix が rc=0・warning 0（build/ws291-c5a.log、build/ws291-k-*.log）。
+  QEMU Venus の回帰 `plan/ws291/tests/venus-reg.sh build/ws291/venus5 build/ws291/forge/hdd-image.img build/ws291/forge/dynamic/libvulkan.so`
+  （image はこの tree の build-forge-image.sh、kernel は案 5 込み）: forge-guest・fence-guest・wltest・mview-mailbox・mview-submits・compositor
+  が ok、PASS。
+- 実機（kernel だけを差し替え、build/ws291/r-base・r-c5a、bench は timing 無し、game mailbox 4 枚）:
+
+| run | 前（main 61630bb0b） | 案 5 | Linux（q1658 の bench-linux） |
+| --- | --- | --- | --- |
+| scene-1 | 1599.1 | 2275.0 | 9380.1 |
+| scene-1500 | 200.70 | 207.07 | 200.4 |
+| scene-6500 | 49.18（frame 20.28） | 49.59（20.12） | 50.12（19.90） |
+| big-100 | 207.3 | 209.1 | 517.8 |
+| big-1000（record / submit） | 34.44（11.57 / 11.90） | 35.53（10.82 / 11.58） | 87.0（5.41 / 0.02） |
+| subs-10 | 495.9 | 990.9 | |
+| subs-100（submit） | 61.23（14.94） | 137.32（6.28） | 510.8（0.91） |
+| subs-1000（submit） | 5.97（153.5） | 14.23（61.5） | 58.2（10.26） |
+
+- round の他の段（案 5 の kernel、build/ws291/r-c5a2）: nggshape 14 種 ok、shot 1 体 max 0・6500 体 max 1（over15 0）、hang 回復 ok（vkhang lost →
+  queue reset → vkhang --loops・--compute --loops ok、後の mview 1086 fps）。
+- design-reviewer（opus）のレビュー: 結果は下に足す。
+
+### window mode の shot の SURFACE_LOST（errno 24）の解析（案 4 の前提、2026-10-29 02:10）
+
+- 再現: main の kernel（vmunix-base）でも shot の段の mview（FIFO、900 frame）が 2 回とも frames=338・279 で SURFACE_LOST（build/ws291/r-base2）。
+  案 4 にも案 5 にもよらない。
+- errno 24 は zedBSD の EAGAIN（include/uapi/errno.h、EMFILE ではない）。mview が失敗の時に出す errno は直前の別の呼び出しの残りで、原因ではない。
+- 診断の libvulkan（SURFACE_LOST を返す所ごとに行番号を出す、commit しない、build/ws291/libvulkan-diag.so、LD_LIBRARY_PATH で mview だけに、
+  build/tmp/diag-shot.sh）: 最初の失敗は wsi-wayland.c wayland_commit の FIFO の watchdog（wayland_wait が WAYLAND_WAIT_NS = 10 s の間に
+  前の frame の frame callback を受けず VK_TIMEOUT → surface を lost に）。keiland-shot を撮らない同じ run は 900 frame で DONE。compositor は
+  生きたまま（pid は前後で同じ）。→ keiland-shot の capture の後、compositor がその window に frame callback を送らなくなる（Keiland の側）。
+  libvulkan・amdrdna の不具合ではない。Keiland は P1（WS309）の所有なので触らない（Q1 へ）。

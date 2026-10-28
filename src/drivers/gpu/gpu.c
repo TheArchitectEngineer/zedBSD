@@ -246,6 +246,15 @@ struct gpu_session {
 	uint64_t topology_acknowledged;
 
 	/*
+	 * Whether a poll scanned this open since its records last woke the
+	 * polls (the registry lock protects it).  A poll sleeps only after
+	 * its scan, so a record's completion or consumption with no scan
+	 * since the last wake changes nothing a sleeping poll looked at,
+	 * and wakes no poll.
+	 */
+	unsigned poll_scanned;
+
+	/*
 	 * The display leases this open holds, each holding the keyboard away
 	 * from the text console; the close gives back what is left.
 	 * Changed only by this open's ioctls and its final close.
@@ -403,6 +412,7 @@ static int gpu_job_reserve_ioctl(struct gpu_session *session, uintptr_t argument
 static int gpu_capacity_ioctl(struct gpu_session *session, uintptr_t argument);
 static int gpu_policy_ioctl(struct gpu_session *session, uintptr_t argument);
 static void gpu_capacity_changed_locked(struct drv_gpu_device *device);
+static void gpu_retirement_changed_locked(struct gpu_session *session);
 static int gpu_session_error_locked(struct gpu_session *session);
 static void gpu_session_fail_locked(struct gpu_session *session, int error, unsigned hard);
 static uint64_t gpu_monitor_deadline(uint64_t milliseconds);
@@ -504,6 +514,8 @@ drv_gpu_complete(
 	struct gpu_fence_binding *binding;
 	struct kernel_handle *retired[GPU_SUBMIT_MAX];
 	unsigned retired_count;
+	unsigned signaled;
+	unsigned notify;
 	unsigned index;
 	unsigned long irq;
 
@@ -513,6 +525,7 @@ drv_gpu_complete(
 
 	/* Terminal observation and actual backend retirement have distinct ownership. */
 	retired_count = 0U;
+	signaled = 0U;
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
 	/* Only the first terminal result may define this generation's public status. */
@@ -547,6 +560,7 @@ drv_gpu_complete(
 				binding->generation,
 				completion->session,
 				completion->error);
+			signaled = 1U;
 		}
 
 		/* Logical error retained this hold until the backend stopped using its completion. */
@@ -563,7 +577,12 @@ drv_gpu_complete(
 
 	/* Reclamation waiters wake even when they must consume a newly terminal record first. */
 	waitq_wake_all(&completion->session->completion_waitq);
-	gpu_capacity_changed_locked(completion->session->device);
+	gpu_retirement_changed_locked(completion->session);
+
+	/* A signaled fence, or a poll that scanned this open, is woken. */
+	notify = signaled | completion->session->poll_scanned;
+	if (notify != 0U)
+		completion->session->poll_scanned = 0U;
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
@@ -572,7 +591,8 @@ drv_gpu_complete(
 		handle_put(retired[index]);
 
 	/* Descriptor and imported-fence observers receive the same terminal state. */
-	poll_notify();
+	if (notify != 0U)
+		poll_notify();
 
 	/* Succeeded: actual backend retirement ended this callback's ownership. */
 	return;
@@ -2241,6 +2261,9 @@ gpu_poll(
 
 	/* Device failure is independent of the caller's selected event mask. */
 	irq = spin_lock_irqsave(&gpu_registry_lock);
+
+	/* The next change of this open's records wakes the polls. */
+	session->poll_scanned = 1U;
 
 	if (session->device->online == 0U)
 		*revents |= POLLERR | POLLHUP;
@@ -6388,9 +6411,12 @@ gpu_completion_observer_leave(
 	unsigned consume,
 	unsigned reserved)
 {
+	struct gpu_session *session;
+	unsigned notify;
 	unsigned long irq;
 
 	/* Consuming removes lookup authority before the last observer releases the slot. */
+	session = completion->session;
 	irq = spin_lock_irqsave(&gpu_registry_lock);
 
 	if (consume != 0U)
@@ -6409,13 +6435,18 @@ gpu_completion_observer_leave(
 
 		/* Failed try-reserve rollback must not wake its own retry on every refusal. */
 		if (completion->unpublished == 0U)
-			gpu_capacity_changed_locked(completion->session->device);
+			gpu_retirement_changed_locked(session);
 	}
+
+	/* Only a poll that scanned this open since the last wake can see the change. */
+	notify = session->poll_scanned;
+	session->poll_scanned = 0U;
 
 	spin_unlock_irqrestore(&gpu_registry_lock, irq);
 
 	/* Readiness may have changed after the final terminal record was consumed. */
-	poll_notify();
+	if (notify != 0U)
+		poll_notify();
 
 	/* Succeeded: remaining observers or the terminal queue retain the old record. */
 	return;
@@ -7136,6 +7167,38 @@ gpu_capacity_changed_locked(
 	/* Capacity and graceful stop both depend on actual callback retirement. */
 	waitq_wake_all(&device->capacity_waitq);
 	waitq_wake_all(&device->monitor_waitq);
+
+	/* Succeeded: no observer can mistake this transition for its old condition. */
+	return;
+}
+
+/*
+ * Publishes one record's retirement in an open: capacity to the producers
+ * and the recovery that wait for it, and to the supervisor only while the
+ * open's stop waits for its retirements (it computes every other deadline
+ * from a scan, so a retirement of a healthy open changes nothing it waits
+ * for); the caller holds the registry lock.
+ */
+static void
+gpu_retirement_changed_locked(
+	struct gpu_session *session)
+{
+	struct drv_gpu_device *device;
+
+	/* Exhaustion stays explicit instead of creating a missed wake through aliasing. */
+	device = session->device;
+	if (device->capacity_sequence == UINT64_MAX) {
+		device->capacity_overflow = 1U;
+	} else {
+		device->capacity_sequence++;
+	}
+
+	/* Capacity depends on every retirement. */
+	waitq_wake_all(&device->capacity_waitq);
+
+	/* A graceful stop depends on its own open's retirements. */
+	if (session->stop_state == GPU_STOP_REQUESTED || session->stop_state == GPU_STOP_PENDING)
+		waitq_wake_all(&device->monitor_waitq);
 
 	/* Succeeded: no observer can mistake this transition for its old condition. */
 	return;
