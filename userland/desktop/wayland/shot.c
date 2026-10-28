@@ -44,14 +44,18 @@
  *
  * keiland-shot (userland/tests/keiland-shot) turns the pixels into a PNG.
  * One request is served at a time; the wait for the frame is at most
- * SHOT_WAIT_MS.  The pixels are written on the event loop's thread with a
- * send timeout, which a test image can afford.
+ * SHOT_WAIT_MS.  The pixels are copied out of the buffer on the event
+ * loop's thread and written by a thread of their own (shot-send) with a
+ * send timeout: a reader slower than the display must not hold the event
+ * loop, whose clients wait for their frame callbacks meanwhile.
  */
 
 #include "kwl.h"
 #include "compose.h"
+#include "threads.h"
 
 #include <errno.h>
+#include <pthread.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -70,6 +74,7 @@
 #define SHOT_IDLE		0
 #define SHOT_REQUESTED		1
 #define SHOT_RECORDED		2
+#define SHOT_SENDING		3
 
 /*
  * The capture's state, one for the compositor's life: the listening
@@ -92,6 +97,29 @@ struct shot_state {
 /* The state; listener -1 until the socket is open. */
 static struct shot_state shot = { -1, { 0 }, -1, SHOT_IDLE, 0, VK_NULL_HANDLE, VK_NULL_HANDLE, 0, 0, 0 };
 
+/*
+ * One sending of a frame's pixels: the connection (the sender's from the
+ * start until the event loop takes the sending back), the header and the
+ * pixels copied out of the buffer, and what came of it.  lock guards done
+ * and sent, which the sender writes last; the event loop joins the sender
+ * once done is set (SHOT_SENDING until then).
+ */
+struct shot_send {
+	struct kwl_thread thread;
+	pthread_mutex_t lock;
+	int connection;
+	char header[96];
+	uint8_t *bytes;
+	size_t size;
+	uint32_t width;
+	uint32_t height;
+	size_t sent;
+	unsigned done;
+};
+
+/* The sending under way, while the stage is SHOT_SENDING. */
+static struct shot_send shot_sending;
+
 static void shot_answer(int connection, const char *line);
 static int shot_displays_request(const char *line);
 static void shot_displays(struct kwl_server *server, int connection, const char *line);
@@ -101,6 +129,9 @@ static void shot_pointer(struct kwl_server *server, int connection);
 static void shot_finish(struct kwl_server *server, const char *error);
 static int shot_buffer(struct kwl_compose *compose);
 static void shot_buffer_free(struct kwl_compose *compose);
+static int shot_send_start(int connection, const char *header, const void *pixels, size_t size);
+static void *shot_send_run(void *argument);
+static int shot_send_end(struct kwl_server *server, unsigned wait);
 
 /*
  * Takes a test image's own option of the command line (WS217):
@@ -204,6 +235,9 @@ void
 kwl_shot_close(
 	struct kwl_server *server)
 {
+	/* A sending under way ends first (the end of the session may wait for it). */
+	(void)shot_send_end(server, 1U);
+
 	/* A request still waiting is answered. */
 	if (shot.client >= 0)
 		shot_finish(server, "closing");
@@ -232,7 +266,13 @@ kwl_shot_tick(
 	int active;
 	int match;
 	int displays;
+	int sending;
 	int error;
+
+	/* A sending of pixels under way holds the next request back until it has ended. */
+	sending = shot_send_end(server, 0U);
+	if (sending)
+		return;
 
 	/* A request whose frame did not come. */
 	now = kwl_milliseconds();
@@ -419,7 +459,11 @@ kwl_shot_record(
 	shot.stage = SHOT_RECORDED;
 }
 
-/* Sends the copied frame once its fence signaled. */
+/*
+ * Sends the copied frame once its fence signaled: the pixels are copied out
+ * of the buffer here and written by the sender's thread, so that the event
+ * loop goes on (without the thread they are written here, as before).
+ */
 void
 kwl_shot_complete(
 	struct kwl_server *server)
@@ -430,6 +474,7 @@ kwl_shot_complete(
 	size_t sent;
 	ssize_t count;
 	VkResult result;
+	int error;
 
 	/* Only a frame that carried the copy. */
 	if (shot.stage != SHOT_RECORDED || shot.client < 0)
@@ -442,9 +487,23 @@ kwl_shot_complete(
 		return;
 	}
 
-	/* The header, then every byte. */
+	/* The header. */
 	snprintf(header, sizeof(header), "OK %u %u %d rotation=%u scanout=%u turn=%u\n", shot.width, shot.height, (int)server->compose->format,
 	    server->compose->rotation, server->compose->scanout_rotation, server->compose->turn_rotation);
+
+	/* The sender takes the connection and a copy of the pixels; the buffer is given back below. */
+	error = shot_send_start(shot.client, header, map, (size_t)shot.size);
+	if (error == 0) {
+		vkUnmapMemory(server->compose->device, shot.memory);
+		shot.client = -1;
+		shot.stage = SHOT_SENDING;
+		if (!server->compose->in_flight)
+			shot_buffer_free(server->compose);
+		return;
+	}
+
+	/* Without the sender the bytes are written here. */
+	printf("KWL SHOT sender errno=%d the pixels are written in the event loop\n", error);
 	shot_answer(shot.client, header);
 	bytes = map;
 	sent = 0U;
@@ -795,4 +854,129 @@ shot_pointer(
 	/* Succeeded: the place. */
 	(void)snprintf(answer, sizeof(answer), "OK x=%d y=%d output=%u\n", x, y, output);
 	shot_answer(connection, answer);
+}
+
+/*
+ * Starts the sender of one frame: a copy of the pixels, the header and the
+ * connection go to its thread.  Returns 0, or ENOMEM or the thread's errno
+ * value (the caller then still owns the connection).
+ */
+static int
+shot_send_start(
+	int connection,
+	const char *header,
+	const void *pixels,
+	size_t size)
+{
+	int error;
+
+	/* The pixels, copied: the buffer goes back to the device at once. */
+	memset(&shot_sending, 0, sizeof(shot_sending));
+	shot_sending.bytes = malloc(size);
+	if (shot_sending.bytes == NULL)
+		return ENOMEM;
+	memcpy(shot_sending.bytes, pixels, size);
+	shot_sending.size = size;
+	shot_sending.width = shot.width;
+	shot_sending.height = shot.height;
+	shot_sending.connection = connection;
+	(void)snprintf(shot_sending.header, sizeof(shot_sending.header), "%s", header);
+
+	/* The lock of what the sender reports. */
+	error = pthread_mutex_init(&shot_sending.lock, NULL);
+	if (error != 0) {
+		free(shot_sending.bytes);
+		shot_sending.bytes = NULL;
+		return error;
+	}
+
+	/* The thread, which writes and then says it is done. */
+	error = kwl_thread_start(&shot_sending.thread, "shot-send", shot_send_run, &shot_sending);
+	if (error != 0) {
+		pthread_mutex_destroy(&shot_sending.lock);
+		free(shot_sending.bytes);
+		shot_sending.bytes = NULL;
+		return error;
+	}
+
+	/* Succeeded: the sender owns the connection until it is done. */
+	return 0;
+}
+
+/* Writes the header and the pixels on the sender's thread. */
+static void *
+shot_send_run(
+	void *argument)
+{
+	struct shot_send *send;
+	size_t sent;
+	ssize_t count;
+
+	/* The sending's record. */
+	send = argument;
+
+	/* The header, then every byte; a write that fails or times out ends it. */
+	shot_answer(send->connection, send->header);
+	sent = 0U;
+	while (sent < send->size) {
+		count = write(send->connection, send->bytes + sent, send->size - sent);
+		if (count <= 0)
+			break;
+		sent += (size_t)count;
+	}
+
+	/* done tells the event loop that the thread is to be joined. */
+	pthread_mutex_lock(&send->lock);
+
+	send->sent = sent;
+	send->done = 1U;
+
+	pthread_mutex_unlock(&send->lock);
+
+	/* The thread ends. */
+	return NULL;
+}
+
+/*
+ * Ends a sending that is done (or, with wait, waits for it): the sender is
+ * joined, the connection closed and the copy freed.  Returns 1 while a
+ * sending is still under way, 0 when none is.
+ */
+static int
+shot_send_end(
+	struct kwl_server *server,
+	unsigned wait)
+{
+	unsigned done;
+
+	/* No sending. */
+	if (shot.stage != SHOT_SENDING)
+		return 0;
+
+	/* Whether the sender has written everything it could. */
+	pthread_mutex_lock(&shot_sending.lock);
+
+	done = shot_sending.done;
+
+	pthread_mutex_unlock(&shot_sending.lock);
+
+	/* Still writing: the event loop does not wait, the end of the session does. */
+	if (!done && !wait)
+		return 1;
+
+	/* The sender, its connection and its copy. */
+	kwl_thread_join(&shot_sending.thread);
+	printf("KWL SHOT sent width=%u height=%u bytes=%llu\n", shot_sending.width, shot_sending.height, (unsigned long long)shot_sending.sent);
+	(void)close(shot_sending.connection);
+	free(shot_sending.bytes);
+	shot_sending.bytes = NULL;
+	pthread_mutex_destroy(&shot_sending.lock);
+
+	/* The request is done; the buffer goes back once no frame uses it. */
+	shot.stage = SHOT_IDLE;
+	if (server->compose != NULL && !server->compose->in_flight)
+		shot_buffer_free(server->compose);
+
+	/* Succeeded: no sending is under way. */
+	return 0;
 }

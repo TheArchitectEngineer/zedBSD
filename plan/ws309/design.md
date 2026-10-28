@@ -39,9 +39,9 @@
 | T10〜T14 | 常駐 | audiod・networkd・bluetoothd・phone・volumed | 5 | daemon の接続ごとに 1 本、blocking の I/O（connect・send・timed read） | connect、recv、2 s の timed read | 状態の写し、答え、event |
 | P1 | pool | hand-N | N（§5） | 手書きの照合 | 計算だけ（最初に template の読み込み） | 候補 |
 | A1 | その都度 | decode | 0〜1 | 壁紙・画像の file の read と decode（1 回ごと） | read、decode | decode した画素（blur へ渡す） |
-| S | （J5） | — | 0 | process の起動: 推しは T7 からの `posix_spawn`（vfork）で、spawner の process は作らない（§4.10） | — | pid |
+| S | （J5） | — | 0 | process の起動: T7 からの `posix_spawn`（vfork）、spawner の process は作らない（§4.10、J5 の Q1 の決定） | — | pid |
 
-- 常駐の thread の数: main を除いて 14（T1〜T14、T2 は output の間）＋ pool の N（J5 が spawner の process なら process が 1 つ増える）。今ある thread で無くなる物: glass の loader・prefetch（A1 と T9 へ）、heads の writer・settings の writer・print の writer（T7 へ）、
+- 常駐の thread の数: main を除いて 14（T1〜T14、T2 は output の間）＋ pool の N。今ある thread で無くなる物: glass の loader・prefetch（A1 と T9 へ）、heads の writer・settings の writer・print の writer（T7 へ）、
   hand の loader（P1 へ）、machine-shell・sysmon・system.c の job・account の job（T6 へ）、scanout-zedbsd の present thread（T4 へ）、P2 の input の worker（T6 へ、merge しない）。
 - Linux・FreeBSD の audio の pump（stream ごとの real-time の thread）は compositor の zedBSD の構成の外で、今のまま残す（§9）。
 - 名前: libc に `pthread_setname_np` が無い（`include/libc/pthread.h`）。名前は compositor の thread の台帳（§3.1）が持ち、起動の時に `KWL THREADS` の 1 行で名前と本数を出す。
@@ -202,7 +202,7 @@
 - 代案（推し）: libc の `posix_spawn` は vfork を使う（userland/base/libc/posix.c:199 `__vfork_spawn`、address space を写さない）。起動は lane（T7）の thread で `posix_spawn`（環境の配列と fd の動作を main が作って渡す）、
   pid は job の done で main に戻り、`waitpid(WNOHANG)`・`kill` は今のまま main に残す。pid が戻る前の kill の依頼は覚えておき done で送る。main は fork しない（P2 #6 の待ちは無くなる）。
   fork の後の `setenv`（今の kwl_spawn、async-signal-safe でない）も無くなる。
-- J5: spawner の process か posix_spawn の lane か。推しは後者。
+- J5（Q1 の決定）: posix_spawn の lane（T7）。spawner の process は作らない。
 
 ### 4.11 main に残る小さな直し（thread でない）
 
@@ -287,8 +287,8 @@
 | J3 | spawner が落ちた後（§4.10） | **決定**（2026-10-29 Q1: 推しで OK）: 作り直さず、起動の依頼を errno で失敗にする |
 | J4 | Linux・FreeBSD の seat 経由の入力の open（logind の D-Bus） | **決定**（2026-10-29 Q1・ユーザー）: 当面は同期のまま残し、WS309 の後の Phase に置く（別の WS にしない） |
 
-| J5 | process の起動（§4.10）: spawner の process か、T7 の thread からの `posix_spawn`（vfork）か | posix_spawn の lane。pid・kill・waitpid は main に残す |
-| J6 | daemon の thread の基準（§4.8）: main で blocking の I/O をする接続だけ（今の 5 つ）か、非 blocking の接続（audiod の stream・sessiond・printd・notify の bus）も含めるか | blocking の物だけ（5 本） |
+| J5 | process の起動（§4.10） | **Q1 の決定**（2026-10-29、ユーザーの原文ではない。spawner の process は Q1 の解釈だったので取り下げ、ユーザーには Q1 が伝える）: io-file（T7）の thread から `posix_spawn`、pid・kill・`waitpid(WNOHANG)` は main |
+| J6 | daemon の thread の基準（§4.8） | **Q1 の決定**（2026-10-29、ユーザーの原文ではない）: main で blocking の I/O をする接続だけ（audiod・networkd・bluetoothd・phone・volumed の 5 本） |
 
 - 範囲の外・制限: Linux・FreeBSD の backend の daemon・audio の pump は今のまま。stdout の log の write（#14）は未確認のまま残す。shm の行の copy（#20）は残す。
 
