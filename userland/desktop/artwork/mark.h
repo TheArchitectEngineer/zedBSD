@@ -6,7 +6,7 @@
  */
 
 /*
- * The Kei mark as coverage masks (ws035-p108), for the programs that draw it
+ * The mark as coverage masks (ws035-p108), for the programs that draw it
  * themselves: the compositor (the greeter and the lock screen) and the file
  * manager (its Welcome and its empty folders).  The source is compiled into
  * each of them.
