@@ -123,7 +123,7 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   142fd7b88（SMU: memory 側の feature の既定を off、hang の mark、実験の memory_allow）。
 - 分かった事: bench の big-N・subs-N は cfg の amdrdna.vk.timing の上乗せ込みだった（外して取る）。SMU の idle の停止は memory 側の feature（UCLK 固定）
   が原因（対照 40 分 0 回、あり 16・20 分で停止）、固定の後も DCN の force allow を残すと 40 分 0 回。既定は安全のため off（UCLK 100 MHz）。
-- 次: (B) の長い soak の後に memory 側の既定を戻すかを Q1 と決める。その後に案 3b・4・5（phase006 の設計）。
+- （取り消し）(B) の長い soak は下のユーザーの決定でやめた。
 - 2026-10-28 UCLK (B)（固定の後も DCN の p-state の force allow を残す）の 2 時間以上の soak: ユーザー（クリック）「夜間に流す (推し)」。それまで既定は off。
 - 2026-10-28 ユーザー「P2は、負荷に応じて上げ下げさせる形、を取ってください。今夜のsoakは不要です。最短ではないものの、よりよい形に仕上げたいです。」 → UCLK は固定せず、DC の watermark・SMU の watermark table・NumOfDisplays・DPM_DCEFCLK・vblank の中の p-state の handshake で負荷に応じた DPM にする（P2、q1655）。(B) の夜間の soak は取り消し。
 
@@ -135,5 +135,6 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   dedicated-host・Venus）、c3a316269（venus-reg.sh）、3f4bec256・877809e6c（UCLK の設計とレビュー）、240ac2197（診断: amdrdnactl の clocks の行、
   status 352 → 384 byte、SMU 停止の mark に handshake、GetUMCFWWA）、fb8c0f844（memory_allow=2、未実機）。案 4 は patch で後回し
   （build/ws291/case4.patch、window mode の shot で SURFACE_LOST errno 24）。案 5 は未着手。
-- 次: phase006 の「UCLK の再開点」の 1〜3（増分 B の soak → 表・NumOfDisplays・hard min・watermark の display の段の実装 → 受け入れの soak と bench）。
+- 次: 表・NumOfDisplays・hard min・watermark の display の段の実装（負荷に応じた DPM）→ 受け入れの bench（Linux の数以上）。
+  UCLK を固定した soak（増分 B）はしない（2026-10-28 20:06 ユーザー「UCLK固定のsoakはやらなくていいと伝えたはずですが。」「P2はsoakはやめさせて、実装に集中させてください。」）。
   機械は既定（memory=0）、kernel vmunix-d3、libvulkan 3b、amdrdnactl d2。
