@@ -1065,8 +1065,8 @@ drv_pcat_text_end(
 	if (error != 0)
 		return error;
 
-	/* Another character path may still draw where the console's display was. */
-	if (foreign)
+	/* Another character path may still draw somewhere on the display: any memory the caller gives may be under it. */
+	if (foreign && count != 0U)
 		return EBUSY;
 
 	/* Text memory's legacy aperture lies in a window that stays mapped. */
