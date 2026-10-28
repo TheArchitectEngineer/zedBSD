@@ -6,7 +6,7 @@
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
 | P1 | phase-runner | ws309 (q1662-i05) | `/home/awe/zedBSD-worktrees/p1-ws309e` / `agent/p1-ws309e` | returned（2026-10-29 ラップアップ） | c58ed8126 |
-| P2 | phase-runner | ws291 (q1668-i02) | `/home/awe/zedBSD-worktrees/p2-ws291l` / `agent/p2-ws291l` | running | f5c01e255（merge 239e8ed7f） |
+| P2 | phase-runner | ws291 (q1668-i02) | `/home/awe/zedBSD-worktrees/p2-ws291l` / `agent/p2-ws291l` | returned（2026-10-29 停止、06:15 に再開の予定） | e6283eb70（merge 3ca557953） |
 | P3 | phase-runner | ws221 (q1664) | `/home/awe/zedBSD-worktrees/p3-ws221` / `agent/p3-ws221` | running（2026-10-29 01:37） | — |
 | P4 | phase-runner | ws307 (q1665-i04) | `/home/awe/zedBSD-worktrees/p4-ws307h` / `agent/p4-ws307h` | returned（2026-10-29 ラップアップ） | c0974cb41（merge 377efd966） |
 | P5 | kernel-and-driver-designer | 設計 (q1666-i04、web の取得は禁止) | `/home/awe/zedBSD-worktrees/p5-design-d` / `agent/p5-design-d` | running | 7f5ab2b73（merge fb47c73a8） |
