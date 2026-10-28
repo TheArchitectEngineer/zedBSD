@@ -124,3 +124,4 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 - 分かった事: bench の big-N・subs-N は cfg の amdrdna.vk.timing の上乗せ込みだった（外して取る）。SMU の idle の停止は memory 側の feature（UCLK 固定）
   が原因（対照 40 分 0 回、あり 16・20 分で停止）、固定の後も DCN の force allow を残すと 40 分 0 回。既定は安全のため off（UCLK 100 MHz）。
 - 次: (B) の長い soak の後に memory 側の既定を戻すかを Q1 と決める。その後に案 3b・4・5（phase006 の設計）。
+- 2026-10-28 UCLK (B)（固定の後も DCN の p-state の force allow を残す）の 2 時間以上の soak: ユーザー（クリック）「夜間に流す (推し)」。それまで既定は off。
