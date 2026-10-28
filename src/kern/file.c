@@ -2887,12 +2887,21 @@ file_format_collect_extent(
 {
 	struct file_format_extents *collection;
 	struct backing_claim_extent *entry;
+	uint32_t per_block;
 
 	/* Checks the exact logical coverage before counting another extent. */
 	collection = argument;
 	if (count == 0 || file_block != collection->next_block ||
 	    file_block > collection->blocks ||
 	    count > collection->blocks - file_block)
+		return EIO;
+
+	/*
+	 * The walk reports 512-byte sectors; a claim names the disk's own
+	 * blocks, so on a disk of larger blocks the extent has to lie on them.
+	 */
+	per_block = collection->disk->d_block_size / DISK_SECTOR_SIZE;
+	if (disk_block % per_block != 0U || count % per_block != 0U)
 		return EIO;
 
 	/* Bounds the allocation count independently of file size. */
@@ -2905,8 +2914,8 @@ file_format_collect_extent(
 			return EAGAIN;
 		entry = &collection->entries[collection->count];
 		entry->disk = collection->disk;
-		entry->block = disk_block;
-		entry->block_count = count;
+		entry->block = disk_block / per_block;
+		entry->block_count = count / per_block;
 	}
 
 	/* Advances the expected contiguous logical position. */
@@ -3004,8 +3013,11 @@ file_format_reserve_locked(
 	    mountp->m_disk == NULL || file_vm_inode(file) != inode)
 		return EOPNOTSUPP;
 
-	/* Requires the sector unit used by the production FAT extent interface. */
-	if (mountp->m_disk->d_block_size != 512U)
+	/*
+	 * Requires a disk whose blocks are whole sectors, the unit the
+	 * filesystems' extent walk reports.
+	 */
+	if (disk_sector_supported(mountp->m_disk) != 0)
 		return EOPNOTSUPP;
 
 	/* Refuses read-only media and mounts even for a previously writable FD. */
@@ -3019,8 +3031,9 @@ file_format_reserve_locked(
 	    INODE_SWAPFILE | INODE_LOOPFILE)) != 0)
 		return EBUSY;
 
-	/* Requires complete sectors at exactly the caller's existing size. */
-	if (size == 0 || size > (uint64_t)OFF_T_MAX || size % 512U != 0)
+	/* Requires complete blocks of the disk at exactly the caller's existing size. */
+	if (size == 0 || size > (uint64_t)OFF_T_MAX ||
+	    size % mountp->m_disk->d_block_size != 0)
 		return EINVAL;
 
 	/* Refuses changed identity metadata before any formatting write. */

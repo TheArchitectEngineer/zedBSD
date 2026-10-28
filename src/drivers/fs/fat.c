@@ -370,6 +370,8 @@ static struct fat_inode_info *fat_inode(struct inode *inode);
 static int fat_engine_write_sector_result(struct fat_mount_state *filesystem,
 	uint32_t lba, uint8_t **sector);
 static int parse_bpb(struct fat_mount_state *fat);
+static uint32_t fat_sector_scale(uint32_t bytes);
+static uint64_t fat_disk_sectors(const struct disk *disk);
 static FAT_MUTATION int fat_raw_mkdir(struct fat_mount_state *filesystem,
 	const char *path, uint32_t *created_cluster);
 static FAT_MUTATION int fat_raw_remove(struct fat_mount_state *filesystem,
@@ -907,8 +909,12 @@ drv_fat_probe_type(
 {
 	int error;
 
-	/* A disk read in other than 512-byte sectors is not one of these. */
-	if (disk == NULL || type == NULL || disk->d_block_size != 512)
+	/* A call that names no disk or nowhere to report. */
+	if (disk == NULL || type == NULL)
+		return EOPNOTSUPP;
+
+	/* A disk whose blocks are not whole sectors is not one of these. */
+	if (disk_sector_supported(disk) != 0)
 		return EOPNOTSUPP;
 
 	/* Asks the shared probe which of the three widths this disk carries. */
@@ -1210,11 +1216,10 @@ fat_sector_read(
 
 	/*
 	 * A mount opened for direct I/O never reads through the buffer cache.
+	 * The sector calls read a sector of a disk of larger blocks too.
 	 */
-	if (state->direct_io)
-		error = disk_read_direct(state->disk, lba, 1, buffer);
-	else
-		error = disk_read(state->disk, lba, 1, buffer);
+	error = disk_sector_transfer(state->disk, lba, 1, buffer, 0,
+				     state->direct_io, NULL);
 
 	/* Reports how the read went. */
 	return error;
@@ -1245,9 +1250,9 @@ fat_sector_write(
 	if (error != 0)
 		return error;
 
-	/* Writes the sector out through that context. */
-	written = disk_write_filesystem_context(state->disk, lba, 1, buffer,
-						&context);
+	/* Writes the sector out through that context, into its block. */
+	written = disk_sector_transfer(state->disk, lba, 1, (void *)buffer, 1,
+				       0, &context);
 
 	/* Reports how the write went. */
 	return written;
@@ -1289,9 +1294,9 @@ fat_sectors_write(
 	if (error != 0)
 		return error;
 
-	/* Writes the run out through that context. */
-	written = disk_write_filesystem_context(state->disk, lba, count, buffer,
-						&context);
+	/* Writes the run out through that context, in whole blocks where it can. */
+	written = disk_sector_transfer(state->disk, lba, count, (void *)buffer,
+				       1, 0, &context);
 	if (written != 0)
 		return written;
 
@@ -1463,7 +1468,16 @@ fat_engine_zero_run(
 	 * the cache's lines are aligned to.  A run that cannot be resolved is
 	 * cut from its own start; the write below then reports why.
 	 */
-	error = disk_resolve_range(filesystem->disk, lba, count, &leaf, &mapped);
+	error = EOPNOTSUPP;
+	if (filesystem->disk->d_block_size == DISK_SECTOR_SIZE)
+		error = disk_resolve_range(filesystem->disk, lba, count, &leaf,
+					   &mapped);
+
+	/*
+	 * A disk of larger blocks starts its partitions on whole blocks, which
+	 * are whole lines' fractions, so the run's own start is aligned as the
+	 * leaf's is.
+	 */
 	if (error != 0)
 		mapped = lba;
 
@@ -1696,6 +1710,44 @@ fat_engine_cluster_lba(
  * overflow before it is made, because a malformed block would otherwise
  * produce an address that appears to lie inside the volume.
  */
+/*
+ * How many 512-byte units a logical sector of the given bytes is: 1, 2, 4
+ * or 8 for 512, 1024, 2048 or 4096 bytes, and 0 for another size.
+ */
+static uint32_t
+fat_sector_scale(
+	uint32_t bytes)
+{
+	/* The sizes the volume's sectors may have. */
+	if (bytes == 512U)
+		return 1U;
+	if (bytes == 1024U)
+		return 2U;
+	if (bytes == 2048U)
+		return 4U;
+	if (bytes == 4096U)
+		return 8U;
+
+	/* Any other size is one this driver does not read. */
+	return 0U;
+}
+
+/* How many 512-byte units a disk holds, whatever the size of its blocks. */
+static uint64_t
+fat_disk_sectors(
+	const struct disk *disk)
+{
+	uint64_t per_block;
+
+	/* The units in one of the disk's blocks. */
+	per_block = disk->d_block_size / DISK_SECTOR_SIZE;
+
+	/* A count that would not fit is as large as can be told. */
+	if (disk->d_block_count > UINT64_MAX / per_block)
+		return UINT64_MAX;
+	return disk->d_block_count * per_block;
+}
+
 static int
 parse_bpb(
 	struct fat_mount_state *fat)
@@ -1714,17 +1766,14 @@ parse_bpb(
 
 	/*
 	 * How many bytes one sector of the volume holds.  This driver reads
-	 * the volume in 512-byte units, so a sector is either one such unit
-	 * or two of them, and nothing else can be mounted.
+	 * the volume in 512-byte units, so a sector is one, two, four or eight
+	 * such units, and nothing else can be mounted.  A sector smaller than
+	 * the disk's block was not written on that disk.
 	 */
 	bytes = fat_engine_get16(bpb + 11);
-	if (bytes == 512) {
-		fat->sector_scale = 1;
-	} else if (bytes == 1024) {
-		fat->sector_scale = 2;
-	} else {
+	fat->sector_scale = fat_sector_scale(bytes);
+	if (fat->disk != NULL && bytes < fat->disk->d_block_size)
 		fat->sector_scale = 0;
-	}
 
 	/* How many sectors make up one cluster, the unit files are given. */
 	sectors_per_cluster = bpb[13];
@@ -1804,7 +1853,7 @@ parse_bpb(
 		return EIO;	/* Failed. */
 
 	/* And a volume larger than its disk was never written there. */
-	if (total_physical > fat->disk->d_block_count)
+	if (total_physical > fat_disk_sectors(fat->disk))
 		return EIO;	/* Failed. */
 
 	/* The same conversion for the two areas in front of the data. */
@@ -11838,12 +11887,12 @@ fat_identify(
 	if (disk == NULL || identity == NULL)
 		return EINVAL;
 
-	/* This driver reads 512-byte sectors and nothing else. */
-	if (disk->d_block_size != 512U || disk->d_block_count == 0U)
+	/* This driver reads disks whose blocks are whole sectors. */
+	if (disk_sector_supported(disk) != 0 || disk->d_block_count == 0U)
 		return EOPNOTSUPP;
 
 	/* Reads the boot sector, which is where every field below lives. */
-	error = disk_read_direct(disk, 0, 1, boot);
+	error = disk_sector_transfer(disk, 0, 1, boot, 0, 1, NULL);
 	if (error != 0)
 		return EIO;
 
@@ -11851,13 +11900,13 @@ fat_identify(
 	if (boot[510] != 0x55U || boot[511] != 0xaaU)
 		return EOPNOTSUPP;
 
-	/* This driver reads 512- and 1024-byte logical sectors. */
+	/*
+	 * This driver reads logical sectors of 512 to 4096 bytes, none smaller
+	 * than the disk's block.
+	 */
 	sector_bytes = fat_engine_get16(boot + 11U);
-	if (sector_bytes == 512U)
-		sector_scale = 1U;
-	else if (sector_bytes == 1024U)
-		sector_scale = 2U;
-	else
+	sector_scale = fat_sector_scale(sector_bytes);
+	if (sector_bytes < disk->d_block_size)
 		sector_scale = 0U;
 
 	/*
@@ -11876,7 +11925,7 @@ fat_identify(
 	 */
 
 	/* A sector size this driver could not read is not a FAT volume. */
-	if (sector_scale != 1U && sector_scale != 2U)
+	if (sector_scale == 0U)
 		return EOPNOTSUPP;	/* Failed. */
 
 	/* Nor is a volume whose clusters hold no sectors. */
@@ -11898,7 +11947,7 @@ fat_identify(
 
 	/* A volume that claims more sectors than the disk holds is damaged. */
 	if (declared_sectors > UINT32_MAX / sector_scale ||
-	    (uint64_t)declared_sectors * sector_scale > disk->d_block_count)
+	    (uint64_t)declared_sectors * sector_scale > fat_disk_sectors(disk))
 		return EINVAL;
 
 	/* Asks the shared probe which of the three widths this is. */

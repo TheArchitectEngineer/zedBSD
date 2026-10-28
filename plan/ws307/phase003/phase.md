@@ -3,7 +3,7 @@
 # ws307-p003 build: `make installer-image`、manifest、unit、index、live の tree、installer の image
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §6・§11.2。Queue: q1665 / q1665-i02（担当 P4、2026-10-29、worktree p4-ws307f）、q1665-i03（P4、worktree p4-ws307g、基点 92e91e61b）。
-- Status: in-progress（段 1〜6 を実装し、`make installer-image` の全 build と QEMU の起動で確かめた。cleared かは Q1 の判定。残す確かめは下の「未実施」）
+- Status: cleared（2026-10-29 Q1 の判定: installer-image rc 0・warning 0、QEMU の login と PARTUUID の root を画面で確かめた、段 6 は変えない根拠あり。下の「未実施」は残す）
 - 承認: 2026-10-29 ユーザー「P4にWS307」（Q1 の中継）。toolchain（`toolchain/llvm/sysroot.mk`）の編集は Q1 の許可（P4/queue.md、自分の build/ の下だけ）。段 1 は sysroot.mk を変えずに済んだ（下）。
 
 ## 段（実装の順）
