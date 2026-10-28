@@ -364,15 +364,20 @@ main(int argc, char **argv)
 			hog(hog_mib);
 	}
 
+	/*
+	 * The mapper starts last: the holes its munmap leaves in the region are free address space, where the
+	 * stack and TLS mmap(NULL) of a thread created after it could land and then be replaced by its MAP_FIXED
+	 * mmap or read into by the readers.
+	 */
 	for (index = 0; index < READERS; index++)
 		pthread_create(&threads[thread_count++], NULL, reader, (void *)(uintptr_t)(index + 1U));
-	if (with_mapper)
-		pthread_create(&threads[thread_count++], NULL, mapper, NULL);
 	pthread_create(&threads[thread_count++], NULL, checker, NULL);
 	if (with_fork)
 		pthread_create(&threads[thread_count++], NULL, forker, NULL);
 	if (use_setuid)
 		pthread_create(&threads[thread_count++], NULL, switcher, NULL);
+	if (with_mapper)
+		pthread_create(&threads[thread_count++], NULL, mapper, NULL);
 	sleep((unsigned)seconds);
 	stopping = 1;
 	for (index = 0; index < thread_count; index++)
