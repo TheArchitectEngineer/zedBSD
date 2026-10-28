@@ -15,14 +15,14 @@
 ### 動いている担当と Queue
 
 <!-- master:agents:start -->
-2026-10-28 21:23 から P3 を終了して動くのは P1・P2 の 2（WS290 は FPGA 側の設計の完了まで保留、再開はユーザーの明示の指示）。それ以前: 2026-10-28 03:15 から N=3（ユーザー「N=3で作業します。」）、07:1x〜WS307 の仕様の P4 で 4、仕様の確定の後にユーザー「P4は停止して、N=3に戻します。」で 3。台帳は [registry](agents/registry.md)。
+2026-10-29 01:1x ラップアップ: 動いている担当は無し（P1〜P4 は全員返却）。次の担当の起動はユーザーの指示で。同時に動かす数の最後の指示は N=3（ユーザー「N=3で作業します。」）。
 
-| 担当 | Queue | WS | 実機 |
+| 担当 | 最後の Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
-| P1 | —（q1657 cleared、merge f88836330） | [WS299](ws299/ws.md) 5330 NVMe: memcpy の改善と全体の測り直しの report を出して停止。継続はユーザーの判断（ユーザー「その上で継続判断させてください。」） | 5330 は Debian、lock 空き |
-| P2 | —（q1661 は保留: 入力の検出の worker は WS309 の設計で置き換えるため未 merge） | [WS291](ws291/ws.md) 案 4・5 はユーザーの判断待ち。[WS309](ws309/ws.md) の設計はユーザーと Q1 で検討中 | 10.0.10.3（/bin/wayland は 3d9306f02 の build） |
-| P3 | — | 終了（2026-10-28 21:23 ユーザー「FPGA側の設計が終わっていないので、P3はいったん終了、再開は明示的な指示です。計画だけアップデートして、整理しておいてください。」）。[WS290](ws290/ws.md) は保留: p017 は実装・host 試験・QEMU 済み（merge b99e96139）、残りは実機（p014・M9）と p015 | — |
-| P4 | —（q1660 cleared） | 記録の矛盾の解消を完了（完了の WS 87 の ws.md を完了の形に、Phase・試験 1,324 件を削除、157 件を plan/tools/ へ移動、WS217 を開き直し、WS220 の残りを WS221 へ）。status.py・links.py の指摘 0 | — |
+| P1 | q1657 cleared（merge f88836330） | [WS299](ws299/ws.md) 5330 NVMe: memcpy の改善と全体の測り直しの report を出して停止。継続はユーザーの判断（ユーザー「その上で継続判断させてください。」）。再開点は ws299/ws.md の「結果（2026-10-28 21:50）」 | 5330 は Debian、/tmp/i915-hw.lock は空き |
+| P2 | q1658 cleared（merge ae5c52a21）、q1661 uncleared・保留 | [WS291](ws291/ws.md): UCLK の負荷に応じた DPM・underflow 0・2 s の止まり（Keiland の input の scan）を直し評価済み。案 4・5 はユーザーの判断待ち。q1661（`agent/p2-ws291i`、入力の検出の backend の worker）は未 merge、[WS309](ws309/ws.md) で置き換える | 10.0.10.3: cfg amdrdna.smu.memory=2・ngg=2、kernel vmunix-m2j、/bin/wayland は q1661 の 3d9306f02 の build（main の b574fbf6a の build は /bin/wayland.p2b574） |
+| P3 | q1659 cleared（merge b99e96139） | 終了（ユーザー「FPGA側の設計が終わっていないので、P3はいったん終了、再開は明示的な指示です。」）。[WS290](ws290/ws.md) は保留、再開の順は ws290/ws.md の「保留」節 | — |
+| P4 | q1660 cleared（merge 582ff2906・382802369） | 記録の矛盾の解消を完了。拾った判断の候補は下の「ユーザーの未決」 | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
 <!-- master:agents:end -->
@@ -40,29 +40,34 @@
 
 <!-- master:focus:start -->
 - 公開は rev.5 まで（実質のベータ2）。次に何をやるか（以前の「ベータ3・ベータ4」の段は取り消し）は Q1 とユーザーが整理中。下の「保留の WS」はその整理の対象。
-- **fg023 zedBSD の GHCI 1.0 の driver**（[WS290](ws290/ws.md)）: amaterrace-gpu の `docs/ghci.md`（正本、89529de）だけに従う driver に書き直し、host 試験で確かめる。仕様の疑問は 2026-10-28 に全部解決、次は design 版 4。
-- **GPU の描画の速さ**（[WS291](ws291/ws.md)、P2）: AMD RDNA → NVIDIA → PowerVR。Linux よりよくなるまで profile を見て直す。
-- **5330 の電源と性能**（P1、2026-10-27 ユーザー「P1は、しばらくはさっきお願いした内容で進めていきますので、master.mdに書いておいてください。」）: [WS299](ws299/ws.md) NVMe の速さ → [WS300](ws300/ws.md) NVMe・VMD の低電力 → [WS052](ws052/ws.md) S0ix → [WS301](ws301/ws.md) CPU の DVFS・P/E core → [WS302](ws302/ws.md) DTB → 熱と fan。順と依存は [pm-plan.md](agents/P1/pm-plan.md)。
-- 達成: fg021 ZYBO（2026-10-23）、fg020 VisionFive 2（WS256・WS269・WS270・WS277、2026-10-22 ユーザー「すばらしい。実用スピードです。」）、
-  fg019 ベータ2（2026-10-17 OSC）、fg018 Linux 標準 GTK4（WS114）、fg010 OSC のデモ、fg012〜fg016。Pi 5（WS278・WS279）も completed。
-  取り下げ: fg022 KC705 の GPU の board（WS288 の終了）。
-- 実機の使い分け（2026-10-27 10:49 ユーザー）: デスクトップは GPU の driver の開発（今後は Linux＋VFIO の passthrough）、Keiland の app は VM で開発して VF2 で速さを詰める、5330 は Intel GPU・電源管理・Alder Lake の時に。Pi 4・Pi 5・VF2・デスクトップは個別の SwitchBot で同時に自動制御の予定。表は [tools.md](tools.md) の「実機」。
+- **Keiland の thread の整理**（[WS309](ws309/ws.md)、planning）: main loop が待たない thread の構成をユーザーと検討中。構成の表とユーザーの決定の原文は ws309/ws.md。未決は手書きの照合の pool の N。ゲームモードは Vulkan display（VK_KHR_display）の仕様の中で実装する（ユーザー「工数が多くてもかまいません。」）。
+- **GPU の描画の速さ**（[WS291](ws291/ws.md)）: RDNA は重い scene で Linux と同等（scene-1500 201.8 対 200.4 fps、scene-6500 49.2 対 50.1）、小さな submit の多い run（big・subs）は Linux の 1/3〜1/10。次は案 4・5（ユーザーの判断）、その後 NVIDIA → PowerVR、Linux 以上の後に WS306。
+- **5330 の電源と性能**（[WS299](ws299/ws.md)）: direct の書き 88%、UFS の file の書き 52%、CPU の速さは Debian の 70〜90%（idle が C1 だけ・HWP 無し・hybrid を知らない、別の WS が要る）。継続はユーザーの判断。その後は WS300 → WS052 → WS301 → WS302 → 熱と fan（[pm-plan.md](agents/P1/pm-plan.md)）。
+- **GHCI 1.0 の driver**（[WS290](ws290/ws.md)）: 保留（FPGA 側の設計の完了と、ユーザーの明示の再開の指示を待つ）。p017 は実装・host 試験・QEMU 済み、残りは実機（p014・M9）と p015。
+- **インストーラ**（[WS307](ws307/ws.md)）: 仕様は確定（spec.md）、実装 p002〜p014 はユーザーの指示の後。
+- 達成: fg021 ZYBO（2026-10-23）、fg020 VisionFive 2（2026-10-22）、fg019 ベータ2（2026-10-17 OSC）、fg018 Linux 標準 GTK4（WS114）、fg010 OSC のデモ、fg012〜fg016。Pi 5（WS278・WS279）も completed。取り下げ: fg022 KC705 の GPU の board（WS288 の終了）。
+- 実機の使い分け（2026-10-27 10:49 ユーザー）: デスクトップは GPU の driver の開発（今後は Linux＋VFIO の passthrough）、Keiland の app は VM で開発して VF2 で速さを詰める、5330 は Intel GPU・電源管理・Alder Lake。
 <!-- master:focus:end -->
 
 <!-- master:priority:start -->
 優先順位（依存による順とは別。Queue の権限は変えない）:
-1. WS290（P3）: p001 の design 版 4（ghci.md 89529de）→ p002〜p012 の実装（host 試験、実機は VF2＋KC705 の用意の後）→ p013 規約の全文。WS291（P2）は並べて進め、Linux 以上の後に WS306。
-2. P1 は 5330 の電源と性能の線（WS299 p004〜 → WS300 → WS052 → WS301 → WS302 → 熱と fan、[pm-plan.md](agents/P1/pm-plan.md) の順）。BUG-346 は resolved。
-3. すぐ取り組む物（2026-10-27 ユーザー）: WS221（Jumbo frame）、WS242（RTX 30/40）・WS243（NVDEC）・WS250（nvrtx の取り消しと復帰）、WS223（全画面は合成、推しで実装）、WS009 の DOC-54（/dev/gpu の UAPI の文書）。
-4. WS226（Vulkan 1.3 相当を全 GPU driver で）は WS290 の後。WS292（GHCI の PROT）も WS290 の後。
-5. WS295（xe、p001 の調査だけ）・WS296（drivers の comment の整理）: 担当の起動はユーザーの指示の時。WS068 は空き時間だけ。
-6. 保留の WS（WS297 を含む）: Q1 とユーザーの整理の後。
+1. WS309（Keiland の thread の整理）: 手書きの pool の N を決めて設計を確定 → Phase の分割 → 担当の起動（ユーザーの指示）。
+2. WS291: 案 4・5 の判断の後に再開。
+3. WS299: ユーザーの継続の判断の後（UFS の書き・mkfs の write-through・p007・p008、または区切る）。
+4. すぐ取り組む物（2026-10-27 ユーザー）: WS221（Jumbo frame、p008・p009 は WS220 から移した物）、WS242（RTX 30/40）・WS243（NVDEC）・WS250（nvrtx の取り消しと復帰）、WS223（全画面は合成、推しで実装）、WS009 の DOC-54（/dev/gpu の UAPI の文書）。
+5. WS307 の実装、WS217（画面の回転、開き直した）: ユーザーの指示の時。
+6. WS290・WS292・WS226: WS290 の再開の後。WS295・WS296・WS068: ユーザーの指示の時。保留の WS（WS297 を含む）: Q1 とユーザーの整理の後。
 <!-- master:priority:end -->
 
 ### ユーザーの未決
 
 <!-- master:open-decisions:start -->
-- 名前の変更（2026-10-28 ユーザー「…KeiというOS名を削除して、zedBSDに統一します。インストーラだけでなくすべてに影響します。…」、WS307 の Phase）: Keiland・libkeiland は残す、OS 名は zedBSD に仮決め（distribution 名は未定）。libkeiland 以外の libkei* を変えるか（WS307 で検討）。既定の利用者を user/user に変える作業（全 image）をどの WS で行うか。
+- WS309: 手書きの照合の pool の N（同時に照合する文字の数か、CPU の数の固定の本数か）。
+- WS291: 案 4（小さな transaction を呼び手の thread で同期の GPU_COMMAND で送る、build/ws291/case4.patch、window mode の SURFACE_LOST errno 24 は未解析）と案 5（gpu.c の起床の抑制）に進むか。
+- WS299 の継続（P1 の report: ws299/ws.md の「結果（2026-10-28 21:50）」）。担当の外で見つけた物の扱い: amd64 の idle（C1 だけ）・HWP・P/E core の置き方（CPU が Debian の 70〜90%）、clock_gettime に vDSO が無く 1 ms 刻み、main から return した時に stdout が flush されない、libc の memcpy の続き（大きな copy・memset・build の flag -fno-builtin -Os）。
+- kernel の PS/2 の aux: mouse が無いのに node を作り、open のたびに 約 80 ms 待って EIO（src/kern/platform/pcat.c の drv_pcat_ps2_8042_init の辺り）。Bug にするか、いつ直すか。
+- P4（q1660）が拾った候補: WS162 を canceled にするか（WS172 に吸収）、WS279 p009（ライセンスと類似性の監査）の担当、P4m の時々の失敗（T1-691）の Bug、nvrtx.disp.own の既定、pci-msi-qemu.c（CONFIG_KERNEL_TEST_CHECKPOINTS の唯一の config が消えた）を残すか、master-design-policy.md へ移す候補 約 25 件（各 WS の ws.md に原文）。retained の 41 WS は source の comment の掃除の Queue の後に片付ける。
+- 名前の変更（2026-10-28 ユーザー「…KeiというOS名を削除して、zedBSDに統一します。インストーラだけでなくすべてに影響します。…」、WS307 の Phase）: Keiland・libkeiland は残す、OS 名は zedBSD に仮決め。
 - 保留の WS の整理（以前のベータ3・4 の中身を含む）。Q1 とユーザー。
 - WS304: Raspberry Pi OS で同じ HAT・FFC・NVMe の link を見るか（ハードの切り分け）。
 - WS306: ゲーム最適化の環境変数の名前と書式、知らない option の扱い（p001 の設計で推しを示す）。
@@ -75,8 +80,9 @@
 ### 止まっている物
 
 <!-- master:blocked:start -->
-- WS290 の実機の試験: VF2＋KC705（GHCI の bitstream はユーザーが書く）、VF2 の電源は SwitchBot のプラグミニ 2（14C19FA80F86、2026-10-28）。KC705 の書き込みの済みはユーザーの知らせを待つ。それまでは host 試験だけ（amaterrace-gpu の sim・firmware は使わない）。
-- 完了の WS の Phase の directory の片付け（record-audit の COMPLETED_WITH_PHASES 89 件）は未着手。
+- WS290 の実機の試験: VF2＋KC705（GHCI の bitstream はユーザーが書く）、VF2 の電源は SwitchBot のプラグミニ 2（14C19FA80F86）。WS290 自体が保留。
+- ユーザーが拾える試験（頼まない）: RDNA の desktop で画面の途切れが無くなったか目で見る（WS291 b574fbf6a・7650291df、機械は今 q1661 の /bin/wayland）、5330 の物理の keyboard・mouse。
+- `plan/records.json`（GitHub の同期の対応）に消した Phase の path が 118 か所残る（同期は今使っていない）。
 - VF2 の zedbsd.cfg は login=graphical を外したまま（元は zedbsd.cfg.p044orig、戻さない）。
 - GitHub への公開は push の指示の時だけ。
 <!-- master:blocked:end -->
