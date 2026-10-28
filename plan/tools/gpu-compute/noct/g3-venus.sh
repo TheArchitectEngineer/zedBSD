@@ -5,7 +5,7 @@
 # ZEDBSD_NOCT_ACCEL := y, by default the main checkout's demonstration build) and mix.nct into /tmp, then runs:
 #  1. gpu-list: noct --gpu-list (the devices Noct's backends see);
 #  2. cpu: noct -O2 -j mix.nct N ROUNDS (the CPU, with the JIT);
-#  3. gpu: KEI_GLES_COMPUTE_TRACE=1 noct -O2 -j --gpu mix.nct N ROUNDS (the GPU; libGLESv2 writes a line per dispatch).
+#  3. gpu: ZEDBSD_GLES_COMPUTE_TRACE=1 noct -O2 -j --gpu mix.nct N ROUNDS (the GPU; libGLESv2 writes a line per dispatch).
 # It passes when both runs check 1001 elements with none wrong, their checksums are equal, and the GPU run's
 # dispatches (one a call) are in its log.  Timing on Venus (the host's lavapipe) is not the 5330's.
 #
@@ -46,7 +46,7 @@ guest 'chmod 755 /tmp/noct' > /dev/null
 # The runs.
 guest '/tmp/noct --gpu-list; echo exit=$?' > "$out/gpu-list.txt"
 guest "/tmp/noct -O2 -j --gc-tenure-size=$tenure /tmp/mix.nct $n $rounds > /tmp/g3-cpu.log 2>&1; echo exit=\$? >> /tmp/g3-cpu.log; cat /tmp/g3-cpu.log" 1800 > "$out/cpu.txt"
-guest "KEI_GLES_COMPUTE_TRACE=1 /tmp/noct -O2 -j --gc-tenure-size=$tenure --gpu /tmp/mix.nct $n $rounds > /tmp/g3-gpu.log 2>&1; echo exit=\$? >> /tmp/g3-gpu.log; cat /tmp/g3-gpu.log" 1800 > "$out/gpu.txt"
+guest "ZEDBSD_GLES_COMPUTE_TRACE=1 KEI_GLES_COMPUTE_TRACE=1 /tmp/noct -O2 -j --gc-tenure-size=$tenure --gpu /tmp/mix.nct $n $rounds > /tmp/g3-gpu.log 2>&1; echo exit=\$? >> /tmp/g3-gpu.log; cat /tmp/g3-gpu.log" 1800 > "$out/gpu.txt"
 python3 plan/tools/guest/guest.py stop >/dev/null 2>&1
 for f in gpu-list cpu gpu; do echo "== $f"; grep -v '^gles: compute dispatch' "$out/$f.txt"; done
 

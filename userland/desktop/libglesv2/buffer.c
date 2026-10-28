@@ -661,7 +661,7 @@ glDeleteBuffers(
 {
 	uint64_t started;
 
-	/* The call, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	/* The call, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
 	started = gles_time_begin();
 	timed_delete_buffers(n, buffers);
 	gles_time_end("delete-buffers", started, 0U);
@@ -815,7 +815,7 @@ glBufferData(
 {
 	uint64_t started;
 
-	/* The call, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	/* The call, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
 	started = gles_time_begin();
 	timed_buffer_data(target, size, data, usage);
 	gles_time_end("buffer-data", started, (size_t)size);
@@ -1020,7 +1020,7 @@ glMapBufferRange(
 	uint64_t started;
 	void *result;
 
-	/* The call, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	/* The call, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
 	started = gles_time_begin();
 	result = timed_map_buffer_range(target, offset, length, access);
 	gles_time_end("map-buffer", started, (size_t)length);
@@ -1118,7 +1118,7 @@ glUnmapBuffer(
 	uint64_t started;
 	GLboolean result;
 
-	/* The call, timed when KEI_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
+	/* The call, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (ws101-p016). */
 	started = gles_time_begin();
 	result = timed_unmap_buffer(target);
 	gles_time_end("unmap-buffer", started, 0U);

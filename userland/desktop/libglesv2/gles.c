@@ -19,6 +19,8 @@
 
 #include "gles.h"
 
+#include "include/kern/os-name.h"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -223,7 +225,7 @@ gles_report(
 }
 
 /*
- * Whether the calls of a compute run are timed (KEI_GLES_COMPUTE_TRACE=2,
+ * Whether the calls of a compute run are timed (ZEDBSD_GLES_COMPUTE_TRACE=2,
  * ws101-p016): -1 until the environment is read.
  */
 static int gles_timing = -1;
@@ -241,7 +243,7 @@ gles_time_begin(void)
 
 	/* The environment, read once: level 2 or more times the steps. */
 	if (gles_timing < 0) {
-		setting = getenv("KEI_GLES_COMPUTE_TRACE");
+		setting = getenv("ZEDBSD_GLES_COMPUTE_TRACE");
 		level = 0;
 		if (setting != NULL)
 			level = atoi(setting);
@@ -1444,15 +1446,15 @@ glGetString(
 		compute = state->compute;
 	switch (name) {
 	case GL_VENDOR:
-		return (const GLubyte *)"Kei";
+		return (const GLubyte *)ZEDBSD_OS_NAME;
 	case GL_RENDERER:
-		return (const GLubyte *)"Kei OpenGL ES on Vulkan";
+		return (const GLubyte *)ZEDBSD_OS_NAME " OpenGL ES on Vulkan";
 	case GL_VERSION:
 		if (compute)
-			return (const GLubyte *)"OpenGL ES 3.1 Kei";
+			return (const GLubyte *)"OpenGL ES 3.1 " ZEDBSD_OS_NAME;
 		if (three)
-			return (const GLubyte *)"OpenGL ES 3.0 Kei";
-		return (const GLubyte *)"OpenGL ES 2.0 Kei";
+			return (const GLubyte *)"OpenGL ES 3.0 " ZEDBSD_OS_NAME;
+		return (const GLubyte *)"OpenGL ES 2.0 " ZEDBSD_OS_NAME;
 	case GL_SHADING_LANGUAGE_VERSION:
 		if (compute)
 			return (const GLubyte *)"OpenGL ES GLSL ES 3.10";

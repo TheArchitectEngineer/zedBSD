@@ -1,5 +1,5 @@
 #!/bin/sh
-# Kei's GPU compute demonstration (WS101, the scene S13 of the demonstration's script): Noct runs the same program
+# The system's GPU compute demonstration (WS101, the scene S13 of the demonstration's script): Noct runs the same program
 # on the CPU and then on the GPU and the two times are shown side by side.  The program (mix.nct) hashes every
 # element of an array of N integers (4,000,000 by default) with 32 operations each, in a loop Noct parallelizes
 # by itself: with --gpu it becomes an OpenGL ES compute shader (libGLESv2 on the i915's Vulkan).  Both runs check
@@ -13,11 +13,13 @@ noct="noct -O2 -j --gc-tenure-size=100000000"
 cpu=/tmp/gpudemo-cpu.log
 gpu=/tmp/gpudemo-gpu.log
 
-echo "Kei GPU compute: $n integers, 32 operations each, in Noct"
+# The system's name as os-release gives it (the file is in the shell's syntax).
+name=$(. /etc/os-release 2>/dev/null; echo "$NAME")
+echo "${name:-zedBSD} GPU compute: $n integers, 32 operations each, in Noct"
 echo "CPU run..."
 $noct "$dir/mix.nct" "$n" 6 > "$cpu" 2>&1 || { cat "$cpu"; echo "The CPU run failed."; exit 1; }
 echo "GPU run..."
-KEI_GLES_COMPUTE_TRACE=1 $noct --gpu "$dir/mix.nct" "$n" 6 > "$gpu" 2>&1 || { cat "$gpu"; echo "The GPU run failed."; exit 1; }
+ZEDBSD_GLES_COMPUTE_TRACE=1 $noct --gpu "$dir/mix.nct" "$n" 6 > "$gpu" 2>&1 || { cat "$gpu"; echo "The GPU run failed."; exit 1; }
 
 # The medians (after the first call), the checks and the checksums.
 cpu_ms=$(sed -n 's/^MIX first_ms=[0-9]* median_ms=\([0-9]*\).*/\1/p' "$cpu")

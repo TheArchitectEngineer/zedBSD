@@ -1789,7 +1789,7 @@ view_setup(
 	uint64_t now_us)
 {
 	static const char *const labels[] = { "Your name", "Email", "Password", "IMAP server", "SMTP server" };
-	static const char *const hints[] = { "Kei Example", "kei@example.net", "", "imap.example.net (993)", "smtp.example.net (465 or :587)" };
+	static const char *const hints[] = { "Alex Example", "alex@example.net", "", "imap.example.net (993)", "smtp.example.net (465 or :587)" };
 	struct kl_field *fields[5];
 	struct kl_rect field;
 	struct kl_rect button;

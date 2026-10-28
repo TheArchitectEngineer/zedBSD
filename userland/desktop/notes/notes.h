@@ -154,8 +154,8 @@
 #define NOTES_AUTOSAVE_IDLE_MS	5000U
 
 /* The name and media type of the edit data attached to the PDF (design-pdf.md section 2). */
-#define NOTES_ATTACHMENT_NAME	"kei-notes.bin"
-#define NOTES_ATTACHMENT_TYPE	"application/x-kei-notes"
+#define NOTES_ATTACHMENT_NAME	"zedbsd-notes.bin"
+#define NOTES_ATTACHMENT_TYPE	"application/x-zedbsd-notes"
 
 /* The sources of an input event: a mouse (or a pen without the tablet protocol), a pen's tip, its eraser end. */
 #define NOTES_SOURCE_POINTER	0U

@@ -301,7 +301,7 @@ main(
 	demo.activated = -1;
 	demo.answer = -1;
 	demo.password.secret = 1;
-	kl_field_set(&demo.name, "Kei");
+	kl_field_set(&demo.name, "User");
 	demo_log("GLASS glass=%d", demo.style.glass);
 
 	/* The loop, until the window closes. */

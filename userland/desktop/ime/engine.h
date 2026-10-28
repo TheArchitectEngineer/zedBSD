@@ -176,7 +176,7 @@ struct ime_engine {
  * told to save and when it is destroyed, not at each learned choice
  * (BUG-143); the supplement is optional (NULL for none) and is looked in
  * before the system dictionary.  Without one, the system dictionary may be
- * Kei's file of two parts (ws095-p017, SKK-JISYO.ja), whose first part is
+ * the system's own file of two parts (ws095-p017, SKK-JISYO.ja), whose first part is
  * the supplement; the input method gives that one file alone.
  */
 struct ja_config {
