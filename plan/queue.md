@@ -150,8 +150,10 @@
 
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
-| q1669 / q1669-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws235`・branch `agent/p1-ws235`、基点 main 42da8d889） | [ws235](ws235/ws.md) p001 → 実装 | RTL81xx の共通の driver（rge を参考）→ RTL8127 の拡張、10.0.10.3、受け入れは約 7 Gbit/s と Linux | in-progress |
+| q1669 / q1669-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws235`・branch `agent/p1-ws235`、基点 main 42da8d889） | [ws235](ws235/ws.md) p001 → 実装 | RTL81xx の共通の driver（rge を参考）→ RTL8127 の拡張、10.0.10.3、受け入れは約 7 Gbit/s と Linux | 返却（p001 判断待ちを除き済み、p002 骨格・p003 link の code、617b6a380 → main dc091f374） |
 | q1670 / q1670-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291m`・branch `agent/p2-ws291m`、基点 main 42da8d889） | [ws291](ws291/ws.md) の NVIDIA の段 | RTX 2070 で desktop 60 fps・model 50 fps、RDNA の案 A・B は host・QEMU まで | in-progress |
 | q1664 / q1664-i02 | P3（worktree `/home/awe/zedBSD-worktrees/p3-ws221b`・branch `agent/p3-ws221b`、基点 main 42da8d889） | [ws221](ws221/ws.md) p004 から | i01 と同じ承認 | ラップアップ（ユーザーが VF2 を使うため、p004 途中 f2827fdb3、未 merge: net の backend に MTU が無く merge の前提を満たさない） |
-| q1665 / q1665-i05 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307i`・branch `agent/p4-ws307i`、基点 main 42da8d889） | [ws307](ws307/ws.md) p008 の 4096 の起動の直しから | i01 と同じ承認 | in-progress |
+| q1665 / q1665-i05 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307i`・branch `agent/p4-ws307i`、基点 main 42da8d889） | [ws307](ws307/ws.md) p008 の 4096 の起動の直しから | i01 と同じ承認 | 返却（p008-4k の FAT の identify の直し、p005・p006 cleared、p009 段 2 の一部、90cfb10ce → main cd04f2a59） |
 | q1664 / q1664-i03 | P3（worktree `/home/awe/zedBSD-worktrees/p3-ws221c`・branch `agent/p3-ws221c`、基点 92ec21301 = f2827fdb3＋main） | [ws221](ws221/ws.md) p004 の残りから | i01 と同じ承認、VF2 はユーザーが開放（「VF2はしばらく使わなくなりました。開放します。」） | in-progress |
+| q1669 / q1669-i02 | P1（worktree `/home/awe/zedBSD-worktrees/p1-ws235b`、基点 main a69e7147e） | ws235 p001 の判断の記録 → link の実機の試験 → p004 | i01 と同じ承認、p001 の回答 ①②③⑤ | in-progress |
+| q1665 / q1665-i06 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307j`、基点 main a69e7147e） | ws307 p009 段 2 の残りから | i01 と同じ承認 | in-progress |

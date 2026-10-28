@@ -5,10 +5,10 @@
 
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
-| P1 | phase-runner | ws235 (q1669) | `/home/awe/zedBSD-worktrees/p1-ws235` / `agent/p1-ws235` | running（2026-10-29 06:15） | — |
+| P1 | phase-runner | ws235 (q1669-i02) | `/home/awe/zedBSD-worktrees/p1-ws235b` / `agent/p1-ws235b` | running | 617b6a380（merge dc091f374） |
 | P2 | phase-runner | ws291 の NVIDIA の段 (q1670) | `/home/awe/zedBSD-worktrees/p2-ws291m` / `agent/p2-ws291m` | running（2026-10-29 06:15） | e6283eb70（merge 3ca557953） |
-| P3 | phase-runner | ws221 (q1664-i03) | `/home/awe/zedBSD-worktrees/p3-ws221c` / `agent/p3-ws221c` | running（2026-10-29、VF2 の開放の後） | 72eb123d4（merge 154c4e409） |
-| P4 | phase-runner | ws307 (q1665-i05) | `/home/awe/zedBSD-worktrees/p4-ws307i` / `agent/p4-ws307i` | running（2026-10-29 06:15） | c0974cb41（merge 377efd966） |
+| P3 | phase-runner | ws221 (q1664-i03) | `/home/awe/zedBSD-worktrees/p3-ws221c` / `agent/p3-ws221c` | running | 7ec2da0ae（merge 8a0ea3a68、p004 cleared） |
+| P4 | phase-runner | ws307 (q1665-i06) | `/home/awe/zedBSD-worktrees/p4-ws307j` / `agent/p4-ws307j` | running | 90cfb10ce（merge cd04f2a59） |
 | P5 | kernel-and-driver-designer | 設計 (q1666-i04) | `/home/awe/zedBSD-worktrees/p5-design-d` / `agent/p5-design-d` | stopped（2026-10-29 ユーザーが停止） | 8d9ea93ce（merge e24ab6ebf） |
 | P6 | phase-runner | WS282〜WS284・WS223 の実装 (q1667-i04) | `/home/awe/zedBSD-worktrees/p6-ws282c` / `agent/p6-ws282c` | returned（2026-10-29 ラップアップ、merge しない、先頭 677277d8f） | — |
 
