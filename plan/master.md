@@ -152,7 +152,6 @@ BUG-349 · q1656 · WS309 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
 | [WS296](ws296/ws.md) | MG001 | src/drivers（gpu/ を除く）の comment から開発の管理情報を消し、XXX の規約の当て直し（usb など 11 file） | planned | 18 LW、担当の起動はユーザーの指示の時 |
 | [WS307](ws307/ws.md) | MG003 | Keiland のアプリとしての zedBSD のグラフィカルなインストーラ（UEFI＋ACPI の PC、ウィザード、disk 全体／partition の選択、base・desktop・firmware・packages の tarball）（2026-10-28 ユーザー） | planned（p001 cleared、仕様は spec.md） | 実装 p002〜p014（134 LW、指示の後） |
-| [WS308](ws308/ws.md) | MG004 | VM の metadata の大域の lock の取り合いを無くす（read・write の syscall の並列性、WS299 の QD32 の頭打ち）（2026-10-28 ユーザー） | incomplete | p001 計測と設計（q1650、P1）→ 後に WS299 に戻る |
 
 ### 保留の WS（何をやるかは Q1 とユーザーが整理中）
 
