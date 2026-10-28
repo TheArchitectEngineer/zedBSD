@@ -10,7 +10,8 @@
  *
  * A thread is made with every signal blocked, so that SIGINT, SIGTERM and
  * SIGCHLD reach the main thread alone, and its name is kept in the
- * register until it is joined.  The register is only read for the log, so
+ * register until it is joined, or for a detached thread (one made for a
+ * single job that may hang, which nobody waits for) until it ends.  The register is only read for the log, so
  * a thread that cannot be registered (the register full) still runs.
  */
 
@@ -25,7 +26,8 @@
 /*
  * The names of the threads running now, one slot each (an empty name is
  * a free slot).  register_lock guards them; a thread is put in at its
- * start and taken out at its join, both on the thread that starts it.
+ * start and taken out at its join, both on the thread that starts it, or
+ * by a detached thread itself as it ends.
  */
 static pthread_mutex_t register_lock = PTHREAD_MUTEX_INITIALIZER;
 static char register_names[KWL_THREADS_MAX][KWL_THREAD_NAME];
@@ -67,6 +69,59 @@ kwl_thread_start(
 
 	/* Succeeded: the thread runs. */
 	return 0;
+}
+
+/*
+ * Starts a detached thread of the compositor's own under a name, with
+ * every signal blocked: nobody joins it, and it calls kwl_thread_ended
+ * with the same name as it ends.  Returns 0, or the errno value of
+ * pthread_create (the thread is then not started).
+ */
+int
+kwl_thread_start_detached(
+	const char *name,
+	void *(*run)(void *),
+	void *argument)
+{
+	pthread_attr_t attributes;
+	pthread_t thread;
+	sigset_t all;
+	sigset_t previous;
+	int error;
+
+	/* Detached: its end frees it. */
+	error = pthread_attr_init(&attributes);
+	if (error != 0)
+		return error;
+	(void)pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
+
+	/* Registered before it runs, so that its own end cannot come first. */
+	register_add(name);
+
+	/* The new thread inherits a mask that blocks every signal; this thread's own mask is put back after. */
+	(void)sigfillset(&all);
+	(void)pthread_sigmask(SIG_SETMASK, &all, &previous);
+	error = pthread_create(&thread, &attributes, run, argument);
+	(void)pthread_sigmask(SIG_SETMASK, &previous, NULL);
+	(void)pthread_attr_destroy(&attributes);
+	if (error != 0) {
+		register_remove(name);
+		return error;
+	}
+
+	/* Succeeded: the thread runs until its job ends. */
+	return 0;
+}
+
+/*
+ * Takes a detached thread out of the register, on that thread as it ends.
+ */
+void
+kwl_thread_ended(
+	const char *name)
+{
+	/* Its slot. */
+	register_remove(name);
 }
 
 /*
