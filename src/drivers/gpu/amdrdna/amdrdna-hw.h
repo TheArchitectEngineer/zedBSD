@@ -144,10 +144,10 @@
  * high word), the temperature-dependent minimum voltage (bit 39, bit 7)
  * and the droop control (bit 42, bit 10).  And the memory clock's levels
  * (bit 3) with the memory's two voltages that Linux always permits with
- * them (bits 8 and 9), and the system clock's levels (bit 4) and its deep
- * sleep (bit 11): the power side holds the memory clock at its highest
- * level once (smu.c), which the firmware does not do while the system
- * clock stands still.
+ * them (bits 8 and 9), and the system clock's levels (bit 4): the power
+ * side holds the memory clock at its highest level once (smu.c), which the
+ * firmware does not do while the system clock stands still.  Not the system
+ * clock's deep sleep (bit 11, below).
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
@@ -156,26 +156,32 @@
  * FEATURE_APCC_PLUS_BIT, FEATURE_GFX_SS_BIT,
  * FEATURE_TEMP_DEPENDENT_VMIN_BIT, FEATURE_APCC_DFLL_BIT,
  * FEATURE_DPM_UCLK_BIT, FEATURE_MEM_VDDCI_SCALING_BIT,
- * FEATURE_MEM_MVDD_SCALING_BIT, FEATURE_DPM_SOCCLK_BIT,
- * FEATURE_DS_SOCCLK_BIT) and
+ * FEATURE_MEM_MVDD_SCALING_BIT, FEATURE_DPM_SOCCLK_BIT) and
  * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
  * (navi10_get_allowed_feature_mask: the features always permitted).
  */
-#define AMDRDNA_SMU_CLOCK_FEATURES_LOW	0x27800b1bU
+#define AMDRDNA_SMU_CLOCK_FEATURES_LOW	0x2780031bU
 #define AMDRDNA_SMU_CLOCK_FEATURES_HIGH	0x000004a0U
 
 /*
  * The memory side's part of the low word above: the memory clock's levels
- * (3), the SoC clock's levels (4), the memory voltages' scaling (8, 9) and
- * the SoC clock's deep sleep (11), which amdrdna.smu.memory=0 leaves off.
+ * (3), the SoC clock's levels (4, which the memory clock's highest level
+ * needs: without it the switch to that level never ends) and the memory
+ * voltages' scaling (8, 9), permitted only with amdrdna.smu.memory=1.  The
+ * SoC clock's deep sleep (11) stays off: it only saves power at idle, and
+ * without the display's clock levels and the deep sleep companions Linux
+ * permits with it, the firmware stopped at idle once with it.
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
  * (FEATURE_DPM_UCLK_BIT, FEATURE_DPM_SOCCLK_BIT,
  * FEATURE_MEM_VDDCI_SCALING_BIT, FEATURE_MEM_MVDD_SCALING_BIT,
- * FEATURE_DS_SOCCLK_BIT).
+ * FEATURE_DS_SOCCLK_BIT) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_get_allowed_feature_mask: DS_SOCCLK with DS_LCLK, DS_DCEFCLK and
+ * DPM_DCEFCLK).
  */
-#define AMDRDNA_SMU_MEMORY_FEATURES_LOW	0x00000b18U
+#define AMDRDNA_SMU_MEMORY_FEATURES_LOW	0x00000318U
 
 /*
  * The graphics clock's levels, in the low word of the feature mask.

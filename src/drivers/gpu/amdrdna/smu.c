@@ -255,6 +255,7 @@ static void power_fault(struct amdrdna_device *device, const char *why);
 static int power_watch_start(struct amdrdna_device *device);
 static void power_watch(void *argument);
 static int smu_message(struct amdrdna_device *device, uint32_t message, uint32_t argument, uint32_t *answer);
+static void smu_hang_mark(struct amdrdna_device *device, uint32_t message);
 static int smu_message_held(struct amdrdna_device *device, uint32_t message, uint32_t argument, uint32_t *answer);
 static uint32_t smu_wait_answer(struct amdrdna_device *device);
 static uint32_t thermal_read(struct amdrdna_device *device, uint32_t offset);
@@ -344,9 +345,14 @@ amdrdna_a4_power(
 	if (amdrdna_parameter_number("amdrdna.smu.gfxclk", 1U) != 0U)
 		thermal->clock_levels = true;
 
-	/* The memory side's levels with them, held at the highest, unless amdrdna.smu.memory=0. */
+	/*
+	 * The memory side's levels with them, held at the highest, only when
+	 * amdrdna.smu.memory=1: with them the firmware stopped answering at
+	 * idle after loads (twice within 20 minutes of load and idle in turn,
+	 * none in 40 minutes without them), so they stay off by default.
+	 */
 	thermal->memory_levels = false;
-	if (amdrdna_parameter_number("amdrdna.smu.memory", 1U) != 0U)
+	if (amdrdna_parameter_number("amdrdna.smu.memory", 0U) != 0U)
 		thermal->memory_levels = true;
 
 	/* How the clock is raised for work once it moves; nothing is raised until then. */
@@ -1491,7 +1497,12 @@ power_memory_clock(
 	floor_error = EIO;
 	if (ceiling_error == 0)
 		floor_error = smu_message(device, SMU_MESSAGE_HARD_FLOOR, (SMU_CLOCK_MEMORY << 16) | highest, NULL);
-	amdrdna_display_memory_switch_end(device, saved);
+	if (amdrdna_parameter_number("amdrdna.smu.memory_allow", 0U) != 0U) {
+		/* amdrdna.smu.memory_allow=1: the arbiter keeps allowing the change. */
+		amdrdna_display_memory_switch_hold(device, saved);
+	} else {
+		amdrdna_display_memory_switch_end(device, saved);
+	}
 
 	/* Marks the levels and each answer. */
 	amdrdna_mark("A4 memory clock: %u levels %u-%uMHz, held at %uMHz (ceiling %d, floor %d, arbiter 0x%08x)",
@@ -2227,6 +2238,7 @@ smu_message_held(
 		word = smu_wait_answer(device);
 		if (word == 0U) {
 			amdrdna_mark("smu: no answer to the previous message before 0x%x", (unsigned)message);
+			smu_hang_mark(device, message);
 			return ETIMEDOUT;
 		}
 	}
@@ -2265,9 +2277,11 @@ smu_message_held(
 		break;
 	}
 
-	/* Reports a message the unit did not carry out. */
+	/* Reports a message the unit did not carry out, and what the unit shows of a hang. */
 	if (error != 0) {
 		amdrdna_mark("smu: message 0x%x answered 0x%x (%d)", (unsigned)message, (unsigned)word, error);
+		if (thermal->hung)
+			smu_hang_mark(device, message);
 		return error;
 	}
 
@@ -2277,6 +2291,31 @@ smu_message_held(
 
 	/* Succeeded: the unit carried the message out. */
 	return 0;
+}
+
+/*
+ * Marks what the unit shows when it stopped answering: its mailbox's
+ * message, argument and answer words, its firmware's state word, and the
+ * display hub's memory state word (whether the display lets the memory's
+ * state change), for the message sent last.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu_cmn.c (__smu_cmn_reg_print_error: the
+ * three mailbox words) and smu11/smu_v11_0.c (smu_v11_0_check_fw_status:
+ * the firmware's state word).
+ */
+static void
+smu_hang_mark(
+	struct amdrdna_device *device,
+	uint32_t message)
+{
+	amdrdna_mark("smu: hung at 0x%x: mailbox message 0x%x argument 0x%x answer 0x%x, firmware 0x%08x, display memory state 0x%08x",
+	    (unsigned)message,
+	    (unsigned)amdrdna_block_read(device, AMDRDNA_BLOCK_SMU, AMDRDNA_SMU_WINDOW_MAILBOX, AMDRDNA_SMU_REG_MESSAGE),
+	    (unsigned)amdrdna_block_read(device, AMDRDNA_BLOCK_SMU, AMDRDNA_SMU_WINDOW_MAILBOX, AMDRDNA_SMU_REG_ARGUMENT),
+	    (unsigned)amdrdna_block_read(device, AMDRDNA_BLOCK_SMU, AMDRDNA_SMU_WINDOW_MAILBOX, AMDRDNA_SMU_REG_RESPONSE),
+	    (unsigned)amdrdna_far_read(device, AMDRDNA_SMU_FAR_FIRMWARE_STATE),
+	    (unsigned)amdrdna_display_memory_state(device));
 }
 
 /* Waits for a nonzero answer word, each millisecond for 2 s; 0 when none came. */
