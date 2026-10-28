@@ -9,7 +9,7 @@
 | P2 | phase-runner | ws291 (q1668-i02) | `/home/awe/zedBSD-worktrees/p2-ws291l` / `agent/p2-ws291l` | running | f5c01e255（merge 239e8ed7f） |
 | P3 | phase-runner | ws221 (q1664) | `/home/awe/zedBSD-worktrees/p3-ws221` / `agent/p3-ws221` | running（2026-10-29 01:37） | — |
 | P4 | phase-runner | ws307 (q1665-i04) | `/home/awe/zedBSD-worktrees/p4-ws307h` / `agent/p4-ws307h` | running | 1f487021a（merge 241c03f1d） |
-| P5 | kernel-and-driver-designer | 設計 (q1666-i03、web の取得は禁止) | `/home/awe/zedBSD-worktrees/p5-design-c` / `agent/p5-design-c` | running | 6bddb1eda（merge d94ceac00） |
+| P5 | kernel-and-driver-designer | 設計 (q1666-i04、web の取得は禁止) | `/home/awe/zedBSD-worktrees/p5-design-d` / `agent/p5-design-d` | running | 7f5ab2b73（merge fb47c73a8） |
 | P6 | phase-runner | WS282〜WS284・WS223 の実装 (q1667-i04) | `/home/awe/zedBSD-worktrees/p6-ws282c` / `agent/p6-ws282c` | running（merge しない） | — |
 
 - 同時に動かす数は 6（2026-10-29 ユーザーの P1〜P6 の指示）。VF2（主）と 5330（従）は P3、10.0.10.3 は P2。
