@@ -691,6 +691,7 @@ layout_update_write(
 	struct nvrtx_vk_descriptor_set *set;
 	struct nvrtx_vk_object *view;
 	struct nvrtx_vk_object *sampler;
+	struct nvrtx_vk_object *object;
 	uint64_t set_id;
 	uint64_t count;
 	uint64_t item;
@@ -762,8 +763,8 @@ layout_update_write(
 
 		/* The decoded handle is the wire's 64-bit identity; the binding reads this range from now on. */
 		kern_memcpy(&buffer_id, &buffer.buffer, sizeof(buffer_id));
-		error = layout_slot_buffer(&set->slots[binding], nvrtx_vk_object_find(session, I915_VK_OBJ_BUFFER, buffer_id),
-					   buffer.offset, buffer.range);
+		object = nvrtx_vk_object_find(session, I915_VK_OBJ_BUFFER, buffer_id);
+		error = layout_slot_buffer(&set->slots[binding], object, buffer.offset, buffer.range);
 		if (error != 0)
 			return error;
 	}

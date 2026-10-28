@@ -19,6 +19,7 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-exec.h"
 #include "userland/desktop/libvulkan/internal.h"
 
 /* A body only this test sends: it echoes one word, so forwarding and the external copy show. */
@@ -43,6 +44,8 @@ static int destroy_payload(struct nvrtx_vk_session *session, void *payload);
 static void test_objects(void);
 static void test_stream(void);
 static void test_device(void);
+static void test_push(void);
+static int push_value(const uint8_t *push, size_t bytes, uint32_t method, uint32_t *value);
 
 void *
 kern_malloc(size_t bytes)
@@ -190,6 +193,7 @@ main(void)
 	test_objects();
 	test_stream();
 	test_device();
+	test_push();
 	printf("%s nvrtx vk: %u checks, %u failures\n", failures == 0 ? "PASS" : "FAIL", checks, failures);
 	return failures == 0 ? 0 : 1;
 }
@@ -559,4 +563,130 @@ test_device(void)
 
 	vulkan_writer_finish(&client);
 	check(nvrtx_vk_session_close(&session) == 0, "device: session closed");
+}
+
+/*
+ * Finds the last word a push buffer writes to a method (its headers
+ * incrementing, as the executor writes them); 0 when no word does.
+ */
+static int
+push_value(const uint8_t *push, size_t bytes, uint32_t method, uint32_t *value)
+{
+	uint32_t header;
+	uint32_t count;
+	uint32_t first;
+	uint32_t index;
+	size_t at;
+	int found;
+
+	found = 0;
+	at = 0;
+	while (at + 4 <= bytes) {
+		memcpy(&header, push + at, 4);
+		count = (header >> 16) & 0x1fffU;
+		first = (header & 0x1fffU) << 2;
+		at += 4;
+		for (index = 0; index < count && at + 4 <= bytes; index++, at += 4) {
+			if (first + index * 4U == method) {
+				memcpy(value, push + at, 4);
+				found = 1;
+			}
+		}
+	}
+	return found;
+}
+
+/* The executor's push buffer: the depth target, an indexed draw, the index buffer, the culling, the depth test and a uniform buffer. */
+static void
+test_push(void)
+{
+	static uint8_t push[4096];
+	struct nvrtx_exec_target target;
+	struct nvrtx_exec_depth depth;
+	uint32_t value;
+	size_t at;
+
+	/* A colour target with a depth target beside it: ZF32 in one-GOB blocks, its width the row's pixels. */
+	memset(&target, 0, sizeof(target));
+	target.address = 0x200000000ULL;
+	target.width = 1920;
+	target.height = 1080;
+	target.pitch = 7680;
+	target.format = VK_FORMAT_B8G8R8A8_UNORM;
+	target.depth_address = 0x300000200ULL;
+	target.depth_pitch = 7680;
+	target.depth_height = 1080;
+	at = nvrtx_exec_target(push, 0, &target);
+	check(push_value(push, at, 0x0fe0, &value) && value == 3 && push_value(push, at, 0x0fe4, &value) && value == 0x200, "push: the depth target's address");
+	check(push_value(push, at, 0x0fe8, &value) && value == 0x0a && push_value(push, at, 0x0fec, &value) && value == 0, "push: ZF32 in one-GOB blocks");
+	check(push_value(push, at, 0x0ff0, &value) && value == 7680U * 1080U / 4U, "push: the depth target's array pitch");
+	check(push_value(push, at, 0x1538, &value) && value == 1, "push: one depth target selected");
+	check(push_value(push, at, 0x1228, &value) && value == 1920 && push_value(push, at, 0x122c, &value) && value == 1080 &&
+	      push_value(push, at, 0x1230, &value) && value == 1, "push: the depth target's size");
+	target.depth_address = 0;
+	at = nvrtx_exec_target(push, 0, &target);
+	check(push_value(push, at, 0x1538, &value) && value == 0 && !push_value(push, at, 0x0fe0, &value), "push: no depth target without one");
+
+	/* A block-linear colour target: its width the row's pixels, one-GOB blocks, its array pitch the level. */
+	target.block_linear = 1;
+	target.width = 1000;
+	target.height = 100;
+	target.pitch = 4032;
+	at = nvrtx_exec_target(push, 0, &target);
+	check(push_value(push, at, 0x0808, &value) && value == 1008 && push_value(push, at, 0x0814, &value) && value == 0 &&
+	      push_value(push, at, 0x081c, &value) && value == 4032U * 104U / 4U, "push: a block-linear colour target");
+
+	/* A tiled texture's header: block linear, 2D, the image's last level and the view's levels. */
+	{
+		static const uint32_t identity[4] = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
+		uint32_t header[8];
+
+		nvrtx_exec_texture_header_tiled(header, 0x512345600ULL, 1024, 512, 11, 2, 9, VK_FORMAT_R8G8B8A8_UNORM, identity);
+		check(((header[2] >> 21) & 7U) == 3U && ((header[4] >> 23) & 15U) == 1U, "push: a tiled header is block linear and 2D");
+		check((header[1] >> 9) == (0x12345600U >> 9) && (header[2] & 0xffffU) == 5U && ((header[1] >> 6) & 7U) == 0U, "push: a tiled header's address");
+		check((header[3] >> 28) == 10U && (header[7] & 15U) == 2U && ((header[7] >> 4) & 15U) == 10U, "push: a tiled header's levels");
+		check((header[4] & 0xffffU) == 1023U && (header[5] & 0xffffU) == 511U, "push: a tiled header's size");
+	}
+
+	/* An indexed draw: the vertex offset as the bases, the instances, the first index and the count. */
+	at = nvrtx_exec_draw_indexed(push, 0, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 6, 36, 5000, 2, -3);
+	check(push_value(push, at, 0x1618, &value) && value == (4U | (1U << 31)), "push: an indexed draw begins triangles, the instances iterated");
+	check(push_value(push, at, 0x17dc, &value) && value == 6 && push_value(push, at, 0x17e0, &value) && value == 36, "push: the first index and the count");
+	check(push_value(push, at, 0x0220, &value) && value == 5000 && push_value(push, at, 0x1438, &value) && value == 2, "push: the instances from the first");
+	check(push_value(push, at, 0x1434, &value) && value == 0xfffffffdU && push_value(push, at, 0x1118, &value) && value == 0xfffffffdU, "push: the vertex offset");
+	check(push_value(push, at, 0x1644, &value) && value == 0, "push: no primitive restart");
+
+	/* The index buffer: its address, its bytes and 16-bit indices. */
+	at = nvrtx_exec_index_buffer(push, 0, 0x123456700ULL, 4096, VK_INDEX_TYPE_UINT16);
+	check(push_value(push, at, 0x17c8, &value) && value == 1 && push_value(push, at, 0x17cc, &value) && value == 0x23456700U, "push: the index buffer's address");
+	check(push_value(push, at, 0x023c, &value) && value == 4096 && push_value(push, at, 0x17d8, &value) && value == 1, "push: the index buffer's size and 16-bit indices");
+	at = nvrtx_exec_index_buffer(push, 0, 0x1000, 4096, VK_INDEX_TYPE_UINT32);
+	check(push_value(push, at, 0x17d8, &value) && value == 2, "push: 32-bit indices");
+
+	/* The culling and the front face. */
+	at = nvrtx_exec_raster(push, 0, VK_CULL_MODE_BACK_BIT, VK_FRONT_FACE_COUNTER_CLOCKWISE);
+	check(push_value(push, at, 0x1918, &value) && value == 1 && push_value(push, at, 0x1920, &value) && value == 0x405 &&
+	      push_value(push, at, 0x191c, &value) && value == 0x901, "push: back faces culled, counterclockwise in front");
+	at = nvrtx_exec_raster(push, 0, VK_CULL_MODE_NONE, VK_FRONT_FACE_CLOCKWISE);
+	check(push_value(push, at, 0x1918, &value) && value == 0 && !push_value(push, at, 0x1920, &value) &&
+	      push_value(push, at, 0x191c, &value) && value == 0x900, "push: nothing culled, clockwise in front");
+
+	/* The depth test, and a clear of depth. */
+	depth.test = 1;
+	depth.write = 1;
+	depth.compare = VK_COMPARE_OP_LESS_OR_EQUAL;
+	at = nvrtx_exec_depth(push, 0, &depth);
+	check(push_value(push, at, 0x12cc, &value) && value == 1 && push_value(push, at, 0x12e8, &value) && value == 1 &&
+	      push_value(push, at, 0x130c, &value) && value == 0x203, "push: the depth test, its writes and LEQUAL");
+	depth.test = 0;
+	at = nvrtx_exec_depth(push, 0, &depth);
+	check(push_value(push, at, 0x12cc, &value) && value == 0 && push_value(push, at, 0x12e8, &value) && value == 0, "push: no depth test, no writes");
+	at = nvrtx_exec_clear_depth(push, 0, 0x3f800000U, 0, 0, 1920, 1080);
+	check(push_value(push, at, 0x0d90, &value) && value == 0x3f800000U && push_value(push, at, 0x19d0, &value) && value == 1, "push: a clear of depth only to 1.0");
+
+	/* A uniform buffer at slot 1 of the fragment program's group. */
+	at = nvrtx_exec_uniform(push, 0, 4, 1, 0x400000100ULL, 256);
+	check(push_value(push, at, 0x2380, &value) && value == 256 && push_value(push, at, 0x2384, &value) && value == 4 &&
+	      push_value(push, at, 0x2388, &value) && value == 0x100, "push: the uniform buffer's size and address");
+	check(push_value(push, at, 0x2410 + 4 * 0x20, &value) && value == 0x11, "push: bound at slot 1 of group 4");
 }

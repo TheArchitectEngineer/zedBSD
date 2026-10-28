@@ -393,7 +393,7 @@ memory_bind_to(
 	uint64_t align;
 	int error;
 
-	/* The resource's size, its boundary (a GOB for a depth image) and where it keeps its binding. */
+	/* The resource's size, its boundary (a GOB for a block-linear image) and where it keeps its binding. */
 	align = NVRTX_VK_RESOURCE_ALIGN;
 	if (image) {
 		picture = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, resource);
@@ -402,7 +402,7 @@ memory_bind_to(
 		bytes = picture->bytes;
 		holder = &picture->memory;
 		place = &picture->offset;
-		if (picture->depth)
+		if (picture->depth || picture->tiled)
 			align = NVRTX_VK_GOB_BYTES;
 	} else {
 		buffer = nvrtx_vk_payload(session, I915_VK_OBJ_BUFFER, resource);
@@ -464,14 +464,14 @@ memory_requirements(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* How many bytes the resource occupies, and its boundary (a GOB for a depth image). */
+	/* How many bytes the resource occupies, and its boundary (a GOB for a block-linear image). */
 	bytes = 0U;
 	align = NVRTX_VK_RESOURCE_ALIGN;
 	if (image) {
 		picture = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, resource);
 		if (picture != NULL)
 			bytes = picture->bytes;
-		if (picture != NULL && picture->depth)
+		if (picture != NULL && (picture->depth || picture->tiled))
 			align = NVRTX_VK_GOB_BYTES;
 	} else {
 		buffer = nvrtx_vk_payload(session, I915_VK_OBJ_BUFFER, resource);
