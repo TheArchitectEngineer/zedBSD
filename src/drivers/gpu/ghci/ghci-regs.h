@@ -223,6 +223,94 @@
 #define GHCI_PROT_CAPS			0x00U
 
 /*
+ * The DISP2 block: the registers of a display controller that is a unit
+ * of the GPU, at offsets from the block (a window of 256 bytes), with
+ * their fields.  The same offsets name the registers in CMD_DISP_SET.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md
+ * (section 13.2, the DISP2 registers, DISP_IRQ_STATUS and DC_CAPS).
+ */
+#define GHCI_DC_WINDOW			0x100U
+#define GHCI_DC_BLOCK_VERSION		1U
+#define GHCI_DC_ID			0x00U
+#define GHCI_DC_VERSION			0x04U
+#define GHCI_DC_CAPS			0x08U
+#define GHCI_DC_CTRL			0x10U
+#define GHCI_DC_STATUS			0x14U
+#define GHCI_DC_IRQ_STATUS		0x18U
+#define GHCI_DC_IRQ_ENABLE		0x1CU
+#define GHCI_DC_FB_BASE			0x20U
+#define GHCI_DC_FB_NEXT			0x24U
+#define GHCI_DC_FB_STRIDE		0x28U
+#define GHCI_DC_FB_SIZE			0x2CU
+#define GHCI_DC_H_ACTIVE		0x30U
+#define GHCI_DC_H_FP			0x34U
+#define GHCI_DC_H_SYNC			0x38U
+#define GHCI_DC_H_BP			0x3CU
+#define GHCI_DC_V_ACTIVE		0x40U
+#define GHCI_DC_V_FP			0x44U
+#define GHCI_DC_V_SYNC			0x48U
+#define GHCI_DC_V_BP			0x4CU
+#define GHCI_DC_SYNC_POL		0x50U
+#define GHCI_DC_FRAME_COUNT		0x54U
+#define GHCI_DC_PCLK_SEL		0x58U
+#define GHCI_DC_I2C_CTRL		0x60U
+#define GHCI_DC_I2C_DATA		0x64U
+#define GHCI_DC_I2C_STATUS		0x68U
+#define GHCI_DC_CONNECTED		0x6CU
+#define GHCI_DC_MODE_INDEX		0x80U
+#define GHCI_DC_MODE_H0			0x84U
+#define GHCI_DC_MODE_H1			0x88U
+#define GHCI_DC_MODE_V0			0x8CU
+#define GHCI_DC_MODE_V1			0x90U
+#define GHCI_DC_MODE_CLOCK		0x94U
+#define GHCI_DC_MODE_FLAGS		0x98U
+#define GHCI_DC_CURSOR_BASE		0xA0U
+#define GHCI_DC_CURSOR_POS		0xA4U
+#define GHCI_DC_CURSOR_CTRL		0xA8U
+#define GHCI_DC_TAKEN0			0xB0U
+#define GHCI_DC_TAKEN1			0xB4U
+#define GHCI_DC_CAPS_TMDS		(1U << 1)
+#define GHCI_DC_CAPS_TRANSMITTER	(1U << 2)
+#define GHCI_DC_CAPS_BGRA8		(1U << 4)
+#define GHCI_DC_CAPS_RGBA8		(1U << 5)
+#define GHCI_DC_CAPS_CURSOR		(1U << 8)
+#define GHCI_DC_CAPS_MODES_SHIFT	9U
+#define GHCI_DC_CAPS_MODES_MASK		0x7U
+#define GHCI_DC_CAPS_SENSE		(1U << 12)
+#define GHCI_DC_CTRL_ENABLE		(1U << 0)
+#define GHCI_DC_CTRL_RESET		(1U << 1)
+#define GHCI_DC_CTRL_FORMAT_SHIFT	4U
+#define GHCI_DC_CTRL_FORMAT_MASK	0x3U
+#define GHCI_DC_CTRL_OUTPUT_HDMI	(1U << 6)
+#define GHCI_DC_FMT_BGRA8		0U
+#define GHCI_DC_FMT_RGBA8		1U
+#define GHCI_DC_ST_RUNNING		(1U << 0)
+#define GHCI_DC_ST_UNDERFLOW		(1U << 1)
+#define GHCI_DC_ST_IDLE			(1U << 2)
+#define GHCI_DC_ST_READ_ERROR		(1U << 3)
+#define GHCI_DC_ST_RECORD_ERROR		(1U << 4)
+#define GHCI_DC_ST_BAD_WRITE		(1U << 5)
+#define GHCI_DC_ST_CONNECTED		(1U << 28)
+#define GHCI_DC_ST_PENDING0		(1U << 29)
+#define GHCI_DC_ST_PENDING1		(1U << 30)
+#define GHCI_DC_ST_RECORD		(1U << 31)
+#define GHCI_DC_IRQ_VSYNC		(1U << 0)
+#define GHCI_DC_IRQ_FLIP_DONE		(1U << 1)
+#define GHCI_DC_IRQ_CURSOR_DONE		(1U << 2)
+#define GHCI_DC_IRQ_HOTPLUG		(1U << 3)
+#define GHCI_DC_IRQ_UNDERFLOW		(1U << 4)
+#define GHCI_DC_IRQ_ERROR		(1U << 5)
+#define GHCI_DC_IRQ_ALL			0x3FU
+#define GHCI_DC_SIZE_HEIGHT_SHIFT	16U
+#define GHCI_DC_MODE_PCLK_SHIFT		4U
+#define GHCI_DC_MODE_PCLK_MASK		0xFU
+#define GHCI_DC_MODE_SYNC_MASK		0x3U
+#define GHCI_DC_TAKEN_CANCELLED		(1U << 31)
+#define GHCI_DC_CURSOR_SIZE		64U
+#define GHCI_DC_RECORD_BYTES		16U
+
+/*
  * Values referenced: amaterrace-gpu cb937e6 docs/ghci.md
  * (section 6.1, RING_SIZE).
  */

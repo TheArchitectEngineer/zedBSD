@@ -58,6 +58,22 @@
 /* The packets the processor parses for one doorbell before it gives up (a guard against a loop). */
 #define MODEL_PACKETS_PER_RUN		100000U
 
+/*
+ * The display controller of the DISP2 profiles: its FourCC, its
+ * capabilities (TMDS, BGRA8 and RGBA8, the cursor plane, two modes), and
+ * the two modes (1280 x 720 at 74.25 MHz, 640 x 480 at 25.175 MHz): the
+ * MODE registers' words in the order H0, H1, V0, V1, CLOCK, FLAGS.
+ */
+#define MODEL_DC_ID			0x3243444dU
+#define MODEL_DC_CAPS			(GHCI_DC_CAPS_TMDS | GHCI_DC_CAPS_BGRA8 | GHCI_DC_CAPS_RGBA8 | GHCI_DC_CAPS_CURSOR | \
+					    (2U << GHCI_DC_CAPS_MODES_SHIFT))
+#define MODEL_DC_MODES			2U
+#define MODEL_DC_STICKY			(GHCI_DC_ST_UNDERFLOW | GHCI_DC_ST_READ_ERROR | GHCI_DC_ST_RECORD_ERROR | GHCI_DC_ST_BAD_WRITE)
+static const uint32_t display_modes[MODEL_DC_MODES][6] = {
+	{ 1280U | (40U << 16), 110U | (220U << 16), 720U | (5U << 16), 5U | (20U << 16), 74250U, 3U | (1U << 4) },
+	{ 640U | (96U << 16), 16U | (48U << 16), 480U | (2U << 16), 10U | (33U << 16), 25175U, 0U }
+};
+
 /* What the processor does after a packet: go on, wait at it, or stop. */
 enum packet_result {
 	PACKET_NEXT = 0,
@@ -313,6 +329,7 @@ static enum packet_result run_vm_unmap(const uint32_t *packet);
 static enum packet_result run_fence(const uint32_t *packet);
 static enum packet_result run_wait_fence(const uint32_t *packet);
 static void run_fill(const uint32_t *packet, uint32_t session);
+static void run_copy(const uint32_t *packet, uint32_t session);
 static int local_range(uint64_t phys, uint64_t bytes);
 static void record(const uint32_t *packet, uint32_t dwords, uint32_t skipped);
 static enum packet_result raise_fault(uint32_t kind, uint32_t unit, uint32_t session, uint64_t address);
@@ -325,6 +342,18 @@ static uint64_t heap_capacity(void);
 static int table_overlaps(uint32_t table, uint64_t va, uint64_t bytes);
 static void table_remove(uint32_t table, uint64_t va, uint64_t bytes, uint32_t session, int by_session);
 static uint64_t get64(const uint32_t *words);
+static int disp_register(uint32_t offset, uint32_t *reg);
+static uint32_t disp_read(uint32_t reg);
+static void disp_write(uint32_t reg, uint32_t value);
+static void disp_scan_write(uint32_t reg, uint32_t value, int ring);
+static enum packet_result run_disp_set(const uint32_t *packet, uint32_t dwords);
+static enum packet_result run_flip(const uint32_t *packet, uint32_t dwords);
+static void disp_take(unsigned plane, int cancelled);
+static void disp_record(unsigned plane, uint32_t value, uint32_t record_pa);
+static void disp_flush_due(void);
+static void disp_event(uint32_t events);
+static void disp_irq_update(void);
+static void disp_reset(void);
 
 /*
  * Builds the model of one profile, powered on and idle.
@@ -385,6 +414,13 @@ model_read(
 	uint32_t offset)
 {
 	uint32_t value;
+	uint32_t reg;
+	int display;
+
+	/* The display controller's block answers for itself. */
+	display = disp_register(offset, &reg);
+	if (display)
+		return disp_read(reg);
 
 	/* Picks the registers the device computes. */
 	switch (offset) {
@@ -462,6 +498,16 @@ model_write(
 	uint32_t value)
 {
 	uint32_t old_ctrl;
+	uint32_t reg;
+	int display;
+
+	/* The display controller's block takes its own writes. */
+	display = disp_register(offset, &reg);
+	if (display) {
+		disp_write(reg, value);
+		irq_check();
+		return;
+	}
 
 	/* Picks what the register does when written. */
 	switch (offset) {
@@ -484,8 +530,9 @@ model_write(
 		/* A read-only register ignores the write. */
 		break;
 	case GHCI_REG_IRQ_STATUS:
-		/* Write-1-to-clear. */
+		/* Write-1-to-clear; the display's summary stays while one of its events is pending. */
 		model.irq_status &= ~value;
+		disp_irq_update();
 		break;
 	case GHCI_REG_IRQ_ENABLE:
 		/* A pending event raises the line as soon as it is enabled. */
@@ -538,7 +585,8 @@ model_write(
 				model.state = MODEL_RUNNING;
 		}
 
-		/* The processor runs what the doorbell left, and the line follows. */
+		/* Records due go out once the processor leaves HALTED; it runs what the doorbell left. */
+		disp_flush_due();
 		model_run();
 		irq_check();
 		break;
@@ -660,8 +708,10 @@ model_run(void)
 void
 model_tick(void)
 {
-	/* One tick of TIMESTAMP, then the ring again (a WAIT_FENCE may pass now). */
+	/* One tick of TIMESTAMP and a frame of the display, then the ring again (a WAIT_FENCE or a FLIP may pass now). */
 	model.ticks++;
+	model_display_vsync();
+	disp_flush_due();
 	model_run();
 	irq_check();
 }
@@ -1008,6 +1058,14 @@ build_window(void)
 	/* FMT: the attachment limit. */
 	if ((blocks & (1U << GHCI_EXTCAP_ID_FMT)) != 0U)
 		window_set(MODEL_FMT_BLOCK + 0x10U, MODEL_FMT_LIMITS);
+
+	/* DISP2: the controller's identity, two modes, the cursor plane, both formats, a sink connected. */
+	if ((blocks & (1U << GHCI_EXTCAP_ID_DISP2)) != 0U) {
+		window_set(MODEL_DISP2_BLOCK + GHCI_DC_ID, MODEL_DC_ID);
+		window_set(MODEL_DISP2_BLOCK + GHCI_DC_VERSION, MODEL_VERSION);
+		window_set(MODEL_DISP2_BLOCK + GHCI_DC_CAPS, MODEL_DC_CAPS);
+		window_set(MODEL_DISP2_BLOCK + GHCI_DC_CONNECTED, 1U);
+	}
 }
 
 /* Puts the device in its power-on state: idle, nothing open, the heap unset. */
@@ -1066,6 +1124,9 @@ do_reset(void)
 	/* CTRL.RESET and MEM_READY may take some reads to show the end. */
 	model.reset_reads_left = model.switches.reset_reads;
 	model.mem_ready_reads_left = model.switches.mem_ready_reads;
+
+	/* The display controller is not reset; a record due goes out now that the processor is idle. */
+	disp_flush_due();
 }
 
 /* Moves IDLE to RUNNING; the first run after a reset builds session 0's root (N07). */
@@ -1308,6 +1369,11 @@ run_packet(
 		return run_fence(packet);
 	case GHCI_OP_WAIT_FENCE:
 		return run_wait_fence(packet);
+	case GHCI_OP_DISP_SET:
+		record(packet, dwords, 0U);
+		return run_disp_set(packet, dwords);
+	case GHCI_OP_FLIP:
+		return run_flip(packet, dwords);
 	default:
 		break;
 	}
@@ -1326,9 +1392,11 @@ run_packet(
 		return raise_fault(model.injection.kind, model.injection.unit, session, model.injection.address);
 	}
 
-	/* A fill writes its pattern where the session maps it. */
+	/* A fill writes its pattern where the session maps it; a copy copies between its mappings. */
 	if (opcode == GHCI_OP_FILL_BUFFER)
 		run_fill(packet, session);
+	if (opcode == GHCI_OP_COPY_BUFFER)
+		run_copy(packet, session);
 
 	/* Succeeded: the command is recorded. */
 	return PACKET_NEXT;
@@ -1370,6 +1438,46 @@ run_fill(
 	/* The pattern, word by word. */
 	for (index = 0U; index + 4U <= bytes; index += 4U)
 		memcpy(&memory[index], &pattern, 4U);
+}
+
+/*
+ * Runs CMD_COPY_BUFFER (section 7.3) without its fill form: the bytes
+ * from the source range to the destination range, when one mapping of
+ * the session holds each.  Other copies are only recorded.
+ */
+static void
+run_copy(
+	const uint32_t *packet,
+	uint32_t session)
+{
+	const struct model_mapping *source;
+	const struct model_mapping *target;
+	uint64_t from;
+	uint64_t to;
+	uint64_t bytes;
+	uint8_t *source_memory;
+	uint8_t *target_memory;
+
+	/* The ranges; a fill pattern is not a copy. */
+	from = get64(&packet[1]);
+	to = get64(&packet[3]);
+	bytes = packet[5];
+	if ((packet[6] & GHCI_COPY_FILL_PATTERN) != 0U || bytes == 0U)
+		return;
+
+	/* One mapping holds each range. */
+	source = model_lookup(session, from);
+	target = model_lookup(session, to);
+	if (source == NULL || target == NULL ||
+	    from - source->va + bytes > source->bytes || to - target->va + bytes > target->bytes)
+		return;
+
+	/* The bytes the mappings reach. */
+	source_memory = model_dma(source->phys + (from - source->va), bytes);
+	target_memory = model_dma(target->phys + (to - target->va), bytes);
+	if (source_memory == NULL || target_memory == NULL)
+		return;
+	memmove(target_memory, source_memory, bytes);
 }
 
 /* Reports whether a range of physical addresses lies in the profile's local memory: 1 when it does. */
@@ -1951,4 +2059,500 @@ get64(
 {
 	/* The low dword, then the high one. */
 	return (uint64_t)words[0] | ((uint64_t)words[1] << 32);
+}
+
+/*
+ * Lets one frame of the display pass, as a vertical sync does while the
+ * controller is lit: FRAME_COUNT moves, VSYNC is raised, plane 0 takes its
+ * pending image and plane 1 its pending cursor (section 13.2).
+ */
+void
+model_display_vsync(void)
+{
+	uint32_t ctrl;
+
+	/* Only a profile with the controller, lit, has frames. */
+	if ((profiles[model.profile].blocks & (1U << GHCI_EXTCAP_ID_DISP2)) == 0U)
+		return;
+	ctrl = window_word(MODEL_DISP2_BLOCK + GHCI_DC_CTRL);
+	if ((ctrl & GHCI_DC_CTRL_ENABLE) == 0U)
+		return;
+
+	/* The frame, and the pending flips taken at its start. */
+	window_set(MODEL_DISP2_BLOCK + GHCI_DC_FRAME_COUNT, window_word(MODEL_DISP2_BLOCK + GHCI_DC_FRAME_COUNT) + 1U);
+	disp_event(GHCI_DC_IRQ_VSYNC);
+	if (model.display.pending[0])
+		disp_take(0U, 0);
+	if (model.display.pending[1])
+		disp_take(1U, 0);
+}
+
+/* Sets sticky error bits of STATUS as a scan-out read or a record write that failed does, with DISP_ERROR. */
+void
+model_display_error(
+	uint32_t sticky)
+{
+	/* The bits, the event, and the line. */
+	model.display.sticky |= sticky & MODEL_DC_STICKY;
+	disp_event(GHCI_DC_IRQ_ERROR);
+	irq_check();
+}
+
+/* Changes CONNECTED as the sink's line does, raising HOTPLUG when it changes. */
+void
+model_display_sense(
+	int connected)
+{
+	uint32_t value;
+
+	/* The new level, and the event when it moved. */
+	value = connected ? 1U : 0U;
+	if (window_word(MODEL_DISP2_BLOCK + GHCI_DC_CONNECTED) == value)
+		return;
+	window_set(MODEL_DISP2_BLOCK + GHCI_DC_CONNECTED, value);
+	disp_event(GHCI_DC_IRQ_HOTPLUG);
+	irq_check();
+}
+
+/* Reports whether a register offset lies in the DISP2 block of the profile, and its offset in the block. */
+static int
+disp_register(
+	uint32_t offset,
+	uint32_t *reg)
+{
+	/* A profile without the controller has no block. */
+	if ((profiles[model.profile].blocks & (1U << GHCI_EXTCAP_ID_DISP2)) == 0U)
+		return 0;
+	if (offset < MODEL_DISP2_BLOCK || offset >= MODEL_DISP2_BLOCK + GHCI_DC_WINDOW)
+		return 0;
+
+	/* Succeeded: the register's offset in the block. */
+	*reg = offset - MODEL_DISP2_BLOCK;
+	return 1;
+}
+
+/* Reads one register of the controller: STATUS, the events and the MODE registers are computed. */
+static uint32_t
+disp_read(
+	uint32_t reg)
+{
+	uint32_t value;
+	uint32_t ctrl;
+	uint32_t index;
+
+	/* Picks the registers the controller computes. */
+	switch (reg) {
+	case GHCI_DC_STATUS:
+		/* Running or idle, the sticky errors, the connection, what is pending; a test may set more. */
+		ctrl = window_word(MODEL_DISP2_BLOCK + GHCI_DC_CTRL);
+		value = model.display.sticky;
+		if ((ctrl & GHCI_DC_CTRL_ENABLE) != 0U)
+			value |= GHCI_DC_ST_RUNNING;
+		else
+			value |= GHCI_DC_ST_IDLE;
+		if ((window_word(MODEL_DISP2_BLOCK + GHCI_DC_CONNECTED) & 1U) != 0U)
+			value |= GHCI_DC_ST_CONNECTED;
+		if (model.display.pending[0])
+			value |= GHCI_DC_ST_PENDING0;
+		if (model.display.pending[1])
+			value |= GHCI_DC_ST_PENDING1;
+		if (model.display.due[0] || model.display.due[1])
+			value |= GHCI_DC_ST_RECORD;
+		value |= window_word(MODEL_DISP2_BLOCK + GHCI_DC_STATUS) & (GHCI_DC_ST_PENDING0 | GHCI_DC_ST_PENDING1 | GHCI_DC_ST_RECORD);
+		return value;
+	case GHCI_DC_IRQ_STATUS:
+		return model.display.irq_status;
+	case GHCI_DC_IRQ_ENABLE:
+		return model.display.irq_enable;
+	case GHCI_DC_MODE_H0:
+	case GHCI_DC_MODE_H1:
+	case GHCI_DC_MODE_V0:
+	case GHCI_DC_MODE_V1:
+	case GHCI_DC_MODE_CLOCK:
+	case GHCI_DC_MODE_FLAGS:
+		/* The mode MODE_INDEX selects; past the table, 0. */
+		index = window_word(MODEL_DISP2_BLOCK + GHCI_DC_MODE_INDEX);
+		if (index >= MODEL_DC_MODES)
+			return 0U;
+		return display_modes[index][(reg - GHCI_DC_MODE_H0) / 4U];
+	case GHCI_DC_I2C_STATUS:
+		/* The I2C master is never busy and no device acknowledges. */
+		return 0x2U;
+	default:
+		break;
+	}
+
+	/* Succeeded: every other register reads what it holds. */
+	return window_word(MODEL_DISP2_BLOCK + reg);
+}
+
+/* Writes one register of the controller from the host, by the kind of the register (section 13.2). */
+static void
+disp_write(
+	uint32_t reg,
+	uint32_t value)
+{
+	uint32_t connected;
+
+	/* Picks the register's kind. */
+	switch (reg) {
+	case GHCI_DC_CTRL:
+	case GHCI_DC_FB_NEXT:
+	case GHCI_DC_FB_STRIDE:
+	case GHCI_DC_FB_SIZE:
+	case GHCI_DC_H_ACTIVE:
+	case GHCI_DC_H_FP:
+	case GHCI_DC_H_SYNC:
+	case GHCI_DC_H_BP:
+	case GHCI_DC_V_ACTIVE:
+	case GHCI_DC_V_FP:
+	case GHCI_DC_V_SYNC:
+	case GHCI_DC_V_BP:
+	case GHCI_DC_SYNC_POL:
+	case GHCI_DC_PCLK_SEL:
+		/* S: the host writes it while the processor is idle, halted or faulted; otherwise BAD_WRITE. */
+		if (model.state == MODEL_RUNNING) {
+			model.display.bad_writes++;
+			model.display.sticky |= GHCI_DC_ST_BAD_WRITE;
+			disp_event(GHCI_DC_IRQ_ERROR);
+			return;
+		}
+		disp_scan_write(reg, value, 0);
+		return;
+	case GHCI_DC_STATUS:
+		/* W: the sticky bits, write 1 to clear. */
+		model.display.sticky &= ~(value & MODEL_DC_STICKY);
+		return;
+	case GHCI_DC_IRQ_STATUS:
+		/* W: the events, write 1 to clear. */
+		model.display.irq_status &= ~value;
+		return;
+	case GHCI_DC_IRQ_ENABLE:
+		/* The events that raise IRQ_STATUS[3]. */
+		model.display.irq_enable = value & GHCI_DC_IRQ_ALL;
+		disp_irq_update();
+		return;
+	case GHCI_DC_CONNECTED:
+		/* L: a write that changes it raises HOTPLUG; a controller that senses the sink keeps its own. */
+		if ((MODEL_DC_CAPS & GHCI_DC_CAPS_SENSE) != 0U)
+			return;
+		connected = window_word(MODEL_DISP2_BLOCK + reg);
+		window_set(MODEL_DISP2_BLOCK + reg, value & 1U);
+		if ((value & 1U) != connected)
+			disp_event(GHCI_DC_IRQ_HOTPLUG);
+		return;
+	case GHCI_DC_MODE_INDEX:
+	case GHCI_DC_CURSOR_POS:
+	case GHCI_DC_CURSOR_CTRL:
+	case GHCI_DC_I2C_CTRL:
+	case GHCI_DC_I2C_DATA:
+		/* I, C and L: the host writes them in every state. */
+		window_set(MODEL_DISP2_BLOCK + reg, value);
+		return;
+	default:
+		/* R: a write is ignored. */
+		return;
+	}
+}
+
+/*
+ * Writes a scan-out register as the host (ring 0) or CMD_DISP_SET (ring 1)
+ * does: CTRL's RESET resets the controller, ENABLE falling cancels every
+ * pending flip, the timing and the image's rows and size take a write only
+ * while ENABLE is 0, and FB_NEXT is the host's (a FLIP's for the ring).
+ */
+static void
+disp_scan_write(
+	uint32_t reg,
+	uint32_t value,
+	int ring)
+{
+	uint32_t ctrl;
+	uint32_t old_format;
+	uint32_t new_format;
+
+	/* The cursor's registers are the ring's as well. */
+	ctrl = window_word(MODEL_DISP2_BLOCK + GHCI_DC_CTRL);
+	if (reg == GHCI_DC_CURSOR_POS || reg == GHCI_DC_CURSOR_CTRL) {
+		window_set(MODEL_DISP2_BLOCK + reg, value);
+		return;
+	}
+
+	/* CTRL: the reset, a format change while lit refused, ENABLE's edges. */
+	if (reg == GHCI_DC_CTRL) {
+		if ((value & GHCI_DC_CTRL_RESET) != 0U) {
+			disp_reset();
+			return;
+		}
+		old_format = (ctrl >> GHCI_DC_CTRL_FORMAT_SHIFT) & GHCI_DC_CTRL_FORMAT_MASK;
+		new_format = (value >> GHCI_DC_CTRL_FORMAT_SHIFT) & GHCI_DC_CTRL_FORMAT_MASK;
+		if ((ctrl & GHCI_DC_CTRL_ENABLE) != 0U && (value & GHCI_DC_CTRL_ENABLE) != 0U && old_format != new_format) {
+			model.display.bad_writes++;
+			model.display.sticky |= GHCI_DC_ST_BAD_WRITE;
+			disp_event(GHCI_DC_IRQ_ERROR);
+			value = (value & ~(GHCI_DC_CTRL_FORMAT_MASK << GHCI_DC_CTRL_FORMAT_SHIFT)) | (old_format << GHCI_DC_CTRL_FORMAT_SHIFT);
+		}
+		window_set(MODEL_DISP2_BLOCK + reg, value & ~GHCI_DC_CTRL_RESET);
+		if ((ctrl & GHCI_DC_CTRL_ENABLE) != 0U && (value & GHCI_DC_CTRL_ENABLE) == 0U) {
+			if (model.display.pending[0])
+				disp_take(0U, 1);
+			if (model.display.pending[1])
+				disp_take(1U, 1);
+		}
+		if ((ctrl & GHCI_DC_CTRL_ENABLE) == 0U && (value & GHCI_DC_CTRL_ENABLE) != 0U)
+			model.display.sticky &= ~GHCI_DC_ST_UNDERFLOW;
+		return;
+	}
+
+	/* FB_NEXT: the host's alone; a pending flip is replaced (cancelled), and taken at once while dark. */
+	if (reg == GHCI_DC_FB_NEXT) {
+		if (ring) {
+			model.display.bad_writes++;
+			model.display.sticky |= GHCI_DC_ST_BAD_WRITE;
+			disp_event(GHCI_DC_IRQ_ERROR);
+			return;
+		}
+		if (model.display.pending[0])
+			disp_take(0U, 1);
+		window_set(MODEL_DISP2_BLOCK + reg, value);
+		if ((ctrl & GHCI_DC_CTRL_ENABLE) == 0U) {
+			window_set(MODEL_DISP2_BLOCK + GHCI_DC_FB_BASE, value);
+			return;
+		}
+		model.display.pending[0] = 1;
+		model.display.pending_base[0] = value;
+		model.display.pending_value[0] = 0U;
+		model.display.pending_record[0] = 0U;
+		return;
+	}
+
+	/* The timing, the rows and the size: only while dark. */
+	if ((ctrl & GHCI_DC_CTRL_ENABLE) != 0U) {
+		model.display.bad_writes++;
+		model.display.sticky |= GHCI_DC_ST_BAD_WRITE;
+		disp_event(GHCI_DC_IRQ_ERROR);
+		return;
+	}
+	window_set(MODEL_DISP2_BLOCK + reg, value);
+}
+
+/* Runs CMD_DISP_SET (section 7.3): each pair as the ring writes it, then the wait for the idle. */
+static enum packet_result
+run_disp_set(
+	const uint32_t *packet,
+	uint32_t dwords)
+{
+	uint32_t pairs;
+	uint32_t index;
+	uint32_t reg;
+
+	/* Each pair: an offset in the block and its value; offsets outside the ring's registers are refused. */
+	pairs = (dwords - 1U) / 2U;
+	for (index = 0U; index < pairs; index++) {
+		reg = packet[1U + 2U * index];
+		if (reg >= GHCI_DC_WINDOW || (reg > GHCI_DC_PCLK_SEL && reg != GHCI_DC_CURSOR_POS && reg != GHCI_DC_CURSOR_CTRL) ||
+		    reg < GHCI_DC_CTRL || reg == GHCI_DC_STATUS || reg == GHCI_DC_IRQ_STATUS || reg == GHCI_DC_IRQ_ENABLE ||
+		    reg == GHCI_DC_FB_BASE || reg == GHCI_DC_FRAME_COUNT) {
+			model.display.bad_writes++;
+			model.display.sticky |= GHCI_DC_ST_BAD_WRITE;
+			disp_event(GHCI_DC_IRQ_ERROR);
+			continue;
+		}
+		disp_scan_write(reg, packet[2U + 2U * index], 1);
+	}
+
+	/* A wait for the idle while the controller stays lit would never end; the model counts it. */
+	if ((packet[0] >> GHCI_HEADER_FLAGS_SHIFT) & GHCI_DISP_SET_WAIT_IDLE) {
+		if ((window_word(MODEL_DISP2_BLOCK + GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) != 0U)
+			model.display.idle_waits_lit++;
+	}
+
+	/* Succeeded: the registers are written. */
+	return PACKET_NEXT;
+}
+
+/*
+ * Runs CMD_FLIP (section 7.3): it waits while its plane has a pending
+ * flip; plane 0 is taken at once while dark or with IMMEDIATE and at the
+ * next vsync otherwise; plane 1 is taken at the next frame, or at once as
+ * cancelled while dark.
+ */
+static enum packet_result
+run_flip(
+	const uint32_t *packet,
+	uint32_t dwords)
+{
+	unsigned plane;
+	uint32_t flags;
+	uint32_t ctrl;
+
+	/* Only display 0, and 32-bit addresses. */
+	if (packet[1] != 0U || packet[3] != 0U || packet[7] != 0U) {
+		record(packet, dwords, 0U);
+		return raise_fault(GHCI_FAULT_KIND_INVALID_OP, GHCI_UNIT_CP, model.bound_session, 1U);
+	}
+
+	/* A plane with a pending flip makes the FLIP wait for it to be taken. */
+	flags = packet[4];
+	plane = 0U;
+	if ((flags & GHCI_FLIP_PLANE_CURSOR) != 0U)
+		plane = 1U;
+	if (model.display.pending[plane]) {
+		model.display.flip_waits++;
+		return PACKET_WAIT;
+	}
+	record(packet, dwords, 0U);
+
+	/* The flip pending, with its value and its record. */
+	model.display.pending[plane] = 1;
+	model.display.pending_base[plane] = packet[2];
+	model.display.pending_value[plane] = packet[5];
+	model.display.pending_record[plane] = 0U;
+	if ((flags & GHCI_FLIP_RECORD_ENABLE) != 0U)
+		model.display.pending_record[plane] = packet[6];
+
+	/* Taken now while dark (plane 1 as cancelled) or for IMMEDIATE; at the next frame otherwise. */
+	ctrl = window_word(MODEL_DISP2_BLOCK + GHCI_DC_CTRL);
+	if ((ctrl & GHCI_DC_CTRL_ENABLE) == 0U)
+		disp_take(plane, plane == 1U);
+	else if (plane == 0U && (flags & GHCI_FLIP_IMMEDIATE) != 0U)
+		disp_take(0U, 0);
+
+	/* Succeeded: the flip is pending or taken. */
+	return PACKET_NEXT;
+}
+
+/*
+ * Takes a plane's pending flip, shown or cancelled: the image becomes the
+ * plane's, TAKENn gets the value (bit 31 when cancelled), and the record
+ * is written (or due while the processor cannot write it) before the
+ * plane's completion event.
+ */
+static void
+disp_take(
+	unsigned plane,
+	int cancelled)
+{
+	uint32_t value;
+
+	/* The image, unless cancelled. */
+	model.display.pending[plane] = 0;
+	if (!cancelled) {
+		if (plane == 0U)
+			window_set(MODEL_DISP2_BLOCK + GHCI_DC_FB_BASE, model.display.pending_base[0]);
+		else
+			window_set(MODEL_DISP2_BLOCK + GHCI_DC_CURSOR_BASE, model.display.pending_base[1]);
+		model.display.takes[plane]++;
+	} else {
+		model.display.cancels[plane]++;
+	}
+
+	/* The value in TAKEN0 or TAKEN1. */
+	value = model.display.pending_value[plane];
+	if (cancelled)
+		value |= GHCI_DC_TAKEN_CANCELLED;
+	window_set(MODEL_DISP2_BLOCK + GHCI_DC_TAKEN0 + 4U * plane, value);
+
+	/* The record and the event. */
+	disp_record(plane, value, model.display.pending_record[plane]);
+}
+
+/*
+ * Writes a flip's record {value, FRAME_COUNT, timestamp} and raises the
+ * plane's event; a record due while the processor is halted or faulted
+ * waits until it leaves those states (STATUS[31]).
+ */
+static void
+disp_record(
+	unsigned plane,
+	uint32_t value,
+	uint32_t record_pa)
+{
+	uint32_t words[4];
+	uint8_t *target;
+
+	/* Without a record, the event only. */
+	if (record_pa != 0U) {
+		/* Due while the processor cannot write. */
+		if (model.state == MODEL_HALTED || model.state == MODEL_FAULTED) {
+			model.display.due[plane] = 1;
+			model.display.due_value[plane] = value;
+			model.display.due_record[plane] = record_pa;
+			return;
+		}
+
+		/* The 16 bytes; a record nobody answers is a record error, with DISP_ERROR. */
+		words[0] = value;
+		words[1] = window_word(MODEL_DISP2_BLOCK + GHCI_DC_FRAME_COUNT);
+		words[2] = (uint32_t)model.ticks;
+		words[3] = (uint32_t)(model.ticks >> 32);
+		target = model_dma(record_pa, sizeof(words));
+		if (target == NULL) {
+			model.display.sticky |= GHCI_DC_ST_RECORD_ERROR;
+			disp_event(GHCI_DC_IRQ_ERROR);
+		} else {
+			memcpy(target, words, sizeof(words));
+			model.display.records++;
+		}
+	}
+
+	/* The plane's completion. */
+	if (plane == 0U)
+		disp_event(GHCI_DC_IRQ_FLIP_DONE);
+	else
+		disp_event(GHCI_DC_IRQ_CURSOR_DONE);
+}
+
+/* Writes the records due once the processor is idle or running again. */
+static void
+disp_flush_due(void)
+{
+	unsigned plane;
+
+	/* Only a processor that left HALTED and FAULTED writes them. */
+	if (model.state != MODEL_IDLE && model.state != MODEL_RUNNING)
+		return;
+
+	/* Each plane's record due. */
+	for (plane = 0U; plane < 2U; plane++) {
+		if (!model.display.due[plane])
+			continue;
+		model.display.due[plane] = 0;
+		disp_record(plane, model.display.due_value[plane], model.display.due_record[plane]);
+	}
+}
+
+/* Raises display events in DISP_IRQ_STATUS and their summary in IRQ_STATUS[3]. */
+static void
+disp_event(
+	uint32_t events)
+{
+	model.display.irq_status |= events;
+	disp_irq_update();
+}
+
+/* Raises IRQ_STATUS[3] while an enabled display event is pending (N21). */
+static void
+disp_irq_update(void)
+{
+	if ((model.display.irq_status & model.display.irq_enable) != 0U)
+		model.irq_status |= GHCI_IRQ_DISPLAY;
+}
+
+/* The controller's own reset: dark, every pending flip cancelled, FRAME_COUNT 0, a sink connected. */
+static void
+disp_reset(void)
+{
+	/* The pending flips are taken as cancelled. */
+	model.display.resets++;
+	window_set(MODEL_DISP2_BLOCK + GHCI_DC_CTRL, 0U);
+	if (model.display.pending[0])
+		disp_take(0U, 1);
+	if (model.display.pending[1])
+		disp_take(1U, 1);
+
+	/* The state a reset leaves. */
+	model.display.sticky = 0U;
+	window_set(MODEL_DISP2_BLOCK + GHCI_DC_FRAME_COUNT, 0U);
+	window_set(MODEL_DISP2_BLOCK + GHCI_DC_CONNECTED, 1U);
 }

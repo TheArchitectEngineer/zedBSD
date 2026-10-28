@@ -23,7 +23,7 @@
 #include <uapi/errno.h>
 
 #include "ghci.h"
-#include "hcr.h"
+#include "ghci-regs.h"
 
 /* The commands of I2C_CTRL and the bits of I2C_STATUS. */
 #define I2C_START			0x01U
@@ -101,18 +101,6 @@ static const struct adv7511_write adv7511_setup[] = {
 	{ 0x55U, 0x40U }
 };
 
-/*
- * The ADV7511's registers the display report reads: the revision, the
- * input and output formats (0x15-0x18), the detected input timing and
- * VIC (0x3b-0x3e), the power, the status (HPD, monitor sense), the
- * interrupts, the PLL, the HDMI mode, the clock delay and the HPD
- * control.
- */
-static const uint8_t adv7511_report_registers[] = {
-	0x00U, 0x15U, 0x16U, 0x17U, 0x18U, 0x3bU, 0x3cU, 0x3dU, 0x3eU,
-	0x41U, 0x42U, 0x96U, 0x9eU, 0xafU, 0xbaU, 0xd6U
-};
-
 static int i2c_command(struct ghci_device *device, uint32_t registers, uint32_t command);
 static int i2c_send(struct ghci_device *device, uint32_t registers, uint32_t byte, uint32_t command);
 static int i2c_write_register(struct ghci_device *device, uint32_t registers, uint32_t address, uint32_t reg, uint32_t value);
@@ -188,31 +176,6 @@ ghci_adv7511_sensed(
 	return 0;
 }
 
-/*
- * Logs the ADV7511's registers that say what it takes in and sends out.
- * The display's lock is held, so no other I2C transaction runs.
- */
-void
-ghci_adv7511_report(
-	struct ghci_device *device,
-	uint32_t registers)
-{
-	uint32_t value;
-	unsigned index;
-	int error;
-
-	/* One line per register. */
-	for (index = 0U; index < sizeof(adv7511_report_registers); index++) {
-		value = 0U;
-		error = i2c_read_register(device, registers, ADV7511_ADDRESS, adv7511_report_registers[index], &value);
-		kern_logf("ghci: %s: report: ADV7511 %02x = %02x%s\n",
-		    device->name,
-		    (unsigned)adv7511_report_registers[index],
-		    (unsigned)value,
-		    error != 0 ? " (not read)" : "");
-	}
-}
-
 /* Runs one command of the I2C master and waits for its end; EIO when the byte was not acknowledged. */
 static int
 i2c_command(
@@ -225,7 +188,7 @@ i2c_command(
 
 	/* The command runs on its own; the master is busy until it ends. */
 	ghci_write(device, registers + GHCI_DC_I2C_CTRL, command);
-	error = ghci_poll(device, registers + GHCI_DC_I2C_STATUS, I2C_BUSY, 0U, I2C_BYTE_MS);
+	error = ghci_wait_register(device, registers + GHCI_DC_I2C_STATUS, I2C_BUSY, 0U, I2C_BYTE_MS);
 	if (error != 0)
 		return EIO;
 

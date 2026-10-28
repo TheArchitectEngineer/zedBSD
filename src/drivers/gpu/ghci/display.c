@@ -8,8 +8,8 @@
 /*
  * The display operations of a GHCI device: one output, the display
  * controller of the DISP2 capability, with its primary plane and, when
- * the controller has one, a cursor plane (display-scan.c drives the
- * controller through the ring).
+ * the controller has one and the GPU reports HW_CURSOR, a cursor plane
+ * (display-scan.c drives the controller through the ring).
  *
  * A present records a frame and returns; the core then waits for its
  * adoption (DRV_GPU_DISPLAY_UNGATED), so presents, waits and the cursor
@@ -17,11 +17,14 @@
  * ways, chosen once for a swapchain by libvulkan from the constraints:
  *
  *  - shared (a blob the session presents): the controller scans the
- *    session's memory where it is, which the display holds until the
- *    controller no longer scans it;
- *  - copied (ordinary storage): the blitter copies the storage into the
- *    one of the driver's two frames that is not on the screen, and the
- *    storage is not borrowed past the call.
+ *    session's memory where it is, by its 32-bit physical address, which
+ *    the display holds until the controller no longer scans it;
+ *  - copied (ordinary storage): the storage is copied into the one of the
+ *    driver's two frames that is not on the screen, and is not borrowed
+ *    past the call.  On a unified GPU the processor copies; on a discrete
+ *    one the frames are local memory, which the blitter fills through
+ *    session 0's mappings, or the processor through the local window when
+ *    the GPU has no blitter.
  *
  * The frame's size picks the mode among the controller's modes; a frame
  * of another mode, format or stride than the one lit lights the
@@ -40,6 +43,7 @@
 #include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
+#include <kern/kmem.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
 #include <uapi/gpu-display.h>
@@ -47,7 +51,7 @@
 
 #include "display-scan.h"
 #include "ghci.h"
-#include "hcr.h"
+#include "ghci-cmd.h"
 
 /* How long a release waits for the controller to go dark and let its images go. */
 #define RELEASE_WAIT_MS			1000U
@@ -55,9 +59,15 @@
 /* The longest a display wait waits, in nanoseconds: one second. */
 #define WAIT_MAX_NS			1000000000ULL
 
+/* How long a copied present waits for the blitter's copy. */
+#define COPY_WAIT_MS			1000U
+
 /* The cursor's image: 64 x 64 pixels of 4 bytes, rows 256 bytes apart. */
 #define CURSOR_STRIDE			(GHCI_DC_CURSOR_SIZE * GHCI_DISPLAY_PIXEL_BYTES)
 #define CURSOR_BYTES			(CURSOR_STRIDE * GHCI_DC_CURSOR_SIZE)
+
+/* The 32-bit physical addresses the controller takes. */
+#define SCAN_LIMIT			0x100000000ULL
 
 static int display_query(void *private_data, void *opaque, struct gpu_display_info *request);
 static int display_mode(void *private_data, void *opaque, struct gpu_display_mode *request);
@@ -135,11 +145,16 @@ const struct drv_gpu_scanout_ops ghci_scanout_ops = {
 
 static int lease_check(struct ghci_display *display, void *opaque, uint64_t lease, uint64_t generation);
 static int find_mode(const struct ghci_display *display, uint32_t width, uint32_t height, unsigned *mode);
+static uint32_t display_formats(const struct ghci_display *display);
+static int buffer_take(struct ghci_device *device, struct ghci_allocation **slot, uint64_t bytes);
 static int buffers_take(struct ghci_device *device);
-static int present_shared(struct ghci_device *device, void *opaque, struct ghci_allocation *storage, unsigned mode, uint32_t format, struct gpu_display_present *request);
-static int present_copied(struct ghci_device *device, void *opaque, struct ghci_allocation *storage, unsigned mode, uint32_t format, struct gpu_display_present *request);
+static int present_shared(struct ghci_device *device, void *opaque, struct ghci_allocation *memory, unsigned mode, uint32_t format, struct gpu_display_present *request);
+static int present_copied(struct ghci_device *device, void *opaque, struct ghci_allocation *memory, unsigned mode, uint32_t format, struct gpu_display_present *request);
+static int copy_by_processor(struct ghci_device *device, struct ghci_allocation *memory, const struct gpu_display_present *request, struct ghci_allocation *frame);
+static int copy_by_blitter(struct ghci_device *device, struct ghci_allocation *memory, const struct gpu_display_present *request, const struct ghci_mapping *frame_map);
 static void memory_let_go(struct ghci_device *device, struct ghci_allocation *memory);
 static int cursor_surface_free(const struct ghci_display *display);
+static int cursor_rows(struct ghci_device *device, struct ghci_allocation *memory, const struct gpu_display_cursor_image *request, uint8_t *staging);
 static void cursor_convert(const uint8_t *staging, uint8_t *surface, uint32_t width, uint32_t height, int swap);
 
 /* Describes the one output. */
@@ -170,7 +185,7 @@ display_query(
 		return EINVAL;
 
 	/* The output, its plane and its formats, under the display's lock. */
-	mutex_lock(&display->lock);
+	mutex_lock(&device->display_lock);
 
 	current = &display->modes[display->mode];
 	largest = &display->modes[ghci_scan_largest_mode(display)];
@@ -181,11 +196,11 @@ display_query(
 		request->flags |= GPU_DISPLAY_CONNECTED;
 	if (display->enabled)
 		request->flags |= GPU_DISPLAY_ACTIVE;
-	if ((display->controller_caps & GHCI_DC_CAPS_CURSOR) != 0U)
+	if (display->cursor)
 		request->flags |= GPU_DISPLAY_HAS_CURSOR;
 	request->plane_count = 1U;
-	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
-	request->max_frame_bytes = (uint64_t)ghci_scan_stride(device, largest->width) * largest->height;
+	request->formats = display_formats(display);
+	request->max_frame_bytes = (uint64_t)ghci_scan_stride(largest->width) * largest->height;
 	request->current_width = current->width;
 	request->current_height = current->height;
 	request->preferred_width = largest->width;
@@ -194,7 +209,7 @@ display_query(
 	request->max_height = largest->height;
 	request->refresh_millihz = current->refresh_millihz;
 
-	mutex_unlock(&display->lock);
+	mutex_unlock(&device->display_lock);
 
 	/* The monitor's size is not read (no EDID through the controller). */
 	request->physical_width_mm = 0U;
@@ -223,11 +238,11 @@ display_mode(
 
 	/* The output's generation now. */
 	device = private_data;
-	mutex_lock(&device->display.lock);
+	mutex_lock(&device->display_lock);
 
 	generation = device->display.generation;
 
-	mutex_unlock(&device->display.lock);
+	mutex_unlock(&device->display_lock);
 
 	/* Only the one output of this generation exists. */
 	if (request->display_id != GHCI_DISPLAY_ID)
@@ -288,17 +303,13 @@ display_claim(
 	if (request->plane_index != 0U)
 		return EINVAL;
 
-	/* The frames a copied present fills and the cursor's surfaces, under the device's lock. */
-	mutex_lock(&device->lock);
-
+	/* The frames a copied present fills and the cursor's surfaces, before any lock. */
 	error = buffers_take(device);
-	if (error != 0) {
-		mutex_unlock(&device->lock);
+	if (error != 0)
 		return error;
-	}
 
 	/* Takes the lease when it is free and the last one has finished ending. */
-	mutex_lock(&display->lock);
+	mutex_lock(&device->display_lock);
 
 	error = 0;
 	if (request->generation != display->generation) {
@@ -320,8 +331,7 @@ display_claim(
 		display->idle_generation = display->generation;
 	}
 
-	mutex_unlock(&display->lock);
-	mutex_unlock(&device->lock);
+	mutex_unlock(&device->display_lock);
 
 	/* Reports a lease that could not be taken. */
 	if (error != 0)
@@ -352,33 +362,31 @@ display_release(
 	/* Only the holder's own lease ends. */
 	device = private_data;
 	display = &device->display;
-	mutex_lock(&display->lock);
+	mutex_lock(&device->display_lock);
 
 	if (display->owner != opaque || display->lease != request->lease) {
-		mutex_unlock(&display->lock);
+		mutex_unlock(&device->display_lock);
 		return EINVAL;
 	}
 
 	ghci_scan_lease_end(device);
 
-	mutex_unlock(&display->lock);
+	mutex_unlock(&device->display_lock);
 
 	/* Waits a bounded time for the dark packet and the cancelled records. */
 	deadline = clock_ticks() + kern_ms_to_ticks(RELEASE_WAIT_MS);
 	for (;;) {
 		mark = ghci_scan_mark(device);
-		mutex_lock(&display->lock);
+		mutex_lock(&device->display_lock);
 
 		done = ghci_scan_lease_done(device);
 
-		mutex_unlock(&display->lock);
+		mutex_unlock(&device->display_lock);
 
 		/* Ends once everything was let go, or at the deadline (the service thread finishes it). */
 		ghci_scan_flush(device);
 		now = clock_ticks();
-		if (done)
-			break;
-		if (now >= deadline)
+		if (done || now >= deadline)
 			break;
 
 		ghci_scan_sleep(device, mark, deadline);
@@ -410,9 +418,10 @@ display_present(
 {
 	struct ghci_device *device;
 	struct ghci_display *display;
-	struct ghci_allocation *storage;
+	struct ghci_resource *storage;
 	uint64_t end;
 	uint32_t format;
+	uint32_t formats;
 	unsigned mode;
 	int error;
 
@@ -420,10 +429,11 @@ display_present(
 	display = &device->display;
 	storage = object;
 
-	/* The two packed formats the controller scans. */
-	if (request->format == GPU_PIXEL_BGRA8888) {
+	/* The packed formats the controller scans. */
+	formats = display_formats(display);
+	if (request->format == GPU_PIXEL_BGRA8888 && (formats & GPU_DISPLAY_FORMAT_BGRA8888) != 0U) {
 		format = GHCI_DC_FMT_BGRA8;
-	} else if (request->format == GPU_PIXEL_RGBA8888) {
+	} else if (request->format == GPU_PIXEL_RGBA8888 && (formats & GPU_DISPLAY_FORMAT_RGBA8888) != 0U) {
 		format = GHCI_DC_FMT_RGBA8;
 	} else {
 		return EINVAL;
@@ -435,24 +445,19 @@ display_present(
 		return error;
 
 	/* Rows of whole pixels, each at least a row wide, inside the storage. */
-	if ((request->stride % GHCI_DISPLAY_PIXEL_BYTES) != 0U)
-		return EINVAL;
-	if ((request->offset % GHCI_DISPLAY_PIXEL_BYTES) != 0U)
+	if ((request->stride % GHCI_DISPLAY_PIXEL_BYTES) != 0U || (request->offset % GHCI_DISPLAY_PIXEL_BYTES) != 0U)
 		return EINVAL;
 	if (request->stride < request->width * GHCI_DISPLAY_PIXEL_BYTES)
 		return EINVAL;
-
-	/* The end of the last row lies inside what the storage was asked for. */
 	end = request->offset + (uint64_t)request->stride * (request->height - 1U) + (uint64_t)request->width * GHCI_DISPLAY_PIXEL_BYTES;
-	if (end > storage->requested)
+	if (end > storage->allocation->bytes)
 		return EINVAL;
 
 	/* A blob is scanned where it is; ordinary storage is copied. */
-	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U) {
-		error = present_shared(device, opaque, storage, mode, format, request);
-	} else {
-		error = present_copied(device, opaque, storage, mode, format, request);
-	}
+	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U)
+		error = present_shared(device, opaque, storage->allocation, mode, format, request);
+	else
+		error = present_copied(device, opaque, storage->allocation, mode, format, request);
 	if (error != 0)
 		return error;
 
@@ -487,12 +492,12 @@ display_wait(
 	timeout_ns = request->timeout_ns;
 	if (timeout_ns > WAIT_MAX_NS)
 		timeout_ns = WAIT_MAX_NS;
-	deadline = clock_ticks() + kern_ms_to_ticks((timeout_ns + 999999U) / 1000000U);
+	deadline = clock_ticks() + kern_ms_to_ticks((unsigned)((timeout_ns + 999999U) / 1000000U));
 
 	/* Looks at the records, sleeping between looks, until the sequence is adopted. */
 	for (;;) {
 		mark = ghci_scan_mark(device);
-		mutex_lock(&display->lock);
+		mutex_lock(&device->display_lock);
 
 		ghci_scan_update(device);
 		error = EAGAIN;
@@ -509,14 +514,12 @@ display_wait(
 			request->generation = display->generation;
 		}
 
-		mutex_unlock(&display->lock);
+		mutex_unlock(&device->display_lock);
 
 		/* Ends at an answer, at once for a zero time, or at the deadline. */
 		ghci_scan_flush(device);
 		now = clock_ticks();
-		if (error != EAGAIN)
-			break;
-		if (timeout_ns == 0U)
+		if (error != EAGAIN || timeout_ns == 0U)
 			break;
 		if (now >= deadline) {
 			error = ETIMEDOUT;
@@ -559,9 +562,9 @@ display_events(
 }
 
 /*
- * Sets the cursor's image from session storage: the blitter copies the
- * rows into the driver's staging, and the processor puts them in a free
- * cursor surface (red and blue swapped for RGBA8888, the rest of the
+ * Sets the cursor's image from session storage: the processor reads the
+ * rows (through the local window for local memory) and puts them in a
+ * free cursor surface (red and blue swapped for RGBA8888, the rest of the
  * 64 x 64 image cleared), which is then flipped.  EBUSY when both
  * surfaces are in use (the call may succeed a refresh later).
  */
@@ -574,8 +577,8 @@ display_cursor_set(
 {
 	struct ghci_device *device;
 	struct ghci_display *display;
-	struct ghci_allocation *storage;
-	struct ghci_blit blit;
+	struct ghci_resource *storage;
+	uint8_t *staging;
 	int surface;
 	int swap;
 	int error;
@@ -584,54 +587,46 @@ display_cursor_set(
 	display = &device->display;
 	storage = object;
 
-	/* A free surface of the lease's display, and the staging for the copy. */
-	mutex_lock(&display->lock);
+	/* An image that fits the plane. */
+	if (request->width == 0U || request->height == 0U ||
+	    request->width > GHCI_DC_CURSOR_SIZE || request->height > GHCI_DC_CURSOR_SIZE)
+		return EINVAL;
+
+	/* The staging of the rows and the converted image. */
+	staging = kern_malloc(2U * CURSOR_BYTES);
+	if (staging == NULL)
+		return ENOMEM;
+
+	/* A free surface of the lease's display takes the image and is flipped. */
+	mutex_lock(&device->display_lock);
 
 	error = lease_check(display, opaque, request->lease, request->generation);
 	surface = -1;
 	if (error == 0) {
 		surface = cursor_surface_free(display);
-		if (surface < 0 || display->cursor_copying)
+		if (surface < 0)
 			error = EBUSY;
 	}
+
 	if (error == 0)
-		display->cursor_copying = 1;
-
-	mutex_unlock(&display->lock);
-
-	/* Reports a lease that does not allow the change, or no free surface. */
-	if (error != 0)
-		return error;
-
-	/* The rows into the staging, by the blitter, outside the display's lock. */
-	kern_memset(&blit, 0, sizeof(blit));
-	blit.op = GHCI_BLT_COPY;
-	blit.src_base = storage->gpu_address + (uint32_t)request->offset;
-	blit.src_stride = request->stride;
-	blit.dst_base = display->staging->gpu_address;
-	blit.dst_stride = CURSOR_STRIDE;
-	blit.width = request->width;
-	blit.height = request->height;
-	error = ghci_blit_run(device, &blit);
-
-	/* The surface takes the rows and is flipped, while the lease is still the caller's. */
-	mutex_lock(&display->lock);
-
-	display->cursor_copying = 0;
-	if (error == 0)
-		error = lease_check(display, opaque, request->lease, request->generation);
+		error = cursor_rows(device, storage->allocation, request, staging);
 	if (error == 0) {
 		swap = 0;
 		if (request->format == GPU_PIXEL_RGBA8888)
 			swap = 1;
-		cursor_convert(display->staging->view, display->surfaces[surface]->view, request->width, request->height, swap);
+		cursor_convert(staging, staging + CURSOR_BYTES, request->width, request->height, swap);
+		error = ghci_scan_write(device, display->surfaces[surface], 0U, staging + CURSOR_BYTES, CURSOR_BYTES);
+	}
+
+	if (error == 0) {
 		display->cursor_image = 1;
 		ghci_scan_cursor(device, surface);
 	}
 
-	mutex_unlock(&display->lock);
+	mutex_unlock(&device->display_lock);
 
-	/* Reports a copy that failed or a lease that ended meanwhile. */
+	/* The staging goes; a refused image is reported. */
+	kern_free(staging);
 	if (error != 0)
 		return error;
 
@@ -654,7 +649,7 @@ display_cursor_move(
 	/* The cursor's registers are the host's in every state of the processor. */
 	device = private_data;
 	display = &device->display;
-	mutex_lock(&display->lock);
+	mutex_lock(&device->display_lock);
 
 	error = lease_check(display, opaque, request->lease, request->generation);
 	if (error == 0 && !display->cursor_image)
@@ -665,7 +660,7 @@ display_cursor_move(
 		ghci_write(device, display->registers + GHCI_DC_CURSOR_CTRL, 1U);
 	}
 
-	mutex_unlock(&display->lock);
+	mutex_unlock(&device->display_lock);
 
 	/* Reports a lease that does not allow the move. */
 	if (error != 0)
@@ -689,13 +684,13 @@ display_cursor_hide(
 	/* The cursor's register is the host's in every state of the processor. */
 	device = private_data;
 	display = &device->display;
-	mutex_lock(&display->lock);
+	mutex_lock(&device->display_lock);
 
 	error = lease_check(display, opaque, request->lease, request->generation);
 	if (error == 0)
 		ghci_write(device, display->registers + GHCI_DC_CURSOR_CTRL, 0U);
 
-	mutex_unlock(&display->lock);
+	mutex_unlock(&device->display_lock);
 
 	/* Reports a lease that does not allow the change. */
 	if (error != 0)
@@ -737,7 +732,7 @@ display_adoption_wait(
 	/* Looks at the records, sleeping between looks, until the record is adopted. */
 	for (;;) {
 		mark = ghci_scan_mark(device);
-		mutex_lock(&display->lock);
+		mutex_lock(&device->display_lock);
 
 		ghci_scan_update(device);
 		usable = ghci_scan_ring_usable(device);
@@ -751,10 +746,11 @@ display_adoption_wait(
 		} else if (!usable) {
 			error = EIO;
 		}
+
 		if (adopted != NULL)
 			*adopted = display->adopted;
 
-		mutex_unlock(&display->lock);
+		mutex_unlock(&device->display_lock);
 
 		/* Ends at an answer, or at the deadline: the output is then uncertain. */
 		ghci_scan_flush(device);
@@ -762,11 +758,11 @@ display_adoption_wait(
 		if (error != EAGAIN)
 			break;
 		if (now >= deadline) {
-			mutex_lock(&display->lock);
+			mutex_lock(&device->display_lock);
 
 			display->uncertain = 1;
 
-			mutex_unlock(&display->lock);
+			mutex_unlock(&device->display_lock);
 
 			kern_logf("ghci: %s: present %llu not adopted in time\n", device->name, (unsigned long long)*sequence);
 			error = ETIMEDOUT;
@@ -807,9 +803,9 @@ scanout_query_device(
 
 /*
  * Reports the constraints of the output's generation: the shared and
- * copied routes, the two packed formats, rows and images on the memory
- * line, and no placement (every blob of a GPU with local memory is in
- * local memory, which the controller scans).
+ * copied routes, the packed formats, rows and images on the memory line,
+ * no placement (host and local memory are both scanned), and the 32-bit
+ * physical addresses the controller takes.
  */
 static int
 scanout_constraints(
@@ -819,17 +815,16 @@ scanout_constraints(
 {
 	struct ghci_device *device;
 	uint64_t generation;
-	uint32_t line;
 
 	(void)opaque;
 
 	/* The output's generation now. */
 	device = private_data;
-	mutex_lock(&device->display.lock);
+	mutex_lock(&device->display_lock);
 
 	generation = device->display.generation;
 
-	mutex_unlock(&device->display.lock);
+	mutex_unlock(&device->display_lock);
 
 	/* Only the one output of this generation exists. */
 	if (request->display_id != GHCI_DISPLAY_ID)
@@ -837,16 +832,13 @@ scanout_constraints(
 	if (request->generation != generation)
 		return ESTALE;
 
-	/* The memory line the controller reads, a power of two. */
-	line = ghci_scan_stride(device, 1U);
-
 	/* Succeeded: the routes and their layout. */
 	request->flags = GPU_SCANOUT_SHARED | GPU_SCANOUT_COPY;
-	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
-	request->stride_alignment = line;
-	request->offset_alignment = line;
+	request->formats = display_formats(&device->display);
+	request->stride_alignment = GHCI_DISPLAY_LINE_BYTES;
+	request->offset_alignment = GHCI_DISPLAY_LINE_BYTES;
 	request->placement = 0U;
-	request->max_dma_address = 0U;
+	request->max_dma_address = SCAN_LIMIT - 1U;
 	return 0;
 }
 
@@ -863,11 +855,7 @@ lease_check(
 	uint64_t generation)
 {
 	/* Another open's lease, none, or one whose adoption did not come. */
-	if (display->owner != opaque)
-		return EBUSY;
-	if (display->lease != lease)
-		return EBUSY;
-	if (display->uncertain)
+	if (display->owner != opaque || display->lease != lease || display->uncertain)
 		return EBUSY;
 
 	/* An old generation of the output, or one without a sink. */
@@ -892,9 +880,7 @@ find_mode(
 
 	/* Looks at each mode the controller has. */
 	for (index = 0U; index < display->mode_count; index++) {
-		if (display->modes[index].width != width)
-			continue;
-		if (display->modes[index].height != height)
+		if (display->modes[index].width != width || display->modes[index].height != height)
 			continue;
 
 		*mode = index;
@@ -905,54 +891,143 @@ find_mode(
 	return EINVAL;
 }
 
+/* Reports the packed formats the controller scans, from DC_CAPS. */
+static uint32_t
+display_formats(
+	const struct ghci_display *display)
+{
+	uint32_t formats;
+
+	/* BGRA8 and RGBA8, as the controller names them. */
+	formats = 0U;
+	if ((display->controller_caps & GHCI_DC_CAPS_BGRA8) != 0U)
+		formats |= GPU_DISPLAY_FORMAT_BGRA8888;
+	if ((display->controller_caps & GHCI_DC_CAPS_RGBA8) != 0U)
+		formats |= GPU_DISPLAY_FORMAT_RGBA8888;
+
+	/* Succeeded: the formats. */
+	return formats;
+}
+
+/*
+ * Fills one slot of the display's buffers with memory the controller
+ * scans, unless it is filled already; a slot another claim filled
+ * meanwhile keeps its memory.  The caller holds no lock of the device.
+ */
+static int
+buffer_take(
+	struct ghci_device *device,
+	struct ghci_allocation **slot,
+	uint64_t bytes)
+{
+	struct ghci_allocation *memory;
+	int filled;
+	int error;
+
+	/* A slot already filled. */
+	mutex_lock(&device->display_lock);
+
+	filled = 0;
+	if (*slot != NULL)
+		filled = 1;
+
+	mutex_unlock(&device->display_lock);
+	if (filled)
+		return 0;
+
+	/* The memory, taken without the display's lock. */
+	error = ghci_scan_alloc(device, bytes, &memory);
+	if (error != 0)
+		return error;
+
+	/* The slot takes it, unless another claim was first. */
+	mutex_lock(&device->display_lock);
+
+	filled = 1;
+	if (*slot == NULL) {
+		*slot = memory;
+		filled = 0;
+	}
+
+	mutex_unlock(&device->display_lock);
+
+	/* Memory a slot did not take goes back. */
+	if (filled) {
+		mutex_lock(&device->lock);
+
+		ghci_memory_unhold(device, memory);
+
+		mutex_unlock(&device->lock);
+	}
+
+	/* Succeeded: the slot is filled. */
+	return 0;
+}
+
 /*
  * Takes the driver's buffers once: two frames of the largest mode that a
- * copied present fills, which only the GPU writes (local memory on a
- * discrete GPU, GHCI section 11.3), and, with a cursor plane, two cursor
- * surfaces and the staging of their copies, which the processor converts
- * (host memory, which the controller reads by DMA).
- * They stay until the detach.  The device's lock is held.
+ * copied present fills (local memory on a discrete GPU, mapped into
+ * session 0 when the blitter fills them), and, with a cursor plane, two
+ * cursor surfaces.  They stay until the detach.  The caller holds no lock
+ * of the device.
  */
 static int
 buffers_take(
 	struct ghci_device *device)
 {
 	struct ghci_display *display;
+	struct ghci_mapping *mapping;
 	const struct ghci_display_mode *largest;
 	uint64_t bytes;
 	unsigned index;
+	int blitter;
+	int mapped;
 	int error;
 
 	/* Each frame holds the largest mode, with rows on the memory line. */
 	display = &device->display;
 	largest = &display->modes[ghci_scan_largest_mode(display)];
-	bytes = (uint64_t)ghci_scan_stride(device, largest->width) * largest->height;
+	bytes = (uint64_t)ghci_scan_stride(largest->width) * largest->height;
 	for (index = 0U; index < 2U; index++) {
-		if (display->frames[index] != NULL)
-			continue;
-
-		error = ghci_memory_alloc(device, NULL, GHCI_USE_DEVICE, bytes, &display->frames[index]);
+		error = buffer_take(device, &display->frames[index], bytes);
 		if (error != 0)
 			return error;
 	}
 
-	/* A controller without a cursor plane needs no surface. */
-	if ((display->controller_caps & GHCI_DC_CAPS_CURSOR) == 0U)
-		return 0;
+	/* Frames in local memory are mapped into session 0 for the blitter, which fills them. */
+	blitter = ghci_caps_has(&device->caps, GHCI_HAS_BLT);
+	for (index = 0U; index < 2U && blitter && device->local_ready; index++) {
+		mutex_lock(&device->display_lock);
 
-	/* The two cursor surfaces. */
-	for (index = 0U; index < 2U; index++) {
-		if (display->surfaces[index] != NULL)
+		mapped = 0;
+		if (display->frame_maps[index] != NULL)
+			mapped = 1;
+
+		mutex_unlock(&device->display_lock);
+		if (mapped)
 			continue;
 
-		error = ghci_memory_alloc(device, NULL, GHCI_USE_MAPPABLE, CURSOR_BYTES, &display->surfaces[index]);
+		error = ghci_vm_map(device, &device->vm0, display->frames[index], 0U, &mapping);
 		if (error != 0)
 			return error;
+
+		/* The slot takes the mapping, unless another claim was first. */
+		mutex_lock(&device->display_lock);
+
+		mapped = 1;
+		if (display->frame_maps[index] == NULL) {
+			display->frame_maps[index] = mapping;
+			mapped = 0;
+		}
+
+		mutex_unlock(&device->display_lock);
+		if (mapped)
+			ghci_vm_unmap(device, mapping);
 	}
 
-	/* The staging the blitter copies a session's rows into. */
-	if (display->staging == NULL) {
-		error = ghci_memory_alloc(device, NULL, GHCI_USE_MAPPABLE, CURSOR_BYTES, &display->staging);
+	/* The two cursor surfaces, with a cursor plane. */
+	for (index = 0U; index < 2U && display->cursor; index++) {
+		error = buffer_take(device, &display->surfaces[index], CURSOR_BYTES);
 		if (error != 0)
 			return error;
 	}
@@ -963,23 +1038,22 @@ buffers_take(
 
 /*
  * Records a shared present: the blob's memory, held by the display, is
- * scanned where it is.  The image lies in memory the controller scans
- * (local memory on a GPU that has it), its first row and its stride on
- * the memory line.  A FIFO present waits for room in the queue.
+ * scanned where it is, by its 32-bit physical address, its first row and
+ * its stride on the memory line.  A FIFO present waits for room in the
+ * queue.
  */
 static int
 present_shared(
 	struct ghci_device *device,
 	void *opaque,
-	struct ghci_allocation *storage,
+	struct ghci_allocation *memory,
 	unsigned mode,
 	uint32_t format,
 	struct gpu_display_present *request)
 {
 	struct ghci_display *display;
 	struct ghci_display_image image;
-	struct ghci_allocation *memory;
-	uint32_t line;
+	uint64_t base;
 	uint64_t deadline;
 	uint64_t mark;
 	uint64_t now;
@@ -987,26 +1061,17 @@ present_shared(
 	int fifo;
 	int error;
 
-	/* The memory the blob shows: its own, or the allocation a Vulkan memory blob shows. */
+	/* The image lies below 4 GiB, its first row and its stride on the memory line. */
 	display = &device->display;
-	memory = storage;
-	if (storage->backing != NULL)
-		memory = storage->backing;
-
-	/* The controller scans local memory only, on a GPU that has it. */
-	if (device->local_size != 0U && memory->kind == GHCI_MEMORY_HOST)
+	base = memory->bus + request->offset;
+	if (memory->bus + memory->bytes > SCAN_LIMIT)
 		return EINVAL;
-
-	/* The first row and the stride are on the memory line. */
-	line = ghci_scan_stride(device, 1U);
-	if (((storage->gpu_address + (uint32_t)request->offset) % line) != 0U)
-		return EINVAL;
-	if ((request->stride % line) != 0U)
+	if ((base % GHCI_DISPLAY_LINE_BYTES) != 0U || (request->stride % GHCI_DISPLAY_LINE_BYTES) != 0U)
 		return EINVAL;
 
 	/* The image the controller scans. */
 	kern_memset(&image, 0, sizeof(image));
-	image.base = storage->gpu_address + (uint32_t)request->offset;
+	image.base = (uint32_t)base;
 	image.stride = request->stride;
 	image.format = format;
 	image.mode = mode;
@@ -1020,6 +1085,7 @@ present_shared(
 	mutex_lock(&device->lock);
 
 	ghci_memory_hold(memory);
+	memory->reached = 1;
 
 	mutex_unlock(&device->lock);
 
@@ -1027,7 +1093,7 @@ present_shared(
 	deadline = clock_ticks() + kern_ms_to_ticks(GHCI_DISPLAY_ADOPTION_MS);
 	for (;;) {
 		mark = ghci_scan_mark(device);
-		mutex_lock(&display->lock);
+		mutex_lock(&device->display_lock);
 
 		ghci_scan_update(device);
 		error = lease_check(display, opaque, request->lease, request->generation);
@@ -1040,12 +1106,13 @@ present_shared(
 			image.sequence = display->sequence + 1U;
 			error = ghci_scan_record(device, &image, fifo);
 		}
+
 		if (error == 0) {
 			display->sequence = image.sequence;
 			request->sequence = image.sequence;
 		}
 
-		mutex_unlock(&display->lock);
+		mutex_unlock(&device->display_lock);
 
 		/* Ends once recorded or refused; a full queue is waited for, a bounded time. */
 		ghci_scan_flush(device);
@@ -1072,22 +1139,22 @@ present_shared(
 
 /*
  * Records a copied present: once every present before it was placed and
- * plane 0 has no flip placed, the blitter copies the storage into the
- * driver's frame not on the screen, which is then recorded.  The storage
- * is not borrowed after the call.
+ * plane 0 has no flip placed, the storage is copied into the driver's
+ * frame not on the screen, which is then recorded.  The storage is not
+ * borrowed after the call.
  */
 static int
 present_copied(
 	struct ghci_device *device,
 	void *opaque,
-	struct ghci_allocation *storage,
+	struct ghci_allocation *memory,
 	unsigned mode,
 	uint32_t format,
 	struct gpu_display_present *request)
 {
 	struct ghci_display *display;
 	struct ghci_display_image image;
-	struct ghci_blit blit;
+	struct ghci_mapping *frame_map;
 	uint64_t deadline;
 	uint64_t mark;
 	uint64_t now;
@@ -1099,31 +1166,28 @@ present_copied(
 	display = &device->display;
 	deadline = clock_ticks() + kern_ms_to_ticks(GHCI_DISPLAY_ADOPTION_MS);
 	frame = -1;
+	frame_map = NULL;
 	for (;;) {
 		mark = ghci_scan_mark(device);
-		mutex_lock(&display->lock);
+		mutex_lock(&device->display_lock);
 
 		ghci_scan_update(device);
 		error = lease_check(display, opaque, request->lease, request->generation);
 		usable = ghci_scan_ring_usable(device);
 		if (error == 0 && !usable)
 			error = EIO;
-		if (error == 0) {
+		if (error == 0 && (display->queue_count != 0U || display->flips[0].placed || display->copy_frame_busy >= 0))
 			error = EAGAIN;
-			if (display->queue_count == 0U &&
-			    !display->flips[0].placed &&
-			    display->copy_frame_busy < 0)
-				error = 0;
-		}
 		if (error == 0) {
 			/* The frame the controller does not scan; it is the copy's until recorded. */
 			frame = 0;
 			if (display->shown.copy_frame == 0)
 				frame = 1;
 			display->copy_frame_busy = frame;
+			frame_map = display->frame_maps[frame];
 		}
 
-		mutex_unlock(&display->lock);
+		mutex_unlock(&device->display_lock);
 
 		/* Ends once a frame is the copy's or the present is refused, or at the deadline. */
 		ghci_scan_flush(device);
@@ -1142,19 +1206,14 @@ present_copied(
 	if (error != 0)
 		return error;
 
-	/* The copy into the frame, by the blitter, outside the display's lock. */
-	kern_memset(&blit, 0, sizeof(blit));
-	blit.op = GHCI_BLT_COPY;
-	blit.src_base = storage->gpu_address + (uint32_t)request->offset;
-	blit.src_stride = request->stride;
-	blit.dst_base = display->frames[frame]->gpu_address;
-	blit.dst_stride = ghci_scan_stride(device, request->width);
-	blit.width = request->width;
-	blit.height = request->height;
-	error = ghci_blit_run(device, &blit);
+	/* The copy into the frame, outside the display's lock: the blitter's, or the processor's. */
+	if (frame_map != NULL)
+		error = copy_by_blitter(device, memory, request, frame_map);
+	else
+		error = copy_by_processor(device, memory, request, display->frames[frame]);
 
 	/* The frame is recorded while the lease is still the caller's. */
-	mutex_lock(&display->lock);
+	mutex_lock(&device->display_lock);
 
 	display->copy_frame_busy = -1;
 	if (error == 0)
@@ -1162,20 +1221,21 @@ present_copied(
 	if (error == 0) {
 		kern_memset(&image, 0, sizeof(image));
 		image.sequence = display->sequence + 1U;
-		image.base = display->frames[frame]->gpu_address;
-		image.stride = blit.dst_stride;
+		image.base = (uint32_t)display->frames[frame]->bus;
+		image.stride = ghci_scan_stride(request->width);
 		image.format = format;
 		image.mode = mode;
 		image.memory = NULL;
 		image.copy_frame = frame;
 		error = ghci_scan_record(device, &image, 1);
 	}
+
 	if (error == 0) {
 		display->sequence = image.sequence;
 		request->sequence = image.sequence;
 	}
 
-	mutex_unlock(&display->lock);
+	mutex_unlock(&device->display_lock);
 
 	/* Reports a copy that failed, or a lease that ended meanwhile. */
 	ghci_scan_flush(device);
@@ -1186,21 +1246,157 @@ present_copied(
 	return 0;
 }
 
+/*
+ * Copies a present's rows into a frame by the processor: through the
+ * views of host memory, and through the local window for local memory
+ * (held open for the copy; the last word written is read back so that
+ * the rows reached local memory before the flip).  Returns 0, or ENOTSUP
+ * when the window does not show the memory.
+ */
+static int
+copy_by_processor(
+	struct ghci_device *device,
+	struct ghci_allocation *memory,
+	const struct gpu_display_present *request,
+	struct ghci_allocation *frame)
+{
+	uint64_t source;
+	uint64_t target;
+	uint32_t stride;
+	uint32_t row_bytes;
+	uint32_t row;
+	int window;
+	int error;
+
+	/* The window, open for the copy when either side is local memory. */
+	window = 0;
+	if (memory->kind == GHCI_MEMORY_LOCAL || frame->kind == GHCI_MEMORY_LOCAL)
+		window = 1;
+	if (window) {
+		error = ghci_memory_window_hold(device);
+		if (error != 0)
+			return error;
+	}
+
+	/* Each row, from the storage's stride to the frame's. */
+	error = 0;
+	if (memory->view == NULL || frame->view == NULL)
+		error = ENOTSUP;
+	stride = ghci_scan_stride(request->width);
+	row_bytes = request->width * GHCI_DISPLAY_PIXEL_BYTES;
+	for (row = 0U; row < request->height && error == 0; row++) {
+		source = request->offset + (uint64_t)row * request->stride;
+		target = (uint64_t)row * stride;
+		kern_memcpy(frame->view + target, memory->view + source, row_bytes);
+	}
+
+	/* The last word written comes back through the window before it closes. */
+	if (window) {
+		if (error == 0 && frame->kind == GHCI_MEMORY_LOCAL) {
+			target = (uint64_t)(request->height - 1U) * stride + row_bytes - 4U;
+			(void)*(volatile uint32_t *)(void *)(frame->view + target);
+		}
+
+		ghci_memory_window_unhold(device);
+	}
+
+	/* Reports a copy the views did not allow. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the rows are in the frame. */
+	return 0;
+}
+
+/*
+ * Copies a present's rows into a frame by the blitter: the storage is
+ * mapped into session 0 for the copy, CMD_COPY_BUFFER copies the rows
+ * (one copy when the strides agree), and the copy's fence is waited for
+ * with no lock held.  Returns 0, EIO when a reset or the loss of the
+ * device ended the copy, ETIMEDOUT, or the mapping's error.
+ *
+ * Procedure referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+ * 6.0, N12: transfers between host memory and local memory by
+ * CMD_COPY_BUFFER between mappings of a session).
+ */
+static int
+copy_by_blitter(
+	struct ghci_device *device,
+	struct ghci_allocation *memory,
+	const struct gpu_display_present *request,
+	const struct ghci_mapping *frame_map)
+{
+	struct ghci_mapping *source;
+	struct ghci_ticket ticket;
+	uint32_t *packets;
+	uint64_t from;
+	uint64_t to;
+	uint32_t stride;
+	uint32_t row_bytes;
+	uint32_t copies;
+	uint32_t bytes;
+	uint32_t dwords;
+	uint32_t row;
+	int error;
+
+	/* The storage, readable in session 0 for the copy. */
+	error = ghci_vm_map(device, &device->vm0, memory, GHCI_VM_MAP_NO_WRITE, &source);
+	if (error != 0)
+		return error;
+
+	/* One copy when the rows lie as the frame's do, one a row otherwise. */
+	stride = ghci_scan_stride(request->width);
+	row_bytes = request->width * GHCI_DISPLAY_PIXEL_BYTES;
+	copies = request->height;
+	bytes = row_bytes;
+	if (request->stride == stride) {
+		copies = 1U;
+		bytes = stride * (request->height - 1U) + row_bytes;
+	}
+
+	packets = kern_malloc((size_t)copies * GHCI_DW_COPY_BUFFER * sizeof(*packets));
+	if (packets == NULL) {
+		ghci_vm_unmap(device, source);
+		return ENOMEM;
+	}
+
+	/* Each copy, from the storage's mapping to the frame's. */
+	dwords = 0U;
+	for (row = 0U; row < copies; row++) {
+		from = source->va + request->offset + (uint64_t)row * request->stride;
+		to = frame_map->va + (uint64_t)row * stride;
+		dwords += ghci_cmd_copy_buffer(&packets[dwords], from, to, bytes, GHCI_COPY_FLUSH_DST, 0U);
+	}
+
+	/* The copies as the driver's own work, and their fence, waited for with no lock held. */
+	error = ghci_cp_submit(device, NULL, packets, dwords, &ticket);
+	kern_free(packets);
+	if (error == 0)
+		error = ghci_cp_wait(device, &ticket, COPY_WAIT_MS);
+
+	/* The mapping goes once the GPU is done with it. */
+	ghci_vm_unmap(device, source);
+
+	/* Reports a copy that did not finish. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the rows are in the frame. */
+	return 0;
+}
+
 /* Lets go of memory the display held for a present that was not recorded. */
 static void
 memory_let_go(
 	struct ghci_device *device,
 	struct ghci_allocation *memory)
 {
-	/* The hold goes under the device's lock; memory its owner gave back waits for the newest fence. */
+	/* The hold goes under the device's lock; memory nothing else holds goes back. */
 	mutex_lock(&device->lock);
 
 	ghci_memory_unhold(device, memory);
 
 	mutex_unlock(&device->lock);
-
-	/* The deferred memory goes back from the service thread. */
-	ghci_service_wake(device, GHCI_WORK_RECLAIM);
 }
 
 /* Reports a cursor surface neither shown nor flipped, or -1 when both are in use. */
@@ -1216,12 +1412,50 @@ cursor_surface_free(
 			continue;
 		if (display->flips[1].placed && display->flips[1].surface == surface)
 			continue;
+		if (display->cursor_pending == surface)
+			continue;
 
 		return surface;
 	}
 
 	/* Both are the controller's for now. */
 	return -1;
+}
+
+/*
+ * Reads a cursor image's rows from session storage into the staging, rows
+ * 256 bytes apart: through the view of host memory, or through the local
+ * window.  Returns 0, or the window's error.
+ */
+static int
+cursor_rows(
+	struct ghci_device *device,
+	struct ghci_allocation *memory,
+	const struct gpu_display_cursor_image *request,
+	uint8_t *staging)
+{
+	uint64_t source;
+	uint32_t row_bytes;
+	uint32_t row;
+	int error;
+
+	/* The rows, each its width of pixels. */
+	row_bytes = request->width * GHCI_DISPLAY_PIXEL_BYTES;
+	for (row = 0U; row < request->height; row++) {
+		source = request->offset + (uint64_t)row * request->stride;
+		if (source > memory->bytes || row_bytes > memory->bytes - source)
+			return EINVAL;
+		if (memory->kind == GHCI_MEMORY_LOCAL) {
+			error = ghci_memory_local_read(device, memory, source, &staging[row * CURSOR_STRIDE], row_bytes);
+			if (error != 0)
+				return error;
+		} else {
+			kern_memcpy(&staging[row * CURSOR_STRIDE], memory->view + source, row_bytes);
+		}
+	}
+
+	/* Succeeded: the rows are in the staging. */
+	return 0;
 }
 
 /*
@@ -1258,16 +1492,14 @@ cursor_convert(
 			}
 
 			/* The pixel, in the controller's BGRA order. */
+			target[1] = source[1];
+			target[3] = source[3];
 			if (swap) {
 				target[0] = source[2];
-				target[1] = source[1];
 				target[2] = source[0];
-				target[3] = source[3];
 			} else {
 				target[0] = source[0];
-				target[1] = source[1];
 				target[2] = source[2];
-				target[3] = source[3];
 			}
 		}
 	}

@@ -7,7 +7,7 @@
 # Then the self-test of the GPU model and the kernel stubs (ghci-model-host-test.c with
 # ghci-model.c and ghci-stubs.c); the stubs' registration checks are gpu_ops_validate,
 # taken out of src/drivers/gpu/gpu.c for the run so that they stay the same as gpu.c's.
-# Then the driver's core against the model (ghci-driver-host-test.c), a grep of the
+# Then the driver's core and its display against the model (ghci-driver-host-test.c), a grep of the
 # files the kernel builds for the names of the interface before GHCI 1.0, the compiler,
 # the Vulkan executor against the model (ghci-vk-host-test.c), its pipelines and descriptors
 # (ghci-pipeline-host-test.c, with shaders compiled by glslc), the execution of recorded commands, and
@@ -63,7 +63,7 @@ fi
 if grep -q '^stub_gpu_ops_validate($' "$validate"; then
 	cc $flags -I"$tests" -o "$out/ghci-driver-host-test" "$tests/ghci-driver-host-test.c" "$tests/ghci-model.c" \
 		"$tests/ghci-stubs.c" "$validate" "$ghci/ghci.c" "$ghci/cp.c" "$ghci/recover.c" "$ghci/memory.c" \
-		"$ghci/vm.c" "$ghci/range.c" "$ghci/share.c" \
+		"$ghci/vm.c" "$ghci/range.c" "$ghci/share.c" "$ghci/display.c" "$ghci/display-scan.c" "$ghci/adv7511.c" \
 		"$ghci/check.c" "$ghci/caps.c" "$ghci/cmd.c"
 	timeout 300 "$out/ghci-driver-host-test" || status=1
 fi
@@ -111,6 +111,7 @@ if grep -q '^stub_gpu_ops_validate($' "$validate"; then
 		compiler_objects="$compiler_objects $out/compiler/$source.o"
 	done
 	executor="$ghci/ghci.c $ghci/cp.c $ghci/recover.c $ghci/memory.c $ghci/vm.c $ghci/range.c $ghci/share.c \
+		$ghci/display.c $ghci/display-scan.c $ghci/adv7511.c \
 		$ghci/check.c $ghci/caps.c $ghci/cmd.c $ghci/jobs.c $ghci/capset.c $ghci/isa.c $vk/vk-node.c $vk/vk-stream.c \
 		$vk/vk-dispatch.c $vk/vk-object.c $vk/vk-reply.c $vk/vk-caps.c $vk/vk-format.c $vk/vk-device.c \
 		$vk/vk-memory.c $vk/vk-command.c $vk/vk-queue.c $vk/vk-layout.c $vk/vk-pipeline.c $vk/vk-pass.c $vk/vk-execute.c $vk/vk-meta.c \

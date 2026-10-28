@@ -24,6 +24,7 @@
 #include <string.h>
 
 #include "drivers/gpu/gpu.h"
+#include "drivers/gpu/ghci/display-scan.h"
 #include "drivers/gpu/ghci/ghci.h"
 #include "drivers/gpu/ghci/ghci-cmd.h"
 #include "drivers/gpu/ghci/ghci-regs.h"
@@ -32,6 +33,7 @@
 #include "uapi/errno.h"
 #include "uapi/gpu.h"
 #include "uapi/gpu-allocation.h"
+#include "uapi/gpu-display.h"
 #include "uapi/gpu-scanout.h"
 #include "ghci-model.h"
 #include "ghci-stubs.h"
@@ -130,6 +132,26 @@ static void action_session_fault(void);
 static void action_session_fault_once(void);
 static void action_replay_fault(void);
 static uint32_t heap_bytes(void);
+static uint32_t dc_read(uint32_t reg);
+static void display_round(void);
+static int display_take(void);
+static struct ghci_resource *display_storage(uint64_t bytes, int blob);
+static int display_present(struct ghci_resource *storage, uint32_t width, uint32_t height, uint32_t stride, uint64_t offset, uint32_t flags, int wait, uint64_t *sequence);
+static void display_pattern(struct ghci_resource *storage, uint32_t seed);
+static int display_frame_holds(uint64_t frame, uint32_t frame_stride, struct ghci_resource *storage, uint32_t width, uint32_t height, uint32_t stride);
+static void display_give_up(void);
+static void boot_display_host(void);
+static void scene_display_modes(void);
+static void scene_display_present(void);
+static void scene_display_copied(void);
+static void scene_display_cursor(void);
+static void scene_display_hotplug(void);
+static void scene_display_errors(void);
+static void scene_display_reset(void);
+static void scene_display_boot(void);
+static void scene_display_panic(void);
+static void scene_display_detach(void);
+static void scene_display_none(void);
 static void scene_versions(void);
 static void scene_attach_checks(void);
 static void scene_attach_policy(void);
@@ -223,6 +245,17 @@ main(void)
 	scene_boot_ranges();
 	scene_local_fallbacks();
 	scene_lost_culprit();
+	scene_display_modes();
+	scene_display_present();
+	scene_display_copied();
+	scene_display_cursor();
+	scene_display_hotplug();
+	scene_display_errors();
+	scene_display_reset();
+	scene_display_boot();
+	scene_display_panic();
+	scene_display_detach();
+	scene_display_none();
 	model_fini();
 
 	/* Reports the counts. */
@@ -699,9 +732,9 @@ scene_attach_checks(void)
 	expect(model.dma_without_master == 0U, "attach: no fetch without bus master");
 	expect((model.ctrl & (GHCI_CTRL_RUN | GHCI_CTRL_WDT_EN | GHCI_CTRL_IRQ_GLOBAL)) ==
 	    (GHCI_CTRL_RUN | GHCI_CTRL_WDT_EN | GHCI_CTRL_IRQ_GLOBAL), "attach: CTRL");
-	expect(model_read(GHCI_REG_IRQ_ENABLE) == (GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG), "attach: IRQ_ENABLE");
+	expect(model_read(GHCI_REG_IRQ_ENABLE) == (GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_DISPLAY), "attach: IRQ_ENABLE");
 	expect(model_count_commands(GHCI_OP_FENCE) == 1U && device.fence_interrupts == 1U, "attach: first fence and its interrupt");
-	expect(stub.registrations == 1U && stub.register_errors == 0U && device.ops.capabilities == (GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE), "attach: registered with the resource capabilities");
+	expect(stub.registrations == 1U && stub.register_errors == 0U && device.ops.capabilities == (GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | GPU_CAP_SHARE | GPU_CAP_ALLOCATION_SHARE | GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS), "attach: registered with the resource and display capabilities");
 	expect(strcmp(device.name, "ghci:10ee:7024") == 0, "attach: name");
 	end_scene("attach: started");
 
@@ -2646,4 +2679,854 @@ scene_lost_culprit(void)
 		ghci_vm_close(&device, other);
 	reclaim();
 	end_scene("lost culprit");
+}
+
+/*
+ * The display scenes (DISP2): the open, its lease and the generation the
+ * scenes present to.
+ */
+static void *display_open;
+static uint64_t display_lease;
+static uint64_t display_generation;
+
+/* Reads a register of the display controller's block. */
+static uint32_t
+dc_read(
+	uint32_t reg)
+{
+	return model_read(MODEL_DISP2_BLOCK + reg);
+}
+
+/* Runs one round of the service thread's display work, as the thread would after an event. */
+static void
+display_round(void)
+{
+	ghci_service_step(&device, GHCI_WORK_DISPLAY);
+}
+
+/* Opens a session of the core and takes the display's lease.  Returns what the claim returned. */
+static int
+display_take(void)
+{
+	struct gpu_display_info info;
+	struct gpu_display_claim claim;
+	int error;
+
+	/* The open, and the output's generation. */
+	error = device.ops.open(&device, &display_open);
+	if (error != 0)
+		return error;
+	memset(&info, 0, sizeof(info));
+	error = device.ops.display->query(&device, display_open, &info);
+	if (error != 0)
+		return error;
+	display_generation = info.generation;
+
+	/* The lease of plane 0. */
+	memset(&claim, 0, sizeof(claim));
+	claim.display_id = 1U;
+	claim.generation = display_generation;
+	error = device.ops.display->claim(&device, display_open, &claim);
+	display_lease = claim.lease;
+	return error;
+}
+
+/* Makes storage (a blob when asked) of the scenes' open; NULL when it could not. */
+static struct ghci_resource *
+display_storage(
+	uint64_t bytes,
+	int blob)
+{
+	struct gpu_resource_create create;
+	struct gpu_blob_create request;
+	uint32_t resource_id;
+	void *object;
+	int error;
+
+	/* A blob, mappable and shareable, or ordinary storage. */
+	if (blob) {
+		memset(&request, 0, sizeof(request));
+		request.bytes = bytes;
+		request.flags = GPU_BLOB_MAPPABLE | GPU_BLOB_SHAREABLE;
+		error = device.ops.blob_create(&device, display_open, &request, &object, &resource_id);
+	} else {
+		memset(&create, 0, sizeof(create));
+		create.bytes = bytes;
+		create.usage = GPU_RESOURCE_USAGE_STORAGE;
+		error = device.ops.resource_create(&device, display_open, &create, &object);
+	}
+	if (error != 0)
+		return NULL;
+	return object;
+}
+
+/* Records a present of storage and, when wait is set, waits for its adoption as the core does. */
+static int
+display_present(
+	struct ghci_resource *storage,
+	uint32_t width,
+	uint32_t height,
+	uint32_t stride,
+	uint64_t offset,
+	uint32_t flags,
+	int wait,
+	uint64_t *sequence)
+{
+	struct gpu_display_present request;
+	uint64_t adopted;
+	int error;
+
+	/* The present. */
+	memset(&request, 0, sizeof(request));
+	request.lease = display_lease;
+	request.generation = display_generation;
+	request.width = width;
+	request.height = height;
+	request.stride = stride;
+	request.offset = offset;
+	request.format = GPU_PIXEL_BGRA8888;
+	request.flags = flags;
+	error = device.ops.display->present(&device, display_open, storage, &request);
+	if (error != 0)
+		return error;
+	*sequence = request.sequence;
+
+	/* Its adoption. */
+	if (!wait)
+		return 0;
+	error = device.ops.display->adoption_wait(&device, display_open, display_lease, sequence, &adopted);
+	return error;
+}
+
+/* Fills storage with a pattern: each 32-bit word its offset plus a seed. */
+static void
+display_pattern(
+	struct ghci_resource *storage,
+	uint32_t seed)
+{
+	uint32_t *words;
+	uint64_t index;
+
+	/* Each word of the host memory. */
+	words = (uint32_t *)(void *)storage->allocation->view;
+	for (index = 0U; index < storage->allocation->bytes / 4U; index++)
+		words[index] = (uint32_t)index * 4U + seed;
+}
+
+/* Reports whether a frame at a bus address holds the rows of storage with the pattern: 1 when it does. */
+static int
+display_frame_holds(
+	uint64_t frame,
+	uint32_t frame_stride,
+	struct ghci_resource *storage,
+	uint32_t width,
+	uint32_t height,
+	uint32_t stride)
+{
+	uint8_t *target;
+	uint32_t row;
+
+	/* Each row. */
+	target = model_dma(frame, (uint64_t)frame_stride * height);
+	if (target == NULL)
+		return 0;
+	for (row = 0U; row < height; row++) {
+		if (memcmp(target + (uint64_t)row * frame_stride, storage->allocation->view + (uint64_t)row * stride, width * 4U) != 0)
+			return 0;
+	}
+	return 1;
+}
+
+/* Lets the display's lease go and closes the open. */
+static void
+display_give_up(void)
+{
+	struct gpu_display_release release;
+
+	/* The release, then the close. */
+	memset(&release, 0, sizeof(release));
+	release.lease = display_lease;
+	(void)device.ops.display->release(&device, display_open, &release);
+	device.ops.close(&device, display_open);
+	display_open = NULL;
+}
+
+/*
+ * The capabilities and the modes: a DISP2 device offers the display, its
+ * events, the cursor and the scan-out query; the modes from the
+ * controller's table; the claim; the first present lights the controller
+ * with DISP_SET and FLIP through the ring; the release turns it dark.
+ */
+static void
+scene_display_modes(void)
+{
+	struct gpu_display_info info;
+	struct gpu_display_mode mode;
+	struct gpu_display_claim claim;
+	struct ghci_resource *storage;
+	void *other;
+	uint64_t sequence;
+	int error;
+
+	/* The device and its capabilities. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0 && device.display.present && device.display.mode_count == 2U, "display modes: started");
+	expect((device.ops.capabilities & (GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS)) == (GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS) &&
+	    device.ops.display == &ghci_display_cursor_ops && device.ops.scanout == &ghci_scanout_ops &&
+	    stub_gpu_ops_validate(&device.ops) == 0, "display modes: capabilities and complete callbacks");
+	expect(model.irq_enable == (GHCI_IRQ_FENCE | GHCI_IRQ_FAULT | GHCI_IRQ_WATCHDOG | GHCI_IRQ_DISPLAY) &&
+	    dc_read(GHCI_DC_IRQ_ENABLE) == (GHCI_DC_IRQ_FLIP_DONE | GHCI_DC_IRQ_CURSOR_DONE | GHCI_DC_IRQ_HOTPLUG | GHCI_DC_IRQ_ERROR) &&
+	    model.display.resets == 1U && (dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) == 0U, "display modes: dark and its events");
+
+	/* The output. */
+	error = device.ops.open(&device, &display_open);
+	memset(&info, 0, sizeof(info));
+	error = device.ops.display->query(&device, display_open, &info);
+	expect(error == 0 && info.count == 1U && (info.flags & (GPU_DISPLAY_CONNECTED | GPU_DISPLAY_HAS_CURSOR)) == (GPU_DISPLAY_CONNECTED | GPU_DISPLAY_HAS_CURSOR) &&
+	    info.formats == (GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888) && info.max_width == 1280U &&
+	    info.max_height == 720U && info.max_frame_bytes == 5120ULL * 720U, "display modes: query");
+	display_generation = info.generation;
+
+	/* The modes, enumerated and checked. */
+	memset(&mode, 0, sizeof(mode));
+	mode.display_id = 1U;
+	mode.generation = display_generation;
+	mode.operation = GPU_DISPLAY_MODE_ENUMERATE;
+	mode.index = 1U;
+	error = device.ops.display->mode(&device, display_open, &mode);
+	expect(error == 0 && mode.count == 2U && mode.width == 640U && mode.height == 480U && mode.refresh_millihz == 59940U,
+	    "display modes: 640 x 480 at 59.94 Hz");
+	mode.index = 0U;
+	error = device.ops.display->mode(&device, display_open, &mode);
+	expect(error == 0 && mode.width == 1280U && mode.height == 720U && mode.refresh_millihz == 60000U, "display modes: 1280 x 720 at 60 Hz");
+	mode.operation = GPU_DISPLAY_MODE_VALIDATE;
+	mode.width = 800U;
+	mode.height = 600U;
+	error = device.ops.display->mode(&device, display_open, &mode);
+	expect(error == EINVAL, "display modes: a size of no mode");
+	mode.generation = display_generation + 1U;
+	error = device.ops.display->mode(&device, display_open, &mode);
+	expect(error == ESTALE, "display modes: an old generation");
+
+	/* The claim, and another open's refused. */
+	memset(&claim, 0, sizeof(claim));
+	claim.display_id = 1U;
+	claim.generation = display_generation;
+	error = device.ops.display->claim(&device, display_open, &claim);
+	display_lease = claim.lease;
+	expect(error == 0 && display_lease == 1U && device.display.frames[0] != NULL && device.display.surfaces[1] != NULL,
+	    "display modes: claimed, with the frames and surfaces");
+	error = device.ops.open(&device, &other);
+	claim.lease = 0U;
+	if (error == 0)
+		error = device.ops.display->claim(&device, other, &claim);
+	expect(error == EBUSY, "display modes: a second claim");
+	device.ops.close(&device, other);
+
+	/* The first present lights the controller through the ring. */
+	storage = display_storage(2560U * 480U, 0);
+	display_pattern(storage, 7U);
+	error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	expect(error == 0 && sequence == 1U && device.display.adopted == 1U, "display modes: first present adopted");
+	expect((dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) != 0U && dc_read(GHCI_DC_H_ACTIVE) == 640U &&
+	    dc_read(GHCI_DC_V_ACTIVE) == 480U && dc_read(GHCI_DC_FB_STRIDE) == 2560U &&
+	    dc_read(GHCI_DC_FB_SIZE) == (640U | (480U << 16)) && dc_read(GHCI_DC_H_SYNC) == 96U &&
+	    dc_read(GHCI_DC_FB_BASE) == (uint32_t)device.display.frames[0]->bus, "display modes: lit on the frame");
+	expect(model_count_commands(GHCI_OP_DISP_SET) >= 3U && model_count_commands(GHCI_OP_FLIP) == 1U &&
+	    model.display.bad_writes == 0U && model.display.idle_waits_lit == 0U && model.display.flip_waits == 0U,
+	    "display modes: DISP_SET and FLIP, no refused write");
+	expect(display_frame_holds(device.display.frames[0]->bus, 2560U, storage, 640U, 480U, 2560U), "display modes: copied by the processor");
+
+	/* The release turns the controller dark. */
+	device.ops.resource_destroy(&device, display_open, storage);
+	display_give_up();
+	expect((dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) == 0U && !device.display.ending && device.display.owner == NULL,
+	    "display modes: dark after the release");
+	expect(model.display.bad_writes == 0U, "display modes: no refused write at the end");
+	end_scene("display modes");
+}
+
+/*
+ * Presents: a shared blob scanned where it is and held until the next
+ * image is on the screen, a mailbox present replacing the one waiting,
+ * FIFO presents that wait for room (never two flips of a plane at once),
+ * and the presents the controller cannot show.
+ */
+static void
+scene_display_present(void)
+{
+	struct ghci_resource *first;
+	struct ghci_resource *second;
+	struct ghci_resource *third;
+	uint64_t sequence;
+	uint64_t mailbox;
+	unsigned takes;
+	int error;
+
+	/* A lease, and three blobs of the large mode. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	if (error == 0)
+		error = display_take();
+	expect(error == 0, "display present: claimed");
+	first = display_storage(5120U * 720U, 1);
+	second = display_storage(5120U * 720U, 1);
+	third = display_storage(5120U * 720U, 1);
+	expect(first != NULL && second != NULL && third != NULL, "display present: blobs");
+
+	/* A shared present: the blob's own address, held by the display. */
+	error = display_present(first, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	expect(error == 0 && dc_read(GHCI_DC_FB_BASE) == (uint32_t)first->allocation->bus && first->allocation->holds == 2U,
+	    "display present: shared, held");
+
+	/* The next shared image on the screen lets the first go. */
+	error = display_present(second, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	expect(error == 0 && dc_read(GHCI_DC_FB_BASE) == (uint32_t)second->allocation->bus && first->allocation->holds == 1U &&
+	    second->allocation->holds == 2U, "display present: the first let go");
+
+	/* Mailbox: the first placed, the second waiting is replaced by the third, which is adopted with it. */
+	takes = model.display.takes[0];
+	error = display_present(first, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB, 0, &sequence);
+	if (error == 0)
+		error = display_present(second, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB, 0, &mailbox);
+	expect(error == 0 && device.display.queue_count == 1U, "display present: one waiting");
+	if (error == 0)
+		error = display_present(third, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB, 1, &mailbox);
+	ghci_scan_flush(&device);
+	expect(error == 0 && device.display.adopted == mailbox && mailbox == sequence + 2U &&
+	    model.display.takes[0] == takes + 2U && dc_read(GHCI_DC_FB_BASE) == (uint32_t)third->allocation->bus &&
+	    second->allocation->holds == 1U, "display present: mailbox replaced, adopted with its replacement");
+
+	/* FIFO: four presents in a row wait for room; the controller never sees two flips of a plane at once. */
+	error = display_present(first, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 0, &sequence);
+	if (error == 0)
+		error = display_present(second, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 0, &sequence);
+	if (error == 0)
+		error = display_present(third, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 0, &sequence);
+	if (error == 0)
+		error = display_present(first, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	expect(error == 0 && device.display.adopted == sequence && model.display.flip_waits == 0U, "display present: FIFO waits for room");
+
+	/* What the controller cannot show. */
+	error = display_present(first, 1280U, 720U, 5120U, 4U, GPU_DISPLAY_PRESENT_BLOB, 0, &sequence);
+	expect(error == EINVAL, "display present: a first row off the memory line");
+	error = display_present(first, 800U, 600U, 3200U, 0U, GPU_DISPLAY_PRESENT_BLOB, 0, &sequence);
+	expect(error == EINVAL, "display present: a size of no mode");
+	error = display_present(first, 1280U, 720U, 5120U, 4096U, 0U, 0, &sequence);
+	expect(error == EINVAL, "display present: past the storage");
+
+	/* The lease goes and the blobs with it. */
+	display_give_up();
+	ghci_scan_flush(&device);
+	expect(device.display.shown.memory == NULL && model.display.bad_writes == 0U, "display present: nothing held after the release");
+	end_scene("display present");
+}
+
+/*
+ * Copied presents of a discrete GPU: into frames of local memory by the
+ * blitter through session 0's mappings, and by the processor through the
+ * local window on a GPU without a blitter.
+ */
+static void
+scene_display_copied(void)
+{
+	struct ghci_resource *storage;
+	struct ghci_allocation *frame;
+	uint64_t sequence;
+	unsigned copies;
+	int error;
+
+	/* With the blitter: the frames are local memory, mapped into session 0. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	error = start_device_window();
+	if (error == 0)
+		error = display_take();
+	expect(error == 0 && device.display.frames[0]->kind == GHCI_MEMORY_LOCAL && device.display.frame_maps[0] != NULL &&
+	    device.display.frame_maps[1] != NULL, "display copied: local frames mapped");
+	storage = display_storage(2560U * 480U, 0);
+	display_pattern(storage, 11U);
+	copies = model_count_commands(GHCI_OP_COPY_BUFFER);
+	error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	frame = device.display.frames[0];
+	expect(error == 0 && model_count_commands(GHCI_OP_COPY_BUFFER) == copies + 1U &&
+	    dc_read(GHCI_DC_FB_BASE) == (uint32_t)frame->bus && display_frame_holds(frame->bus, 2560U, storage, 640U, 480U, 2560U),
+	    "display copied: by the blitter into local memory");
+
+	/* A storage of another stride is copied a row at a time; the next frame is the other one. */
+	device.ops.resource_destroy(&device, display_open, storage);
+	storage = display_storage(4096U * 480U, 0);
+	display_pattern(storage, 13U);
+	copies = model_count_commands(GHCI_OP_COPY_BUFFER);
+	error = display_present(storage, 640U, 480U, 4096U, 0U, GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	frame = device.display.frames[1];
+	expect(error == 0 && model_count_commands(GHCI_OP_COPY_BUFFER) == copies + 480U &&
+	    dc_read(GHCI_DC_FB_BASE) == (uint32_t)frame->bus && display_frame_holds(frame->bus, 2560U, storage, 640U, 480U, 4096U),
+	    "display copied: row by row into the other frame");
+	device.ops.resource_destroy(&device, display_open, storage);
+	display_give_up();
+	expect(model.display.bad_writes == 0U, "display copied: no refused write");
+	end_scene("display copied");
+
+	/* Without a blitter: the processor copies through the window, which closes again. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	model.window[GHCI_REG_DEVICE_CAPS / 4U] &= ~GHCI_CAP_BLT;
+	error = start_device_window();
+	if (error == 0)
+		error = display_take();
+	expect(error == 0 && device.display.frame_maps[0] == NULL, "display copied: no blitter, no mapping");
+	storage = display_storage(2560U * 480U, 0);
+	display_pattern(storage, 17U);
+	error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	frame = device.display.frames[0];
+	expect(error == 0 && model_count_commands(GHCI_OP_COPY_BUFFER) == 0U &&
+	    display_frame_holds(frame->bus, 2560U, storage, 640U, 480U, 2560U) && device.window_users == 0U &&
+	    model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U] == 0U, "display copied: by the processor through the window");
+	device.ops.resource_destroy(&device, display_open, storage);
+	display_give_up();
+	end_scene("display copied: no blitter");
+}
+
+/*
+ * The cursor plane: an image set (converted from RGBA8 to BGRA8, the rest
+ * cleared) and flipped to plane 1, moved and hidden by the host; a
+ * controller without the plane, or a GPU without HW_CURSOR, offers none.
+ */
+static void
+scene_display_cursor(void)
+{
+	struct gpu_display_cursor_image image;
+	struct gpu_display_cursor_move move;
+	struct gpu_display_cursor_hide hide;
+	struct gpu_display_info info;
+	struct ghci_resource *frame;
+	struct ghci_resource *storage;
+	uint8_t *surface;
+	uint8_t *pixels;
+	uint64_t sequence;
+	int error;
+
+	/* A lit display, and a 32 x 16 image of RGBA8. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	if (error == 0)
+		error = display_take();
+	frame = display_storage(2560U * 480U, 0);
+	if (error == 0)
+		error = display_present(frame, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	expect(error == 0, "display cursor: lit");
+	storage = display_storage(4096U, 0);
+	pixels = storage->allocation->view;
+	pixels[0] = 0x11U;
+	pixels[1] = 0x22U;
+	pixels[2] = 0x33U;
+	pixels[3] = 0x44U;
+
+	/* A move before an image is refused. */
+	memset(&move, 0, sizeof(move));
+	move.lease = display_lease;
+	move.generation = display_generation;
+	move.x = -3;
+	move.y = 10;
+	error = device.ops.display->cursor_move(&device, display_open, &move);
+	expect(error == EINVAL, "display cursor: move before an image");
+
+	/* The image goes into a surface and is flipped to plane 1. */
+	memset(&image, 0, sizeof(image));
+	image.lease = display_lease;
+	image.generation = display_generation;
+	image.width = 32U;
+	image.height = 16U;
+	image.stride = 128U;
+	image.format = GPU_PIXEL_RGBA8888;
+	error = device.ops.display->cursor_set(&device, display_open, storage, &image);
+	ghci_sleep_ms(30U);
+	display_round();
+	surface = model_dma(device.display.surfaces[0]->bus, 256U * 64U);
+	expect(error == 0 && surface != NULL && surface[0] == 0x33U && surface[2] == 0x11U && surface[3] == 0x44U &&
+	    surface[16U * 256U] == 0U && dc_read(GHCI_DC_CURSOR_BASE) == (uint32_t)device.display.surfaces[0]->bus &&
+	    device.display.cursor_shown == 0 && model.display.takes[1] == 1U, "display cursor: set and flipped");
+
+	/* The host moves and hides it. */
+	error = device.ops.display->cursor_move(&device, display_open, &move);
+	expect(error == 0 && dc_read(GHCI_DC_CURSOR_POS) == ((uint32_t)(-3) & 0xffffU) + (10U << 16) &&
+	    dc_read(GHCI_DC_CURSOR_CTRL) == 1U, "display cursor: moved");
+	memset(&hide, 0, sizeof(hide));
+	hide.lease = display_lease;
+	hide.generation = display_generation;
+	error = device.ops.display->cursor_hide(&device, display_open, &hide);
+	expect(error == 0 && dc_read(GHCI_DC_CURSOR_CTRL) == 0U, "display cursor: hidden");
+
+	/* The next image goes into the other surface. */
+	error = device.ops.display->cursor_set(&device, display_open, storage, &image);
+	ghci_sleep_ms(30U);
+	display_round();
+	expect(error == 0 && device.display.cursor_shown == 1 && model.display.bad_writes == 0U, "display cursor: the other surface");
+	device.ops.resource_destroy(&device, display_open, storage);
+	device.ops.resource_destroy(&device, display_open, frame);
+	display_give_up();
+	end_scene("display cursor");
+
+	/* A controller without the plane. */
+	prepare_scene(MODEL_KC705_UMA, NULL);
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_CAPS) / 4U] &= ~GHCI_DC_CAPS_CURSOR;
+	error = start_device();
+	memset(&info, 0, sizeof(info));
+	if (error == 0)
+		error = device.ops.open(&device, &display_open);
+	if (error == 0)
+		error = device.ops.display->query(&device, display_open, &info);
+	expect(error == 0 && device.ops.display == &ghci_display_ops && (info.flags & GPU_DISPLAY_HAS_CURSOR) == 0U,
+	    "display cursor: none without the plane");
+	device.ops.close(&device, display_open);
+	end_scene("display cursor: no plane");
+
+	/* A GPU without HW_CURSOR. */
+	prepare_scene(MODEL_KC705_UMA, NULL);
+	model.window[GHCI_REG_EXT_CAP_FEATURE / 4U] &= ~GHCI_FEATURE_HW_CURSOR;
+	error = start_device();
+	expect(error == 0 && device.ops.display == &ghci_display_ops && !device.display.cursor, "display cursor: none without HW_CURSOR");
+	end_scene("display cursor: no HW_CURSOR");
+}
+
+/*
+ * The connection: a sink that goes away is a topology event, and the
+ * lease's presents fail until a sink comes back as a new generation.
+ */
+static void
+scene_display_hotplug(void)
+{
+	struct ghci_resource *storage;
+	uint64_t topology;
+	uint64_t now;
+	uint64_t sequence;
+	int error;
+
+	/* A lease. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(2560U * 480U, 0);
+	expect(error == 0 && storage != NULL, "display hotplug: claimed");
+	(void)device.ops.display->events(&device, display_open, &topology);
+
+	/* The sink goes: HOTPLUG, the service reads CONNECTED, the topology moves. */
+	model_display_sense(0);
+	expect((device.display.irq_events & GHCI_DC_IRQ_HOTPLUG) != 0U && (model.irq_status & GHCI_IRQ_DISPLAY) == 0U &&
+	    model.display.irq_status == 0U, "display hotplug: the event acknowledged in order");
+	display_round();
+	(void)device.ops.display->events(&device, display_open, &now);
+	expect(!device.display.connected && now == topology + 1U && device.display.generation == display_generation,
+	    "display hotplug: disconnected");
+	error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 0, &sequence);
+	expect(error == ENXIO, "display hotplug: no present without a sink");
+
+	/* The sink comes back: a new generation; the old one is stale. */
+	model_display_sense(1);
+	display_round();
+	(void)device.ops.display->events(&device, display_open, &now);
+	expect(device.display.connected && now == topology + 2U && device.display.generation == display_generation + 1U,
+	    "display hotplug: connected again, a new generation");
+	error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 0, &sequence);
+	expect(error == ESTALE, "display hotplug: the old generation is stale");
+	device.ops.resource_destroy(&device, display_open, storage);
+	display_give_up();
+	end_scene("display hotplug");
+}
+
+/*
+ * The scan-out errors: counted and cleared, a read error three rounds in
+ * a row turns the controller dark, and too many in a second mask the
+ * event until the next second.
+ */
+static void
+scene_display_errors(void)
+{
+	struct ghci_resource *storage;
+	uint64_t sequence;
+	unsigned index;
+	int error;
+
+	/* A lit display. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(2560U * 480U, 0);
+	if (error == 0)
+		error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	expect(error == 0, "display errors: lit");
+
+	/* An underflow is counted and cleared. */
+	model_display_error(GHCI_DC_ST_UNDERFLOW);
+	display_round();
+	expect(device.display.underflows == 1U && device.display.errors_total == 1U && (dc_read(GHCI_DC_STATUS) & GHCI_DC_ST_UNDERFLOW) == 0U,
+	    "display errors: an underflow counted and cleared");
+
+	/* A read error three rounds in a row turns the controller dark. */
+	for (index = 0U; index < 3U; index++) {
+		model_display_error(GHCI_DC_ST_READ_ERROR);
+		display_round();
+	}
+	ghci_sleep_ms(10U);
+	expect((dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) == 0U && !device.display.enabled, "display errors: dark after three read errors");
+
+	/* Too many in a second mask the event; the next second unmasks it. */
+	for (index = 0U; index < 32U; index++) {
+		model_display_error(GHCI_DC_ST_RECORD_ERROR);
+		display_round();
+	}
+	expect(device.display.error_masked && (dc_read(GHCI_DC_IRQ_ENABLE) & GHCI_DC_IRQ_ERROR) == 0U, "display errors: masked");
+	ghci_sleep_ms(1100U);
+	display_round();
+	expect(!device.display.error_masked && (dc_read(GHCI_DC_IRQ_ENABLE) & GHCI_DC_IRQ_ERROR) != 0U, "display errors: unmasked");
+	device.ops.resource_destroy(&device, display_open, storage);
+	display_give_up();
+	end_scene("display errors");
+}
+
+/*
+ * A reset of the command processor: a flip lost with the ring is counted
+ * again (TAKEN0 does not name it) and placed again; a flip the controller
+ * took while the processor was faulted has its record written once the
+ * reset leaves the processor idle, and is counted taken; a present made
+ * while the gate is closed waits for the recovery.
+ */
+static void
+scene_display_reset(void)
+{
+	struct ghci_resource *first;
+	struct ghci_resource *second;
+	uint64_t sequence;
+	int error;
+
+	/* A lease and a first image. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	if (error == 0)
+		error = display_take();
+	first = display_storage(5120U * 720U, 1);
+	second = display_storage(5120U * 720U, 1);
+	if (error == 0)
+		error = display_present(first, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	expect(error == 0, "display reset: first image");
+
+	/* A flip the processor never read, lost with the ring, is placed again after the recovery. */
+	model_hold(1);
+	error = display_present(second, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 0, &sequence);
+	expect(error == 0 && device.display.flips[0].placed, "display reset: a flip placed, not read");
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(device.state == GHCI_STATE_RUNNING && device.resets == 1U, "display reset: recovered");
+	error = device.ops.display->adoption_wait(&device, display_open, display_lease, &sequence, NULL);
+	expect(error == 0 && dc_read(GHCI_DC_FB_BASE) == (uint32_t)second->allocation->bus, "display reset: the lost flip placed again");
+
+	/* A flip taken while the processor was faulted: its record comes after the reset. */
+	error = display_present(first, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 0, &sequence);
+	expect(error == 0 && model.display.pending[0], "display reset: a flip pending");
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	model_display_vsync();
+	expect(model.display.due[0] && (dc_read(GHCI_DC_STATUS) & GHCI_DC_ST_RECORD) != 0U, "display reset: the record due while faulted");
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(device.state == GHCI_STATE_RUNNING && !device.display.flips[0].placed && device.display.adopted == sequence &&
+	    dc_read(GHCI_DC_FB_BASE) == (uint32_t)first->allocation->bus, "display reset: counted taken after the reset");
+
+	expect(model.display.bad_writes == 0U && model.display.flip_waits == 0U, "display reset: no refused write");
+	display_give_up();
+	end_scene("display reset");
+
+	/* A present while the gate is closed is placed once the recovery ran (a new device: three faults would lose it). */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	if (error == 0)
+		error = display_take();
+	first = display_storage(5120U * 720U, 1);
+	second = display_storage(5120U * 720U, 1);
+	if (error == 0)
+		error = display_present(first, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	error = display_present(second, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 0, &sequence);
+	expect(error == 0 && !device.display.flips[0].placed && device.display.queue_count == 1U, "display reset: recorded, not placed, at the closed gate");
+	scene_action = action_recover;
+	error = device.ops.display->adoption_wait(&device, display_open, display_lease, &sequence, NULL);
+	scene_action = NULL;
+	expect(error == 0 && dc_read(GHCI_DC_FB_BASE) == (uint32_t)second->allocation->bus && device.resets == 1U,
+	    "display reset: placed after the recovery");
+	expect(model.display.bad_writes == 0U && model.display.flip_waits == 0U, "display reset: no refused write at the gate");
+	display_give_up();
+	end_scene("display reset: gate");
+}
+
+/* Sets the boot display a firmware leaves on a UMA device: 1280 x 720 at 8 MiB of host memory, rows of 5120 bytes. */
+static void
+boot_display_host(void)
+{
+	boot_display(GHCI_DC_CTRL_ENABLE | GHCI_DC_CTRL_OUTPUT_HDMI, MODEL_HOST_BASE + 0x800000U, 5120U, 720U);
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_FB_SIZE) / 4U] = 1280U | (720U << 16);
+
+	/* The timing of the model's first mode. */
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_H_FP) / 4U] = 110U;
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_H_SYNC) / 4U] = 40U;
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_H_BP) / 4U] = 220U;
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_V_FP) / 4U] = 5U;
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_V_SYNC) / 4U] = 5U;
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_V_BP) / 4U] = 20U;
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_SYNC_POL) / 4U] = 3U;
+	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_PCLK_SEL) / 4U] = 1U;
+}
+
+/*
+ * The boot display: kept scanning until the driver's first flip is taken,
+ * its range of local memory kept while the console may still draw to it
+ * and given back otherwise; the detach shows it again while it is kept,
+ * and turns the controller dark once it was given back.
+ */
+static void
+scene_display_boot(void)
+{
+	struct ghci_resource *storage;
+	uint64_t sequence;
+	int error;
+
+	/* A boot display in local memory, which the console may still draw to. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(GHCI_DC_CTRL_ENABLE, MODEL_LOCAL_BASE + 0x100000U, 4096U, 256U);
+	error = start_device_window();
+	expect(error == 0 && device.display.boot_scanning && device.display.boot_kept && device.boot_reserved &&
+	    model.display.resets == 0U && (dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) != 0U, "display boot: kept scanning");
+
+	/* The first flip placed but not taken (no frame passed yet): the boot image stays. */
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(2560U * 480U, 0);
+	if (error == 0)
+		error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 0, &sequence);
+	expect(error == 0 && device.display.boot_scanning && device.boot_reserved, "display boot: kept until the flip is taken");
+
+	/* Taken: the boot display ends, but the range stays for the console. */
+	error = device.ops.display->adoption_wait(&device, display_open, display_lease, &sequence, NULL);
+	ghci_scan_flush(&device);
+	expect(error == 0 && !device.display.boot_scanning && device.display.boot_kept && device.boot_reserved &&
+	    device.window_users == 1U, "display boot: the console's range kept");
+
+	/* The detach shows the boot image again. */
+	device.ops.resource_destroy(&device, display_open, storage);
+	device.ops.close(&device, display_open);
+	end_scene("display boot: kept");
+	expect(dc_read(GHCI_DC_FB_BASE) == (uint32_t)MODEL_LOCAL_BASE + 0x100000U && (dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) != 0U &&
+	    model.display.bad_writes == 0U, "display boot: shown again at the detach");
+
+	/* Nothing draws to it: the range goes back after the first flip, and the detach turns the controller dark. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(GHCI_DC_CTRL_ENABLE, MODEL_LOCAL_BASE + 0x100000U, 4096U, 256U);
+	error = start_device_window();
+	device.display.boot_console = 0;
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(2560U * 480U, 0);
+	if (error == 0)
+		error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	ghci_scan_flush(&device);
+	expect(error == 0 && !device.display.boot_kept && !device.boot_reserved && device.boot_count == 0U &&
+	    device.window_users == 0U, "display boot: given back after the first flip");
+	device.ops.resource_destroy(&device, display_open, storage);
+	device.ops.close(&device, display_open);
+	end_scene("display boot: released");
+	expect((dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) == 0U, "display boot: dark at the detach after the release");
+}
+
+/*
+ * The panic console: the host halts the processor, waits for HALTED and
+ * writes the controller to show the boot image the console draws on; a
+ * device without a boot image has nothing to show.
+ */
+static void
+scene_display_panic(void)
+{
+	struct ghci_resource *storage;
+	uint64_t sequence;
+	int error;
+
+	/* A UMA boot display, then the driver's own image. */
+	prepare_scene(MODEL_KC705_UMA, NULL);
+	boot_display_host();
+	error = start_device();
+	expect(error == 0 && device.display.boot_scanning && device.display.boot.mode == 0U, "display panic: boot display in the 1280 x 720 mode");
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(5120U * 720U, 0);
+	if (error == 0)
+		error = display_present(storage, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	expect(error == 0 && model_count_commands(GHCI_OP_DISP_SET) == 0U && dc_read(GHCI_DC_FB_BASE) != MODEL_HOST_BASE + 0x800000U,
+	    "display panic: the first flip without a new lighting");
+
+	/* The panic: halted, then the boot image by the host. */
+	error = ghci_display_panic(&device);
+	expect(error == 0 && model.state == MODEL_HALTED && dc_read(GHCI_DC_FB_BASE) == MODEL_HOST_BASE + 0x800000U &&
+	    (dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) != 0U && model.display.bad_writes == 0U, "display panic: the boot image shown");
+	device.ops.resource_destroy(&device, display_open, storage);
+	device.ops.close(&device, display_open);
+	end_scene("display panic");
+
+	/* No boot image, nothing to show. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0 && ghci_display_panic(&device) == ENOENT, "display panic: none without a boot image");
+	end_scene("display panic: none");
+}
+
+/*
+ * The detach of a device whose display shows the driver's image: the
+ * controller goes dark, by the ring, with the session's image let go.
+ */
+static void
+scene_display_detach(void)
+{
+	struct ghci_resource *storage;
+	struct ghci_allocation *memory;
+	uint64_t sequence;
+	int error;
+
+	/* A shared image on the screen; the session closes without a release. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(5120U * 720U, 1);
+	if (error == 0)
+		error = display_present(storage, 1280U, 720U, 5120U, 0U, GPU_DISPLAY_PRESENT_BLOB | GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	memory = storage->allocation;
+	device.ops.resource_destroy(&device, display_open, storage);
+	expect(error == 0 && memory->holds == 1U, "display detach: the display holds the image");
+	device.ops.close(&device, display_open);
+	expect(device.display.ending && device.display.owner == NULL, "display detach: the lease ended with the session");
+
+	/* The detach: dark by the ring, before the processor stops. */
+	error = ghci_device_stop(&device);
+	expect(error == 0 && (dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) == 0U && !device.display.present &&
+	    model.display.bad_writes == 0U && model.display.idle_waits_lit == 0U, "display detach: dark");
+	end_scene("display detach");
+}
+
+/*
+ * A GPU without DISP2 offers no display: no block, DISP alone, and DISP2
+ * without the capability bit.
+ */
+static void
+scene_display_none(void)
+{
+	int error;
+
+	/* No block. */
+	error = start_scene(MODEL_MINIMAL, NULL);
+	expect(error == 0 && !device.display.present && device.ops.display == NULL && device.ops.scanout == NULL &&
+	    (device.ops.capabilities & (GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS)) == 0U &&
+	    (model.irq_enable & GHCI_IRQ_DISPLAY) == 0U, "display none: no DISP2");
+	end_scene("display none");
+
+	/* DISP alone is not served. */
+	prepare_scene(MODEL_KC705_UMA, NULL);
+	extcap_rename(GHCI_EXTCAP_ID_DISP2, GHCI_EXTCAP_ID_DISP);
+	error = start_device();
+	expect(error == 0 && !device.display.present && device.ops.display == NULL, "display none: DISP alone");
+	end_scene("display none: DISP");
+
+	/* DISP2 without CAP_DISP. */
+	prepare_scene(MODEL_KC705_UMA, NULL);
+	model.window[GHCI_REG_DEVICE_CAPS / 4U] &= ~GHCI_CAP_DISP;
+	error = start_device();
+	expect(error == 0 && !device.display.present && device.ops.display == NULL, "display none: no CAP_DISP");
+	end_scene("display none: no CAP_DISP");
 }

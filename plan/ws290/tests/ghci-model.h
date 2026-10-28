@@ -142,6 +142,36 @@ struct model_injection {
 	uint64_t address;
 };
 
+/*
+ * The display controller of DISP2 (section 13.2) as the model keeps it
+ * beside the registers it stores in the window: the sticky STATUS bits,
+ * the display events and their mask, each plane's pending flip, the
+ * records due while the processor cannot write them, and what the tests
+ * check: refused writes (BAD_WRITE), the takes and cancellations of each
+ * plane, the records written, FLIPs that had to wait for a pending one,
+ * DISP_SETs that waited for idle while the controller was lit, and the
+ * controller's own resets.
+ */
+struct model_display {
+	uint32_t sticky;
+	uint32_t irq_status;
+	uint32_t irq_enable;
+	int pending[2];
+	uint32_t pending_base[2];
+	uint32_t pending_value[2];
+	uint32_t pending_record[2];
+	int due[2];
+	uint32_t due_value[2];
+	uint32_t due_record[2];
+	unsigned bad_writes;
+	unsigned takes[2];
+	unsigned cancels[2];
+	unsigned records;
+	unsigned flip_waits;
+	unsigned idle_waits_lit;
+	unsigned resets;
+};
+
 /* The interrupt handler the model calls while its line is high. */
 typedef void (*model_irq_handler)(void *argument);
 
@@ -196,6 +226,7 @@ struct model {
 	uint64_t host_next;
 	uint8_t *host;
 	uint8_t *local;
+	struct model_display display;
 };
 
 /* The model the tests run; model_init fills it. */
@@ -226,5 +257,8 @@ uint64_t model_heap_bytes(void);
 const struct model_mapping *model_lookup(uint32_t session, uint64_t va);
 unsigned model_count_commands(uint32_t opcode);
 const struct model_command *model_last_command(uint32_t opcode);
+void model_display_vsync(void);
+void model_display_error(uint32_t sticky);
+void model_display_sense(int connected);
 
 #endif
