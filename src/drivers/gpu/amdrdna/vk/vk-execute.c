@@ -183,12 +183,28 @@ struct amdrdna_vk_execute {
 };
 
 /*
+ * A draw's two resource tables (each one's CPU view and GPU address) and
+ * the vertex program's instance mask.
+ */
+struct execute_tables {
+	uint8_t *vertex_cpu;
+	uint64_t vertex_va;
+	uint8_t *fragment_cpu;
+	uint64_t fragment_va;
+	uint32_t instance_mask;
+};
+
+/*
  * What a command buffer's records have bound so far (the index buffer,
  * its offset and VkIndexType among them), and the pass they are in (its
  * colour target, and its depth target when depth_on).  The drawn_ fields
  * are what the buffer's last draw wrote of the fixed state (its pipeline,
- * viewport, scissor and culling words), good while target_written stays
- * set (every internal draw, transfer, pass and new buffer clears it).
+ * viewport, scissor and culling words) and the resource tables it used
+ * (with the vertex program's instance mask), good while target_written
+ * stays set (every internal draw, transfer, pass and new buffer clears it);
+ * sets_changed, buffers_changed and push_changed say that the descriptor
+ * sets, the vertex buffers or the push constants changed since then (a
+ * binding of what is bound already changes nothing).
  */
 struct execute_state {
 	const struct amdrdna_vk_pipeline *pipeline;
@@ -216,6 +232,10 @@ struct execute_state {
 	uint32_t drawn_viewport[6];
 	int32_t drawn_scissor[4];
 	uint32_t drawn_culling[AMDRDNA_GFX10_NGG_CULL_USER_SGPRS - AMDRDNA_GFX10_NGG_USER_SGPRS];
+	struct execute_tables drawn_tables;
+	bool sets_changed;
+	bool buffers_changed;
+	bool push_changed;
 };
 
 /*
@@ -266,7 +286,9 @@ static int execute_kernel_resources(const struct amdrdna_gfx10_program *program,
 static int execute_part(struct amdrdna_vk_execute *execute, uint32_t bytes, uint8_t **cpu, uint64_t *va);
 static int execute_begin_pass(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_draw(struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
-static int execute_draw_end(struct amdrdna_vk_execute *execute, const struct execute_state *state, const struct amdrdna_vk_record *record);
+static int execute_draw_tables(struct amdrdna_vk_execute *execute, const struct execute_state *state, const struct amdrdna_vk_pipeline *pipeline, struct execute_tables *tables);
+static int execute_table_copy(struct amdrdna_vk_execute *execute, const struct amdrdna_gfx10_program *program, const struct execute_state *state, const uint8_t *earlier, uint8_t **cpu, uint64_t *va);
+static int execute_draw_end(struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record, const struct execute_tables *tables);
 static int execute_draw_call(struct amdrdna_vk_execute *execute, const struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_pass_view(const struct amdrdna_vk_framebuffer *framebuffer, uint32_t attachment, const struct amdrdna_vk_view **view);
 static int execute_table(struct amdrdna_vk_execute *execute, const struct amdrdna_gfx10_program *program, uint8_t **cpu, uint64_t *va);
@@ -951,14 +973,20 @@ execute_bind(
 		break;
 	case GPU_OP_CMD_BIND_DESCRIPTOR_SETS:
 		for (index = 0U; index < record->object_count; index++) {
-			if (record->objects[index] != NULL)
+			if (record->objects[index] != NULL && state->sets[record->first + index] != record->objects[index]->payload) {
 				state->sets[record->first + index] = record->objects[index]->payload;
+				state->sets_changed = true;
+			}
 		}
 		break;
 	case GPU_OP_CMD_BIND_VERTEX_BUFFERS:
 		for (index = 0U; index < record->object_count; index++) {
-			state->buffers[record->first + index] = record->objects[index]->payload;
-			state->offsets[record->first + index] = record->offsets[index];
+			if (state->buffers[record->first + index] != record->objects[index]->payload ||
+			    state->offsets[record->first + index] != record->offsets[index]) {
+				state->buffers[record->first + index] = record->objects[index]->payload;
+				state->offsets[record->first + index] = record->offsets[index];
+				state->buffers_changed = true;
+			}
 		}
 		break;
 	case GPU_OP_CMD_BIND_INDEX_BUFFER:
@@ -967,7 +995,10 @@ execute_bind(
 		state->index_type = record->values[0];
 		break;
 	case GPU_OP_CMD_PUSH_CONSTANTS:
-		kern_memcpy(state->push + record->first, state->push_bytes + record->push_at, record->count);
+		if (kern_memcmp(state->push + record->first, state->push_bytes + record->push_at, record->count) != 0) {
+			kern_memcpy(state->push + record->first, state->push_bytes + record->push_at, record->count);
+			state->push_changed = true;
+		}
 		break;
 	default:
 		break;
@@ -1322,11 +1353,7 @@ execute_draw(
 	struct amdrdna_vk_blend blend;
 	const uint32_t *viewport;
 	const VkRect2D *scissor;
-	uint8_t *vertex_table;
-	uint8_t *fragment_table;
-	uint64_t vertex_va;
-	uint64_t fragment_va;
-	uint32_t instance_mask;
+	struct execute_tables tables;
 	uint32_t base_vertex;
 	uint32_t first_instance;
 	int32_t x0;
@@ -1353,16 +1380,9 @@ execute_draw(
 	}
 
 	/* The two programs' resource tables. */
-	error = execute_table(execute, pipeline->vertex.compiled, &vertex_table, &vertex_va);
-	if (error == 0)
-		error = execute_table(execute, pipeline->fragment.compiled, &fragment_table, &fragment_va);
-	if (error == 0)
-		error = execute_resources(pipeline->vertex.compiled, state, vertex_table);
-	if (error == 0)
-		error = execute_resources(pipeline->fragment.compiled, state, fragment_table);
+	error = execute_draw_tables(execute, state, pipeline, &tables);
 	if (error != 0)
 		return error;
-	execute_vertex_input(execute, pipeline, state, vertex_table, &instance_mask);
 
 	/* The scissor: dynamic or the pipeline's, within the target; nothing to draw outside it. */
 	scissor = &pipeline->scissor;
@@ -1396,9 +1416,9 @@ execute_draw(
 	if (state->target_written && state->drawn_pipeline == pipeline &&
 	    kern_memcmp(state->drawn_viewport, viewport, sizeof(state->drawn_viewport)) == 0 &&
 	    state->drawn_scissor[0] == x0 && state->drawn_scissor[1] == y0 && state->drawn_scissor[2] == x1 && state->drawn_scissor[3] == y1) {
-		amdrdna_vk_state_program_data(&execute->pm4, &pipeline->vertex, vertex_va, fragment_va, base_vertex, first_instance, instance_mask,
-					      state->drawn_culling);
-		return execute_draw_end(execute, state, record);
+		amdrdna_vk_state_program_data(&execute->pm4, &pipeline->vertex, tables.vertex_va, tables.fragment_va, base_vertex, first_instance,
+					      tables.instance_mask, state->drawn_culling);
+		return execute_draw_end(execute, state, record, &tables);
 	}
 
 	/* The targets, once in a buffer: the colour target, and the depth unit's surface or none. */
@@ -1438,8 +1458,8 @@ execute_draw(
 
 	/* The programs with their tables, the first vertex and instance, the culling of a primitive shader that culls. */
 	amdrdna_vk_state_culling(viewport, pipeline->topology, pipeline->cull_mode, pipeline->front_face, state->drawn_culling);
-	amdrdna_vk_state_programs(&execute->pm4, &pipeline->vertex, &pipeline->fragment, vertex_va, fragment_va, base_vertex, first_instance,
-				  instance_mask, state->drawn_culling);
+	amdrdna_vk_state_programs(&execute->pm4, &pipeline->vertex, &pipeline->fragment, tables.vertex_va, tables.fragment_va, base_vertex,
+				  first_instance, tables.instance_mask, state->drawn_culling);
 
 	/* What the next draw of the same may leave as it is. */
 	state->drawn_pipeline = pipeline;
@@ -1450,15 +1470,110 @@ execute_draw(
 	state->drawn_scissor[3] = y1;
 
 	/* The draw. */
-	return execute_draw_end(execute, state, record);
+	return execute_draw_end(execute, state, record, &tables);
 }
 
-/* Writes a draw's packets after its state and counts it. */
+/*
+ * Gives a draw's two resource tables: for the buffer's next draw of the
+ * same pipeline, a table the last one used while nothing it reads changed,
+ * or a copy of it with the push constants written again when only they
+ * changed; else a new table.
+ */
+static int
+execute_draw_tables(
+	struct amdrdna_vk_execute *execute,
+	const struct execute_state *state,
+	const struct amdrdna_vk_pipeline *pipeline,
+	struct execute_tables *tables)
+{
+	const struct amdrdna_gfx10_program *vertex;
+	const struct amdrdna_gfx10_program *fragment;
+	const struct execute_tables *drawn;
+	bool kept;
+	int error;
+
+	vertex = pipeline->vertex.compiled;
+	fragment = pipeline->fragment.compiled;
+	drawn = &state->drawn_tables;
+	kept = state->target_written && state->drawn_pipeline == pipeline && !state->sets_changed;
+
+	/* The vertex program's: kept, copied, or new with its vertex input. */
+	if (kept && !state->buffers_changed && (!state->push_changed || vertex->push_bytes == 0U)) {
+		tables->vertex_cpu = drawn->vertex_cpu;
+		tables->vertex_va = drawn->vertex_va;
+		tables->instance_mask = drawn->instance_mask;
+	} else if (kept && !state->buffers_changed) {
+		error = execute_table_copy(execute, vertex, state, drawn->vertex_cpu, &tables->vertex_cpu, &tables->vertex_va);
+		if (error != 0)
+			return error;
+		tables->instance_mask = drawn->instance_mask;
+	} else {
+		error = execute_table(execute, vertex, &tables->vertex_cpu, &tables->vertex_va);
+		if (error == 0)
+			error = execute_resources(vertex, state, tables->vertex_cpu);
+		if (error != 0)
+			return error;
+		execute_vertex_input(execute, pipeline, state, tables->vertex_cpu, &tables->instance_mask);
+	}
+
+	/* The pixel program's: kept, copied, or new. */
+	if (kept && (!state->push_changed || fragment->push_bytes == 0U)) {
+		tables->fragment_cpu = drawn->fragment_cpu;
+		tables->fragment_va = drawn->fragment_va;
+	} else if (kept) {
+		error = execute_table_copy(execute, fragment, state, drawn->fragment_cpu, &tables->fragment_cpu, &tables->fragment_va);
+		if (error != 0)
+			return error;
+	} else {
+		error = execute_table(execute, fragment, &tables->fragment_cpu, &tables->fragment_va);
+		if (error == 0)
+			error = execute_resources(fragment, state, tables->fragment_cpu);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: both tables are the draw's. */
+	return 0;
+}
+
+/*
+ * Gives a program's resource table as a copy of an earlier one of the
+ * same program (at earlier) with the push constants written again.
+ */
+static int
+execute_table_copy(
+	struct amdrdna_vk_execute *execute,
+	const struct amdrdna_gfx10_program *program,
+	const struct execute_state *state,
+	const uint8_t *earlier,
+	uint8_t **cpu,
+	uint64_t *va)
+{
+	uint32_t bytes;
+	int error;
+
+	/* A new part, the earlier table over it, then the push constants. */
+	error = execute_table(execute, program, cpu, va);
+	if (error != 0)
+		return error;
+	bytes = (program->table_bytes + EXECUTE_TABLE_ALIGN) & ~(EXECUTE_TABLE_ALIGN - 1U);
+	kern_memcpy(*cpu, earlier, bytes);
+	kern_memcpy(*cpu, state->push, program->push_bytes);
+
+	/* Succeeded: the copy is the program's table. */
+	return 0;
+}
+
+/*
+ * Writes a draw's packets after its state and counts it; the tables it
+ * used are kept for the next draw of the same.
+ */
 static int
 execute_draw_end(
 	struct amdrdna_vk_execute *execute,
-	const struct execute_state *state,
-	const struct amdrdna_vk_record *record)
+	struct execute_state *state,
+	const struct amdrdna_vk_record *record,
+	const struct execute_tables *tables)
 {
 	int error;
 
@@ -1467,6 +1582,12 @@ execute_draw_end(
 	if (error != 0)
 		return error;
 	execute->draws++;
+
+	/* Its tables. */
+	state->drawn_tables = *tables;
+	state->sets_changed = false;
+	state->buffers_changed = false;
+	state->push_changed = false;
 
 	/* Succeeded: the draw is written. */
 	return 0;
