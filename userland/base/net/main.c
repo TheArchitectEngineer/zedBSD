@@ -436,7 +436,12 @@ console_prompt(
 	return prompt;
 }
 
-/* Supports the confirm discard operation. */
+/*
+ * Supports the confirm discard operation.
+ *
+ * The end of the input answers too: nothing more can be read, so asking
+ * again would never end, and the changes are discarded.
+ */
 static int
 confirm_discard(
 	void)
@@ -445,8 +450,11 @@ confirm_discard(
 	int discard;
 
 	answer = readline("Discard unsaved changes? [y/N] ");
-	discard = answer != NULL &&
-		  (strcmp(answer, "y") == 0 || strcmp(answer, "yes") == 0);
+	if (answer == NULL) {
+		fprintf(stderr, "\nnet: end of input; unsaved changes discarded\n");
+		return 1;
+	}
+	discard = strcmp(answer, "y") == 0 || strcmp(answer, "yes") == 0;
 	free(answer);
 
 	/* Returns the computed result. */
