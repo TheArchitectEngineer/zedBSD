@@ -158,3 +158,4 @@
 | q1669 / q1669-i02 | P1（worktree `/home/awe/zedBSD-worktrees/p1-ws235b`、基点 main a69e7147e） | ws235 p001 の判断の記録 → link の実機の試験 → p004 | i01 と同じ承認、p001 の回答 ①②③⑤ | in-progress |
 | q1665 / q1665-i06 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307j`、基点 main a69e7147e） | ws307 p009 段 2 の残りから | i01 と同じ承認 | 返却（p009 段 2〜4、dc4dd958e → main 23d2741ea） |
 | q1665 / q1665-i07 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307k`、基点 main 7d2f68e67） | ws307 p009 段 5 から | i01 と同じ承認 | in-progress |
+| q1664 / q1664-i04 | P3（worktree `/home/awe/zedBSD-worktrees/p3-ws221d`、基点 main 539fd96e7） | ws221 p008・p009 の残り → p006 → p007 → WS311 p001 | i01 と同じ承認 | in-progress |
