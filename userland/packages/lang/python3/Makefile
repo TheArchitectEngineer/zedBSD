@@ -24,7 +24,7 @@ ZEDBSD_EXT_python3_ARCHIVE := Python-3.14.8.tar.xz
 ZEDBSD_EXT_python3_URL := https://www.python.org/ftp/python/3.14.8/Python-3.14.8.tar.xz
 ZEDBSD_EXT_python3_SIZE := 24130644
 ZEDBSD_EXT_python3_SHA256 := c2215904f02b175596dc49351585104f4bc20341e1c47378b26a2c274360ce73
-ZEDBSD_EXT_python3_PATCH_LEVEL := zedbsd0
+ZEDBSD_EXT_python3_PATCH_LEVEL := zedbsd1
 ZEDBSD_EXT_python3_PATCHES := $(sort $(wildcard $(abspath $(ZEDBSD_PYTHON3_DIR))/patches/*.patch))
 
 $(eval $(call ZEDBSD_EXTERNAL_SOURCE,python3))
