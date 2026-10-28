@@ -3,7 +3,7 @@
 # ws307-p009 helper install-admin
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §5・§6.1・§6.4・§7・§8・§9（J2・J5・U26）。Queue: q1665 / q1665-i05（担当 P4、2026-10-29、worktree p4-ws307i）。
-- Status: in-progress（段 1 の設計を置いた。実装は段 2 から）
+- Status: in-progress（段 1 の設計、段 2 の index と unpack を host で確かめた。残り: 段 2 の plan・target、段 3〜7）
 - 承認: 2026-10-29 ユーザー「P4にWS307」（Q1 の中継）。HAL の API・toolchain には触れない。Boot####（段 11 の efiboot）は p007 の承認の後で、この Phase では書かない（S11 の案内だけ）。
 - 前提: p003（index と index-sha256.h、live の tree の installer の menu）、p005（diskpart batch・mkswap の partition・mkfs の乱数の serial と 4096）、p008（loader の `kernel=rootpart:`）、p006（4096 の kernel）。
 
@@ -35,3 +35,9 @@
 ### 決めた事（技術の判断）
 
 - T29: deflate は libz-compat の raw（windowBits −15）で、gzip の header と trailer（CRC32・ISIZE）は helper が読む（libz-compat は gzip の wrapper を読まない）。libz-compat の inflate は入力の全体を持ってから 1 回で出力の全体を作る（少しずつ渡すと毎回始めから decode する）ので、tarball は全体を memory に読み（同じ fd で読みながら SHA-256、照らしてから展開）、出力も全体を memory に持つ。最大の unit（lang-clang、65 MB → 208 MB）で約 280 MB。installer の image の起動に要る memory の下限は p011 で量る。
+
+## 結果
+
+- 段 2 の一部（2026-10-29、P4）: `userland/desktop/installer/admin/index.[ch]`（形式 1 の読み、2 回の走査で依存と setid の unit を slot に、同じ名前・未知の record・未知の依存・長すぎる field の拒み、SHA-256 の照合、依存の閉包（依存を先に、循環は ELOOP）、setid の許可の照合）と `unpack.[ch]`（同じ fd で読みながら SHA-256・大きさの照合、gzip の header・raw deflate・CRC-32 と ISIZE、ustar の checksum と magic、file・directory・symlink だけ、path の安全、成分ごとの `openat(O_NOFOLLOW)`、新しい file だけ（`O_EXCL`）、mode と setid の許可、entry ごとの callback で中止）。
+- host: `sh plan/ws307/tests/host/install-admin-unpack-test.sh`（新規、ASan・UBSan）→ PASS（21 の場合: good の展開と mode・symlink・1777、2 回目の EEXIST、許されない setid、絶対 path、`..`、先の entry の symlink を通る書き（ELOOP で外に書かない）、hard link、pax の header、壊れた header、違う SHA-256・大きさ・CRC-32、依存の順と循環、未知の形式・依存・record、index の digest の一致と不一致）。`INSTALLER_PAYLOAD=<p4-ws307g の build/ws307-main/installer/payload>`（1f487021a の build）で 34 の unit を全て展開し entry の数が index と同じ（lang-clang を含む、52 秒）。
+- 残り: 段 2 の plan・target、段 3〜7。
