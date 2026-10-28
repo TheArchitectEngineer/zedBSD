@@ -207,3 +207,11 @@ Phase に固有の試験は各 WS の `tests/`、シナリオ試験（AAT）は 
 | [plan/tools/mail/](tools/mail/)・[media/](tools/media/)・[music/](tools/music/) の追加（WS169・WS189・WS157・WS177、2026-10-28 に移した） | Mail の host 試験（`run-host-mailer.sh`・`run-host-mail-backend.sh`・`run-host-browser-mail.sh`・`run-host-mail-attach.sh`）、media storage の host 試験（`run-host-mediastorage.sh`）、Music の host 試験（`host-music-play.sh`） | `sh plan/tools/<dir>/<script>`。WS197 の Phase と `tests/scenarios/apps/` |
 | [plan/tools/rpi4-audio/](tools/rpi4-audio/)（WS207、2026-10-28 に移した） | Pi 4 の音の ring の host 試験（`run-rpi4-audio-ring-test.sh`） | BUG-318 |
 | [plan/tools/vf2-host/](tools/vf2-host/)（WS256、2026-10-28 に移した） | VF2 の host 試験（`fdt/`・`dw-mmc/`・`native-image/`）と起動の判定の host 試験（`boot-test-host.py`、`serial/`） | BUG-338・BUG-339・BUG-343 |
+
+## RDNA 機の時間の枠（2026-10-29 ユーザー「Q1を通して、あらかじめ時間枠を定義し、さらにQ1を通じて排他できたことを確認しつつ、譲り合って使えば、同時に進められるかなと思います。」、枠はユーザーの回答「案どおり、45 分 (推し)」）
+
+- 対象: RDNA 機（10.0.10.3、Debian と zedBSD、SwitchBot の plug 1 AC276E42B252）。使う担当: P2（WS291）、P1（WS235 の RTL8127）、P3（WS221 p010）。
+- 枠は 45 分。Q1 が順を決めて担当に知らせる。優先はネットワーク（WS235・WS221 p010）、ユーザー「あるいは、排他がちょっと難しいようであれば、ネットワーク改善を優先してもいいです。」。
+- 使い始め: 担当は Q1 に「使い始め」を送り、centris で `flock -n /tmp/zedbsd-rdna.lock` を取り（中に担当名・始め・終わりの予定の時刻を書く）、Q1 が排他を確かめた返事を待ってから機械を触る。
+- 終わり: 機械を決めた状態（Debian か zedBSD か、入っている kernel を phase.md に）にして lock を返し、Q1 に報告。延長は Q1 を通して相手と譲り合う。電源の入れ直しは lock を持つ担当だけ。
+- 機械の構成の変更（2026-10-29 05:4x ユーザー「では、RDNA機をシャットダウンします。再起動後、RTL8127と、RTX 2070が接続されています。RX 5600 XTはPCIスロットの高さの関係で、RTL8127と排他だからです。」）: 10.0.10.3 は今 RTL8127（PCIe 10GbE）と RTX 2070（NVIDIA）。RX 5600 XT（RDNA）は外した（RTL8127 と同時に挿せない）。RDNA の実機の計測は、RX 5600 XT を挿し直すまでできない。
