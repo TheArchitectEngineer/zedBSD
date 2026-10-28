@@ -335,7 +335,8 @@ static uint64_t swapchain_serial;
 static int present_cursor_log_on;
 
 static struct vulkan_swapchain *swapchain_get(VkSwapchainKHR handle);
-static VkResult swapchain_create(struct VkDevice_T *device, const VkSwapchainCreateInfoKHR *info, const VkAllocationCallbacks *allocator, struct wsi_image_group *shared, struct vulkan_swapchain **result);
+static VkResult swapchain_create(struct VkDevice_T *device, const VkSwapchainCreateInfoKHR *info, const VkAllocationCallbacks *allocator, struct wsi_image_group *shared, VkBool32 single, struct vulkan_swapchain **result);
+static VkBool32 swapchain_spare_wanted(struct VkDevice_T *device, struct vulkan_surface *surface, const VkSwapchainCreateInfoKHR *info);
 static VkResult swapchain_validate(struct VkDevice_T *device, const VkSwapchainCreateInfoKHR *info, struct vulkan_surface **surface);
 static VkResult swapchain_publish(struct vulkan_swapchain *chain);
 static void swapchain_free(struct vulkan_swapchain *chain);
@@ -438,7 +439,7 @@ vkCreateSwapchainKHR(
 		return VK_ERROR_INITIALIZATION_FAILED;
 
 	/* Complete acquisition precedes publication and native surface association. */
-	error = swapchain_create(device, info, allocator, NULL, &chain);
+	error = swapchain_create(device, info, allocator, NULL, VK_TRUE, &chain);
 	if (error != VK_SUCCESS)
 		return error;
 	error = swapchain_publish(chain);
@@ -510,7 +511,7 @@ vkCreateSharedSwapchainsKHR(
 	group = NULL;
 	error = VK_SUCCESS;
 	for (index = 0U; index < count; index++) {
-		error = swapchain_create(device, &infos[index], allocator, group, &chains[index]);
+		error = swapchain_create(device, &infos[index], allocator, group, VK_FALSE, &chains[index]);
 		if (error != VK_SUCCESS)
 			goto cleanup;
 		group = chains[index]->group;
@@ -996,15 +997,21 @@ swapchain_get(
 	return (struct vulkan_swapchain *)object;
 }
 
-/* Acquires complete private state without publishing a partially usable chain. */
+/*
+ * Acquires complete private state without publishing a partially usable
+ * chain; a single chain (not one of a shared creation) may get a spare
+ * image (swapchain_spare_wanted).
+ */
 static VkResult
 swapchain_create(
 	struct VkDevice_T *device,
 	const VkSwapchainCreateInfoKHR *info,
 	const VkAllocationCallbacks *allocator,
 	struct wsi_image_group *shared,
+	VkBool32 single,
 	struct vulkan_swapchain **result)
 {
+	VkSwapchainCreateInfoKHR counted;
 	struct vulkan_swapchain *chain;
 	struct vulkan_swapchain *old;
 	struct vulkan_surface *surface;
@@ -1045,6 +1052,13 @@ swapchain_create(
 	error = swapchain_validate(device, info, &surface);
 	if (error != VK_SUCCESS)
 		return error;
+
+	/* The images the chain makes: the asked count, and one more when a spare is wanted. */
+	if (single != VK_FALSE && swapchain_spare_wanted(device, surface, info)) {
+		counted = *info;
+		counted.minImageCount++;
+		info = &counted;
+	}
 	error = vulkan_object_alloc(
 		sizeof(*chain),
 		sizeof(void *),
@@ -1976,6 +1990,46 @@ swapchain_allocator(
 
 	/* Succeeded: these copied callbacks remain valid with the owning object. */
 	return &allocator->callbacks;
+}
+
+/*
+ * Says whether a chain gets one image more than it asked for: a mailbox
+ * chain on a compositor's surface (no display mode, not a cursor or an
+ * overlay) whose images the compositor can show itself, within the
+ * surface's image quota.  The compositor holds the image on the screen and
+ * the one it flips to while the application draws; with the asked count
+ * alone every acquire waits for the release of the image the last present
+ * replaced, and the spare keeps one free.  vkGetSwapchainImagesKHR reports
+ * the count made, which Vulkan allows to exceed minImageCount.
+ */
+static VkBool32
+swapchain_spare_wanted(
+	struct VkDevice_T *device,
+	struct vulkan_surface *surface,
+	const VkSwapchainCreateInfoKHR *info)
+{
+	VkSurfaceCapabilitiesKHR capabilities;
+	VkResult error;
+
+	/* A mailbox chain of a compositor's surface whose images it imports. */
+	if (info->presentMode != VK_PRESENT_MODE_MAILBOX_KHR)
+		return VK_FALSE;
+	if (surface->display_mode != NULL || surface->cursor != VK_FALSE || surface->overlay != VK_FALSE)
+		return VK_FALSE;
+	if (surface->platform->import_image == NULL)
+		return VK_FALSE;
+
+	/* Within the surface's quota. */
+	if (info->minImageCount == UINT32_MAX)
+		return VK_FALSE;
+	error = surface->platform->capabilities(surface, device->physical, &capabilities);
+	if (error != VK_SUCCESS)
+		return VK_FALSE;
+	if (capabilities.maxImageCount != 0U && info->minImageCount + 1U > capabilities.maxImageCount)
+		return VK_FALSE;
+
+	/* Succeeded: the chain gets its spare. */
+	return VK_TRUE;
 }
 
 /* Compares every property which determines the shared presentable image contract. */
