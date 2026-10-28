@@ -33,10 +33,6 @@
 /* The most instructions one of the quad programs has. */
 #define AMDRDNA_QUAD_IR_INSTRUCTIONS	32U
 
-/* The words of an image descriptor and of a sampler. */
-#define AMDRDNA_IMAGE_WORDS		8U
-#define AMDRDNA_SAMPLER_WORDS		4U
-
 /*
  * A colour target: a linear 2D image of four-byte pixels at address
  * (256-byte aligned), its size, and the VkFormat it is written in.  Its
@@ -102,6 +98,7 @@ bool amdrdna_vk_image_format(uint32_t format, uint32_t *code, bool *alternate);
 int amdrdna_vk_image_descriptor(uint64_t address, uint32_t width, uint32_t height, uint32_t format, const uint32_t *swizzle, uint32_t *words);
 void amdrdna_vk_image_descriptor_levels(uint32_t *words, uint32_t base, uint32_t last, uint32_t levels);
 void amdrdna_vk_sampler_descriptor(const struct amdrdna_vk_sampler *sampler, uint32_t *words);
+int amdrdna_vk_texture_descriptors(const struct amdrdna_vk_descriptor_slot *slot, uint32_t *image_words, uint32_t *sampler_words);
 bool amdrdna_vk_vertex_format(uint32_t format, uint32_t *code, uint32_t *components, uint32_t *bytes);
 
 void amdrdna_quad_vertex_ir(struct amdrdna_quad_ir *program, int textured);
