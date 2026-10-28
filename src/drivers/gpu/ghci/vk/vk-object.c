@@ -210,7 +210,8 @@ ghci_vk_object_destroy(
 		ghci_vk_memory_release(session, object);
 		break;
 	case GHCI_VK_EVENT:
-		ghci_vk_heap_give(object->as.event.block, object->as.event.offset);
+		/* Work placed before may still write the word. */
+		ghci_vk_heap_retire(object->device, object->as.event.block, object->as.event.offset, NULL);
 		break;
 	case GHCI_VK_COMMAND_BUFFER:
 		ghci_vk_commands_release(object);
@@ -222,8 +223,15 @@ ghci_vk_object_destroy(
 		break;
 	case GHCI_VK_SHADER_MODULE:
 	case GHCI_VK_PIPELINE:
-	case GHCI_VK_RENDER_PASS:
 		ghci_vk_pipeline_release(session, object);
+		break;
+	case GHCI_VK_RENDER_PASS:
+	case GHCI_VK_FRAMEBUFFER:
+		ghci_vk_pass_release(object);
+		break;
+	case GHCI_VK_QUERY_POOL:
+		/* Work placed before may still write the slots. */
+		ghci_vk_heap_retire(object->device, object->as.query_pool.block, object->as.query_pool.offset, NULL);
 		break;
 	default:
 		break;

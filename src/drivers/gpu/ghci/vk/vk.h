@@ -84,6 +84,9 @@
 #define GHCI_VK_HEAP_BLOCK_MAX		(16U << 20)
 #define GHCI_VK_HEAP_EXTENTS		256U
 
+/* The events whose words one submission's packets may write. */
+#define GHCI_VK_SUBMIT_EVENTS		64U
+
 /* The most bytes of recorded commands one command buffer keeps. */
 #define GHCI_VK_RECORD_MAX		(16U << 20)
 
@@ -143,7 +146,9 @@ enum ghci_vk_kind {
 	GHCI_VK_DESCRIPTOR_POOL,
 	GHCI_VK_DESCRIPTOR_SET,
 	GHCI_VK_PIPELINE,
-	GHCI_VK_RENDER_PASS
+	GHCI_VK_RENDER_PASS,
+	GHCI_VK_FRAMEBUFFER,
+	GHCI_VK_QUERY_POOL
 };
 
 /* The life of a command buffer: new or reset, recording, and ended (ready to submit). */
@@ -188,6 +193,19 @@ struct ghci_vk {
 };
 
 /*
+ * The two heaps of a device: code (mapped executable: pipeline state
+ * records, programs and the driver's table of set 3) and data (never
+ * executable: scratch memory, event words, query pools and the
+ * temporary memory of a submission), so that nothing the GPU writes or
+ * a client fills lies where the GPU may run it as code.
+ */
+enum ghci_vk_heap {
+	GHCI_VK_HEAP_CODE = 0,
+	GHCI_VK_HEAP_DATA,
+	GHCI_VK_HEAPS
+};
+
+/*
  * One block of a device's executor heap: host memory mapped once into
  * the device's GHCI session, and the allocator of its bytes.  The block
  * lives until its device is destroyed.
@@ -201,9 +219,21 @@ struct ghci_vk_heap_block {
 };
 
 /*
- * One VkDevice: its GHCI session, its executor heap, and the ticket of
- * the last work it placed in the ring.  It lives from vkCreateDevice to
- * vkDestroyDevice (or the node session's close).  next, last and
+ * A run of the executor heap let go while work placed before may still
+ * read it: it goes back to its block once the ticket has passed.
+ */
+struct ghci_vk_retired {
+	struct ghci_vk_retired *next;
+	struct ghci_vk_heap_block *block;
+	uint32_t offset;
+	struct ghci_ticket ticket;
+};
+
+/*
+ * One VkDevice: its GHCI session, its executor heaps (code and data, the
+ * bytes of each), the runs let go that wait for a ticket, and the ticket
+ * of the last work it placed in the ring.  It lives from vkCreateDevice
+ * to vkDestroyDevice (or the node session's close).  next, last and
  * submitted change under irq_lock; the rest belongs to the session's
  * commands.
  */
@@ -211,8 +241,9 @@ struct ghci_vk_device {
 	struct ghci_vk_session *session;
 	struct ghci_vk_device *next;
 	struct ghci_vm *vm;
-	struct ghci_vk_heap_block *heap;
-	uint64_t heap_bytes;
+	struct ghci_vk_heap_block *heap[GHCI_VK_HEAPS];
+	uint64_t heap_bytes[GHCI_VK_HEAPS];
+	struct ghci_vk_retired *retired;
 	struct ghci_ticket last;
 	int submitted;
 	int robust;
@@ -268,11 +299,17 @@ struct ghci_vk_fence {
 	struct ghci_ticket ticket;
 };
 
-/* A VkEvent: one 64-bit word in the device's executor heap that the host and the GPU set. */
+/*
+ * A VkEvent: one 64-bit word in the device's data heap that the host and
+ * the GPU set, and the ticket of the last submission whose packets write
+ * it (gpu_written says that there was one).
+ */
 struct ghci_vk_event {
 	struct ghci_vk_heap_block *block;
 	uint32_t offset;
 	volatile uint64_t *word;
+	struct ghci_ticket written;
+	int gpu_written;
 };
 
 /* A VkQueue: the timeline its jobs complete on. */
@@ -474,10 +511,71 @@ struct ghci_vk_subpass {
 	uint32_t input_samples[GHCI_GSI1_INPUT_ATTACHMENTS];
 };
 
-/* A VkRenderPass: its subpasses (made by the render pass commands). */
+/*
+ * One attachment of a render pass: its format and samples, its load and
+ * store operations (the hardware's numbers are Vulkan's) and the first
+ * and last subpass that use it.
+ */
+struct ghci_vk_pass_attachment {
+	uint32_t format;
+	uint32_t samples;
+	uint32_t load;
+	uint32_t store;
+	uint32_t stencil_load;
+	uint32_t stencil_store;
+	uint32_t first;
+	uint32_t last;
+};
+
+/*
+ * The attachments one subpass names, by their index in the render pass
+ * (VK_ATTACHMENT_UNUSED for none): colour, resolve, depth and stencil,
+ * and input.
+ */
+struct ghci_vk_pass_references {
+	uint32_t color_count;
+	uint32_t color[GHCI_VK_COLOR_ATTACHMENTS];
+	uint32_t resolve[GHCI_VK_COLOR_ATTACHMENTS];
+	uint32_t depth;
+	uint32_t input_count;
+	uint32_t input[GHCI_GSI1_INPUT_ATTACHMENTS];
+};
+
+/*
+ * A VkRenderPass: what each subpass is to a pipeline, the attachments
+ * each names, and the attachments.
+ */
 struct ghci_vk_render_pass {
 	uint32_t subpass_count;
 	struct ghci_vk_subpass *subpasses;
+	struct ghci_vk_pass_references *references;
+	uint32_t attachment_count;
+	struct ghci_vk_pass_attachment *attachments;
+};
+
+/* A VkFramebuffer: its image views (by identity, in attachment order) and its size. */
+struct ghci_vk_framebuffer {
+	uint32_t attachment_count;
+	uint64_t *views;
+	uint32_t width;
+	uint32_t height;
+	uint32_t layers;
+};
+
+/*
+ * A VkQueryPool: its type, its queries, and its slots in the device's
+ * data heap (16 bytes each: the result, then the availability word that
+ * END_QUERY or a fence after WRITE_TIMESTAMP writes), where the host
+ * reads them.
+ */
+struct ghci_vk_query_pool {
+	uint32_t type;
+	uint32_t count;
+	struct ghci_vk_heap_block *block;
+	uint32_t offset;
+	uint64_t va;
+	uint64_t bus;
+	uint8_t *view;
 };
 
 /*
@@ -537,6 +635,34 @@ struct ghci_vk_tables {
 	uint32_t bank_count;
 };
 
+/* One run of the data heap a submission's temporary memory takes. */
+struct ghci_vk_temp {
+	struct ghci_vk_heap_block *block;
+	uint32_t offset;
+};
+
+/*
+ * A submission being made: the packets of its command buffers (between
+ * the barriers at its head and its tail) and the runs of temporary
+ * memory they read (the hardware tables, render pass descriptions,
+ * clear colours, index lists and data), taken of the device's data heap
+ * a chunk at a time (chunk_used and chunk_bytes are of the one being
+ * filled), and the events its packets write.  The runs go back once the
+ * submission's ticket has passed, and the events then know that ticket.
+ */
+struct ghci_vk_submission {
+	uint32_t *words;
+	uint32_t used;
+	uint32_t capacity;
+	struct ghci_vk_temp *temps;
+	uint32_t temp_count;
+	uint32_t temp_capacity;
+	uint32_t chunk_used;
+	uint32_t chunk_bytes;
+	uint64_t events[GHCI_VK_SUBMIT_EVENTS];
+	uint32_t event_count;
+};
+
 /*
  * One object of a node session, in the session's table from its create to
  * its destroy.  device is the VkDevice it was made on (a device's own
@@ -568,6 +694,8 @@ struct ghci_vk_object {
 		struct ghci_vk_set *set;
 		struct ghci_vk_pipeline *pipeline;
 		struct ghci_vk_render_pass *render_pass;
+		struct ghci_vk_framebuffer framebuffer;
+		struct ghci_vk_query_pool query_pool;
 	} as;
 };
 
@@ -685,11 +813,14 @@ int ghci_vk_command_route(struct ghci_vk_session *session, uint32_t opcode, uint
 int ghci_vk_queue_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int ghci_vk_layout_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int ghci_vk_pipeline_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int ghci_vk_query_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 
 /* vk-memory.c: memory, buffers, images and the executor heap. */
 struct ghci_allocation *ghci_vk_memory_blob(struct ghci_device *device, struct ghci_session *owner, uint64_t blob_id);
-int ghci_vk_heap_take(struct ghci_vk_session *session, struct ghci_vk_device *device, uint32_t bytes, uint32_t alignment, struct ghci_vk_heap_block **block, uint32_t *offset);
+int ghci_vk_heap_take(struct ghci_vk_session *session, struct ghci_vk_device *device, enum ghci_vk_heap heap, uint32_t bytes, uint32_t alignment, struct ghci_vk_heap_block **block, uint32_t *offset);
 void ghci_vk_heap_give(struct ghci_vk_heap_block *block, uint32_t offset);
+void ghci_vk_heap_retire(struct ghci_vk_device *device, struct ghci_vk_heap_block *block, uint32_t offset, const struct ghci_ticket *ticket);
+void ghci_vk_heap_reclaim(struct ghci_vk_session *session, struct ghci_vk_device *device);
 void ghci_vk_heap_fini(struct ghci_vk_session *session, struct ghci_vk_device *device);
 void ghci_vk_memory_release(struct ghci_vk_session *session, struct ghci_vk_object *object);
 void ghci_vk_image_layout(uint32_t width, uint32_t height, uint32_t depth, uint32_t levels, uint32_t layers, uint32_t samples, uint32_t texel_bytes, uint32_t block, struct ghci_layout_image *layout);
@@ -700,6 +831,14 @@ void ghci_vk_layout_release(struct ghci_vk_session *session, struct ghci_vk_obje
 void ghci_vk_set_layout_hold(struct ghci_vk_set_layout *layout);
 void ghci_vk_set_layout_unhold(struct ghci_vk_set_layout *layout);
 int ghci_vk_layout_tables(struct ghci_vk_session *session, const struct ghci_vk_pipeline *pipeline, const uint64_t *sets, const uint32_t *dynamic_offsets, uint32_t dynamic_count, const uint8_t *push, uint32_t push_bytes, struct ghci_vk_tables *tables);
+
+/* vk-pass.c: render passes and framebuffers. */
+int ghci_vk_pass_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+void ghci_vk_pass_release(struct ghci_vk_object *object);
+
+/* vk-execute.c: the recorded commands of a submission made into packets. */
+int ghci_vk_execute(struct ghci_vk_session *session, struct ghci_vk_device *device, const VkSubmitInfo *submits, uint64_t count, struct ghci_vk_submission *submission);
+void ghci_vk_submission_end(struct ghci_vk_device *device, struct ghci_vk_submission *submission, const struct ghci_ticket *ticket, int placed);
 
 /* vk-pipeline.c: what a shader module or a pipeline lets go of. */
 void ghci_vk_pipeline_release(struct ghci_vk_session *session, struct ghci_vk_object *object);

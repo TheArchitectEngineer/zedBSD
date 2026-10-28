@@ -1671,7 +1671,7 @@ scene_memory(void)
 /*
  * The recording: a pool, two buffers, a recording of three commands kept
  * as they came, the end, the submission of an empty buffer (a fence
- * alone) and the refusal of a recorded one (not executed yet).
+ * alone) and the refusal of a recorded one whose draw has no binds.
  */
 static void
 scene_recording(void)
@@ -1794,9 +1794,11 @@ scene_recording(void)
 	expect(model_last_command(GHCI_OP_BIND_SESSION) != NULL && model_last_command(GHCI_OP_BIND_SESSION)->words[1] == 0U,
 	       "recording: back in session 0");
 
-	/* A buffer with recorded commands is not executed yet: the submission is refused. */
+	/* A buffer that draws outside a render pass and with no pipeline bound: the submission is refused, nothing placed. */
+	fences = model_count_commands(GHCI_OP_FENCE);
 	error = submit(&node, ID_QUEUE, ID_COMMANDS, 0U);
-	expect(error == ENOTSUP, "recording: a recorded buffer is refused for now");
+	expect(error == EINVAL && model_count_commands(GHCI_OP_FENCE) == fences && model_count_commands(GHCI_OP_DRAW) == 0U,
+	       "recording: a draw without its binds refuses the submission");
 
 	/* The pool's destroy takes its buffers. */
 	error = destroy(&node, GPU_OP_DESTROY_COMMAND_POOL, ID_DEVICE, ID_POOL);
@@ -1871,7 +1873,7 @@ scene_sync(void)
 	error = simple_create(&node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_DEVICE, 0U, ID_EVENT, &result);
 	expect(error == 0 && result == 0U, "sync: event");
 	object = ghci_vk_object_find(session, GHCI_VK_EVENT, ID_EVENT);
-	expect(object != NULL && object->device->heap != NULL, "sync: the event's word is in the heap");
+	expect(object != NULL && object->device->heap[GHCI_VK_HEAP_DATA] != NULL, "sync: the event's word is in the data heap");
 	error = object_query(&node, GPU_OP_GET_EVENT_STATUS, ID_DEVICE, ID_EVENT, &result);
 	expect(error == 0 && result == (uint32_t)VK_EVENT_RESET, "sync: event reset");
 	error = object_query(&node, GPU_OP_SET_EVENT, ID_DEVICE, ID_EVENT, &result);

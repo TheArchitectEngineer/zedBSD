@@ -112,7 +112,7 @@ if grep -q '^stub_gpu_ops_validate($' "$validate"; then
 	executor="$ghci/ghci.c $ghci/cp.c $ghci/recover.c $ghci/memory.c $ghci/vm.c $ghci/range.c $ghci/share.c \
 		$ghci/check.c $ghci/caps.c $ghci/cmd.c $ghci/jobs.c $ghci/capset.c $ghci/isa.c $vk/vk-node.c $vk/vk-stream.c \
 		$vk/vk-dispatch.c $vk/vk-object.c $vk/vk-reply.c $vk/vk-caps.c $vk/vk-format.c $vk/vk-device.c \
-		$vk/vk-memory.c $vk/vk-command.c $vk/vk-queue.c $vk/vk-layout.c $vk/vk-pipeline.c \
+		$vk/vk-memory.c $vk/vk-command.c $vk/vk-queue.c $vk/vk-layout.c $vk/vk-pipeline.c $vk/vk-pass.c $vk/vk-execute.c \
 		$repo/src/drivers/gpu/i915/vk/vk-codec.c"
 	cc $flags -I"$repo" -I"$tests" -o "$out/ghci-vk-host-test" "$tests/ghci-vk-host-test.c" "$tests/ghci-model.c" \
 		"$tests/ghci-stubs.c" "$validate" $executor $compiler_objects -lm
@@ -128,6 +128,10 @@ if grep -q '^stub_gpu_ops_validate($' "$validate"; then
 	cc $flags -I"$repo" -I"$tests" -o "$out/ghci-pipeline-host-test" "$tests/ghci-pipeline-host-test.c" "$tests/ghci-model.c" \
 		"$tests/ghci-stubs.c" "$validate" $executor $compiler_objects -lm
 	timeout 300 "$out/ghci-pipeline-host-test" "$out/pipeline" "$out/pipeline" || status=1
+
+	# The execution of recorded commands (ghci-execute-host-test.c, compiled within the pipeline test for its
+	# helpers): the same binary given "execute".
+	timeout 300 "$out/ghci-pipeline-host-test" "$out/pipeline" "$out/pipeline" execute || status=1
 fi
 
 if [ "$status" -ne 0 ]; then
