@@ -174,6 +174,43 @@ waitq_wake_all(
 	return;
 }
 
+/*
+ * The quiet log belongs to the kernel log, which the fixture does not link;
+ * the reveal paths that end it and the kernel's character path are not
+ * exercised here.
+ */
+void
+kern_log_set_quiet(
+	int quiet)
+{
+	(void)quiet;
+
+	/* Succeeded: no log to make loud. */
+	return;
+}
+
+/* Never quiet: the fixture has no kernel log. */
+int
+kern_log_quiet(
+	void)
+{
+	/* Succeeded: loud. */
+	return 0;
+}
+
+/* Drops a quiet character, which the fixture never makes. */
+void
+kern_log_write(
+	const char *bytes,
+	size_t length)
+{
+	(void)bytes;
+	(void)length;
+
+	/* Succeeded: no log to write to. */
+	return;
+}
+
 /* Completes a retained-text operation before the dispatcher advances its generation. */
 static void
 clear_text(

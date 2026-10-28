@@ -13,6 +13,7 @@
 #include <kern/thread.h>
 #include <kern/filedesc.h>
 #include <kern/record-lock.h>
+#include <kern/text-display.h>
 #include <assert.h>
 #include <errno.h>
 #include <stdio.h>
@@ -330,4 +331,17 @@ kern_text_progress_end(
 {
 	/* Succeeded: nothing to end. */
 	return;
+}
+
+/* The console's leaving of the display at the first flip has no console in the host peer. */
+int
+kern_text_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	(void)ranges;
+	(void)count;
+
+	/* Succeeded: nothing draws on a display here. */
+	return 0;
 }
