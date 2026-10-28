@@ -500,6 +500,23 @@ USERLAND_NETWORK_PROGRAMS := $(foreach program,$(USERLAND_PACKAGES),\
 ZEDBSD_USER_PROGRAMS ?= $(ZEDBSD_DEFAULT_USER_PROGRAMS)
 
 #
+# The installer's image (make installer-image) builds everything an
+# installed system may be given, whatever the configuration chose: every
+# selectable program of the base, the desktop, the firmware and the
+# packages that the platform takes.  The tests and X11 are not offered
+# for installing, and the installer itself is the image's own, not a
+# unit (platform/amd64/installer-image.mk).  menuconfig still configures
+# the kernel.
+#
+ZEDBSD_IMAGE_PROFILE ?=
+ZEDBSD_INSTALLER_MENUS := base desktop firmware packages/%
+ifeq ($(ZEDBSD_IMAGE_PROFILE),installer)
+override ZEDBSD_USER_PROGRAMS := $(foreach program,$(ZEDBSD_ALL_USER_PROGRAMS),\
+	$(if $(filter $(ZEDBSD_INSTALLER_MENUS),$(USERLAND_$(program)_MENU)),\
+ $(if $(call user_program_applies,$(program)),$(program))))
+endif
+
+#
 # Remove held package roots before dependency expansion. Otherwise a
 # stale configuration that still names a held application could retain
 # its dependencies even though the application itself is suppressed.
