@@ -352,6 +352,14 @@ static struct spinlock gpu_timing_lock = {
 };
 
 /*
+ * Whether a driver accepted the first image a client flipped to a display,
+ * which ends the text console's use of the framebuffer for good: 0 until
+ * then, 1 after.  Changed once by compare-and-swap, by the caller that
+ * then tells the console.
+ */
+static int gpu_console_ended;
+
+/*
  * Forward declaration.
  */
 static int gpu_ops_validate(const struct drv_gpu_ops *ops);
@@ -360,6 +368,7 @@ static void gpu_device_release(void *argument);
 static int gpu_open(struct file *file);
 static int gpu_close(struct file *file);
 static int gpu_ioctl(struct file *file, unsigned long command, uintptr_t argument);
+static void gpu_console_end(unsigned long command);
 static int gpu_poll(struct file *file, short events, short *revents);
 static void gpu_session_drop(struct gpu_session *session);
 static int gpu_session_enter(struct gpu_session *session);
@@ -1763,7 +1772,54 @@ gpu_ioctl(
 	if (GPU_IOCTL_TRACE && error != 0)
 		kern_logf("gpu: ioctl G%lu (cmd 0x%lx) -> error %d\n",
 			command & 0xffUL, command, error);
+
+	/* A flip the driver accepted ends the console's use of the framebuffer, once, with nothing held. */
+	if (error == 0)
+		gpu_console_end(command);
 	return error;
+}
+
+/*
+ * Ends the text console's use of the framebuffer after the first flip of
+ * all: an image a client presented or committed to a display and a driver
+ * accepted.  The console's characters reach its serial line and the log
+ * from then on.  Called in thread context with nothing held, after the
+ * request has finished with the driver.
+ */
+static void
+gpu_console_end(
+	unsigned long command)
+{
+	int expected;
+	int swapped;
+	int error;
+
+	/* Only the requests that flip an image to a display. */
+	if (command != GPU_PRESENT &&
+	    command != GPU_DISPLAY_PRESENT &&
+	    command != GPU_DISPLAY_PRESENT_SYNC &&
+	    command != GPU_DISPLAY_COMMIT)
+		return;
+
+	/* Every later flip finds the console ended already. */
+	if (__atomic_load_n(&gpu_console_ended, __ATOMIC_ACQUIRE) != 0)
+		return;
+
+	/* The first caller to mark it tells the console. */
+	expected = 0;
+	swapped = __atomic_compare_exchange_n(&gpu_console_ended, &expected, 1, 0, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE);
+	if (!swapped)
+		return;
+
+	/* The console stops drawing on the display; this caller gives no memory back. */
+	error = kern_text_end(NULL, 0U);
+
+	/* A board with no display console (ENOTSUP) has nothing to stop. */
+	if (error != 0 && error != ENOTSUP)
+		kern_logf("gpu: the text console could not leave the display (%d)\n", error);
+
+	/* Succeeded: the console no longer draws on the display. */
+	return;
 }
 
 /*

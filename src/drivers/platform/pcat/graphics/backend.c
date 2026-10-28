@@ -31,6 +31,16 @@
 #define CIRRUS_STRIDE24 (WIDTH * 3U)
 #define PCI_CIRRUS_VENDOR 0x1013U
 
+/* How many mappings of places the framebuffer moved away from are kept to be removed at the end. */
+#define PCAT_RETIRED_MAX 4U
+
+/* How many ranges the end may leave mapped: the retired overflow, the handoff, the frame, the legacy aperture. */
+#define PCAT_LEFT_MAX 8U
+
+/* The legacy VGA aperture, inside a window the hardware layer keeps mapped. */
+#define PCAT_VGA_APERTURE_PHYSICAL 0x000a0000U
+#define PCAT_VGA_APERTURE_BYTES 0x00020000U
+
 enum display_backend {
 	DISPLAY_NONE,
 	DISPLAY_LINEAR,
@@ -63,6 +73,38 @@ static volatile uint32_t *linear_pixels;
 static uint64_t linear_physical;
 static size_t linear_bytes;
 
+/*
+ * One kernel mapping of display memory the backend keeps (pixels at
+ * physical, bytes long), or one range a removal left mapped (pixels NULL,
+ * error the removal's error, 0 for one that cannot be removed at all).
+ */
+struct pcat_mapping {
+	volatile uint32_t *pixels;
+	uint64_t physical;
+	uint64_t bytes;
+	int error;
+};
+
+/*
+ * The mappings of places the framebuffer moved away from: a writer may
+ * have held them during the boot, so they stay until the console leaves
+ * the display (retired_count of them; one past PCAT_RETIRED_MAX stays for
+ * good and is counted in left).  Written by the boot's PCI assignment and
+ * by the end only.
+ */
+static struct pcat_mapping linear_retired[PCAT_RETIRED_MAX];
+static unsigned retired_count;
+
+/*
+ * Whether the console has left the display (backend_ended), and what the
+ * end could not remove (left_count ranges of left).  Written once by the
+ * end, under the graphics lock when /dev/graphics has one; a later end
+ * reads them under the same lock.
+ */
+static int backend_ended;
+static struct pcat_mapping left[PCAT_LEFT_MAX];
+static unsigned left_count;
+
 static const uint32_t vga_palette[16] = {
 	0x000000U, 0x0000aaU, 0x00aa00U, 0x00aaaaU, 0xaa0000U, 0xaa00aaU,
 	0xaa5500U, 0xaaaaaaU, 0x555555U, 0x5555ffU, 0x55ff55U, 0x55ffffU,
@@ -78,6 +120,8 @@ static void cirrus_mode_640x480(unsigned bits_per_pixel);
 static void gfx_write(uint8_t index, uint8_t value);
 static uint8_t seq_read(uint8_t index);
 static void crtc_write(uint8_t index, uint8_t value);
+static void left_add(uint64_t physical, uint64_t bytes, int error);
+static void mapping_remove(volatile uint32_t *pixels, uint64_t physical, size_t bytes);
 static void hidden_dac_write(uint8_t value);
 static void load_rgb332_palette(void);
 static void vga_graphics_mode(void);
@@ -1059,8 +1103,7 @@ pcat_graphics_prepare_hardware(
 	 */
 	linear_pixels = NULL;
 	if (linear_framebuffer != NULL) {
-		error = hal_space_map_device((hal_physaddr_t)linear_framebuffer->physical_base, (size_t)linear_framebuffer->size,
-					     HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_NOCACHE, &mapped);
+		error = kern_device_map(linear_framebuffer->physical_base, (size_t)linear_framebuffer->size, KERN_DEVICE_UNCACHED, &mapped);
 		if (error == 0) {
 			linear_pixels = mapped;
 			linear_physical = linear_framebuffer->physical_base;
@@ -1198,9 +1241,10 @@ cirrus_detach(
 /*
  * Follows the boot framebuffer after its device moved the physical range
  * [from, from + length) to to: maps the framebuffer's new place and has the
- * text console draw there.  The old mapping stays (a writer may still hold
- * it; what it writes now reaches nothing).  Nothing changes for a
- * framebuffer outside the range.
+ * text console draw there.  The old mapping stays until the console leaves
+ * the display (a writer may still hold it; what it writes now reaches
+ * nothing).  Nothing changes for a framebuffer outside the range, or once
+ * the console has left the display.
  */
 void
 drv_pcat_graphics_framebuffer_moved(
@@ -1213,22 +1257,169 @@ drv_pcat_graphics_framebuffer_moved(
 	void *mapped;
 	int error;
 
-	/* Only the framebuffer the kernel mapped, inside the moved range. */
-	if (linear_pixels == NULL || linear_physical < from || linear_physical - from >= length)
+	/* Only the framebuffer the kernel mapped, inside the moved range, while the console uses it. */
+	if (backend_ended || linear_pixels == NULL || linear_physical < from || linear_physical - from >= length)
 		return;
 	physical = to + (linear_physical - from);
 
 	/* The new place, mapped as the old one. */
-	error = hal_space_map_device((hal_physaddr_t)physical, linear_bytes, HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_NOCACHE, &mapped);
+	error = kern_device_map(physical, linear_bytes, KERN_DEVICE_UNCACHED, &mapped);
 	if (error != 0) {
 		kern_logf("graphics: boot framebuffer moved to 0x%llx, not mapped (%d)\n", (unsigned long long)physical, error);
 		return;
 	}
 
-	/* The text console, then the graphics paths, draw through it. */
+	/* The old mapping is kept to be removed when the console leaves the display (one too many stays for good). */
 	previous = linear_pixels;
+	if (retired_count < PCAT_RETIRED_MAX) {
+		linear_retired[retired_count].pixels = previous;
+		linear_retired[retired_count].physical = linear_physical;
+		linear_retired[retired_count].bytes = linear_bytes;
+		retired_count++;
+	} else {
+		left_add(linear_physical, linear_bytes, 0);
+	}
+
+	/* The text console, then the graphics paths, draw through it. */
 	drv_pcat_text_retarget(previous, mapped);
 	linear_pixels = mapped;
 	linear_physical = physical;
 	kern_logf("graphics: boot framebuffer moved to 0x%llx\n", (unsigned long long)physical);
+}
+
+/*
+ * Gives the display up for good, once the console has left it: nothing is
+ * drawn through the backend again, and every kernel mapping of display
+ * memory it made (the framebuffer, the places it moved away from, the
+ * legacy and Cirrus apertures) is removed, with the hardware layer's early
+ * console mapping of the boot framebuffer, which the hardware layer hands
+ * over to one mapping of exactly that framebuffer once the kernel prints.
+ * Returns 0 when nothing left mapped lies in the count ranges, the error
+ * of a removal that failed for a range in them, or EBUSY for a range in
+ * them that cannot be removed.  A later call judges what the first left
+ * against its own ranges.  The caller holds the graphics lock, or it
+ * runs before /dev/graphics has one.
+ */
+int
+drv_pcat_graphics_backend_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	void *handed;
+	unsigned index;
+	int error;
+
+	/* The first end removes the mappings; a later one only judges. */
+	if (!backend_ended) {
+		/* Nothing is drawn through the backend from now on. */
+		backend_ended = 1;
+		backend_prepared = 0;
+		active_backend = DISPLAY_NONE;
+
+		/* The framebuffer the kernel drew through. */
+		if (linear_pixels != NULL)
+			mapping_remove(linear_pixels, linear_physical, linear_bytes);
+		linear_pixels = NULL;
+
+		/* The places the framebuffer moved away from. */
+		for (index = 0U; index < retired_count; index++)
+			mapping_remove(linear_retired[index].pixels, linear_retired[index].physical, (size_t)linear_retired[index].bytes);
+		retired_count = 0U;
+
+		/*
+		 * The hardware layer's early console mapping, handed over by a
+		 * mapping of exactly the boot framebuffer and removed at once.
+		 * Without the hand-over the mapping made is an ordinary one, and
+		 * it goes the same way.
+		 */
+		if (linear_framebuffer != NULL) {
+			error = kern_device_map(linear_framebuffer->physical_base, (size_t)linear_framebuffer->size, KERN_DEVICE_UNCACHED, &handed);
+			if (error == 0) {
+				mapping_remove(handed, linear_framebuffer->physical_base, (size_t)linear_framebuffer->size);
+			} else {
+				left_add(linear_framebuffer->physical_base, (size_t)linear_framebuffer->size, error);
+			}
+		}
+
+		/* The Cirrus aperture (the device stays claimed; its registers are not written). */
+		if (cirrus_mapping.address != NULL) {
+			drv_pci_device_unmap_bar(cirrus_device, &cirrus_mapping);
+			cirrus_mapping.address = NULL;
+		}
+		cirrus_aperture = NULL;
+
+		/* The legacy aperture lies in a window the hardware layer keeps mapped. */
+		if (vga_aperture != NULL) {
+			(void)kern_device_unmap((void *)(uintptr_t)vga_aperture, PCAT_VGA_APERTURE_BYTES);
+			left_add(PCAT_VGA_APERTURE_PHYSICAL, PCAT_VGA_APERTURE_BYTES, 0);
+		}
+		vga_aperture = NULL;
+	}
+
+	/* What was left, against the caller's ranges: a failed removal first, then one that cannot be removed. */
+	for (index = 0U; index < left_count; index++) {
+		/* A range of the caller's memory. */
+		if (!kern_text_range_overlaps(ranges, count, left[index].physical, left[index].bytes))
+			continue;
+		if (left[index].error != 0)
+			return left[index].error;
+	}
+	for (index = 0U; index < left_count; index++) {
+		/* A range that stays mapped for good. */
+		if (kern_text_range_overlaps(ranges, count, left[index].physical, left[index].bytes))
+			return EBUSY;
+	}
+
+	/* Succeeded: nothing the backend mapped is left in the ranges. */
+	return 0;
+}
+
+/*
+ * Records a range of display memory the end leaves mapped, with the error
+ * of its removal (0 for one that cannot be removed).  A full table keeps
+ * its last entry as the whole address space, so that every range judged
+ * later finds it.
+ */
+static void
+left_add(
+	uint64_t physical,
+	uint64_t bytes,
+	int error)
+{
+	/* A table with room takes the range itself. */
+	if (left_count < PCAT_LEFT_MAX) {
+		left[left_count].pixels = NULL;
+		left[left_count].physical = physical;
+		left[left_count].bytes = bytes;
+		left[left_count].error = error;
+		left_count++;
+		return;
+	}
+
+	/* A full table stands for everything from now on. */
+	left[PCAT_LEFT_MAX - 1U].physical = 0U;
+	left[PCAT_LEFT_MAX - 1U].bytes = UINT64_MAX;
+	left[PCAT_LEFT_MAX - 1U].error = 0;
+}
+
+/*
+ * Removes one kernel mapping of display memory, recording the range as
+ * left when the removal fails (EBUSY from the hardware layer: a window it
+ * keeps mapped).
+ */
+static void
+mapping_remove(
+	volatile uint32_t *pixels,
+	uint64_t physical,
+	size_t bytes)
+{
+	int error;
+
+	/* The kernel's own call, which asks the hardware layer. */
+	error = kern_device_unmap((void *)(uintptr_t)pixels, bytes);
+	if (error != 0)
+		left_add(physical, bytes, error == EBUSY ? 0 : error);
+
+	/* Succeeded: the mapping is gone or recorded as left. */
+	return;
 }
