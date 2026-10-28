@@ -621,4 +621,3 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 - 決め手の計測（助言）: M1 = amdrdna.vk.timing と libvulkan の timing で big-1000・subs-1000 を 1 回（End の待ちの割合、op 132/107/91/18、frame あたりの
   run の数と slot 待ち）。M2 = present_copy_shared の copy を飛ばす 10 行の試し（画は誤り、E の上限を測る）。
 - 採否: まだ実施していない（13 時までの待機の指示）。次の担当は M2 → E の案を Q1 へ、並行して executor だけの (2)・(4) から。
-
