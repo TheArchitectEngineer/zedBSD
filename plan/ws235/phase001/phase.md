@@ -68,24 +68,30 @@ RDNA 機の枠（P1、06:20〜07:05 の予定）を 06:19 に早く返した（l
 
 | 差 | 内容 | 共通の段で要るか |
 | --- | --- | --- |
-| descriptor の形 | `RGE_FLAG_DESCV2`: TX の descriptor が 16 byte（v1 は 32 byte）、RX も v2 の形。TSO の bit は v2 の extsts。v2 の時は RXCFG の v1 の有効の bit を落とし、MAC OCP 0xeb58 と MMIO 0xd8 の bit を v2 に合わせる（`rge_init`） | rge は RTL8127 で常に v2。RXCFG の v1 の bit を残せば RTL8127 が v1 で動くかは未確認（ユーザーの伝聞「8125 の driver でそのまま」が当たるならここ） |
+| descriptor の形 | OpenBSD の `RGE_FLAG_DESCV2`: TX の descriptor が 16 byte（v1 は 32 byte）、RX も v2 の形。TSO の bit は v2 の extsts。v2 の時は RXCFG の v1 の有効の bit を落とし、MAC OCP 0xeb58 と MMIO 0xd8 の bit を v2 に合わせる（`rge_init`）。**FreeBSD の rge は RTL8127 でも v1**（fbsd-if_rge.c:1158-1167 で ENBDESCV1 を落とさず、:1190 で 0xeb58 の bit0、:1192-1193 で 0xd8 の bit1 を落とす。design-reviewer の指摘） | 共通の段は v1（FreeBSD の形。ユーザーの伝聞「8125 の driver でそのまま」に合う。実機は未確認）。v2・TSO は拡張の段 |
 | PCI の拡張の config 空間 | `rge_init` が config 0x70c・0x890（RTL8126・8127 は L1 の timeout の無効）を書く | 要る（zedBSD の PCI の config の 0x100 以上の読み書き） |
 | MAC の MCU | `rge_mac_config_ext_mcu`: RTL8126・8127 は版を読み比べ、違えば 3 page（0〜255、256〜511、残り）に書き、break point の register を書く | 要る（firmware の MAC の部） |
 | PHY の MCU | `rge_phy_config_mcu`: 4097 個を書き、patch の要求を一度下げてから残りを書く。ram code の版 0x0051 | 要る（firmware の PHY の部） |
 | PHY の設定 | `rge_phy_config_mac_r27`: 値の表（mac_cfg_value など）と OCP の書き込み | 要る |
 | EPHY | `mac_r27_ephy` の表と `rge_r27_write_ephy` | 要る |
 | media | 10G の広告（`RGE_ADV_10000TFDX` 0x1000）、PHYSTAT の 10G の bit 0x4000 | 要る（相手の X540 は 2.5G・5G を持たないので 10G か 1G） |
-| 割り込み | MSI-X が 30 本以上なら多 vector: link が vector 29、TX が 8+i、RX の queue は最大 8（RSS）。IMR・ISR は V2・V4 の register | 拡張（共通の段は 1 vector） |
+| 割り込み | OpenBSD: MSI-X が 30 本以上なら多 vector: link が vector 29、TX が 8+i、RX の queue は最大 8（RSS）。IMR・ISR は V2・V4 の register | 拡張（共通の段は 1 vector）。**zedBSD の amd64 の PCI は今 1 本しか返さない**（`src/drivers/pci/pci-pcat.c:649` で minimum != 1 は ENOTSUP、:653-666 は index 0 の 1 本）→ 多 vector は PCI の層の変更が要り、この WS の範囲の外（Q1 へ） |
 | ATF | MAC OCP 0xd006 == 0x0007 なら SFP+ の版 | 判定だけ（この機械は銅線と見られる、未確認） |
 
 ### 3. firmware
 
-- rge は attach で firmware の file を読み（`rge_loadfirmware`）、失敗すると attach をやめる。file の形は OpenBSD の独自の形（`maclen`・`phylen` の header と
+- OpenBSD の rge は attach の後の hook で firmware の file を読み（`rge_loadfirmware`、obsd-if_rge.c:375）、失敗すると止める。FreeBSD の rge は
+  `if_rge_microcode.h` を include し（fbsd-if_rge.c:66）、microcode を source に組み込む（file を読まない）。その header と chipinit・PHY の手順の
+  `if_rge_hw.h` は取れていない（502）ので、FreeBSD の MCU・PHY の手順と microcode の中身・license は未取得（design-reviewer の指摘）。file の形は OpenBSD の独自の形（`maclen`・`phylen` の header と
   (reg, val) の 16 bit の組の列）。MAC の部の末尾 4 個が MCU の版（`rge_mcu_get_bin_version`）。
-- zedBSD で使える候補は linux-firmware の `rtl_nic/rtl8127a-1.fw`（再配布可、LICENSE.r8169）。形は Linux の r8169 の firmware の形で、OpenBSD の形とは違う
-  （中身の形は未確認。r8169 の firmware の解釈の code は GPL なので写さない。形の事実を file の観測と資料から決める）。
+- zedBSD で使える候補は linux-firmware の `rtl_nic/rtl8127a-1.fw`（WHENCE で再配布可、LICENSE.r8169。本文は未取得）。形は Linux の r8169 の firmware の形で、
+  OpenBSD の形とは違い、(reg, val) の列でなく操作の列と見られる（推測）。その意味を定める資料は GPL の r8169 の code しか無く、読み取りは手順の引用に当たる
+  （guardrail の許可は WS039 だけ）。OpenBSD の形への変換が LICENSE.r8169 の条件に触れるかも未確認。→ **ユーザーの判断が要る**（Q1 へ）。候補の順:
+  (a) FreeBSD の `if_rge_microcode.h`（BSD の source に入った表、license と出どころは未確認）、(b) linux-firmware の file（GPL の形の解釈の許可が要る）。
 - patch 無しで link が上がるか、ram code の版（PHY OCP 0x801e）が電源の投入の後に何であるかは未確認。p003 で、まず patch 無しで link を試し、
-  要れば firmware を zedBSD-firmware の手順で入れる（Q1 へ先に）。
+  要れば firmware を zedBSD-firmware の手順で入れる（Q1 へ先に）。patch 無しの試しでは、MAC の MCU を止めたまま（0xfc26・0xfc28〜0xfc48 の break point を
+  書かない。OpenBSD の ext_mcu は版が合っても break point を書く、obsd-if_rge.c:2398-2412。中身の無い RAM へ跳ぶのを避ける、推測）、PHY の側も 0x801e の
+  版の比べと patch の書き込みを飛ばす。
 
 ### 4. 同じ機械の Linux の値
 
@@ -111,22 +117,36 @@ RDNA 機の枠（P1、06:20〜07:05 の予定）を 06:19 に早く返した（l
 
 ### 段（ユーザーの順: RTL81xx の共通の driver で動かす → RTL8127 の拡張）
 
-1. 共通の骨格: PCI の ID（10ec:8125・8126・8127、他は未確認）、BAR2 の MMIO、bus master、版の判定（TXCFG）、MAC・PHY・CSI・EPHY の OCP の窓、reset、
-   MAC address、1 vector の割り込み（MSI-X の 1 本か MSI）、net device の登録（link は down のまま）。
-2. MAC・PHY の初期化と link: hw_init（MCU の無効化と MCU の patch）、EPHY・PHY の表、auto-negotiation（10G・1G・100M の広告）、PHYSTAT の読みと link の報告、
-   link の変化の割り込み。firmware は patch 無しから試す。
-3. ring と割り込み: RX・TX の ring（RTL8127 は v2 の descriptor、他は v1）、1 queue、1 vector、network stack への接続（offload 無し、stack に口が無い）。
+1. 共通の骨格: PCI の ID（10ec:8127 は観測、8125・8126 は同じ番号の付け方で未確認）、BAR2 の MMIO、bus master、D0、版の判定（TXCFG）と ATF の判定、MAC・PHY の
+   OCP の窓、PCIe の LCSR の ASPM・ECPM を切る、割り込みを閉じる、OOB からの抜け（RealWoW を切る → reset → OOB の bit → TWICMD を待つ → 0xd42c の UPS の後始末）、
+   MAC address、1 vector の割り込み（MSI-X の 1 本か MSI か pin）、net device の登録（carrier は無いまま、transmit は捨てて ENETDOWN）、失敗の時の巻き戻し。
+2. MAC・PHY の初期化と link（open のたびに走る形、obsd-if_rge.c:919）: chipinit（exit_oob → PHY の電源（PMCH・BMCR・0xa420 が 3 を待つ）→ hw_init（ASPM・CLKREQ
+   の INT_CFG0 0x08、MAC の MCU の停止、patch）→ hw_reset）→ phy_config（EPHY・PHY の表、EEE と advanced EEE を切る）→ MAC の設定。auto-negotiation の広告は
+   rge と同じく 10・100・1000 と 2.5G・5G・10G（obsd-if_rge.c:1232-1237）。PHYSTAT の読みと link の報告。firmware は patch 無しから試す（上の 3）。
+   長い待ち（PHY の reset 最大 2.5 s、MCU の数千の書き込み）は spin lock の外で `sched_sleep`。
+3. ring と割り込み: RX・TX の ring（共通の段は v1 の descriptor、FreeBSD の形）、1 queue、1 vector、IMTYPE_NONE（SIM の moderation は使わない）、
+   network stack への接続（offload 無し、stack に口が無い）。割り込みは ISR が 0 なら何もせず返す。open の途中の poll の要求は失われうる
+   （`src/kern/net/net-device.c:1374-1384`）ので、dw-eqos と同じく周期の kthread が link を読み worker を起こす。TX は `packet_buf_physical` →
+   `drv_dma_physical_address(..., 64, ...)` で in place、届かなければ copy（amd64 の PCI の DMA の制約は 32 bit、`pci-pcat.c:94`）。RX は 2 KiB の buffer で、
+   RXMAXSIZE を buffer に合わせる（frame が descriptor をまたがない形）。OWN の bit の前後に barrier。close は IMR を閉じ → TX・RX を止め → DMA の停止を待ち →
+   ring と packet を返す。
 4. 実機の確かめ（共通の段）: link（両側）、DHCP か static、ping、ssh、TCP の転送。
-5. RTL8127 の拡張: 多 vector の MSI-X（link・TX・RX の queue）、RSS と複数の RX queue、割り込みの抑え（moderation）、RX の zero copy、PCIe の上限（約 7 Gbit/s）に近づける。
-   checksum・TSO の offload は stack の口（kern/net）が要るので、driver の側の用意と計測までにし、口は WS221 と組で Q1 に諮る。
+5. RTL8127 の拡張: v2 の descriptor、割り込みの抑え（moderation）、RX の zero copy、PCIe の上限（約 7 Gbit/s）に近づける。多 vector の MSI-X（link・TX・RX の
+   queue）と RSS・複数の RX queue は zedBSD の PCI の層の多 vector が要る（範囲の外、Q1 へ）。
+   checksum・TSO の offload は stack の口（packet-buf・net-device の flag、kern/net の変更）が要る。口は WS221 p010（10GbE の TCP、P3）で設計する（Q1 の判断、2026-10-29）。
+   driver はまず offload 無しで動かし、口ができたら p006 で driver の側を足す（p006 の依存）。
    net の worker は 1 本なので、7 Gbit/s に届かない時の律速が driver か stack かを profile で分けて記録する。
-6. 他の chip の表（8125・8125B・8125D・8126、未確かめ）。
+6. 他の chip の表（8125・8125B・8125D・8126、未確かめ。PCI の ID の候補に Killer E3000・E5000（obsd-if_rge.c:176-177、値は未確認））。
+   ws.md の目標の 8122・8121・8120 は rge に無く、版の値・ID の出典が無い → 目標に残すか外すかは Q1 経由でユーザーに。
 7. 規約の全文の見直し。
 
 ### 受け入れ（WS）
 
-- 10.0.10.3 の RTL8127 で link が上がり（centris の X540 の側も ethtool で同じ速さ）、IPv4（ping・ssh）、TCP の転送が PCIe の上限 約 7 Gbit/s
-  （同じ機械の Linux の値が取れればそれ）に見合う事。値は zedBSD と Linux を同じ相手・同じ道具で並べる。
+- 10.0.10.3 の RTL8127 で link が上がり（centris の X540 の側も ethtool で同じ速さ）、IPv4（ping・ssh）、TCP の転送を `userland/tests/tcp-perf` で
+  送り・受けの両方向、MTU 1500、各 30 秒以上で測り、PCIe の上限 約 7 Gbit/s（同じ機械の Linux の値が取れればそれ）と並べる。
+- WS221 p010（10GbE の TCP、stack の側）は WS235 に依存するので、WS235 の受け入れは「driver が律速でない事を profile で示す事」とし、7 Gbit/s に
+  届かない分が stack なら p010 に残す（循環を避ける。design-reviewer の指摘、Q1 の判断を待つ）。
+- 計測は 1 本の script（配置 → BootNext → 計測 → 回収 → 要約、45 分の枠の中）。p005 で `plan/ws235/tests/` に作る。
 - 試験の相手の centris の enp94s0f1 に IP を付けるなど centris の設定の変更は、先に Q1 に案を送る（Q1 2026-10-29）。
 
 ## zedBSD の側の口（2026-10-29 P1、tree の読み）
@@ -140,7 +160,7 @@ RDNA 機の枠（P1、06:20〜07:05 の予定）を 06:19 に早く返した（l
 - **stack に checksum・TSO の offload の口が無い**（packet-buf・net-device に flag が無い）。driver の共通の段では offload を使わない。offload・TSO・
   複数の RX queue を活かす口は kern/net の変更で、この WS の範囲の外（WS221 の TCP の改善と組で Q1 へ。この WS の拡張の段では driver の側の用意まで）。
 - PCI: `drv_pci_driver_register`（ID の表）、`drv_pci_device_claim_bar`・`map_bar`（NOCACHE）・`enable_memory`・`set_bus_master`、
-  `drv_pci_device_config_read32`・`write32`（0x70c・0x890 の拡張の config 空間に届くかは p002 で確かめる）、
+  `drv_pci_device_config_read32`・`write32`（pcat は offset 256 以上を ACPI の ECAM で読み書きする、`src/drivers/pci/pci-pcat.c:192`。0x70c・0x890 に届く事の実機の確かめは p002）、
   `drv_pci_device_allocate_irqs`（MSI-X・MSI・INTx、min・max の本数）・`establish_irq`（handler は割り込みの文脈、`int h(void *)`）。手本は intel-ax211-pci.c・pci-nvme.c（1 vector）。
 - DMA: `drv_pci_device_dma` → `drv_dma_alloc_coherent`（ring、256 byte 揃え）。
 - 待ち: `kern_usleep_range`（短い busy wait）、`sched_sleep`（ms）。lock は `spin_lock_irqsave`（割り込みと共有）・`mutex`。log は `kern_logf`。
@@ -150,8 +170,30 @@ RDNA 機の枠（P1、06:20〜07:05 の予定）を 06:19 に早く返した（l
 - build: `config/drivers/pci.drivers`・`config/drivers/menu.list` の `Ethernet|`、Makefile の既定 `?= n` と `-D`、`platform/amd64/vmunix.mk` の source の一覧、
   `src/kern/platform/pcat.c` の登録の呼び出し。
 
-## 未実施
+## design-reviewer（2026-10-29 06:4x、重大 4・中 9・軽 5）
 
-- design-reviewer のレビュー。
+上の節に反映した: descriptor は FreeBSD の v1 を共通に（重大 1）、firmware の出典を OpenBSD と FreeBSD に分け FreeBSD の hw・microcode は未取得（重大 2）、
+rtl8127a-1.fw の解釈は GPL の手順の引用でユーザーの判断（重大 3）、多 vector の MSI-X は zedBSD の PCI が 1 本だけ（重大 4、`pci-pcat.c:649` を確かめた）、
+段 2 の手順の抜け（中 5）、patch 無しの時に break point を書かない（中 6）、poll の喪失と周期の kick（中 8）、DMA の幅と RX の大きさ（中 9、`pci-pcat.c:94` を確かめた）、
+close の順（中 10）、受け入れの循環と測り方（中 11・12）、8122・8121・8120（中 13）、E3000・E5000（軽 18）。
+
+残り（p003 で）:
+- OpenBSD と FreeBSD の食い違いの表（中 7）: 0xd40c（FreeBSD は MAC OCP から読み PHY OCP に書く、fbsd:1273-1274。OpenBSD は MAC OCP、obsd:1064-1065）、
+  INT_CFG0（FreeBSD は AVOID_MISS だけを落とす、fbsd:1279。OpenBSD は EN・AUTO_CLEAR_IMR も、obsd:1069-1074）、FreeBSD だけが 0x20e4 の bit 0x04 を落とす（fbsd:1195）。
+  採る側と理由は p003 で決めて記録する。
+- 0x70c・0x890 は FreeBSD のように CSI の窓でも書ける（fbsd:1170-1176、軽 14）。
+- 食い違い（PHYSTAT と X540）は centris の `ip link` の UP を先に読む（軽 15）: 06:3x の ethtool の時の enp94s0f1 は admin UP・carrier 無し（Q1 の観測）。
+- 10.0.10.3 は RTL8127 と RX 5600 XT が排他（tools.md）。WS291 の RDNA の計測との物理の差し替えは P2・Q1 の調整（軽 17）。
+
+## 要るユーザー・Q1 の判断（2026-10-29 P1 → Q1）
+
+1. firmware: FreeBSD の `if_rge_microcode.h`・`if_rge_hw.h` を取り直してよいか（cgit.freebsd.org は 502、github は 429）。linux-firmware の rtl8127a-1.fw を
+   使うなら、GPL の r8169 の firmware の形の解釈（手順の引用）の許可と LICENSE.r8169 の本文の取得。
+2. 多 vector の MSI-X（PCI の層）を WS235 の範囲に入れるか、別の WS にするか。
+3. 受け入れ（driver が律速でない事の profile ＋ 計測）と WS221 p010 の分け方。
+4. 8122・8121・8120 を目標に残すか。
+5. 同じ機械の Linux の値（10.0.10.3 の Debian の kernel の更新か Realtek の driver）。
+
+## 未実施
 - RTL8127ATF かどうか（OCP 0xd006）、PHY の ram code の版、firmware の形。
 - 同じ機械の Linux の値（ユーザーの判断待ち）。
