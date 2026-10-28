@@ -443,13 +443,16 @@ zbl_uefi_fat_bpb_parse(
 	total32 = read_le32(boot + 32U);
 	fat16_sectors = read_le16(boot + 22U);
 
-	/* Takes 512- and 1024-byte BPB sectors, as media blocks of one or two. */
-	if (bytes_per_sector == 512U)
-		sector_scale = 1U;
-	else if (bytes_per_sector == 1024U)
-		sector_scale = 2U;
-	else
-		sector_scale = 0U;
+	/*
+	 * Takes BPB sectors of 512 through 4096 bytes that are whole media
+	 * blocks, as the kernel FAT driver does: it never writes part of a
+	 * disk block for a volume.
+	 */
+	sector_scale = 0U;
+	if ((bytes_per_sector == 512U || bytes_per_sector == 1024U ||
+	    bytes_per_sector == 2048U || bytes_per_sector == 4096U) &&
+	    bytes_per_sector >= media_block_size)
+		sector_scale = bytes_per_sector / media_block_size;
 
 	/* Refuses an unsupported sector size and impossible cluster, reserved and FAT counts. */
 	if (sector_scale == 0U ||
@@ -476,7 +479,7 @@ zbl_uefi_fat_bpb_parse(
 	else
 		total_sectors = total32;
 
-	/* BPB sectors may be 1024 bytes on a 512-byte kernel disk. */
+	/* A BPB sector may span several media blocks. */
 	if ((uint64_t)total_sectors > media_block_count / sector_scale)
 		return ZBL_UEFI_FAT_MALFORMED;
 
@@ -854,8 +857,11 @@ static int
 supported_fat_block_size(
 	uint32_t size)
 {
-	/* Keep discovery aligned with the kernel FAT driver's disk contract. */
-	if (size == 512U)
+	/*
+	 * Keep discovery aligned with the kernel FAT driver's disk contract:
+	 * blocks of a power of two from 512 bytes to a page.
+	 */
+	if (size == 512U || size == 1024U || size == 2048U || size == 4096U)
 		return 1;
 
 	/* Refuses any other block size. */
