@@ -8,8 +8,9 @@
 # ping both ways and an SSH command over the link.
 # With LANTEST=1 the address the interface took from the LAN's DHCP is reached from this host instead: ping, an SSH
 # command and 100 MB each way over SSH, with the interface counters of IFACE and the control interface before and after.
-# LANTEST=2 first takes the control interface CONTROL down, so every reply leaves through IFACE, and goes on (the
-# reboot too) over IFACE's address; if that fails, Debian does not come back without a power cycle.
+# LANTEST=2 first takes the control interface CONTROL down and deletes its connected route, so every reply leaves
+# through IFACE, and goes on (the reboot too) over IFACE's address; if that fails, Debian does not come back without
+# a power cycle, which POWERCYCLE=1 does once with the plug PLUG (the caller holds the slot's lock).
 # OUT/summary.txt is the result; OUT also keeps the raw outputs.  Nothing is removed.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -25,6 +26,8 @@ IFACE=${IFACE:-rge0}
 IPTEST=${IPTEST:-0}
 LANTEST=${LANTEST:-0}
 CONTROL=${CONTROL:-ue0}
+POWERCYCLE=${POWERCYCLE:-0}
+PLUG=${PLUG:-AC276E42B252}
 ZIP=${ZIP:-192.168.127.2}
 PIP=${PIP:-192.168.127.1}
 KEY=${KEY:-/home/awe/zedBSD-claude1/plan/tmp/guest/id_ed25519}
@@ -102,11 +105,21 @@ if [ -n "$zip" ]; then
 		rip=$(awk '$1 == "inet" && $2 !~ /^127\./ {print $2; exit}' "$out/ifconfig-30.txt")
 		say "LAN address of $IFACE: ${rip:-none}"
 		if [ -n "$rip" ] && [ "$LANTEST" = 2 ]; then
-			T=10 zs "$zip" "(sleep 2; ifconfig $CONTROL down) > /dev/null 2>&1 &"
+			# A closed device keeps its routes, and the stack sends by the route's device with that
+			# device's address: CONTROL's connected route goes too, so the replies take IFACE's.
+			zs "$zip" "route show" > "$out/route-before.txt" 2>&1
+			say "routes before: $(tr '\n' ' ' < "$out/route-before.txt")"
+			cnet=$(awk -v c="$CONTROL" '$NF == c && $1 != "default" && $3 ~ /C/ {print $1; exit}' "$out/route-before.txt")
+			say "connected route of $CONTROL: ${cnet:-none}"
+			del=
+			[ -n "$cnet" ] && del="; route delete -net $cnet -interface $CONTROL"
+			T=10 zs "$zip" "(sleep 2; ifconfig $CONTROL down$del) > /dev/null 2>&1 &"
 			sleep 8
 			zip=$rip
 			T=30 zs "$zip" "ifconfig $CONTROL" > "$out/control-down.txt" 2>&1
 			say "$CONTROL after down, read over $rip: exit $? $(tr '\n' ' ' < "$out/control-down.txt")"
+			T=30 zs "$zip" "route show" > "$out/route-after.txt" 2>&1
+			say "routes after: $(tr '\n' ' ' < "$out/route-after.txt")"
 		fi
 		if [ -n "$rip" ]; then
 			zs "$zip" "ifconfig -a" > "$out/counters-before.txt" 2>&1
@@ -158,8 +171,22 @@ fi
 # Back in Debian, the saved kernel goes back.
 sleep 30
 end=$(($(date +%s) + 400))
+cycled=0
 until linux_up; do
-	[ "$(date +%s)" -lt $end ] || { say "FAIL: Debian did not come back (power-cycle needed)"; exit 1; }
+	if [ "$(date +%s)" -ge $end ]; then
+		# With POWERCYCLE=1 the caller, holding the slot's lock, lets the run cycle the machine's plug once.
+		if [ "$POWERCYCLE" = 1 ] && [ $cycled = 0 ]; then
+			say "Debian did not come back: power cycle of plug $PLUG"
+			timeout 60 python3 -I plan/tools/switchbot.py cycle "$PLUG" 15 >> "$out/powercycle.txt" 2>&1
+			say "power cycle: exit $?"
+			cycled=1
+			sleep 60
+			end=$(($(date +%s) + 400))
+			continue
+		fi
+		say "FAIL: Debian did not come back (power-cycle needed)"
+		exit 1
+	fi
 	sleep 5
 done
 say "Debian is back"
