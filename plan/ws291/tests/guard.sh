@@ -3,8 +3,8 @@
 # command runs, zedBSD's amdrdnactl power line is read every GUARD_SECONDS (20 by default); when it says the
 # system-management firmware hung or the thermal fault, the temperature reached GUARD_TEMP (90 C), or the fan stands
 # while the driver drives it (the firmware stops it below about 60 C by itself), the GPU's load
-# (mview, vkhang, nggshape) is killed, zedBSD is powered off and the command is stopped.  The guard's lines go to
-# OUT.guard; it prints "guard: tripped ..." when it acted.
+# (mview, vkhang, nggshape) is killed, the kernel's log is kept in OUT.dmesg, zedBSD is powered off and the command is
+# stopped.  The guard's lines go to OUT.guard; it prints "guard: tripped ..." when it acted.
 #   usage: plan/ws291/tests/guard.sh OUT COMMAND [ARG...]
 # The machine's state that made the guard (2026-10-28): the firmware stopped answering, the fan stood at 0 rpm and the
 # GPU kept working.
@@ -52,7 +52,9 @@ while kill -0 $child 2> /dev/null; do
 	echo "guard: tripped at $(date +%H:%M:%S): $why ($line)" | tee -a "$out.guard"
 	tripped=1
 	ip=$(ip neigh | awk -v mac="$ZEDBSD_MAC" '$0 ~ mac && $0 !~ /FAILED/ && $1 ~ /^[0-9.]+$/ {print $1; exit}')
-	timeout 20 ssh -i "$KEY" $SSHOPT "root@$ip" "pkill mview; pkill vkhang; pkill nggshape; dmesg > /tmp/guard-dmesg.txt; (sleep 2; poweroff) > /dev/null 2>&1 &" 2> /dev/null
+	timeout 20 ssh -i "$KEY" $SSHOPT "root@$ip" "pkill mview; pkill vkhang; pkill nggshape" 2> /dev/null
+	timeout 20 ssh -i "$KEY" $SSHOPT "root@$ip" "dmesg" > "$out.dmesg" 2> /dev/null
+	timeout 20 ssh -i "$KEY" $SSHOPT "root@$ip" "(sleep 2; poweroff) > /dev/null 2>&1 &" 2> /dev/null
 	kill $child 2> /dev/null
 	break
 done

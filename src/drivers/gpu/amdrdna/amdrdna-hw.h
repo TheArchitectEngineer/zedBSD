@@ -165,6 +165,19 @@
 #define AMDRDNA_SMU_CLOCK_FEATURES_HIGH	0x000004a0U
 
 /*
+ * The memory side's part of the low word above: the memory clock's levels
+ * (3), the SoC clock's levels (4), the memory voltages' scaling (8, 9) and
+ * the SoC clock's deep sleep (11), which amdrdna.smu.memory=0 leaves off.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (FEATURE_DPM_UCLK_BIT, FEATURE_DPM_SOCCLK_BIT,
+ * FEATURE_MEM_VDDCI_SCALING_BIT, FEATURE_MEM_MVDD_SCALING_BIT,
+ * FEATURE_DS_SOCCLK_BIT).
+ */
+#define AMDRDNA_SMU_MEMORY_FEATURES_LOW	0x00000b18U
+
+/*
  * The graphics clock's levels, in the low word of the feature mask.
  *
  * Value referenced: Linux v6.19
