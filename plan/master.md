@@ -22,7 +22,7 @@
 | P1 | q1657 | [WS299](ws299/ws.md) 5330 の NVMe: direct の書き 59% → UFS の書き 55% → mkfs native → p007 → p008（乱読みは Debian の 99%） | 5330 |
 | P2 | q1658 | [WS291](ws291/ws.md) RDNA: UCLK を負荷に応じた DPM に（段 B〜D）→ 受け入れ（Linux の数以上）→ 案 4・5 | 10.0.10.3（NVMe の zedBSD） |
 | P3 | — | 終了（2026-10-28 21:23 ユーザー「FPGA側の設計が終わっていないので、P3はいったん終了、再開は明示的な指示です。計画だけアップデートして、整理しておいてください。」）。[WS290](ws290/ws.md) は保留: p017 は実装・host 試験・QEMU 済み（merge b99e96139）、残りは実機（p014・M9）と p015 | — |
-| P4 | — | 停止（2026-10-28 ユーザー「P4は停止して、N=3に戻します。」）。WS307 の仕様は確定（p001 cleared）、BUG-347 resolved | — |
+| P4 | q1660 | 記録の矛盾の解消（ユーザー「計画ドキュメントの矛盾は解決してアップデートしておいてください。」）: 完了の WS の Phase・試験の片付け（status.py の COMPLETED_WITH_*） | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
 <!-- master:agents:end -->
@@ -84,7 +84,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-349 · q1660 · WS309 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-349 · q1661 · WS309 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
