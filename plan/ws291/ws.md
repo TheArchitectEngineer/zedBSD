@@ -87,3 +87,14 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   thermal fault で仕事を止め fan を 100 %（31129fc30・1b9cc7865）、SMU の電圧の feature（1b9cc7865）、guard.sh。次: (1) fence の約 1.3 ms の固定の遅れ（完了の通知の
   thread の起床 3 回、phase006 の見立て）、(2) 頂点の側の 0.8 ms（s_barrier の数、position の fetch）、(3) big-N・subs-N の CPU 側（executor の外の往復が大半）、
   (4) SMU が長い負荷で壊れないかを guard の下で見続ける（壊れたら mode1 の reset と shutdown の時の reset が候補）。長い試験は必ず round.sh か guard.sh の下で。
+
+## 2026-10-28 q1645（P2、worktree p2-ws291d）
+
+- 承認: q1639 と同じユーザーの文に加え「P2は何度でもFableに聞いてください。」。ユーザーの指示（2026-10-28）: USB NIC が通信できない時に自分で再起動する
+  service（nicwatch）、NVMe への zedBSD の移行（ext4 を縮め root 32 GiB）、amdrdna の初期化の画面の表示を診断用の関数に分けて呼び出しを comment に。
+- 再開点（2026-10-28 10:40 P2）: [phase006](phase006/phase.md) の「q1645」節。scene-6500 は 45.4 → 49.2 fps（Linux 50.0）、GPU の時間（fence 18.9〜19.2 ms）は
+  Linux（19.56）より短い。scene-1500 は 70 → 180〜184 fps（Linux 201）。直した事: Keiland の game mode の present を thread に（5f9ec7f08）、libvulkan の
+  Wayland の acquire を fd で待つ（9b876b5fe）、mview --images と bench 4 枚（632d172dc）、memory clock（UCLK）を最上段に固定（146fdfe5d）、初期化の
+  画面の表示の無効化（dfcaa14e5）、NVMe の区画と道具（6574b457c）。次: 残りの CPU 側（acquire・record・present）、big-N・subs-N の record・submit
+  （phase006 の「残り」）。機械は NVMe の zedBSD（Boot0004）。
+

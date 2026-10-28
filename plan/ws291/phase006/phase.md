@@ -504,3 +504,38 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
   init で GOP の pipe を消してから UCLK を動かす。順位 1 = 切り替えの間だけ pstate の force allow、allow が既に 1 で止まるなら DPM_SOCCLK・DS_SOCCLK」→ force
   allow だけでは止まり、stutter の禁止を外す事と SOCCLK を足して通った。自動の mode1 reset は SMU の停止の回復にまだ使わない（助言どおり、guard の poweroff と
   入れ直しで戻る）。
+
+### 初期化の画面の表示の無効化（commit dfcaa14e5、ユーザーの指示）
+
+- ユーザー（2026-10-28）「amdrdnaドライバが、初期化段階で画面に表示を行っていると思いますが、これをコメントアウトしてほしいです。他のRDNA GPUやRDNA2/3への
+  移植のときにまた使うかもしれないので、コメントアウトでOKです。でも、診断用であることはわかるようにしてください。診断用の処理を関数に分けて、呼び出し元を
+  コメントアウトして説明のコメントを残すのでもいいです。この作業のあと、次の作業を進めてください。」
+- display.c: A6 の色の帯（test の絵へ 1 秒 flip して戻す）を display_check_bars、A7 の cursor の四角（中央に出し対角に動かして隠す）を display_check_cursor
+  に分けた（__attribute__((unused)) static、comment に Diagnostic, not called と用途）。A6・A7 の呼び出し元は comment で残した。A6 は takeover・refresh・
+  割り込みだけ、A7 は cursor の setup（隠したまま）だけ。build warning 0、host test PASS（audit の既存 17 件を除く）、実機で起動・desktop の shot 正常
+  （起動の logo を実際の画面で見たかは未確認）。
+
+### 案 D（game mode の early adopt）と GPU_CAP_FENCE の試し（commit しない）
+
+- 案 D（Q1 の OK）を実装した（Keiland: game mode の window の commit を fence を待たずに adopt、fence の fd を present の thread に渡し ioctl の前に
+  最大 2000 ms 待つ、leave・window の消滅・present の失敗で close）。amdrdna は GPU_CAP_FENCE を持たないので libvulkan は early commit をせず（commit は
+  GPU の後）、D は働かなかった（compositor の log に ACQUIRED 0）。
+- amdrdna に GPU_CAP_FENCE を足す試し（runtime.c の capabilities、core の fence の仕組みをそのまま使う）: early commit が働き、desktop の frame-ops（全段 60 fps
+  前後）・game mode の出入り・video・nggshape・shot・hang は ok。bench は scene-1500 173.2・scene-6500 44.5 fps（acquire 2.41、present 0.79 ms）で HEAD より
+  悪い（frame が vblank より長い時、flip 中の image が GPU の完了 + vblank まで握られる見込み、未確かめ）。→ D と FENCE は commit せず patch で保存:
+  build/ws291/caseD-keiland.patch（sha256 先頭 7cf7a7fe5491d81c）、build/ws291/gpu-cap-fence.patch（a42b1d5de0d2f4cd）（git の外）。
+- HEAD（dfcaa14e5 の kernel、Keiland は A・C）の bench（10:36、build/ws291/measure/head1/）: scene-1 966.9、scene-1500 179.8（fence 4.46）、scene-6500 49.16
+  （frame 20.29・fence 18.92・acquire 0.36・present 0.55）、big-1000 20.4、subs-1000 3.17 fps。round の間 SMU 正常。
+
+### 残り（次の担当へ）
+
+- scene-6500: fence は Linux（19.56）より短い 18.9〜19.2 ms。差は CPU 側の約 0.35〜1.0 ms（acquire・record・present、run ごとに揺れる）。scene-1500: 180〜184
+  対 201（acquire 0.5、record 0.26 対 0.11、present 0.16 対 0.07）。acquire の残りは libvulkan の present の worker が GPU の後に commit する事と
+  compositor の adopt・release の往復（Linux は commit の時に置き換えた image を返す）。案 E（libvulkan の Wayland の swapchain の毎 frame の全画面 copy を
+  無くす直接の route）と、FENCE の early commit を vblank より長い frame で損しない形（flip の thread の待ちと mailbox の置き換えの順）の設計が候補。
+- big-1000（20 対 84.7）・subs-1000（3.2 対 57.7）: record（libvulkan の command の encode、16000 draw で 29〜38 ms = 2 µs/draw、Linux 0.35 µs）と
+  submit（kernel の executor が 16000 draw を PM4 にする 14〜18 ms、vk timing の op 132 が 1 draw 1 µs 強）。libvulkan ↔ gpu core の往復と execute_draw の
+  draw ごとの state の絞り込み（共有の code は案を Q1 に先に）。
+- UCLK: 最上段に固定（146fdfe5d）。shutdown の時に固定を外す事、SMU の停止の時の自動 mode1 reset は未実施（Fable の助言どおり今は guard の poweroff と入れ直し）。
+- 機械: zedBSD は NVMe（Boot0004）、kernel は dfcaa14e5 の build（vmunix-dfcaa14）、Keiland・libvulkan は main の A・C の物、nicwatch あり。USB の stick は
+  ユーザーが抜いた。今日の P2 の SwitchBot の入れ直しは 5 回（08:17:38・08:58:48・09:18:11・09:28:18・09:54:54）、全部 Debian に戻った。
