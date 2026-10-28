@@ -39,3 +39,10 @@
 - 4096 byte の段（spec §5.9・§5.10 の p008 の 4096 の段）: loader の FAT の探索（`volume-discovery.c` の `supported_fat_block_size` と BPB の sector）を kernel の FAT（p006）と同じ契約で 4096 に、4Kn の disk の ESP＋root の UFS（fragment 4096、p005 の残り）で起動。p005・p006 の後。
 - `sync` が j3 の journal の内容を home の位置まで書き終えるかの確かめ（spec §5.10 の 6、未確認）: guest で file を書いて `sync` し、host で UFS の home の block を reader で読む試験。p009 の QEMU の試験で行う。
 - `video=640x480` の時に loader の失敗の文字が見えない件（上の観察）は Q1 の判断（Bug にするか）。
+
+## 2026-10-29 05:0x p008-4k の起動の結果（P4 の返却の後、Q1 が記録）
+
+- FAIL（build/ws307-test/p008-4k.4KNAxn/boot/login.png、p4-ws307h の worktree）。guest の段は全部 ok（P008K DONE、root に 216 MB）。
+- loader は 4Kn の ESP の cfg を見つけ、root の UFS（fragment 4 KiB）から kernel を読んで起動した（loader の 4096 は動いた）。
+- kernel は「vfs: scan nvme0n1 geometry error=21: 2 entries」の後「vfs: boot0 selector resolution failed (error 3)」「VFS initialization failed (3)」で止まる。boot0=UUID=4FAE-A0BC（ESP の FAT の serial）の解決が 4096 の disk で失敗。kernel の boot の volume の探索（geometry の scan と FAT の serial の照合）に 512 の前提が残っている見込み。
+- 次の起動の最初の作業: src/kern の vfs の boot の探索（「geometry error」を出す所）を 4096 に。
