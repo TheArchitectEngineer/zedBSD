@@ -1210,3 +1210,32 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
   採用しなくてもいいです。」→ 効果の基準（測る前、[job-submit-design.md](../job-submit-design.md) の「効果の基準」）: 実機（timing 無し）で同じ組の前後を
   3 run ずつ交互に、subs-1000 の submit の ms/frame の差が同じ build の run の揺れ（最大 − 最小、二つの値に分かれる時は同じ側どうし）を越えて減った時だけ
   採る。A だけと A + B を別に測る。効果の無い ioctl は main に入れない（branch に残し、値と判断をここに）。
+
+### 直した事（commit、worktree p2-ws291l）
+
+1. 2753b6adc・7d953d9f8・92ebb8190（libvulkan queue.c・sync.c、全 GPU 共通）: fence 無しの submit の private fence の終わりを ledger だけで確かめる
+   （queue_reset_completed は ledger を 1 回 reap（全部）して各 slot の sequence を ledger で探すだけ、slot ごとの GPU_COMMAND_WAIT を無くした）。
+   vulkan_sync_job_status は ledger に無い（consume 済み）record では reap しない（vkResetFences の quiesce が fence ごとに reap していた）。
+   reset は 32 個以上の batch で（それより少なければ cache を 256 個まで増やす: reset の transaction は 1 回 約 25 µs）。
+   timing に private_fence・reap・command_ran・command_deferred（baa1ca65c）。
+2. 82e4f0559（amdrdna executor）: command buffer の途中で IB・表が埋まった時の flush を barrier 無しに（execute_put）。slot の再利用は ring の fence
+   （CACHE_FLUSH_AND_INV_TS の EOP、L2 の書き戻し）で足り、次の run は space_commands の cache_sync で始まる。最後の IB の barrier は今どおり。
+3. c013da454（amdrdna record）: vkCmd* の record を command buffer の配列の場所へ直に decode（push constants の byte も push の run へ直に）、
+   stack の record からの copy を無くした。command buffer の lookup を decode の前に（副作用なし）。
+- 確かめ: amd64 の vmunix（ws291 の config、NVRTX=n）・libvulkan warning 0、ws039 amdrdna-vk-host-test 205/205（2 回）、venus-reg PASS
+  （build/ws291/venus1、libvulkan-l3 sha256 先頭 9f76f34996d0bc6f）、arm64・riscv64 の libvulkan.so warning 0（rpi4 の 1 回目は既知の sysroot の競合）。
+
+### 実機（RDNA、timing 無し、game mailbox 4 枚 8 s、build/ws291/ab1〜ab3 の bench、plan/ws291/tests/lib-ab.sh）
+
+| run | base（kernel d94ceac00+NVRTX=n、lib main） | lib l3 | lib l3 + kernel l2（2+3） |
+| --- | --- | --- | --- |
+| scene-6500 | 49.37 | 49.69 | 49.74 |
+| big-100 | 360.8 | 363.3 | 373.1 |
+| big-1000 a・b | 45.9（外れ）・58.4 | 58.6・58.5 | 53.8・60.5 |
+| subs-100 a・b | 215.1・210.3 | 231.8・204.4 | 188.0・176.7 |
+| subs-1000 a・b（submit ms） | 22.2（39.3）・23.0（37.6） | 24.3（35.1）・25.0（34.3） | 24.4（35.2）・18.0（46.7、低い側） |
+| profile big-1000（lib の timing あり） | 58.1 | 57.9 | 60.3 |
+
+- 読み: lib の直し（1）は subs-1000 の submit を 37.6〜39.3 → 34.3〜35.1 ms/frame（1 submit 約 3.5 µs 減、run の揺れ 1.7 ms を越える）。
+  kernel の直し（2+3）は big の差が run の揺れ（big-1000 の外れ）と同じ程度で未確定 → 交互の A/B（build/ws291/ab4）で確かめる。
+  subs-100・subs-1000 は同じ build でも二つの値に分かれる（前の節と同じ形）。
