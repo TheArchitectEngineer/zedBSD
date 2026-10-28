@@ -87,3 +87,5 @@ Worktree `/home/awe/zedBSD-worktrees/p2-ws291j`、定義 phase-runner。
 | Queue | Phase | 範囲 | State |
 | --- | --- | --- | --- |
 | q1663 | [ws291](../../ws291/ws.md) p006 の続き | 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3。原文「P2にWS291の続き」。q1658 と同じ自律の承認 | cleared（2026-10-29、919a05b78 → main） |
+
+| q1668 | [ws291](../../ws291/ws.md) p006 の続き | shot の確かめ → big-N・subs-N | in-progress |
