@@ -627,6 +627,27 @@ test_push(void)
 	at = nvrtx_exec_target(push, 0, &target);
 	check(push_value(push, at, 0x1538, &value) && value == 0 && !push_value(push, at, 0x0fe0, &value), "push: no depth target without one");
 
+	/* A block-linear colour target: its width the row's pixels, one-GOB blocks, its array pitch the level. */
+	target.block_linear = 1;
+	target.width = 1000;
+	target.height = 100;
+	target.pitch = 4032;
+	at = nvrtx_exec_target(push, 0, &target);
+	check(push_value(push, at, 0x0808, &value) && value == 1008 && push_value(push, at, 0x0814, &value) && value == 0 &&
+	      push_value(push, at, 0x081c, &value) && value == 4032U * 104U / 4U, "push: a block-linear colour target");
+
+	/* A tiled texture's header: block linear, 2D, the image's last level and the view's levels. */
+	{
+		static const uint32_t identity[4] = { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G, VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_A };
+		uint32_t header[8];
+
+		nvrtx_exec_texture_header_tiled(header, 0x512345600ULL, 1024, 512, 11, 2, 9, VK_FORMAT_R8G8B8A8_UNORM, identity);
+		check(((header[2] >> 21) & 7U) == 3U && ((header[4] >> 23) & 15U) == 1U, "push: a tiled header is block linear and 2D");
+		check((header[1] >> 9) == (0x12345600U >> 9) && (header[2] & 0xffffU) == 5U && ((header[1] >> 6) & 7U) == 0U, "push: a tiled header's address");
+		check((header[3] >> 28) == 10U && (header[7] & 15U) == 2U && ((header[7] >> 4) & 15U) == 10U, "push: a tiled header's levels");
+		check((header[4] & 0xffffU) == 1023U && (header[5] & 0xffffU) == 511U, "push: a tiled header's size");
+	}
+
 	/* An indexed draw: the vertex offset as the bases, the instances, the first index and the count. */
 	at = nvrtx_exec_draw_indexed(push, 0, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, 6, 36, 5000, 2, -3);
 	check(push_value(push, at, 0x1618, &value) && value == (4U | (1U << 31)), "push: an indexed draw begins triangles, the instances iterated");

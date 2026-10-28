@@ -182,7 +182,7 @@ struct execute_state {
 	VkRect2D area;
 };
 
-/* One quad an internal draw makes: the destination, the source texture and its region in pixels. */
+/* One quad an internal draw makes: the destination, the source texture (pitch linear or tiled) and its region in pixels. */
 struct execute_quad {
 	struct nvrtx_exec_target target;
 	int32_t x0;
@@ -194,6 +194,7 @@ struct execute_quad {
 	uint32_t source_height;
 	uint32_t source_pitch;
 	uint32_t source_format;
+	bool source_tiled;
 	int32_t u0;
 	int32_t v0;
 	int32_t u1;
@@ -227,6 +228,7 @@ static int execute_image_source(const struct nvrtx_vk_image *image, uint32_t lev
 static int execute_depth_target(const struct nvrtx_vk_image *image, struct nvrtx_exec_target *target);
 static int execute_uniforms(const struct execute_state *state, const struct nvrtx_vk_program *program, uint32_t group, uint8_t *push, size_t *at);
 static int execute_copy_buffer(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, const struct nvrtx_vk_record *record);
+static uint64_t execute_gob_offset(uint32_t pitch, uint32_t x, uint32_t y);
 static bool execute_region_inside(int32_t x, int32_t y, uint32_t width, uint32_t height, uint32_t image_width, uint32_t image_height);
 static void execute_full_viewport(uint32_t *viewport, int32_t x0, int32_t y0, int32_t x1, int32_t y1);
 
@@ -977,14 +979,20 @@ execute_texture(
 	if (error != 0)
 		return error;
 
-	/*
-	 * The header of the view's first level (the pitch-linear header has one
-	 * level: a mipmapped image is sampled at that level) and the sampler.
-	 */
-	nvrtx_vk_image_level(image, view->base_level, &offset, &width, &height, &pitch);
-	nvrtx_exec_texture_header(header, va + offset, width, height, pitch, view->format, view->swizzle);
+	/* The header: a tiled image's with the view's levels, a pitch-linear image's of its one level; the sampler. */
+	if (image->tiled) {
+		nvrtx_exec_texture_header_tiled(header, va, image->width, image->height, image->levels, view->base_level,
+						view->level_count, view->format, view->swizzle);
+	} else {
+		nvrtx_vk_image_level(image, 0U, &offset, &width, &height, &pitch);
+		nvrtx_exec_texture_header(header, va + offset, width, height, pitch, view->format, view->swizzle);
+	}
+	kern_memset(&words, 0, sizeof(words));
 	words.mag_filter = sampler->mag_filter;
 	words.min_filter = sampler->min_filter;
+	words.mipmap_mode = sampler->mipmap_mode;
+	words.min_lod = sampler->min_lod;
+	words.max_lod = sampler->max_lod;
 	words.address_u = sampler->address_u;
 	words.address_v = sampler->address_v;
 	words.address_w = sampler->address_w;
@@ -1419,6 +1427,7 @@ execute_cpu_copy(
 	uint32_t level_pitch;
 	uint32_t row_pixels;
 	uint32_t bytes;
+	uint32_t x;
 	uint32_t y;
 	int error;
 
@@ -1437,6 +1446,23 @@ execute_cpu_copy(
 	bytes = region->imageExtent.width * NVRTX_VK_PIXEL_BYTES;
 	for (y = 0U; y < region->imageExtent.height; y++) {
 		buffer_row = buffer_cpu + region->bufferOffset + (uint64_t)y * row_pixels * NVRTX_VK_PIXEL_BYTES;
+
+		/* A tiled image's pixels each where its GOB keeps it. */
+		if (image->tiled) {
+			for (x = 0U; x < region->imageExtent.width; x++) {
+				image_row = image_cpu + level_offset +
+				    execute_gob_offset(level_pitch, ((uint32_t)region->imageOffset.x + x) * NVRTX_VK_PIXEL_BYTES,
+						       (uint32_t)region->imageOffset.y + y);
+				if (to_image) {
+					kern_memcpy(image_row, buffer_row + x * NVRTX_VK_PIXEL_BYTES, NVRTX_VK_PIXEL_BYTES);
+				} else {
+					kern_memcpy(buffer_row + x * NVRTX_VK_PIXEL_BYTES, image_row, NVRTX_VK_PIXEL_BYTES);
+				}
+			}
+			continue;
+		}
+
+		/* A pitch-linear image's row at once. */
 		image_row = image_cpu + level_offset + (uint64_t)(region->imageOffset.y + (int32_t)y) * level_pitch +
 		    (uint64_t)region->imageOffset.x * NVRTX_VK_PIXEL_BYTES;
 		if (to_image) {
@@ -1448,6 +1474,34 @@ execute_cpu_copy(
 
 	/* Succeeded: the region is copied. */
 	return 0;
+}
+
+/*
+ * Reports where a byte of a block-linear surface in one-GOB blocks lies: its
+ * GOB (rows of GOBs, pitch bytes a row wide), then its 16-byte piece within
+ * the GOB and its place in the piece.
+ *
+ * Value referenced: Mesa 25.0.7 src/nouveau/nil/copy.rs
+ * (CopyGOBTuring2D::for_each_16b, the 16-byte pieces of a 64-byte by 8-row
+ * GOB).
+ */
+static uint64_t
+execute_gob_offset(
+	uint32_t pitch,
+	uint32_t x,
+	uint32_t y)
+{
+	uint64_t gob;
+	uint32_t inside;
+
+	/* The GOB, then the byte within it. */
+	gob = (uint64_t)(y / NVRTX_VK_GOB_HEIGHT) * (pitch / NVRTX_VK_GOB_WIDTH) + x / NVRTX_VK_GOB_WIDTH;
+	x %= NVRTX_VK_GOB_WIDTH;
+	y %= NVRTX_VK_GOB_HEIGHT;
+	inside = (x & 15U) | ((y & 3U) << 4) | ((x & 16U) << 2) | ((y & 4U) << 5) | ((x & 32U) << 3);
+
+	/* Succeeded: the byte's offset. */
+	return gob * NVRTX_VK_GOB_BYTES + inside;
 }
 
 /*
@@ -1574,9 +1628,14 @@ execute_quad(
 	if (!inside)
 		return EINVAL;
 
-	/* The source's header and a sampler in pixels, clamped. */
-	nvrtx_exec_texture_header(header, quad->source, quad->source_width, quad->source_height, quad->source_pitch,
-				  quad->source_format, identity);
+	/* The source's header (a tiled source's level as a surface of its own) and a sampler in pixels, clamped. */
+	if (quad->source_tiled) {
+		nvrtx_exec_texture_header_tiled(header, quad->source, quad->source_width, quad->source_height, 1U, 0U, 1U,
+						quad->source_format, identity);
+	} else {
+		nvrtx_exec_texture_header(header, quad->source, quad->source_width, quad->source_height, quad->source_pitch,
+					  quad->source_format, identity);
+	}
 	kern_memset(&sampler, 0, sizeof(sampler));
 	sampler.mag_filter = quad->filter;
 	sampler.min_filter = quad->filter;
@@ -1672,6 +1731,7 @@ execute_image_target(
 	nvrtx_vk_image_level(image, level, &offset, &target->width, &target->height, &target->pitch);
 	target->address = va + offset;
 	target->format = format;
+	target->block_linear = image->tiled ? 1U : 0U;
 	return 0;
 }
 
@@ -1720,6 +1780,7 @@ execute_image_source(
 	nvrtx_vk_image_level(image, level, &offset, &quad->source_width, &quad->source_height, &quad->source_pitch);
 	quad->source = va + offset;
 	quad->source_format = image->format;
+	quad->source_tiled = image->tiled;
 	return 0;
 }
 

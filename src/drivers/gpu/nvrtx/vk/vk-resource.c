@@ -229,10 +229,15 @@ resource_create_image(
 }
 
 /*
- * Lays an image out.  A colour image is pitch linear, each level after the
- * one before on the resource boundary, its rows of its width's pixels on
- * the pitch boundary.  A depth image is block linear in one-GOB blocks: its
- * rows a whole number of GOBs wide, its height a whole number of GOBs.
+ * Lays an image out.  A colour image of one level is pitch linear, its rows
+ * of its width's pixels on the pitch boundary.  A colour image of more
+ * levels is tiled: each level block linear in one-GOB blocks (its rows a
+ * whole number of GOBs wide, its height a whole number of GOBs) right after
+ * the one before.  A depth image is block linear in one-GOB blocks.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/nouveau/nil/image.rs (Image::new,
+ * the levels of a tiled image one after another, each a whole number of
+ * blocks).
  */
 static void
 resource_image_layout(
@@ -256,16 +261,26 @@ resource_image_layout(
 		return;
 	}
 
-	/* A colour image: each level halved from the one before, one pixel at least. */
+	/* A colour image of one level: pitch linear. */
+	if (image->levels == 1U) {
+		row = image->width * NVRTX_VK_PIXEL_BYTES;
+		image->pitch = (row + NVRTX_VK_PITCH_ALIGN - 1U) & ~(NVRTX_VK_PITCH_ALIGN - 1U);
+		image->bytes = (uint64_t)image->pitch * image->height;
+		image->level_offset[0] = 0U;
+		image->level_pitch[0] = image->pitch;
+		return;
+	}
+
+	/* A tiled image: each level halved from the one before, one pixel at least, in whole GOBs. */
+	image->tiled = true;
 	at = 0U;
 	width = image->width;
 	height = image->height;
 	for (level = 0U; level < image->levels; level++) {
 		row = width * NVRTX_VK_PIXEL_BYTES;
 		image->level_offset[level] = at;
-		image->level_pitch[level] = (row + NVRTX_VK_PITCH_ALIGN - 1U) & ~(NVRTX_VK_PITCH_ALIGN - 1U);
-		at += (uint64_t)image->level_pitch[level] * height;
-		at = (at + NVRTX_VK_RESOURCE_ALIGN - 1U) & ~(uint64_t)(NVRTX_VK_RESOURCE_ALIGN - 1U);
+		image->level_pitch[level] = (row + NVRTX_VK_GOB_WIDTH - 1U) & ~(NVRTX_VK_GOB_WIDTH - 1U);
+		at += (uint64_t)image->level_pitch[level] * ((height + NVRTX_VK_GOB_HEIGHT - 1U) & ~(NVRTX_VK_GOB_HEIGHT - 1U));
 		width = width > 1U ? width >> 1 : 1U;
 		height = height > 1U ? height >> 1 : 1U;
 	}
@@ -404,10 +419,10 @@ resource_layout(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* A level of layer 0 of a colour image: where it starts, its rows pitch bytes apart. */
+	/* Level 0 of layer 0 of a pitch-linear image: where it starts, its rows pitch bytes apart. */
 	kern_memset(&layout, 0, sizeof(layout));
 	image = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, identity);
-	if (image != NULL && !image->depth && subresource.mipLevel < image->levels && subresource.arrayLayer == 0U) {
+	if (image != NULL && !image->depth && !image->tiled && subresource.mipLevel == 0U && subresource.arrayLayer == 0U) {
 		nvrtx_vk_image_level(image, subresource.mipLevel, &offset, &width, &height, &pitch);
 		layout.offset = offset;
 		layout.size = (uint64_t)pitch * height;
@@ -490,6 +505,10 @@ resource_create_view(
 		view->image = image;
 		view->format = info.format;
 		view->base_level = info.subresourceRange.baseMipLevel;
+		view->level_count = picture->levels - view->base_level;
+		if (info.subresourceRange.levelCount != VK_REMAINING_MIP_LEVELS && info.subresourceRange.levelCount != 0U &&
+		    info.subresourceRange.levelCount < view->level_count)
+			view->level_count = info.subresourceRange.levelCount;
 		view->swizzle[0] = resource_swizzle(info.components.r, VK_COMPONENT_SWIZZLE_R);
 		view->swizzle[1] = resource_swizzle(info.components.g, VK_COMPONENT_SWIZZLE_G);
 		view->swizzle[2] = resource_swizzle(info.components.b, VK_COMPONENT_SWIZZLE_B);
@@ -543,6 +562,8 @@ resource_create_sampler(
 		sampler->mag_filter = info.magFilter;
 		sampler->min_filter = info.minFilter;
 		sampler->mipmap_mode = info.mipmapMode;
+		kern_memcpy(&sampler->min_lod, &info.minLod, sizeof(sampler->min_lod));
+		kern_memcpy(&sampler->max_lod, &info.maxLod, sizeof(sampler->max_lod));
 		sampler->address_u = info.addressModeU;
 		sampler->address_v = info.addressModeV;
 		sampler->address_w = info.addressModeW;

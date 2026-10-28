@@ -133,6 +133,7 @@
 #define V_FALSE					0U
 #define V_FLOAT_ONE				0x3f800000U
 #define V_TARGET_LAYOUT_PITCH			(1U << 12)
+#define V_TARGET_LAYOUT_BLOCK_ONE_GOB		0U
 #define V_TARGET_NULL_WIDTH			64U
 #define V_CT_SELECT_ONE_TARGET			1U
 #define V_ANTI_ALIAS_1X1			0U
@@ -275,6 +276,22 @@
 #define TSC_FORCE_UNNORMALIZED			1U
 
 /*
+ * The block-linear texture header (its version and the 2D type), and the
+ * sampler's linear mipmap filter and the largest level of detail clamp
+ * (4.8 fixed point).
+ *
+ * Values referenced: Mesa 25.0.7
+ * src/nouveau/headers/nvidia/classes/clb097tex.h
+ * (NVB097_TEXHEAD_BL_HEADER_VERSION_SELECT_BLOCKLINEAR,
+ * NVB097_TEXHEAD_BL_TEXTURE_TYPE_TWO_D, NVB097_TEXSAMP1_MIP_FILTER_MIP_LINEAR,
+ * NVB097_TEXSAMP2_MAX_LOD_CLAMP).
+ */
+#define TIC_VERSION_BLOCKLINEAR			3U
+#define TIC_TYPE_TWO_D				1U
+#define TSC_MIP_LINEAR				3U
+#define TSC_LOD_MAX				0xfffU
+
+/*
  * The words of a texture header and of a sampler.
  *
  * Values referenced: Mesa 25.3.6
@@ -304,6 +321,7 @@ static uint32_t exec_attribute_widths(uint32_t format);
 static uint32_t exec_address_mode(uint32_t mode);
 static void exec_field(uint32_t *words, unsigned low, unsigned bits, uint32_t value);
 static uint32_t exec_swizzle_source(uint32_t swizzle, const uint32_t *identity);
+static uint32_t exec_lod(uint32_t bits);
 
 /*
  * Reports the colour target format of a VkFormat the executor renders
@@ -366,16 +384,27 @@ nvrtx_exec_target(
 	nvrtx_put32(push, at + 4U, target->height << 16);
 	at += 8U;
 
-	/* Colour target 0: the address, the pitch in place of the width, the height, the format, pitch layout, one layer. */
+	/*
+	 * Colour target 0: the address, the pitch in place of the width (block
+	 * linear: the row's pixels), the height, the format, pitch layout (or
+	 * block linear in one-GOB blocks, its array pitch the whole level), one
+	 * layer.
+	 */
 	at = exec_method(push, at, M_SET_COLOR_TARGET_A, 9U);
 	nvrtx_put32(push, at, (uint32_t)(target->address >> 32));
 	nvrtx_put32(push, at + 4U, (uint32_t)(target->address & 0xffffffffU));
-	nvrtx_put32(push, at + 8U, target->pitch);
+	if (target->block_linear != 0U) {
+		nvrtx_put32(push, at + 8U, target->pitch / 4U);
+		nvrtx_put32(push, at + 20U, V_TARGET_LAYOUT_BLOCK_ONE_GOB);
+		nvrtx_put32(push, at + 28U, (uint32_t)(((uint64_t)target->pitch * ((target->height + 7U) & ~7U)) >> 2));
+	} else {
+		nvrtx_put32(push, at + 8U, target->pitch);
+		nvrtx_put32(push, at + 20U, V_TARGET_LAYOUT_PITCH);
+		nvrtx_put32(push, at + 28U, 0U);
+	}
 	nvrtx_put32(push, at + 12U, target->height);
 	nvrtx_put32(push, at + 16U, format);
-	nvrtx_put32(push, at + 20U, V_TARGET_LAYOUT_PITCH);
 	nvrtx_put32(push, at + 24U, 1U);
-	nvrtx_put32(push, at + 28U, 0U);
 	nvrtx_put32(push, at + 32U, 0U);
 	at += 36U;
 	at = exec_set(push, at, M_SET_COLOR_COMPRESSION, V_FALSE);
@@ -1097,9 +1126,56 @@ nvrtx_exec_texture_header(
 }
 
 /*
+ * Writes the texture header of a tiled 2D image of four 8-bit channels
+ * (block linear in one-GOB blocks, levels levels from address, level 0
+ * width by height): the format as the pitch-linear header's, the block
+ * linear header, the levels the view sees (from base_level, level_count
+ * of them; one level alone is a surface of that level's own, as a quad's
+ * source in pixels needs).
+ *
+ * Values referenced: Mesa 25.0.7
+ * src/nouveau/headers/nvidia/classes/clb097tex.h (NVB097_TEXHEAD_BL_*)
+ * and src/nouveau/nil/tic.rs (nvb097_fill_tic, nil_rs_max_mip_level).
+ */
+void
+nvrtx_exec_texture_header_tiled(
+	uint32_t *header,
+	uint64_t address,
+	uint32_t width,
+	uint32_t height,
+	uint32_t levels,
+	uint32_t base_level,
+	uint32_t level_count,
+	uint32_t format,
+	const uint32_t *swizzle)
+{
+	uint32_t index;
+
+	/* The pitch-linear header's format and fields, its address, pitch and type taken out. */
+	nvrtx_exec_texture_header(header, 0U, width, height, 0U, format, swizzle);
+	for (index = 37U; index < 64U; index++)
+		header[index / 32U] &= ~(1U << (index % 32U));
+	for (index = 85U; index < 112U; index++)
+		header[index / 32U] &= ~(1U << (index % 32U));
+	for (index = 151U; index < 155U; index++)
+		header[index / 32U] &= ~(1U << (index % 32U));
+
+	/* The address (bits 31:9 and 47:32), block linear, blocks of one GOB each way, 2D. */
+	exec_field(header, 41U, 23U, (uint32_t)((address & 0xffffffffU) >> 9));
+	exec_field(header, 64U, 16U, (uint32_t)(address >> 32));
+	exec_field(header, 85U, 3U, TIC_VERSION_BLOCKLINEAR);
+	exec_field(header, 151U, 4U, TIC_TYPE_TWO_D);
+
+	/* The levels: the image's last, and the view's first and last. */
+	exec_field(header, 124U, 4U, levels - 1U);
+	exec_field(header, 224U, 4U, base_level);
+	exec_field(header, 228U, 4U, base_level + level_count - 1U);
+}
+
+/*
  * Writes a sampler: the address modes, the font filter and sRGB border fields,
- * the filters (nearest or linear, one level), the seamless cube setting and the
- * coordinates' normalization.
+ * the filters (nearest or linear, the mipmap mode), the seamless cube setting,
+ * the coordinates' normalization and the levels' range.
  *
  * Values referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_sampler.c
  * (nvk_sampler_get_header).
@@ -1111,6 +1187,7 @@ nvrtx_exec_sampler_words(
 {
 	uint32_t mag;
 	uint32_t min;
+	uint32_t mip;
 
 	/* Starts empty. */
 	kern_memset(words, 0, EXEC_TSC_WORDS * sizeof(uint32_t));
@@ -1130,12 +1207,37 @@ nvrtx_exec_sampler_words(
 	min = TSC_MIN_POINT;
 	if (sampler->min_filter == VK_FILTER_LINEAR)
 		min = TSC_MIN_LINEAR;
+	mip = TSC_MIP_POINT;
+	if (sampler->mipmap_mode == VK_SAMPLER_MIPMAP_MODE_LINEAR)
+		mip = TSC_MIP_LINEAR;
 	exec_field(words, 32U + 0U, 3U, mag);
 	exec_field(words, 32U + 4U, 2U, min);
-	exec_field(words, 32U + 6U, 2U, TSC_MIP_POINT);
+	exec_field(words, 32U + 6U, 2U, mip);
 	exec_field(words, 32U + 8U, 2U, TSC_CUBE_AUTO_SPAN_SEAM);
 	if (sampler->unnormalized != 0U)
 		exec_field(words, 32U + 25U, 1U, TSC_FORCE_UNNORMALIZED);
+
+	/* Word 2: the levels' range in 4.8 fixed point, within 0 and the largest. */
+	exec_field(words, 64U + 0U, 12U, exec_lod(sampler->min_lod));
+	exec_field(words, 64U + 12U, 12U, exec_lod(sampler->max_lod));
+}
+
+/* Reports a level of detail (a float's bits) in 4.8 fixed point, within 0 and the largest. */
+static uint32_t
+exec_lod(
+	uint32_t bits)
+{
+	int64_t value;
+
+	/* Negative is 0, beyond 4.8 is its largest. */
+	value = nvrtx_exec_fixed(bits, 8U);
+	if (value < 0)
+		return 0U;
+	if (value > (int64_t)TSC_LOD_MAX)
+		return TSC_LOD_MAX;
+
+	/* Succeeded: the level in fixed point. */
+	return (uint32_t)value;
 }
 
 /* Reports the float bits of a whole number (exact up to 2^24). */

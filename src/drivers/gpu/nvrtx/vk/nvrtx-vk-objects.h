@@ -87,11 +87,13 @@ struct nvrtx_vk_buffer {
 
 /*
  * A VkImage: a 2D image of levels levels, one layer and one sample, bytes
- * long.  A colour image is pitch linear: level n starts level_offset[n]
- * bytes in, its rows level_pitch[n] bytes apart (level 0's is pitch).  A
- * depth image (D32_SFLOAT, one level) is block linear in one-GOB blocks,
- * its rows pitch bytes apart.  Once bound, the memory object it holds and
- * its offset in that memory.
+ * long; level n starts level_offset[n] bytes in, its rows level_pitch[n]
+ * bytes apart (level 0's is pitch).  A colour image of one level is pitch
+ * linear; one of more levels is tiled: block linear in one-GOB blocks, each
+ * level a block-linear surface of its own after the one before (the
+ * texture header's mipmapped layout for blocks one GOB high).  A depth
+ * image (D32_SFLOAT, one level) is block linear in one-GOB blocks too.
+ * Once bound, the memory object it holds and its offset in that memory.
  */
 struct nvrtx_vk_image {
 	uint32_t format;
@@ -102,6 +104,7 @@ struct nvrtx_vk_image {
 	uint64_t bytes;
 	uint32_t levels;
 	bool depth;
+	bool tiled;
 	uint64_t level_offset[NVRTX_VK_LEVELS_MAX];
 	uint32_t level_pitch[NVRTX_VK_LEVELS_MAX];
 	struct nvrtx_vk_object *memory;
@@ -110,24 +113,28 @@ struct nvrtx_vk_image {
 
 /*
  * A VkImageView: the image object it holds, the format it reads the image
- * as, the first level it sees, and where each of red, green, blue and
- * alpha comes from (VkComponentSwizzle, identity resolved).
+ * as, the first level it sees and how many, and where each of red, green,
+ * blue and alpha comes from (VkComponentSwizzle, identity resolved).
  */
 struct nvrtx_vk_view {
 	struct nvrtx_vk_object *image;
 	uint32_t format;
 	uint32_t base_level;
+	uint32_t level_count;
 	uint32_t swizzle[4];
 };
 
 /*
- * A VkSampler: the filters and the address modes a texture read uses, and
- * whether coordinates are in pixels.
+ * A VkSampler: the filters, the levels' range (minLod and maxLod as float
+ * bits) and the address modes a texture read uses, and whether coordinates
+ * are in pixels.
  */
 struct nvrtx_vk_sampler {
 	uint32_t mag_filter;
 	uint32_t min_filter;
 	uint32_t mipmap_mode;
+	uint32_t min_lod;
+	uint32_t max_lod;
 	uint32_t address_u;
 	uint32_t address_v;
 	uint32_t address_w;
