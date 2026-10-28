@@ -1,21 +1,21 @@
 #!/bin/sh
-# ws291: one round of the RX 5600 XT machine's checks of a kernel, from the host at the top of the tree: the kernel put
+# gpu-perf: one round of a GPU test machine's checks of a kernel, from the host at the top of the tree: the kernel put
 # in (measure.sh deploy), the draw shapes (nggshape), mview's still views of 1 and 6500 copies against Linux's, the
 # bench list's runs, and the hang check; each step's output in OUT/<step>.out, the summary printed.
-#   usage: plan/ws291/tests/round.sh OUT VMUNIX [STEP...]   (steps: deploy nggshape shot bench hang; default all)
-# The programs copied in come from USB_MVIEW, USB_NGGSHAPE and USB_VKHANG (see measure.sh).
+#   usage: plan/tools/gpu-perf/round.sh OUT VMUNIX [STEP...]   (steps: deploy nggshape shot bench hang; default all)
+# The programs copied in come from USB_MVIEW, USB_NGGSHAPE and USB_VKHANG (the machine's file, see measure.sh).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 out=${1:?usage: round.sh OUT VMUNIX [STEP...]}
 kernel=${2:?usage: round.sh OUT VMUNIX [STEP...]}
 shift 2
 steps=${*:-deploy nggshape shot bench hang}
-m=plan/ws291/tests/measure.sh
+m=plan/tools/gpu-perf/measure.sh
 mkdir -p "$out"
 # The steps run under the power guard (guard.sh): a hung firmware, a thermal fault or a hot GPU stops the load and
 # powers zedBSD off.
 if [ -z "${ROUND_GUARDED:-}" ]; then
-	ROUND_GUARDED=1 exec sh plan/ws291/tests/guard.sh "$out/round" sh "$0" "$out" "$kernel" $steps
+	ROUND_GUARDED=1 exec sh plan/tools/gpu-perf/guard.sh "$out/round" sh "$0" "$out" "$kernel" $steps
 fi
 for step in $steps; do
 	echo "== $step $(date +%H:%M:%S)"

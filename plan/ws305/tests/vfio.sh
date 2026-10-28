@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws305: the GPU passthrough VM on the desktop (10.0.10.3), driven from the build host at the top of the tree.  The
 # host boots Debian (amdgpu, the Linux reference), "Debian VFIO" (the GPU for the VM) or zedBSD from the USB stick
-# (BootNext, plan/ws291/tests/measure.sh); plan/ws305/phase001/phase.md has the design and the reset steps R1-R4.
+# (BootNext, plan/tools/gpu-perf/measure.sh); plan/ws305/phase001/phase.md has the design and the reset steps R1-R4.
 #
 #     vfio.sh mode                 which system runs: "vfio", "debian" or "down"
 #     vfio.sh setup                once: qemu and OVMF installed, the "Debian VFIO" grub entry (41_zedbsd_vfio) and

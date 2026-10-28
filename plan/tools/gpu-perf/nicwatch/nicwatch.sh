@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws291: the RX 5600 XT machine's USB LAN adapter (ue0, RTL8156) sometimes gets no link after Debian used it before a
+# gpu-perf: the RX 5600 XT machine's USB LAN adapter (ue0, RTL8156) sometimes gets no link after Debian used it before a
 # warm reboot, and zedBSD then cannot be reached.  Started at boot (/etc/service.d/nicwatch): when ue0 has no IPv4
 # address within LIMIT seconds, zedBSD reboots (UEFI's BootOrder brings Debian back, whose measure.sh boots zedBSD again
 # with BootNext); at most MOST times in a row, counted in COUNT, which a boot with an address sets back to 0.  Without the

@@ -93,12 +93,23 @@
  * again, and how often the rest thread looks.
  */
 #define PRESENT_CONSOLE_REST_MS		3000U
+
+/*
+ * A presentation that takes PRESENT_SLOW_MS or more is marked with where
+ * its time went (the first PRESENT_SLOW_MARKS of them): the wait for the
+ * presentation lock, the admission and copy, the flip's write and the
+ * wait for the flip; PRESENT_TIMES moments are taken.
+ */
+#define PRESENT_SLOW_MS			34U
+#define PRESENT_SLOW_MARKS		40U
+#define PRESENT_TIMES			5U
 #define PRESENT_REST_LOOK_MS		250U
 
 static int present_query(void *private_data, void *session, struct gpu_display_info *request);
 static int present_mode(void *private_data, void *session, struct gpu_display_mode *request);
 static int present_claim(void *private_data, void *session, struct gpu_display_claim *request);
 static int present_release(void *private_data, void *session, const struct gpu_display_release *request);
+static void present_slow_mark(struct amdrdna_node *node, const uint64_t *times);
 static int present_present(void *private_data, void *session, void *object, struct gpu_display_present *request);
 static int present_wait(void *private_data, void *session, struct gpu_display_wait *request);
 static int present_events(void *private_data, void *session, uint64_t *sequence);
@@ -603,12 +614,14 @@ present_present(
 	struct amdrdna_resource *resource;
 	struct amdrdna_device *device;
 	uint64_t address;
+	uint64_t times[PRESENT_TIMES];
 	bool blob;
 	bool resize;
 	bool held;
 	int error;
 
-	/* The node and what the core passed in. */
+	/* The node and what the core passed in, and when the call began. */
+	times[0] = sched_ticks();
 	node = private_data;
 	resource = object;
 	device = node->device;
@@ -627,6 +640,7 @@ present_present(
 
 	/* One presentation at a time; the lease cannot end while it runs. */
 	mutex_lock(&node->present_lock);
+	times[1] = sched_ticks();
 
 	/*
 	 * Checks the lease and picks the surface under the display lock; a
@@ -658,6 +672,7 @@ present_present(
 		present_copy(node, resource, request);
 
 	/* Writes the flip under the display lock: the cursor's writes and the flip take turns. */
+	times[2] = sched_ticks();
 	mutex_lock(&node->display_lock);
 
 	error = amdrdna_display_flip(device, address);
@@ -665,8 +680,11 @@ present_present(
 	mutex_unlock(&node->display_lock);
 
 	/* Waits for the frame's update that takes the flip, outside the display lock. */
+	times[3] = sched_ticks();
 	if (error == 0)
 		error = amdrdna_display_flip_wait(device, address);
+	times[4] = sched_ticks();
+	present_slow_mark(node, times);
 
 	/* Records the frame on the screen, or the broken display. */
 	mutex_lock(&node->display_lock);
@@ -1581,4 +1599,30 @@ present_cursor_copy(
 			target[row * PRESENT_CURSOR_SIDE + column] = value;
 		}
 	}
+}
+
+/* Marks a presentation that took PRESENT_SLOW_MS or more, with the time of each of its steps in ms. */
+static void
+present_slow_mark(
+	struct amdrdna_node *node,
+	const uint64_t *times)
+{
+	uint64_t total;
+
+	/* Only a slow one, and only the first few. */
+	total = kern_ticks_to_ms(times[PRESENT_TIMES - 1U] - times[0]);
+	if (total < PRESENT_SLOW_MS)
+		return;
+	node->slow_presents++;
+	if (node->slow_presents > PRESENT_SLOW_MARKS)
+		return;
+
+	/* The steps. */
+	amdrdna_mark("present slow %llums (%llu so far): lock %llu, admit %llu, flip %llu, flip wait %llu",
+	    (unsigned long long)total,
+	    (unsigned long long)node->slow_presents,
+	    (unsigned long long)kern_ticks_to_ms(times[1] - times[0]),
+	    (unsigned long long)kern_ticks_to_ms(times[2] - times[1]),
+	    (unsigned long long)kern_ticks_to_ms(times[3] - times[2]),
+	    (unsigned long long)kern_ticks_to_ms(times[4] - times[3]));
 }

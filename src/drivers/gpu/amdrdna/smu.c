@@ -364,14 +364,26 @@ amdrdna_a4_power(
 		thermal->clock_levels = true;
 
 	/*
-	 * The memory side's levels with them, held at the highest, only when
-	 * amdrdna.smu.memory=1: with them the firmware stopped answering at
+	 * The memory side's levels with them only when the boot line asks:
+	 * held at the highest (amdrdna.smu.memory=1), or moved by the firmware
+	 * with the load once the display's step has run (2).  Held at the
+	 * highest without the display's step the firmware stopped answering at
 	 * idle after loads (twice within 20 minutes of load and idle in turn,
 	 * none in 40 minutes without them), so they stay off by default.
 	 */
+	thermal->memory_mode = amdrdna_parameter_number("amdrdna.smu.memory", 0U);
+	if (thermal->memory_mode > 2U)
+		thermal->memory_mode = 2U;
 	thermal->memory_levels = false;
-	if (amdrdna_parameter_number("amdrdna.smu.memory", 0U) != 0U)
+	if (thermal->memory_mode != 0U)
 		thermal->memory_levels = true;
+	thermal->memory_level_count = 0U;
+	thermal->memory_display = false;
+	thermal->memory_follows = false;
+	thermal->memory_underflows = 0U;
+	thermal->memory_fifo_errors = 0U;
+	thermal->display_watch = amdrdna_parameter_number("amdrdna.smu.display_watch", 0U);
+	thermal->memory_plan_set = false;
 
 	/* How the clock is raised for work once it moves; nothing is raised until then. */
 	raise_mode = amdrdna_parameter_number("amdrdna.smu.boost", THERMAL_BOOST_PROFILE);
@@ -748,6 +760,93 @@ amdrdna_power_busy(
 }
 
 /*
+ * Sends one message to the unit's firmware for another part of the driver
+ * (the display's step) and waits for its answer; answer, when not NULL,
+ * gets the output argument.
+ *
+ * Returns what smu_message returns.
+ */
+int
+amdrdna_smu_message(
+	struct amdrdna_device *device,
+	uint32_t message,
+	uint32_t argument,
+	uint32_t *answer)
+{
+	int error;
+
+	/* The message, under the mailbox. */
+	error = smu_message(device, message, argument, answer);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the unit carried the message out. */
+	return 0;
+}
+
+/*
+ * Hands a table (bytes, a multiple of 4, at most a page) to the unit's
+ * firmware by its ID through the table page, for another part of the
+ * driver.  Returns what power_table_send returns, or EINVAL for a table
+ * larger than the page.
+ */
+int
+amdrdna_smu_table_send(
+	struct amdrdna_device *device,
+	uint32_t id,
+	const uint8_t *table,
+	size_t bytes)
+{
+	int error;
+
+	/* The table must fit the page, in whole words. */
+	if (bytes > SMU_TABLE_PAGE_BYTES || (bytes % 4U) != 0U)
+		return EINVAL;
+
+	/* The page must have been taken by stage A4. */
+	if (!device->thermal.table_taken)
+		return ENXIO;
+
+	/* The table, through the page. */
+	error = power_table_send(device, id, table, bytes);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the firmware has the table. */
+	return 0;
+}
+
+/*
+ * Reads the frequency of one level of a clock (the firmware's clock
+ * number), in MHz; the level 0xff asks how many levels the clock has.
+ * Returns 0 or the message's error.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_get_dpm_freq_by_index).
+ */
+int
+amdrdna_smu_clock_level(
+	struct amdrdna_device *device,
+	uint32_t clock,
+	uint32_t level,
+	uint32_t *mhz)
+{
+	uint32_t answer;
+	int error;
+
+	/* The level's answer, without its top bit. */
+	answer = 0U;
+	error = smu_message(device, SMU_MESSAGE_LEVEL, (clock << 16) | (level & SMU_LEVEL_COUNT), &answer);
+	if (error != 0)
+		return error;
+	*mhz = answer & SMU_LEVEL_FREQUENCY_MASK;
+
+	/* Succeeded: the frequency (or the count) is read. */
+	return 0;
+}
+
+/*
  * Waits for the unit's firmware to say it runs: bit 0 of its state word,
  * read through the indirect register window.
  *
@@ -1119,6 +1218,8 @@ power_features(
 		permitted_high |= AMDRDNA_SMU_CLOCK_FEATURES_HIGH;
 		if (!thermal->memory_levels)
 			permitted &= ~AMDRDNA_SMU_MEMORY_FEATURES_LOW;
+		if (thermal->memory_mode == 2U)
+			permitted |= AMDRDNA_SMU_DISPLAY_FEATURES_LOW;
 	}
 
 	/* No display is counted yet. */
@@ -1490,6 +1591,7 @@ power_memory_clock(
 	uint32_t saved;
 	uint32_t answer;
 	uint32_t allow;
+	uint32_t level;
 	int ceiling_error;
 	int floor_error;
 	int error;
@@ -1511,6 +1613,18 @@ power_memory_clock(
 		return;
 	}
 
+	/* Each level's frequency, for the display's step. */
+	if (count > AMDRDNA_MEMORY_LEVELS)
+		count = AMDRDNA_MEMORY_LEVELS;
+	for (level = 0U; level < count; level++) {
+		error = amdrdna_smu_clock_level(device, SMU_CLOCK_MEMORY, level, &thermal->memory_levels_mhz[level]);
+		if (error != 0) {
+			amdrdna_mark("A4 memory clock: level %u unread (%d)", (unsigned)level, error);
+			return;
+		}
+	}
+	thermal->memory_level_count = count;
+
 	/* The memory controller's answer about its workaround, marked. */
 	answer = 0U;
 	error = smu_message(device, SMU_MESSAGE_MEMORY_WORKAROUND, 0U, &answer);
@@ -1522,8 +1636,12 @@ power_memory_clock(
 	floor_error = EIO;
 	if (ceiling_error == 0)
 		floor_error = smu_message(device, SMU_MESSAGE_HARD_FLOOR, (SMU_CLOCK_MEMORY << 16) | highest, NULL);
+	thermal->memory_saved_state = saved;
 	allow = amdrdna_parameter_number("amdrdna.smu.memory_allow", 0U);
-	if (allow == 1U) {
+	if (thermal->memory_mode == 2U) {
+		/* Held with the change allowed until the display's step tells the firmware what the display needs. */
+		amdrdna_display_memory_switch_hold(device, saved);
+	} else if (allow == 1U) {
 		/* amdrdna.smu.memory_allow=1: the arbiter keeps allowing the change. */
 		amdrdna_display_memory_switch_hold(device, saved);
 	} else if (allow == 2U) {
@@ -1649,10 +1767,12 @@ power_boost(
 		floor_mhz = SMU_FLOOR_FREE;
 	}
 
-	/* Tells the firmware the workloads, then moves the floor. */
+	/* Tells the firmware the workloads, then moves the floor, and the memory clock's floor with the display's step. */
 	error = smu_message(device, SMU_MESSAGE_WORKLOADS, workloads, NULL);
 	if (error == 0 && mode == THERMAL_BOOST_FLOOR)
 		error = smu_message(device, SMU_MESSAGE_FLOOR, (SMU_CLOCK_GFX << 16) | floor_mhz, NULL);
+	if (error == 0)
+		amdrdna_memory_display_busy(device, raising);
 
 	/* A refusal ends the boost for good. */
 	if (error != 0) {
@@ -2182,6 +2302,7 @@ power_watch(
 		/* Reads and checks once the reading is due. */
 		if (now >= next_read) {
 			power_read(device);
+			amdrdna_memory_display_watch(device);
 			next_read = now + THERMAL_WATCH_TICKS;
 		}
 	}

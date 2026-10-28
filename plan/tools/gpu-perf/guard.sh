@@ -1,32 +1,34 @@
 #!/bin/sh
-# ws291: the power guard of a long run on the RX 5600 XT machine, from the host at the top of the tree.  While the
-# command runs, zedBSD's amdrdnactl power line is read every GUARD_SECONDS (20 by default); when it says the
+# gpu-perf: the power guard of a long run on a GPU test machine, from the host at the top of the tree.  While the
+# command runs, the driver's status (DRIVER_STATUS of drivers/NAME.conf, the machine's driver) is read on zedBSD every
+# GUARD_SECONDS (20 by default); when its power line says the
 # system-management firmware hung or the thermal fault, the temperature reached GUARD_TEMP (90 C), or the fan stands
 # while the driver drives it (the firmware stops it below about 60 C by itself), the GPU's load
 # (mview, vkhang, nggshape) is killed, the kernel's log is kept in OUT.dmesg, zedBSD is powered off and the command is
 # stopped.  The guard's lines go to OUT.guard; it prints "guard: tripped ..." when it acted.
-#   usage: plan/ws291/tests/guard.sh OUT COMMAND [ARG...]
-# Each answer's clocks line (the memory clock, the hub's memory state, the underflow) is logged with the power line;
+#   usage: plan/tools/gpu-perf/guard.sh OUT COMMAND [ARG...]
+# Each answer's other lines (amdrdna: the clocks line of the memory clock, the hub's memory state, the underflow) are
+# logged with the power line;
 # a round without an answer is logged as "no answer (N)" (the machine is then judged by whoever watches the log).
-# The machine's state that made the guard (2026-10-28): the firmware stopped answering, the fan stood at 0 rpm and the
-# GPU kept working.
+# The state that made the guard (the RX 5600 XT machine): the power firmware stopped answering, the fan stood at
+# 0 rpm and the GPU kept working.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 out=${1:?usage: guard.sh OUT COMMAND [ARG...]}
 shift
 top=$(pwd)
+. plan/tools/gpu-perf/conf.sh
 KEY=${KEY:-$top/plan/tmp/guest/id_ed25519}
-ZEDBSD_MAC=${ZEDBSD_MAC:-6c:1f:f7:1a:08:b6}
 seconds=${GUARD_SECONDS:-20}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 mkdir -p "$(dirname "$out")"
 : > "$out.guard"
 
-# The power line of the running zedBSD, or nothing when zedBSD does not answer.
+# The driver's status lines of the running zedBSD, or nothing when zedBSD does not answer.
 power_line() {
 	ip=$(ip neigh | awk -v mac="$ZEDBSD_MAC" '$0 ~ mac && $0 !~ /FAILED/ && $1 ~ /^[0-9.]+$/ {print $1; exit}')
 	[ -n "$ip" ] || return 1
-	timeout 20 ssh -i "$KEY" $SSHOPT "root@$ip" "amdrdnactl | grep '^power \|^clocks '" 2> /dev/null
+	timeout 20 ssh -i "$KEY" $SSHOPT "root@$ip" "$DRIVER_STATUS" 2> /dev/null
 }
 
 "$@" &

@@ -147,7 +147,7 @@
   compact_vertices_after_culling）。
 - host: compiler host test 58 PASS（+nggc 6 本、新しい番号の場所から読む番号を instance にずらす変異で 6 本 FAIL）、vk host 197 PASS、vmunix warning 0
   （00322fad8ae84b83）。mview の program は 640 語、31 VGPR（culling part 側が最大）。
-- 実機（vmunix-defer1、ngg=2、`plan/ws291/tests/round.sh`、build/ws291/measure/defer1b/）:
+- 実機（vmunix-defer1、ngg=2、`plan/tools/gpu-perf/round.sh`、build/ws291/measure/defer1b/）:
 
 | 確認 | 結果 |
 | --- | --- |
@@ -328,7 +328,7 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
   warm reboot した事が原因の見込み（Debian の amdgpu が初期化できない）。
 - Q1 の指示（07:15）: (1) 長い試験は温度・fan・SMU を見張り、異常で負荷を止めて poweroff、(2) driver も thermal fault で負荷を止める、(3) わざと
   SMU を壊さない、(4) Linux で同じ負荷を比べる。→ commit 31129fc30: smu.c の power_fault が device を failed にして仕事を止め、fan を thermal block 直で
-  100 % に。plan/ws291/tests/guard.sh（20 秒ごとに amdrdnactl の power 行、hung=1・fault=1・90 C 以上・driver が回す時の fan 停止で mview・vkhang を
+  100 % に。plan/tools/gpu-perf/guard.sh（20 秒ごとに amdrdnactl の power 行、hung=1・fault=1・90 C 以上・driver が回す時の fan 停止で mview・vkhang を
   kill して poweroff）、round.sh は guard の下で走る。Linux（07:20、amdgpu）で bench の全部: SMU の error なし、48 C・fan 1170 rpm（表は下）。
 - Fable 5.1 High の助言 2 回目（SMU、要点）: mailbox・HDP・table の手順は Linux と同じで、0x10410d は結果。MP1・THM・GC が同じ秒に壊れたので電源の
   領域の問題。本命は SMU の feature の組: gfxclk の DPM を動かしながら、Linux が常に許す電圧の保護（APCC_DFLL の droop 制御、TEMP_DEPENDENT_VMIN、
@@ -465,7 +465,7 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 
 ### ue0 の自己 reboot（nicwatch）
 
-- ユーザーの指示（2026-10-28、上の BootNext の節）で、試験の image と機械の設定だけに入れた（base の既定の image には入れない）: `plan/ws291/tests/nicwatch/`
+- ユーザーの指示（2026-10-28、上の BootNext の節）で、試験の image と機械の設定だけに入れた（base の既定の image には入れない）: `plan/tools/gpu-perf/nicwatch/`
   （nicwatch.sh と service）、`plan/ws291/tests/rc.conf`（base の rc.conf に nicwatch の行を足した写し、ZEDBSD_TEST_RC_CONF）、`measure.sh nicwatch`（動いている
   zedBSD に入れる）。動作: 起動の後 150 s 以内に ue0 に IPv4 の address が付かなければ reboot（BootOrder で Debian に戻る）。連続は 3 回まで
   （/boot/boot0/nicwatch.count、address が付いた起動で 0）。measure.sh の to_zedbsd は zedBSD が上がらず Debian に戻った時に BootNext を 2 回まで繰り返す。
@@ -718,7 +718,7 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 
 - 14:24:32: bench の終わりの後（負荷なし、53 C）に hung=1 fault=1、guard が poweroff、14:25:10 に SwitchBot（今日の P2 の 8 回目）。
 - Q1 の指示: UCLK 固定の後に初めて見えた idle の停止なので優先して切り分ける（性能より安全）。kernel に `amdrdna.smu.memory=0`（memory 側の feature を
-  許さず UCLK を固定しない）を足した（e27a16d15）。道具 `plan/ws291/tests/soak.sh OUT [MINUTES [LOAD [IDLE [COPIES]]]]`（guard の下、mview の
+  許さず UCLK を固定しない）を足した（e27a16d15）。道具 soak.sh（2026-10-28 削除済み、git の履歴）`soak.sh OUT [MINUTES [LOAD [IDLE [COPIES]]]]`（guard の下、mview の
   scene-1500 を 5 s、25 s 休み、繰り返し）。
 - 再現: e27a16d15（DS_SOCCLK あり、UCLK 875 固定）の soak で 14:35 開始、31 回目の後の idle で 14:50:47 に hung=1（直前 14:50:27 正常、52 C）、
   guard が poweroff、14:51:09 に SwitchBot（9 回目）。
@@ -895,13 +895,114 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
 
 ### UCLK の再開点（次の担当へ、2026-10-28 19:50）
 
-1. 増分 B: memory=1 + memory_allow=2 で起動し、clocks の行で state=0x0（SR 許可）・underflow=0 を確かめ、soak 60 分 × 2（guard の下）。停止したら dmesg の
-   「smu: hung: display memory handshake」の 4 標本で bit 31（要求）・bit 30（allow）を読む。
+1. （取りやめ、2026-10-28 20:07）増分 B（memory=1 + memory_allow=2 の固定 UCLK の soak）。ユーザー（Q1 経由）「UCLK固定のsoakはやらなくていいと伝えたはずですが」
+   「P2はsoakはやめさせて、実装に集中させてください。」→ soak はしない（固定も受け入れの長いものも）。始めた 1 本（build/ws291/soak-b1、20:01〜）は 13 回・停止 0 で止めた。
 2. 増分 C・D の実装（design-reviewer の B1〜M8 を入れる）: display の段を独立の関数（smu.c か新しい file）にし、A8（takeover）の終わり・
    amdrdna_mode_set の後・reset の A4 の後から呼ぶ。順: DRAM_STATE を 0x30 → watermark の table（TABLE_WATERMARKS = 1、reader 4 行 = UCLK の段の範囲、
    writer 1 行）→ NumOfDisplays = 1 → DCEFCLK の hard min（起動の値か 506）・SOCCLK の hard min → hub の DRAM_CLK_CHANGE の watermark を mode-plan の
    段 0 の UCLK（memory_mts = 100×16）と 404 us で計算した値で 4 set に書く（memory_switch が 0 なら 5 us で計算し UCLK は固定のまま）→ 最後に
    DRAM_STATE を 0x0 → UCLK の hard min を段 0（下ろすのは watermark の後）。shutdown は 0x30 → NumOfDisplays = 0 → hard max を最上段 → all off。
    DEBUG_INDEX と DATA の読みは lock を共有する（control.c と smu_hang_mark）。
-3. 受け入れ（Q1 19:15）: soak（負荷と idle の繰り返し）2 回以上か 2 時間で停止 0・underflow 0、idle で clocks の mem が下がり負荷で上がる、
-   scene の bench が Linux の数以上（同じ条件）。既定は完成して確かめるまで memory=0。
+3. 受け入れ（Q1 19:15、20:10 の指示で soak を除く）: 短い起動の確認（起動の mark・idle で clocks の mem が下がり負荷で上がる・underflow 0）と、
+   scene の bench が Linux の数以上（同じ条件）。長い soak はしない。既定は完成して確かめるまで memory=0。
+
+## q1658（2026-10-28 P2、worktree p2-ws291h、基点 main a346ceb55）
+
+- 指示（Q1 経由のユーザーの原文）: 「UCLK固定のsoakはやらなくていいと伝えたはずですが」「P2はsoakはやめさせて、実装に集中させてください。」→ 増分 B の soak は 20:07 に止めた（13 回・停止 0）。
+  「P2が使っている性能評価スクリプトは、今後ほかのGPUのドライバの性能向上に標準で活用したいので、tools/以下のスクリプトとして保存するのが望ましいと思います。」→ plan/tools/gpu-perf/（9213987d1）。
+  「P2は、評価を中断して、画面へ出す回路のunderflowを先に修正してください。目視でも、かなりの割合で数秒に一回くらい、画面出力が途切れる瞬間があります。解決してから評価に進みます。UCLKの問題は解決とマークしていいです。」
+
+### 負荷に応じた UCLK（amdrdna.smu.memory=2、commit 37ca3c658・261aca2ae・959e8c514・144cff0f5、既定は memory=0 のまま）
+
+- 実装: display-memory.c（display の段）。A4 は UCLK を最上段・p-state の force allow で保つ。takeover（A6）の後・mode set の後・reset の A4 の後に:
+  DRAM_STATE 0x30 → watermark の表（TABLE_WATERMARKS、reader 4 行 = UCLK の段の範囲、writer 1 行、Linux の Watermarks_t と byte 一致: plan/ws291/tests/watermarks-test.sh）
+  → NumOfDisplays=1 → DCEFCLK の hard min 506 → DISPCLK の電圧の hard min（max(DISPCLK, DPPCLK)、164 MHz）→ 今の mode を UCLK 段 0（1600 MT/s、fabric 506）で
+  replan（plane・hub の 4 set・global sync を update lock の下で、amdrdna_mode_replan）→ force を外す（0x0）→ UCLK の floor を段 0。覆えない mode は最上段に固定し
+  5 us（dummy p-state）の plan。mode set の前は hold（0x30・最上段）、shutdown・reset の前は end（+ NumOfDisplays=0）。SOCCLK の hard min は Linux の Navi10 に無いので送らない
+  （送ると 0xff）。power の watch が display の underflow を 1 s ごとに数え mark・clear。GPU の busy（boost）の間は UCLK の floor を段 1（500 MHz）。
+- 実機（短い確認、plan/tools/gpu-perf/amdrdna/dpm-check.sh、guard の下）: idle で mem=100MHz、負荷で 500/625/875、止めると 100。SMU の停止 0、hung=0。
+- underflow: 404 us の plan では game mode の負荷の 6 s ごとに 1〜1.5 回の timing generator の underflow（HUBP は 0）。window mode 0、UCLK 固定 0、Linux 0。
+  Linux の DTN log: 1080p を 2 pipe（960×2、MPC combine、64KB_R_X）、dram_clk_change 439.64 us（404+urgent+25 = active でも許す）。我々は 1 pipe linear で vblank だけ。
+  Fable 5.1 High（21:00）: 1 pipe の vblank の切り替えは 404 us を超える切り替えに余裕 0、Linux は active で ~390 us の余裕。案 F2: latency を 520 us に（vblank に収まる上限 ~575）。
+  → 520 us（MEMORY_SWITCH_TENTHS、amdrdna.smu.memory_latency= で変更可）で game 16 cycle・window 4 cycle・bench 2 回で underflow 0。
+  DISPCLK の電圧の floor だけ（404 us）では 4 cycle で 3 回（効かない）。UCLK の floor 500（memory_floor_level=1）でも 4 cycle で 2 回（100 MHz の段の問題ではない）。
+- 速さ（scene-6500）: 段 0 の floor だけでは UCLK が負荷の中でも 100/500 を往復し fence 20.1〜20.3 ms（Linux は 500 MHz を保ち 19.54）。busy の floor 500 で fence 19.62〜19.70。
+- UCLK（SMU の停止）の件はユーザーの指示で解決とする（2026-10-28 21:40 頃の Q1 の伝達、上の原文）。残り: display の underflow の根本（2 pipe 分割、Linux の形）と評価。
+
+### 画面の途切れ（2026-10-28 21:50〜23:00、ユーザーの指示「画面へ出す回路のunderflowを先に修正」）
+
+- ユーザー（Q1 経由）「途切れは直近数分で観測できています。」（21:46、520 us の kernel の後）→ underflow の bit（HUBP・OTG）と出力（DIG4）の FIFO の
+  level error（watch で 1 s ごと、37ca3c658 以降・732881c57）はどちらも 0。途切れは underflow ではない。
+- mview に止まりの行（MVIEW HITCH: 33 ms 以上の frame の間隔と、その frame の段の時間。MVIEW HITCHES: 数、10d72c341）を足して測った:
+  止まりは全部 vkAcquireNextImageKHR の中（GPU・submit・present・fence は数 ms）。memory=0（UCLK の DPM 無し）でも同じ。
+  - window mode・FIFO: 約 1 s ごとに 50〜52 ms（時々 98・805 ms）。50 ms 刻み = libvulkan の wsi-wayland.c の wayland_wait の slice。
+  - game mode・mailbox: 約 2 s ごとに 75〜86 ms、時々 700 ms 級。Linux（同じ bench）は frame_ms_max 0.8〜22 ms。
+  - CPU の空白の検出（plan/ws291/tests/gap、gap-build.sh）: 負荷の横でも 1 ms を超える空白 0。compositor の pass も最大 0.5 ms。
+- Fable 5.1 High（22:55）: (a) FIFO の present worker が wayland_wait で fd を poll している間に、main thread（mview の window dispatch、acquire の
+  progress）が frame callback の bytes を読み・dispatch してしまい、worker は 50 ms の slice まで起きない（取りこぼし）。
+  (b) mailbox の 80 ms は client 側の poll ではない（acquire は 10 ms ごとに見る）: compositor が release を 80 ms 送らなかったか、全 image を
+  保持していた。周期 2 s の何かが compositor か backend にある見込み。
+- 直した事（7650291df、libvulkan wsi-wayland.c）: wayland_wait の眠りを、surface の queue の read を prepare したまま poll する形に
+  （wayland_sleep: libwayland の協調の読み）、さらに frame callback で surface の progress pipe に 1 byte を書き、眠りはその pipe も待つ。
+  実機（/lib/libvulkan.so を差し替え、元は /lib/libvulkan.so.p2old、compositor は古い lib のまま）: FIFO の 50 ms 刻みの不定の止まりは消え、
+  残りは約 2 s ごとの 95〜97 ms（12 s に 5〜6 回、window FIFO の軽い scene）と game mode の約 2 s ごとの 73〜79 ms。
+- 診断（7650291df、amdrdna present.c）: 34 ms 以上かかった present を段ごとに mark（present slow）。FIFO の run で 0 回 → kernel の present・flip は止まっていない。
+- 残り（次の担当へ）: 約 2 s 周期の 75〜97 ms の止まり。kernel の present・CPU・compositor の pass は否定。次の候補: libvulkan の present worker の
+  GPU 完了の待ち（commit の前の wait_fd・generation）、Keiland の scanout の release（scanout.c kwl_scanout_ended が ended=0 で release しない、
+  Fable の (b)）、compositor の frame callback の送り。切り分け: Keiland の KWL RELEASE の時刻（at_us が粗いので μs の時計を足す）と
+  mview の HITCH を突き合わせる、worker の待ちの時間を VULKAN TIMING に足す。
+- 未実施: libvulkan の変更の venus の回帰（plan/ws291/tests/venus-reg.sh）、arm64（config-rpi4）・riscv64（config-visionfive2）の libvulkan の
+  build の warning 0（Q1 の条件）。compositor が新しい lib で動く形（reboot の後）の計測。
+- 機械の状態: cfg は amdrdna.smu.memory=0（既定）、kernel vmunix-m2j（7650291df の元）、/lib/libvulkan.so は 7650291df の build、/bin/mview は
+  10d72c341 の build。
+
+### 約 2 s 周期の止まりの原因と直し（2026-10-28 23:05〜23:30 P2、q1658-i02）
+
+- 原因: Keiland の main loop が 2 s ごと（KWL_INPUT_SCAN_MS）に /dev/input を scan し、まだ読んでいない eventN を開き直す。この機械の
+  /dev/input/event4（「PC/AT PS/2 mouse」、PS/2 の mouse はつながっていない）の open は毎回 約 80 ms 待って EIO（guest で
+  `time dd if=/dev/input/event4 of=/dev/null count=0`: real 0.08、Input/output error。他の event0〜9 は 0.00）。その間 compositor の main loop が
+  止まり、buffer の release・frame done が出ない → mview の acquire が 75〜97 ms 止まる（周期 117 frame ≈ 2.0 s と一致）。
+  pcat の platform の amd64 の機械で PS/2 の mouse が無ければどこでも起きる（desktop の普段の操作にも効く）。
+- 直し（b574fbf6a、libkeiland-backend-zedbsd の input-zedbsd.c・events-zedbsd.c、backend-private.h に input_refused）: scan で open が device の
+  error（EIO・ENXIO・ENODEV）で失敗した eventN を覚え、/dev/system の INPUT（か OVERFLOW）の event が来るまで開き直さない。EACCES（seat の
+  user の物になる前）は今までどおり毎回試す。system の event が無い kernel（events_descriptor < 0）では覚えず今までどおり。
+  Keiland の protocol の振る舞い（frame done・release の順）は変えていない。
+- 実機（/bin/wayland を差し替え（元は /bin/wayland.p2old）、zedBSD を再起動して compositor も 7650291df の libvulkan で、cfg は memory=0）:
+  - window FIFO 12 s: qs40 1 体 HITCH 0（frame_ms_max 18）、1500 体 ×2 HITCH 0（max 18）。直す前は 12 s に 5〜6 回の 87〜100 ms。
+  - game mailbox 4 枚 12 s: 1 体 ×4 で HITCH 1 回ずつ（frame 625〜650 = run の 1.4 s、48〜57 ms）、6500 体 ×1 で 1 回（frame 72、38 ms）。
+    これは run の開始の direct scanout への切り替え（KWL SCANOUT direct=1 switch_ms=51: compositor の swapchain を閉じ display を claim）の
+    1 回だけ。周期の止まりは 0。直す前は約 2 s ごとに 73〜79 ms。
+  - 記録: build/ws291/kw1-win・kw1-win2・kw1-win3・kw1-game・kw1-game2〜4・kw1-game6500。
+- build: amd64 の /bin/wayland（build/ws291/usb、build/ws291-kw1.log）、arm64（config-rpi4、BUILD=build/ws291/rpi4）・riscv64（config-visionfive2、
+  BUILD=build/ws291/vf2）の libvulkan.so と /bin/wayland が rc=0・warning 0（-Werror、wsi-wayland.o・input-zedbsd.o・events-zedbsd.o を含む）。
+- 別件（範囲の外、直していない）: kernel の PS/2 の aux の node が、mouse が無いのに作られ、open のたびに 約 80 ms 待って EIO を返す
+  （src/kern/platform/pcat.c の PS/2 の mouse の attach、drv_pcat_ps2_8042_init）。
+- (a) QEMU Venus の回帰（plan/ws291/tests/venus-reg.sh build/ws291/venus3、image は今の tree の
+  `plan/tools/gpu-boundary/build-forge-image.sh build/ws291/forge`: libvulkan は 7650291df の wsi-wayland.c 込み（sha256 先頭 a03183d47a99d371、
+  amd64 の build/ws291/usb の物と同じ）、compositor は b574fbf6a 込み）: forge-guest・fence-guest・wltest（mailbox、recreate-at=100）・
+  mview（mailbox 4 枚）・mview（--draws=each --submits=20）・compositor の VULKAN_ERROR 0 が全部 ok、PASS。
+
+### 受け入れの評価（2026-10-28 23:35 P2、直しの後、cfg amdrdna.smu.memory=2（負荷に応じた UCLK）、kernel vmunix-m2j）
+
+- bench（`guard.sh build/ws291/bench-k2/g measure.sh bench zedbsd build/ws291/bench-k2`、game mailbox 4 枚 8 s ずつ）と Linux（build/ws291/bench-linux、
+  同じ日 21:27、RADV）:
+
+| run | zedBSD fps | Linux fps | zedBSD frame / fence ms | Linux frame / fence ms |
+| --- | --- | --- | --- | --- |
+| scene-1 | 1584.6 | 9380.1 | 0.63 / 0.09 | 0.11 / 0.06 |
+| scene-1500 | 201.8 | 200.4 | 4.95 / 4.46 | 4.99 / 4.67 |
+| scene-6500 | 49.20 | 50.12 | 20.27 / 19.50 | 19.90 / 19.54 |
+| big-100 | 206.5 | 517.8 | 4.84（record 1.28・submit 1.08） | 1.93（0.79・0.04） |
+| big-1000 | 34.3 | 87.0 | 29.08（record 11.73・submit 11.95） | 11.48（5.41・0.02） |
+| subs-100 | 58.4 | 510.8 | 17.10（submit 15.69） | 1.96（submit 0.91） |
+| subs-1000 | 6.06 | 58.2 | 161.7（submit 151.2） | 17.15（submit 10.26） |
+
+- 読み: GPU の時間（fence）は scene-6500 で Linux と同じ（19.50・19.54）、scene-1500 は Linux 以上。scene-6500 の fps の差（−1.8 %）は CPU 側の
+  約 0.37 ms（present 0.39 対 0.07、submit 0.16 対 0.09）。command の多い big・subs は submit（kernel への往復）が大きく Linux の 1/3〜1/10。
+  → 次は案 4（小さな transaction を呼び手の thread で同期の GPU_COMMAND）・案 5（gpu.c の起床の抑制）で、Q1 に相談（Q1 の指示）。
+- HITCH: 各 run 1 回（scene-1・big-1・big-10・big-100・subs-10・scene-1500・scene-6500、run の 1.4〜1.6 s の direct scanout への切り替え）と、
+  frame が 33 ms を超える big-1000（29 ms 前後の frame の揺れ、18 回）・subs-1000（全 frame 約 160 ms）。周期の止まりは 0。
+  window mode（memory=2）: 1500 体・6500 体 12 s とも HITCH 0（6500 体は 48.8 fps、max 23 ms）。
+- underflow: bench の間の guard の 5 回の読みで underflow=0・timing_underflow=0・hung=0、window の run の後の amdrdnactl status も 0。
+- 機械の状態（23:40）: cfg amdrdna.smu.memory=2、kernel vmunix-m2j、/lib/libvulkan.so は 7650291df の build、/bin/wayland は b574fbf6a の build
+  （元は /bin/wayland.p2old）、/bin/mview は 10d72c341。

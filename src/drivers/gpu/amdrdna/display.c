@@ -102,6 +102,18 @@
 #define DISPLAY_TIMING_UNDERFLOW	0x00000400U
 
 /*
+ * The clears of the two underflows: bit 31 of the plane's control word and
+ * bit 12 of the combiner's input control.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/amd/include/asic_reg/dcn/dcn_2_0_0_sh_mask.h
+ * (HUBP0_DCHUBP_CNTL__HUBP_UNDERFLOW_CLEAR_MASK,
+ * ODM0_OPTC_INPUT_GLOBAL_CONTROL__OPTC_UNDERFLOW_CLEAR_MASK).
+ */
+#define DISPLAY_PLANE_UNDERFLOW_CLEAR	0x80000000U
+#define DISPLAY_TIMING_UNDERFLOW_CLEAR	0x00001000U
+
+/*
  * The cursor controls of the plane and of the pixel processor: bit 0
  * shows the cursor.  The pixel processor's bit 16 says a change of the
  * cursor still waits for the next frame's update.  Its scale word: 1.0 as
@@ -1027,6 +1039,44 @@ amdrdna_display_underflow(
 	underflow = display_underflow(device, timing_underflow);
 
 	/* Succeeded: the plane's underflow bits. */
+	return underflow;
+}
+
+/*
+ * Reports the plane's underflow bits and the timing generator's underflow
+ * as amdrdna_display_underflow() does, and clears those that are set, so
+ * the next report shows only underflows that came after.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/display/dc/hubp/dcn20/dcn20_hubp.c
+ * (hubp2_clear_underflow) and
+ * drivers/gpu/drm/amd/display/dc/optc/dcn10/dcn10_optc.c
+ * (optc1_clear_optc_underflow).
+ */
+uint32_t
+amdrdna_display_underflow_take(
+	struct amdrdna_device *device,
+	uint32_t *timing_underflow)
+{
+	uint32_t underflow;
+	uint32_t word;
+
+	/* The bits as they stand. */
+	underflow = display_underflow(device, timing_underflow);
+
+	/* The plane's cleared, when set. */
+	if (underflow != 0U) {
+		word = display_read(device, AMDRDNA_DCN_PLANE_CONTROL, device->gop.plane);
+		display_write(device, AMDRDNA_DCN_PLANE_CONTROL, device->gop.plane, word | DISPLAY_PLANE_UNDERFLOW_CLEAR);
+	}
+
+	/* The timing generator's cleared, when set. */
+	if (*timing_underflow != 0U) {
+		word = display_read(device, AMDRDNA_DCN_COMBINER_INPUT, device->gop.timing);
+		display_write(device, AMDRDNA_DCN_COMBINER_INPUT, device->gop.timing, word | DISPLAY_TIMING_UNDERFLOW_CLEAR);
+	}
+
+	/* Succeeded: the bits before the clear. */
 	return underflow;
 }
 

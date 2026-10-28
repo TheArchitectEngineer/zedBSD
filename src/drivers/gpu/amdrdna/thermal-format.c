@@ -9,8 +9,9 @@
  * The words of the GPU's thermal block and the tables of its power side:
  * the temperature the block reads, the fan controller's duty and mode, the
  * fan's speed from its tachometer, the thresholds of the thermal alerts,
- * the board's power table and the averaging settings the system-management
- * unit's firmware is handed, and the readings it hands back.
+ * the board's power table, the averaging settings and the watermark table
+ * the system-management unit's firmware is handed, and the readings it
+ * hands back.
  *
  * Nothing here touches the hardware: every function turns words or tables
  * read from the GPU, the video BIOS or a firmware file into numbers, or
@@ -230,6 +231,26 @@
  * (DriverSmuConfig_t: GfxclkAverageLpfTau through SocketPowerLpfTau).
  */
 #define FORMAT_SETTINGS_AVERAGES		6U
+
+/*
+ * A watermark row's fields: the clock's lowest and highest and the memory
+ * clock's lowest and highest (16-bit, MHz), the hub's set (a byte), and
+ * the top of a range that has none.
+ *
+ * Values referenced: Linux v6.12
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (WatermarkRowGeneric_t) and
+ * drivers/gpu/drm/amd/display/dc/dm_pp_smu.h
+ * (PP_SMU_WM_SET_RANGE_CLK_UNCONSTRAINED_MAX).
+ */
+#define FORMAT_WATERMARK_MIN_CLOCK		0U
+#define FORMAT_WATERMARK_MAX_CLOCK		2U
+#define FORMAT_WATERMARK_MIN_MEMORY		4U
+#define FORMAT_WATERMARK_MAX_MEMORY		6U
+#define FORMAT_WATERMARK_SET			8U
+#define FORMAT_WATERMARK_ANY			0xffffU
+
+static void format_put16(uint8_t *at, uint32_t value);
 
 /*
  * Reads the temperature word: the reading the trip compares (the one the
@@ -647,6 +668,73 @@ amdrdna_power_features_on(
 }
 
 /*
+ * Puts together the firmware's watermark table
+ * (AMDRDNA_SMU_WATERMARKS_BYTES bytes) for the memory clock's levels
+ * (memory_mhz, count of them, at most AMDRDNA_SMU_WATERMARK_ROWS used): a
+ * readers' row for each level, any display engine clock, the memory clock
+ * from above the level before up to this level (from 0 for the first, to
+ * 0xffff for the last), and the hub's watermark set of the row's number;
+ * one writers' row for any clock with set 0.  The rows not used and the
+ * firmware's own words go over as zero.
+ *
+ * Procedure referenced: Linux v6.12
+ * drivers/gpu/drm/amd/display/dc/resource/dcn20/dcn20_resource.c
+ * (dcn20_resource_construct: the reader and writer ranges),
+ * drivers/gpu/drm/amd/display/dc/dml/dcn20/dcn20_fpu.c
+ * (dcn20_fpu_set_wm_ranges, dcn20_update_bounding_box: a state for each
+ * memory clock level) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_set_watermarks_table).
+ */
+void
+amdrdna_power_watermarks_build(
+	const uint32_t *memory_mhz,
+	unsigned count,
+	uint8_t *table)
+{
+	unsigned at;
+	unsigned row;
+	uint32_t low;
+	uint32_t high;
+	uint8_t *entry;
+
+	/* Everything starts as zero. */
+	for (at = 0U; at < AMDRDNA_SMU_WATERMARKS_BYTES; at++)
+		table[at] = 0U;
+
+	/* At most a row a level. */
+	if (count > AMDRDNA_SMU_WATERMARK_ROWS)
+		count = AMDRDNA_SMU_WATERMARK_ROWS;
+
+	/* The readers' rows, one for each memory clock level. */
+	for (row = 0U; row < count; row++) {
+		/* The memory clock's range: above the level before, up to this one; the last row has no top. */
+		low = 0U;
+		if (row > 0U)
+			low = memory_mhz[row - 1U] + 1U;
+		high = memory_mhz[row];
+		if (row + 1U == count)
+			high = FORMAT_WATERMARK_ANY;
+
+		/* The row: any display engine clock, the memory clock's range, and the set. */
+		entry = table + (AMDRDNA_SMU_WATERMARK_READERS * AMDRDNA_SMU_WATERMARK_ROWS + row) * AMDRDNA_SMU_WATERMARK_ROW_BYTES;
+		format_put16(entry + FORMAT_WATERMARK_MIN_CLOCK, 0U);
+		format_put16(entry + FORMAT_WATERMARK_MAX_CLOCK, FORMAT_WATERMARK_ANY);
+		format_put16(entry + FORMAT_WATERMARK_MIN_MEMORY, low);
+		format_put16(entry + FORMAT_WATERMARK_MAX_MEMORY, high);
+		entry[FORMAT_WATERMARK_SET] = (uint8_t)row;
+	}
+
+	/* The writers' one row: any clock, set 0. */
+	entry = table + AMDRDNA_SMU_WATERMARK_WRITERS * AMDRDNA_SMU_WATERMARK_ROWS * AMDRDNA_SMU_WATERMARK_ROW_BYTES;
+	format_put16(entry + FORMAT_WATERMARK_MIN_CLOCK, 0U);
+	format_put16(entry + FORMAT_WATERMARK_MAX_CLOCK, FORMAT_WATERMARK_ANY);
+	format_put16(entry + FORMAT_WATERMARK_MIN_MEMORY, 0U);
+	format_put16(entry + FORMAT_WATERMARK_MAX_MEMORY, FORMAT_WATERMARK_ANY);
+	entry[FORMAT_WATERMARK_SET] = 0U;
+}
+
+/*
  * Puts together the table of the firmware's averaging settings
  * (AMDRDNA_SMU_SETTINGS_BYTES bytes): every average gets the same time
  * constant, AMDRDNA_SMU_AVERAGE_MS.
@@ -671,4 +759,15 @@ amdrdna_power_settings_build(
 		table[average * 2U] = (uint8_t)(AMDRDNA_SMU_AVERAGE_MS & 0xffU);
 		table[average * 2U + 1U] = (uint8_t)(AMDRDNA_SMU_AVERAGE_MS >> 8);
 	}
+}
+
+/* Stores a 16-bit value, the low byte first. */
+static void
+format_put16(
+	uint8_t *at,
+	uint32_t value)
+{
+	/* The low byte, then the high. */
+	at[0] = (uint8_t)(value & 0xffU);
+	at[1] = (uint8_t)((value >> 8) & 0xffU);
 }

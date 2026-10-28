@@ -1,16 +1,17 @@
 #!/bin/sh
-# ws291: the measurements of the RX 5600 XT machine in one command each, run from the host at the top of the tree.
-# Debian 13 is the machine's normal system (awe@10.0.10.3); zedBSD starts from its NVMe partitions (rdna-nvme.sh, UEFI
-# entry "zedBSD NVMe") once with UEFI BootNext and gets its address by DHCP on the USB LAN adapter Debian uses too
-# (found by its MAC).  Every step has a time limit; the long logs
-# stay in OUT, the command prints only the summary.
+# gpu-perf: the measurements of a GPU test machine in one command each, run from the host at the top of the tree.
+# The machine (GPU_PERF_MACHINE, machines/NAME.conf, default rdna) runs Debian as its normal system and starts zedBSD
+# once with UEFI BootNext; zedBSD gets its address by DHCP on the LAN adapter Debian uses too (found by its MAC).  The
+# driver's own parts (its timing marks, its control program) come from the machine's driver (drivers/NAME.conf).
+# Every step has a time limit; the long logs stay in OUT, the command prints only the summary.
 #
 #     measure.sh where                       which system runs: "zedbsd IP", "linux" or "none"
 #     measure.sh zedbsd                      zedBSD running (BootNext from Debian when Debian runs); prints its IP
 #     measure.sh linux                       Debian running (zedBSD rebooted: BootOrder brings Debian back)
 #     measure.sh nicwatch                    puts nicwatch/ on the running zedBSD (reboots itself when its USB LAN
 #                                            adapter gets no address; to_zedbsd then boots it again, twice at most)
-#     measure.sh timing on|off               the kernel's amdrdna.vk.timing marks on the boot line (on: every 2000 ms) or
+#     measure.sh timing on|off               the driver's timing marks on the boot line (DRIVER_TIMING_KEY, on: every
+#                                            DRIVER_TIMING_VALUE ms) or
 #                                            not, zedBSD restarted (via Debian); the marks time every command and
 #                                            cost the command-heavy runs several ms a frame, so bench runs go
 #                                            without them and profile runs with them
@@ -32,21 +33,22 @@
 #                                            (LINUX_ENV: variables set for mview, as RADV_DEBUG=nongg)
 #     measure.sh profile OUT [MVIEW-OPTION]...
 #                                            mview in the session with libvulkan's submission timing
-#                                            (VULKAN_ZEDBSD_SUBMIT_TIMING) and the kernel's amdrdna.vk.timing marks of
-#                                            the run (the boot line must carry amdrdna.vk.timing=N): the MVIEW, VULKAN
+#                                            (VULKAN_ZEDBSD_SUBMIT_TIMING) and the driver's timing marks of the run
+#                                            (the boot line must carry DRIVER_TIMING_KEY=N): the MVIEW, VULKAN
 #                                            TIMING and vk timing lines (printed), OUT/mview.log, OUT/kernel.log
 #     measure.sh shot OUT COPIES             mview's still view of COPIES copies (FIFO, composed: the compositor is
 #                                            not active while a game holds the display) captured by
 #                                            keiland-shot 6 s in: OUT/shot.png, compared with the Linux reference
-#                                            build/ws291/measure/ref/linux-shot-COPIES.png (printed: shot-diff.py and the
+#                                            SHOT_REFERENCE/linux-shot-COPIES.png (printed: shot-diff.py and the
 #                                            pixels 16 or more levels apart)
 #     measure.sh hang OUT                    the hang check: vkhang (a draw that never ends: its app alone loses the
 #                                            device, the queue is reset), then vkhang --loops, vkhang --compute --loops
 #                                            and a short mview run, and the desktop captured: their lines and the
 #                                            kernel's lines of the loss and the reset (printed), OUT/desktop.png
-#     measure.sh nggshape OUT                the vertex stage's draw shapes (nggshape, ws291-p005/p006) one by one, each
+#     measure.sh nggshape OUT                the vertex stage's draw shapes (nggshape of plan/ws291/tests) one by one, each
 #                                            waited for 10 s at most: their NGGSHAPE lines (printed), OUT/nggshape.log
-#     measure.sh logo OUT                    the console's surface between games: amdrdnactl watch reads the plane's
+#     measure.sh logo OUT                    the console's surface between games (a driver with DRIVER_CTL): its
+#                                            watch reads the plane's
 #                                            surface every 2 ms while mview takes the display over and gives it back
 #                                            (game and window mode, gaps under and over the console's 3 s rest) and
 #                                            vkhang loses its device, then while the compositor is ended (zedBSD is
@@ -58,18 +60,15 @@
 #                                            system, mview copied first (USB_MVIEW, LINUX_MVIEW); OUT/bench.log and
 #                                            the table of fps and the frame's stages (printed, OUT/table.txt)
 #
-# The programs copied in: USB_MVIEW, USB_NGGSHAPE, USB_VKHANG (default build/ws291/usb/bin/...).
-# The environment: ZEDBSD_MAC, ZEDBSD_SUBNET (a /24, as 10.0.30), ZEDBSD_BOOT (the UEFI entry), DEBIAN (user@host),
-# KEY (the zedBSD root key), ZEDBSD_ENV (variables set for zedBSD's mview in mview, profile and bench, as LINUX_ENV is
-# for Linux's).  A candidate for Master's Tools (the same steps serve other GPUs' boards).
+# The programs copied in: USB_MVIEW, USB_NGGSHAPE, USB_VKHANG, LINUX_MVIEW (the machine's file gives them).
+# The machine's file: ZEDBSD_MAC, ZEDBSD_SUBNET (a /24, as 10.0.30), ZEDBSD_BOOT (the UEFI entry), DEBIAN (user@host),
+# PERF_BUILD; the environment overrides each.  KEY (the zedBSD root key), ZEDBSD_ENV (variables set for zedBSD's mview
+# in mview, profile and bench, as LINUX_ENV is for Linux's).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 
 top=$(pwd)
-ZEDBSD_MAC=${ZEDBSD_MAC:-6c:1f:f7:1a:08:b6}
-ZEDBSD_SUBNET=${ZEDBSD_SUBNET:-10.0.30}
-ZEDBSD_BOOT=${ZEDBSD_BOOT:-0004}
-DEBIAN=${DEBIAN:-awe@10.0.10.3}
+. plan/tools/gpu-perf/conf.sh
 KEY=${KEY:-$top/plan/tmp/guest/id_ed25519}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 # The commands to zedBSD share one SSH connection, used again and again (its sshd leaves sessions stuck now and then,
@@ -219,11 +218,11 @@ deploy() {
 timing() {
 	ip=$(to_zedbsd) || return 1
 	if [ "$1" = on ]; then
-		zs "$ip" "sed -i -e '/^#*amdrdna.vk.timing=/d' /boot/boot0/zedbsd.cfg && echo amdrdna.vk.timing=2000 >> /boot/boot0/zedbsd.cfg && sync" || return 1
+		zs "$ip" "sed -i -e '/^#*$DRIVER_TIMING_KEY=/d' /boot/boot0/zedbsd.cfg && echo $DRIVER_TIMING_KEY=$DRIVER_TIMING_VALUE >> /boot/boot0/zedbsd.cfg && sync" || return 1
 	else
-		zs "$ip" "sed -i -e '/^amdrdna.vk.timing=/d' /boot/boot0/zedbsd.cfg && sync" || return 1
+		zs "$ip" "sed -i -e '/^$DRIVER_TIMING_KEY=/d' /boot/boot0/zedbsd.cfg && sync" || return 1
 	fi
-	zs "$ip" "grep -c '^amdrdna.vk.timing=' /boot/boot0/zedbsd.cfg" | sed 's/^/measure: timing lines /' >&2
+	zs "$ip" "grep -c '^$DRIVER_TIMING_KEY=' /boot/boot0/zedbsd.cfg" | sed 's/^/measure: timing lines /' >&2
 	to_linux || return 1
 	to_zedbsd
 }
@@ -331,19 +330,19 @@ wait
 EOS
 	zget "$ip" "$out" /tmp/shot.png /tmp/mview-shot.log || return 1
 	grep -E 'MVIEW (DONE|FAILED)' "$out/mview-shot.log"
-	python3 -I plan/tools/frame-ops/shot-diff.py "build/ws291/measure/ref/linux-shot-$copies.png" "$out/shot.png"
+	python3 -I plan/tools/frame-ops/shot-diff.py "$SHOT_REFERENCE/linux-shot-$copies.png" "$out/shot.png"
 	python3 -I -c 'import sys, numpy
 from PIL import Image
 a = numpy.asarray(Image.open(sys.argv[1]).convert("RGB"), dtype=numpy.int16)
 b = numpy.asarray(Image.open(sys.argv[2]).convert("RGB"), dtype=numpy.int16)
-print("over15", int((numpy.abs(a - b).max(axis=2) >= 16).sum()))' "build/ws291/measure/ref/linux-shot-$copies.png" "$out/shot.png"
+print("over15", int((numpy.abs(a - b).max(axis=2) >= 16).sum()))' "$SHOT_REFERENCE/linux-shot-$copies.png" "$out/shot.png"
 }
 
 hang() {
 	out=$1
 	mkdir -p "$out"
 	ip=$(to_zedbsd) || return 1
-	zcp "${USB_VKHANG:-build/ws291/usb/bin/vkhang}" "root@$ip:/tmp/vkhang" || return 1
+	zcp "$USB_VKHANG" "root@$ip:/tmp/vkhang" || return 1
 	zrun "$ip" <<EOS || return 1
 $WAKE
 rm -f /tmp/hang.log /tmp/desktop.png
@@ -365,7 +364,7 @@ nggshape() {
 	out=$1
 	mkdir -p "$out"
 	ip=$(to_zedbsd) || return 1
-	zcp "${USB_NGGSHAPE:-build/ws291/usb/bin/nggshape}" "root@$ip:/tmp/nggshape" || return 1
+	zcp "$USB_NGGSHAPE" "root@$ip:/tmp/nggshape" || return 1
 	zrun "$ip" <<EOS || return 1
 $WAKE
 rm -f /tmp/nggshape.log
@@ -414,11 +413,11 @@ bench() {
 	: > "$bout/bench.log"
 	if [ "$system" = zedbsd ]; then
 		ip=$(to_zedbsd) || return 1
-		zcp "${USB_MVIEW:-build/ws291/usb/bin/mview}" "root@$ip:/tmp/mview" || return 1
+		zcp "$USB_MVIEW" "root@$ip:/tmp/mview" || return 1
 		zs "$ip" "cp /tmp/mview /bin/mview" || return 1
 	else
 		to_linux || return 1
-		timeout 120 scp -q -r $SSHOPT "${LINUX_MVIEW:-build/ws291/linux-mview}/." "$DEBIAN:linux-mview/" || return 1
+		timeout 120 scp -q -r $SSHOPT "$LINUX_MVIEW/." "$DEBIAN:linux-mview/" || return 1
 	fi
 	grep -v '^#' "$list" | while IFS='|' read -r blabel boptions; do
 		[ -n "$blabel" ] || continue
@@ -444,14 +443,15 @@ bench() {
 logo() {
 	out=$1
 	mkdir -p "$out"
+	[ -n "$DRIVER_CTL" ] || { say "logo: the driver $GPU_PERF_DRIVER has no control program"; return 1; }
 	ip=$(to_zedbsd) || return 1
-	zcp "${USB_VKHANG:-build/ws291/usb/bin/vkhang}" "root@$ip:/tmp/vkhang" || return 1
+	zcp "$USB_VKHANG" "root@$ip:/tmp/vkhang" || return 1
 	zrun "$ip" <<EOS || return 1
 $WAKE
 rm -f /tmp/watch.log /tmp/logo.log /tmp/logo-kernel.log /tmp/rest.ppm /tmp/after.ppm
 n=\$(dmesg | wc -l)
 chmod 755 /tmp/vkhang
-amdrdnactl watch 75 > /tmp/watch.log 2>&1 &
+$DRIVER_CTL watch 75 > /tmp/watch.log 2>&1 &
 w=\$!
 sleep 1
 for content in game game none game; do
@@ -463,15 +463,15 @@ sleep 1
 su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=logo --spin=2 --content=game --present=mailbox --copies=1" >> /tmp/logo.log 2>&1 < /dev/null
 sleep 5
 su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=logo --spin=2 --content=game --present=mailbox --copies=1" >> /tmp/logo.log 2>&1 < /dev/null
-amdrdnactl display | grep -E '^address' >> /tmp/logo.log
+$DRIVER_CTL display | grep -E '^address' >> /tmp/logo.log
 wait \$w
-amdrdnactl watch 10 > /tmp/watch2.log 2>&1 &
+$DRIVER_CTL watch 10 > /tmp/watch2.log 2>&1 &
 w=\$!
 sleep 1
 kill \$(ps -ef | awk '\$0 ~ /bin.wayland --session/ && \$0 !~ /awk/ {print \$2}')
 wait \$w
-amdrdnactl display | grep -E '^(display|address)' >> /tmp/logo.log
-amdrdnactl screen /tmp/after.ppm >> /tmp/logo.log 2>&1
+$DRIVER_CTL display | grep -E '^(display|address)' >> /tmp/logo.log
+$DRIVER_CTL screen /tmp/after.ppm >> /tmp/logo.log 2>&1
 dmesg | tail -n +\$n | grep -E 'console|display lease|lost|reset' > /tmp/logo-kernel.log
 EOS
 	zget "$ip" "$out" /tmp/watch.log /tmp/watch2.log /tmp/logo.log /tmp/logo-kernel.log /tmp/after.ppm || return 1
@@ -493,7 +493,7 @@ nicwatch() {
 	ip=$(to_zedbsd) || return 1
 	zcp "$(dirname "$0")/nicwatch/nicwatch.sh" "root@$ip:/etc/nicwatch.sh" || return 1
 	zcp "$(dirname "$0")/nicwatch/service" "root@$ip:/etc/service.d/nicwatch" || return 1
-	zs "$ip" "chmod 755 /etc/nicwatch.sh; grep -q '^  nicwatch:' /etc/rc.conf || printf '  # Reboots when ue0 gets no address (plan/ws291/tests/nicwatch).\\n  nicwatch:\\n    enabled: true\\n    optional: true\\n' >> /etc/rc.conf; sync; tail -4 /etc/rc.conf" || return 1
+	zs "$ip" "chmod 755 /etc/nicwatch.sh; grep -q '^  nicwatch:' /etc/rc.conf || printf '  # Reboots when ue0 gets no address (plan/tools/gpu-perf/nicwatch).\\n  nicwatch:\\n    enabled: true\\n    optional: true\\n' >> /etc/rc.conf; sync; tail -4 /etc/rc.conf" || return 1
 	say "nicwatch put in (from the next boot)"
 }
 

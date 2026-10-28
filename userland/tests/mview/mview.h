@@ -102,6 +102,7 @@ void mview_renderer_span(struct mview_renderer *renderer, int end);
 struct mview_renderer {
 	/* Cycles spent in each stage since the counters were last cleared, and the frames counted. */
 	uint64_t stage_cycles[MVIEW_STAGE_COUNT];
+	uint64_t stage_last[MVIEW_STAGE_COUNT];
 	uint64_t span_start;
 	uint64_t span_cycles;
 	uint32_t stage_frames;

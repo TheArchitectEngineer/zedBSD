@@ -19,7 +19,7 @@
 
 - 前後の表（zedBSD と Linux）、内訳の数値、正しさの比較、hang の確認を記録。amd64 の vmunix・libvulkan が warning 0、host 試験（amdrdna-vk-host-test）PASS。
 
-## 道具（plan/ws291/tests/measure.sh に足した物）
+## 道具（plan/tools/gpu-perf/measure.sh に足した物）
 
 - `profile OUT [MVIEW-OPTION]...`: libvulkan の `VULKAN_ZEDBSD_SUBMIT_TIMING=1` と kernel の `amdrdna.vk.timing=2000`（USB の zedbsd.cfg に足した 1 行）の mark を run ごとに取る。
 - `shot OUT COPIES`: mview の静止 view（FIFO、content game）を keiland-shot で撮り、Linux の基準（build/ws291/measure/ref/linux-shot-COPIES.png）と shot-diff.py と「16 階調以上の差の pixel」で比べる。

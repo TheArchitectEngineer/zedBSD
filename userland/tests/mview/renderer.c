@@ -2751,6 +2751,7 @@ renderer_stage(
 
 	now = renderer_cycles();
 	renderer->stage_cycles[stage] += now - *mark;
+	renderer->stage_last[stage] = now - *mark;
 	*mark = now;
 }
 

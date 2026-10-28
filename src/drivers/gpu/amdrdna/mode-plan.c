@@ -265,6 +265,7 @@ static int plan_prefetch(const struct amdrdna_mode_plan_input *input, const stru
 static void plan_switch(const struct amdrdna_mode_plan_input *input, struct plan_work *work);
 static void plan_fields(const struct amdrdna_mode_plan_input *input, const struct plan_work *work, struct amdrdna_mode_plan *plan);
 static plan_number plan_delivery(const struct plan_work *work, plan_number ratio, uint32_t pixel_width, uint32_t scaler_width, uint32_t parts);
+static uint32_t plan_switch_tenths(const struct amdrdna_mode_plan_input *input);
 
 /*
  * Works out the display plan of a mode at the board's clocks.
@@ -715,7 +716,7 @@ plan_marks(
 
 	/* The watermarks: urgent, the memory clock change, and the self-refresh exit and entry. */
 	work->urgent_us = number_ratio(PLAN_URGENT_TENTHS, 10) + work->extra_us;
-	work->switch_us = number_ratio(PLAN_SWITCH_TENTHS, 10) + work->urgent_us;
+	work->switch_us = number_ratio(plan_switch_tenths(input), 10) + work->urgent_us;
 	work->enter_exit_us = number_ratio(PLAN_ENTER_EXIT_TENTHS, 10) + work->extra_us;
 
 	/* The deep sleep floor: 1.1 times a line's bytes over 64 bytes a cycle in the line's delivery time, at least a 16th of the pixel clock. */
@@ -893,7 +894,7 @@ plan_prefetch(
 	/* The wait: the memory clock change with an urgent latency, the self-refresh, or only the urgent latency. */
 	wait_us = number_ratio(PLAN_URGENT_TENTHS, 10);
 	if (vblank_use == 0U) {
-		wait_us = number_most(number_ratio(PLAN_SWITCH_TENTHS + PLAN_URGENT_TENTHS, 10),
+		wait_us = number_most(number_ratio((int64_t)plan_switch_tenths(input) + PLAN_URGENT_TENTHS, 10),
 		    number_most(number_ratio(PLAN_ENTER_EXIT_TENTHS, 10), wait_us));
 	} else if (vblank_use == 1U) {
 		wait_us = number_most(number_ratio(PLAN_ENTER_EXIT_TENTHS, 10), wait_us);
@@ -1209,4 +1210,21 @@ plan_delivery(
 
 	/* Succeeded: the cycles a part. */
 	return cycles;
+}
+
+/*
+ * The memory clock change's latency the plan works with, in tenths of a
+ * microsecond: the input's, or the latency of a change between the memory
+ * clock's levels when the input gives none.
+ */
+static uint32_t
+plan_switch_tenths(
+	const struct amdrdna_mode_plan_input *input)
+{
+	/* The input's latency. */
+	if (input->switch_tenths != 0U)
+		return input->switch_tenths;
+
+	/* The change between levels. */
+	return PLAN_SWITCH_TENTHS;
 }

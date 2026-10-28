@@ -75,7 +75,7 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 - 再開点（2026-10-28 04:45 P2、q1635、worktree p2-ws291b）: 実装と実機の数は [phase006](phase006/phase.md) の「q1635 の続き」以下。scene-6500 は
   29.3 → 30.7 fps（WC で record −1.9 ms）、GPU 30.6 ms は動かず。次は phase006 の「残りの見立て」の (1)（我々の IB を RADV の culling の IB と全部突き合わせる）。
-  道具: `plan/ws291/tests/round.sh`（deploy・nggshape・shot・bench・hang）、`plan/ws291/tests/nowc-build.sh`（診断 patch を当てた tree の build）、
+  道具: `plan/tools/gpu-perf/round.sh`（deploy・nggshape・shot・bench・hang）、`plan/ws291/tests/nowc-build.sh`（診断 patch を当てた tree の build）、
   build/ws291/linux-ibdump/ibdump.so（host で build、Debian の /tmp に置く）。機械: stick は vmunix-lat1 と ngg=2（cfg に診断の nggx=0 の行、無害）。
 
 ## 2026-10-28 自律の継続（q1639、P2）
@@ -138,3 +138,19 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 - 次: 表・NumOfDisplays・hard min・watermark の display の段の実装（負荷に応じた DPM）→ 受け入れの bench（Linux の数以上）。
   UCLK を固定した soak（増分 B）はしない（2026-10-28 20:06 ユーザー「UCLK固定のsoakはやらなくていいと伝えたはずですが。」「P2はsoakはやめさせて、実装に集中させてください。」）。
   機械は既定（memory=0）、kernel vmunix-d3、libvulkan 3b、amdrdnactl d2。
+
+## 2026-10-28 q1658（P2、worktree p2-ws291h）
+
+- ユーザーの決定（Q1 経由、原文）「P2はsoakはやめさせて、実装に集中させてください。」「P2が使っている性能評価スクリプトは、今後ほかのGPUのドライバの性能向上に標準で活用したいので、tools/以下のスクリプトとして保存するのが望ましいと思います。」
+  「P2は、評価を中断して、画面へ出す回路のunderflowを先に修正してください。目視でも、かなりの割合で数秒に一回くらい、画面出力が途切れる瞬間があります。解決してから評価に進みます。UCLKの問題は解決とマークしていいです。」
+- 結果: 負荷に応じた UCLK（amdrdna.smu.memory=2、既定は 0 のまま）を実装し SMU の停止 0（UCLK の件は解決）。計測の道具は plan/tools/gpu-perf/ へ（9213987d1）。
+  display の underflow: p-state の plan を 404 us → 520 us にして 0（[phase006](phase006/phase.md) の「q1658」節）。
+- 再開点（2026-10-28 23:01 P2）: 画面の途切れは underflow ではなく vkAcquireNextImageKHR の止まり（[phase006](phase006/phase.md) の「画面の途切れ」）。
+  libvulkan の Wayland の待ちの取りこぼし（50 ms）は直した（7650291df）。残りは約 2 s 周期の 75〜97 ms の止まり（compositor の release か
+  present worker の GPU 完了の待ちの見込み）。未実施: venus の回帰・他 arch の libvulkan の build。評価（bench）はこの後。
+- 再開点（2026-10-28 23:40 P2、q1658-i02）: 約 2 s 周期の止まりの原因は Keiland の 2 s ごとの /dev/input の scan で、mouse の無い PS/2 の
+  node（event4）の open が毎回 約 80 ms 待って EIO を返し main loop が止まっていた。直し b574fbf6a（開けなかった node を INPUT の event まで
+  開き直さない）で window の HITCH 0、game は run の開始の direct scanout への切り替えの 1 回だけ。Keiland の protocol の順（frame done・release）は
+  変えていない。venus-reg PASS、arm64・riscv64 の libvulkan と Keiland warning 0。評価: scene-6500 49.2 fps（Linux 50.1、fence は同じ 19.5 ms）、
+  scene-1500 201.8（Linux 200.4）、big・subs は Linux の 1/3〜1/10（[phase006](phase006/phase.md) の「受け入れの評価」）。次は案 4・5 を Q1 と相談。
+  別件（範囲外）: kernel の PS/2 の aux の node が mouse 無しで作られ open が 80 ms 待つ。
