@@ -3,7 +3,7 @@
 # ws309-p004 io-device の残り: 電源・network の詳細・sysmon（machine と detach の ack の扱い）
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §2 T6・§4.5。Queue: q1662-i03（P1）。
-- 状態: cleared（2026-10-29 03:5x P1。実機は未実施。detach の ack は p016 へ、見積もりは Q1 に送った）。
+- 状態: cleared（2026-10-29 03:28 P1。実機は未実施。detach の ack は p016 へ、見積もりは Q1 に送った）。
 - 出典: ユーザーの決定 3「I/O系はまとめていいです。」と ws.md の構成の表（I/O-1 device: 入力の device の検出、電源の読み取り、`statfs`、network・電源・アカウントの処理）。
 - 依存: p003。
 
@@ -19,7 +19,7 @@
 - sysmon.c: 監視の常駐の thread（`sysmon_run`、cond の timedwait、join）をやめ、main が周期ごとに 1 つの標本の job を io-device に出す（前の job が取られてから）。info は 5 標本ごと。
   backend の monitor は io-device の thread が持つ（最初の job で open、最後の object の後の close の job で close、終了は thread の後で main が close）。標本と info は done で main の写しになり、serial で object に知らせる。
 
-## 判断の点（Q1 の判断、2026-10-29 03:4x）
+## 判断の点（Q1 の判断、2026-10-29 03:2x）
 
 - machine の読み（machine-shell.c: 名前・file system の大きさ（statvfs）・account・mount）: 設計は T6 だが、今のコードは同時に 1 本の detached の thread で、10 s で諦めて query を failed で答え、
   止まった読みが残る間の query は即 failed、終了でも待たない。T6 に載せると止まった mount の後ろで入力の device の検出と終了の join が止まる（design のレビュー 10 の懸念と同じ）。
@@ -41,9 +41,9 @@
 
 ## 記録
 
-- 2026-10-29 03:3x P1（027de114f・48869e96d）: 上の実装。`make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/amd64 build/amd64/bin/wayland` exit 0・warning 0。
-- 2026-10-29 03:4x P1: QEMU Venus `sh plan/ws309/tests/io-device2-guest.sh build/ws309/io-dev2a <image> build/ws309/bins/wayland-p004a build/ws309/bins/libkeiland-p004a.so build/ws309/bins/keiland-system` → `io-device2-guest: PASS`
+- 2026-10-29 03:1x P1（027de114f・48869e96d）: 上の実装。`make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/amd64 build/amd64/bin/wayland` exit 0・warning 0。
+- 2026-10-29 03:2x P1: QEMU Venus `sh plan/ws309/tests/io-device2-guest.sh build/ws309/io-dev2a <image> build/ws309/bins/wayland-p004a build/ws309/bins/libkeiland-p004a.so build/ws309/bins/keiland-system` → `io-device2-guest: PASS`
   （image は前の worktree `p1-ws309` の build/ws309/img/hdd-image.img。`KWL THREADS count=2 names=io-file,io-device`、dump の `KEILAND-SYSTEM power source=0 percent=-1`、details の result error=0、
   monitor の 2 回の run で frame は計 22、`KWL SYSTEM monitor subscribers=` が 1・0・1・0）。QEMU に電池は無く、power の変化の event（`kwl_power_read_later`）の経路は通っていない。
-- 同 03:5x P1: machine-read の台帳（上の判断）。amd64・arm64（config-rpi4）・riscv64（config-visionfive2-keiland）の bin/wayland exit 0・warning 0、host の lane・io-file の試験 PASS。machine の読みの QEMU は未実施（形は今と同じ、thread の作り方だけ変えた）。
+- 同 03:2x P1: machine-read の台帳（上の判断）。amd64・arm64（config-rpi4）・riscv64（config-visionfive2-keiland）の bin/wayland exit 0・warning 0、host の lane・io-file の試験 PASS。machine の読みの QEMU は未実施（形は今と同じ、thread の作り方だけ変えた）。
 - 未実施: 実機、Linux・FreeBSD の build と QEMU（io-device が Linux・FreeBSD でも起動するようになった）。

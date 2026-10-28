@@ -72,8 +72,8 @@
 
 ## Resume point
 
-- 2026-10-29 03:5x P1（q1662-i03）: p004 cleared（io-device を全 backend で起動、電源・details・sysmon を io-device へ、machine は A2 machine-read、QEMU `plan/ws309/tests/io-device2-guest.sh` PASS）。次は p006（daemon ×5）。
-- 2026-10-29 03:2x P1（q1662-i03、branch `agent/p1-ws309c`）: p005 cleared（言語・apps.conf・account・鍵・printers の open、QEMU `plan/ws309/tests/io-read-guest.sh` PASS）。p019 cleared（P2 の q1668）。次は p004。
+- 2026-10-29 03:28 P1（q1662-i03）: p004 cleared（io-device を全 backend で起動、電源・details・sysmon を io-device へ、machine は A2 machine-read、QEMU `plan/ws309/tests/io-device2-guest.sh` PASS）。次は p006（daemon ×5）。
+- 2026-10-29 03:1x P1（q1662-i03、branch `agent/p1-ws309c`）: p005 cleared（言語・apps.conf・account・鍵・printers の open、QEMU `plan/ws309/tests/io-read-guest.sh` PASS）。p019 cleared（P2 の q1668）。次は p004。
 - 2026-10-29 02:4x P1（q1662-i02、branch `agent/p1-ws309b`、d5fb0bd08・c3b274d51）: p005 は displays.conf（`saved` は書き終わりで答える）・desktop.conf の Log Out・printers.conf まで済み。
   次は p005 の残り（言語の catalog・apps.conf の読み、account・鍵の保存、[phase.md](phase005/phase.md) の「残り」）、その後 p004。QEMU は `plan/ws309/tests/io-file-guest.sh`。
 - 2026-10-29 02:3x P1（q1662-i01）: p001・p002・p003 cleared、p019（shot の送りを thread へ）は QEMU で再現せず RDNA の確かめ待ち。

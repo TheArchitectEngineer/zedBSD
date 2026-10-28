@@ -3,7 +3,7 @@
 # ws309-p005 io-file: 設定の file の読み書きを thread へ
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §2 T7・§4.11・§7 #4・#13・#19。Queue: q1662-i02・q1662-i03（P1）。
-- 状態: cleared（2026-10-29 03:2x P1。account の変更の QEMU は未実施、実機は未実施）。
+- 状態: cleared（2026-10-29 03:1x P1。account の変更の QEMU は未実施、実機は未実施）。
 - 出典: ユーザーの決定 3「I/O系はまとめていいです。」と ws.md の構成の表（I/O-2 file）。
 - 依存: p002（lane）。
 
@@ -64,7 +64,7 @@
 - 2026-10-29 02:4x P1（c3b274d51）: printers.conf の host の口と io-file の job。wayland の build exit 0・warning 0、print.c の host の syntax OK、print-file の host 試験は 2 つとも `host-print-file: PASS`。
   printers の QEMU は未実施（printd が image に無い、keiland-system の printers の command も無い）。
 - 未実施: 実機、riscv64・arm64 の build、Linux・FreeBSD の build（print.c・printers-shell.c・io.c は共通）。
-- 2026-10-29 02:5x〜03:2x P1（q1662-i03、branch `agent/p1-ws309c`、基点 9402d4c74、38fbef081 と次の commit）: 言語の catalog・apps.conf と各 program の access・account・鍵の保存・printers の open と can（上の設計）。
+- 2026-10-29 02:5x〜03:1x P1（q1662-i03、branch `agent/p1-ws309c`、基点 9402d4c74、38fbef081 と次の commit）: 言語の catalog・apps.conf と各 program の access・account・鍵の保存・printers の open と can（上の設計）。
   `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/amd64 build/amd64/bin/wayland build/amd64/bin/keiland-settings build/amd64/bin/keiland-system` exit 0・warning 0、
   `config-rpi4.mk BUILD=build/arm64` と `config-visionfive2-keiland.mk BUILD=build/riscv64` の `bin/wayland` も exit 0・warning 0。
   host: tr-read・print-file・io-file は 2 つの sanitizer とも PASS、host-store 46 passed。
