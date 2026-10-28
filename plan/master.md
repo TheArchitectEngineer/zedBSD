@@ -91,7 +91,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-351 · q1669 · WS310 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-351 · q1669 · WS310 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
