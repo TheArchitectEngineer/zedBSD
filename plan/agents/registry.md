@@ -12,6 +12,6 @@
 | P5 | kernel-and-driver-designer | 詳細の決まっていない WS の設計 (q1666) | `/home/awe/zedBSD-worktrees/p5-design` / `agent/p5-design` | running（2026-10-29 01:37） | — |
 | P6 | phase-runner | WS223・WS282〜WS284・WS243・WS296 の実装 (q1667) | `p6-ws223`・`p6-ws282`・`p6-ws243b`・`p6-ws296`（`/home/awe/zedBSD-worktrees/`）/ `agent/` に同じ名前 | running（2026-10-29 01:37） | — |
 
-- 同時に動かす数は 6（2026-10-29 ユーザーの P1〜P6 の指示）。5330 は P3、10.0.10.3 は P2。
+- 同時に動かす数は 6（2026-10-29 ユーザーの P1〜P6 の指示）。VF2（主）と 5330（従）は P3、10.0.10.3 は P2。
 - P6 は WS ごとに worktree `p6-ws223`・`p6-ws282`（WS282〜WS284）・`p6-ws243b`・`p6-ws296`。成果は merge しない。
 - 試験の担当 T・ブラウザの B1 は今は立てていない。

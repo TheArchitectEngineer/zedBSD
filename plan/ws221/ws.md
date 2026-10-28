@@ -57,3 +57,4 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 
 - 原文: 「P3にWS221と、ついでに同じWS内で、1GbEの性能を使い切れるまでTCPスタックの最適化、5330を利用。」→ この WS に目標を足す: 5330 で 1GbE の速さを使い切るまで TCP の stack を最適化する（p008・p009 の輻輳の制御・受けの窓を含む）。相手は Q1 の Debian の host（10.0.10.2）を想定、P3 が link の速さを確かめる。
 - p001 §9 の Q1〜Q13: ユーザーの回答（クリック）「全部 推しで (推し)」→ 各問いの推しの案で確定。
+- 2026-10-29 ユーザー（原文）「P3は5330の代わりにVF2を使えませんか？こちらはjumbo frameが使えるかも？」→ Q1: 主の実機を VisionFive 2（10.0.30.2、JH7110 の GMAC、dw-eqos、1GbE）に。dw-eqos の jumbo を p001 の対象と p003 の driver に足す。5330（USB の RTL8156、CDC では descriptor の上限 1518、link 2.5G）は従で、CDC の SET_MAX_DATAGRAM_SIZE の確かめと比較だけ。
