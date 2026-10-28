@@ -126,6 +126,7 @@ amdrdna_memory_display_start(
 	uint32_t highest;
 	uint32_t display_mhz;
 	uint32_t memory_floor_mhz;
+	uint32_t floor_level;
 	int table_error;
 	int count_error;
 	int display_error;
@@ -184,8 +185,13 @@ amdrdna_memory_display_start(
 	if (follows && amdrdna_parameter_number("amdrdna.smu.memory_follow", 1U) == 0U)
 		follows = false;
 	memory_floor_mhz = highest;
-	if (follows)
-		memory_floor_mhz = lowest;
+	if (follows) {
+		/* The lowest level, or the level amdrdna.smu.memory_floor_level= names (for the display's checks). */
+		floor_level = amdrdna_parameter_number("amdrdna.smu.memory_floor_level", 0U);
+		if (floor_level >= thermal->memory_level_count)
+			floor_level = thermal->memory_level_count - 1U;
+		memory_floor_mhz = thermal->memory_levels_mhz[floor_level];
+	}
 	floor_error = amdrdna_smu_message(device, MEMORY_MESSAGE_FLOOR, (MEMORY_CLOCK_MEMORY << 16) | memory_floor_mhz, NULL);
 	thermal->memory_follows = follows && floor_error == 0;
 
@@ -198,6 +204,15 @@ amdrdna_memory_display_start(
 	    plan_error,
 	    plan_error == 0 ? plan.memory_switch : 0U,
 	    plan_error == 0 ? (unsigned)plan.switch_ns : 0U);
+	amdrdna_mark("memory display: plan blank use %u start %u lines, prefetch %u/4, blank ttu %u, urgent %uns, refresh %u/%uns, trip %uns",
+	    plan.vblank_use,
+	    (unsigned)plan.start_lines,
+	    (unsigned)plan.prefetch_quarters,
+	    (unsigned)plan.vblank_ttu_cycles,
+	    (unsigned)plan.urgent_ns,
+	    (unsigned)plan.refresh_enter_exit_ns,
+	    (unsigned)plan.refresh_exit_ns,
+	    (unsigned)plan.trip_ns);
 	amdrdna_mark("memory display: forces %s, memory clock floor %uMHz (%d), %s",
 	    released ? "off" : "change allowed",
 	    (unsigned)memory_floor_mhz,
