@@ -1253,3 +1253,31 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
   を build/ws291/vmunix-* と libvulkan-* に照らす。
 - 次: ab4 を読んで kernel の 2・3 の採否（効果の基準: 差が同じ build の run の揺れを越える時だけ）→ Q1 に merge の依頼（採る物だけ）→
   案 A の実装の前に command_deferred の率で M1 を判断して Q1 と相談 → 実装・host 試験・実機で base・A・B・A+B。
+
+### kernel の交互の A/B（build/ws291/ab4、lib は libvulkan-l4 = baa1ca65c、kernel base = vmunix-base、l2 = vmunix-l2 = c013da454）
+
+| run | base 1 | l2 1 | base 2 | l2 2 |
+| --- | --- | --- | --- | --- |
+| big-100 a・b | 330.0・364.0 | 362.5・369.1 | 365.8・349.6 | 289.3（外れ）・371.6 |
+| big-1000 a・b | 58.16・58.45 | 44.98（外れ）・60.71 | 58.60・58.46 | 59.81・59.62 |
+| subs-100 a・b | 240.1・198.9 | 201.8・175.9 | 232.0・229.9 | 232.2・210.6 |
+| subs-1000 a・b（submit ms） | 25.2（34.0）・18.0（46.9、低い側） | 23.8（36.0）・24.4（35.3） | 23.1（37.4）・19.7（43.4、低い側） | 24.8（34.3）・23.1（37.0） |
+
+- 読み: big-1000 は base 58.16〜58.60（揺れ 0.44）に対し l2 59.62〜60.71（外れの 1 つを除く）で、揺れを越えて +1.0〜2.1 fps（約 +2.5 %）→
+  kernel の 2・3 は効果あり（小さい）。big-100・subs は揺れの中（kernel の変更は subs に効く所ではない）。外れの run（big-1000 45 fps、big-100 289、
+  subs の低い側）は base・l2 の両方に出る（機械の状態、未確かめ）。
+- 案 A の M1: subs-1000 の profile で同期の GPU_COMMAND の後戻り（command_deferred）は 4・6・9・12 回 / 約 7 万回（0.02 % 未満）→ 今の形では
+  DEFERRED の率は問題にならない（案 A で submit が速くなった後の率は実装の後に測る）。private_fence は timing ありで平均 2 µs（前は 5〜9）。
+
+### 再開点（2026-10-29 05:20 P2、ユーザーの指示「P2は計測を中断して停止し、再開できる地点で終了し、再開を待ちます。」で返却）
+
+- 済み: libvulkan の直し（1、効果あり、venus-reg PASS、arm64・riscv64 build 済み）、kernel の直し（2・3、big-1000 で +2.5 %、host 205/205）。
+  merge の候補は 2753b6adc〜（この branch の全部。timing の count の baa1ca65c は venus-reg・arm64・riscv64 の build を l4 で取り直していない:
+  context.c の timing だけの差、merge の前に Q1 の条件なら取り直す）。
+- 実機（10.0.30.5、NVMe の zedBSD）: kernel は build/ws291/vmunix-l2（c013da454 の build、cksum は下）、/lib/libvulkan.so は build/ws291/libvulkan-l4.so
+  （baa1ca65c）、cfg は ngg=2・memory=2・timing off、/bin/wayland は main 9402d4c74 の build のまま。zedBSD が起動して idle。
+- 次: (a) 案 A・B（[job-submit-design.md](../job-submit-design.md)、design-reviewer の指摘は末尾の節）を Q1 に送って OK の後に実装（gpu.c の reserve・
+  commit の内部の関数への分割、uapi、amdrdna の jobs->command、7 driver の ops の初期化、libvulkan、plan/ws014/tests の host の harness）→ 実機で
+  base・A・B・A+B を効果の基準で。(b) big-N の残り（record の encode・decode、executor の draw）。
+  - cksum: build/ws291/vmunix-l2 1192076577
+  - cksum: build/ws291/libvulkan-l4.so 3046047400

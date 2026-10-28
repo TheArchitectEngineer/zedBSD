@@ -181,4 +181,6 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   （q1668 の続き、全 driver の build と venus-reg を merge の前に）。
 - ユーザー（2026-10-29、Q1 経由）原文「WS291: 足してみて効果のなかったioctlは、採用しなくてもいいです。」→ 案 A・B は実装して実機で測り、効果が無い
   （測りの揺れの中）と分かった ioctl は main に入れない（branch に残し、測った値と判断を phase.md に）。効果の基準は測る前に phase.md に書く。
-- 再開点: [phase006](phase006/phase.md) の「q1668-i02」節。
+- 再開点（2026-10-29 05:20 P2、ユーザーの指示で計測を止めて返却）: [phase006](phase006/phase.md) の「q1668-i02」節の最後の再開点。
+  libvulkan の private fence の直しで subs-1000 の 1 submit 約 3.5 µs 減（効果あり）、kernel の flush の barrier 無しと record の直の decode で
+  big-1000 約 +2.5 %（効果あり、小さい）。案 A・B の design は reviewer 済み、実装は Q1 の OK の後。
