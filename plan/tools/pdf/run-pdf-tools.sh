@@ -19,10 +19,11 @@ for header in pdf.h sha2.h md5.h sha1.h; do
 	ln -sf "$(pwd)/include/libc/$header" "$out/include/$header"
 done
 ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
-git show "$golden:userland/desktop/libpdf/outline.c" > "$out/outline-golden.c"
+# libpdf was in userland/base at that commit.
+git show "$golden:userland/base/libpdf/outline.c" > "$out/outline-golden.c"
 status=0
 for variant in plain asan ubsan; do
-	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include"
+	flags="-std=c89 -pedantic -O1 -g -Wall -Wextra -Werror -D_DEFAULT_SOURCE -I$out/include -I."
 	if [ "$variant" = asan ]; then
 		flags="$flags -fsanitize=address -fno-omit-frame-pointer"
 	fi
