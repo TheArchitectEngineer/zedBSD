@@ -243,7 +243,8 @@ kern_swap_source_prepare_file(
 		goto out;
 	}
 
-	if (data->disk->d_block_size != 512U) {
+	/* A disk whose blocks are not whole sectors, or more than a page. */
+	if (disk_sector_supported(data->disk) != 0) {
 		error = EIO;
 		goto out;
 	}
@@ -1332,11 +1333,25 @@ collect_extent(
 {
 	struct file_swap_data *data;
 	struct fat_swap_extent *extent;
+	uint32_t per_block;
 
 	/* Rejects an empty extent or one past the table capacity. */
 	data = argument;
 	if (count == 0)
 		return EINVAL;
+
+	/*
+	 * The walk reports 512-byte sectors.  The table keeps the disk's own
+	 * blocks, so an extent on a disk of larger blocks has to start and end
+	 * on them.
+	 */
+	per_block = data->disk->d_block_size / DISK_SECTOR_SIZE;
+	if (file_block % per_block != 0U ||
+	    disk_block % per_block != 0U ||
+	    count % per_block != 0U) {
+		data->extent_error = EINVAL;
+		return EINVAL;
+	}
 	if (data->extent_count >= FAT_SWAP_EXTENT_MAX) {
 		data->extent_error = E2BIG;
 		return E2BIG;
@@ -1344,9 +1359,9 @@ collect_extent(
 
 	/* Appends the extent. */
 	extent = &data->extents[data->extent_count++];
-	extent->file_block = file_block;
-	extent->disk_block = disk_block;
-	extent->block_count = count;
+	extent->file_block = file_block / per_block;
+	extent->disk_block = disk_block / per_block;
+	extent->block_count = count / per_block;
 	return 0;
 }
 
@@ -1362,10 +1377,10 @@ validate_extents(
 	const struct fat_swap_extent *extent;
 
 	expected = 0;
-	blocks = bytes / 512U;
+	blocks = bytes / data->disk->d_block_size;
 
-	/* The file must be whole sectors with at least one extent. */
-	if (bytes % 512U != 0 || data->extent_count == 0)
+	/* The file must be whole blocks of the disk with at least one extent. */
+	if (bytes % data->disk->d_block_size != 0 || data->extent_count == 0)
 		return EIO;
 
 	/* Each extent must start where the previous ended and fit the disk. */
@@ -1428,9 +1443,13 @@ file_swap_io(
 	unsigned index;
 	int error;
 
-	/* Slot zero is the header, so the page lies one slot further in. */
-	file_block = ((uint64_t)slot + 1U) * (SWAP_PAGE_SIZE / 512U);
-	remaining = SWAP_PAGE_SIZE / 512U;
+	/*
+	 * Slot zero is the header, so the page lies one slot further in.  The
+	 * extents are in the disk's blocks.
+	 */
+	file_block = ((uint64_t)slot + 1U) *
+		(SWAP_PAGE_SIZE / data->disk->d_block_size);
+	remaining = SWAP_PAGE_SIZE / data->disk->d_block_size;
 	bytes = page;
 
 	/* Transfers each extent piece of the page in turn. */
@@ -1464,7 +1483,7 @@ file_swap_io(
 			return EIO;
 		file_block += count;
 		remaining -= count;
-		bytes += count * 512U;
+		bytes += (size_t)count * data->disk->d_block_size;
 	}
 
 	/* Reports the completed transfer. */
