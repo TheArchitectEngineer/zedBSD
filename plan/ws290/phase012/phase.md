@@ -25,3 +25,4 @@ design §19 の表のうち、この Phase の code に効く物を着手の時�
 ## 記録
 
 - 2026-10-28 P3（q1638-i01）: design §18 から立てた。
+- 2026-10-28 P3（q1644-i01）: p011 から渡す物: 最初の自分の flip が取られた後に `ghci_memory_boot_release(device)` を呼ぶ（discrete の boot framebuffer の範囲を local の allocator に返す）、detach で表示を boot framebuffer に戻すか ENABLE = 0。window（BAR2）は CAP_BLT 無しの discrete の表示の写しに使える。multisample の行の pitch は N79 の答えまで §12.11 の P（layout.h の `ghci_layout_row`）。

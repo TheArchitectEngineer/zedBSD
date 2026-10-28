@@ -68,8 +68,11 @@
 
 /*
  * The access every mapping of the GPU's local memory has: its address is
- * a local one (section 11.2 of the specification, VM_FLAG_LOCAL), and
- * the processor's caches have no part in it.
+ * a local one (VM_FLAG_LOCAL), and the processor's caches have no part
+ * in it.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 11.2,
+ * VM_FLAG_LOCAL; section 11.3, phys of a mapping with VM_FLAG_LOCAL).
  */
 #define LOCAL_MAP_FLAGS			(GHCI_VM_FLAG_READ | GHCI_VM_FLAG_WRITE | GHCI_VM_FLAG_LOCAL)
 

@@ -342,9 +342,9 @@ device_record(
 	size_t length;
 	int discrete;
 
-	/* The version, the PCI IDs, and a discrete GPU when it has local memory. */
+	/* The version, the PCI IDs, and a discrete GPU when the driver hands out its local memory. */
 	device = session->device;
-	discrete = ghci_caps_has(&device->caps, GHCI_HAS_DISCRETE);
+	discrete = ghci_memory_local_bytes(device) != 0U;
 	record->apiVersion = DEVICE_API_VERSION;
 	record->driverVersion = DEVICE_DRIVER_VERSION;
 	record->vendorID = device->pci_vendor;
