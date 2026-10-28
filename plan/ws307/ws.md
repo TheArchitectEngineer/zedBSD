@@ -4,7 +4,7 @@
 
 - Status: incomplete（2026-10-28 p001 cleared で実行が始まったので planned から incomplete に。仕様は spec.md で確定。実装 p002〜p014 はユーザーの指示の後）
 - 仕様: [spec.md](spec.md)（確定。ユーザーの確認事項 U1〜U29・J1〜J5 は回答済み（J1 は J5 で置き換え）。design-reviewer の 1〜3 回目の指摘と J5 を反映済み、spec §17）。
-- Resume point: 2026-10-29 q1665-i04（P4、worktree p4-ws307h、最後の commit は phase の記録）でラップアップ: p006 の段 5（mkfs の native UFS の fragment 4096）・UFS の 4096 の QEMU・backing claim の metadata の extent の修正・p005 の batch の QEMU（PASS）・p008 の loader の FAT 4096 を commit。走行中で未記録: p006-4k の USB と NVMe の再試験（NVMe は timeout で切れた、UFS の swap file が未判定）、p008-4k の起動（[phase006/phase.md](phase006/phase.md) の「再試験」）。次: その 2 つを再実行して判定 → p009。p007 は HAL の差分の案（[proposed/hal-fw-variables.md](proposed/hal-fw-variables.md)）でユーザーの承認待ち。p002 の残りは phase002/phase.md。
+- Resume point: 2026-10-29 q1665-i04（P4、worktree p4-ws307h、最後の commit は phase の記録）でラップアップ: p006 の段 5（mkfs の native UFS の fragment 4096）・UFS の 4096 の QEMU・backing claim の metadata の extent の修正・p005 の batch の QEMU（PASS）・p008 の loader の FAT 4096 を commit。p006-4k の NVMe・USB の再試験は FAT・swap の partition・UFS が ok で、UFS の swap file の段で 900 秒の上限に切れた（未判定）。走行中で未記録: p008-4k の起動（[phase006/phase.md](phase006/phase.md) の「再試験」）。次: その 2 つを再実行して判定 → p009。p007 は HAL の差分の案（[proposed/hal-fw-variables.md](proposed/hal-fw-variables.md)）でユーザーの承認待ち。p002 の残りは phase002/phase.md。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
 
