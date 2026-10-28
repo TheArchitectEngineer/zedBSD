@@ -62,3 +62,8 @@
 ## Phase
 
 設計の確定の後に分ける（未作成）。
+
+## ユーザーの決定（2026-10-29、q1662）
+
+- J1 ゲームモードの present: ユーザーの回答（クリック）「V2 swapchain 共有 (推し)」→ compositor が display の swapchain の image を external memory で export して client に渡し、client が直接描く（copy なし、標準の拡張の範囲）。libvulkan の WSI・display の変更は WS309 の範囲（Q1）。
+- J2（queue は render と cursor の 2 本が mutex の下で使う）・J3（spawner が落ちたら作り直さず errno で失敗）・J4（seat 経由の入力の open は同期のまま、WS309 の後の Phase）: P1 の推しで Q1 が決めた（技術の判断）。
