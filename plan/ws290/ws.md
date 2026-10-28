@@ -3,7 +3,7 @@
 # WS290 zedBSD の GHCI の driver を GHCI 1.0（ghci.md d9252e4）に書き直す
 
 - Master: [plan/master.md](../master.md)（2026-10-26 作成）。Primary Milestone: MG006。Related: MG008。前身: [WS288](../ws288/ws.md)（closed、zedBSD の driver は ws288-p006・p010・p018・p019・p035・p040・p043・p044 などで作った）。
-- Status: incomplete（2026-10-28 P3（q1642-i01）: p001〜p004・p013 cleared。driver の正本は ghci.md d9252e4（仕様のレビューは Signoff で閉じた）。design 版 4.8。次は p005。下の「再開点（2026-10-28、P3 q1642-i01 のラップアップ）」）
+- Status: incomplete（2026-10-28 P3（q1656-i01）: p001〜p013・p016 cleared、p017 in-progress、p014・p015 planned。下の「再開点（2026-10-28、P3 q1656-i01）」）
 - 出典: 2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。amaterrace-gpuのディレクトリは読み取り専用とします。amaterrace-gpuのplan/は読んでもかまいません。am-ws001のような書き方をしてくれれば私は理解できます。」
 - 決定（2026-10-26、Q1 の問いへのユーザーの回答）:
   - （G01 の回答で置き換え: 仕様は単一の GHCI 1.0。下の行は当時の記録）対象の版は **GHCI 2.0 だけ**（ghci.md の TO-BE: 19 の register、in-memory の PSO・descriptor、`CMD_*` の構造化 command、CP の自律 MMU）。1.1（§3.1.1 の 128 KiB の register、class 2 の gpu-op の中継、STATE、KICK、APERTURE）は捨てる。2.0 のハードウェアは am-ws001-p007 で作られる予定。
@@ -63,7 +63,7 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 | [p013](phase013/phase.md) | userland と UAPI: `GPU_OP_GHCI_*`・`CONFIG_GHCI_NATIVE` を外す、ghcictl、ghci-blit を削除の list に（受け入れ: ghcictl の build、amd64 の build の warning 0、4 LW） | p004 | cleared（2026-10-28 P3 q1642-i01: GPU_OP_GHCI_*・CONFIG_GHCI_NATIVE を外し、ghcictl は list・display、ghci-blit を消した。build の warning 0） |
 | [p014](phase014/phase.md) | 実機の確かめ（VF2 + KC705、§16.2）。段ごとに Q1 の割当で（受け入れ: 段ごとの要約。KC705 の側の未実装は記録して切り分ける、12 LW） | p004（段 1）、p009（段 2）、p012（段 3）、ユーザーの hardware の用意 | planned |
 | [p016](phase016/phase.md) | WaitEvents の保留（R10 の (b)）: 同じ submission の前に SetEvent の無い WaitEvents を、submit を切り後の submission を event の set まで kernel が保留する形で実装（v1 の p009 は ENOTSUP。ユーザー 2026-10-28「WS290 の中で後の Phase」）（受け入れ: p016 の場面 PASS、build の warning 0、10 LW） | p009・p012 | cleared（2026-10-28 P3 q1656-i01: 実装 578d5c37e と review の直し、execute 285 ほか host 試験全 PASS、amd64・VF2 の warning 0、design 版 4.17） |
-| [p017](phase017/phase.md) | boot framebuffer の使用終了の通知と解放: GPU の使用開始の時に text-display へ使用終了 → graphics の backend → kernel 内 API → HAL で GOP の mapping を解除し、GHCI は通知の成功の後に boot framebuffer を返す（ユーザー 2026-10-28）。Q13（ユーザー 2026-10-28「GHCIに限らず、GPUで最初のフリップをしたら、コンソールはフレームバッファをバックにする点では使用終了します。…すべてのアーキテクチャ、すべてのGPUドライバでそうです。」）で全 GPU driver の最初の flip に広げた（drv_gpu の core の 1 か所）（受け入れ: 設計の review の H 0、場面 PASS、warning 0、他の GPU driver は最初の flip まで振る舞いが変わらない、29.5 LW） | p011・p012 | in-progress（2026-10-28 P3 q1656-i01: 設計 版 3、review 待ち） |
+| [p017](phase017/phase.md) | boot framebuffer の使用終了の通知と解放: GPU の使用開始の時に text-display へ使用終了 → graphics の backend → kernel 内 API → HAL で GOP の mapping を解除し、GHCI は通知の成功の後に boot framebuffer を返す（ユーザー 2026-10-28）。Q13（ユーザー 2026-10-28「GHCIに限らず、GPUで最初のフリップをしたら、コンソールはフレームバッファをバックにする点では使用終了します。…すべてのアーキテクチャ、すべてのGPUドライバでそうです。」）で全 GPU driver の最初の flip に広げた（drv_gpu の core の 1 か所）（受け入れ: 設計の review の H 0、場面 PASS、warning 0、他の GPU driver は最初の flip まで振る舞いが変わらない、29.5 LW） | p011・p012 | in-progress（2026-10-28 P3 q1656-i01: 設計 版 4（review 3 回目の H1 を反映）。段 1〜3・3a・5・11 を実装（e0bb46bc9・8f560010f・2eb8a847b・0786e7285・a1eba2f30）、段 6〜10・7 と QEMU は残り。Q14 はユーザーの答え待ち） |
 | [p015](phase015/phase.md) | 規約の全文の見直し: WS が変えた C の全部、全 host 試験、amd64・riscv64 の warning 0、tree に 1.1 の code が無い grep、stub の `drv_gpu_register` を `gpu.c` と照合、試験を `plan/tools.md` に登録を Q1 に依頼（受け入れ: 規約の違反 0、全 PASS、warning 0、10 LW） | p002〜p014・p016・p017 | planned |
 
 ## 現在の状態・再開点
@@ -199,3 +199,16 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - 2026-10-28 p017 の追加の答え（クリック）: Q7「実装だけで直す (推し)」、Q6「常に止める」、Q8「最後に、確かめてから (推し)」、Q9「1 つの Phase で」。
 - 2026-10-28 第 21 版（C01・C02 の確かめ、N81）→ 回答 第 21.0 版（amaterrace-gpu 1a20ca1、「FULL APPROVE（完全承認・最終 Signoff）」）: C01・C02 PASS。N81: occlusion の counter は device に 1 つ、`CMD_BIND_SESSION` で 0 に戻るので、BEGIN_QUERY から END_QUERY までは 1 つの session の列として ring に分けずに置く（ghci.md 644072a §7.3）。p016 の直しで query の間は切らない（event の待ちは BEGIN_QUERY の前で切る）。driver の正本は ghci.md 644072a。専門の code review のやり取りは完了、見張りは止めた。
 - 2026-10-28 p017 の答え: hal.h の文は「変えない、実装だけ (推し)」。Q10・Q11「x68k は止める、serial だけは足さない (推し)」。Q12「常に止める」。Q13: 2026-10-28 ユーザー（p017 Q13 への答え、原文）「GHCIに限らず、GPUで最初のフリップをしたら、コンソールはフレームバッファをバックにする点では使用終了します。シリアルバックは終了しません。すべてのアーキテクチャ、すべてのGPUドライバでそうです。」
+
+## 2026-10-28 p016 の確かめと p017（q1656、P3）
+
+- p016 cleared（4c768b3e0・233e18e46）。p017 の設計に Q10〜Q13 と hal.h の文の答えを反映し（4dec669e1、版 3）、3 度目の design-reviewer（Opus）の H1・M1〜M3 を反映（a1eba2f30、版 4）。残りの M・L の決め方は phase017 §17.1。
+- 2026-10-28 ユーザー（p017 Q13 への答え、原文）「GHCIに限らず、GPUで最初のフリップをしたら、コンソールはフレームバッファをバックにする点では使用終了します。シリアルバックは終了しません。すべてのアーキテクチャ、すべてのGPUドライバでそうです。」→ drv_gpu の core（`gpu.c` の `gpu_ioctl()` の後の 1 か所、8f560010f、Q1 が q1656 の所有に足した。P2 が後で gpu.c の案 5 を取り込む）で、最初に成功した client の flip の後に `kern_text_end(NULL, 0)` を 1 度。各 GPU driver の source は変えない。
+
+## 再開点（2026-10-28、P3 q1656-i01）
+
+- branch agent/p3-ws290g。commit: 段 1〜3（text-display・PC/AT の text・/dev/graphics・backend）e0bb46bc9、段 11（gpu.c）8f560010f、段 3a（amd64 HAL の early console の窓の委譲・global の TLB flush）2eb8a847b、段 5（GHCI の `boot_end`・`bars[]`・host の場面 4 つ）0786e7285、設計 版 4 と L2 の直し a1eba2f30。
+- 確かめた事: `ghci-host-test.sh` rc=0（driver 1061/0 ほか全 PASS）、GHCI 有りの amd64・VF2 の vmunix warning 0（段 5 の後）、`config/ci/config-amd64.mk` の vmunix warning 0（段 3a の後）。
+- 残り（phase017 §14 の順）: 段 2 の試験の引き金（`KERN_TEST_TEXT_END_SECONDS`）、段 4（kernel の側の host 試験 `text-end-host-test.c`、13.2 の (j) を含む）、段 3a の host 試験（13.3）、段 6（PC-98）、段 8（rpi4・x68k・VF2 の end、ns16550 の送り、VF2 の UART は `/chosen/stdout-path`、VF2 の debug write の 2 度出し M4）、段 9、段 10（全 build、QEMU の script: stdvga を GOP・venus を別 device、stdvga の head の screendump か pmemsave で判定、M7）、段 7（sun4u・generic、最後に Q1 経由でユーザーに確かめてから、M5）。
+- 待ち: Q14（core の呼び出しで /dev/graphics も止めるか、推し: 止める。今の実装は止める）、M8（gpu-test-fd.c の stub か 3 本の試験の削除、Q1 の判断）。merge は Q1 の指示どおり、他の platform の build・host 試験と QEMU の確かめの後。
+- 実機: i915（5330）・amdrdna の graphical boot の確かめ（review 3 の M9）は Q1 の割当で。
