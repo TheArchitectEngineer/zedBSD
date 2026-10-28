@@ -881,3 +881,8 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
     要求）は標本に無い。DRAM_CLK_CHANGE の watermark（set A）は 2210（GOP の値、A12 は走っていない）。→ idle の時の「allow が来ない」は否定。
     停止は別の条件（負荷の後、SR の強制禁止、要求が来た時の allow の落ち方）の見込み。次: 停止の時の handshake（smu_hang_mark に 4 標本を足した）
     を取る再現の soak（memory=1、40 分、19:07〜）。
+- Q1（19:15）: 受け入れの基準は「Linux の数以上（同じ条件の bench）」、固定の時の数は参考。
+- status の大きさの変更（include/uapi/amdrdna.h、352 → 384 byte）の版ずれ（code を読んで確かめた、実機の版ずれは未試験）: AMDRDNA_IOC_STATUS は
+  _IOWR で大きさを番号に含むので、古い amdrdnactl と新しい kernel（またはその逆）では番号が合わず control_ioctl の switch の default に落ちて断る。
+  番号が合っても control_status は version と size（sizeof）を比べて EINVAL で断り、copyout しない。amdrdnactl は失敗を control_fail で言って
+  終わる（壊れた値を出さない）。guard は amdrdnactl が答えない時を「no answer」と記録するだけで止めないので、kernel と amdrdnactl は一緒に入れる。
