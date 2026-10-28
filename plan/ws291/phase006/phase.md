@@ -562,7 +562,7 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
   試験で 0 回を数える、(b) display_shown_address（DCN の surface の address の register）を present の thread とは別に周期で標本化して console の address
   を見た回数を数える、(c) ユーザーに mview の試験（scene の起動・終了と game mode の出入り）を見てもらい logo が出ないかを確かめる手順を渡す。
 
-## q1651（2026-10-28 P2、worktree p2-ws291e、基点 main 8fb381d60）
+## q1651（2026-10-28 P2、worktree p2-ws291e、基点 main 414f3e73e）
 
 - 承認: q1639・q1645 と同じユーザーの文。最初の作業はユーザーの指示（2026-10-28）「GPU使用中はコンソール出力は完全に止めて、内容をアップデートしないように
   なっているかを確認していただき、さらに、GOPのバッファが一瞬ひょうじされてしまっている理由を解析し、修正してください。」「どこかの経路で、ゲームモードに
