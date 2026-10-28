@@ -5,6 +5,7 @@
 # (default 30).  Then four processes write 32 MiB each with O_DIRECT 4 KiB requests and fsync, at once, and the guest
 # must still answer.
 #   [IOSTRESS_RUNS='nvme1n1 direct;nvme0n1 hog 1200'] sh plan/ws308/tests/qemu-iostress.sh IMAGE
+# QEMU_EXTRA: more QEMU arguments (for example "-gdb tcp::22212" to look at the guest with gdb while it runs).
 # IOSTRESS_RUNS: the runs, ";" between them, each a disk under /dev and iostress's words (default: direct, cached,
 # direct with seteuid, cached with a 1200 MiB hog, and the boot disk direct with the hog and seteuid).
 # IMAGE: plan/tools/posix/config-amd64-serial.mk with /root/iostress and /root/directio (ZEDBSD_EXTRA_FILES, built
@@ -27,7 +28,7 @@ timeout 3600 qemu-system-x86_64 -name p1-iostress -machine q35 -m "${MEMORY:-1G}
   -device nvme,serial=zedbsd-boot,drive=boot,bootindex=1 \
   -drive "if=none,id=d1,file=$W/d.img,format=raw" \
   -device nvme,serial=zedbsd-data,drive=d1 \
-  -vga std -display none -no-reboot \
+  -vga std -display none -no-reboot ${QEMU_EXTRA:-} \
   -serial "unix:$W/serial.sock,server=on,wait=off" > "$W/qemu.log" 2>&1 &
 pid=$!
 trap 'kill $pid 2> /dev/null' EXIT

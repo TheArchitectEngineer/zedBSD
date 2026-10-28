@@ -583,12 +583,13 @@ process_cred_sync(
 }
 
 /*
- * Installs an exec's prospective credential.
+ * Installs an exec's prospective credential and set_id.
  */
-void
+struct ucred *
 process_cred_commit(
 	struct process *process,
-	struct ucred *replacement)
+	struct ucred *replacement,
+	unsigned set_id)
 {
 	struct ucred *old;
 	unsigned long irq;
@@ -604,22 +605,54 @@ process_cred_commit(
 
 	old = process->cred;
 	__atomic_store_n(&process->cred, replacement, __ATOMIC_RELEASE);
+	process->set_id = set_id;
 
 	spin_unlock_irqrestore(&process->lock, irq);
 
-	/* Drops the process's reference to the old credential. */
-	cred_release(old);
+	/* Hands the process's old reference to the caller. */
+	return old;
 }
 
 /*
- * Replaces a process's credential.
+ * Takes a reference to a process's credential and reads its set_id.
+ */
+struct ucred *
+process_cred_ref_set_id(
+	struct process *process,
+	unsigned *set_id)
+{
+	struct ucred *cred;
+	unsigned long irq;
+
+	/* There is no credential without a process. */
+	*set_id = 0;
+	if (process == NULL)
+		return NULL;
+
+	/* Reads both under the lock a replacement takes. */
+	irq = spin_lock_irqsave(&process->lock);
+
+	cred = process->cred;
+	cred_ref(cred);
+	*set_id = process->set_id;
+
+	spin_unlock_irqrestore(&process->lock, irq);
+
+	/* Reports the referenced credential, or none. */
+	return cred;
+}
+
+/*
+ * Replaces a process's credential built from the one it still has.
  *
  * An exec in progress owns the credential and refuses the replacement.
  */
 int
 process_cred_replace(
 	struct process *process,
-	struct ucred *replacement)
+	const struct ucred *expected,
+	struct ucred *replacement,
+	unsigned set_id)
 {
 	struct ucred *old;
 	unsigned long irq;
@@ -631,6 +664,8 @@ process_cred_replace(
 	/*
 	 * Once exec has taken ownership of the process image, sibling
 	 * credential syscalls must not race the prospective exec credential.
+	 * A credential another thread replaced meanwhile makes the caller
+	 * build again, so that no change is lost.
 	 */
 	irq = spin_lock_irqsave(&process->lock);
 
@@ -638,20 +673,27 @@ process_cred_replace(
 		spin_unlock_irqrestore(&process->lock, irq);
 		return EBUSY;
 	}
+	if (process->cred != expected) {
+		spin_unlock_irqrestore(&process->lock, irq);
+		return EAGAIN;
+	}
 
 	/*
-	 * Publishes the replacement.  A thread still using the old
-	 * credential holds its own reference until its next system call.
+	 * Publishes the replacement and the identity change together.  A
+	 * thread still using the old credential holds its own reference
+	 * until its next system call.
 	 */
 	old = process->cred;
 	__atomic_store_n(&process->cred, replacement, __ATOMIC_RELEASE);
+	if (set_id)
+		process->set_id = 1;
 
 	spin_unlock_irqrestore(&process->lock, irq);
 
 	/* Drops the process's reference to the old credential. */
 	cred_release(old);
 
-/* Reports the replaced credential. */
+	/* Succeeded: the replacement is the process's. */
 	return 0;
 }
 
@@ -1465,7 +1507,7 @@ process_free_mem(
 	cwdi = process->cwdi;
 	process->vmspace = NULL;
 	process->fd = NULL;
-	process->cred = NULL;
+	__atomic_store_n(&process->cred, NULL, __ATOMIC_RELEASE);
 	process->cwdi = NULL;
 
 	spin_unlock_irqrestore(&process->lock, process_irq);
@@ -2322,6 +2364,7 @@ process_thread_retired(
 	struct signal_info info;
 	unsigned long irq;
 	unsigned long process_irq;
+	uid_t real_uid;
 	int notify;
 	int autoreap;
 	int final_cleanup;
@@ -2331,6 +2374,7 @@ process_thread_retired(
 	/* Starts assuming this is the last thread and nothing to notify. */
 	parent = NULL;
 	dead_vmspace = NULL;
+	real_uid = 0;
 	notify = 0;
 	waited = 0;
 	autoreap = 0;
@@ -2365,6 +2409,10 @@ process_thread_retired(
 			process_ref(parent);
 		notify = parent != NULL && parent != &process0;
 		autoreap = (process->flags & PROCESS_AUTOREAP) != 0;
+
+		/* The parent's wait may free the credential once it is woken below. */
+		if (process->cred != NULL)
+			real_uid = process->cred->ruid;
 
 		/*
 		 * No task can enter this address space again.  A parent asleep
@@ -2416,7 +2464,7 @@ process_thread_retired(
 		else
 			info.code = CLD_KILLED;
 		info.pid = process->pid;
-		info.uid = process_real_uid(process);
+		info.uid = real_uid;
 		if (info.code == CLD_EXITED)
 			info.status = (process->exit_status >> 8) & 0xff;
 		else

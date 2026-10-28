@@ -279,19 +279,39 @@ void
 process_cred_sync(
 	struct thread *thread);
 
+/*
+ * Replaces a process's credential with one built from expected, which must
+ * still be the process's; otherwise EAGAIN, and the caller builds again
+ * from the new one.  A set_id request marks the process in the same step.
+ * The process takes over the caller's reference to the replacement.
+ */
 int
 process_cred_replace(
 	struct process *process,
-	struct ucred *replacement);
+	const struct ucred *expected,
+	struct ucred *replacement,
+	unsigned set_id);
 
 /*
- * Installs an exec's prospective credential, which cannot fail.  The
- * process takes over the caller's reference to the replacement.
+ * Installs an exec's prospective credential and its set_id, which cannot
+ * fail.  The process takes over the caller's reference to the
+ * replacement; the old credential's process reference is returned for the
+ * caller to release once it may free memory.
  */
-void
+struct ucred *
 process_cred_commit(
 	struct process *process,
-	struct ucred *replacement);
+	struct ucred *replacement,
+	unsigned set_id);
+
+/*
+ * Takes a reference to a process's credential together with its set_id,
+ * read in one step so that a tracer sees a matching pair.
+ */
+struct ucred *
+process_cred_ref_set_id(
+	struct process *process,
+	unsigned *set_id);
 
 struct thread *
 thread_find_ref(

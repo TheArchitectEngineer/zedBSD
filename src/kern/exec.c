@@ -582,6 +582,7 @@ process_spawn_from(
 	uintptr_t interpreter_base;
 	unsigned secure;
 	int error;
+	struct ucred *replaced_cred;
 
 	/* Starts before the first stage, holding nothing. */
 	process = NULL;
@@ -705,9 +706,9 @@ process_spawn_from(
 	 * The initial thread is still private and stopped, so credential
 	 * publication cannot race userspace or fail.
 	 */
-	process_cred_commit(process, prospective_cred);
-	process->set_id = secure;
+	replaced_cred = process_cred_commit(process, prospective_cred, secure);
 	prospective_cred = NULL;
+	cred_release(replaced_cred);
 
 	/* Publishes and starts the process. */
 	if (result == NULL)
@@ -805,6 +806,7 @@ exec_sandbox_start(
 	uintptr_t sp;
 	unsigned index;
 	int error;
+	struct ucred *replaced_cred;
 
 	/* The image: an executable regular file of the parent's, no script. */
 	build->access_cred = cred_process_ref(parent);
@@ -896,11 +898,11 @@ exec_sandbox_start(
 	}
 
 	/* The credential and the sandbox, before the thread can run. */
-	process_cred_commit(process, build->prospective_cred);
-	process->set_id = 0U;
+	replaced_cred = process_cred_commit(process, build->prospective_cred, 0U);
 	process->sandbox = plan->sandbox;
 	plan->sandbox = NULL;
 	build->prospective_cred = NULL;
+	cred_release(replaced_cred);
 
 	/* Succeeded: published and started. */
 	process_publish(process);
@@ -1485,6 +1487,7 @@ process_exec_file(
 	bool irq_enabled;
 	int retired;
 	int error;
+	struct ucred *replaced_cred;
 
 	new_vm = NULL;
 	access_cred = NULL;
@@ -1673,11 +1676,13 @@ process_exec_file(
 	 * are gone.  Publish the prospective credentials in the same one-way
 	 * commit window as the address space.
 	 */
-	process_cred_commit(process, prospective_cred);
-	process->set_id = secure;
+	replaced_cred = process_cred_commit(process, prospective_cred, secure);
 	prospective_cred = NULL;
 	if (irq_enabled)
 		hal_irq_enable();
+
+	/* The old credential's process reference goes once memory may be freed. */
+	cred_release(replaced_cred);
 
 	/* Applies the exec side effects and drops the old address space. */
 	filedesc_close_on_exec(process->fd);

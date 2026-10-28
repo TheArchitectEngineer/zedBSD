@@ -529,6 +529,7 @@ kern_ptrace(
 	struct ptrace_state state;
 	struct ucred *tracer_cred;
 	struct ucred *target_cred;
+	unsigned target_set_id;
 	int allowed;
 	int error;
 
@@ -551,8 +552,8 @@ kern_ptrace(
 
 		/* Only a process of the caller's own identity, unless the caller is the superuser (ws160-p001). */
 		tracer_cred = cred_process_ref(caller);
-		target_cred = cred_process_ref(process);
-		allowed = cred_may_trace(tracer_cred, target_cred, process->set_id);
+		target_cred = process_cred_ref_set_id(process, &target_set_id);
+		allowed = cred_may_trace(tracer_cred, target_cred, target_set_id);
 		cred_release(target_cred);
 		cred_release(tracer_cred);
 		if (!allowed) {

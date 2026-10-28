@@ -246,7 +246,6 @@ static SYSCALL_EXT int mkdir_dot_error(struct cwdinfo *context, const char *path
 static intptr_t sys_mutation_call(uint32_t number, const uintptr_t args[6]);
 static intptr_t sys_mutation_at_call(uint32_t number, const uintptr_t args[6]);
 static intptr_t sys_umask_call(const uintptr_t args[6]);
-static int replace_cred(struct process *process, struct ucred *replacement);
 static intptr_t sys_cred_get_call(uint32_t number, const uintptr_t args[6]);
 static int uid_permitted(const struct ucred *cred, uid_t id);
 static int gid_permitted(const struct ucred *cred, gid_t id);
@@ -255,6 +254,7 @@ static intptr_t sys_getentropy_call(const uintptr_t args[6]);
 static int user_atomic_copy(const struct uaccess_pin *source, struct uaccess_pin *destination, size_t size);
 static int user_atomic_equal(const struct uaccess_pin *left, const struct uaccess_pin *right, size_t size, int *equal);
 static intptr_t sys_atomic_call(const uintptr_t args[6]);
+static int cred_set_compose(uint32_t number, const uintptr_t args[6], const struct ucred *old, struct ucred *cred);
 static intptr_t sys_cred_set_call(uint32_t number, const uintptr_t args[6]);
 static intptr_t sys_access_call(const uintptr_t args[6]);
 static SYSCALL_EXT int sys_resolve_path_at(struct process *process, int dirfd, uintptr_t address, unsigned namei_flags, struct path *path, struct file **held);
@@ -5590,23 +5590,6 @@ sys_umask_call(
 	return old;
 }
 
-/* Installs a replacement credential on a process. */
-static int
-replace_cred(
-	struct process *process,
-	struct ucred *replacement)
-{
-	int error;
-
-	/* Reports the failure. */
-	error = process_cred_replace(process, replacement);
-	if (error != 0)
-		return error;
-
-	/* Succeeded. */
-	return 0;
-}
-
 /* Handles getuid(2), geteuid(2), getgid(2), getegid(2), and getgroups(2). */
 static intptr_t
 sys_cred_get_call(
@@ -5966,15 +5949,17 @@ out:
 	return 0;
 }
 
-/* Handles the credential-setting system calls. */
-static intptr_t
-sys_cred_set_call(
+/*
+ * Applies a credential-setting call to cred, a copy of old, checking the
+ * change against old.  Reports EPERM for a change old may not make.
+ */
+static int
+cred_set_compose(
 	uint32_t number,
-	const uintptr_t args[6])
+	const uintptr_t args[6],
+	const struct ucred *old,
+	struct ucred *cred)
 {
-	struct process *process;
-	struct ucred *old;
-	struct ucred *cred;
 	uid_t ruid;
 	uid_t euid;
 	gid_t rgid;
@@ -5982,26 +5967,7 @@ sys_cred_set_call(
 	uid_t uids[3];
 	gid_t gids[3];
 	unsigned i;
-	int changed;
 	int error;
-
-	process = current_process();
-	if (process != NULL)
-		old = cred_current_ref();
-	else
-		old = NULL;
-
-	/* Works on a copy of the current credential. */
-	if (old == NULL || process == &process0) {
-		cred_release(old);
-		return -EPERM;
-	}
-
-	cred = cred_copy(old);
-	if (cred == NULL) {
-		cred_release(old);
-		return -ENOMEM;
-	}
 
 	/* Applies the change the call number names. */
 	switch (number) {
@@ -6162,19 +6128,59 @@ sys_cred_set_call(
 		break;
 	}
 
-	/* Installs the copy, or drops it on failure; a changed identity marks the process (ws160-p001). */
-	if (error == 0) {
-		changed = cred_ids_differ(old, cred);
-		error = replace_cred(process, cred);
+	/* Reports a change old may not make. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: cred holds the change. */
+	return 0;
+}
+
+/* Handles the credential-setting system calls. */
+static intptr_t
+sys_cred_set_call(
+	uint32_t number,
+	const uintptr_t args[6])
+{
+	struct process *process;
+	struct ucred *old;
+	struct ucred *cred;
+	int changed;
+	int error;
+
+	/* Refuses the kernel process and a call outside a process. */
+	process = current_process();
+	if (process == NULL || process == &process0)
+		return -EPERM;
+
+	/*
+	 * Builds the change from the process's latest credential, and
+	 * installs it only while that is still the latest, so that a change
+	 * another thread made meanwhile is never lost.
+	 */
+	for (;;) {
+		old = cred_process_ref(process);
+		if (old == NULL)
+			return -EPERM;
+		cred = cred_copy(old);
+		if (cred == NULL) {
+			cred_release(old);
+			return -ENOMEM;
+		}
+
+		/* Applies the change, and installs it; a changed identity marks the process (ws160-p001). */
+		error = cred_set_compose(number, args, old, cred);
+		if (error == 0) {
+			changed = cred_ids_differ(old, cred);
+			error = process_cred_replace(process, old, cred,
+			    (unsigned)changed);
+		}
 		if (error != 0)
 			cred_release(cred);
-		if (error == 0 && changed)
-			process->set_id = 1;
-	} else {
-		cred_release(cred);
+		cred_release(old);
+		if (error != EAGAIN)
+			break;
 	}
-
-	cred_release(old);
 
 	/* Reports the outcome of the call. */
 	if (error != 0)
@@ -7623,7 +7629,7 @@ sys_sigqueue_call(
 	info.code = SI_QUEUE;
 	info.pid = sender->pid;
 	if (cred != NULL)
-		info.uid = cred->euid;
+		info.uid = cred->ruid;
 	else
 		info.uid = 0;
 	info.value = (uint64_t)args[2];
@@ -10438,6 +10444,7 @@ kernel_syscall_handler(
 				process_stop_current(0);
 			if (result == -EINTR) {
 				syscall_restart_prepare_stop(thread);
+				process_cred_sync(thread);
 				continue;
 			}
 		} else if (thread != NULL && result == -EINTR) {
@@ -10447,6 +10454,7 @@ kernel_syscall_handler(
 				break;
 			if (stop_result == SIGNAL_STOP_RETURN_REDISPATCH) {
 				syscall_restart_prepare_stop(thread);
+				process_cred_sync(thread);
 				continue;
 			}
 		}
