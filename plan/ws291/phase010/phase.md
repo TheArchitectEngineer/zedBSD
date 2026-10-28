@@ -119,3 +119,14 @@
   cfg の nvrtx.vk.perf の行は外した。
 - 次（Q1 に聞いた）: (1) work channel の VA を複数の 512 MiB の directory に広げる、(2) executor に depth・index の draw・mip（mview が動くまで、新しい
   Phase の案 p010a）、desktop の scroll・hover・drag の 20〜35 fps の調べ。案 A・B（RDNA）は host の harness の runner が tree に無く後回し。
+
+### checkpoint（2026-10-29 08:12 P2、q1670-i01 の返却、Q1 の指示「checkpoint を返して終えて」）
+
+- tip ddf4ff288（この節の commit がその後）、未 commit 無し。
+- 実機: 08:10 からユーザーが RTL8127 の移設のため電源を切っている。最後の P2 の状態は Debian（RTX は vfio-pci）、NVMe の zedBSD の kernel は
+  build/ws291/vmunix-lazy2（cksum 204755418）、cfg に nvrtx.vk.perf の行は無し。P1 の枠の script が kernel を一時的に替えて戻す予定だった（Q1）。
+- 再開: (1) `sh plan/ws291/tests/rtx-va-check.sh build/ws291/rtx/va1 build/ws291/vmunix-va1`（01478d325 の build、cksum 1463007375。build/ は
+  worktree p2-ws291m の物。新しい worktree なら `make ZEDBSD_CONFIG=plan/ws291/tests/config.mk BUILD=build/ws291/k build/ws291/k/vmunix` で作り直す）:
+  desktop の後の mview が `work space full` を出さず `api=depth format` まで進めば VA の拡張は効いている。(2) [p010a](../phase010a/phase.md) の実装。
+  (3) desktop の scroll・hover・drag の 20〜35 fps の調べ。案 A・B（RDNA）は host の harness の runner（plan/ws014/tests の gpu-job.c の build の手順）が
+  tree に無く後回し（kernel と host の header の型の衝突で今の tree では compile できない: tid_t・sigset_t）。
