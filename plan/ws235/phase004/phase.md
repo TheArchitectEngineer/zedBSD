@@ -48,3 +48,7 @@
 - 各回の終わりに NVMe の kernel を保存した物に戻し、sha256 の照合が一致（00ddcb7045fbaca5…）、Debian に戻った。最後の状態: Debian、NVMe の kernel は P2 の物（cksum 204755418）。
 - 判定は ssh の ifconfig と centris の ping・ethtool・ip で（console・serial の log は読んでいない）。
 - 相手は 2.5G の switch だった（ws.md の訂正）。10G の link と RTL8127ATF・PHY の microcode の版は未確かめ。
+- 回 3 の ssh の失敗の読み（2026-10-29 07:4x P1、code の読みだけ）: `src/kern/net/tcp.c` の出力の device の選び（1612〜1640 行の付近）は、bind の無い
+  接続で `route_lookup_ref(remote)` の device を使い、その device の address を source にする。ue0（10.0.30.5）と rge0（10.0.30.6）が同じ 10.0.0.0/16 にあると、
+  rge0 に着いた SYN の返事は route の先の device（ue0）から出うる。stack（kern/net）の multi-homing の振る舞いで、この WS の範囲の外。試験は `LANTEST=2`
+  （ue0 を落とし rge0 だけ）で避ける。driver の TCP は未確かめのまま。
