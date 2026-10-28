@@ -819,3 +819,42 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
   subs-100 56.2 → 73.1、scene・big は不変、nggshape 14 ok、hang 回復 ok。が window mode の shot が 2 回とも落ちた: mview（FIFO）が keiland-shot の後に
   vkAcquireNextImageKHR = VK_ERROR_SURFACE_LOST_KHR（errno 24、frames=322）。手で同じ手順でも再現。3b だけの時は shot ok。compositor も同じ
   libvulkan で sync の道を使う。未解析。errno 24 が fd の上限（EMFILE）なら、案 4 の sync の道で fd を閉じ忘れていないかが最初の疑い。
+
+### UCLK を負荷で上げ下げする形の設計（2026-10-28 18:55 P2、未実装、design-reviewer と Fable に通す）
+
+Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）の調べ（subagent、file:行は下の各項）:
+- DCN 2.0 で Linux は p-state の force を使わない（hubbub1_verify_allow_pstate_change_high は dcn20 の funcs に無く、hwseq の呼び出しは comment）。
+  hub の「p-state を許す」は pipe の buffer の量と、選ばれた set の DRAM_CLK_CHANGE の watermark からだけ出る。SR は force なし（DRAM_STATE_CNTL = 0x0、
+  stutter 許可、dcn10_hubbub.c hubbub1_allow_self_refresh_control）。我々の起動の値 0x2 は GOP の「SR を強制で禁止」。
+- display が 404 us の切り替えを覆えない時（dcn20_validate_bandwidth_fp の fallback）は、DRAM_CLK_CHANGE を 5 us（dummy p-state、「G6 temperature
+  read」）で計算し直し、UCLK を hard min = 最上段で固定する（hard max は置かない）。→ PMFW は UCLK を固定していても dummy p-state（GDDR6 の温度読み・
+  保守）を行い hub の allow を待つ。我々の停止（UCLK 固定・force なし・watermark は 404 us 用）は、allow が来ず PMFW が待ち続けた見込み（未確定）。
+- SMU: Watermarks_t（TABLE_WATERMARKS = 1、384 byte、WatermarkRow[2][4]: WM_SOCCLK=0・WM_DCEFCLK=1、各行 MinClock・MaxClock・MinUclk・MaxUclk（MHz、
+  u16）・WmSetting（u8）+ padding、計 44 byte）。reader の set i = WM_DCEFCLK[i]: DCEFCLK 0..0xFFFF、UCLK の範囲 = UCLK の DPM の段 i（前の段 +1 〜
+  この段、最後は 0xFFFF）、WmSetting = i。writer は 1 行（set 0、全範囲）。送るのは TransferTableDram2Smu（param 1）。NumOfDisplays（0x40）は起動で 0、
+  display の後に 1。DCEFCLK の hard min（0x1C、PPCLK_DCEFCLK=5）、SetMinDeepSleepDcefclk（0x22）、UCLK の hard min（display の要る段）。
+  feature: DPM_UCLK(3)・MEM_VDDCI(8)・MEM_MVDD(9)・DPM_SOCCLK(4)・DPM_DCEFCLK(7)（Linux は全部許す。DS_* は今回は許さない）。
+- UMC の workaround（navi10_ppt.c navi10_run_umc_cdr_workaround、MP1 11.0.0 で UCLK DPM が有効の時）: PMFW ≥ 0x2a3500（我々は 42.65.0 = 0x2a4100）は
+  GetUMCFWWA（0x50）。bit0（UMC FW > v136）なら何もしない。bit1（hybrid CDR 無効）なら UCLK の最上段が 750 MHz 以下の時だけ hard max を 0 段 → 最上段に
+  戻し DALEnableDummyPstateChange（0x4A）。どちらでもない時は dummy の pattern の table（0x40000 byte、PRBS7 の 2 種の 4 KiB の交互）の場所を
+  0x4E・0x4F で渡す。→ まず GetUMCFWWA の答えを mark して、要る道だけを実装する（pattern の table が要る時は Q1 に相談: 値の作り方）。
+
+設計（amdrdna.smu.memory=2 の時だけ。既定 0 と今の 1（固定）は変えない）:
+1. A4（SMU）: feature に DPM_UCLK・MEM_VDDCI・MEM_MVDD・DPM_SOCCLK・DPM_DCEFCLK を許す。display の準備（A12）まで UCLK は今の形で最上段に hard min
+   （切り替えの間だけ p-state を force allow、終われば戻す）。GetUMCFWWA を送り答えを mark、要る workaround を行う。
+2. mode の plan（mode-plan.c）: 入力に memory clock の変更の latency（tenths）を持たせ、display が見る最も低い UCLK の段（DPM の 0 段、MT/s = MHz×16）
+   で計算する。memory_switch が 1（blank）か 2（active）なら 404 us の watermark、0 なら 5 us（dummy）で計算し直し「UCLK は最上段に固定」の印。
+   DCFCLK は plan の入力の値（今の DCEFCLK）のまま。
+3. A12 の modeset（modeset_marks）の後、新しい段（display の memory clock、smu.c）: (a) watermark の table を作って送る（reader 4 行: UCLK の段 0..3 の
+   範囲、DCEFCLK 0..0xFFFF、WmSetting 0..3; writer 1 行）。hub の 4 set は今どおり同じ値（plan は最低の UCLK で作るので全段で正しい）。
+   (b) NumOfDisplays = 1。(c) DCEFCLK の hard min = plan の DCFCLK（MHz）、SetMinDeepSleepDcefclk = 同じ値。(d) DRAM_STATE_CNTL を 0x0（SR も p-state
+   も force なし、hub の watermark に任せる）。stutter だけを止める切り替え amdrdna.smu.stutter=0（SR force 禁止のまま、切り分け用）。(e) UCLK の
+   hard min: plan が切り替えを許す時は 0 段（PMFW が負荷で上げ下げ）、許さない時は最上段（Linux の fallback と同じ）。hard max は置かない。
+4. mode の変更・hang の回復・reset の後も同じ順（A4 → A12 → 3）。shutdown の時は NumOfDisplays = 0 と UCLK の hard min を最上段（Linux の
+   pre_display_config_changed と同じ形）にしてから止める。
+5. 印と道具: smu_hang_mark に DCHUBBUB_TEST_DEBUG_INDEX = 0xB の DEBUG_DATA（bit 30 = arbiter の allow、bit 31 = SOC の p-state の要求）を足す。
+   amdrdnactl の power の行に今の UCLK（readings の mem、無効なら GetDpmClockFreq）と DEBUG_DATA を出す。underflow は memory の行の underflow= を
+   guard でも見る（増えたら止める）。
+6. 試験（guard の下）: 起動の mark（features、UMC の答え、table の送り、NumOfDisplays、hard min、DRAM_STATE）→ idle で UCLK が下がる・mview で上がる
+   （power の行を 1 s ごと）→ round（nggshape・shot・bench・hang）→ soak.sh を 60 分以上（負荷 5 s・idle 25 s）で SMU の停止 0・underflow 0 →
+   scene-6500・scene-1500 が固定（memory=1）と同等。停止したら guard の poweroff、入れ直し（プラグミニ 1）、DEBUG_DATA と mailbox の 3 語で切り分け。
