@@ -127,6 +127,15 @@ nvrtx_vk_memory_import(void *owner, uint32_t resource_id, uint64_t bytes, uint8_
 }
 
 int
+nvrtx_vk_memory_cpu(void *owner, void *backing, uint8_t **cpu)
+{
+	(void)owner;
+	(void)backing;
+	(void)cpu;
+	return ENOSPC;
+}
+
+int
 nvrtx_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va)
 {
 	(void)owner;

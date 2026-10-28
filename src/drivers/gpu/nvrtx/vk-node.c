@@ -48,6 +48,7 @@ struct vk_node_run {
 	uint64_t va;
 };
 
+static uint8_t *vk_node_backing_view(struct nvrtx_node *node, const struct nvrtx_backing *backing);
 static void vk_node_backing_drop(struct nvrtx_node *node, struct nvrtx_backing *backing);
 
 /*
@@ -76,7 +77,7 @@ nvrtx_vk_node_blob_attach(
 		return error;
 
 	/* The memory takes its reference under the node's lock, as everything the executor holds. */
-	cpu = (uint8_t *)(uintptr_t)nvrtx_bo_cpu(node->gpu, &backing->bo);
+	cpu = vk_node_backing_view(node, backing);
 
 	mutex_lock(&node->lock);
 
@@ -170,7 +171,7 @@ nvrtx_vk_memory_import(
 
 	/* The memory holds the backing while it lives. */
 	held->refs++;
-	*cpu = (uint8_t *)(uintptr_t)nvrtx_bo_cpu(session->node->gpu, &held->bo);
+	*cpu = vk_node_backing_view(session->node, held);
 	*backing = held;
 
 	/* Succeeded: the memory reaches the blob's VRAM. */
@@ -384,6 +385,52 @@ nvrtx_vk_gpu_copied(
 	/* One copy more, and its bytes. */
 	nvrtx_node_count(session->node, &session->node->counts.copies, 1U);
 	nvrtx_node_count(session->node, &session->node->counts.copy_bytes, bytes);
+}
+
+/*
+ * Gives the CPU's view of a memory's storage for the executor, mapping it
+ * into the window the first time the executor's CPU reaches it (a copy the
+ * GPU cannot draw).  The caller holds the node's lock.
+ *
+ * Returns ENODEV without a working window, or ENOSPC when the window is full.
+ */
+int
+nvrtx_vk_memory_cpu(
+	void *owner,
+	void *backing,
+	uint8_t **cpu)
+{
+	struct nvrtx_session *session;
+	volatile uint8_t *view;
+	int error;
+
+	session = owner;
+
+	/* The backing's place in the window. */
+	error = nvrtx_node_backing_cpu(session->node, backing, &view);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the storage's first byte. */
+	*cpu = (uint8_t *)(uintptr_t)view;
+	return 0;
+}
+
+/*
+ * Reports where the CPU reaches a backing in the window, or NULL while it has
+ * no place there yet (nvrtx_vk_memory_cpu() gives it one).
+ */
+static uint8_t *
+vk_node_backing_view(
+	struct nvrtx_node *node,
+	const struct nvrtx_backing *backing)
+{
+	/* Not yet in the window. */
+	if (backing->bo.bar1_mapped == 0)
+		return NULL;
+
+	/* Succeeded: its first byte there. */
+	return (uint8_t *)(uintptr_t)nvrtx_bo_cpu(node->gpu, &backing->bo);
 }
 
 /*

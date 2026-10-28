@@ -154,6 +154,13 @@ void nvrtx_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t by
 int nvrtx_vk_memory_import(void *owner, uint32_t resource_id, uint64_t bytes, uint8_t **cpu, uint64_t *va, void **backing);
 
 /*
+ * Gives the CPU's view of a memory's storage (a backing nvrtx_vk_memory_attach()
+ * or nvrtx_vk_memory_import() gave), mapping it into the window when it has no
+ * place there yet.  The caller holds the node's lock.
+ */
+int nvrtx_vk_memory_cpu(void *owner, void *backing, uint8_t **cpu);
+
+/*
  * The executor's own GPU memory (programs, push buffers, texture and
  * sampler tables), provided by the node: a run of bytes the CPU writes at
  * *cpu and the GPU reads at *va, and its release.  The token names the

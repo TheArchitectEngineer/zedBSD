@@ -336,5 +336,7 @@ int nvrtx_vk_free_payload(struct nvrtx_vk_session *session, void *payload);
 bool nvrtx_vk_format_colour(uint32_t format);
 int nvrtx_vk_buffer_address(const struct nvrtx_vk_buffer *buffer, uint64_t *va, uint8_t **cpu);
 int nvrtx_vk_image_address(const struct nvrtx_vk_image *image, uint64_t *va, uint8_t **cpu);
+int nvrtx_vk_buffer_cpu(struct nvrtx_vk_session *session, const struct nvrtx_vk_buffer *buffer, uint8_t **cpu);
+int nvrtx_vk_image_cpu(struct nvrtx_vk_session *session, const struct nvrtx_vk_image *image, uint8_t **cpu);
 
 #endif /* DRIVERS_GPU_NVRTX_VK_OBJECTS_H */

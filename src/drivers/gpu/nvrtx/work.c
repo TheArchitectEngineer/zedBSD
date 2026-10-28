@@ -77,6 +77,9 @@
 /* The address-space limit written into the instance block (47-bit virtual addresses). */
 #define WORK_VA_LIMIT			(1ULL << 47)
 
+/* How many times a full space for the users' runs is told in the log. */
+#define WORK_VA_FULL_MARKS		8U
+
 /* The channel number on the graphics runlist (the golden context 1, the scrubber 2, the compute launch 3). */
 #define WORK_CHID			4U
 
@@ -337,6 +340,9 @@ nvrtx_work_map_vram(
 	uint8_t *entries;
 	uint64_t pages;
 	uint64_t address;
+	uint64_t free_bytes;
+	uint32_t runs;
+	int full;
 	int error;
 
 	work = &gpu->work;
@@ -365,9 +371,22 @@ nvrtx_work_map_vram(
 			(void)nvrtx_heap_free(&work->va, address, size);
 	}
 
+	/* A full space is told, the first few times, with what is left of it. */
+	free_bytes = work->va.free_bytes;
+	runs = work->va.count;
+	full = 0;
+	if (error == ENOSPC && work->va_full_marks < WORK_VA_FULL_MARKS) {
+		work->va_full_marks++;
+		full = 1;
+	}
+
 	mutex_unlock(&work->lock);
 
 	kern_free(entries);
+
+	if (full != 0)
+		nvrtx_stage_mark("work space full: %llu KiB asked, %llu KiB free in %u runs",
+		    (unsigned long long)(size >> 10), (unsigned long long)(free_bytes >> 10), (unsigned)runs);
 
 	/* Reports a full space or entries that could not be written. */
 	if (error != 0)

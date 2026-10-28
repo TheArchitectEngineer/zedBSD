@@ -321,6 +321,7 @@ void nvrtx_runtime_stop(struct nvrtx_node *node);
 int nvrtx_vk_node_blob_attach(struct nvrtx_node *node, struct nvrtx_session *session, uint64_t blob_id, struct nvrtx_backing *backing, uint64_t bytes);
 
 void nvrtx_node_backing_put(struct nvrtx_node *node, struct nvrtx_backing *backing);
+int nvrtx_node_backing_cpu(struct nvrtx_node *node, struct nvrtx_backing *backing, volatile uint8_t **cpu);
 uint32_t nvrtx_node_resource_id(struct nvrtx_node *node);
 void nvrtx_node_blob_listed(struct nvrtx_node *node, struct nvrtx_session *session, struct nvrtx_resource *resource, uint32_t resource_id);
 

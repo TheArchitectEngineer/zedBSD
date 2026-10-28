@@ -314,6 +314,30 @@ nvrtx_node_backing_put(
 }
 
 /*
+ * Gives the CPU's view of a blob's VRAM, mapping it into the window the first
+ * time the CPU reaches it; it then stays mapped until the VRAM is given back.
+ *
+ * Returns ENODEV without a working window, or ENOSPC when the window is full.
+ */
+int
+nvrtx_node_backing_cpu(
+	struct nvrtx_node *node,
+	struct nvrtx_backing *backing,
+	volatile uint8_t **cpu)
+{
+	int error;
+
+	/* The window's place (nvrtx_bo_map keeps one it has). */
+	error = nvrtx_bo_map(node->gpu, &backing->bo);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the blob's first byte in the window. */
+	*cpu = nvrtx_bo_cpu(node->gpu, &backing->bo);
+	return 0;
+}
+
+/*
  * Numbers a new blob or import for the protocol: never zero.
  */
 uint32_t
@@ -371,6 +395,8 @@ nvrtx_vk_blob(
 {
 	struct nvrtx_session *session;
 	struct nvrtx_resource *resource;
+	volatile uint8_t *view;
+	int error;
 
 	session = owner;
 
@@ -384,8 +410,13 @@ nvrtx_vk_blob(
 	if (resource == NULL)
 		return ENOENT;
 
+	/* The blob in the CPU's window (taken now if it has no place yet). */
+	error = nvrtx_node_backing_cpu(session->node, resource->backing, &view);
+	if (error != 0)
+		return error;
+
 	/* Succeeded: the blob's bytes in the CPU's window and their count. */
-	*cpu = (uint8_t *)(uintptr_t)nvrtx_bo_cpu(session->node->gpu, &resource->backing->bo);
+	*cpu = (uint8_t *)(uintptr_t)view;
 	*bytes = resource->bytes;
 	return 0;
 }
@@ -609,8 +640,6 @@ node_blob_create(
 	struct nvrtx_node *node;
 	struct nvrtx_resource *resource;
 	struct nvrtx_backing *backing;
-	volatile uint8_t *cpu;
-	uint64_t at;
 	int error;
 
 	node = private_data;
@@ -631,21 +660,21 @@ node_blob_create(
 		return ENOMEM;
 	}
 
-	/* Takes the VRAM and maps it for the CPU. */
+	/*
+	 * Takes the VRAM and clears it, so no earlier contents of the VRAM show.
+	 * It goes into the CPU's window only when the CPU first reaches it
+	 * (nvrtx_node_backing_cpu): the window is far smaller than the VRAM, and
+	 * most blobs (images the GPU draws and the display shows) never need it.
+	 */
 	error = nvrtx_bo_alloc(node->gpu, request->bytes, NODE_BLOB_ALIGN, &backing->bo);
 	if (error == 0)
-		error = nvrtx_bo_map(node->gpu, &backing->bo);
+		error = nvrtx_bo_clear(node->gpu, &backing->bo);
 	if (error != 0) {
 		nvrtx_bo_free(node->gpu, &backing->bo);
 		kern_free(backing);
 		kern_free(resource);
 		return error;
 	}
-
-	/* Clears it through the window, so no earlier contents of the VRAM show. */
-	cpu = nvrtx_bo_cpu(node->gpu, &backing->bo);
-	for (at = 0U; at < backing->bo.size; at += 4U)
-		*(volatile uint32_t *)(volatile void *)(cpu + at) = 0U;
 
 	/* The blob holds the backing's one reference. */
 	backing->bytes = request->bytes;
@@ -711,7 +740,10 @@ node_resource_read(
 	}
 
 	/* A blob is read byte by byte through the uncached window. */
-	source = nvrtx_bo_cpu(node->gpu, &resource->backing->bo) + offset;
+	error = nvrtx_node_backing_cpu(node, resource->backing, &source);
+	if (error != 0)
+		return error;
+	source += offset;
 	for (at = 0U; at < bytes; at++)
 		target[at] = source[at];
 
@@ -754,7 +786,10 @@ node_resource_write(
 	}
 
 	/* A blob is written byte by byte through the uncached window, then read back once so the writes have landed. */
-	target = nvrtx_bo_cpu(node->gpu, &resource->backing->bo) + offset;
+	error = nvrtx_node_backing_cpu(node, resource->backing, &target);
+	if (error != 0)
+		return error;
+	target += offset;
 	for (at = 0U; at < bytes; at++)
 		target[at] = source[at];
 	if (bytes != 0U)
@@ -774,6 +809,8 @@ node_resource_map(
 {
 	struct nvrtx_node *node;
 	struct nvrtx_resource *resource;
+	volatile uint8_t *cpu;
+	int error;
 
 	UNUSED_PARAMETER(session);
 
@@ -789,9 +826,12 @@ node_resource_map(
 		return 0;
 	}
 
-	/* A blob: its place in the window. */
+	/* A blob: its place in the window, which it takes now if it has none. */
+	error = nvrtx_node_backing_cpu(node, resource->backing, &cpu);
+	if (error != 0)
+		return error;
 	mapping->physical = nvrtx_bo_bus(node->gpu, &resource->backing->bo);
-	mapping->address = (void *)(uintptr_t)nvrtx_bo_cpu(node->gpu, &resource->backing->bo);
+	mapping->address = (void *)(uintptr_t)cpu;
 	mapping->bytes = resource->backing->bo.size;
 	mapping->attributes = DRV_GPU_MAPPING_DEVICE;
 
@@ -889,7 +929,8 @@ node_drain(
  * average time, the CPU's copies, the renderer's frames with their average
  * wait for the node's lock and their average hold of it, the flips with
  * their average wait for the head, the GPU's own time for the runs, the
- * draws they held and the command streams read through the window.
+ * draws they held, the command streams read through the window and the
+ * window's use.
  */
 static void
 node_perf_report(
@@ -898,6 +939,9 @@ node_perf_report(
 	struct nvrtx_node_perf taken;
 	uint64_t now;
 	uint64_t period;
+	uint64_t used;
+	uint64_t peak;
+	uint64_t size;
 
 	/* Nothing is written without nvrtx.vk.perf=1, nor before the period is over. */
 	if (node->perf == 0)
@@ -962,6 +1006,13 @@ node_perf_report(
 	    (unsigned long long)taken.streams,
 	    (unsigned long long)(taken.stream_bytes / 1024U),
 	    (unsigned long long)taken.stream_us);
+
+	/* The CPU's window: what is mapped now, the most at once, and its size. */
+	nvrtx_bo_window_use(node->gpu, &used, &peak, &size);
+	nvrtx_stage_mark("perf: window %lluKiB peak %lluKiB of %lluKiB",
+	    (unsigned long long)(used >> 10),
+	    (unsigned long long)(peak >> 10),
+	    (unsigned long long)(size >> 10));
 }
 
 /* Reports a total's average over its count, zero for no count. */
