@@ -2,84 +2,53 @@
 
 # WS112: Debian の package（Debian 13・Ubuntu 26.04 共通の amd64・arm64 と Raspberry Pi OS の arm64）
 
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-06 夜 ユーザーの新しいゴール（3 つの deb）を p002・p003 で生成（cleared 2026-10-07）。Fedora・Arch・CI の p004〜p006 は canceled）。旧: incomplete。残り・制限: p007 の規約の全文は WS の外の一括の見直しへ
+<!-- awesome-plan-current:start -->
+Status: completed（2026-10-27 P3 の精査 q1608。2026-10-06 夜 ユーザーの新しいゴール（3 つの deb）を p002・p003 で生成（2026-10-07 Q1 の判定で cleared）。Fedora・Arch・CI の p004〜p006 は canceled）
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG007
-Related Milestones: MG001（追跡可能なbuild/配布記録）、MG006（既存Keilandの配布）
+Related Milestones: MG001（追跡可能な build・配布の記録）、MG006（既存の Keiland の配布）
 Parent: [Master](../master.md)
-Queue: q585 / A2（p001契約調査のみ）
-Resume point: 2026-10-07 p002・p003 は 3 つの deb を生成し形式・依存の解決を確認（Q1 の判定待ち）。残りは p007（規約の見直し）。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
+<!-- awesome-plan-current:end -->
 
+## 目標
 
-## 目標の設定し直し（2026-10-06 夜 ユーザー）
+2026-10-06 夜 ユーザー「WS112は、Debianパッケージのみにします。Debian 13, Ubuntu 26.04の両方に互換があるamd64/arm64のdebパッケージと、Raspberry Pi OSのarm64のdebパッケージ、この2つのファイルが生成できるようになることを、ゴールに設定し直します。」
 
-「WS112は、Debianパッケージのみにします。Debian 13, Ubuntu 26.04の両方に互換があるamd64/arm64のdebパッケージと、Raspberry Pi OSのarm64のdebパッケージ、この2つのファイルが生成できるようになることを、ゴールに設定し直します。」と、Q1 のクリックの質問への回答「3 つ（amd64・arm64・RPi）」「第 2 段（ベータ2）」。
-- **新しいゴール**: 次の 3 つの deb の file を生成できる。(1) Debian 13・Ubuntu 26.04 の両方に互換の amd64 の deb、(2) 同じく arm64 の deb、(3) Raspberry Pi OS の arm64 の deb。
-- Fedora・Arch・rpm・pacman の package は取りやめる。段はベータ2（第 2 段）、2026-10-05 の「ベータ4 以降」を置き換える。
-- 以下の Objective / scope は以前の 5 種類の計画の記録（取りやめた部分を含む）。
+次の 3 つの deb の file を生成できる: (1) Debian 13・Ubuntu 26.04 の両方に互換の amd64 の deb、(2) 同じく arm64 の deb、(3) Raspberry Pi OS の arm64 の deb。設計は [design.md](design.md)、環境は [native-environments.md](native-environments.md)、形式・依存・manifest は [package-contract.md](package-contract.md)、package の方針は [standards/ws112-linux-packages.md](../standards/ws112-linux-packages.md)。
 
-## 組み替え（2026-10-07、ユーザーの回答と Q1 の指示）
+## ユーザーの決定
 
-- D-a（build の環境）: mmdebstrap の rootfs（ユーザー、2026-10-07）。対象の rootfs（Debian 13、RPi OS trixie）の中で native に build する。amd64 はそのまま、arm64 は host の既存の qemu-aarch64 の binfmt（user-mode、VM ではない）。kernel は host のもの。
-- D-b（確かめる範囲）: 生成＋形式・依存の解決（ユーザー、2026-10-07）。runtime・GUI の試験は無し（既存の QEMU の smoke は任意の経路として残す）。
-- Phase: p001 は superseded（canceled）、p004・p005・p006 は canceled、p002 は amd64・arm64 の共通の deb、p003 は RPi OS の deb、p007 は規約の見直し。CI は Future Work。
+- 2026-10-02: 最初の計画は Debian 13・Ubuntu 26.04・Raspberry Pi OS・Fedora 44・Arch Linux の 5 種類の package と CI。Raspberry Pi OS は「64 bit（arm64、推奨）」、build・deb の生成だけで受け入れ（GPU・GUI・表示の確認は不要）。FreeBSD は source から build・install、package は作らない。CI で導入・GUI の確認は不要。
+- 2026-10-06 夜: 上の目標の設定し直し。Q1 のクリックの質問への回答「3 つ（amd64・arm64・RPi）」「第 2 段（ベータ2）」。Fedora・Arch・rpm・pacman の package は取りやめ。2026-10-05 の「ベータ4 以降」を置き換え。
+- 2026-10-07 D-a（build の環境）: mmdebstrap の rootfs。対象の rootfs（Debian 13、RPi OS trixie）の中で native に build（arm64 は host の qemu-aarch64 の binfmt、user-mode）。
+- 2026-10-07 D-b（確かめる範囲）: 生成＋形式・依存の解決。runtime・GUI の試験は無し。
+- 2026-10-08「規約の整形（各 WS の全文規約の Phase）はベータ3」→ p007 は WS の外の一括の見直しへ。
 
-## Objective / scope（以前の 5 種類の計画の記録）
+## 結果
 
-指定5つのmake targetでDebian 13、Ubuntu 26.04、Raspberry Pi OS、Fedora 44、Arch LinuxのKeiland binary packageを作り、既存CIで全5種類をrelease filesへ含める。
-Raspberry Pi OSはuser回答によりarm64、追加指示でbuild/deb生成のみで受け入れ、GPU/GUI/表示確認は不要。Debian/Ubuntuは既存amd64、Fedora/Archは既存方針と同じx86_64を計画案とする。
-必要なファイル/metadataをad hocに直接生成・圧縮してよく、正式devtool一式は必須にしない。CIで導入・GUI等の動作確認は不要。
-FreeBSDはソースからbuild/installする前提、package作成は対象外。
+- p002: amd64・arm64 の共通の deb を mmdebstrap の rootfs で build し、Debian 13 と Ubuntu 26.04 の rootfs で `apt-get install --simulate` が exit 0、ELF の machine・manifest を確認（2026-10-07 Q1 の判定、host）。
+- p003: RPi OS の arm64 の deb を RPi OS の rootfs（+rpt の package 19）で build、`--simulate` が exit 0（2026-10-07 Q1 の判定、host）。
+- 実機・QEMU での導入と GUI の確認は D-b により範囲の外（未実施）。
 
-対象: root make入口、Linux native stage/production manifest、release tools/入力、5OS package metadata、CI/release定義・検証・文書。
-renderer/OSbackend修理・新CPU版・HAL/toolchain・FreeBSD packaging・source package/署名基盤・--testing/--login実装は含めない。
+## 制限・移管
 
-## Acceptance（将来の実装）
+- Fedora・Arch・CI の release 添付（p004〜p006）は取りやめ（2026-10-06 夜 ユーザー）。CI は Future Work。
+- 規約の全文と WS の受け入れの照合（p007）は WS の外の一括の見直しへ。
 
-| ID | 完了条件 |
-| --- | --- |
-| P1 | 指定5 make targetがそれぞれ対応OS/CPUの実binary packageを生成する（deb3、rpm1、Arch1）。package形式/metadata/依存/owner/modeとbuild由来を確認できる |
-| P2 | 共通production payload、/opt/keiland、keiland-desktop、Linux GDM直接wayland、設定/ライセンスを収録。test/development payloadとsystem libcの置換を含めない |
-| P3 | 既存CIで全5種類を作成・保存し、全packageの存在/整合をrelease前に検証。5つすべてと付随記録をrelease filesへ渡し既存image/zip配布を保持 |
-| P4 | CI runtime/導入/GUI確認を必須経路から外し、FreeBSD packageを作らない。未実施のruntimeやremote releaseを検証済みと主張しない |
-| P5 | 全変更の最終全文規約/manual reviewと該当build/syntax/package/CI検証に合格し、commands/versions/証拠/限界を記録する |
+## Phase 一覧
 
-## Standards / dependencies / decisions
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws112-p001 | 5 種類の共通の契約・入力・形式の確定 | uncleared・canceled（2026-10-07、ゴールの設定し直しで superseded） |
+| ws112-p002 | amd64・arm64 の共通の deb | cleared（2026-10-07 Q1 の判定） |
+| ws112-p003 | Raspberry Pi OS の arm64 の deb | cleared（2026-10-07 Q1 の判定） |
+| ws112-p004 | Fedora 44 の rpm | canceled（2026-10-07） |
+| ws112-p005 | Arch Linux の package | canceled（2026-10-07） |
+| ws112-p006 | CI の 5 target と release の添付 | canceled（2026-10-07） |
+| ws112-p007 | 最終の全文規約と WS の受け入れ | planned のまま WS を閉じた（WS の外の一括の見直しへ） |
 
-[設計](design.md)、[Guardrail](../guardrail.md)、[package方針全文](../standards/ws112-linux-packages.md)、[C全文](../coding-style.md)、[automation](../standards/automation.md#ws112-linux-package-coverage-2026-10-02)。
-[入力と実sourceの調査](phase001/survey.md)、[native環境/署名/commands](native-environments.md)、[形式/依存/manifest/CI成果物契約](package-contract.md)。
-WS108の実QEMU native build/payload/CIとWS105 Linux、WS111 launcherを出発点にする。completed WSを再利用せず、旧結果・失敗履歴を保持。
-Debian/Ubuntu QEMU buildは継承し、新OS環境/入力/依存/format/pinsをp001で具体化。RPi OSの版とArch snapshot等は技術調査後に固定する。
-既存demo focus/相対順位とWS106保留を変えない。WIP local commit可、push/実装/remote publishなし。GitHub Issue/Project同期は保留。
+## 記録の所在
 
-## Phases
-
-| ID / link | Purpose | Goal | Status | Dependencies |
-| --- | --- | --- | --- | --- |
-| [ws112-p001](phase001/phase.md) | 共通契約・対象OS入力・形式を確定 | 5 targetの契約（superseded） | uncleared・canceled（2026-10-07 superseded） | なし |
-| [ws112-p002](phase002/phase.md) | amd64・arm64 の共通の deb | cleared（2026-10-07） | cleared 候補（2026-10-07 P1: amd64・arm64 を生成、Debian 13・Ubuntu 26.04 で依存の解決） | D-a・D-b |
-| [ws112-p003](phase003/phase.md) | Raspberry Pi OS arm64 deb | cleared（2026-10-07） | cleared 候補（2026-10-07 P1） | p002 の道具 |
-| [ws112-p004](phase004/phase.md) | Fedora 44 rpm | make keiland-linux-fedora44とFedora 44 rpm成果物 | canceled（2026-10-07） | ws112-p002 cleared / 共通stage・成果物契約（p001のFedora確定入力を使用） |
-| [ws112-p005](phase005/phase.md) | Arch Linux binary package | make keiland-linux-archとArch成果物 | canceled（2026-10-07） | ws112-p002 cleared / 共通stage・成果物契約（p001のArch確定入力を使用） |
-| [ws112-p006](phase006/phase.md) | CI 5 target・release添付 | 全5 packageを既存CIからrelease filesへ渡す定義と失敗関門 | canceled（2026-10-07） | ws112-p002/p003/p004/p005 cleared / 5種類の実package・記録 |
-| [ws112-p007](phase007/phase.md) | 最終全文規約・WS受け入れ | 変えた source と 3 つの deb を照合 | planned | p002・p003 |
-
-Dependency graph: WS105/WS108/WS111（context）→ p001 → p002 → {p003, p004, p005} → p006 → p007。
-p006はp002を含む全4package Phaseの実出力を必要とする。各Phaseは1 Queueずつ、表は実行許可ではない。
-
-## Event history
-
-2026-10-02 / ws112-package-plan-20261002-created: current userの指定5OS/targets/ad hoc方式/FreeBSD source-only/CI runtime不要を保存しp001〜p007を追加。
-同日のRPi回答「64 bit（arm64、推奨）」を確定契約へ反映。旧WS108の完了は保持し今後のCI runtime方針だけを置換する。
-Master/Guardrail/Outlookへ反映。実装の指示ではなく新focus/最優先/Queueを作らない。GitHub body/comment/Projectはlocal outbox pending。
-
-2026-10-02 / ws112-rpi-build-only-20261002: current userのRPi build-only受け入れを反映。影響するp001/p003/p007・WS/design・release方針を更新、Queue/実装許可は追加しない。GitHub event deliveryは保留。
-
-2026-10-02 / ws112-plan-review-20261002: planning review PASS。7 Phaseの親/状態/Primary/依存、8 record IDの重複無し、全新規Markdown localリンク、指定5 target契約、q576 finished/WS108 completed保持を確認。git diff --check PASS、全変更はplan内のみ。28件のprepared/pending journal payloadを検査、GitHub/publication未実施。コード/build/package/GUI試験は計画scopeのため未実施。
-
-2026-10-02 / ws112-q585-contract-detail: p001調査から5OS input/署名/環境/encoder/依存と共通source/payload/CI契約を詳細化。影響するp002〜p007のprocedureに各自のcommand/証拠/再開条件を反映、依存順・受け入れ・Queue権限は維持。RPi rootfs native build具体案と新OS boot条件はmain照合中、p001 in-progress/WS incomplete、未実行Phaseはplanned。GitHub deliveryはmainのcanonical outboxに委ねる。
-
-2026-10-02 / ws112-q585-rpi-environment-selected: p001でmainのdelegated判断により外側既存Debian13 QEMU VM＋内側公式RPi rootfs/QEMU-user native arm64方式を採用、影響するp003とdesign/環境証拠へ根拠/境界/再開commandを反映。p003実行/実環境成立は未承認/未検証、D1 Fedora/Arch boot適用はmainのuser返答待ち。WS incomplete保持。
-
-2026-10-02 / ws112-q591-p002-candidate: main指示で[p002候補](phase002/queue-candidate.md)を具体化しorigin p001/p002にも準備eventを保存。後続Queue scope/承認はmain所有、p002 planned、実装未実行。
-
-2026-10-02 08:11 UTC / ws112-q585-outcome: p001/q585-i01 uncleared、有限調査終了。5OS公式input/署名/環境/形式/依存/common manifest/source/CI契約と後続commandを保存、D2は委任判断で解決、D1 Fedora/Arch boot方式のuser返答待ちが残る。基準/commands/results/skips/resumeはp001 evidence/criteria。WS incomplete、p002〜007 planned、q591候補だけを保持。D1判断元とGuardrailをmainが保存後p001全基準を再評価し、新exact Queueなしに実装しない。mainへcanonical Queue/共有投影/event反映を依頼、同sessionで待機。
+Phase の計画・結果・調査（`phaseNNN/`、5 OS の入力の URL・hash の調査表 `phase001/survey.md` を含む）は削除する（Q1 の pipeline）。git の commit `fb1f6afee` の `plan/ws112/` にある。Queue の履歴は [plan/history](../history/index.md)。

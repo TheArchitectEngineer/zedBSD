@@ -3,43 +3,61 @@
 # WS134: システムモニターのアプリ（Analytic Spatial UI）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p008・p011〜p013 cleared、p003 は実機の fps 21（UAT 2026-10-04）で cleared。p009・p010 の実機の分は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedに…」で OK。Pi 5 でも 2026-10-22 ユーザー「System Monitor を開いて、中身が出ました。」）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p007・p013 を cleared。2026-10-08 q910 P2 の照合: p007（T1-066 PASS）・p013（T1-070 PASS）は Q1 の判定、p003 は uncleared（fps・G…。残り・制限: p010 の規約の全文は一括の見直しへ
+Status: completed（2026-10-27 P3 の精査 q1608。p001〜p008・p011〜p013 cleared、p003 は実機の fps 21（UAT 2026-10-04）で cleared。p009・p010 の実機の分は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」で OK。Pi 5 でも 2026-10-22 ユーザー「System Monitor を開いて、中身が出ました。」）
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: —
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q649（P2、p001）〜 q660（P2 generation8、p004、2026-10-04 実装済み・QEMU の試験待ち）
-Resume point: (1) p003 の uncleared の直し（fps・GPU の名前 2 点、[phase003](phase003/phase.md) の「再開の条件」）と T1 の再試験。
-(2) p004 は実装済み（a37e407、host 試験 PASS）、T1/T2 の `monitor-p004.sh` の結果待ち。p001・p002 は cleared。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 目標（2026-10-03 ユーザー）
+## 目標
 
-「P2が空いているので、システムモニターのアプリを作ってほしいです。添付がイメージです。」2026-10-03 user「イメージの通りじゃなくてよくて、要素を採用してほしいです。」→ 参考の画像の再現ではなく、コンセプトと画像の要素を取り入れて設計する。デザインのコンセプトは [design/user-concept.md](design/user-concept.md)（原文の要約）と参考の画像 [design/reference-image.webp](design/reference-image.webp)。
+2026-10-03 ユーザー「P2が空いているので、システムモニターのアプリを作ってほしいです。添付がイメージです。」「イメージの通りじゃなくてよくて、要素を採用してほしいです。」
 
-CPU（全体と各 core）、GPU（Util・VRAM・温度・電力、複数）、RAM（Used・Cache・Available・Swap）、Network（RX/TX）、Disk I/O（読み・書き・Latency）と最近の出来事を、中央の「システム状態の立体コア」を顔にした層構造の画面で見せる Keiland の app。3D は階層を見せるため、動きは「呼吸」。タブレットの操作（タップで浮く、スワイプで時間軸、長押しで固定、2 本指で俯瞰）。
+CPU（全体と各 core）、GPU（Util・VRAM・温度・電力、複数）、RAM、Network、Disk I/O と最近の出来事を、中央の「システム状態の立体コア」を顔にした層構造の画面で見せる Keiland の app。設計は [design.md](design.md)、コンセプトは [design/user-concept.md](design/user-concept.md)、参考の画像は [design/reference-image.webp](design/reference-image.webp)。
 
-## Phase
+## ユーザーの決定（2026-10-03）
 
-| Phase | 内容 | 状態 | 依存 |
-| --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: zedBSD（と Linux・FreeBSD）で取れる情報の出どころの調査（不足は kernel・libkeiland の追加の案）、画面の構成・3D の表現・動き・操作・描画の方式（libkeiui と Vulkan）、Phase の分け方 | cleared（2026-10-18 Q1: phase.md に合わせた。旧: planning（P2、q649）） | — |
-| [p002](phase002/phase.md) | M1 骨組み: package・3 OS の build・libkeiui の窓＋自前の Vulkan・title bar・data source の層（sim・replay）・履歴・plate と文字・ZMON の log・App Home | cleared（T1-041 PASS） | p001 |
-| [p003](phase003/phase.md) | M2 3D と動き: 状態コア・CPU のタイル面・GPU のカード・Network/Disk の流れ・Memory の層・視差・数値の slide・段階的な警告・Events | cleared（実機の fps 21、UAT 2026-10-04） | p002 |
-| [p004](phase004/phase.md) | M3a 操作: tap の展開・長押しの固定・swipe の時間軸・pinch の俯瞰・key/pointer・--calm | cleared（q660、T1-063 PASS） | p003 |
-| [p005](phase005/phase.md) | K1 kernel: CPU ごとの時間 `hw.cputimes`（sysctl の CLI・top の CPU 行、design.md §1.2 の review の反映） | cleared（q661、T1-064 PASS） | — |
-| [p006](phase006/phase.md) | K2 kernel: disk ごとの統計 `hw.diskstats`（物理の whole disk） | cleared（q661、T1-065 PASS） | — |
-| [p007](phase007/phase.md) | K3 kernel: GPU の telemetry の sysctl `hw.gputelemetry`（Guardrail により ioctl にしない。実機の確認は 5330） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T1-066 PASS。i915 の実の値は p010 の実機。旧: in-progress（q661: 実装・build 済み、QEMU の試験待ち。i915 は実機）） | — |
-| [p008](phase008/phase.md) | M3a 本物の値（zedBSD の backend の monitor の領域） | cleared（q662、T1-067 PASS） | WS131 p010 までの統合、p005・p006 |
-| [p011](phase011/phase.md) | M3b Linux・FreeBSD の backend の monitor の領域 | cleared（q662、T1-068 PASS） | p008 |
-| [p012](phase012/phase.md) | M3c compositor の `kl_system_monitor_v1`（manager v2、専用の thread、ack と間引き）と libkeiland の `kl_system_monitor_*` | cleared（q662、T1-069 PASS） | p008 |
-| [p013](phase013/phase.md) | M3d app の system の source | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T1-070 で monitor-p013 PASS。旧: in-progress（q662: 実装・host 試験済み、QEMU の試験待ち）） | p012 |
-| [p009](phase009/phase.md) | K4 kernel: ACPI の温度（sysctl `hw.thermal`、zone と DPTF の `_TMP`）。電池・AC は既存の KERN_SYSTEM_GET_POWER（ws132-p002・WS131 p005） | test-wait（実機の温度の UAT の分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。T1-482（QEMU）の結果の Q1 の判定が残り） | 実機 |
-| [p010](phase010/phase.md) | M4 全文規約・回帰・デモの通し | in-progress（実機の p003・p007・p009 とデモの分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。q663 で全文規約の見直しと直し済み、QEMU の回帰（T1）の結果の判定が残り） | p002〜p009 |
+- 「P2はコードを書いてOKだと思います。衝突しないです。」→ 設計（p001）の後、user のレビューを待たずに実装へ。
+- 「P2はとりあえずOSから取れない情報はスタブデータでそれっぽいアニメーションを表示しましょう。」
+- 「simという表記はつけなくていいです。私がどの項目がスタブか把握できていればいいです。」→ 画面に stub の印は付けず、stub の項目の一覧を design.md に書く。
+- 「システムモニターは私に確認しなくていいので、どんどん実装して動かしてください。」
+- 2026-10-04（UAT）: p003 の fps の条件（15 以上）は実機で判定する。
+- 2026-10-13「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」
+- 2026-10-22（Pi 5）「System Monitor を開いて、中身が出ました。」
 
-2026-10-03 user「P2はコードを書いてOKだと思います。衝突しないです。」 → P2 は設計（p001）を書いたら、user のレビューを待たずに実装の Phase へ進んでよい（Phase の ID は Q1 が割り当て）。
+## 結果
 
-2026-10-03 user「P2はとりあえずOSから取れない情報はスタブデータでそれっぽいアニメーションを表示しましょう。」→ OS から今取れない値（GPU の温度・電力など）は、stub のデータ（もっともらしく動く値）で画面と動きを先に作る。stub であることは code と画面の上で分かるように（後で本物に差し替える所を一覧に）。
-2026-10-03 user「simという表記はつけなくていいです。私がどの項目がスタブか把握できていればいいです。」→ 画面に stub の印は付けない。stub の項目の一覧を design.md（と完了の報告）に書き、user が把握できるようにする。
+- app: package・3 OS の build・窓と自前の Vulkan・data source の層（sim・replay）・履歴・plate と文字・`ZMON` の log（p002）、状態コア・CPU のタイル面・GPU のカード・Network/Disk の流れ・Memory の層・視差・警告・Events（p003）、tap の展開・長押しの固定・swipe の時間軸・pinch の俯瞰（p004）、本物の値の system の source（p013）。
+- kernel: CPU ごとの時間 `hw.cputimes`（p005）、disk ごとの統計 `hw.diskstats`（p006）、GPU の telemetry `hw.gputelemetry`（p007）、ACPI の温度 `hw.thermal`（p009）。
+- backend の monitor の領域（zedBSD p008、Linux・FreeBSD p011）、compositor の `kl_system_monitor_v1` と libkeiland の `kl_system_monitor_*`（p012）。
+- 証拠: QEMU の T1-041・T1-063〜T1-070、5330 の実機の UAT（2026-10-04 の fps 21、2026-10-13 の一括の OK）、Pi 5 の 2026-10-22 のユーザーの確認。
 
-2026-10-03 user「システムモニターは私に確認しなくていいので、どんどん実装して動かしてください。」 → P2 は WS134 の Phase を user の確認なしに順に進める（Q1 は報告だけ受ける）。
+## 制限・移管
+
+- p009 の T1-482（QEMU）と p010 の QEMU の回帰（T1）の Q1 の判定の印は付かないまま閉じた（全文規約の見直しと直しは q663 で済み）。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws134-p001 | 設計 | cleared（2026-10-18 Q1 の照合） |
+| ws134-p002 | M1 骨組み | cleared（T1-041） |
+| ws134-p003 | M2 3D と動き | cleared（実機の fps 21、UAT 2026-10-04） |
+| ws134-p004 | M3a 操作 | cleared（q660、T1-063） |
+| ws134-p005 | K1 `hw.cputimes` | cleared（q661、T1-064） |
+| ws134-p006 | K2 `hw.diskstats` | cleared（q661、T1-065） |
+| ws134-p007 | K3 `hw.gputelemetry` | cleared（2026-10-08 Q1 の判定、T1-066） |
+| ws134-p008 | M3a 本物の値（zedBSD の backend） | cleared（q662、T1-067） |
+| ws134-p009 | K4 ACPI の温度 `hw.thermal` | test-wait のまま WS を閉じた（実機の分は 2026-10-13 ユーザーの OK、T1-482 の判定の印なし） |
+| ws134-p010 | M4 全文規約・回帰・デモの通し | in-progress のまま WS を閉じた（全文規約は q663 で済み、実機の分は 2026-10-13 ユーザーの OK、QEMU の回帰の判定の印なし） |
+| ws134-p011 | M3b Linux・FreeBSD の backend | cleared（q662、T1-068） |
+| ws134-p012 | M3c `kl_system_monitor_v1` | cleared（q662、T1-069） |
+| ws134-p013 | M3d app の system の source | cleared（2026-10-08 Q1 の判定、T1-070） |
+
+## 記録の所在
+
+Phase の計画・結果（`phaseNNN/`）は削除する（Q1 の pipeline）。試験（`tests/`: host・replay・guest）は source の comment と `plan/tools/files/build-files-image.sh` が引くので plan/tools/ へ移す案（Q1 の判断）。git の commit `fb1f6afee` の `plan/ws134/` にある。Queue の履歴は [plan/history](../history/index.md)。

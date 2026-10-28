@@ -32,13 +32,13 @@ build と回帰の一般の command は [WS104 の commands.md](../ws104/command
 
 | 基準 | 状態 | 証拠 |
 | --- | --- | --- |
-| C1 | QEMU PASS（login・Log Out は p126 `--no-black`、起動と Shut Down は `c1-boot-shutdown.sh`）。**5330 の目視は未実施** | [p004](phase004/phase.md)、[p009](phase009/phase.md)、[p010](phase010/phase.md)。WS103 の後も PASS（[WS103](../ws103/ws.md) の V2） |
-| C2・C3・C4・C8 | QEMU PASS | [p001](phase001/phase.md)、[p015](phase015/phase.md)（C3 に swipe の解除） |
-| C5 | 5330 の passthrough で 34 回とも ≤ 100 ms（最大 55 ms）。QEMU は 90〜95 ms（App Home の最初の開きだけ 201 ms、QEMU だけ） | [p002](phase002/phase.md) |
+| C1 | QEMU PASS（login・Log Out は p126 `--no-black`、起動と Shut Down は `c1-boot-shutdown.sh`）。**5330 の目視は未実施** | p004（fb1f6afee の `plan/ws099/phase004/phase.md`）、p009（fb1f6afee の `plan/ws099/phase009/phase.md`）、p010（fb1f6afee の `plan/ws099/phase010/phase.md`）。WS103 の後も PASS（[WS103](../ws103/ws.md) の V2） |
+| C2・C3・C4・C8 | QEMU PASS | p001（fb1f6afee の `plan/ws099/phase001/phase.md`）、p015（fb1f6afee の `plan/ws099/phase015/phase.md`）（C3 に swipe の解除） |
+| C5 | 5330 の passthrough で 34 回とも ≤ 100 ms（最大 55 ms）。QEMU は 90〜95 ms（App Home の最初の開きだけ 201 ms、QEMU だけ） | p002（fb1f6afee の `plan/ws099/phase002/phase.md`） |
 | C6 | 未達。5330 の passthrough の中央値は 56.4〜58.8 ms（WS103 の V4、試料 200 個） | WS075（ws075-p024・p026）、[WS103](../ws103/ws.md) |
-| C7 | QEMU 72/72 が 4.5 以上、最小 4.68 | [p005](phase005/phase.md) |
-| C9 | 10 本 PASS。ただし p076 が全体の実行の中で時々 FAIL（[BUG-125](../bugs/BUG-125.md)、tracking） | [p003](phase003/phase.md)、[p007](phase007/phase.md) |
-| C10 | QEMU PASS（p001）。**5330 の 1 時間は未実施** | [p001](phase001/phase.md) |
+| C7 | QEMU 72/72 が 4.5 以上、最小 4.68 | p005（fb1f6afee の `plan/ws099/phase005/phase.md`） |
+| C9 | 10 本 PASS。ただし p076 が全体の実行の中で時々 FAIL（[BUG-125](../bugs/BUG-125.md)、tracking） | p003（fb1f6afee の `plan/ws099/phase003/phase.md`）、p007（fb1f6afee の `plan/ws099/phase007/phase.md`） |
+| C10 | QEMU PASS（p001）。**5330 の 1 時間は未実施** | p001（fb1f6afee の `plan/ws099/phase001/phase.md`） |
 
 既知の bug（[Bug Board](../known-bugs.md)）:
 
@@ -60,8 +60,8 @@ build と回帰の一般の command は [WS104 の commands.md](../ws104/command
    - file: `plan/ws035/tests/zdesktop-p076.sh` だけ（ws099-p003 と同じく WS035 の共有の試験を WS099 が直す。main に一言知らせる）。compositor の source は変えない。
    - 完了の条件: 単独 20 回で FAIL 0（`for i in $(seq 1 20)` で下の「コマンド」の p076 を回す）、`criteria.sh … C9` を 5 回で p076 の FAIL 0、BUG-125 の ticket と Bug Board の行を resolved に。
      試験の側の直しで FAIL が残る（画面が 3 秒たっても期待にならない）なら、compositor の resize の確定（`shell.c` の `ZWL RESIZE settled` を出す所）を調べる Phase に分けて uncleared。
-2. **[ws099-p012](phase012/phase.md) C1 の 5330（ユーザーの目視）と、5330 での BUG-119・BUG-122 の確かめ**（手順は phase.md に追記した）。ユーザーの時間が要る。
-3. **[ws099-p014](phase014/phase.md) C10 の 5330 の 1 時間**（新しい `c10-hw.sh` を作る。手順は phase.md に追記した）。
+2. **ws099-p012（fb1f6afee の `plan/ws099/phase012/phase.md`） C1 の 5330（ユーザーの目視）と、5330 での BUG-119・BUG-122 の確かめ**（手順は phase.md に追記した）。ユーザーの時間が要る。
+3. **ws099-p014（fb1f6afee の `plan/ws099/phase014/phase.md`） C10 の 5330 の 1 時間**（新しい `c10-hw.sh` を作る。手順は phase.md に追記した）。
 4. **ws099-p006 C6 の記録**（planning）。2026-09-30 午後のユーザーの判断「描画の高速化はラップアップし優先を下げる」により、速さの直しはしない。
    5330 で `measure-apps.sh` を 5 run 流し `c6.py` で中央値を ws.md に記録するだけ。デモ critical の中で後ろ。
 5. **ws099-p018（提案）全文の規約と回帰**（WS の最後、必須）: WS099 で変えた全ての source（p002・p005・p007・p009・p010・p011・p015・p016 の差分、`git log --oneline -- userland/desktop/wayland userland/desktop/sessiond` で WS099 の commit を拾う）を
@@ -167,14 +167,14 @@ sh plan/ws035/tests/zdesktop-guest.sh stop
 | C5（開閉の最初の frame） | `sh plan/ws099/tests/c5-hw.sh build/<W>-pt/hdd-image.img build/<W>/c5-hw 3` | `build/<W>/c5-hw/first-frames.txt`・`session.log`・`shots/*-live.png` | `C5-HW RESULT count=N max_ms=M over=0` と `c5-hw: PASS` | 約 8 分（未計測。`H4_MINUTES=20` で上限、`c5-hw.sh:25`） |
 | BUG-121（角の drag 20 回） | `sh plan/ws099/tests/resize-hw.sh build/<W>-pt/hdd-image.img build/<W>/resize-hw 20` | `build/<W>/resize-hw/` | `RESIZE-HW RESULT drags=20 vanished=0` と `resize-hw: PASS` | 約 15 分（未計測） |
 | C6（記録だけ） | `sh plan/ws075/tests/hdmi/measure-apps.sh build/<W>-pt/hdd-image.img build/<W>-pt/vmunix build/<W>/c6-run1` を 5 回（run2…run5）、その後 `python3 plan/ws075/tests/hdmi/c6.py build/<W>/c6-run1 build/<W>/c6-run2 build/<W>/c6-run3 build/<W>/c6-run4 build/<W>/c6-run5` | 各 `measure.txt` | `c6.py` の中央値と判定（50 ms） | 1 run 約 10 分（未計測） |
-| C10（1 時間、提案の新しい script） | [p014](phase014/phase.md) の手順 | — | `c10-hw: PASS` | 約 75 分 |
+| C10（1 時間、提案の新しい script） | p014（fb1f6afee の `plan/ws099/phase014/phase.md`） の手順 | — | `c10-hw: PASS` | 約 75 分 |
 
 - 判定は script の PASS の行と画面（`shots/*-live.png`）と、guest の disk から読んだ session.log（compositor の log）。`hdmi-h4-hw.sh stop` が取る `kernel.log`・`serial.log` で合否を決めない。
 - 途中で止める時: `plan/ws075/tests/hdmi-h4-hw.sh stop build/<W>/c5-hw`（lock を返す）。
 
 ### 素の起動（USB、ユーザーの目視）
 
-C1 の目視・BUG-119 の電源断は [p012](phase012/phase.md) の手順。image は上の `build/<W>-demo/hdd-image.img`。
+C1 の目視・BUG-119 の電源断は p012（fb1f6afee の `plan/ws099/phase012/phase.md`） の手順。image は上の `build/<W>-demo/hdd-image.img`。
 
 ## 注意
 

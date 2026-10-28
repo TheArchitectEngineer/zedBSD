@@ -13,7 +13,7 @@
 | G1 | i915 のネイティブの実行器で Vulkan の compute（pipeline・dispatch・indirect・local size・built-in・shared memory と barrier・SSBO と shared の atomic） | **passthrough で済み**（vkcs 21/21、p007）。素の 5330 は未実施（p012） |
 | G2 | libglesv2 の OpenGL ES 3.1 の compute（GLSL ES 3.10、`glDispatchCompute`、SSBO、`glMapBufferRange`、`glMemoryBarrier`、headless EGL） | **Venus（p009）と passthrough（p010・p007 の再実行）で済み** |
 | G3 | Noct の自動並列化（`accel_opengles.c`）が zedBSD で GPU を選び、整数の DOALL の見本 `mix.nct` が CPU と一致し、CPU より速い | **一致は済み**（p011、passthrough と Venus）。**速さは未達**: GPU が CPU の約 22 倍遅い（p017 の 5330 の追記: GPU 221 ms、CPU 10 ms） |
-| G4 | fg010 の台本の場面 S13（Noct の見本を GPU と CPU で走らせて時間を比べる）として見せられる | **passthrough の demo の image で済み**（p015、[s13-live.png](phase015/s13-live.png)）。**素の 5330（デモの本番の形）は未実施** |
+| G4 | fg010 の台本の場面 S13（Noct の見本を GPU と CPU で走らせて時間を比べる）として見せられる | **passthrough の demo の image で済み**（p015、`plan/ws101/phase015/s13-live.png`（fb1f6afee））。**素の 5330（デモの本番の形）は未実施** |
 
 ### fg010 の場面 S13（master「fg010 の達成基準」）
 
@@ -52,22 +52,22 @@
 | --- | --- | --- |
 | p001 | 設計 | [design.md](design.md) |
 | p002〜p004 | compiler（GLCompute、SLM 以外）・実行器の object・batch | host の試験 PASS（2026-10-01 にも再実行して PASS、下の 6 章） |
-| p005〜p007 | 5330 の passthrough で vkcs 9 → 15 → 21/21、回帰 vkx 9/9・vke1 6/6・vke2 17/17・vkc 9/9 | [phase007](phase007/phase.md)、`OUT=build/ws101-p007-hw plan/ws101/tests/hw/run-hw.sh r1 vkcs vkx vke1 vke2 vkc` |
+| p005〜p007 | 5330 の passthrough で vkcs 9 → 15 → 21/21、回帰 vkx 9/9・vke1 6/6・vke2 17/17・vkc 9/9 | phase007（fb1f6afee の `plan/ws101/phase007/phase.md`）、`OUT=build/ws101-p007-hw plan/ws101/tests/hw/run-hw.sh r1 vkcs vkx vke1 vke2 vkc` |
 | p008 | GLSL ES 3.10 の compute | `plan/ws101/tests/glsl/run.sh` PASS（2026-10-01 再実行 PASS） |
-| p009 | libglesv2・libegl の ES 3.1 の compute の API。Venus で glescompute PASS | [phase009](phase009/phase.md) |
+| p009 | libglesv2・libegl の ES 3.1 の compute の API。Venus で glescompute PASS | phase009（fb1f6afee の `plan/ws101/phase009/phase.md`） |
 | p010 | passthrough で glescompute・egltest feedback・queries PASS | `plan/ws101/tests/hw/gles-hw.sh` |
-| p011（p014 を含む） | toolchain の差分（main が適用）、`mix.nct`・`s13.sh`、G3 の一致（passthrough・Venus） | [phase011](phase011/phase.md) |
-| p015 | demo の image の Terminal で S13 が通る（passthrough） | [phase015](phase015/phase.md)、[s13-live.png](phase015/s13-live.png) |
-| p016 | 時間の分解（QEMU）。道具 `KEI_GLES_COMPUTE_TRACE=2`・`tests/time-split.sh`・`tests/time-split.py` | [phase016](phase016/phase.md) |
+| p011（p014 を含む） | toolchain の差分（main が適用）、`mix.nct`・`s13.sh`、G3 の一致（passthrough・Venus） | phase011（fb1f6afee の `plan/ws101/phase011/phase.md`） |
+| p015 | demo の image の Terminal で S13 が通る（passthrough） | phase015（fb1f6afee の `plan/ws101/phase015/phase.md`）、`plan/ws101/phase015/s13-live.png`（fb1f6afee） |
+| p016 | 時間の分解（QEMU）。道具 `KEI_GLES_COMPUTE_TRACE=2`・`tests/time-split.sh`・`tests/time-split.py` | phase016（fb1f6afee の `plan/ws101/phase016/phase.md`） |
 
 ### 開いているもの
 
 | 項目 | 状態 | 次 |
 | --- | --- | --- |
 | **p017**（L2 3 倍） | **uncleared**（2026-09-30）。libGLESv2 の device の buffer の使い回し（spare）と device の上の bytes を実装（main に merge 済み）。QEMU の GPU の call 835 → 212 ms。5330 の passthrough（P1 の追記）: 1 call 215 ms のうち gpu-wait 167 ms（78%）、Noct 35 ms、buffer-data 8 ms。S13 の表示「The CPU is 22.1 times as fast as the GPU.」 | ユーザーの「今のまま」で止めた。受け入れ（GPU ≤ CPU / 3）は未達。扱い（canceled か保留）は main の判断（3.2 の提案 A） |
-| p012（L3 素の 5330） | planned（phase.md なし → 2026-10-01 に [phase012](phase012/phase.md) を作った）。依存は表では p017 | 3.1 の順番 1 |
+| p012（L3 素の 5330） | planned（phase.md なし → 2026-10-01 に phase012（fb1f6afee の `plan/ws101/phase012/phase.md`） を作った）。依存は表では p017 | 3.1 の順番 1 |
 | p018（L3 10 倍） | planned、保留（「今のまま」） | ユーザーが再開を言うまで触らない |
-| p013（規約と回帰） | planned（2026-10-01 に [phase013](phase013/phase.md) を作った） | 3.1 の順番 2 |
+| p013（規約と回帰） | planned（2026-10-01 に phase013（fb1f6afee の `plan/ws101/phase013/phase.md`） を作った） | 3.1 の順番 2 |
 
 ### bug・Future Work
 
@@ -111,8 +111,8 @@ accel の前の物で、`rootfs/usr/share/gpudemo` も無い（`bin/noct` だけ
 
 | 順 | Phase | 目的 | 依存 | 完了の条件 |
 | --- | --- | --- | --- | --- |
-| 1 | [ws101-p012](phase012/phase.md)（の S13 の部分。3.2 の提案 C で分けるなら p019） | 素の 5330 の demo の image で S13 が通る（G4）、GPU が固まった時の回復の手順を台本に書く、G1 の vkcs を素の機械で（可能なら） | demo の image（main の build）、ユーザーの起動 | phase012 の「完了の条件」 |
-| 2 | [ws101-p013](phase013/phase.md) | WS101 の全ての変更の規約の全文との照合と回帰 | p002〜p017 の code。**新規実装の期間（〜10/10）の後半に** | phase013 の「完了の条件」 |
+| 1 | ws101-p012（fb1f6afee の `plan/ws101/phase012/phase.md`）（の S13 の部分。3.2 の提案 C で分けるなら p019） | 素の 5330 の demo の image で S13 が通る（G4）、GPU が固まった時の回復の手順を台本に書く、G1 の vkcs を素の機械で（可能なら） | demo の image（main の build）、ユーザーの起動 | phase012 の「完了の条件」 |
+| 2 | ws101-p013（fb1f6afee の `plan/ws101/phase013/phase.md`） | WS101 の全ての変更の規約の全文との照合と回帰 | p002〜p017 の code。**新規実装の期間（〜10/10）の後半に** | phase013 の「完了の条件」 |
 | 保留 | p018（10 倍）、p017 の続き | ユーザーの「今のまま」 | ユーザーの再開の指示 | — |
 
 ### 3.2 提案（main の承認が要る。ID は次の番号）
@@ -123,7 +123,7 @@ accel の前の物で、`rootfs/usr/share/gpudemo` も無い（`bin/noct` だけ
 | B | ws101-p020 | 試験の script の path と `NOCT` の衝突を直す: 既定の noct を repo の相対の `build/demo-lcd9/bin/noct`、fonts を `build/ws035-fonts`、wallpaper を `build/ws035-wallpaper/wallpaper-1080.ppm` に。環境変数の名前を `S13_NOCT`（build-s13-image.sh）・`G3_NOCT`（g3-hw.sh）・`NOCT` のまま（g3-venus.sh・time-split.sh は make を呼ばない）に | `plan/ws101/tests/hw/g3-hw.sh`・`gles-hw.sh`・`demo/build-s13-image.sh`・`noct/g3-venus.sh`（WS101 の plan の中だけ。source は触らない） | `bash -n` の 4 本が 0、`grep -rn zedBSD-rpi4 plan/ws101/tests` が 0 件、`G3_HW_BUILD_ONLY=1 BUILD=build/<W>-g3 plan/ws101/tests/hw/g3-hw.sh build/<W>/g3`（image の build だけ）が `g3-hw: built` を出す |
 | C | ws101-p019 | p012 から「素の 5330 で S13（G4）と回復の手順」だけを分ける（デモ critical。vkcs の素の機械の run は p012 に残す。素の機械で試験の kernel を起こす方法が未知のため、下の 4 章） | `plan/ws101/phase019/phase.md`、記録だけ（source は触らない） | 素の 5330 の Terminal の画面（写真）に「The results are the same on the CPU and the GPU.」、3 回続けて通る、回復の手順が台本の形で phase.md にある |
 
-p019 を採るなら、[phase012](phase012/phase.md) の手順の A を p019 へ移し、p012 は B だけにする。
+p019 を採るなら、phase012（fb1f6afee の `plan/ws101/phase012/phase.md`） の手順の A を p019 へ移し、p012 は B だけにする。
 
 ## 4. 未知と調べ方
 

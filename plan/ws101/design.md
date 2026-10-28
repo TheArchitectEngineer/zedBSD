@@ -3,7 +3,7 @@
 # WS101 の設計: GPU の compute（i915 の Vulkan の compute、GLES 3.1 の compute、Noct の自動並列化）
 
 Parent: [WS101](ws.md)。作成: ws101-p001（2026-09-30、サブエージェント）。見直しと敵対的レビュー（design-reviewer）の結果は
-[phase001](phase001/phase.md)。第 2 版（レビューの指摘 H1〜H4・M1〜M14・L1〜L9 を反映）。
+phase001（fb1f6afee の `plan/ws101/phase001/phase.md`）。第 2 版（レビューの指摘 H1〜H4・M1〜M14・L1〜L9 を反映）。
 
 この文書は設計であり、実行の許可ではない。各 Phase は Queue に入ってから実行する。値（bit の位置・message の型）は Mesa 25.0.7
 （`/home/awe/p014-c/mesa`、既存の `intel/eu-encoding-gen12.h` が引く版と同じ）と genxml（gen120 → gen110 → gen90 → gen80 → gen75 → gen70 →

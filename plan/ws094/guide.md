@@ -26,7 +26,7 @@ QEMU・実機・image の build は流していない（未確認）。
 | W2 | double click で WS093 の対応の app が開く、folder は新しい Files の窓 | 済み（p004） |
 | W3 | 右 click の menu・名前の変更・Trash・Copy・Paste・New Folder・Show in Files | 済み（p005） |
 | W4 | 移動と保存、Files の窓との DnD、touch の double tap と long press | 済み（p006） |
-| W5 | 段 L3〜L5 のうち main が選んだ段の Phase（ws.md「段」） | L3 は p008・p013 cleared、p009 uncleared（合否は実機、下の §2.2）。L4a p010 cleared。L4b p011 は q582でcleared（2026-10-02、[結果](phase011/q582-result.md)）、L5 p012 は planned |
+| W5 | 段 L3〜L5 のうち main が選んだ段の Phase（ws.md「段」） | L3 は p008・p013 cleared、p009 uncleared（合否は実機、下の §2.2）。L4a p010 cleared。L4b p011 は q582でcleared（2026-10-02、結果（fb1f6afee の `plan/ws094/phase011/q582-result.md`））、L5 p012 は planned |
 | W6 | 全文の規約と回帰（p007、code を作る WS の最後の Phase。Awesome Plan §6） | planned |
 
 **完了の定義**: W1〜W4 は済み。残りは「main が選んだ最後の段の Phase」と p007 が cleared になること。このあと ws.md を完了の形に書き直し、
@@ -49,14 +49,14 @@ master の Tools 節に登録する（AGENTS.md「記録の置き場所」。mas
 | Phase | 結果 | 証拠 |
 | --- | --- | --- |
 | p001 | 設計（J1〜J7 は既定: Files が背景の層の client） | [design.md](design.md) |
-| p002 | compositor の `keiland_desktop_v1`、probe | [phase002](phase002/phase.md)、`build/ws094-shots/p002/`（worktree） |
-| p003 | libkeiland の API、`files --desktop` | [phase003](phase003/phase.md) |
-| p004 | 選択・開く・keyboard・配置の保存・Clean Up | [phase004](phase004/phase.md) |
-| p005 | context menu・名前の変更・Trash・Copy・Paste・New Folder・Show in Files | [phase005](phase005/phase.md) |
-| p006 | drag・DnD・touch | [phase006](phase006/phase.md) |
-| p008 | L3 の計測の道具（`perf100`）と基準値 (a) 2908・(b) 1094・(c) 95 ms | [phase008](phase008/phase.md) |
-| p013 | jpg・gif の thumbnail（共有の decoder `userland/desktop/picture/`） | [phase013](phase013/phase.md) |
-| p010 | 長い名前の 2 行・画面の大きさの変更（統合の試験 `plan/ws079/tests/demo-s8-s9.sh` で合格扱い、ユーザーの指示） | [phase010](phase010/phase.md) |
+| p002 | compositor の `keiland_desktop_v1`、probe | phase002（fb1f6afee の `plan/ws094/phase002/phase.md`）、`build/ws094-shots/p002/`（worktree） |
+| p003 | libkeiland の API、`files --desktop` | phase003（fb1f6afee の `plan/ws094/phase003/phase.md`） |
+| p004 | 選択・開く・keyboard・配置の保存・Clean Up | phase004（fb1f6afee の `plan/ws094/phase004/phase.md`） |
+| p005 | context menu・名前の変更・Trash・Copy・Paste・New Folder・Show in Files | phase005（fb1f6afee の `plan/ws094/phase005/phase.md`） |
+| p006 | drag・DnD・touch | phase006（fb1f6afee の `plan/ws094/phase006/phase.md`） |
+| p008 | L3 の計測の道具（`perf100`）と基準値 (a) 2908・(b) 1094・(c) 95 ms | phase008（fb1f6afee の `plan/ws094/phase008/phase.md`） |
+| p013 | jpg・gif の thumbnail（共有の decoder `userland/desktop/picture/`） | phase013（fb1f6afee の `plan/ws094/phase013/phase.md`） |
+| p010 | 長い名前の 2 行・画面の大きさの変更（統合の試験 `plan/ws079/tests/demo-s8-s9.sh` で合格扱い、ユーザーの指示） | phase010（fb1f6afee の `plan/ws094/phase010/phase.md`） |
 
 2026-10-01 に main の checkout（fb1f3317）で流した host 試験: `host-desktop.sh` PASS（12 秒）、`host-thumb.sh` PASS（12 秒）、`plan/tools/files/host-model.sh` PASS。
 （`plan/ws104/phase007/phase.md` の survey は「host-desktop は font の確かめ 2 つで落ちる」と書くが、main の checkout では再現しなかった。WS104 の copy の tree の差と見られる。未確認。）
@@ -67,9 +67,9 @@ master の Tools 節に登録する（AGENTS.md「記録の置き場所」。mas
 | --- | --- |
 | p009（L3b） | uncleared。QEMU で (a) 1954・(c) 90 ms。残りは Files の外（zdesktop の buffer の import と QEMU の Venus の 1 回約 10 ms）。**Q1 の判断: 合否は実機（p012）で決める**。zdesktop の import の短縮は WS099 の p016 へ移した。Venus の 10 ms は Future Work の F-064 |
 | p010 の残り | Terminal を開く場面と ws035-p088 の切り分け、実機は未実施（phase010 の最後の節）。p007 の回帰で拾う |
-| p011（L4b） | cleared（2026-10-02、q582）。host/build/guest/boot PASS（[結果](phase011/q582-result.md)） |
-| p012（L5） | planned、実機とユーザーの時間が要る（[phase012](phase012/phase.md)） |
-| p007（規約と回帰） | planned（[phase007](phase007/phase.md)） |
+| p011（L4b） | cleared（2026-10-02、q582）。host/build/guest/boot PASS（結果（fb1f6afee の `plan/ws094/phase011/q582-result.md`）） |
+| p012（L5） | planned、実機とユーザーの時間が要る（phase012（fb1f6afee の `plan/ws094/phase012/phase.md`）） |
+| p007（規約と回帰） | planned（phase007（fb1f6afee の `plan/ws094/phase007/phase.md`）） |
 | p010 の L4 (b) の表の数値 | ws.md の段の表は「1920x1280」、p010 は 1920x1080 で試した。どちらでも規則は同じ（保存の場所が grid の中なら保つ） |
 
 ### 2.3 既知の bug
@@ -89,9 +89,9 @@ master の優先順位（2026-09-30 夜ユーザー）: WS099・WS079・WS090・
 
 | 順 | Phase | 目的 | 実行 | 受け入れ |
 | --- | --- | --- | --- | --- |
-| 済 | [ws094-p011](phase011/phase.md) | L4b: 溢れた項目の数の log と、無い名前の保存の行の掃除 | agent（phase-runner-mid） | host 試験の新しい確かめ、guest の `files-desktop-guest.sh … install show saved prune`（新しい手順）PASS |
-| 2 | [ws094-p012](phase012/phase.md) | L5: 5330 で L1 の手順と L3 の (a)(c) | ユーザーが 5330 を操作し、agent が SSH で log を読む | (a) ≤ 1500 ms・(c) ≤ 50 ms・SLOW-FRAME 0、L1 の操作が働く（写真） |
-| 3 | [ws094-p007](phase007/phase.md) | 全文の規約と回帰（WS の最後） | agent（phase-runner） | style-check 0（既存の例外を除く）、host・guest・C9・boot test PASS |
+| 済 | ws094-p011（fb1f6afee の `plan/ws094/phase011/phase.md`） | L4b: 溢れた項目の数の log と、無い名前の保存の行の掃除 | agent（phase-runner-mid） | host 試験の新しい確かめ、guest の `files-desktop-guest.sh … install show saved prune`（新しい手順）PASS |
+| 2 | ws094-p012（fb1f6afee の `plan/ws094/phase012/phase.md`） | L5: 5330 で L1 の手順と L3 の (a)(c) | ユーザーが 5330 を操作し、agent が SSH で log を読む | (a) ≤ 1500 ms・(c) ≤ 50 ms・SLOW-FRAME 0、L1 の操作が働く（写真） |
+| 3 | ws094-p007（fb1f6afee の `plan/ws094/phase007/phase.md`） | 全文の規約と回帰（WS の最後） | agent（phase-runner） | style-check 0（既存の例外を除く）、host・guest・C9・boot test PASS |
 | 4 | p009 の扱い | p012 の実機の値で (a)(c) が以内なら p009 を「実機で clear」の follow-up に、超えれば新しい Phase（実機の値を見て Files の command buffer の事前の記録、phase009「残り」の 3） | main の判断 | — |
 
 - p012 が実機の都合で 2026-10-10 までにできないときは、p007 を先に行い、p012 を WS の完了の条件から外す（Future Work か fg010 の実機の確認の一覧へ移す）かを

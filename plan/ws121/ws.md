@@ -3,33 +3,51 @@
 # WS121: Web ブラウザでのアクセラレーションつきのビデオ再生
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001・p002・p004〜p006 cleared（2026-10-07 T1-315: libmedia、`<video>`、JS の HTMLMediaElement、音と controls）。H.264 の hardware decode の土台は WS083（Vulkan Video）、native の再生は WS202 で main に統合）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.3）: **ベータ3**（browser と一緒、WS074）。p001 は cleared。残りの p003（Range）はベータ3。2026-10-08 q910 P2 の照合: p002・p004〜p006 clear…。残り・制限: p003（Range の loader）は後回しのまま（browser 本体は WS074 の Codex のセッション）
+Status: completed（2026-10-27 P3 の精査 q1608。p001・p002・p004〜p006 cleared（2026-10-07 T1-315: libmedia、`<video>`、JS の HTMLMediaElement、音と controls）。H.264 の hardware decode の土台は WS083（Vulkan Video）、native の再生は WS202 で main に統合）
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Objectives: O2
 Parent: [Master](../master.md)
-Focused goal: fg019（ベータ1。2026-10-05 Q1 records reconciliation: Master の工数の表で「ベータ2（2026-10-05 移動）」、段の表ではベータ3。どちらかは Q1 が Master で決める）
-Queue: q831（P2）
-Resume point: p002・p004〜p006 の T1（apps.browser.video）、p001 の U0〜U7 のユーザーの判断（既定で進めた）、p003（Range）。
-2026-10-02 user: 動画関連（WS083・WS121・WS122）は**別セッション**でユーザーがノウハウを提供しステップバイステップで進める。このセッション（Q1/P1〜P8）は割り当てない。ベータ1 では最悪 drop してもリリース可能とする（努力目標）。VA-API（WS123）は canceled、アプリが Vulkan Video を直接使う。ブラウザへの組み込み（WS121）は Codex 側と調整。（2026-10-05 に下の行で置き換え: 別セッション・Codex との調整の記述は履歴）
-2026-10-05 ユーザー: Codex の担当を外し、WS107・WS121 は Q1 が作業する（「WS107, WS121はあなたが作業します。」）。p001 の設計から。WS122 と同じく、まず dlopen の libavcodec の software decode で、GPU の decode（WS083 の Vulkan Video）は後で使う形を検討する。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 目標（2026-10-02 ユーザー（ベータ1、リリース目標 10/17））
+## 目標
 
-「Webブラウザでアクセラレーションつきのビデオ再生を可能にする。」
+2026-10-02 ユーザー（ベータ1、リリース目標 10/17）「Webブラウザでアクセラレーションつきのビデオ再生を可能にする。」
 
-- browser（~~WS074 は Codex が作業中~~ → 2026-10-05 から Q1 の担当）で `<video>` を Vulkan Video（WS083）を直接使う hardware decode で再生する。browser の source の所有と編集の順序は Codex の作業と調整が要る（ユーザーに確認）。2026-10-05 Q1 records reconciliation: Codex の担当は外れ、WS074・WS107・WS121 は Q1 が扱う（ユーザー）ので、この調整は不要になった。source は WS107 の配置（engine は `userland/desktop/libbrowser/`、shell は `userland/desktop/browser/`）で、`<video>` の対応は libbrowser の公開 API（`browser.h`）の変更を伴う見込み。WS074 のレンダリングの改善の停止は、WS121 の作業を止めない（ユーザーが WS121 を Q1 に割り当てた）。
+browser で `<video>` を再生する。decode は libmedia が持ち、Vulkan Video（WS083）の hardware decode を使える形にする。
 
-## Phase
+## ユーザーの決定
 
-| Phase | 目的 | Status | 依存 |
-| --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 要件・設計（software decode の `<video>`、libmedia、Range、JS の API、音） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: U0〜U7 は既定で進め、p002・p004〜p006 が実装・cleared。旧: in-progress（2026-10-05 夜、第 2 版、review 2 回目とユーザーの判断 U0〜U7 待ち）） | — |
-| [p002](phase002/phase.md) | libmedia（mediafile の source、engine、共有の library） | cleared（2026-10-07、T1-315） | p001（既定で） |
-| p003 | Range の loader と media-fetch（大きな remote の media） | planning（後に回した: 今は loader で全体を 64 MiB まで） | p002 |
-| [p004](phase004/phase.md) | `<video>` の DOM・layout・描画、autoplay muted | cleared（2026-10-07、T1-315） | p002 |
-| [p005](phase005/phase.md) | JS の HTMLMediaElement と event | cleared（2026-10-07、T1-315） | p004 |
-| [p006](phase006/phase.md) | 音と controls の帯、AAT | cleared（2026-10-07、T1-315） | p005 |
-| 最後 | 全文規約と回帰 | planning | 実装 Phase |
+- 2026-10-02: 動画関連（WS083・WS121・WS122）は別セッションでユーザーがノウハウを提供しステップバイステップで進める。ベータ1 では最悪 drop してもリリース可能（努力目標）。VA-API（WS123）は canceled、アプリが Vulkan Video を直接使う。
+- 2026-10-05「WS107, WS121はあなたが作業します。」→ Codex の担当を外し、Q1 の側で p001 の設計から。
+- p001 の判断 U0〜U7 は既定で進めた（2026-10-08 Q1 の判定）。
+- 2026-10-08「規約の整形（各 WS の全文規約の Phase）はベータ3」→ 最後の全文規約は WS の外の一括の見直しへ。
 
-2026-10-05 Q1 records reconciliation: 「このセッションは割り当てない」「Codex 側と調整」は 2026-10-05 のユーザーの指示で置き換わった（上の Status の block の 2 行目）。Master の「動画（別セッション）」「別セッション（ユーザー） WS083 → WS122 → WS121」の行と段（ベータ1・2・3）の不一致は Q1 に直しを提案した。Status は planning のまま、Queue なし。
+## 結果
+
+- libmedia（mediafile の source、engine、共有の library、p002）、`<video>` の DOM・layout・描画と autoplay muted（p004）、JS の HTMLMediaElement と event（p005）、音と controls の帯・AAT（p006）が main にある。
+- 証拠: T1-315 の AAT browser.video（`MEDIA play position_ms=0`・`pause position_ms=5083`）と playing の PNG（QEMU）。
+- libmedia の Vulkan Video の decoder（`vkvideo.c`）は WS083・WS202 の成果。
+
+## 制限・移管
+
+- p003（Range の loader と media-fetch、大きな remote の media）は着手せず。今は loader で全体を 64 MiB まで。browser 本体は WS074。
+- 全文規約と回帰は WS の外の一括の見直しへ。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws121-p001 | 要件・設計（`<video>`、libmedia、Range、JS の API、音） | cleared（2026-10-08 Q1 の判定、U0〜U7 は既定） |
+| ws121-p002 | libmedia | cleared（2026-10-07、T1-315） |
+| ws121-p003 | Range の loader と media-fetch | 着手せず（Phase の directory なし） |
+| ws121-p004 | `<video>` の DOM・layout・描画 | cleared（2026-10-07、T1-315） |
+| ws121-p005 | JS の HTMLMediaElement と event | cleared（2026-10-07、T1-315） |
+| ws121-p006 | 音と controls の帯、AAT | cleared（2026-10-07、T1-315） |
+| （最後） | 全文規約と回帰 | WS の外の一括の見直しへ |
+
+## 記録の所在
+
+Phase の計画・結果・試験（`phaseNNN/`・`tests/`）は削除する（Q1 の pipeline）。git の commit `fb1f6afee` の `plan/ws121/` にある。Queue の履歴は [plan/history](../history/index.md)。
