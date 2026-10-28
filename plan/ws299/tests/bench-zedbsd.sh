@@ -18,8 +18,9 @@
 #        boot) in 1 MiB requests and synced, read back in 1 MiB and 4 MiB requests, P7_MIB MiB of the data region
 #        read in 1 MiB requests, and random 4 KiB reads at depth 1 and 32 (randread direct, one description and
 #        one per thread).
-# qdprobe: where depth 32 stops: random 4 KiB reads at depth 32 as threads and as processes, direct and through
-#        the cache, without the clock in the loop, and getppid() alone at depth 32 (threads and processes).
+# qdprobe: where depth 32 stops: random 4 KiB reads at depth 1 and 32, threads and processes, direct and through
+#        the cache, without the clock in the loop, and getpid() alone; after each run the kernel's last "exp:" and
+#        nvme latency lines (a measurement kernel prints "exp:").
 # Every timed step prints "step NAME bytes=N" and the /bin/time lines (real/user/sys); the summary is made on the
 # build host (summary.py).  The only file removed is WFILE_NEW, inside zedBSD, before it is written again.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -216,10 +217,13 @@ p7direct)
 	snap rand-direct
 	;;
 qdprobe)
-	for how in "direct" "direct procs" "direct notime" "direct procs notime" "notime" "procs notime" \
-	    "nullcall notime" "nullcall procs notime"; do
-		echo "step qd32-$(echo "$how" | tr ' ' '-') bytes=0"
-		"$RANDREAD" $DEV 4096 32 "$RAND_SECONDS" "$R0_MIB" "$R_MIB" $how
+	for run in "1 direct notime" "32 direct notime" "32 direct procs notime" "1 notime" "32 notime" "32 procs notime" \
+	    "1 nullcall notime" "32 nullcall notime" "32 nullcall procs notime"; do
+		depth=${run%% *}
+		how=${run#* }
+		echo "step qd$depth-$(echo "$how" | tr ' ' '-') bytes=0"
+		"$RANDREAD" $DEV 4096 "$depth" "$RAND_SECONDS" "$R0_MIB" "$R_MIB" $how
+		dmesg | grep -E '^exp:|^nvme: [0-9]+ commands' | tail -4
 	done
 	snap qdprobe
 	;;
