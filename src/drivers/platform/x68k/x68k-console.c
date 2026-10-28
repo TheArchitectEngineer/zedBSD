@@ -12,6 +12,11 @@
  * draws it on the text screen.  A positioned write has no teletype meaning
  * and is dropped; the grid only answers the size and cursor queries that
  * programs make.  The console has no input yet.
+ *
+ * Once a GPU has flipped its first image the console leaves the text
+ * screen for good: the kernel takes the character path over from the
+ * hardware layer and drops every character, which then only the kernel's
+ * log keeps, since the board has no other output.
  */
 
 #include <stdint.h>
@@ -21,6 +26,7 @@
 #include <hal/hal.h>
 
 #include <kern/text-display.h>
+#include <uapi/errno.h>
 
 /* The grid the console reports, the HAL's text screen's. */
 #define X68K_CONSOLE_COLUMNS	96U
@@ -34,6 +40,8 @@ static int console_set_cursor(unsigned row, unsigned column);
 static void console_get_cursor(unsigned *row, unsigned *column, int *visible);
 static void console_show_cursor(int visible);
 static void console_nothing(void);
+static int console_end(const struct kern_text_range *ranges, unsigned count);
+static void console_discard(int character);
 
 /*
  * The console's text operations, registered once at start-up and never
@@ -50,7 +58,8 @@ static const struct kern_text_ops x68k_console_ops = {
 	.show_cursor = console_show_cursor,
 	.update_cursor = console_nothing,
 	.suspend = console_nothing,
-	.resume = console_nothing
+	.resume = console_nothing,
+	.end = console_end
 };
 
 /*
@@ -160,4 +169,48 @@ static void
 console_nothing(
 	void)
 {
+}
+
+/*
+ * Ends the console's use of the text screen for good: a character path
+ * that drops every character is published as the kernel's, so the
+ * hardware layer hands each character to it and never draws again.
+ * Nothing is left behind (the hardware layer reaches the text screen by
+ * its physical address), so this returns 0; EBUSY with ranges when
+ * another character path was published already, since what it draws is
+ * not known.
+ */
+static int
+console_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	void (*published)(int);
+	int foreign;
+
+	(void)ranges;
+
+	/* The hardware layer hands every later character to the dropping path. */
+	foreign = 0;
+	published = __atomic_load_n(&kernel_putc, __ATOMIC_ACQUIRE);
+	if (published == NULL) {
+		__atomic_store_n(&kernel_putc, console_discard, __ATOMIC_RELEASE);
+	} else if (published != console_discard) {
+		foreign = 1;
+	}
+
+	/* Another path than this one may still draw anywhere the caller gives. */
+	if (foreign && count != 0U)
+		return EBUSY;
+
+	/* Succeeded: nothing of the console draws on the screen. */
+	return 0;
+}
+
+/* Drops one character of the kernel's own path; the kernel's log keeps it. */
+static void
+console_discard(
+	int character)
+{
+	(void)character;
 }

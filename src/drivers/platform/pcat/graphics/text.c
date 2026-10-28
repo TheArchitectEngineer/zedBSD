@@ -35,14 +35,18 @@
 #include "text.h"
 #include "../serial-mirror.h"
 
+#ifdef KERN_TEST_TEXT_END_SECONDS
+#include <kern/platform.h>
+#endif
+
 #define TEXT_GLYPH_WIDTH	8U
 #define TEXT_GLYPH_HEIGHT	16U
 
 /*
  * How often the splash's spinner is looked at while no line comes, and how
- * many times at most (two minutes; milliseconds, ws035-p107).  The spinner
- * keeps its own time and draws only when a step has passed (BUG-193), so a
- * look much shorter than its step only keeps the turns even.
+ * many times at most (two minutes; milliseconds).  The spinner keeps its
+ * own time and draws only when a step has passed, so a look much shorter
+ * than its step only keeps the turns even.
  */
 #define TEXT_SPLASH_TICK_MS	25U
 #define TEXT_SPLASH_TICKS_MAX	4800U
@@ -51,7 +55,7 @@
 #define TEXT_MAX_COLUMNS	240U
 #define TEXT_MAX_ROWS		68U
 
-/* How many times a fatal stop tries text_lock before it draws without it (BUG-158). */
+/* How many times a fatal stop tries text_lock before it draws without it. */
 #define TEXT_FATAL_LOCK_SPINS	50000000U
 
 /* The legacy aperture, and text memory's offset and geometry inside it. */
@@ -94,7 +98,7 @@ static enum text_surface text_surface;
 static volatile uint16_t *text_vram;
 
 /*
- * A quiet console (the boot parameter kmsg=quiet, ws035-p097): the cells
+ * A quiet console (the boot parameter kmsg=quiet): the cells
  * are kept but not drawn, so the boot logo stays on the screen, until the
  * console is revealed (a reader on it, a diagnostic that bypasses the log).
  * The framebuffer's height is kept to clear the logo then.  Protected by
@@ -105,10 +109,34 @@ static unsigned text_framebuffer_height;
 
 /*
  * Whether the splash's spinner has ended for good (a display was taken
- * for graphics, ws035-p107): it is not drawn again, by a log record or by
- * its ticker.  Protected by text_lock.
+ * for graphics): it is not drawn again, by a log record or by its ticker.
+ * Protected by text_lock.
  */
 static int text_splash_ended;
+
+/*
+ * Whether the console has left the display for good (a GPU flipped its
+ * first image there): nothing is drawn on the surface again, by a write,
+ * a resume, a reveal or a fatal stop, while the cells keep following the
+ * characters.  Set once under text_lock and read atomically, also by a
+ * fatal stop that draws without the lock.
+ */
+static int text_ended;
+
+#ifdef KERN_TEST_TEXT_END_SECONDS
+/*
+ * The console's own end, KERN_TEST_TEXT_END_SECONDS after the layer is up:
+ * what kern_text_end() returned (text_end_test_result), and 1 once it has
+ * returned (text_end_test_done).  Written once, by the thread that asks.
+ * Nothing in the kernel reads them; they are volatile so that both stores
+ * and both symbols stay in the image for a debugger.
+ */
+static volatile int text_end_test_result;
+static volatile int text_end_test_done;
+
+/* Whether the thread that ends the console was started; written by the layer's set-up only. */
+static int text_end_test_started;
+#endif
 
 /* The standard VGA palette the attribute byte indexes. */
 static const uint32_t text_palette[16] = {
@@ -127,6 +155,11 @@ static int vga_text_attach_locked(void);
 static void vga_cursor_locked(void);
 static void text_splash_ticker(void *argument);
 static void text_splash_ticker_start(void);
+static int cells_live_locked(void);
+#ifdef KERN_TEST_TEXT_END_SECONDS
+static void text_end_test_start(void);
+static void text_end_test(void *argument);
+#endif
 
 /*
  * Renders retained text cells into an independent RAM image without reading display memory.
@@ -186,7 +219,7 @@ drv_pcat_text_snapshot(
 	}
 
 	/*
-	 * A quiet console shows none of its text (ws035-p101): its image is
+	 * A quiet console shows none of its text: its image is
 	 * black, so a display given back to the console between two graphical
 	 * owners (the greeter and the session) stays dark until it is revealed.
 	 */
@@ -407,11 +440,11 @@ putc_locked(
 	 */
 	drv_pcat_serial_mirror(character);
 
-	/* Ignores output before the framebuffer is published. */
-	if (!text_ready)
+	/* Ignores output before the framebuffer is published (an ended console keeps its cells). */
+	if (!cells_live_locked())
 		return;
 
-	/* A line nobody sees on a quiet boot turns the splash's spinner (ws035-p107). */
+	/* A line nobody sees on a quiet boot turns the splash's spinner. */
 	if (text_hidden && character == '\n')
 		drv_pcat_splash_step();
 
@@ -473,7 +506,8 @@ static const struct kern_text_ops pcat_text_ops = {
 	.snapshot = drv_pcat_text_snapshot,
 	.reveal = drv_pcat_text_reveal,
 	.reveal_fatal = drv_pcat_text_reveal_fatal,
-	.progress = drv_pcat_text_progress
+	.progress = drv_pcat_text_progress,
+	.end = drv_pcat_text_end
 };
 
 /*
@@ -552,6 +586,11 @@ drv_pcat_text_init(
 	/* On a quiet boot the splash's spinner also turns by itself, so a long wait does not look stopped. */
 	if (text_hidden)
 		text_splash_ticker_start();
+
+#ifdef KERN_TEST_TEXT_END_SECONDS
+	/* The console ends itself after the configured wait. */
+	text_end_test_start();
+#endif
 }
 
 /*
@@ -681,7 +720,7 @@ drv_pcat_text_write(
 	if (utf8 == NULL)
 		return;
 	irq = spin_lock_irqsave(&text_lock);
-	if (text_ready && row < text_rows) {
+	if (cells_live_locked() && row < text_rows) {
 		/* Stores and paints each byte until the row ends. */
 		for (index = column;
 		     index < text_columns && *utf8 != '\0';
@@ -708,7 +747,7 @@ drv_pcat_text_clear(
 	irq = spin_lock_irqsave(&text_lock);
 
 	/* Empties every cell with the default attribute. */
-	if (text_ready) {
+	if (cells_live_locked()) {
 		for (index = 0; index < text_rows * text_columns; index++) {
 			text_cells[index] =
 			    (uint16_t)(0x0700U | (uint16_t)' ');
@@ -734,7 +773,7 @@ drv_pcat_text_set_cursor(
 	irq = spin_lock_irqsave(&text_lock);
 
 	/* Rejects a position outside the live grid. */
-	if (!text_ready || row >= text_rows || column >= text_columns) {
+	if (!cells_live_locked() || row >= text_rows || column >= text_columns) {
 		error = -1;
 	} else {
 		/* Repaints the cell the cursor is leaving. */
@@ -836,9 +875,9 @@ drv_pcat_text_resume(
 {
 	unsigned long irq;
 
-	/* Resumes only when a surface is still attached. */
+	/* Resumes only when a surface is still attached and the console has not left it. */
 	irq = spin_lock_irqsave(&text_lock);
-	if (text_surface != TEXT_SURFACE_NONE && text_columns != 0 &&
+	if (!text_ended && text_surface != TEXT_SURFACE_NONE && text_columns != 0 &&
 	    text_rows != 0) {
 		text_ready = 1;
 		redraw_locked();
@@ -851,7 +890,7 @@ drv_pcat_text_resume(
 
 /*
  * Turns the splash's spinner while the console is kept off the screen: a
- * log record went nowhere else (ws035-p107); or stops it for good, a
+ * log record went nowhere else; or stops it for good, a
  * display having been taken for graphics.
  */
 void
@@ -922,7 +961,7 @@ drv_pcat_text_reveal(
 }
 
 /*
- * Shows the console for a fatal stop (BUG-158).
+ * Shows the console for a fatal stop.
  *
  * A graphics mode suspended the text (text_ready 0) and draws over the same
  * framebuffer, so the ordinary reveal draws nothing there and a panic looked
@@ -963,6 +1002,14 @@ drv_pcat_text_reveal_fatal(
 	text_hidden = 0;
 	drv_pcat_splash_stop();
 
+	/* A console that left the display draws nothing there; the stop goes to the serial line and the log. */
+	if (__atomic_load_n(&text_ended, __ATOMIC_ACQUIRE) != 0) {
+		/* Gives the lock back when it was taken. */
+		if (locked)
+			spin_unlock(&text_lock);
+		return;
+	}
+
 	/* A surface that is still attached is drawn to again, whoever suspended it. */
 	if (text_surface != TEXT_SURFACE_NONE && text_columns != 0 &&
 	    text_rows != 0)
@@ -988,6 +1035,75 @@ drv_pcat_text_reveal_fatal(
 
 	/* Succeeded: the retained text is on the screen. */
 	return;
+}
+
+/*
+ * Ends the console's use of the display for good: it stops drawing on its
+ * surface (and the splash with it), keeps its cells following the
+ * characters (which the serial mirror still carries), takes the kernel's
+ * character path over from the HAL's early console if it had not yet, and
+ * has /dev/graphics and its backend give up the display and their
+ * mappings.  Returns what /dev/graphics returns, or EBUSY when a writer
+ * this layer cannot stop, or the legacy text memory it keeps, lies in the
+ * ranges.  Thread context, no lock held.
+ */
+int
+drv_pcat_text_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	void (*published)(int);
+	unsigned long irq;
+	int foreign;
+	int error;
+
+	/* Serializes the end with every other text operation. */
+	irq = spin_lock_irqsave(&text_lock);
+
+	/* The first end stops the surface; a later one finds it stopped. */
+	if (!text_ended) {
+		/* Hides the hardware cursor of text memory, as a suspend does. */
+		if (text_surface == TEXT_SURFACE_VGA_TEXT && text_ready) {
+			kern_io_out8(TEXT_VGA_CRTC_INDEX, TEXT_VGA_CURSOR_START);
+			kern_io_out8(TEXT_VGA_CRTC_DATA, TEXT_VGA_CURSOR_OFF);
+		}
+
+		/* Nothing draws on the surface from now on; the cells go on (a fatal stop reads the mark unlocked). */
+		__atomic_store_n(&text_ended, 1, __ATOMIC_RELEASE);
+		text_ready = 0;
+
+		/* The splash and its spinner stop for good. */
+		text_splash_ended = 1;
+		drv_pcat_splash_stop();
+	}
+
+	spin_unlock_irqrestore(&text_lock, irq);
+
+	/* The kernel's characters come here, not to the HAL's early console, from now on. */
+	foreign = 0;
+	published = __atomic_load_n(&kernel_putc, __ATOMIC_ACQUIRE);
+	if (published == NULL) {
+		__atomic_store_n(&kernel_putc, kern_text_kernel_putc, __ATOMIC_RELEASE);
+	} else if (published != kern_text_kernel_putc) {
+		foreign = 1;
+	}
+
+	/* /dev/graphics and the backend give the display and their mappings up. */
+	error = drv_pcat_graphics_end(ranges, count);
+	if (error != 0)
+		return error;
+
+	/* Another character path may still draw somewhere on the display: any memory the caller gives may be under it. */
+	if (foreign && count != 0U)
+		return EBUSY;
+
+	/* Text memory's legacy aperture lies in a window that stays mapped. */
+	if (text_surface == TEXT_SURFACE_VGA_TEXT &&
+	    kern_text_range_overlaps(ranges, count, TEXT_VGA_APERTURE, TEXT_VGA_APERTURE_SIZE))
+		return EBUSY;
+
+	/* Succeeded: nothing of the text layer draws on the display or keeps memory in the ranges. */
+	return 0;
 }
 
 /* Starts the thread that turns the splash's spinner by itself; without it the spinner turns with the log only. */
@@ -1045,6 +1161,71 @@ text_splash_ticker(
 	}
 }
 
+#ifdef KERN_TEST_TEXT_END_SECONDS
+/* Starts, once a boot, the thread that ends the console after the configured wait. */
+static void
+text_end_test_start(
+	void)
+{
+	struct thread *thread;
+	int error;
+
+	/* Only the first set-up of the layer starts it. */
+	if (text_end_test_started)
+		return;
+	text_end_test_started = 1;
+
+	/* The thread, at the default priority. */
+	error = kthread_create(text_end_test, NULL, SCHED_PRIORITY_DEFAULT, &thread);
+	if (error != 0) {
+		kern_logf("text: the timed end did not start (%d)\n", error);
+		return;
+	}
+
+	/* Lets it run. */
+	thread_start(thread);
+}
+
+/*
+ * Waits KERN_TEST_TEXT_END_SECONDS, then ends the console's use of the
+ * display once, with the boot framebuffer's range (no range without one),
+ * and keeps the result.
+ */
+static void
+text_end_test(
+	void *argument)
+{
+	struct kern_boot_framebuffer framebuffer;
+	struct kern_text_range range;
+	uint64_t deadline;
+	int error;
+
+	(void)argument;
+
+	/* The wait, whole even if the sleep comes back early. */
+	deadline = sched_ticks() + kern_ms_to_ticks((uint64_t)KERN_TEST_TEXT_END_SECONDS * 1000U);
+	while (sched_ticks() < deadline)
+		sched_sleep(deadline);
+
+	/* The framebuffer the boot handed over, if there is one. */
+	error = kern_boot_framebuffer("pcat.framebuffer", &framebuffer);
+	if (error == 0 && framebuffer.size != 0U) {
+		/* Ends over the framebuffer's range. */
+		range.physical = framebuffer.physical_base;
+		range.bytes = framebuffer.size;
+		error = kern_text_end(&range, 1U);
+	} else {
+		/* Ends with no range to judge. */
+		error = kern_text_end(NULL, 0U);
+	}
+
+	/* The result, then the mark that it is there. */
+	text_end_test_result = error;
+	__atomic_store_n(&text_end_test_done, 1, __ATOMIC_RELEASE);
+	kern_logf("text: the timed end returned %d\n", error);
+}
+#endif
+
 /*
  * Has the console draw through another mapping of the framebuffer (to for
  * from), and the spinner too, under the console's lock.
@@ -1065,4 +1246,25 @@ drv_pcat_text_retarget(
 
 	/* Other writers see the new mapping. */
 	spin_unlock_irqrestore(&text_lock, irq);
+}
+
+/*
+ * Reports whether a write changes the cells: the surface draws them, or
+ * the console left the display and its cells keep following the
+ * characters.  The caller holds text_lock.
+ */
+static int
+cells_live_locked(
+	void)
+{
+	/* A drawing surface takes every write. */
+	if (text_ready)
+		return 1;
+
+	/* An ended console with a grid keeps its cells. */
+	if (text_ended && text_surface != TEXT_SURFACE_NONE && text_columns != 0U && text_rows != 0U)
+		return 1;
+
+	/* A suspended console, or one without a grid, ignores writes. */
+	return 0;
 }

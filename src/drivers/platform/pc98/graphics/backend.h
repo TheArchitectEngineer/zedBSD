@@ -48,4 +48,15 @@ int drv_pc98_graphics_backend_flush(const struct graphics_rect *, size_t);
 int drv_pc98_graphics_backend_get_glyph(uint32_t, uint8_t[32], unsigned *,
 					unsigned *);
 
+struct kern_text_range;
+
+/*
+ * Ends the console's use of the display for good: /dev/graphics refuses
+ * every request from now on and the backend removes its mappings
+ * (drv_pc98_graphics_end, in pc98-graphics.c); the backend's own part,
+ * under the graphics lock (drv_pc98_graphics_backend_end).
+ */
+int drv_pc98_graphics_end(const struct kern_text_range *ranges, unsigned count);
+int drv_pc98_graphics_backend_end(const struct kern_text_range *ranges, unsigned count);
+
 #endif

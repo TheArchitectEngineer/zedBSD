@@ -33,6 +33,7 @@
 #include "kern/poll.h"
 #include "kern/sched.h"
 #include "kern/waitq.h"
+#include "uapi/errno.h"
 #include "ghci-model.h"
 #include "ghci-stubs.h"
 
@@ -69,6 +70,7 @@ stub_reset(void)
 	quiet = stub.quiet;
 	memset(&stub, 0, sizeof(stub));
 	stub.quiet = quiet;
+	stub.text_end_result = ENOTSUP;
 }
 
 /*
@@ -432,6 +434,38 @@ kern_logf(
 	printf("  log: ");
 	vprintf(format, arguments);
 	va_end(arguments);
+}
+
+/*
+ * The console's leaving of the display: counts the call, the locks held at
+ * it, keeps the ranges, runs the test's hook and gives the test's result.
+ */
+int
+kern_text_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	unsigned index;
+
+	/* The call, made with no lock held. */
+	stub.text_end_calls++;
+	if (stub.held_count != 0U) {
+		stub.text_end_held++;
+		if (!stub.quiet)
+			printf("FAIL kern_text_end called holding %s\n", stub.held[0]);
+	}
+
+	/* The ranges, as many as fit. */
+	stub.text_end_count = count;
+	for (index = 0U; index < count && index < KERN_TEXT_END_RANGES; index++)
+		stub.text_end_ranges[index] = ranges[index];
+
+	/* What the test does meanwhile. */
+	if (stub.text_end_hook != NULL)
+		stub.text_end_hook(stub.text_end_argument);
+
+	/* The test's result. */
+	return stub.text_end_result;
 }
 
 /* The kernel's heap is the host's. */

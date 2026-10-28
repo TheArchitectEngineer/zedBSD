@@ -15,9 +15,12 @@
  * kernel's console (kernel_putc), so the HAL stops touching the display
  * and the kernel's own records and the terminal share one cursor.  The
  * grid stops being drawn while /dev/graphics owns the screen and is drawn
- * again, over a cleared screen, when it is given back.  Without a
- * framebuffer each character goes to hal_putc() as before.  A positioned
- * write has no teletype meaning and is dropped.
+ * again, over a cleared screen, when it is given back.  Once a GPU shows
+ * its own image the console leaves the screen for good: the grid is never
+ * drawn again and the framebuffer's mapping is given back, while the
+ * characters still reach the serial port.  Without a framebuffer each
+ * character goes to hal_putc() as before.  A positioned write has no
+ * teletype meaning and is dropped.
  *
  * Input is read from the serial port, a 16550, by a kernel thread that
  * looks at it every few milliseconds, so the console needs no interrupt
@@ -34,10 +37,12 @@
 
 #include <kern/clock.h>
 #include <kern/device-io.h>
+#include <kern/graphics-backend.h>
 #include <kern/sched.h>
 #include <kern/text-display.h>
 #include <kern/thread.h>
 #include <kern/tty.h>
+#include <uapi/errno.h>
 
 /*
  * The 16550's receive buffer and line status registers, and the bit that
@@ -95,6 +100,7 @@ static void console_input_worker(void *argument);
 static void console_reveal_fatal(void);
 static void console_suspend(void);
 static void console_resume(void);
+static int console_end(const struct kern_text_range *ranges, unsigned count);
 static void console_kernel_putc(int character);
 static void serial_write(int character);
 static unsigned long screen_enter(int *owned);
@@ -108,8 +114,8 @@ static void screen_repaint(void);
 /*
  * The console's text operations, registered once at start-up and never
  * changed.  Everything but a character goes nowhere, because the console
- * is a teletype; suspend, resume and reveal_fatal matter only when the
- * console draws the framebuffer.
+ * is a teletype; suspend, resume, reveal_fatal and end matter only when
+ * the console or the hardware layer draws the screen.
  */
 static const struct kern_text_ops sun4u_console_ops = {
 	.get_size = console_get_size,
@@ -122,7 +128,8 @@ static const struct kern_text_ops sun4u_console_ops = {
 	.update_cursor = console_nothing,
 	.suspend = console_suspend,
 	.resume = console_resume,
-	.reveal_fatal = console_reveal_fatal
+	.reveal_fatal = console_reveal_fatal,
+	.end = console_end
 };
 
 /*
@@ -163,6 +170,15 @@ static uint16_t screen_drawn[SUN4U_CONSOLE_MAX_ROWS][SUN4U_CONSOLE_COLUMNS];
  * without it).
  */
 static int screen_suspended;
+
+/*
+ * Whether the console has left the screen for good (a GPU shows its own
+ * image there): screen_suspended stays set, so neither a write, a resume
+ * nor a fatal stop's reveal draws again, while the grid keeps following
+ * the characters.  Set once inside screen_enter() with a release, and read
+ * inside it, or by a fatal stop's reveal with an acquire.
+ */
+static int screen_ended;
 
 /*
  * Set while a writer changes the grid.  A writer that finds it set is the
@@ -433,8 +449,15 @@ static void
 console_reveal_fatal(
 	void)
 {
+	int ended;
+
 	/* Nothing to show without the framebuffer: the serial port has it all. */
 	if (!screen_on)
+		return;
+
+	/* Nothing is shown once the console has left the screen: it is the GPU's. */
+	ended = __atomic_load_n(&screen_ended, __ATOMIC_ACQUIRE);
+	if (ended)
 		return;
 
 	/* Takes the screen back and draws the grid over a cleared screen. */
@@ -474,13 +497,95 @@ console_resume(
 	if (!screen_on)
 		return;
 
-	/* Gives the screen back to the grid and repaints all of it. */
+	/* Gives the screen back to the grid and repaints all of it, unless the console has left it. */
 	enabled = screen_enter(&owned);
 
-	screen_suspended = 0;
-	screen_repaint();
+	if (!screen_ended) {
+		screen_suspended = 0;
+		screen_repaint();
+	}
 
 	screen_leave(enabled, owned);
+}
+
+/*
+ * Ends the console's use of the screen for good: the grid is never drawn
+ * again (it still follows the characters, which still reach the serial
+ * port), the kernel's characters are taken over from the hardware layer's
+ * early console if they were not yet, and /dev/graphics and the firmware
+ * framebuffer give the screen and their mappings up.  Returns the first
+ * error they return, or EBUSY when another character path, which may draw
+ * anywhere on the screen, was published and the caller gives memory back.
+ * Thread context, no lock held.
+ */
+static int
+console_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	const uint64_t *port;
+	void (*published)(int);
+	unsigned long enabled;
+	int owned;
+	int foreign;
+	int graphics_error;
+	int framebuffer_error;
+
+	/* Finds the serial port, which a console that never drew the screen has not looked up. */
+	port = hal_get_arch_handoff("sun4u.serial.port");
+
+	/*
+	 * Stops drawing the grid for good, apart from any writer: once this
+	 * section is left no writer is drawing, and none draws again.
+	 */
+	enabled = screen_enter(&owned);
+
+	/* A suspend that lasts: a resume or a fatal stop's reveal sees the end. */
+	if (!screen_ended) {
+		screen_suspended = 1;
+		__atomic_store_n(&screen_ended, 1, __ATOMIC_RELEASE);
+	}
+
+	/* The characters keep reaching the serial port the hardware layer wrote. */
+	if (serial_port == 0 &&
+	    port != NULL &&
+	    *port <= UINT16_MAX)
+		serial_port = (uint16_t)*port;
+
+	screen_leave(enabled, owned);
+
+	/* The kernel's characters come here, not to the hardware layer's early console, from now on. */
+	foreign = 0;
+	published = __atomic_load_n(&kernel_putc, __ATOMIC_ACQUIRE);
+	if (published == NULL) {
+		__atomic_store_n(&kernel_putc, console_kernel_putc, __ATOMIC_RELEASE);
+	} else if (published != console_kernel_putc) {
+		foreign = 1;
+	}
+
+	/* /dev/graphics drops its mode, refuses every request, and has its backend give its mappings up. */
+	graphics_error = 0;
+#if CONFIG_DRIVER_GRAPHICS_DEVICE
+	graphics_error = drv_graphics_device_end(ranges, count);
+#endif
+
+	/* The framebuffer's own mapping goes, whichever backend /dev/graphics chose. */
+	framebuffer_error = drv_sun4u_fb_end(ranges, count);
+
+	/* Reports what /dev/graphics left in the ranges first. */
+	if (graphics_error != 0)
+		return graphics_error;
+
+	/* Then what the framebuffer left in them. */
+	if (framebuffer_error != 0)
+		return framebuffer_error;
+
+	/* Another character path may still draw somewhere on the screen: any memory the caller gives may be under it. */
+	if (foreign && count != 0U)
+		return EBUSY;
+
+	/* Succeeded: nothing of the console draws the screen or keeps memory in the ranges. */
+	return 0;
 }
 
 /*
@@ -497,11 +602,12 @@ console_kernel_putc(
 	unsigned long enabled;
 	int owned;
 
-	/* Writes the serial port and the grid as one step. */
+	/* Writes the serial port and the grid as one step; a console without a framebuffer has no grid. */
 	enabled = screen_enter(&owned);
 
 	serial_write(character);
-	screen_putc(character);
+	if (screen_on)
+		screen_putc(character);
 
 	screen_leave(enabled, owned);
 }

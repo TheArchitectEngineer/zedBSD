@@ -64,6 +64,35 @@ kern_device_map(uint64_t address, size_t size, unsigned attributes, void **mappe
 }
 
 int
+kern_device_unmap(void *mapped, size_t size)
+{
+	(void)mapped;
+	(void)size;
+	return 0;
+}
+
+int
+mutex_init(struct mutex *mutex, enum lock_rank rank, const char *name)
+{
+	(void)mutex;
+	(void)rank;
+	(void)name;
+	return 0;
+}
+
+void
+mutex_lock(struct mutex *mutex)
+{
+	(void)mutex;
+}
+
+void
+mutex_unlock(struct mutex *mutex)
+{
+	(void)mutex;
+}
+
+int
 drv_graphics_backend_register(const struct drv_graphics_backend *backend, int priority)
 {
 	if (priority != DRV_GRAPHICS_PRIORITY_FIRMWARE)

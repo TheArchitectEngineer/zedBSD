@@ -327,6 +327,11 @@ map_registers(
 		return error;
 	}
 
+	/* The whole BAR the device decodes, for the console's leaving of the display. */
+	bus->device.bars[bus->device.bar_count].physical = bus->register_map.physical_address;
+	bus->device.bars[bus->device.bar_count].bytes = bar.size;
+	bus->device.bar_count++;
+
 	/* Succeeded: the registers are reached through the mapping. */
 	bus->device.registers = bus->register_map.address;
 	bus->device.register_bytes = REGISTER_BYTES;
@@ -384,6 +389,11 @@ map_window(
 		drv_pci_device_release_bar(bus->pci, BAR_WINDOW);
 		return;
 	}
+
+	/* The whole BAR, not only the part mapped. */
+	bus->device.bars[bus->device.bar_count].physical = bus->window_map.physical_address;
+	bus->device.bars[bus->device.bar_count].bytes = bar.size;
+	bus->device.bar_count++;
 
 	/* Succeeded: the processor's view of the window and its physical place. */
 	bus->device.window = bus->window_map.address;

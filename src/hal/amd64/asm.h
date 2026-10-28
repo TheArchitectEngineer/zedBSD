@@ -56,6 +56,13 @@ asm_load_cr3(
 void
 asm_flush_tlb(void);
 
+uint64_t
+asm_get_cr4(void);
+
+void
+asm_load_cr4(
+	uint64_t value);
+
 void
 asm_lidt(
 	const void *descriptor);

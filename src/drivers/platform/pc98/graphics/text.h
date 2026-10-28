@@ -20,6 +20,8 @@
 
 #include <stdint.h>
 
+struct kern_text_range;
+
 void drv_pc98_text_init(void);
 int drv_pc98_text_ready(void);
 void drv_pc98_text_get_size(unsigned *columns, unsigned *rows);
@@ -33,5 +35,11 @@ void drv_pc98_text_show_cursor(int visible);
 void drv_pc98_text_update_cursor(void);
 void drv_pc98_text_suspend(void);
 void drv_pc98_text_resume(void);
+
+/*
+ * Ends the console's use of the display for good (the board's end op of
+ * kern_text_end()).
+ */
+int drv_pc98_text_end(const struct kern_text_range *ranges, unsigned count);
 
 #endif

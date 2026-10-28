@@ -61,6 +61,7 @@
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/poll.h>
+#include <kern/text-display.h>
 #include <uapi/errno.h>
 
 #include "display-scan.h"
@@ -145,6 +146,9 @@ static int halt_for_host(struct ghci_device *device, int spin);
 static void flips_forget(struct ghci_device *device);
 static void scan_release(struct ghci_device *device, struct ghci_allocation *memory);
 static void scan_flush(struct ghci_device *device, int service);
+static void boot_end(struct ghci_device *device);
+static int boot_image(const struct ghci_display *display, const struct ghci_display_image *image);
+static int boot_in_use(const struct ghci_display *display);
 static void detach_begin(struct ghci_device *device);
 static int detach_step(struct ghci_device *device, int *turned);
 static void buffers_give_back(struct ghci_device *device);
@@ -1493,17 +1497,19 @@ taken(
 	display->shown_time_ns = ghci_scan_now_ns();
 
 	/* The boot image is the driver's own image at the boot display's address. */
-	boot = 0;
-	if (flip->image.memory == NULL &&
-	    flip->image.copy_frame < 0 &&
-	    flip->image.base == display->boot.base)
-		boot = 1;
+	boot = boot_image(display, &flip->image);
 
-	/* The first image of the driver's ends the boot display; the boot image goes back unless drawn to. */
+	/*
+	 * The first image of the driver's ends the boot display; the boot
+	 * image goes back unless the console may draw to it, which is told it
+	 * leaves the display first (once).
+	 */
 	if (display->boot_scanning && !boot) {
 		display->boot_scanning = 0;
 		if (display->boot_kept && !display->boot_console)
 			display->boot_release = 1;
+		if (display->boot_kept && display->boot_console && !display->boot_end_tried)
+			display->boot_end_due = 1;
 	}
 
 	if (boot && display->boot_kept)
@@ -2528,6 +2534,7 @@ scan_flush(
 	unsigned index;
 	int release;
 	int locked;
+	int end;
 
 	/* The device's lock, then the display's to take the lists and the release. */
 	display = &device->display;
@@ -2553,11 +2560,23 @@ scan_flush(
 	for (index = 0U; index < unsure_count; index++)
 		unsure[index] = display->unsure[index];
 	display->unsure_count = 0U;
+	/* The boot image goes back unless a flip of it was placed again meanwhile (its next own image retries). */
 	release = 0;
 	if (display->boot_release && !service) {
-		release = 1;
 		display->boot_release = 0;
-		display->boot_kept = 0;
+		if (!boot_in_use(display)) {
+			release = 1;
+			display->boot_kept = 0;
+		}
+	}
+
+	/* The console is told once, for a device still here with a boot image out of the allocator. */
+	end = 0;
+	if (display->boot_end_due && !service) {
+		display->boot_end_due = 0;
+		display->boot_end_tried = 1;
+		if (display->present && device->boot_reserved && device->bar_count != 0U)
+			end = 1;
 	}
 
 	mutex_unlock(&device->display_lock);
@@ -2579,4 +2598,104 @@ scan_flush(
 		ghci_memory_boot_release(device);
 		kern_logf("ghci: %s: boot framebuffer given back\n", device->name);
 	}
+
+	/* The console leaves the display, with no lock held. */
+	if (end)
+		boot_end(device);
+}
+
+/*
+ * Tells the console it leaves the display for good, with the device's
+ * whole BARs as the memory about to go to others, and gives the boot image
+ * back once it did (0), the device is still here, and no flip of the boot
+ * image is placed or shown; otherwise the image is kept as it was.  A read
+ * of a register first lets every write the console posted to the device
+ * reach it before the memory goes.  Called with no lock held.
+ */
+static void
+boot_end(
+	struct ghci_device *device)
+{
+	struct kern_text_range ranges[GHCI_BUS_RANGES];
+	struct ghci_display *display;
+	unsigned count;
+	unsigned index;
+	int release;
+	int error;
+
+	/* The device's BARs, as the bus glue found them. */
+	display = &device->display;
+	count = device->bar_count;
+	for (index = 0U; index < count; index++) {
+		ranges[index].physical = device->bars[index].physical;
+		ranges[index].bytes = device->bars[index].bytes;
+	}
+
+	/* The console stops drawing on the display and removes what it maps of it. */
+	error = kern_text_end(ranges, count);
+	if (error != 0) {
+		kern_logf("ghci: %s: boot framebuffer kept: the console cannot leave it (%d)\n", device->name, error);
+		return;
+	}
+
+	mutex_lock(&device->lock);
+	mutex_lock(&device->display_lock);
+
+	/* Nothing of the console draws to the boot image any more; it goes back when nothing reads it. */
+	display->boot_console = 0;
+	release = 0;
+	if (display->present) {
+		/* The console's last posted writes reach the device before its memory is reused. */
+		(void)ghci_read(device, GHCI_REG_MAGIC);
+		if (display->boot_kept && !boot_in_use(display)) {
+			display->boot_kept = 0;
+			release = 1;
+		}
+	}
+
+	mutex_unlock(&device->display_lock);
+	mutex_unlock(&device->lock);
+
+	/* The boot image goes back to the allocator, with no lock held. */
+	if (release) {
+		ghci_memory_boot_release(device);
+		kern_logf("ghci: %s: boot framebuffer given back\n", device->name);
+	}
+
+	/* Succeeded: the console left the display. */
+	return;
+}
+
+/* Reports whether an image is the boot image: the driver's own, at the boot display's address. */
+static int
+boot_image(
+	const struct ghci_display *display,
+	const struct ghci_display_image *image)
+{
+	/* Memory of the driver's own, not a copied frame, at the boot base. */
+	if (image->memory == NULL && image->copy_frame < 0 && image->base == display->boot.base)
+		return 1;
+
+	/* Any other image. */
+	return 0;
+}
+
+/*
+ * Reports whether the boot image is scanned, or a flip of it is placed
+ * (the end of a lease lights it again).  The caller holds display_lock.
+ */
+static int
+boot_in_use(
+	const struct ghci_display *display)
+{
+	/* The controller still scans it. */
+	if (display->boot_scanning)
+		return 1;
+
+	/* A flip of it waits to be taken. */
+	if (display->flips[0].placed && boot_image(display, &display->flips[0].image))
+		return 1;
+
+	/* Nothing reads it. */
+	return 0;
 }

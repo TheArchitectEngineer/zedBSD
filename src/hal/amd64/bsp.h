@@ -61,6 +61,13 @@ prekern_pcat_cons_init(void);
 
 void pcat_cons_paging_ready(void);
 
+/*
+ * Forgets the early console's mapping of the boot framebuffer, which the
+ * kernel's console took over and removes: nothing of the early console
+ * draws through it again.
+ */
+void pcat_cons_framebuffer_release(void);
+
 void
 prekern_pcat_cons_irq_init(void);
 

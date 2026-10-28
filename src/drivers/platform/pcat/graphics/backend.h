@@ -72,4 +72,15 @@ void drv_pcat_graphics_framebuffer_moved(
 	uint64_t to,
 	uint64_t length);
 
+struct kern_text_range;
+
+/*
+ * Ends the console's use of the display for good: /dev/graphics refuses
+ * every request from now on and the backend removes its mappings
+ * (drv_pcat_graphics_end, in pcat-graphics.c); the backend's own part,
+ * under the graphics lock (drv_pcat_graphics_backend_end).
+ */
+int drv_pcat_graphics_end(const struct kern_text_range *ranges, unsigned count);
+int drv_pcat_graphics_backend_end(const struct kern_text_range *ranges, unsigned count);
+
 #endif

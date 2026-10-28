@@ -104,7 +104,17 @@ static struct mutex graphics_lock __attribute__((section(".vfs_bss")));
 /* Nonzero once graphics_lock is initialized. */
 static int graphics_lock_ready __attribute__((section(".vfs_bss")));
 
+/*
+ * Whether the console has left the display for good: every open and request
+ * is refused from now on, and nothing gives the screen back to the text.
+ * Written under graphics_lock, or before the lock exists (the boot, with no
+ * open yet); not in .vfs_bss, since it may be set before the device is
+ * registered.
+ */
+static int graphics_ended;
+
 static void graphics_lock_init_once(void);
+static int backend_end(const struct kern_text_range *ranges, unsigned count);
 static int graphics_open(struct file *file);
 static int graphics_close(struct file *file);
 static int require_entered(struct file *file);
@@ -219,23 +229,75 @@ void
 drv_graphics_device_restore_text(
 	void)
 {
-	/* Only resumes the text when the device never registered. */
+	/* Only resumes the text when the device never registered (an ended console draws nothing again). */
 	if (!graphics_lock_ready) {
-		kern_text_resume();
+		if (!graphics_ended)
+			kern_text_resume();
 		return;
 	}
 
-	/* Leaves the backend's mode and resumes the text. */
+	/* Leaves the backend's mode and resumes the text, unless the console has left the display. */
 	mutex_lock(&graphics_lock);
 
-	if (graphics_entered) {
-		graphics_backend->leave();
-		graphics_entered = 0;
+	if (!graphics_ended) {
+		/* The owner's mode goes before the text comes back. */
+		if (graphics_entered) {
+			graphics_backend->leave();
+			graphics_entered = 0;
+		}
+
+		kern_text_resume();
 	}
 
-	kern_text_resume();
+	mutex_unlock(&graphics_lock);
+}
+
+/*
+ * Ends /dev/graphics for good once the console has left the display.
+ */
+int
+drv_graphics_device_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	int error;
+
+	/*
+	 * Before the device is registered there is no lock, no open and no
+	 * mode.  The choice is fixed now, so a backend offered later is refused
+	 * and the registration keeps this one.
+	 */
+	if (!graphics_lock_ready) {
+		graphics_chosen = 1;
+		graphics_backend = graphics_candidate;
+		graphics_ended = 1;
+		error = backend_end(ranges, count);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: nothing the backend mapped is left in the ranges. */
+		return 0;
+	}
+
+	/*
+	 * Drops the mode with the owner's rights, without writing the hardware,
+	 * and has the backend give the display up; a later caller waits here
+	 * for the first one's removals and then judges what they left.
+	 */
+	mutex_lock(&graphics_lock);
+
+	graphics_ended = 1;
+	graphics_entered = 0;
+	error = backend_end(ranges, count);
 
 	mutex_unlock(&graphics_lock);
+
+	/* Reports what was left in the ranges. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: nothing the backend mapped is left in the ranges. */
+	return 0;
 }
 
 /* Initializes the sleepable lock on the first registration. */
@@ -251,18 +313,49 @@ graphics_lock_init_once(
 	}
 }
 
+/*
+ * Has the chosen backend give the display up; 0 when there is no backend
+ * or it has nothing to give back.
+ */
+static int
+backend_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	int error;
+
+	/* A backend without an end keeps no mapping to give back. */
+	if (graphics_backend == NULL || graphics_backend->end == NULL)
+		return 0;
+
+	/* The backend removes its mappings and judges what is left. */
+	error = graphics_backend->end(ranges, count);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: nothing the backend mapped is left in the ranges. */
+	return 0;
+}
+
 /* Gives the device to its first opener. */
 static int
 graphics_open(
 	struct file *file)
 {
+	int ready;
 	int error;
 
 	/* Takes ownership when the backend is ready and the device is free. */
 	error = 0;
 	mutex_lock(&graphics_lock);
 
-	if (!graphics_backend->ready()) {
+	/* Nothing can draw once the console has left the display for good. */
+	ready = 0;
+	if (!graphics_ended)
+		ready = graphics_backend->ready();
+
+	/* Refuses a backend that cannot draw, then a second opener. */
+	if (!ready) {
 		error = ENODEV;
 	} else if (graphics_owner != NULL) {
 		error = EBUSY;
@@ -287,6 +380,7 @@ graphics_close(
 	mutex_lock(&graphics_lock);
 
 	if (graphics_owner == file) {
+		/* A mode the end dropped is not left again, and the text is not resumed. */
 		if (graphics_entered) {
 			graphics_backend->leave();
 			kern_text_resume();
@@ -945,10 +1039,12 @@ graphics_ioctl(
 {
 	int error;
 
-	/* Dispatches the request under the lock. */
+	/* Dispatches the request under the lock; nothing reaches the display once the console has ended. */
 	mutex_lock(&graphics_lock);
 
-	error = graphics_ioctl_locked(file, request, argument);
+	error = ENODEV;
+	if (!graphics_ended)
+		error = graphics_ioctl_locked(file, request, argument);
 
 	mutex_unlock(&graphics_lock);
 

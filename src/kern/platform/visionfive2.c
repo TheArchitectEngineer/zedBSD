@@ -10,8 +10,10 @@
  *
  * The console is a teletype whose output the hardware layer writes to the
  * firmware's console; the board's UART does not type into it yet.  The
- * board publishes one boot device: the initial ramdisk the loader read,
- * when there is one, and otherwise the SD card.  The ramdisk holds a disk
+ * UART the firmware's console uses is mapped too, for the end of the
+ * console's use of the screen (below).  The board publishes one boot
+ * device: the initial ramdisk the loader read, when there is one, and
+ * otherwise the SD card.  The ramdisk holds a disk
  * image laid out like a Raspberry Pi 4's SD card, a FAT boot partition
  * first and the UFS root beside it, so the kernel's root search finds the
  * root as it does there.  An SD card booted without a ramdisk carries its
@@ -45,6 +47,13 @@
  * stop puts the display controller's plane back on the loader's screen,
  * where the hardware layer draws the console's text, in case a graphics
  * program had the controller show a buffer of its own.
+ *
+ * Once a GPU has flipped its first image the console leaves the screen
+ * for good: the kernel publishes its own character path, which writes the
+ * firmware console's UART, so the hardware layer neither draws on the
+ * screen nor calls the firmware again; the serial line carries on, and a
+ * fatal stop takes no display back.  Without that UART the console stays
+ * as it is.
  */
 
 #include <stdbool.h>
@@ -71,6 +80,7 @@
 #include <drivers/platform/visionfive2/vf2-dmatest.h>
 #endif
 #include <drivers/platform/visionfive2/vf2-syscon.h>
+#include <drivers/serial/ns16550.h>
 #include <kern/boot.h>
 #include <kern/disk.h>
 #include <kern/kcrt.h>
@@ -282,6 +292,24 @@ static struct drv_fdt soc_tree;
 static int soc_ready;
 
 /*
+ * The UART the firmware's console uses (/chosen/stdout-path), mapped by
+ * probe_soc() on the boot CPU and kept for the life of the system;
+ * console_uart_present says it was found, and neither changes afterwards.
+ * Bytes reach it only once the console has left the screen.
+ */
+static struct drv_ns16550 console_uart;
+static int console_uart_present;
+
+/*
+ * Whether the console has left the screen for good: the kernel's
+ * character path is the UART's, a fatal stop takes no display back, and
+ * the debug port no longer repeats the log's records.  Set once by
+ * vf2_text_end() with a release, after it published the character path;
+ * read with an acquire.
+ */
+static int console_ended;
+
+/*
  * The SD card's disk, published by kern_platform_init() and kept for the
  * life of the system; NULL when the slot is empty or the card failed.
  */
@@ -303,6 +331,9 @@ static void attach_sd_card(void);
 static void attach_ethernet(void);
 static void describe_sd_partitions(void);
 static void reveal_fatal(void);
+static void probe_console_uart(const struct drv_fdt *fdt);
+static int vf2_text_end(const struct kern_text_range *ranges, unsigned count);
+static void console_uart_putc(int character);
 #if CONFIG_DRIVER_POWERVR
 static void probe_display_controller(const struct drv_fdt *fdt);
 static int check_display_clocks(void);
@@ -341,10 +372,11 @@ kern_platform_init(
 
 	/*
 	 * Publishes the teletype as /dev/console's output, with the fatal
-	 * reveal that takes the display back.
+	 * reveal that takes the display back and the end that leaves it.
 	 */
 	vf2_text_ops = *drv_serial_console_ops();
 	vf2_text_ops.reveal_fatal = reveal_fatal;
+	vf2_text_ops.end = vf2_text_end;
 	kern_text_register(&vf2_text_ops);
 
 	/* Reads and checks the screen the firmware left on, for the boot log. */
@@ -461,8 +493,22 @@ void
 kern_platform_debug_write(
 	const char *text)
 {
+	int ended;
+	int quiet;
+
 	/* Ignores a missing string. */
 	if (text == NULL)
+		return;
+
+	/*
+	 * Once the console has left the screen the log's record has already
+	 * reached the UART through the kernel's character path, unless the
+	 * log is quiet and kept it off that path; then it goes there once
+	 * from here.
+	 */
+	ended = __atomic_load_n(&console_ended, __ATOMIC_ACQUIRE);
+	quiet = kern_log_quiet();
+	if (ended && !quiet)
 		return;
 
 	/* Emits every byte through the hardware layer. */
@@ -670,6 +716,9 @@ probe_soc(
 		kern_logf("visionfive2: unreadable device tree (%d)\n", error);
 		return;
 	}
+
+	/* Maps the firmware console's UART, which needs nothing else of the SoC. */
+	probe_console_uart(&fdt);
 
 	/* Maps the system control blocks, which hold the PLL settings. */
 	error = drv_vf2_syscon_init(&fdt);
@@ -1370,9 +1419,109 @@ static void
 reveal_fatal(
 	void)
 {
+	int ended;
+
+	/* A console that left the screen shows nothing there; the stop goes to the UART and the log. */
+	ended = __atomic_load_n(&console_ended, __ATOMIC_ACQUIRE);
+	if (ended)
+		return;
+
 #if CONFIG_DRIVER_POWERVR
 	/* Takes the screen back when the display driver read the controller. */
 	if (vf2_fatal_display != NULL)
 		vf2_fatal_display();
 #endif
+}
+
+/*
+ * Maps the UART /chosen/stdout-path names, without starting its input.  A
+ * tree without one leaves the console unable to leave the screen.
+ */
+static void
+probe_console_uart(
+	const struct drv_fdt *fdt)
+{
+	int error;
+
+	/* Finds and maps the firmware console's UART. */
+	error = drv_ns16550_probe_console(fdt, &console_uart);
+	if (error != 0) {
+		kern_logf("visionfive2: no console UART (%d)\n", error);
+		return;
+	}
+
+	/* Keeps it for the end of the console's use of the screen. */
+	console_uart_present = 1;
+	kern_logf("visionfive2: console UART at %llx\n", (unsigned long long)console_uart.physical);
+}
+
+/*
+ * Ends the console's use of the screen for good: the UART's character path
+ * is published as the kernel's, so the hardware layer hands it every
+ * character and neither draws on the screen nor calls the firmware again.
+ * The hardware layer's mapping of the screen stays (the kernel has no way
+ * to remove it), so the screen counts as left: EBUSY when it lies in the
+ * ranges, 0 otherwise.  ENOTSUP, changing nothing, without the UART, since
+ * the serial line would be lost.
+ */
+static int
+vf2_text_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	struct kern_boot_framebuffer screen;
+	void (*published)(int);
+	int overlaps;
+	int foreign;
+	int error;
+
+	/* Without the console's UART the kernel would lose the serial line: nothing changes. */
+	if (!console_uart_present)
+		return ENOTSUP;
+
+	/* The hardware layer hands every later character to the UART. */
+	foreign = 0;
+	published = __atomic_load_n(&kernel_putc, __ATOMIC_ACQUIRE);
+	if (published == NULL) {
+		__atomic_store_n(&kernel_putc, console_uart_putc, __ATOMIC_RELEASE);
+	} else if (published != console_uart_putc) {
+		foreign = 1;
+	}
+
+	/* A fatal stop takes no display back, and the debug port stops repeating the log. */
+	__atomic_store_n(&console_ended, 1, __ATOMIC_RELEASE);
+
+	/* Another character path may still draw anywhere the caller gives. */
+	if (foreign && count != 0U)
+		return EBUSY;
+
+	/* A boot without the loader's screen leaves nothing behind. */
+	error = kern_boot_framebuffer("riscv64.framebuffer", &screen);
+	if (error != 0 || screen.size == 0U)
+		return 0;
+
+	/* The screen stays mapped by the hardware layer. */
+	overlaps = kern_text_range_overlaps(ranges, count, screen.physical_base, screen.size);
+	if (overlaps)
+		return EBUSY;
+
+	/* Succeeded: nothing the console leaves behind lies in the ranges. */
+	return 0;
+}
+
+/*
+ * Writes one character of the kernel's own path to the console's UART,
+ * ending each line with a carriage return as the firmware's console did.
+ * Never sleeps.
+ */
+static void
+console_uart_putc(
+	int character)
+{
+	/* A new line returns the carriage first. */
+	if (character == '\n')
+		drv_ns16550_putc_polled(&console_uart, (uint8_t)'\r');
+
+	/* The character itself. */
+	drv_ns16550_putc_polled(&console_uart, (uint8_t)character);
 }

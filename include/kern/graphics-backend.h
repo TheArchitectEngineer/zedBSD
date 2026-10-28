@@ -25,10 +25,16 @@
  *   3. It moves the text console to its own surface by calling
  *      kern_text_register() again (a second call replaces the first).
  *   4. The firmware mapping is no longer used after that; its window is
- *      not returned.
+ *      not returned then.
  *
  * Takeover happens only at boot, so nothing here waits for graphics to be
  * left before a backend changes.
+ *
+ * Once the console's use of the display ends for good (kern_text_end(),
+ * when a GPU flipped its first image), the front end refuses every open
+ * and request and has the chosen backend give its mappings back through
+ * its optional end operation; the firmware framebuffer's driver gives its
+ * own mapping back then too, chosen or not.
  */
 
 #ifndef KERN_KERN_GRAPHICS_BACKEND_H
@@ -38,6 +44,8 @@
 #include <stdint.h>
 #include <uapi/graphics.h>
 #include "kern/boot.h"
+
+struct kern_text_range;
 
 /* The priority of a framebuffer the firmware left behind. */
 #define DRV_GRAPHICS_PRIORITY_FIRMWARE	0
@@ -73,6 +81,16 @@ struct drv_graphics_row {
  * runs under the front end's sleepable lock, with arguments the front end
  * already checked against the entered mode. A drawing operation returns
  * nonzero on success and zero when the hardware refused.
+ *
+ * end is optional (NULL for a backend with nothing to give back). It runs
+ * under the same lock, or before /dev/graphics registers with no lock at
+ * all, once the console has left the display for good: nothing is drawn
+ * through the backend again and every kernel mapping of display memory it
+ * made is removed, without writing the hardware. It returns 0 when
+ * nothing left mapped lies in the count ranges, the error of a removal
+ * that failed for a mapping in them, or EBUSY for a mapping in them that
+ * cannot be removed. A later call judges what the first one left against
+ * its own ranges.
  */
 struct drv_graphics_backend {
 	const char *name;
@@ -86,6 +104,7 @@ struct drv_graphics_backend {
 	int (*blit_row)(unsigned x, unsigned y, const struct drv_graphics_row *row, uint64_t pattern, int patterned);
 	int (*flush)(const struct graphics_rect *rects, size_t count);
 	int (*get_glyph)(uint32_t codepoint, uint8_t bitmap[32], unsigned *width, unsigned *height);
+	int (*end)(const struct kern_text_range *ranges, unsigned count);
 };
 
 /*
@@ -107,6 +126,23 @@ drv_graphics_backend_register(
  */
 const struct drv_graphics_backend *
 drv_graphics_backend_selected(void);
+
+/*
+ * Ends /dev/graphics for good once the console has left the display.
+ *
+ * A graphics mode entered is dropped without writing the hardware, every
+ * open and request is refused with ENODEV from now on, closing does not
+ * give the screen back, and the chosen backend's end, when it has one,
+ * removes its mappings. Before /dev/graphics registers, the choice of the
+ * backend is fixed here, so no backend offered later can draw. Returns
+ * what the backend's end returns (0 without one); a later call has it
+ * judge again against its own ranges. Thread context, no lock held; it
+ * may sleep.
+ */
+int
+drv_graphics_device_end(
+	const struct kern_text_range *ranges,
+	unsigned count);
 
 /*
  * Tells whether a pattern pixel is set.

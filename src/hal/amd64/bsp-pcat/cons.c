@@ -1157,3 +1157,28 @@ pcat_cons_paging_ready(void)
 {
 	vga_memory = (volatile uint16_t *)((uintptr_t)AMD64_LEGACY_MMIO_BASE + 0x18000U);
 }
+
+/*
+ * Forgets the early console's mapping of the boot framebuffer, which the
+ * kernel's console took over and removes.  The kernel prints through its
+ * own character path by then, so nothing here draws again; the pointer
+ * goes under the output lock all the same, so that no late writer on any
+ * path follows it into a removed mapping.
+ */
+void
+pcat_cons_framebuffer_release(
+	void)
+{
+	struct console_output_token token;
+
+	token = console_output_lock();
+
+	/* No drawing reaches the framebuffer from now on. */
+	framebuffer_pixels = NULL;
+	framebuffer_cursor_drawn = 0;
+
+	console_output_unlock(token);
+
+	/* Succeeded: the early console holds no mapping of the framebuffer. */
+	return;
+}

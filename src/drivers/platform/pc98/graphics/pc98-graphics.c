@@ -39,6 +39,14 @@ static uint32_t palette_buffer[256] __attribute__((section(".vfs_bss")));
 static struct mutex graphics_lock __attribute__((section(".vfs_bss")));
 static int graphics_lock_ready __attribute__((section(".vfs_bss")));
 
+/*
+ * Whether the console has left the display for good: every open and request
+ * is refused from now on.  Written under graphics_lock, or before the lock
+ * exists (the boot, with no open yet); not in .vfs_bss, since it may be set
+ * before the device is registered.
+ */
+static int graphics_ended;
+
 static void graphics_lock_init_once(void);
 static int graphics_open(struct file *file);
 static int graphics_close(struct file *file);
@@ -93,9 +101,10 @@ void
 drv_graphics_device_restore_text(
 	void)
 {
-	/* Handles the graphics lock ready condition. */
+	/* Handles the graphics lock ready condition (an ended console draws nothing again). */
 	if (!graphics_lock_ready) {
-		kern_text_resume();
+		if (!graphics_ended)
+			kern_text_resume();
 
 		/* Returns the computed result. */
 		return;
@@ -103,15 +112,64 @@ drv_graphics_device_restore_text(
 
 	mutex_lock(&graphics_lock);
 
-	/* Handles the graphics entered condition. */
-	if (graphics_entered) {
-		drv_pc98_graphics_backend_leave();
-		graphics_entered = 0;
+	/* The display stays as the GPU left it once the console has ended. */
+	if (!graphics_ended) {
+		/* Handles the graphics entered condition. */
+		if (graphics_entered) {
+			drv_pc98_graphics_backend_leave();
+			graphics_entered = 0;
+		}
+
+		kern_text_resume();
 	}
 
-	kern_text_resume();
+	mutex_unlock(&graphics_lock);
+}
+
+/*
+ * Ends /dev/graphics for good once the console has left the display: a
+ * graphics mode entered is dropped without writing the hardware, every
+ * open and request is refused from now on, and the backend removes its
+ * mappings.  Returns what the backend returns.  Thread context, no lock
+ * held.
+ */
+int
+drv_pc98_graphics_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	int error;
+
+	/* Before the device is registered there is no lock, no open and no mode. */
+	if (!graphics_lock_ready) {
+		graphics_ended = 1;
+		error = drv_pc98_graphics_backend_end(ranges, count);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: nothing the backend mapped is left in the ranges. */
+		return 0;
+	}
+
+	/*
+	 * Drops the mode with the owner's rights and has the backend give the
+	 * display up; a later caller waits here for the first one's removals
+	 * and then judges what they left.
+	 */
+	mutex_lock(&graphics_lock);
+
+	graphics_ended = 1;
+	graphics_entered = 0;
+	error = drv_pc98_graphics_backend_end(ranges, count);
 
 	mutex_unlock(&graphics_lock);
+
+	/* Reports what was left in the ranges. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: nothing the backend mapped is left in the ranges. */
+	return 0;
 }
 
 /* Registration happens serially on the boot CPU.  Once this flag is published, every open/close/ioctl operation uses the sleepable mutex so driver callbacks and user-memory faults never run under a spinlock. */
@@ -136,8 +194,8 @@ graphics_open(
 
 	mutex_lock(&graphics_lock);
 
-	/* Checks the drv pc98 graphics backend ready result. */
-	if (!drv_pc98_graphics_backend_ready()) {
+	/* Checks the drv pc98 graphics backend ready result (none after the console ended). */
+	if (graphics_ended || !drv_pc98_graphics_backend_ready()) {
 		error = ENODEV;
 	} else if (graphics_owner != NULL) {
 		error = EBUSY;
@@ -166,7 +224,7 @@ graphics_close(
 
 	/* Handles the graphics owner condition. */
 	if (graphics_owner == file) {
-		/* Handles the graphics entered condition. */
+		/* Handles the graphics entered condition (dropped already when the console ended). */
 		if (graphics_entered) {
 			drv_pc98_graphics_backend_leave();
 			kern_text_resume();
@@ -804,7 +862,10 @@ graphics_ioctl(
 
 	mutex_lock(&graphics_lock);
 
-	error = graphics_ioctl_locked(file, request, argument);
+	/* Nothing reaches the display once the console has ended. */
+	error = ENODEV;
+	if (!graphics_ended)
+		error = graphics_ioctl_locked(file, request, argument);
 
 	mutex_unlock(&graphics_lock);
 

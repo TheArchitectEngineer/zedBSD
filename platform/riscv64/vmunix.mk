@@ -67,6 +67,7 @@ RISCV64_PLATFORM_SOURCES_virt := src/kern/platform/riscv-virt.c \
 # its UEFI disk image needs, and the headphone jack (the PWM audio converter
 # fed by the AXI DMA controller).
 RISCV64_PLATFORM_SOURCES_visionfive2 := src/kern/platform/visionfive2.c \
+	src/drivers/serial/ns16550.c \
 	src/drivers/generic/serial-console.c src/drivers/generic/ramdisk.c \
 	src/drivers/platform/visionfive2/vf2-syscon.c \
 	src/drivers/platform/visionfive2/vf2-crg.c \

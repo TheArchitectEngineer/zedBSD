@@ -20,17 +20,27 @@
  * the screen and give it back without losing what was on it.
  */
 
+#include <hal/hal.h>
 #include <kern/device-io.h>
 #include <kern/lock.h>
 #include <kern/text-display.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <uapi/errno.h>
 
+#include "backend.h"
 #include "text.h"
 
 /* Characters are 16-bit words; their attributes live in a second plane. */
 #define TEXT_CODE_VRAM		((volatile uint16_t *)0x800a0000)
 #define TEXT_ATTRIBUTE_VRAM	((volatile uint8_t *)0x800a2000)
+
+/*
+ * The text memory's physical range under those kernel addresses: both
+ * planes, in the hardware layer's map of low memory, which stays mapped.
+ */
+#define TEXT_VRAM_PHYSICAL	0x000a0000U
+#define TEXT_VRAM_BYTES		0x00004000U
 
 #define TEXT_COLUMNS		80U
 #define TEXT_ROWS		25U
@@ -66,6 +76,14 @@ static unsigned text_cursor_column;
 static int text_cursor_visible = 1;
 static int text_ready;
 
+/*
+ * Whether the console has left the display for good (a GPU flipped its
+ * first image there): nothing is written to text memory or the cursor
+ * again, by a write or a resume, while the cell arrays keep following the
+ * characters.  Set once under text_lock with a release; read under it.
+ */
+static int text_ended;
+
 static uint8_t pc98_attribute(uint8_t attribute);
 static int gdc_write(uint16_t port, uint8_t value);
 static void publish_cell_locked(unsigned row, unsigned column);
@@ -89,7 +107,8 @@ static const struct kern_text_ops pc98_text_ops = {
 	.show_cursor = drv_pc98_text_show_cursor,
 	.update_cursor = drv_pc98_text_update_cursor,
 	.suspend = drv_pc98_text_suspend,
-	.resume = drv_pc98_text_resume
+	.resume = drv_pc98_text_resume,
+	.end = drv_pc98_text_end
 };
 
 /*
@@ -341,12 +360,81 @@ drv_pc98_text_resume(
 {
 	unsigned long irq;
 
-	/* Repaints both planes from the retained cells. */
+	/* Repaints both planes from the retained cells, unless the console has left the display. */
 	irq = spin_lock_irqsave(&text_lock);
-	text_ready = 1;
-	redraw_locked();
-	cursor_locked();
+
+	if (!text_ended) {
+		text_ready = 1;
+		redraw_locked();
+		cursor_locked();
+	}
+
 	spin_unlock_irqrestore(&text_lock, irq);
+}
+
+/*
+ * Ends the console's use of the display for good: it stops writing text
+ * memory and the cursor (the cell arrays keep following the characters),
+ * takes the kernel's character path over from the hardware layer's early
+ * console if it had not yet, and has /dev/graphics and its backend give
+ * up the display and their mappings.  Returns what /dev/graphics returns,
+ * or EBUSY when a writer this layer cannot stop, or the text memory that
+ * stays mapped, lies in the ranges.  Thread context, no lock held.
+ */
+int
+drv_pc98_text_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	void (*published)(int);
+	unsigned long irq;
+	int overlaps;
+	int foreign;
+	int error;
+
+	/* Stops the text memory's writers once; a later end finds them stopped. */
+	irq = spin_lock_irqsave(&text_lock);
+
+	if (!text_ended) {
+		/* Hides the hardware cursor, as a suspend does. */
+		if (text_ready) {
+			text_cursor_visible = 0;
+			cursor_locked();
+			text_cursor_visible = 1;
+		}
+
+		/* Nothing is written to text memory from now on; the cells go on. */
+		__atomic_store_n(&text_ended, 1, __ATOMIC_RELEASE);
+		text_ready = 0;
+	}
+
+	spin_unlock_irqrestore(&text_lock, irq);
+
+	/* The kernel's characters come here, not to the hardware layer's early console, from now on. */
+	foreign = 0;
+	published = __atomic_load_n(&kernel_putc, __ATOMIC_ACQUIRE);
+	if (published == NULL) {
+		__atomic_store_n(&kernel_putc, drv_pc98_text_putc, __ATOMIC_RELEASE);
+	} else if (published != drv_pc98_text_putc) {
+		foreign = 1;
+	}
+
+	/* /dev/graphics and the backend give the display and their mappings up. */
+	error = drv_pc98_graphics_end(ranges, count);
+	if (error != 0)
+		return error;
+
+	/* Another character path may still draw somewhere on the display: any memory the caller gives may be under it. */
+	if (foreign && count != 0U)
+		return EBUSY;
+
+	/* Text memory lies in the hardware layer's map of low memory, which stays. */
+	overlaps = kern_text_range_overlaps(ranges, count, TEXT_VRAM_PHYSICAL, TEXT_VRAM_BYTES);
+	if (overlaps)
+		return EBUSY;
+
+	/* Succeeded: nothing of the text layer writes the display or keeps memory in the ranges. */
+	return 0;
 }
 
 /*

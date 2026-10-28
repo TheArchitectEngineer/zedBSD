@@ -565,9 +565,12 @@ struct ghci_display_flip {
  * The boot display: boot_scanning says the controller still scans what
  * the firmware left (boot, in the mode slot GHCI_DISPLAY_BOOT_MODE),
  * until the driver's own first flip is taken.  boot_kept says the boot
- * image is still kept out of the allocators, boot_console that something
- * of the kernel may still draw to it (so it is never given back), and
- * boot_release that the release is due once every lock is let go.
+ * image is still kept out of the allocators, boot_console that the
+ * kernel's console may still draw to it (until kern_text_end() returns 0
+ * for the device's ranges; the image is never given back before),
+ * boot_release that the release is due once every lock is let go,
+ * boot_end_due that the console is to be told it leaves the display once
+ * every lock is let go, and boot_end_tried that it was (once only).
  */
 struct ghci_display {
 	int present;
@@ -639,6 +642,8 @@ struct ghci_display {
 	int boot_kept;
 	int boot_console;
 	int boot_release;
+	int boot_end_due;
+	int boot_end_tried;
 	struct ghci_display_image boot;
 
 	/* The scan-out errors: the count of this second, the mask, the reads that kept failing, and the totals. */
@@ -648,6 +653,15 @@ struct ghci_display {
 	unsigned read_errors;
 	unsigned underflows;
 	unsigned errors_total;
+};
+
+/* The most memory ranges the bus decodes for a device: BAR0 and BAR2. */
+#define GHCI_BUS_RANGES 2U
+
+/* One range of processor physical addresses the device decodes: a whole BAR. */
+struct ghci_bus_range {
+	uint64_t physical;
+	uint64_t bytes;
 };
 
 /*
@@ -664,8 +678,9 @@ struct ghci_device {
 	 * the register window, the local window, the function's IDs, whether
 	 * the device is polled, whether host memory is reached uncached (the
 	 * bus does not snoop the caches), whether bus mastering was on when
-	 * the driver found the function (a boot display may be using it), and
-	 * the ring's size in bytes (0: GHCI_RING_BYTES).
+	 * the driver found the function (a boot display may be using it), the
+	 * ring's size in bytes (0: GHCI_RING_BYTES), and the processor physical
+	 * ranges of the BARs mapped (bar_count of bars, each a whole BAR).
 	 */
 	void *bus;
 	const struct ghci_bus_ops *bus_ops;
@@ -680,6 +695,8 @@ struct ghci_device {
 	int host_uncached;
 	int bus_master_found;
 	uint32_t ring_bytes;
+	struct ghci_bus_range bars[GHCI_BUS_RANGES];
+	unsigned bar_count;
 
 	/*
 	 * What the start turned on, so that the detach and a failed start

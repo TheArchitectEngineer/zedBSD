@@ -255,6 +255,33 @@ asm_flush_tlb(
 }
 
 /*
+ * Reads the current CPU's paging-control register CR4.
+ */
+uint64_t
+asm_get_cr4(
+	void)
+{
+	uint64_t value;
+
+	/* Samples control register CR4. */
+	__asm__ volatile("movq %%cr4,%0" : "=r"(value));
+
+	/* Returns the sampled paging controls. */
+	return value;
+}
+
+/*
+ * Loads the current CPU's paging-control register CR4.
+ */
+void
+asm_load_cr4(
+	uint64_t value)
+{
+	/* Loads CR4 and prevents compiler memory reordering around it. */
+	__asm__ volatile("movq %0,%%cr4" : : "r"(value) : "memory");
+}
+
+/*
  * Loads the current CPU's interrupt descriptor-table register.
  */
 void
