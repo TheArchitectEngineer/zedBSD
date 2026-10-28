@@ -92,4 +92,6 @@
 
 | q1647 / q1647-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307b`・branch `agent/p4-ws307b`、基点 main） | (1) [ws307-p001](ws307/phase001/phase.md) の残り: 2 回目の review の後の変更の design-reviewer と反映 → (2) [BUG-347](bugs/BUG-347.md) の直し | (1) は q1643 と同じ承認。(2) 承認: 2026-10-28 ユーザー「BUG-347は推しで解決します。担当はP4で、現在の仕様検討が終わった後にスケジュールします。」（推し = root の tree を作る所で umask 022 を固定） | (2) BUG-347 resolved（merge a79ce5edb）。(1) は 3 回目の review の結果が P4 の返却の後に届いた（plan/ws307/design-review3.md）、反映は q1648 |
 
-| q1648 / q1648-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307c`・branch `agent/p4-ws307c`、基点 main） | [ws307-p001](ws307/phase001/phase.md) の残り | 3 回目の review（design-review3.md）と J1〜J4 の回答を spec に反映（q1643 と同じ承認）。code は書かない | in-progress |
+| q1648 / q1648-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307c`・branch `agent/p4-ws307c`、基点 main） | [ws307-p001](ws307/phase001/phase.md) の残り | 3 回目の review（design-review3.md）と J1〜J4 の回答を spec に反映（q1643 と同じ承認）。code は書かない | 済み（P4 e7e87b0f4 → main。review3 17 件と J1〜J4 を反映）。J5 の反映は q1649 |
+
+| q1649 / q1649-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307d`・branch `agent/p4-ws307d`、基点 main） | [ws307-p001](ws307/phase001/phase.md) の最後 | J5 の回答を spec に反映（J1 の非公開の取り消し、運用禁止の規則、root 起動相当の扱い）。code は書かない。承認は q1643 と同じ | in-progress |
