@@ -100,5 +100,7 @@
 
 | q1651 / q1651-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291e`・branch `agent/p2-ws291e`、基点 main） | [ws291](ws291/ws.md) | (1) mview の試験中に起動の logo（GOP の buffer）が見える件を直す（ユーザーの指示: GPU の使用中は console を止め、GOP の buffer は黒に）→ (2) Linux 以上まで（案 E・big-N・subs-N）。同じ承認（自律、Fable は何度でも、共有の code は案を Q1 に） | paused（2026-10-28 11:07 ユーザーの 13 時までの待機。P2 返却 07abbf57d → main。起動 logo の件を直した（GOP を黒に塗る、lease の終わりは黒へ flip、console は止めたまま）、実機で確かめ。Fable の CPU 時間の助言は記録のみ）。続きは q1653 |
 
-| q1652 / q1652-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws308b`・branch `agent/p1-ws308b`、基点 main） | [ws308](ws308/ws.md) の続き | q1650 と同じ承認と所有（13 時の再開）。Q1 が src/kern/buf.c・disk.c を所有に追加 | in-progress |
+| q1652 / q1652-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws308b`・branch `agent/p1-ws308b`、基点 main） | [ws308](ws308/ws.md) の続き | q1650 と同じ承認と所有（13 時の再開）。Q1 が src/kern/buf.c・disk.c を所有に追加 | 済み（P1 返却 c9266aa62 → main 394ab9393。乱読み QD32 direct 99.3%・QD1 105%（同じ時間帯の Debian 比）。続きは q1654） |
 | q1653 / q1653-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291f`・branch `agent/p2-ws291f`、基点 main） | [ws291](ws291/ws.md) の続き | q1651 と同じ承認（13 時の再開）: Fable の助言の M2 → 案 E の提案、executor の改善。2026-10-28 Q1 の OK（条件付き）: 共有の code の案 1（WSI の MAILBOX の画像 +1）・2（vkCmd* を recording に直に encode）・3（Reset・Begin・End を Submit に畳む）・4（小さい transaction を同期で）・5（gpu.c の wake・poll_notify を待ち手がいる時だけ、design-reviewer の後） | in-progress |
+
+| q1654 / q1654-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws308c`・branch `agent/p1-ws308c`、基点 main） | [ws308](ws308/ws.md) p004（不具合 1 の直し）・p006 の不具合 2・3・p007 規約 → WS299 | q1652 と同じ承認と所有。2026-10-28 ユーザー（クリック）「WS308 の中で P1 が直す (推し)」「後回し（Future Work） (推し)」（p005） | in-progress |

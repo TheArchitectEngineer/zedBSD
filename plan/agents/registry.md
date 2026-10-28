@@ -5,7 +5,7 @@
 
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
-| P1 | phase-runner | WS308 の続き（q1652） | `/home/awe/zedBSD-worktrees/p1-ws308b` / `agent/p1-ws308b` | running（13:00〜） | f43be9280（q1650） |
+| P1 | phase-runner | WS308 の不具合の直しと規約 → WS299（q1654） | `/home/awe/zedBSD-worktrees/p1-ws308c` / `agent/p1-ws308c` | running | c9266aa62（q1652） |
 | P2 | phase-runner | WS291 の続き（q1653） | `/home/awe/zedBSD-worktrees/p2-ws291f` / `agent/p2-ws291f` | running（13:00〜、10.0.10.3） | 07abbf57d（q1651） |
 | P3 | phase-runner | WS290 p009〜（q1644、13 時に resume） | `/home/awe/zedBSD-worktrees/p3-ws290g` / `agent/p3-ws290g` | running（13:00〜） | 1e41a9a86 |
 | P4 | phase-runner | WS307 p001（q1643〜q1649、済み）、BUG-347（resolved） | `/home/awe/zedBSD-worktrees/p4-ws307d` / `agent/p4-ws307d` | returned（2026-10-28） | 23c76dd28 |
