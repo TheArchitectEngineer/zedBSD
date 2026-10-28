@@ -4,7 +4,7 @@
 
 - 版: **第 5 版**（2026-10-29 P5、q1666-i03）。第 4 版までの「改訂の節を本文の上に重ねる」形をやめ、**一つの本文**にまとめた（第 4 版の review [design-v4-review.md](design-v4-review.md) の B1）。前の版は git の履歴にあり、各版の改訂（第 2 版 R1〜R13、第 3 版 T1〜T7、第 4 版 V1〜V10）の行き先は §11。
   review: 第 1 版 [design-review.md](design-review.md)、第 3 版 [design-v3-review.md](design-v3-review.md)、第 4 版 [design-v4-review.md](design-v4-review.md)。第 5 版の review は design-v5-review.md（未実施）。
-- 基点: worktree `p5-design-c`（main d94ceac00）。第 4 版までの file:行 は `p5-design-b`（63386d8a4）の物で、引用の source はこの間に変わっていない（第 4 版の review が `git diff --stat` で確かめた）。code は書いていない。
+- 基点: worktree `p5-design-d`（main 68ee65381。引用の source は d94ceac00 から変わっていない、`git diff --stat` で確かめた）。第 5 版の作成の基点は `p5-design-c`（main d94ceac00）。第 4 版までの file:行 は `p5-design-b`（63386d8a4）の物で、引用の source はこの間に変わっていない（第 4 版の review が `git diff --stat` で確かめた）。code は書いていない。
 - 調べた物: zedBSD の source（§1）、5330 の ACPI の表（`scratchpad/ws303-acpi/`、git に入れない）、5330 の Debian の読み（2026-10-29 02:42 と、WS301 の読みの TjMax、§2.3）、Fable の調査（公開の資料だけ、§2.4）。
 
 ## 0. ユーザーの決定（原文）と解釈
@@ -20,14 +20,14 @@
 | Q303-6 | 「入れる」 | passive（WS301 の上限を下げる）を入れる（§4.7） |
 | Q303-7 | 「Debian で読む (推し)」 | Dell の mode の符号は zedBSD で set → Debian で読みだけ（§6.3） |
 | Q303-8 | 「よい (推し)」 | 5330 の BIOS の Thermal Management を試験で書き換えてよい、終わりに performance へ戻す |
-| Q303-9/10（Q1 の要約の形） | 「/dev/thermal に移す・root/wheel」（Q1 の注: monitor も /dev/thermal に移し hw.thermal の sysctl は後で外す、sessiond 経由は root か wheel） | `hw.thermal` は monitor と sysctl の道具を移した後に外す（p009）。「後で」を同じ WS の p009 と読んだのは解釈（原文が要約の形なので Q1 に確かめる）。sessiond 経由は root か wheel の user |
+| Q303-9/10（Q1 の要約の形） | 「/dev/thermal に移す・root/wheel」（Q1 の注: monitor も /dev/thermal に移し hw.thermal の sysctl は後で外す、sessiond 経由は root か wheel） | `hw.thermal` は monitor と sysctl の道具を移した後に外す（p009）。Q1 の答え（2026-10-29）: 「後で外す」はユーザーがクリックした選択肢の文に含まれていた（原文の扱いでよい、同じ WS の p009）。sessiond 経由は root か wheel の user |
 | Q303-11 | 「ストラテジーはかなり抽象化されたものとして、トータルの「performance or balanced or power save or manual」と、マニュアルなら実行速度、騒音、細粒度パワーゲートの3項目を0-100で設定可能に。具体的なプラットフォームへのマッピングはドライバが決める。」 | strategy は 4 つ。manual の時だけ 3 つの軸（各 0〜100）。各 driver（受け手）が自分の対応を決める（§4.4） |
 | Q303-12 | 「GPL の値を出典つきで (推し)」 | 5330 の SMM の fan の state の値は Linux の hwmon の driver（GPL）から block ごとに出典つきで取る。手順は公開の文書と AML から組む（§8） |
 | Q303-13/14（Q1 の要約の形） | 「推しの組 (推し)」（第 4 版の Q303-13 の A、Q303-14 の A） | 非常の停止の水準は ACPI の thermal zone の `_CRT` と DT の critical だけ（5330 は firmware、Pi 5 は 110 °C）。passive は仕組みと host 試験まで、実機の受け入れは passive の水準が critical より下の機械が来た時 |
 | Q1 の決定 | AML の harness は p002 で `plan/tools/aml-host/` に移す。`/dev/acpi` は BUG-351 | |
 | WS301 Q301-7 | 「持たせない (推し)」（Q1 の注: 利用者が選ぶのは WS303 の strategy だけ、CPU ごとの直の値は root の診断用だけ） | WS301 は自分の policy を持たず strategy の受け手。WS301 の直の設定は root の診断（§4.4 の CUSTOM） |
 
-解釈で確かめたい所: Q303-9 の「後で」（上）、Dell の Quiet（firmware が fan を遅くする mode）を noise の軸で選んでよいか（Q303-19、§9。原文 Q303-5「ストラテジだけファームウェアに伝える」で支えられると読んだ）。
+解釈で確かめたい所: Dell の Quiet（firmware が fan を遅くする mode）を noise の軸で選んでよいか（Q303-19、§9。原文 Q303-5「ストラテジだけファームウェアに伝える」で支えられると読んだ）。
 
 ## 1. 今の振る舞い（code の事実）
 
@@ -417,7 +417,7 @@ int kern_thermal_limit_receiver_register(int (*limit)(uint32_t source, uint32_t 
 - Dell の公開の文書（Service Manual、DCC、KB）: mode の名前の出典。zedBSD の名前は strategy の抽象で、Dell の名前は provider の表の comment に出典つきで。
 - Linux の文書の散文（ABI・hwmon・wmi）は概念の確かめだけ。
 - **Q303-12**: SMM の fan の state の命令の値は Linux の `dell-smm-hwmon` の driver（GPL）から「Value(s) referenced:」で block ごとに取る（guardrail:123、前例 `rpi5-fan.c:44〜47`）。実装の担当は値のために GPL の file を読むが、code・名前・構造・comment は写さない。
-  呼び出しの手順（どの register に何を入れ、何を失敗の印とするか）は公開の `dell-smm-hwmon` の文書（§2.4）と 5330 の AML（`WMDM` の EAX〜EDX、§2.1）から組む。GPL の file からの「Procedure referenced:」が全 WS で許されるかは guardrail の字面が WS039 の節だけなので Q1 に確かめる（それまでは手順は GPL の file から取らない）。
+  呼び出しの手順（どの register に何を入れ、何を失敗の印とするか）は公開の `dell-smm-hwmon` の文書（§2.4）と 5330 の AML（`WMDM` の EAX〜EDX、§2.1）から組む。Q1 の答え（2026-10-29）: GPL の file からの手順の引用は guardrail が明示していない WS では採らない。この WS では手順を GPL の file から取らない（値だけ Q303-12 の決定で出典つき）。
 - 5330 の観測の値は試験の期待の値として `plan/ws303/tests/` に置き、source の定数にしない。
 
 ## 9. ユーザーに決めてほしい点（推しつき）
@@ -436,7 +436,7 @@ int kern_thermal_limit_receiver_register(int (*limit)(uint32_t source, uint32_t 
 4. `IETM._STA` の `DDDR` が Debian の後の warm reboot で残るか（p004 で `\DDDR` を読む）。
 5. kernel の中に非常の時に呼べる sync の口があるか（p003b）。
 6. `/dev/thermal` の device の番号の空き（p003a）。
-7. Q303-9 の「後で外す」の原文（Q1）。GPL の file からの手順の参照の可否（Q1、§8）。
+7. （済み、2026-10-29 Q1）Q303-9 の「後で外す」は選択肢の原文、GPL の file からの手順は採らない（§0・§8）。
 
 ## 11. 経緯（前の版の改訂の行き先）
 
