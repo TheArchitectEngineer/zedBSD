@@ -51,8 +51,12 @@
 #define NVME_IO_MAX_COMMAND_BYTES (2U * 1024U * 1024U)
 #define NVME_IO_MAX_COMMAND_PAGES (NVME_IO_MAX_COMMAND_BYTES / KERN_PAGE_SIZE)
 
-/* The most one block request carries before the block layer splits it (ws299: was 64 KiB). */
-#define NVME_IO_MAX_BIO_BYTES (1024U * 1024U)
+/*
+ * The most one block request carries before the block layer splits it: 4
+ * MiB, so that a direct transfer of 4 MiB keeps its commands posted together
+ * instead of waiting for the device between four requests of 1 MiB.
+ */
+#define NVME_IO_MAX_BIO_BYTES (4U * 1024U * 1024U)
 
 /*
  * The most one command of a page list carries, so that a request of 1 MiB
@@ -122,11 +126,16 @@ _Static_assert(NVME_IO_MAX_SLOTS <= 64U, "the free-slot hint is one 64-bit word"
  * its host) makes the same request succeed on the recovered queue.
  */
 #define NVME_IO_TIMEOUT_RETRIES 3U
+/*
+ * How many commands of one block request stay posted at once: a request of
+ * NVME_IO_MAX_BIO_BYTES in commands of NVME_IO_PAGE_COMMAND_BYTES, all at
+ * once.
+ */
 #ifndef NVME_IO_PIPELINE_DEPTH
-#define NVME_IO_PIPELINE_DEPTH 4U
+#define NVME_IO_PIPELINE_DEPTH (NVME_IO_MAX_BIO_BYTES / NVME_IO_PAGE_COMMAND_BYTES)
 #endif
-#if NVME_IO_PIPELINE_DEPTH < 1 || NVME_IO_PIPELINE_DEPTH > 8
-#error NVME_IO_PIPELINE_DEPTH must be between 1 and 8
+#if NVME_IO_PIPELINE_DEPTH < 1 || NVME_IO_PIPELINE_DEPTH > 16
+#error NVME_IO_PIPELINE_DEPTH must be between 1 and 16
 #endif
 #define NVME_PCI_COMMAND 0x04U
 #define NVME_PCI_COMMAND_ENABLE 0x0007U

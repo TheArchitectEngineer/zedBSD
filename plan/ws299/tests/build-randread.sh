@@ -11,7 +11,7 @@ S=build/amd64/sysroot
 [ -d "$S" ] || S=/home/awe/zedBSD-claude1/build/amd64/sysroot
 C=build/llvm/bin/clang
 mkdir -p "$OUT"
-for name in randread patwrite directio; do
+for name in randread patwrite directio cpuloop; do
 	"$C" --target=x86_64-unknown-zedbsd --sysroot="$S" -nostdinc -isystem include -isystem "$S/usr/include" -O2 -Wall -Wextra -Werror \
 		-c plan/ws299/tests/$name.c -o "$OUT/$name.o"
 	"$C" --target=x86_64-unknown-zedbsd --sysroot="$S" -nostdlib -static "$S/usr/lib/crt0.o" "$OUT/$name.o" \

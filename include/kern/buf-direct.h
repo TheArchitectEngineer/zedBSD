@@ -19,7 +19,10 @@
 #include <stdint.h>
 
 /* The most one piece of a direct transfer moves: one request of the largest a driver takes. */
-#define BUF_DIRECT_PIECE_BYTES	(1024U * 1024U)
+#define BUF_DIRECT_PIECE_BYTES	(4U * 1024U * 1024U)
+
+/* The most one staged piece moves, through a staging buffer of the kernel's heap. */
+#define BUF_DIRECT_STAGED_BYTES	(1024U * 1024U)
 
 /*
  * Reports 1 when a direct transfer of length bytes at a byte offset of a

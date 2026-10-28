@@ -13,13 +13,25 @@
  *	directio read DEV MIB [BS_KIB [OFFSET_MIB]]
  *	directio write DEV MIB [BS_KIB [OFFSET_MIB]]
  *	directio check DEV FILE
+ *	directio fillbench DEV
+ *	directio fillmix DEV
  *
  * read and write move MIB MiB with O_DIRECT in BS_KIB requests (1024 by
  * default) from OFFSET_MIB of DEV, from a page-aligned buffer; write puts
  * a numbered pseudo-random pattern in every 4 KiB block (as patwrite does)
  * and ends with fsync.  One line reports the result:
  *
- *	directio read|write mib=M bs_kib=B ms=T MBps=X
+ *	directio read|write mib=M bs_kib=B ms=T MBps=X fill_ms=F io_ms=I sync_ms=S
+ *	    moved=M/N pcore=P/N
+ * (F: the time spent filling the buffer, I: in the reads or writes, S: in
+ * the closing fsync; M of the N requests returned on another CPU than they
+ * started on, P of them started on a hybrid part's performance core)
+ *
+ * fillbench writes the first MiB of DEV twice and prints the TSC ticks one
+ * fill of a 1 MiB buffer takes before and after a direct write from it.
+ *
+ * fillmix writes the first 768 MiB of DEV and prints the ticks of one fill
+ * of a buffer next to direct I/O from another buffer (fillmix()).
  *
  * check (zedBSD) destroys the first 16 MiB of DEV and runs the semantic
  * checks of O_DIRECT: refusals (a regular FILE, O_TRUNC on it, F_SETFL,
@@ -70,6 +82,41 @@ now_ns(void)
 	return (uint64_t)now.tv_sec * 1000000000U + (uint64_t)now.tv_nsec;
 }
 
+/* The split's clock: the time stamp counter on x86_64 (the system clock may tick in milliseconds). */
+static uint64_t
+split_now(void)
+{
+#if defined(__x86_64__)
+	unsigned lo, hi;
+
+	__asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
+	return ((uint64_t)hi << 32) | lo;
+#else
+	return now_ns();
+#endif
+}
+
+/* The CPU the thread runs on (initial APIC ID) and whether it is a hybrid part's performance core. */
+static void
+split_where(unsigned *apic, int *pcore)
+{
+#if defined(__x86_64__)
+	unsigned a, b, c, d;
+
+	__asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0U), "c"(0U));
+	*pcore = 0;
+	if (a >= 0x1aU) {
+		__asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(0x1aU), "c"(0U));
+		*pcore = (a >> 24) == 0x40U;
+	}
+	__asm__ volatile("cpuid" : "=a"(a), "=b"(b), "=c"(c), "=d"(d) : "a"(1U), "c"(0U));
+	*apic = b >> 24;
+#else
+	*apic = 0;
+	*pcore = 0;
+#endif
+}
+
 /* Fills a buffer with numbered 4 KiB blocks of a seeded xorshift pattern. */
 static void
 fill(unsigned char *buffer, size_t length, uint64_t seed, uint64_t number)
@@ -77,12 +124,24 @@ fill(unsigned char *buffer, size_t length, uint64_t seed, uint64_t number)
 	uint64_t state;
 	size_t at;
 
+	/*
+	 * Whole words with a copy of a constant size, which the compiler makes a
+	 * store (a copy of a variable size calls the C library's memcpy for
+	 * every word, which measures the library and not the I/O), then the
+	 * tail.  The bytes are the same either way.
+	 */
 	state = seed * 0x9e3779b97f4a7c15ULL + 1U;
-	for (at = 0; at < length; at += 8) {
+	for (at = 0; at + 8 <= length; at += 8) {
 		state ^= state << 13;
 		state ^= state >> 7;
 		state ^= state << 17;
-		memcpy(buffer + at, &state, length - at < 8 ? length - at : 8);
+		memcpy(buffer + at, &state, 8);
+	}
+	if (at < length) {
+		state ^= state << 13;
+		state ^= state >> 7;
+		state ^= state << 17;
+		memcpy(buffer + at, &state, length - at);
 	}
 	for (at = 0; at + 8 <= length; at += BLOCK) {
 		memcpy(buffer + at, &number, 8);
@@ -123,6 +182,23 @@ measure(int write_mode, const char *path, unsigned long mib, unsigned long bs_ki
 	uint64_t started;
 	uint64_t elapsed;
 	uint64_t number;
+	uint64_t mark;
+	uint64_t split0;
+	uint64_t split_hz;
+	uint64_t fill_ns;
+	uint64_t io_ns;
+	uint64_t sync_ns;
+	uint64_t refill_ns;
+	int refill;
+	int trace;
+	uint64_t trace_fill;
+	uint64_t trace_io;
+	unsigned apic;
+	unsigned last_apic;
+	unsigned moved;
+	unsigned pcores;
+	unsigned requests;
+	int pcore;
 	size_t bs;
 	off_t at;
 	off_t end;
@@ -140,14 +216,49 @@ measure(int write_mode, const char *path, unsigned long mib, unsigned long bs_ki
 	at = (off_t)offset_mib * MIB;
 	end = at + (off_t)mib * MIB;
 	number = (uint64_t)at / BLOCK;
+	fill_ns = 0;
+	io_ns = 0;
+	sync_ns = 0;
+	refill_ns = 0;
+	refill = getenv("DIRECTIO_REFILL") != NULL;
+	trace = getenv("DIRECTIO_TRACE") != NULL;
+	trace_fill = 0;
+	trace_io = 0;
 	started = now_ns();
+	split0 = split_now();
+	moved = 0;
+	pcores = 0;
+	requests = 0;
+	split_where(&last_apic, &pcore);
 	while (at < end) {
+		split_where(&apic, &pcore);
+		if (apic != last_apic)
+			moved++;
+		pcores += pcore != 0;
+		requests++;
+		mark = split_now();
 		if (write_mode) {
 			fill(buffer, bs, 7, number);
 			number += bs / BLOCK;
+			fill_ns += split_now() - mark;
+			if (refill) {
+				mark = split_now();
+				fill(buffer, bs, 7, number - bs / BLOCK);
+				refill_ns += split_now() - mark;
+			}
+			mark = split_now();
 			done = pwrite(fd, buffer, bs, at);
 		} else {
 			done = pread(fd, buffer, bs, at);
+		}
+		io_ns += split_now() - mark;
+		split_where(&last_apic, &pcore);
+		if (trace && requests % 256U == 0U) {
+			printf("directio trace request=%u fill_ticks=%llu io_ticks=%llu\n", requests,
+			    (unsigned long long)((fill_ns - trace_fill) / 256U),
+			    (unsigned long long)((io_ns - trace_io) / 256U));
+			trace_fill = fill_ns;
+			trace_io = io_ns;
 		}
 		if (done != (ssize_t)bs) {
 			fprintf(stderr, "directio: %s at %lld: %zd\n", write_mode ? "pwrite" : "pread",
@@ -156,15 +267,28 @@ measure(int write_mode, const char *path, unsigned long mib, unsigned long bs_ki
 		}
 		at += (off_t)bs;
 	}
+	mark = split_now();
 	if (write_mode && fsync(fd) != 0) {
 		perror("fsync");
 		return 1;
 	}
+	sync_ns = split_now() - mark;
 	elapsed = now_ns() - started;
+	split_hz = (uint64_t)((double)(split_now() - split0) * 1e9 / ((double)elapsed + 1.0));
+	fill_ns = (uint64_t)((double)fill_ns * 1e9 / ((double)split_hz + 1.0));
+	io_ns = (uint64_t)((double)io_ns * 1e9 / ((double)split_hz + 1.0));
+	sync_ns = (uint64_t)((double)sync_ns * 1e9 / ((double)split_hz + 1.0));
+	refill_ns = (uint64_t)((double)refill_ns * 1e9 / ((double)split_hz + 1.0));
+	if (refill)
+		printf("directio refill_ms=%llu (the same fill again at once, DIRECTIO_REFILL)\n",
+		    (unsigned long long)(refill_ns / 1000000U));
 	close(fd);
-	printf("directio %s mib=%lu bs_kib=%lu ms=%llu MBps=%.1f\n", write_mode ? "write" : "read",
-	    mib, bs_kib, (unsigned long long)(elapsed / 1000000U),
-	    (double)mib * MIB / 1e6 / ((double)elapsed / 1e9));
+	printf("directio %s mib=%lu bs_kib=%lu ms=%llu MBps=%.1f fill_ms=%llu io_ms=%llu sync_ms=%llu"
+	    " moved=%u/%u pcore=%u/%u\n",
+	    write_mode ? "write" : "read", mib, bs_kib, (unsigned long long)(elapsed / 1000000U),
+	    (double)mib * MIB / 1e6 / ((double)elapsed / 1e9), (unsigned long long)(fill_ns / 1000000U),
+	    (unsigned long long)(io_ns / 1000000U), (unsigned long long)(sync_ns / 1000000U),
+	    moved, requests, pcores, requests);
 	fflush(stdout);
 	return 0;
 }
@@ -422,6 +546,142 @@ check(const char *device, const char *file)
 	return 0;
 }
 
+/* The TSC ticks of 64 fills of one 1 MiB buffer, per fill. */
+static uint64_t
+fill_ticks(unsigned char *buffer)
+{
+	uint64_t mark;
+	unsigned i;
+
+	mark = split_now();
+	for (i = 0; i < 64; i++)
+		fill(buffer, MIB, 7, i);
+	return (split_now() - mark) / 64U;
+}
+
+/*
+ * How fast the buffer of a direct transfer fills: a page-aligned 1 MiB
+ * buffer filled before any I/O, after one direct write from it, after one
+ * buffered write from it, and a second fresh buffer for comparison.
+ */
+static int
+fillbench(const char *path)
+{
+	unsigned char *buffer;
+	unsigned char *other;
+	uint64_t before;
+	uint64_t after_direct;
+	uint64_t after_plain;
+	uint64_t fresh;
+	int fd;
+
+	buffer = aligned(MIB);
+	other = aligned(MIB);
+	memset(buffer, 0, MIB);
+	memset(other, 0, MIB);
+	before = fill_ticks(buffer);
+	fd = open(path, O_WRONLY | O_DIRECT);
+	if (fd < 0 || pwrite(fd, buffer, MIB, 0) != (ssize_t)MIB) {
+		perror(path);
+		return 1;
+	}
+	close(fd);
+	after_direct = fill_ticks(buffer);
+	fd = open(path, O_WRONLY);
+	if (fd < 0 || pwrite(fd, buffer, MIB, 0) != (ssize_t)MIB || fsync(fd) != 0) {
+		perror(path);
+		return 1;
+	}
+	close(fd);
+	after_plain = fill_ticks(buffer);
+	fresh = fill_ticks(other);
+	printf("directio fillbench ticks_per_MiB before=%llu after_direct=%llu after_buffered=%llu other_buffer=%llu\n",
+	    (unsigned long long)before, (unsigned long long)after_direct, (unsigned long long)after_plain,
+	    (unsigned long long)fresh);
+	fflush(stdout);
+	return 0;
+}
+
+/*
+ * How a fill of one buffer A behaves next to direct I/O from another buffer
+ * B: after a direct write, after a direct write and a 2 ms sleep, after a
+ * direct read, and after a 0.5 ms sleep with no I/O; then the fill of A
+ * right after a direct write from A itself, and a second fill at once; 256
+ * rounds each, the mean TSC ticks of one 1 MiB fill.
+ */
+static int
+fillmix(const char *path)
+{
+	unsigned char *a;
+	unsigned char *b;
+	uint64_t sum[4];
+	uint64_t same[2];
+	uint64_t mark;
+	unsigned kind;
+	unsigned i;
+	off_t at;
+	int fd;
+
+	a = aligned(MIB);
+	b = aligned(MIB);
+	memset(a, 0, MIB);
+	memset(b, 0, MIB);
+	fd = open(path, O_RDWR | O_DIRECT);
+	if (fd < 0) {
+		perror(path);
+		return 1;
+	}
+	at = 0;
+	for (kind = 0; kind < 4; kind++) {
+		sum[kind] = 0;
+		for (i = 0; i < 256; i++) {
+			if (kind == 0 || kind == 1) {
+				if (pwrite(fd, b, MIB, at) != (ssize_t)MIB) {
+					perror("pwrite");
+					return 1;
+				}
+				at += MIB;
+			} else if (kind == 2) {
+				if (pread(fd, b, MIB, (off_t)i * MIB) != (ssize_t)MIB) {
+					perror("pread");
+					return 1;
+				}
+			}
+			if (kind == 1)
+				usleep(2000);
+			if (kind == 3)
+				usleep(500);
+			mark = split_now();
+			fill(a, MIB, 7, i);
+			sum[kind] += split_now() - mark;
+		}
+	}
+	/* The written buffer itself: its first fill after the write, and a second one at once. */
+	same[0] = 0;
+	same[1] = 0;
+	for (i = 0; i < 256; i++) {
+		if (pwrite(fd, a, MIB, at) != (ssize_t)MIB) {
+			perror("pwrite");
+			return 1;
+		}
+		at += MIB;
+		mark = split_now();
+		fill(a, MIB, 7, i);
+		same[0] += split_now() - mark;
+		mark = split_now();
+		fill(a, MIB, 7, i + 1);
+		same[1] += split_now() - mark;
+	}
+	close(fd);
+	printf("directio fillmix ticks_per_MiB after_write=%llu after_write_sleep=%llu after_read=%llu after_sleep=%llu"
+	    " own_after_write=%llu own_again=%llu\n",
+	    (unsigned long long)(sum[0] / 256U), (unsigned long long)(sum[1] / 256U),
+	    (unsigned long long)(sum[2] / 256U), (unsigned long long)(sum[3] / 256U),
+	    (unsigned long long)(same[0] / 256U), (unsigned long long)(same[1] / 256U));
+	fflush(stdout);
+	return 0;
+}
+
 int
 main(int argc, char **argv)
 {
@@ -430,6 +690,10 @@ main(int argc, char **argv)
 
 	if (argc >= 4 && strcmp(argv[1], "check") == 0)
 		return check(argv[2], argv[3]);
+	if (argc >= 3 && strcmp(argv[1], "fillbench") == 0)
+		return fillbench(argv[2]);
+	if (argc >= 3 && strcmp(argv[1], "fillmix") == 0)
+		return fillmix(argv[2]);
 	if (argc < 4 || (strcmp(argv[1], "read") != 0 && strcmp(argv[1], "write") != 0)) {
 		fprintf(stderr, "usage: directio read|write DEV MIB [BS_KIB [OFFSET_MIB]] | check DEV FILE\n");
 		return 2;
