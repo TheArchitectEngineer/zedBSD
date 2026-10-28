@@ -130,3 +130,10 @@
   desktop の後の mview が `work space full` を出さず `api=depth format` まで進めば VA の拡張は効いている。(2) [p010a](../phase010a/phase.md) の実装。
   (3) desktop の scroll・hover・drag の 20〜35 fps の調べ。案 A・B（RDNA）は host の harness の runner（plan/ws014/tests の gpu-job.c の build の手順）が
   tree に無く後回し（kernel と host の header の型の衝突で今の tree では compile できない: tid_t・sigset_t）。
+
+### work channel の VA の拡張の実機（2026-10-29 08:49〜08:56 P2、q1670-i02、build/ws291/rtx/va1、worktree p2-ws291n）
+
+- `sh plan/ws291/tests/rtx-va-check.sh build/ws291/rtx/va1 build/ws291/vmunix-va1`（01478d325 の build、cksum 1463007375）: desktop の後の mview 3 回とも
+  swapchain を越えて `api=depth format result=-11`（[p010a](../phase010a/phase.md) で足す物）まで進み、kernel の行に `work space full`・`window full` は無い → VA の拡張は効いている。
+- desktop（counts 無し）: keys 167、output 67、type 61、home 63、wiseview 62、launch 49、scroll 20、hover 23、drag 36 fps（前の lazy と同じ）。
+- 終わり: Debian、RTX は vfio-pci、NVMe の zedBSD の kernel は vmunix-va1（前の物は vmunix.old）。

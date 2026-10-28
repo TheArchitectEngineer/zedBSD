@@ -204,3 +204,9 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 - 再開点（2026-10-29 07:20 P2）: [phase010](phase010/phase.md) の「再開点」。BAR1 の window の直し（06cdbf381）で window の peak 246 → 107 MiB、
   terminal が開き frame-ops の全段が動く（scroll・hover・drag は 20〜35 fps）。次の壁: work channel の VA（約 383 MiB）の満杯と、executor に depth の形式が無い
   （mview が動かない）。NVK の基準: scene-5000 50.1 fps（weston は render-only、direct scanout でない）。
+
+## 2026-10-29 q1670-i02（P2、worktree p2-ws291n）
+
+- 承認は q1670 と同じ（ユーザーの回答「WS291 の NVIDIA の段 (推し)」、Linux の基準「NVK（nouveau） (推し)」）。Q1 の判断: VA の直しと p010a は WS291 の中、その後 p011。
+- 再開点（2026-10-29 08:57 P2）: VA の拡張は実機で OK（[phase010](phase010/phase.md) の最後の節）。p010a の実装（depth・DrawIndexed・cull・UNIFORM_BUFFER・mip（tiled の texture）・
+  CopyBuffer）は host で確かめた（[phase010a](phase010a/phase.md)）、実機は次の枠。移設の後の「zedBSD が出ない」は新しい worktree の鍵の mode（0664）だった。
