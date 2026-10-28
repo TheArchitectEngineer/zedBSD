@@ -111,8 +111,9 @@ struct filesystem_type {
 	/* Caller retains a prepared backing claim. Report ordered logical and
 	 * physical 512-byte sectors; never allocate blocks or retain the callback. */
 	int (*file_extents)(struct file *, file_extent_cb, void *);
-	/* Optional exclusive metadata ranges, never shared allocation tables.
-	 * These protect layout; they are not part of the logical file I/O map. */
+	/* Optional exclusive metadata ranges in physical 512-byte sectors, never
+	 * shared allocation tables.  These protect layout; they are not part of
+	 * the logical file I/O map. */
 	int (*file_metadata_extents)(struct file *, file_metadata_extent_cb, void *);
 	/* Stable file identity across separate mounts; no mutation or admission. */
 	int (*file_backing_identity)(struct inode *, struct disk **, uint64_t *);
