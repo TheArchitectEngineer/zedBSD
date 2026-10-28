@@ -104,6 +104,15 @@
 - keiland-shot は eager・lazy とも撮れた（6222418 byte、shot の ERROR buffer は最初の起動の時だけ、未解析）。
 - 手順の注意: `pkill -f rtx-window-ab.sh` は同じ語を含む自分の shell も止める（tools.md の注意と同じ、exit 144）。
 
+### work channel の VA の拡張（01478d325、実機は未実施）
+
+- NVRTX_WORK_VA_BYTES 512 MiB → 3.5 GiB（0x20000000〜0x100000000、first-level の entry 1〜7、resource manager の 4 GiB の range の手前）。
+  mmu.c: 512 MiB ごとの double-entry directory（最初の物は今の 0x3000、2 つ目からは page table の後ろ）にし、page table は 1 本の列のまま
+  （`nvrtx_mmu_gr_pte_offset` は不変、1 entry の range の image は前と同じ byte）。work.c の arena: tables 0〜0x70a000、instance 0x800000、
+  USERD 0x801000、own buffers 0xa00000（arena 32 MiB は不変）。
+- 確かめ: vmunix warning 0（build/ws291/vmunix-va1 cksum 1463007375）、plan/tools/nvrtx/nvrtx-sm75-host-test.sh 287 checks 0 failures、
+  page table の walk の host の確かめ（scratchpad、7 つの VA で dir0・page table・PTE の位置が一致、PASS）。実機は次の枠。
+
 ### 再開点（2026-10-29 07:20 P2）
 
 - 実機: Debian、RTX は vfio-pci、lock は返した。NVMe の zedBSD の kernel は vmunix-lazy2（cf48046e5 の build、cksum 204755418、前の物は vmunix.old）、
