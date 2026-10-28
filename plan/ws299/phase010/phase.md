@@ -113,3 +113,7 @@
 - QD32 は WS308 で直った: 5330（b8ce0cdc3 の config-5330、`nvme-bench-5330.sh zedbsd w308c-q - qdprobe`、同じ時間帯の Debian は `plan/tools/kstress/debian-qdstat.sh`）で乱読み 4 KiB QD32 direct 224.2k IOPS（918 MB/s）＝Debian 225.8k の 99.3%、process 99.7%、cached 241.2k（988 MB/s）、QD1 direct 13.9k（Debian 13.6k）。記録 `build/hw5330/ws308c/`。→ 受け入れの乱読みは満たす。
 - direct の書き 59% の切り分け: 今の kernel で p7direct の基準を取り直そうとした（`nvme-bench-5330.sh zedbsd w299c-z - p7direct`）が、zedBSD の起動の後 5 分答えず、5330 は ping・SSH とも返らない（18:46、Q1 に電源の入れ直しを頼んだ）。同じ kernel で今日 3 回（read・qdprobe）は正常に起動した。止まった所（起動の途中か、p7 の discard・書きの最中か）は未確認。
 - 書きの仮説（未確認）: 1 MiB の要求は NVMe の 256 KiB の command 4 つを一度に出す（`NVME_IO_PAGE_COMMAND_BYTES`×`NVME_IO_PIPELINE_DEPTH` 4 = 1 MiB）ので、同時の数は Linux と同じ見込み。差の 1 MiB あたり約 0.5 ms（zedBSD 1.23 ms、Debian 0.73 ms）は、(a) command の大きさ（Linux は MDTS まで、BG5 の DRAM-less の書きは大きい command が有利かもしれない）、(b) `buf_direct_prepare` と finish の line の 2 回の walk と `backing_mutation_begin_disk`、(c) 1 MiB の piece の間の直列（user の QD1 は同じ）、(d) 書きの完了の割り込みと起床。次は 5330 で bs 4 MiB の書きと、command の大きさ 128 KiB・256 KiB・512 KiB（MDTS まで）で比べ、post→CQ の時間を取る。
+
+## 2026-10-28 夜（q1657、P1）
+
+- direct の書き 59% の差は、道具 directio の fill（長さを変数にした memcpy を 8 byte ごとに呼び、zedBSD の libc の memcpy が遅い）だった。kernel の 1 MiB の書きは約 0.47 ms で、I/O の時間は Debian と同じ程度。fill を直し、NVMe の 1 request を 4 MiB・同時 16 command にした（c9468203a）。5330: direct の書き 1384 / 1579 MB/s（88%）、読み 1 MiB 2554 / 2486（103%）、4 MiB 2809 / 3101（91%）。表と見立ては [ws.md](../ws.md) の「結果（2026-10-28 21:50）」。
