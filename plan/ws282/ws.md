@@ -19,7 +19,7 @@
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（/dev/camN の API、uvc、xHCI の isochronous の制約、試験、Phase）→ [design.md](design.md)（版 3。版 1 の review は [phase001/review-20261023.md](phase001/review-20261023.md)、版 2 の review は [phase001/review-v2-20261023.md](phase001/review-v2-20261023.md)） | — | in-progress（2026-10-23 P3、版 3。Q1 の判定と版 3 の review 待ち） |
-| p002 | 枠組み: `include/uapi/camera.h`（layout と `_Static_assert`）、`src/drivers/camera/cam.c`（cdev と退役（停止の一本化・admission）、所有、0 埋めの buffer と mmap、slot の API、queue、DEQUEUE の timeout、poll、metadata、counters、状態機械、FAULT）、host の試験（design §11、6〜8 LW） | p001 | planned |
+| [p002](phase002/phase.md) | 枠組み: `include/uapi/camera.h`（layout と `_Static_assert`）、`src/drivers/camera/cam.c`（cdev と退役（停止の一本化・admission）、所有、0 埋めの buffer と mmap、slot の API、queue、DEQUEUE の timeout、poll、metadata、counters、状態機械、FAULT）、host の試験（design §11、6〜8 LW） | p001 | in-progress（一部の実装済み・試験未実施、branch agent/p6-ws282、SHA 0eea3815d） |
 | p003 | uvc の bind と descriptor の解析（MJPEG の 11 byte の形、GUID の byte 列）と dump、VS の claim、PROBE/COMMIT と補正、`ENOSPC`、登録、build。devfs の 0600（Q1）。板（5330 + HDMI capture + webcam）で dump、仕様の節の確定（3〜4 LW） | p002 | planned |
 | p004a | xHCI の HS isoch IN の実地（URB の予約・投入の順の ring・worker・halt だけ、`camcap --probe-only`）。xHCI の不具合は BUG の ticket にして WS197 へ（2〜3 LW） | p003 | planned |
 | p004b | streaming（payload の解析と frame の組み立て、COMMIT の再送、watchdog、bulk は host 試験のみ）、`camcap`・`camcommon`。板で最初の frame（P ≤ 1024 の mode、5〜7 LW） | p004a | planned |
@@ -45,3 +45,4 @@
 - 2026-10-29 01:3x ユーザー「P6は設計が決まっているWSについて、テストなしでひたすら実装だけ進めてテスト未完了でincompleteだけど実装はできていてマージされていない状態のWSを増やす。」
 - ユーザー「調査しなくてよい、設計ができているか自明なWSについて、ひたすら書いてください。選択したもののうち、調査が必要なものはスキップします。WSごとにサブのサブエージェントを作ってよいです。」（選択: WS223・WS282〜WS284・WS243・WS296）
 - 解釈（Q1）: 試験をせず実装だけを P6 の branch に積み、main に merge しない。Status は incomplete のまま（試験は未実施）。調べが要ると分かれば P6 は飛ばして Q1 に返す。
+- 2026-10-29 01:56 P6 の配下: p002 の一部を実装（camera.h・cam.h・cam.c・amd64 の build の登録・camcommon、SHA 0eea3815d、cam.c は compile で warning 0）。P6 の指示（優先度）で止めた。未着手: cam-host-test、arm64/riscv64 の登録、p003〜p004b、camcap。再開点は [phase002](phase002/phase.md) の「再開点」。未 commit の物は無し。
