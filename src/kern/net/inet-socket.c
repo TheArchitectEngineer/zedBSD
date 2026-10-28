@@ -763,9 +763,10 @@ inet_socket_ioctl(
 		netmask = interface->netmask;
 		interface_unlock(enabled);
 
-		/* Replaces the connected route. */
+		/* Replaces the connected route; what senders kept of the old address is looked up again. */
 		interface_update_route(device, old_address, old_netmask, address,
 				       netmask);
+		route_changed();
 		net_device_release(device);
 		return 0;
 	default:
@@ -857,6 +858,9 @@ inet_interface_purge_device(
 	}
 
 	interface_unlock(enabled);
+
+	/* What senders kept of the device's address is looked up again. */
+	route_changed();
 	for (index = 0; index < count; index++)
 		net_device_release(references[index]);
 }

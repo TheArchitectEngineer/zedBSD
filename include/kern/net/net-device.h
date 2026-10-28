@@ -169,6 +169,8 @@ unsigned net_device_capabilities_get(const struct net_device *device);
  * change.  EINVAL for a value outside, EBUSY while the device opens or
  * closes, ENODEV for a device that is gone, or the driver's errno. */
 int net_device_set_mtu(struct net_device *device, unsigned mtu);
+/* Whether any device has a poll scheduled; read without the registry lock. */
+int net_device_poll_wanted(void);
 /* The longest frame, from its Ethernet header on, the stack hands the
  * device: the header and the MTU, within one packet after the default
  * headroom.  The loopback device's packets stay standard ones. */

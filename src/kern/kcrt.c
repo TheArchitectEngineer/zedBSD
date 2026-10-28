@@ -109,6 +109,15 @@ static void kcrt_emit_number(struct kcrt_output *output, uintmax_t value, int ne
 
 /*
  * Copies count bytes between ranges that do not overlap.
+ *
+ * Whole words are moved once the destination is word-aligned: straight
+ * when the source is aligned too, else each word put together from the two
+ * aligned source words it straddles, so no unaligned access is ever made
+ * (a processor that traps on one, the U74 of the VisionFive 2, would take
+ * a trap for every word) and a network packet's payload, which seldom
+ * starts on a word, is still copied a word at a time.  Every aligned
+ * source word read holds bytes of the source only partly at its ends, so
+ * nothing beyond the source's last aligned word is read.
  */
 void *
 kern_memcpy(
@@ -118,16 +127,57 @@ kern_memcpy(
 {
 	unsigned char *to;
 	const unsigned char *from;
-	int aligned;
+	const kcrt_word *words;
+	kcrt_word low;
+	kcrt_word high;
+	unsigned shift;
 
 	to = destination;
 	from = source;
 
-	/* Copies whole words while both addresses are word-aligned. */
-	aligned = ((uintptr_t)to | (uintptr_t)from) % KCRT_WORD_SIZE == 0;
-	if (aligned) {
+	/* Copies bytes until the destination is word-aligned, or the count runs out. */
+	while (count != 0 && (uintptr_t)to % KCRT_WORD_SIZE != 0) {
+		*to = *from;
+		to++;
+		from++;
+		count--;
+	}
+
+	/* Copies whole words, four at a time and then one, when the source is aligned too. */
+	if ((uintptr_t)from % KCRT_WORD_SIZE == 0) {
+		while (count >= 4U * KCRT_WORD_SIZE) {
+			((kcrt_word *)to)[0] = ((const kcrt_word *)from)[0];
+			((kcrt_word *)to)[1] = ((const kcrt_word *)from)[1];
+			((kcrt_word *)to)[2] = ((const kcrt_word *)from)[2];
+			((kcrt_word *)to)[3] = ((const kcrt_word *)from)[3];
+			to += 4U * KCRT_WORD_SIZE;
+			from += 4U * KCRT_WORD_SIZE;
+			count -= 4U * KCRT_WORD_SIZE;
+		}
 		while (count >= KCRT_WORD_SIZE) {
 			*(kcrt_word *)to = *(const kcrt_word *)from;
+			to += KCRT_WORD_SIZE;
+			from += KCRT_WORD_SIZE;
+			count -= KCRT_WORD_SIZE;
+		}
+	} else if (count >= 2U * KCRT_WORD_SIZE) {
+		/*
+		 * Puts each destination word together from the two aligned source
+		 * words it straddles.  The loop stops one word early so that the
+		 * last aligned word read still holds bytes of the source.
+		 */
+		shift = (unsigned)((uintptr_t)from % KCRT_WORD_SIZE) * 8U;
+		words = (const kcrt_word *)((uintptr_t)from - (uintptr_t)from % KCRT_WORD_SIZE);
+		low = words[0];
+		while (count >= 2U * KCRT_WORD_SIZE) {
+			high = words[1];
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+			*(kcrt_word *)to = (low >> shift) | (high << (8U * KCRT_WORD_SIZE - shift));
+#else
+			*(kcrt_word *)to = (low << shift) | (high >> (8U * KCRT_WORD_SIZE - shift));
+#endif
+			low = high;
+			words++;
 			to += KCRT_WORD_SIZE;
 			from += KCRT_WORD_SIZE;
 			count -= KCRT_WORD_SIZE;

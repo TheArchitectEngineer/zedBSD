@@ -114,14 +114,61 @@ net_checksum_pseudo6(
 	return checksum;
 }
 
-/* Adds the big-endian 16-bit words of a buffer to a running sum. */
+/*
+ * Adds the big-endian 16-bit words of a buffer to a running sum.
+ *
+ * A buffer at an even address is summed a machine word at a time once it
+ * is word-aligned: the one's complement sum of a buffer's native-order
+ * words, folded to 16 bits, is its big-endian sum with the two bytes
+ * swapped on a little-endian machine (RFC 1071 section 2(B)).  The words
+ * are only ever read aligned.  An odd address keeps the byte loop.
+ */
 static uint32_t
 checksum_add(
 	uint32_t sum,
 	const uint8_t *data,
 	size_t length)
 {
-	/* Adds every complete word. */
+	const uintptr_t *words;
+	uint64_t wide;
+	uintptr_t word;
+	uint32_t folded;
+
+	/* The leading words, two bytes at a time, until a machine word is aligned; an odd address all the way. */
+	while (length >= 2U && (((uintptr_t)data & 1U) != 0 || (uintptr_t)data % sizeof(uintptr_t) != 0)) {
+		sum += (uint16_t)((uint16_t)data[0] << 8) | data[1];
+		data += 2;
+		length -= 2;
+	}
+
+	/* The aligned machine words, their 32-bit halves added into 64 bits, which cannot overflow here. */
+	if (length >= sizeof(uintptr_t)) {
+		wide = 0;
+		words = (const uintptr_t *)(const void *)data;
+		while (length >= sizeof(uintptr_t)) {
+			word = *words;
+			wide += (uint32_t)word;
+#if UINTPTR_MAX > 0xffffffffU
+			wide += (uint32_t)((uint64_t)word >> 32);
+#endif
+			words++;
+			length -= sizeof(uintptr_t);
+		}
+		data = (const uint8_t *)words;
+
+		/* Folds them to 16 bits, in big-endian order, into the running sum. */
+		wide = (wide & 0xffffffffU) + (wide >> 32);
+		wide = (wide & 0xffffffffU) + (wide >> 32);
+		folded = (uint32_t)wide;
+		folded = (folded & 0xffffU) + (folded >> 16);
+		folded = (folded & 0xffffU) + (folded >> 16);
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+		folded = ((folded & 0xffU) << 8) | (folded >> 8);
+#endif
+		sum += folded;
+	}
+
+	/* The words left after the last machine word. */
 	while (length >= 2U) {
 		sum += (uint16_t)((uint16_t)data[0] << 8) | data[1];
 		data += 2;

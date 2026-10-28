@@ -65,7 +65,7 @@
  * header of the longest options.  A connection's segments are its
  * send_mss: the smaller of the peer's offer and what the interface carries.
  */
-#define TCP_SEGMENT_MAX (PACKET_BUF_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM - 60U)
+#define TCP_SEGMENT_MAX (PACKET_BUF_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM - 64U)
 
 /*
  * The segment size a peer whose SYN offered none takes (RFC 9293 section
@@ -73,6 +73,16 @@
  */
 #define TCP_DEFAULT_MSS 536U
 #define TCP_DEFAULT_MSS6 1220U
+
+/*
+ * The headroom of a segment's copy in the send ring: the default headroom
+ * for the link and IP headers and a TCP header with the longest options,
+ * which its first transmission pushes in front of the payload.  Two bytes
+ * more than that put the frame of an IPv4 segment without options (54
+ * bytes of headers) on a word, which is where the device's copy of it is
+ * fastest.
+ */
+#define TCP_COPY_HEADROOM (PACKET_BUF_DEFAULT_HEADROOM + 62U)
 
 /* The IPv4 and TCP headers without options, and the IPv6 and TCP headers. */
 #define TCP_HEADERS 40U
@@ -92,6 +102,10 @@
 #define TCP_OPTION_END 0U
 #define TCP_OPTION_NOP 1U
 #define TCP_OPTION_MSS 2U
+#define TCP_OPTION_WSCALE 3U
+
+/* The largest window scale shift (RFC 7323 section 2.3). */
+#define TCP_WSCALE_MAX 14U
 
 /*
  * The largest segment this end takes, which the SYN offers (BUG-222): an
@@ -360,8 +374,11 @@ static void tcp_listener_established(struct tcp_endpoint *child);
 static int tcp_port_in_use(const struct tcp_endpoint *candidate, int strict);
 static int tcp_allocate_port_locked(struct tcp_endpoint *endpoint);
 static int tcp_route(struct tcp_endpoint *endpoint, struct net_device **device, uint32_t *source);
+static int tcp_route_cached(struct tcp_endpoint *endpoint, struct net_device **device, uint32_t *source, uint32_t *next_hop);
+static void tcp_route_remember(struct tcp_endpoint *endpoint, struct net_device *device, uint32_t source, unsigned long generation);
 static int tcp_send_segment_at(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
-static int tcp_output_segment(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
+static int tcp_output_segment(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length, struct packet_buf *carrier);
+static int tcp_send_segment_carried(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, struct packet_buf *carrier);
 static void tcp_stats_fill_locked(const struct tcp_endpoint *endpoint, uint64_t now, int superuser, struct tcp_stats_entry *entry);
 static int tcp_allocate_port(struct tcp_endpoint *endpoint);
 static enum tcp_refusal tcp_refusal_of(int error);
@@ -397,6 +414,8 @@ static int tcp_maxunack_expired_locked(const struct tcp_endpoint *endpoint, uint
 static void tcp_persist_leave_locked(struct tcp_endpoint *endpoint);
 static int tcp_oldest_fits_window_locked(const struct tcp_endpoint *endpoint);
 static uint32_t tcp_syn_offered_mss(const struct tcp_wire *tcp, size_t header_length);
+static int tcp_syn_offered_wscale(const struct tcp_wire *tcp, size_t header_length);
+static uint32_t tcp_segment_window_locked(const struct tcp_endpoint *endpoint, const struct tcp_wire *tcp);
 static void tcp_start_sending(struct tcp_endpoint *endpoint, uint32_t offered_mss);
 static uint32_t tcp_segment_size_locked(const struct tcp_endpoint *endpoint);
 static uint32_t tcp_send_limit_locked(const struct tcp_endpoint *endpoint);
@@ -404,6 +423,7 @@ static int tcp_send_room_locked(const struct tcp_endpoint *endpoint, size_t leng
 static void tcp_cwnd_grow_locked(struct tcp_endpoint *endpoint, uint32_t acked);
 static void tcp_cwnd_loss_locked(struct tcp_endpoint *endpoint, int timeout);
 static void tcp_ack_delay(struct tcp_endpoint *endpoint);
+static int tcp_send_wake_due_locked(const struct tcp_endpoint *endpoint);
 struct tcp_discard {
 	struct packet_buf *packets[CONFIG_TCP_SEND_QUEUE_MAX];
 	unsigned count;
@@ -443,7 +463,7 @@ static void tcp_keepalive_arm_locked(struct tcp_endpoint *endpoint);
 static struct tcp_endpoint * tcp_lookup(const struct tcp_segment_addresses *addresses, uint16_t source_port, uint16_t destination_port);
 static int tcp_connection_matches(const struct tcp_endpoint *endpoint, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint16_t destination_port);
 static int tcp_listener_matches(const struct tcp_endpoint *endpoint, const struct tcp_segment_addresses *addresses, uint16_t destination_port);
-static struct tcp_endpoint * tcp_passive_syn(struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint32_t sequence, uint32_t offered_mss);
+static struct tcp_endpoint * tcp_passive_syn(struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint32_t sequence, uint32_t offered_mss, int offered_wscale);
 static void tcp_child_addresses(struct tcp_endpoint *child, const struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses);
 static int tcp_input(struct packet_buf *packet, uint32_t source, uint32_t destination);
 static int tcp6_input(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
@@ -871,7 +891,7 @@ tcp_timer_run(
 		oldest = &endpoint->tcp.send_queue[endpoint->tcp.send_first];
 		sequence = oldest->sequence;
 		flags = oldest->flags;
-		length = oldest->packet->length;
+		length = oldest->length;
 		if (length > sizeof(payload)) {
 			tcp_retransmit_reset(endpoint, &discard);
 			endpoint->tcp.state = TCP_CLOSED;
@@ -886,7 +906,7 @@ tcp_timer_run(
 		}
 
 		if (length != 0)
-			kern_memcpy(payload, oldest->packet->data, length);
+			kern_memcpy(payload, oldest->packet->storage + oldest->payload_offset, length);
 
 		/*
 		 * Counts the resend of the oldest segment, and backs the timeout
@@ -1577,9 +1597,14 @@ tcp_route(
 	int have_route;
 	int error;
 
-	/* A bound interface wins over the route's device. */
+	/*
+	 * A bound interface wins over the route's device, so the route is
+	 * looked up only without one: a connection remembers the interface of
+	 * its first segment, and every later segment goes by it.
+	 */
 	have_route = 0;
-	if (route_lookup_ref(endpoint->tcp.inet.remote_address, &route) == 0)
+	if (endpoint->tcp.inet.ifindex == 0 &&
+	    route_lookup_ref(endpoint->tcp.inet.remote_address, &route) == 0)
 		have_route = 1;
 	if (endpoint->tcp.inet.ifindex != 0)
 		output = net_device_find_by_index_ref(endpoint->tcp.inet.ifindex);
@@ -1606,6 +1631,96 @@ tcp_route(
 		endpoint->tcp.inet.local_address = *source;
 	*device = output;
 	return 0;
+}
+
+/*
+ * Takes the way the connection's last lookup found, when nothing has
+ * changed since: the bound interface (with a reference), the source and
+ * the next hop.  Reports 0 when there is none to take, and the caller
+ * looks it up.
+ */
+static int
+tcp_route_cached(
+	struct tcp_endpoint *endpoint,
+	struct net_device **device,
+	uint32_t *source,
+	uint32_t *next_hop)
+{
+	struct net_device *output;
+	unsigned long irq;
+	unsigned ifindex;
+	int valid;
+
+	/* What was kept, while the table and the addresses are as they were. */
+	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	valid = endpoint->tcp.route_cached != 0 &&
+	    endpoint->tcp.route_generation_seen == route_generation();
+	*source = endpoint->tcp.route_source;
+	*next_hop = endpoint->tcp.route_next_hop;
+	ifindex = endpoint->tcp.inet.ifindex;
+
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
+
+	/* Nothing kept, or something changed. */
+	if (!valid || ifindex == 0)
+		return 0;
+
+	/* The interface, when it is still there. */
+	output = net_device_find_by_index_ref(ifindex);
+	if (output == NULL)
+		return 0;
+
+	/* Succeeded: the way the segment goes. */
+	*device = output;
+	return 1;
+}
+
+/*
+ * Keeps the way a lookup found for the connection's later segments: the
+ * source and the route's next hop through the device, with the count of
+ * changes read before the lookup (generation).  A peer that is one of
+ * this host's own addresses, or one no route reaches through the device,
+ * is not kept.
+ */
+static void
+tcp_route_remember(
+	struct tcp_endpoint *endpoint,
+	struct net_device *device,
+	uint32_t source,
+	unsigned long generation)
+{
+	struct net_route route;
+	unsigned long irq;
+	uint32_t destination;
+	uint32_t next_hop;
+	int local;
+	int error;
+
+	/* A peer of this host's own goes round the loopback device: nothing kept. */
+	destination = endpoint->tcp.inet.remote_address;
+	local = inet_address_is_local(destination);
+	if (local)
+		return;
+
+	/* The next hop: the route's gateway, else the peer itself. */
+	error = route_lookup_device_ref(destination, device, &route);
+	if (error != 0)
+		return;
+	next_hop = destination;
+	if (route.gateway != 0)
+		next_hop = route.gateway;
+	route_release(&route);
+
+	/* Kept for the segments after, with the count it holds for. */
+	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	endpoint->tcp.route_cached = 1;
+	endpoint->tcp.route_generation_seen = generation;
+	endpoint->tcp.route_source = source;
+	endpoint->tcp.route_next_hop = next_hop;
+
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
 }
 
 /*
@@ -1678,9 +1793,53 @@ tcp_send_segment_at(
 	int error;
 
 	/* Builds and hands the segment to the device. */
-	error = tcp_output_segment(endpoint, sequence, flags, data, length);
+	error = tcp_output_segment(endpoint, sequence, flags, data, length, NULL);
 
 	/* Counts the segment and, when it went, a closed window it told of. */
+	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	if (error != 0) {
+		endpoint->tcp.counters.segment_send_failures++;
+	} else {
+		endpoint->tcp.counters.segments_out++;
+		if (endpoint->tcp.advertised_window == 0)
+			endpoint->tcp.counters.zero_windows_out++;
+
+		/* Every segment acknowledges what was received: no acknowledgement is owed any more. */
+		endpoint->tcp.ack_owed = 0;
+	}
+
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
+
+	/* Reports why the segment did not go. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device has the segment. */
+	return 0;
+}
+
+/*
+ * Transmits a segment whose payload is a packet of its own, the carrier,
+ * whose reference passes to the output, and counts it: a segment's copy
+ * in the send ring, which carries its first transmission (the headers go
+ * into its headroom, in front of the payload).  The caller holds no
+ * socket lock, which the counting takes.
+ */
+static int
+tcp_send_segment_carried(
+	struct tcp_endpoint *endpoint,
+	uint32_t sequence,
+	uint8_t flags,
+	struct packet_buf *carrier)
+{
+	unsigned long irq;
+	int error;
+
+	/* Builds the segment around the payload and hands it to the device. */
+	error = tcp_output_segment(endpoint, sequence, flags, NULL, 0, carrier);
+
+	/* Counts the segment as tcp_send_segment_at does. */
 	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
 
 	if (error != 0) {
@@ -1769,6 +1928,10 @@ tcp_stats_fill_locked(
 
 	/* The send side: the peer's window, and the ring that holds what is in flight and what waits unsent. */
 	entry->send_window = tcp->peer_window;
+
+	/* Window scaling, when both ends offered it (RFC 7323). */
+	if (tcp->wscale_on != 0)
+		entry->features |= TCP_STATS_HAVE_WSCALE;
 	entry->in_flight_bytes = sent_end - tcp->send_unacknowledged;
 	entry->send_segments = tcp->send_count;
 	entry->send_ring = TCP_SEND_QUEUE_MAX;
@@ -1850,13 +2013,17 @@ tcp_output_segment(
 	uint32_t sequence,
 	uint8_t flags,
 	const void *data,
-	size_t length)
+	size_t length,
+	struct packet_buf *carrier)
 {
 	struct net_device *device;
 	struct packet_buf *packet;
 	struct tcp_wire *tcp;
 	struct in6_addr source6;
+	unsigned long generation;
+	uint32_t next_hop;
 	uint32_t source;
+	int routed;
 	uint16_t checksum;
 	uint16_t window;
 	uint16_t mss;
@@ -1876,46 +2043,80 @@ tcp_output_segment(
 	options = 0;
 	if ((flags & TCP_SYN) != 0)
 		options = 4U;
+	if ((flags & TCP_SYN) != 0 && endpoint->tcp.wscale_offered != 0)
+		options += 4U;
 
 	/* Routes the segment: over IPv6 to an IPv6 peer (ws130-p003), else over IPv4. */
 	source = 0;
 	mss = TCP_RECEIVE_MSS;
 	ipv6 = inet_socket_speaks_ipv6(&endpoint->tcp.inet);
+	routed = 0;
+	next_hop = 0;
 	if (ipv6) {
 		error = tcp6_route(endpoint, &device, &source6);
 		mss = TCP_RECEIVE_MSS6;
 	} else {
-		error = tcp_route(endpoint, &device, &source);
+		/*
+		 * The way the connection's last lookup found, while nothing has
+		 * changed since; else a lookup, kept for the segments after.
+		 */
+		routed = tcp_route_cached(endpoint, &device, &source, &next_hop);
+		error = 0;
+		if (!routed) {
+			generation = route_generation();
+			error = tcp_route(endpoint, &device, &source);
+			if (error == 0)
+				tcp_route_remember(endpoint, device, source, generation);
+		}
 	}
-	if (error != 0)
+	if (error != 0) {
+		packet_buf_free(carrier);
 		return error;
+	}
 
 	/*
-	 * Allocates its buffer.  An empty pool is ENOMEM, which tells it from
-	 * a full device queue (ENOBUFS from the driver): the device says when
-	 * it has room again, the pool does not (ws220-p003).
+	 * A carrier holds the payload already: the header goes in front of
+	 * it, into the headroom its copy was made with.
 	 */
-	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
-	if (packet == NULL) {
-		if (device != NULL)
-			net_device_release(device);
-		return ENOMEM;
-	}
+	if (carrier != NULL) {
+		packet = carrier;
+		tcp = packet_buf_push(packet, sizeof(*tcp) + options);
+		if (tcp == NULL) {
+			packet_buf_free(packet);
+			if (device != NULL)
+				net_device_release(device);
+			return EMSGSIZE;
+		}
+	} else {
+		/*
+		 * Allocates its buffer.  An empty pool is ENOMEM, which tells it
+		 * from a full device queue (ENOBUFS from the driver): the device
+		 * says when it has room again, the pool does not (ws220-p003).
+		 */
+		packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
+		if (packet == NULL) {
+			if (device != NULL)
+				net_device_release(device);
+			return ENOMEM;
+		}
 
-	/* A segment too large for one packet's storage is never sent (the callers keep within TCP_SEGMENT_MAX). */
-	tcp = packet_buf_append(packet, sizeof(*tcp) + options);
-	payload = packet_buf_append(packet, length);
-	if (tcp == NULL || payload == NULL) {
-		packet_buf_free(packet);
-		if (device != NULL)
-			net_device_release(device);
-		return EMSGSIZE;
+		/* A segment too large for one packet's storage is never sent (the callers keep within TCP_SEGMENT_MAX). */
+		tcp = packet_buf_append(packet, sizeof(*tcp) + options);
+		payload = packet_buf_append(packet, length);
+		if (tcp == NULL || payload == NULL) {
+			packet_buf_free(packet);
+			if (device != NULL)
+				net_device_release(device);
+			return EMSGSIZE;
+		}
+
+		/* The payload. */
+		if (length != 0)
+			kern_memcpy(payload, data, length);
 	}
 
 	/* Fills the header with the current receive state and the free space. */
 	kern_memset(tcp, 0, sizeof(*tcp));
-	if (length != 0)
-		kern_memcpy(payload, data, length);
 	wire_put16(tcp->source, endpoint->tcp.inet.local_port);
 	wire_put16(tcp->destination, endpoint->tcp.inet.remote_port);
 	wire_put32(tcp->sequence, sequence);
@@ -1926,10 +2127,22 @@ tcp_output_segment(
 	/* Writes the MSS option (kind 2, length 4) after the fixed header. */
 	if (options != 0) {
 		option = (uint8_t *)(tcp + 1);
-		option[0] = 2U;
+		option[0] = TCP_OPTION_MSS;
 		option[1] = 4U;
 		option[2] = (uint8_t)(mss >> 8);
 		option[3] = (uint8_t)(mss & 0xffU);
+	}
+
+	/*
+	 * And the window scale option (a NOP, then kind 3, length 3) with this
+	 * end's shift, 0: it takes the peer's scale without scaling its own.
+	 */
+	if (options == 8U) {
+		option = (uint8_t *)(tcp + 1);
+		option[4] = TCP_OPTION_NOP;
+		option[5] = TCP_OPTION_WSCALE;
+		option[6] = 3U;
+		option[7] = 0U;
 	}
 
 	window = tcp_receive_window(endpoint);
@@ -1953,8 +2166,12 @@ tcp_output_segment(
 	checksum = net_checksum_pseudo(source, endpoint->tcp.inet.remote_address,
 	    IPPROTO_TCP, packet->data, packet->length);
 	wire_put16(tcp->checksum, checksum);
-	error = ipv4_output(device, endpoint->tcp.inet.remote_address,
-	    IPPROTO_TCP, packet);
+	if (routed)
+		error = ipv4_output_routed(device, endpoint->tcp.inet.remote_address, next_hop,
+		    IPPROTO_TCP, source, packet);
+	else
+		error = ipv4_output_sourced(device, endpoint->tcp.inet.remote_address,
+		    IPPROTO_TCP, source, packet);
 	net_device_release(device);
 
 	/* Reports the failure. */
@@ -2660,6 +2877,79 @@ tcp_syn_offered_mss(
 }
 
 /*
+ * Reads the window scale shift a SYN offers (RFC 7323 section 2.2), no
+ * more than 14, or -1 when it offers none.
+ */
+static int
+tcp_syn_offered_wscale(
+	const struct tcp_wire *tcp,
+	size_t header_length)
+{
+	const uint8_t *options;
+	size_t length;
+	size_t at;
+	uint8_t kind;
+	uint8_t size;
+	unsigned shift;
+
+	/* The options between the fixed header and the data. */
+	options = (const uint8_t *)(tcp + 1);
+	length = header_length - sizeof(*tcp);
+
+	/* Each option in turn until the window scale is found or the options end. */
+	at = 0;
+	while (at < length) {
+		kind = options[at];
+		if (kind == TCP_OPTION_END)
+			break;
+		if (kind == TCP_OPTION_NOP) {
+			at++;
+			continue;
+		}
+
+		/* An option with a length: one that does not fit ends the list. */
+		if (at + 1U >= length)
+			break;
+		size = options[at + 1U];
+		if (size < 2U || at + size > length)
+			break;
+
+		/* The window scale option: kind 3, length 3, the shift (a larger one is taken as 14). */
+		if (kind == TCP_OPTION_WSCALE && size == 3U) {
+			shift = options[at + 2U];
+			if (shift > TCP_WSCALE_MAX)
+				shift = TCP_WSCALE_MAX;
+			return (int)shift;
+		}
+		at += size;
+	}
+
+	/* None offered. */
+	return -1;
+}
+
+/*
+ * Reports the window a segment other than a SYN advertises, in bytes:
+ * its window field shifted by the peer's scale once both ends offered it.
+ * The caller holds the socket lock.
+ */
+static uint32_t
+tcp_segment_window_locked(
+	const struct tcp_endpoint *endpoint,
+	const struct tcp_wire *tcp)
+{
+	uint32_t window;
+
+	/* The field, unscaled without the option. */
+	window = wire_get16(tcp->window);
+	if (endpoint->tcp.wscale_on != 0)
+		window <<= endpoint->tcp.peer_wscale;
+
+	/* Succeeded: the window in bytes. */
+	return window;
+}
+
+/*
  * Sets up what an established connection sends with: the segment size,
  * the smaller of the peer's offer (offered_mss; 0 for none) and what the
  * route's interface carries, and the congestion window it starts with
@@ -2798,6 +3088,40 @@ tcp_send_room_locked(
 
 	/* Succeeded: it fits. */
 	return 1;
+}
+
+/*
+ * Tells whether a writer waiting for room is woken now: when nothing is
+ * left in flight, or when a quarter of the ring's entries and a quarter of
+ * the send limit are free (a low-water mark, as SO_SNDLOWAT), so that a
+ * write queues many segments rather than the one or two an
+ * acknowledgement frees.  The caller holds the socket lock.
+ */
+static int
+tcp_send_wake_due_locked(
+	const struct tcp_endpoint *endpoint)
+{
+	uint32_t in_flight;
+	uint32_t limit;
+	unsigned ring_free;
+
+	/* An empty ring always wakes. */
+	if (endpoint->tcp.send_count == 0)
+		return 1;
+
+	/* Too few free entries. */
+	ring_free = TCP_SEND_QUEUE_MAX - endpoint->tcp.send_count;
+	if (ring_free < (TCP_SEND_QUEUE_MAX + 3U) / 4U)
+		return 0;
+
+	/* Too little of the limit free. */
+	in_flight = tcp_in_flight(endpoint);
+	limit = tcp_send_limit_locked(endpoint);
+	if (in_flight < limit && limit - in_flight >= limit / 4U)
+		return 1;
+
+	/* Not yet. */
+	return 0;
 }
 
 /*
@@ -3254,8 +3578,11 @@ tcp_send_reliable(
 	int error;
 	struct tcp_discard discard;
 
-	/* Keeps a copy of the payload for retransmission. */
-	copy = packet_buf_alloc(0);
+	/*
+	 * Keeps a copy of the payload for retransmission, with room in front
+	 * for the headers its first transmission pushes.
+	 */
+	copy = packet_buf_alloc(TCP_COPY_HEADROOM);
 	if (copy == NULL)
 		return ENOBUFS;
 	payload = packet_buf_append(copy, length);
@@ -3305,6 +3632,7 @@ tcp_send_reliable(
 	endpoint->tcp.send_queue[slot].sequence = sequence;
 	endpoint->tcp.send_queue[slot].advance = advance;
 	endpoint->tcp.send_queue[slot].length = (uint16_t)length;
+	endpoint->tcp.send_queue[slot].payload_offset = (uint16_t)(copy->data - copy->storage);
 	endpoint->tcp.send_queue[slot].flags = flags;
 	endpoint->tcp.send_count++;
 	endpoint->tcp.send_unsent++;
@@ -3332,6 +3660,13 @@ tcp_send_reliable(
 		endpoint->tcp.send_flushing = 1;
 		tcp_mark_sent_locked(endpoint, now);
 		owner = 1;
+
+		/*
+		 * The copy carries the first transmission itself; the reference
+		 * taken for it keeps the copy while the lock is released, should
+		 * an acknowledgement or a reset take the entry meanwhile.
+		 */
+		packet_buf_ref(copy);
 	}
 
 	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
@@ -3343,9 +3678,10 @@ tcp_send_reliable(
 	/*
 	 * Publish the retransmission record before output.  A fast ACK may
 	 * then safely retire it, and the timer can never observe an unowned
-	 * pointer.
+	 * pointer.  The copy goes out with the headers pushed in front of its
+	 * payload, the reference taken above passing to the output.
 	 */
-	error = tcp_send_segment_at(endpoint, sequence, flags, data, length);
+	error = tcp_send_segment_carried(endpoint, sequence, flags, copy);
 	refusal = tcp_refusal_of(error);
 	retries = tcp_refusal_retries(refusal);
 
@@ -3882,7 +4218,7 @@ tcp_send_unsent(
 		packet = entry->packet;
 		sequence = entry->sequence;
 		flags = entry->flags;
-		length = packet->length;
+		length = entry->length;
 		now = sched_ticks();
 		tcp_mark_sent_locked(endpoint, now);
 
@@ -3899,7 +4235,7 @@ tcp_send_unsent(
 
 		/* Its payload, which the ring's copy may not outlive once the lock is released. */
 		if (length != 0)
-			kern_memcpy(payload, packet->data, length);
+			kern_memcpy(payload, packet->storage + entry->payload_offset, length);
 
 		spin_unlock_irqrestore(&socket->lock, irq);
 
@@ -4431,6 +4767,14 @@ tcp_connect(
 	endpoint->tcp.send_next = tcp_initial_sequence(endpoint->tcp.send_next);
 	endpoint->tcp.send_unacknowledged = endpoint->tcp.send_next;
 	endpoint->tcp.state = TCP_SYN_SENT;
+
+	/* A new peer's way is looked up afresh. */
+	endpoint->tcp.route_cached = 0;
+
+	/* The SYN offers window scaling; the SYN-ACK says whether the peer takes it. */
+	endpoint->tcp.wscale_offered = 1;
+	endpoint->tcp.wscale_on = 0;
+	endpoint->tcp.peer_wscale = 0;
 
 	/* A new connection measures its own round trip (ws220-p004). */
 	tcp_rtt_forget_locked(endpoint);
@@ -5423,7 +5767,8 @@ tcp_passive_syn(
 	const struct tcp_segment_addresses *addresses,
 	uint16_t source_port,
 	uint32_t sequence,
-	uint32_t offered_mss)
+	uint32_t offered_mss,
+	int offered_wscale)
 {
 	struct socket *created;
 	struct tcp_endpoint *child;
@@ -5455,6 +5800,13 @@ tcp_passive_syn(
 	child->tcp.inet.inet_flags = INET_SOCKET_BOUND | INET_SOCKET_CONNECTED;
 	child->tcp.receive_next = sequence + 1U;
 	child->tcp.peer_mss = offered_mss;
+
+	/* A SYN that offers window scaling is answered with the option, and both ends then scale (RFC 7323). */
+	if (offered_wscale >= 0) {
+		child->tcp.wscale_offered = 1;
+		child->tcp.wscale_on = 1;
+		child->tcp.peer_wscale = (uint8_t)offered_wscale;
+	}
 	child->tcp.send_next = (uint32_t)sched_ticks() * 1103515245U +
 	    child->tcp.inet.local_port + source_port;
 	child->tcp.send_next = tcp_initial_sequence(child->tcp.send_next);
@@ -5686,9 +6038,11 @@ tcp_segment_input(
 	int acknowledges_old;
 	uint32_t overlap;
 	int starts_before;
-	uint16_t segment_window;
-	uint16_t previous_window;
+	uint32_t segment_window;
+	uint32_t previous_window;
+	int offered_wscale;
 	int retired;
+	int wake;
 	int accept_fin;
 	int gap_filled;
 	struct packet_buf *eof;
@@ -5727,7 +6081,7 @@ tcp_segment_input(
 	if (state == TCP_LISTEN) {
 		if ((flags & (TCP_SYN | TCP_ACK | TCP_RST)) == TCP_SYN)
 			(void)tcp_passive_syn(endpoint, addresses, source_port, sequence,
-			    tcp_syn_offered_mss(tcp, header_length));
+			    tcp_syn_offered_mss(tcp, header_length), tcp_syn_offered_wscale(tcp, header_length));
 		packet_buf_free(packet);
 		socket_release(&endpoint->tcp.inet.socket);
 		return 0;
@@ -5836,7 +6190,7 @@ tcp_segment_input(
 			tcp_rtt_handshake_locked(endpoint, acknowledgement, sched_ticks());
 			endpoint->tcp.send_unacknowledged = acknowledgement;
 			tcp_retransmit_reset(endpoint, &retransmit);
-			endpoint->tcp.peer_window = wire_get16(tcp->window);
+			endpoint->tcp.peer_window = tcp_segment_window_locked(endpoint, tcp);
 			endpoint->tcp.send_window_sequence = sequence;
 			endpoint->tcp.send_window_acknowledgement = acknowledgement;
 			endpoint->tcp.state = TCP_ESTABLISHED;
@@ -5881,6 +6235,13 @@ tcp_segment_input(
 			endpoint->tcp.send_unacknowledged = acknowledgement;
 			tcp_retransmit_reset(endpoint, &retransmit);
 			endpoint->tcp.receive_next = sequence + 1U;
+
+			/* Scaling is on when the SYN-ACK offers it too; the SYN-ACK's own window is never scaled. */
+			offered_wscale = tcp_syn_offered_wscale(tcp, header_length);
+			if (offered_wscale >= 0 && endpoint->tcp.wscale_offered != 0) {
+				endpoint->tcp.wscale_on = 1;
+				endpoint->tcp.peer_wscale = (uint8_t)offered_wscale;
+			}
 			endpoint->tcp.peer_window = wire_get16(tcp->window);
 			endpoint->tcp.send_window_sequence = sequence;
 			endpoint->tcp.send_window_acknowledgement = acknowledgement;
@@ -5996,7 +6357,7 @@ tcp_segment_input(
 		 * (SND.WL1 and SND.WL2), so an old one cannot set it back.
 		 */
 		previous_window = endpoint->tcp.peer_window;
-		segment_window = wire_get16(tcp->window);
+		segment_window = tcp_segment_window_locked(endpoint, tcp);
 		window_opened = 0;
 		window_update = 0;
 		if (!acknowledges_old)
@@ -6102,17 +6463,22 @@ tcp_segment_input(
 			endpoint->tcp.counters.immediate_resends++;
 		}
 
-		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
-		retired = retransmit.count != 0;
-		if (retired)
-			tcp_discard_free(&retransmit);
-
 		/*
 		 * A writer waits for room in flight, which an acknowledgement
 		 * makes by retiring segments or by reopening the window; a
-		 * window update alone retires nothing but must wake it too.
+		 * window update alone retires nothing but must wake it too.  It
+		 * is woken once a good part of the room is free, not for every
+		 * acknowledgement: each write then queues many segments.
 		 */
+		retired = retransmit.count != 0;
+		wake = 0;
 		if (retired || window_opened)
+			wake = tcp_send_wake_due_locked(endpoint);
+
+		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
+		if (retired)
+			tcp_discard_free(&retransmit);
+		if (wake)
 			socket_wake_send(&endpoint->tcp.inet.socket);
 	}
 

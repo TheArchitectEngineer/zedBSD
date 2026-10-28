@@ -97,6 +97,101 @@ ipv4_output(
 }
 
 /*
+ * Sends a payload to an IPv4 destination from the device's address the
+ * caller has already looked up (TCP sums it into its pseudo-header), so
+ * the output does not look it up again; no waiting for ARP.
+ */
+int
+ipv4_output_sourced(
+	struct net_device *device,
+	uint32_t destination,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *packet)
+{
+	int error;
+
+	/* Reports why the send failed. */
+	error = ipv4_output_common(device, destination, protocol, source, 1, 0, packet);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Sends a payload to an IPv4 destination that is not one of this host's
+ * own, through a device, from its address and to a next hop the caller
+ * found with a route lookup it keeps (TCP keeps them while
+ * route_generation() does not move), without looking any of them up
+ * again; no waiting for ARP.  The device's reference stays the caller's.
+ */
+int
+ipv4_output_routed(
+	struct net_device *device,
+	uint32_t destination,
+	uint32_t next_hop,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *packet)
+{
+	struct ipv4_wire *header;
+	uint16_t checksum;
+	uint8_t hardware[6];
+	int error;
+
+	/* Rejects a missing packet or device. */
+	if (packet == NULL)
+		return EINVAL;
+	if (device == NULL) {
+		packet_buf_free(packet);
+		return ENETUNREACH;
+	}
+
+	/* Rejects a payload that cannot fit the MTU with a header. */
+	if (packet->length > device->mtu - IPV4_HEADER_MIN) {
+		packet_buf_free(packet);
+		return EMSGSIZE;
+	}
+
+	/* The next hop's hardware address; an unresolved one is asked for and the packet refused, as ipv4_output does. */
+	error = arp_resolve(device, next_hop, hardware);
+	if (error != 0) {
+		(void)arp_request(device, next_hop);
+		packet_buf_free(packet);
+		return EAGAIN;
+	}
+
+	/* Prepends the header. */
+	header = packet_buf_push(packet, sizeof(*header));
+	if (header == NULL) {
+		packet_buf_free(packet);
+		return ENOBUFS;
+	}
+	kern_memset(header, 0, sizeof(*header));
+	header->version_ihl = 0x45U;
+	wire_put16(header->total_length, (uint16_t)packet->length);
+	wire_put16(header->identification, ++next_identification);
+	wire_put16(header->fragment, 0x4000U);
+	header->ttl = 64;
+	header->protocol = protocol;
+	wire_put32(header->source, source);
+	wire_put32(header->destination, destination);
+	checksum = net_checksum(header, sizeof(*header));
+	wire_put16(header->checksum, checksum);
+	packet->l3_offset = (uint16_t)(packet->data - packet->storage);
+
+	/* Sends the packet as an Ethernet frame. */
+	error = ethernet_output(device, hardware, ETHERNET_TYPE_IPV4, packet);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
  * Sends a payload to an IPv4 destination, waiting for ARP resolution.
  */
 int

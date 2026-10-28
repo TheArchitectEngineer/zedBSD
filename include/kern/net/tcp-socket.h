@@ -69,13 +69,18 @@ enum tcp_state {
 /*
  * One segment in the send ring: its copy, where it lies in the sequence
  * space, its TCP flags, and whether it went out as a probe of a window
- * that could not take it (ws220-p005; set when it is marked sent).
+ * that could not take it (ws220-p005; set when it is marked sent).  The
+ * payload is length bytes at payload_offset in the copy's storage: the
+ * copy itself carries the segment's first transmission, which pushes the
+ * headers in front of the payload, so its data pointer is not the
+ * payload's afterwards; the payload's bytes never change.
  */
 struct tcp_pending {
 	struct packet_buf *packet;
 	uint32_t sequence;
 	uint32_t advance;
 	uint16_t length;
+	uint16_t payload_offset;
 	uint8_t flags;
 	uint8_t probe;
 };
@@ -122,7 +127,18 @@ struct tcp_socket {
 	uint32_t connect_generation;
 	uint32_t active_connect_generation;
 	uint64_t connect_wait_deadline;
-	uint16_t peer_window;
+	/*
+	 * The peer's window in bytes, scaled by its window scale (RFC 7323)
+	 * when both ends offered the option in their SYNs: wscale_offered
+	 * says this end's SYN carries it (an active open always, a passive
+	 * one when the peer's SYN did), peer_wscale is the peer's shift, and
+	 * wscale_on says both offered it.  This end's own shift is 0: its
+	 * window never exceeds 64 KB.
+	 */
+	uint32_t peer_window;
+	uint8_t peer_wscale;
+	uint8_t wscale_offered;
+	uint8_t wscale_on;
 	/*
 	 * The sequence and acknowledgement numbers of the segment peer_window
 	 * was last taken from (RFC 9293's SND.WL1 and SND.WL2).  A segment
@@ -163,6 +179,18 @@ struct tcp_socket {
 	unsigned ack_owed;
 	unsigned ack_listed;
 	struct tcp_socket *ack_next;
+	/*
+	 * The way the connection's IPv4 segments go, as the last route lookup
+	 * found it: its source address and next hop, through the interface
+	 * the connection is bound to (inet.ifindex), valid while route_cached
+	 * is set and route_generation() still returns route_generation_seen.
+	 * A peer that is one of this host's own addresses is never kept (its
+	 * segments go round the loopback device).  Guarded by the socket lock.
+	 */
+	unsigned route_cached;
+	unsigned long route_generation_seen;
+	uint32_t route_source;
+	uint32_t route_next_hop;
 	/*
 	 * Segments queued and not yet acknowledged, oldest first.  Several
 	 * may be in flight at once, bounded by the peer's advertised window
