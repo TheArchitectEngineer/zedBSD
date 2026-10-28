@@ -277,8 +277,8 @@ AMD64_AMDRDNA_VK_SOURCES += src/drivers/gpu/amdrdna/vk/vk-object.c src/drivers/g
 	$(filter-out $(AMD64_I915_SOURCES) $(AMD64_NVRTX_SOURCES),src/drivers/gpu/i915/vk/vk-codec.c)
 endif
 # The generic GHCI GPU driver (a PCIe GPU with the GPU Host Controller Interface 1.0): the device, the ring,
-# the fences, the interrupt, the recovery, the sessions and their GPU addresses, the resources, the shader
-# compiler and the Vulkan executor (with the shared wire codec of the i915 executor).
+# the fences, the interrupt, the recovery, the sessions and their GPU addresses, the resources, the display
+# (DISP2), the shader compiler and the Vulkan executor (with the shared wire codec of the i915 executor).
 AMD64_GHCI_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_GHCI),y)
 AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/pci-attach.c src/drivers/gpu/ghci/cp.c \
@@ -291,6 +291,7 @@ AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/pci-attac
 	src/drivers/gpu/ghci/compiler/gsi1-image.c src/drivers/gpu/ghci/compiler/gsi1-schedule.c \
 	src/drivers/gpu/ghci/compiler/gsi1-spill.c \
 	src/drivers/gpu/ghci/jobs.c src/drivers/gpu/ghci/capset.c \
+	src/drivers/gpu/ghci/display.c src/drivers/gpu/ghci/display-scan.c src/drivers/gpu/ghci/adv7511.c \
 	src/drivers/gpu/ghci/vk/vk-node.c src/drivers/gpu/ghci/vk/vk-stream.c src/drivers/gpu/ghci/vk/vk-dispatch.c \
 	src/drivers/gpu/ghci/vk/vk-object.c src/drivers/gpu/ghci/vk/vk-reply.c src/drivers/gpu/ghci/vk/vk-caps.c \
 	src/drivers/gpu/ghci/vk/vk-format.c src/drivers/gpu/ghci/vk/vk-device.c src/drivers/gpu/ghci/vk/vk-memory.c \
