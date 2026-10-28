@@ -1,13 +1,18 @@
 #version 450
-// A specialization constant scales what is written.
-layout(local_size_x = 32) in;
+// Specialization constants: the workgroup's width (local_size_x_id), a scale and its double (an
+// OpSpecConstantOp), a Boolean, and shared memory sized by a constant expression.
+layout(local_size_x_id = 3, local_size_y = 2) in;
 layout(constant_id = 7) const uint SCALE = 4U;
 layout(constant_id = 8) const bool NEGATE = false;
+const uint DOUBLE = SCALE * 2U;
 layout(set = 0, binding = 0) buffer Data { uint data[]; };
+shared uint scratch[DOUBLE + 1U];
 void main()
 {
-	uint value = gl_GlobalInvocationID.x * SCALE;
+	uint value = gl_GlobalInvocationID.x * DOUBLE;
+	scratch[gl_LocalInvocationIndex % (DOUBLE + 1U)] = value;
+	barrier();
 	if (NEGATE)
 		value = ~value;
-	data[gl_GlobalInvocationID.x] = value;
+	data[gl_GlobalInvocationID.x] = value + scratch[0];
 }

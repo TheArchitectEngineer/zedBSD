@@ -8,7 +8,8 @@
 /*
  * The executor's side of a node session: its open and close, the table
  * of its Vulkan objects by kind and identity, what each object lets go
- * of when it is destroyed, and the scratch a command decodes into.
+ * of when it is destroyed, the budget of host bytes its objects keep,
+ * and the scratch a command decodes into.
  *
  * A VkDevice's objects go before the device; the device's GHCI session
  * closes last, so that the memory its mappings hold is unmapped first.
@@ -228,6 +229,9 @@ ghci_vk_object_destroy(
 		break;
 	}
 
+	/* What it took of the budget. */
+	ghci_vk_budget_give(session, object->charged);
+
 	/* The object leaves its bucket. */
 	bucket = bucket_of(object->kind, object->identity);
 	position = &session->buckets[bucket];
@@ -263,13 +267,106 @@ ghci_vk_arena_take(
 	struct i915_wire_reader none;
 	void *taken;
 
-	/* The codec's allocator, with a reader that only latches its own refusal. */
+	/* The codec's own allocator (no array length), with a reader that only latches its own refusal. */
 	kern_memset(&none, 0, sizeof(none));
 	none.size = bytes;
-	taken = i915_vkc_array(&none, &session->arena, 1U, bytes);
+	taken = (i915_vkc_array)(&none, &session->arena, 1U, bytes);
 
 	/* Succeeded: the bytes, or NULL. */
 	return taken;
+}
+
+/*
+ * Takes the run of an array a record decoder reads for the current
+ * command (the codec's allocator), with the array's element count in the
+ * eight bytes of the scratch just before it, which
+ * ghci_vk_decoded_count() reads.  The arena is always a session's.
+ * Returns the array, or NULL with the reader's error latched.
+ */
+void *
+ghci_vk_decode_array(
+	struct i915_wire_reader *reader,
+	struct i915_wire_arena *arena,
+	uint64_t count,
+	size_t element)
+{
+	uint64_t *header;
+	uint8_t *array;
+
+	/* The count's word, then the array right behind it (both runs are eight-byte aligned). */
+	header = (i915_vkc_array)(reader, arena, 1U, sizeof(*header));
+	if (header == NULL)
+		return NULL;
+	array = (i915_vkc_array)(reader, arena, count, element);
+	if (array == NULL)
+		return NULL;
+	if (array != (uint8_t *)(header + 1)) {
+		reader->error = 1;
+		return NULL;
+	}
+
+	/* Succeeded: the array, its count kept. */
+	*header = count;
+	return array;
+}
+
+/*
+ * Reports the element count a record decoder of the current command gave
+ * an array of a record; 0 for an absent array (NULL) or one that is not
+ * such an array.
+ */
+uint64_t
+ghci_vk_decoded_count(
+	const struct ghci_vk_session *session,
+	const void *array)
+{
+	const uint8_t *at;
+	uint64_t count;
+	size_t offset;
+
+	/* An absent array, or one outside the scratch's used bytes. */
+	at = array;
+	if (at == NULL || session->arena.base == NULL)
+		return 0U;
+	if (at < session->arena.base + sizeof(count) || at > session->arena.base + session->arena.used)
+		return 0U;
+	offset = (size_t)(at - session->arena.base);
+	if ((offset & (sizeof(count) - 1U)) != 0U)
+		return 0U;
+
+	/* Succeeded: the count kept just before the array. */
+	kern_memcpy(&count, at - sizeof(count), sizeof(count));
+	return count;
+}
+
+/*
+ * Takes bytes of the session's budget for an object's host memory.
+ * Returns 0, or ENOMEM when the budget would be passed (nothing taken).
+ */
+int
+ghci_vk_budget_take(
+	struct ghci_vk_session *session,
+	uint64_t bytes)
+{
+	/* Within the budget. */
+	if (bytes > GHCI_VK_BUDGET_BYTES - session->budget_used)
+		return ENOMEM;
+
+	/* Succeeded: the bytes are the object's. */
+	session->budget_used += bytes;
+	return 0;
+}
+
+/* Gives bytes of the session's budget back. */
+void
+ghci_vk_budget_give(
+	struct ghci_vk_session *session,
+	uint64_t bytes)
+{
+	/* Never below nothing. */
+	if (bytes > session->budget_used)
+		bytes = session->budget_used;
+	session->budget_used -= bytes;
 }
 
 /* Reports the bucket of a kind and identity. */

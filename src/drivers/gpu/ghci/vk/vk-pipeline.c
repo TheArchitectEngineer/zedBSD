@@ -28,9 +28,10 @@
  * compiler's refusals), more colour attachments than MAX_MRT, a blend
  * factor of the second colour without dual-source blending, a logic op
  * without FEATURE[11], attachments blended differently without
- * MRT_BLEND, shared memory past LDS_KB, a workgroup past {256, 256, 64}
- * or 256 invocations, a sample count query or four samples without
- * multisampling, and the features Vulkan 1.0 lets the device lack.
+ * MRT_BLEND, shared memory past LDS_KB, a workgroup past the limits the
+ * device reports, a sample count query or four samples without
+ * multisampling, a vertex attribute format the device does not fetch,
+ * and the features Vulkan 1.0 lets the device lack.
  */
 
 #include <stddef.h>
@@ -75,11 +76,6 @@
 /* All four samples of the record's sample mask. */
 #define PIPELINE_SAMPLE_MASK_ALL	0xfU
 
-/* The workgroup the hardware runs: {256, 256, 64}, at most 256 invocations. */
-#define PIPELINE_LOCAL_XY_MAX		256U
-#define PIPELINE_LOCAL_Z_MAX		64U
-#define PIPELINE_INVOCATIONS_MAX	256U
-
 /* The scratch memory's warps: RESIDENT_WARPS[15:0]. */
 #define PIPELINE_WARPS_MASK		0xffffU
 
@@ -91,18 +87,26 @@
 #define PIPELINE_CACHE_VERSION		1U
 
 /*
- * SPIR-V: the first word of the instructions, an instruction's opcode and
- * word count, and the opcodes and decoration a specialization rewrites.
+ * SPIR-V: the first word of the instructions and the word of the id
+ * bound, an instruction's opcode and word count, and the opcodes,
+ * decorations and execution modes a specialization rewrites.
  *
  * Values referenced: SPIR-V 1.0 specification (section 2.3, the physical
- * layout; section 3.32, OpDecorate 71, OpConstantTrue 41 to
- * OpConstantComposite 44, OpSpecConstantTrue 48 to OpSpecConstantOp 52,
- * OpNop 0; section 3.20, the SpecId decoration 1).
+ * layout; section 3.32, OpNop 0, OpExecutionMode 16, OpTypeBool 20,
+ * OpTypeInt 21, OpConstantTrue 41 to OpConstantComposite 44,
+ * OpSpecConstantTrue 48 to OpSpecConstantOp 52, OpDecorate 71; section
+ * 3.20, the SpecId decoration 1 and BuiltIn 11; section 3.21, the
+ * WorkgroupSize built-in 25; section 3.6, the LocalSize execution mode
+ * 17; SPIR-V 1.2, OpExecutionModeId 331 and LocalSizeId 38).
  */
 #define SPIRV_HEADER_WORDS		5U
+#define SPIRV_BOUND_WORD		3U
 #define SPIRV_OPCODE_MASK		0xffffU
 #define SPIRV_COUNT_SHIFT		16U
 #define SPIRV_OP_NOP			0U
+#define SPIRV_OP_EXECUTION_MODE		16U
+#define SPIRV_OP_TYPE_BOOL		20U
+#define SPIRV_OP_TYPE_INT		21U
 #define SPIRV_OP_CONSTANT_TRUE		41U
 #define SPIRV_OP_CONSTANT_FALSE		42U
 #define SPIRV_OP_CONSTANT		43U
@@ -113,8 +117,71 @@
 #define SPIRV_OP_SPEC_COMPOSITE		51U
 #define SPIRV_OP_SPEC_OP		52U
 #define SPIRV_OP_DECORATE		71U
+#define SPIRV_OP_EXECUTION_MODE_ID	331U
 #define SPIRV_DECORATION_SPEC_ID	1U
+#define SPIRV_DECORATION_BUILTIN	11U
+#define SPIRV_BUILTIN_WORKGROUP_SIZE	25U
+#define SPIRV_MODE_LOCAL_SIZE		17U
+#define SPIRV_MODE_LOCAL_SIZE_ID	38U
 #define SPIRV_NOP_WORD			(1U << SPIRV_COUNT_SHIFT)
+
+/*
+ * The operations of OpSpecConstantOp the driver folds on 32-bit integers
+ * and Booleans.
+ *
+ * Values referenced: SPIR-V 1.0 specification (section 3.32: OpUConvert
+ * 113, OpSConvert 114, OpSNegate 126, OpIAdd 128, OpISub 130, OpIMul
+ * 132, OpUDiv 134, OpSDiv 135, OpUMod 137, OpSRem 138, OpSMod 139,
+ * OpLogicalEqual 164 to OpSLessThanEqual 179, OpShiftRightLogical 194 to
+ * OpNot 200).
+ */
+#define SPIRV_OP_U_CONVERT		113U
+#define SPIRV_OP_S_CONVERT		114U
+#define SPIRV_OP_S_NEGATE		126U
+#define SPIRV_OP_I_ADD			128U
+#define SPIRV_OP_I_SUB			130U
+#define SPIRV_OP_I_MUL			132U
+#define SPIRV_OP_U_DIV			134U
+#define SPIRV_OP_S_DIV			135U
+#define SPIRV_OP_U_MOD			137U
+#define SPIRV_OP_S_REM			138U
+#define SPIRV_OP_S_MOD			139U
+#define SPIRV_OP_LOGICAL_EQUAL		164U
+#define SPIRV_OP_LOGICAL_NOT_EQUAL	165U
+#define SPIRV_OP_LOGICAL_OR		166U
+#define SPIRV_OP_LOGICAL_AND		167U
+#define SPIRV_OP_LOGICAL_NOT		168U
+#define SPIRV_OP_SELECT			169U
+#define SPIRV_OP_I_EQUAL		170U
+#define SPIRV_OP_I_NOT_EQUAL		171U
+#define SPIRV_OP_U_GREATER		172U
+#define SPIRV_OP_S_GREATER		173U
+#define SPIRV_OP_U_GREATER_EQUAL	174U
+#define SPIRV_OP_S_GREATER_EQUAL	175U
+#define SPIRV_OP_U_LESS			176U
+#define SPIRV_OP_S_LESS			177U
+#define SPIRV_OP_U_LESS_EQUAL		178U
+#define SPIRV_OP_S_LESS_EQUAL		179U
+#define SPIRV_OP_SHIFT_RIGHT_LOGICAL	194U
+#define SPIRV_OP_SHIFT_RIGHT_ARITHMETIC	195U
+#define SPIRV_OP_SHIFT_LEFT_LOGICAL	196U
+#define SPIRV_OP_BITWISE_OR		197U
+#define SPIRV_OP_BITWISE_XOR		198U
+#define SPIRV_OP_BITWISE_AND		199U
+#define SPIRV_OP_NOT			200U
+
+/* The most operands of a folded operation (OpSelect's three), and the bits of a 32-bit integer. */
+#define SPEC_OPERANDS_MAX		3U
+#define SPEC_INT_BITS			32U
+#define SPEC_INT_SIGN			0x80000000U
+
+/* What an id of a module being specialized is: a 32-bit integer or Boolean type or constant, or a constant composite. */
+#define SPEC_UNKNOWN			0U
+#define SPEC_TYPE_INT			1U
+#define SPEC_TYPE_BOOL			2U
+#define SPEC_INT			3U
+#define SPEC_BOOL			4U
+#define SPEC_COMPOSITE			5U
 
 /* What a pipeline's create is refused with besides a host allocation. */
 #define PIPELINE_REFUSED		((uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY)
@@ -179,18 +246,47 @@ struct pipeline_programs {
 	struct ghci_gsi1_program *program[PIPELINE_STAGES];
 };
 
+/*
+ * One id of a module while it is specialized: what it is (SPEC_*) and
+ * its value (a constant's, or the word where a composite starts).
+ */
+struct spec_value {
+	uint32_t kind;
+	uint32_t value;
+};
+
+/*
+ * A module's words while they are specialized: the copy, the table of
+ * its SpecId decorations (each id, then its SpecId), the ids below the
+ * bound the table of values follows (NULL when nothing needs it), the id
+ * the WorkgroupSize built-in decorates (0 for none), and the reason a
+ * specialization is refused.
+ */
+struct spec_module {
+	uint32_t *words;
+	uint32_t word_count;
+	uint32_t *ids;
+	uint32_t *spec_ids;
+	uint32_t spec_count;
+	struct spec_value *values;
+	uint32_t value_count;
+	uint32_t workgroup;
+	const char *reason;
+};
+
 static int create_module(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int create_cache(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int cache_data(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int merge_caches(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int create_pipelines(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, uint32_t bind_point);
 static int decode_graphics(struct ghci_vk_session *session, struct i915_wire_reader *reader, struct pipeline_request *request);
-static int decode_stage(const VkPipelineShaderStageCreateInfo *info, struct pipeline_request *request);
-static void decode_vertex_input(const VkPipelineVertexInputStateCreateInfo *info, struct pipeline_request *request);
-static void decode_blend(const VkPipelineColorBlendStateCreateInfo *info, struct pipeline_request *request);
+static int decode_stage(struct ghci_vk_session *session, const VkPipelineShaderStageCreateInfo *info, struct pipeline_request *request);
+static int decode_vertex_input(struct ghci_vk_session *session, const VkPipelineVertexInputStateCreateInfo *info, struct pipeline_request *request);
+static int decode_blend(struct ghci_vk_session *session, const VkPipelineColorBlendStateCreateInfo *info, struct pipeline_request *request);
 static int decode_compute(struct ghci_vk_session *session, struct i915_wire_reader *reader, struct pipeline_request *request);
 static void request_free(struct pipeline_request *request);
 static uint32_t pipeline_build(struct ghci_vk_session *session, struct ghci_vk_device *device, const struct pipeline_request *request, struct ghci_vk_pipeline **result);
+static void pipeline_free(struct ghci_vk_session *session, struct ghci_vk_pipeline *pipeline);
 static uint32_t graphics_check(struct ghci_vk_session *session, const struct pipeline_request *request, const struct ghci_vk_subpass *subpass);
 static uint32_t pipeline_compile(struct ghci_vk_session *session, struct ghci_vk_device *device, const struct pipeline_request *request, const struct ghci_vk_pipeline_layout *layout, const struct ghci_vk_subpass *subpass, struct pipeline_programs *programs);
 static uint32_t pipeline_compile_with(struct ghci_vk_session *session, struct ghci_vk_device *device, const struct pipeline_request *request, const struct ghci_vk_pipeline_layout *layout, const struct ghci_vk_subpass *subpass, struct ghci_gsi1_options *options, struct pipeline_programs *programs);
@@ -200,9 +296,16 @@ static uint32_t pipeline_place(struct ghci_vk_session *session, struct ghci_vk_d
 static void pipeline_pso(const struct pipeline_request *request, const struct pipeline_programs *programs, struct ghci_pso *pso);
 static void pipeline_state(struct ghci_vk_session *session, const struct pipeline_request *request, struct ghci_vk_pipeline *pipeline);
 static uint32_t blend_word(const VkPipelineColorBlendAttachmentState *attachment);
+static uint32_t blend_word_used(const VkPipelineColorBlendAttachmentState *attachment);
 static void subpass_of(struct ghci_vk_session *session, const struct pipeline_request *request, struct ghci_vk_subpass *subpass);
-static int specialize(const struct ghci_vk_shader_module *module, const struct stage_request *stage, uint32_t **words);
-static int specialize_constant(uint32_t *words, uint32_t at, uint32_t count, const struct stage_request *stage, const uint32_t *ids, const uint32_t *spec_ids, uint32_t spec_count);
+static int specialize(const struct ghci_vk_shader_module *module, const struct stage_request *stage, uint32_t **words, const char **reason);
+static int specialize_scan(struct spec_module *spec);
+static int specialize_constant(struct spec_module *spec, uint32_t at, uint32_t count, const struct stage_request *stage);
+static int specialize_track(struct spec_module *spec, uint32_t at, uint32_t count);
+static int specialize_fold(struct spec_module *spec, uint32_t at, uint32_t count);
+static int fold_value(uint32_t operation, uint32_t operands, const uint32_t *kinds, const uint32_t *values, uint32_t *kind, uint32_t *value);
+static int fold_signed(uint32_t operation, uint32_t left, uint32_t right, uint32_t *value);
+static int specialize_workgroup(struct spec_module *spec);
 static uint32_t pipeline_refuse(struct ghci_vk_session *session, const char *reason);
 static int destroy_object(struct ghci_vk_session *session, enum ghci_vk_kind kind, struct i915_wire_reader *reader);
 static struct ghci_vk_device *device_of(struct ghci_vk_session *session, uint64_t handle);
@@ -326,6 +429,7 @@ create_module(
 	uint64_t handle;
 	uint64_t present;
 	uint64_t identity;
+	uint64_t decoded;
 	uint32_t *words;
 	uint32_t count;
 	int error;
@@ -343,27 +447,41 @@ create_module(
 	if (device == NULL)
 		return EINVAL;
 
-	/* Whole words, the header at least, and a bounded module. */
+	/* Whole words, the header at least, a bounded module, and all its words decoded. */
 	if (info.pCode == NULL || (info.codeSize & 3U) != 0U || info.codeSize < SPIRV_HEADER_WORDS * 4U)
 		return EINVAL;
 	if (info.codeSize > PIPELINE_MODULE_WORDS_MAX * 4U)
 		return EINVAL;
+	count = (uint32_t)(info.codeSize / 4U);
+	decoded = ghci_vk_decoded_count(session, info.pCode);
+	if (decoded != count)
+		return EINVAL;
+
+	/* Its bytes, within the session's budget. */
+	error = ghci_vk_budget_take(session, (uint64_t)count * 4U);
+	if (error != 0) {
+		ghci_vk_reply_created(reply, requested, (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY, identity);
+		return 0;
+	}
 
 	/* A copy of the words, which outlive the command's scratch. */
-	count = (uint32_t)(info.codeSize / 4U);
 	words = kern_malloc((size_t)count * 4U);
-	if (words == NULL)
+	if (words == NULL) {
+		ghci_vk_budget_give(session, (uint64_t)count * 4U);
 		return ENOMEM;
+	}
 	kern_memcpy(words, info.pCode, (size_t)count * 4U);
 
 	/* The object. */
 	error = ghci_vk_object_add(session, GHCI_VK_SHADER_MODULE, identity, device, &object);
 	if (error != 0) {
+		ghci_vk_budget_give(session, (uint64_t)count * 4U);
 		kern_free(words);
 		return error;
 	}
 	object->as.module.words = words;
 	object->as.module.word_count = count;
+	object->charged = (uint64_t)count * 4U;
 
 	/* The result and the identity. */
 	ghci_vk_reply_created(reply, requested, (uint32_t)VK_SUCCESS, identity);
@@ -535,8 +653,10 @@ merge_caches(
  * vkCreateGraphicsPipelines and vkCreateComputePipelines: [device][cache]
  * [u32 n][u64 n]{create info}[u64 0][u64 n][identities] -> [result]
  * [u64 n][identities, 0 for one not made].  Each pipeline is made on its
- * own; the result is the first failure's.  A record that does not decode
- * fails the command.
+ * own; the result is the first failure's, and the pipelines made are
+ * kept.  A record that does not decode, or a pipeline that cannot be
+ * kept as an object of the session (an identity already used), fails the
+ * command with none of its pipelines made.
  */
 static int
 create_pipelines(
@@ -549,6 +669,7 @@ create_pipelines(
 	struct pipeline_request *requests[PIPELINE_BATCH_MAX];
 	uint64_t identities[PIPELINE_BATCH_MAX];
 	struct ghci_vk_pipeline *pipeline;
+	uint64_t kept;
 	struct ghci_vk_device *device;
 	struct ghci_vk_object *object;
 	uint64_t handle;
@@ -609,17 +730,25 @@ create_pipelines(
 		if (made == (uint32_t)VK_SUCCESS) {
 			error = ghci_vk_object_add(session, GHCI_VK_PIPELINE, identities[index], device, &object);
 			if (error != 0) {
-				ghci_vk_heap_give(pipeline->block, pipeline->offset);
-				ghci_vk_heap_give(pipeline->scratch_block, pipeline->scratch_offset);
-				kern_free(pipeline);
+				pipeline_free(session, pipeline);
 				break;
 			}
 			object->as.pipeline = pipeline;
+			object->charged = pipeline->charged;
 		} else {
 			identities[index] = 0U;
 			if (result == (uint32_t)VK_SUCCESS)
 				result = made;
 		}
+	}
+
+	/* A pipeline that could not be kept takes the ones made before it with it. */
+	for (kept = 0U; error != 0 && kept < index && kept < count; kept++) {
+		if (identities[kept] == 0U)
+			continue;
+		object = ghci_vk_object_find(session, GHCI_VK_PIPELINE, identities[kept]);
+		if (object != NULL)
+			ghci_vk_object_destroy(session, object);
 	}
 
 	/* The decoded records go. */
@@ -661,6 +790,7 @@ decode_graphics(
 	VkPipelineColorBlendStateCreateInfo blend;
 	VkPipelineDynamicStateCreateInfo dynamic;
 	uint64_t present;
+	uint64_t decoded;
 	uint64_t stages;
 	uint64_t index;
 	int error;
@@ -678,7 +808,7 @@ decode_graphics(
 		i915_vkc_dec_VkPipelineShaderStageCreateInfo(reader, &session->arena, &stage);
 		if (reader->error != 0)
 			return EINVAL;
-		error = decode_stage(&stage, request);
+		error = decode_stage(session, &stage, request);
 		if (error != 0)
 			return error;
 	}
@@ -690,7 +820,9 @@ decode_graphics(
 		i915_vkc_dec_VkPipelineVertexInputStateCreateInfo(reader, &session->arena, &vertex_input);
 		if (reader->error != 0)
 			return EINVAL;
-		decode_vertex_input(&vertex_input, request);
+		error = decode_vertex_input(session, &vertex_input, request);
+		if (error != 0)
+			return error;
 	}
 
 	/* The input assembly: the topology (a list of triangles without one). */
@@ -715,11 +847,19 @@ decode_graphics(
 	if (present != 0U) {
 		kern_memset(&viewport, 0, sizeof(viewport));
 		i915_vkc_dec_VkPipelineViewportStateCreateInfo(reader, &session->arena, &viewport);
-		if (reader->error == 0 && viewport.pViewports != NULL && viewport.viewportCount != 0U) {
+		if (reader->error != 0)
+			return EINVAL;
+		decoded = ghci_vk_decoded_count(session, viewport.pViewports);
+		if (viewport.pViewports != NULL && decoded != viewport.viewportCount)
+			return EINVAL;
+		decoded = ghci_vk_decoded_count(session, viewport.pScissors);
+		if (viewport.pScissors != NULL && decoded != viewport.scissorCount)
+			return EINVAL;
+		if (viewport.pViewports != NULL && viewport.viewportCount != 0U) {
 			request->viewport = viewport.pViewports[0];
 			request->viewport_given = 1U;
 		}
-		if (reader->error == 0 && viewport.pScissors != NULL && viewport.scissorCount != 0U) {
+		if (viewport.pScissors != NULL && viewport.scissorCount != 0U) {
 			request->scissor = viewport.pScissors[0];
 			request->scissor_given = 1U;
 		}
@@ -755,7 +895,9 @@ decode_graphics(
 		i915_vkc_dec_VkPipelineColorBlendStateCreateInfo(reader, &session->arena, &blend);
 		if (reader->error != 0)
 			return EINVAL;
-		decode_blend(&blend, request);
+		error = decode_blend(session, &blend, request);
+		if (error != 0)
+			return error;
 	}
 
 	/* The dynamic state: a bit per VkDynamicState of Vulkan 1.0. */
@@ -763,7 +905,10 @@ decode_graphics(
 	if (present != 0U) {
 		kern_memset(&dynamic, 0, sizeof(dynamic));
 		i915_vkc_dec_VkPipelineDynamicStateCreateInfo(reader, &session->arena, &dynamic);
-		for (index = 0U; reader->error == 0 && dynamic.pDynamicStates != NULL && index < dynamic.dynamicStateCount; index++) {
+		decoded = ghci_vk_decoded_count(session, dynamic.pDynamicStates);
+		if (reader->error != 0 || decoded != dynamic.dynamicStateCount)
+			return EINVAL;
+		for (index = 0U; index < dynamic.dynamicStateCount; index++) {
 			if ((uint32_t)dynamic.pDynamicStates[index] < 32U)
 				request->dynamic |= 1U << (uint32_t)dynamic.pDynamicStates[index];
 		}
@@ -785,15 +930,18 @@ decode_graphics(
 /*
  * Keeps one stage of a pipeline's create: the vertex, fragment or compute
  * stage with its module and a copy of its specialization (a stage the
- * device has not is refused).  Returns 0, EINVAL or ENOMEM.
+ * device has not is refused).  Returns 0, EINVAL (a specialization whose
+ * counts are not its arrays') or ENOMEM.
  */
 static int
 decode_stage(
+	struct ghci_vk_session *session,
 	const VkPipelineShaderStageCreateInfo *info,
 	struct pipeline_request *request)
 {
 	const VkSpecializationInfo *special;
 	struct stage_request *stage;
+	uint64_t decoded;
 	uint32_t slot;
 
 	/* The vertex and fragment stages of a graphics pipeline, the compute stage of a compute one. */
@@ -812,11 +960,19 @@ decode_stage(
 	stage->module = (uint64_t)(uintptr_t)info->module;
 	request->stage_count++;
 
-	/* The specialization, copied out of the command's scratch. */
+	/* The specialization, its entries and data the arrays decoded, copied out of the command's scratch. */
 	special = info->pSpecializationInfo;
-	if (special == NULL || special->mapEntryCount == 0U)
+	if (special == NULL)
 		return 0;
-	if (special->mapEntryCount > PIPELINE_SPECIALIZATIONS_MAX || special->pMapEntries == NULL)
+	decoded = ghci_vk_decoded_count(session, special->pMapEntries);
+	if (decoded != special->mapEntryCount)
+		return EINVAL;
+	decoded = ghci_vk_decoded_count(session, special->pData);
+	if (special->pData != NULL && decoded != special->dataSize)
+		return EINVAL;
+	if (special->mapEntryCount == 0U)
+		return 0;
+	if (special->mapEntryCount > PIPELINE_SPECIALIZATIONS_MAX)
 		return EINVAL;
 	stage->map = kern_calloc(special->mapEntryCount, sizeof(*stage->map));
 	if (stage->map == NULL)
@@ -837,18 +993,31 @@ decode_stage(
 	return 0;
 }
 
-/* Keeps a pipeline's vertex bindings (their strides and rates) and attributes. */
-static void
+/*
+ * Keeps a pipeline's vertex bindings (their strides and rates) and
+ * attributes.  Returns 0, or EINVAL for counts that are not the arrays'.
+ */
+static int
 decode_vertex_input(
+	struct ghci_vk_session *session,
 	const VkPipelineVertexInputStateCreateInfo *info,
 	struct pipeline_request *request)
 {
 	const VkVertexInputBindingDescription *binding;
 	const VkVertexInputAttributeDescription *attribute;
+	uint64_t decoded;
 	uint32_t index;
 
+	/* The arrays as decoded. */
+	decoded = ghci_vk_decoded_count(session, info->pVertexBindingDescriptions);
+	if (decoded != info->vertexBindingDescriptionCount)
+		return EINVAL;
+	decoded = ghci_vk_decoded_count(session, info->pVertexAttributeDescriptions);
+	if (decoded != info->vertexAttributeDescriptionCount)
+		return EINVAL;
+
 	/* The bindings: a binding past the hardware's sixteen is refused. */
-	for (index = 0U; info->pVertexBindingDescriptions != NULL && index < info->vertexBindingDescriptionCount; index++) {
+	for (index = 0U; index < info->vertexBindingDescriptionCount; index++) {
 		binding = &info->pVertexBindingDescriptions[index];
 		if (binding->binding >= GHCI_VERTEX_BINDINGS) {
 			request->refusal = "a vertex binding past 15";
@@ -861,7 +1030,7 @@ decode_vertex_input(
 	}
 
 	/* The attributes: more than the record's sixteen are refused. */
-	for (index = 0U; info->pVertexAttributeDescriptions != NULL && index < info->vertexAttributeDescriptionCount; index++) {
+	for (index = 0U; index < info->vertexAttributeDescriptionCount; index++) {
 		attribute = &info->pVertexAttributeDescriptions[index];
 		if (request->attribute_count >= GHCI_VERTEX_ATTRIBUTES) {
 			request->refusal = "more than 16 vertex attributes";
@@ -873,15 +1042,29 @@ decode_vertex_input(
 		request->attributes[request->attribute_count].offset = attribute->offset;
 		request->attribute_count++;
 	}
+
+	/* Succeeded: the vertex input is kept. */
+	return 0;
 }
 
-/* Keeps a pipeline's colour blend state and its attachments (more than eight are refused). */
-static void
+/*
+ * Keeps a pipeline's colour blend state and its attachments (more than
+ * eight are refused).  Returns 0, or EINVAL for a count that is not the
+ * array's.
+ */
+static int
 decode_blend(
+	struct ghci_vk_session *session,
 	const VkPipelineColorBlendStateCreateInfo *info,
 	struct pipeline_request *request)
 {
+	uint64_t decoded;
 	uint32_t index;
+
+	/* The array as decoded. */
+	decoded = ghci_vk_decoded_count(session, info->pAttachments);
+	if (decoded != info->attachmentCount)
+		return EINVAL;
 
 	/* The state, without the scratch's array. */
 	request->blend = 1U;
@@ -893,8 +1076,11 @@ decode_blend(
 	}
 
 	/* The attachments. */
-	for (index = 0U; info->pAttachments != NULL && index < request->blend_state.attachmentCount; index++)
+	for (index = 0U; index < request->blend_state.attachmentCount; index++)
 		request->attachments[index] = info->pAttachments[index];
+
+	/* Succeeded: the blend state is kept. */
+	return 0;
 }
 
 /* Decodes a compute pipeline's record (VkComputePipelineCreateInfo). */
@@ -916,7 +1102,7 @@ decode_compute(
 	/* The compute stage alone. */
 	if (info.stage.stage != VK_SHADER_STAGE_COMPUTE_BIT)
 		return EINVAL;
-	error = decode_stage(&info.stage, request);
+	error = decode_stage(session, &info.stage, request);
 	if (error != 0)
 		return error;
 	request->layout = (uint64_t)(uintptr_t)info.layout;
@@ -1028,6 +1214,8 @@ pipeline_build(
 			pipeline->bindings = programs.program[PIPELINE_FRAGMENT]->bindings;
 		pipeline->push_bytes = layout->push_bytes;
 		pipeline->dynamic_count = layout->dynamic_count;
+		kern_memcpy(pipeline->dynamic_base, layout->dynamic_base, sizeof(pipeline->dynamic_base));
+		kern_memcpy(pipeline->dynamic_sets, layout->dynamic_sets, sizeof(pipeline->dynamic_sets));
 		pipeline->layout = request->layout;
 		pipeline->render_pass = request->render_pass;
 		pipeline->subpass = request->subpass;
@@ -1039,17 +1227,27 @@ pipeline_build(
 	for (index = 0U; index < PIPELINE_STAGES; index++)
 		ghci_gsi1_program_free(programs.program[index]);
 	if (made != (uint32_t)VK_SUCCESS) {
-		if (pipeline != NULL) {
-			ghci_vk_heap_give(pipeline->block, pipeline->offset);
-			ghci_vk_heap_give(pipeline->scratch_block, pipeline->scratch_offset);
-			kern_free(pipeline);
-		}
+		if (pipeline != NULL)
+			pipeline_free(session, pipeline);
 		return made;
 	}
 
 	/* Succeeded: the pipeline. */
 	*result = pipeline;
 	return (uint32_t)VK_SUCCESS;
+}
+
+/* Frees a pipeline that is no object: its runs of the heap, its budget and its record. */
+static void
+pipeline_free(
+	struct ghci_vk_session *session,
+	struct ghci_vk_pipeline *pipeline)
+{
+	/* The runs, what they took of the budget, then the record. */
+	ghci_vk_heap_give(pipeline->block, pipeline->offset);
+	ghci_vk_heap_give(pipeline->scratch_block, pipeline->scratch_offset);
+	ghci_vk_budget_give(session, pipeline->charged);
+	kern_free(pipeline);
 }
 
 /*
@@ -1063,10 +1261,13 @@ graphics_check(
 	const struct ghci_vk_subpass *subpass)
 {
 	const struct ghci_caps *caps;
+	const struct ghci_vk_formats *formats;
+	const struct ghci_vk *vk;
 	const VkPipelineColorBlendAttachmentState *attachment;
 	uint32_t factors[4];
 	uint32_t index;
 	uint32_t factor;
+	uint32_t format;
 	int has;
 
 	/* A vertex stage, and a topology the hardware draws (a fan as triangles). */
@@ -1114,11 +1315,20 @@ graphics_check(
 		}
 	}
 
-	/* Attachments blended differently need MRT_BLEND. */
+	/* Attachments blended differently need MRT_BLEND (the factors and operators of one that does not blend do not count). */
 	has = ghci_caps_has(caps, GHCI_HAS_MRT_BLEND);
 	for (index = 1U; index < request->blend_state.attachmentCount && has == 0; index++) {
-		if (blend_word(&request->attachments[index]) != blend_word(&request->attachments[0]))
+		if (blend_word_used(&request->attachments[index]) != blend_word_used(&request->attachments[0]))
 			return pipeline_refuse(session, "attachments blended differently without MRT_BLEND");
+	}
+
+	/* Each attribute's format is one the device fetches from a vertex buffer. */
+	vk = session->device->vk;
+	formats = &vk->formats;
+	for (index = 0U; index < request->attribute_count; index++) {
+		format = request->attributes[index].format;
+		if (format >= GHCI_VK_FORMATS || (formats->buffer[format] & (uint32_t)VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT) == 0U)
+			return pipeline_refuse(session, "a vertex attribute format without VERTEX_BUFFER");
 	}
 
 	/* Succeeded: the hardware draws the state. */
@@ -1242,6 +1452,7 @@ compile_stage(
 	const struct ghci_isa_backend *backend;
 	struct ghci_gsi1_diagnostic diagnostic;
 	struct ghci_vk_object *object;
+	const char *reason;
 	uint32_t *words;
 	int error;
 
@@ -1253,10 +1464,13 @@ compile_stage(
 	if (backend == NULL)
 		return pipeline_refuse(session, "a device without a shader unit");
 
-	/* The words with the specialization's constants in place. */
-	error = specialize(&object->as.module, stage, &words);
+	/* The words with the specialization's constants, folded operations and workgroup size in place. */
+	reason = NULL;
+	error = specialize(&object->as.module, stage, &words, &reason);
 	if (error == ENOMEM)
 		return (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
+	if (error != 0 && reason != NULL)
+		return pipeline_refuse(session, reason);
 	if (error != 0)
 		return pipeline_refuse(session, "a specialization the driver does not apply");
 
@@ -1279,10 +1493,10 @@ compile_stage(
 
 /*
  * Checks what a pipeline's programs need of the device: shared memory
- * within LDS_KB, a workgroup within {256, 256, 64} and 256 invocations,
- * no sample count query without multisampling, and one dynamic offset
- * per dynamic buffer array (the compiler reads element 0's).  Returns
- * the VkResult.
+ * within LDS_KB, a workgroup within the maxComputeWorkGroupSize and
+ * maxComputeWorkGroupInvocations the device reports, no sample count
+ * query without multisampling, and one dynamic offset per dynamic buffer
+ * array (the compiler reads element 0's).  Returns the VkResult.
  */
 static uint32_t
 programs_check(
@@ -1293,22 +1507,32 @@ programs_check(
 {
 	const struct ghci_gsi1_program *program;
 	const struct ghci_gsi1_resource *entry;
-	uint32_t invocations;
+	VkPhysicalDeviceLimits *limits;
+	uint64_t invocations;
 	uint32_t index;
 	uint32_t dynamic;
+	uint32_t made;
 	int has;
 
-	/* A compute program's shared memory and workgroup. */
+	/* A compute program's shared memory and workgroup, within the limits the device reports. */
 	program = programs->program[PIPELINE_VERTEX];
 	if (request->bind_point == PIPELINE_COMPUTE) {
 		if (program->lds_bytes > session->device->caps.lds_bytes)
 			return pipeline_refuse(session, "shared memory past LDS_KB");
-		if (program->local_size[0] > PIPELINE_LOCAL_XY_MAX || program->local_size[1] > PIPELINE_LOCAL_XY_MAX ||
-		    program->local_size[2] > PIPELINE_LOCAL_Z_MAX)
-			return pipeline_refuse(session, "a workgroup past {256, 256, 64}");
-		invocations = program->local_size[0] * program->local_size[1] * program->local_size[2];
-		if (invocations > PIPELINE_INVOCATIONS_MAX)
-			return pipeline_refuse(session, "a workgroup past 256 invocations");
+		limits = kern_malloc(sizeof(*limits));
+		if (limits == NULL)
+			return (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
+		ghci_vk_caps_limits(&session->device->caps, limits);
+		invocations = (uint64_t)program->local_size[0] * program->local_size[1] * program->local_size[2];
+		made = (uint32_t)VK_SUCCESS;
+		if (program->local_size[0] > limits->maxComputeWorkGroupSize[0] || program->local_size[1] > limits->maxComputeWorkGroupSize[1] ||
+		    program->local_size[2] > limits->maxComputeWorkGroupSize[2])
+			made = pipeline_refuse(session, "a workgroup past maxComputeWorkGroupSize");
+		else if (invocations > limits->maxComputeWorkGroupInvocations)
+			made = pipeline_refuse(session, "a workgroup past maxComputeWorkGroupInvocations");
+		kern_free(limits);
+		if (made != (uint32_t)VK_SUCCESS)
+			return made;
 	}
 
 	/* A sample count query needs multisampling. */
@@ -1354,8 +1578,10 @@ pipeline_place(
 	const struct ghci_gsi1_program *program;
 	uint32_t code_at[PIPELINE_STAGES];
 	uint32_t scratch_at[PIPELINE_STAGES];
+	uint64_t scratch_bytes;
+	uint64_t stage_bytes;
+	uint64_t charged;
 	uint32_t table_at;
-	uint32_t scratch_bytes;
 	uint32_t bytes;
 	uint32_t warps;
 	uint32_t index;
@@ -1379,14 +1605,24 @@ pipeline_place(
 		if (program->scratch_bytes != 0U) {
 			if (warps == 0U)
 				return pipeline_refuse(session, "a program that spills on a device without RESIDENT_WARPS");
-			scratch_at[index] = scratch_bytes;
-			scratch_bytes += align_up(program->scratch_bytes * warps, PIPELINE_CODE_ALIGN);
+			scratch_at[index] = (uint32_t)scratch_bytes;
+			stage_bytes = ((uint64_t)program->scratch_bytes * warps + PIPELINE_CODE_ALIGN - 1U) & ~(uint64_t)(PIPELINE_CODE_ALIGN - 1U);
+			scratch_bytes += stage_bytes;
+			if (scratch_bytes > GHCI_VK_HEAP_BLOCK_MAX)
+				return pipeline_refuse(session, "scratch memory past a block of the executor heap");
 		}
 	}
 	bytes = align_up(bytes, PIPELINE_CODE_ALIGN);
 	table_at = bytes;
 	if (scratch_bytes != 0U)
 		bytes += GSI1_ABI_DRIVER_TABLE_BYTES;
+
+	/* The record and its runs, within the session's budget. */
+	charged = sizeof(*pipeline) + (uint64_t)bytes + scratch_bytes;
+	error = ghci_vk_budget_take(session, charged);
+	if (error != 0)
+		return (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
+	pipeline->charged = charged;
 
 	/* The run of the heap. */
 	error = ghci_vk_heap_take(session, device, bytes, PIPELINE_PSO_ALIGN, &pipeline->block, &pipeline->offset);
@@ -1410,7 +1646,7 @@ pipeline_place(
 
 	/* The scratch memory and the table of its addresses, by stage (a compute program's at 0x10). */
 	if (scratch_bytes != 0U) {
-		error = ghci_vk_heap_take(session, device, scratch_bytes, PIPELINE_CODE_ALIGN, &pipeline->scratch_block, &pipeline->scratch_offset);
+		error = ghci_vk_heap_take(session, device, (uint32_t)scratch_bytes, PIPELINE_CODE_ALIGN, &pipeline->scratch_block, &pipeline->scratch_offset);
 		if (error != 0)
 			return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 		pipeline->table_va = base + table_at;
@@ -1669,6 +1905,29 @@ blend_word(
 }
 
 /*
+ * Reports what of an attachment's blend word the hardware uses: the
+ * whole word when it blends, the enable bit and the write mask alone
+ * when it does not.
+ */
+static uint32_t
+blend_word_used(
+	const VkPipelineColorBlendAttachmentState *attachment)
+{
+	VkPipelineColorBlendAttachmentState plain;
+
+	/* A blending attachment's whole word. */
+	if (attachment->blendEnable != VK_FALSE)
+		return blend_word(attachment);
+
+	/* One that does not blend: its write mask alone. */
+	kern_memset(&plain, 0, sizeof(plain));
+	plain.colorWriteMask = attachment->colorWriteMask;
+
+	/* Succeeded: the word. */
+	return blend_word(&plain);
+}
+
+/*
  * Reports what a pipeline knows of its subpass: the render pass's record
  * when the session has it; otherwise the pipeline's own state (the colour
  * attachments it blends, its samples, no input attachment).
@@ -1700,123 +1959,191 @@ subpass_of(
  * Makes a copy of a module's words with a stage's specialization in
  * place: each OpSpecConstantTrue, OpSpecConstantFalse and OpSpecConstant
  * becomes the plain constant of its SpecId's value (its default without
- * one), OpSpecConstantComposite becomes OpConstantComposite, and the
- * SpecId decorations become OpNop.  OpSpecConstantOp is refused.
- * Returns 0, EINVAL or ENOMEM; the caller frees the copy.
+ * one), OpSpecConstantComposite becomes OpConstantComposite, each
+ * OpSpecConstantOp of 32-bit integers and Booleans is folded into the
+ * plain constant of its result (in the order of the module, so that one
+ * may use another's), the SpecId decorations become OpNop, and the
+ * constant the WorkgroupSize built-in decorates goes into the LocalSize
+ * (or LocalSizeId) execution mode, which it overrides.  Returns 0,
+ * EINVAL with *reason for what the driver does not apply, or ENOMEM; the
+ * caller frees the copy.
  */
 static int
 specialize(
 	const struct ghci_vk_shader_module *module,
 	const struct stage_request *stage,
-	uint32_t **words)
+	uint32_t **words,
+	const char **reason)
 {
-	uint32_t *ids;
-	uint32_t *spec_ids;
-	uint32_t *copy;
-	uint32_t spec_count;
+	struct spec_module spec;
 	uint32_t at;
 	uint32_t count;
-	uint32_t opcode;
+	uint32_t limit;
+	int folds;
 	int error;
 
-	/* The copy, and the table of the SpecId decorations (each id, then its SpecId). */
-	copy = kern_malloc((size_t)module->word_count * 4U);
-	if (copy == NULL)
+	/* The copy, and the table of the SpecId decorations. */
+	kern_memset(&spec, 0, sizeof(spec));
+	spec.word_count = module->word_count;
+	spec.words = kern_malloc((size_t)module->word_count * 4U);
+	if (spec.words == NULL)
 		return ENOMEM;
-	ids = kern_calloc(2U * PIPELINE_SPECIALIZATIONS_MAX, sizeof(*ids));
-	if (ids == NULL) {
-		kern_free(copy);
+	spec.ids = kern_calloc(2U * PIPELINE_SPECIALIZATIONS_MAX, sizeof(*spec.ids));
+	if (spec.ids == NULL) {
+		kern_free(spec.words);
 		return ENOMEM;
 	}
-	spec_ids = ids + PIPELINE_SPECIALIZATIONS_MAX;
-	kern_memcpy(copy, module->words, (size_t)module->word_count * 4U);
+	spec.spec_ids = spec.ids + PIPELINE_SPECIALIZATIONS_MAX;
+	kern_memcpy(spec.words, module->words, (size_t)module->word_count * 4U);
 
-	/* The SpecId decorations, each turned into OpNop. */
-	spec_count = 0U;
-	for (at = SPIRV_HEADER_WORDS; at < module->word_count; at += count) {
-		opcode = copy[at] & SPIRV_OPCODE_MASK;
-		count = copy[at] >> SPIRV_COUNT_SHIFT;
-		if (count == 0U || count > module->word_count - at) {
-			kern_free(ids);
-			kern_free(copy);
-			return EINVAL;
-		}
-		if (opcode != SPIRV_OP_DECORATE || count != 4U || copy[at + 2U] != SPIRV_DECORATION_SPEC_ID)
-			continue;
-		if (spec_count >= PIPELINE_SPECIALIZATIONS_MAX) {
-			kern_free(ids);
-			kern_free(copy);
-			return EINVAL;
-		}
-		ids[spec_count] = copy[at + 1U];
-		spec_ids[spec_count] = copy[at + 3U];
-		spec_count++;
-		copy[at] = SPIRV_NOP_WORD;
-		copy[at + 1U] = SPIRV_NOP_WORD;
-		copy[at + 2U] = SPIRV_NOP_WORD;
-		copy[at + 3U] = SPIRV_NOP_WORD;
+	/* The SpecId decorations (each turned into OpNop), the operations to fold and the WorkgroupSize. */
+	folds = specialize_scan(&spec);
+	error = 0;
+	if (folds < 0)
+		error = EINVAL;
+
+	/* The values of the ids below the bound, when an operation or the workgroup size needs them. */
+	if (error == 0 && (folds > 0 || spec.workgroup != 0U)) {
+		limit = spec.words[SPIRV_BOUND_WORD];
+		if (limit > spec.word_count)
+			limit = spec.word_count;
+		if (limit == 0U)
+			limit = 1U;
+		spec.value_count = limit;
+		spec.values = kern_calloc(limit, sizeof(*spec.values));
+		if (spec.values == NULL)
+			error = ENOMEM;
 	}
 
-	/* The specialization constants. */
-	for (at = SPIRV_HEADER_WORDS; at < module->word_count; at += count) {
-		opcode = copy[at] & SPIRV_OPCODE_MASK;
-		count = copy[at] >> SPIRV_COUNT_SHIFT;
-		error = specialize_constant(copy, at, count, stage, ids, spec_ids, spec_count);
-		if (error != 0) {
-			kern_free(ids);
-			kern_free(copy);
-			return error;
-		}
+	/* The constants, then the folds, in the order of the module. */
+	for (at = SPIRV_HEADER_WORDS; error == 0 && at < spec.word_count; at += count) {
+		count = spec.words[at] >> SPIRV_COUNT_SHIFT;
+		error = specialize_constant(&spec, at, count, stage);
+		if (error == 0 && spec.values != NULL)
+			error = specialize_track(&spec, at, count);
+	}
+
+	/* The workgroup size the built-in gives. */
+	if (error == 0 && spec.workgroup != 0U)
+		error = specialize_workgroup(&spec);
+
+	/* The tables go; a copy not specialized goes too. */
+	kern_free(spec.values);
+	kern_free(spec.ids);
+	if (error != 0) {
+		kern_free(spec.words);
+		*reason = spec.reason;
+		return error;
 	}
 
 	/* Succeeded: the specialized words. */
-	kern_free(ids);
-	*words = copy;
+	*words = spec.words;
 	return 0;
 }
 
 /*
+ * Reads a module's copy once: its instructions' word counts, each SpecId
+ * decoration (kept in the table and turned into OpNop), whether it has an
+ * OpSpecConstantOp, and the id the WorkgroupSize built-in decorates.
+ * Returns 1 when there is an operation to fold, 0 when there is none, or
+ * -1 for a module the driver does not read (the reason set).
+ */
+static int
+specialize_scan(
+	struct spec_module *spec)
+{
+	uint32_t *words;
+	uint32_t at;
+	uint32_t count;
+	uint32_t opcode;
+	int folds;
+
+	/* Each instruction, of a whole word count within the module. */
+	words = spec->words;
+	folds = 0;
+	for (at = SPIRV_HEADER_WORDS; at < spec->word_count; at += count) {
+		opcode = words[at] & SPIRV_OPCODE_MASK;
+		count = words[at] >> SPIRV_COUNT_SHIFT;
+		if (count == 0U || count > spec->word_count - at) {
+			spec->reason = "a module whose instructions do not fit its words";
+			return -1;
+		}
+
+		/* An operation to fold. */
+		if (opcode == SPIRV_OP_SPEC_OP) {
+			folds = 1;
+			continue;
+		}
+
+		/* The constant the WorkgroupSize built-in decorates. */
+		if (opcode == SPIRV_OP_DECORATE && count == 4U && words[at + 2U] == SPIRV_DECORATION_BUILTIN &&
+		    words[at + 3U] == SPIRV_BUILTIN_WORKGROUP_SIZE) {
+			spec->workgroup = words[at + 1U];
+			continue;
+		}
+
+		/* A SpecId decoration, kept and turned into OpNop. */
+		if (opcode != SPIRV_OP_DECORATE || count != 4U || words[at + 2U] != SPIRV_DECORATION_SPEC_ID)
+			continue;
+		if (spec->spec_count >= PIPELINE_SPECIALIZATIONS_MAX) {
+			spec->reason = "more than 256 specialization constants";
+			return -1;
+		}
+		spec->ids[spec->spec_count] = words[at + 1U];
+		spec->spec_ids[spec->spec_count] = words[at + 3U];
+		spec->spec_count++;
+		words[at] = SPIRV_NOP_WORD;
+		words[at + 1U] = SPIRV_NOP_WORD;
+		words[at + 2U] = SPIRV_NOP_WORD;
+		words[at + 3U] = SPIRV_NOP_WORD;
+	}
+
+	/* Succeeded: the module is read. */
+	return folds;
+}
+
+/*
  * Rewrites one instruction of a specialized copy when it is a
- * specialization constant.  Returns 0, or EINVAL for OpSpecConstantOp and
- * a value that does not fit its constant.
+ * specialization constant (an OpSpecConstantOp is left to
+ * specialize_fold()).  Returns 0, or EINVAL for a value that does not fit
+ * its constant.
  */
 static int
 specialize_constant(
-	uint32_t *words,
+	struct spec_module *spec,
 	uint32_t at,
 	uint32_t count,
-	const struct stage_request *stage,
-	const uint32_t *ids,
-	const uint32_t *spec_ids,
-	uint32_t spec_count)
+	const struct stage_request *stage)
 {
 	const VkSpecializationMapEntry *entry;
+	uint32_t *words;
 	uint32_t opcode;
 	uint32_t value;
 	uint32_t index;
 	uint32_t spec_id;
 	int found;
 
-	/* The instruction's opcode; a composite only changes its opcode, an operation is refused. */
+	/* The instruction's opcode; a composite only changes its opcode. */
+	words = spec->words;
 	opcode = words[at] & SPIRV_OPCODE_MASK;
 	if (opcode == SPIRV_OP_SPEC_COMPOSITE) {
 		words[at] = (words[at] & ~SPIRV_OPCODE_MASK) | SPIRV_OP_CONSTANT_COMPOSITE;
 		return 0;
 	}
-	if (opcode == SPIRV_OP_SPEC_OP)
-		return EINVAL;
 	if (opcode != SPIRV_OP_SPEC_TRUE && opcode != SPIRV_OP_SPEC_FALSE && opcode != SPIRV_OP_SPEC_CONSTANT)
 		return 0;
-	if (count < 3U)
+	if (count < 3U) {
+		spec->reason = "a specialization constant without its id";
 		return EINVAL;
+	}
 
 	/* The constant's SpecId, and the map's entry for it. */
 	entry = NULL;
 	found = 0;
 	spec_id = 0U;
-	for (index = 0U; index < spec_count; index++) {
-		if (ids[index] == words[at + 2U]) {
-			spec_id = spec_ids[index];
+	for (index = 0U; index < spec->spec_count; index++) {
+		if (spec->ids[index] == words[at + 2U]) {
+			spec_id = spec->spec_ids[index];
 			found = 1;
 			break;
 		}
@@ -1827,8 +2154,10 @@ specialize_constant(
 			break;
 		}
 	}
-	if (entry != NULL && ((uint64_t)entry->offset + entry->size > stage->data_bytes || stage->data == NULL))
+	if (entry != NULL && ((uint64_t)entry->offset + entry->size > stage->data_bytes || stage->data == NULL)) {
+		spec->reason = "a specialization map entry past its data";
 		return EINVAL;
+	}
 
 	/* A Boolean: the entry's value (a VkBool32), or its default. */
 	if (opcode == SPIRV_OP_SPEC_TRUE || opcode == SPIRV_OP_SPEC_FALSE) {
@@ -1843,13 +2172,456 @@ specialize_constant(
 
 	/* A scalar: the entry's bytes over the literal words. */
 	if (entry != NULL) {
-		if (entry->size > (uint64_t)(count - 3U) * 4U)
+		if (entry->size > (uint64_t)(count - 3U) * 4U) {
+			spec->reason = "a specialization value larger than its constant";
 			return EINVAL;
+		}
 		kern_memcpy(&words[at + 3U], stage->data + entry->offset, entry->size);
 	}
 	words[at] = (words[at] & ~SPIRV_OPCODE_MASK) | SPIRV_OP_CONSTANT;
 
 	/* Succeeded: the constant is plain. */
+	return 0;
+}
+
+/*
+ * Keeps what one instruction of a specialized copy makes, for the folds
+ * and the workgroup size: a 32-bit integer or Boolean type, a plain
+ * constant of one, a constant composite; and folds an OpSpecConstantOp.
+ * Returns 0, or EINVAL for an operation the driver does not fold.
+ */
+static int
+specialize_track(
+	struct spec_module *spec,
+	uint32_t at,
+	uint32_t count)
+{
+	struct spec_value *values;
+	uint32_t *words;
+	uint32_t opcode;
+	uint32_t limit;
+	int error;
+
+	/* The instruction, and the ids the table follows. */
+	words = spec->words;
+	values = spec->values;
+	limit = spec->value_count;
+	opcode = words[at] & SPIRV_OPCODE_MASK;
+
+	/* What each kind of instruction makes (an id past the table is not followed). */
+	error = 0;
+	switch (opcode) {
+	case SPIRV_OP_TYPE_INT:
+		if (count == 4U && words[at + 1U] < limit && words[at + 2U] == SPEC_INT_BITS)
+			values[words[at + 1U]].kind = SPEC_TYPE_INT;
+		break;
+	case SPIRV_OP_TYPE_BOOL:
+		if (count == 2U && words[at + 1U] < limit)
+			values[words[at + 1U]].kind = SPEC_TYPE_BOOL;
+		break;
+	case SPIRV_OP_CONSTANT:
+		if (count == 4U && words[at + 1U] < limit && words[at + 2U] < limit && values[words[at + 1U]].kind == SPEC_TYPE_INT) {
+			values[words[at + 2U]].kind = SPEC_INT;
+			values[words[at + 2U]].value = words[at + 3U];
+		}
+		break;
+	case SPIRV_OP_CONSTANT_TRUE:
+	case SPIRV_OP_CONSTANT_FALSE:
+		if (count == 3U && words[at + 2U] < limit) {
+			values[words[at + 2U]].kind = SPEC_BOOL;
+			values[words[at + 2U]].value = opcode == SPIRV_OP_CONSTANT_TRUE ? 1U : 0U;
+		}
+		break;
+	case SPIRV_OP_CONSTANT_COMPOSITE:
+		if (count >= 3U && words[at + 2U] < limit) {
+			values[words[at + 2U]].kind = SPEC_COMPOSITE;
+			values[words[at + 2U]].value = at;
+		}
+		break;
+	case SPIRV_OP_SPEC_OP:
+		error = specialize_fold(spec, at, count);
+		if (error != 0)
+			return error;
+		break;
+	default:
+		break;
+	}
+
+	/* Succeeded: the instruction is kept. */
+	return 0;
+}
+
+/*
+ * Folds one OpSpecConstantOp of a specialized copy into the plain
+ * constant of its result (OpConstant, OpConstantTrue or OpConstantFalse,
+ * the words after it OpNop).  Its operands are 32-bit integer or Boolean
+ * constants made before it.  Returns 0, or EINVAL (the reason set).
+ */
+static int
+specialize_fold(
+	struct spec_module *spec,
+	uint32_t at,
+	uint32_t count)
+{
+	uint32_t kinds[SPEC_OPERANDS_MAX];
+	uint32_t operands[SPEC_OPERANDS_MAX];
+	struct spec_value *values;
+	uint32_t *words;
+	uint32_t operation;
+	uint32_t operand_count;
+	uint32_t type;
+	uint32_t result;
+	uint32_t kind;
+	uint32_t value;
+	uint32_t index;
+	uint32_t id;
+	int error;
+
+	/* The result's type and id, the operation, and its operands' values. */
+	words = spec->words;
+	values = spec->values;
+	if (count < 5U || count - 4U > SPEC_OPERANDS_MAX) {
+		spec->reason = "an OpSpecConstantOp the driver does not fold";
+		return EINVAL;
+	}
+	type = words[at + 1U];
+	result = words[at + 2U];
+	operation = words[at + 3U];
+	operand_count = count - 4U;
+	if (type >= spec->value_count || result >= spec->value_count) {
+		spec->reason = "an OpSpecConstantOp of an id past the module's bound";
+		return EINVAL;
+	}
+	for (index = 0U; index < operand_count; index++) {
+		id = words[at + 4U + index];
+		if (id >= spec->value_count || (values[id].kind != SPEC_INT && values[id].kind != SPEC_BOOL)) {
+			spec->reason = "an OpSpecConstantOp of something other than 32-bit integer and Boolean constants";
+			return EINVAL;
+		}
+		kinds[index] = values[id].kind;
+		operands[index] = values[id].value;
+	}
+
+	/* The result, of the type the instruction names. */
+	error = fold_value(operation, operand_count, kinds, operands, &kind, &value);
+	if (error != 0) {
+		spec->reason = "an OpSpecConstantOp the driver does not fold";
+		return EINVAL;
+	}
+	if ((kind == SPEC_INT && values[type].kind != SPEC_TYPE_INT) || (kind == SPEC_BOOL && values[type].kind != SPEC_TYPE_BOOL)) {
+		spec->reason = "an OpSpecConstantOp whose result is not of its type";
+		return EINVAL;
+	}
+
+	/* The plain constant, then OpNop to the instruction's end. */
+	if (kind == SPEC_INT) {
+		words[at] = (4U << SPIRV_COUNT_SHIFT) | SPIRV_OP_CONSTANT;
+		words[at + 3U] = value;
+		index = 4U;
+	} else {
+		words[at] = (3U << SPIRV_COUNT_SHIFT) | (value != 0U ? SPIRV_OP_CONSTANT_TRUE : SPIRV_OP_CONSTANT_FALSE);
+		index = 3U;
+	}
+	while (index < count) {
+		words[at + index] = SPIRV_NOP_WORD;
+		index++;
+	}
+	values[result].kind = kind;
+	values[result].value = value;
+
+	/* Succeeded: the operation is a constant. */
+	return 0;
+}
+
+/*
+ * Reports the value of a folded operation on 32-bit integers (wrapping)
+ * and Booleans, and its kind (SPEC_INT or SPEC_BOOL).  Returns 0, or
+ * EINVAL for an operation the driver does not fold, operands of another
+ * kind, a division by zero, a signed division's overflow, or a shift of
+ * 32 bits or more.
+ */
+static int
+fold_value(
+	uint32_t operation,
+	uint32_t operands,
+	const uint32_t *kinds,
+	const uint32_t *values,
+	uint32_t *kind,
+	uint32_t *value)
+{
+	uint32_t left;
+	uint32_t right;
+	int error;
+
+	/* OpSelect: a Boolean, then two operands of one kind. */
+	if (operation == SPIRV_OP_SELECT) {
+		if (operands != 3U || kinds[0] != SPEC_BOOL || kinds[1] != kinds[2])
+			return EINVAL;
+		*kind = kinds[1];
+		*value = values[0] != 0U ? values[1] : values[2];
+		return 0;
+	}
+
+	/* One operand: a negation, a complement, a conversion of 32 bits to 32 bits, a logical not. */
+	left = values[0];
+	if (operands == 1U) {
+		*kind = kinds[0];
+		if (kinds[0] == SPEC_BOOL && operation == SPIRV_OP_LOGICAL_NOT) {
+			*value = left != 0U ? 0U : 1U;
+			return 0;
+		}
+		if (kinds[0] != SPEC_INT)
+			return EINVAL;
+		switch (operation) {
+		case SPIRV_OP_S_NEGATE:
+			*value = 0U - left;
+			return 0;
+		case SPIRV_OP_NOT:
+			*value = ~left;
+			return 0;
+		case SPIRV_OP_U_CONVERT:
+		case SPIRV_OP_S_CONVERT:
+			*value = left;
+			return 0;
+		default:
+			return EINVAL;
+		}
+	}
+
+	/* Two operands of one kind. */
+	if (operands != 2U || kinds[0] != kinds[1])
+		return EINVAL;
+	right = values[1];
+
+	/* Two Booleans (each 0 or 1). */
+	if (kinds[0] == SPEC_BOOL) {
+		*kind = SPEC_BOOL;
+		switch (operation) {
+		case SPIRV_OP_LOGICAL_EQUAL:
+			*value = left == right ? 1U : 0U;
+			return 0;
+		case SPIRV_OP_LOGICAL_NOT_EQUAL:
+			*value = left != right ? 1U : 0U;
+			return 0;
+		case SPIRV_OP_LOGICAL_OR:
+			*value = left | right;
+			return 0;
+		case SPIRV_OP_LOGICAL_AND:
+			*value = left & right;
+			return 0;
+		default:
+			return EINVAL;
+		}
+	}
+
+	/* Two integers compared. */
+	*kind = SPEC_BOOL;
+	switch (operation) {
+	case SPIRV_OP_I_EQUAL:
+		*value = left == right ? 1U : 0U;
+		return 0;
+	case SPIRV_OP_I_NOT_EQUAL:
+		*value = left != right ? 1U : 0U;
+		return 0;
+	case SPIRV_OP_U_GREATER:
+		*value = left > right ? 1U : 0U;
+		return 0;
+	case SPIRV_OP_U_GREATER_EQUAL:
+		*value = left >= right ? 1U : 0U;
+		return 0;
+	case SPIRV_OP_U_LESS:
+		*value = left < right ? 1U : 0U;
+		return 0;
+	case SPIRV_OP_U_LESS_EQUAL:
+		*value = left <= right ? 1U : 0U;
+		return 0;
+	default:
+		break;
+	}
+
+	/* Two integers, wrapping at 32 bits. */
+	*kind = SPEC_INT;
+	switch (operation) {
+	case SPIRV_OP_I_ADD:
+		*value = left + right;
+		return 0;
+	case SPIRV_OP_I_SUB:
+		*value = left - right;
+		return 0;
+	case SPIRV_OP_I_MUL:
+		*value = left * right;
+		return 0;
+	case SPIRV_OP_U_DIV:
+	case SPIRV_OP_U_MOD:
+		if (right == 0U)
+			return EINVAL;
+		if (operation == SPIRV_OP_U_DIV)
+			*value = left / right;
+		else
+			*value = left % right;
+		return 0;
+	case SPIRV_OP_SHIFT_LEFT_LOGICAL:
+	case SPIRV_OP_SHIFT_RIGHT_LOGICAL:
+	case SPIRV_OP_SHIFT_RIGHT_ARITHMETIC:
+		if (right >= SPEC_INT_BITS)
+			return EINVAL;
+		if (operation == SPIRV_OP_SHIFT_LEFT_LOGICAL)
+			*value = left << right;
+		else if (operation == SPIRV_OP_SHIFT_RIGHT_LOGICAL || (left & SPEC_INT_SIGN) == 0U)
+			*value = left >> right;
+		else
+			*value = ~(~left >> right);
+		return 0;
+	case SPIRV_OP_BITWISE_OR:
+		*value = left | right;
+		return 0;
+	case SPIRV_OP_BITWISE_XOR:
+		*value = left ^ right;
+		return 0;
+	case SPIRV_OP_BITWISE_AND:
+		*value = left & right;
+		return 0;
+	default:
+		break;
+	}
+
+	/* The signed ones (comparisons give a Boolean). */
+	error = fold_signed(operation, left, right, value);
+	if (error != 0)
+		return error;
+	if (operation == SPIRV_OP_S_GREATER || operation == SPIRV_OP_S_GREATER_EQUAL || operation == SPIRV_OP_S_LESS ||
+	    operation == SPIRV_OP_S_LESS_EQUAL)
+		*kind = SPEC_BOOL;
+
+	/* Succeeded: the value. */
+	return 0;
+}
+
+/*
+ * Reports the value of a signed operation on two 32-bit integers: a
+ * comparison (1 or 0), a division rounded toward zero, the remainder with
+ * the dividend's sign (OpSRem) or the divisor's (OpSMod).  Returns 0, or
+ * EINVAL for another operation, a division by zero, or the most negative
+ * value divided by -1.
+ */
+static int
+fold_signed(
+	uint32_t operation,
+	uint32_t left,
+	uint32_t right,
+	uint32_t *value)
+{
+	int32_t a;
+	int32_t b;
+	int32_t remainder;
+
+	/* The two's-complement values. */
+	a = (int32_t)left;
+	b = (int32_t)right;
+
+	/* The comparisons. */
+	switch (operation) {
+	case SPIRV_OP_S_GREATER:
+		*value = a > b ? 1U : 0U;
+		return 0;
+	case SPIRV_OP_S_GREATER_EQUAL:
+		*value = a >= b ? 1U : 0U;
+		return 0;
+	case SPIRV_OP_S_LESS:
+		*value = a < b ? 1U : 0U;
+		return 0;
+	case SPIRV_OP_S_LESS_EQUAL:
+		*value = a <= b ? 1U : 0U;
+		return 0;
+	default:
+		break;
+	}
+
+	/* A division: a divisor that is not zero, no overflow. */
+	if (operation != SPIRV_OP_S_DIV && operation != SPIRV_OP_S_REM && operation != SPIRV_OP_S_MOD)
+		return EINVAL;
+	if (b == 0 || (left == SPEC_INT_SIGN && right == UINT32_MAX))
+		return EINVAL;
+	if (operation == SPIRV_OP_S_DIV) {
+		*value = (uint32_t)(a / b);
+		return 0;
+	}
+
+	/* The remainders. */
+	remainder = a % b;
+	if (operation == SPIRV_OP_S_MOD && remainder != 0 && (remainder < 0) != (b < 0))
+		remainder += b;
+
+	/* Succeeded: the remainder. */
+	*value = (uint32_t)remainder;
+	return 0;
+}
+
+/*
+ * Puts the workgroup size the WorkgroupSize built-in's constant composite
+ * gives into the module's LocalSize execution mode (its three values) or
+ * LocalSizeId one (its three ids).  Returns 0, or EINVAL (the reason
+ * set).
+ */
+static int
+specialize_workgroup(
+	struct spec_module *spec)
+{
+	uint32_t sizes[3];
+	uint32_t ids[3];
+	uint32_t *words;
+	uint32_t composite;
+	uint32_t at;
+	uint32_t count;
+	uint32_t opcode;
+	uint32_t axis;
+	uint32_t id;
+	int placed;
+
+	/* The composite of three 32-bit integer constants. */
+	words = spec->words;
+	if (spec->workgroup >= spec->value_count || spec->values[spec->workgroup].kind != SPEC_COMPOSITE) {
+		spec->reason = "a WorkgroupSize that is not a constant composite";
+		return EINVAL;
+	}
+	composite = spec->values[spec->workgroup].value;
+	if ((words[composite] >> SPIRV_COUNT_SHIFT) != 6U) {
+		spec->reason = "a WorkgroupSize that is not a constant composite";
+		return EINVAL;
+	}
+	for (axis = 0U; axis < 3U; axis++) {
+		id = words[composite + 3U + axis];
+		if (id >= spec->value_count || spec->values[id].kind != SPEC_INT) {
+			spec->reason = "a WorkgroupSize of something other than 32-bit integer constants";
+			return EINVAL;
+		}
+		ids[axis] = id;
+		sizes[axis] = spec->values[id].value;
+	}
+
+	/* The execution modes that give the size. */
+	placed = 0;
+	for (at = SPIRV_HEADER_WORDS; at < spec->word_count; at += count) {
+		opcode = words[at] & SPIRV_OPCODE_MASK;
+		count = words[at] >> SPIRV_COUNT_SHIFT;
+		if (count != 6U)
+			continue;
+		if (opcode == SPIRV_OP_EXECUTION_MODE && words[at + 2U] == SPIRV_MODE_LOCAL_SIZE) {
+			for (axis = 0U; axis < 3U; axis++)
+				words[at + 3U + axis] = sizes[axis];
+			placed = 1;
+		} else if (opcode == SPIRV_OP_EXECUTION_MODE_ID && words[at + 2U] == SPIRV_MODE_LOCAL_SIZE_ID) {
+			for (axis = 0U; axis < 3U; axis++)
+				words[at + 3U + axis] = ids[axis];
+			placed = 1;
+		}
+	}
+	if (placed == 0) {
+		spec->reason = "a WorkgroupSize without a LocalSize to put it in";
+		return EINVAL;
+	}
+
+	/* Succeeded: the module's workgroup is the built-in's. */
 	return 0;
 }
 

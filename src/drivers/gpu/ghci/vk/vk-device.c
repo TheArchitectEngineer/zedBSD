@@ -722,11 +722,13 @@ device_admit(
 	struct ghci_vk_session *session,
 	const VkDeviceCreateInfo *info)
 {
+	uint64_t decoded;
 	uint32_t index;
 	int within;
 
-	/* One queue of the one family. */
-	if (info->queueCreateInfoCount != 0U && info->pQueueCreateInfos == NULL)
+	/* One queue of the one family (the array as long as its count). */
+	decoded = ghci_vk_decoded_count(session, info->pQueueCreateInfos);
+	if (decoded != info->queueCreateInfoCount)
 		return (uint32_t)VK_ERROR_INITIALIZATION_FAILED;
 	for (index = 0U; index < info->queueCreateInfoCount; index++) {
 		if (info->pQueueCreateInfos[index].queueFamilyIndex >= DEVICE_FAMILIES)

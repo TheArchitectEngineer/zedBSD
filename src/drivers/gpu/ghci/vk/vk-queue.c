@@ -469,9 +469,10 @@ queue_submit(
 }
 
 /*
- * Checks the submissions: every semaphore is the device's, and every
- * command buffer the device's and ended.  Returns 0, EINVAL for one the
- * session does not have or one not ready, or ENOTSUP for a command
+ * Checks the submissions: every array as long as its count, every
+ * semaphore the device's, and every command buffer the device's and
+ * ended.  Returns 0, EINVAL for one the session does not have, one not
+ * ready or a count that is not its array's, or ENOTSUP for a command
  * buffer with recorded commands, which the executor does not execute
  * yet.
  */
@@ -483,12 +484,27 @@ submission_check(
 	struct ghci_vk_device *device)
 {
 	struct ghci_vk_object *object;
+	uint64_t decoded[4];
 	uint64_t index;
 	uint32_t at;
 	uint64_t handle;
 
 	/* Each submission's semaphores and command buffers. */
 	for (index = 0U; index < count; index++) {
+		/* Arrays as long as their counts say (an absent one is not read). */
+		decoded[0] = ghci_vk_decoded_count(session, submits[index].pWaitSemaphores);
+		decoded[1] = ghci_vk_decoded_count(session, submits[index].pWaitDstStageMask);
+		decoded[2] = ghci_vk_decoded_count(session, submits[index].pCommandBuffers);
+		decoded[3] = ghci_vk_decoded_count(session, submits[index].pSignalSemaphores);
+		if (submits[index].pWaitSemaphores != NULL && decoded[0] != submits[index].waitSemaphoreCount)
+			return EINVAL;
+		if (submits[index].pWaitDstStageMask != NULL && decoded[1] != submits[index].waitSemaphoreCount)
+			return EINVAL;
+		if (submits[index].pCommandBuffers != NULL && decoded[2] != submits[index].commandBufferCount)
+			return EINVAL;
+		if (submits[index].pSignalSemaphores != NULL && decoded[3] != submits[index].signalSemaphoreCount)
+			return EINVAL;
+
 		/* The semaphores waited for and signaled. */
 		for (at = 0U; at < submits[index].waitSemaphoreCount && submits[index].pWaitSemaphores != NULL; at++) {
 			handle = (uint64_t)(uintptr_t)submits[index].pWaitSemaphores[at];

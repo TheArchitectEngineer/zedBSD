@@ -65,11 +65,11 @@
 #define LIMIT_DEFAULT_CLOCK_HZ		100000000U
 
 /*
- * The limits the driver decides (section 15.5 of the driver's design):
- * the texel buffers the compiler samples as a 256-texel wide 2D texture,
- * the descriptors of set 2's table, the dynamic offsets of the constant
- * bank, the alignments of the descriptors and of the layout's rows, and
- * Vulkan 1.0's smallest values for the rest.
+ * The limits the driver decides: the texel buffers the compiler samples
+ * as a 256-texel wide 2D texture, the descriptors of set 2's table, the
+ * dynamic offsets of the constant bank, the alignments of the
+ * descriptors and of the layout's rows, and Vulkan 1.0's smallest values
+ * for the rest.
  */
 #define LIMIT_TEXEL_ELEMENTS		(256U * 16384U)
 #define LIMIT_SET_UNIFORM_BUFFERS	72U

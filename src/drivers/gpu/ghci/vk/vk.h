@@ -45,6 +45,18 @@
 #include "../compiler/gsi1-abi.h"
 #include "../compiler/gsi1-compile.h"
 
+/*
+ * The record decoders (drivers/gpu/i915/vk/vk-codec.inc) size each array
+ * by its own count on the wire, which a client may make differ from the
+ * Vulkan count field beside it.  The executor's decoders take their
+ * arrays through ghci_vk_decode_array(), which keeps each array's
+ * decoded length in the scratch just before it, so that every count
+ * field is checked against the array (ghci_vk_decoded_count()) before
+ * the array is read by it.
+ */
+#define i915_vkc_array(reader, arena, count, element) \
+	ghci_vk_decode_array((reader), (arena), (count), (element))
+
 /* The buckets of a session's object table, and the most objects a session keeps. */
 #define GHCI_VK_BUCKETS			256U
 #define GHCI_VK_OBJECTS_MAX		65536U
@@ -74,6 +86,15 @@
 
 /* The most bytes of recorded commands one command buffer keeps. */
 #define GHCI_VK_RECORD_MAX		(16U << 20)
+
+/*
+ * The host bytes the objects of one node session may keep: shader
+ * modules' words, pipelines (their records and runs of the executor
+ * heap), descriptor set layouts, pipeline layouts, descriptor sets and
+ * command buffers' recordings.  A create past it is answered
+ * VK_ERROR_OUT_OF_HOST_MEMORY.
+ */
+#define GHCI_VK_BUDGET_BYTES		(64ULL << 20)
 
 /* The pipelineCacheUUID the device reports and a pipeline cache's header carries. */
 #define GHCI_VK_CACHE_UUID		"zedBSD-ghci-pc10"
@@ -351,12 +372,15 @@ struct ghci_vk_layout_binding {
 /*
  * A VkDescriptorSetLayout, shared by the layout object, the pipeline
  * layouts and the sets made with it (holds counts them; the last to let
- * go frees it).  The bindings are in increasing binding order, which is
- * the order of a set's descriptors and of its dynamic offsets; samplers
- * holds the immutable samplers' descriptors by descriptor index.
+ * go frees it and gives charged back to its session's budget).  The
+ * bindings are in increasing binding order, which is the order of a
+ * set's descriptors and of its dynamic offsets; samplers holds the
+ * immutable samplers' descriptors by descriptor index.
  */
 struct ghci_vk_set_layout {
 	unsigned holds;
+	struct ghci_vk_session *session;
+	uint64_t charged;
 	uint32_t binding_count;
 	uint32_t descriptor_count;
 	uint32_t dynamic_count;
@@ -367,6 +391,9 @@ struct ghci_vk_set_layout {
 /*
  * A VkPipelineLayout: its set layouts (held), the push-constant bytes and
  * the dynamic buffers in the order of their offsets (one per descriptor).
+ * dynamic_base[i] is the index of set i's first dynamic offset and
+ * dynamic_sets[i] how many set i has (0 for a set past set_count), so
+ * that the dynamic offsets of a bind of sets i and on land at their place.
  */
 struct ghci_vk_pipeline_layout {
 	uint32_t set_count;
@@ -374,6 +401,8 @@ struct ghci_vk_pipeline_layout {
 	uint32_t push_bytes;
 	uint32_t dynamic_count;
 	struct ghci_gsi1_dynamic dynamic[GHCI_GSI1_DYNAMIC_OFFSETS];
+	uint32_t dynamic_base[GHCI_VK_SETS];
+	uint32_t dynamic_sets[GHCI_VK_SETS];
 };
 
 /* A VkDescriptorPool: its flags, its sets, and the descriptors of each type it has and has given. */
@@ -458,9 +487,11 @@ struct ghci_vk_render_pass {
  * programs share, the push-constant bytes and dynamic offsets they read,
  * the vertex bindings' strides, and the state the record does not keep.
  * table_va is 0 for a pipeline without the driver's table.  layout,
- * render_pass and subpass are what it was made with.  fan says that the
- * topology is a triangle fan, which the record draws as triangles from
- * an index list the executor makes.
+ * render_pass and subpass are what it was made with, and dynamic_base
+ * and dynamic_sets its layout's places of each set's dynamic offsets.
+ * fan says that the topology is a triangle fan, which the record draws
+ * as triangles from an index list the executor makes.  charged is what
+ * the record and its runs take of the session's budget.
  */
 struct ghci_vk_pipeline {
 	uint32_t bind_point;
@@ -475,6 +506,8 @@ struct ghci_vk_pipeline {
 	struct ghci_gsi1_bindings bindings;
 	uint32_t push_bytes;
 	uint32_t dynamic_count;
+	uint32_t dynamic_base[GHCI_VK_SETS];
+	uint32_t dynamic_sets[GHCI_VK_SETS];
 	uint32_t vertex_bindings;
 	uint32_t strides[GHCI_VERTEX_BINDINGS];
 	uint32_t fan;
@@ -484,6 +517,7 @@ struct ghci_vk_pipeline {
 	uint64_t render_pass;
 	uint32_t subpass;
 	struct ghci_vk_static_state state;
+	uint64_t charged;
 };
 
 /*
@@ -506,13 +540,15 @@ struct ghci_vk_tables {
 /*
  * One object of a node session, in the session's table from its create to
  * its destroy.  device is the VkDevice it was made on (a device's own
- * object points at its record).
+ * object points at its record).  charged is what it takes of the
+ * session's budget, given back at its destroy.
  */
 struct ghci_vk_object {
 	struct ghci_vk_object *next;
 	enum ghci_vk_kind kind;
 	uint64_t identity;
 	struct ghci_vk_device *device;
+	uint64_t charged;
 	union {
 		struct ghci_vk_memory memory;
 		struct ghci_vk_buffer buffer;
@@ -553,8 +589,9 @@ struct ghci_vk_frame {
 /*
  * The executor's side of one node session, from its open to its close.
  *
- * The object table, the arena and the opcodes for the log belong to the
- * session's commands.  Under irq_lock: next (the executor's list), the
+ * The object table, the arena, the budget the objects have taken
+ * (budget_used, of GHCI_VK_BUDGET_BYTES) and the opcodes for the log
+ * belong to the session's commands.  Under irq_lock: next (the executor's list), the
  * devices, the device of each timeline, the job markers (and the
  * timeline each was reserved on), the queued frames, completing (the
  * completions a retirement took and has not yet reported to the core),
@@ -566,6 +603,7 @@ struct ghci_vk_session {
 	struct ghci_session *owner;
 	struct ghci_vk_object *buckets[GHCI_VK_BUCKETS];
 	unsigned object_count;
+	uint64_t budget_used;
 	struct i915_wire_arena arena;
 	uint32_t last_opcode;
 	uint32_t failed_opcode;
@@ -602,6 +640,10 @@ int ghci_vk_object_add(struct ghci_vk_session *session, enum ghci_vk_kind kind, 
 void ghci_vk_object_destroy(struct ghci_vk_session *session, struct ghci_vk_object *object);
 void ghci_vk_objects_of_device(struct ghci_vk_session *session, struct ghci_vk_device *device);
 void *ghci_vk_arena_take(struct ghci_vk_session *session, size_t bytes);
+void *ghci_vk_decode_array(struct i915_wire_reader *reader, struct i915_wire_arena *arena, uint64_t count, size_t element);
+uint64_t ghci_vk_decoded_count(const struct ghci_vk_session *session, const void *array);
+int ghci_vk_budget_take(struct ghci_vk_session *session, uint64_t bytes);
+void ghci_vk_budget_give(struct ghci_vk_session *session, uint64_t bytes);
 
 /* vk-reply.c: the forms every command shares, the results and the float words. */
 uint64_t ghci_vk_create_tail(struct i915_wire_reader *reader);

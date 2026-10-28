@@ -53,7 +53,7 @@ static int reset_buffer(struct ghci_vk_session *session, uint32_t requested, str
 static void buffer_reset(struct ghci_vk_command_buffer *commands);
 static int record(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader);
 static int record_arguments(struct ghci_vk_session *session, uint32_t opcode, struct i915_wire_reader *reader);
-static void record_keep(struct ghci_vk_command_buffer *commands, const uint8_t *bytes, size_t length);
+static void record_keep(struct ghci_vk_session *session, struct ghci_vk_object *object, const uint8_t *bytes, size_t length);
 static void decode_barriers(struct ghci_vk_session *session, struct i915_wire_reader *reader);
 static void decode_transfer(struct ghci_vk_session *session, uint32_t opcode, struct i915_wire_reader *reader);
 static void decode_clear(struct ghci_vk_session *session, uint32_t opcode, struct i915_wire_reader *reader);
@@ -535,7 +535,7 @@ record(
 	object = ghci_vk_object_find(session, GHCI_VK_COMMAND_BUFFER, identity);
 	if (object == NULL || object->as.commands.state != GHCI_VK_RECORD_RECORDING)
 		return EINVAL;
-	record_keep(&object->as.commands, reader->base + start, reader->offset - start);
+	record_keep(session, object, reader->base + start, reader->offset - start);
 
 	/* Succeeded: the command is recorded. */
 	return 0;
@@ -738,19 +738,25 @@ record_arguments(
 }
 
 /*
- * Appends one command to a recording, doubling its room as needed up to
- * GHCI_VK_RECORD_MAX; one that does not fit marks the recording failed.
+ * Appends one command to a command buffer's recording, doubling its room
+ * as needed up to GHCI_VK_RECORD_MAX and within the session's budget (the
+ * room is the buffer's object's charge); one that does not fit marks the
+ * recording failed.
  */
 static void
 record_keep(
-	struct ghci_vk_command_buffer *commands,
+	struct ghci_vk_session *session,
+	struct ghci_vk_object *object,
 	const uint8_t *bytes,
 	size_t length)
 {
+	struct ghci_vk_command_buffer *commands;
 	uint8_t *grown;
 	uint64_t capacity;
+	int error;
 
 	/* A recording that already failed keeps nothing more. */
+	commands = &object->as.commands;
 	if (commands->failed)
 		return;
 
@@ -765,16 +771,23 @@ record_keep(
 		return;
 	}
 
-	/* A larger room, with what was recorded. */
+	/* A larger room, with what was recorded, its growth taken of the budget. */
 	if (capacity != commands->capacity) {
+		error = ghci_vk_budget_take(session, capacity - commands->capacity);
+		if (error != 0) {
+			commands->failed = 1;
+			return;
+		}
 		grown = kern_malloc((size_t)capacity);
 		if (grown == NULL) {
+			ghci_vk_budget_give(session, capacity - commands->capacity);
 			commands->failed = 1;
 			return;
 		}
 		if (commands->used != 0U)
 			kern_memcpy(grown, commands->bytes, commands->used);
 		kern_free(commands->bytes);
+		object->charged += capacity - commands->capacity;
 		commands->bytes = grown;
 		commands->capacity = (uint32_t)capacity;
 	}
