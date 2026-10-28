@@ -102,3 +102,4 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   画面の表示の無効化（dfcaa14e5）、NVMe の区画と道具（6574b457c）。次: 残りの CPU 側（acquire・record・present）、big-N・subs-N の record・submit
   （phase006 の「残り」）。機械は NVMe の zedBSD（Boot0004）。
 - 2026-10-28 ユーザーの補足「P2のモデル表示のテスト中に、起動ロゴ画面が見えてしまう、というバグです」（mview の表示の試験の間に起動の logo の画面が見える）。
+- 2026-10-28 ユーザー「どこかの経路で、ゲームモードに切り替えるときにGOPのバッファが表示されてしまうのが仕方がないとしても、そのバッファはクリアして黒にしておいてほしいです。」→ display を takeover した後（GPU の使用中）は GOP の buffer を黒で塗り、その後 console が書かないようにする（新しい P2 の最初の作業）。
