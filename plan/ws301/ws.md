@@ -4,7 +4,7 @@
 
 - Master: [plan/master.md](../master.md)（2026-10-27 作成、q1615 P1 の計画）。Primary Milestone: MG004（既定構成の性能と電力）。Related: MG003、MG008（HAL の契約）、
   [WS302](../ws302/ws.md)（この WS の口を使う）、[WS052](../ws052/ws.md)（電源の UAPI と文書）、[WS132](../ws132/ws.md)（`/dev/system` の事象）。
-- Status: planning（2026-10-27 新設。計画だけ）
+- Status: planning（2026-10-27 新設。設計 p001 は第 3 版、2026-10-29）
 - 出典: 2026-10-27 ユーザー
   「CPUの省電力機能のドライバフレームワークを追加（WSを立てて検討）
   - コアごとのDVFSのステップ(設定可能な値)を取得する機能
@@ -111,3 +111,16 @@ kernel に CPU の性能と電力の枠組み（provider の登録の口）を�
 - 設計: [design.md](design.md)（第 2 版）、レビュー [design-review.md](design-review.md)、HAL の差分の案 [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff)（第 2 版、適用しない、承認待ち）。Phase と LW は design.md の「第 2 版の Phase の表」が本体で、下の「Phase の案と見積もり」より優先する（5330 だけで約 25 LW）。
 - 再開点: ユーザーの判断 Q301-1〜7（design.md の第 2 版の問い）を Q1 経由で待つ。§6.0 の 5330 の Debian の読み（CPUID・MSR）は msr の module の読み込みの許可（Q1）が要る。ACPI 6.5 の節番号は記憶による推定で未確認（ユーザーに PDF を置けるかを Q1 が聞いている）。
 - 2026-10-29 ユーザー（Q1 の中継、原文）「CPUのスピードは/dev/systemと言ってしまいましたが、/dev/thermalに変更してください。」→ 解釈: UAPI は WS303 の `/dev/thermal`（上の 2026-10-27 の「UAPI は /dev/system」を置き換える）。policy は WS303 の strategy の受け手（design.md の「第 2 版への追記」）。
+
+## ユーザーの回答（2026-10-29、Q1 が用語の説明から聞き直した、Q1 の中継の原文）
+
+- Q301-3「最終的には呼ぶが、別なWSにして、システム全体の挙動が問題ないかを厳重にチェックする。今は呼ばない。」→ 解釈: この WS は `_OSC` を呼ばない。Q1 が WS310（`_OSC` を呼び全体の挙動を確かめる、WS301 の後）を作った。
+- Q301-4「試験が通るまで無効 (推し)」→ `CONFIG_CPU_PERF` の既定は n、p006 の受け入れの後に既定を決め直す。
+- Q301-5「枠だけ、実装は後 (推し)」→ arm64・riscv64 は provider の口と既定の答えまで。provider は後の WS。
+- Q301-7「持たせない (推し)」（Q1 の注: 利用者が選ぶのは WS303 の strategy だけ、CPU ごとの直の値は root の診断用だけ）→ WS301 は自分の policy・起動の parameter を持たない。domain ごとの直の設定は root の診断の口。
+- ユーザーの問い「HWP は必ずあるのか」→ design.md §4.9 と Q301-8（新）。
+
+## 再開点（2026-10-29 P5、q1666-i03）
+
+- 設計は [design.md](design.md) 第 3 版（一つの本文にまとめた。5330 の Debian の読み §2.3 を反映: MHz/単位は CPUID.16H ÷ Highest、module は L2 の組、HFI は Linux が無効で値は未読、TjMax 100 °C）。HAL の差分の案 [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff) 第 3 版（`highest_khz` を足した）、ユーザー向けの説明 [hal-review.md](hal-review.md)。Phase の表は design.md §7 が本体（上の「Phase の案と見積もり」より優先）。
+- 未決: Q301-1（HAL の差分、hal-review.md を見てから）、Q301-2（相対の性能の源）、Q301-8（HWP の無い CPU）。第 3 版の design-reviewer は未実施（次の作業）。

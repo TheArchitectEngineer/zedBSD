@@ -1,6 +1,9 @@
 Proposed change to include/hal/hal.h for WS301 (CPU performance framework).
 NOT APPLIED.  Needs the user's approval (plan/guardrail.md, HAL).  Base: main 63386d8a4.
 Second version (2026-10-29): design-review.md B1, M1-M8 applied.  Design: plan/ws301/design.md.
+Third version (2026-10-29): highest_khz in place of the capabilities' last reserved word
+(the 5330's firmware gives one nominal frequency for both core types, so the kernel
+needs the processor's stated clock per core type to estimate MHz; design.md section 4.7).
 The topology part and the performance-control part are one diff; the
 kernel framework (p002) needs the topology part, the x86 provider (p004) both.
 
@@ -86,7 +89,7 @@ kernel framework (p002) needs the topology part, the x86 provider (p004) both.
 +	uint32_t feedback_capabilities;	/* the values each row holds per class (1: performance, 2: and efficiency) */
 +	uint32_t feedback_classes;	/* the classes each row holds (1 without class support) */
 +	uint32_t reference_khz;		/* the reference counter's rate (x86: the TSC's), 0 unknown */
-+	uint32_t reserved;
++	uint32_t highest_khz;		/* the processor's stated clock at highest (x86: CPUID 16H), 0 unknown */
 +};
 +
 +struct hal_cpu_perf_request {
