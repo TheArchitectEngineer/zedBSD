@@ -279,6 +279,9 @@ static const uint32_t block_offsets[] = {
  */
 struct model model;
 
+/* Nonzero makes FMT know R8_UNORM and D24S8 and D32S8 too (ghci-model.h). */
+int model_more_formats;
+
 /*
  * The L0 tables each page table has built: one bit per 2 MiB chunk a
  * mapping has touched since the table's root was made.  VM_UNMAP leaves
@@ -1147,8 +1150,15 @@ fmt_features(
 	case 126U:
 		return 0x011U;
 	default:
-		return 0U;
+		break;
 	}
+
+	/* The formats the transfer test adds. */
+	if (model_more_formats && format == 9U)
+		return MODEL_FMT_ALL;
+	if (model_more_formats && (format == 129U || format == 130U))
+		return 0x011U;
+	return 0U;
 }
 
 /* Reports whether the device has a command's capability. */

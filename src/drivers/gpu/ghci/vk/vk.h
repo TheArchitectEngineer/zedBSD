@@ -162,6 +162,147 @@ struct ghci_vk_session;
 struct ghci_vk_object;
 
 /*
+ * The driver's own transfer programs (vk-meta.c): a compute program that
+ * copies elements of 1 to 4 bytes between two buffers (copies, fills,
+ * updates, buffer and image copies, single aspects of depth and
+ * stencil), one that packs query results, and the vertex and fragment
+ * programs of the draws that resolve (the average of 2 or 4 samples, or
+ * sample 0 of an integer format) and blit (a texture sampled over the
+ * destination's rectangle).
+ */
+enum ghci_vk_meta_kind {
+	GHCI_VK_META_COPY = 0,
+	GHCI_VK_META_QUERY,
+	GHCI_VK_META_RESOLVE_AVERAGE2,
+	GHCI_VK_META_RESOLVE_AVERAGE4,
+	GHCI_VK_META_RESOLVE_FIRST,
+	GHCI_VK_META_BLIT,
+	GHCI_VK_META_KINDS
+};
+
+/* The programs of a kind: the compute (or vertex) program, and a draw's fragment program. */
+#define GHCI_VK_META_PROGRAMS		2U
+
+/* The push-constant words of a transfer program (c0 to c15). */
+#define GHCI_VK_META_PUSH_WORDS		16U
+
+/*
+ * The copy program's push-constant words: the elements, the elements of
+ * a row and the rows of a slice, the mask of an element's bytes, the
+ * source's first byte (from its descriptor's address), element stride,
+ * row pitch and slice pitch, the destination's four, the bytes of an
+ * element, and the first element of the dispatch.
+ */
+#define GHCI_VK_META_COPY_COUNT		0U
+#define GHCI_VK_META_COPY_PER_ROW	1U
+#define GHCI_VK_META_COPY_ROWS		2U
+#define GHCI_VK_META_COPY_MASK		3U
+#define GHCI_VK_META_COPY_SOURCE	4U
+#define GHCI_VK_META_COPY_DESTINATION	8U
+#define GHCI_VK_META_COPY_BYTES		12U
+#define GHCI_VK_META_COPY_FIRST		13U
+#define GHCI_VK_META_COPY_WORDS		14U
+
+/*
+ * The query program's push-constant words: the queries, the first slot's
+ * byte (from the source descriptor's address), the destination's first
+ * byte and stride, the flags below, and the first query of the dispatch.
+ */
+#define GHCI_VK_META_QUERY_COUNT	0U
+#define GHCI_VK_META_QUERY_SOURCE	1U
+#define GHCI_VK_META_QUERY_DESTINATION	2U
+#define GHCI_VK_META_QUERY_STRIDE	3U
+#define GHCI_VK_META_QUERY_FLAGS	4U
+#define GHCI_VK_META_QUERY_FIRST	5U
+#define GHCI_VK_META_QUERY_WORDS	6U
+
+/* The query program's flags: 64-bit results, the availability after each, and values not yet available written too. */
+#define GHCI_VK_META_QUERY_64		1U
+#define GHCI_VK_META_QUERY_AVAILABILITY	2U
+#define GHCI_VK_META_QUERY_ANY		4U
+
+/*
+ * A resolve draw's push-constant words: the source's texel less the
+ * destination's pixel, x and y (integers).
+ */
+#define GHCI_VK_META_RESOLVE_DX		0U
+#define GHCI_VK_META_RESOLVE_DY		1U
+#define GHCI_VK_META_RESOLVE_WORDS	2U
+
+/*
+ * A blit draw's push-constant words (integers): for x, then for y, the
+ * source's two corners, the destination's two corners, the viewport's
+ * first pixel and its end; then the source level's width and height.
+ */
+#define GHCI_VK_META_BLIT_X		0U
+#define GHCI_VK_META_BLIT_Y		6U
+#define GHCI_VK_META_BLIT_SIZE		12U
+#define GHCI_VK_META_BLIT_WORDS		14U
+
+/* The invocations of a transfer program's workgroup, and the most workgroups one dispatch of it runs. */
+#define GHCI_VK_META_GROUP		64U
+#define GHCI_VK_META_GROUPS_MAX		65535U
+
+/*
+ * One of the driver's transfer programs placed in a device's code heap:
+ * its pipeline state record and code (one run, which goes with the
+ * heap), the code's words (a draw's vertex program, then its fragment
+ * program), and for a compute program the byte offsets in the resource
+ * table (set 2) of its source and destination buffers' descriptors, and
+ * the table's bytes; a draw reads texture and sampler slot 0.  A zero
+ * pso_va is a program not placed yet.
+ */
+struct ghci_vk_meta_pipeline {
+	struct ghci_vk_heap_block *block;
+	uint32_t offset;
+	uint64_t pso_va;
+	uint64_t code_va;
+	uint32_t code_words;
+	uint64_t fragment_va;
+	uint32_t fragment_words;
+	uint32_t source_entry;
+	uint32_t destination_entry;
+	uint32_t resource_bytes;
+};
+
+/*
+ * A copy of elements the copy program makes: the GPU addresses of the
+ * first element's first byte on each side, the bytes of an element (1
+ * to 4), the elements of a row, the rows of a slice and the slices, and
+ * on each side the element stride, the row pitch and the slice pitch in
+ * bytes.  A stride of 0 reads one element again (a fill).
+ */
+struct ghci_vk_meta_copy {
+	uint64_t source;
+	uint64_t destination;
+	uint32_t element_bytes;
+	uint32_t per_row;
+	uint32_t rows;
+	uint32_t slices;
+	uint32_t source_step[3];
+	uint32_t destination_step[3];
+};
+
+/*
+ * One transfer as the executor places it: the program, the buffers its
+ * descriptors give (address and bytes, both within 32-bit addresses),
+ * the push-constant words, which word is the first element of a
+ * dispatch, and the elements in all (dispatched GHCI_VK_META_GROUP to a
+ * workgroup).
+ */
+struct ghci_vk_meta_dispatch {
+	enum ghci_vk_meta_kind kind;
+	uint64_t source;
+	uint32_t source_bytes;
+	uint64_t destination;
+	uint32_t destination_bytes;
+	uint32_t push[GHCI_VK_META_PUSH_WORDS];
+	uint32_t push_words;
+	uint32_t first_word;
+	uint32_t elements;
+};
+
+/*
  * The Vulkan format features of each VkFormat on optimal and linear
  * tiling and in buffers, made once at the attach from the FMT block (or
  * the table of the specification without it) and not changed after.
@@ -182,7 +323,10 @@ struct ghci_vk_formats {
  * wakes a drain once a session's last retired completion has been
  * reported to the core.  refusals counts the refused commands the log
  * has shown, so that a client cannot flood it; it is counted without a
- * lock (two sessions at once may show one more).
+ * lock (two sessions at once may show one more).  meta holds the
+ * driver's own transfer programs (vk-meta.c), each compiled at its first
+ * use and kept to the detach; a slot changes from NULL to its program
+ * once, under the device's lock.
  */
 struct ghci_vk {
 	struct ghci_device *device;
@@ -190,6 +334,7 @@ struct ghci_vk {
 	struct ghci_vk_session *sessions;
 	struct wait_queue completing_wake;
 	unsigned refusals;
+	struct ghci_gsi1_program *meta[GHCI_VK_META_KINDS][GHCI_VK_META_PROGRAMS];
 };
 
 /*
@@ -235,7 +380,8 @@ struct ghci_vk_retired {
  * of the last work it placed in the ring.  It lives from vkCreateDevice
  * to vkDestroyDevice (or the node session's close).  next, last and
  * submitted change under irq_lock; the rest belongs to the session's
- * commands.
+ * commands.  meta are the driver's transfer programs placed in its code
+ * heap at their first use, which go with the heap.
  */
 struct ghci_vk_device {
 	struct ghci_vk_session *session;
@@ -247,6 +393,7 @@ struct ghci_vk_device {
 	struct ghci_ticket last;
 	int submitted;
 	int robust;
+	struct ghci_vk_meta_pipeline meta[GHCI_VK_META_KINDS];
 };
 
 /*
@@ -841,6 +988,12 @@ void ghci_vk_pass_release(struct ghci_vk_object *object);
 /* vk-execute.c: the recorded commands of a submission made into packets. */
 int ghci_vk_execute(struct ghci_vk_session *session, struct ghci_vk_device *device, const VkSubmitInfo *submits, uint64_t count, struct ghci_vk_submission *submission);
 void ghci_vk_submission_end(struct ghci_vk_device *device, struct ghci_vk_submission *submission, const struct ghci_ticket *ticket, int placed);
+
+/* vk-meta.c: the driver's own transfer programs. */
+int ghci_vk_meta_compile(const struct ghci_caps *caps, enum ghci_vk_meta_kind kind, struct ghci_gsi1_program **programs);
+int ghci_vk_meta_pipeline(struct ghci_vk_session *session, struct ghci_vk_device *device, enum ghci_vk_meta_kind kind, const struct ghci_vk_meta_pipeline **pipeline);
+int ghci_vk_meta_copy(const struct ghci_vk_meta_copy *copy, struct ghci_vk_meta_dispatch *dispatch);
+int ghci_vk_meta_query(uint64_t source, uint32_t count, uint64_t destination, uint32_t stride, uint32_t flags, struct ghci_vk_meta_dispatch *dispatch);
 
 /* vk-pipeline.c: what a shader module or a pipeline lets go of. */
 void ghci_vk_pipeline_release(struct ghci_vk_session *session, struct ghci_vk_object *object);

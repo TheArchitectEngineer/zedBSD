@@ -33,9 +33,17 @@
  * refuse the whole submission (EINVAL); a command the device cannot do
  * (an indirect draw without CAP_INDIRECT_DRAW, a partial clear) or that
  * would read past its buffer (indirect records, indices) is skipped, and
- * the log shows it once per command buffer.  A transfer on a device
- * without the blitter refuses the submission (ENOTSUP), and so does a
- * wait for an event nothing earlier in the submission sets.
+ * the log shows it once per command buffer.  A wait for an event
+ * nothing earlier in the submission sets refuses the submission
+ * (ENOTSUP).
+ *
+ * Without the blitter, the transfers are the driver's own compute
+ * programs (vk-meta.c), and so are, on every device, the copy of query
+ * results, the bytes of a buffer copy that are not whole words, and a
+ * copy of one aspect of a combined depth and stencil image.  Such a
+ * program runs in the command buffer's session and takes the pipeline,
+ * the tables and the constants: the command buffer's own are placed
+ * again before its next draw or dispatch.
  */
 
 #include <stddef.h>
@@ -96,6 +104,25 @@
 #define INDIRECT_DRAW_BYTES		16U
 #define INDIRECT_INDEXED_BYTES		20U
 #define INDIRECT_DISPATCH_BYTES		12U
+
+/*
+ * The flags of a buffer descriptor the driver's transfer programs read
+ * only.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 8.3,
+ * GhciBufferDescriptor: flags [0] ReadOnly).
+ */
+#define META_SOURCE_READ_ONLY		(1U << 0)
+
+/*
+ * A draw's source texture descriptor: dimension 2D, and the components as
+ * they are (R, G, B, A as 2 to 5 in the four 3-bit swizzle fields).
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 8.3,
+ * GhciTextureDescriptor).
+ */
+#define META_DIMENSION_2D		1U
+#define META_SWIZZLE_IDENTITY		(2U | (3U << 3) | (4U << 6) | (5U << 9))
 
 /* The bytes vkCmdUpdateBuffer may write. */
 #define UPDATE_BYTES_MAX		65536U
@@ -319,23 +346,41 @@ static void clear_slice(struct exec *exec, const struct slice_target *target, co
 static int image_of(struct exec *exec, uint64_t identity, const struct ghci_vk_image **image, uint64_t *va);
 static uint64_t image_slice(const struct ghci_vk_image *image, uint64_t base, uint32_t level, uint32_t layer, uint32_t z);
 static int transfer_allowed(struct exec *exec);
+static int has_blitter(struct exec *exec);
+static int meta_run(struct exec *exec, const struct ghci_vk_meta_dispatch *dispatch);
+static int meta_copy(struct exec *exec, const struct ghci_vk_meta_copy *copy);
+static int meta_bytes(struct exec *exec, uint64_t source, uint64_t destination, uint64_t bytes, uint32_t element);
+static int meta_fill(struct exec *exec, uint64_t destination, uint64_t bytes, uint32_t data);
 static void copy_buffer(struct exec *exec, struct i915_wire_reader *reader);
 static void copy_bytes(struct exec *exec, uint64_t source, uint64_t destination, uint64_t bytes);
 static void fill_buffer(struct exec *exec, struct i915_wire_reader *reader);
 static void update_buffer(struct exec *exec, struct i915_wire_reader *reader);
 static void copy_image(struct exec *exec, uint32_t number, struct i915_wire_reader *reader);
 static void image_region_read(struct i915_wire_reader *reader, uint32_t number, struct image_region *region);
+static void meta_image_copy(struct exec *exec, const struct ghci_vk_image *source, uint64_t source_base, const struct ghci_vk_image *destination, uint64_t destination_base, const struct image_region *region, const uint32_t *extent);
+static uint64_t meta_image_texel(const struct ghci_vk_image *image, uint64_t base, const VkImageSubresourceLayers *layers, const int32_t *offset, uint32_t skip, uint32_t *steps);
+static void meta_draw(struct exec *exec, enum ghci_vk_meta_kind kind, const uint8_t *texture, const struct ghci_sampler_desc *sampler, const struct slice_target *target, const uint32_t *rect, const uint32_t *push, uint32_t push_words);
+static void meta_texture(const struct ghci_vk_image *image, uint64_t base, uint32_t level, uint32_t layer, uint8_t *out);
+static void meta_target(const struct ghci_vk_image *image, uint64_t base, uint32_t level, uint32_t layer, struct slice_target *target);
+static int meta_resolve_kind(uint32_t format, uint32_t samples, enum ghci_vk_meta_kind *kind);
+static int format_has(struct exec *exec, uint32_t format, uint32_t features);
+static void meta_resolve(struct exec *exec, const struct ghci_vk_image *source, uint64_t source_base, const struct ghci_vk_image *destination, uint64_t destination_base, const struct image_region *region);
+static void meta_sampler(uint32_t filter, struct ghci_sampler_desc *sampler);
+static void meta_blit(struct exec *exec, const struct ghci_vk_image *source, uint64_t source_base, const struct ghci_vk_image *destination, uint64_t destination_base, const struct image_region *region, uint32_t filter);
 static int image_region_check(struct exec *exec, uint32_t number, const struct ghci_vk_image *source, const struct ghci_vk_image *destination, const struct image_region *region);
 static int layers_check(const struct ghci_vk_image *image, const VkImageSubresourceLayers *layers);
 static int box_check(const struct ghci_vk_image *image, uint32_t level, const int32_t *offset, const uint32_t *extent);
 static int corner_check(const struct ghci_vk_image *image, uint32_t level, const int32_t *corner);
 static void copy_buffer_image(struct exec *exec, uint32_t number, struct i915_wire_reader *reader);
 static int buffer_rows_fit(uint64_t offset, uint64_t slice_bytes, uint32_t slices, uint64_t needed, uint64_t size);
+static void meta_buffer_image(struct exec *exec, const struct ghci_vk_image *image, uint64_t image_base, const VkImageSubresourceLayers *layers, const int32_t *offset, const uint32_t *extent, uint64_t buffer, uint32_t pitch, uint64_t slice_bytes, uint32_t slices, int to_image);
+static void meta_texels(const struct ghci_vk_image *image, uint32_t aspect, uint32_t *element, uint32_t *image_step, uint32_t *buffer_step, uint32_t *skip, uint32_t *per_texel);
 static void read_layers(struct i915_wire_reader *reader, VkImageSubresourceLayers *layers);
 static void read_offset(struct i915_wire_reader *reader, int32_t *offset);
 static void event_write(struct exec *exec, struct i915_wire_reader *reader, uint32_t value);
 static void wait_events(struct exec *exec, struct i915_wire_reader *reader);
 static void query(struct exec *exec, uint32_t number, struct i915_wire_reader *reader);
+static void query_copy(struct exec *exec, const struct ghci_vk_query_pool *pool, uint32_t first, uint32_t count, const uint64_t *target, uint32_t flags);
 static void execute_commands(struct exec *exec, struct i915_wire_reader *reader);
 
 /*
@@ -2391,12 +2436,18 @@ subpass_end(
 	const struct ghci_vk_pass_references *references;
 	const struct ghci_vk_image_view *source;
 	const struct ghci_vk_image_view *destination;
+	struct ghci_sampler_desc sampler;
+	struct slice_target target;
 	struct ghci_transfer transfer;
+	enum ghci_vk_meta_kind kind;
 	uint32_t words[GHCI_DW_RESOLVE_IMAGE];
+	uint32_t push[GHCI_VK_META_RESOLVE_WORDS];
 	uint32_t traits;
 	uint32_t index;
+	uint32_t format;
 	int barrier_placed;
 	int has;
+	int error;
 
 	/* The subpass ends; its description is the GPU's now. */
 	put(exec, words, ghci_cmd_end_render_pass(words));
@@ -2409,19 +2460,40 @@ subpass_end(
 	for (index = 1U; index < references->color_count; index++) {
 		if (references->resolve[index] == VK_ATTACHMENT_UNUSED || references->color[index] == VK_ATTACHMENT_UNUSED)
 			continue;
-		if (!has) {
-			skip_command(exec, "a resolve of colour attachment 1 to 7 on a device without the blitter");
-			continue;
-		}
 		if (view_of(exec, references->color[index], &source) != 0 || view_of(exec, references->resolve[index], &destination) != 0)
 			return;
 
-		/* The samples the pass wrote reach memory before the first resolve reads them. */
-		if (!barrier_placed) {
+		/* The samples the pass wrote reach memory before the first resolve reads them (the blitter, or the texture unit). */
+		if (!barrier_placed && has)
 			put(exec, words, ghci_cmd_barrier(words, GHCI_STAGE_ROP, GHCI_STAGE_BLT, GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA));
-			barrier_placed = 1;
+		if (!barrier_placed && !has) {
+			put(exec, words, ghci_cmd_barrier(words, GHCI_STAGE_ROP, GHCI_STAGE_FS,
+				GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_TEX));
 		}
-		(void)ghci_vk_format_traits(exec->pass.pass->attachments[references->color[index]].format, &traits);
+		barrier_placed = 1;
+
+		/* Without the blitter, the driver's resolve draw over the render area. */
+		format = exec->pass.pass->attachments[references->color[index]].format;
+		if (!has) {
+			error = meta_resolve_kind(format, source->samples, &kind);
+			if (error != 0) {
+				skip_command(exec, "a resolve of colour attachment 1 to 7 the driver's draw cannot make");
+				continue;
+			}
+			kern_memset(&target, 0, sizeof(target));
+			target.format = exec->pass.pass->attachments[references->resolve[index]].format;
+			target.va = destination->va;
+			target.pitch = destination->row_pitch;
+			target.width = destination->width;
+			target.height = destination->height;
+			target.samples = 1U;
+			push[GHCI_VK_META_RESOLVE_DX] = 0U;
+			push[GHCI_VK_META_RESOLVE_DY] = 0U;
+			meta_sampler(0U, &sampler);
+			meta_draw(exec, kind, source->single, &sampler, &target, exec->pass.area, push, GHCI_VK_META_RESOLVE_WORDS);
+			continue;
+		}
+		(void)ghci_vk_format_traits(format, &traits);
 		kern_memset(&transfer, 0, sizeof(transfer));
 		transfer.src.va = source->va;
 		transfer.src.pitch = source->row_pitch;
@@ -2956,30 +3028,212 @@ image_slice(
 
 /*
  * Reports whether a transfer may be placed: outside a render pass (in
- * one, Vulkan forbids it: the submission is refused, EINVAL), on a device
- * with the blitter (without it the submission is refused, ENOTSUP).
+ * one, Vulkan forbids it: the submission is refused, EINVAL).
  */
 static int
 transfer_allowed(
 	struct exec *exec)
 {
-	int has;
-
 	/* Outside a render pass. */
 	if (exec->pass.active) {
 		refuse(exec, EINVAL, "a transfer inside a render pass");
 		return 0;
 	}
 
-	/* The blitter. */
+	/* Succeeded: the transfer may be placed. */
+	return 1;
+}
+
+/* Reports whether the device has the blit engine (without it, the driver's programs make the transfers). */
+static int
+has_blitter(
+	struct exec *exec)
+{
+	int has;
+
+	/* CAP_BLT. */
 	has = ghci_caps_has(&exec->session->device->caps, GHCI_HAS_BLT);
-	if (!has) {
-		refuse(exec, ENOTSUP, "a transfer on a device without the blitter");
+	if (!has)
 		return 0;
+
+	/* Succeeded: the blitter takes the transfers. */
+	return 1;
+}
+
+/*
+ * Places one of the driver's transfer programs: the program, its
+ * resource table (the source's and the destination's buffer
+ * descriptors, in temporary memory) and push constants, and one dispatch
+ * of 64 invocations to a workgroup per GHCI_VK_META_GROUPS_MAX
+ * workgroups of elements.  The command buffer's own binds are in the
+ * ring no more, and are placed again before its next draw or dispatch.
+ * Returns 0, or the error that refuses the submission.
+ */
+static int
+meta_run(
+	struct exec *exec,
+	const struct ghci_vk_meta_dispatch *dispatch)
+{
+	const struct ghci_vk_meta_pipeline *pipeline;
+	struct ghci_buffer_desc descriptor;
+	uint32_t words[3U + GHCI_CONST_LOAD_MAX];
+	uint32_t push[GHCI_VK_META_PUSH_WORDS];
+	uint64_t first;
+	uint64_t groups;
+	uint64_t va;
+	uint8_t *view;
+	int error;
+
+	/* A submission already refused. */
+	if (exec->error != 0)
+		return exec->error;
+
+	/* The program, in the device's code heap. */
+	error = ghci_vk_meta_pipeline(exec->session, exec->device, dispatch->kind, &pipeline);
+	if (error == ENOTSUP) {
+		refuse(exec, ENOTSUP, "a transfer whose program the compiler refuses");
+		return ENOTSUP;
+	}
+	if (error != 0) {
+		refuse(exec, error == ENOMEM ? ENOMEM : EIO, "no room for the driver's transfer program");
+		return error;
 	}
 
-	/* Succeeded: the blitter takes it. */
-	return 1;
+	/* The resource table: the source (read only) and the destination. */
+	error = temp_take(exec, pipeline->resource_bytes, TABLE_ALIGN, &va, &view);
+	if (error != 0)
+		return error;
+	kern_memset(&descriptor, 0, sizeof(descriptor));
+	descriptor.base = dispatch->source;
+	descriptor.bytes = dispatch->source_bytes;
+	descriptor.flags = META_SOURCE_READ_ONLY;
+	(void)ghci_buffer_desc_encode(view + pipeline->source_entry, &descriptor);
+	kern_memset(&descriptor, 0, sizeof(descriptor));
+	descriptor.base = dispatch->destination;
+	descriptor.bytes = dispatch->destination_bytes;
+	(void)ghci_buffer_desc_encode(view + pipeline->destination_entry, &descriptor);
+
+	/* The program and its table. */
+	put(exec, words, ghci_cmd_bind_pipeline(words, pipeline->pso_va));
+	put(exec, words, ghci_cmd_bind_descriptor_table(words, GSI1_ABI_SET_RESOURCES, va, pipeline->resource_bytes / GSI1_ABI_RESOURCE_UNIT));
+
+	/* The dispatches, each with its first element in the push constants. */
+	kern_memcpy(push, dispatch->push, sizeof(push));
+	first = 0U;
+	while (first < dispatch->elements && exec->error == 0) {
+		groups = ((uint64_t)dispatch->elements - first + GHCI_VK_META_GROUP - 1U) / GHCI_VK_META_GROUP;
+		if (groups > GHCI_VK_META_GROUPS_MAX)
+			groups = GHCI_VK_META_GROUPS_MAX;
+		push[dispatch->first_word] = (uint32_t)first;
+		put(exec, words, ghci_cmd_load_const(words, GSI1_ABI_BANK_PUSH_LOW, dispatch->push_words, push));
+		put(exec, words, ghci_cmd_dispatch(words, (uint32_t)groups, 1U, 1U));
+		first += groups * GHCI_VK_META_GROUP;
+	}
+
+	/* The command buffer's pipelines, tables, constants and state are placed again before they are used. */
+	buffer_state_dirty(exec->state);
+
+	/* Succeeded: the transfer is placed, or the error says why not. */
+	return exec->error;
+}
+
+/* Plans and places a copy of elements with the driver's copy program.  Returns 0, or the error that refuses the submission. */
+static int
+meta_copy(
+	struct exec *exec,
+	const struct ghci_vk_meta_copy *copy)
+{
+	struct ghci_vk_meta_dispatch dispatch;
+	int error;
+
+	/* The plan: within 32-bit addresses and the program's count. */
+	error = ghci_vk_meta_copy(copy, &dispatch);
+	if (error != 0) {
+		refuse(exec, EINVAL, "a transfer the driver's copy program cannot reach");
+		return EINVAL;
+	}
+
+	/* The dispatches. */
+	error = meta_run(exec, &dispatch);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the copy is placed. */
+	return 0;
+}
+
+/* Copies bytes in elements of element bytes (1 or 4) with the driver's copy program.  Returns 0, or the error. */
+static int
+meta_bytes(
+	struct exec *exec,
+	uint64_t source,
+	uint64_t destination,
+	uint64_t bytes,
+	uint32_t element)
+{
+	struct ghci_vk_meta_copy copy;
+	int error;
+
+	/* One row of elements, each element bytes past the last. */
+	kern_memset(&copy, 0, sizeof(copy));
+	copy.source = source;
+	copy.destination = destination;
+	copy.element_bytes = element;
+	copy.per_row = (uint32_t)(bytes / element);
+	copy.rows = 1U;
+	copy.slices = 1U;
+	copy.source_step[0] = element;
+	copy.destination_step[0] = element;
+	if (bytes / element > UINT32_MAX) {
+		refuse(exec, EINVAL, "a transfer past the driver's copy program's count");
+		return EINVAL;
+	}
+	error = meta_copy(exec, &copy);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the bytes are copied. */
+	return 0;
+}
+
+/*
+ * Fills whole words with a pattern with the driver's copy program: the
+ * pattern in a word of temporary memory, read again for each word (a
+ * source stride of 0).  Returns 0, or the error.
+ */
+static int
+meta_fill(
+	struct exec *exec,
+	uint64_t destination,
+	uint64_t bytes,
+	uint32_t data)
+{
+	struct ghci_vk_meta_copy copy;
+	uint64_t pattern;
+	uint8_t *view;
+	int error;
+
+	/* The pattern's word. */
+	error = temp_take(exec, 4U, 4U, &pattern, &view);
+	if (error != 0)
+		return error;
+	kern_memcpy(view, &data, 4U);
+
+	/* The words, each from the one pattern. */
+	kern_memset(&copy, 0, sizeof(copy));
+	copy.source = pattern;
+	copy.destination = destination;
+	copy.element_bytes = 4U;
+	copy.per_row = (uint32_t)(bytes / 4U);
+	copy.rows = 1U;
+	copy.slices = 1U;
+	copy.destination_step[0] = 4U;
+	error = meta_copy(exec, &copy);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the words are filled. */
+	return 0;
 }
 
 /* vkCmdCopyBuffer: [source][destination][count][u64 count][regions: source offset, destination offset, size]. */
@@ -3022,11 +3276,13 @@ copy_buffer(
 }
 
 /*
- * Copies bytes between GPU addresses with COPY_BUFFER:
- * COPY_BUFFER moves whole words, so a copy whose ends are not on 4 bytes
- * moves its aligned middle (when both addresses share their alignment)
- * and leaves the bytes at the ends to the shader's copy, which this
- * device does not have yet: those are skipped.
+ * Copies bytes between GPU addresses: the bytes up to the destination's
+ * first word boundary and after its last are the driver's copy program's
+ * (a byte at a time, without touching the other bytes of their words);
+ * the whole words between are COPY_BUFFER's when the device has the
+ * blitter and the source is on a word too (COPY_BUFFER moves whole words
+ * of both), and otherwise the program's (a word at a time, read from
+ * the source wherever it lies).
  */
 static void
 copy_bytes(
@@ -3038,35 +3294,55 @@ copy_bytes(
 	uint32_t words[GHCI_DW_COPY_BUFFER];
 	uint64_t head;
 	uint64_t middle;
+	uint64_t tail;
 	uint64_t piece;
+	int blitter;
+	int error;
 
-	/* Addresses that cannot share a word boundary have no middle. */
-	if ((source & 3U) != (destination & 3U)) {
-		skip_command(exec, "a copy of buffers whose offsets differ within a word");
-		return;
-	}
-
-	/* The head to the first word boundary, the whole words, and the tail. */
-	head = (4U - (source & 3U)) & 3U;
+	/* The head to the destination's first word boundary, the whole words, and the tail. */
+	head = (4U - (destination & 3U)) & 3U;
 	if (head > bytes)
 		head = bytes;
 	middle = (bytes - head) & ~(uint64_t)3U;
-	if (head != 0U || bytes - head - middle != 0U)
-		skip_command(exec, "the bytes of a copy that are not whole words");
+	tail = bytes - head - middle;
 
-	/* The middle in pieces COPY_BUFFER takes. */
+	/* The head's bytes. */
+	if (head != 0U) {
+		error = meta_bytes(exec, source, destination, head, 1U);
+		if (error != 0)
+			return;
+	}
 	source += head;
 	destination += head;
-	while (middle != 0U && exec->error == 0) {
-		piece = middle > TRANSFER_BYTES_MAX ? TRANSFER_BYTES_MAX : middle;
-		put(exec, words, ghci_cmd_copy_buffer(words, source, destination, (uint32_t)piece, 0U, 0U));
-		source += piece;
-		destination += piece;
-		middle -= piece;
+
+	/* The words: the blitter's when both sides are on a word, else the program's. */
+	blitter = has_blitter(exec);
+	if (blitter && (source & 3U) == 0U) {
+		while (middle != 0U && exec->error == 0) {
+			piece = middle > TRANSFER_BYTES_MAX ? TRANSFER_BYTES_MAX : middle;
+			put(exec, words, ghci_cmd_copy_buffer(words, source, destination, (uint32_t)piece, 0U, 0U));
+			source += piece;
+			destination += piece;
+			middle -= piece;
+		}
+	} else if (middle != 0U) {
+		error = meta_bytes(exec, source, destination, middle, 4U);
+		if (error != 0)
+			return;
+		source += middle;
+		destination += middle;
 	}
+
+	/* The tail's bytes. */
+	if (tail != 0U)
+		(void)meta_bytes(exec, source, destination, tail, 1U);
 }
 
-/* vkCmdFillBuffer: [buffer][u64 offset][u64 size][data]; VK_WHOLE_SIZE fills to the last whole word. */
+/*
+ * vkCmdFillBuffer: [buffer][u64 offset][u64 size][data]; VK_WHOLE_SIZE
+ * fills to the last whole word.  FILL_BUFFER, or the driver's copy
+ * program without the blitter.
+ */
 static void
 fill_buffer(
 	struct exec *exec,
@@ -3080,6 +3356,7 @@ fill_buffer(
 	uint64_t remaining;
 	uint64_t piece;
 	uint32_t data;
+	int blitter;
 
 	/* The arguments. */
 	identity = read64(reader);
@@ -3101,6 +3378,14 @@ fill_buffer(
 		return;
 	}
 
+	/* Without the blitter, the driver's program. */
+	blitter = has_blitter(exec);
+	if (!blitter) {
+		if (size != 0U)
+			(void)meta_fill(exec, va, size, data);
+		return;
+	}
+
 	/* The fill in pieces FILL_BUFFER takes. */
 	while (size != 0U && exec->error == 0) {
 		piece = size > TRANSFER_BYTES_MAX ? TRANSFER_BYTES_MAX : size;
@@ -3113,7 +3398,8 @@ fill_buffer(
 /*
  * vkCmdUpdateBuffer: [buffer][u64 offset][u64 size][u64 count][the bytes,
  * padded to words]: the bytes are written to temporary memory and copied
- * to the buffer.
+ * to the buffer (by COPY_BUFFER, or the driver's copy program without the
+ * blitter).
  */
 static void
 update_buffer(
@@ -3130,6 +3416,7 @@ update_buffer(
 	uint64_t remaining;
 	uint64_t source;
 	uint8_t *view;
+	int blitter;
 	int error;
 
 	/* The arguments and the bytes. */
@@ -3153,6 +3440,11 @@ update_buffer(
 	if (error != 0)
 		return;
 	kern_memcpy(view, bytes, (size_t)size);
+	blitter = has_blitter(exec);
+	if (!blitter) {
+		(void)meta_bytes(exec, source, va, size, 4U);
+		return;
+	}
 	put(exec, words, ghci_cmd_copy_buffer(words, source, va, (uint32_t)size, 0U, 0U));
 }
 
@@ -3163,7 +3455,10 @@ update_buffer(
  * levels, layers, corners and extents; the packets keep 16 bits of a
  * coordinate, which an image's 16384 texels never pass), and a region
  * past its image refuses the submission; then each region becomes one
- * packet per layer (a 3D image's depth slices for a copy).
+ * packet per layer (a 3D image's depth slices for a copy).  Without the
+ * blitter, a copy (and on any device a copy of one aspect of a combined
+ * depth and stencil format) is the driver's copy program's, and a blit
+ * and a resolve are the driver's draws.
  */
 static void
 copy_image(
@@ -3190,6 +3485,8 @@ copy_image(
 	size_t end;
 	int source_3d;
 	int destination_3d;
+	int blitter;
+	int one_aspect;
 	int error;
 
 	/* The images and the regions (read twice: a blit's filter follows them). */
@@ -3235,10 +3532,29 @@ copy_image(
 	reader->offset = regions;
 
 	/* Each region's packets. */
+	blitter = has_blitter(exec);
 	for (index = 0U; index < count && reader->error == 0 && exec->error == 0; index++) {
 		image_region_read(reader, number, &region);
 		if (number == GPU_OP_CMD_BLIT_IMAGE && source_3d) {
 			skip_command(exec, "a blit of a 3D image");
+			continue;
+		}
+
+		/* The driver's copy program: without the blitter, or for one aspect of a combined depth and stencil format. */
+		one_aspect = 0;
+		if ((source->format == (uint32_t)VK_FORMAT_D24_UNORM_S8_UINT || source->format == (uint32_t)VK_FORMAT_D32_SFLOAT_S8_UINT)
+			&& region.layers[0].aspectMask != (uint32_t)(VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
+			one_aspect = 1;
+		if (number == GPU_OP_CMD_COPY_IMAGE && (!blitter || one_aspect)) {
+			meta_image_copy(exec, source, source_base, destination, destination_base, &region, region.extent);
+			continue;
+		}
+		if (number == GPU_OP_CMD_BLIT_IMAGE && !blitter) {
+			meta_blit(exec, source, source_base, destination, destination_base, &region, filter);
+			continue;
+		}
+		if (number == GPU_OP_CMD_RESOLVE_IMAGE && !blitter) {
+			meta_resolve(exec, source, source_base, destination, destination_base, &region);
 			continue;
 		}
 
@@ -3291,6 +3607,444 @@ copy_image(
 		}
 	}
 	reader->offset = end;
+}
+
+/*
+ * Copies one region between images with the driver's copy program,
+ * every layer (or a 3D level's depth slice) in one copy: the texels'
+ * words, or one aspect's bytes of a combined depth and stencil format,
+ * the samples of a multisampled texel side by side, in blocks for a
+ * compressed format.  The images have the same texel size (Vulkan's
+ * rule for a copy).
+ */
+static void
+meta_image_copy(
+	struct exec *exec,
+	const struct ghci_vk_image *source,
+	uint64_t source_base,
+	const struct ghci_vk_image *destination,
+	uint64_t destination_base,
+	const struct image_region *region,
+	const uint32_t *extent)
+{
+	struct ghci_vk_meta_copy copy;
+	uint32_t element;
+	uint32_t image_step;
+	uint32_t buffer_step;
+	uint32_t skip;
+	uint32_t per_texel;
+	uint32_t texel_bytes;
+	uint32_t block;
+	uint32_t granule;
+
+	/* The elements of a texel (with its samples). */
+	meta_texels(source, region->layers[0].aspectMask, &element, &image_step, &buffer_step, &skip, &per_texel);
+	(void)ghci_vk_format_size(source->format, &texel_bytes, &block);
+	granule = block != 0U ? 4U : 1U;
+
+	/* Each side's first element and steps. */
+	kern_memset(&copy, 0, sizeof(copy));
+	copy.source = meta_image_texel(source, source_base, &region->layers[0], region->offsets[0], skip, copy.source_step);
+	copy.destination = meta_image_texel(destination, destination_base, &region->layers[1], region->offsets[2], skip, copy.destination_step);
+	copy.source_step[0] = image_step;
+	copy.destination_step[0] = image_step;
+
+	/* The texels of a row, the rows, and the layers or depth slices. */
+	copy.element_bytes = element;
+	copy.per_row = (extent[0] + granule - 1U) / granule * per_texel * source->layout.samples;
+	copy.rows = (extent[1] + granule - 1U) / granule;
+	copy.slices = region->layers[0].layerCount;
+	if (source->type == (uint32_t)VK_IMAGE_TYPE_3D)
+		copy.slices = extent[2];
+	(void)meta_copy(exec, &copy);
+}
+
+/*
+ * Reports the address of a region's first texel (and of its aspect's
+ * first byte, skip bytes in) of an image, with its row pitch and slice
+ * pitch (a 3D level's plane, or the layer stride) in steps[1] and
+ * steps[2].
+ */
+static uint64_t
+meta_image_texel(
+	const struct ghci_vk_image *image,
+	uint64_t base,
+	const VkImageSubresourceLayers *layers,
+	const int32_t *offset,
+	uint32_t skip,
+	uint32_t *steps)
+{
+	uint64_t address;
+	uint32_t texel_bytes;
+	uint32_t block;
+	uint32_t granule;
+
+	/* The texel's bytes, with its samples, or a block's. */
+	(void)ghci_vk_format_size(image->format, &texel_bytes, &block);
+	granule = block != 0U ? 4U : 1U;
+	if (block == 0U)
+		texel_bytes *= image->layout.samples;
+
+	/* The slice of the first layer or depth slice, and the pitches. */
+	if (image->type == (uint32_t)VK_IMAGE_TYPE_3D) {
+		address = image_slice(image, base, layers->mipLevel, 0U, (uint32_t)offset[2]);
+		steps[2] = ghci_layout_plane(&image->layout, layers->mipLevel);
+	} else {
+		address = image_slice(image, base, layers->mipLevel, layers->baseArrayLayer, 0U);
+		steps[2] = ghci_layout_layer_stride(&image->layout);
+	}
+	steps[1] = ghci_layout_row(&image->layout, layers->mipLevel);
+
+	/* Succeeded: the first texel's row and column. */
+	return address + (uint64_t)((uint32_t)offset[1] / granule) * steps[1] + (uint64_t)((uint32_t)offset[0] / granule) * texel_bytes + skip;
+}
+
+/*
+ * Places one of the driver's draws (a resolve or a blit): a render pass
+ * of the target as colour attachment 0, loaded and stored, over rect
+ * ([x, y, width, height]); the draw's program with the viewport and
+ * scissor of rect; the source's texture descriptor in set 0 and the
+ * sampler in set 1; the push constants; one triangle.  The command
+ * buffer's own binds are placed again before its next draw or dispatch.
+ */
+static void
+meta_draw(
+	struct exec *exec,
+	enum ghci_vk_meta_kind kind,
+	const uint8_t *texture,
+	const struct ghci_sampler_desc *sampler,
+	const struct slice_target *target,
+	const uint32_t *rect,
+	const uint32_t *push,
+	uint32_t push_words)
+{
+	const struct ghci_vk_meta_pipeline *pipeline;
+	struct ghci_render_pass_desc desc;
+	uint32_t words[3U + GHCI_CONST_LOAD_MAX];
+	uint32_t viewport[6];
+	uint64_t desc_va;
+	uint64_t table_va;
+	uint8_t *view;
+	int error;
+
+	/* The programs, in the device's code heap. */
+	error = ghci_vk_meta_pipeline(exec->session, exec->device, kind, &pipeline);
+	if (error == ENOTSUP) {
+		refuse(exec, ENOTSUP, "a transfer whose program the compiler refuses");
+		return;
+	}
+	if (error != 0) {
+		refuse(exec, error == ENOMEM ? ENOMEM : EIO, "no room for the driver's transfer program");
+		return;
+	}
+
+	/* The pass: the target, loaded and stored (what lies outside the rectangle stays). */
+	kern_memset(&desc, 0, sizeof(desc));
+	desc.colors[0].va = target->va;
+	desc.colors[0].row_pitch = target->pitch;
+	desc.colors[0].format = target->format;
+	desc.colors[0].ops = (uint32_t)VK_ATTACHMENT_LOAD_OP_LOAD | ((uint32_t)VK_ATTACHMENT_STORE_OP_STORE << 2);
+	desc.width = target->width;
+	desc.height = target->height;
+	desc.layers = 1U;
+	desc.samples = 1U;
+	error = temp_take(exec, GHCI_RENDER_PASS_BYTES, DESC_ALIGN, &desc_va, &view);
+	if (error != 0)
+		return;
+	error = ghci_render_pass_desc_encode(view, &desc);
+	if (error != 0) {
+		refuse(exec, EINVAL, "a transfer to a slice the render pass description cannot hold");
+		return;
+	}
+	put(exec, words, ghci_cmd_begin_render_pass(words, desc_va, rect, 0U, 0U, 0U, 0U));
+
+	/* The program, the viewport and the scissor of the rectangle. */
+	put(exec, words, ghci_cmd_bind_pipeline(words, pipeline->pso_va));
+	viewport[0] = ghci_vk_float_ratio(rect[0], 1U);
+	viewport[1] = ghci_vk_float_ratio(rect[1], 1U);
+	viewport[2] = ghci_vk_float_ratio(rect[2], 1U);
+	viewport[3] = ghci_vk_float_ratio(rect[3], 1U);
+	viewport[4] = 0U;
+	viewport[5] = ghci_vk_float_ratio(1U, 1U);
+	put(exec, words, ghci_cmd_set_viewport(words, viewport));
+	put(exec, words, ghci_cmd_set_scissor(words, (int32_t)rect[0], (int32_t)rect[1], rect[2], rect[3]));
+
+	/* The source's texture (set 0) and the sampler (set 1), slot 0 each. */
+	error = temp_take(exec, GHCI_TEXTURE_DESC_BYTES, TABLE_ALIGN, &table_va, &view);
+	if (error != 0)
+		return;
+	kern_memcpy(view, texture, GHCI_TEXTURE_DESC_BYTES);
+	put(exec, words, ghci_cmd_bind_descriptor_table(words, GSI1_ABI_SET_TEXTURES, table_va, 1U));
+	error = temp_take(exec, GHCI_SAMPLER_DESC_BYTES, TABLE_ALIGN, &table_va, &view);
+	if (error != 0)
+		return;
+	(void)ghci_sampler_desc_encode(view, sampler);
+	put(exec, words, ghci_cmd_bind_descriptor_table(words, GSI1_ABI_SET_SAMPLERS, table_va, 1U));
+
+	/* The push constants, one triangle, the end of the pass. */
+	put(exec, words, ghci_cmd_load_const(words, GSI1_ABI_BANK_PUSH_LOW, push_words, push));
+	put(exec, words, ghci_cmd_draw(words, 3U, 1U, 0U, 0U));
+	put(exec, words, ghci_cmd_end_render_pass(words));
+
+	/* The command buffer's pipelines, tables, constants and state are placed again before they are used. */
+	buffer_state_dirty(exec->state);
+}
+
+/*
+ * Fills the texture descriptor of one level of one layer of an image as
+ * a draw's source: the level's size, its row pitch, the image's samples
+ * and format (sRGB decoded), 2D, one level, the components as they are.
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 8.3,
+ * GhciTextureDescriptor: dimension 1 is 2D; each swizzle field names the
+ * channel R as 2 to A as 5).
+ */
+static void
+meta_texture(
+	const struct ghci_vk_image *image,
+	uint64_t base,
+	uint32_t level,
+	uint32_t layer,
+	uint8_t *out)
+{
+	struct ghci_texture_desc desc;
+	uint32_t traits;
+
+	/* The slice and its shape. */
+	kern_memset(&desc, 0, sizeof(desc));
+	desc.base = image_slice(image, base, level, layer, 0U);
+	desc.width = ghci_layout_extent(image->layout.width, level);
+	desc.height = ghci_layout_extent(image->layout.height, level);
+	desc.depth = 1U;
+	desc.format = image->format;
+	desc.mip_levels = 1U;
+	desc.row_pitch = ghci_layout_row(&image->layout, level);
+	desc.slice_pitch = ghci_layout_layer_stride(&image->layout);
+	desc.samples = image->layout.samples;
+	desc.dimension = META_DIMENSION_2D;
+	(void)ghci_vk_format_traits(image->format, &traits);
+	if ((traits & GHCI_VK_FORMAT_SRGB) != 0U)
+		desc.flags = GHCI_TEX_FLAG_SRGB;
+	desc.swizzle = META_SWIZZLE_IDENTITY;
+	(void)ghci_texture_desc_encode(out, &desc);
+}
+
+/* Fills the target of a draw into one level of one layer of an image. */
+static void
+meta_target(
+	const struct ghci_vk_image *image,
+	uint64_t base,
+	uint32_t level,
+	uint32_t layer,
+	struct slice_target *target)
+{
+	/* The slice, its row pitch and its size. */
+	kern_memset(target, 0, sizeof(*target));
+	target->format = image->format;
+	target->va = image_slice(image, base, level, layer, 0U);
+	target->pitch = ghci_layout_row(&image->layout, level);
+	target->width = ghci_layout_extent(image->layout.width, level);
+	target->height = ghci_layout_extent(image->layout.height, level);
+	target->samples = 1U;
+}
+
+/* Reports the driver's resolve draw for a format and samples: sample 0 of an integer format, else the average; ENOTSUP for none. */
+static int
+meta_resolve_kind(
+	uint32_t format,
+	uint32_t samples,
+	enum ghci_vk_meta_kind *kind)
+{
+	uint32_t traits;
+
+	/* An integer format's sample 0. */
+	(void)ghci_vk_format_traits(format, &traits);
+	if ((traits & GHCI_VK_FORMAT_INTEGER) != 0U) {
+		*kind = GHCI_VK_META_RESOLVE_FIRST;
+		return 0;
+	}
+
+	/* The average of 2 or 4. */
+	if (samples == 2U) {
+		*kind = GHCI_VK_META_RESOLVE_AVERAGE2;
+		return 0;
+	}
+	if (samples == 4U) {
+		*kind = GHCI_VK_META_RESOLVE_AVERAGE4;
+		return 0;
+	}
+
+	/* Another count. */
+	return ENOTSUP;
+}
+
+/* Reports whether the device's format features of a format (optimal tiling) have all of features. */
+static int
+format_has(
+	struct exec *exec,
+	uint32_t format,
+	uint32_t features)
+{
+	const struct ghci_vk *vk;
+
+	/* The table of the device's formats. */
+	vk = exec->session->device->vk;
+	if (format >= GHCI_VK_FORMATS)
+		return 0;
+	if ((vk->formats.optimal[format] & features) != features)
+		return 0;
+
+	/* Succeeded: the format has them. */
+	return 1;
+}
+
+/*
+ * Resolves one region without the blitter: each layer by the driver's
+ * resolve draw into the destination's level, the region's rectangle, the
+ * source's texels moved by the offsets' difference.  A destination that
+ * cannot be a colour attachment, or a sample count the draws do not
+ * average, is skipped.
+ */
+static void
+meta_resolve(
+	struct exec *exec,
+	const struct ghci_vk_image *source,
+	uint64_t source_base,
+	const struct ghci_vk_image *destination,
+	uint64_t destination_base,
+	const struct image_region *region)
+{
+	struct ghci_sampler_desc sampler;
+	struct slice_target target;
+	enum ghci_vk_meta_kind kind;
+	uint8_t texture[GHCI_TEXTURE_DESC_BYTES];
+	uint32_t rect[4];
+	uint32_t push[GHCI_VK_META_RESOLVE_WORDS];
+	uint32_t layer;
+	int attachable;
+	int error;
+
+	/* The draw of the format and samples, into a colour attachment. */
+	error = meta_resolve_kind(source->format, source->layout.samples, &kind);
+	attachable = format_has(exec, destination->format, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
+	if (error != 0 || !attachable) {
+		skip_command(exec, "a resolve the driver's draw cannot make");
+		return;
+	}
+
+	/* The rectangle, the texels' offset, a sampler (unused by a fetch). */
+	rect[0] = (uint32_t)region->offsets[2][0];
+	rect[1] = (uint32_t)region->offsets[2][1];
+	rect[2] = region->extent[0];
+	rect[3] = region->extent[1];
+	push[GHCI_VK_META_RESOLVE_DX] = (uint32_t)(region->offsets[0][0] - region->offsets[2][0]);
+	push[GHCI_VK_META_RESOLVE_DY] = (uint32_t)(region->offsets[0][1] - region->offsets[2][1]);
+	meta_sampler(0U, &sampler);
+
+	/* Each layer. */
+	for (layer = 0U; layer < region->layers[0].layerCount && exec->error == 0; layer++) {
+		meta_texture(source, source_base, region->layers[0].mipLevel, region->layers[0].baseArrayLayer + layer, texture);
+		meta_target(destination, destination_base, region->layers[1].mipLevel, region->layers[1].baseArrayLayer + layer, &target);
+		meta_draw(exec, kind, texture, &sampler, &target, rect, push, GHCI_VK_META_RESOLVE_WORDS);
+	}
+}
+
+/* Fills the sampler of a draw: the filter (VkFilter), clamped to the edge, level 0 alone, normalized coordinates. */
+static void
+meta_sampler(
+	uint32_t filter,
+	struct ghci_sampler_desc *sampler)
+{
+	/* The filter and the edges. */
+	kern_memset(sampler, 0, sizeof(*sampler));
+	sampler->min_filter = filter;
+	sampler->mag_filter = filter;
+	sampler->address[0] = (uint32_t)VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler->address[1] = (uint32_t)VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler->address[2] = (uint32_t)VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+	sampler->max_anisotropy = 1U;
+}
+
+/*
+ * Blits one region without the blitter: from a format the texture unit
+ * samples (not depth or stencil) to one that can be a colour attachment,
+ * each layer by the driver's blit draw over the destination's rectangle
+ * (its corners in either order: a flip), with the region's filter.  A
+ * copy of texels as they are of other formats is the copy program's;
+ * any other blit is skipped.
+ */
+static void
+meta_blit(
+	struct exec *exec,
+	const struct ghci_vk_image *source,
+	uint64_t source_base,
+	const struct ghci_vk_image *destination,
+	uint64_t destination_base,
+	const struct image_region *region,
+	uint32_t filter)
+{
+	struct ghci_sampler_desc sampler;
+	struct slice_target target;
+	uint8_t texture[GHCI_TEXTURE_DESC_BYTES];
+	uint32_t push[GHCI_VK_META_BLIT_WORDS];
+	uint32_t rect[4];
+	uint32_t extent[3];
+	uint32_t traits;
+	uint32_t axis;
+	uint32_t layer;
+	int32_t low;
+	int32_t high;
+	int sampled;
+	int attachable;
+
+	/* A sampled colour source and an attachable destination: the draw. */
+	(void)ghci_vk_format_traits(source->format, &traits);
+	sampled = format_has(exec, source->format, VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+	attachable = format_has(exec, destination->format, VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT);
+	if (!sampled || !attachable || (traits & GHCI_VK_FORMAT_DEPTH) != 0U) {
+		/* Texels as they are: the same format and size, no flip, one sample. */
+		if (source->format != destination->format || source->layout.samples != 1U ||
+		    region->offsets[1][0] - region->offsets[0][0] <= 0 || region->offsets[1][1] - region->offsets[0][1] <= 0 ||
+		    region->offsets[1][0] - region->offsets[0][0] != region->offsets[3][0] - region->offsets[2][0] ||
+		    region->offsets[1][1] - region->offsets[0][1] != region->offsets[3][1] - region->offsets[2][1]) {
+			skip_command(exec, "a blit the driver's draw and copy cannot make");
+			return;
+		}
+		extent[0] = (uint32_t)(region->offsets[1][0] - region->offsets[0][0]);
+		extent[1] = (uint32_t)(region->offsets[1][1] - region->offsets[0][1]);
+		extent[2] = 1U;
+		meta_image_copy(exec, source, source_base, destination, destination_base, region, extent);
+		return;
+	}
+
+	/* For each axis: the corners, the viewport's first pixel and end (the corners in order). */
+	for (axis = 0U; axis < 2U; axis++) {
+		low = region->offsets[2][axis];
+		high = region->offsets[3][axis];
+		if (low > high) {
+			low = region->offsets[3][axis];
+			high = region->offsets[2][axis];
+		}
+		push[axis * 6U + 0U] = (uint32_t)region->offsets[0][axis];
+		push[axis * 6U + 1U] = (uint32_t)region->offsets[1][axis];
+		push[axis * 6U + 2U] = (uint32_t)region->offsets[2][axis];
+		push[axis * 6U + 3U] = (uint32_t)region->offsets[3][axis];
+		push[axis * 6U + 4U] = (uint32_t)low;
+		push[axis * 6U + 5U] = (uint32_t)high;
+		rect[axis] = (uint32_t)low;
+		rect[axis + 2U] = (uint32_t)(high - low);
+	}
+	push[GHCI_VK_META_BLIT_SIZE] = ghci_layout_extent(source->layout.width, region->layers[0].mipLevel);
+	push[GHCI_VK_META_BLIT_SIZE + 1U] = ghci_layout_extent(source->layout.height, region->layers[0].mipLevel);
+	if (rect[2] == 0U || rect[3] == 0U || push[0] == push[1] || push[6] == push[7])
+		return;
+	meta_sampler(filter, &sampler);
+
+	/* Each layer. */
+	for (layer = 0U; layer < region->layers[0].layerCount && exec->error == 0; layer++) {
+		meta_texture(source, source_base, region->layers[0].mipLevel, region->layers[0].baseArrayLayer + layer, texture);
+		meta_target(destination, destination_base, region->layers[1].mipLevel, region->layers[1].baseArrayLayer + layer, &target);
+		meta_draw(exec, GHCI_VK_META_BLIT, texture, &sampler, &target, rect, push, GHCI_VK_META_BLIT_WORDS);
+	}
 }
 
 /*
@@ -3495,8 +4249,10 @@ corner_check(
  * image height (in blocks for a compressed format).  A region past its
  * image (level, layers, offset, extent), with rows shorter than its
  * extent, or whose rows and slices lie past its buffer refuses the
- * submission.  One aspect of a combined depth and stencil format is
- * skipped (the packets cannot pick it).
+ * submission.  Without the blitter, and for the one aspect of a combined
+ * depth and stencil format a copy takes (the packets cannot pick it; the
+ * buffer holds 4 bytes of depth or 1 of stencil a texel), the region is
+ * the driver's copy program's.
  */
 static void
 copy_buffer_image(
@@ -3533,8 +4289,11 @@ copy_buffer_image(
 	uint64_t buffer_bytes;
 	uint64_t count;
 	uint64_t index;
+	uint32_t buffer_texel;
 	int to_image;
 	int fits;
+	int blitter;
+	int combined;
 
 	/* The buffer, the image and the regions. */
 	to_image = number == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE;
@@ -3556,6 +4315,10 @@ copy_buffer_image(
 		return;
 	}
 	granule = block != 0U ? 4U : 1U;
+	blitter = has_blitter(exec);
+	combined = 0;
+	if (image->format == (uint32_t)VK_FORMAT_D24_UNORM_S8_UINT || image->format == (uint32_t)VK_FORMAT_D32_SFLOAT_S8_UINT)
+		combined = 1;
 
 	/* Each region. */
 	for (index = 0U; index < count && reader->error == 0 && exec->error == 0; index++) {
@@ -3569,9 +4332,18 @@ copy_buffer_image(
 		extent[2] = read32(reader);
 		if (reader->error != 0)
 			break;
-		if (image->format == (uint32_t)VK_FORMAT_D24_UNORM_S8_UINT || image->format == (uint32_t)VK_FORMAT_D32_SFLOAT_S8_UINT) {
-			skip_command(exec, "a copy of one aspect of a depth and stencil format");
-			continue;
+
+		/* The buffer's bytes of a texel: one aspect's of a combined format (4 of depth, 1 of stencil). */
+		buffer_texel = texel_bytes;
+		if (combined) {
+			if (layers.aspectMask == (uint32_t)VK_IMAGE_ASPECT_DEPTH_BIT) {
+				buffer_texel = 4U;
+			} else if (layers.aspectMask == (uint32_t)VK_IMAGE_ASPECT_STENCIL_BIT) {
+				buffer_texel = 1U;
+			} else {
+				refuse(exec, EINVAL, "a copy of a depth and stencil image that is not of one aspect");
+				return;
+			}
 		}
 		if (layers_check(image, &layers) != 0 || box_check(image, layers.mipLevel, offset, extent) != 0) {
 			refuse(exec, EINVAL, "a copy of a region past its image");
@@ -3587,7 +4359,7 @@ copy_buffer_image(
 			refuse(exec, EINVAL, "a copy whose buffer rows are shorter than its extent");
 			return;
 		}
-		row_pitch = ((uint64_t)row_length + granule - 1U) / granule * texel_bytes;
+		row_pitch = ((uint64_t)row_length + granule - 1U) / granule * buffer_texel;
 		if (row_pitch > UINT32_MAX) {
 			refuse(exec, EINVAL, "a copy whose buffer row is past the packet's pitch");
 			return;
@@ -3600,7 +4372,7 @@ copy_buffer_image(
 
 		/* Every slice's rows within the buffer: the last row of a slice is the extent's width. */
 		rows = ((uint64_t)extent[1] + granule - 1U) / granule;
-		needed = (rows - 1U) * row_pitch + ((uint64_t)extent[0] + granule - 1U) / granule * texel_bytes;
+		needed = (rows - 1U) * row_pitch + ((uint64_t)extent[0] + granule - 1U) / granule * buffer_texel;
 		if (buffer_va(exec, buffer_id, 0U, &va, &buffer_bytes) != 0) {
 			refuse(exec, EINVAL, "a copy with a buffer the session does not have bound");
 			return;
@@ -3609,6 +4381,16 @@ copy_buffer_image(
 		if (!fits) {
 			refuse(exec, EINVAL, "a copy whose rows lie past its buffer");
 			return;
+		}
+
+		/* Without the blitter, or of one aspect: the driver's program, every slice at once. */
+		if (!blitter || combined) {
+			if (buffer_va(exec, buffer_id, buffer_offset, &va, &remaining) != 0) {
+				refuse(exec, EINVAL, "a copy with a buffer the session does not have bound, or past it");
+				return;
+			}
+			meta_buffer_image(exec, image, image_base, &layers, offset, extent, va, pitch, slice_bytes, slices, to_image);
+			continue;
 		}
 
 		/* One packet per slice. */
@@ -3668,6 +4450,150 @@ buffer_rows_fit(
 
 	/* Succeeded: every slice is in the buffer. */
 	return 1;
+}
+
+/*
+ * Copies a region between a buffer and an image with the driver's copy
+ * program, every slice in one copy: the buffer's rows pitch bytes and
+ * its slices slice_bytes apart, the image's rows and slices (layers, or
+ * a 3D level's depth slices) as its layout has them, in blocks for a
+ * compressed format and in one aspect's bytes of a combined depth and
+ * stencil format.
+ */
+static void
+meta_buffer_image(
+	struct exec *exec,
+	const struct ghci_vk_image *image,
+	uint64_t image_base,
+	const VkImageSubresourceLayers *layers,
+	const int32_t *offset,
+	const uint32_t *extent,
+	uint64_t buffer,
+	uint32_t pitch,
+	uint64_t slice_bytes,
+	uint32_t slices,
+	int to_image)
+{
+	struct ghci_vk_meta_copy copy;
+	uint64_t image_address;
+	uint32_t image_steps[3];
+	uint32_t buffer_steps[3];
+	uint32_t element;
+	uint32_t image_step;
+	uint32_t buffer_step;
+	uint32_t skip;
+	uint32_t per_texel;
+	uint32_t granule;
+	uint32_t texel_bytes;
+	uint32_t block;
+
+	/* The elements of a texel, and their bytes on each side. */
+	meta_texels(image, layers->aspectMask, &element, &image_step, &buffer_step, &skip, &per_texel);
+	(void)ghci_vk_format_size(image->format, &texel_bytes, &block);
+	granule = block != 0U ? 4U : 1U;
+
+	/* The image's first texel of the region, its rows and its slices. */
+	if (image->type == (uint32_t)VK_IMAGE_TYPE_3D) {
+		image_address = image_slice(image, image_base, layers->mipLevel, 0U, (uint32_t)offset[2]);
+		image_steps[2] = ghci_layout_plane(&image->layout, layers->mipLevel);
+	} else {
+		image_address = image_slice(image, image_base, layers->mipLevel, layers->baseArrayLayer, 0U);
+		image_steps[2] = ghci_layout_layer_stride(&image->layout);
+	}
+	image_steps[1] = ghci_layout_row(&image->layout, layers->mipLevel);
+	image_steps[0] = image_step;
+	image_address += (uint64_t)((uint32_t)offset[1] / granule) * image_steps[1] + (uint64_t)((uint32_t)offset[0] / granule) * texel_bytes + skip;
+
+	/* The buffer's. */
+	if (slice_bytes > UINT32_MAX) {
+		refuse(exec, EINVAL, "a copy whose buffer slices are past the driver's copy program's reach");
+		return;
+	}
+	buffer_steps[0] = buffer_step;
+	buffer_steps[1] = pitch;
+	buffer_steps[2] = (uint32_t)slice_bytes;
+
+	/* The copy, from the buffer or to it. */
+	kern_memset(&copy, 0, sizeof(copy));
+	copy.element_bytes = element;
+	copy.per_row = (extent[0] + granule - 1U) / granule * per_texel;
+	copy.rows = (extent[1] + granule - 1U) / granule;
+	copy.slices = slices;
+	if (to_image) {
+		copy.source = buffer;
+		copy.destination = image_address;
+		kern_memcpy(copy.source_step, buffer_steps, sizeof(buffer_steps));
+		kern_memcpy(copy.destination_step, image_steps, sizeof(image_steps));
+	} else {
+		copy.source = image_address;
+		copy.destination = buffer;
+		kern_memcpy(copy.source_step, image_steps, sizeof(image_steps));
+		kern_memcpy(copy.destination_step, buffer_steps, sizeof(buffer_steps));
+	}
+	(void)meta_copy(exec, &copy);
+}
+
+/*
+ * Reports how the driver's copy program moves the texels of an image's
+ * aspect: the bytes of an element (a texel or block of 4, 8 or 16 bytes
+ * is moved a word at a time), the bytes from one element to the next in
+ * the image and in a buffer, the bytes of the texel before the aspect's
+ * (stencil after depth), and the elements of a texel.  Section 8.5.1 of
+ * the specification (N13): D24S8 is 32 bits, depth in [23:0] and stencil
+ * in [31:24]; D32S8 is 64 bits, depth in [31:0] and stencil in [39:32].
+ * A buffer holds 4 bytes of depth or 1 of stencil a texel.
+ */
+static void
+meta_texels(
+	const struct ghci_vk_image *image,
+	uint32_t aspect,
+	uint32_t *element,
+	uint32_t *image_step,
+	uint32_t *buffer_step,
+	uint32_t *skip,
+	uint32_t *per_texel)
+{
+	uint32_t texel_bytes;
+	uint32_t block;
+
+	/* A texel (or block) of whole words is its words; a smaller one is one element. */
+	(void)ghci_vk_format_size(image->format, &texel_bytes, &block);
+	*skip = 0U;
+	*per_texel = 1U;
+	*element = texel_bytes;
+	*image_step = texel_bytes;
+	*buffer_step = texel_bytes;
+	if (texel_bytes >= 4U && (texel_bytes & 3U) == 0U) {
+		*element = 4U;
+		*image_step = 4U;
+		*buffer_step = 4U;
+		*per_texel = texel_bytes / 4U;
+	}
+
+	/* One aspect of a combined depth and stencil format (a copy of both aspects is the texel's words). */
+	if (image->format == (uint32_t)VK_FORMAT_D24_UNORM_S8_UINT && aspect == (uint32_t)VK_IMAGE_ASPECT_DEPTH_BIT) {
+		*element = 3U;
+		*image_step = 4U;
+		*buffer_step = 4U;
+		*per_texel = 1U;
+	} else if (image->format == (uint32_t)VK_FORMAT_D24_UNORM_S8_UINT && aspect == (uint32_t)VK_IMAGE_ASPECT_STENCIL_BIT) {
+		*element = 1U;
+		*image_step = 4U;
+		*buffer_step = 1U;
+		*skip = 3U;
+		*per_texel = 1U;
+	} else if (image->format == (uint32_t)VK_FORMAT_D32_SFLOAT_S8_UINT && aspect == (uint32_t)VK_IMAGE_ASPECT_DEPTH_BIT) {
+		*element = 4U;
+		*image_step = 8U;
+		*buffer_step = 4U;
+		*per_texel = 1U;
+	} else if (image->format == (uint32_t)VK_FORMAT_D32_SFLOAT_S8_UINT && aspect == (uint32_t)VK_IMAGE_ASPECT_STENCIL_BIT) {
+		*element = 1U;
+		*image_step = 8U;
+		*buffer_step = 1U;
+		*skip = 4U;
+		*per_texel = 1U;
+	}
 }
 
 /* Reads a VkImageSubresourceLayers: [aspect][level][first layer][layers]. */
@@ -3843,9 +4769,11 @@ wait_events(
  * [pool][query] (16-byte slots with the availability word),
  * vkCmdWriteTimestamp [stage][pool][query] (the counter, then a fence of
  * 1 on the slot's availability word), vkCmdResetQueryPool
- * [pool][first][count] (a fill of zeros; a transfer), and
- * vkCmdCopyQueryPoolResults (the shader's copy, which this device does
- * not have yet: skipped).
+ * [pool][first][count] (a fill of zeros; a transfer, the driver's copy
+ * program's without the blitter), and vkCmdCopyQueryPoolResults
+ * [pool][first][count][buffer][u64 offset][u64 stride][flags] (the
+ * driver's query program on every device: COPY_BUFFER cannot pack the
+ * results).
  */
 static void
 query(
@@ -3861,11 +4789,14 @@ query(
 	uint32_t count;
 	uint32_t flags;
 	uint32_t when;
+	uint64_t target[3];
+	int blitter;
 
 	/* The arguments of each. */
 	stage = 0U;
 	count = 1U;
 	flags = 0U;
+	kern_memset(target, 0, sizeof(target));
 	if (number == GPU_OP_CMD_WRITE_TIMESTAMP)
 		stage = read32(reader);
 	object = ghci_vk_object_find(exec->session, GHCI_VK_QUERY_POOL, read64(reader));
@@ -3874,8 +4805,12 @@ query(
 		flags = read32(reader);
 	else if (number == GPU_OP_CMD_RESET_QUERY_POOL || number == GPU_OP_CMD_COPY_QUERY_POOL_RESULTS)
 		count = read32(reader);
-	if (number == GPU_OP_CMD_COPY_QUERY_POOL_RESULTS)
-		read_skip(reader, 24U + 4U);
+	if (number == GPU_OP_CMD_COPY_QUERY_POOL_RESULTS) {
+		target[0] = read64(reader);
+		target[1] = read64(reader);
+		target[2] = read64(reader);
+		flags = read32(reader);
+	}
 	if (reader->error != 0)
 		return;
 
@@ -3906,6 +4841,11 @@ query(
 	case GPU_OP_CMD_RESET_QUERY_POOL:
 		if (count == 0U || !transfer_allowed(exec))
 			break;
+		blitter = has_blitter(exec);
+		if (!blitter) {
+			(void)meta_fill(exec, pool->va + (uint64_t)first * QUERY_SLOT_BYTES, (uint64_t)count * QUERY_SLOT_BYTES, 0U);
+			break;
+		}
 		put(exec, words, ghci_cmd_fill_buffer(words, pool->va + (uint64_t)first * QUERY_SLOT_BYTES, count * QUERY_SLOT_BYTES, 0U));
 		break;
 	default:
@@ -3913,9 +4853,75 @@ query(
 			refuse(exec, EINVAL, "a copy of query results inside a render pass");
 			break;
 		}
-		skip_command(exec, "a copy of query results (the shader's copy)");
+		query_copy(exec, pool, first, count, target, flags);
 		break;
 	}
+}
+
+/*
+ * vkCmdCopyQueryPoolResults of count queries from first: target is the
+ * buffer, the offset and the stride.  A wait for the results lets
+ * everything placed before finish first (R12: WAIT_IDLE), so that the
+ * slots hold them; the driver's query program then writes each query's
+ * value (32 or 64 bits) when it is available, or with
+ * VK_QUERY_RESULT_PARTIAL_BIT what the slot holds, and the availability
+ * after it when asked.  A destination past its buffer or not on the
+ * results' size refuses the submission.
+ */
+static void
+query_copy(
+	struct exec *exec,
+	const struct ghci_vk_query_pool *pool,
+	uint32_t first,
+	uint32_t count,
+	const uint64_t *target,
+	uint32_t flags)
+{
+	struct ghci_vk_meta_dispatch dispatch;
+	uint32_t words[GHCI_DW_BARRIER];
+	uint64_t va;
+	uint64_t remaining;
+	uint64_t needed;
+	uint32_t program_flags;
+	int error;
+
+	/* Nothing to copy. */
+	if (count == 0U)
+		return;
+
+	/* The program's flags. */
+	program_flags = 0U;
+	if ((flags & VK_QUERY_RESULT_64_BIT) != 0U)
+		program_flags |= GHCI_VK_META_QUERY_64;
+	if ((flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) != 0U)
+		program_flags |= GHCI_VK_META_QUERY_AVAILABILITY;
+	if ((flags & (VK_QUERY_RESULT_PARTIAL_BIT | VK_QUERY_RESULT_WAIT_BIT)) != 0U)
+		program_flags |= GHCI_VK_META_QUERY_ANY;
+
+	/* The results within the buffer. */
+	needed = (flags & VK_QUERY_RESULT_64_BIT) != 0U ? 8U : 4U;
+	if ((flags & VK_QUERY_RESULT_WITH_AVAILABILITY_BIT) != 0U)
+		needed *= 2U;
+	error = buffer_va(exec, target[0], target[1], &va, &remaining);
+	if (error != 0 ||
+	    target[2] > UINT32_MAX ||
+	    needed > remaining ||
+	    (uint64_t)(count - 1U) * target[2] > remaining - needed) {
+		refuse(exec, EINVAL, "a copy of query results past its buffer");
+		return;
+	}
+	error = ghci_vk_meta_query(pool->va + (uint64_t)first * QUERY_SLOT_BYTES, count, va, (uint32_t)target[2], program_flags, &dispatch);
+	if (error != 0) {
+		refuse(exec, EINVAL, "a copy of query results not on the results' size");
+		return;
+	}
+
+	/* The work placed before has written the slots. */
+	if ((flags & VK_QUERY_RESULT_WAIT_BIT) != 0U)
+		put(exec, words, ghci_cmd_barrier(words, 0U, 0U, GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_L1_DATA));
+
+	/* The program. */
+	(void)meta_run(exec, &dispatch);
 }
 
 /*
