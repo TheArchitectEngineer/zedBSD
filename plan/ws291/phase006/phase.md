@@ -929,7 +929,7 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
 - 速さ（scene-6500）: 段 0 の floor だけでは UCLK が負荷の中でも 100/500 を往復し fence 20.1〜20.3 ms（Linux は 500 MHz を保ち 19.54）。busy の floor 500 で fence 19.62〜19.70。
 - UCLK（SMU の停止）の件はユーザーの指示で解決とする（2026-10-28 21:40 頃の Q1 の伝達、上の原文）。残り: display の underflow の根本（2 pipe 分割、Linux の形）と評価。
 
-### 画面の途切れ（2026-10-28 21:50〜23:20、ユーザーの指示「画面へ出す回路のunderflowを先に修正」）
+### 画面の途切れ（2026-10-28 21:50〜23:00、ユーザーの指示「画面へ出す回路のunderflowを先に修正」）
 
 - ユーザー（Q1 経由）「途切れは直近数分で観測できています。」（21:46、520 us の kernel の後）→ underflow の bit（HUBP・OTG）と出力（DIG4）の FIFO の
   level error（watch で 1 s ごと、37ca3c658 以降・732881c57）はどちらも 0。途切れは underflow ではない。

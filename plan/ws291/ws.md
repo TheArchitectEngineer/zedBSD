@@ -144,6 +144,6 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   「P2は、評価を中断して、画面へ出す回路のunderflowを先に修正してください。目視でも、かなりの割合で数秒に一回くらい、画面出力が途切れる瞬間があります。解決してから評価に進みます。UCLKの問題は解決とマークしていいです。」
 - 結果: 負荷に応じた UCLK（amdrdna.smu.memory=2、既定は 0 のまま）を実装し SMU の停止 0（UCLK の件は解決）。計測の道具は plan/tools/gpu-perf/ へ（9213987d1）。
   display の underflow: p-state の plan を 404 us → 520 us にして 0（[phase006](phase006/phase.md) の「q1658」節）。
-- 再開点（2026-10-28 23:20 P2）: 画面の途切れは underflow ではなく vkAcquireNextImageKHR の止まり（[phase006](phase006/phase.md) の「画面の途切れ」）。
+- 再開点（2026-10-28 23:01 P2）: 画面の途切れは underflow ではなく vkAcquireNextImageKHR の止まり（[phase006](phase006/phase.md) の「画面の途切れ」）。
   libvulkan の Wayland の待ちの取りこぼし（50 ms）は直した（7650291df）。残りは約 2 s 周期の 75〜97 ms の止まり（compositor の release か
   present worker の GPU 完了の待ちの見込み）。未実施: venus の回帰・他 arch の libvulkan の build。評価（bench）はこの後。
