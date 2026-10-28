@@ -23,6 +23,7 @@
 #include "kern/backing-claim.h"
 #include "kern/block-identity.h"
 #include "kern/buf.h"
+#include "kern/buf-direct.h"
 #include "kern/cdev.h"
 #include "kern/filedesc.h"
 #include "kern/disk.h"
@@ -38,6 +39,10 @@
 #include "kern/pipe.h"
 #include "kern/process.h"
 #include "kern/thread.h"
+#include "kern/signal.h"
+#include "kern/vmspace.h"
+#include "kern/vm-reclaim.h"
+#include "kern/page.h"
 #include <kern/kcrt.h>
 
 #include <uapi/block.h>
@@ -163,6 +168,7 @@ static DEVFS_HIGH ssize_t block_read(struct file *file, void *buffer, size_t len
 static DEVFS_HIGH ssize_t block_pwrite(struct file *file, const void *buffer, size_t length, off_t offset);
 static DEVFS_HIGH ssize_t block_write(struct file *file, const void *buffer, size_t length);
 static DEVFS_HIGH int block_fsync(struct file *file);
+static DEVFS_HIGH ssize_t block_pdirect(struct file *file, int write, const struct uaccess_pin *pin, size_t pin_offset, size_t length, off_t offset);
 static DEVFS_HIGH int block_ioctl(struct file *file, unsigned long request, uintptr_t argument);
 static DEVFS_HIGH int devfs_mount_impl(struct mount *mountp);
 static DEVFS_HIGH int devfs_statvfs(struct mount *mountp, struct statvfs *result);
@@ -179,6 +185,7 @@ static const struct file_ops devfs_block_ops = {
 	.pwrite = block_pwrite,
 	.ioctl = block_ioctl,
 	.fsync = block_fsync,
+	.pdirect = block_pdirect,
 };
 
 /*
@@ -1937,6 +1944,298 @@ block_write(
 
 	/* Reports the write result. */
 	return done;
+}
+
+/* The pages one direct piece names in place on the stack; a longer piece allocates its list. */
+#define BLOCK_DIRECT_STACK_PAGES 16U
+
+/* The most one direct call moves, as Linux bounds one read or write; a longer one is short. */
+#define BLOCK_DIRECT_CALL_MAX ((size_t)0x7ffff000U)
+
+/*
+ * Moves one piece of a direct transfer straight to or from the caller's
+ * pages: the private pages from the piece's start, at most bytes of them.
+ * Pages of a shared mapping or a device, which the disk cannot be given,
+ * end the piece; EOPNOTSUPP before anything moved means the piece goes
+ * through staging instead.  moved reports the confirmed bytes.
+ */
+static DEVFS_HIGH int
+block_direct_pages(
+	struct disk *disk,
+	int write,
+	const struct uaccess_pin *pin,
+	size_t pin_offset,
+	size_t bytes,
+	uint64_t block,
+	const struct backing_claim *claim,
+	uint64_t *pages,
+	size_t *moved)
+{
+	const struct vmspace_pinned_page *page;
+	uint32_t completed;
+	uint32_t count;
+	size_t first;
+	size_t index;
+	size_t number;
+	int error;
+
+	*moved = 0;
+
+	/* Names the private pages of the piece, stopping at the first other kind. */
+	first = (pin->first_offset + pin_offset) / KERN_PAGE_SIZE;
+	number = bytes / KERN_PAGE_SIZE;
+	for (index = 0; index < number; index++) {
+		page = &pin->pages[first + index];
+		if (page->kind != VMSPACE_PINNED_PRIVATE)
+			break;
+		pages[index] = page->memory.paddr;
+	}
+	if (index == 0)
+		return EOPNOTSUPP;
+	number = index;
+
+	/* Moves the pages in place. */
+	count = (uint32_t)(number * (KERN_PAGE_SIZE / disk->d_block_size));
+	completed = 0;
+	error = disk_transfer_pages_claimed(disk, write ? BIO_WRITE : BIO_READ,
+	    block, count, pages, (uint32_t)number, claim, &completed);
+
+	/* A read changed the pages the disk filled, as a copy into them would. */
+	if (!write) {
+		for (index = 0; index < (size_t)completed * disk->d_block_size / KERN_PAGE_SIZE; index++)
+			vm_private_page_mark_dirty(pin->pages[first + index].owner.private_page);
+	}
+
+	/* Reports the confirmed prefix and why the rest did not move. */
+	*moved = (size_t)completed * disk->d_block_size;
+	return error;
+}
+
+/*
+ * Moves one piece of a direct transfer through a staging buffer: for a
+ * caller's buffer that does not start a page, pages of a shared mapping,
+ * or a disk whose driver does not move pages.
+ */
+static DEVFS_HIGH int
+block_direct_staged(
+	struct disk *disk,
+	int write,
+	const struct uaccess_pin *pin,
+	size_t pin_offset,
+	size_t bytes,
+	uint64_t block,
+	const struct backing_claim *claim,
+	size_t *moved)
+{
+	uint32_t count;
+	uint8_t *staging;
+	int error;
+
+	*moved = 0;
+
+	/* Takes a staging buffer for the piece. */
+	staging = kern_malloc(bytes);
+	if (staging == NULL)
+		return ENOMEM;
+	count = (uint32_t)(bytes / disk->d_block_size);
+
+	/* Reads into staging and copies out, or copies in and writes from staging. */
+	if (write) {
+		error = copyin_pinned(pin, pin_offset, staging, bytes);
+		if (error == 0 && claim != NULL)
+			error = disk_write_direct_claimed(disk, block, count, staging, claim);
+		else if (error == 0)
+			error = disk_write_direct(disk, block, count, staging);
+	} else {
+		error = disk_read_direct(disk, block, count, staging);
+		if (error == 0)
+			error = copyout_pinned(pin, pin_offset, staging, bytes);
+	}
+	kern_free(staging);
+
+	/* A piece moves whole or not at all. */
+	if (error != 0)
+		return error;
+	*moved = bytes;
+	return 0;
+}
+
+/*
+ * Moves bytes between a pinned user range and a disk without the cache
+ * (O_DIRECT).
+ *
+ * The offset and the length are whole logical blocks, as on Linux; the
+ * caller's buffer may start anywhere, and only the whole pages of it that a
+ * private mapping holds go to the disk in place, the rest through staging.
+ * The range is clipped to the disk as an ordinary transfer is: a read past
+ * the end is short, a write past it has no room.  Before the transfer the
+ * cache's dirty lines of the range are written back and, for a write, its
+ * lines are left to be read again, before and after, so that a cached
+ * reader afterwards reads what was written.  A reserved device (a claim of
+ * its own) bypasses the cache already and only checks its claim.  A signal
+ * ends a long transfer between pieces with the bytes moved.  A synchronous
+ * write flushes the device alone.
+ */
+static DEVFS_HIGH ssize_t
+block_pdirect(
+	struct file *file,
+	int write,
+	const struct uaccess_pin *pin,
+	size_t pin_offset,
+	size_t length,
+	off_t offset)
+{
+	struct backing_mutation_guard guard;
+	struct devfs_block_io_range range;
+	const struct backing_claim *claim;
+	struct disk *disk;
+	struct disk *leaf;
+	uint64_t stack_pages[BLOCK_DIRECT_STACK_PAGES];
+	uint64_t *pages;
+	uint64_t first;
+	uint64_t count;
+	uint32_t block_size;
+	size_t total;
+	size_t piece;
+	size_t moved;
+	size_t user;
+	int guarded;
+	int prepared;
+	int admitted;
+	int finish;
+	int durable;
+	int error;
+
+	disk = file->f_data;
+	claim = file->f_block_claim;
+
+	/* Rejects a file without a disk; an empty request moves nothing. */
+	if (disk == NULL || pin == NULL)
+		return -EINVAL;
+	if (length == 0)
+		return 0;
+
+	/* Rejects a pin that does not cover the request, or a read-only disk for a write. */
+	if (!pin->active || pin_offset > pin->size || length > pin->size - pin_offset)
+		return -EINVAL;
+	if (write && (disk->d_flags & DISK_READ_ONLY) != 0)
+		return -EROFS;
+	block_size = disk->d_block_size;
+	if (block_size != 512U && block_size != 4096U)
+		return -EOPNOTSUPP;
+
+	/* Refuses a range that is not whole blocks, and clips it to the disk. */
+	if (buf_direct_misaligned((int64_t)offset, length, block_size))
+		return -EINVAL;
+	error = devfs_block_io_range_prepare(disk->d_block_count, block_size,
+	    (int64_t)offset, length, write ? DEVFS_BLOCK_IO_WRITE : DEVFS_BLOCK_IO_READ,
+	    &range);
+	if (error != 0)
+		return -error;
+	length = range.length;
+	if (length == 0)
+		return 0;
+	if (length > BLOCK_DIRECT_CALL_MAX)
+		length = BLOCK_DIRECT_CALL_MAX - BLOCK_DIRECT_CALL_MAX % block_size;
+	first = range.position / block_size;
+	count = length / block_size;
+
+	/* A long piece names its pages in an allocated list. */
+	pages = stack_pages;
+	if (length > (size_t)BLOCK_DIRECT_STACK_PAGES * KERN_PAGE_SIZE) {
+		pages = kern_malloc((BUF_DIRECT_PIECE_BYTES / KERN_PAGE_SIZE) * sizeof(*pages));
+		if (pages == NULL)
+			return -ENOMEM;
+	}
+
+	/* Admits the transfer: a reserved device by its claim, any other as a cache user. */
+	admitted = 0;
+	leaf = NULL;
+	if (claim != NULL)
+		error = disk_admin_io_begin(disk, claim);
+	else
+		error = disk_direct_begin(disk, &leaf);
+	if (error == 0)
+		admitted = 1;
+
+	/* Excludes other mutations of the range for a write. */
+	guarded = 0;
+	if (error == 0 && write) {
+		error = backing_mutation_begin_disk(disk, first, count, claim, &guard);
+		if (error == 0)
+			guarded = 1;
+	}
+
+	/* Brings the cache's lines of the range in line with the disk. */
+	prepared = 0;
+	if (error == 0 && claim == NULL) {
+		error = buf_direct_prepare(disk, first, (uint32_t)count, write);
+		if (error == 0)
+			prepared = 1;
+	}
+
+	/* Moves the range one piece at a time, in place where it can. */
+	total = 0;
+	while (error == 0 && total < length) {
+		/* A signal ends a long transfer between pieces, with what moved. */
+		if (total != 0 && curthread != NULL &&
+		    signal_pending_unblocked(curthread))
+			break;
+
+		/* Picks the next piece: the caller's whole private pages, or staging. */
+		user = (pin->first_offset + pin_offset + total) % KERN_PAGE_SIZE;
+		piece = buf_direct_page_piece(user, length - total, KERN_PAGE_SIZE,
+		    BUF_DIRECT_PIECE_BYTES);
+		if (piece > (size_t)BLOCK_DIRECT_STACK_PAGES * KERN_PAGE_SIZE &&
+		    pages == stack_pages)
+			piece = (size_t)BLOCK_DIRECT_STACK_PAGES * KERN_PAGE_SIZE;
+		moved = 0;
+		error = EOPNOTSUPP;
+		if (piece != 0)
+			error = block_direct_pages(disk, write, pin,
+			    pin_offset + total, piece,
+			    first + total / block_size, claim, pages, &moved);
+		if (error == EOPNOTSUPP && moved == 0) {
+			piece = buf_direct_staged_piece(user, length - total,
+			    KERN_PAGE_SIZE, block_size, BUF_DIRECT_PIECE_BYTES);
+			if (piece == 0 || piece % block_size != 0)
+				piece = block_size;
+			error = block_direct_staged(disk, write, pin,
+			    pin_offset + total, piece,
+			    first + total / block_size, claim, &moved);
+		}
+		total += moved;
+	}
+
+	/* A write leaves no line that a reader in the meantime filled from before it. */
+	if (prepared && write) {
+		finish = buf_direct_prepare(disk, first, (uint32_t)count, 1);
+		if (error == 0)
+			error = finish;
+	}
+
+	/* A synchronous write is durable when the device has flushed it. */
+	durable = 0;
+	if (write && total != 0 &&
+	    (file_status_flags_get(file) & (O_SYNC | O_DSYNC)) != 0)
+		durable = bio_flush(disk);
+
+	/* Ends the exclusion and the admission, and frees the page list. */
+	if (guarded)
+		backing_mutation_end(&guard);
+	if (admitted && claim != NULL)
+		disk_admin_io_end(disk, claim);
+	else if (admitted)
+		disk_direct_end(leaf);
+	if (pages != stack_pages)
+		kern_free(pages);
+
+	/* Reports a failed flush, else the bytes moved, else why nothing moved. */
+	if (durable != 0)
+		return -durable;
+	if (total != 0 || error == 0)
+		return (ssize_t)total;
+	return -error;
 }
 
 /* Flushes the disk behind a block device file. */

@@ -164,6 +164,7 @@ static int disk_media_idle_locked(struct disk *parent, unsigned extra);
 static int disk_reload_replace_locked(struct disk *parent, struct disk **new_disks, unsigned count);
 static int disk_cache_enter(struct disk *disk, struct disk **leaf_out);
 static void disk_cache_leave(struct disk *leaf);
+static int disk_transfer_pages_owned(struct disk *disk, enum bio_op op, uint64_t block, uint32_t count, const uint64_t *pages, uint32_t page_count, const struct backing_claim *claim, uint32_t *completed, const struct io_context *context);
 static int disk_cached_transfer(struct disk *disk, uint64_t block, uint32_t count, void *data, int write, struct buf_view *view, const struct io_context *context);
 static int async_initialize(void);
 static void async_worker(void *argument);
@@ -4240,6 +4241,66 @@ disk_transfer_pages_context(
 	uint32_t *completed,
 	const struct io_context *context)
 {
+	/* Transfers under no claim of the caller's own. */
+	return disk_transfer_pages_owned(disk, op, block, count, pages,
+	    page_count, NULL, completed, context);
+}
+
+/*
+ * Transfers blocks to or from whole physical pages under a backing claim
+ * that may own the range, waiting for each request.
+ */
+int
+disk_transfer_pages_claimed(
+	struct disk *disk,
+	enum bio_op op,
+	uint64_t block,
+	uint32_t count,
+	const uint64_t *pages,
+	uint32_t page_count,
+	const struct backing_claim *claim,
+	uint32_t *completed)
+{
+	/* Transfers under the caller's claim. */
+	return disk_transfer_pages_owned(disk, op, block, count, pages,
+	    page_count, claim, completed, NULL);
+}
+
+/*
+ * Admits a transfer that bypasses the cache but must first make the cache's
+ * lines of its range agree with the disk, under the same reload and
+ * lifetime barriers as a cached access.
+ */
+int
+disk_direct_begin(
+	struct disk *disk,
+	struct disk **leaf)
+{
+	/* Admits the caller as a cache user of the physical device. */
+	return disk_cache_enter(disk, leaf);
+}
+
+/* Releases an admission disk_direct_begin() gave. */
+void
+disk_direct_end(
+	struct disk *leaf)
+{
+	disk_cache_leave(leaf);
+}
+
+/* Transfers whole physical pages, guarding a write under the caller's claim. */
+static int
+disk_transfer_pages_owned(
+	struct disk *disk,
+	enum bio_op op,
+	uint64_t block,
+	uint32_t count,
+	const uint64_t *pages,
+	uint32_t page_count,
+	const struct backing_claim *claim,
+	uint32_t *completed,
+	const struct io_context *context)
+{
 	struct io_context child;
 	struct backing_mutation_guard guard;
 	struct bio bio;
@@ -4279,7 +4340,7 @@ disk_transfer_pages_context(
 	/* A write excludes conflicting claims on the range, as a direct write does. */
 	guarded = 0;
 	if (op == BIO_WRITE) {
-		error = backing_mutation_begin_disk(disk, block, count, NULL, &guard);
+		error = backing_mutation_begin_disk(disk, block, count, claim, &guard);
 		if (error != 0)
 			return error;
 		guarded = 1;

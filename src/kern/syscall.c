@@ -2916,6 +2916,7 @@ sys_read_call(
 	size_t length;
 	intptr_t result;
 	int error;
+	int direct;
 	size_t chunk;
 	ssize_t count;
 
@@ -2935,14 +2936,23 @@ sys_read_call(
 		return -error;
 	}
 
-	/* Takes a staging buffer and opens the transfer. */
-	buffer = syscall_io_buffer(file, length, small_buffer, &capacity);
+	/* Takes a staging buffer, unless the data goes straight to the pages, and opens the transfer. */
+	direct = file_io_direct(file);
+	if (!direct)
+		buffer = syscall_io_buffer(file, length, small_buffer, &capacity);
 	error = file_io_begin(file, FILE_IO_READ, 0, 0, &io);
 	if (error != 0) {
 		syscall_io_buffer_release(file, buffer, small_buffer, capacity);
 		uaccess_unpin(&pin);
 		(void)file_close(file);
 		return -error;
+	}
+
+	/* A file without a cache moves the whole request between its device and the pages. */
+	if (direct) {
+		io_stats_record(IO_SYSCALL_READ, length);
+		result = file_io_transfer_pinned(&io, &pin, 0, length);
+		goto out;
 	}
 
 	/* Copies one chunk at a time until the request or the data runs out. */
@@ -3020,6 +3030,7 @@ sys_write_call(
 	size_t length;
 	intptr_t result;
 	int error;
+	int direct;
 	size_t chunk;
 	int limited;
 	ssize_t count;
@@ -3040,8 +3051,10 @@ sys_write_call(
 		return -error;
 	}
 
-	/* Takes a staging buffer and opens the transfer. */
-	buffer = syscall_io_buffer(file, length, small_buffer, &capacity);
+	/* Takes a staging buffer, unless the data goes straight from the pages, and opens the transfer. */
+	direct = file_io_direct(file);
+	if (!direct)
+		buffer = syscall_io_buffer(file, length, small_buffer, &capacity);
 	error = file_io_begin_cred(file, FILE_IO_WRITE, 0, 0, process->cred,
 	    &io);
 	if (error != 0) {
@@ -3053,6 +3066,13 @@ sys_write_call(
 
 	file_io_set_growth_limit(&io,
 	    resource_limit_current(process, RLIMIT_FSIZE));
+
+	/* A file without a cache moves the whole request between the pages and its device. */
+	if (direct) {
+		io_stats_record(IO_SYSCALL_WRITE, length);
+		result = file_io_transfer_pinned(&io, &pin, 0, length);
+		goto out;
+	}
 
 	/* Copies one chunk at a time; a hit size limit raises SIGXFSZ. */
 	while (done < length) {
@@ -4644,6 +4664,7 @@ sys_positional_call(
 	struct ucred *credential;
 	intptr_t result;
 	int error;
+	int direct;
 	size_t chunk;
 	int limited;
 	ssize_t count;
@@ -4684,8 +4705,10 @@ sys_positional_call(
 		credential = NULL;
 	}
 
-	/* Takes a staging buffer and opens the transfer. */
-	buffer = syscall_io_buffer(file, length, small_buffer, &capacity);
+	/* Takes a staging buffer, unless the data goes straight through the pages, and opens the transfer. */
+	direct = file_io_direct(file);
+	if (!direct)
+		buffer = syscall_io_buffer(file, length, small_buffer, &capacity);
 	error = file_io_begin_cred(file, operation, offset, 0, credential, &io);
 	if (error != 0) {
 		syscall_io_buffer_release(file, buffer, small_buffer, capacity);
@@ -4697,6 +4720,13 @@ sys_positional_call(
 	if (writing)
 		file_io_set_growth_limit(&io,
 		    resource_limit_current(process, RLIMIT_FSIZE));
+
+	/* A file without a cache moves the whole request between its device and the pages. */
+	if (direct) {
+		io_stats_record(writing ? IO_SYSCALL_WRITE : IO_SYSCALL_READ, length);
+		result = file_io_transfer_pinned(&io, &pin, 0, length);
+		goto out;
+	}
 
 	/* Copies one chunk at a time in the requested direction. */
 	while (done < length) {
@@ -4790,6 +4820,7 @@ sys_vector_call(
 	uint32_t access;
 	enum file_io_kind operation;
 	struct ucred *credential;
+	int direct;
 
 	/* Starts with nothing pinned and no bytes transferred. */
 	process = current_process();
@@ -4846,9 +4877,11 @@ sys_vector_call(
 		credential = NULL;
 	}
 
-	/* Takes a staging buffer and opens the transfer under the size limit. */
-	buffer = syscall_io_buffer(file, (size_t)total, small_buffer,
-	    &capacity);
+	/* Takes a staging buffer, unless the data goes straight through the pages, and opens the transfer. */
+	direct = file_io_direct(file);
+	if (!direct)
+		buffer = syscall_io_buffer(file, (size_t)total, small_buffer,
+		    &capacity);
 	error = file_io_begin_cred(file, operation, 0, 0, credential, &io);
 	if (error != 0)
 		goto fail;
@@ -4856,6 +4889,28 @@ sys_vector_call(
 	if (writing)
 		file_io_set_growth_limit(&io,
 		    resource_limit_current(process, RLIMIT_FSIZE));
+
+	/*
+	 * A file without a cache moves each element whole between its device
+	 * and the element's pages, and stops at the first short or failed one.
+	 */
+	if (direct) {
+		total = 0;
+		for (i = 0; i < count; i++) {
+			length = (size_t)vectors[i].length;
+			io_stats_record(writing ? IO_SYSCALL_WRITE : IO_SYSCALL_READ, length);
+			result = file_io_transfer_pinned(&io, &pins[i], 0, length);
+			if (result < 0) {
+				if (total == 0)
+					total = result;
+				goto out;
+			}
+			total += result;
+			if ((size_t)result < length)
+				goto out;
+		}
+		goto out;
+	}
 
 	/*
 	 * POSIX requires a writev no larger than PIPE_BUF to be
@@ -8333,7 +8388,13 @@ sys_fcntl_call(
 		 * O_NONBLOCK or O_APPEND; ignore the immutable bits rather
 		 * than rejecting the standard idiom.
 		 */
-		file_status_flags_update(file, O_APPEND | O_NONBLOCK,
+		/* Only a file that moves its data without a cache takes O_DIRECT. */
+		if (((int)args[2] & O_DIRECT) != 0 &&
+		    (file->f_ops == NULL || file->f_ops->pdirect == NULL)) {
+			(void)file_close(file);
+			return -EINVAL;
+		}
+		file_status_flags_update(file, O_APPEND | O_NONBLOCK | O_DIRECT,
 		    (int)args[2]);
 		(void)file_close(file);
 		return 0;

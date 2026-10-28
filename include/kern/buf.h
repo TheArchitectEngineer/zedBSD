@@ -174,6 +174,19 @@ buf_write_unjournaled(
 	struct disk *disk);
 
 /*
+ * Brings the cache's lines of a range in line with the disk before a
+ * transfer that bypasses the cache: writes the dirty ones back and, with
+ * invalidate, leaves every line of the range to be read again (EBUSY when
+ * a journal still pins one).  Does not flush the device.
+ */
+int
+buf_direct_prepare(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count,
+	int invalidate);
+
+/*
  * Registers a function the flusher calls on every interval, before it
  * writes aged buffers; NULL removes it.  One slot per argument.
  */

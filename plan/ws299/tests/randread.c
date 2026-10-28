@@ -12,11 +12,16 @@
  * measured the same way.
  *
  *	randread FILE BLOCK DEPTH SECONDS OFFSET_MIB LENGTH_MIB [direct] [fdeach]
+ *	    [procs] [notime] [nullcall]
  *
  * Each thread reads BLOCK bytes at block-aligned offsets drawn from its own
  * xorshift sequence inside [OFFSET_MIB, OFFSET_MIB + LENGTH_MIB).  "direct"
  * opens with O_DIRECT where the system has it; "fdeach" gives each thread
- * its own open of FILE instead of sharing one.  One line reports the
+ * its own open of FILE instead of sharing one.  "procs" runs the readers as
+ * that many processes instead of threads of one (each opens FILE itself);
+ * "notime" leaves the clock out of the loop (the mean and largest read times
+ * are then 0); "nullcall" makes each read a getppid() instead, the cost of a
+ * system call alone at that concurrency.  One line reports the
  * reads, the bytes per second, and the mean and largest read time:
  *
  *	randread bs=4096 qd=32 reads=N MBps=X iops=Y mean_us=Z max_us=W
@@ -29,6 +34,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -40,6 +47,7 @@
 
 struct worker {
 	pthread_t thread;
+	pid_t pid;
 	int fd;
 	uint64_t state;
 	uint64_t reads;
@@ -52,7 +60,9 @@ static int fd;
 static size_t block;
 static uint64_t first_block;
 static uint64_t block_count;
-static volatile int stopping;
+static volatile int *stopping;
+static int timed = 1;
+static int nullcall;
 
 static uint64_t now_ns(void);
 static void *run(void *argument);
@@ -65,7 +75,7 @@ main(
 	int argc,
 	char **argv)
 {
-	struct worker workers[RANDREAD_MAX_DEPTH];
+	struct worker *workers;
 	uint64_t started;
 	uint64_t elapsed;
 	uint64_t reads;
@@ -77,6 +87,8 @@ main(
 	int depth;
 	int flags;
 	int each = 0;
+	int procs = 0;
+	int status;
 	int index;
 	struct timespec pause;
 	char line[256];
@@ -107,7 +119,23 @@ main(
 	for (index = 7; index < argc; index++) {
 		if (strcmp(argv[index], "fdeach") == 0)
 			each = 1;
+		if (strcmp(argv[index], "procs") == 0)
+			procs = 1;
+		if (strcmp(argv[index], "notime") == 0)
+			timed = 0;
+		if (strcmp(argv[index], "nullcall") == 0)
+			nullcall = 1;
 	}
+
+	/* The workers' records and the stop flag are shared with reader processes. */
+	workers = mmap(NULL, sizeof(*workers) * RANDREAD_MAX_DEPTH + sizeof(int),
+	    PROT_READ | PROT_WRITE, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+	if (workers == MAP_FAILED) {
+		perror("mmap");
+		return 1;
+	}
+	stopping = (volatile int *)(workers + RANDREAD_MAX_DEPTH);
+	*stopping = 0;
 	fd = open(argv[1], flags);
 	if (fd < 0) {
 		perror(argv[1]);
@@ -121,10 +149,22 @@ main(
 	for (index = 0; index < depth; index++) {
 		memset(&workers[index], 0, sizeof(workers[index]));
 		workers[index].state = 0x9e3779b97f4a7c15ULL * (uint64_t)(index + 1);
-		workers[index].fd = each ? open(argv[1], flags) : fd;
+		workers[index].fd = each || procs ? open(argv[1], flags) : fd;
 		if (workers[index].fd < 0) {
 			perror(argv[1]);
 			return 1;
+		}
+		if (procs) {
+			workers[index].pid = fork();
+			if (workers[index].pid == 0) {
+				(void)run(&workers[index]);
+				_exit(0);
+			}
+			if (workers[index].pid < 0) {
+				perror("fork");
+				return 1;
+			}
+			continue;
 		}
 		if (pthread_create(&workers[index].thread, NULL, run, &workers[index]) != 0) {
 			fprintf(stderr, "randread: pthread_create failed\n");
@@ -135,14 +175,17 @@ main(
 	pause.tv_sec = (time_t)seconds;
 	pause.tv_nsec = 0;
 	nanosleep(&pause, NULL);
-	stopping = 1;
+	*stopping = 1;
 
 	/* Sums what the readers did. */
 	reads = 0;
 	busy = 0;
 	largest = 0;
 	for (index = 0; index < depth; index++) {
-		pthread_join(workers[index].thread, NULL);
+		if (procs)
+			(void)waitpid(workers[index].pid, &status, 0);
+		else
+			pthread_join(workers[index].thread, NULL);
 		if (workers[index].failed) {
 			fprintf(stderr, "randread: a read failed\n");
 			return 1;
@@ -192,7 +235,7 @@ run(
 		worker->failed = 1;
 		return NULL;
 	}
-	while (!stopping) {
+	while (!*stopping) {
 		/* xorshift64* */
 		x = worker->state;
 		x ^= x >> 12;
@@ -201,15 +244,19 @@ run(
 		worker->state = x;
 		where = (off_t)((first_block + (x * 0x2545f4914f6cdd1dULL) % block_count) * block);
 
-		before = now_ns();
-		if (pread(worker->fd, buffer, block, where) != (ssize_t)block) {
+		before = timed ? now_ns() : 0;
+		if (nullcall) {
+			(void)getppid();
+		} else if (pread(worker->fd, buffer, block, where) != (ssize_t)block) {
 			worker->failed = 1;
 			break;
 		}
-		spent = now_ns() - before;
-		worker->busy_ns += spent;
-		if (spent > worker->max_ns)
-			worker->max_ns = spent;
+		if (timed) {
+			spent = now_ns() - before;
+			worker->busy_ns += spent;
+			if (spent > worker->max_ns)
+				worker->max_ns = spent;
+		}
 		worker->reads++;
 	}
 	free(buffer);
