@@ -429,6 +429,9 @@ icmp6_too_big(
 	icmp6_paths[slot].expires_ms = now + IPV6_PATH_MTU_MS;
 
 	spin_unlock_irqrestore(&icmp6_lock, irq);
+
+	/* TCP's connections to the destination cut their segments to it (RFC 8201 section 4). */
+	tcp6_path_mtu_lowered(&destination, mtu);
 }
 
 /* Tells whether one more error may be sent this second, and counts it. */

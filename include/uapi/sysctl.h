@@ -351,7 +351,9 @@ _Static_assert(sizeof(struct thermal_entry) == 64U,
  * The head of net.tcpstats: the layout's version, the header's size, one
  * entry's size and how many entries follow; the standard packets of the
  * network stack's pool (how many there are, how many are taken now, the
- * most ever taken, and how many allocations found none free); the time of
+ * most ever taken, and how many allocations found none free to them: a
+ * copy kept for retransmission does not take the last few, which stay for
+ * the receive and for what only passes through); the time of
  * the reading in milliseconds since boot; and the pool's jumbo packets in
  * the same counts, with how many of them are kept for the drivers'
  * receive (an allocation outside that reserve that finds none free is a

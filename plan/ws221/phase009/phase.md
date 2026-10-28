@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p009 -->
 # ws221-p009: TCP の受けの窓（窓の約束、受け側の SWS 回避、window scale、delayed ACK）（旧 ws220-p007）
 
-Status: in-progress（2026-10-29 P3 q1664-i03: 自分の window scale と byte で数える窓は 13a032348 で済み（下の「i03 の結果」）。残り: 受け側の SWS 回避の見直し、delayed ACK の timer（今は 2 つ目か worker の batch の終わり）、slow-reader の receive_refused 0）
+Status: in-progress（2026-10-29 P3 q1664-i04: 受け側の SWS 回避は 9592ac4be（VF2 で非退行）。残り: slow-reader の receive_refused 0（送り側の窓 0 の扱いの作り直しが要る、下の i04）、delayed ACK の timer（P3 は「足さない」を推す、Q1 の判断待ち）
 Parent: [WS221](../ws.md)
 Queue: q1664 / q1664-i01（P3）
 依存: p008（輻輳の制御と byte の送りの buffer。受けの queue の上限は packet の pool の class を考慮）
@@ -47,3 +47,23 @@ Q1（2026-10-29）: 「p008・p009 の残り（自分の window scale の広告�
 | 自分の window scale (c) | SYN の option の shift を `TCP_RECEIVE_WSCALE` 5（`SOCKET_BUFFER_MAX` 1 MB を覆う最小）に。両端が option を出した接続は窓の field を 5 bit 右へ（SYN では scale しない、32 byte に切り捨て）、`advertised_window` は byte の値（uint32）で持つ |
 | 受けの buffer の既定 | 64-bit（pool 1024）の TCP の接続は 128 KB（`TCP_RECEIVE_BUFFER`、128 packet × 1024 と同じ）。32-bit は 64 KB のまま。`SO_RCVBUF` で変えられる |
 | 試験 | tcp-model PASS: model の `--peer-window` を A の読む scale で書く形に直し、窓が 128 KB になって flight が 128 segment になった 3 つの上限（unresolved 76→140、unresolved-giveup 84→148、rtt-step-zedbsd 64→128）を追従させた。rtt-10ms は 6.1→12.2 MB/s（窓 / RTT）、lan-loss-1-zedbsd 14.1→12.0、no-route 58.3→50.9（flight が大きい分の損失）。qemu-tcp.sh PASS（53.0・56.6 Mbps）。VF2 実機（相手 5330 の Debian、Q1 の許可、flock）: 1500 で受け 949.3・949.3、送り 949.1・949.1（受けの窓 131072）、9000 で受け 990.6・990.8（前の 987 から上がった）、送り 990.9・990.9（受けの窓 71680 = jumbo 8 × 8960）、両方 receive_refused 0・再送 0 |
+
+## i04 の結果（2026-10-29 P3 q1664-i04、9592ac4be）
+
+| 項目 | 内容 |
+| --- | --- |
+| 受け側の SWS 回避 (b) | RFC 9293 3.8.6.2.2: 送った窓の右端（`receive_edge`）は min(受けの buffer の半分, 自分の MSS) 以上開く時だけ進め、小さく開く時は前の右端のまま（room より大きくは約束しない）。read の後の窓の更新は「残りの窓（右端 − receive_next）が MSS 未満で SWS の一歩以上開いた」か「2 MSS 以上か buffer の半分以上開いた」時 |
+| slow-reader の receive_refused | 3650 → 2900（tcp-model）。残りは A（送り手）が窓 0 で flight 0 の時にすぐ送る full の segment の probe を B が断った分（`tcp_send_room_locked` の「一つは常に送れる」）。0 にするには送り手が窓 0 の時に送らず persist の timer で probe する形（FreeBSD: 最初の probe は persist の間隔の後、1 byte）が要り、今の「queue に入れる時だけ窓を見る」作りを「送る時に窓を見る」作りに替えることになる（ring の unsent の扱い・persist・tcp-model の persist 系の作り直し）。範囲の判断を Q1 に頼んだ |
+| delayed ACK の timer (d) | 今は 2 segment に 1 つか、network worker の batch の終わり（実質すぐ）。40 ms の timer を足すと、一つだけ来た segment の ACK が遅れ、相手の Nagle と組んで 40 ms の待ちを作る（RFC 1122 の 500 ms 以内・2 つ目の full segment で ACK は今も満たす）。P3 は「足さない（今の batch の終わりの ACK を設計として記録）」を推す。Q1 の判断待ち |
+
+試験: tcp-model 全 PASS。VF2 実機（9592ac4be の tree、kernel sha256 953f976bb52fd2ba…、相手 5330 の Debian、Q1 の許可、flock /tmp/i915-hw.lock）:
+
+| MTU | 受け Mbps（最遅の 1 秒） | 送り Mbps（最遅の 1 秒） |
+| --- | --- | --- |
+| 1500 | 949.3（947.7）、949.3（946.3） | 949.2（948.2）、669.8（0.5）、949.2 ×3（≥ 947.7） |
+| 9000 | 969.3（458.6）、990.8（989.0）、990.6（987.8） | 990.9（989.5）、990.6（989.2） |
+
+- 669.8 の run: 197 s に flight 約 190 segment（277 KB）が一度に失われ（線の上か相手、原因は未確かめ）、timeout の後の回復が 9 秒かかった。今の作り（WS220 p005 の NewReno）は timeout の後 cwnd を 1 segment にし、partial ACK ごとに次の穴を 1 つ送り直すだけで slow start で増やさない（`tcp_cwnd_grow_locked` は recovery の外だけ）ので、穴が続くと 1 RTT（Linux の受けの delayed ACK で約 40 ms）に 1 segment になる。i04 の変更の前からの作り。直し（timeout の後は una から go-back-N で slow start、unsent の送りに cwnd の門）を Q1 に提案した
+- 969.3 の run: 1 秒だけ 393 Mbps、受けで out_of_order 6・old 1（線の上の損失を Linux の送り手が SACK 無しで回復）
+- 相手 centris（この host）: 1500 で受け 948.2・948.6、送り 928.0・931.1（centris の受けの入れ替わり、前と同じ）
+- 終わりに VF2 の en0 と 5330 の enx6c1ff706148a は 1500（読み戻し済み）。VF2 の /boot/boot0/vmunix は 9592ac4be の tree の build、vmunix.old は a774d28e3 の tree の build（その前は vmunix.old に 13a032348 があった物を vf2-tcp.sh が上書き）

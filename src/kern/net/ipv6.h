@@ -144,6 +144,9 @@ void icmp6_raw_deliver(struct packet_buf *packet, const struct in6_addr *source,
 void udp6_error(const struct in6_addr *source, const struct in6_addr *destination, uint16_t source_port, uint16_t destination_port, int error);
 void tcp6_error(const struct in6_addr *source, const struct in6_addr *destination, uint16_t source_port, uint16_t destination_port, int error);
 
+/* tcp.c: a Packet Too Big lowered the MTU of the path to a destination; the connections to it cut their segments to it */
+void tcp6_path_mtu_lowered(const struct in6_addr *destination, unsigned mtu);
+
 /* nd6.c */
 int nd6_init(void);
 int nd6_output(struct net_device *device, const struct in6_addr *next_hop, struct packet_buf *packet);

@@ -235,6 +235,22 @@ struct model_settings {
 	unsigned maxunacktime;
 	uint64_t expect_gap_low;
 	uint64_t expect_gap_high;
+	/*
+	 * --pool-held N (ws221-p008): the packets other senders' copies hold,
+	 * taken as they take them until the pool refuses one, less N left to
+	 * A's own; -1 (the default) takes none.
+	 */
+	long pool_held_free;
+	/* --send-buffer N (ws221-p008): A's SO_SNDBUF in bytes, 0 for the default. */
+	unsigned send_buffer;
+	/*
+	 * --nodelay (ws221-p008): A sets TCP_NODELAY; --expect-segments-max N:
+	 * A sent no more than N data segments (Nagle's algorithm joins short
+	 * writes), --expect-segments-min N: no fewer.
+	 */
+	int nodelay;
+	uint64_t expect_segments_max;
+	uint64_t expect_segments_min;
 	int quiet;
 };
 
@@ -374,6 +390,10 @@ main(
 {
 	struct socket_family_ops family;
 	struct packet_buf_pool_usage usage;
+	static struct packet_buf *held[PACKET_BUF_POOL_COUNT];
+	struct packet_buf *held_packet;
+	unsigned held_count;
+	size_t send_bytes_max;
 	int usage_jumbo_check;
 	uint64_t next_report_ns;
 	uint64_t last_received;
@@ -435,6 +455,45 @@ main(
 	stream_sequence = tcp_of(sender)->send_unacknowledged;
 	transfer_start_ns = now_ns;
 
+	/* The copies of other senders to slow peers, which hold all the pool lets them, less what A is left. */
+	held_count = 0;
+	if (settings.pool_held_free >= 0) {
+		for (;;) {
+			held_packet = packet_buf_alloc_for(64U, 1460U, PACKET_BUF_ALLOC_HOLD, &error);
+			if (held_packet == NULL || held_count == sizeof(held) / sizeof(held[0])) {
+				if (held_packet != NULL)
+					packet_buf_free(held_packet);
+				break;
+			}
+			held[held_count++] = held_packet;
+		}
+		while (settings.pool_held_free > 0 && held_count != 0) {
+			packet_buf_free(held[--held_count]);
+			settings.pool_held_free--;
+		}
+		printf("tcp-model: pool held by other senders: %u packets\n", held_count);
+	}
+
+	/* A's TCP_NODELAY, when the scenario sets it. */
+	if (settings.nodelay) {
+		option_value = 1;
+		error = sender->ops->setsockopt(sender, IPPROTO_TCP, TCP_NODELAY, &option_value, sizeof(option_value));
+		if (error != 0) {
+			printf("tcp-model: TCP_NODELAY refused (%d)\n", error);
+			return 2;
+		}
+	}
+
+	/* A's send buffer, when the scenario sets one. */
+	if (settings.send_buffer != 0) {
+		option_value = (int)settings.send_buffer;
+		error = socket_setsockopt_common(sender, SOL_SOCKET, SO_SNDBUF, &option_value, sizeof(option_value));
+		if (error != 0) {
+			printf("tcp-model: SO_SNDBUF refused (%d)\n", error);
+			return 2;
+		}
+	}
+
 	/* A's TCP_MAXUNACKTIME, when the scenario sets one. */
 	if (settings.maxunacktime != 0) {
 		option_value = (int)settings.maxunacktime;
@@ -461,8 +520,11 @@ main(
 	min_rate = -1.0;
 	slow_intervals = 0;
 	intervals = 0;
+	send_bytes_max = 0;
 	while (received < settings.bytes && transfer_error == 0 && now_ns - start_ns < settings.limit_ns) {
 		step();
+		if (tcp_of(sender)->send_bytes > send_bytes_max)
+			send_bytes_max = tcp_of(sender)->send_bytes;
 
 		/* The link that loses everything from its time on. */
 		if (settings.blackhole_at_ns != 0 && now_ns - start_ns >= settings.blackhole_at_ns) {
@@ -515,6 +577,39 @@ main(
 	mean = 0.0;
 	if (now_ns > start_ns)
 		mean = (double)received / 1048576.0 / ((double)(now_ns - start_ns) / 1e9);
+	/* The data segments A sent, against what the scenario expects of Nagle's algorithm. */
+	if (settings.expect_segments_max != 0 || settings.expect_segments_min != 0) {
+		printf("tcp-model: data segments %llu\n", (unsigned long long)tcp_of(sender)->counters.data_segments_out);
+		if (settings.expect_segments_max != 0 &&
+		    tcp_of(sender)->counters.data_segments_out > settings.expect_segments_max)
+			printf("check: FAIL: A sent %llu data segments, more than %llu\n",
+			    (unsigned long long)tcp_of(sender)->counters.data_segments_out,
+			    (unsigned long long)settings.expect_segments_max);
+		if (tcp_of(sender)->counters.data_segments_out < settings.expect_segments_min)
+			printf("check: FAIL: A sent %llu data segments, fewer than %llu\n",
+			    (unsigned long long)tcp_of(sender)->counters.data_segments_out,
+			    (unsigned long long)settings.expect_segments_min);
+	}
+
+	/* A's ring held no more payload than its send buffer. */
+	if (settings.send_buffer != 0) {
+		printf("tcp-model: send buffer %u, most queued %zu\n", settings.send_buffer, send_bytes_max);
+		if (send_bytes_max > settings.send_buffer)
+			printf("check: FAIL: A queued %zu bytes, more than its send buffer of %u\n", send_bytes_max,
+			    settings.send_buffer);
+	}
+
+	/* With the pool held by other senders, the frames that arrived still found a packet. */
+	if (held_count != 0 || settings.pool_held_free >= 0) {
+		printf("tcp-model: pool held=%u receive_no_packet=%llu\n", held_count,
+		    (unsigned long long)(links[0].receive_no_packet + links[1].receive_no_packet));
+		if (links[0].receive_no_packet + links[1].receive_no_packet != 0)
+			printf("check: FAIL: %llu frames found no packet while other senders held the pool\n",
+			    (unsigned long long)(links[0].receive_no_packet + links[1].receive_no_packet));
+	}
+	while (held_count != 0)
+		packet_buf_free(held[--held_count]);
+
 	/* B's segments that came ahead of a gap. */
 	out_of_order = 0;
 	if (receiver != NULL)
@@ -886,6 +981,7 @@ parse_settings(
 	settings.expect_timeouts = 0;
 	settings.close_at_ns = 0;
 	settings.maxunacktime = 0;
+	settings.pool_held_free = -1;
 	settings.expect_gap_low = 0;
 	settings.expect_gap_high = 0;
 	settings.quiet = 0;
@@ -894,6 +990,10 @@ parse_settings(
 	for (index = 1; index < argc; index++) {
 		if (strcmp(argv[index], "--quiet") == 0) {
 			settings.quiet = 1;
+			continue;
+		}
+		if (strcmp(argv[index], "--nodelay") == 0) {
+			settings.nodelay = 1;
 			continue;
 		}
 		if (strcmp(argv[index], "--connect-blackhole") == 0) {
@@ -1000,6 +1100,14 @@ parse_settings(
 			settings.expect_timeouts = 1;
 		} else if (strcmp(argv[index], "--close-at-ms") == 0) {
 			settings.close_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		} else if (strcmp(argv[index], "--expect-segments-max") == 0) {
+			settings.expect_segments_max = strtoull(argv[index + 1], NULL, 0);
+		} else if (strcmp(argv[index], "--expect-segments-min") == 0) {
+			settings.expect_segments_min = strtoull(argv[index + 1], NULL, 0);
+		} else if (strcmp(argv[index], "--send-buffer") == 0) {
+			settings.send_buffer = (unsigned)strtoull(argv[index + 1], NULL, 0);
+		} else if (strcmp(argv[index], "--pool-held") == 0) {
+			settings.pool_held_free = (long)strtod(argv[index + 1], NULL);
 		} else if (strcmp(argv[index], "--maxunacktime") == 0) {
 			settings.maxunacktime = (unsigned)strtoull(argv[index + 1], NULL, 0);
 		} else if (strcmp(argv[index], "--expect-probe-gap-s") == 0) {
@@ -1434,6 +1542,8 @@ run_writer(
 	uint64_t base;
 	uint32_t window;
 	uint32_t in_flight;
+	uint32_t segment;
+	int buffer_room;
 	ssize_t written;
 	int error;
 
@@ -1497,7 +1607,8 @@ run_writer(
 		/*
 		 * A refusal with room left is a shortage of packets: the kernel's
 		 * writer sleeps.  The room is the peer's window (one segment when
-		 * it is closed) and the congestion window, the smaller (ws221-p008).
+		 * it is closed) and the congestion window, the smaller, and the
+		 * send buffer for one segment more (ws221-p008).
 		 */
 		tcp = tcp_of(sender);
 		window = tcp->peer_window;
@@ -1506,7 +1617,10 @@ run_writer(
 		if (tcp->cwnd != 0 && tcp->cwnd < window)
 			window = tcp->cwnd;
 		in_flight = tcp->send_next - tcp->send_unacknowledged;
-		if (tcp->send_count < TCP_SEND_QUEUE_MAX && (in_flight == 0 || in_flight + (uint32_t)length <= window))
+		segment = tcp->send_mss != 0 && tcp->send_mss < length ? tcp->send_mss : (uint32_t)length;
+		buffer_room = tcp->send_bytes == 0 || tcp->send_bytes + segment <= sender->send_hiwat_bytes;
+		if (tcp->send_count < TCP_SEND_QUEUE_MAX && buffer_room &&
+		    (in_flight == 0 || in_flight + (uint32_t)length <= window))
 			send_sleep_until_ns = now_ns + MODEL_SEND_RETRY_NS;
 		return;
 	}

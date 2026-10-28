@@ -102,7 +102,7 @@ static bool packet_lock(void);
 static void packet_unlock(bool enabled);
 static void packet_pool_allocate(void);
 static void *packet_pool_block(size_t bytes, hal_physaddr_t *physical);
-static struct packet_buf *packet_take_standard_locked(void);
+static struct packet_buf *packet_take_standard_locked(unsigned flags);
 static struct packet_buf *packet_take_jumbo_locked(unsigned flags);
 static void packet_reset(struct packet_buf *packet, uint8_t *storage, size_t capacity, size_t headroom);
 
@@ -170,7 +170,7 @@ packet_buf_alloc(
 	/* Takes the top free slot. */
 	enabled = packet_lock();
 
-	packet = packet_take_standard_locked();
+	packet = packet_take_standard_locked(0);
 
 	packet_unlock(enabled);
 
@@ -189,7 +189,9 @@ packet_buf_alloc(
  *
  * A standard class with none free does not fall back to the jumbo class,
  * nor the other way.  The last PACKET_BUF_JUMBO_RESERVE jumbo packets go
- * only to a caller passing PACKET_BUF_ALLOC_RECEIVE.  On failure *error
+ * only to a caller passing PACKET_BUF_ALLOC_RECEIVE, and the last
+ * PACKET_BUF_HOLD_RESERVE standard ones never to one passing
+ * PACKET_BUF_ALLOC_HOLD.  On failure *error
  * says why: EMSGSIZE when no packet is that large, ENOBUFS when the class
  * has none free.
  */
@@ -233,7 +235,7 @@ packet_buf_alloc_for(
 	if (jumbo)
 		packet = packet_take_jumbo_locked(flags);
 	else
-		packet = packet_take_standard_locked();
+		packet = packet_take_standard_locked(flags);
 
 	packet_unlock(enabled);
 
@@ -642,12 +644,22 @@ packet_unlock(
  */
 static struct packet_buf *
 packet_take_standard_locked(
-	void)
+	unsigned flags)
 {
 	struct packet_slot *slot;
+	unsigned left;
 
-	/* A class with none free is counted, for net.tcpstats. */
-	if (packet_free_count == 0) {
+	/* The slots this caller may take: those beyond the reserve for one that holds its packet. */
+	left = packet_free_count;
+	if ((flags & PACKET_BUF_ALLOC_HOLD) != 0) {
+		if (left > PACKET_BUF_HOLD_RESERVE)
+			left -= PACKET_BUF_HOLD_RESERVE;
+		else
+			left = 0;
+	}
+
+	/* None left to this caller is counted, for net.tcpstats. */
+	if (left == 0) {
 		packet_alloc_failures++;
 		return NULL;
 	}

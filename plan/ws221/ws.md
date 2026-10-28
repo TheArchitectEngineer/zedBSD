@@ -4,7 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」）。旧: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13…
-Resume point: 2026-10-29 08:0x P3 q1664-i03: p004・p005 cleared。p009 の自分の window scale と byte の窓は 13a032348（VF2 で検証）。残り: p008（byte の送りの buffer、Nagle、IPv6 の path MTU の追従）、p009（受け側の SWS 回避、delayed ACK の timer、slow-reader の refusal）→ p006（ユーザーの機械と時期）→ p007（規約の全文の見直し）。その後 WS311（CUBIC）。VF2（10.0.30.2）は P3、/boot/boot0/vmunix は 13a032348 の tree（sha256 707f0733…）、vmunix.old は d17b806f1 の物、en0 1500。5330 は Q1 の許可で TCP の相手に使い 1500 に戻した（lock は返した）。p010 は WS235 の後
+Resume point: 2026-10-29 08:1x P3 q1664-i04: p008 案 B（pool の切り離し・Nagle・IPv6 の PTB）a774d28e3、p009 の受け側の SWS 回避 9592ac4be、VF2（相手 5330）で 1500 は 949、9000 は 990 の非退行。Q1 の判断待ち: slow-reader の refusal 0（送り側の窓 0 の作り直し）、delayed ACK の timer（足さない案）、timeout の後の go-back-N と slow start。次: p006 の記録 → p007 → WS311 p001。VF2（10.0.30.2）は P3、/boot/boot0/vmunix は 9592ac4be の tree（sha256 953f976bb52fd2ba…）、vmunix.old は a774d28e3 の tree、en0 1500。5330 は 1500 に戻した。p010 は WS235 の後
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -31,8 +31,8 @@ Related Milestones: なし
 | [p005](phase005/phase.md) | TCP: SYN の MSS を `tcp_path_mss`（`tcp_device_mss`: MTU − 40/−60、frame と packet の class の上限、IPv6 は path MTU、gateway 経由の IPv4 は 1460）に、jumbo の segment の送り（接続ごとに copy 8）、受けの window の jumbo の上限（8） | p002、p008・p009（Q1 の順で先に行った、phase.md の注） | cleared（2026-10-29 P3 q1664-i03: d17b806f1、tcp-model・qemu-tcp PASS、VF2 実機 MTU 9000 で受け 987・送り 991 Mbps、1500 は 949、5 platform の build warning 0。IPv6・gateway 経由は未実施） |
 | p006（案） | 実機の受け入れ: 5330（RTL8156）と Pi 4（UGREEN 2.5GbE）で、jumbo の switch の上の 9000 の相手と 1500 の相手の混在、大きい ping（長さの一致）、TCP の継続の転送（両向き） | p003・p004・p005 | planning（ユーザーの機械と時期） |
 | p007（案） | 規約の全文の見直し（WS の全ての C、試験を含む） | p002〜p005・p008・p009 | planning |
-| [p008](phase008/phase.md) | TCP の輻輳の制御（cwnd・ssthresh・IW 10）と byte の送りの buffer、相手の MSS と `tcp_device_mss`（slot の上限・IPv6 の path MTU・gateway 経由の IPv4）、Nagle（旧 WS220 p006） | WS220 p005（main） | in-progress（2026-10-29 P3 q1664-i03: 送り ≥ 940 は済み、gateway の 1460 と tcp_device_mss は p005。残り: byte の送りの buffer、Nagle、IPv6 の path MTU の追従） |
-| [p009](phase009/phase.md) | TCP の受けの窓: 窓の約束（byte で数える）、受け側の SWS 回避、window scale、delayed ACK（旧 WS220 p007） | p008 | in-progress（2026-10-29 P3 q1664-i03: 自分の window scale（shift 5）と byte で数える窓・受けの buffer 128 KB は 13a032348（VF2 で 1500 は窓 131072・949 Mbps、9000 は 991）。残り: 受け側の SWS 回避、delayed ACK の timer、slow-reader の refusal） |
+| [p008](phase008/phase.md) | TCP の輻輳の制御（cwnd・ssthresh・IW 10）と byte の送りの buffer、相手の MSS と `tcp_device_mss`（slot の上限・IPv6 の path MTU・gateway 経由の IPv4）、Nagle（旧 WS220 p006） | WS220 p005（main） | in-progress（2026-10-29 P3 q1664-i04: 案 B（Q1 の判断、byte の buffer は Future Work）を a774d28e3: 送りの copy は pool の予約 256 を取らない・SO_SNDBUF の byte の上限、Nagle（Minshall）、IPv6 の Packet Too Big への追従。tcp-model・VF2 の非退行 PASS。PTB の実地の試験は未実施） |
+| [p009](phase009/phase.md) | TCP の受けの窓: 窓の約束（byte で数える）、受け側の SWS 回避、window scale、delayed ACK（旧 WS220 p007） | p008 | in-progress（2026-10-29 P3 q1664-i04: 受け側の SWS 回避 9592ac4be（VF2 の非退行 PASS）。残り: slow-reader の refusal 0 と delayed ACK の timer は Q1 の判断待ち（phase.md の i04）） |
 
 p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descriptor の `wMaxSegmentSize` が 1514 で変えられないので、QEMU では MTU の口（拒否・保存・既定に戻す・再起動）と回帰だけを確かめ、jumbo の data の経路は実機だけ（phase.md §1.10・§8）。代替として host の Linux の USB gadget（dummy_hcd + f_ncm、module はこの host にある）を QEMU の `usb-host` で渡す案を §8.4 に書いた（可否は未確認、Q12）。
 判断の要る点（推奨つき）は phase.md §9 の Q1〜Q13: MTU の変更は up のままでも可（第 1 版から変更、理由は review S5・M10）、jumbo 32 のうち予約 8、最小 MTU は常に 1280、IPv4 は gateway 経由の MSS を 1460 に抑え ICMP の読みは Future Work、`no mtu` は既定に戻す、descriptor の読みの手段と 1514 の時の扱い、5320 を対象外に、gadget の試し、枯渇の方針。

@@ -73,6 +73,16 @@ scenario lan-jumbo 100 --bytes 67108864 --mtu 9000 --write-bytes 65536 --expect-
 scenario lan-jumbo-loss 50 --bytes 33554432 --mtu 9000 --write-bytes 65536 --loss-ab 0.1 --peer-window 65535 \
     --expect-mss 8960 --expect-retransmits-losses --expect-timeouts-max 0
 scenario lan-1500-writes 100 --bytes 67108864 --write-bytes 65536 --expect-mss 1460
+# ws221-p008: other senders to slow peers hold every copy the pool lets them (all but PACKET_BUF_HOLD_RESERVE), A is
+# left 64: B's frames still find a packet (receive_no_packet 0) and the stream arrives whole, at what 64 copies carry.
+scenario pool-held 5 --bytes 16777216 --pool-held 64
+# ws221-p008: Nagle's algorithm: 1024-byte writes over 10 ms of round trip go in full 1460-byte segments (16 MiB is 11492
+# of them, 16384 writes), and with TCP_NODELAY nearly each write is its own segment (only one queued behind a segment the
+# device refused takes the next write's bytes).
+scenario nagle-1024 4 --bytes 16777216 --delay-us 5000 --expect-segments-max 11600
+scenario nodelay-1024 4 --bytes 16777216 --delay-us 5000 --nodelay --expect-segments-min 16000
+# ws221-p008: SO_SNDBUF bounds the payload A's ring holds (16 KB: no more is queued, and the window it keeps busy).
+scenario send-buffer-16k 20 --bytes 16777216 --send-buffer 16384
 # 10 ms of round trip: the rate is the window over the round trip (64 KB: 6.4 MB/s).
 scenario rtt-10ms 4 --bytes 16777216 --delay-us 5000
 # (The resends of these and of slow-reader stay at most the counts of ws220-p005, --expect-retransmits-max: p004 review-1 G2
@@ -108,7 +118,9 @@ scenario queue-5 30 --bytes 67108864 --queue 5
 scenario queue-2 30 --bytes 67108864 --queue 2
 scenario queue-1 30 --bytes 33554432 --queue 1
 # ws220-p003: two writers on one socket while the device refuses: no byte twice, none out of order (before p003: corrupt).
-scenario two-writers 30 --bytes 33554432 --queue 3 --second-writer --expect-in-order
+# (ws221-p008: writes of one full segment each, so that each write is whole in one segment: since Nagle's algorithm a
+# short write is joined by the next, and the model's second writer would then land inside the first's bytes.)
+scenario two-writers 30 --bytes 33554432 --queue 3 --second-writer --expect-in-order --write-bytes 1460
 # ws220-p003: losses with a one-frame device queue: the timer's resends and the acknowledgements are refused too.
 scenario queue-1-loss-1 2 --bytes 16777216 --queue 1 --loss-ab 1 --limit-s 300
 # ws220-p003: A's neighbour is unresolved for 500 ms (IPv4 refuses with EAGAIN and asks ARP each time): TCP takes the
