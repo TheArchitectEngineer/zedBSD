@@ -1240,8 +1240,6 @@ endif
 $(eval $(call ZEDBSD_ROOTFS_UFS_IMAGE_RULE,$(AMD64_ARCH_UFS_IMAGE),amd64))
 rootfs: $(BUILD)/rootfs/.stamp
 
-# The installer's units and image (make installer-image).
-include platform/amd64/installer-image.mk
 
 # ws035-p096: the boot logo on the boot FAT (/logo.ppm: the ZEDBSD FAT32 partition of the native layout (WS238), the payload FAT of the BIOS image), drawn by the
 # UEFI and the BIOS loaders when zedbsd.cfg names it (logo=logo.ppm).  ws035-p107: it is the boot splash
@@ -1860,3 +1858,6 @@ $(BUILD)/bootloader/common-memory-map.i386.o: bootloader/common/memory-map.c boo
 
 # The copied boot-source record is part of the UEFI producer ABI.
 $(BUILD)/uefi/bootx64.o $(BUILD)/uefi/volume-discovery.o: include/kern/boot.h
+
+# The installer's units and image (make installer-image), after the native image's variables it uses.
+include platform/amd64/installer-image.mk

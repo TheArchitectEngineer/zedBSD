@@ -5,7 +5,9 @@ The image is a GPT disk with four partitions: the EFI system partition
 holding only the UEFI loader; the boot partition, a FAT32 volume of the
 Basic Data type labelled ZEDBSD, holding the kernel, zedbsd.cfg and the
 logo; the UFS root partition labelled zedBSD-root; and the swap partition
-labelled zedBSD-swap.  The check reads the partition table and compares
+labelled zedBSD-swap.  The installer's image's configuration names the
+root and swap partitions by their GUIDs (--root-partuuid, --swap-partuuid),
+which the check finds in the table and in zedbsd.cfg.  The check reads the partition table and compares
 every partition's contents with the inputs the image was built from.  It
 reads the image in pieces, so a root of any size is checked in bounded
 memory.
@@ -124,6 +126,18 @@ def fat_volume(image, offset: int) -> tuple[int, str]:
     return 1, boot[71:82].decode("ascii", "replace").rstrip()
 
 
+def guid_text(stored: bytes) -> str:
+    """A GUID in the order GPT stores it, as text."""
+    text = stored[3::-1].hex() + stored[5:3:-1].hex() + stored[7:5:-1].hex() + stored[8:].hex()
+    return f"{text[:8]}-{text[8:12]}-{text[12:16]}-{text[16:20]}-{text[20:]}"
+
+
+def config_names(path: Path, key: str, value: str) -> bool:
+    """Whether zedbsd.cfg has the line key=PARTUUID=value."""
+    lines = path.read_text(encoding="ascii").splitlines()
+    return f"{key}=PARTUUID={value}".lower() in (line.strip().lower() for line in lines)
+
+
 def main() -> None:
     """Checks the image named on the command line."""
     parser = argparse.ArgumentParser()
@@ -133,8 +147,16 @@ def main() -> None:
     parser.add_argument("--logo", type=Path)
     parser.add_argument("--ufs-root", type=Path, required=True)
     parser.add_argument("--swap", type=Path, required=True)
+    parser.add_argument("--root-partuuid")
+    parser.add_argument("--swap-partuuid")
     parser.add_argument("image", type=Path)
     arguments = parser.parse_args()
+
+    # The configuration names the root and swap partitions by the GUIDs given.
+    if arguments.root_partuuid and not config_names(arguments.zedbsd_config, "rootpart", arguments.root_partuuid):
+        fail(f"zedbsd.cfg does not name the root as PARTUUID={arguments.root_partuuid}")
+    if arguments.swap_partuuid and not config_names(arguments.zedbsd_config, "swap0", arguments.swap_partuuid):
+        fail(f"zedbsd.cfg does not name swap as PARTUUID={arguments.swap_partuuid}")
 
     size = arguments.image.stat().st_size
     if size % SECTOR != 0:
@@ -171,6 +193,10 @@ def main() -> None:
             if extents and start <= extents[-1][1]:
                 fail(f"partition {index + 1} overlaps the one before it")
             extents.append((start, end))
+            unique = guid_text(entry[16:32])
+            wanted = (None, None, arguments.root_partuuid, arguments.swap_partuuid)[index]
+            if wanted is not None and unique != wanted.lower():
+                fail(f"partition {index + 1} is {unique}, not {wanted}")
 
         # The root and swap partitions hold their inputs exactly.
         root_start, root_end = extents[2]
