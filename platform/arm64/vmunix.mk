@@ -220,7 +220,7 @@ endif
 
 # USB behind the Pi 4's PCIe (ws048): the core comes with any USB driver.
 ARM64_USB_SOURCES :=
-ifneq ($(filter y,$(CONFIG_DRIVER_PCI_XHCI) $(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_USB_HUB) $(CONFIG_DRIVER_USB_STORAGE) $(CONFIG_DRIVER_USB_CDC_NCM) $(CONFIG_DRIVER_USB_CDC_ECM) $(CONFIG_DRIVER_USB_CCID) $(CONFIG_DRIVER_USB_BT) $(CONFIG_DRIVER_USB_RTL8822BU)),)
+ifneq ($(filter y,$(CONFIG_DRIVER_PCI_XHCI) $(CONFIG_DRIVER_USB_HID) $(CONFIG_DRIVER_USB_HUB) $(CONFIG_DRIVER_USB_STORAGE) $(CONFIG_DRIVER_USB_CDC_NCM) $(CONFIG_DRIVER_USB_CDC_ECM) $(CONFIG_DRIVER_USB_CCID) $(CONFIG_DRIVER_USB_BT) $(CONFIG_DRIVER_USB_UVC) $(CONFIG_DRIVER_USB_RTL8822BU)),)
 ARM64_USB_SOURCES += src/drivers/usb/usb.c
 endif
 ifeq ($(CONFIG_DRIVER_PCI_XHCI),y)
@@ -252,6 +252,10 @@ ARM64_USB_SOURCES += src/drivers/usb/usb-ccid.c src/drivers/usb/usb-ccid-proto.c
 endif
 ifeq ($(CONFIG_DRIVER_USB_BT),y)
 ARM64_USB_SOURCES += src/drivers/usb/usb-bt.c
+endif
+# The USB Video Class cameras, on the camera framework.
+ifeq ($(CONFIG_DRIVER_USB_UVC),y)
+ARM64_USB_SOURCES += src/drivers/usb/usb-uvc.c src/drivers/usb/usb-uvc-desc.c src/drivers/usb/usb-uvc-stream.c src/drivers/usb/usb-uvc-payload.c
 endif
 # The Bluetooth HCI class, for a USB controller or the Pi 4's or the Pi 5's onboard one.
 ifneq ($(filter y,$(CONFIG_DRIVER_USB_BT) $(CONFIG_DRIVER_BCM2711_BT) $(if $(filter rpi5,$(ZEDBSD_BOARD)),$(CONFIG_DRIVER_RPI5_BT))),)

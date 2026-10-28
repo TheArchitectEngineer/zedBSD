@@ -128,6 +128,11 @@ endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-hub.o
 endif
+# The USB Video Class cameras and the camera framework.
+ifeq ($(CONFIG_DRIVER_USB_UVC),y)
+PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-uvc.o $(BUILD)/drivers/usb/usb-uvc-desc.o \
+	$(BUILD)/drivers/usb/usb-uvc-stream.o $(BUILD)/drivers/usb/usb-uvc-payload.o $(BUILD)/drivers/camera/cam.o
+endif
 ifeq ($(CONFIG_DRIVER_USB_RTL8822BU),y)
 PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/wifi/rtl8822b/rtl8822b.o \
 	$(BUILD)/drivers/wifi/rtl8822b/rtl8822b-security.o \

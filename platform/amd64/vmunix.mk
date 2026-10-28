@@ -430,6 +430,10 @@ endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hub.c
 endif
+# The USB Video Class cameras, on the camera framework.
+ifeq ($(CONFIG_DRIVER_USB_UVC),y)
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-uvc.c src/drivers/usb/usb-uvc-desc.c src/drivers/usb/usb-uvc-stream.c src/drivers/usb/usb-uvc-payload.c
+endif
 ifeq ($(CONFIG_DRIVER_USB_RTL8822BU),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/wifi/rtl8822b/rtl8822b.c \
 	src/drivers/wifi/rtl8822b/rtl8822b-security.c \
