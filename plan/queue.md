@@ -156,4 +156,5 @@
 | q1665 / q1665-i05 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307i`・branch `agent/p4-ws307i`、基点 main 42da8d889） | [ws307](ws307/ws.md) p008 の 4096 の起動の直しから | i01 と同じ承認 | 返却（p008-4k の FAT の identify の直し、p005・p006 cleared、p009 段 2 の一部、90cfb10ce → main cd04f2a59） |
 | q1664 / q1664-i03 | P3（worktree `/home/awe/zedBSD-worktrees/p3-ws221c`・branch `agent/p3-ws221c`、基点 92ec21301 = f2827fdb3＋main） | [ws221](ws221/ws.md) p004 の残りから | i01 と同じ承認、VF2 はユーザーが開放（「VF2はしばらく使わなくなりました。開放します。」） | in-progress |
 | q1669 / q1669-i02 | P1（worktree `/home/awe/zedBSD-worktrees/p1-ws235b`、基点 main a69e7147e） | ws235 p001 の判断の記録 → link の実機の試験 → p004 | i01 と同じ承認、p001 の回答 ①②③⑤ | in-progress |
-| q1665 / q1665-i06 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307j`、基点 main a69e7147e） | ws307 p009 段 2 の残りから | i01 と同じ承認 | in-progress |
+| q1665 / q1665-i06 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307j`、基点 main a69e7147e） | ws307 p009 段 2 の残りから | i01 と同じ承認 | 返却（p009 段 2〜4、dc4dd958e → main 23d2741ea） |
+| q1665 / q1665-i07 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307k`、基点 main 7d2f68e67） | ws307 p009 段 5 から | i01 と同じ承認 | in-progress |

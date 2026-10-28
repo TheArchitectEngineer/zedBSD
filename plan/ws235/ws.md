@@ -69,3 +69,4 @@ Parent: [Master](../master.md)
 3. ユーザー（原文）: 「それでよい (推し)」→ Q1 の解釈: WS235 の受け入れは driver が律速でない事の profile と両向きの tcp-perf。7 Gbit/s までの残りは WS221 p010。
 4. Q1 の判断（ユーザーの回答ではない）: RTL8122・8121・8120 を目標に残す（p007 で版の表と差の hook まで、実機は未確かめ）。
 5. ユーザー（原文）: 「backports の kernel (推し)」→ Q1 の解釈: Linux の基準は 10.0.10.3 の Debian に backports の新しい kernel と firmware-realtek を入れ、起動の既定は今の kernel のまま、計測の時だけ backports で起動。導入は sudo で、時間の枠の中で。
+- ユーザーの回答（クリック、2026-10-29）: RTL8127 の cable は「2.5G の switch」。→ 前の「centris の 10GbE に直結」は誤り（訂正）。今の link は LAN の 2.5G の switch と 2500 Mbps。10GbE の測り（WS235 の受け入れ・WS221 p010）には 10G の経路（centris の enp94s0f1 との直結など）が要る、つなぎ直しはユーザーの判断。
