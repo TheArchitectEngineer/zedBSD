@@ -47,8 +47,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 | [p006](phase006/phase.md) | RDNA: NGG B+C（primitive の culling と頂点の詰め直し・属性の後回しを Mesa の形で一緒に。2026-10-27 14:50 Q1: compaction 無しの culling は GFX10 で止まる（仮説 A）ので p007 と統合） | p005 | in-progress（q1668: big-1000 35.5 → 57〜59 fps（Linux 87）、subs-1000 1 submit 48 → 39 µs（Linux 10）、scene-1500 209・scene-6500 49.6（Linux 200.4・50.1）） |
 | p007 | RDNA: NGG C（vertex の詰め直しと属性の後回し、wave をまたぐ subgroup）、目標 GPU 約 20 ms | p006 | p006 に統合（2026-10-27 14:50 Q1。目標 GPU 約 20 ms は p006 の受け入れへ） |
 | p008〜p009 | RDNA: HTILE、guard band、CPU 側の record（2.3 ms）の短縮 | p007 | — |
-| p010 | NVIDIA: GPU の入れ替え（ユーザー）、desktop の計測と 60 fps | RDNA の Phase の全部、P2 | planned |
-| p011 | NVIDIA: Linux で約 50 fps の scene での差の計測と 50 fps（p012〜p019 は改善の予備） | p010 | planned |
+| [p010](phase010/phase.md) | NVIDIA（RTX 2070）: nvrtx の起動、desktop の計測と 60 fps、Linux の NVK の基準 | 機械の入れ替え（2026-10-29 ユーザー）、P2 | in-progress（q1670: 起動・表示 ok、client の memory が BAR1 の window の満杯で失敗、NVK の scene-5000 50.1 fps） |
+| p011 | NVIDIA: Linux（NVK）で約 50 fps の scene（qs40 ×5000）での差の計測と 50 fps（p012〜p019 は改善の予備） | p010 | planned |
 | p020 | PowerVR（VF2）: model の 50 fps（RDNA で確立した手順、P3） | RDNA の手順の確立（p002 と最初の改善） | planned |
 | 最後 | 規約の全文の見直し | 実装の全部 | — |
 
@@ -65,7 +65,7 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 ## 未決（その Phase の前に確かめる）
 
-- NVIDIA の Linux の基準の driver（NVIDIA の proprietary か nouveau/NVK か）と、入れる GPU の型番。GPU の入れ替えはユーザー。
+- （決まった 2026-10-29）NVIDIA の Linux の基準の driver: ユーザーの回答（クリック）「NVK（nouveau） (推し)」。GPU は RTX 2070（TU106）。
 - PowerVR の 50 fps の基準: Linux との比較か、50 fps の絶対値か（VF2 の Linux の PowerVR の driver の有無で決まる）。
 
 ## 2026-10-28 の再開（q1635、P2）
@@ -193,3 +193,12 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 - 機械の変更（原文）「再起動後、RTL8127と、RTX 2070が接続されています。RX 5600 XTはPCIスロットの高さの関係で、RTL8127と排他だからです。」
 - Q1 の問い「RX 5600 XT を外している間、P2 は何をしますか？」への回答（クリック）「WS291 の NVIDIA の段 (推し)」→ RTX 2070 で desktop 60 fps と model 50 fps（計画の順どおり）。RDNA の案 A・B の実装は実機の要らない所（host・QEMU）まで並べて進め、測るのは RX 5600 XT を挿し直した時。RDNA 機は時間の枠（plan/tools.md、ネットワーク優先）で P1（WS235 の RTL8127）と分ける。
+
+## 2026-10-29 q1670（P2、worktree p2-ws291m、NVIDIA の段）
+
+- 承認: 上の節のユーザーの回答「WS291 の NVIDIA の段 (推し)」。Linux の基準: ユーザーの回答（クリック、Q1 経由）「NVK（nouveau） (推し)」→ 設定の file は変えず、
+  計測の時だけ sysfs で vfio-pci から外して nouveau（GSP）を読み込み、終わったら vfio-pci に戻す。
+- Q1 の判断: nvrtx の BAR1 の window の満杯（device-local も常に map）は NVIDIA の段の目標を塞ぐので WS291 の中で直す（形は host-visible で要る物だけ map、
+  前後の使用量を記録、WS250 の design.md の前提と食い違わない形）。
+- 再開点（2026-10-29 06:40 P2）: [phase010](phase010/phase.md) の「再開点」。RTX 2070 で nvrtx は起動・表示（GSP-RM・takeover・gpu device・compositor）、
+  client の Vulkan の memory が ENOSPC で全部失敗。NVK の基準: scene-5000 50.1 fps（weston は render-only、direct scanout でない）。
