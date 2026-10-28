@@ -76,6 +76,25 @@
   1 回目の後の 08:24 の SwitchBot の cycle はプラグが未接続で届いていなかった（ユーザー）。Debian（08:34）: enx6c1ff71a08b6（RTL8156 0bda:8156）10.0.10.3、
   RTX は vfio-pci、BootOrder 0002,0000。zedBSD が起動しないのか link が出ないのかは未切り分け（画面が要る、Q1 に返した）。VA の拡張（01478d325）の実機は未実施。
 
+### 実装の 2 段目（a21aaa3f9）・host の確かめ（032fb7cfe）
+
+- mip の sampling: 2 level 以上の colour image は tiled（各 level が 1 GOB の block の block linear、前の level の直後、境界 512 byte）。
+  texture header は block linear（version 3、2D、MAX_MIP_LEVEL・RES_VIEW_MIN/MAX_MIP_LEVEL、address は 512 byte 単位）、sampler は
+  mipmapMode（POINT・LINEAR）と minLod・maxLod の clamp（4.8 の固定小数点）。colour target も block linear にできる（幅は行の pixel、
+  MEMORY 0、ARRAY_PITCH は level の大きさ）。quad の source の tiled の level は level 0 だけの面として読む（画素の座標のため）。
+  CPU の copy の経路は tiled の image に GOB の中の 16 byte の並び（Turing の 2D の GOB）で 1 画素ずつ。
+  1 level の image（swapchain・desktop の物）は前と同じ pitch linear。
+- host: nvrtx-vk-host-test.sh PASS 86 checks（push の check を足した: depth target・indexed draw・index buffer・cull・depth test・
+  depth の clear・uniform buffer・block linear の colour target・tiled の header）。mview の 6 つの shader は SM75 の compiler で全部
+  compile でき IR と一致（nvrtx-sm75-desktop-test の build で `--sm 75 userland/tests/mview/shaders/*.spv`、6 compiled 0 refused）。
+  rpi4（arm64）・riscv64-virt の vmunix も rc 0・warning 0（nvrtx は amd64 だけ、libvulkan は触っていない）。
+- 実機の script: plan/ws291/tests/rtx-mview-check.sh（f7ff592c9、copies 1・5000、shading=pixel、shot 1・5000、kernel の vk の行）。
+
+### 実機の「zedBSD が出ない」の原因（08:52）
+
+- 新しい worktree の plan/tmp/guest/id_ed25519 が mode 0664 で、ssh が鍵を拒み、measure.sh の uname の確かめが失敗していた
+  （「zedbsd did not come up」）。chmod 600 で直った（git は mode を追わない）。08:51 に zedBSD は 10.0.30.5 にいた（DP の cable で起動）。
+
 ### 再開点（2026-10-29 08:45 P2）
 
 - 実機: 08:35 の BootNext の後、zedBSD も Debian も応答しない（Q1 の指示待ち）。NVMe の zedBSD の kernel は移設前の物のまま（deploy の前で止まった）。
