@@ -2,53 +2,61 @@
 
 # WS278 Raspberry Pi 5 対応
 
-- ID: ws278、Master: [plan/master.md](../master.md)、Primary Milestone: MG008（異種機での実証）。Related: MG003。
-- Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: Pi 5 の image で起動し desktop・USB の mouse が動く（WS279 の 2026-10-22 のユーザーの確かめ）。D1〜D3 は 2026-10-21 ユーザーが回答済み（「D1: serialは不要です。 D2: 分けましょう。 D3: Pi5 2GBです。…」、Master の「D1〜D3 待ち」は古い）。BT は 2026-10-22 ユーザー「BTはPi4でも動作していないため、いったんドライバを無効にしてください。」で無効）。旧: incomplete（2026-10-21 開始。p001〜p008 を実装と host の確認まで、実機の一括の試験の待ち）。残り・制限: p001〜p009 の Phase の印（実機の行の確かめは未実施）、BT（無効）、BUG-345
-- 出典: 2026-10-21 ユーザー「もう1つサブエージェントを追加して、Raspberry Pi 5対応を行ってほしいです。config/ci/config-rpi5.mkを作成して、イメージを生成できるようにしてほしいです。必要ならGPUドライバの対応、WiFiドライバの対応を行ってほしいです。」「Pi5の対応は、Fableによるレビューは不要です。Opus 5.5で対応しましょう。」
+<!-- awesome-plan-current:start -->
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: Pi 5 の image で起動し desktop・USB の mouse が動く（WS279 の 2026-10-22 のユーザーの確かめ）。D1〜D3 は 2026-10-21 ユーザーが回答済み。BT は 2026-10-22 ユーザー「BTはPi4でも動作していないため、いったんドライバを無効にしてください。」で無効）
+Completed: 2026-10-27（q1608）
+Primary Milestone: MG008
+Related Milestones: MG003
+Objectives: —
+Parent: [Master](../master.md)
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
+<!-- awesome-plan-current:end -->
 
-## 目的と完了の条件
+## 目標
 
-- `config/ci/config-rpi5.mk` で Raspberry Pi 5（BCM2712、Cortex-A76、RP1 の southbridge、VideoCore VII）の起動 image を作れる。
-- 実機で起動して login できる（実機の試験はユーザーの手元の機材で。QEMU に raspi5 の machine は無い）。
-- 必要に応じて GPU（V3D 7.1）・WiFi（CYW43455 系）・RP1 の Ethernet・USB の driver。
-- 新しいコードは plan/coding-style.md の全文。HAL の API（include/hal/hal.h）の変更は差分ごとのユーザーの事前承認。
-- 設計の review に Fable の design-reviewer は使わない（ユーザーの指示）。担当は Opus 5.5。
+`config/ci/config-rpi5.mk` で Raspberry Pi 5（BCM2712、Cortex-A76、RP1 の southbridge、VideoCore VII）の起動 image を作り、実機で起動して login できる。必要に応じて WiFi・RP1 の Ethernet・USB の driver（GPU は [WS279](../ws279/ws.md)）。既存の rpi4 の platform・driver を土台に差を足す。設計は [design.md](design.md)。
 
-## 制約・参照
+## ユーザーの決定
 
-- 既存の rpi4（config/ci/config-rpi4.mk、BCM2711）の platform・driver を土台に、差を足す。
-- Guardrail: plan/guardrail.md（driver の配置、drv_ の symbol、HAL）。
+- 2026-10-21「もう1つサブエージェントを追加して、Raspberry Pi 5対応を行ってほしいです。config/ci/config-rpi5.mkを作成して、イメージを生成できるようにしてほしいです。必要ならGPUドライバの対応、WiFiドライバの対応を行ってほしいです。」「Pi5の対応は、Fableによるレビューは不要です。Opus 5.5で対応しましょう。」
+- 2026-10-21「D1: serialは不要です。 D2: 分けましょう。 D3: Pi5 2GBです。…」→ D1 serial console は不要（既定 n）、D2 GPU は別 WS（WS279）、D3 手元は Pi 5 2GB（HDMI モニター・USB keyboard・Debug Probe 付き USB serial あり）。
+- 2026-10-21「テストは後回しにして実装してしまって、ビッグバンでテストしましょう。」（p003〜p008 は実機の試験なしで実装し、最後にまとめて実機）
+- 2026-10-21 HAL の bsp を分ける指示（p008 の第 1 部: `src/hal/arm64/bsp-rpi-common/`・`bsp-rpi4/`・`bsp-rpi5/`、arch 共通の file に `HAL_BOARD_` の分岐は無い）。
+- 2026-10-22「Pi5のUATです。カーネルは起動しますが、USB, LAN, SDIOなどいろいろ使えないようです。」「まだだめですね」（1・2 回目の UAT）。
+- 2026-10-22「BTはPi4でも動作していないため、いったんドライバを無効にしてください。」
+- 2026-10-22（5 回目の UAT、1 分ごとの SSH の確認 40 回全部成功）「安定しているようなので、40回で切り上げて合格にしましょう。」
+- 2026-10-22「Pi5のファンが回ってないんですが」→ p009。2026-10-23「ファンが回転していますね。」
 
-## Phase
+## 結果
 
-| Phase | 内容 | 依存 | 状態 |
-| --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 調べと設計（[design.md](design.md)）: BCM2712 と BCM2711 の差、Phase の分け方、試験の方法 | — | in-progress（2026-10-21 P3 q1542、設計を書いた、Q1 の判定待ち） |
-| [p002](phase002/phase.md) | config/ci/config-rpi5.mk と platform の起動（console・timer・interrupt・memory）、SD の root、image の生成 | p001 | in-progress（2026-10-21 image まで済み、実機の確認待ち） |
-| [p003](phase003/phase.md) | SMP（PSCI の CPU_ON、A76 の Aff1） | p002 | in-progress（2026-10-21 実装と host の確認済み、実機は一括の試験） |
-| [p004](phase004/phase.md) | RP1 の USB（`pciex4_reset=0` で PCIe を引き継ぎ、DWC3 の xHCI、poll から） | p002 | in-progress（2026-10-21 実装と host の確認済み、実機は一括の試験） |
-| [p004b](phase004b/phase.md) | RP1 の割り込み（MSI-X → MIP → GIC） | p004 | in-progress（2026-10-21 実装と host の確認済み、実機は一括の試験） |
-| [p005](phase005/phase.md) | RP1 の Ethernet（Cadence GEM） | p004 | in-progress（2026-10-21 実装と build、実機は一括の試験） |
-| [p006](phase006/phase.md) | WiFi（sdio2 の SDIO host、bcm43455 の流用） | p002 | in-progress（2026-10-21 実装と build、実機は一括の試験） |
-| [p007](phase007/phase.md) | BT（uarta） | p006 | in-progress（2026-10-21 実装と build、実機は一括の試験） |
-| [p008](phase008/phase.md) | 規約の全文の見直し（第 1 部: HAL の bsp の分離、第 2 部: p003〜p007 の C） | p002〜 | in-progress（第 1・2 部 2026-10-21 済み、rpi4 の QEMU 起動の回帰は T1 待ち） |
-| [p009](phase009/phase.md) | ファンと温度（RP1 の PWM1 のファン端子、AVS の温度を hw.thermal に） | p004 | in-progress（2026-10-22 実装と板の確認済み、Q1 の判定待ち） |
-| （別 WS の提案） | GPU: V3D 7.1 と HVS6（design.md §4 D2） | p002 | — |
+- p001 設計（design.md 版 1）。p002 `config/ci/config-rpi5.mk` と platform の起動（console・timer・interrupt・memory）、SD の root、image の生成（c7909625c、locore の再配置の stub dba0bf700）。p003 SMP（PSCI の CPU_ON、A76 の Aff1）。p004・p004b RP1 の USB（PCIe の引き継ぎ、DWC3 の xHCI）と割り込み（MSI-X → MIP → GIC）。p005 RP1 の Ethernet（Cadence GEM）。p006 WiFi（sdio2 の SDIO host、bcm43455 の流用）。p007 BT（uarta、config で無効）。p008 規約の全文の見直し（第 1 部 HAL の bsp の分離、第 2 部 p003〜p007 の C）。p009 ファンと温度（RP1 の PWM1、AVS の温度を hw.thermal に）。
+- UAT の直し（2026-10-22、実機）: arm64 の HAL の SError の扱い、init の異常終了、firmware が渡す root port の bus 番号 0 と outbound の窓（device tree の ranges から毎回設定し、RP1 の BAR を並べ直す）、chip の stepping を boot flash の pin の mux の register から決める（C1 の device tree で D0 の chip）、Wi-Fi の cfg と supplicant の確かめを `sup_wpa` の iovar に、LAN の deadlock の直し（9d78dc950）、device tree の local-mac-address（bd4744521、main 4cc0e5001）。
+- 実機（Pi 5 D0）: 5 回目の UAT で LAN・USB keyboard・RP1・Wi-Fi の SDIO の bus が動作、1 分ごとの SSH 40 回全部成功で合格（ユーザー）。Wi-Fi は wlan0（98:fe:54:22:65:c4）で elecom-84a0c3-5G に自動接続・DHCP 192.168.2.156・ping 20/20。ファンは 58 °C で level 1（2352 rpm）、60.6 °C で level 2（3877 rpm）、54.5 °C で level 1 に戻り、ユーザーが目視で確認。
+- T1: QEMU raspi4b の Pi 4 の起動 PASS（Pi 4 の回帰、2026-10-22）。arm64 virt は config が無く未実施。
 
-## 現在の状態・再開点
+## 制限・移管
 
-- 2026-10-21: P3（phase-runner、Opus 5.5）が q1542 で p001 から始めた。p001 は design.md（版 1）。p002 は image の生成まで（c7909625c は main 7547e49c4 に merge 済み、locore の再配置の stub は dba0bf700）。
-- 再開点: 実機の試験（[tests/rpi5-hw-test.md](tests/rpi5-hw-test.md)）の結果を見て p002 を判定。ユーザーの判断 D1〜D3（design.md §4）。
+- BT は無効（ユーザー）。
+- Wi-Fi の rx の glom の取りこぼしの log 1 回、切断・再接続、Pi 4 での Wi-Fi の直しの確かめは未実施。
+- [BUG-345](../bugs/BUG-345.md)（Pi 5 の desktop でマウスのクリックが時々効かない）。
+- 各 Phase の実機の行ごとの確かめは未実施（UAT の通しで見た）。Pi 4・Pi 5 の SDIO host の SDHCI の core への乗せ替えは Future Work fw-sdio-host-split。
 
-- 2026-10-21: ユーザーの指示で HAL の bsp を分けた（p008 の第 1 部）。`src/hal/arm64/bsp-rpi-common/`（共通）・`bsp-rpi4/`・`bsp-rpi5/`（board ごと、写して書き直し）。arch 共通の file に `HAL_BOARD_` の分岐は無い。
-- 2026-10-21 ユーザーの判断: D1 serial console は不要（既定 n）、D2 GPU は別 WS（[WS279](../ws279/ws.md)）、D3 手元は Pi 5 2GB（2026-10-21 購入、D0 の見込み）、HDMI モニター・USB keyboard・Debug Probe 付き USB serial あり。p003〜p008 は実機の試験なしで続けて実装し、最後にまとめて実機（ユーザー「テストは後回しにして実装してしまって、ビッグバンでテストしましょう。」）。P3 q1543。
-- 2026-10-21 P3 q1543-i02: p004（RP1 の USB）・p004b（RP1 の割り込み）・p005（RP1 の Ethernet）・p006（WiFi）・p007（Bluetooth）を実装し、p008 第 2 部（全文の見直し）を済ませた。image（`make ZEDBSD_CONFIG=config/ci/config-rpi5.mk`）は build できる。再開点: 実機の一括の試験（[tests/rpi5-hw-test.md](tests/rpi5-hw-test.md) の「一回の試験の手順」）の結果で各 Phase を判定する。
-- 2026-10-22 P3: 1 回目の実機（ユーザー「Pi5のUATです。カーネルは起動しますが、USB, LAN, SDIOなどいろいろ使えないようです。」）を受けて、init の異常終了（kernel の device の access が起こした SError を init が EL0 への戻りで受けた、p002）、Wi-Fi の CMD5 の無答（BCM2712 の SD controller の cfg の block の card detect と pin の選択、p006）、BT の driver を無効に（ユーザーの指示、p007）、USB・LAN の段ごとの log（p004）、bootlog の file を Pi 5 でも（p002）。image `build/review/rpi5/zedbsd-rpi5-493271454.img`。再開点: 2 回目の実機の試験（[tests/rpi5-hw-test.md](tests/rpi5-hw-test.md) の「2 回目の試験」）。
-- 2026-10-22 P3 の Pi 5 の 1 回目の UAT への直し（arm64 の HAL の SError の扱い、rpi5-wifi の cfg、BT を config で n、rp1・USB の診断の行、bootlog を Pi 5 にも）を main 2336be786 に merge。T1: QEMU raspi4b の Pi 4 の起動 PASS（login.png）、arm64 virt は config が無く未実施。Pi 5 の 2 回目の UAT の image: build/review/rpi5/zedbsd-rpi5-493271454.img（sha256 80a100593add…）、手順は plan/ws278/tests/rpi5-hw-test.md。
-- 2026-10-22 P3: 2 回目の UAT（ユーザー「まだだめですね」）への直し。USB・LAN: firmware は link を残すが root port の bus 番号を 0 で渡す → kernel が bus 1 を付け、outbound の窓・BAR が空なら埋める（p004）。Wi-Fi: CMD5 が EIO、CMD の level が low。Linux と照らして clock・電圧・WL_ON の待ち・pin の function と pull・SD_PIN_SEL は合っていた。原因を絞る log を足した（p006）。SError: Pi 5 の段ごとに ISR_EL1.A を見て段の名を出す（p002）。再開点: 3 回目の実機の試験（[tests/rpi5-hw-test.md](tests/rpi5-hw-test.md) の「3 回目の試験」）。
-- 2026-10-22 P3: 3 回目の UAT への直し（29ad4a404）。USB・LAN: firmware の outbound の窓は CPU 0x1c_0000_0000 → PCI 0x8000_0000 で、device tree の ranges（CPU 0x1f_0000_0000 → PCI 0）と違い、RP1 の周辺の読みが全部 deaddead だった → Linux と同じく ranges から outbound の窓を毎回設定し、RP1 の BAR を tree の配置（周辺 PCI 0、MSI-X 0x41_0000）へ並べ直す（p004）。Wi-Fi と SError: firmware は C1 の device tree を渡したが chip は D0。pin を C0 の配置で書いて block の外（0x24）に触れ（SError）、SDIO の pin は GPIO・pull-down のまま（CMD low）だった → stepping を chip の register（boot flash の pin の mux）から決める（p006）。再開点: 4 回目の実機の試験（[tests/rpi5-hw-test.md](tests/rpi5-hw-test.md) の「4 回目の試験」）。
-- 2026-10-22 5 回目の UAT（kernel 9d78dc950、LAN の deadlock の直し）: LAN・USB keyboard・RP1・Wi-Fi の SDIO の bus が動作。1 分ごとの SSH の確認 40 回全部成功（16:59〜17:38、4 回目は約 40 分で停止）→ ユーザー「安定しているようなので、40回で切り上げて合格にしましょう。」で合格。Wi-Fi は MAC が NVRAM の仮の値で止まる → bd4744521（device tree の local-mac-address）を main 4cc0e5001 に merge、板で確認する。
-- 2026-10-22 板で bd4744521 の kernel: rpi5-wifi が MAC を得て bcm43455 が 98:fe:54:22:65:c4 で wlan0 として publish（ifconfig に wlan0）。接続の試験はまだ。
-- 2026-10-22 P3: Wi-Fi の接続。`connect` の EOPNOTSUPP は driver が supplicant を `cap` の list の idsup で確かめていたため（7.45.241 の list には無い、Pi 4 も同じ）。Linux と同じく `sup_wpa` の iovar で確かめるように直し（p006）、板で elecom-84a0c3-5G に自動接続（authorized）・DHCP 192.168.2.156・ping 192.168.2.1 20/20。残り: rx の glom の取りこぼしの log 1 回、切断・再接続・Pi 4 は未実施。
-- 2026-10-22 P3: ファン（ユーザー「Pi5のファンが回ってないんですが」）。kernel にファン・温度の code が無く、firmware は RP1 の PWM1 の clock を止めて渡していた。rpi5-fan を足し（p009）、板で 58 °C で level 1（2352 rpm）、60.6 °C で level 2（3877 rpm）、54.5 °C で level 1 に戻るのを見た。hw.thermal に温度。
-- 2026-10-23 ユーザー「ファンが回転していますね。」→ ws278-p009 の fan を実機で目視確認。
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws278-p001 | 調べと設計（BCM2712 と BCM2711 の差、Phase の分け方、試験の方法） | in-progress のまま WS を閉じた（design.md 版 1、D1〜D3 はユーザーが回答） |
+| ws278-p002 | config-rpi5.mk と platform の起動、SD の root、image の生成 | in-progress のまま WS を閉じた（実機で起動・login、UAT 合格） |
+| ws278-p003 | SMP（PSCI の CPU_ON、A76 の Aff1） | in-progress のまま WS を閉じた（実装と host の確認、実機は UAT の通し） |
+| ws278-p004 | RP1 の USB（PCIe の引き継ぎ、DWC3 の xHCI） | in-progress のまま WS を閉じた（実機で USB keyboard が動く） |
+| ws278-p004b | RP1 の割り込み（MSI-X → MIP → GIC） | in-progress のまま WS を閉じた（実装と host の確認、実機は UAT の通し） |
+| ws278-p005 | RP1 の Ethernet（Cadence GEM） | in-progress のまま WS を閉じた（実機で LAN・SSH 40 回） |
+| ws278-p006 | WiFi（sdio2 の SDIO host、bcm43455 の流用） | in-progress のまま WS を閉じた（実機で接続・DHCP・ping） |
+| ws278-p007 | BT（uarta） | in-progress のまま WS を閉じた（ユーザーの指示で無効） |
+| ws278-p008 | 規約の全文の見直し（HAL の bsp の分離、p003〜p007 の C） | in-progress のまま WS を閉じた（第 1・2 部済み、rpi4 の QEMU の起動の回帰 PASS） |
+| ws278-p009 | ファンと温度 | in-progress のまま WS を閉じた（実機でファンの回転をユーザーが確認） |
+
+## 記録の所在
+
+Phase の計画・結果と実機の試験の手順（`plan/ws278/phase001`〜`phase009`、`plan/ws278/tests/rpi5-hw-test.md`）は削除する。git の commit `fb1f6afee` の `plan/ws278/` にある。Queue の履歴は [plan/history](../history/index.md)。

@@ -1,6 +1,6 @@
 # WS298 の設計: Intel VMD の driver（pci-vmd）
 
-- Phase: [ws298-p001](phase001/phase.md)（Queue q1613、担当 P1）。版 1: 2026-10-27（89cea113b）。版 2: 2026-10-27、design-reviewer の 18 件（[design-review.md](design-review.md)）を反映。人の判断が要る 2 件は §12。
+- Phase: ws298-p001（`fb1f6afee` の `plan/ws298/phase001/phase.md`）（Queue q1613、担当 P1）。版 1: 2026-10-27（89cea113b）。版 2: 2026-10-27、design-reviewer の 18 件（[design-review.md](design-review.md)）を反映。人の判断が要る 2 件は §12。
 - 親: [WS298](ws.md)。関係: q1612（Latitude 5330 の NVMe に zedBSD の区画を作り、USB 無しで起動する）。
 - この文書は設計だけ。source は変えていない。
 

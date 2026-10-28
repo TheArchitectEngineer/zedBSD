@@ -1,6 +1,6 @@
 # WS256 VisionFive 2 の周辺の設計（p012、改訂 4）
 
-- Phase: [ws256-p012](phase012/phase.md)。版 1 は q1270-i01（2026-10-19、P1）、改訂 2 は q1270-i02（2026-10-19、P1、[レビュー 1](design-peripherals-review-1.md) の全部を反映、対応は §9）、改訂 3 は q1272-i01（2026-10-19、P2）: [レビュー 2](design-peripherals-review-2.md)（Blocker 1・Major 7・Minor 13）の全部を当てた（対応は §10）。**改訂 4 は q1278-i01（2026-10-19、P2）**: [レビュー 3](design-peripherals-review-3.md)（Blocker 0・Major 2・Minor 13）の全部を当てた。対応の表は §11。
+- Phase: ws256-p012（`fb1f6afee` の `plan/ws256/phase012/phase.md`）。版 1 は q1270-i01（2026-10-19、P1）、改訂 2 は q1270-i02（2026-10-19、P1、[レビュー 1](design-peripherals-review-1.md) の全部を反映、対応は §9）、改訂 3 は q1272-i01（2026-10-19、P2）: [レビュー 2](design-peripherals-review-2.md)（Blocker 1・Major 7・Minor 13）の全部を当てた（対応は §10）。**改訂 4 は q1278-i01（2026-10-19、P2）**: [レビュー 3](design-peripherals-review-3.md)（Blocker 0・Major 2・Minor 13）の全部を当てた。対応の表は §11。
 - 範囲: p011（framebuffer）と p013〜p025 の設計。code は書かない。HAL の差分は案だけで適用しない（[proposed/hal-riscv64-framebuffer.md](proposed/hal-riscv64-framebuffer.md)）。
 - 前提: [design.md](design.md)（改訂 2）の HAL の芯・起動の道・ユーザーの決定 1〜12、p004 で入った loader → HAL の `bootloader/include/riscv64-handoff.h`（版 1、`version`・`size` を持ち、後の版は field を後ろに足す: ab23cbac7）。design.md の直しが要る所は §8 に Q1 への依頼として集めた（この文書からは直さない）。
 - 改訂 3 はレビュー 3 を通った（結論「Major 1・2 を直す小さな改訂の後なら受け入れてよい」）。**改訂 4 はその小さな改訂で、Q1 の判定の前**（P2 は子のエージェントを起動しない）。
