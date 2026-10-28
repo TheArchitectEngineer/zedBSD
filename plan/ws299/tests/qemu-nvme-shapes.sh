@@ -1,8 +1,7 @@
 #!/bin/sh
 # ws299-p003: QEMU check of the NVMe page-list and bounce paths on namespaces of other shapes.  Beside the boot disk
-# two blank NVMe disks: nvme1 with MDTS 9 (2 MiB commands, a 511-entry PRP list; the driver takes only 512-byte
-# blocks, drv_nvme_identify_namespace_validate), nvme2 with
-# 512-byte blocks and MDTS 3 (32 KiB commands, so a request splits into many).  The guest (8 GiB, so buffer-cache pages
+# two blank NVMe disks of 512-byte blocks: nvme1 with MDTS 9 (2 MiB commands, a 511-entry PRP list), nvme2 with
+# MDTS 3 (32 KiB commands, so a request splits into many).  The guest (8 GiB, so buffer-cache pages
 # lie both below and above 4 GiB) writes the same 200 MiB of random data raw to each with 1 MiB and 64 KiB writes,
 # reads it back the same ways, compares checksums with the source, and prints the kernel's page-list counts.
 #   sh plan/ws299/tests/qemu-nvme-shapes.sh IMAGE         (IMAGE built with CONFIG_PCAT_SERIAL_MIRROR=y)
