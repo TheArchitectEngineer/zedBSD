@@ -4,6 +4,12 @@
 # interface brought up and read over SSH (ifconfig: flags, media, address) with the link partner's side read on this
 # host (ethtool of centris's X540 port), then zedBSD rebooted into Debian and the saved kernel put back.
 #   sh plan/ws235/tests/rtl-link.sh VMUNIX OUT        (from the top of the tree; the caller holds the RDNA slot's lock)
+# With IPTEST=1 the link also carries IPv4 (zedBSD ZIP, this host PIP on PARTNER, added for the run and removed after):
+# ping both ways and an SSH command over the link.
+# With LANTEST=1 the address the interface took from the LAN's DHCP is reached from this host instead: ping, an SSH
+# command and 100 MB each way over SSH, with the interface counters of IFACE and the control interface before and after.
+# LANTEST=2 first takes the control interface CONTROL down, so every reply leaves through IFACE, and goes on (the
+# reboot too) over IFACE's address; if that fails, Debian does not come back without a power cycle.
 # OUT/summary.txt is the result; OUT also keeps the raw outputs.  Nothing is removed.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -16,6 +22,11 @@ ZEDBSD_SUBNET=${ZEDBSD_SUBNET:-10.0.30}
 ZEDBSD_BOOT=${ZEDBSD_BOOT:-0004}
 PARTNER=${PARTNER:-enp94s0f1}
 IFACE=${IFACE:-rge0}
+IPTEST=${IPTEST:-0}
+LANTEST=${LANTEST:-0}
+CONTROL=${CONTROL:-ue0}
+ZIP=${ZIP:-192.168.127.2}
+PIP=${PIP:-192.168.127.1}
 KEY=${KEY:-/home/awe/zedBSD-claude1/plan/tmp/guest/id_ed25519}
 NV_BOOT=/dev/disk/by-partuuid/d335c6ec-77ea-486f-8a95-57f10a367f0a
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
@@ -87,6 +98,57 @@ if [ -n "$zip" ]; then
 		say "after +$wait s: $(tr '\n' ' ' < "$out/ifconfig-$wait.txt")"
 		say "partner after +$wait s: $(partner)"
 	done
+	if [ "$LANTEST" = 1 ] || [ "$LANTEST" = 2 ]; then
+		rip=$(awk '$1 == "inet" && $2 !~ /^127\./ {print $2; exit}' "$out/ifconfig-30.txt")
+		say "LAN address of $IFACE: ${rip:-none}"
+		if [ -n "$rip" ] && [ "$LANTEST" = 2 ]; then
+			T=10 zs "$zip" "(sleep 2; ifconfig $CONTROL down) > /dev/null 2>&1 &"
+			sleep 8
+			zip=$rip
+			T=30 zs "$zip" "ifconfig $CONTROL" > "$out/control-down.txt" 2>&1
+			say "$CONTROL after down, read over $rip: exit $? $(tr '\n' ' ' < "$out/control-down.txt")"
+		fi
+		if [ -n "$rip" ]; then
+			zs "$zip" "ifconfig -a" > "$out/counters-before.txt" 2>&1
+			say "counters before: $(grep -E '^[a-z]|packets' "$out/counters-before.txt" | tr '\n' ' ')"
+			ping -c 200 -i 0.05 -W 1 "$rip" > "$out/ping-lan.txt" 2>&1
+			say "ping $rip: exit $? $(tail -2 "$out/ping-lan.txt" | tr '\n' ' ')"
+			T=30 zs "$rip" "uname -a" > "$out/ssh-lan.txt" 2>&1
+			say "ssh $rip: exit $? $(tr '\n' ' ' < "$out/ssh-lan.txt")"
+			t0=$(date +%s.%N)
+			bytes=$(T=120 zs "$rip" "dd if=/dev/zero bs=65536 count=1600 2> /dev/null" | wc -c)
+			t1=$(date +%s.%N)
+			say "from zedBSD over SSH: $bytes bytes in $(echo "$t1 - $t0" | bc) s"
+			t0=$(date +%s.%N)
+			head -c 104857600 /dev/zero | timeout 120 ssh $SSHOPT -i "$KEY" "root@$rip" "cat > /dev/null"
+			rc=$?
+			t1=$(date +%s.%N)
+			say "to zedBSD over SSH: exit $rc, 104857600 bytes in $(echo "$t1 - $t0" | bc) s"
+			zs "$zip" "ifconfig -a" > "$out/counters-after.txt" 2>&1
+			say "counters after: $(grep -E '^[a-z]|packets' "$out/counters-after.txt" | tr '\n' ' ')"
+		fi
+	fi
+	if [ "$IPTEST" = 1 ]; then
+		# The partner's address lives only for the run; the trap takes it away on any exit.
+		sudo -n ip addr add "$PIP/24" dev "$PARTNER" && trap 'sudo -n ip addr del "$PIP/24" dev "$PARTNER" 2> /dev/null' EXIT
+		say "partner address: $(ip -br addr show "$PARTNER")"
+		zs "$zip" "ifconfig $IFACE inet $ZIP/24" > "$out/ifconfig-inet.txt" 2>&1
+		say "zedBSD inet: exit $? $(tr '\n' ' ' < "$out/ifconfig-inet.txt")"
+		sleep 2
+		ping -c 5 -W 1 -I "$PARTNER" "$ZIP" > "$out/ping-from-partner.txt" 2>&1
+		say "ping from partner: exit $? $(tail -2 "$out/ping-from-partner.txt" | tr '\n' ' ')"
+		T=40 zs "$zip" "ping -c 5 $PIP" > "$out/ping-from-zedbsd.txt" 2>&1
+		say "ping from zedBSD: exit $? $(tail -2 "$out/ping-from-zedbsd.txt" | tr '\n' ' ')"
+		T=30 zs "$ZIP" "uname -a" > "$out/ssh-over-link.txt" 2>&1
+		say "ssh over the link: exit $? $(tr '\n' ' ' < "$out/ssh-over-link.txt")"
+		zs "$zip" "ifconfig $IFACE" > "$out/ifconfig-after-ip.txt" 2>&1
+		say "after IP: $(tr '\n' ' ' < "$out/ifconfig-after-ip.txt")"
+		ip neigh show dev "$PARTNER" > "$out/neigh.txt" 2>&1
+		say "partner neighbours: $(tr '\n' ' ' < "$out/neigh.txt")"
+		sudo -n ip addr del "$PIP/24" dev "$PARTNER"
+		trap - EXIT
+		say "partner address after removal: $(ip -br addr show "$PARTNER")"
+	fi
 	say "zedBSD: reboot"
 	T=10 zs "$zip" "(sleep 1; reboot) > /dev/null 2>&1 &"
 else

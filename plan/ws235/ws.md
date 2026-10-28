@@ -22,7 +22,8 @@ Parent: [Master](../master.md)
 ## Resume point
 
 - 2026-10-29 07:0x P1（q1669-i02、worktree p1-ws235b）: p001 cleared（判断の 5 件の回答は下の「p001 の判断」と phase001 の末尾）。p002・p003 は code と build まで。
-  次は RDNA 機の枠（P2 の 07:47 の後）で `plan/ws235/tests/rtl-link.sh` で attach と link → p004（v1 の ring）。
+  2026-10-29 07:20〜07:30 の RDNA 機の枠で 3 回: attach・link（2.5G の switch）・DHCP・LAN 越しの ping 200/200 は成立、ssh は未成立（下の p004）。
+  次は RTL8127 の 10G の switch への移設の後の枠で `LANTEST=2 rtl-link.sh`（ue0 を落として rge0 だけで ssh・転送）。
 
 ## Phase（2026-10-29 P1 が p001 でユーザーの順に直した。旧の表と見積もり（2026-10-14 Q1）は git の履歴に）
 
@@ -32,9 +33,9 @@ Parent: [Master](../master.md)
 | ID | 内容 | 見積もり | 状態 | 依存 |
 | --- | --- | --- | --- | --- |
 | [ws235-p001](phase001/phase.md) | 調べと設計: 10.0.10.3 の観測、rge（OpenBSD・FreeBSD）の作りが RTL8127 に当たるか、firmware と license、zedBSD の口、Phase の表 | 4 LW | cleared（2026-10-29 07:0x P1、q1669-i02。判断の 5 件の回答を記録） | — |
-| [ws235-p002](phase002/phase.md) | 共通の骨格: PCI の ID、BAR2、bus master、版の判定（TXCFG）、MAC・PHY・CSI・EPHY の OCP の窓、reset、MAC address、1 vector の割り込み、net device の登録、`CONFIG_DRIVER_PCI_RTL8125`、試験の config `plan/ws235/tests/` | 6 LW | in-progress（2026-10-29 P1、build の warning 0 まで。実機の attach は未実施） | p001 |
-| [ws235-p003](phase003/phase.md) | MAC・PHY の初期化と link（共通の手順＋RTL8127 に要る MCU・EPHY・PHY の表）: firmware 無しから試し、要れば zedBSD-firmware の手順で（Q1 に先に）。auto-negotiation、link の報告（両側） | 10 LW | in-progress（2026-10-29 P1、code と build まで、実機は未実施） | p002 |
-| ws235-p004 | RX・TX の ring（v1・v2 の descriptor）、1 queue・1 vector、net の worker への接続（offload 無し） | 8 LW | planned | p002 |
+| [ws235-p002](phase002/phase.md) | 共通の骨格: PCI の ID、BAR2、bus master、版の判定（TXCFG）、MAC・PHY・CSI・EPHY の OCP の窓、reset、MAC address、1 vector の割り込み、net device の登録、`CONFIG_DRIVER_PCI_RTL8125`、試験の config `plan/ws235/tests/` | 6 LW | in-progress（2026-10-29 P1、実機の attach は成立 07:2x。cleared の判定は p003・p004 とまとめて） | p001 |
+| [ws235-p003](phase003/phase.md) | MAC・PHY の初期化と link（共通の手順＋RTL8127 に要る MCU・EPHY・PHY の表）: firmware 無しから試し、要れば zedBSD-firmware の手順で（Q1 に先に）。auto-negotiation、link の報告（両側） | 10 LW | in-progress（2026-10-29 P1、2.5G の link は成立、10G は移設の後） | p002 |
+| [ws235-p004](phase004/phase.md) | RX・TX の ring（v1・v2 の descriptor）、1 queue・1 vector、net の worker への接続（offload 無し） | 8 LW | in-progress（2026-10-29 P1、DHCP・ping は成立、TCP は未確かめ） | p002 |
 | ws235-p005 | 実機（共通の段）: link・IPv4（static か DHCP）・ping・ssh・TCP の転送の計測と直し | 6 LW | planned | p003・p004 |
 | ws235-p006 | RTL8127 の拡張: 多 vector の MSI-X、RSS と複数の RX queue、割り込みの抑え、RX の zero copy、約 7 Gbit/s（Linux の値）に近づける。律速が stack なら記録して WS221 と組で Q1 へ。checksum・TSO の offload は、stack の口（WS221 p010、P3 が設計）ができたら driver の側を足す | 10 LW | planned | p005。offload は WS221 p010 の口 |
 | ws235-p007 | 他の chip の版の表と差の hook（8125・8125B・8125D・8126。実機は未確かめ。8122・8121・8120 は版の値が未確認） | 4 LW | planned | p003 |
@@ -61,6 +62,10 @@ Parent: [Master](../master.md)
   （Intel X540-AT2、ixgbe。`enp94s0f0` は LAN の switch 側の 10G）。centris の側の設定は変えない（IP を付けるなどは先に Q1 に案を送る）、ethtool・ip の読みは自由。
   - 観測（2026-10-29 06:1x P1）: RTL8127 の PHYSTAT（MMIO 0x6c）は driver 無しで 100M full の link を示すが、centris の `enp94s0f1` は `Link detected: no`。
     食い違いは未確認として [p001](phase001/phase.md) に。X540 の広告は 100baseT・1000baseT・10000baseT（2.5G・5G は無い）。
+  - **訂正**（2026-10-29 07:3x）: ユーザーの回答（Q1 経由、クリック）「2.5G の switch」→ RTL8127 の cable は 2.5G の switch に繋がっていた（centris の enp94s0f1 との直結ではない。
+    上の「centris の 10GbE に直結」は誤り）。P1 の観測（p004 の kernel）でも rge0 が LAN の DHCP で 10.0.30.6/16 を取り、media 2500Mbps、enp94s0f1 は link 無し。
+  - ユーザー（原文、2026-10-29、Q1 経由）: 「もしよかったら、10GbEスイッチに移設します。電源を切ってもいいですか？」→ P1 は 07:30 に機械を Debian にして返した。
+    移設の後の経路（10G の switch）での試験の枠は Q1 が知らせる。10GbE の計測（p005 の受け入れ・WS221 p010）にはこの 10G の経路が要る。
 
 ## p001 の判断（2026-10-29、Q1 経由のユーザーのクリック。原文と解釈を分ける。詳しくは [p001](phase001/phase.md) の「判断の回答」）
 

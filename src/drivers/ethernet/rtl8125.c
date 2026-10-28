@@ -23,6 +23,7 @@
 
 #include <drivers/ethernet/rtl8125.h>
 
+#include <drivers/generic/dma.h>
 #include <drivers/pci/pci.h>
 #include <kern/clock.h>
 #include <kern/device-io.h>
@@ -93,6 +94,92 @@
 #define RTL_REG_POWER_SWITCH		0x00f2U
 #define RTL_REG_PERMANENT0		0x19e0U
 #define RTL_REG_PERMANENT4		0x19e4U
+
+/*
+ * The registers the rings, the receive filter and the interrupt set-up
+ * use.  The interrupt moderation register is the one whose low bits the
+ * reset reads as the DMA's idle flags.
+ *
+ * Values referenced: FreeBSD sys/dev/rge/if_rgereg.h, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (RGE_MAR0, RGE_MAR4,
+ * RGE_TXDESC_ADDR_LO, RGE_TXDESC_ADDR_HI, RGE_CFG1, RGE_TDFNR,
+ * RGE_TIMERCNT, RGE_INT_CFG1, RGE_TXSTART, RGE_DLLPR, RGE_RXMAXSIZE,
+ * RGE_CPLUSCMD, RGE_IM, RGE_RXDESC_ADDR_LO, RGE_RXDESC_ADDR_HI,
+ * RGE_RADMFIFO_PROTECT, RGE_INTMITI, RGE_RSS_CTRL, RGE_RXQUEUE_CTRL,
+ * RGE_EEE_TXIDLE_TIMER); sys/dev/rge/if_rge.c, the same commit
+ * (rge_init_locked: 0x0382, 0x1880, 0x00d8, 0x20e4).
+ */
+#define RTL_REG_MULTICAST0		0x0008U
+#define RTL_REG_MULTICAST4		0x000cU
+#define RTL_REG_TX_RING_LOW		0x0020U
+#define RTL_REG_TX_RING_HIGH		0x0024U
+#define RTL_REG_TIMER_COUNT		0x0048U
+#define RTL_REG_CONFIG1			0x0052U
+#define RTL_REG_TX_FIRST_NUMBER		0x0057U
+#define RTL_REG_INTERRUPT_CONFIG1	0x007aU
+#define RTL_REG_TX_START		0x0090U
+#define RTL_REG_DLL_POWER		0x00d0U
+#define RTL_REG_DESCRIPTOR_MODE		0x00d8U
+#define RTL_REG_RX_MAX_SIZE		0x00daU
+#define RTL_REG_CPLUS_COMMAND		0x00e0U
+#define RTL_REG_INTERRUPT_MODERATION	0x00e2U
+#define RTL_REG_RX_RING_LOW		0x00e4U
+#define RTL_REG_RX_RING_HIGH		0x00e8U
+#define RTL_REG_LTR_8125		0x0382U
+#define RTL_REG_RX_FIFO_PROTECT		0x0402U
+#define RTL_REG_MITIGATION_FIRST	0x0a00U
+#define RTL_REG_RX_LINK_8127		0x1880U
+#define RTL_REG_DESCRIPTOR_8127		0x20e4U
+#define RTL_REG_RSS_CONTROL		0x4500U
+#define RTL_REG_RX_QUEUE_CONTROL	0x4800U
+#define RTL_REG_EEE_TX_IDLE		0x6048U
+
+/*
+ * The fields of those registers, and the transmit and receive
+ * configurations each member starts from.
+ *
+ * Values referenced: FreeBSD sys/dev/rge/if_rgereg.h, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (RGE_ISR_*, RGE_INTRS,
+ * RGE_RXCFG_VLANSTRIP, RGE_CFG1_SPEED_DOWN, RGE_INT_CFG0_*,
+ * RGE_TXSTART_START, RGE_DLLPR_PFM_EN, RGE_DLLPR_TX_10M_PS_EN,
+ * RGE_CPLUSCMD_RXCSUM, RGE_TXCFG_CONFIG, RGE_RXCFG_CONFIG,
+ * RGE_RXCFG_CONFIG_8125B, RGE_RXCFG_CONFIG_8125D, RGE_RXCFG_CONFIG_8126,
+ * RGE_JUMBO_FRAMELEN, RGE_JUMBO_MTU); OpenBSD sys/dev/pci/if_rgereg.h
+ * 1.20 (RGE_INT_CFG0_AUTO_CLEAR_IMR).
+ */
+#define RTL_INTERRUPT_RX_OK		0x00000001U
+#define RTL_INTERRUPT_RX_ERROR		0x00000002U
+#define RTL_INTERRUPT_TX_OK		0x00000004U
+#define RTL_INTERRUPT_TX_ERROR		0x00000008U
+#define RTL_INTERRUPT_LINK_CHANGE	0x00000020U
+#define RTL_INTERRUPT_TX_UNAVAILABLE	0x00000080U
+#define RTL_INTERRUPT_PCS_TIMEOUT	0x00004000U
+#define RTL_INTERRUPT_SYSTEM_ERROR	0x00008000U
+#define RTL_INTERRUPTS_RUNNING		(RTL_INTERRUPT_RX_OK | RTL_INTERRUPT_RX_ERROR | \
+					 RTL_INTERRUPT_TX_OK | RTL_INTERRUPT_TX_ERROR | \
+					 RTL_INTERRUPT_LINK_CHANGE | RTL_INTERRUPT_TX_UNAVAILABLE | \
+					 RTL_INTERRUPT_PCS_TIMEOUT | RTL_INTERRUPT_SYSTEM_ERROR)
+#define RTL_RX_CONFIG_ALL_PHYSICAL	0x00000001U
+#define RTL_RX_CONFIG_OWN_ADDRESS	0x00000002U
+#define RTL_RX_CONFIG_MULTICAST		0x00000004U
+#define RTL_RX_CONFIG_BROADCAST		0x00000008U
+#define RTL_RX_CONFIG_VLAN_STRIP	0x00c00000U
+#define RTL_RX_CONFIG_8125		0x41000700U
+#define RTL_RX_CONFIG_8125B		0x41000c00U
+#define RTL_RX_CONFIG_8125D		0x41200c00U
+#define RTL_RX_CONFIG_8126		0x41200d00U
+#define RTL_TX_CONFIG_START		0x03000700U
+#define RTL_CONFIG1_SPEED_DOWN		0x10U
+#define RTL_INTERRUPT_CONFIG0_ENABLE	0x01U
+#define RTL_INTERRUPT_CONFIG0_TIMEOUT_BYPASS	0x02U
+#define RTL_INTERRUPT_CONFIG0_MITIGATION_BYPASS	0x04U
+#define RTL_INTERRUPT_CONFIG0_RDU_BYPASS	0x10U
+#define RTL_INTERRUPT_CONFIG0_AUTO_CLEAR	0x20U
+#define RTL_INTERRUPT_CONFIG0_AVOID_MISS	0x40U
+#define RTL_TX_START_NORMAL		0x0001U
+#define RTL_DLL_POWER_BITS		0xc0U
+#define RTL_CPLUS_RX_CHECKSUM		0x0020U
+#define RTL_EEE_TX_IDLE_VALUE		(9216U - 14U - 4U - 4U + 14U + 32U)
 
 /*
  * The fields of those registers.
@@ -301,6 +388,56 @@
 #define RTL_PCI_LINK_ASPM_MASK		0x0003U
 #define RTL_PCI_LINK_CLOCK_PM		0x0100U
 
+/*
+ * The bits of the 32-byte transmit and receive descriptors.
+ *
+ * Values referenced: FreeBSD sys/dev/rge/if_rgereg.h, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (struct rge_tx_desc,
+ * struct rge_rx_desc, RGE_TDCMDSTS_*, RGE_RDCMDSTS_*).
+ */
+#define RTL_DESCRIPTOR_OWN		0x80000000U
+#define RTL_DESCRIPTOR_END_OF_RING	0x40000000U
+#define RTL_TX_FIRST			0x20000000U
+#define RTL_TX_LAST			0x10000000U
+#define RTL_TX_ERROR			0x00800000U
+#define RTL_RX_FIRST			0x02000000U
+#define RTL_RX_LAST			0x01000000U
+#define RTL_RX_ERROR			0x00100000U
+#define RTL_RX_LENGTH_MASK		0x00003fffU
+
+/*
+ * The rings: descriptors per ring, the bytes of a receive buffer and of a
+ * transmit bounce buffer, which hold a whole frame, and the alignments.
+ */
+#define RTL_TX_COUNT			512U
+#define RTL_RX_COUNT			512U
+#define RTL_DESCRIPTOR_BYTES		32U
+#define RTL_BUFFER_BYTES		2048U
+#define RTL_RING_ALIGNMENT		256U
+#define RTL_BUFFER_ALIGNMENT		64U
+
+/*
+ * The frame sizes: an Ethernet header, the checksum the receiver leaves
+ * on, the shortest frame the wire carries without its checksum, and the
+ * longest one the interface sends.
+ */
+#define RTL_HEADER_BYTES		14U
+#define RTL_CRC_BYTES			4U
+#define RTL_MIN_FRAME			60U
+#define RTL_FRAME_MAX			(RTL_DEFAULT_MTU + RTL_HEADER_BYTES)
+
+/* How often the service thread wakes the network worker while the interface is open. */
+#define RTL_POLL_MS			20U
+
+/*
+ * How many interrupt mitigation registers the parts have.
+ *
+ * Values referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_init_locked, num_miti).
+ */
+#define RTL_MITIGATION_COUNT_SHORT	32U
+#define RTL_MITIGATION_COUNT_LONG	64U
+
 /* The interface's MTU and how many controllers the driver serves. */
 #define RTL_DEFAULT_MTU			1500U
 #define RTL_MAX_DEVICES			4U
@@ -345,6 +482,32 @@ struct rtl_ephy_write {
 };
 
 /*
+ * One transmit descriptor: the command and status, the extended (offload)
+ * word, the buffer's bus address, and four words the controller ignores.
+ * The descriptors are little-endian, as the CPUs the driver runs on are.
+ */
+struct rtl_tx_descriptor {
+	volatile uint32_t command;
+	volatile uint32_t extended;
+	volatile uint32_t address_low;
+	volatile uint32_t address_high;
+	volatile uint32_t reserved[4];
+};
+
+/*
+ * One receive descriptor: four words the controller writes its hash and
+ * header information to, the buffer's bus address, the extended (offload)
+ * status, and the command and status with the frame's length.
+ */
+struct rtl_rx_descriptor {
+	volatile uint32_t information[4];
+	volatile uint32_t address_low;
+	volatile uint32_t address_high;
+	volatile uint32_t extended;
+	volatile uint32_t command;
+};
+
+/*
  * One version of the controller the driver knows.
  *
  * The version is the transmit configuration's masked value; the family
@@ -379,14 +542,47 @@ struct rtl_device {
 	unsigned bar_claimed;
 	unsigned enable_saved;
 	unsigned bar_mapped;
+	unsigned descriptors_allocated;
+	unsigned tx_buffers_allocated;
+	unsigned rx_buffers_allocated;
+	/*
+	 * The rings, allocated at attach and kept: one coherent block of the
+	 * transmit then the receive descriptors, the receive buffers by slot,
+	 * and the transmit bounce buffers by slot for frames the controller
+	 * cannot reach in place.
+	 */
+	struct drv_dma_device *dma;
+	struct drv_dma_buffer descriptors;
+	struct drv_dma_buffer tx_buffers;
+	struct drv_dma_buffer rx_buffers;
+	struct rtl_tx_descriptor *tx_ring;
+	struct rtl_rx_descriptor *rx_ring;
+	uint64_t tx_ring_address;
+	uint64_t rx_ring_address;
+	/*
+	 * The packets the transmit descriptors point at in place, by slot (NULL
+	 * for a frame copied into the slot's bounce buffer), and the ones the
+	 * controller has finished, linked by next, which the caller of
+	 * reclaim_tx frees once the lock is released.  The producer and
+	 * consumer count descriptors without wrapping; the slot is the count
+	 * modulo the ring.  Guarded by the lock.
+	 */
+	struct packet_buf *tx_packets[RTL_TX_COUNT];
+	struct packet_buf *tx_done;
+	unsigned tx_producer;
+	unsigned tx_consumer;
+	unsigned rx_consumer;
 	/*
 	 * Whether the interface is open, and the link as last announced.
-	 * Guarded by the lock; the link thread reads the PHY status only
-	 * while the interface is open.
+	 * Guarded by the lock; the service thread reads the PHY status only
+	 * while the interface is open.  A system error the interrupt saw is
+	 * reported once by the poll.
 	 */
 	unsigned opened;
 	unsigned carrier;
 	uint32_t link_mbps;
+	unsigned system_error;
+	unsigned system_error_reported;
 	struct thread *link_thread;
 	uint16_t ram_code_version;
 	volatile uint8_t *registers;
@@ -744,6 +940,25 @@ static uint16_t read16(const struct rtl_device *device, uint32_t offset);
 static uint32_t read32(const struct rtl_device *device, uint32_t offset);
 static void write8(struct rtl_device *device, uint32_t offset, uint8_t value);
 static void write32(struct rtl_device *device, uint32_t offset, uint32_t value);
+static void write16(struct rtl_device *device, uint32_t offset, uint16_t value);
+static void clear16(struct rtl_device *device, uint32_t offset, uint16_t bits);
+static void clear32(struct rtl_device *device, uint32_t offset, uint32_t bits);
+static void mac_ocp_set(struct rtl_device *device, uint16_t reg, uint16_t bits);
+static void mac_ocp_modify(struct rtl_device *device, uint16_t reg, uint16_t mask, uint16_t value);
+static int allocate_rings(struct rtl_device *device);
+static void prepare_rings(struct rtl_device *device);
+static void arm_rx_slot(struct rtl_device *device, unsigned slot);
+static void configure_mac(struct rtl_device *device);
+static void configure_rings_and_pcie(struct rtl_device *device);
+static void configure_mac_ocp(struct rtl_device *device);
+static void configure_interrupt_type(struct rtl_device *device);
+static void configure_receiver(struct rtl_device *device);
+static void stop_controller(struct rtl_device *device);
+static unsigned reclaim_tx(struct rtl_device *device);
+static struct packet_buf *take_tx_done_locked(struct rtl_device *device);
+static void free_tx_done(struct packet_buf *list);
+static unsigned receive_frames(struct net_device *net, unsigned budget);
+static void report_tx_errors(struct net_device *net, unsigned errors);
 static void set8(struct rtl_device *device, uint32_t offset, uint8_t bits);
 static void clear8(struct rtl_device *device, uint32_t offset, uint8_t bits);
 static int phy_ocp_modify(struct rtl_device *device, uint16_t reg, uint16_t mask, uint16_t value);
@@ -867,6 +1082,14 @@ rtl_attach(
 	/* Takes the address the chip was given at manufacture. */
 	read_station_address(device);
 
+	/* Allocates the rings, which the controller sees only once the interface opens. */
+	error = allocate_rings(device);
+	if (error != 0) {
+		kern_logf("rtl8125: %s rings unavailable (%d)\n", device->chip->name, error);
+		release_unpublished(device);
+		return error;
+	}
+
 	/* Connects the controller's interrupt. */
 	error = setup_interrupt(device);
 	if (error != 0) {
@@ -972,6 +1195,45 @@ write32(
 	kern_mmio_write32(device->registers + offset, value);
 }
 
+/* Writes one word register. */
+static void
+write16(
+	struct rtl_device *device,
+	uint32_t offset,
+	uint16_t value)
+{
+	/* Writes it after every earlier store. */
+	kern_mmio_write16(device->registers + offset, value);
+}
+
+/* Clears bits of one word register. */
+static void
+clear16(
+	struct rtl_device *device,
+	uint32_t offset,
+	uint16_t bits)
+{
+	uint16_t value;
+
+	/* Writes the register back without the bits. */
+	value = read16(device, offset);
+	write16(device, offset, (uint16_t)(value & ~bits));
+}
+
+/* Clears bits of one longword register. */
+static void
+clear32(
+	struct rtl_device *device,
+	uint32_t offset,
+	uint32_t bits)
+{
+	uint32_t value;
+
+	/* Writes the register back without the bits. */
+	value = read32(device, offset);
+	write32(device, offset, value & ~bits);
+}
+
 /*
  * Reads one register of the MAC's OCP space.
  *
@@ -1030,6 +1292,35 @@ mac_ocp_clear(
 	/* Writes the register back without the bits. */
 	value = mac_ocp_read(device, reg);
 	mac_ocp_write(device, reg, (uint16_t)(value & ~bits));
+}
+
+/* Sets bits of one register of the MAC's OCP space. */
+static void
+mac_ocp_set(
+	struct rtl_device *device,
+	uint16_t reg,
+	uint16_t bits)
+{
+	uint16_t value;
+
+	/* Writes the register back with the bits. */
+	value = mac_ocp_read(device, reg);
+	mac_ocp_write(device, reg, (uint16_t)(value | bits));
+}
+
+/* Clears the mask bits and sets the value bits of one register of the MAC's OCP space. */
+static void
+mac_ocp_modify(
+	struct rtl_device *device,
+	uint16_t reg,
+	uint16_t mask,
+	uint16_t value)
+{
+	uint16_t current;
+
+	/* Writes the register back changed. */
+	current = mac_ocp_read(device, reg);
+	mac_ocp_write(device, reg, (uint16_t)((current & ~mask) | value));
 }
 
 /*
@@ -1153,6 +1444,20 @@ static void
 release_unpublished(
 	struct rtl_device *device)
 {
+	/* Frees the rings, which the controller never saw. */
+	if (device->rx_buffers_allocated) {
+		drv_dma_free_coherent(device->dma, &device->rx_buffers);
+		device->rx_buffers_allocated = 0U;
+	}
+	if (device->tx_buffers_allocated) {
+		drv_dma_free_coherent(device->dma, &device->tx_buffers);
+		device->tx_buffers_allocated = 0U;
+	}
+	if (device->descriptors_allocated) {
+		drv_dma_free_coherent(device->dma, &device->descriptors);
+		device->descriptors_allocated = 0U;
+	}
+
 	/* Unmaps the registers. */
 	if (device->bar_mapped) {
 		drv_pci_device_unmap_bar(device->pci, &device->mapping);
@@ -1600,10 +1905,14 @@ setup_interrupt(
 }
 
 /*
- * Acknowledges the controller's interrupt.
+ * Acknowledges the controller's interrupt and, for frames sent or
+ * received, holds the interrupts off and wakes the network worker.
  *
  * Runs in interrupt context.  A shared pin may call it for another
  * device's interrupt, so it reports whether the controller had one.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_intr_msi).
  */
 static int
 rtl_interrupt(
@@ -1612,22 +1921,39 @@ rtl_interrupt(
 	struct rtl_device *device;
 	unsigned long irq;
 	uint32_t status;
+	unsigned schedule;
 
 	/* Samples and acknowledges what the controller latched. */
 	device = argument;
+	schedule = 0U;
 	irq = spin_lock_irqsave(&device->lock);
 
 	status = read32(device, RTL_REG_INTERRUPT_STATUS);
 
 	/* Writes the latched bits back to clear them; all ones is a device gone from the bus. */
-	if (status != 0U && status != 0xffffffffU)
+	if (status != 0U && status != 0xffffffffU) {
 		write32(device, RTL_REG_INTERRUPT_STATUS, status);
+
+		/* Remembers a system error for the poll to report. */
+		if ((status & RTL_INTERRUPT_SYSTEM_ERROR) != 0)
+			device->system_error = 1U;
+
+		/* Holds the interrupts off until the worker has drained the rings. */
+		if (device->opened && (status & RTL_INTERRUPTS_RUNNING) != 0) {
+			write32(device, RTL_REG_INTERRUPT_MASK, 0U);
+			schedule = 1U;
+		}
+	}
 
 	spin_unlock_irqrestore(&device->lock, irq);
 
 	/* Nothing latched means the interrupt was another device's. */
 	if (status == 0U || status == 0xffffffffU)
 		return 0;
+
+	/* Wakes the network worker outside the lock. */
+	if (schedule)
+		net_device_schedule_poll(device->net);
 
 	/* The interrupt was the controller's. */
 	return 1;
@@ -1674,8 +2000,12 @@ publish_interface(
 }
 
 /*
- * Opens the interface: the controller and the PHY are set up again and the
- * link thread starts following the negotiation.
+ * Opens the interface: the controller and the PHY are set up again, the
+ * rings given to the controller, and the receiver, the transmitter and
+ * the interrupts started.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_init_locked).
  */
 static int
 rtl_open(
@@ -1683,19 +2013,44 @@ rtl_open(
 {
 	struct rtl_device *device;
 	unsigned long irq;
+	uint32_t status;
+	unsigned opened;
 	int error;
 
-	/* Brings the link up from reset. */
+	/* A repeated open keeps the running rings. */
 	device = net->driver_data;
+	irq = spin_lock_irqsave(&device->lock);
+
+	opened = device->opened;
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	if (opened)
+		return 0;
+
+	/* Brings the link up from reset, which leaves the interrupts masked. */
 	error = bring_up_link(device);
 	if (error != 0) {
 		kern_logf("rtl8125: %s link set-up failed (%d)\n", device->name, error);
 		return error;
 	}
 
-	/* Lets the link thread read the PHY status. */
+	/*
+	 * Empties both rings and sets the MAC up around them; nothing else
+	 * touches the registers while the interface is not open.
+	 */
+	prepare_rings(device);
+	configure_mac(device);
+
+	/* Starts the receiver, the transmitter and the interrupts, and lets the service thread in. */
 	irq = spin_lock_irqsave(&device->lock);
 
+	write8(device, RTL_REG_COMMAND, RTL_COMMAND_TX_ENABLE | RTL_COMMAND_RX_ENABLE);
+	write32(device, RTL_REG_TIMER_INTERRUPT0, 0U);
+	write16(device, RTL_REG_INTERRUPT_MODERATION, 0U);
+	status = read32(device, RTL_REG_INTERRUPT_STATUS);
+	write32(device, RTL_REG_INTERRUPT_STATUS, status);
+	write32(device, RTL_REG_INTERRUPT_MASK, RTL_INTERRUPTS_RUNNING);
 	device->opened = 1U;
 
 	spin_unlock_irqrestore(&device->lock, irq);
@@ -1703,55 +2058,901 @@ rtl_open(
 	/* Tells which PHY microcode the link runs on. */
 	kern_logf("rtl8125: %s PHY microcode version 0x%04x\n", device->name, device->ram_code_version);
 
-	/* Succeeded: the interface is open and the carrier follows the link. */
+	/* Succeeded: frames move by interrupt and the service thread, the carrier follows the link. */
 	return 0;
 }
 
-/* Closes the interface; the link thread announces the carrier lost. */
+/*
+ * Closes the interface: no more interrupts, the receiver and the
+ * transmitter stopped and the MAC reset, and the packets the transmit ring
+ * held freed.  The rings stay.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_stop_locked).
+ */
 static void
 rtl_close(
 	struct net_device *net)
 {
 	struct rtl_device *device;
+	struct packet_buf *done;
 	unsigned long irq;
+	unsigned slot;
 
-	/* Stops the link thread from reading the PHY status. */
+	/* Closes the producers' gate and masks the interrupts. */
 	device = net->driver_data;
 	irq = spin_lock_irqsave(&device->lock);
 
 	device->opened = 0U;
+	write32(device, RTL_REG_INTERRUPT_MASK, 0U);
 
 	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* Stops the receiver and the transmitter and waits for the DMA to stop. */
+	stop_controller(device);
+
+	/* The packets descriptors still held go on the list to free: the DMA has stopped. */
+	irq = spin_lock_irqsave(&device->lock);
+
+	for (slot = 0; slot < RTL_TX_COUNT; slot++) {
+		if (device->tx_packets[slot] == NULL)
+			continue;
+		device->tx_packets[slot]->next = device->tx_done;
+		device->tx_done = device->tx_packets[slot];
+		device->tx_packets[slot] = NULL;
+	}
+	done = take_tx_done_locked(device);
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* Frees them outside the lock. */
+	free_tx_done(done);
 }
 
-/* Drops a frame, which has no link to go out on. */
+/*
+ * Hands one frame to the transmit ring, in place when the controller
+ * reaches the packet's bytes, else copied into the slot's bounce buffer.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_encap, rge_txstart).
+ */
 static int
 rtl_transmit(
 	struct net_device *net,
 	struct packet_buf *packet)
 {
-	UNUSED_PARAMETER(net);
+	struct rtl_device *device;
+	struct rtl_tx_descriptor *descriptor;
+	struct packet_buf *done;
+	uint8_t *buffer;
+	uint64_t address;
+	uint64_t physical;
+	unsigned long irq;
+	uint32_t command;
+	unsigned errors;
+	unsigned slot;
+	size_t length;
+	int in_place;
+	int error;
 
-	/* The packet is consumed either way. */
-	packet_buf_free(packet);
+	/* Refuses a missing packet. */
+	if (packet == NULL)
+		return EINVAL;
 
-	/* Reports that the link is down. */
-	return ENETDOWN;
+	/* Drops a frame too short for a header or too long for the interface. */
+	device = net->driver_data;
+	length = packet->length;
+	if (length < RTL_HEADER_BYTES || length > RTL_FRAME_MAX) {
+		packet_buf_free(packet);
+		return EMSGSIZE;
+	}
+
+	/*
+	 * Points the descriptor at the packet itself when the controller
+	 * reaches its bytes; a short frame, which is padded, is copied.
+	 */
+	in_place = 0;
+	if (length >= RTL_MIN_FRAME) {
+		error = packet_buf_physical(packet, &physical);
+		if (error == 0) {
+			error = drv_dma_physical_address(device->dma, physical, length, 64U, &address);
+			if (error == 0)
+				in_place = 1;
+		}
+	}
+
+	/* Takes a free descriptor, if the interface runs and has a link. */
+	error = 0;
+	errors = 0U;
+	irq = spin_lock_irqsave(&device->lock);
+
+	if (!device->opened || !device->carrier) {
+		error = ENETDOWN;
+	} else {
+		/*
+		 * Frees what the controller finished only when the ring looks
+		 * half full (the network worker's poll frees the rest), then
+		 * checks one descriptor is left.
+		 */
+		if (device->tx_producer - device->tx_consumer >= RTL_TX_COUNT / 2U)
+			errors = reclaim_tx(device);
+		if (device->tx_producer - device->tx_consumer >= RTL_TX_COUNT - 1U)
+			error = ENOBUFS;
+	}
+
+	/* Fills the descriptor and hands it over. */
+	if (error == 0) {
+		/*
+		 * The packet in place, kept until the frame is sent; or the frame
+		 * copied, a short one padded so no old bytes go out.
+		 */
+		slot = device->tx_producer % RTL_TX_COUNT;
+		if (in_place) {
+			device->tx_packets[slot] = packet;
+		} else {
+			buffer = (uint8_t *)device->tx_buffers.address + slot * RTL_BUFFER_BYTES;
+			kern_memcpy(buffer, packet->data, length);
+			if (length < RTL_MIN_FRAME) {
+				kern_memset(buffer + length, 0, RTL_MIN_FRAME - length);
+				length = RTL_MIN_FRAME;
+			}
+			address = device->tx_buffers.device_address + slot * RTL_BUFFER_BYTES;
+		}
+
+		/* Points the descriptor at the bytes as one whole frame. */
+		descriptor = &device->tx_ring[slot];
+		descriptor->address_low = (uint32_t)address;
+		descriptor->address_high = (uint32_t)(address >> 32);
+		descriptor->extended = 0U;
+		command = RTL_DESCRIPTOR_OWN | RTL_TX_FIRST | RTL_TX_LAST | (uint32_t)length;
+		if (slot == RTL_TX_COUNT - 1U)
+			command |= RTL_DESCRIPTOR_END_OF_RING;
+
+		/* Hands the descriptor over only after the buffer and the other words are written. */
+		kern_io_write_barrier();
+		descriptor->command = command;
+
+		/* Tells the controller the ring has a new frame, after the descriptor is written. */
+		device->tx_producer++;
+		kern_io_write_barrier();
+		write16(device, RTL_REG_TX_START, RTL_TX_START_NORMAL);
+	}
+
+	done = take_tx_done_locked(device);
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	/*
+	 * Releases the packet unless a descriptor holds it, the packets of the
+	 * frames finished, and counts the ones that failed, outside the lock.
+	 */
+	if (!in_place || error != 0)
+		packet_buf_free(packet);
+	free_tx_done(done);
+	report_tx_errors(net, errors);
+
+	/* Reports a closed interface, no link or a full ring. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the frame is on the ring. */
+	return 0;
 }
 
-/* Reports that no frame has arrived, as the receiver is not running. */
+/*
+ * Sends finished transmit descriptors back to the free side, receives up
+ * to the budget's frames, and lets the controller interrupt again.
+ */
 static unsigned
 rtl_poll(
 	struct net_device *net,
 	unsigned budget)
 {
-	UNUSED_PARAMETER(net);
-	UNUSED_PARAMETER(budget);
+	struct rtl_device *device;
+	struct packet_buf *done;
+	unsigned long irq;
+	unsigned errors;
+	unsigned count;
+	unsigned report;
 
-	/* Nothing was received. */
+	/* Frees what the controller has sent. */
+	device = net->driver_data;
+	errors = 0U;
+	irq = spin_lock_irqsave(&device->lock);
+
+	if (device->opened)
+		errors = reclaim_tx(device);
+	done = take_tx_done_locked(device);
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* The packets of the sent frames, outside the lock. */
+	free_tx_done(done);
+
+	/* Counts sent frames that failed. */
+	report_tx_errors(net, errors);
+
+	/* Passes received frames to the stack. */
+	count = receive_frames(net, budget);
+
+	/* Lets the controller interrupt again once the batch is done; a closed one stays quiet. */
+	report = 0U;
+	irq = spin_lock_irqsave(&device->lock);
+
+	if (device->opened)
+		write32(device, RTL_REG_INTERRUPT_MASK, RTL_INTERRUPTS_RUNNING);
+
+	/* Takes a system error for reporting, once. */
+	if (device->system_error && !device->system_error_reported) {
+		device->system_error_reported = 1U;
+		report = 1U;
+	}
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* Reports a system error once. */
+	if (report)
+		kern_logf("rtl8125: %s PCI Express system error\n", device->name);
+
+	/* Reports the frames received, dropped ones included. */
+	return count;
+}
+
+/*
+ * Allocates the descriptors and the buffers of both rings.
+ *
+ * The controller reaches them through the PCI bus's DMA, whose addresses
+ * the bus limits; the descriptors take a 64-bit address.
+ */
+static int
+allocate_rings(
+	struct rtl_device *device)
+{
+	size_t ring_bytes;
+	int error;
+
+	/* Takes the bus's DMA. */
+	device->dma = drv_pci_device_dma(device->pci);
+	if (device->dma == NULL)
+		return ENODEV;
+
+	/* Allocates the descriptors, transmit ring first. */
+	ring_bytes = (RTL_TX_COUNT + RTL_RX_COUNT) * RTL_DESCRIPTOR_BYTES;
+	error = drv_dma_alloc_coherent(device->dma, ring_bytes, RTL_RING_ALIGNMENT, &device->descriptors);
+	if (error != 0)
+		return error;
+	device->descriptors_allocated = 1U;
+
+	/* Allocates the transmit bounce buffers. */
+	error = drv_dma_alloc_coherent(device->dma,
+				       RTL_TX_COUNT * RTL_BUFFER_BYTES,
+				       RTL_BUFFER_ALIGNMENT,
+				       &device->tx_buffers);
+	if (error != 0)
+		return error;
+	device->tx_buffers_allocated = 1U;
+
+	/* Allocates the receive buffers. */
+	error = drv_dma_alloc_coherent(device->dma,
+				       RTL_RX_COUNT * RTL_BUFFER_BYTES,
+				       RTL_BUFFER_ALIGNMENT,
+				       &device->rx_buffers);
+	if (error != 0)
+		return error;
+	device->rx_buffers_allocated = 1U;
+
+	/* Splits the descriptor block into the two rings. */
+	device->tx_ring = device->descriptors.address;
+	device->rx_ring = (struct rtl_rx_descriptor *)(device->tx_ring + RTL_TX_COUNT);
+	device->tx_ring_address = device->descriptors.device_address;
+	device->rx_ring_address = device->tx_ring_address + RTL_TX_COUNT * RTL_DESCRIPTOR_BYTES;
+
+	/* Succeeded: the rings and buffers exist, unseen by the controller. */
 	return 0;
 }
 
+/*
+ * Empties the transmit ring and gives every receive descriptor to the
+ * controller.  The last descriptor of each ring marks the ring's end.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_rx_list_init,
+ * rge_tx_list_init, rge_newbuf).
+ */
+static void
+prepare_rings(
+	struct rtl_device *device)
+{
+	unsigned slot;
+
+	/* Takes every descriptor back to the CPU. */
+	kern_memset(device->tx_ring, 0, RTL_TX_COUNT * RTL_DESCRIPTOR_BYTES);
+	kern_memset(device->rx_ring, 0, RTL_RX_COUNT * RTL_DESCRIPTOR_BYTES);
+
+	/* Starts both rings at their first descriptor. */
+	device->tx_producer = 0U;
+	device->tx_consumer = 0U;
+	device->rx_consumer = 0U;
+
+	/* Marks the end of the transmit ring. */
+	device->tx_ring[RTL_TX_COUNT - 1U].command = RTL_DESCRIPTOR_END_OF_RING;
+
+	/* Gives every receive descriptor to the controller. */
+	for (slot = 0; slot < RTL_RX_COUNT; slot++)
+		arm_rx_slot(device, slot);
+
+	/* Makes the descriptors visible before the controller is told where they are. */
+	kern_io_write_barrier();
+}
+
+/*
+ * Points one receive descriptor at its buffer and gives it to the
+ * controller.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_newbuf).
+ */
+static void
+arm_rx_slot(
+	struct rtl_device *device,
+	unsigned slot)
+{
+	struct rtl_rx_descriptor *descriptor;
+	uint64_t address;
+	uint32_t command;
+
+	/* Points the descriptor at the slot's buffer, whose size it carries. */
+	descriptor = &device->rx_ring[slot];
+	address = device->rx_buffers.device_address + slot * RTL_BUFFER_BYTES;
+	descriptor->address_low = (uint32_t)address;
+	descriptor->address_high = (uint32_t)(address >> 32);
+	descriptor->extended = 0U;
+	command = RTL_BUFFER_BYTES;
+	if (slot == RTL_RX_COUNT - 1U)
+		command |= RTL_DESCRIPTOR_END_OF_RING;
+
+	/* Hands it over after the address is written. */
+	kern_io_write_barrier();
+	descriptor->command = command | RTL_DESCRIPTOR_OWN;
+}
+
+/*
+ * Sets the MAC up around the rings: their addresses, the transmit and
+ * receive configurations, the MAC's OCP settings, the interrupt type and
+ * the receive filter.  The receiver, the transmitter and the interrupts
+ * stay off.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_init_locked).
+ */
+static void
+configure_mac(
+	struct rtl_device *device)
+{
+	uint8_t lock;
+
+	/* Writes the station address again, as the open's resets came after attach wrote it. */
+	read_station_address(device);
+
+	/* Opens the configuration registers for writing. */
+	lock = read8(device, RTL_REG_CONFIG_LOCK);
+	write8(device, RTL_REG_CONFIG_LOCK, (uint8_t)(lock | RTL_CONFIG_LOCK_WRITABLE));
+
+	/* Keeps the link out of CLKREQ power saving. */
+	clear8(device, RTL_REG_MISC_F1, RTL_MISC_F1_BIT);
+	disable_clock_request(device);
+	write16(device, RTL_REG_EEE_TX_IDLE, (uint16_t)RTL_EEE_TX_IDLE_VALUE);
+
+	/* Tells the controller where the rings are and how the function behaves on the link. */
+	configure_rings_and_pcie(device);
+
+	/* Applies the MAC's internal settings. */
+	configure_mac_ocp(device);
+
+	/* Runs the interrupts unmoderated on one vector. */
+	configure_interrupt_type(device);
+
+	/* Sets the receiver's frame size and filter. */
+	configure_receiver(device);
+
+	/* Keeps CLKREQ off and locks the configuration registers again. */
+	disable_clock_request(device);
+	clear8(device, RTL_REG_CONFIG_LOCK, RTL_CONFIG_LOCK_WRITABLE);
+	kern_usleep_range(10U, 10U);
+}
+
+/*
+ * Writes the rings' addresses, the transmit and receive configurations
+ * and the function's PCI Express settings, and runs one receive queue.
+ *
+ * Procedure and values referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_init_locked, from the
+ * descriptor addresses to RGE_CFG1).
+ */
+static void
+configure_rings_and_pcie(
+	struct rtl_device *device)
+{
+	uint32_t config;
+	uint32_t value;
+	uint16_t queues;
+
+	/* Tells the controller where the rings are. */
+	write32(device, RTL_REG_RX_RING_LOW, (uint32_t)device->rx_ring_address);
+	write32(device, RTL_REG_RX_RING_HIGH, (uint32_t)(device->rx_ring_address >> 32));
+	write32(device, RTL_REG_TX_RING_LOW, (uint32_t)device->tx_ring_address);
+	write32(device, RTL_REG_TX_RING_HIGH, (uint32_t)(device->tx_ring_address >> 32));
+
+	/* Picks the member's receive configuration, which selects the 32-byte descriptors. */
+	switch (device->chip->family) {
+	case RTL_FAMILY_8125:
+		config = RTL_RX_CONFIG_8125;
+		break;
+	case RTL_FAMILY_8125B:
+		config = RTL_RX_CONFIG_8125B;
+		break;
+	case RTL_FAMILY_8125D:
+		config = RTL_RX_CONFIG_8125D;
+		break;
+	default:
+		config = RTL_RX_CONFIG_8126;
+		break;
+	}
+
+	/* Writes the receive and transmit configurations. */
+	write32(device, RTL_REG_RX_CONFIG, config);
+	write32(device, RTL_REG_TX_CONFIG, RTL_TX_CONFIG_START);
+
+	/* Sets the function's PCI Express settings in its configuration space. */
+	value = csi_read(device, 0x070cU) & ~0x3f000000U;
+	csi_write(device, 0x070cU, value | 0x27000000U);
+	if (device->chip->family == RTL_FAMILY_8126 || device->chip->family == RTL_FAMILY_8127) {
+		/* Turns the L1 timeout off. */
+		value = csi_read(device, 0x0890U) & ~0x00000001U;
+		csi_write(device, 0x0890U, value);
+	} else if (device->chip->family != RTL_FAMILY_8125D) {
+		/* Sets the older parts' latency tolerance. */
+		write16(device, RTL_REG_LTR_8125, 0x221bU);
+	}
+
+	/* Runs one receive queue without receive-side scaling. */
+	write32(device, RTL_REG_RSS_CONTROL, 0U);
+	queues = read16(device, RTL_REG_RX_QUEUE_CONTROL);
+	write16(device, RTL_REG_RX_QUEUE_CONTROL, (uint16_t)(queues & ~0x001cU));
+
+	/* Keeps the link from slowing down on its own. */
+	clear8(device, RTL_REG_CONFIG1, RTL_CONFIG1_SPEED_DOWN);
+}
+
+/*
+ * Applies the MAC's OCP settings for the 32-byte descriptors and one
+ * queue.
+ *
+ * Procedure and values referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_init_locked, from MAC OCP
+ * 0xc140 to 0x1880); OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_init: MAC OCP
+ * 0xd40c, which the FreeBSD driver writes through the PHY's window).
+ */
+static void
+configure_mac_ocp(
+	struct rtl_device *device)
+{
+	enum rtl_family family;
+	uint16_t value;
+
+	/* Opens the MAC's filters fully. */
+	family = device->chip->family;
+	mac_ocp_write(device, 0xc140U, 0xffffU);
+	mac_ocp_write(device, 0xc142U, 0xffffU);
+
+	/* Selects the 32-byte descriptors. */
+	mac_ocp_set(device, 0xeb58U, 0x0001U);
+	if (family == RTL_FAMILY_8126 || family == RTL_FAMILY_8127) {
+		clear8(device, RTL_REG_DESCRIPTOR_MODE, 0x02U);
+		if (family == RTL_FAMILY_8127) {
+			clear8(device, RTL_REG_DESCRIPTOR_8127, 0x04U);
+			mac_ocp_clear(device, 0xe00cU, 0x1000U);
+			mac_ocp_clear(device, 0xc0c2U, 0x0040U);
+		}
+	}
+
+	/* Sets the transmit FIFO thresholds by the member. */
+	value = mac_ocp_read(device, 0xe614U);
+	if (family == RTL_FAMILY_8127) {
+		value = (uint16_t)((value & ~0x0f00U) | 0x0f00U);
+	} else if (family == RTL_FAMILY_8125B) {
+		value = (uint16_t)((value & ~0x0700U) | 0x0200U);
+	} else {
+		value = (uint16_t)((value & ~0x0700U) | 0x0300U);
+	}
+	mac_ocp_write(device, 0xe614U, value);
+
+	/* Runs one transmit queue. */
+	mac_ocp_modify(device, 0xe63eU, 0x0c00U, 0U);
+	mac_ocp_modify(device, 0xe63eU, 0x0030U, 0x0020U);
+
+	/* Restarts the MAC's transmit engine with its flow settings. */
+	mac_ocp_clear(device, 0xc0b4U, 0x0001U);
+	mac_ocp_set(device, 0xc0b4U, 0x0001U);
+	mac_ocp_set(device, 0xc0b4U, 0x000cU);
+	mac_ocp_modify(device, 0xeb6aU, 0x00ffU, 0x0033U);
+	mac_ocp_modify(device, 0xeb50U, 0x03e0U, 0x0040U);
+	mac_ocp_clear(device, 0xe056U, 0x00f0U);
+	write8(device, RTL_REG_TX_FIRST_NUMBER, 0x10U);
+	mac_ocp_clear(device, 0xe040U, 0x1000U);
+	mac_ocp_modify(device, 0xea1cU, 0x0003U, 0x0001U);
+	if (family == RTL_FAMILY_8125D) {
+		mac_ocp_write(device, 0xe0c0U, 0x4403U);
+	} else {
+		mac_ocp_write(device, 0xe0c0U, 0x4000U);
+	}
+	mac_ocp_set(device, 0xe052U, 0x0060U);
+	mac_ocp_clear(device, 0xe052U, 0x0088U);
+	mac_ocp_modify(device, 0xd430U, 0x0fffU, 0x045fU);
+
+	/* Lets the link's DLL power down in the states that allow it. */
+	set8(device, RTL_REG_DLL_POWER, RTL_DLL_POWER_BITS);
+	if (family == RTL_FAMILY_8125)
+		set8(device, RTL_REG_MCU_COMMAND, 0x01U);
+
+	/* Turns EEE plus off where the part has it. */
+	if (family != RTL_FAMILY_8125D)
+		mac_ocp_clear(device, 0xe080U, 0x0002U);
+	if (family == RTL_FAMILY_8126 || family == RTL_FAMILY_8127) {
+		mac_ocp_clear(device, 0xea1cU, 0x0304U);
+	} else {
+		mac_ocp_clear(device, 0xea1cU, 0x0004U);
+	}
+
+	/* Clears the TCAM entries. */
+	mac_ocp_set(device, 0xeb54U, 0x0001U);
+	kern_usleep_range(1U, 1U);
+	mac_ocp_clear(device, 0xeb54U, 0x0001U);
+	clear16(device, RTL_REG_RX_LINK_8127, 0x0030U);
+
+	/* Sets the RTL8127's MAC power settings. */
+	if (family == RTL_FAMILY_8127)
+		mac_ocp_modify(device, 0xd40cU, 0xe038U, 0x8020U);
+}
+
+/*
+ * Runs the interrupts on one vector without moderation: no timer
+ * interrupts and every mitigation register cleared.
+ *
+ * Procedure and values referenced: OpenBSD sys/dev/pci/if_rge.c 1.48
+ * (rge_init, "Config interrupt type", the single-vector RTL8127 case);
+ * FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_init_locked, from the
+ * interrupt type to MAC OCP 0xe092).
+ */
+static void
+configure_interrupt_type(
+	struct rtl_device *device)
+{
+	enum rtl_family family;
+	unsigned count;
+	unsigned index;
+	uint32_t value;
+	uint8_t config;
+
+	/* Takes the RTL8127 out of its multi-vector mode; the others out of the interrupt engine. */
+	family = device->chip->family;
+	if (family == RTL_FAMILY_8127) {
+		config = read8(device, RTL_REG_INTERRUPT_CONFIG0);
+		config &= (uint8_t)~(RTL_INTERRUPT_CONFIG0_ENABLE | RTL_INTERRUPT_CONFIG0_AUTO_CLEAR |
+				     RTL_INTERRUPT_CONFIG0_AVOID_MISS);
+		write8(device, RTL_REG_INTERRUPT_CONFIG0, config);
+	} else if (family != RTL_FAMILY_8125) {
+		clear8(device, RTL_REG_INTERRUPT_CONFIG0, RTL_INTERRUPT_CONFIG0_ENABLE);
+	}
+
+	/* Clears the timer interrupts. */
+	write32(device, RTL_REG_TIMER_INTERRUPT0, 0U);
+	write32(device, RTL_REG_TIMER_INTERRUPT1, 0U);
+	write32(device, RTL_REG_TIMER_INTERRUPT2, 0U);
+	write32(device, RTL_REG_TIMER_INTERRUPT3, 0U);
+
+	/* Clears every interrupt mitigation register the part has. */
+	count = RTL_MITIGATION_COUNT_LONG;
+	if (family == RTL_FAMILY_8125B || family == RTL_FAMILY_8126)
+		count = RTL_MITIGATION_COUNT_SHORT;
+	for (index = 0; index < count; index++)
+		write32(device, RTL_REG_MITIGATION_FIRST + index * 4U, 0U);
+
+	/* Turns the RTL8126's interrupt bypasses off. */
+	if (family == RTL_FAMILY_8126) {
+		clear8(device,
+		       RTL_REG_INTERRUPT_CONFIG0,
+		       RTL_INTERRUPT_CONFIG0_TIMEOUT_BYPASS | RTL_INTERRUPT_CONFIG0_RDU_BYPASS |
+			       RTL_INTERRUPT_CONFIG0_MITIGATION_BYPASS);
+		write16(device, RTL_REG_INTERRUPT_CONFIG1, 0U);
+	}
+
+	/* Applies the MAC's remaining settings. */
+	mac_ocp_set(device, 0xc0acU, 0x1f80U);
+	mac_ocp_write(device, 0xe098U, 0xc302U);
+	mac_ocp_clear(device, 0xe032U, 0x0003U);
+	value = csi_read(device, 0x0098U) & ~0x0000ff00U;
+	csi_write(device, 0x0098U, value);
+	if (family == RTL_FAMILY_8125D) {
+		mac_ocp_modify(device, 0xe092U, 0x00ffU, 0x0008U);
+	} else {
+		mac_ocp_clear(device, 0xe092U, 0x00ffU);
+	}
+}
+
+/*
+ * Sets the receiver up: no VLAN stripping or checksum offload, frames no
+ * longer than one buffer, the receive data path open, and a filter that
+ * takes the station's frames, broadcasts and every multicast, as the stack
+ * keeps no multicast list for the driver.
+ *
+ * Procedure and values referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_init_locked, from the
+ * VLAN tagging to RGE_RADMFIFO_PROTECT; rge_iff_locked).
+ */
+static void
+configure_receiver(
+	struct rtl_device *device)
+{
+	uint32_t filter;
+
+	/* Leaves VLAN tags and checksums to the stack. */
+	clear32(device, RTL_REG_RX_CONFIG, RTL_RX_CONFIG_VLAN_STRIP);
+	clear16(device, RTL_REG_CPLUS_COMMAND, RTL_CPLUS_RX_CHECKSUM);
+	(void)read16(device, RTL_REG_CPLUS_COMMAND);
+
+	/* Takes no frame longer than one receive buffer. */
+	write16(device, RTL_REG_RX_MAX_SIZE, (uint16_t)RTL_BUFFER_BYTES);
+
+	/* Opens the receive data path and gives it time to settle. */
+	clear8(device, RTL_REG_POWER_SWITCH, RTL_POWER_SWITCH_RX_GATE);
+	kern_usleep_range(2000U, 2000U);
+
+	/* Takes the station's frames, broadcasts and every multicast. */
+	filter = read32(device, RTL_REG_RX_CONFIG);
+	filter &= ~RTL_RX_CONFIG_ALL_PHYSICAL;
+	filter |= RTL_RX_CONFIG_OWN_ADDRESS | RTL_RX_CONFIG_BROADCAST | RTL_RX_CONFIG_MULTICAST;
+	write32(device, RTL_REG_RX_CONFIG, filter);
+	write32(device, RTL_REG_MULTICAST0, 0xffffffffU);
+	write32(device, RTL_REG_MULTICAST4, 0xffffffffU);
+
+	/* Clears the RTL8127's receive FIFO protection (the low byte of the drivers' 0x2001). */
+	if (device->chip->family == RTL_FAMILY_8127)
+		clear8(device, RTL_REG_RX_FIFO_PROTECT, 0x01U);
+}
+
+/*
+ * Stops the controller: no frame accepted, the interrupts and timers
+ * cleared, the FIFOs drained and the MAC reset.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_stop_locked) and
+ * sys/dev/rge/if_rge_hw.c, the same commit (rge_hw_reset).
+ */
+static void
+stop_controller(
+	struct rtl_device *device)
+{
+	int error;
+
+	/* Stops accepting frames, then clears the interrupts and the timers. */
+	clear32(device, RTL_REG_RX_CONFIG, RTL_RX_CONFIG_ACCEPT_MASK);
+	mask_interrupts(device);
+	write32(device, RTL_REG_TIMER_INTERRUPT0, 0U);
+	write32(device, RTL_REG_TIMER_INTERRUPT1, 0U);
+	write32(device, RTL_REG_TIMER_INTERRUPT2, 0U);
+	write32(device, RTL_REG_TIMER_INTERRUPT3, 0U);
+
+	/* Drains the FIFOs and resets the MAC, which stops its DMA. */
+	error = reset_controller(device);
+	if (error != 0)
+		kern_logf("rtl8125: %s reset at close timed out\n", device->name);
+
+	/* Turns the MAC's transmit settings back off. */
+	mac_ocp_clear(device, 0xc0acU, 0x1f80U);
+}
+
+/*
+ * Moves the transmit consumer past every descriptor the controller has
+ * finished.  The caller holds the lock.
+ *
+ * Returns how many of them failed on the wire.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_txeof).
+ */
+static unsigned
+reclaim_tx(
+	struct rtl_device *device)
+{
+	struct rtl_tx_descriptor *descriptor;
+	struct packet_buf *packet;
+	uint32_t status;
+	unsigned errors;
+	unsigned slot;
+
+	/* Walks the ring from the oldest frame on it. */
+	errors = 0U;
+	while (device->tx_consumer != device->tx_producer) {
+		/* Stops at the first descriptor the controller still owns. */
+		slot = device->tx_consumer % RTL_TX_COUNT;
+		descriptor = &device->tx_ring[slot];
+		status = descriptor->command;
+		if ((status & RTL_DESCRIPTOR_OWN) != 0)
+			break;
+
+		/* Counts a frame the MAC reported an error for. */
+		kern_io_read_barrier();
+		if ((status & RTL_TX_ERROR) != 0)
+			errors++;
+
+		/* Frees the descriptor, keeping the ring's end, and puts the packet it held on the list to free. */
+		descriptor->command = status & RTL_DESCRIPTOR_END_OF_RING;
+		packet = device->tx_packets[slot];
+		if (packet != NULL) {
+			device->tx_packets[slot] = NULL;
+			packet->next = device->tx_done;
+			device->tx_done = packet;
+		}
+		device->tx_consumer++;
+	}
+
+	/* Reports the failed frames. */
+	return errors;
+}
+
+/*
+ * Takes the list of the packets whose frames the controller has finished,
+ * for the caller to free once it has released the lock.  The caller holds
+ * the lock.
+ */
+static struct packet_buf *
+take_tx_done_locked(
+	struct rtl_device *device)
+{
+	struct packet_buf *list;
+
+	/* The whole list, the device's emptied. */
+	list = device->tx_done;
+	device->tx_done = NULL;
+
+	/* Succeeded: the list, or none. */
+	return list;
+}
+
+/* Frees a list of packets linked by next. */
+static void
+free_tx_done(
+	struct packet_buf *list)
+{
+	struct packet_buf *next;
+
+	/* Frees each packet in turn. */
+	while (list != NULL) {
+		next = list->next;
+		list->next = NULL;
+		packet_buf_free(list);
+		list = next;
+	}
+}
+
+/*
+ * Copies up to the budget's received frames into packets, gives their
+ * descriptors back, and passes the packets to the stack.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_rxeof).
+ */
+static unsigned
+receive_frames(
+	struct net_device *net,
+	unsigned budget)
+{
+	struct rtl_device *device;
+	struct rtl_rx_descriptor *descriptor;
+	struct packet_buf *packet;
+	unsigned long irq;
+	uint32_t status;
+	uint8_t *payload;
+	unsigned slot;
+	unsigned count;
+	size_t length;
+	int alloc_error;
+	int valid;
+	int empty;
+
+	/* Takes at most the budget, so one port cannot starve the worker. */
+	device = net->driver_data;
+	for (count = 0; count < budget; count++) {
+		packet = NULL;
+		valid = 0;
+		empty = 0;
+		irq = spin_lock_irqsave(&device->lock);
+
+		/* Looks at the oldest descriptor; a closed ring or one the controller owns ends the batch. */
+		slot = device->rx_consumer % RTL_RX_COUNT;
+		descriptor = &device->rx_ring[slot];
+		status = descriptor->command;
+		if (!device->opened || (status & RTL_DESCRIPTOR_OWN) != 0)
+			empty = 1;
+
+		/* Reads the frame the controller wrote back. */
+		if (!empty) {
+			/* Reads the buffer only after the write-back that released it. */
+			kern_io_read_barrier();
+			length = status & RTL_RX_LENGTH_MASK;
+
+			/* Takes a whole, good frame that fits one buffer; counts anything else. */
+			if ((status & (RTL_RX_FIRST | RTL_RX_LAST)) == (RTL_RX_FIRST | RTL_RX_LAST) &&
+			    (status & RTL_RX_ERROR) == 0 &&
+			    length >= RTL_HEADER_BYTES + RTL_CRC_BYTES &&
+			    length <= RTL_FRAME_MAX + RTL_CRC_BYTES) {
+				/*
+				 * Copies the frame without its checksum into a packet;
+				 * without one the frame is dropped.
+				 */
+				length -= RTL_CRC_BYTES;
+				payload = NULL;
+				packet = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM,
+							      length,
+							      PACKET_BUF_ALLOC_RECEIVE,
+							      &alloc_error);
+				if (packet != NULL)
+					payload = packet_buf_append(packet, length);
+				if (payload != NULL) {
+					kern_memcpy(payload,
+						    (uint8_t *)device->rx_buffers.address + slot * RTL_BUFFER_BYTES,
+						    length);
+					valid = 1;
+				}
+			} else {
+				/* A frame with an error, split across buffers, or of a size the stack does not take. */
+				net->rx_errors++;
+			}
+
+			/* Counts a frame dropped for want of a packet or for an error. */
+			if (!valid)
+				net->rx_dropped++;
+
+			/* Gives the descriptor back to the controller. */
+			arm_rx_slot(device, slot);
+			device->rx_consumer++;
+		}
+
+		spin_unlock_irqrestore(&device->lock, irq);
+
+		/* Ends the batch at an empty ring. */
+		if (empty) {
+			if (packet != NULL)
+				packet_buf_free(packet);
+			break;
+		}
+
+		/* Passes the packet to the stack, or frees one that holds no frame. */
+		if (valid) {
+			net_device_receive(net, packet);
+		} else if (packet != NULL) {
+			packet_buf_free(packet);
+		}
+	}
+
+	/* Reports the frames taken off the ring, dropped ones included. */
+	return count;
+}
+
+/* Counts sent frames that failed on the wire. */
+static void
+report_tx_errors(
+	struct net_device *net,
+	unsigned errors)
+{
+	/* Records each failure once. */
+	while (errors != 0) {
+		net_device_tx_error(net);
+		errors--;
+	}
+}
 
 /* Sets bits of one byte register. */
 static void
@@ -2442,18 +3643,45 @@ start_link_thread(
 	thread_start(device->link_thread);
 }
 
-/* Follows the link every RTL_LINK_MS for the life of the system. */
+/*
+ * Follows the link every RTL_LINK_MS and, while the interface is open,
+ * wakes the network worker every RTL_POLL_MS for anything a lost
+ * interrupt left on the rings, for the life of the system.
+ */
 static void
 link_worker(
 	void *argument)
 {
 	struct rtl_device *device;
+	unsigned long irq;
+	uint64_t next_link;
+	uint64_t now;
+	unsigned opened;
 
 	/* Checks the link at once, then on its interval. */
 	device = argument;
+	next_link = 0U;
 	for (;;) {
-		check_link(device);
-		sched_sleep(sched_ticks() + KERN_MS_TO_TICKS(RTL_LINK_MS));
+		/* Follows the link when its interval has passed. */
+		now = sched_ticks();
+		if (now >= next_link) {
+			check_link(device);
+			next_link = now + KERN_MS_TO_TICKS(RTL_LINK_MS);
+		}
+
+		/* Samples whether the interface is open. */
+		irq = spin_lock_irqsave(&device->lock);
+
+		opened = device->opened;
+
+		spin_unlock_irqrestore(&device->lock, irq);
+
+		/* Wakes the worker for the rings of an open interface. */
+		if (opened)
+			net_device_schedule_poll(device->net);
+
+		/* Sleeps until the next service. */
+		sched_sleep(sched_ticks() + KERN_MS_TO_TICKS(RTL_POLL_MS));
 	}
 }
 
