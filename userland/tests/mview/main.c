@@ -39,6 +39,10 @@
 /* How many consecutive out-of-date swapchains are tolerated before giving up. */
 #define MAIN_RECREATE_LIMIT	16U
 
+/* A gap between presented frames the spin reports as a hitch (two refreshes at 60 Hz and more), and the hitches named one by one. */
+#define MAIN_HITCH_MS		33.0
+#define MAIN_HITCH_LINES	20U
+
 /* One invocation's display, model, log token and run bounds. */
 struct main_options {
 	const char *display;
@@ -90,6 +94,9 @@ struct main_spin {
 	double base_yaw;
 	double applied;
 
+	/* The frames presented after a long gap (MAIN_HITCH_MS or more, past the first two frames). */
+	uint32_t hitches;
+
 	/* Presented frames in all and in the current whole second, and that second's number. */
 	uint32_t frames;
 	uint32_t second_frames;
@@ -139,6 +146,7 @@ main(
 	const char *operation;
 	const char *reason;
 	uint32_t completed;
+	uint32_t hitches;
 	uint32_t stale;
 	int redraw;
 	int status;
@@ -368,7 +376,19 @@ main(
 
 		/* The spin demonstration counts the frame and ends once its time is up. */
 		if (options.spin != 0U) {
+			hitches = spin.hitches;
 			status = main_spin_presented(&spin, options.token, options.spin);
+			if (spin.hitches != hitches && spin.hitches <= MAIN_HITCH_LINES) {
+				/* The stages of the frame before the gap, in millions of counter cycles. */
+				printf("MVIEW HITCH STAGES run=%s acquire=%.2f record=%.2f submit=%.2f present=%.2f fence=%.2f\n",
+				    options.token,
+				    (double)renderer.stage_last[MVIEW_STAGE_ACQUIRE] / 1e6,
+				    (double)renderer.stage_last[MVIEW_STAGE_RECORD] / 1e6,
+				    (double)renderer.stage_last[MVIEW_STAGE_SUBMIT] / 1e6,
+				    (double)renderer.stage_last[MVIEW_STAGE_PRESENT] / 1e6,
+				    (double)renderer.stage_last[MVIEW_STAGE_FENCE] / 1e6);
+				fflush(stdout);
+			}
 			if (status != 0) {
 				mview_renderer_span(&renderer, 1);
 				mview_renderer_report_stages(&renderer, options.token, main_seconds(&spin.start, &spin.last));
@@ -915,6 +935,12 @@ main_spin_presented(
 			spin->shortest = interval;
 		if (interval > spin->longest)
 			spin->longest = interval;
+		if (spin->frames >= 2U && interval >= MAIN_HITCH_MS) {
+			/* A long gap past the start: each of the first few named, all counted. */
+			spin->hitches++;
+			if (spin->hitches <= MAIN_HITCH_LINES)
+				printf("MVIEW HITCH run=%s frame=%u ms=%.2f\n", token, spin->frames, interval);
+		}
 	}
 
 	spin->frames++;
@@ -945,6 +971,7 @@ main_spin_presented(
 		spin->shortest,
 		spin->frames > 1U ? spin->total / (double)(spin->frames - 1U) : 0.0,
 		spin->longest);
+	printf("MVIEW HITCHES run=%s hitches=%u\n", token, spin->hitches);
 	fflush(stdout);
 
 	/* The spin is over. */
