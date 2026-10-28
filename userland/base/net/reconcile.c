@@ -505,6 +505,8 @@ route6_named(
  * Emits an enabled interface's MTU when the target names another one than
  * the previous program did: the value, or 0 for the device's default when
  * the target no longer names one.  The interface stays up while it changes.
+ * One that was disabled was given no MTU, so whatever it has is not known
+ * and the target's is emitted.
  */
 static int
 emit_mtu(
@@ -533,8 +535,8 @@ emit_mtu(
 	if (item->mtu_set)
 		mtu = item->mtu;
 
-	/* Nothing to do while they agree. */
-	if (mtu == before_mtu)
+	/* Nothing to do while they agree on an interface that was enabled. */
+	if (mtu == before_mtu && (before == NULL || before->enabled))
 		return 0;
 
 	/* The interface and its MTU. */

@@ -91,7 +91,23 @@ net(config-if:NAME)> disable
 net(config-if:NAME)> dhcp [timeout SECONDS]
 net(config-if:NAME)> static ipv4 ADDRESS prefix-length BITS
 net(config-if:NAME)> no ipv4
+net(config-if:NAME)> mtu BYTES
+net(config-if:NAME)> no mtu
 ```
+
+`mtu BYTES` keeps an interface MTU of 1280 through 65535 in the candidate,
+written to `/etc/net.conf` as the interface key `mtu: BYTES`; `no mtu` removes
+the key, which returns the interface to its device's default MTU. The device's
+own limit (1500 for most Ethernet devices, up to 9000 for those that take jumbo
+frames) is applied when the value is set, so a commit with an MTU the device
+refuses fails and leaves the running MTU as it was. A commit changes the MTU
+while the interface stays up; a disabled interface is given none until it is
+enabled. At startup the MTU is set before the interface comes up, and again
+each time a cable is put back. An interface that names an MTU but neither DHCP
+nor an address is not configured at startup and keeps its device's default;
+`ifconfig NAME mtu BYTES` sets one by hand. An `/etc/net.conf` that carries an
+`mtu` key cannot be read by a system older than this key, which then applies
+none of the file.
 
 `end` returns directly to operational mode; `exit` returns one level. Exiting
 with uncommitted edits asks before discarding the process-local candidate. The
