@@ -6,7 +6,7 @@
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
 | P1 | phase-runner | WS308 VM の metadata の lock（q1650）、後に WS299（q1646 paused） | `/home/awe/zedBSD-worktrees/p1-ws308` / `agent/p1-ws308`（WS299 は p1-ws299c） | running | 0500994dd（q1640） |
-| P2 | phase-runner | WS291 RDNA の描画の速さ、Linux 以上まで自律（q1645） | `/home/awe/zedBSD-worktrees/p2-ws291d` / `agent/p2-ws291d` | running（2026-10-28 08:5x〜、10.0.10.3） | dc0e46e09（q1639） |
+| P2 | phase-runner | WS291: 起動 logo が見える件 → Linux 以上（q1651） | `/home/awe/zedBSD-worktrees/p2-ws291e` / `agent/p2-ws291e` | running（10.0.10.3、NVMe の zedBSD） | e2c14e68a（q1645） |
 | P3 | phase-runner | WS290 p005〜p012（q1644） | `/home/awe/zedBSD-worktrees/p3-ws290g` / `agent/p3-ws290g` | running（2026-10-28 08:xx〜） | bb020cf80（q1642） |
 | P4 | phase-runner | WS307 p001（q1643〜q1649、済み）、BUG-347（resolved） | `/home/awe/zedBSD-worktrees/p4-ws307d` / `agent/p4-ws307d` | returned（2026-10-28） | 23c76dd28 |
 
