@@ -203,6 +203,7 @@ static void syscall_io_buffer_release(struct file *file, uint8_t *buffer, uint8_
 static SYSCALL_EXT intptr_t sys_write_call(const uintptr_t args[6]);
 static intptr_t sys_lseek_call(const uintptr_t args[6]);
 static intptr_t sys_fstat_call(const uintptr_t args[6]);
+static int syscall_io_pooled(struct file *file);
 static int pseudo_file_getattr(struct file *file, struct stat *status);
 static int descriptor_getattr(struct process *process, int descriptor, struct stat *status);
 static int descriptor_link_target(struct process *process, const struct inode *alias, char *buffer, size_t capacity);
@@ -2838,10 +2839,20 @@ static int
 syscall_io_pooled(
 	struct file *file)
 {
+	/* A file with no inode is neither a regular file nor a disk. */
 	if (file->f_inode == NULL)
 		return 0;
-	return file->f_inode->i_type == INODE_REG ||
-	    file->f_inode->i_type == INODE_BLOCK;
+
+	/* A regular file waits for a disk at most. */
+	if (file->f_inode->i_type == INODE_REG)
+		return 1;
+
+	/* A block device waits for a disk at most. */
+	if (file->f_inode->i_type == INODE_BLOCK)
+		return 1;
+
+	/* Reports that the transfer may wait for another process. */
+	return 0;
 }
 
 /*
@@ -2865,6 +2876,7 @@ syscall_io_buffer(struct file *file, size_t length, uint8_t *fallback,
 	uint8_t *buffer;
 	size_t size;
 	int large;
+	int pooled;
 
 	*capacity = SYSCALL_IO_CHUNK;
 	if (length <= SYSCALL_IO_CHUNK)
@@ -2887,7 +2899,9 @@ syscall_io_buffer(struct file *file, size_t length, uint8_t *fallback,
 		}
 	}
 
-	if (syscall_io_pooled(file)) {
+	/* A file that waits for a disk at most borrows shared scratch. */
+	pooled = syscall_io_pooled(file);
+	if (pooled) {
 		buffer = io_pool_borrow(length, capacity);
 		if (buffer == NULL)
 			return fallback;
@@ -2909,6 +2923,8 @@ static void
 syscall_io_buffer_release(struct file *file, uint8_t *buffer,
 	uint8_t *fallback, size_t capacity)
 {
+	int pooled;
+
 	if (buffer == fallback)
 		return;
 
@@ -2918,7 +2934,9 @@ syscall_io_buffer_release(struct file *file, uint8_t *buffer,
 		return;
 	}
 
-	if (syscall_io_pooled(file))
+	/* A pooled transfer returns its scratch to the pool; any other frees its heap buffer. */
+	pooled = syscall_io_pooled(file);
+	if (pooled)
 		io_pool_release(buffer);
 	else
 		kern_free(buffer);
@@ -6159,25 +6177,35 @@ sys_cred_set_call(
 	 * another thread made meanwhile is never lost.
 	 */
 	for (;;) {
+		/* References the latest credential, which the change is built from. */
 		old = cred_process_ref(process);
 		if (old == NULL)
 			return -EPERM;
+
+		/* Copies it to build the change on. */
 		cred = cred_copy(old);
 		if (cred == NULL) {
 			cred_release(old);
 			return -ENOMEM;
 		}
 
-		/* Applies the change, and installs it; a changed identity marks the process (ws160-p001). */
+		/* Applies the change, and installs it; a changed identity marks the process. */
 		error = cred_set_compose(number, args, old, cred);
 		if (error == 0) {
 			changed = cred_ids_differ(old, cred);
-			error = process_cred_replace(process, old, cred,
-			    (unsigned)changed);
+			error = process_cred_replace(
+				process,
+				old,
+				cred,
+				(unsigned)changed);
 		}
+
+		/* Drops the copy when it was not installed, and the reference to the old credential. */
 		if (error != 0)
 			cred_release(cred);
 		cred_release(old);
+
+		/* Builds again only when another thread replaced the credential meanwhile. */
 		if (error != EAGAIN)
 			break;
 	}
@@ -7094,6 +7122,7 @@ sys_symlinkat_call(
 	created = NULL;
 	parent_valid = 0;
 
+	/* Refuses the call without credentials to check. */
 	if (process == NULL || cred == NULL)
 		return -EINVAL;
 	credential = cred_process_ref(process);

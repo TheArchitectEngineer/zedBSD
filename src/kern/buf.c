@@ -613,7 +613,8 @@ buf_init(
 
 	/* Allocates the first header slab. */
 	cache_initialized = 1;
-	if (slab_grow(0) != 0) {
+	error = slab_grow(0);
+	if (error != 0) {
 		cache_initialized = 0;
 		return ENOMEM;
 	}
@@ -2713,7 +2714,8 @@ alloc_pmem(
 		return ENOMEM;
 	reserved = (size + KERN_PAGE_SIZE - 1U) &
 	    ~(size_t)(KERN_PAGE_SIZE - 1U);
-	if (reserve_bytes(reserved, metadata, needed) != 0)
+	error = reserve_bytes(reserved, metadata, needed);
+	if (error != 0)
 		return ENOMEM;
 	memory->size = reserved;
 	error = hal_pmem_alloc(reserved, KERN_PAGE_SIZE, &memory->paddr);
@@ -2734,7 +2736,8 @@ alloc_pmem(
 	 * rounding.
 	 */
 	if (memory->size > reserved) {
-		if (reserve_bytes(memory->size - reserved, metadata, needed) != 0) {
+		error = reserve_bytes(memory->size - reserved, metadata, needed);
+		if (error != 0) {
 			if (hal_pmem_free(&memory->paddr, memory->size) != HAL_OK)
 				HAL_FATAL("buffer allocation rollback failed");
 			cancel_reservation(reserved, metadata);
@@ -3150,18 +3153,31 @@ reference_line(
 				pressed = 1;
 				continue;
 			}
+
+			/* Reports that no header could be had even under pressure. */
 			if (candidate == NULL)
 				return ENOMEM;
-			error = alloc_pmem((size_t)(line_blocks * disk->d_block_size),
-			    &memory, 0, pressed);
+
+			/* Allocates the memory the line will hold. */
+			error = alloc_pmem(
+				(size_t)(line_blocks * disk->d_block_size),
+				&memory,
+				0,
+				pressed);
+
+			/* Gives the header back when the line's memory could not be had. */
 			if (error != 0) {
 				free_metadata(candidate);
 				candidate = NULL;
 			}
+
+			/* A needed line refused for memory goes around once more under pressure. */
 			if (error == ENOMEM && needed && !pressed) {
 				pressed = 1;
 				continue;
 			}
+
+			/* Reports why the line's memory could not be had. */
 			if (error != 0)
 				return error;
 
@@ -3400,8 +3416,11 @@ transfer_run_lines(
 
 	/* Pins and allocates all lines before acquiring any busy ownership. */
 	for (index = 0; index < count; index++) {
-		error = reference_line(disk, block + (uint64_t)index * line_blocks,
-		    0, &lines[index]);
+		error = reference_line(
+			disk,
+			block + (uint64_t)index * line_blocks,
+			0,
+			&lines[index]);
 
 		/* A run that already has two lines ends before the line that could not be had. */
 		if (error != 0 && index >= 2U) {

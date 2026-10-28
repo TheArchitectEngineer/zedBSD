@@ -669,10 +669,13 @@ process_cred_replace(
 	 */
 	irq = spin_lock_irqsave(&process->lock);
 
+	/* Refuses while an exec owns the process image. */
 	if (process->execing) {
 		spin_unlock_irqrestore(&process->lock, irq);
 		return EBUSY;
 	}
+
+	/* Refuses a replacement built from a credential that is no longer current. */
 	if (process->cred != expected) {
 		spin_unlock_irqrestore(&process->lock, irq);
 		return EAGAIN;

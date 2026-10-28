@@ -197,8 +197,10 @@ uaccess_pin_vmspace(
 	error = vmspace_pin_user_pages(vm, address, size, prot, pages, page_count);
 	vmspace_put(vm);
 	if (error != 0) {
+		/* Frees the records only when they were allocated. */
 		if (pages != (struct vmspace_pinned_page *)pin->inline_pages)
 			kern_free(pages);
+
 		if (error == ENOMEM)
 			return ENOMEM;
 		return EFAULT;
@@ -255,8 +257,11 @@ uaccess_unpin(
 
 	/* Releases the pages and clears the pin. */
 	vmspace_unpin_user_pages(pin->pages, pin->page_count);
+
+	/* Frees the records only when they were allocated. */
 	if (pin->pages != (struct vmspace_pinned_page *)pin->inline_pages)
 		kern_free(pin->pages);
+
 	kern_memset(pin, 0, sizeof(*pin));
 }
 
