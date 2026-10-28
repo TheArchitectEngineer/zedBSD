@@ -49,4 +49,4 @@
 
 ## 再開点（2026-10-29 P5、q1666-i04）
 
-- Q1 の答え（Q303-9 は選択肢の原文、GPL の手順は採らない）を design.md §0・§8・§10 に反映（184a42bb0）。第 5 版の design-reviewer を起動（出力 design-v5-review.md）、この時点で未返却。次: review の反映、問い Q303-15〜19 は user-questions.md のまま。
+- Q1 の答え（Q303-9 は選択肢の原文、GPL の手順は採らない）を design.md §0・§8・§10 に反映（184a42bb0）。第 5 版の design-reviewer の結果は [design-v5-review.md](design-v5-review.md)（blocker 0・major 9・minor 25、2026-10-29）。**design.md に未反映**（ラップアップ）。次: 第 6 版で M1〜M9・m1〜m25 を反映（M2 の上限の口の引数と apply の戻りは WS301 と揃える、M9 は SMM の失敗の印を値として扱ってよいかを Q1 に確かめる）、その後に design-reviewer。問い Q303-15〜19 は [user-questions.md](user-questions.md) のまま未回答。
