@@ -4,6 +4,7 @@
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §4.1（レビュー 1）・§4.2・§11 の (1)、J2。Queue: q1662-i04（P1）。
 - 状態: in-progress（2026-10-29 P1。queue の lock は済み、fence 付きの task は未着手）。
+- 再開点（2026-10-29 04:5x P1 q1662-i05、branch `agent/p1-ws309e`）: 下の「残り」1 から着手。source の変更はまだ無い。build/ は main の build/ への symlink（llvm・NoctLang など）を作り、sysroot は make が作る。
 - 依存: p002。
 
 ## 済み（6eab69097）
