@@ -21,7 +21,7 @@ Parent: [Master](../master.md)
 
 ## Resume point
 
-- 2026-10-29 P1（q1669-i01）: p001 の調べと設計を [phase001/phase.md](phase001/phase.md) に。design-reviewer の指摘の反映と Q1 の判定の待ち。次は p002（共通の骨格）。
+- 2026-10-29 06:5x P1（q1669-i01）: p001 は設計・design-reviewer の反映まで（判断の 5 件は phase001 の末尾）。p002 の骨格は build の warning 0（amd64＋driver・amd64 の既定・pcat）。次は p003（MAC・PHY と link、firmware 無しから）と、実機の枠での attach の確かめ。
 
 ## Phase（2026-10-29 P1 が p001 でユーザーの順に直した。旧の表と見積もり（2026-10-14 Q1）は git の履歴に）
 
@@ -30,9 +30,9 @@ Parent: [Master](../master.md)
 
 | ID | 内容 | 見積もり | 状態 | 依存 |
 | --- | --- | --- | --- | --- |
-| [ws235-p001](phase001/phase.md) | 調べと設計: 10.0.10.3 の観測、rge（OpenBSD・FreeBSD）の作りが RTL8127 に当たるか、firmware と license、zedBSD の口、Phase の表 | 4 LW | in-progress（2026-10-29 P1） | — |
-| ws235-p002 | 共通の骨格: PCI の ID、BAR2、bus master、版の判定（TXCFG）、MAC・PHY・CSI・EPHY の OCP の窓、reset、MAC address、1 vector の割り込み、net device の登録、`CONFIG_DRIVER_PCI_RTL8125`、試験の config `plan/ws235/tests/` | 6 LW | planned | p001 |
-| ws235-p003 | MAC・PHY の初期化と link（共通の手順＋RTL8127 に要る MCU・EPHY・PHY の表）: firmware 無しから試し、要れば zedBSD-firmware の手順で（Q1 に先に）。auto-negotiation、link の報告（両側） | 10 LW | planned | p002 |
+| [ws235-p001](phase001/phase.md) | 調べと設計: 10.0.10.3 の観測、rge（OpenBSD・FreeBSD）の作りが RTL8127 に当たるか、firmware と license、zedBSD の口、Phase の表 | 4 LW | in-progress（2026-10-29 P1。設計と design-reviewer の反映は済み、判断の 5 件を Q1 へ。cleared の判定は Q1） | — |
+| [ws235-p002](phase002/phase.md) | 共通の骨格: PCI の ID、BAR2、bus master、版の判定（TXCFG）、MAC・PHY・CSI・EPHY の OCP の窓、reset、MAC address、1 vector の割り込み、net device の登録、`CONFIG_DRIVER_PCI_RTL8125`、試験の config `plan/ws235/tests/` | 6 LW | in-progress（2026-10-29 P1、build の warning 0 まで。実機の attach は未実施） | p001 |
+| [ws235-p003](phase003/phase.md) | MAC・PHY の初期化と link（共通の手順＋RTL8127 に要る MCU・EPHY・PHY の表）: firmware 無しから試し、要れば zedBSD-firmware の手順で（Q1 に先に）。auto-negotiation、link の報告（両側） | 10 LW | in-progress（2026-10-29 P1、code と build まで、実機は未実施） | p002 |
 | ws235-p004 | RX・TX の ring（v1・v2 の descriptor）、1 queue・1 vector、net の worker への接続（offload 無し） | 8 LW | planned | p002 |
 | ws235-p005 | 実機（共通の段）: link・IPv4（static か DHCP）・ping・ssh・TCP の転送の計測と直し | 6 LW | planned | p003・p004 |
 | ws235-p006 | RTL8127 の拡張: 多 vector の MSI-X、RSS と複数の RX queue、割り込みの抑え、RX の zero copy、約 7 Gbit/s（Linux の値）に近づける。律速が stack なら記録して WS221 と組で Q1 へ。checksum・TSO の offload は、stack の口（WS221 p010、P3 が設計）ができたら driver の側を足す | 10 LW | planned | p005。offload は WS221 p010 の口 |
