@@ -4,7 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」）。旧: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13…
-Resume point: 2026-10-29 04:31 q1664（P3）: 6d45f0a87 まで（pool の動的確保、TCP の費用削り）。VF2 は recv 948・send 820〜918 Mbps、send ≥ 940 が残り（書き手の CPU 律速）。次は「性能の受け入れ」の未達の行、p002 の残り（下の p002 の行）、p003（RTL8156 の SET_MAX_DATAGRAM_SIZE の試し、dw-eqos は済み）。VF2 の今の kernel は 6d45f0a87 の build（/boot/boot0/vmunix、前は vmunix.old、元は vmunix.p3orig と host の build/vf2-board-backup/）。5330 の enx6c1ff706148a の MTU は 1500 に戻した。§9 は全部推しで決定（下）。旧: p001 の review-2 → §9 の判断（特に Q1・Q4・Q11・Q12・Q13）→ p002（kernel + ifconfig + ping）と p004（設定）を Queue に、p003 の前に descriptor の読み（phase.md §4.1）
+Resume point: 2026-10-29 05:20 q1664（P3）: 最新の commit は下の表の最後の行（write(2) の socket への pinned の送り）。VF2: recv 948.6・send 932〜935 Mbps（3 回）、send ≥ 940 まであと少し（書き手の CPU 律速、copy と checksum が残り）。VF2 の /boot/boot0/vmunix はその commit の build（前は vmunix.old、元は vmunix.p3orig と host の build/vf2-board-backup/）。5330 の enx6c1ff706148a の MTU は 1500 に戻した（Debian 側の一時の設定だけで、永続の設定は触っていない）。次: send の残り（候補: sendto(2) にも pinned、fused の copy と checksum、TX checksum の offload の可否）、p002 の残り（ws の p002 の行）、p003（RTL8156 の SET_MAX_DATAGRAM_SIZE）、p007（規約の見直し）。§9 は全部推しで決定（下）。旧: p001 の review-2 → §9 の判断（特に Q1・Q4・Q11・Q12・Q13）→ p002（kernel + ifconfig + ping）と p004（設定）を Queue に、p003 の前に descriptor の読み（phase.md §4.1）
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -83,7 +83,9 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 | 7d99bf2d9 | 948.4 | 900.1・784.9 | frame を語の境界に、TX の reclaim を ring が半分の時だけ |
 | 970652255 | 948.5 | 886.7・918.4 | TCP が next hop と source を route の世代つきで持つ |
 | 6d45f0a87 | 948.6 | 822.9 | pool を起動の時に確保（amd64 の上限の余りのため） |
-| （ring 256） | 948.4 | 915.8・923.5・923.8 | 送りの ring 128 → 256、書き手を起こすのを ring の半分が空いてから（write の 64 KB の bounce が丸ごと取られる） |
+| f22ba6a27 | 948.4 | 915.8・923.5・923.8 | 送りの ring 128 → 256、書き手を起こすのを ring の半分が空いてから（write の 64 KB の bounce が丸ごと取られる） |
+| 09e15688b | 948.5 | 923.0・886.4 | dw-eqos の TX を pool の packet から直に DMA（pool を物理 page から取り、packet_buf_physical） |
+| （pinned） | 948.6 | 932.2・935.4・932.9 | write(2) の stream socket は bounce を使わず pin した user の page から TCP の ring の copy へ（send_pinned） |
 
 - 受けは基準を満たした（948 Mbps、理論値 949）。送りは 785〜918 Mbps で未達。書き手の thread が 1 CPU の 95 % 前後を使い、どの CPU に載るか（eqos の割り込みの CPU と同じか）で run ごとに揺れる。
 - 測りの道具: sched の tick で中断の PC と kernel thread の入口を数える一時の差分（commit しない、build/tmp/*.patch）。送りの書き手の内訳（7d99bf2d9 の時）: memcpy（copyin の 64 KB の bounce と ring の copy）・eqos_transmit（DMA の buffer への copy と MMIO）・checksum・route と device の ref。
