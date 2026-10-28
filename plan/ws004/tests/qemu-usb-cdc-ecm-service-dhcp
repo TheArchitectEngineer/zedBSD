@@ -1,7 +1,0 @@
-type=oneshot
-command=/usr/bin/usb-cdc-ecm-guest-probe
-arguments=dhcp
-after=networkd
-requires=networkd
-restart=no
-required=YES

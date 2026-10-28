@@ -1,6 +1,0 @@
-type=oneshot
-command=/bin/sh
-arguments=/etc/bug095-poweroff.sh
-after=sshd
-restart=no
-required=NO

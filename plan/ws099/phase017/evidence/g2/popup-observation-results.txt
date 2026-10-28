@@ -1,1 +1,0 @@
-popup run=1 exit=1 seconds=47

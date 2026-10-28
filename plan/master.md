@@ -22,7 +22,7 @@
 | P1 | —（q1657 cleared、merge f88836330） | [WS299](ws299/ws.md) 5330 NVMe: memcpy の改善と全体の測り直しの report を出して停止。継続はユーザーの判断（ユーザー「その上で継続判断させてください。」） | 5330 は Debian、lock 空き |
 | P2 | —（q1658 cleared、merge ae5c52a21） | [WS291](ws291/ws.md) RDNA: UCLK の負荷に応じた DPM・underflow 0・2 s の止まり（Keiland）を直し評価済み。次の案 4・5 はユーザーの判断 | 10.0.10.3（memory=2、vmunix-m2j） |
 | P3 | — | 終了（2026-10-28 21:23 ユーザー「FPGA側の設計が終わっていないので、P3はいったん終了、再開は明示的な指示です。計画だけアップデートして、整理しておいてください。」）。[WS290](ws290/ws.md) は保留: p017 は実装・host 試験・QEMU 済み（merge b99e96139）、残りは実機（p014・M9）と p015 | — |
-| P4 | q1660 | 記録の矛盾の解消（ユーザー「計画ドキュメントの矛盾は解決してアップデートしておいてください。」）: 完了の WS の Phase・試験の片付け（status.py の COMPLETED_WITH_*） | — |
+| P4 | —（q1660 cleared） | 記録の矛盾の解消を完了（完了の WS 87 の ws.md を完了の形に、Phase・試験 1,324 件を削除、157 件を plan/tools/ へ移動、WS217 を開き直し、WS220 の残りを WS221 へ）。status.py・links.py の指摘 0 | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
 <!-- master:agents:end -->
@@ -140,7 +140,8 @@ BUG-349 · q1661 · WS309 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS009](ws009/ws.md) | MG001 | 文書 | incomplete（DOC-54 を今書く、2026-10-27 ユーザーの回答「今書く」） | DOC-54（/dev/gpu の UAPI の文書） |
 | [WS068](ws068/ws.md) | MG006 | EGL と OpenGL ES（と desktop GL 3.0〜4.6）を Vulkan と display 拡張の上に実装する（Wayland とディスプレイ直接の両方）（2026-09-26・27 ユーザー指示） | incomplete・継続（空き時間だけ、2026-10-27 ユーザーの回答「継続」） | p037・p034〜p036（GL 3.3〜4.6）、p039 ETC2、p007 規約 |
 | [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete・継続（Codex のセッション） | WPT Interop 2025 の 100%（ws074-q20261019-55 active） |
-| [WS221](ws221/ws.md) | MG005 | Jumbo frame（Ethernet の L2 の大きな MTU、device ごとの上限、IP・TCP の MSS）（2026-10-13 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」） | p001 の判断から |
+| [WS217](ws217/ws.md) | MG006 | 画面の回転（Settings の Display、縦長で Notes を使う）（2026-10-13 ユーザーの UAT） | incomplete（2026-10-28 ユーザー「WS217 を開き直す」） | p009-1（Intel の PRM）・p009〜p011（scanout の 180°）・p005（複数 head）・p006（pen・touch と display の結び付け）・p012（game の session）→ p007 確かめ・p008 規約。p002a・p002b・p003・p004 は済み |
+| [WS221](ws221/ws.md) | MG005 | Jumbo frame（Ethernet の L2 の大きな MTU、device ごとの上限、IP・TCP の MSS）（2026-10-13 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」） | p001 の判断から（p008・p009 は WS220 の旧 p006 tcp_device_mss・p007 を移した物、2026-10-28 ユーザー「WS221 へ移す (推し)」） |
 | [WS223](ws223/ws.md) | MG006 | 全画面は compositor の合成、game mode は Wayland の拡張で求められた時だけ（Video Player は game mode をやめる）（2026-10-13 ユーザー） | planning（すぐ進める、2026-10-27 ユーザーの回答「推しで決めて実装」、D1〜D6 は推し） | p001 の D1〜D6 を推しで確定 → p002 |
 | [WS226](ws226/ws.md) | MG006 | Khronos の Vulkan 1.3 の header をそのまま使い、libvulkan で Vulkan 1.3 の API を実装しきる（不整合の整理）（2026-10-13 ユーザー） | planning（WS290 の後、全 GPU driver で Vulkan 1.3 相当を capability の flag とともに、2026-10-27 ユーザー） | WS290 の後に p001 |
 | [WS242](ws242/ws.md) | MG006 | nvrtx の RTX 20/30/40 の全モデル（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の再開点 1〜4、GTX 16・RTX 30・40 の既定の有効（ユーザーの決定、未実装） |

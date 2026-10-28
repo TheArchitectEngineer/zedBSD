@@ -8,7 +8,7 @@
 | P1 | phase-runner | WS299 の残り（q1657、cleared） | `/home/awe/zedBSD-worktrees/p1-ws299d` / `agent/p1-ws299d` | returned（2026-10-28 21:50、ユーザーの継続の判断待ち） | da1bcc51d（q1657、merge f88836330） |
 | P2 | phase-runner | WS291 UCLK・画面の止まり（q1658、cleared） | `/home/awe/zedBSD-worktrees/p2-ws291h` / `agent/p2-ws291h` | returned（2026-10-28、案 4・5 はユーザーの判断待ち） | a716c54a0（q1658、merge ae5c52a21） |
 | P3 | phase-runner | WS290 p017 の残り（q1659、cleared） | `/home/awe/zedBSD-worktrees/p3-ws290h` / `agent/p3-ws290h` | returned・終了（2026-10-28 21:23 ユーザー「P3はいったん終了、再開は明示的な指示です。」） | 351040f44（q1659、merge b99e96139） |
-| P4 | phase-runner | 記録の矛盾の解消（q1660） | `/home/awe/zedBSD-worktrees/p4-closeout` / `agent/p4-closeout` | running | 23c76dd28（WS307 p001） |
+| P4 | phase-runner | 記録の矛盾の解消（q1660、cleared） | `/home/awe/zedBSD-worktrees/p4-closeout` / `agent/p4-closeout` | returned（2026-10-29） | 67da81f72（merge 582ff2906） |
 
 - 2026-10-28 21:23 から P3 を終了し、動くのは P1・P2。P3 の再開はユーザーの明示の指示（WS290 は FPGA 側の設計の完了待ち）。
 - 同時に動かす数は 3（2026-10-28 ユーザー「N=3で作業します。」）。WS307 の仕様の間だけ P4 を足して 4、2026-10-28 ユーザー「P4は停止して、N=3に戻します。」で 3 に戻した。

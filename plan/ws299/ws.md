@@ -18,7 +18,7 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 
 ## 今の事実（2026-10-27 の調べ、根拠は file:行）
 
-- 測定（[ws298 p002](../ws298/phase002/phase.md):46-51、kernel f0effe7ad、`/dev/nvme0n1` を dd）: 1・16・64・256 MiB は 0〜1 秒、512 MiB は 5 秒、1024 MiB は 52 秒、
+- 測定（[ws298 p002](../ws298/ws.md):46-51、kernel f0effe7ad、`/dev/nvme0n1` を dd）: 1・16・64・256 MiB は 0〜1 秒、512 MiB は 5 秒、1024 MiB は 52 秒、
   195 GiB の位置の 256 MiB は 71 秒（約 3.6 MB/s）。遅さは位置ではなく boot からの読みの量に依る。nvme の timeout・回復の行は無い。dd の script は git に無い（`5330-run.sh` の EXTRA）。
 - 経路: devfs の `block_pread_data`（`src/kern/devfs.c:1625-1716`）→ `disk_read`（`src/kern/disk.c:2416-2431`）→ buffer cache の `buf_read`・`transfer_run`
   （`src/kern/buf.c:673-731`、`2339-2480`、1 run は 4 KiB の line ×16 = 64 KiB）→ `disk_transfer_direct`（`disk.c:3923-4015`、BIO を 1 つずつ待つ）→ NVMe。

@@ -666,7 +666,7 @@ q581/p001 GTK調査clearとq583部分診断clearをB df66db5e→A435a62126から
 
 ## q578 / C10 hardware cleared（2026-10-02）
 
-[Archive](queue-q578.md)、[結果](../ws099/phase014/q578-result.md)。i915 passthroughで実3602秒/278周/errors0/restarts0、final live Terminal/disk receipt/cleanup確認。WS099はincomplete、USB素実機は範囲外。補助framebuffer boot timeoutは別記。P9利用上限終了後mainが判定。q577/q579はmain継続中、3children停止後、ユーザー利用上限回復確認でgeneration2再起動/N_effective3、全WIP/pushなし/GitHub公開保留。
+[Archive](queue-q578.md)、結果（fb1f6afee の `plan/ws099/phase014/q578-result.md`）。i915 passthroughで実3602秒/278周/errors0/restarts0、final live Terminal/disk receipt/cleanup確認。WS099はincomplete、USB素実機は範囲外。補助framebuffer boot timeoutは別記。P9利用上限終了後mainが判定。q577/q579はmain継続中、3children停止後、ユーザー利用上限回復確認でgeneration2再起動/N_effective3、全WIP/pushなし/GitHub公開保留。
 
 ## 2026-10-02 並列実行開始（結果は未確定）
 
