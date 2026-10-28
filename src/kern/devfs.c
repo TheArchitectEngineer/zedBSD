@@ -2197,7 +2197,7 @@ block_pdirect(
 			    first + total / block_size, claim, pages, &moved);
 		if (error == EOPNOTSUPP && moved == 0) {
 			piece = buf_direct_staged_piece(user, length - total,
-			    KERN_PAGE_SIZE, block_size, BUF_DIRECT_PIECE_BYTES);
+			    KERN_PAGE_SIZE, block_size, BUF_DIRECT_STAGED_BYTES);
 			if (piece == 0 || piece % block_size != 0)
 				piece = block_size;
 			error = block_direct_staged(disk, write, pin,

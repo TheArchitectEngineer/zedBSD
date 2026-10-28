@@ -21,11 +21,12 @@
 # qdprobe: where depth 32 stops: random 4 KiB reads at depth 1 and 32, threads and processes, direct and through
 #        the cache, without the clock in the loop, and getpid() alone; after each run the kernel's last "exp:" and
 #        nvme latency lines (a measurement kernel prints "exp:").
+# cpu:  cpuloop three times (one thread's compute, fill and memcpy rates), to compare the CPU's speed with Debian's.
 # Every timed step prints "step NAME bytes=N" and the /bin/time lines (real/user/sys); the summary is made on the
 # build host (summary.py).  The only file removed is WFILE_NEW, inside zedBSD, before it is written again.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-MODE=${1:?read|write|p7rawwrite|p7rawread|p7fswrite|p7fsread|p7direct|qdprobe}
+MODE=${1:?read|write|p7rawwrite|p7rawread|p7fswrite|p7fsread|p7direct|qdprobe|cpu}
 DEV=/dev/nvme0n1
 SWAP=/dev/nvme0n1p6
 R0_MIB=${R0_MIB:-25681}
@@ -215,6 +216,12 @@ p7direct)
 		"$RANDREAD" $DEV 4096 $depth "$RAND_SECONDS" "$R0_MIB" "$R_MIB" direct fdeach
 	done
 	snap rand-direct
+	;;
+cpu)
+	# How fast one thread computes and copies here (cpuloop, copied to CPULOOP), against Debian's same mode.
+	for run in 1 2 3; do
+		"${CPULOOP:-/tmp/cpuloop-zedbsd}"
+	done
 	;;
 qdprobe)
 	for run in "1 direct notime" "32 direct notime" "32 direct procs notime" "1 notime" "32 notime" "32 procs notime" \

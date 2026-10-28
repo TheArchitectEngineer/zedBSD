@@ -10,7 +10,8 @@
  * which offsets and lengths a direct transfer accepts, and how a request is
  * cut into pieces that go to the caller's pages in place and pieces that go
  * through staging, so that every piece is whole blocks, the pieces cover the
- * request exactly, and a page-aligned buffer goes in place in 1 MiB pieces.
+ * request exactly, and a page-aligned buffer goes in place in 4 MiB pieces
+ * (staging in 1 MiB pieces).
  *
  *   cc -O2 -Wall -Wextra -I include -o build/tmp/buf-direct-test plan/ws299/tests/host/buf-direct-test.c && build/tmp/buf-direct-test
  */
@@ -55,7 +56,7 @@ cut(size_t user, size_t length, uint32_t block, unsigned *pieces)
 			placed += piece;
 		} else {
 			piece = buf_direct_staged_piece(at, length - done, PAGE, block,
-			    BUF_DIRECT_PIECE_BYTES);
+			    BUF_DIRECT_STAGED_BYTES);
 			if (piece == 0)
 				piece = block;
 		}
@@ -88,7 +89,7 @@ main(void)
 
 	/* An aligned buffer goes in place in whole pieces. */
 	placed = cut(0, 4U << 20, 512, &pieces);
-	check(placed == 4U << 20 && pieces == 4, "aligned 4 MiB: four 1 MiB pieces in place");
+	check(placed == 4U << 20 && pieces == 1, "aligned 4 MiB: one 4 MiB piece in place");
 	placed = cut(0, 4096, 512, &pieces);
 	check(placed == 4096 && pieces == 1, "aligned 4 KiB in place");
 

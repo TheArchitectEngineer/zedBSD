@@ -17,6 +17,7 @@
 #   sh bench-debian.sh p7direct        p7 discarded, P7_MIB MiB written to it with O_DIRECT (directio, 1 MiB requests,
 #                                      fsync), read back direct in 1 MiB and 4 MiB requests, and P7_MIB MiB of the
 #                                      data region read direct, as bench-zedbsd.sh p7direct does
+#   sh bench-debian.sh cpu             cpuloop three times (one thread's compute, fill and memcpy), as bench-zedbsd.sh cpu
 #   sh bench-debian.sh p7ufs           p7 discarded, then the root UFS of the zedBSD image P7_IMAGE (as 5330-nvme-write.sh
 #                                      puts it on p5) written to it and grown to fill it (ufs-grow.py), for zedBSD's
 #                                      file measurement on a volume of the kind zedBSD's root is
@@ -27,7 +28,7 @@
 # its result line.  REST seconds pass before every write step.  Nothing is removed.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-MODE=${1:?read|write|p6fresh|p6save|p7fresh|p7raw|p7fs|p7ufs|p7direct}
+MODE=${1:?read|write|p6fresh|p6save|p7fresh|p7raw|p7fs|p7ufs|p7direct|cpu}
 DEV=/dev/nvme0n1
 P6=/dev/disk/by-partuuid/a26f52a1-fed3-4073-b577-1bc61322882f
 HMB=/sys/class/nvme/nvme0/hmb
@@ -264,6 +265,11 @@ p7direct)
 	"$DIRECTIO" read "$P7" "$P7_MIB" 4096
 	echo "step data-directread"
 	"$DIRECTIO" read $DEV "$P7_MIB" 1024 "$R0_MIB"
+	;;
+cpu)
+	for run in 1 2 3; do
+		"$(dirname "$0")/cpuloop-linux"
+	done
 	;;
 p7fs)
 	p7_fresh
