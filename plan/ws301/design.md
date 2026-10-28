@@ -6,6 +6,14 @@
 - 基点: worktree `p5-design-b`（main 63386d8a4）。code は書いていない。HAL の差分の案は [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff)（適用しない）。
 - ユーザーの決定（[ws.md](ws.md) の原文から）: 2026-10-27 09:39（クリック）「UAPI は /dev/system、設定は domain ごとの min・max・desired・EPP、設定できるのは root だけ、HAL の差分の案を作る（承認は差分ごと）。対象はまず amd64（5330 の HWP）、arm64・riscv64 は枠だけ。fan は別の WS（WS303）。」
 
+## 第 2 版への追記: UAPI の置き場所の変更（2026-10-29、Q1 の中継）
+
+- 原文（ユーザー）: 「CPUのスピードは/dev/systemと言ってしまいましたが、/dev/thermalに変更してください。」
+- 解釈（P5）: ws.md の 2026-10-27 09:39 の決定のうち「UAPI は /dev/system」はこの原文で置き換わる（他の部分: domain ごとの min・max・desired・EPP、root だけ、HAL の差分の案、amd64 から、は残る）。
+  CPU の性能の ioctl（CPU の表・domain の表と設定）と事象は WS303 の `/dev/thermal`（group 'T'、`include/uapi/thermal.h`、事象の record は同じ形）に置き、番号は WS303 の p003 の案と一緒に決める。§5.2・§5.3・R12 の `/dev/system` の番号と事象の class 0x100 は取り下げ。
+- policy（Q301-7）: WS303 の strategy（ユーザーの回答 Q303-11: performance・balanced・powersave・manual、manual は実行速度・騒音・細粒度パワーゲートの 0〜100、対応は driver）の受け手になる。WS301 は独自の policy の名前と起動の parameter を持たない。
+  x86 の provider の対応の表（strategy と speed の軸 → EPP・min・max）は p004 で設計する。domain ごとの直の設定と strategy の関係は WS303 の Q303-17 で聞く。熱の上限の口は千分率に改める（WS303 の第 4 版 V6）。
+
 ## 第 2 版の改訂（2026-10-29 P5、[design-review.md](design-review.md) の blocker 1・major 17・minor 13 を反映。この節が下の本文に優先する）
 
 - **R1（B1）enable の前に HWP の MSR を読まない、#GP で止まらない**: HAL の契約を直した（[proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff) 第 2 版、`git apply --check` を通る）。

@@ -2,10 +2,74 @@
 
 # WS303 設計: 熱と fan（温度の読み・fan の回転数・thermal mode）
 
-- 版: 第 3 版（2026-10-29 P5、q1666-i02。第 1 版 → design-reviewer（[design-review.md](design-review.md)）→「第 2 版の改訂」→ ユーザーの回答 →「第 3 版の改訂」。第 3 版の review は [design-v3-review.md](design-v3-review.md)）。p001（調査と設計）の成果。code は書いていない。
+- 版: 第 4 版（2026-10-29 P5、q1666-i02。第 3 版の review を受けた「第 4 版の改訂」が最優先。第 1 版 → design-reviewer（[design-review.md](design-review.md)）→「第 2 版の改訂」→ ユーザーの回答 →「第 3 版の改訂」。第 3 版の review は [design-v3-review.md](design-v3-review.md)）。p001（調査と設計）の成果。code は書いていない。
 - 基点: worktree `p5-design-b`（main 63386d8a4）。根拠の file:行 はこの tree の物。
 - 調べた物: zedBSD の source（下の §1）、5330 の ACPI の表（前の P5 が取った逆アセンブル、`scratchpad/ws303-acpi/`、git に入れない）、
   5330 の Debian の読みだけの観測（2026-10-29 02:42、Q1 の割当、§2.3）、Fable の調査（公開の資料だけ、GPL の source は読まない、§2.4）。
+
+## 第 4 版への追記: ユーザーの回答の第 2 回（2026-10-29、Q1 の中継。この節が第 4 版の改訂の問いの推しに優先する）
+
+### 原文（Q1 の中継の通り。Q303-9・10・13・14 は Q1 の要約の形で届いた）
+
+- Q303-9/10「/dev/thermal に移す・root/wheel」（Q1 の注: monitor も /dev/thermal に移し hw.thermal の sysctl は後で外す、sessiond 経由は root か wheel）
+- Q303-11「ストラテジーはかなり抽象化されたものとして、トータルの「performance or balanced or power save or manual」と、マニュアルなら実行速度、騒音、細粒度パワーゲートの3項目を0-100で設定可能に。具体的なプラットフォームへのマッピングはドライバが決める。」
+- Q303-12「GPL の値を出典つきで (推し)」
+- Q303-13/14「推しの組 (推し)」（第 4 版の Q303-13 の A、Q303-14 の A）
+- WS301 にも効く原文: 「CPUのスピードは/dev/systemと言ってしまいましたが、/dev/thermalに変更してください。」
+
+### 解釈（P5）
+
+1. `hw.thermal` の sysctl は、Keiland の monitor（`monitor-zedbsd.c`）と `sysctl` の道具を `/dev/thermal` に移した後に外す（新しい Phase p009）。V8 の「`hw.thermal` は残す」はこれで置き換わる。sessiond 経由は root か wheel（第 4 版の Q303-10 の推し B は取り下げ）。
+2. strategy は抽象の 4 つ: `performance`・`balanced`・`powersave`・`manual`。manual の時だけ 3 つの軸を 0〜100 で持つ: 実行速度（speed）・騒音（noise）・細粒度パワーゲート（power gating）。cool・quiet は strategy の名前から外れる。
+   kernel は strategy（と manual の 3 軸）を受け手の全部に渡し、**具体的な対応は driver（受け手）が決める**: WS301 の CPU の provider は speed と strategy から EPP・min・max を、Dell の provider は strategy と noise から Dell の 4 つの mode のどれかを、Pi 5 の provider は noise から trip の組を決める。
+   どの軸でも fan を「必要な回転数より下」にはしない（第 3 版の原文 Q303-2・5 を保つ。noise は上げる段と firmware の mode の選びにだけ効く）。第 4 版の Q303-11 の表は取り下げ、対応の表は各 driver の Phase で設計して記録する。
+3. Q303-12: 5330 の SMM の fan の state の命令の値は Linux の hwmon の driver（GPL）から block ごとに出典つきで取る（guardrail の「MIT・GPL の出典のデータの引用」。実装の担当が GPL の source を値のために読む。code・名前・構造は写さない）。
+4. Q303-13 A: 非常の停止は ACPI の thermal zone の `_CRT` と DT の critical だけ（5330 は firmware に任せる、Pi 5 は 110 °C）、手順は V3。Q303-14 A: passive は仕組みと host 試験まで、実機の受け入れは passive の水準が critical より下にある機械が来た時。
+5. WS301 の CPU の性能の UAPI も `/dev/thermal`（同じ device、ioctl の group 'T'、事象の record も同じ）。WS301 の policy（Q301-7）は独立の名前を持たず、この strategy の受け手になる。
+
+### まだ聞く点（推しつき）
+
+- **Q303-15 起動の時の strategy**（第 4 版のまま）: (A, 推し) firmware のまま。(B) 前回の strategy を覚えて渡す。
+- **Q303-16（新）細粒度パワーゲートの軸が何に効くか**: (A, 推し) idle の深さと device の runtime の省電力の積極さ（CPU の C-state の上限、PCIe の ASPM・NVMe の APST の閾値（WS300）、GPU の power gating）を driver ごとに決める。(B) CPU だけ（C-state と HWP の activity window）。
+- **Q303-17（新）WS301 の domain ごとの直の設定（2026-10-27 の決定: min・max・desired・EPP）と strategy の関係**: (A, 推し) 直の設定は strategy より優先し、strategy は「manual（custom）」と表示する。次に strategy を選ぶと直の設定は消える。(B) 直の設定は manual の時だけ許す。
+
+### 第 4 版の Phase の表への追加
+
+- p009（新）: Keiland の monitor と `sysctl` の道具を `/dev/thermal` に移し、`hw.thermal` を外す（2 LW、p003 の後）。p003 の strategy は 4 つと manual の 3 軸の形。合計 約 32 LW。
+
+## 第 4 版の改訂（2026-10-29 P5、[design-v3-review.md](design-v3-review.md) の blocker 2・major 9・minor 15 を反映。この節が第 3 版の改訂に優先する）
+
+- **V1（B1）5330 の水準は段にならない**: 5330 の値（`out-ssdt3.dsl` から review が計算）は TCPU の `_PSV` = `_HOT` = `_CRT` = TJMX（110 °C）、TMEM・TSKN・NGFF の `_HOT`・`_CRT` 127 °C、AMBF の `_CRT` 80 °C・`_HOT` 75 °C。
+  device（DPTF の participant）の `_CRT` は ACPI 6.5 §11.4.4 で system を落とす閾値ではない（review の読み、ACPI 6.5 の本文は Fable の写しの 11 章）。→ 非常の停止の水準は **ACPI の thermal zone の `_CRT` と device tree の critical の trip だけ**を既定にし、DPTF の participant の値は使わない。
+  127 °C 以上（0x7F 以上）は「定めない」と扱う。前の読みから 20 °C 以上跳ねた値は 1 回捨てる。5330 には thermal zone が無いので、5330 の非常の停止は firmware（EC と CPU の hardware）に任せる形になる（Q303-13 で聞き直す）。
+  passive も同じで、5330 の TCPU の `_PSV` は 110 °C で CPU が自分で絞る温度と重なり、p007 は 5330 で動く場面が無い（Q303-14 で聞き直す）。
+- **V2（M2）hot の規則を外す**: 「hot = critical − 5 °C」「hot で boost を最大」は原文に無いので外した。原文の「回転を上げる」は「自動の制御（firmware・device tree の trip）が上げる事を OS が妨げない、user は上げる段を足せる」と読む（下回らせない = max(自動, boost)）。
+- **V3（B2）非常の停止の道**: init に SIGUSR2 → poweroff を足す（`userland/base/init` の変更、今は SIGINT が reboot・SIGTERM が halt、`init/main.c:2470〜2480`）。kernel は `signal_send_process` で pid 1 に送る。
+  送ってから 120 秒（init の service ごとの 5+5 秒の待ちを見込む）たっても水準以上なら、kernel が直に電源を切る: `system_shutdown_prepare` を通さず、`\_PTS` の評価は interpreter の lock が 1 秒で取れた時だけ（取れなければ `_PTS` 無しで SLP_TYP・SLP_EN を書く）。
+  写しが古い（30 秒以上更新されない）間に最後の値が水準以上なら、それも非常として扱う。時間つきの lock の口が今の AML の層にあるかは p003 で確かめる（無ければ足す、`src/drivers/acpi` の実装の内）。
+- **V4（M1・Q303-11 の改め）Pi 5 の profile は fan を遅くしない**: quiet の「trip +5 °C」は「必要な回転数を下回らせない」に反するので外す。Pi 5 の profile は balanced = DT の trip、cool = 全 trip −5 °C（早く回す）、quiet・performance = DT の trip（fan は balanced と同じ、違いは WS301 の policy）。
+- **V5（M3）strategy と WS301 の policy の持ち主**: strategy の受け手の口（`kern_thermal_strategy_receiver_register`）は WS303 p003 が作り、WS301 の policy を受け手として登録する小さな作業は WS303 p007 に入れる（WS301 p002 の後）。
+  起動の時の strategy は「firmware のまま」（表示は firmware の今の mode、Dell は `ODV0`）で、WS301 の policy には何も渡さない（WS301 の既定のまま）。user が strategy を一度選ぶと全部の受け手に渡る。一部の受け手が失敗したら strategy は「partial」と受け手ごとの結果を返す（EIO にしない）。
+- **V6（M4）熱の上限の口の形**: `kern_cpuperf_limit` は単位でなく domain の範囲の千分率（lowest = 0、highest = 1000）で渡す（hybrid の単位の違いを WS301 の側で解く）。下限は guaranteed。source は `KERN_CPUPERF_LIMIT_THERMAL` の定数。WS301 の design に同じ改めを返す（Q1 経由で WS301 の次の版に入れる）。p007 は WS301 p002・p003（HAL の承認）・p004 に依る。
+- **V7（M5）DIAG の `_WDG`**: DIAG の `_WDG` は Method で Name を返すだけ（SMI 無し、`dsdt.dsl` 94054〜94071）。WMI の層は既定で Method の `_WDG` を評価せず、provider が path を名指した device（`\_SB.DIAG`）だけ評価する口を持つ（Q303-12 の A を採る時だけ使う）。
+- **V8（M6）2 つの registry**: `hw.thermal` の `thermal_entry` は変えない（Keiland の monitor が `sizeof` で進む、`monitor-zedbsd.c:672`）。水準（passive・critical）と非常の判定は新しい registry だけが持つ。`acpi-thermal.c` の 5 秒の thread を唯一の読みの源にし、`hw.thermal` と `/dev/thermal` は同じ写しを出す。「2 回続けて」は読みの時刻が違う 2 つの値で数える。新しい UAPI の名前は `KERN_THERMAL_*`（今の `THERMAL_*` とぶつけない）、header は `include/uapi/thermal.h`、ioctl の group は 'T'（空き、review が確かめた）。
+- **V9（M7・M8）試験**: 5330 の boost の合否: 同じ負荷で boost の段を上げた時の rpm が boost 無しの rpm 以上で、さらに温度が上がった時に EC が boost の値より上げる事（上げなければ boost を無効にして記録）。
+  非常の停止の端から端: 試験の build だけの試験の sensor（`/dev/thermal` の試験の ioctl で温度を注入、`CONFIG_THERMAL_TEST_INJECT`、既定 n）を QEMU で使い、注入 → init の poweroff → QEMU の終了を QMP の `query-status` と process の終了で判定する（console の log で判定しない）。直の切りの道は init を止めた試験の image で同じく。p005（sessiond）の QEMU の受け入れは試験の受け手（注入と同じ試験の option）で strategy が届いた事を読む。
+- **V10（M9）UAPI**: `/dev/thermal` の struct（sensor・fan・strategy・boost・事象の record 128 byte・購読の mask）は p003 の最初に `include/uapi/thermal.h` の案として書き、ユーザーの review に出す（この版では欄の一覧だけ: sensor = 名前 32・源・flags・温度・passive・critical・時刻、fan = 名前・flags・rpm・rpm_max・自動の段・boost の段・段の数・時刻、strategy = 対応の bit・今・受け手ごとの結果）。本文 §5.1 の `KERN_FAN_MODE_MANUAL` は外す（user が段を固定する口は無い）。
+- **minor**: m2 Q303-10 の字面は B（session の user なら誰でも）に近いので、推しを B に替えて聞く（sessiond は今 seat の session を持つ）。他の minor（行の番号、名前、表の写し）は実装の Phase で直す（design-v3-review.md の一覧を p003 の作業の入力にする）。
+
+### 第 4 版の Phase の表の変更（第 3 版の表に対し）
+
+- p003 は init の SIGUSR2 と直の切りの道、試験の注入の option を足して 8 LW。p007 は WS301 の policy の受け手の登録と passive、依存に WS301 p003 を足す。合計 約 30 LW。
+
+### 第 4 版で聞き直す点（第 3 版の Q303-9〜14 を置き換える物は印）
+
+- Q303-9・Q303-12: 第 3 版のまま。
+- **Q303-10（改め）**: (B, 推し) seat の session の user なら誰でも sessiond 経由で変えられる（原文「sessiond経由でも変えられる」の字面）。(A) root か wheel。
+- **Q303-11（改め）**: (A, 推し) performance = WS301 performance・Dell UltraPerformance・Pi 5 DT、balanced = balanced・Optimized・DT、quiet = powersave・Quiet・DT（fan は遅くしない）、cool = powersave・Cool・DT −5 °C。(B) strategy は Dell の mode と Pi 5 の trip だけ、WS301 の policy は別に選ぶ。
+- **Q303-13（改め）非常の停止の水準**: (A, 推し) ACPI の thermal zone の `_CRT` と DT の critical だけ（5330 は thermal zone が無いので firmware に任せる。Pi 5 は 110 °C）。(B) A に加え 5330 は CPU の TCPU の 110 °C（CPU が自分で絞る温度と同じ）を 3 回続けた時。(C) A に加え DPTF の participant の `_CRT`（5330 では AMBF の 80 °C が効く）。手順は V3（init → 120 秒 → 直に切る）。
+- **Q303-14（改め）passive**: 5330（TCPU の `_PSV` 110 °C）にも Pi 5（DT に passive の trip が無い）にも動く場面が無い。(A, 推し) 仕組み（WS301 の上限を下げる）は作り host 試験で確かめ、実機の受け入れは passive の水準が critical より下にある機械が来た時に回す。(B) 機械ごとの既定の passive の水準を zedBSD が持つ（例 5330 は 95 °C、Pi 5 は 80 °C）。(C) passive をこの WS から外す。
+- **Q303-15（新）起動の時の strategy**: (A, 推し) 「firmware のまま」（WS301 の policy は既定のまま、Dell の mode は書かない）。(B) 前回選んだ strategy を覚えて起動の時に全部の受け手に渡す（`/etc` に保存、rc で `/sbin/thermal` が渡す）。
 
 ## 第 3 版の改訂（2026-10-29 P5。ユーザーの回答を受けた改訂で、この節が第 2 版の改訂と本文に優先する）
 
