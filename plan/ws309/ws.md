@@ -72,15 +72,17 @@
 
 ## Resume point
 
-- 2026-10-29 P1（q1662-i01）: p002（lane）と p003（入力の検出の thread）の実装と host 試験まで。次は p004（io-device の残り）か p005（io-file）。J5・J6 は Q1 が決めた（推しのとおり）。
+- 2026-10-29 02:3x P1（q1662-i01）: p001・p002・p003 cleared、p019（shot の送りを thread へ）は QEMU で再現せず RDNA の確かめ待ち。
+  次は p005（io-file: displays.conf の `saved` の答えを書き終わりで返す。displays-shell.c の `displays_pending` の保留の仕組みを広げる案）か p004（io-device の残り）。
+  QEMU の image は `plan/ws309/tests/config-amd64-p1.mk`（BUILD=build/ws309/img）、試験は `plan/ws309/tests/` の io-device-guest.sh・shot-fifo.sh。
 
 ## Phase
 
 | ID | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [ws309-p001](design.md) | 設計の確定（thread の一覧・本数・待ちの点・queue と通知・ゲームモード、敵対的レビューの反映） | in-progress（判断の点は全て決定、QEMU の確かめは p017） | — |
-| [ws309-p002](phase002/phase.md) | 共通の部品: thread の台帳・lane（常駐と pool）、host 試験 | in-progress | p001 |
-| [ws309-p003](phase003/phase.md) | io-device: 入力の device の検出と close を thread へ（zedBSD） | in-progress | p002 |
+| [ws309-p001](design.md) | 設計の確定（thread の一覧・本数・待ちの点・queue と通知・ゲームモード、敵対的レビューの反映） | cleared（判断の点 J1〜J6 は全て決定） | — |
+| [ws309-p002](phase002/phase.md) | 共通の部品: thread の台帳・lane（常駐と pool）、host 試験 | cleared | p001 |
+| [ws309-p003](phase003/phase.md) | io-device: 入力の device の検出と close を thread へ（zedBSD） | cleared（実機は未実施） | p002 |
 | ws309-p004 | io-device の残り: 電源・network の詳細・machine・sysmon、input の detach の ack を wake で | planned | p003 |
 | ws309-p005 | io-file: displays.conf・desktop.conf・printers.conf の書き込み（`saved` は書き終わりで答える）、apps.conf・言語・printers.conf の読み、account・鍵の保存 | planned | p002 |
 | ws309-p006 | daemon ×5 の thread（zedBSD の backend、wake pipe を backend の open の前に） | planned | p002、J6 |

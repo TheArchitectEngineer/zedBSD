@@ -3,7 +3,7 @@
 # ws309-p002 共通の部品: thread の台帳・lane（常駐と pool）
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §3。Queue: q1662-i01（P1）。
-- 状態: in-progress（2026-10-29 P1）。
+- 状態: cleared（2026-10-29 P1: host 試験と build。lane は p003 の QEMU で io-device として動いた）。
 - 依存: p001（設計）。
 
 ## 範囲
