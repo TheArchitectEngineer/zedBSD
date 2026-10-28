@@ -23,16 +23,16 @@
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 調査と設計、design-reviewer | — | in-progress（第 3 版。Q303-9〜14 待ち） |
+| p001 | 調査と設計、design-reviewer | — | in-progress（第 4 版。Q303-9〜15 待ち） |
 | p002 | ACPI WMI の層、harness の移しと拡張（6 LW） | p001 | planning |
-| p003 | registry・`/dev/thermal`・水準と非常の停止・`/sbin/thermal`（7 LW） | p001 | planning |
+| p003 | registry・`/dev/thermal`・非常の停止（init の SIGUSR2・直の切り）・試験の注入・`/sbin/thermal`（8 LW） | p001 | planning |
 | p004 | Dell の provider と 5330 の試験（7 LW） | p002、p003 | planning |
 | p005 | sessiond の THERMAL の要求（2 LW） | p003 | planning |
 | p006 | Pi 5 の provider（profile と boost、3 LW） | p003 | planning |
-| p007 | passive（WS301 の上限の口、2 LW） | p003、WS301 p002・p004 | planning |
+| p007 | WS301 の policy の受け手と passive（2 LW） | p003、WS301 p002・p003・p004 | planning |
 | p008 | 規約の全文と文書（2 LW） | p004〜p007 | planning |
 
 ## 再開点（2026-10-29 P5、q1666-i02）
 
-- 設計の第 3 版（ユーザーの回答 Q303-1〜8 を反映）。確かめの問い Q303-9〜14 の答えと、第 3 版の design-reviewer を待つ。
+- 設計の第 4 版（ユーザーの回答 Q303-1〜8 と第 3 版の review を反映）。聞き直し Q303-9〜15（design.md の第 4 版の問いが最新）の答えを待つ。p003 は 8 LW、合計 約 30 LW（design.md の第 4 版の変更）。
 - 5330 の Debian の読みの記録（2026-10-29 02:42、読みだけ）は scratchpad にあり git に入れていない。要る値は design.md §2.3 に写した。
