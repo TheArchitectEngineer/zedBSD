@@ -95,6 +95,7 @@ static void scene_bus_master(void);
 static void scene_locked_and_bus(void);
 static void scene_wait_fence(void);
 static void scene_stubs(void);
+static void scene_display(void);
 static void sleep_hook(unsigned sleep, void *argument);
 static int test_open(void *device, void **session);
 static void test_close(void *device, void *session);
@@ -125,6 +126,7 @@ main(void)
 	scene_bus_master();
 	scene_locked_and_bus();
 	scene_wait_fence();
+	scene_display();
 	scene_stubs();
 	model_fini();
 
@@ -1042,4 +1044,113 @@ test_get_info(
 	(void)session;
 	(void)info;
 	return 0;
+}
+
+/*
+ * The display controller of DISP2 (section 13.2): the mode table, the
+ * ring's lighting (a flip taken at once while dark, its record and
+ * TAKEN0), a flip pending until the vsync, the display event and its
+ * summary in IRQ_STATUS[3], the host's scan-out writes refused while the
+ * processor runs and taken while it is halted, a record due while halted
+ * and written by the reset, FB_NEXT refused to DISP_SET, and the stop
+ * cancelling a pending flip.
+ */
+static void
+scene_display(void)
+{
+	uint32_t packet[TEST_PACKET_DWORDS];
+	uint32_t offsets[4];
+	uint32_t values[4];
+	uint32_t dwords;
+	uint32_t record[4];
+	uint64_t record_bus;
+	uint32_t block;
+	int error;
+
+	/* A device with the controller, its events enabled, and a record. */
+	scene_start(MODEL_KC705_UMA, NULL, TEST_HEAP_BYTES);
+	block = MODEL_DISP2_BLOCK;
+	model_write(GHCI_REG_IRQ_ENABLE, GHCI_IRQ_FENCE | GHCI_IRQ_DISPLAY);
+	model_write(block + GHCI_DC_IRQ_ENABLE, GHCI_DC_IRQ_FLIP_DONE | GHCI_DC_IRQ_CURSOR_DONE);
+	error = model_host_alloc(16U, 16U, UINT32_MAX, &record_bus);
+	expect(error == 0, "display: record allocated");
+
+	/* The mode table. */
+	model_write(block + GHCI_DC_MODE_INDEX, 1U);
+	expect(model_read(block + GHCI_DC_MODE_H0) == (640U | (96U << 16)) && model_read(block + GHCI_DC_MODE_CLOCK) == 25175U &&
+	    ((model_read(block + GHCI_DC_CAPS) >> GHCI_DC_CAPS_MODES_SHIFT) & GHCI_DC_CAPS_MODES_MASK) == 2U, "display: modes");
+
+	/* The ring lights it: CTRL off waiting for the idle, the stride, a flip taken at once, CTRL on. */
+	offsets[0] = GHCI_DC_CTRL;
+	values[0] = 0U;
+	dwords = ghci_cmd_disp_set(packet, 1U, 1U, offsets, values);
+	push(packet, dwords);
+	offsets[0] = GHCI_DC_FB_STRIDE;
+	values[0] = 2560U;
+	dwords = ghci_cmd_disp_set(packet, 0U, 1U, offsets, values);
+	push(packet, dwords);
+	dwords = ghci_cmd_flip(packet, 0U, 0x10400000U, GHCI_FLIP_VSYNC_WAIT | GHCI_FLIP_RECORD_ENABLE, 5U, (uint32_t)record_bus);
+	push(packet, dwords);
+	memcpy(record, model_dma(record_bus, 16U), 16U);
+	expect(model_read(block + GHCI_DC_FB_BASE) == 0x10400000U && model_read(block + GHCI_DC_TAKEN0) == 5U && record[0] == 5U &&
+	    model_read(block + GHCI_DC_FB_STRIDE) == 2560U, "display: a flip taken at once while dark");
+	expect((model_read(GHCI_REG_IRQ_STATUS) & GHCI_IRQ_DISPLAY) != 0U && handler_calls != 0U &&
+	    model.display.irq_status == GHCI_DC_IRQ_FLIP_DONE, "display: FLIP_DONE summed up in IRQ_STATUS[3]");
+	model_write(block + GHCI_DC_IRQ_STATUS, GHCI_DC_IRQ_ALL);
+	model_write(GHCI_REG_IRQ_STATUS, GHCI_IRQ_DISPLAY);
+	expect((model_read(GHCI_REG_IRQ_STATUS) & GHCI_IRQ_DISPLAY) == 0U, "display: IRQ_STATUS[3] clears after DISP_IRQ_STATUS");
+	offsets[0] = GHCI_DC_CTRL;
+	values[0] = GHCI_DC_CTRL_ENABLE;
+	dwords = ghci_cmd_disp_set(packet, 0U, 1U, offsets, values);
+	push(packet, dwords);
+	expect((model_read(block + GHCI_DC_STATUS) & GHCI_DC_ST_RUNNING) != 0U && model.display.idle_waits_lit == 0U, "display: lit");
+
+	/* A flip while lit waits for the vsync. */
+	dwords = ghci_cmd_flip(packet, 0U, 0x10800000U, GHCI_FLIP_VSYNC_WAIT | GHCI_FLIP_RECORD_ENABLE, 6U, (uint32_t)record_bus);
+	push(packet, dwords);
+	expect((model_read(block + GHCI_DC_STATUS) & GHCI_DC_ST_PENDING0) != 0U && model_read(block + GHCI_DC_FB_BASE) == 0x10400000U,
+	    "display: pending until the vsync");
+	model_display_vsync();
+	memcpy(record, model_dma(record_bus, 16U), 16U);
+	expect(model_read(block + GHCI_DC_FB_BASE) == 0x10800000U && record[0] == 6U && record[1] == 1U, "display: taken at the vsync");
+
+	/* The host's scan-out write while the processor runs is refused; halted, it is taken. */
+	model_write(block + GHCI_DC_FB_STRIDE, 4096U);
+	expect(model.display.bad_writes == 1U && (model_read(block + GHCI_DC_STATUS) & GHCI_DC_ST_BAD_WRITE) != 0U,
+	    "display: BAD_WRITE while running");
+	model_write(block + GHCI_DC_STATUS, GHCI_DC_ST_BAD_WRITE);
+	model_write(GHCI_REG_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_IRQ_GLOBAL | GHCI_CTRL_HALT);
+	model_write(block + GHCI_DC_CURSOR_CTRL, 1U);
+	expect(model.display.bad_writes == 1U && model_read(block + GHCI_DC_CURSOR_CTRL) == 1U, "display: the cursor is the host's in every state");
+
+	/* A flip pending at the halt is taken at the vsync; its record waits for the reset. */
+	model_write(GHCI_REG_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_IRQ_GLOBAL);
+	dwords = ghci_cmd_flip(packet, 0U, 0x10C00000U, GHCI_FLIP_VSYNC_WAIT | GHCI_FLIP_RECORD_ENABLE, 7U, (uint32_t)record_bus);
+	push(packet, dwords);
+	model_write(GHCI_REG_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_IRQ_GLOBAL | GHCI_CTRL_HALT);
+	model_display_vsync();
+	memcpy(record, model_dma(record_bus, 16U), 16U);
+	expect(record[0] == 6U && (model_read(block + GHCI_DC_STATUS) & GHCI_DC_ST_RECORD) != 0U &&
+	    model_read(block + GHCI_DC_TAKEN0) == 7U, "display: taken while halted, record due");
+	model_write(GHCI_REG_CTRL, GHCI_CTRL_RESET);
+	memcpy(record, model_dma(record_bus, 16U), 16U);
+	expect(record[0] == 7U && (model_read(block + GHCI_DC_STATUS) & GHCI_DC_ST_RECORD) == 0U &&
+	    (model_read(block + GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) != 0U, "display: record written by the reset, scan-out kept");
+
+	/* FB_NEXT is not DISP_SET's; a host stop cancels a pending flip. */
+	model_write(GHCI_REG_RING_WPTR, 0U);
+	ring_wptr = 0U;
+	model_write(GHCI_REG_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_IRQ_GLOBAL);
+	offsets[0] = GHCI_DC_FB_NEXT;
+	values[0] = 0x11000000U;
+	dwords = ghci_cmd_disp_set(packet, 0U, 1U, offsets, values);
+	push(packet, dwords);
+	expect(model.display.bad_writes == 2U, "display: FB_NEXT refused to DISP_SET");
+	dwords = ghci_cmd_flip(packet, 0U, 0x11400000U, GHCI_FLIP_VSYNC_WAIT | GHCI_FLIP_RECORD_ENABLE, 8U, (uint32_t)record_bus);
+	push(packet, dwords);
+	model_write(GHCI_REG_CTRL, GHCI_CTRL_RUN | GHCI_CTRL_IRQ_GLOBAL | GHCI_CTRL_HALT);
+	model_write(block + GHCI_DC_CTRL, 0U);
+	memcpy(record, model_dma(record_bus, 16U), 16U);
+	expect(model_read(block + GHCI_DC_TAKEN0) == (8U | GHCI_DC_TAKEN_CANCELLED) && model_read(block + GHCI_DC_FB_BASE) == 0x10C00000U &&
+	    (model_read(block + GHCI_DC_STATUS) & GHCI_DC_ST_IDLE) != 0U, "display: the stop cancels the pending flip");
 }

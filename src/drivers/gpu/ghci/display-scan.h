@@ -8,10 +8,12 @@
 /*
  * The scan-out side of a GHCI device's display (display-scan.c), which
  * the display's operations (display.c) use: what the ring places for the
- * controller, the records of its flips and the waits for them.
+ * controller, the records of its flips and the waits for them, and the
+ * memory the controller scans.
  *
- * Every function but ghci_scan_mark, ghci_scan_sleep and ghci_scan_flush
- * is called with the display's lock held.
+ * Every function but ghci_scan_mark, ghci_scan_sleep, ghci_scan_flush,
+ * ghci_scan_alloc and ghci_scan_write is called with the display's lock
+ * held.
  */
 
 #ifndef DRIVERS_GPU_GHCI_DISPLAY_SCAN_H
@@ -28,6 +30,13 @@
 /* A frame's pixels: 32 bits. */
 #define GHCI_DISPLAY_PIXEL_BYTES	4U
 
+/*
+ * The memory line the controller's addresses and rows are aligned to.
+ * The specification asks for the memory line without giving its size;
+ * the driver takes the 64 bytes of the linear layout's rows.
+ */
+#define GHCI_DISPLAY_LINE_BYTES		64U
+
 /* The time a presentation's adoption may take before the output is uncertain. */
 #define GHCI_DISPLAY_ADOPTION_MS	1000U
 
@@ -38,7 +47,7 @@ int ghci_scan_ring_usable(struct ghci_device *device);
 unsigned ghci_scan_largest_mode(const struct ghci_display *display);
 
 /* Reports the bytes between the rows of a frame of a width, a multiple of the memory line. */
-uint32_t ghci_scan_stride(struct ghci_device *device, uint32_t width);
+uint32_t ghci_scan_stride(uint32_t width);
 
 /* Reports the time a frame is shown, on the scheduler's clock in nanoseconds. */
 uint64_t ghci_scan_now_ns(void);
@@ -65,7 +74,7 @@ int ghci_scan_lease_done(struct ghci_device *device);
 /* Lets go of held memory later, once the display's lock is let go; the lock is held. */
 void ghci_scan_drop(struct ghci_device *device, struct ghci_allocation *memory);
 
-/* Lets go of the memory dropped meanwhile; neither the device's lock nor the display's is held. */
+/* Lets go of the memory dropped meanwhile, and of the boot image once due; no lock of the device is held. */
 void ghci_scan_flush(struct ghci_device *device);
 
 /* Reports the wake-up sequence of the flip waiters, read before a wait's look. */
@@ -73,5 +82,15 @@ uint64_t ghci_scan_mark(struct ghci_device *device);
 
 /* Sleeps until a flip's interrupt, a short poll, or the deadline, whichever comes first. */
 void ghci_scan_sleep(struct ghci_device *device, uint64_t mark, uint64_t deadline);
+
+/*
+ * Takes memory the controller scans, the device's own: local memory on a
+ * discrete GPU, host memory below 4 GiB otherwise.  The caller holds no
+ * lock of the device.
+ */
+int ghci_scan_alloc(struct ghci_device *device, uint64_t bytes, struct ghci_allocation **result);
+
+/* Writes bytes into memory the controller scans; the caller may hold any lock but the interrupt's. */
+int ghci_scan_write(struct ghci_device *device, struct ghci_allocation *memory, uint64_t offset, const void *bytes, uint64_t length);
 
 #endif

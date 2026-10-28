@@ -135,6 +135,8 @@ ghci_cp_start(
 	irq = spin_lock_irqsave(&device->irq_lock);
 
 	device->irq_mask = IRQ_TAKEN;
+	if (device->display.present)
+		device->irq_mask |= GHCI_IRQ_DISPLAY;
 	device->completed = 0U;
 	device->issued = 0U;
 	device->recovering = 0;
@@ -830,7 +832,8 @@ ghci_cp_irq_enable(
 /*
  * The interrupt handler of the device, and the poll's work on a polled
  * device: a fault or the watchdog starts a recovery, a fence moves the
- * completed fence on.
+ * completed fence on, and the display's events (acknowledged in
+ * DISP_IRQ_STATUS before IRQ_STATUS[3]) go to the service thread.
  *
  * Returns 1 when the device had an event, 0 otherwise.
  */
@@ -860,6 +863,8 @@ ghci_cp_interrupt(
 		ghci_write(device, GHCI_REG_IRQ_ENABLE, 0U);
 	status = ghci_read(device, GHCI_REG_IRQ_STATUS);
 	status &= mask;
+	if ((status & GHCI_IRQ_DISPLAY) != 0U)
+		ghci_display_interrupt(device);
 	if (status != 0U)
 		ghci_write(device, GHCI_REG_IRQ_STATUS, status);
 	if (!device->polled)
@@ -879,9 +884,11 @@ ghci_cp_interrupt(
 	if ((status & GHCI_IRQ_FENCE) != 0U)
 		take_fence(device, status, generation);
 
-	/* Wakes the waiters of tickets and of the ring's room, and the service thread. */
+	/* Wakes the waiters of tickets, of the ring's room and of flips, and the service thread. */
 	waitq_wake_all(&device->fence_wake);
 	waitq_wake_all(&device->ring_wake);
+	if ((status & GHCI_IRQ_DISPLAY) != 0U)
+		waitq_wake_all(&device->display.flip_wake);
 	waitq_wake_all(&device->service_wake);
 
 	/* Succeeded: the interrupt was the device's. */

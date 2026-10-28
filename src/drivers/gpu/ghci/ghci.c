@@ -118,9 +118,18 @@ ghci_device_start(
 	/* The local memory of a discrete GPU, the boot framebuffer in it, and the local window. */
 	(void)ghci_memory_local_start(device);
 
+	/*
+	 * The display controller, while the processor is idle and the host
+	 * may write it: a boot display keeps running, a dark one stays dark.
+	 */
+	error = ghci_display_attach(device);
+	if (error != 0)
+		kern_logf("ghci: %s: display not started (%d)\n", device->name, error);
+
 	/* CP_HEAP, the ring, the fence page, the interrupt and the first fence. */
 	error = ghci_cp_start(device);
 	if (error != 0) {
+		ghci_display_detach(device);
 		ghci_memory_local_stop(device);
 		return error;
 	}
@@ -128,6 +137,7 @@ ghci_device_start(
 	/* The service thread, which recovers from faults and hangs. */
 	error = ghci_service_start(device);
 	if (error != 0) {
+		ghci_display_detach(device);
 		(void)ghci_cp_stop(device);
 		return error;
 	}
@@ -136,6 +146,7 @@ ghci_device_start(
 	error = ghci_poll_start(device);
 	if (error != 0) {
 		ghci_service_stop(device);
+		ghci_display_detach(device);
 		(void)ghci_cp_stop(device);
 		return error;
 	}
@@ -144,6 +155,7 @@ ghci_device_start(
 	error = register_device(device);
 	if (error != 0) {
 		ghci_service_stop(device);
+		ghci_display_detach(device);
 		(void)ghci_cp_stop(device);
 		return error;
 	}
@@ -208,6 +220,12 @@ ghci_device_stop(
 	/* The executor's record goes with the node; no session of it is left. */
 	if (device->executor_ops != NULL)
 		device->executor_ops->detach(device);
+
+	/*
+	 * The display shows the boot image again while it is kept, or goes
+	 * dark, before the processor stops; its memory goes back.
+	 */
+	ghci_display_detach(device);
 
 	/*
 	 * The processor halts and resets, the interrupt and bus mastering go,
@@ -634,6 +652,19 @@ register_device(
 	device->ops.resource_map = gpu_resource_map;
 	device->ops.share = &ghci_share_ops;
 
+	/*
+	 * The display controller's operations, on a device with DISP2: the
+	 * display and its events, the cursor's three with the cursor plane,
+	 * and the scan-out query.
+	 */
+	if (device->display.present) {
+		device->ops.capabilities |= GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS;
+		device->ops.display = &ghci_display_ops;
+		if (device->display.cursor)
+			device->ops.display = &ghci_display_cursor_ops;
+		device->ops.scanout = &ghci_scanout_ops;
+	}
+
 	/* The Vulkan executor adds its operations and capabilities, on a device that runs shaders. */
 	if (device->executor && ghci_vk_attach != NULL) {
 		error = ghci_vk_attach(device);
@@ -736,7 +767,10 @@ gpu_close(
 	device = private_data;
 	session = opaque;
 
-	/* The executor's objects go first: its devices' sessions close and its memory is let go. */
+	/* The display lease ends first, so its frame is no longer scanned from the session's memory. */
+	ghci_display_session_close(device, session);
+
+	/* The executor's objects go: its devices' sessions close and its memory is let go. */
 	if (device->executor_ops != NULL && session->vk != NULL)
 		device->executor_ops->session_close(device, session);
 

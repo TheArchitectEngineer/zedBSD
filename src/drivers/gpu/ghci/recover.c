@@ -196,8 +196,8 @@ ghci_service_main(
 
 /*
  * Does one round of the service's work: the recovery when the gate is
- * closed, the hang check, and the retirement of what the GPU is done
- * with.
+ * closed, the hang check, the display, and the retirement of what the
+ * GPU is done with.
  */
 void
 ghci_service_step(
@@ -239,6 +239,9 @@ ghci_service_step(
 	/* The executor's completions whose work the GPU finished, or a reset ended. */
 	if (device->executor_ops != NULL)
 		device->executor_ops->service(device);
+
+	/* The display's records, errors and connection, and what a reset made it place again. */
+	ghci_display_service(device, work);
 
 	/*
 	 * What the GPU is done with goes back.  The device's lock is only
@@ -539,7 +542,8 @@ recover_once(
 	ghci_vm_mark_lost(device, fence);
 	ghci_cp_ring_reset(device);
 
-	/* Step 5: the display is counted again here once it is driven; its lock goes. */
+	/* Step 5: the display's flips are counted again while the processor is idle; its lock goes. */
+	ghci_display_recover_count(device);
 	mutex_unlock(&device->display_lock);
 
 	/* Step 6: the sessions settle, the ring runs again, and a fence of the driver's must come back. */
@@ -1280,9 +1284,10 @@ core_reset(
 		return EIO;
 	}
 
-	/* Every ticket still pending ends, and the ring is empty. */
+	/* Every ticket still pending ends, the ring is empty, and the display's flips are counted again. */
 	(void)end_tickets(device);
 	ghci_cp_ring_reset(device);
+	ghci_display_recover_count(device);
 	mutex_unlock(&device->display_lock);
 
 	/* The sessions settle (the isolated ones retire), the ring runs, and a fence of the driver's comes back. */

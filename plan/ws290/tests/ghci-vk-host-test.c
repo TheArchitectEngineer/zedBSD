@@ -1000,7 +1000,7 @@ scene_registration(void)
 	    GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY;
 	error = start(MODEL_KC705_UMA);
 	expect(error == 0 && stub.registrations == 1U && stub.register_errors == 0U, "registration: accepted");
-	expect(device.ops.capabilities == wanted, "registration: capabilities");
+	expect(device.ops.capabilities == (wanted | GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS), "registration: capabilities with the display");
 	expect(device.ops.recovery != NULL && device.ops.recovery->isolate != NULL, "registration: recovery");
 	stop("registration");
 
@@ -1010,12 +1010,12 @@ scene_registration(void)
 	expect((device.ops.capabilities & GPU_CAP_COMMAND) == 0U, "registration: no-su has no command");
 	stop("registration no-su");
 
-	/* A flat device and a PROT device run Vulkan too. */
+	/* A flat device (without DISP2) and a PROT device (with it) run Vulkan too. */
 	error = start(MODEL_FLAT);
 	expect(error == 0 && device.ops.capabilities == wanted, "registration: flat has the executor");
 	stop("registration flat");
 	error = start(MODEL_PROT);
-	expect(error == 0 && device.ops.capabilities == wanted, "registration: prot has the executor");
+	expect(error == 0 && device.ops.capabilities == (wanted | GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS), "registration: prot has the executor");
 	stop("registration prot");
 }
 
