@@ -15,14 +15,12 @@
 ### 動いている担当と Queue
 
 <!-- master:agents:start -->
-**2026-10-28 11:07 ユーザー「5時間セッション上限が近いのでP1, P2は13時まで待機してください。サブエージェントを使っている場合は、それが終了してから待機します。」** → P1・P2 は区切って返却。同日ユーザー「P3も13時まで待機をお願いします。…あとで復旧できる状態にしておいてください。」→ P3 も区切る。13:00 に Q1 が 3 人を新しく起動（予約済み）。
-
 2026-10-28 03:15 から N=3（ユーザー「N=3で作業します。」）、07:1x〜WS307 の仕様の P4 で 4、仕様の確定の後にユーザー「P4は停止して、N=3に戻します。」で 3。台帳は [registry](agents/registry.md)。
 
 | 担当 | Queue | WS | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1650 | [WS308](ws308/ws.md) VM の metadata の lock（一時、終わったら [WS299](ws299/ws.md) の q1646 に戻る）。Fable の助言 OK | 5330・QEMU |
-| P2 | q1651 | [WS291](ws291/ws.md) RDNA: 試験中に起動 logo が見える件 → scene-6500 49.2 fps（Linux 50.0）の残り・big-N・subs-N | 10.0.10.3（NVMe の zedBSD、プラグミニ 1） |
+| P1 | q1652 | [WS308](ws308/ws.md) read/write の lock（QD32 direct 91%・cached 87%）の続き、後に WS299 | 5330・QEMU |
+| P2 | q1653 | [WS291](ws291/ws.md) RDNA: logo の件は済み。CPU 時間（案 E・executor）で Linux 以上へ | 10.0.10.3（NVMe の zedBSD） |
 | P3 | q1644 | [WS290](ws290/ws.md) GHCI 1.0 の driver: p001〜p004・p013 cleared、p005（session・VM）から | host（VF2＋KC705 は書き込みの知らせの後） |
 | P4 | — | 停止（2026-10-28 ユーザー「P4は停止して、N=3に戻します。」）。WS307 の仕様は確定（p001 cleared）、BUG-347 resolved | — |
 
@@ -86,7 +84,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-349 · q1652 · WS309 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-349 · q1654 · WS309 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
