@@ -1040,6 +1040,24 @@ drv_nvme_io_command_id(unsigned slot, unsigned generation)
 	    (slot + 1U)) & 0xffffU);
 }
 
+/*
+ * Advances a slot's generation and names its next command, skipping FFFFh,
+ * which the error information log uses for an error of no command.
+ */
+static inline uint16_t
+drv_nvme_io_next_command_id(unsigned slot, unsigned *generation)
+{
+	uint16_t command_id;
+
+	(*generation)++;
+	command_id = drv_nvme_io_command_id(slot, *generation);
+	if (command_id == 0xffffU) {
+		(*generation)++;
+		command_id = drv_nvme_io_command_id(slot, *generation);
+	}
+	return command_id;
+}
+
 /* Finds the slot a command identifier names; 0 when it names none of slot_count. */
 static inline int
 drv_nvme_io_command_slot(uint16_t command_id, unsigned slot_count, unsigned *slot)

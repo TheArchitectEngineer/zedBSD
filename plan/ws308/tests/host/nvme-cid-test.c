@@ -10,7 +10,8 @@
  * slot (include/drivers/pci/pci-nvme-protocol.h): never zero, the slot comes
  * back from the identifier through every generation, identifiers of
  * different slots never meet, and an identifier of a slot the queue does not
- * have (or of zero) names none.
+ * have (or of zero) names none; the driver's sequence of a slot
+ * (drv_nvme_io_next_command_id) never names FFFFh.
  *
  *   cc -std=c99 -Wall -Wextra -Werror -I include -o build/tmp/nvme-cid-test \
  *       plan/ws308/tests/host/nvme-cid-test.c && build/tmp/nvme-cid-test
@@ -50,6 +51,19 @@ main(void)
 				failures++;
 			}
 			owner[id] = (unsigned char)(slot + 1U);
+		}
+	}
+
+	/* The driver's sequence of a slot never names FFFFh. */
+	for (slot = 0; slot < DRV_NVME_IO_CID_SLOTS; slot++) {
+		generation = 0;
+		for (found = 0; found < 5000U; found++) {
+			id = drv_nvme_io_next_command_id(slot, &generation);
+			if (id == 0xffffU || id == 0U) {
+				printf("FAIL slot %u named %u\n", slot, id);
+				failures++;
+				break;
+			}
 		}
 	}
 

@@ -415,6 +415,7 @@ amd64_timecounter_read_guarded(
 	uint64_t *frequency_hz)
 {
 	uint64_t raw;
+	uint64_t seen;
 	uint64_t frequency;
 	int result;
 
@@ -430,6 +431,12 @@ amd64_timecounter_read_guarded(
 
 	/* Samples only while acquire-observing a published counter. */
 	if (__atomic_load_n(&state->available, __ATOMIC_ACQUIRE) != 0U) {
+		/*
+		 * The maximum published before this sample: only a sample below it
+		 * stepped back.  A sample above it that another CPU's later sample
+		 * overtook before this one was published is no regression.
+		 */
+		seen = __atomic_load_n(&state->last_sample, __ATOMIC_RELAXED);
 		raw = sample(context);
 
 		/*
@@ -448,7 +455,7 @@ amd64_timecounter_read_guarded(
 			uint64_t before = raw;
 
 			raw = amd64_timecounter_monotonic_max(&state->last_sample, raw);
-			if (raw > before) {
+			if (before < seen) {
 				/* The published maximum refused a backwards step. */
 				static uint32_t regress_logged;
 

@@ -14,7 +14,8 @@
  * thread's values never go back; a value read after another thread's read
  * returned is never smaller than it (a global sequence orders the reads);
  * the final shared maximum is the largest value returned; a disabled state
- * reads nothing.
+ * reads nothing.  A first round with no skew must log no regression (two
+ * CPUs racing to publish are not a step back); the skewed round may.
  *
  *   cc -O2 -Wall -Wextra -pthread -I include -I src/hal/amd64/bsp-pcat -o build/tmp/timecounter-test \
  *       plan/ws308/tests/host/timecounter-test.c && build/tmp/timecounter-test
@@ -31,10 +32,13 @@
 #define THREADS 8
 #define READS 200000
 
+static _Atomic int printed;
+
 int
 hal_printf(const char *format, ...)
 {
 	(void)format;
+	atomic_fetch_add(&printed, 1);
 	return 0;
 }
 
@@ -105,6 +109,17 @@ main(void)
 		printf("FAIL publication\n");
 		return 1;
 	}
+	/* Unskewed readers race to publish, and nothing stepped back. */
+	for (index = 0; index < THREADS; index++)
+		pthread_create(&threads[index], NULL, reader, (void *)(uintptr_t)0);
+	for (index = 0; index < THREADS; index++)
+		pthread_join(threads[index], NULL);
+	if (atomic_load(&printed) != 0) {
+		printf("FAIL a regression was logged without skew\n");
+		return 1;
+	}
+
+	/* Skewed readers. */
 	for (index = 0; index < THREADS; index++)
 		pthread_create(&threads[index], NULL, reader, (void *)(index * 97U));
 	for (index = 0; index < THREADS; index++)
