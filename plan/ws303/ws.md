@@ -46,3 +46,7 @@
 ## 再開点（2026-10-29 P5、q1666-i03）
 
 - 第 4 版の review（[design-v4-review.md](design-v4-review.md)、blocker 1・major 11・minor 16）を反映した第 5 版（一つの本文）を書いた。行き先は design.md §11。第 5 版の design-reviewer は未実施。問いは Q303-15〜19（design.md §9、ユーザー向けの説明は [user-questions.md](user-questions.md)）。
+
+## 再開点（2026-10-29 P5、q1666-i04）
+
+- Q1 の答え（Q303-9 は選択肢の原文、GPL の手順は採らない）を design.md §0・§8・§10 に反映（184a42bb0）。第 5 版の design-reviewer を起動（出力 design-v5-review.md）、この時点で未返却。次: review の反映、問い Q303-15〜19 は user-questions.md のまま。
