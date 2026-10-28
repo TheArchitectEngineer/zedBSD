@@ -69,3 +69,8 @@ S0i3 の妨げにならない状態（NVMe は D3、link は L1.2 か L2 相当�
 - 範囲: 「動作中の APST・ASPM」を入れると docs/architecture/power-management.md の「runtime の省電力は対応外」を変える（ユーザーの review）。
 - S0 idle の時の NVMe を SHN＋D3hot（今）のままにするか、Microsoft の要件に合わせた形にするか（p001 の調べの後）。
 - 状態を見る口（UAPI）の置き場所（`/dev/system` か sysctl）。WS301 の決定と揃える。
+
+## 再開点（2026-10-29 P5、q1666-i03）
+
+- p001 の調べ: 公開の資料 [survey-fable.md](survey-fable.md)、5330 の Debian の読みと firmware の表 [survey-5330.md](survey-5330.md)（2026-10-29、読みだけ。BG5 の PS0〜PS4 と APST・HMB、VMD の下の ASPM・L1SS は Debian でも無効、PMC は PC2 まで、VMD0 の `StorageD3Enable` と PEG0 の D3cold の method）。
+- 設計（design.md）は未着手。次の担当は survey の 2 つと `pci-vmd.c`・`pci-power.c`・`pci-nvme.c` の suspend の code から書き始める。
