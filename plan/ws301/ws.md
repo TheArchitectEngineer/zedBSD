@@ -110,3 +110,4 @@ kernel に CPU の性能と電力の枠組み（provider の登録の口）を�
 
 - 設計: [design.md](design.md)（第 2 版）、レビュー [design-review.md](design-review.md)、HAL の差分の案 [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff)（第 2 版、適用しない、承認待ち）。Phase と LW は design.md の「第 2 版の Phase の表」が本体で、下の「Phase の案と見積もり」より優先する（5330 だけで約 25 LW）。
 - 再開点: ユーザーの判断 Q301-1〜7（design.md の第 2 版の問い）を Q1 経由で待つ。§6.0 の 5330 の Debian の読み（CPUID・MSR）は msr の module の読み込みの許可（Q1）が要る。ACPI 6.5 の節番号は記憶による推定で未確認（ユーザーに PDF を置けるかを Q1 が聞いている）。
+- 2026-10-29 ユーザー（Q1 の中継、原文）「CPUのスピードは/dev/systemと言ってしまいましたが、/dev/thermalに変更してください。」→ 解釈: UAPI は WS303 の `/dev/thermal`（上の 2026-10-27 の「UAPI は /dev/system」を置き換える）。policy は WS303 の strategy の受け手（design.md の「第 2 版への追記」）。

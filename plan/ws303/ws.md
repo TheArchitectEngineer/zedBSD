@@ -20,6 +20,7 @@
   Q303-5「温度に対して必要な回転数を下回らせることはできず、回転を上げる。非常水準に達したとき、電源を落とす。コントロールできないときはファームウェアにまかせたり、ストラテジだけファームウェアに伝える。」、Q303-6「入れる」、Q303-7「Debian で読む (推し)」、Q303-8「よい (推し)」。
 - 解釈（P5、design.md の「第 3 版の改訂」）: UAPI は新しい `/dev/thermal`。変更は root と sessiond 経由。`/sbin/thermal` が strategy を選ぶ。fan は上げる段だけ。非常の水準で停止。passive を入れるので WS301 に依存する。確かめの問い Q303-9〜14 を聞き直し中。
 - Q1 の決定（2026-10-29）: AML の harness は p002 で `plan/tools/aml-host/` に移す。`/dev/acpi` は BUG-351。
+- ユーザーの回答の第 2 回（2026-10-29、Q1 の中継の原文と解釈は design.md の「第 4 版への追記」）: Q303-9/10「/dev/thermal に移す・root/wheel」、Q303-11「ストラテジーはかなり抽象化されたものとして、トータルの「performance or balanced or power save or manual」と、マニュアルなら実行速度、騒音、細粒度パワーゲートの3項目を0-100で設定可能に。具体的なプラットフォームへのマッピングはドライバが決める。」、Q303-12「GPL の値を出典つきで (推し)」、Q303-13/14「推しの組 (推し)」。残りの問い Q303-15〜17。
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
@@ -30,7 +31,8 @@
 | p005 | sessiond の THERMAL の要求（2 LW） | p003 | planning |
 | p006 | Pi 5 の provider（profile と boost、3 LW） | p003 | planning |
 | p007 | WS301 の policy の受け手と passive（2 LW） | p003、WS301 p002・p003・p004 | planning |
-| p008 | 規約の全文と文書（2 LW） | p004〜p007 | planning |
+| p008 | 規約の全文と文書（2 LW） | p004〜p007、p009 | planning |
+| p009 | monitor と sysctl の道具を `/dev/thermal` へ、`hw.thermal` を外す（2 LW） | p003 | planning |
 
 ## 再開点（2026-10-29 P5、q1666-i02）
 
