@@ -13,6 +13,7 @@
 #define KERN_KERN_NET_NET_DEVICE_H
 
 #include <kern/atomic.h>
+#include <kern/net/packet-buf.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -27,6 +28,19 @@
 #define NET_DEVICE_LOOPBACK 0x00000010U
 
 #define NET_DEVICE_CAP_WLAN 0x00000001U
+
+/*
+ * The smallest MTU an interface may be set to, the IPv6 minimum link MTU
+ * (RFC 8200 section 5), so turning IPv6 on later never finds a link too
+ * small; and the largest, a 9000-byte jumbo frame where the packet pool
+ * has jumbo packets to hold one, else Ethernet's 1500.
+ */
+#define NET_MTU_MIN 1280U
+#if PACKET_BUF_JUMBO_COUNT != 0U
+#define NET_MTU_MAX 9000U
+#else
+#define NET_MTU_MAX 1500U
+#endif
 
 struct packet_buf;
 struct net_device;
@@ -48,6 +62,13 @@ struct net_device_ops {
 	 * called only after close has returned and the last net_device reference
 	 * has retired.  It may free driver_data, but must not access device. */
 	void (*release)(void *driver_data);
+	/* Optional.  Thread context, admitted like ioctl (joined by close, gone
+	 * and shutdown_all), with the device open or not.  The driver checks
+	 * the new MTU against what its hardware takes and returns 0 or an
+	 * errno (EBUSY when it needs the device closed first).  device->mtu
+	 * still holds the old value during the call; nothing the driver sized
+	 * at open may depend on device->mtu. */
+	int (*set_mtu)(struct net_device *device, unsigned mtu);
 };
 
 struct net_device {
@@ -56,6 +77,14 @@ struct net_device {
 	uint64_t generation;
 	unsigned flags;
 	unsigned mtu;
+	/*
+	 * The largest MTU the driver takes (0 at create: mtu, which cannot
+	 * grow) and the MTU the device was created with, which SIOCSIFMTU's 0
+	 * restores.  The driver sets mtu_max before create; mtu is written
+	 * under the registry lock by net_device_set_mtu and read without it.
+	 */
+	unsigned mtu_max;
+	unsigned mtu_default;
 	/*
 	 * The link's speed in megabits a second, as the driver last heard it
 	 * from the hardware (a CDC NCM or ECM speed notification); 0 while it
@@ -134,6 +163,16 @@ int net_device_transmit(struct net_device *device, struct packet_buf *packet);
 int net_device_ioctl(struct net_device *device, unsigned long request,
 		     void *argument);
 unsigned net_device_capabilities_get(const struct net_device *device);
+/* Thread context.  Sets the device's MTU (0: the one it was created with)
+ * between NET_MTU_MIN and mtu_max (which a driver keeps within
+ * NET_MTU_MAX), open or not, through the driver's set_mtu admitted like an ioctl, and posts the
+ * change.  EINVAL for a value outside, EBUSY while the device opens or
+ * closes, ENODEV for a device that is gone, or the driver's errno. */
+int net_device_set_mtu(struct net_device *device, unsigned mtu);
+/* The longest frame, from its Ethernet header on, the stack hands the
+ * device: the header and the MTU, within one packet after the default
+ * headroom.  The loopback device's packets stay standard ones. */
+size_t net_device_frame_max(const struct net_device *device);
 /* Record one genuine terminal failure reported after transmit accepted a
  * packet. Accepted packet/byte counters remain unchanged and this does not
  * classify the packet as dropped. The driver owns exactly-once publication. */

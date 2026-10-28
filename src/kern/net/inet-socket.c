@@ -673,6 +673,15 @@ inet_socket_ioctl(
 	case SIOCGIFMTU:
 		request.ifr_mtu = (int)device->mtu;
 		break;
+	case SIOCSIFMTU:
+		/* A new MTU for the device, 0 for its own, then IPv6's link MTU follows it. */
+		error = EINVAL;
+		if (request.ifr_mtu >= 0)
+			error = net_device_set_mtu(device, (unsigned)request.ifr_mtu);
+		if (error == 0)
+			ipv6_device_mtu_changed(device);
+		net_device_release(device);
+		return error;
 	case SIOCGIFSTATS:
 		kern_memset(&request.ifr_data, 0, sizeof(request.ifr_data));
 		request.ifr_data.ifi_mtu = device->mtu;

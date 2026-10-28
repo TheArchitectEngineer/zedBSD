@@ -5,8 +5,11 @@
 # tcp-perf and sysctl to the board's /tmp and runs each transfer against plan/ws221/tests/perf-peer.py on this host,
 # sampling the board's net.tcpstats and its adapter's counters every second.  Judged from the programs' own lines
 # over SSH, never the console.
-#   plan/ws221/tests/vf2-tcp.sh [--kernel VMUNIX] [--bin DIR] [--seconds N] [--runs LIST] [--chunk BYTES] NAME
-# --bin: the directory with tcp-perf and sysctl for riscv64 (default build/vf2/bin, plan/ws221/tests/config-vf2-tcp.mk).
+#   plan/ws221/tests/vf2-tcp.sh [--kernel VMUNIX] [--bin DIR] [--seconds N] [--runs LIST] [--chunk BYTES] [--mtu N]
+#       NAME
+# --bin: the directory with tcp-perf, sysctl and ifconfig for riscv64 (default build/vf2/bin,
+# plan/ws221/tests/config-vf2-tcp.mk); ifconfig is used only from /tmp, for --mtu (the board's adapter set to N, as
+# root, before the runs).  Each run also reports each CPU's busy share over the run (hw.cputimes).
 # --runs: a comma list of send (the board sends) and recv (the board receives), default send,recv; --seconds each run
 # (default 30).  The output is build/ws221-vf2/NAME (plan/tools/fresh-out.sh): summary.txt, the client's and the
 # peer's lines, the samples.  The last line is "vf2-tcp: PASS" when every run moved bytes in both ends' count.
@@ -19,6 +22,7 @@ bin=build/vf2/bin
 seconds=30
 runs=send,recv
 chunk=131072
+mtu=
 while [ $# -gt 1 ]; do
 	case $1 in
 	--kernel) kernel=$2 ;;
@@ -26,6 +30,7 @@ while [ $# -gt 1 ]; do
 	--seconds) seconds=$2 ;;
 	--runs) runs=$2 ;;
 	--chunk) chunk=$2 ;;
+	--mtu) mtu=$2 ;;
 	*) echo "vf2-tcp: unknown option $1"; exit 2 ;;
 	esac
 	shift 2
@@ -82,11 +87,16 @@ fi
 
 board 'uname -a' > "$out/uname.txt"
 say "board: $(cat "$out/uname.txt")"
-timeout 60 sshpass -e scp $so "$bin/tcp-perf" "$bin/sysctl" "$host:/tmp/" || { say "FAIL: copy of the programs"; exit 1; }
+timeout 60 sshpass -e scp $so "$bin/tcp-perf" "$bin/sysctl" "$bin/ifconfig" "$host:/tmp/" || { say "FAIL: copy of the programs"; exit 1; }
 iface=$(board 'route show' | awk '$1 == "default" || $1 == "0.0.0.0" {print $NF; exit}')
 [ -n "$iface" ] || iface=en0
 say "server=$server_ip board=$board_ip interface=$iface seconds=$seconds chunk=$chunk runs=$runs"
+if [ -n "$mtu" ]; then
+	board_root "/tmp/ifconfig $iface mtu $mtu" > "$out/mtu.txt"
+	say "mtu $mtu: $(tr '\n' ' ' < "$out/mtu.txt")"
+fi
 board "ifconfig $iface" > "$out/ifconfig-before.txt"
+say "adapter: $(head -1 "$out/ifconfig-before.txt")"
 
 status=0
 for run in $(echo "$runs" | tr ',' ' '); do
@@ -99,7 +109,9 @@ for run in $(echo "$runs" | tr ',' ' '); do
 	peer=$!
 	sleep 1
 	board "nohup sh -c 'while :; do /tmp/sysctl net.tcpstats; sleep 1; done' > /tmp/ws221-samples-$run.txt 2>&1 < /dev/null & echo \$! > /tmp/ws221-sampler.pid" > /dev/null
+	board '/tmp/sysctl hw.cputimes' > "$out/cpu-before-$run.txt"
 	T=$((seconds + 40)) board "/tmp/tcp-perf $run $server_ip $port $seconds $chunk; echo exit=\$?" > "$out/client-$run.txt"
+	board '/tmp/sysctl hw.cputimes' > "$out/cpu-after-$run.txt"
 	wait "$peer"
 	board 'kill $(cat /tmp/ws221-sampler.pid)' > /dev/null
 	timeout 60 sshpass -e scp $so "$host:/tmp/ws221-samples-$run.txt" "$out/samples-$run.txt" > /dev/null 2>&1
@@ -108,6 +120,12 @@ for run in $(echo "$runs" | tr ',' ' '); do
 	say "$run: board ${client:-no result} | host ${peerline:-no result}"
 	min=$(awk -F'mbps=' '/^t=/ {v = $2 + 0; if (n++ == 0 || v < m) m = v} END {if (n) printf "%.1f", m}' "$out/client-$run.txt")
 	say "$run: slowest second ${min:-?} Mbps"
+	cpu=$(awk '/cpu=/ { for (i = 1; i <= NF; i++) { split($i, kv, "="); v[kv[1]] = kv[2] }
+		c = v["cpu"]; t = v["user"] + v["system"] + v["idle"] + v["other"]
+		if (FILENAME ~ /before/) { b[c] = v["user"] + v["system"]; bt[c] = t } else { a[c] = v["user"] + v["system"]; at[c] = t }
+		} END { for (c = 0; c < 64; c++) if (c in a) { d = at[c] - bt[c]; p = 0; if (d > 0) p = (a[c] - b[c]) * 100 / d; printf "cpu%d=%.0f%% ", c, p } }' \
+	    "$out/cpu-before-$run.txt" "$out/cpu-after-$run.txt")
+	say "$run: busy $cpu"
 	case $client in
 	*bytes=0\ *|'') status=1 ;;
 	esac

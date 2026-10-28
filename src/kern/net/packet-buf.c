@@ -31,27 +31,66 @@ extern void hal_irq_enable(void) __attribute__((weak));
 extern void net_device_ref(struct net_device *) __attribute__((weak));
 extern void net_device_release(struct net_device *) __attribute__((weak));
 
+/*
+ * A standard packet's slot and a jumbo packet's: the packet, its inline
+ * storage, and whether it is taken.
+ */
 struct packet_slot {
 	struct packet_buf packet;
 	uint8_t storage[PACKET_BUF_STORAGE_SIZE];
 	uint8_t used;
 };
 
-static struct packet_slot packet_pool[PACKET_BUF_POOL_COUNT] NET_BSS;
-static unsigned packet_used;
+struct packet_jumbo_slot {
+	struct packet_buf packet;
+	uint8_t storage[PACKET_BUF_JUMBO_STORAGE_SIZE];
+	uint8_t used;
+};
 
 /*
- * The most packets ever taken at once, and how many allocations found the
- * pool empty, since the pool was emptied (ws220-p001: net.tcpstats shows
- * whether a transfer ran the stack out of packets).  Both only grow and are
- * moved under the pool lock with packet_used.
+ * The jumbo slots the array holds: at least one, since C has no empty
+ * array, but only PACKET_BUF_JUMBO_COUNT of them are ever handed out.
+ */
+#if PACKET_BUF_JUMBO_COUNT != 0U
+#define PACKET_JUMBO_SLOTS PACKET_BUF_JUMBO_COUNT
+#else
+#define PACKET_JUMBO_SLOTS 1U
+#endif
+
+/*
+ * The slots of both classes and, for each, a stack of the free slots'
+ * indices: an allocation takes the top one and a free puts its slot back
+ * on top, so both take constant time and the slot used last, still warm
+ * in the cache, is used next.  The pool lock guards the slots' used
+ * flags, the stacks and the counts below.
+ */
+static struct packet_slot packet_pool[PACKET_BUF_POOL_COUNT] NET_BSS;
+static struct packet_jumbo_slot packet_jumbo_pool[PACKET_JUMBO_SLOTS] NET_BSS;
+static uint16_t packet_free_stack[PACKET_BUF_POOL_COUNT];
+static uint16_t packet_jumbo_free_stack[PACKET_JUMBO_SLOTS];
+static unsigned packet_free_count;
+static unsigned packet_jumbo_free_count;
+static unsigned packet_used;
+static unsigned packet_jumbo_used;
+
+/*
+ * The most packets of each class ever taken at once, and how many
+ * allocations found the class empty (the jumbo class: empty but for the
+ * reserve), since the pool was emptied (ws220-p001: net.tcpstats shows
+ * whether a transfer ran the stack out of packets).  They only grow and
+ * are moved under the pool lock with the counts above.
  */
 static unsigned packet_used_max;
+static unsigned packet_jumbo_used_max;
 static uint64_t packet_alloc_failures;
+static uint64_t packet_jumbo_alloc_failures;
 static atomic_uint_t packet_guard;
 
 static bool packet_lock(void);
 static void packet_unlock(bool enabled);
+static struct packet_buf *packet_take_standard_locked(void);
+static struct packet_buf *packet_take_jumbo_locked(unsigned flags);
+static void packet_reset(struct packet_buf *packet, uint8_t *storage, size_t capacity, size_t headroom);
 
 /*
  * Empties the packet pool.
@@ -61,17 +100,33 @@ packet_buf_pool_init(
 	void)
 {
 	bool enabled;
+	unsigned index;
 
 	enabled = packet_lock();
+
 	kern_memset(packet_pool, 0, sizeof(packet_pool));
+	kern_memset(packet_jumbo_pool, 0, sizeof(packet_jumbo_pool));
+
+	/* Stacks every slot of each class, the first one on top. */
+	for (index = 0; index < PACKET_BUF_POOL_COUNT; index++)
+		packet_free_stack[index] = (uint16_t)(PACKET_BUF_POOL_COUNT - 1U - index);
+	for (index = 0; index < PACKET_BUF_JUMBO_COUNT; index++)
+		packet_jumbo_free_stack[index] = (uint16_t)(PACKET_BUF_JUMBO_COUNT - 1U - index);
+	packet_free_count = PACKET_BUF_POOL_COUNT;
+	packet_jumbo_free_count = PACKET_BUF_JUMBO_COUNT;
+
 	packet_used = 0;
+	packet_jumbo_used = 0;
 	packet_used_max = 0;
+	packet_jumbo_used_max = 0;
 	packet_alloc_failures = 0;
+	packet_jumbo_alloc_failures = 0;
+
 	packet_unlock(enabled);
 }
 
 /*
- * Allocates an empty packet with the requested headroom.
+ * Allocates an empty standard packet with the requested headroom.
  *
  * The test fault point lets a test make the pool look exhausted.
  */
@@ -80,12 +135,8 @@ packet_buf_alloc(
 	size_t headroom)
 {
 	struct packet_buf *packet;
-	struct packet_slot *slot;
 	struct kern_test_fault_result fault;
 	bool enabled;
-	unsigned index;
-
-	packet = NULL;
 
 	/* Rejects headroom beyond the slot storage. */
 	if (headroom > PACKET_BUF_STORAGE_SIZE)
@@ -96,35 +147,86 @@ packet_buf_alloc(
 	    UINT32_MAX, &fault))
 		return NULL;
 
-	/* Takes the first free slot and resets its packet. */
+	/* Takes the top free slot. */
 	enabled = packet_lock();
-	for (index = 0; index < PACKET_BUF_POOL_COUNT; index++) {
-		slot = &packet_pool[index];
-		if (slot->used)
-			continue;
-		slot->used = 1;
-		packet_used++;
-		if (packet_used > packet_used_max)
-			packet_used_max = packet_used;
-		kern_memset(&slot->packet, 0, sizeof(slot->packet));
-		slot->packet.storage = slot->storage;
-		slot->packet.data = slot->storage + headroom;
-		slot->packet.capacity = sizeof(slot->storage);
-		slot->packet.l2_offset = PACKET_OFFSET_NONE;
-		slot->packet.l3_offset = PACKET_OFFSET_NONE;
-		slot->packet.l4_offset = PACKET_OFFSET_NONE;
-		refcount_init(&slot->packet.refcount, 1);
-		packet = &slot->packet;
-		break;
-	}
 
-	/* A pool with no free slot is counted, for net.tcpstats. */
-	if (packet == NULL)
-		packet_alloc_failures++;
+	packet = packet_take_standard_locked();
 
 	packet_unlock(enabled);
 
-	/* Reports the packet, or none when the pool is exhausted. */
+	/* Reports none when the pool is exhausted. */
+	if (packet == NULL)
+		return NULL;
+
+	/* Succeeded: an empty packet with the headroom. */
+	packet_reset(packet, packet->storage, PACKET_BUF_STORAGE_SIZE, headroom);
+	return packet;
+}
+
+/*
+ * Allocates an empty packet with the headroom and room for length bytes
+ * after it: a standard packet when they fit one, else a jumbo packet.
+ *
+ * A standard class with none free does not fall back to the jumbo class,
+ * nor the other way.  The last PACKET_BUF_JUMBO_RESERVE jumbo packets go
+ * only to a caller passing PACKET_BUF_ALLOC_RECEIVE.  On failure *error
+ * says why: EMSGSIZE when no packet is that large, ENOBUFS when the class
+ * has none free.
+ */
+struct packet_buf *
+packet_buf_alloc_for(
+	size_t headroom,
+	size_t length,
+	unsigned flags,
+	int *error)
+{
+	struct packet_buf *packet;
+	struct kern_test_fault_result fault;
+	size_t capacity;
+	bool enabled;
+	int jumbo;
+
+	/* Refuses a size no packet holds. */
+	if (headroom > PACKET_BUF_MAX_STORAGE_SIZE ||
+	    length > PACKET_BUF_MAX_STORAGE_SIZE - headroom) {
+		*error = EMSGSIZE;
+		return NULL;
+	}
+
+	/* The class: jumbo only for what a standard packet cannot hold, and only where there are jumbo packets. */
+	jumbo = headroom + length > PACKET_BUF_STORAGE_SIZE;
+	if (jumbo && PACKET_BUF_JUMBO_COUNT == 0U) {
+		*error = EMSGSIZE;
+		return NULL;
+	}
+
+	/* Fails on demand under test, as an empty pool. */
+	if (KERN_TEST_FAULT(KERN_TEST_FAULT_NET_PACKET_ALLOC, UINT32_MAX,
+	    UINT32_MAX, &fault)) {
+		*error = ENOBUFS;
+		return NULL;
+	}
+
+	/* Takes the top free slot of the class. */
+	enabled = packet_lock();
+
+	if (jumbo)
+		packet = packet_take_jumbo_locked(flags);
+	else
+		packet = packet_take_standard_locked();
+
+	packet_unlock(enabled);
+
+	/* Reports a class with none free. */
+	if (packet == NULL) {
+		*error = ENOBUFS;
+		return NULL;
+	}
+
+	/* Succeeded: an empty packet of the class with the headroom. */
+	capacity = jumbo ? PACKET_BUF_JUMBO_STORAGE_SIZE : PACKET_BUF_STORAGE_SIZE;
+	packet_reset(packet, packet->storage, capacity, headroom);
+	*error = 0;
 	return packet;
 }
 
@@ -158,11 +260,13 @@ packet_buf_free(
 	struct packet_buf *packet)
 {
 	struct net_device *device;
-	struct packet_slot *slot;
 	void *control;
 	void (*control_release)(void *);
+	uintptr_t address;
+	uintptr_t first;
+	uintptr_t end;
+	size_t index;
 	bool enabled;
-	unsigned index;
 
 	device = NULL;
 	control = NULL;
@@ -179,22 +283,39 @@ packet_buf_free(
 		return;
 	}
 
-	/* Detaches the device and control block, then clears the slot. */
-	for (index = 0; index < PACKET_BUF_POOL_COUNT; index++) {
-		slot = &packet_pool[index];
-		if (&slot->packet != packet)
-			continue;
-		device = slot->packet.device;
-		control = slot->packet.control;
-		control_release = slot->packet.control_release;
-		slot->packet.device = NULL;
-		slot->packet.control = NULL;
-		slot->packet.control_release = NULL;
-		kern_memset(&slot->packet, 0, sizeof(slot->packet));
-		slot->used = 0;
-		if (packet_used != 0)
+	/* Detaches the device and the control block, which are released outside the lock. */
+	device = packet->device;
+	control = packet->control;
+	control_release = packet->control_release;
+	packet->device = NULL;
+	packet->control = NULL;
+	packet->control_release = NULL;
+
+	/* Puts a standard packet's slot, found from the packet's address, back on its stack. */
+	address = (uintptr_t)packet;
+	first = (uintptr_t)&packet_pool[0];
+	end = (uintptr_t)&packet_pool[PACKET_BUF_POOL_COUNT];
+	if (address >= first && address < end) {
+		index = (address - first) / sizeof(packet_pool[0]);
+		if (&packet_pool[index].packet == packet && packet_pool[index].used != 0) {
+			packet_pool[index].used = 0;
+			packet_free_stack[packet_free_count] = (uint16_t)index;
+			packet_free_count++;
 			packet_used--;
-		break;
+		}
+	}
+
+	/* The same for a jumbo packet. */
+	first = (uintptr_t)&packet_jumbo_pool[0];
+	end = (uintptr_t)&packet_jumbo_pool[PACKET_BUF_JUMBO_COUNT];
+	if (address >= first && address < end) {
+		index = (address - first) / sizeof(packet_jumbo_pool[0]);
+		if (&packet_jumbo_pool[index].packet == packet && packet_jumbo_pool[index].used != 0) {
+			packet_jumbo_pool[index].used = 0;
+			packet_jumbo_free_stack[packet_jumbo_free_count] = (uint16_t)index;
+			packet_jumbo_free_count++;
+			packet_jumbo_used--;
+		}
 	}
 
 	packet_unlock(enabled);
@@ -335,14 +456,15 @@ packet_buf_copy(
 	struct packet_buf *copy;
 	size_t headroom;
 	void *data;
+	int error;
 
 	/* There is nothing to copy without a source. */
 	if (source == NULL)
 		return NULL;
 
-	/* Allocates a packet with the same headroom and copies the data. */
+	/* Allocates a packet of the class the data needs, with the same headroom, and copies the data. */
 	headroom = packet_buf_headroom(source);
-	copy = packet_buf_alloc(headroom);
+	copy = packet_buf_alloc_for(headroom, source->length, 0, &error);
 	if (copy == NULL)
 		return NULL;
 	data = packet_buf_append(copy, source->length);
@@ -382,6 +504,7 @@ packet_buf_copy_region(
 {
 	struct packet_buf *copy;
 	void *data;
+	int error;
 
 	/* Rejects a missing source or a region outside its storage. */
 	if (source == NULL ||
@@ -389,8 +512,8 @@ packet_buf_copy_region(
 	    length > source->capacity - offset)
 		return NULL;
 
-	/* Allocates a packet and copies the region as its data. */
-	copy = packet_buf_alloc(0);
+	/* Allocates a packet of the class the region needs and copies the region as its data. */
+	copy = packet_buf_alloc_for(0, length, 0, &error);
 	if (copy == NULL)
 		return NULL;
 	data = packet_buf_append(copy, length);
@@ -425,9 +548,9 @@ packet_buf_in_use(
 	bool enabled;
 	unsigned result;
 
-	/* Samples the count under the pool lock. */
+	/* Samples the counts of both classes under the pool lock. */
 	enabled = packet_lock();
-	result = packet_used;
+	result = packet_used + packet_jumbo_used;
 	packet_unlock(enabled);
 
 	/* Reports the sampled count. */
@@ -435,8 +558,8 @@ packet_buf_in_use(
 }
 
 /*
- * Reports the pool's size, the packets taken now and the most ever taken,
- * and how many allocations found no packet free.
+ * Reports each class's size, the packets taken now and the most ever
+ * taken, how many allocations found no packet free, and the jumbo reserve.
  */
 void
 packet_buf_pool_usage(
@@ -451,6 +574,11 @@ packet_buf_pool_usage(
 	usage->used = packet_used;
 	usage->used_max = packet_used_max;
 	usage->alloc_failures = packet_alloc_failures;
+	usage->jumbo_total = PACKET_BUF_JUMBO_COUNT;
+	usage->jumbo_used = packet_jumbo_used;
+	usage->jumbo_used_max = packet_jumbo_used_max;
+	usage->jumbo_reserve = PACKET_BUF_JUMBO_RESERVE;
+	usage->jumbo_alloc_failures = packet_jumbo_alloc_failures;
 
 	packet_unlock(enabled);
 }
@@ -486,4 +614,95 @@ packet_unlock(
 	/* Re-enables interrupts only when they were enabled before. */
 	if (enabled && hal_irq_enable != NULL)
 		hal_irq_enable();
+}
+
+/*
+ * Takes the top free standard slot and counts it, or counts the failure.
+ * The caller holds the pool lock.
+ */
+static struct packet_buf *
+packet_take_standard_locked(
+	void)
+{
+	struct packet_slot *slot;
+
+	/* A class with none free is counted, for net.tcpstats. */
+	if (packet_free_count == 0) {
+		packet_alloc_failures++;
+		return NULL;
+	}
+
+	/* The slot on top of the stack, marked taken. */
+	packet_free_count--;
+	slot = &packet_pool[packet_free_stack[packet_free_count]];
+	slot->used = 1;
+	packet_used++;
+	if (packet_used > packet_used_max)
+		packet_used_max = packet_used;
+
+	/* Succeeded: the slot's packet, its storage pointer set. */
+	slot->packet.storage = slot->storage;
+	return &slot->packet;
+}
+
+/*
+ * Takes the top free jumbo slot and counts it, or counts the failure.  The
+ * last PACKET_BUF_JUMBO_RESERVE are only for a driver's receive.  The
+ * caller holds the pool lock.
+ */
+static struct packet_buf *
+packet_take_jumbo_locked(
+	unsigned flags)
+{
+	struct packet_jumbo_slot *slot;
+	unsigned left;
+
+	/* The slots this caller may take: all for a receive, those beyond the reserve otherwise. */
+	left = packet_jumbo_free_count;
+	if ((flags & PACKET_BUF_ALLOC_RECEIVE) == 0) {
+		if (left > PACKET_BUF_JUMBO_RESERVE)
+			left -= PACKET_BUF_JUMBO_RESERVE;
+		else
+			left = 0;
+	}
+
+	/* None left to this caller is counted, for net.tcpstats. */
+	if (left == 0) {
+		packet_jumbo_alloc_failures++;
+		return NULL;
+	}
+
+	/* The slot on top of the stack, marked taken. */
+	packet_jumbo_free_count--;
+	slot = &packet_jumbo_pool[packet_jumbo_free_stack[packet_jumbo_free_count]];
+	slot->used = 1;
+	packet_jumbo_used++;
+	if (packet_jumbo_used > packet_jumbo_used_max)
+		packet_jumbo_used_max = packet_jumbo_used;
+
+	/* Succeeded: the slot's packet, its storage pointer set. */
+	slot->packet.storage = slot->storage;
+	return &slot->packet;
+}
+
+/*
+ * Resets a packet just taken: no data, the headroom before it, no layer
+ * offsets, one reference.
+ */
+static void
+packet_reset(
+	struct packet_buf *packet,
+	uint8_t *storage,
+	size_t capacity,
+	size_t headroom)
+{
+	/* Clears every field, then sets the storage and the data after the headroom. */
+	kern_memset(packet, 0, sizeof(*packet));
+	packet->storage = storage;
+	packet->data = storage + headroom;
+	packet->capacity = capacity;
+	packet->l2_offset = PACKET_OFFSET_NONE;
+	packet->l3_offset = PACKET_OFFSET_NONE;
+	packet->l4_offset = PACKET_OFFSET_NONE;
+	refcount_init(&packet->refcount, 1);
 }

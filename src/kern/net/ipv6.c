@@ -80,6 +80,12 @@ struct ipv6_interface {
 	int carrier;
 	struct in6_address_table addresses;
 	struct ipv6_link link;
+	/*
+	 * The MTU the last router advertisement gave (0: none), kept whole
+	 * even beyond the device's MTU: link.mtu is the smaller of the two,
+	 * worked out again when the device's MTU changes.
+	 */
+	unsigned ra_mtu;
 	unsigned solicitations;
 	uint64_t solicit_ms;
 	uint64_t report_ms;
@@ -601,11 +607,43 @@ ipv6_link_update(
 			interface->link.reachable_ms = values->reachable_ms;
 		if (values->retrans_ms != 0U)
 			interface->link.retrans_ms = values->retrans_ms;
-		if (values->mtu >= IPV6_MINIMUM_MTU && values->mtu <= device->mtu)
-			interface->link.mtu = values->mtu;
+		if (values->mtu >= IPV6_MINIMUM_MTU) {
+			interface->ra_mtu = values->mtu;
+			interface->link.mtu = values->mtu <= device->mtu ? values->mtu : device->mtu;
+		}
 	}
 
 	spin_unlock_irqrestore(&ipv6_lock, irq);
+}
+
+/*
+ * Takes a device's new MTU: the link MTU becomes the device's, or the
+ * router's when it advertised a smaller one, and the path MTUs learnt
+ * are forgotten (they are learnt again from the next Packet Too Big).
+ */
+void
+ipv6_device_mtu_changed(
+	struct net_device *device)
+{
+	struct ipv6_interface *interface;
+	unsigned long irq;
+	unsigned mtu;
+
+	/* The link MTU worked out again from the device's and the router's. */
+	irq = spin_lock_irqsave(&ipv6_lock);
+
+	interface = ipv6_interface_locked(device);
+	if (interface != NULL) {
+		mtu = device->mtu;
+		if (interface->ra_mtu != 0U && interface->ra_mtu < mtu)
+			mtu = interface->ra_mtu;
+		interface->link.mtu = mtu;
+	}
+
+	spin_unlock_irqrestore(&ipv6_lock, irq);
+
+	/* Forgets every path MTU, which the old link MTU bounded. */
+	icmp6_path_mtu_purge();
 }
 
 /* Takes the news that another node has a tentative address of the device's (neighbor discovery). */

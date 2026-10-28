@@ -75,6 +75,13 @@ struct ifconf {
 #define SIOCGIFBRDADDR 0x00008917UL
 #define SIOCSIFBRDADDR 0x00008919UL
 #define SIOCGIFMTU 0x00008921UL
+/*
+ * Sets an interface's MTU from ifr_mtu, the superuser only: between 1280
+ * and what the interface takes (EINVAL outside), with the interface up or
+ * down; 0 sets it back to the interface's own.  EBUSY while it opens or
+ * closes, or when its driver needs it down first.
+ */
+#define SIOCSIFMTU 0x00008922UL
 #define SIOCGIFSTATS 0x000089f0UL
 
 /*

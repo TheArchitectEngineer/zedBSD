@@ -127,6 +127,7 @@ static const struct net_device_ops genet_operations = {
 	genet_transmit,
 	genet_poll,
 	NULL,
+	NULL,
 	NULL
 };
 

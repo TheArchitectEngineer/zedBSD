@@ -112,7 +112,8 @@ static const struct net_device_ops net_operations = {
 	net_transmit,
 	net_poll,
 	net_ioctl,
-	net_release
+	net_release,
+	NULL
 };
 
 /* What the bus does with what it receives. */

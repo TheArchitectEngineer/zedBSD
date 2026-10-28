@@ -109,6 +109,7 @@ int ipv6_address_state(struct net_device *device, const struct in6_addr *address
 int ipv6_address_is_local(const struct in6_addr *address);
 int ipv6_link_get(struct net_device *device, struct ipv6_link *link);
 void ipv6_link_update(struct net_device *device, const struct ipv6_link *values);
+void ipv6_device_mtu_changed(struct net_device *device);
 void ipv6_duplicate(struct net_device *device, const struct in6_addr *address);
 void ipv6_router_advertised(struct net_device *device);
 unsigned ipv6_groups(struct net_device *device, struct in6_addr *groups, unsigned capacity);
