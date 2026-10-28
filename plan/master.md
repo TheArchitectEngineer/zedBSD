@@ -15,13 +15,13 @@
 ### 動いている担当と Queue
 
 <!-- master:agents:start -->
-2026-10-28 03:15 から N=3（ユーザー「N=3で作業します。」）、07:1x〜WS307 の仕様の P4 で 4、仕様の確定の後にユーザー「P4は停止して、N=3に戻します。」で 3。台帳は [registry](agents/registry.md)。
+2026-10-28 21:23 から P3 を終了して動くのは P1・P2 の 2（WS290 は FPGA 側の設計の完了まで保留、再開はユーザーの明示の指示）。それ以前: 2026-10-28 03:15 から N=3（ユーザー「N=3で作業します。」）、07:1x〜WS307 の仕様の P4 で 4、仕様の確定の後にユーザー「P4は停止して、N=3に戻します。」で 3。台帳は [registry](agents/registry.md)。
 
 | 担当 | Queue | WS | 実機 |
 | --- | --- | --- | --- |
 | P1 | q1657 | [WS299](ws299/ws.md) 5330 の NVMe: direct の書き 59% → UFS の書き 55% → mkfs native → p007 → p008（乱読みは Debian の 99%） | 5330 |
 | P2 | q1658 | [WS291](ws291/ws.md) RDNA: UCLK を負荷に応じた DPM に（段 B〜D）→ 受け入れ（Linux の数以上）→ 案 4・5 | 10.0.10.3（NVMe の zedBSD） |
-| P3 | —（q1659 cleared、merge b99e96139） | [WS290](ws290/ws.md) GHCI: p017 は実装・host 試験・QEMU 済み、実機（p014・M9）待ち。p015 は実機の後 | 待機（VF2＋KC705 の書き込みの知らせ待ち） |
+| P3 | — | 終了（2026-10-28 21:23 ユーザー「FPGA側の設計が終わっていないので、P3はいったん終了、再開は明示的な指示です。計画だけアップデートして、整理しておいてください。」）。[WS290](ws290/ws.md) は保留: p017 は実装・host 試験・QEMU 済み（merge b99e96139）、残りは実機（p014・M9）と p015 | — |
 | P4 | — | 停止（2026-10-28 ユーザー「P4は停止して、N=3に戻します。」）。WS307 の仕様は確定（p001 cleared）、BUG-347 resolved | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
@@ -146,7 +146,7 @@ BUG-349 · q1660 · WS309 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS242](ws242/ws.md) | MG006 | nvrtx の RTX 20/30/40 の全モデル（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の再開点 1〜4、GTX 16・RTX 30・40 の既定の有効（ユーザーの決定、未実装） |
 | [WS243](ws243/ws.md) | MG006 | nvrtx の NVDEC で H.264（Vulkan Video）（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の design.md から |
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の設計（草稿は main 64f05b2c7） |
-| [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 1.0（amaterrace-gpu の docs/ghci.md 89529de）だけに書き直す。試験は host だけ | incomplete（仕様の疑問は全部解決 2026-10-28） | q1636（P3）で p001 の design 版 4 → p002〜（host 試験、実機は VF2＋KC705 の用意の後） |
+| [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 1.0（amaterrace-gpu の docs/ghci.md 89529de）だけに書き直す。試験は host だけ | incomplete・保留（2026-10-28 ユーザー: FPGA 側の設計が終わるまで P3 終了、再開は明示の指示。p017 は実機待ち） | q1636（P3）で p001 の design 版 4 → p002〜（host 試験、実機は VF2＋KC705 の用意の後） |
 | [WS291](ws291/ws.md) | MG006 | GPU の driver の描画の速さ（desktop 60 fps・重い 3D の model 50 fps）: AMD RDNA（P2）→ NVIDIA（P2、GPU を入れ替え）→ PowerVR（VF2、P3） | incomplete（p001〜p005 cleared、p006 in-progress） | q1635（P2）で p006 の続き → p008〜p009、Linux 以上の後に WS306 |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |

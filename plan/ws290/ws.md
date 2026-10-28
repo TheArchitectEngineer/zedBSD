@@ -3,7 +3,7 @@
 # WS290 zedBSD の GHCI の driver を GHCI 1.0（ghci.md d9252e4）に書き直す
 
 - Master: [plan/master.md](../master.md)（2026-10-26 作成）。Primary Milestone: MG006。Related: MG008。前身: [WS288](../ws288/ws.md)（closed、zedBSD の driver は ws288-p006・p010・p018・p019・p035・p040・p043・p044 などで作った）。
-- Status: incomplete（2026-10-28 P3（q1659-i01）: p001〜p013・p016 cleared、p017 in-progress、p014・p015 planned。下の「再開点（2026-10-28 20:45、P3 q1659-i01）」）
+- Status: incomplete・保留（2026-10-28 21:23 ユーザー「FPGA側の設計が終わっていないので、P3はいったん終了、再開は明示的な指示です。計画だけアップデートして、整理しておいてください。」 → P3 終了。再開はユーザーの明示の指示。p001〜p013・p016 cleared、p017 in-progress（実装・host 試験・QEMU 済み、merge b99e96139、残りは実機 p014・M9）、p014・p015 planned。下の「保留（2026-10-28 21:23）」）
 - 出典: 2026-10-26 ユーザー「amaterrace-gpuは他のエージェントにまかせることにしました。あなたにはzedBSD側に集中してもらいます。よって、ws288をクローズしてください。新しいwsを作り、現状のghci.mdを読んで、zedBSDのGHCI driverを書き直してください。amaterrace-gpuのディレクトリは読み取り専用とします。amaterrace-gpuのplan/は読んでもかまいません。am-ws001のような書き方をしてくれれば私は理解できます。」
 - 決定（2026-10-26、Q1 の問いへのユーザーの回答）:
   - （G01 の回答で置き換え: 仕様は単一の GHCI 1.0。下の行は当時の記録）対象の版は **GHCI 2.0 だけ**（ghci.md の TO-BE: 19 の register、in-memory の PSO・descriptor、`CMD_*` の構造化 command、CP の自律 MMU）。1.1（§3.1.1 の 128 KiB の register、class 2 の gpu-op の中継、STATE、KICK、APERTURE）は捨てる。2.0 のハードウェアは am-ws001-p007 で作られる予定。
@@ -231,3 +231,10 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - 確かめた事（P3 が流した）: host 試験 text-end 48 run・boards 36 run（255 check）・hal-fbwindow 14/14・sun4u 30 run（258 check）が 0 fail、WS275 の 3 本 PASS。build 16（config/ci の 10、amd64 の引き金、amd64-ghci・vf2-ghci、x68k、sun4u、sun4u-x11）rc=0・warning 0。QEMU（KVM、Q1 の割当の port）: trigger 16/0、core 9/0（判定は pmemsave・gdbstub・HMP gva2gpa・serial.py／SSH の終了の値）。詳細は [phase017](phase017/phase.md) の「記録」。
 - 判断: 13.2 の (c) は「legacy の窓は外れず残る物に数える（unmap の呼び出しは map と対で残す）」。H1 の外れ 5 つと H4 の外れを採った（phase017 の記録）。
 - 残り: §18 の design.md の反映（版 4.15 の段落、p012 の「残り」1 の注記）、実機（p014 の 13.7、M9 の i915・amdrdna の graphical boot）、p015（規約の全文）。merge は Q1。
+
+## 保留（2026-10-28 21:23、Q1）
+
+- ユーザー「FPGA側の設計が終わっていないので、P3はいったん終了、再開は明示的な指示です。計画だけアップデートして、整理しておいてください。」
+- 状態: q1659 cleared（merge b99e96139）。branch `agent/p3-ws290h` の先 351040f44 は main に入っている。worktree `/home/awe/zedBSD-worktrees/p3-ws290h` は残す（build の QEMU の image 以外は片付け済み）。
+- 再開の時の順: (1) FPGA 側（am-ws001 系）の設計の完了と ghci.md の版を確かめる（版が変わっていれば p001 の design との差を見る）→ (2) VF2＋KC705 の書き込みの知らせの後に p014（実機）と p017 の実機（13.7、M9 の i915・amdrdna の graphical boot）→ (3) p015 規約の全文。上の「再開点（2026-10-28 20:45、P3 q1659-i01）」が技術の詳細。
+- design.md §18 の反映（版 4.15 の段落、p012 の残り 1 の注記）は未着手。
