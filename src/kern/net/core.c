@@ -525,6 +525,10 @@ poll_devices(
 
 	total = 0;
 
+	/* No device asked for a poll: nothing to walk. */
+	if (!net_device_poll_wanted())
+		return 0;
+
 	/* Polls the devices in registry order until the budget is spent. */
 	for (index = 0; total < NET_WORK_BUDGET; index++) {
 		device = net_device_at_ref(index);
@@ -559,8 +563,8 @@ work_pending(
 	if (pending)
 		return 1;
 
-	/* A device with a pending poll is work. */
-	for (index = 0;; index++) {
+	/* A device with a pending poll is work; none has one when the count says so. */
+	for (index = 0; net_device_poll_wanted(); index++) {
 		device = net_device_at_ref(index);
 		if (device == NULL)
 			break;

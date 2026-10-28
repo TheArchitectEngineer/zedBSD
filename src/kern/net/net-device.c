@@ -74,10 +74,19 @@ static void device_put_locked(struct net_device *device, struct device_finalizer
 static void device_update_running_locked(struct net_device *device);
 static void device_wait_callbacks(struct net_device *device, int opening, int closing);
 static void device_wait_removed(struct net_device *device);
+/*
+ * How many devices have a poll scheduled: the network worker's passes
+ * skip the walk of the devices when none has (net_device_poll_wanted).
+ * Moved under the registry lock with each device's poll_scheduled, read
+ * without it.
+ */
+static unsigned poll_scheduled_devices;
+
 static bool device_lock(void);
 static void device_unlock(bool enabled);
 static int device_name_valid(const char *name);
 static void device_post_event(const struct net_device *device, unsigned ifindex, uint32_t action);
+static void device_poll_scheduled_set_locked(struct net_device *device, unsigned scheduled);
 
 /*
  * Empties the device registry.
@@ -305,7 +314,7 @@ net_device_gone(
 	event_ifindex = device->ifindex;
 	event_generation = device->generation;
 	event_flags = device->flags;
-	device->poll_scheduled = 0;
+	device_poll_scheduled_set_locked(device, 0);
 
 	/* Keeps the slot alive until close and every identity purge has finished. */
 	refcount_get(&device->refs);
@@ -967,7 +976,7 @@ net_device_close(
 	if (device->open_count == 0) {
 		last_close = 1;
 		device->closing = 1;
-		device->poll_scheduled = 0;
+		device_poll_scheduled_set_locked(device, 0);
 		device->flags &= ~(NET_DEVICE_UP | NET_DEVICE_RUNNING);
 		call_close = device->ops->close != NULL;
 	}
@@ -1364,7 +1373,7 @@ net_device_schedule_poll(
 	    !device->opening &&
 	    !device->closing &&
 	    device->ops->poll_receive != NULL) {
-		device->poll_scheduled = 1;
+		device_poll_scheduled_set_locked(device, 1);
 		wake = 1;
 	}
 
@@ -1402,7 +1411,7 @@ net_device_poll(
 		return 0;
 	}
 
-	device->poll_scheduled = 0;
+	device_poll_scheduled_set_locked(device, 0);
 	device->poll_active++;
 	refcount_get(&device->refs);
 	device_unlock(enabled);
@@ -1420,7 +1429,7 @@ net_device_poll(
 	    !device->opening &&
 	    !device->closing &&
 	    count >= budget)
-		device->poll_scheduled = 1;
+		device_poll_scheduled_set_locked(device, 1);
 	device_unlock(enabled);
 	net_device_release(device);
 
@@ -1684,4 +1693,39 @@ device_post_event(
 	/* The detail, then the event. */
 	kern_snprintf(detail, sizeof(detail), "ifindex=%u mtu=%u", ifindex, (unsigned)device->mtu);
 	kern_system_event_post(KERN_SYSTEM_EVENT_NETWORK, action, 0, device->name, detail);
+}
+
+/*
+ * Tells whether any device has a poll scheduled, without the registry
+ * lock: a scheduling that races the answer also wakes the worker, which
+ * then looks again.
+ */
+int
+net_device_poll_wanted(
+	void)
+{
+	unsigned scheduled;
+
+	/* The count, read after whatever the waker published. */
+	scheduled = __atomic_load_n(&poll_scheduled_devices, __ATOMIC_ACQUIRE);
+
+	/* Succeeded: whether one waits. */
+	return scheduled != 0;
+}
+
+/*
+ * Sets or clears a device's scheduled poll and keeps the count of devices
+ * with one.  The caller holds the registry lock.
+ */
+static void
+device_poll_scheduled_set_locked(
+	struct net_device *device,
+	unsigned scheduled)
+{
+	/* A change of the flag moves the count. */
+	if (scheduled != 0 && device->poll_scheduled == 0)
+		__atomic_store_n(&poll_scheduled_devices, poll_scheduled_devices + 1U, __ATOMIC_RELEASE);
+	else if (scheduled == 0 && device->poll_scheduled != 0)
+		__atomic_store_n(&poll_scheduled_devices, poll_scheduled_devices - 1U, __ATOMIC_RELEASE);
+	device->poll_scheduled = scheduled;
 }
