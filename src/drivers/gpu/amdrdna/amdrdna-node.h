@@ -84,8 +84,11 @@ struct amdrdna_resource {
  *
  * space is its GPU address space, blobs lists its blobs by protocol
  * number, and vk is its executor session once an executor is bound.
- * pending counts its queued frames and its reserved or queued markers and
- * stopping refuses its new work (both under the node's queue_lock);
+ * pending counts its queued frames, its reserved or queued markers and
+ * the command running on its caller's thread, queued the frames and
+ * markers in the worker's queue or running there (a command may not
+ * overtake them), and stopping refuses its new work (all under the
+ * node's queue_lock);
  * isolated says the core isolated it: what it held stays the device's.
  * runs names the newest run its executor put on each of its queues
  * (AMDRDNA_NODE_QUEUE_*), under the node's lock: a marker queued after
@@ -97,6 +100,7 @@ struct amdrdna_session {
 	struct amdrdna_resource *blobs;
 	void *vk;
 	uint32_t pending;
+	uint32_t queued;
 	int stopping;
 	int isolated;
 	struct amdrdna_space_ticket runs[AMDRDNA_NODE_QUEUES];
