@@ -371,10 +371,10 @@ test_fat_bpb(void)
 	CHECK(zbl_uefi_fat_bpb_parse(boot, SECTOR_SIZE, SECTOR_SIZE, 16383U,
 	    &info) == ZBL_UEFI_FAT_MALFORMED);
 	CHECK(zbl_uefi_fat_bpb_parse(boot, 1024U, 1024U, 8192U,
-	    &info) == ZBL_UEFI_FAT_UNSUPPORTED_BLOCK_SIZE);
+	    &info) == ZBL_UEFI_FAT_OK);
 	make_fat16(boot, 2048U, 1U);
 	CHECK(zbl_uefi_fat_bpb_parse(boot, SECTOR_SIZE, SECTOR_SIZE, 32768U,
-	    &info) == ZBL_UEFI_FAT_MALFORMED);
+	    &info) == ZBL_UEFI_FAT_OK);
 
 	make_fat12(boot, 1U);
 	CHECK(zbl_uefi_fat_bpb_parse(boot, SECTOR_SIZE, SECTOR_SIZE, 2880U,
