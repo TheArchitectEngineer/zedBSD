@@ -50,6 +50,9 @@
 /* The two words of an instruction. */
 #define GSI1_WORDS_PER_INSTRUCTION	2U
 
+/* The instructions of the fragment program of a pipeline without a fragment stage. */
+#define GSI1_EMPTY_FRAGMENT_INSTRUCTIONS 3U
+
 /* All ones: the Boolean true of the IR and of GSI1. */
 #define GSI1_TRUE			UINT32_MAX
 
@@ -227,6 +230,59 @@ ghci_gsi1_program_free(
 	/* The binary, then the record. */
 	kern_free(program->words);
 	kern_free(program);
+}
+
+/*
+ * Makes the fragment program of a pipeline without a fragment stage: all
+ * ones (r0 = 0 - 1) exported to the sample mask, which leaves the
+ * coverage as it is, and the end every program has.  The registers are
+ * those the rasterizer writes before the warp starts.
+ */
+int
+ghci_gsi1_empty_fragment(
+	struct ghci_gsi1_program **program)
+{
+	struct ghci_gsi1_program *made;
+	struct gsi1_extra extra;
+	uint64_t code[GSI1_EMPTY_FRAGMENT_INSTRUCTIONS];
+	uint32_t index;
+
+	/* The record and its code. */
+	made = kern_calloc(1U, sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+	made->words = kern_calloc(GSI1_EMPTY_FRAGMENT_INSTRUCTIONS * GSI1_WORDS_PER_INSTRUCTION, sizeof(*made->words));
+	if (made->words == NULL) {
+		kern_free(made);
+		return ENOMEM;
+	}
+
+	/*
+	 * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+	 * 12.10.3, export targets of a fragment warp: a program ends with
+	 * all ones exported to 0x105, and a pipeline without a fragment
+	 * stage gets a program of these two instructions).
+	 */
+	kern_memset(&extra, 0, sizeof(extra));
+	code[0] = gsi1_encode_i(GSI1_OP_OPIMM, GSI1_F3_ADD, 0U, GSI1_ZERO, -1, 0U);
+	code[1] = gsi1_encode_s(GSI1_OP_CUSTOM1, GSI1_F3_EXP, 0U, 0U, (int32_t)GSI1_EXP_SAMPLE_MASK);
+	code[2] = gsi1_encode_r(GSI1_OP_CUSTOM0, GSI1_F3_END, 0U, 0U, 0U, 0U, &extra);
+
+	/* The code, word0 then word1 of each instruction. */
+	for (index = 0U; index < GSI1_EMPTY_FRAGMENT_INSTRUCTIONS; index++) {
+		made->words[2U * index] = (uint32_t)code[index];
+		made->words[2U * index + 1U] = (uint32_t)(code[index] >> 32);
+	}
+	made->word_count = GSI1_EMPTY_FRAGMENT_INSTRUCTIONS * GSI1_WORDS_PER_INSTRUCTION;
+	made->instruction_count = GSI1_EMPTY_FRAGMENT_INSTRUCTIONS;
+
+	/* A fragment program with the rasterizer's inputs and nothing else. */
+	made->stage = DRV_GPU_STAGE_FRAGMENT;
+	made->used_regs = GSI1_IN_SAMPLE_MASK + 1U;
+
+	/* Succeeded: the caller owns the program. */
+	*program = made;
+	return 0;
 }
 
 /*

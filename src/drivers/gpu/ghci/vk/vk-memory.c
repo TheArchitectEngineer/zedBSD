@@ -924,8 +924,8 @@ heap_grow(
 
 	mutex_unlock(&session->device->lock);
 
-	/* Its mapping in the device's session; a failure lets the memory go again. */
-	error = ghci_vm_map(session->device, device->vm, allocation, 0U, &block->mapping);
+	/* Its mapping in the device's session, executable for the pipelines' code; a failure lets the memory go again. */
+	error = ghci_vm_map(session->device, device->vm, allocation, GHCI_VM_FLAG_EXEC, &block->mapping);
 	if (error != 0) {
 		mutex_lock(&session->device->lock);
 

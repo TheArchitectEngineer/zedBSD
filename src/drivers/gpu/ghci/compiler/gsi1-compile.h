@@ -71,6 +71,9 @@
 #define GHCI_GSI1_FLAG_DEPTH_EXPORT	(1U << 1)
 #define GHCI_GSI1_FLAG_DISCARD		(1U << 2)
 
+/* The program asks an image its sample count (texsz.s), which needs multisampling; not a PSO flag. */
+#define GHCI_GSI1_FLAG_SAMPLE_QUERY	(1U << 3)
+
 /* A fragment program's colour outputs: bit k for attachment k, and the second colour of attachment 0. */
 #define GHCI_GSI1_OUTPUT_SECOND_COLOR	(1U << 8)
 
@@ -231,6 +234,12 @@ int ghci_gsi1_compile(const uint32_t *words, size_t word_count, enum drv_gpu_sha
 
 /* Compiles a parsed program (the IR is only read), as ghci_gsi1_compile(). */
 int ghci_gsi1_compile_ir(const struct drv_gpu_shader_ir *ir, const struct ghci_gsi1_options *options, struct ghci_gsi1_program **program, struct ghci_gsi1_diagnostic *diagnostic);
+
+/*
+ * Makes the fragment program of a pipeline without a fragment stage: all
+ * ones to the sample mask, and the end.  Returns 0 or ENOMEM.
+ */
+int ghci_gsi1_empty_fragment(struct ghci_gsi1_program **program);
 
 /* Frees a compiled program. */
 void ghci_gsi1_program_free(struct ghci_gsi1_program *program);

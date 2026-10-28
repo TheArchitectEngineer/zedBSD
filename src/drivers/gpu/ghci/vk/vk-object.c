@@ -214,6 +214,16 @@ ghci_vk_object_destroy(
 	case GHCI_VK_COMMAND_BUFFER:
 		ghci_vk_commands_release(object);
 		break;
+	case GHCI_VK_SET_LAYOUT:
+	case GHCI_VK_PIPELINE_LAYOUT:
+	case GHCI_VK_DESCRIPTOR_SET:
+		ghci_vk_layout_release(session, object);
+		break;
+	case GHCI_VK_SHADER_MODULE:
+	case GHCI_VK_PIPELINE:
+	case GHCI_VK_RENDER_PASS:
+		ghci_vk_pipeline_release(session, object);
+		break;
 	default:
 		break;
 	}
