@@ -224,12 +224,14 @@ scenario delayed-ack-stream 30 --bytes 16777216 --ack-delay-ms 200 --expect-retr
 # the resends stay few, and SRTT follows (a Linux-like peer, whose window does not move).  The step comes 2 ms in, while
 # the megabyte is still on its way (ws221-p008: at 100 MB/s it takes about 10 ms).  The spurious timeouts resend no
 # more than the flight (ws221-p008: the 64 KB window, 64 of the model's 1024-byte segments; before, the ring's 8).
+# (ws221-p008: a timeout goes back to the oldest segment and resends the flight in slow start; after this spurious one
+# the resends of segments B had come back as duplicates, which may bring one fast retransmit, as on BSD.)
 scenario rtt-step 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 --peer-window 65535 --limit-s 120 \
-    --expect-retransmits-max 64 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:0
+    --expect-retransmits-max 64 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:1
 # ws220-p005: the same with zedBSD as the receiver (its window moves): no resend on a reopened window keeps the sample.
 # (ws221-p009: zedBSD's 128 KB window, 128 segments of the flight; the Linux-like peer above keeps 64 KB.)
 scenario rtt-step-zedbsd 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 --limit-s 120 \
-    --expect-retransmits-max 128 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:0
+    --expect-retransmits-max 128 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:1
 # ws220-p004 review-1 G2: B's reader stops for 5 s, B's window closes: A's probes double apart (at most 10, p003: 17739).
 # ws220-p005: the duplicates of the closed window start no fast retransmit; one after the window opens (the hole of a
 # segment B refused) may.
@@ -247,6 +249,10 @@ scenario two-holes 30 --bytes 1048576 --drop-ab 100,103 --peer-window 65535 --ex
     --expect-timeouts-max 0 --expect-retransmits-max 2
 scenario two-holes-zedbsd 30 --bytes 1048576 --drop-ab 100,103 --expect-fast-retransmits 1:1 --expect-timeouts-max 0 \
     --expect-retransmits-max 2
+# ws221-p008: a burst loses A's frames for 2 ms 50 ms in (a whole flight) and B holds a lone acknowledgement 40 ms as
+# Linux does: one timeout, then the go-back-N in slow start resends the flight in a few round trips (before: a segment
+# a partial acknowledgement, each held 40 ms; on the VisionFive 2, 9 s).
+scenario burst-loss 20 --bytes 16777216 --drop-ab-run 50:2000 --ack-delay-ms 40 --expect-stall-max-ms 700
 scenario window-lost 2 --bytes 1048576 --drop-ab 100,101,102,103,104,105,106,107 --peer-window 65535 \
     --expect-fast-retransmits 0:1 --expect-timeouts-max 1 --expect-retransmits-max 8
 # ws220-p005 review-1 G2: losses across the sequence numbers' wrap: the fast retransmits go on (recover is compared only

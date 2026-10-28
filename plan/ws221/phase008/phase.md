@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p008 -->
 # ws221-p008: TCP の輻輳の制御と送りの buffer、相手の MSS、`tcp_device_mss`、Nagle（旧 ws220-p006）
 
-Status: in-progress（2026-10-29 P3 q1664-i04: 案 B の (1)〜(3) を a774d28e3 に実装、tcp-model・packet-buf の host 試験 PASS、VF2 の kernel の build warning 0。残り: IPv6 の Packet Too Big の試験（QEMU か実機、未実施）、VF2 の実機の非退行、5 platform の build）
+Status: cleared（2026-10-29 P3 q1664-i04: 案 B と timeout の後の go-back-N を fff5467c0 まで。tcp-model 全 PASS、VF2 実機（相手 5330）で 1500 は 949、9000 は 990 の非退行、QEMU qemu-tcp PASS。IPv6 の Packet Too Big の実地の試験は未実施（下の「i04 (C)」の最後））
 Parent: [WS221](../ws.md)
 Queue: q1664 / q1664-i01（P3）
 依存: WS220 p005（main、cleared）。WS221 p005 はこの Phase の `tcp_device_mss` を使う
@@ -56,3 +56,19 @@ Queue: q1664 / q1664-i01（P3）
 - `plan/ws221/tests/run-packet-buf-host-test.sh` PASS（`test_hold_reserve` を足した: 保持は予約の外まで、予約は受けと通過の packet が取れる）
 - VF2 の kernel（`config-vf2-tcp.mk`）rc=0・warning 0
 - 未実施: IPv6 の Packet Too Big の試験（model は IPv4 だけ）、VF2 の実機の非退行、5 platform の build
+
+## i04 (C): timeout の後の回復（2026-10-29、fff5467c0）
+
+Q1 の判断（2026-10-29）:「timeout の後の回復の弱点は既存の不具合なので p008 の範囲で今直して（推しの形: una から go-back-N、unsent に cwnd の門、recovery 中も slow start）。tcp-model に 669.8 の run を再現する場面を足して、直した後に VF2 で非退行を。」
+
+| 項目 | 内容 |
+| --- | --- |
+| 症状 | VF2 の送り 1 本が 669.8 Mbps: flight 約 190 segment が一度に失われ、timeout の後の回復に 9 秒（partial ACK ごとに次の穴を 1 つ、cwnd は recovery の外でしか増えず、Linux の受けが lone ACK を 40 ms 持つ） |
+| 直し | 本当に切れた timeout: cwnd 1 segment、recover は `send_max`（新しい欄、今までに device に渡した最も先、BSD の snd_max）、最古は timer が送り直し、その後ろの送った entry は unsent に戻し `rewound` の印（次の送りは再送に数え、Karn で計時しない）。`tcp_send_unsent` に cwnd の門（`tcp_unsent_fits_cwnd_locked`: flight があり cwnd を超える entry で止まる）、ACK ごとに unsent があれば output retry。timeout の recovery 中（`recovery_by_timeout` 1）は partial ACK で即の再送をせず cwnd を slow start で増やす。相手が持っていた戻した entry は、ACK が `send_max` まで来れば送った物として取る（取らないと「送っていない物の ACK」で捨て、R2 で接続が死ぬ、model で見つけた）。書き手が unsent を送っている間の timeout は今までどおり（`recovery_by_timeout` 2） |
+| tcp-model | 新 scenario `burst-loss`（50 ms から 2 ms の間 A の frame を全部落とし、B は lone ACK を 40 ms 持つ）: 直す前の tcp.c は 4.07 s・3.93 MB/s で FAIL、直した後 0.43 s・37.4 MB/s で PASS。model に `--drop-ab-run AT_MS:US`・`--expect-stall-max-ms` を足した。`rtt-step`・`rtt-step-zedbsd` の fast retransmit の期待を 0:0 → 0:1（RTT が 0.2 → 600 ms に跳ねる spurious timeout で、go-back-N が相手の持っていた segment を送り直し、その重複の dupack が 1 回の fast retransmit を生む。BSD と同じ）。全 scenario PASS |
+| VF2 実機（fff5467c0 の tree、kernel sha256 6cf2a25b35b3564f…、相手 5330、flock） | 1500: 送り 949.2・949.1・949.2（最遅 ≥ 947.6）、受け 949.3・949.3（最遅 ≥ 947.2）。9000: 受け 990.7・990.7（最遅 ≥ 987.7）、送り 990.7・990.7（最遅 ≥ 989.2）。終わりに VF2 en0・5330 enx6c1ff706148a とも 1500 を読み戻した |
+| 混在 | VF2 の en0 を 9000 にして centris（1500、VF2 の /16 で on-link）と: 送り 933.8・受け 947.9、send_mss 1460（相手の MSS）・receive_mss 8960 |
+| QEMU | `plan/ws221/tests/qemu-tcp.sh` PASS（送り 50.7・受け 53.3 Mbps、emulator の値） |
+| build | amd64・pcat・rpi4・rpi5・zybo の vmunix・bin/net・bin/networkd: 全部 rc=0・warning 0（fff5467c0 の tree、rpi4・rpi5 は -j 無し。rpi5 は -j16 の時に src/libc/math が sysroot の header の前に compile されて一度落ちた、並列の依存の穴、この変更と無関係） |
+
+未実施: IPv6 の Packet Too Big の実地の試験（`tcp6_path_mtu_lowered` と `tcp_send_segment_cut` の経路）。tcp-model は IPv4 だけ、tcp-perf・perf-peer.py は IPv4 だけ。案: VF2 と 5330 を 9000 にし、5330 から raw の ICMPv6 socket で PTB（MTU 1500、中の宛先を 5330）を送り、IPv6 の TCP の転送が続くこと（send_mss 1440、再送の数）を net.tcpstats で見る。道具（IPv6 の tcp-perf）を足す要がある。

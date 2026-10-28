@@ -488,6 +488,7 @@ static uint32_t tcp_send_limit_locked(const struct tcp_endpoint *endpoint);
 static int tcp_send_room_locked(const struct tcp_endpoint *endpoint, size_t length);
 static int tcp_send_buffer_room_locked(const struct tcp_endpoint *endpoint, size_t length);
 static int tcp_nagle_holds_locked(const struct tcp_endpoint *endpoint);
+static int tcp_unsent_fits_cwnd_locked(const struct tcp_endpoint *endpoint);
 static size_t tcp_tail_room_locked(const struct tcp_endpoint *endpoint);
 static void tcp_cwnd_grow_locked(struct tcp_endpoint *endpoint, uint32_t acked);
 static void tcp_cwnd_loss_locked(struct tcp_endpoint *endpoint, int timeout);
@@ -791,6 +792,8 @@ tcp6_path_mtu_lowered(
 				break;
 		}
 		if (index < sent && endpoint->tcp.send_flushing == 0) {
+			for (slot = index; slot < sent; slot++)
+				endpoint->tcp.send_queue[(endpoint->tcp.send_first + slot) % TCP_SEND_QUEUE_MAX].rewound = 1;
 			endpoint->tcp.send_unsent = endpoint->tcp.send_count - index;
 			endpoint->tcp.rtt_timing = 0;
 			if (index == 0) {
@@ -858,6 +861,7 @@ tcp_timer_run(
 	uint8_t flags;
 	uint32_t sequence;
 	uint32_t skip;
+	unsigned rewind;
 	size_t length;
 	uint64_t delay;
 	enum tcp_refusal refusal;
@@ -1110,20 +1114,38 @@ tcp_timer_run(
 		exponent = endpoint->tcp.rto_backoff;
 
 		/*
-		 * A timeout that really expired starts a recovery up to what was
-		 * sent by then (RFC 6582 section 4): partial acknowledgements
-		 * have the next hole resent at once, segments sent after it are
-		 * not resent (they give the sample that ends the backoff,
-		 * ws220-p004 review-1 G1), and the duplicates the resends bring
-		 * start no fast retransmit.
+		 * A timeout that really expired starts a recovery up to the most
+		 * ever sent (RFC 6582 section 4, BSD's snd_max), whose duplicates start no
+		 * fast retransmit, and goes back to the oldest segment (RFC 5681
+		 * section 3.1, as BSD sets snd_nxt back to snd_una): the timer
+		 * resends it, every segment sent after it is unsent again, and
+		 * they go again in order as the congestion window, one segment
+		 * now, grows in slow start with each acknowledgement.  A burst
+		 * that lost a whole flight then costs one timeout and a few
+		 * round trips, not a round trip for each segment.  The resends
+		 * are not timed (Karn); the first new segment's sample ends the
+		 * backoff.  Not while a thread is sending the unsent entries: the
+		 * segments after the oldest then wait for their partial
+		 * acknowledgements as before.
 		 */
 		if (!immediate && !persist) {
 			tcp_cwnd_loss_locked(endpoint, 1);
-			endpoint->tcp.recover = tcp_sent_end_locked(endpoint);
+			endpoint->tcp.recover = endpoint->tcp.send_max;
+			if (tcp_sequence_before(endpoint->tcp.recover, tcp_sent_end_locked(endpoint)))
+				endpoint->tcp.recover = tcp_sent_end_locked(endpoint);
 			endpoint->tcp.recovery = 1;
-			endpoint->tcp.recovery_by_timeout = 1;
+			endpoint->tcp.recovery_by_timeout = 0;
 			endpoint->tcp.duplicate_acks = 0;
 			endpoint->tcp.dupack_guard = 0;
+			sent = tcp_sent_count_locked(endpoint);
+			if (endpoint->tcp.send_flushing == 0) {
+				endpoint->tcp.recovery_by_timeout = 1;
+				for (rewind = 1; rewind < sent; rewind++)
+					endpoint->tcp.send_queue[(endpoint->tcp.send_first + rewind) % TCP_SEND_QUEUE_MAX].rewound = 1;
+				endpoint->tcp.send_unsent = endpoint->tcp.send_count - 1U;
+			} else {
+				endpoint->tcp.recovery_by_timeout = 2;
+			}
 		}
 
 		/*
@@ -3562,6 +3584,41 @@ tcp_nagle_holds_locked(
 }
 
 /*
+ * Tells whether the first unsent entry may go within the congestion
+ * window with what was sent before it: always with nothing sent
+ * outstanding, a control segment, or before the connection has a window.
+ * Entries were queued within the window, so this holds back only those a
+ * timeout made unsent again (its go-back-N goes in slow start) or a
+ * window a loss cut since.  The caller holds the socket lock.
+ */
+static int
+tcp_unsent_fits_cwnd_locked(
+	const struct tcp_endpoint *endpoint)
+{
+	const struct tcp_pending *entry;
+	uint32_t flight;
+	unsigned slot;
+
+	/* Nothing waits, or no window yet. */
+	if (endpoint->tcp.send_unsent == 0 || endpoint->tcp.cwnd == 0)
+		return 1;
+
+	/* The first unsent entry: a data segment. */
+	slot = (endpoint->tcp.send_first + endpoint->tcp.send_count - endpoint->tcp.send_unsent) % TCP_SEND_QUEUE_MAX;
+	entry = &endpoint->tcp.send_queue[slot];
+	if (entry->length == 0)
+		return 1;
+
+	/* Within the window with what is in flight, or alone. */
+	flight = tcp_sent_end_locked(endpoint) - endpoint->tcp.send_unacknowledged;
+	if (flight == 0 || (uint64_t)flight + entry->length <= endpoint->tcp.cwnd)
+		return 1;
+
+	/* Succeeded: it waits. */
+	return 0;
+}
+
+/*
  * Reports how many bytes of a write the ring's last entry still takes in
  * place of a new segment: one never handed to the device, a data segment
  * shorter than the connection's segment size, up to that size and the
@@ -3842,6 +3899,7 @@ tcp_retire_acknowledged(
 	int ended;
 	uint32_t acked = 0;
 	int probe_answered = 0;
+	int going_back;
 	int beyond;
 	int covered;
 	int before;
@@ -3907,17 +3965,22 @@ tcp_retire_acknowledged(
 
 	/*
 	 * With the short segment sent before it acknowledged, a short last
-	 * entry that Nagle's algorithm held may go: the network worker, which
-	 * takes this acknowledgement, sends it on its next pass.
+	 * entry that Nagle's algorithm held may go.
 	 */
 	if (endpoint->tcp.send_small_outstanding != 0 &&
-	    tcp_sequence_at_or_before(endpoint->tcp.send_small_end, acknowledgement)) {
+	    tcp_sequence_at_or_before(endpoint->tcp.send_small_end, acknowledgement))
 		endpoint->tcp.send_small_outstanding = 0;
-		if (endpoint->tcp.send_unsent != 0) {
-			endpoint->tcp.output_retry_on_pass = 1;
-			if (endpoint->tcp.output_retry_deadline == 0)
-				endpoint->tcp.output_retry_deadline = sched_ticks();
-		}
+
+	/*
+	 * Unsent entries the congestion window held back (after a timeout's
+	 * go-back-N, or a window cut by a loss) or Nagle's algorithm held go
+	 * as far as the room this acknowledgement made: the network worker,
+	 * which takes it, sends them on its next pass.
+	 */
+	if (endpoint->tcp.send_unsent != 0) {
+		endpoint->tcp.output_retry_on_pass = 1;
+		if (endpoint->tcp.output_retry_deadline == 0)
+			endpoint->tcp.output_retry_deadline = sched_ticks();
 	}
 
 	/*
@@ -3979,11 +4042,12 @@ tcp_retire_acknowledged(
 	 * leaves it at the threshold set when the loss was found (RFC 6582
 	 * section 3.2 step 3, this end not inflating it meanwhile).
 	 */
+	going_back = recovering && endpoint->tcp.recovery_by_timeout == 1U;
 	if (ended) {
 		if (endpoint->tcp.cwnd > endpoint->tcp.ssthresh)
 			endpoint->tcp.cwnd = endpoint->tcp.ssthresh;
 		endpoint->tcp.cwnd_acked = 0;
-	} else if (!recovering && endpoint->tcp.recovery == 0) {
+	} else if (going_back || (!recovering && endpoint->tcp.recovery == 0)) {
 		tcp_cwnd_grow_locked(endpoint, acked);
 	}
 
@@ -4013,7 +4077,7 @@ tcp_retire_acknowledged(
 	endpoint->tcp.retransmit_immediate = 0;
 	if (sent == 0) {
 		endpoint->tcp.retransmit_deadline = 0;
-	} else if (recovering) {
+	} else if (recovering && !going_back) {
 		endpoint->tcp.retransmit_deadline = now;
 		endpoint->tcp.retransmit_immediate = TCP_IMMEDIATE_LOSS;
 		endpoint->tcp.counters.immediate_resends++;
@@ -4516,6 +4580,10 @@ tcp_mark_sent_locked(
 	/* It is no longer owed to the device: the end of what was sent moves past it, and takes no more bytes. */
 	endpoint->tcp.send_unsent--;
 	entry->fresh = 0;
+	if (sent == 0 && endpoint->tcp.send_count == 1U && endpoint->tcp.send_unsent == 0)
+		endpoint->tcp.send_max = entry->sequence + entry->advance;
+	if (tcp_sequence_before(endpoint->tcp.send_max, entry->sequence + entry->advance))
+		endpoint->tcp.send_max = entry->sequence + entry->advance;
 
 	/* A short data segment is the one Nagle's algorithm waits on until it is acknowledged. */
 	if (entry->length != 0 && entry->length < tcp_segment_size_locked(endpoint)) {
@@ -4561,8 +4629,8 @@ tcp_mark_sent_locked(
 		endpoint->tcp.persist_shift = 1;
 	}
 
-	/* With no segment being timed, this one is: one sample a round trip (ws220-p004). */
-	if (endpoint->tcp.rtt_timing == 0) {
+	/* With no segment being timed, this one is, unless it is a resend (Karn): one sample a round trip (ws220-p004). */
+	if (endpoint->tcp.rtt_timing == 0 && entry->rewound == 0) {
 		endpoint->tcp.rtt_timing = 1;
 		endpoint->tcp.rtt_sequence = entry->sequence + entry->advance;
 		endpoint->tcp.rtt_start = now;
@@ -4809,6 +4877,7 @@ tcp_send_unsent(
 	uint32_t sequence;
 	size_t length;
 	uint8_t flags;
+	uint8_t resend;
 	uint64_t now;
 	enum tcp_refusal refusal;
 	int progressed;
@@ -4829,6 +4898,10 @@ tcp_send_unsent(
 		if (endpoint->tcp.send_unsent == 1U && tcp_nagle_holds_locked(endpoint))
 			break;
 
+		/* Or at one the congestion window does not take now: an acknowledgement sends it. */
+		if (!tcp_unsent_fits_cwnd_locked(endpoint))
+			break;
+
 		/* The first unsent entry, marked sent and copied out. */
 		slot = (endpoint->tcp.send_first + endpoint->tcp.send_count -
 		    endpoint->tcp.send_unsent) % TCP_SEND_QUEUE_MAX;
@@ -4837,8 +4910,10 @@ tcp_send_unsent(
 		sequence = entry->sequence;
 		flags = entry->flags;
 		length = entry->length;
+		resend = entry->rewound;
 		now = sched_ticks();
 		tcp_mark_sent_locked(endpoint, now);
+		entry->rewound = 0;
 
 		/*
 		 * A payload larger than a segment is never queued (a write
@@ -4869,10 +4944,20 @@ tcp_send_unsent(
 		irq = spin_lock_irqsave(&socket->lock);
 		if (retries) {
 			tcp_unmark_sent_locked(endpoint, packet);
+			slot = (endpoint->tcp.send_first + endpoint->tcp.send_count -
+			    endpoint->tcp.send_unsent) % TCP_SEND_QUEUE_MAX;
+			if (endpoint->tcp.send_unsent != 0 && endpoint->tcp.send_queue[slot].packet == packet)
+				endpoint->tcp.send_queue[slot].rewound = resend;
 			if (length != 0)
 				endpoint->tcp.counters.send_refused++;
 			tcp_output_refused_locked(endpoint, refusal, progressed, now);
 			break;
+		}
+
+		/* A resend of what a timeout or a Packet Too Big made unsent again is counted so for net.tcpstats. */
+		if (error == 0 && resend != 0 && length != 0) {
+			endpoint->tcp.counters.retransmit_segments++;
+			endpoint->tcp.counters.retransmit_bytes += length;
 		}
 
 		/*
@@ -6806,6 +6891,7 @@ tcp_segment_input(
 	int established;
 	uint32_t sent_end;
 	unsigned sent;
+	unsigned slot;
 	int old_payload;
 	int accept_payload;
 	int discard_payload;
@@ -7103,6 +7189,27 @@ tcp_segment_input(
 		 */
 		sent_end = tcp_sent_end_locked(endpoint);
 		acknowledges_unsent = tcp_sequence_before(sent_end, acknowledgement);
+
+		/*
+		 * Entries made unsent again after they went (a timeout's
+		 * go-back-N, a Packet Too Big) that the peer had after all are
+		 * sent as far as it acknowledges them, up to the most ever sent;
+		 * not while a thread is sending them.
+		 */
+		if (acknowledges_unsent && endpoint->tcp.send_flushing == 0 &&
+		    tcp_sequence_at_or_before(acknowledgement, endpoint->tcp.send_max)) {
+			while (endpoint->tcp.send_unsent != 0) {
+				slot = (endpoint->tcp.send_first + endpoint->tcp.send_count -
+				    endpoint->tcp.send_unsent) % TCP_SEND_QUEUE_MAX;
+				if (!tcp_sequence_before(endpoint->tcp.send_queue[slot].sequence, acknowledgement))
+					break;
+				endpoint->tcp.send_queue[slot].rewound = 0;
+				endpoint->tcp.send_queue[slot].fresh = 0;
+				endpoint->tcp.send_unsent--;
+			}
+			sent_end = tcp_sent_end_locked(endpoint);
+			acknowledges_unsent = tcp_sequence_before(sent_end, acknowledgement);
+		}
 		acknowledges_old = tcp_sequence_before(acknowledgement,
 		    endpoint->tcp.send_unacknowledged);
 
