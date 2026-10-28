@@ -7,7 +7,7 @@
 | --- | --- | --- | --- | --- | --- |
 | P1 | phase-runner | WS308 の不具合の直しと規約 → WS299（q1654） | `/home/awe/zedBSD-worktrees/p1-ws308c` / `agent/p1-ws308c` | running | c9266aa62（q1652） |
 | P2 | phase-runner | WS291: 案 3b・4・5 と夜間の soak（q1655） | `/home/awe/zedBSD-worktrees/p2-ws291g` / `agent/p2-ws291g` | running（10.0.10.3） | bcacd6219（q1653） |
-| P3 | phase-runner | WS290 p009〜（q1644、13 時に resume） | `/home/awe/zedBSD-worktrees/p3-ws290g` / `agent/p3-ws290g` | running（13:00〜） | 1e41a9a86 |
+| P3 | phase-runner | WS290 p016 の commit → p017（q1656） | `/home/awe/zedBSD-worktrees/p3-ws290g` / `agent/p3-ws290g` | running | 9ba654be0（q1644） |
 | P4 | phase-runner | WS307 p001（q1643〜q1649、済み）、BUG-347（resolved） | `/home/awe/zedBSD-worktrees/p4-ws307d` / `agent/p4-ws307d` | returned（2026-10-28） | 23c76dd28 |
 
 - 同時に動かす数は 3（2026-10-28 ユーザー「N=3で作業します。」）。WS307 の仕様の間だけ P4 を足して 4、2026-10-28 ユーザー「P4は停止して、N=3に戻します。」で 3 に戻した。

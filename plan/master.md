@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | P1 | q1654 | [WS308](ws308/ws.md) 乱読みは Debian の 99%。前からの不具合 3 つ（p004・p006）と規約 → [WS299](ws299/ws.md) | 5330・QEMU |
 | P2 | q1655 | [WS291](ws291/ws.md) RDNA: 案 3b・4・5（共有の code）、UCLK を負荷に応じた DPM に（DC の watermark・handshake） | 10.0.10.3（NVMe の zedBSD） |
-| P3 | q1644 | [WS290](ws290/ws.md) GHCI 1.0 の driver: p001〜p004・p013 cleared、p005（session・VM）から | host（VF2＋KC705 は書き込みの知らせの後） |
+| P3 | q1656 | [WS290](ws290/ws.md) GHCI: p005〜p012 cleared・Signoff。p016 の commit → p017（console の framebuffer の使用終了、全 backend・全 GPU driver） | host（VF2＋KC705 は書き込みの知らせの後） |
 | P4 | — | 停止（2026-10-28 ユーザー「P4は停止して、N=3に戻します。」）。WS307 の仕様は確定（p001 cleared）、BUG-347 resolved | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
@@ -84,7 +84,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-349 · q1656 · WS309 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-349 · q1657 · WS309 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的

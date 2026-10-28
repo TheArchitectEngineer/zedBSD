@@ -106,3 +106,5 @@
 | q1654 / q1654-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws308c`・branch `agent/p1-ws308c`、基点 main） | [ws308](ws308/ws.md) p004（不具合 1 の直し）・p006 の不具合 2・3・p007 規約 → WS299 | q1652 と同じ承認と所有。2026-10-28 ユーザー（クリック）「WS308 の中で P1 が直す (推し)」「後回し（Future Work） (推し)」（p005） | in-progress |
 
 | q1655 / q1655-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291g`・branch `agent/p2-ws291g`、基点 main） | [ws291](ws291/ws.md) の続き | 案 3b・4・5（Q1 の OK 済み、条件どおり）。2026-10-28 ユーザー「P2は、負荷に応じて上げ下げさせる形、を取ってください。今夜のsoakは不要です。最短ではないものの、よりよい形に仕上げたいです。」 → UCLK を負荷に応じた DPM で（夜間の soak は取り消し）。承認: q1653 と同じ。2026-10-28 ユーザー（クリック）「夜間に流す (推し)」 | in-progress |
+
+| q1656 / q1656-i01 | P3（phase-runner、worktree `/home/awe/zedBSD-worktrees/p3-ws290g`（helper の未 commit の差分を引き継ぐため同じ worktree）・branch `agent/p3-ws290g`） | [ws290](ws290/ws.md) p016 の直しの確かめと commit → p017（全 backend・全 GPU driver の console の使用終了） | q1644 と同じ承認。p017 のユーザーの答え（Q1〜Q13、hal.h は変えない）と 2026-10-28 の全体の決定（GPU の最初の flip で console の framebuffer の backend は使用終了、serial は続く、全 arch・全 GPU driver） | in-progress |
