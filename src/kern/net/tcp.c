@@ -44,6 +44,7 @@
 #include "kern/signal.h"
 #include "kern/process.h"
 #include "kern/thread.h"
+#include "kern/uaccess.h"
 #include "internal.h"
 #include "ipv6.h"
 #include "wire.h"
@@ -438,7 +439,9 @@ static void tcp_reorder_keep(struct tcp_endpoint *endpoint, struct packet_buf **
 static void tcp_reorder_drain(struct tcp_endpoint *endpoint, int discard);
 static void tcp_reorder_free(struct tcp_endpoint *endpoint);
 static void tcp_connect_cancel_locked(struct tcp_endpoint *endpoint, uint32_t generation, struct tcp_discard *discard);
-static int tcp_send_reliable(struct tcp_endpoint *endpoint, uint8_t flags, const void *data, size_t length);
+static int tcp_send_reliable(struct tcp_endpoint *endpoint, uint8_t flags, const void *data, const struct uaccess_pin *pin, size_t pin_offset, size_t length);
+static ssize_t tcp_send_bytes(struct socket *socket, const void *buffer, const struct uaccess_pin *pin, size_t pin_offset, size_t length, int flags);
+static ssize_t tcp_send_pinned(struct socket *socket, const struct uaccess_pin *pin, size_t offset, size_t length, int flags);
 static int tcp_bind(struct socket *socket, const struct sockaddr *address, socklen_t length);
 static int tcp_listen(struct socket *socket, int backlog);
 static int tcp_accept(struct socket *socket, struct socket **result, struct sockaddr *address, socklen_t *length, unsigned io_flags);
@@ -476,6 +479,7 @@ static const struct socket_ops tcp_ops = {
 	.listen = tcp_listen,
 	.accept = tcp_accept,
 	.sendto = tcp_sendto,
+	.send_pinned = tcp_send_pinned,
 	.recvfrom = tcp_recvfrom,
 	.shutdown = tcp_shutdown,
 	.getsockname = tcp_getsockname,
@@ -3562,6 +3566,8 @@ tcp_send_reliable(
 	struct tcp_endpoint *endpoint,
 	uint8_t flags,
 	const void *data,
+	const struct uaccess_pin *pin,
+	size_t pin_offset,
 	size_t length)
 {
 	struct packet_buf *copy;
@@ -3593,8 +3599,16 @@ tcp_send_reliable(
 		return ENOBUFS;
 	}
 
-	if (length != 0)
+	/* The payload: from a kernel buffer, or straight from the writer's pinned pages. */
+	if (length != 0 && pin != NULL) {
+		error = copyin_pinned(pin, pin_offset, payload, length);
+		if (error != 0) {
+			packet_buf_free(copy);
+			return error;
+		}
+	} else if (length != 0) {
 		kern_memcpy(payload, data, length);
+	}
 
 	/* SYN and FIN each consume one sequence number. */
 	advance = (uint32_t)length;
@@ -4785,7 +4799,7 @@ tcp_connect(
 
 	/* Sends the SYN, retrying a few times when buffers are short. */
 	for (attempt = 0; attempt < 4U; attempt++) {
-		error = tcp_send_reliable(endpoint, TCP_SYN, NULL, 0);
+		error = tcp_send_reliable(endpoint, TCP_SYN, NULL, NULL, 0, 0);
 		if (error == 0)
 			break;
 		if (error != EAGAIN && error != EBUSY && error != ENOBUFS) {
@@ -4892,6 +4906,56 @@ tcp_sendto(
 	const struct sockaddr *address,
 	socklen_t address_length)
 {
+	ssize_t result;
+
+	(void)address_length;
+
+	/* Rejects an address, or a missing buffer. */
+	if (address != NULL || (buffer == NULL && length != 0))
+		return -EINVAL;
+
+	/* Sends from the kernel buffer. */
+	result = tcp_send_bytes(socket, buffer, NULL, 0, length, flags);
+
+	/* The bytes queued, or why none were. */
+	return result;
+}
+
+/* Sends from a writer's pinned pages without an address (write(2), socket_file_write_pinned). */
+static ssize_t
+tcp_send_pinned(
+	struct socket *socket,
+	const struct uaccess_pin *pin,
+	size_t offset,
+	size_t length,
+	int flags)
+{
+	ssize_t result;
+
+	/* Rejects a missing pin. */
+	if (pin == NULL && length != 0)
+		return -EINVAL;
+
+	/* Sends from the pages. */
+	result = tcp_send_bytes(socket, NULL, pin, offset, length, flags);
+
+	/* The bytes queued, or why none were. */
+	return result;
+}
+
+/*
+ * Queues bytes for the peer, from a kernel buffer or (pin not NULL) from
+ * length bytes at pin_offset in a writer's pinned pages.
+ */
+static ssize_t
+tcp_send_bytes(
+	struct socket *socket,
+	const void *buffer,
+	const struct uaccess_pin *pin,
+	size_t pin_offset,
+	size_t length,
+	int flags)
+{
 	struct tcp_endpoint *endpoint;
 	struct thread *thread;
 	unsigned long irq;
@@ -4906,12 +4970,8 @@ tcp_sendto(
 	endpoint = tcp_endpoint(socket);
 	thread = thread_current();
 
-	(void)address_length;
-
-	/* Rejects unsupported flags, an address, or a missing buffer. */
-	if ((flags & ~(MSG_DONTWAIT | MSG_NOSIGNAL)) != 0 ||
-	    address != NULL ||
-	    (buffer == NULL && length != 0))
+	/* Rejects unsupported flags. */
+	if ((flags & ~(MSG_DONTWAIT | MSG_NOSIGNAL)) != 0)
 		return -EINVAL;
 
 	/* A shut-down or unconnected socket cannot send. */
@@ -5023,8 +5083,11 @@ tcp_sendto(
 		segment_flags = TCP_ACK;
 		if (total + chunk == length)
 			segment_flags |= TCP_PSH;
-		error = tcp_send_reliable(endpoint, segment_flags,
-		    (const uint8_t *)buffer + total, chunk);
+		if (pin != NULL)
+			error = tcp_send_reliable(endpoint, segment_flags, NULL, pin, pin_offset + total, chunk);
+		else
+			error = tcp_send_reliable(endpoint, segment_flags, (const uint8_t *)buffer + total, NULL, 0,
+			    chunk);
 
 		/* Queued: the next segment. */
 		if (error == 0) {
@@ -5300,7 +5363,7 @@ tcp_shutdown(
 	spin_unlock_irqrestore(&socket->lock, irq);
 
 	/* A FIN that could not be sent restores the state. */
-	error = tcp_send_reliable(endpoint, TCP_FIN | TCP_ACK, NULL, 0);
+	error = tcp_send_reliable(endpoint, TCP_FIN | TCP_ACK, NULL, NULL, 0, 0);
 	if (error != 0) {
 		irq = spin_lock_irqsave(&socket->lock);
 		if (endpoint->tcp.state == closing_state) {
@@ -5517,7 +5580,7 @@ tcp_endpoint_close(
 	if (endpoint->tcp.state == old_state)
 		endpoint->tcp.state = closing_state;
 	spin_unlock_irqrestore(&socket->lock, irq);
-	error = tcp_send_reliable(endpoint, TCP_FIN | TCP_ACK, NULL, 0);
+	error = tcp_send_reliable(endpoint, TCP_FIN | TCP_ACK, NULL, NULL, 0, 0);
 	if (error != 0) {
 		irq = spin_lock_irqsave(&socket->lock);
 		if (endpoint->tcp.state == closing_state)
@@ -5837,7 +5900,7 @@ tcp_passive_syn(
 
 	spin_unlock_irqrestore(&child->tcp.inet.socket.lock, irq);
 
-	error = tcp_send_reliable(child, TCP_SYN | TCP_ACK, NULL, 0);
+	error = tcp_send_reliable(child, TCP_SYN | TCP_ACK, NULL, NULL, 0, 0);
 	if (error != 0) {
 		tcp_listener_remove(child);
 		socket_release(created);

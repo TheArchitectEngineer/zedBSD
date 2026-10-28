@@ -3073,6 +3073,7 @@ sys_write_call(
 	intptr_t result;
 	int error;
 	int direct;
+	int to_socket;
 	size_t chunk;
 	int limited;
 	ssize_t count;
@@ -3095,9 +3096,14 @@ sys_write_call(
 		return -error;
 	}
 
-	/* Takes a staging buffer, unless the data goes straight from the pages, and opens the transfer. */
+	/*
+	 * Takes a staging buffer, unless the data goes straight from the pages
+	 * (a direct file, or a stream socket that copies from them into its
+	 * own buffers), and opens the transfer.
+	 */
 	direct = file_io_direct(file);
-	if (!direct)
+	to_socket = socket_file_takes_pinned(file);
+	if (!direct && !to_socket)
 		buffer = syscall_io_buffer(file, length, small_buffer, &capacity);
 	error = file_io_begin_cred(file, FILE_IO_WRITE, 0, 0, cred,
 	    &io);
@@ -3115,6 +3121,13 @@ sys_write_call(
 	if (direct) {
 		io_stats_record(IO_SYSCALL_WRITE, length);
 		result = file_io_transfer_pinned(&io, &pin, 0, length);
+		goto out;
+	}
+
+	/* A stream socket takes the bytes from the pages itself. */
+	if (to_socket) {
+		io_stats_record(IO_SYSCALL_WRITE, length);
+		result = socket_file_write_pinned(file, &pin, length);
 		goto out;
 	}
 
