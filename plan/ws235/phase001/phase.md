@@ -68,7 +68,8 @@ RDNA 機の枠（P1、06:20〜07:05 の予定）を 06:19 に早く返した（l
 
 | 差 | 内容 | 共通の段で要るか |
 | --- | --- | --- |
-| descriptor の形 | `RGE_FLAG_DESCV2`: TX の descriptor が 16 byte（v1 は 32 byte）、RX も v2 の形。TSO の bit は v2 の extsts | 要る（RTL8127 では常に v2 にしている） |
+| descriptor の形 | `RGE_FLAG_DESCV2`: TX の descriptor が 16 byte（v1 は 32 byte）、RX も v2 の形。TSO の bit は v2 の extsts。v2 の時は RXCFG の v1 の有効の bit を落とし、MAC OCP 0xeb58 と MMIO 0xd8 の bit を v2 に合わせる（`rge_init`） | rge は RTL8127 で常に v2。RXCFG の v1 の bit を残せば RTL8127 が v1 で動くかは未確認（ユーザーの伝聞「8125 の driver でそのまま」が当たるならここ） |
+| PCI の拡張の config 空間 | `rge_init` が config 0x70c・0x890（RTL8126・8127 は L1 の timeout の無効）を書く | 要る（zedBSD の PCI の config の 0x100 以上の読み書き） |
 | MAC の MCU | `rge_mac_config_ext_mcu`: RTL8126・8127 は版を読み比べ、違えば 3 page（0〜255、256〜511、残り）に書き、break point の register を書く | 要る（firmware の MAC の部） |
 | PHY の MCU | `rge_phy_config_mcu`: 4097 個を書き、patch の要求を一度下げてから残りを書く。ram code の版 0x0051 | 要る（firmware の PHY の部） |
 | PHY の設定 | `rge_phy_config_mac_r27`: 値の表（mac_cfg_value など）と OCP の書き込み | 要る |
@@ -114,9 +115,11 @@ RDNA 機の枠（P1、06:20〜07:05 の予定）を 06:19 に早く返した（l
    MAC address、1 vector の割り込み（MSI-X の 1 本か MSI）、net device の登録（link は down のまま）。
 2. MAC・PHY の初期化と link: hw_init（MCU の無効化と MCU の patch）、EPHY・PHY の表、auto-negotiation（10G・1G・100M の広告）、PHYSTAT の読みと link の報告、
    link の変化の割り込み。firmware は patch 無しから試す。
-3. ring と割り込み: RX・TX の ring（RTL8127 は v2 の descriptor、他は v1）、1 queue、1 vector、checksum の offload、network stack への接続。
+3. ring と割り込み: RX・TX の ring（RTL8127 は v2 の descriptor、他は v1）、1 queue、1 vector、network stack への接続（offload 無し、stack に口が無い）。
 4. 実機の確かめ（共通の段）: link（両側）、DHCP か static、ping、ssh、TCP の転送。
-5. RTL8127 の拡張: 多 vector の MSI-X（link・TX・RX の queue）、RSS と複数の RX queue、TSO（v2）、割り込みの抑え（moderation）、PCIe の上限（約 7 Gbit/s）に近づける。
+5. RTL8127 の拡張: 多 vector の MSI-X（link・TX・RX の queue）、RSS と複数の RX queue、割り込みの抑え（moderation）、RX の zero copy、PCIe の上限（約 7 Gbit/s）に近づける。
+   checksum・TSO の offload は stack の口（kern/net）が要るので、driver の側の用意と計測までにし、口は WS221 と組で Q1 に諮る。
+   net の worker は 1 本なので、7 Gbit/s に届かない時の律速が driver か stack かを profile で分けて記録する。
 6. 他の chip の表（8125・8125B・8125D・8126、未確かめ）。
 7. 規約の全文の見直し。
 
@@ -126,9 +129,26 @@ RDNA 機の枠（P1、06:20〜07:05 の予定）を 06:19 に早く返した（l
   （同じ機械の Linux の値が取れればそれ）に見合う事。値は zedBSD と Linux を同じ相手・同じ道具で並べる。
 - 試験の相手の centris の enp94s0f1 に IP を付けるなど centris の設定の変更は、先に Q1 に案を送る（Q1 2026-10-29）。
 
-## zedBSD の側の口
+## zedBSD の側の口（2026-10-29 P1、tree の読み）
 
-（下に追記）
+- net device: `include/kern/net/net-device.h` の `struct net_device_ops`（open・close・transmit・poll_receive・ioctl・release・set_mtu）、
+  `net_device_alloc` → field（name・flags・mtu・mtu_max・link_mbps・hwaddr）→ `net_device_create`。RX は割り込みで `net_device_schedule_poll`、
+  net の worker が `poll_receive(dev, budget)` を呼び、driver は `net_device_receive` で渡す。link は `net_device_set_carrier` と `link_mbps`。
+  手本は `src/drivers/ethernet/dw-eqos.c`（登録・TX・RX の写し・link の poll の kthread）。
+- packet: `include/kern/net/packet-buf.h`。storage は物理で連続（`packet_buf_physical` → `drv_dma_physical_address` で TX は in place の DMA）。
+  RX は dw-eqos と同じく、DMA の buffer から新しい packet に写す形を既定に（zero copy は拡張の候補）。jumbo は 9216 byte の storage が 32 個。
+- **stack に checksum・TSO の offload の口が無い**（packet-buf・net-device に flag が無い）。driver の共通の段では offload を使わない。offload・TSO・
+  複数の RX queue を活かす口は kern/net の変更で、この WS の範囲の外（WS221 の TCP の改善と組で Q1 へ。この WS の拡張の段では driver の側の用意まで）。
+- PCI: `drv_pci_driver_register`（ID の表）、`drv_pci_device_claim_bar`・`map_bar`（NOCACHE）・`enable_memory`・`set_bus_master`、
+  `drv_pci_device_config_read32`・`write32`（0x70c・0x890 の拡張の config 空間に届くかは p002 で確かめる）、
+  `drv_pci_device_allocate_irqs`（MSI-X・MSI・INTx、min・max の本数）・`establish_irq`（handler は割り込みの文脈、`int h(void *)`）。手本は intel-ax211-pci.c・pci-nvme.c（1 vector）。
+- DMA: `drv_pci_device_dma` → `drv_dma_alloc_coherent`（ring、256 byte 揃え）。
+- 待ち: `kern_usleep_range`（短い busy wait）、`sched_sleep`（ms）。lock は `spin_lock_irqsave`（割り込みと共有）・`mutex`。log は `kern_logf`。
+- 周期の仕事: callout は無い。dw-eqos と同じく kthread で link を 1 秒ごとに読む（rge も 1 秒の tick で PHYSTAT を読む）。
+- firmware: `/lib/firmware/<name>` を `file_openat`・`file_content_lease_*` で読む（intel-ax211-firmware.c の形）。package は `userland/firmware/`、
+  driver との対応は `config/drivers/firmware.list`。
+- build: `config/drivers/pci.drivers`・`config/drivers/menu.list` の `Ethernet|`、Makefile の既定 `?= n` と `-D`、`platform/amd64/vmunix.mk` の source の一覧、
+  `src/kern/platform/pcat.c` の登録の呼び出し。
 
 ## 未実施
 
