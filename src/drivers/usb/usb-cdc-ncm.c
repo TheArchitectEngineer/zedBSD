@@ -43,6 +43,7 @@ static uint32_t clamp_nth16_size(uint32_t device_limit, uint32_t resource_limit)
 static int profile_valid(const struct drv_usb_cdc_ncm_profile *profile);
 static int alignment_valid(uint16_t divisor, uint16_t remainder, uint16_t alignment, uint32_t ntb_size);
 static int make_layout(uint16_t divisor, uint16_t payload_remainder, uint16_t ndp_alignment, size_t datagram_length, uint16_t short_packet_size, size_t no_zlp_exact_size, struct ncm_layout *layout);
+static int datagram_fits(const struct drv_usb_cdc_ncm_profile *candidate, uint16_t datagram_size);
 static int datagram_at_or_after(size_t minimum, uint16_t divisor, uint16_t payload_remainder, size_t *result);
 static int congruent_at_or_after(size_t minimum, uint16_t divisor, uint16_t remainder, size_t *result);
 static int checked_add(size_t left, size_t right, size_t *result);
@@ -69,9 +70,9 @@ drv_usb_cdc_ncm_negotiate_nth16(
 {
 	const uint8_t *bytes = parameters;
 	struct drv_usb_cdc_ncm_profile candidate;
-	struct ncm_layout layout;
 	uint32_t device_in, device_out;
 	uint16_t formats, device_tx_datagrams;
+	uint16_t shortest, longest, middle;
 	int error;
 
 	/* Handles the profile availability. */
@@ -104,7 +105,9 @@ drv_usb_cdc_ncm_negotiate_nth16(
 	    limits->ndp_chain_max > DRV_USB_CDC_NCM_MAX_NDP_CHAIN ||
 	    limits->bulk_out_max_packet_size < 8U ||
 	    !is_power_of_two(limits->bulk_out_max_packet_size) ||
-	    limits->bulk_out_max_packet_size > limits->ntb_out_max_size) {
+	    limits->bulk_out_max_packet_size > limits->ntb_out_max_size ||
+	    (limits->max_datagram_size != 0 &&
+	    limits->max_datagram_size < DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE)) {
 		/* Failed. */
 		return EINVAL;
 	}
@@ -148,32 +151,28 @@ drv_usb_cdc_ncm_negotiate_nth16(
 	if (!profile_valid(&candidate))
 		return EINVAL;
 
-	/* Checks the operation status. */
-	error = make_layout(candidate.ndp_in_divisor,
-			    candidate.ndp_in_payload_remainder,
-			    candidate.ndp_in_alignment,
-			    candidate.max_datagram_size, 0, 0, &layout);
+	/* The standard datagram must fit; the error is the layout's. */
+	error = datagram_fits(&candidate, DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE);
 	if (error != 0)
 		return error;
 
-	/* Handles the layout condition. */
-	if (layout.block_length > candidate.ntb_in_max_size)
-		return EMSGSIZE;
-
-	/* Checks the operation status. */
-	error = make_layout(
-		candidate.ndp_out_divisor, candidate.ndp_out_payload_remainder,
-		candidate.ndp_out_alignment, candidate.max_datagram_size,
-		candidate.bulk_out_max_packet_size,
-		candidate.ntb_out_max_is_device_max ? candidate.ntb_out_max_size
-						    : 0,
-		&layout);
-	if (error != 0)
-		return error;
-
-	/* Handles the layout condition. */
-	if (layout.block_length > candidate.ntb_out_max_size)
-		return EMSGSIZE;
+	/*
+	 * The longest datagram up to the driver's that fits both NTBs: the
+	 * layout only grows with the datagram, so halving the range between
+	 * the standard one and the driver's finds it.
+	 */
+	shortest = DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE;
+	longest = limits->max_datagram_size;
+	if (longest < shortest)
+		longest = shortest;
+	while (shortest < longest) {
+		middle = (uint16_t)(shortest + (longest - shortest + 1U) / 2U);
+		if (datagram_fits(&candidate, middle) == 0)
+			shortest = middle;
+		else
+			longest = (uint16_t)(middle - 1U);
+	}
+	candidate.max_datagram_size = shortest;
 
 	*profile = candidate;
 	/* Succeeded. */
@@ -438,7 +437,7 @@ profile_valid(
 	    profile->ntb_out_max_size == 0 ||
 	    profile->ntb_in_max_size > UINT16_MAX ||
 	    profile->ntb_out_max_size > UINT16_MAX ||
-	    profile->max_datagram_size != DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE ||
+	    profile->max_datagram_size < DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE ||
 	    profile->rx_max_datagrams == 0 ||
 	    profile->rx_max_datagrams > DRV_USB_CDC_NCM_MAX_RX_DATAGRAMS ||
 	    profile->tx_max_datagrams == 0 ||
@@ -488,6 +487,46 @@ alignment_valid(
 
 	/* Returns the computed result. */
 	return error;
+}
+
+/*
+ * Reports 0 when one datagram of datagram_size bytes, laid out as the
+ * profile's IN and OUT alignment ask, fits each NTB; else the layout's
+ * error, or EMSGSIZE.
+ */
+static int
+datagram_fits(
+	const struct drv_usb_cdc_ncm_profile *candidate,
+	uint16_t datagram_size)
+{
+	struct ncm_layout layout;
+	int error;
+
+	/* The IN NTB. */
+	error = make_layout(candidate->ndp_in_divisor,
+			    candidate->ndp_in_payload_remainder,
+			    candidate->ndp_in_alignment,
+			    datagram_size, 0, 0, &layout);
+	if (error != 0)
+		return error;
+	if (layout.block_length > candidate->ntb_in_max_size)
+		return EMSGSIZE;
+
+	/* The OUT NTB, with its zero-length packet rule. */
+	error = make_layout(
+		candidate->ndp_out_divisor, candidate->ndp_out_payload_remainder,
+		candidate->ndp_out_alignment, datagram_size,
+		candidate->bulk_out_max_packet_size,
+		candidate->ntb_out_max_is_device_max ? candidate->ntb_out_max_size
+						     : 0,
+		&layout);
+	if (error != 0)
+		return error;
+	if (layout.block_length > candidate->ntb_out_max_size)
+		return EMSGSIZE;
+
+	/* Succeeded: both fit. */
+	return 0;
 }
 
 /* Supports the make layout operation. */
