@@ -95,7 +95,11 @@
 - 新しい worktree の plan/tmp/guest/id_ed25519 が mode 0664 で、ssh が鍵を拒み、measure.sh の uname の確かめが失敗していた
   （「zedbsd did not come up」）。chmod 600 で直った（git は mode を追わない）。08:51 に zedBSD は 10.0.30.5 にいた（DP の cable で起動）。
 
-### 再開点（2026-10-29 08:45 P2）
+### 再開点（2026-10-29 08:57 P2）
 
-- 実機: 08:35 の BootNext の後、zedBSD も Debian も応答しない（Q1 の指示待ち）。NVMe の zedBSD の kernel は移設前の物のまま（deploy の前で止まった）。
-- 次: Q1 の指示で機械を戻す → rtx-va-check.sh（VA）→ build/ws291/k/vmunix で mview（depth・index・mip）。host では push の関数の check を足す。
+- 実機: 08:56 に返した（Debian、RTX は vfio-pci、NVMe の zedBSD の kernel は vmunix-va1 = 01478d325 の build）。VA の拡張は実機で OK（[p010](../phase010/phase.md) の最後の節）。
+  Q1 の指示: p010a の実機の確かめは P1（WS235）の枠の後の枠で。
+- 次の枠: `sh plan/ws291/tests/rtx-mview-check.sh build/ws291/rtx/m1 build/ws291/vmunix-p010a1`（dadd28a8d の build、cksum 2422632154。
+  新しい worktree なら `make ZEDBSD_CONFIG=plan/ws291/tests/config.mk BUILD=build/ws291/k build/ws291/k/vmunix` で作り直し、plan/tmp/guest/id_ed25519 は chmod 600）。
+  見る物: mview の MVIEW SPIN（copies 1・5000、shading=pixel）、shot-1・shot-5000 の PNG（深度の前後と texture）、kernel の `nvrtx: vk` の行と MMU の fault。
+  block linear（depth・tiled の texture）の PTE の kind は pitch のままなので、壊れた画や fault が出れば kind を見る。
