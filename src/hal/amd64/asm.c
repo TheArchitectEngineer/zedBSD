@@ -255,33 +255,30 @@ asm_flush_tlb(
 }
 
 /*
- * Flushes the current CPU's whole translation cache, global entries and
- * paging-structure caches too.  Interrupts are disabled by the caller.
+ * Reads the current CPU's paging-control register CR4.
  */
-void
-asm_flush_tlb_global(
+uint64_t
+asm_get_cr4(
 	void)
 {
-	uint64_t cr4;
+	uint64_t value;
 
-	/* The current paging controls. */
-	__asm__ volatile("movq %%cr4,%0" : "=r"(cr4));
+	/* Samples control register CR4. */
+	__asm__ volatile("movq %%cr4,%0" : "=r"(value));
 
-	/*
-	 * With global pages enabled, clearing CR4.PGE and setting it again
-	 * invalidates every TLB entry, global ones included, and the
-	 * paging-structure caches.
-	 * Procedure referenced: Intel SDM Vol. 3A section 4.10.4.1, operations
-	 * that invalidate TLBs and paging-structure caches.
-	 */
-	if ((cr4 & ((uint64_t)1U << 7)) != 0U) {
-		__asm__ volatile("movq %0,%%cr4" : : "r"(cr4 & ~((uint64_t)1U << 7)) : "memory");
-		__asm__ volatile("movq %0,%%cr4" : : "r"(cr4) : "memory");
-		return;
-	}
+	/* Returns the sampled paging controls. */
+	return value;
+}
 
-	/* Without global pages a reload of CR3 flushes every entry. */
-	asm_flush_tlb();
+/*
+ * Loads the current CPU's paging-control register CR4.
+ */
+void
+asm_load_cr4(
+	uint64_t value)
+{
+	/* Loads CR4 and prevents compiler memory reordering around it. */
+	__asm__ volatile("movq %0,%%cr4" : : "r"(value) : "memory");
 }
 
 /*

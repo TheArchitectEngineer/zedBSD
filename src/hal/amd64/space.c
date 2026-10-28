@@ -94,6 +94,9 @@ struct amd64_device_mapping {
 /* The offset bits inside one leaf table's span, for rounding up to the next span. */
 #define AMD64_LEAF_SPAN_MASK ((uintptr_t)AMD64_DETACH_MIN_BYTES - 1U)
 
+/* CR4.PGE: global pages are enabled, and the G bit keeps an entry across CR3 loads. */
+#define AMD64_CR4_PGE ((uint64_t)1U << 7)
+
 struct amd64_shootdown_request {
 	volatile unsigned active;
 	hal_space_t space;
@@ -214,14 +217,17 @@ static uint64_t *walk_leaf(struct amd64_space *space, uintptr_t address, int cre
 static int table_is_empty(const struct amd64_table_page *page);
 static uint64_t *table_owner_of(struct amd64_space *space, uint64_t *table);
 static void flush_request_range(hal_space_t handle, void *vaddr, size_t size, unsigned global);
+static void flush_tlb_global(void);
 static uint64_t *table_at(uint64_t entry);
 static struct amd64_table_page *detach_empty_tables(struct amd64_space *space);
 static void free_detached_tables(struct amd64_table_page *page);
 static uint64_t leaf_flags(uint32_t attr);
 static void shootdown(hal_space_t handle, void *vaddr, size_t size);
 static void shootdown_request(hal_space_t handle, void *vaddr, size_t size, unsigned global);
+static void fb_window_hold(uint64_t physical, uint64_t size);
 static int fb_window_give(hal_physaddr_t physical, size_t size, uint32_t attr, void **address);
 static int fb_window_remove(void *address, size_t size, int *matched);
+static int fb_window_meets_fixed(hal_physaddr_t physical, size_t size);
 static void service_shootdowns(hal_cpu_id_t cpu);
 static int user_page_allowed(hal_physaddr_t physical, uint32_t attr);
 static int device_fixed_range(hal_physaddr_t physical, size_t size, void **address);
@@ -549,8 +555,6 @@ prekern_amd64_space_init(
 	unsigned chunks;
 	unsigned chunk;
 	uint64_t framebuffer_tables[2];
-	uint64_t aligned;
-	uint64_t end;
 	uint64_t efer;
 	uint64_t flags;
 	uintptr_t cr0;
@@ -651,13 +655,7 @@ prekern_amd64_space_init(
 			HAL_FATAL("amd64 framebuffer MMIO geometry invalid");
 
 		/* The early console draws through it until the kernel's console takes it over. */
-		aligned = framebuffer->physical_base & ~(uint64_t)0x1fffffU;
-		end = (framebuffer->physical_base + framebuffer->size + PAGE_SIZE - 1U) & ~(uint64_t)(PAGE_SIZE - 1U);
-		fb_window.state = AMD64_FB_WINDOW_HELD;
-		fb_window.physical = framebuffer->physical_base;
-		fb_window.size = (size_t)framebuffer->size;
-		fb_window.address = (uintptr_t)(ZBL6_FRAMEBUFFER_VIRTUAL_BASE + (framebuffer->physical_base - aligned));
-		fb_window.pd_count = (unsigned)((end - aligned + 0x1fffffU) / 0x200000U);
+		fb_window_hold(framebuffer->physical_base, framebuffer->size);
 	}
 
 	/* Gives legacy VGA/ROM its own uncached window, outside the RAM map. */
@@ -2470,7 +2468,7 @@ flush_request_range(
 
 	/* A global request leaves no translation at all. */
 	if (global != 0U) {
-		asm_flush_tlb_global();
+		flush_tlb_global();
 		return;
 	}
 
@@ -2490,6 +2488,36 @@ flush_request_range(
 		__asm__ volatile("invlpg (%0)" : : "r"(address) : "memory");
 		address += PAGE_SIZE;
 	}
+}
+
+/*
+ * Flushes this CPU's whole translation cache, global entries and the
+ * paging-structure caches too.  Interrupts are disabled by the caller.
+ */
+static void
+flush_tlb_global(
+	void)
+{
+	uint64_t cr4;
+
+	/* Reads whether this CPU has global pages enabled. */
+	cr4 = asm_get_cr4();
+
+	/*
+	 * With global pages enabled, clearing CR4.PGE and setting it again
+	 * invalidates every TLB entry, global ones included, and the
+	 * paging-structure caches.
+	 * Procedure referenced: Intel SDM Vol. 3A section 4.10.4.1, operations
+	 * that invalidate TLBs and paging-structure caches.
+	 */
+	if ((cr4 & AMD64_CR4_PGE) != 0U) {
+		asm_load_cr4(cr4 & ~AMD64_CR4_PGE);
+		asm_load_cr4(cr4);
+		return;
+	}
+
+	/* Without global pages the G bit is ignored, and a reload of CR3 flushes every entry. */
+	asm_flush_tlb();
 }
 
 /* Services all active shootdown requests targeting one CPU. */
@@ -3198,6 +3226,32 @@ current_space_store(
 }
 
 /*
+ * Records the early console's mapping of the boot framebuffer, which the
+ * system page table maps from AMD64_FRAMEBUFFER_PD_FIRST at the loader's
+ * framebuffer window: 2 MiB directory entries, with the partial ends
+ * through the edge tables.
+ */
+static void
+fb_window_hold(
+	uint64_t physical,
+	uint64_t size)
+{
+	uint64_t aligned;
+	uint64_t end;
+
+	/* The 2 MiB page the window starts at and the page-rounded end of the framebuffer. */
+	aligned = physical & ~(uint64_t)0x1fffffU;
+	end = (physical + size + PAGE_SIZE - 1U) & ~(uint64_t)(PAGE_SIZE - 1U);
+
+	/* The early console holds it, and draws through it until the kernel prints. */
+	fb_window.state = AMD64_FB_WINDOW_HELD;
+	fb_window.physical = physical;
+	fb_window.size = (size_t)size;
+	fb_window.address = (uintptr_t)(ZBL6_FRAMEBUFFER_VIRTUAL_BASE + (physical - aligned));
+	fb_window.pd_count = (unsigned)((end - aligned + 0x1fffffU) / 0x200000U);
+}
+
+/*
  * Gives the early console's mapping of the boot framebuffer to the
  * kernel's console: the first mapping request of exactly the framebuffer
  * (its physical base and size, uncached and writable) once the kernel
@@ -3224,11 +3278,14 @@ fb_window_give(
 	if (printer == NULL)
 		return 0;
 
+	/* Gives only the framebuffer itself, exactly, while the early console holds it. */
 	enabled = registry_lock_enter();
 
-	/* Only the framebuffer itself, while the early console holds it. */
 	given = 0;
-	if (fb_window.state == AMD64_FB_WINDOW_HELD && fb_window.physical == physical && fb_window.size == size) {
+	if (fb_window.state == AMD64_FB_WINDOW_HELD &&
+	    fb_window.physical == physical &&
+	    fb_window.size == size) {
+		/* GIVEN: the one holder's release removes it; no other request gets it. */
 		fb_window.state = AMD64_FB_WINDOW_GIVEN;
 		*address = (void *)fb_window.address;
 		given = 1;
@@ -3254,31 +3311,26 @@ fb_window_remove(
 	size_t size,
 	int *matched)
 {
-	uint64_t physical_end;
 	unsigned index;
 	unsigned slot;
 	bool enabled;
 	int fixed;
 
+	/* Takes only a release of the window as it was given. */
 	enabled = registry_lock_enter();
 
-	/* Only the window as it was given. */
 	*matched = 0;
-	if (fb_window.state != AMD64_FB_WINDOW_GIVEN || fb_window.address != (uintptr_t)address || fb_window.size != size) {
+	if (fb_window.state != AMD64_FB_WINDOW_GIVEN ||
+	    fb_window.address != (uintptr_t)address ||
+	    fb_window.size != size) {
 		registry_lock_leave(enabled);
 		return HAL_OK;
 	}
+
 	*matched = 1;
 
 	/* A framebuffer meeting a fixed window (legacy, low MMIO, APIC) cannot lose its pages. */
-	physical_end = fb_window.physical + fb_window.size;
-	fixed = 0;
-	if (fb_window.physical < 0x100000U && physical_end > 0xa0000U)
-		fixed = 1;
-	if (fb_window.physical < 0xf1000000U && physical_end > 0xf0000000U)
-		fixed = 1;
-	if (fb_window.physical < 0xff000000U && physical_end > 0xfec00000U)
-		fixed = 1;
+	fixed = fb_window_meets_fixed(fb_window.physical, fb_window.size);
 	if (fixed) {
 		registry_lock_leave(enabled);
 		return HAL_ERR_BUSY;
@@ -3306,4 +3358,39 @@ fb_window_remove(
 
 	/* Succeeded: the window is gone. */
 	return HAL_OK;
+}
+
+/*
+ * Reports whether a physical extent meets any of the fixed device windows
+ * (the legacy VGA and ROM range, the low MMIO range, and the I/O and
+ * local APIC pages), even in one byte: the system page table maps those
+ * for good, beside the window, the low MMIO and APIC ones with large pages
+ * shared by other devices.  Unlike
+ * device_fixed_range(), an extent that starts before a window and runs
+ * into it meets it too.
+ */
+static int
+fb_window_meets_fixed(
+	hal_physaddr_t physical,
+	size_t size)
+{
+	uint64_t end;
+
+	/* The first byte past the extent. */
+	end = physical + size;
+
+	/* Meets the legacy VGA and ROM window. */
+	if (physical < 0x100000U && end > 0xa0000U)
+		return 1;
+
+	/* Meets the low MMIO window. */
+	if (physical < 0xf1000000U && end > 0xf0000000U)
+		return 1;
+
+	/* Meets the I/O APIC or the local APIC window. */
+	if (physical < 0xff000000U && end > 0xfec00000U)
+		return 1;
+
+	/* Meets none: the extent has no permanent mapping beside its own window. */
+	return 0;
 }
