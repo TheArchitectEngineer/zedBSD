@@ -63,11 +63,13 @@ struct kwl_settings_change {
 };
 
 /*
- * The thread that merges a session's changes into the file without the
- * event loop waiting (the Log Out): the changes taken when it started,
- * how many, its error once it ended, and whether it runs or has not been
- * joined yet.  lock guards done and error; only the event loop starts and
- * joins it.
+ * The writer that merges a session's changes into the file without the
+ * event loop waiting (the Log Out): the changes taken when it was given,
+ * how many, its error once it ended, whether its thread runs or has not
+ * been joined yet (started), and whether it was given to a thread of the
+ * caller's instead (given: the caller runs kwl_settings_store_save_run
+ * there and has it end before kwl_settings_store_finish).  lock guards
+ * done and error; only the event loop gives, starts and joins it.
  */
 struct kwl_settings_writer {
 	pthread_t thread;
@@ -78,6 +80,7 @@ struct kwl_settings_writer {
 	char folder[KWL_SETTINGS_PATH_MAX];
 	uint64_t generation;
 	int started;
+	int given;
 	int done;
 	int error;
 };
@@ -115,6 +118,8 @@ void kwl_settings_store_report(struct kwl_settings_store *store, const char *nam
 unsigned kwl_settings_store_changes(const struct kwl_settings_store *store, struct kwl_settings_change *changes);
 int kwl_settings_store_save(struct kwl_settings_store *store);
 int kwl_settings_store_save_later(struct kwl_settings_store *store);
+int kwl_settings_store_save_give(struct kwl_settings_store *store);
+void kwl_settings_store_save_run(struct kwl_settings_writer *writer);
 int kwl_settings_store_finish(struct kwl_settings_store *store);
 
 #endif

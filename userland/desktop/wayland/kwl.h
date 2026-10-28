@@ -1377,6 +1377,13 @@ struct kwl_server {
 	struct kwl_lane io_device;
 	unsigned io_started;
 	unsigned input_finding;
+	/*
+	 * The file I/O thread (io.c): io_file runs the jobs that read or
+	 * write the session's files (a write's fsync waits seconds on UFS),
+	 * io_file_started says it runs.
+	 */
+	struct kwl_lane io_file;
+	unsigned io_file_started;
 	uint64_t input_events;
 	uint64_t seat_events;
 	unsigned capabilities;
@@ -2406,6 +2413,7 @@ void kwl_displays_tell(struct kwl_server *server);
 void kwl_displays_move_settled(struct kwl_server *server, int failed);
 void kwl_displays_pending_tick(struct kwl_server *server, uint64_t now);
 void kwl_displays_object_gone(struct kwl_object *object);
+void kwl_displays_written(struct kwl_server *server, uint64_t ticket, int error);
 int kwl_displays_key(struct kwl_server *server, uint32_t key, uint32_t state);
 void kwl_displays_tick(struct kwl_server *server);
 
@@ -2685,10 +2693,18 @@ size_t kwl_os_poll_count(const struct kwl_server *server);
 void kwl_os_poll_fill(struct kwl_server *server, struct pollfd *descriptors);
 void kwl_os_poll_done(struct kwl_server *server, const struct pollfd *descriptors);
 void kwl_input_scan(struct kwl_server *server);
+/*
+ * The keys of the file I/O thread's jobs of which only the latest given
+ * is worth running (io.c): a newer one replaces one not started yet.
+ */
+#define KWL_IO_KEY_DISPLAYS	1U
+
 void kwl_io_start(struct kwl_server *server);
 void kwl_io_take(struct kwl_server *server);
 void kwl_io_stop(struct kwl_server *server);
 int kwl_io_input_find(struct kwl_server *server);
+int kwl_io_file_submit(struct kwl_server *server, struct kwl_lane_job *job, const struct kwl_lane_ops *ops, uint64_t key);
+void kwl_io_file_finish(struct kwl_server *server);
 void kwl_io_input_close(struct kwl_server *server, int descriptor);
 int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
 int kwl_input_alt_held(const struct kwl_server *server);

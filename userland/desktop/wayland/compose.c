@@ -1039,9 +1039,6 @@ kwl_compose_close(
 	struct kwl_compose *compose;
 	unsigned index;
 
-	/* The angle chosen last reaches displays.conf before the compositor ends (heads.c's writer). */
-	kwl_heads_config_close();
-
 	/* Nothing was opened. */
 	compose = server->compose;
 	if (compose == NULL)

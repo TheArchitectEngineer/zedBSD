@@ -1302,8 +1302,13 @@ service_cleanup(
 	/* The device I/O thread ends; the devices it opened and the closes it was given are closed (io.c). */
 	kwl_io_stop(server);
 
-	/* The session's volume and settings are kept for the next login (volume.c; settings.c). */
+	/* The session's volume is kept for the next login (volume.c). */
 	kwl_volume_keep(server, "end");
+
+	/* The file I/O thread writes everything given (displays.conf, the Log Out's settings), then ends (io.c). */
+	kwl_io_file_finish(server);
+
+	/* The session's settings are kept for the next login (settings.c). */
 	kwl_settings_close(server);
 
 	/* The system extension's threads end before the backend closes (system.c). */
