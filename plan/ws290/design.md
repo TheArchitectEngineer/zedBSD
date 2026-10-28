@@ -3,6 +3,7 @@
 - Phase: [ws290-p001](phase001/phase.md)。版 1・2: 2026-10-26（P1、q1594）。版 3: 2026-10-27（P3、q1621、書きかけで中断）。**版 4: 2026-10-28（P3、q1636-i01）**。版 3 までの本文は git の履歴（f5fea4c2e など）にあり、この版は 89529de を正本に全部を書き直した。
 - 親: [WS290](ws.md)。前身の設計: [WS288 design](../ws288/design.md) §6（1.1 の driver）。
 - この文書は設計だけ。source は変えていない。
+- **版 4.12（2026-10-28、q1644 P3）: p008 の code の review を受け、§11.4 に heap の寿命と code・data の heap の分離（p009）、OpSpecConstantOp の畳み込み。**
 - **版 4.11（2026-10-28、q1644 P3）: p007 の code の review を受け、§5.4 の isolate を ISOLATED に、§15.5 の set の sampled image・sampler を 96 に、§19 に仕様が決めていない所の driver の読み。**
 - **版 4.10（2026-10-28、q1644 P3）: p006 の code の review を受け、§11.4 に compiler と executor の取り決め、§12 の 2 を `lw` に、§15.5 に `maxTexelBufferElements` と資源の表の上限、§19 に N78（属性の register の食い違い）。**
 - **版 4.9（2026-10-28、q1644 P3）: p005 の実装の形を §5.5 の「実装の形」に書いた（arena と chunk の早い返し、勘定の数え方、資源の holds、非同期の close・unmap）。**
@@ -456,6 +457,8 @@ HW が決める物（§8.4、20bf888 1340・2204 行）: texture の命令の te
   - VS を先に compile し、その資源の表を FS の compile に渡す（同じ binding は同じ slot・entry）。
   - graphics と compute は table の slot 0〜3 を共有する（§8.4）ので、dispatch の後の draw（と draw の後の dispatch）の前に 4 つの table・c0〜c71 の constant を置き直す。`LOAD_CONST` は c24〜c31 に書かない。
   - fragment stage の無い pipeline の 2 命令の FS は p008 で executor が作る。
+  - **heap の寿命と実行の属性（版 4.12、p008 の review の M5）**: submit はその記録が参照する pipeline（と descriptor の set・view・buffer の record）を hold し、fence の後に離す（client が使用中に destroy しても heap の run を返さない）。code の heap（EXEC）と data の heap（draw の table・push constant・一時の memory、EXEC 無し）を分け、data に GPU が命令として走れる番地を作らない（p009）。
+  - **OpSpecConstantOp（版 4.12、p008 の review の M2、P3 の判断）**: driver が 32 bit の整数と論理の演算を畳み込む。他は作成で断って log。
   - compiler が断る物（U8 の一覧に足す）: 分かれた sampler と descriptor の配列（IR に無い）、資源の表が 128 entry・4096 byte を超える pipeline。
 
 - **attachment の配置（R05、仮）**: §8.4 の attachment の記述に linear・tiled の flag も layer の pitch も無く、`mip_level`・`base_array_layer` から番地を求める方法も無い（ghci-review 第 13 版 N47、H）。答えまで: COLOR_ATTACHMENT・DEPTH_STENCIL_ATTACHMENT・INPUT_ATTACHMENT・TRANSFER_DST（blit・resolve の先）の usage の image は **linear**（§8.5.2 の 64 byte 揃えの行、subresource の配置は §8.5.2）に作り、記述の `*_va` には driver が §8.5.2 で求めた subresource（mip・layer）の先頭の番地を書き、`mip_level` = `base_array_layer` = 0、`layers` = 1。framebuffer の layers > 1 は layer 0 だけに描き（geometry shader が無いので layer を選ぶ shader は無い）、layer 1 以降の loadOp CLEAR と、ClearAttachments の baseArrayLayer > 0 は、layer ごとにその subresource の番地で clear だけの render pass を置く（Q12）。他の image は tiled にしてよい（texture の flags[0]）。答えが (b)（tiled の flag の追加）なら p008・p009 で attachment を tiled にできる。
