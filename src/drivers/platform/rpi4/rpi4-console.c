@@ -19,6 +19,10 @@
  * Without the serial console in the build (CONFIG_RPI4_SERIAL_CONSOLE, off
  * by default) the port is left alone: no reader, and output goes only to
  * the framebuffer until a display driver takes it.
+ *
+ * Once a GPU has flipped its first image the console leaves the
+ * framebuffer for good: the hardware layer's framebuffer output is
+ * suspended and never resumed, and the serial line carries on.
  */
 
 #include <stdint.h>
@@ -30,10 +34,12 @@
 #include "hal/arm64/bsp-rpi-common/cons.h"
 #include <kern/clock.h>
 #include <kern/device-io.h>
+#include <kern/platform.h>
 #include <kern/sched.h>
 #include <kern/text-display.h>
 #include <kern/thread.h>
 #include <kern/tty.h>
+#include <uapi/errno.h>
 
 /* The kernel's direct map of physical memory and devices. */
 #define RPI4_DIRECT_BASE	0xffff000000000000ULL
@@ -51,6 +57,13 @@
 #else
 /* The PL011 the firmware routes to GPIO 14 and 15 (config.txt disables BT). */
 #define RPI4_UART_BASE		0xfe201000ULL
+#endif
+
+/* The name prefix under which the hardware layer describes the firmware's screen. */
+#if defined(HAL_BOARD_RPI5)
+#define RPI4_FRAMEBUFFER_NAME	"rpi5.framebuffer"
+#else
+#define RPI4_FRAMEBUFFER_NAME	"rpi4.framebuffer"
 #endif
 #define RPI4_UART_DR		0x00U
 #define RPI4_UART_FR		0x18U
@@ -81,6 +94,7 @@ static void console_show_cursor(int visible);
 static void console_nothing(void);
 static void console_suspend(void);
 static void console_resume(void);
+static int console_end(const struct kern_text_range *ranges, unsigned count);
 static uint32_t uart_read(unsigned offset);
 static void console_input_worker(void *argument);
 
@@ -99,7 +113,8 @@ static const struct kern_text_ops rpi4_console_ops = {
 	.show_cursor = console_show_cursor,
 	.update_cursor = console_nothing,
 	.suspend = console_suspend,
-	.resume = console_resume
+	.resume = console_resume,
+	.end = console_end
 };
 
 /*
@@ -108,6 +123,15 @@ static const struct kern_text_ops rpi4_console_ops = {
  * pointer only keeps a second start from creating another.
  */
 static struct thread *input_worker;
+
+/*
+ * Whether the console has left the framebuffer for good: a resume no
+ * longer gives the screen back to the hardware layer's console.  Set once
+ * by console_end() before it suspends the hardware layer's output; read by
+ * console_resume() before and after it resumes that output, all
+ * sequentially consistent, so that no resume outlives an end.
+ */
+static int console_ended;
 
 /*
  * Publishes the console output.
@@ -321,9 +345,62 @@ static void
 console_resume(
 	void)
 {
+	int ended;
+
+	/* A console that left the framebuffer stays off it; the serial line goes on. */
+	ended = __atomic_load_n(&console_ended, __ATOMIC_SEQ_CST);
+	if (ended)
+		return;
+
 	/* Repaints the retained early console without discarding newer log messages. */
 	rpi_cons_resume_output();
 
-	/* Succeeded: serial and framebuffer output both show the console again. */
+	/* An end that came meanwhile may have suspended the output first: it stays suspended. */
+	ended = __atomic_load_n(&console_ended, __ATOMIC_SEQ_CST);
+	if (ended)
+		rpi_cons_suspend_output();
+
+	/* Succeeded: the framebuffer shows the console again, unless it has left it. */
 	return;
+}
+
+/*
+ * Ends the console's use of the framebuffer for good: the hardware layer's
+ * framebuffer output is suspended and no later resume gives it back, while
+ * the serial line goes on.  The hardware layer's stall watch still draws a
+ * stop's report on the firmware's framebuffer when it has no compositor to
+ * draw on, so that screen counts as left: EBUSY when it lies in the
+ * ranges, 0 otherwise.
+ */
+static int
+console_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	struct kern_boot_framebuffer screen;
+	int overlaps;
+	int error;
+
+	/*
+	 * No resume gives the screen back from now on: one that read the mark
+	 * clear before this store suspends the output again after its own
+	 * repaint, since it reads the mark once more.
+	 */
+	__atomic_store_n(&console_ended, 1, __ATOMIC_SEQ_CST);
+
+	/* Stops the hardware layer's framebuffer writes under its output lock. */
+	rpi_cons_suspend_output();
+
+	/* A boot whose firmware allocated no screen leaves nothing behind. */
+	error = kern_boot_framebuffer(RPI4_FRAMEBUFFER_NAME, &screen);
+	if (error != 0 || screen.size == 0U)
+		return 0;
+
+	/* The firmware's screen, which a stop's report may still draw on. */
+	overlaps = kern_text_range_overlaps(ranges, count, screen.physical_base, screen.size);
+	if (overlaps)
+		return EBUSY;
+
+	/* Succeeded: nothing the console leaves behind lies in the ranges. */
+	return 0;
 }

@@ -19,6 +19,7 @@
 #include <hal/hal.h>
 
 #include "kern/klog.h"
+#include "kern/text-display.h"
 #include "text.h"
 #include <uapi/errno.h>
 #include "kern/pmem.h"
@@ -28,9 +29,36 @@
 #define GDC_PLANE_SIZE 0x8000U
 #define CIRRUS_APERTURE_SIZE (4U * 1024U * 1024U)
 
+/* How many ranges the end may leave mapped: the four planes and the Cirrus aperture. */
+#define PC98_LEFT_MAX 8U
+
+/*
+ * One range of display memory the end left mapped, with the error of its
+ * removal (0 for one that cannot be removed at all).
+ */
+struct pc98_left {
+	uint64_t physical;
+	uint64_t bytes;
+	int error;
+};
+
+/* Where the four GDC planes are, in the order gdc_memory[] keeps them. */
+static const uint64_t plane_address[4] = {
+	0x000a8000U, 0x000b0000U, 0x000b8000U, 0x000e0000U};
+
 /* The four GDC planes and the Cirrus aperture, once mapped. */
 static void *gdc_memory[4];
 static void *cirrus_memory;
+
+/*
+ * Whether the console has left the display (backend_ended), and what the
+ * end could not remove (left_count ranges of left).  Written once by the
+ * end, under the graphics lock when /dev/graphics has one; a later end
+ * reads them under the same lock.
+ */
+static int backend_ended;
+static struct pc98_left left[PC98_LEFT_MAX];
+static unsigned left_count;
 
 static struct pc98_auto display;
 static struct pc98_display_backend backend_hal;
@@ -43,6 +71,8 @@ static uint8_t port_in8(void *context, uint16_t port);
 static void port_out8(void *context, uint16_t port, uint8_t value);
 static int display_reset(void *context);
 static int display_stop(void *context);
+static void left_add(uint64_t physical, uint64_t bytes, int error);
+static void mapping_remove(void *mapped, uint64_t physical, size_t bytes);
 
 /*
  * Implements the drv pc98 graphics backend get modes operation.
@@ -359,13 +389,73 @@ drv_pc98_graphics_backend_ready(
 	return backend_prepared;
 }
 
+/*
+ * Gives the display up for good, once the console has left it: nothing is
+ * drawn through the backend again, and every kernel mapping of display
+ * memory it made (the four GDC planes and the Cirrus aperture) is removed;
+ * the hardware is not written.  Returns 0 when nothing left mapped lies in
+ * the count ranges, the error of a removal that failed for a range in
+ * them, or EBUSY for a range in them that cannot be removed.  A later call
+ * judges what the first left against its own ranges.  The caller holds
+ * the graphics lock, or it runs before /dev/graphics has one.
+ */
+int
+drv_pc98_graphics_backend_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	unsigned index;
+	int overlaps;
+
+	/* The first end removes the mappings; a later one only judges. */
+	if (!backend_ended) {
+		/* Nothing is drawn through the backend from now on. */
+		backend_ended = 1;
+		backend_prepared = 0;
+		kern_memset(&native_display, 0, sizeof(native_display));
+
+		/* Removes each of the four GDC planes' mappings. */
+		for (index = 0U; index < 4U; index++) {
+			/* The native display no longer reaches the plane. */
+			display.gdc.planes[index] = NULL;
+
+			/* The plane's mapping, when the start-up made one. */
+			if (gdc_memory[index] != NULL)
+				mapping_remove(gdc_memory[index], plane_address[index], GDC_PLANE_SIZE);
+			gdc_memory[index] = NULL;
+		}
+
+		/* The Cirrus aperture's mapping (its registers are not written). */
+		if (cirrus_memory != NULL)
+			mapping_remove(cirrus_memory, CIRRUS_PADDR, CIRRUS_APERTURE_SIZE);
+		cirrus_memory = NULL;
+	}
+
+	/* What was left, against the caller's ranges: a failed removal first. */
+	for (index = 0U; index < left_count; index++) {
+		/* A range of the caller's memory whose removal failed. */
+		overlaps = kern_text_range_overlaps(ranges, count, left[index].physical, left[index].bytes);
+		if (overlaps && left[index].error != 0)
+			return left[index].error;
+	}
+
+	/* Then a range that stays mapped for good. */
+	for (index = 0U; index < left_count; index++) {
+		/* A range of the caller's memory that cannot be removed. */
+		overlaps = kern_text_range_overlaps(ranges, count, left[index].physical, left[index].bytes);
+		if (overlaps)
+			return EBUSY;
+	}
+
+	/* Succeeded: nothing the backend mapped is left in the ranges. */
+	return 0;
+}
+
 /* Supports the pc98 graphics prepare hardware operation. */
 static int
 pc98_graphics_prepare_hardware(
 	void)
 {
-	static const uint64_t plane_address[4] = {
-		0x000a8000U, 0x000b0000U, 0x000b8000U, 0x000e0000U};
 	unsigned i;
 
 	/* Maps the four uncached GDC planes. */
@@ -477,4 +567,55 @@ display_stop(
 
 	/* Returns the computed result. */
 	return error;
+}
+
+/*
+ * Records a range of display memory the end leaves mapped, with the error
+ * of its removal (0 for one that cannot be removed).  A full table keeps
+ * its last entry as the whole address space, so that every range judged
+ * later finds it.
+ */
+static void
+left_add(
+	uint64_t physical,
+	uint64_t bytes,
+	int error)
+{
+	/* A table with room takes the range itself. */
+	if (left_count < PC98_LEFT_MAX) {
+		left[left_count].physical = physical;
+		left[left_count].bytes = bytes;
+		left[left_count].error = error;
+		left_count++;
+		return;
+	}
+
+	/* A full table stands for everything from now on. */
+	left[PC98_LEFT_MAX - 1U].physical = 0U;
+	left[PC98_LEFT_MAX - 1U].bytes = UINT64_MAX;
+	left[PC98_LEFT_MAX - 1U].error = 0;
+}
+
+/*
+ * Removes one kernel mapping of display memory, recording the range as
+ * left when the removal fails (EBUSY from the hardware layer: a window it
+ * keeps mapped).
+ */
+static void
+mapping_remove(
+	void *mapped,
+	uint64_t physical,
+	size_t bytes)
+{
+	int error;
+
+	/* The kernel's own call, which asks the hardware layer. */
+	error = kern_device_unmap(mapped, bytes);
+
+	/* A window the hardware layer keeps is left for good; another failure is left with its error. */
+	if (error == EBUSY) {
+		left_add(physical, bytes, 0);
+	} else if (error != 0) {
+		left_add(physical, bytes, error);
+	}
 }
