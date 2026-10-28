@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p002 -->
 # ws221-p002: kernel + ifconfig + ping（pool の 2 class、MTU の口）
 
-Status: in-progress（2026-10-29 P3 q1664: 下の「済み」まで。残りは「残り」）
+Status: in-progress（2026-10-29 P3 q1664: 下の「済み」まで、77bd8ef04。残りは「残り」）
 Parent: [WS221](../ws.md)
 Queue: q1664 / q1664-i01（P3）
 設計: [p001](../phase001/phase.md) §3.1・§3.2・§3.3・§3.7（ifconfig・ping）、§9 は全部推し（2026-10-29 ユーザー「全部 推しで (推し)」）
@@ -16,11 +16,13 @@ Queue: q1664 / q1664-i01（P3）
 | UAPI `SIOCSIFMTU` 0x8922（superuser、0 = 既定）、IPv6 の `ra_mtu` と `ipv6_device_mtu_changed`（path MTU を消す） | 85a74b441 | 同上。lo0 の `mtu default` が EINVAL になる誤りを直して（NET_MTU_MAX の検査を外す）VF2 で 65535 に戻ることを確かめた |
 | `ifconfig IF mtu N|default` | 85a74b441 | 同上 |
 
+| `socket_datagram_max`（syscall.c の 4 か所、AF_UNIX は 2048 のまま）、UDP・raw ICMP・ICMP の echo socket・ICMPv6 の echo の返事・packet socket の送りを `alloc_for` に | 52e468447 | VF2（en0 と 5330 を一時 9000）: `ping -s 8972 10.0.30.3` が 8980 bytes で返る |
+| `ping -s SIZE`（8〜65000、既定 56）、sendto の失敗の表示、返事の長さが送りと違えば truncated で数えない、ping6 も | 77bd8ef04 | VF2: `-s 1473` を MTU 1500 で → `ping: sendto: Message too long`、`-s 7` → usage、`ping -6 -s 1000 ::1` が 1008 bytes。5330 の MTU は 1500 に戻した |
+
 ## 残り
 
-- `socket_datagram_max`（syscall.c の 4 か所）、socket ごとの jumbo の上限（2）、UDP・raw・ICMPv6・packet socket の `alloc_for`（p001 §3.1）。
+- socket ごとの jumbo の上限（2）（p001 §3.1 S7 (b)）。
 - net.tcpstats の header の jumbo の欄（72 byte、p001 §3.1 M6）。
-- `ping -s SIZE` と sendto の失敗の表示、受けた長さの判定（§3.7、Q7）。
 - QEMU の §8.2 (1)〜(4)（usb-net の 1514 で `mtu 9000` → EINVAL、`mtu 1400` → 成功、ping の長さ）。
 - i386 の build（pcat）は warning 0 を確かめた（6d45f0a87 の tree）。
 
