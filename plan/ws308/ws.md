@@ -30,3 +30,4 @@ read・write・pread・pwrite・vector の syscall が、user の buffer を固�
 
 - HAL の API は変えない（要れば差分の案をユーザーの承認に）。VM は全 platform・全 process に効くので、正しさ（use-after-free・競合）を最優先し、試験で確かめる。
 - 2026-10-28 ユーザー「WS308ですが、bufferを毎回固定するのではなくて使い回すような方法も検討の余地があると思いますので、Fable 5.1 Highへの質問事項に入れてください。それによって、WSの内容を変更してもいいです。」→ p001 で pin の使い回し（pin の cache・登録済みの buffer）も Fable に聞いて評価し、結果で目標・Phase を変えてよい（UAPI を足すならユーザーの判断）。
+- 2026-10-28 P1 の計測（QEMU 8 CPU）: 主因は metadata_lock でなく kernel heap の大域の lock（entry.c）・NVMe の command_lock・vm_object_registry_lock・process の cred の lock。ユーザー「P1の触る範囲が広がるのはOKです。」→ 目標をこれらの lock に広げる（P1 が目標と Phase を直す）。所有に src/kern/entry.c・process.c・vm の object registry・pci-nvme.c を追加。
