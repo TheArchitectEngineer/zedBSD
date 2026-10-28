@@ -9,7 +9,7 @@ Related Milestones: MG006, MG008, MG009
 Objectives: O2, O4, O5
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001〜p008 cleared。DOC-54 は [p009](phase009/phase.md)（設計 第 2 版 2026-10-29、p009a・p009b、20 LW、担当は Q1 が割り当てる）
+Resume point: p001〜p008 cleared。DOC-54 は [p009](phase009/phase.md)（設計 第 2 版 2026-10-29、p009a・p009b、22 LW、担当は Q1 が割り当てる）。docs の link の試験の既知の失敗: `docs/agent/awesome-plan/README.md` の `img/1.png` が無い（固定版の欠け、触らない、2026-10-29 Q1）
 Target: **ベータ2**（2026-10-13 ユーザー「WS196、WS172、WS009はベータ2に入れます。」。旧: ベータ3（2026-10-08 ユーザー））
 <!-- awesome-plan-current:end -->
 
@@ -27,7 +27,7 @@ Shared tests: [WS009 test index](tests/README.md)
 | [`ws009-p006`](phase006/phase.md) | Complete (`q072`) | Current WLAN, physical USB HID, Intel Mac Variant, Noct 2.0.1, and project-toolchain behavior is published without claiming planned removals or new UAPIs |
 | [`ws009-p007`](phase007/phase.md) | Complete (`q150`) | Architecture, compatibility, console/graphics/system and multi-radio WLAN reconciled; 283 product links pass |
 | [`ws009-p008`](phase008/phase.md) | Complete (`q190`) | Current amd64/PC98 installer and native-root workflows, recovery/limits, producer evidence and 293 product links verified |
-| [`ws009-p009`](phase009/phase.md) | Planned (design 2026-10-29, q1666) | DOC-54 `/dev/gpu` UAPI reference: two stages p009a/p009b, 20 LW; design review in [design-review.md](phase009/design-review.md) |
+| [`ws009-p009`](phase009/phase.md) | Planned (design 2026-10-29, q1666) | DOC-54 `/dev/gpu` UAPI reference: two stages p009a/p009b, 22 LW; design review in [design-review.md](phase009/design-review.md) |
 
 Documentation work may be extracted alongside a producer WS when it describes
 a newly frozen public interface, but it retains a WS009 Phase ID and acceptance

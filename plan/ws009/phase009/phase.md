@@ -6,7 +6,7 @@ Status: planned（第 2 版、2026-10-29 P5 の設計、q1666。[design-review.m
 Parent: [WS009](../ws.md)
 Approval: 2026-10-27 ユーザーの回答（クリック）「今書く」（DOC-54 を保留から外した。ws.md の Status の原文）
 依存: なし。並行の作業との merge の順は 8 節
-見積もり: 20 LW（±50%）。2 つの段 p009a（10 LW）・p009b（10 LW）に分ける（review M11）
+見積もり: 22 LW（±50%）。2 つの段 p009a（12 LW）・p009b（10 LW）に分ける（review M11、capset の形は 2026-10-29 ユーザーの回答で +2）
 
 ## 1. 目的と成果物
 
@@ -47,7 +47,7 @@ p009a（共通の部分）:
 1. Status 行・ABI の版・header の一覧（source への相対 link）。
 2. 呼び方の規約: top level の要求の `version` は `GPU_ABI_VERSION`、`size` は ioctl ごとに決まる（表に書く）。例外を明記（review M6）: `GPU_COMMAND_SUBMIT_SYNC`・`GPU_DISPLAY_PRESENT_SYNC` は入れ子の struct の size（gpu.c 6971・6985 行）、`gpu_blob_create_placed` は外側の大きさ、`gpu_display_plane_state`・`gpu_placement` は version・size を持たない。固定幅、ILP32 と LP64 で同じ大きさ（review が 45 個の struct を x86_64 と -m32 で確かめた）。`-1` と `errno`。
 3. node と権限（review M5）: `/dev/gpuN` の番号（`gpu%u`、gpu.c 1328 行）と使い回し、同じ device を見分ける `GPU_DEVICE_QUERY` の `device_id`、open の権限（root か node の owner）、node の mode（既定 0666、seat の user に 0600 で渡すのは gpu0〜gpu3）、**読みと書きの権限**（open の mode から `readable`・`writable`、gpu.c 1426〜1427 行）。ioctl の表に「要る open の mode（R・W・不要）」と「要る CAP」の列。
-4. capability の model: 各 bit、bit が無い時の errno（`EOPNOTSUPP` が既定、gpu.c 2199〜2201 行と各 ioctl）、`GPU_GET_CAPSET`。capset の payload（id 4・version 0、168・176 byte、magic と flag）は header の外の ABI なので「command の protocol の一部、consumer は libvulkan」と書き、形は書かない（review M7、推しの既定。9 節で確かめる）。
+4. capability の model: 各 bit、bit が無い時の errno（`EOPNOTSUPP` が既定、gpu.c 2199〜2201 行と各 ioctl）、`GPU_GET_CAPSET`。**capset の payload の形も書く**（2026-10-29 ユーザーの回答、9 節）: id 4・version 0、168・176 byte、magic と flag の各欄。header の外の ABI なので、出典は driver（venus.c 735、amdrdna/runtime.c 55・293、nvrtx/runtime.c 42・195、powervr/render-runtime.c 50・185 など）と libvulkan の読む所。照合の script の対象に payload の欄の表を足す。p009a に +2 LW。
 5. object の model と寿命: resource・blob・handle、mmap の offset、export・import の fd（allocation と image の descriptor、device_id は kernel が付ける）、scanout の import。
 6. 投入と完了: `GPU_COMMAND`（受け付けは完了ではない）、`GPU_COMMAND_SUBMIT`・`WAIT`、fence（fence の ioctl が `GPU_CAP_FENCE` を要るかは `gpu_fence_ioctl` を読んで書く、review m7）、job（reserve・commit・cancel、`GPU_JOB_CAPACITY` の WAIT は flags 0、review m2、policy の値は build の config から）、session の失敗（device lost に当たる errno、回復の手順）。
 7. **並行と待ち**（review M4）: 同じ fd で並べてよい ioctl（admission の外の物: `GPU_JOB_*`・`GPU_COMMAND_WAIT`・`GPU_DISPLAY_EVENTS`・`GPU_DISPLAY_REFRESH` など、gpu.c を読んで一覧に）、各 wait の timeout の 0・有限・`UINT64_MAX`・EINTR、取り消し。
@@ -82,9 +82,9 @@ p009b（display と driver と直し）:
 
 | 段 | 作業 | LW |
 | --- | --- | --- |
-| p009a | header（gpu-op.h を除く約 1,060 行）と gpu.c の権限・dispatch・errno・並行の読み 4、文書 1〜8 節 4、照合の script と例の compile 2 | 10 |
+| p009a | header（gpu-op.h を除く約 1,060 行）と gpu.c の権限・dispatch・errno・並行の読み 4、文書 1〜8 節 4、capset の payload の形 2、照合の script と例の compile 2 | 12 |
 | p009b | display の 9 節 3、10・11 節 1、node の種類ごとの表（9 種の node の ops と条件を読む）3、既存の文書の直し 1、link と producer-docs と照合 2 | 10 |
-| 計 | gpu.md は 700〜1,000 行の見込み（evdev.md 205 行、kernel-boot-parameters.md 632 行から推測） | 20（±50%） |
+| 計 | gpu.md は 700〜1,000 行の見込み（evdev.md 205 行、kernel-boot-parameters.md 632 行から推測） | 22（±50%） |
 
 節ごとに commit して Q1 に報告する。
 
@@ -103,5 +103,7 @@ p009b（display と driver と直し）:
 
 - （Bug の候補、review B1）venus は strict queue が無くても `GPU_CAP_JOB` を返すが `GPU_JOB_RESERVE` は ENOTSUP（`venus.c` 29 行、`transport.c` 179・408 行）。
 - （既知の失敗、review B2）`docs/agent/awesome-plan/README.md` の `img/1.png` が無く、link の試験を `docs` 全体で流すと FAIL する。
-- ユーザーに聞く点（Q-D54-1、範囲）: 推し「`/dev/gpuN` の ABI 1 と sysctl の GPU の項の要約。`/dev/amdrdna0` と WS306 は書かない。capset の payload は不透明と書く」。
+- 2026-10-29 ユーザーの回答（クリック、Q1 の中継）Q-D54-1: 「capset の形も書く」。→ 解釈: 範囲は `/dev/gpuN` の ABI 1、sysctl の GPU の項の要約、capset の payload の形（3 節の 4）。`/dev/amdrdna0` と WS306 は書かない（推しのまま）。
+- (a) は Q1 が Bug にする（2026-10-29 Q1）。(b) は awesome-plan の固定版の欠けで触らない（下の既知の失敗）。
+- 既知の失敗（2026-10-29 Q1）: `docs/agent/awesome-plan/README.md` の `img/1.png` が無いので、`check-relative-links.noct` を `docs` 全体で流すと FAIL する。この Phase は `docs/reference docs/architecture` を引数にする。
   （言語は docs/ の全文書と同じ英語で、聞かない。review m4）
