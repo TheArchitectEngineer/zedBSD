@@ -24,6 +24,8 @@
 
 #include <kern/kcrt.h>
 
+#include "drivers/gpu/compiler/spirv.h"
+
 #include "vk.h"
 
 /*
@@ -50,7 +52,13 @@
 #define LIMIT_ATTRIBUTE_OFFSET		524287U
 #define LIMIT_BINDING_STRIDE		4095U
 #define LIMIT_WORKGROUPS		65535U
-#define LIMIT_INVOCATIONS		256U
+
+/*
+ * The invocations of one workgroup the shader frontend compiles: the
+ * hardware takes 256, but the shared SPIR-V frontend refuses more than
+ * 128, the least Vulkan 1.0 allows.
+ */
+#define LIMIT_INVOCATIONS		DRV_GPU_SPIRV_MAX_GROUP_INVOCATIONS
 #define LIMIT_WORKGROUP_DEPTH		64U
 #define LIMIT_SHARED_BYTES		16384U
 #define LIMIT_SUBPIXEL_BITS		4U
@@ -250,7 +258,7 @@ ghci_vk_caps_limits(
 		limits->maxFragmentDualSrcAttachments = 1U;
 	limits->maxFragmentCombinedOutputResources = attachments + LIMIT_STAGE_SLOTS + LIMIT_STAGE_STORAGE_IMAGES;
 
-	/* Compute: the shared memory of EXT_CAP_FEATURE, and a workgroup of eight warps. */
+	/* Compute: the shared memory of EXT_CAP_FEATURE, and a workgroup of the frontend's four warps. */
 	limits->maxComputeSharedMemorySize = shared;
 	limits->maxComputeWorkGroupCount[0] = LIMIT_WORKGROUPS;
 	limits->maxComputeWorkGroupCount[1] = LIMIT_WORKGROUPS;
