@@ -619,7 +619,7 @@ static int nvme_io_begin_bio(struct nvme_controller *controller, enum bio_op ope
 static void nvme_io_end_bio(struct nvme_controller *controller, enum bio_op operation);
 static int nvme_io_slot_acquire(struct nvme_controller *controller, struct nvme_io_slot **result, int may_wait);
 static int nvme_io_post(struct nvme_controller *controller, struct nvme_io_slot *slot, const struct drv_nvme_command *command, int uses_payload);
-static int nvme_io_wait_completion(struct nvme_controller *controller, struct nvme_io_slot *slot, int *recovery_owner);
+static int nvme_io_wait_completion(struct nvme_controller *controller, struct nvme_io_slot *slot, int *recovery_owner, int *dma_uncertain, uint64_t *fence);
 static void nvme_io_slot_release(struct nvme_controller *controller, struct nvme_io_slot *slot);
 static int nvme_io_execute(struct nvme_controller *controller, uint8_t opcode, uint64_t first_block, uint32_t block_count, void *bytes);
 static int nvme_io_start(struct nvme_controller *controller, uint8_t opcode, uint64_t first_block, uint32_t *block_count, void *bytes, const uint64_t *pages, int may_wait, struct nvme_io_slot **result, int *bounced);
@@ -4182,8 +4182,14 @@ nvme_irq(
 		consumed += pass;
 	} while (pass != 0U);
 
-	/* Checks the operation status. */
-	status = controller->controller_enabled
+	/*
+	 * Looks for a fatal controller status only when the interrupt brought
+	 * no completion: a controller that completes commands is not fatal,
+	 * and the read of the device register would lengthen every hold of
+	 * command_lock.  A fatal state that stops completions is found here
+	 * at the next interrupt, or by the command timeout.
+	 */
+	status = controller->controller_enabled && consumed == 0U
 			 ? nvme_read32(controller, DRV_NVME_REG_CSTS)
 			 : 0U;
 	if (status == UINT32_MAX || (status & DRV_NVME_CSTS_FATAL) != 0U) {
@@ -4657,11 +4663,20 @@ nvme_io_begin_bio(
 
 	*owned = 0;
 
-	/* Checks the operation status. */
-	error = nvme_io_ensure_online(controller);
-	if (error != 0)
-		return error;
+	/*
+	 * Admits the request at once when the queue is online, under the one
+	 * hold below; otherwise waits it online (a suspend, a recovery) first.
+	 */
 	irq = spin_lock_irqsave(&controller->command_lock);
+	if (controller->suspended || !controller->io_queue_ready ||
+	    controller->stopping || controller->quarantined ||
+	    controller->io_recovery_needed) {
+		spin_unlock_irqrestore(&controller->command_lock, irq);
+		error = nvme_io_ensure_online(controller);
+		if (error != 0)
+			return error;
+		irq = spin_lock_irqsave(&controller->command_lock);
+	}
 
 	/* Handles the controller condition. */
 	if (controller->stopping || controller->quarantined ||
@@ -5004,7 +5019,9 @@ static int
 nvme_io_wait_completion(
 	struct nvme_controller *controller,
 	struct nvme_io_slot *slot,
-	int *recovery_owner)
+	int *recovery_owner,
+	int *dma_uncertain,
+	uint64_t *fence)
 {
 	uint64_t deadline = sched_ticks() + controller->timeout_ticks;
 	unsigned long irq;
@@ -5077,6 +5094,12 @@ nvme_io_wait_completion(
 		slot->state = NVME_IO_SLOT_COPYING;
 	} else if (error == 0) {
 		error = EIO;
+	}
+
+	/* Says, under the same hold, whether the device may still move the slot's data. */
+	if (dma_uncertain != NULL && slot->dma_uncertain) {
+		*dma_uncertain = 1;
+		*fence = controller->io_dma_quiesce_count;
 	}
 
 	/* Handles the controller condition. */
@@ -5463,7 +5486,7 @@ nvme_io_execute(
 		return error;
 
 	/* Failed posts also own a faulted slot and must participate in recovery. */
-	error = nvme_io_wait_completion(controller, slot, &recovery_owner);
+	error = nvme_io_wait_completion(controller, slot, &recovery_owner, NULL, NULL);
 	if (error == 0 && opcode == DRV_NVME_NVM_READ) {
 		kern_io_read_barrier();
 		kern_memcpy(bytes, slot->bounce_dma.address,
@@ -5505,6 +5528,8 @@ nvme_io_pipeline(
 	int claimed;
 	int bounced;
 	int dma_uncertain = 0;
+	int chunk_uncertain;
+	uint64_t chunk_fence;
 	int recovery_owner = 0;
 
 	opcode = bio->b_op == BIO_READ ? DRV_NVME_NVM_READ : DRV_NVME_NVM_WRITE;
@@ -5526,13 +5551,15 @@ nvme_io_pipeline(
 		while (!stopped && remaining != 0U &&
 		    pending < NVME_IO_PIPELINE_DEPTH) {
 			/* Notice a later CQ error before replenishing earlier successes. */
-			irq = spin_lock_irqsave(&controller->command_lock);
-			for (scan = 0; scan < pending; scan++) {
-				index = (head + scan) % NVME_IO_PIPELINE_DEPTH;
-				if (chunks[index].slot->error != 0)
-					stopped = 1;
+			if (pending != 0U) {
+				irq = spin_lock_irqsave(&controller->command_lock);
+				for (scan = 0; scan < pending; scan++) {
+					index = (head + scan) % NVME_IO_PIPELINE_DEPTH;
+					if (chunks[index].slot->error != 0)
+						stopped = 1;
+				}
+				spin_unlock_irqrestore(&controller->command_lock, irq);
 			}
-			spin_unlock_irqrestore(&controller->command_lock, irq);
 			if (stopped)
 				break;
 
@@ -5591,7 +5618,10 @@ nvme_io_pipeline(
 			break;
 		/* Reap in logical order; IRQ completion remains CID-based. */
 		entry = &chunks[head];
-		current = nvme_io_wait_completion(controller, entry->slot, &claimed);
+		chunk_uncertain = 0;
+		chunk_fence = 0;
+		current = nvme_io_wait_completion(controller, entry->slot, &claimed,
+		    &chunk_uncertain, &chunk_fence);
 		if (claimed)
 			recovery_owner = 1;
 		if (current != 0) {
@@ -5607,13 +5637,10 @@ nvme_io_pipeline(
 		 * cannot have happened yet, because this request still owns the
 		 * slot and a stop waits for every slot to be given back.
 		 */
-		if (entry->pages != NULL && !entry->bounced) {
-			irq = spin_lock_irqsave(&controller->command_lock);
-			if (entry->slot->dma_uncertain && !dma_uncertain) {
-				dma_uncertain = 1;
-				fence = controller->io_dma_quiesce_count;
-			}
-			spin_unlock_irqrestore(&controller->command_lock, irq);
+		if (entry->pages != NULL && !entry->bounced &&
+		    chunk_uncertain && !dma_uncertain) {
+			dma_uncertain = 1;
+			fence = chunk_fence;
 		}
 
 		/* Report only the successful prefix, even if later writes completed. */

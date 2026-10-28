@@ -3,7 +3,7 @@
 # ws308-p002 起床の道と NVMe の command_lock、amd64 の timecounter の大域の lock
 
 - 親: [WS308](../ws.md)。Queue: q1650（担当 P1）。前提: [p001](../phase001/phase.md) の 5330 の区間の計測。
-- Status: in-progress（2026-10-28 P1: 実装 15840093d と review の反映、5330 の区間の計測 1 回。回帰の試験の残りあり）
+- Status: in-progress（2026-10-28 P1: 実装 15840093d・84fd65ac6・27a02af59、5330 で direct QD32 214k IOPS（Debian の 91%）。回帰の試験の残りあり）
 - Disposition: normal
 - 範囲の決定: 2026-10-28 ユーザー「P1の触る範囲が広がるのはOKです。」→ Q1: src/drivers/pci/pci-nvme.c（command_lock）を WS308 の所有に。Q1: src/hal/amd64/bsp-pcat/timecounter-policy.c の実装の直し（hal.h の宣言・契約は変えない）を WS308 の所有に、条件「時刻の単調性（CPU をまたいでも戻らない）と、TSC が信頼できない機械・QEMU の fallback を壊さない事を、host 試験か QEMU の多 CPU で確かめる。他の platform の timecounter には触らない。」
 
@@ -77,6 +77,22 @@
 - build: config-5330（`build/p1-w308b`）・pcat・visionfive2・rpi4・m68k-virt で rc 0・warning 0。
 - QEMU（serial の image `build/p1-w308q`）: boot-test（KVM）PASS、boot-test（`QEMU_NO_KVM=1`、TCG の 4 CPU、PIT 較正の TSC の道）PASS、`qemu-nvme-shapes.sh` PASS、`qemu-directio.sh` PASS、`qemu-nvme-errors.sh` PASS（誤りの完了を 3 回、誤りの無い範囲の direct・cached の QD32 6 回、guest は生きている）。
 - 未実施: timeout・stop・detach の道に眠る者がいる場合、TSC の無い機械（`available=0`）の起動。
+
+## command_lock の回数を減らす（2026-10-28、P1、27a02af59）
+
+- 区間の計測（`w308-c`、計測の点を足した一時の kernel）: direct QD32 の入口→post 約 66 µs の内訳は pin 5〜7 µs、pin→submit 2 µs、`nvme_io_begin_bio` 27〜29 µs、begin→post（slot の取得・command の組み立て・post）29〜32 µs ＝ command_lock の待ち。1 I/O で command_lock を約 10 回取っていた（ensure_online、begin_bio、pipeline の誤りの見回り（pending 0 でも）、slot_acquire、post、wait（眠った後の取り直し）、dma_uncertain の確認、slot_release、end_bio）＋割り込みの CSTS の読み（device の register の読みを lock の下で毎回）。
+- 直し: (1) begin_bio の中で online の条件を同じ保持で見て、外れた時だけ `nvme_io_ensure_online`、(2) pipeline の誤りの見回りは出ている chunk がある時だけ、(3) dma_uncertain と fence は `nvme_io_wait_completion` の保持の中で返す、(4) 割り込みの CSTS の読みは完了を 1 つも取らなかった時だけ（完了を返す controller は fatal ではない。完了が止まる fatal は次の割り込みか timeout で見る）。1 I/O の command_lock は約 6〜7 回に。
+- 5330（`w308-d`、27a02af59 ＋ 一時の計測の差分）:
+
+| 負荷 | p001（main） | p002＋p003（w308-b） | 27a02af59（w308-d） | Debian |
+| --- | --- | --- | --- | --- |
+| direct QD32（thread） | 124620 IOPS | 143242 | 214465（878 MB/s） | 964 MB/s（91%） |
+| direct QD32（process） | 124275 | 134575 | 215825（884 MB/s） | — |
+| cached QD32（thread） | 139233 | 172477 | 204840（839 MB/s） | 964（87%） |
+| direct・cached QD1 | 13386・14279 | 13540・14804 | 13619・15021 | — |
+
+- direct QD32 の区間: 入口→post 6〜9 µs（pin 2〜5）、post→CQ 126 µs（device に出ている command が増えた）、CQ→waiter 5 µs、起床→戻り 3 µs、入口→戻り 142〜145 µs。cached QD32: 入口→post 29〜32 µs（pin→submit 12 µs＝buffer cache の道）、起床→戻り 15〜19 µs。
+- QEMU（27a02af59 の serial の image）: boot-test、`qemu-nvme-shapes.sh`・`qemu-directio.sh`・`qemu-nvme-errors.sh` PASS。build は config-5330 だけ（他の 4 config は 84fd65ac6 で warning 0、27a02af59 は pci-nvme.c だけの変更で未 build）。
 
 ## 危険
 
