@@ -6,6 +6,54 @@
 
 ユーザーの決定（原文、2026-10-15）:「その場合のキャンセルと復帰を実装した方がよくない？device lostでプログラムがそれ以上動けなくなるのはOK。でもシステムとしては動き続けてほしいな。」
 
+## 第 2 版の改訂（2026-10-29 P5、q1666。この節が下の本文の該当の所に優先する）
+
+照合した tree: main 61630bb0b（`VK_NODE_RUN_US` 2 s は `vk-node.c:31`・`:291` のまま、work channel は `work.c:936` の `WORK_CHID`、`nvrtx_work_stop` は `work.c:224`、RC の event の枝は `rpc.c:252`。nvrtx の ops に `isolate`・`reset` は今も無い）。
+公開の source の調べ（P5 の配下の調べ、Fable、2026-10-29）: open-gpu-kernel-modules 570.144・Linux v6.19 nouveau・Mesa 25.3.6、引用した file は全部 MIT（GPL の file は読んでいない）。値と手順だけを取り、code は写さない（guardrail の出典の規則）。
+
+| # | 改訂 | 根拠（project・file・行は main の調べの時点） |
+| --- | --- | --- |
+| R1 | **STOP_CHANNEL の失敗を即 STUCK にしない**（§4.3 の 3d）。header の意味は「disable・unbind・runlist から外す。preempt か外すのに失敗したら RM がその channel を RC する」、bImmediate=1 は「待たずに強制に preempt、timeout なら RC」。無限 loop の warp は WFI の mode では preempt できないので、STOP の timeout → GSP の RC が通常の道になる見込み。判定: 「STOP が 0」か「STOP が失敗し、その chid の RC の event が短い待ち（500 ms）の中に来た」なら止まったと見て FREE に進み、**FREE の status が 0 なら FREED**（GSP はもうその memory を読まない）。FREE も失敗なら STUCK | ogkm `src/common/sdk/nvidia/inc/ctrl/ctrla06f/ctrla06fgpfifo.h` 204〜230 行、`src/nvidia/src/kernel/gpu/fifo/kernel_channel.c` 1995〜2030 行 |
+| R2 | **RESET_CHANNEL を常には呼ばない**（§4.3 の 3b）。意味は「channel を reset し、その engine も reset する」。STOP が成功した時は engine の reset は要らず、他の channel を 1 回止めるだけ。STOP が失敗した時は GSP が RC の中で reset を済ませてから event を送る（client の RM は journal と通知だけ）。→ RESET は「STOP が失敗し、500 ms の中に RC の event が来ない」時だけ。`bIsRcPending` は nvrtx が自分の RC の記録から埋める。S2 を「STOP+FREE」と「STOP+RESET+FREE」の 2 つの build で比べて決める（U4） | `ctrl/ctrl906f.h` 106〜148 行、`kernel_channel.c` 3146〜3192 行、`gpu/gsp/kernel_gsp.c`（`_kgspRpcRCTriggered`）、`gpu/rc/kernel_rc_notification.c` 355〜437 行 |
+| R3 | **他の channel の context は engine の reset で壊れない見込み**（§9 の 2）。hardware の engine reset は「engine に載っている context」の group だけを失わせ、save 済みの他の channel の context は memory に残る（nouveau の GSP を使わない道の手順: group の disable・runlist から外す → PBDMA の idle を 2 s まで待つ → 載っている context がその group の時だけ engine の reset）。GSP の中の手順は firmware で未確認、S2 の vkquad と PNG で確かめる | nouveau `nvkm/engine/fifo/runl.c` 30〜130・145〜175 行、`nvkm/engine/fifo/tu102.c` 137〜185 行 |
+| R4 | **GSP 自身の見張り**（§3.3・§4.4・D5）: CPU 側の RC watchdog（既定 7 s）は kernel RM の物で nvrtx には無い（本文と一致）。一方、hardware の ctxsw の timeout は registry `RmEngineContextSwitchTimeoutUs`（1.024 µs 単位、既定 0x003fffff ≈ 4.3 s、0 で無効）で、RC は既定で有効（`RmRobustChannels`）。無限 loop の channel と compositor の channel が同じ runlist にあり timeslice の切り替えが要ると、約 4.3 s で ctxsw の timeout → GSP が RC（engine reset・isolate）→ `RC_TRIGGERED` の event、が起きる見込み。nvrtx は registry の表を既に GSP に送っている（`gsp.c` 1227〜1231 行、`records.c` 100〜102 行の 3 key）ので、この key を足して短くできるか（GSP が読むか）は未確認（U3）。→ 選択肢 Q250-1 | ogkm `src/nvidia/interface/nvrm_registry.h` 1365〜1408 行、`gpu/rc/kernel_rc.c` 72〜83・140〜200 行、`kernel_rc_watchdog.c` 115〜160 行 |
+| R5 | **nouveau の回復は software だけ**: RC の event で channel を errored にし、以後の EXEC は -ENODEV、channel の作り直しはしない（client の close まで残る）。scheduler の job の timeout は 10 s で channel を kill するだけ（RM の call 無し）。Mesa NVK は -ENODEV を `VK_ERROR_DEVICE_LOST` に。→ 本文の「session の喪失、他の session は続く」と同じ形。nvrtx が自分で STOP を送るのは nouveau より積極的 | nouveau `r535/fifo.c` 45〜70・340〜380 行、`nouveau_chan.c` 44〜62 行、`nouveau_sched.c` 15・370〜396 行、Mesa `src/nouveau/vulkan/nvk_queue.c` 286〜322・414〜453 行 |
+| R6 | **chid と USERD**（§9 の 3）: client の RM も GSP へ「INDEX_FIXED=FALSE、PAGE_FIXED=TRUE、index=chid%8、page=chid/8」で送る（nvrtx の `objects.c` 471〜510 行と同じ形）。page は 9 bit（chid の上限 4096）。nouveau は GSP の道で chid の総数を 2048 に固定。session の chid 16〜47 は通る見込み | `alloc/alloc_channel.h` 173〜205 行、`kernel_channel.c` 2835〜2850 行、nouveau `r535/fifo.c` 457〜472 行 |
+| R7 | **TSG 無しで優先を付ける口がある**（D6・§4.14 の訂正）: channel 単位の `NVA06F_CTRL_CMD_SET_INTERLEAVE_LEVEL`（0xa06f0109、LOW/MEDIUM/HIGH）。compositor の channel を HIGH にする案は TSG を作らずに試せる（GSP で効くかは未確認、U5）。client の RM は TSG でない channel を暗黙の TSG で包む | `ctrla06fgpfifo.h` 111〜139 行、`kernel_channel.c` 358〜411 行 |
+| R8 | **promote の VA**（§9 の 4）: 本文の (i)「session の channel の own の buffer を channel ごとの別の VA に map して promote に書く」は RM の普通の形（nouveau は global の buffer も channel ごとに別の VA に map して promote に書く）。(ii) の vaspace の分割は要らない。`nvrtx_gr_promote`（`gr.c` 545〜600 行）に VA の配列を渡す本文の案で足りる | nouveau `nvkm/subdev/gsp/rm/r535/gr.c` 40〜135 行、ogkm `gpu/gr/kernel_graphics_context.c` 1446〜1660 行 |
+| R9 | **段 2（`reset`）の手順の事実**（D4 は変えない）: GSP の unload の RPC → falcon の再起動 → client・device・vaspace・channel・display の全部の作り直し。scanout は disp の object の free で止まり modeset まで戻らない。公開の「GPU reset」の control は無い | ogkm `kernel_gsp.c`（`kgspUnloadRm_IMPL`）、nouveau `r535/gsp.c` 329〜350・1185〜1225 行 |
+| R10 | **Ampere/Ada（WS242）**: GA100 以降は runlist ごとの chid（CHRAM が runlist ごと）。nvrtx の「copy の chid 8 は別の runlist」「session は 16〜」の割り当ては Ampere では runlist ごとに分ける要がある。この WS は Turing（RTX 2070）だけを受け入れの対象にし、Ampere の chid の管理は WS242 の実装の時に合わせる（WS242 の設計に連絡） | ogkm `g_kernel_fifo_nvoc.c`（chip の HAL の表）、`kernel_fifo_init.c` 139〜194 行 |
+| R11 | **順**（D7 の置き換え）: WS241 は canceled（WS291 へ、workstreams-closed.md）。work.c・vk-node.c を触るのは WS291 の NVIDIA の段（P2、RDNA の後）と WS242 の再開点 1〜3。→ p002 は「WS242 の driver の SM・QMD の段の merge の後、WS291 の NVIDIA の段の前か後かは Q1 が P2 と決める」（Q250-3） | master.md の WS291 の行 |
+| R12 | **実機**（§6.3）: RTX 2070 は今の試験の台に挿さっていない（10.0.10.3 は RDNA と排他で差し替え、10.0.30.5 は今 Pi 5。tools.md の「実機」、memory の test hosts）。S0〜S5 は RTX を差した機械（素の起動か WS305 の VFIO の passthrough）が要る → Q250-2 | plan/tools.md 8〜12・140 行 |
+
+### 第 2 版の未確認と最小の実機の試験（§9 に足す）
+
+| # | 未確認 | 試験（S1 の probe の中で） |
+| --- | --- | --- |
+| U1 | STOP（bImmediate=1）が無限 loop の channel に何を返すか、何秒か | 2 s の後に STOP を 1 回、status と時間、1 s の中の RC の event（chid・exceptType）を log に |
+| U2 | GSP の ctxsw の timeout の RC が来るか、何秒か、exceptType、compositor の channel が進むか | 取り消しの無い build で vkhang を 10 s、`channel error` の行の時刻と type、前後の PNG |
+| U3 | `RmEngineContextSwitchTimeoutUs` を registry で送った時に GSP が従うか | records.c の表に 1 行を足した build で U2 を繰り返す |
+| U4 | RESET が同じ runlist の他の channel を壊すか | S2 を 2 つの build で（R2） |
+| U5 | channel の INTERLEAVE_LEVEL が GSP で効くか | compositor の channel に HIGH、status を見る |
+
+### 第 2 版の Phase の表（§7 を置き換える。LW は ±50%）
+
+| Phase | 内容 | 依存 | LW |
+| --- | --- | --- | --- |
+| p002 | channel の一般化（§7 の p002 のまま）、promote の VA の配列（R8） | R11 の順 | 7 |
+| p003 | 検出と取り消し（R1・R2 の判定に直した手順）、RC の event の道、`isolate`、S1 の probe（U1〜U5）→ S2 | p002、実機（R12） | 8 |
+| p004 | 試験の app `vkhang` と scenario（§7 のまま） | p002 と並行可 | 4 |
+| p005 | 選択肢（a worker の分離、b `reset`）、ユーザーの判断 | p003 | a 10、b 12 |
+| p006 | 規約の全文と出典の監査 | 全部 | 2 |
+
+必須（p002〜p004・p006）21 LW。p005 は別。
+
+### 第 2 版のユーザーに聞く点（§8 に足す。D1〜D7 は §8 の既定のまま、D6 は R7 で「試せる口がある」に変わるが既定は「しない」のまま、D7 は R11 で置き換え）
+
+- Q250-1 主の道: 推し **(b) nvrtx の 2 s の期限で STOP（本文のまま）を主にし、GSP の ctxsw の timeout の RC（約 4.3 s）は同じ session の喪失として受ける back-up**。理由: 2 s は今の executor の期限と同じで、GSP の時間は未確認（U2・U3）。選択肢 (a) GSP の RC を主にし（registry で短く）、nvrtx の期限は back-up。
+- Q250-2 実機: 推し「RTX 2070 を WS305（Linux＋VFIO の passthrough、10.0.10.3）で使えるようになった時に S1〜S5」。選択肢: RDNA と差し替えて素の起動。その時期はユーザー（WS291 の P2 が RDNA を使用中）。
+- Q250-3 順: 推し「WS242 の driver の段（再開点 1〜3）→ WS250 p002・p003 → WS291 の NVIDIA の段」。WS291 の P2 と file（work.c・vk-node.c・vk-execute.c）が重なるので Q1 が調整。
+
 ## 0. 要約（この設計が決めたこと）
 
 | # | 決めたこと | 根拠の節 |
