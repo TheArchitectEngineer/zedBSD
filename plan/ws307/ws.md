@@ -106,7 +106,7 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 仕様の確定（調査、spec.md、ユーザーの確認事項、design-reviewer、実装の Phase の案） | — | in-progress（q1648、P4。受け入れを満たした、Q1 の確認待ち） |
+| [p001](phase001/phase.md) | 仕様の確定（調査、spec.md、ユーザーの確認事項、design-reviewer、実装の Phase の案） | — | cleared（2026-10-28、q1649、spec.md で確定） |
 
 ### 実装の Phase の案（p001 の成果、[spec.md](spec.md) による。ユーザーの回答で変わりうる。Phase の directory はまだ作らない）
 
