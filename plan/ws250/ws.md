@@ -15,6 +15,11 @@ Resume point: 2026-10-15 夜 ユーザーの即時中断で止めた。design.md
 （外部の質問「A verifier can catch malformed SPIR-V, but not a valid shader that loops forever. Without DRM's reset path, is a watchdog in your driver the recovery story for now?」への Q1 の説明の後）
 「その場合のキャンセルと復帰を実装した方がよくない？device lostでプログラムがそれ以上動けなくなるのはOK。でもシステムとしては動き続けてほしいな。」
 
+## ユーザーの回答（2026-10-29、クリック、Q1 の中継、design.md の第 2 版の改訂の問い）
+
+- Q250-1「nvrtx の 2 s で STOP (推し)」、Q250-2（Q242-2 とまとめた問い）「WS305 の VFIO (推し)」。Q250-3 の順は Q1 が推しで決めた。
+- → 解釈: 主の道は nvrtx の 2 s の期限で STOP、GSP の ctxsw の timeout の RC は同じ session の喪失として受ける back-up。実機の S1〜S5 は WS305 の VFIO で RTX を使える時。順は WS242 p003〜p005 → WS250 p002・p003 → WS291 の NVIDIA の段。
+
 ## 今の振る舞い（Q1 の調べ、2026-10-15、main 5027043ab）
 
 - executor は投入ごとに driver の fence を 2 秒待ち（`vk-node.c` の `VK_NODE_RUN_US`）、来なければ EIO → app に `VK_ERROR_DEVICE_LOST`（`vk-queue.c` の `queue_result`）。走り続ける shader は止めない。

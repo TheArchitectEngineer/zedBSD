@@ -17,6 +17,10 @@ Resume point（2026-10-29 P5、q1666）: 残りの設計 [design.md](design.md)�
 
 - 「GTX 16・RTX 30・40 はデフォルトで有効にします。記録だけしてWS247を続けます。」→ 今は `nvrtx.gsp=1` の時だけ起動する GTX 16・RTX 30・40 を既定で有効にする。実装は WS242 の次の round（担当未定、WS247 の後）。
 
+- 2026-10-29 ユーザーの回答（クリック、Q1 の中継、[design.md](design.md) §8）: Q242-1「既定で起動 (推し)」、Q242-2（Q250-2 とまとめた問い）「WS305 の VFIO (推し)」。
+  → 解釈: GTX 16・RTX 30・40 は既定で GSP を起動し、`nvrtx.gsp=0` で逃げられることを文書に書く。RTX 2070 の回帰（p006）は WS305 の Linux＋VFIO の passthrough（10.0.10.3）で RTX を使える時に T1。
+- 順（2026-10-29 Q1 の判断、Q250-3 の推し）: WS242 p003〜p005 → WS250 p002・p003 → WS291 の NVIDIA の段。
+
 ## 単一目標
 nvrtx が RTX 20（Turing、GTX 16xx を含む）・30（Ampere）・40（Ada）の全モデルを認識し、30・40 でも GSP の起動・display・Vulkan の描画（SM86・SM89 の shader）が動く形にする。30/40 は実機の確かめなし（host 試験と build まで）。RTX 2070 の今の動きを壊さない。
 
