@@ -83,6 +83,7 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 | 7d99bf2d9 | 948.4 | 900.1・784.9 | frame を語の境界に、TX の reclaim を ring が半分の時だけ |
 | 970652255 | 948.5 | 886.7・918.4 | TCP が next hop と source を route の世代つきで持つ |
 | 6d45f0a87 | 948.6 | 822.9 | pool を起動の時に確保（amd64 の上限の余りのため） |
+| （ring 256） | 948.4 | 915.8・923.5・923.8 | 送りの ring 128 → 256、書き手を起こすのを ring の半分が空いてから（write の 64 KB の bounce が丸ごと取られる） |
 
 - 受けは基準を満たした（948 Mbps、理論値 949）。送りは 785〜918 Mbps で未達。書き手の thread が 1 CPU の 95 % 前後を使い、どの CPU に載るか（eqos の割り込みの CPU と同じか）で run ごとに揺れる。
 - 測りの道具: sched の tick で中断の PC と kernel thread の入口を数える一時の差分（commit しない、build/tmp/*.patch）。送りの書き手の内訳（7d99bf2d9 の時）: memcpy（copyin の 64 KB の bounce と ring の copy）・eqos_transmit（DMA の buffer への copy と MMIO）・checksum・route と device の ref。
