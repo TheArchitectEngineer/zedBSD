@@ -20,7 +20,7 @@
 | 担当 | Queue | WS | 実機 |
 | --- | --- | --- | --- |
 | P1 | —（q1657 cleared、merge f88836330） | [WS299](ws299/ws.md) 5330 NVMe: memcpy の改善と全体の測り直しの report を出して停止。継続はユーザーの判断（ユーザー「その上で継続判断させてください。」） | 5330 は Debian、lock 空き |
-| P2 | —（q1658 cleared、merge ae5c52a21） | [WS291](ws291/ws.md) RDNA: UCLK の負荷に応じた DPM・underflow 0・2 s の止まり（Keiland）を直し評価済み。次の案 4・5 はユーザーの判断 | 10.0.10.3（memory=2、vmunix-m2j） |
+| P2 | q1661 | [WS291](ws291/ws.md) Keiland の main loop の blocking を無くす（ユーザー「Keilandの直し方ですが、デバイスの検出はスレッドに追い出してください。他にもメインループにそういったブロッキング要素がないかチェックしてください。」）。案 4・5 はユーザーの判断待ち | 10.0.10.3 |
 | P3 | — | 終了（2026-10-28 21:23 ユーザー「FPGA側の設計が終わっていないので、P3はいったん終了、再開は明示的な指示です。計画だけアップデートして、整理しておいてください。」）。[WS290](ws290/ws.md) は保留: p017 は実装・host 試験・QEMU 済み（merge b99e96139）、残りは実機（p014・M9）と p015 | — |
 | P4 | —（q1660 cleared） | 記録の矛盾の解消を完了（完了の WS 87 の ws.md を完了の形に、Phase・試験 1,324 件を削除、157 件を plan/tools/ へ移動、WS217 を開き直し、WS220 の残りを WS221 へ）。status.py・links.py の指摘 0 | — |
 
@@ -84,7 +84,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-349 · q1661 · WS309 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-349 · q1662 · WS309 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
