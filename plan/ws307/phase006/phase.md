@@ -3,7 +3,7 @@
 # ws307-p006 kernel の 4096 byte の sector（FAT・UFS・swap）
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §5.9（U17「WS307 で 4096 byte に対応」）。Queue: q1665 / q1665-i03（担当 P4、2026-10-29、worktree p4-ws307g）。
-- Status: in-progress（段 1〜4 を実装、FAT と swap は QEMU の 4096 の NVMe で受け入れ。残り: 段 5（mkfs の UFS の fragment 4096）と UFS の 4096 の試験、USB の 4096、p008 の 4096 の段）
+- Status: cleared（2026-10-29 Q1 の判定: QEMU の 4096 の NVMe・USB で FAT・swap の partition と file・native UFS と UFS の上の swap file、512 の回帰が PASS。q1665-i05 の結果）
 - 承認: 2026-10-29 ユーザー「P4にWS307」（Q1 の中継）。HAL の API には触れない。
 - 一緒に行う物: p005 の残り（mkfs の native UFS の fragment 4096 の profile）、p008 の 4096 の段（loader の FAT の探索）。
 
