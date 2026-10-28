@@ -9,12 +9,13 @@
 # taken out of src/drivers/gpu/gpu.c for the run so that they stay the same as gpu.c's.
 # Then the driver's core against the model (ghci-driver-host-test.c), a grep of the
 # files the kernel builds for the names of the interface before GHCI 1.0, the compiler,
-# and the Vulkan executor against the model (ghci-vk-host-test.c).
+# the Vulkan executor against the model (ghci-vk-host-test.c), and its pipelines and descriptors
+# (ghci-pipeline-host-test.c, with shaders compiled by glslc).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws290/tests/ghci-host-test.sh   (from anywhere)
 # Environment: GHCI_SPEC_REPO (default ~/amaterrace-gpu), GHCI_SPEC_REV (default d9252e4).
-# Needs cc and git. Output goes to a new directory below build/tmp; nothing is removed.
+# Needs cc, git and glslc. Output goes to a new directory below build/tmp; nothing is removed.
 set -eu
 repo=$(cd "$(dirname "$0")/../../.." && pwd)
 tests="$repo/plan/ws290/tests"
@@ -94,16 +95,39 @@ fi
 timeout 900 sh "$tests/gsi1-host-test.sh" || status=1
 
 # The Vulkan executor (vk/) with the driver's core against the model (ghci-vk-host-test.c), and the
-# record codec it shares with the i915 executor.
+# record codec it shares with the i915 executor. The executor's pipelines compile with the shader
+# compiler and the shared SPIR-V frontend (which keeps its own declaration style).
 if grep -q '^stub_gpu_ops_validate($' "$validate"; then
 	vk="$ghci/vk"
+	mkdir -p "$out/compiler"
+	compiler_objects=""
+	for source in gsi1-compile gsi1-encode gsi1-io gsi1-memory gsi1-texture gsi1-image gsi1-schedule gsi1-spill; do
+		cc $flags -I"$repo" -c -o "$out/compiler/$source.o" "$ghci/compiler/$source.c"
+		compiler_objects="$compiler_objects $out/compiler/$source.o"
+	done
+	for source in spirv optimize; do
+		cc $flags -I"$repo" -Wno-declaration-after-statement -c -o "$out/compiler/$source.o" "$repo/src/drivers/gpu/compiler/$source.c"
+		compiler_objects="$compiler_objects $out/compiler/$source.o"
+	done
+	executor="$ghci/ghci.c $ghci/cp.c $ghci/recover.c $ghci/memory.c $ghci/vm.c $ghci/range.c $ghci/share.c \
+		$ghci/check.c $ghci/caps.c $ghci/cmd.c $ghci/jobs.c $ghci/capset.c $ghci/isa.c $vk/vk-node.c $vk/vk-stream.c \
+		$vk/vk-dispatch.c $vk/vk-object.c $vk/vk-reply.c $vk/vk-caps.c $vk/vk-format.c $vk/vk-device.c \
+		$vk/vk-memory.c $vk/vk-command.c $vk/vk-queue.c $vk/vk-layout.c $vk/vk-pipeline.c \
+		$repo/src/drivers/gpu/i915/vk/vk-codec.c"
 	cc $flags -I"$repo" -I"$tests" -o "$out/ghci-vk-host-test" "$tests/ghci-vk-host-test.c" "$tests/ghci-model.c" \
-		"$tests/ghci-stubs.c" "$validate" "$ghci/ghci.c" "$ghci/cp.c" "$ghci/recover.c" "$ghci/memory.c" \
-		"$ghci/vm.c" "$ghci/range.c" "$ghci/share.c" "$ghci/check.c" "$ghci/caps.c" "$ghci/cmd.c" \
-		"$ghci/jobs.c" "$ghci/capset.c" "$vk/vk-node.c" "$vk/vk-stream.c" "$vk/vk-dispatch.c" "$vk/vk-object.c" \
-		"$vk/vk-reply.c" "$vk/vk-caps.c" "$vk/vk-format.c" "$vk/vk-device.c" "$vk/vk-memory.c" \
-		"$vk/vk-command.c" "$vk/vk-queue.c" "$repo/src/drivers/gpu/i915/vk/vk-codec.c"
+		"$tests/ghci-stubs.c" "$validate" $executor $compiler_objects -lm
 	timeout 300 "$out/ghci-vk-host-test" || status=1
+
+	# The pipelines and descriptors (ghci-pipeline-host-test.c) with the shaders of pipeline/ and the
+	# compiler test's attrib60.vert and spill.comp, compiled by glslc.
+	mkdir -p "$out/pipeline"
+	for source in "$tests"/pipeline/*.vert "$tests"/pipeline/*.frag "$tests"/pipeline/*.comp "$tests/gsi1/attrib60.vert" \
+		"$tests/gsi1/spill.comp"; do
+		glslc --target-env=vulkan1.0 -o "$out/pipeline/$(basename "$source").spv" "$source"
+	done
+	cc $flags -I"$repo" -I"$tests" -o "$out/ghci-pipeline-host-test" "$tests/ghci-pipeline-host-test.c" "$tests/ghci-model.c" \
+		"$tests/ghci-stubs.c" "$validate" $executor $compiler_objects -lm
+	timeout 300 "$out/ghci-pipeline-host-test" "$out/pipeline" "$out/pipeline" || status=1
 fi
 
 if [ "$status" -ne 0 ]; then

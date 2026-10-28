@@ -989,6 +989,10 @@ emit_texsz(
 	if (immediate == GSI1_TEXSZ_LEVELS || immediate == GSI1_TEXSZ_SAMPLES)
 		rs1 = 0U;
 
+	/* texsz.s needs multisampling (DEVICE_CAPS[31]); the pipeline is refused without it. */
+	if (immediate == GSI1_TEXSZ_SAMPLES)
+		lowering->flags |= GHCI_GSI1_FLAG_SAMPLE_QUERY;
+
 	/* The I form: the slot in sub. */
 	gsi1_emit(lowering, gsi1_encode_i(GSI1_OP_CUSTOM1, GSI1_F3_TEXSZ, rd, rs1, (int32_t)immediate, slot));
 }

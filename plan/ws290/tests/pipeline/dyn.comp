@@ -1,0 +1,13 @@
+#version 450
+// A dynamic storage buffer, push constants and shared memory.
+layout(local_size_x = 64) in;
+layout(set = 0, binding = 0) buffer Data { uint data[]; };
+layout(push_constant) uniform Push { uint add; uint pad[24]; uint high; };
+shared uint scratch[64];
+void main()
+{
+	uint lane = gl_LocalInvocationIndex;
+	scratch[lane] = data[gl_GlobalInvocationID.x] + add;
+	barrier();
+	data[gl_GlobalInvocationID.x] = scratch[63U - lane] + high;
+}

@@ -360,7 +360,7 @@ device_record(
 	kern_memcpy(record->deviceName, device->name, length);
 
 	/* The pipeline cache's UUID (the cache keeps nothing), and the limits. */
-	kern_memcpy(record->pipelineCacheUUID, "zedBSD-ghci-pc10", VK_UUID_SIZE);
+	kern_memcpy(record->pipelineCacheUUID, GHCI_VK_CACHE_UUID, VK_UUID_SIZE);
 	ghci_vk_caps_limits(&device->caps, &record->limits);
 }
 

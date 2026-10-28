@@ -40,7 +40,10 @@
 #include "drivers/gpu/i915/vk/vk-codec.h"
 
 #include "../ghci.h"
+#include "../ghci-cmd.h"
 #include "../layout.h"
+#include "../compiler/gsi1-abi.h"
+#include "../compiler/gsi1-compile.h"
 
 /* The buckets of a session's object table, and the most objects a session keeps. */
 #define GHCI_VK_BUCKETS			256U
@@ -72,6 +75,31 @@
 /* The most bytes of recorded commands one command buffer keeps. */
 #define GHCI_VK_RECORD_MAX		(16U << 20)
 
+/* The pipelineCacheUUID the device reports and a pipeline cache's header carries. */
+#define GHCI_VK_CACHE_UUID		"zedBSD-ghci-pc10"
+
+/* The descriptor sets a pipeline layout binds (maxBoundDescriptorSets). */
+#define GHCI_VK_SETS			4U
+
+/* The descriptor types of Vulkan 1.0 (VK_DESCRIPTOR_TYPE_SAMPLER to INPUT_ATTACHMENT). */
+#define GHCI_VK_DESCRIPTOR_TYPES	11U
+
+/* The colour attachments of a subpass and the input attachments a fragment program reads. */
+#define GHCI_VK_COLOR_ATTACHMENTS	8U
+
+/*
+ * The constant-bank words a draw or a dispatch loads: push constants in
+ * c0-c23 and c32-c39, the dynamic offsets from c40.  c24-c31 hold the
+ * hardware's mirror of the tables and are never loaded.
+ */
+#define GHCI_VK_BANK_WORDS		(40U + GHCI_GSI1_DYNAMIC_OFFSETS)
+
+/* What a format is besides its size (ghci_vk_format_traits). */
+#define GHCI_VK_FORMAT_INTEGER		(1U << 0)
+#define GHCI_VK_FORMAT_SRGB		(1U << 1)
+#define GHCI_VK_FORMAT_DEPTH		(1U << 2)
+#define GHCI_VK_FORMAT_BLOCK		(1U << 3)
+
 /* The kinds of object the executor keeps; a lookup names the kind it expects. */
 enum ghci_vk_kind {
 	GHCI_VK_DEVICE = 1,
@@ -83,7 +111,18 @@ enum ghci_vk_kind {
 	GHCI_VK_SEMAPHORE,
 	GHCI_VK_EVENT,
 	GHCI_VK_COMMAND_POOL,
-	GHCI_VK_COMMAND_BUFFER
+	GHCI_VK_COMMAND_BUFFER,
+	GHCI_VK_SAMPLER,
+	GHCI_VK_IMAGE_VIEW,
+	GHCI_VK_BUFFER_VIEW,
+	GHCI_VK_SHADER_MODULE,
+	GHCI_VK_PIPELINE_CACHE,
+	GHCI_VK_SET_LAYOUT,
+	GHCI_VK_PIPELINE_LAYOUT,
+	GHCI_VK_DESCRIPTOR_POOL,
+	GHCI_VK_DESCRIPTOR_SET,
+	GHCI_VK_PIPELINE,
+	GHCI_VK_RENDER_PASS
 };
 
 /* The life of a command buffer: new or reset, recording, and ended (ready to submit). */
@@ -245,6 +284,225 @@ struct ghci_vk_command_buffer {
 	uint32_t commands;
 };
 
+/* A VkSampler: its sampler descriptor (section 8.3 of the specification). */
+struct ghci_vk_sampler {
+	uint8_t descriptor[GHCI_SAMPLER_DESC_BYTES];
+};
+
+/*
+ * A VkImageView: the image, what part of it the view is, and the two
+ * texture descriptors a set takes of it: sampled (the view's levels from
+ * its first, for a sampled image) and single (the first level and layer
+ * of the view alone, linear, one level, for a storage image and an input
+ * attachment).  va is the address of the first level and layer, where an
+ * attachment of the view starts, and row_pitch its row.
+ */
+struct ghci_vk_image_view {
+	uint64_t image;
+	uint32_t format;
+	uint32_t view_type;
+	uint32_t aspect;
+	uint32_t base_level;
+	uint32_t levels;
+	uint32_t base_layer;
+	uint32_t layers;
+	uint32_t samples;
+	uint32_t width;
+	uint32_t height;
+	uint32_t row_pitch;
+	uint64_t va;
+	uint8_t sampled[GHCI_TEXTURE_DESC_BYTES];
+	uint8_t single[GHCI_TEXTURE_DESC_BYTES];
+};
+
+/*
+ * A VkBufferView: the buffer descriptor of the view (stride = the texel's
+ * bytes) and, for a uniform texel buffer, the texture descriptor of the
+ * view read as a linear 2D image 256 texels wide.
+ */
+struct ghci_vk_buffer_view {
+	uint64_t buffer;
+	uint32_t format;
+	uint32_t elements;
+	uint8_t buffer_descriptor[GHCI_BUFFER_DESC_BYTES];
+	uint8_t texture[GHCI_TEXTURE_DESC_BYTES];
+};
+
+/* A VkShaderModule: a copy of its SPIR-V words. */
+struct ghci_vk_shader_module {
+	uint32_t *words;
+	uint32_t word_count;
+};
+
+/*
+ * One binding of a descriptor set layout: its number, type, count and
+ * stages, the index of its first descriptor in a set, and whether its
+ * samplers are the layout's immutable ones.
+ */
+struct ghci_vk_layout_binding {
+	uint32_t binding;
+	uint32_t type;
+	uint32_t count;
+	uint32_t stages;
+	uint32_t first;
+	uint32_t immutable;
+};
+
+/*
+ * A VkDescriptorSetLayout, shared by the layout object, the pipeline
+ * layouts and the sets made with it (holds counts them; the last to let
+ * go frees it).  The bindings are in increasing binding order, which is
+ * the order of a set's descriptors and of its dynamic offsets; samplers
+ * holds the immutable samplers' descriptors by descriptor index.
+ */
+struct ghci_vk_set_layout {
+	unsigned holds;
+	uint32_t binding_count;
+	uint32_t descriptor_count;
+	uint32_t dynamic_count;
+	struct ghci_vk_layout_binding *bindings;
+	uint8_t *samplers;
+};
+
+/*
+ * A VkPipelineLayout: its set layouts (held), the push-constant bytes and
+ * the dynamic buffers in the order of their offsets (one per descriptor).
+ */
+struct ghci_vk_pipeline_layout {
+	uint32_t set_count;
+	struct ghci_vk_set_layout *sets[GHCI_VK_SETS];
+	uint32_t push_bytes;
+	uint32_t dynamic_count;
+	struct ghci_gsi1_dynamic dynamic[GHCI_GSI1_DYNAMIC_OFFSETS];
+};
+
+/* A VkDescriptorPool: its flags, its sets, and the descriptors of each type it has and has given. */
+struct ghci_vk_descriptor_pool {
+	uint32_t flags;
+	uint32_t max_sets;
+	uint32_t sets;
+	uint32_t capacity[GHCI_VK_DESCRIPTOR_TYPES];
+	uint32_t used[GHCI_VK_DESCRIPTOR_TYPES];
+};
+
+/*
+ * One descriptor of a set as the hardware tables take it: its type (as
+ * written), the texture descriptor of an image or texel buffer, the
+ * sampler descriptor, and the buffer descriptor of a buffer or texel
+ * buffer.  An unwritten descriptor is zero.
+ */
+struct ghci_vk_descriptor {
+	uint32_t written;
+	uint8_t texture[GHCI_TEXTURE_DESC_BYTES];
+	uint8_t sampler[GHCI_SAMPLER_DESC_BYTES];
+	uint8_t buffer[GHCI_BUFFER_DESC_BYTES];
+};
+
+/* A VkDescriptorSet: its pool, its layout (held), and its descriptors. */
+struct ghci_vk_set {
+	uint64_t pool;
+	struct ghci_vk_set_layout *layout;
+	struct ghci_vk_descriptor *descriptors;
+};
+
+/*
+ * The state of a pipeline that its pipeline state record does not keep,
+ * which the executor sets with
+ * SET_DYNAMIC_STATE, SET_VIEWPORT and SET_SCISSOR at each bind: the
+ * VkDynamicState values the pipeline made dynamic (bit per value), and
+ * the static values of the others.  Floats are kept as their bits; the
+ * payloads are SET_DYNAMIC_STATE's (depth bias constant, slope and clamp;
+ * stencil compare mask, write mask and reference per face in one word),
+ * and blend_attachment the blend word of colour attachments 0 to
+ * blend_count - 1 for a device with independent blending.
+ */
+struct ghci_vk_static_state {
+	uint32_t dynamic;
+	uint32_t viewport[6];
+	int32_t scissor_offset[2];
+	uint32_t scissor_extent[2];
+	uint32_t line_width;
+	uint32_t depth_bias[3];
+	uint32_t blend_constants[4];
+	uint32_t stencil[2];
+	uint32_t blend_count;
+	uint32_t blend_attachment[GHCI_VK_COLOR_ATTACHMENTS];
+	uint32_t rasterizer_discard;
+};
+
+/*
+ * What a pipeline knows of its subpass: the colour attachments' formats,
+ * the depth attachment's, the samples, and the input attachments'
+ * formats and samples by InputAttachmentIndex.  The render pass's record
+ * gives it; without one the pipeline's own state does.
+ */
+struct ghci_vk_subpass {
+	uint32_t color_count;
+	uint32_t color_format[GHCI_VK_COLOR_ATTACHMENTS];
+	uint32_t depth_format;
+	uint32_t samples;
+	uint32_t input_format[GHCI_GSI1_INPUT_ATTACHMENTS];
+	uint32_t input_samples[GHCI_GSI1_INPUT_ATTACHMENTS];
+};
+
+/* A VkRenderPass: its subpasses (made by the render pass commands). */
+struct ghci_vk_render_pass {
+	uint32_t subpass_count;
+	struct ghci_vk_subpass *subpasses;
+};
+
+/*
+ * A VkPipeline: its pipeline state record in the device's executor heap
+ * (the 128 bytes, then the code of its programs, then the driver's table
+ * of set 3) and a copy of the record, its scratch memory, the tables its
+ * programs share, the push-constant bytes and dynamic offsets they read,
+ * the vertex bindings' strides, and the state the record does not keep.
+ * table_va is 0 for a pipeline without the driver's table.  layout,
+ * render_pass and subpass are what it was made with.  fan says that the
+ * topology is a triangle fan, which the record draws as triangles from
+ * an index list the executor makes.
+ */
+struct ghci_vk_pipeline {
+	uint32_t bind_point;
+	struct ghci_vk_heap_block *block;
+	uint32_t offset;
+	uint64_t pso_va;
+	uint64_t code_va[2];
+	uint64_t table_va;
+	struct ghci_vk_heap_block *scratch_block;
+	uint32_t scratch_offset;
+	uint8_t pso[GHCI_PSO_BYTES];
+	struct ghci_gsi1_bindings bindings;
+	uint32_t push_bytes;
+	uint32_t dynamic_count;
+	uint32_t vertex_bindings;
+	uint32_t strides[GHCI_VERTEX_BINDINGS];
+	uint32_t fan;
+	uint32_t primitive;
+	uint32_t samples;
+	uint64_t layout;
+	uint64_t render_pass;
+	uint32_t subpass;
+	struct ghci_vk_static_state state;
+};
+
+/*
+ * The hardware tables and constant-bank words of one draw or dispatch
+ * (compiler/gsi1-abi.h): set 0's texture descriptors and set 1's
+ * sampler descriptors by slot, set 2's resource table, and bank words
+ * c0 to c(bank_count - 1) (c24-c31 are zero and never loaded).
+ */
+struct ghci_vk_tables {
+	uint8_t textures[GHCI_GSI1_TEXTURE_SLOTS * GHCI_TEXTURE_DESC_BYTES];
+	uint32_t texture_count;
+	uint8_t samplers[GHCI_GSI1_SAMPLER_SLOTS * GHCI_SAMPLER_DESC_BYTES];
+	uint32_t sampler_count;
+	uint8_t resources[GSI1_ABI_RESOURCE_TABLE_BYTES];
+	uint32_t resource_bytes;
+	uint32_t bank[GHCI_VK_BANK_WORDS];
+	uint32_t bank_count;
+};
+
 /*
  * One object of a node session, in the session's table from its create to
  * its destroy.  device is the VkDevice it was made on (a device's own
@@ -264,6 +522,16 @@ struct ghci_vk_object {
 		struct ghci_vk_queue queue;
 		struct ghci_vk_command_pool pool;
 		struct ghci_vk_command_buffer commands;
+		struct ghci_vk_sampler sampler;
+		struct ghci_vk_image_view image_view;
+		struct ghci_vk_buffer_view buffer_view;
+		struct ghci_vk_shader_module module;
+		struct ghci_vk_set_layout *set_layout;
+		struct ghci_vk_pipeline_layout *pipeline_layout;
+		struct ghci_vk_descriptor_pool pool_of_sets;
+		struct ghci_vk_set *set;
+		struct ghci_vk_pipeline *pipeline;
+		struct ghci_vk_render_pass *render_pass;
 	} as;
 };
 
@@ -366,12 +634,15 @@ int ghci_vk_format_size(uint32_t format, uint32_t *bytes, uint32_t *block);
 void ghci_vk_formats_table(const struct ghci_caps *caps, struct ghci_vk_formats *formats);
 void ghci_vk_formats_from_bits(const struct ghci_caps *caps, uint32_t format, uint32_t optimal, uint32_t linear, uint32_t buffer, struct ghci_vk_formats *formats);
 void ghci_vk_formats_read(struct ghci_device *device, struct ghci_vk_formats *formats);
+uint32_t ghci_vk_format_traits(uint32_t format, uint32_t *flags);
 
 /* The routes of the command groups. */
 int ghci_vk_device_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int ghci_vk_memory_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int ghci_vk_command_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 int ghci_vk_queue_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int ghci_vk_layout_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int ghci_vk_pipeline_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 
 /* vk-memory.c: memory, buffers, images and the executor heap. */
 struct ghci_allocation *ghci_vk_memory_blob(struct ghci_device *device, struct ghci_session *owner, uint64_t blob_id);
@@ -380,6 +651,16 @@ void ghci_vk_heap_give(struct ghci_vk_heap_block *block, uint32_t offset);
 void ghci_vk_heap_fini(struct ghci_vk_session *session, struct ghci_vk_device *device);
 void ghci_vk_memory_release(struct ghci_vk_session *session, struct ghci_vk_object *object);
 void ghci_vk_image_layout(uint32_t width, uint32_t height, uint32_t depth, uint32_t levels, uint32_t layers, uint32_t samples, uint32_t texel_bytes, uint32_t block, struct ghci_layout_image *layout);
+
+/* vk-layout.c: samplers, views, descriptor sets and their layouts, and the hardware tables of a draw. */
+int ghci_vk_bound_va(struct ghci_vk_session *session, uint64_t memory, uint64_t offset, uint64_t *va);
+void ghci_vk_layout_release(struct ghci_vk_session *session, struct ghci_vk_object *object);
+void ghci_vk_set_layout_hold(struct ghci_vk_set_layout *layout);
+void ghci_vk_set_layout_unhold(struct ghci_vk_set_layout *layout);
+int ghci_vk_layout_tables(struct ghci_vk_session *session, const struct ghci_vk_pipeline *pipeline, const uint64_t *sets, const uint32_t *dynamic_offsets, uint32_t dynamic_count, const uint8_t *push, uint32_t push_bytes, struct ghci_vk_tables *tables);
+
+/* vk-pipeline.c: what a shader module or a pipeline lets go of. */
+void ghci_vk_pipeline_release(struct ghci_vk_session *session, struct ghci_vk_object *object);
 
 /* vk-command.c: what a command buffer lets go of. */
 void ghci_vk_commands_release(struct ghci_vk_object *object);

@@ -1,0 +1,13 @@
+#version 450
+// A specialization constant scales what is written.
+layout(local_size_x = 32) in;
+layout(constant_id = 7) const uint SCALE = 4U;
+layout(constant_id = 8) const bool NEGATE = false;
+layout(set = 0, binding = 0) buffer Data { uint data[]; };
+void main()
+{
+	uint value = gl_GlobalInvocationID.x * SCALE;
+	if (NEGATE)
+		value = ~value;
+	data[gl_GlobalInvocationID.x] = value;
+}

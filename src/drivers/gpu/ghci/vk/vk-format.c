@@ -170,6 +170,47 @@ static const struct format_row format_rows[] = {
 	{ 156U, 16U, GUARD_ETC2, SAMPLE_FILTER, ROW_BLOCK }
 };
 
+/*
+ * The components of the VkFormat values first to last: a run of formats
+ * of the same channels.
+ *
+ * Values referenced: Vulkan 1.0 VkFormat (the order of the enumeration,
+ * R4G4 at 1 to D32_SFLOAT_S8_UINT at 130).
+ */
+struct format_channels {
+	uint16_t first;
+	uint16_t last;
+	uint32_t components;
+};
+
+/* The runs of formats by their components; the block formats have four. */
+static const struct format_channels format_channel_runs[] = {
+	{ 1U, 1U, 2U },
+	{ 2U, 3U, 4U },
+	{ 4U, 5U, 3U },
+	{ 6U, 8U, 4U },
+	{ 9U, 15U, 1U },
+	{ 16U, 22U, 2U },
+	{ 23U, 36U, 3U },
+	{ 37U, 69U, 4U },
+	{ 70U, 76U, 1U },
+	{ 77U, 83U, 2U },
+	{ 84U, 90U, 3U },
+	{ 91U, 97U, 4U },
+	{ 98U, 100U, 1U },
+	{ 101U, 103U, 2U },
+	{ 104U, 106U, 3U },
+	{ 107U, 109U, 4U },
+	{ 110U, 112U, 1U },
+	{ 113U, 115U, 2U },
+	{ 116U, 118U, 3U },
+	{ 119U, 121U, 4U },
+	{ 122U, 123U, 3U },
+	{ 124U, 127U, 1U },
+	{ 128U, 130U, 2U },
+	{ 131U, 184U, 4U }
+};
+
 static const struct format_row *row_of(uint32_t format);
 static uint32_t table_bits(const struct ghci_caps *caps, const struct format_row *row);
 static uint32_t vulkan_bits(uint32_t hw);
@@ -199,6 +240,48 @@ ghci_vk_format_size(
 
 	/* Succeeded: the size. */
 	return 0;
+}
+
+/*
+ * Reports the components of a format the hardware takes (0 for another
+ * format) and what it is besides (GHCI_VK_FORMAT_*).
+ */
+uint32_t
+ghci_vk_format_traits(
+	uint32_t format,
+	uint32_t *flags)
+{
+	const struct format_row *row;
+	uint32_t components;
+	size_t index;
+
+	/* A format of the table. */
+	*flags = 0U;
+	row = row_of(format);
+	if (row == NULL)
+		return 0U;
+
+	/* What its row says it is. */
+	if ((row->kind & ROW_INTEGER) != 0U)
+		*flags |= GHCI_VK_FORMAT_INTEGER;
+	if ((row->kind & ROW_SRGB) != 0U)
+		*flags |= GHCI_VK_FORMAT_SRGB;
+	if ((row->kind & ROW_DEPTH) != 0U)
+		*flags |= GHCI_VK_FORMAT_DEPTH;
+	if ((row->kind & ROW_BLOCK) != 0U)
+		*flags |= GHCI_VK_FORMAT_BLOCK;
+
+	/* The run of formats it is in. */
+	components = 0U;
+	for (index = 0U; index < sizeof(format_channel_runs) / sizeof(format_channel_runs[0]); index++) {
+		if (format >= format_channel_runs[index].first && format <= format_channel_runs[index].last) {
+			components = format_channel_runs[index].components;
+			break;
+		}
+	}
+
+	/* Succeeded: its components. */
+	return components;
 }
 
 /*

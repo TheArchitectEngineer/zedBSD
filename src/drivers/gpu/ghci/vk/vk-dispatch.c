@@ -28,15 +28,19 @@ static void dispatch_refused(struct ghci_vk_session *session, uint32_t opcode, i
 /*
  * The handlers, each owning a group of commands: the instance, the
  * physical device, the device and its queues; memory, buffers and
- * images; command pools, command buffers and the recorded commands; and
- * the submission with fences, semaphores and events.  The list is fixed
+ * images; command pools, command buffers and the recorded commands; the
+ * submission with fences, semaphores and events; samplers, views,
+ * descriptor sets and their layouts; and shader modules, pipeline caches
+ * and pipelines.  The list is fixed
  * for the kernel's life.
  */
 static const ghci_vk_route dispatch_routes[] = {
 	ghci_vk_device_route,
 	ghci_vk_memory_route,
 	ghci_vk_command_route,
-	ghci_vk_queue_route
+	ghci_vk_queue_route,
+	ghci_vk_layout_route,
+	ghci_vk_pipeline_route
 };
 
 /*
