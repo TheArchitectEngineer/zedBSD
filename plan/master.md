@@ -22,7 +22,7 @@
 | P1 | q1646 | [WS299](ws299/ws.md) 5330 の NVMe: p010 O_DIRECT → 乱読み QD32 → UFS の書き → p007 → p008（自律） | 5330 |
 | P2 | q1645 | [WS291](ws291/ws.md) RDNA: scene-6500 44.7 fps（Linux 50.2）、fence の固定の遅れ・vertex・CPU の往復を詰める（自律、Fable は何度でも） | 10.0.10.3（プラグミニ 1 は P2 が入れ直す） |
 | P3 | q1644 | [WS290](ws290/ws.md) GHCI 1.0 の driver: p001〜p004・p013 cleared、p005（session・VM）から | host（VF2＋KC705 は書き込みの知らせの後） |
-| P4 | q1649 | [WS307](ws307/ws.md) 仕様の最後の反映（J5: installer の image は運用禁止・root 起動相当） | — |
+| P4 | — | 返却（WS307 の仕様を確定、p001 cleared。BUG-347 resolved）。次の仕事は指示待ち（候補: BUG-348、WS307 の実装 p002〜） | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
 <!-- master:agents:end -->
@@ -151,7 +151,7 @@ BUG-349 · q1650 · WS308 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
 | [WS296](ws296/ws.md) | MG001 | src/drivers（gpu/ を除く）の comment から開発の管理情報を消し、XXX の規約の当て直し（usb など 11 file） | planned | 18 LW、担当の起動はユーザーの指示の時 |
-| [WS307](ws307/ws.md) | MG003 | Keiland のアプリとしての zedBSD のグラフィカルなインストーラ（UEFI＋ACPI の PC、ウィザード、disk 全体／partition の選択、base・desktop・firmware・packages の tarball）（2026-10-28 ユーザー） | planning（p001 で仕様を確定中） | p001（q1643、P4） |
+| [WS307](ws307/ws.md) | MG003 | Keiland のアプリとしての zedBSD のグラフィカルなインストーラ（UEFI＋ACPI の PC、ウィザード、disk 全体／partition の選択、base・desktop・firmware・packages の tarball）（2026-10-28 ユーザー） | planned（p001 cleared、仕様は spec.md） | 実装 p002〜p014（134 LW、指示の後） |
 
 ### 保留の WS（何をやるかは Q1 とユーザーが整理中）
 

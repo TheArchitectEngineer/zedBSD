@@ -2,7 +2,7 @@
 
 # WS307 Keiland のアプリとしての zedBSD のグラフィカルなインストーラ
 
-- Status: planning（2026-10-28 新設。p001 で仕様を確定中、q1648 P4）
+- Status: planned（2026-10-28 p001 cleared、仕様は spec.md で確定。実装 p002〜p014 はユーザーの指示の後）
 - 仕様: [spec.md](spec.md)（確定。ユーザーの確認事項 U1〜U29・J1〜J5 は回答済み（J1 は J5 で置き換え）。design-reviewer の 1〜3 回目の指摘と J5 を反映済み、spec §17）。
 - Resume point: p001 は受け入れを満たした（2026-10-28、P4、q1648・q1649。Q1 の cleared の判断待ち）。q1648 で 3 回目の design-reviewer（[design-review3.md](design-review3.md)、blocker 1・major 6・minor 10）と J1〜J4 を、q1649 で J5（live は公開の既定の password `user`、installer の image を運用に使ってはいけない規則、起動は root 起動相当。J1 は取り消し）を spec に反映した（spec §17.3・§17.4）。ユーザーの確認事項の残りは無い。次は実装の p002（OS 名の統一。p002 の前に Q1 が `plan/tools` の道具を user → kei の順で試す形にする、spec §13a）か p003（build と installer-image）。p003・p004 は toolchain の許可、p007 は HAL の承認、p002 の nightly の asset の upload はユーザーの指示が要る。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。

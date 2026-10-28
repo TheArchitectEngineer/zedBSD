@@ -94,4 +94,4 @@
 
 | q1648 / q1648-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307c`・branch `agent/p4-ws307c`、基点 main） | [ws307-p001](ws307/phase001/phase.md) の残り | 3 回目の review（design-review3.md）と J1〜J4 の回答を spec に反映（q1643 と同じ承認）。code は書かない | 済み（P4 e7e87b0f4 → main。review3 17 件と J1〜J4 を反映）。J5 の反映は q1649 |
 
-| q1649 / q1649-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307d`・branch `agent/p4-ws307d`、基点 main） | [ws307-p001](ws307/phase001/phase.md) の最後 | J5 の回答を spec に反映（J1 の非公開の取り消し、運用禁止の規則、root 起動相当の扱い）。code は書かない。承認は q1643 と同じ | in-progress |
+| q1649 / q1649-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307d`・branch `agent/p4-ws307d`、基点 main） | [ws307-p001](ws307/phase001/phase.md) の最後 | J5 の回答を spec に反映（J1 の非公開の取り消し、運用禁止の規則、root 起動相当の扱い）。code は書かない。承認は q1643 と同じ | cleared（P4 23c76dd28 → main 18b6d7a11。ws307-p001 は Q1 が cleared） |
