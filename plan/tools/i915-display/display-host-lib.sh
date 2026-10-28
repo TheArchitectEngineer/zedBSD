@@ -1,6 +1,6 @@
 #!/bin/sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
-# Sourced by plan/ws084/tests/run-native-decide-host-test.sh (ws084-p004, restored from the WS031 tool removed in
+# Sourced by run-xd-host-tests.sh; first used by the old plan/ws084/tests/run-native-decide-host-test.sh (ws084-p004, restored from the WS031 tool removed in
 # 1e867fbf): builds one host display test against the production display sources (src/drivers/gpu/i915/display/*.c,
 # every file, each its own translation unit because the Linux environments of the display are mutually exclusive), the
 # device trace (trace.c), the host stand-ins of the kernel services and the test's own sources

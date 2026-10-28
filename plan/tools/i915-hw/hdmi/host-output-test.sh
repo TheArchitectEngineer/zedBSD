@@ -15,4 +15,4 @@ for f in src/kern/boot.c src/drivers/gpu/i915/display/output.c plan/tools/i915-h
 	$CC $FLAGS -c "$f" -o "$out/$(basename "$f" .c).o"
 done
 $CC -fsanitize=address,undefined -Wl,--gc-sections "$out/boot.o" "$out/output.o" "$out/host-output-test.o" -o "$out/host-output-test"
-"$out/host-output-test" plan/ws075/phase011/lcd-edid.hex
+"$out/host-output-test" plan/tools/i915-hw/hdmi/lcd-edid.hex

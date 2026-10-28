@@ -8,5 +8,5 @@ cd "$(dirname -- "$0")/../../.."
 out=${1:-build/ws130-host}
 mkdir -p "$out"
 ${CC:-cc} -std=gnu99 -O1 -g -Wall -Wextra -Werror -D_GNU_SOURCE -fsanitize=address,undefined -fno-sanitize-recover=all \
-	-fno-omit-frame-pointer -I. plan/tools/net-ipv6/host-netconf6.c userland/base/net/netconf.c userland/base/net/reconcile.c -o "$out/host-netconf6"
+	-fno-omit-frame-pointer -I. plan/ws130/tests/host-netconf6.c userland/base/net/netconf.c userland/base/net/reconcile.c -o "$out/host-netconf6"
 "$out/host-netconf6"

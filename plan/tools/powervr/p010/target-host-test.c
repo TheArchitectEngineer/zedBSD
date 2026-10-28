@@ -12,7 +12,7 @@
  * pvr_rogue_fwif_check.h gives, and the frames of the grow, rebuild,
  * statistics and cleanup commands.  The expected sizes were worked out
  * by hand from Mesa 26.2.5's pvr_arch_job_render.c for the frame sizes
- * below (plan/ws269/phase010d/phase.md).
+ * below (fb1f6afee: plan/ws269/phase010d/phase.md).
  */
 
 #include <stdint.h>

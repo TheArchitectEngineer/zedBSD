@@ -10,7 +10,7 @@
  * linear and twiddled images, the words of views and samplers, and the
  * sizes of descriptors.  The expected words were compared once with the
  * packers that Mesa 26.2.5's csbgen/gen_pack_header.py makes of
- * texstate.xml (plan/ws269/phase010c/phase.md, the M9 check).
+ * texstate.xml (fb1f6afee: plan/ws269/phase010c/phase.md, the M9 check).
  */
 
 #include <stdint.h>

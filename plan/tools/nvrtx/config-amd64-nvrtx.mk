@@ -1,5 +1,5 @@
 # ws037-p004: the image for the nvrtx runs on the RTX 2070 handed to a QEMU guest by VFIO
-# (plan/ws037/phase004/phase.md section 3).  The CI amd64 image (config/ci/config-amd64.mk) with:
+# (fb1f6afee: plan/ws037/phase004/phase.md section 3).  The CI amd64 image (config/ci/config-amd64.mk) with:
 #   - the nvrtx driver built in (CONFIG_DRIVER_PCI_NVRTX, on by default since 2026-10-15),
 #   - the GSP firmware package (nvidia-gsp-firmware; its license is accepted first with
 #     "yes | make firmware-licenses", as for every image with a firmware package),
@@ -13,7 +13,7 @@
 #     takeover of the head the GOP lit as the monitor test, nvrtx.disp.test=1, and nvrtx.resident=0) or R8c
 #     (R8b with the GPU device) or R8d (R8c with the display-scanout probe: events, refresh, cursor,
 #     sharing) or R9w (the work channel, stage D1) or R9v (the renderer, stage D3, with vkquad) or R9k (the desktop, D6) or RAk/RAd (method A with nvrtx.vk=1, D7) or RA (no words: the default boot of the main image, the console kept and shown on the
-#     taken-over head, the GPU device); plan/ws037/phase004 to phase006 give what each run must show.
+#     taken-over head, the GPU device); fb1f6afee: plan/ws037/phase004 to phase006 give what each run must show.
 # Build one image per run, each into its own BUILD:
 #   plan/tools/guest/test-image.sh --no-harness plan/tools/nvrtx/config-amd64-nvrtx.mk build/ws037-nvrtx/r0 NVRTX_RUN=R0
 include config/ci/config-amd64.mk

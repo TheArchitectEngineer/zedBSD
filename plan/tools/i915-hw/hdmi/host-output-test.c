@@ -11,7 +11,7 @@
  * Links src/kern/boot.c (the display= and display.mode= parameters) and
  * src/drivers/gpu/i915/display/output.c (the EDID timings, the CVT formula
  * and the HDMI mode choice), and checks them against the EDID of the
- * ws075 H1 LCD (plan/ws075/phase011/lcd-edid.hex), VESA DMT
+ * ws075 H1 LCD (plan/tools/i915-hw/hdmi/lcd-edid.hex), VESA DMT
  * reduced-blanking modes and hand-computed values.  Built and run by
  * host-output-test.sh.
  */

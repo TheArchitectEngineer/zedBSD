@@ -9,7 +9,7 @@ script が変わったら、この文書の行の番号も直す。
 | 規則 | 根拠 |
 | --- | --- |
 | 実機を使う試験は `/tmp/i915-hw.lock`（centris の `/tmp`）を `flock` で取ってから、1 つずつ。2 つ同時に走らせない | `plan/ws031/tests/vkloop-hw.sh:46`、`plan/ws075/ws.md:39` |
-| `hdmi-h4-hw.sh start` とそれを呼ぶ script（`c5-hw.sh`・`resize-hw.sh`・`measure-apps.sh`・`s13-hw.sh`）を `timeout` で括らない。長いので background で走らせて待つ | `plan/tools/i915-hw/hdmi-h4-hw.sh:16-20`、`plan/ws075/phase018/phase.md`「実機の harness の事故と対策」 |
+| `hdmi-h4-hw.sh start` とそれを呼ぶ script（`c5-hw.sh`・`resize-hw.sh`・`measure-apps.sh`・`s13-hw.sh`）を `timeout` で括らない。長いので background で走らせて待つ | `plan/tools/i915-hw/hdmi-h4-hw.sh:16-20`、fb1f6afee の `plan/ws075/phase018/phase.md`「実機の harness の事故と対策」 |
 | QEMU の console log・serial log を読んで判定しない（解析も含む）。例外はユーザーがその場で許したときだけ | AGENTS.md「検証」、`plan/guardrail.md:53` |
 | QEMU（passthrough を含む）の証拠と、5330 を USB から単独で起動した証拠を分けて書く。やっていない確認は「未実施」 | AGENTS.md「検証」、`plan/guardrail.md:59-60` |
 | subagent は toolchain（`build/llvm`・`build/NoctLang` 等）を build・変更しない。共有の `build/` の成果物を消さない | AGENTS.md「禁止と承認」 |
@@ -114,9 +114,9 @@ plan/tools/i915-hw/hdmi-h4-hw.sh ctl pointer move 22 16 sleep 100 down up sleep 
 | 取り方（H4 の harness） | `start` が `setsid nohup hdmi/h4-lock.sh OUTDIR &` を起こす。それが lock を取ると `OUTDIR/.locked` を作り、`OUTDIR/.running` が消えるまで持つ。`start` は lock を得ると `/tmp/i915-h4-owner` に OUTDIR の絶対 path を書く | `hdmi-h4-hw.sh:46-52`、`h4-lock.sh:7-15` |
 | H4 の守り | `ctl`・`fetch` は、この tree の run が lock を持つとき（owner の path がこの tree の下で `.locked` がある）だけ動く。持たない `stop` は自分の待ちだけを終える | `hdmi-h4-hw.sh:30-39,62,67,82-87` |
 | 返し方 | `stop OUTDIR` が `.running` を消し、`.locked` が消えるのを待ち、owner を消す | `hdmi-h4-hw.sh:93-96` |
-| image の build | lock の外で先に済ませる。lock の中で make する script（`vkloop-hw.sh` 系）は、待つ間の tree の変更を拾う | `plan/tools/gpu-compute/hw/run-hw.sh:2-6`、`plan/ws101/phase005/phase.md` の注意 |
+| image の build | lock の外で先に済ませる。lock の中で make する script（`vkloop-hw.sh` 系）は、待つ間の tree の変更を拾う | `plan/tools/gpu-compute/hw/run-hw.sh:2-6`、fb1f6afee の `plan/ws101/phase005/phase.md` の注意 |
 
-空いているかを見る（待たない。空いていれば一瞬だけ取って返す。`plan/ws099/phase016/phase.md:67` が使った形）:
+空いているかを見る（待たない。空いていれば一瞬だけ取って返す。fb1f6afee の `plan/ws099/phase016/phase.md:67` が使った形）:
 
 ```sh
 flock -n /tmp/i915-hw.lock true && echo free || echo busy
