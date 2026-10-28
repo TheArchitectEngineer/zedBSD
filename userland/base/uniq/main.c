@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "include/kern/os-name.h"
 
 /* The codes of the long options that have no letter. */
 #define OPTION_HELP	256
@@ -224,7 +225,7 @@ read_options(
 			options->limited = 1;
 			break;
 		case OPTION_VERSION:
-			printf("uniq (Kei) 1.0\n");
+			printf("uniq (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 		default:
 			usage();

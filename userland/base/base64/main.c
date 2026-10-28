@@ -29,6 +29,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 /* The line length without -w. */
 #define BASE64_WRAP_DEFAULT 76
@@ -129,7 +130,7 @@ main(
 			/* The wrap is taken. */
 			break;
 		case OPTION_VERSION:
-			printf("base64 (Kei) 1.0\n");
+			printf("base64 (" ZEDBSD_OS_NAME ") 1.0\n");
 			return 0;
 		default:
 			usage();

@@ -34,6 +34,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 /* The codes of the long options that have no letter. */
 #define OPTION_TIME	256
@@ -185,7 +186,7 @@ read_options(
 			apply_time_word(scan.value, options);
 			break;
 		case OPTION_VERSION:
-			printf("touch (Kei) 1.0\n");
+			printf("touch (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 		default:
 			usage();

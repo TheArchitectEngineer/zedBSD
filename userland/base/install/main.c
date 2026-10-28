@@ -44,6 +44,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 /* The mode without -m. */
 #define INSTALL_MODE_DEFAULT 0755
@@ -260,7 +261,7 @@ read_options(
 			options->target = scan.value;
 			break;
 		case OPTION_VERSION:
-			printf("install (Kei) 1.0\n");
+			printf("install (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 			break;
 		default:

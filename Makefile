@@ -1253,11 +1253,13 @@ $(ZEDBSD_VERSION_STAMP): FORCE_ZEDBSD_VERSION
 	@printf '%s\n' '$(ZEDBSD_VERSION)' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
+include config/os-name.mk
+
 $(ZEDBSD_OS_RELEASE): FORCE_ZEDBSD_VERSION
 	@mkdir -p $(dir $@)
-	@printf '%s\n' 'NAME="zedBSD"' 'ID=zedbsd' \
+	@printf '%s\n' 'NAME="$(ZEDBSD_OS_NAME)"' 'ID=$(ZEDBSD_OS_ID)' \
  'VERSION="$(ZEDBSD_VERSION_NAME)"' 'VERSION_ID=$(ZEDBSD_VERSION)' \
- 'PRETTY_NAME="Kei/zedBSD $(ZEDBSD_VERSION_NAME)"' \
+ 'PRETTY_NAME="$(ZEDBSD_OS_NAME) $(ZEDBSD_VERSION_NAME)"' \
  'BUILD_ID=$(ZEDBSD_SOURCE_REVISION)' 'ZEDBSD_RELEASE=$(ZEDBSD_RELEASE)' \
  'ZEDBSD_VERSION="zedBSD $(ZEDBSD_RELEASE) ($(ZEDBSD_SOURCE_REVISION) $(ZEDBSD_SOURCE_DATE))"' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi

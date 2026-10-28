@@ -20,6 +20,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 #define AT_SPOOL "/var/spool/at"
 
@@ -317,7 +318,7 @@ submit_job(
 	/* Handles a failed fdopen operation. */
 	if (descriptor < 0 || (output = fdopen(descriptor, "w")) == NULL)
 		return 1;
-	fprintf(output, "# Kei at job\n");
+	fprintf(output, "# " ZEDBSD_OS_NAME " at job\n");
 
 	/* Process input until it is exhausted. */
 	while (fgets(buffer, sizeof(buffer), input) != NULL) {
