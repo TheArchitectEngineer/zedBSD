@@ -202,10 +202,11 @@ struct execute_tables {
  * viewport, scissor and culling words) and the resource tables it used
  * (with the vertex program's instance mask), good while target_written
  * stays set (every internal draw, transfer, pass and new buffer clears it);
- * sets_changed (a bit for each set number), buffers_changed and
- * push_changed say that the descriptor sets, the vertex buffers or the
- * push constants changed since then (a binding of what is bound already
- * changes nothing).  fixed_written says that the drawn_ fields of the
+ * sets_changed (a bit for each set number) and buffers_changed say that
+ * the descriptor sets or the vertex buffers changed since then, and
+ * push_changed_from is the first byte of the push constants that changed
+ * (AMDRDNA_VK_PUSH_BYTES for none; a program's table holds the bytes from 0
+ * to its push_bytes); a binding of what is bound already changes nothing.  fixed_written says that the drawn_ fields of the
  * fixed state (with the topology, blend, raster and depth words) are what
  * the buffer's registers hold since the target was written, so that a draw
  * of another pipeline writes only what differs.
@@ -244,7 +245,7 @@ struct execute_state {
 	bool fixed_written;
 	uint32_t sets_changed;
 	bool buffers_changed;
-	bool push_changed;
+	uint32_t push_changed_from;
 };
 
 /*
@@ -967,7 +968,9 @@ execute_bind(
 	struct execute_state *state,
 	const struct amdrdna_vk_record *record)
 {
+	const uint8_t *pushed;
 	uint32_t index;
+	int compared;
 
 	/* The state each command binds. */
 	switch (record->opcode) {
@@ -1006,10 +1009,20 @@ execute_bind(
 		state->index_type = record->values[0];
 		break;
 	case GPU_OP_CMD_PUSH_CONSTANTS:
-		if (kern_memcmp(state->push + record->first, state->push_bytes + record->push_at, record->count) != 0) {
-			kern_memcpy(state->push + record->first, state->push_bytes + record->push_at, record->count);
-			state->push_changed = true;
+		pushed = state->push_bytes + record->push_at;
+		compared = kern_memcmp(state->push + record->first, pushed, record->count);
+		if (compared == 0)
+			break;
+
+		/* The first byte that changes, then the bytes. */
+		for (index = 0U; index < record->count; index++) {
+			if (state->push[record->first + index] != pushed[index])
+				break;
 		}
+
+		if (record->first + index < state->push_changed_from)
+			state->push_changed_from = record->first + index;
+		kern_memcpy(state->push + record->first, pushed, record->count);
 		break;
 	default:
 		break;
@@ -1639,7 +1652,7 @@ execute_draw_tables(
 	}
 
 	/* The vertex program's: kept, copied, or new with its vertex input. */
-	if (vertex_kept && (!state->push_changed || vertex->push_bytes == 0U)) {
+	if (vertex_kept && state->push_changed_from >= vertex->push_bytes) {
 		tables->vertex_cpu = drawn->vertex_cpu;
 		tables->vertex_va = drawn->vertex_va;
 		tables->instance_mask = drawn->instance_mask;
@@ -1658,7 +1671,7 @@ execute_draw_tables(
 	}
 
 	/* The pixel program's: kept, copied, or new. */
-	if (fragment_kept && (!state->push_changed || fragment->push_bytes == 0U)) {
+	if (fragment_kept && state->push_changed_from >= fragment->push_bytes) {
 		tables->fragment_cpu = drawn->fragment_cpu;
 		tables->fragment_va = drawn->fragment_va;
 	} else if (fragment_kept) {
@@ -1728,7 +1741,7 @@ execute_draw_end(
 	state->drawn_tables = *tables;
 	state->sets_changed = 0U;
 	state->buffers_changed = false;
-	state->push_changed = false;
+	state->push_changed_from = AMDRDNA_VK_PUSH_BYTES;
 
 	/* Succeeded: the draw is written. */
 	return 0;
