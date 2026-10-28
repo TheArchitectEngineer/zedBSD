@@ -6,6 +6,42 @@
 
 ユーザーの決定（原文、2026-10-15）:「その場合のキャンセルと復帰を実装した方がよくない？device lostでプログラムがそれ以上動けなくなるのはOK。でもシステムとしては動き続けてほしいな。」
 
+## 第 3 版の改訂（2026-10-29 P5、[design-review.md](design-review.md) の blocker 2・major 13・minor 10 を反映。この節が第 2 版の改訂と本文に優先する）
+
+本文と第 2 版の改訂は経緯として残す（review M12: 重ねた形の矛盾は、実装の Phase の前に Q1 の指示で本文を書き直して一本にする。下の T1〜T13 がその時の正）。
+
+| # | 改訂 | review |
+| --- | --- | --- |
+| T1 | **必須の範囲は共有の channel の取り消しと作り直し（案 B）にする**（推し、Q250-4）。理由: worker は 1 本で GPU の待ちも `node->lock` の中なので、GPU に仕事を持つ channel は常に 1 つ（詰まった run だけ）。他の session の仕事は kernel の queue にあり ring に入っていないので、work channel を kill して作り直しても失う物は無い。案 A の GPU の側の利点（runlist の timeslice で compositor が回る）は session ごとの worker（p005 a）が入ってから初めて効く。→ 案 A は p005 a の下地として p005 に移す。p002 は 2〜3 LW に縮む見込み（review の見積もり） | M1、M9、M10、M13 |
+| T2 | **kill を頼むのは 3 つの時だけ**: run の期限切れ、その channel の RC の event、`stop_begin` の時に走っている run がある時。`stop_begin` は普通の close では `stopping` を立てるだけ（共通の層は final close のたびに `gpu_session_fail_locked(ENODEV)`（`gpu.c:1530`）と drain の後の `stop_begin`（`gpu.c:7546-7560, 7602`）を呼ぶので、そこで kill を頼むと app が閉じるたびに kill → 10 s 後の isolate の失敗 → device の fault になる） | B1 |
+| T3 | **kill の RPC の timeout は今の 5 s と `rpc_unanswered` の扱いのまま**（短い timeout にしない）。`nvrtx_rpc_wait` は reply を function だけで照合し sequence の違いを記録するだけ（`rpc.c:219-228`）なので、遅れた STOP の reply を次の control が受ける。短くするなら先に sequence の照合を厳密にする段が要る（この WS ではしない） | B2 |
+| T4 | **isolate の成功の基準**: 「GPU がこの channel をもう走らせない証拠」= STOP が 0、またはその chid の RC の event を受けた（GSP は runlist から外し engine を reset した後に送る、第 2 版 R1・R2）。FREE が失敗しても quarantine に置いて 0 を返す（i915 の `i915_isolate`、`src/drivers/gpu/i915/reset.c:686-716` と同じ形: quarantine を立ててから回復し成功で 0）。証拠が無ければ失敗 → 今の device の fault | M2、M8 |
+| T5 | kill は worker の次の turn に頼らない: 期限を検出した thread（worker か `runtime_command` の ioctl の thread）がその場で kill の要求を立て、worker が寝ていれば起こす（`runtime.c:694` の待ち）。RC の event が run の外で来た時も同じ | M3 |
+| T6 | `rpc_lock` の公平: kernel の mutex は待っている thread に渡さない（`src/kern/lock.c:359-440`）。drain は 1 回の turn の後に `rpc_lock` を手放して yield し、kill・open が取れる形にする（turn の短縮は本文 §4.5 の案、ここで公平を足す） | M4 |
+| T7 | 遅れた RC の event: kill の後の作り直しの channel は**別の chid**（work の chid を 2 つの値で交互に）にし、前の chid の event は捨てる。session は pointer でなく生成の番号で引く（ABA を避ける） | M5 |
+| T8 | **U2・S1 の probe の作り直し**: run が 1 つずつなので GSP の ctxsw の timeout は今の作りでは起きない（他の channel に走れる仕事が無い）。R4 の back-up は p005 a の後でしか働かない。→ Q250-1 の回答（nvrtx の 2 s で STOP を主）と合う。U2・U3 は p005 a の段に移す | M6 |
+| T9 | `vkhang` の loop は `userland/tests/vkreset` の「奇数の上限」の形（無限と証明できる形）を使う（`x = x*3 + 1` は 32 bit で x0=1 の時 2^31−1 回で 0 になる） | M7 |
+| T10 | 実機（WS305 の VFIO、2026-10-29 ユーザーの回答）は p002 の受け入れ（desktop の回帰、作り直しの後の first fence）にも要る。p003 の依存に p004（vkhang） | M11 |
+| T11 | 名前: `struct nvrtx_channel` と `nvrtx_channel_*` は GSP の queue の物として既にある（`nvrtx-gsp.h:456`、`channel.c`）。work channel の物は別の名前（例 `nvrtx_work_channel`）にする | M10 |
+| T12 | minor: STOP の param は 1 byte（「4 with padding」は誤り、RM の大きさの照合は実装の最初に確かめる）、`CONFIG_NVRTX_RUN_MS` は amd64 の platform、`CONFIG_GPU_JOB_STOP_MS` との関係を書く、`FALLEN_OFF_THE_BUS` は NVIDIA の symbol の字面なので独自の名前に、registry の key を足すなら別の block の出典、temp の file への link を本文から外す | minor |
+| T13 | host 試験に足す: 普通の close で kill が走らない（T2）、遅れた reply の取り違え（T3 の今の照合）、期限の検出が ioctl の thread でも kill を起こす（T5）、`rpc_lock` の取り直し（T6）、遅れた RC の event を捨てる（T7） | §6.1 |
+
+### 第 3 版の Phase の表（第 2 版の表を置き換える。LW は ±50%）
+
+| Phase | 内容 | 依存 | LW |
+| --- | --- | --- | --- |
+| p002 | 共有の work channel の kill と作り直し（T1・T7・T11）、`rpc_lock` の公平（T6）、host 試験 | WS242 p003〜p005（Q1 の順） | 4 |
+| p003 | 検出と取り消し（T2・T4・T5、R1・R2 の判定）、RC の event の道、`isolate`、host 試験（T13） | p002、p004 | 7 |
+| p004 | `vkhang`（T9）と scenario、WS305 の VFIO の上の script | p002 と並行可 | 4 |
+| p005 | 選択肢: a session ごとの worker と session ごとの channel（案 A、promote の VA の配列 R8、VA の区画、遅延の作成、U2・U3）、b `reset` | p003、ユーザーの判断 | a 14、b 12 |
+| p006 | 規約の全文と出典の監査 | 全部 | 2 |
+
+必須（p002〜p004・p006）17 LW。実機は p002〜p004（T10、WS305 の VFIO）。
+
+### 第 3 版のユーザーに聞く点
+
+- Q250-4 必須の範囲の形: 推し「共有の work channel の kill と作り直し（案 B）。session ごとの channel（案 A）は session ごとの worker と一緒に p005 a で」。理由: 今の 1 本の worker では案 A の利点が無く、費用（open ごと約 1 MiB、33 個目の open の EBUSY、VA の区画）だけが増える。選択肢: 案 A を必須に（+7〜9 LW）。
+
 ## 第 2 版の改訂（2026-10-29 P5、q1666。この節が下の本文の該当の所に優先する）
 
 照合した tree: main 61630bb0b（`VK_NODE_RUN_US` 2 s は `vk-node.c:31`・`:291` のまま、work channel は `work.c:936` の `WORK_CHID`、`nvrtx_work_stop` は `work.c:224`、RC の event の枝は `rpc.c:252`。nvrtx の ops に `isolate`・`reset` は今も無い）。
