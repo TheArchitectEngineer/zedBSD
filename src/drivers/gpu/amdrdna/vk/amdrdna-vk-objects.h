@@ -199,10 +199,17 @@ struct amdrdna_vk_descriptor_pool {
 	uint32_t max_sets;
 };
 
+/* The words of an image descriptor and of a sampler. */
+#define AMDRDNA_IMAGE_WORDS		8U
+#define AMDRDNA_SAMPLER_WORDS		4U
+
 /*
  * One binding of a descriptor set: the image view and the sampler a
  * combined image sampler names, or the buffer, offset and range a uniform
- * or storage buffer names; each object held while the set names it.
+ * or storage buffer names; each object held while the set names it.  A
+ * combined image sampler's two descriptors are made when the binding is
+ * written (words_ready set, the view's image bound to memory then: its
+ * address cannot change after), so that a draw copies them.
  */
 struct amdrdna_vk_descriptor_slot {
 	struct amdrdna_vk_object *view;
@@ -210,6 +217,9 @@ struct amdrdna_vk_descriptor_slot {
 	struct amdrdna_vk_object *buffer;
 	uint64_t offset;
 	uint64_t range;
+	uint32_t image_words[AMDRDNA_IMAGE_WORDS];
+	uint32_t sampler_words[AMDRDNA_SAMPLER_WORDS];
+	bool words_ready;
 };
 
 /*

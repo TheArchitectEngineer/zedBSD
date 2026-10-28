@@ -27,6 +27,7 @@
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
+#include "drivers/gpu/amdrdna/vk/amdrdna-vk-exec.h"
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk-objects.h"
 
 #include "drivers/gpu/i915/vk/vk-codec.inc"
@@ -793,6 +794,7 @@ layout_slot_set(
 	struct amdrdna_vk_object *view,
 	struct amdrdna_vk_object *sampler)
 {
+	int made;
 	int error;
 
 	/* Holds the new ones first: one of them may be the old one. */
@@ -816,6 +818,13 @@ layout_slot_set(
 	/* The binding names the new ones. */
 	slot->view = view;
 	slot->sampler = sampler;
+
+	/* Their descriptors, for the draws to copy; a view they cannot be made of yet leaves the draws to make them. */
+	if (view != NULL && sampler != NULL) {
+		made = amdrdna_vk_texture_descriptors(slot, slot->image_words, slot->sampler_words);
+		if (made == 0)
+			slot->words_ready = true;
+	}
 
 	/* Reports an old one whose destruction failed. */
 	if (error != 0)
@@ -882,6 +891,7 @@ layout_slot_clear(
 	slot->buffer = NULL;
 	slot->offset = 0U;
 	slot->range = 0U;
+	slot->words_ready = false;
 
 	/* Reports a destruction that failed. */
 	if (first_error != 0)
