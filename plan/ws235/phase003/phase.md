@@ -19,6 +19,8 @@ link は kthread が 500 ms ごとに PHYSTAT を読み、carrier と `link_mbps
   数の照合: 元の呼び出し 202（loop の本体 5 を引き、loop の展開 12・12・18 を足す）= 239 で一致。EPHY の表は `mac_r27_ephy` の 36 個。
 - 疑い（未確認）: OpenBSD の EPHY の窓の address の mask は 0x7f（`RGE_EPHYAR_ADDR_MASK`）で、RTL8127 の表の offset（例 0x088・0x188）は 0x7f で切ると同じ 0x08 に
   なる。OpenBSD のまま写した。FreeBSD の hw の file（未取得）か実機の振る舞いで確かめる。
+  - 2026-10-29 08:3x P1: FreeBSD の if_rgereg.h（`RGE_EPHYAR_ADDR_MASK 0x0000007f`）と if_rge_hw.c の EPHY の読み書きも 0x7f で切る（p1-ws235b の
+    `build/tmp/ws235-fbsd-070331`、p002 の時に取った物）。両 BSD で同じ。0x80 以上の offset が窓のどこに当たるかは未確認のまま（2.5G の link は成立している）。
 - build: `make ZEDBSD_CONFIG=plan/ws235/tests/config-amd64-rtl8127.mk BUILD=build/ws235/amd64 build/ws235/amd64/vmunix` → exit 0、warning 0（`build/tmp/ws235-build3.log`）。
 - 実機の試験の script: `plan/ws235/tests/rtl-link.sh VMUNIX OUT`（NVMe の kernel を保存 → 試験の kernel → BootNext → ssh で `ifconfig rge0`・`ifconfig rge0 up`・
   5〜65 s の間の `ifconfig rge0`、centris の `ethtool enp94s0f1` → reboot で Debian → 保存した kernel を戻す → `OUT/summary.txt`）。未実行。
