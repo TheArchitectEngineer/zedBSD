@@ -178,3 +178,12 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - p007 の制約（p005 の review）: isolate は vm.c の DEAD の近道（reset が終わった前提で物理を即に返す）を使わず別の印で device の hold に移す（M6）。core の reset（LOST → RUNNING）は vm を退かせる前に submit_log を空にする（L2）。
 - ユーザーの指示（2026-10-28、Q1 経由の原文）「~/amaterrace-gpuの未コミット分はハードウェア担当の作業中のものです。…このディレクトリですgit操作はlogなどの参照のみにしてください。」「そのディレクトリはすべてリードオンリーです。」→ ~/amaterrace-gpu・~/amaterrace-worktrees は全部読み取り専用。git は `git -C ~/amaterrace-gpu log`・`show <SHA>:<path>`・`diff <SHA> <SHA>`・`ls-tree`・`cat-file` だけ（`git status` も使わない）。未 commit の file は読まない。cd して make・script を走らせない、出力を置かない。helper と review の subagent にも伝える。
 - 2026-10-28 Q1 の了承: GHCI の `maxComputeWorkGroupInvocations` は共有の SPIR-V frontend の上限 128 に合わせた（hardware は 256）。**WS226 の候補**: 共有の frontend（`src/drivers/gpu/compiler/spirv.h` の `DRV_GPU_SPIRV_MAX_GROUP_INVOCATIONS`）を 256 に上げ、GHCI の答えを 256 に戻す。
+
+## 再開点（2026-10-28 11:27、P3 q1644-i01 の中断。ユーザーの指示で 13 時まで待機）
+
+- ユーザーの指示（2026-10-28、Q1 経由の原文）「P3も13時まで待機をお願いします。現在のhelperは、残り5時間制限が4%しかないので、途中で強制終了になるかもしれないです。P3はそれに備えて、あとで復旧できる状態にしておいてください。」
+- branch agent/p3-ws290g（worktree `/home/awe/zedBSD-worktrees/p3-ws290g`）、先頭 d2297c919 の上にこの記録の commit。作業 tree は clean（11:27 に `git status --short` が空）。
+- 済み（cleared）: p001〜p008・p013。SHA: p005 55f636f74・700cf6875・ae3f9e7ff、p006 86ab21fc3・f0f84bee1・f0f404f02、p007 d8a97defc・bf7732f17・08253d72c、p008 b2fc47356・e5d4a9152・05a850366（workgroup の上限 128）・d2297c919。design 版 4.12（e0bbb48e0）。host 試験 `plan/ws290/tests/ghci-host-test.sh` 全 PASS（words 141・ref 56・model 254・driver 587・gsi1 50・vk 383・pipeline 175・old-names・isa）、GHCI 有りの amd64・VF2 の vmunix の warning 0。
+- p009: helper（phase-runner）を 11:20 頃に起動したが、11:26 に止めるよう伝えた。11:27 の時点で worktree に p009 の差分は無い（patch は不要。`plan/ws290/temp/p009-wip.patch` は作っていない）。helper がこの後に file を残した場合は、再開の時に `git status` で見て、未確認の差分として扱う（build と試験の前に commit しない）。
+- 次の一手: p009（記録と実行）を最初から。phase009/phase.md の記録に p008 の review から渡す物（submit の hold、code と data の heap の分離、set ごとの dynamic offset の base、`subpass_of` の不正な render pass を断る、`ghci_vk_layout_tables` の ENOENT は draw を飛ばす）。分けるなら A（pass・draw・dispatch・barrier・dynamic state・bind の検査・submit の hold と heap）と B（転送・query・event・clear）。その後 p010・p011・p012、p012 の後に code review の依頼の版（上の「code review の依頼の決定」の手順）。
+- 未実施: 実機（p014）。p007 の M3（libvulkan の encoder での wire の照合）は別の Phase の候補。
