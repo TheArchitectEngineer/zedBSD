@@ -106,6 +106,7 @@ kwl_cursor_plane_open(
 	cursor->instance = compose->instance;
 	cursor->device = compose->device;
 	cursor->queue = compose->queue;
+	cursor->queue_lock = &compose->queue_lock;
 	cursor->wake_main = server->wake[1];
 	cursor->log = server->log_frames;
 	cursor->hold_us = plane_hold_us(server);
@@ -214,7 +215,7 @@ kwl_cursor_plane_close(
 	}
 
 	/* No copy of the plane may still run. */
-	(void)vkDeviceWaitIdle(compose->device);
+	kwl_device_wait_idle(compose);
 
 	/* The commands, fences, semaphores and pool, the copies, then the swapchain and surface. */
 	plane_objects_destroy(compose, cursor);

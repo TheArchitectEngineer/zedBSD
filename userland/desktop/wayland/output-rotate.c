@@ -719,7 +719,7 @@ output_rotate_turn_begin(
 	/* No frame may use the old images from now until they are exchanged (the cursor's plane is held already). */
 	kwl_compose_park(server);
 	clock->parked = kwl_milliseconds();
-	(void)vkDeviceWaitIdle(compose->device);
+	kwl_device_wait_idle(compose);
 	clock->idle = kwl_milliseconds();
 
 	/* The new angle and logical size, which the windows are fitted to and the clients told. */

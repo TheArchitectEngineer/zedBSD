@@ -22,6 +22,7 @@
 #include "kwl.h"
 
 #include <vulkan/vulkan.h>
+#include <pthread.h>
 
 #include "../../tests/vkdemo/display.h"
 #include "displays.h"
@@ -467,6 +468,13 @@ struct kwl_compose {
 	char display_name[KWL_COMPOSE_NAME];
 	VkDevice device;
 	VkQueue queue;
+	/*
+	 * The queue's lock: Vulkan wants a queue's use (submit, present, wait
+	 * idle, and a device's wait idle over all its queues) from one thread at
+	 * a time, and the render thread, the cursor thread and the main thread
+	 * all use this queue.  Held only around those calls.
+	 */
+	pthread_mutex_t queue_lock;
 	uint32_t family;
 	VkRenderPass pass;
 	VkDescriptorSetLayout set_layout;
@@ -893,6 +901,9 @@ void kwl_compose_park(struct kwl_server *server);
 void kwl_compose_unpark(struct kwl_server *server);
 void kwl_compose_forget(struct kwl_server *server, unsigned output, unsigned heads_mask);
 uint64_t kwl_compose_generation(struct kwl_compose *compose);
+void kwl_queue_lock(struct kwl_compose *compose);
+void kwl_queue_unlock(struct kwl_compose *compose);
+void kwl_device_wait_idle(struct kwl_compose *compose);
 void kwl_compose_list_begin(struct kwl_compose *compose);
 void kwl_glass_glyphs_take(struct kwl_compose *compose);
 void kwl_layers_open(struct kwl_server *server);
