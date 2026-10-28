@@ -24,7 +24,7 @@ read・write・pread・pwrite・vector の syscall の I/O の道の並列性を
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 計測（QEMU の標本、5330 の 1 I/O の区間）と設計、Fable の助言、design-reviewer | — | in-progress（q1650） |
-| [p002](phase002/phase.md) | 起床の道と NVMe の command_lock（割り込みの起床を command_lock の外へ、command id で slot を O(1) で引く、amd64 の timecounter の大域の lock を外す。submit・release の lock の回数は次） | p001 | in-progress（実装・review の反映、5330 で direct QD32 124.6k→143.2k IOPS） |
+| [p002](phase002/phase.md) | 起床の道と NVMe の command_lock（割り込みの起床を command_lock の外へ、command id で slot を O(1) で引く、amd64 の timecounter の大域の lock を外す。submit・release の lock の回数は次） | p001 | in-progress（5330 で direct QD32 124.6k→214.5k IOPS＝Debian の 91%、cached 139k→205k＝87%） |
 | [p003](phase003/phase.md) | syscall の I/O の道で heap を確保しない（pin の内の配列、block device の bounce を shared の I/O pool から） | p001 | in-progress（実装 01e701914、5330 で cached QD32 139k→172k IOPS（p002 と合わせて）） |
 | p004 | syscall ごとの process->lock を無くす（thread ごとの credential の参照と世代、signal の要約の語、user probe の数を CPU ごとに） | p001 | planned |
 | p005 | pin を大域の metadata の mutex なしで（vmspace ごとの rwlock、書き手の監査と lock の順） | p001 | planned |
@@ -37,3 +37,10 @@ read・write・pread・pwrite・vector の syscall の I/O の道の並列性を
 
 - HAL の API は変えない（要れば差分の案をユーザーの承認に）。VM は全 platform・全 process に効くので、正しさ（use-after-free・競合）を最優先し、試験で確かめる。
 - 2026-10-28 ユーザー「WS308ですが、bufferを毎回固定するのではなくて使い回すような方法も検討の余地があると思いますので、Fable 5.1 Highへの質問事項に入れてください。それによって、WSの内容を変更してもいいです。」→ p001 で pin の使い回し（pin の cache・登録済みの buffer）も Fable に聞いて評価し、結果で目標・Phase を変えてよい（UAPI を足すならユーザーの判断）。
+
+## 再開点（2026-10-28、P1、q1650 を 2026-10-28 ユーザー「5時間セッション上限が近いのでP1, P2は13時まで待機してください。」で区切り）
+
+- commit（agent/p1-ws308）: 3ec112dc5・7b6a2f4a3・f2d01c3e5（p001 の計測と Fable の助言）、15840093d（p002）、01e701914（p003）、84fd65ac6（p002 の review の反映）、27a02af59（command_lock の回数）、この記録の commit。
+- 今の数（5330、一時の計測の kernel）: 乱読み 4 KiB QD32 direct 214.5k IOPS・878 MB/s（Debian 964 の 91%）、cached 204.8k・839 MB/s（87%）。目標の 95% まであと少し。
+- 次の一手: (1) direct の残り（入口→post 6〜9 µs、post→CQ 126 µs は device の側か割り込みの束ね方）と cached の pin→submit 12 µs（buffer cache の道: disk_lock・cache_lock）の内訳を同じ計測（`build/tmp/exp-io-2.patch`・`build/tmp/exp-io.h` を当てて build、`nvme-bench-5330.sh zedbsd NAME VMUNIX qdprobe`）で見る。(2) submit の command_lock をさらに減らす（slot_acquire と post を 1 回の保持に、release と end_bio を 1 回に）。(3) metadata の mutex の待ち（取りの 5〜15%）→ p005。(4) p004（process->lock）は I/O の QD32 が thread と process で同じなので、この目標には効かない見込み（取り下げ候補、数で判断）。(5) 27a02af59 の他の 4 config の build、回帰の試験の残り（timeout・stop・detach の最中、TSC の無い機械）、p006 の負荷試験、p007 規約。
+- 5330 は Debian に戻した（lock は返した）。
