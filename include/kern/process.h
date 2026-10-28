@@ -26,8 +26,6 @@ struct filedesc;
 struct thread;
 struct vmspace;
 struct ucred;
-struct process_retired_cred;
-struct process_cred_reservation;
 struct tty;
 
 #define PROCESS_AUTOREAP	0x00000001U
@@ -75,9 +73,14 @@ struct process {
 	pid_t session;
 	mode_t umask;
 	struct process_limits limits;
+
+	/*
+	 * The process credential.  Written under lock with a release store;
+	 * each thread holds its own reference to the one its system calls use
+	 * (thread->cred), so a replaced credential lives as long as a thread
+	 * still uses it.
+	 */
 	struct ucred *cred;
-	struct process_retired_cred *retired_creds;
-	unsigned cred_readers;
 	struct signal_action signal_actions[NSIG];
 	sigset_t signal_pending;
 
@@ -268,13 +271,13 @@ struct vmspace *
 process_vmspace_ref(
 	struct process *process);
 
+/*
+ * Brings the credential a thread's system calls use up to its process's
+ * current one.  Only the thread itself calls this, at a system call entry.
+ */
 void
-process_cred_read_enter(
-	struct process *process);
-
-void
-process_cred_read_leave(
-	struct process *process);
+process_cred_sync(
+	struct thread *thread);
 
 int
 process_cred_replace(
@@ -282,24 +285,13 @@ process_cred_replace(
 	struct ucred *replacement);
 
 /*
- * Reserve the only allocation needed by a credential replacement.  Exec
- * uses this before its one-way commit point, then publishes the already-built
- * credential without a possible allocation failure.
+ * Installs an exec's prospective credential, which cannot fail.  The
+ * process takes over the caller's reference to the replacement.
  */
-int
-process_cred_reserve(
-	struct process *process,
-	struct process_cred_reservation **result);
-
 void
-process_cred_reservation_abort(
-	struct process_cred_reservation *reservation);
-
-void
-process_cred_commit_reserved(
+process_cred_commit(
 	struct process *process,
-	struct ucred *replacement,
-	struct process_cred_reservation *reservation);
+	struct ucred *replacement);
 
 struct thread *
 thread_find_ref(

@@ -203,7 +203,7 @@ static void syscall_io_buffer_release(struct file *file, uint8_t *buffer, uint8_
 static SYSCALL_EXT intptr_t sys_write_call(const uintptr_t args[6]);
 static intptr_t sys_lseek_call(const uintptr_t args[6]);
 static intptr_t sys_fstat_call(const uintptr_t args[6]);
-static int pseudo_file_getattr(struct process *process, struct file *file, struct stat *status);
+static int pseudo_file_getattr(struct file *file, struct stat *status);
 static int descriptor_getattr(struct process *process, int descriptor, struct stat *status);
 static int descriptor_link_target(struct process *process, const struct inode *alias, char *buffer, size_t capacity);
 static int descriptor_link_getattr(struct process *process, struct inode *alias, struct stat *status);
@@ -1025,11 +1025,13 @@ sys_sysctl_call(
 	int superuser;
 	int error;
 	int copy_error;
+	const struct ucred *cred;
 
 	old_output = old_value;
 	old_length = 0;
 	namelen = (unsigned)args[1];
 	process = current_process();
+	cred = cred_current();
 
 	/* Copies the name and sizes an output buffer for the old value. */
 	if (args[0] == 0 ||
@@ -1078,7 +1080,7 @@ sys_sysctl_call(
 		new_argument = new_value;
 	else
 		new_argument = NULL;
-	superuser = process != NULL && cred_is_superuser(process->cred);
+	superuser = process != NULL && cred_is_superuser(cred);
 	error = kern_sysctl(name, namelen, old_argument, old_length_argument,
 	    new_argument, (size_t)args[5], superuser);
 	if (args[3] != 0) {
@@ -1354,9 +1356,11 @@ sys_socket_call(
 	unsigned descriptor_flags;
 	int descriptor;
 	int error;
+	const struct ucred *cred;
 
 	/* Splits the descriptor and file flags out of the type. */
 	process = current_process();
+	cred = cred_current();
 	file = NULL;
 	supplied_type = (int)args[1];
 	type = supplied_type &
@@ -1381,7 +1385,7 @@ sys_socket_call(
 	if (type != SOCK_RAW && type != SOCK_DGRAM && type != SOCK_STREAM)
 		return -EINVAL;
 	if (((int)args[0] == AF_PACKET || type == SOCK_RAW) &&
-	    !cred_is_superuser(process->cred))
+	    !cred_is_superuser(cred))
 		return -EPERM;
 
 	/* Creates the socket, wraps it in a file, and installs a descriptor. */
@@ -1824,8 +1828,10 @@ sys_sendto_call(
 	int io_flags;
 	int error;
 	size_t amount;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	destination = NULL;
 
 	/* Validates the flags, the destination pair, and the datagram size. */
@@ -1869,7 +1875,7 @@ sys_sendto_call(
 		io_flags = (int)socket_file_effective_flags(&reference, (int)args[3]);
 		if (socket->family == AF_UNIX)
 			result = unix_socket_send_message_at(socket, process->cwdi,
-			    process->cred, "", 0, io_flags, destination,
+			    cred, "", 0, io_flags, destination,
 			    (socklen_t)args[5], NULL, 0);
 		else
 			result = socket->ops->sendto(socket, "", 0, io_flags,
@@ -1897,7 +1903,7 @@ sys_sendto_call(
 		io_flags = (int)socket_file_effective_flags(&reference, (int)args[3]);
 		if (socket->family == AF_UNIX)
 			result = unix_socket_send_message_at(socket, process->cwdi,
-			    process->cred, buffer, amount, io_flags, destination,
+			    cred, buffer, amount, io_flags, destination,
 			    (socklen_t)args[5], NULL, 0);
 		else
 			result = socket->ops->sendto(socket, buffer, amount,
@@ -2049,8 +2055,10 @@ sys_sendmsg_call(
 	unsigned count;
 	ssize_t result;
 	int error;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	destination = NULL;
 	buffer = NULL;
 	count = 0;
@@ -2143,7 +2151,7 @@ sys_sendmsg_call(
 		result = unix_socket_send_objects_at(
 			reference.socket,
 			process->cwdi,
-			process->cred,
+			cred,
 			data,
 			(size_t)request.data_length,
 			(int)socket_file_effective_flags(&reference, (int)request.flags),
@@ -3050,8 +3058,10 @@ sys_write_call(
 	size_t chunk;
 	int limited;
 	ssize_t count;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	done = 0;
 	length = (size_t)args[2];
 
@@ -3071,7 +3081,7 @@ sys_write_call(
 	direct = file_io_direct(file);
 	if (!direct)
 		buffer = syscall_io_buffer(file, length, small_buffer, &capacity);
-	error = file_io_begin_cred(file, FILE_IO_WRITE, 0, 0, process->cred,
+	error = file_io_begin_cred(file, FILE_IO_WRITE, 0, 0, cred,
 	    &io);
 	if (error != 0) {
 		syscall_io_buffer_release(file, buffer, small_buffer, capacity);
@@ -3166,10 +3176,11 @@ sys_lseek_call(
  */
 static int
 pseudo_file_getattr(
-	struct process *process,
 	struct file *file,
 	struct stat *status)
 {
+	const struct ucred *cred;
+
 	kern_memset(status, 0, sizeof(*status));
 	if (pipe_file_is_pipe(file))
 		status->st_mode = S_IFIFO | 0600;
@@ -3178,12 +3189,14 @@ pseudo_file_getattr(
 	else
 		return EINVAL;
 
+	/* One link, a number that tells the files apart, and the caller as owner. */
 	status->st_nlink = 1;
 	status->st_ino = (ino_t)((uintptr_t)file / sizeof(*file));
 	status->st_blksize = 4096;
-	if (process->cred != NULL) {
-		status->st_uid = process->cred->euid;
-		status->st_gid = process->cred->egid;
+	cred = cred_current();
+	if (cred != NULL) {
+		status->st_uid = cred->euid;
+		status->st_gid = cred->egid;
 	}
 
 	/* Succeeded. */
@@ -3214,7 +3227,7 @@ descriptor_getattr(
 	 * handles) have nothing to describe.
 	 */
 	if (file->f_inode == NULL)
-		error = pseudo_file_getattr(process, file, status);
+		error = pseudo_file_getattr(file, status);
 	else
 		error = inode_getattr(file->f_inode, status);
 	(void)file_close(file);
@@ -3322,6 +3335,7 @@ descriptor_link_getattr(
 	unsigned access;
 	int descriptor;
 	int error;
+	const struct ucred *cred;
 
 	/* Starts from the node's own identity and times. */
 	error = inode_getattr(alias, status);
@@ -3337,9 +3351,10 @@ descriptor_link_getattr(
 	status->st_size = (off_t)kern_strlen(target);
 	status->st_rdev = 0;
 	status->st_nlink = 1;
-	if (process->cred != NULL) {
-		status->st_uid = process->cred->euid;
-		status->st_gid = process->cred->egid;
+	cred = cred_current();
+	if (cred != NULL) {
+		status->st_uid = cred->euid;
+		status->st_gid = cred->egid;
 	}
 
 	/* A standard name is a plain link open to everyone. */
@@ -4071,17 +4086,19 @@ sys_clock_settime_call(
 	struct process *process;
 	struct timespec requested;
 	int error;
+	const struct ucred *cred;
 
 	/* Refuses the call without credentials to check. */
 	process = current_process();
-	if (process == NULL || process->cred == NULL)
+	cred = cred_current();
+	if (process == NULL || cred == NULL)
 		return -EINVAL;
 
 	/* Reads the requested time and sets the clock. */
 	error = copyin(args[1], &requested, sizeof(requested));
 	if (error == 0)
 		error = kern_clock_settime((clockid_t)args[0], &requested,
-		    process->cred);
+		    cred);
 
 	/* Reports the outcome of the call. */
 	if (error != 0)
@@ -4244,14 +4261,16 @@ sys_mount_call(
 	int flags;
 	int mount_flags;
 	int error;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	flags = (int)args[2];
 
 	/* Only the superuser mounts, and only with the supported flags. */
-	if (process == NULL || process->cred == NULL)
+	if (process == NULL || cred == NULL)
 		return -EINVAL;
-	if (!cred_is_superuser(process->cred))
+	if (!cred_is_superuser(cred))
 		return -EPERM;
 	if ((flags & ~(int)(MNT_RDONLY | MNT_NOSUID | MNT_WRITETHRU |
 	    MNT_NOJOURNAL | MNT_NOEXEC)) != 0)
@@ -4331,14 +4350,16 @@ sys_unmount_call(
 	struct process *process;
 	char directory[PATH_MAX];
 	int error;
+	const struct ucred *cred;
 
 	/* Refuses the call without credentials to check. */
 	process = current_process();
-	if (process == NULL || process->cred == NULL)
+	cred = cred_current();
+	if (process == NULL || cred == NULL)
 		return -EINVAL;
 
 	/* Reserves unmounting for the superuser. */
-	if (!cred_is_superuser(process->cred))
+	if (!cred_is_superuser(cred))
 		return -EPERM;
 
 	/* Rejects a flag word this kernel does not define. */
@@ -4413,13 +4434,15 @@ sys_quotactl_call(
 	char pathname[PATH_MAX];
 	int error;
 	int allowed;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	allowed = 0;
 
 	/* Copies and validates the request. */
 	if (process == NULL ||
-	    process->cred == NULL ||
+	    cred == NULL ||
 	    process->cwdi == NULL ||
 	    args[1] == 0)
 		return -EINVAL;
@@ -4436,16 +4459,16 @@ sys_quotactl_call(
 
 	/* An unprivileged caller may only query its own quotas. */
 	if (error == 0) {
-		allowed = cred_is_superuser(process->cred);
+		allowed = cred_is_superuser(cred);
 		if (request.command == KERN_QUOTA_GET && !allowed) {
 			if (request.type == KERN_QUOTA_USER) {
 				allowed = 0;
-				if (request.id == process->cred->ruid ||
-				    request.id == process->cred->euid ||
-				    request.id == process->cred->suid)
+				if (request.id == cred->ruid ||
+				    request.id == cred->euid ||
+				    request.id == cred->suid)
 					allowed = 1;
 			} else {
-				allowed = cred_in_group(process->cred,
+				allowed = cred_in_group(cred,
 				    (gid_t)request.id);
 			}
 		}
@@ -4481,15 +4504,17 @@ sys_snapshotctl_call(
 	struct path path;
 	char pathname[PATH_MAX];
 	int error;
+	const struct ucred *cred;
 
 	/* Only the superuser controls snapshots. */
 	process = current_process();
+	cred = cred_current();
 	if (process == NULL ||
-	    process->cred == NULL ||
+	    cred == NULL ||
 	    process->cwdi == NULL ||
 	    args[1] == 0)
 		return -EINVAL;
-	if (!cred_is_superuser(process->cred))
+	if (!cred_is_superuser(cred))
 		return -EPERM;
 
 	/* Copies and validates the request, then runs it on the path's mount. */
@@ -4677,15 +4702,17 @@ sys_positional_call(
 	off_t offset;
 	uint32_t access;
 	enum file_io_kind operation;
-	struct ucred *credential;
+	const struct ucred *credential;
 	intptr_t result;
 	int error;
 	int direct;
 	size_t chunk;
 	int limited;
 	ssize_t count;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	done = 0;
 	length = (size_t)args[2];
 	offset = (off_t)args[3];
@@ -4715,7 +4742,7 @@ sys_positional_call(
 	/* Selects the operation and the credentials it runs under. */
 	if (writing) {
 		operation = FILE_IO_PWRITE;
-		credential = process->cred;
+		credential = cred;
 	} else {
 		operation = FILE_IO_PREAD;
 		credential = NULL;
@@ -4835,11 +4862,13 @@ sys_vector_call(
 	ssize_t result;
 	uint32_t access;
 	enum file_io_kind operation;
-	struct ucred *credential;
+	const struct ucred *credential;
 	int direct;
+	const struct ucred *cred;
 
 	/* Starts with nothing pinned and no bytes transferred. */
 	process = current_process();
+	cred = cred_current();
 	file = NULL;
 	count = (int)args[2];
 	pinned = 0;
@@ -4887,7 +4916,7 @@ sys_vector_call(
 	/* Selects the operation and the credentials it runs under. */
 	if (writing) {
 		operation = FILE_IO_WRITE;
-		credential = process->cred;
+		credential = cred;
 	} else {
 		operation = FILE_IO_READ;
 		credential = NULL;
@@ -5167,8 +5196,10 @@ sys_truncate_call(
 	off_t length;
 	int error;
 	int limit_exceeded;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	inode = NULL;
 	file = NULL;
 	length = (off_t)args[1];
@@ -5208,11 +5239,11 @@ sys_truncate_call(
 	} else {
 		error = 0;
 		if (!by_fd)
-			error = vfs_access(inode, process->cred, W_OK);
+			error = vfs_access(inode, cred, W_OK);
 		if (error == 0)
 			error = inode_truncate_limited_cred(inode, length,
 			    resource_limit_current(process, RLIMIT_FSIZE),
-			    process->cred, &limit_exceeded);
+			    cred, &limit_exceeded);
 	}
 
 	/* Signals a caller that hit the size limit, and releases the file. */
@@ -6161,11 +6192,13 @@ sys_access_call(
 	struct ucred real;
 	char pathname[PATH_MAX];
 	int error;
+	const struct ucred *cred;
 
 	/* Rejects a mode this call does not define. */
 	process = current_process();
+	cred = cred_current();
 	if (process == NULL ||
-	    process->cred == NULL ||
+	    cred == NULL ||
 	    ((int)args[1] & ~(R_OK | W_OK | X_OK)) != 0)
 		return -EINVAL;
 
@@ -6176,7 +6209,7 @@ sys_access_call(
 
 	/* Tests access against the real identity rather than the effective one. */
 	if (error == 0) {
-		real = *process->cred;
+		real = *cred;
 		real.euid = real.ruid;
 		real.egid = real.rgid;
 		error = vfs_access(path.p_inode, &real, (int)args[1]);
@@ -6310,14 +6343,16 @@ sys_getxattr_call(
 	ssize_t result;
 	size_t size;
 	int error;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	value = NULL;
 
 	/* Rejects a request larger than one attribute may be. */
 	size = (size_t)args[3];
 	if (process == NULL ||
-	    process->cred == NULL ||
+	    cred == NULL ||
 	    size > INODE_XATTR_SIZE_MAX ||
 	    (size != 0 && args[2] == 0))
 		return -EINVAL;
@@ -6340,7 +6375,7 @@ sys_getxattr_call(
 	}
 
 	/* A zero size only asks for the attribute length. */
-	result = vfs_getxattr(reference.inode, process->cred, name, value, size);
+	result = vfs_getxattr(reference.inode, cred, name, value, size);
 	if (result >= 0 && size != 0 && (size_t)result > size) {
 		error = ERANGE;
 	} else if (result >= 0 && result != 0 && size != 0) {
@@ -6372,14 +6407,16 @@ sys_setxattr_call(
 	void *value;
 	size_t size;
 	int error;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	value = NULL;
 
 	/* Rejects a value larger than one attribute may be. */
 	size = (size_t)args[3];
 	if (process == NULL ||
-	    process->cred == NULL ||
+	    cred == NULL ||
 	    size > INODE_XATTR_SIZE_MAX ||
 	    (size != 0 && args[2] == 0))
 		return -EINVAL;
@@ -6401,7 +6438,7 @@ sys_setxattr_call(
 	if (error == 0) {
 
 		/* Stores the attribute and releases what the walk held. */
-		error = vfs_setxattr(reference.inode, process->cred, name, value,
+		error = vfs_setxattr(reference.inode, cred, name, value,
 			size, (unsigned)args[4]);
 		sys_inode_ref_release(&reference);
 	}
@@ -6427,14 +6464,16 @@ sys_listxattr_call(
 	ssize_t result;
 	size_t size;
 	int error;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	list = NULL;
 
 	/* Rejects a request larger than one list may be. */
 	size = (size_t)args[2];
 	if (process == NULL ||
-	    process->cred == NULL ||
+	    cred == NULL ||
 	    size > INODE_XATTR_SIZE_MAX ||
 	    (size != 0 && args[1] == 0))
 		return -EINVAL;
@@ -6455,7 +6494,7 @@ sys_listxattr_call(
 	}
 
 	/* A zero size only asks for the list length. */
-	result = vfs_listxattr(reference.inode, process->cred, list, size);
+	result = vfs_listxattr(reference.inode, cred, list, size);
 	if (result >= 0 && size != 0 && (size_t)result > size) {
 		error = ERANGE;
 	} else if (result >= 0 && result != 0 && size != 0) {
@@ -6485,10 +6524,12 @@ sys_removexattr_call(
 	struct syscall_inode_ref reference;
 	char name[INODE_XATTR_NAME_MAX + 1U];
 	int error;
+	const struct ucred *cred;
 
 	/* Refuses the call without credentials to check. */
 	process = current_process();
-	if (process == NULL || process->cred == NULL)
+	cred = cred_current();
+	if (process == NULL || cred == NULL)
 		return -EINVAL;
 
 	/* Reads the attribute name and resolves the inode. */
@@ -6499,7 +6540,7 @@ sys_removexattr_call(
 	if (error == 0) {
 
 		/* Removes the attribute and releases what the walk held. */
-		error = vfs_removexattr(reference.inode, process->cred, name);
+		error = vfs_removexattr(reference.inode, cred, name);
 		sys_inode_ref_release(&reference);
 	}
 
@@ -6544,14 +6585,16 @@ sys_chmod_common(
 	unsigned namei_flags;
 	int by_fd;
 	int error;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	file = NULL;
 	held = NULL;
 	by_fd = fd >= 0;
 
 	if (process == NULL ||
-	    process->cred == NULL ||
+	    cred == NULL ||
 	    (flags & ~AT_SYMLINK_NOFOLLOW) != 0)
 		return -EINVAL;
 
@@ -6581,14 +6624,14 @@ sys_chmod_common(
 	}
 
 	/* A non-member owner cannot set the set-group-id bit. */
-	if (!inode_chmod_allowed(inode, process->cred)) {
+	if (!inode_chmod_allowed(inode, cred)) {
 		error = EPERM;
 	} else {
 		error = inode_getattr(inode, &status);
 		if (error == 0) {
 			status.st_mode = (status.st_mode & S_IFMT) | (mode & 07777U);
-			if (!cred_is_superuser(process->cred) &&
-			    !cred_in_group(process->cred, inode->i_gid))
+			if (!cred_is_superuser(cred) &&
+			    !cred_in_group(cred, inode->i_gid))
 				status.st_mode &= ~(mode_t)S_ISGID;
 			error = inode_setattr(inode, &status, INODE_ATTR_MODE);
 		}
@@ -6629,15 +6672,17 @@ sys_chown_common(
 	unsigned namei_flags;
 	int by_fd;
 	int error;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	file = NULL;
 	held = NULL;
 	mask = 0;
 	by_fd = fd >= 0;
 
 	if (process == NULL ||
-	    process->cred == NULL ||
+	    cred == NULL ||
 	    (flags & ~AT_SYMLINK_NOFOLLOW) != 0)
 		return -EINVAL;
 
@@ -6667,7 +6712,7 @@ sys_chown_common(
 	}
 
 	/* Applies the requested ids and clears set-id where required. */
-	error = vfs_may_chown(inode, process->cred, uid, gid);
+	error = vfs_may_chown(inode, cred, uid, gid);
 	if (error == 0) {
 		error = inode_getattr(inode, &status);
 		if (error == 0 && uid != (uid_t)-1) {
@@ -6687,7 +6732,7 @@ sys_chown_common(
 		 * behavior of clearing on an explicit ownership request.
 		 */
 		if (error == 0 && (status.st_mode & (S_ISUID | S_ISGID)) != 0 &&
-		    (!cred_is_superuser(process->cred) || uid != (uid_t)-1 ||
+		    (!cred_is_superuser(cred) || uid != (uid_t)-1 ||
 		     gid != (gid_t)-1)) {
 			status.st_mode &= ~(mode_t)(S_ISUID | S_ISGID);
 			mask |= INODE_ATTR_MODE;
@@ -6747,9 +6792,11 @@ sys_utimens_common(
 	int by_fd;
 	int explicit_time;
 	int error;
+	const struct ucred *cred;
 
 	/* Starts with nothing held and no timestamp chosen. */
 	process = current_process();
+	cred = cred_current();
 	file = NULL;
 	held = NULL;
 	mask = 0;
@@ -6757,7 +6804,7 @@ sys_utimens_common(
 	explicit_time = 0;
 
 	if (process == NULL ||
-	    process->cred == NULL ||
+	    cred == NULL ||
 	    (flags & ~AT_SYMLINK_NOFOLLOW) != 0)
 		return -EINVAL;
 
@@ -6823,10 +6870,10 @@ sys_utimens_common(
 
 	/* An explicit time needs ownership; "now" needs write access. */
 	if (error == 0 && mask != 0 &&
-	    !inode_chmod_allowed(inode, process->cred)) {
+	    !inode_chmod_allowed(inode, cred)) {
 		if (explicit_time)
 			error = EPERM;
-		else if (vfs_access(inode, process->cred, W_OK) != 0)
+		else if (vfs_access(inode, cred, W_OK) != 0)
 			error = EACCES;
 	}
 
@@ -6860,14 +6907,16 @@ sys_faccessat_call(
 	int mode;
 	int flags;
 	int error;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	held = NULL;
 	mode = (int)args[2];
 	flags = (int)args[3];
 
 	if (process == NULL ||
-	    process->cred == NULL ||
+	    cred == NULL ||
 	    (mode & ~(R_OK | W_OK | X_OK)) != 0 ||
 	    (flags & ~(AT_EACCESS | AT_SYMLINK_NOFOLLOW)) != 0)
 		return -EINVAL;
@@ -6880,7 +6929,7 @@ sys_faccessat_call(
 	error = sys_resolve_path_at(process, (int)args[0], args[1], namei_flags,
 		&path, &held);
 	if (error == 0) {
-		check = *process->cred;
+		check = *cred;
 		if ((flags & AT_EACCESS) == 0) {
 			check.euid = check.ruid;
 			check.egid = check.rgid;
@@ -6956,15 +7005,17 @@ sys_linkat_call(
 	int flags;
 	int error;
 	int parent_valid;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	old_held = NULL;
 	new_held = NULL;
 	flags = (int)args[4];
 	parent_valid = 0;
 
 	if (process == NULL ||
-	    process->cred == NULL ||
+	    cred == NULL ||
 	    (flags & ~AT_SYMLINK_FOLLOW) != 0)
 		return -EINVAL;
 
@@ -6988,7 +7039,7 @@ sys_linkat_call(
 	if (error == 0)
 		mount_vfs_transaction_enter(parent.p_mount);
 	if (error == 0)
-		error = vfs_may_create(parent.p_inode, process->cred);
+		error = vfs_may_create(parent.p_inode, cred);
 	if (error == 0)
 		error = inode_link(parent.p_inode, &name, target.p_inode);
 	if (error == 0)
@@ -7028,14 +7079,16 @@ sys_symlinkat_call(
 	char storage[NAME_MAX + 1U];
 	int error;
 	int parent_valid;
+	const struct ucred *cred;
 
 	process = current_process();
+	cred = cred_current();
 	credential = NULL;
 	held = NULL;
 	created = NULL;
 	parent_valid = 0;
 
-	if (process == NULL || process->cred == NULL)
+	if (process == NULL || cred == NULL)
 		return -EINVAL;
 	credential = cred_process_ref(process);
 	if (credential == NULL)
@@ -7546,8 +7599,10 @@ sys_sigqueue_call(
 	pid_t pid;
 	int signo;
 	int error;
+	const struct ucred *cred;
 
 	sender = current_process();
+	cred = cred_current();
 	pid = (pid_t)args[0];
 
 	/* A null signal only checks permission. */
@@ -7567,8 +7622,8 @@ sys_sigqueue_call(
 	kern_memset(&info, 0, sizeof(info));
 	info.code = SI_QUEUE;
 	info.pid = sender->pid;
-	if (sender->cred != NULL)
-		info.uid = sender->cred->euid;
+	if (cred != NULL)
+		info.uid = cred->euid;
 	else
 		info.uid = 0;
 	info.value = (uint64_t)args[2];
@@ -8670,8 +8725,10 @@ priority_matches(
 {
 	struct ucred *target_cred;
 	uid_t target_euid;
+	const struct ucred *cred;
 
 	target_euid = (uid_t)-1;
+	cred = cred_current();
 
 	/* A zero who names the caller's own process, group, or user. */
 	if (who == 0) {
@@ -8680,7 +8737,7 @@ priority_matches(
 		else if (which == PRIO_PGRP)
 			who = (id_t)caller->pgrp;
 		else if (which == PRIO_USER)
-			who = (id_t)caller->cred->euid;
+			who = (id_t)cred->euid;
 	}
 
 	if (which == PRIO_PROCESS) {
@@ -8780,9 +8837,11 @@ sys_setpriority_call(
 	int denied;
 	struct ucred *target_cred;
 	int old;
+	const struct ucred *cred;
 
 	/* Starts with nothing found and nothing denied. */
 	caller = current_process();
+	cred = cred_current();
 	cursor = -1;
 	which = (int)args[0];
 	value = (int)args[2];
@@ -8814,8 +8873,8 @@ sys_setpriority_call(
 			found = 1;
 			target_cred = cred_process_ref(target);
 			if (target_cred == NULL ||
-			    (caller->cred->euid != 0 &&
-			    caller->cred->euid != target_cred->euid)) {
+			    (cred->euid != 0 &&
+			    cred->euid != target_cred->euid)) {
 				cred_release(target_cred);
 				process_release(target);
 				denied = 1;
@@ -8824,7 +8883,7 @@ sys_setpriority_call(
 
 			/* Only the superuser may lower a nice value. */
 			cred_release(target_cred);
-			if (value < old && !cred_is_superuser(caller->cred)) {
+			if (value < old && !cred_is_superuser(cred)) {
 				denied = 1;
 				process_release(target);
 				continue;
@@ -10310,25 +10369,17 @@ kernel_syscall_handler(
 	const uintptr_t args[6])
 {
 	struct thread *thread;
-	struct process *process;
 	uintptr_t dispatch_args[HAL_SYSCALL_ARGS];
 	uint32_t dispatch_number;
-	int cred_guard;
 	intptr_t result;
 	enum signal_stop_return_result stop_result;
 
 	/* Records the entry for the user probe. */
 	user_probe_syscall(number);
 
-	/* Resolves the caller and decides whether to hold the credentials. */
+	/* Resolves the caller. */
 	thread = curthread;
-	if (thread != NULL)
-		process = thread->proc;
-	else
-		process = NULL;
 	dispatch_number = number;
-	cred_guard = number != KERN_SYS_exit &&
-	    number != KERN_SYS_thread_exit;
 
 	/*
 	 * HAL calls the registered dispatcher with the active user frame
@@ -10344,10 +10395,9 @@ kernel_syscall_handler(
 	/* Takes a private copy of the arguments a restart may reuse. */
 	kern_memcpy(dispatch_args, args, sizeof(dispatch_args));
 
-	/* Arms the restart state and pins the credentials. */
+	/* Arms the restart state and takes the process's current credential. */
 	syscall_restart_state_begin(thread);
-	if (cred_guard)
-		process_cred_read_enter(process);
+	process_cred_sync(thread);
 
 	/* Runs the handler, redispatching after a sigreturn or a transparent stop. */
 	for (;;) {
@@ -10367,11 +10417,8 @@ kernel_syscall_handler(
 		if (thread != NULL && dispatch_number != KERN_SYS_sigreturn)
 			thread->syscall_restart_valid = result == -EINTR &&
 			    syscall_restartable(dispatch_number);
-		if (thread != NULL && thread->terminate_requested) {
-			if (cred_guard)
-				process_cred_read_leave(process);
+		if (thread != NULL && thread->terminate_requested)
 			thread_exit(0);
-		}
 
 		/* Redispatches the call a signal handler returned into. */
 		if (thread != NULL && dispatch_number == KERN_SYS_sigreturn &&
@@ -10409,8 +10456,6 @@ kernel_syscall_handler(
 
 	/* Retires the restart state and the accounting this call opened. */
 	syscall_restart_state_finish(thread);
-	if (cred_guard)
-		process_cred_read_leave(process);
 	if (!hal_irq_disable())
 		HAL_FATAL("syscall callback returned with IRQs disabled");
 	sched_accounting_kernel_leave();

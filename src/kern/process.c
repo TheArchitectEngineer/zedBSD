@@ -46,13 +46,6 @@ void process_timer_cleanup(struct process *);
 #include <uapi/wait.h>
 
 struct process process0;
-struct process_retired_cred {
-	struct ucred *cred;
-	struct process_retired_cred *next;
-};
-struct process_cred_reservation {
-	struct process_retired_cred retired;
-};
 static struct process *all_processes;
 static struct process *creating_processes;
 static pid_t next_pid = 1;
@@ -94,7 +87,7 @@ static int process_autoreap_claim(struct process *process);
 static int process_autoreap_commit(struct process *process);
 static void process_reaper(void *argument);
 static void detach_tty_from_list_locked(struct process *list, pid_t session, struct tty *tty, uint64_t generation);
-static void release_retired_creds(struct process_retired_cred *retired);
+static uid_t process_real_uid(struct process *process);
 static int wait_selector_matches(const struct process *child, pid_t selector, pid_t caller_pgrp);
 static void notify_parent_job_event_tree_locked(struct process *process, int code, int status);
 static void process_stop_notify(void *argument);
@@ -549,141 +542,73 @@ process_vmspace_ref(
 }
 
 /*
- * Enters a credential read section, keeping a replaced credential alive.
+ * Brings the credential a thread's system calls use up to its process's.
  */
 void
-process_cred_read_enter(
-	struct process *process)
+process_cred_sync(
+	struct thread *thread)
 {
+	struct process *process;
+	struct ucred *current;
+	struct ucred *old;
 	unsigned long irq;
 
-	/* Ignores a missing process. */
+	/* Ignores a thread without a process. */
+	if (thread == NULL)
+		return;
+	process = thread->proc;
 	if (process == NULL)
 		return;
 
-	/* Counts the reader under the process lock. */
-	irq = spin_lock_irqsave(&process->lock);
-
-	process->cred_readers++;
-
-	spin_unlock_irqrestore(&process->lock, irq);
-}
-
-/*
- * Leaves a credential read section, releasing credentials retired
- * meanwhile once the last reader is gone.
- */
-void
-process_cred_read_leave(
-	struct process *process)
-{
-	struct process_retired_cred *retired;
-	unsigned long irq;
-
-	/* Ignores a missing process. */
-	retired = NULL;
-	if (process == NULL)
+	/*
+	 * The thread's reference keeps its credential's memory from being
+	 * reused, so the same pointer means the same credential.
+	 */
+	current = __atomic_load_n(&process->cred, __ATOMIC_ACQUIRE);
+	if (current == thread->cred)
 		return;
 
-	/* The last reader takes the retired list with it. */
+	/* References the process credential under the process lock. */
 	irq = spin_lock_irqsave(&process->lock);
 
-	if (process->cred_readers == 0)
-		HAL_FATAL("credential reader underflow");
-	process->cred_readers--;
-	if (process->cred_readers == 0) {
-		retired = process->retired_creds;
-		process->retired_creds = NULL;
-	}
+	current = process->cred;
+	cred_ref(current);
 
 	spin_unlock_irqrestore(&process->lock, irq);
 
-	release_retired_creds(retired);
+	/* Moves the thread to it and drops the credential it used before. */
+	old = thread->cred;
+	thread->cred = current;
+	cred_release(old);
 }
 
 /*
- * Reserves the memory a later credential commit needs.
- */
-int
-process_cred_reserve(
-	struct process *process,
-	struct process_cred_reservation **result)
-{
-	struct process_cred_reservation *reservation;
-
-	/* Rejects a missing result or process, or the kernel process. */
-	if (result == NULL)
-		return EINVAL;
-	*result = NULL;
-	if (process == NULL)
-		return EINVAL;
-	if (process == &process0)
-		return EPERM;
-
-	/* Allocates the retirement record. */
-	reservation = kern_calloc(1, sizeof(*reservation));
-	if (reservation == NULL)
-		return ENOMEM;
-	*result = reservation;
-
-	/* Reports the reservation. */
-	return 0;
-}
-
-/*
- * Drops an unused credential reservation.
+ * Installs an exec's prospective credential.
  */
 void
-process_cred_reservation_abort(
-	struct process_cred_reservation *reservation)
-{
-	kern_free(reservation);
-}
-
-/*
- * Replaces a process's credential using a reservation, which cannot fail.
- */
-void
-process_cred_commit_reserved(
+process_cred_commit(
 	struct process *process,
-	struct ucred *replacement,
-	struct process_cred_reservation *reservation)
+	struct ucred *replacement)
 {
-	struct process_retired_cred *retired;
 	struct ucred *old;
 	unsigned long irq;
 
 	/* Rejects a missing operand or the kernel process. */
 	if (process == NULL ||
 	    replacement == NULL ||
-	    reservation == NULL ||
 	    process == &process0)
-		HAL_FATAL("invalid reserved credential commit");
+		HAL_FATAL("invalid credential commit");
 
-	/* Retires the old credential while readers still use it. */
-	retired = &reservation->retired;
+	/* Publishes the replacement; threads still using the old one hold their own references. */
 	irq = spin_lock_irqsave(&process->lock);
 
 	old = process->cred;
-	process->cred = replacement;
-	if (process->cred_readers != 0) {
-		retired->cred = old;
-		retired->next = process->retired_creds;
-		process->retired_creds = retired;
-		retired = NULL;
-	}
+	__atomic_store_n(&process->cred, replacement, __ATOMIC_RELEASE);
 
 	spin_unlock_irqrestore(&process->lock, irq);
 
-	/*
-	 * Without readers the old credential goes at once.  When readers
-	 * exist, reservation is now the first member of the retired list and
-	 * is reclaimed by process_cred_read_leave().
-	 */
-	if (retired != NULL) {
-		cred_release(old);
-		kern_free(reservation);
-	}
+	/* Drops the process's reference to the old credential. */
+	cred_release(old);
 }
 
 /*
@@ -696,18 +621,12 @@ process_cred_replace(
 	struct process *process,
 	struct ucred *replacement)
 {
-	struct process_cred_reservation *reservation;
-	struct process_retired_cred *retired;
 	struct ucred *old;
 	unsigned long irq;
-	int error;
 
 	/* Rejects a missing operand or the kernel process. */
 	if (process == NULL || replacement == NULL || process == &process0)
 		return EPERM;
-	error = process_cred_reserve(process, &reservation);
-	if (error != 0)
-		return error;
 
 	/*
 	 * Once exec has taken ownership of the process image, sibling
@@ -717,29 +636,22 @@ process_cred_replace(
 
 	if (process->execing) {
 		spin_unlock_irqrestore(&process->lock, irq);
-		process_cred_reservation_abort(reservation);
 		return EBUSY;
 	}
 
-	/* Retires the old credential while readers still use it. */
-	retired = &reservation->retired;
+	/*
+	 * Publishes the replacement.  A thread still using the old
+	 * credential holds its own reference until its next system call.
+	 */
 	old = process->cred;
-	process->cred = replacement;
-	if (process->cred_readers != 0) {
-		retired->cred = old;
-		retired->next = process->retired_creds;
-		process->retired_creds = retired;
-		retired = NULL;
-	}
+	__atomic_store_n(&process->cred, replacement, __ATOMIC_RELEASE);
 
 	spin_unlock_irqrestore(&process->lock, irq);
 
-	if (retired != NULL) {
-		cred_release(old);
-		kern_free(reservation);
-	}
+	/* Drops the process's reference to the old credential. */
+	cred_release(old);
 
-	/* Reports the replaced credential. */
+/* Reports the replaced credential. */
 	return 0;
 }
 
@@ -1528,7 +1440,6 @@ process_free_mem(
 	struct vmspace *vmspace;
 	struct filedesc *fd;
 	struct ucred *cred;
-	struct process_retired_cred *retired;
 	struct cwdinfo *cwdi;
 	pid_t old_session;
 	pid_t old_pgrp;
@@ -1551,13 +1462,10 @@ process_free_mem(
 	vmspace = process->vmspace;
 	fd = process->fd;
 	cred = process->cred;
-	retired = process->retired_creds;
 	cwdi = process->cwdi;
 	process->vmspace = NULL;
 	process->fd = NULL;
 	process->cred = NULL;
-	process->retired_creds = NULL;
-	process->cred_readers = 0;
 	process->cwdi = NULL;
 
 	spin_unlock_irqrestore(&process->lock, process_irq);
@@ -1620,7 +1528,6 @@ process_free_mem(
 		vmspace_put(vmspace);
 	filedesc_destroy(fd);
 	cred_release(cred);
-	release_retired_creds(retired);
 	cwdinfo_release(cwdi);
 	process_release(process);
 }
@@ -1764,10 +1671,7 @@ reserve:
 			event->parent = parent;
 			event->child = child;
 			event->pid = child->pid;
-			if (child->cred != NULL)
-				event->uid = child->cred->ruid;
-			else
-				event->uid = 0;
+			event->uid = process_real_uid(child);
 			spin_unlock_irqrestore(&process_tree_lock, irq);
 			return event->pid;
 		}
@@ -2512,10 +2416,7 @@ process_thread_retired(
 		else
 			info.code = CLD_KILLED;
 		info.pid = process->pid;
-		if (process->cred != NULL)
-			info.uid = process->cred->ruid;
-		else
-			info.uid = 0;
+		info.uid = process_real_uid(process);
 		if (info.code == CLD_EXITED)
 			info.status = (process->exit_status >> 8) & 0xff;
 		else
@@ -2928,20 +2829,25 @@ detach_tty_from_list_locked(
 	}
 }
 
-/* Releases a list of retired credentials. */
-static void
-release_retired_creds(
-	struct process_retired_cred *retired)
+/* Reads a process's real user ID, or 0 when it has no credential. */
+static uid_t
+process_real_uid(
+	struct process *process)
 {
-	struct process_retired_cred *next;
+	unsigned long irq;
+	uid_t uid;
 
-	/* Releases every credential the exit deferred. */
-	while (retired != NULL) {
-		next = retired->next;
-		cred_release(retired->cred);
-		kern_free(retired);
-		retired = next;
-	}
+	/* Reads it under the lock a credential replacement takes. */
+	uid = 0;
+	irq = spin_lock_irqsave(&process->lock);
+
+	if (process->cred != NULL)
+		uid = process->cred->ruid;
+
+	spin_unlock_irqrestore(&process->lock, irq);
+
+	/* Reports the real user ID. */
+	return uid;
 }
 
 /* Tests whether a child matches a waitpid() selector. */
@@ -3001,10 +2907,7 @@ notify_parent_job_event_tree_locked(
 	kern_memset(&info, 0, sizeof(info));
 	info.code = code;
 	info.pid = process->pid;
-	if (process->cred != NULL)
-		info.uid = process->cred->ruid;
-	else
-		info.uid = 0;
+	info.uid = process_real_uid(process);
 	info.status = status;
 
 	/* SA_NOCLDSTOP suppresses the signal but not the wakeup. */

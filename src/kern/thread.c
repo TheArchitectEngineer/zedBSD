@@ -16,6 +16,7 @@
  */
 
 #include "kern/thread.h"
+#include "kern/cred.h"
 #include "kern/process.h"
 #include "kern/vmspace.h"
 #include "kern/kmem.h"
@@ -634,6 +635,9 @@ thread_release(
 	if (thread->state != THREAD_DEAD ||
 	    (thread->flags & THREAD_FLAG_IDLE) != 0)
 		HAL_FATAL("releasing live kernel thread");
+
+	/* Drops the credential its last system call used, then the record. */
+	cred_release(thread->cred);
 	kern_free(thread);
 }
 

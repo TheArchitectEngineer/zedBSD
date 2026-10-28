@@ -77,15 +77,13 @@ struct exec_target {
 /*
  * What a sandboxed spawn holds while it builds the child, released by
  * process_spawn_sandbox whatever the outcome: the resolved image, the
- * parent's credential, the child's prospective credential and its
- * reservation, the unpublished child, and the stage reached (for the
- * log).
+ * parent's credential, the child's prospective credential, the
+ * unpublished child, and the stage reached (for the log).
  */
 struct exec_sandbox_build {
 	struct exec_target target;
 	struct ucred *access_cred;
 	struct ucred *prospective_cred;
-	struct process_cred_reservation *cred_reservation;
 	struct process *process;
 	const char *stage;
 };
@@ -573,7 +571,6 @@ process_spawn_from(
 {
 	struct exec_target target;
 	struct process *process;
-	struct process_cred_reservation *cred_reservation;
 	struct ucred *access_cred;
 	struct ucred *prospective_cred;
 	struct thread *thread;
@@ -588,7 +585,6 @@ process_spawn_from(
 
 	/* Starts before the first stage, holding nothing. */
 	process = NULL;
-	cred_reservation = NULL;
 	access_cred = NULL;
 	prospective_cred = NULL;
 	secure = 0;
@@ -630,9 +626,6 @@ process_spawn_from(
 	/* Creates the process with its address space. */
 	stage = "create process";
 	error = process_create(parent, 0, &process);
-	if (error != 0)
-		goto out;
-	error = process_cred_reserve(process, &cred_reservation);
 	if (error != 0)
 		goto out;
 	process->vmspace = vmspace_create();
@@ -712,11 +705,9 @@ process_spawn_from(
 	 * The initial thread is still private and stopped, so credential
 	 * publication cannot race userspace or fail.
 	 */
-	process_cred_commit_reserved(process, prospective_cred,
-				     cred_reservation);
+	process_cred_commit(process, prospective_cred);
 	process->set_id = secure;
 	prospective_cred = NULL;
-	cred_reservation = NULL;
 
 	/* Publishes and starts the process. */
 	if (result == NULL)
@@ -730,7 +721,6 @@ out:
 	if (error != 0)
 		kern_logf("exec: %s failed for %s (%d)\n", stage, path, error);
 	exec_target_release(&target);
-	process_cred_reservation_abort(cred_reservation);
 	cred_release(prospective_cred);
 	cred_release(access_cred);
 	if (process != NULL)
@@ -783,7 +773,6 @@ process_spawn_sandbox(
 	if (error != 0)
 		kern_logf("exec: sandbox %s failed (%d)\n", build.stage, error);
 	exec_target_release(&build.target);
-	process_cred_reservation_abort(build.cred_reservation);
 	cred_release(build.prospective_cred);
 	cred_release(build.access_cred);
 	if (build.process != NULL)
@@ -838,9 +827,6 @@ exec_sandbox_start(
 	process = build->process;
 	cwdinfo_release(process->cwdi);
 	process->cwdi = NULL;
-	error = process_cred_reserve(process, &build->cred_reservation);
-	if (error != 0)
-		return error;
 
 	/* Its limits: the smaller of the parent's and the plan's, the sandbox's files, no core file. */
 	exec_sandbox_limit(&process->limits.values[RLIMIT_AS], plan->memory_max);
@@ -910,12 +896,11 @@ exec_sandbox_start(
 	}
 
 	/* The credential and the sandbox, before the thread can run. */
-	process_cred_commit_reserved(process, build->prospective_cred, build->cred_reservation);
+	process_cred_commit(process, build->prospective_cred);
 	process->set_id = 0U;
 	process->sandbox = plan->sandbox;
 	plan->sandbox = NULL;
 	build->prospective_cred = NULL;
-	build->cred_reservation = NULL;
 
 	/* Succeeded: published and started. */
 	process_publish(process);
@@ -1484,7 +1469,6 @@ process_exec_file(
 	struct vmspace *new_vm;
 	struct vmspace *old_vm;
 	struct exec_target target;
-	struct process_cred_reservation *cred_reservation;
 	struct ucred *access_cred;
 	struct ucred *prospective_cred;
 	struct thread *other;
@@ -1503,7 +1487,6 @@ process_exec_file(
 	int error;
 
 	new_vm = NULL;
-	cred_reservation = NULL;
 	access_cred = NULL;
 	prospective_cred = NULL;
 	secure = 0;
@@ -1558,9 +1541,6 @@ process_exec_file(
 		mount_flags |= MOUNT_NOSUID;
 	exec_credential_prepare(prospective_cred, &target.status,
 				mount_flags, 0, &secure);
-	error = process_cred_reserve(process, &cred_reservation);
-	if (error != 0)
-		goto out;
 
 	/* Loads the new image into a fresh address space. */
 	new_vm = vmspace_create();
@@ -1693,11 +1673,9 @@ process_exec_file(
 	 * are gone.  Publish the prospective credentials in the same one-way
 	 * commit window as the address space.
 	 */
-	process_cred_commit_reserved(process, prospective_cred,
-				     cred_reservation);
+	process_cred_commit(process, prospective_cred);
 	process->set_id = secure;
 	prospective_cred = NULL;
-	cred_reservation = NULL;
 	if (irq_enabled)
 		hal_irq_enable();
 
@@ -1722,7 +1700,6 @@ out:
 	spin_unlock_irqrestore(&process->lock, process_irq);
 
 	exec_target_release(&target);
-	process_cred_reservation_abort(cred_reservation);
 	cred_release(prospective_cred);
 	cred_release(access_cred);
 	if (new_vm != NULL)
