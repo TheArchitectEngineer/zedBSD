@@ -97,6 +97,30 @@ ipv4_output(
 }
 
 /*
+ * Sends a payload to an IPv4 destination from the device's address the
+ * caller has already looked up (TCP sums it into its pseudo-header), so
+ * the output does not look it up again; no waiting for ARP.
+ */
+int
+ipv4_output_sourced(
+	struct net_device *device,
+	uint32_t destination,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *packet)
+{
+	int error;
+
+	/* Reports why the send failed. */
+	error = ipv4_output_common(device, destination, protocol, source, 1, 0, packet);
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
  * Sends a payload to an IPv4 destination, waiting for ARP resolution.
  */
 int

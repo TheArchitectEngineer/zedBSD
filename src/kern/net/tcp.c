@@ -1592,9 +1592,14 @@ tcp_route(
 	int have_route;
 	int error;
 
-	/* A bound interface wins over the route's device. */
+	/*
+	 * A bound interface wins over the route's device, so the route is
+	 * looked up only without one: a connection remembers the interface of
+	 * its first segment, and every later segment goes by it.
+	 */
 	have_route = 0;
-	if (route_lookup_ref(endpoint->tcp.inet.remote_address, &route) == 0)
+	if (endpoint->tcp.inet.ifindex == 0 &&
+	    route_lookup_ref(endpoint->tcp.inet.remote_address, &route) == 0)
 		have_route = 1;
 	if (endpoint->tcp.inet.ifindex != 0)
 		output = net_device_find_by_index_ref(endpoint->tcp.inet.ifindex);
@@ -2050,8 +2055,8 @@ tcp_output_segment(
 	checksum = net_checksum_pseudo(source, endpoint->tcp.inet.remote_address,
 	    IPPROTO_TCP, packet->data, packet->length);
 	wire_put16(tcp->checksum, checksum);
-	error = ipv4_output(device, endpoint->tcp.inet.remote_address,
-	    IPPROTO_TCP, packet);
+	error = ipv4_output_sourced(device, endpoint->tcp.inet.remote_address,
+	    IPPROTO_TCP, source, packet);
 	net_device_release(device);
 
 	/* Reports the failure. */

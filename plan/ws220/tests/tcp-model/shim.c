@@ -459,6 +459,19 @@ inet_interface_address(
 	return 0;
 }
 
+/* As ipv4_output: the model's device takes the source from its own address (ws221-p008). */
+int
+ipv4_output_sourced(
+	struct net_device *device,
+	uint32_t destination,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *packet)
+{
+	(void)source;
+	return ipv4_output(device, destination, protocol, packet);
+}
+
 /* IPv4 hands the segment to the link out of the device it was routed to. */
 int
 ipv4_output(
