@@ -18,6 +18,7 @@
 #include "kern/net/packet-buf.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <uapi/errno.h>
 
@@ -50,6 +51,15 @@ kern_memset(
 	size_t count)
 {
 	return memset(destination, value, count);
+}
+
+/* The kernel's zeroed allocation is the host's. */
+void *
+kern_calloc(
+	size_t count,
+	size_t size)
+{
+	return calloc(count, size);
 }
 
 /* A 32-bit board's atomics enter and leave nothing on the host's one thread. */

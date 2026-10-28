@@ -19,21 +19,18 @@
 #include "kern/net/packet-buf.h"
 #include "kern/net/net-device.h"
 #include "kern/test-fault.h"
+#include "kern/kmem.h"
 #include <kern/kcrt.h>
 
 #include <uapi/errno.h>
 #include <stdbool.h>
 
-/*
- * The pool's slots are zero-filled storage: a .bss section, so they take
- * no room in the kernel's image (only in memory).
- */
-#define NET_BSS __attribute__((section(".bss.net_pool")))
-
+/* The HAL, the devices and the log are optional, so that host tests can use the pool without them. */
 extern bool hal_irq_disable(void) __attribute__((weak));
 extern void hal_irq_enable(void) __attribute__((weak));
 extern void net_device_ref(struct net_device *) __attribute__((weak));
 extern void net_device_release(struct net_device *) __attribute__((weak));
+extern void kern_logf(const char *format, ...) __attribute__((weak, format(printf, 1, 2)));
 
 /*
  * A standard packet's slot and a jumbo packet's: the packet, its inline
@@ -52,26 +49,25 @@ struct packet_jumbo_slot {
 };
 
 /*
- * The jumbo slots the array holds: at least one, since C has no empty
- * array, but only PACKET_BUF_JUMBO_COUNT of them are ever handed out.
- */
-#if PACKET_BUF_JUMBO_COUNT != 0U
-#define PACKET_JUMBO_SLOTS PACKET_BUF_JUMBO_COUNT
-#else
-#define PACKET_JUMBO_SLOTS 1U
-#endif
-
-/*
  * The slots of both classes and, for each, a stack of the free slots'
  * indices: an allocation takes the top one and a free puts its slot back
  * on top, so both take constant time and the slot used last, still warm
- * in the cache, is used next.  The pool lock guards the slots' used
+ * in the cache, is used next.  The arrays are allocated once, when the
+ * pool is first emptied (packet_buf_pool_init), rather than kept in the
+ * kernel's image: a 64-bit machine's pool is a few megabytes, which would
+ * count against the image's size limit (amd64's 16 MiB).  packet_count
+ * and packet_jumbo_count are the slots each class got: PACKET_BUF_POOL_COUNT
+ * and PACKET_BUF_JUMBO_COUNT, or fewer when memory was short (halved until
+ * an allocation succeeds).  The arrays and counts are set before the
+ * network runs and never change; the pool lock guards the slots' used
  * flags, the stacks and the counts below.
  */
-static struct packet_slot packet_pool[PACKET_BUF_POOL_COUNT] NET_BSS;
-static struct packet_jumbo_slot packet_jumbo_pool[PACKET_JUMBO_SLOTS] NET_BSS;
-static uint16_t packet_free_stack[PACKET_BUF_POOL_COUNT];
-static uint16_t packet_jumbo_free_stack[PACKET_JUMBO_SLOTS];
+static struct packet_slot *packet_pool;
+static struct packet_jumbo_slot *packet_jumbo_pool;
+static uint16_t *packet_free_stack;
+static uint16_t *packet_jumbo_free_stack;
+static unsigned packet_count;
+static unsigned packet_jumbo_count;
 static unsigned packet_free_count;
 static unsigned packet_jumbo_free_count;
 static unsigned packet_used;
@@ -92,12 +88,13 @@ static atomic_uint_t packet_guard;
 
 static bool packet_lock(void);
 static void packet_unlock(bool enabled);
+static void packet_pool_allocate(void);
 static struct packet_buf *packet_take_standard_locked(void);
 static struct packet_buf *packet_take_jumbo_locked(unsigned flags);
 static void packet_reset(struct packet_buf *packet, uint8_t *storage, size_t capacity, size_t headroom);
 
 /*
- * Empties the packet pool.
+ * Empties the packet pool, allocating its arrays the first time.
  */
 void
 packet_buf_pool_init(
@@ -106,18 +103,24 @@ packet_buf_pool_init(
 	bool enabled;
 	unsigned index;
 
+	/* The arrays, once; a pool that got none has no packets. */
+	if (packet_pool == NULL)
+		packet_pool_allocate();
+
 	enabled = packet_lock();
 
-	kern_memset(packet_pool, 0, sizeof(packet_pool));
-	kern_memset(packet_jumbo_pool, 0, sizeof(packet_jumbo_pool));
+	if (packet_pool != NULL)
+		kern_memset(packet_pool, 0, (size_t)packet_count * sizeof(packet_pool[0]));
+	if (packet_jumbo_pool != NULL)
+		kern_memset(packet_jumbo_pool, 0, (size_t)packet_jumbo_count * sizeof(packet_jumbo_pool[0]));
 
 	/* Stacks every slot of each class, the first one on top. */
-	for (index = 0; index < PACKET_BUF_POOL_COUNT; index++)
-		packet_free_stack[index] = (uint16_t)(PACKET_BUF_POOL_COUNT - 1U - index);
-	for (index = 0; index < PACKET_BUF_JUMBO_COUNT; index++)
-		packet_jumbo_free_stack[index] = (uint16_t)(PACKET_BUF_JUMBO_COUNT - 1U - index);
-	packet_free_count = PACKET_BUF_POOL_COUNT;
-	packet_jumbo_free_count = PACKET_BUF_JUMBO_COUNT;
+	for (index = 0; index < packet_count; index++)
+		packet_free_stack[index] = (uint16_t)(packet_count - 1U - index);
+	for (index = 0; index < packet_jumbo_count; index++)
+		packet_jumbo_free_stack[index] = (uint16_t)(packet_jumbo_count - 1U - index);
+	packet_free_count = packet_count;
+	packet_jumbo_free_count = packet_jumbo_count;
 
 	packet_used = 0;
 	packet_jumbo_used = 0;
@@ -298,7 +301,7 @@ packet_buf_free(
 	/* Puts a standard packet's slot, found from the packet's address, back on its stack. */
 	address = (uintptr_t)packet;
 	first = (uintptr_t)&packet_pool[0];
-	end = (uintptr_t)&packet_pool[PACKET_BUF_POOL_COUNT];
+	end = (uintptr_t)&packet_pool[packet_count];
 	if (address >= first && address < end) {
 		index = (address - first) / sizeof(packet_pool[0]);
 		if (&packet_pool[index].packet == packet && packet_pool[index].used != 0) {
@@ -311,7 +314,7 @@ packet_buf_free(
 
 	/* The same for a jumbo packet. */
 	first = (uintptr_t)&packet_jumbo_pool[0];
-	end = (uintptr_t)&packet_jumbo_pool[PACKET_BUF_JUMBO_COUNT];
+	end = (uintptr_t)&packet_jumbo_pool[packet_jumbo_count];
 	if (address >= first && address < end) {
 		index = (address - first) / sizeof(packet_jumbo_pool[0]);
 		if (&packet_jumbo_pool[index].packet == packet && packet_jumbo_pool[index].used != 0) {
@@ -574,11 +577,11 @@ packet_buf_pool_usage(
 	/* Samples the counts together under the pool lock. */
 	enabled = packet_lock();
 
-	usage->total = PACKET_BUF_POOL_COUNT;
+	usage->total = packet_count;
 	usage->used = packet_used;
 	usage->used_max = packet_used_max;
 	usage->alloc_failures = packet_alloc_failures;
-	usage->jumbo_total = PACKET_BUF_JUMBO_COUNT;
+	usage->jumbo_total = packet_jumbo_count;
 	usage->jumbo_used = packet_jumbo_used;
 	usage->jumbo_used_max = packet_jumbo_used_max;
 	usage->jumbo_reserve = PACKET_BUF_JUMBO_RESERVE;
@@ -709,4 +712,45 @@ packet_reset(
 	packet->l3_offset = PACKET_OFFSET_NONE;
 	packet->l4_offset = PACKET_OFFSET_NONE;
 	refcount_init(&packet->refcount, 1);
+}
+
+/*
+ * Allocates the arrays of both classes: as many slots as the build asks
+ * for, halved until the memory is there (and reported when it was short),
+ * down to none.
+ */
+static void
+packet_pool_allocate(
+	void)
+{
+	size_t bytes;
+	unsigned count;
+
+	/* The standard slots and their stack, in one block. */
+	for (count = PACKET_BUF_POOL_COUNT; count != 0; count /= 2U) {
+		bytes = (size_t)count * (sizeof(packet_pool[0]) + sizeof(uint16_t));
+		packet_pool = kern_calloc(1, bytes);
+		if (packet_pool != NULL)
+			break;
+	}
+	packet_count = count;
+	if (packet_pool != NULL)
+		packet_free_stack = (uint16_t *)(void *)(packet_pool + count);
+
+	/* The jumbo slots and their stack, where the build has them. */
+	for (count = PACKET_BUF_JUMBO_COUNT; count != 0; count /= 2U) {
+		bytes = (size_t)count * (sizeof(packet_jumbo_pool[0]) + sizeof(uint16_t));
+		packet_jumbo_pool = kern_calloc(1, bytes);
+		if (packet_jumbo_pool != NULL)
+			break;
+	}
+	packet_jumbo_count = count;
+	if (packet_jumbo_pool != NULL)
+		packet_jumbo_free_stack = (uint16_t *)(void *)(packet_jumbo_pool + count);
+
+	/* A short pool is worth saying, where there is a log. */
+	if ((packet_count != PACKET_BUF_POOL_COUNT || packet_jumbo_count != PACKET_BUF_JUMBO_COUNT) &&
+	    kern_logf != NULL)
+		kern_logf("net: packet pool short of memory: %u of %u packets, %u of %u jumbo\n", packet_count,
+		    (unsigned)PACKET_BUF_POOL_COUNT, packet_jumbo_count, (unsigned)PACKET_BUF_JUMBO_COUNT);
 }
