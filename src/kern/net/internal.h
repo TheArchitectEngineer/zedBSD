@@ -150,6 +150,14 @@ tcp_socket_create(
 void
 tcp_timer_run(void);
 
+/*
+ * Sends the acknowledgements TCP delayed for the end of a batch of input
+ * (each connection that took a single segment since it last sent): the
+ * network worker calls it when it has taken every packet that had arrived.
+ */
+void
+tcp_ack_flush(void);
+
 uint64_t
 tcp_timer_next_deadline(void);
 

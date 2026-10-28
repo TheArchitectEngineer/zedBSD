@@ -58,13 +58,45 @@
 #define TCP_RST 0x04U
 #define TCP_PSH 0x08U
 #define TCP_ACK 0x10U
-#define TCP_MSS 1024U
+
+/*
+ * The largest payload a segment of this end carries: one standard packet
+ * holds it after the default headroom (the link and IP headers) with a TCP
+ * header of the longest options.  A connection's segments are its
+ * send_mss: the smaller of the peer's offer and what the interface carries.
+ */
+#define TCP_SEGMENT_MAX (PACKET_BUF_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM - 60U)
+
+/*
+ * The segment size a peer whose SYN offered none takes (RFC 9293 section
+ * 3.7.1: 536 over IPv4; RFC 8200 section 8.3: 1220 over IPv6).
+ */
+#define TCP_DEFAULT_MSS 536U
+#define TCP_DEFAULT_MSS6 1220U
+
+/* The IPv4 and TCP headers without options, and the IPv6 and TCP headers. */
+#define TCP_HEADERS 40U
+#define TCP_HEADERS6 60U
+
+/*
+ * The congestion window a connection starts with (RFC 6928): ten segments,
+ * but no more than 14600 bytes unless two segments are larger.
+ */
+#define TCP_INITIAL_WINDOW_SEGMENTS 10U
+#define TCP_INITIAL_WINDOW_BYTES 14600U
+
+/* The largest congestion window, well within 32 bits. */
+#define TCP_CWND_MAX 0x40000000U
+
+/* The TCP option kinds this end reads in a SYN (RFC 9293 section 3.2). */
+#define TCP_OPTION_END 0U
+#define TCP_OPTION_NOP 1U
+#define TCP_OPTION_MSS 2U
 
 /*
  * The largest segment this end takes, which the SYN offers (BUG-222): an
  * Ethernet frame's 1500 bytes less the IP and TCP headers.  It fits one
- * packet's storage with its headers.  The segments this end sends stay
- * TCP_MSS, which every interface it is used on carries.
+ * packet's storage with its headers.
  */
 #define TCP_RECEIVE_MSS 1460U
 
@@ -93,11 +125,16 @@ struct tcp_segment_addresses {
  * How many packets a socket's receive queue may hold.  The window is a
  * full segment for each one still free, so this is what bounds a transfer
  * over a link with any delay (BUG-222: the common limit of 8 was an 8 KB
- * window, about 1 MB/s on a LAN).  44 segments are the 64 KB the queue's
- * bytes allow, and the larger pool of the 64-bit machines has room for
- * them; the small pool of the 32-bit boards keeps the common limit.
+ * window, about 1 MB/s on a LAN).  The large pool of the 64-bit machines
+ * gives a connection 128, so the 64 KB the queue's bytes allow fit in
+ * packets even when the peer's segments are as small as 512 bytes (a
+ * segment the queue cannot coalesce into the one before takes a packet of
+ * its own): the window promised is then always taken.  The small pool of
+ * the 32-bit boards keeps the common limit.
  */
-#if PACKET_BUF_POOL_COUNT >= 256U
+#if PACKET_BUF_POOL_COUNT >= 1024U
+#define TCP_RECEIVE_PACKETS 128U
+#elif PACKET_BUF_POOL_COUNT >= 256U
 #define TCP_RECEIVE_PACKETS 44U
 #else
 #define TCP_RECEIVE_PACKETS SOCKET_RECEIVE_MESSAGES_MAX
@@ -308,6 +345,14 @@ static struct tcp_endpoint *tcp_sockets;
 static uint16_t next_ephemeral;
 static struct spinlock tcp_registry_lock;
 
+/*
+ * The connections owing a delayed acknowledgement, linked by ack_next,
+ * each holding a socket reference the flush drops (tcp_ack_flush).  The
+ * lock guards the head and the links.
+ */
+static struct tcp_socket *tcp_ack_head;
+static struct spinlock tcp_ack_lock;
+
 static struct tcp_endpoint * tcp_endpoint(struct socket *socket);
 static void tcp_forget_peer(struct tcp_endpoint *endpoint);
 static void tcp_listener_remove(struct tcp_endpoint *child);
@@ -351,6 +396,14 @@ static int tcp_persist_given_up_locked(const struct tcp_endpoint *endpoint, uint
 static int tcp_maxunack_expired_locked(const struct tcp_endpoint *endpoint, uint64_t now);
 static void tcp_persist_leave_locked(struct tcp_endpoint *endpoint);
 static int tcp_oldest_fits_window_locked(const struct tcp_endpoint *endpoint);
+static uint32_t tcp_syn_offered_mss(const struct tcp_wire *tcp, size_t header_length);
+static void tcp_start_sending(struct tcp_endpoint *endpoint, uint32_t offered_mss);
+static uint32_t tcp_segment_size_locked(const struct tcp_endpoint *endpoint);
+static uint32_t tcp_send_limit_locked(const struct tcp_endpoint *endpoint);
+static int tcp_send_room_locked(const struct tcp_endpoint *endpoint, size_t length);
+static void tcp_cwnd_grow_locked(struct tcp_endpoint *endpoint, uint32_t acked);
+static void tcp_cwnd_loss_locked(struct tcp_endpoint *endpoint, int timeout);
+static void tcp_ack_delay(struct tcp_endpoint *endpoint);
 struct tcp_discard {
 	struct packet_buf *packets[CONFIG_TCP_SEND_QUEUE_MAX];
 	unsigned count;
@@ -390,7 +443,7 @@ static void tcp_keepalive_arm_locked(struct tcp_endpoint *endpoint);
 static struct tcp_endpoint * tcp_lookup(const struct tcp_segment_addresses *addresses, uint16_t source_port, uint16_t destination_port);
 static int tcp_connection_matches(const struct tcp_endpoint *endpoint, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint16_t destination_port);
 static int tcp_listener_matches(const struct tcp_endpoint *endpoint, const struct tcp_segment_addresses *addresses, uint16_t destination_port);
-static struct tcp_endpoint * tcp_passive_syn(struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint32_t sequence);
+static struct tcp_endpoint * tcp_passive_syn(struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint32_t sequence, uint32_t offered_mss);
 static void tcp_child_addresses(struct tcp_endpoint *child, const struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses);
 static int tcp_input(struct packet_buf *packet, uint32_t source, uint32_t destination);
 static int tcp6_input(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
@@ -471,6 +524,8 @@ tcp_init(
 	next_ephemeral = TCP_EPHEMERAL_FIRST;
 	spin_init(&tcp_registry_lock, LOCK_RANK_SOCKET_REGISTRY,
 	    "TCP socket registry");
+	spin_init(&tcp_ack_lock, LOCK_RANK_NETWORK, "TCP delayed acknowledgements");
+	tcp_ack_head = NULL;
 
 	/* Reports why the registration failed. */
 	error = ipv4_protocol_register(IPPROTO_TCP, tcp_input);
@@ -605,7 +660,7 @@ tcp_timer_run(
 	struct socket *socket;
 	struct tcp_discard discard;
 	struct tcp_pending *oldest;
-	uint8_t payload[TCP_MSS];
+	uint8_t payload[TCP_SEGMENT_MAX];
 	uint8_t flags;
 	uint32_t sequence;
 	size_t length;
@@ -629,6 +684,9 @@ tcp_timer_run(
 	count = 0;
 	registered = 0;
 	now = sched_ticks();
+
+	/* The acknowledgements delayed since the last pass go first. */
+	tcp_ack_flush();
 
 	/* Holds the registry still while its sockets are counted. */
 	irq = spin_lock_irqsave(&tcp_registry_lock);
@@ -854,6 +912,7 @@ tcp_timer_run(
 		 * start no fast retransmit.
 		 */
 		if (!immediate && !persist) {
+			tcp_cwnd_loss_locked(endpoint, 1);
 			endpoint->tcp.recover = tcp_sent_end_locked(endpoint);
 			endpoint->tcp.recovery = 1;
 			endpoint->tcp.recovery_by_timeout = 1;
@@ -1630,6 +1689,9 @@ tcp_send_segment_at(
 		endpoint->tcp.counters.segments_out++;
 		if (endpoint->tcp.advertised_window == 0)
 			endpoint->tcp.counters.zero_windows_out++;
+
+		/* Every segment acknowledges what was received: no acknowledgement is owed any more. */
+		endpoint->tcp.ack_owed = 0;
 	}
 
 	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
@@ -1710,7 +1772,14 @@ tcp_stats_fill_locked(
 	entry->in_flight_bytes = sent_end - tcp->send_unacknowledged;
 	entry->send_segments = tcp->send_count;
 	entry->send_ring = TCP_SEND_QUEUE_MAX;
-	entry->send_mss = TCP_MSS;
+	entry->send_mss = tcp_segment_size_locked(endpoint);
+
+	/* The congestion window and the slow start threshold (RFC 5681), once the connection has them. */
+	if (tcp->cwnd != 0) {
+		entry->features |= TCP_STATS_HAVE_CWND;
+		entry->cwnd = tcp->cwnd;
+		entry->ssthresh = tcp->ssthresh;
+	}
 
 	/*
 	 * The round-trip estimate (ws220-p004; srtt_us and rttvar_us mean
@@ -1833,7 +1902,7 @@ tcp_output_segment(
 		return ENOMEM;
 	}
 
-	/* A segment too large for one packet's storage is never sent (the callers keep within TCP_MSS). */
+	/* A segment too large for one packet's storage is never sent (the callers keep within TCP_SEGMENT_MAX). */
 	tcp = packet_buf_append(packet, sizeof(*tcp) + options);
 	payload = packet_buf_append(packet, length);
 	if (tcp == NULL || payload == NULL) {
@@ -2543,6 +2612,372 @@ tcp_in_flight(
 }
 
 /*
+ * Reads the maximum segment size a SYN offers (RFC 9293 section 3.2), or
+ * 0 when it offers none.  The options end at the header's end, at an end
+ * of options, or at one whose length does not fit.
+ */
+static uint32_t
+tcp_syn_offered_mss(
+	const struct tcp_wire *tcp,
+	size_t header_length)
+{
+	const uint8_t *options;
+	size_t length;
+	size_t at;
+	uint8_t kind;
+	uint8_t size;
+
+	/* The options between the fixed header and the data. */
+	options = (const uint8_t *)(tcp + 1);
+	length = header_length - sizeof(*tcp);
+
+	/* Each option in turn until the MSS is found or the options end. */
+	at = 0;
+	while (at < length) {
+		kind = options[at];
+		if (kind == TCP_OPTION_END)
+			break;
+		if (kind == TCP_OPTION_NOP) {
+			at++;
+			continue;
+		}
+
+		/* An option with a length: one that does not fit ends the list. */
+		if (at + 1U >= length)
+			break;
+		size = options[at + 1U];
+		if (size < 2U || at + size > length)
+			break;
+
+		/* The MSS option: kind 2, length 4, the size in network order. */
+		if (kind == TCP_OPTION_MSS && size == 4U)
+			return ((uint32_t)options[at + 2U] << 8) | options[at + 3U];
+		at += size;
+	}
+
+	/* None offered. */
+	return 0;
+}
+
+/*
+ * Sets up what an established connection sends with: the segment size,
+ * the smaller of the peer's offer (offered_mss; 0 for none) and what the
+ * route's interface carries, and the congestion window it starts with
+ * (RFC 6928).  Called without the socket lock, which the route lookup
+ * must not be taken under.
+ */
+static void
+tcp_start_sending(
+	struct tcp_endpoint *endpoint,
+	uint32_t offered_mss)
+{
+	struct net_device *device;
+	struct in6_addr source6;
+	struct in6_addr chosen;
+	unsigned long irq;
+	unsigned path_mtu;
+	uint32_t source;
+	uint32_t limit;
+	uint32_t mss;
+	uint32_t window;
+	int ipv6;
+	int error;
+
+	/* What the route's interface carries, no more than one packet holds. */
+	limit = TCP_SEGMENT_MAX;
+	ipv6 = inet_socket_speaks_ipv6(&endpoint->tcp.inet);
+	if (ipv6) {
+		/* Over IPv6, the path MTU to the peer (Packet Too Big lowers it later, ws130). */
+		path_mtu = 0;
+		error = tcp6_route(endpoint, &device, &source6);
+		if (error == 0) {
+			error = ipv6_route_source(device, &endpoint->tcp.inet.remote6, &chosen, &path_mtu);
+			if (device != NULL)
+				net_device_release(device);
+		}
+		if (error == 0 && path_mtu > TCP_HEADERS6 && path_mtu - TCP_HEADERS6 < limit)
+			limit = path_mtu - TCP_HEADERS6;
+	} else {
+		/* Over IPv4, the output device's MTU. */
+		error = tcp_route(endpoint, &device, &source);
+		if (error == 0) {
+			if (device->mtu > TCP_HEADERS && device->mtu - TCP_HEADERS < limit)
+				limit = device->mtu - TCP_HEADERS;
+			net_device_release(device);
+		}
+	}
+
+	/* The peer's offer, or the size every peer takes without one. */
+	mss = offered_mss;
+	if (mss == 0)
+		mss = ipv6 ? TCP_DEFAULT_MSS6 : TCP_DEFAULT_MSS;
+	if (mss > limit)
+		mss = limit;
+
+	/* Ten segments to start, but no more than 14600 bytes unless two segments are larger (RFC 6928). */
+	window = TCP_INITIAL_WINDOW_SEGMENTS * mss;
+	if (window > TCP_INITIAL_WINDOW_BYTES)
+		window = TCP_INITIAL_WINDOW_BYTES;
+	if (window < 2U * mss)
+		window = 2U * mss;
+
+	/* Published under the lock, before the writers send. */
+	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	endpoint->tcp.peer_mss = offered_mss;
+	endpoint->tcp.send_mss = mss;
+	endpoint->tcp.cwnd = window;
+	endpoint->tcp.ssthresh = UINT32_MAX;
+	endpoint->tcp.cwnd_acked = 0;
+
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
+}
+
+/*
+ * Reports the connection's segment size, or the default for a peer that
+ * offered none while it is not yet set.  The caller holds the socket lock.
+ */
+static uint32_t
+tcp_segment_size_locked(
+	const struct tcp_endpoint *endpoint)
+{
+	/* Not set before the connection is established. */
+	if (endpoint->tcp.send_mss == 0)
+		return TCP_DEFAULT_MSS;
+
+	/* Succeeded: the size set at establishment. */
+	return endpoint->tcp.send_mss;
+}
+
+/*
+ * Reports how much may be in flight: the peer's window (an unknown or
+ * closed one lets one segment go) and the congestion window, whichever is
+ * smaller.  The caller holds the socket lock.
+ */
+static uint32_t
+tcp_send_limit_locked(
+	const struct tcp_endpoint *endpoint)
+{
+	uint32_t limit;
+
+	/* The peer's window, one segment when it is closed or not known. */
+	limit = endpoint->tcp.peer_window;
+	if (limit == 0)
+		limit = tcp_segment_size_locked(endpoint);
+
+	/* The congestion window, once the connection has one. */
+	if (endpoint->tcp.cwnd != 0 && endpoint->tcp.cwnd < limit)
+		limit = endpoint->tcp.cwnd;
+
+	/* Succeeded: the smaller limit. */
+	return limit;
+}
+
+/*
+ * Tells whether a data segment of length bytes may join what is in flight:
+ * always with nothing in flight, else within the send limit.  The caller
+ * holds the socket lock.
+ */
+static int
+tcp_send_room_locked(
+	const struct tcp_endpoint *endpoint,
+	size_t length)
+{
+	uint32_t in_flight;
+	uint32_t limit;
+
+	/* One segment may always go. */
+	in_flight = tcp_in_flight(endpoint);
+	if (in_flight == 0)
+		return 1;
+
+	/* Others while they stay within the limit. */
+	limit = tcp_send_limit_locked(endpoint);
+	if ((uint64_t)in_flight + length > limit)
+		return 0;
+
+	/* Succeeded: it fits. */
+	return 1;
+}
+
+/*
+ * Grows the congestion window for bytes newly acknowledged outside a
+ * recovery (RFC 5681 section 3.1): in slow start by what was taken, no
+ * more than two segments an acknowledgement (RFC 3465's L, for a peer that
+ * acknowledges every second segment); past the threshold by one segment a
+ * window's worth of acknowledged bytes.  The caller holds the socket lock.
+ */
+static void
+tcp_cwnd_grow_locked(
+	struct tcp_endpoint *endpoint,
+	uint32_t acked)
+{
+	uint32_t mss;
+	uint32_t step;
+
+	/* A connection not yet sending has no window to grow. */
+	if (endpoint->tcp.cwnd == 0)
+		return;
+	mss = tcp_segment_size_locked(endpoint);
+
+	/* Slow start. */
+	if (endpoint->tcp.cwnd < endpoint->tcp.ssthresh) {
+		step = acked;
+		if (step > 2U * mss)
+			step = 2U * mss;
+		if (endpoint->tcp.cwnd <= TCP_CWND_MAX - step)
+			endpoint->tcp.cwnd += step;
+		return;
+	}
+
+	/* Congestion avoidance: a segment for each window acknowledged. */
+	endpoint->tcp.cwnd_acked += acked;
+	if (endpoint->tcp.cwnd_acked < endpoint->tcp.cwnd)
+		return;
+	endpoint->tcp.cwnd_acked -= endpoint->tcp.cwnd;
+	if (endpoint->tcp.cwnd <= TCP_CWND_MAX - mss)
+		endpoint->tcp.cwnd += mss;
+}
+
+/*
+ * Takes a loss into the congestion window (RFC 5681 sections 3.1 and
+ * 3.2): the threshold becomes half of what was in flight, at least two
+ * segments; the window becomes the threshold after a fast retransmit, one
+ * segment after a timeout.  The caller holds the socket lock.
+ */
+static void
+tcp_cwnd_loss_locked(
+	struct tcp_endpoint *endpoint,
+	int timeout)
+{
+	uint32_t flight;
+	uint32_t mss;
+	uint32_t threshold;
+
+	/* A connection not yet sending has no window to cut. */
+	if (endpoint->tcp.cwnd == 0)
+		return;
+	mss = tcp_segment_size_locked(endpoint);
+
+	/* Half of what was sent and not acknowledged, at least two segments. */
+	flight = tcp_sent_end_locked(endpoint) - endpoint->tcp.send_unacknowledged;
+	threshold = flight / 2U;
+	if (threshold < 2U * mss)
+		threshold = 2U * mss;
+	endpoint->tcp.ssthresh = threshold;
+
+	/* The window to go on with. */
+	endpoint->tcp.cwnd = timeout ? mss : threshold;
+	endpoint->tcp.cwnd_acked = 0;
+}
+
+/*
+ * Owes the peer an acknowledgement of one more in-order segment: the
+ * second sends it at once (RFC 5681 section 4.2); a first one waits on the
+ * list of delayed acknowledgements, which the network worker flushes when
+ * it has taken the input that had arrived.
+ */
+static void
+tcp_ack_delay(
+	struct tcp_endpoint *endpoint)
+{
+	struct socket *socket;
+	unsigned long irq;
+	unsigned owed;
+	int listing;
+	int referenced;
+
+	/* One more owed, and whether this call puts the connection on the list. */
+	socket = &endpoint->tcp.inet.socket;
+	irq = spin_lock_irqsave(&socket->lock);
+
+	endpoint->tcp.ack_owed++;
+	owed = endpoint->tcp.ack_owed;
+	listing = 0;
+	if (owed < 2U && endpoint->tcp.ack_listed == 0) {
+		endpoint->tcp.ack_listed = 1;
+		listing = 1;
+	}
+
+	spin_unlock_irqrestore(&socket->lock, irq);
+
+	/* The second segment is acknowledged now. */
+	if (owed >= 2U) {
+		(void)tcp_send_ack(endpoint, 0);
+		return;
+	}
+
+	/* Already on the list: the flush acknowledges this one too. */
+	if (!listing)
+		return;
+
+	/* A socket that is closing gets its acknowledgement now rather than a reference. */
+	referenced = socket_tryref(socket);
+	if (!referenced) {
+		irq = spin_lock_irqsave(&socket->lock);
+
+		endpoint->tcp.ack_listed = 0;
+
+		spin_unlock_irqrestore(&socket->lock, irq);
+
+		(void)tcp_send_ack(endpoint, 0);
+		return;
+	}
+
+	/* On the list, with the reference the flush drops. */
+	irq = spin_lock_irqsave(&tcp_ack_lock);
+
+	endpoint->tcp.ack_next = tcp_ack_head;
+	tcp_ack_head = &endpoint->tcp;
+
+	spin_unlock_irqrestore(&tcp_ack_lock, irq);
+}
+
+/*
+ * Sends the delayed acknowledgements still owed, and empties the list.
+ */
+void
+tcp_ack_flush(
+	void)
+{
+	struct tcp_socket *list;
+	struct tcp_socket *next;
+	struct tcp_endpoint *endpoint;
+	struct socket *socket;
+	unsigned long irq;
+	unsigned owed;
+
+	/* Takes the whole list. */
+	irq = spin_lock_irqsave(&tcp_ack_lock);
+
+	list = tcp_ack_head;
+	tcp_ack_head = NULL;
+
+	spin_unlock_irqrestore(&tcp_ack_lock, irq);
+
+	/* Each connection still owing one sends it; one that sent anything since owes none. */
+	while (list != NULL) {
+		next = list->ack_next;
+		socket = &list->inet.socket;
+		endpoint = tcp_endpoint(socket);
+		irq = spin_lock_irqsave(&socket->lock);
+
+		owed = endpoint->tcp.ack_owed;
+		endpoint->tcp.ack_listed = 0;
+		endpoint->tcp.ack_next = NULL;
+		if (endpoint->tcp.state == TCP_CLOSED)
+			owed = 0;
+
+		spin_unlock_irqrestore(&socket->lock, irq);
+
+		if (owed != 0)
+			(void)tcp_send_ack(endpoint, 0);
+		socket_release(socket);
+		list = next;
+	}
+}
+
+/*
  * Retires every segment the acknowledgement covers.
  *
  * The caller holds the socket lock and frees the returned payloads once it
@@ -2562,6 +2997,7 @@ tcp_retire_acknowledged(
 	uint64_t timeout;
 	int progressed = 0;
 	int recovering;
+	int ended;
 	uint32_t acked = 0;
 	int probe_answered = 0;
 	int beyond;
@@ -2647,7 +3083,9 @@ tcp_retire_acknowledged(
 	}
 
 	/* The recovery ends here; one a timeout started, exactly at recover, guards its duplicates. */
+	ended = 0;
 	if (endpoint->tcp.recovery != 0 && !recovering) {
+		ended = 1;
 		if (endpoint->tcp.recovery_by_timeout != 0 && acknowledgement == endpoint->tcp.recover) {
 			endpoint->tcp.dupack_guard = 1;
 			endpoint->tcp.dupack_guard_sequence = acknowledgement;
@@ -2673,6 +3111,20 @@ tcp_retire_acknowledged(
 		endpoint->tcp.unack_since = 0;
 	} else if (acked > 1U) {
 		endpoint->tcp.unack_since = sched_ticks();
+	}
+
+	/*
+	 * The congestion window grows with what the acknowledgement took
+	 * (RFC 5681 section 3.1), but not in a recovery; one that ends here
+	 * leaves it at the threshold set when the loss was found (RFC 6582
+	 * section 3.2 step 3, this end not inflating it meanwhile).
+	 */
+	if (ended) {
+		if (endpoint->tcp.cwnd > endpoint->tcp.ssthresh)
+			endpoint->tcp.cwnd = endpoint->tcp.ssthresh;
+		endpoint->tcp.cwnd_acked = 0;
+	} else if (!recovering && endpoint->tcp.recovery == 0) {
+		tcp_cwnd_grow_locked(endpoint, acked);
 	}
 
 	/* The duplicates and the resends of the oldest start over, and the peer has answered. */
@@ -2790,12 +3242,12 @@ tcp_send_reliable(
 	void *payload;
 	uint32_t sequence;
 	uint32_t advance;
-	uint32_t window;
 	uint64_t now;
 	unsigned long irq;
 	unsigned slot;
 	unsigned sent;
 	enum tcp_refusal refusal;
+	int room;
 	int control;
 	int owner;
 	int retries;
@@ -2836,13 +3288,8 @@ tcp_send_reliable(
 		return EAGAIN;
 	}
 	if (!control && length != 0) {
-		window = endpoint->tcp.peer_window;
-
-		/* An unknown or closed window still allows one segment. */
-		if (window == 0)
-			window = (uint32_t)TCP_MSS;
-		if (tcp_in_flight(endpoint) != 0 &&
-		    tcp_in_flight(endpoint) + (uint32_t)length > window) {
+		room = tcp_send_room_locked(endpoint, length);
+		if (!room) {
 			spin_unlock_irqrestore(
 			    &endpoint->tcp.inet.socket.lock, irq);
 			packet_buf_free(copy);
@@ -3391,8 +3838,8 @@ tcp_output_retry(
  * the device or the pool refuses one; the caller has set send_flushing,
  * which this gives up.
  *
- * Each entry is marked sent and its payload copied into payload (TCP_MSS
- * bytes) under the socket lock, then handed to the device with the lock
+ * Each entry is marked sent and its payload copied into payload
+ * (TCP_SEGMENT_MAX bytes) under the socket lock, then handed to the device with the lock
  * released: a reset may free the ring's copies meanwhile.  Finding none
  * left and giving up send_flushing happen under one hold of the lock, so an
  * entry a writer queues meanwhile is never left without a sender.
@@ -3441,10 +3888,11 @@ tcp_send_unsent(
 
 		/*
 		 * A payload larger than a segment is never queued (a write
-		 * takes at most TCP_MSS bytes); one that were would be left
-		 * marked and unsent, for the timer to abandon its connection.
+		 * queues at most send_mss bytes a segment); one that were would
+		 * be left marked and unsent, for the timer to abandon its
+		 * connection.
 		 */
-		if (length > TCP_MSS) {
+		if (length > TCP_SEGMENT_MAX) {
 			progressed = 1;
 			continue;
 		}
@@ -4102,7 +4550,10 @@ tcp_sendto(
 	struct thread *thread;
 	unsigned long irq;
 	enum tcp_state state;
-	uint32_t window;
+	size_t total;
+	size_t chunk;
+	uint8_t segment_flags;
+	int room;
 	int error;
 	uint64_t sequence;
 
@@ -4144,39 +4595,53 @@ tcp_sendto(
 
 	if (length == 0)
 		return 0;
-	if (length > TCP_MSS)
-		length = TCP_MSS;
 
 	/*
-	 * Waits for room, then queues the segment.  A segment the device or
-	 * the pool refuses on its way out stays queued for the output retry
-	 * (ws220-p003), so the writer goes on without sleeping for it.  Only
-	 * two things send it back here: another writer took the room first,
-	 * and it waits for room again; or no packet was left for the
-	 * segment's copy, and it sleeps TCP_SEND_RETRY_MS, since the pool
-	 * the whole stack shares tells no one when it has packets again.  A
-	 * blocking send waits as long as the connection lasts; only a
-	 * signal, an error or the end of the connection ends the wait.
+	 * Queues the bytes a segment at a time, each of the connection's
+	 * segment size, for as long as the ring and the windows have room;
+	 * the call returns what it queued, waiting for room only before its
+	 * first segment.  A segment the device or the pool refuses on its way
+	 * out stays queued for the output retry (ws220-p003), so the writer
+	 * goes on without sleeping for it.  Only two things send it back to
+	 * wait: another writer took the room first, and it waits for room
+	 * again; or no packet was left for the segment's copy, and it sleeps
+	 * TCP_SEND_RETRY_MS, since the pool the whole stack shares tells no
+	 * one when it has packets again.  A blocking send waits as long as the
+	 * connection lasts; only a signal, an error or the end of the
+	 * connection ends the wait.
 	 */
-	for (;;) {
+	total = 0;
+	error = 0;
+	while (total < length) {
+		/* The next segment: the connection's size, or what is left. */
+		irq = spin_lock_irqsave(&socket->lock);
+
+		chunk = tcp_segment_size_locked(endpoint);
+
+		spin_unlock_irqrestore(&socket->lock, irq);
+
+		if (chunk > length - total)
+			chunk = length - total;
+
 		/*
 		 * Waits for room rather than for silence: several segments may
 		 * be queued, so the send proceeds as long as the ring has a
-		 * free entry and the peer's window has space for this many
-		 * more bytes.
+		 * free entry and the windows have space for this many more
+		 * bytes.  Past the first segment the call returns instead.
 		 */
 		for (;;) {
 			irq = spin_lock_irqsave(&socket->lock);
-			window = endpoint->tcp.peer_window;
-
-			/* An unknown or closed window still allows one segment. */
-			if (window == 0)
-				window = (uint32_t)TCP_MSS;
-			if (endpoint->tcp.send_count < TCP_SEND_QUEUE_MAX &&
-			    (tcp_in_flight(endpoint) == 0 ||
-			     tcp_in_flight(endpoint) + (uint32_t)length <= window)) {
+			room = endpoint->tcp.send_count < TCP_SEND_QUEUE_MAX &&
+			    tcp_send_room_locked(endpoint, chunk);
+			if (room) {
 				spin_unlock_irqrestore(&socket->lock, irq);
 				break;
+			}
+
+			/* What was queued already is the call's result. */
+			if (total != 0) {
+				spin_unlock_irqrestore(&socket->lock, irq);
+				return (ssize_t)total;
 			}
 
 			if ((flags & MSG_DONTWAIT) != 0 || thread == NULL) {
@@ -4208,17 +4673,30 @@ tcp_sendto(
 		}
 		spin_unlock_irqrestore(&socket->lock, irq);
 
-		/* Queues the segment and sends it, or leaves it to the output retry. */
-		error = tcp_send_reliable(endpoint, TCP_ACK | TCP_PSH,
-		    buffer, length);
+		/* Queues the segment and sends it, or leaves it to the output retry; the write's last one is pushed. */
+		segment_flags = TCP_ACK;
+		if (total + chunk == length)
+			segment_flags |= TCP_PSH;
+		error = tcp_send_reliable(endpoint, segment_flags,
+		    (const uint8_t *)buffer + total, chunk);
+
+		/* Queued: the next segment. */
+		if (error == 0) {
+			total += chunk;
+			continue;
+		}
+
+		/* What was queued already is the call's result; the error, if it lasts, is the next call's. */
+		if (total != 0)
+			return (ssize_t)total;
 
 		/* Another writer took the room first: waits for room again. */
 		if (error == EAGAIN)
 			continue;
 
-		/* Queued, or an error the connection cannot pass. */
+		/* An error the connection cannot pass. */
 		if (error != ENOBUFS)
-			break;
+			return -error;
 
 		/* No packet for the copy: a writer that does not wait is told to try later. */
 		if ((flags & MSG_DONTWAIT) != 0 || thread == NULL)
@@ -4245,12 +4723,8 @@ tcp_sendto(
 		sched_sleep(sched_ticks() + kern_ms_to_ticks(TCP_SEND_RETRY_MS));
 	}
 
-	/* Reports an error the connection cannot pass (no route). */
-	if (error != 0)
-		return -error;
-
 	/* Succeeded: the bytes are queued, and the connection delivers them. */
-	return (ssize_t)length;
+	return (ssize_t)total;
 }
 
 /* Receives data from the socket's queue, keeping an unread remainder. */
@@ -4266,8 +4740,10 @@ tcp_recvfrom(
 	struct tcp_endpoint *endpoint;
 	struct packet_buf *packet;
 	size_t copied;
+	size_t take;
 	uint32_t window;
 	unsigned long irq;
+	int dequeue_flags;
 	int update;
 	int sent;
 	int error;
@@ -4299,23 +4775,51 @@ tcp_recvfrom(
 	    socket->receive_head == NULL)
 		return 0;
 
-	/* Takes the next packet and copies what fits. */
-	error = socket_dequeue_packet(socket, flags, &packet);
-	if (error != 0)
-		return -error;
-	if (length < packet->length)
-		copied = length;
-	else
-		copied = packet->length;
-	if (copied != 0)
-		kern_memcpy(buffer, packet->data, copied);
+	/*
+	 * Takes the queued packets in order and copies what fits, waiting (as
+	 * the flags allow) only for the first: one read takes as much as is
+	 * queued, up to its length.  A short unread suffix goes back to the
+	 * queue's head.  The end-of-file marker, an empty packet, ends the
+	 * read: taken alone it is the end of the stream, after data it goes
+	 * back for the next read.
+	 */
+	copied = 0;
+	dequeue_flags = flags;
+	for (;;) {
+		/* The next packet; past the first, only one already queued. */
+		error = socket_dequeue_packet(socket, dequeue_flags, &packet);
+		if (error != 0) {
+			if (copied != 0)
+				break;
+			return -error;
+		}
+		dequeue_flags = MSG_DONTWAIT;
 
-	/* Retain a short unread suffix by placing it back at the queue head. */
-	if (copied < packet->length) {
-		(void)packet_buf_pull(packet, copied);
-		(void)socket_requeue_packet_front(socket, packet);
-	} else {
+		/* The end of the stream after data waits for the next read. */
+		if (packet->length == 0 && copied != 0) {
+			(void)socket_requeue_packet_front(socket, packet);
+			break;
+		}
+
+		/* The part of it that fits. */
+		take = packet->length;
+		if (take > length - copied)
+			take = length - copied;
+		if (take != 0)
+			kern_memcpy((uint8_t *)buffer + copied, packet->data, take);
+		copied += take;
+
+		/* A short unread suffix goes back to the head; the read is full. */
+		if (take < packet->length) {
+			(void)packet_buf_pull(packet, take);
+			(void)socket_requeue_packet_front(socket, packet);
+			break;
+		}
 		packet_buf_free(packet);
+
+		/* The end of the stream taken alone, or a full read, ends it. */
+		if (take == 0 || copied == length)
+			break;
 	}
 
 	/*
@@ -4918,7 +5422,8 @@ tcp_passive_syn(
 	struct tcp_endpoint *listener,
 	const struct tcp_segment_addresses *addresses,
 	uint16_t source_port,
-	uint32_t sequence)
+	uint32_t sequence,
+	uint32_t offered_mss)
 {
 	struct socket *created;
 	struct tcp_endpoint *child;
@@ -4949,6 +5454,7 @@ tcp_passive_syn(
 	child->tcp.inet.ifindex = listener->tcp.inet.ifindex;
 	child->tcp.inet.inet_flags = INET_SOCKET_BOUND | INET_SOCKET_CONNECTED;
 	child->tcp.receive_next = sequence + 1U;
+	child->tcp.peer_mss = offered_mss;
 	child->tcp.send_next = (uint32_t)sched_ticks() * 1103515245U +
 	    child->tcp.inet.local_port + source_port;
 	child->tcp.send_next = tcp_initial_sequence(child->tcp.send_next);
@@ -5184,6 +5690,7 @@ tcp_segment_input(
 	uint16_t previous_window;
 	int retired;
 	int accept_fin;
+	int gap_filled;
 	struct packet_buf *eof;
 	void *pulled;
 
@@ -5219,7 +5726,8 @@ tcp_segment_input(
 	/* A listener answers a bare SYN with a half-open child. */
 	if (state == TCP_LISTEN) {
 		if ((flags & (TCP_SYN | TCP_ACK | TCP_RST)) == TCP_SYN)
-			(void)tcp_passive_syn(endpoint, addresses, source_port, sequence);
+			(void)tcp_passive_syn(endpoint, addresses, source_port, sequence,
+			    tcp_syn_offered_mss(tcp, header_length));
 		packet_buf_free(packet);
 		socket_release(&endpoint->tcp.inet.socket);
 		return 0;
@@ -5343,6 +5851,7 @@ tcp_segment_input(
 			(void)tcp_send_segment_at(endpoint, resend_sequence,
 			    TCP_SYN | TCP_ACK, NULL, 0);
 		if (established) {
+			tcp_start_sending(endpoint, endpoint->tcp.peer_mss);
 			socket_wake_send(&endpoint->tcp.inet.socket);
 			tcp_listener_established(endpoint);
 		}
@@ -5356,6 +5865,14 @@ tcp_segment_input(
 	if (state == TCP_SYN_SENT) {
 		retransmit.count = 0;
 		established = 0;
+
+		/*
+		 * The segment size and the congestion window, from the SYN-ACK's
+		 * offer and the route, are in place before the writers the
+		 * connection's establishment wakes below can send.
+		 */
+		if ((flags & (TCP_SYN | TCP_ACK)) == (TCP_SYN | TCP_ACK))
+			tcp_start_sending(endpoint, tcp_syn_offered_mss(tcp, header_length));
 		socket_irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
 		if ((flags & (TCP_SYN | TCP_ACK)) == (TCP_SYN | TCP_ACK) &&
 		    endpoint->tcp.active_connect_generation != 0 &&
@@ -5551,8 +6068,9 @@ tcp_segment_input(
 		if (counted && endpoint->tcp.duplicate_acks == TCP_DUPLICATE_ACKS_FAST && endpoint->tcp.recovery == 0)
 			fast = 1;
 
-		/* The fast retransmit: a recovery up to what was sent, and the oldest resent at once. */
+		/* The fast retransmit: the window halved, a recovery up to what was sent, and the oldest resent at once. */
 		if (fast) {
+			tcp_cwnd_loss_locked(endpoint, 0);
 			endpoint->tcp.recover = tcp_sent_end_locked(endpoint);
 			endpoint->tcp.recovery = 1;
 			endpoint->tcp.recovery_by_timeout = 0;
@@ -5695,12 +6213,23 @@ tcp_segment_input(
 		/* A segment the receive queue had no room for is counted for net.tcpstats. */
 		if (!queued)
 			endpoint->tcp.counters.receive_refused++;
+
+		/* Segments kept ahead of a gap mean this one filled it, or part of it. */
+		gap_filled = endpoint->tcp.reorder_count != 0;
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
 
-		/* The segments kept ahead that now follow on, then one acknowledgement for all. */
+		/*
+		 * The segments kept ahead that now follow on, then one
+		 * acknowledgement for all: at once for a segment that filled a gap
+		 * (RFC 5681 section 4.2) or that the queue refused, else delayed
+		 * to the second segment or the end of the batch of input.
+		 */
 		if (queued)
 			tcp_reorder_drain(endpoint, discard_payload);
-		(void)tcp_send_ack(endpoint, 0);
+		if (!queued || gap_filled)
+			(void)tcp_send_ack(endpoint, 0);
+		else
+			tcp_ack_delay(endpoint);
 		if (!queued)
 			goto fin_done;
 	}

@@ -4195,6 +4195,17 @@ station_index_enter(
 	if (index >= NET_DEVICE_MAX || result == NULL)
 		return ENODEV;
 
+	/*
+	 * An index that holds no station is passed over without the registry
+	 * lock: the network worker asks every index on each of its passes,
+	 * tens of thousands of times a second under load, and most machines
+	 * have no wireless station at all.  A station published meanwhile is
+	 * found on the next pass, as it would be had the lock been taken a
+	 * moment earlier.
+	 */
+	if (__atomic_load_n(&wlan_stations[index].used, __ATOMIC_ACQUIRE) == 0)
+		return ENODEV;
+
 	/* Takes a reference on the station the index names. */
 	registry_enabled = spin_lock_irqsave(&wlan_registry_lock);
 

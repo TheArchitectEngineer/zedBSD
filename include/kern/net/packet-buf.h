@@ -21,8 +21,9 @@
  * packets of PACKET_BUF_STORAGE_SIZE, and on the 64-bit machines a few
  * jumbo packets large enough for a 9000-byte frame with its headroom.  A
  * 64-bit machine's TCP offers a window of tens of kilobytes, a packet for
- * each segment of it; the 32-bit boards keep the small pool their memory
- * map was laid out for and have no jumbo packets.
+ * each segment of it, and keeps a copy of each segment it sends until the
+ * peer has it (128 of them a connection); the 32-bit boards keep the small
+ * pool their memory map was laid out for and have no jumbo packets.
  *
  * PACKET_BUF_JUMBO_RESERVE jumbo packets are kept for the drivers'
  * receive (PACKET_BUF_ALLOC_RECEIVE): a sender or a copy that would take
@@ -31,7 +32,7 @@
  */
 #if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
     defined(HAL_ARCH_RISCV64)
-#define PACKET_BUF_POOL_COUNT		256U
+#define PACKET_BUF_POOL_COUNT		1024U
 #define PACKET_BUF_JUMBO_STORAGE_SIZE	9216U
 #define PACKET_BUF_JUMBO_COUNT		32U
 #define PACKET_BUF_JUMBO_RESERVE	8U

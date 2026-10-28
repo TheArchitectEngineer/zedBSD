@@ -667,7 +667,7 @@ socket_enqueue_packet(
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
-	poll_notify();
+	socket_poll_notify(socket);
 
 	/* Reports the queued packet. */
 	return 0;
@@ -716,7 +716,7 @@ socket_enqueue_stream(
 			waitq_wake_one(&socket->receive_waitq);
 			spin_unlock_irqrestore(&socket->lock, irq);
 			packet_buf_free(packet);
-			poll_notify();
+			socket_poll_notify(socket);
 			return 0;
 		}
 	}
@@ -877,7 +877,7 @@ socket_requeue_packet_front(
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
-	poll_notify();
+	socket_poll_notify(socket);
 
 	/* Reports the requeued packet. */
 	return 0;
@@ -1067,6 +1067,39 @@ socket_poll_common(
 	return 0;
 }
 
+/*
+ * Marks a socket as one poll or select has looked at, before the caller
+ * reads its readiness.
+ */
+void
+socket_poll_watch(
+	struct socket *socket)
+{
+	/* Published before the readiness the poll then reads. */
+	__atomic_store_n(&socket->polled, 1U, __ATOMIC_RELAXED);
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+}
+
+/*
+ * Tells the system's polls of a change of a socket's readiness the caller
+ * has made, unless no poll has ever looked at the socket.
+ */
+void
+socket_poll_notify(
+	struct socket *socket)
+{
+	unsigned polled;
+
+	/* The change is published before the mark is read. */
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+	polled = __atomic_load_n(&socket->polled, __ATOMIC_RELAXED);
+	if (polled == 0)
+		return;
+
+	/* Every poll scans again. */
+	poll_notify();
+}
+
 /* Wakes one wait queue of a socket under its lock and notifies pollers. */
 static void
 socket_wake_queue(
@@ -1086,5 +1119,5 @@ socket_wake_queue(
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
-	poll_notify();
+	socket_poll_notify(socket);
 }

@@ -24,6 +24,8 @@
 #include "kern/irq.h"
 #include "kern/sysctl.h"
 #include <kern/kcrt.h>
+#include <kern/lock.h>
+#include <kern/waitq.h>
 
 #define USB_REQ_GET_DESCRIPTOR 6U
 #define USB_REQ_CLEAR_FEATURE 1U
@@ -35,6 +37,9 @@
 #define USB_RESET_RECOVERY_MS 20U
 #define USB_PORT_RESET_MS 50U
 #define USB_CANCEL_TIMEOUT_MS 1000U
+
+/* The longest a synchronous waiter sleeps before it looks at its URB again unwoken. */
+#define USB_SYNC_SLEEP_MAX_MS 10U
 #define USB_CONTROL_TIMEOUT_MS 1000U
 /*
  * How many times a root port is reset and enumerated when a step times
@@ -245,6 +250,19 @@ static bool usb_initialized;
 static atomic_uint_t usb_topology_gate;
 
 /*
+ * Where a thread waiting for a URB of its own sleeps (drv_usb_urb_wait):
+ * the publication of any URB's terminal state wakes every one of them
+ * while usb_sync_waiters says one may be asleep, and each looks at its own
+ * URB again.  The lock is the queue's condition lock and guards the
+ * count's changes; the publisher reads the count without it, and a full
+ * fence on both sides makes a waiter that saw its URB pending always seen
+ * by the publisher that ends it.
+ */
+static struct spinlock usb_sync_lock;
+static struct wait_queue usb_sync_waitq;
+static unsigned usb_sync_waiters;
+
+/*
  * Forward declaration
  */
 static void usb_topology_lock(void);
@@ -346,6 +364,8 @@ static int urb_hcd_get(struct drv_usb_urb *urb);
 static int urb_admission_get(struct drv_usb_urb *urb, struct drv_usb_interface **submitting_owner);
 static int binding_admission_enter(struct drv_usb_urb *urb, struct drv_usb_interface *interface, struct drv_usb_interface **submitting_owner);
 static int urb_cancel_to(struct drv_usb_urb *u, enum drv_usb_urb_status terminal);
+static void urb_sync_sleep(struct drv_usb_urb *urb, uint64_t deadline);
+static void urb_sync_wake(void);
 static int device_control_lock(struct drv_usb_device *device, unsigned timeout_ms);
 static int sync_data(struct drv_usb_device *device, struct drv_usb_endpoint *endpoint, void *buffer, size_t length, unsigned timeout_ms, size_t *actual);
 static int host_interface_reset_endpoints(struct drv_usb_host_interface *alternate);
@@ -369,6 +389,9 @@ drv_usb_init(
 	usb_shutdown_generation = 0;
 	usb_device_generation = 0;
 	atomic_store_release(&usb_topology_gate, 0U);
+	spin_init(&usb_sync_lock, LOCK_RANK_POLL, "usb sync wait");
+	waitq_init(&usb_sync_waitq, "usb sync wait");
+	usb_sync_waiters = 0;
 	usb_initialized = true;
 	kern_logf("usb: URB completion contract q009-release-acquire-v1\n");
 
@@ -2671,6 +2694,60 @@ drv_usb_urb_cancel(
 }
 
 /*
+ * Sleeps until some URB ends, the deadline (0: none) passes, or
+ * USB_SYNC_SLEEP_MAX_MS goes by, unless this one has ended already.  The
+ * bound covers a wakeup published before this thread was counted.
+ */
+static void
+urb_sync_sleep(
+	struct drv_usb_urb *urb,
+	uint64_t deadline)
+{
+	unsigned long irq;
+	uint64_t observed;
+	uint64_t wake;
+
+	/* No later than the bound, nor than the transfer's deadline. */
+	wake = sched_ticks() + kern_ms_to_ticks(USB_SYNC_SLEEP_MAX_MS);
+	if (deadline != 0 && deadline < wake)
+		wake = deadline;
+
+	/* Counted as a waiter before the URB is looked at, so its publisher sees this thread. */
+	irq = spin_lock_irqsave(&usb_sync_lock);
+
+	observed = waitq_sequence(&usb_sync_waitq);
+	__atomic_store_n(&usb_sync_waiters, usb_sync_waiters + 1U, __ATOMIC_RELAXED);
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+	if (atomic_raw_load_acquire(&urb->status) == DRV_USB_URB_PENDING)
+		(void)waitq_sleep(&usb_sync_waitq, &usb_sync_lock, observed, wake, 0);
+	__atomic_store_n(&usb_sync_waiters, usb_sync_waiters - 1U, __ATOMIC_RELAXED);
+
+	spin_unlock_irqrestore(&usb_sync_lock, irq);
+}
+
+/* Wakes every thread waiting for a URB of its own, when one may be asleep. */
+static void
+urb_sync_wake(
+	void)
+{
+	unsigned long irq;
+	unsigned waiters;
+
+	/* The terminal state is published before the count is looked at. */
+	__atomic_thread_fence(__ATOMIC_SEQ_CST);
+	waiters = __atomic_load_n(&usb_sync_waiters, __ATOMIC_RELAXED);
+	if (waiters == 0)
+		return;
+
+	/* Each looks at its own URB again. */
+	irq = spin_lock_irqsave(&usb_sync_lock);
+
+	waitq_wake_all(&usb_sync_waitq);
+
+	spin_unlock_irqrestore(&usb_sync_lock, irq);
+}
+
+/*
  * Waits for a transfer to complete.
  */
 int
@@ -2743,8 +2820,13 @@ drv_usb_urb_wait(
 			continue;
 		}
 
-		/* Completion may be published by an HCD retirement worker. */
-		sched_yield();
+		/*
+		 * Completion may be published by an HCD retirement worker or the
+		 * controller's interrupt: sleeps until a URB ends, or the
+		 * deadline, rather than spinning on the CPU for the whole of a
+		 * long transfer (a hub's status poll waits a quarter second).
+		 */
+		urb_sync_sleep(urb, deadline);
 	}
 }
 
@@ -7331,6 +7413,9 @@ urb_publish_terminal(
 
 	/* The terminal state publishes actual_length and all HCD input data. */
 	atomic_raw_store_release(&urb->status, status);
+
+	/* Wakes the threads waiting for a URB of their own to look at it again. */
+	urb_sync_wake();
 
 	/* Handles the callback availability. */
 	if (urb->callback != NULL)

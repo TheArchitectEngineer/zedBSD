@@ -30,18 +30,28 @@ enum tcp_state {
 /*
  * How many segments may be outstanding at once, and one of them.
  *
- * The window this opens is TCP_SEND_QUEUE_MAX segments; the peer's own
- * advertised window narrows it further whenever that is smaller.
+ * The window this opens is TCP_SEND_QUEUE_MAX segments; the congestion
+ * window and the peer's advertised window narrow it further whenever they
+ * are smaller.  Each queued segment keeps a copy of its payload in a
+ * packet of the shared pool, so the 64-bit machines, whose pool is large,
+ * keep enough for a gigabit link's round trip with the stack's delays
+ * (128 segments of 1448 bytes), and the 32-bit boards a few.
  */
 #ifndef CONFIG_TCP_SEND_QUEUE_MAX
+#if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
+    defined(HAL_ARCH_RISCV64)
+#define CONFIG_TCP_SEND_QUEUE_MAX 128
+#else
 #define CONFIG_TCP_SEND_QUEUE_MAX 8
+#endif
 #endif
 #define TCP_SEND_QUEUE_MAX ((unsigned)CONFIG_TCP_SEND_QUEUE_MAX)
 
 /*
  * How many segments that came ahead of a gap a connection keeps until the
  * gap is filled (BUG-222).  On the 64-bit machines it is the whole receive
- * window (44 segments, tcp.c's TCP_RECEIVE_PACKETS): a segment dropped for
+ * window (tcp.c's TCP_RECEIVE_PACKETS, 128 segments: the 64 KB window in
+ * segments as small as 512 bytes): a segment dropped for
  * want of room is one the sender (without SACK) resends a round trip
  * after the one before it, and with the window queued in the USB adapter a
  * round trip is tens of milliseconds (T1-516: a 2 % loss fell to a tenth
@@ -51,7 +61,7 @@ enum tcp_state {
  */
 #if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
     defined(HAL_ARCH_RISCV64)
-#define TCP_REORDER_MAX 44U
+#define TCP_REORDER_MAX 128U
 #else
 #define TCP_REORDER_MAX 16U
 #endif
@@ -124,6 +134,35 @@ struct tcp_socket {
 	uint32_t send_window_acknowledgement;
 	/* The window last put in a segment; a read that opens it says so. */
 	uint16_t advertised_window;
+	/*
+	 * The maximum segment size the peer's SYN offered (0: it offered none),
+	 * and the largest payload this end puts in a segment: the smaller of
+	 * that offer (536, or 1220 over IPv6, without one) and what the route's
+	 * interface carries, set when the connection is established.
+	 */
+	uint32_t peer_mss;
+	uint32_t send_mss;
+	/*
+	 * The congestion control of RFC 5681 in bytes: the congestion window
+	 * (RFC 6928's ten segments to start), the slow start threshold, and
+	 * the bytes acknowledged towards the next segment of growth in
+	 * congestion avoidance.  What is in flight stays within the smaller of
+	 * the congestion window and the peer's window.
+	 */
+	uint32_t cwnd;
+	uint32_t ssthresh;
+	uint32_t cwnd_acked;
+	/*
+	 * Delayed acknowledgements (RFC 1122 4.2.3.2, RFC 5681 4.2): the
+	 * in-order segments received since this end last sent anything, which
+	 * the second of them acknowledges at once; one alone is acknowledged
+	 * when the network worker has taken every segment that had arrived
+	 * (tcp_ack_flush).  ack_listed says the connection is on that list,
+	 * linked by ack_next, with a reference the flush drops.
+	 */
+	unsigned ack_owed;
+	unsigned ack_listed;
+	struct tcp_socket *ack_next;
 	/*
 	 * Segments queued and not yet acknowledged, oldest first.  Several
 	 * may be in flight at once, bounded by the peer's advertised window

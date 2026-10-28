@@ -24,7 +24,11 @@
 #include <uapi/errno.h>
 #include <stdbool.h>
 
-#define NET_BSS __attribute__((section(".net_bss")))
+/*
+ * The pool's slots are zero-filled storage: a .bss section, so they take
+ * no room in the kernel's image (only in memory).
+ */
+#define NET_BSS __attribute__((section(".bss.net_pool")))
 
 extern bool hal_irq_disable(void) __attribute__((weak));
 extern void hal_irq_enable(void) __attribute__((weak));
