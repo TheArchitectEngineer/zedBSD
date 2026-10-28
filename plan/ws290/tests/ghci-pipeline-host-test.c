@@ -161,6 +161,29 @@ struct test_graphics {
 	uint32_t skew;
 };
 
+/*
+ * A render pass a scene makes: its attachments (format, samples, load
+ * and store operations, the same for stencil) and its subpasses (colour
+ * attachments, their resolves when resolves is set, and the depth
+ * attachment, VK_ATTACHMENT_UNUSED for none).
+ */
+struct test_pass {
+	uint32_t attachment_count;
+	uint32_t format[8];
+	uint32_t samples[8];
+	uint32_t load[8];
+	uint32_t store[8];
+	uint32_t subpass_count;
+	uint32_t color_count[2];
+	uint32_t color[2][8];
+	uint32_t resolves[2];
+	uint32_t resolve[2][8];
+	uint32_t depth[2];
+};
+
+/* The render pass every graphics pipeline of the scenes is made for. */
+#define ID_PIPELINE_PASS		0x7777U
+
 /* The counts of the checks. */
 static unsigned checks_passed;
 static unsigned checks_failed;
@@ -171,6 +194,10 @@ static struct ghci_device device;
 /* The frame the helpers build (one at a time; too large for the stack), and what the last run returned. */
 static struct frame frame;
 static int last_run;
+
+/* The capability bits a scene takes away from its profile, and the ring's bytes it asks for (0: the driver's). */
+static uint32_t test_caps_off;
+static uint32_t test_ring_bytes;
 
 /* The SPIR-V of each module and its bytes, read once at the start. */
 static uint8_t modules[MODULES][MODULE_BYTES];
@@ -201,6 +228,7 @@ static int make_modules(struct node *node);
 static uint32_t make_set_layout(struct node *node, uint64_t identity, uint32_t count, const uint32_t *types, const uint32_t *stages, uint64_t immutable);
 static uint32_t make_layout(struct node *node, uint64_t identity, uint32_t sets, const uint64_t *set_layouts, uint32_t push_bytes);
 static void put_stage(uint32_t stage, uint64_t module, const uint32_t *spec, uint32_t spec_count);
+static uint32_t make_render_pass(struct node *node, uint64_t identity, const struct test_pass *pass);
 static uint32_t make_graphics(struct node *node, const struct test_graphics *graphics, uint64_t identity);
 static uint32_t make_compute(struct node *node, uint64_t module, uint64_t layout, const uint32_t *spec, uint32_t spec_count, uint64_t identity);
 static void graphics_defaults(struct test_graphics *graphics);
@@ -219,6 +247,7 @@ static void scene_caches(void);
 static void scene_scratch(void);
 static void scene_counts(void);
 static void scene_budget(void);
+static int execute_main(const char *directory, const char *compiler_directory);
 
 /* The operations of the fake bus; they live as long as the test. */
 static const struct ghci_bus_ops fake_bus_ops = {
@@ -238,11 +267,13 @@ main(
 {
 	int error;
 
-	/* The modules. */
-	if (argc != 3) {
-		printf("usage: ghci-pipeline-host-test spirv-directory compiler-spirv-directory\n");
+	/* The modules, and the scenes asked for (the pipelines', or the execution's with "execute"). */
+	if (argc != 3 && (argc != 4 || strcmp(argv[3], "execute") != 0)) {
+		printf("usage: ghci-pipeline-host-test spirv-directory compiler-spirv-directory [execute]\n");
 		return 2;
 	}
+	if (argc == 4)
+		return execute_main(argv[1], argv[2]);
 	error = load_modules(argv[1], argv[2]);
 	if (error != 0) {
 		printf("FAIL ghci-pipeline-host-test: the SPIR-V modules are not there\n");
@@ -351,8 +382,9 @@ start(
 		"ghci device", "ghci display", "ghci ring", "ghci interrupt"
 	};
 
-	/* The model and the stubs, with the rules the driver must keep. */
+	/* The model and the stubs, with the rules the driver must keep; the scene's bits taken away. */
 	model_init(profile, NULL);
+	model.window[GHCI_REG_DEVICE_CAPS / 4U] &= ~test_caps_off;
 	stub_reset();
 	stub_lock_order(order, 4U);
 	stub_forbid_wait("ghci fence", "ghci device");
@@ -365,6 +397,7 @@ start(
 	device.bus_ops = &fake_bus_ops;
 	device.pci_vendor = TEST_PCI_VENDOR;
 	device.pci_device = TEST_PCI_DEVICE;
+	device.ring_bytes = test_ring_bytes;
 	return ghci_device_start(&device);
 }
 
@@ -896,9 +929,94 @@ graphics_defaults(
 }
 
 /*
- * vkCreateGraphicsPipelines of one pipeline as libvulkan encodes it (no
- * render pass the executor knows).  Returns the result (~0 when the
- * frame failed); the reply holds the identity or 0.
+ * vkCreateRenderPass as libvulkan encodes it (the same pass made again
+ * replaces it).  Returns the result (~0 when the frame failed).
+ */
+static uint32_t
+make_render_pass(
+	struct node *node,
+	uint64_t identity,
+	const struct test_pass *pass)
+{
+	uint32_t index;
+	uint32_t at;
+	int error;
+
+	/* The old pass of the identity goes. */
+	begin(node, GPU_OP_DESTROY_RENDER_PASS);
+	put64(ID_DEVICE);
+	put64(identity);
+	put64(0U);
+	(void)run(node);
+
+	/* [device][u64 1], the head and the attachments. */
+	begin(node, GPU_OP_CREATE_RENDER_PASS);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(pass->attachment_count);
+	put64(pass->attachment_count);
+	for (index = 0U; index < pass->attachment_count; index++) {
+		put32(0U);
+		put32(pass->format[index]);
+		put32(pass->samples[index]);
+		put32(pass->load[index]);
+		put32(pass->store[index]);
+		put32(pass->load[index]);
+		put32(pass->store[index]);
+		put32(VK_IMAGE_LAYOUT_UNDEFINED);
+		put32(VK_IMAGE_LAYOUT_GENERAL);
+	}
+
+	/* The subpasses: no inputs, the colours, the resolves, the depth, no preserves. */
+	put32(pass->subpass_count);
+	put64(pass->subpass_count);
+	for (index = 0U; index < pass->subpass_count; index++) {
+		put32(0U);
+		put32(VK_PIPELINE_BIND_POINT_GRAPHICS);
+		put32(0U);
+		put64(0U);
+		put32(pass->color_count[index]);
+		put64(pass->color_count[index]);
+		for (at = 0U; at < pass->color_count[index]; at++) {
+			put32(pass->color[index][at]);
+			put32(VK_IMAGE_LAYOUT_GENERAL);
+		}
+		put64(pass->resolves[index] != 0U ? pass->color_count[index] : 0U);
+		for (at = 0U; pass->resolves[index] != 0U && at < pass->color_count[index]; at++) {
+			put32(pass->resolve[index][at]);
+			put32(VK_IMAGE_LAYOUT_GENERAL);
+		}
+		put64(pass->depth[index] != VK_ATTACHMENT_UNUSED ? 1U : 0U);
+		if (pass->depth[index] != VK_ATTACHMENT_UNUSED) {
+			put32(pass->depth[index]);
+			put32(VK_IMAGE_LAYOUT_GENERAL);
+		}
+		put32(0U);
+		put64(0U);
+	}
+
+	/* No dependencies, then the tail. */
+	put32(0U);
+	put64(0U);
+	tail(identity);
+	error = run(node);
+	if (error != 0)
+		return ~0U;
+
+	/* Succeeded: the result. */
+	return reply32(node, 4U);
+}
+
+/*
+ * vkCreateGraphicsPipelines of one pipeline as libvulkan encodes it, for
+ * subpass 0 of ID_PIPELINE_PASS, which is made first to match the
+ * pipeline (its colour attachments R8G8B8A8_UNORM, a depth and stencil
+ * attachment when the pipeline tests depth or stencil, its samples).
+ * Returns the result (~0 when the frame failed); the reply holds the
+ * identity or 0.
  */
 static uint32_t
 make_graphics(
@@ -906,9 +1024,29 @@ make_graphics(
 	const struct test_graphics *graphics,
 	uint64_t identity)
 {
+	struct test_pass pass;
 	uint32_t index;
 	uint32_t word;
 	int error;
+
+	/* The render pass of the pipeline. */
+	memset(&pass, 0, sizeof(pass));
+	pass.subpass_count = 1U;
+	pass.color_count[0] = graphics->attachments;
+	pass.depth[0] = VK_ATTACHMENT_UNUSED;
+	for (index = 0U; index < graphics->attachments && index < 8U; index++) {
+		pass.format[index] = VK_FORMAT_R8G8B8A8_UNORM;
+		pass.samples[index] = graphics->samples != 0U ? graphics->samples : 1U;
+		pass.color[0][index] = index;
+	}
+	pass.attachment_count = index;
+	if (graphics->depth != 0U || graphics->stencil != 0U) {
+		pass.format[index] = graphics->stencil != 0U ? VK_FORMAT_D32_SFLOAT_S8_UINT : VK_FORMAT_D32_SFLOAT;
+		pass.samples[index] = graphics->samples != 0U ? graphics->samples : 1U;
+		pass.depth[0] = index;
+		pass.attachment_count++;
+	}
+	(void)make_render_pass(node, ID_PIPELINE_PASS, &pass);
 
 	/* [device][cache][u32 1][u64 1] and the head with the stages. */
 	begin(node, GPU_OP_CREATE_GRAPHICS_PIPELINES);
@@ -1060,9 +1198,9 @@ make_graphics(
 		put64(0U);
 	}
 
-	/* The layout, a render pass the executor does not know, subpass 0, no base; then the identity. */
+	/* The layout, the render pass, subpass 0, no base; then the identity. */
 	put64(graphics->layout);
-	put64(0x7777U);
+	put64(ID_PIPELINE_PASS);
 	put32(0U);
 	put64(0U);
 	put32(0xffffffffU);
@@ -2895,3 +3033,6 @@ scene_budget(void)
 	node_close(&node);
 	stop("budget");
 }
+
+/* The scenes of the execution of recorded commands (compiled with these helpers). */
+#include "ghci-execute-host-test.c"

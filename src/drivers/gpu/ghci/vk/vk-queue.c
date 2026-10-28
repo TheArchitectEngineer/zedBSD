@@ -17,10 +17,12 @@
  * One ring is the one queue, so the submissions run in the order they
  * are placed: a semaphore needs no wait of its own, and a fence or a job
  * is done when the ticket of the last submission before it is.  A
- * submission places the executed command buffers in the device's GHCI
- * session and a fence after them; one whose command buffers record
- * nothing places the fence alone.  An event is a word of the device's
- * executor heap, which the host sets and resets here.
+ * submission places the packets of its command buffers (vk-execute.c)
+ * in the device's GHCI session and a fence after them; one whose command
+ * buffers record nothing places the fence alone.  An event is a word of
+ * the device's data heap, which the host sets and resets here and the
+ * GPU with a fence.  A query pool's slots are in the data heap too, and
+ * the host reads its results there.
  */
 
 #include <stddef.h>
@@ -43,13 +45,19 @@
 /* The bytes and the alignment of an event's word. */
 #define EVENT_BYTES			8U
 
+/* The bytes of a query's slot (its result and availability word) and the most queries of a pool. */
+#define QUERY_SLOT_BYTES		16U
+#define QUERY_POOL_MAX			65536U
+
 static int queue_submit(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
-static int submission_check(struct ghci_vk_session *session, const VkSubmitInfo *submits, uint64_t count, struct ghci_vk_device *device);
+static int submission_check(struct ghci_vk_session *session, const VkSubmitInfo *submits, uint64_t count, struct ghci_vk_device *device, int *recorded);
 static int create_sync(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int destroy_sync(struct ghci_vk_session *session, enum ghci_vk_kind kind, struct i915_wire_reader *reader);
 static int reset_fences(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int fence_status(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int event_operation(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int create_query_pool(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int query_results(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static enum ghci_job_answer judge(void *context, uint64_t seq, uint64_t generation);
 static void retire_session(struct ghci_device *device, struct ghci_vk_session *session);
 static unsigned retire(struct ghci_vk_session *session, void **done, int *errors, struct ghci_vk_session **owners, unsigned capacity, struct ghci_vk_frame **gone);
@@ -408,9 +416,11 @@ queue_submit(
 	struct ghci_vk_object *queue;
 	struct ghci_vk_object *fence;
 	struct ghci_vk_device *device;
+	struct ghci_vk_submission submission;
 	VkSubmitInfo *submits;
 	struct ghci_ticket ticket;
 	uint64_t handle;
+	int recorded;
 	uint64_t count;
 	uint64_t index;
 	uint64_t signal;
@@ -441,17 +451,27 @@ queue_submit(
 	}
 
 	/* The semaphores and the command buffers named, ready to run. */
-	error = submission_check(session, submits, count, device);
+	error = submission_check(session, submits, count, device, &recorded);
 	if (error != 0)
 		return error;
 
+	/* The recorded commands made into packets (none for buffers that record nothing). */
+	kern_memset(&submission, 0, sizeof(submission));
+	if (recorded) {
+		error = ghci_vk_execute(session, device, submits, count, &submission);
+		if (error != 0) {
+			ghci_vk_submission_end(device, &submission, NULL, 0);
+			return error;
+		}
+	}
+
 	/* The work and its fence in the device's session (the queue holds no lock of the device). */
 	result = (uint32_t)VK_SUCCESS;
-	error = ghci_cp_submit(session->device, device->vm, NULL, 0U, &ticket);
+	error = ghci_cp_submit(session->device, device->vm, submission.words, submission.used, &ticket);
 	if (error != 0)
 		result = (uint32_t)VK_ERROR_DEVICE_LOST;
 
-	/* The ticket the fence, the jobs and the frames wait for. */
+	/* The ticket the fence, the jobs, the frames and the submission's memory wait for. */
 	if (result == (uint32_t)VK_SUCCESS) {
 		ghci_vk_submitted(device, &ticket);
 		if (fence != NULL) {
@@ -459,6 +479,9 @@ queue_submit(
 			fence->as.fence.submitted = 1;
 			fence->as.fence.ticket = ticket;
 		}
+		ghci_vk_submission_end(device, &submission, &ticket, 1);
+	} else {
+		ghci_vk_submission_end(device, &submission, NULL, error == EIO);
 	}
 
 	/* The result. */
@@ -470,18 +493,18 @@ queue_submit(
 
 /*
  * Checks the submissions: every array as long as its count, every
- * semaphore the device's, and every command buffer the device's and
- * ended.  Returns 0, EINVAL for one the session does not have, one not
- * ready or a count that is not its array's, or ENOTSUP for a command
- * buffer with recorded commands, which the executor does not execute
- * yet.
+ * semaphore the device's, and every command buffer the device's, primary
+ * and ended; *recorded says whether one has commands.  Returns 0, or
+ * EINVAL for one the session does not have, one not ready or a count
+ * that is not its array's.
  */
 static int
 submission_check(
 	struct ghci_vk_session *session,
 	const VkSubmitInfo *submits,
 	uint64_t count,
-	struct ghci_vk_device *device)
+	struct ghci_vk_device *device,
+	int *recorded)
 {
 	struct ghci_vk_object *object;
 	uint64_t decoded[4];
@@ -490,6 +513,7 @@ submission_check(
 	uint64_t handle;
 
 	/* Each submission's semaphores and command buffers. */
+	*recorded = 0;
 	for (index = 0U; index < count; index++) {
 		/* Arrays as long as their counts say (an absent one is not read). */
 		decoded[0] = ghci_vk_decoded_count(session, submits[index].pWaitSemaphores);
@@ -519,16 +543,20 @@ submission_check(
 				return EINVAL;
 		}
 
-		/* The command buffers: ended, and (for now) empty. */
-		for (at = 0U; at < submits[index].commandBufferCount && submits[index].pCommandBuffers != NULL; at++) {
+		/* The command buffers: primary and ended. */
+		if (submits[index].commandBufferCount != 0U && submits[index].pCommandBuffers == NULL)
+			return EINVAL;
+		for (at = 0U; at < submits[index].commandBufferCount; at++) {
 			handle = (uint64_t)(uintptr_t)submits[index].pCommandBuffers[at];
 			object = ghci_vk_object_find(session, GHCI_VK_COMMAND_BUFFER, handle);
 			if (object == NULL || object->device != device)
 				return EINVAL;
-			if (object->as.commands.state != GHCI_VK_RECORD_EXECUTABLE)
+			if (object->as.commands.state != GHCI_VK_RECORD_EXECUTABLE || object->as.commands.failed)
+				return EINVAL;
+			if (object->as.commands.level != (uint32_t)VK_COMMAND_BUFFER_LEVEL_PRIMARY)
 				return EINVAL;
 			if (object->as.commands.commands != 0U)
-				return ENOTSUP;
+				*recorded = 1;
 		}
 	}
 
@@ -589,7 +617,7 @@ create_sync(
 	block = NULL;
 	offset = 0U;
 	if (kind == GHCI_VK_EVENT) {
-		error = ghci_vk_heap_take(session, device->device, EVENT_BYTES, EVENT_BYTES, &block, &offset);
+		error = ghci_vk_heap_take(session, device->device, GHCI_VK_HEAP_DATA, EVENT_BYTES, EVENT_BYTES, &block, &offset);
 		if (error == ENOMEM)
 			result = (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 		else if (error != 0)
@@ -925,4 +953,208 @@ complete(
 		kern_free(gone);
 		gone = next;
 	}
+}
+
+/*
+ * Runs a query pool command; *handled stays clear for another group's
+ * number.
+ */
+int
+ghci_vk_query_route(
+	struct ghci_vk_session *session,
+	uint32_t opcode,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply,
+	int *handled)
+{
+	int error;
+
+	/* Picks the command, or leaves it to another group. */
+	*handled = 1;
+	switch (opcode) {
+	case GPU_OP_CREATE_QUERY_POOL:
+		error = create_query_pool(session, requested, reader, reply);
+		break;
+	case GPU_OP_DESTROY_QUERY_POOL:
+		error = destroy_sync(session, GHCI_VK_QUERY_POOL, reader);
+		break;
+	case GPU_OP_GET_QUERY_POOL_RESULTS:
+		error = query_results(session, requested, reader, reply);
+		break;
+	default:
+		*handled = 0;
+		return 0;
+	}
+
+	/* A command that could not be decoded or run. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the command ran. */
+	return 0;
+}
+
+/*
+ * vkCreateQueryPool: the create form with VkQueryPoolCreateInfo.  An
+ * occlusion or timestamp pool takes 16 bytes of the device's data heap
+ * per query, cleared (no query is available); a pipeline statistics pool
+ * is answered VK_ERROR_FEATURE_NOT_PRESENT (the feature is not
+ * reported), and a pool past QUERY_POOL_MAX queries or the heap
+ * VK_ERROR_OUT_OF_DEVICE_MEMORY.
+ */
+static int
+create_query_pool(
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
+{
+	VkQueryPoolCreateInfo info;
+	struct ghci_vk_object *device;
+	struct ghci_vk_object *object;
+	struct ghci_vk_heap_block *block;
+	uint64_t handle;
+	uint64_t present;
+	uint64_t identity;
+	uint32_t offset;
+	uint32_t bytes;
+	uint32_t result;
+	int error;
+
+	/* The device, the create info and the tail. */
+	kern_memset(&info, 0, sizeof(info));
+	handle = drv_i915_wire_read_u64(reader);
+	present = drv_i915_wire_read_u64(reader);
+	if (present == 1U)
+		i915_vkc_dec_VkQueryPoolCreateInfo(reader, &session->arena, &info);
+	identity = ghci_vk_create_tail(reader);
+	if (reader->error != 0 || present != 1U)
+		return EINVAL;
+	device = ghci_vk_object_find(session, GHCI_VK_DEVICE, handle);
+	if (device == NULL)
+		return EINVAL;
+
+	/* The types the device counts, and the slots in the data heap. */
+	result = (uint32_t)VK_SUCCESS;
+	block = NULL;
+	offset = 0U;
+	bytes = 0U;
+	if (info.queryType != VK_QUERY_TYPE_OCCLUSION && info.queryType != VK_QUERY_TYPE_TIMESTAMP)
+		result = (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT;
+	else if (info.queryCount == 0U || info.queryCount > QUERY_POOL_MAX)
+		result = (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
+	if (result == (uint32_t)VK_SUCCESS) {
+		bytes = info.queryCount * QUERY_SLOT_BYTES;
+		error = ghci_vk_heap_take(session, device->device, GHCI_VK_HEAP_DATA, bytes, QUERY_SLOT_BYTES, &block, &offset);
+		if (error == ENOMEM)
+			result = (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
+		else if (error != 0)
+			result = (uint32_t)VK_ERROR_DEVICE_LOST;
+	}
+
+	/* The object, its slots cleared. */
+	if (result == (uint32_t)VK_SUCCESS) {
+		error = ghci_vk_object_add(session, GHCI_VK_QUERY_POOL, identity, device->device, &object);
+		if (error != 0) {
+			ghci_vk_heap_give(block, offset);
+			return error;
+		}
+		object->as.query_pool.type = info.queryType;
+		object->as.query_pool.count = info.queryCount;
+		object->as.query_pool.block = block;
+		object->as.query_pool.offset = offset;
+		object->as.query_pool.va = block->mapping->va + offset;
+		object->as.query_pool.bus = block->allocation->bus + offset;
+		object->as.query_pool.view = block->allocation->view + offset;
+		kern_memset(object->as.query_pool.view, 0, bytes);
+	}
+
+	/* The result, and the identity when it succeeded. */
+	ghci_vk_reply_created(reply, requested, result, identity);
+
+	/* Succeeded: the pool exists, or the reply says why not. */
+	return 0;
+}
+
+/*
+ * vkGetQueryPoolResults: [device][pool][u32 first][u32 count][u64 bytes]
+ * [u64 bytes][u64 stride][u32 flags] -> [result][u64 bytes][the records].
+ * Each record is the query's result and its availability word, each
+ * 4 bytes (8 with VK_QUERY_RESULT_64_BIT), packed at stride; the result is
+ * VK_SUCCESS when every query is available and VK_NOT_READY when one is
+ * not (libvulkan waits itself).  A shape that is not that is EINVAL.
+ */
+static int
+query_results(
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
+{
+	struct ghci_vk_object *object;
+	const uint8_t *slot;
+	uint64_t identity;
+	uint64_t bytes;
+	uint64_t stride;
+	uint64_t value;
+	uint64_t available;
+	uint32_t first;
+	uint32_t count;
+	uint32_t flags;
+	uint32_t width;
+	uint32_t index;
+	uint32_t result;
+
+	/* The device, the pool, the queries and the shape. */
+	(void)drv_i915_wire_read_u64(reader);
+	identity = drv_i915_wire_read_u64(reader);
+	first = drv_i915_wire_read_u32(reader);
+	count = drv_i915_wire_read_u32(reader);
+	bytes = drv_i915_wire_read_u64(reader);
+	(void)drv_i915_wire_read_u64(reader);
+	stride = drv_i915_wire_read_u64(reader);
+	flags = drv_i915_wire_read_u32(reader);
+	if (reader->error != 0)
+		return EINVAL;
+	object = ghci_vk_object_find(session, GHCI_VK_QUERY_POOL, identity);
+	if (object == NULL || first > object->as.query_pool.count || count > object->as.query_pool.count - first)
+		return EINVAL;
+	width = 4U;
+	if ((flags & VK_QUERY_RESULT_64_BIT) != 0U)
+		width = 8U;
+	if (stride != 2U * width || bytes != (uint64_t)count * stride)
+		return EINVAL;
+
+	/* Every query available, or not yet. */
+	result = (uint32_t)VK_SUCCESS;
+	for (index = 0U; index < count; index++) {
+		slot = object->as.query_pool.view + (uint64_t)(first + index) * QUERY_SLOT_BYTES;
+		kern_memcpy(&available, slot + 8U, 8U);
+		if (available == 0U)
+			result = (uint32_t)VK_NOT_READY;
+	}
+	if (requested == 0U)
+		return 0;
+
+	/* The result, then each query's record. */
+	drv_i915_wire_reply_u32(reply, result);
+	drv_i915_wire_reply_u64(reply, bytes);
+	for (index = 0U; index < count; index++) {
+		slot = object->as.query_pool.view + (uint64_t)(first + index) * QUERY_SLOT_BYTES;
+		kern_memcpy(&value, slot, 8U);
+		kern_memcpy(&available, slot + 8U, 8U);
+		if (available != 0U)
+			available = 1U;
+		if (width == 8U) {
+			drv_i915_wire_reply_u64(reply, value);
+			drv_i915_wire_reply_u64(reply, available);
+		} else {
+			drv_i915_wire_reply_u32(reply, (uint32_t)value);
+			drv_i915_wire_reply_u32(reply, (uint32_t)available);
+		}
+	}
+
+	/* Succeeded: the records are reported. */
+	return 0;
 }

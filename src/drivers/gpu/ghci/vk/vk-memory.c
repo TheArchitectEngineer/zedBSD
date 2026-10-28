@@ -17,10 +17,13 @@
  * the specification): attachments and storage images must be, and the
  * others may be.
  *
- * The executor heap is what the driver itself writes for the GPU in a
- * device's session (events now; descriptors, pipelines and the temporary
- * memory of a submission later): blocks of host memory mapped once and
- * handed out in pieces, a block twice the last when none has room.
+ * The executor heaps are what the driver itself writes for the GPU in a
+ * device's session: blocks of host memory mapped once and handed out in
+ * pieces, a block twice the last when none has room.  The code heap
+ * (pipeline state records and programs) is mapped executable, the data
+ * heap (scratch, events, query pools, a submission's temporary memory)
+ * is not.  A run that work in the ring may still read goes back once
+ * that work's ticket has passed.
  */
 
 #include <stddef.h>
@@ -55,7 +58,7 @@ static int subresource_layout(struct ghci_vk_session *session, uint32_t requeste
 static int sparse_requirements(uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static struct ghci_vk_device *device_of(struct ghci_vk_session *session, uint64_t handle);
 static uint64_t round_up(uint64_t value, uint64_t granule);
-static int heap_grow(struct ghci_vk_session *session, struct ghci_vk_device *device, uint32_t least);
+static int heap_grow(struct ghci_vk_session *session, struct ghci_vk_device *device, enum ghci_vk_heap heap, uint32_t least);
 
 /*
  * Runs a memory, buffer or image command; *handled stays clear for
@@ -154,14 +157,17 @@ ghci_vk_memory_blob(
 }
 
 /*
- * Takes bytes of a device's executor heap, aligned to alignment (a power
- * of two), growing the heap when no block has room.  Returns 0 with the
- * block and the offset in it, or the error of the growth (ENOMEM, EIO).
+ * Takes bytes of one of a device's executor heaps (code or data),
+ * aligned to alignment (a power of two), growing that heap when no block
+ * has room.  Runs let go whose tickets have passed go back first.
+ * Returns 0 with the block and the offset in it, or the error of the
+ * growth (ENOMEM, EIO).
  */
 int
 ghci_vk_heap_take(
 	struct ghci_vk_session *session,
 	struct ghci_vk_device *device,
+	enum ghci_vk_heap heap,
 	uint32_t bytes,
 	uint32_t alignment,
 	struct ghci_vk_heap_block **block,
@@ -170,9 +176,12 @@ ghci_vk_heap_take(
 	struct ghci_vk_heap_block *each;
 	int error;
 
+	/* What the GPU has passed is room again. */
+	ghci_vk_heap_reclaim(session, device);
+
 	/* The blocks in turn, then a new one. */
 	for (;;) {
-		for (each = device->heap; each != NULL; each = each->next) {
+		for (each = device->heap[heap]; each != NULL; each = each->next) {
 			error = ghci_range_alloc(&each->map, bytes, alignment, offset);
 			if (error == 0) {
 				*block = each;
@@ -181,13 +190,13 @@ ghci_vk_heap_take(
 		}
 
 		/* No block has room: one more, large enough. */
-		error = heap_grow(session, device, bytes + alignment);
+		error = heap_grow(session, device, heap, bytes + alignment);
 		if (error != 0)
 			return error;
 	}
 }
 
-/* Gives back bytes of the executor heap. */
+/* Gives back bytes of the executor heap that nothing placed in the ring reads. */
 void
 ghci_vk_heap_give(
 	struct ghci_vk_heap_block *block,
@@ -199,8 +208,84 @@ ghci_vk_heap_give(
 }
 
 /*
- * Lets a device's executor heap go: each block is unmapped and its
- * memory goes back once the unmap passed.  The device's objects are gone.
+ * Lets a run of the executor heap go once the work placed until now has
+ * passed: once ticket has (NULL: the device's last submission), or at
+ * once when the device has placed nothing.  A record that cannot be made
+ * keeps the run until the device's heap goes.
+ */
+void
+ghci_vk_heap_retire(
+	struct ghci_vk_device *device,
+	struct ghci_vk_heap_block *block,
+	uint32_t offset,
+	const struct ghci_ticket *ticket)
+{
+	struct ghci_vk_retired *retired;
+	struct ghci_ticket last;
+	unsigned long irq;
+	int submitted;
+
+	/* Nothing to let go. */
+	if (block == NULL)
+		return;
+
+	/* The ticket the run waits for. */
+	if (ticket != NULL) {
+		last = *ticket;
+		submitted = 1;
+	} else {
+		irq = spin_lock_irqsave(&device->session->device->irq_lock);
+
+		last = device->last;
+		submitted = device->submitted;
+
+		spin_unlock_irqrestore(&device->session->device->irq_lock, irq);
+	}
+
+	/* Nothing placed reads it, or its ticket has passed. */
+	if (!submitted || ghci_cp_ticket(device->session->device, &last) != GHCI_TICKET_PENDING) {
+		(void)ghci_range_free(&block->map, offset);
+		return;
+	}
+
+	/* It waits on the device's list. */
+	retired = kern_malloc(sizeof(*retired));
+	if (retired == NULL)
+		return;
+	retired->block = block;
+	retired->offset = offset;
+	retired->ticket = last;
+	retired->next = device->retired;
+	device->retired = retired;
+}
+
+/* Gives back the runs a device let go whose tickets have passed (or a reset ended). */
+void
+ghci_vk_heap_reclaim(
+	struct ghci_vk_session *session,
+	struct ghci_vk_device *device)
+{
+	struct ghci_vk_retired **position;
+	struct ghci_vk_retired *retired;
+
+	/* Each run, in turn. */
+	position = &device->retired;
+	while (*position != NULL) {
+		retired = *position;
+		if (ghci_cp_ticket(session->device, &retired->ticket) == GHCI_TICKET_PENDING) {
+			position = &retired->next;
+			continue;
+		}
+		*position = retired->next;
+		(void)ghci_range_free(&retired->block->map, retired->offset);
+		kern_free(retired);
+	}
+}
+
+/*
+ * Lets a device's executor heaps go: each block is unmapped and its
+ * memory goes back once the unmap passed (which orders it after the
+ * work that read it).  The device's objects are gone.
  */
 void
 ghci_vk_heap_fini(
@@ -208,22 +293,33 @@ ghci_vk_heap_fini(
 	struct ghci_vk_device *device)
 {
 	struct ghci_vk_heap_block *block;
+	struct ghci_vk_retired *retired;
+	uint32_t heap;
 
-	/* Each block in turn. */
-	while (device->heap != NULL) {
-		block = device->heap;
-		device->heap = block->next;
-
-		/* The GPU address goes with the unmap's fence, and the block lets its memory go. */
-		ghci_vm_unmap(session->device, block->mapping);
-		mutex_lock(&session->device->lock);
-
-		ghci_memory_unhold(session->device, block->allocation);
-
-		mutex_unlock(&session->device->lock);
-		kern_free(block);
+	/* The records of the runs that waited: their blocks go below. */
+	while (device->retired != NULL) {
+		retired = device->retired;
+		device->retired = retired->next;
+		kern_free(retired);
 	}
-	device->heap_bytes = 0U;
+
+	/* Each block of each heap in turn. */
+	for (heap = 0U; heap < GHCI_VK_HEAPS; heap++) {
+		while (device->heap[heap] != NULL) {
+			block = device->heap[heap];
+			device->heap[heap] = block->next;
+
+			/* The GPU address goes with the unmap's fence, and the block lets its memory go. */
+			ghci_vm_unmap(session->device, block->mapping);
+			mutex_lock(&session->device->lock);
+
+			ghci_memory_unhold(session->device, block->allocation);
+
+			mutex_unlock(&session->device->lock);
+			kern_free(block);
+		}
+		device->heap_bytes[heap] = 0U;
+	}
 }
 
 /*
@@ -882,26 +978,29 @@ round_up(
 }
 
 /*
- * Adds a block to a device's executor heap: twice the last block (the
- * first is GHCI_VK_HEAP_FIRST_BYTES), at least least bytes, at most
- * GHCI_VK_HEAP_BLOCK_MAX, mapped into the device's session.  Returns 0,
- * ENOMEM, or EIO for a session or a device the GPU lost.
+ * Adds a block to one of a device's executor heaps: twice that heap's
+ * bytes (the first is GHCI_VK_HEAP_FIRST_BYTES), at least least bytes, at
+ * most GHCI_VK_HEAP_BLOCK_MAX, mapped into the device's session (the
+ * code heap executable, the data heap not).  Returns 0, ENOMEM, or EIO
+ * for a session or a device the GPU lost.
  */
 static int
 heap_grow(
 	struct ghci_vk_session *session,
 	struct ghci_vk_device *device,
+	enum ghci_vk_heap heap,
 	uint32_t least)
 {
 	struct ghci_vk_heap_block *block;
 	struct ghci_allocation *allocation;
 	uint64_t bytes;
+	uint32_t flags;
 	int error;
 
 	/* The block's size. */
 	bytes = GHCI_VK_HEAP_FIRST_BYTES;
-	if (device->heap_bytes != 0U)
-		bytes = device->heap_bytes;
+	if (device->heap_bytes[heap] != 0U)
+		bytes = device->heap_bytes[heap];
 	while (bytes < least)
 		bytes <<= 1;
 	if (bytes > GHCI_VK_HEAP_BLOCK_MAX)
@@ -924,8 +1023,11 @@ heap_grow(
 
 	mutex_unlock(&session->device->lock);
 
-	/* Its mapping in the device's session, executable for the pipelines' code; a failure lets the memory go again. */
-	error = ghci_vm_map(session->device, device->vm, allocation, GHCI_VM_FLAG_EXEC, &block->mapping);
+	/* Its mapping in the device's session, executable only for the code heap; a failure lets the memory go again. */
+	flags = 0U;
+	if (heap == GHCI_VK_HEAP_CODE)
+		flags = GHCI_VM_FLAG_EXEC;
+	error = ghci_vm_map(session->device, device->vm, allocation, flags, &block->mapping);
 	if (error != 0) {
 		mutex_lock(&session->device->lock);
 
@@ -936,12 +1038,12 @@ heap_grow(
 		return error;
 	}
 
-	/* The block's allocator, and the block first in the heap. */
+	/* The block's allocator, and the block first in its heap. */
 	block->allocation = allocation;
 	ghci_range_init(&block->map, 0U, bytes, block->extents, GHCI_VK_HEAP_EXTENTS);
-	block->next = device->heap;
-	device->heap = block;
-	device->heap_bytes += bytes;
+	block->next = device->heap[heap];
+	device->heap[heap] = block;
+	device->heap_bytes[heap] += bytes;
 
 	/* Succeeded: the heap has room. */
 	return 0;

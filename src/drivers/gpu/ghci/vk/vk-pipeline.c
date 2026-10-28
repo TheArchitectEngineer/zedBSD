@@ -297,7 +297,7 @@ static void pipeline_pso(const struct pipeline_request *request, const struct pi
 static void pipeline_state(struct ghci_vk_session *session, const struct pipeline_request *request, struct ghci_vk_pipeline *pipeline);
 static uint32_t blend_word(const VkPipelineColorBlendAttachmentState *attachment);
 static uint32_t blend_word_used(const VkPipelineColorBlendAttachmentState *attachment);
-static void subpass_of(struct ghci_vk_session *session, const struct pipeline_request *request, struct ghci_vk_subpass *subpass);
+static int subpass_of(struct ghci_vk_session *session, const struct pipeline_request *request, struct ghci_vk_subpass *subpass);
 static int specialize(const struct ghci_vk_shader_module *module, const struct stage_request *stage, uint32_t **words, const char **reason);
 static int specialize_scan(struct spec_module *spec);
 static int specialize_constant(struct spec_module *spec, uint32_t at, uint32_t count, const struct stage_request *stage);
@@ -372,9 +372,9 @@ ghci_vk_pipeline_route(
 }
 
 /*
- * Lets a shader module, a pipeline or a render pass go: the module's
- * words; the pipeline's runs of the executor heap and its record; the
- * render pass's subpasses.
+ * Lets a shader module or a pipeline go: the module's words; the
+ * pipeline's runs of the executor heap (once the work placed until now
+ * has passed) and its record.
  */
 void
 ghci_vk_pipeline_release(
@@ -382,7 +382,6 @@ ghci_vk_pipeline_release(
 	struct ghci_vk_object *object)
 {
 	struct ghci_vk_pipeline *pipeline;
-	struct ghci_vk_render_pass *render_pass;
 
 	/* What each kind holds. */
 	(void)session;
@@ -396,19 +395,11 @@ ghci_vk_pipeline_release(
 		if (pipeline == NULL)
 			break;
 
-		/* The record and code, the scratch memory, then the record of the kernel. */
-		ghci_vk_heap_give(pipeline->block, pipeline->offset);
-		ghci_vk_heap_give(pipeline->scratch_block, pipeline->scratch_offset);
+		/* The record and code and the scratch memory once the work placed until now has passed, then the record of the kernel. */
+		ghci_vk_heap_retire(object->device, pipeline->block, pipeline->offset, NULL);
+		ghci_vk_heap_retire(object->device, pipeline->scratch_block, pipeline->scratch_offset, NULL);
 		kern_free(pipeline);
 		object->as.pipeline = NULL;
-		break;
-	case GHCI_VK_RENDER_PASS:
-		render_pass = object->as.render_pass;
-		if (render_pass == NULL)
-			break;
-		kern_free(render_pass->subpasses);
-		kern_free(render_pass);
-		object->as.render_pass = NULL;
 		break;
 	default:
 		break;
@@ -1167,7 +1158,8 @@ pipeline_build(
 	/* The subpass, and the fixed-function state a graphics pipeline may have. */
 	kern_memset(&subpass, 0, sizeof(subpass));
 	if (request->bind_point == PIPELINE_GRAPHICS) {
-		subpass_of(session, request, &subpass);
+		if (subpass_of(session, request, &subpass) != 0)
+			return pipeline_refuse(session, "a render pass the session does not have, or a subpass it does not have");
 		made = graphics_check(session, request, &subpass);
 		if (made != (uint32_t)VK_SUCCESS)
 			return made;
@@ -1625,7 +1617,7 @@ pipeline_place(
 	pipeline->charged = charged;
 
 	/* The run of the heap. */
-	error = ghci_vk_heap_take(session, device, bytes, PIPELINE_PSO_ALIGN, &pipeline->block, &pipeline->offset);
+	error = ghci_vk_heap_take(session, device, GHCI_VK_HEAP_CODE, bytes, PIPELINE_PSO_ALIGN, &pipeline->block, &pipeline->offset);
 	if (error == ENOMEM)
 		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 	if (error != 0)
@@ -1646,7 +1638,7 @@ pipeline_place(
 
 	/* The scratch memory and the table of its addresses, by stage (a compute program's at 0x10). */
 	if (scratch_bytes != 0U) {
-		error = ghci_vk_heap_take(session, device, (uint32_t)scratch_bytes, PIPELINE_CODE_ALIGN, &pipeline->scratch_block, &pipeline->scratch_offset);
+		error = ghci_vk_heap_take(session, device, GHCI_VK_HEAP_DATA, (uint32_t)scratch_bytes, PIPELINE_CODE_ALIGN, &pipeline->scratch_block, &pipeline->scratch_offset);
 		if (error != 0)
 			return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 		pipeline->table_va = base + table_at;
@@ -1928,11 +1920,11 @@ blend_word_used(
 }
 
 /*
- * Reports what a pipeline knows of its subpass: the render pass's record
- * when the session has it; otherwise the pipeline's own state (the colour
- * attachments it blends, its samples, no input attachment).
+ * Reports what a pipeline knows of its subpass: the render pass's record.
+ * Returns 0, or ENOENT for a render pass the session does not have (or
+ * the null handle) and a subpass the pass does not have.
  */
-static void
+static int
 subpass_of(
 	struct ghci_vk_session *session,
 	const struct pipeline_request *request,
@@ -1942,17 +1934,12 @@ subpass_of(
 
 	/* The render pass's subpass. */
 	object = ghci_vk_object_find(session, GHCI_VK_RENDER_PASS, request->render_pass);
-	if (object != NULL && object->as.render_pass != NULL && request->subpass < object->as.render_pass->subpass_count) {
-		*subpass = object->as.render_pass->subpasses[request->subpass];
-		return;
-	}
+	if (object == NULL || object->as.render_pass == NULL || request->subpass >= object->as.render_pass->subpass_count)
+		return ENOENT;
+	*subpass = object->as.render_pass->subpasses[request->subpass];
 
-	/* The pipeline's own state. */
-	kern_memset(subpass, 0, sizeof(*subpass));
-	subpass->color_count = request->blend_state.attachmentCount;
-	subpass->samples = 1U;
-	if (request->multisample != 0U)
-		subpass->samples = request->samples.rasterizationSamples;
+	/* Succeeded: the subpass is known. */
+	return 0;
 }
 
 /*
