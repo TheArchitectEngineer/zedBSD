@@ -39,8 +39,8 @@ WS084（i915 の firmware の画面の引き継ぎ: 素の 5330 を UEFI で起�
 
 | 物 | 状態 |
 | --- | --- |
-| L2（10 回の起動） | 未着手 → [p003](phase003/phase.md)（planned）。**既定の graphical boot の image の素の 5330 での takeover は未確認**（demo-lcd2・lcd3・lcd8 は logo 無効） |
-| parity との乖離 1〜3 | 未整理（今は実害なし）→ [p004](phase004/phase.md)（planned） |
+| L2（10 回の起動） | 未着手 → p003（fb1f6afee の `plan/ws084/phase003/phase.md`）（planned）。**既定の graphical boot の image の素の 5330 での takeover は未確認**（demo-lcd2・lcd3・lcd8 は logo 無効） |
+| parity との乖離 1〜3 | 未整理（今は実害なし）→ p004（fb1f6afee の `plan/ws084/phase004/phase.md`）（planned） |
 | host 試験 `host-native-decide-test.c` | 期待値は p001 で直したが未実行（build の道具が WS031 の片付けで消えた、`1e867fbf`）→ p004 の手順 3 |
 | kernel 内の試験（`tests/display/hpd-ktest.c`、`tests/execution/ktest-gt.c`） | build の道具が無く未実行 |
 | HDMI の起動時の未接続（rc=13） | この WS の外（WS075） |
@@ -53,8 +53,8 @@ BUG-117（素の 5330 での確認が残り、WS075）。
 
 | 順 | Phase | 目的 | 条件 |
 | --- | --- | --- | --- |
-| 1 | [ws084-p003](phase003/phase.md)（planned） | L2: demo の既定の image で素の 5330 の 10 回の起動、`plan/ws084/tests/reboot-loop.sh` | ユーザーが USB の起動と最初・最後の目視をできるとき。ws075 の提案 p033（素の 5330 の S11）と同じ機会にまとめてよい |
-| 2 | [ws084-p004](phase004/phase.md)（planned） | 乖離 1〜3 を調べて記録、直しの案を patch に（適用しない）、host-native-decide-test を戻す | p003 の dmesg を入力にする。source は変えない |
+| 1 | ws084-p003（fb1f6afee の `plan/ws084/phase003/phase.md`）（planned） | L2: demo の既定の image で素の 5330 の 10 回の起動、`plan/ws084/tests/reboot-loop.sh` | ユーザーが USB の起動と最初・最後の目視をできるとき。ws075 の提案 p033（素の 5330 の S11）と同じ機会にまとめてよい |
+| 2 | ws084-p004（fb1f6afee の `plan/ws084/phase004/phase.md`）（planned） | 乖離 1〜3 を調べて記録、直しの案を patch に（適用しない）、host-native-decide-test を戻す | p003 の dmesg を入力にする。source は変えない |
 | 3 | 提案 ws084-p005 | p004 で main が「直す」と決めた乖離の実装、素の 5330 で p003 の 10 回をやり直す | main の判断の後、10-10 より前。GPU の driver の Phase なので image は B（§5）から始め、最後に A で 10 回 |
 | 4 | 提案 ws084-p006 | WS の完了: 変えた source（`display/takeover.c`・`modeset.c`・`display.c`・`ddi.c`・`output.c`・`hotplug.c`・`gt-power.c` の WS084 の差分）を [coding-style.md](../coding-style.md) の全文と照合、build（warning 0）、boot test、ws.md を完了の形に | p003〜p005 の後 |
 

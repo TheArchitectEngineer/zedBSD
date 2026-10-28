@@ -77,11 +77,11 @@ H1 は H2 と独立に先に走らせ、結果で H3 の要否（EDID が読め�
 
 ## 結果（2026-09-28）
 
-- H1 = [ws075-p011](phase011/phase.md): EDID は読める（JTG S123、native は **1920x1280**@60、164.36 MHz）。pipe B・DVI で
+- H1 = ws075-p011（fb1f6afee の `plan/ws075/phase011/phase.md`）: EDID は読める（JTG S123、native は **1920x1280**@60、164.36 MHz）。pipe B・DVI で
   1280x720・1920x1080・1920x1280 を出力。touch の USB は 5330 に列挙されない（cable と口の確認が要る）。
-- H2 = [ws075-p012](phase012/phase.md): `display=hdmi`（EDID の mode、`display.mode=` で上書き）で Keiland が HDMI の全画面、
+- H2 = ws075-p012（fb1f6afee の `plan/ws075/phase012/phase.md`）: `display=hdmi`（EDID の mode、`display.mode=` で上書き）で Keiland が HDMI の全画面、
   `display=auto` は eDP。H3（EDID の mode）の内容は H2 に含めた。残りは LCD の目視、HDMI の無い boot の実機確認、H4。
-- H4 = [ws075-p013](phase013/phase.md)（2026-09-28、実機の passthrough）: デモの image（`plan/ws075/demo/build-demo-image.sh`、
+- H4 = ws075-p013（fb1f6afee の `plan/ws075/phase013/phase.md`）（2026-09-28、実機の passthrough）: デモの image（`plan/ws075/demo/build-demo-image.sh`、
   `config-demo-hdmi.mk`: graphical boot + `display=hdmi` + App Home の application）で、splash → greeter（HDMI 1920x1280）→ login →
   session（HDMI）→ Terminal の窓を 4 秒ごとに drag して 30 分（perf の全区間で present あり、lease の終わりの判定は underrun なしの
   PASS、3214 flip）→ Log Out → greeter の Shut Down（CPU は全て halt、pipe B は停止）。途中で 2 つの不具合: (1) H2 の resident の vblank の
@@ -93,4 +93,4 @@ H1 は H2 と独立に先に走らせ、結果で H3 の要否（EDID が読め�
   `waitq_sleep` → `spin_unlock` の持ち主の違いの trap、gdbstub で解析、未修正。p013 の不具合 3、要 Bug ticket）。
 - 未実施（ユーザー）: LCD と eDP の目視、bare metal での起動（firmware の splash の出し先、takeover の時の eDP）、実物の cable を抜いた
   boot。splash を HDMI に出す案（kernel の spinner を i915 の pipe B で続ける、loader が外の monitor の GOP を選ぶ、BIOS の設定）と、
-  lease の替わり目で pipe を止めない案は [p013](phase013/phase.md) の「提案」。画面は worktree の `build/ws075-shots/hdmi-h4-*.png`。
+  lease の替わり目で pipe を止めない案は p013（fb1f6afee の `plan/ws075/phase013/phase.md`） の「提案」。画面は worktree の `build/ws075-shots/hdmi-h4-*.png`。

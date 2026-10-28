@@ -4,7 +4,7 @@
 - 日付: 2026-10-15 16:50 JST（host の `date`）
 - 対象の commit: `73a01c38bacfdf4f38b8fce790c6f768157ceea3`（`git -C /home/awe/zedBSD-worktrees/p3 log -1 --format=%H`。対象の file は作業ツリーで変更なし）
 - 対象: [design.md](design.md)（全 436 行）、[amdrdna-license-audit.md](amdrdna-license-audit.md)
-- 照合に使った物: `plan/ws039/temp/notes/{a〜f}.md`、正本 `plan/ws039/temp/linux`（Linux v6.19 の `drivers/gpu/drm/amd`）・`temp/mesa`（Mesa 25.3.6）、`include/drivers/gpu/gpu.h`・`gpu-display.h`・`gpu-scanout.h`、`src/drivers/gpu/gpu.c`（登録の検査）、`src/drivers/gpu/nvrtx/`（同じ形の実装）、[nvrtx-design.md](../ws037/nvrtx-design.md)、[p007](phase007/phase.md)、[ws.md](ws.md)、`plan/guardrail.md`「MIT・GPL の出典のデータの引用」。
+- 照合に使った物: `plan/ws039/temp/notes/{a〜f}.md`、正本 `plan/ws039/temp/linux`（Linux v6.19 の `drivers/gpu/drm/amd`）・`temp/mesa`（Mesa 25.3.6）、`include/drivers/gpu/gpu.h`・`gpu-display.h`・`gpu-scanout.h`、`src/drivers/gpu/gpu.c`（登録の検査）、`src/drivers/gpu/nvrtx/`（同じ形の実装）、[nvrtx-design.md](../ws037/nvrtx-design.md)、p007（fb1f6afee の `plan/ws039/phase007/phase.md`）、[ws.md](ws.md)、`plan/guardrail.md`「MIT・GPL の出典のデータの引用」。
 - やらなかった事: source・他の plan の変更、build、試験、実機・QEMU。**すべて source を読んだだけで、hardware での観測は無い**。
 
 以下、design の節の番号は design.md の節。「確認」は正本・note・zedBSD の source の該当行を自分で読んで確かめた事、「未確認」はそうでない事。

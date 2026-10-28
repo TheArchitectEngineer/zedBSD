@@ -176,7 +176,7 @@ p004 の読み込みの決まり（`reader.c`・`object.c`）:
 
 ## 7. p004 の状態（2026-09-28）
 
-経過と確認は [phase004/phase.md](phase004/phase.md) が正本。要約:
+経過と確認は phase004/phase.md（fb1f6afee の `plan/ws079/phase004/phase.md`） が正本。要約:
 
 - 済み: `include/libc/pdf.h`、`writer.c`（規約に合わせた。buffer の `error` で段落ごとに一度検査）、`outline.c`（`pdf_outline_stroke()`・
   `pdf_outline_free()`・`pdf_writer_fill_outline()`）、画像の XObject（JPEG の DCTDecode、RGBA の RGB と SMask）、trailer の `/ID`、`/Info` の日付、package の登録と amd64・arm64・pcat・pc98 の
@@ -188,14 +188,14 @@ p004 の読み込みの決まり（`reader.c`・`object.c`）:
 
 ## 8. p006 の状態（2026-09-28）
 
-経過と確認は [phase006/phase.md](phase006/phase.md) が正本。§4 の構成のうち `content.c`（`gstate.c` は分けず content.c の中）・`filter.c`（Flate と
+経過と確認は phase006/phase.md（fb1f6afee の `plan/ws079/phase006/phase.md`） が正本。§4 の構成のうち `content.c`（`gstate.c` は分けず content.c の中）・`filter.c`（Flate と
 predictor、ASCIIHex）・`display.c`・画像（`image.c`）・stroker（`stroke.c`）を作り、§4.1 の display list を `pdf_page_render()` で返す。§4.1 の
 `pdf_path_flatten()` は作らず、代わりに CPU の rasterizer `pdf_display_list_rasterize()`（`raster.c`）を足した（PDF Viewer v1 と試験が使う。GPU で描く
 program は display list を自分で描く）。libpdf の依存に libz-compat と libjpeg-compat が加わった。
 
 ## 9. p014 の状態（2026-09-28）
 
-経過と確認は [phase014/phase.md](phase014/phase.md) が正本。§3 の「増分更新」を次の形にした: Notes は他の PDF を **base**（元の bytes）として持ち、
+経過と確認は phase014/phase.md（fb1f6afee の `plan/ws079/phase014/phase.md`） が正本。§3 の「増分更新」を次の形にした: Notes は他の PDF を **base**（元の bytes）として持ち、
 保存のたびに base の bytes のまま＋1 つの revision（page の上書き・置き換え・追加、編集 data の添付、/Info の日付、/Prev で base の section を
 指す classic xref）を書く。前回の revision は積まずに置き換える（autosave で file が膨らまない）。編集 data は版 1.1（`BASE`: base の長さと
 SHA-256、`SRC `: page の由来と base の page 番号）。開くときは file の先頭が base の hash と合い、最新の revision が base の直後なら stroke を
@@ -204,7 +204,7 @@ SHA-256、`SRC `: page の由来と base の page 番号）。開くときは fi
 
 ## 10. p007 の 2 回目と p008 の状態（2026-09-28）
 
-経過と確認は [phase007/phase.md](phase007/phase.md) と [phase008/phase.md](phase008/phase.md) が正本。§4 の構成に対して:
+経過と確認は phase007/phase.md（fb1f6afee の `plan/ws079/phase007/phase.md`） と phase008/phase.md（fb1f6afee の `plan/ws079/phase008/phase.md`） が正本。§4 の構成に対して:
 
 - filter: ASCII85・LZW（EarlyChange、predictor）・RunLength を足した。CCITTFax・JBIG2・JPX は SKIPPED のまま。
 - inline image は image XObject と同じ decoder で描く（stream object の `bytes` が content の中を指す）。`/Interpolate` の無い画像の 4 倍以上の拡大は最近傍。
@@ -218,7 +218,7 @@ SHA-256、`SRC `: page の由来と base の page 番号）。開くときは fi
 
 ## 11. p015 の状態（2026-09-29）
 
-経過と確認は [phase015/phase.md](phase015/phase.md) が正本。§4・§5 に対して:
+経過と確認は phase015/phase.md（fb1f6afee の `plan/ws079/phase015/phase.md`） が正本。§4・§5 に対して:
 
 - filter: CCITTFaxDecode（`ccitt.c`、Group 3 の 1 次元・混在、Group 4、EOL・byte 揃え・EOB・BlackIs1・壊れた行）。`/Rows` が無ければ画像の
   `/Height` まで白で埋める。JBIG2・JPX は SKIPPED のまま。

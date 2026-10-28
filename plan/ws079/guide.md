@@ -40,8 +40,8 @@ L3 を Future Work に移すのは受け入れの縮小なので**人間の判�
 | 何 | 証拠 |
 | --- | --- |
 | 全 Phase（p001〜p016）cleared | [ws.md](ws.md) の Phase の表 |
-| S8・S9 の QEMU の通し（注入の touch と pen） | [phase016](phase016/phase.md): `demo-s8-s9: PASS`、scroll の turn 最長 142 ms、page の frame 最長 140 ms。2026-09-30 夕の統合の tree でも PASS（[ws090 p011](../ws090/phase011/phase.md) の「統合の試験」、140・148 ms）。ws099-p015 の後も PASS（page の frame 135 ms、[ws099 の表](../ws099/ws.md)） |
-| 規約の全文の照合 | [phase009](phase009/phase.md)（style-check 0、`style-extra.py` 7 件は規約に当たらない） |
+| S8・S9 の QEMU の通し（注入の touch と pen） | phase016（fb1f6afee の `plan/ws079/phase016/phase.md`）: `demo-s8-s9: PASS`、scroll の turn 最長 142 ms、page の frame 最長 140 ms。2026-09-30 夕の統合の tree でも PASS（[ws090 p011](../ws090/phase011/phase.md) の「統合の試験」、140・148 ms）。ws099-p015 の後も PASS（page の frame 135 ms、[ws099 の表](../ws099/ws.md)） |
+| 規約の全文の照合 | phase009（fb1f6afee の `plan/ws079/phase009/phase.md`）（style-check 0、`style-extra.py` 7 件は規約に当たらない） |
 | host 試験（2026-10-01 にこの手引きの作成で再実行） | `run-pdf-writer: ok`（約 5 秒）、`run-notes-host: ok`（約 16 秒）、`run-pdfviewer-host: ok`（約 31 秒）。`run-pdf-render.sh`（引数なし）は既定の fuzz の回数が多く 115 秒の timeout に掛かった。`run-pdf-render.sh 100` は `run-pdf-render: ok`（約 38 秒）→ 下の command は `100` を渡す |
 | 実機（5330）・Windows の QEMU での S8・S9 | **未実施**。手順の 1 枚は [demo-s8-s9-manual.md](demo-s8-s9-manual.md) |
 
@@ -51,7 +51,7 @@ L3 を Future Work に移すのは受け入れの縮小なので**人間の判�
 2. 5330 の passthrough での S8・S9 の自動の確かめ（エージェントができる部分、p020 提案。2026-10-07: 旧 p017 の案、p017 の番号は 2026-10-06 に text box に使った）。
 3. ~~Notes の Ctrl+O~~: ws128-p002 で済み（File > Open... と Save As... が libkeiland の file chooser、`app_choose`・`app_open_file`。2026-10-05 P2 が source で確かめた）。
 4. L3 の実機の pen（機材が無い）。
-5. ~~記録の不整合~~: [phase002](phase002/phase.md)・[phase003](phase003/phase.md) の頭の `Status:` を ws.md の表（cleared）に合わせた（2026-10-05 P2）。
+5. ~~記録の不整合~~: phase002（fb1f6afee の `plan/ws079/phase002/phase.md`）・phase003（fb1f6afee の `plan/ws079/phase003/phase.md`） の頭の `Status:` を ws.md の表（cleared）に合わせた（2026-10-05 P2）。
 
 ### 2.3 既知の bug（[known-bugs.md](../known-bugs.md)）
 

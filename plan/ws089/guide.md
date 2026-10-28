@@ -40,7 +40,7 @@ WS089（設定のアプリ Settings）を、追加の調査なしで続けるた
 
 | Phase | 内容 | 証拠 |
 | --- | --- | --- |
-| p001〜p009 | 設計、骨格、検索、desktop の設定（`keiland_preferences_*`）、Network、Appearance・Wallpaper・Display・Storage、Mouse・Keyboard・Sound、生成の壁紙、規約と回帰とデモの通し | 各 phase.md。[phase006](phase006/phase.md): `settings-regress.sh` の 8 本が PASS（p002・p008 は試験の期待を直して）、boot test PASS |
+| p001〜p009 | 設計、骨格、検索、desktop の設定（`keiland_preferences_*`）、Network、Appearance・Wallpaper・Display・Storage、Mouse・Keyboard・Sound、生成の壁紙、規約と回帰とデモの通し | 各 phase.md。phase006（fb1f6afee の `plan/ws089/phase006/phase.md`）: `settings-regress.sh` の 8 本が PASS（p002・p008 は試験の期待を直して）、boot test PASS |
 | 後からの変更（他の WS） | ws100-p005（Sound の頁の slider と mute、`settings/sound.c`）、ws090-p014（chooser の sheet、Settings は chooser を使わない）、KEILAND_VERSION 13 → 20 | [ws100 の ws.md](../ws100/ws.md) の p005（`volume-p005: PASS`） |
 | host（2026-10-01、この手引きの作成で再実行） | `sh plan/ws089/tests/host-build.sh` → `built build/ws089-host/settings-render`（exit 0）、`sh plan/ws089/tests/host-preferences.sh` → `host-preferences: PASS`、`build/ws089-host/settings-render --page=network draw=...` が描けた | — |
 

@@ -60,13 +60,13 @@ WS075（i915 のネイティブ実行器で今のデスクトップとグラフ�
 
 | 物 | 状態 | 再開の条件 |
 | --- | --- | --- |
-| [p006](phase006/phase.md) | in-progress、段の外（後回し） | texel buffer（samplerBuffer）・sampler2DMS の texelFetch、増分 6 の実機の再確認。デモの台本は使わない。10-10 より前に main が選んだとき |
+| p006（fb1f6afee の `plan/ws075/phase006/phase.md`） | in-progress、段の外（後回し） | texel buffer（samplerBuffer）・sampler2DMS の texelFetch、増分 6 の実機の再確認。デモの台本は使わない。10-10 より前に main が選んだとき |
 | p007（GL 3.2 の geometry shader・gl_Layer・PrimitiveId） | planning、段の外、phase.md 無し | 着手前に分ける（ws.md）。受け入れ 2 の `--gl32` は「feature として断る」でも満たせる |
 | p010（規約の照合・統合回帰） | planning、phase.md 無し | WS の完了の直前（全 Phase の後） |
-| [p017](phase017/phase.md)（BUG-058 の再試験） | uncleared（6 回で再現せず） | BUG-058 が再発したとき |
-| [p018](phase018/phase.md)（非同期の実行器） | uncleared（計測で効果が小さい見込み） | L3 の手 3。描画の高速化の再開の後 |
-| [p022](phase022/phase.md)（scoreboard の緩和） | uncleared、patch 保留 | 命令の並べ替えを入れるとき |
-| [p031](phase031/phase.md)（L3: 文字の draw をまとめる） | uncleared、patch `phase031/exp/text-batch.patch` | **ユーザーが描画の高速化の再開を言うとき**。2026-10-01 の確認: patch は `git apply` では当たらない（compose.c・glass.c が後で変わった）、`git apply --3way` なら衝突なく当たる（`--check` で確認）|
+| p017（fb1f6afee の `plan/ws075/phase017/phase.md`）（BUG-058 の再試験） | uncleared（6 回で再現せず） | BUG-058 が再発したとき |
+| p018（fb1f6afee の `plan/ws075/phase018/phase.md`）（非同期の実行器） | uncleared（計測で効果が小さい見込み） | L3 の手 3。描画の高速化の再開の後 |
+| p022（fb1f6afee の `plan/ws075/phase022/phase.md`）（scoreboard の緩和） | uncleared、patch 保留 | 命令の並べ替えを入れるとき |
+| p031（fb1f6afee の `plan/ws075/phase031/phase.md`）（L3: 文字の draw をまとめる） | uncleared、patch `phase031/exp/text-batch.patch` | **ユーザーが描画の高速化の再開を言うとき**。2026-10-01 の確認: patch は `git apply` では当たらない（compose.c・glass.c が後で変わった）、`git apply --3way` なら衝突なく当たる（`--check` で確認）|
 | （候補）draw ごとの pipeline の停止と flush の削減 | planning | p023 の (b) で効かなかった。L3 の手 2 と合わせて考える |
 | （候補）GPU の object の枠 128（BUG-120） | planning | 下の提案 p032 |
 
@@ -90,10 +90,10 @@ WS075（i915 のネイティブ実行器で今のデスクトップとグラフ�
 | --- | --- | --- | --- |
 | 1 | **提案 p032**（新）: BUG-120 の object の枠 | 窓 30 個で GPU の object が尽きない | 10-10 より前。デモの 10 窓には要らないので、上位の WS の後 |
 | 2 | **提案 p033**（新）: 素の 5330 での S11 の確認（L2 の段の実機の 1 回） | デモの実機で窓 10 個が止まらず動くことを、ユーザーの目と ssh の数値で確かめる | ユーザーが 5330 を USB で起動できるとき。WS084 の p003（10 回の起動）と同じ機会にまとめてよい |
-| 3 | [p006](phase006/phase.md) の残り | texel buffer・sampler2DMS、増分 6 の実機の再確認 | 段の外。main が選んだとき、10-10 より前 |
+| 3 | p006（fb1f6afee の `plan/ws075/phase006/phase.md`） の残り | texel buffer・sampler2DMS、増分 6 の実機の再確認 | 段の外。main が選んだとき、10-10 より前 |
 | 4 | p007（分けてから） | GL 3.2 の stage | 段の外。断る方針でよいかを main に確かめてから |
 | 5 | p010 | 規約の全文との照合・統合回帰（WS の完了の条件） | 全 Phase の後 |
-| 保留 | [p031](phase031/phase.md)→ L3 の手 2・3（p018） | C6 50 ms | **ユーザーが描画の高速化の再開を言うとき**だけ |
+| 保留 | p031（fb1f6afee の `plan/ws075/phase031/phase.md`）→ L3 の手 2・3（p018） | C6 50 ms | **ユーザーが描画の高速化の再開を言うとき**だけ |
 
 ### 提案 p032: BUG-120（GPU の object の枠）
 
