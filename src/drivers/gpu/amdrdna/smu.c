@@ -1765,10 +1765,12 @@ power_boost(
 		floor_mhz = SMU_FLOOR_FREE;
 	}
 
-	/* Tells the firmware the workloads, then moves the floor. */
+	/* Tells the firmware the workloads, then moves the floor, and the memory clock's floor with the display's step. */
 	error = smu_message(device, SMU_MESSAGE_WORKLOADS, workloads, NULL);
 	if (error == 0 && mode == THERMAL_BOOST_FLOOR)
 		error = smu_message(device, SMU_MESSAGE_FLOOR, (SMU_CLOCK_GFX << 16) | floor_mhz, NULL);
+	if (error == 0)
+		amdrdna_memory_display_busy(device, raising);
 
 	/* A refusal ends the boost for good. */
 	if (error != 0) {

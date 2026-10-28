@@ -111,6 +111,16 @@
  */
 #define MEMORY_SWITCH_TENTHS		5200U
 
+/*
+ * The memory clock's level the floor goes to while the graphics engine
+ * works (the power side's boost): the second.  At the lowest level's floor
+ * the firmware let the memory clock fall to the lowest level (100 MHz)
+ * again and again under a heavy 3D scene that does not read much memory,
+ * which made its frames some 0.8 ms longer; Linux's firmware kept 500 MHz
+ * under the same scene, and so does this floor.
+ */
+#define MEMORY_BUSY_LEVEL		1U
+
 /* The underflows of the display the watch marks in the log; it counts the rest. */
 #define MEMORY_UNDERFLOW_MARKS		20U
 
@@ -155,6 +165,7 @@ amdrdna_memory_display_start(
 	uint32_t latency;
 	uint32_t memory_floor_mhz;
 	uint32_t floor_level;
+	uint32_t busy_level;
 	int table_error;
 	int count_error;
 	int display_error;
@@ -234,6 +245,13 @@ amdrdna_memory_display_start(
 	}
 	floor_error = amdrdna_smu_message(device, MEMORY_MESSAGE_FLOOR, (MEMORY_CLOCK_MEMORY << 16) | memory_floor_mhz, NULL);
 	thermal->memory_follows = follows && floor_error == 0;
+
+	/* The floor while the graphics engine works: the level amdrdna.smu.memory_busy_level= names (MEMORY_BUSY_LEVEL, 0 for none). */
+	busy_level = amdrdna_parameter_number("amdrdna.smu.memory_busy_level", MEMORY_BUSY_LEVEL);
+	if (busy_level >= thermal->memory_level_count)
+		busy_level = thermal->memory_level_count - 1U;
+	thermal->memory_idle_floor_mhz = memory_floor_mhz;
+	thermal->memory_busy_floor_mhz = thermal->memory_levels_mhz[busy_level];
 
 	/* amdrdna.smu.memory_pin=1 keeps the memory clock at the floor's level (the ceiling there too, for the display's checks). */
 	ceiling_error = 0;
@@ -350,6 +368,36 @@ amdrdna_memory_plan_clocks(
 	input->fabric_khz = thermal->memory_plan_fabric_khz;
 	input->memory_mts = thermal->memory_plan_mts;
 	input->switch_tenths = thermal->memory_plan_switch_tenths;
+}
+
+/*
+ * Moves the memory clock's floor with the graphics engine's boost (the
+ * power watch, raising when work starts and lowering a second after it
+ * ended): the busy floor while it works, the idle floor after.  Does
+ * nothing unless the firmware moves the memory clock with a busy floor
+ * above the idle one.
+ */
+void
+amdrdna_memory_display_busy(
+	struct amdrdna_device *device,
+	bool raising)
+{
+	struct amdrdna_thermal *thermal;
+	uint32_t mhz;
+	int error;
+
+	/* Only while the firmware moves the memory clock and the busy floor is higher. */
+	thermal = &device->thermal;
+	if (!thermal->memory_follows || thermal->memory_busy_floor_mhz <= thermal->memory_idle_floor_mhz)
+		return;
+
+	/* The floor for the engine's state. */
+	mhz = thermal->memory_idle_floor_mhz;
+	if (raising)
+		mhz = thermal->memory_busy_floor_mhz;
+	error = amdrdna_smu_message(device, MEMORY_MESSAGE_FLOOR, (MEMORY_CLOCK_MEMORY << 16) | mhz, NULL);
+	if (error != 0)
+		amdrdna_mark("memory display: the busy floor %uMHz refused (%d)", (unsigned)mhz, error);
 }
 
 /*

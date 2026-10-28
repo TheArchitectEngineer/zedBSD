@@ -267,8 +267,9 @@ struct amdrdna_power_clock_report {
  * word as stage A4 found it.  The display's step keeps memory_display
  * (the firmware counts the display, has its watermark table and the
  * clock floors), memory_follows (the memory clock's floor is its lowest
- * level), memory_underflows (the display's underflows the watch found
- * since then), and the clocks and the latency the display's plan is worked out
+ * level), the memory clock's floors at idle and while the graphics engine
+ * works (memory_idle_floor_mhz, memory_busy_floor_mhz), memory_underflows
+ * (the display's underflows the watch found since then), and the clocks and the latency the display's plan is worked out
  * with (memory_plan_set, memory_plan_*).  All of them change only in the
  * bring-up, the reset or under the display's mode lock.
  */
@@ -293,6 +294,8 @@ struct amdrdna_thermal {
 	uint32_t memory_saved_state;
 	bool memory_display;
 	bool memory_follows;
+	uint32_t memory_idle_floor_mhz;
+	uint32_t memory_busy_floor_mhz;
 	uint64_t memory_underflows;
 	bool memory_plan_set;
 	uint32_t memory_plan_return_khz;
@@ -1096,6 +1099,11 @@ amdrdna_memory_display_hold(
 void
 amdrdna_memory_display_end(
 	struct amdrdna_device *device);
+
+void
+amdrdna_memory_display_busy(
+	struct amdrdna_device *device,
+	bool raising);
 
 void
 amdrdna_memory_display_watch(
