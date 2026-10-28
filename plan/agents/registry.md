@@ -5,7 +5,7 @@
 
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
-| P1 | phase-runner | ws309 (q1662) | `/home/awe/zedBSD-worktrees/p1-ws309` / `agent/p1-ws309` | running（2026-10-29 01:37） | — |
+| P1 | phase-runner | ws309 (q1662-i02) | `/home/awe/zedBSD-worktrees/p1-ws309b` / `agent/p1-ws309b` | running（i01 は返却、i02 起動） | ef99d4812（merge b9f358a5a） |
 | P2 | phase-runner | ws291 (q1663、cleared) | `/home/awe/zedBSD-worktrees/p2-ws291j` / `agent/p2-ws291j` | returned（2026-10-29） | 919a05b78 |
 | P3 | phase-runner | ws221 (q1664) | `/home/awe/zedBSD-worktrees/p3-ws221` / `agent/p3-ws221` | running（2026-10-29 01:37） | — |
 | P4 | phase-runner | ws307 (q1665) | `/home/awe/zedBSD-worktrees/p4-ws307e` / `agent/p4-ws307e` | running（2026-10-29 01:37） | — |
