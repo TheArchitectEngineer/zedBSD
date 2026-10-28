@@ -517,6 +517,8 @@ static int tcp_connect(struct socket *socket, const struct sockaddr *address, so
 static ssize_t tcp_sendto(struct socket *socket, const void *buffer, size_t length, int flags, const struct sockaddr *address, socklen_t address_length);
 static ssize_t tcp_recvfrom(struct socket *socket, void *buffer, size_t length, int flags, struct sockaddr *address, socklen_t *address_length);
 static uint32_t tcp_receive_window(struct tcp_endpoint *endpoint);
+static uint32_t tcp_receive_offered(const struct tcp_endpoint *endpoint);
+static uint32_t tcp_receive_sws_step(const struct tcp_endpoint *endpoint);
 static int tcp_reset_error_locked(const struct tcp_endpoint *endpoint, uint8_t flags, uint32_t acknowledgement);
 static void tcp_send_reset(const struct tcp_segment_addresses *addresses, const struct tcp_wire *segment, size_t payload_length);
 static void tcp_send_reset6(const struct tcp_segment_addresses *addresses, struct packet_buf *packet);
@@ -2281,6 +2283,7 @@ tcp_output_segment(
 	int routed;
 	uint16_t checksum;
 	uint32_t window;
+	uint32_t offered;
 	uint16_t field;
 	unsigned shift;
 	uint16_t mss;
@@ -2412,6 +2415,20 @@ tcp_output_segment(
 	 * says.  The bytes it says are what the peer was promised.
 	 */
 	window = tcp_receive_window(endpoint);
+
+	/*
+	 * The receiver's silly window avoidance (RFC 9293 section 3.8.6.2.2):
+	 * the right edge offered moves on only by min(half the buffer, a
+	 * segment) or more; a smaller opening keeps the edge offered before.
+	 * The window is never more than the room, so a smaller room than
+	 * that edge is what is offered.
+	 */
+	if ((flags & TCP_SYN) == 0 && endpoint->tcp.receive_edge_set != 0) {
+		offered = tcp_receive_offered(endpoint);
+		if (window > offered && window - offered < tcp_receive_sws_step(endpoint))
+			window = offered;
+	}
+
 	shift = 0;
 	if (endpoint->tcp.wscale_on != 0 && (flags & TCP_SYN) == 0)
 		shift = endpoint->tcp.receive_wscale;
@@ -2419,6 +2436,8 @@ tcp_output_segment(
 		window = 0xffffU << shift;
 	field = (uint16_t)(window >> shift);
 	endpoint->tcp.advertised_window = (uint32_t)field << shift;
+	endpoint->tcp.receive_edge = endpoint->tcp.receive_next + endpoint->tcp.advertised_window;
+	endpoint->tcp.receive_edge_set = 1;
 	wire_put16(tcp->window, field);
 
 	/* Hands the segment to IPv6, with the checksum over its pseudo-header. */
@@ -5775,6 +5794,8 @@ tcp_recvfrom(
 	size_t take;
 	uint32_t window;
 	uint32_t mss;
+	uint32_t offered;
+	uint32_t opened;
 	unsigned long irq;
 	int dequeue_flags;
 	int update;
@@ -5872,12 +5893,15 @@ tcp_recvfrom(
 	 */
 	window = tcp_receive_window(endpoint);
 	mss = tcp_receive_mss(endpoint);
+	offered = tcp_receive_offered(endpoint);
 	update = 0;
-	if (endpoint->tcp.advertised_window < mss && window >= mss)
-		update = 1;
-	else if (endpoint->tcp.advertised_window < 2U * mss &&
-	    window >= (uint32_t)endpoint->tcp.advertised_window + 2U * mss)
-		update = 1;
+	if (window > offered) {
+		opened = window - offered;
+		if (offered < mss && opened >= tcp_receive_sws_step(endpoint))
+			update = 1;
+		else if (opened >= 2U * mss || opened >= socket->receive_hiwat_bytes / 2U)
+			update = 1;
+	}
 
 	if (update != 0 &&
 	    (endpoint->tcp.state == TCP_ESTABLISHED ||
@@ -5897,6 +5921,46 @@ tcp_recvfrom(
 
 	/* Reports the bytes received. */
 	return (ssize_t)copied;
+}
+
+/*
+ * Reports what the peer was last offered and has not filled: the right
+ * edge of the last window sent less receive_next (0 once it is passed, or
+ * before any window went).  Read without the socket lock, as the window.
+ */
+static uint32_t
+tcp_receive_offered(
+	const struct tcp_endpoint *endpoint)
+{
+	/* None went yet, or it is filled. */
+	if (endpoint->tcp.receive_edge_set == 0 ||
+	    tcp_sequence_at_or_before(endpoint->tcp.receive_edge, endpoint->tcp.receive_next))
+		return 0;
+
+	/* Succeeded: the part left. */
+	return endpoint->tcp.receive_edge - endpoint->tcp.receive_next;
+}
+
+/*
+ * Reports the least step the offered window's right edge moves by (RFC
+ * 9293 section 3.8.6.2.2): half the receive buffer or a segment of this
+ * end's size, the smaller.
+ */
+static uint32_t
+tcp_receive_sws_step(
+	const struct tcp_endpoint *endpoint)
+{
+	uint32_t half;
+	uint32_t mss;
+
+	/* The smaller of the two. */
+	half = (uint32_t)(endpoint->tcp.inet.socket.receive_hiwat_bytes / 2U);
+	mss = tcp_receive_mss(endpoint);
+	if (half < mss)
+		return half;
+
+	/* Succeeded: a segment. */
+	return mss;
 }
 
 /*

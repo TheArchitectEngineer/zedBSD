@@ -159,6 +159,14 @@ struct tcp_socket {
 	 */
 	uint32_t advertised_window;
 	/*
+	 * The right edge of the window last put in a segment (receive_next
+	 * then, and that window), once one went (receive_edge_set): a window
+	 * that opens it by less than min(half the buffer, a segment) keeps it
+	 * where it was, the receiver's silly window avoidance.
+	 */
+	uint32_t receive_edge;
+	uint8_t receive_edge_set;
+	/*
 	 * The maximum segment size the peer's SYN offered (0: it offered none),
 	 * and the largest payload this end puts in a segment: the smaller of
 	 * that offer (536, or 1220 over IPv6, without one) and what the route's
