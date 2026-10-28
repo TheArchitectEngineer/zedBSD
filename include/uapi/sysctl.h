@@ -349,11 +349,14 @@ _Static_assert(sizeof(struct thermal_entry) == 64U,
 
 /*
  * The head of net.tcpstats: the layout's version, the header's size, one
- * entry's size and how many entries follow; the packets of the network
- * stack's one pool (how many there are, how many are taken now, the most
- * ever taken, and how many allocations found none free); and the time of
- * the reading in milliseconds since boot.  Every field has a fixed width,
- * so one layout serves ILP32 and LP64 processes.
+ * entry's size and how many entries follow; the standard packets of the
+ * network stack's pool (how many there are, how many are taken now, the
+ * most ever taken, and how many allocations found none free); the time of
+ * the reading in milliseconds since boot; and the pool's jumbo packets in
+ * the same counts, with how many of them are kept for the drivers'
+ * receive (an allocation outside that reserve that finds none free is a
+ * failure).  Every field has a fixed width, so one layout serves ILP32
+ * and LP64 processes.
  */
 struct tcp_stats_header {
 	uint32_t version;
@@ -366,6 +369,11 @@ struct tcp_stats_header {
 	uint32_t reserved;
 	uint64_t packet_alloc_failures;
 	uint64_t time_ms;
+	uint32_t jumbo_total;
+	uint32_t jumbo_used;
+	uint32_t jumbo_used_max;
+	uint32_t jumbo_reserve;
+	uint64_t jumbo_alloc_failures;
 };
 
 /*
@@ -470,7 +478,7 @@ struct tcp_stats_entry {
 	uint64_t fast_retransmits;
 };
 
-_Static_assert(sizeof(struct tcp_stats_header) == 48U,
+_Static_assert(sizeof(struct tcp_stats_header) == 72U,
     "net.tcpstats header ABI must be identical on ILP32 and LP64");
 _Static_assert(sizeof(struct tcp_stats_entry) == 312U,
     "net.tcpstats entry ABI must be identical on ILP32 and LP64");

@@ -629,6 +629,7 @@ socket_enqueue_packet(
 	struct packet_buf *packet)
 {
 	unsigned long irq;
+	int jumbo;
 	int error;
 
 	/* Rejects a missing socket or packet. */
@@ -640,11 +641,19 @@ socket_enqueue_packet(
 	/* Drops the packet when the socket is closed or the queue is full. */
 	irq = spin_lock_irqsave(&socket->lock);
 
+	/*
+	 * A datagram socket keeps no more than SOCKET_RECEIVE_JUMBO_MAX jumbo
+	 * packets queued, so a reader that does not read cannot hold the few
+	 * jumbo packets every interface's receive needs (TCP's queue is
+	 * bounded by its window instead).
+	 */
+	jumbo = packet->capacity > PACKET_BUF_STORAGE_SIZE;
 	if (socket->lifecycle != SOCKET_OPEN ||
 	    (socket->receive_packet_limit != 0 &&
 	    socket->receive_packets >= socket->receive_packet_limit) ||
 	    packet->length > socket->receive_hiwat_bytes ||
-	    socket->receive_bytes > socket->receive_hiwat_bytes - packet->length) {
+	    socket->receive_bytes > socket->receive_hiwat_bytes - packet->length ||
+	    (jumbo && socket->type != SOCK_STREAM && socket->receive_jumbo >= SOCKET_RECEIVE_JUMBO_MAX)) {
 		if (socket->lifecycle != SOCKET_OPEN)
 			error = EPIPE;
 		else
@@ -663,6 +672,8 @@ socket_enqueue_packet(
 	socket->receive_tail = packet;
 	socket->receive_packets++;
 	socket->receive_bytes += packet->length;
+	if (jumbo)
+		socket->receive_jumbo++;
 	waitq_wake_one(&socket->receive_waitq);
 
 	spin_unlock_irqrestore(&socket->lock, irq);
@@ -873,6 +884,8 @@ socket_requeue_packet_front(
 		socket->receive_tail = packet;
 	socket->receive_packets++;
 	socket->receive_bytes += packet->length;
+	if (packet->capacity > PACKET_BUF_STORAGE_SIZE)
+		socket->receive_jumbo++;
 	waitq_wake_one(&socket->receive_waitq);
 
 	spin_unlock_irqrestore(&socket->lock, irq);
@@ -964,6 +977,8 @@ socket_dequeue_packet(
 		socket->receive_packets--;
 	if (socket->receive_bytes >= (*result)->length)
 		socket->receive_bytes -= (*result)->length;
+	if ((*result)->capacity > PACKET_BUF_STORAGE_SIZE && socket->receive_jumbo != 0)
+		socket->receive_jumbo--;
 	waitq_wake_all(&socket->receive_space_waitq);
 
 	spin_unlock_irqrestore(&socket->lock, irq);
@@ -1065,6 +1080,21 @@ socket_poll_common(
 
 	/* Reports the derived readiness. */
 	return 0;
+}
+
+/*
+ * Reports the longest datagram a socket takes in one call.
+ */
+size_t
+socket_datagram_max(
+	const struct socket *socket)
+{
+	/* AF_UNIX keeps to the standard packet. */
+	if (socket->family == AF_UNIX)
+		return PACKET_BUF_STORAGE_SIZE;
+
+	/* Succeeded: the largest packet's storage. */
+	return PACKET_BUF_MAX_STORAGE_SIZE;
 }
 
 /*

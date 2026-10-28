@@ -1230,6 +1230,11 @@ tcp_stats_copy(
 	header.packets_used_max = usage.used_max;
 	header.packet_alloc_failures = usage.alloc_failures;
 	header.time_ms = kern_ticks_to_ms(now);
+	header.jumbo_total = usage.jumbo_total;
+	header.jumbo_used = usage.jumbo_used;
+	header.jumbo_used_max = usage.jumbo_used_max;
+	header.jumbo_reserve = usage.jumbo_reserve;
+	header.jumbo_alloc_failures = usage.jumbo_alloc_failures;
 	place = output;
 	kern_memcpy(place, &header, sizeof(header));
 	place += sizeof(header);

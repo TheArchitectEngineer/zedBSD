@@ -1855,7 +1855,7 @@ sys_sendto_call(
 	}
 
 	if (socket->type != SOCK_STREAM &&
-	    args[2] > PACKET_BUF_STORAGE_SIZE) {
+	    args[2] > socket_datagram_max(socket)) {
 		result = socket_result(&reference, -EMSGSIZE);
 		return result;
 	}
@@ -1971,8 +1971,8 @@ sys_recvfrom_call(
 		else
 			capacity = (size_t)args[2];
 	} else {
-		if (args[2] > PACKET_BUF_STORAGE_SIZE)
-			capacity = PACKET_BUF_STORAGE_SIZE;
+		if (args[2] > socket_datagram_max(socket))
+			capacity = socket_datagram_max(socket);
 		else
 			capacity = (size_t)args[2];
 	}
@@ -2087,7 +2087,7 @@ sys_sendmsg_call(
 	if (descriptor_socket(process, (int)args[0], &reference) != 0)
 		return -EBADF;
 	if (reference.socket->type != SOCK_STREAM &&
-	    request.data_length > PACKET_BUF_STORAGE_SIZE) {
+	    request.data_length > socket_datagram_max(reference.socket)) {
 		result = socket_result(&reference, -EMSGSIZE);
 		return result;
 	}
@@ -2257,8 +2257,8 @@ sys_recvmsg_call(
 	    buffer_capacity > SYSCALL_SOCKET_BUFFER_MAX)
 		buffer_capacity = SYSCALL_SOCKET_BUFFER_MAX;
 	if (reference.socket->type != SOCK_STREAM &&
-	    buffer_capacity > PACKET_BUF_STORAGE_SIZE)
-		buffer_capacity = PACKET_BUF_STORAGE_SIZE;
+	    buffer_capacity > socket_datagram_max(reference.socket))
+		buffer_capacity = socket_datagram_max(reference.socket);
 	if (reference.socket->type == SOCK_STREAM && buffer_capacity == 0) {
 		request.data_length = 0;
 		request.name_length = 0;
