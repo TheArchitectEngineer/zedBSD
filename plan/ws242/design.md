@@ -6,6 +6,38 @@ Parent: [WS242](ws.md)。作成 2026-10-29 P5（q1666、設計だけ）。照合
 前の記録: [p001](phase001/phase.md)（driver、2026-10-15 の WIP は main に入っている）、[p002](phase002/phase.md)（compiler、SM86・SM89 の encode と latency は main に入っている）。
 公開の source の調べ: P5 の配下の調べ（Fable、2026-10-29）。Linux v6.19 nouveau（file ごとに MIT）、open-gpu-kernel-modules 570.144（以下 ogkm、MIT）、open-gpu-doc（MIT）、Mesa 25.3.6（src/nouveau、MIT）、linux-firmware の WHENCE、pci.ids（2026-10-29、sha256 41f814a4…afe87、BSD-3-Clause と GPL-2+ の dual と header にある、要確かめ）。値と手順だけを取り、code は写さない（guardrail「MIT・GPL の出典のデータの引用」、実装では block ごとに「Value(s) referenced:」「Procedure referenced:」）。
 
+## 第 2 版の改訂（2026-10-29 P5、[design-review.md](design-review.md) の blocker 1・major 7・minor 9 を反映。この節が下の本文に優先する）
+
+| # | 改訂 | review |
+| --- | --- | --- |
+| V1 | **§3 の「失敗の段と戻り方」の表は今の code と違う**: `gsp_teardown()`（`gsp.c:1112-1170`）は GSP が走って `gsp_stop()` で止まった後にしか WPR2 を壊さない。FWSEC の timeout（`:1032`）・booter_load の timeout（`:1298`）・INIT_DONE が来ない（`:1372`）はどれも `FAILED_HOLD`（teardown も console の復帰もせず、DMA の memory を保ち、detach は EBUSY、復帰は power cycle）。FRTS・booter の失敗では region が残り「reboot the host」の印だけ。→ 「段ごとに諦めて firmware の画面に戻す道」は無い。作るには bus master を切るか falcon を reset するかの DMA の順を決める段が要る（新しい p005b、6〜8 LW の見込み、`FAILED_HOLD` の各段の安全な戻し方を実装の最初に調べる） | B1、m9 |
+| V2 | **Q242-1 の回答の前提が変わった**: 2026-10-29 のユーザーの回答「既定で起動 (推し)」は、§3 の表（諦めの道がある）を前提にした問いへの答え。実際は失敗すると power cycle まで画面と GPU が戻らず、`FAILED_HOLD` と WPR2 の残りで次の warm reboot でも nvrtx は諦める。製品 288 のうち laptop が 115 で、nouveau は GSP に ACPI の data を送る（`r535_gsp_acpi_info`）が nvrtx は送らない（laptop で init が通るかは推測）。→ 事実の報告として聞き直す（Q242-3）。決定を変える提案ではない | M7 |
+| V3 | **Q242-2 の回答の前提も変わった**: WS305 は止めたまま（master.md）。passthrough の GPU の画面は QMP の screendump に写らない（AGENTS.md §9 の判定の方法に合わない）。nvrtx の失敗の多くは cold reset が要る。→ 聞き直す（Q242-4）。WS250 の Q250-2 も同じ | M6 |
+| V4 | compute の launch の `SET_OBJECT` が 0xc5c0 の固定（`compute-launch.c:239`）。object は `profile->class_compute` で作る（`compute.c:688`）。§2.2 の版ごとの関数に class も渡す。`compute-launch.c` に profile（`nvrtx-private.h`）を持ち込まず、版・class・PCAS2_B の要否の小さな struct を渡す（層の境界） | M1、m4 |
+| V5 | **p005（既定で起動）は p004 の後**（vk は既定で on なので、p004 より前だと RTX 30/40 が SM75 の code と c597 の push で起動する）。既定を on にする 1 行は最後の commit | M2 |
+| V6 | 試験に足す: 起動の判断（family × firmware の画面 × `nvrtx.gsp`）を純粋な関数に出した host 試験、QMD の bit の期待値を header から機械的に抜く（自己参照を避ける）、Turing の出力が byte で同じ（shared memory が 0 でない入力を含む）、戻す gsp-host-test の既定の firmware の path を `-tu-ga-ad` の cache に（今は古い `dc85cc…` で GA/AD/TU116 の実 file の項が黙って飛ぶ）、`plan/tools/nvrtx/nvrtx-vk-host-test.c` に owner の口の stub、段ごとの失敗（RTX 2070 で `nvrtx.stop=` を段ごと） | M3、M4、M5 |
+| V7 | 戻す host 試験 3 本は `plan/ws242/tests/` でなく `plan/tools/nvrtx/` に置き `plan/tools.md` に登録（WS の完了でまた消えないように。登録は Q1） | M5 |
+| V8 | minor: §2.1 の 256 MiB は ogkm の「Firmware scrubs the last 256mb」で、量は `fbSize − gspFwRsvdStart`（外の heap の始まり）、失敗の印は「VRAM too small」（`gsp.c:709`）と分ける、ELF は 60.6 MiB。vk-execute.c は `execute_compile`・`execute_start` に引数が要り「呼び出しの行だけ」ではない（WS291 との重なりが広い）。HBLANK_DELAY（0x2364）は c57d に無いので class で分け、armed の値を写す。`boot_default` は常に 1 なので欄を作らず verified の判断を外すだけにする（identify.c の位置の初期化子を崩さない）。p001 は「済み」でなく uncleared で閉じる。carve-out・warps の欄は今使われていない。WS250 の R10 の危険は低い（nouveau も GA/AD で同じ doorbell の形） | m1〜m8 |
+
+### 第 2 版の Phase の表（§5 を置き換える）
+
+| Phase | 内容 | 依存 | LW |
+| --- | --- | --- | --- |
+| p003 | host 試験の復元（`plan/tools/nvrtx/`）と追従、identify・profile・products・§2.1・起動の判断の項 | — | 7 |
+| p004 | SM を渡す、QMD 3.0・class・PCAS2_B（V4）、HBLANK_DELAY、QMD と Turing の byte の試験 | p003 | 9 |
+| p005a | §2.1 の検査、firmware の package の確かめ | p003 | 2 |
+| p005b | 段ごとに諦めて firmware の画面に戻す道（V1）、段ごとの失敗の試験 | p004 | 7 |
+| p005c | 既定で起動（Q242-3 の答えしだい、最後の 1 行） | p004、p005b | 1 |
+| p006 | RTX 2070 の実機の回帰（Q242-4） | p004・p005 | 3 |
+| p007 | 規約の全文と出典の監査 | 全部 | 3 |
+
+計 32 LW（前 24）。
+
+### 第 2 版のユーザーに聞き直す点（Q1 へ）
+
+- Q242-3（Q242-1 の聞き直し、事実の報告）: 今の nvrtx は GSP の起動に途中で失敗すると画面と GPU が power cycle まで戻らない（`FAILED_HOLD`）。推し「p005b（諦めて firmware の画面に戻す道、7 LW）を作ってから既定で起動」。選択肢: (b) 今のまま既定で起動（失敗した機械は `nvrtx.gsp=0` を boot の行に足して再起動）、(c) desktop の製品だけ既定で起動（laptop 115 個は `nvrtx.gsp=1`）、(d) 諦めの道ができるまで `nvrtx.gsp=1` のまま。
+- Q242-4（Q242-2・Q250-2 の聞き直し）: WS305 は止めたまま、passthrough の GPU の画面は QMP の screendump に写らず、nvrtx の失敗の多くは cold reset が要る。推し「RDNA と差し替えて素の起動（SwitchBot で電源）、判定は ssh と boot-test.sh」。選択肢: WS305 を再開して VFIO（画面の判定は別の方法が要る）。
+
 ## 0. 要点
 
 1. **p001 の再開点 1〜3 は今も未着手**: driver の 4 か所は今も `nvrtx_sm75_compile_ir`／`_stage`（SM の引数なし）を呼び（`draw.c:443`、`compute.c:736`、`vk/vk-pipeline.c:676`、`vk/vk-execute.c:412`）、QMD は 2.2 だけ（`compute.c:811` の `nvrtx_qmd_build`、`:820` の `nvrtx_push_compute_launch`）、launch は `SEND_SIGNALING_PCAS_B` 固定（`compute-launch.c:261`）、draw の init は Turing の class の wrapper（`draw.c:568`、`vk/vk-execute.c:453` の `nvrtx_push_draw_init`）。→ RTX 30/40 は起動しても SM75 の code と Turing の 3D class を使う（正しくない）。
