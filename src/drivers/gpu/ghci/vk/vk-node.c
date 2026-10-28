@@ -306,8 +306,9 @@ node_reserve(
 
 /*
  * Commits a reserved marker to the last submission of its timeline's
- * device: it completes when that work has finished (or a reset ended
- * it), at once when there is none.
+ * device, placed or held back: it completes when that work has finished
+ * (or a reset ended it, or the held work failed), at once when there is
+ * none.
  */
 static int
 node_commit(
@@ -343,6 +344,8 @@ node_commit(
 			if (state != GHCI_TICKET_DONE)
 				ticket = owner->last;
 		}
+		if (owner != NULL)
+			(void)ghci_vk_held_ticket(owner, &ticket);
 		error = ghci_jobs_commit(&session->jobs, index, completion, ticket.seq, ticket.generation, &passed);
 	}
 

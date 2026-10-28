@@ -101,11 +101,15 @@ ghci_vk_stream_execute(
 	frame.session = session;
 	frame.copy_left = STREAM_COPY_BYTES;
 
-	/* Reads the frame from its start. */
+	/* Reads the frame from its start; the session's objects are the frame's until it ends. */
 	kern_memset(&reader, 0, sizeof(reader));
 	reader.base = wire;
 	reader.size = bytes;
+	mutex_lock(&session->hold_lock);
+
 	error = stream_run(&frame, &reader);
+
+	mutex_unlock(&session->hold_lock);
 	if (error != 0)
 		return error;
 
