@@ -28,6 +28,7 @@ void model_clock_set(uint64_t now_us);
 uint64_t model_clock_us(void);
 int model_deliver(const void *data, size_t length, uint32_t source, uint32_t destination);
 struct net_device *model_device(unsigned host);
+void model_device_mtu_set(unsigned mtu);
 int model_link_output(unsigned host, struct packet_buf *packet, uint32_t source, uint32_t destination);
 
 /* Converts a 32-bit value between network and host order (the host is little-endian). */

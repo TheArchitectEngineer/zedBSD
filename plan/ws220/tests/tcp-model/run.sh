@@ -67,6 +67,12 @@ scenario() {
 
 # The clean LAN: gigabit, 0.2 ms round trip, a USB adapter's queue of 9 frames each way (no regression).
 scenario lan-clean 30 --bytes 67108864
+# Jumbo frames (ws221-p005): an MTU of 9000 at both ends and 64 KB writes give 8960-byte segments, in jumbo packets
+# within the per-connection bounds; and with losses each lost frame is resent once.
+scenario lan-jumbo 100 --bytes 67108864 --mtu 9000 --write-bytes 65536 --expect-mss 8960
+scenario lan-jumbo-loss 50 --bytes 33554432 --mtu 9000 --write-bytes 65536 --loss-ab 0.1 --peer-window 65535 \
+    --expect-mss 8960 --expect-retransmits-losses --expect-timeouts-max 0
+scenario lan-1500-writes 100 --bytes 67108864 --write-bytes 65536 --expect-mss 1460
 # 10 ms of round trip: the rate is the window over the round trip (64 KB: 6.4 MB/s).
 scenario rtt-10ms 4 --bytes 16777216 --delay-us 5000
 # (The resends of these and of slow-reader stay at most the counts of ws220-p005, --expect-retransmits-max: p004 review-1 G2

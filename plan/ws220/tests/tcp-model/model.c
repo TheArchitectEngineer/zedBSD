@@ -151,7 +151,7 @@ struct model_frame {
 	uint32_t source;
 	uint32_t destination;
 	size_t length;
-	uint8_t data[2048];
+	uint8_t data[PACKET_BUF_MAX_STORAGE_SIZE];
 };
 
 /*
@@ -189,6 +189,11 @@ struct model_settings {
 	uint64_t limit_ns;
 	double reader_kbps;
 	unsigned peer_window;
+	/* Both devices' MTU (0: Ethernet's 1500), and the writer's piece (--write-bytes, 1024 to 65536). */
+	unsigned mtu;
+	unsigned write_bytes;
+	/* The segment size both ends are to settle on (--expect-mss, 0: not checked). */
+	unsigned expect_mss;
 	double overlap_ab;
 	unsigned overlap_bytes;
 	uint64_t blind_at_ns;
@@ -368,6 +373,8 @@ main(
 	char **argv)
 {
 	struct socket_family_ops family;
+	struct packet_buf_pool_usage usage;
+	int usage_jumbo_check;
 	uint64_t next_report_ns;
 	uint64_t last_received;
 	uint64_t progress_mark;
@@ -393,6 +400,8 @@ main(
 	parse_settings(argc, argv);
 	random_state = settings.seed * 2654435761ULL + 1U;
 	model_kernel_init(isn_tick_base(settings.wrap_before));
+	if (settings.mtu != 0)
+		model_device_mtu_set(settings.mtu);
 	links[0].loss = settings.loss_ab / 100.0;
 	links[1].loss = settings.loss_ba / 100.0;
 	links[0].transmit_end_ns = MODEL_NEVER;
@@ -561,6 +570,28 @@ main(
 		printf("check: FAIL: A made %llu fast retransmits, not %llu..%llu\n",
 		    (unsigned long long)a->counters.fast_retransmits, (unsigned long long)settings.expect_fast_low,
 		    (unsigned long long)settings.expect_fast_high);
+		return 1;
+	}
+
+	/* The segment size both ends settled on, and the jumbo packets A's ring held at most (--expect-mss). */
+	usage_jumbo_check = 0;
+	if (settings.expect_mss != 0) {
+		packet_buf_pool_usage(&usage);
+		printf("mss: a.send_mss=%u b.receive_mss=%u jumbo_used_max=%u jumbo_alloc_failures=%llu\n", a->send_mss,
+		    receiver != NULL ? tcp_of(receiver)->receive_mss : 0U, usage.jumbo_used_max,
+		    (unsigned long long)usage.jumbo_alloc_failures);
+		if (a->send_mss != settings.expect_mss)
+			usage_jumbo_check = 1;
+		if (receiver != NULL && tcp_of(receiver)->receive_mss != settings.expect_mss)
+			usage_jumbo_check = 1;
+		if (settings.expect_mss > 1460U && usage.jumbo_used_max == 0)
+			usage_jumbo_check = 1;
+		if (usage.jumbo_used_max > 2U * 8U)
+			usage_jumbo_check = 1;
+	}
+	if (usage_jumbo_check) {
+		printf("check: FAIL: the segment size is not %u, or the jumbo packets were not used within their bounds\n",
+		    settings.expect_mss);
 		return 1;
 	}
 
@@ -814,6 +845,9 @@ parse_settings(
 	settings.limit_ns = 600ULL * 1000000000ULL;
 	settings.reader_kbps = 0.0;
 	settings.peer_window = 0;
+	settings.mtu = 0;
+	settings.write_bytes = 1024;
+	settings.expect_mss = 0;
 	settings.overlap_ab = 0.0;
 	settings.overlap_bytes = 100U;
 	settings.blind_at_ns = 0;
@@ -916,6 +950,12 @@ parse_settings(
 			settings.reader_kbps = strtod(argv[index + 1], NULL);
 		else if (strcmp(argv[index], "--peer-window") == 0)
 			settings.peer_window = (unsigned)strtoull(argv[index + 1], NULL, 0);
+		else if (strcmp(argv[index], "--mtu") == 0)
+			settings.mtu = (unsigned)strtoull(argv[index + 1], NULL, 0);
+		else if (strcmp(argv[index], "--write-bytes") == 0)
+			settings.write_bytes = (unsigned)strtoull(argv[index + 1], NULL, 0);
+		else if (strcmp(argv[index], "--expect-mss") == 0)
+			settings.expect_mss = (unsigned)strtoull(argv[index + 1], NULL, 0);
 		else if (strcmp(argv[index], "--overlap-ab") == 0)
 			settings.overlap_ab = strtod(argv[index + 1], NULL);
 		else if (strcmp(argv[index], "--overlap-bytes") == 0)
@@ -1373,8 +1413,8 @@ static void
 run_writer(
 	void)
 {
+	static uint8_t chunk[65536];
 	struct tcp_socket *tcp;
-	uint8_t chunk[1024];
 	uint64_t length;
 	uint64_t index;
 	uint64_t base;
@@ -1402,6 +1442,8 @@ run_writer(
 	/* Each piece the stack takes, after the bytes of any write still inside it. */
 	while (send_left > writer_reserved) {
 		length = send_left - writer_reserved;
+		if (length > settings.write_bytes)
+			length = settings.write_bytes;
 		if (length > sizeof(chunk))
 			length = sizeof(chunk);
 		base = send_offset + writer_reserved;
@@ -1691,7 +1733,8 @@ report(
 	printf("t=%.3f mbs=%.2f received=%llu a.state=%d a.in_flight=%u a.ring=%u a.peer_window=%u a.backoff=%u a.srtt_us=%u a.rto_ms=%llu "
 	    "a.retransmits=%llu a.immediate=%llu a.dupacks_in=%llu a.acks_outside=%llu a.refused=%llu a.send_fail=%llu "
 	    "b.window=%u b.reorder=%u b.ooo_in=%llu b.ooo_kept=%llu b.old_in=%llu b.refused=%llu b.send_fail=%llu "
-	    "link.ab.lost=%llu link.ab.full=%llu link.ba.lost=%llu link.ba.full=%llu rx_nobuf=%llu pool=%u/%u max=%u fail=%llu\n",
+	    "link.ab.lost=%llu link.ab.full=%llu link.ba.lost=%llu link.ba.full=%llu rx_nobuf=%llu pool=%u/%u max=%u fail=%llu "
+	    "jumbo=%u/%u max=%u fail=%llu a.mss=%u a.jumbo=%u b.rmss=%u\n",
 	    (double)elapsed_ns / 1e9, rate, (unsigned long long)received, (int)a->state, a->send_next - a->send_unacknowledged,
 	    a->send_count, a->peer_window, a->retransmit_count, a->srtt_us, (unsigned long long)kern_ticks_to_ms(a->rto),
 	    (unsigned long long)a->counters.retransmit_segments, (unsigned long long)a->counters.immediate_resends,
@@ -1706,7 +1749,9 @@ report(
 	    (unsigned long long)links[0].lost, (unsigned long long)links[0].queue_full,
 	    (unsigned long long)links[1].lost, (unsigned long long)links[1].queue_full,
 	    (unsigned long long)(links[0].receive_no_packet + links[1].receive_no_packet),
-	    usage.used, usage.total, usage.used_max, (unsigned long long)usage.alloc_failures);
+	    usage.used, usage.total, usage.used_max, (unsigned long long)usage.alloc_failures,
+	    usage.jumbo_used, usage.jumbo_total, usage.jumbo_used_max, (unsigned long long)usage.jumbo_alloc_failures,
+	    a->send_mss, a->send_jumbo, b != NULL ? b->receive_mss : 0U);
 }
 
 /*
