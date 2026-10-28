@@ -3,8 +3,8 @@
 # WS307 p007 の HAL の差分の案: UEFI の変数（Boot####・BootOrder）
 
 - 親: [WS307](../ws.md)、[spec.md](../spec.md) §5.8。作成: P4、2026-10-29（q1665）。
-- 状態: **承認待ち**（AGENTS.md §7「HAL の API の変更は差分ごとの事前承認」）。承認まで code は書かない。承認までの間、installer は loader を置いて S11 で「firmware の boot menu で選ぶ」を出すだけ（spec §5.8 の承認の手順）。
-- 要るユーザーの判断は下の「判断」の H1〜H3。推しは A。
+- 状態: **置き換え済み**（2026-10-29 ユーザー「UEFIに限らないファームウェア環境変数という概念で作り直してみてください。」→ [hal-fw-variables.md](hal-fw-variables.md)）。この案は承認の対象でない。承認までの間、installer は loader を置いて S11 で「firmware の boot menu で選ぶ」を出すだけ（spec §5.8 の承認の手順）。
+- 下の「判断」の H1〜H3 は改訂 2 の F1〜F3 に置き換わった。
 
 ## 1. なぜ HAL か
 

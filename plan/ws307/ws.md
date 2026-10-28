@@ -102,6 +102,13 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 J4「許す (推し)」: `plan/ws307/tests/` の config だけで live の tree に openssh・aat-input・keiland-shot を足す（unit・index・CI には入れない、spec §11.2）。
 - 2026-10-28 J5「規定値を作ります。非公開である必要はないです。インストーライメージを運用に使ってはいけないというルールにして、このイメージでの起動は規定ユーザでの起動ではあるが、root起動相当、という扱いにします。インストーラがrootで動くことは一般的であり、セキュリティ上の懸念は存在しません。」（推し A「build ごとの乱数の password」は採らない）: J1 は取り消し。installer の image の live の利用者は公開の既定の `user`/`user`（U26 と同じ値、spec T24）。「installer の image を運用に使ってはいけない」規則を S1・S11・文書（p013）に示す（spec T25）。この image での起動は root 起動相当と扱い、helper の password 無しの root の操作はその前提で受け入れる。乱数の password と live の session の lock をしない設定は外した（spec §9.1・§17.4）。
 
+- 2026-10-29 HAL の案（p007）へのユーザーの回答（原文、Q1 の中継）:「UEFIに限らないファームウェア環境変数という概念で作り直してみてください。もう一度レビューして承認します。」→ UEFI に限らない firmware の環境変数の抽象で案を作り直し、design-reviewer を通して Q1 に送る（[proposed/hal-fw-variables.md](proposed/hal-fw-variables.md)）。
+- 2026-10-29 Q1 の判断（q1665）: p002 の git mv の一覧（`tools/release/kei-nightly*` の 4 件と `kei-boot-splash.png`）は OK（splash の中身は F の新しい絵をユーザーに見せた後）。`docs/release/zedbsd-1.0.0-beta2*.md` は履歴として残す。compositor の 4 file は最後に小さく（P1 に知らせてから）。nightly の asset の upload はユーザーの指示まで止め、URL を変える commit は main に merge しない印を付ける。
+
+## 制限
+
+- loader（p008）: cfg に `video=640x480` がある時、root の partition の失敗（`A64 KERN UFS …`）の文字が画面に出ない（debug port には出て、loader は `halt()` で止まっている）。導入先の cfg は `video=` を持たないので、その形では出る。原因（GOP の mode を変えた後の firmware の console の行の位置と見られる）は未確定（2026-10-29、P4）。
+
 ## Phase
 
 | Phase | 内容 | 依存 | 状態 |
