@@ -95,3 +95,9 @@ sched に core の種類の希望（hint）を出し、DTB を切った時に比
 - D3: nice を sched の priority にも効かせるか（今は sched が nice を読まない。DTB の core の割り付けとは別の、sched の変更）。
 - D4: 前面の app を kernel が知る口（compositor からの focus の hint の UAPI）を作るか。作らなければ HID は「人が操作中か」だけに使う。
 - D5: 統計の追加（syscall の数と時刻）を DTB が off の時も常に取るか（負担の数を p001 で示す）。
+
+## 再開点（2026-10-29 P5、q1666）
+
+
+
+- source の棚卸し [survey-source.md](survey-source.md)（Opus の調べ、Q1 の指示で止めた。未調査は §7）。§0 の ws.md の食い違い（:21 の決定と :45・:64・:93・:95）は Q1 の確かめの後に直す。再開は p001 の設計（WS301 p001 の後、WS309 の thread の種類と合わせる）。
