@@ -50,9 +50,10 @@ enum uvc_packet_loss {
  *
  * last_fid is -1 until the first payload is seen.  current is the slot
  * being filled, or NULL while the frame's data is thrown away; offset is
- * how much of it is filled.  The bulk fields hold the header of a payload
- * that spans transfers.  The counters only grow while the stream runs and
- * are read by the driver's counters operation.
+ * how much of it is filled.  now_ns is the time of the payload being
+ * read.  The bulk fields hold the header of a payload that spans
+ * transfers, and whether its data is thrown away.  The counters only
+ * grow and are read by the driver's counters operation.
  */
 struct uvc_assembler {
 	struct drv_cam_device *camera;
@@ -73,7 +74,9 @@ struct uvc_assembler {
 	uint64_t scr;
 	uint64_t frame_time_ns;
 	uint64_t last_done_ns;
+	uint64_t now_ns;
 	unsigned bulk_in_payload;
+	unsigned bulk_discard;
 	uint8_t bulk_info;
 	size_t bulk_received;
 	uint64_t invalid_header;
