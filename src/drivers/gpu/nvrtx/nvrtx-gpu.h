@@ -358,6 +358,8 @@ struct nvrtx_bo {
  */
 struct nvrtx_work_state {
 	struct nvrtx_bo arena;
+	/* How many times a full space for the users' runs was told. */
+	uint32_t va_full_marks;
 	uint64_t physical[NVRTX_GR_BUFFER_MAX];
 	struct nvrtx_buffer ring;
 	struct nvrtx_buffer semaphore;
@@ -445,6 +447,8 @@ struct nvrtx_memory_state {
 	/* The most of the window in use at once, and how many times a full window was told. */
 	uint64_t bar1_peak;
 	uint32_t bar1_full_marks;
+	/* How many times a full VRAM allocator was told. */
+	uint32_t vram_full_marks;
 	int bar1_claimed;
 	struct drv_pci_mapping bar1_mapping;
 	int bar1_mapped;

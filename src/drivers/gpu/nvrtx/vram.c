@@ -351,7 +351,14 @@ nvrtx_bo_alloc(
 
 	mutex_unlock(&memory->lock);
 
-	/* Reports a missing allocator or a full one. */
+	/* Reports a missing allocator or a full one (a full one is told, the first few times). */
+	if (error == ENOSPC && memory->vram_full_marks < VRAM_BAR1_FULL_MARKS) {
+		memory->vram_full_marks++;
+		nvrtx_stage_mark("vram full: %llu KiB asked, %llu KiB free in %u runs",
+		    (unsigned long long)(size >> 10),
+		    (unsigned long long)(memory->vram.free_bytes >> 10),
+		    (unsigned)memory->vram.count);
+	}
 	if (error != 0)
 		return error;
 
