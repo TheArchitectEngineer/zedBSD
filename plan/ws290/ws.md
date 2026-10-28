@@ -62,7 +62,8 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 | [p012](phase012/phase.md) | 表示: DISP_SET・FLIP、DISP_IRQ、copied・cursor の写し、reset の数え直し、panic、boot framebuffer、adv7511。+ `DISPLAY | DISPLAY_EVENTS`（受け入れ: p012 の場面 PASS、22 LW） | p007・p009・p011 | planned |
 | [p013](phase013/phase.md) | userland と UAPI: `GPU_OP_GHCI_*`・`CONFIG_GHCI_NATIVE` を外す、ghcictl、ghci-blit を削除の list に（受け入れ: ghcictl の build、amd64 の build の warning 0、4 LW） | p004 | cleared（2026-10-28 P3 q1642-i01: GPU_OP_GHCI_*・CONFIG_GHCI_NATIVE を外し、ghcictl は list・display、ghci-blit を消した。build の warning 0） |
 | [p014](phase014/phase.md) | 実機の確かめ（VF2 + KC705、§16.2）。段ごとに Q1 の割当で（受け入れ: 段ごとの要約。KC705 の側の未実装は記録して切り分ける、12 LW） | p004（段 1）、p009（段 2）、p012（段 3）、ユーザーの hardware の用意 | planned |
-| [p015](phase015/phase.md) | 規約の全文の見直し: WS が変えた C の全部、全 host 試験、amd64・riscv64 の warning 0、tree に 1.1 の code が無い grep、stub の `drv_gpu_register` を `gpu.c` と照合、試験を `plan/tools.md` に登録を Q1 に依頼（受け入れ: 規約の違反 0、全 PASS、warning 0、10 LW） | p002〜p014 | planned |
+| [p016](phase016/phase.md) | WaitEvents の保留（R10 の (b)）: 同じ submission の前に SetEvent の無い WaitEvents を、submit を切り後の submission を event の set まで kernel が保留する形で実装（v1 の p009 は ENOTSUP。ユーザー 2026-10-28「WS290 の中で後の Phase」）（受け入れ: p016 の場面 PASS、build の warning 0、10 LW） | p009・p012 | planned |
+| [p015](phase015/phase.md) | 規約の全文の見直し: WS が変えた C の全部、全 host 試験、amd64・riscv64 の warning 0、tree に 1.1 の code が無い grep、stub の `drv_gpu_register` を `gpu.c` と照合、試験を `plan/tools.md` に登録を Q1 に依頼（受け入れ: 規約の違反 0、全 PASS、warning 0、10 LW） | p002〜p014・p016 | planned |
 
 ## 現在の状態・再開点
 
