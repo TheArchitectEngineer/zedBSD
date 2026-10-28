@@ -1088,6 +1088,26 @@ amdrdna_display_memory_switch_hold(
 	display_write(device, AMDRDNA_DCN_HUB_DRAM_STATE, 0U, saved | DISPLAY_DRAM_STATE_CHANGE_ALLOW);
 }
 
+/*
+ * Puts the arbiter's word back as amdrdna_display_memory_switch_end() does,
+ * but with neither force: the memory's self refresh and its state change
+ * as the watermarks allow them, the word Linux's display code leaves.
+ *
+ * Procedure referenced: Linux v6.12
+ * drivers/gpu/drm/amd/display/dc/hubbub/dcn10/dcn10_hubbub.c
+ * (hubbub1_allow_self_refresh_control with the self refresh allowed) and
+ * drivers/gpu/drm/amd/display/dc/hubbub/dcn20/dcn20_hubbub.c (the state
+ * change is never forced on DCN 2.0).
+ */
+void
+amdrdna_display_memory_switch_release(
+	struct amdrdna_device *device,
+	uint32_t saved)
+{
+	/* The word before, both forces off. */
+	display_write(device, AMDRDNA_DCN_HUB_DRAM_STATE, 0U, saved & ~(DISPLAY_DRAM_SELF_REFRESH_FORCE | DISPLAY_DRAM_STATE_CHANGE_ALLOW));
+}
+
 /* Reads the display hub's memory state word (DCHUBBUB_ARB_DRAM_STATE_CNTL) as it is. */
 uint32_t
 amdrdna_display_memory_state(

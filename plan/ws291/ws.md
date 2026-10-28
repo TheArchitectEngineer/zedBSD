@@ -126,3 +126,14 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 - 次: (B) の長い soak の後に memory 側の既定を戻すかを Q1 と決める。その後に案 3b・4・5（phase006 の設計）。
 - 2026-10-28 UCLK (B)（固定の後も DCN の p-state の force allow を残す）の 2 時間以上の soak: ユーザー（クリック）「夜間に流す (推し)」。それまで既定は off。
 - 2026-10-28 ユーザー「P2は、負荷に応じて上げ下げさせる形、を取ってください。今夜のsoakは不要です。最短ではないものの、よりよい形に仕上げたいです。」 → UCLK は固定せず、DC の watermark・SMU の watermark table・NumOfDisplays・DPM_DCEFCLK・vblank の中の p-state の handshake で負荷に応じた DPM にする（P2、q1655）。(B) の夜間の soak は取り消し。
+
+## 2026-10-28 q1655（P2、worktree p2-ws291g）
+
+- ユーザーの決定（2026-10-28、Q1 経由、原文）「P2は、負荷に応じて上げ下げさせる形、を取ってください。今夜のsoakは不要です。最短ではないものの、
+  よりよい形に仕上げたいです。」→ UCLK は固定せず Linux の DC の手順で PMFW に上げ下げさせる。受け入れは Linux の数以上（Q1）。
+- 再開点（2026-10-28 19:50 P2）: [phase006](phase006/phase.md) の「q1655」節。commit: cf2118327（案 3b、Q1 の条件を全部通過: 実機・他 arch・
+  dedicated-host・Venus）、c3a316269（venus-reg.sh）、3f4bec256・877809e6c（UCLK の設計とレビュー）、240ac2197（診断: amdrdnactl の clocks の行、
+  status 352 → 384 byte、SMU 停止の mark に handshake、GetUMCFWWA）、fb8c0f844（memory_allow=2、未実機）。案 4 は patch で後回し
+  （build/ws291/case4.patch、window mode の shot で SURFACE_LOST errno 24）。案 5 は未着手。
+- 次: phase006 の「UCLK の再開点」の 1〜3（増分 B の soak → 表・NumOfDisplays・hard min・watermark の display の段の実装 → 受け入れの soak と bench）。
+  機械は既定（memory=0）、kernel vmunix-d3、libvulkan 3b、amdrdnactl d2。
