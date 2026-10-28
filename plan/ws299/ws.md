@@ -131,3 +131,36 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 
 - 承認（ユーザー、2026-10-28）:「P1はfstrimを使った上で、SSDの消去の影響をなるべく排除して、再度目標達成まで継続してください。」「P1は自律的にゴールに向かわせてください。」「…両方でLinuxと同等以上の性能にチューニングしたいです。」「P1は、現在原因がわかっていないパフォーマンスの問題については、Fable 5.1 Highに何度でも助言を求めてOKです。」「さきほどの「mkfs で作った native の UFS が write-through になり、4 GiB の書きが 7 MB/s しか出ない件」は、P1に依頼します。UFS読み書きの高速化のあとに取り組んでもらいます。」「もしUFS読み書きの高速化にwrite-throughに修正が必要なら、先に取り組んだり同時に取り組んだりしてもOKです」
 - 2026-10-28 ユーザー（Q1 経由）「P1はmemcpyを改善して計測し直した後、全体の比較レポートを送ってほしいです。その上で継続判断させてください。」→ Q1: q1657 の範囲に libc の memcpy（`src/libc/string.c`、案 (a): 小さい長さは重なってよい load/store、内部の 2 段の call を無くす、大きい長さは ERMS の時 rep movsb）を足す。build の flag（案 b）と memset はしない。全長さ×alignment の host 試験、memcpy の micro bench と WS299 の全体の測り直し（zedBSD と Debian を同じ時間帯）、1 つの report を Q1 に送って止まる（UFS の書き・mkfs には進まない）。
+
+### 結果（2026-10-28 21:50、P1、q1657）
+
+- 5330 の起動: 18:46 に止まった kernel（w308c-z）で `5330-run.sh --nvme-none p1-q1657-boot1` PASS（ssh まで 21 s）。新しい image（c9468203a＋memcpy、`build/p1-q57img`）を `--nvme-image p1-q1657-img` で p5 に書いて PASS。この夜の 20 回近い zedBSD の起動で止まりは再現しなかった。
+- direct の書き 59% の切り分け: 測る口（一時の patch、`plan/ws299/temp/`、commit しない）で、1 MiB の direct の書きの kernel の時間は約 0.47 ms（BIO 0.46、pin 0.02、prepare・finish 0.005）。4 GiB の I/O の時間は zedBSD 2.05〜2.13 s、Debian 1.96〜2.24 s で同じ程度。差は道具 directio の fill の側にあった: 長さを変数にした memcpy を 8 byte ごとに呼んでいて、clang はそれを call memcpy のまま残し（gcc は inline の mov にする）、zedBSD の libc の memcpy（1 回 3.2 ns、Debian 0.9 ns）が 1 MiB あたり 0.5〜1.4 ms かかっていた。→ fill を定数 8 byte の写しに直した（書く byte は同じ）。directio に TSC での内訳（fill・io・sync）、CPU の移り、P-core の数を足した。
+- NVMe: 1 request を 4 MiB（`NVME_IO_MAX_BIO_BYTES`）、同時の command を 16（256 KiB×16）、direct の piece を 4 MiB（staging は 1 MiB のまま）に（c9468203a）。比べた形（128 KiB×8、128 KiB×32、256 KiB×16）では書きの I/O の時間は変わらず、4 MiB の direct の読みが 2578 → 2809〜2867 MB/s。QEMU: qemu-directio PASS、qemu-nvme-shapes PASS、boot-test PASS（`build/tmp/boot-test-q57/login.png`）。build: config-5330・pcat・visionfive2・rpi4・m68k-virt の kernel で warning 0。host: buf-direct-test PASS。
+- libc の memcpy（`src/libc/string.c`、amd64 だけ、42d5d4943）: 16 byte 以下は重なってよい head と tail、64 byte 以下は 16 byte の head と tail、それより長い物は 32 byte の loop と最後の 32 byte、2048 byte 以上で ERMS があれば rep movsb。host 試験 `plan/ws299/tests/host/memcpy-test.sh`（長さ 0〜1100 の全部と境界の長さ × src・dst のずれ 0〜15、286720 件、guard の byte、rep movsb あり・なしの両方）PASS。image の build で libc は warning 0（image の warning 476 件は openssh の package と perl の locale）。
+- memcpy の micro bench（5330、`cpuloop`、P-core の上、ns/回。同じ起動で新・旧の libc を静的に link した物を並べた。zedBSD の時計は 1 ms 刻みで ±10% ほどぶれる）: 8 B 旧 3.7〜4.1 → 新 1.07（glibc 0.91）、64 B 3.1〜3.2 → 1.31（1.02）、1 KiB 21〜23 → 21（7.2）、4 KiB 69 → 46（29）、64 KiB 1587 → 1465（1055）、1 MiB 52.7 µs → 50.8 µs（36.2 µs）、32 MiB 9.5 → 9.4 GB/s（18.4 GB/s）。
+- 1 thread の CPU の速さ（`cpuloop chain`）: Debian 725〜730 Msteps/s（P-core）、zedBSD 480〜660（P-core でも 500〜660、E-core に移ると 470〜570）。zedBSD の amd64 の idle は `sti; hlt` だけ（C1）で、HWP も無い。
+- UFS の file の書きの profile（tick ごとの kernel の PC、一時の patch）: 書き手の CPU の大半は buffer cache の 4 KiB の line ごとの処理（reference_line・evict_one・buf_release・buf_read・mark_dirty・finish_run_line・write_range など、1 line あたり約 2.4 µs）と copyin_pinned。
+
+| 項目（5330、4 GiB など） | Debian（q57-D、同じ夜） | zedBSD（q57-Z、c9468203a＋memcpy） | 比 | 前回の比（q1640・q1646） |
+| --- | --- | --- | --- | --- |
+| raw の書き p7（page cache・fsync） | 1934 MB/s | 1752 | 91% | 119%（Debian 1549） |
+| raw の冷えた読み p7（cache 経由） | 1.3 GB/s | 1812 MB/s | 139% | 150% |
+| raw の direct の読み p7（dd、Debian だけ） | 2.2 GB/s | — | — | — |
+| file の書き p7（ext4 / root と同じ UFS、fsync） | 1917 | 988 | 52% | 55% |
+| file の冷えた読み p7 | 1.3 GB/s | 1512 MB/s | 116% | 126% |
+| direct の書き 1 MiB | 1579 | 1384 | 88% | 59%（道具の fill を含む） |
+| direct の読み 1 MiB | 2486 | 2554 | 103% | 95% |
+| direct の読み 4 MiB | 3101 | 2809 | 91% | 85% |
+| data 範囲の direct の読み 1 MiB | 1526 | 1554 | 102% | 101% |
+| 乱読み 4 KiB direct QD1（notime） | 55.8 | 57.3 | 103% | 99% |
+| 乱読み 4 KiB direct QD32（notime） | 923 | 917 | 99% | 48%（WS308 の前） |
+| 乱読み 4 KiB direct QD32 procs（notime） | 919 | 919 | 100% | — |
+| 乱読み 4 KiB QD32（時計入りの randread、cache） | 930（hmb1） | 491〜506 | 53% | 44% |
+| data 範囲の raw の連続の読み（read mode の chunk2〜15、dd 1 MiB） | 1.5 GB/s | 1.68〜2.24 GB/s | 112〜149% | — |
+| 同じ、最初の 900 MiB（bs64k・bs1m・bs4m・chunk0・chunk1） | 1.5 GB/s | 320〜655 MB/s | 21〜44% | 同じ形（前から） |
+| root の UFS の 1 GiB 上書き（ufsover）/ 新しく（ufsnew） | ext4 1.6 GB/s | 1309 / 985 | 82% / 62% | — |
+| p6 の raw の書き 1 GiB（rawtotal） | 1.7 GB/s | 1309 | 77% | — |
+
+- 残る差の見立て（未確認の物を含む）: (1) CPU の速さ（idle が C1 だけ・HWP なし・hybrid を知らない置き方）で、書き手の CPU が律速の項目（UFS の書き・direct の書きの fill）は 10〜30% 遅くなる。所有の外（HAL の idle・scheduler）。(2) UFS の書きは buffer cache の line ごとの費用。(3) 時計入りの randread は clock_gettime が syscall（vDSO が無く 1 ms 刻み）のため。(4) read mode の最初の約 900 MiB が遅いのは、乱読みが残した 4 KiB の line を追い出す道が遅いためと見ている（cache は乱読みの後に既に満杯、chunk2 から速い。未確認）。(5) memcpy は 1 KiB〜4 KiB（dst を揃えていない、AVX なし）と 32 MiB（non-temporal の store なし）で glibc より遅い。
+- 再開点: ユーザーの継続の判断待ち（2026-10-28 ユーザー「その上で継続判断させてください。」）。証拠は worktree の `build/hw5330/ws299d/`（切り分け）・`build/hw5330/ws299e/`（全体）、git の外。
