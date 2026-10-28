@@ -4,7 +4,7 @@
 
 - Master: [plan/master.md](../master.md)（2026-10-29 作成）。Primary Milestone: MG006。前身の調べ: [WS291](../ws291/ws.md) の
   [keiland-blocking.md](../ws291/keiland-blocking.md)（P2 q1661 の点検、branch `agent/p2-ws291i` にあり main に未 merge）。
-- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) とレビューの反映、p002・p003 を実装中）
+- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) 確定、p001〜p003 cleared、p019 は実機の確かめ待ち、p004〜p018 planned）
 - 目標: Keiland の compositor の main loop が frame を止める同期の待ちを持たないよう、thread を下の構成に整理する。ゲームモードの
   direct scanout は Vulkan display（`VK_KHR_display`）の仕様の中で実装する。
 
