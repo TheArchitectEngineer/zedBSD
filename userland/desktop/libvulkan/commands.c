@@ -35,6 +35,8 @@ static VkBool32 command_record_begin(struct VkCommandBuffer_T *command, struct v
 static void command_record_finish(struct VkCommandBuffer_T *command, struct vulkan_writer *writer);
 static void command_head_add(struct VkCommandBuffer_T *command, uint32_t opcode);
 static VkResult command_send(struct VkCommandBuffer_T *command, size_t bytes, uint32_t last);
+static size_t command_batch_limit(struct VkCommandBuffer_T *command);
+static VkResult command_pending_send(struct VkCommandBuffer_T *command);
 static void command_encode_color(struct vulkan_writer *writer, const VkClearColorValue *color);
 static void command_encode_depth_ranges(struct vulkan_writer *writer, const VkClearDepthStencilValue *clear, uint32_t count, const VkImageSubresourceRange *ranges);
 static void command_encode_clear_attachment(struct vulkan_writer *writer, const VkClearAttachment *attachment);
@@ -381,8 +383,17 @@ vkBeginCommandBuffer(
 	VkCommandBufferInheritanceInfo inheritance;
 	VkResult status;
 
-	/* Begin discards the earlier recording's bytes and failure. */
+	/*
+	 * An End still waiting for a submission travels first, so the native
+	 * command buffer has left its recording before Begin.  Its result is
+	 * not reported: Begin discards that recording, and a lost device is
+	 * latched on the context.
+	 */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
+	if (command->end_pending != VK_FALSE)
+		(void)command_pending_send(command);
+
+	/* Begin discards the earlier recording's bytes and failure. */
 	command->recording.bytes = 0;
 	command->recording.error = VK_SUCCESS;
 
@@ -461,6 +472,7 @@ vkEndCommandBuffer(
 	struct vulkan_reader reader;
 	VkResult prior;
 	VkResult status;
+	size_t limit;
 
 	/* Prepares the sole result-bearing record after every deferred void command. */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
@@ -475,6 +487,24 @@ vkEndCommandBuffer(
 		if (prior == VK_SUCCESS) {
 			vulkan_write_bytes(&command->recording, writer.data, writer.bytes);
 			prior = command->recording.error;
+		}
+	}
+
+	/*
+	 * A primary command buffer's recording, End included, waits for the
+	 * submission that names it when it is small enough to travel with
+	 * that submission: it is executable now, and a failure only the
+	 * renderer sees is reported by vkQueueSubmit.
+	 */
+	if (prior == VK_SUCCESS && command->level == VK_COMMAND_BUFFER_LEVEL_PRIMARY) {
+		limit = command_batch_limit(command) / 4U;
+		if (command->recording.bytes <= limit) {
+			vulkan_writer_finish(&writer);
+			command->end_pending = VK_TRUE;
+			command->state = VULKAN_COMMAND_EXECUTABLE;
+
+			/* Succeeded: the submission carries the End. */
+			return VK_SUCCESS;
 		}
 	}
 
@@ -594,6 +624,112 @@ vulkan_command_record_finish(
 	return;
 }
 
+/*
+ * Writes a command buffer's recording whose End waits for its submission
+ * ahead of the submission attempt serial, once, and counts the replies it
+ * asks for.  A recording that would grow the transaction past one batch
+ * is sent alone first (its failure is the command buffer's, which the
+ * submission then reports).
+ */
+VkResult
+vulkan_command_pending_write(
+	struct VkCommandBuffer_T *command,
+	struct vulkan_writer *writer,
+	uint64_t serial,
+	uint32_t *replies)
+{
+	size_t limit;
+	VkResult status;
+
+	/* Only an End still waiting, and only once in this attempt. */
+	if (command->end_pending == VK_FALSE)
+		return VK_SUCCESS;
+	if (command->end_serial == serial)
+		return VK_SUCCESS;
+
+	/* A transaction past one batch: this recording travels alone, now. */
+	limit = command_batch_limit(command);
+	if (writer->bytes + command->recording.bytes > limit) {
+		status = command_pending_send(command);
+		if (status != VK_SUCCESS) {
+			command->error = status;
+			command->state = VULKAN_COMMAND_INVALID;
+		}
+
+		/* Succeeded: the recording travelled, or its failure waits on the command buffer. */
+		return VK_SUCCESS;
+	}
+
+	/* The recording, End included, and the replies of its head and End. */
+	vulkan_write_bytes(writer, command->recording.data, command->recording.bytes);
+	command->end_serial = serial;
+	*replies += command->head_replies + 1U;
+
+	/* Succeeded: the recording goes with the submission's transaction. */
+	return writer->error;
+}
+
+/*
+ * Reads the replies of a recording written ahead of the submission
+ * attempt serial, which ran: the head's, then End's.  The recording has
+ * travelled whatever they say; a failure makes the command buffer
+ * invalid and is returned.
+ */
+VkResult
+vulkan_command_pending_read(
+	struct VkCommandBuffer_T *command,
+	struct vulkan_reader *reader,
+	uint64_t serial)
+{
+	uint32_t expected;
+	uint32_t opcode;
+	uint32_t index;
+	VkResult status;
+	VkResult result;
+
+	/* Only a recording this attempt wrote, read once. */
+	if (command->end_pending == VK_FALSE)
+		return VK_SUCCESS;
+	if (command->end_serial != serial)
+		return VK_SUCCESS;
+
+	/* Each reply in the order its command lay: its opcode, then its result; the first failure is kept. */
+	result = VK_SUCCESS;
+	for (index = 0U; index <= command->head_replies; index++) {
+		expected = GPU_OP_END_COMMAND_BUFFER;
+		if (index < command->head_replies)
+			expected = command->head_opcodes[index];
+		opcode = vulkan_read_u32(reader);
+		if (reader->error != VK_SUCCESS || opcode != expected) {
+			reader->error = VK_ERROR_DEVICE_LOST;
+			break;
+		}
+		status = vulkan_read_result(reader);
+		if (result == VK_SUCCESS)
+			result = status;
+		if (reader->error != VK_SUCCESS)
+			break;
+	}
+
+	/* The recording has travelled. */
+	command->end_pending = VK_FALSE;
+	command->recording.bytes = 0;
+	command->head_bytes = 0;
+	command->head_replies = 0;
+	if (reader->error != VK_SUCCESS)
+		result = reader->error;
+
+	/* A failure the renderer saw makes the command buffer invalid. */
+	if (result != VK_SUCCESS) {
+		command->error = result;
+		command->state = VULKAN_COMMAND_INVALID;
+		return result;
+	}
+
+	/* Succeeded: the native command buffer ended executable. */
+	return VK_SUCCESS;
+}
+
 #include "commands-generated.inc"
 
 /*
@@ -664,11 +800,7 @@ command_record_finish(
 		command->recording.bytes = start;
 
 	/* Leave space for the final result-bearing End record. */
-	limit = VULKAN_RECORDING_BATCH_BYTES;
-	if (command->object.context->max_resource_bytes != 0) {
-		if (command->object.context->max_resource_bytes < limit)
-			limit = (size_t)command->object.context->max_resource_bytes;
-	}
+	limit = command_batch_limit(command);
 
 	/* An unusably small backend cannot retain one complete record and End. */
 	if (status == VK_SUCCESS) {
@@ -793,6 +925,50 @@ command_send(
 
 	/* Succeeded: the bytes ran; the first answering command's failure, if any. */
 	return result;
+}
+
+/* The bytes one transaction of a command buffer's recording may carry. */
+static size_t
+command_batch_limit(
+	struct VkCommandBuffer_T *command)
+{
+	size_t limit;
+
+	/* One batch, or less when the backend's resources are smaller. */
+	limit = VULKAN_RECORDING_BATCH_BYTES;
+	if (command->object.context->max_resource_bytes != 0) {
+		if (command->object.context->max_resource_bytes < limit)
+			limit = (size_t)command->object.context->max_resource_bytes;
+	}
+
+	/* Succeeded: the limit is known. */
+	return limit;
+}
+
+/*
+ * Sends a recording whose End waits for a submission in its own
+ * transaction, with the head's and End's replies; it has travelled
+ * whatever the result.  Returns the first failure.
+ */
+static VkResult
+command_pending_send(
+	struct VkCommandBuffer_T *command)
+{
+	VkResult status;
+
+	/* The recording, End included, and the replies it asks for. */
+	status = command_send(command, command->recording.bytes, GPU_OP_END_COMMAND_BUFFER);
+
+	/* The recording has travelled. */
+	command->end_pending = VK_FALSE;
+	command->recording.bytes = 0;
+	command->head_bytes = 0;
+	command->head_replies = 0;
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the native command buffer ended executable. */
+	return VK_SUCCESS;
 }
 
 /* Releases retained bytes through the command's effective destruction policy. */
@@ -1053,6 +1229,7 @@ command_buffer_initial(
 	command->head_bytes = 0;
 	command->head_replies = 0;
 	command->reset_pending = VK_FALSE;
+	command->end_pending = VK_FALSE;
 	command->error = VK_SUCCESS;
 	command->state = VULKAN_COMMAND_INITIAL;
 
