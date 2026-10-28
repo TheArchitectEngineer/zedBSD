@@ -169,3 +169,9 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - 今の build に入る file: ghci.c・pci-attach.c・cp.c・recover.c（新: service thread・回復・hang・LOST・poll）・service.c・memory.c・check.c・caps.c・cmd.c。build の外で後の Phase が書き直す物: vk/（p007〜p010）、compiler/・isa.c（p006）、display*.c・adv7511.c（p012）、share.c・range.c（p005）、jobs.c・capset.c（p007）。これらは新しい ghci.h では compile できない（書き直しの時に合わせる）。
 - 次: p005（session・VM・memory・resource・blob・share、design §5.5・§5.6・§6.2・§6.3・§7、§14 の p005 の場面）。p004 の土台: 門 `ghci_cp_enter(device, GHCI_HOLD_DEVICE, 1)`、`ghci_cp_place`・`ghci_cp_place_fence`・`ghci_cp_doorbell`、ticket と `ghci_cp_wait`、回復の 6〜8 段に session の状態・勘定・再生を足す所（recover.c の `recover_once` の step 6・7 の comment の所）、犯人は `count_storm` の前に入れる。`ghci_memory_alloc` は host だけ（limit 引数あり）。p006 は p004 の後に並べられる。
 - 未実施: 実機（p014、Q1 の割り当ての後）。
+
+## 2026-10-28 p005・p006（q1644、P3）と code review の依頼の決定
+
+- p005 cleared（[phase005](phase005/phase.md)）、p006 cleared（[phase006](phase006/phase.md)、helper の phase-runner が実装し P3 が commit）。design 版 4.10。ghci-review 第 17 版（N78: 属性の register の累積と `ghci_cmd.h` の 4 × loc + comp の食い違い）を用意し main に入った（仕様の担当への連絡は未）。
+- ユーザーの指示（2026-10-28、Q1 経由の原文）「P3は実装完了後、ハードウェア設計担当に、同じプロトコルを使ってコードレビューを依頼できます。依頼したら私に教えてください。ハードウェア担当に更新監視を再開するように知らせます。なお、ソースコードのファイルパスは~/からのパスで書かないと伝わらないです。」→ 手順（Q1 の指示）: p012 まで終わったら Q1 に merge を頼み、merge の後に main の checkout の `plan/ws290/ghci-review.md` に code review の依頼の版（1 行目を前の版と変え、見てほしい file を `~/zedBSD-claude1/src/drivers/gpu/ghci/...` の形で全部、観点は ghci.md d9252e4 との合致・仕様の解釈・N78、末尾 DONE）を書き、すぐ Q1 に知らせ、reply（`~/amaterrace-gpu/docs/ghci-review-reply.md`）の見張り（60 秒）を納得するまで続ける。
+- p007 の制約（p005 の review）: isolate は vm.c の DEAD の近道（reset が終わった前提で物理を即に返す）を使わず別の印で device の hold に移す（M6）。core の reset（LOST → RUNNING）は vm を退かせる前に submit_log を空にする（L2）。
