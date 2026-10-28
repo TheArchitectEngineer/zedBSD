@@ -81,7 +81,7 @@ static size_t linear_bytes;
 struct pcat_mapping {
 	volatile uint32_t *pixels;
 	uint64_t physical;
-	size_t bytes;
+	uint64_t bytes;
 	int error;
 };
 
@@ -120,7 +120,7 @@ static void cirrus_mode_640x480(unsigned bits_per_pixel);
 static void gfx_write(uint8_t index, uint8_t value);
 static uint8_t seq_read(uint8_t index);
 static void crtc_write(uint8_t index, uint8_t value);
-static void left_add(uint64_t physical, size_t bytes, int error);
+static void left_add(uint64_t physical, uint64_t bytes, int error);
 static void mapping_remove(volatile uint32_t *pixels, uint64_t physical, size_t bytes);
 static void hidden_dac_write(uint8_t value);
 static void load_rgb332_palette(void);
@@ -1323,7 +1323,7 @@ drv_pcat_graphics_backend_end(
 
 		/* The places the framebuffer moved away from. */
 		for (index = 0U; index < retired_count; index++)
-			mapping_remove(linear_retired[index].pixels, linear_retired[index].physical, linear_retired[index].bytes);
+			mapping_remove(linear_retired[index].pixels, linear_retired[index].physical, (size_t)linear_retired[index].bytes);
 		retired_count = 0U;
 
 		/*
@@ -1383,7 +1383,7 @@ drv_pcat_graphics_backend_end(
 static void
 left_add(
 	uint64_t physical,
-	size_t bytes,
+	uint64_t bytes,
 	int error)
 {
 	/* A table with room takes the range itself. */
