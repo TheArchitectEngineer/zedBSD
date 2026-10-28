@@ -265,7 +265,10 @@ struct ghci_arena;
  * after the GPU is done with it; on a lost device it waits in the
  * quarantine instead.  holds counts what keeps a shared allocation (a
  * resource, an export, a mapping until its unmap's fence passed), and
- * reached says the GPU was ever given its address (lock).
+ * reached says the GPU was ever given its address (lock).  scan_unsure
+ * says the display controller may still read it, as the host could not
+ * see the controller stop (lock): its last owner puts it in the
+ * quarantine instead of giving it back.
  */
 struct ghci_allocation {
 	struct ghci_allocation *next;
@@ -276,6 +279,7 @@ struct ghci_allocation {
 	struct kern_pmem run;
 	unsigned holds;
 	int reached;
+	int scan_unsure;
 };
 
 /*
@@ -546,9 +550,13 @@ struct ghci_display_flip {
  * queue[] the presents still waiting for plane 0's flip, oldest first.
  * copy_frame_busy is the driver's frame a copied present is filling (-1
  * for none): no present is recorded until it is.  drops[] is held memory
- * let go of once the lock is let go (the device's lock frees it).  The
- * frames are mapped into session 0 (frame_maps) where the blitter copies
- * into them.
+ * let go of once the lock is let go (the device's lock frees it), and
+ * unsure[] memory the controller may still read, which then goes to the
+ * quarantine; host_unsure says the host turned the controller without
+ * seeing the processor halt or the controller go idle.  The frames are
+ * mapped into session 0 (frame_maps) where the blitter copies into them.
+ * service_placing says the service thread places: the ring is then only
+ * entered when it is free and has room at once.
  *
  * The cursor: surfaces[] are the driver's two images of plane 1;
  * cursor_shown is the surface the controller has (-1 for none) and
@@ -607,6 +615,10 @@ struct ghci_display {
 	int copy_frame_busy;
 	struct ghci_allocation *drops[GHCI_DISPLAY_DROPS];
 	unsigned drop_count;
+	struct ghci_allocation *unsure[GHCI_DISPLAY_DROPS];
+	unsigned unsure_count;
+	int host_unsure;
+	int service_placing;
 
 	/* The cursor plane. */
 	struct ghci_allocation *surfaces[2];
@@ -866,6 +878,7 @@ int ghci_cp_start(struct ghci_device *device);
 int ghci_cp_stop(struct ghci_device *device);
 int ghci_cp_check_packets(const uint32_t *packets, uint32_t dwords);
 enum ghci_gate ghci_cp_enter(struct ghci_device *device, unsigned held, int wait);
+enum ghci_gate ghci_cp_try_enter(struct ghci_device *device, uint32_t need);
 void ghci_cp_leave(struct ghci_device *device);
 int ghci_cp_place(struct ghci_device *device, const uint32_t *packets, uint32_t dwords);
 void ghci_cp_doorbell(struct ghci_device *device);
@@ -941,6 +954,7 @@ void ghci_display_service(struct ghci_device *device, unsigned work);
 void ghci_display_interrupt(struct ghci_device *device);
 void ghci_display_recover_count(struct ghci_device *device);
 int ghci_display_panic(struct ghci_device *device);
+int ghci_display_records_settle(struct ghci_device *device);
 int ghci_adv7511_start(struct ghci_device *device, uint32_t registers);
 int ghci_adv7511_sensed(struct ghci_device *device, uint32_t registers, int *connected);
 

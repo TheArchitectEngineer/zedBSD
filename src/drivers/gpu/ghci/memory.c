@@ -312,8 +312,8 @@ ghci_memory_hold(
 /*
  * Lets one owner of an allocation go; the last one gives it back.  On a
  * lost device an allocation the GPU was ever given joins the quarantine
- * instead, as the GPU may still reach it.  The caller holds the device's
- * lock.
+ * instead, as the GPU may still reach it, and so does one the display
+ * controller may still read.  The caller holds the device's lock.
  */
 void
 ghci_memory_unhold(
@@ -344,6 +344,12 @@ ghci_memory_unhold(
 
 	/* Memory a lost GPU may still reach waits for bus mastering to go. */
 	if (state == GHCI_STATE_LOST && allocation->reached) {
+		ghci_memory_quarantine(device, allocation);
+		return;
+	}
+
+	/* Memory the display controller may still read waits too. */
+	if (allocation->scan_unsure) {
 		ghci_memory_quarantine(device, allocation);
 		return;
 	}

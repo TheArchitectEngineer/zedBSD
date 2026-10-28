@@ -53,9 +53,6 @@
 #include "ghci.h"
 #include "ghci-cmd.h"
 
-/* How long a release waits for the controller to go dark and let its images go. */
-#define RELEASE_WAIT_MS			1000U
-
 /* The longest a display wait waits, in nanoseconds: one second. */
 #define WAIT_MAX_NS			1000000000ULL
 
@@ -65,6 +62,10 @@
 /* The cursor's image: 64 x 64 pixels of 4 bytes, rows 256 bytes apart. */
 #define CURSOR_STRIDE			(GHCI_DC_CURSOR_SIZE * GHCI_DISPLAY_PIXEL_BYTES)
 #define CURSOR_BYTES			(CURSOR_STRIDE * GHCI_DC_CURSOR_SIZE)
+
+/* The places CURSOR_POS takes: 16 bits a coordinate, signed. */
+#define CURSOR_POSITION_MIN		(-32768)
+#define CURSOR_POSITION_MAX		32767
 
 /* The 32-bit physical addresses the controller takes. */
 #define SCAN_LIMIT			0x100000000ULL
@@ -156,6 +157,7 @@ static void memory_let_go(struct ghci_device *device, struct ghci_allocation *me
 static int cursor_surface_free(const struct ghci_display *display);
 static int cursor_rows(struct ghci_device *device, struct ghci_allocation *memory, const struct gpu_display_cursor_image *request, uint8_t *staging);
 static void cursor_convert(const uint8_t *staging, uint8_t *surface, uint32_t width, uint32_t height, int swap);
+static uint32_t cursor_coordinate(int32_t value);
 
 /* Describes the one output. */
 static int
@@ -200,7 +202,7 @@ display_query(
 		request->flags |= GPU_DISPLAY_HAS_CURSOR;
 	request->plane_count = 1U;
 	request->formats = display_formats(display);
-	request->max_frame_bytes = (uint64_t)ghci_scan_stride(largest->width) * largest->height;
+	request->max_frame_bytes = ghci_scan_frame_bytes(display);
 	request->current_width = current->width;
 	request->current_height = current->height;
 	request->preferred_width = largest->width;
@@ -342,9 +344,12 @@ display_claim(
 }
 
 /*
- * Ends the lease of its holder: the controller goes dark and lets its
- * images go before the call returns (or, past a bounded time, soon
- * after).  EINVAL for another session's lease.
+ * Ends the lease of its holder: the call returns once the controller is
+ * dark and no longer scans the lease's memory, which is then let go of.
+ * The wait holds no lock while it sleeps and always ends: the dark
+ * packet's ticket passes, or fails at the reset that ends a hang, and a
+ * ring that no longer runs is turned dark by the host.  EINVAL for
+ * another session's lease.
  */
 static int
 display_release(
@@ -354,9 +359,7 @@ display_release(
 {
 	struct ghci_device *device;
 	struct ghci_display *display;
-	uint64_t deadline;
 	uint64_t mark;
-	uint64_t now;
 	int done;
 
 	/* Only the holder's own lease ends. */
@@ -373,32 +376,26 @@ display_release(
 
 	mutex_unlock(&device->display_lock);
 
-	/* Waits a bounded time for the dark packet and the cancelled records. */
-	deadline = clock_ticks() + kern_ms_to_ticks(RELEASE_WAIT_MS);
+	/* Waits for the dark packet and the cancelled records; a dark packet a recovery refused is placed again. */
 	for (;;) {
 		mark = ghci_scan_mark(device);
 		mutex_lock(&device->display_lock);
 
+		if (display->ending && display->dark_placed < 0)
+			ghci_scan_lease_end(device);
 		done = ghci_scan_lease_done(device);
 
 		mutex_unlock(&device->display_lock);
 
-		/* Ends once everything was let go, or at the deadline (the service thread finishes it). */
+		/* Ends once everything was let go. */
 		ghci_scan_flush(device);
-		now = clock_ticks();
-		if (done || now >= deadline)
+		if (done)
 			break;
 
-		ghci_scan_sleep(device, mark, deadline);
+		ghci_scan_sleep(device, mark, clock_ticks() + kern_ms_to_ticks(GHCI_HANG_MS));
 	}
 
-	/* A controller slow to go dark is finished by the service thread. */
-	if (!done) {
-		kern_logf("ghci: %s: display lease ended before the controller went dark\n", device->name);
-		ghci_service_wake(device, GHCI_WORK_DISPLAY);
-	}
-
-	/* Succeeded: the lease is free (once the controller is dark, for a new claim). */
+	/* Succeeded: the lease's memory is no longer scanned, and the display may be claimed again. */
 	return 0;
 }
 
@@ -655,7 +652,7 @@ display_cursor_move(
 	if (error == 0 && !display->cursor_image)
 		error = EINVAL;
 	if (error == 0) {
-		position = ((uint32_t)request->x & 0xffffU) | ((uint32_t)request->y << 16);
+		position = cursor_coordinate(request->x) | (cursor_coordinate(request->y) << 16);
 		ghci_write(device, display->registers + GHCI_DC_CURSOR_POS, position);
 		ghci_write(device, display->registers + GHCI_DC_CURSOR_CTRL, 1U);
 	}
@@ -965,7 +962,7 @@ buffer_take(
 }
 
 /*
- * Takes the driver's buffers once: two frames of the largest mode that a
+ * Takes the driver's buffers once: two frames any mode fits in that a
  * copied present fills (local memory on a discrete GPU, mapped into
  * session 0 when the blitter fills them), and, with a cursor plane, two
  * cursor surfaces.  They stay until the detach.  The caller holds no lock
@@ -977,17 +974,15 @@ buffers_take(
 {
 	struct ghci_display *display;
 	struct ghci_mapping *mapping;
-	const struct ghci_display_mode *largest;
 	uint64_t bytes;
 	unsigned index;
 	int blitter;
 	int mapped;
 	int error;
 
-	/* Each frame holds the largest mode, with rows on the memory line. */
+	/* Each frame holds a frame of any mode, with rows on the memory line. */
 	display = &device->display;
-	largest = &display->modes[ghci_scan_largest_mode(display)];
-	bytes = (uint64_t)ghci_scan_stride(largest->width) * largest->height;
+	bytes = ghci_scan_frame_bytes(display);
 	for (index = 0U; index < 2U; index++) {
 		error = buffer_take(device, &display->frames[index], bytes);
 		if (error != 0)
@@ -1503,4 +1498,23 @@ cursor_convert(
 			}
 		}
 	}
+}
+
+/*
+ * Reports a coordinate of the cursor as CURSOR_POS takes it: 16 bits,
+ * signed, a place past either end held at that end (the parts of the
+ * image outside the screen are clipped).
+ */
+static uint32_t
+cursor_coordinate(
+	int32_t value)
+{
+	/* Held to the 16-bit range. */
+	if (value < CURSOR_POSITION_MIN)
+		value = CURSOR_POSITION_MIN;
+	if (value > CURSOR_POSITION_MAX)
+		value = CURSOR_POSITION_MAX;
+
+	/* Succeeded: the two's complement in the low 16 bits. */
+	return (uint32_t)value & 0xffffU;
 }
