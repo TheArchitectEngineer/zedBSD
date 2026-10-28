@@ -261,6 +261,10 @@ main(
 			printf("KWL FAILED site=threads errno=%d\n", error);
 	}
 
+	/* The device I/O thread, which opens and closes the input devices away from the event loop (io.c). */
+	if (error == 0)
+		kwl_io_start(&server);
+
 	/* How long the notifications' bus, the wallpaper's reading thread and the threads' pipe took to start. */
 	step_start = startup_step("prepare", step_start);
 
@@ -291,7 +295,11 @@ main(
 			printf("KWL FAILED site=input-thread errno=%d\n", error);
 	}
 
-	/* Input devices are found before READY; a seat without devices is still valid. */
+	/*
+	 * The input devices are looked for before READY (where the device I/O
+	 * thread opens them they join a moment later, from the event loop); a
+	 * seat without devices is still valid.
+	 */
 	if (error == 0) {
 		kwl_input_scan(&server);
 		step_start = startup_step("input", step_start);
@@ -1117,6 +1125,9 @@ event_loop(
 		/* Device authority changes before the old snapshot can read revoked input or complete a frame. */
 		kwl_os_poll_done(server, descriptors + first_os);
 
+		/* The input devices the device I/O thread opened are offered to the seat (io.c). */
+		kwl_io_take(server);
+
 		/* A finished frame releases its buffers and sends its callbacks; a fence without an fd is asked. */
 		part = kwl_cycles();
 		if (frame_slot != 0 && descriptors[frame_slot].revents != 0)
@@ -1283,6 +1294,9 @@ service_cleanup(
 	/* The input thread lets go of every device; then, no client remaining to hear from the seat, they close quietly. */
 	kwl_input_threads_stop(server);
 	kwl_input_cleanup(server);
+
+	/* The device I/O thread ends; the devices it opened and the closes it was given are closed (io.c). */
+	kwl_io_stop(server);
 
 	/* The session's volume and settings are kept for the next login (volume.c; settings.c). */
 	kwl_volume_keep(server, "end");

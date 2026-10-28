@@ -105,17 +105,26 @@ static void input_settings(struct kwl_server *server, struct kwl_input_settings 
 static void pointer_warp_place(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 
 /*
- * Opens the input devices not read yet (libkeiland-backend's scan, which
- * offers each through kwl_input_probe) and sets the time of the next scan.
+ * Opens the input devices not read yet and sets the time of the next scan:
+ * on the device I/O thread where it runs (io.c, the seat is offered the
+ * devices from a later pass), otherwise in libkeiland-backend's scan here,
+ * which offers each through kwl_input_probe.
  */
 void
 kwl_input_scan(
 	struct kwl_server *server)
 {
+	int error;
+
 	/* The next rescan is due one period from now. */
 	server->input_scan_time = kwl_milliseconds();
 
-	/* The backend finds, opens and offers the devices. */
+	/* The device I/O thread opens them; a finding under way already will do. */
+	error = kwl_io_input_find(server);
+	if (error == 0 || error == EBUSY)
+		return;
+
+	/* Without the thread (or memory for its job) the backend finds, opens and offers the devices here. */
 	kl_backend_input_scan(server->backend);
 }
 
@@ -1536,7 +1545,7 @@ apply_detached(
 	/* Any other end closes the device. */
 	printf("KWL INPUT_CLOSED device=%s kind=%s reason=%s errno=%d\n", device->path, input_kind_name(device), input_reason_name(detached->reason), detached->error);
 	if (device->fd >= 0)
-		kl_backend_input_close(server->backend, device->fd);
+		kwl_io_input_close(server, device->fd);
 	input_retire(server, device);
 }
 

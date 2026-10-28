@@ -58,6 +58,7 @@
 #include "rotate.h"
 #include "title-tap.h"
 #include "cursor-box.h"
+#include "lane.h"
 #include "input-thread.h"
 #include <stdint.h>
 #include <stddef.h>
@@ -1367,6 +1368,15 @@ struct kwl_server {
 	struct kwl_input_device inputs[KWL_INPUT_MAX];
 	uint64_t input_scan_time;
 	uint64_t input_settle_until;
+	/*
+	 * The device I/O thread (io.c): io_device runs the jobs that may wait
+	 * for a device (the input devices' opening and closing), io_started
+	 * says it runs.  input_finding is set from a finding's submission to
+	 * its taking, so that the scans do not pile up behind a slow open.
+	 */
+	struct kwl_lane io_device;
+	unsigned io_started;
+	unsigned input_finding;
 	uint64_t input_events;
 	uint64_t seat_events;
 	unsigned capabilities;
@@ -2675,6 +2685,11 @@ size_t kwl_os_poll_count(const struct kwl_server *server);
 void kwl_os_poll_fill(struct kwl_server *server, struct pollfd *descriptors);
 void kwl_os_poll_done(struct kwl_server *server, const struct pollfd *descriptors);
 void kwl_input_scan(struct kwl_server *server);
+void kwl_io_start(struct kwl_server *server);
+void kwl_io_take(struct kwl_server *server);
+void kwl_io_stop(struct kwl_server *server);
+int kwl_io_input_find(struct kwl_server *server);
+void kwl_io_input_close(struct kwl_server *server, int descriptor);
 int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
 int kwl_input_alt_held(const struct kwl_server *server);
 int kwl_input_attach(struct kwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, unsigned direct, const struct input_absinfo *x, const struct input_absinfo *y);
