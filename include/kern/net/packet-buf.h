@@ -159,5 +159,14 @@ packet_buf_in_use(void);
 void
 packet_buf_pool_usage(
 	struct packet_buf_pool_usage *usage);
+/*
+ * The physical address of a packet's data (0 and the address, or ENOENT
+ * when it is not known), for a driver that hands the bytes to its device
+ * in place; the packet's storage is physically contiguous.
+ */
+int
+packet_buf_physical(
+	const struct packet_buf *packet,
+	uint64_t *physical);
 
 #endif
