@@ -17,3 +17,7 @@ ZEDBSD_USER_PROGRAMS += aat-input keiland-shot
 
 # The 3D scene (ws291-p002).
 ZEDBSD_USER_PROGRAMS += $(filter-out $(ZEDBSD_USER_PROGRAMS),mview)
+
+# Without the NVIDIA driver for now: with the larger network packet pool the kernel of this config passes
+# AMD64_KERNEL_MAX_BYTES by 4 KiB (Q1 2026-10-29: off until the pool is allocated at boot; put it back then).
+CONFIG_DRIVER_PCI_NVRTX := n

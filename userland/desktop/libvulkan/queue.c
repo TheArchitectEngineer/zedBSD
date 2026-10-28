@@ -351,7 +351,9 @@ queue_enqueue(
 
 	/* A preparing private slot stays exclusive even while capacity waiting drops the queue lock. */
 	if (fence == VK_NULL_HANDLE) {
+		mark = vulkan_timing_start();
 		status = queue_private_fence(queue, &private_fence);
+		vulkan_timing_add(VULKAN_TIMING_PRIVATE_FENCE, mark, 0);
 		if (status == VK_SUCCESS) {
 			fence = private_fence->fence;
 			completion = vulkan_sync_object((uint64_t)(uintptr_t)fence);
@@ -993,13 +995,23 @@ queue_reset_completed(
 	uint32_t index;
 	VkResult status;
 
+	/*
+	 * The ledger, reaped once when it has grown, tells which jobs ended:
+	 * asking the kernel about each slot costs a system call a slot, and a
+	 * slot whose ended record is not yet consumed is only taken by a later
+	 * batch (the ledger is bounded, so is the cache).
+	 */
+	status = vulkan_sync_ledger_reap(queue->device->object.context);
+	if (status != VK_SUCCESS)
+		return status;
+
 	/* Preparing callers and already-reset slots are not native GPU completion candidates. */
 	count = 0U;
 	for (slot = queue->private_fences; slot != NULL; slot = slot->next) {
 		/* A host marker's final native access must retire before that identity is reset. */
 		if (slot->state == QUEUE_FENCE_INFLIGHT) {
 			sync = vulkan_sync_object((uint64_t)(uintptr_t)slot->fence);
-			status = vulkan_sync_job_status(sync, 0);
+			status = vulkan_sync_job_retired(sync);
 			if (status < VK_SUCCESS)
 				return status;
 

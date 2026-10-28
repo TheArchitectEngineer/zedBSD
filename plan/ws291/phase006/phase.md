@@ -1192,3 +1192,14 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
   設計から）、private fence の状態の確かめを ledger だけで済ませる（libvulkan）。
 - big-N: kernel の decode（1 op 約 0.05 µs、1 frame 3 ms）、executor の draw（約 0.39 µs）、GPU 側（IB の flush ごとの全 barrier、表の領域 768 KiB で 1 frame
   約 8 回）。kernel と libvulkan は -Os（全体の方針、変えていない）。
+
+## q1668-i02（2026-10-29 P2、worktree p2-ws291l、基点 main d94ceac00）
+
+- 承認: ユーザーの回答（クリック、2026-10-29）「WS291 の続き (推し)」、q1663 と同じ自律の承認。範囲は前の節の「残り」のうち GPU core の job の ABI を
+  変えない物（big-N、subs-N の private fence）と、1 本の ioctl の設計の案（実装しない）。
+- kernel の大きさ: main d94ceac00 の plan/ws291/tests/config.mk の vmunix は AMD64_KERNEL_MAX_BYTES を 4 KiB 越えて link できない（網の packet の pool
+  256 → 1024）。Q1 の指示（2026-10-29）で config.mk に `CONFIG_DRIVER_PCI_NVRTX := n`（pool の直しが main に入ったら戻す）。kernel は BUILD=build/ws291/k。
+- 実機の状態（04:20、未変更）: kernel は 1132ec5b6 の build（vmunix-e4、cksum 3189798377）、/lib/libvulkan.so は 1824111c8 の build（cksum 2490346689）、
+  /bin/wayland は main 9402d4c74 の build、cfg は ngg=2・memory=2、timing は off。zedBSD は 10.0.30.5。
+- 再開点（04:25、未完）: subs-N の private fence を ledger だけで確かめる直し（queue.c queue_reset_completed は reap を 1 回して ledger の検索だけ、
+  sync.c vulkan_sync_job_status は ledger に無い record では reap しない、timing に private_fence・reap）を build（warning 0）、実機は未実施。

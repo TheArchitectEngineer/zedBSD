@@ -65,6 +65,8 @@ VkResult vulkan_sync_capacity_wait(struct VkQueue_T *queue, uint64_t sequence);
 VkResult vulkan_sync_job_reserve(struct VkQueue_T *queue, struct vulkan_sync *sync, struct vulkan_notification **reserved, uint64_t *capacity_sequence, VkBool32 *prepared);
 VkResult vulkan_sync_job_finish(struct VkQueue_T *queue, struct vulkan_sync *sync, struct vulkan_notification *reserved, VkResult native_status, VkBool32 accepted);
 VkResult vulkan_sync_job_status(struct vulkan_sync *sync, uint64_t timeout_ns);
+VkResult vulkan_sync_ledger_reap(struct vulkan_context *context);
+VkResult vulkan_sync_job_retired(struct vulkan_sync *sync);
 void vulkan_sync_quiesce(struct vulkan_sync *sync);
 
 /* Display events; the caller owns the fence's device mutex. */
