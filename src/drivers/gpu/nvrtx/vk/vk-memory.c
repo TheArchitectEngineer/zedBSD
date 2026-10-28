@@ -390,9 +390,11 @@ memory_bind_to(
 	struct nvrtx_vk_object **holder;
 	uint64_t *place;
 	uint64_t bytes;
+	uint64_t align;
 	int error;
 
-	/* The resource's size and where it keeps its binding. */
+	/* The resource's size, its boundary (a GOB for a depth image) and where it keeps its binding. */
+	align = NVRTX_VK_RESOURCE_ALIGN;
 	if (image) {
 		picture = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, resource);
 		if (picture == NULL)
@@ -400,6 +402,8 @@ memory_bind_to(
 		bytes = picture->bytes;
 		holder = &picture->memory;
 		place = &picture->offset;
+		if (picture->depth)
+			align = NVRTX_VK_GOB_BYTES;
 	} else {
 		buffer = nvrtx_vk_payload(session, I915_VK_OBJ_BUFFER, resource);
 		if (buffer == NULL)
@@ -415,7 +419,7 @@ memory_bind_to(
 
 	/* On the boundary, wholly inside the allocation. */
 	storage = memory->payload;
-	if ((offset % NVRTX_VK_RESOURCE_ALIGN) != 0U)
+	if ((offset % align) != 0U)
 		return EINVAL;
 	if (offset > storage->bytes)
 		return EINVAL;
@@ -450,6 +454,7 @@ memory_requirements(
 	const struct nvrtx_vk_buffer *buffer;
 	const struct nvrtx_vk_image *picture;
 	uint64_t resource;
+	uint64_t align;
 	uint64_t bytes;
 
 	/* The resource between the device and the output's presence word. */
@@ -459,22 +464,25 @@ memory_requirements(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* How many bytes the resource occupies. */
+	/* How many bytes the resource occupies, and its boundary (a GOB for a depth image). */
 	bytes = 0U;
+	align = NVRTX_VK_RESOURCE_ALIGN;
 	if (image) {
 		picture = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, resource);
 		if (picture != NULL)
 			bytes = picture->bytes;
+		if (picture != NULL && picture->depth)
+			align = NVRTX_VK_GOB_BYTES;
 	} else {
 		buffer = nvrtx_vk_payload(session, I915_VK_OBJ_BUFFER, resource);
 		if (buffer != NULL)
 			bytes = buffer->size;
 	}
 
-	/* Whole runs of the resource boundary, on that boundary, of the one memory type. */
+	/* Whole runs of the boundary, on that boundary, of the one memory type. */
 	kern_memset(&requirements, 0, sizeof(requirements));
-	requirements.size = (bytes + NVRTX_VK_RESOURCE_ALIGN - 1U) & ~(uint64_t)(NVRTX_VK_RESOURCE_ALIGN - 1U);
-	requirements.alignment = NVRTX_VK_RESOURCE_ALIGN;
+	requirements.size = (bytes + align - 1U) & ~(align - 1U);
+	requirements.alignment = align;
 	requirements.memoryTypeBits = 0U;
 	if (bytes != 0U)
 		requirements.memoryTypeBits = 1U << NVRTX_VK_MEMORY_TYPE;

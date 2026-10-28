@@ -34,6 +34,7 @@
 static int resource_create_buffer(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int resource_create_image(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int resource_image_supported(const VkImageCreateInfo *info);
+static void resource_image_layout(struct nvrtx_vk_image *image);
 static int resource_layout(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int resource_create_view(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static uint32_t resource_swizzle(VkComponentSwizzle swizzle, uint32_t identity);
@@ -178,7 +179,6 @@ resource_create_image(
 	VkImageCreateInfo info;
 	struct nvrtx_vk_image *image;
 	uint64_t identity;
-	uint32_t row;
 	int supported;
 	int error;
 
@@ -207,18 +207,17 @@ resource_create_image(
 		error = ENOTSUP;
 	}
 
-	/* Lays the image out: rows of the width's pixels on the pitch boundary. */
+	/* Lays the image out. */
 	image = NULL;
 	if (error == 0) {
 		image = kern_calloc(1U, sizeof(*image));
 		if (image != NULL) {
-			row = info.extent.width * NVRTX_VK_PIXEL_BYTES;
 			image->format = info.format;
 			image->width = info.extent.width;
 			image->height = info.extent.height;
 			image->usage = info.usage;
-			image->pitch = (row + NVRTX_VK_PITCH_ALIGN - 1U) & ~(NVRTX_VK_PITCH_ALIGN - 1U);
-			image->bytes = (uint64_t)image->pitch * image->height;
+			image->levels = info.mipLevels;
+			resource_image_layout(image);
 		}
 	}
 
@@ -230,19 +229,104 @@ resource_create_image(
 }
 
 /*
- * Reports whether an image is one the executor lays out: 2D, one level,
- * one layer, one sample, a colour format, within the largest side.
+ * Lays an image out.  A colour image is pitch linear, each level after the
+ * one before on the resource boundary, its rows of its width's pixels on
+ * the pitch boundary.  A depth image is block linear in one-GOB blocks: its
+ * rows a whole number of GOBs wide, its height a whole number of GOBs.
+ */
+static void
+resource_image_layout(
+	struct nvrtx_vk_image *image)
+{
+	uint64_t at;
+	uint32_t level;
+	uint32_t width;
+	uint32_t height;
+	uint32_t row;
+
+	/* A depth image: GOB rows and GOB heights. */
+	if (image->format == VK_FORMAT_D32_SFLOAT) {
+		row = image->width * NVRTX_VK_PIXEL_BYTES;
+		image->depth = true;
+		image->pitch = (row + NVRTX_VK_GOB_WIDTH - 1U) & ~(NVRTX_VK_GOB_WIDTH - 1U);
+		height = (image->height + NVRTX_VK_GOB_HEIGHT - 1U) & ~(NVRTX_VK_GOB_HEIGHT - 1U);
+		image->bytes = (uint64_t)image->pitch * height;
+		image->level_offset[0] = 0U;
+		image->level_pitch[0] = image->pitch;
+		return;
+	}
+
+	/* A colour image: each level halved from the one before, one pixel at least. */
+	at = 0U;
+	width = image->width;
+	height = image->height;
+	for (level = 0U; level < image->levels; level++) {
+		row = width * NVRTX_VK_PIXEL_BYTES;
+		image->level_offset[level] = at;
+		image->level_pitch[level] = (row + NVRTX_VK_PITCH_ALIGN - 1U) & ~(NVRTX_VK_PITCH_ALIGN - 1U);
+		at += (uint64_t)image->level_pitch[level] * height;
+		at = (at + NVRTX_VK_RESOURCE_ALIGN - 1U) & ~(uint64_t)(NVRTX_VK_RESOURCE_ALIGN - 1U);
+		width = width > 1U ? width >> 1 : 1U;
+		height = height > 1U ? height >> 1 : 1U;
+	}
+	image->pitch = image->level_pitch[0];
+	image->bytes = at;
+}
+
+/*
+ * Reports where a level of an image starts, its size and its row pitch
+ * (a level past the image's last is its last).
+ */
+void
+nvrtx_vk_image_level(
+	const struct nvrtx_vk_image *image,
+	uint32_t level,
+	uint64_t *offset,
+	uint32_t *width,
+	uint32_t *height,
+	uint32_t *pitch)
+{
+	uint32_t w;
+	uint32_t h;
+	uint32_t index;
+
+	/* One of the image's levels. */
+	if (image->levels != 0U && level >= image->levels)
+		level = image->levels - 1U;
+
+	/* The size halved per level, one pixel at least. */
+	w = image->width;
+	h = image->height;
+	for (index = 0U; index < level; index++) {
+		w = w > 1U ? w >> 1 : 1U;
+		h = h > 1U ? h >> 1 : 1U;
+	}
+
+	/* Succeeded: the level's place and shape. */
+	*offset = image->level_offset[level];
+	*width = w;
+	*height = h;
+	*pitch = image->level_pitch[level];
+}
+
+/*
+ * Reports whether an image is one the executor lays out: 2D, one layer,
+ * one sample, within the largest side; a colour format of any number of
+ * levels, or D32_SFLOAT of one level as a depth attachment (sampled or
+ * copied it is not).
  */
 static int
 resource_image_supported(
 	const VkImageCreateInfo *info)
 {
+	uint32_t side;
+	uint32_t levels;
 	bool colour;
 
-	/* A 2D image of one level, one layer and one sample. */
+	/* A 2D image of one layer and one sample, of a level at least. */
 	if (info->imageType != VK_IMAGE_TYPE_2D)
 		return 0;
-	if (info->mipLevels != 1U)
+	if (info->mipLevels == 0U || info->mipLevels > NVRTX_VK_LEVELS_MAX)
 		return 0;
 	if (info->arrayLayers != 1U)
 		return 0;
@@ -257,9 +341,28 @@ resource_image_supported(
 	if (info->extent.height == 0U || info->extent.height > NVRTX_VK_IMAGE_SIDE_MAX)
 		return 0;
 
+	/* A depth attachment of one level, nothing else done with it. */
+	if (info->format == VK_FORMAT_D32_SFLOAT) {
+		if (info->mipLevels != 1U)
+			return 0;
+		if ((info->usage & ~(uint32_t)(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT)) != 0U)
+			return 0;
+		return 1;
+	}
+
 	/* In one of the colour formats. */
 	colour = nvrtx_vk_format_colour(info->format);
 	if (!colour)
+		return 0;
+
+	/* No more levels than halving the longer side down to one pixel gives. */
+	side = info->extent.width > info->extent.height ? info->extent.width : info->extent.height;
+	levels = 1U;
+	while (side > 1U) {
+		side >>= 1;
+		levels++;
+	}
+	if (info->mipLevels > levels)
 		return 0;
 
 	/* Succeeded: the image is laid out pitch linear. */
@@ -283,6 +386,10 @@ resource_layout(
 	const struct nvrtx_vk_image *image;
 	uint64_t identity;
 	uint64_t present;
+	uint64_t offset;
+	uint32_t width;
+	uint32_t height;
+	uint32_t pitch;
 
 	/* The image behind the device, then the subresource when present (level 0 when absent). */
 	(void)drv_i915_wire_read_u64(reader);
@@ -297,15 +404,16 @@ resource_layout(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Level 0 of layer 0 is the whole image, rows pitch bytes apart. */
+	/* A level of layer 0 of a colour image: where it starts, its rows pitch bytes apart. */
 	kern_memset(&layout, 0, sizeof(layout));
 	image = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, identity);
-	if (image != NULL && subresource.mipLevel == 0U && subresource.arrayLayer == 0U) {
-		layout.offset = 0U;
-		layout.size = image->bytes;
-		layout.rowPitch = image->pitch;
+	if (image != NULL && !image->depth && subresource.mipLevel < image->levels && subresource.arrayLayer == 0U) {
+		nvrtx_vk_image_level(image, subresource.mipLevel, &offset, &width, &height, &pitch);
+		layout.offset = offset;
+		layout.size = (uint64_t)pitch * height;
+		layout.rowPitch = pitch;
 		layout.arrayPitch = image->bytes;
-		layout.depthPitch = image->bytes;
+		layout.depthPitch = layout.size;
 	}
 
 	/* The layout behind its presence word. */
@@ -329,6 +437,7 @@ resource_create_view(
 {
 	VkImageViewCreateInfo info;
 	struct nvrtx_vk_object *image;
+	const struct nvrtx_vk_image *picture;
 	struct nvrtx_vk_view *view;
 	uint64_t identity;
 	bool colour;
@@ -343,16 +452,25 @@ resource_create_view(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* A view of a known image, 2D, of its level 0 and layer 0, in a colour format. */
+	/*
+	 * A view of a known image, 2D, of one of its levels and layer 0, in a
+	 * colour format, or the depth image in its own format.
+	 */
 	error = 0;
 	image = nvrtx_vk_object_find(session, I915_VK_OBJ_IMAGE, (uint64_t)(uintptr_t)info.image);
+	picture = NULL;
+	if (image != NULL)
+		picture = image->payload;
 	colour = nvrtx_vk_format_colour(info.format);
-	if (image == NULL) {
+	if (picture == NULL) {
 		error = EINVAL;
 	} else if (info.viewType != VK_IMAGE_VIEW_TYPE_2D) {
 		error = ENOTSUP;
-	} else if (info.subresourceRange.baseMipLevel != 0U || info.subresourceRange.baseArrayLayer != 0U) {
+	} else if (info.subresourceRange.baseMipLevel >= picture->levels || info.subresourceRange.baseArrayLayer != 0U) {
 		error = EINVAL;
+	} else if (picture->depth) {
+		if (info.format != VK_FORMAT_D32_SFLOAT)
+			error = ENOTSUP;
 	} else if (!colour) {
 		error = ENOTSUP;
 	}
@@ -371,6 +489,7 @@ resource_create_view(
 	if (view != NULL) {
 		view->image = image;
 		view->format = info.format;
+		view->base_level = info.subresourceRange.baseMipLevel;
 		view->swizzle[0] = resource_swizzle(info.components.r, VK_COMPONENT_SWIZZLE_R);
 		view->swizzle[1] = resource_swizzle(info.components.g, VK_COMPONENT_SWIZZLE_G);
 		view->swizzle[2] = resource_swizzle(info.components.b, VK_COMPONENT_SWIZZLE_B);

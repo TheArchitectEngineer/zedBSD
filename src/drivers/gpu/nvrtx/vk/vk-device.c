@@ -28,6 +28,7 @@
 #include <uapi/gpu-op.h>
 
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
+#include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
 
 #include "drivers/gpu/i915/vk/vk-codec.inc"
 
@@ -551,6 +552,10 @@ device_format_features(
 		properties->optimalTilingFeatures = DEVICE_COLOUR_FEATURES;
 		properties->linearTilingFeatures = DEVICE_COLOUR_FEATURES;
 		break;
+	case VK_FORMAT_D32_SFLOAT:
+		/* The depth format: a depth attachment of optimal tiling only. */
+		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		break;
 	default:
 		break;
 	}
@@ -597,7 +602,7 @@ device_usage_features(
 	if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U)
 		required |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
 
-	/* Rendering depth needs the depth attachment feature, which no format has. */
+	/* Rendering depth needs the depth attachment feature (D32_SFLOAT's). */
 	if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U)
 		required |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
@@ -675,11 +680,13 @@ device_image_format(
 		return 0;
 	}
 
-	/* One level, one layer, one sample, up to 16384 a side and 1 GiB. */
+	/* Every level of a colour image (one of a depth image), one layer, one sample, up to 16384 a side and 1 GiB. */
 	image.maxExtent.width = 16384U;
 	image.maxExtent.height = 16384U;
 	image.maxExtent.depth = 1U;
-	image.maxMipLevels = 1U;
+	image.maxMipLevels = NVRTX_VK_LEVELS_MAX;
+	if (format == VK_FORMAT_D32_SFLOAT)
+		image.maxMipLevels = 1U;
 	image.maxArrayLayers = 1U;
 	image.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
 	image.maxResourceSize = 1ULL << 30;

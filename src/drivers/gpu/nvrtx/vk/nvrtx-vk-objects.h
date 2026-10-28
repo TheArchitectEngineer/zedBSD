@@ -70,10 +70,28 @@ struct nvrtx_vk_buffer {
 	uint64_t offset;
 };
 
+/* The levels an image has at most (a side of NVRTX_VK_IMAGE_SIDE_MAX halved to one). */
+#define NVRTX_VK_LEVELS_MAX		15U
+
 /*
- * A VkImage: a 2D image of one level, one layer and one sample, pitch
- * linear with rows pitch bytes apart, bytes long; once bound the memory
- * object it holds and its offset in that memory.
+ * A depth image is block linear in blocks of one GOB: its rows are a whole
+ * number of GOBs wide and its height a whole number of GOBs tall, and it
+ * starts on a GOB.
+ *
+ * Value referenced: Mesa 25.0.7 src/nouveau/nil/tiling.rs (the Fermi GOB of
+ * 64 bytes by 8 rows, 512 bytes).
+ */
+#define NVRTX_VK_GOB_WIDTH		64U
+#define NVRTX_VK_GOB_HEIGHT		8U
+#define NVRTX_VK_GOB_BYTES		512U
+
+/*
+ * A VkImage: a 2D image of levels levels, one layer and one sample, bytes
+ * long.  A colour image is pitch linear: level n starts level_offset[n]
+ * bytes in, its rows level_pitch[n] bytes apart (level 0's is pitch).  A
+ * depth image (D32_SFLOAT, one level) is block linear in one-GOB blocks,
+ * its rows pitch bytes apart.  Once bound, the memory object it holds and
+ * its offset in that memory.
  */
 struct nvrtx_vk_image {
 	uint32_t format;
@@ -82,18 +100,23 @@ struct nvrtx_vk_image {
 	uint32_t usage;
 	uint32_t pitch;
 	uint64_t bytes;
+	uint32_t levels;
+	bool depth;
+	uint64_t level_offset[NVRTX_VK_LEVELS_MAX];
+	uint32_t level_pitch[NVRTX_VK_LEVELS_MAX];
 	struct nvrtx_vk_object *memory;
 	uint64_t offset;
 };
 
 /*
  * A VkImageView: the image object it holds, the format it reads the image
- * as, and where each of red, green, blue and alpha comes from
- * (VkComponentSwizzle, identity resolved).
+ * as, the first level it sees, and where each of red, green, blue and
+ * alpha comes from (VkComponentSwizzle, identity resolved).
  */
 struct nvrtx_vk_view {
 	struct nvrtx_vk_object *image;
 	uint32_t format;
+	uint32_t base_level;
 	uint32_t swizzle[4];
 };
 
@@ -142,8 +165,8 @@ struct nvrtx_vk_layout_binding {
 };
 
 /*
- * A VkDescriptorSetLayout: its bindings.  Only combined image samplers
- * are bound to anything (the compositor's one kind of descriptor).
+ * A VkDescriptorSetLayout: its bindings.  Combined image samplers and
+ * uniform buffers are bound to something.
  */
 struct nvrtx_vk_set_layout {
 	uint32_t count;
@@ -163,11 +186,15 @@ struct nvrtx_vk_descriptor_pool {
 
 /*
  * One binding of a descriptor set: the image view and the sampler a
- * combined image sampler names, each object held while the set names it.
+ * combined image sampler names, or the buffer, offset and range a uniform
+ * buffer names, each object held while the set names it.
  */
 struct nvrtx_vk_descriptor_slot {
 	struct nvrtx_vk_object *view;
 	struct nvrtx_vk_object *sampler;
+	struct nvrtx_vk_object *buffer;
+	uint64_t offset;
+	uint64_t range;
 };
 
 /*
@@ -179,40 +206,55 @@ struct nvrtx_vk_descriptor_set {
 	struct nvrtx_vk_descriptor_slot slots[NVRTX_VK_BINDINGS_MAX];
 };
 
+/* The attachments a render pass and a framebuffer have at most (one colour, one depth). */
+#define NVRTX_VK_ATTACHMENTS_MAX	2U
+
 /*
- * A VkRenderPass of one subpass writing at most one colour attachment:
- * the attachment's format and load operation, and whether the subpass
- * writes it at all.
+ * A VkRenderPass of one subpass writing at most one colour attachment and
+ * at most one depth attachment: whether the subpass writes each, its
+ * number among the pass's attachments, its format and its load operation.
  */
 struct nvrtx_vk_render_pass {
 	uint32_t colour;
+	uint32_t colour_attachment;
 	uint32_t format;
 	uint32_t load_op;
+	uint32_t depth;
+	uint32_t depth_attachment;
+	uint32_t depth_load_op;
 };
 
-/* A VkFramebuffer: its size and the view of its one attachment, held (NULL with none). */
+/* A VkFramebuffer: its size and the views of its attachments in order, held. */
 struct nvrtx_vk_framebuffer {
 	uint32_t width;
 	uint32_t height;
-	struct nvrtx_vk_object *view;
+	uint32_t view_count;
+	struct nvrtx_vk_object *views[NVRTX_VK_ATTACHMENTS_MAX];
 };
 
-/* Where a program's sampled image comes from: a descriptor set and a binding. */
+/* Where a program's sampled image or uniform buffer comes from: a descriptor set and a binding. */
 struct nvrtx_vk_texture_source {
 	uint32_t set;
 	uint32_t binding;
 };
 
+/* The uniform buffers one program reads (constant buffers 1 on). */
+#define NVRTX_VK_UNIFORMS_MAX		7U
+
 /*
  * One compiled program of a pipeline: its address (its header, the code
- * after it), its registers, and the descriptors its texture handles come
- * from, in the order of their slots in constant buffer 0.
+ * after it), its registers, the descriptors its texture handles come
+ * from, in the order of their slots in constant buffer 0, and the
+ * descriptors of its uniform buffers, in the order of their constant
+ * buffers from 1.
  */
 struct nvrtx_vk_program {
 	uint64_t va;
 	uint32_t gprs;
 	uint32_t texture_count;
 	struct nvrtx_vk_texture_source textures[NVRTX_VK_TEXTURES_MAX];
+	uint32_t uniform_count;
+	struct nvrtx_vk_texture_source uniforms[NVRTX_VK_UNIFORMS_MAX];
 };
 
 /* A vertex buffer binding of a pipeline: its number, stride and whether it steps per instance. */
@@ -233,7 +275,7 @@ struct nvrtx_vk_vertex_attribute {
 /*
  * A graphics VkPipeline: its two programs in a run of the executor's GPU
  * memory (code_token names the run to the node), the vertex input, the
- * topology, the culling, the blend of the colour attachment, and the
+ * topology, the culling, the depth test, the blend of the colour attachment, and the
  * viewport and scissor unless they are dynamic (floats as their bits).
  */
 struct nvrtx_vk_pipeline {
@@ -248,6 +290,9 @@ struct nvrtx_vk_pipeline {
 	uint32_t topology;
 	uint32_t cull_mode;
 	uint32_t front_face;
+	uint32_t depth_test;
+	uint32_t depth_write;
+	uint32_t depth_compare;
 	uint32_t blend_enable;
 	uint32_t blend_src_colour;
 	uint32_t blend_dst_colour;
@@ -334,6 +379,7 @@ void *nvrtx_vk_payload(struct nvrtx_vk_session *session, enum i915_vk_object_kin
 int nvrtx_vk_free_payload(struct nvrtx_vk_session *session, void *payload);
 
 bool nvrtx_vk_format_colour(uint32_t format);
+void nvrtx_vk_image_level(const struct nvrtx_vk_image *image, uint32_t level, uint64_t *offset, uint32_t *width, uint32_t *height, uint32_t *pitch);
 int nvrtx_vk_buffer_address(const struct nvrtx_vk_buffer *buffer, uint64_t *va, uint8_t **cpu);
 int nvrtx_vk_image_address(const struct nvrtx_vk_image *image, uint64_t *va, uint8_t **cpu);
 int nvrtx_vk_buffer_cpu(struct nvrtx_vk_session *session, const struct nvrtx_vk_buffer *buffer, uint8_t **cpu);

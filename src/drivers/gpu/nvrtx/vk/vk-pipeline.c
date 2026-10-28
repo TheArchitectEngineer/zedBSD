@@ -337,11 +337,16 @@ pipeline_decode(
 			refused = ENOTSUP;
 	}
 
-	/* The depth state is read (no pass of the executor's has depth). */
+	/* The depth test (no stencil test, no depth bounds). */
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U) {
 		kern_memset(&depth, 0, sizeof(depth));
 		i915_vkc_dec_VkPipelineDepthStencilStateCreateInfo(reader, &session->arena, &depth);
+		pipeline->depth_test = depth.depthTestEnable != VK_FALSE ? 1U : 0U;
+		pipeline->depth_write = depth.depthWriteEnable != VK_FALSE ? 1U : 0U;
+		pipeline->depth_compare = depth.depthCompareOp;
+		if ((depth.stencilTestEnable != VK_FALSE || depth.depthBoundsTestEnable != VK_FALSE) && refused == 0)
+			refused = ENOTSUP;
 	}
 
 	/* The colour blend; without it every channel is written unblended. */
@@ -635,12 +640,12 @@ pipeline_compile(
 	if (error != 0)
 		return error;
 
-	/* The vertex program samples nothing and neither reads buffers through descriptors. */
+	/* The vertex program samples nothing; neither reads storage buffers; each reads a few uniform buffers. */
 	if (build->vertex->texture_count != 0U || build->fragment->texture_count > NVRTX_VK_TEXTURES_MAX)
 		return ENOTSUP;
-	if (build->vertex->storage_count != 0U || build->vertex->uniform_count != 0U)
+	if (build->vertex->storage_count != 0U || build->vertex->uniform_count > NVRTX_VK_UNIFORMS_MAX)
 		return ENOTSUP;
-	if (build->fragment->storage_count != 0U || build->fragment->uniform_count != 0U)
+	if (build->fragment->storage_count != 0U || build->fragment->uniform_count > NVRTX_VK_UNIFORMS_MAX)
 		return ENOTSUP;
 
 	/* The run holding both, each on the boundary. */
@@ -694,7 +699,7 @@ pipeline_compile_stage(
 
 /*
  * Copies a compiled program to its place (its header, then its code) and
- * keeps its address, registers and texture sources.
+ * keeps its address, registers, texture sources and uniform buffer sources.
  */
 static int
 pipeline_program(
@@ -718,6 +723,15 @@ pipeline_program(
 			return ENOTSUP;
 		program->textures[index].set = binary->textures[index].set;
 		program->textures[index].binding = binary->textures[index].binding;
+	}
+
+	/* Where each uniform buffer comes from, in the order of its constant buffer. */
+	program->uniform_count = binary->uniform_count;
+	for (index = 0U; index < binary->uniform_count; index++) {
+		if (binary->uniforms[index].set >= NVRTX_VK_SETS_MAX || binary->uniforms[index].binding >= NVRTX_VK_BINDINGS_MAX)
+			return ENOTSUP;
+		program->uniforms[index].set = binary->uniforms[index].set;
+		program->uniforms[index].binding = binary->uniforms[index].binding;
 	}
 
 	/* Succeeded: the program is in place. */
