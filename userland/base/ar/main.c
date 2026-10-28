@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 static const char *program = "ar";
 
@@ -113,7 +114,7 @@ main(
 			verbose = 1;
 			break;
 		case 'V':
-			puts("Kei ar 1");
+			puts(ZEDBSD_OS_NAME " ar 1");
 
 			/* Reports successful completion. */
 			return 0;

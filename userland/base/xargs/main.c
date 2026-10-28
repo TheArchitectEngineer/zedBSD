@@ -54,6 +54,7 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 /* The largest command line xargs builds when -s does not ask for less. */
 #define XARGS_DEFAULT_SIZE 131072
@@ -408,7 +409,7 @@ read_options(
 			options->exit_on_overflow = 1;
 			break;
 		case OPTION_VERSION:
-			printf("xargs (Kei) 1.0\n");
+			printf("xargs (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 			break;
 		default:

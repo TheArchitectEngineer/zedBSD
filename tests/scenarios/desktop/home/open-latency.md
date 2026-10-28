@@ -13,7 +13,7 @@ since: ws099-p035c
 App Home を開く時の遅れ（BUG-225）を測る: 入力から stage の最初の frame まで、icon の最初の frame まで。
 
 ## 準備
-kei の desktop。
+user の desktop。
 
 ## 操作と確認
 1. 操作: Windows キー。

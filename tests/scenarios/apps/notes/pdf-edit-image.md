@@ -14,7 +14,7 @@ Notes の Select の道具で、他の program が作った PDF の画像を移�
 
 ## 準備
 - 補助（`plan/tools/aat/scenarios/helpers_notes_edit.py`）が host で `plan/tools/aat/make-edit-samples.py` の `edit-basic.pdf`（3 頁、US Letter。1 頁に 4 行の段落と JPEG 1 つ（320x200 を (72, 420) に 240x150 pt））と `picture.png`（160x100、右半分が半透明）・`landscape.jpg`（200x120）を作り、target の `/tmp/aat-work/notes-<id>-<時刻>/` に `notes-edit.pdf` などとして置く（scenario ごとに別の folder: 前の run の journal を拾わない。file chooser は名前の頭の字で選ぶ）。
-- その `notes-edit.pdf` を kei として Notes で開いている（`NOTES OPEN pages=3 … kind=foreign`）。1 頁を表示。座標は Notes の `NOTES LAYOUT`（頁の位置と scale）・`NOTES BUTTONS`（toolbar の button）と窓の位置から決める。
+- その `notes-edit.pdf` を user として Notes で開いている（`NOTES OPEN pages=3 … kind=foreign`）。1 頁を表示。座標は Notes の `NOTES LAYOUT`（頁の位置と scale）・`NOTES BUTTONS`（toolbar の button）と窓の位置から決める。
 
 ## 操作と確認
 1. 操作: toolbar の Select の道具を押す。

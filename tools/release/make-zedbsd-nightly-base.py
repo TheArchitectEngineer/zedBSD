@@ -6,7 +6,7 @@
 # The base archive is the original Kei-nightly.zip with the two unused QEMU
 # executables removed, the corrected README.txt, THIRD-PARTY.txt and the
 # license texts under LICENSES/. Every input is pinned by SHA-256
-# (tools/release/kei-nightly/inputs.txt), and the output is deterministic for
+# (tools/release/zedbsd-nightly/inputs.txt), and the output is deterministic for
 # the same inputs: entries are sorted, original entries keep their original
 # timestamps, and added entries use ADDED_TIME.
 
@@ -52,7 +52,7 @@ MSYS2_DLLS = {
 
 
 def fail(message):
-    print("make-kei-nightly-base: " + message, file=sys.stderr)
+    print("make-zedbsd-nightly-base: " + message, file=sys.stderr)
     sys.exit(1)
 
 
@@ -132,7 +132,7 @@ def entry(name, date_time, directory):
 
 def main():
     here = os.path.dirname(os.path.abspath(__file__))
-    data = os.path.join(here, "kei-nightly")
+    data = os.path.join(here, "zedbsd-nightly")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--original", required=True, help="the original Kei-nightly.zip")
     parser.add_argument("--cache", required=True, help="directory for the pinned inputs")
@@ -162,7 +162,7 @@ def main():
 
     output_directory = os.path.dirname(os.path.abspath(args.output))
     os.makedirs(output_directory, exist_ok=True)
-    work = tempfile.mkdtemp(prefix=".kei-nightly-base.", dir=output_directory)
+    work = tempfile.mkdtemp(prefix=".zedbsd-nightly-base.", dir=output_directory)
     try:
         # Group the members wanted from each archive: license texts and the
         # DLLs that are checked against their packages.

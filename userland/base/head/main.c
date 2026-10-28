@@ -28,6 +28,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "include/kern/os-name.h"
 
 /* Whether headers are written. */
 #define HEADERS_AUTO	0	/* with several files */
@@ -203,7 +204,7 @@ read_options(
 			options->delimiter = '\0';
 			break;
 		case OPTION_VERSION:
-			printf("head (Kei) 1.0\n");
+			printf("head (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 		default:
 			usage();

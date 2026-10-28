@@ -13,7 +13,7 @@ since: ws158-p003
 WS158 の翻訳の仕組み（libkeiland の kl_tr、catalog `wayland.tr`、設定 `ui.language`）で、compositor の文が logout も再起動もなしに日本語に切り替わり、英語に戻ることを確かめる。
 
 ## 準備
-desktop（os.boot.session-up）。`/usr/share/keiland/locale/ja/wayland.tr` がある。表示の言語は英語（`ui.language` 0）。Settings の Languages の頁に「Display language」の選択が入るまでは、`keiland-settings set ui.language 1` を kei として流して変える。
+desktop（os.boot.session-up）。`/usr/share/keiland/locale/ja/wayland.tr` がある。表示の言語は英語（`ui.language` 0）。Settings の Languages の頁に「Display language」の選択が入るまでは、`keiland-settings set ui.language 1` を user として流して変える。
 
 ## 操作と確認
 1. 操作: 表示の言語を日本語にする（`keiland-settings set ui.language 1`）。

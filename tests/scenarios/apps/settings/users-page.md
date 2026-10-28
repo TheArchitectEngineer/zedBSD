@@ -17,7 +17,7 @@ Settings の Users の頁。
 
 ## 操作と確認
 1. 操作: log に `ZSETTINGS USERS list count=` の行が出るのを待ってから頁を撮る（一覧は desktop が読んで答える、ws188-p002）。
-   確認事項: 中身。正解: 「Your account」に kei、「Password」に Change Password の button、「Sign-in Methods」に 3 つの switch（ws200-p001）、利用者の一覧（kei ほか）、管理者なら Manage users の card。確認方法: log `ZSETTINGS USERS account name=kei`、`ZSETTINGS USERS list count=N`（N ≥ 1）、撮影（人が見る）。
+   確認事項: 中身。正解: 「Your account」に user、「Password」に Change Password の button、「Sign-in Methods」に 3 つの switch（ws200-p001）、利用者の一覧（user ほか）、管理者なら Manage users の card。確認方法: log `ZSETTINGS USERS account name=user`、`ZSETTINGS USERS list count=N`（N ≥ 1）、撮影（人が見る）。
 
 ## 合格
 log の正解。見えは needs-person。

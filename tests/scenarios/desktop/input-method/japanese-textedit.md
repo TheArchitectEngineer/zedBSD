@@ -13,7 +13,7 @@ since: ws095
 romaji から仮名・漢字への変換と確定が app に届き、保存されることを確かめる（UAT F8、BUG-143・139）。
 
 ## 準備
-入力方式を Japanese に（desktop.input-method.choose-method）。kei で `textedit /tmp/aat-work/ja.txt` を開く（空の新しい file）。
+入力方式を Japanese に（desktop.input-method.choose-method）。user で `textedit /tmp/aat-work/ja.txt` を開く（空の新しい file）。
 
 ## 操作と確認
 1. 操作: Alt+Space（日本語へ。`ZWL IME language=ja` になるまで）。

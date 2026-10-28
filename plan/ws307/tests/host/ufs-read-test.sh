@@ -1,14 +1,14 @@
 #!/bin/sh
 # The host test of the loaders' UFS reader: a UFS volume made by zedimage-host from a tree with a large kernel
 # (past the single indirect block), a logo, a deep directory, a large directory, an empty file and a symbolic link,
-# read back through bootloader/common/ufs-read.c.  Output goes to a new build/ws307/ufs-read.* directory.
+# read back through bootloader/common/ufs-read.c.  Output goes to a new build/ws307-test/ufs-read.* directory.
 #   sh plan/ws307/tests/host/ufs-read-test.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname "$0")/../../../.."
 make -s ZEDBSD_CONFIG=config/ci/config-amd64.mk build/zedimage-host
-mkdir -p build/ws307
-out=$(mktemp -d build/ws307/ufs-read.XXXXXX)
+mkdir -p build/ws307-test
+out=$(mktemp -d build/ws307-test/ufs-read.XXXXXX)
 tree=$out/tree
 mkdir -p "$tree/boot" "$tree/etc" "$tree/a/b/c/d/e/f/g/h" "$tree/many"
 head -c 25165824 /dev/urandom > "$tree/boot/vmunix"

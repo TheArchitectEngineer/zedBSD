@@ -6,7 +6,7 @@
  */
 
 /*
- * The executor's transport: one submitted frame of the Kei GPU command
+ * The executor's transport: one submitted frame of the zedBSD GPU command
  * protocol, decoded command by command.
  *
  * The transport's own commands are taken here: selecting the reply stream

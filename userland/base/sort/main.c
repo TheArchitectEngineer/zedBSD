@@ -41,6 +41,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "include/kern/os-name.h"
 
 /* The ordering modifiers of a key (and the global ones). */
 #define KEY_BLANKS	0x01	/* b */
@@ -333,7 +334,7 @@ apply_option(
 		/* -m is a plain sort; memory, temporary files and threads are sort's own. */
 		break;
 	case OPTION_VERSION:
-		printf("sort (Kei) 1.0\n");
+		printf("sort (" ZEDBSD_OS_NAME ") 1.0\n");
 		exit(0);
 	case OPTION_HELP:
 		usage();

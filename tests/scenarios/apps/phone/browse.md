@@ -13,7 +13,7 @@ since: ws170
 Phone が `~/Documents/Phone` の連絡先と timeline を読み、keyboard で連絡先を移れることを確かめる（WS170 p002・p003）。
 
 ## 準備
-kei の `~/Documents/Phone` に連絡先 2 人（Ben: 1 分前の未読の SMS、Aiko: 2 時間前の RCS と 1 時間前の通話）の file を置く。App Home から Phone を開く（`PHONE READY width= height=`）。
+user の `~/Documents/Phone` に連絡先 2 人（Ben: 1 分前の未読の SMS、Aiko: 2 時間前の RCS と 1 時間前の通話）の file を置く。App Home から Phone を開く（`PHONE READY width= height=`）。
 
 ## 操作と確認
 1. 操作: 窓の中（連絡先の一覧）を click して焦点を移し、下矢印。

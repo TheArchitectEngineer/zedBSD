@@ -14,7 +14,7 @@ since: ws189-p003
 落とした点に置かれること。Notes の画像の app の中の移動は窓の中ではそのまま、窓の外へ出すと外の drag になり、自分の頁へ戻すと移動になること。
 
 ## 準備
-host で `plan/tools/aat/make-photos.py --view` の写真を kei の `~/AATPhotos` に置き、`/bin/photos --import=/home/kei/AATPhotos` で取り込む。Photos と Notes（新しい notebook）を
+host で `plan/tools/aat/make-photos.py --view` の写真を user の `~/AATPhotos` に置き、`/bin/photos --import=/home/user/AATPhotos` で取り込む。Photos と Notes（新しい notebook）を
 重ならないように開く。
 
 ## 操作と確認

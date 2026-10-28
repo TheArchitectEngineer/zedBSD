@@ -13,7 +13,7 @@ since: ws169
 Mail の IMAP・SMTP（TLS は STARTTLS）で、account の追加・受信・本文・送信が通ることを確かめる（WS169 p003・p004）。
 
 ## 準備
-host で `plan/tools/mail/fake-mail-server.py` を動かす（試験の CA と、mail.test と target から届く address（QEMU なら 10.0.2.2）の証明書、その address で）。server は address で指す（zedBSD の resolver は `/etc/hosts` を読まない）。CA を `/tmp/aat-work/mail-ca.pem` に。kei の Mail の account は無い（`~/.config/keiland/mailer.conf`・`mailer-accounts` を消す）。Mail は `env SSL_CERT_FILE=/tmp/aat-work/mail-ca.pem /bin/mailer` で起動する。
+host で `plan/tools/mail/fake-mail-server.py` を動かす（試験の CA と、mail.test と target から届く address（QEMU なら 10.0.2.2）の証明書、その address で）。server は address で指す（zedBSD の resolver は `/etc/hosts` を読まない）。CA を `/tmp/aat-work/mail-ca.pem` に。user の Mail の account は無い（`~/.config/keiland/mailer.conf`・`mailer-accounts` を消す）。Mail は `env SSL_CERT_FILE=/tmp/aat-work/mail-ca.pem /bin/mailer` で起動する。
 
 ## 操作と確認
 1. 操作: Mail を起動する。

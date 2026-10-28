@@ -13,7 +13,7 @@ since: ws102-p022
 flick の panel の「絵文字」tab から絵文字が欄に入ることを確かめる。
 
 ## 準備
-kei で `textedit /tmp/aat-work/emoji.txt` を開いて本文を click。flick の panel を開く。
+user で `textedit /tmp/aat-work/emoji.txt` を開いて本文を click。flick の panel を開く。
 
 ## 操作と確認
 1. 操作: 「絵文字」の tab を tap（panel の tools の 2 段目の 4 つ目）。

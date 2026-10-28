@@ -29,6 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "include/kern/os-name.h"
 
 /* The codes of the long options that have no letter. */
 #define OPTION_POSIX		256
@@ -433,7 +434,7 @@ version(
 	void)
 {
 	/* The name and where it comes from. */
-	printf("sed (Kei) 1.0\n");
+	printf("sed (" ZEDBSD_OS_NAME ") 1.0\n");
 	exit(0);
 }
 

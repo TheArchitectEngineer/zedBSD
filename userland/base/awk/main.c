@@ -32,6 +32,7 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
+#include "include/kern/os-name.h"
 
 /* The codes of the long options that have no letter. */
 #define OPTION_VERSION	256
@@ -181,7 +182,7 @@ main(
 			have_file = 1;
 			break;
 		case OPTION_VERSION:
-			printf("awk (Kei) 1.0\n");
+			printf("awk (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 		case OPTION_POSIX:
 			awk.posix = 1;

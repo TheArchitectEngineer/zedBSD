@@ -5,14 +5,14 @@
 # user's "/usr/share/keiland/ime への移動と、辞書を 1 つにまとめる"; it was /usr/share/kei/ime/ja/ with two files).
 # The file has two parts, which merge.sh made from the two files of before (their last revision is in git):
 #
-#   the supplement  written for Kei (formerly SKK-JISYO.kei), looked in first for the everyday words REmacs's
+#   the supplement  written for zedBSD (formerly SKK-JISYO.kei), looked in first for the everyday words REmacs's
 #                   dictionary lacks; the input method weighs its words above the other part's;
 #   the system part REmacs's dictionary (formerly SKK-JISYO.X, copied into the tree from
 #                   userland/base/emacs/dict/SKK-JISYO.X on 2026-10-04, user: "IME の辞書はコピーして取り込んで
 #                   ください。"), from the line ";; ==== part: system ====" on, its header kept as published.
 #
 # License: Awe Morris holds the copyright of both.  The supplement is zlib; REmacs's dictionary was relicensed
-# under zlib for Kei on 2026-09-29 ("私が著作権者なので、zlibライセンスで改めてライセンスします。…プロジェクト全体の
+# under zlib for zedBSD on 2026-09-29 ("私が著作権者なので、zlibライセンスで改めてライセンスします。…プロジェクト全体の
 # ライセンスファイルの影響下ということで問題ないです。", WS095 decision D1, plan/ws095/design.md section 9.1), and
 # REmacs itself is in the tree under zlib since 2026-10-04.  It is covered by the project's own license file, and
 # no license file of its own is installed.

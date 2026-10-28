@@ -8,7 +8,7 @@
 /*
  * The PowerVR render node's Vulkan executor.
  *
- * libvulkan sends the Kei GPU command protocol (uapi/gpu-op.h) to the
+ * libvulkan sends the zedBSD GPU command protocol (uapi/gpu-op.h) to the
  * render node; the executor decodes it in the kernel and does the work on
  * the core.  The wire's readers and writers and the generated record
  * codec are the i915 executor's, used unchanged.  The executor covers the

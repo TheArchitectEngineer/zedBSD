@@ -1,5 +1,5 @@
 # The image for the current UAT on the Latitude 5330: the beta 2 release's configuration (the first public beta, 2026-10-06 user)
-# (config/release/config-amd64-beta2.mk: root locked, kei the user with the password "kei", sshd on),
+# (config/release/config-amd64-beta2.mk: root locked, user the user with the password "user", sshd on),
 # built as a development build (uname's release carries the source's revision), with the programs
 # the UAT also looks at.  Build it from the top of the tree whenever wanted:
 #   make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/uat disk-image

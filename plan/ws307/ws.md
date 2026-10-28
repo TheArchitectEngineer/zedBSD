@@ -4,7 +4,7 @@
 
 - Status: incomplete（2026-10-28 p001 cleared で実行が始まったので planned から incomplete に。仕様は spec.md で確定。実装 p002〜p014 はユーザーの指示の後）
 - 仕様: [spec.md](spec.md)（確定。ユーザーの確認事項 U1〜U29・J1〜J5 は回答済み（J1 は J5 で置き換え）。design-reviewer の 1〜3 回目の指摘と J5 を反映済み、spec §17）。
-- Resume point: p001 は受け入れを満たした（2026-10-28、P4、q1648・q1649。Q1 の cleared の判断待ち）。q1648 で 3 回目の design-reviewer（[design-review3.md](design-review3.md)、blocker 1・major 6・minor 10）と J1〜J4 を、q1649 で J5（live は公開の既定の password `user`、installer の image を運用に使ってはいけない規則、起動は root 起動相当。J1 は取り消し）を spec に反映した（spec §17.3・§17.4）。ユーザーの確認事項の残りは無い。次は実装の p002（OS 名の統一。p002 の前に Q1 が `plan/tools` の道具を user → kei の順で試す形にする、spec §13a）か p003（build と installer-image）。p003・p004 は toolchain の許可、p007 は HAL の承認、p002 の nightly の asset の upload はユーザーの指示が要る。
+- Resume point: 2026-10-29 q1665（P4）: p005（base の道具）・p008（loader の UFS、512 の段）・p002（OS 名、一部）を実装、p007 は HAL の差分の案（[proposed/hal-uefi-variables.md](proposed/hal-uefi-variables.md)）でユーザーの承認待ち。次: p002 の残り（各 phase.md の「残り」）、p003（build と installer-image、toolchain の許可は q1665 で Q1 が出した）、p006（kernel の 4096、p005 の UFS の fragment 4096 と一緒に）。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
 
@@ -102,6 +102,13 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 - 2026-10-28 J4「許す (推し)」: `plan/ws307/tests/` の config だけで live の tree に openssh・aat-input・keiland-shot を足す（unit・index・CI には入れない、spec §11.2）。
 - 2026-10-28 J5「規定値を作ります。非公開である必要はないです。インストーライメージを運用に使ってはいけないというルールにして、このイメージでの起動は規定ユーザでの起動ではあるが、root起動相当、という扱いにします。インストーラがrootで動くことは一般的であり、セキュリティ上の懸念は存在しません。」（推し A「build ごとの乱数の password」は採らない）: J1 は取り消し。installer の image の live の利用者は公開の既定の `user`/`user`（U26 と同じ値、spec T24）。「installer の image を運用に使ってはいけない」規則を S1・S11・文書（p013）に示す（spec T25）。この image での起動は root 起動相当と扱い、helper の password 無しの root の操作はその前提で受け入れる。乱数の password と live の session の lock をしない設定は外した（spec §9.1・§17.4）。
 
+- 2026-10-29 HAL の案（p007）へのユーザーの回答（原文、Q1 の中継）:「UEFIに限らないファームウェア環境変数という概念で作り直してみてください。もう一度レビューして承認します。」→ UEFI に限らない firmware の環境変数の抽象で案を作り直し、design-reviewer を通して Q1 に送る（[proposed/hal-fw-variables.md](proposed/hal-fw-variables.md)）。
+- 2026-10-29 Q1 の判断（q1665）: p002 の git mv の一覧（`tools/release/kei-nightly*` の 4 件と `kei-boot-splash.png`）は OK（splash の中身は F の新しい絵をユーザーに見せた後）。`docs/release/zedbsd-1.0.0-beta2*.md` は履歴として残す。compositor の 4 file は最後に小さく（P1 に知らせてから）。nightly の asset の upload はユーザーの指示まで止め、URL を変える commit は main に merge しない印を付ける。
+
+## 制限
+
+- loader（p008）: cfg に `video=640x480` がある時、root の partition の失敗（`A64 KERN UFS …`）の文字が画面に出ない（debug port には出て、loader は `halt()` で止まっている）。導入先の cfg は `video=` を持たないので、その形では出る。原因（GOP の mode を変えた後の firmware の console の行の位置と見られる）は未確定（2026-10-29、P4）。
+
 ## Phase
 
 | Phase | 内容 | 依存 | 状態 |
@@ -112,7 +119,7 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 
 | Phase | 内容 | 依存 | 見積もり | 状態 |
 | --- | --- | --- | --- | --- |
-| p002 | OS 名「Kei」を削除して zedBSD に統一する（tree 全体、起動の logo と mark の絵を含む。既定の利用者 user/user（U26、group の `kei:x:1000:` も）と hostname zedbsd（U27）も）。`ZEDBSD_OS_NAME`・`ZEDBSD_OS_ID` の make の断片（Linux・FreeBSD の Keiland の build も include）。J3 の物（GPU の protocol の名前、mark と Files の文字、license の記録の文、nightly の asset の名前と取得の道（mk・script・CI・release の title）と移行の手順）。棚卸しは `git grep -I -i kei` から keiland を除き、`plan/tools` を含む（Q1 が範囲を明示し、前に道具を user → kei の順に）→ 一覧を Q1 に出して git mv・rename の所有と衝突を調整 → 変更 → 試験（古い kei と新しい user の両方の image で道具の回帰）。新しい asset の upload はユーザーの指示で Q1（spec §13a） | p001 | 16 LW（upload 待ちを除く） | planning |
+| [p002](phase002/phase.md) | OS 名「Kei」を削除して zedBSD に統一する（tree 全体、起動の logo と mark の絵を含む。既定の利用者 user/user（U26、group の `kei:x:1000:` も）と hostname zedbsd（U27）も）。`ZEDBSD_OS_NAME`・`ZEDBSD_OS_ID` の make の断片（Linux・FreeBSD の Keiland の build も include）。J3 の物（GPU の protocol の名前、mark と Files の文字、license の記録の文、nightly の asset の名前と取得の道（mk・script・CI・release の title）と移行の手順）。棚卸しは `git grep -I -i kei` から keiland を除き、`plan/tools` を含む（Q1 が範囲を明示し、前に道具を user → kei の順に）→ 一覧を Q1 に出して git mv・rename の所有と衝突を調整 → 変更 → 試験（古い kei と新しい user の両方の image で道具の回帰）。新しい asset の upload はユーザーの指示で Q1（spec §13a） | p001 | 16 LW（upload 待ちを除く） | in-progress（q1665、P4。利用者 user・hostname・os-release と OS 名の 1 か所（include/kern/os-name.h）・base の表示・GPU の protocol の名前・license の文を commit。残り: desktop の文字と翻訳、診断の識別子、絵（U29）、nightly、試験） |
 | p003 | build: `make installer-image`（menuconfig は kernel の config だけ、userland・package は決まった選択で全部）、file の manifest（持ち主の package・mode）、重なりの規則、unit の tarball（ustar＋deflate、所有者 0:0、mode の正規化、set-user-ID の許可の一覧）、index（SHA-256・file の数・依存・項目・firmware の license）、manifest から mode を正規化した live の tree、installer の image（ESP＋ZEDBSD の FAT32＋root＋swap、cfg が build ごとの PARTUUID を名指す）、漏れと重複の検査（spec §6・§11.2）。make の形: 再帰の `$(MAKE) ZEDBSD_IMAGE_PROFILE=installer`、`$(BUILD)/installer/{full,live,units}`、build の順（全部入りの tree（installer 無し）→ manifest → unit → index → install-admin（`-D` の hash）→ live の tree）、amd64＋native 以外と他の image の goal との併用は error、installer の menu の package は SELECTABLE n で外の build は error。live だけの上書き（自動 login だけ。password は base の既定の user/user、J5）、試験の hook（J4）、root の大きさを 2 段で量り zedimage-host の上限（16 GiB・65536 inode）で失敗、`check-amd64-native-image.py` の installer の形。sysroot の持ち主の付け方は toolchain（`toolchain/llvm/sysroot.mk`）に触れるので Q1 の許可が要る | p001 | 16 LW | planning |
 | p004 | package の header と `.pc`（gtk4・cairo・pango・glib・libavcodec・libcxx など）と pkgconf の package。導入先で GTK4 の app を build する確認（spec §6.2、U13）。`lang/clang`・`devel/libcxx` は toolchain なので Q1 の許可が要る | p003 | 8 LW | planning |
 | [p005](phase005/phase.md) | base の道具: `mkswap` の partition の mode（ZEDSWAP2 64 bit）、`diskpart` の batch（add・delete、型・名前・PARTUUID・attribute の変更）と「未割り当て」の型 GUID、`mkfs -t fat32` の乱数の serial、UFS の inode の密度、道具の側の 4096 byte の sector（mkfs の FAT32・UFS の fragment 4096 の profile、mkswap、diskpart）（spec §5.9・§11.3）。host の試験と QEMU の短い確認 | p001 | 12 LW | in-progress（q1665、P4。残り: native UFS の fragment 4096 と QEMU の確認） |

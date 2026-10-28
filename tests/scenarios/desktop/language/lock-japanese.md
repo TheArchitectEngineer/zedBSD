@@ -16,9 +16,9 @@ since: ws158-p003
 desktop（sessiond が始めた session。zdesktop は sessiond の無い時は lock しない: 解く者がいないため、greeter.c の `zwl_lock`）。
 
 ## 操作と確認
-1. 操作: kei で `keiland-settings set ui.language 1`。
+1. 操作: user で `keiland-settings set ui.language 1`。
    確認事項: 日本語。正解: `ZWL LANGUAGE language=ja`。確認方法: log。
-2. 操作: Super+L、撮影、password `kei`、Enter。
+2. 操作: Super+L、撮影、password `user`、Enter。
    確認事項: lock と解除。正解: `ZWL LOCK locked`・`ZWL LOCK unlocked`、撮影で日本語（パスワード）。確認方法: log、撮影。
 3. 操作: `keiland-settings set ui.language 0`。
    確認事項: 英語に戻る。正解: `ZWL LANGUAGE language=en`。確認方法: log。

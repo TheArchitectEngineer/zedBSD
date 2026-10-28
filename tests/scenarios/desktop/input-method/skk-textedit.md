@@ -13,7 +13,7 @@ since: ws154
 SKK（大文字で語を始め、Space で変換）が desktop の入力方式として使えることを確かめる。
 
 ## 準備
-入力方式を SKK に。kei で `textedit /tmp/aat-work/skk.txt` を開く。
+入力方式を SKK に。user で `textedit /tmp/aat-work/skk.txt` を開く。
 
 ## 操作と確認
 1. 操作: Alt+Space（`ZWL IME language=ja` まで）。

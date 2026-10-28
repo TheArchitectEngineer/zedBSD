@@ -14,7 +14,7 @@ WS190（ユーザーの要望「テキストをダブルタップすると選択
 
 ## 準備
 - 試験の image は `plan/tools/aat/config-amd64-aat-touch.mk`（AAT の image ＋ kuidemo。aat-input に touch screen がある）。desktop は `plan/ws035/tests/zdesktop-guest.sh start IMAGE`（Venus）で起動。
-- `aat start`、kei で `kuidemo --height=820` を開く（stderr の `KUIDEMO` の行は session.log）。窓の位置は `aat windows`、Controls の頁の Settings の card の Name・Password・Notes の欄の位置は撮影から読む（文字の左端は欄の左端から 12 px、1 行の欄の文字の縦の中央は欄の中央、Notes の 1 行目の中央は欄の上端から 18 px、2 行目は 38 px）。
+- `aat start`、user で `kuidemo --height=820` を開く（stderr の `KUIDEMO` の行は session.log）。窓の位置は `aat windows`、Controls の頁の Settings の card の Name・Password・Notes の欄の位置は撮影から読む（文字の左端は欄の左端から 12 px、1 行の欄の文字の縦の中央は欄の中央、Notes の 1 行目の中央は欄の上端から 18 px、2 行目は 38 px）。
 - 指は `aat tap X Y`（`--count 2` で double tap）、`aat touch-down 0 X Y`・`aat touch-move 0 X Y`・`aat touch-up 0`。handle の knob は選択の端の文字の境の下、欄の下端の少し上（1 行の欄で上端から 30 px ほど）にある。`aat mark start` は手順 1 の前。
 
 ## 操作と確認

@@ -15,7 +15,7 @@ multipart/mixed（本文と base64 の添付）になることを確かめる。
 
 ## 準備
 `apps.mailer.read-compose` の準備と手順 1〜2（偽の server、account を足す）。試験の image は `plan/tools/aat/config-amd64-aat-dnd.mk`。runner の試料
-`/tmp/aat-samples/sample.png` と `sample.pdf`。kei で `mkdir -p ~/attach && cp /tmp/aat-samples/sample.pdf ~/attach/report.pdf && echo attached > ~/attach/note.txt`。
+`/tmp/aat-samples/sample.png` と `sample.pdf`。user で `mkdir -p ~/attach && cp /tmp/aat-samples/sample.pdf ~/attach/report.pdf && echo attached > ~/attach/note.txt`。
 Files を `files ~/attach` で開き、Photos を開いて `sample.png` が grid にあること（Photos の試料の場所は `apps.photos` のシナリオと同じ）。窓は重ならないように置く。
 
 ## 操作と確認

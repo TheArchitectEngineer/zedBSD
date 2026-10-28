@@ -14,7 +14,7 @@ Notes の塗りつぶしの道具が、閉じた線で囲まれた所を線の�
 
 ## 準備
 - 補助（`plan/tools/aat/scenarios/helpers_notes_edit.py`）が host で `plan/tools/aat/make-edit-samples.py` の `edit-basic.pdf`（3 頁、US Letter。1 頁に JPEG（320x200 を (72, 420) に 240x150 pt、色の階調の中に白い正方形））を作り、target の scenario の folder（`/tmp/aat-work/notes-fill-region-<時刻>/`）に `notes-edit.pdf` として置く。
-- kei として Notes を同じ folder の新しい notebook `fill.pdf` で開く（`NOTES START`）。座標は Notes の `NOTES LAYOUT` と窓の位置から決める。
+- user として Notes を同じ folder の新しい notebook `fill.pdf` で開く（`NOTES START`）。座標は Notes の `NOTES LAYOUT` と窓の位置から決める。
 
 ## 操作と確認
 1. 操作: key P（ペン）、mouse で頁の真ん中に閉じた円（端は始めの点を越える）。

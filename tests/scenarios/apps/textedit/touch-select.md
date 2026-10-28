@@ -14,7 +14,7 @@ WS190 p003（plan/ws190/phase001/phase.md §3）: Text Editor の本文で、指
 
 ## 準備
 - 試験の image は `plan/tools/aat/config-amd64-aat-touch.mk`（aat-input に touch screen）。desktop は `plan/ws035/tests/zdesktop-guest.sh start IMAGE`。
-- kei で `textedit /tmp/aat-work/touch.txt`（新しい file）を開き、本文を click して `one two` `key enter` `three four` `key enter` `five` と打つ（3 行）。本文の行の位置は撮影から読む。`aat mark start`。
+- user で `textedit /tmp/aat-work/touch.txt`（新しい file）を開き、本文を click して `one two` `key enter` `three four` `key enter` `five` と打つ（3 行）。本文の行の位置は撮影から読む。`aat mark start`。
 
 ## 操作と確認
 1. 操作: 1 行目の `two` の上を `aat tap X Y --count 2`。
