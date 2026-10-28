@@ -377,7 +377,6 @@ networkd_protocol_clear(
 	}
 }
 
-
 /*
  * Writes one wired interface's LAN_ENABLE record.
  *

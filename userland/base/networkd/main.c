@@ -130,6 +130,8 @@ struct networkd_request {
 	uint32_t token;
 	/* The account a session request is about (NETWORKD_FIELD_ACCOUNT). */
 	uint32_t account;
+	/* An interface's MTU, 0 for the device's default (NETWORKD_FIELD_MTU). */
+	unsigned mtu;
 };
 
 struct networkd_wlan_radio {
@@ -617,8 +619,8 @@ static int write_resolver(char *const addresses[], int count);
 static void lan_static_resolver(void);
 static void handle_lan_configure(int client, struct networkd_request *request, const struct kern_peercred *peer);
 static int lan_configure_target(const struct networkd_request *request, char *reason, size_t capacity);
-static int lan_configure_save(const struct networkd_lan_configure *configure, char *reason, size_t capacity);
-static void lan_configure_policy(const struct networkd_request *request, const struct networkd_lan_configure *configure);
+static int lan_configure_save(const struct networkd_lan_configure *configure, unsigned *mtu, char *reason, size_t capacity);
+static void lan_configure_policy(const struct networkd_request *request, const struct networkd_lan_configure *configure, unsigned mtu);
 static int lan_configure_apply(struct networkd_request *request, const struct networkd_lan_configure *configure, char diagnostic[CHILD_OUTPUT_MAX]);
 static void handle_signal(int signal_number);
 static void ignore_signal(int signal_number);
@@ -1428,10 +1430,7 @@ lan_policy_decode(
 {
 	struct networkd_field_reader reader;
 	struct networkd_field field;
-	char record[128];
-	char *word[5];
-	char *token;
-	unsigned words;
+	struct networkd_lan_record record;
 	int result;
 
 	*count = 0U;
@@ -1441,9 +1440,7 @@ lan_policy_decode(
 	/* Continue while the operation condition remains true. */
 	while ((result = networkd_field_read(&reader, &field)) == 0) {
 		/* Rejects anything that is not one of the records. */
-		if (field.type != NETWORKD_FIELD_OUTPUT ||
-		    field.length == 0U || field.length >= sizeof(record) ||
-		    memchr(field.value, '\0', field.length) != NULL) {
+		if (field.type != NETWORKD_FIELD_OUTPUT) {
 			errno = EINVAL;
 			return -1;
 		}
@@ -1453,52 +1450,25 @@ lan_policy_decode(
 			errno = EOVERFLOW;
 			return -1;
 		}
-		memcpy(record, field.value, field.length);
-		record[field.length] = '\0';
-		words = 0U;
-		for (token = strtok(record, " "); token != NULL;
-		    token = strtok(NULL, " ")) {
-			if (words == sizeof(word) / sizeof(word[0])) {
-				errno = EINVAL;
-				return -1;
-			}
-			word[words++] = token;
-		}
 
 		/* Every record names an interface and what is asked of it. */
-		if (words < 2U || strlen(word[0]) >= IFNAMSIZ) {
+		if (networkd_lan_record_parse((const char *)field.value,
+		    field.length, &record) != 0 ||
+		    strlen(record.interface) >= sizeof(policy[*count].interface)) {
 			errno = EINVAL;
 			return -1;
 		}
 		memset(&policy[*count], 0, sizeof(policy[*count]));
-		strncpy(policy[*count].interface, word[0],
-			sizeof(policy[*count].interface) - 1U);
-
-		/* Dispatch the selected kind of record. */
-		if (strcmp(word[1], "dhcp") == 0 && words == 3U) {
+		strcpy(policy[*count].interface, record.interface);
+		strcpy(policy[*count].address, record.address);
+		strcpy(policy[*count].netmask, record.netmask);
+		policy[*count].dhcp_timeout = record.dhcp_timeout;
+		policy[*count].mtu = record.mtu;
+		policy[*count].mode = NETWORKD_LAN_MODE_DISABLED;
+		if (record.mode == NETWORKD_LAN_RECORD_DHCP)
 			policy[*count].mode = NETWORKD_LAN_MODE_DHCP;
-			policy[*count].dhcp_timeout =
-			    (unsigned)strtoul(word[2], NULL, 10);
-			if (policy[*count].dhcp_timeout == 0U ||
-			    policy[*count].dhcp_timeout > 3600U) {
-				errno = EINVAL;
-				return -1;
-			}
-		} else if (strcmp(word[1], "static") == 0 && words == 4U) {
+		else if (record.mode == NETWORKD_LAN_RECORD_STATIC)
 			policy[*count].mode = NETWORKD_LAN_MODE_STATIC;
-			if (strlen(word[2]) >= sizeof(policy[*count].address) ||
-			    strlen(word[3]) >= sizeof(policy[*count].netmask)) {
-				errno = EINVAL;
-				return -1;
-			}
-			strcpy(policy[*count].address, word[2]);
-			strcpy(policy[*count].netmask, word[3]);
-		} else if (strcmp(word[1], "disabled") == 0 && words == 2U) {
-			policy[*count].mode = NETWORKD_LAN_MODE_DISABLED;
-		} else {
-			errno = EINVAL;
-			return -1;
-		}
 		(*count)++;
 	}
 
@@ -1714,12 +1684,32 @@ lan_configure_steps(
 {
 	char diagnostic[CHILD_OUTPUT_MAX];
 	char seconds[16];
+	char mtu_text[16];
 	char *arguments[7];
 	uint64_t deadline;
 	int obtained;
 
 	deadline = netutil_monotonic_us() +
 	    (uint64_t)(work->policy.dhcp_timeout + 30U) * 1000000ULL;
+
+	/*
+	 * The MTU the configuration names, before the interface comes up.
+	 * One the device refuses is logged and the interface is configured
+	 * all the same: it still carries frames of its default size.
+	 */
+	if (work->policy.mtu != 0U) {
+		diagnostic[0] = '\0';
+		(void)snprintf(mtu_text, sizeof(mtu_text), "%u", work->policy.mtu);
+		arguments[0] = (char *)"/sbin/ifconfig";
+		arguments[1] = (char *)work->interface;
+		arguments[2] = (char *)"mtu";
+		arguments[3] = mtu_text;
+		arguments[4] = NULL;
+		if (run_command_until(arguments, 10U, deadline, diagnostic) != 0)
+			syslog(LOG_WARNING, "networkd: %s: mtu %u was not set: %s",
+			       work->interface, work->policy.mtu, diagnostic);
+	}
+
 	diagnostic[0] = '\0';
 	arguments[0] = (char *)"/sbin/ifconfig";
 	arguments[1] = (char *)work->interface;
@@ -4028,7 +4018,8 @@ dispatch_request(
 	if (((request->header.opcode >= NETWORKD_OP_UP &&
 	    request->header.opcode <= NETWORKD_OP_STATIC6_REMOVE &&
 	    request->header.opcode != NETWORKD_OP_RELOAD) ||
-	    request->header.opcode == NETWORKD_OP_ROUTE6_REMOVE) &&
+	    request->header.opcode == NETWORKD_OP_ROUTE6_REMOVE ||
+	    request->header.opcode == NETWORKD_OP_MTU) &&
 	    networkd_confirmed_check(&confirmed, request->token) != 0) {
 		error = errno != 0 ? errno : EBUSY;
 		send_response(client, request->header.request_id,
@@ -4118,6 +4109,7 @@ execute_wired_request(
 	struct in_addr gateway;
 	unsigned prefix;
 	char seconds[16];
+	char mtu_text[16];
 	char *arguments[16];
 	char *dns[8];
 	unsigned index;
@@ -4312,6 +4304,24 @@ execute_wired_request(
 		diagnostic[0] = '\0';
 		result = 0;
 		*error = 0;
+	} else if (request->header.opcode == NETWORKD_OP_MTU) {
+		/*
+		 * An interface's MTU, changed while it stays up.  The wired
+		 * policy keeps the value, so that the next configuration of the
+		 * interface (a cable put back) sets it again.
+		 */
+		(void)snprintf(mtu_text, sizeof(mtu_text), "%u", request->mtu);
+		arguments[0] = "/sbin/ifconfig";
+		arguments[1] = request->interface;
+		arguments[2] = "mtu";
+		arguments[3] = request->mtu != 0U ? mtu_text : "default";
+		arguments[4] = NULL;
+		if (interface_exists(request->interface) == 0)
+			result = run_command_until(arguments, 10, deadline, diagnostic);
+		*error = errno;
+		if (result == 0)
+			(void)networkd_lan_set_mtu(&managed_lan, request->interface,
+			    request->mtu);
 	} else if (request->header.opcode == NETWORKD_OP_ROUTE6_CLEAR) {
 		/* The IPv6 default route removed; none there is the same. */
 		arguments[0] = "/sbin/route";
@@ -4495,6 +4505,18 @@ rollback_parse(
 			request->header.opcode = NETWORKD_OP_STATIC6_REMOVE;
 		strcpy(request->interface, word[2]);
 		strcpy(request->address, word[3]);
+	} else if (strcmp(word[1], "MTU") == 0 && count == 4U) {
+		/* An interface's MTU, 0 for the device's default. */
+		errno = 0;
+		timeout = strtoul(word[3], &end, 10);
+		if (errno != 0 || end == word[3] || *end != '\0' ||
+		    (timeout != 0U && (timeout < NETWORKD_LAN_RECORD_MTU_MIN ||
+		    timeout > NETWORKD_LAN_RECORD_MTU_MAX)) ||
+		    strlen(word[2]) >= sizeof(request->interface))
+			ROLLBACK_REJECT("invalid rollback MTU");
+		request->header.opcode = NETWORKD_OP_MTU;
+		request->mtu = (unsigned)timeout;
+		strcpy(request->interface, word[2]);
 	} else if (strcmp(word[1], "ROUTE6_REMOVE") == 0 && count == 3U) {
 		/* An IPv6 route taken away: its destination (ws177-p045). */
 		if (strlen(word[2]) >= sizeof(request->address))
@@ -4539,7 +4561,8 @@ rollback_parse(
 	    request->header.opcode == NETWORKD_OP_STATIC ||
 	    request->header.opcode == NETWORKD_OP_IPV6 ||
 	    request->header.opcode == NETWORKD_OP_STATIC6 ||
-	    request->header.opcode == NETWORKD_OP_STATIC6_REMOVE) &&
+	    request->header.opcode == NETWORKD_OP_STATIC6_REMOVE ||
+	    request->header.opcode == NETWORKD_OP_MTU) &&
 	    (request->interface[0] == '\0' ||
 	    strspn(request->interface,
 	    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-") !=
@@ -6424,6 +6447,7 @@ decode_request(
 	struct networkd_field field;
 	unsigned seen;
 	uint32_t timeout;
+	uint32_t mtu;
 	int result;
 
 	/* Reads every field while rejecting duplicates and unknown data. */
@@ -6476,6 +6500,13 @@ decode_request(
 		    (seen & 256U) == 0U &&
 		    networkd_field_read_u32(&field, &request->account) == 0) {
 			seen |= 256U;
+		} else if (field.type == NETWORKD_FIELD_MTU &&
+		    (seen & 512U) == 0U &&
+		    networkd_field_read_u32(&field, &mtu) == 0 &&
+		    (mtu == 0U || (mtu >= NETWORKD_LAN_RECORD_MTU_MIN &&
+		    mtu <= NETWORKD_LAN_RECORD_MTU_MAX))) {
+			request->mtu = (unsigned)mtu;
+			seen |= 512U;
 		} else if (field.type == NETWORKD_FIELD_SSID &&
 		    (seen & 32U) == 0U && field.length != 0U &&
 		    field.length <= sizeof(request->ssid) &&
@@ -6522,6 +6553,9 @@ decode_request(
 	    (seen == 5U || seen == (5U | 128U)) && request->dns_count == 0U) ||
 	    (request->header.opcode == NETWORKD_OP_ROUTE6_REMOVE &&
 	    (seen == 4U || seen == (4U | 128U)) && request->dns_count == 0U) ||
+	    (request->header.opcode == NETWORKD_OP_MTU &&
+	    (seen == (1U | 512U) || seen == (1U | 512U | 128U)) &&
+	    request->dns_count == 0U) ||
 	    (request->header.opcode == NETWORKD_OP_ROUTE6 &&
 	    (seen == 20U || seen == 21U || seen == (20U | 128U) || seen == (21U | 128U)) &&
 	    request->dns_count == 0U) ||
@@ -6603,6 +6637,8 @@ operation_name(
 		return "STATIC6_REMOVE";
 	if (opcode == NETWORKD_OP_ROUTE6_REMOVE)
 		return "ROUTE6_REMOVE";
+	if (opcode == NETWORKD_OP_MTU)
+		return "MTU";
 	if (opcode == NETWORKD_OP_LAN_ENABLE)
 		return "LAN_ENABLE";
 	if (opcode == NETWORKD_OP_LAN_DISABLE)
@@ -9692,6 +9728,7 @@ handle_lan_configure(
 	unsigned long euid;
 	unsigned index;
 	const char *mode;
+	unsigned mtu;
 	int fixed;
 	int result;
 	int error;
@@ -9707,6 +9744,7 @@ handle_lan_configure(
 		configure.dns[index] = request->dns[index];
 	diagnostic[0] = '\0';
 	reason[0] = '\0';
+	mtu = 0U;
 
 	/* Checked strictly. */
 	error = 0;
@@ -9720,11 +9758,11 @@ handle_lan_configure(
 
 	/* Its entry in net.conf. */
 	if (error == 0)
-		error = lan_configure_save(&configure, reason, sizeof(reason));
+		error = lan_configure_save(&configure, &mtu, reason, sizeof(reason));
 
 	/* The wired policy follows, and the configuration is applied now. */
 	if (error == 0) {
-		lan_configure_policy(request, &configure);
+		lan_configure_policy(request, &configure, mtu);
 		error = lan_configure_apply(request, &configure, diagnostic);
 		if (error != 0)
 			(void)snprintf(reason, sizeof(reason), "%s", "saved, but could not be applied now");
@@ -9812,10 +9850,12 @@ lan_configure_target(
 static int
 lan_configure_save(
 	const struct networkd_lan_configure *configure,
+	unsigned *mtu,
 	char *reason,
 	size_t capacity)
 {
 	struct netconf *configuration;
+	size_t index;
 	int writer;
 	int result;
 	int error;
@@ -9859,6 +9899,14 @@ lan_configure_save(
 		error = errno;
 	}
 
+	/* The MTU the edit kept for the interface, which the policy carries on. */
+	*mtu = 0U;
+	for (index = 0U; result == 0 && index < configuration->interface_count; index++) {
+		if (strcmp(configuration->interfaces[index].name, configure->interface) == 0 &&
+		    configuration->interfaces[index].mtu_set)
+			*mtu = configuration->interfaces[index].mtu;
+	}
+
 	/* The lock and the configuration go. */
 	(void)netconf_writer_unlock(writer);
 	free(configuration);
@@ -9878,7 +9926,8 @@ lan_configure_save(
 static void
 lan_configure_policy(
 	const struct networkd_request *request,
-	const struct networkd_lan_configure *configure)
+	const struct networkd_lan_configure *configure,
+	unsigned mtu)
 {
 	struct networkd_lan_policy policy;
 	int fixed;
@@ -9895,6 +9944,7 @@ lan_configure_policy(
 		(void)snprintf(policy.address, sizeof(policy.address), "%s", request->address);
 		(void)snprintf(policy.netmask, sizeof(policy.netmask), "%s", request->netmask);
 	}
+	policy.mtu = mtu;
 
 	/* The policy's record of the interface. */
 	(void)networkd_lan_set_interface(&managed_lan, &policy);
