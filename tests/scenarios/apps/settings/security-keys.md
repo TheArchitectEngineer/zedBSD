@@ -17,7 +17,7 @@ Settings の Security Keys の頁（ws199-p001 §3.1〜§3.5、p002）が 3 つ�
 ## 準備
 desktop に user で login 済み。root で `/etc/passkey` を `/tmp/aat-passkey.saved` に控え（無ければ空と記録）、user の作り物の鍵の行を 1 つ書く
 （どの鍵も持たない credential、`plan/ws172/tests/fido2-p003-guest.sh` の手順 1 と同じ）:
-`umask 077; printf '# zedBSD passkey 1\nkei:1000:fido2:AQIDBA:pQECAyYgASFYIGBhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5_IlggQEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8:0:zedbsd.login:Desk key:2026-10-06\n' > /etc/passkey`。
+`umask 077; printf '# zedBSD passkey 1\nuser:1000:fido2:AQIDBA:pQECAyYgASFYIGBhYmNkZWZnaGlqa2xtbm9wcXJzdHV2d3h5ent8fX5_IlggQEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8:0:zedbsd.login:Desk key:2026-10-06\n' > /etc/passkey`。
 user で `/bin/settings security-keys` を開く（session の socket で、`fido2-p003-guest.sh` の手順 4 と同じ）。
 
 ## 操作と確認

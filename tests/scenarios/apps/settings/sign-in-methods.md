@@ -25,7 +25,7 @@ Settings の Users の頁を開く。
    確認事項: password で確かめて PIN を外す。正解: log `ZSETTINGS USERS start flow=2 method=2`・`USERS methods request=N methods=5`・`USERS methods result request=N errno=0`、`/etc/passkey` に `user:1000:options:methods=password,fido2:key-pin=1:key-touch=1`、switch が off。確認方法: log、撮影、`/etc/passkey`。
 3. 操作: Super+L、下から上へドラッグして card を出す。撮る。
    確認事項: PIN が出ない。正解: `KWL GREETER styles=1`（password だけ）、PIN の pill が無い。password で解除。確認方法: log、撮影。
-4. 操作: root で guest の端末から、外した PIN の解除を直に試す（`printf 'auth\nkei\npin\n135790\n' | /sbin/passkey`）。
+4. 操作: root で guest の端末から、外した PIN の解除を直に試す（`printf 'auth\nuser\npin\n135790\n' | /sbin/passkey`）。
    確認事項: 受けない。正解: `fail style-off`。確認方法: 出力。
 5. 操作: Users の頁で PIN の switch を押し、`user` → Change → Done。もう一度 Super+L とドラッグ。
    確認事項: PIN が戻る。正解: `/etc/passkey` の options の行が無くなる（既定）、`KWL GREETER styles=3`、PIN で解除できる。確認方法: log、`/etc/passkey`。
