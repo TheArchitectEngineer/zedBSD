@@ -1181,6 +1181,7 @@ net_device_set_mtu(
 	if (mtu < NET_MTU_MIN || mtu > device->mtu_max)
 		return EINVAL;
 
+	/* Decides in the registry's lock whether the device may change now. */
 	enabled = device_lock();
 
 	/* Driver callbacks run in thread context only. */
@@ -1194,6 +1195,8 @@ net_device_set_mtu(
 		device_unlock(enabled);
 		return ENODEV;
 	}
+
+	/* A device changing its open state, or a registry shutting down, is not touched. */
 	if (device->opening || device->closing || registry_stopping) {
 		device_unlock(enabled);
 		return EBUSY;
@@ -1418,6 +1421,7 @@ net_device_poll(
 		return 0;
 	}
 
+	/* Takes the scheduled poll, and keeps the device alive until it is done. */
 	device_poll_scheduled_set_locked(device, 0);
 	device->poll_active++;
 	refcount_get(&device->refs);

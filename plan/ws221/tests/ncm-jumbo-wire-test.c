@@ -90,6 +90,7 @@ make_limits(uint32_t in_max, uint32_t out_max, uint16_t maximum)
 {
 	struct drv_usb_cdc_ncm_limits limits;
 
+	/* The limits start from zero. */
 	memset(&limits, 0, sizeof(limits));
 	limits.ntb_in_max_size = in_max;
 	limits.ntb_out_max_size = out_max;
@@ -110,12 +111,19 @@ negotiate(const struct device_parameters *device, uint32_t in_max, uint32_t out_
 	struct drv_usb_cdc_ncm_limits limits;
 	struct drv_usb_cdc_ncm_profile local;
 
+	/* The parameters the device reports, and the limits the driver asks within. */
 	make_parameters(device, parameters);
 	limits = make_limits(in_max, out_max, maximum);
 	if (profile == NULL)
 		profile = &local;
+
+	/* The negotiation. */
 	*error = drv_usb_cdc_ncm_negotiate_nth16(parameters, sizeof(parameters), &limits, profile);
-	return *error == 0 ? profile->max_datagram_size : 0;
+	if (*error != 0)
+		return 0;
+
+	/* Succeeded: the datagram size the profile settled on. */
+	return profile->max_datagram_size;
 }
 
 /*

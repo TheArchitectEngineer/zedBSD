@@ -100,6 +100,7 @@ netconf_reconcile(
 	size_t index;
 	size_t used;
 	int count;
+	int emitted;
 
 	if (previous == NULL || target == NULL || emit == NULL ||
 	    netconf_reconcile_supported(previous, error, capacity) != 0 ||
@@ -127,12 +128,17 @@ netconf_reconcile(
 		    emit("DOWN", item->name, context) != 0)
 			return -1;
 	}
+
+	/* The MTU of every interface the target names comes before its state. */
 	for (index = 0U; index < target->interface_count; index++) {
-		if (emit_mtu(previous, &target->interfaces[index], emit, context) != 0)
+		emitted = emit_mtu(previous, &target->interfaces[index], emit, context);
+		if (emitted != 0)
 			return -1;
-		if (emit_interface(&target->interfaces[index], emit, context) != 0)
+		emitted = emit_interface(&target->interfaces[index], emit, context);
+		if (emitted != 0)
 			return -1;
 	}
+
 	/* An explicit route wins over any route acquired by DHCP. */
 	if (route_ipv4(target) != NULL &&
 	    (emit("DEFAULTROUTE_CLEAR", NULL, context) != 0 ||
@@ -545,6 +551,8 @@ emit_mtu(
 		errno = EOVERFLOW;
 		return -1;
 	}
+
+	/* Hands the MTU line to the consumer. */
 	emitted = emit("MTU", operands, context);
 	if (emitted != 0)
 		return -1;

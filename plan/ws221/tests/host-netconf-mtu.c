@@ -135,7 +135,9 @@ main(void)
 	}
 	check(status == 0, "written");
 	length = strnlen(written, sizeof(written));
-	status = length < sizeof(written) ? parse_text(written, &again, error, sizeof(error)) : -1;
+	status = -1;
+	if (length < sizeof(written))
+		status = parse_text(written, &again, error, sizeof(error));
 	check(status == 0, "read again");
 	check(again.interfaces[0].mtu_set && again.interfaces[0].mtu == 9000U, "ue0's mtu kept");
 	check(!again.interfaces[1].mtu_set, "ue1 still without one");
@@ -151,6 +153,8 @@ main(void)
 		status = netconf_write(stream, &configuration);
 		fclose(stream);
 	}
+
+	/* Nothing named, nothing written. */
 	check(status == 0 && strstr(written, "mtu") == NULL, "no mtu line written for none named");
 
 	/* Refused: below 1280, above 65535, not a number, named twice. */
@@ -270,8 +274,10 @@ reconcile_text(
 
 	/* Both read. */
 	test_program[0] = '\0';
-	if (parse_text(previous, &before, error, sizeof(error)) != 0 ||
-	    parse_text(target, &after, error, sizeof(error)) != 0) {
+	status = parse_text(previous, &before, error, sizeof(error));
+	if (status == 0)
+		status = parse_text(target, &after, error, sizeof(error));
+	if (status != 0) {
 		printf("  error: %s\n", error);
 		return -1;
 	}
@@ -290,12 +296,19 @@ record(
 	const char *operands,
 	void *context)
 {
+	const char *separator;
+	const char *text;
 	size_t used;
 
 	/* After the ones before it. */
 	(void)context;
 	used = strlen(test_program);
-	(void)snprintf(test_program + used, sizeof(test_program) - used, "%s%s%s\n", operation, operands != NULL ? " " : "",
-	    operands != NULL ? operands : "");
+	separator = "";
+	text = "";
+	if (operands != NULL) {
+		separator = " ";
+		text = operands;
+	}
+	(void)snprintf(test_program + used, sizeof(test_program) - used, "%s%s%s\n", operation, separator, text);
 	return 0;
 }

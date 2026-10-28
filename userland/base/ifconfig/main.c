@@ -489,10 +489,12 @@ set_mtu(
 	char *end;
 	int status;
 	int error;
+	int not_default;
 
 	/* The value: a number, or 0 for the interface's own. */
 	mtu = 0;
-	if (strcmp(text, "default") != 0) {
+	not_default = strcmp(text, "default");
+	if (not_default != 0) {
 		errno = 0;
 		mtu = strtoul(text, &end, 10);
 		if (errno != 0 || *end != '\0' || end == text || mtu == 0 || mtu > 65535UL) {
@@ -507,6 +509,8 @@ set_mtu(
 		printf("ifconfig: %s: %s\n", name, strerror(errno));
 		return 1;
 	}
+
+	/* The value the kernel is asked to set. */
 	request_.ifr_mtu = (int)mtu;
 
 	/* The kernel's answer; a value out of range or a driver that needs the interface down is said in words. */

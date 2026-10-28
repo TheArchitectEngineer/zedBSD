@@ -1431,6 +1431,8 @@ lan_policy_decode(
 	struct networkd_field_reader reader;
 	struct networkd_field field;
 	struct networkd_lan_record record;
+	size_t interface_length;
+	int parsed;
 	int result;
 
 	*count = 0U;
@@ -1452,12 +1454,20 @@ lan_policy_decode(
 		}
 
 		/* Every record names an interface and what is asked of it. */
-		if (networkd_lan_record_parse((const char *)field.value,
-		    field.length, &record) != 0 ||
-		    strlen(record.interface) >= sizeof(policy[*count].interface)) {
+		parsed = networkd_lan_record_parse((const char *)field.value, field.length, &record);
+		if (parsed != 0) {
 			errno = EINVAL;
 			return -1;
 		}
+
+		/* The interface name must fit the policy entry. */
+		interface_length = strlen(record.interface);
+		if (interface_length >= sizeof(policy[*count].interface)) {
+			errno = EINVAL;
+			return -1;
+		}
+
+		/* Copies the record into the policy entry. */
 		memset(&policy[*count], 0, sizeof(policy[*count]));
 		strcpy(policy[*count].interface, record.interface);
 		strcpy(policy[*count].address, record.address);
@@ -1688,6 +1698,7 @@ lan_configure_steps(
 	char *arguments[7];
 	uint64_t deadline;
 	int obtained;
+	int ran;
 
 	deadline = netutil_monotonic_us() +
 	    (uint64_t)(work->policy.dhcp_timeout + 30U) * 1000000ULL;
@@ -1705,9 +1716,11 @@ lan_configure_steps(
 		arguments[2] = (char *)"mtu";
 		arguments[3] = mtu_text;
 		arguments[4] = NULL;
-		if (run_command_until(arguments, 10U, deadline, diagnostic) != 0)
+		ran = run_command_until(arguments, 10U, deadline, diagnostic);
+		if (ran != 0) {
 			syslog(LOG_WARNING, "networkd: %s: mtu %u was not set: %s",
 			       work->interface, work->policy.mtu, diagnostic);
+		}
 	}
 
 	diagnostic[0] = '\0';
@@ -4116,6 +4129,7 @@ execute_wired_request(
 	int present;
 	int missing;
 	int result;
+	int exists;
 	int off;
 
 	if (request == NULL || diagnostic == NULL ||
@@ -4314,14 +4328,19 @@ execute_wired_request(
 		arguments[0] = "/sbin/ifconfig";
 		arguments[1] = request->interface;
 		arguments[2] = "mtu";
-		arguments[3] = request->mtu != 0U ? mtu_text : "default";
+		if (request->mtu != 0U)
+			arguments[3] = mtu_text;
+		else
+			arguments[3] = "default";
 		arguments[4] = NULL;
-		if (interface_exists(request->interface) == 0)
+		exists = interface_exists(request->interface);
+		if (exists == 0)
 			result = run_command_until(arguments, 10, deadline, diagnostic);
 		*error = errno;
-		if (result == 0)
+		if (result == 0) {
 			(void)networkd_lan_set_mtu(&managed_lan, request->interface,
 			    request->mtu);
+		}
 	} else if (request->header.opcode == NETWORKD_OP_ROUTE6_CLEAR) {
 		/* The IPv6 default route removed; none there is the same. */
 		arguments[0] = "/sbin/route";
@@ -4430,6 +4449,7 @@ rollback_parse(
 	unsigned prefix;
 	unsigned long timeout;
 	size_t length;
+	size_t name_length;
 	unsigned count;
 	unsigned index;
 
@@ -4509,10 +4529,11 @@ rollback_parse(
 		/* An interface's MTU, 0 for the device's default. */
 		errno = 0;
 		timeout = strtoul(word[3], &end, 10);
+		name_length = strlen(word[2]);
 		if (errno != 0 || end == word[3] || *end != '\0' ||
 		    (timeout != 0U && (timeout < NETWORKD_LAN_RECORD_MTU_MIN ||
 		    timeout > NETWORKD_LAN_RECORD_MTU_MAX)) ||
-		    strlen(word[2]) >= sizeof(request->interface))
+		    name_length >= sizeof(request->interface))
 			ROLLBACK_REJECT("invalid rollback MTU");
 		request->header.opcode = NETWORKD_OP_MTU;
 		request->mtu = (unsigned)timeout;
@@ -9857,6 +9878,7 @@ lan_configure_save(
 	struct netconf *configuration;
 	size_t index;
 	int writer;
+	int same;
 	int result;
 	int error;
 
@@ -9902,8 +9924,8 @@ lan_configure_save(
 	/* The MTU the edit kept for the interface, which the policy carries on. */
 	*mtu = 0U;
 	for (index = 0U; result == 0 && index < configuration->interface_count; index++) {
-		if (strcmp(configuration->interfaces[index].name, configure->interface) == 0 &&
-		    configuration->interfaces[index].mtu_set)
+		same = strcmp(configuration->interfaces[index].name, configure->interface);
+		if (same == 0 && configuration->interfaces[index].mtu_set)
 			*mtu = configuration->interfaces[index].mtu;
 	}
 
@@ -9944,6 +9966,8 @@ lan_configure_policy(
 		(void)snprintf(policy.address, sizeof(policy.address), "%s", request->address);
 		(void)snprintf(policy.netmask, sizeof(policy.netmask), "%s", request->netmask);
 	}
+
+	/* The MTU the configuration kept for it. */
 	policy.mtu = mtu;
 
 	/* The policy's record of the interface. */

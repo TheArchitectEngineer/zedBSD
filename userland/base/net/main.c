@@ -447,6 +447,7 @@ confirm_discard(
 	void)
 {
 	char *answer;
+	int compare;
 	int discard;
 
 	answer = readline("Discard unsaved changes? [y/N] ");
@@ -454,10 +455,17 @@ confirm_discard(
 		fprintf(stderr, "\nnet: end of input; unsaved changes discarded\n");
 		return 1;
 	}
-	discard = strcmp(answer, "y") == 0 || strcmp(answer, "yes") == 0;
+
+	/* Only "y" or "yes" confirms the discard. */
+	compare = strcmp(answer, "y");
+	if (compare != 0)
+		compare = strcmp(answer, "yes");
+	discard = 0;
+	if (compare == 0)
+		discard = 1;
 	free(answer);
 
-	/* Returns the computed result. */
+	/* Reports whether the changes are to be discarded. */
 	return discard;
 }
 
@@ -866,6 +874,7 @@ backend_payload(
 	uint32_t timeout;
 	unsigned mtu;
 	uint16_t field;
+	int written;
 
 	/* Splits only the legacy internal wired operands. */
 	if (payload == NULL || length == NULL ||
@@ -952,11 +961,14 @@ backend_payload(
 			return -1;
 	} else if (opcode == NETWORKD_OP_MTU) {
 		/* An interface's MTU, 0 for the device's default. */
-		if (decimal_mtu(item[1], &mtu) != 0 ||
-		    networkd_field_write(&writer, NETWORKD_FIELD_INTERFACE,
-		    item[0], strlen(item[0])) != 0 ||
-		    networkd_field_write_u32(&writer, NETWORKD_FIELD_MTU,
-		    mtu) != 0)
+		written = decimal_mtu(item[1], &mtu);
+		if (written != 0)
+			return -1;
+		written = networkd_field_write(&writer, NETWORKD_FIELD_INTERFACE, item[0], strlen(item[0]));
+		if (written != 0)
+			return -1;
+		written = networkd_field_write_u32(&writer, NETWORKD_FIELD_MTU, mtu);
+		if (written != 0)
 			return -1;
 	} else if (opcode == NETWORKD_OP_DNS) {
 		field = NETWORKD_FIELD_DNS;
@@ -2172,6 +2184,9 @@ lan_send_policy(
 	char text[NETWORKD_LAN_RECORD_MAX];
 	char error[160] = "";
 	size_t length;
+	size_t name_length;
+	size_t address_length;
+	int status;
 	size_t index;
 
 	/* Handles a configuration that cannot be read. */
@@ -2203,11 +2218,16 @@ lan_send_policy(
 
 		/* Dispatch the selected kind of record. */
 		memset(&record, 0, sizeof(record));
-		if (strlen(item->name) >= sizeof(record.interface)) {
+		name_length = strlen(item->name);
+		if (name_length >= sizeof(record.interface)) {
 			fprintf(stderr, "net: %s: the name is too long\n", item->name);
 			return 1;
 		}
+
+		/* The name the record is for. */
 		strcpy(record.interface, item->name);
+
+		/* The mode the interface is configured in. */
 		if (!item->enabled) {
 			record.mode = NETWORKD_LAN_RECORD_DISABLED;
 		} else if (item->dhcp) {
@@ -2216,15 +2236,17 @@ lan_send_policy(
 			    item->dhcp_timeout : 10U;
 		} else if (item->address_count != 0) {
 			/* Handles an address whose mask cannot be written. */
-			if (strlen(item->addresses[0].address) >=
-			    sizeof(record.address) || mask_from_prefix(
-			    item->addresses[0].prefix_length, record.netmask,
-			    sizeof(record.netmask)) != 0) {
+			address_length = strlen(item->addresses[0].address);
+			status = mask_from_prefix(item->addresses[0].prefix_length, record.netmask,
+						  sizeof(record.netmask));
+			if (address_length >= sizeof(record.address) || status != 0) {
 				fprintf(stderr,
 					"net: %s: the address cannot be used\n",
 					item->name);
 				return 1;
 			}
+
+			/* A static address with its mask. */
 			record.mode = NETWORKD_LAN_RECORD_STATIC;
 			strcpy(record.address, item->addresses[0].address);
 		} else {
@@ -2241,8 +2263,8 @@ lan_send_policy(
 			record.mtu = item->mtu;
 
 		/* Handles a record that did not fit. */
-		if (networkd_lan_record_format(&record, text, sizeof(text),
-		    &length) != 0) {
+		status = networkd_lan_record_format(&record, text, sizeof(text), &length);
+		if (status != 0) {
 			fprintf(stderr, "net: %s: the record is too long\n",
 				item->name);
 			return 1;
@@ -3068,6 +3090,8 @@ console_interface(
 	struct netconf_interface *item;
 	struct in_addr parsed;
 	unsigned value;
+	int compare;
+	int status;
 
 	item = console->interface;
 
@@ -3135,21 +3159,34 @@ console_interface(
 	}
 
 	/* An MTU kept in the configuration, applied on commit. */
-	if (count == 2 && strcmp(words[0], "mtu") == 0 &&
-	    decimal_mtu(words[1], &value) == 0 && value != 0U) {
-		item->mtu = value;
-		item->mtu_set = 1;
-		console->dirty = 1;
-		return 0;
+	if (count == 2) {
+		compare = strcmp(words[0], "mtu");
+		if (compare == 0) {
+			status = decimal_mtu(words[1], &value);
+			if (status == 0 && value != 0U) {
+				item->mtu = value;
+				item->mtu_set = 1;
+				console->dirty = 1;
+
+				/* Succeeded: the MTU is kept. */
+				return 0;
+			}
+		}
 	}
 
 	/* No MTU in the configuration: the device's default. */
-	if (count == 2 && strcmp(words[0], "no") == 0 &&
-	    strcmp(words[1], "mtu") == 0) {
-		item->mtu = 0U;
-		item->mtu_set = 0;
-		console->dirty = 1;
-		return 0;
+	if (count == 2) {
+		compare = strcmp(words[0], "no");
+		if (compare == 0)
+			compare = strcmp(words[1], "mtu");
+		if (compare == 0) {
+			item->mtu = 0U;
+			item->mtu_set = 0;
+			console->dirty = 1;
+
+			/* Succeeded: the default is back. */
+			return 0;
+		}
 	}
 
 	/* Checks the remaining item count. */

@@ -99,6 +99,8 @@ main(void)
 		printf("packet-buf-host-test: FAIL (%u)\n", failures);
 		return 1;
 	}
+
+	/* Succeeded: every check held. */
 	printf("packet-buf-host-test: PASS (jumbo %u, reserve %u)\n", PACKET_BUF_JUMBO_COUNT, PACKET_BUF_JUMBO_RESERVE);
 	return 0;
 }
@@ -125,6 +127,7 @@ test_classes(void)
 	struct packet_buf *large;
 	struct packet_buf *again;
 	struct packet_buf *none;
+	unsigned jumbo_expected;
 	int error;
 
 	/* A standard frame takes a standard packet. */
@@ -150,7 +153,10 @@ test_classes(void)
 	/* The counts see both. */
 	packet_buf_pool_usage(&usage);
 	check(usage.used == 1U, "one standard packet is counted");
-	check(usage.jumbo_used == (PACKET_BUF_JUMBO_COUNT != 0U ? 1U : 0U), "the jumbo packet is counted");
+	jumbo_expected = 0U;
+	if (PACKET_BUF_JUMBO_COUNT != 0U)
+		jumbo_expected = 1U;
+	check(usage.jumbo_used == jumbo_expected, "the jumbo packet is counted");
 	check(packet_buf_in_use() == usage.used + usage.jumbo_used, "in use counts both classes");
 
 	/* A freed slot is the next one taken. */
@@ -186,6 +192,8 @@ test_reserve(void)
 			break;
 		count++;
 	}
+
+	/* The sender stopped at the reserve. */
 	check(count == PACKET_BUF_JUMBO_COUNT - PACKET_BUF_JUMBO_RESERVE, "a sender takes all but the reserve");
 	check(error == ENOBUFS, "a sender past the reserve is ENOBUFS");
 
@@ -255,7 +263,7 @@ test_standard_exhaustion(void)
 }
 
 /*
- * ws221-p008: the copies a sender holds (PACKET_BUF_ALLOC_HOLD) leave the
+ * The copies a sender holds (PACKET_BUF_ALLOC_HOLD) leave the
  * last PACKET_BUF_HOLD_RESERVE standard packets, which the drivers'
  * receive and the other callers still take.
  */
@@ -277,6 +285,8 @@ test_hold_reserve(void)
 			break;
 		taken[held++] = extra;
 	}
+
+	/* The holders stopped at the reserve. */
 	check(held == PACKET_BUF_POOL_COUNT - PACKET_BUF_HOLD_RESERVE, "holders take all but the reserve");
 	check(error == ENOBUFS, "a holder refused is ENOBUFS");
 	packet_buf_pool_usage(&usage);

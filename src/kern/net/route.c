@@ -246,6 +246,8 @@ route_purge_device(
 			kern_memset(&routes[index], 0, sizeof(routes[index]));
 		}
 	}
+
+	/* Tells the stack its routes changed. */
 	route_changed();
 
 	route_unlock(enabled);
@@ -690,9 +692,9 @@ route_lookup_matching(
 			return 0;
 		}
 	}
-	best_prefix = 0;
 
 	/* Keeps the matching live route with the longest prefix. */
+	best_prefix = 0;
 	for (index = 0; index < ROUTE_MAX; index++) {
 		prefix = 0;
 		if (!route_used[index] ||

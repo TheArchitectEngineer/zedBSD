@@ -62,12 +62,14 @@ struct net_device_ops {
 	 * called only after close has returned and the last net_device reference
 	 * has retired.  It may free driver_data, but must not access device. */
 	void (*release)(void *driver_data);
-	/* Optional.  Thread context, admitted like ioctl (joined by close, gone
+	/*
+	 * Optional.  Thread context, admitted like ioctl (joined by close, gone
 	 * and shutdown_all), with the device open or not.  The driver checks
 	 * the new MTU against what its hardware takes and returns 0 or an
 	 * errno (EBUSY when it needs the device closed first).  device->mtu
 	 * still holds the old value during the call; nothing the driver sized
-	 * at open may depend on device->mtu. */
+	 * at open may depend on device->mtu.
+	 */
 	int (*set_mtu)(struct net_device *device, unsigned mtu);
 };
 
@@ -163,17 +165,22 @@ int net_device_transmit(struct net_device *device, struct packet_buf *packet);
 int net_device_ioctl(struct net_device *device, unsigned long request,
 		     void *argument);
 unsigned net_device_capabilities_get(const struct net_device *device);
-/* Thread context.  Sets the device's MTU (0: the one it was created with)
+/*
+ * Thread context.  Sets the device's MTU (0: the one it was created with)
  * between NET_MTU_MIN and mtu_max (which a driver keeps within
- * NET_MTU_MAX), open or not, through the driver's set_mtu admitted like an ioctl, and posts the
- * change.  EINVAL for a value outside, EBUSY while the device opens or
- * closes, ENODEV for a device that is gone, or the driver's errno. */
+ * NET_MTU_MAX), open or not, through the driver's set_mtu admitted like an
+ * ioctl, and posts the change.  EINVAL for a value outside, EBUSY while the
+ * device opens or closes, ENODEV for a device that is gone, or the driver's
+ * errno.
+ */
 int net_device_set_mtu(struct net_device *device, unsigned mtu);
 /* Whether any device has a poll scheduled; read without the registry lock. */
 int net_device_poll_wanted(void);
-/* The longest frame, from its Ethernet header on, the stack hands the
+/*
+ * The longest frame, from its Ethernet header on, the stack hands the
  * device: the header and the MTU, within one packet after the default
- * headroom.  The loopback device's packets stay standard ones. */
+ * headroom.  The loopback device's packets stay standard ones.
+ */
 size_t net_device_frame_max(const struct net_device *device);
 /* Record one genuine terminal failure reported after transmit accepted a
  * packet. Accepted packet/byte counters remain unchanged and this does not

@@ -522,11 +522,13 @@ poll_devices(
 	unsigned total;
 	unsigned index;
 	unsigned count;
+	int wanted;
 
 	total = 0;
 
 	/* No device asked for a poll: nothing to walk. */
-	if (!net_device_poll_wanted())
+	wanted = net_device_poll_wanted();
+	if (wanted == 0)
 		return 0;
 
 	/* Polls the devices in registry order until the budget is spent. */
@@ -552,6 +554,7 @@ work_pending(
 	unsigned index;
 	unsigned long irq;
 	int pending;
+	int wanted;
 
 	/* Queued input is work. */
 	irq = spin_lock_irqsave(&input_lock);
@@ -564,7 +567,11 @@ work_pending(
 		return 1;
 
 	/* A device with a pending poll is work; none has one when the count says so. */
-	for (index = 0; net_device_poll_wanted(); index++) {
+	for (index = 0;; index++) {
+		wanted = net_device_poll_wanted();
+		if (wanted == 0)
+			break;
+
 		device = net_device_at_ref(index);
 		if (device == NULL)
 			break;

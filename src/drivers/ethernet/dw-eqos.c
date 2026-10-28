@@ -1413,6 +1413,8 @@ eqos_close(
 		device->tx_done = device->tx_packets[slot];
 		device->tx_packets[slot] = NULL;
 	}
+
+	/* Takes the list of packets whose transmission is finished. */
 	done = take_tx_done_locked(device);
 
 	spin_unlock_irqrestore(&device->lock, irq);
@@ -1466,9 +1468,13 @@ eqos_transmit(
 	 * reaches its bytes; a short frame, which is padded, is copied.
 	 */
 	in_place = 0;
-	if (length >= EQOS_MIN_FRAME && packet_buf_physical(packet, &physical) == 0 &&
-	    drv_dma_physical_address(device->dma, physical, length, 0, &address) == 0)
-		in_place = 1;
+	if (length >= EQOS_MIN_FRAME) {
+		error = packet_buf_physical(packet, &physical);
+		if (error == 0)
+			error = drv_dma_physical_address(device->dma, physical, length, 0, &address);
+		if (error == 0)
+			in_place = 1;
+	}
 
 	/* Takes a free descriptor, if the interface runs and has a link. */
 	error = 0;
@@ -1505,6 +1511,8 @@ eqos_transmit(
 				kern_memset(buffer + length, 0, EQOS_MIN_FRAME - length);
 				length = EQOS_MIN_FRAME;
 			}
+
+			/* The bus address of the copy the controller reads. */
 			address = device->tx_buffers.device_address + slot * EQOS_BUFFER_BYTES;
 		}
 
@@ -1526,6 +1534,7 @@ eqos_transmit(
 					  (device->tx_producer % EQOS_TX_COUNT) * EQOS_DESCRIPTOR_BYTES));
 	}
 
+	/* Takes the list of packets whose transmission is finished. */
 	done = take_tx_done_locked(device);
 
 	spin_unlock_irqrestore(&device->lock, irq);

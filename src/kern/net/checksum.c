@@ -154,6 +154,8 @@ checksum_add(
 			words++;
 			length -= sizeof(uintptr_t);
 		}
+
+		/* Continues after the words, with the bytes left over. */
 		data = (const uint8_t *)words;
 
 		/* Folds them to 16 bits, in big-endian order, into the running sum. */

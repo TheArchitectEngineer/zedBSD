@@ -316,6 +316,7 @@ socket_file_write_pinned(
 {
 	struct socket *socket;
 	ssize_t result;
+	int status_flags;
 	int flags;
 
 	/* Rejects a file that does not take the pages. */
@@ -324,7 +325,8 @@ socket_file_write_pinned(
 		return -EOPNOTSUPP;
 
 	/* A non-blocking file sends without waiting. */
-	if ((file_status_flags_get(file) & O_NONBLOCK) != 0)
+	status_flags = file_status_flags_get(file);
+	if ((status_flags & O_NONBLOCK) != 0)
 		flags = MSG_DONTWAIT;
 	else
 		flags = 0;

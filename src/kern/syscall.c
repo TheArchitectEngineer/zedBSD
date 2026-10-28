@@ -1930,6 +1930,7 @@ sys_recvfrom_call(
 	socklen_t *length_argument;
 	socklen_t length;
 	size_t capacity;
+	size_t datagram_max;
 	void *buffer;
 	uint8_t empty;
 	ssize_t result;
@@ -1971,8 +1972,9 @@ sys_recvfrom_call(
 		else
 			capacity = (size_t)args[2];
 	} else {
-		if (args[2] > socket_datagram_max(socket))
-			capacity = socket_datagram_max(socket);
+		datagram_max = socket_datagram_max(socket);
+		if (args[2] > datagram_max)
+			capacity = datagram_max;
 		else
 			capacity = (size_t)args[2];
 	}

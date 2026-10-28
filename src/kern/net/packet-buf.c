@@ -88,7 +88,7 @@ static unsigned packet_jumbo_used;
 /*
  * The most packets of each class ever taken at once, and how many
  * allocations found the class empty (the jumbo class: empty but for the
- * reserve), since the pool was emptied (ws220-p001: net.tcpstats shows
+ * reserve), since the pool was emptied (net.tcpstats shows
  * whether a transfer ran the stack out of packets).  They only grow and
  * are moved under the pool lock with the counts above.
  */
@@ -206,6 +206,7 @@ packet_buf_alloc_for(
 	struct kern_test_fault_result fault;
 	size_t capacity;
 	bool enabled;
+	bool injected;
 	int jumbo;
 
 	/* Refuses a size no packet holds. */
@@ -223,8 +224,8 @@ packet_buf_alloc_for(
 	}
 
 	/* Fails on demand under test, as an empty pool. */
-	if (KERN_TEST_FAULT(KERN_TEST_FAULT_NET_PACKET_ALLOC, UINT32_MAX,
-	    UINT32_MAX, &fault)) {
+	injected = KERN_TEST_FAULT(KERN_TEST_FAULT_NET_PACKET_ALLOC, UINT32_MAX, UINT32_MAX, &fault);
+	if (injected) {
 		*error = ENOBUFS;
 		return NULL;
 	}
@@ -246,7 +247,9 @@ packet_buf_alloc_for(
 	}
 
 	/* Succeeded: an empty packet of the class with the headroom. */
-	capacity = jumbo ? PACKET_BUF_JUMBO_STORAGE_SIZE : PACKET_BUF_STORAGE_SIZE;
+	capacity = PACKET_BUF_STORAGE_SIZE;
+	if (jumbo)
+		capacity = PACKET_BUF_JUMBO_STORAGE_SIZE;
 	packet_reset(packet, packet->storage, capacity, headroom);
 	*error = 0;
 	return packet;
@@ -758,6 +761,8 @@ packet_pool_allocate(
 		if (packet_pool != NULL)
 			break;
 	}
+
+	/* Records how many slots the block holds, and stacks them free. */
 	packet_count = count;
 	if (packet_pool != NULL)
 		packet_free_stack = (uint16_t *)(void *)(packet_pool + count);
@@ -769,6 +774,8 @@ packet_pool_allocate(
 		if (packet_jumbo_pool != NULL)
 			break;
 	}
+
+	/* Records how many jumbo slots the block holds, and stacks them free. */
 	packet_jumbo_count = count;
 	if (packet_jumbo_pool != NULL)
 		packet_jumbo_free_stack = (uint16_t *)(void *)(packet_jumbo_pool + count);
