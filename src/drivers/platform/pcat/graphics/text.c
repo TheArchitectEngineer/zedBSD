@@ -35,14 +35,18 @@
 #include "text.h"
 #include "../serial-mirror.h"
 
+#ifdef KERN_TEST_TEXT_END_SECONDS
+#include <kern/platform.h>
+#endif
+
 #define TEXT_GLYPH_WIDTH	8U
 #define TEXT_GLYPH_HEIGHT	16U
 
 /*
  * How often the splash's spinner is looked at while no line comes, and how
- * many times at most (two minutes; milliseconds, ws035-p107).  The spinner
- * keeps its own time and draws only when a step has passed (BUG-193), so a
- * look much shorter than its step only keeps the turns even.
+ * many times at most (two minutes; milliseconds).  The spinner keeps its
+ * own time and draws only when a step has passed, so a look much shorter
+ * than its step only keeps the turns even.
  */
 #define TEXT_SPLASH_TICK_MS	25U
 #define TEXT_SPLASH_TICKS_MAX	4800U
@@ -51,7 +55,7 @@
 #define TEXT_MAX_COLUMNS	240U
 #define TEXT_MAX_ROWS		68U
 
-/* How many times a fatal stop tries text_lock before it draws without it (BUG-158). */
+/* How many times a fatal stop tries text_lock before it draws without it. */
 #define TEXT_FATAL_LOCK_SPINS	50000000U
 
 /* The legacy aperture, and text memory's offset and geometry inside it. */
@@ -94,7 +98,7 @@ static enum text_surface text_surface;
 static volatile uint16_t *text_vram;
 
 /*
- * A quiet console (the boot parameter kmsg=quiet, ws035-p097): the cells
+ * A quiet console (the boot parameter kmsg=quiet): the cells
  * are kept but not drawn, so the boot logo stays on the screen, until the
  * console is revealed (a reader on it, a diagnostic that bypasses the log).
  * The framebuffer's height is kept to clear the logo then.  Protected by
@@ -105,8 +109,8 @@ static unsigned text_framebuffer_height;
 
 /*
  * Whether the splash's spinner has ended for good (a display was taken
- * for graphics, ws035-p107): it is not drawn again, by a log record or by
- * its ticker.  Protected by text_lock.
+ * for graphics): it is not drawn again, by a log record or by its ticker.
+ * Protected by text_lock.
  */
 static int text_splash_ended;
 
@@ -118,6 +122,21 @@ static int text_splash_ended;
  * fatal stop that draws without the lock.
  */
 static int text_ended;
+
+#ifdef KERN_TEST_TEXT_END_SECONDS
+/*
+ * The console's own end, KERN_TEST_TEXT_END_SECONDS after the layer is up:
+ * what kern_text_end() returned (text_end_test_result), and 1 once it has
+ * returned (text_end_test_done).  Written once, by the thread that asks.
+ * Nothing in the kernel reads them; they are volatile so that both stores
+ * and both symbols stay in the image for a debugger.
+ */
+static volatile int text_end_test_result;
+static volatile int text_end_test_done;
+
+/* Whether the thread that ends the console was started; written by the layer's set-up only. */
+static int text_end_test_started;
+#endif
 
 /* The standard VGA palette the attribute byte indexes. */
 static const uint32_t text_palette[16] = {
@@ -137,6 +156,10 @@ static void vga_cursor_locked(void);
 static void text_splash_ticker(void *argument);
 static void text_splash_ticker_start(void);
 static int cells_live_locked(void);
+#ifdef KERN_TEST_TEXT_END_SECONDS
+static void text_end_test_start(void);
+static void text_end_test(void *argument);
+#endif
 
 /*
  * Renders retained text cells into an independent RAM image without reading display memory.
@@ -196,7 +219,7 @@ drv_pcat_text_snapshot(
 	}
 
 	/*
-	 * A quiet console shows none of its text (ws035-p101): its image is
+	 * A quiet console shows none of its text: its image is
 	 * black, so a display given back to the console between two graphical
 	 * owners (the greeter and the session) stays dark until it is revealed.
 	 */
@@ -421,7 +444,7 @@ putc_locked(
 	if (!cells_live_locked())
 		return;
 
-	/* A line nobody sees on a quiet boot turns the splash's spinner (ws035-p107). */
+	/* A line nobody sees on a quiet boot turns the splash's spinner. */
 	if (text_hidden && character == '\n')
 		drv_pcat_splash_step();
 
@@ -563,6 +586,11 @@ drv_pcat_text_init(
 	/* On a quiet boot the splash's spinner also turns by itself, so a long wait does not look stopped. */
 	if (text_hidden)
 		text_splash_ticker_start();
+
+#ifdef KERN_TEST_TEXT_END_SECONDS
+	/* The console ends itself after the configured wait. */
+	text_end_test_start();
+#endif
 }
 
 /*
@@ -862,7 +890,7 @@ drv_pcat_text_resume(
 
 /*
  * Turns the splash's spinner while the console is kept off the screen: a
- * log record went nowhere else (ws035-p107); or stops it for good, a
+ * log record went nowhere else; or stops it for good, a
  * display having been taken for graphics.
  */
 void
@@ -933,7 +961,7 @@ drv_pcat_text_reveal(
 }
 
 /*
- * Shows the console for a fatal stop (BUG-158).
+ * Shows the console for a fatal stop.
  *
  * A graphics mode suspended the text (text_ready 0) and draws over the same
  * framebuffer, so the ordinary reveal draws nothing there and a panic looked
@@ -1132,6 +1160,71 @@ text_splash_ticker(
 			return;
 	}
 }
+
+#ifdef KERN_TEST_TEXT_END_SECONDS
+/* Starts, once a boot, the thread that ends the console after the configured wait. */
+static void
+text_end_test_start(
+	void)
+{
+	struct thread *thread;
+	int error;
+
+	/* Only the first set-up of the layer starts it. */
+	if (text_end_test_started)
+		return;
+	text_end_test_started = 1;
+
+	/* The thread, at the default priority. */
+	error = kthread_create(text_end_test, NULL, SCHED_PRIORITY_DEFAULT, &thread);
+	if (error != 0) {
+		kern_logf("text: the timed end did not start (%d)\n", error);
+		return;
+	}
+
+	/* Lets it run. */
+	thread_start(thread);
+}
+
+/*
+ * Waits KERN_TEST_TEXT_END_SECONDS, then ends the console's use of the
+ * display once, with the boot framebuffer's range (no range without one),
+ * and keeps the result.
+ */
+static void
+text_end_test(
+	void *argument)
+{
+	struct kern_boot_framebuffer framebuffer;
+	struct kern_text_range range;
+	uint64_t deadline;
+	int error;
+
+	(void)argument;
+
+	/* The wait, whole even if the sleep comes back early. */
+	deadline = sched_ticks() + kern_ms_to_ticks((uint64_t)KERN_TEST_TEXT_END_SECONDS * 1000U);
+	while (sched_ticks() < deadline)
+		sched_sleep(deadline);
+
+	/* The framebuffer the boot handed over, if there is one. */
+	error = kern_boot_framebuffer("pcat.framebuffer", &framebuffer);
+	if (error == 0 && framebuffer.size != 0U) {
+		/* Ends over the framebuffer's range. */
+		range.physical = framebuffer.physical_base;
+		range.bytes = framebuffer.size;
+		error = kern_text_end(&range, 1U);
+	} else {
+		/* Ends with no range to judge. */
+		error = kern_text_end(NULL, 0U);
+	}
+
+	/* The result, then the mark that it is there. */
+	text_end_test_result = error;
+	__atomic_store_n(&text_end_test_done, 1, __ATOMIC_RELEASE);
+	kern_logf("text: the timed end returned %d\n", error);
+}
+#endif
 
 /*
  * Has the console draw through another mapping of the framebuffer (to for

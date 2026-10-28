@@ -1307,6 +1307,7 @@ drv_pcat_graphics_backend_end(
 {
 	void *handed;
 	unsigned index;
+	int overlaps;
 	int error;
 
 	/* The first end removes the mappings; a later one only judges. */
@@ -1348,7 +1349,11 @@ drv_pcat_graphics_backend_end(
 		}
 		cirrus_aperture = NULL;
 
-		/* The legacy aperture lies in a window the hardware layer keeps mapped. */
+		/*
+		 * The legacy aperture's mapping is given back like the others, but
+		 * it lies in a window the hardware layer keeps mapped for good, so
+		 * its range counts as left whatever the removal reports.
+		 */
 		if (vga_aperture != NULL) {
 			(void)kern_device_unmap((void *)(uintptr_t)vga_aperture, PCAT_VGA_APERTURE_BYTES);
 			left_add(PCAT_VGA_APERTURE_PHYSICAL, PCAT_VGA_APERTURE_BYTES, 0);
@@ -1356,17 +1361,19 @@ drv_pcat_graphics_backend_end(
 		vga_aperture = NULL;
 	}
 
-	/* What was left, against the caller's ranges: a failed removal first, then one that cannot be removed. */
+	/* What was left, against the caller's ranges: a failed removal first. */
 	for (index = 0U; index < left_count; index++) {
-		/* A range of the caller's memory. */
-		if (!kern_text_range_overlaps(ranges, count, left[index].physical, left[index].bytes))
-			continue;
-		if (left[index].error != 0)
+		/* A range of the caller's memory whose removal failed. */
+		overlaps = kern_text_range_overlaps(ranges, count, left[index].physical, left[index].bytes);
+		if (overlaps && left[index].error != 0)
 			return left[index].error;
 	}
+
+	/* Then a range that stays mapped for good. */
 	for (index = 0U; index < left_count; index++) {
-		/* A range that stays mapped for good. */
-		if (kern_text_range_overlaps(ranges, count, left[index].physical, left[index].bytes))
+		/* A range of the caller's memory that cannot be removed. */
+		overlaps = kern_text_range_overlaps(ranges, count, left[index].physical, left[index].bytes);
+		if (overlaps)
 			return EBUSY;
 	}
 
@@ -1417,8 +1424,13 @@ mapping_remove(
 
 	/* The kernel's own call, which asks the hardware layer. */
 	error = kern_device_unmap((void *)(uintptr_t)pixels, bytes);
-	if (error != 0)
-		left_add(physical, bytes, error == EBUSY ? 0 : error);
+
+	/* A window the hardware layer keeps is left for good; another failure is left with its error. */
+	if (error == EBUSY) {
+		left_add(physical, bytes, 0);
+	} else if (error != 0) {
+		left_add(physical, bytes, error);
+	}
 
 	/* Succeeded: the mapping is gone or recorded as left. */
 	return;
