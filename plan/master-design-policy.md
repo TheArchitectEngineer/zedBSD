@@ -290,6 +290,7 @@ WS に固有の決定はその ws.md にある。ここは複数の WS・OS 全�
   `include/libc/compat/`（`jpeglib.h`、`png/` など）のまま。
 - **retro**: X11 の program は `userland/retro/`、`zedinst` は `userland/retro/zedinst`。Wayland の installer の作り直しは低い優先度。
 - **文字の符号**: UTF-8 だけを扱う。ls などは locale に関わらず名前を UTF-8 として扱い、表示できる文字を escape しない（escape は制御文字と不正な byte だけ）。
+- **GPU の使用開始と console（2026-10-28）**: 2026-10-28 ユーザー（p017 Q13 への答え、原文）「GHCIに限らず、GPUで最初のフリップをしたら、コンソールはフレームバッファをバックにする点では使用終了します。シリアルバックは終了しません。すべてのアーキテクチャ、すべてのGPUドライバでそうです。」 → どの arch・どの GPU driver でも、GPU が最初の flip をしたら console の framebuffer の backend は使用終了（以後描かない、mapping は解放）。serial の backend は続く。仕組みは WS290 p017（kern_text_end → graphics の backend → kernel 内 API → HAL の実装）。
 - **既定の利用者（2026-10-28 に変える決定）**: ユーザー「すべてのイメージで、ユーザ名をuser, パスワードをuserに変更します。インストーラはsetuidのヘルパーを使うので、パスワード認証を不要にします。これは特別なインストーライメージのみです。」→ 全 image の既定の利用者を user/user に変える（未実施。下の kei の記述は実施までの今の姿）。installer の image に限り、installer の setuid の helper は password を聞かない（WS307）。hostname の既定は zedbsd（WS307 U27）。
 - **既定の image と login**: base の passwd・group・shadow に kei（uid 1000、network group、password kei）、root の password は root。
   sessiond が `/etc/keiland/autologin`（既定 kei、root は拒む）の利用者で起動の時に 1 回 login し、Log Out の後は greeter。
