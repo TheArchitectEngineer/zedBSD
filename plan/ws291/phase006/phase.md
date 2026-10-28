@@ -905,3 +905,26 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
    DEBUG_INDEX と DATA の読みは lock を共有する（control.c と smu_hang_mark）。
 3. 受け入れ（Q1 19:15、20:10 の指示で soak を除く）: 短い起動の確認（起動の mark・idle で clocks の mem が下がり負荷で上がる・underflow 0）と、
    scene の bench が Linux の数以上（同じ条件）。長い soak はしない。既定は完成して確かめるまで memory=0。
+
+## q1658（2026-10-28 P2、worktree p2-ws291h、基点 main a346ceb55）
+
+- 指示（Q1 経由のユーザーの原文）: 「UCLK固定のsoakはやらなくていいと伝えたはずですが」「P2はsoakはやめさせて、実装に集中させてください。」→ 増分 B の soak は 20:07 に止めた（13 回・停止 0）。
+  「P2が使っている性能評価スクリプトは、今後ほかのGPUのドライバの性能向上に標準で活用したいので、tools/以下のスクリプトとして保存するのが望ましいと思います。」→ plan/tools/gpu-perf/（9213987d1）。
+  「P2は、評価を中断して、画面へ出す回路のunderflowを先に修正してください。目視でも、かなりの割合で数秒に一回くらい、画面出力が途切れる瞬間があります。解決してから評価に進みます。UCLKの問題は解決とマークしていいです。」
+
+### 負荷に応じた UCLK（amdrdna.smu.memory=2、commit 37ca3c658・261aca2ae・959e8c514・144cff0f5、既定は memory=0 のまま）
+
+- 実装: display-memory.c（display の段）。A4 は UCLK を最上段・p-state の force allow で保つ。takeover（A6）の後・mode set の後・reset の A4 の後に:
+  DRAM_STATE 0x30 → watermark の表（TABLE_WATERMARKS、reader 4 行 = UCLK の段の範囲、writer 1 行、Linux の Watermarks_t と byte 一致: plan/ws291/tests/watermarks-test.sh）
+  → NumOfDisplays=1 → DCEFCLK の hard min 506 → DISPCLK の電圧の hard min（max(DISPCLK, DPPCLK)、164 MHz）→ 今の mode を UCLK 段 0（1600 MT/s、fabric 506）で
+  replan（plane・hub の 4 set・global sync を update lock の下で、amdrdna_mode_replan）→ force を外す（0x0）→ UCLK の floor を段 0。覆えない mode は最上段に固定し
+  5 us（dummy p-state）の plan。mode set の前は hold（0x30・最上段）、shutdown・reset の前は end（+ NumOfDisplays=0）。SOCCLK の hard min は Linux の Navi10 に無いので送らない
+  （送ると 0xff）。power の watch が display の underflow を 1 s ごとに数え mark・clear。GPU の busy（boost）の間は UCLK の floor を段 1（500 MHz）。
+- 実機（短い確認、plan/tools/gpu-perf/amdrdna/dpm-check.sh、guard の下）: idle で mem=100MHz、負荷で 500/625/875、止めると 100。SMU の停止 0、hung=0。
+- underflow: 404 us の plan では game mode の負荷の 6 s ごとに 1〜1.5 回の timing generator の underflow（HUBP は 0）。window mode 0、UCLK 固定 0、Linux 0。
+  Linux の DTN log: 1080p を 2 pipe（960×2、MPC combine、64KB_R_X）、dram_clk_change 439.64 us（404+urgent+25 = active でも許す）。我々は 1 pipe linear で vblank だけ。
+  Fable 5.1 High（21:00）: 1 pipe の vblank の切り替えは 404 us を超える切り替えに余裕 0、Linux は active で ~390 us の余裕。案 F2: latency を 520 us に（vblank に収まる上限 ~575）。
+  → 520 us（MEMORY_SWITCH_TENTHS、amdrdna.smu.memory_latency= で変更可）で game 16 cycle・window 4 cycle・bench 2 回で underflow 0。
+  DISPCLK の電圧の floor だけ（404 us）では 4 cycle で 3 回（効かない）。UCLK の floor 500（memory_floor_level=1）でも 4 cycle で 2 回（100 MHz の段の問題ではない）。
+- 速さ（scene-6500）: 段 0 の floor だけでは UCLK が負荷の中でも 100/500 を往復し fence 20.1〜20.3 ms（Linux は 500 MHz を保ち 19.54）。busy の floor 500 で fence 19.62〜19.70。
+- UCLK（SMU の停止）の件はユーザーの指示で解決とする（2026-10-28 21:5x、上の原文）。残り: display の underflow の根本（2 pipe 分割、Linux の形）と評価。
