@@ -102,7 +102,7 @@ sm_source_open_sim(
 	/* The machine: its name, CPUs, memory and GPUs. */
 	error = gethostname(host, sizeof(host));
 	if (error != 0 || host[0] == '\0')
-		strcpy(host, "kei");
+		strcpy(host, "zedbsd");
 	host[sizeof(host) - 1U] = '\0';
 	strcpy(source->info.host, host);
 	if (cpus == 0U)

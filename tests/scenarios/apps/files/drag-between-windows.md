@@ -14,16 +14,16 @@ ws189 の DnD の変更（compositor の multi-device・receive の制限・rele
 file の drag（別の窓の folder への移動、Terminal への path）が動くことを確かめる回帰。
 
 ## 準備
-desktop。kei で `mkdir -p ~/dnd-src ~/dnd-dst && echo one > ~/dnd-src/a.txt && echo two > ~/dnd-src/b.txt`（`~/dnd-dst/a.txt` が無いこと）。Files の窓を 2 つ開き
+desktop。user で `mkdir -p ~/dnd-src ~/dnd-dst && echo one > ~/dnd-src/a.txt && echo two > ~/dnd-src/b.txt`（`~/dnd-dst/a.txt` が無いこと）。Files の窓を 2 つ開き
 （1 つ目は `files ~/dnd-src`、2 つ目は `files ~/dnd-dst`）、重ならないように置く。Terminal を 1 つ開く。
 
 ## 操作と確認
 1. 操作: 1 つ目の窓の `a.txt` を押して 2 つ目の窓の一覧の空いた所へ動かし、止めて離す。`aat mark start` は押す前。
    確認事項: 窓の間の drag。正解: `ZFILES DND start items=1`、`KWL DATA drag start`、`KWL DATA drag enter`（2 つ目の窓の client）、`KWL DATA drag drop`、
-   2 つ目の窓の `ZFILES DROP operation=… items=1 destination=/home/kei/dnd-dst first=/home/kei/dnd-src/a.txt` と `ZFILES TASK done … state=done`、1 つ目の窓の
-   `ZFILES DND end dropped=1`。`ls ~/dnd-dst` に a.txt（operation が move なら `~/dnd-src` から消える。どちらだったかを記録）。確認方法: log、kei の `ls`。
+   2 つ目の窓の `ZFILES DROP operation=… items=1 destination=/home/user/dnd-dst first=/home/user/dnd-src/a.txt` と `ZFILES TASK done … state=done`、1 つ目の窓の
+   `ZFILES DND end dropped=1`。`ls ~/dnd-dst` に a.txt（operation が move なら `~/dnd-src` から消える。どちらだったかを記録）。確認方法: log、user の `ls`。
 2. 操作: 1 つ目の窓の `b.txt` を Terminal の窓の上へ drag して離す。
-   確認事項: Terminal への path。正解: `ZTERM DROP enter uris=1`、`ZTERM DROP bytes=… uris=1`、Terminal の入力行に `/home/kei/dnd-src/b.txt`。確認方法: log、撮影。
+   確認事項: Terminal への path。正解: `ZTERM DROP enter uris=1`、`ZTERM DROP bytes=… uris=1`、Terminal の入力行に `/home/user/dnd-src/b.txt`。確認方法: log、撮影。
 3. 操作: 1 つ目の窓の `b.txt` を押して 20 px 動かし、40 ms で離す。これを 3 回。
    確認事項: 即離し（T1-436 F6 の回帰）。正解: `KWL CLIENT gone` が無く、Files の窓が残って次の click に答える。確認方法: log、撮影。
 

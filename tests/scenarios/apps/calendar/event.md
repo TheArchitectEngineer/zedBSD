@@ -13,7 +13,7 @@ since: ws155
 予定が `~/Documents/Calendar` に iCalendar の file として残り、月の表示の予定の pill の double click で編集の画面が、予定の無い所の click で新規作成の画面が開き、system bar の時計で Calendar が開くことを確かめる（WS155 p002〜p004・p006）。
 
 ## 準備
-kei の `~/Documents/Calendar` を消す。App Home から Calendar を開く（`CALENDAR READY`、`CALENDAR CELL today x= y= width= height=`）。
+user の `~/Documents/Calendar` を消す。App Home から Calendar を開く（`CALENDAR READY`、`CALENDAR CELL today x= y= width= height=`）。
 
 ## 操作と確認
 1. 操作: 右の panel の Work の card を今日の cell へ drag。

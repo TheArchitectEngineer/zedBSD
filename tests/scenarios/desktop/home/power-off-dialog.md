@@ -13,7 +13,7 @@ since: ws099-p037
 App Home の Log Out が確認なしに session を終えないこと、Power Off の tile から暗くする dialog で選べることを確かめる（BUG-235、ws099-p037）。
 
 ## 準備
-kei の desktop。
+user の desktop。
 
 ## 操作と確認
 1. 操作: Windows キーで App Home、`power` と打ち、Power Off の icon を click。

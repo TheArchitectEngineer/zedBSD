@@ -18,10 +18,10 @@ Text Editor に `desk clip` を打った窓。desktop の空いた所が見え�
 
 ## 操作と確認
 1. 操作: Text Editor の `desk clip` を選び、その上で押して desktop の空いた所へ動かし、止めて撮り、離す。`aat mark start` は押す前。
-   確認事項: 文字の file。正解: `ZFILES DESKTOP drop enter self=0 files=0 content=1`、`KWL DATA drag state=copy`、`ZFILES DND content path=/home/kei/Desktop/Text Clipping.txt bytes=9 type=1`、
+   確認事項: 文字の file。正解: `ZFILES DESKTOP drop enter self=0 files=0 content=1`、`KWL DATA drag state=copy`、`ZFILES DND content path=/home/user/Desktop/Text Clipping.txt bytes=9 type=1`、
    `ZFILES DESKTOP drop-file path=...`、`ZFILES DESKTOP dropped name=Text Clipping.txt column=C row=R`、file の中身が `desk clip`。desktop の離した所に icon。確認方法: log、`cat`、撮影。
 2. 操作: Notes の画像を Select で押して窓の外へ出し（desktop.dnd.photo-to-notes の 3）、desktop の別の空いた所で離す。
-   確認事項: 画像の file。正解: `ZFILES DND content path=/home/kei/Desktop/Image.png ... type=4`、file の先頭が PNG の signature（`head -c 8 | od -c`）、desktop に icon。確認方法: log、od、撮影。
+   確認事項: 画像の file。正解: `ZFILES DND content path=/home/user/Desktop/Image.png ... type=4`、file の先頭が PNG の signature（`head -c 8 | od -c`）、desktop に icon。確認方法: log、od、撮影。
 3. 操作: 1 をもう一度。
    確認事項: 重なる名前。正解: `Text Clipping 2.txt`。確認方法: log、ls。
 

@@ -14,7 +14,7 @@ Notes の描く道具（筆・鉛筆・水彩）が試験のペンの筆圧で�
 
 ## 準備
 - image は試験のペン（`peninject`）のある AAT の image（`plan/tools/aat/config-amd64-notes-pen.mk`）。`peninject` の無い image では線は mouse の物（筆圧なし）になり、補助は最後に fail（理由: 試験のペンが無い）を返す。
-- 補助（`plan/tools/aat/scenarios/helpers_notes_edit.py`）が target に scenario の folder（`/tmp/aat-work/notes-draw-tools-<時刻>/`）を作り、kei として Notes をその中の新しい notebook `draw.pdf` で開く（`NOTES START`）。座標は Notes の `NOTES LAYOUT`（頁の位置）・`NOTES BUTTONS`（toolbar と帯の button）と窓の位置から決める。
+- 補助（`plan/tools/aat/scenarios/helpers_notes_edit.py`）が target に scenario の folder（`/tmp/aat-work/notes-draw-tools-<時刻>/`）を作り、user として Notes をその中の新しい notebook `draw.pdf` で開く（`NOTES START`）。座標は Notes の `NOTES LAYOUT`（頁の位置）・`NOTES BUTTONS`（toolbar と帯の button）と窓の位置から決める。
 - ペンの線: `aat-input` が注入の口を全部持つので、補助は `aat stop` → `peninject`（root、画面全体に写る tablet、傾き (20, −15)、筆圧 0 → 4095 → 0 の sine）→ `aat start` の順に流す。
 
 ## 操作と確認

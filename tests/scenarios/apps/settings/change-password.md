@@ -25,8 +25,8 @@ root で `/etc/shadow` を控える（最後に戻す）。Settings の Users �
    確認事項: 短い。正解: 「Use at least 8 characters.」。確認方法: 撮影。
 4. 操作: 2 つの欄に `aat-pass-1`、Enter。
    確認事項: 今の password の誤り。正解: `ZSETTINGS USERS change request=N`、busy の後 `ZSETTINGS USERS result request=N errno=…`（0 でない）、Step 1 に戻り「The current password is wrong.」、shadow が変わらない。確認方法: log、撮影、shadow の比較。
-5. 操作: `kei`、Enter、2 つの欄に `aat-pass-1`、Enter。
-   確認事項: 変更。正解: 「Your password is changed. Use the new one from now on.」と Done、`ZSETTINGS USERS result … errno=0`、shadow の kei の行が変わる。Done で popup が閉じる。確認方法: log、撮影、shadow の比較。
+5. 操作: `user`、Enter、2 つの欄に `aat-pass-1`、Enter。
+   確認事項: 変更。正解: 「Your password is changed. Use the new one from now on.」と Done、`ZSETTINGS USERS result … errno=0`、shadow の user の行が変わる。Done で popup が閉じる。確認方法: log、撮影、shadow の比較。
 6. 操作: 控えた `/etc/shadow` を戻す（root）。
 
 ## 合格

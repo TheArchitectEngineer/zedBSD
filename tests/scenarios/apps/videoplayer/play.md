@@ -13,7 +13,7 @@ since: ws122
 Video Player が app の任意 libavcodec による MPEG-4 Part 2 の映像と、libmedia 自前 AAC-LC の音の MP4を開いて再生し、操作が効くことを確かめる。
 
 ## 準備
-host で作った 12 秒・640x360・音つきの `sample.mp4` を target の `/tmp/aat-samples/` に置く（`plan/tools/aat/scenarios/samples.py`）。kei で `videoplayer /tmp/aat-samples/sample.mp4` を開く。
+host で作った 12 秒・640x360・音つきの `sample.mp4` を target の `/tmp/aat-samples/` に置く（`plan/tools/aat/scenarios/samples.py`）。user で `videoplayer /tmp/aat-samples/sample.mp4` を開く。
 
 ## 操作と確認
 1. 操作: 開くのを待つ。

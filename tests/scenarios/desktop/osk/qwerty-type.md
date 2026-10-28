@@ -13,7 +13,7 @@ since: ws102-p006
 QWERTY の panel の鍵が焦点の欄に文字を送ることを確かめる。
 
 ## 準備
-入力方式は None か direct。kei で `textedit /tmp/aat-work/qwerty.txt` を開き、本文を click。
+入力方式は None か direct。user で `textedit /tmp/aat-work/qwerty.txt` を開き、本文を click。
 
 ## 操作と確認
 1. 操作: 左下の角から QWERTY の panel を開く。
