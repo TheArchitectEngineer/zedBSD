@@ -19,14 +19,15 @@
  * The driver starts no output of its own.
  *
  * Stage A6 saves the plane's words, takes the frames' VRAM, measures the
- * refresh from the frame counter, turns on the interrupts of a frame's
- * start, of a finished flip and of the hot-plug line, then flips to a
- * picture of colour bars and back.  Stage A7 takes the cursor's images,
- * sets the cursor up hidden, shows it in the middle of the screen, moves
- * it and hides it again.  Both run when the driver owns the display (the
- * default; amdrdna.disp.own=0 leaves it to the firmware);
- * amdrdna.disp.test=<seconds> holds the bars and the moving cursor that
- * long for an eye to check.
+ * refresh from the frame counter and turns on the interrupts of a frame's
+ * start, of a finished flip and of the hot-plug line.  Stage A7 takes the
+ * cursor's images and sets the cursor up hidden.  Both run when the driver
+ * owns the display (the default; amdrdna.disp.own=0 leaves it to the
+ * firmware).  Neither draws on the screen: the diagnostic checks that did
+ * (display_check_bars, a picture of colour bars flipped to and back, and
+ * display_check_cursor, a cursor shown, moved and hidden;
+ * amdrdna.disp.test=<seconds> holds them that long for an eye to check)
+ * are kept, not called, for bringing up the display of another RDNA GPU.
  *
  * The interrupt thread acknowledges the display's events, counts them,
  * keeps the refresh count, follows the monitor's connection and wakes the
@@ -206,6 +207,8 @@ static int takeover_memory(struct amdrdna_device *device);
 static void takeover_memory_give(struct amdrdna_device *device);
 static int takeover_measure(struct amdrdna_device *device);
 static void takeover_bars(struct amdrdna_device *device, unsigned frame);
+static int display_check_bars(struct amdrdna_device *device) __attribute__((unused));
+static int display_check_cursor(struct amdrdna_device *device) __attribute__((unused));
 static void takeover_give_back(struct amdrdna_device *device);
 static void display_interrupts(struct amdrdna_device *device, bool on);
 static void display_sample_locked(struct amdrdna_device *device);
@@ -233,35 +236,20 @@ amdrdna_display_wanted(void)
 }
 
 /*
- * Runs stage A6: takes the firmware's plane over and flips it to a
- * picture of the driver's and back.
+ * Runs stage A6: takes the firmware's plane over, keeping the console's
+ * picture on the screen.
  *
- * Returns 0 when the plane flipped there and back (or the display stays
- * the firmware's), ENOTSUP for a picture the takeover does not keep,
- * ENOMEM without VRAM for the frames, EIO when the frame counter does not
- * move, or ETIMEDOUT when a flip did not begin.  A failure leaves the
- * firmware's picture and the plane's words as they were.
+ * Returns 0 when the plane is the driver's (or the display stays the
+ * firmware's), ENOTSUP for a picture the takeover does not keep, ENOMEM
+ * without VRAM for the frames, or EIO when the frame counter does not
+ * move.  A failure leaves the firmware's picture and the plane's words as
+ * they were.
  */
 int
 amdrdna_a6_takeover(
 	struct amdrdna_device *device)
 {
 	struct amdrdna_display *display;
-	uint64_t started_us;
-	uint64_t latch_us;
-	uint64_t signals_before;
-	uint64_t signals_after;
-	uint64_t flips_before;
-	uint64_t flips_after;
-	uint64_t count_before;
-	uint64_t count_after;
-	uint64_t time_ns;
-	uint64_t back;
-	unsigned seconds;
-	unsigned hold_ms;
-	uint32_t underflow;
-	uint32_t timing_underflow;
-	unsigned long irq;
 	bool wanted;
 	int error;
 
@@ -306,6 +294,70 @@ amdrdna_a6_takeover(
 	/* The interrupts of a frame's start, of a finished flip and of the hot-plug line. */
 	display_interrupts(device, true);
 
+	/*
+	 * Diagnostic, not run: the colour bars' check (display_check_bars)
+	 * flipped the plane to a test picture for a second at every boot and
+	 * back, timing the flip and counting the refreshes and the interrupts
+	 * on the screen.  It is kept for bringing up the display of another
+	 * RDNA GPU (RDNA2, RDNA3), whose takeover it checks by eye and by the
+	 * counts; the call to put back is:
+	 *
+	 *	error = display_check_bars(device);
+	 *	if (error != 0) {
+	 *		takeover_give_back(device);
+	 *		return error;
+	 *	}
+	 */
+
+	/* Marks the result. */
+	amdrdna_mark("A6 ok refresh=%u.%03uHz %ux%u stride=%u hotplug=%d",
+	    (unsigned)(display->refresh_millihz / 1000U),
+	    (unsigned)(display->refresh_millihz % 1000U),
+	    (unsigned)display->width,
+	    (unsigned)display->height,
+	    (unsigned)display->stride,
+	    display->has_hotplug ? (int)display->hotplug : -1);
+
+	/* Succeeded: the plane is the driver's, showing the console. */
+	return 0;
+}
+
+/*
+ * Diagnostic, not called (amdrdna_a6_takeover keeps the call commented
+ * out): flips the taken plane to a picture of colour bars, holds it a
+ * second (amdrdna.disp.test=<seconds> longer, for an eye to check), flips
+ * back to the console's surface and marks how long the flip took to
+ * begin, the refreshes and the frame and flip interrupts over the hold,
+ * and the underflows.  For bringing up the display of another RDNA GPU.
+ *
+ * Returns 0, or ETIMEDOUT when a flip did not begin (the caller gives the
+ * display back).
+ */
+__attribute__((unused)) static int
+display_check_bars(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_display *display;
+	uint64_t started_us;
+	uint64_t latch_us;
+	uint64_t signals_before;
+	uint64_t signals_after;
+	uint64_t flips_before;
+	uint64_t flips_after;
+	uint64_t count_before;
+	uint64_t count_after;
+	uint64_t time_ns;
+	uint64_t back;
+	unsigned seconds;
+	unsigned hold_ms;
+	uint32_t underflow;
+	uint32_t timing_underflow;
+	unsigned long irq;
+	int error;
+
+	/* The display the takeover holds. */
+	display = &device->display;
+
 	/* The colour bars, written through the window and pushed past the host path. */
 	takeover_bars(device, 0U);
 	amdrdna_host_path_flush(device);
@@ -323,7 +375,6 @@ amdrdna_a6_takeover(
 	latch_us = amdrdna_display_now_us() - started_us;
 	if (error != 0) {
 		amdrdna_mark("A6 fail: the flip to the driver's frame did not begin in %ums (%d)", DISPLAY_FLIP_WAIT_MS, error);
-		takeover_give_back(device);
 		return error;
 	}
 
@@ -356,7 +407,6 @@ amdrdna_a6_takeover(
 	error = amdrdna_display_show(device, display->console);
 	if (error != 0) {
 		amdrdna_mark("A6 fail: the flip back to the console did not begin (%d)", error);
-		takeover_give_back(device);
 		return error;
 	}
 
@@ -373,7 +423,7 @@ amdrdna_a6_takeover(
 	spin_unlock_irqrestore(&display->lock, irq);
 
 	/* Marks the result. */
-	amdrdna_mark("A6 ok flip pending=0 latch=%lluus back=%u hold=%ums frames=%llu frame_irq=%llu flip_irq=%llu/2 refresh=%u.%03uHz %ux%u stride=%u underflow=%u/%u hotplug=%d",
+	amdrdna_mark("A6 bars ok flip pending=0 latch=%lluus back=%u hold=%ums frames=%llu frame_irq=%llu flip_irq=%llu/2 refresh=%u.%03uHz %ux%u stride=%u underflow=%u/%u hotplug=%d",
 	    (unsigned long long)latch_us,
 	    back == display->console ? 1U : 0U,
 	    hold_ms,
@@ -389,35 +439,22 @@ amdrdna_a6_takeover(
 	    (unsigned)timing_underflow,
 	    display->has_hotplug ? (int)display->hotplug : -1);
 
-	/* Succeeded: the plane is the driver's, showing the console. */
+	/* Succeeded: the plane flipped there and back. */
 	return 0;
 }
 
 /*
- * Runs stage A7: sets the hardware cursor up and shows, moves and hides
- * it once over the console.
+ * Runs stage A7: sets the hardware cursor up, hidden.
  *
- * Returns 0 when the cursor showed and hid (or the display stays the
- * firmware's), ENODEV without stage A6's takeover, or EIO when a cursor
- * change did not reach the pixel processor.
+ * Returns 0 when the cursor is set up (or the display stays the
+ * firmware's), or ENODEV without stage A6's takeover.
  */
 int
 amdrdna_a7_cursor(
 	struct amdrdna_device *device)
 {
 	struct amdrdna_display *display;
-	uint32_t control;
-	uint32_t pixel;
-	unsigned seconds;
-	unsigned moves;
-	unsigned step;
-	unsigned steps;
-	int32_t x;
-	int32_t y;
-	bool shown;
-	bool hidden;
 	bool wanted;
-	int error;
 
 	/* Says the stage starts. */
 	amdrdna_mark("A7 begin");
@@ -436,11 +473,71 @@ amdrdna_a7_cursor(
 		return ENODEV;
 	}
 
-	/* The test image in the first slot, and the cursor set up hidden on it. */
-	display_cursor_square(device, 0U);
-	amdrdna_host_path_flush(device);
+	/* The cursor set up hidden on the first slot. */
 	display_cursor_setup(device);
 	amdrdna_display_cursor_use(device, 0U);
+
+	/*
+	 * Diagnostic, not run: the cursor's check (display_check_cursor)
+	 * painted a test square, showed it in the middle of the screen, moved
+	 * it down a diagonal for a second and hid it again at every boot.  It
+	 * is kept for bringing up the display of another RDNA GPU (RDNA2,
+	 * RDNA3), whose hardware cursor it checks on the screen; the call to
+	 * put back is:
+	 *
+	 *	error = display_check_cursor(device);
+	 *	if (error != 0)
+	 *		return error;
+	 */
+
+	/* The cursor is ready for the GPU device's lease. */
+	display->cursor_ready = true;
+
+	/* Marks the result. */
+	amdrdna_mark("A7 ok cursor %ux%u at 0x%llx hidden",
+	    DISPLAY_CURSOR_SIDE,
+	    DISPLAY_CURSOR_SIDE,
+	    (unsigned long long)amdrdna_display_address(device, display->cursor_vram));
+
+	/* Succeeded: the cursor is set up, hidden. */
+	return 0;
+}
+
+/*
+ * Diagnostic, not called (amdrdna_a7_cursor keeps the call commented
+ * out): paints a test square into the cursor's first slot, shows it in
+ * the middle of the screen, moves it down a diagonal one step a frame for
+ * a second (amdrdna.disp.test=<seconds> longer) and hides it again,
+ * checking at each end that the plane and the pixel processor took the
+ * change, and marks the moves.  For bringing up the display of another
+ * RDNA GPU.
+ *
+ * Returns 0, or EIO when a cursor change did not reach the pixel
+ * processor.
+ */
+__attribute__((unused)) static int
+display_check_cursor(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_display *display;
+	uint32_t control;
+	uint32_t pixel;
+	unsigned seconds;
+	unsigned moves;
+	unsigned step;
+	unsigned steps;
+	int32_t x;
+	int32_t y;
+	bool shown;
+	bool hidden;
+	int error;
+
+	/* The display the takeover holds. */
+	display = &device->display;
+
+	/* The test image in the first slot, which the set-up cursor reads. */
+	display_cursor_square(device, 0U);
+	amdrdna_host_path_flush(device);
 
 	/* Shows it in the middle of the screen and lets a frame take it. */
 	x = (int32_t)(display->width / 2U) - (int32_t)(DISPLAY_CURSOR_SIDE / 2U);
@@ -499,19 +596,13 @@ amdrdna_a7_cursor(
 		return EIO;
 	}
 
-	/* The cursor is ready for the GPU device's lease. */
-	display->cursor_ready = true;
+	/* Marks the moves. */
+	amdrdna_mark("A7 cursor check ok shown=1 pending=0 moves=%u hidden=1", moves);
 
-	/* Marks the result. */
-	amdrdna_mark("A7 ok cursor %ux%u at 0x%llx shown=1 pending=0 moves=%u hidden=1",
-	    DISPLAY_CURSOR_SIDE,
-	    DISPLAY_CURSOR_SIDE,
-	    (unsigned long long)amdrdna_display_address(device, display->cursor_vram),
-	    moves);
-
-	/* Succeeded: the cursor works over the console. */
+	/* Succeeded: the cursor showed, moved and hid. */
 	return 0;
 }
+
 
 /*
  * Gives the display back to the firmware's state for the reboot: the
