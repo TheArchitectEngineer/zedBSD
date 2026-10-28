@@ -19,14 +19,16 @@
 
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1662-i05 返却（ラップアップ） | [ws309](ws309/ws.md): p001〜p007・p019 cleared、p008 は queue lock 済み、次は fence 付きの task。worktree p1-ws309e | QEMU |
-| P2 | q1668-i02 停止（再開待ち） | [ws291](ws291/ws.md): RDNA で shot の直しの確かめ → big-N・subs-N（q1663 は cleared、merge d6685c55e） | 10.0.10.3 |
-| P3 | q1664 返却（p002・p003 cleared、次は p004） | [ws221](ws221/ws.md) p002〜p009: §9 は全部推し（ユーザーの回答「全部 推しで (推し)」） | VF2（10.0.30.2）が主、5330 は従、相手は 10.0.10.2 |
-| P4 | q1665-i04 返却（ラップアップ） | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
+| P1 | q1669 in-progress | [ws235](ws235/ws.md) RTL81xx の共通の driver → RTL8127（10.0.10.3）。WS309 は止めた（p001〜p007・p019 cleared、再開点は p008 の残り 1） | 10.0.10.3（時間の枠） |
+| P2 | q1670 in-progress | [ws291](ws291/ws.md) の NVIDIA の段（RTX 2070）、RDNA の案 A・B は host・QEMU まで | 10.0.10.3（時間の枠） |
+| P3 | q1664-i02 in-progress | [ws221](ws221/ws.md) p004 から（p002・p003 cleared、1GbE の TCP は達成） | VF2 |
+| P4 | q1665-i05 in-progress（p008 の 4096 の起動の直しから） | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
 | P5 | q1666-i04 停止（ユーザー） | 詳細の決まっていない WS の設計: code は書かない | — |
 | P6 | q1667-i04 返却（ラップアップ） | 実装だけ（merge しない）: WS296 全 Phase（agent/p6-ws296c 1809873bd）、WS282 p002〜p004b（agent/p6-ws282c 677277d8f）、WS284 p002 script・p003 CPU の参照（同じ branch、zedBSD の libyolox.so の build 規則は共有の userland-dynamic.mk に要る、未決）。試験は全部未実施 | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
+
+**06:15 に P1〜P4 を再開した（P5・P6 は返却のまま）。**
 
 **ラップアップ（2026-10-29 04:5x ユーザー「P2とP3は継続、それ以外をラップアップしてください。」）: P1・P4・P6 は返却、P5 は停止（ユーザー）、P3 は返却、P2 は停止（返却）（ユーザー「P2は計測を中断して停止し、再開できる地点で終了し、再開を待ちます。中断は強制的ではなく、次の計測が終わった後でいいです。」）。**
 
@@ -100,7 +102,7 @@ web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の ha
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-352 · q1670 · WS311 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-352 · q1671 · WS311 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的

@@ -143,3 +143,14 @@
 | q1667 / q1667-i04 | worktree p6-ws282c（c60cdbd44 から）、基点 main d94ceac00 | 続き | 同じ承認 | 返却・ラップアップ（WS282 p002〜p004b 実装済み・試験未実施、WS284 p002 script・p003 CPU の参照、agent/p6-ws282c 677277d8f、merge しない） |
 | q1668 / q1668-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291k`・branch `agent/p2-ws291k`、基点 main 9402d4c74） | [ws291](ws291/ws.md) p006 の続き | RDNA で shot の直しの確かめ → big-N・subs-N。ユーザーの回答（クリック、2026-10-29）「WS291 の続き (推し)」、q1663 と同じ自律の承認 | 返却（big-1000 35.5→57〜59、subs 48→39 µs、f5c01e255 → main 239e8ed7f） |
 | q1668 / q1668-i02 | worktree p2-ws291l、基点 main d94ceac00 | 続き | 同じ承認 | 停止（ユーザーの指示、lib の直し subs-1000 submit 37.6〜39.3→34.3〜35.1 ms、kernel big-1000 +2.5 %、e6283eb70 → main 3ca557953。案 A・B は設計の review 済み・未実装） |
+
+## 2026-10-29 06:15: 再開（P1〜P4）
+
+承認: 2026-10-29 ユーザー「訂正します、タイマーでP1, P2, P3, P4だけの再開です。」と、WS235（「P1は、RTL8159というPCIeの10GbEアダプタのドライバを書いてほしいです。」→ 訂正「RTL8127です。」）・WS291（「WS291 の NVIDIA の段 (推し)」）の決定。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1669 / q1669-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws235`・branch `agent/p1-ws235`、基点 main 42da8d889） | [ws235](ws235/ws.md) p001 → 実装 | RTL81xx の共通の driver（rge を参考）→ RTL8127 の拡張、10.0.10.3、受け入れは約 7 Gbit/s と Linux | in-progress |
+| q1670 / q1670-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291m`・branch `agent/p2-ws291m`、基点 main 42da8d889） | [ws291](ws291/ws.md) の NVIDIA の段 | RTX 2070 で desktop 60 fps・model 50 fps、RDNA の案 A・B は host・QEMU まで | in-progress |
+| q1664 / q1664-i02 | P3（worktree `/home/awe/zedBSD-worktrees/p3-ws221b`・branch `agent/p3-ws221b`、基点 main 42da8d889） | [ws221](ws221/ws.md) p004 から | i01 と同じ承認 | in-progress |
+| q1665 / q1665-i05 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307i`・branch `agent/p4-ws307i`、基点 main 42da8d889） | [ws307](ws307/ws.md) p008 の 4096 の起動の直しから | i01 と同じ承認 | in-progress |
