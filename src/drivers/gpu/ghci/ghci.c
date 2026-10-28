@@ -63,6 +63,16 @@ static int gpu_resource_write(void *private_data, void *opaque, void *object, ui
 static int gpu_resource_map(void *private_data, void *opaque, void *object, struct drv_gpu_mapping *mapping);
 static int resource_new(struct ghci_device *device, struct ghci_session *session, uint64_t bytes, int blob, uint32_t flags, struct ghci_resource **result);
 static int resource_range(const struct ghci_resource *resource, uint64_t offset, uint32_t bytes);
+static int memory_blob(struct ghci_device *device, struct ghci_session *session, const struct gpu_blob_create *request, struct ghci_resource **result);
+
+/*
+ * The Vulkan executor (vk/).
+ *
+ * Every kernel built with the driver links it; the host test of the
+ * driver's core links without it, and a null test then leaves the device
+ * without Vulkan, as a device without a shader unit is.
+ */
+extern int ghci_vk_attach(struct ghci_device *device) __attribute__((weak));
 
 /*
  * Starts a GHCI device whose bus fields the glue has filled.
@@ -189,6 +199,10 @@ ghci_device_stop(
 		}
 		device->gpu = NULL;
 	}
+
+	/* The executor's record goes with the node; no session of it is left. */
+	if (device->executor_ops != NULL)
+		device->executor_ops->detach(device);
 
 	/*
 	 * The processor halts and resets, the interrupt and bus mastering go,
@@ -615,10 +629,21 @@ register_device(
 	device->ops.resource_map = gpu_resource_map;
 	device->ops.share = &ghci_share_ops;
 
+	/* The Vulkan executor adds its operations and capabilities, on a device that runs shaders. */
+	if (device->executor && ghci_vk_attach != NULL) {
+		error = ghci_vk_attach(device);
+		if (error != 0) {
+			kern_logf("ghci: %s: no Vulkan executor (%d)\n", device->name, error);
+			return error;
+		}
+	}
+
 	/* Publishes the node. */
 	error = drv_gpu_register(&device->ops, device, &device->gpu);
 	if (error != 0) {
 		kern_logf("ghci: %s: not registered (%d)\n", device->name, error);
+		if (device->executor_ops != NULL)
+			device->executor_ops->detach(device);
 		return error;
 	}
 
@@ -674,6 +699,15 @@ gpu_open(
 		return error;
 	}
 
+	/* The executor's side of the open; one that fails takes the session off the list again. */
+	if (device->executor_ops != NULL) {
+		error = device->executor_ops->session_open(device, session);
+		if (error != 0) {
+			gpu_close(device, session);
+			return error;
+		}
+	}
+
 	/* Succeeded: the session is the caller's. */
 	*result = session;
 	return 0;
@@ -696,6 +730,10 @@ gpu_close(
 	/* The device and the session. */
 	device = private_data;
 	session = opaque;
+
+	/* The executor's objects go first: its devices' sessions close and its memory is let go. */
+	if (device->executor_ops != NULL && session->vk != NULL)
+		device->executor_ops->session_close(device, session);
 
 	/* The session leaves the device's list, and its resources let their memory go. */
 	mutex_lock(&device->lock);
@@ -818,9 +856,15 @@ gpu_blob_create(
 	if ((request->flags & ~BLOB_FLAGS) != 0U)
 		return ENOTSUP;
 
-	/* A blob of a renderer's memory object needs the renderer, which this device does not run yet. */
-	if (request->blob_id != 0U)
-		return ENOTSUP;
+	/* A blob of a VkDeviceMemory shows that memory; it needs the executor. */
+	if (request->blob_id != 0U) {
+		error = memory_blob(private_data, opaque, request, &resource);
+		if (error != 0)
+			return error;
+		*result = resource;
+		*resource_id = resource->resource_id;
+		return 0;
+	}
 
 	/* The memory and its record. */
 	error = resource_new(private_data, opaque, request->bytes, 1, request->flags, &resource);
@@ -977,5 +1021,49 @@ resource_range(
 		return EINVAL;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Makes the blob of one of the session's VkDeviceMemory objects: a
+ * resource that shows the object's memory and holds it.  Returns 0,
+ * ENOTSUP on a device without the executor, ENOENT for a blob id that
+ * names no memory of the session, EINVAL for a size past the memory's, or
+ * ENOMEM.
+ */
+static int
+memory_blob(
+	struct ghci_device *device,
+	struct ghci_session *session,
+	const struct gpu_blob_create *request,
+	struct ghci_resource **result)
+{
+	struct ghci_allocation *allocation;
+	int error;
+
+	/* Only the executor makes memory objects. */
+	if (device->executor_ops == NULL || session->vk == NULL)
+		return ENOTSUP;
+
+	/* The memory the id names, and a resource of it, under the device's lock. */
+	mutex_lock(&device->lock);
+
+	allocation = device->executor_ops->memory_blob(device, session, request->blob_id);
+	error = 0;
+	if (allocation == NULL) {
+		error = ENOENT;
+	} else if (request->bytes == 0U || request->bytes > allocation->bytes) {
+		error = EINVAL;
+	} else {
+		error = ghci_resource_add(device, session, allocation, 1, request->flags, result);
+	}
+
+	mutex_unlock(&device->lock);
+
+	/* No memory of that id, or no record for the resource. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the resource shows the memory. */
 	return 0;
 }

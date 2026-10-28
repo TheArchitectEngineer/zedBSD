@@ -639,6 +639,24 @@ ghci_cp_ticket(
 }
 
 /*
+ * Reports the state of a ticket for a caller that holds irq_lock (the
+ * retirement of completions, which reads several tickets in one section).
+ */
+enum ghci_ticket_state
+ghci_cp_ticket_locked(
+	struct ghci_device *device,
+	const struct ghci_ticket *ticket)
+{
+	enum ghci_ticket_state state;
+
+	/* The fence and the generations, which the caller's section keeps still. */
+	state = ticket_state(device, ticket);
+
+	/* Succeeded: the ticket's state. */
+	return state;
+}
+
+/*
  * Checks a run of packets before any is placed: every header names a
  * length of at least one dword that stays inside the run.  Returns 0, or
  * EINVAL.

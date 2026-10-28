@@ -21,6 +21,12 @@
  * minute or two exhaustions of CP_HEAP within a minute make the device
  * lost.
  *
+ * The GPU core has three recovery calls of its own: its fault makes the
+ * device lost at once, and its reset (asked only once no older owner is
+ * left) has the service thread reset the device, check that a fence of
+ * the driver's comes back, and give back what the lost device kept and
+ * what the isolated sessions held.
+ *
  * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 5,
  * what a reset keeps and clears, and the order of the recovery; section
  * 10, the faults and the watchdog).
@@ -78,6 +84,8 @@ static void hang_check(struct ghci_device *device);
 static void unlock_outer(struct ghci_device *device);
 static void placing(struct ghci_device *device, int on, unsigned fault_seen);
 static void report_dead(struct ghci_device *device, void **owners, unsigned count);
+static void core_reset_step(struct ghci_device *device);
+static int core_reset(struct ghci_device *device);
 
 /*
  * Stops the service thread and waits a bounded time for it to leave.
@@ -201,7 +209,9 @@ ghci_service_step(
 	int locked;
 	int freed;
 
-	(void)work;
+	/* The GPU core's reset, when it asked for one. */
+	if ((work & GHCI_WORK_RESET) != 0U)
+		core_reset_step(device);
 
 	/* Work that stopped moving closes the gate too. */
 	hang_check(device);
@@ -224,6 +234,10 @@ ghci_service_step(
 	/* The core hears of a lost device once every lock is let go. */
 	if (outcome == RECOVERY_LOST && device->gpu != NULL)
 		drv_gpu_report_error(device->gpu, EIO);
+
+	/* The executor's completions whose work the GPU finished, or a reset ended. */
+	if (device->executor_ops != NULL)
+		device->executor_ops->service(device);
 
 	/*
 	 * What the GPU is done with goes back.  The device's lock is only
@@ -263,6 +277,92 @@ ghci_recover_wait(
 	}
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
+}
+
+/*
+ * Takes the GPU core's fault: the device is lost from here, every ticket
+ * still pending fails, and whoever waits at the gate hears it.  Calling
+ * it again changes nothing.  The caller holds none of the device's locks.
+ */
+void
+ghci_recover_fault(
+	struct ghci_device *device)
+{
+	unsigned long irq;
+	int lost;
+
+	/* A recovery that runs ends its pass first; the loss is set under cp_lock as the recovery's is. */
+	mutex_lock(&device->cp_lock);
+
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	lost = device->state == GHCI_STATE_LOST;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+	if (!lost)
+		lose(device, "the GPU core gave it up");
+
+	mutex_unlock(&device->cp_lock);
+}
+
+/*
+ * Runs the GPU core's reset on the service thread and waits a bounded
+ * time for it.  The core calls it once no owner older than the caller is
+ * left.  The caller holds none of the device's locks.
+ *
+ * Returns 0 once the device was reset, a fence of the driver's came back
+ * and the device runs again, EIO when the reset failed (the device stays
+ * lost), or ETIMEDOUT when the service thread did not answer.
+ */
+int
+ghci_recover_reset(
+	struct ghci_device *device)
+{
+	unsigned long irq;
+	uint64_t round;
+	uint64_t sequence;
+	uint64_t deadline;
+	uint64_t now;
+	int answered;
+	int answer;
+
+	/* Asks the service thread, which alone drives a recovery. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	round = device->reset_rounds;
+	device->reset_asked = 1;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+	ghci_service_wake(device, GHCI_WORK_RESET);
+
+	/* Waits on the gate until that round is counted, or the time is up. */
+	deadline = clock_ticks() + kern_ms_to_ticks(GHCI_CORE_RESET_WAIT_MS);
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	for (;;) {
+		sequence = waitq_sequence(&device->gate_wake);
+		answered = device->reset_rounds != round;
+		if (answered)
+			break;
+		now = clock_ticks();
+		if (now >= deadline)
+			break;
+		(void)waitq_sleep(&device->gate_wake, &device->irq_lock, sequence, deadline, 0U);
+	}
+	answer = device->reset_answer;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* The service thread did not answer in time. */
+	if (!answered)
+		return ETIMEDOUT;
+
+	/* The reset failed; the device stays lost. */
+	if (answer != 0)
+		return answer;
+
+	/* Succeeded: the device runs again. */
+	return 0;
 }
 
 /*
@@ -1067,4 +1167,119 @@ unlock_outer(
 	/* The inner one first. */
 	mutex_unlock(&device->display_lock);
 	mutex_unlock(&device->lock);
+}
+
+/* Runs the GPU core's reset when it is asked for, and publishes its outcome. */
+static void
+core_reset_step(
+	struct ghci_device *device)
+{
+	unsigned long irq;
+	int asked;
+	int answer;
+
+	/* Takes the request. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	asked = device->reset_asked;
+	device->reset_asked = 0;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+	if (!asked)
+		return;
+
+	/* The reset and its checks. */
+	answer = core_reset(device);
+
+	/* The outcome, and the caller that waits on the gate. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	device->reset_answer = answer;
+	device->reset_rounds++;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+	waitq_wake_all(&device->gate_wake);
+}
+
+/*
+ * The GPU core's reset: the device is reset as a recovery resets it,
+ * with no session to find a culprit in or to replay (every owner older
+ * than the caller has closed), and the device runs again once a fence of
+ * the driver's comes back.  The memory a lost device kept and the
+ * sessions an isolation held go back then.  Returns 0, or EIO with the
+ * device lost.
+ */
+static int
+core_reset(
+	struct ghci_device *device)
+{
+	unsigned long irq;
+	unsigned fault_seen;
+	int error;
+
+	/* Every lock of the device, in their order. */
+	mutex_lock(&device->lock);
+	mutex_lock(&device->display_lock);
+	mutex_lock(&device->cp_lock);
+
+	/* The gate stays closed through the reset; the faults counted from here are new. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	fault_seen = device->fault_count;
+	device->recovering = 1;
+	device->state = GHCI_STATE_RECOVERING;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/*
+	 * The submissions the log remembers may name sessions the core's
+	 * closes retired while the device was lost; the log is emptied
+	 * before anything reads it.
+	 */
+	device->submit_first = 0U;
+	device->submit_count = 0U;
+
+	/* The reset, and the registers it keeps. */
+	error = reset_and_check(device);
+	if (error != 0) {
+		lose(device, "the core's reset did not end");
+		mutex_unlock(&device->cp_lock);
+		unlock_outer(device);
+		return EIO;
+	}
+
+	/* Every ticket still pending ends, and the ring is empty. */
+	(void)end_tickets(device);
+	ghci_cp_ring_reset(device);
+	mutex_unlock(&device->display_lock);
+
+	/* The sessions settle (the isolated ones retire), the ring runs, and a fence of the driver's comes back. */
+	ghci_vm_after_reset(device);
+	placing(device, 1, fault_seen);
+	ghci_cp_run(device);
+	error = fence_back(device);
+	if (error == 0)
+		error = ghci_vm_replay(device);
+	if (error == 0)
+		error = last_check(device, fault_seen);
+	placing(device, 0, fault_seen);
+	if (error != 0) {
+		lose(device, "no fence after the core's reset");
+		mutex_unlock(&device->cp_lock);
+		mutex_unlock(&device->lock);
+		return EIO;
+	}
+
+	/* The GPU reaches only the driver's memory now: what the lost device kept goes back. */
+	ghci_memory_release_quarantine(device);
+	mutex_unlock(&device->cp_lock);
+	mutex_unlock(&device->lock);
+
+	/* Whoever waits at the gate, for room or for a ticket wakes. */
+	waitq_wake_all(&device->ring_wake);
+	waitq_wake_all(&device->fence_wake);
+
+	/* Succeeded: the device runs again. */
+	kern_logf("ghci: %s: reset for the GPU core (reset %u)\n", device->name, device->resets);
+	return 0;
 }

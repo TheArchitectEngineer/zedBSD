@@ -346,6 +346,17 @@ ghci_vm_close(
 		if (vm->state == GHCI_VM_CLOSING)
 			break;
 
+		/*
+		 * An isolated session may still run in the GPU: nothing is placed
+		 * and nothing goes back.  The device keeps the record, with its
+		 * number, chunks and mappings, until a reset retires it.
+		 */
+		if (vm->state == GHCI_VM_ISOLATED) {
+			vm->closed = 1;
+			vm->owner = NULL;
+			break;
+		}
+
 		/* Without a walker the close waits only for the work placed until now. */
 		if (vm->flat) {
 			mutex_lock(&device->cp_lock);
@@ -582,6 +593,12 @@ ghci_vm_unmap(
 		/* A lost device, or a session a reset killed, needs no packet. */
 		if (lost || vm->state == GHCI_VM_DEAD) {
 			mapping_drop(device, mapping);
+			break;
+		}
+
+		/* An isolated session places nothing; the mapping is held until a reset ends. */
+		if (vm->state == GHCI_VM_ISOLATED) {
+			mapping->state = GHCI_MAPPING_HELD;
 			break;
 		}
 
@@ -845,6 +862,23 @@ ghci_vm_after_reset(
 			continue;
 		}
 
+		/*
+		 * The reset stopped an isolated session's work: one its owner gave
+		 * up retires, and one still owned is dead (its memory goes at its
+		 * close, as the GPU no longer reaches it).
+		 */
+		if (vm->state == GHCI_VM_ISOLATED && vm->closed) {
+			vm->counted = 0;
+			vm_retire(device, vm);
+			continue;
+		}
+		if (vm->state == GHCI_VM_ISOLATED) {
+			vm->state = GHCI_VM_DEAD;
+			vm->counted = 0;
+			vm->lost_work = 0;
+			continue;
+		}
+
 		/* A culprit, and a session whose work was thrown away, die. */
 		if (vm->state == GHCI_VM_FAULTED || (vm->lost_work && vm->state != GHCI_VM_DEAD)) {
 			vm->state = GHCI_VM_DEAD;
@@ -855,14 +889,14 @@ ghci_vm_after_reset(
 		vm->lost_work = 0;
 	}
 
-	/* Every unmap the reset ended or that passed is done. */
+	/* Every unmap the reset ended or that passed is done, and so is every mapping an isolation held. */
 	for (slot = 0U; slot < GHCI_SESSIONS; slot++) {
 		vm = device->vm[slot];
 		if (vm == NULL)
 			continue;
 		for (mapping = vm->mappings; mapping != NULL; mapping = next) {
 			next = mapping->next;
-			if (mapping->state == GHCI_MAPPING_UNMAPPING)
+			if (mapping->state == GHCI_MAPPING_UNMAPPING || mapping->state == GHCI_MAPPING_HELD)
 				mapping_drop(device, mapping);
 		}
 	}
@@ -1032,6 +1066,30 @@ ghci_vm_take_dead(
 
 	/* Succeeded: the owners to report. */
 	return count;
+}
+
+/*
+ * Isolates a session the GPU core could not confirm stopped: it takes no
+ * new work, and its unmaps and close place nothing and give nothing back
+ * until a reset that ends (ghci_vm_after_reset()).  A session that is no
+ * longer open needs nothing.
+ */
+void
+ghci_vm_isolate(
+	struct ghci_device *device,
+	struct ghci_vm *vm)
+{
+	/* The state changes under both locks, as every state change of a session does. */
+	mutex_lock(&device->lock);
+	mutex_lock(&device->cp_lock);
+
+	if (vm->state == GHCI_VM_OPEN || vm->state == GHCI_VM_REPLAY_WAIT) {
+		vm->state = GHCI_VM_ISOLATED;
+		kern_logf("ghci: %s: session %u isolated\n", device->name, (unsigned)vm->slot);
+	}
+
+	mutex_unlock(&device->cp_lock);
+	mutex_unlock(&device->lock);
 }
 
 /*

@@ -31,9 +31,10 @@
  * The states of a job marker.
  *
  * A FREE marker belongs to nobody.  RESERVED holds a completion that the
- * core has not published yet.  COMMITTED is bound to a fence value and
- * completes when the fence passes.  FAILED completes with an error at the
- * next retirement, whatever the fence says.
+ * core has not published yet.  COMMITTED is bound to a ticket (a fence
+ * sequence and its reset generation) and completes when the ticket is
+ * answered.  FAILED completes with an error at the next retirement,
+ * whatever the ticket says.
  */
 enum ghci_job_state {
 	GHCI_JOB_FREE = 0,
@@ -68,24 +69,41 @@ struct ghci_range_map {
 };
 
 /*
+ * The answer a judge gives for the ticket of a committed marker: not yet,
+ * passed, or ended by a reset or the loss of the device.
+ */
+enum ghci_job_answer {
+	GHCI_JOB_WAITING = 0,
+	GHCI_JOB_PASSED,
+	GHCI_JOB_LOST
+};
+
+/*
  * One job marker of a session.
  *
  * completion is the core's opaque record, held from the reservation until
- * the marker is retired or withdrawn.  fence is meaningful once the
- * marker is COMMITTED: the device fence value whose passing completes it.
+ * the marker is retired or withdrawn.  seq and generation are meaningful
+ * once the marker is COMMITTED: the ticket whose answer completes it.
  */
 struct ghci_job_marker {
 	enum ghci_job_state state;
 	void *completion;
-	uint32_t fence;
+	uint64_t seq;
+	uint64_t generation;
 };
+
+/*
+ * Answers the ticket of a committed marker; context is the retirer's.
+ * The judge runs with the table's lock held and must not sleep.
+ */
+typedef enum ghci_job_answer (*ghci_job_judge)(void *context, uint64_t seq, uint64_t generation);
 
 /*
  * The job markers of one session.
  *
  * reserved counts the RESERVED markers and committed the COMMITTED and
  * FAILED ones, so the room left is GHCI_JOB_MARKERS less both.  The
- * session's lock protects the whole table.
+ * caller's lock protects the whole table.
  */
 struct ghci_job_table {
 	struct ghci_job_marker markers[GHCI_JOB_MARKERS];
@@ -133,12 +151,12 @@ void ghci_jobs_init(struct ghci_job_table *table);
 int ghci_jobs_reserve(struct ghci_job_table *table, void *completion, unsigned *index);
 
 /*
- * Binds a reserved marker to a fence value.  passed says whether the
- * fence has already passed (completed is the last completed value): the
- * marker is then freed at once and the caller completes it.  Returns 0,
- * or ESTALE when the marker does not hold completion in the reserved state.
+ * Binds a reserved marker to a ticket.  A sequence of 0 says that no work
+ * is outstanding: the marker is then freed at once, *passed is set and the
+ * caller completes it.  Returns 0, or ESTALE when the marker does not hold
+ * completion in the reserved state.
  */
-int ghci_jobs_commit(struct ghci_job_table *table, unsigned index, void *completion, uint32_t fence, uint32_t completed, int *passed);
+int ghci_jobs_commit(struct ghci_job_table *table, unsigned index, void *completion, uint64_t seq, uint64_t generation, int *passed);
 
 /*
  * Withdraws a reserved marker (fault 0: freed, nothing completes) or ends
@@ -155,12 +173,12 @@ unsigned ghci_jobs_capacity(const struct ghci_job_table *table);
 int ghci_jobs_index(const struct ghci_job_table *table, const void *token, unsigned *index);
 
 /*
- * Frees every marker that is done: a COMMITTED one whose fence has passed
- * completed, and a FAILED one.  Each freed marker's completion goes to
- * done[] and its error (0 or EIO) to errors[], at most capacity of them.
- * Returns the number written.
+ * Frees every marker that is done: a COMMITTED one whose ticket the judge
+ * answers (passed: error 0, lost: EIO), and a FAILED one (EIO).  Each
+ * freed marker's completion goes to done[] and its error to errors[], at
+ * most capacity of them.  Returns the number written.
  */
-unsigned ghci_jobs_retire(struct ghci_job_table *table, uint32_t completed, void **done, int *errors, unsigned capacity);
+unsigned ghci_jobs_retire(struct ghci_job_table *table, ghci_job_judge judge, void *context, void **done, int *errors, unsigned capacity);
 
 /* Turns every COMMITTED marker into FAILED, for a device that lost its work. */
 void ghci_jobs_fail(struct ghci_job_table *table);
