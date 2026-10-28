@@ -214,6 +214,7 @@
 static int state_topology(struct amdrdna_vk_pm4 *pm4, uint32_t topology, bool primitive_shader);
 static void state_vertex_program(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *vertex, uint64_t vertex_table, uint32_t base_vertex, uint32_t first_instance, uint32_t instance_mask);
 static void state_primitive_shader(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *vertex, uint64_t vertex_table, uint32_t base_vertex, uint32_t first_instance, uint32_t instance_mask, const uint32_t *culling);
+static void state_vertex_data(struct amdrdna_vk_pm4 *pm4, const struct amdrdna_vk_program *vertex, uint64_t vertex_table, uint32_t base_vertex, uint32_t first_instance, uint32_t instance_mask, const uint32_t *culling);
 static void state_start_graphics(struct amdrdna_vk_pm4 *pm4);
 static void state_start_compute(struct amdrdna_vk_pm4 *pm4);
 static bool state_blend_factor(uint32_t factor, uint32_t *code);
@@ -827,12 +828,7 @@ state_vertex_program(
 	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_VERTEX_CODE_LOW, words, 4U);
 
 	/* The table, the base vertex, the first instance and the instance mask. */
-	words[0] = (uint32_t)vertex_table;
-	words[1] = (uint32_t)(vertex_table >> 32);
-	words[2] = base_vertex;
-	words[3] = first_instance;
-	words[4] = instance_mask;
-	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_VERTEX_USER_DATA, words, 5U);
+	state_vertex_data(pm4, vertex, vertex_table, base_vertex, first_instance, instance_mask, NULL);
 
 	/* A legacy vertex program in wave32. */
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, AMDRDNA_CX_STAGES_LEGACY_VERTEX);
@@ -862,9 +858,7 @@ state_primitive_shader(
 	uint32_t instance_mask,
 	const uint32_t *culling)
 {
-	uint32_t words[AMDRDNA_GFX10_NGG_CULL_USER_SGPRS];
-	uint32_t count;
-	uint32_t index;
+	uint32_t words[2];
 	uint32_t stages;
 	uint32_t factor;
 
@@ -882,23 +876,8 @@ state_primitive_shader(
 	words[1] = vertex->registers.inputs;
 	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_RESOURCES, words, 2U);
 
-	/*
-	 * The table in s[0:1]; the base vertex, the first instance and the
-	 * instance mask in s8 .. s10; the culling's words in s11 .. s16.
-	 */
-	words[0] = (uint32_t)vertex_table;
-	words[1] = (uint32_t)(vertex_table >> 32);
-	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_TABLE, words, 2U);
-	words[0] = base_vertex;
-	words[1] = first_instance;
-	words[2] = instance_mask;
-	count = AMDRDNA_GFX10_NGG_USER_SGPRS;
-	if (vertex->registers.primitive_culling != 0U) {
-		for (index = 0U; index < AMDRDNA_GFX10_NGG_CULL_USER_SGPRS - AMDRDNA_GFX10_NGG_USER_SGPRS; index++)
-			words[AMDRDNA_GFX10_NGG_USER_SGPRS + index] = culling[index];
-		count = AMDRDNA_GFX10_NGG_CULL_USER_SGPRS;
-	}
-	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_USER_DATA, words, count);
+	/* The table, the base vertex, the first instance, the instance mask and the culling's words. */
+	state_vertex_data(pm4, vertex, vertex_table, base_vertex, first_instance, instance_mask, culling);
 
 	/*
 	 * RADV's CUs and late allocation, the parameter cache oversubscribed;
@@ -934,6 +913,80 @@ state_primitive_shader(
 	if (vertex->registers.primitive_culling != 0U)
 		stages = AMDRDNA_CX_STAGES_PRIMITIVE;
 	amdrdna_vk_pm4_set_context(pm4, AMDRDNA_CX_STAGES, stages);
+}
+
+/*
+ * Writes a vertex program's user SGPRs: a legacy one's table, base
+ * vertex, first instance and instance mask in one run; a primitive
+ * shader's table in s[0:1], the base vertex, the first instance and the
+ * instance mask in s8 .. s10 and, when it culls, the six words of
+ * amdrdna_vk_state_culling() (culling) in s11 .. s16.
+ */
+static void
+state_vertex_data(
+	struct amdrdna_vk_pm4 *pm4,
+	const struct amdrdna_vk_program *vertex,
+	uint64_t vertex_table,
+	uint32_t base_vertex,
+	uint32_t first_instance,
+	uint32_t instance_mask,
+	const uint32_t *culling)
+{
+	uint32_t words[AMDRDNA_GFX10_NGG_CULL_USER_SGPRS];
+	uint32_t count;
+	uint32_t index;
+
+	/* A legacy vertex program's run. */
+	if (vertex->registers.primitive_shader == 0U) {
+		words[0] = (uint32_t)vertex_table;
+		words[1] = (uint32_t)(vertex_table >> 32);
+		words[2] = base_vertex;
+		words[3] = first_instance;
+		words[4] = instance_mask;
+		amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_VERTEX_USER_DATA, words, 5U);
+		return;
+	}
+
+	/* A primitive shader's table, then its user SGPRs. */
+	words[0] = (uint32_t)vertex_table;
+	words[1] = (uint32_t)(vertex_table >> 32);
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_TABLE, words, 2U);
+	words[0] = base_vertex;
+	words[1] = first_instance;
+	words[2] = instance_mask;
+	count = AMDRDNA_GFX10_NGG_USER_SGPRS;
+	if (vertex->registers.primitive_culling != 0U) {
+		for (index = 0U; index < AMDRDNA_GFX10_NGG_CULL_USER_SGPRS - AMDRDNA_GFX10_NGG_USER_SGPRS; index++)
+			words[AMDRDNA_GFX10_NGG_USER_SGPRS + index] = culling[index];
+		count = AMDRDNA_GFX10_NGG_CULL_USER_SGPRS;
+	}
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PRIMITIVE_USER_DATA, words, count);
+}
+
+/*
+ * Writes only what changes between two draws of the same programs, after
+ * amdrdna_vk_state_programs() wrote everything of them for an earlier
+ * draw: the vertex program's user SGPRs (as there) and the pixel
+ * program's table.
+ */
+void
+amdrdna_vk_state_program_data(
+	struct amdrdna_vk_pm4 *pm4,
+	const struct amdrdna_vk_program *vertex,
+	uint64_t vertex_table,
+	uint64_t fragment_table,
+	uint32_t base_vertex,
+	uint32_t first_instance,
+	uint32_t instance_mask,
+	const uint32_t *culling)
+{
+	uint32_t words[2];
+
+	/* The vertex program's, then the pixel program's table. */
+	state_vertex_data(pm4, vertex, vertex_table, base_vertex, first_instance, instance_mask, culling);
+	words[0] = (uint32_t)fragment_table;
+	words[1] = (uint32_t)(fragment_table >> 32);
+	amdrdna_vk_pm4_set_shader_run(pm4, AMDRDNA_SH_PIXEL_USER_DATA, words, 2U);
 }
 
 /*

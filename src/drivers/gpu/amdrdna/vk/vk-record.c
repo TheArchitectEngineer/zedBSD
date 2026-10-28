@@ -42,7 +42,7 @@
 #define RECORD_COLOUR_TAG		2U
 #define RECORD_COLOUR_WORDS		4U
 
-static int record_decode(struct amdrdna_vk_session *session, uint32_t opcode, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
+static int record_decode(struct amdrdna_vk_session *session, uint32_t opcode, struct i915_wire_reader *reader, struct amdrdna_vk_record *record, uint8_t *push);
 static int record_hold(struct amdrdna_vk_session *session, struct amdrdna_vk_record *record, enum i915_vk_object_kind kind, uint64_t identity);
 static int record_pipeline(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_viewport(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
@@ -57,10 +57,11 @@ static int record_copy(struct amdrdna_vk_session *session, uint32_t opcode, stru
 static int record_clear(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_colour(struct i915_wire_reader *reader, uint32_t *words);
 static int record_barrier(struct amdrdna_vk_session *session, struct i915_wire_reader *reader);
-static int record_push(struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
+static int record_push(struct i915_wire_reader *reader, struct amdrdna_vk_record *record, uint8_t *bytes);
 static int record_begin_pass(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_line_width(struct i915_wire_reader *reader);
-static int record_append(struct amdrdna_vk_command_buffer *command, const struct amdrdna_vk_record *record);
+static int record_append(struct amdrdna_vk_command_buffer *command, struct amdrdna_vk_record *record, const uint8_t *push);
+static int record_push_keep(struct amdrdna_vk_command_buffer *command, struct amdrdna_vk_record *record, const uint8_t *push);
 static void record_drop(struct amdrdna_vk_record *record);
 
 /*
@@ -78,6 +79,7 @@ amdrdna_vk_record_route(
 {
 	struct amdrdna_vk_command_buffer *command;
 	struct amdrdna_vk_record record;
+	uint8_t push[AMDRDNA_VK_PUSH_BYTES];
 	uint64_t identity;
 	int refused;
 	int error;
@@ -123,7 +125,7 @@ amdrdna_vk_record_route(
 	/* Reads the record to its end; a record that does not decode leaves the stream unreadable. */
 	kern_memset(&record, 0, sizeof(record));
 	record.opcode = opcode;
-	refused = record_decode(session, opcode, reader, &record);
+	refused = record_decode(session, opcode, reader, &record, push);
 	if (refused == EINVAL || reader->error != 0) {
 		record_drop(&record);
 		return EINVAL;
@@ -149,7 +151,7 @@ amdrdna_vk_record_route(
 		return 0;
 
 	/* Appends it; one that cannot be kept fails the recording. */
-	error = record_append(command, &record);
+	error = record_append(command, &record, push);
 	if (error != 0) {
 		record_drop(&record);
 		if (command->error == 0)
@@ -161,16 +163,18 @@ amdrdna_vk_record_route(
 }
 
 /*
- * Decodes one record's arguments.  Returns EINVAL when they did not decode
- * (the stream is then unreadable), another error when they decoded but
- * cannot be run.
+ * Decodes one record's arguments (a push constant record's bytes into
+ * push, AMDRDNA_VK_PUSH_BYTES long).  Returns EINVAL when they did not
+ * decode (the stream is then unreadable), another error when they decoded
+ * but cannot be run.
  */
 static int
 record_decode(
 	struct amdrdna_vk_session *session,
 	uint32_t opcode,
 	struct i915_wire_reader *reader,
-	struct amdrdna_vk_record *record)
+	struct amdrdna_vk_record *record,
+	uint8_t *push)
 {
 	int error;
 
@@ -220,7 +224,7 @@ record_decode(
 		error = record_barrier(session, reader);
 		break;
 	case GPU_OP_CMD_PUSH_CONSTANTS:
-		error = record_push(reader, record);
+		error = record_push(reader, record, push);
 		break;
 	case GPU_OP_CMD_BEGIN_RENDER_PASS:
 		error = record_begin_pass(session, reader, record);
@@ -869,12 +873,14 @@ record_barrier(
 
 /*
  * vkCmdPushConstants: [layout][stages][offset][size][count]{bytes, padded
- * to words}; the bytes copied into a run of the record's own.
+ * to words}; the bytes read into bytes (AMDRDNA_VK_PUSH_BYTES long), which
+ * the record's command buffer keeps when it keeps the record.
  */
 static int
 record_push(
 	struct i915_wire_reader *reader,
-	struct amdrdna_vk_record *record)
+	struct amdrdna_vk_record *record,
+	uint8_t *bytes)
 {
 	uint32_t offset;
 	uint32_t size;
@@ -890,12 +896,7 @@ record_push(
 		return EINVAL;
 
 	/* The bytes. */
-	if (size != 0U) {
-		record->push = kern_malloc(size);
-		if (record->push == NULL)
-			return ENOMEM;
-	}
-	i915_vkc_read_bytes(reader, record->push, size);
+	i915_vkc_read_bytes(reader, bytes, size);
 	if (reader->error != 0)
 		return EINVAL;
 	record->first = offset;
@@ -991,14 +992,27 @@ record_begin_pass(
 	return 0;
 }
 
-/* Appends a record to a command buffer's array, growing it when full. */
+/*
+ * Appends a record to a command buffer's array, growing it when full; a
+ * push constant record's bytes (at push) go to the command buffer's push
+ * bytes first.
+ */
 static int
 record_append(
 	struct amdrdna_vk_command_buffer *command,
-	const struct amdrdna_vk_record *record)
+	struct amdrdna_vk_record *record,
+	const uint8_t *push)
 {
 	struct amdrdna_vk_record *grown;
 	uint32_t capacity;
+	int error;
+
+	/* A push constant record's bytes. */
+	if (record->opcode == GPU_OP_CMD_PUSH_CONSTANTS) {
+		error = record_push_keep(command, record, push);
+		if (error != 0)
+			return error;
+	}
 
 	/* Grows a full array: twice as large, the records moved over. */
 	if (command->record_count == command->record_capacity) {
@@ -1026,7 +1040,48 @@ record_append(
 	return 0;
 }
 
-/* Lets a record that is not kept go: its objects and its runs. */
+/*
+ * Keeps a push constant record's count bytes (at push) after the command
+ * buffer's push bytes so far, growing their run when it is full; the
+ * record gives where.
+ */
+static int
+record_push_keep(
+	struct amdrdna_vk_command_buffer *command,
+	struct amdrdna_vk_record *record,
+	const uint8_t *push)
+{
+	uint8_t *grown;
+	uint32_t capacity;
+
+	/* Grows a run without room: twice as large, the bytes moved over. */
+	if (record->count > command->push_capacity - command->push_used) {
+		if (command->push_capacity >= RECORD_MAX * AMDRDNA_VK_PUSH_BYTES)
+			return ENOMEM;
+		capacity = RECORD_FIRST_CAPACITY * AMDRDNA_VK_PUSH_BYTES;
+		if (command->push_capacity != 0U)
+			capacity = command->push_capacity * 2U;
+		grown = kern_malloc(capacity);
+		if (grown == NULL)
+			return ENOMEM;
+		if (command->push_used != 0U)
+			kern_memcpy(grown, command->push_bytes, command->push_used);
+		if (command->push_bytes != NULL)
+			kern_free(command->push_bytes);
+		command->push_bytes = grown;
+		command->push_capacity = capacity;
+	}
+
+	/* The bytes take the next place. */
+	kern_memcpy(command->push_bytes + command->push_used, push, record->count);
+	record->push_at = command->push_used;
+	command->push_used += record->count;
+
+	/* Succeeded: the bytes are kept. */
+	return 0;
+}
+
+/* Lets a record that is not kept go: its objects and its run of regions. */
 static void
 record_drop(
 	struct amdrdna_vk_record *record)
@@ -1038,11 +1093,8 @@ record_drop(
 		(void)amdrdna_vk_object_release(record->objects[index]);
 	record->object_count = 0U;
 
-	/* Its runs. */
+	/* Its run of regions. */
 	if (record->regions != NULL)
 		kern_free(record->regions);
-	if (record->push != NULL)
-		kern_free(record->push);
 	record->regions = NULL;
-	record->push = NULL;
 }
