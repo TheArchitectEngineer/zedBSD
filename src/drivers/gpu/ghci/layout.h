@@ -15,8 +15,9 @@
  *   (the same for h and d).  A row is w_l texels of ps bytes, or
  *   ceil(w_l / 4) blocks of a compressed format, each four texel rows
  *   high, rounded up to a multiple of 64 bytes.  A multisampled image (2D,
- *   one level) has rows of P = roundup(width, 2) x S x ps bytes, the S
- *   samples of a pixel side by side, not rounded further.  A level's plane
+ *   one level) has rows of at least P = roundup(width, 2) x S x ps bytes,
+ *   the S samples of a pixel side by side, rounded up to 64 bytes in the
+ *   same way.  A level's plane
  *   (one slice) is its rows; a level is its planes (a 3D level's d_l
  *   slices one after the other), rounded up to 64 bytes; a layer holds the
  *   levels back to back, and the layers are a layer stride apart, the sum
@@ -70,11 +71,14 @@ ghci_layout_extent(
 }
 
 /*
- * Reports the bytes of one row of a level: rounded up to the alignment,
- * or a multisampled image's pitch P.
+ * Reports the bytes of one row of a level, rounded up to the alignment;
+ * a multisampled image's row holds an even number of pixels, each with
+ * its samples.
  *
- * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 12.11,
- * Multisampled images: P = roundup(width, 2) x S x ps).
+ * Values referenced: amaterrace-gpu 288c459 docs/ghci.md (section 12.11,
+ * Multisampled images: P_min = roundup(width, 2) x S x ps, the hardware
+ * takes row_pitch_bytes as given, roundup(P_min, 64) recommended; section
+ * 8.4, the attachment row pitch).
  */
 static inline uint32_t
 ghci_layout_row(
@@ -84,14 +88,12 @@ ghci_layout_row(
 	uint32_t width;
 	uint32_t bytes;
 
-	/* A multisampled image's pixels, an even number of them, each with its samples. */
+	/* Whole 4x4 blocks of a compressed format, a multisampled image's pixels with their samples, or texels. */
 	width = ghci_layout_extent(image->width, level);
-	if (image->samples > 1u && !image->block)
-		return (width + 1u) / 2u * 2u * image->samples * image->texel_bytes;
-
-	/* Whole 4x4 blocks of a compressed format, or texels. */
 	if (image->block)
 		bytes = (width + 3u) / 4u * image->texel_bytes;
+	else if (image->samples > 1u)
+		bytes = (width + 1u) / 2u * 2u * image->samples * image->texel_bytes;
 	else
 		bytes = width * image->texel_bytes;
 

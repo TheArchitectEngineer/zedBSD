@@ -96,6 +96,24 @@
 /* The events whose words one submission's packets may write. */
 #define GHCI_VK_SUBMIT_EVENTS		64U
 
+/*
+ * The generation of a ticket that names no fence but the device's held
+ * submissions: its seq is the serial of the last one held when the
+ * ticket was taken, and a job marker or a frame with it waits until that
+ * submission is placed (it then takes that submission's ticket) or fails
+ * with it.
+ */
+#define GHCI_VK_HELD_GENERATION		UINT64_MAX
+
+/*
+ * The barriers around a run of a submission's packets: at the head, the
+ * host's writes (code, descriptors, buffers) seen; at the tail, the GPU's
+ * writes in memory before the fence after them.
+ */
+#define GHCI_VK_HEAD_FLAGS		(GHCI_BARRIER_INVAL_ICACHE | GHCI_BARRIER_INVAL_TEX | GHCI_BARRIER_INVAL_L1_DATA | \
+					 GHCI_BARRIER_INVAL_DESCRIPTOR)
+#define GHCI_VK_TAIL_FLAGS		(GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_FLUSH_L2)
+
 /* The most bytes of recorded commands one command buffer keeps. */
 #define GHCI_VK_RECORD_MAX		(16U << 20)
 
@@ -169,6 +187,7 @@ enum ghci_vk_recording {
 
 struct ghci_vk_session;
 struct ghci_vk_object;
+struct ghci_vk_hold;
 
 /*
  * The driver's own transfer programs (vk-meta.c): a compute program that
@@ -392,12 +411,15 @@ struct ghci_vk_retired {
 
 /*
  * One VkDevice: its GHCI session, its executor heaps (code and data, the
- * bytes of each), the runs let go that wait for a ticket, and the ticket
- * of the last work it placed in the ring.  It lives from vkCreateDevice
- * to vkDestroyDevice (or the node session's close).  next, last and
- * submitted change under irq_lock; the rest belongs to the session's
- * commands.  meta are the driver's transfer programs placed in its code
- * heap at their first use, which go with the heap.
+ * bytes of each), the runs let go that wait for a ticket, the ticket of
+ * the last work it placed in the ring, and the submissions it holds back
+ * (holds, oldest first; hold_serial is the serial of the last one held
+ * and hold_count how many are held).  It lives from vkCreateDevice to
+ * vkDestroyDevice (or the node session's close).  next, last, submitted,
+ * hold_serial and hold_count change under irq_lock; the rest belongs to
+ * whoever holds the session's hold_lock.  meta are the driver's transfer
+ * programs placed in its code heap at their first use, which go with the
+ * heap.
  */
 struct ghci_vk_device {
 	struct ghci_vk_session *session;
@@ -410,6 +432,9 @@ struct ghci_vk_device {
 	int submitted;
 	int robust;
 	struct ghci_vk_meta_pipeline meta[GHCI_VK_META_KINDS];
+	struct ghci_vk_hold *holds;
+	uint64_t hold_serial;
+	unsigned hold_count;
 };
 
 /*
@@ -455,10 +480,16 @@ struct ghci_vk_image {
 	uint64_t offset;
 };
 
-/* A VkFence: signaled on the host, or by the ticket of the submission that signals it. */
+/*
+ * A VkFence: signaled on the host, or by the ticket of the submission
+ * that signals it.  held says that the submission is held back and has
+ * no ticket yet; lost that it failed before it was placed.
+ */
 struct ghci_vk_fence {
 	int signaled;
 	int submitted;
+	int held;
+	int lost;
 	struct ghci_ticket ticket;
 };
 
@@ -807,13 +838,28 @@ struct ghci_vk_temp {
 };
 
 /*
+ * A point where a submission's packets may be cut in pieces placed apart
+ * (a dword between commands, outside a render pass): at, and the events
+ * (count of them from first in the submission's waits) that must be set
+ * before anything after it is placed; a plain cut has none.
+ */
+struct ghci_vk_cut {
+	uint32_t at;
+	uint32_t first;
+	uint32_t count;
+};
+
+/*
  * A submission being made: the packets of its command buffers (between
  * the barriers at its head and its tail) and the runs of temporary
  * memory they read (the hardware tables, render pass descriptions,
  * clear colours, index lists and data), taken of the device's data heap
  * a chunk at a time (chunk_used and chunk_bytes are of the one being
- * filled), and the events its packets write.  The runs go back once the
- * submission's ticket has passed, and the events then know that ticket.
+ * filled), the events its packets write (and the dwords of each one's
+ * first and last write), and its cuts in order of their dwords with the events
+ * they wait for (waiting is the number of cuts with events).  The runs
+ * go back once the submission's last ticket has passed, and the events
+ * know the ticket of the piece that wrote them.
  */
 struct ghci_vk_submission {
 	uint32_t *words;
@@ -825,7 +871,38 @@ struct ghci_vk_submission {
 	uint32_t chunk_used;
 	uint32_t chunk_bytes;
 	uint64_t events[GHCI_VK_SUBMIT_EVENTS];
+	uint32_t event_first[GHCI_VK_SUBMIT_EVENTS];
+	uint32_t event_last[GHCI_VK_SUBMIT_EVENTS];
 	uint32_t event_count;
+	struct ghci_vk_cut *cuts;
+	uint32_t cut_count;
+	uint32_t cut_capacity;
+	uint64_t *waits;
+	uint32_t wait_count;
+	uint32_t wait_capacity;
+	uint32_t waiting;
+};
+
+/*
+ * A submission a device holds back until the events it waits for are
+ * set (or until the earlier held submissions of the device are placed):
+ * its packets, of which the first placed dwords are in the ring (in
+ * pieces, each with its fence; ticket is the last piece's, when placed
+ * says one was), the cut the next piece starts at or after, the VkFence
+ * it signals (its identity, 0 for none), its serial among the device's
+ * held submissions, and the host bytes it takes of the session's budget
+ * while it is held.
+ */
+struct ghci_vk_hold {
+	struct ghci_vk_hold *next;
+	struct ghci_vk_submission submission;
+	uint32_t placed;
+	uint32_t cut;
+	uint64_t fence;
+	uint64_t serial;
+	struct ghci_ticket ticket;
+	int ticketed;
+	uint64_t charged;
 };
 
 /*
@@ -869,7 +946,8 @@ struct ghci_vk_object {
  * (the decoder's notification) completes once it has run; a context
  * fence of a timeline waits for the work of the timeline's device placed
  * until it ran, after the earlier frames of its timeline.  A frame with
- * nothing to wait for has ticket.seq 0; failed ends it with an error.
+ * nothing to wait for has ticket.seq 0; one behind held submissions has
+ * a ticket of GHCI_VK_HELD_GENERATION; failed ends it with an error.
  */
 struct ghci_vk_frame {
 	struct ghci_vk_frame *next;
@@ -884,12 +962,16 @@ struct ghci_vk_frame {
  *
  * The object table, the arena, the budget the objects have taken
  * (budget_used, of GHCI_VK_BUDGET_BYTES) and the opcodes for the log
- * belong to the session's commands.  Under irq_lock: next (the executor's list), the
- * devices, the device of each timeline, the job markers (and the
- * timeline each was reserved on), the queued frames, completing (the
- * completions a retirement took and has not yet reported to the core),
- * the ticket of the session's last work, and the marks the GPU core's
- * stop and isolation set.
+ * belong to whoever holds hold_lock: the session's commands, which take
+ * it for each frame, and the service thread, which only tries it to
+ * place the submissions the session's devices hold back.  Under
+ * irq_lock: next (the executor's list), the devices, the device of each
+ * timeline, the job markers (and the timeline each was reserved on), the
+ * queued frames, completing (the completions a retirement took and has
+ * not yet reported to the core), the submissions held (hold_count, of
+ * every device) and the service rounds that look at them (holding), the
+ * ticket of the session's last work, and the marks the GPU core's stop
+ * and isolation set.
  */
 struct ghci_vk_session {
 	struct ghci_device *device;
@@ -908,6 +990,9 @@ struct ghci_vk_session {
 	struct ghci_vk_frame *frames;
 	unsigned frame_count;
 	unsigned completing;
+	struct mutex hold_lock;
+	unsigned hold_count;
+	unsigned holding;
 	struct ghci_ticket last;
 	int submitted;
 	int stopping;
@@ -1005,6 +1090,7 @@ void ghci_vk_pass_release(struct ghci_vk_object *object);
 int ghci_vk_execute(struct ghci_vk_session *session, struct ghci_vk_device *device, const VkSubmitInfo *submits, uint64_t count, struct ghci_vk_submission *submission);
 int ghci_vk_execute_clear(struct ghci_vk_session *session, struct ghci_vk_device *device, uint64_t va, uint64_t bytes, struct ghci_vk_submission *submission);
 void ghci_vk_submission_end(struct ghci_vk_device *device, struct ghci_vk_submission *submission, const struct ghci_ticket *ticket, int placed);
+void ghci_vk_submission_written(struct ghci_vk_device *device, const struct ghci_vk_submission *submission, uint32_t end, const struct ghci_ticket *ticket);
 
 /* vk-meta.c: the driver's own transfer programs. */
 int ghci_vk_meta_compile(const struct ghci_caps *caps, enum ghci_vk_meta_kind kind, struct ghci_gsi1_program **programs);
@@ -1027,5 +1113,8 @@ int ghci_vk_frame_queue(struct ghci_vk_session *session, struct ghci_vk_frame *f
 void ghci_vk_submitted(struct ghci_vk_device *device, const struct ghci_ticket *ticket);
 int ghci_vk_session_pending(struct ghci_vk_session *session);
 void ghci_vk_session_fail(struct ghci_vk_session *session);
+int ghci_vk_holds_advance(struct ghci_vk_session *session, struct ghci_vk_device *device, int wait);
+void ghci_vk_holds_fail(struct ghci_vk_session *session, struct ghci_vk_device *device);
+int ghci_vk_held_ticket(struct ghci_vk_device *device, struct ghci_ticket *ticket);
 
 #endif

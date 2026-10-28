@@ -14,9 +14,10 @@
  * hand; the binds a draw or dispatch needs; indirect draws on a device
  * without CAP_INDIRECT_DRAW; barriers; transfers with and without the
  * blitter; queries, timestamps and events; clears; a submission larger
- * than the ring; the vertex buffer's range; a triangle fan; and the heap
+ * than the ring; the vertex buffer's range; a triangle fan; the heap
  * runs a destroyed pipeline keeps until the submission that used it has
- * passed.
+ * passed; and the submissions held back behind a wait for an event the
+ * host or an earlier submission sets (design section 11.4).
  *
  * It is compiled within ghci-pipeline-host-test.c (which includes it at
  * its end) for that file's helpers, and runs when the binary is given
@@ -44,6 +45,9 @@
 
 /* The most packets of one submission the scenes look at. */
 #define X_OPS_MAX			256U
+
+/* The fills of the buffer's first word the hold scenes count, at most. */
+#define X_FILLS_MAX			512U
 
 static int x_open(struct node *node, enum model_profile profile);
 static void x_record(const struct node *node, uint64_t commands);
@@ -84,6 +88,17 @@ static void scene_x_pass_rules(void);
 static void scene_x_layers(void);
 static void x_fault_hook(unsigned sleep, void *argument);
 static void scene_x_partial(void);
+static void x_wait(uint64_t commands, uint64_t event);
+static void x_fill(uint64_t commands, uint32_t value);
+static int x_host_event(struct node *node, uint32_t opcode, uint64_t event);
+static uint32_t x_fence_status(struct node *node, uint64_t fence);
+static int x_create(struct node *node, uint32_t opcode, uint32_t type, uint64_t identity);
+static unsigned x_fills(unsigned mark, uint32_t *values);
+static unsigned x_ring_fences(unsigned mark);
+static int x_other_open(struct node *node);
+static void scene_x_hold(void);
+static void scene_x_hold_fail(void);
+static void scene_x_hold_pieces(void);
 
 /* Runs the scenes of the execution and reports.  Returns the exit status. */
 static int
@@ -122,6 +137,9 @@ execute_main(
 	scene_x_pass_rules();
 	scene_x_layers();
 	scene_x_partial();
+	scene_x_hold();
+	scene_x_hold_fail();
+	scene_x_hold_pieces();
 	model_fini();
 
 	/* The counts. */
@@ -1544,7 +1562,7 @@ scene_x_queries(void)
 	error = run(&node);
 	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_EVENT_SET, "queries: the GPU set the event");
 
-	/* ResetEvent on the GPU, then a wait for the event that nothing sets: refused. */
+	/* ResetEvent on the GPU, then a wait for the event that nothing sets: held until the host sets it. */
 	x_record(&node, ID_X_COMMANDS);
 	x_command(GPU_OP_CMD_RESET_EVENT, ID_X_COMMANDS);
 	put64(ID_X_EVENT);
@@ -1558,10 +1576,13 @@ scene_x_queries(void)
 	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_EVENT_RESET, "queries: the GPU reset the event");
 	for (index = 0; index < 2; index++) {
 		if (index == 1) {
+			fences = model_count_commands(GHCI_OP_FENCE);
 			begin(&node, GPU_OP_SET_EVENT);
 			put64(ID_DEVICE);
 			put64(ID_X_EVENT);
-			(void)run(&node);
+			error = run(&node);
+			expect(error == 0 && model_count_commands(GHCI_OP_FENCE) == fences + 1U,
+			       "queries: the host's set places the held submission");
 		}
 		x_record(&node, ID_X_COMMANDS);
 		x_command(GPU_OP_CMD_WAIT_EVENTS, ID_X_COMMANDS);
@@ -1580,8 +1601,8 @@ scene_x_queries(void)
 		fences = model_count_commands(GHCI_OP_FENCE);
 		error |= x_submit(&node, ID_X_COMMANDS, 0U);
 		if (index == 0)
-			expect(error == ENOTSUP && model_count_commands(GHCI_OP_FENCE) == fences,
-			       "queries: a wait for an event nothing sets is refused (the hold of R10 is not made)");
+			expect(error == 0 && model_count_commands(GHCI_OP_FENCE) == fences + 1U,
+			       "queries: a wait for an event nothing sets is held after the part before it");
 		else
 			expect(error == 0 && model_count_commands(GHCI_OP_FENCE) == fences + 1U, "queries: a wait for an event the host set runs");
 	}
@@ -2421,7 +2442,8 @@ scene_x_ranges(void)
  * The word a wait of the GPU watches: the client's vkResetEvent on the
  * host after the submission that sets and waits for the event does not
  * stop the ring (the wait watches the submission's own word); a wait
- * after the submission reset the event it set is refused.
+ * after the submission reset the event it set is held: the part before
+ * the wait is placed, and the rest once the host sets the event.
  */
 static void
 scene_x_events(void)
@@ -2478,7 +2500,7 @@ scene_x_events(void)
 	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_SUCCESS && model_count_commands(GHCI_OP_WAIT_FENCE) == waits + 1U &&
 	       model.waiting_fence == 0 && model.faults == 0U, "events: the host's reset after the submission does not stop the wait");
 
-	/* Set, reset, then a wait in one submission: nothing would set the word, refused. */
+	/* Set, reset, then a wait in one submission: the part before the wait is placed, the rest held. */
 	x_record(&node, ID_X_COMMANDS);
 	x_command(GPU_OP_CMD_SET_EVENT, ID_X_COMMANDS);
 	put64(ID_X_EVENT);
@@ -2500,8 +2522,27 @@ scene_x_events(void)
 	put64(0U);
 	error = x_end(&node, ID_X_COMMANDS);
 	fences = model_count_commands(GHCI_OP_FENCE);
-	expect(error == 0 && x_submit(&node, ID_X_COMMANDS, 0U) == ENOTSUP && model_count_commands(GHCI_OP_FENCE) == fences,
-	       "events: a wait after the submission reset the event is refused");
+	waits = model_count_commands(GHCI_OP_WAIT_FENCE);
+	error |= x_submit(&node, ID_X_COMMANDS, ID_X_FENCE);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	begin(&node, GPU_OP_GET_FENCE_STATUS);
+	put64(ID_DEVICE);
+	put64(ID_X_FENCE);
+	error |= run(&node);
+	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_NOT_READY && model_count_commands(GHCI_OP_FENCE) == fences + 4U &&
+	       model_count_commands(GHCI_OP_WAIT_FENCE) == waits && model.waiting_fence == 0,
+	       "events: a wait after the submission reset the event: the set, the reset and their fence placed, the rest held");
+	begin(&node, GPU_OP_SET_EVENT);
+	put64(ID_DEVICE);
+	put64(ID_X_EVENT);
+	error |= run(&node);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	begin(&node, GPU_OP_GET_FENCE_STATUS);
+	put64(ID_DEVICE);
+	put64(ID_X_FENCE);
+	error |= run(&node);
+	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_SUCCESS && model_count_commands(GHCI_OP_FENCE) == fences + 5U,
+	       "events: the host's set places the rest, and the fence signals after it");
 	node_close(&node);
 	stop("events");
 }
@@ -3023,4 +3064,508 @@ scene_x_partial(void)
 	expect(state == GHCI_TICKET_FAILED && record->retired == NULL, "partial: the reset ends the ticket and the memory goes back");
 	node_close(&node);
 	stop("partial");
+}
+
+/* Appends vkCmdWaitEvents of one event, from the host's stage to the transfer's, with no barrier. */
+static void
+x_wait(
+	uint64_t commands,
+	uint64_t event)
+{
+	x_command(GPU_OP_CMD_WAIT_EVENTS, commands);
+	put32(1U);
+	put64(1U);
+	put64(event);
+	put32(VK_PIPELINE_STAGE_HOST_BIT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	put32(0U);
+	put64(0U);
+	put32(0U);
+	put64(0U);
+	put32(0U);
+	put64(0U);
+}
+
+/* Appends vkCmdFillBuffer of the buffer's first word with a value. */
+static void
+x_fill(
+	uint64_t commands,
+	uint32_t value)
+{
+	x_command(GPU_OP_CMD_FILL_BUFFER, commands);
+	put64(ID_BUFFER);
+	put64(0U);
+	put64(4U);
+	put32(value);
+}
+
+/* Runs vkSetEvent, vkResetEvent or vkGetEventStatus on the host.  Returns what the frame returned. */
+static int
+x_host_event(
+	struct node *node,
+	uint32_t opcode,
+	uint64_t event)
+{
+	begin(node, opcode);
+	put64(ID_DEVICE);
+	put64(event);
+	return run(node);
+}
+
+/* Reports vkGetFenceStatus of a fence (UINT32_MAX when the frame failed). */
+static uint32_t
+x_fence_status(
+	struct node *node,
+	uint64_t fence)
+{
+	begin(node, GPU_OP_GET_FENCE_STATUS);
+	put64(ID_DEVICE);
+	put64(fence);
+	if (run(node) != 0)
+		return UINT32_MAX;
+	return reply32(node, 4U);
+}
+
+/* Creates a fence or an event (flags 0).  Returns 0, or 1. */
+static int
+x_create(
+	struct node *node,
+	uint32_t opcode,
+	uint32_t type,
+	uint64_t identity)
+{
+	begin(node, opcode);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(type);
+	put64(0U);
+	put32(0U);
+	tail(identity);
+	if (run(node) != 0 || reply32(node, 4U) != 0U)
+		return 1;
+	return 0;
+}
+
+/* Collects the values of the fills of the buffer's first word the model ran after mark.  Returns the count. */
+static unsigned
+x_fills(
+	unsigned mark,
+	uint32_t *values)
+{
+	unsigned index;
+	unsigned count;
+
+	count = 0U;
+	for (index = mark; index < model.command_count && count < X_FILLS_MAX; index++) {
+		if (model.commands[index].opcode != GHCI_OP_FILL_BUFFER || model.commands[index].words[3] != 4U)
+			continue;
+		values[count] = model.commands[index].words[4];
+		count++;
+	}
+	return count;
+}
+
+/* Counts the fences with the interrupt (the ends of what was placed in the ring) the model ran after mark. */
+static unsigned
+x_ring_fences(
+	unsigned mark)
+{
+	unsigned index;
+	unsigned count;
+
+	count = 0U;
+	for (index = mark; index < model.command_count; index++) {
+		if (model.commands[index].opcode == GHCI_OP_FENCE && (model.commands[index].words[5] & GHCI_FENCE_FLAG_IRQ) != 0U)
+			count++;
+	}
+	return count;
+}
+
+/*
+ * Opens a second node session on the started device with a VkDevice, its
+ * queue on timeline 1, a command pool with one primary command buffer,
+ * a fence and an event (the same identities as the first session's).
+ * Returns 0, or 1.
+ */
+static int
+x_other_open(
+	struct node *node)
+{
+	int error;
+
+	/* The session and vkCreateDevice: one queue of family 0, no feature. */
+	error = node_open(node);
+	if (error != 0)
+		return 1;
+	begin(node, GPU_OP_CREATE_DEVICE);
+	put64(ID_PHYSICAL);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(1U);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(0U);
+	put32(1U);
+	put64(1U);
+	put32(0x3f800000U);
+	put32(0U);
+	put64(0U);
+	put32(0U);
+	put64(0U);
+	put64(0U);
+	tail(ID_DEVICE);
+	if (run(node) != 0 || reply32(node, 4U) != 0U)
+		return 1;
+
+	/* The queue on timeline 1, the pool and its buffer. */
+	begin(node, GPU_OP_GET_DEVICE_QUEUE2);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2);
+	put64(1U);
+	put32(GPU_OP_RECORD_QUEUE_TIMELINE);
+	put64(0U);
+	put32(1U);
+	put32(0U);
+	put32(0U);
+	put32(0U);
+	put64(1U);
+	put64(ID_X_QUEUE);
+	if (run(node) != 0)
+		return 1;
+	begin(node, GPU_OP_CREATE_COMMAND_POOL);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(0U);
+	tail(ID_X_POOL);
+	if (run(node) != 0 || reply32(node, 4U) != 0U)
+		return 1;
+	begin(node, GPU_OP_ALLOCATE_COMMAND_BUFFERS);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO);
+	put64(0U);
+	put64(ID_X_POOL);
+	put32(VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+	put32(1U);
+	put64(1U);
+	put64(ID_X_COMMANDS);
+	if (run(node) != 0 || reply32(node, 4U) != 0U)
+		return 1;
+
+	/* The fence and the event. */
+	if (x_create(node, GPU_OP_CREATE_FENCE, VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, ID_X_FENCE) != 0)
+		return 1;
+	return x_create(node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_X_EVENT);
+}
+
+/*
+ * The hold: a submission that waits for an event the host has not set
+ * places nothing after the wait and holds the device's later submission
+ * too, with no WAIT_FENCE in the ring; their fences, a job marker and a
+ * context fence frame behind them wait; the host's reset keeps it
+ * waiting, and the host's set places both, in order, after which the
+ * fences, the marker and the frame complete.  An earlier submission's
+ * SetEvent that the GPU has not run yet holds the wait until the service
+ * thread sees it run.  Another session's work runs meanwhile, and the
+ * close of the session ends what it holds with an error.
+ */
+static void
+scene_x_hold(void)
+{
+	struct drv_gpu_completion *completion[3];
+	static char completions[3];
+	uint32_t values[X_FILLS_MAX];
+	struct node other;
+	struct node node;
+	unsigned completed;
+	unsigned waits;
+	unsigned mark;
+	unsigned count;
+	void *token;
+	int error;
+
+	/* The device, an event, two more fences. */
+	for (count = 0U; count < 3U; count++)
+		completion[count] = (struct drv_gpu_completion *)(void *)&completions[count];
+	error = x_open(&node, MODEL_FULL);
+	error |= x_create(&node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_X_EVENT);
+	error |= x_create(&node, GPU_OP_CREATE_FENCE, VK_STRUCTURE_TYPE_FENCE_CREATE_INFO, ID_X_FENCE + 1U);
+	expect(error == 0, "hold: objects");
+
+	/* A wait and a fill, then a fill alone, each with a fence; a marker and a frame behind them. */
+	x_record(&node, ID_X_COMMANDS);
+	x_wait(ID_X_COMMANDS, ID_X_EVENT);
+	x_fill(ID_X_COMMANDS, 0x101U);
+	error = x_end(&node, ID_X_COMMANDS);
+	x_record(&node, ID_X_COMMANDS + 1U);
+	x_fill(ID_X_COMMANDS + 1U, 0x102U);
+	error |= x_end(&node, ID_X_COMMANDS + 1U);
+	mark = model.command_count;
+	waits = model_count_commands(GHCI_OP_WAIT_FENCE);
+	completed = stub.completions;
+	error |= x_submit(&node, ID_X_COMMANDS, ID_X_FENCE);
+	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_SUCCESS, "hold: the submission that waits is taken");
+	error = device.ops.jobs->reserve(&device, node.session, 1U, completion[0], &token);
+	error |= device.ops.jobs->commit(&device, node.session, token, completion[0]);
+	error |= x_submit(&node, ID_X_COMMANDS + 1U, ID_X_FENCE + 1U);
+	error |= device.ops.commands->submit(&device, node.session, NULL, 0U, GPU_COMMAND_CONTEXT_FENCE, 1U, completion[1]);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && x_fills(mark, values) == 0U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_NOT_READY &&
+	       x_fence_status(&node, ID_X_FENCE + 1U) == (uint32_t)VK_NOT_READY && stub.completions == completed &&
+	       model_count_commands(GHCI_OP_WAIT_FENCE) == waits && model.waiting_fence == 0,
+	       "hold: no fill, no WAIT_FENCE; the fences, the marker and the frame wait");
+	expect(device.ops.recovery->stop_poll(&device, node.session) == EAGAIN, "hold: the stop poll waits for held work");
+
+	/* The host's reset before any set: still held. */
+	error = x_host_event(&node, GPU_OP_RESET_EVENT, ID_X_EVENT);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && x_fills(mark, values) == 0U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_NOT_READY,
+	       "hold: the host's reset before the set keeps it waiting");
+
+	/* The host's set: both placed in order; then the fences, the marker and the frame. */
+	error = x_host_event(&node, GPU_OP_SET_EVENT, ID_X_EVENT);
+	count = x_fills(mark, values);
+	expect(error == 0 && count == 2U && values[0] == 0x101U && values[1] == 0x102U && model.waiting_fence == 0,
+	       "hold: the host's set places the held fill, then the later submission's");
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS && x_fence_status(&node, ID_X_FENCE + 1U) == (uint32_t)VK_SUCCESS &&
+	       stub.completions == completed + 2U && stub.last_completion_error == 0,
+	       "hold: the fences, the marker and the frame complete after the work ran");
+
+	/* An earlier submission's set the GPU has not run: the wait is held until the service sees it run. */
+	error = x_host_event(&node, GPU_OP_RESET_EVENT, ID_X_EVENT);
+	x_record(&node, ID_X_COMMANDS + 2U);
+	x_command(GPU_OP_CMD_SET_EVENT, ID_X_COMMANDS + 2U);
+	put64(ID_X_EVENT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	error |= x_end(&node, ID_X_COMMANDS + 2U);
+	x_record(&node, ID_X_COMMANDS);
+	x_wait(ID_X_COMMANDS, ID_X_EVENT);
+	x_fill(ID_X_COMMANDS, 0x201U);
+	error |= x_end(&node, ID_X_COMMANDS);
+	mark = model.command_count;
+	model_hold(1);
+	error |= x_submit(&node, ID_X_COMMANDS + 2U, 0U);
+	error |= x_submit(&node, ID_X_COMMANDS, ID_X_FENCE);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && x_fills(mark, values) == 0U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_NOT_READY,
+	       "hold: a wait for an earlier submission's set the GPU has not run is held");
+	model_hold(0);
+	model_tick();
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	count = x_fills(mark, values);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(count == 1U && values[0] == 0x201U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS &&
+	       model.waiting_fence == 0, "hold: the service places the rest once the earlier set ran; its fence signals");
+
+	/* Another session's work runs while this one holds. */
+	error = x_host_event(&node, GPU_OP_RESET_EVENT, ID_X_EVENT);
+	x_record(&node, ID_X_COMMANDS);
+	x_wait(ID_X_COMMANDS, ID_X_EVENT);
+	x_fill(ID_X_COMMANDS, 0x301U);
+	error |= x_end(&node, ID_X_COMMANDS);
+	mark = model.command_count;
+	error |= x_submit(&node, ID_X_COMMANDS, ID_X_FENCE);
+	error |= x_other_open(&other);
+	x_record(&other, ID_X_COMMANDS);
+	x_command(GPU_OP_CMD_SET_EVENT, ID_X_COMMANDS);
+	put64(ID_X_EVENT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	error |= x_end(&other, ID_X_COMMANDS);
+	error |= x_submit(&other, ID_X_COMMANDS, ID_X_FENCE);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && x_fence_status(&other, ID_X_FENCE) == (uint32_t)VK_SUCCESS && x_fills(mark, values) == 0U &&
+	       x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_NOT_READY && model.waiting_fence == 0,
+	       "hold: another session's submission runs while one is held; the ring does not wait");
+
+	/* The close ends the held work and the marker behind it with an error. */
+	completed = stub.completions;
+	error = device.ops.jobs->reserve(&device, node.session, 1U, completion[2], &token);
+	error |= device.ops.jobs->commit(&device, node.session, token, completion[2]);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && stub.completions == completed, "hold: a marker behind the held work waits");
+	node_close(&node);
+	expect(stub.completions == completed + 1U && stub.last_completion_error == EIO && x_fills(mark, values) == 0U,
+	       "hold: the close ends the held work and its marker with an error");
+	node_close(&other);
+	stop("hold");
+}
+
+/*
+ * The failures of held work: a reset that ends the device's placed work
+ * (its GHCI session dies) fails the held submission behind it: its fence
+ * is lost and its marker ends with an error, and nothing of it runs; the
+ * isolation of the session fails what it holds.
+ */
+static void
+scene_x_hold_fail(void)
+{
+	struct drv_gpu_completion *completion[2];
+	static char completions[2];
+	uint32_t values[X_FILLS_MAX];
+	struct node node;
+	unsigned completed;
+	unsigned mark;
+	void *token;
+	int error;
+
+	/* The device and an event. */
+	completion[0] = (struct drv_gpu_completion *)(void *)&completions[0];
+	completion[1] = (struct drv_gpu_completion *)(void *)&completions[1];
+	error = x_open(&node, MODEL_FULL);
+	error |= x_create(&node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_X_EVENT);
+	expect(error == 0, "hold fail: objects");
+
+	/* Placed work the processor holds, then held work with its fence and a marker. */
+	x_record(&node, ID_X_COMMANDS);
+	x_fill(ID_X_COMMANDS, 0x401U);
+	error = x_end(&node, ID_X_COMMANDS);
+	x_record(&node, ID_X_COMMANDS + 1U);
+	x_wait(ID_X_COMMANDS + 1U, ID_X_EVENT);
+	x_fill(ID_X_COMMANDS + 1U, 0x402U);
+	error |= x_end(&node, ID_X_COMMANDS + 1U);
+	mark = model.command_count;
+	completed = stub.completions;
+	model_hold(1);
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	error |= x_submit(&node, ID_X_COMMANDS + 1U, ID_X_FENCE);
+	error |= device.ops.jobs->reserve(&device, node.session, 1U, completion[0], &token);
+	error |= device.ops.jobs->commit(&device, node.session, token, completion[0]);
+	expect(error == 0 && stub.completions == completed, "hold fail: held behind placed work");
+
+	/* A fault in the placed work; the reset ends it, and the held work fails. */
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x2000U, 0);
+	model_hold(0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(stub.completions == completed + 1U && stub.last_completion_error == EIO &&
+	       x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_ERROR_DEVICE_LOST && x_fills(mark, values) == 0U,
+	       "hold fail: a reset that ends the placed work fails the held work: its fence is lost, its marker EIO");
+	node_close(&node);
+	stop("hold fail");
+
+	/* The isolation of the session fails what it holds. */
+	error = x_open(&node, MODEL_FULL);
+	error |= x_create(&node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_X_EVENT);
+	x_record(&node, ID_X_COMMANDS);
+	x_wait(ID_X_COMMANDS, ID_X_EVENT);
+	x_fill(ID_X_COMMANDS, 0x403U);
+	error |= x_end(&node, ID_X_COMMANDS);
+	error |= x_submit(&node, ID_X_COMMANDS, ID_X_FENCE);
+	completed = stub.completions;
+	error |= device.ops.jobs->reserve(&device, node.session, 1U, completion[1], &token);
+	error |= device.ops.jobs->commit(&device, node.session, token, completion[1]);
+	error |= device.ops.recovery->isolate(&device, node.session);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && stub.completions == completed + 1U && stub.last_completion_error == EIO &&
+	       session_of(&node)->hold_count == 0U, "hold fail: the isolation fails the held work and its marker");
+	node_close(&node);
+	stop("hold fail isolated");
+}
+
+/*
+ * A held submission larger than half of a 4 KiB ring, which an earlier
+ * submission's set on the GPU lets go: the service thread places it in
+ * pieces the ring takes at once (each with its fence), in order, and its
+ * fence signals after the last.
+ */
+static void
+scene_x_hold_pieces(void)
+{
+	uint32_t values[X_FILLS_MAX];
+	struct node node;
+	unsigned rounds;
+	unsigned count;
+	unsigned mark;
+	unsigned index;
+	unsigned heads;
+	unsigned tails;
+	int held;
+	int error;
+
+	/* A 4 KiB ring and an event. */
+	test_ring_bytes = 4096U;
+	error = x_open(&node, MODEL_FULL);
+	test_ring_bytes = 0U;
+	error |= x_create(&node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_X_EVENT);
+	expect(error == 0, "hold pieces: objects");
+
+	/* The set, then the wait and 400 fills (2000 dwords). */
+	x_record(&node, ID_X_COMMANDS);
+	x_command(GPU_OP_CMD_SET_EVENT, ID_X_COMMANDS);
+	put64(ID_X_EVENT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	error = x_end(&node, ID_X_COMMANDS);
+	x_record(&node, ID_X_COMMANDS + 1U);
+	x_wait(ID_X_COMMANDS + 1U, ID_X_EVENT);
+	for (index = 0U; index < 400U; index++)
+		x_fill(ID_X_COMMANDS + 1U, 0x1000U + index);
+	error |= x_end(&node, ID_X_COMMANDS + 1U);
+	mark = model.command_count;
+	model_hold(1);
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	error |= x_submit(&node, ID_X_COMMANDS + 1U, ID_X_FENCE);
+	expect(error == 0 && x_fills(mark, values) == 0U, "hold pieces: held behind the set");
+
+	/* The set runs; the service places the rest in pieces. */
+	model_hold(0);
+	model_tick();
+	for (rounds = 0U; rounds < 16U && x_fills(mark, values) < 400U; rounds++) {
+		model_tick();
+		ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	}
+	count = x_fills(mark, values);
+	held = count == 400U;
+	for (index = 0U; index < count && held; index++) {
+		if (values[index] != 0x1000U + index)
+			held = 0;
+	}
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(held && x_ring_fences(mark) >= 1U + 4U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS &&
+	       model.waiting_fence == 0,
+	       "hold pieces: 400 fills in order, in pieces each with its fence; the fence signals after the last");
+
+	/* Each piece shows the GPU the host's writes at its head and puts the GPU's in memory at its tail. */
+	heads = 0U;
+	tails = 0U;
+	for (index = mark; index < model.command_count; index++) {
+		if (model.commands[index].opcode != GHCI_OP_BARRIER || model.commands[index].words[1] != 0U)
+			continue;
+		if (model.commands[index].words[3] == GHCI_VK_HEAD_FLAGS)
+			heads++;
+		if (model.commands[index].words[3] == GHCI_VK_TAIL_FLAGS)
+			tails++;
+	}
+	expect(heads == tails && heads + 1U >= x_ring_fences(mark), "hold pieces: a head barrier and a tail barrier around each piece");
+
+	/* A wait inside a render pass holds the submission from where the pass begins, never inside it. */
+	error = x_host_event(&node, GPU_OP_RESET_EVENT, ID_X_EVENT);
+	x_record(&node, ID_X_COMMANDS);
+	x_fill(ID_X_COMMANDS, 0x501U);
+	x_begin_pass(ID_X_COMMANDS, 64U, 32U);
+	x_wait(ID_X_COMMANDS, ID_X_EVENT);
+	x_command(GPU_OP_CMD_END_RENDER_PASS, ID_X_COMMANDS);
+	error |= x_end(&node, ID_X_COMMANDS);
+	mark = model.command_count;
+	error |= x_submit(&node, ID_X_COMMANDS, ID_X_FENCE);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	count = x_fills(mark, values);
+	expect(error == 0 && count == 1U && values[0] == 0x501U && model_count_commands(GHCI_OP_BEGIN_RENDER_PASS) == 0U &&
+	       x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_NOT_READY,
+	       "hold pieces: a wait inside a render pass: the fill before the pass placed, the pass held");
+	error = x_host_event(&node, GPU_OP_SET_EVENT, ID_X_EVENT);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && model_count_commands(GHCI_OP_BEGIN_RENDER_PASS) == 1U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS,
+	       "hold pieces: the host's set places the pass whole");
+	node_close(&node);
+	stop("hold pieces");
 }

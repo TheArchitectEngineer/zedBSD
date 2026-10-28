@@ -1684,12 +1684,12 @@ scene_memory(void)
 	       reply64(&node, 36U) == 1728U && reply64(&node, 44U) == 128U, "memory: subresource layout");
 
 	/*
-	 * Multisampled layouts (ghci.md section 12.11: rows of P = roundup(width,
-	 * 2) x S x ps, not rounded to 64; the level, and so the layer, rounded up
-	 * to 64): 5 x 3 R8G8B8A8 with 4 samples, rows of 6 x 4 x 4 = 96, a plane
-	 * of 288, layers of 320; 7 x 5 R8 with 2 samples, rows of 8 x 2 = 16, a
-	 * plane of 80, layers of 128; 30 x 10 with one sample keeps its rows of
-	 * 128.
+	 * Multisampled layouts (ghci.md sections 8.4 and 12.11: rows of
+	 * roundup(P_min, 64) with P_min = roundup(width, 2) x S x ps): 5 x 3
+	 * R8G8B8A8 with 4 samples, P_min 6 x 4 x 4 = 96, rows of 128, a plane
+	 * and layers of 384; 7 x 5 R8 with 2 samples, P_min 8 x 2 = 16, rows of
+	 * 64, a plane and layers of 320; 30 x 10 with one sample keeps its rows
+	 * of 128.
 	 */
 	memset(&layout, 0, sizeof(layout));
 	layout.texel_bytes = 4U;
@@ -1699,14 +1699,14 @@ scene_memory(void)
 	layout.levels = 1U;
 	layout.layers = 2U;
 	layout.samples = 4U;
-	expect(ghci_layout_row(&layout, 0U) == 96U && ghci_layout_plane(&layout, 0U) == 288U && ghci_layout_layer_stride(&layout) == 320U &&
-	       ghci_layout_size(&layout) == 640U, "memory: a 4-sample 5 x 3 layout, rows of 96, layers of 320");
+	expect(ghci_layout_row(&layout, 0U) == 128U && ghci_layout_plane(&layout, 0U) == 384U && ghci_layout_layer_stride(&layout) == 384U &&
+	       ghci_layout_size(&layout) == 768U, "memory: a 4-sample 5 x 3 layout, rows of 128, layers of 384");
 	layout.texel_bytes = 1U;
 	layout.width = 7U;
 	layout.height = 5U;
 	layout.samples = 2U;
-	expect(ghci_layout_row(&layout, 0U) == 16U && ghci_layout_plane(&layout, 0U) == 80U && ghci_layout_layer_stride(&layout) == 128U,
-	       "memory: a 2-sample 7 x 5 R8 layout, rows of 16, layers of 128");
+	expect(ghci_layout_row(&layout, 0U) == 64U && ghci_layout_plane(&layout, 0U) == 320U && ghci_layout_layer_stride(&layout) == 320U,
+	       "memory: a 2-sample 7 x 5 R8 layout, rows of 64, layers of 320");
 	layout.texel_bytes = 4U;
 	layout.width = 30U;
 	layout.height = 10U;

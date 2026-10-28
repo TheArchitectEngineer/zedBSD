@@ -33,9 +33,18 @@
  * refuse the whole submission (EINVAL); a command the device cannot do
  * (an indirect draw without CAP_INDIRECT_DRAW, a partial clear) or that
  * would read past its buffer (indirect records, indices) is skipped, and
- * the log shows it once per command buffer.  A wait for an event
- * nothing earlier in the submission sets refuses the submission
- * (ENOTSUP).
+ * the log shows it once per command buffer.
+ *
+ * A wait for an event that nothing earlier in the submission sets cuts
+ * the submission there (before the render pass it is in): the queue
+ * places the packets before the cut and holds the rest back until the
+ * event is set (vk-queue.c).  Cuts without events, between commands
+ * outside a render pass every CUT_SPACING dwords or more (an eighth of
+ * the ring at most), let a held submission go into the ring in pieces
+ * the ring has room for.  The GPU may lose a session's binds between two
+ * pieces (a reset, or a clear of new memory with the driver's program),
+ * so a command buffer binds everything again after a cut, and after the
+ * begin of a render pass, where a wait inside the pass cuts it.
  *
  * Without the blitter, the transfers are the driver's own compute
  * programs (vk-meta.c), and so are, on every device, the copy of query
@@ -94,6 +103,10 @@
 
 /* The events of one submission whose words its packets write. */
 #define EVENTS_MAX			GHCI_VK_SUBMIT_EVENTS
+
+/* The least dwords between two cuts without events, and the most events the cuts of a submission wait for. */
+#define CUT_SPACING			4096U
+#define CUT_WAITS_MAX			65536U
 
 /* The bytes of a query's slot (its result, then its availability word). */
 #define QUERY_SLOT_BYTES		16U
@@ -271,24 +284,27 @@ struct slice_target {
 
 /*
  * The last value one submission's packets wrote to an event's word, at
- * the point being made, and the bus address of the word of the
- * submission's temporary memory that its last SetEvent's fence also set
- * (0 after a ResetEvent).  A wait watches that word: the client cannot
- * write it (the host's vkSetEvent and vkResetEvent write the event's own
- * word alone), so the wait cannot be made to stop the ring.
+ * the point being made, the bus address of the word of the submission's
+ * temporary memory that its last SetEvent's fence also set (0 after a
+ * ResetEvent), and the dwords of the submission's first and last write
+ * of it.  A wait watches that word: the client cannot write it (the
+ * host's vkSetEvent and vkResetEvent write the event's own word alone),
+ * so the wait cannot be made to stop the ring.
  */
 struct event_write {
 	uint64_t identity;
 	uint32_t value;
 	uint64_t private_bus;
+	uint32_t first_at;
+	uint32_t last_at;
 };
 
 /*
  * One submission being made: the session and device, the submission's
  * packets and temporary memory, the state of the command buffer being
- * walked and its render pass, the hardware tables of the bind being
- * made, the events written, and the first error, which refuses the
- * submission.
+ * walked and its render pass (pass_at is the dword its begin starts at),
+ * the hardware tables of the bind being made, the events written, and
+ * the first error, which refuses the submission.
  */
 struct exec {
 	struct ghci_vk_session *session;
@@ -298,6 +314,7 @@ struct exec {
 	uint32_t chunk_offset;
 	struct buffer_state *state;
 	struct pass_state pass;
+	uint32_t pass_at;
 	struct ghci_vk_tables tables;
 	struct event_write events[EVENTS_MAX];
 	uint32_t event_count;
@@ -311,6 +328,7 @@ static void command_convert(struct exec *exec, uint32_t number, struct i915_wire
 static void skip_command(struct exec *exec, const char *reason);
 static void refuse(struct exec *exec, int error, const char *reason);
 static void put(struct exec *exec, const uint32_t *words, uint32_t count);
+static void cut_mark(struct exec *exec, uint32_t at, const uint64_t *events, uint32_t count);
 static int temp_take(struct exec *exec, uint32_t bytes, uint32_t alignment, uint64_t *va, uint8_t **view);
 static uint32_t read32(struct i915_wire_reader *reader);
 static uint64_t read64(struct i915_wire_reader *reader);
@@ -416,7 +434,6 @@ ghci_vk_execute(
 	uint32_t words[GHCI_DW_BARRIER];
 	uint64_t index;
 	uint32_t at;
-	uint32_t flags;
 	int error;
 
 	/* The submission's record. */
@@ -428,8 +445,7 @@ ghci_vk_execute(
 	exec->submission = submission;
 
 	/* The head: what the host wrote is seen. */
-	flags = GHCI_BARRIER_INVAL_ICACHE | GHCI_BARRIER_INVAL_TEX | GHCI_BARRIER_INVAL_L1_DATA | GHCI_BARRIER_INVAL_DESCRIPTOR;
-	put(exec, words, ghci_cmd_barrier(words, 0U, 0U, flags));
+	put(exec, words, ghci_cmd_barrier(words, 0U, 0U, GHCI_VK_HEAD_FLAGS));
 
 	/* Each command buffer of each submission, in order, until one refuses the submission. */
 	for (index = 0U; index < count && exec->error == 0; index++) {
@@ -444,13 +460,15 @@ ghci_vk_execute(
 	}
 
 	/* The tail: the GPU's writes are in memory before the fence. */
-	flags = GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_FLUSH_L2;
-	put(exec, words, ghci_cmd_barrier(words, 0U, 0U, flags));
+	put(exec, words, ghci_cmd_barrier(words, 0U, 0U, GHCI_VK_TAIL_FLAGS));
 
-	/* The events the packets write wait for the submission's ticket. */
+	/* The events the packets write wait for the ticket of the piece that writes them. */
 	submission->event_count = exec->event_count;
-	for (at = 0U; at < exec->event_count; at++)
+	for (at = 0U; at < exec->event_count; at++) {
 		submission->events[at] = exec->events[at].identity;
+		submission->event_first[at] = exec->events[at].first_at;
+		submission->event_last[at] = exec->events[at].last_at;
+	}
 
 	/* The record goes; the packets and memory are the submission's. */
 	error = exec->error;
@@ -549,7 +567,7 @@ ghci_vk_execute_clear(
  * of ghci_cp_submit_placed(); with no ticket, a submission that was not
  * placed, at once, and one placed with no ticket to wait for stays until
  * the device's heap goes), the events its packets write wait for the
- * ticket, and the packets' room is freed.
+ * ticket, and the packets' room and its cuts are freed.
  */
 void
 ghci_vk_submission_end(
@@ -581,7 +599,37 @@ ghci_vk_submission_end(
 	/* The arrays. */
 	kern_free(submission->words);
 	kern_free(submission->temps);
+	kern_free(submission->cuts);
+	kern_free(submission->waits);
 	kern_memset(submission, 0, sizeof(*submission));
+}
+
+/*
+ * Records that a piece of a submission, its packets up to the dword end,
+ * was placed with ticket: every event the submission writes before end
+ * waits for that ticket (an event first written in an earlier piece
+ * waits for the later ticket, which passes after its own).
+ */
+void
+ghci_vk_submission_written(
+	struct ghci_vk_device *device,
+	const struct ghci_vk_submission *submission,
+	uint32_t end,
+	const struct ghci_ticket *ticket)
+{
+	struct ghci_vk_object *object;
+	uint32_t index;
+
+	/* Each event written before end. */
+	for (index = 0U; index < submission->event_count; index++) {
+		if (submission->event_first[index] >= end)
+			continue;
+		object = ghci_vk_object_find(device->session, GHCI_VK_EVENT, submission->events[index]);
+		if (object == NULL)
+			continue;
+		object->as.event.written = *ticket;
+		object->as.event.gpu_written = 1;
+	}
 }
 
 /*
@@ -621,6 +669,10 @@ buffer_convert(
 	reader.base = commands->bytes;
 	reader.size = commands->used;
 	while (reader.offset < reader.size && reader.error == 0 && exec->error == 0) {
+		/* Between commands outside a render pass, the submission may be cut. */
+		if (!secondary && !exec->pass.active)
+			cut_mark(exec, exec->submission->used, NULL, 0U);
+
 		number = read32(&reader);
 		read_skip(&reader, COMMAND_HEAD_BYTES - 4U);
 		command_convert(exec, number, &reader);
@@ -894,6 +946,113 @@ put(
 	/* The packet after the others. */
 	kern_memcpy(submission->words + submission->used, words, (size_t)count * 4U);
 	submission->used += count;
+}
+
+/*
+ * Cuts the submission at the dword at: with events, a cut whose events
+ * must be set before anything after it is placed (merged into a cut
+ * already there); without, a cut that only lets a held submission be
+ * placed in pieces, made only a spacing (CUT_SPACING, an eighth of the
+ * ring at most) after the head and the last cut.  The command buffer
+ * binds everything again after a cut outside a render pass.  The cuts
+ * stay in order of their dwords.
+ */
+static void
+cut_mark(
+	struct exec *exec,
+	uint32_t at,
+	const uint64_t *events,
+	uint32_t count)
+{
+	struct ghci_vk_submission *submission;
+	struct ghci_vk_cut *cuts;
+	struct ghci_vk_cut *last;
+	uint64_t *waits;
+	uint32_t capacity;
+	uint32_t spacing;
+
+	/* A submission already refused. */
+	if (exec->error != 0)
+		return;
+
+	/* The last cut, and the spacing of plain cuts: an eighth of the ring at most. */
+	submission = exec->submission;
+	last = NULL;
+	if (submission->cut_count != 0U)
+		last = &submission->cuts[submission->cut_count - 1U];
+	spacing = exec->session->device->ring.dwords / 8U;
+	if (spacing > CUT_SPACING || spacing == 0U)
+		spacing = CUT_SPACING;
+
+	/* A plain cut only past the spacing: not near the head, nor near the last cut. */
+	if (count == 0U && at < spacing)
+		return;
+	if (count == 0U && last != NULL && at - last->at < spacing)
+		return;
+
+	/* Never behind the last cut. */
+	if (last != NULL && at < last->at) {
+		refuse(exec, EINVAL, "a wait for an event before the last cut");
+		return;
+	}
+
+	/* Room for the events. */
+	if (count > CUT_WAITS_MAX - submission->wait_count) {
+		refuse(exec, ENOMEM, "a submission that waits for more events than it keeps");
+		return;
+	}
+	if (submission->wait_count + count > submission->wait_capacity) {
+		capacity = submission->wait_capacity == 0U ? EVENTS_MAX : submission->wait_capacity;
+		while (capacity < submission->wait_count + count)
+			capacity <<= 1;
+		waits = kern_malloc((size_t)capacity * sizeof(*waits));
+		if (waits == NULL) {
+			exec->error = ENOMEM;
+			return;
+		}
+		if (submission->wait_count != 0U)
+			kern_memcpy(waits, submission->waits, (size_t)submission->wait_count * sizeof(*waits));
+		kern_free(submission->waits);
+		submission->waits = waits;
+		submission->wait_capacity = capacity;
+	}
+
+	/* A new cut, unless the last one is at the same dword. */
+	if (last == NULL || last->at != at) {
+		if (submission->cut_count == submission->cut_capacity) {
+			capacity = submission->cut_capacity == 0U ? 16U : submission->cut_capacity * 2U;
+			cuts = kern_malloc((size_t)capacity * sizeof(*cuts));
+			if (cuts == NULL) {
+				exec->error = ENOMEM;
+				return;
+			}
+			if (submission->cut_count != 0U)
+				kern_memcpy(cuts, submission->cuts, (size_t)submission->cut_count * sizeof(*cuts));
+			kern_free(submission->cuts);
+			submission->cuts = cuts;
+			submission->cut_capacity = capacity;
+		}
+		last = &submission->cuts[submission->cut_count];
+		submission->cut_count++;
+		last->at = at;
+		last->first = submission->wait_count;
+		last->count = 0U;
+	}
+
+	/* What the command buffer bound may be gone after the cut (inside a pass, its begin made it so). */
+	if (!exec->pass.active)
+		buffer_state_dirty(exec->state);
+
+	/* The events, after the cut's others (the last cut's events are the last of the waits). */
+	if (count == 0U)
+		return;
+	if (last->count == 0U) {
+		last->first = submission->wait_count;
+		submission->waiting++;
+	}
+	kern_memcpy(submission->waits + submission->wait_count, events, (size_t)count * sizeof(*events));
+	submission->wait_count += count;
+	last->count += count;
 }
 
 /*
@@ -2319,8 +2478,10 @@ begin_pass(
 	if (framebuffer_check(exec, pass->as.render_pass, &framebuffer->as.framebuffer) != 0)
 		return;
 
-	/* The first subpass. */
+	/* The first subpass, with everything bound again; a wait inside the pass cuts the submission where it begins. */
+	buffer_state_dirty(exec->state);
 	exec->pass.active = 1;
+	exec->pass_at = exec->submission->used;
 	exec->pass.pass = pass->as.render_pass;
 	exec->pass.framebuffer = &framebuffer->as.framebuffer;
 	exec->pass.subpass = 0U;
@@ -4846,10 +5007,12 @@ event_write(
 	}
 	if (index == exec->event_count) {
 		exec->events[index].identity = identity;
+		exec->events[index].first_at = exec->submission->used;
 		exec->event_count++;
 	}
 	exec->events[index].value = value;
 	exec->events[index].private_bus = 0U;
+	exec->events[index].last_at = exec->submission->used;
 
 	/* The fence on the word the host reads. */
 	bus = object->as.event.block->allocation->bus + object->as.event.offset;
@@ -4870,11 +5033,13 @@ event_write(
  * vkCmdWaitEvents: [count][u64 count][events][source stages][destination
  * stages], then the barriers.  An event this submission set earlier (and
  * did not reset since) is waited for with WAIT_FENCE on the word of the
- * submission's own that its SetEvent's fence sets; one the host has set
- * and no placed work writes needs no wait.  Any other would stop the one
- * ring until something outside it sets the word, and the executor does
- * not hold a submission back for that: the submission is refused
- * (ENOTSUP).  The barrier follows.
+ * submission's own that its SetEvent's fence sets.  Any other (one the
+ * host sets, an earlier submission's GPU sets, or one this submission
+ * reset) cuts the submission where the wait is, or where the render
+ * pass it is in begins: the queue places nothing after the cut until the
+ * event's word is set and no placed work writes it any more, so that the
+ * ring never waits for what only the host or a later look of the kernel
+ * can see.  The barrier follows.
  */
 static void
 wait_events(
@@ -4884,14 +5049,16 @@ wait_events(
 	struct ghci_vk_object *object;
 	uint32_t words[GHCI_DW_WAIT_FENCE];
 	uint64_t identities[EVENTS_MAX];
+	uint64_t held[EVENTS_MAX];
 	uint32_t source_stages;
 	uint32_t destination_stages;
 	uint32_t source_access;
 	uint32_t destination_access;
 	uint64_t count;
 	uint64_t index;
+	uint32_t held_count;
+	uint32_t cut_at;
 	uint32_t at;
-	enum ghci_ticket_state state;
 
 	/* The events, the stages and the barriers. */
 	read_skip(reader, 4U);
@@ -4908,32 +5075,39 @@ wait_events(
 	if (reader->error != 0)
 		return;
 
-	/* Each event. */
-	for (index = 0U; index < count && exec->error == 0; index++) {
+	/* Each event: the events no earlier set of the submission sets are the cut's. */
+	held_count = 0U;
+	for (index = 0U; index < count; index++) {
 		object = ghci_vk_object_find(exec->session, GHCI_VK_EVENT, identities[index]);
 		if (object == NULL) {
 			refuse(exec, EINVAL, "a wait for an event the session does not have");
 			return;
 		}
-
-		/* Set earlier in this submission: the processor waits for the submission's word of that set. */
 		for (at = 0U; at < exec->event_count; at++) {
 			if (exec->events[at].identity == identities[index])
 				break;
 		}
-		if (at < exec->event_count && exec->events[at].value == 1U && exec->events[at].private_bus != 0U) {
-			put(exec, words, ghci_cmd_wait_fence(words, exec->events[at].private_bus, 1U));
+		if (at < exec->event_count && exec->events[at].value == 1U && exec->events[at].private_bus != 0U)
 			continue;
-		}
+		held[held_count] = identities[index];
+		held_count++;
+	}
 
-		/* Set by the host, and no placed work writes it any more. */
-		state = GHCI_TICKET_DONE;
-		if (object->as.event.gpu_written)
-			state = ghci_cp_ticket(exec->session->device, &object->as.event.written);
-		if (at == exec->event_count && *object->as.event.word == 1U && state != GHCI_TICKET_PENDING)
-			continue;
-		refuse(exec, ENOTSUP, "a wait for an event nothing before it in the ring sets");
-		return;
+	/* The cut: here, or where the render pass the wait is in begins. */
+	cut_at = exec->submission->used;
+	if (exec->pass.active)
+		cut_at = exec->pass_at;
+	if (held_count != 0U)
+		cut_mark(exec, cut_at, held, held_count);
+
+	/* Set earlier in this submission: the processor waits for the submission's word of that set. */
+	for (index = 0U; index < count && exec->error == 0; index++) {
+		for (at = 0U; at < exec->event_count; at++) {
+			if (exec->events[at].identity == identities[index])
+				break;
+		}
+		if (at < exec->event_count && exec->events[at].value == 1U && exec->events[at].private_bus != 0U)
+			put(exec, words, ghci_cmd_wait_fence(words, exec->events[at].private_bus, 1U));
 	}
 
 	/* The barrier of the wait. */

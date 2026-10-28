@@ -20,6 +20,7 @@
 
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
+#include <kern/lock.h>
 #include <uapi/errno.h>
 
 #include "vk.h"
@@ -60,6 +61,7 @@ ghci_vk_session_open(
 	session->arena.size = GHCI_VK_ARENA_BYTES;
 	session->device = device;
 	session->owner = owner;
+	(void)mutex_init(&session->hold_lock, LOCK_RANK_DEVICE, "ghci vk hold");
 	ghci_jobs_init(&session->jobs);
 
 	/* The service thread sees the session from here. */
@@ -446,8 +448,9 @@ device_release(
 	unsigned long irq;
 	uint32_t timeline;
 
-	/* The device's own objects, then its heap. */
+	/* What the device holds back fails; then its own objects, then its heap. */
 	device = object->device;
+	ghci_vk_holds_fail(session, device);
 	ghci_vk_objects_of_device(session, device);
 	ghci_vk_heap_fini(session, device);
 

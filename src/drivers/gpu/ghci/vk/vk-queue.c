@@ -23,6 +23,21 @@
  * the device's data heap, which the host sets and resets here and the
  * GPU with a fence.  A query pool's slots are in the data heap too, and
  * the host reads its results there.
+ *
+ * A submission that waits for an event nothing earlier in it sets is
+ * held back from its cut on (vk-execute.c), and so is every later
+ * submission of the device, in order: the ring never waits for a word
+ * the client writes, so a wait that never ends stops no other session
+ * and not the display.  The kernel places a held submission's next
+ * piece once the events of its cut are set and no placed work writes
+ * them any more: when the host sets an event (on the client's thread,
+ * which may wait for the ring's room) and at each round of the service
+ * thread, after each fence interrupt (which only tries the session's
+ * hold_lock and enters only a free ring with room now).  A fence, a job
+ * marker or a frame behind held work completes once that work has run;
+ * held work ends with an error when its session stops, is isolated or
+ * closes, its device goes, the GPU is lost, or a reset ends the
+ * device's placed work.
  */
 
 #include <stddef.h>
@@ -31,7 +46,9 @@
 #include <drivers/gpu/gpu.h>
 #include <kern/device-io.h>
 #include <kern/kcrt.h>
+#include <kern/klog.h>
 #include <kern/kmem.h>
+#include <kern/lock.h>
 #include <kern/waitq.h>
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
@@ -50,6 +67,9 @@
 #define QUERY_SLOT_BYTES		16U
 #define QUERY_POOL_MAX			65536U
 
+/* The dwords a piece of a held submission adds to its packets: the binds, the barriers and the fence. */
+#define PIECE_EXTRA_DWORDS		(2U * GHCI_DW_BIND_SESSION + 2U * GHCI_DW_BARRIER + GHCI_DW_FENCE)
+
 static int queue_submit(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int submission_check(struct ghci_vk_session *session, const VkSubmitInfo *submits, uint64_t count, struct ghci_vk_device *device, int *recorded);
 static int create_sync(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -63,6 +83,16 @@ static enum ghci_job_answer judge(void *context, uint64_t seq, uint64_t generati
 static void retire_session(struct ghci_device *device, struct ghci_vk_session *session);
 static unsigned retire(struct ghci_vk_session *session, void **done, int *errors, struct ghci_vk_session **owners, unsigned capacity, struct ghci_vk_frame **gone);
 static void complete(struct ghci_device *device, void **done, const int *errors, struct ghci_vk_session **owners, unsigned count, struct ghci_vk_frame *gone);
+static uint32_t hold_submit(struct ghci_vk_session *session, struct ghci_vk_device *device, struct ghci_vk_submission *submission, struct ghci_vk_object *fence);
+static int hold_step(struct ghci_vk_session *session, struct ghci_vk_device *device, struct ghci_vk_hold *hold, int wait);
+static int piece_end(struct ghci_vk_session *session, struct ghci_vk_hold *hold, int wait, uint32_t *end);
+static int cut_ready(struct ghci_vk_session *session, const struct ghci_vk_hold *hold, const struct ghci_vk_cut *cut);
+static int piece_place(struct ghci_vk_session *session, struct ghci_vk_device *device, struct ghci_vk_hold *hold, uint32_t end, int wait);
+static int ring_place(struct ghci_device *gpu, struct ghci_vm *vm, const uint32_t *packets, uint32_t dwords, int head, int tail, int wait, struct ghci_ticket *ticket, int *placed);
+static void hold_finish(struct ghci_vk_session *session, struct ghci_vk_device *device, struct ghci_vk_hold *hold);
+static int holds_dead(struct ghci_vk_session *session, struct ghci_vk_device *device);
+static void held_resolve(struct ghci_vk_session *session, struct ghci_vk_device *device, uint64_t serial, const struct ghci_ticket *ticket);
+static void holds_service(struct ghci_device *gpu);
 
 /*
  * Runs a submission, fence, semaphore or event command; *handled stays
@@ -141,6 +171,9 @@ ghci_vk_service(
 	unsigned long irq;
 	unsigned count;
 
+	/* The held submissions that may go now, so that what failed is retired below. */
+	holds_service(device);
+
 	/* Batches of completions until a batch is not full. */
 	vk = device->vk;
 	do {
@@ -160,19 +193,21 @@ ghci_vk_service(
 }
 
 /*
- * Ends every completion of a node session before it closes: the session
- * retires its own completions as their tickets are answered, waiting a
- * bounded time on its last ticket between looks, and then waits until no
- * completion another thread took is still being reported to the core.  A
- * ticket that never passes is ended by the recovery (a hang, a reset,
- * the loss of the device), so the drain ends.  The caller holds none of
- * the device's locks.
+ * Ends every completion of a node session before it closes: its held
+ * submissions fail, the session retires its own completions as their
+ * tickets are answered, waiting a bounded time on its last ticket
+ * between looks, and then waits until no completion another thread took
+ * is still being reported to the core and no service round looks at the
+ * session.  A ticket that never passes is ended by the recovery (a hang,
+ * a reset, the loss of the device), so the drain ends.  The caller holds
+ * none of the device's locks.
  */
 void
 ghci_vk_drain(
 	struct ghci_device *device,
 	struct ghci_vk_session *session)
 {
+	struct ghci_vk_device *each;
 	struct ghci_ticket last;
 	struct ghci_vk *vk;
 	unsigned long irq;
@@ -180,7 +215,15 @@ ghci_vk_drain(
 	int pending;
 	int submitted;
 
-	/* Looks until nothing of the session is pending or being reported. */
+	/* Held submissions end with an error: nothing sets what they wait for once the session closes. */
+	mutex_lock(&session->hold_lock);
+
+	for (each = session->devices; each != NULL; each = each->next)
+		ghci_vk_holds_fail(session, each);
+
+	mutex_unlock(&session->hold_lock);
+
+	/* Looks until nothing of the session is pending, being reported or looked at by the service. */
 	vk = device->vk;
 	for (;;) {
 		/* The session's completions that are done, reported at once. */
@@ -190,7 +233,7 @@ ghci_vk_drain(
 		irq = spin_lock_irqsave(&device->irq_lock);
 
 		pending = session->jobs.committed != 0U || session->frame_count != 0U;
-		while (!pending && session->completing != 0U) {
+		while (!pending && (session->completing != 0U || session->holding != 0U)) {
 			sequence = waitq_sequence(&vk->completing_wake);
 			(void)waitq_sleep(&vk->completing_wake, &device->irq_lock, sequence, 0U, 0U);
 		}
@@ -290,7 +333,8 @@ ghci_vk_frame_new(
  * Queues a frame's completion once the frame has run: a frame of
  * timeline 0 completes at the next retirement, since its replies are
  * already written; a context fence of a timeline waits for the work its
- * device placed until now (none when the frame destroyed the device).
+ * device placed or holds until now (none when the frame destroyed the
+ * device).
  * Returns 0, or EIO for a session the GPU core stopped or isolated, and
  * then frees the record.
  */
@@ -313,6 +357,8 @@ ghci_vk_frame_queue(
 		device = session->timeline_device[frame->timeline];
 	if (device != NULL && device->submitted)
 		frame->ticket = device->last;
+	if (device != NULL)
+		(void)ghci_vk_held_ticket(device, &frame->ticket);
 	if (!stopped) {
 		position = &session->frames;
 		while (*position != NULL)
@@ -366,8 +412,11 @@ ghci_vk_session_pending(
 	enum ghci_ticket_state state;
 	struct ghci_vk_device *device;
 
-	/* Completions not retired yet, or retired and not yet reported to the core. */
-	if (session->jobs.committed != 0U || session->frame_count != 0U || session->completing != 0U)
+	/* Completions not retired yet, or retired and not yet reported to the core, or held work. */
+	if (session->jobs.committed != 0U ||
+	    session->frame_count != 0U ||
+	    session->completing != 0U ||
+	    session->hold_count != 0U)
 		return 1;
 
 	/* A device whose last work the GPU has not finished. */
@@ -402,10 +451,139 @@ ghci_vk_session_fail(
 }
 
 /*
+ * Places what the device holds back as far as it may go now, oldest
+ * first: each held submission's pieces whose events are set, and each
+ * whole one after it.  With wait (a client's thread) a piece goes
+ * through the ring's gate as any submission does and may wait for room;
+ * without (the service thread) only into a free ring with room now, and
+ * the rest waits for the next round.  Held work of a device whose
+ * session stopped or was isolated, whose placed work a reset ended, or
+ * whose GPU is lost, and held work after a piece that failed, fails.
+ * The caller holds the session's hold_lock.  Returns 0, or the error
+ * with which the held work failed.
+ */
+int
+ghci_vk_holds_advance(
+	struct ghci_vk_session *session,
+	struct ghci_vk_device *device,
+	int wait)
+{
+	struct ghci_vk_hold *hold;
+	int dead;
+	int error;
+
+	/* The oldest held submission, until one waits. */
+	while (device->holds != NULL) {
+		/* A device whose work can no longer run. */
+		dead = holds_dead(session, device);
+		if (dead) {
+			ghci_vk_holds_fail(session, device);
+			return EIO;
+		}
+
+		/* Its pieces that may go; one that waits keeps it and every later one held. */
+		hold = device->holds;
+		error = hold_step(session, device, hold, wait);
+		if (error == EAGAIN)
+			return 0;
+		if (error != 0) {
+			ghci_vk_holds_fail(session, device);
+			return error;
+		}
+
+		/* Placed whole: it is no longer held. */
+		device->holds = hold->next;
+		hold_finish(session, device, hold);
+	}
+
+	/* Succeeded: nothing more may go now. */
+	return 0;
+}
+
+/*
+ * Ends every submission a device holds back with an error: its VkFence
+ * is lost, the job markers and frames behind it fail, and its memory
+ * goes back (after its last piece, for one placed in part).  The caller
+ * holds the session's hold_lock.
+ */
+void
+ghci_vk_holds_fail(
+	struct ghci_vk_session *session,
+	struct ghci_vk_device *device)
+{
+	struct ghci_vk_object *object;
+	struct ghci_vk_hold *hold;
+	unsigned long irq;
+	unsigned count;
+
+	/* Each held submission, oldest first. */
+	count = 0U;
+	while (device->holds != NULL) {
+		hold = device->holds;
+		device->holds = hold->next;
+		count++;
+
+		/* The fence it would have signaled, still waiting for it (a reset of the fence lets it go). */
+		object = ghci_vk_object_find(session, GHCI_VK_FENCE, hold->fence);
+		if (object != NULL && object->as.fence.held) {
+			object->as.fence.held = 0;
+			object->as.fence.lost = 1;
+		}
+
+		/* Its memory: after its last piece, or at once when nothing of it was placed; and the budget it took. */
+		if (hold->ticketed)
+			ghci_vk_submission_end(device, &hold->submission, &hold->ticket, 1);
+		else
+			ghci_vk_submission_end(device, &hold->submission, NULL, 0);
+		ghci_vk_budget_give(session, hold->charged);
+		kern_free(hold);
+	}
+	if (count == 0U)
+		return;
+
+	/* Nothing is held; what waited for it fails. */
+	irq = spin_lock_irqsave(&session->device->irq_lock);
+
+	session->hold_count -= device->hold_count;
+	device->hold_count = 0U;
+	held_resolve(session, device, 0U, NULL);
+
+	spin_unlock_irqrestore(&session->device->irq_lock, irq);
+
+	/* The failures are retired at the service's next round. */
+	kern_logf("ghci: %s: %u held submission(s) of a session end with an error\n", session->device->name, count);
+	ghci_service_wake(session->device, GHCI_WORK_RECLAIM);
+}
+
+/*
+ * Makes the ticket a job marker or a frame of the device's timeline
+ * waits for while the device holds submissions back: the serial of the
+ * last one held, in GHCI_VK_HELD_GENERATION.  The caller holds irq_lock.
+ * Returns 1 with the ticket, or 0 (and the ticket unchanged) when
+ * nothing is held.
+ */
+int
+ghci_vk_held_ticket(
+	struct ghci_vk_device *device,
+	struct ghci_ticket *ticket)
+{
+	/* Nothing held. */
+	if (device->hold_count == 0U)
+		return 0;
+
+	/* Succeeded: the last held submission. */
+	ticket->seq = device->hold_serial;
+	ticket->generation = GHCI_VK_HELD_GENERATION;
+	return 1;
+}
+
+/*
  * vkQueueSubmit: [queue][u32 count][u64 count][count x VkSubmitInfo]
  * [fence] -> [result].  The submissions' command buffers run in the
  * device's GHCI session, with a fence after them that the VkFence, the
- * jobs and the frames wait for.
+ * jobs and the frames wait for.  One that waits for an event, or comes
+ * while the device holds submissions back, is held from its first such
+ * wait on (hold_submit).
  */
 static int
 queue_submit(
@@ -465,6 +643,13 @@ queue_submit(
 			ghci_vk_submission_end(device, &submission, NULL, 0);
 			return error;
 		}
+	}
+
+	/* Behind held submissions, or waiting for an event: held, and placed as far as it may be now. */
+	if (device->holds != NULL || submission.waiting != 0U) {
+		result = hold_submit(session, device, &submission, fence);
+		ghci_vk_reply_result(reply, requested, result);
+		return 0;
 	}
 
 	/* The work and its fence in the device's session (the queue holds no lock of the device). */
@@ -714,6 +899,8 @@ reset_fences(
 			return EINVAL;
 		object->as.fence.signaled = 0;
 		object->as.fence.submitted = 0;
+		object->as.fence.held = 0;
+		object->as.fence.lost = 0;
 	}
 	ghci_vk_reply_result(reply, requested, (uint32_t)VK_SUCCESS);
 
@@ -723,7 +910,8 @@ reset_fences(
 
 /*
  * vkGetFenceStatus: [device][fence] -> [result]: VK_SUCCESS signaled,
- * VK_NOT_READY not yet, VK_ERROR_DEVICE_LOST for work a reset ended.
+ * VK_NOT_READY not yet (or held back), VK_ERROR_DEVICE_LOST for work a
+ * reset ended or held work that failed.
  */
 static int
 fence_status(
@@ -748,7 +936,9 @@ fence_status(
 
 	/* Signaled on the host, by its submission's ticket, or not yet. */
 	result = (uint32_t)VK_NOT_READY;
-	if (object->as.fence.signaled) {
+	if (object->as.fence.lost) {
+		result = (uint32_t)VK_ERROR_DEVICE_LOST;
+	} else if (object->as.fence.signaled) {
 		result = (uint32_t)VK_SUCCESS;
 	} else if (object->as.fence.submitted) {
 		state = ghci_cp_ticket(session->device, &object->as.fence.ticket);
@@ -767,7 +957,8 @@ fence_status(
 
 /*
  * vkGetEventStatus, vkSetEvent and vkResetEvent: [device][event] ->
- * [result], on the event's word.
+ * [result], on the event's word.  A set lets the device's held
+ * submissions go as far as they may now.
  */
 static int
 event_operation(
@@ -794,6 +985,7 @@ event_operation(
 	result = (uint32_t)VK_SUCCESS;
 	if (opcode == GPU_OP_SET_EVENT) {
 		*object->as.event.word = 1U;
+		(void)ghci_vk_holds_advance(session, object->device, 1);
 	} else if (opcode == GPU_OP_RESET_EVENT) {
 		*object->as.event.word = 0U;
 	} else if (*object->as.event.word != 0U) {
@@ -816,6 +1008,10 @@ judge(
 {
 	enum ghci_ticket_state state;
 	struct ghci_ticket ticket;
+
+	/* Held work is not placed yet. */
+	if (generation == GHCI_VK_HELD_GENERATION)
+		return GHCI_JOB_WAITING;
 
 	/* The ticket's state. */
 	ticket.seq = seq;
@@ -893,7 +1089,7 @@ retire(
 		state = GHCI_TICKET_DONE;
 		if (frame->failed)
 			state = GHCI_TICKET_FAILED;
-		else if ((waiting & mark) != 0U)
+		else if ((waiting & mark) != 0U || frame->ticket.generation == GHCI_VK_HELD_GENERATION)
 			state = GHCI_TICKET_PENDING;
 		else if (frame->ticket.seq != 0U)
 			state = ghci_cp_ticket_locked(session->device, &frame->ticket);
@@ -963,6 +1159,579 @@ complete(
 		next = gone->next;
 		kern_free(gone);
 		gone = next;
+	}
+}
+
+/*
+ * Holds a submission back behind the device's held ones (or at its cut),
+ * with the fence it signals, and places it as far as it may go now.  What
+ * it keeps of the host's memory (its record, packets and cuts) is taken
+ * of the session's budget until it is placed or fails.  Returns the
+ * reply: VK_SUCCESS (placed or held), VK_ERROR_DEVICE_LOST when the held
+ * work failed, or VK_ERROR_OUT_OF_HOST_MEMORY with nothing held.
+ */
+static uint32_t
+hold_submit(
+	struct ghci_vk_session *session,
+	struct ghci_vk_device *device,
+	struct ghci_vk_submission *submission,
+	struct ghci_vk_object *fence)
+{
+	struct ghci_vk_hold **position;
+	struct ghci_vk_hold *hold;
+	unsigned long irq;
+	uint64_t bytes;
+	int error;
+
+	/* The host bytes it keeps while held, of the session's budget. */
+	bytes = sizeof(*hold) + (uint64_t)submission->capacity * 4U + (uint64_t)submission->cut_capacity * sizeof(struct ghci_vk_cut) +
+		(uint64_t)submission->wait_capacity * 8U + (uint64_t)submission->temp_capacity * sizeof(struct ghci_vk_temp);
+	error = ghci_vk_budget_take(session, bytes);
+	if (error != 0) {
+		ghci_vk_submission_end(device, submission, NULL, 0);
+		return (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
+
+	/* The record takes the submission over. */
+	hold = kern_calloc(1U, sizeof(*hold));
+	if (hold == NULL) {
+		ghci_vk_budget_give(session, bytes);
+		ghci_vk_submission_end(device, submission, NULL, 0);
+		return (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
+	hold->submission = *submission;
+	hold->charged = bytes;
+	kern_memset(submission, 0, sizeof(*submission));
+
+	/* The fence waits for it, unsignaled. */
+	if (fence != NULL) {
+		hold->fence = fence->identity;
+		fence->as.fence.signaled = 0;
+		fence->as.fence.submitted = 0;
+		fence->as.fence.held = 1;
+		fence->as.fence.lost = 0;
+	}
+
+	/* Its serial and count, which the jobs and frames read. */
+	irq = spin_lock_irqsave(&session->device->irq_lock);
+
+	device->hold_serial++;
+	hold->serial = device->hold_serial;
+	device->hold_count++;
+	session->hold_count++;
+
+	spin_unlock_irqrestore(&session->device->irq_lock, irq);
+
+	/* Last of the device's held submissions. */
+	position = &device->holds;
+	while (*position != NULL)
+		position = &(*position)->next;
+	*position = hold;
+
+	/* As far as it may go now. */
+	error = ghci_vk_holds_advance(session, device, 1);
+	if (error != 0)
+		return (uint32_t)VK_ERROR_DEVICE_LOST;
+
+	/* Succeeded: placed, or held until its events are set. */
+	return (uint32_t)VK_SUCCESS;
+}
+
+/*
+ * Places the pieces of a held submission that may go now.  Returns 0
+ * once it is placed whole, EAGAIN when a piece waits (for an event, or
+ * for the ring), or the error that fails it.
+ */
+static int
+hold_step(
+	struct ghci_vk_session *session,
+	struct ghci_vk_device *device,
+	struct ghci_vk_hold *hold,
+	int wait)
+{
+	uint32_t end;
+	int error;
+
+	/* Piece after piece (one, with the fence alone, for a submission of no packets). */
+	do {
+		error = piece_end(session, hold, wait, &end);
+		if (error != 0)
+			return error;
+		error = piece_place(session, device, hold, end, wait);
+		if (error != 0)
+			return error;
+	} while (hold->placed < hold->submission.used);
+
+	/* Succeeded: placed whole. */
+	return 0;
+}
+
+/*
+ * Reports where the next piece of a held submission ends: past every cut
+ * whose events are set, up to the first whose are not; without wait, no
+ * longer than the ring takes at once (half the ring, less a piece's own
+ * dwords) unless one stretch between two cuts is.  A cut whose events
+ * are set no longer waits.  Returns 0 with *end, EAGAIN when the piece
+ * would be empty (the first cut waits), or EINVAL when an event it waits
+ * for is gone.
+ */
+static int
+piece_end(
+	struct ghci_vk_session *session,
+	struct ghci_vk_hold *hold,
+	int wait,
+	uint32_t *end)
+{
+	struct ghci_vk_submission *submission;
+	uint32_t limit;
+	uint32_t next;
+	uint32_t cut;
+	uint32_t at;
+	int error;
+
+	/* What the ring takes at once. */
+	submission = &hold->submission;
+	limit = session->device->ring.dwords / 2U;
+	if (limit > PIECE_EXTRA_DWORDS)
+		limit -= PIECE_EXTRA_DWORDS;
+	else
+		limit = 1U;
+
+	/* From the first dword not placed, cut by cut. */
+	at = hold->placed;
+	cut = hold->cut;
+	for (;;) {
+		/* The cut here: its events set, or the piece ends before it. */
+		if (cut < submission->cut_count && submission->cuts[cut].at == at) {
+			if (submission->cuts[cut].count != 0U) {
+				/* Its events: an empty piece waits, a longer one ends before the cut. */
+				error = cut_ready(session, hold, &submission->cuts[cut]);
+				if (error != 0 && at == hold->placed)
+					return error;
+				if (error != 0)
+					break;
+
+				/* Set: the cut no longer waits. */
+				submission->cuts[cut].count = 0U;
+			}
+			cut++;
+		}
+
+		/* The end, or the next cut within what the ring takes at once. */
+		if (at == submission->used)
+			break;
+		next = submission->used;
+		if (cut < submission->cut_count)
+			next = submission->cuts[cut].at;
+		if (!wait &&
+		    at != hold->placed &&
+		    next - hold->placed > limit)
+			break;
+		at = next;
+	}
+
+	/* Succeeded: the piece's end. */
+	*end = at;
+	return 0;
+}
+
+/*
+ * Reports whether the events of a cut of a held submission are set: each
+ * word 1, and no placed work writes it any more; an event the submission
+ * itself writes between its first dword not placed and the cut is not
+ * set yet (the piece ends at the cut, and its ticket is then waited
+ * for).  Returns 0, EAGAIN when one is not yet, or EINVAL when one is
+ * gone.
+ */
+static int
+cut_ready(
+	struct ghci_vk_session *session,
+	const struct ghci_vk_hold *hold,
+	const struct ghci_vk_cut *cut)
+{
+	const struct ghci_vk_submission *submission;
+	struct ghci_vk_object *object;
+	enum ghci_ticket_state state;
+	uint64_t identity;
+	uint32_t index;
+	uint32_t at;
+
+	/* Each event of the cut. */
+	submission = &hold->submission;
+	for (index = 0U; index < cut->count; index++) {
+		/* Written by the part of the submission not placed yet, before the cut. */
+		identity = submission->waits[cut->first + index];
+		for (at = 0U; at < submission->event_count && cut->at > hold->placed; at++) {
+			if (submission->events[at] != identity)
+				continue;
+			if (submission->event_first[at] < cut->at && submission->event_last[at] >= hold->placed)
+				return EAGAIN;
+		}
+
+		/* The word, and the placed work that writes it. */
+		object = ghci_vk_object_find(session, GHCI_VK_EVENT, identity);
+		if (object == NULL)
+			return EINVAL;
+		if (*object->as.event.word != 1U)
+			return EAGAIN;
+		if (!object->as.event.gpu_written)
+			continue;
+		state = ghci_cp_ticket(session->device, &object->as.event.written);
+		if (state == GHCI_TICKET_PENDING)
+			return EAGAIN;
+	}
+
+	/* Succeeded: every event is set. */
+	return 0;
+}
+
+/*
+ * Places a held submission's packets up to the dword end, after a
+ * barrier that shows the GPU what the host wrote when it does not begin
+ * the submission and before one that puts the GPU's writes in memory
+ * when it does not end it.  The piece's ticket is the device's last and
+ * the events it writes wait for it.  Returns 0, EAGAIN when the ring
+ * does not take it now (without wait), or the error that fails it.
+ */
+static int
+piece_place(
+	struct ghci_vk_session *session,
+	struct ghci_vk_device *device,
+	struct ghci_vk_hold *hold,
+	uint32_t end,
+	int wait)
+{
+	struct ghci_vk_submission *submission;
+	const uint32_t *packets;
+	struct ghci_ticket ticket;
+	int placed;
+	int error;
+
+	/* The piece (none for a submission of no packets). */
+	submission = &hold->submission;
+	packets = NULL;
+	if (end != hold->placed)
+		packets = submission->words + hold->placed;
+	error = ring_place(session->device, device->vm, packets, end - hold->placed, hold->placed != 0U, end != submission->used, wait,
+		&ticket, &placed);
+
+	/* What reached the ring has a ticket, which its memory and events wait for. */
+	if (error == 0 || placed) {
+		hold->ticket = ticket;
+		hold->ticketed = 1;
+		ghci_vk_submitted(device, &ticket);
+		ghci_vk_submission_written(device, submission, end, &ticket);
+	}
+	if (error != 0)
+		return error;
+
+	/* The next piece starts at end, at the first cut there or after. */
+	hold->placed = end;
+	while (hold->cut < submission->cut_count && submission->cuts[hold->cut].at < end)
+		hold->cut++;
+
+	/* Succeeded: the piece is in the ring. */
+	return 0;
+}
+
+/*
+ * Places a run of packets in a GHCI session as ghci_cp_submit_placed()
+ * does (the session's bind, the packets, the fence and session 0's
+ * bind), with the head barrier before them and the tail barrier after
+ * them when asked.  With wait it passes the gate and may wait for the
+ * ring's room; without, it enters only a free ring with room for all of
+ * it now.  Returns 0 with the ticket; EAGAIN (without wait) with nothing
+ * placed; EIO for a lost device, a session that is not open, or a
+ * recovery that began in the middle (*placed and the ticket then say
+ * what is the reset's to end); or EINVAL for malformed packets.
+ */
+static int
+ring_place(
+	struct ghci_device *gpu,
+	struct ghci_vm *vm,
+	const uint32_t *packets,
+	uint32_t dwords,
+	int head,
+	int tail,
+	int wait,
+	struct ghci_ticket *ticket,
+	int *placed)
+{
+	enum ghci_gate gate;
+	uint32_t bind[GHCI_DW_BIND_SESSION];
+	uint32_t barrier[GHCI_DW_BARRIER];
+	unsigned long irq;
+	uint32_t start;
+	uint32_t need;
+	int walker;
+	int fenced;
+	int error;
+
+	/* Packets the ring could not take are refused before anything is placed. */
+	*placed = 0;
+	error = ghci_cp_check_packets(packets, dwords);
+	if (error != 0)
+		return error;
+
+	/* The gate: waited through, or only a free ring with the room now. */
+	walker = ghci_caps_has(&gpu->caps, GHCI_HAS_HW_WALKER);
+	if (wait) {
+		for (;;) {
+			gate = ghci_cp_enter(gpu, 0U, 1);
+			if (gate == GHCI_GATE_LOST)
+				return EIO;
+			if (gate == GHCI_GATE_OPEN)
+				break;
+		}
+	} else {
+		need = dwords + GHCI_DW_FENCE;
+		if (walker)
+			need += 2U * GHCI_DW_BIND_SESSION;
+		if (head)
+			need += GHCI_DW_BARRIER;
+		if (tail)
+			need += GHCI_DW_BARRIER;
+		gate = ghci_cp_try_enter(gpu, need);
+		if (gate == GHCI_GATE_LOST)
+			return EIO;
+		if (gate != GHCI_GATE_OPEN)
+			return EAGAIN;
+	}
+
+	/* Only an open session runs packets; its state does not change while cp_lock is held. */
+	if (vm->state != GHCI_VM_OPEN) {
+		ghci_cp_leave(gpu);
+		return EIO;
+	}
+
+	/* The session, the head barrier, the packets, the tail barrier and the fence. */
+	start = gpu->ring.wptr;
+	fenced = 0;
+	if (walker) {
+		(void)ghci_cmd_bind_session(bind, vm->session);
+		error = ghci_cp_place(gpu, bind, GHCI_DW_BIND_SESSION);
+	}
+	if (error == 0 && head) {
+		(void)ghci_cmd_barrier(barrier, 0U, 0U, GHCI_VK_HEAD_FLAGS);
+		error = ghci_cp_place(gpu, barrier, GHCI_DW_BARRIER);
+	}
+	if (error == 0)
+		error = ghci_cp_place(gpu, packets, dwords);
+	if (error == 0 && tail) {
+		(void)ghci_cmd_barrier(barrier, 0U, 0U, GHCI_VK_TAIL_FLAGS);
+		error = ghci_cp_place(gpu, barrier, GHCI_DW_BARRIER);
+	}
+	if (error == 0) {
+		error = ghci_cp_place_fence(gpu, vm, start, ticket);
+		if (error == 0)
+			fenced = 1;
+	}
+
+	/* Session 0 again, so that the driver's later packets do not run in the client's session. */
+	if (error == 0 && walker) {
+		(void)ghci_cmd_bind_session(bind, 0U);
+		error = ghci_cp_place(gpu, bind, GHCI_DW_BIND_SESSION);
+	}
+
+	/* A part placed without its fence: a ticket past every fence placed, which the reset that throws it away ends. */
+	if (gpu->ring.wptr != start)
+		*placed = 1;
+	if (*placed && !fenced) {
+		irq = spin_lock_irqsave(&gpu->irq_lock);
+
+		ticket->seq = gpu->fence_placed + 1U;
+		ticket->generation = gpu->generation;
+
+		spin_unlock_irqrestore(&gpu->irq_lock, irq);
+	}
+
+	/* The doorbell for what was placed. */
+	ghci_cp_doorbell(gpu);
+	ghci_cp_leave(gpu);
+
+	/* A recovery that began in the middle lost the piece. */
+	if (error == EAGAIN)
+		return EIO;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the piece is in the ring. */
+	return 0;
+}
+
+/*
+ * Ends a held submission placed whole: the job markers and frames that
+ * wait for it take its last ticket, its VkFence waits for that ticket,
+ * and its memory goes back once the ticket has passed.  The caller holds
+ * the session's hold_lock.
+ */
+static void
+hold_finish(
+	struct ghci_vk_session *session,
+	struct ghci_vk_device *device,
+	struct ghci_vk_hold *hold)
+{
+	struct ghci_vk_object *object;
+	unsigned long irq;
+
+	/* It is no longer held; what waited for it waits for its ticket. */
+	irq = spin_lock_irqsave(&session->device->irq_lock);
+
+	device->hold_count--;
+	session->hold_count--;
+	held_resolve(session, device, hold->serial, &hold->ticket);
+
+	spin_unlock_irqrestore(&session->device->irq_lock, irq);
+
+	/* The fence it signals, still waiting for it (none for identity 0; a reset of the fence lets it go). */
+	object = ghci_vk_object_find(session, GHCI_VK_FENCE, hold->fence);
+	if (object != NULL && object->as.fence.held) {
+		object->as.fence.held = 0;
+		object->as.fence.submitted = 1;
+		object->as.fence.ticket = hold->ticket;
+	}
+
+	/* Its memory, after its last piece, and the budget it took. */
+	ghci_vk_submission_end(device, &hold->submission, &hold->ticket, 1);
+	ghci_vk_budget_give(session, hold->charged);
+	kern_free(hold);
+}
+
+/*
+ * Reports whether a device's held work can no longer run: its session
+ * stopped or was isolated, the GPU is lost, or a reset ended the work it
+ * placed last (its GHCI session died with it).  Returns 1 when so.
+ */
+static int
+holds_dead(
+	struct ghci_vk_session *session,
+	struct ghci_vk_device *device)
+{
+	enum ghci_ticket_state state;
+	unsigned long irq;
+	int dead;
+
+	/* The marks, the GPU and the device's last ticket, under the interrupt's lock. */
+	irq = spin_lock_irqsave(&session->device->irq_lock);
+
+	state = GHCI_TICKET_DONE;
+	if (device->submitted)
+		state = ghci_cp_ticket_locked(session->device, &device->last);
+	dead = 0;
+	if (session->stopping || session->isolated) {
+		/* The GPU core stopped or isolated the session. */
+		dead = 1;
+	} else if (session->device->state == GHCI_STATE_LOST) {
+		/* The GPU is lost. */
+		dead = 1;
+	} else if (state == GHCI_TICKET_FAILED) {
+		/* A reset ended the device's placed work, and its GHCI session with it. */
+		dead = 1;
+	}
+
+	spin_unlock_irqrestore(&session->device->irq_lock, irq);
+
+	/* Succeeded: the answer. */
+	return dead;
+}
+
+/*
+ * Gives the job markers and frames of a device's timelines that wait for
+ * its held submissions up to serial the ticket of that submission, or,
+ * with no ticket, fails every one of them.  The caller holds irq_lock.
+ */
+static void
+held_resolve(
+	struct ghci_vk_session *session,
+	struct ghci_vk_device *device,
+	uint64_t serial,
+	const struct ghci_ticket *ticket)
+{
+	struct ghci_job_marker *marker;
+	struct ghci_vk_frame *frame;
+	unsigned index;
+
+	/* The markers committed behind held work of the device. */
+	for (index = 0U; index < GHCI_JOB_MARKERS; index++) {
+		marker = &session->jobs.markers[index];
+		if (marker->state != GHCI_JOB_COMMITTED || marker->generation != GHCI_VK_HELD_GENERATION)
+			continue;
+		if (session->marker_timeline[index] >= GHCI_VK_TIMELINES || session->timeline_device[session->marker_timeline[index]] != device)
+			continue;
+		if (ticket == NULL) {
+			marker->state = GHCI_JOB_FAILED;
+		} else if (marker->seq <= serial) {
+			marker->seq = ticket->seq;
+			marker->generation = ticket->generation;
+		}
+	}
+
+	/* The frames of its timelines queued behind it. */
+	for (frame = session->frames; frame != NULL; frame = frame->next) {
+		if (frame->ticket.generation != GHCI_VK_HELD_GENERATION || frame->timeline == 0U)
+			continue;
+		if (frame->timeline >= GHCI_VK_TIMELINES || session->timeline_device[frame->timeline] != device)
+			continue;
+		if (ticket == NULL)
+			frame->failed = 1;
+		else if (frame->ticket.seq <= serial)
+			frame->ticket = *ticket;
+	}
+}
+
+/*
+ * Lets the held submissions of every node session go as far as they may
+ * on the service thread: a session whose commands hold its hold_lock is
+ * left for the next round, and nothing here waits for the ring.  Each
+ * session looked at counts as holding until the look ends, so that its
+ * drain waits.
+ */
+static void
+holds_service(
+	struct ghci_device *gpu)
+{
+	struct ghci_vk_session *sessions[GHCI_VK_DONE_BATCH];
+	struct ghci_vk_session *session;
+	struct ghci_vk_device *each;
+	struct ghci_vk *vk;
+	unsigned long irq;
+	unsigned count;
+	unsigned index;
+	int locked;
+
+	/* The sessions with held work. */
+	vk = gpu->vk;
+	count = 0U;
+	irq = spin_lock_irqsave(&gpu->irq_lock);
+
+	for (session = vk->sessions; session != NULL && count < GHCI_VK_DONE_BATCH; session = session->next) {
+		if (session->hold_count == 0U)
+			continue;
+		session->holding++;
+		sessions[count] = session;
+		count++;
+	}
+
+	spin_unlock_irqrestore(&gpu->irq_lock, irq);
+
+	/* Each one whose commands do not hold it now. */
+	for (index = 0U; index < count; index++) {
+		session = sessions[index];
+		locked = mutex_trylock(&session->hold_lock);
+		if (locked) {
+			for (each = session->devices; each != NULL; each = each->next)
+				(void)ghci_vk_holds_advance(session, each, 0);
+			mutex_unlock(&session->hold_lock);
+		}
+
+		/* The look ends; the last one wakes a drain. */
+		irq = spin_lock_irqsave(&gpu->irq_lock);
+
+		session->holding--;
+		if (session->holding == 0U)
+			waitq_wake_all(&vk->completing_wake);
+
+		spin_unlock_irqrestore(&gpu->irq_lock, irq);
 	}
 }
 

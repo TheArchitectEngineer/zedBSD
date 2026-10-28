@@ -15,14 +15,14 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
 # usage: plan/ws290/tests/ghci-host-test.sh   (from anywhere)
-# Environment: GHCI_SPEC_REPO (default ~/amaterrace-gpu), GHCI_SPEC_REV (default d9252e4).
+# Environment: GHCI_SPEC_REPO (default ~/amaterrace-gpu), GHCI_SPEC_REV (default 288c459).
 # Needs cc, git and glslc. Output goes to a new directory below build/tmp; nothing is removed.
 set -eu
 repo=$(cd "$(dirname "$0")/../../.." && pwd)
 tests="$repo/plan/ws290/tests"
 ghci="$repo/src/drivers/gpu/ghci"
 spec_repo=${GHCI_SPEC_REPO:-$HOME/amaterrace-gpu}
-spec_rev=${GHCI_SPEC_REV:-d9252e4}
+spec_rev=${GHCI_SPEC_REV:-288c459}
 mkdir -p "$repo/build/tmp"
 out=$(mktemp -d "$repo/build/tmp/ghci290-host.XXXXXX")
 export TMPDIR="$out"
