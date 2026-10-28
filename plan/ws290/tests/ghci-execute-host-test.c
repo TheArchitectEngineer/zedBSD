@@ -73,6 +73,17 @@ static void scene_x_holds(void);
 static int x_image(struct node *node, uint64_t identity, uint64_t view, uint32_t format, uint32_t samples, uint32_t usage, uint64_t offset);
 static void scene_x_subpasses(void);
 static void scene_x_secondary(void);
+static void x_indirect(uint64_t commands, uint32_t opcode, uint64_t offset, uint32_t draws, uint32_t stride);
+static void x_begin_with(uint64_t commands, uint64_t pass, uint64_t framebuffer, uint32_t count);
+static void x_clear_color0(uint64_t commands, uint32_t first, uint32_t count);
+static uint32_t x_framebuffer(struct node *node, uint64_t identity, uint64_t pass, uint64_t view, uint32_t width, uint32_t height, uint32_t layers);
+static void scene_x_ranges(void);
+static void scene_x_events(void);
+static void scene_x_regions(void);
+static void scene_x_pass_rules(void);
+static void scene_x_layers(void);
+static void x_fault_hook(unsigned sleep, void *argument);
+static void scene_x_partial(void);
 
 /* Runs the scenes of the execution and reports.  Returns the exit status. */
 static int
@@ -105,6 +116,12 @@ execute_main(
 	scene_x_holds();
 	scene_x_subpasses();
 	scene_x_secondary();
+	scene_x_ranges();
+	scene_x_events();
+	scene_x_regions();
+	scene_x_pass_rules();
+	scene_x_layers();
+	scene_x_partial();
 	model_fini();
 
 	/* The counts. */
@@ -1305,6 +1322,7 @@ scene_x_queries(void)
 	const struct model_command *command;
 	uint32_t ops[X_OPS_MAX];
 	uint64_t event_bus;
+	uint64_t private_bus;
 	unsigned first;
 	unsigned count;
 	unsigned mark;
@@ -1407,11 +1425,12 @@ scene_x_queries(void)
 	mark = model.command_count;
 	error |= x_submit(&node, ID_X_COMMANDS, 0U);
 	count = x_ops(mark, &first, ops);
-	expect(error == 0 && count == 15U && ops[2] == GHCI_OP_FILL_BUFFER && ops[3] == GHCI_OP_WRITE_TIMESTAMP && ops[4] == GHCI_OP_FENCE &&
+	expect(error == 0 && count == 16U && ops[2] == GHCI_OP_FILL_BUFFER && ops[3] == GHCI_OP_WRITE_TIMESTAMP && ops[4] == GHCI_OP_FENCE &&
 	       ops[5] == GHCI_OP_BEGIN_RENDER_PASS && ops[6] == GHCI_OP_BEGIN_QUERY && ops[7] == GHCI_OP_END_QUERY &&
-	       ops[8] == GHCI_OP_END_RENDER_PASS && ops[9] == GHCI_OP_FENCE && ops[10] == GHCI_OP_WAIT_FENCE && ops[11] == GHCI_OP_BARRIER &&
-	       ops[12] == GHCI_OP_BARRIER, "queries: fill, timestamp and its fence, the query in the pass, the event's fence, its wait and barrier");
-	if (count == 15U) {
+	       ops[8] == GHCI_OP_END_RENDER_PASS && ops[9] == GHCI_OP_FENCE && ops[10] == GHCI_OP_FENCE && ops[11] == GHCI_OP_WAIT_FENCE &&
+	       ops[12] == GHCI_OP_BARRIER && ops[13] == GHCI_OP_BARRIER,
+	       "queries: fill, timestamp and its fence, the query in the pass, the event's two fences, its wait and barrier");
+	if (count == 16U) {
 		command = &model.commands[first + 2U];
 		expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == pool->va && command->words[3] == 64U && command->words[4] == 0U,
 		       "queries: the reset fills the pool's 64 bytes with 0");
@@ -1428,9 +1447,13 @@ scene_x_queries(void)
 		expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == event_bus && command->words[3] == 1U &&
 		       command->words[5] == GHCI_FENCE_FLAG_MEM_WRITE, "queries: SetEvent is a fence of 1 on the event's word");
 		command = &model.commands[first + 10U];
-		expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == event_bus && command->words[3] == 1U && command->words[4] == 0U,
-		       "queries: WaitEvents after the set waits with WAIT_FENCE for 1 on the word");
+		private_bus = command->words[1] | ((uint64_t)command->words[2] << 32);
+		expect(private_bus != event_bus && private_bus != 0U && command->words[3] == 1U && command->words[5] == GHCI_FENCE_FLAG_MEM_WRITE,
+		       "queries: SetEvent's second fence sets a word of the submission's own");
 		command = &model.commands[first + 11U];
+		expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == private_bus && command->words[3] == 1U && command->words[4] == 0U,
+		       "queries: WaitEvents after the set waits with WAIT_FENCE for 1 on the submission's word, not the client's");
+		command = &model.commands[first + 12U];
 		expect(command->words[1] == GHCI_STAGE_BLT && command->words[2] == GHCI_STAGE_FS, "queries: the wait's barrier BLT before FS");
 	}
 
@@ -1709,6 +1732,32 @@ scene_x_fan(void)
 	for (index = 0U; same && index < 9U; index++)
 		same = x_load(indices + index * 4U, 4U) == expected[index];
 	expect(same, "fan: the 32-bit index list (1, 2, 0), (2, 3, 0), (3, 4, 0)");
+
+	/* A fan of 2^32 - 1 vertices is skipped (no index list that long); one of 20000 is drawn from a list past one chunk. */
+	x_record(&node, ID_X_COMMANDS);
+	x_begin_pass(ID_X_COMMANDS, 64U, 32U);
+	x_bind_triangle(ID_X_COMMANDS, ID_PIPELINE, 0U);
+	x_command(GPU_OP_CMD_DRAW, ID_X_COMMANDS);
+	put32(0xffffffffU);
+	put32(1U);
+	put32(0U);
+	put32(0U);
+	x_command(GPU_OP_CMD_DRAW, ID_X_COMMANDS);
+	put32(20000U);
+	put32(1U);
+	put32(0U);
+	put32(0U);
+	x_command(GPU_OP_CMD_END_RENDER_PASS, ID_X_COMMANDS);
+	error = x_end(&node, ID_X_COMMANDS);
+	drawn = model_count_commands(GHCI_OP_DRAW_INDEXED);
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	command = model_last_command(GHCI_OP_DRAW_INDEXED);
+	expect(error == 0 && model_count_commands(GHCI_OP_DRAW_INDEXED) == drawn + 1U && command != NULL && command->words[1] == 3U * 19998U,
+	       "fan: 2^32 - 1 vertices skipped, 20000 drawn as 19998 triangles");
+	command = model_last_command(GHCI_OP_BIND_INDEX_BUFFER);
+	indices = command != NULL ? x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32)) : NULL;
+	expect(indices != NULL && x_load(indices + 19997U * 12U, 4U) == 19998U && x_load(indices + 19997U * 12U + 4U, 4U) == 19999U &&
+	       x_load(indices + 19997U * 12U + 8U, 4U) == 0U, "fan: the last triangle is (19998, 19999, 0)");
 	node_close(&node);
 	stop("fan");
 }
@@ -1867,8 +1916,9 @@ static void
 scene_x_subpasses(void)
 {
 	static const uint32_t expected[] = {
-		GHCI_OP_BIND_SESSION, GHCI_OP_BARRIER, GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_END_RENDER_PASS, GHCI_OP_RESOLVE_IMAGE,
-		GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_END_RENDER_PASS, GHCI_OP_BARRIER, GHCI_OP_FENCE, GHCI_OP_BIND_SESSION
+		GHCI_OP_BIND_SESSION, GHCI_OP_BARRIER, GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_END_RENDER_PASS, GHCI_OP_BARRIER,
+		GHCI_OP_RESOLVE_IMAGE, GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_END_RENDER_PASS, GHCI_OP_BARRIER, GHCI_OP_FENCE,
+		GHCI_OP_BIND_SESSION
 	};
 	const struct model_command *command;
 	const uint8_t *desc;
@@ -1991,14 +2041,17 @@ scene_x_subpasses(void)
 		       "subpass 0: colour 0 resolved to attachment 2 by the description (average), 4 samples");
 	}
 
-	/* Colour 1's resolve after the subpass. */
+	/* Colour 1's resolve after the subpass, after a barrier that waits for the pass's writes. */
 	command = &model.commands[first + 4U];
+	expect(command->words[1] == GHCI_STAGE_ROP && command->words[2] == GHCI_STAGE_BLT &&
+	       command->words[3] == (GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA), "subpasses: BARRIER ROP before BLT, idle and flush L1");
+	command = &model.commands[first + 5U];
 	expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == va[1] &&
 	       (command->words[3] | ((uint64_t)command->words[4] << 32)) == va[3] && command->words[9] == (64U | (32U << 16)) &&
 	       command->words[10] == (37U | (0U << 8) | (2U << 10)), "subpasses: RESOLVE_IMAGE of colour 1 to attachment 3, 4 samples, average");
 
 	/* Subpass 1: colour 1 loaded and stored, nothing cleared. */
-	command = &model.commands[first + 5U];
+	command = &model.commands[first + 6U];
 	desc = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
 	expect(command->words[8] == 0U && desc != NULL && x_load(desc, 8U) == va[1] && desc[0x0dU] == 0U && x_load(desc + 0x10U, 8U) == 0U &&
 	       x_load(desc + 0x80U, 8U) == 0U && x_load(desc + 0x90U, 8U) == 0U, "subpass 1: colour 1 LOAD | STORE alone");
@@ -2062,4 +2115,837 @@ scene_x_secondary(void)
 	expect(error == EINVAL && model_count_commands(GHCI_OP_FENCE) == fences, "secondary: not submitted on its own");
 	node_close(&node);
 	stop("secondary");
+}
+
+/* Records an indirect draw or dispatch from the scene's buffer: [buffer][u64 offset], and a draw's [count][stride]. */
+static void
+x_indirect(
+	uint64_t commands,
+	uint32_t opcode,
+	uint64_t offset,
+	uint32_t draws,
+	uint32_t stride)
+{
+	x_command(opcode, commands);
+	put64(ID_BUFFER);
+	put64(offset);
+	if (opcode == GPU_OP_CMD_DISPATCH_INDIRECT)
+		return;
+	put32(draws);
+	put32(stride);
+}
+
+/* Records vkCmdBeginRenderPass of a pass and framebuffer over 64 x 32 with count clear colours (index, 0, 0, 1). */
+static void
+x_begin_with(
+	uint64_t commands,
+	uint64_t pass,
+	uint64_t framebuffer,
+	uint32_t count)
+{
+	uint32_t index;
+
+	x_command(GPU_OP_CMD_BEGIN_RENDER_PASS, commands);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO);
+	put64(0U);
+	put64(pass);
+	put64(framebuffer);
+	put32(0U);
+	put32(0U);
+	put32(64U);
+	put32(32U);
+	put32(count);
+	put64(count);
+	for (index = 0U; index < count; index++) {
+		put32(0U);
+		put32(2U);
+		put64(4U);
+		put32(index);
+		put32(0U);
+		put32(0U);
+		put32(0x3f800000U);
+	}
+	put32(VK_SUBPASS_CONTENTS_INLINE);
+}
+
+/* Records vkCmdClearAttachments of colour 0 to (0, 1, 0, 1) over the whole 64 x 32 area of layers [first, first + count). */
+static void
+x_clear_color0(
+	uint64_t commands,
+	uint32_t first,
+	uint32_t count)
+{
+	x_command(GPU_OP_CMD_CLEAR_ATTACHMENTS, commands);
+	put32(1U);
+	put64(1U);
+	put32(VK_IMAGE_ASPECT_COLOR_BIT);
+	put32(0U);
+	put32(0U);
+	put32(2U);
+	put64(4U);
+	put32(0U);
+	put32(0x3f800000U);
+	put32(0U);
+	put32(0x3f800000U);
+	put32(1U);
+	put64(1U);
+	put32(0U);
+	put32(0U);
+	put32(64U);
+	put32(32U);
+	put32(first);
+	put32(count);
+}
+
+/* Makes a framebuffer of a pass of one attachment with one view, width x height x layers.  Returns the frame's error, or the result. */
+static uint32_t
+x_framebuffer(
+	struct node *node,
+	uint64_t identity,
+	uint64_t pass,
+	uint64_t view,
+	uint32_t width,
+	uint32_t height,
+	uint32_t layers)
+{
+	int error;
+
+	begin(node, GPU_OP_CREATE_FRAMEBUFFER);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put64(pass);
+	put32(1U);
+	put64(1U);
+	put64(view);
+	put32(width);
+	put32(height);
+	put32(layers);
+	tail(identity);
+	error = run(node);
+	if (error != 0)
+		return (uint32_t)error;
+	return reply32(node, 4U);
+}
+
+/*
+ * The ranges of indirect and indexed draws: indirect records at an
+ * offset that is not a multiple of 4, with a stride below a record or
+ * not a multiple of 4, past the buffer (also by 2^30 records, which 32
+ * bits would wrap) are skipped, and one at the buffer's very end runs;
+ * the same for an indirect dispatch.  Indexed draws past the index
+ * buffer's end, and from one bound at an odd offset, are skipped.
+ */
+static void
+scene_x_ranges(void)
+{
+	const struct model_command *command;
+	unsigned indirect;
+	unsigned dispatches;
+	unsigned indexed;
+	struct node node;
+	int error;
+
+	/* With CAP_INDIRECT_DRAW: the triangle, the compute pipeline and its set. */
+	error = x_open(&node, MODEL_FULL);
+	error |= x_compute_set(&node);
+	error |= (int)x_triangle(&node, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, UINT32_MAX, ID_PIPELINE);
+	expect(error == 0, "ranges: objects");
+
+	/* The indirect draws the rules skip, then one at the end of the 8192 bytes, and the dispatches. */
+	x_record(&node, ID_X_COMMANDS);
+	x_begin_pass(ID_X_COMMANDS, 64U, 32U);
+	x_bind_triangle(ID_X_COMMANDS, ID_PIPELINE, 0U);
+	x_indirect(ID_X_COMMANDS, GPU_OP_CMD_DRAW_INDIRECT, 66U, 1U, 16U);
+	x_indirect(ID_X_COMMANDS, GPU_OP_CMD_DRAW_INDIRECT, 64U, 2U, 8U);
+	x_indirect(ID_X_COMMANDS, GPU_OP_CMD_DRAW_INDIRECT, 64U, 2U, 18U);
+	x_indirect(ID_X_COMMANDS, GPU_OP_CMD_DRAW_INDIRECT, 8192U - 16U, 2U, 16U);
+	x_indirect(ID_X_COMMANDS, GPU_OP_CMD_DRAW_INDEXED_INDIRECT, 8192U - 16U, 1U, 20U);
+	x_indirect(ID_X_COMMANDS, GPU_OP_CMD_DRAW_INDIRECT, 0U, 0x40000000U, 16U);
+	x_indirect(ID_X_COMMANDS, GPU_OP_CMD_DRAW_INDIRECT, 0U, 0U, 16U);
+	x_indirect(ID_X_COMMANDS, GPU_OP_CMD_DRAW_INDIRECT, 8192U - 16U, 1U, 0U);
+	x_command(GPU_OP_CMD_END_RENDER_PASS, ID_X_COMMANDS);
+	x_command(GPU_OP_CMD_BIND_PIPELINE, ID_X_COMMANDS);
+	put32(VK_PIPELINE_BIND_POINT_COMPUTE);
+	put64(ID_X_COMPUTE);
+	x_command(GPU_OP_CMD_BIND_DESCRIPTOR_SETS, ID_X_COMMANDS);
+	put32(VK_PIPELINE_BIND_POINT_COMPUTE);
+	put64(ID_LAYOUT);
+	put32(0U);
+	put32(1U);
+	put64(1U);
+	put64(ID_SET);
+	put32(1U);
+	put64(1U);
+	put32(0U);
+	x_indirect(ID_X_COMMANDS, GPU_OP_CMD_DISPATCH_INDIRECT, 8192U - 8U, 0U, 0U);
+	x_indirect(ID_X_COMMANDS, GPU_OP_CMD_DISPATCH_INDIRECT, 6U, 0U, 0U);
+	x_indirect(ID_X_COMMANDS, GPU_OP_CMD_DISPATCH_INDIRECT, 8192U - 12U, 0U, 0U);
+	error = x_end(&node, ID_X_COMMANDS);
+	indirect = model_count_commands(GHCI_OP_DRAW_INDIRECT);
+	dispatches = model_count_commands(GHCI_OP_DISPATCH_INDIRECT);
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	command = model_last_command(GHCI_OP_DRAW_INDIRECT);
+	expect(error == 0 && model_count_commands(GHCI_OP_DRAW_INDIRECT) == indirect + 1U && command != NULL && command->words[3] == 8192U - 16U &&
+	       command->words[4] == 1U && command->words[5] == 16U, "ranges: of the indirect draws only the one at the buffer's end runs (stride 16)");
+	command = model_last_command(GHCI_OP_DISPATCH_INDIRECT);
+	expect(model_count_commands(GHCI_OP_DISPATCH_INDIRECT) == dispatches + 1U && command != NULL && command->words[3] == 8192U - 12U,
+	       "ranges: of the indirect dispatches only the one whose 12 bytes fit runs");
+
+	/* Indexed draws: 6 indices of 16 bits at the buffer's end, 7, from index 5, and from an odd offset. */
+	x_record(&node, ID_X_COMMANDS + 1U);
+	x_begin_pass(ID_X_COMMANDS + 1U, 64U, 32U);
+	x_bind_triangle(ID_X_COMMANDS + 1U, ID_PIPELINE, 0U);
+	x_command(GPU_OP_CMD_BIND_INDEX_BUFFER, ID_X_COMMANDS + 1U);
+	put64(ID_BUFFER);
+	put64(8192U - 12U);
+	put32(VK_INDEX_TYPE_UINT16);
+	x_command(GPU_OP_CMD_DRAW_INDEXED, ID_X_COMMANDS + 1U);
+	put32(6U);
+	put32(1U);
+	put32(0U);
+	put32(0U);
+	put32(0U);
+	x_command(GPU_OP_CMD_DRAW_INDEXED, ID_X_COMMANDS + 1U);
+	put32(7U);
+	put32(1U);
+	put32(0U);
+	put32(0U);
+	put32(0U);
+	x_command(GPU_OP_CMD_DRAW_INDEXED, ID_X_COMMANDS + 1U);
+	put32(2U);
+	put32(1U);
+	put32(5U);
+	put32(0U);
+	put32(0U);
+	x_command(GPU_OP_CMD_BIND_INDEX_BUFFER, ID_X_COMMANDS + 1U);
+	put64(ID_BUFFER);
+	put64(1U);
+	put32(VK_INDEX_TYPE_UINT16);
+	x_command(GPU_OP_CMD_DRAW_INDEXED, ID_X_COMMANDS + 1U);
+	put32(1U);
+	put32(1U);
+	put32(0U);
+	put32(0U);
+	put32(0U);
+	x_command(GPU_OP_CMD_END_RENDER_PASS, ID_X_COMMANDS + 1U);
+	error = x_end(&node, ID_X_COMMANDS + 1U);
+	indexed = model_count_commands(GHCI_OP_DRAW_INDEXED);
+	error |= x_submit(&node, ID_X_COMMANDS + 1U, 0U);
+	command = model_last_command(GHCI_OP_DRAW_INDEXED);
+	expect(error == 0 && model_count_commands(GHCI_OP_DRAW_INDEXED) == indexed + 1U && command != NULL && command->words[1] == 6U &&
+	       model.faults == 0U, "ranges: the 6 indices in the buffer are drawn; past its end and from an odd offset skipped");
+	node_close(&node);
+	stop("ranges");
+}
+
+/*
+ * The word a wait of the GPU watches: the client's vkResetEvent on the
+ * host after the submission that sets and waits for the event does not
+ * stop the ring (the wait watches the submission's own word); a wait
+ * after the submission reset the event it set is refused.
+ */
+static void
+scene_x_events(void)
+{
+	unsigned waits;
+	unsigned fences;
+	struct node node;
+	int error;
+
+	/* The device and an event. */
+	error = x_open(&node, MODEL_FULL);
+	begin(&node, GPU_OP_CREATE_EVENT);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_EVENT_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	tail(ID_X_EVENT);
+	error |= run(&node);
+	expect(error == 0, "events: objects");
+
+	/* SetEvent and WaitEvents, held in the model, and the host's reset meanwhile. */
+	x_record(&node, ID_X_COMMANDS);
+	x_command(GPU_OP_CMD_SET_EVENT, ID_X_COMMANDS);
+	put64(ID_X_EVENT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	x_command(GPU_OP_CMD_WAIT_EVENTS, ID_X_COMMANDS);
+	put32(1U);
+	put64(1U);
+	put64(ID_X_EVENT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	put32(0U);
+	put64(0U);
+	put32(0U);
+	put64(0U);
+	put32(0U);
+	put64(0U);
+	error = x_end(&node, ID_X_COMMANDS);
+	waits = model_count_commands(GHCI_OP_WAIT_FENCE);
+	model_hold(1);
+	error |= x_submit(&node, ID_X_COMMANDS, ID_X_FENCE);
+	begin(&node, GPU_OP_RESET_EVENT);
+	put64(ID_DEVICE);
+	put64(ID_X_EVENT);
+	error |= run(&node);
+	model_hold(0);
+	model_tick();
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	begin(&node, GPU_OP_GET_FENCE_STATUS);
+	put64(ID_DEVICE);
+	put64(ID_X_FENCE);
+	error |= run(&node);
+	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_SUCCESS && model_count_commands(GHCI_OP_WAIT_FENCE) == waits + 1U &&
+	       model.waiting_fence == 0 && model.faults == 0U, "events: the host's reset after the submission does not stop the wait");
+
+	/* Set, reset, then a wait in one submission: nothing would set the word, refused. */
+	x_record(&node, ID_X_COMMANDS);
+	x_command(GPU_OP_CMD_SET_EVENT, ID_X_COMMANDS);
+	put64(ID_X_EVENT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	x_command(GPU_OP_CMD_RESET_EVENT, ID_X_COMMANDS);
+	put64(ID_X_EVENT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	x_command(GPU_OP_CMD_WAIT_EVENTS, ID_X_COMMANDS);
+	put32(1U);
+	put64(1U);
+	put64(ID_X_EVENT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	put32(0U);
+	put64(0U);
+	put32(0U);
+	put64(0U);
+	put32(0U);
+	put64(0U);
+	error = x_end(&node, ID_X_COMMANDS);
+	fences = model_count_commands(GHCI_OP_FENCE);
+	expect(error == 0 && x_submit(&node, ID_X_COMMANDS, 0U) == ENOTSUP && model_count_commands(GHCI_OP_FENCE) == fences,
+	       "events: a wait after the submission reset the event is refused");
+	node_close(&node);
+	stop("events");
+}
+
+/*
+ * The regions of image copies: a negative offset, an extent past the
+ * image, an offset past the 16 bits of the packet, layers past the
+ * image, a blit of 2^32 - 1 layers, rows past the buffer and rows
+ * shorter than the extent each refuse the submission before anything is
+ * placed; a framebuffer larger than its view is not made, one whose view
+ * is not of its pass's format is refused at its begin; the code heap is
+ * mapped executable and not writable, the data heap writable and not
+ * executable.
+ */
+static void
+scene_x_regions(void)
+{
+	static const int32_t offsets[4][3] = { { -1, 0, 0 }, { 0, 0, 0 }, { 70000, 0, 0 }, { 0, 0, 0 } };
+	static const uint32_t extents[4][3] = { { 4U, 4U, 1U }, { 65U, 1U, 1U }, { 1U, 1U, 1U }, { 4U, 4U, 1U } };
+	static const char *const names[] = {
+		"regions: a negative offset is refused", "regions: an extent past the image is refused",
+		"regions: an offset past 16 bits is refused", "regions: layers past the image are refused",
+		"regions: a blit of 2^32 - 1 layers is refused", "regions: rows past the buffer are refused",
+		"regions: rows shorter than the extent are refused"
+	};
+	const struct ghci_vk_pipeline *pipeline;
+	const struct model_mapping *mapping;
+	const struct ghci_vk_object *object;
+	struct test_pass pass;
+	unsigned fences;
+	uint32_t session;
+	struct node node;
+	int index;
+	int error;
+
+	/* The device and the triangle. */
+	error = x_open(&node, MODEL_FULL);
+	error |= (int)x_triangle(&node, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, UINT32_MAX, ID_PIPELINE);
+	expect(error == 0, "regions: objects");
+
+	/* Each copy the checks refuse. */
+	for (index = 0; index < 7; index++) {
+		x_record(&node, ID_X_COMMANDS);
+		if (index < 4) {
+			x_command(GPU_OP_CMD_COPY_IMAGE, ID_X_COMMANDS);
+			put64(ID_IMAGE);
+			put32(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+			put64(ID_X_IMAGE);
+			put32(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+			put32(1U);
+			put64(1U);
+			put32(VK_IMAGE_ASPECT_COLOR_BIT);
+			put32(0U);
+			put32(index == 3 ? 1U : 0U);
+			put32(index == 3 ? 2U : 1U);
+			put32((uint32_t)offsets[index][0]);
+			put32((uint32_t)offsets[index][1]);
+			put32((uint32_t)offsets[index][2]);
+			put32(VK_IMAGE_ASPECT_COLOR_BIT);
+			put32(0U);
+			put32(0U);
+			put32(index == 3 ? 2U : 1U);
+			put32(0U);
+			put32(0U);
+			put32(0U);
+			put32(extents[index][0]);
+			put32(extents[index][1]);
+			put32(extents[index][2]);
+		} else if (index == 4) {
+			x_command(GPU_OP_CMD_BLIT_IMAGE, ID_X_COMMANDS);
+			put64(ID_IMAGE);
+			put32(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+			put64(ID_X_IMAGE);
+			put32(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+			put32(1U);
+			put64(1U);
+			put32(VK_IMAGE_ASPECT_COLOR_BIT);
+			put32(0U);
+			put32(0U);
+			put32(0xffffffffU);
+			put64(2U);
+			put32(0U);
+			put32(0U);
+			put32(0U);
+			put32(64U);
+			put32(32U);
+			put32(1U);
+			put32(VK_IMAGE_ASPECT_COLOR_BIT);
+			put32(0U);
+			put32(0U);
+			put32(0xffffffffU);
+			put64(2U);
+			put32(0U);
+			put32(0U);
+			put32(0U);
+			put32(32U);
+			put32(16U);
+			put32(1U);
+			put32(VK_FILTER_NEAREST);
+		} else {
+			x_command(GPU_OP_CMD_COPY_BUFFER_TO_IMAGE, ID_X_COMMANDS);
+			put64(ID_BUFFER);
+			put64(ID_IMAGE);
+			put32(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+			put32(1U);
+			put64(1U);
+			put64(index == 5 ? 8192U - 100U : 0U);
+			put32(index == 5 ? 0U : 8U);
+			put32(0U);
+			put32(VK_IMAGE_ASPECT_COLOR_BIT);
+			put32(0U);
+			put32(0U);
+			put32(1U);
+			put32(0U);
+			put32(0U);
+			put32(0U);
+			put32(32U);
+			put32(16U);
+			put32(1U);
+		}
+		error = x_end(&node, ID_X_COMMANDS);
+		fences = model_count_commands(GHCI_OP_FENCE);
+		error |= x_submit(&node, ID_X_COMMANDS, 0U) != EINVAL;
+		expect(error == 0 && model_count_commands(GHCI_OP_FENCE) == fences && model_count_commands(GHCI_OP_COPY_IMAGE) == 0U &&
+		       model_count_commands(GHCI_OP_BLIT) == 0U && model_count_commands(GHCI_OP_COPY_BUFFER_TO_IMAGE) == 0U, names[index]);
+	}
+
+	/* A framebuffer wider than its view, and one of more layers, are not made. */
+	expect(x_framebuffer(&node, ID_X_FRAMEBUFFER + 3U, ID_X_PASS, ID_X_VIEW, 128U, 32U, 1U) == EINVAL &&
+	       x_framebuffer(&node, ID_X_FRAMEBUFFER + 3U, ID_X_PASS, ID_X_VIEW, 64U, 32U, 2U) == EINVAL,
+	       "regions: a framebuffer larger than its view is not made");
+
+	/* A pass of B8G8R8A8 begun with a framebuffer of the R8G8B8A8 view: refused. */
+	memset(&pass, 0, sizeof(pass));
+	pass.attachment_count = 1U;
+	pass.format[0] = VK_FORMAT_B8G8R8A8_UNORM;
+	pass.samples[0] = VK_SAMPLE_COUNT_1_BIT;
+	pass.load[0] = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	pass.store[0] = VK_ATTACHMENT_STORE_OP_STORE;
+	pass.subpass_count = 1U;
+	pass.color_count[0] = 1U;
+	pass.color[0][0] = 0U;
+	pass.depth[0] = VK_ATTACHMENT_UNUSED;
+	error = (int)make_render_pass(&node, ID_X_PASS + 3U, &pass);
+	error |= (int)x_framebuffer(&node, ID_X_FRAMEBUFFER + 3U, ID_X_PASS + 3U, ID_X_VIEW, 64U, 32U, 1U);
+	x_record(&node, ID_X_COMMANDS);
+	x_begin_with(ID_X_COMMANDS, ID_X_PASS + 3U, ID_X_FRAMEBUFFER + 3U, 1U);
+	x_command(GPU_OP_CMD_END_RENDER_PASS, ID_X_COMMANDS);
+	error |= x_end(&node, ID_X_COMMANDS);
+	fences = model_count_commands(GHCI_OP_FENCE);
+	error |= x_submit(&node, ID_X_COMMANDS, 0U) != EINVAL;
+	expect(error == 0 && model_count_commands(GHCI_OP_FENCE) == fences && model_count_commands(GHCI_OP_BEGIN_RENDER_PASS) == 0U,
+	       "regions: a framebuffer whose view is not of its pass's format is refused at the begin");
+
+	/* The heaps' mappings. */
+	pipeline = pipeline_of(&node, ID_PIPELINE);
+	session = session_of(&node)->devices->vm->session;
+	mapping = pipeline != NULL ? model_lookup(session, pipeline->pso_va) : NULL;
+	expect(mapping != NULL && (mapping->flags & GHCI_VM_FLAG_EXEC) != 0U && (mapping->flags & GHCI_VM_FLAG_WRITE) == 0U &&
+	       (mapping->flags & GHCI_VM_FLAG_READ) != 0U, "regions: the code heap is executable and read-only to the GPU");
+	begin(&node, GPU_OP_CREATE_EVENT);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_EVENT_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	tail(ID_X_EVENT);
+	(void)run(&node);
+	object = ghci_vk_object_find(session_of(&node), GHCI_VK_EVENT, ID_X_EVENT);
+	mapping = object != NULL ? model_lookup(session, object->as.event.block->mapping->va) : NULL;
+	expect(mapping != NULL && (mapping->flags & GHCI_VM_FLAG_EXEC) == 0U && (mapping->flags & GHCI_VM_FLAG_WRITE) != 0U,
+	       "regions: the data heap is writable and not executable");
+	node_close(&node);
+	stop("regions");
+}
+
+/*
+ * What Vulkan allows in and out of a render pass: a primary buffer that
+ * ends inside one, a fill, a dispatch and a SetEvent inside one, and a
+ * secondary buffer that begins or ends one each refuse the submission
+ * before anything is placed.
+ */
+static void
+scene_x_pass_rules(void)
+{
+	static const char *const names[] = {
+		"pass rules: a primary buffer that ends inside a pass is refused", "pass rules: a fill inside a pass is refused",
+		"pass rules: a dispatch inside a pass is refused", "pass rules: a SetEvent inside a pass is refused",
+		"pass rules: a secondary buffer that begins a pass is refused", "pass rules: a secondary buffer that ends the pass is refused"
+	};
+	unsigned fences;
+	struct node node;
+	int index;
+	int error;
+
+	/* The device, the compute pipeline and its set, an event and a secondary buffer. */
+	error = x_open(&node, MODEL_FULL);
+	error |= x_compute_set(&node);
+	begin(&node, GPU_OP_CREATE_EVENT);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_EVENT_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	tail(ID_X_EVENT);
+	error |= run(&node);
+	begin(&node, GPU_OP_ALLOCATE_COMMAND_BUFFERS);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO);
+	put64(0U);
+	put64(ID_X_POOL);
+	put32(VK_COMMAND_BUFFER_LEVEL_SECONDARY);
+	put32(1U);
+	put64(1U);
+	put64(ID_X_COMMANDS + 8U);
+	error |= run(&node);
+	expect(error == 0, "pass rules: objects");
+
+	/* Each recording. */
+	for (index = 0; index < 6; index++) {
+		/* The secondary buffer: a pass begun and ended, or an end alone. */
+		if (index >= 4) {
+			x_record(&node, ID_X_COMMANDS + 8U);
+			if (index == 4)
+				x_begin_pass(ID_X_COMMANDS + 8U, 64U, 32U);
+			x_command(GPU_OP_CMD_END_RENDER_PASS, ID_X_COMMANDS + 8U);
+			error = x_end(&node, ID_X_COMMANDS + 8U);
+		}
+
+		/* The primary. */
+		x_record(&node, ID_X_COMMANDS);
+		if (index == 2) {
+			x_command(GPU_OP_CMD_BIND_PIPELINE, ID_X_COMMANDS);
+			put32(VK_PIPELINE_BIND_POINT_COMPUTE);
+			put64(ID_X_COMPUTE);
+			x_command(GPU_OP_CMD_BIND_DESCRIPTOR_SETS, ID_X_COMMANDS);
+			put32(VK_PIPELINE_BIND_POINT_COMPUTE);
+			put64(ID_LAYOUT);
+			put32(0U);
+			put32(1U);
+			put64(1U);
+			put64(ID_SET);
+			put32(1U);
+			put64(1U);
+			put32(0U);
+		}
+		if (index != 4)
+			x_begin_pass(ID_X_COMMANDS, 64U, 32U);
+		if (index == 1) {
+			x_command(GPU_OP_CMD_FILL_BUFFER, ID_X_COMMANDS);
+			put64(ID_BUFFER);
+			put64(0U);
+			put64(64U);
+			put32(0U);
+		} else if (index == 2) {
+			x_command(GPU_OP_CMD_DISPATCH, ID_X_COMMANDS);
+			put32(1U);
+			put32(1U);
+			put32(1U);
+		} else if (index == 3) {
+			x_command(GPU_OP_CMD_SET_EVENT, ID_X_COMMANDS);
+			put64(ID_X_EVENT);
+			put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+		} else if (index >= 4) {
+			x_command(GPU_OP_CMD_EXECUTE_COMMANDS, ID_X_COMMANDS);
+			put32(1U);
+			put64(1U);
+			put64(ID_X_COMMANDS + 8U);
+		}
+		if (index != 0 && index != 4)
+			x_command(GPU_OP_CMD_END_RENDER_PASS, ID_X_COMMANDS);
+		error |= x_end(&node, ID_X_COMMANDS);
+		fences = model_count_commands(GHCI_OP_FENCE);
+		error |= x_submit(&node, ID_X_COMMANDS, 0U) != EINVAL;
+		expect(error == 0 && model_count_commands(GHCI_OP_FENCE) == fences && model_count_commands(GHCI_OP_FILL_BUFFER) == 0U &&
+		       model_count_commands(GHCI_OP_DISPATCH) == 0U, names[index]);
+	}
+	node_close(&node);
+	stop("pass rules");
+}
+
+/*
+ * A framebuffer of two layers: the pass's clear of layer 1 is a pass of
+ * its own before the subpass (layer 0 is the subpass's); a
+ * vkCmdClearAttachments of layer 1 ends the subpass, clears layer 1, and
+ * begins the subpass again loading layer 0.  A clear of attachments in
+ * a subpass whose attachment is not stored makes the first part store
+ * it (the subpass goes on) and the last part keep DONT_CARE.
+ */
+static void
+scene_x_layers(void)
+{
+	static const uint32_t expected[] = {
+		GHCI_OP_BIND_SESSION, GHCI_OP_BARRIER, GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_END_RENDER_PASS, GHCI_OP_BEGIN_RENDER_PASS,
+		GHCI_OP_END_RENDER_PASS, GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_END_RENDER_PASS, GHCI_OP_BEGIN_RENDER_PASS,
+		GHCI_OP_END_RENDER_PASS, GHCI_OP_BARRIER, GHCI_OP_FENCE, GHCI_OP_BIND_SESSION
+	};
+	const struct model_command *command;
+	const uint8_t *desc;
+	const uint8_t *table;
+	struct test_pass pass;
+	uint32_t ops[X_OPS_MAX];
+	uint64_t layer0;
+	unsigned first;
+	unsigned count;
+	unsigned mark;
+	struct node node;
+	int error;
+
+	/* A 64 x 32 image of two layers at 0x70000 and its 2D array view. */
+	error = x_open(&node, MODEL_FULL);
+	begin(&node, GPU_OP_CREATE_IMAGE);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(VK_IMAGE_TYPE_2D);
+	put32(VK_FORMAT_R8G8B8A8_UNORM);
+	put32(64U);
+	put32(32U);
+	put32(1U);
+	put32(1U);
+	put32(2U);
+	put32(VK_SAMPLE_COUNT_1_BIT);
+	put32(VK_IMAGE_TILING_OPTIMAL);
+	put32(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT);
+	put32(VK_SHARING_MODE_EXCLUSIVE);
+	put32(0U);
+	put64(0U);
+	put32(VK_IMAGE_LAYOUT_UNDEFINED);
+	tail(ID_X_IMAGE + 5U);
+	error |= run(&node);
+	error |= (int)reply32(&node, 4U);
+	begin(&node, GPU_OP_BIND_IMAGE_MEMORY);
+	put64(ID_DEVICE);
+	put64(ID_X_IMAGE + 5U);
+	put64(ID_MEMORY);
+	put64(0x70000U);
+	error |= run(&node);
+	error |= (int)reply32(&node, 4U);
+	begin(&node, GPU_OP_CREATE_IMAGE_VIEW);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put64(ID_X_IMAGE + 5U);
+	put32(VK_IMAGE_VIEW_TYPE_2D_ARRAY);
+	put32(VK_FORMAT_R8G8B8A8_UNORM);
+	put32(VK_COMPONENT_SWIZZLE_IDENTITY);
+	put32(VK_COMPONENT_SWIZZLE_IDENTITY);
+	put32(VK_COMPONENT_SWIZZLE_IDENTITY);
+	put32(VK_COMPONENT_SWIZZLE_IDENTITY);
+	put32(VK_IMAGE_ASPECT_COLOR_BIT);
+	put32(0U);
+	put32(1U);
+	put32(0U);
+	put32(2U);
+	tail(ID_X_VIEW + 5U);
+	error |= run(&node);
+	error |= (int)reply32(&node, 4U);
+	error |= (int)x_framebuffer(&node, ID_X_FRAMEBUFFER + 5U, ID_X_PASS, ID_X_VIEW + 5U, 64U, 32U, 2U);
+	expect(error == 0, "layers: objects");
+	layer0 = x_va(&node, 0x70000U);
+
+	/* The pass begun, layer 1 cleared by vkCmdClearAttachments, the end. */
+	x_record(&node, ID_X_COMMANDS);
+	x_begin_with(ID_X_COMMANDS, ID_X_PASS, ID_X_FRAMEBUFFER + 5U, 1U);
+	x_clear_color0(ID_X_COMMANDS, 1U, 1U);
+	x_command(GPU_OP_CMD_END_RENDER_PASS, ID_X_COMMANDS);
+	error = x_end(&node, ID_X_COMMANDS);
+	mark = model.command_count;
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	count = x_ops(mark, &first, ops);
+	expect(error == 0 && x_same(ops, count, expected, sizeof(expected) / sizeof(expected[0])),
+	       "layers: layer 1's clear, the subpass, the clear of layer 1 between its two parts");
+	if (count == sizeof(expected) / sizeof(expected[0])) {
+		/* Layer 1 cleared to the pass's value before the subpass, over the render area. */
+		command = &model.commands[first + 2U];
+		desc = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
+		table = desc != NULL ? x_gpu(command->session, x_load(desc + 0xa8U, 8U)) : NULL;
+		expect(desc != NULL && table != NULL && x_load(desc, 8U) == layer0 + 8192U && desc[0x0dU] == 1U && command->words[8] == 1U &&
+		       command->words[4] == (64U | (32U << 16)) && x_load(table, 4U) == 0U && x_load(table + 12U, 4U) == 0x3f800000U,
+		       "layers: layer 1 (8192 bytes on) cleared to (0, 0, 0, 1) by a pass of its own");
+
+		/* The subpass on layer 0, stored at its end in the middle. */
+		command = &model.commands[first + 4U];
+		desc = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
+		expect(desc != NULL && x_load(desc, 8U) == layer0 && desc[0x0dU] == 1U, "layers: the subpass draws layer 0, CLEAR | STORE");
+
+		/* The clear of layer 1 with the attachments' value. */
+		command = &model.commands[first + 6U];
+		desc = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
+		table = desc != NULL ? x_gpu(command->session, x_load(desc + 0xa8U, 8U)) : NULL;
+		expect(desc != NULL && table != NULL && x_load(desc, 8U) == layer0 + 8192U && x_load(table + 4U, 4U) == 0x3f800000U,
+		       "layers: vkCmdClearAttachments clears layer 1 to (0, 1, 0, 1)");
+
+		/* The subpass again, loading layer 0. */
+		command = &model.commands[first + 8U];
+		desc = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
+		expect(desc != NULL && command->words[8] == 0U && x_load(desc, 8U) == layer0 && desc[0x0dU] == 0U,
+		       "layers: the subpass begun again loads layer 0 (LOAD | STORE)");
+	}
+
+	/* A pass that does not store its colour: the clear's first part stores it, the last keeps DONT_CARE. */
+	memset(&pass, 0, sizeof(pass));
+	pass.attachment_count = 1U;
+	pass.format[0] = VK_FORMAT_R8G8B8A8_UNORM;
+	pass.samples[0] = VK_SAMPLE_COUNT_1_BIT;
+	pass.load[0] = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	pass.store[0] = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	pass.subpass_count = 1U;
+	pass.color_count[0] = 1U;
+	pass.color[0][0] = 0U;
+	pass.depth[0] = VK_ATTACHMENT_UNUSED;
+	error = (int)make_render_pass(&node, ID_X_PASS + 4U, &pass);
+	error |= (int)x_framebuffer(&node, ID_X_FRAMEBUFFER + 4U, ID_X_PASS + 4U, ID_X_VIEW, 64U, 32U, 1U);
+	x_record(&node, ID_X_COMMANDS);
+	x_begin_with(ID_X_COMMANDS, ID_X_PASS + 4U, ID_X_FRAMEBUFFER + 4U, 1U);
+	x_clear_color0(ID_X_COMMANDS, 0U, 1U);
+	x_command(GPU_OP_CMD_END_RENDER_PASS, ID_X_COMMANDS);
+	error |= x_end(&node, ID_X_COMMANDS);
+	mark = model.command_count;
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	count = x_ops(mark, &first, ops);
+	expect(error == 0 && count == 9U && ops[2] == GHCI_OP_BEGIN_RENDER_PASS && ops[4] == GHCI_OP_BEGIN_RENDER_PASS,
+	       "layers: the clear of a DONT_CARE attachment ends the subpass in its middle");
+	if (count == 9U) {
+		command = &model.commands[first + 2U];
+		desc = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
+		expect(desc != NULL && desc[0x0dU] == 1U, "layers: the first part stores (CLEAR | STORE, not DONT_CARE)");
+		command = &model.commands[first + 4U];
+		desc = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
+		expect(desc != NULL && desc[0x0dU] == (1U | (1U << 2)) && command->words[8] == 1U,
+		       "layers: the last part clears and keeps DONT_CARE");
+	}
+	node_close(&node);
+	stop("layers");
+}
+
+/* The sleep hook of the partial scene: a fault of the processor at the first wait for the ring's room. */
+static void
+x_fault_hook(
+	unsigned sleep,
+	void *argument)
+{
+	int *injected;
+
+	(void)sleep;
+	injected = argument;
+	if (*injected)
+		return;
+	*injected = 1;
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x2000U, 0);
+}
+
+/*
+ * A submission a recovery cuts after part of it is in the ring (a 4 KiB
+ * ring the held processor does not read, and a fault while the driver
+ * waits for room): the reply is VK_ERROR_DEVICE_LOST, the device's last
+ * ticket is the part's, pending, its temporary memory waits on it, and
+ * the reset ends it and gives the memory back.
+ */
+static void
+scene_x_partial(void)
+{
+	struct ghci_vk_device *record;
+	struct ghci_ticket ticket;
+	enum ghci_ticket_state state;
+	struct node node;
+	int injected;
+	int index;
+	int error;
+
+	/* A 4 KiB ring, the triangle, 400 draws. */
+	test_ring_bytes = 4096U;
+	error = x_open(&node, MODEL_FULL);
+	test_ring_bytes = 0U;
+	error |= (int)x_triangle(&node, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, UINT32_MAX, ID_PIPELINE);
+	record = session_of(&node)->devices;
+	expect(error == 0 && record != NULL, "partial: objects");
+	if (record == NULL) {
+		node_close(&node);
+		stop("partial");
+		return;
+	}
+	x_record(&node, ID_X_COMMANDS);
+	x_begin_pass(ID_X_COMMANDS, 64U, 32U);
+	x_bind_triangle(ID_X_COMMANDS, ID_PIPELINE, 0U);
+	for (index = 0; index < 400; index++) {
+		x_command(GPU_OP_CMD_DRAW, ID_X_COMMANDS);
+		put32(3U);
+		put32(1U);
+		put32((uint32_t)index);
+		put32(0U);
+	}
+	x_command(GPU_OP_CMD_END_RENDER_PASS, ID_X_COMMANDS);
+	error = x_end(&node, ID_X_COMMANDS);
+
+	/* The processor held; the fault comes while the driver waits for room. */
+	model_hold(1);
+	injected = 0;
+	stub_set_sleep_hook(x_fault_hook, &injected);
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	stub_set_sleep_hook(NULL, NULL);
+	ticket = record->last;
+	state = ghci_cp_ticket(&device, &ticket);
+	expect(error == 0 && injected && reply32(&node, 4U) == (uint32_t)VK_ERROR_DEVICE_LOST && record->submitted &&
+	       ticket.generation == device.generation && state == GHCI_TICKET_PENDING && record->retired != NULL,
+	       "partial: DEVICE_LOST; the part's ticket is the device's last, pending, and the memory waits on it");
+
+	/* The recovery ends the ticket; the memory goes back. */
+	model_hold(0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	state = ghci_cp_ticket(&device, &ticket);
+	ghci_vk_heap_reclaim(session_of(&node), record);
+	expect(state == GHCI_TICKET_FAILED && record->retired == NULL, "partial: the reset ends the ticket and the memory goes back");
+	node_close(&node);
+	stop("partial");
 }

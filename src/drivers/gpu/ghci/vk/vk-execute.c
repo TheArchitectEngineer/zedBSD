@@ -25,12 +25,17 @@
  * which goes back once the submission's ticket has passed.
  *
  * A command that cannot be run as recorded is refused in one of two
- * ways (design section 11.4): a draw or a dispatch whose pipeline, sets,
- * buffers or dynamic state were never bound refuses the whole submission
- * (EINVAL); a command the device cannot do (an indirect draw without
- * CAP_INDIRECT_DRAW, a partial clear) is skipped, and the log shows it
- * once per command buffer.  A transfer on a device without the blitter
- * refuses the submission (ENOTSUP).
+ * ways: a draw or a dispatch whose pipeline, sets, buffers or dynamic
+ * state were never bound, a command Vulkan does not allow where it is
+ * (a transfer, a dispatch or an event's set inside a render pass, a
+ * render pass begun or ended by a secondary buffer, a primary buffer
+ * that ends inside one) and a copy of a region past its images or buffer
+ * refuse the whole submission (EINVAL); a command the device cannot do
+ * (an indirect draw without CAP_INDIRECT_DRAW, a partial clear) or that
+ * would read past its buffer (indirect records, indices) is skipped, and
+ * the log shows it once per command buffer.  A transfer on a device
+ * without the blitter refuses the submission (ENOTSUP), and so does a
+ * wait for an event nothing earlier in the submission sets.
  */
 
 #include <stddef.h>
@@ -51,8 +56,16 @@
 #define WORDS_FIRST			1024U
 #define WORDS_MAX			(4U << 20)
 
-/* The least run of the data heap one chunk of temporary memory takes. */
+/*
+ * The least run of the data heap one chunk of temporary memory takes,
+ * and the most bytes one take asks for (a chunk of them, aligned, still
+ * fits the largest block of the heap).
+ */
 #define TEMP_CHUNK_BYTES		(64U * 1024U)
+#define TEMP_BYTES_MAX			(GHCI_VK_HEAP_BLOCK_MAX / 2U)
+
+/* The most triangles of a fan drawn from an index list (12 bytes each). */
+#define FAN_TRIANGLES_MAX		(TEMP_BYTES_MAX / 12U)
 
 /* The alignment of a render pass description, a hardware table and a clear colour table. */
 #define DESC_ALIGN			64U
@@ -73,6 +86,16 @@
 
 /* The bytes of a query's slot (its result, then its availability word). */
 #define QUERY_SLOT_BYTES		16U
+
+/*
+ * The bytes of the records an indirect draw, an indexed one and a
+ * dispatch read (VkDrawIndirectCommand, VkDrawIndexedIndirectCommand and
+ * VkDispatchIndirectCommand).  With CAP_INDIRECT_DRAW the device reports
+ * maxDrawIndirectCount 2^32 - 1, so every draw count is within it.
+ */
+#define INDIRECT_DRAW_BYTES		16U
+#define INDIRECT_INDEXED_BYTES		20U
+#define INDIRECT_DISPATCH_BYTES		12U
 
 /* The bytes vkCmdUpdateBuffer may write. */
 #define UPDATE_BYTES_MAX		65536U
@@ -114,7 +137,8 @@ struct vertex_state {
  * The state one command buffer records and the ring holds for it: the
  * bind points, which of them the tables in the ring belong to (or none,
  * BIND_POINTS), the push constants, the vertex buffers (bound is a bit
- * per binding), the index buffer, and the dynamic state (set has a bit
+ * per binding), the index buffer (its address, the bytes from there to
+ * the buffer's end, and its type), and the dynamic state (set has a bit
  * per VkDynamicState recorded, dirty a bit per value not yet in the
  * ring since it changed).  logged says that the log has shown a skipped
  * command of the buffer, and secondary that it is a secondary buffer.
@@ -128,6 +152,7 @@ struct buffer_state {
 	uint32_t vertex_bound;
 	int vertex_dirty;
 	uint64_t index_va;
+	uint64_t index_bytes;
 	uint32_t index_32bit;
 	int index_bound;
 	int index_dirty;
@@ -147,9 +172,12 @@ struct buffer_state {
 
 /*
  * The render pass a command buffer is in: the pass and framebuffer
- * records, the subpass, the render area ([x, y, width, height]), and the
+ * records, the subpass, the render area ([x, y, width, height]), the
  * clear values of the attachments ([4 words] of a colour, or the depth's
- * bits and the stencil in the first two).
+ * bits and the stencil in the first two), and the description the
+ * current subpass began with and its bytes in temporary memory (which
+ * the GPU reads only once the submission is placed, so an end in the
+ * middle of the subpass may still make it store everything).
  */
 struct pass_state {
 	int active;
@@ -159,6 +187,8 @@ struct pass_state {
 	uint32_t area[4];
 	uint32_t clear[CLEAR_VALUES_MAX][4];
 	uint32_t clear_count;
+	struct ghci_render_pass_desc desc;
+	uint8_t *desc_view;
 };
 
 /*
@@ -175,10 +205,45 @@ struct pass_clear {
 	uint32_t stencil_value;
 };
 
-/* The last value one submission's packets wrote to an event's word, at the point being made. */
+/*
+ * One region of an image copy, blit or resolve: the layers of the source
+ * and the destination, the corners (the source's, a blit's second
+ * source corner, the destination's, a blit's second destination corner)
+ * and a copy's or a resolve's extent.
+ */
+struct image_region {
+	VkImageSubresourceLayers layers[2];
+	int32_t offsets[4][3];
+	uint32_t extent[3];
+};
+
+/*
+ * One slice of an image a render pass that only clears clears: its
+ * format, address, row pitch and size, samples, and whether it is a
+ * depth and stencil attachment (or colour attachment 0).
+ */
+struct slice_target {
+	uint32_t format;
+	uint64_t va;
+	uint32_t pitch;
+	uint32_t width;
+	uint32_t height;
+	uint32_t samples;
+	int depth;
+};
+
+/*
+ * The last value one submission's packets wrote to an event's word, at
+ * the point being made, and the bus address of the word of the
+ * submission's temporary memory that its last SetEvent's fence also set
+ * (0 after a ResetEvent).  A wait watches that word: the client cannot
+ * write it (the host's vkSetEvent and vkResetEvent write the event's own
+ * word alone), so the wait cannot be made to stop the ring.
+ */
 struct event_write {
 	uint64_t identity;
 	uint32_t value;
+	uint64_t private_bus;
 };
 
 /*
@@ -230,6 +295,8 @@ static uint32_t pipeline_sets(const struct ghci_vk_pipeline *pipeline);
 static void draw(struct exec *exec, uint32_t number, struct i915_wire_reader *reader);
 static void draw_fan(struct exec *exec, uint32_t vertices, uint32_t instances, uint32_t first_vertex, uint32_t first_instance);
 static void draw_indirect(struct exec *exec, uint32_t number, struct i915_wire_reader *reader);
+static int indirect_check(struct exec *exec, uint64_t offset, uint64_t remaining, uint32_t count, uint32_t stride, uint32_t size);
+static int indices_check(struct exec *exec, uint32_t count, uint32_t first);
 static void dispatch(struct exec *exec, uint32_t number, struct i915_wire_reader *reader);
 static int dispatch_prepare(struct exec *exec);
 static void barrier(struct exec *exec, uint32_t number, struct i915_wire_reader *reader);
@@ -238,14 +305,17 @@ static uint32_t stages_of(uint32_t vulkan);
 static uint32_t barrier_flags(uint32_t source_access, uint32_t destination_access, uint32_t source_stages, uint32_t destination_stages);
 static void begin_pass(struct exec *exec, struct i915_wire_reader *reader);
 static void read_clear_value(struct i915_wire_reader *reader, uint32_t *value);
+static int framebuffer_check(struct exec *exec, const struct ghci_vk_render_pass *pass, const struct ghci_vk_framebuffer *framebuffer);
 static void subpass_begin(struct exec *exec, const struct pass_clear *clear);
+static void subpass_store_all(struct exec *exec);
 static void subpass_end(struct exec *exec);
+static void layers_clear(struct exec *exec, const struct pass_clear *clear, uint32_t first, uint32_t count);
 static int view_of(struct exec *exec, uint32_t attachment, const struct ghci_vk_image_view **view);
 static uint32_t pass_load(const struct ghci_vk_pass_attachment *attachment, uint32_t subpass, uint32_t load);
 static uint32_t pass_store(const struct ghci_vk_pass_attachment *attachment, uint32_t subpass, uint32_t store);
 static void clear_attachments(struct exec *exec, struct i915_wire_reader *reader);
 static void clear_image(struct exec *exec, uint32_t number, struct i915_wire_reader *reader);
-static void clear_slice(struct exec *exec, uint32_t format, uint64_t va, uint32_t pitch, uint32_t width, uint32_t height, uint32_t samples, int depth_attachment, const uint32_t *value, uint32_t aspects);
+static void clear_slice(struct exec *exec, const struct slice_target *target, const uint32_t *value, uint32_t aspects, const uint32_t *area);
 static int image_of(struct exec *exec, uint64_t identity, const struct ghci_vk_image **image, uint64_t *va);
 static uint64_t image_slice(const struct ghci_vk_image *image, uint64_t base, uint32_t level, uint32_t layer, uint32_t z);
 static int transfer_allowed(struct exec *exec);
@@ -254,7 +324,13 @@ static void copy_bytes(struct exec *exec, uint64_t source, uint64_t destination,
 static void fill_buffer(struct exec *exec, struct i915_wire_reader *reader);
 static void update_buffer(struct exec *exec, struct i915_wire_reader *reader);
 static void copy_image(struct exec *exec, uint32_t number, struct i915_wire_reader *reader);
+static void image_region_read(struct i915_wire_reader *reader, uint32_t number, struct image_region *region);
+static int image_region_check(struct exec *exec, uint32_t number, const struct ghci_vk_image *source, const struct ghci_vk_image *destination, const struct image_region *region);
+static int layers_check(const struct ghci_vk_image *image, const VkImageSubresourceLayers *layers);
+static int box_check(const struct ghci_vk_image *image, uint32_t level, const int32_t *offset, const uint32_t *extent);
+static int corner_check(const struct ghci_vk_image *image, uint32_t level, const int32_t *corner);
 static void copy_buffer_image(struct exec *exec, uint32_t number, struct i915_wire_reader *reader);
+static int buffer_rows_fit(uint64_t offset, uint64_t slice_bytes, uint32_t slices, uint64_t needed, uint64_t size);
 static void read_layers(struct i915_wire_reader *reader, VkImageSubresourceLayers *layers);
 static void read_offset(struct i915_wire_reader *reader, int32_t *offset);
 static void event_write(struct exec *exec, struct i915_wire_reader *reader, uint32_t value);
@@ -333,9 +409,11 @@ ghci_vk_execute(
 
 /*
  * Ends a submission: its temporary memory goes back once ticket has
- * passed (with no ticket, a submission that was not placed, at once; one
- * placed in part stays until the device's heap goes), the events its
- * packets write wait for the ticket, and the packets' room is freed.
+ * passed or a reset ended it (a submission placed in part has the ticket
+ * of ghci_cp_submit_placed(); with no ticket, a submission that was not
+ * placed, at once, and one placed with no ticket to wait for stays until
+ * the device's heap goes), the events its packets write wait for the
+ * ticket, and the packets' room is freed.
  */
 void
 ghci_vk_submission_end(
@@ -413,6 +491,10 @@ buffer_convert(
 	}
 	if (reader.error != 0 && exec->error == 0)
 		refuse(exec, EINVAL, "a recording that does not decode");
+
+	/* A primary buffer ends outside a render pass (the next buffer begins outside one). */
+	if (!secondary && exec->pass.active)
+		refuse(exec, EINVAL, "a primary command buffer that ends inside a render pass");
 
 	/* The state goes; the one that executed a secondary buffer finds the ring changed. */
 	exec->state = saved;
@@ -546,6 +628,10 @@ command_convert(
 	case GPU_OP_CMD_NEXT_SUBPASS:
 		/* [contents]: the subpass ends and the next begins. */
 		(void)read32(reader);
+		if (exec->state->secondary) {
+			refuse(exec, EINVAL, "a next subpass in a secondary command buffer");
+			break;
+		}
 		if (!exec->pass.active || exec->pass.subpass + 1U >= exec->pass.pass->subpass_count) {
 			refuse(exec, EINVAL, "a next subpass outside a render pass");
 			break;
@@ -555,7 +641,11 @@ command_convert(
 		subpass_begin(exec, NULL);
 		break;
 	case GPU_OP_CMD_END_RENDER_PASS:
-		/* The last subpass ends. */
+		/* The last subpass ends (in the primary buffer that began it). */
+		if (exec->state->secondary) {
+			refuse(exec, EINVAL, "an end of a render pass in a secondary command buffer");
+			break;
+		}
 		if (!exec->pass.active) {
 			refuse(exec, EINVAL, "an end of a render pass outside one");
 			break;
@@ -686,14 +776,20 @@ temp_take(
 {
 	struct ghci_vk_submission *submission;
 	struct ghci_vk_temp *grown;
-	uint32_t start;
-	uint32_t chunk;
+	uint64_t start;
+	uint64_t chunk;
 	uint32_t capacity;
 	int error;
 
+	/* No more than one block of the heap holds, aligned. */
+	if (bytes > TEMP_BYTES_MAX) {
+		refuse(exec, ENOMEM, "temporary memory past a block of the heap");
+		return ENOMEM;
+	}
+
 	/* Room in the chunk being filled. */
 	submission = exec->submission;
-	start = (submission->chunk_used + alignment - 1U) & ~(alignment - 1U);
+	start = ((uint64_t)submission->chunk_used + alignment - 1U) & ~(uint64_t)(alignment - 1U);
 	if (exec->chunk_block == NULL || start + bytes > submission->chunk_bytes) {
 		/* A record of one more run. */
 		if (submission->temp_count == submission->temp_capacity) {
@@ -712,11 +808,11 @@ temp_take(
 			submission->temp_capacity = capacity;
 		}
 
-		/* A new chunk of the data heap. */
+		/* A new chunk of the data heap (bytes is below the largest block, so the doubling ends). */
 		chunk = TEMP_CHUNK_BYTES;
 		while (chunk < bytes)
 			chunk <<= 1;
-		error = ghci_vk_heap_take(exec->session, exec->device, GHCI_VK_HEAP_DATA, chunk, DESC_ALIGN, &exec->chunk_block, &exec->chunk_offset);
+		error = ghci_vk_heap_take(exec->session, exec->device, GHCI_VK_HEAP_DATA, (uint32_t)chunk, DESC_ALIGN, &exec->chunk_block, &exec->chunk_offset);
 		if (error != 0) {
 			exec->chunk_block = NULL;
 			refuse(exec, error == ENOMEM ? ENOMEM : EIO, "no temporary memory for a submission");
@@ -726,7 +822,7 @@ temp_take(
 		submission->temps[submission->temp_count].offset = exec->chunk_offset;
 		submission->temp_count++;
 		submission->chunk_used = 0U;
-		submission->chunk_bytes = chunk;
+		submission->chunk_bytes = (uint32_t)chunk;
 		start = 0U;
 	}
 
@@ -734,7 +830,7 @@ temp_take(
 	*va = exec->chunk_block->mapping->va + exec->chunk_offset + start;
 	*view = exec->chunk_block->allocation->view + exec->chunk_offset + start;
 	kern_memset(*view, 0, bytes);
-	submission->chunk_used = start + bytes;
+	submission->chunk_used = (uint32_t)(start + bytes);
 
 	/* Succeeded: the bytes are the submission's. */
 	return 0;
@@ -858,6 +954,12 @@ bind_sets(
 	for (index = 0U; index < dynamic_count; index++)
 		offsets[index] = read32(reader);
 
+	/* A bind point of Vulkan 1.0. */
+	if (point != (uint32_t)VK_PIPELINE_BIND_POINT_GRAPHICS && point != (uint32_t)VK_PIPELINE_BIND_POINT_COMPUTE) {
+		refuse(exec, EINVAL, "a bind of sets to a bind point Vulkan 1.0 does not have");
+		return;
+	}
+
 	/* A layout of the session whose sets take that many dynamic offsets. */
 	if (object == NULL || object->as.pipeline_layout == NULL) {
 		refuse(exec, EINVAL, "a bind of sets with a pipeline layout the session does not have");
@@ -960,6 +1062,7 @@ bind_index_buffer(
 
 	/* The binding, placed before the next indexed draw. */
 	exec->state->index_va = va;
+	exec->state->index_bytes = remaining;
 	exec->state->index_32bit = type == (uint32_t)VK_INDEX_TYPE_UINT32 ? 1U : 0U;
 	exec->state->index_bound = 1;
 	exec->state->index_dirty = 1;
@@ -1180,7 +1283,7 @@ draw_prepare(
 
 /*
  * Places the graphics pipeline when it changed, with the state its record
- * does not keep (design R07): the viewport and scissor (an empty scissor
+ * does not keep: the viewport and scissor (an empty scissor
  * for a pipeline that discards its primitives), depth bias, blend
  * constants, the stencil words, a dynamic line width, and each
  * attachment's blend word on a device with independent blending; and
@@ -1547,6 +1650,13 @@ draw(
 		return;
 	}
 
+	/* The indices of an indexed draw within its index buffer, at a multiple of their size. */
+	if (indexed) {
+		error = indices_check(exec, arguments[0], arguments[2]);
+		if (error != 0)
+			return;
+	}
+
 	/* What the draw reads. */
 	error = draw_prepare(exec, indexed);
 	if (error != 0)
@@ -1564,7 +1674,7 @@ draw(
 
 /*
  * Draws a triangle fan as a triangle list from an index list in
- * temporary memory (design R30): triangle i is vertices (i + 1, i + 2, 0)
+ * temporary memory: triangle i is vertices (i + 1, i + 2, 0)
  * from the first, so that its provoking vertex is Vulkan's; the
  * client's index buffer is bound again before the next indexed draw.
  */
@@ -1588,7 +1698,7 @@ draw_fan(
 	if (vertices < 3U)
 		return;
 	triangles = vertices - 2U;
-	if (triangles > (UINT32_MAX / 12U)) {
+	if (triangles > FAN_TRIANGLES_MAX) {
 		skip_command(exec, "a triangle fan too long for its index list");
 		return;
 	}
@@ -1631,6 +1741,7 @@ draw_indirect(
 	uint64_t remaining;
 	uint32_t draws;
 	uint32_t stride;
+	uint32_t size;
 	int indexed;
 	int has;
 	int error;
@@ -1660,11 +1771,106 @@ draw_indirect(
 		return;
 	}
 
+	/* No draws place nothing; the others' records lie within the buffer. */
+	if (draws == 0U)
+		return;
+	size = INDIRECT_DRAW_BYTES;
+	if (indexed)
+		size = INDIRECT_INDEXED_BYTES;
+	if (draws == 1U)
+		stride = size;
+	error = indirect_check(exec, offset, remaining, draws, stride, size);
+	if (error != 0)
+		return;
+
 	/* What the draw reads, then the draw. */
 	error = draw_prepare(exec, indexed);
 	if (error != 0)
 		return;
 	put(exec, words, ghci_cmd_draw_indirect(words, indexed ? 1U : 0U, va, (uint32_t)offset, draws, stride));
+}
+
+/*
+ * Checks the records an indirect command reads: count records of size
+ * bytes, stride apart from offset, all within the remaining bytes of the
+ * buffer; offset a multiple of 4, and (more than one record) stride a
+ * multiple of 4 no smaller than a record.  Returns 0, or ERANGE for a
+ * command skipped (and logged once per command buffer).
+ */
+static int
+indirect_check(
+	struct exec *exec,
+	uint64_t offset,
+	uint64_t remaining,
+	uint32_t count,
+	uint32_t stride,
+	uint32_t size)
+{
+	uint64_t end;
+
+	/* The offset and the stride as Vulkan asks. */
+	if ((offset & 3U) != 0U) {
+		skip_command(exec, "an indirect command at an offset that is not a multiple of 4");
+		return ERANGE;
+	}
+	if (count > 1U && ((stride & 3U) != 0U || stride < size)) {
+		skip_command(exec, "an indirect draw whose stride is not a multiple of 4 of at least its record");
+		return ERANGE;
+	}
+
+	/* The last record's end within the buffer (64-bit: no wrap). */
+	end = offset + (uint64_t)(count - 1U) * stride + size;
+	if (end > remaining) {
+		skip_command(exec, "an indirect command whose records lie past its buffer");
+		return ERANGE;
+	}
+
+	/* Succeeded: the records are in the buffer. */
+	return 0;
+}
+
+/*
+ * Checks the indices an indexed draw reads: count of them from first,
+ * within the index buffer's bytes, and the buffer bound at a multiple of
+ * their size.  Returns 0, ERANGE for a draw skipped (logged once per
+ * command buffer), or EINVAL without an index buffer (the submission is
+ * refused).
+ */
+static int
+indices_check(
+	struct exec *exec,
+	uint32_t count,
+	uint32_t first)
+{
+	struct buffer_state *state;
+	uint64_t size;
+	uint64_t end;
+
+	/* An index buffer bound. */
+	state = exec->state;
+	if (!state->index_bound) {
+		refuse(exec, EINVAL, "an indexed draw without an index buffer bound");
+		return EINVAL;
+	}
+
+	/* Its address at a multiple of an index's size. */
+	size = 2U;
+	if (state->index_32bit)
+		size = 4U;
+	if ((state->index_va & (size - 1U)) != 0U) {
+		skip_command(exec, "an indexed draw from an index buffer bound at an offset not a multiple of its type");
+		return ERANGE;
+	}
+
+	/* The last index within the buffer (64-bit: no wrap). */
+	end = ((uint64_t)first + count) * size;
+	if (end > state->index_bytes) {
+		skip_command(exec, "an indexed draw whose indices lie past its index buffer");
+		return ERANGE;
+	}
+
+	/* Succeeded: the indices are in the buffer. */
+	return 0;
 }
 
 /* Makes the ring hold what a dispatch reads: the compute pipeline and the tables. */
@@ -1674,6 +1880,12 @@ dispatch_prepare(
 {
 	struct bind_state *bind;
 	uint32_t words[GHCI_DW_BIND_PIPELINE];
+
+	/* Outside a render pass. */
+	if (exec->pass.active) {
+		refuse(exec, EINVAL, "a dispatch inside a render pass");
+		return EINVAL;
+	}
 
 	/* A compute pipeline bound, placed when it changed. */
 	bind = &exec->state->binds[BIND_COMPUTE];
@@ -1739,6 +1951,9 @@ dispatch(
 		refuse(exec, EINVAL, "an indirect dispatch from a buffer the session does not have bound");
 		return;
 	}
+	error = indirect_check(exec, offset, remaining, 1U, INDIRECT_DISPATCH_BYTES, INDIRECT_DISPATCH_BYTES);
+	if (error != 0)
+		return;
 	error = dispatch_prepare(exec);
 	if (error != 0)
 		return;
@@ -1928,6 +2143,12 @@ begin_pass(
 	if (reader->error != 0)
 		return;
 
+	/* A primary buffer begins it. */
+	if (exec->state->secondary) {
+		refuse(exec, EINVAL, "a render pass begun in a secondary command buffer");
+		return;
+	}
+
 	/* A pass and a framebuffer of the session with as many attachments, outside a pass. */
 	if (exec->pass.active || pass == NULL || framebuffer == NULL || pass->as.render_pass == NULL) {
 		refuse(exec, EINVAL, "a render pass begun with objects the session does not have");
@@ -1937,13 +2158,13 @@ begin_pass(
 		refuse(exec, EINVAL, "a framebuffer whose attachments are not its render pass's");
 		return;
 	}
-	if (exec->pass.area[0] + exec->pass.area[2] > framebuffer->as.framebuffer.width
-		|| exec->pass.area[1] + exec->pass.area[3] > framebuffer->as.framebuffer.height) {
+	if ((uint64_t)exec->pass.area[0] + exec->pass.area[2] > framebuffer->as.framebuffer.width
+		|| (uint64_t)exec->pass.area[1] + exec->pass.area[3] > framebuffer->as.framebuffer.height) {
 		refuse(exec, EINVAL, "a render area past its framebuffer");
 		return;
 	}
-	if (framebuffer->as.framebuffer.layers > 1U)
-		skip_command(exec, "a framebuffer of more than one layer (layer 0 alone is drawn)");
+	if (framebuffer_check(exec, pass->as.render_pass, &framebuffer->as.framebuffer) != 0)
+		return;
 
 	/* The first subpass. */
 	exec->pass.active = 1;
@@ -2005,6 +2226,7 @@ subpass_begin(
 	uint32_t depth_value;
 	uint32_t stencil_value;
 	uint32_t load;
+	uint32_t store;
 	uint32_t index;
 	uint32_t at;
 	uint64_t table_va;
@@ -2013,6 +2235,10 @@ subpass_begin(
 	uint8_t *view_bytes;
 	int stencil;
 	int error;
+
+	/* Layers 1 on of the attachments the subpass's operations clear, before it (a framebuffer of layers). */
+	if (clear == NULL && exec->pass.framebuffer->layers > 1U)
+		layers_clear(exec, NULL, 1U, exec->pass.framebuffer->layers - 1U);
 
 	/* The subpass and what it names. */
 	subpass = &exec->pass.pass->subpasses[exec->pass.subpass];
@@ -2037,10 +2263,13 @@ subpass_begin(
 		load = pass_load(attachment, exec->pass.subpass, attachment->load);
 		if (clear != NULL)
 			load = (clear->colors & (1U << index)) != 0U ? (uint32_t)VK_ATTACHMENT_LOAD_OP_CLEAR : (uint32_t)VK_ATTACHMENT_LOAD_OP_LOAD;
+		store = pass_store(attachment, exec->pass.subpass, attachment->store);
+		if (index != 0U && references->resolve[index] != VK_ATTACHMENT_UNUSED)
+			store = (uint32_t)VK_ATTACHMENT_STORE_OP_STORE;
 		desc.colors[index].va = view->va;
 		desc.colors[index].row_pitch = view->row_pitch;
 		desc.colors[index].format = attachment->format;
-		desc.colors[index].ops = load | (pass_store(attachment, exec->pass.subpass, attachment->store) << 2);
+		desc.colors[index].ops = load | (store << 2);
 		if (load != (uint32_t)VK_ATTACHMENT_LOAD_OP_CLEAR)
 			continue;
 		flags |= 1U << index;
@@ -2111,13 +2340,49 @@ subpass_begin(
 		refuse(exec, EINVAL, "a subpass the render pass description cannot hold");
 		return;
 	}
+	exec->pass.desc = desc;
+	exec->pass.desc_view = view_bytes;
 	put(exec, words, ghci_cmd_begin_render_pass(words, desc_va, exec->pass.area, 0U, depth_value, stencil_value, flags));
+}
+
+/*
+ * Makes the current subpass store every attachment at its end (an end in
+ * the middle of the subpass, which begins it again loading them): its
+ * description, not yet read by the GPU, is written again with STORE.
+ */
+static void
+subpass_store_all(
+	struct exec *exec)
+{
+	struct ghci_render_pass_desc *desc;
+	uint32_t index;
+	int error;
+
+	/* Nothing began. */
+	if (exec->pass.desc_view == NULL)
+		return;
+
+	/* Each attachment's store operations STORE (0). */
+	desc = &exec->pass.desc;
+	for (index = 0U; index < GHCI_COLOR_ATTACHMENTS; index++) {
+		if (desc->colors[index].va != 0U)
+			desc->colors[index].ops &= ~(3U << 2);
+	}
+	if (desc->depth_stencil.va != 0U)
+		desc->depth_stencil.ops &= ~((3U << 2) | (3U << 6));
+
+	/* The description again. */
+	error = ghci_render_pass_desc_encode(exec->pass.desc_view, desc);
+	if (error != 0)
+		refuse(exec, EINVAL, "a subpass the render pass description cannot hold");
 }
 
 /*
  * Ends the current subpass, and resolves its colour attachments 1 to 7
  * with RESOLVE_IMAGE over the render area (colour 0's is the
- * description's); a device without the blitter skips them.
+ * description's), after a barrier that waits for the pass's writes to
+ * reach memory (the subpass stored those attachments); a device without
+ * the blitter skips them.
  */
 static void
 subpass_end(
@@ -2130,10 +2395,13 @@ subpass_end(
 	uint32_t words[GHCI_DW_RESOLVE_IMAGE];
 	uint32_t traits;
 	uint32_t index;
+	int barrier_placed;
 	int has;
 
-	/* The subpass ends. */
+	/* The subpass ends; its description is the GPU's now. */
 	put(exec, words, ghci_cmd_end_render_pass(words));
+	exec->pass.desc_view = NULL;
+	barrier_placed = 0;
 
 	/* The resolves of colours 1 to 7. */
 	references = &exec->pass.pass->references[exec->pass.subpass];
@@ -2147,6 +2415,12 @@ subpass_end(
 		}
 		if (view_of(exec, references->color[index], &source) != 0 || view_of(exec, references->resolve[index], &destination) != 0)
 			return;
+
+		/* The samples the pass wrote reach memory before the first resolve reads them. */
+		if (!barrier_placed) {
+			put(exec, words, ghci_cmd_barrier(words, GHCI_STAGE_ROP, GHCI_STAGE_BLT, GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA));
+			barrier_placed = 1;
+		}
 		(void)ghci_vk_format_traits(exec->pass.pass->attachments[references->color[index]].format, &traits);
 		kern_memset(&transfer, 0, sizeof(transfer));
 		transfer.src.va = source->va;
@@ -2187,6 +2461,44 @@ view_of(
 	return 0;
 }
 
+/*
+ * Checks a framebuffer against the render pass it is begun with: each
+ * view still of the session, of its attachment's format and samples, and
+ * at least as large as the framebuffer in width, height and layers.
+ * Returns 0, or EINVAL (the submission is refused).
+ */
+static int
+framebuffer_check(
+	struct exec *exec,
+	const struct ghci_vk_render_pass *pass,
+	const struct ghci_vk_framebuffer *framebuffer)
+{
+	const struct ghci_vk_image_view *view;
+	struct ghci_vk_object *object;
+	uint32_t index;
+
+	/* Each attachment's view. */
+	for (index = 0U; index < pass->attachment_count; index++) {
+		object = ghci_vk_object_find(exec->session, GHCI_VK_IMAGE_VIEW, framebuffer->views[index]);
+		if (object == NULL) {
+			refuse(exec, EINVAL, "a framebuffer whose view the session no longer has");
+			return EINVAL;
+		}
+		view = &object->as.image_view;
+		if (view->format != pass->attachments[index].format || view->samples != pass->attachments[index].samples) {
+			refuse(exec, EINVAL, "a framebuffer whose view is not of its attachment's format and samples");
+			return EINVAL;
+		}
+		if (view->width < framebuffer->width || view->height < framebuffer->height || view->layers < framebuffer->layers) {
+			refuse(exec, EINVAL, "a framebuffer larger than one of its views");
+			return EINVAL;
+		}
+	}
+
+	/* Succeeded: the views are the pass's. */
+	return 0;
+}
+
 /* Reports an attachment's load operation in a subpass: its own in the first that uses it, LOAD after. */
 static uint32_t
 pass_load(
@@ -2218,11 +2530,122 @@ pass_store(
 }
 
 /*
+ * Clears layers first to first + count - 1 (but layer 0, which the
+ * subpass's own description clears) of the attachments of the current
+ * subpass, each with a render pass of its own that only clears, over the
+ * render area: those its load operations clear (clear NULL), or those
+ * vkCmdClearAttachments names, with their values.  The ring is outside a
+ * render pass.
+ */
+static void
+layers_clear(
+	struct exec *exec,
+	const struct pass_clear *clear,
+	uint32_t first,
+	uint32_t count)
+{
+	static const uint32_t zero[4] = { 0U, 0U, 0U, 0U };
+	const struct ghci_vk_pass_attachment *attachment;
+	const struct ghci_vk_pass_references *references;
+	const struct ghci_vk_image_view *view;
+	struct slice_target target;
+	const uint32_t *value;
+	uint32_t depth_value[4];
+	uint32_t aspects;
+	uint32_t layer;
+	uint32_t index;
+	uint32_t at;
+	int error;
+
+	/* Each layer named but layer 0. */
+	references = &exec->pass.pass->references[exec->pass.subpass];
+	for (layer = first; layer - first < count && exec->error == 0; layer++) {
+		if (layer == 0U)
+			continue;
+
+		/* Each colour attachment cleared, at its view's layer. */
+		for (index = 0U; index < references->color_count && exec->error == 0; index++) {
+			at = references->color[index];
+			if (at == VK_ATTACHMENT_UNUSED)
+				continue;
+			attachment = &exec->pass.pass->attachments[at];
+			if (clear == NULL) {
+				if (pass_load(attachment, exec->pass.subpass, attachment->load) != (uint32_t)VK_ATTACHMENT_LOAD_OP_CLEAR)
+					continue;
+				value = zero;
+				if (at < exec->pass.clear_count)
+					value = exec->pass.clear[at];
+			} else {
+				if ((clear->colors & (1U << index)) == 0U)
+					continue;
+				value = clear->color[index];
+			}
+			error = view_of(exec, at, &view);
+			if (error != 0)
+				return;
+			target.format = attachment->format;
+			target.va = view->va + (uint64_t)layer * view->layer_stride;
+			target.pitch = view->row_pitch;
+			target.width = view->width;
+			target.height = view->height;
+			target.samples = view->samples;
+			target.depth = 0;
+			clear_slice(exec, &target, value, VK_IMAGE_ASPECT_COLOR_BIT, exec->pass.area);
+		}
+
+		/* The depth and stencil attachment's aspects cleared (the stencil of a format that has one). */
+		at = references->depth;
+		if (at == VK_ATTACHMENT_UNUSED)
+			continue;
+		attachment = &exec->pass.pass->attachments[at];
+		aspects = 0U;
+		kern_memset(depth_value, 0, sizeof(depth_value));
+		if (clear == NULL) {
+			if (pass_load(attachment, exec->pass.subpass, attachment->load) == (uint32_t)VK_ATTACHMENT_LOAD_OP_CLEAR)
+				aspects |= VK_IMAGE_ASPECT_DEPTH_BIT;
+			if (pass_load(attachment, exec->pass.subpass, attachment->stencil_load) == (uint32_t)VK_ATTACHMENT_LOAD_OP_CLEAR)
+				aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+			if (at < exec->pass.clear_count) {
+				depth_value[0] = exec->pass.clear[at][0];
+				depth_value[1] = exec->pass.clear[at][1];
+			}
+		} else {
+			if (clear->depth)
+				aspects |= VK_IMAGE_ASPECT_DEPTH_BIT;
+			if (clear->stencil)
+				aspects |= VK_IMAGE_ASPECT_STENCIL_BIT;
+			depth_value[0] = clear->depth_value;
+			depth_value[1] = clear->stencil_value;
+		}
+		if (attachment->format == (uint32_t)VK_FORMAT_S8_UINT)
+			aspects &= ~(uint32_t)VK_IMAGE_ASPECT_DEPTH_BIT;
+		if (attachment->format < (uint32_t)VK_FORMAT_S8_UINT || attachment->format > (uint32_t)VK_FORMAT_D32_SFLOAT_S8_UINT)
+			aspects &= ~(uint32_t)VK_IMAGE_ASPECT_STENCIL_BIT;
+		if (aspects == 0U)
+			continue;
+		error = view_of(exec, at, &view);
+		if (error != 0)
+			return;
+		target.format = attachment->format;
+		target.va = view->va + (uint64_t)layer * view->layer_stride;
+		target.pitch = view->row_pitch;
+		target.width = view->width;
+		target.height = view->height;
+		target.samples = view->samples;
+		target.depth = 1;
+		clear_slice(exec, &target, depth_value, aspects, exec->pass.area);
+	}
+}
+
+/*
  * vkCmdClearAttachments: [count][u64 count][each: aspect, attachment,
  * tagged value][count][u64 count][rects: x, y, width, height, layer,
- * layers].  A clear of the whole render area of layer 0 ends the subpass
- * and begins it again clearing those attachments; a partial clear is
- * skipped.
+ * layers].  A clear of the whole render area ends the subpass (storing
+ * everything), clears the layers past 0 the rectangles name with render
+ * passes of their own that only clear, and begins the subpass again,
+ * clearing those attachments when a rectangle names layer 0 (loading
+ * them otherwise); a partial clear, or one of layers past the
+ * framebuffer's, is skipped.
  */
 static void
 clear_attachments(
@@ -2230,13 +2653,17 @@ clear_attachments(
 	struct i915_wire_reader *reader)
 {
 	struct pass_clear clear;
+	struct pass_clear none;
 	uint32_t value[4];
 	uint32_t aspect;
 	uint32_t attachment;
 	uint32_t rect[6];
 	uint64_t count;
 	uint64_t index;
+	size_t rects;
+	size_t end_offset;
 	uint32_t at;
+	int layer_zero;
 	int whole;
 
 	/* The attachments and their values. */
@@ -2261,16 +2688,23 @@ clear_attachments(
 		}
 	}
 
-	/* The rectangles: each the whole render area of layer 0. */
+	/* The rectangles: each the whole render area of layers within the framebuffer's. */
 	whole = 1;
+	layer_zero = 0;
 	read_skip(reader, 4U);
 	count = read_count(reader);
+	rects = reader->offset;
 	for (index = 0U; index < count && reader->error == 0; index++) {
 		for (at = 0U; at < 6U; at++)
 			rect[at] = read32(reader);
 		if (rect[0] != exec->pass.area[0] || rect[1] != exec->pass.area[1] || rect[2] != exec->pass.area[2]
-			|| rect[3] != exec->pass.area[3] || rect[4] != 0U || rect[5] != 1U)
+			|| rect[3] != exec->pass.area[3])
 			whole = 0;
+		if (!exec->pass.active || rect[5] == 0U || rect[4] >= exec->pass.framebuffer->layers
+			|| rect[5] > exec->pass.framebuffer->layers - rect[4])
+			whole = 0;
+		if (rect[4] == 0U)
+			layer_zero = 1;
 	}
 	if (reader->error != 0)
 		return;
@@ -2279,13 +2713,30 @@ clear_attachments(
 		return;
 	}
 	if (!whole) {
-		skip_command(exec, "a clear of part of the attachments");
+		skip_command(exec, "a clear of part of the attachments, or of layers past the framebuffer's");
 		return;
 	}
 
-	/* The subpass again, clearing them. */
+	/* The subpass ends in its middle: everything is stored. */
+	subpass_store_all(exec);
 	subpass_end(exec);
-	subpass_begin(exec, &clear);
+
+	/* The layers past 0 of each rectangle, each by a pass that only clears. */
+	end_offset = reader->offset;
+	reader->offset = rects;
+	for (index = 0U; index < count && reader->error == 0 && exec->error == 0; index++) {
+		for (at = 0U; at < 6U; at++)
+			rect[at] = read32(reader);
+		layers_clear(exec, &clear, rect[4], rect[5]);
+	}
+	reader->offset = end_offset;
+
+	/* The subpass again, clearing them in layer 0 when named, loading everything otherwise. */
+	kern_memset(&none, 0, sizeof(none));
+	if (layer_zero)
+		subpass_begin(exec, &clear);
+	else
+		subpass_begin(exec, &none);
 }
 
 /*
@@ -2303,6 +2754,7 @@ clear_image(
 	struct i915_wire_reader *reader)
 {
 	const struct ghci_vk_image *image;
+	struct slice_target target;
 	struct ghci_vk *vk;
 	uint32_t value[4];
 	uint32_t range[5];
@@ -2372,11 +2824,18 @@ clear_image(
 			slices = layers;
 			if (image->type == (uint32_t)VK_IMAGE_TYPE_3D)
 				slices = ghci_layout_extent(image->layout.depth, level);
-			for (layer = 0U; layer < slices; layer++) {
-				clear_slice(exec, image->format, image->type == (uint32_t)VK_IMAGE_TYPE_3D
-					? image_slice(image, base, level, 0U, layer) : image_slice(image, base, level, range[3] + layer, 0U),
-					ghci_layout_row(&image->layout, level), ghci_layout_extent(image->layout.width, level),
-					ghci_layout_extent(image->layout.height, level), image->layout.samples, depth, value, range[0]);
+			for (layer = 0U; layer < slices && exec->error == 0; layer++) {
+				if (image->type == (uint32_t)VK_IMAGE_TYPE_3D)
+					target.va = image_slice(image, base, level, 0U, layer);
+				else
+					target.va = image_slice(image, base, level, range[3] + layer, 0U);
+				target.format = image->format;
+				target.pitch = ghci_layout_row(&image->layout, level);
+				target.width = ghci_layout_extent(image->layout.width, level);
+				target.height = ghci_layout_extent(image->layout.height, level);
+				target.samples = image->layout.samples;
+				target.depth = depth;
+				clear_slice(exec, &target, value, range[0], NULL);
 			}
 		}
 	}
@@ -2385,24 +2844,20 @@ clear_image(
 /*
  * Clears one slice of an image with a render pass that only clears: the
  * slice as colour attachment 0 (or the depth and stencil attachment,
- * clearing the aspects named), stored.
+ * clearing the aspects named), stored, over area ([x, y, width, height];
+ * NULL for the whole slice).
  */
 static void
 clear_slice(
 	struct exec *exec,
-	uint32_t format,
-	uint64_t va,
-	uint32_t pitch,
-	uint32_t width,
-	uint32_t height,
-	uint32_t samples,
-	int depth_attachment,
+	const struct slice_target *target,
 	const uint32_t *value,
-	uint32_t aspects)
+	uint32_t aspects,
+	const uint32_t *area)
 {
 	struct ghci_render_pass_desc desc;
 	uint32_t words[GHCI_DW_BEGIN_RENDER_PASS];
-	uint32_t area[4];
+	uint32_t whole[4];
 	uint32_t flags;
 	uint64_t desc_va;
 	uint64_t table_va;
@@ -2414,10 +2869,10 @@ clear_slice(
 	kern_memset(&desc, 0, sizeof(desc));
 	flags = 0U;
 	table_va = 0U;
-	if (depth_attachment) {
-		desc.depth_stencil.va = va;
-		desc.depth_stencil.row_pitch = pitch;
-		desc.depth_stencil.format = format;
+	if (target->depth) {
+		desc.depth_stencil.va = target->va;
+		desc.depth_stencil.row_pitch = target->pitch;
+		desc.depth_stencil.format = target->format;
 		if ((aspects & VK_IMAGE_ASPECT_DEPTH_BIT) != 0U) {
 			desc.depth_stencil.ops |= (uint32_t)VK_ATTACHMENT_LOAD_OP_CLEAR;
 			flags |= GHCI_CLEAR_DEPTH;
@@ -2431,19 +2886,19 @@ clear_slice(
 		if (error != 0)
 			return;
 		kern_memcpy(table, value, 16U);
-		desc.colors[0].va = va;
-		desc.colors[0].row_pitch = pitch;
-		desc.colors[0].format = format;
+		desc.colors[0].va = target->va;
+		desc.colors[0].row_pitch = target->pitch;
+		desc.colors[0].format = target->format;
 		desc.colors[0].ops = (uint32_t)VK_ATTACHMENT_LOAD_OP_CLEAR;
 		flags |= 1U;
 	}
-	desc.width = width;
-	desc.height = height;
+	desc.width = target->width;
+	desc.height = target->height;
 	desc.layers = 1U;
-	desc.samples = samples;
+	desc.samples = target->samples;
 	desc.clear_table = table_va;
 
-	/* The description, then the pass over the whole slice. */
+	/* The description, then the pass over the area. */
 	error = temp_take(exec, GHCI_RENDER_PASS_BYTES, DESC_ALIGN, &desc_va, &view);
 	if (error != 0)
 		return;
@@ -2451,10 +2906,12 @@ clear_slice(
 		refuse(exec, EINVAL, "a clear of a slice the render pass description cannot hold");
 		return;
 	}
-	area[0] = 0U;
-	area[1] = 0U;
-	area[2] = width;
-	area[3] = height;
+	whole[0] = 0U;
+	whole[1] = 0U;
+	whole[2] = target->width;
+	whole[3] = target->height;
+	if (area == NULL)
+		area = whole;
 	put(exec, words, ghci_cmd_begin_render_pass(words, desc_va, area, 0U, value[0], value[1], flags));
 	put(exec, words, ghci_cmd_end_render_pass(words));
 }
@@ -2498,15 +2955,21 @@ image_slice(
 }
 
 /*
- * Reports whether a transfer may be placed: the device has the blitter.
- * Without it the submission is refused (the shader's transfers come
- * later).
+ * Reports whether a transfer may be placed: outside a render pass (in
+ * one, Vulkan forbids it: the submission is refused, EINVAL), on a device
+ * with the blitter (without it the submission is refused, ENOTSUP).
  */
 static int
 transfer_allowed(
 	struct exec *exec)
 {
 	int has;
+
+	/* Outside a render pass. */
+	if (exec->pass.active) {
+		refuse(exec, EINVAL, "a transfer inside a render pass");
+		return 0;
+	}
 
 	/* The blitter. */
 	has = ghci_caps_has(&exec->session->device->caps, GHCI_HAS_BLT);
@@ -2559,7 +3022,7 @@ copy_buffer(
 }
 
 /*
- * Copies bytes between GPU addresses with COPY_BUFFER (design R11):
+ * Copies bytes between GPU addresses with COPY_BUFFER:
  * COPY_BUFFER moves whole words, so a copy whose ends are not on 4 bytes
  * moves its aligned middle (when both addresses share their alignment)
  * and leaves the bytes at the ends to the shader's copy, which this
@@ -2696,8 +3159,11 @@ update_buffer(
 /*
  * vkCmdCopyImage, vkCmdBlitImage and vkCmdResolveImage: [source][layout]
  * [destination][layout][count][u64 count][regions] (and a blit's
- * filter).  Each region becomes one packet per layer (a 3D image's
- * depth slices for a copy).
+ * filter).  Every region is checked against both images first (the
+ * levels, layers, corners and extents; the packets keep 16 bits of a
+ * coordinate, which an image's 16384 texels never pass), and a region
+ * past its image refuses the submission; then each region becomes one
+ * packet per layer (a 3D image's depth slices for a copy).
  */
 static void
 copy_image(
@@ -2707,15 +3173,13 @@ copy_image(
 {
 	const struct ghci_vk_image *source;
 	const struct ghci_vk_image *destination;
+	struct image_region region;
 	struct ghci_transfer transfer;
-	VkImageSubresourceLayers layers[2];
 	uint32_t words[GHCI_DW_BLIT];
 	uint32_t traits;
-	uint32_t extent[3];
 	uint32_t filter;
 	uint32_t slices;
 	uint32_t slice;
-	int32_t offsets[4][3];
 	uint64_t source_id;
 	uint64_t destination_id;
 	uint64_t source_base;
@@ -2723,9 +3187,12 @@ copy_image(
 	uint64_t count;
 	uint64_t index;
 	size_t regions;
-	uint32_t at;
+	size_t end;
+	int source_3d;
+	int destination_3d;
+	int error;
 
-	/* The images and the regions (read after the filter that follows them is found). */
+	/* The images and the regions (read twice: a blit's filter follows them). */
 	source_id = read64(reader);
 	read_skip(reader, 4U);
 	destination_id = read64(reader);
@@ -2735,76 +3202,87 @@ copy_image(
 	regions = reader->offset;
 	if (reader->error != 0)
 		return;
-	if (!transfer_allowed(exec) || image_of(exec, source_id, &source, &source_base) != 0
-		|| image_of(exec, destination_id, &destination, &destination_base) != 0) {
-		refuse(exec, exec->error != 0 ? exec->error : EINVAL, "a copy of images the session does not have bound");
+	if (!transfer_allowed(exec))
+		return;
+	if (image_of(exec, source_id, &source, &source_base) != 0 || image_of(exec, destination_id, &destination, &destination_base) != 0) {
+		refuse(exec, EINVAL, "a copy of images the session does not have bound");
+		return;
+	}
+	source_3d = source->type == (uint32_t)VK_IMAGE_TYPE_3D;
+	destination_3d = destination->type == (uint32_t)VK_IMAGE_TYPE_3D;
+	if (source_3d != destination_3d) {
+		refuse(exec, EINVAL, "a copy between a 3D image and one of another type");
 		return;
 	}
 
-	/* Each region. */
-	filter = 0U;
-	for (index = 0U; index < count && reader->error == 0 && exec->error == 0; index++) {
-		/* The region: [source layers][offset, or u64 2 and two][destination layers][the same][extent]. */
-		read_layers(reader, &layers[0]);
-		if (number == GPU_OP_CMD_BLIT_IMAGE && read_count(reader) != 2U)
-			reader->error = 1;
-		read_offset(reader, offsets[0]);
-		if (number == GPU_OP_CMD_BLIT_IMAGE)
-			read_offset(reader, offsets[1]);
-		read_layers(reader, &layers[1]);
-		if (number == GPU_OP_CMD_BLIT_IMAGE && read_count(reader) != 2U)
-			reader->error = 1;
-		read_offset(reader, offsets[2]);
-		if (number == GPU_OP_CMD_BLIT_IMAGE) {
-			read_offset(reader, offsets[3]);
-		} else {
-			for (at = 0U; at < 3U; at++)
-				extent[at] = read32(reader);
-		}
+	/* Every region within both images. */
+	for (index = 0U; index < count && reader->error == 0; index++) {
+		image_region_read(reader, number, &region);
 		if (reader->error != 0)
 			break;
+		error = image_region_check(exec, number, source, destination, &region);
+		if (error != 0)
+			return;
+	}
+	if (reader->error != 0)
+		return;
+
+	/* A blit's filter, then the regions again. */
+	filter = 0U;
+	if (number == GPU_OP_CMD_BLIT_IMAGE && read32(reader) == (uint32_t)VK_FILTER_LINEAR)
+		filter = 1U;
+	end = reader->offset;
+	reader->offset = regions;
+
+	/* Each region's packets. */
+	for (index = 0U; index < count && reader->error == 0 && exec->error == 0; index++) {
+		image_region_read(reader, number, &region);
+		if (number == GPU_OP_CMD_BLIT_IMAGE && source_3d) {
+			skip_command(exec, "a blit of a 3D image");
+			continue;
+		}
 
 		/* The layers (a 3D copy's depth slices). */
-		slices = layers[0].layerCount;
-		if (number == GPU_OP_CMD_COPY_IMAGE && source->type == (uint32_t)VK_IMAGE_TYPE_3D)
-			slices = extent[2];
-		if (layers[0].mipLevel >= source->layout.levels || layers[1].mipLevel >= destination->layout.levels) {
-			refuse(exec, EINVAL, "a copy of a level its image does not have");
-			return;
-		}
+		slices = region.layers[0].layerCount;
+		if (source_3d)
+			slices = region.extent[2];
 		for (slice = 0U; slice < slices && exec->error == 0; slice++) {
 			kern_memset(&transfer, 0, sizeof(transfer));
-			if (source->type == (uint32_t)VK_IMAGE_TYPE_3D)
-				transfer.src.va = image_slice(source, source_base, layers[0].mipLevel, 0U, (uint32_t)offsets[0][2] + slice);
-			else
-				transfer.src.va = image_slice(source, source_base, layers[0].mipLevel, layers[0].baseArrayLayer + slice, 0U);
-			if (destination->type == (uint32_t)VK_IMAGE_TYPE_3D)
-				transfer.dst.va = image_slice(destination, destination_base, layers[1].mipLevel, 0U, (uint32_t)offsets[2][2] + slice);
-			else
-				transfer.dst.va = image_slice(destination, destination_base, layers[1].mipLevel, layers[1].baseArrayLayer + slice, 0U);
-			transfer.src.pitch = ghci_layout_row(&source->layout, layers[0].mipLevel);
-			transfer.dst.pitch = ghci_layout_row(&destination->layout, layers[1].mipLevel);
-			transfer.src.x = (uint32_t)offsets[0][0];
-			transfer.src.y = (uint32_t)offsets[0][1];
+			if (source_3d) {
+				transfer.src.va = image_slice(source, source_base, region.layers[0].mipLevel, 0U, (uint32_t)region.offsets[0][2] + slice);
+				transfer.dst.va = image_slice(destination, destination_base, region.layers[1].mipLevel, 0U, (uint32_t)region.offsets[2][2] + slice);
+			} else {
+				transfer.src.va = image_slice(source, source_base, region.layers[0].mipLevel, region.layers[0].baseArrayLayer + slice, 0U);
+				transfer.dst.va = image_slice(destination, destination_base, region.layers[1].mipLevel, region.layers[1].baseArrayLayer + slice, 0U);
+			}
+			transfer.src.pitch = ghci_layout_row(&source->layout, region.layers[0].mipLevel);
+			transfer.dst.pitch = ghci_layout_row(&destination->layout, region.layers[1].mipLevel);
+			transfer.src.x = (uint32_t)region.offsets[0][0];
+			transfer.src.y = (uint32_t)region.offsets[0][1];
+			transfer.dst.x = (uint32_t)region.offsets[2][0];
+			transfer.dst.y = (uint32_t)region.offsets[2][1];
 			transfer.format = source->format;
+
+			/* A blit's corners and formats. */
 			if (number == GPU_OP_CMD_BLIT_IMAGE) {
-				transfer.src_x1 = (uint32_t)offsets[1][0];
-				transfer.src_y1 = (uint32_t)offsets[1][1];
-				transfer.dst.x = (uint32_t)offsets[2][0];
-				transfer.dst.y = (uint32_t)offsets[2][1];
-				transfer.dst_x1 = (uint32_t)offsets[3][0];
-				transfer.dst_y1 = (uint32_t)offsets[3][1];
+				transfer.src_x1 = (uint32_t)region.offsets[1][0];
+				transfer.src_y1 = (uint32_t)region.offsets[1][1];
+				transfer.dst_x1 = (uint32_t)region.offsets[3][0];
+				transfer.dst_y1 = (uint32_t)region.offsets[3][1];
 				transfer.dst_format = destination->format;
 				transfer.filter = filter;
+				put(exec, words, ghci_cmd_blit(words, &transfer));
 				continue;
 			}
-			transfer.dst.x = (uint32_t)offsets[2][0];
-			transfer.dst.y = (uint32_t)offsets[2][1];
-			transfer.width = extent[0];
-			transfer.height = extent[1];
+
+			/* A copy's or a resolve's extent. */
+			transfer.width = region.extent[0];
+			transfer.height = region.extent[1];
 			if (number == GPU_OP_CMD_RESOLVE_IMAGE) {
 				(void)ghci_vk_format_traits(source->format, &traits);
-				transfer.resolve_mode = (traits & GHCI_VK_FORMAT_INTEGER) != 0U ? 3U : 0U;
+				transfer.resolve_mode = 0U;
+				if ((traits & GHCI_VK_FORMAT_INTEGER) != 0U)
+					transfer.resolve_mode = 3U;
 				transfer.samples = source->layout.samples;
 				put(exec, words, ghci_cmd_resolve_image(words, &transfer));
 			} else {
@@ -2812,46 +3290,200 @@ copy_image(
 			}
 		}
 	}
+	reader->offset = end;
+}
 
-	/* A blit's filter follows its regions; the blits are placed with it. */
-	if (number != GPU_OP_CMD_BLIT_IMAGE || reader->error != 0 || exec->error != 0)
-		return;
-	filter = read32(reader) == (uint32_t)VK_FILTER_LINEAR ? 1U : 0U;
-	reader->offset = regions;
-	for (index = 0U; index < count && reader->error == 0 && exec->error == 0; index++) {
-		read_layers(reader, &layers[0]);
-		(void)read_count(reader);
-		read_offset(reader, offsets[0]);
-		read_offset(reader, offsets[1]);
-		read_layers(reader, &layers[1]);
-		(void)read_count(reader);
-		read_offset(reader, offsets[2]);
-		read_offset(reader, offsets[3]);
-		if (source->type == (uint32_t)VK_IMAGE_TYPE_3D || destination->type == (uint32_t)VK_IMAGE_TYPE_3D) {
-			skip_command(exec, "a blit of a 3D image");
-			continue;
-		}
-		for (slice = 0U; slice < layers[0].layerCount && exec->error == 0; slice++) {
-			kern_memset(&transfer, 0, sizeof(transfer));
-			transfer.src.va = image_slice(source, source_base, layers[0].mipLevel, layers[0].baseArrayLayer + slice, 0U);
-			transfer.dst.va = image_slice(destination, destination_base, layers[1].mipLevel, layers[1].baseArrayLayer + slice, 0U);
-			transfer.src.pitch = ghci_layout_row(&source->layout, layers[0].mipLevel);
-			transfer.dst.pitch = ghci_layout_row(&destination->layout, layers[1].mipLevel);
-			transfer.src.x = (uint32_t)offsets[0][0];
-			transfer.src.y = (uint32_t)offsets[0][1];
-			transfer.src_x1 = (uint32_t)offsets[1][0];
-			transfer.src_y1 = (uint32_t)offsets[1][1];
-			transfer.dst.x = (uint32_t)offsets[2][0];
-			transfer.dst.y = (uint32_t)offsets[2][1];
-			transfer.dst_x1 = (uint32_t)offsets[3][0];
-			transfer.dst_y1 = (uint32_t)offsets[3][1];
-			transfer.format = source->format;
-			transfer.dst_format = destination->format;
-			transfer.filter = filter;
-			put(exec, words, ghci_cmd_blit(words, &transfer));
-		}
+/*
+ * Reads one region of an image copy, blit or resolve: [source layers]
+ * [offset, or u64 2 and two corners][destination layers][the same]
+ * [extent, not for a blit].
+ */
+static void
+image_region_read(
+	struct i915_wire_reader *reader,
+	uint32_t number,
+	struct image_region *region)
+{
+	/* The source's layers and corner (two of a blit). */
+	kern_memset(region, 0, sizeof(*region));
+	read_layers(reader, &region->layers[0]);
+	if (number == GPU_OP_CMD_BLIT_IMAGE && read_count(reader) != 2U)
+		reader->error = 1;
+	read_offset(reader, region->offsets[0]);
+	if (number == GPU_OP_CMD_BLIT_IMAGE)
+		read_offset(reader, region->offsets[1]);
+
+	/* The destination's, then a copy's extent. */
+	read_layers(reader, &region->layers[1]);
+	if (number == GPU_OP_CMD_BLIT_IMAGE && read_count(reader) != 2U)
+		reader->error = 1;
+	read_offset(reader, region->offsets[2]);
+	if (number == GPU_OP_CMD_BLIT_IMAGE) {
+		read_offset(reader, region->offsets[3]);
+	} else {
+		region->extent[0] = read32(reader);
+		region->extent[1] = read32(reader);
+		region->extent[2] = read32(reader);
 	}
-	(void)read32(reader);
+}
+
+/*
+ * Checks one region against its two images: levels and layers each
+ * image has (as many on both sides), and corners and extents within
+ * the levels (a blit's corners between 0 and the level's size); a
+ * resolve from a multisampled image to a single-sampled one.  Returns 0,
+ * or EINVAL (the submission is refused).
+ */
+static int
+image_region_check(
+	struct exec *exec,
+	uint32_t number,
+	const struct ghci_vk_image *source,
+	const struct ghci_vk_image *destination,
+	const struct image_region *region)
+{
+	int error;
+
+	/* The layers of each side, as many on both. */
+	error = layers_check(source, &region->layers[0]);
+	if (error == 0)
+		error = layers_check(destination, &region->layers[1]);
+	if (error != 0 || region->layers[0].layerCount != region->layers[1].layerCount) {
+		refuse(exec, EINVAL, "a copy of levels or layers its images do not have");
+		return EINVAL;
+	}
+
+	/* A blit's corners within the levels. */
+	if (number == GPU_OP_CMD_BLIT_IMAGE) {
+		error = corner_check(source, region->layers[0].mipLevel, region->offsets[0]);
+		if (error == 0)
+			error = corner_check(source, region->layers[0].mipLevel, region->offsets[1]);
+		if (error == 0)
+			error = corner_check(destination, region->layers[1].mipLevel, region->offsets[2]);
+		if (error == 0)
+			error = corner_check(destination, region->layers[1].mipLevel, region->offsets[3]);
+		if (error != 0) {
+			refuse(exec, EINVAL, "a blit of corners past its images");
+			return EINVAL;
+		}
+
+		/* Succeeded: the blit's region is in both images. */
+		return 0;
+	}
+
+	/* A copy's or a resolve's box within both levels. */
+	error = box_check(source, region->layers[0].mipLevel, region->offsets[0], region->extent);
+	if (error == 0)
+		error = box_check(destination, region->layers[1].mipLevel, region->offsets[2], region->extent);
+	if (error != 0) {
+		refuse(exec, EINVAL, "a copy of a region past its images");
+		return EINVAL;
+	}
+
+	/* A resolve's samples. */
+	if (number == GPU_OP_CMD_RESOLVE_IMAGE && (source->layout.samples < 2U || destination->layout.samples != 1U)) {
+		refuse(exec, EINVAL, "a resolve that is not of a multisampled image to a single-sampled one");
+		return EINVAL;
+	}
+
+	/* Succeeded: the region is in both images. */
+	return 0;
+}
+
+/*
+ * Checks the level and layers a region names of an image: a level it
+ * has; the one layer 0 of a 3D image, or at least one layer, all within
+ * the image's.  Returns 0, or EINVAL.
+ */
+static int
+layers_check(
+	const struct ghci_vk_image *image,
+	const VkImageSubresourceLayers *layers)
+{
+	/* The level. */
+	if (layers->mipLevel >= image->layout.levels)
+		return EINVAL;
+
+	/* A 3D image's one layer. */
+	if (image->type == (uint32_t)VK_IMAGE_TYPE_3D) {
+		if (layers->baseArrayLayer != 0U || layers->layerCount != 1U)
+			return EINVAL;
+		return 0;
+	}
+
+	/* Layers within the image's. */
+	if (layers->layerCount == 0U || layers->baseArrayLayer >= image->layout.layers)
+		return EINVAL;
+	if (layers->layerCount > image->layout.layers - layers->baseArrayLayer)
+		return EINVAL;
+
+	/* Succeeded: the layers are the image's. */
+	return 0;
+}
+
+/*
+ * Checks a box of a level of an image: offsets not negative, extents not
+ * zero, and offset + extent within the level in each dimension (depth 0
+ * and 1 for an image that is not 3D).  Returns 0, or EINVAL.
+ */
+static int
+box_check(
+	const struct ghci_vk_image *image,
+	uint32_t level,
+	const int32_t *offset,
+	const uint32_t *extent)
+{
+	uint32_t size[3];
+	uint32_t axis;
+
+	/* The level's size. */
+	size[0] = ghci_layout_extent(image->layout.width, level);
+	size[1] = ghci_layout_extent(image->layout.height, level);
+	size[2] = ghci_layout_extent(image->layout.depth, level);
+	if (image->type != (uint32_t)VK_IMAGE_TYPE_3D)
+		size[2] = 1U;
+
+	/* Each dimension (64-bit: no wrap). */
+	for (axis = 0U; axis < 3U; axis++) {
+		if (offset[axis] < 0 || extent[axis] == 0U)
+			return EINVAL;
+		if ((uint64_t)(uint32_t)offset[axis] + extent[axis] > size[axis])
+			return EINVAL;
+	}
+
+	/* Succeeded: the box is in the level. */
+	return 0;
+}
+
+/*
+ * Checks a blit's corner of a level of an image: each coordinate between
+ * 0 and the level's size (depth 0 or 1 for an image that is not 3D).
+ * Returns 0, or EINVAL.
+ */
+static int
+corner_check(
+	const struct ghci_vk_image *image,
+	uint32_t level,
+	const int32_t *corner)
+{
+	uint32_t size[3];
+	uint32_t axis;
+
+	/* The level's size. */
+	size[0] = ghci_layout_extent(image->layout.width, level);
+	size[1] = ghci_layout_extent(image->layout.height, level);
+	size[2] = ghci_layout_extent(image->layout.depth, level);
+	if (image->type != (uint32_t)VK_IMAGE_TYPE_3D)
+		size[2] = 1U;
+
+	/* Each coordinate. */
+	for (axis = 0U; axis < 3U; axis++) {
+		if (corner[axis] < 0 || (uint32_t)corner[axis] > size[axis])
+			return EINVAL;
+	}
+
+	/* Succeeded: the corner is in the level. */
+	return 0;
 }
 
 /*
@@ -2860,9 +3492,11 @@ copy_image(
  * [u64 count][regions].  A region is [u64 offset][row length][image
  * height][layers][offset][extent]; each layer (or depth slice) is one
  * packet whose buffer row pitch and slice come from the row length and
- * image height (in blocks for a compressed format).  One aspect of a
- * combined depth and stencil format is skipped (the packets cannot pick
- * it).
+ * image height (in blocks for a compressed format).  A region past its
+ * image (level, layers, offset, extent), with rows shorter than its
+ * extent, or whose rows and slices lie past its buffer refuses the
+ * submission.  One aspect of a combined depth and stencil format is
+ * skipped (the packets cannot pick it).
  */
 static void
 copy_buffer_image(
@@ -2891,11 +3525,16 @@ copy_buffer_image(
 	uint64_t image_base;
 	uint64_t buffer_offset;
 	uint64_t slice_bytes;
+	uint64_t row_pitch;
+	uint64_t needed;
+	uint64_t rows;
 	uint64_t va;
 	uint64_t remaining;
+	uint64_t buffer_bytes;
 	uint64_t count;
 	uint64_t index;
 	int to_image;
+	int fits;
 
 	/* The buffer, the image and the regions. */
 	to_image = number == GPU_OP_CMD_COPY_BUFFER_TO_IMAGE;
@@ -2934,23 +3573,47 @@ copy_buffer_image(
 			skip_command(exec, "a copy of one aspect of a depth and stencil format");
 			continue;
 		}
-		if (layers.mipLevel >= image->layout.levels) {
-			refuse(exec, EINVAL, "a copy of a level its image does not have");
+		if (layers_check(image, &layers) != 0 || box_check(image, layers.mipLevel, offset, extent) != 0) {
+			refuse(exec, EINVAL, "a copy of a region past its image");
 			return;
 		}
 
-		/* The buffer's rows and slices. */
+		/* The buffer's rows (at least the extent's) and slices. */
 		if (row_length == 0U)
 			row_length = extent[0];
 		if (image_height == 0U)
 			image_height = extent[1];
-		pitch = (row_length + granule - 1U) / granule * texel_bytes;
-		slice_bytes = (uint64_t)pitch * ((image_height + granule - 1U) / granule);
-		slices = image->type == (uint32_t)VK_IMAGE_TYPE_3D ? extent[2] : layers.layerCount;
+		if (row_length < extent[0] || image_height < extent[1]) {
+			refuse(exec, EINVAL, "a copy whose buffer rows are shorter than its extent");
+			return;
+		}
+		row_pitch = ((uint64_t)row_length + granule - 1U) / granule * texel_bytes;
+		if (row_pitch > UINT32_MAX) {
+			refuse(exec, EINVAL, "a copy whose buffer row is past the packet's pitch");
+			return;
+		}
+		pitch = (uint32_t)row_pitch;
+		slice_bytes = row_pitch * (((uint64_t)image_height + granule - 1U) / granule);
+		slices = layers.layerCount;
+		if (image->type == (uint32_t)VK_IMAGE_TYPE_3D)
+			slices = extent[2];
+
+		/* Every slice's rows within the buffer: the last row of a slice is the extent's width. */
+		rows = ((uint64_t)extent[1] + granule - 1U) / granule;
+		needed = (rows - 1U) * row_pitch + ((uint64_t)extent[0] + granule - 1U) / granule * texel_bytes;
+		if (buffer_va(exec, buffer_id, 0U, &va, &buffer_bytes) != 0) {
+			refuse(exec, EINVAL, "a copy with a buffer the session does not have bound");
+			return;
+		}
+		fits = buffer_rows_fit(buffer_offset, slice_bytes, slices, needed, buffer_bytes);
+		if (!fits) {
+			refuse(exec, EINVAL, "a copy whose rows lie past its buffer");
+			return;
+		}
 
 		/* One packet per slice. */
 		for (slice = 0U; slice < slices && exec->error == 0; slice++) {
-			if (buffer_va(exec, buffer_id, buffer_offset + slice * slice_bytes, &va, &remaining) != 0) {
+			if (buffer_va(exec, buffer_id, buffer_offset + (uint64_t)slice * slice_bytes, &va, &remaining) != 0) {
 				refuse(exec, EINVAL, "a copy with a buffer the session does not have bound, or past it");
 				return;
 			}
@@ -2975,6 +3638,36 @@ copy_buffer_image(
 				put(exec, words, ghci_cmd_copy_image_to_buffer(words, &transfer));
 		}
 	}
+}
+
+/*
+ * Reports whether slices of a buffer copy fit the buffer's size bytes:
+ * from offset, slice_bytes apart, each needing needed bytes (64-bit, and
+ * checked so that nothing wraps).  Returns 1 when they fit, 0 otherwise.
+ */
+static int
+buffer_rows_fit(
+	uint64_t offset,
+	uint64_t slice_bytes,
+	uint32_t slices,
+	uint64_t needed,
+	uint64_t size)
+{
+	uint64_t left;
+
+	/* The first slice. */
+	if (offset > size)
+		return 0;
+	left = size - offset;
+	if (needed > left)
+		return 0;
+
+	/* The others, each slice_bytes on. */
+	if (slices > 1U && slice_bytes > (left - needed) / (slices - 1U))
+		return 0;
+
+	/* Succeeded: every slice is in the buffer. */
+	return 1;
 }
 
 /* Reads a VkImageSubresourceLayers: [aspect][level][first layer][layers]. */
@@ -3004,7 +3697,9 @@ read_offset(
 
 /*
  * vkCmdSetEvent and vkCmdResetEvent: [event][stage mask]: a fence that
- * writes the event's word (1 or 0) once the work before it is done.
+ * writes the event's word (1 or 0) once the work before it is done.  A
+ * SetEvent's second fence sets a word of the submission's own (a later
+ * wait of the submission watches it).
  */
 static void
 event_write(
@@ -3016,13 +3711,21 @@ event_write(
 	uint32_t words[GHCI_DW_FENCE];
 	uint64_t identity;
 	uint64_t bus;
+	uint64_t private_bus;
+	uint64_t private_va;
+	uint8_t *private_view;
 	uint32_t index;
+	int error;
 
-	/* The event, of the session. */
+	/* The event, of the session, outside a render pass. */
 	identity = read64(reader);
 	(void)read32(reader);
 	if (reader->error != 0)
 		return;
+	if (exec->pass.active) {
+		refuse(exec, EINVAL, "a set or reset of an event inside a render pass");
+		return;
+	}
 	object = ghci_vk_object_find(exec->session, GHCI_VK_EVENT, identity);
 	if (object == NULL) {
 		refuse(exec, EINVAL, "a set of an event the session does not have");
@@ -3043,19 +3746,32 @@ event_write(
 		exec->event_count++;
 	}
 	exec->events[index].value = value;
+	exec->events[index].private_bus = 0U;
 
-	/* The fence on the word. */
+	/* The fence on the word the host reads. */
 	bus = object->as.event.block->allocation->bus + object->as.event.offset;
 	put(exec, words, ghci_cmd_fence(words, bus, value, GHCI_FENCE_FLAG_MEM_WRITE));
+	if (value == 0U)
+		return;
+
+	/* A set: a word of the submission's own, cleared, and the fence that sets it. */
+	error = temp_take(exec, 8U, 8U, &private_va, &private_view);
+	if (error != 0)
+		return;
+	private_bus = exec->chunk_block->allocation->bus + (uint64_t)(private_view - exec->chunk_block->allocation->view);
+	exec->events[index].private_bus = private_bus;
+	put(exec, words, ghci_cmd_fence(words, private_bus, 1U, GHCI_FENCE_FLAG_MEM_WRITE));
 }
 
 /*
  * vkCmdWaitEvents: [count][u64 count][events][source stages][destination
- * stages], then the barriers (design R10).  An event this submission set
- * earlier is waited for with WAIT_FENCE on its word; one the host has set
+ * stages], then the barriers.  An event this submission set earlier (and
+ * did not reset since) is waited for with WAIT_FENCE on the word of the
+ * submission's own that its SetEvent's fence sets; one the host has set
  * and no placed work writes needs no wait.  Any other would stop the one
- * ring until something outside it sets the word, which the executor does
- * not hold for yet: the submission is refused.  The barrier follows.
+ * ring until something outside it sets the word, and the executor does
+ * not hold a submission back for that: the submission is refused
+ * (ENOTSUP).  The barrier follows.
  */
 static void
 wait_events(
@@ -3071,7 +3787,6 @@ wait_events(
 	uint32_t destination_access;
 	uint64_t count;
 	uint64_t index;
-	uint64_t bus;
 	uint32_t at;
 	enum ghci_ticket_state state;
 
@@ -3098,14 +3813,13 @@ wait_events(
 			return;
 		}
 
-		/* Set earlier in this submission: the processor waits for its word. */
+		/* Set earlier in this submission: the processor waits for the submission's word of that set. */
 		for (at = 0U; at < exec->event_count; at++) {
 			if (exec->events[at].identity == identities[index])
 				break;
 		}
-		if (at < exec->event_count && exec->events[at].value == 1U) {
-			bus = object->as.event.block->allocation->bus + object->as.event.offset;
-			put(exec, words, ghci_cmd_wait_fence(words, bus, 1U));
+		if (at < exec->event_count && exec->events[at].value == 1U && exec->events[at].private_bus != 0U) {
+			put(exec, words, ghci_cmd_wait_fence(words, exec->events[at].private_bus, 1U));
 			continue;
 		}
 
@@ -3128,7 +3842,7 @@ wait_events(
  * The query commands: vkCmdBeginQuery [pool][query][flags], vkCmdEndQuery
  * [pool][query] (16-byte slots with the availability word),
  * vkCmdWriteTimestamp [stage][pool][query] (the counter, then a fence of
- * 1 on the slot's availability word, design R12), vkCmdResetQueryPool
+ * 1 on the slot's availability word), vkCmdResetQueryPool
  * [pool][first][count] (a fill of zeros; a transfer), and
  * vkCmdCopyQueryPoolResults (the shader's copy, which this device does
  * not have yet: skipped).
@@ -3195,6 +3909,10 @@ query(
 		put(exec, words, ghci_cmd_fill_buffer(words, pool->va + (uint64_t)first * QUERY_SLOT_BYTES, count * QUERY_SLOT_BYTES, 0U));
 		break;
 	default:
+		if (exec->pass.active) {
+			refuse(exec, EINVAL, "a copy of query results inside a render pass");
+			break;
+		}
 		skip_command(exec, "a copy of query results (the shader's copy)");
 		break;
 	}

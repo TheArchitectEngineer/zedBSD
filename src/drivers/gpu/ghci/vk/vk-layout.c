@@ -655,6 +655,7 @@ image_view_admit(
 	view->width = ghci_layout_extent(image->layout.width, view->base_level);
 	view->height = ghci_layout_extent(image->layout.height, view->base_level);
 	view->row_pitch = ghci_layout_row(&image->layout, view->base_level);
+	view->layer_stride = ghci_layout_layer_stride(&image->layout);
 	view->va = va + (uint64_t)view->base_layer * ghci_layout_layer_stride(&image->layout);
 	view->va += ghci_layout_level_offset(&image->layout, view->base_level);
 

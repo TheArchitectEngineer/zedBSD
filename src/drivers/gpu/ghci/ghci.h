@@ -146,6 +146,13 @@
 #define GHCI_HOLD_DISPLAY		2U
 
 /*
+ * A request of ghci_vm_map's flags beside GHCI_VM_FLAG_EXEC: a mapping
+ * the GPU may only read (and run, with EXEC), without GHCI_VM_FLAG_WRITE.
+ * It is above the bits of CMD_VM_MAP's flags and never reaches a packet.
+ */
+#define GHCI_VM_MAP_NO_WRITE		(1U << 31)
+
+/*
  * The life of a device: the start, the ring running, a recovery
  * resetting the device and replaying what it lost, a device that did not
  * come back, and a device whose detach has finished.
@@ -629,6 +636,7 @@ int ghci_cp_place(struct ghci_device *device, const uint32_t *packets, uint32_t 
 void ghci_cp_doorbell(struct ghci_device *device);
 int ghci_cp_place_fence(struct ghci_device *device, struct ghci_vm *owner, uint32_t start, struct ghci_ticket *ticket);
 int ghci_cp_submit(struct ghci_device *device, struct ghci_vm *vm, const uint32_t *packets, uint32_t dwords, struct ghci_ticket *ticket);
+int ghci_cp_submit_placed(struct ghci_device *device, struct ghci_vm *vm, const uint32_t *packets, uint32_t dwords, struct ghci_ticket *ticket, int *placed);
 int ghci_cp_wait(struct ghci_device *device, const struct ghci_ticket *ticket, unsigned milliseconds);
 enum ghci_ticket_state ghci_cp_ticket(struct ghci_device *device, const struct ghci_ticket *ticket);
 enum ghci_ticket_state ghci_cp_ticket_locked(struct ghci_device *device, const struct ghci_ticket *ticket);

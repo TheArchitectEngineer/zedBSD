@@ -353,7 +353,8 @@ struct ghci_vk_sampler {
  * its first, for a sampled image) and single (the first level and layer
  * of the view alone, linear, one level, for a storage image and an input
  * attachment).  va is the address of the first level and layer, where an
- * attachment of the view starts, and row_pitch its row.
+ * attachment of the view starts, row_pitch its row, and layer_stride the
+ * bytes from one layer of the image to the next.
  */
 struct ghci_vk_image_view {
 	uint64_t image;
@@ -368,6 +369,7 @@ struct ghci_vk_image_view {
 	uint32_t width;
 	uint32_t height;
 	uint32_t row_pitch;
+	uint32_t layer_stride;
 	uint64_t va;
 	uint8_t sampled[GHCI_TEXTURE_DESC_BYTES];
 	uint8_t single[GHCI_TEXTURE_DESC_BYTES];

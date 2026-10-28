@@ -981,7 +981,8 @@ round_up(
  * Adds a block to one of a device's executor heaps: twice that heap's
  * bytes (the first is GHCI_VK_HEAP_FIRST_BYTES), at least least bytes, at
  * most GHCI_VK_HEAP_BLOCK_MAX, mapped into the device's session (the
- * code heap executable, the data heap not).  Returns 0, ENOMEM, or EIO
+ * code heap executable and read-only to the GPU, the data heap writable
+ * and not executable).  Returns 0, ENOMEM, or EIO
  * for a session or a device the GPU lost.
  */
 static int
@@ -1023,10 +1024,15 @@ heap_grow(
 
 	mutex_unlock(&session->device->lock);
 
-	/* Its mapping in the device's session, executable only for the code heap; a failure lets the memory go again. */
+	/*
+	 * Its mapping in the device's session: the code heap executable and
+	 * not writable by the GPU (it only reads records, code and tables
+	 * the host wrote), the data heap writable and not executable; a
+	 * failure lets the memory go again.
+	 */
 	flags = 0U;
 	if (heap == GHCI_VK_HEAP_CODE)
-		flags = GHCI_VM_FLAG_EXEC;
+		flags = GHCI_VM_FLAG_EXEC | GHCI_VM_MAP_NO_WRITE;
 	error = ghci_vm_map(session->device, device->vm, allocation, flags, &block->mapping);
 	if (error != 0) {
 		mutex_lock(&session->device->lock);
