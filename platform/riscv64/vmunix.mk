@@ -243,7 +243,8 @@ RISCV64_PCI_DEVICE_SOURCES += src/drivers/pci/pci-nvme.c
 endif
 # The generic GHCI GPU driver (a PCIe GPU with the GPU Host Controller Interface 1.0, the KC705 board in the
 # VisionFive 2's M.2 slot): the device, the ring, the fences, the interrupt, the recovery, the sessions and
-# their GPU addresses, and the resources.
+# their GPU addresses, the resources, the shader compiler and the Vulkan executor (with the shared wire codec
+# of the i915 executor, unless the board's own drivers already build it).
 ifeq ($(CONFIG_DRIVER_PCI_GHCI),y)
 RISCV64_PCI_DEVICE_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/pci-attach.c src/drivers/gpu/ghci/cp.c \
 	src/drivers/gpu/ghci/recover.c src/drivers/gpu/ghci/service.c src/drivers/gpu/ghci/memory.c \
@@ -253,7 +254,13 @@ RISCV64_PCI_DEVICE_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/p
 	src/drivers/gpu/ghci/compiler/gsi1-encode.c src/drivers/gpu/ghci/compiler/gsi1-io.c \
 	src/drivers/gpu/ghci/compiler/gsi1-memory.c src/drivers/gpu/ghci/compiler/gsi1-texture.c \
 	src/drivers/gpu/ghci/compiler/gsi1-image.c src/drivers/gpu/ghci/compiler/gsi1-schedule.c \
-	src/drivers/gpu/ghci/compiler/gsi1-spill.c src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c
+	src/drivers/gpu/ghci/compiler/gsi1-spill.c src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c \
+	src/drivers/gpu/ghci/jobs.c src/drivers/gpu/ghci/capset.c \
+	src/drivers/gpu/ghci/vk/vk-node.c src/drivers/gpu/ghci/vk/vk-stream.c src/drivers/gpu/ghci/vk/vk-dispatch.c \
+	src/drivers/gpu/ghci/vk/vk-object.c src/drivers/gpu/ghci/vk/vk-reply.c src/drivers/gpu/ghci/vk/vk-caps.c \
+	src/drivers/gpu/ghci/vk/vk-format.c src/drivers/gpu/ghci/vk/vk-device.c src/drivers/gpu/ghci/vk/vk-memory.c \
+	src/drivers/gpu/ghci/vk/vk-command.c src/drivers/gpu/ghci/vk/vk-queue.c \
+	$(filter-out $(RISCV64_PLATFORM_SOURCES_$(ZEDBSD_BOARD)),src/drivers/gpu/i915/vk/vk-codec.c)
 endif
 
 # The virt board's ECAM host and the VisionFive 2's two PLDA
