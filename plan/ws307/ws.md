@@ -111,6 +111,7 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 ## 制限
 
 - loader（p008）: cfg に `video=640x480` がある時、root の partition の失敗（`A64 KERN UFS …`）の文字が画面に出ない（debug port には出て、loader は `halt()` で止まっている）。導入先の cfg は `video=` を持たないので、その形では出る。原因（GOP の mode を変えた後の firmware の console の行の位置と見られる）は未確定（2026-10-29、P4）。
+- native UFS（p006）: 4096 byte の logical sector の disk では書き込みが 512 の disk より遅い。QEMU（KVM、NVMe、whole disk の native UFS、`plan/ws307/tests/p006-ufs-speed.sh`）で 16 MiB の dd が 512 で 23 秒、4096 で 63 秒（約 2.7 倍）。見立ては 512 byte の journal の record の read-modify-write（未確認）。正しさに関わらないので直していない（2026-10-29 Q1 の判断）。
 
 ## Phase
 
