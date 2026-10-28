@@ -370,7 +370,7 @@ prekern_pcat_cons_init(
 		 * A quiet boot (kmsg=quiet, ws035-p097) keeps the loader's logo:
 		 * the early console draws nothing (the debug port still has every
 		 * line), and the progress block the kernel's entry drew over the
-		 * logo is painted over.  The Kei splash's spinner starts, and each
+		 * logo is painted over.  The boot splash's spinner starts, and each
 		 * line the early console does not show turns it (ws035-p107).  The
 		 * kernel's own console takes over from here, quiet as well.
 		 */
@@ -451,7 +451,7 @@ quiet_boot(
  * Paints the progress panel at the top right (136x40, where the loader's
  * stages and the kernel's entry draw their blocks) over with the logo:
  * each column of the panel takes the colour just under it, so a picture
- * that covers the screen (the Kei splash's sky, ws035-p107) goes on as
+ * that covers the screen (the boot splash's sky, ws035-p107) goes on as
  * smoothly as a plain background does.
  */
 static void

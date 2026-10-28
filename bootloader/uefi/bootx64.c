@@ -44,7 +44,7 @@
 #define CONFIG_READ_BUFFER		(ZBL_KERN_CONFIG_FILE_MAX + 1U)
 #define FILE_INFO_BUFFER		1024U
 
-/* The GOP mode a boot with a logo asks for: the Kei splash's size. */
+/* The GOP mode a boot with a logo asks for: the boot splash's size. */
 #define SPLASH_MODE_WIDTH		1920U
 #define SPLASH_MODE_HEIGHT		1080U
 
@@ -383,7 +383,7 @@ efi_main(
 	 * Applies the optional display request before retaining framebuffer
 	 * addresses.  When there is no video=, a boot with Ctrl held wishes for
 	 * 640x480, where the early console's 80 columns fill the screen, and a
-	 * boot with a logo (logo=) for the GOP's 1920x1080, the Kei splash's
+	 * boot with a logo (logo=) for the GOP's 1920x1080, the boot splash's
 	 * size.
 	 */
 	logo_named = zbl_logo_path(configuration.parameter_record.text,

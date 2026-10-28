@@ -153,7 +153,7 @@ struct kern_text_ops {
 
 	/*
 	 * Optionally shows that a quiet boot goes on: a record went to the log
-	 * only (end 0: the Kei splash's spinner turns, ws035-p107), or the
+	 * only (end 0: the boot splash's spinner turns, ws035-p107), or the
 	 * boot's screen is over (end 1: a display was taken for graphics, and
 	 * the splash stops for good).
 	 */
