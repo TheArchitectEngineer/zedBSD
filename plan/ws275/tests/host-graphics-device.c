@@ -159,22 +159,22 @@ fake_blit_row(unsigned x, unsigned y, const struct drv_graphics_row *row, uint64
 
 static const struct drv_graphics_backend backend_low = {
 	"low", fake_ready, fake_get_modes, fake_enter, fake_leave, fake_fill,
-	fake_line, fake_pattern_fill, fake_blit_row, fake_flush, fake_get_glyph,
+	fake_line, fake_pattern_fill, fake_blit_row, fake_flush, fake_get_glyph, NULL,
 };
 
 static const struct drv_graphics_backend backend_high = {
 	"high", fake_ready, fake_get_modes, fake_enter, fake_leave, fake_fill,
-	fake_line, fake_pattern_fill, fake_blit_row, fake_flush, fake_get_glyph,
+	fake_line, fake_pattern_fill, fake_blit_row, fake_flush, fake_get_glyph, NULL,
 };
 
 static const struct drv_graphics_backend backend_equal = {
 	"equal", fake_ready, fake_get_modes, fake_enter, fake_leave, fake_fill,
-	fake_line, fake_pattern_fill, fake_blit_row, fake_flush, fake_get_glyph,
+	fake_line, fake_pattern_fill, fake_blit_row, fake_flush, fake_get_glyph, NULL,
 };
 
 static const struct drv_graphics_backend backend_incomplete = {
 	"incomplete", fake_ready, fake_get_modes, fake_enter, fake_leave, fake_fill,
-	fake_line, fake_pattern_fill, NULL, fake_flush, fake_get_glyph,
+	fake_line, fake_pattern_fill, NULL, fake_flush, fake_get_glyph, NULL,
 };
 
 /* Blits one image and compares the screen with a direct reference. */

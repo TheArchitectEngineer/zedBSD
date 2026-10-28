@@ -50,6 +50,7 @@ drv_sun4u_fb_glyph(unsigned x, unsigned y, const uint8_t *glyph, uint32_t foregr
 			pixels[y + line][x + bit] = (glyph[line] & (0x80U >> bit)) ? foreground : background;
 }
 void kern_text_register(const struct kern_text_ops *ops) { (void)ops; }
+int drv_sun4u_fb_end(const struct kern_text_range *ranges, unsigned count) { (void)ranges; (void)count; return 0; }
 void *hal_get_arch_handoff(const char *name) { (void)name; return NULL; }
 bool hal_irq_disable(void) { return false; }
 void hal_irq_enable(void) { }
