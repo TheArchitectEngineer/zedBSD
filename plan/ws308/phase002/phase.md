@@ -3,7 +3,7 @@
 # ws308-p002 起床の道と NVMe の command_lock、amd64 の timecounter の大域の lock
 
 - 親: [WS308](../ws.md)。Queue: q1650（担当 P1）。前提: [p001](../phase001/phase.md) の 5330 の区間の計測。
-- Status: in-progress（2026-10-28 P1: 実装 15840093d・84fd65ac6・27a02af59、5330 で direct QD32 214k IOPS（Debian の 91%）。回帰の試験の残りあり）
+- Status: in-progress（2026-10-28 P1: q1652 で a609f74a1、5330 で direct QD32 223.8k IOPS＝同じ時間帯の Debian 225.5k の 99.3%、cached 240.4k。回帰の試験の残り（timeout・stop・detach の最中の眠る者、TSC の無い機械）あり）
 - Disposition: normal
 - 範囲の決定: 2026-10-28 ユーザー「P1の触る範囲が広がるのはOKです。」→ Q1: src/drivers/pci/pci-nvme.c（command_lock）を WS308 の所有に。Q1: src/hal/amd64/bsp-pcat/timecounter-policy.c の実装の直し（hal.h の宣言・契約は変えない）を WS308 の所有に、条件「時刻の単調性（CPU をまたいでも戻らない）と、TSC が信頼できない機械・QEMU の fallback を壊さない事を、host 試験か QEMU の多 CPU で確かめる。他の platform の timecounter には触らない。」
 
@@ -93,6 +93,44 @@
 
 - direct QD32 の区間: 入口→post 6〜9 µs（pin 2〜5）、post→CQ 126 µs（device に出ている command が増えた）、CQ→waiter 5 µs、起床→戻り 3 µs、入口→戻り 142〜145 µs。cached QD32: 入口→post 29〜32 µs（pin→submit 12 µs＝buffer cache の道）、起床→戻り 15〜19 µs。
 - QEMU（27a02af59 の serial の image）: boot-test、`qemu-nvme-shapes.sh`・`qemu-directio.sh`・`qemu-nvme-errors.sh` PASS。build は config-5330 だけ（他の 4 config は 84fd65ac6 で warning 0、27a02af59 は pci-nvme.c だけの変更で未 build）。
+
+## q1652: 1 I/O の内訳と直し（2026-10-28、P1）
+
+### Debian を同じ道具で測り直した
+
+- `plan/ws308/tests/debian-qdstat.sh RANDREAD_LINUX [SECONDS]`（`SETTLE=1` で fstrim と 60 s の休み）: 5330 の Debian で randread（direct・cached、QD1・QD32、thread・process）を流し、前後の `/sys/block/nvme0n1/stat` から block 層の平均の時間（issue→完了）と平均の in flight、NVMe の割り込みの数を出す（remote 側は `qdstat-remote.sh`）。
+- 今日の Debian（3 回、settle の有無で同じ）: direct QD32 224.8k〜225.5k IOPS（920〜923 MB/s）、block 層 138 µs・in flight 31.2 → Linux の host 側は 1 I/O 約 4 µs。QD1 13.4k〜13.6k（block 71 µs）。以前の基準 964 MB/s（235k）より低い（device の状態か Debian の版の差。原因は調べていない）。受け入れは同じ時間帯の Debian と比べる。
+
+### 内訳（計測の kernel、commit しない）
+
+- 計測の差分: `build/tmp/exp-io-4.patch`・`build/tmp/exp-io-4.h`（rdtsc の stamp、syscall の道に 16 点、IRQ の数・時間・CPU、HAL の syscall の出入り）、直しを足した `build/tmp/m3-full.patch`・`build/tmp/m3-exp-io.h`。timecounter の読み（大域の CAS）を stamp に使った最初の版（exp-io-3）は QD32 を 214k→175k に落とし、command_lock の保持を伸ばして内訳を歪めた（捨てた）。
+- 5330（`p1-m2`、27a02af59 ＋ transfer_run の直し ＋ 計測）direct QD32 208k の 1 I/O（µs）: syscall の外 5.5、入口→pin 2.4、pin→submit 1.2、begin 0.6、begin→post（slot の取得・組み立て・post）2.0、device 127.3、IRQ→起床 1.5、起床→実行 3.7、command_lock の取り直し 0.7、→wait の戻り 0.3、→submit の戻り（release・end_bio・bio_complete）4.5、→handler の終わり 0.8、→user への戻り 1.5。host 側 計 約 25 µs（Debian 約 4 µs）。cached QD32: 入口→pin 5〜16（metadata の mutex の待ちが取りの 11〜14%）、copy_cached_lines の miss 2.6、transfer_run 0.3、reference_line 2.8、begin 2.9、post 5.8、submit の戻り 16〜20、handler の終わり 6〜7。
+- `bio_complete` と `bio_admit` は大域の `disk_registry_lock`（割り込みを止める spin）の下で時計（timecounter、大域の CAS）を読んでいた。`transfer_run` は 4 KiB の 1 行の読みでも `disk_page_vector_supported`（disk_registry_lock）と `kern_malloc`/`kern_free` をしてから 1 行の道に戻っていた。NVMe の slot の取得は 63 slot の state を前から線形に読む（command_lock の下で、他の CPU が書く line）。
+
+### 直し（a609f74a1）
+
+- (a) `transfer_run`（buf.c）: 2 行に満たない範囲は、driver への問い合わせと heap の確保の前に 1 行の道へ（統計 `IO_BUF_SINGLE_GEOMETRY` は今と同じ）。
+- (b) disk.c: hw.diskstats の時計を `disk_registry_lock` の前に読む（`disk_stats_stamp`）。他の CPU が間に入ると busy の区間の端がその分ずれるだけ（比較は古い時刻を許す）。
+- (c) pci-nvme.c: 空き slot の hint（`io_slot_free_hint`、64 bit）。release・queue の初期化・作り直しで bit を立て、取得は hint の bit を下から見て state が FREE か確かめる。hint が空なら今どおり全 slot を見る（bit の漏れがあっても見つかる）。
+- (d) pci-nvme.c: 遅延の計測（WS299 p004 の log）を command id の世代で 8 本に 1 本に。他の command は post で時計を読まず、完了で command_lock の下で時計を読まない。log は計測した 4096 本ごと。
+- (e) pci-nvme.c: request の最後の command（それまでに失敗なし、recovery の持ち主でない、DMA の不確かさなし）は、slot の返却と `end_bio` を 1 回の command_lock で。caller の page に直に入った command（bounce なし）は、起床後に command_lock を取る 1 回の保持で状態の確認・返却・end_bio まで済ませる。1 I/O の command_lock は 6 回→4 回（begin・acquire・post・完了）。
+
+### 試験
+
+- build: config-5330（`build/p1-k1`）・pcat・visionfive2・rpi4・m68k-virt で rc 0・warning 0（27a02af59 の他の 4 config の確認を兼ねる）。build のため main の `build/amd64/sysroot`・`build/i386/sysroot` を worktree の build/ に複写した。
+- QEMU（serial の image `build/p1-q1`、cache 128 MiB の image `build/p1-q2`、a609f74a1 と同じ source）: `qemu-nvme-shapes.sh` PASS（5 checksums equal）、`qemu-directio.sh` PASS、`qemu-nvme-errors.sh` PASS（失敗の run 3、良い run 6、guest 生存）、`qemu-readahead.sh` PASS（reload の拒否 0）、`qemu-grow-reboot.sh` PASS、`qemu-cache-stress.sh` PASS（7 checksums、file intact、reload busy 1/8）、`boot-test.sh` PASS（`build/tmp/q1-boot-test/login.png`）。
+- 5330（同じ時間帯、`nvme-bench-5330.sh zedbsd p1-k1 build/p1-k1/vmunix qdprobe` → `debian-qdstat.sh`、固まりなし）:
+
+| 負荷（4 KiB） | zedBSD a609f74a1 | Debian（直後） | 比 |
+| --- | --- | --- | --- |
+| direct QD32（thread） | 223827 IOPS（916.7 MB/s） | 225484（923.5） | 99.3% |
+| direct QD32（process） | 224571 | 225370 | 99.6% |
+| direct QD1 | 14005 | 13367 | 104.8% |
+| cached QD32（thread） | 240396（984.6 MB/s） | — | 以前の基準 964 の 102% |
+| cached QD1 | 15291 | — | — |
+
+- 計測の kernel（`p1-m3`、直し ＋ 計測）direct QD32 221k の 1 I/O: submit の戻り 4.5→1.0、post 2.0→1.8、IRQ→起床 1.5→1.0、起床→実行 3.7→2.7 µs。syscall の外は 4.8 µs のままだが、HAL の syscall の出口→入口（user と asm）は 0.4 µs で、残り約 4.4 µs は user への戻りの stamp から HAL の出口までと HAL の入口から handler の入口までに出る（その間は割り込みを止めた数行で、時間がかかる理由が無い）。QD1 では同じ値が 255 µs と出て、計測の誤り（新しい thread の field の初期化の漏れなど）の疑い。未解明（数の目標には要らない）。
+- 未実施: timeout・stop・detach の最中に slot に眠る者がいる場合、TSC の無い機械の起動、p006 の負荷の試験。
 
 ## 危険
 

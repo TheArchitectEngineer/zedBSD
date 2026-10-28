@@ -24,10 +24,10 @@ read・write・pread・pwrite・vector の syscall の I/O の道の並列性を
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 計測（QEMU の標本、5330 の 1 I/O の区間）と設計、Fable の助言、design-reviewer | — | in-progress（q1650） |
-| [p002](phase002/phase.md) | 起床の道と NVMe の command_lock（割り込みの起床を command_lock の外へ、command id で slot を O(1) で引く、amd64 の timecounter の大域の lock を外す。submit・release の lock の回数は次） | p001 | in-progress（5330 で direct QD32 124.6k→214.5k IOPS＝Debian の 91%、cached 139k→205k＝87%） |
+| [p002](phase002/phase.md) | 起床の道と NVMe の command_lock（割り込みの起床を command_lock の外へ、command id で slot を O(1) で引く、amd64 の timecounter の大域の lock を外す、空き slot の hint、完了の返却と end_bio を 1 回の保持に）、disk の統計の時計を disk_registry_lock の外へ、buffer cache の 1 行の読みで heap と disk_registry_lock を取らない | p001 | in-progress（a609f74a1、5330 で direct QD32 223.8k IOPS＝同じ時間帯の Debian 225.5k の 99.3%、cached 240.4k。回帰の残りあり） |
 | [p003](phase003/phase.md) | syscall の I/O の道で heap を確保しない（pin の内の配列、block device の bounce を shared の I/O pool から） | p001 | in-progress（実装 01e701914、5330 で cached QD32 139k→172k IOPS（p002 と合わせて）） |
-| p004 | syscall ごとの process->lock を無くす（thread ごとの credential の参照と世代、signal の要約の語、user probe の数を CPU ごとに） | p001 | planned |
-| p005 | pin を大域の metadata の mutex なしで（vmspace ごとの rwlock、書き手の監査と lock の順） | p001 | planned |
+| p004 | syscall ごとの process->lock を無くす（thread ごとの credential の参照と世代、signal の要約の語、user probe の数を CPU ごとに） | p001 | planned（取り下げの候補: I/O の QD32 は thread と process で同じで、数の目標は p002・p003 で達した。Q1・ユーザーの判断待ち） |
+| p005 | pin を大域の metadata の mutex なしで（vmspace ごとの rwlock、書き手の監査と lock の順） | p001 | planned（取り下げか後回しの候補: 待ちは取りの 8〜15% だが数の目標は達した。Q1・ユーザーの判断待ち） |
 | p006 | 回帰（QD32 の受け入れ、fork/COW・munmap/mprotect と pread の競争・swap・setuid の競争・signal と exec・readv/writev・O_DIRECT、QEMU の全 boot、全 platform の build、5330） | p002〜p005 | planned |
 | p007 | 規約の全文の見直し | p006 | planned |
 
@@ -45,3 +45,9 @@ read・write・pread・pwrite・vector の syscall の I/O の道の並列性を
 - 今の数（5330、一時の計測の kernel）: 乱読み 4 KiB QD32 direct 214.5k IOPS・878 MB/s（Debian 964 の 91%）、cached 204.8k・839 MB/s（87%）。目標の 95% まであと少し。
 - 次の一手: (1) direct の残り（入口→post 6〜9 µs、post→CQ 126 µs は device の側か割り込みの束ね方）と cached の pin→submit 12 µs（buffer cache の道: disk_lock・cache_lock）の内訳を同じ計測（`build/tmp/exp-io-2.patch`・`build/tmp/exp-io.h` を当てて build、`nvme-bench-5330.sh zedbsd NAME VMUNIX qdprobe`）で見る。(2) submit の command_lock をさらに減らす（slot_acquire と post を 1 回の保持に、release と end_bio を 1 回に）。(3) metadata の mutex の待ち（取りの 5〜15%）→ p005。(4) p004（process->lock）は I/O の QD32 が thread と process で同じなので、この目標には効かない見込み（取り下げ候補、数で判断）。(5) 27a02af59 の他の 4 config の build、回帰の試験の残り（timeout・stop・detach の最中、TSC の無い機械）、p006 の負荷試験、p007 規約。
 - 5330 は Debian に戻した（lock は返した）。
+
+## 再開点（2026-10-28、P1、q1652）
+
+- commit（agent/p1-ws308b、基点 main 9fda28faf）: a609f74a1（NVMe の空き slot の hint・遅延の計測の間引き・完了の返却と end_bio を 1 回の保持に、disk の統計の時計を disk_registry_lock の外へ、transfer_run の 1 行の早い戻り、Debian の測り直しの道具 `plan/ws308/tests/debian-qdstat.sh`）と、この記録の commit。
+- 数（5330、同じ時間帯）: 乱読み 4 KiB QD32 direct 223.8k IOPS（916.7 MB/s）＝Debian 225.5k（923.5 MB/s）の 99.3%、process 99.6%、QD1 105%、cached QD32 240.4k（984.6 MB/s、以前の基準 964 の 102%）。今日の Debian は以前の 964 MB/s でなく 923 MB/s（[p002](phase002/phase.md)）。→ 数の目標（Debian の 95% 以上）は達した。
+- 残り: (1) 回帰の試験（timeout・stop・detach の最中に slot に眠る者、TSC の無い機械の起動）と p006 の負荷（fork/COW・munmap/mprotect と pread の競争・swap・setuid・signal と exec・readv/writev）、(2) p004・p005 を取り下げるか（Q1・ユーザー）、(3) p007 規約の全文の見直し、(4) syscall の外の 4.8 µs の計測の食い違い（p002 の「計測の kernel」の項、目標には要らない）。a609f74a1 の design-reviewer は依頼中。
