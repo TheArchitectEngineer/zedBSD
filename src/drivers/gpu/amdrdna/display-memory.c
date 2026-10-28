@@ -15,19 +15,22 @@
  * hub allowing the memory's state change by force.  Once the display is
  * the driver's (stage A6, a mode set, the reset's stage A4), the display's
  * step tells the firmware the watermark set of each memory clock range,
- * that one display runs, and the floor of the display engine's clock the
- * display's plan counts on (Linux gives Navi10's system clock none); works the display's plan out
- * at the lowest memory clock level with the latency of a change between
- * levels and writes it (the hub then allows a change only when its buffer
- * covers it, in the vertical blank); lets the hub's watermarks alone
- * decide the memory's self refresh and state change; and lowers the memory
- * clock's floor to the lowest level, so the firmware moves the clock with
- * the load.  A mode the hub cannot cover a change in keeps the memory
- * clock at its highest level with the plan worked out for the firmware's
- * short pauses of the memory, as Linux does; a plan that covers neither
- * keeps the change allowed by force.  Before a mode set the memory clock
- * goes back to its highest level with the change allowed by force, and at
- * the shutdown and the reset the firmware is also told no display runs.
+ * that one display runs, and the floors of the display engine's clock the
+ * display's plan counts on and of the display clock's voltage (Linux gives
+ * Navi10's system clock none); works the display's plan out at the lowest
+ * memory clock level with the latency of a change between levels (longer
+ * than Linux's, MEMORY_SWITCH_TENTHS) and writes it (the hub then allows a
+ * change only when its buffer covers it, in the vertical blank); lets the
+ * hub's watermarks alone decide the memory's self refresh and state
+ * change; and lowers the memory clock's floor to the lowest level, so the
+ * firmware moves the clock with the load.  A mode the hub cannot cover a
+ * change in keeps the memory clock at its highest level with the plan
+ * worked out for the firmware's short pauses of the memory, as Linux does;
+ * a plan that covers neither keeps the change allowed by force.  Before a
+ * mode set the memory clock goes back to its highest level with the change
+ * allowed by force, and at the shutdown and the reset the firmware is also
+ * told no display runs.  The power watch counts and marks the display's
+ * underflows after the step.
  */
 
 #include <stdbool.h>
@@ -41,31 +44,35 @@
 #include "drivers/gpu/amdrdna/amdrdna-regs.h"
 
 /*
- * The messages the step sends: a clock's floor (the clock in the high 16
- * bits, MHz in the low 16), and how many displays run.
+ * The messages the step sends: a clock's floor and ceiling (the clock in
+ * the high 16 bits, MHz in the low 16), and how many displays run.
  *
  * Values referenced: Linux v6.12
  * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu_v11_0_ppsmc.h
- * (PPSMC_MSG_SetHardMinByFreq, PPSMC_MSG_NumOfDisplays) and
+ * (PPSMC_MSG_SetHardMinByFreq, PPSMC_MSG_SetHardMaxByFreq,
+ * PPSMC_MSG_NumOfDisplays) and
  * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
  * (smu_v11_0_set_hard_freq_limited_range, smu_v11_0_display_clock_voltage_request).
  */
 #define MEMORY_MESSAGE_FLOOR		0x1cU
+#define MEMORY_MESSAGE_CEILING		0x1dU
 #define MEMORY_MESSAGE_DISPLAYS		0x40U
 
 /*
  * The firmware's numbers of the clocks the step gives floors: the memory
- * clock and the display engine's clock; and the level index that asks how
- * many levels a clock has.
+ * clock, the display engine's clock and the display clock (whose floor
+ * keeps the voltage the display's pipe needs); and the level index that
+ * asks how many levels a clock has.
  *
  * Values referenced: Linux v6.12
  * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
- * (PPCLK_UCLK, PPCLK_DCEFCLK) and
+ * (PPCLK_UCLK, PPCLK_DCEFCLK, PPCLK_DISPCLK) and
  * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
  * (smu_v11_0_get_dpm_level_count).
  */
 #define MEMORY_CLOCK_MEMORY		2U
 #define MEMORY_CLOCK_DISPLAY		5U
+#define MEMORY_CLOCK_PIPE		6U
 #define MEMORY_LEVEL_COUNT		0xffU
 
 /*
@@ -87,6 +94,23 @@
 #define MEMORY_TRANSFERS		16U
 #define MEMORY_PAUSE_TENTHS		50U
 
+/*
+ * The latency of a change between the memory clock's levels the display's
+ * plan covers, in tenths of a microsecond: 520 us.  Linux plans 404 us,
+ * but it splits a 1920-pixel plane over two pipes, whose buffers cover a
+ * change in the active area with some 390 us to spare; one pipe covers it
+ * only in the vertical blank with none.  Under a heavy load the firmware's
+ * changes took longer than 404 us there (the timing generator underflowed
+ * at 1 to 1.5 of the changes in 6 s of load, none in 8 such runs with 520
+ * us), so the plan covers 520 us (the vertical blank of 1080p60 holds up
+ * to some 575).  amdrdna.smu.memory_latency= sets another.
+ *
+ * Value referenced: Linux v6.12
+ * drivers/gpu/drm/amd/display/dc/dml/dcn20/dcn20_fpu.c
+ * (dcn2_0_soc: dram_clock_change_latency_us 404.0, the latency it replaces).
+ */
+#define MEMORY_SWITCH_TENTHS		5200U
+
 /* The underflows of the display the watch marks in the log; it counts the rest. */
 #define MEMORY_UNDERFLOW_MARKS		20U
 
@@ -104,7 +128,8 @@ static void memory_plan_use(struct amdrdna_device *device, uint32_t display_mhz,
  * Procedure referenced: Linux v6.12
  * drivers/gpu/drm/amd/display/dc/clk_mgr/dcn20/dcn20_clk_mgr.c
  * (dcn2_update_clocks: the display count, the display engine's clock's
- * floor, the change's support, the memory clock's floor; Navi10's
+ * floor, the change's support, the memory clock's floor, the display
+ * clock's voltage (PP_SMU_NV_DISPCLK); Navi10's
  * pp_smu functions in amdgpu_dm/amdgpu_dm_pp_smu.c have no system clock
  * floor),
  * drivers/gpu/drm/amd/display/dc/dml/dcn20/dcn20_fpu.c
@@ -124,12 +149,17 @@ amdrdna_memory_display_start(
 	uint32_t word;
 	uint32_t lowest;
 	uint32_t highest;
+	struct amdrdna_mode_plan_input clocks;
 	uint32_t display_mhz;
+	uint32_t pipe_mhz;
+	uint32_t latency;
 	uint32_t memory_floor_mhz;
 	uint32_t floor_level;
 	int table_error;
 	int count_error;
 	int display_error;
+	int pipe_error;
+	int ceiling_error;
 	int plan_error;
 	int floor_error;
 	bool follows;
@@ -154,13 +184,23 @@ amdrdna_memory_display_start(
 	table_error = memory_table_send(device);
 	count_error = amdrdna_smu_message(device, MEMORY_MESSAGE_DISPLAYS, 1U, NULL);
 	display_mhz = memory_floor(device, MEMORY_CLOCK_DISPLAY, MEMORY_DISPLAY_FLOOR_MHZ, &display_error);
+	pipe_mhz = 0U;
+	pipe_error = amdrdna_mode_clocks(device, &clocks);
+	if (pipe_error == 0) {
+		/* The display and pipe clocks' voltage: a floor at the faster of the two, in whole MHz. */
+		pipe_mhz = (clocks.display_khz > clocks.pipe_khz ? clocks.display_khz : clocks.pipe_khz) + 999U;
+		pipe_mhz /= 1000U;
+		pipe_error = amdrdna_smu_message(device, MEMORY_MESSAGE_FLOOR, (MEMORY_CLOCK_PIPE << 16) | pipe_mhz, NULL);
+	}
 	thermal->memory_display = true;
 
 	/* The plan at the lowest level with a change's latency; the plan at the highest with the pause's when the hub cannot cover a change. */
 	follows = false;
 	plan_error = EIO;
 	if (table_error == 0 && count_error == 0) {
-		memory_plan_use(device, display_mhz, lowest, 0U);
+		/* The change's latency (MEMORY_SWITCH_TENTHS), or amdrdna.smu.memory_latency= in tenths of a microsecond. */
+		latency = amdrdna_parameter_number("amdrdna.smu.memory_latency", MEMORY_SWITCH_TENTHS);
+		memory_plan_use(device, display_mhz, lowest, latency);
 		plan_error = amdrdna_mode_replan(device, false, &plan);
 		follows = plan_error == 0 && plan.memory_switch != 0U;
 		if (!follows) {
@@ -195,6 +235,11 @@ amdrdna_memory_display_start(
 	floor_error = amdrdna_smu_message(device, MEMORY_MESSAGE_FLOOR, (MEMORY_CLOCK_MEMORY << 16) | memory_floor_mhz, NULL);
 	thermal->memory_follows = follows && floor_error == 0;
 
+	/* amdrdna.smu.memory_pin=1 keeps the memory clock at the floor's level (the ceiling there too, for the display's checks). */
+	ceiling_error = 0;
+	if (thermal->memory_follows && amdrdna_parameter_number("amdrdna.smu.memory_pin", 0U) != 0U)
+		ceiling_error = amdrdna_smu_message(device, MEMORY_MESSAGE_CEILING, (MEMORY_CLOCK_MEMORY << 16) | memory_floor_mhz, NULL);
+
 	/* Marks each part's answer and the plan. */
 	amdrdna_mark("memory display: table %d, displays %d, display clock floor %uMHz (%d), plan %d switch=%u watermark=%uns",
 	    table_error,
@@ -213,10 +258,13 @@ amdrdna_memory_display_start(
 	    (unsigned)plan.refresh_enter_exit_ns,
 	    (unsigned)plan.refresh_exit_ns,
 	    (unsigned)plan.trip_ns);
-	amdrdna_mark("memory display: forces %s, memory clock floor %uMHz (%d), %s",
+	amdrdna_mark("memory display: display clock voltage floor %uMHz (%d), forces %s, memory clock floor %uMHz (%d, ceiling %d), %s",
+	    (unsigned)pipe_mhz,
+	    pipe_error,
 	    released ? "off" : "change allowed",
 	    (unsigned)memory_floor_mhz,
 	    floor_error,
+	    ceiling_error,
 	    thermal->memory_follows ? "follows the load" : "held");
 }
 
@@ -240,9 +288,11 @@ amdrdna_memory_display_hold(
 		return;
 	highest = thermal->memory_levels_mhz[thermal->memory_level_count - 1U];
 
-	/* The change allowed by force, then the floor at the highest level. */
+	/* The change allowed by force, then the ceiling and the floor at the highest level. */
 	(void)amdrdna_display_memory_switch_begin(device);
-	error = amdrdna_smu_message(device, MEMORY_MESSAGE_FLOOR, (MEMORY_CLOCK_MEMORY << 16) | highest, NULL);
+	error = amdrdna_smu_message(device, MEMORY_MESSAGE_CEILING, (MEMORY_CLOCK_MEMORY << 16) | highest, NULL);
+	if (error == 0)
+		error = amdrdna_smu_message(device, MEMORY_MESSAGE_FLOOR, (MEMORY_CLOCK_MEMORY << 16) | highest, NULL);
 	if (error != 0)
 		amdrdna_mark("memory display: the hold's floor refused (%d)", error);
 	thermal->memory_follows = false;
