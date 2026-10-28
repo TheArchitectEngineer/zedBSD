@@ -858,3 +858,26 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
 6. 試験（guard の下）: 起動の mark（features、UMC の答え、table の送り、NumOfDisplays、hard min、DRAM_STATE）→ idle で UCLK が下がる・mview で上がる
    （power の行を 1 s ごと）→ round（nggshape・shot・bench・hang）→ soak.sh を 60 分以上（負荷 5 s・idle 25 s）で SMU の停止 0・underflow 0 →
    scene-6500・scene-1500 が固定（memory=1）と同等。停止したら guard の poweroff、入れ直し（プラグミニ 1）、DEBUG_DATA と mailbox の 3 語で切り分け。
+
+### 設計のレビュー（design-reviewer opus と Fable 5.1 High、19:00）と直した計画
+
+- design-reviewer（blocker 2・major 8）: (B1) A12 は既定の起動で走らない（amdrdna.auto = A9。A12 は別の mode に 3 秒切り替える診断の段）。watermark を
+  書く道は amdrdna_mode_set（present・hotplug）・relight・reset_display で、どれも modeset_input で今の UCLK・DCEFCLK を読む。→ display の段は独立の
+  関数にし、takeover（A6〜A8）の終わり・modeset の後・reset の A4 の後から呼ぶ。plan の入力は段 0 の UCLK と表の fabric（Linux の段 0: fabric =
+  max(1.08×UCLK, 506)）を明示で渡す。(B2) 段 1 の中間状態（固定・force なし）は既知の停止の設定 → 段 3 が済むまでと失敗の時は hold（force allow）。
+  (M1) SR を強制で禁じたまま（0x32）では SetHardMin が時間切れ（q1645）→ stutter=0 と memory=2 は組ませない、段 3 は DRAM_STATE を 0x30 にしてから
+  表・NumOfDisplays・hard min を送り、最後に 0x0。(M2・M3) DCEFCLK・SOCCLK の hard min（段 0 の値 506 MHz か起動の値）を A4 で置く、DISPCLK・
+  PHYCLK の電圧の hard min も。(M5) shutdown は NumOfDisplays=0・hard max を最上段（hard min ではない）、その前に 0x30。(M6) reset の後は表の送りを
+  やり直す。(M7) guard は SSH の無応答を数える、underflow を数える。(M8) plan_prefetch も latency を直に使う、5 us でも 0 なら hold。
+  minor: SetMinDeepSleepDcefclk は DS_DCEFCLK が無い今は送らない、DEBUG_INDEX と DATA は lock を共有、soak は 2 回以上か 2 時間、
+  受け入れの「固定と同等」は Linux も scene-1500 で UCLK 500 の段を使う（q1645）ので基準を Q1 と確かめる。
+- Fable: Linux は「固定 + 404 us の watermark」の組を走らせない（固定する時は 5 us の dummy の watermark）。増分の案: A（memory=1 + 5 us の
+  watermark、hard min = max、force なし）→ B（+ SR 許可）→ C（+ 表・NumOfDisplays・DCEFCLK の hard min）→ D（段 0 の 404 us の watermark と UCLK の
+  hard min を下ろす）。NumOfDisplays の DPM_DCEFCLK の条件は DCN2 では使われない道（dcn20_update_clocks から無条件）。
+- 実機の観察（19:00、診断の kernel 240ac2197 の元、amdrdnactl の clocks の行）:
+  - GetUMCFWWA の答え 0x00000001（UMC の firmware > v136）→ UMC の workaround は要らない（dummy の pattern の table は不要）。
+  - memory=1（固定、force なし）の idle で 1500 標本: DRAM_STATE 0x2（GOP のまま、SR は強制で禁止）、handshake 0x50777777 が 99.8 %（bit 30 arbiter
+    allow = 1、6 pipe の plane0・plane1・cursor0 と WB0 が allow）、残りは 0x10777776（pipe0 plane0 と arbiter の allow が一瞬落ちる）。bit 31（PMFW の
+    要求）は標本に無い。DRAM_CLK_CHANGE の watermark（set A）は 2210（GOP の値、A12 は走っていない）。→ idle の時の「allow が来ない」は否定。
+    停止は別の条件（負荷の後、SR の強制禁止、要求が来た時の allow の落ち方）の見込み。次: 停止の時の handshake（smu_hang_mark に 4 標本を足した）
+    を取る再現の soak（memory=1、40 分、19:07〜）。
