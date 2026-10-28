@@ -118,9 +118,10 @@ model_deliver(
 {
 	struct packet_buf *packet;
 	void *payload;
+	int error;
 
-	/* A packet from the pool, as a driver takes one for each frame it receives. */
-	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
+	/* A packet from the pool, as a driver takes one for each frame it receives (a jumbo one for a large frame). */
+	packet = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM, length, PACKET_BUF_ALLOC_RECEIVE, &error);
 	if (packet == NULL)
 		return ENOBUFS;
 
@@ -137,6 +138,15 @@ model_deliver(
 
 	/* Succeeded: delivered. */
 	return 0;
+}
+
+/* Sets both devices' MTU (--mtu: a jumbo link). */
+void
+model_device_mtu_set(
+	unsigned mtu)
+{
+	model_devices[0].mtu = mtu;
+	model_devices[1].mtu = mtu;
 }
 
 /*
@@ -610,6 +620,29 @@ ipv6_route_source(
 	(void)source;
 	(void)mtu;
 	return ENETUNREACH;
+}
+
+/* The model has no IPv6 addresses of its own. */
+int
+ipv6_address_is_local(
+	const struct in6_addr *address)
+{
+	(void)address;
+	return 0;
+}
+
+/* A device's largest frame, as the kernel reckons it (the model's devices are Ethernet, never the loopback). */
+size_t
+net_device_frame_max(
+	const struct net_device *device)
+{
+	size_t frame;
+
+	/* The header and the MTU, within the largest packet after its headroom. */
+	frame = 14U + (size_t)device->mtu;
+	if (frame > PACKET_BUF_MAX_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM)
+		frame = PACKET_BUF_MAX_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM;
+	return frame;
 }
 
 /* An IPv4 TCP socket, as the internet layer makes one. */

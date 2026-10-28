@@ -160,6 +160,12 @@ struct tcp_socket {
 	uint32_t peer_mss;
 	uint32_t send_mss;
 	/*
+	 * The maximum segment size this end's SYN offered (0 before one went):
+	 * what the route's interface carries, which the receive window and its
+	 * updates count in.
+	 */
+	uint32_t receive_mss;
+	/*
 	 * The congestion control of RFC 5681 in bytes: the congestion window
 	 * (RFC 6928's ten segments to start), the slow start threshold, and
 	 * the bytes acknowledged towards the next segment of growth in
@@ -214,6 +220,8 @@ struct tcp_socket {
 	unsigned send_first;
 	unsigned send_count;
 	unsigned send_unsent;
+	/* The ring's copies that are jumbo packets (within TCP_SEND_JUMBO_MAX). */
+	unsigned send_jumbo;
 	/*
 	 * Set while one thread hands unsent entries to the device with the
 	 * socket lock released; another that queues meanwhile leaves its

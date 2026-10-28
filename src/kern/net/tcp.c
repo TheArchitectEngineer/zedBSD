@@ -69,6 +69,31 @@
 #define TCP_SEGMENT_MAX (PACKET_BUF_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM - 64U)
 
 /*
+ * The same in the largest packet, a jumbo one where the pool has them: the
+ * segments of an interface whose frames are larger than a standard packet
+ * holds.
+ */
+#define TCP_SEGMENT_MAX_JUMBO (PACKET_BUF_MAX_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM - 64U)
+
+/*
+ * The segment size towards an IPv4 peer behind a gateway: Ethernet's.
+ * Nothing here learns an IPv4 path's MTU (ICMP's fragmentation needed is
+ * not read), and a router between two jumbo networks may well carry only
+ * 1500-byte frames, which would drop every larger segment unseen.
+ */
+#define TCP_GATEWAY_MSS 1460U
+
+/*
+ * The jumbo packets one connection holds at most: as copies in its send
+ * ring, and promised by its receive window.  The pool has few of them
+ * (PACKET_BUF_JUMBO_COUNT, some kept for the drivers' receive), so that one
+ * connection leaves room for others; eight segments of a 9000-byte MTU
+ * still keep a gigabit link busy over a LAN's round trip.
+ */
+#define TCP_SEND_JUMBO_MAX 8U
+#define TCP_RECEIVE_JUMBO_MAX 8U
+
+/*
  * The segment size a peer whose SYN offered none takes (RFC 9293 section
  * 3.7.1: 536 over IPv4; RFC 8200 section 8.3: 1220 over IPv6).
  */
@@ -418,6 +443,10 @@ static uint32_t tcp_syn_offered_mss(const struct tcp_wire *tcp, size_t header_le
 static int tcp_syn_offered_wscale(const struct tcp_wire *tcp, size_t header_length);
 static uint32_t tcp_segment_window_locked(const struct tcp_endpoint *endpoint, const struct tcp_wire *tcp);
 static void tcp_start_sending(struct tcp_endpoint *endpoint, uint32_t offered_mss);
+static uint32_t tcp_device_mss(const struct net_device *device, int ipv6, int local);
+static uint32_t tcp_path_mss(struct tcp_endpoint *endpoint, struct net_device *device, int ipv6);
+static int tcp_copy_is_jumbo(const struct packet_buf *packet);
+static uint32_t tcp_receive_mss(const struct tcp_endpoint *endpoint);
 static uint32_t tcp_segment_size_locked(const struct tcp_endpoint *endpoint);
 static uint32_t tcp_send_limit_locked(const struct tcp_endpoint *endpoint);
 static int tcp_send_room_locked(const struct tcp_endpoint *endpoint, size_t length);
@@ -666,6 +695,14 @@ tcp6_error(
  * once its retry is due (ws220-p003); the network worker runs a pass after
  * each device's transmit completion as well as at its deadlines.
  */
+/*
+ * The payload of a segment the timer pass resends or sends late, copied
+ * out of the ring so that it is sent with the socket lock released.  The
+ * network worker is the one thread that runs the pass, and a jumbo
+ * segment's payload is too large for its stack.
+ */
+static uint8_t tcp_timer_payload[TCP_SEGMENT_MAX_JUMBO];
+
 void
 tcp_timer_run(
 	void)
@@ -684,7 +721,7 @@ tcp_timer_run(
 	struct socket *socket;
 	struct tcp_discard discard;
 	struct tcp_pending *oldest;
-	uint8_t payload[TCP_SEGMENT_MAX];
+	uint8_t *payload;
 	uint8_t flags;
 	uint32_t sequence;
 	size_t length;
@@ -707,6 +744,7 @@ tcp_timer_run(
 
 	count = 0;
 	registered = 0;
+	payload = tcp_timer_payload;
 	now = sched_ticks();
 
 	/* The acknowledgements delayed since the last pass go first. */
@@ -896,7 +934,7 @@ tcp_timer_run(
 		sequence = oldest->sequence;
 		flags = oldest->flags;
 		length = oldest->length;
-		if (length > sizeof(payload)) {
+		if (length > sizeof(tcp_timer_payload)) {
 			tcp_retransmit_reset(endpoint, &discard);
 			endpoint->tcp.state = TCP_CLOSED;
 			endpoint->tcp.active_connect_generation = 0;
@@ -1980,12 +2018,10 @@ tcp_stats_fill_locked(
 	entry->receive_bytes = (uint32_t)socket->receive_bytes;
 	entry->receive_limit_bytes = (uint32_t)socket->receive_hiwat_bytes;
 
-	/* The segment size the SYN offered, smaller over IPv6 for its larger header. */
-	if (ipv6) {
-		entry->receive_mss = TCP_RECEIVE_MSS6;
-	} else {
-		entry->receive_mss = TCP_RECEIVE_MSS;
-	}
+	/* The segment size the SYN offered (the default of the family before one went). */
+	entry->receive_mss = tcp->receive_mss;
+	if (entry->receive_mss == 0)
+		entry->receive_mss = ipv6 ? TCP_RECEIVE_MSS6 : TCP_RECEIVE_MSS;
 
 	/* The counts since the socket was created. */
 	entry->segments_out = counters->segments_out;
@@ -2043,11 +2079,9 @@ tcp_output_segment(
 	int error;
 
 	/*
-	 * A SYN carries the maximum segment size this end takes: one receive
-	 * slot, TCP_RECEIVE_MSS bytes.  The receive window counts a full segment
-	 * per free slot, so a peer that sent larger segments would find it
-	 * closing faster than it opens; without the option a peer assumes its
-	 * own size.
+	 * A SYN carries the maximum segment size this end takes: what the
+	 * route's interface carries (tcp_path_mss), which the receive window
+	 * counts in; without the option a peer assumes its own size.
 	 */
 	options = 0;
 	if ((flags & TCP_SYN) != 0)
@@ -2057,13 +2091,12 @@ tcp_output_segment(
 
 	/* Routes the segment: over IPv6 to an IPv6 peer (ws130-p003), else over IPv4. */
 	source = 0;
-	mss = TCP_RECEIVE_MSS;
+	mss = 0;
 	ipv6 = inet_socket_speaks_ipv6(&endpoint->tcp.inet);
 	routed = 0;
 	next_hop = 0;
 	if (ipv6) {
 		error = tcp6_route(endpoint, &device, &source6);
-		mss = TCP_RECEIVE_MSS6;
 	} else {
 		/*
 		 * The way the connection's last lookup found, while nothing has
@@ -2081,6 +2114,12 @@ tcp_output_segment(
 	if (error != 0) {
 		packet_buf_free(carrier);
 		return error;
+	}
+
+	/* The size a SYN offers, which the connection's receive window then counts in. */
+	if ((flags & TCP_SYN) != 0) {
+		mss = (uint16_t)tcp_path_mss(endpoint, device, ipv6);
+		endpoint->tcp.receive_mss = mss;
 	}
 
 	/*
@@ -2102,14 +2141,15 @@ tcp_output_segment(
 		 * from a full device queue (ENOBUFS from the driver): the device
 		 * says when it has room again, the pool does not (ws220-p003).
 		 */
-		packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
+		packet = packet_buf_alloc_for(PACKET_BUF_DEFAULT_HEADROOM,
+		    sizeof(*tcp) + options + length, 0, &error);
 		if (packet == NULL) {
 			if (device != NULL)
 				net_device_release(device);
-			return ENOMEM;
+			return error == ENOBUFS ? ENOMEM : error;
 		}
 
-		/* A segment too large for one packet's storage is never sent (the callers keep within TCP_SEGMENT_MAX). */
+		/* A segment too large for one packet's storage is never sent (the callers keep within TCP_SEGMENT_MAX_JUMBO). */
 		tcp = packet_buf_append(packet, sizeof(*tcp) + options);
 		payload = packet_buf_append(packet, length);
 		if (tcp == NULL || payload == NULL) {
@@ -2240,6 +2280,7 @@ tcp_retransmit_reset(
 	endpoint->tcp.send_first = 0;
 	endpoint->tcp.send_count = 0;
 	endpoint->tcp.send_unsent = 0;
+	endpoint->tcp.send_jumbo = 0;
 	endpoint->tcp.retransmit_deadline = 0;
 	endpoint->tcp.retransmit_count = 0;
 	endpoint->tcp.retransmit_since = 0;
@@ -2972,9 +3013,7 @@ tcp_start_sending(
 {
 	struct net_device *device;
 	struct in6_addr source6;
-	struct in6_addr chosen;
 	unsigned long irq;
-	unsigned path_mtu;
 	uint32_t source;
 	uint32_t limit;
 	uint32_t mss;
@@ -2982,26 +3021,20 @@ tcp_start_sending(
 	int ipv6;
 	int error;
 
-	/* What the route's interface carries, no more than one packet holds. */
+	/* What the route's interface carries, no more than one packet holds (a standard one without a route). */
 	limit = TCP_SEGMENT_MAX;
 	ipv6 = inet_socket_speaks_ipv6(&endpoint->tcp.inet);
 	if (ipv6) {
-		/* Over IPv6, the path MTU to the peer (Packet Too Big lowers it later, ws130). */
-		path_mtu = 0;
 		error = tcp6_route(endpoint, &device, &source6);
 		if (error == 0) {
-			error = ipv6_route_source(device, &endpoint->tcp.inet.remote6, &chosen, &path_mtu);
+			limit = tcp_path_mss(endpoint, device, 1);
 			if (device != NULL)
 				net_device_release(device);
 		}
-		if (error == 0 && path_mtu > TCP_HEADERS6 && path_mtu - TCP_HEADERS6 < limit)
-			limit = path_mtu - TCP_HEADERS6;
 	} else {
-		/* Over IPv4, the output device's MTU. */
 		error = tcp_route(endpoint, &device, &source);
 		if (error == 0) {
-			if (device->mtu > TCP_HEADERS && device->mtu - TCP_HEADERS < limit)
-				limit = device->mtu - TCP_HEADERS;
+			limit = tcp_path_mss(endpoint, device, 0);
 			net_device_release(device);
 		}
 	}
@@ -3030,6 +3063,120 @@ tcp_start_sending(
 	endpoint->tcp.cwnd_acked = 0;
 
 	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
+}
+
+/*
+ * Reports the largest segment payload a device carries: its MTU less the
+ * IP and TCP headers, within the frame a packet holds for it
+ * (net_device_frame_max) and the storage of the packet class that frame
+ * takes.  A peer that is this host's own (local) goes round the loopback,
+ * whose frames stay in standard packets.
+ */
+static uint32_t
+tcp_device_mss(
+	const struct net_device *device,
+	int ipv6,
+	int local)
+{
+	uint32_t headers;
+	uint32_t limit;
+	size_t frame;
+
+	/* A standard packet's segment, unless the device's frames need jumbo ones. */
+	headers = ipv6 ? TCP_HEADERS6 : TCP_HEADERS;
+	limit = TCP_SEGMENT_MAX;
+	if (local || device == NULL)
+		return limit;
+	frame = net_device_frame_max(device);
+	if (frame > PACKET_BUF_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM)
+		limit = TCP_SEGMENT_MAX_JUMBO;
+
+	/* Within the frame, past the link header, and within the MTU. */
+	if (frame > 14U + headers && frame - 14U - headers < limit)
+		limit = (uint32_t)(frame - 14U - headers);
+	if (device->mtu > headers && device->mtu - headers < limit)
+		limit = device->mtu - headers;
+
+	/* Succeeded: the device's segment size. */
+	return limit;
+}
+
+/*
+ * Reports the segment size of the way to the connection's peer through
+ * device (over IPv6 NULL is the route's): tcp_device_mss, over IPv6 no
+ * more than the path MTU less the headers (Packet Too Big lowers it, ws130),
+ * and over IPv4 TCP_GATEWAY_MSS at most through a gateway.  Called without
+ * the socket lock, which the route lookups must not be taken under.
+ */
+static uint32_t
+tcp_path_mss(
+	struct tcp_endpoint *endpoint,
+	struct net_device *device,
+	int ipv6)
+{
+	struct net_route route;
+	struct in6_addr chosen;
+	unsigned path_mtu;
+	uint32_t limit;
+	int gateway;
+	int local;
+	int error;
+
+	/* Over IPv6: the device's, and the path's. */
+	if (ipv6) {
+		local = in6_is_loopback(&endpoint->tcp.inet.remote6) ||
+		    ipv6_address_is_local(&endpoint->tcp.inet.remote6);
+		limit = tcp_device_mss(device, 1, local);
+		if (device == NULL && !local)
+			limit = TCP_SEGMENT_MAX_JUMBO;
+		path_mtu = 0;
+		error = ipv6_route_source(device, &endpoint->tcp.inet.remote6, &chosen, &path_mtu);
+		if (error == 0 && path_mtu > TCP_HEADERS6 && path_mtu - TCP_HEADERS6 < limit)
+			limit = path_mtu - TCP_HEADERS6;
+		return limit;
+	}
+
+	/* Over IPv4: the device's, and Ethernet's through a gateway. */
+	local = inet_address_is_local(endpoint->tcp.inet.remote_address);
+	limit = tcp_device_mss(device, 0, local);
+	if (local || limit <= TCP_GATEWAY_MSS)
+		return limit;
+	gateway = 0;
+	error = route_lookup_ref(endpoint->tcp.inet.remote_address, &route);
+	if (error == 0) {
+		gateway = route.gateway != 0;
+		route_release(&route);
+	}
+	if (gateway)
+		limit = TCP_GATEWAY_MSS;
+
+	/* Succeeded: the path's segment size. */
+	return limit;
+}
+
+/* Reports whether a ring's copy is a jumbo packet. */
+static int
+tcp_copy_is_jumbo(
+	const struct packet_buf *packet)
+{
+	/* A packet larger than a standard one's storage. */
+	return packet != NULL && packet->capacity > PACKET_BUF_STORAGE_SIZE;
+}
+
+/*
+ * Reports the segment size this end's SYN offered, which the receive
+ * window counts in, or the family's default before one went.
+ */
+static uint32_t
+tcp_receive_mss(
+	const struct tcp_endpoint *endpoint)
+{
+	/* Offered. */
+	if (endpoint->tcp.receive_mss != 0)
+		return endpoint->tcp.receive_mss;
+
+	/* Not yet. */
+	return inet_socket_speaks_ipv6(&endpoint->tcp.inet) ? TCP_RECEIVE_MSS6 : TCP_RECEIVE_MSS;
 }
 
 /*
@@ -3370,6 +3517,8 @@ tcp_retire_acknowledged(
 		acked += entry->advance;
 
 		/* Hands its copy to the caller to free, and takes it off the ring. */
+		if (tcp_copy_is_jumbo(entry->packet) && endpoint->tcp.send_jumbo != 0)
+			endpoint->tcp.send_jumbo--;
 		discard->packets[discard->count++] = entry->packet;
 		entry->packet = NULL;
 		endpoint->tcp.send_first =
@@ -3586,6 +3735,7 @@ tcp_send_reliable(
 	enum tcp_refusal refusal;
 	int room;
 	int control;
+	int jumbo;
 	int owner;
 	int retries;
 	int error;
@@ -3593,11 +3743,12 @@ tcp_send_reliable(
 
 	/*
 	 * Keeps a copy of the payload for retransmission, with room in front
-	 * for the headers its first transmission pushes.
+	 * for the headers its first transmission pushes: a jumbo packet for a
+	 * payload a standard one cannot hold.
 	 */
-	copy = packet_buf_alloc(TCP_COPY_HEADROOM);
+	copy = packet_buf_alloc_for(TCP_COPY_HEADROOM, length, 0, &error);
 	if (copy == NULL)
-		return ENOBUFS;
+		return error == EMSGSIZE ? EMSGSIZE : ENOBUFS;
 	payload = packet_buf_append(copy, length);
 	if (payload == NULL) {
 		packet_buf_free(copy);
@@ -3630,7 +3781,9 @@ tcp_send_reliable(
 	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
 
 	control = (flags & (TCP_SYN | TCP_FIN)) != 0;
-	if (endpoint->tcp.send_count >= TCP_SEND_QUEUE_MAX) {
+	jumbo = tcp_copy_is_jumbo(copy);
+	if (endpoint->tcp.send_count >= TCP_SEND_QUEUE_MAX ||
+	    (jumbo && endpoint->tcp.send_jumbo >= TCP_SEND_JUMBO_MAX)) {
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
 		packet_buf_free(copy);
 		return EAGAIN;
@@ -3658,6 +3811,8 @@ tcp_send_reliable(
 	endpoint->tcp.send_count++;
 	endpoint->tcp.send_unsent++;
 	endpoint->tcp.send_next += advance;
+	if (jumbo)
+		endpoint->tcp.send_jumbo++;
 
 	/* Data queued for its first transmission is counted for net.tcpstats. */
 	if (length != 0) {
@@ -3739,6 +3894,8 @@ tcp_send_reliable(
 			discard.packets[discard.count++] = copy;
 			endpoint->tcp.send_queue[slot].packet = NULL;
 			endpoint->tcp.send_count--;
+			if (jumbo && endpoint->tcp.send_jumbo != 0)
+				endpoint->tcp.send_jumbo--;
 			endpoint->tcp.send_next = sequence;
 
 			/* A data segment taken back was not queued for net.tcpstats after all: its writer sends the bytes again. */
@@ -4196,7 +4353,7 @@ tcp_output_retry(
  * which this gives up.
  *
  * Each entry is marked sent and its payload copied into payload
- * (TCP_SEGMENT_MAX bytes) under the socket lock, then handed to the device with the lock
+ * (TCP_SEGMENT_MAX_JUMBO bytes) under the socket lock, then handed to the device with the lock
  * released: a reset may free the ring's copies meanwhile.  Finding none
  * left and giving up send_flushing happen under one hold of the lock, so an
  * entry a writer queues meanwhile is never left without a sender.
@@ -4249,7 +4406,7 @@ tcp_send_unsent(
 		 * be left marked and unsent, for the timer to abandon its
 		 * connection.
 		 */
-		if (length > TCP_SEGMENT_MAX) {
+		if (length > TCP_SEGMENT_MAX_JUMBO) {
 			progressed = 1;
 			continue;
 		}
@@ -4968,6 +5125,7 @@ tcp_send_bytes(
 	size_t total;
 	size_t chunk;
 	uint8_t segment_flags;
+	int standard_only;
 	int room;
 	int error;
 	uint64_t sequence;
@@ -5023,14 +5181,21 @@ tcp_send_bytes(
 	 */
 	total = 0;
 	error = 0;
+	standard_only = 0;
 	while (total < length) {
-		/* The next segment: the connection's size, or what is left. */
+		/*
+		 * The next segment: the connection's size, or what is left; one
+		 * a standard packet holds once the pool had no jumbo packet for
+		 * a copy (smaller than the segment size is always allowed).
+		 */
 		irq = spin_lock_irqsave(&socket->lock);
 
 		chunk = tcp_segment_size_locked(endpoint);
 
 		spin_unlock_irqrestore(&socket->lock, irq);
 
+		if (standard_only && chunk > TCP_SEGMENT_MAX)
+			chunk = TCP_SEGMENT_MAX;
 		if (chunk > length - total)
 			chunk = length - total;
 
@@ -5043,7 +5208,9 @@ tcp_send_bytes(
 		for (;;) {
 			irq = spin_lock_irqsave(&socket->lock);
 			room = endpoint->tcp.send_count < TCP_SEND_QUEUE_MAX &&
-			    tcp_send_room_locked(endpoint, chunk);
+			    tcp_send_room_locked(endpoint, chunk) &&
+			    (chunk <= TCP_SEGMENT_MAX ||
+			    endpoint->tcp.send_jumbo < TCP_SEND_JUMBO_MAX);
 			if (room) {
 				spin_unlock_irqrestore(&socket->lock, irq);
 				break;
@@ -5097,6 +5264,12 @@ tcp_send_bytes(
 		/* Queued: the next segment. */
 		if (error == 0) {
 			total += chunk;
+			continue;
+		}
+
+		/* No jumbo packet for the copy: the segment is cut to fit a standard one, at once. */
+		if (error == ENOBUFS && chunk > TCP_SEGMENT_MAX) {
+			standard_only = 1;
 			continue;
 		}
 
@@ -5156,6 +5329,7 @@ tcp_recvfrom(
 	size_t copied;
 	size_t take;
 	uint32_t window;
+	uint32_t mss;
 	unsigned long irq;
 	int dequeue_flags;
 	int update;
@@ -5252,11 +5426,12 @@ tcp_recvfrom(
 	 * window's promise).
 	 */
 	window = tcp_receive_window(endpoint);
+	mss = tcp_receive_mss(endpoint);
 	update = 0;
-	if (endpoint->tcp.advertised_window < TCP_RECEIVE_MSS && window >= TCP_RECEIVE_MSS)
+	if (endpoint->tcp.advertised_window < mss && window >= mss)
 		update = 1;
-	else if (endpoint->tcp.advertised_window < 2U * TCP_RECEIVE_MSS &&
-	    window >= (uint32_t)endpoint->tcp.advertised_window + 2U * TCP_RECEIVE_MSS)
+	else if (endpoint->tcp.advertised_window < 2U * mss &&
+	    window >= (uint32_t)endpoint->tcp.advertised_window + 2U * mss)
 		update = 1;
 
 	if (update != 0 &&
@@ -5285,7 +5460,10 @@ tcp_recvfrom(
  * The queue is bounded twice, by bytes and by how many packets it may hold
  * (the packets come from one small pool the whole stack shares), so the
  * window is the smaller of the bytes left and a full segment for each packet
- * left.  A peer that keeps within it is never refused.  It is read without
+ * left.  A connection that offered segments larger than a standard packet
+ * holds also promises no more than TCP_RECEIVE_JUMBO_MAX jumbo packets,
+ * those its queue holds counted, for the pool has few of them.  A peer
+ * that keeps within it is never refused.  It is read without
  * the socket lock, because segments are also sent with that lock held; a
  * value a moment old is what any peer sees anyway.  With no window scaling
  * the field holds at most 65535.
@@ -5299,6 +5477,8 @@ tcp_receive_window(
 	size_t used = socket->receive_bytes;
 	size_t room;
 	size_t packets;
+	size_t jumbo;
+	uint32_t mss;
 
 	/* The bytes left. */
 	room = used < limit ? limit - used : 0;
@@ -5309,6 +5489,15 @@ tcp_receive_window(
 		    socket->receive_packet_limit - socket->receive_packets : 0;
 		if (room > packets * TCP_RECEIVE_MSS)
 			room = packets * TCP_RECEIVE_MSS;
+	}
+
+	/* A jumbo segment for each jumbo packet the connection may still hold. */
+	mss = endpoint->tcp.receive_mss;
+	if (mss > TCP_SEGMENT_MAX) {
+		jumbo = socket->receive_jumbo < TCP_RECEIVE_JUMBO_MAX ?
+		    TCP_RECEIVE_JUMBO_MAX - socket->receive_jumbo : 0;
+		if (room > jumbo * mss)
+			room = jumbo * mss;
 	}
 
 	/* Clamps to what the header can carry. */

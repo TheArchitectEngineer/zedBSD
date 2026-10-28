@@ -15,7 +15,8 @@
 # peer's lines, the samples.  The last line is "vf2-tcp: PASS" when every run moved bytes in both ends' count.
 # --peer USER@HOST,ADDRESS runs the peer on another Linux machine over SSH (its python3, /tmp/perf-peer.py) at ADDRESS
 # instead of this host (2026-10-29: the 5330's Debian on the board's own switch; the path from the board to this host
-# reorders frames).  VF2_HOST (default kei@10.0.30.2) and VF2_PASSWORD (default kei) reach the board; VF2_PLUG its plug.
+# reorders frames).  --peer-if IF with --mtu sets that peer's adapter IF to the same MTU (sudo ip link, nothing
+# kept); at the end the board's adapter and the peer's go back to 1500.  VF2_HOST (default kei@10.0.30.2) and VF2_PASSWORD (default kei) reach the board; VF2_PLUG its plug.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -26,6 +27,7 @@ runs=send,recv
 chunk=131072
 mtu=
 peer_remote=
+peer_if=
 while [ $# -gt 1 ]; do
 	case $1 in
 	--kernel) kernel=$2 ;;
@@ -35,6 +37,7 @@ while [ $# -gt 1 ]; do
 	--chunk) chunk=$2 ;;
 	--mtu) mtu=$2 ;;
 	--peer) peer_remote=$2 ;;
+	--peer-if) peer_if=$2 ;;
 	*) echo "vf2-tcp: unknown option $1"; exit 2 ;;
 	esac
 	shift 2
@@ -102,6 +105,13 @@ iface=$(board 'route show' | awk '$1 == "default" || $1 == "0.0.0.0" {print $NF;
 [ -n "$iface" ] || iface=en0
 say "server=$server_ip board=$board_ip interface=$iface seconds=$seconds chunk=$chunk runs=$runs"
 if [ -n "$mtu" ]; then
+	trap 'board_root "/tmp/ifconfig $iface mtu 1500" > /dev/null 2>&1; [ -n "$peer_if" ] && [ -n "$peer_host" ] &&
+	    timeout 60 ssh -o BatchMode=yes "$peer_host" "sudo ip link set $peer_if mtu 1500" > /dev/null 2>&1' EXIT
+	if [ -n "$peer_if" ] && [ -n "$peer_host" ]; then
+		timeout 60 ssh -o BatchMode=yes "$peer_host" "sudo ip link set $peer_if mtu $mtu; ip -o link show $peer_if" \
+		    > "$out/peer-mtu.txt" 2>&1
+		say "peer mtu: $(sed -n 's/.*\(mtu [0-9]*\).*/\1/p' "$out/peer-mtu.txt")"
+	fi
 	board_root "/tmp/ifconfig $iface mtu $mtu" > "$out/mtu.txt"
 	say "mtu $mtu: $(tr '\n' ' ' < "$out/mtu.txt")"
 fi
