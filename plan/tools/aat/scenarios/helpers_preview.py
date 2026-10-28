@@ -6,7 +6,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
     helpers_preview.py --outdir OUTDIR [--only REGEX] -- TARGET-OPTIONS     (--list: the ids)
 
 Files and Settings make their pictures with keiland-preview in a sandbox (sandbox_spawn): the AAT's samples (a PNG, a
-JPEG, a PDF) and a damaged PNG are put in kei's ~/AATThumbs, Files opens the folder, and each thumbnail is made by a
+JPEG, a PDF) and a damaged PNG are put in the session user's ~/AATThumbs, Files opens the folder, and each thumbnail is made by a
 child (its THUMB line names the child's pid and status), the damaged one refused; opened again, they come from the
 cache.  Settings' Wallpaper page makes its tiles the same way.  The kernel's log has no "SANDBOX deny" line (the
 child keeps to its set of calls).
@@ -20,8 +20,8 @@ import common
 
 run = aatlib.Run.from_command_line("helpers_preview")
 
-FOLDER = "/home/kei/AATThumbs"
-CACHE = "/home/kei/.cache/keiland/thumbnails"
+FOLDER = f"{aatlib.HOME}/AATThumbs"
+CACHE = f"{aatlib.HOME}/.cache/keiland/thumbnails"
 
 
 def sized(window, mark):
@@ -42,7 +42,7 @@ def thumbnails(item):
 	try:
 		run.sh(f"rm -rf {FOLDER} {CACHE}; mkdir -p {FOLDER}; cp {aatlib.SAMPLES}/sample.png {aatlib.SAMPLES}/sample.jpg "
 			f"{aatlib.SAMPLES}/sample.pdf {FOLDER}/; printf '\\211PNG\\r\\n\\032\\nbroken' > {FOLDER}/broken.png; "
-			f"chown -R kei {FOLDER}; chmod -R a+rX {FOLDER}")
+			f"chown -R {aatlib.USER} {FOLDER}; chmod -R a+rX {FOLDER}")
 		_, denied_before = run.sh("dmesg 2>/dev/null | grep -c 'SANDBOX deny'")
 		item.step("four files in ~/AATThumbs", "sample.png, sample.jpg, sample.pdf, broken.png")
 		# Files on the folder: each thumbnail by a child.

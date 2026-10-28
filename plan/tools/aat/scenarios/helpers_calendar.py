@@ -5,7 +5,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
     helpers_calendar.py --outdir OUTDIR [--only REGEX] -- TARGET-OPTIONS     (--list: the ids)
 
-Calendar keeps its events under ~/Documents/Calendar as iCalendar files (one each); the helper takes kei's folder away
+Calendar keeps its events under ~/Documents/Calendar as iCalendar files (one each); the helper takes the session user's folder away
 before and after.  The places in the window are view.c's layout, from the window's right edge: the panel 300 wide,
 its Work card at (right - 220, 146), the editor's Save at (right - 54, 274) and Cancel at (right - 132, 274); an
 event's first pill in a cell 39 below the cell's top, and a click on a cell where it has no pill opens a new event
@@ -21,7 +21,7 @@ import common
 
 run = aatlib.Run.from_command_line("helpers_calendar")
 
-FOLDER = "/home/kei/Documents/Calendar"
+FOLDER = f"{aatlib.HOME}/Documents/Calendar"
 
 
 @run.define("apps.calendar.event")

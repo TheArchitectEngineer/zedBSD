@@ -90,7 +90,8 @@ def login(console: Console, user: str) -> None:
 	console.read_until(re.compile(r"[Pp]assword"), timeout=30.0)
 	console.forget()
 
-	# The password is the account's name (2026-09-29: root is root, kei is kei), or ZEDBSD_GUEST_PASSWORD.
+	# The password is the account's name (root is root, user is user, and kei is kei in the older images), or
+	# ZEDBSD_GUEST_PASSWORD.
 	console.send(os.environ.get("ZEDBSD_GUEST_PASSWORD", user))
 	console.read_until(PROMPT, timeout=60.0)
 	console.forget()

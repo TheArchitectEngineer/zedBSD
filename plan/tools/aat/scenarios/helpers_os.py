@@ -101,7 +101,7 @@ def sudo(item):
 	run.key("enter")
 	time.sleep(2.0)
 	right = read_work("sudo.txt")
-	item.step("sudo id -u with kei's password", right.strip())
+	item.step(f"sudo id -u with {aatlib.USER}'s password", right.strip())
 	run.shot(item, "right")
 	item.check(right.split() == ["0", "rc=0"], f"sudo with the right password: {right.strip()!r}")
 	run.type(f"sudo -k; sudo true; echo rc=$? > {aatlib.WORK}/sudo-wrong.txt")
@@ -136,7 +136,7 @@ def su_root(item):
 
 
 def shadow_line() -> str:
-	"""kei's line of /etc/shadow."""
+	"""The session user's line of /etc/shadow."""
 	_, text = run.sh(f"grep '^{aatlib.USER}:' /etc/shadow")
 	return text.strip()
 
@@ -155,7 +155,7 @@ def passwd(item):
 			run.key("enter")
 		time.sleep(3.0)
 		after = shadow_line()
-		item.step(f"passwd to {new!r}", "kei's shadow line changed" if after != before else "kei's shadow line kept")
+		item.step(f"passwd to {new!r}", "the user's shadow line changed" if after != before else "the user's shadow line kept")
 		run.shot(item, name)
 		if name == "short":
 			item.check(after == before, "the short password was taken")
@@ -163,12 +163,12 @@ def passwd(item):
 			item.check(after != before, "the long password was not taken")
 	common.restore_shadow(run)
 	item.check(shadow_line() == before, "/etc/shadow was not put back")
-	item.step("put /etc/shadow back", "kei's line is the first one again")
+	item.step("put /etc/shadow back", "the user's line is the first one again")
 	item.passed()
 
 
 def admin(request: list[str]) -> str:
-	"""Runs account-admin as kei with a request; returns its answer."""
+	"""Runs account-admin as the session's user with a request; returns its answer."""
 	text = "".join(line + "\n" for line in request)
 	inner = f"printf %s {shlex.quote(text)} | /usr/libexec/account-admin"
 	_, answer = run.sh(f"su {aatlib.USER} -c {shlex.quote(inner)} 2>&1", timeout=30)
@@ -177,7 +177,8 @@ def admin(request: list[str]) -> str:
 
 @run.define("os.accounts.account-admin")
 def account_admin(item):
-	run.sh("grep -q '^aatuser:' /etc/passwd && { printf 'kei\\nremove\\naatuser\\nremove-home\\n' | su kei -c /usr/libexec/account-admin; }; "
+	run.sh(f"grep -q '^aatuser:' /etc/passwd && {{ printf '%s\\nremove\\naatuser\\nremove-home\\n' {shlex.quote(aatlib.PASSWORD)} | "
+		f"su {aatlib.USER} -c /usr/libexec/account-admin; }}; "
 		"grep -q '^aatuser:' /etc/passwd || rm -rf /home/aatuser; true")
 	cases = [
 		("a wrong caller's password", ["wrong-pass", "add", "aatuser", "AAT User", "aat-pass-1", "user"], "error bad-password"),

@@ -36,13 +36,13 @@ KEY_GAP = 6
 FLICK_ROWS = 4
 
 # Phone's store and its places (helpers_phone.py): the contacts a third of the window, the field at the bottom.
-PHONE_FOLDER = "/home/kei/Documents/Phone"
+PHONE_FOLDER = f"{aatlib.HOME}/Documents/Phone"
 PHONE_COMPOSER = 60
 PHONE_SHARE = 0.34
 
-DESKTOP_FOLDER = "/home/kei/Desktop"
-# kei's own store of Wi-Fi keys (net wifi add as kei writes it; the desktop reads the saved networks from it).
-WIFI_STORE = "/home/kei/.wifi.conf"
+DESKTOP_FOLDER = f"{aatlib.HOME}/Desktop"
+# The session user's own store of Wi-Fi keys (net wifi add as that user writes it; the desktop reads the saved networks from it).
+WIFI_STORE = f"{aatlib.HOME}/.wifi.conf"
 
 
 # Shared steps.
@@ -208,7 +208,7 @@ def qwerty_rects(mark: str) -> dict[str, tuple[int, int, int, int]]:
 
 
 def phone_store(item) -> None:
-	"""Two contacts in kei's Documents/Phone (Ben first), as helpers_phone.py."""
+	"""Two contacts in the session user's Documents/Phone (Ben first), as helpers_phone.py."""
 	now = int(time.time())
 	script = f"""set -e
 rm -rf {PHONE_FOLDER}
@@ -217,7 +217,7 @@ printf 'BEGIN:VCARD\\r\\nVERSION:3.0\\r\\nFN:Ben Carter\\r\\nTEL:+1 415 555 0142
 printf 'BEGIN:VCARD\\r\\nVERSION:3.0\\r\\nFN:Aiko Tanaka\\r\\nTEL:+81 90 1234 5678\\r\\nEND:VCARD\\r\\n' > {PHONE_FOLDER}/contacts/aat-aiko.vcf
 printf 'Kind: text\\nChannel: sms\\nDirection: in\\nDate: {now - 60}\\nState: unread\\n\\nCall me when you can.\\n' > {PHONE_FOLDER}/messages/aat-ben/1-1-in.txt
 printf 'Kind: text\\nChannel: rcs\\nDirection: in\\nDate: {now - 7200}\\nState: read\\n\\nGood morning!\\n' > {PHONE_FOLDER}/messages/aat-aiko/1-2-in.txt
-chown -R kei {PHONE_FOLDER}
+chown -R {aatlib.USER} {PHONE_FOLDER}
 """
 	status, output = run.sh(script)
 	item.step("two contacts in ~/Documents/Phone", output.strip()[-200:])
@@ -293,13 +293,13 @@ def settings_wifi(item):
 	# stopped for the scenario: the watch ends, the compositor watches again within a second and finds network-probe
 	# (T1-481: with only the socket moved aside, the old watch kept "wifi=absent" and the page had no Wi-Fi switch).
 	# Stopping networkd leaves the wired interface as it is (it retires only the Wi-Fi radios).
-	# A tap joins at once only a network whose key kei has saved (an open one is refused, a new secured one opens
+	# A tap joins at once only a network whose key the session's user has saved (an open one is refused, a new secured one opens
 	# the key's line: T1-491 tapped Cafe Guest, open and unsaved, and the page said open networks come later).  Kei
-	# Lab's key goes into kei's store (/home/kei/.wifi.conf) while networkd still runs, and the store is put back at
+	# Lab's key goes into the user's store (~/.wifi.conf) while networkd still runs, and the store is put back at
 	# the end.
 	add = shlex.quote('net wifi delete "Kei Lab" >/dev/null 2>&1; net wifi add "Kei Lab" --password keilab-2026 --auto yes')
-	_, saved = run.sh(f"if [ -f {WIFI_STORE} ]; then cp -p {WIFI_STORE} /tmp/aat-wifi.conf.kept; fi; /bin/su kei -c {add}; echo status=$?")
-	item.step("saved Kei Lab's key in kei's store", " ".join(saved.split())[:200])
+	_, saved = run.sh(f"if [ -f {WIFI_STORE} ]; then cp -p {WIFI_STORE} /tmp/aat-wifi.conf.kept; fi; /bin/su {aatlib.USER} -c {add}; echo status=$?")
+	item.step("saved Kei Lab's key in the user's store", " ".join(saved.split())[:200])
 	item.check("status=0" in saved, "the key for Kei Lab was not saved")
 	mark = run.mark()
 	run.sh("/sbin/service stop networkd > /tmp/aat-networkd-stop.log 2>&1; i=0; while [ -S /run/networkd.sock ] && [ $i -lt 20 ]; do sleep 0.5; i=$((i+1)); done; "
@@ -839,7 +839,7 @@ def files_open_programs(item):
 	mark = run.mark()
 	run.sh(f"mkdir -p {DESKTOP_FOLDER} && cp {aatlib.SAMPLES}/sample.mp4 {DESKTOP_FOLDER}/aat-clip.mp4 && "
 		f"chmod 755 {DESKTOP_FOLDER}/aat-clip.mp4 && cp /bin/ls {DESKTOP_FOLDER}/aat-ls && chmod 755 {DESKTOP_FOLDER}/aat-ls && "
-		f"chown kei {DESKTOP_FOLDER} {DESKTOP_FOLDER}/aat-clip.mp4 {DESKTOP_FOLDER}/aat-ls")
+		f"chown {aatlib.USER} {DESKTOP_FOLDER} {DESKTOP_FOLDER}/aat-clip.mp4 {DESKTOP_FOLDER}/aat-ls")
 	try:
 		# No Terminal from an earlier scenario, so a running one is this scenario's.
 		run.stop_programs()
@@ -1050,7 +1050,7 @@ def x11_close(item):
 			if up == 0:
 				break
 			time.sleep(0.5)
-		item.step("xserver as kei", f"socket {'there' if up == 0 else 'missing'}")
+		item.step(f"xserver as {aatlib.USER}", f"socket {'there' if up == 0 else 'missing'}")
 		item.check(up == 0, "the X server did not start")
 		mark = run.mark()
 		window = run.open_as_user(item, "env DISPLAY=:0 /bin/glxtest --frames=6000 --delay-ms=30 --token=aat", timeout=30)
