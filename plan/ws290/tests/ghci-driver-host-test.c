@@ -1542,8 +1542,9 @@ scene_flat(void)
 }
 
 /*
- * CP_HEAP's bound: a session or a chunk past it is refused with ENOMEM
- * before the GPU sees it, so the processor never runs out.
+ * CP_HEAP's bound: a session past it is refused with ENOSPC and a chunk
+ * past it with ENOMEM before the GPU sees them, so the processor never
+ * runs out.
  */
 static void
 scene_heap_bound(void)
@@ -1567,7 +1568,7 @@ scene_heap_bound(void)
 	error = ghci_vm_open(&device, &owner_token, &vm);
 	expect(error == 0, "heap: one session fits");
 	error = ghci_vm_open(&device, &owner_token, &other);
-	expect(error == ENOMEM, "heap: a second session is refused");
+	expect(error == ENOSPC, "heap: a second session is refused");
 	error = ghci_vm_map(&device, vm, memory, 0U, &mapping);
 	expect(error == 0, "heap: one chunk fits");
 	error = ghci_vm_map(&device, vm, more, 0U, &refused);

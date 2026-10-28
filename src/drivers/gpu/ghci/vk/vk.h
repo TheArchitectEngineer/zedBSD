@@ -113,14 +113,17 @@ struct ghci_vk_formats {
  * The executor of one GHCI device, from the attach to the detach.
  *
  * sessions lists the node sessions with the executor's side open
- * (irq_lock), for the service thread's retirement.  refusals counts the
- * refused commands the log has shown, so that a client cannot flood it;
- * it is counted without a lock (two sessions at once may show one more).
+ * (irq_lock), for the service thread's retirement.  completing_wake
+ * wakes a drain once a session's last retired completion has been
+ * reported to the core.  refusals counts the refused commands the log
+ * has shown, so that a client cannot flood it; it is counted without a
+ * lock (two sessions at once may show one more).
  */
 struct ghci_vk {
 	struct ghci_device *device;
 	struct ghci_vk_formats formats;
 	struct ghci_vk_session *sessions;
+	struct wait_queue completing_wake;
 	unsigned refusals;
 };
 
@@ -265,13 +268,16 @@ struct ghci_vk_object {
 };
 
 /*
- * A queued frame of a node session whose completion waits for the
- * session's work placed until the frame ran (irq_lock).  A frame with
+ * A queued frame of a node session (irq_lock).  A frame of timeline 0
+ * (the decoder's notification) completes once it has run; a context
+ * fence of a timeline waits for the work of the timeline's device placed
+ * until it ran, after the earlier frames of its timeline.  A frame with
  * nothing to wait for has ticket.seq 0; failed ends it with an error.
  */
 struct ghci_vk_frame {
 	struct ghci_vk_frame *next;
 	struct drv_gpu_completion *completion;
+	uint32_t timeline;
 	struct ghci_ticket ticket;
 	int failed;
 };
@@ -282,9 +288,10 @@ struct ghci_vk_frame {
  * The object table, the arena and the opcodes for the log belong to the
  * session's commands.  Under irq_lock: next (the executor's list), the
  * devices, the device of each timeline, the job markers (and the
- * timeline each was reserved on), the queued
- * frames, the ticket of the session's last work, and the marks the GPU
- * core's stop and isolation set.
+ * timeline each was reserved on), the queued frames, completing (the
+ * completions a retirement took and has not yet reported to the core),
+ * the ticket of the session's last work, and the marks the GPU core's
+ * stop and isolation set.
  */
 struct ghci_vk_session {
 	struct ghci_device *device;
@@ -301,6 +308,7 @@ struct ghci_vk_session {
 	uint32_t marker_timeline[GHCI_JOB_MARKERS];
 	struct ghci_vk_frame *frames;
 	unsigned frame_count;
+	unsigned completing;
 	struct ghci_ticket last;
 	int submitted;
 	int stopping;
@@ -379,7 +387,9 @@ void ghci_vk_commands_release(struct ghci_vk_object *object);
 /* vk-queue.c: the completions, the drain and the stop. */
 void ghci_vk_service(struct ghci_device *device);
 void ghci_vk_drain(struct ghci_device *device, struct ghci_vk_session *session);
-int ghci_vk_frame_queue(struct ghci_vk_session *session, uint32_t timeline, struct drv_gpu_completion *completion);
+void ghci_vk_settle(struct ghci_device *device, struct ghci_vk_session *session);
+int ghci_vk_frame_new(struct ghci_vk_session *session, uint32_t timeline, struct drv_gpu_completion *completion, struct ghci_vk_frame **result);
+int ghci_vk_frame_queue(struct ghci_vk_session *session, struct ghci_vk_frame *frame);
 void ghci_vk_submitted(struct ghci_vk_device *device, const struct ghci_ticket *ticket);
 int ghci_vk_session_pending(struct ghci_vk_session *session);
 void ghci_vk_session_fail(struct ghci_vk_session *session);

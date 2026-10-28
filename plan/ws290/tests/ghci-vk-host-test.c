@@ -102,11 +102,20 @@ static int service_running;
 /* The completions the scenes hand the executor: distinct addresses the stub counts. */
 static char completions[8];
 
+/*
+ * The session whose completion the completing hook reports, as the
+ * service thread would between its retirement and its report, and the
+ * sleep of the waiter it ran in (0 until then).
+ */
+static struct ghci_vk_session *completing_session;
+static unsigned completing_sleep;
+
 static void expect(int held, const char *name);
 static int start(enum model_profile profile);
 static void stop(const char *name);
 static void model_irq(void *argument);
 static void sleep_hook(unsigned sleep, void *argument);
+static void completing_hook(unsigned sleep, void *argument);
 static int fake_interrupt_take(struct ghci_device *target);
 static int fake_interrupt_release(struct ghci_device *target);
 static int fake_bus_master(struct ghci_device *target, int on);
@@ -115,7 +124,9 @@ static void node_close(struct node *node);
 static void put32(struct frame *frame, uint32_t value);
 static void put64(struct frame *frame, uint64_t value);
 static void begin(struct frame *frame, const struct node *node, uint32_t opcode, uint32_t reply);
+static void trail(struct node *node, struct frame *frame);
 static int run(struct node *node, struct frame *frame);
+static int run_queued(struct node *node, struct frame *frame, uint32_t timeline, struct drv_gpu_completion *completion);
 static uint32_t reply32(const struct node *node, size_t at);
 static uint64_t reply64(const struct node *node, size_t at);
 static int trailer_ok(const struct node *node);
@@ -127,6 +138,7 @@ static int create_image(struct node *node, uint64_t handle, uint32_t format, uin
 static int simple_create(struct node *node, uint32_t opcode, uint32_t type, uint64_t handle, uint32_t flags, uint64_t identity, uint32_t *result);
 static int object_query(struct node *node, uint32_t opcode, uint64_t handle, uint64_t identity, uint32_t *result);
 static int submit(struct node *node, uint64_t queue, uint64_t commands, uint64_t fence);
+static int allocate_buffers(struct node *node, uint64_t handle, uint64_t pool, const uint64_t *identities, uint32_t count);
 static int ticket_passed(const struct ghci_ticket *ticket);
 static int log_names_no_session(void);
 static void scene_capset(void);
@@ -141,6 +153,7 @@ static void scene_memory(void);
 static void scene_recording(void);
 static void scene_sync(void);
 static void scene_jobs(void);
+static void scene_completions(void);
 static void scene_recovery(void);
 static void scene_core_reset(void);
 
@@ -171,6 +184,7 @@ main(void)
 	scene_recording();
 	scene_sync();
 	scene_jobs();
+	scene_completions();
 	scene_recovery();
 	scene_core_reset();
 	model_fini();
@@ -306,6 +320,38 @@ sleep_hook(
 	service_running = 0;
 }
 
+/*
+ * Each sleep of a waiter while the completing hook is set: the first one
+ * reports the completion the scene left in flight, as the service thread
+ * does once drv_gpu_complete has returned (the count lowered and the
+ * waiter woken under irq_lock).
+ */
+static void
+completing_hook(
+	unsigned sleep,
+	void *argument)
+{
+	struct ghci_vk *vk;
+	unsigned long irq;
+
+	(void)argument;
+
+	/* Only once, and only for a session left in flight. */
+	if (completing_sleep != 0U || completing_session == NULL)
+		return;
+	completing_sleep = sleep;
+
+	/* The report: one fewer completing, the last one wakes the waiter. */
+	vk = device.vk;
+	irq = spin_lock_irqsave(&device.irq_lock);
+
+	completing_session->completing--;
+	if (completing_session->completing == 0U)
+		waitq_wake_all(&vk->completing_wake);
+
+	spin_unlock_irqrestore(&device.irq_lock, irq);
+}
+
 /* Takes the interrupt: the model's line. */
 static int
 fake_interrupt_take(
@@ -433,17 +479,49 @@ run(
 {
 	int error;
 
-	/* GPU_OP_SEEK_REPLY_STREAM, then GPU_OP_ENUMERATE_INSTANCE_VERSION with its output. */
+	/* The trailer, then the frame. */
+	trail(node, frame);
+	error = device.ops.command(&device, node->session, frame->bytes, (uint32_t)frame->used);
+	return error;
+}
+
+/*
+ * Ends a frame with the trailer and clears the replies, as run() does:
+ * GPU_OP_SEEK_REPLY_STREAM to the blob's last 20 bytes, then
+ * GPU_OP_ENUMERATE_INSTANCE_VERSION with its output.
+ */
+static void
+trail(
+	struct node *node,
+	struct frame *frame)
+{
 	put32(frame, GPU_OP_SEEK_REPLY_STREAM);
 	put32(frame, 0U);
 	put64(frame, TRAILER_AT);
 	put32(frame, GPU_OP_ENUMERATE_INSTANCE_VERSION);
 	put32(frame, GPU_OP_FLAG_REPLY);
 	put64(frame, 1U);
-
-	/* The frame. */
 	memset(node->reply, 0, REPLY_BYTES);
-	error = device.ops.command(&device, node->session, frame->bytes, (uint32_t)frame->used);
+}
+
+/*
+ * Ends a frame with the trailer and queues it with a completion, as
+ * libvulkan's transaction does with the notification (the context's
+ * fence flag on timeline 0).  Returns what the submit returned.
+ */
+static int
+run_queued(
+	struct node *node,
+	struct frame *frame,
+	uint32_t timeline,
+	struct drv_gpu_completion *completion)
+{
+	int error;
+
+	/* The trailer, then the queued frame. */
+	trail(node, frame);
+	error = device.ops.commands->submit(&device, node->session, frame->bytes, (uint32_t)frame->used,
+	    GPU_COMMAND_CONTEXT_FENCE, timeline, completion);
 	return error;
 }
 
@@ -767,6 +845,33 @@ submit(
 	return run(node, &frame);
 }
 
+/* vkAllocateCommandBuffers of primary buffers from a pool on a device.  Returns what the frame returned. */
+static int
+allocate_buffers(
+	struct node *node,
+	uint64_t handle,
+	uint64_t pool,
+	const uint64_t *identities,
+	uint32_t count)
+{
+	struct frame frame;
+	uint32_t index;
+
+	/* [device][u64 1][VkCommandBufferAllocateInfo][u64 count][count x identity]. */
+	begin(&frame, node, GPU_OP_ALLOCATE_COMMAND_BUFFERS, GPU_OP_FLAG_REPLY);
+	put64(&frame, handle);
+	put64(&frame, 1U);
+	put32(&frame, VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO);
+	put64(&frame, 0U);
+	put64(&frame, pool);
+	put32(&frame, VK_COMMAND_BUFFER_LEVEL_PRIMARY);
+	put32(&frame, count);
+	put64(&frame, count);
+	for (index = 0U; index < count; index++)
+		put64(&frame, identities[index]);
+	return run(node, &frame);
+}
+
 /* Reports whether a ticket has passed. */
 static int
 ticket_passed(
@@ -1060,6 +1165,8 @@ scene_formats(void)
 	struct frame frame;
 	struct node node;
 	struct ghci_vk *vk;
+	unsigned index;
+	int same;
 	int error;
 
 	/* FMT: R8G8B8A8_UNORM has every feature (storage from the table), as FMT says. */
@@ -1083,6 +1190,24 @@ scene_formats(void)
 	expect(vk->formats.optimal[43] == 0xDF81U && vk->formats.buffer[43] == 0x48U, "formats: 43 (FMT)");
 	expect(vk->formats.optimal[126] == 0xC201U && vk->formats.buffer[126] == 0U, "formats: 126 (FMT)");
 	expect(vk->formats.optimal[9] == 0U && vk->formats.optimal[53] == 0U, "formats: FMT says nothing");
+
+	/*
+	 * FMT_OPTIMAL and FMT_LINEAR that differ: every image is linear, so
+	 * optimal tiling has what both have (sample and filter here, with the
+	 * copies; the full profile's blit engine adds no blit): through the
+	 * wire too.
+	 */
+	ghci_vk_formats_from_bits(&device.caps, 37U, 0x1FFU, 0x003U, 0x1FFU, &vk->formats);
+	expect(vk->formats.optimal[37] == vk->formats.linear[37] && vk->formats.optimal[37] == 0xD001U,
+	       "formats: optimal is linear's when linear has less");
+	begin(&frame, &node, GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES, GPU_OP_FLAG_REPLY);
+	put64(&frame, ID_PHYSICAL);
+	put32(&frame, 37U);
+	put64(&frame, 1U);
+	error = run(&node, &frame);
+	expect(error == 0 && reply32(&node, 12U) == 0xD001U && reply32(&node, 16U) == 0xD001U, "formats: the wire answers the intersection");
+	ghci_vk_formats_from_bits(&device.caps, 37U, 0x003U, 0x1FFU, 0x1FFU, &vk->formats);
+	expect(vk->formats.optimal[37] == 0xD001U && vk->formats.linear[37] == 0xDF83U, "formats: optimal has less than linear");
 	node_close(&node);
 	stop("formats full");
 
@@ -1099,6 +1224,12 @@ scene_formats(void)
 	expect(vk->formats.optimal[124] == 0xC201U, "formats: D16 without a blit");
 	expect(vk->formats.optimal[51] == vk->formats.optimal[37], "formats: A8B8G8R8 as R8G8B8A8");
 	expect(vk->formats.buffer[106] == 0x40U && vk->formats.optimal[106] == 0U, "formats: R32G32B32 vertex only");
+	same = 1;
+	for (index = 0U; index < GHCI_VK_FORMATS; index++) {
+		if (vk->formats.optimal[index] != vk->formats.linear[index])
+			same = 0;
+	}
+	expect(same, "formats: the table's optimal and linear are the same");
 	stop("formats minimal");
 }
 
@@ -1370,6 +1501,18 @@ scene_devices(void)
 	expect(model_count_commands(GHCI_OP_SESSION_OPEN) == 0U, "devices: flat places no SESSION_OPEN");
 	node_close(&first);
 	stop("devices flat");
+
+	/* CP_HEAP's bound without room for a session's tables: out of device memory, not of host memory. */
+	error = start(MODEL_KC705_UMA);
+	if (error == 0)
+		error = node_open(&first);
+	expect(error == 0, "devices: start bound");
+	device.heap_budget = device.heap_used;
+	error = create_device(&first, ID_DEVICE, NULL, &result);
+	expect(error == 0 && result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY && trailer_ok(&first),
+	       "devices: CP_HEAP's bound is out of device memory");
+	node_close(&first);
+	stop("devices bound");
 }
 
 /*
@@ -1537,6 +1680,7 @@ scene_recording(void)
 	struct ghci_vk_session *session;
 	struct frame frame;
 	struct node node;
+	uint64_t identities[3];
 	size_t recorded;
 	uint32_t result;
 	unsigned fences;
@@ -1608,6 +1752,21 @@ scene_recording(void)
 	expect(object != NULL && object->as.commands.commands == 3U && object->as.commands.used == recorded &&
 	       memcmp(object->as.commands.bytes, frame.bytes + 36U, recorded) == 0, "recording: kept as it came");
 	expect(object != NULL && object->as.commands.state == GHCI_VK_RECORD_EXECUTABLE, "recording: executable");
+
+	/* A pool of another device is refused; a buffer that cannot be made takes the ones before it back. */
+	error = create_device(&node, ID_DEVICE + 1U, NULL, &result);
+	expect(error == 0 && result == 0U, "recording: a second device");
+	identities[0] = ID_COMMANDS + 8U;
+	error = allocate_buffers(&node, ID_DEVICE + 1U, ID_POOL, identities, 1U);
+	expect(error == EINVAL && ghci_vk_object_find(session, GHCI_VK_COMMAND_BUFFER, ID_COMMANDS + 8U) == NULL,
+	       "recording: a pool of another device");
+	identities[1] = ID_COMMANDS + 9U;
+	identities[2] = ID_COMMANDS;
+	error = allocate_buffers(&node, ID_DEVICE, ID_POOL, identities, 3U);
+	expect(error == EINVAL && ghci_vk_object_find(session, GHCI_VK_COMMAND_BUFFER, ID_COMMANDS + 8U) == NULL &&
+	       ghci_vk_object_find(session, GHCI_VK_COMMAND_BUFFER, ID_COMMANDS + 9U) == NULL &&
+	       ghci_vk_object_find(session, GHCI_VK_COMMAND_BUFFER, ID_COMMANDS) != NULL,
+	       "recording: a failed allocation takes the made buffers back");
 
 	/* A recorded command of a malformed shape ends the frame without the trailer. */
 	begin(&frame, &node, GPU_OP_CMD_SET_BLEND_CONSTANTS, 0U);
@@ -1794,6 +1953,96 @@ scene_jobs(void)
 	expect(device.ops.recovery->stop_poll(&device, node.session) == 0, "jobs: stop poll done");
 	node_close(&node);
 	stop("jobs");
+}
+
+/*
+ * The completions of the queued frames and their count: a frame of
+ * timeline 0 (the decoder's notification) completes once it has run,
+ * though earlier work of the session is still in the GPU and a context
+ * fence of a timeline waits; a frame of a timeline no queue owns is
+ * refused before it runs.  A completion that a retirement took and has
+ * not yet reported (the service thread between its retirement and
+ * drv_gpu_complete) keeps the stop poll waiting and holds the drain and
+ * the isolation until it is reported.
+ */
+static void
+scene_completions(void)
+{
+	struct drv_gpu_completion *notification;
+	struct drv_gpu_completion *fence;
+	struct ghci_vk_session *session;
+	struct frame frame;
+	struct node node;
+	unsigned completed;
+	unsigned sleeps;
+	uint32_t result;
+	int error;
+
+	/* A device and its queue on timeline 1. */
+	error = start(MODEL_KC705_UMA);
+	if (error == 0)
+		error = node_open(&node);
+	if (error == 0)
+		error = create_device(&node, ID_DEVICE, NULL, &result);
+	if (error == 0)
+		error = get_queue(&node, ID_DEVICE, 1U, ID_QUEUE);
+	expect(error == 0, "completions: device");
+	session = ((struct ghci_session *)node.session)->vk;
+	notification = (struct drv_gpu_completion *)(void *)&completions[2];
+	fence = (struct drv_gpu_completion *)(void *)&completions[3];
+
+	/* Work the model holds, and a context fence of timeline 1 behind it. */
+	model_hold(1);
+	error = submit(&node, ID_QUEUE, 0U, 0U);
+	error |= device.ops.commands->submit(&device, node.session, NULL, 0U, GPU_COMMAND_CONTEXT_FENCE, 1U, fence);
+	expect(error == 0, "completions: work held, a fence frame behind it");
+
+	/* A notification frame runs, and completes at once though the work is held. */
+	completed = stub.completions;
+	begin(&frame, &node, GPU_OP_ENUMERATE_INSTANCE_VERSION, GPU_OP_FLAG_REPLY);
+	put64(&frame, 1U);
+	error = run_queued(&node, &frame, 0U, notification);
+	expect(error == 0 && trailer_ok(&node), "completions: the notification frame ran");
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(stub.completions == completed + 1U && stub.last_completion_error == 0, "completions: timeline 0 completes while the work is held");
+	expect(session->frame_count == 1U && session->completing == 0U, "completions: the fence frame still waits");
+	expect(device.ops.recovery->stop_poll(&device, node.session) == EAGAIN, "completions: stop poll waits for the fence frame");
+
+	/* A frame of a timeline no queue owns is refused before it runs. */
+	begin(&frame, &node, GPU_OP_ENUMERATE_INSTANCE_VERSION, GPU_OP_FLAG_REPLY);
+	put64(&frame, 1U);
+	error = run_queued(&node, &frame, 5U, notification);
+	expect(error == EINVAL && !trailer_ok(&node), "completions: unknown timeline refused, not run");
+
+	/* The work passes: the fence frame completes. */
+	model_hold(0);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(stub.completions == completed + 2U && session->frame_count == 0U && session->completing == 0U,
+	       "completions: the fence frame completes once the work passed");
+	expect(device.ops.recovery->stop_poll(&device, node.session) == 0, "completions: stop poll done");
+
+	/* A completion in flight (taken, not reported yet) keeps the stop poll waiting. */
+	session->completing = 1U;
+	expect(device.ops.recovery->stop_poll(&device, node.session) == EAGAIN, "completions: stop poll waits for a completion in flight");
+
+	/* The drain does not return until the completion in flight is reported. */
+	completing_session = session;
+	completing_sleep = 0U;
+	sleeps = stub.sleeps;
+	stub_set_sleep_hook(completing_hook, NULL);
+	device.ops.commands->drain(&device, node.session);
+	expect(completing_sleep > sleeps && session->completing == 0U, "completions: drain waits for the report");
+
+	/* The isolation does not return until a completion in flight is reported either. */
+	session->completing = 1U;
+	completing_sleep = 0U;
+	sleeps = stub.sleeps;
+	error = device.ops.recovery->isolate(&device, node.session);
+	expect(error == 0 && completing_sleep > sleeps && session->completing == 0U, "completions: isolate waits for the report");
+	stub_set_sleep_hook(sleep_hook, NULL);
+	completing_session = NULL;
+	node_close(&node);
+	stop("completions");
 }
 
 /*

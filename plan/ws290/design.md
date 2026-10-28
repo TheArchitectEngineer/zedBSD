@@ -3,6 +3,7 @@
 - Phase: [ws290-p001](phase001/phase.md)。版 1・2: 2026-10-26（P1、q1594）。版 3: 2026-10-27（P3、q1621、書きかけで中断）。**版 4: 2026-10-28（P3、q1636-i01）**。版 3 までの本文は git の履歴（f5fea4c2e など）にあり、この版は 89529de を正本に全部を書き直した。
 - 親: [WS290](ws.md)。前身の設計: [WS288 design](../ws288/design.md) §6（1.1 の driver）。
 - この文書は設計だけ。source は変えていない。
+- **版 4.11（2026-10-28、q1644 P3）: p007 の code の review を受け、§5.4 の isolate を ISOLATED に、§15.5 の set の sampled image・sampler を 96 に、§19 に仕様が決めていない所の driver の読み。**
 - **版 4.10（2026-10-28、q1644 P3）: p006 の code の review を受け、§11.4 に compiler と executor の取り決め、§12 の 2 を `lw` に、§15.5 に `maxTexelBufferElements` と資源の表の上限、§19 に N78（属性の register の食い違い）。**
 - **版 4.9（2026-10-28、q1644 P3）: p005 の実装の形を §5.5 の「実装の形」に書いた（arena と chunk の早い返し、勘定の数え方、資源の holds、非同期の close・unmap）。**
 - **状態（2026-10-28、q1641 P3）: 版 4.8（design-reviewer（Opus 5.5）の 4 回目、T01〜T16 の反映の確かめと p004・p005 の穴 H1〜H3・M1〜M9・L1〜L5 を §5・§6・§7・§8・§10・§14 に反映。§24 の「4 回目」）。版 4.7 まで: U の回答（版 4.1）、design-reviewer（Opus 5.5）3 回の指摘（版 4.2〜4.4、§24）を反映し、仕様 cb937e6（回答 第 13.0 版）に追従（版 4.5: N48 で計画の reset を外し、N47・N49・N50・N51・N59・swizzle・unnormalized を使う）。版 4.6: 仕様 20bf888（回答 第 14.0 版）に追従（N62 の sampler の独立の slot `w1[9:6]`、N63 の kind の 1 対 1、N66 の operand 120・121、N70 の DISP_SET 1 + 2N、§11.4 の `maxDescriptorSet*` を 96 に）。版 4.7: 仕様 d9252e4（回答 第 15.0 版）で N73〜N77 が全部解決し、第 16 版で「残る疑問なし」を送った（§19）。**
@@ -274,7 +275,7 @@ U5（「全部 WS292」）により、WS290 は session だけの回収（§3.3 
 | core の call | driver |
 | --- | --- |
 | `stop_begin`・`stop_poll`（session） | irq_lock の状態だけで答える（device.lock を取らない）。DEAD・RETIRED、または未完の ticket が無い session は 0、回復の途中で未完の物があれば EAGAIN |
-| `isolate`（session） | その session の未完の ticket・callback を irq_lock の中で ERROR で終え、`ghci_vm` を DEAD にし（以後の unmap・close は packet を置かず hardware に触れない、gpu.h の isolate の約束）、物理を device の hold に移し（次に成功した driver の reset か core の reset で返す）、以後の submit を断る。0 を返す（回復が core の `CONFIG_GPU_JOB_STOP_MS` より長くても装置全体の fault に上がらない） |
+| `isolate`（session） | その session の未完の ticket・callback を irq_lock の中で ERROR で終え、`ghci_vm` を **ISOLATED** にし（p007 の実装、p005 の review の M6: DEAD は「reset が終わった」印で物理を即に返すので使わない。ISOLATED の unmap は mapping を HELD にし、close は `closed` の印だけで番号・chunk・物理を device が持ち、次に終わった reset（driver の回復か core の reset）が closed の物を退かせ、まだ持ち主のいる物を DEAD にする。以後の unmap・close は packet を置かず hardware に触れない、gpu.h の isolate の約束）、物理を device の hold に移し（次に成功した driver の reset か core の reset で返す）、以後の submit を断る。0 を返す（回復が core の `CONFIG_GPU_JOB_STOP_MS` より長くても装置全体の fault に上がらない） |
 | `fault`（device） | LOST にする（下）。何度呼ばれても同じ |
 | `reset`（device） | 古い持ち主が全部去った後に、service に頼んで（回復は service だけ）2〜6（session 無し）と liveness を行い、通れば `recovering` = 0、`gate_generation` を進め、quarantine と isolate の hold を返し、LOST から RUNNING に戻して 0。通らなければ LOST のまま error |
 
@@ -624,7 +625,7 @@ FMT の block が有れば、format ごとに `FMT_INDEX` を書き `FMT_OPTIMAL
 | `maxFramebufferWidth`・`Height`・`Layers` | 16384・16384・256 | render pass の width・height（1371 行）。layers は Vulkan の最小 256 を答え、§11.4 の仮の扱いで layer 0 だけに描く |
 | `maxViewportDimensions`・`viewportBoundsRange` | {16384, 16384}・[−32768, 32767] | 同上、Vulkan の最小 |
 | `pointSizeRange`・`lineWidthRange` | [1, 1]・[1, 1] | POINT_SIZE は無視（§12.10.3）、wideLines は false |
-| `maxDescriptorSetUniformBuffers`・`StorageBuffers`・`StorageImages`・`SampledImages`・`Samplers` | 72・24・24・16・16 | set 2 の表の大きさ（§11.4）で決める。sampled image と sampler は slot 16 個（U8 で Vulkan の最小 96 に足りない） |
+| `maxDescriptorSetUniformBuffers`・`StorageBuffers`・`StorageImages`・`SampledImages`・`Samplers` | 72・24・24・96・96 | set 2 の表の大きさ（§11.4）で決める。sampled image と sampler は d9252e4 の §8.6（1572〜1573 行、N74）の set 96 を答え、pipeline の VS と FS の和が slot 16 個を超える物は作成で断る（p007 の実装。U8 の不足は「pipeline あたり 16」の形になった） |
 | `maxDescriptorSetUniformBuffersDynamic`・`StorageBuffersDynamic` | 8・4 | c40〜 の dynamic offset の語（§11.4） |
 | `maxPerStageResources`・`maxDescriptorSetInputAttachments` | 128・4 | Vulkan の最小 |
 | `shaderSampledImageArrayDynamicIndexing` ほか dynamic indexing | false | texture の slot は即値 sub[3:0]（2161 行） |
@@ -712,6 +713,15 @@ WS の受け入れ（ws.md）との対応: 1.1 の code が無い = p004・p007�
 | N75 | 51〜57（A8B8G8R8_*）は 37〜43 と同じに受ける、B4G4R4A4・A2B10G10R10_UINT・E5B9G9R9 は shader か断り | 51〜57 をそのまま書く、残りの 3 つは U8（§15.4） |
 | N76 | `lw`・`sw` は bits 1:0 を無視し fault しない | compiler は揃った番地だけを出す（§12） |
 | N77 | §12.4・§12.5 の samp_slot、systolic の operand の削除、120・121 は VS だけ、ETC2 は `CAP_ETC2` | gsi1_isa.h の `w1[9:6]`、120・121 は VS だけ（§12） |
+
+仕様が決めていない所の driver の読み（p007 の実装、仮。版 4.11）:
+
+| 項目 | 読み |
+| --- | --- |
+| `GCLK_HZ` = 0 の `timestampPeriod` | 10 ns（仕様の名目の 100 MHz）。実機で GCLK_HZ が 0 なら p014 で見直す |
+| `FMT_BUFFER` の bit（「buffer features」とだけある） | bit 5 → VERTEX_BUFFER、bit 0 → UNIFORM_TEXEL_BUFFER、bit 8 → STORAGE_TEXEL_BUFFER（表で storage の format だけ） |
+| `textureCompressionETC2` | FMT0[7] と FMT0[9]（sRGB）の両方が有る時だけ true |
+| memory の heap の大きさ | unified は 256 MiB と答える（4 GiB 未満の連続の host memory から取る） |
 
 ## 20. ghci.md 以外の判断（Q1・ユーザーへ）
 

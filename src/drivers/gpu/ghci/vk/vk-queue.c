@@ -9,7 +9,10 @@
  * The queue of the Vulkan executor: the submission, the fences, the
  * semaphores and the events, and the completions of a node session (its
  * job markers and its queued frames) that the service thread retires as
- * the GPU passes their tickets.
+ * the GPU passes their tickets.  A retirement counts what it took as the
+ * session's completing until each is reported to the core, so that a
+ * drain or a stop never says that a session is done while a completion
+ * of it is still being reported.
  *
  * One ring is the one queue, so the submissions run in the order they
  * are placed: a semaphore needs no wait of its own, and a fence or a job
@@ -26,6 +29,7 @@
 #include <drivers/gpu/gpu.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
+#include <kern/waitq.h>
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
@@ -47,8 +51,9 @@ static int reset_fences(struct ghci_vk_session *session, uint32_t requested, str
 static int fence_status(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int event_operation(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static enum ghci_job_answer judge(void *context, uint64_t seq, uint64_t generation);
-static unsigned retire(struct ghci_vk_session *session, void **done, int *errors, unsigned capacity, struct ghci_vk_frame **gone);
-static void complete(void **done, const int *errors, unsigned count, struct ghci_vk_frame *gone);
+static void retire_session(struct ghci_device *device, struct ghci_vk_session *session);
+static unsigned retire(struct ghci_vk_session *session, void **done, int *errors, struct ghci_vk_session **owners, unsigned capacity, struct ghci_vk_frame **gone);
+static void complete(struct ghci_device *device, void **done, const int *errors, struct ghci_vk_session **owners, unsigned count, struct ghci_vk_frame *gone);
 
 /*
  * Runs a submission, fence, semaphore or event command; *handled stays
@@ -118,6 +123,7 @@ void
 ghci_vk_service(
 	struct ghci_device *device)
 {
+	struct ghci_vk_session *owners[GHCI_VK_DONE_BATCH];
 	struct ghci_vk_session *session;
 	struct ghci_vk_frame *gone;
 	struct ghci_vk *vk;
@@ -135,56 +141,58 @@ ghci_vk_service(
 		irq = spin_lock_irqsave(&device->irq_lock);
 
 		for (session = vk->sessions; session != NULL && count < GHCI_VK_DONE_BATCH; session = session->next)
-			count += retire(session, done + count, errors + count, GHCI_VK_DONE_BATCH - count, &gone);
+			count += retire(session, done + count, errors + count, owners + count, GHCI_VK_DONE_BATCH - count, &gone);
 
 		spin_unlock_irqrestore(&device->irq_lock, irq);
 
 		/* The core hears of each. */
-		complete(done, errors, count, gone);
+		complete(device, done, errors, owners, count, gone);
 	} while (count == GHCI_VK_DONE_BATCH);
 }
 
 /*
  * Ends every completion of a node session before it closes: the session
  * retires its own completions as their tickets are answered, waiting a
- * bounded time on its last ticket between looks.  A ticket that never
- * passes is ended by the recovery (a hang, a reset, the loss of the
- * device), so the drain ends.  The caller holds none of the device's
- * locks.
+ * bounded time on its last ticket between looks, and then waits until no
+ * completion another thread took is still being reported to the core.  A
+ * ticket that never passes is ended by the recovery (a hang, a reset,
+ * the loss of the device), so the drain ends.  The caller holds none of
+ * the device's locks.
  */
 void
 ghci_vk_drain(
 	struct ghci_device *device,
 	struct ghci_vk_session *session)
 {
-	struct ghci_vk_frame *gone;
 	struct ghci_ticket last;
-	void *done[GHCI_VK_DONE_BATCH];
-	int errors[GHCI_VK_DONE_BATCH];
+	struct ghci_vk *vk;
 	unsigned long irq;
-	unsigned count;
+	uint64_t sequence;
 	int pending;
 	int submitted;
 
-	/* Looks until nothing of the session is pending. */
+	/* Looks until nothing of the session is pending or being reported. */
+	vk = device->vk;
 	for (;;) {
-		/* The session's completions that are done, and what is left. */
-		gone = NULL;
+		/* The session's completions that are done, reported at once. */
+		retire_session(device, session);
+
+		/* What is left; with nothing, the completions another thread is still reporting. */
 		irq = spin_lock_irqsave(&device->irq_lock);
 
-		count = retire(session, done, errors, GHCI_VK_DONE_BATCH, &gone);
 		pending = session->jobs.committed != 0U || session->frame_count != 0U;
+		while (!pending && session->completing != 0U) {
+			sequence = waitq_sequence(&vk->completing_wake);
+			(void)waitq_sleep(&vk->completing_wake, &device->irq_lock, sequence, 0U, 0U);
+		}
 		last = session->last;
 		submitted = session->submitted;
 
 		spin_unlock_irqrestore(&device->irq_lock, irq);
-		complete(done, errors, count, gone);
 
-		/* Nothing left, or more done than a batch: look again at once. */
+		/* Nothing left: no completion of the session is in flight. */
 		if (!pending)
 			return;
-		if (count == GHCI_VK_DONE_BATCH)
-			continue;
 
 		/* Waits for the session's last work; a failed marker or frame needs no wait. */
 		if (submitted)
@@ -195,40 +203,107 @@ ghci_vk_drain(
 }
 
 /*
- * Queues a frame's completion behind the work the session placed until
- * now (the work of the timeline's device for a context fence of a
- * timeline).  Returns 0, ENOMEM, or EIO for a session the GPU core
- * stopped or isolated.
+ * Ends the completions of a node session that are done now (after an
+ * isolation, every one), and waits until none that another thread took
+ * is still being reported to the core.  It waits for no ticket.  The
+ * caller holds none of the device's locks.
+ */
+void
+ghci_vk_settle(
+	struct ghci_device *device,
+	struct ghci_vk_session *session)
+{
+	struct ghci_vk *vk;
+	unsigned long irq;
+	uint64_t sequence;
+
+	/* What is done, reported at once. */
+	vk = device->vk;
+	retire_session(device, session);
+
+	/* What the service thread took is reported before the caller goes on. */
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	while (session->completing != 0U) {
+		sequence = waitq_sequence(&vk->completing_wake);
+		(void)waitq_sleep(&vk->completing_wake, &device->irq_lock, sequence, 0U, 0U);
+	}
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+}
+
+/*
+ * Makes the record of a frame's completion before the frame runs, so
+ * that a frame that ran always has its completion queued.  timeline is 0
+ * (the decoder's notification) or a timeline a queue of the session
+ * completes on.  Returns 0 with the record, EINVAL for a timeline no
+ * queue of the session owns, or ENOMEM.
  */
 int
-ghci_vk_frame_queue(
+ghci_vk_frame_new(
 	struct ghci_vk_session *session,
 	uint32_t timeline,
-	struct drv_gpu_completion *completion)
+	struct drv_gpu_completion *completion,
+	struct ghci_vk_frame **result)
 {
 	struct ghci_vk_frame *frame;
-	struct ghci_vk_frame **position;
-	struct ghci_vk_device *device;
 	unsigned long irq;
-	int stopped;
+	int known;
+
+	/* Timeline 0, or one of the session's queues. */
+	known = 0;
+	if (timeline == 0U) {
+		known = 1;
+	} else if (timeline < GHCI_VK_TIMELINES) {
+		irq = spin_lock_irqsave(&session->device->irq_lock);
+
+		if (session->timeline_device[timeline] != NULL)
+			known = 1;
+
+		spin_unlock_irqrestore(&session->device->irq_lock, irq);
+	}
+	if (!known)
+		return EINVAL;
 
 	/* The record. */
 	frame = kern_calloc(1U, sizeof(*frame));
 	if (frame == NULL)
 		return ENOMEM;
 	frame->completion = completion;
+	frame->timeline = timeline;
+
+	/* Succeeded: the caller runs the frame, then queues the record. */
+	*result = frame;
+	return 0;
+}
+
+/*
+ * Queues a frame's completion once the frame has run: a frame of
+ * timeline 0 completes at the next retirement, since its replies are
+ * already written; a context fence of a timeline waits for the work its
+ * device placed until now (none when the frame destroyed the device).
+ * Returns 0, or EIO for a session the GPU core stopped or isolated, and
+ * then frees the record.
+ */
+int
+ghci_vk_frame_queue(
+	struct ghci_vk_session *session,
+	struct ghci_vk_frame *frame)
+{
+	struct ghci_vk_frame **position;
+	struct ghci_vk_device *device;
+	unsigned long irq;
+	int stopped;
 
 	/* The ticket it waits for, and the frame last in the session's queue. */
 	irq = spin_lock_irqsave(&session->device->irq_lock);
 
 	stopped = session->stopping || session->isolated;
 	device = NULL;
-	if (timeline < GHCI_VK_TIMELINES)
-		device = session->timeline_device[timeline];
+	if (frame->timeline != 0U)
+		device = session->timeline_device[frame->timeline];
 	if (device != NULL && device->submitted)
 		frame->ticket = device->last;
-	else if (device == NULL && session->submitted)
-		frame->ticket = session->last;
 	if (!stopped) {
 		position = &session->frames;
 		while (*position != NULL)
@@ -282,8 +357,8 @@ ghci_vk_session_pending(
 	enum ghci_ticket_state state;
 	struct ghci_vk_device *device;
 
-	/* Completions not retired yet. */
-	if (session->jobs.committed != 0U || session->frame_count != 0U)
+	/* Completions not retired yet, or retired and not yet reported to the core. */
+	if (session->jobs.committed != 0U || session->frame_count != 0U || session->completing != 0U)
 		return 1;
 
 	/* A device whose last work the GPU has not finished. */
@@ -702,40 +777,79 @@ judge(
 	return GHCI_JOB_WAITING;
 }
 
+/* Retires and reports, batch by batch, every completion of one session that is done; no lock is held. */
+static void
+retire_session(
+	struct ghci_device *device,
+	struct ghci_vk_session *session)
+{
+	struct ghci_vk_session *owners[GHCI_VK_DONE_BATCH];
+	struct ghci_vk_frame *gone;
+	void *done[GHCI_VK_DONE_BATCH];
+	int errors[GHCI_VK_DONE_BATCH];
+	unsigned long irq;
+	unsigned count;
+
+	/* Batches until a batch is not full. */
+	do {
+		gone = NULL;
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		count = retire(session, done, errors, owners, GHCI_VK_DONE_BATCH, &gone);
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+		complete(device, done, errors, owners, count, gone);
+	} while (count == GHCI_VK_DONE_BATCH);
+}
+
 /*
  * Takes a session's done markers and frames (irq_lock held): their
- * completions and errors to done and errors (at most capacity), and the
- * frames' records to gone, to be freed once the lock is let go.  Returns
- * the number taken.
+ * completions and errors to done and errors and the session to owners
+ * (at most capacity), and the frames' records to gone, to be freed once
+ * the lock is let go.  What is taken counts as the session's completing
+ * until complete() has reported it.  Returns the number taken.
  */
 static unsigned
 retire(
 	struct ghci_vk_session *session,
 	void **done,
 	int *errors,
+	struct ghci_vk_session **owners,
 	unsigned capacity,
 	struct ghci_vk_frame **gone)
 {
 	enum ghci_ticket_state state;
+	struct ghci_vk_frame **position;
 	struct ghci_vk_frame *frame;
+	uint64_t waiting;
+	uint64_t mark;
 	unsigned count;
+	unsigned index;
 
 	/* The markers. */
 	count = ghci_jobs_retire(&session->jobs, judge, session->device, done, errors, capacity);
 
-	/* The frames, in order: one that waits keeps the later ones waiting. */
-	while (count < capacity && session->frames != NULL) {
-		frame = session->frames;
+	/* The frames, in order within a timeline: one that waits keeps its timeline's later ones waiting. */
+	waiting = 0U;
+	position = &session->frames;
+	while (count < capacity && *position != NULL) {
+		frame = *position;
+		mark = (uint64_t)1U << frame->timeline;
 		state = GHCI_TICKET_DONE;
 		if (frame->failed)
 			state = GHCI_TICKET_FAILED;
+		else if ((waiting & mark) != 0U)
+			state = GHCI_TICKET_PENDING;
 		else if (frame->ticket.seq != 0U)
 			state = ghci_cp_ticket_locked(session->device, &frame->ticket);
-		if (state == GHCI_TICKET_PENDING)
-			break;
+		if (state == GHCI_TICKET_PENDING) {
+			waiting |= mark;
+			position = &frame->next;
+			continue;
+		}
 
 		/* The frame leaves the queue with its answer. */
-		session->frames = frame->next;
+		*position = frame->next;
 		session->frame_count--;
 		done[count] = frame->completion;
 		errors[count] = 0;
@@ -746,24 +860,48 @@ retire(
 		*gone = frame;
 	}
 
+	/* What was taken is the session's until it is reported. */
+	for (index = 0U; index < count; index++)
+		owners[index] = session;
+	session->completing += count;
+
 	/* Succeeded: the number taken. */
 	return count;
 }
 
-/* Completes what a retirement took and frees the frames' records; no lock is held. */
+/*
+ * Completes what a retirement took and frees the frames' records; no lock
+ * is held.  Each completion leaves its session's completing once the
+ * core has heard of it, and the last one wakes a drain; the session is
+ * not touched after that.
+ */
 static void
 complete(
+	struct ghci_device *device,
 	void **done,
 	const int *errors,
+	struct ghci_vk_session **owners,
 	unsigned count,
 	struct ghci_vk_frame *gone)
 {
 	struct ghci_vk_frame *next;
+	struct ghci_vk *vk;
+	unsigned long irq;
 	unsigned index;
 
-	/* The core hears of each completion. */
-	for (index = 0U; index < count; index++)
+	/* The core hears of each completion, and then its session counts it reported. */
+	vk = device->vk;
+	for (index = 0U; index < count; index++) {
 		drv_gpu_complete(done[index], errors[index]);
+
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		owners[index]->completing--;
+		if (owners[index]->completing == 0U)
+			waitq_wake_all(&vk->completing_wake);
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
+	}
 
 	/* The frames' records. */
 	while (gone != NULL) {

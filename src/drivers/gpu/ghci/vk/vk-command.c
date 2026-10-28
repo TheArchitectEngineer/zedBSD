@@ -280,6 +280,8 @@ pool_buffers(
 /*
  * vkAllocateCommandBuffers: [device][u64 1][VkCommandBufferAllocateInfo]
  * [u64 count][count x identity] -> [result][u64 count][count x identity].
+ * Either every buffer is made or none: one that cannot be takes the ones
+ * before it back.
  */
 static int
 allocate_buffers(
@@ -289,18 +291,21 @@ allocate_buffers(
 	struct i915_wire_writer *reply)
 {
 	VkCommandBufferAllocateInfo info;
+	struct ghci_vk_object *device;
 	struct ghci_vk_object *pool;
 	struct ghci_vk_object *object;
 	const uint8_t *identities;
+	uint64_t handle;
 	uint64_t present;
 	uint64_t count;
 	uint64_t index;
+	uint64_t made;
 	uint64_t identity;
 	int error;
 
 	/* The device, the allocate info and the identities libvulkan reserved. */
 	kern_memset(&info, 0, sizeof(info));
-	(void)drv_i915_wire_read_u64(reader);
+	handle = drv_i915_wire_read_u64(reader);
 	present = drv_i915_wire_read_u64(reader);
 	if (present == 1U)
 		i915_vkc_dec_VkCommandBufferAllocateInfo(reader, &session->arena, &info);
@@ -309,20 +314,35 @@ allocate_buffers(
 	if (reader->error != 0 || present != 1U || count != info.commandBufferCount)
 		return EINVAL;
 
-	/* A pool of the session. */
+	/* A device of the session, and a pool of that device. */
+	device = ghci_vk_object_find(session, GHCI_VK_DEVICE, handle);
+	if (device == NULL)
+		return EINVAL;
 	pool = ghci_vk_object_find(session, GHCI_VK_COMMAND_POOL, (uint64_t)(uintptr_t)info.commandPool);
-	if (pool == NULL)
+	if (pool == NULL || pool->device != device->device)
 		return EINVAL;
 
-	/* Each buffer's object. */
-	for (index = 0U; index < count; index++) {
-		kern_memcpy(&identity, identities + index * 8U, 8U);
+	/* Each buffer's object, until one cannot be made. */
+	error = 0;
+	for (made = 0U; made < count; made++) {
+		kern_memcpy(&identity, identities + made * 8U, 8U);
 		error = ghci_vk_object_add(session, GHCI_VK_COMMAND_BUFFER, identity, pool->device, &object);
 		if (error != 0)
-			return error;
+			break;
 		object->as.commands.pool = pool->identity;
 		object->as.commands.level = info.level;
 		object->as.commands.state = GHCI_VK_RECORD_INITIAL;
+	}
+
+	/* A buffer that could not be made takes the ones made before it back. */
+	if (error != 0) {
+		for (index = 0U; index < made; index++) {
+			kern_memcpy(&identity, identities + index * 8U, 8U);
+			object = ghci_vk_object_find(session, GHCI_VK_COMMAND_BUFFER, identity);
+			if (object != NULL)
+				ghci_vk_object_destroy(session, object);
+		}
+		return error;
 	}
 
 	/* The result, the count and the identities. */

@@ -228,7 +228,9 @@ ghci_vk_formats_table(
  * linear tiling and for buffers, and drops what the driver cannot do: a
  * format outside the table, an sRGB format without EXT_CAP_FMT0's bit, a
  * storage image the table does not give, and a blit the driver's shaders
- * replace on a device without the blit engine.
+ * replace on a device without the blit engine.  The driver lays every
+ * image out in linear rows, so an image made with optimal tiling is a
+ * linear one: optimal tiling has only what both tilings have.
  */
 void
 ghci_vk_formats_from_bits(
@@ -257,12 +259,12 @@ ghci_vk_formats_from_bits(
 	if ((row->kind & ROW_SRGB) != 0U && !srgb)
 		return;
 
-	/* What the driver itself can do with the format: storage only where the table gives it. */
+	/* What the driver itself can do with the format (storage only where the table gives it); optimal images are linear. */
 	driver = ~(uint32_t)HW_STORAGE_IMAGE;
 	if ((row->features & HW_STORAGE_IMAGE) != 0U)
 		driver = ~0U;
 	blitter = ghci_caps_has(caps, GHCI_HAS_BLT);
-	tilings[0] = optimal & driver;
+	tilings[0] = optimal & linear & driver;
 	tilings[1] = linear & driver;
 
 	/* Without the blit engine the blits are the driver's draws: a sampled source, a colour destination. */

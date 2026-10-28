@@ -113,6 +113,7 @@ ghci_vk_attach(
 	if (vk == NULL)
 		return ENOMEM;
 	vk->device = device;
+	waitq_init(&vk->completing_wake, "ghci vk completing");
 
 	/* The features of every format, read once. */
 	ghci_vk_formats_read(device, &vk->formats);
@@ -192,9 +193,10 @@ node_command(
 }
 
 /*
- * Runs one frame and queues its completion behind the work it placed; a
- * frame of no bytes is a fence of the node session (or of a timeline)
- * alone.
+ * Runs one frame and queues its completion: a frame of timeline 0 (the
+ * decoder's notification) completes once it has run, a context fence of
+ * a timeline once the work of the timeline's device placed until now has
+ * finished.  A frame of no bytes is a fence alone.
  */
 static int
 node_submit(
@@ -207,6 +209,7 @@ node_submit(
 	struct drv_gpu_completion *completion)
 {
 	struct ghci_vk_session *session;
+	struct ghci_vk_frame *frame;
 	int error;
 
 	(void)private_data;
@@ -224,15 +227,22 @@ node_submit(
 	if (bytes == 0U && flags == 0U)
 		return EINVAL;
 
+	/* The completion's record before the frame runs, on timeline 0 or one of the session's queues. */
+	error = ghci_vk_frame_new(session, timeline, completion, &frame);
+	if (error != 0)
+		return error;
+
 	/* The frame runs now; its replies are written before the completion is queued. */
 	if (bytes != 0U) {
 		error = ghci_vk_stream_execute(session, wire, bytes);
-		if (error != 0)
+		if (error != 0) {
+			kern_free(frame);
 			return error;
+		}
 	}
 
-	/* The completion waits for the work placed until now. */
-	error = ghci_vk_frame_queue(session, timeline, completion);
+	/* The completion, queued (a stopped session frees the record). */
+	error = ghci_vk_frame_queue(session, frame);
 	if (error != 0)
 		return error;
 
@@ -526,8 +536,9 @@ node_reset(
 
 /*
  * Isolates a node session whose stop could not be confirmed: every
- * completion of it ends with an error, it takes no more work, and each
- * of its devices' GHCI sessions is isolated, so that its unmaps and
+ * completion of it ends with an error before the isolation returns (one
+ * the service thread is still reporting too), it takes no more work, and
+ * each of its devices' GHCI sessions is isolated, so that its unmaps and
  * closes keep the memory with the device until a reset.  Other sessions
  * go on.  Returns 0.
  */
@@ -558,8 +569,8 @@ node_isolate(
 
 	spin_unlock_irqrestore(&device->irq_lock, irq);
 
-	/* The failed completions end now. */
-	ghci_vk_service(device);
+	/* The failed completions end now, with any the service thread is still reporting. */
+	ghci_vk_settle(device, session);
 
 	/* Each GHCI session of the node session is isolated. */
 	for (index = 0U; index < count; index++)
