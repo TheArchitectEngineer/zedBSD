@@ -26,6 +26,16 @@ struct vmspace_pinned_page;
  * replaced.  Pins are owned by the calling thread and must not survive a
  * syscall return.
  */
+/*
+ * A pin of at most UACCESS_PIN_INLINE_PAGES pages (a 4 KiB buffer that
+ * crosses a page boundary) keeps its page records inside the pin, so that
+ * the common small transfer does not allocate; pages then points into the
+ * pin itself, and a pin is never copied.  UACCESS_PIN_INLINE_WORDS holds
+ * that many records (checked in uaccess.c).
+ */
+#define UACCESS_PIN_INLINE_PAGES	2U
+#define UACCESS_PIN_INLINE_WORDS	12U
+
 struct uaccess_pin {
 	uintptr_t address;
 	size_t size;
@@ -34,6 +44,7 @@ struct uaccess_pin {
 	size_t page_count;
 	struct vmspace_pinned_page *pages;
 	unsigned active;
+	uint64_t inline_pages[UACCESS_PIN_INLINE_WORDS];
 };
 
 int
