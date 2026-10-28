@@ -20,6 +20,8 @@ Resume point: 2026-10-15 夜 ユーザーの即時中断で止めた。design.md
 - Q250-1「nvrtx の 2 s で STOP (推し)」、Q250-2（Q242-2 とまとめた問い）「WS305 の VFIO (推し)」。Q250-3 の順は Q1 が推しで決めた。
 - → 解釈: 主の道は nvrtx の 2 s の期限で STOP、GSP の ctxsw の timeout の RC は同じ session の喪失として受ける back-up。実機の S1〜S5 は WS305 の VFIO で RTX を使える時。順は WS242 p003〜p005 → WS250 p002・p003 → WS291 の NVIDIA の段。
 
+- 2026-10-29 ユーザーの回答（クリック、Q1 の中継）Q250-4「案 A を必須に」（推しでない方）。→ 解釈: session ごとの channel を必須の範囲に（design.md の第 4 版の改訂）。session ごとの worker を必須に含めるかは Q250-5 で聞く。
+
 ## 今の振る舞い（Q1 の調べ、2026-10-15、main 5027043ab）
 
 - executor は投入ごとに driver の fence を 2 秒待ち（`vk-node.c` の `VK_NODE_RUN_US`）、来なければ EIO → app に `VK_ERROR_DEVICE_LOST`（`vk-queue.c` の `queue_result`）。走り続ける shader は止めない。
