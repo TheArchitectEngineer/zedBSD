@@ -11989,13 +11989,18 @@ fat_identify(
 		       sizeof(identity->label),
 		       boot + label_offset,
 		       11U);
-	difference = 1;
+	difference = 0;
 	if (identity->label[0] != '\0')
 		difference = kern_strcmp(identity->label, "NO NAME");
 
-	/* The placeholder label every unnamed volume carries. */
+	/*
+	 * A blank label and the placeholder every unnamed volume carries are
+	 * no label, and a field without its flag is left zero.
+	 */
 	if (difference != 0)
 		identity->flags |= KERN_BLKID_LABEL;
+	else
+		kern_memset(identity->label, 0, sizeof(identity->label));
 
 	/*
 	 * Succeeded: the caller now holds everything the volume names itself
