@@ -1239,3 +1239,17 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
 - 読み: lib の直し（1）は subs-1000 の submit を 37.6〜39.3 → 34.3〜35.1 ms/frame（1 submit 約 3.5 µs 減、run の揺れ 1.7 ms を越える）。
   kernel の直し（2+3）は big の差が run の揺れ（big-1000 の外れ）と同じ程度で未確定 → 交互の A/B（build/ws291/ab4）で確かめる。
   subs-100・subs-1000 は同じ build でも二つの値に分かれる（前の節と同じ形）。
+
+### 再開点（2026-10-29 04:55 P2、q1668-i02、未完）
+
+- 済み: 上の 1〜3 の commit（先頭 2753b6adc、末尾は git log）。1（lib）は効果あり、venus-reg・arm64・riscv64 の build 済み。1 本の ioctl の
+  案 A・B の design（[job-submit-design.md](../job-submit-design.md)、design-reviewer の指摘を末尾の節に反映、6d48cd6ea）。Q1 へ design の
+  反映の報告はまだ（次の起動で送る）、実装は Q1 の OK の後。
+- 測りの途中: build/ws291/ab4（plan/ws291/tests/lib-ab.sh、list plan/ws291/tests/kab.list、lib は libvulkan-l4 = baa1ca65c の build で
+  command_ran・command_deferred を数える）で kernel の base（build/ws291/vmunix-base）と l2（build/ws291/vmunix-l2 = c013da454）を交互に 2 回ずつ。
+  結果は build/ws291/ab4.out（各 label の table と subs-1000 の profile の VULKAN TIMING 行の command_deferred の数 = 案 A の M1 の率）。
+- 実機（10.0.30.5）: ab4 の最後の組（kernel vmunix-l2、/lib/libvulkan.so は libvulkan-l4）が入る。cfg は ngg=2・memory=2、timing off、
+  /bin/wayland は main 9402d4c74 の build のまま。ab4 が途中で止まっていたら、どれが入っているかは `cksum /boot/boot0/vmunix /lib/libvulkan.so`
+  を build/ws291/vmunix-* と libvulkan-* に照らす。
+- 次: ab4 を読んで kernel の 2・3 の採否（効果の基準: 差が同じ build の run の揺れを越える時だけ）→ Q1 に merge の依頼（採る物だけ）→
+  案 A の実装の前に command_deferred の率で M1 を判断して Q1 と相談 → 実装・host 試験・実機で base・A・B・A+B。
