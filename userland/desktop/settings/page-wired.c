@@ -8,7 +8,7 @@
 /*
  * The Ethernet page's IPv4 card of each wired interface (ws089-p022): how
  * it is configured (DHCP or a static address) and its router, the IPv6
- * that Kei does not have yet, and Edit; while edited, the choice of DHCP
+ * that the system does not have yet, and Edit; while edited, the choice of DHCP
  * or a static address, the address, subnet mask and router of a static
  * one, two DNS servers, and Apply and Cancel (wired.c checks and sends
  * them).  "Use DHCP" puts a static interface back on DHCP at once.
@@ -17,6 +17,8 @@
  */
 
 #include "settings.h"
+
+#include "include/kern/os-name.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -88,7 +90,7 @@ se_wired_card(
 		if (link->router[0] != '\0')
 			router = link->router;
 		y = se_row_value(app, canvas, x, y, width, "Router", router, 0);
-		y = se_row_value(app, canvas, x, y, width, "IPv6", "Not available on Kei yet", 1);
+		y = se_row_value(app, canvas, x, y, width, "IPv6", "Not available on " ZEDBSD_OS_NAME " yet", 1);
 		right = x + width - WIRED_PAD;
 		button = se_button_width(app, "Edit");
 		(void)se_button_draw(app, canvas, right - button, y + 10, "Edit", 0, app->network.live, WIRED_EDIT_FIRST + (int)which);
@@ -114,9 +116,9 @@ se_wired_card(
 		y += WIRED_ROW;
 	}
 
-	/* The IPv6, which Kei does not have yet (ws089-p022: the user's decision), faint. */
+	/* The IPv6, which the system does not have yet (ws089-p022: the user's decision), faint. */
 	(void)kl_text_draw_fit(app->text, canvas, x + WIRED_PAD, kl_text_center(WIRED_TEXT_ROW, y + 8, 36), "IPv6", WIRED_TEXT_ROW, 0, WIRED_FIELD_X - 30, SE_COLOR_TEXT_FAINT);
-	(void)kl_text_draw_fit(app->text, canvas, x + WIRED_FIELD_X, kl_text_center(WIRED_TEXT_ROW, y + 8, 36), "Not available on Kei yet", WIRED_TEXT_ROW, 0, width - WIRED_FIELD_X - WIRED_PAD, SE_COLOR_TEXT_FAINT);
+	(void)kl_text_draw_fit(app->text, canvas, x + WIRED_FIELD_X, kl_text_center(WIRED_TEXT_ROW, y + 8, 36), "Not available on " ZEDBSD_OS_NAME " yet", WIRED_TEXT_ROW, 0, width - WIRED_FIELD_X - WIRED_PAD, SE_COLOR_TEXT_FAINT);
 	y += 50;
 
 	/* Apply and Cancel at the right. */

@@ -490,7 +490,7 @@ look_tile(
 	/*
 	 * The picture; while its small copy is still being read a plain grey
 	 * stand-in (BUG-152); for one that could not be read a quiet gradient
-	 * with the Kei mark.
+	 * with the mark.
 	 */
 	if (wallpaper->read != 0) {
 		kl_canvas_image(canvas, &wallpaper->thumbnail, (float)x, (float)y, (float)width, (float)height, 10.0f, 1.0f);

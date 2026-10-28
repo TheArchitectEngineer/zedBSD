@@ -9,7 +9,8 @@
  * The Languages page (WS154 p002, ws158-p004):
  *
  *   Input method      which input method the keyboard types through:
- *                     Japanese (Kei's), SKK, or none (English); one is
+ *                     Japanese (the system's own), SKK, or none
+ *                     (English); one is
  *                     chosen at a time, and the desktop starts the input
  *                     method again with it at once (ime.method).
  *   Display language  the language of the desktop's words (ui.language,
@@ -67,7 +68,7 @@ struct languages_choice {
 
 /* The choices, in the order shown. */
 static const struct languages_choice languages_choices[] = {
-	{ LANGUAGES_JAPANESE, 1, "Japanese", "Kei's input method: romaji to kana, converted a phrase at a time." },
+	{ LANGUAGES_JAPANESE, 1, "Japanese", "{1}'s input method: romaji to kana, converted a phrase at a time." },
 	{ LANGUAGES_SKK, 2, "SKK", "Emacs's SKK: an upper-case letter starts a word, Space converts it." },
 	{ LANGUAGES_NONE, 0, "None (English)", "The keys type as they are; no input method." },
 };
@@ -98,6 +99,7 @@ se_languages_draw(
 {
 	struct kl_text_line line;
 	const struct languages_choice *choice;
+	char summary[SE_SUMMARY_TEXT];
 	int height;
 	int y;
 	size_t i;
@@ -107,10 +109,11 @@ se_languages_draw(
 	y = se_card_begin(app, canvas, x, top, width, height, kl_tr("Input method"), kl_tr("What the keyboard types through. The change applies at once."));
 	kl_text_metrics(app->text, LANGUAGES_TEXT_TITLE, &line);
 	for (i = 0; i < sizeof(languages_choices) / sizeof(languages_choices[0]); i++) {
-		/* The name, what it does, and its switch (on for the method chosen). */
+		/* The name, what it does (with the system's name in it), and its switch (on for the method chosen). */
 		choice = &languages_choices[i];
+		(void)se_named(summary, sizeof(summary), kl_tr(choice->line));
 		(void)kl_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 10 + line.ascent, kl_tr(choice->name), LANGUAGES_TEXT_TITLE, 1, width / 2, SE_COLOR_TEXT);
-		(void)kl_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 32 + line.ascent, kl_tr(choice->line), LANGUAGES_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
+		(void)kl_text_draw_fit(app->text, canvas, x + LANGUAGES_PAD + 2, y + 32 + line.ascent, summary, LANGUAGES_TEXT_SMALL, 0, width - 120, SE_COLOR_TEXT_SECONDARY);
 		se_toggle_draw(app, canvas, x + width - LANGUAGES_PAD - 44, y + 16, app->look.ime_method == choice->method, app->look.writable, choice->index);
 		y += LANGUAGES_ROW;
 	}

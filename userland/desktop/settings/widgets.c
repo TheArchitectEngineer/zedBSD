@@ -7,7 +7,7 @@
 
 /*
  * The parts Settings' pages are built of: the page's header, a card with
- * its title, a row of a label and its value, and the Kei mark.
+ * its title, a row of a label and its value, and the mark.
  *
  * Each part is drawn from a top edge within a column and returns the edge
  * below it, so that a page lays its parts out from the top down.
@@ -38,7 +38,7 @@
 #define WIDGETS_TEXT_ROW	14U
 #define WIDGETS_LABEL_SHARE	0.34f
 
-/* The largest Kei mark drawn, in pixels a side (its layers are kept rendered at the last size). */
+/* The largest mark drawn, in pixels a side (its layers are kept rendered at the last size). */
 #define WIDGETS_MARK_MAX	160U
 
 /* A switch's size. */
@@ -87,11 +87,22 @@ se_page_header(
 	int width)
 {
 	struct kl_style style;
+	char summary[SE_SUMMARY_TEXT];
+	const char *line;
 	int bottom;
+
+	/*
+	 * A page of the table has its summary in the language with the
+	 * system's name in it; a header made for the moment (the search's)
+	 * is shown as it was written, braces and all.
+	 */
+	line = page->summary;
+	if (page->id < SE_PAGES && page == &se_pages[page->id])
+		line = se_named(summary, sizeof(summary), kl_tr(page->summary));
 
 	/* libkeiland's header in the page's words. */
 	widgets_style(app, canvas, &style);
-	bottom = kl_header(&style, x, top, width, kl_tr(page->name), kl_tr(page->summary));
+	bottom = kl_header(&style, x, top, width, kl_tr(page->name), line);
 	return bottom;
 }
 
@@ -174,7 +185,7 @@ se_row_value(
 }
 
 /*
- * Draws the Kei mark in a square of a size in pixels at (x, y), as opaque
+ * Draws the mark in a square of a size in pixels at (x, y), as opaque
  * as asked (0..1): its seven layers (userland/desktop/artwork/mark.c), each
  * in its colour, as the file manager draws it (ws035-p109).
  */

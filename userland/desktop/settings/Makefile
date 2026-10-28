@@ -1,8 +1,8 @@
 include $(dir $(lastword $(MAKEFILE_LIST)))../package.mk
 
-# Settings (WS089): the Kei desktop's settings, a Wayland window drawn on the CPU and shown with Vulkan, the list of
+# Settings (WS089): the desktop's settings, a Wayland window drawn on the CPU and shown with Vulkan, the list of
 # pages and the page floating as glass cards; text from libtruetype.  The canvas, text and icons are libkeiland's
-# (ws090-p009); the Kei mark (userland/desktop/artwork) is compiled in unchanged (plan/ws089/design.md).
+# (ws090-p009); the mark (userland/desktop/artwork) is compiled in unchanged (plan/ws089/design.md).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 KEILAND_SETTINGS_SOURCES := userland/desktop/settings/main.c \
 	userland/desktop/settings/window.c userland/desktop/settings/present.c \

@@ -1,7 +1,7 @@
 # Settings' texts that reach kl_tr through a variable (tools/i18n/tr.py reads this with the source, WS158 p004).
 # The pages' names and summaries (pages.c se_pages), drawn with kl_tr(page->name) and kl_tr(page->summary).
 msg	Settings
-msg	Change how Kei looks and works.
+msg	Change how {1} looks and works.
 msg	Wi-Fi
 msg	Join wireless networks and turn the radio on or off.
 msg	Ethernet
@@ -40,14 +40,14 @@ msg	Remote Login and, later, cloud storage.
 msg	Users
 msg	Accounts on this computer.
 msg	Updates
-msg	Keep Kei up to date.
+msg	Keep {1} up to date.
 msg	About
-msg	This computer and the version of Kei.
+msg	This computer and the version of {1}.
 # The search's header (search.c, a page of its own drawn by se_page_header).
 msg	Search Results
 # The input methods' choices on the Languages page (page-languages.c languages_choices).
 msg	Japanese
-msg	Kei's input method: romaji to kana, converted a phrase at a time.
+msg	{1}'s input method: romaji to kana, converted a phrase at a time.
 msg	SKK
 msg	Emacs's SKK: an upper-case letter starts a word, Space converts it.
 msg	None (English)
@@ -62,9 +62,9 @@ msg	A picture for the desktop, and how clear the windows are.
 msg	Languages and input
 msg	How you type, and the language of the desktop's words.
 msg	Keys to know
-msg	Kei is quick to use from the keyboard.
+msg	{1} is quick to use from the keyboard.
 msg	You are all set
-msg	Start using Kei opens Files at Today. The Welcome is in Settings > About whenever you want it again.
+msg	Start using {1} opens Files at Today. The Welcome is in Settings > About whenever you want it again.
 msg	Open App Home (tap the key)
 msg	Wiseview: every window at a glance
 msg	Switch between windows

@@ -19,6 +19,8 @@
 
 #include "settings.h"
 
+#include "include/kern/os-name.h"
+
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
@@ -115,7 +117,7 @@ se_sharing_draw(
 	/* What comes later. */
 	top = y + SHARING_GAP;
 	y = se_card_begin(app, canvas, x, top, width, 64 + 40, "Cloud storage", NULL);
-	(void)kl_text_draw_fit(app->text, canvas, x + SHARING_PAD + 2, y + 18, "OneDrive and Kei's own storage come in a later version of Kei.", SHARING_TEXT_SMALL, 0, width - 2 * SHARING_PAD, SE_COLOR_TEXT_SECONDARY);
+	(void)kl_text_draw_fit(app->text, canvas, x + SHARING_PAD + 2, y + 18, "OneDrive and " ZEDBSD_OS_NAME "'s own storage come in a later version of " ZEDBSD_OS_NAME ".", SHARING_TEXT_SMALL, 0, width - 2 * SHARING_PAD, SE_COLOR_TEXT_SECONDARY);
 
 	/* The edge below the cards. */
 	return top + 64 + 40;
