@@ -33,6 +33,8 @@ struct vulkan_command_pool {
 
 static VkBool32 command_record_begin(struct VkCommandBuffer_T *command, struct vulkan_writer *writer, uint32_t opcode);
 static void command_record_finish(struct VkCommandBuffer_T *command, struct vulkan_writer *writer);
+static void command_head_add(struct VkCommandBuffer_T *command, uint32_t opcode);
+static VkResult command_send(struct VkCommandBuffer_T *command, size_t bytes, uint32_t last);
 static void command_encode_color(struct vulkan_writer *writer, const VkClearColorValue *color);
 static void command_encode_depth_ranges(struct vulkan_writer *writer, const VkClearDepthStencilValue *clear, uint32_t count, const VkImageSubresourceRange *ranges);
 static void command_encode_clear_attachment(struct vulkan_writer *writer, const VkClearAttachment *attachment);
@@ -377,8 +379,6 @@ vkBeginCommandBuffer(
 	struct VkCommandBuffer_T *command;
 	VkCommandBufferBeginInfo begin;
 	VkCommandBufferInheritanceInfo inheritance;
-	struct vulkan_writer writer;
-	struct vulkan_reader reader;
 	VkResult status;
 
 	/* Begin discards the earlier recording's bytes and failure. */
@@ -411,20 +411,35 @@ vkBeginCommandBuffer(
 			inheritance.queryFlags = 0;
 	}
 
-	/* Native Begin applies the standard initial/re-recording transition and pool flags. */
-	vulkan_writer_init_for_object(&writer, &command->object);
-	vulkan_command_begin(&writer, GPU_OP_BEGIN_COMMAND_BUFFER);
-	vulkan_write_u64(&writer, command->object.wire_id);
-	vulkan_write_u64(&writer, 1);
-	vulkan_encode_VkCommandBufferBeginInfo(&writer, &begin);
-	status = vulkan_command_execute(command->object.context, &writer, 8, &reader, VK_TRUE);
-	vulkan_writer_finish(&writer);
-	status = vulkan_reply_finish(command->object.context, &reader, status);
+	/*
+	 * Native Begin applies the standard initial/re-recording transition
+	 * and pool flags.  It goes, after a Reset left for it, at the
+	 * recording's start and travels with the recording's first bytes (a
+	 * batch or End), which read its reply: a failure only the renderer
+	 * sees is reported there.
+	 */
+	command->head_replies = 0;
+	if (command->reset_pending != VK_FALSE) {
+		command_head_add(command, GPU_OP_RESET_COMMAND_BUFFER);
+		vulkan_write_u64(&command->recording, command->object.wire_id);
+		vulkan_write_u32(&command->recording, command->reset_flags);
+	}
+	command_head_add(command, GPU_OP_BEGIN_COMMAND_BUFFER);
+	vulkan_write_u64(&command->recording, command->object.wire_id);
+	vulkan_write_u64(&command->recording, 1);
+	vulkan_encode_VkCommandBufferBeginInfo(&command->recording, &begin);
+	status = command->recording.error;
 	if (status != VK_SUCCESS) {
+		command->recording.bytes = 0;
+		command->recording.error = VK_SUCCESS;
+		command->head_replies = 0;
+		command->head_bytes = 0;
 		command->error = status;
 		command->state = VULKAN_COMMAND_INVALID;
 		return status;
 	}
+	command->head_bytes = command->recording.bytes;
+	command->reset_pending = VK_FALSE;
 
 	/* Clears the previous recording failure only after native Begin succeeds. */
 	command->error = VK_SUCCESS;
@@ -463,20 +478,32 @@ vkEndCommandBuffer(
 		}
 	}
 
-	/* A failed local record still ends the already-started native recording. */
+	/*
+	 * A failed local record still ends the already-started native
+	 * recording: End alone, after the head when it has not travelled yet.
+	 * Else the recording with End, whose reply comes after the head's.
+	 */
 	if (prior != VK_SUCCESS) {
-		command->recording.bytes = 0;
-		status = vulkan_command_execute(command->object.context, &writer, 8, &reader, VK_TRUE);
+		command->recording.bytes = command->head_bytes;
+		command->recording.error = VK_SUCCESS;
+		if (command->head_bytes == 0) {
+			status = vulkan_command_execute(command->object.context, &writer, 8, &reader, VK_TRUE);
+			status = vulkan_reply_finish(command->object.context, &reader, status);
+		} else {
+			vulkan_write_bytes(&command->recording, writer.data, writer.bytes);
+			status = command->recording.error;
+			if (status == VK_SUCCESS)
+				status = command_send(command, command->recording.bytes, GPU_OP_END_COMMAND_BUFFER);
+		}
 	} else {
-		/* Only End requested a reply, regardless of the stream's first opcode. */
-		command->recording.opcode = GPU_OP_END_COMMAND_BUFFER;
-		status = vulkan_command_execute(command->object.context, &command->recording, 8, &reader, VK_TRUE);
+		status = command_send(command, command->recording.bytes, GPU_OP_END_COMMAND_BUFFER);
 	}
 
 	/* Retains capacity for re-recording, never bytes that may already be native. */
 	command->recording.bytes = 0;
+	command->head_bytes = 0;
+	command->head_replies = 0;
 	vulkan_writer_finish(&writer);
-	status = vulkan_reply_finish(command->object.context, &reader, status);
 
 	/* Preserves the first recording failure rather than claiming a partial buffer is executable. */
 	if (prior != VK_SUCCESS)
@@ -505,28 +532,28 @@ vkResetCommandBuffer(
 	VkCommandBufferResetFlags flags)
 {
 	struct VkCommandBuffer_T *command;
-	struct vulkan_writer writer;
-	struct vulkan_reader reader;
-	VkResult status;
+	VkCommandBufferResetFlags pending;
 
-	/* Preserves the requested resource-release behavior in the actual native reset. */
+	/*
+	 * The native reset, with the requested resource-release behaviour,
+	 * waits for the next Begin and travels at its head (only Begin may
+	 * follow a reset command buffer); a failure only the renderer sees is
+	 * reported where Begin's is.  Two resets in a row release resources
+	 * when either asked to.
+	 */
 	command = (struct VkCommandBuffer_T *)commandBuffer;
-	vulkan_writer_init_for_object(&writer, &command->object);
-	vulkan_command_begin(&writer, GPU_OP_RESET_COMMAND_BUFFER);
-	vulkan_write_u64(&writer, command->object.wire_id);
-	vulkan_write_u32(&writer, flags);
-	status = vulkan_command_execute(command->object.context, &writer, 8, &reader, VK_TRUE);
-	vulkan_writer_finish(&writer);
-	status = vulkan_reply_finish(command->object.context, &reader, status);
-	if (status != VK_SUCCESS)
-		return status;
+	pending = 0U;
+	if (command->reset_pending != VK_FALSE)
+		pending = command->reset_flags;
 
-	/* Release-resources returns callback storage only after native reset succeeded. */
+	/* Release-resources returns the local callback storage now. */
 	if (flags & VK_COMMAND_BUFFER_RESET_RELEASE_RESOURCES_BIT)
 		command_buffer_release(&command->object);
 
-	/* Local initial state follows successful native reset rather than preceding it. */
+	/* The local initial state, and the native reset left for Begin. */
 	command_buffer_initial(command);
+	command->reset_pending = VK_TRUE;
+	command->reset_flags = pending | flags;
 
 	/* Succeeded: this command buffer may be recorded again under its pool's normal rules. */
 	return VK_SUCCESS;
@@ -620,7 +647,6 @@ command_record_finish(
 	struct VkCommandBuffer_T *command,
 	struct vulkan_writer *writer)
 {
-	struct vulkan_writer part;
 	struct vulkan_reader reader;
 	size_t limit;
 	size_t start;
@@ -656,10 +682,7 @@ command_record_finish(
 
 	/* Decode the complete prefix before this record when the two would cross the soft limit. */
 	if (status == VK_SUCCESS && start != 0 && command->recording.bytes > limit) {
-		part = command->recording;
-		part.bytes = start;
-		status = vulkan_context_execute(command->object.context, &part, 0, &reader);
-		status = vulkan_reply_finish(command->object.context, &reader, status);
+		status = command_send(command, start, 0U);
 		if (status == VK_SUCCESS) {
 			memmove(command->recording.data, command->recording.data + start, length);
 			command->recording.bytes = length;
@@ -684,6 +707,92 @@ command_record_finish(
 
 	/* Succeeded: recording is owned locally or its complete prefix was decoded. */
 	return;
+}
+
+/*
+ * Puts one more reply-asking command at the recording's head (its header
+ * now; the caller writes its body).
+ */
+static void
+command_head_add(
+	struct VkCommandBuffer_T *command,
+	uint32_t opcode)
+{
+	/* The header asks for a reply, which the head's sending reads. */
+	vulkan_write_u32(&command->recording, opcode);
+	vulkan_write_u32(&command->recording, GPU_OP_FLAG_REPLY);
+	command->head_opcodes[command->head_replies] = opcode;
+	command->head_replies++;
+
+	/* Succeeded: the command is at the head. */
+	return;
+}
+
+/*
+ * Sends the recording's first bytes in one transaction and reads the
+ * replies they ask for: the head's, while it has not travelled, then
+ * last's (an opcode, or 0 for none).  Returns the first failure.
+ */
+static VkResult
+command_send(
+	struct VkCommandBuffer_T *command,
+	size_t bytes,
+	uint32_t last)
+{
+	struct vulkan_context *context;
+	struct vulkan_writer part;
+	struct vulkan_reader reader;
+	uint32_t expected[3];
+	uint32_t count;
+	uint32_t index;
+	uint32_t opcode;
+	VkResult status;
+	VkResult result;
+
+	/* The replies in the order their commands lie. */
+	context = command->object.context;
+	count = 0U;
+	for (index = 0U; index < command->head_replies; index++)
+		expected[count++] = command->head_opcodes[index];
+	if (last != 0U)
+		expected[count++] = last;
+
+	/* The bytes, timed under the first command that answers. */
+	part = command->recording;
+	part.bytes = bytes;
+	part.error = VK_SUCCESS;
+	if (count != 0U)
+		part.opcode = expected[0];
+	status = vulkan_context_execute(context, &part, (size_t)count * 8U, &reader);
+
+	/* The head has travelled whatever the result. */
+	command->head_replies = 0U;
+	command->head_bytes = 0U;
+
+	/* Each reply: its own opcode, then its result; the first failure is kept. */
+	result = VK_SUCCESS;
+	for (index = 0U; status == VK_SUCCESS && index < count; index++) {
+		opcode = vulkan_read_u32(&reader);
+		if (reader.error != VK_SUCCESS || opcode != expected[index]) {
+			reader.error = VK_ERROR_DEVICE_LOST;
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
+			break;
+		}
+		status = vulkan_read_result(&reader);
+		if (status == VK_ERROR_DEVICE_LOST)
+			vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
+		if (result == VK_SUCCESS)
+			result = status;
+		status = VK_SUCCESS;
+		if (reader.error != VK_SUCCESS)
+			break;
+	}
+	status = vulkan_reply_finish(context, &reader, status);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the bytes ran; the first answering command's failure, if any. */
+	return result;
 }
 
 /* Releases retained bytes through the command's effective destruction policy. */
@@ -941,6 +1050,9 @@ command_buffer_initial(
 	/* Recording errors belong to the discarded old recording and cannot survive a successful reset. */
 	command->recording.bytes = 0;
 	command->recording.error = VK_SUCCESS;
+	command->head_bytes = 0;
+	command->head_replies = 0;
+	command->reset_pending = VK_FALSE;
 	command->error = VK_SUCCESS;
 	command->state = VULKAN_COMMAND_INITIAL;
 

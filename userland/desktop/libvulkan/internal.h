@@ -188,6 +188,17 @@ struct VkCommandBuffer_T {
 	struct vulkan_writer recording;
 	/* Where the record being encoded straight into recording begins. */
 	size_t record_start;
+	/*
+	 * The recording's head: a Reset left for the next Begin
+	 * (reset_pending, with reset_flags) and the Begin, encoded at the
+	 * recording's start (head_bytes) and sent with its first bytes; their
+	 * replies (head_opcodes, head_replies of them) are read there.
+	 */
+	VkBool32 reset_pending;
+	uint32_t reset_flags;
+	size_t head_bytes;
+	uint32_t head_opcodes[2];
+	uint32_t head_replies;
 	uint32_t state;
 	VkResult error;
 	/*
