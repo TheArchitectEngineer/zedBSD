@@ -13,7 +13,9 @@
 # --runs: a comma list of send (the board sends) and recv (the board receives), default send,recv; --seconds each run
 # (default 30).  The output is build/ws221-vf2/NAME (plan/tools/fresh-out.sh): summary.txt, the client's and the
 # peer's lines, the samples.  The last line is "vf2-tcp: PASS" when every run moved bytes in both ends' count.
-# VF2_HOST (default kei@10.0.30.2) and VF2_PASSWORD (default kei) reach the board; VF2_PLUG its plug.
+# --peer USER@HOST,ADDRESS runs the peer on another Linux machine over SSH (its python3, /tmp/perf-peer.py) at ADDRESS
+# instead of this host (2026-10-29: the 5330's Debian on the board's own switch; the path from the board to this host
+# reorders frames).  VF2_HOST (default kei@10.0.30.2) and VF2_PASSWORD (default kei) reach the board; VF2_PLUG its plug.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -23,6 +25,7 @@ seconds=30
 runs=send,recv
 chunk=131072
 mtu=
+peer_remote=
 while [ $# -gt 1 ]; do
 	case $1 in
 	--kernel) kernel=$2 ;;
@@ -31,6 +34,7 @@ while [ $# -gt 1 ]; do
 	--runs) runs=$2 ;;
 	--chunk) chunk=$2 ;;
 	--mtu) mtu=$2 ;;
+	--peer) peer_remote=$2 ;;
 	*) echo "vf2-tcp: unknown option $1"; exit 2 ;;
 	esac
 	shift 2
@@ -41,6 +45,12 @@ board_ip=${host#*@}
 plug=${VF2_PLUG:-14C19FA80F86}
 export SSHPASS="${VF2_PASSWORD:-kei}"
 server_ip=$(ip route get "$board_ip" | sed -n 's/.* src \([0-9.]*\).*/\1/p' | head -1)
+peer_host=
+if [ -n "$peer_remote" ]; then
+	peer_host=${peer_remote%,*}
+	server_ip=${peer_remote#*,}
+	timeout 60 scp -q plan/ws221/tests/perf-peer.py "$peer_host:/tmp/perf-peer.py" || { echo "vf2-tcp: FAIL: copy of the peer"; exit 1; }
+fi
 port=5301
 so="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8"
 . plan/tools/fresh-out.sh
@@ -105,7 +115,13 @@ for run in $(echo "$runs" | tr ',' ' '); do
 	*) say "unknown run $run"; status=1; continue ;;
 	esac
 	: > "$out/peer-$run.log"
-	timeout $((seconds + 60)) python3 -I plan/ws221/tests/perf-peer.py "$server_ip" "$port" "$out/peer-$run.log" 1 &
+	if [ -n "$peer_host" ]; then
+		timeout $((seconds + 60)) ssh -o BatchMode=yes "$peer_host" \
+		    "f=\$(mktemp /tmp/perf-peer.XXXXXX); python3 -I /tmp/perf-peer.py $server_ip $port \$f 1; cat \$f" \
+		    > "$out/peer-$run.log" 2>&1 &
+	else
+		timeout $((seconds + 60)) python3 -I plan/ws221/tests/perf-peer.py "$server_ip" "$port" "$out/peer-$run.log" 1 &
+	fi
 	peer=$!
 	sleep 1
 	board "nohup sh -c 'while :; do /tmp/sysctl net.tcpstats; sleep 1; done' > /tmp/ws221-samples-$run.txt 2>&1 < /dev/null & echo \$! > /tmp/ws221-sampler.pid" > /dev/null

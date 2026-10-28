@@ -5345,6 +5345,21 @@ tcp_shutdown(
 		return 0;
 	}
 
+	spin_unlock_irqrestore(&socket->lock, irq);
+
+	/*
+	 * A full retransmission ring is first given time to make room for the
+	 * FIN, as a close does: a writer that has just filled the ring and
+	 * shuts its side is not told to try again.
+	 */
+	tcp_close_drain(endpoint, TCP_DRAIN_ROOM);
+	irq = spin_lock_irqsave(&socket->lock);
+
+	if (socket->write_shutdown) {
+		spin_unlock_irqrestore(&socket->lock, irq);
+		return 0;
+	}
+
 	/* The write side moves to the closing state and sends a FIN. */
 	if (endpoint->tcp.state != TCP_ESTABLISHED &&
 	    endpoint->tcp.state != TCP_CLOSE_WAIT) {
