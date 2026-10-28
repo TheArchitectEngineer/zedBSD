@@ -3,8 +3,8 @@
 # WS217: 画面の回転（Settings の Display、縦長で Notes を使う）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: Settings の回転と Notes の縦長の目的は p002a・p002b・p003・p004 で達成（2026-10-13〜14 Q1、T1-576・T1-592・T1-598・T1-611〜T1-616 PASS））。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-13 Q1 作成。P4 が p001 の第 1 版、design-reviewer の [review-1](phase001/review-1.md)（致命的 2・重…。残り・制限: p005（複数 head の回転）・p006（pen と display の結び付け）・p009〜p011（scanout の 180°）は未着手、実機の確認は未実施
-Resume point: review-3 の判定で p002a（compositor の中核、turn 無し、open の比較は最初から組）と p009-1（Intel の PRM の確認）は第 4 版の後に始められる。p002b・p009 の実装・p010 以降は review-4 の後。p012（game の session）は D18 の後（game だけで先に実装してよい）。D5（Notes の toolbar の幅）は p007 で測る。Pi 4 の 180° は p011、90°・270° は WS141 p015 の後（D7）。
+Status: incomplete（2026-10-28 ユーザーの回答（クリック）「WS217 を開き直す」: p005（複数 head の回転）・p006（pen・touch と display の結び付け、2026-10-13 ユーザー「画面ごとに向きを持つ、ペン・タッチと画面の結び付ける」）・p009-1・p009〜p012 が未着手で行き先が無いため）。旧: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: Settings の回転と Notes の縦長の目的は p002a・p002b・p003・p004 で達成（2026-10-13〜14 Q1、T1-576・T1-592・T1-598・T1-611〜T1-616 PASS））。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-13 Q1 作成。P4 が p001 の第 1 版、design-reviewer の [review-1](phase001/review-1.md)（致命的 2・重…。残り・制限: p005（複数 head の回転）・p006（pen と display の結び付け）・p009〜p011（scanout の 180°）は未着手、実機の確認は未実施
+Resume point（2026-10-28 P4、開き直し）: 次は未着手の p009-1（Intel の PRM の確認）・p009〜p011（scanout の 180°）・p005（複数 head）・p006（pen・touch と display の結び付け）・p012（game の session）、その後 p007（確かめ）・p008（規約）。p002a・p002b・p003・p004 は済み（Settings の回転と Notes の縦長、T1-576・T1-592・T1-598・T1-611〜T1-616 PASS）。旧: review-3 の判定で p002a（compositor の中核、turn 無し、open の比較は最初から組）と p009-1（Intel の PRM の確認）は第 4 版の後に始められる。p002b・p009 の実装・p010 以降は review-4 の後。p012（game の session）は D18 の後（game だけで先に実装してよい）。D5（Notes の toolbar の幅）は p007 で測る。Pi 4 の 180° は p011、90°・270° は WS141 p015 の後（D7）。
 Primary Milestone: MG006
 Related Milestones: なし
 <!-- awesome-plan-current:end -->

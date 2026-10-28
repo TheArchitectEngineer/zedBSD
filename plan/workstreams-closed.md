@@ -185,10 +185,9 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS214](ws214/ws.md) | MG006 | 窓をディスプレイの重ね合わせ（HVS の plane）に載せる（Pi 4、drag・dock の間 GPU が窓を描き直さない）（2026-10-12 ユーザー「ぜんぶやりましょう。」） | completed（2026-10-27 精査 q1608） | p005・p006（案、未投入）は終了、p002 の規約と類似の監査は一括の見直しへ |
 | [WS215](ws215/ws.md) | MG005 | Raspberry Pi 4 の Bluetooth（内蔵の BCM43455、UART の HCI）（2026-10-12 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施。p008（SCO と HFP）は WS197 の HFP と一緒に（ベータ3 の段は 2026-10-27 に取り消し） |
 | [WS216](ws216/ws.md) | MG006 | Notes の描く道具（筆・鉛筆・領域の塗りつぶし・水彩）（2026-10-13 ユーザーの UAT） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施、p008 の規約は一括の見直しへ |
-| [WS217](ws217/ws.md) | MG006 | 画面の回転（Settings の Display、縦長で Notes を使う）（2026-10-13 ユーザーの UAT） | completed（2026-10-27 精査 q1608） | p005（複数 head の回転）・p006（pen と display の結び付け）・p009〜p011（scanout の 180°）は未着手、実機の確認は未実施 |
 | [WS218](ws218/ws.md) | MG005 | Intel WiFi（AX211）driver の license の表示を実態に合わせる（OpenBSD・Intel の license の削除の監査）（2026-10-13 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施 |
 | [WS219](ws219/ws.md) | MG006 | Venus の protocol の op の流用の整理（定数名の付け直し、Venus の著作権表示を外し引用の明記に留める）（2026-10-13 ユーザー） | completed（2026-10-27 精査 q1608） | — |
-| [WS220](ws220/ws.md) | MG005 | TCP の転送の速さの安定（継続の転送ですぐ 1 MB/s 未満に落ちる、window の制御の直し）（2026-10-13 ユーザー） | completed（2026-10-27 精査 q1608） | p002 の QEMU の確かめは未実施、p006〜p009 は案のまま（BUG-222 の USB LAN の遅さは Bug で） |
+| [WS220](ws220/ws.md) | MG005 | TCP の転送の速さの安定（継続の転送ですぐ 1 MB/s 未満に落ちる、window の制御の直し）（2026-10-13 ユーザー） | completed（2026-10-27 精査 q1608） | p002 の QEMU の確かめは未実施。p006・p007 は WS221 の p008・p009 へ移した（2026-10-28 ユーザー）、SACK は行き先なし。tests/ は残す |
 | [WS224](ws224/ws.md) | MG006 | Vulkan の header の著作権表示の形（zedBSD の file header の下に Khronos の表示を別の block で、派生物、解説は入れない）（2026-10-13 ユーザー） | completed（2026-10-13） | Q1 |
 | [WS227](ws227/ws.md) | MG002 | menuconfig の Base・Desktop の表示名の整理、画像と PDF の library を Desktop へ、Linux・FreeBSD に zedBSD 独自の base の命令（2026-10-14 ユーザー） | completed（2026-10-14） | — |
 | [WS228](ws228/ws.md) | MG002 | 独自実装の簡単な vi を base に足す（2026-10-14 ユーザー、ベータ2 の最後の機能） | completed（2026-10-14） | — |
