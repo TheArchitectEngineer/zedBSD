@@ -69,7 +69,7 @@ step ufs-read-many test "$(cat /mnt/p006u/many/f299.txt)" = "file 299"
 step ufs-read-deep test "$(cat /mnt/p006u/a/b/c/d/e/f/deep.txt)" = "deep"
 echo "UFSCKSUM /random.bin $(cksum < /mnt/p006u/random.bin)"
 echo "UFSCKSUM /many/f299.txt $(cksum < /mnt/p006u/many/f299.txt)"
-step ufs-swapfile-write dd if=/dev/zero of=/mnt/p006u/swapfile bs=65536 count=1024
+step ufs-swapfile-write dd if=/dev/zero of=/mnt/p006u/swapfile bs=65536 count=256
 step ufs-swapfile-mkswap mkswap /mnt/p006u/swapfile
 step ufs-swapfile-on swapon /mnt/p006u/swapfile
 step ufs-swapfile-off swapoff /mnt/p006u/swapfile

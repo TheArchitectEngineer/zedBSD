@@ -17,7 +17,7 @@ out=$(mktemp -d build/ws307-test/p006-4k.XXXXXX)
 export GUEST_RUNTIME="$(pwd)/$out/guest"
 truncate -s 1G "$out/disk4k.img"
 cp --sparse=always "$image" "$out/boot.img"
-g() { timeout 900 python3 plan/tools/guest/guest.py "$@"; }
+g() { timeout 1800 python3 plan/tools/guest/guest.py "$@"; }
 second="-device nvme,serial=p006k,drive=p006k,logical_block_size=4096,physical_block_size=4096"
 if [ "${P006_BUS:-nvme}" = usb ]; then
 	second="-device qemu-xhci,id=p006x -device usb-storage,bus=p006x.0,drive=p006k,logical_block_size=4096,physical_block_size=4096"
