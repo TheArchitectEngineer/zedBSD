@@ -6,27 +6,34 @@
  */
 
 /*
- * The glyph worker (ws213-p005, the work thread W of plan/ws213/phase001
- * section 5).
+ * The font thread (the glyph worker of ws213-p005, the work thread W of
+ * plan/ws213/phase001 section 5).
  *
  * The main thread decides a glyph's cell and metrics on its own fonts and
  * asks the worker for the coverage; the worker renders the glyphs in the
  * order they were asked for, on faces of its own opened over the same font
  * bytes (a face is not shared between threads: its size is state), and
- * hands them back in that order.  The worker touches no Vulkan, no host
- * image and nothing of the compositor's but this record: the main thread
- * writes the coverage into the atlas at the start of a walk.
+ * hands them back in that order.  It also decodes a colour glyph (the
+ * emoji font's PNG, scaled to the size) and reads a font file whole, so
+ * that the event loop never waits for either.  The worker touches no
+ * Vulkan, no host image and nothing of the compositor's but this record:
+ * the main thread writes the coverage into the atlas at the start of a
+ * walk, and opens its own face over a font's bytes.
  */
 
 #include "glyph-worker.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 static void *worker_main(void *argument);
 static void worker_render(struct kwl_glyph_worker *worker, struct kwl_glyph_job *job);
+static void worker_color(struct kwl_glyph_worker *worker, struct kwl_glyph_job *job);
+static void worker_read(struct kwl_glyph_job *job);
 static struct truetype_face *worker_face(struct kwl_glyph_worker *worker, unsigned slot);
 static void worker_wake(int descriptor);
 static void worker_free_list(struct kwl_glyph_job *job);
@@ -60,16 +67,13 @@ kwl_glyph_worker_start(
 		return error;
 	}
 
-	/* The thread, which waits for the first job. */
-	error = pthread_create(&worker->thread, NULL, worker_main, worker);
+	/* The thread, which waits for the first job, in the register as the font thread. */
+	error = kwl_thread_start(&worker->thread, "font", worker_main, worker);
 	if (error != 0) {
 		pthread_cond_destroy(&worker->work);
 		pthread_mutex_destroy(&worker->lock);
 		return error;
 	}
-
-	/* started tells the stop that a thread is to be joined. */
-	worker->started = 1U;
 
 	/* Succeeded: the worker renders what it is asked for. */
 	return 0;
@@ -87,7 +91,7 @@ kwl_glyph_worker_stop(
 	unsigned slot;
 
 	/* A worker never started has nothing to stop. */
-	if (!worker->started)
+	if (!worker->thread.started)
 		return;
 
 	/* The request, seen when the worker next looks for a job. */
@@ -99,8 +103,7 @@ kwl_glyph_worker_stop(
 	pthread_mutex_unlock(&worker->lock);
 
 	/* The thread ends; nothing touches the record but this thread from here. */
-	(void)pthread_join(worker->thread, NULL);
-	worker->started = 0U;
+	kwl_thread_join(&worker->thread);
 
 	/* The jobs not rendered and the jobs not taken. */
 	worker_free_list(worker->jobs);
@@ -228,8 +231,10 @@ kwl_glyph_job_free(
 	if (job == NULL)
 		return;
 
-	/* The coverage, then the job. */
+	/* The coverage, a colour image and a file's bytes not taken, then the job. */
 	free(job->bitmap);
+	free(job->image.pixels);
+	free(job->data);
 	free(job);
 }
 
@@ -267,8 +272,14 @@ worker_main(
 		if (job == NULL)
 			break;
 
-		/* The glyph's coverage, away from every lock. */
-		worker_render(worker, job);
+		/* The job's work, away from every lock. */
+		if (job->task == KWL_GLYPH_TASK_READ) {
+			worker_read(job);
+		} else if (job->task == KWL_GLYPH_TASK_COLOR) {
+			worker_color(worker, job);
+		} else {
+			worker_render(worker, job);
+		}
 
 		/*
 		 * The job joins the rendered ones in its order; the main thread is
@@ -371,6 +382,133 @@ worker_render(
 	/* Succeeded: the coverage and the box drawn are the job's. */
 	job->metrics = metrics;
 	job->bitmap = bitmap;
+}
+
+/*
+ * Decodes one job's colour glyph on the worker's face of the emoji font
+ * and scales it to the size: the image must be of the box the main thread
+ * measured, so that the cell it chose holds it.  The job's error says why
+ * it could not be.
+ */
+static void
+worker_color(
+	struct kwl_glyph_worker *worker,
+	struct kwl_glyph_job *job)
+{
+	struct truetype_face *face;
+	int error;
+
+	/* The worker's own face of the font. */
+	job->error = 0;
+	memset(&job->image, 0, sizeof(job->image));
+	face = worker_face(worker, job->font);
+	if (face == NULL) {
+		job->error = ENOENT;
+		return;
+	}
+
+	/* The glyph's PNG decoded and scaled. */
+	error = kl_color_glyph(face, job->glyph, job->pixels, &job->image);
+	if (error != 0) {
+		job->error = error;
+		return;
+	}
+
+	/* An image of another box than the main thread's is not drawn: the cell was chosen for that one. */
+	if ((uint32_t)job->image.width != job->width || (uint32_t)job->image.height != job->height) {
+		free(job->image.pixels);
+		memset(&job->image, 0, sizeof(job->image));
+		job->error = EINVAL;
+		return;
+	}
+
+	/* Succeeded: the pixels are the job's. */
+	return;
+}
+
+/*
+ * Reads one job's font file whole (an ordinary file, to KWL_GLYPH_FILE_MAX
+ * bytes) into an allocation of the job's.  The job's error says why it
+ * could not be.
+ */
+static void
+worker_read(
+	struct kwl_glyph_job *job)
+{
+	struct stat status;
+	unsigned char *data;
+	ssize_t count;
+	size_t capacity;
+	size_t length;
+	int descriptor;
+	int regular;
+	int error;
+
+	/* The file; opening a FIFO or a device does not wait for a writer. */
+	job->error = 0;
+	job->data = NULL;
+	job->size = 0U;
+	if (job->path == NULL) {
+		job->error = ENOENT;
+		return;
+	}
+	descriptor = open(job->path, O_RDONLY | O_CLOEXEC | O_NONBLOCK);
+	if (descriptor < 0) {
+		job->error = errno;
+		return;
+	}
+
+	/* Only an ordinary file, of a size bounded by KWL_GLYPH_FILE_MAX. */
+	error = fstat(descriptor, &status);
+	if (error != 0) {
+		job->error = errno;
+		close(descriptor);
+		return;
+	}
+	regular = S_ISREG(status.st_mode);
+	if (!regular || status.st_size <= 0) {
+		job->error = EINVAL;
+		close(descriptor);
+		return;
+	}
+	capacity = KWL_GLYPH_FILE_MAX;
+	if ((uint64_t)status.st_size < KWL_GLYPH_FILE_MAX)
+		capacity = (size_t)status.st_size;
+
+	/* Its bytes. */
+	data = malloc(capacity);
+	if (data == NULL) {
+		job->error = ENOMEM;
+		close(descriptor);
+		return;
+	}
+
+	/* Read to the end or the bound: normally one read. */
+	length = 0U;
+	for (;;) {
+		count = read(descriptor, data + length, capacity - length);
+		if (count < 0 && errno == EINTR)
+			continue;
+		if (count <= 0)
+			break;
+		length += (size_t)count;
+		if (length == capacity)
+			break;
+	}
+
+	/* The file is no longer needed. */
+	close(descriptor);
+
+	/* An empty or unreadable file has nothing to use. */
+	if (length == 0U) {
+		free(data);
+		job->error = EIO;
+		return;
+	}
+
+	/* Succeeded: the bytes are the job's. */
+	job->data = data;
+	job->size = length;
 }
 
 /* Gives the worker's face of a font, opening it over the font's bytes the first time (NULL: none). */
