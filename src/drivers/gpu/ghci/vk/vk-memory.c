@@ -13,13 +13,15 @@
  * a resource the node session imported), held by the object and mapped
  * once into the device's GHCI session; its CPU view is the blob libvulkan
  * makes of it.  On a discrete GPU, memory of the device-local type is the
- * GPU's local memory instead, which the GPU clears before the allocation
- * returns (it may hold what an earlier client left); memory the
- * processor writes or reads, memory made for export (another process
- * maps it) and imported memory stay in host memory.  A buffer or an
- * image is a range of one memory object once it is bound.  Every image
- * is laid out in linear rows (section 8.5.2 of the specification):
- * attachments and storage images must be, and the others may be.
+ * GPU's local memory instead, made for export or not (an image another
+ * process shows lives in local memory too), which the GPU clears before
+ * the allocation returns (it may hold what an earlier client left); the
+ * processor never reads or writes it, and memory of the host-visible
+ * type stays in host memory.  Imported memory is the resource's,
+ * wherever that lies.  A buffer or an image is a range of one memory
+ * object once it is bound.  Every image is laid out in linear rows
+ * (section 8.5.2 of the specification): attachments and storage images
+ * must be, and the others may be.
  *
  * The executor heaps are what the driver itself writes for the GPU in a
  * device's session: blocks of host memory mapped once and handed out in
@@ -44,8 +46,13 @@
 
 #include "drivers/gpu/i915/vk/vk-codec.inc"
 
-/* How long an allocation waits for the GPU to clear its local memory. */
-#define CLEAR_WAIT_MS			10000U
+/*
+ * How long one wait for the GPU's clear of new local memory sleeps before
+ * it looks again.  The allocation waits on until the clear's ticket
+ * passes or a reset or the loss of the device ends it; a busy GPU only
+ * makes it longer.
+ */
+#define CLEAR_WAIT_MS			1000U
 
 /* A buffer's size in memory is a whole number of words. */
 #define BUFFER_GRANULE			4U
@@ -406,7 +413,6 @@ allocate_memory(
 	uint32_t type;
 	uint32_t imported;
 	uint32_t result;
-	int exported;
 	int local;
 	int error;
 
@@ -435,12 +441,9 @@ allocate_memory(
 	if (device == NULL)
 		return EINVAL;
 	imported = 0U;
-	exported = 0;
 	if (chain != 0U && record == GPU_OP_RECORD_IMPORT_RESOURCE)
 		imported = value;
-	else if (chain != 0U && record == VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO)
-		exported = 1;
-	else if (chain != 0U)
+	else if (chain != 0U && record != VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO)
 		return EINVAL;
 
 	/* The size and the type the device has. */
@@ -451,13 +454,12 @@ allocate_memory(
 		result = (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
 	/*
-	 * Local memory for the device-local type of a discrete GPU, unless
-	 * the memory is imported (it is the resource's) or made for export
-	 * (another process maps it, so it stays where the processor reaches
-	 * it).
+	 * Local memory for the device-local type of a discrete GPU, made for
+	 * export or not (an importer maps it as local memory), unless the
+	 * memory is imported (it is the resource's).
 	 */
 	local = 0;
-	if (memory_types(session) == 2U && type == GHCI_VK_TYPE_LOCAL && imported == 0U && !exported)
+	if (memory_types(session) == 2U && type == GHCI_VK_TYPE_LOCAL && imported == 0U)
 		local = 1;
 
 	/* The object, then its memory and its mapping; a failure takes the object back. */
@@ -482,8 +484,11 @@ allocate_memory(
  * Gives a memory object its memory (a new allocation of host memory, or
  * of local memory when local is set, or the imported resource's) and maps
  * it into the device's GHCI session; local memory is cleared by the GPU
- * before the object is the client's.  Returns the VkResult; on a failure
- * the object holds what it got, which its destroy lets go.
+ * before the object is the client's.  Returns the VkResult, which is
+ * never device lost (vkAllocateMemory does not report it): a lost session
+ * or device gives out of device memory.  On a failure the object holds
+ * what it got, which its destroy lets go once the GPU no longer reaches
+ * it.
  */
 static uint32_t
 memory_back(
@@ -535,10 +540,8 @@ memory_back(
 
 	/* The mapping into the device's session: no GPU address left, or a lost session. */
 	error = ghci_vm_map(device, object->device->vm, allocation, 0U, &object->as.memory.mapping);
-	if (error == ENOMEM)
-		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 	if (error != 0)
-		return (uint32_t)VK_ERROR_DEVICE_LOST;
+		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
 	/* New local memory is cleared before the client has it. */
 	if (allocation->kind == GHCI_MEMORY_LOCAL && imported == 0U)
@@ -551,11 +554,19 @@ memory_back(
 /*
  * Clears a memory object's new local memory to zero with the GPU in the
  * device's session, and waits for it: the client can neither read the
- * memory with the GPU before work placed after the clear, nor with the
- * processor (through a blob in the local window) before the allocation
- * has returned.  Returns the VkResult: out of device memory when the
- * clear cannot be made or does not end in time, device lost when the
- * session or the device is lost.
+ * memory with the GPU before work placed after the clear, nor see what
+ * an earlier client left.  The wait has no deadline: it ends when the
+ * clear's ticket passes, or when a reset or the loss of the device ends
+ * it.  It holds no lock, so a busy GPU, a recovery and the display go on
+ * meanwhile.  A clear that passed in a session the reset found a culprit
+ * (whose work the GPU may have skipped), or on a device lost since, does
+ * not count.
+ *
+ * Returns the VkResult: success, or out of device memory when the clear
+ * cannot be made or did not clear (vkAllocateMemory does not report a
+ * lost device).  On a failure the caller's destroy of the object gives
+ * the run back only after its unmap's ticket, once the GPU no longer
+ * reaches it.
  */
 static uint32_t
 local_clear(
@@ -566,6 +577,9 @@ local_clear(
 	struct ghci_vk_device *device;
 	struct ghci_mapping *mapping;
 	struct ghci_ticket ticket;
+	enum ghci_device_state state;
+	enum ghci_vm_state vm_state;
+	unsigned long irq;
 	int placed;
 	int error;
 
@@ -593,13 +607,33 @@ local_clear(
 		ghci_vk_submission_end(device, &submission, NULL, 0);
 	}
 	if (error != 0)
-		return (uint32_t)VK_ERROR_DEVICE_LOST;
+		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
-	/* The zeroes are in memory before the client has it. */
-	error = ghci_cp_wait(session->device, &ticket, CLEAR_WAIT_MS);
-	if (error == EIO)
-		return (uint32_t)VK_ERROR_DEVICE_LOST;
+	/* The zeroes are in memory before the client has it: the ticket passes, or a reset ends it. */
+	for (;;) {
+		error = ghci_cp_wait(session->device, &ticket, CLEAR_WAIT_MS);
+		if (error != ETIMEDOUT)
+			break;
+	}
 	if (error != 0)
+		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
+
+	/* The session the clear ran in, under the device's lock (it changes under that lock and cp_lock). */
+	mutex_lock(&session->device->lock);
+
+	vm_state = device->vm->state;
+
+	mutex_unlock(&session->device->lock);
+
+	/* The device's life, as the recovery last set it. */
+	irq = spin_lock_irqsave(&session->device->irq_lock);
+
+	state = session->device->state;
+
+	spin_unlock_irqrestore(&session->device->irq_lock, irq);
+
+	/* A culprit's clear may have been skipped though its fence was written; a lost device's is not trusted. */
+	if (vm_state == GHCI_VM_FAULTED || vm_state == GHCI_VM_DEAD || state == GHCI_STATE_LOST)
 		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
 	/* Succeeded: the memory holds zeroes. */

@@ -164,6 +164,11 @@ static void scene_vm_edges(void);
 static void action_fault_then_recover(void);
 static void scene_local(void);
 static void scene_local_lost(void);
+static void scene_boot_ranges(void);
+static void scene_local_fallbacks(void);
+static void scene_lost_culprit(void);
+static void boot_display(uint32_t ctrl, uint64_t base, uint32_t stride, uint32_t height);
+static void extcap_rename(uint32_t from, uint32_t to);
 static struct ghci_allocation *local_memory(uint64_t bytes);
 static int quarantined_local(void);
 
@@ -215,6 +220,9 @@ main(void)
 	scene_vm_edges();
 	scene_local();
 	scene_local_lost();
+	scene_boot_ranges();
+	scene_local_fallbacks();
+	scene_lost_culprit();
 	model_fini();
 
 	/* Reports the counts. */
@@ -2166,6 +2174,10 @@ quarantined_local(void)
 static void
 scene_local(void)
 {
+	static const uint8_t pattern[16] = {
+		1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U, 16U
+	};
+	uint8_t read_back[16];
 	struct ghci_allocation *first;
 	struct ghci_allocation *second;
 	struct ghci_allocation *third;
@@ -2186,9 +2198,10 @@ scene_local(void)
 	model.window[(MODEL_DISP2_BLOCK + 0x2CU) / 4U] = (256U << 16) | 1024U;
 	error = start_device();
 	expect(error == 0 && device.local_ready && ghci_memory_local_bytes(&device) == MODEL_LOCAL_BYTES, "local: discrete started");
-	expect(device.boot_reserved && device.boot_offset == 0x100000U && device.boot_bytes == 0x100000U, "local: boot framebuffer found");
+	expect(device.boot_reserved && device.boot_count == 1U && device.boot_offset[0] == 0x100000U && device.boot_bytes[0] == 0x100000U,
+	    "local: boot framebuffer found");
 	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
-	expect(ctrl == 1U && device.window_open, "local: window kept open for the boot console");
+	expect(ctrl == 1U && device.window_open && device.window_users == 1U, "local: window kept open for the boot console");
 
 	/* Runs of local memory go around the boot framebuffer, at local addresses, not seen by the processor without a window. */
 	first = local_memory(0x100000U);
@@ -2205,7 +2218,10 @@ scene_local(void)
 	/* The release after the first flip: the range is the allocator's again, and the unused window closes. */
 	ghci_memory_boot_release(&device);
 	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
-	expect(!device.boot_reserved && ctrl == 0U && !device.window_open, "local: boot framebuffer released, window closed");
+	expect(!device.boot_reserved && ctrl == 0U && !device.window_open && device.window_users == 0U,
+	    "local: boot framebuffer released, window closed");
+	ghci_memory_boot_release(&device);
+	expect(device.window_users == 0U && device.local_map.count == 2U, "local: a second release changes nothing");
 	third = local_memory(0x100000U);
 	expect(third != NULL && third->bus == MODEL_LOCAL_BASE + 0x100000U, "local: the framebuffer's range handed out after the release");
 
@@ -2253,16 +2269,65 @@ scene_local(void)
 	end_scene("local");
 	expect(device.local_extents == NULL && !device.local_ready, "local: allocator gone at the detach");
 
-	/* A discrete device with a window and no boot framebuffer: the driver keeps the window open, runs it shows have a view. */
+	/*
+	 * A discrete device with a window and no boot framebuffer: the window
+	 * closes at once, and opens only while the driver holds it for an
+	 * access of its own.
+	 */
 	prepare_scene(MODEL_KC705_DISCRETE, NULL);
 	error = start_device_window();
 	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
-	expect(error == 0 && !device.boot_reserved && ctrl == 1U, "local: window open for the driver's use");
+	expect(error == 0 && !device.boot_reserved && ctrl == 0U && !device.window_open, "local: unused window closed at the start");
 	first = local_memory(0x2000U);
 	expect(first != NULL && first->view == (uint8_t *)model.local, "local: the window shows the run");
+	error = ghci_memory_window_hold(&device);
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(error == 0 && ctrl == 1U && device.window_users == 1U, "local: a hold opens the window");
+	error = ghci_memory_window_hold(&device);
+	ghci_memory_window_unhold(&device);
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(error == 0 && ctrl == 1U && device.window_users == 1U, "local: the window stays open while held");
+	ghci_memory_window_unhold(&device);
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(ctrl == 0U && device.window_users == 0U, "local: the last unhold closes the window");
+	ghci_memory_window_unhold(&device);
+	expect(device.window_users == 0U && !device.window_open, "local: an unhold too many changes nothing");
+	if (first != NULL) {
+		error = ghci_memory_local_write(&device, first, 0x10U, pattern, sizeof(pattern));
+		ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+		expect(error == 0 && memcmp(model.local + 0x10U, pattern, sizeof(pattern)) == 0 && ctrl == 0U,
+		    "local: the driver writes through the window, closed after");
+		memset(read_back, 0, sizeof(read_back));
+		error = ghci_memory_local_read(&device, first, 0x10U, read_back, sizeof(read_back));
+		ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+		expect(error == 0 && memcmp(read_back, pattern, sizeof(pattern)) == 0 && ctrl == 0U,
+		    "local: the driver reads through the window, closed after");
+		error = ghci_memory_local_read(&device, first, 0x2000U - 8U, read_back, sizeof(read_back));
+		expect(error == EINVAL, "local: a read past the run refused");
+		error = ghci_memory_local_write(&device, first, 0x4000U, pattern, sizeof(pattern));
+		expect(error == EINVAL, "local: a write past the run refused");
+		memory_done(first);
+	}
+	host = host_memory(4096U);
+	error = host != NULL ? ghci_memory_local_read(&device, host, 0U, read_back, sizeof(read_back)) : 0;
+	expect(error == EINVAL && device.window_users == 0U, "local: host memory is not read through the window");
+	if (host != NULL)
+		memory_done(host);
+	end_scene("local: window");
+
+	/* Without the window's mapping, a hold and the driver's accesses are refused. */
+	error = start_scene(MODEL_KC705_DISCRETE, NULL);
+	first = local_memory(0x2000U);
+	expect(error == 0 && first != NULL && first->view == NULL, "local: no view without the window");
+	error = ghci_memory_window_hold(&device);
+	expect(error == ENOTSUP && device.window_users == 0U, "local: no hold without the window");
+	error = first != NULL ? ghci_memory_local_read(&device, first, 0U, read_back, sizeof(read_back)) : 0;
+	expect(error == ENOTSUP, "local: no read without the window");
+	error = first != NULL ? ghci_memory_local_write(&device, first, 0U, pattern, sizeof(pattern)) : 0;
+	expect(error == ENOTSUP, "local: no write without the window");
 	if (first != NULL)
 		memory_done(first);
-	end_scene("local: window");
+	end_scene("local: no window");
 
 	/* A unified device hands out no local memory, and leaves no window to manage. */
 	error = start_scene(MODEL_KC705_UMA, NULL);
@@ -2334,4 +2399,251 @@ scene_local_lost(void)
 	error = ghci_device_stop(&device);
 	expect(error == 0 && device.quarantined == NULL && device.local_extents == NULL, "local lost: given back at the detach");
 	end_scene("local lost");
+}
+
+/* Sets the display controller's block as a boot display leaves it: CTRL, the image scanned out, its pitch and height. */
+static void
+boot_display(
+	uint32_t ctrl,
+	uint64_t base,
+	uint32_t stride,
+	uint32_t height)
+{
+	/* CTRL, FB_BASE, FB_STRIDE and FB_SIZE (1024 pixels wide). */
+	model.window[(MODEL_DISP2_BLOCK + 0x10U) / 4U] = ctrl;
+	model.window[(MODEL_DISP2_BLOCK + 0x20U) / 4U] = (uint32_t)base;
+	model.window[(MODEL_DISP2_BLOCK + 0x28U) / 4U] = stride;
+	model.window[(MODEL_DISP2_BLOCK + 0x2CU) / 4U] = (height << 16) | 1024U;
+}
+
+/* Renames a block of the model's extended capability list, before the start reads it. */
+static void
+extcap_rename(
+	uint32_t from,
+	uint32_t to)
+{
+	uint32_t entry;
+	uint32_t word;
+	unsigned index;
+
+	/* Each entry of the list, two dwords apart. */
+	entry = MODEL_EXTCAP_LIST;
+	for (index = 0U; index < 16U; index++) {
+		word = model.window[entry / 4U];
+		if ((word & 0xffU) == from) {
+			model.window[entry / 4U] = (word & ~0xffU) | to;
+			return;
+		}
+		if ((word >> 16) == 0U)
+			return;
+		entry += 8U;
+	}
+}
+
+/*
+ * What a boot display reads of local memory: the image scanned out, the
+ * image of a pending flip and the cursor's image on DISP2 (joined where
+ * they touch), only the image scanned out on DISP, nothing on a disabled
+ * controller, images that straddle the ends of local memory or start
+ * inside a page, and a detach before the release that keeps the window
+ * open for the boot console.
+ */
+static void
+scene_boot_ranges(void)
+{
+	struct ghci_allocation *first;
+	struct ghci_allocation *second;
+	uint32_t ctrl;
+	int error;
+
+	/* DISP2: 1 MiB at 1 MiB, a pending flip to 4 MiB, and a cursor right after the image, inside a page. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(1U, MODEL_LOCAL_BASE + 0x100000U, 4096U, 256U);
+	model.window[(MODEL_DISP2_BLOCK + 0x14U) / 4U] = 1U << 29;
+	model.window[(MODEL_DISP2_BLOCK + 0x24U) / 4U] = (uint32_t)MODEL_LOCAL_BASE + 0x400000U;
+	model.window[(MODEL_DISP2_BLOCK + 0x08U) / 4U] = 1U << 8;
+	model.window[(MODEL_DISP2_BLOCK + 0xA0U) / 4U] = (uint32_t)MODEL_LOCAL_BASE + 0x200800U;
+	error = start_device();
+	expect(error == 0 && device.local_ready && device.boot_count == 2U, "boot ranges: two ranges");
+	expect(device.boot_offset[0] == 0x100000U && device.boot_bytes[0] == 0x105000U, "boot ranges: image and cursor joined");
+	expect(device.boot_offset[1] == 0x400000U && device.boot_bytes[1] == 0x100000U, "boot ranges: the pending flip's image");
+	expect(device.local_map.count == 2U, "boot ranges: both out of the allocator");
+
+	/* Runs go into the gaps around them. */
+	first = local_memory(0x100000U);
+	second = local_memory(0x100000U);
+	expect(first != NULL && first->bus == MODEL_LOCAL_BASE, "boot ranges: a run below the image");
+	expect(second != NULL && second->bus == MODEL_LOCAL_BASE + 0x205000U, "boot ranges: a run between the ranges");
+	if (first != NULL)
+		memory_done(first);
+	if (second != NULL)
+		memory_done(second);
+
+	/* The release gives both back. */
+	ghci_memory_boot_release(&device);
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(device.local_map.count == 0U && device.boot_count == 0U && ctrl == 0U, "boot ranges: released");
+	end_scene("boot ranges");
+
+	/* DISP2 without a pending flip: the image only (FB_NEXT is not read). */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(1U, MODEL_LOCAL_BASE + 0x100000U, 4096U, 256U);
+	model.window[(MODEL_DISP2_BLOCK + 0x24U) / 4U] = (uint32_t)MODEL_LOCAL_BASE + 0x400000U;
+	error = start_device();
+	expect(error == 0 && device.boot_count == 1U && device.boot_offset[0] == 0x100000U && device.boot_bytes[0] == 0x100000U,
+	    "boot ranges: no pending flip");
+	end_scene("boot ranges: no flip");
+
+	/* DISP (ID 1): the image only, whatever its STATUS and the other registers say. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	extcap_rename(GHCI_EXTCAP_ID_DISP2, GHCI_EXTCAP_ID_DISP);
+	boot_display(1U, MODEL_LOCAL_BASE + 0x200000U, 4096U, 128U);
+	model.window[(MODEL_DISP2_BLOCK + 0x14U) / 4U] = 1U << 29;
+	model.window[(MODEL_DISP2_BLOCK + 0x24U) / 4U] = (uint32_t)MODEL_LOCAL_BASE + 0x400000U;
+	model.window[(MODEL_DISP2_BLOCK + 0x08U) / 4U] = 1U << 8;
+	model.window[(MODEL_DISP2_BLOCK + 0xA0U) / 4U] = (uint32_t)MODEL_LOCAL_BASE + 0x600000U;
+	error = start_device();
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(error == 0 && device.caps.block_offset[GHCI_EXTCAP_ID_DISP2] == 0U && device.boot_count == 1U &&
+	    device.boot_offset[0] == 0x200000U && device.boot_bytes[0] == 0x80000U && ctrl == 1U, "boot ranges: DISP");
+	end_scene("boot ranges: DISP");
+
+	/* A disabled DISP2 reads nothing: no range, and the window closes. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(0U, MODEL_LOCAL_BASE + 0x100000U, 4096U, 256U);
+	error = start_device();
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(error == 0 && device.local_ready && !device.boot_reserved && device.local_map.count == 0U && ctrl == 0U,
+	    "boot ranges: disabled controller");
+	end_scene("boot ranges: disabled");
+
+	/* An image that starts below local memory is cut to its first byte. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(1U, MODEL_LOCAL_BASE - 0x1000U, 4096U, 4U);
+	error = start_device();
+	expect(error == 0 && device.boot_count == 1U && device.boot_offset[0] == 0U && device.boot_bytes[0] == 0x3000U,
+	    "boot ranges: straddles the start");
+	first = local_memory(0x1000U);
+	expect(first != NULL && first->bus == MODEL_LOCAL_BASE + 0x3000U, "boot ranges: a run after a range at offset 0");
+	if (first != NULL)
+		memory_done(first);
+	end_scene("boot ranges: start");
+
+	/* An image that runs past the end of local memory is cut to its last page. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(1U, MODEL_LOCAL_BASE + MODEL_LOCAL_BYTES - 0x1800U, 4096U, 3U);
+	error = start_device();
+	expect(error == 0 && device.boot_count == 1U && device.boot_offset[0] == MODEL_LOCAL_BYTES - 0x2000U &&
+	    device.boot_bytes[0] == 0x2000U, "boot ranges: straddles the end");
+	end_scene("boot ranges: end");
+
+	/* An image that starts inside a page takes the whole pages it touches. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(1U, MODEL_LOCAL_BASE + 0x1800U, 4096U, 1U);
+	error = start_device();
+	expect(error == 0 && device.boot_count == 1U && device.boot_offset[0] == 0x1000U && device.boot_bytes[0] == 0x2000U,
+	    "boot ranges: inside a page");
+	end_scene("boot ranges: inside a page");
+
+	/* A detach before the release: the allocator goes with only the range in it, and the window stays open. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(1U, MODEL_LOCAL_BASE + 0x100000U, 4096U, 256U);
+	error = start_device();
+	first = local_memory(0x1000U);
+	if (first != NULL)
+		memory_done(first);
+	if (error == 0)
+		error = ghci_device_stop(&device);
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(error == 0 && device.local_extents == NULL && device.boot_reserved && ctrl == 1U,
+	    "boot ranges: detach with the range kept, window open");
+	end_scene("boot ranges: detach");
+}
+
+/*
+ * The start keeps everything in host memory on a discrete device it
+ * cannot hand local memory out of: without a page-table walker, and with
+ * a LOCAL_BASE that is not on a page; the boot framebuffer still keeps
+ * the window open for the boot console.
+ */
+static void
+scene_local_fallbacks(void)
+{
+	struct ghci_allocation *run;
+	uint32_t ctrl;
+	int error;
+
+	/* LOCAL_BASE not on a page, with a boot framebuffer. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	model.window[(MODEL_MEM_BLOCK + GHCI_MEM_LOCAL_BASE) / 4U] = (uint32_t)MODEL_LOCAL_BASE + 0x800U;
+	boot_display(1U, MODEL_LOCAL_BASE + 0x100000U, 4096U, 256U);
+	error = start_device();
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	run = NULL;
+	expect(error == 0 && !device.local_ready && ghci_memory_local_bytes(&device) == 0U && device.local_extents == NULL,
+	    "fallbacks: LOCAL_BASE off a page leaves the device unified");
+	expect(device.boot_reserved && ctrl == 1U, "fallbacks: the boot console keeps the window");
+	error = ghci_memory_alloc_local(&device, 4096U, &run);
+	expect(error == ENOTSUP && run == NULL, "fallbacks: no local run");
+	ghci_memory_boot_release(&device);
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(!device.boot_reserved && ctrl == 0U, "fallbacks: the release closes the window");
+	end_scene("fallbacks: base");
+
+	/* No page-table walker. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	model.window[GHCI_REG_DEVICE_CAPS / 4U] &= ~GHCI_CAP_HW_WALKER;
+	error = start_device();
+	expect(error == 0 && !device.local_ready && ghci_memory_local_bytes(&device) == 0U, "fallbacks: no walker leaves the device unified");
+	end_scene("fallbacks: walker");
+}
+
+/*
+ * A device lost in a recovery after a session's fault under PROT: the
+ * culprit's submission whose fence the device wrote fails as a reset
+ * would fail it, though the device never ended the generation with a
+ * reset.
+ */
+static void
+scene_lost_culprit(void)
+{
+	struct ghci_ticket ticket;
+	struct ghci_ticket other_ticket;
+	struct ghci_vm *one;
+	struct ghci_vm *other;
+	int error;
+
+	/* Two sessions with work whose fences are written, the culprit's last. */
+	error = start_scene(MODEL_PROT, NULL);
+	one = NULL;
+	other = NULL;
+	if (error == 0)
+		error = ghci_vm_open(&device, &owner_token, &one);
+	if (error == 0)
+		error = ghci_vm_open(&device, &owner_token, &other);
+	if (error == 0)
+		error = submit_vm(other, &other_ticket);
+	if (error == 0)
+		error = submit_vm(one, &ticket);
+	expect(error == 0, "lost culprit: set up");
+
+	/* Session 1 faults, and the reset never ends: the device is lost. */
+	model.switches.reset_stuck = 1;
+	model_inject(GHCI_FAULT_KIND_PAGE_FAULT, GHCI_UNIT_SU, one != NULL ? one->session : 1U, 0x4000U, 0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(device.state == GHCI_STATE_LOST, "lost culprit: lost");
+
+	/* The culprit's written fence failed; the other session's passed. */
+	error = ghci_cp_wait(&device, &ticket, TEST_WAIT_MS);
+	expect(error == EIO, "lost culprit: the culprit's written fence failed");
+	error = ghci_cp_wait(&device, &other_ticket, TEST_WAIT_MS);
+	expect(error == 0, "lost culprit: the other session's written fence passed");
+	model.switches.reset_stuck = 0;
+	model.reset_hung = 0;
+	if (one != NULL)
+		ghci_vm_close(&device, one);
+	if (other != NULL)
+		ghci_vm_close(&device, other);
+	reclaim();
+	end_scene("lost culprit");
 }

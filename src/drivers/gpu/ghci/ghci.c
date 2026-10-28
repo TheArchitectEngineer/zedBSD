@@ -882,7 +882,7 @@ gpu_blob_create(
 	return 0;
 }
 
-/* Copies bytes out of a resource. */
+/* Copies bytes out of a resource of host memory; a client never reads local memory. */
 static int
 gpu_resource_read(
 	void *private_data,
@@ -904,8 +904,8 @@ gpu_resource_read(
 	if (error != 0)
 		return error;
 
-	/* Local memory the local window does not show has no view to read. */
-	if (resource->allocation->view == NULL)
+	/* Local memory is not the client's to read: it is reached by copies on the GPU. */
+	if (resource->allocation->kind != GHCI_MEMORY_HOST)
 		return ENOTSUP;
 
 	/* Succeeded: the bytes are copied from the processor's view. */
@@ -913,7 +913,7 @@ gpu_resource_read(
 	return 0;
 }
 
-/* Copies bytes into a resource. */
+/* Copies bytes into a resource of host memory; a client never writes local memory. */
 static int
 gpu_resource_write(
 	void *private_data,
@@ -935,31 +935,24 @@ gpu_resource_write(
 	if (error != 0)
 		return error;
 
-	/* Local memory the local window does not show has no view to write. */
-	if (resource->allocation->view == NULL)
+	/* Local memory is not the client's to write: it is reached by copies on the GPU. */
+	if (resource->allocation->kind != GHCI_MEMORY_HOST)
 		return ENOTSUP;
 
-	/* The bytes are copied into the processor's view. */
+	/* Succeeded: the bytes are copied into the processor's view. */
 	kern_memcpy(resource->allocation->view + offset, buffer, bytes);
-
-	/*
-	 * A write through the local window is read back at its last byte, so
-	 * that it has reached local memory before a later doorbell (section
-	 * 11.1 of the specification).
-	 */
-	if (resource->allocation->kind == GHCI_MEMORY_LOCAL && bytes != 0U)
-		(void)*(volatile uint8_t *)(resource->allocation->view + offset + bytes - 1U);
-
-	/* Succeeded: the bytes are in the resource. */
 	return 0;
 }
 
 /*
  * Gives the processor's view of a resource for a user mapping: RAM,
- * uncached where the GPU does not snoop the processor's caches, or for
- * local memory its place in the local window, as device memory.  A blob
- * maps only when it was made mappable, and local memory only where the
- * window shows it.
+ * uncached where the GPU does not snoop the processor's caches.  A blob
+ * maps only when it was made mappable.  Local memory never maps: the
+ * local window is for the driver's own uses alone.
+ *
+ * Procedure referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+ * 11.1, the local window for the framebuffer only, and uploads and
+ * readbacks of local memory made by copy commands).
  */
 static int
 gpu_resource_map(
@@ -979,19 +972,9 @@ gpu_resource_map(
 	if (resource->blob && (resource->flags & GPU_BLOB_MAPPABLE) == 0U)
 		return EINVAL;
 
-	/* Local memory: the window's place of it, uncached. */
-	if (resource->allocation->kind == GHCI_MEMORY_LOCAL) {
-		/* Local memory the window does not show has no place to map. */
-		if (resource->allocation->view == NULL)
-			return ENOTSUP;
-
-		/* Succeeded: the window's bytes of the run, as device memory. */
-		mapping->physical = device->window_physical + (resource->allocation->bus - device->caps.local_base);
-		mapping->address = resource->allocation->view;
-		mapping->bytes = resource->allocation->bytes;
-		mapping->attributes = DRV_GPU_MAPPING_DEVICE;
-		return 0;
-	}
+	/* Local memory has no view a client may map. */
+	if (resource->allocation->kind != GHCI_MEMORY_HOST)
+		return ENOTSUP;
 
 	/* Succeeded: the run and how the processor sees it. */
 	mapping->physical = resource->allocation->bus;

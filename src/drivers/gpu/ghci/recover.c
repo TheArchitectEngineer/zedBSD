@@ -76,6 +76,7 @@ static int count_storm(struct ghci_device *device, const struct ghci_fault_recor
 static int count_window(uint64_t *ticks, unsigned capacity, unsigned *count, uint64_t now);
 static int reset_and_check(struct ghci_device *device);
 static uint64_t end_tickets(struct ghci_device *device);
+static uint64_t culprit_fences(struct ghci_device *device, uint64_t word, uint64_t *failed, unsigned *failed_count);
 static int fence_back(struct ghci_device *device);
 static int last_check(struct ghci_device *device, unsigned fault_seen);
 static enum recovery_outcome check_failed(struct ghci_device *device, const char *what);
@@ -838,7 +839,6 @@ static uint64_t
 end_tickets(
 	struct ghci_device *device)
 {
-	struct ghci_submit_entry *entry;
 	struct ghci_reset_record *record;
 	uint64_t failed[GHCI_CULPRIT_FENCES];
 	unsigned failed_count;
@@ -846,31 +846,10 @@ end_tickets(
 	unsigned long irq;
 	uint64_t word;
 	uint64_t end;
-	int passed;
 
-	/* The fence the device wrote before the reset. */
+	/* The fence the device wrote before the reset, and the culprits' fences in it. */
 	word = ghci_fence_read(device);
-
-	/*
-	 * The culprits' submissions whose fences the device wrote: their
-	 * work was skipped, so their tickets fail.  More of them than the
-	 * record keeps end the generation before the first one instead.
-	 */
-	end = word;
-	failed_count = 0U;
-	for (index = 0U; index < device->submit_count; index++) {
-		entry = &device->submit_log[(device->submit_first + index) % GHCI_SUBMIT_LOG];
-		passed = ghci_fence64_passed(word, entry->seq);
-		if (!passed || entry->owner == NULL || entry->owner->state != GHCI_VM_FAULTED)
-			continue;
-		if (failed_count == GHCI_CULPRIT_FENCES) {
-			end = failed[0] - 1U;
-			failed_count = 0U;
-			break;
-		}
-		failed[failed_count] = entry->seq;
-		failed_count++;
-	}
+	end = culprit_fences(device, word, failed, &failed_count);
 
 	/* Ends the generation and starts the next with every fence placed counted as written. */
 	irq = spin_lock_irqsave(&device->irq_lock);
@@ -893,6 +872,49 @@ end_tickets(
 
 	/* Succeeded: the fence the reset ended the generation at. */
 	return word;
+}
+
+/*
+ * Finds the culprits' submissions whose fences the device wrote (word):
+ * their work was skipped, so their tickets fail.  Their sequences go to
+ * failed, at most GHCI_CULPRIT_FENCES of them; more than that end the
+ * generation before the first one instead, with none in failed.  The
+ * caller holds cp_lock, with the submission log as the device left it.
+ * Returns the fence the generation ends at.
+ */
+static uint64_t
+culprit_fences(
+	struct ghci_device *device,
+	uint64_t word,
+	uint64_t *failed,
+	unsigned *failed_count)
+{
+	struct ghci_submit_entry *entry;
+	unsigned count;
+	unsigned index;
+	uint64_t end;
+	int passed;
+
+	/* Each submission of the log whose fence the device wrote, of a culprit. */
+	end = word;
+	count = 0U;
+	for (index = 0U; index < device->submit_count; index++) {
+		entry = &device->submit_log[(device->submit_first + index) % GHCI_SUBMIT_LOG];
+		passed = ghci_fence64_passed(word, entry->seq);
+		if (!passed || entry->owner == NULL || entry->owner->state != GHCI_VM_FAULTED)
+			continue;
+		if (count == GHCI_CULPRIT_FENCES) {
+			end = failed[0] - 1U;
+			count = 0U;
+			break;
+		}
+		failed[count] = entry->seq;
+		count++;
+	}
+
+	/* Succeeded: the end and the culprits' fences. */
+	*failed_count = count;
+	return end;
 }
 
 /*
@@ -1016,8 +1038,8 @@ check_failed(
 
 /*
  * Makes the device lost: every ticket still pending ends with an error,
- * the gate answers LOST, and whoever waits wakes.  The caller holds
- * cp_lock.
+ * and so does a culprit's whose fence the device wrote, the gate answers
+ * LOST, and whoever waits wakes.  The caller holds cp_lock.
  */
 static void
 lose(
@@ -1025,19 +1047,29 @@ lose(
 	const char *reason)
 {
 	struct ghci_reset_record *record;
+	uint64_t failed[GHCI_CULPRIT_FENCES];
+	unsigned failed_count;
+	unsigned index;
 	unsigned long irq;
 	uint64_t word;
+	uint64_t end;
 
-	/* The fence the device wrote last. */
+	/*
+	 * The fence the device wrote last, and the culprits' fences in it,
+	 * which fail as a reset fails them (their work was skipped).
+	 */
 	word = ghci_fence_read(device);
+	end = culprit_fences(device, word, failed, &failed_count);
 
 	/* Ends the generation with every pending ticket failed, and the device's life. */
 	irq = spin_lock_irqsave(&device->irq_lock);
 
 	record = &device->history[device->generation % GHCI_RESET_HISTORY];
 	record->generation = device->generation;
-	record->completed = word;
-	record->failed_count = 0U;
+	record->completed = end;
+	record->failed_count = failed_count;
+	for (index = 0U; index < failed_count; index++)
+		record->failed[index] = failed[index];
 	device->generation++;
 	device->state = GHCI_STATE_LOST;
 

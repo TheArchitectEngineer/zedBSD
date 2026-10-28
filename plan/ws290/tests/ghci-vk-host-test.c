@@ -122,6 +122,22 @@ static char completions[8];
 static struct ghci_vk_session *completing_session;
 static unsigned completing_sleep;
 
+/*
+ * What the clear hook does at the sleeps of an allocation's wait for its
+ * clear (clear_mode), the sleeps it has seen, the session the clear runs
+ * in, and the guard that keeps it from running inside a recovery's own
+ * sleeps.
+ */
+enum clear_mode {
+	CLEAR_BUSY = 1,
+	CLEAR_RESET,
+	CLEAR_CULPRIT
+};
+static enum clear_mode clear_mode;
+static unsigned clear_sleeps;
+static struct ghci_vm *clear_vm;
+static int clear_running;
+
 static void expect(int held, const char *name);
 static int start(enum model_profile profile);
 static void stop(const char *name);
@@ -169,6 +185,8 @@ static void scene_completions(void);
 static void scene_recovery(void);
 static void scene_core_reset(void);
 static void scene_discrete(void);
+static void scene_discrete_clear(void);
+static void clear_hook(unsigned sleep, void *argument);
 static int allocate_typed(struct node *node, uint64_t handle, uint64_t bytes, uint32_t type, int exported, uint64_t memory, uint32_t *result);
 static int all_bytes(const uint8_t *bytes, uint64_t count, uint8_t value);
 
@@ -203,6 +221,7 @@ main(void)
 	scene_recovery();
 	scene_core_reset();
 	scene_discrete();
+	scene_discrete_clear();
 	model_fini();
 
 	/* The counts. */
@@ -2302,11 +2321,12 @@ all_bytes(
 /*
  * A discrete device: device-local memory in local memory, mapped with
  * VM_FLAG_LOCAL and cleared by FILL_BUFFER before the allocation returns
- * (and by the copy program without the blitter), host-visible and
- * exported memory in host memory, buffers that take both types, the
- * upload and the readback of local memory through the local window (and
- * their refusal without it), a local heap that runs out, and the runs
- * going back to the allocator.
+ * (and by the copy program without the blitter), exported device-local
+ * memory in local memory too and its importer's mapping with
+ * VM_FLAG_LOCAL, host-visible memory in host memory, buffers that take
+ * both types, a client's read, write and mapping of local memory refused
+ * and the driver's own accesses through the window, a local heap that
+ * runs out, and the runs going back to the allocator.
  */
 static void
 scene_discrete(void)
@@ -2318,11 +2338,14 @@ scene_discrete(void)
 	struct drv_gpu_mapping view;
 	const struct model_command *command;
 	struct ghci_allocation *allocation;
+	struct ghci_allocation *exported;
 	struct ghci_vk_object *object;
 	struct ghci_vk_session *session;
 	struct frame frame;
 	struct node node;
 	uint8_t read_back[16];
+	uint32_t shared_id;
+	void *shared;
 	uint64_t offset;
 	unsigned fills;
 	unsigned dispatches;
@@ -2341,7 +2364,7 @@ scene_discrete(void)
 		error = create_device(&node, ID_DEVICE, NULL, &result);
 	expect(error == 0 && result == 0U, "discrete: device");
 	session = ((struct ghci_session *)node.session)->vk;
-	expect(model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U] == 1U, "discrete: window open for the driver");
+	expect(model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U] == 0U, "discrete: window closed while the driver does not use it");
 	memset(model.local, 0xa5, MODEL_LOCAL_BYTES);
 
 	/* Device-local memory: a run of local memory, mapped with VM_FLAG_LOCAL at its local address. */
@@ -2365,18 +2388,37 @@ scene_discrete(void)
 	expect(allocation != NULL && all_bytes(model.local + offset, 65536U, 0U) && model.local[offset + 65536U] == 0xa5U,
 	       "discrete: the run holds zeroes only");
 
-	/* Host-visible memory and memory made for export stay in host memory, and are not filled. */
+	/* Host-visible memory stays in host memory, and is not filled. */
 	fills = model_count_commands(GHCI_OP_FILL_BUFFER);
 	error = allocate_typed(&node, ID_DEVICE, 65536U, 1U, 0, ID_MEMORY + 1U, &result);
 	object = ghci_vk_object_find(session, GHCI_VK_MEMORY, ID_MEMORY + 1U);
 	command = model_last_command(GHCI_OP_VM_MAP);
 	expect(error == 0 && result == 0U && object != NULL && object->as.memory.allocation->kind == GHCI_MEMORY_HOST &&
 	       command != NULL && (command->words[2] & GHCI_VM_FLAG_LOCAL) == 0U, "discrete: host-visible memory is host memory");
+	expect(model_count_commands(GHCI_OP_FILL_BUFFER) == fills, "discrete: host memory not filled");
+
+	/* Device-local memory made for export is local memory too, and filled. */
 	error = allocate_typed(&node, ID_DEVICE, 65536U, 0U, 1, ID_MEMORY + 2U, &result);
 	object = ghci_vk_object_find(session, GHCI_VK_MEMORY, ID_MEMORY + 2U);
-	expect(error == 0 && result == 0U && object != NULL && object->as.memory.allocation->kind == GHCI_MEMORY_HOST,
-	       "discrete: exported memory is host memory");
-	expect(model_count_commands(GHCI_OP_FILL_BUFFER) == fills, "discrete: host memory not filled");
+	exported = object != NULL ? object->as.memory.allocation : NULL;
+	expect(error == 0 && result == 0U && exported != NULL && exported->kind == GHCI_MEMORY_LOCAL &&
+	       model_count_commands(GHCI_OP_FILL_BUFFER) == fills + 1U, "discrete: exported device-local memory is local memory");
+
+	/* Its importer maps it as local memory, at the same local address, without another fill. */
+	memset(&request, 0, sizeof(request));
+	request.bytes = 65536U;
+	request.blob_id = ID_MEMORY + 2U;
+	shared = NULL;
+	shared_id = 0U;
+	error = device.ops.blob_create(&device, node.session, &request, &shared, &shared_id);
+	if (error == 0)
+		error = allocate_memory(&node, ID_DEVICE, 65536U, shared_id, ID_MEMORY + 5U, &result);
+	object = ghci_vk_object_find(session, GHCI_VK_MEMORY, ID_MEMORY + 5U);
+	command = model_last_command(GHCI_OP_VM_MAP);
+	expect(error == 0 && result == 0U && object != NULL && object->as.memory.allocation == exported && command != NULL &&
+	       (command->words[2] & GHCI_VM_FLAG_LOCAL) != 0U && exported != NULL &&
+	       ((uint64_t)command->words[7] << 32 | command->words[6]) == exported->bus &&
+	       model_count_commands(GHCI_OP_FILL_BUFFER) == fills + 1U, "discrete: imported local memory mapped with VM_FLAG_LOCAL");
 	error = allocate_typed(&node, ID_DEVICE, 65536U, 2U, 0, ID_MEMORY + 3U, &result);
 	expect(error == 0 && result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY, "discrete: no third type");
 
@@ -2404,7 +2446,7 @@ scene_discrete(void)
 		error = run(&node, &frame);
 	expect(error == 0 && reply32(&node, 28U) == 3U, "discrete: buffer memory types");
 
-	/* The upload and the readback of local memory through the window, and its user mapping as device memory. */
+	/* A client neither reads, writes nor maps local memory, though the window shows it; the window stays closed. */
 	memset(&request, 0, sizeof(request));
 	request.bytes = 65536U;
 	request.blob_id = ID_MEMORY;
@@ -2414,25 +2456,39 @@ scene_discrete(void)
 	expect(error == 0 && blob != NULL, "discrete: blob of local memory");
 	if (error == 0) {
 		error = device.ops.resource_write(&device, node.session, blob, 64U, written, sizeof(written));
-		expect(error == 0 && memcmp(model.local + offset + 64U, written, sizeof(written)) == 0, "discrete: upload through the window");
-		memset(read_back, 0, sizeof(read_back));
+		expect(error == ENOTSUP && model.local[offset + 64U] == 0U, "discrete: a client's write refused");
 		error = device.ops.resource_read(&device, node.session, blob, 64U, read_back, sizeof(read_back));
-		expect(error == 0 && memcmp(read_back, written, sizeof(written)) == 0, "discrete: readback through the window");
+		expect(error == ENOTSUP, "discrete: a client's read refused");
 		memset(&view, 0, sizeof(view));
 		error = device.ops.resource_map(&device, node.session, blob, &view);
-		expect(error == 0 && view.physical == TEST_WINDOW_PHYSICAL + offset && view.attributes == DRV_GPU_MAPPING_DEVICE &&
-		       view.address == (void *)(model.local + offset), "discrete: mapped through the window");
+		expect(error == ENOTSUP, "discrete: a client's mapping refused");
 		device.ops.resource_destroy(&device, node.session, blob);
 	}
+	expect(model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U] == 0U, "discrete: the window stays closed");
+
+	/* The driver's own accesses go through the window, open only meanwhile. */
+	error = allocation != NULL ? ghci_memory_local_write(&device, allocation, 64U, written, sizeof(written)) : EINVAL;
+	expect(error == 0 && memcmp(model.local + offset + 64U, written, sizeof(written)) == 0 &&
+	       model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U] == 0U, "discrete: the driver writes through the window");
+	memset(read_back, 0, sizeof(read_back));
+	error = allocation != NULL ? ghci_memory_local_read(&device, allocation, 64U, read_back, sizeof(read_back)) : EINVAL;
+	expect(error == 0 && memcmp(read_back, written, sizeof(written)) == 0 &&
+	       model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U] == 0U, "discrete: the driver reads through the window");
 
 	/* The local heap runs out: more than local memory has. */
 	error = allocate_typed(&node, ID_DEVICE, MODEL_LOCAL_BYTES + 65536U, 0U, 0, ID_MEMORY + 4U, &result);
 	expect(error == 0 && result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY, "discrete: local heap exhausted");
 
-	/* Freed local memory goes back to the allocator once its unmap passed. */
+	/* Freed local memory goes back to the allocator once its unmaps passed and its last holder let it go. */
 	error = destroy(&node, GPU_OP_FREE_MEMORY, ID_DEVICE, ID_MEMORY);
+	error |= destroy(&node, GPU_OP_FREE_MEMORY, ID_DEVICE, ID_MEMORY + 5U);
+	error |= destroy(&node, GPU_OP_FREE_MEMORY, ID_DEVICE, ID_MEMORY + 2U);
 	ghci_service_step(&device, GHCI_WORK_RECLAIM);
-	expect(error == 0 && device.local_map.count == 0U, "discrete: freed local memory back in the allocator");
+	expect(error == 0 && device.local_map.count == 1U, "discrete: the export's resource keeps its run");
+	if (shared != NULL)
+		device.ops.resource_destroy(&device, node.session, shared);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(device.local_map.count == 0U, "discrete: freed local memory back in the allocator");
 	node_close(&node);
 	stop("discrete");
 
@@ -2480,4 +2536,129 @@ scene_discrete(void)
 	       model_count_commands(GHCI_OP_DISPATCH) > dispatches, "discrete without blitter: cleared by the copy program");
 	node_close(&node);
 	stop("discrete without blitter");
+}
+
+/*
+ * Each sleep of an allocation's wait for its clear, as clear_mode says:
+ * a busy GPU that holds the clear for a minute of the clock and then
+ * runs it; a device fault and its recovery while the clear is held; or
+ * the clear run and its session then found a culprit, with the GPU held
+ * again so that the unmap of the failed allocation waits.
+ */
+static void
+clear_hook(
+	unsigned sleep,
+	void *argument)
+{
+	(void)sleep;
+	(void)argument;
+
+	/* Never inside the hook's own recovery. */
+	if (clear_running)
+		return;
+	clear_running = 1;
+	clear_sleeps++;
+
+	/* A busy GPU: a minute passes, then the clear runs. */
+	if (clear_mode == CLEAR_BUSY && clear_sleeps == 1U)
+		stub.ticks += kern_ms_to_ticks(60000U);
+	if (clear_mode == CLEAR_BUSY && clear_sleeps == 4U)
+		model_hold(0);
+
+	/* A device fault while the clear is held, and the recovery. */
+	if (clear_mode == CLEAR_RESET && clear_sleeps == 2U) {
+		model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+		ghci_service_step(&device, GHCI_WORK_RECOVER);
+	}
+
+	/* The clear runs, then its session is found a culprit before the recovery; the GPU holds what comes next. */
+	if (clear_mode == CLEAR_CULPRIT && clear_sleeps == 1U) {
+		model_hold(0);
+		if (clear_vm != NULL)
+			clear_vm->state = GHCI_VM_FAULTED;
+		model_hold(1);
+	}
+	clear_running = 0;
+}
+
+/*
+ * The wait of vkAllocateMemory for the GPU's clear of new local memory:
+ * it outlasts a GPU busy for a minute; a device fault and its reset
+ * during the wait fail the allocation with out of device memory (never
+ * device lost), the reset having ended the GPU's reach of the run; and a
+ * clear that passed in a session found a culprit fails too, its run
+ * going back only after the unmap's ticket.
+ */
+static void
+scene_discrete_clear(void)
+{
+	struct ghci_vk_session *session;
+	struct ghci_vk_device *owner;
+	struct ghci_vk_object *object;
+	struct node node;
+	uint32_t result;
+	unsigned fills;
+	int error;
+
+	/* A discrete device whose GPU holds the clear while a minute passes. */
+	error = start(MODEL_KC705_DISCRETE);
+	if (error == 0)
+		error = node_open(&node);
+	if (error == 0)
+		error = create_device(&node, ID_DEVICE, NULL, &result);
+	expect(error == 0 && result == 0U, "clear: device");
+	session = ((struct ghci_session *)node.session)->vk;
+	memset(model.local, 0xa5, MODEL_LOCAL_BYTES);
+	fills = model_count_commands(GHCI_OP_FILL_BUFFER);
+	model_hold(1);
+	clear_mode = CLEAR_BUSY;
+	clear_sleeps = 0U;
+	stub_set_sleep_hook(clear_hook, NULL);
+	error = allocate_typed(&node, ID_DEVICE, 65536U, 0U, 0, ID_MEMORY, &result);
+	stub_set_sleep_hook(sleep_hook, NULL);
+	clear_mode = 0;
+	object = ghci_vk_object_find(session, GHCI_VK_MEMORY, ID_MEMORY);
+	expect(error == 0 && result == 0U && clear_sleeps >= 4U && object != NULL &&
+	       model_count_commands(GHCI_OP_FILL_BUFFER) == fills + 1U &&
+	       all_bytes(model.local + (object->as.memory.allocation->bus - MODEL_LOCAL_BASE), 65536U, 0U),
+	       "clear: the wait outlasts a busy GPU");
+
+	/* The clear passed, but its session is found a culprit: out of device memory, the run out until the unmap passed. */
+	owner = object != NULL ? object->device : NULL;
+	clear_vm = owner != NULL ? owner->vm : NULL;
+	model_hold(1);
+	clear_mode = CLEAR_CULPRIT;
+	clear_sleeps = 0U;
+	stub_set_sleep_hook(clear_hook, NULL);
+	error = allocate_typed(&node, ID_DEVICE, 65536U, 0U, 0, ID_MEMORY + 1U, &result);
+	stub_set_sleep_hook(sleep_hook, NULL);
+	clear_mode = 0;
+	expect(error == 0 && result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY &&
+	       ghci_vk_object_find(session, GHCI_VK_MEMORY, ID_MEMORY + 1U) == NULL, "clear: a culprit's clear fails the allocation");
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(device.local_map.count == 2U, "clear: the run out while its unmap is held");
+	model_hold(0);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(device.local_map.count == 1U, "clear: the run back once the unmap passed");
+	if (clear_vm != NULL)
+		clear_vm->state = GHCI_VM_OPEN;
+	clear_vm = NULL;
+
+	/* A device fault and its reset while the GPU holds the clear: out of device memory, not device lost. */
+	model_hold(1);
+	clear_mode = CLEAR_RESET;
+	clear_sleeps = 0U;
+	stub_set_sleep_hook(clear_hook, NULL);
+	error = allocate_typed(&node, ID_DEVICE, 65536U, 0U, 0, ID_MEMORY + 2U, &result);
+	stub_set_sleep_hook(sleep_hook, NULL);
+	clear_mode = 0;
+	expect(error == 0 && result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY && device.resets == 1U &&
+	       device.state == GHCI_STATE_RUNNING, "clear: a reset during the wait gives out of device memory");
+	expect(owner != NULL && owner->vm->state == GHCI_VM_DEAD, "clear: the session that lost the clear is dead");
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(device.local_map.count == 1U, "clear: the run of the failed clear back after the reset");
+	node_close(&node);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(device.local_map.count == 0U, "clear: every run back");
+	stop("clear");
 }

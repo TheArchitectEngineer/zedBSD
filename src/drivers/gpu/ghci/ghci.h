@@ -124,6 +124,13 @@
 /* The ends of the reset generations the driver remembers, to answer an old ticket. */
 #define GHCI_RESET_HISTORY		16U
 
+/*
+ * The ranges of local memory a boot display may still read, kept out of
+ * the allocator until the release: the image being scanned out, the one
+ * a pending flip will take, and the cursor's image.
+ */
+#define GHCI_BOOT_RANGES		3U
+
 /* The values the start writes to SCRATCH and reads back. */
 #define GHCI_SCRATCH_FIRST		0x5a5a5a5aU
 #define GHCI_SCRATCH_SECOND		0xa5a5a5a5U
@@ -233,13 +240,13 @@ struct ghci_arena;
  * bytes its size in whole pages, view the processor's kernel view (the
  * direct map, or an uncached mapping on a bus that does not snoop the
  * caches; for local memory, its place in the local window, or NULL when
- * the window does not show it) and run the RAM it is (unused for local
- * memory).  The
- * allocation lives until its owner gives it back after the GPU is done
- * with it; on a lost device it waits in the quarantine instead.  holds
- * counts what keeps a shared allocation (a resource, an export, a
- * mapping until its unmap's fence passed), and reached says the GPU was
- * ever given its address (lock).
+ * the window does not show it, which only the driver's own accesses use
+ * while they hold the window open) and run the RAM it is (unused for
+ * local memory).  The allocation lives until its owner gives it back
+ * after the GPU is done with it; on a lost device it waits in the
+ * quarantine instead.  holds counts what keeps a shared allocation (a
+ * resource, an export, a mapping until its unmap's fence passed), and
+ * reached says the GPU was ever given its address (lock).
  */
 struct ghci_allocation {
 	struct ghci_allocation *next;
@@ -537,18 +544,28 @@ struct ghci_device {
 	 * The GPU's local memory on a discrete device (lock), from the start
 	 * to the detach: local_ready says that the driver hands it out,
 	 * local_map is the allocator of its offsets from LOCAL_BASE and
-	 * local_extents the allocator's table.  The boot framebuffer the
-	 * firmware left scanned out is kept out of it (boot_reserved, at
-	 * boot_offset for boot_bytes) until the release after the driver's
-	 * own first flip.  window_open is what the driver last wrote to
-	 * WINDOW_CTRL.ENABLE.
+	 * local_extents the allocator's table.  What the boot display the
+	 * firmware left running may still read of local memory is kept out
+	 * of it (boot_reserved, boot_count page-rounded ranges in address
+	 * order, each at boot_offset for boot_bytes) until the release after
+	 * the driver's own first flip.
 	 */
 	int local_ready;
 	struct ghci_range_map local_map;
 	struct ghci_range_extent *local_extents;
 	int boot_reserved;
-	uint32_t boot_offset;
-	uint32_t boot_bytes;
+	unsigned boot_count;
+	uint32_t boot_offset[GHCI_BOOT_RANGES];
+	uint32_t boot_bytes[GHCI_BOOT_RANGES];
+
+	/*
+	 * The local window (irq_lock): window_users counts what of the driver
+	 * uses it (the kept boot framebuffer, which the boot console may
+	 * write through it, and each hold of the driver's own accesses), and
+	 * window_open is what the driver last wrote to WINDOW_CTRL.ENABLE:
+	 * open while window_users is not 0, closed otherwise.
+	 */
+	unsigned window_users;
 	int window_open;
 
 	/*
@@ -686,6 +703,10 @@ int ghci_memory_local_start(struct ghci_device *device);
 void ghci_memory_local_stop(struct ghci_device *device);
 uint64_t ghci_memory_local_bytes(const struct ghci_device *device);
 void ghci_memory_boot_release(struct ghci_device *device);
+int ghci_memory_window_hold(struct ghci_device *device);
+void ghci_memory_window_unhold(struct ghci_device *device);
+int ghci_memory_local_read(struct ghci_device *device, const struct ghci_allocation *allocation, uint64_t offset, void *buffer, uint64_t bytes);
+int ghci_memory_local_write(struct ghci_device *device, const struct ghci_allocation *allocation, uint64_t offset, const void *buffer, uint64_t bytes);
 int ghci_memory_free(struct ghci_device *device, struct ghci_allocation *allocation);
 void ghci_memory_quarantine(struct ghci_device *device, struct ghci_allocation *allocation);
 void ghci_memory_release_quarantine(struct ghci_device *device);
