@@ -2,7 +2,7 @@
 
 # WS308 VM の metadata の大域の lock の取り合いを無くす（read・write の syscall の並列性）
 
-- Status: incomplete（2026-10-28 新設、q1650 で P1 が p001 から）
+- Status: incomplete（2026-10-28 新設、q1650 で P1 が p001 から。2026-10-28 P1 が目標と Phase を改訂）
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG004。関係: [WS299](../ws299/ws.md)（5330 の NVMe の乱読み QD32 が約 115k IOPS で頭打ち、Debian の 48%。この WS の後に WS299 に戻る）。
 
 ## ユーザーの決定（原文）
@@ -11,7 +11,9 @@
 
 ## 目標
 
-read・write・pread・pwrite・vector の syscall が、user の buffer を固定する所（`uaccess_pin` → `vmspace_pin_user_pages`、`src/kern/vm/vmspace-copy.c`）で取る大域の VM の metadata の mutex（`src/kern/vm/metadata-lock.c`）の取り合いを無くし、多 thread・多 process の I/O が CPU の数に応じて伸びるようにする。数の目安は WS299 の乱読み QD32（5330、Debian 964 MB/s の 95% 以上）。
+read・write・pread・pwrite・vector の syscall の I/O の道の並列性を止める大域・process 単位の lock と確保を無くし、多 thread・多 process の I/O が CPU の数に応じて伸びるようにする。数の目安は WS299 の乱読み QD32（5330、Debian 964 MB/s の 95% 以上）。
+
+- 2026-10-28 改訂（P1、p001 の計測と Fable 5.1 High の助言による）: 当初の「VM の metadata の mutex」は QEMU の計測で主因でなかった（待ちは取りの 6〜18%、標本の 5%）。対象を、syscall ごとの kernel heap の確保（大域の spin lock）、全 syscall の process->lock（credential・signal）、VM の metadata の mutex と vmspace の lock（pin）、NVMe の command_lock（direct の道）に広げる。2026-10-28 ユーザー「P1の触る範囲が広がるのはOKです。」pin の使い回し（cache・登録の UAPI）は採らない（理由は [p001](phase001/phase.md)）。regular file の VM object の registry lock は block device の目標に要らないので、要れば別の Phase。
 
 ## 事実（2026-10-28 P1 の読み。数は確かめ中）
 
@@ -21,10 +23,15 @@ read・write・pread・pwrite・vector の syscall が、user の buffer を固�
 
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 計測（lock の takes・waits・保持の時間、QEMU と 5330）と設計（lock の分割・範囲の縮小・lock の要らない道。VM の不変条件の一覧）、Fable の助言、design-reviewer | — | in-progress（q1650） |
-| p002 | 実装と host 試験 | p001 | planned |
-| p003 | 回帰（QEMU の全 boot、fork・mmap・munmap・exec の負荷、5330 の測定）と全 platform の build | p002 | planned |
-| p004 | 規約の全文の見直し | p003 | planned |
+| [p001](phase001/phase.md) | 計測（QEMU の標本、5330 の 1 I/O の区間）と設計、Fable の助言、design-reviewer | — | in-progress（q1650） |
+| p002 | 起床の道と NVMe の command_lock（lock の外の wake_one、submit・release の lock を 1 回に、slot の空きの list、起こされた thread の置き場所） | p001 | planned |
+| p003 | syscall の I/O の道で heap を確保しない（pin の内の配列、vector の 1 配列、block の bounce の thread ごとの page） | p001 | planned |
+| p004 | syscall ごとの process->lock を無くす（thread ごとの credential の参照と世代、signal の要約の語、user probe の数を CPU ごとに） | p001 | planned |
+| p005 | pin を大域の metadata の mutex なしで（vmspace ごとの rwlock、書き手の監査と lock の順） | p001 | planned |
+| p006 | 回帰（QD32 の受け入れ、fork/COW・munmap/mprotect と pread の競争・swap・setuid の競争・signal と exec・readv/writev・O_DIRECT、QEMU の全 boot、全 platform の build、5330） | p002〜p005 | planned |
+| p007 | 規約の全文の見直し | p006 | planned |
+
+- p002〜p005 の順は p001 の 5330 の区間の数で決める（数が要らない Phase は取り下げる）。heap の per-CPU の magazine・NVMe の複数 queue は、p002〜p005 の後に 5330 で足りない時だけ足す。
 
 ## 制約
 
