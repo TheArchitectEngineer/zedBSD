@@ -172,3 +172,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 - 再開点（2026-10-29 04:15 P2）: [phase006](phase006/phase.md) の「q1668」節。P1 の keiland-shot の直しは RDNA で確かめた（shot 4 回とも DONE）。commit 8f8533e87・
   b3173b786・790aa60d1・bc65b40c0・1824111c8・1132ec5b6。big-1000 35.5 → 57〜59 fps（Linux 87）、subs-1000 1 submit 48 → 39 µs（Linux 10）、scene は不変。
   次: subs-N は GPU core の job の ioctl を 1 本にする設計（Q1 と）、big-N は kernel の decode と executor の draw、GPU の flush の barrier。
+
+## 2026-10-29 ユーザーの決定（submit の ioctl）
+
+- P2 の設計の案（plan/ws291/job-submit-design.md）へのユーザーの回答（クリック）: 案 A（GPU_JOB_SUBMIT）「採る (推し)」、案 B（GPU_JOB_RETIRE）「案 A と一緒に」。続けて原文「WS291: 足してみて効果のなかったioctlは、採用しなくてもいいです。」
+- Q1: 番号は WS306 の予定（'G' 46〜48、GPU_CAP 131072）を避けて 'G' 49・50、GPU_CAP 262144・524288。outcome を driver が返す形は Q1 が OK。実装して実機で測り、効果が揺れを超えない ioctl は main に入れない。
