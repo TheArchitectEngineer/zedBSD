@@ -709,7 +709,7 @@ WS の受け入れ（ws.md）との対応: 1.1 の code が無い = p004・p007�
 
 版 4 の S01・S02 は N37〜N46 で解決した（第 12 版）。版 4.1 の design-reviewer で見つけた N47〜N60 は [ghci-review.md](ghci-review.md) 第 13 版で送り、回答 第 13.0 版（cb937e6）で 10 件が解決、4 件が一部。第 14 版（N62〜N72）は回答 第 14.0 版（20bf888）で 7 件が解決、4 件が一部。第 15 版（N73〜N77）は回答 第 15.0 版（d9252e4）で全部解決した。2026-10-28 06:35 の第 16 版で「残る疑問なし」を送り（仕様担当は回答 第 16.0 版で Signoff）、やり取りを閉じた（N01〜N77 の全部が解決）。
 
-**仕様の残り**: d9252e4 の ghci.md の本文には無い。ただし p006 の code の review（M4）で、`include/ghci_cmd.h`（d9252e4）の `GHCI_VS_REG_ATTR(loc, comp)` = 4 × loc + comp が §12.10.3 の累積の base_i と食い違い、`fw/cp/pipeline.c` も古い ATTR_DST の書き方のままと分かった。driver は正本の ghci.md（累積）に従う。食い違いは ghci-review 第 17 版の N78 として用意した（`plan/ws290/ghci-review.md`）。実機（p014）で vec2 + vec3 の属性の場面を足して確かめる。d9252e4 で決まった物の driver の扱い:
+**仕様の残り**: d9252e4 の ghci.md の本文には無い。ただし p006 の code の review（M4）で、`include/ghci_cmd.h`（d9252e4）の `GHCI_VS_REG_ATTR(loc, comp)` = 4 × loc + comp が §12.10.3 の累積の base_i と食い違い、`fw/cp/pipeline.c` も古い ATTR_DST の書き方のままと分かった。driver は正本の ghci.md（累積）に従う。食い違いは ghci-review 第 17 版の N78 として用意した（`plan/ws290/ghci-review.md`）。p010 の review（M4）で、§8.4（1396 行、attachment の行は 64 byte に揃う）と §12.11（2501〜2505 行、multisample の行の pitch は P = roundup(width, 2) × S × ps）の食い違いも見つけ、第 17 版に N79 として足した（送る前）。driver は仮に multisample の image の行を P にする（layout.h）。実機（p014）で vec2 + vec3 の属性の場面を足して確かめる。d9252e4 で決まった物の driver の扱い:
 
 | N | 決まった事（d9252e4） | driver（design の節） |
 | --- | --- | --- |
