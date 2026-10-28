@@ -341,8 +341,9 @@ gsi1_buffer_address(
 		if (error != 0)
 			return error;
 
-		/* minu(offset, bytes - 4). */
+		/* minu(offset, minu(bytes - 4, bytes)): a range under a word does not wrap. */
 		gsi1_emit_alu_immediate(lowering, GSI1_F3_ADD, reg, bytes, -4);
+		gsi1_emit_alu(lowering, GSI1_F3_MINU, GSI1_F7_MINMAX, reg, reg, bytes);
 		gsi1_emit_alu(lowering, GSI1_F3_MINU, GSI1_F7_MINMAX, reg, offset, reg);
 		offset = reg;
 	}

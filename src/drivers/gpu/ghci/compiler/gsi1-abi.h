@@ -99,7 +99,7 @@
  * descriptor two; the most bytes a pipeline's table takes.
  */
 #define GSI1_ABI_RESOURCE_UNIT		16U
-#define GSI1_ABI_RESOURCE_TABLE_BYTES	2048U
+#define GSI1_ABI_RESOURCE_TABLE_BYTES	4096U
 
 /*
  * Set 3, the driver's table: the address of the scratch memory of the

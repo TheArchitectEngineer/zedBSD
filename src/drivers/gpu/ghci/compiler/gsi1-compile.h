@@ -37,7 +37,7 @@
 /* The texture and sampler slots of a pipeline (sets 0 and 1), the resource table's entries, and the dynamic offsets. */
 #define GHCI_GSI1_TEXTURE_SLOTS		16U
 #define GHCI_GSI1_SAMPLER_SLOTS		16U
-#define GHCI_GSI1_RESOURCES		64U
+#define GHCI_GSI1_RESOURCES		128U
 #define GHCI_GSI1_DYNAMIC_OFFSETS	32U
 
 /* The primitive a fragment program is compiled for: its inputs differ (a point's are vertex 0's, a line has no vertex 2). */

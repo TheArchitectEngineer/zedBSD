@@ -20,7 +20,7 @@ pipeline と descriptor: vk-pipeline・vk-layout・layout.h
 
 ## 仕様の仮の扱い（ghci-review の回答で変われば直す）
 
-design §19 の表のうち、この Phase の code に効く物を着手の時にここへ写す。
+design §19: N78（属性の register の累積の base_i と header の 4 × loc + comp の食い違い）は ghci.md の累積で作る。p006 の compiler の取り決め（design §11.4 の「p006 で決めた取り決め（版 4.10）」: STORAGE の image は linear・set 3 の配置・texel buffer は slot と entry・属性の表は常に渡す・VS を先に compile・dispatch と draw の間の table の置き直し・c24〜c31 に LOAD_CONST しない・fragment の無い pipeline の FS）を守る。
 
 ## 記録
 

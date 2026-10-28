@@ -830,6 +830,7 @@ lower_buffer_fetch(
 	uint32_t block;
 	uint32_t inside;
 	uint32_t count;
+	uint32_t clamped;
 	uint32_t channel;
 	int error;
 
@@ -838,14 +839,32 @@ lower_buffer_fetch(
 	if (error != 0)
 		return error;
 
-	/* Takes the run of the coordinates. */
-	error = gsi1_scratch_block(lowering, 2U, &block);
+	/* The buffer's elements. */
+	binding = &lowering->binding[uniform];
+	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_ELEMENTS, &count);
 	if (error != 0)
 		return error;
 
+	/* Takes the run of the coordinates and the register of the clamped index. */
+	error = gsi1_scratch_block(lowering, 2U, &block);
+	if (error != 0)
+		return error;
+	error = gsi1_scratch(lowering, &clamped);
+	if (error != 0)
+		return error;
+
+	/*
+	 * The index the fetch reads: i clamped to the last element (to 0 for
+	 * an empty buffer), so that no fetch reads past the view; a texel
+	 * past the count reads zero below.
+	 */
+	gsi1_emit_alu_immediate(lowering, GSI1_F3_ADD, clamped, count, -1);
+	gsi1_emit_alu(lowering, GSI1_F3_MINU, GSI1_F7_MINMAX, clamped, clamped, count);
+	gsi1_emit_alu(lowering, GSI1_F3_MINU, GSI1_F7_MINMAX, clamped, element, clamped);
+
 	/* x = i & 255, y = i >> 8. */
-	gsi1_emit_alu_immediate(lowering, GSI1_F3_AND, block, element, (int32_t)(GSI1_ABI_TEXEL_BUFFER_WIDTH - 1U));
-	gsi1_emit(lowering, gsi1_encode_shift(GSI1_F3_SRL, GSI1_F7_BASE, block + 1U, element, GSI1_ABI_TEXEL_BUFFER_SHIFT));
+	gsi1_emit_alu_immediate(lowering, GSI1_F3_AND, block, clamped, (int32_t)(GSI1_ABI_TEXEL_BUFFER_WIDTH - 1U));
+	gsi1_emit(lowering, gsi1_encode_shift(GSI1_F3_SRL, GSI1_F7_BASE, block + 1U, clamped, GSI1_ABI_TEXEL_BUFFER_SHIFT));
 
 	/* The texel of level 0. */
 	sample->three = 0;
@@ -856,12 +875,6 @@ lower_buffer_fetch(
 	emit_texture(lowering, GSI1_F3_TEXF, 0U, sample, dst, block, GSI1_ZERO);
 
 	/* Whether the element is inside the buffer: i < count, unsigned. */
-	binding = &lowering->binding[uniform];
-	error = gsi1_resource_field(lowering, binding, GSI1_FIELD_ELEMENTS, &count);
-	if (error != 0)
-		return error;
-
-	/* Takes the register of the Boolean. */
 	error = gsi1_scratch(lowering, &inside);
 	if (error != 0)
 		return error;
