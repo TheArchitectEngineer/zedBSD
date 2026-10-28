@@ -23,9 +23,11 @@ step table init_table
 listing=$(diskpart --machine list)
 printf '%s\n' "$listing" | awk -F'\t' -v d="$disk" '$1 == "device" && index($2, d) == 1'
 part_reg() { printf '%s\n' "$listing" | awk -F'\t' -v d="$1" '$1 == "device" && $2 == d { print $3; exit }'; }
-esp=${disk}p1
-swp=${disk}p2
-ufs=${disk}p3
+# A disk named with a final digit (nvme1n1) takes "p" before the partition number (sda1 does not).
+case $disk in *[0-9]) prefix=${disk}p ;; *) prefix=$disk ;; esac
+esp=${prefix}1
+swp=${prefix}2
+ufs=${prefix}3
 step mkfs-fat32 sh -c "echo 'FORMAT $esp:$(part_reg "$esp")' | mkfs -t fat32 /dev/$esp"
 mkdir -p /mnt/p006
 step mount-fat mount -t fat /dev/$esp /mnt/p006
