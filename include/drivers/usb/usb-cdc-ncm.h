@@ -15,6 +15,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+/*
+ * The standard Ethernet datagram: the least maximum datagram every
+ * function takes, and the profile's maximum when the limits ask for none
+ * larger.
+ */
 #define DRV_USB_CDC_NCM_MTU			1500U
 #define DRV_USB_CDC_NCM_ETHERNET_HEADER_SIZE	14U
 #define DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE 	(DRV_USB_CDC_NCM_ETHERNET_HEADER_SIZE + DRV_USB_CDC_NCM_MTU)
@@ -52,6 +57,9 @@
  * Resource limits owned by the driver/HCD, not by the USB function.  The
  * negotiation result never exceeds these limits or the NTH16 wire limit.
  * bulk_out_max_packet_size comes from the selected bulk-OUT endpoint.
+ * max_datagram_size is the longest datagram the driver wants (0 for the
+ * standard one); the profile takes the longest up to it whose one-datagram
+ * layout fits both the IN and the OUT NTB, never below the standard one.
  */
 struct drv_usb_cdc_ncm_limits {
 	uint32_t ntb_in_max_size;
@@ -60,6 +68,7 @@ struct drv_usb_cdc_ncm_limits {
 	uint16_t tx_max_datagrams;
 	uint16_t ndp_chain_max;
 	uint16_t bulk_out_max_packet_size;
+	uint16_t max_datagram_size;
 };
 
 /*

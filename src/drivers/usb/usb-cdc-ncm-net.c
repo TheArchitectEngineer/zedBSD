@@ -62,6 +62,21 @@
 #endif
 
 /*
+ * Where the pool has jumbo packets, blocks large enough for jumbo
+ * datagrams: a 32 KB receive block holds three of 9014 bytes (or the
+ * standard ones a 16 KB block would), and a 16 KB transmit block one.
+ * NCM_DATAGRAM_MAX is the longest datagram asked of the device.
+ */
+#if PACKET_BUF_JUMBO_COUNT != 0U && PACKET_BUF_POOL_COUNT >= 256U
+#define NCM_NTB_IN_JUMBO_SIZE		32768U
+#define NCM_NTB_OUT_SIZE		16384U
+#else
+#define NCM_NTB_IN_JUMBO_SIZE		NCM_NTB_IN_SIZE
+#define NCM_NTB_OUT_SIZE		NCM_NTB_BUFFER_SIZE
+#endif
+#define NCM_DATAGRAM_MAX		(DRV_USB_CDC_NCM_ETHERNET_HEADER_SIZE + NET_MTU_MAX)
+
+/*
  * Frames held while the one transmit transfer is busy.  The packet pool is
  * small and shared by the whole stack, so the queue stays short; a burst
  * of acknowledgements fits, and only a longer one is dropped.
@@ -90,6 +105,7 @@ struct ncm_binding {
 	unsigned data_alternate;
 	uint8_t mac_string;
 	uint8_t capabilities;
+	uint16_t max_segment_size;
 };
 
 struct ncm_adapter {
@@ -114,6 +130,13 @@ struct ncm_adapter {
 	size_t rx_queue_count;
 	unsigned data_alternate;
 	uint8_t capabilities;
+	/*
+	 * The descriptor's wMaxSegmentSize, and the maximum datagram the
+	 * device answered GET_MAX_DATAGRAM_SIZE with (0 when it was not
+	 * asked or did not answer).
+	 */
+	uint16_t max_segment_size;
+	uint16_t max_datagram_read_back;
 	unsigned ready;
 	unsigned starts_active;
 	unsigned polls_active;
@@ -158,7 +181,7 @@ static uint16_t ncm_le16(const uint8_t *bytes);
 static struct drv_usb_configuration * ncm_interface_configuration(struct drv_usb_interface *interface);
 static int ncm_iad_covers(const struct drv_usb_interface_association_descriptor *iad, unsigned interface_number);
 static int ncm_iad_consistent(struct drv_usb_configuration *configuration, unsigned control_number, unsigned data_number);
-static int ncm_control_descriptors(const struct drv_usb_host_interface *alternate, unsigned control_number, unsigned *data_number, uint8_t *mac_string, uint8_t *capabilities);
+static int ncm_control_descriptors(const struct drv_usb_host_interface *alternate, unsigned control_number, unsigned *data_number, uint8_t *mac_string, uint8_t *capabilities, uint16_t *max_segment_size);
 static int ncm_find_notification(const struct drv_usb_host_interface *alternate, struct drv_usb_endpoint **result);
 static int ncm_find_data_alternate(struct drv_usb_interface *data, struct drv_usb_endpoint **bulk_in, struct drv_usb_endpoint **bulk_out, unsigned *alternate_result);
 static int ncm_binding_parse(struct drv_usb_interface *control, struct ncm_binding *binding);
@@ -166,6 +189,8 @@ static int ncm_hex(unsigned char character);
 static int ncm_get_mac(const struct ncm_binding *binding, uint8_t mac[6]);
 static int ncm_control(struct ncm_adapter *adapter, uint8_t request_type, uint8_t request, uint16_t value, void *buffer, size_t length, size_t *actual);
 static int ncm_program_profile(struct ncm_adapter *adapter);
+static int ncm_program_max_datagram(struct ncm_adapter *adapter);
+static int ncm_set_max_datagram(struct ncm_adapter *adapter, uint16_t size, uint16_t *read_back);
 static int ncm_program_packet_filter(struct ncm_adapter *adapter);
 static int ncm_urb_status_error(enum drv_usb_urb_status status);
 static int ncm_tx_status_is_error(enum drv_usb_urb_status status);
@@ -358,7 +383,8 @@ ncm_control_descriptors(
 	unsigned control_number,
 	unsigned *data_number,
 	uint8_t *mac_string,
-	uint8_t *capabilities)
+	uint8_t *capabilities,
+	uint16_t *max_segment_size)
 {
 	const uint8_t *descriptor;
 	size_t length;
@@ -414,6 +440,7 @@ ncm_control_descriptors(
 				return 0;
 			}
 			*mac_string = descriptor[3];
+			*max_segment_size = ncm_le16(descriptor + 8U);
 			break;
 		case NCM_FUNCTIONAL_DESCRIPTOR:
 			/* Checks the ncm le16 result. */
@@ -601,7 +628,8 @@ ncm_binding_parse(
 	if (control_alternate == NULL ||
 	    !ncm_control_descriptors(control_alternate, control_number,
 				     &data_number, &mac_string,
-				     &binding->capabilities) ||
+				     &binding->capabilities,
+				     &binding->max_segment_size) ||
 	    !ncm_find_notification(control_alternate, &binding->notification)) {
 		/* Succeeded. */
 		return 0;
@@ -731,11 +759,16 @@ ncm_program_profile(
 	for (index = 0; index < sizeof(steps) / sizeof(steps[0]); index++) {
 		actual = 0;
 
-		/* Handles the steps condition. */
+		/* The maximum datagram, for a device that takes it, by its own steps. */
 		if (steps[index] ==
-			    DRV_USB_CDC_NCM_CONTROL_SET_MAX_DATAGRAM_SIZE &&
-		    (adapter->capabilities & NCM_CAP_MAX_DATAGRAM_SIZE) == 0)
+		    DRV_USB_CDC_NCM_CONTROL_SET_MAX_DATAGRAM_SIZE) {
+			if ((adapter->capabilities & NCM_CAP_MAX_DATAGRAM_SIZE) == 0)
+				continue;
+			error = ncm_program_max_datagram(adapter);
+			if (error != 0)
+				return error;
 			continue;
+		}
 
 		/* Handles the steps condition. */
 		if (steps[index] == DRV_USB_CDC_NCM_CONTROL_DISABLE_CRC &&
@@ -762,6 +795,119 @@ ncm_program_profile(
 	}
 
 	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Sets the device's maximum datagram, from the longest the profile's
+ * blocks take down: that one, then the descriptor's wMaxSegmentSize, then
+ * the standard 1514.  The device's answer to GET_MAX_DATAGRAM_SIZE after
+ * each set is the size it took, and becomes the profile's when smaller.
+ * One beyond wMaxSegmentSize is kept only when the device reads it back;
+ * any size the device refuses (a STALL) passes to the next.
+ *
+ * Procedure referenced: USB CDC NCM 1.0, 6.2.9 SetMaxDatagramSize and
+ * 6.2.8 GetMaxDatagramSize.
+ */
+static int
+ncm_program_max_datagram(
+	struct ncm_adapter *adapter)
+{
+	uint16_t sizes[3];
+	uint16_t read_back;
+	uint16_t bounded;
+	unsigned count;
+	unsigned index;
+	int error;
+
+	/* The sizes to try, longest first, each once. */
+	bounded = adapter->max_segment_size;
+	if (bounded < DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE)
+		bounded = DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE;
+	count = 0;
+	sizes[count++] = adapter->profile.max_datagram_size;
+	if (bounded < sizes[count - 1U])
+		sizes[count++] = bounded;
+	if (DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE < sizes[count - 1U])
+		sizes[count++] = DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE;
+
+	/* Takes the first the device accepts. */
+	error = EIO;
+	for (index = 0; index < count; index++) {
+		read_back = 0;
+		error = ncm_set_max_datagram(adapter, sizes[index], &read_back);
+		if (error != 0)
+			continue;
+
+		/* A size the device did not confirm is kept only within its descriptor. */
+		if (read_back == 0 && sizes[index] > bounded) {
+			error = EIO;
+			continue;
+		}
+
+		/* The size the device took. */
+		adapter->max_datagram_read_back = read_back;
+		adapter->profile.max_datagram_size = sizes[index];
+		if (read_back != 0 && read_back < sizes[index])
+			adapter->profile.max_datagram_size = read_back;
+		return 0;
+	}
+
+	/* Failed: the device refused even the standard size. */
+	return error;
+}
+
+/*
+ * Sends SET_MAX_DATAGRAM_SIZE with size and reads GET_MAX_DATAGRAM_SIZE
+ * back into *read_back: the device's value when it answered with one of
+ * at least the standard size, else 0.  Fails only when the set failed.
+ */
+static int
+ncm_set_max_datagram(
+	struct ncm_adapter *adapter,
+	uint16_t size,
+	uint16_t *read_back)
+{
+	struct drv_usb_cdc_ncm_control_request request;
+	struct drv_usb_cdc_ncm_profile profile;
+	uint8_t answer[2];
+	size_t actual;
+	uint16_t value;
+	int error;
+
+	/* The request for this size. */
+	profile = adapter->profile;
+	profile.max_datagram_size = size;
+	error = drv_usb_cdc_ncm_make_control_request(
+		&profile, DRV_USB_CDC_NCM_CONTROL_SET_MAX_DATAGRAM_SIZE, &request);
+	if (error != 0)
+		return error;
+
+	/* Sets it. */
+	actual = 0;
+	error = ncm_control(adapter,
+			    DRV_USB_DIR_OUT | DRV_USB_REQUEST_CLASS |
+				    DRV_USB_RECIP_INTERFACE,
+			    request.request, request.value,
+			    request.payload, request.length, &actual);
+	if (error != 0 || actual != request.length)
+		return error != 0 ? error : EIO;
+
+	/* Reads back what the device took; a device that does not answer leaves 0. */
+	*read_back = 0;
+	actual = 0;
+	error = ncm_control(adapter,
+			    DRV_USB_DIR_IN | DRV_USB_REQUEST_CLASS |
+				    DRV_USB_RECIP_INTERFACE,
+			    DRV_USB_CDC_NCM_GET_MAX_DATAGRAM_SIZE, 0,
+			    answer, sizeof(answer), &actual);
+	if (error == 0 && actual == sizeof(answer)) {
+		value = ncm_le16(answer);
+		if (value >= DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE)
+			*read_back = value;
+	}
+
+	/* Succeeded: the set was taken. */
 	return 0;
 }
 
@@ -1349,18 +1495,25 @@ ncm_queue_datagram(
 	struct packet_buf *packet;
 	void *destination;
 	unsigned long irq;
+	int error;
 
 	/* Checks the current data length. */
 	if (length < DRV_USB_CDC_NCM_ETHERNET_HEADER_SIZE ||
-	    length > DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE) {
+	    length > adapter->profile.max_datagram_size) {
 		/* Failed. */
 		return EINVAL;
 	}
 
-	/* Handles the packet availability. */
-	packet = packet_buf_alloc(0);
-	if (packet == NULL)
-		return ENOBUFS;
+	/*
+	 * A packet of the class the datagram needs (a driver's receive may
+	 * take the reserved jumbo ones).  Without one this datagram is
+	 * dropped and the block's others still delivered.
+	 */
+	packet = packet_buf_alloc_for(0, length, PACKET_BUF_ALLOC_RECEIVE, &error);
+	if (packet == NULL) {
+		adapter->net_device->rx_dropped++;
+		return 0;
+	}
 
 	/* Handles the destination availability. */
 	destination = packet_buf_append(packet, length);
@@ -1379,8 +1532,9 @@ ncm_queue_datagram(
 		spin_unlock_irqrestore(&adapter->lock, irq);
 		packet_buf_free(packet);
 
-		/* Failed. */
-		return ENOBUFS;
+		/* The queue is full: this datagram is dropped, the block's others tried. */
+		adapter->net_device->rx_dropped++;
+		return 0;
 	}
 
 	adapter->rx_queue[(adapter->rx_queue_head + adapter->rx_queue_count) %
@@ -2096,6 +2250,9 @@ ncm_net_device_create(
 		return ENOSPC;
 	device->flags = NET_DEVICE_BROADCAST | NET_DEVICE_MULTICAST;
 	device->mtu = DRV_USB_CDC_NCM_MTU;
+	device->mtu_max = adapter->profile.max_datagram_size - DRV_USB_CDC_NCM_ETHERNET_HEADER_SIZE;
+	if (device->mtu_max > NET_MTU_MAX)
+		device->mtu_max = NET_MTU_MAX;
 	kern_memcpy(device->hwaddr, mac, 6U);
 	device->hwaddr_len = 6U;
 	device->ops = &ncm_net_ops;
@@ -2163,6 +2320,7 @@ ncm_attach(
 	adapter->bulk_out = binding.bulk_out;
 	adapter->data_alternate = binding.data_alternate;
 	adapter->capabilities = binding.capabilities;
+	adapter->max_segment_size = binding.max_segment_size;
 	adapter->notification_length = drv_usb_cdc_notification_transfer_length(
 		drv_usb_endpoint_max_packet_size(binding.notification));
 	spin_init(&adapter->lock, LOCK_RANK_DEVICE, "usb-cdc-ncm");
@@ -2194,6 +2352,22 @@ ncm_attach(
 	kern_memset(&limits, 0, sizeof(limits));
 	limits.ntb_in_max_size = NCM_NTB_IN_SIZE;
 	limits.ntb_out_max_size = NCM_NTB_BUFFER_SIZE;
+
+	/*
+	 * Jumbo datagrams where the pool has jumbo packets: up to the
+	 * descriptor's wMaxSegmentSize, or, for a device that takes
+	 * SET_MAX_DATAGRAM_SIZE, up to the longest the pool holds, which the
+	 * device's read back then confirms or lowers.
+	 */
+	limits.max_datagram_size = binding.max_segment_size;
+	if ((binding.capabilities & NCM_CAP_MAX_DATAGRAM_SIZE) != 0)
+		limits.max_datagram_size = NCM_DATAGRAM_MAX;
+	if (limits.max_datagram_size > NCM_DATAGRAM_MAX)
+		limits.max_datagram_size = NCM_DATAGRAM_MAX;
+	if (limits.max_datagram_size > DRV_USB_CDC_NCM_MAX_DATAGRAM_SIZE) {
+		limits.ntb_in_max_size = NCM_NTB_IN_JUMBO_SIZE;
+		limits.ntb_out_max_size = NCM_NTB_OUT_SIZE;
+	}
 	limits.rx_max_datagrams = NCM_RX_QUEUE_MAX;
 	limits.tx_max_datagrams = 1U;
 	limits.ndp_chain_max = DRV_USB_CDC_NCM_MAX_NDP_CHAIN;
@@ -2251,9 +2425,16 @@ ncm_attach(
 	if (error != 0)
 		return error;
 	ncm_set_ready(adapter, 1);
-	kern_logf("usb-cdc-ncm: %s mac=%02x:%02x:%02x:%02x:%02x:%02x\n",
+	kern_logf("usb-cdc-ncm: %s mac=%02x:%02x:%02x:%02x:%02x:%02x "
+		   "segment=%u ntb_in=%u ntb_out=%u max_datagram=%u read_back=%u "
+		   "caps=0x%02x mtu_max=%u\n",
 		   adapter->net_device->name, mac[0], mac[1], mac[2], mac[3],
-		   mac[4], mac[5]);
+		   mac[4], mac[5], adapter->max_segment_size,
+		   (unsigned)adapter->profile.ntb_in_max_size,
+		   (unsigned)adapter->profile.ntb_out_max_size,
+		   adapter->profile.max_datagram_size,
+		   adapter->max_datagram_read_back, adapter->capabilities,
+		   adapter->net_device->mtu_max);
 
 	/* Succeeded. */
 	return 0;
