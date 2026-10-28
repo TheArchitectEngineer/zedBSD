@@ -37,9 +37,10 @@
  * pixel coordinates) into the destination, or writes one colour.  A copy
  * whose buffer is not laid out as a linear image can be (its start or its
  * row pitch off 256 bytes) is moved by the command processor, row by row.
- * Between a pass or a transfer and what follows, and at the end of every
- * indirect buffer, a barrier drains the programs, writes the colour
- * caches back and empties the shader caches.
+ * Between a pass or a transfer and what follows, and at the end of a
+ * command buffer's last indirect buffer, a barrier drains the programs,
+ * writes the colour caches back and empties the shader caches (a buffer
+ * that fills goes on its queue without one).
  *
  * A dispatch writes its kernel's resource table (from the sets bound at
  * the compute bind point), the kernel and the workgroups, then a barrier.
@@ -284,6 +285,7 @@ static int execute_compile(struct amdrdna_quad_ir *program, const struct amdrdna
 static int execute_start(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
 static int execute_slot_make(struct amdrdna_vk_session *session, struct execute_slot *slot);
 static int execute_flush(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
+static int execute_put(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute);
 static int execute_room(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state);
 static void execute_barrier(struct amdrdna_vk_execute *execute);
 static int execute_record(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
@@ -818,11 +820,37 @@ execute_flush(
 	struct amdrdna_vk_session *session,
 	struct amdrdna_vk_execute *execute)
 {
+	int error;
+
+	/* The barrier at the end, then the buffer on its queue. */
+	execute_barrier(execute);
+	error = execute_put(session, execute);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the run is on its queue. */
+	return 0;
+}
+
+/*
+ * Puts the indirect buffer written so far on its queue as it is, padded,
+ * without waiting for it: the run is the slot's and the queue's newest,
+ * and the next slot is the current one.  A buffer that fills in the middle
+ * of a command buffer goes without a barrier, as the draws of one buffer
+ * do: the ring's fence after the run (an end-of-pipe event that writes
+ * the level-2 cache back) is what frees the slot, the run after it starts
+ * by emptying the caches, and the draws that follow keep the order of
+ * draws in one pass.  Returns the error of the run's putting.
+ */
+static int
+execute_put(
+	struct amdrdna_vk_session *session,
+	struct amdrdna_vk_execute *execute)
+{
 	struct amdrdna_vk_ticket ticket;
 	int error;
 
-	/* The barrier at the end, the buffer padded. */
-	execute_barrier(execute);
+	/* The buffer padded. */
 	amdrdna_vk_pm4_pad(&execute->pm4, EXECUTE_BUFFER_PAD);
 	if (execute->pm4.full)
 		return ENOSPC;
@@ -867,8 +895,8 @@ execute_room(
 	if (!full)
 		return 0;
 
-	/* Puts what there is on the queue and starts the next buffer. */
-	error = execute_flush(session, execute);
+	/* Puts what there is on the queue, without a barrier, and starts the next buffer. */
+	error = execute_put(session, execute);
 	if (error == 0)
 		error = execute_start(session, execute);
 	if (error != 0)

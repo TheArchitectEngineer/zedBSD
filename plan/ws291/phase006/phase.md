@@ -1203,3 +1203,6 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
   /bin/wayland は main 9402d4c74 の build、cfg は ngg=2・memory=2、timing は off。zedBSD は 10.0.30.5。
 - 再開点（04:25、未完）: subs-N の private fence を ledger だけで確かめる直し（queue.c queue_reset_completed は reap を 1 回して ledger の検索だけ、
   sync.c vulkan_sync_job_status は ledger に無い record では reap しない、timing に private_fence・reap）を build（warning 0）、実機は未実施。
+- 再開点（04:35、未完）: big-N の IB の flush（execute_room で buffer・表が埋まった時）を barrier 無しに（execute_put、ring の fence が EOP で
+  L2 を書き戻すので slot の再利用はそれで足り、次の run は cache を空にして始まる）。kernel build warning 0（build/ws291/vmunix-l1）、ws039 の
+  amdrdna-vk-host-test 205/205 PASS。実機は未実施。
