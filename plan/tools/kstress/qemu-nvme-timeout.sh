@@ -8,7 +8,7 @@
 #   (2) a read of the boot disk and "echo alive": the guest is still usable,
 #   (3) 32 threads of direct reads of the boot disk in the background, and a reboot 3 s later: QEMU (-no-reboot)
 #       must end within 300 s.
-#   sh plan/ws308/tests/qemu-nvme-timeout.sh IMAGE
+#   sh plan/tools/kstress/qemu-nvme-timeout.sh IMAGE
 # IMAGE: plan/tools/posix/config-amd64-serial.mk with randread in /root (ZEDBSD_EXTRA_FILES).  W is
 # build/tmp/qemu-nvme-timeout (a fresh run each time).  The last line is "qemu-nvme-timeout: PASS|FAIL ...".
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib

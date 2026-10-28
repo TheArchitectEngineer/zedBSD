@@ -8,8 +8,8 @@
 /*
  * Reads a disk or file from many threads while the address space and the
  * process change under them, for the read and write system calls' pinning
- * of user buffers (ws308-p006).  It builds like randread.c (build-randread.sh
- * builds every .c it is given; cc -O2 -pthread on Linux).
+ * of user buffers (ws308-p006).  plan/tools/kstress/build.sh builds it for
+ * zedBSD and Linux (cc -O2 -pthread).
  *
  *	iostress FILE SECONDS [direct] [hog MIB] [setuid] [nofork] [nomap] [size MIB]
  *

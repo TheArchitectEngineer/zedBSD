@@ -4,12 +4,12 @@
 # through the cache.  The guest has MEMORY (default 1G), so "hog" pushes pages to swap.  Each run lasts SECONDS
 # (default 30).  Then four processes write 32 MiB each with O_DIRECT 4 KiB requests and fsync, at once, and the guest
 # must still answer.
-#   [IOSTRESS_RUNS='nvme1n1 direct;nvme0n1 hog 1200'] sh plan/ws308/tests/qemu-iostress.sh IMAGE
+#   [IOSTRESS_RUNS='nvme1n1 direct;nvme0n1 hog 1200'] sh plan/tools/kstress/qemu-iostress.sh IMAGE
 # QEMU_EXTRA: more QEMU arguments (for example "-gdb tcp::22212" to look at the guest with gdb while it runs).
 # IOSTRESS_RUNS: the runs, ";" between them, each a disk under /dev and iostress's words (default: direct, cached,
 # direct with seteuid, cached with a 1200 MiB hog, and the boot disk direct with the hog and seteuid).
-# IMAGE: plan/tools/posix/config-amd64-serial.mk with /root/iostress and /root/directio (ZEDBSD_EXTRA_FILES, built
-# from iostress.c as randread is, and by build-randread.sh).  W is build/tmp/qemu-iostress (a fresh run each time).  The last line is "qemu-iostress: PASS|FAIL ...".
+# IMAGE: plan/tools/posix/config-amd64-serial.mk with /root/iostress and /root/directio (ZEDBSD_EXTRA_FILES, from
+# plan/tools/kstress/build.sh and plan/ws299/tests/build-randread.sh).  W is build/tmp/qemu-iostress (a fresh run each time).  The last line is "qemu-iostress: PASS|FAIL ...".
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 . plan/tools/guest/qemu-accel.sh

@@ -3,7 +3,7 @@
 # the reads, the mean time a request spent between issue and completion (read_ticks), the mean number in flight
 # (time_in_queue over the wall time), and the NVMe interrupts per queue.  Runs on the build host; the 5330 must be
 # in Debian.  Takes /tmp/i915-hw.lock.  Nothing is written to the disk and nothing is removed.
-#   [SETTLE=1] sh plan/ws308/tests/debian-qdstat.sh RANDREAD_LINUX [SECONDS]
+#   [SETTLE=1] sh plan/tools/kstress/debian-qdstat.sh RANDREAD_LINUX [SECONDS]
 # Prints the randread line and one "qdstat:" line per run, and ends with "debian-qdstat: done".
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -20,7 +20,7 @@ exec 9> /tmp/i915-hw.lock
 flock 9
 lin hostname | grep -q chaos || { echo "debian-qdstat: FAIL: Debian is not up"; exit 1; }
 TO=60 timeout 60 scp -q "$RR" "$HOST:ws245/randread-qdstat" || { echo "debian-qdstat: FAIL: copy"; exit 1; }
-TO=60 timeout 60 scp -q plan/ws308/tests/qdstat-remote.sh "$HOST:ws245/qdstat-remote.sh" || { echo "debian-qdstat: FAIL: copy"; exit 1; }
+TO=60 timeout 60 scp -q plan/tools/kstress/qdstat-remote.sh "$HOST:ws245/qdstat-remote.sh" || { echo "debian-qdstat: FAIL: copy"; exit 1; }
 # SETTLE=1 first trims and rests the drive as nvme-bench-5330.sh does before each mode.
 if [ "${SETTLE:-0}" = 1 ]; then
 	TO=600 lin 'sudo -n fstrim -av' > /dev/null

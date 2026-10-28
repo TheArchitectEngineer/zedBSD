@@ -25,7 +25,7 @@ read・write・pread・pwrite・vector の syscall の I/O の道の並列性を
 - 5330（10.0.30.3、同じ時間帯の Debian と）: 乱読み 4 KiB QD32 direct 224.2k IOPS（918 MB/s）＝Debian 225.8k の 99.3%、process 99.7%、cached 241.2k（988 MB/s）。始めの頭打ち（約 115k、Debian の 48%）から倍。目標（Debian の 95% 以上）を満たした。syscall だけの null call は thread QD32 610k→1.41M IOPS。
 - 直した所: kernel heap を syscall の I/O の道で取らない（p003）、NVMe の起床を command_lock の外へ・command id で slot を O(1)・空き slot の hint・完了の返却と end_bio を 1 回の保持に、amd64 の timecounter の大域の lock を外す、disk の統計の時計を disk_registry_lock の外へ（p002）、syscall ごとの process->lock を無くす thread ごとの credential（p004）。
 - 前からの不具合 3 つを直した（[p006](phase006/phase.md)）: seteuid の繰り返しで退役した credential が溜まり heap が尽きる（p004）、memory の圧迫で buffer cache が新しい行を全て断り cached の pread が ENOMEM（記録の「EINTR」は errno の読み違い）と UFS の journal の home の書きの失敗（d30136b22）、fork・munmap と O_DIRECT の user の #GP は iostress の試験の競争だった（210d2ac3d）。review で見つけた前からの credential の競争（setuid 系の更新が消える、set_id と ptrace の窓、si_uid が euid）も直した。
-- 試験: `plan/ws308/tests/` の iostress・credrace・sigexec・nvme-errors・nvme-timeout と WS299 の NVMe の試験、boot-test、全 platform の vmunix の build（warning 0）。
+- 試験: `plan/tools/kstress/`（2026-10-28 移した）の iostress・credrace・sigexec・nvme-errors・nvme-timeout と WS299 の NVMe の試験、boot-test、全 platform の vmunix の build（warning 0）。
 
 ## 制限・移管
 
