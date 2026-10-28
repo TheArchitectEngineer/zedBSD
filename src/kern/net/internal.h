@@ -96,6 +96,15 @@ ipv4_output(
 	struct packet_buf *);
 
 int
+ipv4_output_routed(
+	struct net_device *,
+	uint32_t destination,
+	uint32_t next_hop,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *);
+
+int
 ipv4_output_sourced(
 	struct net_device *,
 	uint32_t destination,

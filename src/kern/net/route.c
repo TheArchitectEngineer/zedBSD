@@ -34,6 +34,16 @@ static struct net_route routes[ROUTE_MAX];
 static uint8_t route_used[ROUTE_MAX];
 static atomic_uint_t route_guard;
 
+/*
+ * How many times the table, or an interface's address, has changed: a
+ * sender that keeps what a lookup found (TCP keeps each connection's next
+ * hop and source) uses it while the count has not moved.  Moved with an
+ * atomic add (route_changed) and read atomically; a word wide, so every
+ * machine moves it without a lock (a wrap needs billions of changes, and
+ * only equality is asked).
+ */
+static unsigned long route_changes;
+
 extern bool hal_irq_disable(void) __attribute__((weak));
 extern void hal_irq_enable(void) __attribute__((weak));
 
@@ -132,6 +142,7 @@ route_add_flags(
 	}
 
 	route_used[free_index] = 1;
+	route_changed();
 	routes[free_index].network = network;
 	routes[free_index].netmask = netmask;
 	routes[free_index].gateway = gateway;
@@ -200,6 +211,7 @@ route_delete(
 			net_device_release(routes[index].device);
 			route_used[index] = 0;
 			kern_memset(&routes[index], 0, sizeof(routes[index]));
+			route_changed();
 			route_unlock(enabled);
 			return 0;
 		}
@@ -234,6 +246,7 @@ route_purge_device(
 			kern_memset(&routes[index], 0, sizeof(routes[index]));
 		}
 	}
+	route_changed();
 
 	route_unlock(enabled);
 }
@@ -445,6 +458,36 @@ route_ioctl(
 	return 0;
 }
 
+/*
+ * Counts a change of the routing table or of an interface's address, so
+ * that what a sender kept from a lookup is looked up again.
+ */
+void
+route_changed(
+	void)
+{
+	/* One more change, seen by the next read. */
+	(void)__atomic_fetch_add(&route_changes, 1U, __ATOMIC_ACQ_REL);
+}
+
+/*
+ * Reports how many changes the table and the interfaces' addresses have
+ * had: a value read before a lookup stands for its result while it does
+ * not move.
+ */
+unsigned long
+route_generation(
+	void)
+{
+	unsigned long changes;
+
+	/* The count, ordered before the lookup that follows. */
+	changes = __atomic_load_n(&route_changes, __ATOMIC_ACQUIRE);
+
+	/* Succeeded: the count. */
+	return changes;
+}
+
 /* Disables interrupts, when the HAL is present, and takes the table lock. */
 static bool
 route_lock(
@@ -585,6 +628,7 @@ route_delete_request(
 	net_device_release(routes[selected].device);
 	route_used[selected] = 0;
 	kern_memset(&routes[selected], 0, sizeof(routes[selected]));
+	route_changed();
 	route_unlock(enabled);
 
 	/* Reports the deleted route. */

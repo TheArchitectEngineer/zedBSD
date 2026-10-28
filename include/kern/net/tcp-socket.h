@@ -180,6 +180,18 @@ struct tcp_socket {
 	unsigned ack_listed;
 	struct tcp_socket *ack_next;
 	/*
+	 * The way the connection's IPv4 segments go, as the last route lookup
+	 * found it: its source address and next hop, through the interface
+	 * the connection is bound to (inet.ifindex), valid while route_cached
+	 * is set and route_generation() still returns route_generation_seen.
+	 * A peer that is one of this host's own addresses is never kept (its
+	 * segments go round the loopback device).  Guarded by the socket lock.
+	 */
+	unsigned route_cached;
+	unsigned long route_generation_seen;
+	uint32_t route_source;
+	uint32_t route_next_hop;
+	/*
 	 * Segments queued and not yet acknowledged, oldest first.  Several
 	 * may be in flight at once, bounded by the peer's advertised window
 	 * and by the size of this ring; each keeps a copy of its payload so

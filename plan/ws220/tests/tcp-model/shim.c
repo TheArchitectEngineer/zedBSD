@@ -432,6 +432,34 @@ route_lookup_ref(
 	return ENETUNREACH;
 }
 
+/* The model's table never changes (ws221-p008). */
+unsigned long
+route_generation(
+	void)
+{
+	return 0;
+}
+
+/* The way to the other host through a device: as route_lookup_ref (ws221-p008). */
+int
+route_lookup_device_ref(
+	uint32_t destination,
+	const struct net_device *device,
+	struct net_route *result)
+{
+	(void)device;
+	return route_lookup_ref(destination, result);
+}
+
+/* Neither host's address is the other's (ws221-p008). */
+int
+inet_address_is_local(
+	uint32_t address)
+{
+	(void)address;
+	return 0;
+}
+
 /* A route holds no reference in the model. */
 void
 route_release(
@@ -457,6 +485,21 @@ inet_interface_address(
 	else
 		*address = MODEL_ADDRESS_B;
 	return 0;
+}
+
+/* As ipv4_output, the next hop being the destination in the model (ws221-p008). */
+int
+ipv4_output_routed(
+	struct net_device *device,
+	uint32_t destination,
+	uint32_t next_hop,
+	uint8_t protocol,
+	uint32_t source,
+	struct packet_buf *packet)
+{
+	(void)next_hop;
+	(void)source;
+	return ipv4_output(device, destination, protocol, packet);
 }
 
 /* As ipv4_output: the model's device takes the source from its own address (ws221-p008). */

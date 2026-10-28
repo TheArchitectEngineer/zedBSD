@@ -374,6 +374,8 @@ static void tcp_listener_established(struct tcp_endpoint *child);
 static int tcp_port_in_use(const struct tcp_endpoint *candidate, int strict);
 static int tcp_allocate_port_locked(struct tcp_endpoint *endpoint);
 static int tcp_route(struct tcp_endpoint *endpoint, struct net_device **device, uint32_t *source);
+static int tcp_route_cached(struct tcp_endpoint *endpoint, struct net_device **device, uint32_t *source, uint32_t *next_hop);
+static void tcp_route_remember(struct tcp_endpoint *endpoint, struct net_device *device, uint32_t source, unsigned long generation);
 static int tcp_send_segment_at(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
 static int tcp_output_segment(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length, struct packet_buf *carrier);
 static int tcp_send_segment_carried(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, struct packet_buf *carrier);
@@ -1632,6 +1634,96 @@ tcp_route(
 }
 
 /*
+ * Takes the way the connection's last lookup found, when nothing has
+ * changed since: the bound interface (with a reference), the source and
+ * the next hop.  Reports 0 when there is none to take, and the caller
+ * looks it up.
+ */
+static int
+tcp_route_cached(
+	struct tcp_endpoint *endpoint,
+	struct net_device **device,
+	uint32_t *source,
+	uint32_t *next_hop)
+{
+	struct net_device *output;
+	unsigned long irq;
+	unsigned ifindex;
+	int valid;
+
+	/* What was kept, while the table and the addresses are as they were. */
+	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	valid = endpoint->tcp.route_cached != 0 &&
+	    endpoint->tcp.route_generation_seen == route_generation();
+	*source = endpoint->tcp.route_source;
+	*next_hop = endpoint->tcp.route_next_hop;
+	ifindex = endpoint->tcp.inet.ifindex;
+
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
+
+	/* Nothing kept, or something changed. */
+	if (!valid || ifindex == 0)
+		return 0;
+
+	/* The interface, when it is still there. */
+	output = net_device_find_by_index_ref(ifindex);
+	if (output == NULL)
+		return 0;
+
+	/* Succeeded: the way the segment goes. */
+	*device = output;
+	return 1;
+}
+
+/*
+ * Keeps the way a lookup found for the connection's later segments: the
+ * source and the route's next hop through the device, with the count of
+ * changes read before the lookup (generation).  A peer that is one of
+ * this host's own addresses, or one no route reaches through the device,
+ * is not kept.
+ */
+static void
+tcp_route_remember(
+	struct tcp_endpoint *endpoint,
+	struct net_device *device,
+	uint32_t source,
+	unsigned long generation)
+{
+	struct net_route route;
+	unsigned long irq;
+	uint32_t destination;
+	uint32_t next_hop;
+	int local;
+	int error;
+
+	/* A peer of this host's own goes round the loopback device: nothing kept. */
+	destination = endpoint->tcp.inet.remote_address;
+	local = inet_address_is_local(destination);
+	if (local)
+		return;
+
+	/* The next hop: the route's gateway, else the peer itself. */
+	error = route_lookup_device_ref(destination, device, &route);
+	if (error != 0)
+		return;
+	next_hop = destination;
+	if (route.gateway != 0)
+		next_hop = route.gateway;
+	route_release(&route);
+
+	/* Kept for the segments after, with the count it holds for. */
+	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	endpoint->tcp.route_cached = 1;
+	endpoint->tcp.route_generation_seen = generation;
+	endpoint->tcp.route_source = source;
+	endpoint->tcp.route_next_hop = next_hop;
+
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
+}
+
+/*
  * Finds the output device (NULL: the route's) and the source address for
  * an IPv6 endpoint's peer (ws130-p003): the bound interface, or the one a
  * link-local peer is on, and the bound address or the one chosen (RFC 6724),
@@ -1928,7 +2020,10 @@ tcp_output_segment(
 	struct packet_buf *packet;
 	struct tcp_wire *tcp;
 	struct in6_addr source6;
+	unsigned long generation;
+	uint32_t next_hop;
 	uint32_t source;
+	int routed;
 	uint16_t checksum;
 	uint16_t window;
 	uint16_t mss;
@@ -1955,11 +2050,24 @@ tcp_output_segment(
 	source = 0;
 	mss = TCP_RECEIVE_MSS;
 	ipv6 = inet_socket_speaks_ipv6(&endpoint->tcp.inet);
+	routed = 0;
+	next_hop = 0;
 	if (ipv6) {
 		error = tcp6_route(endpoint, &device, &source6);
 		mss = TCP_RECEIVE_MSS6;
 	} else {
-		error = tcp_route(endpoint, &device, &source);
+		/*
+		 * The way the connection's last lookup found, while nothing has
+		 * changed since; else a lookup, kept for the segments after.
+		 */
+		routed = tcp_route_cached(endpoint, &device, &source, &next_hop);
+		error = 0;
+		if (!routed) {
+			generation = route_generation();
+			error = tcp_route(endpoint, &device, &source);
+			if (error == 0)
+				tcp_route_remember(endpoint, device, source, generation);
+		}
 	}
 	if (error != 0) {
 		packet_buf_free(carrier);
@@ -2058,8 +2166,12 @@ tcp_output_segment(
 	checksum = net_checksum_pseudo(source, endpoint->tcp.inet.remote_address,
 	    IPPROTO_TCP, packet->data, packet->length);
 	wire_put16(tcp->checksum, checksum);
-	error = ipv4_output_sourced(device, endpoint->tcp.inet.remote_address,
-	    IPPROTO_TCP, source, packet);
+	if (routed)
+		error = ipv4_output_routed(device, endpoint->tcp.inet.remote_address, next_hop,
+		    IPPROTO_TCP, source, packet);
+	else
+		error = ipv4_output_sourced(device, endpoint->tcp.inet.remote_address,
+		    IPPROTO_TCP, source, packet);
 	net_device_release(device);
 
 	/* Reports the failure. */
@@ -4655,6 +4767,9 @@ tcp_connect(
 	endpoint->tcp.send_next = tcp_initial_sequence(endpoint->tcp.send_next);
 	endpoint->tcp.send_unacknowledged = endpoint->tcp.send_next;
 	endpoint->tcp.state = TCP_SYN_SENT;
+
+	/* A new peer's way is looked up afresh. */
+	endpoint->tcp.route_cached = 0;
 
 	/* The SYN offers window scaling; the SYN-ACK says whether the peer takes it. */
 	endpoint->tcp.wscale_offered = 1;

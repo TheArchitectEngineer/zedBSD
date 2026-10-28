@@ -70,5 +70,15 @@ int
 route_ioctl(
 	unsigned long request,
 	uintptr_t argument);
+/*
+ * The changes of the table and of the interfaces' addresses, counted: a
+ * lookup's result read with the count stands while route_generation()
+ * returns the same value.  route_changed() counts one (the interfaces'
+ * code calls it when an address changes).
+ */
+void
+route_changed(void);
+unsigned long
+route_generation(void);
 
 #endif
