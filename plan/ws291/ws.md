@@ -114,3 +114,13 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   飛ばす試し）→ 案 E（libvulkan の Wayland の直の present、Q1 へ案）、executor だけの push の inline と execute_draw の state の差分。
   機械: NVMe の zedBSD（kernel vmunix-logo2 = この節の build、amdrdnactl に watch）で idle、guard は止めた。今日の P2 の SwitchBot の入れ直しは
   11:04:25 が 6 回目。
+
+## 2026-10-28 q1653（P2、worktree p2-ws291f）
+
+- 再開点（2026-10-28 16:45 P2）: [phase006](phase006/phase.md) の「q1653」節。commit: 8e4463127（push の領域・draw の state の差分）、b93e355ea
+  （audit の 'mapped'）、b4897a17b（案 1 swapchain +1 枚）、d162d6700（案 2 直の encode）、6ac6d3754（表の再利用）、2ff3d0c73・e27a16d15・53213c001
+  （measure.sh timing・cfg、soak.sh、guard.sh の dmesg）、b113329f3（dedicated-host の試験の直し）、141ce391d（案 3a Reset・Begin を head に）、
+  142fd7b88（SMU: memory 側の feature の既定を off、hang の mark、実験の memory_allow）。
+- 分かった事: bench の big-N・subs-N は cfg の amdrdna.vk.timing の上乗せ込みだった（外して取る）。SMU の idle の停止は memory 側の feature（UCLK 固定）
+  が原因（対照 40 分 0 回、あり 16・20 分で停止）、固定の後も DCN の force allow を残すと 40 分 0 回。既定は安全のため off（UCLK 100 MHz）。
+- 次: (B) の長い soak の後に memory 側の既定を戻すかを Q1 と決める。その後に案 3b・4・5（phase006 の設計）。
