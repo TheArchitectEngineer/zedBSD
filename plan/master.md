@@ -23,8 +23,8 @@
 | P2 | q1663 cleared（returned、merge d6685c55e、次はユーザーの指示） | [ws291](ws291/ws.md) p006 の続き: 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3 | 10.0.10.3 |
 | P3 | q1664 in-progress | [ws221](ws221/ws.md) p002〜p009: §9 は全部推し（ユーザーの回答「全部 推しで (推し)」） | VF2（10.0.30.2）が主、5330 は従、相手は 10.0.10.2 |
 | P4 | q1665 in-progress | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
-| P5 | q1666 in-progress | 詳細の決まっていない WS の設計: code は書かない | — |
-| P6 | q1667 in-progress | WS223・WS282〜WS284・WS243・WS296 の実装: 試験なし、main に merge しない、incomplete のまま | — |
+| P5 | q1666-i02 in-progress | 詳細の決まっていない WS の設計: code は書かない | — |
+| P6 | q1667-i02 in-progress | WS223・WS282〜WS284・WS243・WS296 の実装: 試験なし、main に merge しない、incomplete のまま | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
 <!-- master:agents:end -->
