@@ -148,3 +148,4 @@ Future Work は実行を許可しない。
 | F-WS308-p005 | WS308 p005: user の buffer の pin を vmspace ごとの rwlock にし、VM の metadata の mutex の眠り（cached の pin で取りの 11〜14%）を無くす | 2026-10-28 ユーザー「後回し（Future Work）」。乱読み QD32 は Debian の 99% に届いた後 |
 | F-GPU-console-return | Keiland が終わり GPU の使用を終える時に、/dev/gpu0 の scanout を console（text-display）の backend に切り替える | 2026-10-28 ユーザー（WS290 の boot framebuffer の解放の議論、「後者は今回はやらず、future workにすればいいです」） |
 | F-GPU-panic-display | kern_fatal（panic）の時に GPU の driver が表示を出す hook（案 kern_panic_display_register） | 2026-10-28 ユーザー「panic は後で」 |
+| F-WS308-fork | vmspace_fork が「vmspace の全ての fault が落ち着くまで」待ち、layout の変化で最初からやり直すので、fault と munmap・mprotect が続く間 fork が飢える（20〜40 s に 2〜22 回）。直すなら fork の間 fault の新規を止めるなどの設計の変更 | 2026-10-28 WS308（P1 の iostress）、Q1 の判断で後回し |
