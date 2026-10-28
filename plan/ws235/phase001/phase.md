@@ -118,7 +118,8 @@ RDNA 機の枠（P1、06:20〜07:05 の予定）を 06:19 に早く返した（l
 3. ring と割り込み: RX・TX の ring（RTL8127 は v2 の descriptor、他は v1）、1 queue、1 vector、network stack への接続（offload 無し、stack に口が無い）。
 4. 実機の確かめ（共通の段）: link（両側）、DHCP か static、ping、ssh、TCP の転送。
 5. RTL8127 の拡張: 多 vector の MSI-X（link・TX・RX の queue）、RSS と複数の RX queue、割り込みの抑え（moderation）、RX の zero copy、PCIe の上限（約 7 Gbit/s）に近づける。
-   checksum・TSO の offload は stack の口（kern/net）が要るので、driver の側の用意と計測までにし、口は WS221 と組で Q1 に諮る。
+   checksum・TSO の offload は stack の口（packet-buf・net-device の flag、kern/net の変更）が要る。口は WS221 p010（10GbE の TCP、P3）で設計する（Q1 の判断、2026-10-29）。
+   driver はまず offload 無しで動かし、口ができたら p006 で driver の側を足す（p006 の依存）。
    net の worker は 1 本なので、7 Gbit/s に届かない時の律速が driver か stack かを profile で分けて記録する。
 6. 他の chip の表（8125・8125B・8125D・8126、未確かめ）。
 7. 規約の全文の見直し。
@@ -140,7 +141,7 @@ RDNA 機の枠（P1、06:20〜07:05 の予定）を 06:19 に早く返した（l
 - **stack に checksum・TSO の offload の口が無い**（packet-buf・net-device に flag が無い）。driver の共通の段では offload を使わない。offload・TSO・
   複数の RX queue を活かす口は kern/net の変更で、この WS の範囲の外（WS221 の TCP の改善と組で Q1 へ。この WS の拡張の段では driver の側の用意まで）。
 - PCI: `drv_pci_driver_register`（ID の表）、`drv_pci_device_claim_bar`・`map_bar`（NOCACHE）・`enable_memory`・`set_bus_master`、
-  `drv_pci_device_config_read32`・`write32`（0x70c・0x890 の拡張の config 空間に届くかは p002 で確かめる）、
+  `drv_pci_device_config_read32`・`write32`（pcat は offset 256 以上を ACPI の ECAM で読み書きする、`src/drivers/pci/pci-pcat.c:192`。0x70c・0x890 に届く事の実機の確かめは p002）、
   `drv_pci_device_allocate_irqs`（MSI-X・MSI・INTx、min・max の本数）・`establish_irq`（handler は割り込みの文脈、`int h(void *)`）。手本は intel-ax211-pci.c・pci-nvme.c（1 vector）。
 - DMA: `drv_pci_device_dma` → `drv_dma_alloc_coherent`（ring、256 byte 揃え）。
 - 待ち: `kern_usleep_range`（短い busy wait）、`sched_sleep`（ms）。lock は `spin_lock_irqsave`（割り込みと共有）・`mutex`。log は `kern_logf`。
