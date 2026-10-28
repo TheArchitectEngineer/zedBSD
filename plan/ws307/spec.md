@@ -3,9 +3,9 @@
 # WS307 インストーラの仕様
 
 - 親: [WS307](ws.md)。作成: [ws307-p001](phase001/phase.md)（P4、2026-10-28）。
-- 状態: **確定**（ユーザーの確認事項 U1〜U29 は全て回答済み、§15 に原文。design-reviewer の 1 回目・2 回目の指摘は §17 で反映済み。実装の Phase の表は ws.md）。
+- 状態: **確定**（ユーザーの確認事項 U1〜U29・J1〜J4 は回答済み、§15 に原文。J5（J1 の方法）は Q1 に確認中で、本文は推しの形で書いた。design-reviewer の 1〜3 回目の指摘は §17 で反映済み。実装の Phase の表は ws.md）。
 - 正はユーザーの原文（[ws.md](ws.md) の「ユーザーの指示と希望の仕様」）。この文書は原文のブラッシュアップで、原文と食い違えば原文が正。
-- 調査の出典は file:行（基点 main 5300ea917）。
+- 調査の出典は file:行（基点 main 5300ea917。3 回目のレビューの反映は main d483706d4 で確かめた）。
 
 ## 1. 範囲
 
@@ -19,7 +19,7 @@
 
 | 語 | 意味 |
 | --- | --- |
-| live の system | installer が動いている system（導入元。`make installer-image` で作った USB の image、§11.2） |
+| live の system | installer が動いている system（導入元。`make installer-image` で作った USB の image、§11.2）。live の利用者は `user` で、password は公開しない（J1、§9.1） |
 | 導入先 | 選ばれた disk と、その上の partition |
 | unit | `/opt/installer` に置く tarball の単位。Base・Desktop・Firmware の 3 つと、`userland/packages/` の package ごと |
 | helper | root の権限で disk の操作と展開を行う program（`install-admin`、§9） |
@@ -29,7 +29,7 @@
 ## 3. 全体の構成
 
 ```text
-installer（Keiland のアプリ、live の session の利用者 `user` で動く、U26）
+installer（Keiland のアプリ、live の session の利用者 `user` で動く、U26。password は非公開、J1）
   │ 画面・検査・計画の組み立て（disk には触らない）
   │ stdin/stdout の pipe（行の protocol、§9.2）
   ▼
@@ -92,7 +92,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 
 - 表示: partition の一覧（slot・開始・大きさ・型の名前・label・「新規」「未使用」の印）と空き領域の行。下に「削除」「作成」。
 - 操作は押した時にその場で disk の partition の表に書く（U2 の回答「ボタンでその場で書く」）。手順は §7.1:
-  - 画面に入った時、1 回だけ「この画面の削除・作成はその場で disk に書きます。キャンセルしても元に戻りません」を出す。最初に書く操作の前に helper の session を始める（§9。installer の image では password を聞かない、U26）。
+  - 画面に入った時、1 回だけ「この画面の削除・作成はその場で disk に書きます。キャンセルしても元に戻りません」を出す。最初に書く操作の前に helper の session を始める（§9。helper は password を聞かない、U26。live の利用者の password は非公開、J1）。
   - **削除**: 選んだ partition を消す。確認の dialog（partition の番号・大きさ・型・label と「中身は消えます」、`KL_BUTTON_DANGER`）の後に書く。mount 中の partition（live の system が使っている物、helper が外せない物）は削除の button を無効にし理由を出す。
   - **作成**: 大きさだけを聞く（`kl_field`、MiB・GiB の単位、既定は最大の空き。ESP を自動で作る時は最大の空きから ESP の 512 MiB と境界の分を引いた値）。置き場所は大きさが入る最初の空き（LBA の小さい方）、開始と大きさは 1 MiB に揃える。型は zedBSD 独自の「未割り当て」（U3 の回答、§5.3）、label は無し。確認の dialog は出さない（既存の data を消さないため）。書いた後、helper は新しい partition の先頭と末尾の 1 MiB を 0 で埋める（diskpart は data の sector を消さない、`docs/reference/block-administration.md:60`。前の image の FAT と `zedbsd.cfg` が残ると、loader の候補になり起動できるように見えるため）。
   - **ESP の自動作成**: 作成の時、disk に ESP（型 `C12A7328-F81F-11D2-BA4B-00A0C93EC93B`）が無ければ、新しい partition の前に ESP（§5.4 の 512 MiB）を同じ空きに作り、`mkfs -t fat32` で format する。ESP と新しい partition の両方が入らない、または使っている entry が 15 以上（diskpart は使っている entry を 16 までしか持てない、`userland/base/diskpart/main.c:401`）の時は、何も書かずに作成の失敗を出す。表を書いた後に 0 埋めか ESP の format が失敗した時は、作った 2 つの entry を batch の削除で 1 回で消す書き込みを試み、作成の失敗として出す（消せなければ、その状態を出す）。
@@ -156,9 +156,9 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
   - root の password と確認。
   - 自動 login（`kl_switch`、既定は入。Desktop を入れない時は無効）。
   - hostname（既定 `zedbsd`、U27 の回答。英小文字・数字・`-`、63 文字まで）。
-- 作る利用者は管理者（wheel）と network の group に入れる（今の既定の利用者と同じ、`userland/base/etc/group:1`）。
+- 作る利用者は管理者（wheel）と network の group に入れる（既定の利用者と同じ、`userland/base/etc/group:1-2`）。利用者の名前と同じ名前の group（gid 1000）も持つ（既定の利用者の `kei:x:1000:` の行、`userland/base/etc/group:12`。p002 で `user:x:1000:` になる）。
 - 検査: 名前が規則に合い、`root` や base の system の利用者の名前でない。password が空でなく、確認と一致する。
-- 導入先の設定（§7.2 の段 7）: base の unit の既定の利用者（U26 の後は `user`、uid 1000。今の tree では kei）を入力の利用者に置き換える。account の core は利用者の名前を変えられない（`userland/base/account-admin/main.c:1288-1290` の user-modify は表示名・shell・group・lock だけ）ので、名前が既定の利用者と違えば既定の利用者を消し、uid 1000 で新しい利用者を足し、`/etc/group` の wheel・network の行（`userland/base/etc/group:1-2`）と `/home` の所有者を直す（同じ名前なら password と表示名だけを変える）。root の password を設定する。自動 login が入なら `/etc/keiland/autologin` に名前、切なら空にする（`userland/desktop/sessiond/main.c:201-217`）。password の hash は `account-admin` と同じ共有の account の core で作る。hostname は S7a の欄（既定 `zedbsd`、U27）の値を `/etc/rc.conf` の hostname に書く。
+- 導入先の設定（§7.2 の段 7）: base の unit の既定の利用者（p002 の後は `user`、uid 1000。今の tree では kei）を入力の利用者に置き換える。account の core は利用者の名前を変えられない（`userland/base/account-admin/main.c:1288-1290` の user-modify は表示名・shell・group・lock だけ）ので、名前が既定の利用者と違えば既定の利用者を消し、uid 1000 で新しい利用者を足し、`/etc/group` の wheel・network の行（`userland/base/etc/group:1-2`）と既定の利用者の名前の group（gid 1000、`:12`）の名前、`/home` の所有者を直す（同じ名前なら password と表示名だけを変える）。root の password を設定する。自動 login が入なら `/etc/keiland/autologin` に名前、切なら空にする（`userland/desktop/sessiond/main.c:201-217`）。password の hash は `account-admin` と同じ共有の account の core で作る。hostname は S7a の欄（既定 `zedbsd`、U27）の値を `/etc/rc.conf` の hostname に書く。
 - 遷移: 戻る → S7、次へ → S8。
 
 ### 4.8 S8 最終確認
@@ -183,7 +183,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 ### 4.11 S11 終了
 
 - 表示: 完了の message、入れた物、導入先から起動する方法（§5.8）: Boot#### を BootOrder の末尾に作るので（U15）、既定の起動の順は変わらない。そこで「再起動して firmware の boot menu で『zedBSD』を選ぶ（firmware の設定で順を変えれば既定にできる）」を出す。loader を `\EFI\ZEDBSD\` に置いた時は U5 の回答の文「firmware の boot menu で選ぶ」を必ず出す。Boot#### を作れなかった時は「boot menu で導入先の disk（または `\EFI\ZEDBSD\BOOTX64.EFI`）を選ぶ」、作った利用者の名前。
-- 「再起動」: `kl_system_power_action(…, KL_POWER_REBOOT, …)`（`userland/desktop/include/keiland/keiland.h:2293`。sessiond が root か wheel の session だけに許す、`sessiond/power-rules.c:8-16`。kei は wheel、`userland/base/etc/group:1`）。
+- 「再起動」: `kl_system_power_action(…, KL_POWER_REBOOT, …)`（`userland/desktop/include/keiland/keiland.h:2293`。sessiond が root か wheel の session だけに許す、`sessiond/power-rules.c:8-16`。live の利用者 `user` は wheel、`userland/base/etc/group:1`（p002 の後））。
 - 「閉じる」: installer を閉じ、live の desktop をそのまま使える（原文）。
 
 ## 5. disk と partition の規則
@@ -227,7 +227,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 - ESP に置く物: loader（`BOOTX64.EFI`、今 29 KiB）と `zedbsd.cfg`（U19 の回答「ESP（FAT）のまま」）。kernel は root の UFS の `/boot/vmunix`、logo は `/boot/logo.ppm`（U20 の回答）に置き、loader が UFS から読む（§5.10、2026-10-28 ユーザーの追加の指示「ブートローダがUFSからカーネルをロードできるようにしたいです」）。
   - U4・U4b の「ESP に全部」は、この追加の指示で kernel（と logo）を除いた形に読み替える（Q1 の中継の解釈）。ESP の大きさ 512 MiB は U4 のまま。別の ZEDBSD の FAT は作らない（WS238 の今の image の形とは違う。WS238 は ESP に loader だけ、kernel・設定・logo は Windows・macOS で mount できる ZEDBSD の FAT32、`plan/ws238/ws.md`）。
   - loader は同じ disk の全ての FAT から root の `/zedbsd.cfg` を探す（`bootloader/uefi/bootx64.c:1815` 付近）ので ESP の root に置けば足りる。
-- 「十分な ESP」（S4 の検査）: 型が ESP、loader が受け付ける FAT（FAT16 か FAT32、serial が 0 でない、block の大きさが loader の扱える物、`bootloader/uefi/bootx64.c:1555`）、かつ
+- 「十分な ESP」（S4 の検査）: 型が ESP、loader が受け付ける FAT（FAT16 か FAT32、serial が 0 でない、block の大きさが loader の扱える物、`bootloader/uefi/bootx64.c:1555`。今の loader の FAT の探索は 512 byte の block だけを受け付ける、`bootloader/uefi/volume-discovery.c:854-862`。4096 は p008 の後、§5.9）、かつ
   - 計画で新しく作る ESP: 上の大きさ。
   - 既存の ESP: 空き ≥ 置く物の合計＋16 MiB（`/opt/installer` の index に置く物の大きさを書く。旧 zedinst の `max(64 MiB, loader＋kernel＋FAT の overhead＋16 MiB)` に倣う。kernel が UFS に移るので ESP に要る量は loader と cfg だけになる）。既に `zedbsd.cfg` がある disk は §4.3 で「partition を選ぶ」を無効にする（§13）。 ESP の root と `\EFI\ZEDBSD\` に、書く名前（`zedbsd.cfg`・loader）の file が既にあれば「十分な ESP」でない（他の OS の file を上書きしない）。
 - 1 つの disk に ESP が複数ある時は、slot の番号の小さい方から最初の「十分な ESP」を使い、S8 にどの ESP かを出す。十分な ESP が 1 つも無ければ U16 の規則（「partition を選ぶ」を無効）。
@@ -276,8 +276,10 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
   - `diskpart`: GPT の初期化は既に 512・4096 を扱う（`dp_initialize_gpt`、`userland/base/diskpart/table.c:235-310`）。add・delete・batch・1 MiB 境界の計算を 4096 で確かめる。
   - kernel: partition の reload は 4096 を扱う（`src/kern/partition.c:329-334`）。しかし FAT（`src/drivers/fs/fat.c:911`・`:963`・`:11842`）、UFS（`src/drivers/fs/ufs.c:60` の `UFS_SECTOR_SIZE 512`・`:2825`・`:5452`）、swap の partition（`src/kern/vm/swap-source.c:246`）、swap file の extent（`src/kern/file.c:2920`）は今 512 byte の sector だけを受け付ける。これらを直すのは確実な kernel の作業で、別の Phase（ws.md の p006）にする。HAL の API には触れない見込み。
   - native UFS の fragment は 1024 byte（`userland/base/mkfs/ufs-format.c:26`）で 4096 byte の sector より小さい。4096 の disk では fragment 4096 の profile を使う（driver の read-modify-write より単純で、loader の UFS の reader（§5.10）も sector と fragment の換算だけで済む。inode の密度は §5.6 の検査で確かめる）。技術の判断（§16 T19）。
-  - probe は p006 の前は 4096 の disk の fs を識別できないので、その間 4Kn の disk は選べない（灰色と理由）。
-  - loader: 4096 byte の block を読める（`bootloader/uefi/bootx64.c:41`・`:1425-1437`、buffer 4096）。OVMF で確かめる。
+  - **loader の FAT**（3 回目のレビューの blocker）: loader の FAT の探索は media の block が 512 byte の物だけを受け付け（`bootloader/uefi/volume-discovery.c:854-862` の `supported_fat_block_size`、`:409-411` の `ZBL_UEFI_FAT_UNSUPPORTED_BLOCK_SIZE`）、BPB の sector は 512・1024 だけ（`:446-452`）。このままでは 4Kn の ESP の `zedbsd.cfg` が見つからず起動しない。p008 で、kernel の FAT（p006）と同じ契約で block・BPB の sector 4096 を受け付ける（`supported_fat_block_size` は「kernel の FAT の driver が受け付ける物」と揃える規則なので、p006 の後に変える）。読む buffer は今 4096（`bootloader/uefi/bootx64.c:41`・`:1425-1437`）。
+  - **firmware の FAT**: 導入先の loader そのものは firmware の FAT の driver が 4Kn の ESP から読む。OVMF が 4096 byte の sector の FAT32 を読めるかは未確認（3 回目のレビュー）。p008 の 4096 の段の最初に OVMF で確かめ、読めなければ Q1 に報告する（firmware の制限なので、4Kn の対応の範囲をユーザーに聞く）。
+  - **選べる時期**: probe は 4Kn の disk を、p005（道具）・p006（kernel）・p008（loader の FAT と UFS の reader の 4096）の全てが入るまで選べない disk として出す（灰色と理由）。
+  - p008 の 4096 の試験は p005・p006 の後（mkfs の 4096 の FAT32・UFS と kernel の 4096 が要る）。
 - 試験: QEMU の `-device nvme,logical_block_size=4096,physical_block_size=4096` と `usb-storage` の同じ設定の導入先に、全体・選ぶの両方で入れて起動する。
 
 ### 5.10 loader が UFS から kernel を読む（2026-10-28 ユーザーの追加の指示）
@@ -286,11 +288,24 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 - 今: UEFI の loader は firmware の FAT の driver（`EFI_SIMPLE_FILE_SYSTEM_PROTOCOL`）で cfg・kernel・logo を開く（`bootloader/uefi/bootx64.c:1563-1599` の cfg の探索、`:2865-2960` の `load_kernel` は cfg の FAT の `root->Open`）。UFS は読めない。future-work の F-014（UFS からの直接の load、2026-09-25 ユーザー）の UEFI の部分に当たる。
 - 作る物（実装の Phase、ws.md の p008）:
   1. **file の源の抽象**: loader の中で「開く・大きさ・offset からの読み」の 3 つの操作の口を作り、今の FAT（`EFI_FILE_PROTOCOL`）と新しい UFS の両方をその口で読む。`load_kernel`・`show_logo` はこの口を使う。
-  2. **UFS の reader**（読み取り専用、freestanding、`bootloader/common/` に置き BIOS の loader でも後に使える形）: superblock（offset 65536、magic `0x19540119`、`userland/base/mkfs/ufs-disk.h`）、cylinder group の inode の位置、256 byte の dinode、直接の 12 block と 1・2・3 段の間接 block、fragment、directory（`UFS_DIRBLKSIZ` 512）の名前の照合、path の成分ごとの lookup。symlink は辿らない（kernel の path に symlink があれば失敗）。拡張属性・journal は読まない。block の大きさ・sector の大きさ（512・4096、§5.9）の換算。範囲外の block 番号・循環・大きすぎる値は失敗にする（壊れた disk で loader を暴走させない）。
-  3. **root の partition の見つけ方**: cfg の `rootpart=` を loader も読む（今は kernel に渡すだけ）。`PARTUUID=` だけを受け付け（`PARTLABEL=` などは曖昧さを避けるため loader では拒む）、loader が起動した disk と同じ物理 disk の partition の handle のうち、device path の `HD()` の node の signature（GPT の PARTUUID）が一致する物を探し、`EFI_BLOCK_IO_PROTOCOL`（と要れば `EFI_DISK_IO_PROTOCOL`）で読む。0 個・2 個以上は失敗。
+  2. **UFS の reader**（読み取り専用、freestanding、`bootloader/common/` に置き BIOS の loader でも後に使える形）: superblock（offset 65536、magic `0x19540119`、`userland/base/mkfs/ufs-disk.h`）、cylinder group の inode の位置、256 byte の dinode、直接の 12 block と 1・2・3 段の間接 block、fragment、directory（`UFS_DIRBLKSIZ` 512）の名前の照合、path の成分ごとの lookup。symlink は辿らない（kernel の path に symlink があれば失敗）。拡張属性・journal は読まない。block の大きさ・sector の大きさ（512・4096、§5.9）の換算。範囲外の block 番号・循環・大きすぎる値は失敗にする（壊れた disk で loader を暴走させない）。3 回目のレビュー #10 の規則:
+     - 位置の換算: UFS の `fsbtodb` は 512 byte の単位（`userland/base/mkfs/ufs-disk.h`）。reader は fragment の番号から byte の offset を出し、それを media の `BlockSize` で割る（512 の単位のまま `BlockIo` の LBA に使わない）。fragment の大きさ（`fs_fsize`）が `BlockSize` より小さい volume は拒む（4096 の disk の fragment 1024 は読まない、§5.9 の fragment 4096 の profile）。
+     - 範囲: superblock の `fs_size`（fragment の数）×`fs_fsize` が partition の大きさ（`Media->LastBlock`＋1 の block）以下であること。block の番号が `fs_size` 以上なら失敗。
+     - 穴: block の番号 0（直接・間接のどれも）は穴で、0 の byte として読む（kernel の file の大きさの中の穴、sparse の kernel は無いが壊さない）。
+     - byte order: superblock の magic が逆の byte order の volume は拒む（kernel は両方を読む、`src/drivers/fs/ufs.c:2524-2532`。loader は native（little endian）だけ）。
+  3. **root の partition の見つけ方**: cfg の `rootpart=` を loader も読む（今は kernel に渡すだけ）。`PARTUUID=` だけを受け付け（`PARTLABEL=` などは曖昧さを避けるため loader では拒む）。
+     - 列挙: 今の cfg の探索は `EFI_SIMPLE_FILE_SYSTEM_PROTOCOL` の handle だけを列挙する（`bootloader/uefi/bootx64.c:1735`）。firmware は UFS に SimpleFS を付けないので、`LocateHandleBuffer(ByProtocol, EFI_BLOCK_IO_PROTOCOL)` で全ての block の handle を列挙し、device path の末尾が `HD()` の node（partition）の物を候補にする（3 回目のレビュー #9）。firmware が型の分からない GPT の partition に BlockIo の handle を作るかは未確認で、p008 の最初に OVMF で確かめる。
+     - 照合: cfg の PARTUUID の文字列（大文字・小文字を区別しない）を GPT の binary の GUID（先頭の 3 つの field は little endian の混ざった byte order）に直し、`HD()` の node の signature（16 byte）と byte で比べる。
+     - 選び方: loader が起動した disk（自分の image の device path の disk の部分）と同じ物理 disk の候補で一致する物がちょうど 1 つなら、それを `EFI_BLOCK_IO_PROTOCOL`（と要れば `EFI_DISK_IO_PROTOCOL`）で読む。同じ disk で 0 個・2 個以上は失敗。
+     - 他の disk の重なり: kernel は全ての disk から PARTUUID を探し、重なれば EEXIST で root を mount しない（`src/kern/block-identity.c:182-188`。導入先を dd で写した disk を付けた時など）。loader は他の disk の候補にも同じ PARTUUID があれば、kernel の失敗を待たずに `A64 KERN UFS duplicate PARTUUID` を出して止まる（§16 T21）。
   4. **cfg の書き方**: `kernel=rootpart:/boot/vmunix`（`rootpart:` の接頭辞は「`rootpart=` の partition の UFS の絶対 path」）。接頭辞の無い `kernel=vmunix` は今どおり cfg の FAT の相対 path（今の image・WS238 の形はそのまま動く）。`logo=` も同じ規則（U20）。今の disk image（hdd-image・installer の image）は WS238 の形のまま（U21 の回答「image は今のまま」。loader は両方の書き方を読む）。
+     - 今の cfg の parser は kernel の path の `:` を拒む（`bootloader/uefi/zedbsd-config.c:620-624`、「the kernel is on the boot volume」）。p008 は `rootpart:` の接頭辞だけを先に切り出して別の種類の path として持ち、残りの path の検査（`..`・`:`・長さ）は今の規則のまま当てる。
+     - `logo=` の path の検査は BIOS の loader と共有の `bootloader/common/logo-path.c` の `logo_path_character` が `:` を拒む。`rootpart:` の接頭辞は UEFI の loader の側で切り出し、共有の文字の規則は変えない。BIOS の loader は `rootpart:` を今どおり不正な path として拒み、画面に理由を出して止まる（UFS を読まない。p008 で BIOS の loader の host の試験か QEMU の BIOS で、拒み方が今の不正な path と同じことを確かめる）。
   5. **失敗**: 今の方針（隠れた fallback 無し、`docs/howto/boot-and-storage.md` の「a missing file does not select a hidden direct-kernel fallback」）どおり、`A64 KERN UFS <理由>` を画面に出して止まる。FAT の kernel に戻らない。
-  6. **一貫性**: loader は journal を再生しない。UFS の上の kernel は、置いた後に sync して journal が checkpoint された状態でだけ正しく読める。installer は段 8 で unmount と sync をする。kernel の更新（Future）は新しい名前に書いて sync してから rename する規則にする。superblock の clean の印が無い（前の起動が落ちた）時も読むが、警告を 1 行出す。
+  6. **一貫性**: loader は journal を再生しない。UFS の上の kernel は、その内容が home の位置に書かれた状態でだけ正しく読める。installer は段 8 で unmount する（unmount で checkpoint し clean の印を付ける）。
+     - clean の印で警告しない（3 回目のレビュー #8）: 今の kernel は clean の印を unmount の時だけ立て、mount で消し（`src/drivers/fs/ufs.c:18044`・`:18608`）、shutdown は unmount せずに sync する（`src/kern/shutdown.c:117-128`、`src/kern/mount.c:946`）。毎回の起動で印が無いので、印での警告は常に出てしまう。警告は出さない。
+     - kernel の更新の規則（Future の更新の道具、と導入後に利用者が手で kernel を替える時の文書）: 新しい名前に書く → `fsync` → `rename` → `sync`。j3 の journal は封じた後に cache から home の位置を書く（`ufs.c:20719-20760`・`:20830`）ので、`sync` が home の位置まで書き終えることを p008 で確かめる（未確認。書き終えないなら、規則に unmount 相当の checkpoint を足す案を Q1 に出す）。
+     - 最後の j3 の commit を loader が重ねて読む（journal の再生の読み取り専用の版）は Future（§13）。
 - HAL・kernel: kernel は今どおり `rootpart=` で root を mount する。loader → HAL の handoff は変えない（kernel の位置と大きさは今の handoff のまま）。HAL の API に触れない。
 - 試験: host で、`mkfs`（`mkfs -t ufs --profile=native` を file に）・`zedimage-host` で作った UFS に大きな kernel（間接 block を使う 20 MiB 以上）・fragment・深い directory を置き、reader で読んで byte を照らす。壊した superblock・inode・間接 block で失敗すること。QEMU の OVMF で、ESP（loader・cfg）＋ root の UFS（`/boot/vmunix`）の disk を 512・4096 の sector で起動して login prompt（boot-test.sh）。
 
@@ -318,7 +333,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
   - set-user-ID・set-group-ID の file は build の許可の一覧（`account-admin`・`su`・`sudo`・`passwd`・`newgrp`・`ping` など、各 Makefile の mode から作る）と照らし、一覧に無い物があれば build を失敗させる。helper も展開の時に同じ一覧（index にある）と照らす。
 - 展開の安全: 絶対 path・`..` の成分・hard link・device の node・FIFO は拒む。symlink は作るだけで辿らない。file は path の成分ごとに `openat(…, O_NOFOLLOW)` で開き、先に作った symlink の下に書かせない。ustar の名前・link 先の 100 byte の上限は pax の `x` header で越えるか、build の検査で拒む。
 - 改ざんの検出: `/opt/installer` は live の root（読み書きのできる UFS）にある。そこで:
-  - index の SHA-256 を install-admin の binary に build の時に埋め込む。helper は index を 1 回だけ memory に読み、その写しで hash を照らしてから解釈する。
+  - index の SHA-256 を install-admin の binary に build の時に埋め込む（`-D` の定数）。index は install-admin を含まない全部入りの tree から作るので循環しない（build の順は §6.2）。helper は index を 1 回だけ memory に読み、その写しで hash を照らしてから解釈する。
   - tarball は、展開に使うのと同じ fd から読みながら hash を取り、終わりで index の値と照らす（照らしてから別に読み直さない。読み直すと間に書き換えられうる）。合わなければ失敗にする。展開した物はまだ公開していない（段 9 の前）ので起動できる状態にならない。
   - boot の file（loader・kernel・logo）は、hash を取りながら一時の名前に写し、合えば rename する。
   - `/opt/installer` の file と親の directory は、`fstat` で所有者 0・group と other の書き込み無しを確かめる。
@@ -333,9 +348,17 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
   1. **file の manifest**: 登録の macro が package ごとの変数（写す file・subtree・link）を持ち、root の tree を作る時に「導入先の path → 持ち主の package → mode」の manifest（`$(BUILD)/rootfs.manifest`）を書く。sysroot の開発の file は、それを sysroot に入れた package（libc・base の library は base、curl の header は `network/curl` など）に付ける。
   2. **重なりの規則**: 同じ path を 2 つの package が入れる時、中身が同じなら依存される側（例 clang と base の libc の header は base）に付け、違えば build を失敗させる。
   3. **unit**: manifest の持ち主の package の menu（第 8 引数）で振り分ける: base → `base`、desktop → `desktop`、firmware → `firmware`、`userland/packages/<category>/<name>` → `<category>-<name>`。platform の `--file`（`rc.conf`・`os-release` など）は `base`。menu が tests・x11-applications・x11-servers の package と `ZEDBSD_EXTRA_FILES`・試験の上書きは、`installer-image` の build で選ばない（U24 の回答「tests・X11 無し」）。
-  4. **検査**: 全ての file がちょうど 1 つの unit に属し、unit の和が root の tree と一致する。
+  4. **検査**: 全ての file がちょうど 1 つの unit に属し、unit の和が全部入りの tree（installer と install-admin を含まない、下の順の 1）と一致する。live の tree には当てない（live の tree は installer・install-admin・`/opt/installer` と live だけの上書きを持つ）。
 - package の header（U13 の回答「WS307 で header も入れる」）: 今 header を入れない package（gtk4・cairo・pango・glib・harfbuzz・fribidi・fontconfig・freetype・gdk-pixbuf・graphene・libepoxy・libxkbcommon・pixman・libpng・libtiff・libjpeg-turbo・libavcodec・libcxx の `c++/v1` など。`userland/packages/libs/fontconfig/Makefile:115-117`、`desktop/gtk4/Makefile` の「development packages later」の注記、`multimedia/libavcodec/Makefile:117-118`）にも、stage の `usr/include`・`usr/lib/pkgconfig/*.pc`・開発の symlink（`lib*.so`）をその package の file として入れる。`.pc` の `prefix` は導入先の `/usr`。受け入れ: 導入先で GTK4 の小さな app を clang と `pkg-config gtk4` で build して動く。guest に pkg-config は無い（`userland/packages/` に無い）ので、外部の package として pkgconf（ISC の license）を `devel/pkgconf` に足し、Clang の項目の依存にする（U13 の「GTK4 の app を build できる」に要る手段、§16 T18）。
 - 1 つの BUILD で作る（§11.2 の `make installer-image`）: menuconfig の userland・package の選択に依らず、`installer-image` の決まった選択（base の全部、desktop の menu の全部、kernel の driver が選ぶ firmware、`userland/packages/` の amd64 の全 package。U22・U24 の回答）で root の tree（全部入り）を作り、その manifest から unit を作る。live の image の root は、manifest から `base`・`desktop`・`firmware` の unit の file と installer・install-admin・`/opt/installer` だけを取った別の tree から作る（package は live の system に入れない。tree を 2 回 build しない）。
+- build の順（3 回目のレビュー #2。index の hash を install-admin に埋め込むと「tree → manifest → unit → index → install-admin → tree」の循環になるため、全部入りの tree から installer・install-admin を除く）:
+  1. 全部入りの tree `$(BUILD)/installer/full`（installer の menu の package（installer・install-admin）を含まない）。
+  2. manifest（`$(BUILD)/installer/full.manifest`）。
+  3. unit（`$(BUILD)/installer/units/*.tar.gz`）と boot の file。
+  4. index（§6.3）と、その SHA-256。
+  5. install-admin を index の SHA-256 の `-D` で build、installer（app）を build。
+  6. live の tree `$(BUILD)/installer/live`: manifest の `base`・`desktop`・`firmware` の file を mode を正規化して写し、installer・install-admin・`/opt/installer`（index・unit・boot の file）と live だけの上書き（§11.2 の `/etc/shadow`・自動 login・session の設定）を足す。
+  - 検査 4 は 1 の tree にだけ当てる。live の tree には「1 の部分集合＋足した物の一覧」と一致することを当てる。
 - installer 自身（app と helper）と `/opt/installer` は、どの unit にも入れない（導入先に installer を残さない）。
 - base の全部を入れると fidoctl・passkey-fido2（base、menuconfig の既定は n）も入り、Base が `security/openssl` を要る（`userland/base/fidoctl/Makefile:12`、`userland/base/passkey-fido2/Makefile:15`）。その時 OpenSSL は依存で必ず入る（S7 で灰色）。
 
@@ -370,7 +393,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 5. **root の mount**: root を `/run/install-admin/target`（`/run/install-admin` は mode 0700）に nosuid・nodev で mount（展開する set-user-ID の file を live の system から使わせない）。
 6. **展開**: 計画の unit を依存の順（base が先）に、SHA-256 を確かめてから展開。進みを byte で報告。中止の要求は file の間で受ける。
 7. **設定**: `/etc/fstab`（swap file の時）、`/var/db/installer/`、swap file（§5.5）、利用者と root の password と自動 login（§4.7a）。live の system の `/etc` は写さない（base の unit の既定）。Desktop を入れない時は graphical の login を設定しない（`zedbsd.cfg` に `login=graphical` を書かない）。
-   - 既知の password を残さない: base の unit の `/etc/shadow` は root と kei に固定の hash を持つ（`userland/base/etc/shadow:1,5`）。helper は S7a の入力で root と利用者の hash を必ず書き換え、既定の利用者を入力の利用者に置き換える（同じ名前の時も password は入力の物）。書き換えた後、導入先の shadow の root・利用者の行が base の物と違うことを確かめる。
+   - 既知の password を残さない: base の unit の `/etc/shadow` は root と既定の利用者（今 kei、p002 の後 user）に固定の hash を持つ（`userland/base/etc/shadow:1,5`）。helper は S7a の入力で root と利用者の hash を必ず書き換え、既定の利用者を入力の利用者に置き換える（同じ名前の時も password は入力の物）。書き換えた後、導入先の shadow の root・利用者の行が base の物と違うことを確かめる。
    - OpenSSH を入れた時: package の `sshd_config` は `PermitRootLogin yes`・`PasswordAuthentication yes`・全ての address で待つ（`userland/packages/network/openssh/files/sshd_config:6,11,12`）。導入先では `PermitRootLogin no` に書き換える（§16 T14）。
    - 利用者の file の編集: 共有の account の core は `/etc` の path を固定で持つ（`userland/base/common/account.h:48-57`）ので、導入先の root を前提に開く形を足す（p009）。hostname は S7a の値（既定 `zedbsd`）。
 8. **root の unmount と sync**。
@@ -419,12 +442,17 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 ### 9.1 形
 
 - installer は利用者（live の session の `user`）で動き、権限を持たない（`docs/architecture/security.md:11-30` の原則）。
-- **password は聞かない**（U26 の回答、installer の image だけ）: security.md の「管理者は変更の時に自分の password を入れる」の例外。代わりに helper を呼べる者を次で絞る:
+- **live の利用者の password を公開しない**（J1 の回答「live の password を非公開に」。U26 の「user/user」は installer の image では password だけが変わる。利用者の名前は `user` のまま）。方法（J5 で Q1 に確認中。本文は推しの A で書く）:
+  - A（推し）: build ごとの乱数の password。`make installer-image` が live の tree の `/etc/shadow` の `user` の行に、build の中で作った乱数の password の hash を書き、平文はどこにも残さない（誰も知らない）。root の行は lock（`*`、今の release の shadow と同じ、`Makefile` の `$(BUILD)/gen/shadow`）。`user` の行を lock（`!`・`*`）にしないのは、sessiond の自動 login が lock の account を拒むため（`userland/desktop/sessiond/main.c:694-723`）。
+  - live の session は lock しない: compositor は login の session を入力の無い 10 分で lock する（`userland/desktop/wayland/main.c:33`・`:153-155`）。password を誰も知らないので、lock すると導入の途中でも戻れない。installer の image の session は idle の lock と、sleep・蓋の後の lock をしない（sessiond が compositor に `--lock-idle=0` を渡す口と sleep の設定を、installer の image の live の上書きの設定で入れる。p010）。System Menu の「lock」「log out」は installer の image では出さないか、「戻れません。再起動します」の確認にする（p010）。
+  - 帰結: live の利用者は `sudo`・`su` で root になれない（password を知らない）。live の system の root の道は helper だけになる。
+- helper は **password を聞かない**（U26 の回答「インストーラはsetuidのヘルパーを使うので、パスワード認証を不要にします。これは特別なインストーライメージのみです。」）: security.md の「管理者は変更の時に自分の password を入れる」の例外。代わりに helper を呼べる者を次で絞る:
   - helper は `make installer-image` の live の tree にだけ入れる（§11.1）。普通の image・導入先には無い。
-  - file の mode は 4550、所有者 root・group wheel（wheel の利用者だけが実行できる）。helper の中でも呼び出し元の real uid が wheel で、live の session の利用者（`/etc/keiland/autologin` の名前）であることを確かめる。
+  - file の mode は 4550、所有者 0:0（root、group wheel。wheel は gid 0、`userland/base/etc/group:1`）。wheel の利用者だけが実行できる（3 回目のレビュー #11。`account-admin` は 4555、`userland/base/account-admin/Makefile:8`）。kernel は実行の許可を egid と補助の group で見る（`src/kern/cred.c:122-140`、sessiond は `initgroups` で補助の group を付ける、`userland/desktop/sessiond/session.c:646`）。
+  - helper の中でも、`getgroups()` か egid に 0（wheel）があり、real uid が `/etc/keiland/autologin` の名前の利用者の uid と同じことを確かめる。
   - helper は起動の時に、自分に埋め込んだ index の hash と `/opt/installer/index` が合うこと（installer の image で動いていること）を確かめ、合わなければ何もしない。
-  - 受け入れる危険（U26 の決定の帰結として記す）: live の session の利用者として動く他の process（browser など）も、password 無しで helper を呼んで disk を書きうる。installer の image は導入のための使い捨ての system で、物理的に USB を挿せる者は既に disk を書けるので、この危険を受け入れる。
-- root の仕事は新しい set-user-ID root の helper `/usr/libexec/install-admin`（mode 4555、`account-admin` と同じ形の 1 つの仕事だけの program、`userland/base/account-admin/main.c:8-45`。呼び出し元が wheel かは helper が自分で確かめる）。
+  - 受け入れる危険（U26・J1 の決定の帰結として記す）: live の session の利用者として動く他の process（browser の中の web の内容など、遠隔の内容を含む）も、画面を通さず password 無しで helper を呼んで全ての disk を書きうる。live の password が非公開（J1）なので `sudo`・`su` の道は無く、helper がこの system の唯一の root の道になる。U26 でユーザーが helper の password を不要とした決定の帰結として受け入れ、次で狭める: helper は installer の image だけ、呼べるのは自動 login の利用者だけ、installer の image は導入のための一時の system とし、S1 と文書（p013）に「installer の image を普段の system として使わない（dd した installer の image を使い続けると、password 無しの root の helper が残る）」を出す。helper の呼び出し元を installer の process に絞る形（親の program の確かめなど）は確実に守れないので Future（§13）。
+- root の仕事は新しい set-user-ID root の helper `/usr/libexec/install-admin`（mode 4550、所有者 0:0。`account-admin` と同じ形の 1 つの仕事だけの program、`userland/base/account-admin/main.c:8-45`。呼び出し元が wheel かは helper が自分でも確かめる）。source は `userland/desktop/installer/admin/`（J2、§11.1）。
 - installer が helper を子として起動する（U6 の回答。zedBSD の UEFI PC だけの app なので compositor を通さない。Guardrail の「app 自身の機能のための OS の依存」、D14）。
 - 要求の種類:
   - `probe`: 読むだけ（disk・partition・ESP の空き・RAM・UEFI の起動か）。
@@ -451,10 +479,12 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 
 | 物 | source |
 | --- | --- |
-| installer（app） | `userland/desktop/installer/`（`ZEDBSD_USERLAND_PACKAGE`。menu が base・desktop などの時、platform は `*` に固定される（`Makefile:458`）ので、専用の menu の値（installer）にし、`make installer-image` だけが選ぶ。普通の image・Linux・FreeBSD の Keiland の build には入れない） |
-| install-admin（helper） | `userland/base/install-admin/`（base の program。Guardrail「userland/base は arch で有無を分けない」に従い全 platform で build するが、image に入れるのは `make installer-image` の live の tree だけ（installer の menu の値）。普通の image に password 無しで FAT を mount する set-user-ID root の program を置かない。UEFI でない system では `probe` が「対象外」を返す） |
+| installer（app） | `userland/desktop/installer/`（`ZEDBSD_USERLAND_PACKAGE`。menu が base・desktop などの時、platform は `*` に固定される（`Makefile:455`）ので、専用の menu の値（installer）にし、`make installer-image` だけが選ぶ。普通の image・Linux・FreeBSD の Keiland の build には入れない） |
+| install-admin（helper） | `userland/desktop/installer/admin/`（J2 の回答「userland/base の外へ移す (推し)」。`userland/base` の program は arch・platform で有無を分けず全部を root に入れる規則（`plan/guardrail.md` の「userland/base の program の有無」）なので、installer の image だけに入れる set-user-ID root の helper は base に置かない）。menu は installer、platform は amd64。account の core（`userland/base/common/account.*`）・format の共有の code は `account-admin` と同じく source として使う。UEFI でない system では `probe` が「対象外」を返す |
 | unit と index を作る道具 | `tools/build/`（host） |
 | image の target | `make installer-image`（2026-10-28 ユーザーの指示、§11.2）。menuconfig は kernel の config にだけ使う |
+
+- installer の menu の package（installer・install-admin）は SELECTABLE を n にし（menuconfig に出さない）、`make installer-image` の外の build で `ZEDBSD_USER_PROGRAMS` に入っていれば（手で書いた config.mk、`Makefile:513-519` の依存の展開は登録された package を何でも選ぶ）Makefile が error で止める（3 回目のレビュー #12。普通の image に password 無しの set-user-ID root の helper を入れない）。helper の index の hash の確かめ（§9.1）は 2 つ目の守り。
 
 ### 11.2 image
 
@@ -463,10 +493,18 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
   - kernel（`vmunix`）と loader は menuconfig の config（kernel の driver など）で build する。導入先に入る kernel と同じ物。
   - userland・package は menuconfig の選択に依らず、決まった選択で全部を build する（§6.2、U22・U24）。
   - 全 unit・index・`/opt/installer` を作り（§6）、live の root（base・desktop・firmware の unit と installer・install-admin・`/opt/installer`）を作る。
+  - **make の形**（3 回目のレビュー #3）: 今の Makefile は package の選択を parse の時に決め（`Makefile:504-532`）、root の tree は 1 つの `$(BUILD)/rootfs`（`Makefile:1422` 付近）で、native の image の rule は `VARIANT=native` の時だけある（`platform/amd64/vmunix.mk:1302`、`Makefile:213`）。同じ make の中で選択を変えられず、`installer-image` と `hdd-image` が同じ tree を書き換え合う。そこで:
+    - `installer-image` は再帰の `$(MAKE) ZEDBSD_IMAGE_PROFILE=installer …` を起動し、その make は parse の時に選択（`ZEDBSD_USER_PROGRAMS`）を installer の決まった選択で置き換える。
+    - tree は `$(BUILD)/installer/{full,live,units}` に置き、`$(BUILD)/rootfs` を使わない。`vmunix`・loader は普通の build と共有する（同じ config から同じ物）。
+    - amd64 で `VARIANT=native` でなければ error。`installer-image` を他の image の goal（`disk-image`・`hdd-image` など）と同じ make の command line に並べたら error。
+    - 起動の設定: graphical の login と graphical の boot は installer の image では常に入（installer の自動起動に要る）。`kmsg` と追加の boot の行（extra の行）は menuconfig の値を使う。
   - 出力は `$(BUILD)/installer-image.img`。普通の `hdd-image.img`（`make disk-image`）とは別の target で、`hdd-image.img` の形・大きさ（WS238 の形、`AMD64_NATIVE_ROOT_MIB` 1024、CI の 2 GiB、`platform/amd64/vmunix.mk:1333`・`:1344`）は変えない（U21 の「image は今のまま」は `hdd-image.img` の事）。
 - installer の image の形（U23 の回答「インストーライメージでは、ESPにブートローダ、BOOT FAT32にカーネルとzedbsd.cfg、rootfs, swapのパーティションを置きます。」）: ESP（loader）、BOOT の FAT32（`vmunix`・`zedbsd.cfg`）、root の UFS（`/opt/installer` を含む）、swap の 4 つ。loader の UFS の読み（p008）を待たずに作れる。BOOT の FAT32 は今の `hdd-image.img` と同じく Basic Data の型・volume label「ZEDBSD」で、`logo.ppm` もその FAT32 に置く（U25 の回答）。`hdd-image.img` との違いは root の大きさ・`/opt/installer`・build ごとの PARTUUID の cfg。root の大きさは unit の合計に合わせる。導入先の形（ESP に loader・cfg、kernel は root の UFS、§5.4）とは違う。
-- live の image の起動の選び方: 今の native の image は `rootpart=PARTLABEL=zedBSD-root`・`swap0=PARTLABEL=zedBSD-swap`（`platform/amd64/zedbsd-native-uefi.cfg`）で、同じ image を dd した disk が付いていると EEXIST で起動しない（`src/kern/block-identity.c:184-190`）。installer の image は build ごとに乱数の PARTUUID を作り、その値を `rootpart=PARTUUID=`・`swap0=PARTUUID=` として cfg に書く（zedimage-host に PARTUUID を外から渡す形を足す）。同じ image の file を 2 台に dd した時の曖昧さは残る（loader の disk を優先する kernel の規則は Future）。
-- 起動時に自動で開く（U1 の回答）: compositor の Welcome の自動起動（`userland/desktop/wayland/desktop.c:857-880`）と同じ仕組みで、`/opt/installer/index` がある時に 1 回 `installer` を起動する。Settings の Welcome と重ならないよう、installer がある時は Welcome を出さない。
+- live の image の起動の選び方: 今の native の image は `rootpart=PARTLABEL=zedBSD-root`・`swap0=PARTLABEL=zedBSD-swap`（`platform/amd64/zedbsd-native-uefi.cfg`）で、同じ image を dd した disk が付いていると EEXIST で起動しない（`src/kern/block-identity.c:184-190`）。zedimage-host は今も build ごとに disk と partition の GUID を乱数で作る（`tools/build/zedimage-host.c:749-760`、3 回目のレビュー #17）。違いは cfg がその PARTUUID を名指すこと: installer の image では zedimage-host に PARTUUID を外から渡す（または作った値を出力する）形を足し、その値を `rootpart=PARTUUID=`・`swap0=PARTUUID=` として BOOT の FAT32 の cfg に書く。同じ image の file を 2 台に dd した時の曖昧さは残る（loader の disk を優先する kernel の規則は Future）。
+- root の大きさと zedimage-host の上限（3 回目のレビュー #17）: zedimage-host は image 全体を host の memory に取り（`calloc`）、上限は 16 GiB（`tools/build/zedimage-host.c:27`）、inode は 65536 まで（`:18` の `MAX_INODES`）。root の大きさは「live の tree ＋ `/opt/installer`（全 unit）＋空き」で、2 段で量る（live の tree と unit を作った後に合計を出し、空きを足して image を作る）。上限を越えれば build を失敗させ、量った値を出す。今の image の検査 `platform/amd64/tools/check-amd64-native-image.py:190-202` は今の cfg（PARTLABEL）を前提にするので、p003 で installer の image の形（PARTUUID の cfg）を検査する形を足す。
+- live だけの上書き（J1、§9.1）: live の tree の `/etc/shadow`（`user` は build ごとの乱数の password の hash、root は lock）、`/etc/keiland/autologin`（`user`）、session の lock をしない設定。unit（導入先に入る物）には入れない。
+- 試験の build（3 回目のレビュー #4、J4 の回答「許す (推し)」）: live の image には試験の手段が無い（openssh は package で live に入らない、`aat-input`・`keiland-shot` は tests の menu、`login=graphical` は getty の代わりに graphical の login を出す、`userland/base/etc/rc.conf:33-35`）。そこで、`plan/ws307/tests/` の config.mk だけが使う試験の hook（`ZEDBSD_INSTALLER_TEST_EXTRAS` などの変数）で、`network/openssh`・`aat-input`・`keiland-shot` と試験の SSH の鍵（`user` の `authorized_keys`）を **live の tree にだけ** 足す。unit・index・CI・配布の image には入れない（U24 の「tests・X11 無し」は導入先と配布の image に当てる、と J4 で確かめた）。index の hash は試験の build でも同じ（unit が同じなので）。
+- 起動時に自動で開く（U1 の回答）: compositor の Welcome の自動起動（`userland/desktop/wayland/desktop.c:857-880`）と同じ仕組みで、`/opt/installer/index` がある時に 1 回 `installer` を起動する。Settings の Welcome と重ならないよう、installer がある時は Welcome を出さない。S1 は「この system は導入のための一時の system。普段の system として使わない」を出す（§9.1）。
 
 ### 11.3 base の道具に足す物
 
@@ -480,9 +518,9 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | 層 | 方法 |
 | --- | --- |
 | host | 計画の組み立て（配置・ESP の自動作成・検査）、index と依存の閉包、ustar＋deflate の展開（path の安全）、`zedbsd.cfg` の生成、diskpart の batch と mkswap の partition の mode の table・codec。host の C の試験 |
-| QEMU の helper | live の image（`make installer-image`）を USB で起動、導入先の空の disk を `guest.py start --qemu-extra` で足す（NVMe `-device nvme`、SATA は q35 の ich9-ahci に `-device ide-hd`、USB `-device usb-storage`）。SSH で `install-admin` を直に流す（GUI 無し） |
+| QEMU の helper | live の image（`make installer-image` を `plan/ws307/tests/` の config.mk の試験の hook で、§11.2）を USB で起動、導入先の空の disk を `guest.py start --qemu-extra` で足す（NVMe `-device nvme`、SATA は q35 の ich9-ahci に `-device ide-hd`、USB `-device usb-storage`）。試験の鍵の SSH で `install-admin` を直に流す（GUI 無し） |
 | QEMU の GUI | AAT（`plan/tools/aat/`、`aat-input`・`keiland-shot`）で S1〜S11 を操作。installer の READY・画面・control の log で操作する |
-| 導入先の起動 | 導入先の disk の file だけで `plan/tools/boot-test.sh`（`BOOT_MODE=uefi-nvme`）の login prompt。USB の image を付けたままの起動でも root が導入先になる（PARTUUID） |
+| 導入先の起動 | 導入先の disk の file だけで `plan/tools/boot-test.sh`（`BOOT_MODE=uefi-nvme`）の login prompt。boot-test.sh が login の画面を読めるよう、起動を確かめる導入は S7a の自動 login を切って行う（自動 login が入だと desktop が出て login prompt が無い）。導入先の中の確かめは OpenSSH を選んで入れ、SSH で行う。USB の image を付けたままの起動でも root が導入先になる（PARTUUID） |
 | 共存 | 前もって「他の OS」の GPT（ESP に `\EFI\BOOT\BOOTX64.EFI` と別の file、Basic Data の partition に file）を作った disk に「partition を選ぶ」で入れ、触らない partition の byte の hash が変わらないこと、既存の fallback の loader が残り `\EFI\ZEDBSD\` に置かれること、Boot#### が書かれ OVMF の変数に残ること（p007 の後） |
 | 「partition を選ぶ」を拒む場合 | 古い native の zedBSD（ZEDBSD の FAT に `zedbsd.cfg`）がある disk、未割り当ての partition に古い FAT が残る disk（0 埋めの確認）、diskpart が編集できない GPT（backup が途中にある・degraded）、使っている entry が 16 の disk、空・MBR の disk（U10） |
 | 起動の識別 | 同じ image を dd した disk を 2 台目に付けて live の installer の image を起動、USB の導入先と別の USB の disk を付けての導入先の起動（boot0 の待ち） |
@@ -499,6 +537,9 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 - network からの導入、package の後からの追加・削除・更新（§6.4 の記録だけを残す）。
 - 同じ disk に 2 つ目の zedBSD を入れる（disk のどれかの FAT に `zedbsd.cfg` があれば「partition を選ぶ」を無効にする、§4.3）。
 - 導入の間の電源の操作（再起動・電源断・suspend）を止める口。
+- loader が UFS の最後の j3 の commit を重ねて読む（journal の読み取り専用の再生、§5.10）。
+- helper の呼び出し元を installer の process に絞る（§9.1）。
+- package の後からの更新に合わせた kernel の更新の道具（§5.10 の規則に従う）。
 - `volumed` に導入先の disk を隠す要求。
 - PARTLABEL・UUID の選び方で loader の disk を優先する kernel の規則。
 - 暗号化、RAID、LVM 相当。
@@ -507,15 +548,35 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 ## 13a. OS 名「Kei」を zedBSD に統一する（p002）
 
 - 指示（2026-10-28 ユーザー、原文、Q1 の中継）:「P4に伝えてください。起動ロゴ画像を含めて、KeiというOS名を削除して、zedBSDに統一します。インストーラだけでなくすべてに影響します。そういうphaseをこのWSに追加してください。」と U15「Keiの名前はプロジェクトから削除予定です」。
-- 範囲: OS 名の「Kei」（画面の文言・起動の logo の画像・`/etc/os-release`・UEFI の名前・文書・release の道具の名前）、既定の利用者 `kei`/`kei` → `user`/`user`（U26。`/etc/passwd`・`/etc/shadow`・`/etc/group` の wheel・network・`/etc/keiland/autologin`・`/home/kei`）、既定の hostname `kei` → `zedbsd`（U27、`userland/base/etc/rc.conf:2`）。desktop の名前 Keiland と libkeiland（と Keiland の内部名: libkeiland-backend-*・libkeiland-compat・kl_*・`/etc/keiland`・`/usr/share/keiland` など）は残す（U28 の回答）。logo の画像は U29 の回答（担当が今の logo と同じ様式で「zedBSD」の文字の画像を作り、PNG を Q1 経由でユーザーに見せて確かめてから入れる）。
+- 範囲: OS 名の「Kei」（画面の文言・起動の logo の画像・`/etc/os-release`・UEFI の名前・文書・release の道具の名前）、J3 の回答「これらも変える」の 4 つ（GPU の command の protocol の名前、mark の絵と Files の文字、license の記録の文、GitHub の release の asset の名前と取得の道。下の「J3 の物」）、既定の利用者 `kei`/`kei` → `user`/`user`（U26。`/etc/passwd`・`/etc/shadow`・`/etc/group` の wheel・network と利用者の group `kei:x:1000:`（`userland/base/etc/group:12`）→ `user:x:1000:`・`/etc/keiland/autologin`・`/home/kei`。installer の image の live の利用者は名前 `user` で password は非公開、J1・§9.1）、既定の hostname `kei` → `zedbsd`（U27、`userland/base/etc/rc.conf:2`）。desktop の名前 Keiland と libkeiland（と Keiland の内部名: libkeiland-backend-*・libkeiland-compat・kl_*・`/etc/keiland`・`/usr/share/keiland` など）は残す（U28 の回答）。logo の画像は U29 の回答（担当が今の logo と同じ様式で「zedBSD」の文字の画像を作り、PNG を Q1 経由でユーザーに見せて確かめてから入れる）。
 - U28 の回答（原文）:「Keilandの名前はそのままです。libkeilandもそのままです。KeiというOS名は、予定ではzedBSDに変更ですが、OSディストリビューション名が変更になる可能性があります。zedBSDはカーネル名です。OS名にするかは未定ですが、現状ではOS名もzedBSDに仮決めしておきます。libkeiland以外にlibkei*があるなら、変更を検討します。」
-- **OS 名を 1 か所で定義する**（distribution 名が後で変わり得るため）: build の変数 `ZEDBSD_OS_NAME`（今の仮の値 `zedBSD`）を 1 つ置き、`/etc/os-release` の `NAME`・`PRETTY_NAME` をそこから作る（今は `NAME="zedBSD"`・`PRETTY_NAME="Kei/zedBSD …"` を Makefile が直に書く、`Makefile:1259-1266`）。画面に OS 名を出す program（installer・Settings の About・greeter など）は `/etc/os-release` の `NAME` を読んで出し、source に OS 名の文字列を書かない。kernel の名前（`uname` の zedBSD、`ZEDBSD_VERSION` の行）は kernel 名なので別に保つ。UEFI の Boot#### の名前（§5.8）と loader の文言は os-release を読めないので、build の時に同じ変数から入れる。logo の画像は絵なので変数にできない（名前が変われば作り直す）。
+- **OS 名を 1 か所で定義する**（distribution 名が後で変わり得るため）: build の変数 `ZEDBSD_OS_NAME`（今の仮の値 `zedBSD`）を 1 つ置き、`/etc/os-release` の `NAME`・`PRETTY_NAME` をそこから作る（今は `NAME="zedBSD"`・`PRETTY_NAME="Kei/zedBSD …"` を Makefile が直に書く、`Makefile:1259-1266`）。画面に OS 名を出す program は source に OS 名の文字列を書かない。kernel の名前（`uname` の zedBSD、`ZEDBSD_VERSION` の行）は kernel 名なので別に保つ。logo の画像は絵なので変数にできない（名前が変われば作り直す）。
+  - 定義の置き場（3 回目のレビュー #16）: `ZEDBSD_OS_NAME`（今 `zedBSD`）と `ZEDBSD_OS_ID`（今 `zedbsd`、os-release の `ID`）を 1 つの make の断片に置き、`Makefile` と Linux・FreeBSD の Keiland の build（`userland/desktop/keiland-linux.mk`・`keiland-freebsd.mk`）が include する。置き場の path は p002 で決める。os-release は `NAME="$(ZEDBSD_OS_NAME)"`・`ID=$(ZEDBSD_OS_ID)`・`PRETTY_NAME="$(ZEDBSD_OS_NAME) <版の名前>"`（今の `Kei/zedBSD` を外す）。
+  - 走っている system を説明する文（Settings の About、installer の S1・S11 など zedBSD の上だけで動く物）は `/etc/os-release` の `NAME` を読む。
+  - project の名前として出す文（browser の開始の頁「The Web browser of Kei」`userland/desktop/browser/data/start.html:27`、Files の hero の文字など、Linux・FreeBSD の Keiland の build でも動く物）は os-release を読まない（Linux・FreeBSD では host の名前になる）。build の定数（`ZEDBSD_OS_NAME` を `-D` か data の file の置き換えで）を使う。
+  - UEFI の Boot#### の名前（§5.8）は install-admin が導入先の `/etc/os-release` の `NAME` から作る。loader の文言は os-release を読めないので build の定数。
 - libkei* の棚卸し（U28 の「libkeiland以外にlibkei*があるなら」）: 今の tree の library は libkeiland の系（libkeiland・libkeiland-backend・-backend-zedbsd・-linux・-freebsd・libkeiland-compat）だけ。旧名 `libkeiui` は libkeiland に統合済みで、残るのは comment の経緯（`userland/desktop/libkeiland/ui/window.h:316`・`:474` など）と、Linux・FreeBSD の host から古い file を消す一覧（`userland/desktop/keiland-linux.mk:171`・`keiland-freebsd.mk:176` の `lib/libkeiui.so`・`include/keiui.h`）だけ。別の libkei* は無いので、変える物は無い。
-- 棚卸し: `git grep -I -i -w kei`（`plan/` を除く）で、2026-10-28 の基点で約 460 行・約 200 file（`userland/desktop` 73・`tests/scenarios` 59・`userland/base` 37・`src/drivers` 9・`tools/release` 7 など）。ほかに binary（logo の画像、`bootloader/uefi/logo.c`・`bootloader/bios/logo.c` の参照する絵、`platform/amd64` の boot-logo）、file の名前・directory の名前（`git ls-files | grep -i kei`）。分類: 文言、利用者名・home の path、hostname、logo、file の名前、試験（scenarios・AAT・guest の login）、文書。`plan/` の履歴は直さない（Q1 が今も有効な規則の文だけを直す。master-design-policy §11 の「logo は必ず Kei」も）。
+- 棚卸し: `git grep -I -i -w kei`（`plan/` を除く）で、2026-10-28 の基点で約 460 行・約 200 file（`userland/desktop` 73・`tests/scenarios` 59・`userland/base` 37・`src/drivers` 9・`tools/release` 7 など）。`-w` は `KEI_NIGHTLY_*`・`kei-nightly`・`SKK-JISYO.kei` のような語の一部を落とす（3 回目のレビュー #15）ので、棚卸しは `git grep -I -i kei` から `keiland`（大文字・小文字を問わず）を除いた物で行う。ほかに binary（logo の画像、`bootloader/uefi/logo.c`・`bootloader/bios/logo.c` の参照する絵、`platform/amd64` の boot-logo、`kei-boot-splash.png`）、file の名前・directory の名前（`git ls-files | grep -i kei | grep -vi keiland`）。分類: 文言、利用者名・home の path、hostname、logo と mark、file の名前、試験（scenarios・AAT・guest の login）、文書、release の道具、J3 の物。`plan/` の履歴は直さない（Q1 が今も有効な規則の文だけを直す。master-design-policy §11 の「logo は必ず Kei」も）。
+- **`plan/tools` も棚卸しに入れる**（3 回目のレビュー #6）: 共有の試験の道具が既定の利用者 kei を持つ（`git grep -i -w kei -- plan/tools` で 285 行。例 `plan/tools/aat/scenarios/aatlib.py:48-50` の `AAT_USER`・`AAT_USER_PASSWORD` の既定 kei、`plan/tools/guest/serial.py:93`、`plan/tools/hw5330/`）。`plan/tools` は WS307 の所有の外で、他の担当の branch の image（kei/kei）もこの道具で試験する。そこで:
+  - p002 の前に（Q1 か、Q1 が p002 の Queue で範囲を明示して）、道具が `user` を先に試し、だめなら `kei` を試す形にする（login・SSH・AAT の既定）。古い image と新しい image の両方で動く。
+  - p002 の Queue は `plan/tools` の変更を範囲に含めることを Q1 が明示する（所有の調整）。
+  - p002 の受け入れに、他の branch の image（kei/kei のまま）と p002 の後の image（user/user）の両方で、道具の回帰（boot-test.sh・guest の SSH・AAT の login）が通ることを入れる。
+- **J3 の物**（J3 の回答「これらも変える」。3 回目のレビューの推しは「残す」だったが、ユーザーは変えるを選んだ）:
+  - GPU の command の protocol: 名前は `include/uapi/gpu-op.h:9` の comment「The Kei GPU command protocol, version 1」と driver の comment（`src/drivers/gpu/*/vk/*.h`・`vk-stream.c` など）だけにある。UAPI の識別子（macro・struct・enum の名前）に Kei を含む物は今の tree に無い（2026-10-28 に `git grep -i kei -- include/uapi src/drivers/gpu` で確かめた）。名前を「zedBSD GPU command protocol」に変える。番号・struct の形・版は変えない（ABI は同じ）。p002 の棚卸しで GPU の道（libvulkan など）に Kei を含む識別子が見つかれば、番号と形を保って名前だけを変え、使う側を同じ commit で直す。
+  - mark の絵: `userland/desktop/artwork/mark.c` の「the Kei mark」（縦の棒と葉、`kei-boot-splash.png` と同じ意匠。compositor の greeter・lock screen と Files が使う、`artwork/mark.h:10`）を zedBSD の mark に描き直す。U29 と同じ手順（担当が今の様式で案を作り、PNG を Q1 経由でユーザーに見せて確かめてから入れる）。Files の hero の文字「Kei」（`userland/desktop/files/ui-home.c:545-567`）は build の定数の OS 名にする（上の「project の名前として出す文」）。
+  - license の記録の文: `userland/desktop/ime/dict/Makefile:15` の「relicensed under zlib for Kei on 2026-09-29」と `userland/desktop/ime/dict/SKK-JISYO.ja:2`・`:9-10` の header の Kei。著作権者はユーザー自身で、ユーザーが変えると決めた。「for zedBSD」（同じ project の今の名前）に変え、日付とユーザーの発言の原文の引用（Kei を含まない）はそのまま保つ。「formerly SKK-JISYO.kei」のような旧い file の名前の注記は、下の「残す物の一覧」に入れて Q1 が確かめる。
+  - GitHub の release の asset の名前と取得の道: `tools/release/kei-nightly.mk`（rev-0 の asset `kei-nightly-base-winq-a10-1.zip` を名前と SHA-256 で固定、`:13-21`）、出力 `Kei-nightly.zip`、target `kei-nightly-base`・`kei-nightly-zip`、変数 `KEI_NIGHTLY_*`、`tools/release/make-kei-nightly-base.py`・`make-kei-nightly-zip.py`・`tools/release/kei-nightly/`、archive の中の root の directory `Kei-nightly/`（`make-kei-nightly-base.py:25-27`）、`.github/workflows/ci.yml:85-86`、`release.yml:4`・`:6`・`:110-111`・`:162`・`:207`（release の title「Kei/zedBSD」）。asset の名前を変えると取得が壊れるので、取得の道（mk・script・workflow）を同じ Phase で直す。移行の手順（p002）:
+    1. 棚卸し: archive の中の `Kei-nightly/` の名前に、中の launcher・script（WINQ-EMU）が頼るかを確かめる。頼れば中の名前は変えないか、頼る file も直す（どちらかを Q1 に報告して決める）。
+    2. 新しい asset: 外の file の名前だけを変えるなら同じ byte（SHA-256 は同じ）を新しい名前で用意する。中の名前を変えるなら、決まった出力の base の作り方（`make-kei-nightly-base.py` の後継）で作り直し、新しい SHA-256 を量る。
+    3. rev-0 への新しい asset の upload は GitHub への書き込みなので、ユーザーの指示で Q1 が行う（push と同じ扱い）。upload の前に、URL を変える commit を main に merge しない（CI の取得が壊れる）。
+    4. 1 つの commit で、mk（asset の名前・要れば SHA-256・target・変数）・script の名前・workflow（`zedbsd-nightly-*` の target、release の title「zedBSD <名前>」）・文書を変える。確かめ: 新しい URL からの取得と SHA-256 の照合（`make` の取得の target）と、CI の 1 回の実行（ユーザーの push の後）。
+    5. 旧い asset は rev-0 に残す（旧い tag の workflow の再実行・他の branch がまだ旧い名前を使う）。消すかはユーザーの判断（ユーザーの判断の一覧に置く）。手元の `build/releases/` の旧い名前の cache は消さない（共有の build、要れば Q1）。
+  - 最終の release の asset（`zedbsd-$VERSION-*`）は既に zedBSD の名前で、変えない。
+- **残す物の一覧**: p002 の後に `git grep -I -i kei`（keiland を除く）に残ってよい物は、Keiland・libkeiland と内部名（U28）、`plan/` の履歴、旧い名前の互換の code（Linux・FreeBSD の host から古い `libkeiui` を消す一覧、`userland/desktop/keiland-linux.mk:171`・`keiland-freebsd.mk:176`）、旧い file の名前の注記。p002 はこの一覧を phase.md に書き、Q1 が確かめる。
 - 手順: (1) 棚卸しの一覧と、git mv・大量の rename の一覧を Q1 に出し、所有と他の担当の作業との衝突を調整してから変える（Q1 の補い）。(2) 文言・設定・試験の道具を変える。(3) logo（U29）。(4) build と試験。
 - 順: installer の実装の前（p002）。installer の画面・live の image の利用者・hostname がこの Phase の後の名前を前提にする。ただし installer の helper は既定の利用者の名前に依らない（`/etc/keiland/autologin` と uid 1000 で見つける）ので、p003 以降はこの Phase の完了を待たずに進めてよい（通しの試験 p011 は待つ）。
-- 試験: build（warning 0）、変えた所の host の試験、boot-test.sh の login prompt の PNG（新しい logo と login の画面）、AAT の login（user/user）と既存の scenario の利用者名の追従、`git grep -i -w kei` の残りが範囲外（U28 で残す物と `plan/`）だけであること。
-- 見積もり: 12 LW（logo の画像の作り直しと `ZEDBSD_OS_NAME` を含む）。
+- 試験: build（warning 0）、変えた所の host の試験、boot-test.sh の login prompt の PNG（新しい logo と login の画面）、AAT の login（user/user）と既存の scenario の利用者名の追従、`plan/tools` の道具の回帰を古い（kei）・新しい（user）の両方の image で、nightly の取得（新しい URL と SHA-256）、`git grep -I -i kei`（keiland を除く）の残りが「残す物の一覧」だけであること。
+- 見積もり: 16 LW（logo と mark の絵の作り直し、`ZEDBSD_OS_NAME`、`plan/tools`、asset の移行を含む。upload を待つ時間を除く）。
 
 ## 14. 原文との対応
 
@@ -540,7 +601,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 
 ## 15. ユーザーの確認事項
 
-2026-10-28 に Q1 へ送った（第 1 回 U1〜U8、第 2 回 U9〜U13、U14 は U2 の回答から）。回答の原文（ユーザーのクリックで選んだ選択肢の文、Q1 の中継）をここに引用し、本文を直す。
+2026-10-28 に Q1 へ送った（第 1 回 U1〜U8、第 2 回 U9〜U13、U14 は U2 の回答から。J1〜J4 は 3 回目のレビューから Q1 が聞いた物、J5 は J1 の回答から）。回答の原文（ユーザーのクリックで選んだ選択肢の文、Q1 の中継）をここに引用し、本文を直す。
 
 | # | 問い | 推し | 回答（原文） |
 | --- | --- | --- | --- |
@@ -549,7 +610,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | U3 | 作成した「未使用」の partition の型 | A: zedBSD 独自の GUID | 2026-10-28「zedBSD 独自の未割り当ての型 (推し)」→ A |
 | U4 | disk 全体の配置 | A: ESP 512 MiB（kernel も ESP）・swap partition・root | 2026-10-28「ESP 512M＋swap 区画＋root (推し)」→ A |
 | U5 | 既存の ESP を共有する時の loader と boot entry | A: fallback が無ければそこ、有れば `\EFI\kei\`、Boot#### は Future | 2026-10-28「\EFI\BOOT\BOOTX64.EFIがなければそこに置く。あれば、上書きせず、\EFI\ZEDBSD\BOOTX64.EFIに置いて、完了の画面で、Frimware のboot menuで選ぶ、と出す。Boot####の作成もWSに入れる。」→ §5.4・§5.8・§4.11 |
-| U6 | root の権限 | A: setuid の helper を installer が直に起動、最終確認で password | 2026-10-28「setuid の helper、自分で起動 (推し)」→ A（password の時期は U2 に合わせ §9） |
+| U6 | root の権限 | A: setuid の helper を installer が直に起動、最終確認で password | 2026-10-28「setuid の helper、自分で起動 (推し)」→ A。password は後の U26 の回答で聞かない形に置き換わった（§9.1） |
 | U7 | 利用者のアカウント | B: 最終確認の前に利用者の画面 | 2026-10-28「「利用者」の画面を足す (推し)」→ B、§4.7a |
 | U8 | 入れる項目の必須と既定 | A: Base 必須、Desktop・Firmware 既定で選択、Packages 無選択 | 2026-10-28「Base必須、DesktopとFirmwareは規定で、外そうとすると警告、PackagesはOpenSSL, OpenSSH, ca-certificates, Fontsのみ規定。Pythonのパッケージも追記しておいてください。」→ §4.7 |
 | U9 | disk の一覧の型番 | B: kernel に model を足す | 2026-10-28「今の口で出せる物だけ」→ A |
@@ -565,7 +626,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | U19 | （追加の指示から）`zedbsd.cfg` の置き場 | A: ESP（loader の探し方を変えない） | 2026-10-28「ESP（FAT）のまま (推し)」→ A |
 | U20 | （追加の指示から）起動の logo の置き場 | A: root の UFS の `/boot/logo.ppm` | 2026-10-28「root の UFS（/boot/logo.ppm） (推し)」→ A |
 | U21 | （追加の指示から）今の disk image（hdd-image・installer の image）の形 | A: 導入先だけ新しい形、image は WS238 の形のまま | 2026-10-28「image は今のまま (推し)」→ A |
-| U26 | （2 回目のレビュー #9）live の system の password の案内 | A: dialog に既定の password（kei）を書く | 2026-10-28「すべてのイメージで、ユーザ名をuser, パスワードをuserに変更します。インストーラはsetuidのヘルパーを使うので、パスワード認証を不要にします。これは特別なインストーライメージのみです。」→ installer の image では password 無し（§9.1）。全 image の既定の利用者を user/user に（§13a、p002） |
+| U26 | （2 回目のレビュー #9）live の system の password の案内 | A: dialog に既定の password（kei）を書く | 2026-10-28「すべてのイメージで、ユーザ名をuser, パスワードをuserに変更します。インストーラはsetuidのヘルパーを使うので、パスワード認証を不要にします。これは特別なインストーライメージのみです。」→ installer の image では helper は password 無し（§9.1）。全 image の既定の利用者を user/user に（§13a、p002）。installer の image の live の利用者の password は後の J1 で非公開に |
 | U27 | （2 回目のレビュー #23）導入先の hostname | A: S7a に欄、既定 `zedbsd` | 2026-10-28「今後keiの名前は削除しますので、zedbsdにします。」→ 既定 `zedbsd`。S7a の欄は技術の判断で足す（Q1） |
 | U28 | （OS 名の統一の指示から）名前を変える範囲 | A: OS 名の Kei だけ。Keiland と内部名は残す | 2026-10-28「Keilandの名前はそのままです。libkeilandもそのままです。KeiというOS名は、予定ではzedBSDに変更ですが、OSディストリビューション名が変更になる可能性があります。zedBSDはカーネル名です。OS名にするかは未定ですが、現状ではOS名もzedBSDに仮決めしておきます。libkeiland以外にlibkei*があるなら、変更を検討します。」→ A。OS 名は 1 か所（`ZEDBSD_OS_NAME`）で定義（§13a） |
 | U29 | （OS 名の統一の指示から）起動の logo の画像 | A: 担当が同じ様式で zedBSD の画像を作り、ユーザーに見せて確かめる | 2026-10-28「推し」→ A |
@@ -574,6 +635,11 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | U17 | 4Kn の disk | A: 選べない（Future） | 2026-10-28「WS307 で 4096 byte に対応」→ B（§5.9） |
 | U18 | Firmware の license | A: 配布の config の firmware、S7 で license を表示し同意を求める | 2026-10-28「一覧を出し同意で入れる (推し)」→ A（§4.7） |
 | U14 | （U2 の回答から）S5・S6 の root・swap の型の印と mkfs・mkswap の時期 | A: 最終確認の後（progress の中）。B: S5・S6 の次へでその場で | 2026-10-28「最終確認の後 (推し)」→ A |
+| J1 | （3 回目のレビュー、U26 の危険）live の利用者の process が helper で画面無しに全ての disk を書ける | A: 受け入れ、理由の文を直す。B: setgid の `_installer` で helper を 4510（弱い）。C: live の password を非公開に（U26 を変える） | 2026-10-28「live の password を非公開に」→ C（推しと違う）。installer の image の live の利用者の password を公開しない。方法は J5 で確認中（§9.1） |
+| J2 | （3 回目のレビュー #5）install-admin の置き場 | A: `userland/base` の外へ移す。B: Guardrail の例外 | 2026-10-28「userland/base の外へ移す (推し)」→ A（`userland/desktop/installer/admin/`、§11.1） |
+| J3 | （3 回目のレビュー #7・#15）OS 名の範囲: GPU の protocol の UAPI の識別子・mark の絵・license の記録の文・GitHub の release の asset の名前 | A: 残す（comment だけ、Files の文字は os-release、記録は変えない、asset の名前は保つ） | 2026-10-28「これらも変える」→ 変える（推しと違う）。取得の道（CI・script）も同じ Phase で直し、移行の手順を p002 に（§13a の「J3 の物」） |
+| J4 | （3 回目のレビュー #4）試験だけの config で live の tree に openssh・aat-input・keiland-shot を足すのを U24 の下で許すか | A: 許す（`plan/ws307/tests/` だけ、unit・index・CI には入れない） | 2026-10-28「許す (推し)」→ A（§11.2） |
+| J5 | （J1 の回答から）live の password を非公開にする方法 | A: build ごとの乱数の password（平文は捨てる）、root は lock、live の session は lock しない、sudo・su は使えない | 未回答（2026-10-28 に Q1 へ送った）。本文は A で書いた（§9.1） |
 
 ## 16. 担当が決めた技術の判断（理由）
 
@@ -598,6 +664,10 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | T17 | 1 つの BUILD で全部入りの tree を作り、manifest から unit と live の tree を作る | tree を 2 回 build せず、unit と live の system の file が同じ build から来る（指摘 8・9） |
 | T18 | pkgconf の package を足す | U13 の「入れた system で GTK4 の app を build できる」に pkg-config が要り、guest に無い |
 | T11 | 日本語の catalog も作る | Keiland の app は `kl_tr` で翻訳する（WS158）。install の画面だけ英語にする理由が無い |
+| T20 | install-admin は `userland/desktop/installer/admin/`（installer の app と同じ directory の下） | J2 の回答で `userland/base` の外。installer の menu の 2 つの package を 1 つの所に置き、menu の外の build での error（§11.1）を 1 つの規則で当てる |
+| T21 | loader は他の disk に同じ PARTUUID があれば止まる（3 回目のレビュー #9 の推しは警告） | kernel は全ての disk を探して EEXIST で root を mount しない（`block-identity.c:182-188`）。loader が先に理由を出して止まる方が、kernel の後の失敗より分かりやすい。隠れた fallback を作らない方針（§5.10 の 5）とも合う |
+| T22 | loader の UFS の reader は native の byte order だけ、fragment が media の block より小さい volume を拒む | 3 回目のレビュー #10。導入先は installer が作る UFS だけで、両方とも満たす。reader を小さく保つ |
+| T23 | kernel の更新の規則は「新しい名前 → fsync → rename → sync」、clean の印では警告しない | 3 回目のレビュー #8。clean の印は毎回の起動で無い（unmount の時だけ立つ） |
 
 ## 17. design-reviewer の指摘と反映
 
@@ -657,7 +727,7 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | 6 | major | kei が helper を SIGKILL できる | §9.1（`setresuid(0,0,0)`・`setsid`・`clearenv`・rlimit） |
 | 7 | major | hash の照合と展開の間の書き換え | §6.1（同じ fd で hash、index は memory に 1 回、`fstat` の確かめ、mode の正規化）、T16 |
 | 8 | major | 4Kn は確実な kernel の作業 | §5.9、ws.md の p006、T19 |
-| 9 | major | password の時期と live の password | §4.8（S8 で聞き直す）、U26 |
+| 9 | major | password の時期と live の password | 当時は §4.8（S8 で聞き直す）。後の U26 の回答で helper は password を聞かない形に置き換わり（§4.8・§9.1）、J1 で live の password を非公開にした |
 | 10 | major | lock の範囲 | §5.2（session が lock を持ち、probe は session に頼む） |
 | 11 | major | 普通の image に set-user-ID の helper | §11.1（installer の image だけに入れる） |
 | 12 | major | toolchain の許可、sysroot の観察の誤り | §6.2、ws.md の p003・p004 |
@@ -677,7 +747,34 @@ install-admin（set-user-ID root の helper、1 つの仕事だけ）
 | 26 | minor | 共有の ESP の名前の衝突 | §5.4 |
 | 27 | minor | 作成の既定の大きさ | §4.4 |
 
+### 17.3 3 回目（2026-10-28、opus、2ac2eeaad の版に対して。全文 [design-review3.md](design-review3.md)。blocker 1・major 6・minor 10、ユーザーの判断 J1〜J4）
+
+| # | 重さ | 要点 | 反映 |
+| --- | --- | --- | --- |
+| 1 | blocker | loader の FAT の探索は 512 byte の block だけ（`volume-discovery.c:854-862`・`:409-411`・`:446-452`）。4Kn の ESP は見つからず起動しない、受け持つ Phase が無い | §5.9（loader の FAT の 4096 を p008 に、kernel の FAT（p006）の後。OVMF の FAT の確かめ。4Kn を選べるのは p005・p006・p008 の後）、§5.4、ws.md の p008（依存に p005・p006） |
+| 2 | major | index の hash を install-admin に埋めると build が循環、検査 4 が installer を含む tree と食い違う | §6.1、§6.2（build の順: 全部入りの tree（installer 無し）→ manifest → unit → index → install-admin → live の tree。検査 4 は全部入りの tree だけ） |
+| 3 | major | package の選択は parse の時、`$(BUILD)/rootfs` が 1 つ、native の rule は VARIANT=native だけ。installer-image と hdd-image が書き換え合う、起動の設定の元が無い | §11.2 の「make の形」（再帰の make と `ZEDBSD_IMAGE_PROFILE=installer`、`$(BUILD)/installer/{full,live,units}`、vmunix・loader の共有、amd64＋native 以外と他の image の goal との併用は error、graphical の login・boot は入、kmsg・extra は menuconfig） |
+| 4 | major | live の image に試験の手段が無い | J4 の回答で §11.2 の試験の hook、§12（導入先の起動の試験は自動 login を切る、中は OpenSSH の SSH） |
+| 5 | major | install-admin を `userland/base` に置くのは Guardrail と食い違う | J2 の回答で `userland/desktop/installer/admin/`（§11.1、§9.1、T20） |
+| 6 | major | 棚卸しが `plan/tools` を除く（285 行）、他の担当の kei の image が壊れる | §13a（`plan/tools` を入れる、p002 の前に道具が user → kei の順で試す、両方の image で回帰、Q1 が範囲を明示） |
+| 7 | major | rev-0 の asset の名前と SHA-256 を固定している、名前を変えると取得が壊れる | J3 の回答で asset の名前も変える。§13a の移行の手順（新しい asset の upload はユーザーの指示で Q1、URL の変更は 1 つの commit、旧い asset は残す） |
+| 8 | minor | clean の印は unmount の時だけ、警告が常に出る。j3 の home の書き込み | §5.10 の 6（警告を出さない、kernel の更新の規則、sync が home まで書くかを p008 で確かめる、j3 の重ね読みは Future）、T23、§13 |
+| 9 | minor | 今の探索は SimpleFS の handle だけ、`HD()` の GUID は混ざった byte order、kernel は全 disk で EEXIST | §5.10 の 3（BlockIo の列挙、文字列 → binary の照合、他の disk の重なりで止まる）、T21 |
+| 10 | minor | `fsbtodb` は 512 の単位、逆の byte order、cfg の `:` の拒み、共有の `logo-path.c` | §5.10 の 2（換算・範囲・穴・byte order の規則）と 4（`rootpart:` の切り出し、BIOS の loader の拒み方の試験）、T22 |
+| 11 | minor | mode 4550 と 4555 の食い違い、wheel は gid 0、kernel は補助の group を見る | §9.1（4550・0:0、`getgroups()`・egid と自動 login の利用者の uid の確かめ） |
+| 12 | minor | 手で書いた config.mk で普通の image に helper が入る | §11.1（SELECTABLE n、installer-image の外は error、hash の確かめは 2 つ目の守り） |
+| 13 | minor | U26 の後の古い文（S8 の聞き直し、§17.2 #9、§15 U6、§4.11 の kei、ws.md の p009、§4.4） | §4.4・§4.11・§15 の U6・§17.2 の #9、ws.md の p009 を直した |
+| 14 | minor | 利用者の group `kei:x:1000:` の名前の変更が無い | §4.7a、§13a |
+| 15 | minor | `git grep -w` が `KEI_NIGHTLY_*` を落とす。GPU の protocol・mark・license の記録の分類 | §13a（`-i kei` から keiland を除く、J3 の物、残す物の一覧） |
+| 16 | minor | Boot#### は os-release を読める。Linux・FreeBSD では os-release が host の物。`ZEDBSD_OS_NAME` の置き場と `ID` | §13a（make の断片を Makefile と keiland-linux.mk・keiland-freebsd.mk が include、`ZEDBSD_OS_ID`、system の説明は os-release・project の名前は build の定数、Boot#### は導入先の os-release） |
+| 17 | minor | zedimage-host は既に PARTUUID を乱数で作る、image は memory に全部、16 GiB・65536 inode、検査の script | §11.2（違いは cfg が PARTUUID を名指すこと、2 段で量る、上限で失敗、`check-amd64-native-image.py` を p003 で） |
+
+- レビューの「未確認」（reviewer の推測）: OVMF の FAT が 4096 byte の sector の FAT32 を読むか（§5.9、p008 の最初）、firmware が型の分からない GPT の partition に BlockIo の handle を作るか（§5.10 の 3、p008 の最初）、j3 の解放の追跡と home の書き込みの前の block の再使用（§5.10 の 6、p008）。
+
 ## 18. 未決・残り
 
 - 実装の Phase で決める技術の点: 「未割り当て」の型 GUID の値（p005）、mkfs の FAT の serial を既定で乱数にするか（p005）、UFS の inode の密度（p005）、`/dev/system` の EFI の変数の UAPI の形（p007）、HAL の差分の案（p007、ユーザーの承認）。
 - toolchain の許可（p003・p004、Q1）。
+- J5（live の password を非公開にする方法）の回答（Q1 経由）。本文は推しの A。B・C なら §9.1・§11.2 と p003・p010 を直す。
+- rev-0 への新しい nightly の asset の upload（ユーザーの指示で Q1、p002）と旧い asset を消すか（ユーザーの判断）。
+- OVMF の 4Kn の FAT（p008 の最初）。読めなければ 4Kn の対応の範囲をユーザーに聞く。

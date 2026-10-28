@@ -2,8 +2,8 @@
 
 # ws307-p001 インストーラの仕様の確定
 
-- 親: [WS307](../ws.md)。Queue: q1643 / q1643-i01（担当 P4、2026-10-28）。
-- Status: in-progress（2026-10-28 P4: 受け入れを満たした。cleared は Q1 の確認で）
+- 親: [WS307](../ws.md)。Queue: q1643 / q1643-i01（担当 P4、2026-10-28）、q1647（3 回目のレビューの起動）、q1648 / q1648-i01（3 回目のレビューと J1〜J4 の反映、P4、2026-10-28）。
+- Status: in-progress（受け入れを満たした、Q1 の確認待ち。2026-10-28 P4、q1648）
 - 出典: 2026-10-28 ユーザー「P4を立てて、WS307の仕様検討を行ってもらってください。ユーザ確認事項があれば回答させていただきます。仕様を確定させたいです。そのためのphaseをQ1が作り、P4に実行させてください。」
 
 ## 目的
@@ -34,6 +34,8 @@ ws.md に記録したユーザーの希望の仕様（原文）をブラッシ�
 - 調査: disk・partition・ESP・loader・swap（diskpart・mkfs・mkswap・kernel の partition・block-identity・swap-source・UEFI の loader）、driver（NVMe・VMD・AHCI・USB）、build と package（Makefile の登録・rootfs の rule・userland/packages・firmware）、Keiland の app・権限（account-admin・sessiond・security.md）・翻訳（WS158）・試験の道具（boot-test.sh・guest.py・AAT）を file:行で押さえ、[spec.md](../spec.md) の本文に引いた。
 - 仕様: [spec.md](../spec.md)。ユーザーの原文の各項目との対応は §14。
 - ユーザーの確認事項: U1〜U29 を Q1 経由で聞き、全て回答済み。回答の原文は spec §15 と [ws.md](../ws.md) の「ユーザーの決定」。追加の指示（loader が UFS から kernel を読む、`make installer-image`、OS 名 Kei の削除）も反映。
-- design-reviewer（opus）: 2 回（082c46884 の版と ea2d011cc の版）。指摘と反映は spec §17。
+- design-reviewer（opus）: 3 回（082c46884 の版、ea2d011cc の版、2ac2eeaad の版）。指摘と反映は spec §17（3 回目は §17.3、全文 [design-review3.md](../design-review3.md)）。
+- 3 回目の後のユーザーの判断 J1〜J4 は回答済み（原文は spec §15・ws.md）。J1 の方法の J5 は Q1 に確認中（2026-10-28）。本文は推しの A で書き、B・C の時の直す所を spec §18 に書いた。
 - 実装の Phase の表: [ws.md](../ws.md)（p002〜p014）。
 - code・build の変更は無い（`plan/ws307/` だけ）。
+- 確かめ（q1648）: 反映で引いた file:行を main d483706d4 で読んで確かめた（`volume-discovery.c:409-411`・`:446-452`・`:854-862`、`sessiond/main.c:694-723`、`wayland/main.c:33`・`:155`、`account-admin/Makefile:8`、`cred.c:122`、`session.c:646`、`zedbsd-config.c:620-624`、`bootx64.c:1735`、`zedimage-host.c:18`・`:27`・`:749-760`、`tools/release/kei-nightly.mk`、`include/uapi/gpu-op.h:9`、`ime/dict/Makefile:15`、`aatlib.py:48-50`）。reviewer の挙げた他の行（ufs.c の j3・byte order、block-identity.c:182-188、check-amd64-native-image.py:190-202 など）は reviewer の観察として引いた。
