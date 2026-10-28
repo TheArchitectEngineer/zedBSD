@@ -38,3 +38,9 @@ Resume point: [p001](phase001/phase.md) の「再開の点」（調べた事実�
 | p003 | 実装: Vulkan Video の object（profile・capability・session・parameters・DPB）と H.264 の decode の命令（code のみ、host 試験） | planned |
 | p004 | 実機の debug（WS241 の完了の後、RTX 2070 の素の起動、T の試験） | planned |
 | p005 | 規約の全文の見直し | planned |
+
+## 実装だけの担当 P6（2026-10-29、q1667）
+
+- 2026-10-29 01:3x ユーザー「P6は設計が決まっているWSについて、テストなしでひたすら実装だけ進めてテスト未完了でincompleteだけど実装はできていてマージされていない状態のWSを増やす。」
+- ユーザー「調査しなくてよい、設計ができているか自明なWSについて、ひたすら書いてください。選択したもののうち、調査が必要なものはスキップします。WSごとにサブのサブエージェントを作ってよいです。」（選択: WS223・WS282〜WS284・WS243・WS296）
+- 解釈（Q1）: 試験をせず実装だけを P6 の branch に積み、main に merge しない。Status は incomplete のまま（試験は未実施）。調べが要ると分かれば P6 は飛ばして Q1 に返す。

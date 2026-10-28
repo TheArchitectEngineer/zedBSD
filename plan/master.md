@@ -15,16 +15,18 @@
 ### 動いている担当と Queue
 
 <!-- master:agents:start -->
-2026-10-29 01:1x ラップアップ: 動いている担当は無し（P1〜P4 は全員返却）。次の担当の起動はユーザーの指示で。同時に動かす数の最後の指示は N=3（ユーザー「N=3で作業します。」）。
+2026-10-29 01:37 起動: P1〜P6（同時に 6、ユーザーの指示）。
 
-| 担当 | 最後の Queue | WS と次の手 | 実機 |
+| 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1657 cleared（merge f88836330） | [WS299](ws299/ws.md) 5330 NVMe: memcpy の改善と全体の測り直しの report を出して停止。継続はユーザーの判断（ユーザー「その上で継続判断させてください。」）。再開点は ws299/ws.md の「結果（2026-10-28 21:50）」 | 5330 は Debian、/tmp/i915-hw.lock は空き |
-| P2 | q1658 cleared（merge ae5c52a21）、q1661 uncleared・保留 | [WS291](ws291/ws.md): UCLK の負荷に応じた DPM・underflow 0・2 s の止まり（Keiland の input の scan）を直し評価済み。案 4・5 はユーザーの判断待ち。q1661（`agent/p2-ws291i`、入力の検出の backend の worker）は未 merge、[WS309](ws309/ws.md) で置き換える | 10.0.10.3: cfg amdrdna.smu.memory=2・ngg=2、kernel vmunix-m2j、/bin/wayland は q1661 の 3d9306f02 の build（main の b574fbf6a の build は /bin/wayland.p2b574） |
-| P3 | q1659 cleared（merge b99e96139） | 終了（ユーザー「FPGA側の設計が終わっていないので、P3はいったん終了、再開は明示的な指示です。」）。[WS290](ws290/ws.md) は保留、再開の順は ws290/ws.md の「保留」節 | — |
-| P4 | q1660 cleared（merge 582ff2906・382802369） | 記録の矛盾の解消を完了。拾った判断の候補は下の「ユーザーの未決」 | — |
+| P1 | q1662 in-progress | [ws309](ws309/ws.md): 設計の確定（pool の N は CPU 数で固定、ユーザーの回答「CPU 数で固定 (推し)」）→ design-reviewer → Phase の分割（Q1 に表を送る）→ 実装と試験 | — |
+| P2 | q1663 in-progress | [ws291](ws291/ws.md) p006 の続き: 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3 | 10.0.10.3 |
+| P3 | q1664 in-progress | [ws221](ws221/ws.md) p002〜p009: §9 は全部推し（ユーザーの回答「全部 推しで (推し)」） | 5330（10.0.30.3）、相手は 10.0.10.2 |
+| P4 | q1665 in-progress | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
+| P5 | q1666 in-progress | 詳細の決まっていない WS の設計: code は書かない | — |
+| P6 | q1667 in-progress | WS223・WS282〜WS284・WS243・WS296 の実装: 試験なし、main に merge しない、incomplete のまま | — |
 
-止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
+止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
 <!-- master:agents:end -->
 
 ### 統合の注意
@@ -51,8 +53,8 @@
 
 <!-- master:priority:start -->
 優先順位（依存による順とは別。Queue の権限は変えない）:
-1. WS309（Keiland の thread の整理）: 手書きの pool の N を決めて設計を確定 → Phase の分割 → 担当の起動（ユーザーの指示）。
-2. WS291: 案 4・5 の判断の後に再開。
+1. WS309（Keiland の thread の整理）: P1（q1662）が設計の確定 → Phase の分割 → 実装。
+2. WS291: P2（q1663）が案 5 → 案 4。並べて WS221（P3）・WS307（P4）・設計の全般（P5）・実装だけ（P6）。
 3. WS299: ユーザーの継続の判断の後（UFS の書き・mkfs の write-through・p007・p008、または区切る）。
 4. すぐ取り組む物（2026-10-27 ユーザー）: WS221（Jumbo frame、p008・p009 は WS220 から移した物）、WS242（RTX 30/40）・WS243（NVDEC）・WS250（nvrtx の取り消しと復帰）、WS223（全画面は合成、推しで実装）、WS009 の DOC-54（/dev/gpu の UAPI の文書）。
 5. WS307 の実装、WS217（画面の回転、開き直した）: ユーザーの指示の時。
@@ -62,8 +64,6 @@
 ### ユーザーの未決
 
 <!-- master:open-decisions:start -->
-- WS309: 手書きの照合の pool の N（同時に照合する文字の数か、CPU の数の固定の本数か）。
-- WS291: 案 4（小さな transaction を呼び手の thread で同期の GPU_COMMAND で送る、build/ws291/case4.patch、window mode の SURFACE_LOST errno 24 は未解析）と案 5（gpu.c の起床の抑制）に進むか。
 - WS299 の継続（P1 の report: ws299/ws.md の「結果（2026-10-28 21:50）」）。担当の外で見つけた物の扱い: amd64 の idle（C1 だけ）・HWP・P/E core の置き方（CPU が Debian の 70〜90%）、clock_gettime に vDSO が無く 1 ms 刻み、main から return した時に stdout が flush されない、libc の memcpy の続き（大きな copy・memset・build の flag -fno-builtin -Os）。
 - kernel の PS/2 の aux: mouse が無いのに node を作り、open のたびに 約 80 ms 待って EIO（src/kern/platform/pcat.c の drv_pcat_ps2_8042_init の辺り）。Bug にするか、いつ直すか。
 - P4（q1660）が拾った候補: WS162 を canceled にするか（WS172 に吸収）、WS279 p009（ライセンスと類似性の監査）の担当、P4m の時々の失敗（T1-691）の Bug、nvrtx.disp.own の既定、pci-msi-qemu.c（CONFIG_KERNEL_TEST_CHECKPOINTS の唯一の config が消えた）を残すか、master-design-policy.md へ移す候補 約 25 件（各 WS の ws.md に原文）。retained の 41 WS は source の comment の掃除の Queue の後に片付ける。
@@ -90,7 +90,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-349 · q1662 · WS310 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-349 · q1668 · WS310 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的

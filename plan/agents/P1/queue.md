@@ -99,3 +99,11 @@ Next（予約、2026-10-03 user）: q635 BUG-149（kernel の poll の SHUT_WR �
 （2026-10-28 Q1: この lane は 2026-10-14 の後に書かれていない。上の「State: active」は全部終わっている。2026-10-15〜10-27 の Queue は [queue.md](../../queue.md) と [history](../../history/index.md)。）
 
 2026-10-28 03:15 / q1634: [WS299](../../ws299/ws.md) p004 → p008（5330 の NVMe の速さ）。worktree p1-ws299。State: active。
+
+## 2026-10-29 01:37 generation
+
+Worktree `/home/awe/zedBSD-worktrees/p1-ws309`、定義 phase-runner。
+
+| Queue | Phase | 範囲 | State |
+| --- | --- | --- | --- |
+| q1662 | [ws309](../../ws309/ws.md) | 設計の確定（pool の N は CPU 数で固定、ユーザーの回答「CPU 数で固定 (推し)」）→ design-reviewer → Phase の分割（Q1 に表を送る）→ 実装と試験。原文「P1にWS309」。q1661 の branch は置き換え（読むだけ） | in-progress |

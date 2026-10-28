@@ -5,11 +5,13 @@
 
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
-| P1 | phase-runner | WS299 の残り（q1657、cleared） | `/home/awe/zedBSD-worktrees/p1-ws299d` / `agent/p1-ws299d` | returned（2026-10-28 21:50、ユーザーの継続の判断待ち） | da1bcc51d（q1657、merge f88836330） |
-| P2 | phase-runner | q1661（uncleared、保留） | `/home/awe/zedBSD-worktrees/p2-ws291i` / `agent/p2-ws291i` | returned（2026-10-29、branch は未 merge） | a716c54a0（q1658、merge ae5c52a21） |
-| P3 | phase-runner | WS290 p017 の残り（q1659、cleared） | `/home/awe/zedBSD-worktrees/p3-ws290h` / `agent/p3-ws290h` | returned・終了（2026-10-28 21:23 ユーザー「P3はいったん終了、再開は明示的な指示です。」） | 351040f44（q1659、merge b99e96139） |
-| P4 | phase-runner | 記録の矛盾の解消（q1660、cleared） | `/home/awe/zedBSD-worktrees/p4-closeout` / `agent/p4-closeout` | returned（2026-10-28） | 67da81f72（merge 582ff2906） |
+| P1 | phase-runner | ws309 (q1662) | `/home/awe/zedBSD-worktrees/p1-ws309` / `agent/p1-ws309` | running（2026-10-29 01:37） | — |
+| P2 | phase-runner | ws291 (q1663) | `/home/awe/zedBSD-worktrees/p2-ws291j` / `agent/p2-ws291j` | running（2026-10-29 01:37） | — |
+| P3 | phase-runner | ws221 (q1664) | `/home/awe/zedBSD-worktrees/p3-ws221` / `agent/p3-ws221` | running（2026-10-29 01:37） | — |
+| P4 | phase-runner | ws307 (q1665) | `/home/awe/zedBSD-worktrees/p4-ws307e` / `agent/p4-ws307e` | running（2026-10-29 01:37） | — |
+| P5 | kernel-and-driver-designer | 詳細の決まっていない WS の設計 (q1666) | `/home/awe/zedBSD-worktrees/p5-design` / `agent/p5-design` | running（2026-10-29 01:37） | — |
+| P6 | phase-runner | WS223・WS282〜WS284・WS243・WS296 の実装 (q1667) | `p6-ws223`・`p6-ws282`・`p6-ws243b`・`p6-ws296`（`/home/awe/zedBSD-worktrees/`）/ `agent/` に同じ名前 | running（2026-10-29 01:37） | — |
 
-- 2026-10-28 21:23 から P3 を終了し、動くのは P1・P2。P3 の再開はユーザーの明示の指示（WS290 は FPGA 側の設計の完了待ち）。
-- 同時に動かす数は 3（2026-10-28 ユーザー「N=3で作業します。」）。WS307 の仕様の間だけ P4 を足して 4、2026-10-28 ユーザー「P4は停止して、N=3に戻します。」で 3 に戻した。
-- 試験の担当 T・ブラウザの B1 は今は立てていない（以前の試験の台帳は `plan/agents/T1/requests.md`・`T2/`・`T3/`）。
+- 同時に動かす数は 6（2026-10-29 ユーザーの P1〜P6 の指示）。5330 は P3、10.0.10.3 は P2。
+- P6 は WS ごとに worktree `p6-ws223`・`p6-ws282`（WS282〜WS284）・`p6-ws243b`・`p6-ws296`。成果は merge しない。
+- 試験の担当 T・ブラウザの B1 は今は立てていない。

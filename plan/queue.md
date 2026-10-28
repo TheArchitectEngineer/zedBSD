@@ -115,3 +115,16 @@
 | q1659 / q1659-i01 | P3（phase-runner、worktree `/home/awe/zedBSD-worktrees/p3-ws290h`・branch `agent/p3-ws290h`、agent/p3-ws290g の先から） | [ws290](ws290/ws.md) p017 の残り（段 4・6・8・9・10・7）と QEMU の確かめ | q1656 と同じ承認。Q14「止める (推し)」、M8 は stub を足して試験を直す（Q1） | cleared（2026-10-28、merge b99e96139。host 試験・16 build・QEMU 2 本 PASS。p017 は実機（p014・M9）が残り in-progress） |
 | q1660 / q1660-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-closeout`・branch `agent/p4-closeout`、基点 main fb1f6afee） | 記録の監査（status.py）の COMPLETED_WITH_PHASES 89・COMPLETED_WITH_TESTS 79 の解消: 完了の WS の ws.md を完了の形に、Phase の directory と WS だけの試験の削除の一覧、今後も使う試験の plan/tools/ への移動 | 2026-10-28 ユーザー「計画ドキュメントの矛盾は解決してアップデートしておいてください。」 | cleared（2026-10-28、merge 582ff2906 と Q1 の削除。status.py・links.py の指摘 0） |
 | q1661 / q1661-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291i`・branch `agent/p2-ws291i`、基点 main） | [ws291](ws291/ws.md) Keiland の input の device の検出を thread へ、main loop の他の blocking の点検と直し | 2026-10-28 ユーザー「Keilandの直し方ですが、デバイスの検出はスレッドに追い出してください。他にもメインループにそういったブロッキング要素がないかチェックしてください。」 | uncleared（2026-10-29: 入力の検出の thread 化と点検の表は済んだが、ユーザー「アドホックにはしません。」で merge 保留、WS309 の設計で置き換える） |
+
+## 2026-10-29 01:37: P1〜P6（q1662〜q1667）
+
+承認: 2026-10-29 01:3x ユーザー「P1にWS309 / P2にWS291の続き / P3にWS221と、ついでに同じWS内で、1GbEの性能を使い切れるまでTCPスタックの最適化、5330を利用。 / P4にWS307 / P5は詳細が決まっていないWSの設計のみを、ユーザの判断を聞きながら全般的に進める / P6は設計が決まっているWSについて、テストなしでひたすら実装だけ進めてテスト未完了でincompleteだけど実装はできていてマージされていない状態のWSを増やす。」（同時に 6）。
+
+| Queue | 担当 | Phase | 範囲 | 結果 |
+| --- | --- | --- | --- | --- |
+| q1662 / q1662-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws309`・branch `agent/p1-ws309`、基点 main） | [ws309](ws309/ws.md) | 設計の確定（pool の N は CPU 数で固定、ユーザーの回答「CPU 数で固定 (推し)」）→ design-reviewer → Phase の分割（Q1 に表を送る）→ 実装と試験。原文「P1にWS309」。q1661 の branch は置き換え（読むだけ） | in-progress |
+| q1663 / q1663-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291j`・branch `agent/p2-ws291j`、基点 main） | [ws291](ws291/ws.md) p006 の続き | 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3。原文「P2にWS291の続き」。q1658 と同じ自律の承認 | in-progress |
+| q1664 / q1664-i01 | P3（phase-runner、worktree `/home/awe/zedBSD-worktrees/p3-ws221`・branch `agent/p3-ws221`、基点 main） | [ws221](ws221/ws.md) p002〜p009 | §9 は全部推し（ユーザーの回答「全部 推しで (推し)」）。kernel・driver・設定・TCP、5330 で 1GbE を使い切るまで TCP を最適化。原文「P3にWS221と、ついでに同じWS内で、1GbEの性能を使い切れるまでTCPスタックの最適化、5330を利用。」。5330 は P3 に割当 | in-progress |
+| q1665 / q1665-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307e`・branch `agent/p4-ws307e`、基点 main） | [ws307](ws307/ws.md) p002〜p014 | spec.md どおりに実装。toolchain（sysroot.mk・libcxx）・asset の upload・HAL に触れる所は始める前に Q1 へ。QEMU。原文「P4にWS307」 | in-progress |
+| q1666 / q1666-i01 | P5（kernel-and-driver-designer、worktree `/home/awe/zedBSD-worktrees/p5-design`・branch `agent/p5-design`、基点 main） | 詳細の決まっていない WS の設計 | code は書かない。判断は Q1 経由でユーザーへ。P1〜P4・P6 の WS は除く。原文「P5は詳細が決まっていないWSの設計のみを、ユーザの判断を聞きながら全般的に進める」 | in-progress |
+| q1667 / q1667-i01 | P6（phase-runner、worktree `/home/awe/zedBSD-worktrees/` の `p6-ws223`・`p6-ws282`・`p6-ws243b`・`p6-ws296`・branch は `agent/` に同じ名前、基点 main） | WS223・WS282〜WS284・WS243・WS296 の実装 | 試験なし、main に merge しない、incomplete のまま。調べが要る物は飛ばす。WS ごとにサブのサブエージェント可。原文「P6は設計が決まっているWSについて、テストなしでひたすら実装だけ進めて…マージされていない状態のWSを増やす。」・「調査しなくてよい、設計ができているか自明なWSについて、ひたすら書いてください。…WSごとにサブのサブエージェントを作ってよいです。」 | in-progress |

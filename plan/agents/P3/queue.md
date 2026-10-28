@@ -77,3 +77,11 @@ Next（予約）: ws115-p006（libpng・freetype・harfbuzz・fontconfig）〜
 （2026-10-28 Q1: この lane は 2026-10-14 の後に書かれていない。上の「State: active」は全部終わっている。2026-10-15〜10-27 の Queue は [queue.md](../../queue.md) と [history](../../history/index.md)。）
 
 2026-10-28 03:15 / q1636: [WS290](../../ws290/ws.md) p001 の仕上げ → p012（GHCI 1.0 の driver、host 試験）。worktree p3-ws290b。State: active。
+
+## 2026-10-29 01:37 generation
+
+Worktree `/home/awe/zedBSD-worktrees/p3-ws221`、定義 phase-runner。
+
+| Queue | Phase | 範囲 | State |
+| --- | --- | --- | --- |
+| q1664 | [ws221](../../ws221/ws.md) p002〜p009 | §9 は全部推し（ユーザーの回答「全部 推しで (推し)」）。kernel・driver・設定・TCP、5330 で 1GbE を使い切るまで TCP を最適化。原文「P3にWS221と、ついでに同じWS内で、1GbEの性能を使い切れるまでTCPスタックの最適化、5330を利用。」。5330 は P3 に割当 | in-progress |

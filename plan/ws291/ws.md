@@ -154,3 +154,7 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   変えていない。venus-reg PASS、arm64・riscv64 の libvulkan と Keiland warning 0。評価: scene-6500 49.2 fps（Linux 50.1、fence は同じ 19.5 ms）、
   scene-1500 201.8（Linux 200.4）、big・subs は Linux の 1/3〜1/10（[phase006](phase006/phase.md) の「受け入れの評価」）。次は案 4・5 を Q1 と相談。
   別件（範囲外）: kernel の PS/2 の aux の node が mouse 無しで作られ open が 80 ms 待つ。
+
+## 2026-10-29 q1663（P2、worktree p2-ws291j）
+
+- ユーザーの回答（クリック、2026-10-29 01:3x）「両方 (推し)」→ 案 5（gpu.c の起床の抑制）を先に、続けて案 4（小さな transaction を呼び手の thread で同期の GPU_COMMAND、window mode の SURFACE_LOST errno 24 の解析を含む）。指示の原文「P2にWS291の続き」。

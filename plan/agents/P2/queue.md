@@ -79,3 +79,11 @@ Next（予約）: debug を続ける（BUG-147 の後: 優先度の高い bug。
 （2026-10-28 Q1: この lane は 2026-10-14 の後に書かれていない。上の「State: active」は全部終わっている。2026-10-15〜10-27 の Queue は [queue.md](../../queue.md) と [history](../../history/index.md)。）
 
 2026-10-28 03:15 / q1635: [WS291](../../ws291/ws.md) p006 の続き → p009（RDNA の描画の速さ、Linux 以上）。worktree p2-ws291b。State: active。
+
+## 2026-10-29 01:37 generation
+
+Worktree `/home/awe/zedBSD-worktrees/p2-ws291j`、定義 phase-runner。
+
+| Queue | Phase | 範囲 | State |
+| --- | --- | --- | --- |
+| q1663 | [ws291](../../ws291/ws.md) p006 の続き | 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3。原文「P2にWS291の続き」。q1658 と同じ自律の承認 | in-progress |

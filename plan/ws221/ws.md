@@ -4,7 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」）。旧: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13…
-Resume point: p001 の review-2 → §9 の判断（特に Q1・Q4・Q11・Q12・Q13）→ p002（kernel + ifconfig + ping）と p004（設定）を Queue に、p003 の前に descriptor の読み（phase.md §4.1）
+Resume point: 2026-10-29 q1664（P3）。§9 は全部推しで決定（下）。旧: p001 の review-2 → §9 の判断（特に Q1・Q4・Q11・Q12・Q13）→ p002（kernel + ifconfig + ping）と p004（設定）を Queue に、p003 の前に descriptor の読み（phase.md §4.1）
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -52,3 +52,8 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 完了の条件の読み替え（review S8、ユーザーの決定に合わせる）: 上の「目的と完了の条件」の 2 の GENET・amd64 の有線、3 の断片化、4 の QEMU で MTU 9000 の受け入れは、ユーザーの決定（GENET は 1500 のまま、USB の有線 LAN で 9000）と設計（QEMU の usb-net は 1514 固定）に合わせて、次に読み替える: 対象は USB の有線 LAN（CDC ECM・NCM）、QEMU では MTU の設定の口と回帰だけ、大きな frame の受け入れは実機（Pi 4・5330 に挿した USB LAN）だけ。5320 は対象の実機に含めない（ユーザーの確認待ち）。
 
 2026-10-13 ユーザー（原文）:「USB LANは型番不明の UGREEN 2.5GbE RTL8825BU です。MTU 9000はスイッチ経由です。」→ Pi 4 の USB LAN は UGREEN の 2.5GbE の adapter（chip はユーザーの言う RTL8825BU、型番は不明）。MTU 9000 の相手は jumbo frame の switch を経由。p003 の前にこの adapter と 5330 の RTL8156 の descriptor（wMaxSegmentSize・NCM の NTB の値・CDC の class）を実機で読む。switch を経由するので、混在の試験は同じ switch の上の 1500 の相手で行う。
+
+## ユーザーの決定（2026-10-29）
+
+- 原文: 「P3にWS221と、ついでに同じWS内で、1GbEの性能を使い切れるまでTCPスタックの最適化、5330を利用。」→ この WS に目標を足す: 5330 で 1GbE の速さを使い切るまで TCP の stack を最適化する（p008・p009 の輻輳の制御・受けの窓を含む）。相手は Q1 の Debian の host（10.0.10.2）を想定、P3 が link の速さを確かめる。
+- p001 §9 の Q1〜Q13: ユーザーの回答（クリック）「全部 推しで (推し)」→ 各問いの推しの案で確定。

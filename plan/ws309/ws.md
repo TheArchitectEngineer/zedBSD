@@ -4,7 +4,7 @@
 
 - Master: [plan/master.md](../master.md)（2026-10-29 作成）。Primary Milestone: MG006。前身の調べ: [WS291](../ws291/ws.md) の
   [keiland-blocking.md](../ws291/keiland-blocking.md)（P2 q1661 の点検、branch `agent/p2-ws291i` にあり main に未 merge）。
-- Status: planning（thread の構成をユーザーと検討中。手書きの照合の pool の N の決め方が未決）
+- Status: planning（pool の N は決定、2026-10-29 q1662 P1 が設計の確定 → Phase の分割 → 実装）
 - 目標: Keiland の compositor の main loop が frame を止める同期の待ちを持たないよう、thread を下の構成に整理する。ゲームモードの
   direct scanout は Vulkan display（`VK_KHR_display`）の仕様の中で実装する。
 
@@ -55,7 +55,7 @@
 
 ## 未決
 
-- 手書きの照合の pool の N: 同時に照合する文字の数で決めるか、CPU の数で決める固定の本数か。
+- （決定）手書きの照合の pool の N: 2026-10-29 01:3x ユーザーの回答（クリック）「CPU 数で固定 (推し)」→ 起動の時に CPU の数から決めた固定の本数（Q1 の選択肢の例: CPU の数 − 1、上限 4。具体の式は P1 の設計で）。
 - P2 の q1661（`agent/p2-ws291i` 3d9306f02 の backend の入力の検出の worker、467f1cabc・1a0ead286 の記録）: アドホックにしない決定 2 により
   main に merge せず保留。この WS の I/O-1 の実装で置き換える。main には b574fbf6a（開けなかった node を覚える）が入っている。
 

@@ -38,3 +38,11 @@ Graph: q697（cleared）→ q698（cleared）→ q699。source所有: `intel-ax2
 q699-i01 **cleared**。WIP `acb4afa`（製品修正と回帰試験）、`999eb8b`（承認/checkpoint）。ordinary/ASan/UBSanで65536境界・abort/失敗/resetをPASS、旧実装は256で失敗。最終kernel build警告0、実行ELF hash一致。補正無しpassthrough688.531秒、console10分24秒、256境界10回、SW_ERROR/restart/recovery/panic各0、host ping/SSH各70回成功、最後12 vCPU idle。[Phaseの結果・引き継ぎ](../../ws005/phase032/phase.md)と[BUG-158](../../bugs/BUG-158.md)へ証拠を保存した。
 
 QEMU/monitor終了、5330 AX211 driver無し・override(null)・blacklist保持、USB有線正常。whole Phase in-progress / BUG tracking / 実機UAT待ち。main統合と共有Queue/WS/Master/Past Log/GitHubへの投影はQ1へ保留。追加Queueは開始せずP4は停止する。
+
+## 2026-10-29 01:37 generation
+
+Worktree `/home/awe/zedBSD-worktrees/p4-ws307e`、定義 phase-runner。
+
+| Queue | Phase | 範囲 | State |
+| --- | --- | --- | --- |
+| q1665 | [ws307](../../ws307/ws.md) p002〜p014 | spec.md どおりに実装。toolchain（sysroot.mk・libcxx）・asset の upload・HAL に触れる所は始める前に Q1 へ。QEMU。原文「P4にWS307」 | in-progress |
