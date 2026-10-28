@@ -74,6 +74,16 @@ struct settings_state {
 };
 
 /*
+ * The Log Out's merge of the session's settings on the file I/O thread
+ * (io.c): the lane's job and the store whose writer it runs (the store
+ * lives until kwl_settings_close, which comes after the thread finished).
+ */
+struct settings_save_job {
+	struct kwl_lane_job lane;
+	struct kwl_settings_store *store;
+};
+
+/*
  * The one state of the process: zeroed by kwl_settings_open and kept for
  * the process's life; only the event loop's thread touches it.
  */
@@ -104,6 +114,17 @@ static uint32_t settings_result_of(int error);
 static size_t settings_put_string(unsigned char *payload, size_t offset, const char *text);
 static int settings_read_string(const unsigned char *bytes, size_t size, size_t offset, char **text, size_t *next);
 static uint32_t settings_word(const unsigned char *bytes, size_t offset);
+static int settings_save_give(struct kwl_server *server);
+static void settings_save_run(struct kwl_lane_job *job);
+static void settings_save_done(void *context, struct kwl_lane_job *job);
+static void settings_save_drop(struct kwl_lane_job *job);
+
+/* The operations of the Log Out's merge on the file I/O thread. */
+static const struct kwl_lane_ops settings_save_ops = {
+	settings_save_run,
+	settings_save_done,
+	settings_save_drop
+};
 
 /*
  * Opens the session's settings, before the look draws the wallpaper: the
@@ -213,8 +234,10 @@ kwl_settings_logout(
 	if (server->settings == NULL)
 		return;
 
-	/* Starts merging the session's settings into desktop.conf on the store's thread. */
-	error = kwl_settings_store_save_later(server->settings);
+	/* Merges the session's settings into desktop.conf on the file I/O thread, or on the store's own thread without it. */
+	error = settings_save_give(server);
+	if (error == ENOTSUP)
+		error = kwl_settings_store_save_later(server->settings);
 
 	/* Logs how the start went, for the tests. */
 	printf("KWL SETTINGS logout-save error=%d\n", error);
@@ -1590,4 +1613,88 @@ settings_word(
 
 	/* Reports the word read. */
 	return word;
+}
+
+/*
+ * Gives the session's settings to the file I/O thread to merge into
+ * desktop.conf.  Returns 0 (given, or nothing to write), ENOTSUP when the
+ * thread does not run or the job has no memory (the caller writes them
+ * another way), or the store's refusal.
+ */
+static int
+settings_save_give(
+	struct kwl_server *server)
+{
+	struct settings_save_job *job;
+	struct kwl_settings_store *store;
+	int error;
+
+	/* Without the thread the store writes on a thread of its own. */
+	if (!server->io_file_started)
+		return ENOTSUP;
+
+	/* The job's record. */
+	job = calloc(1U, sizeof(*job));
+	if (job == NULL)
+		return ENOTSUP;
+
+	/* The changes as they are now, copied into the store's writer; none leaves the file as it is. */
+	store = server->settings;
+	error = kwl_settings_store_save_give(store);
+	if (error != 0 || !store->writer.given) {
+		free(job);
+		return error;
+	}
+
+	/* The thread merges them; kwl_settings_close takes them as written once it finished. */
+	job->store = store;
+	error = kwl_io_file_submit(server, &job->lane, &settings_save_ops, 0U);
+	if (error != 0) {
+		/* Not given after all: the store's own thread writes them. */
+		store->writer.given = 0;
+		free(job);
+		return ENOTSUP;
+	}
+
+	/* Succeeded: the thread writes the session's settings. */
+	return 0;
+}
+
+/* Merges the session's settings into desktop.conf on the file I/O thread. */
+static void
+settings_save_run(
+	struct kwl_lane_job *lane_job)
+{
+	struct settings_save_job *job;
+
+	/* The store's writer records how it went. */
+	job = (struct settings_save_job *)lane_job;
+	kwl_settings_store_save_run(&job->store->writer);
+}
+
+/* Takes the Log Out's merge that ran, on the event loop's thread: logged. */
+static void
+settings_save_done(
+	void *context,
+	struct kwl_lane_job *lane_job)
+{
+	struct settings_save_job *job;
+
+	(void)context;
+
+	/* How it went, for the tests (kwl_settings_close takes the settings written). */
+	job = (struct settings_save_job *)lane_job;
+	printf("KWL SETTINGS logout-saved by=io-file error=%d\n", job->store->writer.error);
+
+	/* The record. */
+	free(job);
+}
+
+/* Frees a merge that did not run (the thread stopped): kwl_settings_close writes everything then. */
+static void
+settings_save_drop(
+	struct kwl_lane_job *lane_job)
+{
+	/* The record. */
+	free(lane_job);
 }
