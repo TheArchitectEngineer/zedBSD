@@ -114,6 +114,12 @@ struct kl_backend {
 };
 
 /*
+ * Gives the compositor's threads lent to the backend's own (backend.c):
+ * the open backend's, or none when no backend is open.
+ */
+void kl_backend_threads(struct kl_backend_threads *threads);
+
+/*
  * The session's work in kl_backend_tick: each operating system's session
  * reads what its manager sent and keeps its deadlines.
  */

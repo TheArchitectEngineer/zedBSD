@@ -36,6 +36,7 @@ struct kwl_thread {
 
 int kwl_thread_start(struct kwl_thread *thread, const char *name, void *(*run)(void *), void *argument);
 void kwl_thread_join(struct kwl_thread *thread);
+int kwl_thread_start_lent(const char *name, void *(*run)(void *), void *argument, pthread_t *handle);
 int kwl_thread_start_detached(const char *name, void *(*run)(void *), void *argument);
 void kwl_thread_ended(const char *name);
 unsigned kwl_threads_count(void);
