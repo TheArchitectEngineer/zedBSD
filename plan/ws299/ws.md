@@ -125,3 +125,4 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 - 2026-10-28 ユーザー「仮想メモリのロックの変更は、P1の担当にして、一時的にそれに対応する別なWSを処理して、そのあとでNVMeのWSに戻りましょう。」→ q1646 は paused、[WS308](../ws308/ws.md)（VM の metadata lock、QD32 の頭打ちの有力な原因）の後に戻る。
 - 5330 の停止（zb-d2 の後の reboot で desktop のまま固まった）: 2026-10-28 ユーザー「フリーズは再現したときに対策を考え直します。」原因は不明、QEMU の繰り返しでは再現せず（2 回正常）。
 - 戻った時の順: direct の書き 59% の切り分け（Fable 5.1 High に助言を求めてよい、2026-10-28 ユーザー）→ QD32 の測り直し → UFS の file の書き（55%）→ mkfs native の write-through（2026-10-28 ユーザー、UFS の高速化の後、要れば先に）→ p007 → p008。
+- 2026-10-28 18:50 P1（WS308 の後に q1646 を再開）: 乱読み QD32 は WS308 で Debian の 99.3%（direct）・cached 241k になった（[phase010](phase010/phase.md) の「再開」）。direct の書き 59% の切り分けは、基準の取り直しで 5330 の zedBSD が起動の後に答えなくなり止まった（電源の入れ直し待ち）。次は 5330 が戻ってから、p7direct の zedBSD と Debian の取り直し → bs 4 MiB と command の大きさで比べる → UFS の file の書き（55%）→ mkfs native の write-through → p007 → p008。
