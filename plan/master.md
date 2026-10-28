@@ -20,7 +20,7 @@
 | 担当 | Queue | WS | 実機 |
 | --- | --- | --- | --- |
 | P1 | —（q1657 cleared、merge f88836330） | [WS299](ws299/ws.md) 5330 NVMe: memcpy の改善と全体の測り直しの report を出して停止。継続はユーザーの判断（ユーザー「その上で継続判断させてください。」） | 5330 は Debian、lock 空き |
-| P2 | q1661 | [WS291](ws291/ws.md) Keiland の main loop の blocking を無くす（ユーザー「Keilandの直し方ですが、デバイスの検出はスレッドに追い出してください。他にもメインループにそういったブロッキング要素がないかチェックしてください。」）。案 4・5 はユーザーの判断待ち | 10.0.10.3 |
+| P2 | —（q1661 は保留: 入力の検出の worker は WS309 の設計で置き換えるため未 merge） | [WS291](ws291/ws.md) 案 4・5 はユーザーの判断待ち。[WS309](ws309/ws.md) の設計はユーザーと Q1 で検討中 | 10.0.10.3（/bin/wayland は 3d9306f02 の build） |
 | P3 | — | 終了（2026-10-28 21:23 ユーザー「FPGA側の設計が終わっていないので、P3はいったん終了、再開は明示的な指示です。計画だけアップデートして、整理しておいてください。」）。[WS290](ws290/ws.md) は保留: p017 は実装・host 試験・QEMU 済み（merge b99e96139）、残りは実機（p014・M9）と p015 | — |
 | P4 | —（q1660 cleared） | 記録の矛盾の解消を完了（完了の WS 87 の ws.md を完了の形に、Phase・試験 1,324 件を削除、157 件を plan/tools/ へ移動、WS217 を開き直し、WS220 の残りを WS221 へ）。status.py・links.py の指摘 0 | — |
 
@@ -84,7 +84,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-349 · q1662 · WS309 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-349 · q1662 · WS310 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
@@ -149,6 +149,7 @@ BUG-349 · q1662 · WS309 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の設計（草稿は main 64f05b2c7） |
 | [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 1.0（amaterrace-gpu の docs/ghci.md 89529de）だけに書き直す。試験は host だけ | incomplete・保留（2026-10-28 ユーザー: FPGA 側の設計が終わるまで P3 終了、再開は明示の指示。p017 は実機待ち） | q1636（P3）で p001 の design 版 4 → p002〜（host 試験、実機は VF2＋KC705 の用意の後） |
 | [WS291](ws291/ws.md) | MG006 | GPU の driver の描画の速さ（desktop 60 fps・重い 3D の model 50 fps）: AMD RDNA（P2）→ NVIDIA（P2、GPU を入れ替え）→ PowerVR（VF2、P3） | incomplete（p001〜p005 cleared、p006 in-progress） | q1635（P2）で p006 の続き → p008〜p009、Linux 以上の後に WS306 |
+| [WS309](ws309/ws.md) | MG006 | Keiland の compositor の thread の構成を整理し main loop が待たないようにする。ゲームモードは Vulkan display の仕様の中で | planning（構成はユーザーと検討中、手書きの pool の N が未決） | 設計の確定 → Phase の分割 |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
 | [WS296](ws296/ws.md) | MG001 | src/drivers（gpu/ を除く）の comment から開発の管理情報を消し、XXX の規約の当て直し（usb など 11 file） | planned | 18 LW、担当の起動はユーザーの指示の時 |
