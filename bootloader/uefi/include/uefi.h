@@ -252,6 +252,8 @@ typedef EFI_STATUS(EFIAPI *EFI_LOCATE_PROTOCOL)(const EFI_GUID *, void *,
 						void **);
 typedef EFI_STATUS(EFIAPI *EFI_LOCATE_HANDLE_BUFFER)(
 	int, const EFI_GUID *, void *, UINTN *, EFI_HANDLE **);
+typedef EFI_STATUS(EFIAPI *EFI_CONNECT_CONTROLLER)(EFI_HANDLE, EFI_HANDLE *,
+						   void *, BOOLEAN);
 
 /* The boot services table, valid until ExitBootServices. */
 typedef struct efi_boot_services {
@@ -286,7 +288,7 @@ typedef struct efi_boot_services {
 	void *GetNextMonotonicCount;
 	void *Stall;
 	void *SetWatchdogTimer;
-	void *ConnectController;
+	EFI_CONNECT_CONTROLLER ConnectController;
 	void *DisconnectController;
 	void *OpenProtocol;
 	void *CloseProtocol;
