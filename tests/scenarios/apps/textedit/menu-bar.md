@@ -13,7 +13,7 @@ since: BUG-248
 Text Editor の title bar に、他の app（Notes・Terminal など）と同じ下線の付いた menu bar（File・Edit・View・Help）が出て、項目と短縮 key が今までどおり効くことを確かめる（BUG-248）。title bar の Open・Save・Undo・Redo の button と Find の欄は無くなり、Find は窓の中の panel になる。
 
 ## 準備
-kei で `textedit /tmp/aat-work/menu.txt`（新しい file）を開く。
+user で `textedit /tmp/aat-work/menu.txt`（新しい file）を開く。
 
 ## 操作と確認
 1. 操作: 窓が出るのを待つ。

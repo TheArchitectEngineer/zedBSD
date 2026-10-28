@@ -13,7 +13,7 @@ since: ws177-p021
 再生中に音の service（audiod）が去った時に stream を開き直して同じ位置から続けること、曲の file が消えた時に知らせて次の曲へ進むこと、検索の field を Escape で離れた後の Space が再生・一時停止になること、Next の連打を 1 回の曲の切り替えにまとめること、Files から開いた鳴らせない file の理由を知らせることを確かめる（ws177-p021）。
 
 ## 準備
-`apps.music.play` と同じ（kei の `~/Music/AAT/` に Tone A・Tone B、QEMU は音の device 付き）。加えて 3 曲目 `03-tone-c.m4a`（同じ作り方、題 Tone C、番号 3）と、音でない file `/home/kei/not-a-song.m4a`（中身は `not an mp4`）。この scenario の 3 曲は 20 秒（1 の開き直しの後も Tone A が鳴っているように。T1-455 では 8 秒の Tone A が自分で終わり、2 の Next が最後の曲を越えて止まった）。
+`apps.music.play` と同じ（user の `~/Music/AAT/` に Tone A・Tone B、QEMU は音の device 付き）。加えて 3 曲目 `03-tone-c.m4a`（同じ作り方、題 Tone C、番号 3）と、音でない file `/home/user/not-a-song.m4a`（中身は `not an mp4`）。この scenario の 3 曲は 20 秒（1 の開き直しの後も Tone A が鳴っているように。T1-455 では 8 秒の Tone A が自分で終わり、2 の Next が最後の曲を越えて止まった）。
 
 ## 操作と確認
 1. 操作: Music を開き、Play（Tone A）。3 秒待つ。root で audiod を SIGKILL で止める（zedBSD に pkill は無い: `ps -A -o pid,args` で `/sbin/audiod` の pid を探して `kill -KILL`。audiod は `restart=on-failure` で起き直る）。
@@ -22,9 +22,9 @@ since: ws177-p021
    確認事項: 連打のまとめ。正解: `MUSIC STEP step=2 requests=2` と `MUSIC PLAY song=2 error=0`（`song=1` の PLAY が無い）。2 回が別の frame に分かれた時は `STEP step=1 requests=1` が 2 つ（それも可、記録する）。確認方法: log。
 3. 操作: 左の上の Search の field を click し、Escape、続けて Space。
    確認事項: field を離れる。正解: Space で `MUSIC PAUSE song=` か `MUSIC RESUME song=`（field に空白が入らない）。確認方法: log、撮影。
-4. 操作: root で `touch -r /home/kei/Music/AAT /tmp/aat-music-time`、`/home/kei/Music/AAT/02-tone-b.m4a` を `/home/kei/` へ mv、`touch -m -r /tmp/aat-music-time /home/kei/Music/AAT`（folder の時刻を戻し、5 秒ごとの見直しが click の前に曲を消さないように）。Music の一覧で Tone B（2 行目）を double click。
+4. 操作: root で `touch -r /home/user/Music/AAT /tmp/aat-music-time`、`/home/user/Music/AAT/02-tone-b.m4a` を `/home/user/` へ mv、`touch -m -r /tmp/aat-music-time /home/user/Music/AAT`（folder の時刻を戻し、5 秒ごとの見直しが click の前に曲を消さないように）。Music の一覧で Tone B（2 行目）を double click。
    確認事項: file の消失。正解: `MUSIC GONE song=1`、`MUSIC RESCAN songs=2`、`MUSIC NOTICE text=This song's file is gone.`、続いて `MUSIC PLAY song=1 error=0`（Tone C、消えた曲の次。その前の `MUSIC PLAY song=1 error=6` は開けなかった印）。確認方法: log、撮影。
-5. 操作: Music を閉じ、kei として `/bin/music /home/kei/not-a-song.m4a`。
+5. 操作: Music を閉じ、user として `/bin/music /home/user/not-a-song.m4a`。
    確認事項: Files から開けない file の理由。正解: `MUSIC FILE song=-1 error=3`（zedBSD の EINVAL）と `MUSIC NOTICE text=This file is not a song Music can play.`（音の無い MP4 なら error=21（EOPNOTSUPP）と「This file has no sound Music can play.」、読めない file なら「The file could not be read.」）。確認方法: log、撮影。
 
 ## 合格

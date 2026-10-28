@@ -8,7 +8,7 @@
 /*
  * The Vulkan executor of a GHCI device.
  *
- * libvulkan sends the Kei GPU command protocol (uapi/gpu-op.h) to the
+ * libvulkan sends the zedBSD GPU command protocol (uapi/gpu-op.h) to the
  * node.  The executor keeps the Vulkan objects in the kernel: it decodes
  * every command, answers the instance, the physical device and its
  * limits from the GPU's capability registers, keeps memory, buffers,

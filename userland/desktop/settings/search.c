@@ -19,6 +19,8 @@
 
 #include "settings.h"
 
+#include "include/kern/os-name.h"
+
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -88,7 +90,7 @@ static const struct search_setting search_settings[] = {
 	{ SE_PAGE_KEYBOARD, "Key repeat rate", "repeat rate keys held" },
 	{ SE_PAGE_KEYBOARD, "Delay before repeat", "delay repeat keys held" },
 	{ SE_PAGE_SOUND, "Sound service", "audio sound service audiod output" },
-	{ SE_PAGE_ABOUT, "Kei version", "version kernel release zedbsd operating system" },
+	{ SE_PAGE_ABOUT, "System version", "version kernel release " ZEDBSD_OS_ID " zedbsd operating system" },
 	{ SE_PAGE_ABOUT, "Processor", "processor cpu cores machine" },
 	{ SE_PAGE_ABOUT, "Graphics", "graphics gpu vulkan video" },
 	{ SE_PAGE_ABOUT, "Screen", "screen resolution display refresh" },
@@ -522,7 +524,7 @@ search_row(
 		name = result->setting;
 		(void)snprintf(where, sizeof(where), "%s", kl_tr(page->name));
 	} else if (page->ready != 0) {
-		(void)snprintf(where, sizeof(where), "%s", kl_tr(page->summary));
+		(void)se_named(where, sizeof(where), kl_tr(page->summary));
 	} else {
 		(void)snprintf(where, sizeof(where), "%s", kl_tr("Coming in a later version"));
 	}

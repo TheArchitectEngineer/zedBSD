@@ -16,7 +16,7 @@ Browser が page の `<video>` を libmedia（libavcodec の add-in）で再生�
 runner の試料 `/tmp/aat-samples/sample.mp4`（12 秒、MPEG-4 Part 2 640x360 と AAC）。`/tmp/aat-work/video.html` に `<video src="/tmp/aat-samples/sample.mp4" controls>`（muted でない）。image に libavcodec。
 
 ## 操作と確認
-1. 操作: kei として `/bin/browser /tmp/aat-work/video.html`。
+1. 操作: user として `/bin/browser /tmp/aat-work/video.html`。
    確認事項: 開く。正解: `BROWSER MEDIA MEDIA open width=640 height=360 … video=mpeg4 audio=none`（ベータ3 で音が戻れば `audio=aac` も正解）、page の左上に 640x360 の最初の絵と下の帯（再生の印）。確認方法: log、撮影。
 2. 操作: 動画の上を click、3 秒待つ。
    確認事項: 再生。正解: `BROWSER MEDIA MEDIA play position_ms=`、絵が進み、帯は一時停止の印と進んだ位置。確認方法: log、撮影。

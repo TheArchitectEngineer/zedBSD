@@ -159,3 +159,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 - ユーザーの回答（クリック、2026-10-29 01:3x）「両方 (推し)」→ 案 5（gpu.c の起床の抑制）を先に、続けて案 4（小さな transaction を呼び手の thread で同期の GPU_COMMAND、window mode の SURFACE_LOST errno 24 の解析を含む）。指示の原文「P2にWS291の続き」。
 - 再開点（2026-10-29 02:15 P2）: 案 5（gpu.c の起床の抑制）を実装・実機・venus-reg PASS（[phase006](phase006/phase.md) の「q1663」節）。shot の SURFACE_LOST は main でも起き、keiland-shot の後に compositor が frame callback を送らない事による 10 s の watchdog（Keiland、P1）。案 4 も実装・実機・venus-reg PASS（同じ節）。次の候補は big-N の record（libvulkan の encode）と executor の draw の費用、subs-N の残り（1 submit 約 47 µs 対 Linux 10）。
+
+## 2026-10-29 ユーザーの決定（WS306 との関係）
+
+- 原文: 「まずはデフォルト有効で実装して、NGGはゲーム用に作り替えます。つまりWSに依存関係があります。」→ 案 4・5 は既定で有効のまま。NGG は WS306 でゲーム用の option に作り替える（WS306 が WS291 に依存）。
+- 次の Queue: q1668（P2）big-N と subs-N の続き、RDNA で P1 の shot の直し（p019）の確かめ。ユーザーの回答（クリック）「WS291 の続き (推し)」。

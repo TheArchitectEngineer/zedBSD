@@ -31,6 +31,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 /* How much of a name must exist when it is made canonical. */
 #define CANONICAL_NONE		0	/* only the link itself is read */
@@ -189,7 +190,7 @@ read_options(
 			options->end = '\0';
 			break;
 		case OPTION_VERSION:
-			printf("readlink (Kei) 1.0\n");
+			printf("readlink (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 		default:
 			usage();

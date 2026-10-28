@@ -7,10 +7,12 @@
 
 /*
  * The frame of a page that is not ready yet: its picture and name on a
- * card, and a line saying it comes in a later version of Kei.
+ * card, and a line saying it comes in a later version of the system.
  */
 
 #include "settings.h"
+
+#include "include/kern/os-name.h"
 
 #include <string.h>
 
@@ -21,7 +23,7 @@
 #define SOON_TEXT_LINE		14U
 
 /* The line every such page shows. */
-#define SOON_MESSAGE		"This page is coming in a later version of Kei."
+#define SOON_MESSAGE		"This page is coming in a later version of " ZEDBSD_OS_NAME "."
 
 /*
  * Draws the card of a page that is not ready from a top edge; returns the

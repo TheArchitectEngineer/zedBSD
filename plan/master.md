@@ -19,12 +19,12 @@
 
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1662 in-progress | [ws309](ws309/ws.md): 設計の確定（pool の N は CPU 数で固定、ユーザーの回答「CPU 数で固定 (推し)」）→ design-reviewer → Phase の分割（Q1 に表を送る）→ 実装と試験 | — |
-| P2 | q1663 cleared（returned、merge d6685c55e） | [ws291](ws291/ws.md) p006 の続き: 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3 | 10.0.10.3 |
+| P1 | q1662-i03 in-progress（i02 返却、merge 9402d4c74） | [ws309](ws309/ws.md): p001〜p003 cleared、p019（shot の送り）in-progress、次は p005 io-file → p004 → p006〜p018。worktree p1-ws309b | QEMU |
+| P2 | q1668 in-progress | [ws291](ws291/ws.md): RDNA で shot の直しの確かめ → big-N・subs-N（q1663 は cleared、merge d6685c55e） | 10.0.10.3 |
 | P3 | q1664 in-progress | [ws221](ws221/ws.md) p002〜p009: §9 は全部推し（ユーザーの回答「全部 推しで (推し)」） | VF2（10.0.30.2）が主、5330 は従、相手は 10.0.10.2 |
-| P4 | q1665 in-progress | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
-| P5 | q1666 in-progress | 詳細の決まっていない WS の設計: code は書かない | — |
-| P6 | q1667 in-progress | WS223・WS282〜WS284・WS243・WS296 の実装: 試験なし、main に merge しない、incomplete のまま | — |
+| P4 | q1665-i02 in-progress | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
+| P5 | q1666-i02 in-progress | 詳細の決まっていない WS の設計: code は書かない | — |
+| P6 | q1667-i02 in-progress | WS223・WS282〜WS284・WS243・WS296 の実装: 試験なし、main に merge しない、incomplete のまま | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
 <!-- master:agents:end -->
@@ -43,7 +43,7 @@
 
 <!-- master:focus:start -->
 - 公開は rev.5 まで（実質のベータ2）。次に何をやるか（以前の「ベータ3・ベータ4」の段は取り消し）は Q1 とユーザーが整理中。下の「保留の WS」はその整理の対象。
-- **Keiland の thread の整理**（[WS309](ws309/ws.md)、planning）: main loop が待たない thread の構成をユーザーと検討中。構成の表とユーザーの決定の原文は ws309/ws.md。未決は手書きの照合の pool の N。ゲームモードは Vulkan display（VK_KHR_display）の仕様の中で実装する（ユーザー「工数が多くてもかまいません。」）。
+- **Keiland の thread の整理**（[WS309](ws309/ws.md)、incomplete）: 設計は確定（design.md、J1 は V2 swapchain 共有）、p001〜p003 cleared、P1 が p005 から実装中。構成の表とユーザーの決定の原文は ws309/ws.md。未決は手書きの照合の pool の N。ゲームモードは Vulkan display（VK_KHR_display）の仕様の中で実装する（ユーザー「工数が多くてもかまいません。」）。
 - **GPU の描画の速さ**（[WS291](ws291/ws.md)）: RDNA は重い scene で Linux と同等（scene-1500 201.8 対 200.4 fps、scene-6500 49.2 対 50.1）、小さな submit の多い run（big・subs）は Linux の 1/3〜1/10。次は案 4・5（ユーザーの判断）、その後 NVIDIA → PowerVR、Linux 以上の後に WS306。
 - **5330 の電源と性能**（[WS299](ws299/ws.md)）: direct の書き 88%、UFS の file の書き 52%、CPU の速さは Debian の 70〜90%（idle が C1 だけ・HWP 無し・hybrid を知らない、別の WS が要る）。継続はユーザーの判断。その後は WS300 → WS052 → WS301 → WS302 → 熱と fan（[pm-plan.md](agents/P1/pm-plan.md)）。
 - **GHCI 1.0 の driver**（[WS290](ws290/ws.md)）: 保留（FPGA 側の設計の完了と、ユーザーの明示の再開の指示を待つ）。p017 は実装・host 試験・QEMU 済み、残りは実機（p014・M9）と p015。
@@ -54,7 +54,7 @@
 
 <!-- master:priority:start -->
 優先順位（依存による順とは別。Queue の権限は変えない）:
-1. WS309（Keiland の thread の整理）: P1（q1662）が設計の確定 → Phase の分割 → 実装。
+1. WS309（Keiland の thread の整理）: P1（q1662-i02）が p005 から実装。
 2. WS291: P2（q1663）が案 5 → 案 4。並べて WS221（P3）・WS307（P4）・設計の全般（P5）・実装だけ（P6）。
 3. WS299: ユーザーの継続の判断の後（UFS の書き・mkfs の write-through・p007・p008、または区切る）。
 4. すぐ取り組む物（2026-10-27 ユーザー）: WS221（Jumbo frame、p008・p009 は WS220 から移した物）、WS242（RTX 30/40）・WS243（NVDEC）・WS250（nvrtx の取り消しと復帰）、WS223（全画面は合成、推しで実装）、WS009 の DOC-54（/dev/gpu の UAPI の文書）。
@@ -91,7 +91,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-350 · q1668 · WS310 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-351 · q1669 · WS310 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
@@ -156,7 +156,7 @@ BUG-350 · q1668 · WS310 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS250](ws250/ws.md) | MG006 | nvrtx の終わらない GPU の仕事の取り消しと復帰、system は動き続ける（2026-10-15 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「すぐ取り組むものの一つです。」） | p001 の設計（草稿は main 64f05b2c7） |
 | [WS290](ws290/ws.md) | MG006 | zedBSD の GHCI の driver を GHCI 1.0（amaterrace-gpu の docs/ghci.md 89529de）だけに書き直す。試験は host だけ | incomplete・保留（2026-10-28 ユーザー: FPGA 側の設計が終わるまで P3 終了、再開は明示の指示。p017 は実機待ち） | q1636（P3）で p001 の design 版 4 → p002〜（host 試験、実機は VF2＋KC705 の用意の後） |
 | [WS291](ws291/ws.md) | MG006 | GPU の driver の描画の速さ（desktop 60 fps・重い 3D の model 50 fps）: AMD RDNA（P2）→ NVIDIA（P2、GPU を入れ替え）→ PowerVR（VF2、P3） | incomplete（p001〜p005 cleared、p006 in-progress） | q1635（P2）で p006 の続き → p008〜p009、Linux 以上の後に WS306 |
-| [WS309](ws309/ws.md) | MG006 | Keiland の compositor の thread の構成を整理し main loop が待たないようにする。ゲームモードは Vulkan display の仕様の中で | planning（構成はユーザーと検討中、手書きの pool の N が未決） | 設計の確定 → Phase の分割 |
+| [WS309](ws309/ws.md) | MG006 | Keiland の compositor の thread の構成を整理し main loop が待たないようにする。ゲームモードは Vulkan display の仕様の中で | incomplete（p001〜p003 cleared、P1 q1662-i02） | p005 の残り（言語・apps.conf・account）から |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
 | [WS296](ws296/ws.md) | MG001 | src/drivers（gpu/ を除く）の comment から開発の管理情報を消し、XXX の規約の当て直し（usb など 11 file） | planned | 18 LW、担当の起動はユーザーの指示の時 |

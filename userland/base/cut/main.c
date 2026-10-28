@@ -33,6 +33,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "include/kern/os-name.h"
 
 /* What the list counts. */
 #define MODE_NONE	0
@@ -215,7 +216,7 @@ read_options(
 			options->output_delimiter = scan.value;
 			break;
 		case OPTION_VERSION:
-			printf("cut (Kei) 1.0\n");
+			printf("cut (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 		default:
 			usage();

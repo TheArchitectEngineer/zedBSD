@@ -14,7 +14,7 @@ ws189 の設計 §0 の欠け 1・§3.6: 1 つの client が複数の wl_data_de
 全部の device に送り（enter・motion・leave）、型を受けた最初の device にだけ drop を送ることを確かめる。
 
 ## 準備
-desktop。試験の image は `plan/tools/aat/config-amd64-aat-dnd.mk`（AAT の image に `data-probe`）。kei で `data-probe --token=two --two-devices` を開き
+desktop。試験の image は `plan/tools/aat/config-amd64-aat-dnd.mk`（AAT の image に `data-probe`）。user で `data-probe --token=two --two-devices` を開き
 （1 つの窓に data device が 2 つ）、Terminal（`echo dndsame` を打って Enter）と重ならないように置く。
 
 ## 操作と確認
@@ -31,4 +31,4 @@ devices=2 の enter、両方の device の enter、device 1 だけの drop と�
 ## 注記
 T1-433 は Terminal の New Window（Ctrl+Shift+N）で試して `devices=1` だった。Terminal の New Window は別の process を起動する（terminal/main.c
 `main_new_window` の fork と exec）ので、1 つの client に device は 1 つで `devices=1` が正しい（設計 §0 の「Terminal・Notes の 2 つ目の窓が該当」は誤り、
-今の Kei の program に 1 つの process で窓を 2 つ持つ物は無い）。§3.6 の経路は data-probe の `--two-devices` で確かめる（ws189-p002 F2）。
+今の desktop の program に 1 つの process で窓を 2 つ持つ物は無い）。§3.6 の経路は data-probe の `--two-devices` で確かめる（ws189-p002 F2）。

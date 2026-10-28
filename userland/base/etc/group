@@ -1,8 +1,8 @@
-wheel:x:0:root,kei
-network:x:69:kei
+wheel:x:0:root,user
+network:x:69:user
 sshd:x:22:
 _greeter:x:78:
 _passkey:x:79:
 _bluetooth:x:80:
 bluetooth:x:81:
-kei:x:1000:
+user:x:1000:

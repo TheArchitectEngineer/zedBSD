@@ -36,6 +36,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 /* The codes of the long options that have no letter. */
 #define OPTION_HELP	256
@@ -230,7 +231,7 @@ read_options(
 			options->target_directory = scan.value;
 			break;
 		case OPTION_VERSION:
-			printf("ln (Kei) 1.0\n");
+			printf("ln (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 		default:
 			usage();

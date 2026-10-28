@@ -8,15 +8,15 @@
 # login prompt), wrong-uuid (the loader names a root that is not there and stops: the
 # screen shows "A64 KERN UFS root partition not found"), no-kernel (no /boot/vmunix on the root: "A64 KERN UFS not
 # found"), duplicate (a second disk with the same PARTUUID: "A64 KERN UFS duplicate PARTUUID").  The three failure
-# cases end with a screen shot (SHOT) to look at.  VIDEO=WxH adds video=.  The last line is "p008-root-boot: CASE PASS|FAIL OUT".  Output goes to a new build/ws307/p008-boot.*.
+# cases end with a screen shot (SHOT) to look at.  VIDEO=WxH adds video=.  The last line is "p008-root-boot: CASE PASS|FAIL OUT".  Output goes to a new build/ws307-test/p008-boot.*.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 cd "$(dirname "$0")/../../.."
 B=${1:?usage: p008-root-boot.sh BUILD [CASE]}
 CASE=${2:-boot}
 NOCT=build/NoctLang/build-static/noct
-mkdir -p build/ws307
-out=$(mktemp -d build/ws307/p008-boot.XXXXXX)
+mkdir -p build/ws307-test
+out=$(mktemp -d build/ws307-test/p008-boot.XXXXXX)
 
 # The root: the staged tree (hard links, only files are added) with the kernel and the logo in /boot.
 cp -al "$B/rootfs" "$out/tree"

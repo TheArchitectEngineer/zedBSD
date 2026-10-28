@@ -10,9 +10,9 @@
  * window, drawn on the CPU into the picture the renderer shows over the
  * desk (design-input-notes.md section 5.2).
  *
- * It follows the look of the File Manager and the titlebar (Kei's look,
+ * It follows the look of the File Manager and the titlebar (the desktop's look,
  * plan/ws035/kei-identity-design.md): a translucent white card with a light
- * rim and a soft slate shadow, slate labels, and Kei's blue for what is
+ * rim and a soft slate shadow, slate labels, and the desktop's blue for what is
  * chosen -- the tool and the width on a pale blue pill in blue, as the
  * File Manager marks its chosen place, and the colour with a blue ring.  The picture is B8G8R8A8 with straight
  * alpha: transparent around the card, so the desk shows there, and
@@ -97,7 +97,7 @@
 #define UI_NOTICE_GAP		6
 
 /*
- * Kei's colours, as 0xRRGGBB, with the alphas they are laid on with:
+ * The desktop's colours, as 0xRRGGBB, with the alphas they are laid on with:
  * the glass's white veil, its rim and its slate edge, the slate text in
  * three strengths, the accent the user chose (ws179-p002) as a mark and as
  * text and its pale tint, and the shadow's slate
@@ -573,7 +573,7 @@ ui_layout(
 	float cx;
 	float cy;
 
-	/* The tools, the chosen one in Kei's blue: the drawing tool (ws216-p006), the eraser, Select and Text. */
+	/* The tools, the chosen one in the desktop's blue: the drawing tool (ws216-p006), the eraser, Select and Text. */
 	x = left;
 	x = ui_draw_button(ui, x, state);
 	x = ui_eraser_button(ui, x, state);
@@ -681,7 +681,7 @@ ui_layout(
 		cy = (float)UI_BUTTON_TOP + (float)UI_BUTTON_HEIGHT / 2.0f;
 		radius = ui_width_radius(kind, index);
 
-		/* The chosen width stands out in Kei's blue. */
+		/* The chosen width stands out in the desktop's blue. */
 		if (index == state->width) {
 			ui_rounded(ui, (float)x, (float)UI_BUTTON_TOP, (float)UI_BUTTON_HEIGHT, (float)UI_BUTTON_HEIGHT,
 				   (float)UI_BUTTON_HEIGHT / 2.0f, UI_ACCENT, UI_ACCENT_TINT_ALPHA);

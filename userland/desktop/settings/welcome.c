@@ -13,12 +13,13 @@
  * (Wi-Fi when the machine has the radio, else Ethernet; Wallpaper and
  * Appearance), whose controls work as they do there; Welcome, Keys and
  * Done are drawn here.  A bar at the foot of the page's pane holds a dot a
- * step, Back, and Next (on the last step "Start using Kei"); Skip stands at
+ * step, Back, and Next (on the last step "Start using" and the system's
+ * name); Skip stands at
  * the top right of every step.
  *
- * Start using Kei and Skip set the desktop's setting welcome.done to 1 (the
+ * Start using and Skip set the desktop's setting welcome.done to 1 (the
  * compositor starts the Welcome at a login while it is 0) and close the
- * window; Start using Kei also opens Files, which shows Today.  Closing the
+ * window; Start using also opens Files, which shows Today.  Closing the
  * window sets nothing, so the Welcome comes again at the next login.  The
  * About page shows it again ("Show Welcome again").
  *
@@ -33,6 +34,8 @@
  */
 
 #include "settings.h"
+
+#include "include/kern/os-name.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -77,7 +80,7 @@
 /* The steps' words for the log and the tests. */
 static const char *const welcome_words[WELCOME_STEPS] = { "welcome", "network", "look", "languages", "keys", "done" };
 
-/* The Keys step: Kei's main keys and what they do. */
+/* The Keys step: the desktop's main keys and what they do. */
 static const char *const welcome_keys[][2] = {
 	{ "Super", "Open App Home (tap the key)" },
 	{ "Super+Tab", "Wiseview: every window at a glance" },
@@ -167,7 +170,7 @@ se_welcome_draw(
 		y = welcome_header(app, canvas, x, top, width - skip_width - 16, "Languages and input", "How you type, and the language of the desktop's words.");
 		return se_languages_draw(app, canvas, x, y + WELCOME_CARD_GAP, width);
 	case WELCOME_STEP_KEYS:
-		y = welcome_header(app, canvas, x, top, width - skip_width - 16, "Keys to know", "Kei is quick to use from the keyboard.");
+		y = welcome_header(app, canvas, x, top, width - skip_width - 16, "Keys to know", "{1} is quick to use from the keyboard.");
 		return welcome_keys_card(app, canvas, x, y + WELCOME_CARD_GAP, width);
 	default:
 		break;
@@ -180,7 +183,7 @@ se_welcome_draw(
 /*
  * Draws the bar at the foot of the page's pane: a dot a step (the one
  * shown in the accent), Back (not on the first step) and Next, or on the
- * last step "Start using Kei".
+ * last step "Start using" and the system's name.
  */
 void
 se_welcome_bar(
@@ -189,6 +192,7 @@ se_welcome_bar(
 	const struct kl_rect *panel)
 {
 	struct kl_rect line;
+	char start[96];
 	const char *label;
 	kl_color color;
 	int button_y;
@@ -218,10 +222,10 @@ se_welcome_bar(
 		left += back_width + WELCOME_BAR_GAP;
 	}
 
-	/* Next, or Start using Kei (Close once Files could not be started), at the right; the middle ends before it. */
+	/* Next, or Start using and the name (Close once Files could not be started), at the right; the middle ends before it. */
 	label = kl_tr("Next");
 	if (app->welcome_step == WELCOME_STEP_DONE)
-		label = kl_tr("Start using Kei");
+		label = se_named(start, sizeof(start), kl_tr("Start using {1}"));
 	if (app->welcome_step == WELCOME_STEP_DONE && app->welcome_files_failed)
 		label = kl_tr("Close");
 	next_width = se_button_width(app, label);
@@ -300,7 +304,7 @@ se_welcome_press(
 
 /*
  * Takes a key the step's page did not (ws177-p007): Enter goes Next (or
- * starts Kei on the last step), Esc closes the window without the Welcome
+ * starts the desktop on the last step), Esc closes the window without the Welcome
  * done (it comes again at the next login), Alt+Left and Alt+Right go Back
  * and Next.  Returns 1 when the key was the Welcome's.
  */
@@ -384,7 +388,7 @@ welcome_page(
 	return SE_PAGE_HOME;
 }
 
-/* Draws the Welcome step: the mark, "Welcome to Kei, NAME" and a line; returns the edge below. */
+/* Draws the Welcome step: the mark, "Welcome to SYSTEM, NAME" and a line; returns the edge below. */
 static int
 welcome_intro(
 	struct se_app *app,
@@ -405,7 +409,7 @@ welcome_intro(
 
 	/* The greeting under it, with the account's name. */
 	welcome_name(app, name, sizeof(name));
-	(void)kl_tr_format(words, sizeof(words), kl_tr("Welcome to Kei, {1}"), name, (const char *)NULL);
+	(void)kl_tr_format(words, sizeof(words), kl_tr("Welcome to {1}, {2}"), ZEDBSD_OS_NAME, name, (const char *)NULL);
 	kl_text_metrics(app->text, WELCOME_TEXT_BIG, &title);
 	baseline = top + (int)WELCOME_MARK + 28 + title.ascent;
 	(void)kl_text_draw_fit(app->text, canvas, x, baseline, words, WELCOME_TEXT_BIG, 1, width, SE_COLOR_TITLE);
@@ -453,7 +457,7 @@ welcome_done(
 {
 	/* A header alone. */
 	return welcome_header(app, canvas, x, top, width, "You are all set",
-			      "Start using Kei opens Files at Today. The Welcome is in Settings > About whenever you want it again.");
+			      "Start using {1} opens Files at Today. The Welcome is in Settings > About whenever you want it again.");
 }
 
 /* Draws a step's header: its title large and a line under it; returns the edge below. */
@@ -468,6 +472,7 @@ welcome_header(
 	const char *summary)
 {
 	struct kl_text_line line;
+	char text[SE_SUMMARY_TEXT];
 	int bottom;
 
 	/* The title, bold, in the size of a page's header. */
@@ -475,7 +480,8 @@ welcome_header(
 	(void)kl_text_draw_fit(app->text, canvas, x, top + line.ascent, kl_tr(title), WELCOME_TEXT_TITLE, 1, width, SE_COLOR_TEXT);
 
 	/* The summary under it, broken into lines when it is longer than the column (ws177-p007). */
-	bottom = welcome_lines(app, canvas, x, top + line.height + 2, width, kl_tr(summary), WELCOME_TEXT_SUMMARY, 0, SE_COLOR_TEXT_SECONDARY, WELCOME_SUMMARY_LINES);
+	(void)se_named(text, sizeof(text), kl_tr(summary));
+	bottom = welcome_lines(app, canvas, x, top + line.height + 2, width, text, WELCOME_TEXT_SUMMARY, 0, SE_COLOR_TEXT_SECONDARY, WELCOME_SUMMARY_LINES);
 
 	/* Succeeded: the edge below the summary. */
 	return bottom;

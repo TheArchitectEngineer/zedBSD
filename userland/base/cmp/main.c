@@ -24,6 +24,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 struct cmp_reader {
 	const char *name;
@@ -358,7 +359,7 @@ cmp_parse_options(
 			options->limited = 1;
 			break;
 		case CMP_OPTION_VERSION:
-			printf("cmp (Kei) 1.0\n");
+			printf("cmp (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 		default:
 			return -1;

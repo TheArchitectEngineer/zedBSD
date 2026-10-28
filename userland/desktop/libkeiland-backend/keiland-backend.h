@@ -1230,9 +1230,11 @@ struct kl_backend_print *kl_backend_print_open(const char *config_path, const ch
 void kl_backend_print_close(struct kl_backend_print *print);
 
 /*
- * Tells whether printing can be offered: the daemon's program is there.
+ * Tells whether printing can be offered: the daemon's program is there,
+ * as it is now, or after kl_backend_print_host as the host's last check
+ * found (looked at by the open and by each kl_backend_print_check_run).
  */
-int kl_backend_print_can(const struct kl_backend_print *print);
+int kl_backend_print_can(struct kl_backend_print *print);
 
 /*
  * Reads what the daemon said and the settings file changed by another
@@ -1240,6 +1242,26 @@ int kl_backend_print_can(const struct kl_backend_print *print);
  * bits.  Returns 0.
  */
 int kl_backend_print_update(struct kl_backend_print *print, unsigned *changed);
+
+/*
+ * The settings file's writes and checks on a thread of the host's (the
+ * compositor's file I/O thread), so that its own thread neither starts a
+ * writer nor looks at the file: after kl_backend_print_host, the host
+ * calls kl_backend_print_write on its thread when
+ * kl_backend_print_write_wanted says changes wait (the update answers them
+ * once made), and checks the file for another session's change from time
+ * to time: kl_backend_print_check_begin and _end on its own thread,
+ * kl_backend_print_check_run between them on the other.  The close makes
+ * the changes still waiting.
+ */
+struct kl_backend_print_check;
+
+void kl_backend_print_host(struct kl_backend_print *print);
+int kl_backend_print_write_wanted(struct kl_backend_print *print);
+void kl_backend_print_write(struct kl_backend_print *print);
+struct kl_backend_print_check *kl_backend_print_check_begin(struct kl_backend_print *print);
+void kl_backend_print_check_run(struct kl_backend_print *print, struct kl_backend_print_check *check);
+void kl_backend_print_check_end(struct kl_backend_print *print, struct kl_backend_print_check *check);
 
 /*
  * Copy up to capacity printers or jobs and return how many were copied.

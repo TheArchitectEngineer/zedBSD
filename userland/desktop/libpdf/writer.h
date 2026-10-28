@@ -129,7 +129,7 @@ struct pdf_writer_attachment {
  * data is a zlib stream (FlateDecode), png_rows that it holds a PNG's rows
  * (the PNG predictor), alpha_size is the mask's length (0: width times
  * height) and alpha_flate that it is compressed.  An image of Notes has
- * its id, written as the private key /KeiNotesImage, and the digest of
+ * its id, written as the private key /ZedBSDNotesImage, and the digest of
  * what the editor was given, by which one update shares it among pages.
  */
 struct pdf_writer_image {

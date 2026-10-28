@@ -2,7 +2,7 @@
 # userland/desktop/locale/settings.keys:3, userland/desktop/settings/ui.c:580
 msg	Settings	設定
 # userland/desktop/locale/settings.keys:4
-msg	Change how Kei looks and works.	Kei の見た目と動きを変えます。
+msg	Change how {1} looks and works.	{1} の見た目と動きを変えます。
 # userland/desktop/locale/settings.keys:5
 msg	Wi-Fi	Wi-Fi
 # userland/desktop/locale/settings.keys:6
@@ -80,17 +80,17 @@ msg	Accounts on this computer.	このコンピューターのアカウント。
 # userland/desktop/locale/settings.keys:42
 msg	Updates	アップデート
 # userland/desktop/locale/settings.keys:43
-msg	Keep Kei up to date.	Kei を最新に保ちます。
+msg	Keep {1} up to date.	{1} を最新に保ちます。
 # userland/desktop/locale/settings.keys:44
 msg	About	情報
 # userland/desktop/locale/settings.keys:45
-msg	This computer and the version of Kei.	このコンピューターと Kei のバージョン。
+msg	This computer and the version of {1}.	このコンピューターと {1} のバージョン。
 # userland/desktop/locale/settings.keys:47
 msg	Search Results	検索結果
 # userland/desktop/locale/settings.keys:49
 msg	Japanese	日本語
 # userland/desktop/locale/settings.keys:50
-msg	Kei's input method: romaji to kana, converted a phrase at a time.	Kei の入力方式: ローマ字をかなにし、文節ごとに変換します。
+msg	{1}'s input method: romaji to kana, converted a phrase at a time.	{1} の入力方式: ローマ字をかなにし、文節ごとに変換します。
 # userland/desktop/locale/settings.keys:51
 msg	SKK	SKK
 # userland/desktop/locale/settings.keys:52
@@ -118,11 +118,11 @@ msg	How you type, and the language of the desktop's words.	入力のしかたと
 # userland/desktop/locale/settings.keys:64
 msg	Keys to know	覚えておきたいキー
 # userland/desktop/locale/settings.keys:65
-msg	Kei is quick to use from the keyboard.	Kei はキーボードからすばやく使えます。
+msg	{1} is quick to use from the keyboard.	{1} はキーボードからすばやく使えます。
 # userland/desktop/locale/settings.keys:66
 msg	You are all set	準備ができました
 # userland/desktop/locale/settings.keys:67
-msg	Start using Kei opens Files at Today. The Welcome is in Settings > About whenever you want it again.	「Kei を使い始める」でファイルの「今日」を開きます。ようこそは、設定 > 情報 からいつでももう一度見られます。
+msg	Start using {1} opens Files at Today. The Welcome is in Settings > About whenever you want it again.	「{1} を使い始める」でファイルの「今日」を開きます。ようこそは、設定 > 情報 からいつでももう一度見られます。
 # userland/desktop/locale/settings.keys:68
 msg	Open App Home (tap the key)	App Home を開く（キーを軽く押す）
 # userland/desktop/locale/settings.keys:69
@@ -314,13 +314,13 @@ msg	Back	戻る
 # userland/desktop/settings/welcome.c:222
 msg	Next	次へ
 # userland/desktop/settings/welcome.c:224
-msg	Start using Kei	Kei を使い始める
+msg	Start using {1}	{1} を使い始める
 # userland/desktop/settings/welcome.c:226
 msg	Close	
 # userland/desktop/settings/welcome.c:358
 msg	Files could not be opened. Open it from App Home.	
 # userland/desktop/settings/welcome.c:408
-msg	Welcome to Kei, {1}	Kei へようこそ、{1} さん
+msg	Welcome to {1}, {2}	{1} へようこそ、{2} さん
 # userland/desktop/settings/welcome.c:415
 msg	Let's set up a few things. You can change each of them later in Settings.	いくつか設定しましょう。どれもあとで設定から変えられます。
 # userland/desktop/settings/welcome.c:563

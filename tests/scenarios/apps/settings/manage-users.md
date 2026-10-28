@@ -13,7 +13,7 @@ since: ws089-p026
 管理者が Settings から利用者を足し、自分の password の誤りで拒まれ、消せることを確かめる。
 
 ## 準備
-kei は wheel。Settings の Users の頁。`aatuser` はいない。
+user は wheel。Settings の Users の頁。`aatuser` はいない。
 
 ## 操作と確認
 1. 操作: Manage users の card の「Add User」を click。
@@ -22,9 +22,9 @@ kei は wheel。Settings の Users の頁。`aatuser` はいない。
    確認事項: 名前の欄は account-admin の上限 32 byte で止まる（ws177-p004）。正解: `ZSETTINGS USERS admin field=0 length=32` があり、`length=33` 以上が無い。確認方法: log、撮影（欄に 32 字）。
 3. 操作: `aatuser`、Tab、`AAT User`、Tab、`aat-pass-1`、Tab、`wrong-pass`、Enter。
    確認事項: 拒否。正解: `ZSETTINGS USERS admin result … reason=bad-password`、`/etc/passwd` に `aatuser` が無い。確認方法: log、grep。
-4. 操作: もう一度「Add User」、同じ値で Your password を `kei`、Enter。
+4. 操作: もう一度「Add User」、同じ値で Your password を `user`、Enter。
    確認事項: 追加。正解: `ZSETTINGS USERS admin result request=N errno=0`、`/etc/passwd` に `aatuser`、その後の `ZSETTINGS USERS list count=` の行を待ってから一覧に出る（一覧は desktop が読み直して答える、ws188-p002）。確認方法: log、grep、撮影。
-5. 操作: 一覧の `aatuser` の行を click、「Remove」、Your password に `kei`、Enter。
+5. 操作: 一覧の `aatuser` の行を click、「Remove」、Your password に `user`、Enter。
    確認事項: 削除。正解: `… admin start mode=3`、`… admin result … errno=0`、`/etc/passwd` に `aatuser` が無い。確認方法: log、grep。
 
 ## 合格

@@ -32,6 +32,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include "include/kern/os-name.h"
 
 /* Whether headers are written. */
 #define HEADERS_AUTO	0	/* with several files */
@@ -294,7 +295,7 @@ read_options(
 			/* How -f watches is tail's own. */
 			break;
 		case OPTION_VERSION:
-			printf("tail (Kei) 1.0\n");
+			printf("tail (" ZEDBSD_OS_NAME ") 1.0\n");
 			exit(0);
 		default:
 			usage();

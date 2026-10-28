@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include "include/kern/os-name.h"
 
 enum console_line_result {
 	CONSOLE_LINE_READY,
@@ -99,7 +100,7 @@ service_console_run(
 
 	/* Handles a failed fprintf operation. */
 	if (fprintf(context->output,
-		    "Kei Service Console\nType '?' for help.\n") < 0)
+		    ZEDBSD_OS_NAME " Service Console\nType '?' for help.\n") < 0)
 
 		/* Reports operation failure. */
 		return 1;

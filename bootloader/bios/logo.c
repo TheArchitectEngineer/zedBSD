@@ -16,7 +16,7 @@
  * screen is filled with first, and the logo is drawn in the middle (its
  * middle part when it is larger than the screen).
  *
- * A picture whose header has the comment "fit=contain" (the Kei boot
+ * A picture whose header has the comment "fit=contain" (the boot
  * splash, 1920x1080) is drawn whole in the middle of a black
  * screen: at its own size when the screen holds it, else shrunk by nearest
  * pixels, its proportions kept, to the largest size the screen holds (a

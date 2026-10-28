@@ -13,7 +13,7 @@ since: ws179-p003
 Appearance の頁の accent の色（8 色、ws179-p001）を選ぶと、compositor（bar・App Home の強調）と app（Settings・Files）に届くことを確かめる。
 
 ## 準備
-App Home から Files を開き、Settings を Appearance の頁で開く（`settings appearance` を kei で流すと今の Settings がその頁に移る）。
+App Home から Files を開き、Settings を Appearance の頁で開く（`settings appearance` を user で流すと今の Settings がその頁に移る）。
 
 ## 操作と確認
 1. 操作: Accent colour の 2 番目の丸（Purple、control 91）を click。

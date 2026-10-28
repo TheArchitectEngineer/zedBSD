@@ -13,7 +13,7 @@ since: BUG-273
 BUG-273（x11-p004 の段 3: docked の glxtest を bar の close で閉じても終わらない）が compositor の側か試験の座標かを分ける。
 
 ## 準備
-image は `plan/tools/aat/config-amd64-aat-bugs.mk`（`/bin/glxtest` 入り）。kei で `DISPLAY=:0 /bin/xserver` と `glxtest` を helper が立て、終わりに止める。
+image は `plan/tools/aat/config-amd64-aat-bugs.mk`（`/bin/glxtest` 入り）。user で `DISPLAY=:0 /bin/xserver` と `glxtest` を helper が立て、終わりに止める。
 
 ## 操作と確認
 1. 操作: glxtest の窓の title bar を double click で dock。

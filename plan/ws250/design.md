@@ -6,6 +6,35 @@
 
 ユーザーの決定（原文、2026-10-15）:「その場合のキャンセルと復帰を実装した方がよくない？device lostでプログラムがそれ以上動けなくなるのはOK。でもシステムとしては動き続けてほしいな。」
 
+## 第 4 版の改訂（2026-10-29 P5、Q250-4 のユーザーの回答を反映。この節が第 3 版の T1 と Phase の表に優先する）
+
+ユーザーの回答（原文は ws.md）: Q250-4「案 A を必須に」。→ session ごとの channel（案 A）を必須の範囲に戻す。第 3 版の T1（案 B を必須）は取り消し、T2〜T13 は案 A の上でも有効。
+
+| # | 改訂 | review |
+| --- | --- | --- |
+| W1 | **channel は最初の run で遅延して作る**（`nvrtx_vk_gpu_run` の初回）。render しない open（display の lease・capture・blob の共有だけの client、`node.c:46-51`）は channel を持たない（isolate の NONE の扱い）。上限に達した時は open ではなく submit を EBUSY にする。faulted・broken の時は channel を作らず、close も RM を呼ばない | M13 |
+| W2 | **VA の区画**: session の channel ごとに user の heap から 2 MiB の区画を取り、ring・semaphore・fence の push・own の context buffer を置く（今の固定の `WORK_RING_VA` 等と DRIVER の区画 256 page には 33 channel 分が入らない、`work.c:70-75`、`nvrtx-work.h:39-40`）。own の context buffer は今 golden の VA に privileged で map している（`work_tables`）ので、privileged の map の関数（`nvrtx_work_map_vram` の privileged 版）を足す。`work_tables` の範囲の検査（`work.c:792-800`）を区画にも広げる。promote は VA の配列（第 2 版 R8） | M9 |
+| W3 | 範囲の明記: vaspace を共有するので、悪意のある・壊れた shader が他の session の memory を壊すことは防がない（今の 1 本の channel と同じで回帰ではない。space の分割は別の課題） | M9 の付記 |
+| W4 | 名前は `nvrtx_work_channel`（第 3 版 T11） | M10 |
+| W5 | **session ごとの worker が要る**: 今の worker は 1 本で、GPU の待ちが `node->lock` の中（`runtime.c`）なので、案 A でも GPU に仕事を持つ channel は常に 1 つ。compositor の frame は詰まった run の 2 s の検出の間、worker の待ちの後ろで止まる（第 1 版の D3）。案 A の利点（GPU の runlist の timeslice で compositor の channel が回る、GSP の ctxsw timeout の RC が back-up として働く: 第 3 版 T8）は session ごとの worker（GPU の待ちを `node->lock` の外へ）と一緒で初めて出る → 推しは**必須に含める**（Q250-5） | M1、M6 |
+
+### 第 4 版の Phase の表（第 3 版の表を置き換える。LW は ±50%）
+
+| Phase | 内容 | 依存 | LW |
+| --- | --- | --- | --- |
+| p002 | session ごとの channel（W1・W2・W4、遅延の作成、chid 16〜47 の bitmap、promote の VA の配列）、`rpc_lock` の公平（T6）、host 試験 | WS242 p003〜p005 | 9 |
+| p003 | 検出と取り消し（T2・T4・T5・T7、R1・R2）、RC の event の道、`isolate`、host 試験（T13） | p002、p004 | 7 |
+| p004 | `vkhang`（T9）と scenario | p002 と並行可 | 4 |
+| p005 | session ごとの worker（GPU の待ちを `node->lock` の外へ、W5）、U2・U3 の probe | p003（Q250-5 で必須なら p003 と同じ round） | 12 |
+| p006 | 選択肢: `reset`（GSP の再起動、D4 は「作らない」が既定） | ユーザーの判断 | 12 |
+| p007 | 規約の全文と出典の監査 | 全部 | 2 |
+
+必須: p002〜p004・p007 で 22 LW、Q250-5 で worker を含めれば 34 LW。実機は p002〜p005（Q242-4 の聞き直しの答えの機械）。
+
+### 第 4 版のユーザーに聞く点（Q1 へ）
+
+- Q250-5 session ごとの worker を必須に含めるか: 推し「含める（34 LW）。無いと案 A でも compositor は 2 s の検出の間 worker の後ろで止まり、案 A の利点が出ない」。選択肢: 含めない（22 LW、2 s の 1 回の停滞を受け入れる、第 1 版 D3 の既定）。
+
 ## 第 3 版の改訂（2026-10-29 P5、[design-review.md](design-review.md) の blocker 2・major 13・minor 10 を反映。この節が第 2 版の改訂と本文に優先する）
 
 本文と第 2 版の改訂は経緯として残す（review M12: 重ねた形の矛盾は、実装の Phase の前に Q1 の指示で本文を書き直して一本にする。下の T1〜T13 がその時の正）。

@@ -1,6 +1,6 @@
 #!/bin/sh
-# ws095-p017: makes SKK-JISYO.ja, the one dictionary file of Kei's input method, from the two it was made of
-# (2026-10-05, the user's decision "辞書を 1 つにまとめる"): Kei's own supplement (SKK-JISYO.kei, looked in
+# ws095-p017: makes SKK-JISYO.ja, the one dictionary file of zedBSD's input method, from the two it was made of
+# (2026-10-05, the user's decision "辞書を 1 つにまとめる"): zedBSD's own supplement (SKK-JISYO.kei, looked in
 # first) and REmacs's dictionary (SKK-JISYO.X).  They are not merged headword by headword: the segmenter weighs a
 # headword of the supplement above one of the system dictionary (ja-segment.c), so the file keeps them as two
 # parts, the supplement's first, and the line ";; ==== part: system ====" begins the system dictionary's part
@@ -15,19 +15,19 @@ supplement=$1
 system=$2
 cat <<'HEADER'
 ;; -*- mode: fundamental; coding: utf-8 -*-
-;; SKK-JISYO.ja - the dictionary of Kei's input method (Japanese).
+;; SKK-JISYO.ja - the dictionary of zedBSD's input method (Japanese).
 ;;
 ;; Copyright (C) 2026 Awe Morris
 ;; SPDX-License-Identifier: Zlib
 ;;
 ;; One file of two parts (ws095-p017), read in this order:
 ;;
-;;   1. Kei's supplement (formerly SKK-JISYO.kei): about a thousand everyday
-;;      words written for Kei (WS095 decision D3), with the annotations of
+;;   1. zedBSD's supplement (formerly SKK-JISYO.kei): about a thousand everyday
+;;      words written for zedBSD (WS095 decision D3), with the annotations of
 ;;      how verbs and adjectives conjugate.
 ;;   2. REmacs's dictionary (formerly SKK-JISYO.X), from the line
 ;;      ";; ==== part: system ====" on.  Its copyright holder, Awe Morris,
-;;      relicensed it under zlib for Kei on 2026-09-29 (WS095 decision D1;
+;;      relicensed it under zlib for zedBSD on 2026-09-29 (WS095 decision D1;
 ;;      its own header below is kept as it was published).
 ;;
 ;; Both parts are SKK dictionaries; an SKK tool reads the file as one.  The

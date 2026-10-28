@@ -61,7 +61,7 @@ func writtenImage(command) {
     for (i in 0..Array.size(written)) { if (written[i][0] == command) { return written[i][1]; } }
     return "";
 }
-// The Kei GPU command protocol's name of a Vulkan command (uapi/gpu-op.h): vkCmdBindPipeline -> GPU_OP_CMD_BIND_PIPELINE.
+// The zedBSD GPU command protocol's name of a Vulkan command (uapi/gpu-op.h): vkCmdBindPipeline -> GPU_OP_CMD_BIND_PIPELINE.
 func opName(name) {
     var lower = "abcdefghijklmnopqrstuvwxyz";
     var upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";

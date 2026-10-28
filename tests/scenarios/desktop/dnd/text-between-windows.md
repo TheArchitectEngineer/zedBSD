@@ -14,7 +14,7 @@ app の間の drag and drop（WS189）: 文字の drag が compositor を通っ�
 drag の元の窓へ戻すと印が出ず、離しても何も起きないこと（Text Editor は自分への drop を受けない、ws189 の決定）。
 
 ## 準備
-desktop。Text Editor を 2 つ（別の process、kei で `textedit` を 2 回）と Terminal を 1 つ開き、重ならないように置く。1 つ目の Text Editor に `hello drag` と打つ。
+desktop。Text Editor を 2 つ（別の process、user で `textedit` を 2 回）と Terminal を 1 つ開き、重ならないように置く。1 つ目の Text Editor に `hello drag` と打つ。
 
 ## 操作と確認
 1. 操作: 1 つ目の Text Editor で `hello drag` を全部選ぶ（Ctrl+A）。`aat mark start`。

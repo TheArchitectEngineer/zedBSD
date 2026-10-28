@@ -13,7 +13,7 @@ since: ws166-p003
 flick の panel の「候補」tab に、打った仮名の読みからの予測が出て、tap で読みが語に置き換わることを確かめる（WS166）。
 
 ## 準備
-入力方式 Japanese。kei で `textedit /tmp/aat-work/predict.txt` を開いて本文を click。flick の panel を開く（desktop.osk.open-close の 1）。panel が kana の面でなければ、右下の面の鍵（`A`・`1`・`あ`）を kana まで押す（`ZWL OSK face name=kana`）。
+入力方式 Japanese。user で `textedit /tmp/aat-work/predict.txt` を開いて本文を click。flick の panel を開く（desktop.osk.open-close の 1）。panel が kana の面でなければ、右下の面の鍵（`A`・`1`・`あ`）を kana まで押す（`ZWL OSK face name=kana`）。
 
 ## 操作と確認
 1. 操作: 「か」の鍵を tap、「わ」の鍵を押したまま上へ flick（ん）。

@@ -922,7 +922,7 @@ struct se_machine {
  * window learned them, and the memory as the monitor tells it.  An empty text is a value that could not be read, and the
  * row is not shown; system is the version's name of /etc/os-release
  * (PRETTY_NAME, ws089-p027), shown as the operating system, which is
- * "Kei" when it is empty.
+ * the build's name of the system (ZEDBSD_OS_NAME) when it is empty.
  */
 struct se_about {
 	char system[128];
@@ -1432,9 +1432,13 @@ struct se_app {
 #define SE_WELCOME_SKIP		9002
 #define SE_ABOUT_WELCOME	9003
 
+/* The room for a summary of the language with the system's name filled in (se_named). */
+#define SE_SUMMARY_TEXT		256
+
 /* The table of pages (pages.c). */
 extern const struct se_page se_pages[SE_PAGES];
 const struct se_page *se_page_find(const char *word);
+const char *se_named(char *out, size_t size, const char *text);
 
 /* The interface (ui.c). */
 void se_ui_init(struct se_app *app, struct kl_text *text, unsigned page);

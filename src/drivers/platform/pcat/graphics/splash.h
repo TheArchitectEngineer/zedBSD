@@ -6,7 +6,7 @@
  */
 
 /*
- * The Kei boot splash's spinner on the firmware framebuffer (ws035-p107).
+ * The boot splash's spinner on the firmware framebuffer (ws035-p107).
  */
 
 #ifndef KERN_DRIVERS_PLATFORM_PCAT_GRAPHICS_SPLASH_H

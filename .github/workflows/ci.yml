@@ -82,8 +82,8 @@ jobs:
       - name: Package zedbsd-qemu.zip
         continue-on-error: true
         run: |
-          make kei-nightly-zip
-          cp build/amd64/Kei-nightly.zip artifacts/zedbsd-qemu.zip
+          make zedbsd-nightly-zip
+          cp build/amd64/zedbsd-nightly.zip artifacts/zedbsd-qemu.zip
 
       - name: Upload binary
         uses: actions/upload-artifact@v4

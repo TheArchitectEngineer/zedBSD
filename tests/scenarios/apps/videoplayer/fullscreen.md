@@ -13,7 +13,7 @@ since: ws122-p005a
 動画の player が F11・Alt+Enter・picture の double click で全画面になり、Esc・F11 で戻ることを確かめる（BUG-223、ws122-p005a）。
 
 ## 準備
-kei で `videoplayer /tmp/aat-samples/sample.mp4` を開く。
+user で `videoplayer /tmp/aat-samples/sample.mp4` を開く。
 
 ## 操作と確認
 1. 操作: picture を click してから F11。

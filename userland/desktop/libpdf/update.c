@@ -24,7 +24,7 @@
  * one of its name in the catalog's EmbeddedFiles name tree and associated
  * files, and the information dictionary gets the date of the save.
  *
- * The new content's resources are named with the prefix "Kei", so they do
+ * The new content's resources are named with the prefix "ZedBSD", so they do
  * not meet the names the page's own content uses.  Objects of the document
  * that the revision copies are written back as the reader read them:
  * references stay references and strings are written in hexadecimal.
@@ -44,7 +44,7 @@
 #include "writer.h"
 
 /* The prefix of the names an update's resources take. */
-#define PDF_UPDATE_NAME_PREFIX "Kei"
+#define PDF_UPDATE_NAME_PREFIX "ZedBSD"
 
 /* The most nodes of the EmbeddedFiles name tree, and entries in it, an update carries over. */
 #define PDF_UPDATE_TREE_NODES_MAX 4096
@@ -2434,8 +2434,8 @@ free_layout(
 }
 
 /*
- * Chooses the prefix of an update's names (design.md [M4]): "Kei", or
- * "Kei1_" to "Kei9_", the first that begins no name of any page's
+ * Chooses the prefix of an update's names (design.md [M4]): "ZedBSD", or
+ * "ZedBSD1_" to "ZedBSD9_", the first that begins no name of any page's
  * ExtGState, XObject, Font or Pattern resources (Notes' own names of an earlier
  * revision, for one).  The last is taken when all are used; the
  * per-page check (EEXIST) still refuses a name met.
@@ -2447,7 +2447,7 @@ choose_prefix(
 	unsigned candidate;
 	int used;
 
-	/* "Kei" first. */
+	/* "ZedBSD" first. */
 	(void)snprintf(writer->prefix_buffer, sizeof(writer->prefix_buffer), "%s", PDF_UPDATE_NAME_PREFIX);
 	writer->name_prefix = writer->prefix_buffer;
 	used = prefix_used(writer->base, writer->prefix_buffer);

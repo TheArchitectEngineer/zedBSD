@@ -15,7 +15,7 @@
  * with a plain background reads as one picture on any screen size.  The
  * kernel does not know logo=; it ignores it as an unknown name.
  *
- * A picture whose header has the comment "fit=contain" (the Kei boot
+ * A picture whose header has the comment "fit=contain" (the boot
  * splash, 1920x1080, tools/build/make-boot-splash.py) is drawn
  * whole in the middle of a black screen: at its own size when the screen
  * holds it, else shrunk bilinearly, its proportions kept, to the largest

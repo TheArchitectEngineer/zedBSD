@@ -171,7 +171,7 @@ def main(arguments):
     found = {}
     for name in sorted(texts, key=lambda name: (not name.startswith('hersh.or'), name)):
         found.update(glyphs(texts[name]))
-    out = ['# The handwriting templates of Kei (ws165-p002), converted from the Hershey fonts by convert.py.',
+    out = ['# The handwriting templates of the desktop (ws165-p002), converted from the Hershey fonts by convert.py.',
            '# The Hershey Fonts were originally created by Dr. A. V. Hershey while working at the U. S. National',
            '# Bureau of Standards.  The format of the font data this was converted from was originally created by',
            '# James Hurt, Cognition, Inc., 900 Technology Park Drive, Billerica, MA 01821 (mit-eddie!ci-dandelion!hurt).',

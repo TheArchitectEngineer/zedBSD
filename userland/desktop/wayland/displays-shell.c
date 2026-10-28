@@ -27,6 +27,11 @@
  * light keys move it by DISPLAYS_KEY_STEP (D-BRIGHT-KEY).  A session that
  * is not active (the login screen, a lock) may not change anything
  * (D-AUTH2).
+ *
+ * A request's result says whether its choice was written to displays.conf;
+ * the file I/O thread writes it (heads.c), so the result is held until the
+ * writing that holds the choice is over, and, for a move of the output to
+ * another display, until the move's first frame proves it.
  */
 
 #include "kwl.h"
@@ -37,6 +42,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* Marks a parameter a function does not use. */
@@ -63,18 +69,26 @@ static struct {
 } displays_state;
 
 /*
- * A result held back until the move of the output it caused is proven by
- * the move's first frame (BUG-266): the object (NULL when none waits), its
- * request, whether the choice was written, and since when it waits.  The
- * object's going clears it (kwl_displays_object_gone); a newer held result
- * answers the older one first.
+ * A result held back (in the order held): the object (its going forgets
+ * the result), its request, how it ended (applied), and whether the
+ * choice was written; ticket is the writing of displays.conf it waits for
+ * (0: none, written is final), moving says it waits for the first frame
+ * of the output's move, since when.  Only the latest move is waited for:
+ * a newer one answers the older as applied.
  */
-static struct {
+struct displays_held {
+	struct displays_held *next;
 	struct kwl_object *object;
 	uint32_t request;
+	uint32_t applied;
 	uint32_t written;
+	uint64_t ticket;
+	unsigned moving;
 	uint64_t since_ms;
-} displays_pending;
+};
+
+/* The results held back (struct displays_held), the event loop's thread's alone. */
+static struct displays_held *displays_held_list;
 
 static void displays_snapshot(struct kwl_object *object);
 static void displays_output(struct kwl_object *object, struct kwl_server *server, unsigned index);
@@ -90,7 +104,9 @@ static int displays_touch_request(struct kwl_object *object, uint32_t opcode, co
 static void displays_rotation(struct kwl_object *object, struct kwl_server *server, const char *key, unsigned anchor);
 static int displays_places(const char *text, struct kwl_display_config *wanted);
 static void displays_result(struct kwl_object *object, uint32_t request, uint32_t applied, uint32_t saved);
-static void displays_answer(struct kwl_object *object, VkDisplayKHR before, uint32_t request, uint32_t applied, uint32_t written);
+static void displays_answer(struct kwl_object *object, VkDisplayKHR before, uint32_t request, uint32_t applied, int saved);
+static void displays_hold(struct kwl_object *object, uint32_t request, uint32_t applied, int saved, unsigned moving);
+static void displays_held_settle(void);
 static int displays_active(struct kwl_server *server);
 static int displays_string(const unsigned char *bytes, size_t size, size_t offset, size_t bound, const char **text, size_t *next);
 static size_t displays_put_word(unsigned char *payload, size_t offset, uint32_t word);
@@ -191,36 +207,37 @@ kwl_displays_request(
 }
 
 /*
- * Answers the result held back for a move of the output (BUG-266), once
- * the move's first frame was presented or refused: a refused one is
- * FAILED, the choice not holding.
+ * Settles the result held back for a move of the output, once the move's
+ * first frame was presented or refused: a refused one is FAILED, the
+ * choice not holding.  It is answered once its writing is over too.
  */
 void
 kwl_displays_move_settled(
 	struct kwl_server *server,
 	int failed)
 {
-	uint32_t applied;
+	struct displays_held *held;
 
 	UNUSED_PARAMETER(server);
 
-	/* Nothing held back. */
-	if (displays_pending.object == NULL)
-		return;
+	/* Each result that waits for the move (one at most). */
+	for (held = displays_held_list; held != NULL; held = held->next) {
+		if (!held->moving)
+			continue;
 
-	/* How the move ended. */
-	applied = KL_SYSTEM_RESULT_OK;
-	if (failed)
-		applied = KL_SYSTEM_RESULT_FAILED;
+		/* How the move ended. */
+		held->moving = 0U;
+		if (failed)
+			held->applied = KL_SYSTEM_RESULT_FAILED;
+		printf("KWL DISPLAYS result held request=%u applied=%u\n", held->request, held->applied);
+	}
 
-	/* The answer, and nothing held back any more. */
-	printf("KWL DISPLAYS result held request=%u applied=%u\n", displays_pending.request, applied);
-	displays_result(displays_pending.object, displays_pending.request, applied, displays_pending.written);
-	displays_pending.object = NULL;
+	/* What waits for nothing more is answered. */
+	displays_held_settle();
 }
 
 /*
- * Answers a result held back too long (the move's first frame never came:
+ * Settles a move held back too long (the move's first frame never came:
  * nothing was drawn, or the output was moved again), as applied.
  */
 void
@@ -228,29 +245,73 @@ kwl_displays_pending_tick(
 	struct kwl_server *server,
 	uint64_t now)
 {
-	/* Nothing held back, or not long yet. */
-	if (displays_pending.object == NULL)
-		return;
-	if (now - displays_pending.since_ms < DISPLAYS_PENDING_MS)
-		return;
+	struct displays_held *held;
 
-	/* Answered as the choice applied. */
-	kwl_displays_move_settled(server, 0);
+	/* Each result that waits for the move, long enough. */
+	for (held = displays_held_list; held != NULL; held = held->next) {
+		if (!held->moving || now - held->since_ms < DISPLAYS_PENDING_MS)
+			continue;
+
+		/* Settled as the choice applied. */
+		kwl_displays_move_settled(server, 0);
+		return;
+	}
 }
 
 /*
- * Forgets a held result of a displays object that goes.
+ * Settles the results that waited for the writings of displays.conf up to
+ * a ticket (heads.c, once the file I/O thread wrote it): written, or not
+ * when the writing failed.
+ */
+void
+kwl_displays_written(
+	struct kwl_server *server,
+	uint64_t ticket,
+	int error)
+{
+	struct displays_held *held;
+
+	UNUSED_PARAMETER(server);
+
+	/* Each result whose choice this writing holds. */
+	for (held = displays_held_list; held != NULL; held = held->next) {
+		if (held->ticket == 0U || held->ticket > ticket)
+			continue;
+
+		/* Its writing is over. */
+		held->ticket = 0U;
+		held->written = 0U;
+		if (error == 0)
+			held->written = 1U;
+	}
+
+	/* What waits for nothing more is answered. */
+	displays_held_settle();
+}
+
+/*
+ * Forgets the held results of a displays object that goes.
  */
 void
 kwl_displays_object_gone(
 	struct kwl_object *object)
 {
-	/* Only the object that waits. */
-	if (displays_pending.object != object)
-		return;
+	struct displays_held **link;
+	struct displays_held *held;
 
-	/* Nobody to answer. */
-	displays_pending.object = NULL;
+	/* Each result of the object leaves the list. */
+	link = &displays_held_list;
+	while (*link != NULL) {
+		held = *link;
+		if (held->object != object) {
+			link = &held->next;
+			continue;
+		}
+
+		/* Nobody to answer. */
+		*link = held->next;
+		free(held);
+	}
 }
 
 /* Sends every displays object a new snapshot: the displays changed. */
@@ -685,7 +746,6 @@ displays_apply_request(
 	uint32_t request;
 	uint32_t serial;
 	uint32_t mode;
-	uint32_t written;
 	size_t next;
 	int active;
 	int saved;
@@ -748,11 +808,8 @@ displays_apply_request(
 		return 0;
 	}
 
-	/* Succeeded: applied, and whether it was written (held back while the output's move is not proven). */
-	written = 0U;
-	if (saved == 0)
-		written = 1U;
-	displays_answer(object, before, request, KL_SYSTEM_RESULT_OK, written);
+	/* Succeeded: applied, answered once written (and once the output's move is proven). */
+	displays_answer(object, before, request, KL_SYSTEM_RESULT_OK, saved);
 	return 0;
 }
 
@@ -768,7 +825,6 @@ displays_brightness_request(
 	const char *key;
 	uint32_t request;
 	uint32_t percent;
-	uint32_t written;
 	unsigned index;
 	size_t next;
 	int internal;
@@ -827,11 +883,8 @@ displays_brightness_request(
 		return 0;
 	}
 
-	/* Succeeded: set, and whether it was written (the snapshot went with the apply). */
-	written = 0U;
-	if (saved == 0)
-		written = 1U;
-	displays_result(object, request, KL_SYSTEM_RESULT_OK, written);
+	/* Succeeded: set, answered once written (the snapshot went with the apply). */
+	displays_hold(object, request, KL_SYSTEM_RESULT_OK, saved, 0U);
 	return 0;
 }
 
@@ -848,7 +901,6 @@ displays_shown_request(
 	uint32_t request;
 	uint32_t shown;
 	uint32_t applied;
-	uint32_t written;
 	size_t next;
 	int active;
 	int saved;
@@ -892,11 +944,10 @@ displays_shown_request(
 		break;
 	}
 
-	/* Succeeded: answered, with whether it was written. */
-	written = 0U;
-	if (error == 0 && saved == 0)
-		written = 1U;
-	displays_answer(object, before, request, applied, written);
+	/* Succeeded: answered, once written when it changed the choice. */
+	if (error != 0)
+		saved = error;
+	displays_answer(object, before, request, applied, saved);
 	return 0;
 }
 
@@ -918,7 +969,6 @@ displays_rotation_request(
 	uint32_t request;
 	uint32_t rotation;
 	uint32_t applied;
-	uint32_t written;
 	unsigned shown;
 	unsigned index;
 	size_t next;
@@ -988,11 +1038,10 @@ displays_rotation_request(
 		break;
 	}
 
-	/* Succeeded: answered, with whether it was written. */
-	written = 0U;
-	if (error == 0 && saved == 0)
-		written = 1U;
-	displays_result(object, request, applied, written);
+	/* Succeeded: answered, once written when the choice was given to the file. */
+	if (error != 0)
+		saved = error;
+	displays_hold(object, request, applied, saved, 0U);
 	return 0;
 }
 
@@ -1085,9 +1134,10 @@ displays_places(
 }
 
 /*
- * Answers a request that changed the displays: at once, or, when it moved
- * the output to another display (from `before`), once the move's first
- * frame tells whether the move holds (BUG-266).
+ * Answers a request that changed the displays (saved: 0 when its choice
+ * was given to displays.conf, else why not): once its writing is over,
+ * and, when it moved the output to another display (from `before`), once
+ * the move's first frame tells whether the move holds.
  */
 static void
 displays_answer(
@@ -1095,31 +1145,115 @@ displays_answer(
 	VkDisplayKHR before,
 	uint32_t request,
 	uint32_t applied,
-	uint32_t written)
+	int saved)
 {
 	struct kwl_compose *compose;
 	struct kwl_server *server;
+	unsigned moving;
 
-	/* A refusal, or a change that did not move the output, is answered at once. */
+	/* Only an applied change that moved the output waits for the move's first frame. */
 	server = object->client->server;
 	compose = server->compose;
-	if (applied != KL_SYSTEM_RESULT_OK ||
-	    compose == NULL ||
-	    !compose->switch_proving ||
-	    compose->display == before) {
+	moving = 0U;
+	if (applied == KL_SYSTEM_RESULT_OK && compose != NULL && compose->switch_proving && compose->display != before)
+		moving = 1U;
+
+	/* Answered, or held back. */
+	displays_hold(object, request, applied, saved, moving);
+}
+
+/*
+ * Holds a result back until what it waits for is over: the writing of
+ * displays.conf that holds its choice (saved 0; any other saved is not
+ * written) and the output's move (moving).  A result that waits for
+ * neither is answered at once.
+ */
+static void
+displays_hold(
+	struct kwl_object *object,
+	uint32_t request,
+	uint32_t applied,
+	int saved,
+	unsigned moving)
+{
+	struct displays_held **link;
+	struct displays_held *held;
+	uint64_t ticket;
+	uint32_t written;
+	int settled;
+	int error;
+
+	/* The writing it waits for, unless it is over already or none was given. */
+	ticket = 0U;
+	written = 0U;
+	if (saved == 0) {
+		ticket = kwl_heads_config_ticket();
+		settled = kwl_heads_config_settled(ticket, &error);
+		if (settled) {
+			ticket = 0U;
+			if (error == 0)
+				written = 1U;
+		}
+	}
+
+	/* Waiting for nothing: answered now. */
+	if (ticket == 0U && !moving) {
 		displays_result(object, request, applied, written);
 		return;
 	}
 
-	/* An older result held back is answered first, as applied. */
-	kwl_displays_move_settled(server, 0);
+	/* An older result held for a move is settled first, as applied. */
+	if (moving)
+		kwl_displays_move_settled(object->client->server, 0);
 
-	/* Held back until the move's first frame. */
-	displays_pending.object = object;
-	displays_pending.request = request;
-	displays_pending.written = written;
-	displays_pending.since_ms = kwl_milliseconds();
-	printf("KWL DISPLAYS result held request=%u until the move's first frame\n", request);
+	/* The record; without memory the result is answered now, not written yet. */
+	held = calloc(1U, sizeof(*held));
+	if (held == NULL) {
+		printf("KWL DISPLAYS result request=%u answered unheld errno=%d\n", request, ENOMEM);
+		displays_result(object, request, applied, written);
+		return;
+	}
+
+	/* What it waits for. */
+	held->object = object;
+	held->request = request;
+	held->applied = applied;
+	held->written = written;
+	held->ticket = ticket;
+	held->moving = moving;
+	held->since_ms = kwl_milliseconds();
+
+	/* Kept after the results held before. */
+	link = &displays_held_list;
+	while (*link != NULL)
+		link = &(*link)->next;
+	*link = held;
+
+	/* Logged for the tests. */
+	printf("KWL DISPLAYS result held request=%u ticket=%llu move=%u\n", request, (unsigned long long)ticket, moving);
+}
+
+/* Answers, in the order held, every held result that waits for nothing more. */
+static void
+displays_held_settle(void)
+{
+	struct displays_held **link;
+	struct displays_held *held;
+
+	/* Each held result in its order. */
+	link = &displays_held_list;
+	while (*link != NULL) {
+		held = *link;
+		if (held->ticket != 0U || held->moving) {
+			link = &held->next;
+			continue;
+		}
+
+		/* Answered, and gone from the list. */
+		*link = held->next;
+		displays_result(held->object, held->request, held->applied, held->written);
+		free(held);
+	}
 }
 
 /* Sends an object a request's result. */

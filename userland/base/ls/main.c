@@ -316,7 +316,7 @@ main(
 	int listed;
 
 	/*
-	 * Names are UTF-8 whatever the locale says, because Kei supports no
+	 * Names are UTF-8 whatever the locale says, because the system supports no
 	 * other encoding (the user's decision of 2026-09-29): a printable
 	 * character is written as it is and measured by its width.  Without a
 	 * UTF-8 locale in the C library the names fall back to single bytes.

@@ -8,7 +8,7 @@
 /*
  * The Vulkan executor of the nvrtx GPU device.
  *
- * libvulkan sends the Kei GPU command protocol (uapi/gpu-op.h) to a GPU
+ * libvulkan sends the zedBSD GPU command protocol (uapi/gpu-op.h) to a GPU
  * node; the executor decodes it in the kernel and does the work on the
  * GPU.  The wire's readers and writers and the generated record codec are
  * the i915 executor's, used unchanged (as the bcm2711 executor uses them);

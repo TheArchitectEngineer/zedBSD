@@ -16,7 +16,7 @@ PDF Viewer の Find（titlebar の find field、F3・Shift+F3）と、文字の 
 補助（`plan/tools/aat/scenarios/helpers_pdfviewer_find.py`）が host で `plan/tools/aat/make-edit-samples.py` の `edit-basic.pdf`（3 頁。1 頁の段落の 1 行目は「The quick brown fox jumps over the lazy dog」、3 頁は `/Rotate 90`）を作り、target の `/tmp/aat-work/pdf-find.pdf` に置く。
 
 ## 操作と確認
-1. 操作: kei で `pdfviewer /tmp/aat-work/pdf-find.pdf`。
+1. 操作: user で `pdfviewer /tmp/aat-work/pdf-find.pdf`。
    確認事項: 開き。正解: `PDFVIEWER READY … pages=3`。確認方法: log、撮影。
 2. 操作: Ctrl+F、`lazy` と打つ。
    確認事項: 検索。正解: titlebar の find field に文字が入り、1 頁の「lazy」が橙で塗られる。確認方法: log `PDFVIEWER FIND found query="lazy" page=0 from=35 length=4`、撮影（人が見る）。

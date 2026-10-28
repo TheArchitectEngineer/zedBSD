@@ -17,6 +17,11 @@
  * closed here too, because a device's close runs its driver's close.
  * Where the backend opens the devices through a seat service (Linux and
  * FreeBSD), the event loop scans as before.
+ *
+ * The file I/O thread (io-file): the reads and writes of the session's
+ * files run here, in the order given (a file is written in the order its
+ * writes were given), each answered on the event loop's thread when it is
+ * done.  A write's flush takes seconds on zedBSD's UFS.
  */
 
 #include "kwl.h"
@@ -73,9 +78,10 @@ static const struct kwl_lane_ops io_close_ops = {
 };
 
 /*
- * Starts the device I/O thread once the threads' wake pipe is made, where
- * the backend opens the input devices itself.  Without it the event loop
- * scans as before (logged).
+ * Starts the I/O threads once the threads' wake pipe is made: the file
+ * I/O thread, and the device I/O thread where the backend opens the input
+ * devices itself.  Without one, its work is done in the event loop as
+ * before (logged).
  */
 void
 kwl_io_start(
@@ -84,8 +90,21 @@ kwl_io_start(
 	int supported;
 	int error;
 
-	/* Made once, after the wake pipe. */
-	if (server->io_started || !server->threads_prepared)
+	/* Made after the wake pipe. */
+	if (!server->threads_prepared)
+		return;
+
+	/* The file I/O thread, once. */
+	if (!server->io_file_started) {
+		error = kwl_lane_start(&server->io_file, "io-file", 1U, server->wake[1]);
+		if (error != 0)
+			printf("KWL IO thread=io-file errno=%d the files are written in the event loop\n", error);
+		else
+			server->io_file_started = 1U;
+	}
+
+	/* The device I/O thread, once. */
+	if (server->io_started)
 		return;
 
 	/* A backend whose seat opens the devices needs no thread for them. */
@@ -112,12 +131,54 @@ void
 kwl_io_take(
 	struct kwl_server *server)
 {
-	/* No thread, nothing to take. */
-	if (!server->io_started)
+	/* The findings offer their nodes; the closes need nothing. */
+	if (server->io_started)
+		(void)kwl_lane_take(&server->io_device, server);
+
+	/* The files read and written are applied and answered. */
+	if (server->io_file_started)
+		(void)kwl_lane_take(&server->io_file, server);
+}
+
+/*
+ * Gives the file I/O thread a job (run there, done here at a later pass);
+ * a key other than 0 replaces the job of the same key not started yet
+ * (KWL_IO_KEY_*).  Returns 0, or ENOTSUP when the thread does not run: the
+ * caller does the work itself.
+ */
+int
+kwl_io_file_submit(
+	struct kwl_server *server,
+	struct kwl_lane_job *job,
+	const struct kwl_lane_ops *ops,
+	uint64_t key)
+{
+	/* Without the thread the caller does it. */
+	if (!server->io_file_started)
+		return ENOTSUP;
+
+	/* Succeeded: the thread has it. */
+	kwl_lane_submit(&server->io_file, job, ops, key);
+	return 0;
+}
+
+/*
+ * Ends the file I/O thread at the end of the session, after the event
+ * loop: every job given runs and is taken first (the files the session
+ * changed reach the disk), then the thread ends.
+ */
+void
+kwl_io_file_finish(
+	struct kwl_server *server)
+{
+	/* Nothing runs. */
+	if (!server->io_file_started)
 		return;
 
-	/* The findings offer their nodes; the closes need nothing. */
-	(void)kwl_lane_take(&server->io_device, server);
+	/* Everything given is done and answered, then the thread ends. */
+	kwl_lane_finish(&server->io_file, server);
+	kwl_lane_stop(&server->io_file);
+	server->io_file_started = 0U;
 }
 
 /*

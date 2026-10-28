@@ -37,6 +37,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "include/kern/os-name.h"
 
 /* An expanded string: its characters, and where a [x*] fill stands. */
 struct set {
@@ -710,7 +711,7 @@ version(
 	void)
 {
 	/* The name and where it comes from. */
-	printf("tr (Kei) 1.0\n");
+	printf("tr (" ZEDBSD_OS_NAME ") 1.0\n");
 	exit(0);
 }
 

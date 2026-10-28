@@ -657,7 +657,7 @@ transport_echo(
 	message[4] = (uint8_t)(TRANSPORT_ECHO_ID >> 8);
 	message[5] = (uint8_t)TRANSPORT_ECHO_ID;
 	message[7] = 1U;
-	memcpy(message + 8, "kei-ipv6", 8U);
+	memcpy(message + 8, "zed-ipv6", 8U);
 	transport_name6(&name, address, 0U, scope);
 	got = sendto(raw, message, sizeof(message), 0, (struct sockaddr *)&name, sizeof(name));
 	if (got != (ssize_t)sizeof(message))

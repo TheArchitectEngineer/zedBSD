@@ -21,6 +21,9 @@ Resume point（2026-10-29 P5、q1666）: 残りの設計 [design.md](design.md)�
   → 解釈: GTX 16・RTX 30・40 は既定で GSP を起動し、`nvrtx.gsp=0` で逃げられることを文書に書く。RTX 2070 の回帰（p006）は WS305 の Linux＋VFIO の passthrough（10.0.10.3）で RTX を使える時に T1。
 - 順（2026-10-29 Q1 の判断、Q250-3 の推し）: WS242 p003〜p005 → WS250 p002・p003 → WS291 の NVIDIA の段。
 
+- 2026-10-29 聞き直し（設計の §3 の表の誤り（諦めの道がある、と書いた）と WS305 が止めたままの事に気づき、前提を正して聞き直した。上の Q242-1・Q242-2 の答えはこれで置き換わる）: ユーザーの回答（クリック）Q242-3「諦めの道を先に (推し)」、Q242-4「RDNA と差し替え (推し)」。
+  → 解釈: 段ごとに諦めて firmware の画面に戻す道（design.md 第 2 版の改訂の p005b）を作ってから既定で起動（p005c）。RTX 2070 の回帰は RDNA と差し替えた素の起動（SwitchBot で電源、判定は ssh と boot-test.sh）。plan/tools/nvrtx/ に戻す試験の tools.md の登録は試験が入った時に Q1。
+
 ## 単一目標
 nvrtx が RTX 20（Turing、GTX 16xx を含む）・30（Ampere）・40（Ada）の全モデルを認識し、30・40 でも GSP の起動・display・Vulkan の描画（SM86・SM89 の shader）が動く形にする。30/40 は実機の確かめなし（host 試験と build まで）。RTX 2070 の今の動きを壊さない。
 

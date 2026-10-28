@@ -22,6 +22,8 @@
 #include "fixed.h"
 #include "shaders.h"
 
+#include "include/kern/os-name.h"
+
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1455,17 +1457,17 @@ fixed_string(
 	/* An OpenGL 3.1 context's, with GLSL 1.40, and a 3.0 one's, with GLSL 1.30. */
 	version = gl_context_version(&flags);
 	if (version == 31U && name == GL_VERSION)
-		return (const GLubyte *)"3.1 Kei (OpenGL ES 3.0 on Vulkan)";
+		return (const GLubyte *)"3.1 " ZEDBSD_OS_NAME " (OpenGL ES 3.0 on Vulkan)";
 	if (version == 31U && name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"1.40";
 	if (version == 30U && name == GL_VERSION)
-		return (const GLubyte *)"3.0 Kei (OpenGL ES 3.0 on Vulkan)";
+		return (const GLubyte *)"3.0 " ZEDBSD_OS_NAME " (OpenGL ES 3.0 on Vulkan)";
 	if (version == 30U && name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"1.30";
 
 	/* An OpenGL 3.2 context's, with GLSL 1.50. */
 	if (version == 32U && name == GL_VERSION)
-		return (const GLubyte *)"3.2 Kei (OpenGL ES 3.0 on Vulkan)";
+		return (const GLubyte *)"3.2 " ZEDBSD_OS_NAME " (OpenGL ES 3.0 on Vulkan)";
 	if (version == 32U && name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"1.50";
 
@@ -1477,7 +1479,7 @@ fixed_string(
 
 	/* An OpenGL 1.4 context's; the rest are OpenGL ES's. */
 	if (name == GL_VERSION)
-		return (const GLubyte *)"1.4 Kei (fixed function on OpenGL ES 2.0 on Vulkan)";
+		return (const GLubyte *)"1.4 " ZEDBSD_OS_NAME " (fixed function on OpenGL ES 2.0 on Vulkan)";
 	if (name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"";
 	return NULL;

@@ -52,7 +52,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The marks' colours (0xAARRGGBB, not premultiplied): the places found (yellow), the one shown (orange), the selection (Kei's blue). */
+/* The marks' colours (0xAARRGGBB, not premultiplied): the places found (yellow), the one shown (orange), the selection (the desktop's blue). */
 #define FIND_MATCH		0x60ffd400U
 #define FIND_CURRENT		0x80ff8a00U
 #define FIND_SELECTION		((pv_draw_accent() & 0x00ffffffU) | 0x50000000U)

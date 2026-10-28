@@ -16,6 +16,8 @@
 
 #include "textedit.h"
 
+#include "include/kern/os-name.h"
+
 #include <errno.h>
 #include <limits.h>
 #include <math.h>
@@ -1789,7 +1791,7 @@ te_app_dialog_words(
 		break;
 	default:
 		snprintf(title, size, "Text Editor");
-		*words = "A simple editor of plain text for Kei.";
+		*words = "A simple editor of plain text for " ZEDBSD_OS_NAME ".";
 		*labels = about;
 		break;
 	}

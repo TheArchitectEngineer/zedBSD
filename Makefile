@@ -1253,11 +1253,13 @@ $(ZEDBSD_VERSION_STAMP): FORCE_ZEDBSD_VERSION
 	@printf '%s\n' '$(ZEDBSD_VERSION)' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
 
+include config/os-name.mk
+
 $(ZEDBSD_OS_RELEASE): FORCE_ZEDBSD_VERSION
 	@mkdir -p $(dir $@)
-	@printf '%s\n' 'NAME="zedBSD"' 'ID=zedbsd' \
+	@printf '%s\n' 'NAME="$(ZEDBSD_OS_NAME)"' 'ID=$(ZEDBSD_OS_ID)' \
  'VERSION="$(ZEDBSD_VERSION_NAME)"' 'VERSION_ID=$(ZEDBSD_VERSION)' \
- 'PRETTY_NAME="Kei/zedBSD $(ZEDBSD_VERSION_NAME)"' \
+ 'PRETTY_NAME="$(ZEDBSD_OS_NAME) $(ZEDBSD_VERSION_NAME)"' \
  'BUILD_ID=$(ZEDBSD_SOURCE_REVISION)' 'ZEDBSD_RELEASE=$(ZEDBSD_RELEASE)' \
  'ZEDBSD_VERSION="zedBSD $(ZEDBSD_RELEASE) ($(ZEDBSD_SOURCE_REVISION) $(ZEDBSD_SOURCE_DATE))"' > $@.tmp
 	@if cmp -s $@.tmp $@; then rm -f $@.tmp; else mv $@.tmp $@; fi
@@ -1570,7 +1572,7 @@ $(BUILD)/src/hal/i386/cmain.o: HAL_CC += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
 $(BUILD)/kern64/src/kern/main.o $(BUILD)/src/kern/main.o: $(ZEDBSD_VERSION_STAMP)
 $(BUILD)/kern64/src/kern/main.o: AMD64_CPPFLAGS += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
 $(BUILD)/src/kern/main.o: OBJ_CFLAGS += -DZEDBSD_VERSION='"$(ZEDBSD_VERSION)"'
-include tools/release/kei-nightly.mk
+include tools/release/zedbsd-nightly.mk
 
 ifneq ($(strip $(ZEDBSD_TARGET_TRIPLE)),)
 

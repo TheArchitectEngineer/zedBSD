@@ -524,7 +524,7 @@ session_runtime(
 
 /*
  * Makes the home directory of an account that has none yet:
- * an image can name a person's account (the demonstration's kei) but
+ * an image can name a person's account (the default user) but
  * cannot give a directory to its owner, so the first login makes it, 0700
  * and the user's.  Anything already at the path is left as it is, and a
  * home outside a root-owned directory that only root may write is not
