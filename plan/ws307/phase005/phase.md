@@ -22,7 +22,7 @@ installer の helper（p009）が使う base の道具を足す: `mkswap` の pa
   - `mkfs -t fat32 DEVICE` の serial を乱数（`getentropy`、0 は引き直す）に。今の値（disk の登録番号）に頼る利用者は tree に無い（`git grep` で確かめた、loader・kernel は serial を `boot0=UUID=` の照合にだけ使う）ので、option にせず既定を乱数にした（spec §11.3 の「p005 で決める」）。
   - `mkfs -t fat32 DEVICE` は 4096 byte の logical sector の device も受け付ける（FAT32 の geometry は既に 4096 を扱う）。native UFS の device の mode は 512 だけのまま（下の「残り」）。
   - `--check-size` に `--sector-size=512|4096` を足した（FAT32 は両方、native UFS は 512 だけ）。出力の sector の欄はその値（今まで固定の 512）。
-- UFS の inode の密度（spec §5.6）: native の 256 inode／cylinder group（約 62 MiB）で 1 GiB に約 4,200、8 GiB で約 33,000。unit の file の数は p003 の index で出るので、密度を変えるかは p003 で量ってから決める（mkfs は変えていない）。
+- UFS の inode の密度（spec §5.6）: native の 256 inode／cylinder group（約 62 MiB）で 1 GiB に約 4,200、8 GiB で約 33,000。unit の file の数は p003 の index で出るので、密度を変えるかは p003 で量ってから決める（mkfs は変えていない）。 → p003 の段 6（2026-10-29）で量った: 全 unit の entry 2,985 に対し、導入先の最小の root（約 1.5 GiB）で約 6,000 inode。密度は変えない（[phase003/phase.md](../phase003/phase.md)）。
 
 ## 確かめ（2026-10-29、P4、host）
 
