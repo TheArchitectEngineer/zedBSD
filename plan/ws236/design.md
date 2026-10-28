@@ -2,7 +2,7 @@
 
 # WS236 設計: VC6（Raspberry Pi 4）の H.264 decode を Vulkan Video で
 
-Parent: [WS236](ws.md)。Phase: [p001](phase001/phase.md)（この文書を書いた Phase）。
+Parent: [WS236](ws.md)。Phase: p001（fb1f6afee の plan/ws236/phase001/phase.md）（この文書を書いた Phase）。
 版: 第 1 版（2026-10-14、P3）。design-reviewer の review の前。
 
 ## 1. 目的と範囲

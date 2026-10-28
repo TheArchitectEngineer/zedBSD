@@ -1,6 +1,6 @@
 # WS214: HVS の値の出典の表
 
-[p001 の設計](../phase001/phase.md) 4.3 (8) の表。新しく使う HVS の値ごとに、値・zedBSD の名前・出典・確かめ方を書く。GPL の文と code は写さない（値・独自の名前・出典の場所・確かめ方だけ）。出典の記号: (a) zedBSD の既存の code（WS141 で監査済み、[rpi4-gpu-license-audit.md](../../ws141/rpi4-gpu-license-audit.md)）、(b) Broadcom・Raspberry Pi の公開の文書、(c) Pi の実測、(d) Linux 6.19 vc4 の読み（理解だけ）。
+p001 の設計（fb1f6afee の plan/ws214/phase001/phase.md） 4.3 (8) の表。新しく使う HVS の値ごとに、値・zedBSD の名前・出典・確かめ方を書く。GPL の文と code は写さない（値・独自の名前・出典の場所・確かめ方だけ）。出典の記号: (a) zedBSD の既存の code（WS141 で監査済み、[rpi4-gpu-license-audit.md](../../ws141/rpi4-gpu-license-audit.md)）、(b) Broadcom・Raspberry Pi の公開の文書、(c) Pi の実測、(d) Linux 6.19 vc4 の読み（理解だけ）。
 
 ## p003a（2026-10-12 P2）
 

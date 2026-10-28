@@ -2,41 +2,50 @@
 
 # WS233: firmware を awemorris/zedBSD-firmware から取る
 
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-14 ユーザー「WS233はユーザの方で確認できました。CIが通ればOKとします。CI成果物で最終UATする予定です。」。firmware は全部 zedBSD-firmware から取っている（Master の merge の block））。旧: incomplete（2026-10-14 Q1 起動、P1）。残り・制限: p002 の license の画面の端末での目視は未実施
+<!-- awesome-plan-current:start -->
+Status: completed（2026-10-27 P3 の精査 q1608。2026-10-14 ユーザー「WS233はユーザの方で確認できました。CIが通ればOKとします。CI成果物で最終UATする予定です。」）
+<!-- retained-after-completion --> phase001・phase002 は source の comment（platform/amd64/vmunix.mk、userland/firmware/zedbsd-firmware.mk、tools/menuconfig.py、userland/firmware/license-agree.sh）が設計の出典として参照している。消すか残すかは Q1 の判断待ち。
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG002
 Parent: [Master](../master.md)
-Source: 2026-10-14 ユーザー「リポジトリ awemorris/zedBSD-firmware を作って、RPi4のコンパイル済みファームウェアを含め、再配布してよいバイナリであることを確認してそこにすべて入れて、GitHubから落とす形にできませんか？」。きっかけは CI の run 38531306764 が git.kernel.org の 503 で intelbt の firmware を取れず失敗したこと（retry は 6fd32c175 で入れた）。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
+<!-- awesome-plan-current:end -->
 
 ## 目標
 
-- build が取る全ての firmware の binary（`userland/firmware/*`、`vendor/raspberrypi-firmware` の submodule から使う RPi4 の起動の firmware、`vendor/intel-vbt` など）を一覧にし、それぞれの license が再配布を許すことを確かめる。
-- 許す物だけを `awemorris/zedBSD-firmware`（GitHub、public）に license の文書と出所（元の URL・commit・sha256）とともに置く。
-- build はそこから固定の commit で取り、今と同じ sha256 で確かめる。元の配布元は予備（mirror）として残すかは P1 の設計で決める。
-- CI（.github/workflows）の submodule の clone をやめられるならやめる。
+build が取る全ての firmware の binary を一覧にし、license が再配布を許す物だけを `awemorris/zedBSD-firmware`（GitHub、public）に license の文書と出所（元の URL・commit・sha256）とともに置き、build はそこから固定の commit で取り、今と同じ sha256 で確かめる。CI の submodule の clone をやめられるならやめる。
 
-## Phase
+## ユーザーの決定
 
-| ID | 内容 | 状態 |
+- 2026-10-14（原文）「リポジトリ awemorris/zedBSD-firmware を作って、RPi4のコンパイル済みファームウェアを含め、再配布してよいバイナリであることを確認してそこにすべて入れて、GitHubから落とす形にできませんか？」（きっかけは CI の run 38531306764 が git.kernel.org の 503 で intelbt の firmware を取れず失敗したこと）
+- 2026-10-14「それでよいです。ghコマンドで作ること、アップロードすることを許可します。ファームウェアのディレクトリごとにライセンスファイルもわかりやすく置くのがよいです。makeで個別ファームウェアをダウンロードしたとき、初回は ライセンス表示と Agree するかの yes/no があるのがいいと思います。CIでは yes | make でいいのでは。」
+- 2026-10-14「はい、何のファームウェアか、著作権表示、ライセンス文、yes/noですね。」（初回の表示の順）
+- 2026-10-14（クリック）Cypress の brcmbt・bcm43455 は「入れる」。RPi4 の DTB は「dts を repo に置く」。VBT・OpRegion の raw は「VBTはテスト用だったので、もう不要と思います。削除できませんか？」
+- 2026-10-15「5330 VBT削除は私の指示で、コミットから削除になりました。もしあるなら削除しておいてください。」「vbt-decodeは削除してください。」
+- 2026-10-14「では作ってください。ライセンスをスクロール表示して、きちんと法的な見た目にしてほしいです。」→ p002。
+- 2026-10-14「WS233はユーザの方で確認できました。CIが通ればOKとします。CI成果物で最終UATする予定です。」
+
+## 結果
+
+- p001: 一覧と license の監査、repo の中身、取り方の切り替えと同意の表示、RPi4 の firmware の取り方、CI（P1 の 36966480d・5090f6202 を main に merge）。Q1 が `gh repo create awemorris/zedBSD-firmware --public` と push（ddd36a0d2f02、68 file、SHA256SUMS 一致）、`userland/firmware/zedbsd-firmware.mk` に SHA（2fd3cc622）。host で 6 つの firmware と rpi4-boot を取り全部一致、intelbt の接続先は raw.githubusercontent.com だけ（strace）。2026-10-14 夜に `nvidia-gsp/`（WS037 の GSP-RM）を足して push（3cad3cc0aa84）。
+- VBT・OpRegion の raw と読む試験は git rm（531dfe8d4）、2026-10-15 に 5330 の VBT・OpRegion の raw、それを含む patch 7 本、vbt-decode.txt も削除。
+- submodule `vendor/raspberrypi-firmware` は tree に無い（2026-10-28 に `.gitmodules`・`vendor/` が無いことを確かめた）。
+- p002: menuconfig の Build boot image の license の TUI（scroll、Accept/Decline）。host の確かめまで。
+- T1 の image の試験（T1-619）はユーザーの確かめで取り消し。
+
+## 制限・移管
+
+- p002 の license の画面の端末での目視は未実施。
+- zedBSD-firmware の repo を作り直す道具（`make-firmware-repo.sh` ほか）と `run-i915-firmware-package-test.sh` は plan/tools/ へ移す（Q1 の OK の後）。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
 | --- | --- | --- |
-| [ws233-p001](phase001/phase.md) | 一覧と license の監査、repo の中身の準備（local）、build の取り方の変更、初回の license の同意（yes/no） | in-progress（P1 の実装と host の確かめは済み。Q1 の push・placeholder・submodule の除去と T1 の image の試験が残り） |
-| [ws233-p002](phase002/phase.md) | menuconfig の Build boot image で firmware の license を TUI（scroll、Accept/Decline）で聞く | in-progress（P1 の実装と host の確かめは済み。端末での目視は未実施） |
+| ws233-p001 | 一覧と license の監査、repo の中身、build の取り方の変更、初回の license の同意 | in-progress のまま閉じた（repo の作成・push と取り方は main、ユーザーの確かめ） |
+| ws233-p002 | menuconfig の Build boot image で firmware の license を TUI で聞く | in-progress のまま閉じた（実装と host の確かめ、端末での目視は未実施） |
 
-repo の作成と push は Q1 が、監査の結果をユーザーに示してから行う。
+## 記録の所在
 
-## 決定（2026-10-14 ユーザー）
-
-「それでよいです。ghコマンドで作ること、アップロードすることを許可します。ファームウェアのディレクトリごとにライセンスファイルもわかりやすく置くのがよいです。makeで個別ファームウェアをダウンロードしたとき、初回は ライセンス表示と Agree するかの yes/no があるのがいいと思います。CIでは yes | make でいいのでは。」
-
-- repo は public。`gh` での作成と push（upload）は許可済み（Q1 が監査の結果を確かめてから行う）。
-- firmware の directory ごとに license の file を置く。
-- make で firmware を初めて取る時に license を表示して yes/no で同意を聞く。CI は `yes | make`。
-- 初回の表示の順（2026-10-14 ユーザー「はい、何のファームウェアか、著作権表示、ライセンス文、yes/noですね。」）: 何の firmware か → 著作権表示 → license の全文 → yes/no。
-- 判断（2026-10-14 ユーザー、クリック）: Cypress の brcmbt・bcm43455 は「入れる」。RPi4 の DTB は「dts を repo に置く」。VBT・OpRegion の raw（vendor/intel-vbt、plan/ws031/display-ref/）は「VBTはテスト用だったので、もう不要と思います。削除できませんか？」→ P1 が参照を調べ、Q1 が git rm する。
-- P1 の 36966480d（取り方の切り替え・同意の表示・RPi4 の firmware の取り方・CI）を main に merge（placeholder は空で今の取り方のまま）。
-- 2026-10-14 Q1: P1 の 5090f6202（DTB の source、Cypress の README、VBT の参照の除去）を merge。VBT・OpRegion の raw と読む試験 6 file を git rm（531dfe8d4）。`plan/ws031/handover/increment-results/` の patch 7 本（VBT の bytes を含む、約 60 MB）は未決（ユーザーに確認）。
-- 2026-10-15 Q1（ユーザー「5330 VBT削除は私の指示で、コミットから削除になりました。もしあるなら削除しておいてください。」）: 10-14 の削除から漏れた 5330 の VBT・OpRegion の raw を git rm: `plan/ws051/tests/m3-5330-20261007/debugfs/i915_vbt.txt`（8704 byte、$VBT ALDERLAKE-P の binary）・`i915_opregion.txt`（8192 byte）と、`display-ref/i915_vbt.bin`・`i915_opregion.bin` の binary の差分を含む `plan/ws031/handover/increment-results/e97-e1{09,15,16,17,18,19,20}-changes.patch` の 7 本（上の「未決」）。WS031 の過去の記録（report・freeze・results など 18 file）の patch への参照は履歴としてそのまま。VBT を解読した文章 `plan/ws031/display-ref/vbt-decode.txt` も削除した（2026-10-15 ユーザー「vbt-decodeは削除してください。」）。
-- 2026-10-14 Q1: `gh repo create awemorris/zedBSD-firmware --public` と push（commit ddd36a0d2f0215f4a9000d1c0796e54aeaf1a79f、68 file、SHA256SUMS 一致）。`userland/firmware/zedbsd-firmware.mk` にその SHA を記入（2fd3cc622）。host で 6 つの firmware と rpi4-boot を新しい cache に取り、全部一致。intelbt は strace で接続先が raw.githubusercontent.com（185.199.108〜111.133）だけ、git.kernel.org への接続なしを確認。
-- 残り: submodule `vendor/raspberrypi-firmware` の除去（手順は phase001/proposed/remove-submodule.md）、T1 の image の試験（rpi4・amd64 の build、FAT の中の firmware が前と byte 一致、raspi4b の boot-test）。
-- 2026-10-14 ユーザー「では作ってください。ライセンスをスクロール表示して、きちんと法的な見た目にしてほしいです。」→ ws233-p002（menuconfig の license の画面）。きっかけは、今の Build boot image が stdin を端末のまま make に渡し、license の質問が log にだけ出て止まって見える問題（Q1 の source の読み、未確かめ）。
-- 2026-10-14 ユーザー「WS233はユーザの方で確認できました。CIが通ればOKとします。CI成果物で最終UATする予定です。」→ T1-619 は取り消し。残りは submodule の除去（CI が通った後）。
-- 2026-10-14 夜 Q1: zedBSD-firmware に `nvidia-gsp/`（WS037 の GSP-RM 570.144、LICENCE.nvidia 2.1.2）を足して push（3cad3cc0aa84a5991ed558869213de764ed077ef）、zedbsd-firmware.mk の revision を更新。nvidia-gsp・intelbt・i915 を新しい cache に取り、接続先は GitHub だけで全部一致。
+Phase の計画・結果・試験は削除する（上の retained の 2 つは Q1 の判断の後、道具は plan/tools/ へ）。git の commit `fb1f6afee` の `plan/ws233/` にある。Queue の履歴は [plan/history](../history/index.md)。

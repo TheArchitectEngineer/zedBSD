@@ -3,44 +3,55 @@
 # WS211: Pi 4 の compositor の描画の削減（App Home の遷移のクロスフェード、draw の束ね）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p003・p005〜p011 の実装は main（Pi で確認）。2026-10-12 ユーザー（Pi の試し）「めちゃくちゃ速くなりました」「非常に快適です」、2026-10-13 ユーザー「コンポジタ、アプリ、CSE/DCE、すべてが効いて、これまでに見たこともないようななめらかなデスクトップです。」。2026-10-13 ユーザー「いや、これ以上詰めなくていいです。」で最適化を終えた）。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-12 Q1 作成））。残り・制限: p002（クロスフェード）は終了の時に未実装、p004 の規約は一括の見直しへ
+Status: completed（2026-10-27 P3 の精査 q1608。2026-10-13 ユーザー「いや、これ以上詰めなくていいです。」で最適化を終えた）
+<!-- retained-after-completion --> phase001・phase003・phase009 は userland/desktop/wayland/ の source の comment が設計の出典として参照している（layer-cache.c・batch.c・compose-bind.c・damage.c）。消すか残すかは Q1 の判断待ち。
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
-Queue: P3（WS141 の Pi の直しの次）
-Resume point: p002（クロスフェード）・p003（束ね）・p005（時計）の実装は main（Pi で確認中）。p006 はマウス移動の cursor の間隔の直し（main 1d9c9749e）。p007（dock・undock を窓の絵の拡大縮小に、configure はアニメの後）を実装（agent/p3 902a5feb2）、place16 で Pi の確認待ち（2026-10-12 P3）。p008（Calendar の hover の遅れ: 窓の commit を client の damage の所だけ描く）を実装（agent/p3 db55254d4）、place23 で Pi 待ち。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
-
-## 由来
-
-2026-10-12 ユーザー: App Home を開くアニメが 2 コマしか出ない（「もうちょっと出そう」）。Pi 4 の kernel の log では App Home の 1 コマが 458〜916 draw（アイコン 1 つに光・絵・映り込み・名前の文字 1 字ずつ・動作中の線、床・時計・点・後ろのデスクトップの window ごと）で、1 コマ 150〜400 ms、開くアニメ（HOME_OPEN_MS 280）の間に 1〜2 コマ。アイコンの絵は起動時に atlas へ読み込み済み（glass.c tiles_create）で、時間差は表示の演出（HOME_CONTENT_STEP_MS）。ユーザー「場合によっては、デスクトップ1枚とHome1枚でクロスフェードすることが必要かも。」「App Homeのアイコンは、遷移のスムーズさのために常に保持するしかないと思います。」→ Q1 が (1) クロスフェード (2) draw の束ねの新しい WS を提案、ユーザー「承認します。」
 
 ## 目標
 
-Pi 4 で App Home の開閉のアニメが 60 fps に近く、App Home を開いたままの操作（hover・ページ）も軽い。i915・Venus の見た目と速さを損なわない。
+Pi 4 で App Home の開閉のアニメが 60 fps に近く、App Home を開いたままの操作（hover・ページ）も軽い。i915・Venus の見た目と速さを損なわない。範囲は compositor（userland/desktop/wayland/）の中。
 
-## 範囲
+## ユーザーの決定
 
-- (1) クロスフェード: デスクトップの絵と App Home の絵を 1 枚ずつ GPU の画像に持ち、開閉のアニメの間は 2 枚を拡大・縮小・透明度で重ねるだけ（1 コマ数 draw）。App Home の絵は常に保持し、アプリの一覧・動作中の印・ページ・言語・外観が変わった時だけ後ろで描き直す（最初の 1 コマも待たない）。アイコンの時間差の演出はやめるか置き換える（ユーザーと決める）。
-- (2) draw の束ね: 同じ種類（文字の glyph、アイコンの tile、影・光、塗り）を 1 回の draw（instance か頂点の列）にまとめる。App Home とデスクトップの両方。
-- compositor（userland/desktop/wayland/）の中。kernel・libvulkan・UAPI・HAL は変えない（必要が出たら WS141 へ）。
+- 2026-10-12（由来）:「場合によっては、デスクトップ1枚とHome1枚でクロスフェードすることが必要かも。」「App Homeのアイコンは、遷移のスムーズさのために常に保持するしかないと思います。」→ Q1 の (1) クロスフェード (2) draw の束ねの WS の案に「承認します。」
+- 2026-10-12（Pi の試し）「めちゃくちゃ速くなりました」「非常に快適です」。
+- 2026-10-13「コンポジタ、アプリ、CSE/DCE、すべてが効いて、これまでに見たこともないようななめらかなデスクトップです。」
+- 2026-10-13「いや、これ以上詰めなくていいです。」（描画の最適化の終了）
 
-## 完了の条件（仮、p001 で確定）
+## 結果
 
-Pi 4 で App Home の開閉が目で滑らか（ユーザーの確認）、1 コマの draw の数と時間が p001 の目標以下（実機の log）。i915・Venus で見た目が今と同じ（T1）。
+- クロスフェード（p002）は main（4c3a56cf9、`glass_draw_crossfade`）。開閉のアニメのコマは絵を使い 1 コマ数十 draw。
+- 時計の部分の更新（p005、fab6d4df1）、cursor の present の間隔（p006、1d9c9749e）、dock・undock の拡大縮小（p007、902a5feb2）、client の damage の所だけの描画（p008、db55254d4）、複数の damage の四角（p009、e6e7b1a9b・4ec9f16d1）、1 コマの CPU の仕事の削減（p010、f7873c64f・af2dd3887）、present の copy の command buffer の使い回し（p011、fa6102245）は main の履歴にある（2026-10-28 に `git merge-base --is-ancestor` で確かめた）。
+- Pi の実機の確かめはユーザーの目の評価（上の原文）。Phase ごとの Pi の log の判定と T1（i915・Venus）の回帰は未実施のまま閉じた。
 
-## Phase
+## 制限・移管
 
-| Phase | 内容 | Status |
+- 完了の条件（仮）の数値（1 コマの draw の数と時間の目標）は決めずに終えた（2026-10-13 ユーザーの終了）。
+- p003 の段 2（床の試し）以降と、p001 の未決（Pi の変換の方式・舞台の 1 枚化・面積の閾値）は終了の時に未着手。
+- p004 の規約の全文は WS の外の一括の見直しへ（2026-10-08 ユーザー「規約の整形（各 WS の全文規約の Phase）はベータ3」、2026-10-27 の精査で一括の見直しに読み替え）。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 調査と設計（draw の数え、クロスフェードの絵の持ち方と無効化、束ねの形、Pi の見積もり、試験） | planning（第 4 版、review-4 待ち） |
-| p002 | クロスフェードの実装と Pi の確かめ | planned |
-| [p003](phase003/phase.md) | draw の束ね（文字・tile・影）と Pi の確かめ | 段 1 実装（未 merge）、段 2 は床の試しから |
-| [p005](phase005/phase.md) | 時計の 1 分ごとの更新を時計の所だけに | in-progress（実装済み、Pi 未確認） |
-| [p006](phase006/phase.md) | 窓の drag の移動とマウス移動を 60fps に近づける | in-progress（cursor の present の間隔の直しは main、drag は計測待ち） |
-| [p007](phase007/phase.md) | dock・undock のアニメを窓の絵の拡大縮小にし、終わってから client に描き直させる | in-progress（実装、place16 で Pi 待ち） |
-| [p008](phase008/phase.md) | 窓の小さな更新（Calendar の hover）を client の damage の所だけ描く | in-progress（実装 db55254d4、place23 で Pi 待ち） |
-| [p009](phase009/phase.md) | damage を 1 つの外接の四角でなく複数の四角のまま描く（compositor の四角ごとの scissor、driver は触れる supertile だけを回し、present の写しも変わった箱だけ） | in-progress（実装 e6e7b1a9b・4ec9f16d1、place24 で Pi 待ち） |
-| [p010](phase010/phase.md) | 1 コマの CPU の仕事（kernel の decode の object の探索を O(1)、空の copy の往復を省く、計測） | in-progress（実装 agent/p4、place25 で Pi 待ち） |
-| [p011](phase011/phase.md) | present の copy の command buffer を slot ごとに使い回す（往復 2 回減）と、compositor の窓の tile あたりの GPU の費用（不透明な層の下を描かない、glass の shader を短く） | in-progress（1 は main、2 は agent/p3、host 試験 PASS。Pi・T1 待ち、2026-10-12 P3） |
-| p004 | 規約の全文の見直し | planned |
+| ws211-p001 | 調査と設計（draw の数え、クロスフェードの絵の持ち方、束ね、Pi の見積もり、試験） | planning（第 4 版）のまま WS を閉じた。段 1・2 は計測用に main へ |
+| ws211-p002 | クロスフェードの実装と Pi の確かめ | 実装は main（4c3a56cf9）。Phase の記録は無い |
+| ws211-p003 | draw の束ね（文字・tile・影） | 段 1 は実装、段 2 は未着手で終了 |
+| ws211-p005 | 時計の 1 分ごとの更新を時計の所だけに | in-progress のまま閉じた（実装は main、Pi の判定は未実施） |
+| ws211-p006 | 窓の drag とマウス移動を 60 fps に近づける | in-progress のまま閉じた（cursor の present の間隔の直しは main） |
+| ws211-p007 | dock・undock を窓の絵の拡大縮小に | in-progress のまま閉じた（実装は main、Pi の判定は未実施） |
+| ws211-p008 | Calendar の hover などを client の damage の所だけ描く | in-progress のまま閉じた（実装は main、ユーザーの「非常に快適です」） |
+| ws211-p009 | damage を複数の四角のまま描く | in-progress のまま閉じた（実装は main） |
+| ws211-p010 | 1 コマの CPU の仕事（decode の object の探索を O(1) など） | in-progress のまま閉じた（実装は main、host 試験 PASS） |
+| ws211-p011 | present の copy の command buffer の使い回し、窓の tile の GPU の費用 | in-progress のまま閉じた（1 は main、host 試験 PASS） |
+| ws211-p004 | 規約の全文の見直し | WS の外の一括の見直しへ |
+
+## 記録の所在
+
+Phase の計画・結果・試験は削除する（上の retained の 3 つは Q1 の判断の後）。git の commit `fb1f6afee` の `plan/ws211/` にある。Queue の履歴は [plan/history](../history/index.md)。

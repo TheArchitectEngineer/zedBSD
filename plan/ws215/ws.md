@@ -3,40 +3,53 @@
 # WS215: Raspberry Pi 4 の Bluetooth（内蔵の BCM43455 の Bluetooth）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p002〜p005 は実装・host 試験・build 済み（UART の HCI・firmware・Broadcom の始動）。残りは Pi 4 の実機の確かめ（p006）だけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」。Pi の BT は config で既定 n（ユーザー、Master の merge の block））。旧: incomplete（2026-10-12 Q1 作成。2026-10-13 P3: p001 の第 2 版を review-2 が「p002 可、p003 は条件つき」と判定、第 3 版の補いで中-B〜F・軽微を入れた。p002 を実行（build・host 試験済み、T1 と実機の確かめ待ち）。p004 を実行（b…。残り・制限: 実機の確認は未実施。p008（SCO と HFP）は HFP と一緒にベータ3
+Status: completed（2026-10-27 P3 の精査 q1608。p002〜p005 は実装・host 試験・build 済み、残りは Pi 4 の実機の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）
+<!-- retained-after-completion --> phase001 は source の comment（userland/base/bluetoothd/broadcom.c・broadcom.h、userland/firmware/brcmbt/Makefile・brcmbt-firmware.manifest）が設計の出典として参照している。消すか残すかは Q1 の判断待ち。
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG005
 Related Milestones: MG006
 Parent: [Master](../master.md)
-Queue: P3 の lane（2026-10-13 Q1 の割当、p001・p002・p004）、P2 の lane（p003）
-Resume point: p002（[phase002/phase.md](phase002/phase.md)）は T1 の QEMU raspi4b の起動の回帰と Pi の実機の確かめ（bluetoothd が静かに待つ）の結果待ち。p003（[phase003/phase.md](phase003/phase.md)）は実装・build・host 試験まで済み、T1 の QEMU raspi4b の起動の回帰と Pi の実機の smoke（bt-probe）の結果待ち（D1 で `CONFIG_DRIVER_BCM2711_BT` の既定 y、D5 は未回答で推奨の (a)）。p004（[phase004/phase.md](phase004/phase.md)）は package・host 試験・license の監査まで済み、rpi4 の image の build で file が載る確かめと Q1 の判定待ち。p005（[phase005/phase.md](phase005/phase.md)）は実装・build・host 試験まで済み（P2）、Pi の実機（firmware・3 Mbaud・scan・`bt show`）の結果待ち。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
-
-## 由来
-
-2026-10-12 ユーザー:「描画の最適化の後、計測を取ったら、SMPを入れます。さらに計測をとって、最適化を終了したいです。そのあと、RPi4のWiFiとBluetoothを実装し、RPi4は完了です。」WiFi は既存の WS206。Bluetooth はこの WS。
 
 ## 目標
 
-Pi 4 の内蔵の Bluetooth（BCM43455 の Bluetooth の部分）で、zedBSD の既存の Bluetooth の stack（bluetoothd、/dev/bluetooth0、WS197・WS205 の機能）が動く。
+Pi 4 の内蔵の Bluetooth（BCM43455 の Bluetooth の部分、PL011 の UART の HCI）で、zedBSD の既存の Bluetooth の stack（bluetoothd、/dev/bluetooth0、WS197・WS205 の機能）が動く。
 
-## 範囲（p001 で決める）
+## ユーザーの決定
 
-- 接続の経路（PL011 の UART の HCI、今の config.txt は `dtoverlay=disable-bt` で UART を console に回している。WS141 で serial の console は既定で無効にした）、firmware（patchram の .hcd）の読み込み、clock・GPIO・電源の制御、device tree。
-- 既存の USB の Bluetooth の driver と HCI の層の共有。
-- WiFi（WS206、同じ chip の SDIO）との共存（coexistence）。
-- 試験: Pi の実機（keyboard・mouse・audio・phone の連携）。
+- 2026-10-12（由来）:「描画の最適化の後、計測を取ったら、SMPを入れます。さらに計測をとって、最適化を終了したいです。そのあと、RPi4のWiFiとBluetoothを実装し、RPi4は完了です。」（WiFi は WS206、Bluetooth はこの WS）
+- 2026-10-13: p001 の判断 D1〜D4 はユーザーが回答（D1 で `CONFIG_DRIVER_BCM2711_BT` の driver の表の既定 y、D2 の firmware の package）。D5 は未回答で推奨の (a) で進めた。
 
-## Phase
+## 結果
 
-設計の第 2 版（[p001](phase001/phase.md) の 7 節）の段の分け。計 約 18 LW。p007（規約の全文）は WS の最後（p006・p008 の後）。
+- p002: arm64 で Bluetooth の userland（bluetoothd・bt・bt-probe）と kernel の `CONFIG_INPUT_BRIDGE` の build（warning 0、host 試験 PASS）。
+- p003: kernel の PL011 の UART の HCI の transport（`rpi4-bt.c`、H4 の assembler、`BT_IOC_SET_SPEED`、config.txt の生成）。T1-566（QEMU raspi4b の既定と serial、amd64 の bt-loopback）PASS。
+- p004: firmware の package（`userland/firmware/brcmbt/`、BCM4345C0.hcd）と license の本文の一致の監査。
+- p005: bluetoothd の Broadcom の始動（reset、速さの切り替え、patchram、BD_ADDR）、host 試験 PASS。
+- Pi 4 の実機の確かめ（firmware・3 Mbaud・scan・`bt show`、keyboard・mouse・audio・phone）は未実施。`config/ci/config-rpi4.mk` は `CONFIG_DRIVER_BCM2711_BT := n`（2026-10-28 に確かめた。driver の表 `config/drivers/architecture/arm64.drivers` の既定は y）。
 
-| Phase | 内容 | Status | 依存・入る条件 |
-| --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 調べと設計 → design-reviewer（[review-1](phase001/review-1.md)、[review-2](phase001/review-2.md)） | in-progress（第 2 版 + 第 3 版の補い（review-2 への対応）、Q1 の判定待ち。D1〜D4 答え済み、D5 未回答） | — |
-| [p002](phase002/phase.md) | arm64 で Bluetooth の userland（bluetoothd・bt・bt-probe）の build と、kernel の `CONFIG_INPUT_BRIDGE` の arm64 の規則と rpi4 の既定 | in-progress（build warning 0・host 試験 PASS、T1 の QEMU raspi4b と実機の確かめ待ち） | p001 の review-1 の判定で開始可 |
-| [p003](phase003/phase.md) | kernel: PL011 の UART の HCI の transport（`rpi4-bt.c`、HUNT・SYNC と自己 reset）、H4 の assembler、class・UAPI の変更（`BT_IOC_SET_SPEED`・`bt_info` の拡張）、config.txt の生成（`CONFIG_DRIVER_BCM2711_BT`、D1 で既定 y）、bt-probe の Read Local Name。実機の smoke | in-progress（P2、build warning 0・host 試験 PASS、test-wait: T1 の QEMU raspi4b と実機の smoke） | p002、ws206-p002a（GPIO・mailbox の GPIO の helper）、p001 の再 review の通過、値の出典の表の p003 の行、D1・D5 |
-| [p004](phase004/phase.md) | firmware の package（`userland/firmware/brcmbt/`、BCM4345C0.hcd）と license の監査（本文の一致） | in-progress（package・host 試験 PASS・本文の一致を確かめた。rpi4 の image の build で file が載る確かめと Q1 の判定待ち） | p001、D2（答え済み、p003 と並行可） |
-| [p005](phase005/phase.md) | bluetoothd の Broadcom の始動（始めの reset、速さの切り替え、patchram、BD_ADDR）、host の試験、実機で firmware・scan | in-progress（P2、build warning 0・host 試験 PASS、test-wait: Pi の実機） | p003、p004、値の出典の表の p005 の行、D3 |
-| p006 | 実機の統合（keyboard・mouse・audio・phone・WiFi との共存） | planned | p005（WS206・WS205 の統合の後の部分あり） |
-| p007 | 規約の全文の見直し | planned | p006、p008 |
-| p008 | UART の SCO（送りの拍か Synchronous Flow Control、`0xFC1C` の routing）と HFP の通話 | planned | p005、ws197-p007b |
+## 制限・移管
+
+- 実機の確認は未実施（p002〜p005 の Pi、p006 の統合）。
+- p008（UART の SCO と HFP の通話）は HFP（[WS197](../ws197/ws.md) の p007b）と一緒に扱う。
+- p007 の規約の全文は WS の外の一括の見直しへ（2026-10-08 ユーザー「規約の整形（各 WS の全文規約の Phase）はベータ3」、2026-10-27 の精査で一括の見直しに読み替え）。
+- 回帰に残す試験（`bt-broadcom-host-test`、`brcmbt-firmware-package-test.sh`）は plan/tools/ へ移す（Q1 の OK の後）。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws215-p001 | 調べと設計（review-1・review-2） | in-progress（第 2 版と第 3 版の補い）のまま閉じた。実装は p002〜p005 |
+| ws215-p002 | arm64 の Bluetooth の userland と input bridge の build | in-progress のまま閉じた（build・host 試験 PASS、Pi は未実施） |
+| ws215-p003 | kernel: PL011 の UART の HCI の transport、UAPI、config.txt | in-progress のまま閉じた（T1-566 PASS、Pi の smoke は未実施） |
+| ws215-p004 | firmware の package（brcmbt）と license の監査 | in-progress のまま閉じた（package・host 試験・本文の一致まで） |
+| ws215-p005 | bluetoothd の Broadcom の始動 | in-progress のまま閉じた（host 試験 PASS、Pi は未実施） |
+| ws215-p006 | 実機の統合（keyboard・mouse・audio・phone・WiFi との共存） | 未着手で閉じた（実機の確認だけ、2026-10-27 ユーザーの原文） |
+| ws215-p008 | UART の SCO と HFP の通話 | 未着手。WS197 の HFP と一緒に |
+| ws215-p007 | 規約の全文の見直し | WS の外の一括の見直しへ |
+
+## 記録の所在
+
+Phase の計画・結果・試験は削除する（上の retained の phase001 は Q1 の判断の後）。git の commit `fb1f6afee` の `plan/ws215/` にある。Queue の履歴は [plan/history](../history/index.md)。
