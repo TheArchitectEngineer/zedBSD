@@ -48,9 +48,13 @@
 - 512 の回帰: 同じ image の `plan/tools/boot-test.sh`（uefi-nvme）login prompt PASS（`build/ws307-test/p006-boot.ny8kCK/login.png`）。上の試験も 512 の NVMe の UFS の root から起動し SSH で動いた。
 - 未実施: UFS の 4096（mkfs の native UFS の fragment 4096 の profile が要る、段 5）、USB（`usb-storage` の 4096）、host の `fsck.fat`（host に無い）、FAT32 の 4Kn の ESP からの起動（p008 の 4096 の段）。
 
-## q1665-i04 の再開点（2026-10-29、P4、worktree p4-ws307h）
+## q1665-i04 の結果（2026-10-29、P4、worktree p4-ws307h）
 
-- 段 5 の実装（`userland/base/mkfs/ufs-format.[ch]`・`block-command.c`）と host の試験 `plan/ws307/tests/host/mkfs-ufs-native-test.sh` は PASS（1 KiB の 3 profile が d94ceac00 の formatter と byte で同じ、4096 の native を mkfs の decoder と loader の reader で読む）。次: target の mkfs の build（warning 0）→ p006-4k の UFS の段 → QEMU。
+- 段 5（commit bfa7afcdb、p005 の残り）: `mkfs -t ufs --profile=native` は disk の logical sector に合わせて fragment を選ぶ（512 → 1 KiB・block 8 KiB、今の形のまま。4096 → 4 KiB・block 32 KiB）。group の中は 64 KiB の boot の域・superblock の block・map の block・inode の表・data（4 KiB では fragment 16・24・32・48）。group は 1 KiB の profile の最大と同じ約 62 MiB（fpg 15984）で inode 256 個、inode の密度は今と同じ。8 KiB より大きい block は 8 KiB の buffer で書き、残りを 0 にする。persistence の tail（ZUJ2・ZSL1）の位置は `fragments × fsize / 512`。`--check-size --sector-size=4096` も native を受ける。`ufs_format_native_*` は sector の大きさを引数に取る（呼ぶのは block-command.c だけ）。
+- host（`sh plan/ws307/tests/host/mkfs-ufs-native-test.sh`、新規）: `mkfs-ufs-native-test: PASS`。1 KiB の ordinary・feature・native（4 MiB〜64 GiB の 10 の大きさ）が d94ceac00 の formatter と byte で同じ。4096 の native（4 MiB〜100 GiB の 6 つ）と 512 の 2 つを formatter の verify、mkfs の superblock の decoder、capacity の報告（free の block・inode が superblock と同じ）、loader の reader（`bootloader/common/ufs-read.c`）の mount（4096 と 512 の media）で確かめた。target の `build/ws307h/bin/mkfs` は warning 0。
+- QEMU（KVM、OVMF、`sh plan/ws307/tests/p006-4k.sh build/ws307h-ssh/hdd-image.img`、UFS の段を足した、commit cbe44934e）: `build/ws307-test/p006-4k.O52KLU`。FAT・swap の段は前と同じく ok。4096 の NVMe の 3 つ目の partition に `mkfs -t ufs --profile=native`・mount・9.6 MB の乱数の file（直接の block の先、間接 block）・300 file・深い directory・umount・再 mount・cksum が同じ（ok）。host で loader の reader（`plan/ws307/tests/host/ufs-cat.c`、4096 の block）が `/random.bin`・`/many/f299.txt` と、`sync` だけして mount のまま guest を止めた `/synced.bin` を guest と同じ cksum で読んだ（sync が home の位置まで書く確かめ、p008 の残りの一つ、4096 の disk で）。
+- **未達**: UFS の上の swap file（`mkswap /mnt/p006u/swapfile` が `Invalid argument`、続く swapon・swapoff も fail）。512 の disk の 1 KiB の UFS で同じかを `plan/ws307/tests/p006-ufs-speed.sh` で比べている。UFS の書き込みが 4096 の disk で遅い（64 MiB の dd に約 4 分、約 270 KB/s）のも同じ試験で 512 と比べる。
+- 段 6 の残り: USB の 4096、p008 の 4096 の起動（guest の中で 4Kn の disk に ESP と root を作り、`BOOT_NVME_BLOCK_SIZE=4096` の boot-test.sh で起動、commit e799efd22 の道具）。
 
 ## 次の attempt への引き継ぎ（2026-10-29、P4）
 
