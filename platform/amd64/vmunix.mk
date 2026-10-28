@@ -371,6 +371,10 @@ ifeq ($(CONFIG_DRIVER_ACPI),y)
 AMD64_I2C_SOURCES += src/drivers/i2c/i2c-hid.c src/drivers/gpio/intel-gpio.c
 endif
 endif
+AMD64_RTL8125_SOURCES :=
+ifeq ($(CONFIG_DRIVER_PCI_RTL8125),y)
+AMD64_RTL8125_SOURCES += src/drivers/ethernet/rtl8125.c
+endif
 AMD64_INTEL_WLAN_SOURCES :=
 ifeq ($(CONFIG_DRIVER_PCI_INTEL_AX211),y)
 AMD64_INTEL_WLAN_SOURCES += src/drivers/wifi/intel-ax211/intel-ax211.c \
@@ -462,6 +466,7 @@ AMD64_KERNEL_SOURCES := \
 	$(AMD64_AMDRDNA_VK_SOURCES) \
 	$(AMD64_GHCI_SOURCES) \
 	$(AMD64_INTEL_WLAN_SOURCES) \
+	$(AMD64_RTL8125_SOURCES) \
 	$(AMD64_ACPI_SOURCES) \
 	$(AMD64_I2C_SOURCES) \
 	src/drivers/platform/pcat/pcat-ide.c src/drivers/ethernet/dp8390.c \
