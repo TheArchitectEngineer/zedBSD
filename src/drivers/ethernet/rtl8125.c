@@ -32,6 +32,8 @@
 #include <kern/lock.h>
 #include <kern/net/net-device.h>
 #include <kern/net/packet-buf.h>
+#include <kern/sched.h>
+#include <kern/thread.h>
 #include <uapi/errno.h>
 
 #include <stdbool.h>
@@ -58,7 +60,9 @@
  * Values referenced: OpenBSD sys/dev/pci/if_rgereg.h 1.20 (RGE_MAC0,
  * RGE_MAC4, RGE_CMD, RGE_IMR, RGE_ISR, RGE_TXCFG, RGE_RXCFG, RGE_EECMD,
  * RGE_PHYSTAT, RGE_MACOCP, RGE_PHYOCP, RGE_TWICMD, RGE_MCUCMD, RGE_IM,
- * RGE_PPSW, RGE_ADDR0, RGE_ADDR1).
+ * RGE_PPSW, RGE_ADDR0, RGE_ADDR1, RGE_INT_CFG0, RGE_TIMERINT0..3, RGE_CFG2,
+ * RGE_CFG5, RGE_CSIDR, RGE_CSIAR, RGE_PMCH, RGE_EPHYAR; 0x00f1 from
+ * rge_hw_init).
  */
 #define RTL_REG_STATION0		0x0000U
 #define RTL_REG_STATION4		0x0004U
@@ -69,6 +73,18 @@
 #define RTL_REG_RX_CONFIG		0x0044U
 #define RTL_REG_CONFIG_LOCK		0x0050U
 #define RTL_REG_PHY_STATUS		0x006cU
+#define RTL_REG_INTERRUPT_CONFIG0	0x0034U
+#define RTL_REG_TIMER_INTERRUPT0	0x0058U
+#define RTL_REG_TIMER_INTERRUPT1	0x005cU
+#define RTL_REG_TIMER_INTERRUPT2	0x008cU
+#define RTL_REG_TIMER_INTERRUPT3	0x00f4U
+#define RTL_REG_CONFIG2			0x0053U
+#define RTL_REG_CONFIG5			0x0056U
+#define RTL_REG_CSI_DATA		0x0064U
+#define RTL_REG_CSI_ADDRESS		0x0068U
+#define RTL_REG_POWER_CONTROL		0x006fU
+#define RTL_REG_EPHY			0x0080U
+#define RTL_REG_MISC_F1			0x00f1U
 #define RTL_REG_MAC_OCP			0x00b0U
 #define RTL_REG_PHY_OCP			0x00b8U
 #define RTL_REG_TWI_COMMAND		0x00d2U
@@ -102,6 +118,40 @@
 #define RTL_MCU_RX_FIFO_EMPTY		0x10U
 #define RTL_MCU_TX_FIFO_EMPTY		0x20U
 #define RTL_MCU_OUT_OF_BAND		0x80U
+
+/*
+ * The fields of the configuration, CSI and EPHY windows and of the PHY
+ * status.
+ *
+ * Values referenced: OpenBSD sys/dev/pci/if_rgereg.h 1.20
+ * (RGE_CFG2_CLKREQ_EN, RGE_CFG5_PME_STS, RGE_CSIAR_BYTE_EN,
+ * RGE_CSIAR_BYTE_EN_SHIFT, RGE_CSIAR_ADDR_MASK, RGE_CSIAR_BUSY,
+ * RGE_EPHYAR_DATA_MASK, RGE_EPHYAR_BUSY, RGE_EPHYAR_ADDR_MASK,
+ * RGE_EPHYAR_ADDR_SHIFT, RGE_EPHYAR_EXT_ADDR, RGE_PHYSTAT_*); sys/dev/pci/if_rge.c
+ * 1.48 (rge_disable_aspm_clkreq: INT_CFG0 bit 0x08; rge_hw_init: 0x00f1
+ * bit 0x80; rge_set_phy_power: PMCH 0xc0).
+ */
+#define RTL_CONFIG2_CLKREQ		0x80U
+#define RTL_CONFIG5_PME_STATUS		0x01U
+#define RTL_INTERRUPT_CONFIG0_CLKREQ	0x08U
+#define RTL_MISC_F1_BIT			0x80U
+#define RTL_POWER_CONTROL_PHY_ON	0xc0U
+#define RTL_CSI_BYTE_ENABLE		0x0000f000U
+#define RTL_CSI_ADDRESS_MASK		0x00000fffU
+#define RTL_CSI_BUSY			0x80000000U
+#define RTL_EPHY_DATA_MASK		0x0000ffffU
+#define RTL_EPHY_BUSY			0x80000000U
+#define RTL_EPHY_ADDRESS_MASK		0x0000007fU
+#define RTL_EPHY_ADDRESS_SHIFT		16U
+#define RTL_EPHY_EXTENDED_ADDRESS	0x0ffeU
+#define RTL_PHY_STATUS_FULL_DUPLEX	0x0001U
+#define RTL_PHY_STATUS_LINK		0x0002U
+#define RTL_PHY_STATUS_10		0x0004U
+#define RTL_PHY_STATUS_100		0x0008U
+#define RTL_PHY_STATUS_1000		0x0010U
+#define RTL_PHY_STATUS_2500		0x0400U
+#define RTL_PHY_STATUS_5000		0x1000U
+#define RTL_PHY_STATUS_10000		0x4000U
 
 /*
  * The transmit configuration's version of each controller.
@@ -156,6 +206,67 @@
 #define RTL_PHY_OCP_UPS_B_BITS		0x000aU
 
 /*
+ * The clause-22 registers of the PHY and their bits (IEEE 802.3 clause 22:
+ * the control, auto-negotiation advertisement and 1000BASE-T control
+ * registers), and where the PHY's OCP space holds them: register r at
+ * 0xa400 + 2r.
+ *
+ * Values referenced: OpenBSD sys/dev/pci/if_rgereg.h 1.20 (RGE_PHYBASE) and
+ * sys/dev/pci/if_rge.c 1.48 (rge_write_phy).
+ */
+#define RTL_PHY_OCP_MII_BASE		0xa400U
+#define RTL_MII_CONTROL			0U
+#define RTL_MII_ADVERTISE		4U
+#define RTL_MII_1000_CONTROL		9U
+#define RTL_MII_CONTROL_RESET		0x8000U
+#define RTL_MII_CONTROL_AUTONEG		0x1000U
+#define RTL_MII_CONTROL_POWER_DOWN	0x0800U
+#define RTL_MII_CONTROL_RESTART		0x0200U
+#define RTL_MII_ADVERTISE_10		0x0020U
+#define RTL_MII_ADVERTISE_10_FULL	0x0040U
+#define RTL_MII_ADVERTISE_100		0x0080U
+#define RTL_MII_ADVERTISE_100_FULL	0x0100U
+#define RTL_MII_ADVERTISE_PAUSE		0x0400U
+#define RTL_MII_ADVERTISE_PAUSE_ASYM	0x0800U
+#define RTL_MII_1000_FULL		0x0200U
+#define RTL_MII_1000_HALF		0x0100U
+
+/*
+ * The PHY OCP registers the PHY's power, reset, EEE and multi-gigabit
+ * advertisement use.
+ *
+ * Values referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_set_phy_power,
+ * rge_phy_config, rge_ifmedia_upd) and sys/dev/pci/if_rgereg.h 1.20
+ * (RGE_ADV_2500TFDX, RGE_ADV_5000TFDX, RGE_ADV_10000TFDX).
+ */
+#define RTL_PHY_OCP_STATE_READY		0x0003U
+#define RTL_PHY_OCP_MULTIGIG		0xa5d4U
+#define RTL_PHY_OCP_MULTIGIG_2500	0x0080U
+#define RTL_PHY_OCP_MULTIGIG_5000	0x0100U
+#define RTL_PHY_OCP_MULTIGIG_10000	0x1000U
+#define RTL_PHY_OCP_INDEX		0xa436U
+#define RTL_PHY_OCP_DATA		0xa438U
+#define RTL_PHY_OCP_RAM_CODE_VERSION	0x801eU
+
+/*
+ * The MAC OCP registers the hardware set-up uses.
+ *
+ * Values referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_hw_init,
+ * rge_phy_config: the EEE registers).
+ */
+#define RTL_MAC_OCP_UPS_CONTROL		0xd40aU
+#define RTL_MAC_OCP_UPS_CONTROL_BIT	0x0010U
+#define RTL_MAC_OCP_MCU_ENABLE		0xfc26U
+#define RTL_MAC_OCP_MCU_BREAK_FIRST	0xfc28U
+#define RTL_MAC_OCP_MCU_BREAK_ENABLE	0xfc48U
+#define RTL_MAC_OCP_EEE			0xe040U
+#define RTL_MAC_OCP_EEE_BITS		0x0003U
+#define RTL_MAC_OCP_EEE_ADVANCED	0xe052U
+#define RTL_MAC_OCP_EEE_ADVANCED_BIT	0x0001U
+#define RTL_CSI_UNCORRECTABLE		0x0108U
+#define RTL_CSI_UNCORRECTABLE_BIT	0x00100000U
+
+/*
  * The bounded waits, as a number of polls and the delay between two.
  *
  * Values referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_reset,
@@ -173,6 +284,11 @@
 #define RTL_RESET_POLL_US		100U
 #define RTL_PHY_STATE_POLLS		100U
 #define RTL_PHY_STATE_POLL_US		1000U
+#define RTL_PHY_RESET_POLLS		2500U
+#define RTL_PHY_RESET_POLL_MS		1U
+#define RTL_CSI_SETTLE_US		20U
+#define RTL_MCU_STOP_US			3000U
+#define RTL_LINK_MS			500U
 
 /*
  * The PCI Express capability's link control register and the power
@@ -199,6 +315,33 @@ enum rtl_family {
 	RTL_FAMILY_8125D,
 	RTL_FAMILY_8126,
 	RTL_FAMILY_8127
+};
+
+/* What one step of a PHY register sequence does. */
+enum rtl_phy_step_kind {
+	RTL_PHY_STEP_WRITE,
+	RTL_PHY_STEP_MODIFY,
+	RTL_PHY_STEP_READ
+};
+
+/*
+ * One step of a PHY register sequence.
+ *
+ * A write stores value; a modify clears the mask bits and sets the value
+ * bits of what the register holds; a read only reads, for a register whose
+ * read has an effect.
+ */
+struct rtl_phy_step {
+	enum rtl_phy_step_kind kind;
+	uint16_t reg;
+	uint16_t mask;
+	uint16_t value;
+};
+
+/* One write of a PCI Express PHY (EPHY) table. */
+struct rtl_ephy_write {
+	uint16_t reg;
+	uint16_t value;
 };
 
 /*
@@ -236,6 +379,16 @@ struct rtl_device {
 	unsigned bar_claimed;
 	unsigned enable_saved;
 	unsigned bar_mapped;
+	/*
+	 * Whether the interface is open, and the link as last announced.
+	 * Guarded by the lock; the link thread reads the PHY status only
+	 * while the interface is open.
+	 */
+	unsigned opened;
+	unsigned carrier;
+	uint32_t link_mbps;
+	struct thread *link_thread;
+	uint16_t ram_code_version;
 	volatile uint8_t *registers;
 	const struct rtl_chip *chip;
 	unsigned fiber;
@@ -258,6 +411,276 @@ static const struct rtl_chip rtl_chips[] = {
 	{ RTL_VERSION_8125D_1, RTL_FAMILY_8125D, 1U, "RTL8125D" },
 	{ RTL_VERSION_8125D_2, RTL_FAMILY_8125D, 2U, "RTL8125D" },
 	{ RTL_VERSION_8127, RTL_FAMILY_8127, 1U, "RTL8127" },
+};
+
+/*
+ * The RTL8127's PCI Express PHY settings.
+ *
+ * Values referenced: OpenBSD sys/dev/pci/if_rgereg.h 1.20 (mac_r27_ephy).
+ */
+static const struct rtl_ephy_write rtl_ephy_8127[] = {
+	{ 0x8088, 0x0064 }, { 0x8488, 0x0064 }, { 0x8888, 0x0064 },
+	{ 0x8c88, 0x0064 }, { 0x8188, 0x0064 }, { 0x8588, 0x0064 },
+	{ 0x8988, 0x0064 }, { 0x8d88, 0x0064 }, { 0x808c, 0x09b0 },
+	{ 0x848c, 0x09b0 }, { 0x888c, 0x0f90 }, { 0x8c8c, 0x0f90 },
+	{ 0x818c, 0x09b0 }, { 0x858c, 0x09b0 }, { 0x898c, 0x0f90 },
+	{ 0x8d8c, 0x0f90 }, { 0x808a, 0x09b8 }, { 0x848a, 0x09b8 },
+	{ 0x888a, 0x0f98 }, { 0x8c8a, 0x0f98 }, { 0x818a, 0x09b8 },
+	{ 0x858a, 0x09b8 }, { 0x898a, 0x0f98 }, { 0x8d8a, 0x0f98 },
+	{ 0x9020, 0x0080 }, { 0x9420, 0x0080 }, { 0x9820, 0x0080 },
+	{ 0x9c20, 0x0080 }, { 0x901e, 0x0190 }, { 0x941e, 0x0190 },
+	{ 0x981e, 0x0140 }, { 0x9c1e, 0x0140 }, { 0x901c, 0x0190 },
+	{ 0x941c, 0x0190 }, { 0x981c, 0x0140 }, { 0x9c1c, 0x0140 }
+};
+
+/*
+ * The RTL8127's PHY settings after its reset, in order, without the PHY
+ * microcode patch that the reference loads first.
+ *
+ * Procedure and values referenced: OpenBSD sys/dev/pci/if_rge.c 1.48
+ * (rge_phy_config_mac_r27, with its mac_cfg_value, mac_cfg2_value and
+ * mac_cfg_a438_value tables written out in place).
+ */
+static const struct rtl_phy_step rtl_phy_8127[] = {
+	{ RTL_PHY_STEP_WRITE, 0xa4d2, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_READ, 0xa4d4, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa442, 0x0800, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8415 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x9300 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81a3 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x0f00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81ae },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x0f00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81b9 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xb900 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83b0 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0x0e00, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83c5 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0x0e00, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83da },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0x0e00, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83ef },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0x0e00, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf38, 0x01f0, 0x0160 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf3a, 0x001f, 0x0014 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf28, 0x6000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf2c, 0xc000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf28, 0x1fff, 0x0187 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf2a, 0x003f, 0x0003 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8173 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x8620 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8175 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x8671 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x817c },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0000, 0x2000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8187 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0000, 0x2000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8192 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0000, 0x2000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x819d },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0000, 0x2000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81a8 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x2000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81b3 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x2000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81be },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0000, 0x2000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x817d },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xa600 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8188 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xa600 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8193 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xa600 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x819e },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xa600 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81a9 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x1400 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81b4 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x1400 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81bf },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xa600 },
+	{ RTL_PHY_STEP_MODIFY, 0xaeaa, 0x0028, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x84f0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x201c },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x84f2 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x3117 },
+	{ RTL_PHY_STEP_WRITE, 0xaec6, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xae20, 0x0000, 0xffff },
+	{ RTL_PHY_STEP_WRITE, 0xaece, 0x0000, 0xffff },
+	{ RTL_PHY_STEP_WRITE, 0xaed2, 0x0000, 0xffff },
+	{ RTL_PHY_STEP_WRITE, 0xaec8, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xaed0, 0x0001, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xadb8, 0x0000, 0x0150 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8197 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x5000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8231 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x5000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x82cb },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x5000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x82cd },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x5700 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8233 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x5700 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8199 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x5700 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x815a },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0150 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x81f4 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0150 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x828e },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0150 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x81b1 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x824b },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x82e5 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x84f7 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x2800 },
+	{ RTL_PHY_STEP_MODIFY, 0xaec2, 0x0000, 0x1000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x81b3 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0xad00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x824d },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0xad00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x82e7 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0xad00 },
+	{ RTL_PHY_STEP_MODIFY, 0xae4e, 0x000f, 0x0001 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x82ce },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xf000, 0x4000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83a5 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0400 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83a6 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0400 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83a7 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0400 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83a8 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0400 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x84ac },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x84ae },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x84b0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xf818 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x84b2 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x6000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ffc },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x6008 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ffe },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xf4ff },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8015 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0x0000, 0x0200 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8016 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0x0800, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fe6 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0800 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fe4 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x2114 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8647 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xa7b1 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8649 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xbbca },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x864b },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0xdc00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8154 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xc000, 0x4000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8158 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xc000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x826c },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xffff },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x826e },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xffff },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8872 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0e00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8012 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0000, 0x0800 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8012 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0000, 0x4000 },
+	{ RTL_PHY_STEP_MODIFY, 0xb576, 0x0000, 0x0001 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x834a },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x0700 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8217 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0x3f00, 0x2a00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81b1 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x0b00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fed },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x4e00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x88ac },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x2300 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf0c, 0x0000, 0x3800 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x88de },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x80b4 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x5195 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8370 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x8671 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8372 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x86c8 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8401 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x86c8 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8403 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x86da },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8406 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x1800, 0x1000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8408 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x1800, 0x1000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x840a },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x1800, 0x1000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x840c },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x1800, 0x1000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x840e },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x1800, 0x1000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8410 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x1800, 0x1000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8412 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x1800, 0x1000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8414 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x1800, 0x1000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8416 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x1800, 0x1000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x82bd },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x1f40 },
+	{ RTL_PHY_STEP_MODIFY, 0xbfb4, 0x07ff, 0x0328 },
+	{ RTL_PHY_STEP_WRITE, 0xbfb6, 0x0000, 0x3e14 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81c4 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x003b },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0086 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00b7 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00db },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00fe },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00fe },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00fe },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00fe },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00c3 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0078 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0047 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0023 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x88d7 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x01a0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x88d9 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x01a0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ffa },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x002a },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fee },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xffdf },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ff0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xffff },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ff2 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0a4a },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ff4 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xaa5a },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ff6 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0a4a },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ff8 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xaa5a },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x88d5 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0200 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x84bb },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x0a00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x84c0 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x1600 },
+	{ RTL_PHY_STEP_MODIFY, 0xa430, 0x0000, 0x0003 },
+	{ RTL_PHY_STEP_MODIFY, 0xa442, 0x0000, 0x0080 },
+	{ RTL_PHY_STEP_MODIFY, 0xa430, 0x1000, 0x0000 },
 };
 
 /* The PCI identities the driver binds. */
@@ -321,6 +744,29 @@ static uint16_t read16(const struct rtl_device *device, uint32_t offset);
 static uint32_t read32(const struct rtl_device *device, uint32_t offset);
 static void write8(struct rtl_device *device, uint32_t offset, uint8_t value);
 static void write32(struct rtl_device *device, uint32_t offset, uint32_t value);
+static void set8(struct rtl_device *device, uint32_t offset, uint8_t bits);
+static void clear8(struct rtl_device *device, uint32_t offset, uint8_t bits);
+static int phy_ocp_modify(struct rtl_device *device, uint16_t reg, uint16_t mask, uint16_t value);
+static int mii_read(struct rtl_device *device, unsigned reg, uint16_t *value);
+static int mii_write(struct rtl_device *device, unsigned reg, uint16_t value);
+static uint32_t csi_read(struct rtl_device *device, uint32_t reg);
+static void csi_write(struct rtl_device *device, uint32_t reg, uint32_t value);
+static void ephy_write(struct rtl_device *device, uint16_t reg, uint16_t value);
+static int run_phy_steps(struct rtl_device *device, const struct rtl_phy_step *steps, unsigned count);
+static int bring_up_link(struct rtl_device *device);
+static int power_up_phy(struct rtl_device *device);
+static void disable_clock_request(struct rtl_device *device);
+static void stop_mac_mcu(struct rtl_device *device);
+static void configure_hardware(struct rtl_device *device);
+static void configure_ephy(struct rtl_device *device);
+static int reset_phy(struct rtl_device *device);
+static int configure_phy(struct rtl_device *device);
+static int disable_eee(struct rtl_device *device);
+static int advertise_all(struct rtl_device *device);
+static void start_link_thread(struct rtl_device *device);
+static void link_worker(void *argument);
+static void check_link(struct rtl_device *device);
+static uint32_t speed_of(uint16_t status);
 static uint16_t mac_ocp_read(struct rtl_device *device, uint16_t reg);
 static void mac_ocp_write(struct rtl_device *device, uint16_t reg, uint16_t value);
 static void mac_ocp_clear(struct rtl_device *device, uint16_t reg, uint16_t bits);
@@ -435,6 +881,9 @@ rtl_attach(
 		kern_logf("rtl8125: interface unavailable (%d)\n", error);
 		return error;
 	}
+
+	/* Follows the link from here on. */
+	start_link_thread(device);
 
 	/* Tells which part was found and under which address. */
 	kern_logf("rtl8125: %s: %s%s rev %u, address %02x:%02x:%02x:%02x:%02x:%02x\n",
@@ -1224,23 +1673,55 @@ publish_interface(
 	return 0;
 }
 
-/* Opens the interface, which keeps no carrier while the link is not brought up. */
+/*
+ * Opens the interface: the controller and the PHY are set up again and the
+ * link thread starts following the negotiation.
+ */
 static int
 rtl_open(
 	struct net_device *net)
 {
-	UNUSED_PARAMETER(net);
+	struct rtl_device *device;
+	unsigned long irq;
+	int error;
 
-	/* Succeeded: the interface is open without a carrier. */
+	/* Brings the link up from reset. */
+	device = net->driver_data;
+	error = bring_up_link(device);
+	if (error != 0) {
+		kern_logf("rtl8125: %s link set-up failed (%d)\n", device->name, error);
+		return error;
+	}
+
+	/* Lets the link thread read the PHY status. */
+	irq = spin_lock_irqsave(&device->lock);
+
+	device->opened = 1U;
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* Tells which PHY microcode the link runs on. */
+	kern_logf("rtl8125: %s PHY microcode version 0x%04x\n", device->name, device->ram_code_version);
+
+	/* Succeeded: the interface is open and the carrier follows the link. */
 	return 0;
 }
 
-/* Closes the interface, which has no I/O in flight. */
+/* Closes the interface; the link thread announces the carrier lost. */
 static void
 rtl_close(
 	struct net_device *net)
 {
-	UNUSED_PARAMETER(net);
+	struct rtl_device *device;
+	unsigned long irq;
+
+	/* Stops the link thread from reading the PHY status. */
+	device = net->driver_data;
+	irq = spin_lock_irqsave(&device->lock);
+
+	device->opened = 0U;
+
+	spin_unlock_irqrestore(&device->lock, irq);
 }
 
 /* Drops a frame, which has no link to go out on. */
@@ -1269,4 +1750,791 @@ rtl_poll(
 
 	/* Nothing was received. */
 	return 0;
+}
+
+
+/* Sets bits of one byte register. */
+static void
+set8(
+	struct rtl_device *device,
+	uint32_t offset,
+	uint8_t bits)
+{
+	uint8_t value;
+
+	/* Writes the register back with the bits. */
+	value = read8(device, offset);
+	write8(device, offset, (uint8_t)(value | bits));
+}
+
+/* Clears bits of one byte register. */
+static void
+clear8(
+	struct rtl_device *device,
+	uint32_t offset,
+	uint8_t bits)
+{
+	uint8_t value;
+
+	/* Writes the register back without the bits. */
+	value = read8(device, offset);
+	write8(device, offset, (uint8_t)(value & ~bits));
+}
+
+
+/* Clears the mask bits and sets the value bits of one PHY OCP register. */
+static int
+phy_ocp_modify(
+	struct rtl_device *device,
+	uint16_t reg,
+	uint16_t mask,
+	uint16_t value)
+{
+	uint16_t current;
+	int error;
+
+	/* Reads the register. */
+	error = phy_ocp_read(device, reg, &current);
+	if (error != 0)
+		return error;
+
+	/* Writes it back changed. */
+	error = phy_ocp_write(device, reg, (uint16_t)((current & ~mask) | value));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the register holds the new bits. */
+	return 0;
+}
+
+/* Reads one clause-22 register of the PHY through its OCP space. */
+static int
+mii_read(
+	struct rtl_device *device,
+	unsigned reg,
+	uint16_t *value)
+{
+	int error;
+
+	/* Reads the register's OCP copy. */
+	error = phy_ocp_read(device, (uint16_t)(RTL_PHY_OCP_MII_BASE + reg * 2U), value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the value is the register's. */
+	return 0;
+}
+
+/* Writes one clause-22 register of the PHY through its OCP space. */
+static int
+mii_write(
+	struct rtl_device *device,
+	unsigned reg,
+	uint16_t value)
+{
+	int error;
+
+	/* Writes the register's OCP copy. */
+	error = phy_ocp_write(device, (uint16_t)(RTL_PHY_OCP_MII_BASE + reg * 2U), value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the PHY took the value. */
+	return 0;
+}
+
+/*
+ * Reads one longword of the function's configuration space through the
+ * controller's CSI window.
+ *
+ * The window sets its flag once the data has arrived; the read goes on
+ * after a bounded wait either way.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_read_csi).
+ */
+static uint32_t
+csi_read(
+	struct rtl_device *device,
+	uint32_t reg)
+{
+	uint32_t window;
+	unsigned poll;
+
+	/* Names the longword with every byte enabled. */
+	write32(device, RTL_REG_CSI_ADDRESS, (reg & RTL_CSI_ADDRESS_MASK) | RTL_CSI_BYTE_ENABLE);
+
+	/* Waits for the data. */
+	for (poll = 0; poll < RTL_OCP_POLLS; poll++) {
+		kern_usleep_range(RTL_OCP_POLL_US, RTL_OCP_POLL_US);
+
+		/* The data is valid once the flag is set. */
+		window = read32(device, RTL_REG_CSI_ADDRESS);
+		if ((window & RTL_CSI_BUSY) != 0)
+			break;
+	}
+
+	/* Reports the longword after the window settles. */
+	kern_usleep_range(RTL_CSI_SETTLE_US, RTL_CSI_SETTLE_US);
+	return read32(device, RTL_REG_CSI_DATA);
+}
+
+/*
+ * Writes one longword of the function's configuration space through the
+ * controller's CSI window.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_write_csi).
+ */
+static void
+csi_write(
+	struct rtl_device *device,
+	uint32_t reg,
+	uint32_t value)
+{
+	uint32_t window;
+	unsigned poll;
+
+	/* Hands over the data and names the longword with every byte enabled. */
+	write32(device, RTL_REG_CSI_DATA, value);
+	write32(device,
+		RTL_REG_CSI_ADDRESS,
+		(reg & RTL_CSI_ADDRESS_MASK) | RTL_CSI_BYTE_ENABLE | RTL_CSI_BUSY);
+
+	/* Waits for the write to finish; the window settles either way. */
+	for (poll = 0; poll < RTL_OCP_POLLS; poll++) {
+		kern_usleep_range(RTL_OCP_POLL_US, RTL_OCP_POLL_US);
+
+		/* The write is done once the flag is clear. */
+		window = read32(device, RTL_REG_CSI_ADDRESS);
+		if ((window & RTL_CSI_BUSY) == 0)
+			break;
+	}
+	kern_usleep_range(RTL_CSI_SETTLE_US, RTL_CSI_SETTLE_US);
+}
+
+/*
+ * Writes one register of the PCI Express PHY.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_write_ephy).
+ */
+static void
+ephy_write(
+	struct rtl_device *device,
+	uint16_t reg,
+	uint16_t value)
+{
+	uint32_t window;
+	unsigned poll;
+
+	/* Names the register and the value with the write bit. */
+	window = (uint32_t)(reg & RTL_EPHY_ADDRESS_MASK) << RTL_EPHY_ADDRESS_SHIFT;
+	window |= RTL_EPHY_BUSY | (value & RTL_EPHY_DATA_MASK);
+	write32(device, RTL_REG_EPHY, window);
+
+	/* Waits for the write to finish; the window settles either way. */
+	for (poll = 0; poll < RTL_OCP_POLLS; poll++) {
+		kern_usleep_range(RTL_OCP_POLL_US, RTL_OCP_POLL_US);
+
+		/* The write is done once the flag is clear. */
+		window = read32(device, RTL_REG_EPHY);
+		if ((window & RTL_EPHY_BUSY) == 0)
+			break;
+	}
+	kern_usleep_range(RTL_CSI_SETTLE_US, RTL_CSI_SETTLE_US);
+}
+
+/* Runs a PHY register sequence in order and stops at the first PHY that does not answer. */
+static int
+run_phy_steps(
+	struct rtl_device *device,
+	const struct rtl_phy_step *steps,
+	unsigned count)
+{
+	uint16_t ignored;
+	unsigned index;
+	int error;
+
+	/* Applies each step. */
+	for (index = 0; index < count; index++) {
+		/* Does what the step says. */
+		switch (steps[index].kind) {
+		case RTL_PHY_STEP_WRITE:
+			error = phy_ocp_write(device, steps[index].reg, steps[index].value);
+			break;
+		case RTL_PHY_STEP_MODIFY:
+			error = phy_ocp_modify(device, steps[index].reg, steps[index].mask, steps[index].value);
+			break;
+		default:
+			error = phy_ocp_read(device, steps[index].reg, &ignored);
+			break;
+		}
+
+		/* A PHY that stops answering ends the sequence. */
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: every step was applied. */
+	return 0;
+}
+
+/*
+ * Brings the controller and its PHY from reset to an autonegotiating link.
+ *
+ * It runs in thread context because the PHY's reset takes up to seconds.
+ * The MAC's and the PHY's microcode patches are not loaded: the MAC's
+ * microcode stays stopped and the PHY runs what it came up with.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_init,
+ * rge_chipinit, rge_phy_config, rge_ifmedia_upd).
+ */
+static int
+bring_up_link(
+	struct rtl_device *device)
+{
+	int error;
+
+	/* Takes the controller back from the firmware and resets it. */
+	error = exit_out_of_band(device);
+	if (error != 0)
+		return error;
+
+	/* Powers the PHY up. */
+	error = power_up_phy(device);
+	if (error != 0)
+		return error;
+
+	/* Sets the MAC up without its microcode, then resets it with the interrupts masked. */
+	configure_hardware(device);
+	mask_interrupts(device);
+	write32(device, RTL_REG_TIMER_INTERRUPT0, 0U);
+	write32(device, RTL_REG_TIMER_INTERRUPT1, 0U);
+	write32(device, RTL_REG_TIMER_INTERRUPT2, 0U);
+	write32(device, RTL_REG_TIMER_INTERRUPT3, 0U);
+	error = reset_controller(device);
+	if (error != 0)
+		return error;
+
+	/* Sets the PCI Express PHY up. */
+	configure_ephy(device);
+
+	/* Resets the PHY with nothing advertised. */
+	error = reset_phy(device);
+	if (error != 0)
+		return error;
+
+	/* Applies the PHY's settings. */
+	error = configure_phy(device);
+	if (error != 0)
+		return error;
+
+	/* Turns energy-efficient Ethernet off. */
+	error = disable_eee(device);
+	if (error != 0)
+		return error;
+
+	/* Advertises every speed the part has and restarts the negotiation. */
+	error = advertise_all(device);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the PHY is negotiating. */
+	return 0;
+}
+
+/*
+ * Powers the PHY up and waits for it to report it is ready.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48
+ * (rge_set_phy_power).
+ */
+static int
+power_up_phy(
+	struct rtl_device *device)
+{
+	uint16_t state;
+	unsigned poll;
+	int error;
+
+	/* Turns the PHY's power on and lets it autonegotiate. */
+	set8(device, RTL_REG_POWER_CONTROL, RTL_POWER_CONTROL_PHY_ON);
+	error = mii_write(device, RTL_MII_CONTROL, RTL_MII_CONTROL_AUTONEG);
+	if (error != 0)
+		return error;
+
+	/* Waits for the PHY to be ready; a slow one is set up anyway. */
+	for (poll = 0; poll < RTL_PHY_STATE_POLLS; poll++) {
+		/* A PHY that does not answer ends the wait. */
+		error = phy_ocp_read(device, RTL_PHY_OCP_STATE, &state);
+		if (error != 0)
+			return error;
+
+		/* The PHY is ready once its state says so. */
+		if ((state & RTL_PHY_OCP_STATE_MASK) == RTL_PHY_OCP_STATE_READY)
+			break;
+
+		kern_usleep_range(RTL_PHY_STATE_POLL_US, RTL_PHY_STATE_POLL_US);
+	}
+
+	/* Succeeded: the PHY is powered. */
+	return 0;
+}
+
+/*
+ * Keeps the link out of CLKREQ power saving and clears a pending PME.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48
+ * (rge_disable_aspm_clkreq).
+ */
+static void
+disable_clock_request(
+	struct rtl_device *device)
+{
+	uint8_t lock;
+	unsigned unlocked;
+
+	/* Opens the configuration registers unless they are open already. */
+	lock = read8(device, RTL_REG_CONFIG_LOCK);
+	unlocked = 0U;
+	if ((lock & RTL_CONFIG_LOCK_WRITABLE) != RTL_CONFIG_LOCK_WRITABLE) {
+		set8(device, RTL_REG_CONFIG_LOCK, RTL_CONFIG_LOCK_WRITABLE);
+		unlocked = 1U;
+	}
+
+	/* Clears CLKREQ where the part keeps it. */
+	if (device->chip->family == RTL_FAMILY_8126 || device->chip->family == RTL_FAMILY_8127) {
+		clear8(device, RTL_REG_INTERRUPT_CONFIG0, RTL_INTERRUPT_CONFIG0_CLKREQ);
+	} else {
+		clear8(device, RTL_REG_CONFIG2, RTL_CONFIG2_CLKREQ);
+	}
+
+	/* Clears a pending PME. */
+	clear8(device, RTL_REG_CONFIG5, RTL_CONFIG5_PME_STATUS);
+
+	/* Locks the configuration registers again if this opened them. */
+	if (unlocked)
+		clear8(device, RTL_REG_CONFIG_LOCK, RTL_CONFIG_LOCK_WRITABLE);
+}
+
+/*
+ * Stops the MAC's microcode and clears its break points.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_hw_init).
+ */
+static void
+stop_mac_mcu(
+	struct rtl_device *device)
+{
+	uint16_t reg;
+
+	/* Disables the break points, then clears each one. */
+	mac_ocp_write(device, RTL_MAC_OCP_MCU_BREAK_ENABLE, 0U);
+	for (reg = RTL_MAC_OCP_MCU_BREAK_FIRST; reg < RTL_MAC_OCP_MCU_BREAK_ENABLE; reg = (uint16_t)(reg + 2U))
+		mac_ocp_write(device, reg, 0U);
+
+	/* Gives the microcode time to stop, then turns it off. */
+	kern_usleep_range(RTL_MCU_STOP_US, RTL_MCU_STOP_US);
+	mac_ocp_write(device, RTL_MAC_OCP_MCU_ENABLE, 0U);
+}
+
+/*
+ * Sets the MAC up for the driver: no CLKREQ, no UPS, the microcode
+ * stopped, and uncorrectable PCI Express errors reported.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_hw_init),
+ * without the microcode patch.
+ */
+static void
+configure_hardware(
+	struct rtl_device *device)
+{
+	uint32_t status;
+
+	/* Keeps the link out of CLKREQ power saving. */
+	disable_clock_request(device);
+	clear8(device, RTL_REG_MISC_F1, RTL_MISC_F1_BIT);
+
+	/* Turns the firmware's power saving (UPS) off. */
+	mac_ocp_clear(device, RTL_MAC_OCP_UPS_CONTROL, RTL_MAC_OCP_UPS_CONTROL_BIT);
+
+	/* Stops the MAC's microcode, which runs without a patch from here on. */
+	disable_clock_request(device);
+	stop_mac_mcu(device);
+
+	/* Reports uncorrectable errors in the PCI Express status. */
+	status = csi_read(device, RTL_CSI_UNCORRECTABLE);
+	csi_write(device, RTL_CSI_UNCORRECTABLE, status | RTL_CSI_UNCORRECTABLE_BIT);
+}
+
+/*
+ * Writes the part's PCI Express PHY table.
+ *
+ * The RTL8127's registers are named by a page in an extended address
+ * register and an offset; the page goes back to 0 at the end.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48
+ * (rge_ephy_config_mac_r27, rge_r27_write_ephy, rge_check_ephy_ext_add).
+ */
+static void
+configure_ephy(
+	struct rtl_device *device)
+{
+	unsigned index;
+	uint16_t reg;
+
+	/* Only the RTL8127's table is known here; the others keep their reset values. */
+	if (device->chip->family != RTL_FAMILY_8127)
+		return;
+
+	/* Writes each entry through its page. */
+	for (index = 0; index < sizeof(rtl_ephy_8127) / sizeof(rtl_ephy_8127[0]); index++) {
+		reg = rtl_ephy_8127[index].reg;
+		ephy_write(device, RTL_EPHY_EXTENDED_ADDRESS, (uint16_t)(reg >> 12));
+		ephy_write(device, (uint16_t)(reg & 0x0fffU), rtl_ephy_8127[index].value);
+	}
+
+	/* Returns to the first page. */
+	ephy_write(device, RTL_EPHY_EXTENDED_ADDRESS, 0U);
+}
+
+/*
+ * Clears what the PHY advertises and resets it.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_phy_config,
+ * the PHY reset).
+ */
+static int
+reset_phy(
+	struct rtl_device *device)
+{
+	uint16_t advertise;
+	uint16_t multigig;
+	uint16_t control;
+	unsigned poll;
+	int error;
+
+	/* Advertises no 10 or 100 Mbit/s mode. */
+	error = mii_read(device, RTL_MII_ADVERTISE, &advertise);
+	if (error != 0)
+		return error;
+	advertise &= (uint16_t)~(RTL_MII_ADVERTISE_100_FULL | RTL_MII_ADVERTISE_100 |
+				  RTL_MII_ADVERTISE_10_FULL | RTL_MII_ADVERTISE_10);
+	error = mii_write(device, RTL_MII_ADVERTISE, advertise);
+	if (error != 0)
+		return error;
+
+	/* Advertises no gigabit mode. */
+	error = mii_read(device, RTL_MII_1000_CONTROL, &control);
+	if (error != 0)
+		return error;
+	control &= (uint16_t)~(RTL_MII_1000_FULL | RTL_MII_1000_HALF);
+	error = mii_write(device, RTL_MII_1000_CONTROL, control);
+	if (error != 0)
+		return error;
+
+	/* Advertises none of the multi-gigabit modes the part has. */
+	multigig = RTL_PHY_OCP_MULTIGIG_2500;
+	if (device->chip->family == RTL_FAMILY_8126)
+		multigig |= RTL_PHY_OCP_MULTIGIG_5000;
+	if (device->chip->family == RTL_FAMILY_8127)
+		multigig |= RTL_PHY_OCP_MULTIGIG_5000 | RTL_PHY_OCP_MULTIGIG_10000;
+	error = phy_ocp_modify(device, RTL_PHY_OCP_MULTIGIG, multigig, 0U);
+	if (error != 0)
+		return error;
+
+	/* Resets the PHY. */
+	error = mii_write(device,
+			  RTL_MII_CONTROL,
+			  RTL_MII_CONTROL_RESET | RTL_MII_CONTROL_AUTONEG | RTL_MII_CONTROL_RESTART);
+	if (error != 0)
+		return error;
+
+	/* Waits for the reset to finish. */
+	for (poll = 0; poll < RTL_PHY_RESET_POLLS; poll++) {
+		/* A PHY that does not answer ends the wait. */
+		error = mii_read(device, RTL_MII_CONTROL, &control);
+		if (error != 0)
+			return error;
+
+		/* The PHY is out of reset once the bit clears. */
+		if ((control & RTL_MII_CONTROL_RESET) == 0)
+			return 0;
+
+		sched_sleep(sched_ticks() + KERN_MS_TO_TICKS(RTL_PHY_RESET_POLL_MS));
+	}
+
+	/* A PHY that stays in reset is reported. */
+	return ETIMEDOUT;
+}
+
+/*
+ * Records the PHY's microcode version and applies the part's PHY settings.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_phy_config).
+ */
+static int
+configure_phy(
+	struct rtl_device *device)
+{
+	int error;
+
+	/* Reads the version of the microcode the PHY runs. */
+	error = phy_ocp_write(device, RTL_PHY_OCP_INDEX, RTL_PHY_OCP_RAM_CODE_VERSION);
+	if (error != 0)
+		return error;
+	error = phy_ocp_read(device, RTL_PHY_OCP_DATA, &device->ram_code_version);
+	if (error != 0)
+		return error;
+
+	/* Applies the RTL8127's settings; the other parts keep the PHY's own. */
+	if (device->chip->family == RTL_FAMILY_8127) {
+		error = run_phy_steps(device, rtl_phy_8127, sizeof(rtl_phy_8127) / sizeof(rtl_phy_8127[0]));
+		if (error != 0)
+			return error;
+	}
+
+	/* Clears the bit every part's settings end with. */
+	error = phy_ocp_modify(device, 0xa5b4U, 0x8000U, 0U);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the PHY is set up. */
+	return 0;
+}
+
+/*
+ * Turns energy-efficient Ethernet and its advanced mode off in the MAC and
+ * the PHY.
+ *
+ * Procedure and values referenced: OpenBSD sys/dev/pci/if_rge.c 1.48
+ * (rge_phy_config, "Disable EEE" and "Disable advanced EEE").
+ */
+static int
+disable_eee(
+	struct rtl_device *device)
+{
+	static const struct rtl_phy_step common[] = {
+		{ RTL_PHY_STEP_MODIFY, 0xa6d8, 0x0010, 0x0000 },
+		{ RTL_PHY_STEP_MODIFY, 0xa428, 0x0080, 0x0000 },
+		{ RTL_PHY_STEP_MODIFY, 0xa4a2, 0x0200, 0x0000 },
+	};
+	static const struct rtl_phy_step advanced[] = {
+		{ RTL_PHY_STEP_MODIFY, 0xa442, 0x3000, 0x0000 },
+		{ RTL_PHY_STEP_MODIFY, 0xa430, 0x8000, 0x0000 },
+	};
+	uint16_t bits;
+	int error;
+
+	/* Turns EEE off in the MAC. */
+	mac_ocp_clear(device, RTL_MAC_OCP_EEE, RTL_MAC_OCP_EEE_BITS);
+
+	/* Turns the PHY's EEE advertisement off; the RTL8127 has one more speed of it. */
+	bits = 0x0006U;
+	if (device->chip->family == RTL_FAMILY_8127)
+		bits = 0x000eU;
+	error = phy_ocp_modify(device, 0xa5d0U, bits, 0U);
+	if (error != 0)
+		return error;
+
+	/* Turns the PHY's multi-gigabit EEE off; the RTL8126 and RTL8127 have two bits of it. */
+	bits = 0x0001U;
+	if (device->chip->family == RTL_FAMILY_8126 || device->chip->family == RTL_FAMILY_8127)
+		bits = 0x0003U;
+	error = phy_ocp_modify(device, 0xa6d4U, bits, 0U);
+	if (error != 0)
+		return error;
+
+	/* Turns the rest of the PHY's EEE off. */
+	error = run_phy_steps(device, common, sizeof(common) / sizeof(common[0]));
+	if (error != 0)
+		return error;
+
+	/* Turns advanced EEE off in the MAC and the PHY. */
+	mac_ocp_clear(device, RTL_MAC_OCP_EEE_ADVANCED, RTL_MAC_OCP_EEE_ADVANCED_BIT);
+	error = run_phy_steps(device, advanced, sizeof(advanced) / sizeof(advanced[0]));
+	if (error != 0)
+		return error;
+
+	/* Succeeded: EEE is off. */
+	return 0;
+}
+
+/*
+ * Advertises every speed the part has, with pause, and restarts the
+ * negotiation.
+ *
+ * Procedure and values referenced: OpenBSD sys/dev/pci/if_rge.c 1.48
+ * (rge_ifmedia_upd, the automatic media).
+ */
+static int
+advertise_all(
+	struct rtl_device *device)
+{
+	uint16_t multigig;
+	uint16_t lite;
+	uint16_t value;
+	int error;
+
+	/* Turns Gigabit Lite off. */
+	error = phy_ocp_modify(device, 0xa428U, 0x0200U, 0U);
+	if (error != 0)
+		return error;
+	lite = 0x0001U;
+	if (device->chip->family == RTL_FAMILY_8126 || device->chip->family == RTL_FAMILY_8127)
+		lite = 0x0007U;
+	error = phy_ocp_modify(device, 0xa5eaU, lite, 0U);
+	if (error != 0)
+		return error;
+
+	/* Chooses the multi-gigabit speeds the part has. */
+	multigig = RTL_PHY_OCP_MULTIGIG_2500;
+	if (device->chip->family == RTL_FAMILY_8126)
+		multigig |= RTL_PHY_OCP_MULTIGIG_5000;
+	if (device->chip->family == RTL_FAMILY_8127)
+		multigig |= RTL_PHY_OCP_MULTIGIG_5000 | RTL_PHY_OCP_MULTIGIG_10000;
+
+	/* Advertises 10 and 100 Mbit/s at both duplexes, with pause. */
+	error = mii_write(device,
+			  RTL_MII_ADVERTISE,
+			  RTL_MII_ADVERTISE_100_FULL | RTL_MII_ADVERTISE_100 |
+				  RTL_MII_ADVERTISE_10_FULL | RTL_MII_ADVERTISE_10 |
+				  RTL_MII_ADVERTISE_PAUSE_ASYM | RTL_MII_ADVERTISE_PAUSE);
+	if (error != 0)
+		return error;
+
+	/* Advertises gigabit at both duplexes. */
+	error = mii_write(device, RTL_MII_1000_CONTROL, RTL_MII_1000_FULL | RTL_MII_1000_HALF);
+	if (error != 0)
+		return error;
+
+	/* Advertises the multi-gigabit speeds. */
+	error = phy_ocp_modify(device, RTL_PHY_OCP_MULTIGIG, multigig, multigig);
+	if (error != 0)
+		return error;
+
+	/* Restarts the negotiation. */
+	value = RTL_MII_CONTROL_RESET | RTL_MII_CONTROL_AUTONEG | RTL_MII_CONTROL_RESTART;
+	error = mii_write(device, RTL_MII_CONTROL, value);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the PHY is negotiating. */
+	return 0;
+}
+
+/* Starts the thread that follows the link while the interface is open. */
+static void
+start_link_thread(
+	struct rtl_device *device)
+{
+	int error;
+
+	/* Creates the thread; without it the carrier never comes up. */
+	error = kthread_create(link_worker, device, SCHED_PRIORITY_DEFAULT, &device->link_thread);
+	if (error != 0) {
+		kern_logf("rtl8125: %s link thread unavailable (%d)\n", device->name, error);
+		return;
+	}
+
+	/* Keeps the interface for the thread, which lives as long as the system. */
+	net_device_ref(device->net);
+
+	/* Lets it run. */
+	thread_start(device->link_thread);
+}
+
+/* Follows the link every RTL_LINK_MS for the life of the system. */
+static void
+link_worker(
+	void *argument)
+{
+	struct rtl_device *device;
+
+	/* Checks the link at once, then on its interval. */
+	device = argument;
+	for (;;) {
+		check_link(device);
+		sched_sleep(sched_ticks() + KERN_MS_TO_TICKS(RTL_LINK_MS));
+	}
+}
+
+/*
+ * Reads the link from the PHY status and announces a change.
+ *
+ * Procedure referenced: OpenBSD sys/dev/pci/if_rge.c 1.48
+ * (rge_get_link_status, rge_link_state).
+ */
+static void
+check_link(
+	struct rtl_device *device)
+{
+	unsigned long irq;
+	uint16_t status;
+	uint32_t mbps;
+	unsigned opened;
+	unsigned carrier;
+	unsigned changed;
+
+	/* Samples the PHY status while the interface is open. */
+	irq = spin_lock_irqsave(&device->lock);
+
+	opened = device->opened;
+	status = 0U;
+	if (opened)
+		status = read16(device, RTL_REG_PHY_STATUS);
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* A closed interface has no carrier. */
+	carrier = 0U;
+	mbps = 0U;
+	if (opened && (status & RTL_PHY_STATUS_LINK) != 0) {
+		carrier = 1U;
+		mbps = speed_of(status);
+	}
+
+	/* Records the link and whether it moved. */
+	irq = spin_lock_irqsave(&device->lock);
+
+	changed = 0U;
+	if (carrier != device->carrier || mbps != device->link_mbps) {
+		device->carrier = carrier;
+		device->link_mbps = mbps;
+		changed = 1U;
+	}
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* Announces a change. */
+	if (changed) {
+		device->net->link_mbps = mbps;
+		(void)net_device_set_carrier(device->net, (int)carrier);
+		kern_logf("rtl8125: %s link %s %u Mbit/s%s\n",
+			  device->name,
+			  carrier ? "up" : "down",
+			  (unsigned)mbps,
+			  (status & RTL_PHY_STATUS_FULL_DUPLEX) != 0 ? " full duplex" : "");
+	}
+}
+
+/* Reports the speed a PHY status names, in Mbit/s. */
+static uint32_t
+speed_of(
+	uint16_t status)
+{
+	/* Takes the fastest speed bit that is set. */
+	if ((status & RTL_PHY_STATUS_10000) != 0)
+		return 10000U;
+	if ((status & RTL_PHY_STATUS_5000) != 0)
+		return 5000U;
+	if ((status & RTL_PHY_STATUS_2500) != 0)
+		return 2500U;
+	if ((status & RTL_PHY_STATUS_1000) != 0)
+		return 1000U;
+	if ((status & RTL_PHY_STATUS_100) != 0)
+		return 100U;
+	if ((status & RTL_PHY_STATUS_10) != 0)
+		return 10U;
+
+	/* No speed bit is set. */
+	return 0U;
 }
