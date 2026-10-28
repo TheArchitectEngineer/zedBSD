@@ -130,10 +130,14 @@
 | q1664 / q1664-i01 | P3（phase-runner、worktree `/home/awe/zedBSD-worktrees/p3-ws221`・branch `agent/p3-ws221`、基点 main） | [ws221](ws221/ws.md) p002〜p009 | §9 は全部推し（ユーザーの回答「全部 推しで (推し)」）。kernel・driver・設定・TCP、5330 で 1GbE を使い切るまで TCP を最適化。原文「P3にWS221と、ついでに同じWS内で、1GbEの性能を使い切れるまでTCPスタックの最適化、5330を利用。」。5330 は P3 に割当 | in-progress |
 | q1665 / q1665-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307e`・branch `agent/p4-ws307e`、基点 main） | [ws307](ws307/ws.md) p002〜p014 | spec.md どおりに実装。toolchain（sysroot.mk・libcxx）・asset の upload・HAL に触れる所は始める前に Q1 へ。QEMU。原文「P4にWS307」 | 返却（p005・p008 の 512・p002 の一部・p007 の HAL の案、f049d689d → main 10bc3185e） |
 | q1665 / q1665-i02 | P4（worktree p4-ws307f、基点 main 35d2a373c） | i01 の続き | i01 と同じ承認 | 返却（p002 の大部分・splash・p003 段 1、246d63690 → main 92e91e61b） |
-| q1665 / q1665-i03 | P4（worktree p4-ws307g、基点 main 92e91e61b） | i01 の続き（p003 段 2 から） | i01 と同じ承認 | in-progress |
+| q1665 / q1665-i03 | P4（worktree p4-ws307g、基点 main 92e91e61b） | i01 の続き（p003 段 2 から） | i01 と同じ承認 | 返却（p003 cleared、p006 段 1〜4、1f487021a → main 241c03f1d） |
+| q1665 / q1665-i04 | worktree p4-ws307h、基点 main d94ceac00 | 続き | 同じ承認 | in-progress |
 | q1666 / q1666-i01 | P5（kernel-and-driver-designer、worktree `/home/awe/zedBSD-worktrees/p5-design`・branch `agent/p5-design`、基点 main） | 詳細の決まっていない WS の設計 | code は書かない。判断は Q1 経由でユーザーへ。P1〜P4・P6 の WS は除く。原文「P5は詳細が決まっていないWSの設計のみを、ユーザの判断を聞きながら全般的に進める」 | 返却（全部 merge 63386d8a4） |
-| q1666 / q1666-i02 | P5（worktree p5-design-b） | i01 の続き | i01 と同じ承認 | in-progress |
+| q1666 / q1666-i02 | P5（worktree p5-design-b） | i01 の続き | i01 と同じ承認 | 返却（WS303 第 4 版・WS301 第 2 版・WS300 の調べ、6bddb1eda → main d94ceac00） |
+| q1666 / q1666-i03 | worktree p5-design-c、基点 main d94ceac00 | 続き | 同じ承認 | in-progress |
 | q1667 / q1667-i01 | P6（phase-runner、worktree `/home/awe/zedBSD-worktrees/` の `p6-ws223`・`p6-ws282`・`p6-ws243b`・`p6-ws296`・branch は `agent/` に同じ名前、基点 main） | WS223・WS282〜WS284・WS243・WS296 の実装 | 試験なし、main に merge しない、incomplete のまま。調べが要る物は飛ばす。WS ごとにサブのサブエージェント可。原文「P6は設計が決まっているWSについて、テストなしでひたすら実装だけ進めて…マージされていない状態のWSを増やす。」・「調査しなくてよい、設計ができているか自明なWSについて、ひたすら書いてください。…WSごとにサブのサブエージェントを作ってよいです。」 | 返却（WS296 p001〜p003・p004 途中、WS282 p002 途中、merge しない） |
 | q1667 / q1667-i02 | P6（worktree p6-ws296b・p6-ws282b） | i01 の続き | i01 と同じ承認 | 返却（WS296 p004 の usb.c 済み・rtl8822bu 途中、f31a4954d、merge しない） |
-| q1667 / q1667-i03 | P6（worktree p6-ws296c・p6-ws282b） | i01 の続き | i01 と同じ承認 | in-progress |
-| q1668 / q1668-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291k`・branch `agent/p2-ws291k`、基点 main 9402d4c74） | [ws291](ws291/ws.md) p006 の続き | RDNA で shot の直しの確かめ → big-N・subs-N。ユーザーの回答（クリック、2026-10-29）「WS291 の続き (推し)」、q1663 と同じ自律の承認 | in-progress |
+| q1667 / q1667-i03 | P6（worktree p6-ws296c・p6-ws282b） | i01 の続き | i01 と同じ承認 | 返却（WS296 全 Phase 実装済み 1809873bd、WS282 p002 途中 c60cdbd44、merge しない） |
+| q1667 / q1667-i04 | worktree p6-ws282c（c60cdbd44 から）、基点 main d94ceac00 | 続き | 同じ承認 | in-progress |
+| q1668 / q1668-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291k`・branch `agent/p2-ws291k`、基点 main 9402d4c74） | [ws291](ws291/ws.md) p006 の続き | RDNA で shot の直しの確かめ → big-N・subs-N。ユーザーの回答（クリック、2026-10-29）「WS291 の続き (推し)」、q1663 と同じ自律の承認 | 返却（big-1000 35.5→57〜59、subs 48→39 µs、f5c01e255 → main 239e8ed7f） |
+| q1668 / q1668-i02 | worktree p2-ws291l、基点 main d94ceac00 | 続き | 同じ承認 | in-progress |

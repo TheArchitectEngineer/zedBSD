@@ -20,11 +20,11 @@
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
 | P1 | q1662-i04 in-progress（i03 返却、merge 2bf956f01） | [ws309](ws309/ws.md): p001〜p005・p019 cleared、次は p006（daemon ×5）。worktree p1-ws309d | QEMU |
-| P2 | q1668 in-progress | [ws291](ws291/ws.md): RDNA で shot の直しの確かめ → big-N・subs-N（q1663 は cleared、merge d6685c55e） | 10.0.10.3 |
+| P2 | q1668-i02 in-progress | [ws291](ws291/ws.md): RDNA で shot の直しの確かめ → big-N・subs-N（q1663 は cleared、merge d6685c55e） | 10.0.10.3 |
 | P3 | q1664 in-progress | [ws221](ws221/ws.md) p002〜p009: §9 は全部推し（ユーザーの回答「全部 推しで (推し)」） | VF2（10.0.30.2）が主、5330 は従、相手は 10.0.10.2 |
-| P4 | q1665-i03 in-progress | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
-| P5 | q1666-i02 in-progress | 詳細の決まっていない WS の設計: code は書かない | — |
-| P6 | q1667-i03 in-progress | WS223・WS282〜WS284・WS243・WS296 の実装: 試験なし、main に merge しない、incomplete のまま | — |
+| P4 | q1665-i04 in-progress | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
+| P5 | q1666-i03 in-progress | 詳細の決まっていない WS の設計: code は書かない | — |
+| P6 | q1667-i04 in-progress | WS223・WS282〜WS284・WS243・WS296 の実装: 試験なし、main に merge しない、incomplete のまま | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
 <!-- master:agents:end -->
@@ -32,6 +32,7 @@
 ### 統合の注意
 
 <!-- master:merge:start -->
+- web の取得の禁止（2026-10-29 ユーザー「あとで個別に詳細な事情を説明してください。対策を考えます。それまではWebの取得を頼まないでください。」）: 担当にも配下にも web から資料を取らせない（Fable の配下が bot の確認の回避で権限の判定に 3 回止められた件）。
 - サブエージェントの起動は番号の小さい担当を優先（2026-10-29 ユーザー「P1,P2,..というふうに、数字の小さなエージェントに優先してサブエージェントを起動させてください。必要なら優先度の低いものを停止してください。」）。上限に当たったら Q1 が番号の大きい担当の配下を止める。今の枠: P5 の配下は同時 2 本、P6 は 1 本。
 - 全担当の成果は main に merge 済み（上の Queue の作業中の物を除く）。`agent/p2-ws288-p006` は WS288 の終了で使わない。
 - 既定の config: Pi の BT は config-rpi4.mk・config-rpi5.mk で n（ユーザー）、Pi 5 の GPU（CONFIG_DRIVER_BCM2712_GPU）は CI で n、
