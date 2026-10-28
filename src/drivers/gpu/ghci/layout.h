@@ -12,13 +12,15 @@
  * every byte.
  *
  *   Level l is w_l x h_l (x d_l for 3D) texels, w_l = max(1, width >> l)
- *   (the same for h and d).  A row is w_l texels of ps bytes (S samples of
- *   a multisampled image side by side), or ceil(w_l / 4) blocks of a
- *   compressed format, each four texel rows high, rounded up to a
- *   multiple of 64 bytes.  A level's plane (one slice) is its rows; a
- *   layer holds the levels back to back (a 3D level's d_l slices one after
- *   the other), and the layers are a layer stride apart, the sum of the
- *   levels.  Every plane and layer stays 64-byte aligned.
+ *   (the same for h and d).  A row is w_l texels of ps bytes, or
+ *   ceil(w_l / 4) blocks of a compressed format, each four texel rows
+ *   high, rounded up to a multiple of 64 bytes.  A multisampled image (2D,
+ *   one level) has rows of P = roundup(width, 2) x S x ps bytes, the S
+ *   samples of a pixel side by side, not rounded further.  A level's plane
+ *   (one slice) is its rows; a level is its planes (a 3D level's d_l
+ *   slices one after the other), rounded up to 64 bytes; a layer holds the
+ *   levels back to back, and the layers are a layer stride apart, the sum
+ *   of the levels.  Every level and layer starts 64-byte aligned.
  */
 
 #ifndef GHCI_LAYOUT_H
@@ -67,7 +69,13 @@ ghci_layout_extent(
 	return extent;
 }
 
-/* Reports the bytes of one row of a level, rounded up to the alignment. */
+/*
+ * Reports the bytes of one row of a level: rounded up to the alignment,
+ * or a multisampled image's pitch P.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 12.11,
+ * Multisampled images: P = roundup(width, 2) x S x ps).
+ */
 static inline uint32_t
 ghci_layout_row(
 	const struct ghci_layout_image *image,
@@ -76,12 +84,16 @@ ghci_layout_row(
 	uint32_t width;
 	uint32_t bytes;
 
-	/* Whole 4x4 blocks of a compressed format, or texels with their samples. */
+	/* A multisampled image's pixels, an even number of them, each with its samples. */
 	width = ghci_layout_extent(image->width, level);
+	if (image->samples > 1u && !image->block)
+		return (width + 1u) / 2u * 2u * image->samples * image->texel_bytes;
+
+	/* Whole 4x4 blocks of a compressed format, or texels. */
 	if (image->block)
 		bytes = (width + 3u) / 4u * image->texel_bytes;
 	else
-		bytes = width * image->samples * image->texel_bytes;
+		bytes = width * image->texel_bytes;
 
 	/* Succeeded: the row, aligned. */
 	return (bytes + GHCI_LAYOUT_ALIGN - 1u) / GHCI_LAYOUT_ALIGN * GHCI_LAYOUT_ALIGN;
@@ -100,23 +112,25 @@ ghci_layout_plane(
 	if (image->block)
 		rows = (rows + 3u) / 4u;
 
-	/* Succeeded: the plane (aligned, as its rows are). */
+	/* Succeeded: the plane. */
 	return rows * ghci_layout_row(image, level);
 }
 
-/* Reports the bytes of a level: one plane, or d_l of a 3D image. */
+/* Reports the bytes of a level: one plane, or d_l of a 3D image, rounded up to the alignment. */
 static inline uint32_t
 ghci_layout_level_bytes(
 	const struct ghci_layout_image *image,
 	uint32_t level)
 {
 	uint32_t slices;
+	uint32_t bytes;
 
 	/* The level's slices. */
 	slices = ghci_layout_extent(image->depth, level);
+	bytes = ghci_layout_plane(image, level) * slices;
 
-	/* Succeeded: the level. */
-	return ghci_layout_plane(image, level) * slices;
+	/* Succeeded: the level, aligned. */
+	return (bytes + GHCI_LAYOUT_ALIGN - 1u) / GHCI_LAYOUT_ALIGN * GHCI_LAYOUT_ALIGN;
 }
 
 /* Reports the offset of a level in its layer: the levels before it. */

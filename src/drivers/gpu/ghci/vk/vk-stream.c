@@ -402,7 +402,8 @@ stream_nested(
 
 /*
  * Finds a resource of the node session by its id and gives its processor
- * view and size.  Returns 0, or ENOENT.
+ * view and size.  Only host memory carries a stream: the driver reads it
+ * directly.  Returns 0, or ENOENT (also for a resource of local memory).
  */
 static int
 stream_blob(
@@ -422,6 +423,8 @@ stream_blob(
 		if (resource->resource_id == resource_id)
 			break;
 	}
+	if (resource != NULL && resource->allocation->kind != GHCI_MEMORY_HOST)
+		resource = NULL;
 	if (resource != NULL) {
 		*cpu = resource->allocation->view;
 		*bytes = resource->allocation->bytes;

@@ -76,6 +76,15 @@
 /* The size of the memory heap the device reports, and the largest allocation. */
 #define GHCI_VK_HEAP_SIZE		(256ULL << 20)
 
+/*
+ * The memory types.  A unified GPU has one, device local, host visible
+ * and coherent, in host memory.  A discrete GPU whose local memory is in
+ * use has two: device local alone, in local memory (heap 0), and host
+ * visible and coherent, in host memory (heap 1).
+ */
+#define GHCI_VK_TYPE_LOCAL		0U
+#define GHCI_VK_TYPE_HOST		1U
+
 /* The alignment of every buffer and image in memory (the tiled subresource's 256 bytes). */
 #define GHCI_VK_ALIGN			256U
 
@@ -249,8 +258,10 @@ enum ghci_vk_meta_kind {
  * heap), the code's words (a draw's vertex program, then its fragment
  * program), and for a compute program the byte offsets in the resource
  * table (set 2) of its source and destination buffers' descriptors, and
- * the table's bytes; a draw reads texture and sampler slot 0.  A zero
- * pso_va is a program not placed yet.
+ * the table's bytes; a draw reads texture and sampler slot 0, and
+ * blend_word is its record's blend word of colour attachment 0 (no
+ * blending, every component written).  A zero pso_va is a program not
+ * placed yet.
  */
 struct ghci_vk_meta_pipeline {
 	struct ghci_vk_heap_block *block;
@@ -263,6 +274,7 @@ struct ghci_vk_meta_pipeline {
 	uint32_t source_entry;
 	uint32_t destination_entry;
 	uint32_t resource_bytes;
+	uint32_t blend_word;
 };
 
 /*
@@ -326,7 +338,10 @@ struct ghci_vk_formats {
  * lock (two sessions at once may show one more).  meta holds the
  * driver's own transfer programs (vk-meta.c), each compiled at its first
  * use and kept to the detach; a slot changes from NULL to its program
- * once, under the device's lock.
+ * once, under the device's lock.  meta_refused marks a kind whose
+ * program the compiler refused (or that does not fit its pipeline
+ * state), set once under the device's lock, so that it is not compiled
+ * again.
  */
 struct ghci_vk {
 	struct ghci_device *device;
@@ -335,6 +350,7 @@ struct ghci_vk {
 	struct wait_queue completing_wake;
 	unsigned refusals;
 	struct ghci_gsi1_program *meta[GHCI_VK_META_KINDS][GHCI_VK_META_PROGRAMS];
+	int meta_refused[GHCI_VK_META_KINDS];
 };
 
 /*
@@ -940,7 +956,7 @@ int ghci_vk_stream_execute(struct ghci_vk_session *session, const void *wire, ui
 /* vk-caps.c: the answers the capability registers give. */
 void ghci_vk_caps_features(const struct ghci_caps *caps, VkPhysicalDeviceFeatures *features);
 void ghci_vk_caps_limits(const struct ghci_caps *caps, VkPhysicalDeviceLimits *limits);
-void ghci_vk_caps_memory(const struct ghci_caps *caps, VkPhysicalDeviceMemoryProperties *memory);
+void ghci_vk_caps_memory(const struct ghci_caps *caps, uint64_t local_bytes, VkPhysicalDeviceMemoryProperties *memory);
 void ghci_vk_caps_family(const struct ghci_caps *caps, VkQueueFamilyProperties *family);
 uint32_t ghci_vk_caps_sample_counts(const struct ghci_caps *caps);
 void ghci_vk_caps_format(const struct ghci_vk_formats *formats, uint32_t format, VkFormatProperties *properties);
@@ -987,6 +1003,7 @@ void ghci_vk_pass_release(struct ghci_vk_object *object);
 
 /* vk-execute.c: the recorded commands of a submission made into packets. */
 int ghci_vk_execute(struct ghci_vk_session *session, struct ghci_vk_device *device, const VkSubmitInfo *submits, uint64_t count, struct ghci_vk_submission *submission);
+int ghci_vk_execute_clear(struct ghci_vk_session *session, struct ghci_vk_device *device, uint64_t va, uint64_t bytes, struct ghci_vk_submission *submission);
 void ghci_vk_submission_end(struct ghci_vk_device *device, struct ghci_vk_submission *submission, const struct ghci_ticket *ticket, int placed);
 
 /* vk-meta.c: the driver's own transfer programs. */

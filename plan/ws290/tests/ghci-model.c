@@ -312,6 +312,8 @@ static enum packet_result run_vm_map(const uint32_t *packet);
 static enum packet_result run_vm_unmap(const uint32_t *packet);
 static enum packet_result run_fence(const uint32_t *packet);
 static enum packet_result run_wait_fence(const uint32_t *packet);
+static void run_fill(const uint32_t *packet, uint32_t session);
+static int local_range(uint64_t phys, uint64_t bytes);
 static void record(const uint32_t *packet, uint32_t dwords, uint32_t skipped);
 static enum packet_result raise_fault(uint32_t kind, uint32_t unit, uint32_t session, uint64_t address);
 static void irq_check(void);
@@ -998,6 +1000,9 @@ build_window(void)
 		window_set(MODEL_MEM_BLOCK + GHCI_MEM_LOCAL_SIZE, MODEL_LOCAL_BYTES);
 		window_set(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_SIZE, MODEL_LOCAL_BYTES);
 		window_set(MODEL_MEM_BLOCK + GHCI_MEM_HOST_LIMIT, MODEL_HOST_LIMIT);
+
+		/* The window is open after a power-on reset (section 11.1). */
+		window_set(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL, 1U);
 	}
 
 	/* FMT: the attachment limit. */
@@ -1321,8 +1326,68 @@ run_packet(
 		return raise_fault(model.injection.kind, model.injection.unit, session, model.injection.address);
 	}
 
+	/* A fill writes its pattern where the session maps it. */
+	if (opcode == GHCI_OP_FILL_BUFFER)
+		run_fill(packet, session);
+
 	/* Succeeded: the command is recorded. */
 	return PACKET_NEXT;
+}
+
+/*
+ * Runs CMD_FILL_BUFFER (section 7.3): the pattern in every word of the
+ * range, when one mapping of the session holds all of it.  A range the
+ * session does not map is only recorded (the model checks the driver's
+ * packets, not a client's addresses).
+ */
+static void
+run_fill(
+	const uint32_t *packet,
+	uint32_t session)
+{
+	const struct model_mapping *mapping;
+	uint64_t va;
+	uint64_t bytes;
+	uint64_t index;
+	uint8_t *memory;
+	uint32_t pattern;
+
+	/* The range and the pattern. */
+	va = get64(&packet[1]);
+	bytes = packet[3];
+	pattern = packet[4];
+
+	/* One mapping holds the whole range. */
+	mapping = model_lookup(session, va);
+	if (mapping == NULL || bytes == 0U || va - mapping->va + bytes > mapping->bytes)
+		return;
+
+	/* The bytes the mapping reaches. */
+	memory = model_dma(mapping->phys + (va - mapping->va), bytes);
+	if (memory == NULL)
+		return;
+
+	/* The pattern, word by word. */
+	for (index = 0U; index + 4U <= bytes; index += 4U)
+		memcpy(&memory[index], &pattern, 4U);
+}
+
+/* Reports whether a range of physical addresses lies in the profile's local memory: 1 when it does. */
+static int
+local_range(
+	uint64_t phys,
+	uint64_t bytes)
+{
+	/* Only a profile with MEM has local memory. */
+	if ((profiles[model.profile].blocks & (1U << GHCI_EXTCAP_ID_MEM)) == 0U)
+		return 0;
+
+	/* The range lies wholly in it. */
+	if (phys < MODEL_LOCAL_BASE || bytes > MODEL_LOCAL_BYTES || phys - MODEL_LOCAL_BASE > MODEL_LOCAL_BYTES - bytes)
+		return 0;
+
+	/* Succeeded: the range is local memory. */
+	return 1;
 }
 
 /* Runs CMD_SESSION_OPEN (section 11.6). */
@@ -1434,6 +1499,17 @@ run_vm_map(
 	va_limit = 1ULL << va_bits;
 	if (va >= va_limit || bytes > va_limit - va)
 		return raise_fault(GHCI_FAULT_KIND_INVALID_OP, GHCI_UNIT_CP, session, va);
+
+	/*
+	 * VM_FLAG_LOCAL names local memory and only local memory (section
+	 * 11.3, HOST_LIMIT's routing): a local address without the flag, or
+	 * the flag on an address outside local memory, is a violation of the
+	 * mapping's flags (kind 10).
+	 */
+	if ((packet[2] & GHCI_VM_FLAG_LOCAL) != 0U && !local_range(phys, bytes))
+		return raise_fault(GHCI_FAULT_KIND_PERM_FAULT, GHCI_UNIT_CP, session, va);
+	if ((packet[2] & GHCI_VM_FLAG_LOCAL) == 0U && local_range(phys, bytes))
+		return raise_fault(GHCI_FAULT_KIND_PERM_FAULT, GHCI_UNIT_CP, session, va);
 
 	/* A range that overlaps a mapping of the same table is a collision (kind 10). */
 	table = table_of(session);

@@ -67,6 +67,13 @@
 #define HOST_MAP_FLAGS			(GHCI_VM_FLAG_READ | GHCI_VM_FLAG_WRITE | GHCI_VM_FLAG_COHERENT)
 
 /*
+ * The access every mapping of the GPU's local memory has: its address is
+ * a local one (section 11.2 of the specification, VM_FLAG_LOCAL), and
+ * the processor's caches have no part in it.
+ */
+#define LOCAL_MAP_FLAGS			(GHCI_VM_FLAG_READ | GHCI_VM_FLAG_WRITE | GHCI_VM_FLAG_LOCAL)
+
+/*
  * One run of chunks a session owns and the GPU addresses its mappings
  * take in it.  It lives from the first mapping placed in it until the
  * last one leaves; the device's lock protects it.
@@ -433,8 +440,12 @@ ghci_vm_close(
  * coherence are the driver's.  The placement is not waited for: the
  * processor runs the ring in order.
  *
+ * Local memory is mapped with GHCI_VM_FLAG_LOCAL and its local address,
+ * and never coherent with the processor.
+ *
  * Returns 0 with the mapping, which holds the allocation; ENOTSUP for
- * local memory; ENOMEM when no addresses or no room in CP_HEAP's bound
+ * local memory on a GPU without a page-table walker (whose addresses are
+ * bus addresses); ENOMEM when no addresses or no room in CP_HEAP's bound
  * are left; or EIO when the session or the device is lost.
  */
 int
@@ -451,8 +462,8 @@ ghci_vm_map(
 	uint64_t va;
 	int error;
 
-	/* Host memory only; the flags a caller adds are EXEC and NO_WRITE. */
-	if (allocation->kind != GHCI_MEMORY_HOST)
+	/* Local memory needs a walker; the flags a caller adds are EXEC and NO_WRITE. */
+	if (allocation->kind == GHCI_MEMORY_LOCAL && vm->flat)
 		return ENOTSUP;
 	if ((flags & ~(GHCI_VM_FLAG_EXEC | GHCI_VM_MAP_NO_WRITE)) != 0U)
 		return EINVAL;
@@ -465,6 +476,8 @@ ghci_vm_map(
 	mapping->allocation = allocation;
 	mapping->bytes = allocation->bytes;
 	mapping->flags = HOST_MAP_FLAGS | (flags & GHCI_VM_FLAG_EXEC);
+	if (allocation->kind == GHCI_MEMORY_LOCAL)
+		mapping->flags = LOCAL_MAP_FLAGS | (flags & GHCI_VM_FLAG_EXEC);
 	if ((flags & GHCI_VM_MAP_NO_WRITE) != 0U)
 		mapping->flags &= ~GHCI_VM_FLAG_WRITE;
 	mapping->state = GHCI_MAPPING_LIVE;

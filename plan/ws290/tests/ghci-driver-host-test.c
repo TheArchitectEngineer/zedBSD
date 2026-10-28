@@ -36,6 +36,9 @@
 #include "ghci-model.h"
 #include "ghci-stubs.h"
 
+/* Where the scenes with a local window say BAR2 is placed. */
+#define TEST_WINDOW_PHYSICAL		0xe0000000ULL
+
 /* The NOP dwords of one ordinary submission of the scenes. */
 #define TEST_SUBMIT_DWORDS		200U
 
@@ -112,6 +115,7 @@ static void expect(int held, const char *name);
 static int start_scene(enum model_profile profile, const struct model_switches *switches);
 static void prepare_scene(enum model_profile profile, const struct model_switches *switches);
 static int start_device(void);
+static int start_device_window(void);
 static void end_scene(const char *name);
 static void check_locks(const char *name);
 static void model_irq(void *argument);
@@ -158,6 +162,10 @@ static void scene_vm_retry(void);
 static void scene_resources(void);
 static void scene_vm_edges(void);
 static void action_fault_then_recover(void);
+static void scene_local(void);
+static void scene_local_lost(void);
+static struct ghci_allocation *local_memory(uint64_t bytes);
+static int quarantined_local(void);
 
 /*
  * The operations of the fake bus; they live as long as the test.
@@ -205,6 +213,8 @@ main(void)
 	scene_vm_retry();
 	scene_resources();
 	scene_vm_edges();
+	scene_local();
+	scene_local_lost();
 	model_fini();
 
 	/* Reports the counts. */
@@ -330,6 +340,34 @@ start_device(void)
 	device.pci_device = TEST_PCI_DEVICE;
 	device.bus_master_found = test_master_found;
 	device.ring_bytes = test_ring_bytes;
+
+	/* Starts it. */
+	error = ghci_device_start(&device);
+	return error;
+}
+
+/*
+ * Starts the device of the prepared scene with a local window as BAR2
+ * gives it: the model's local memory, all of it.  Returns what the start
+ * returned.
+ */
+static int
+start_device_window(void)
+{
+	int error;
+
+	/* The device as the bus glue leaves it, with the window. */
+	memset(&device, 0, sizeof(device));
+	device.registers = stub_bar0();
+	device.register_bytes = 4096U;
+	device.bus_ops = &fake_bus_ops;
+	device.pci_vendor = TEST_PCI_VENDOR;
+	device.pci_device = TEST_PCI_DEVICE;
+	device.bus_master_found = test_master_found;
+	device.ring_bytes = test_ring_bytes;
+	device.window = model.local;
+	device.window_physical = TEST_WINDOW_PHYSICAL;
+	device.window_bytes = MODEL_LOCAL_BYTES;
 
 	/* Starts it. */
 	error = ghci_device_start(&device);
@@ -2084,4 +2122,216 @@ scene_vm_edges(void)
 	error = ghci_device_stop(&device);
 	expect(error == 0 && device.quarantined == NULL, "edges: quarantine given back at the detach");
 	end_scene("edges");
+}
+
+/* Takes a run of local memory, held by the test. */
+static struct ghci_allocation *
+local_memory(
+	uint64_t bytes)
+{
+	struct ghci_allocation *allocation;
+	int error;
+
+	/* The run, held by the test. */
+	error = ghci_memory_alloc_local(&device, bytes, &allocation);
+	if (error != 0)
+		return NULL;
+	allocation->holds = 1U;
+	return allocation;
+}
+
+/* Reports whether the quarantine holds a run of local memory: 1 when it does. */
+static int
+quarantined_local(void)
+{
+	struct ghci_allocation *allocation;
+
+	/* Each run of the quarantine. */
+	for (allocation = device.quarantined; allocation != NULL; allocation = allocation->next) {
+		if (allocation->kind == GHCI_MEMORY_LOCAL)
+			return 1;
+	}
+
+	/* None of local memory. */
+	return 0;
+}
+
+/*
+ * Local memory of a discrete device: the boot framebuffer kept out of the
+ * allocator and the window kept open until the release, runs of local
+ * memory at local addresses and mapped with VM_FLAG_LOCAL, a unified
+ * device that hands out none, and a boot framebuffer in host memory that
+ * the driver leaves alone.
+ */
+static void
+scene_local(void)
+{
+	struct ghci_allocation *first;
+	struct ghci_allocation *second;
+	struct ghci_allocation *third;
+	struct ghci_allocation *host;
+	struct ghci_allocation *spare;
+	struct ghci_mapping *mapping;
+	struct ghci_mapping *host_mapping;
+	const struct model_mapping *seen;
+	struct ghci_vm *vm;
+	uint32_t ctrl;
+	int error;
+
+	/* A boot framebuffer of 1 MiB at 1 MiB into local memory, scanned out (DISP2 CTRL.ENABLE). */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	model.window[(MODEL_DISP2_BLOCK + 0x10U) / 4U] = 1U;
+	model.window[(MODEL_DISP2_BLOCK + 0x20U) / 4U] = (uint32_t)MODEL_LOCAL_BASE + 0x100000U;
+	model.window[(MODEL_DISP2_BLOCK + 0x28U) / 4U] = 4096U;
+	model.window[(MODEL_DISP2_BLOCK + 0x2CU) / 4U] = (256U << 16) | 1024U;
+	error = start_device();
+	expect(error == 0 && device.local_ready && ghci_memory_local_bytes(&device) == MODEL_LOCAL_BYTES, "local: discrete started");
+	expect(device.boot_reserved && device.boot_offset == 0x100000U && device.boot_bytes == 0x100000U, "local: boot framebuffer found");
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(ctrl == 1U && device.window_open, "local: window kept open for the boot console");
+
+	/* Runs of local memory go around the boot framebuffer, at local addresses, not seen by the processor without a window. */
+	first = local_memory(0x100000U);
+	second = local_memory(0x100000U);
+	expect(first != NULL && second != NULL && first->kind == GHCI_MEMORY_LOCAL, "local: runs taken");
+	expect(first != NULL && first->bus == MODEL_LOCAL_BASE && first->view == NULL, "local: first run below the framebuffer");
+	expect(second != NULL && second->bus == MODEL_LOCAL_BASE + 0x200000U, "local: second run past the framebuffer");
+
+	/* A run larger than what is left is refused. */
+	spare = NULL;
+	error = ghci_memory_alloc_local(&device, MODEL_LOCAL_BYTES, &spare);
+	expect(error == ENOMEM && spare == NULL, "local: a run past local memory refused");
+
+	/* The release after the first flip: the range is the allocator's again, and the unused window closes. */
+	ghci_memory_boot_release(&device);
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(!device.boot_reserved && ctrl == 0U && !device.window_open, "local: boot framebuffer released, window closed");
+	third = local_memory(0x100000U);
+	expect(third != NULL && third->bus == MODEL_LOCAL_BASE + 0x100000U, "local: the framebuffer's range handed out after the release");
+
+	/* A mapping of local memory carries VM_FLAG_LOCAL and the local address; host memory does not. */
+	host = host_memory(64U * 1024U);
+	vm = NULL;
+	mapping = NULL;
+	host_mapping = NULL;
+	error = ghci_vm_open(&device, &owner_token, &vm);
+	if (error == 0 && first != NULL)
+		error = ghci_vm_map(&device, vm, first, 0U, &mapping);
+	if (error == 0 && host != NULL)
+		error = ghci_vm_map(&device, vm, host, 0U, &host_mapping);
+	expect(error == 0 && mapping != NULL && host_mapping != NULL, "local: mapped");
+	seen = mapping != NULL ? model_lookup(vm->session, mapping->va) : NULL;
+	expect(seen != NULL && seen->phys == MODEL_LOCAL_BASE &&
+	    seen->flags == (GHCI_VM_FLAG_READ | GHCI_VM_FLAG_WRITE | GHCI_VM_FLAG_LOCAL), "local: VM_MAP with VM_FLAG_LOCAL");
+	seen = host_mapping != NULL ? model_lookup(vm->session, host_mapping->va) : NULL;
+	expect(seen != NULL && (seen->flags & GHCI_VM_FLAG_LOCAL) == 0U && (seen->flags & GHCI_VM_FLAG_COHERENT) != 0U,
+	    "local: host memory mapped without VM_FLAG_LOCAL");
+	expect(model.faults == 0U && device.state == GHCI_STATE_RUNNING, "local: no fault");
+
+	/* The unmap gives the run back to the allocator once its fence passed and the test lets it go. */
+	if (mapping != NULL)
+		ghci_vm_unmap(&device, mapping);
+	if (host_mapping != NULL)
+		ghci_vm_unmap(&device, host_mapping);
+	reclaim();
+	if (first != NULL)
+		memory_done(first);
+	spare = local_memory(0x100000U);
+	expect(spare != NULL && spare->bus == MODEL_LOCAL_BASE, "local: an unmapped run is handed out again");
+	if (vm != NULL)
+		ghci_vm_close(&device, vm);
+	reclaim();
+	if (spare != NULL)
+		memory_done(spare);
+	if (second != NULL)
+		memory_done(second);
+	if (third != NULL)
+		memory_done(third);
+	if (host != NULL)
+		memory_done(host);
+	expect(device.local_map.count == 0U, "local: every run back in the allocator");
+	end_scene("local");
+	expect(device.local_extents == NULL && !device.local_ready, "local: allocator gone at the detach");
+
+	/* A discrete device with a window and no boot framebuffer: the driver keeps the window open, runs it shows have a view. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	error = start_device_window();
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(error == 0 && !device.boot_reserved && ctrl == 1U, "local: window open for the driver's use");
+	first = local_memory(0x2000U);
+	expect(first != NULL && first->view == (uint8_t *)model.local, "local: the window shows the run");
+	if (first != NULL)
+		memory_done(first);
+	end_scene("local: window");
+
+	/* A unified device hands out no local memory, and leaves no window to manage. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	spare = NULL;
+	expect(error == 0 && !device.local_ready && ghci_memory_local_bytes(&device) == 0U, "local: unified uses none");
+	error = ghci_memory_alloc_local(&device, 4096U, &spare);
+	expect(error == ENOTSUP && spare == NULL, "local: unified refuses a run");
+	end_scene("local: unified");
+
+	/* A boot framebuffer in host memory on a discrete device is not the driver's to keep; the unused window closes. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	model.window[(MODEL_DISP2_BLOCK + 0x10U) / 4U] = 1U;
+	model.window[(MODEL_DISP2_BLOCK + 0x20U) / 4U] = (uint32_t)MODEL_HOST_BASE;
+	model.window[(MODEL_DISP2_BLOCK + 0x28U) / 4U] = 4096U;
+	model.window[(MODEL_DISP2_BLOCK + 0x2CU) / 4U] = (16U << 16) | 1024U;
+	error = start_device();
+	ctrl = model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U];
+	expect(error == 0 && device.local_ready && !device.boot_reserved && ctrl == 0U, "local: boot framebuffer in host memory left alone");
+	end_scene("local: host framebuffer");
+}
+
+/*
+ * Local memory of a lost device: a run the GPU was given waits in the
+ * quarantine when it is let go, and goes back to the allocator only at
+ * the detach, after bus mastering is off.
+ */
+static void
+scene_local_lost(void)
+{
+	struct ghci_allocation *run;
+	struct ghci_mapping *mapping;
+	struct ghci_ticket ticket;
+	enum ghci_gate gate;
+	struct ghci_vm *vm;
+	int error;
+
+	/* A discrete device with a mapped run of local memory. */
+	error = start_scene(MODEL_KC705_DISCRETE, NULL);
+	run = local_memory(0x10000U);
+	vm = NULL;
+	mapping = NULL;
+	if (error == 0 && run != NULL)
+		error = ghci_vm_open(&device, &owner_token, &vm);
+	if (error == 0)
+		error = ghci_vm_map(&device, vm, run, 0U, &mapping);
+	expect(error == 0 && run != NULL && mapping != NULL, "local lost: mapped");
+
+	/* The device is lost: every recovery's check fails. */
+	model_hold(1);
+	(void)submit_nops(TEST_SUBMIT_DWORDS, &ticket);
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	model_set_bus_master(0);
+	scene_action = action_recover;
+	gate = ghci_cp_enter(&device, 0U, 1);
+	scene_action = NULL;
+	expect(gate == GHCI_GATE_LOST && device.state == GHCI_STATE_LOST, "local lost: lost");
+
+	/* The mapping and the test let the run go: it waits in the quarantine, still out of the allocator. */
+	if (mapping != NULL)
+		ghci_vm_unmap(&device, mapping);
+	if (vm != NULL)
+		ghci_vm_close(&device, vm);
+	reclaim();
+	if (run != NULL)
+		memory_done(run);
+	expect(quarantined_local() && device.local_map.count == 1U, "local lost: the run is quarantined");
+
+	/* The detach gives it back once bus mastering is off, and the allocator goes. */
+	error = ghci_device_stop(&device);
+	expect(error == 0 && device.quarantined == NULL && device.local_extents == NULL, "local lost: given back at the detach");
+	end_scene("local lost");
 }
