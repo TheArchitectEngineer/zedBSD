@@ -17,32 +17,59 @@
 #include <stdint.h>
 
 /*
- * The packets of the whole stack, one pool.  A 64-bit machine's TCP offers
- * a window of tens of kilobytes, a packet for each segment of it (BUG-222);
- * the 32-bit boards keep the small pool their memory map was laid out for.
+ * The packets of the whole stack, in two classes of one pool: standard
+ * packets of PACKET_BUF_STORAGE_SIZE, and on the 64-bit machines a few
+ * jumbo packets large enough for a 9000-byte frame with its headroom.  A
+ * 64-bit machine's TCP offers a window of tens of kilobytes, a packet for
+ * each segment of it; the 32-bit boards keep the small pool their memory
+ * map was laid out for and have no jumbo packets.
+ *
+ * PACKET_BUF_JUMBO_RESERVE jumbo packets are kept for the drivers'
+ * receive (PACKET_BUF_ALLOC_RECEIVE): a sender or a copy that would take
+ * one of the last of them is refused, so the frames that arrive still
+ * find a packet while sockets hold the others.
  */
 #if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
     defined(HAL_ARCH_RISCV64)
-#define PACKET_BUF_POOL_COUNT	256U
+#define PACKET_BUF_POOL_COUNT		256U
+#define PACKET_BUF_JUMBO_STORAGE_SIZE	9216U
+#define PACKET_BUF_JUMBO_COUNT		32U
+#define PACKET_BUF_JUMBO_RESERVE	8U
 #else
-#define PACKET_BUF_POOL_COUNT	32U
+#define PACKET_BUF_POOL_COUNT		32U
+#define PACKET_BUF_JUMBO_STORAGE_SIZE	2048U
+#define PACKET_BUF_JUMBO_COUNT		0U
+#define PACKET_BUF_JUMBO_RESERVE	0U
 #endif
 #define PACKET_BUF_STORAGE_SIZE	2048U
+
+/* The largest storage any packet has: what one frame and its headroom may take. */
+#define PACKET_BUF_MAX_STORAGE_SIZE	PACKET_BUF_JUMBO_STORAGE_SIZE
+
+/* packet_buf_alloc_for: the caller is a driver's receive, which may take the reserved jumbo packets. */
+#define PACKET_BUF_ALLOC_RECEIVE	0x1U
 #define PACKET_BUF_DEFAULT_HEADROOM	64U
 #define PACKET_OFFSET_NONE	UINT16_MAX
 
 struct net_device;
 
 /*
- * The packet pool's use at one moment (packet_buf_pool_usage): its size,
- * the packets taken now and the most ever taken, and how many allocations
- * found none free.
+ * The packet pool's use at one moment (packet_buf_pool_usage): for the
+ * standard packets and then the jumbo ones, the class's size, the packets
+ * taken now and the most ever taken, and how many allocations found none
+ * free (for the jumbo class, none outside the reserve), and the jumbo
+ * packets kept for the drivers' receive.
  */
 struct packet_buf_pool_usage {
 	unsigned total;
 	unsigned used;
 	unsigned used_max;
 	uint64_t alloc_failures;
+	unsigned jumbo_total;
+	unsigned jumbo_used;
+	unsigned jumbo_used_max;
+	unsigned jumbo_reserve;
+	uint64_t jumbo_alloc_failures;
 };
 
 struct packet_buf {
@@ -84,6 +111,12 @@ packet_buf_pool_init(void);
 struct packet_buf *
 packet_buf_alloc(
 	size_t headroom);
+struct packet_buf *
+packet_buf_alloc_for(
+	size_t headroom,
+	size_t length,
+	unsigned flags,
+	int *error);
 void
 packet_buf_ref(
 	struct packet_buf *packet);

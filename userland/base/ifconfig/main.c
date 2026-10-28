@@ -31,6 +31,7 @@ static int set_sockaddr(int descriptor, const char *name, unsigned long command,
 static void show_inet6(int descriptor, const char *name);
 static int switch_ipv6(int descriptor, const char *name, const char *state);
 static int change_inet6(int descriptor, const char *name, const char *text, int add);
+static int set_mtu(int descriptor, const char *name, const char *text);
 
 /*
  * Runs the ifconfig command.
@@ -156,6 +157,11 @@ main(
 	} else if (argc == 4 && strcmp(argv[2], "-inet6") == 0) {
 		/* An IPv6 address removed (ws130-p005). */
 		status = change_inet6(descriptor, argv[1], argv[3], 0) != 0;
+	} else if (argc == 4 && strcmp(argv[2], "mtu") == 0) {
+		/* The interface's MTU, or its own again (default); set_mtu says why a value was refused. */
+		status = set_mtu(descriptor, argv[1], argv[3]);
+		close(descriptor);
+		return status;
 	} else if (argc == 4 && strcmp(argv[2], "broadcast") == 0) {
 		/* Validates the command-line arguments. */
 		if (netutil_parse_ipv4(argv[3], &broadcast_local1) != 0) {
@@ -311,7 +317,8 @@ usage(
 	void)
 {
 	puts("usage: ifconfig [-a] [interface [up|down|inet address[/prefix] "
-	     "[netmask mask]|inet6 address[/prefix]|-inet6 address[/prefix]|ipv6 on|off|broadcast address]]]");
+	     "[netmask mask]|inet6 address[/prefix]|-inet6 address[/prefix]|ipv6 on|off|broadcast address|"
+	     "mtu N|default]]]");
 
 	/* Reports operation failure. */
 	return 2;
@@ -464,4 +471,57 @@ switch_ipv6(
 	/* Succeeded or not, the kernel's answer. */
 	status = ioctl(descriptor, SIOCSIFINET6, &request_);
 	return status;
+}
+
+/*
+ * Sets an interface's MTU to a number, or back to the interface's own
+ * ("default"), and says why the kernel refused it.  Returns 0, 1 when the
+ * kernel refused, or 2 for a value that is not a number.
+ */
+static int
+set_mtu(
+	int descriptor,
+	const char *name,
+	const char *text)
+{
+	struct ifreq request_;
+	unsigned long mtu;
+	char *end;
+	int status;
+	int error;
+
+	/* The value: a number, or 0 for the interface's own. */
+	mtu = 0;
+	if (strcmp(text, "default") != 0) {
+		errno = 0;
+		mtu = strtoul(text, &end, 10);
+		if (errno != 0 || *end != '\0' || end == text || mtu == 0 || mtu > 65535UL) {
+			printf("ifconfig: %s: bad mtu %s\n", name, text);
+			return 2;
+		}
+	}
+
+	/* The request. */
+	status = netutil_ifreq(&request_, name);
+	if (status != 0) {
+		printf("ifconfig: %s: %s\n", name, strerror(errno));
+		return 1;
+	}
+	request_.ifr_mtu = (int)mtu;
+
+	/* The kernel's answer; a value out of range or a driver that needs the interface down is said in words. */
+	status = ioctl(descriptor, SIOCSIFMTU, &request_);
+	if (status != 0) {
+		error = errno;
+		if (error == EINVAL)
+			printf("ifconfig: %s: mtu %s is outside 1280 to the interface's limit\n", name, text);
+		else if (error == EBUSY)
+			printf("ifconfig: %s: the interface is busy or its driver needs it down first\n", name);
+		else
+			printf("ifconfig: %s: %s\n", name, strerror(error));
+		return 1;
+	}
+
+	/* Succeeded: the interface runs at the new MTU. */
+	return 0;
 }

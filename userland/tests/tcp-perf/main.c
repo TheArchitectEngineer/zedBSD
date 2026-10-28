@@ -20,6 +20,12 @@
  * second's rate; the last line is "TCP-PERF DIRECTION seconds=S bytes=N
  * mbps=RATE" over the whole transfer.  It exits 0, 1 when the transfer
  * failed, or 2 for a bad command line.  The source also builds on Linux.
+ *
+ * The time is kept by an interval timer that raises SIGALRM every second,
+ * not by reading the clock around each read or write: on a system whose
+ * clock is read through a system call that would add two calls to each
+ * one the transfer makes.  A read or write the signal interrupts is
+ * simply made again.
  */
 
 #include <arpa/inet.h>
@@ -29,7 +35,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -41,6 +49,13 @@
 
 /* The longest transfer the command line may ask for, in seconds. */
 #define PERF_SECONDS_MAX 3600UL
+
+/*
+ * The seconds the interval timer has counted since the transfer started.
+ *
+ * The SIGALRM handler adds one; the main thread reads it.
+ */
+static volatile sig_atomic_t perf_ticks;
 
 /*
  * The rate of each second and of the whole transfer.
@@ -58,7 +73,9 @@ struct perf_progress {
 static int perf_parse(int argc, char **argv, int *sending, unsigned long *seconds, unsigned long *chunk);
 static int perf_connect(const char *address_text, const char *port_text, int *descriptor);
 static double perf_now(void);
-static void perf_count(struct perf_progress *progress, size_t bytes, double now);
+static void perf_tick(int signal_number);
+static int perf_start_timer(void);
+static void perf_count(struct perf_progress *progress, size_t bytes);
 static int perf_send(int descriptor, unsigned char *buffer, unsigned long chunk, unsigned long seconds,
     struct perf_progress *progress);
 static int perf_receive(int descriptor, unsigned char *buffer, unsigned long chunk, unsigned long seconds,
@@ -119,6 +136,13 @@ main(
 	memset(&progress, 0, sizeof(progress));
 	progress.start = perf_now();
 	progress.second_start = progress.start;
+	error = perf_start_timer();
+	if (error != 0) {
+		fprintf(stderr, "tcp-perf: no interval timer: %s\n", strerror(error));
+		close(descriptor);
+		free(buffer);
+		return 1;
+	}
 	if (sending)
 		error = perf_send(descriptor, buffer, chunk, seconds, &progress);
 	else
@@ -256,27 +280,70 @@ perf_now(void)
 	return (double)now.tv_sec + (double)now.tv_nsec / 1e9;
 }
 
+/* Counts one more second of the transfer. */
+static void
+perf_tick(
+	int signal_number)
+{
+	(void)signal_number;
+	perf_ticks++;
+}
+
+/*
+ * Starts the interval timer that counts the transfer's seconds, without
+ * SA_RESTART so that a blocked read or write returns to look at them.
+ */
+static int
+perf_start_timer(void)
+{
+	struct sigaction action;
+	struct itimerval interval;
+	int error;
+
+	/* The handler of SIGALRM. */
+	memset(&action, 0, sizeof(action));
+	action.sa_handler = perf_tick;
+	sigemptyset(&action.sa_mask);
+	error = sigaction(SIGALRM, &action, NULL);
+	if (error != 0)
+		return errno;
+
+	/* A signal every second from now. */
+	memset(&interval, 0, sizeof(interval));
+	interval.it_interval.tv_sec = 1;
+	interval.it_value.tv_sec = 1;
+	error = setitimer(ITIMER_REAL, &interval, NULL);
+	if (error != 0)
+		return errno;
+
+	/* Succeeded: the seconds are counted. */
+	return 0;
+}
+
 /*
  * Counts bytes moved and prints the rate of each second that has ended.
  */
 static void
 perf_count(
 	struct perf_progress *progress,
-	size_t bytes,
-	double now)
+	size_t bytes)
 {
 	double span;
+	double now;
 
 	/* The bytes count toward the total and the running second. */
 	progress->total += (unsigned long long)bytes;
 	progress->second_bytes += (unsigned long long)bytes;
 
 	/* A second still running prints nothing. */
-	span = now - progress->second_start;
-	if (span < 1.0)
+	if ((unsigned)perf_ticks <= progress->second)
 		return;
 
 	/* The second that ended, its rate over its own length. */
+	now = perf_now();
+	span = now - progress->second_start;
+	if (span <= 0.0)
+		span = 1e-9;
 	progress->second++;
 	printf("t=%u bytes=%llu mbps=%.1f\n", progress->second, progress->second_bytes,
 	    (double)progress->second_bytes * 8.0 / span / 1e6);
@@ -297,14 +364,12 @@ perf_send(
 	unsigned long seconds,
 	struct perf_progress *progress)
 {
-	double now;
 	ssize_t moved;
 	int error;
 
 	/* Each write until the duration has passed. */
 	for (;;) {
-		now = perf_now();
-		if (now - progress->start >= (double)seconds)
+		if ((unsigned long)perf_ticks >= seconds)
 			break;
 
 		/* The write, which blocks until the kernel takes some of it. */
@@ -315,7 +380,7 @@ perf_send(
 				continue;
 			return error;
 		}
-		perf_count(progress, (size_t)moved, perf_now());
+		perf_count(progress, (size_t)moved);
 	}
 
 	/* The end of the stream for the peer. */
@@ -351,14 +416,12 @@ perf_receive(
 	unsigned long seconds,
 	struct perf_progress *progress)
 {
-	double now;
 	ssize_t moved;
 	int error;
 
 	/* Each read until the duration has passed or the stream ends. */
 	for (;;) {
-		now = perf_now();
-		if (now - progress->start >= (double)seconds)
+		if ((unsigned long)perf_ticks >= seconds)
 			break;
 
 		/* The read, which blocks until some bytes arrive. */
@@ -371,7 +434,7 @@ perf_receive(
 				continue;
 			return error;
 		}
-		perf_count(progress, (size_t)moved, perf_now());
+		perf_count(progress, (size_t)moved);
 	}
 
 	/* Succeeded: the duration passed or the peer ended the stream. */
