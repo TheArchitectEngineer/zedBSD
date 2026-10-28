@@ -883,6 +883,6 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
     を取る再現の soak（memory=1、40 分、19:07〜）。
 - Q1（19:15）: 受け入れの基準は「Linux の数以上（同じ条件の bench）」、固定の時の数は参考。
 - status の大きさの変更（include/uapi/amdrdna.h、352 → 384 byte）の版ずれ（code を読んで確かめた、実機の版ずれは未試験）: AMDRDNA_IOC_STATUS は
-  _IOWR で大きさを番号に含むので、古い amdrdnactl と新しい kernel（またはその逆）では番号が合わず control_ioctl の switch の default に落ちて断る。
+  _IOWR で大きさを番号に含むので、古い amdrdnactl と新しい kernel（またはその逆）では番号が合わず control_ioctl の switch の default で ENOTTY。
   番号が合っても control_status は version と size（sizeof）を比べて EINVAL で断り、copyout しない。amdrdnactl は失敗を control_fail で言って
   終わる（壊れた値を出さない）。guard は amdrdnactl が答えない時を「no answer」と記録するだけで止めないので、kernel と amdrdnactl は一緒に入れる。
