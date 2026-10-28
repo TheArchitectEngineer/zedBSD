@@ -442,6 +442,9 @@ struct nvrtx_memory_state {
 	uint64_t bar1_bus;
 	/* Where the CPU's mapping of the window starts: after the console's part, else 0. */
 	uint64_t bar1_cpu_from;
+	/* The most of the window in use at once, and how many times a full window was told. */
+	uint64_t bar1_peak;
+	uint32_t bar1_full_marks;
 	int bar1_claimed;
 	struct drv_pci_mapping bar1_mapping;
 	int bar1_mapped;
@@ -745,6 +748,8 @@ int nvrtx_console_check(struct nvrtx_gpu *gpu);
 void nvrtx_console_restore(struct nvrtx_gpu *gpu);
 int nvrtx_bo_alloc(struct nvrtx_gpu *gpu, uint64_t size, uint64_t align, struct nvrtx_bo *bo);
 int nvrtx_bo_map(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);
+int nvrtx_bo_clear(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);
+void nvrtx_bo_window_use(struct nvrtx_gpu *gpu, uint64_t *used, uint64_t *peak, uint64_t *size);
 void nvrtx_bo_free(struct nvrtx_gpu *gpu, struct nvrtx_bo *bo);
 volatile uint8_t *nvrtx_bo_cpu(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo);
 uint64_t nvrtx_bo_bus(struct nvrtx_gpu *gpu, const struct nvrtx_bo *bo);

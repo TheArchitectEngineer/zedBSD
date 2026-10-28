@@ -202,7 +202,7 @@ static void execute_vertex_input(const struct nvrtx_vk_pipeline *pipeline, const
 static int execute_transfer(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static int execute_copy_images(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static int execute_buffer_image(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
-static int execute_cpu_copy(const struct nvrtx_vk_buffer *buffer, const struct nvrtx_vk_image *image, const VkBufferImageCopy *region, bool to_image);
+static int execute_cpu_copy(struct nvrtx_vk_session *session, const struct nvrtx_vk_buffer *buffer, const struct nvrtx_vk_image *image, const VkBufferImageCopy *region, bool to_image);
 static int execute_clear_image(struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static int execute_quad(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct execute_quad *quad);
 static int execute_image_target(const struct nvrtx_vk_image *image, uint32_t format, struct nvrtx_exec_target *target);
@@ -1175,7 +1175,7 @@ execute_buffer_image(
 		if (!drawn) {
 			error = execute_flush(session, execute);
 			if (error == 0)
-				error = execute_cpu_copy(buffer, image, region, to_image);
+				error = execute_cpu_copy(session, buffer, image, region, to_image);
 			if (error != 0)
 				return error;
 
@@ -1234,16 +1234,17 @@ execute_buffer_image(
 
 /*
  * Copies one region between a buffer and an image by the CPU, row by row
- * through the BAR1 window (the GPU is idle: the work before has run).
+ * through the BAR1 window (the GPU is idle: the work before has run); the
+ * two storages take their place in the window now if they have none.
  */
 static int
 execute_cpu_copy(
+	struct nvrtx_vk_session *session,
 	const struct nvrtx_vk_buffer *buffer,
 	const struct nvrtx_vk_image *image,
 	const VkBufferImageCopy *region,
 	bool to_image)
 {
-	uint64_t va;
 	uint8_t *buffer_cpu;
 	uint8_t *image_cpu;
 	uint8_t *buffer_row;
@@ -1254,9 +1255,9 @@ execute_cpu_copy(
 	int error;
 
 	/* The two views. */
-	error = nvrtx_vk_buffer_address(buffer, &va, &buffer_cpu);
+	error = nvrtx_vk_buffer_cpu(session, buffer, &buffer_cpu);
 	if (error == 0)
-		error = nvrtx_vk_image_address(image, &va, &image_cpu);
+		error = nvrtx_vk_image_cpu(session, image, &image_cpu);
 	if (error != 0)
 		return error;
 

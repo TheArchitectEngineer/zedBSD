@@ -48,7 +48,7 @@
 #define CURSOR_BYTE_BITS		8U
 
 static int cursor_check(struct nvrtx_node *node, void *session, uint64_t lease, uint64_t generation);
-static void cursor_copy(struct nvrtx_node *node, const struct nvrtx_resource *resource, const struct gpu_display_cursor_image *request, unsigned slot);
+static int cursor_copy(struct nvrtx_node *node, const struct nvrtx_resource *resource, const struct gpu_display_cursor_image *request, unsigned slot);
 static uint64_t cursor_slot_offset(const struct nvrtx_node *node, unsigned slot);
 static uint32_t cursor_read_pixel(const volatile uint8_t *source);
 
@@ -181,7 +181,11 @@ nvrtx_cursor_set(
 
 	/* Copies the image into the slot the shown cursor does not read. */
 	slot = node->cursor_slot ^ 1U;
-	cursor_copy(node, resource, request, slot);
+	error = cursor_copy(node, resource, request, slot);
+	if (error != 0) {
+		mutex_unlock(&node->lock);
+		return error;
+	}
 
 	/* A shown cursor is moved to the new slot by the core. */
 	if (node->cursor_visible != 0) {
@@ -360,9 +364,10 @@ cursor_check(
 /*
  * Copies a cursor image's rows into one slot through the CPU's window, as
  * A8R8G8B8, with every pixel outside the image transparent.  The core
- * checked the rows lie inside the storage.
+ * checked the rows lie inside the storage.  Returns the error of a blob that
+ * cannot take its place in the window (the slot is then unchanged).
  */
-static void
+static int
 cursor_copy(
 	struct nvrtx_node *node,
 	const struct nvrtx_resource *resource,
@@ -370,18 +375,23 @@ cursor_copy(
 	unsigned slot)
 {
 	const volatile uint8_t *source;
+	volatile uint8_t *view;
 	volatile uint8_t *slot_base;
 	volatile uint32_t *target;
 	uint32_t pixel;
 	uint32_t row;
 	uint32_t column;
 	int rgba;
+	int error;
 
-	/* The image's first byte: in RAM for storage, in the window for a blob. */
+	/* The image's first byte: in RAM for storage, in the window for a blob (mapped now if it is not). */
 	if (resource->kind == NVRTX_RESOURCE_STORAGE) {
 		source = resource->cpu + request->offset;
 	} else {
-		source = nvrtx_bo_cpu(node->gpu, &resource->backing->bo) + request->offset;
+		error = nvrtx_node_backing_cpu(node, resource->backing, &view);
+		if (error != 0)
+			return error;
+		source = view + request->offset;
 	}
 
 	/* The slot, and whether red and blue change places. */
@@ -405,6 +415,9 @@ cursor_copy(
 
 	/* Reads the slot back once, so the writes have reached the VRAM before the core names it. */
 	(void)target[0];
+
+	/* Succeeded: the slot holds the image. */
+	return 0;
 }
 
 /* Reports where a slot lies in the VRAM (a multiple of 256). */
