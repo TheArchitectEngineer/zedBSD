@@ -927,4 +927,4 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
   → 520 us（MEMORY_SWITCH_TENTHS、amdrdna.smu.memory_latency= で変更可）で game 16 cycle・window 4 cycle・bench 2 回で underflow 0。
   DISPCLK の電圧の floor だけ（404 us）では 4 cycle で 3 回（効かない）。UCLK の floor 500（memory_floor_level=1）でも 4 cycle で 2 回（100 MHz の段の問題ではない）。
 - 速さ（scene-6500）: 段 0 の floor だけでは UCLK が負荷の中でも 100/500 を往復し fence 20.1〜20.3 ms（Linux は 500 MHz を保ち 19.54）。busy の floor 500 で fence 19.62〜19.70。
-- UCLK（SMU の停止）の件はユーザーの指示で解決とする（2026-10-28 21:5x、上の原文）。残り: display の underflow の根本（2 pipe 分割、Linux の形）と評価。
+- UCLK（SMU の停止）の件はユーザーの指示で解決とする（2026-10-28 21:40 頃の Q1 の伝達、上の原文）。残り: display の underflow の根本（2 pipe 分割、Linux の形）と評価。
