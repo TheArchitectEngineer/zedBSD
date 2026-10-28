@@ -91,16 +91,30 @@ enum nvme_hmb_state {
 #define NVME_DMA_ADDRESS_BITS 64U
 
 /*
- * How many completed commands pass between two log lines of the average wait
+ * How many measured commands pass between two log lines of the average wait
  * from post to the interrupt's completion and from there to the waiter
- * running again (ws299-p004 measurement).
+ * running again (ws299-p004 measurement).  One command in
+ * NVME_IO_LATENCY_SAMPLE is measured, chosen by its command identifier's
+ * generation bits, so the other commands read no clock to post and none
+ * under command_lock when they complete.
  */
 #define NVME_IO_LATENCY_LOG_EVERY 4096U
+#define NVME_IO_LATENCY_SAMPLE 8U
+
+/*
+ * What nvme_io_wait_completion may finish in the hold it takes when the
+ * command is done, so the end of a request takes command_lock once: give
+ * the slot back (the caller copies nothing out of it), and then also end
+ * the request's admission (its last command, with nothing failed).
+ */
+#define NVME_IO_FINISH_RELEASE 1U
+#define NVME_IO_FINISH_END_BIO 2U
 
 /* How many page-list commands pass between two log lines of the direct and bounced counts. */
 #define NVME_IO_PATH_LOG_EVERY 4096U
 #define NVME_IO_MAX_SLOTS (NVME_IO_QUEUE_REQUESTED_DEPTH - 1U)
 _Static_assert(NVME_IO_MAX_SLOTS <= DRV_NVME_IO_CID_SLOTS, "every I/O slot needs its own command identifier");
+_Static_assert(NVME_IO_MAX_SLOTS <= 64U, "the free-slot hint is one 64-bit word");
 
 /*
  * How many more times a request runs after it timed out.  A timeout stops the
@@ -340,6 +354,13 @@ struct nvme_controller {
 	volatile struct drv_nvme_command *io_submission;
 	volatile struct drv_nvme_completion *io_completion;
 	struct nvme_io_slot io_slots[NVME_IO_MAX_SLOTS];
+	/*
+	 * Under command_lock, a bit for each slot that was last seen going
+	 * free: a hint, so taking a slot need not read every slot's state.
+	 * A bit is checked against the slot's state before the slot is taken,
+	 * and an empty hint falls back to looking at every slot.
+	 */
+	uint64_t io_slot_free_hint;
 	unsigned io_slot_count;
 	unsigned io_queue_depth;
 	unsigned io_submission_tail;
@@ -475,7 +496,7 @@ static void nvme_io_fail_all_locked(struct nvme_controller *controller, int erro
 static int nvme_attach(struct drv_pci_device *device, const struct drv_pci_id *id);
 static int nvme_detach(struct drv_pci_device *device, unsigned flags);
 static int nvme_disk_submit(struct disk *disk, struct bio *bio);
-static int nvme_disk_run(struct nvme_controller *controller, struct bio *bio, size_t *transferred);
+static int nvme_disk_run(struct nvme_controller *controller, struct bio *bio, size_t *transferred, int *ended);
 static void nvme_lifecycle_bar_release(void *context);
 static int nvme_lifecycle_bar_restore(void *context);
 static void nvme_lifecycle_bar_unmap(void *context);
@@ -617,10 +638,13 @@ static int nvme_io_wait_locked(struct nvme_controller *controller, struct wait_q
 static int nvme_io_ensure_online(struct nvme_controller *controller);
 static int nvme_io_begin_bio(struct nvme_controller *controller, enum bio_op operation, int *owned);
 static void nvme_io_end_bio(struct nvme_controller *controller, enum bio_op operation);
+static void nvme_io_end_bio_locked(struct nvme_controller *controller, enum bio_op operation);
 static int nvme_io_slot_acquire(struct nvme_controller *controller, struct nvme_io_slot **result, int may_wait);
 static int nvme_io_post(struct nvme_controller *controller, struct nvme_io_slot *slot, const struct drv_nvme_command *command, int uses_payload);
-static int nvme_io_wait_completion(struct nvme_controller *controller, struct nvme_io_slot *slot, int *recovery_owner, int *dma_uncertain, uint64_t *fence);
+static int nvme_io_wait_completion(struct nvme_controller *controller, struct nvme_io_slot *slot, int *recovery_owner, int *dma_uncertain, uint64_t *fence, unsigned *finish, enum bio_op operation);
 static void nvme_io_slot_release(struct nvme_controller *controller, struct nvme_io_slot *slot);
+static void nvme_io_slot_release_locked(struct nvme_controller *controller, struct nvme_io_slot *slot);
+static void nvme_io_slot_release_end(struct nvme_controller *controller, struct nvme_io_slot *slot, enum bio_op operation);
 static int nvme_io_execute(struct nvme_controller *controller, uint8_t opcode, uint64_t first_block, uint32_t block_count, void *bytes);
 static int nvme_io_start(struct nvme_controller *controller, uint8_t opcode, uint64_t first_block, uint32_t *block_count, void *bytes, const uint64_t *pages, int may_wait, struct nvme_io_slot **result, int *bounced);
 static int nvme_io_build_command(struct nvme_controller *controller, struct nvme_io_slot *slot, uint8_t opcode, uint64_t first_block, uint32_t *block_count, void *bytes, const uint64_t *pages, struct drv_nvme_command *command, int *bounced);
@@ -4762,6 +4786,17 @@ nvme_io_end_bio(
 {
 	unsigned long irq = spin_lock_irqsave(&controller->command_lock);
 
+	nvme_io_end_bio_locked(controller, operation);
+
+	spin_unlock_irqrestore(&controller->command_lock, irq);
+}
+
+/* Hands one block request back to its caller, under command_lock. */
+static void
+nvme_io_end_bio_locked(
+	struct nvme_controller *controller,
+	enum bio_op operation)
+{
 	/* Validates the selected operation. */
 	if (operation == BIO_FLUSH) {
 		/* Handles the controller condition. */
@@ -4780,8 +4815,36 @@ nvme_io_end_bio(
 		__builtin_trap();
 	controller->io_calls--;
 	waitq_wake_all(&controller->io_state_waitq);
+}
 
-	spin_unlock_irqrestore(&controller->command_lock, irq);
+/*
+ * Finds a free slot under command_lock, or reports io_slot_count when none
+ * is free.  The slots the hint names are looked at first, and a hinted
+ * slot that is not free loses its bit; only when the hint holds no free
+ * slot is every slot looked at, so a slot that went free without its bit
+ * is still found.
+ */
+static unsigned
+nvme_io_slot_find_free(
+	struct nvme_controller *controller)
+{
+	uint64_t valid;
+	unsigned index;
+
+	valid = controller->io_slot_count >= 64U ? ~(uint64_t)0 :
+	    ((uint64_t)1 << controller->io_slot_count) - 1U;
+	controller->io_slot_free_hint &= valid;
+	while (controller->io_slot_free_hint != 0U) {
+		index = (unsigned)__builtin_ctzll(controller->io_slot_free_hint);
+		controller->io_slot_free_hint &= ~((uint64_t)1 << index);
+		if (controller->io_slots[index].state == NVME_IO_SLOT_FREE)
+			return index;
+	}
+	for (index = 0; index < controller->io_slot_count; index++) {
+		if (controller->io_slots[index].state == NVME_IO_SLOT_FREE)
+			return index;
+	}
+	return controller->io_slot_count;
 }
 
 /* Takes one of the queue's command slots. */
@@ -4809,12 +4872,10 @@ nvme_io_slot_acquire(
 			break;
 		}
 
-		/* Process each remaining element. */
-		for (index = 0; index < controller->io_slot_count; index++) {
-			/* Handles the slot condition. */
+		/* Takes a free slot, when there is one. */
+		index = nvme_io_slot_find_free(controller);
+		if (index < controller->io_slot_count) {
 			slot = &controller->io_slots[index];
-			if (slot->state != NVME_IO_SLOT_FREE)
-				continue;
 
 			/* Names the command by the slot and its next generation. */
 			command_id = drv_nvme_io_next_command_id(index,
@@ -4869,6 +4930,15 @@ nvme_io_slot_acquire(
 	return 0;
 }
 
+/* Says whether a command is one of the measured ones (its slot's generation picks it). */
+static int
+nvme_io_latency_sampled(
+	const struct nvme_io_slot *slot)
+{
+	return ((unsigned)(slot->command_id >> DRV_NVME_IO_CID_SLOT_BITS) %
+	    NVME_IO_LATENCY_SAMPLE) == 0U;
+}
+
 /* Posts one command to the I/O submission queue. */
 static int
 nvme_io_post(
@@ -4883,8 +4953,8 @@ nvme_io_post(
 	unsigned long irq;
 	int error;
 
-	/* Reads the clock before command_lock, so the lock is not held over it. */
-	posted_ns = nvme_now_ns();
+	/* Reads the clock for a measured command before command_lock, so the lock is not held over it. */
+	posted_ns = nvme_io_latency_sampled(slot) ? nvme_now_ns() : 0U;
 	irq = spin_lock_irqsave(&controller->command_lock);
 
 	/* Handles the slot condition. */
@@ -5021,7 +5091,9 @@ nvme_io_wait_completion(
 	struct nvme_io_slot *slot,
 	int *recovery_owner,
 	int *dma_uncertain,
-	uint64_t *fence)
+	uint64_t *fence,
+	unsigned *finish,
+	enum bio_op operation)
 {
 	uint64_t deadline = sched_ticks() + controller->timeout_ticks;
 	unsigned long irq;
@@ -5034,6 +5106,7 @@ nvme_io_wait_completion(
 	uint64_t log_device_max;
 	uint64_t log_wake_max;
 	unsigned log_count;
+	unsigned requested;
 	int log_latency;
 
 	*recovery_owner = 0;
@@ -5056,10 +5129,10 @@ nvme_io_wait_completion(
 		}
 	}
 
-	/* Adds a completed command's two waits to the measurement (p004). */
+	/* Adds a measured completed command's two waits to the measurement (p004). */
 	log_latency = 0;
 	if (slot->state == NVME_IO_SLOT_CQ_DONE && slot->done_ns != 0U &&
-	    slot->done_ns >= slot->posted_ns) {
+	    slot->posted_ns != 0U && slot->done_ns >= slot->posted_ns) {
 		now = nvme_now_ns();
 		device_ns = slot->done_ns - slot->posted_ns;
 		wake_ns = 0;
@@ -5109,6 +5182,27 @@ nvme_io_wait_completion(
 		*recovery_owner = 1;
 	}
 
+	/*
+	 * Gives the slot back in this hold when the caller asked and has
+	 * nothing to copy out of it, unless the command failed while posted
+	 * or this caller now owns a recovery (those keep their own order);
+	 * and ends the request too when asked and the command succeeded.
+	 */
+	if (finish != NULL) {
+		requested = *finish;
+		*finish = 0;
+		if ((requested & NVME_IO_FINISH_RELEASE) != 0U &&
+		    slot->state == NVME_IO_SLOT_COPYING && !slot->dma_uncertain &&
+		    !*recovery_owner) {
+			nvme_io_slot_release_locked(controller, slot);
+			*finish = NVME_IO_FINISH_RELEASE;
+			if ((requested & NVME_IO_FINISH_END_BIO) != 0U && error == 0) {
+				nvme_io_end_bio_locked(controller, operation);
+				*finish |= NVME_IO_FINISH_END_BIO;
+			}
+		}
+	}
+
 	spin_unlock_irqrestore(&controller->command_lock, irq);
 
 	/* Says how the waits of the last commands divide, outside the lock. */
@@ -5138,6 +5232,32 @@ nvme_io_slot_release(
 {
 	unsigned long irq = spin_lock_irqsave(&controller->command_lock);
 
+	nvme_io_slot_release_locked(controller, slot);
+
+	spin_unlock_irqrestore(&controller->command_lock, irq);
+}
+
+/* Gives a request's last command slot back and ends the request, in one hold of command_lock. */
+static void
+nvme_io_slot_release_end(
+	struct nvme_controller *controller,
+	struct nvme_io_slot *slot,
+	enum bio_op operation)
+{
+	unsigned long irq = spin_lock_irqsave(&controller->command_lock);
+
+	nvme_io_slot_release_locked(controller, slot);
+	nvme_io_end_bio_locked(controller, operation);
+
+	spin_unlock_irqrestore(&controller->command_lock, irq);
+}
+
+/* Gives one command slot back, under command_lock. */
+static void
+nvme_io_slot_release_locked(
+	struct nvme_controller *controller,
+	struct nvme_io_slot *slot)
+{
 	/* Handles the slot condition. */
 	if (slot->state != NVME_IO_SLOT_COPYING &&
 	    slot->state != NVME_IO_SLOT_FAULTED)
@@ -5150,14 +5270,13 @@ nvme_io_slot_release(
 	slot->posted = 0;
 	slot->command_id = 0;
 	slot->error = 0;
+	controller->io_slot_free_hint |= (uint64_t)1 << (unsigned)(slot - controller->io_slots);
 
 	/* Handles the controller condition. */
 	if (controller->io_owned == 0U)
 		__builtin_trap();
 	controller->io_owned--;
 	waitq_wake_all(&controller->io_state_waitq);
-
-	spin_unlock_irqrestore(&controller->command_lock, irq);
 }
 
 /*
@@ -5486,7 +5605,8 @@ nvme_io_execute(
 		return error;
 
 	/* Failed posts also own a faulted slot and must participate in recovery. */
-	error = nvme_io_wait_completion(controller, slot, &recovery_owner, NULL, NULL);
+	error = nvme_io_wait_completion(controller, slot, &recovery_owner, NULL, NULL,
+	    NULL, BIO_FLUSH);
 	if (error == 0 && opcode == DRV_NVME_NVM_READ) {
 		kern_io_read_barrier();
 		kern_memcpy(bytes, slot->bounce_dma.address,
@@ -5503,7 +5623,8 @@ static int
 nvme_io_pipeline(
 	struct nvme_controller *controller,
 	struct bio *bio,
-	size_t *transferred)
+	size_t *transferred,
+	int *ended)
 {
 	struct nvme_io_chunk chunks[NVME_IO_PIPELINE_DEPTH];
 	struct nvme_io_chunk *entry;
@@ -5531,9 +5652,12 @@ nvme_io_pipeline(
 	int chunk_uncertain;
 	uint64_t chunk_fence;
 	int recovery_owner = 0;
+	unsigned finish;
+	int last;
 
 	opcode = bio->b_op == BIO_READ ? DRV_NVME_NVM_READ : DRV_NVME_NVM_WRITE;
 	*transferred = 0;
+	*ended = 0;
 	fence = 0;
 
 	/* A page list goes only to a controller that announced it, in whole pages. */
@@ -5616,12 +5740,28 @@ nvme_io_pipeline(
 
 		if (pending == 0U)
 			break;
-		/* Reap in logical order; IRQ completion remains CID-based. */
+		/*
+		 * Reap in logical order; IRQ completion remains CID-based.  The
+		 * request's last command, with nothing failed so far, ends the
+		 * request in the same hold that gives its slot back; a command
+		 * whose data went straight to the caller's pages gives its slot
+		 * back in the hold that sees it done.
+		 */
 		entry = &chunks[head];
 		chunk_uncertain = 0;
 		chunk_fence = 0;
+		last = pending == 1U && remaining == 0U && !stopped && error == 0 &&
+		    launch_error == 0 && !recovery_owner && !dma_uncertain;
+		finish = 0;
+		if (entry->pages != NULL && !entry->bounced) {
+			finish = NVME_IO_FINISH_RELEASE;
+			if (last)
+				finish |= NVME_IO_FINISH_END_BIO;
+		}
 		current = nvme_io_wait_completion(controller, entry->slot, &claimed,
-		    &chunk_uncertain, &chunk_fence);
+		    &chunk_uncertain, &chunk_fence, &finish, bio->b_op);
+		if ((finish & NVME_IO_FINISH_END_BIO) != 0U)
+			*ended = 1;
 		if (claimed)
 			recovery_owner = 1;
 		if (current != 0) {
@@ -5658,7 +5798,14 @@ nvme_io_pipeline(
 			}
 			*transferred += entry->length;
 		}
-		nvme_io_slot_release(controller, entry->slot);
+		if ((finish & NVME_IO_FINISH_RELEASE) == 0U) {
+			if (last && current == 0 && !claimed && !chunk_uncertain) {
+				nvme_io_slot_release_end(controller, entry->slot, bio->b_op);
+				*ended = 1;
+			} else {
+				nvme_io_slot_release(controller, entry->slot);
+			}
+		}
 		head = (head + 1U) % NVME_IO_PIPELINE_DEPTH;
 		pending--;
 	}
@@ -5687,6 +5834,7 @@ nvme_disk_submit(
 	unsigned retries;
 	int owned;
 	int admitted;
+	int ended;
 	int error;
 
 	/* Handles the disk availability. */
@@ -5730,8 +5878,9 @@ nvme_disk_submit(
 	retries = 0;
 	for (;;) {
 		/* Runs the request once on the admitted queue. */
-		error = nvme_disk_run(controller, bio, &transferred);
-		nvme_io_end_bio(controller, bio->b_op);
+		error = nvme_disk_run(controller, bio, &transferred, &ended);
+		if (!ended)
+			nvme_io_end_bio(controller, bio->b_op);
 
 		/* Only a timeout, and only a bounded number of them, is tried again. */
 		if (error != ETIMEDOUT)
@@ -5760,16 +5909,18 @@ static int
 nvme_disk_run(
 	struct nvme_controller *controller,
 	struct bio *bio,
-	size_t *transferred)
+	size_t *transferred,
+	int *ended)
 {
 	int error;
 
-	/* A flush moves no data. */
+	/* A flush moves no data; a read or write may end its own admission. */
 	*transferred = 0;
+	*ended = 0;
 	if (bio->b_op == BIO_FLUSH) {
 		error = nvme_io_execute(controller, DRV_NVME_NVM_FLUSH, 0U, 0U, NULL);
 	} else {
-		error = nvme_io_pipeline(controller, bio, transferred);
+		error = nvme_io_pipeline(controller, bio, transferred, ended);
 	}
 
 	/* Reports why the request failed. */
@@ -6221,6 +6372,7 @@ nvme_io_dma_allocate(
 		slot->state = NVME_IO_SLOT_FREE;
 		slot->posted = 0;
 		slot->epoch = controller->io_epoch;
+		controller->io_slot_free_hint |= (uint64_t)1 << index;
 	}
 
 	/* Succeeded. */
@@ -6298,6 +6450,7 @@ nvme_io_queue_memory_reset(
 		slot->command_id = 0;
 		slot->error = 0;
 		slot->epoch = controller->io_epoch;
+		controller->io_slot_free_hint |= (uint64_t)1 << index;
 	}
 
 	spin_unlock_irqrestore(&controller->command_lock, irq);

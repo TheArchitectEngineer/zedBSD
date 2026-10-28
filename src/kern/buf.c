@@ -3225,8 +3225,25 @@ transfer_run(
 	struct buf *lines[BUF_RUN_LINES];
 	uint64_t generations[BUF_RUN_LINES];
 	struct buf_run_scratch *scratch;
+	uint64_t line_blocks;
 	int supported;
 	int error;
+
+	/*
+	 * A range shorter than two whole page-sized lines goes by the
+	 * single-line path, so it neither asks the driver about page lists
+	 * (the disk registry lock) nor takes run bookkeeping from the heap.
+	 * Larger lines and odd sizes are left to transfer_run_lines.
+	 */
+	if (disk->d_block_size != 0 && disk->d_block_size <= KERN_PAGE_SIZE &&
+	    (disk->d_block_size & (disk->d_block_size - 1U)) == 0) {
+		line_blocks = KERN_PAGE_SIZE / disk->d_block_size;
+		if (block % line_blocks != 0 || remaining / line_blocks < 2U) {
+			*transferred = 0;
+			run_record(0, IO_BUF_SINGLE_GEOMETRY, 0);
+			return 0;
+		}
+	}
 
 	/* Asks whether the disk's driver moves page lists itself. */
 	supported = 0;
