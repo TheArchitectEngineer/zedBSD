@@ -103,13 +103,18 @@ endef
 
 #
 # One block a program: P, its name, menu, registered path, class, mode, the paths it requires, its label and its
-# version (an external package's release, or zedBSD's); then C for its command's destination (the commands the
+# version (an external package's release, LLVM's, or zedBSD's); then C for its command's destination (the commands the
 # root installs, platform/common/userland-rootfs.mk), D for each data file, and W for each word its selection
 # alone gives the entries.  The block of the empty selection (B) comes first, then the root's own list (R: the
 # commands, the accounts, the base's data and the runtime), which gives the base what no program claims.
 #
+# The release of a package that is built from a source other than its own archive: the compiler and its C++
+# runtime are LLVM's.
+INSTALLER_VERSION_clang := $(ZEDBSD_LLVM_VERSION)
+INSTALLER_VERSION_libcxx := $(ZEDBSD_LLVM_VERSION)
+
 define installer_program_block
-P	$(1)	$(USERLAND_$(1)_MENU)	$(USERLAND_$(1)_PACKAGE)	$(USERLAND_$(1)_CLASS)	$(USERLAND_$(1)_MODE)	$(strip $(USERLAND_$(1)_REQUIRE))	$(USERLAND_$(1)_LABEL)	$(or $(ZEDBSD_EXT_$(1)_VERSION),$(ZEDBSD_VERSION))
+P	$(1)	$(USERLAND_$(1)_MENU)	$(USERLAND_$(1)_PACKAGE)	$(USERLAND_$(1)_CLASS)	$(USERLAND_$(1)_MODE)	$(strip $(USERLAND_$(1)_REQUIRE))	$(USERLAND_$(1)_LABEL)	$(or $(INSTALLER_VERSION_$(1)),$(ZEDBSD_EXT_$(1)_VERSION),$(ZEDBSD_VERSION))
 $(if $(filter $(ZEDBSD_ROOTFS_COMMANDS),$(1)),C	$(if $(filter umount,$(1)),/sbin/umount,$(call zedbsd_userland_destination,$(1)))
 )$(foreach entry,$(USERLAND_$(1)_DATA),D	$(word 1,$(subst =, ,$(entry)))
 )$(call installer_words,$(1))

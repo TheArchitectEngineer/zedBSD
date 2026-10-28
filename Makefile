@@ -509,11 +509,23 @@ ZEDBSD_USER_PROGRAMS ?= $(ZEDBSD_DEFAULT_USER_PROGRAMS)
 # the kernel.
 #
 ZEDBSD_IMAGE_PROFILE ?=
-ZEDBSD_INSTALLER_MENUS := base desktop firmware packages/%
+ZEDBSD_INSTALLER_MENUS := base desktop packages/%
 ifeq ($(ZEDBSD_IMAGE_PROFILE),installer)
+#
+# The firmware is what the configured kernel's drivers need
+# (config/drivers/firmware.list: a driver's key, then its firmware
+# packages), as menuconfig selects it, not every firmware package.
+#
+ZEDBSD_INSTALLER_COMMA := ,
+ZEDBSD_INSTALLER_FIRMWARE := $(sort $(foreach row,$(shell sed -n \
+	's/^\(CONFIG_[A-Z0-9_]*\)|\(.*\)$$/\1=\2/p' config/drivers/firmware.list | tr ' ' ','),\
+ $(if $(filter y,$($(firstword $(subst =, ,$(row))))),\
+ $(subst $(ZEDBSD_INSTALLER_COMMA), ,$(lastword $(subst =, ,$(row)))))))
 override ZEDBSD_USER_PROGRAMS := $(foreach program,$(ZEDBSD_ALL_USER_PROGRAMS),\
 	$(if $(filter $(ZEDBSD_INSTALLER_MENUS),$(USERLAND_$(program)_MENU)),\
- $(if $(call user_program_applies,$(program)),$(program))))
+ $(if $(call user_program_applies,$(program)),$(program)))) \
+	$(filter $(ZEDBSD_INSTALLER_FIRMWARE),$(foreach program,$(ZEDBSD_ALL_USER_PROGRAMS),\
+ $(if $(filter firmware,$(USERLAND_$(program)_MENU)),$(program))))
 else ifneq ($(strip $(ZEDBSD_IMAGE_PROFILE)),)
 $(error Unknown ZEDBSD_IMAGE_PROFILE '$(ZEDBSD_IMAGE_PROFILE)'; the only profile is installer)
 endif
@@ -1683,7 +1695,7 @@ distclean: noct-clean
 	rm -rf build
 
 ifneq ($(strip $(ZEDBSD_PLATFORM)),)
--include $(filter-out $(BUILD)/rootfs/%,$(wildcard $(BUILD)/*.d \
+-include $(filter-out $(BUILD)/rootfs/% $(BUILD)/installer/%,$(wildcard $(BUILD)/*.d \
 	$(BUILD)/*/*.d $(BUILD)/*/*/*.d $(BUILD)/*/*/*/*.d \
 	$(BUILD)/*/*/*/*/*.d $(BUILD)/*/*/*/*/*/*.d \
 	$(BUILD)/*/*/*/*/*/*/*.d \
