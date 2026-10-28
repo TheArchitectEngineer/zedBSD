@@ -47,6 +47,19 @@ dmesg | grep -E "window full|perf: window" | tail -6' > "$out/$label-probe.txt" 
 	timeout 60 scp -O -i "$KEY" $SSHOPT "root@$ip:/tmp/probe.png" "$out/$label-probe.png" > /dev/null 2>&1
 }
 
+# scene LABEL IP COPIES: mview's scene of COPIES copies for 12 s with libvulkan's submission timing and the driver's
+# counts of the run (perf lines every 5 s, nvrtx.vk.perf=1 on the boot line).
+scene() {
+	label=$1
+	ip=$2
+	copies=$3
+	ZS_TIMEOUT=120 zs "$ip" 'U=$(awk -F: "\$3 == 1000 { print \$1; exit }" /etc/passwd)
+n=$(dmesg | wc -l)
+su $U -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 VULKAN_ZEDBSD_SUBMIT_TIMING=1 timeout 60 /bin/mview --token=prof --spin=12 --content=game --present=mailbox --images=4 --copies='"$copies"'" 2>&1 | grep -E "MVIEW (SPIN|STAGES|FAILED)|VULKAN TIMING" | tail -6
+dmesg | tail -n +$n | grep -E "perf|window full" | tail -14' > "$out/$label-scene$copies.txt" 2>&1
+	sed "s/^/$label scene$copies /" "$out/$label-scene$copies.txt" | tee -a "$summary"
+}
+
 # run LABEL VMUNIX: the kernel put in (zedBSD restarted), frame-ops, the probes.
 run() {
 	label=$1
@@ -59,6 +72,7 @@ run() {
 	ip=$($M zedbsd 2> /dev/null | tail -1)
 	[ -n "$ip" ] || { say "$label: FAIL no zedBSD"; return 1; }
 	probe "$label" "$ip"
+	scene "$label" "$ip" 5000
 }
 
 $M timing on > "$out/timing-on.txt" 2>&1 || say "FAIL timing on"
