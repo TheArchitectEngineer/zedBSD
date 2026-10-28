@@ -4,7 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」）。旧: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13…
-Resume point: 2026-10-29 08:4x P3 q1664-i04: p008 案 B（pool の切り離し・Nagle・IPv6 の PTB）a774d28e3、p009 の受け側の SWS 回避 9592ac4be、VF2（相手 5330）で 1500 は 949、9000 は 990 の非退行。Q1 の判断待ち: slow-reader の refusal 0（送り側の窓 0 の作り直し）、delayed ACK の timer（足さない案）、timeout の後の go-back-N と slow start。次: p006 の記録 → p007 → WS311 p001。VF2（10.0.30.2）は P3、/boot/boot0/vmunix は 9592ac4be の tree（sha256 953f976bb52fd2ba…）、vmunix.old は a774d28e3 の tree、en0 1500。5330 は 1500 に戻した。p010 は WS235 の後
+Resume point: 2026-10-29 08:1x P3 q1664-i04: p008 案 B（pool の切り離し・Nagle・IPv6 の PTB）a774d28e3、p009 の受け側の SWS 回避 9592ac4be、VF2（相手 5330）で 1500 は 949、9000 は 990 の非退行。Q1 の判断待ち: slow-reader の refusal 0（送り側の窓 0 の作り直し）、delayed ACK の timer（足さない案）、timeout の後の go-back-N と slow start。次: p006 の記録 → p007 → WS311 p001。VF2（10.0.30.2）は P3、/boot/boot0/vmunix は 9592ac4be の tree（sha256 953f976bb52fd2ba…）、vmunix.old は a774d28e3 の tree、en0 1500。5330 は 1500 に戻した。p010 は WS235 の後
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
