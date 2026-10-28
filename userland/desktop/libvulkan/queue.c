@@ -15,6 +15,15 @@
 
 #define QUEUE_FENCE_RESET_BATCH 64U
 
+/*
+ * A reset is a native transaction: one that would reset fewer than
+ * QUEUE_FENCE_RESET_MIN fences makes a new fence instead, until the queue
+ * caches QUEUE_FENCE_CACHE_MAX of them, so a queue that submits without
+ * fences again and again resets its fences in large batches.
+ */
+#define QUEUE_FENCE_RESET_MIN 32U
+#define QUEUE_FENCE_CACHE_MAX 256U
+
 /* Private identities remain exclusive during unlocked admission waits and GPU execution. */
 enum queue_fence_state {
 	QUEUE_FENCE_EMPTY,
@@ -351,7 +360,9 @@ queue_enqueue(
 
 	/* A preparing private slot stays exclusive even while capacity waiting drops the queue lock. */
 	if (fence == VK_NULL_HANDLE) {
+		mark = vulkan_timing_start();
 		status = queue_private_fence(queue, &private_fence);
+		vulkan_timing_add(VULKAN_TIMING_PRIVATE_FENCE, mark, 0);
 		if (status == VK_SUCCESS) {
 			fence = private_fence->fence;
 			completion = vulkan_sync_object((uint64_t)(uintptr_t)fence);
@@ -990,16 +1001,32 @@ queue_reset_completed(
 	struct vulkan_queue_fence *slot;
 	struct vulkan_sync *sync;
 	uint32_t count;
+	uint32_t cached;
 	uint32_t index;
 	VkResult status;
 
+	/*
+	 * The ledger, reaped once, tells which jobs ended: asking the kernel
+	 * about each slot costs a system call a slot.  The reap consumes every
+	 * ended record (each needs that once), so the batch takes about every
+	 * slot whose job ended; one that ends after the reap waits for a later
+	 * batch (the ledger is bounded, so is the cache).
+	 */
+	status = vulkan_sync_ledger_reap(queue->device->object.context);
+	if (status != VK_SUCCESS)
+		return status;
+
 	/* Preparing callers and already-reset slots are not native GPU completion candidates. */
 	count = 0U;
+	cached = 0U;
 	for (slot = queue->private_fences; slot != NULL; slot = slot->next) {
+		/* The cache's size decides whether a small batch is worth its transaction. */
+		cached++;
+
 		/* A host marker's final native access must retire before that identity is reset. */
 		if (slot->state == QUEUE_FENCE_INFLIGHT) {
 			sync = vulkan_sync_object((uint64_t)(uintptr_t)slot->fence);
-			status = vulkan_sync_job_status(sync, 0);
+			status = vulkan_sync_job_retired(sync);
 			if (status < VK_SUCCESS)
 				return status;
 
@@ -1022,6 +1049,10 @@ queue_reset_completed(
 
 	/* No terminal work means that another exclusive caller needs a new native identity. */
 	if (count == 0U)
+		return VK_SUCCESS;
+
+	/* A small batch waits for more ended jobs while the cache may still grow; the caller makes a fence. */
+	if (count < QUEUE_FENCE_RESET_MIN && cached < QUEUE_FENCE_CACHE_MAX)
 		return VK_SUCCESS;
 
 	/* One native transaction resets all selected proofs after their final marker accesses ended. */

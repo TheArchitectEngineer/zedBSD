@@ -786,6 +786,7 @@ vulkan_context_transaction(
 	struct gpu_command request;
 	struct gpu_command_submit submission;
 	uint64_t sequence;
+	uint64_t mark;
 	uint8_t *response;
 	size_t storage_bytes;
 	VkResult error;
@@ -876,11 +877,16 @@ vulkan_context_transaction(
 		request.size = sizeof(request);
 		request.address = (uintptr_t)command.data;
 		request.bytes = (uint32_t)command.bytes;
+		mark = vulkan_timing_start();
 		status = ioctl(context->fd, GPU_COMMAND, &request);
-		if (status == 0)
+		if (status == 0) {
 			ran = VK_TRUE;
-		if (status != 0 && errno == EAGAIN)
+			vulkan_timing_add(VULKAN_TIMING_COMMAND_RAN, mark, 0);
+		}
+		if (status != 0 && errno == EAGAIN) {
 			status = 0;
+			vulkan_timing_add(VULKAN_TIMING_COMMAND_DEFERRED, mark, 0);
+		}
 	}
 
 	/*

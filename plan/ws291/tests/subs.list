@@ -1,0 +1,6 @@
+subs-10|--draws=each --copies=10 --submits=10
+subs-100a|--draws=each --copies=100 --submits=100
+subs-1000a|--draws=each --copies=1000 --submits=1000
+big-1000a|--draws=each --copies=1000
+subs-100b|--draws=each --copies=100 --submits=100
+subs-1000b|--draws=each --copies=1000 --submits=1000

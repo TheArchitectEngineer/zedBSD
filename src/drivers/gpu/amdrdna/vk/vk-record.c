@@ -10,8 +10,10 @@
  * [opcode][0][command buffer] and its arguments, with no reply, and is kept as
  * a record of its command buffer until a submission runs it (vk-execute.c).
  *
- * Every record is read to its end first, holding the objects it names;
- * then it is appended to a command buffer that is recording, or let go.
+ * Every record is read to its end, holding the objects it names: a record
+ * of a command buffer that is recording straight into its place at the
+ * end of the command buffer's records (and kept there), another one aside
+ * and let go.
  * A record the executor cannot run (another bind point, an unknown object,
  * more regions than a record keeps) marks its command buffer failed, and
  * the End reports it.  An opcode the executor does not know cannot be
@@ -60,8 +62,7 @@ static int record_barrier(struct amdrdna_vk_session *session, struct i915_wire_r
 static int record_push(struct i915_wire_reader *reader, struct amdrdna_vk_record *record, uint8_t *bytes);
 static int record_begin_pass(struct amdrdna_vk_session *session, struct i915_wire_reader *reader, struct amdrdna_vk_record *record);
 static int record_line_width(struct i915_wire_reader *reader);
-static int record_append(struct amdrdna_vk_command_buffer *command, struct amdrdna_vk_record *record, const uint8_t *push);
-static int record_push_keep(struct amdrdna_vk_command_buffer *command, struct amdrdna_vk_record *record, const uint8_t *push);
+static int record_room(struct amdrdna_vk_command_buffer *command, uint32_t opcode);
 static void record_drop(struct amdrdna_vk_record *record);
 
 /*
@@ -78,11 +79,13 @@ amdrdna_vk_record_route(
 	int *handled)
 {
 	struct amdrdna_vk_command_buffer *command;
-	struct amdrdna_vk_record record;
+	struct amdrdna_vk_record *record;
+	struct amdrdna_vk_record aside;
 	uint8_t push[AMDRDNA_VK_PUSH_BYTES];
+	uint8_t *bytes;
 	uint64_t identity;
 	int refused;
-	int error;
+	int room;
 
 	UNUSED_PARAMETER(requested);
 	UNUSED_PARAMETER(reply);
@@ -122,25 +125,47 @@ amdrdna_vk_record_route(
 	if (reader->error != 0)
 		return EINVAL;
 
+	/* A command buffer that is recording keeps the record; another one's records are read and let go. */
+	command = amdrdna_vk_payload(session, I915_VK_OBJ_COMMAND_BUFFER, identity);
+	if (command != NULL && command->state != AMDRDNA_VK_COMMAND_RECORDING)
+		command = NULL;
+
+	/*
+	 * A kept record is read straight into its place at the end of the
+	 * command buffer's array, a push constant record's bytes into theirs:
+	 * nothing is copied after it is read.  Without room it is read aside.
+	 */
+	record = &aside;
+	bytes = push;
+	room = 0;
+	if (command != NULL && opcode != GPU_OP_CMD_SET_LINE_WIDTH && opcode != GPU_OP_CMD_PIPELINE_BARRIER) {
+		room = record_room(command, opcode);
+		if (room == 0) {
+			record = &command->records[command->record_count];
+			if (opcode == GPU_OP_CMD_PUSH_CONSTANTS)
+				bytes = command->push_bytes + command->push_used;
+		}
+	}
+
 	/* Reads the record to its end; a record that does not decode leaves the stream unreadable. */
-	kern_memset(&record, 0, sizeof(record));
-	record.opcode = opcode;
-	refused = record_decode(session, opcode, reader, &record, push);
+	kern_memset(record, 0, sizeof(*record));
+	record->opcode = opcode;
+	refused = record_decode(session, opcode, reader, record, bytes);
 	if (refused == EINVAL || reader->error != 0) {
-		record_drop(&record);
+		record_drop(record);
 		return EINVAL;
 	}
 
-	/* A command buffer that is recording keeps it; a refused record fails the recording. */
-	command = amdrdna_vk_payload(session, I915_VK_OBJ_COMMAND_BUFFER, identity);
-	if (command == NULL || command->state != AMDRDNA_VK_COMMAND_RECORDING) {
-		record_drop(&record);
+	/* A record of no recording command buffer is let go. */
+	if (command == NULL) {
+		record_drop(record);
 		return 0;
 	}
 
+	/* A refused record fails the recording. */
 	if (refused != 0) {
 		kern_logf("amdrdna: vk: a recorded command %u is not run (%d)\n", (unsigned)opcode, refused);
-		record_drop(&record);
+		record_drop(record);
 		if (command->error == 0)
 			command->error = refused;
 		return 0;
@@ -150,13 +175,20 @@ amdrdna_vk_record_route(
 	if (opcode == GPU_OP_CMD_SET_LINE_WIDTH || opcode == GPU_OP_CMD_PIPELINE_BARRIER)
 		return 0;
 
-	/* Appends it; one that cannot be kept fails the recording. */
-	error = record_append(command, &record, push);
-	if (error != 0) {
-		record_drop(&record);
+	/* A record that had no room fails the recording. */
+	if (room != 0) {
+		record_drop(record);
 		if (command->error == 0)
-			command->error = error;
+			command->error = room;
+		return 0;
 	}
+
+	/* The record, read in its place, is the command buffer's now; a push constant record's bytes are too. */
+	if (opcode == GPU_OP_CMD_PUSH_CONSTANTS) {
+		record->push_at = command->push_used;
+		command->push_used += record->count;
+	}
+	command->record_count++;
 
 	/* Succeeded: the command is recorded, or its command buffer remembers why not. */
 	return 0;
@@ -993,28 +1025,21 @@ record_begin_pass(
 }
 
 /*
- * Appends a record to a command buffer's array, growing it when full; a
- * push constant record's bytes (at push) go to the command buffer's push
- * bytes first.
+ * Makes room at the end of a command buffer's records for one more, and
+ * for a push constant record AMDRDNA_VK_PUSH_BYTES more push bytes too,
+ * growing each run (twice as large, what it held moved over) when it
+ * lacks it.  Returns ENOMEM when a run cannot grow.
  */
 static int
-record_append(
+record_room(
 	struct amdrdna_vk_command_buffer *command,
-	struct amdrdna_vk_record *record,
-	const uint8_t *push)
+	uint32_t opcode)
 {
 	struct amdrdna_vk_record *grown;
+	uint8_t *grown_bytes;
 	uint32_t capacity;
-	int error;
 
-	/* A push constant record's bytes. */
-	if (record->opcode == GPU_OP_CMD_PUSH_CONSTANTS) {
-		error = record_push_keep(command, record, push);
-		if (error != 0)
-			return error;
-	}
-
-	/* Grows a full array: twice as large, the records moved over. */
+	/* Grows a full array. */
 	if (command->record_count == command->record_capacity) {
 		if (command->record_capacity >= RECORD_MAX)
 			return ENOMEM;
@@ -1032,52 +1057,29 @@ record_append(
 		command->record_capacity = capacity;
 	}
 
-	/* The record takes the next place; what it holds is the command buffer's now. */
-	command->records[command->record_count] = *record;
-	command->record_count++;
+	/* Only a push constant record takes push bytes. */
+	if (opcode != GPU_OP_CMD_PUSH_CONSTANTS)
+		return 0;
 
-	/* Succeeded: the record is kept. */
-	return 0;
-}
-
-/*
- * Keeps a push constant record's count bytes (at push) after the command
- * buffer's push bytes so far, growing their run when it is full; the
- * record gives where.
- */
-static int
-record_push_keep(
-	struct amdrdna_vk_command_buffer *command,
-	struct amdrdna_vk_record *record,
-	const uint8_t *push)
-{
-	uint8_t *grown;
-	uint32_t capacity;
-
-	/* Grows a run without room: twice as large, the bytes moved over. */
-	if (record->count > command->push_capacity - command->push_used) {
+	/* Grows a run without room for the most bytes one record has. */
+	if (AMDRDNA_VK_PUSH_BYTES > command->push_capacity - command->push_used) {
 		if (command->push_capacity >= RECORD_MAX * AMDRDNA_VK_PUSH_BYTES)
 			return ENOMEM;
 		capacity = RECORD_FIRST_CAPACITY * AMDRDNA_VK_PUSH_BYTES;
 		if (command->push_capacity != 0U)
 			capacity = command->push_capacity * 2U;
-		grown = kern_malloc(capacity);
-		if (grown == NULL)
+		grown_bytes = kern_malloc(capacity);
+		if (grown_bytes == NULL)
 			return ENOMEM;
 		if (command->push_used != 0U)
-			kern_memcpy(grown, command->push_bytes, command->push_used);
+			kern_memcpy(grown_bytes, command->push_bytes, command->push_used);
 		if (command->push_bytes != NULL)
 			kern_free(command->push_bytes);
-		command->push_bytes = grown;
+		command->push_bytes = grown_bytes;
 		command->push_capacity = capacity;
 	}
 
-	/* The bytes take the next place. */
-	kern_memcpy(command->push_bytes + command->push_used, push, record->count);
-	record->push_at = command->push_used;
-	command->push_used += record->count;
-
-	/* Succeeded: the bytes are kept. */
+	/* Succeeded: the next record, and its push bytes, have their place. */
 	return 0;
 }
 
