@@ -1095,10 +1095,10 @@ scene_x_barriers(void)
 
 /*
  * Transfers on a device with the blitter: copies of buffers (a region of
- * whole words, and one whose ends are not: its middle), a fill, an
- * update through temporary memory, a buffer to an image level and layer
- * and back, an image copy and a blit; and their refusal without the
- * blitter.
+ * whole words, and one whose ends are not: its middle, and the ends by
+ * the driver's program), a fill, an update through temporary memory, a
+ * buffer to an image level and layer and back, an image copy and a blit
+ * (the transfers without the blitter are ghci-meta-host-test.c's).
  */
 static void
 scene_x_transfers(void)
@@ -1112,7 +1112,6 @@ scene_x_transfers(void)
 	unsigned first;
 	unsigned count;
 	unsigned mark;
-	unsigned fences;
 	struct node node;
 	int error;
 
@@ -1240,15 +1239,21 @@ scene_x_transfers(void)
 	error |= x_end(&node, ID_X_COMMANDS);
 	expect(error == 0 && reply32(&node, 4U) == 0U, "transfers: recorded");
 
-	/* The packets: head, two copies, a fill, an update, two buffer-image copies, an image copy, a blit, tail. */
+	/*
+	 * The packets: head, two copies (the second's 3 bytes before and after
+	 * its word the driver's program's), a fill, an update, two buffer-image
+	 * copies, an image copy, a blit, tail.
+	 */
 	mark = model.command_count;
 	error = x_submit(&node, ID_X_COMMANDS, 0U);
 	count = x_ops(mark, &first, ops);
-	expect(error == 0 && count == 13U && ops[2] == GHCI_OP_COPY_BUFFER && ops[3] == GHCI_OP_COPY_BUFFER &&
-	       ops[4] == GHCI_OP_FILL_BUFFER && ops[5] == GHCI_OP_COPY_BUFFER && ops[6] == GHCI_OP_COPY_BUFFER_TO_IMAGE &&
-	       ops[7] == GHCI_OP_COPY_IMAGE_TO_BUFFER && ops[8] == GHCI_OP_COPY_IMAGE && ops[9] == GHCI_OP_BLIT,
+	expect(error == 0 && count == 21U && ops[2] == GHCI_OP_COPY_BUFFER && ops[3] == GHCI_OP_BIND_PIPELINE &&
+	       ops[4] == GHCI_OP_BIND_DESCRIPTOR_TABLE && ops[5] == GHCI_OP_LOAD_CONST && ops[6] == GHCI_OP_DISPATCH &&
+	       ops[7] == GHCI_OP_COPY_BUFFER && ops[8] == GHCI_OP_BIND_PIPELINE && ops[11] == GHCI_OP_DISPATCH &&
+	       ops[12] == GHCI_OP_FILL_BUFFER && ops[13] == GHCI_OP_COPY_BUFFER && ops[14] == GHCI_OP_COPY_BUFFER_TO_IMAGE &&
+	       ops[15] == GHCI_OP_COPY_IMAGE_TO_BUFFER && ops[16] == GHCI_OP_COPY_IMAGE && ops[17] == GHCI_OP_BLIT,
 	       "transfers: the packets of each");
-	if (count != 13U) {
+	if (count != 21U) {
 		node_close(&node);
 		stop("transfers");
 		return;
@@ -1257,54 +1262,39 @@ scene_x_transfers(void)
 	expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == buffer_va &&
 	       (command->words[3] | ((uint64_t)command->words[4] << 32)) == buffer_va + 4096U && command->words[5] == 256U,
 	       "transfers: COPY_BUFFER of 256 bytes to offset 4096");
-	command = &model.commands[first + 3U];
+	command = &model.commands[first + 7U];
 	expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == buffer_va + 4U &&
 	       (command->words[3] | ((uint64_t)command->words[4] << 32)) == buffer_va + 4100U && command->words[5] == 4U,
-	       "transfers: 10 bytes from 1 to 4097 copy their whole word 4 to 4100 (R11; the ends are the shader's)");
-	command = &model.commands[first + 4U];
+	       "transfers: 10 bytes from 1 to 4097 copy their whole word 4 to 4100 (R11; the ends are the driver's program's)");
+	command = &model.commands[first + 12U];
 	expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == buffer_va + 64U && command->words[3] == 8128U &&
 	       command->words[4] == 0xdeadbeefU, "transfers: FILL_BUFFER from 64 to the end with the pattern");
-	command = &model.commands[first + 5U];
+	command = &model.commands[first + 13U];
 	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
 	expect((command->words[3] | ((uint64_t)command->words[4] << 32)) == buffer_va + 128U && command->words[5] == 8U &&
 	       bytes != NULL && x_load(bytes, 4U) == 0x11223344U && x_load(bytes + 4U, 4U) == 0x55667788U,
 	       "transfers: the update's 8 bytes copied from temporary memory");
-	command = &model.commands[first + 6U];
+	command = &model.commands[first + 14U];
 	expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == buffer_va &&
 	       (command->words[3] | ((uint64_t)command->words[4] << 32)) == image_va + 10752U + 8192U && command->words[5] == 128U &&
 	       command->words[6] == 128U && command->words[7] == 0U && command->words[8] == (32U | (16U << 16)) && command->words[9] == 37U,
 	       "transfers: buffer to level 1 of layer 1, pitches 128, 32 x 16");
-	command = &model.commands[first + 7U];
+	command = &model.commands[first + 15U];
 	expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == image_va &&
 	       (command->words[3] | ((uint64_t)command->words[4] << 32)) == buffer_va + 1024U && command->words[5] == 256U &&
 	       command->words[6] == 64U && command->words[7] == (8U | (4U << 16)) && command->words[8] == (16U | (8U << 16)),
 	       "transfers: level 0 at (8, 4) to the buffer at 1024, image pitch 256, buffer pitch 64");
-	command = &model.commands[first + 8U];
+	command = &model.commands[first + 16U];
 	expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == image_va &&
 	       (command->words[3] | ((uint64_t)command->words[4] << 32)) == attachment_va && command->words[5] == 256U &&
 	       command->words[6] == 256U && command->words[8] == (4U | (4U << 16)) && command->words[9] == (16U | (16U << 16)) &&
 	       command->words[10] == 37U, "transfers: COPY_IMAGE 16 x 16 to (4, 4)");
-	command = &model.commands[first + 9U];
+	command = &model.commands[first + 17U];
 	expect(command->words[7] == 0U && command->words[8] == (64U | (32U << 16)) && command->words[9] == 0U &&
 	       command->words[10] == (32U | (16U << 16)) && command->words[11] == (37U | (37U << 8) | (1U << 16)),
 	       "transfers: BLIT 64 x 32 to 32 x 16, linear");
 	node_close(&node);
 	stop("transfers");
-
-	/* Without the blitter, a transfer refuses the submission (the shader's transfers come later). */
-	error = x_open(&node, MODEL_NO_BLT);
-	x_record(&node, ID_X_COMMANDS);
-	x_command(GPU_OP_CMD_FILL_BUFFER, ID_X_COMMANDS);
-	put64(ID_BUFFER);
-	put64(0U);
-	put64(64U);
-	put32(0U);
-	error |= x_end(&node, ID_X_COMMANDS);
-	fences = model_count_commands(GHCI_OP_FENCE);
-	expect(error == 0 && x_submit(&node, ID_X_COMMANDS, 0U) == ENOTSUP && model_count_commands(GHCI_OP_FENCE) == fences &&
-	       model.faults == 0U, "transfers: no blitter, ENOTSUP and nothing placed");
-	node_close(&node);
-	stop("transfers no-blt");
 }
 
 /*
@@ -1425,12 +1415,13 @@ scene_x_queries(void)
 	mark = model.command_count;
 	error |= x_submit(&node, ID_X_COMMANDS, 0U);
 	count = x_ops(mark, &first, ops);
-	expect(error == 0 && count == 16U && ops[2] == GHCI_OP_FILL_BUFFER && ops[3] == GHCI_OP_WRITE_TIMESTAMP && ops[4] == GHCI_OP_FENCE &&
+	expect(error == 0 && count == 20U && ops[2] == GHCI_OP_FILL_BUFFER && ops[3] == GHCI_OP_WRITE_TIMESTAMP && ops[4] == GHCI_OP_FENCE &&
 	       ops[5] == GHCI_OP_BEGIN_RENDER_PASS && ops[6] == GHCI_OP_BEGIN_QUERY && ops[7] == GHCI_OP_END_QUERY &&
 	       ops[8] == GHCI_OP_END_RENDER_PASS && ops[9] == GHCI_OP_FENCE && ops[10] == GHCI_OP_FENCE && ops[11] == GHCI_OP_WAIT_FENCE &&
-	       ops[12] == GHCI_OP_BARRIER && ops[13] == GHCI_OP_BARRIER,
-	       "queries: fill, timestamp and its fence, the query in the pass, the event's two fences, its wait and barrier");
-	if (count == 16U) {
+	       ops[12] == GHCI_OP_BARRIER && ops[13] == GHCI_OP_BIND_PIPELINE && ops[14] == GHCI_OP_BIND_DESCRIPTOR_TABLE &&
+	       ops[15] == GHCI_OP_LOAD_CONST && ops[16] == GHCI_OP_DISPATCH && ops[17] == GHCI_OP_BARRIER,
+	       "queries: fill, timestamp and its fence, the query in the pass, the event's two fences, its wait and barrier, the copy's program");
+	if (count == 20U) {
 		command = &model.commands[first + 2U];
 		expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == pool->va && command->words[3] == 64U && command->words[4] == 0U,
 		       "queries: the reset fills the pool's 64 bytes with 0");

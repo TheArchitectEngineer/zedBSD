@@ -32,6 +32,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "drivers/gpu/gpu.h"
@@ -248,6 +249,7 @@ static void scene_scratch(void);
 static void scene_counts(void);
 static void scene_budget(void);
 static int execute_main(const char *directory, const char *compiler_directory);
+static int meta_main(const char *directory, const char *compiler_directory, const char *tests, const char *tools, const char *out);
 
 /* The operations of the fake bus; they live as long as the test. */
 static const struct ghci_bus_ops fake_bus_ops = {
@@ -267,9 +269,15 @@ main(
 {
 	int error;
 
-	/* The modules, and the scenes asked for (the pipelines', or the execution's with "execute"). */
+	/*
+	 * The modules, and the scenes asked for (the pipelines', the execution's
+	 * with "execute", or the transfer programs' with "meta" and the
+	 * directories of the tests, the GSI1 tools and the model's files).
+	 */
+	if (argc == 7 && strcmp(argv[3], "meta") == 0)
+		return meta_main(argv[1], argv[2], argv[4], argv[5], argv[6]);
 	if (argc != 3 && (argc != 4 || strcmp(argv[3], "execute") != 0)) {
-		printf("usage: ghci-pipeline-host-test spirv-directory compiler-spirv-directory [execute]\n");
+		printf("usage: ghci-pipeline-host-test spirv-directory compiler-spirv-directory [execute | meta tests tools out]\n");
 		return 2;
 	}
 	if (argc == 4)
@@ -3036,3 +3044,4 @@ scene_budget(void)
 
 /* The scenes of the execution of recorded commands (compiled with these helpers). */
 #include "ghci-execute-host-test.c"
+#include "ghci-meta-host-test.c"

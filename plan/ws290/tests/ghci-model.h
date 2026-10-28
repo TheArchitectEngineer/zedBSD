@@ -43,7 +43,7 @@
 #define MODEL_COMMANDS			4096U
 
 /* The leading dwords of a command kept in its record. */
-#define MODEL_COMMAND_WORDS		16U
+#define MODEL_COMMAND_WORDS		32U
 
 /* The mappings one page table of the model holds. */
 #define MODEL_MAPPINGS			512U
@@ -200,6 +200,13 @@ struct model {
 
 /* The model the tests run; model_init fills it. */
 extern struct model model;
+
+/*
+ * Nonzero makes FMT know R8_UNORM (every feature) and the two combined
+ * depth and stencil formats (sampled, depth attachment) besides its own;
+ * the transfer test sets it before its devices.  It lasts across models.
+ */
+extern int model_more_formats;
 
 void model_init(enum model_profile profile, const struct model_switches *switches);
 void model_fini(void);

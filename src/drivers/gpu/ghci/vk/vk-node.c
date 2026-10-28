@@ -580,11 +580,21 @@ node_isolate(
 	return 0;
 }
 
-/* Lets the executor's record go at the detach; no node session is left. */
+/* Lets the executor's record and its transfer programs go at the detach; no node session is left. */
 static void
 node_detach(
 	struct ghci_device *device)
 {
+	struct ghci_vk *vk;
+	unsigned kind;
+
+	/* The driver's transfer programs. */
+	vk = device->vk;
+	for (kind = 0U; kind < GHCI_VK_META_KINDS; kind++) {
+		ghci_gsi1_program_free(vk->meta[kind][0]);
+		ghci_gsi1_program_free(vk->meta[kind][1]);
+	}
+
 	/* The record and the table. */
 	kern_free(device->vk);
 	device->vk = NULL;
