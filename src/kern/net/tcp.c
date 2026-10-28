@@ -74,6 +74,13 @@
 #define TCP_DEFAULT_MSS 536U
 #define TCP_DEFAULT_MSS6 1220U
 
+/*
+ * The headroom of a segment's copy in the send ring: the default headroom
+ * for the link and IP headers and a TCP header with the longest options,
+ * which its first transmission pushes in front of the payload.
+ */
+#define TCP_COPY_HEADROOM (PACKET_BUF_DEFAULT_HEADROOM + 60U)
+
 /* The IPv4 and TCP headers without options, and the IPv6 and TCP headers. */
 #define TCP_HEADERS 40U
 #define TCP_HEADERS6 60U
@@ -361,7 +368,8 @@ static int tcp_port_in_use(const struct tcp_endpoint *candidate, int strict);
 static int tcp_allocate_port_locked(struct tcp_endpoint *endpoint);
 static int tcp_route(struct tcp_endpoint *endpoint, struct net_device **device, uint32_t *source);
 static int tcp_send_segment_at(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
-static int tcp_output_segment(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
+static int tcp_output_segment(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length, struct packet_buf *carrier);
+static int tcp_send_segment_carried(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, struct packet_buf *carrier);
 static void tcp_stats_fill_locked(const struct tcp_endpoint *endpoint, uint64_t now, int superuser, struct tcp_stats_entry *entry);
 static int tcp_allocate_port(struct tcp_endpoint *endpoint);
 static enum tcp_refusal tcp_refusal_of(int error);
@@ -871,7 +879,7 @@ tcp_timer_run(
 		oldest = &endpoint->tcp.send_queue[endpoint->tcp.send_first];
 		sequence = oldest->sequence;
 		flags = oldest->flags;
-		length = oldest->packet->length;
+		length = oldest->length;
 		if (length > sizeof(payload)) {
 			tcp_retransmit_reset(endpoint, &discard);
 			endpoint->tcp.state = TCP_CLOSED;
@@ -886,7 +894,7 @@ tcp_timer_run(
 		}
 
 		if (length != 0)
-			kern_memcpy(payload, oldest->packet->data, length);
+			kern_memcpy(payload, oldest->packet->storage + oldest->payload_offset, length);
 
 		/*
 		 * Counts the resend of the oldest segment, and backs the timeout
@@ -1678,9 +1686,53 @@ tcp_send_segment_at(
 	int error;
 
 	/* Builds and hands the segment to the device. */
-	error = tcp_output_segment(endpoint, sequence, flags, data, length);
+	error = tcp_output_segment(endpoint, sequence, flags, data, length, NULL);
 
 	/* Counts the segment and, when it went, a closed window it told of. */
+	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	if (error != 0) {
+		endpoint->tcp.counters.segment_send_failures++;
+	} else {
+		endpoint->tcp.counters.segments_out++;
+		if (endpoint->tcp.advertised_window == 0)
+			endpoint->tcp.counters.zero_windows_out++;
+
+		/* Every segment acknowledges what was received: no acknowledgement is owed any more. */
+		endpoint->tcp.ack_owed = 0;
+	}
+
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
+
+	/* Reports why the segment did not go. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device has the segment. */
+	return 0;
+}
+
+/*
+ * Transmits a segment whose payload is a packet of its own, the carrier,
+ * whose reference passes to the output, and counts it: a segment's copy
+ * in the send ring, which carries its first transmission (the headers go
+ * into its headroom, in front of the payload).  The caller holds no
+ * socket lock, which the counting takes.
+ */
+static int
+tcp_send_segment_carried(
+	struct tcp_endpoint *endpoint,
+	uint32_t sequence,
+	uint8_t flags,
+	struct packet_buf *carrier)
+{
+	unsigned long irq;
+	int error;
+
+	/* Builds the segment around the payload and hands it to the device. */
+	error = tcp_output_segment(endpoint, sequence, flags, NULL, 0, carrier);
+
+	/* Counts the segment as tcp_send_segment_at does. */
 	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
 
 	if (error != 0) {
@@ -1850,7 +1902,8 @@ tcp_output_segment(
 	uint32_t sequence,
 	uint8_t flags,
 	const void *data,
-	size_t length)
+	size_t length,
+	struct packet_buf *carrier)
 {
 	struct net_device *device;
 	struct packet_buf *packet;
@@ -1887,35 +1940,54 @@ tcp_output_segment(
 	} else {
 		error = tcp_route(endpoint, &device, &source);
 	}
-	if (error != 0)
+	if (error != 0) {
+		packet_buf_free(carrier);
 		return error;
-
-	/*
-	 * Allocates its buffer.  An empty pool is ENOMEM, which tells it from
-	 * a full device queue (ENOBUFS from the driver): the device says when
-	 * it has room again, the pool does not (ws220-p003).
-	 */
-	packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
-	if (packet == NULL) {
-		if (device != NULL)
-			net_device_release(device);
-		return ENOMEM;
 	}
 
-	/* A segment too large for one packet's storage is never sent (the callers keep within TCP_SEGMENT_MAX). */
-	tcp = packet_buf_append(packet, sizeof(*tcp) + options);
-	payload = packet_buf_append(packet, length);
-	if (tcp == NULL || payload == NULL) {
-		packet_buf_free(packet);
-		if (device != NULL)
-			net_device_release(device);
-		return EMSGSIZE;
+	/*
+	 * A carrier holds the payload already: the header goes in front of
+	 * it, into the headroom its copy was made with.
+	 */
+	if (carrier != NULL) {
+		packet = carrier;
+		tcp = packet_buf_push(packet, sizeof(*tcp) + options);
+		if (tcp == NULL) {
+			packet_buf_free(packet);
+			if (device != NULL)
+				net_device_release(device);
+			return EMSGSIZE;
+		}
+	} else {
+		/*
+		 * Allocates its buffer.  An empty pool is ENOMEM, which tells it
+		 * from a full device queue (ENOBUFS from the driver): the device
+		 * says when it has room again, the pool does not (ws220-p003).
+		 */
+		packet = packet_buf_alloc(PACKET_BUF_DEFAULT_HEADROOM);
+		if (packet == NULL) {
+			if (device != NULL)
+				net_device_release(device);
+			return ENOMEM;
+		}
+
+		/* A segment too large for one packet's storage is never sent (the callers keep within TCP_SEGMENT_MAX). */
+		tcp = packet_buf_append(packet, sizeof(*tcp) + options);
+		payload = packet_buf_append(packet, length);
+		if (tcp == NULL || payload == NULL) {
+			packet_buf_free(packet);
+			if (device != NULL)
+				net_device_release(device);
+			return EMSGSIZE;
+		}
+
+		/* The payload. */
+		if (length != 0)
+			kern_memcpy(payload, data, length);
 	}
 
 	/* Fills the header with the current receive state and the free space. */
 	kern_memset(tcp, 0, sizeof(*tcp));
-	if (length != 0)
-		kern_memcpy(payload, data, length);
 	wire_put16(tcp->source, endpoint->tcp.inet.local_port);
 	wire_put16(tcp->destination, endpoint->tcp.inet.remote_port);
 	wire_put32(tcp->sequence, sequence);
@@ -3254,8 +3326,11 @@ tcp_send_reliable(
 	int error;
 	struct tcp_discard discard;
 
-	/* Keeps a copy of the payload for retransmission. */
-	copy = packet_buf_alloc(0);
+	/*
+	 * Keeps a copy of the payload for retransmission, with room in front
+	 * for the headers its first transmission pushes.
+	 */
+	copy = packet_buf_alloc(TCP_COPY_HEADROOM);
 	if (copy == NULL)
 		return ENOBUFS;
 	payload = packet_buf_append(copy, length);
@@ -3305,6 +3380,7 @@ tcp_send_reliable(
 	endpoint->tcp.send_queue[slot].sequence = sequence;
 	endpoint->tcp.send_queue[slot].advance = advance;
 	endpoint->tcp.send_queue[slot].length = (uint16_t)length;
+	endpoint->tcp.send_queue[slot].payload_offset = (uint16_t)(copy->data - copy->storage);
 	endpoint->tcp.send_queue[slot].flags = flags;
 	endpoint->tcp.send_count++;
 	endpoint->tcp.send_unsent++;
@@ -3332,6 +3408,13 @@ tcp_send_reliable(
 		endpoint->tcp.send_flushing = 1;
 		tcp_mark_sent_locked(endpoint, now);
 		owner = 1;
+
+		/*
+		 * The copy carries the first transmission itself; the reference
+		 * taken for it keeps the copy while the lock is released, should
+		 * an acknowledgement or a reset take the entry meanwhile.
+		 */
+		packet_buf_ref(copy);
 	}
 
 	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
@@ -3343,9 +3426,10 @@ tcp_send_reliable(
 	/*
 	 * Publish the retransmission record before output.  A fast ACK may
 	 * then safely retire it, and the timer can never observe an unowned
-	 * pointer.
+	 * pointer.  The copy goes out with the headers pushed in front of its
+	 * payload, the reference taken above passing to the output.
 	 */
-	error = tcp_send_segment_at(endpoint, sequence, flags, data, length);
+	error = tcp_send_segment_carried(endpoint, sequence, flags, copy);
 	refusal = tcp_refusal_of(error);
 	retries = tcp_refusal_retries(refusal);
 
@@ -3882,7 +3966,7 @@ tcp_send_unsent(
 		packet = entry->packet;
 		sequence = entry->sequence;
 		flags = entry->flags;
-		length = packet->length;
+		length = entry->length;
 		now = sched_ticks();
 		tcp_mark_sent_locked(endpoint, now);
 
@@ -3899,7 +3983,7 @@ tcp_send_unsent(
 
 		/* Its payload, which the ring's copy may not outlive once the lock is released. */
 		if (length != 0)
-			kern_memcpy(payload, packet->data, length);
+			kern_memcpy(payload, packet->storage + entry->payload_offset, length);
 
 		spin_unlock_irqrestore(&socket->lock, irq);
 

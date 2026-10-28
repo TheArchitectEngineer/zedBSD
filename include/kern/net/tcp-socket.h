@@ -69,13 +69,18 @@ enum tcp_state {
 /*
  * One segment in the send ring: its copy, where it lies in the sequence
  * space, its TCP flags, and whether it went out as a probe of a window
- * that could not take it (ws220-p005; set when it is marked sent).
+ * that could not take it (ws220-p005; set when it is marked sent).  The
+ * payload is length bytes at payload_offset in the copy's storage: the
+ * copy itself carries the segment's first transmission, which pushes the
+ * headers in front of the payload, so its data pointer is not the
+ * payload's afterwards; the payload's bytes never change.
  */
 struct tcp_pending {
 	struct packet_buf *packet;
 	uint32_t sequence;
 	uint32_t advance;
 	uint16_t length;
+	uint16_t payload_offset;
 	uint8_t flags;
 	uint8_t probe;
 };
