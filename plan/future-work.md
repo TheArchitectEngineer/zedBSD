@@ -146,3 +146,5 @@ Future Work は実行を許可しない。
 
 | fw-i915-dmc-rkl-adls-icl | RKL・ADL-S・ICL の DMC firmware（rkl_dmc_ver2_03.bin・adls_dmc_ver2_01.bin・icl_dmc_ver1_09.bin）を i915-firmware の package に | 表示の省電力（DC5/DC6）。無くても表示は動く。userland/firmware/i915/Makefile の cache の照合・manifest・WS233 の firmware-inventory・mirror の追従が要る | 2026-10-26 23:54 WS252 p002（P4 の推し、Q1 の判断: 実機が無いので WS252 では足さない） | promoted（2026-10-26 23:58 ユーザー「zedBSD-firmware/ツリーに、i915の依存としてすべて入れられませんか？」→ WS252 の q1601） | — | [WS252](ws252/ws.md) |
 | F-WS308-p005 | WS308 p005: user の buffer の pin を vmspace ごとの rwlock にし、VM の metadata の mutex の眠り（cached の pin で取りの 11〜14%）を無くす | 2026-10-28 ユーザー「後回し（Future Work）」。乱読み QD32 は Debian の 99% に届いた後 |
+| F-GPU-console-return | Keiland が終わり GPU の使用を終える時に、/dev/gpu0 の scanout を console（text-display）の backend に切り替える | 2026-10-28 ユーザー（WS290 の boot framebuffer の解放の議論、「後者は今回はやらず、future workにすればいいです」） |
+| F-GPU-panic-display | kern_fatal（panic）の時に GPU の driver が表示を出す hook（案 kern_panic_display_register） | 2026-10-28 ユーザー「panic は後で」 |
