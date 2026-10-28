@@ -1269,7 +1269,7 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
 - 案 A の M1: subs-1000 の profile で同期の GPU_COMMAND の後戻り（command_deferred）は 4・6・9・12 回 / 約 7 万回（0.02 % 未満）→ 今の形では
   DEFERRED の率は問題にならない（案 A で submit が速くなった後の率は実装の後に測る）。private_fence は timing ありで平均 2 µs（前は 5〜9）。
 
-### 再開点（2026-10-29 05:20 P2、ユーザーの指示「P2は計測を中断して停止し、再開できる地点で終了し、再開を待ちます。」で返却）
+### 再開点（2026-10-29 05:05 P2、ユーザーの指示「P2は計測を中断して停止し、再開できる地点で終了し、再開を待ちます。」で返却）
 
 - 済み: libvulkan の直し（1、効果あり、venus-reg PASS、arm64・riscv64 build 済み）、kernel の直し（2・3、big-1000 で +2.5 %、host 205/205）。
   merge の候補は 2753b6adc〜（この branch の全部。timing の count の baa1ca65c は venus-reg・arm64・riscv64 の build を l4 で取り直していない:
