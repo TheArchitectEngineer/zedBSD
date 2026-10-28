@@ -68,3 +68,14 @@
 - 段 5（mkfs の native UFS の fragment 4096 の profile、p005 の残り）の調べ: `userland/base/mkfs/ufs-format.c` の native の形は fragment 1 KiB・block 8 KiB（frag 8）に固定の数（`FORMAT_FRAGMENT`・`FORMAT_BLOCK`・`FORMAT_DATA_FRAGMENT` 144・`FORMAT_NATIVE_USED` 152、superblock の `sblkno` 64・`cblkno` 72・`iblkno` 80、cg の `IUSEDOFF` 168・`FREEOFF` 200、`FORMAT_IPG` 256、`fsbtodb` 1、`bshift` 13・`fshift` 10、inode の `DI_BLKSIZE` と `DI_BLOCKS` の 16 sector）。案: fragment 4 KiB・block 32 KiB（frag 8 のまま）の profile。fragment の番号は superblock 16（64 KiB）、cg 24、inode の表 32、data は表の後（block に揃える）。cg の大きさが block（32 KiB）以下なので 1 group は最大約 1 GiB、inode を 256／group のままにすると 1 GiB に 256 個で足りない。`ipg` を増やす（inode の bitmap の大きさで `FREEOFF` が動く、kernel は cg の header の offset を読むかを確かめる）か、group を小さくする（今の native と同じく fpg を下げて group を増やす）。kernel の UFS（`ufs.c` の superblock の検査、2639〜2647 付近）と loader の reader（`bootloader/common/ufs-read.c`、block 4096〜65536・fragment ≥ media block）が受ける形かを先に確かめる。`--check-size` の出力と `--sector-size=4096` も。
 - 段 5 の後: `plan/ws307/tests/p006-4k-guest-steps.sh` に UFS（`mkfs -t ufs --profile=native` の 4096 の partition、mount、書き、再 mount、UFS の上の swap file、j3 の journal を通る書き）を足し、host で `bootloader/common/ufs-read.c` の host の試験の読み手で読む。USB の 4096（`-device usb-storage,…` に logical_block_size が効くか QEMU で確かめる）。
 - その後 p008 の 4096 の段（loader の `volume-discovery.c` の `supported_fat_block_size` と BPB の sector を 4096 に、4Kn の ESP＋root の UFS で起動）。
+
+## q1665-i05 の結果（2026-10-29、P4、worktree p4-ws307i）
+
+- 試験の直し（commit 80a7f0ab9）: `p006-4k.sh` の `g()` の上限を 1800 秒に、UFS の上の swap file を 16 MiB（64 KiB × 256）に（4096 の UFS の書きが遅いため、ws.md の「制限」）。
+- kernel の直し（commit f553c82ba、p008-4k の FAIL の原因、[phase008/phase.md](../phase008/phase.md) の q1665-i05）: FAT の identify が placeholder の label "NO NAME" の volume を EINVAL にしていた（512 でも同じ、guest の mkfs の FAT32 で出る）。
+- 再試験（image `build/ws307i-ssh/hdd-image.img`、f553c82ba の kernel）:
+  - NVMe `sh plan/ws307/tests/p006-4k.sh build/ws307i-ssh/hdd-image.img` → **PASS**（`build/ws307-test/p006-4k.WxBY8s`）。40 の step が ok（UFS の上の swap file の dd・mkswap・swapon・swapoff を含む。c43982757 の backing claim の直しの確かめ）、host の mdir・FAT の cksum・UFS の 3 file が guest と同じ。
+  - USB `P006_BUS=usb sh plan/ws307/tests/p006-4k.sh …` → **PASS**（`build/ws307-test/p006-4k.QpUplt`、4096 の `sda`、同じ 40 step と host の読み戻し）。
+  - 512 の回帰: `plan/tools/boot-test.sh`（uefi-nvme）login prompt PASS（`build/ws307-test/p006-boot512.yjgnrB/boot/login.png`）。
+  - p008 の 4096 の起動も PASS（[phase008/phase.md](../phase008/phase.md)）。
+- 段 1〜6 の受け入れを満たした（判定は Q1）。未実施: host の `fsck.fat`（host に無い）。
