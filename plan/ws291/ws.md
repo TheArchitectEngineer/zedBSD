@@ -101,3 +101,4 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   Wayland の acquire を fd で待つ（9b876b5fe）、mview --images と bench 4 枚（632d172dc）、memory clock（UCLK）を最上段に固定（146fdfe5d）、初期化の
   画面の表示の無効化（dfcaa14e5）、NVMe の区画と道具（6574b457c）。次: 残りの CPU 側（acquire・record・present）、big-N・subs-N の record・submit
   （phase006 の「残り」）。機械は NVMe の zedBSD（Boot0004）。
+- 2026-10-28 ユーザーの補足「P2のモデル表示のテスト中に、起動ロゴ画面が見えてしまう、というバグです」（mview の表示の試験の間に起動の logo の画面が見える）。
