@@ -586,6 +586,7 @@ vulkan_sync_job_reserve(
 	int descriptor;
 	int error;
 	int saved_error;
+	unsigned attempt;
 	uint64_t mark;
 
 	/* A failed reservation cannot leave a caller with partially published job storage. */
@@ -615,41 +616,59 @@ vulkan_sync_job_reserve(
 	if (notification == NULL)
 		return VK_ERROR_OUT_OF_HOST_MEMORY;
 
-	/* Native preparation precedes this snapshot so its own CPU0 completion cannot spuriously wake admission. */
-	status = vulkan_sync_capacity_query(queue, &observed_sequence);
+	/* A local or context failure must not be hidden by an otherwise healthy kernel reservation. */
+	status = __atomic_load_n(&queue->device->error, __ATOMIC_ACQUIRE);
+	if (status == VK_SUCCESS)
+		status = __atomic_load_n(&context->error, __ATOMIC_ACQUIRE);
 	if (status != VK_SUCCESS) {
 		free(notification);
 		return status;
 	}
 
-	/* Reclaims only previously terminal jobs before reserving another bounded kernel slot. */
-	pthread_mutex_lock(&context->mutex);
-
-	status = sync_notifications_reap_if(context, &retired, 0);
-	if (status != VK_SUCCESS) {
-		pthread_mutex_unlock(&context->mutex);
-		free(notification);
-		return status;
-	}
-
-	/* One reservation pins both the exact generation and all later marker publication resources. */
-	memset(&request, 0, sizeof(request));
-	request.version = GPU_ABI_VERSION;
-	request.size = sizeof(request);
-	request.fd = descriptor;
-	request.generation = generation;
-	request.timeline = queue->timeline_index;
-	error = ioctl(context->fd, GPU_JOB_RESERVE, &request);
-	saved_error = errno;
-	if (error != 0) {
-		pthread_mutex_unlock(&context->mutex);
-		free(notification);
-
-		/* Backpressure asks the caller to release producer locks before waiting for capacity. */
-		if (saved_error == EAGAIN) {
-			*capacity_sequence = observed_sequence;
-			return VK_NOT_READY;
+	/*
+	 * Reserves at once; only a full queue takes the capacity snapshot,
+	 * then tries once more, so that capacity freed between the refusal
+	 * and the snapshot is taken by the second try and capacity freed after
+	 * the snapshot wakes the caller's wait.
+	 */
+	observed_sequence = 0;
+	for (attempt = 0U; attempt < 2U; attempt++) {
+		/* The snapshot a refused first try waits from. */
+		if (attempt != 0U) {
+			status = vulkan_sync_capacity_query(queue, &observed_sequence);
+			if (status != VK_SUCCESS) {
+				free(notification);
+				return status;
+			}
 		}
+
+		/* Reclaims only previously terminal jobs before reserving another bounded kernel slot. */
+		pthread_mutex_lock(&context->mutex);
+
+		status = sync_notifications_reap_if(context, &retired, 0);
+		if (status != VK_SUCCESS) {
+			pthread_mutex_unlock(&context->mutex);
+			free(notification);
+			return status;
+		}
+
+		/* One reservation pins both the exact generation and all later marker publication resources. */
+		memset(&request, 0, sizeof(request));
+		request.version = GPU_ABI_VERSION;
+		request.size = sizeof(request);
+		request.fd = descriptor;
+		request.generation = generation;
+		request.timeline = queue->timeline_index;
+		error = ioctl(context->fd, GPU_JOB_RESERVE, &request);
+		saved_error = errno;
+		if (error == 0)
+			break;
+		pthread_mutex_unlock(&context->mutex);
+
+		/* A full queue tries again after the snapshot; another failure ends the reservation. */
+		if (saved_error == EAGAIN)
+			continue;
+		free(notification);
 
 		/* Actual allocation failure remains distinct from temporarily occupied job slots. */
 		if (saved_error == ENOMEM)
@@ -658,6 +677,13 @@ vulkan_sync_job_reserve(
 		/* A negotiated backend that cannot reserve its promised contract is unusable. */
 		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
 		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* Backpressure on both tries asks the caller to release producer locks before waiting for capacity. */
+	if (error != 0) {
+		free(notification);
+		*capacity_sequence = observed_sequence;
+		return VK_NOT_READY;
 	}
 
 	/* A successful reservation must have an observable, nonzero lifetime identity. */

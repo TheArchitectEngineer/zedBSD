@@ -1110,3 +1110,85 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
 - 読み: subs-N の 1 submit は 153 → 約 47 µs（Linux 10）。subs-100 は run により 130 か 170 の二つの値。scene-6500 の差（−1.2 %）は fence
   （GPU の時間 19.8 対 19.5 ms）。big-1000 は record（libvulkan の encode 10.9 ms）と submit（executor 11.4 ms）で Linux の 1/2.5。
 - 機械の状態: kernel vmunix-c45b、/lib/libvulkan.so は案 4 の build（main の物は /lib/libvulkan.so.main61630）、cfg は ngg=2・memory=2。
+
+## q1668（2026-10-29 P2、worktree p2-ws291k、基点 main 9402d4c74）
+
+- 承認: ユーザーの回答（クリック、2026-10-29）「WS291 の続き (推し)」（big-N・subs-N、RDNA で shot の直しの確かめ）。q1658・q1663 と同じ自律の承認。
+  ユーザーの決定（2026-10-29）「まずはデフォルト有効で実装して、NGGはゲーム用に作り替えます。つまりWSに依存関係があります。」→ 案 4・5 は既定で有効のまま、
+  NGG の既定は変えない（WS306 で option に）。
+- 機械: zedBSD は NVMe（Boot0004）、cfg は ngg=2・memory=2。終わりの状態: kernel は 1132ec5b6 の build（build/ws291/vmunix-e4）、/lib/libvulkan.so は
+  1824111c8 の build（build/ws291/libvulkan-i2.so）、/bin/wayland は main 9402d4c74 の build（前の q1661 の物は /bin/wayland.q1661）。
+
+### keiland-shot の直し（P1、ws309-p019 の ab0c3a934）の RDNA での確かめ
+
+- main 9402d4c74 の /bin/wayland（plan/ws291/tests/config.mk、warning 0）を入れ、`measure.sh shot` を 1 体・6500 体 × 2 回（build/ws291/shotchk）:
+  4 回とも `MVIEW DONE frames=900`、SURFACE_LOST 0、Linux との差 max 0・max 1（over15 0）。前の /bin/wayland では r-base2・r-c4a・r-c5a2・r-c45b の
+  8 回とも frames 280〜343 で SURFACE_LOST だった。→ 直った（RDNA の実機の証拠）。以後の round の shot も全部 DONE。
+
+### 計測（timing あり、build/ws291/prof1・prof2・prof3）
+
+- big-1000（1 frame 16000 draw、約 54000 の vkCmd*）: kernel の decode の op（132 push・103 sets・107 draw・93 pipeline）は timing の上乗せ（op 1 つ約 0.1 µs）
+  を引くと 1 op 約 0.03〜0.06 µs、1 frame 約 3 ms（record の中の 1 MB ごとの transaction の hold の和）。libvulkan の encode（mview の loop 込み）は
+  record の残りの約 6 ms（1 vkCmd* 約 0.11 µs）。executor（op 18）約 6〜11 ms。
+- subs-N の 1 submit（libvulkan の timing）: GPU_COMMAND の transaction 約 27 µs（kernel の frame 約 13 µs + libvulkan と system call）、private fence
+  約 6〜7 µs（queue_private_fence: 64 回に 1 回の vkResetFences と INFLIGHT の slot ごとの GPU_COMMAND_WAIT）、JOB_RESERVE 約 6 µs、JOB_COMMIT 約 3 µs。
+- system call の費用（plan/ws291/tests/ioctl-cost.c、実機）: getppid 190 ns、GPU_GET_INFO 1150 ns。1 submit で GPU の ioctl が 4〜5 本。
+- libvulkan の timing（VULKAN_ZEDBSD_SUBMIT_TIMING）自体が subs-1000 の 1 submit に約 25 µs を足す（timing なし 39 µs、あり 64〜67 µs）。部分の比べだけに使う。
+
+### 直した事（commit、全部 worktree p2-ws291k）
+
+1. 8f8533e87（amdrdna executor）: draw の表を program ごとの読む set で再利用（set の bit mask）、combined image sampler の image・sampler の descriptor を
+   vkUpdateDescriptorSets の時に作って slot に置く（作れなければ draw の時に作る、今どおり）、pipeline が替わっても同じ viewport・guard band（soft float）・
+   scissor・blend・raster・depth・culling の語は書かない（fixed_written、target の書き直しで忘れる）、copy の表は clear しない。試験の道具
+   plan/ws291/tests/each-shot.sh（--draws=each と instanced の画の比べ）。
+2. b3173b786: dispatch の route の順で record（vkCmd*）を先頭に。PM4 writer に context register の shadow（同じ値の単独の再書き込みをしない、
+   context_known、IB の頭（pm4_start）と CLEAR_STATE（context_start）で忘れる、full で落ちた run は unknown）。ws039 の host 試験の期待の追従
+   （同じ値を 2 回書いて full を作る試験は別の値に、viewport 2 つの packet 数 8 → 7）と shadow の試験（同じ値は書かない、CLEAR_STATE の後・新しい IB で
+   書く）。Q1 の OK（2026-10-29）。
+3. 790aa60d1（libvulkan sync.c、全 GPU 共通）: vulkan_sync_job_reserve は毎回の GPU_JOB_CAPACITY の query をやめ、JOB_RESERVE がすぐ通らない（EAGAIN）時
+   だけ query して 1 回だけ reserve し直し、それも EAGAIN なら NOT_READY（query の sequence で待つ）。
+   - 解放を見落とさない順の論証: capacity の解放は kernel の capacity の sequence を進める。1 回目の EAGAIN の後に query した sequence を S とする。
+     (i) 解放が query より前なら、2 回目の reserve はその空きを見て通る（2 回目の前の reap も同じ）。(ii) 解放が query より後なら、sequence は S を越え、
+     vulkan_sync_capacity_wait(S) は kernel の observed_sequence の比べで EAGAIN（「raced capacity observation」）を返して眠らない（眠っていれば起こされる）。
+     どちらでも、空きがあるのに S で永く待つ並びは無い。前の形（query → reap → reserve → EAGAIN なら S で待つ）と同じ保証で、成功の道から ioctl が 1 本減る。
+     local の device・context の error の確かめ（query の中にあった）は reserve の前に残した。
+   - 確かめ: QEMU Venus の回帰 PASS（build/ws291/venus7、forge image はこの tree）、arm64（config-rpi4、1 回目は既知の sysroot の競合で失敗・2 回目 rc=0）・
+     riscv64（config-visionfive2）の libvulkan.so warning 0。Q1 の OK（2026-10-29）。
+4. bc65b40c0（amdrdna executor）: push constants の変わった最初の byte（push_changed_from）を覚え、program の表（byte 0〜push_bytes）が変わらない時は
+   表を保つ（mview の色だけが変わる draw で vertex の表を写さない）。
+5. 1824111c8（libvulkan、全 GPU 共通）: vkCmd* の記録の encode を inline に。internal.h に static __inline の vulkan_record_u32・vulkan_record_u64・
+   vulkan_record_handle（vulkan_write_u32・vulkan_write_u64・vulkan_encode_handle と同じ wire、storage が足りない時だけ out-of-line の
+   vulkan_writer_reserve）。tools/maintain-commands.noct がそれを出すように直して commands-generated.inc を再生成（再生成の出力 = 今の file の 3 つの名前の
+   置換と一致を cmp で確かめた）、commands.c の record の頭も。public な関数と他の file は不変。libvulkan.so 277 → 290 KB（全部を inline にした試しは 351 KB
+   で同じ速さだったので採らない）。確かめ: Venus の回帰 PASS（build/ws291/venus8）、arm64・riscv64 の libvulkan.so warning 0、ws039 の amdrdna の host 試験と
+   plan/tools/nvrtx/nvrtx-vk-host-test.sh PASS。
+6. 1132ec5b6（amdrdna PM4 writer）: user configuration register（draw の primitive・index の type、GE の groups など）の shadow と、draw の packet の
+   instance 数・index buffer の大きさの shadow（同じなら書かない、IB の頭と CLEAR_STATE で忘れる）。host 試験 205/205（足した試験 5 つ）。
+- preempt からの再開について（Q1 の条件）: amdrdna は gfx queue を IB の途中で preempt して同じ IB を続ける道を持たない（cp.c の detach の preempt は queue の
+  reset の道で、その run は落とされる）。各 session の executor は自分の pm4 を持ち、IB ごとに pm4_start と CLEAR_STATE を通るので、context の切り替え・
+  別の session・queue の reset の後の IB は全部 shadow を忘れた所から始まる（host 試験の「新しい buffer」「CLEAR_STATE の後」）。
+
+### 実機（RDNA、全部 round の nggshape 14 ok・shot 1 体 max 0・6500 体 max 1・each と instanced の画の差 0（1・100 体）・hang 回復 ok・guard の異常 0）
+
+| run | 前（c45b、q1663） | e1（1） | e2（2+3） | e3（4） | i2（5、kernel e3） | e4（6、最後） | Linux |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| scene-1500 | 208.1 | 208.8 | 209.3 | 209.6 | | 209.3 | 200.4 |
+| scene-6500 | 49.5 | 49.6 | 49.6 | 49.5 | | 49.6 | 50.1 |
+| big-100 | | 245.3 | 332.9 | 338.8 | | 360.7 | 517.8 |
+| big-1000（record / submit / fence ms） | 35.5（10.9 / 11.4） | 37.8（10.5 / 8.3 / 5.5） | 51.7（9.4 / 6.7 / 3.1） | 52.3 | 58.0〜59.4（7.4 / 6.5 / 2.8〜3.2） | 57.4（7.7 / 6.2 / 3.4） | 87.0（5.41 / 0.02） |
+| subs-100 | 130〜169 | 140.4 | 208.0 | 178〜207 | 211〜216 | 183.7 | 510.8 |
+| subs-1000（submit ms / frame） | 17.6〜18.6（48） | 19.4（43.5） | 21.3（39.1） | 15.3〜20.8 | 21.7〜22.3（38.8〜40.0） | 22.2（38.9） | 58.2（10.3） |
+
+- 表の元: build/ws291/r-e1b・r-e2b・r-e3b・rep-e3・rep-i1・rep-i2・r-e4b の bench/table.txt（timing 無し、game mailbox 4 枚 8 s）。
+- subs-N は同じ build でも run により二つの値に分かれる（subs-1000 15.3 と 20.8、subs-100 178 と 207）。q1663 の subs-100 の 130・170 と同じ形で、code の差では
+  ない（record も同じ割合で動くので CPU 側の状態の見込み、未確かめ）。
+- 読み: big-1000 は 35.5 → 57〜59 fps（Linux の 2/3）。残りは record 7.4 ms（encode 約 4.4 + kernel の decode 約 3）と、executor が IB を出す速さに GPU が
+  ついて回る submit + fence 約 9.5 ms（Linux の GPU は約 6 ms）。subs-1000 は 1 submit 48 → 39 µs（Linux 10）。scene は不変（GPU 律速）。
+
+### 残り（次の担当へ）
+
+- subs-N（1 submit 39 µs 対 10）: 1 submit に GPU の ioctl が 4〜5 本（JOB_RESERVE・GPU_COMMAND・JOB_COMMIT・reap の CONSUME の WAIT・private fence の
+  状態の WAIT）。Linux は CS の 1 本。次の手は GPU core の job の ABI で reserve・command・commit を 1 本にする（gpu.c と uapi、全 driver に効くので Q1 と
+  設計から）、private fence の状態の確かめを ledger だけで済ませる（libvulkan）。
+- big-N: kernel の decode（1 op 約 0.05 µs、1 frame 3 ms）、executor の draw（約 0.39 µs）、GPU 側（IB の flush ごとの全 barrier、表の領域 768 KiB で 1 frame
+  約 8 回）。kernel と libvulkan は -Os（全体の方針、変えていない）。

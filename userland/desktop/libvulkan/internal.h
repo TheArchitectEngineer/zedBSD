@@ -745,6 +745,86 @@ vulkan_writer_reserve(
 	struct vulkan_writer *writer,
 	size_t additional);
 
+/*
+ * Appends a little-endian 32-bit protocol word as vulkan_write_u32() does,
+ * inline: the storage grows (out of line) only when the word does not
+ * fit.  The vkCmd* recordings write through here, several words a
+ * command.
+ */
+static __inline void
+vulkan_record_u32(
+	struct vulkan_writer *writer,
+	uint32_t word)
+{
+	uint8_t *bytes;
+
+	/* Reserves the complete scalar before modifying the stream length; an earlier failure stays. */
+	if (writer->error != VK_SUCCESS || writer->capacity - writer->bytes < 4U) {
+		vulkan_writer_reserve(writer, 4);
+		if (writer->error != VK_SUCCESS)
+			return;
+	}
+
+	/* Stores wire byte order independently of host alignment or endianness. */
+	bytes = writer->data + writer->bytes;
+	bytes[0] = (uint8_t)word;
+	bytes[1] = (uint8_t)(word >> 8);
+	bytes[2] = (uint8_t)(word >> 16);
+	bytes[3] = (uint8_t)(word >> 24);
+	writer->bytes += 4;
+}
+
+/*
+ * Appends a little-endian 64-bit protocol scalar as vulkan_write_u64()
+ * does, inline, the storage grown out of line only when it does not fit.
+ */
+static __inline void
+vulkan_record_u64(
+	struct vulkan_writer *writer,
+	uint64_t number)
+{
+	uint8_t *bytes;
+
+	/* Reserves both words atomically before exposing any scalar bytes; an earlier failure stays. */
+	if (writer->error != VK_SUCCESS || writer->capacity - writer->bytes < 8U) {
+		vulkan_writer_reserve(writer, 8);
+		if (writer->error != VK_SUCCESS)
+			return;
+	}
+
+	/* Stores every byte without requiring 64-bit host alignment. */
+	bytes = writer->data + writer->bytes;
+	bytes[0] = (uint8_t)number;
+	bytes[1] = (uint8_t)(number >> 8);
+	bytes[2] = (uint8_t)(number >> 16);
+	bytes[3] = (uint8_t)(number >> 24);
+	bytes[4] = (uint8_t)(number >> 32);
+	bytes[5] = (uint8_t)(number >> 40);
+	bytes[6] = (uint8_t)(number >> 48);
+	bytes[7] = (uint8_t)(number >> 56);
+	writer->bytes += 8;
+}
+
+/*
+ * Appends a non-dispatchable or dispatchable handle's renderer identity
+ * (0 for the null handle) as vulkan_encode_handle() does, inline.
+ */
+static __inline void
+vulkan_record_handle(
+	struct vulkan_writer *writer,
+	uint64_t handle)
+{
+	const struct vulkan_object *object;
+	uint64_t identity;
+
+	/* The standard null handle is 0 on the wire; another is its object's identity. */
+	object = (const struct vulkan_object *)(uintptr_t)handle;
+	identity = 0;
+	if (object != NULL)
+		identity = object->wire_id;
+	vulkan_record_u64(writer, identity);
+}
+
 void
 vulkan_write_float(
 	struct vulkan_writer *writer,
