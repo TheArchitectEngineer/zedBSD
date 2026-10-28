@@ -38,6 +38,9 @@
 #                  an X window); the reading that recognises most is kept
 #   BOOT_INTERVAL  seconds between two looks at the screen (default 2, 0.5 in
 #                  the modes that boot a kernel directly)
+#   BOOT_NVME_BLOCK_SIZE  in uefi-nvme, the boot disk's logical and physical
+#                  block size in bytes (4096 for a 4Kn disk); empty leaves
+#                  QEMU's default of 512
 #   QEMU_NO_KVM    1 runs the amd64 guest on TCG (-cpu max) even when /dev/kvm
 #                  is usable; otherwise it runs under KVM (-cpu host) when the
 #                  host offers it (plan/tools/guest/qemu-accel.sh)
@@ -319,6 +322,9 @@ if [[ $boot_mode == uefi-usb || $boot_mode == uefi-nvme ]]; then
 	# the USB model is slow and is not used for measuring).
 	if [[ $boot_mode == uefi-nvme ]]; then
 		boot_device=(-device nvme,serial=zedbsd-boot,drive=boot,bootindex=1)
+		if [[ -n ${BOOT_NVME_BLOCK_SIZE:-} ]]; then
+			boot_device=(-device "nvme,serial=zedbsd-boot,drive=boot,bootindex=1,logical_block_size=$BOOT_NVME_BLOCK_SIZE,physical_block_size=$BOOT_NVME_BLOCK_SIZE")
+		fi
 	else
 		boot_device=(-device usb-storage,bus=xhci.0,port=1,drive=boot,id=rootstick,bootindex=1)
 	fi
