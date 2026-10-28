@@ -72,7 +72,7 @@
 
 ## Resume point
 
-- 2026-10-29 P1（q1662-i04、branch `agent/p1-ws309d`）: p006・p007 cleared（QEMU `daemon-guest.sh`・`font-guest.sh` PASS）。次は p008（render を GPU の queue の唯一の持ち主に (1)）。
+- 2026-10-29 P1（q1662-i04、branch `agent/p1-ws309d`）: p006・p007 cleared（QEMU `daemon-guest.sh`・`font-guest.sh` PASS）。p008 は queue の lock まで（6eab69097）、次は fence 付きの task（[phase.md](phase008/phase.md) の「残り」1〜6）。
 - 2026-10-29 03:28 P1（q1662-i03）: p004 cleared（io-device を全 backend で起動、電源・details・sysmon を io-device へ、machine は A2 machine-read、QEMU `plan/ws309/tests/io-device2-guest.sh` PASS）。次は p006（daemon ×5）。
 - 2026-10-29 03:1x P1（q1662-i03、branch `agent/p1-ws309c`）: p005 cleared（言語・apps.conf・account・鍵・printers の open、QEMU `plan/ws309/tests/io-read-guest.sh` PASS）。p019 cleared（P2 の q1668）。次は p004。
 - 2026-10-29 02:4x P1（q1662-i02、branch `agent/p1-ws309b`、d5fb0bd08・c3b274d51）: p005 は displays.conf（`saved` は書き終わりで答える）・desktop.conf の Log Out・printers.conf まで済み。
@@ -92,7 +92,7 @@
 | [ws309-p005](phase005/phase.md) | io-file: displays.conf・desktop.conf・printers.conf の書き込み（`saved` は書き終わりで答える）、apps.conf・言語・printers.conf の読み、account・鍵の保存 | cleared（account の実行と実機は未実施） | p002 |
 | [ws309-p006](phase006/phase.md) | daemon ×5 の thread（zedBSD の backend、wake pipe を backend の open の前に） | cleared（実機は未実施） | p002、J6 |
 | [ws309-p007](phase007/phase.md) | font の thread: 予備の font・emoji の先読み、rasterize、color emoji の decode | cleared（実機は未実施） | p002 |
-| ws309-p008 | render を GPU の queue の唯一の持ち主に (1): fence 付きの task と queue の lock | planned | p002 |
+| [ws309-p008](phase008/phase.md) | render を GPU の queue の唯一の持ち主に (1): fence 付きの task と queue の lock | in-progress（queue の lock 済み） | p002 |
 | ws309-p009 | 同 (2)(3): 遅らせた破棄（serial・descriptor set・二重の image）、quiesce と main の `vkDeviceWaitIdle` を消す | planned | p008 |
 | ws309-p010 | blur の thread とその都度の decode（壁紙・出力の大きさ・回転） | planned | p009 |
 | ws309-p011 | 手書きの照合の pool（N = min(max(CPU−1,1),4)） | planned | p002 |
