@@ -6,16 +6,18 @@
  */
 
 /*
- * The operations the Vulkan executor adds to a GHCI node: the capset
- * libvulkan reads, the queued frames and their drain, the job markers
- * libvulkan completes its fences with, the stop of a closing session's
- * work, and the device's fault.
+ * The node's side of the Vulkan executor: what the executor adds to the
+ * device's operations at the attach (the capset libvulkan reads, the
+ * command frames run at once or queued with a completion, the job
+ * markers on the queues' timelines, and the GPU core's recovery), and
+ * the executor's own end at the detach.
  *
- * A job marker is reserved with the core's completion before libvulkan
- * submits, committed to the session's last fence (the fence after the
- * frame of the vkQueueSubmit before it) and completed by the service
- * thread when that fence passes.  The device has one ring, so every
- * timeline of a session's queues is that ring's order.
+ * The GPU core's recovery: the stop of a node session is answered from
+ * what the interrupt's lock guards (the session's completions and last
+ * tickets) without waiting; an isolation fails the session's
+ * completions and isolates its GHCI sessions, whose memory the device
+ * keeps until a reset; the core's fault makes the device lost, and its
+ * reset has the service thread reset the device.
  */
 
 #include <stddef.h>
@@ -23,18 +25,28 @@
 
 #include <drivers/gpu/gpu.h>
 #include <kern/kcrt.h>
+#include <kern/klog.h>
+#include <kern/kmem.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
+#include <uapi/gpu-fence.h>
 #include <uapi/gpu-job.h>
 
 #include "vk.h"
-#include "vk-engine.h"
 
 /* The capset libvulkan asks for: the native renderer's protocol record. */
-#define CAPSET_ID			4U
+#define NODE_CAPSET_ID			4U
+
+/* The capabilities the executor adds to the device's. */
+#define NODE_CAPABILITIES		(GPU_CAP_CAPSET | GPU_CAP_COMMAND | GPU_CAP_NOTIFICATION | GPU_CAP_FENCE | \
+					 GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY)
+
+/* The shortfalls the attach's log names at most. */
+#define NODE_SHORTFALLS			8U
 
 static int node_capset(void *private_data, void *opaque, struct gpu_capset *capset);
-static int node_submit(void *private_data, void *opaque, const void *command, uint32_t bytes, uint32_t flags, uint32_t timeline, struct drv_gpu_completion *completion);
+static int node_command(void *private_data, void *opaque, const void *wire, uint32_t bytes);
+static int node_submit(void *private_data, void *opaque, const void *wire, uint32_t bytes, uint32_t flags, uint32_t timeline, struct drv_gpu_completion *completion);
 static void node_drain(void *private_data, void *opaque);
 static int node_reserve(void *private_data, void *opaque, uint32_t timeline, struct drv_gpu_completion *completion, void **token);
 static int node_commit(void *private_data, void *opaque, void *token, struct drv_gpu_completion *completion);
@@ -43,7 +55,11 @@ static int node_capacity(void *private_data, void *opaque, uint32_t timeline, un
 static int node_stop_begin(void *private_data, void *opaque, int error);
 static int node_stop_poll(void *private_data, void *opaque);
 static void node_fault(void *private_data, int error);
-static int timeline_owned(const struct ghci_session *owner, uint32_t timeline);
+static int node_reset(void *private_data);
+static int node_isolate(void *private_data, void *opaque);
+static void node_detach(struct ghci_device *device);
+static struct ghci_vk_session *session_of(void *opaque);
+static struct ghci_vk_device *timeline_device(struct ghci_vk_session *session, uint32_t timeline);
 
 /* The queued frames; the table lives as long as the kernel. */
 static const struct drv_gpu_command_ops command_operations = {
@@ -59,35 +75,68 @@ static const struct drv_gpu_job_ops job_operations = {
 	node_capacity
 };
 
-/*
- * The recovery: the stop of a session's work, which the core asks for at
- * every close (without it the core takes each close for a device that
- * cannot stop, and faults the whole device), and the device's fault.  The
- * command processor's own reset after a GPU fault or a hang is the
- * service thread's (cp.c).
- */
+/* The GPU core's recovery calls; the table lives as long as the kernel. */
 static const struct drv_gpu_recovery_ops recovery_operations = {
 	node_stop_begin,
 	node_stop_poll,
 	node_fault,
-	NULL,
-	NULL
+	node_reset,
+	node_isolate
+};
+
+/* What the core of the driver asks of the executor; the table lives as long as the kernel. */
+static const struct ghci_executor_ops executor_operations = {
+	ghci_vk_session_open,
+	ghci_vk_session_close,
+	ghci_vk_memory_blob,
+	ghci_vk_service,
+	node_detach
 };
 
 /*
- * Adds the capset, the queued frames, the job markers and the recovery
- * to the node's operations.
+ * Attaches the Vulkan executor to a device before its node is published:
+ * reads the format features (FMT), adds the executor's operations and
+ * capabilities, and logs what the device lacks of Vulkan 1.0.  Returns
+ * 0, or ENOMEM.
  */
-void
-ghci_vk_node_bind(
+int
+ghci_vk_attach(
 	struct ghci_device *device)
 {
-	/* The operations and the capabilities they make good. */
+	const char *names[NODE_SHORTFALLS];
+	struct ghci_vk *vk;
+	unsigned count;
+	unsigned index;
+
+	/* The executor's record. */
+	vk = kern_calloc(1U, sizeof(*vk));
+	if (vk == NULL)
+		return ENOMEM;
+	vk->device = device;
+
+	/* The features of every format, read once. */
+	ghci_vk_formats_read(device, &vk->formats);
+
+	/* The operations, and the capabilities they make good. */
+	device->vk = vk;
+	device->executor_ops = &executor_operations;
 	device->ops.get_capset = node_capset;
+	device->ops.command = node_command;
 	device->ops.commands = &command_operations;
 	device->ops.jobs = &job_operations;
 	device->ops.recovery = &recovery_operations;
-	device->ops.capabilities |= GPU_CAP_CAPSET | GPU_CAP_NOTIFICATION | GPU_CAP_JOB | GPU_CAP_JOB_CAPACITY;
+	device->ops.capabilities |= NODE_CAPABILITIES;
+
+	/* What a Vulkan 1.0 device should have and this one lacks; it is refused when asked for. */
+	count = ghci_vk_caps_shortfalls(&device->caps, &vk->formats, names, NODE_SHORTFALLS);
+	for (index = 0U; index < count; index++)
+		kern_logf("ghci: %s: Vulkan 1.0 shortfall: %s\n", device->name, names[index]);
+
+	/* Succeeded: the device runs Vulkan. */
+	kern_logf("ghci: %s: Vulkan executor (formats from %s)\n",
+	    device->name,
+	    vk->formats.from_registers ? "FMT" : "the table");
+	return 0;
 }
 
 /* Reports the native renderer's capset: id 4, version 0. */
@@ -101,13 +150,9 @@ node_capset(
 	(void)opaque;
 
 	/* Only the protocol's capset, version 0, in a reply that holds it. */
-	if (capset->capset_id != CAPSET_ID)
+	if (capset->capset_id != NODE_CAPSET_ID || capset->capset_version != 0U)
 		return ENOTSUP;
-	if (capset->capset_version != 0U)
-		return ENOTSUP;
-	if (capset->capacity < GHCI_CAPSET_BYTES)
-		return EINVAL;
-	if (capset->capacity > GPU_CAPSET_MAX)
+	if (capset->capacity < GHCI_CAPSET_BYTES || capset->capacity > GPU_CAPSET_MAX)
 		return EINVAL;
 
 	/* The record, and nothing after it. */
@@ -119,48 +164,90 @@ node_capset(
 	return 0;
 }
 
-/* Takes one frame of commands, or an empty frame of a context fence. */
+/* Runs one frame at once. */
+static int
+node_command(
+	void *private_data,
+	void *opaque,
+	const void *wire,
+	uint32_t bytes)
+{
+	struct ghci_vk_session *session;
+	int error;
+
+	(void)private_data;
+
+	/* Whole words, within the command's bound. */
+	session = session_of(opaque);
+	if (bytes == 0U || bytes > GPU_COMMAND_MAX || (bytes & 3U) != 0U)
+		return EINVAL;
+
+	/* The frame through the executor. */
+	error = ghci_vk_stream_execute(session, wire, bytes);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the frame ran. */
+	return 0;
+}
+
+/*
+ * Runs one frame and queues its completion behind the work it placed; a
+ * frame of no bytes is a fence of the node session (or of a timeline)
+ * alone.
+ */
 static int
 node_submit(
 	void *private_data,
 	void *opaque,
-	const void *command,
+	const void *wire,
 	uint32_t bytes,
 	uint32_t flags,
 	uint32_t timeline,
 	struct drv_gpu_completion *completion)
 {
-	struct ghci_device *device;
+	struct ghci_vk_session *session;
 	int error;
 
-	/* Every frame is on the context's own timeline. */
-	if (timeline != 0U)
+	(void)private_data;
+
+	/* Only the context's fence flag; a timeline only with it. */
+	session = session_of(opaque);
+	if ((flags & ~GPU_COMMAND_CONTEXT_FENCE) != 0U || timeline >= GHCI_VK_TIMELINES)
+		return EINVAL;
+	if (flags == 0U && timeline != 0U)
 		return EINVAL;
 
-	/* The frame is decoded and submitted under the device's lock. */
-	device = private_data;
-	mutex_lock(&device->lock);
+	/* Whole words within the bound; an empty frame only as a fence. */
+	if (bytes > GPU_COMMAND_MAX || (bytes & 3U) != 0U)
+		return EINVAL;
+	if (bytes == 0U && flags == 0U)
+		return EINVAL;
 
-	error = ghci_vk_submit(device, opaque, command, bytes, flags, completion);
+	/* The frame runs now; its replies are written before the completion is queued. */
+	if (bytes != 0U) {
+		error = ghci_vk_stream_execute(session, wire, bytes);
+		if (error != 0)
+			return error;
+	}
 
-	mutex_unlock(&device->lock);
-
-	/* A frame that was refused retains no callback. */
+	/* The completion waits for the work placed until now. */
+	error = ghci_vk_frame_queue(session, timeline, completion);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the callback completes once the replies are written. */
+	/* Succeeded: the service thread completes the frame. */
 	return 0;
 }
 
-/* Waits for every frame and fence of a closing session. */
+/* Waits until every queued frame and committed marker of a closing node session has ended. */
 static void
 node_drain(
 	void *private_data,
 	void *opaque)
 {
-	/* The frames complete on the service thread meanwhile. */
-	ghci_vk_drain(private_data, opaque);
+	/* The session retires its own completions as their tickets are answered. */
+	ghci_vk_drain(private_data, session_of(opaque));
 }
 
 /* Reserves a job marker on a timeline of the session's queues: EAGAIN when all are in use. */
@@ -173,30 +260,31 @@ node_reserve(
 	void **token)
 {
 	struct ghci_device *device;
-	struct ghci_session *owner;
+	struct ghci_vk_session *session;
+	struct ghci_vk_device *owner;
+	unsigned long irq;
 	unsigned index;
-	int owned;
 	int error;
 
-	/* A timeline of the session's queues. */
+	/* A timeline of the session's queues on a device that runs. */
 	device = private_data;
-	owner = opaque;
+	session = session_of(opaque);
 	*token = NULL;
-	mutex_lock(&device->lock);
+	irq = spin_lock_irqsave(&device->irq_lock);
 
-	owned = timeline_owned(owner, timeline);
+	owner = timeline_device(session, timeline);
 	error = EINVAL;
-	if (owned && owner->vk->lost) {
+	if (owner != NULL && (session->stopping || session->isolated || device->state == GHCI_STATE_LOST)) {
 		error = EIO;
-	} else if (owned) {
-		error = ghci_jobs_reserve(&owner->vk->jobs, completion, &index);
+	} else if (owner != NULL) {
+		error = ghci_jobs_reserve(&session->jobs, completion, &index);
+	}
+	if (error == 0) {
+		session->marker_timeline[index] = timeline;
+		*token = &session->jobs.markers[index];
 	}
 
-	/* The token names the marker. */
-	if (error == 0)
-		*token = &owner->vk->jobs.markers[index];
-
-	mutex_unlock(&device->lock);
+	spin_unlock_irqrestore(&device->irq_lock, irq);
 
 	/* No marker. */
 	if (error != 0)
@@ -207,9 +295,9 @@ node_reserve(
 }
 
 /*
- * Commits a reserved marker to the session's last fence: it completes
- * when the work the session submitted before it has finished, at once
- * when that has already happened.
+ * Commits a reserved marker to the last submission of its timeline's
+ * device: it completes when that work has finished (or a reset ended
+ * it), at once when there is none.
  */
 static int
 node_commit(
@@ -218,50 +306,53 @@ node_commit(
 	void *token,
 	struct drv_gpu_completion *completion)
 {
+	enum ghci_ticket_state state;
 	struct ghci_device *device;
-	struct ghci_session *owner;
-	uint32_t completed;
-	uint32_t fence;
+	struct ghci_vk_session *session;
+	struct ghci_vk_device *owner;
+	struct ghci_ticket ticket;
+	unsigned long irq;
 	unsigned index;
 	int passed;
 	int error;
 
-	/* The marker the token names, bound under the device's lock. */
+	/* The marker the token names, bound under the interrupt's lock. */
 	device = private_data;
-	owner = opaque;
+	session = session_of(opaque);
 	passed = 0;
-	mutex_lock(&device->lock);
+	irq = spin_lock_irqsave(&device->irq_lock);
 
-	error = ghci_jobs_index(&owner->vk->jobs, token, &index);
+	error = ghci_jobs_index(&session->jobs, token, &index);
+	if (error == 0) {
+		/* The work to wait for: the timeline's device's last, none when it finished. */
+		ticket.seq = 0U;
+		ticket.generation = 0U;
+		owner = timeline_device(session, session->marker_timeline[index]);
+		if (owner != NULL && owner->submitted) {
+			state = ghci_cp_ticket_locked(device, &owner->last);
+			if (state != GHCI_TICKET_DONE)
+				ticket = owner->last;
+		}
+		error = ghci_jobs_commit(&session->jobs, index, completion, ticket.seq, ticket.generation, &passed);
+	}
 
-	/* The fence to wait for: the session's last, or the completed one when nothing is outstanding. */
-	completed = ghci_cp_completed(device);
-	fence = completed;
-	if (owner->outstanding)
-		fence = owner->last_fence;
-
-	/* Binds the marker to that fence. */
-	if (error == 0)
-		error = ghci_jobs_commit(&owner->vk->jobs, index, completion, fence, completed, &passed);
-
-	mutex_unlock(&device->lock);
+	spin_unlock_irqrestore(&device->irq_lock, irq);
 
 	/* A token or a completion that is not this reservation's. */
 	if (error != 0)
 		return error;
 
-	/* Work that has already finished completes the marker now. */
+	/* Work that has already finished completes the marker now; the rest is the service thread's. */
 	if (passed)
 		drv_gpu_complete(completion, 0);
+	else
+		ghci_service_wake(device, GHCI_WORK_RECLAIM);
 
 	/* Succeeded: the marker completes in order. */
 	return 0;
 }
 
-/*
- * Withdraws a reservation (normal) or ends an uncertain one with an
- * error at the next retirement (fault).
- */
+/* Withdraws a reservation (normal) or ends an uncertain one with an error at the next retirement (fault). */
 static int
 node_cancel(
 	void *private_data,
@@ -271,20 +362,21 @@ node_cancel(
 	unsigned fault)
 {
 	struct ghci_device *device;
-	struct ghci_session *owner;
+	struct ghci_vk_session *session;
+	unsigned long irq;
 	unsigned index;
 	int error;
 
-	/* The marker the token names, changed under the device's lock. */
+	/* The marker the token names, changed under the interrupt's lock. */
 	device = private_data;
-	owner = opaque;
-	mutex_lock(&device->lock);
+	session = session_of(opaque);
+	irq = spin_lock_irqsave(&device->irq_lock);
 
-	error = ghci_jobs_index(&owner->vk->jobs, token, &index);
+	error = ghci_jobs_index(&session->jobs, token, &index);
 	if (error == 0)
-		error = ghci_jobs_cancel(&owner->vk->jobs, index, completion, fault);
+		error = ghci_jobs_cancel(&session->jobs, index, completion, fault);
 
-	mutex_unlock(&device->lock);
+	spin_unlock_irqrestore(&device->irq_lock, irq);
 
 	/* A cancel the marker's state does not allow. */
 	if (error != 0)
@@ -292,13 +384,13 @@ node_cancel(
 
 	/* A failed marker completes with the next round of the service. */
 	if (fault != 0U)
-		ghci_service_wake(device, GHCI_WORK_REPLY);
+		ghci_service_wake(device, GHCI_WORK_RECLAIM);
 
 	/* Succeeded: the reservation is withdrawn or ended. */
 	return 0;
 }
 
-/* Reports how many markers a reservation on the timeline could take now. */
+/* Reports how many markers a reservation on the timeline could take now, without sleeping. */
 static int
 node_capacity(
 	void *private_data,
@@ -307,26 +399,27 @@ node_capacity(
 	unsigned *available)
 {
 	struct ghci_device *device;
-	struct ghci_session *owner;
-	int owned;
+	struct ghci_vk_session *session;
+	struct ghci_vk_device *owner;
+	unsigned long irq;
 	int error;
 
 	/* A timeline of the session's queues on a device that runs. */
 	device = private_data;
-	owner = opaque;
+	session = session_of(opaque);
 	*available = 0U;
-	mutex_lock(&device->lock);
+	irq = spin_lock_irqsave(&device->irq_lock);
 
-	owned = timeline_owned(owner, timeline);
+	owner = timeline_device(session, timeline);
 	error = EINVAL;
-	if (owned && device->vk->faulted) {
+	if (owner != NULL && device->state == GHCI_STATE_LOST) {
 		error = EIO;
-	} else if (owned) {
-		*available = ghci_jobs_capacity(&owner->vk->jobs);
+	} else if (owner != NULL) {
+		*available = ghci_jobs_capacity(&session->jobs);
 		error = 0;
 	}
 
-	mutex_unlock(&device->lock);
+	spin_unlock_irqrestore(&device->irq_lock, irq);
 
 	/* A timeline the session's queues do not complete on. */
 	if (error != 0)
@@ -337,9 +430,8 @@ node_capacity(
 }
 
 /*
- * Begins the stop of a session's work.  The core has stopped taking the
- * session's commands; its frames and fences in the ring end by
- * themselves (or with the next reset), so nothing more is to be done.
+ * Begins the stop of a node session: it takes no new frame or job.  Its
+ * work in the ring ends on the GPU or with a reset; nothing waits here.
  */
 static int
 node_stop_begin(
@@ -347,18 +439,29 @@ node_stop_begin(
 	void *opaque,
 	int error)
 {
-	(void)private_data;
-	(void)opaque;
+	struct ghci_device *device;
+	struct ghci_vk_session *session;
+	unsigned long irq;
+
 	(void)error;
 
-	/* Succeeded: the stop has begun; the poll says when it is done. */
+	/* The stop mark, which the frames and the jobs read. */
+	device = private_data;
+	session = session_of(opaque);
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	session->stopping = 1;
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* Succeeded: the poll says when the stop is done. */
 	return 0;
 }
 
 /*
- * Reports whether a stopping session's work is done: 0 when no frame of
- * it is in flight, no job marker waits and its last fence passed (or a
- * reset ended it), EAGAIN before.
+ * Reports whether a stopping node session's work is done: 0 once none of
+ * its devices' work is pending in the GPU and every completion is
+ * retired, EAGAIN before (the service thread retires meanwhile).
  */
 static int
 node_stop_poll(
@@ -366,38 +469,22 @@ node_stop_poll(
 	void *opaque)
 {
 	struct ghci_device *device;
-	struct ghci_session *owner;
-	struct ghci_ticket ticket;
-	unsigned pending;
-	unsigned committed;
-	int outstanding;
-	int done;
+	struct ghci_vk_session *session;
+	unsigned long irq;
+	int pending;
 
-	/* What of the session is still in flight. */
+	/* What is still pending, under the interrupt's lock only. */
 	device = private_data;
-	owner = opaque;
-	mutex_lock(&device->lock);
+	session = session_of(opaque);
+	irq = spin_lock_irqsave(&device->irq_lock);
 
-	pending = 0U;
-	committed = 0U;
-	if (owner->vk != NULL) {
-		pending = owner->vk->pending;
-		committed = owner->vk->jobs.committed;
-	}
-	outstanding = owner->outstanding;
-	ticket.fence = owner->last_fence;
-	ticket.generation = owner->last_generation;
+	pending = ghci_vk_session_pending(session);
 
-	mutex_unlock(&device->lock);
+	spin_unlock_irqrestore(&device->irq_lock, irq);
 
-	/* The last fence, when one is outstanding. */
-	done = 1;
-	if (outstanding)
-		done = ghci_cp_done(device, ticket.fence, ticket.generation);
-
-	/* Work still in flight: the service thread completes it meanwhile. */
-	if (!done || pending != 0U || committed != 0U) {
-		ghci_service_wake(device, GHCI_WORK_REPLY);
+	/* Work still pending: the service thread retires it as the GPU passes it. */
+	if (pending) {
+		ghci_service_wake(device, GHCI_WORK_RECLAIM);
 		return EAGAIN;
 	}
 
@@ -405,47 +492,116 @@ node_stop_poll(
 	return 0;
 }
 
-/*
- * Takes the core's fault: the device takes no new frame.  The work in
- * flight still ends on the GPU or with the next reset, so no memory goes
- * back before the GPU is done with it.
- */
+/* Takes the GPU core's fault: the device is lost from here; calling it again changes nothing. */
 static void
 node_fault(
 	void *private_data,
 	int error)
 {
-	struct ghci_device *device;
-
 	(void)error;
 
-	/* No frame is submitted from here. */
-	device = private_data;
-	mutex_lock(&device->lock);
-
-	device->vk->faulted = 1;
-
-	mutex_unlock(&device->lock);
+	/* The device's loss, as a recovery that gives up makes it. */
+	ghci_recover_fault(private_data);
 }
 
-/* Reports whether a session's queues complete jobs on a timeline (1 to 63): 1 when they do. */
+/*
+ * Runs the GPU core's reset once no older owner is left: the service
+ * thread resets the device and checks it, and the memory a loss or an
+ * isolation kept goes back.  Returns 0, or the error of the reset.
+ */
 static int
-timeline_owned(
-	const struct ghci_session *owner,
+node_reset(
+	void *private_data)
+{
+	int error;
+
+	/* The reset on the service thread. */
+	error = ghci_recover_reset(private_data);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the device runs again. */
+	return 0;
+}
+
+/*
+ * Isolates a node session whose stop could not be confirmed: every
+ * completion of it ends with an error, it takes no more work, and each
+ * of its devices' GHCI sessions is isolated, so that its unmaps and
+ * closes keep the memory with the device until a reset.  Other sessions
+ * go on.  Returns 0.
+ */
+static int
+node_isolate(
+	void *private_data,
+	void *opaque)
+{
+	struct ghci_device *device;
+	struct ghci_vk_session *session;
+	struct ghci_vk_device *each;
+	struct ghci_vm *vms[GHCI_SESSIONS];
+	unsigned long irq;
+	unsigned count;
+	unsigned index;
+
+	/* The completions fail and the session's devices are noted, under the interrupt's lock. */
+	device = private_data;
+	session = session_of(opaque);
+	count = 0U;
+	irq = spin_lock_irqsave(&device->irq_lock);
+
+	ghci_vk_session_fail(session);
+	for (each = session->devices; each != NULL && count < GHCI_SESSIONS; each = each->next) {
+		vms[count] = each->vm;
+		count++;
+	}
+
+	spin_unlock_irqrestore(&device->irq_lock, irq);
+
+	/* The failed completions end now. */
+	ghci_vk_service(device);
+
+	/* Each GHCI session of the node session is isolated. */
+	for (index = 0U; index < count; index++)
+		ghci_vm_isolate(device, vms[index]);
+
+	/* Succeeded: the session is isolated. */
+	return 0;
+}
+
+/* Lets the executor's record go at the detach; no node session is left. */
+static void
+node_detach(
+	struct ghci_device *device)
+{
+	/* The record and the table. */
+	kern_free(device->vk);
+	device->vk = NULL;
+	device->executor_ops = NULL;
+}
+
+/* Reports the executor's side of a node session the core passed. */
+static struct ghci_vk_session *
+session_of(
+	void *opaque)
+{
+	struct ghci_session *owner;
+
+	/* The node session's executor side, made at its open. */
+	owner = opaque;
+	return owner->vk;
+}
+
+/* Reports the device whose queue completes jobs on a timeline (1 to 63); NULL for none.  The caller holds irq_lock. */
+static struct ghci_vk_device *
+timeline_device(
+	struct ghci_vk_session *session,
 	uint32_t timeline)
 {
-	/* An open without an executor has no queue. */
-	if (owner->vk == NULL)
-		return 0;
-
 	/* Timelines 1 to 63, as vkGetDeviceQueue2 gave them. */
-	if (timeline == 0U)
-		return 0;
-	if (timeline >= GHCI_VK_TIMELINES)
-		return 0;
-	if ((owner->vk->timelines & ((uint64_t)1U << timeline)) == 0U)
-		return 0;
+	if (timeline == 0U || timeline >= GHCI_VK_TIMELINES)
+		return NULL;
 
-	/* Succeeded: the timeline is the session's. */
-	return 1;
+	/* Succeeded: the device, or NULL. */
+	return session->timeline_device[timeline];
 }

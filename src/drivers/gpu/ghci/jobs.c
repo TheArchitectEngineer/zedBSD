@@ -9,10 +9,10 @@
  * The job markers of a GHCI session.
  *
  * A marker is reserved with the core's completion before userspace
- * submits, committed to the fence value of the session's last submission,
- * and completed when that fence passes.  The fence is the device's: one
- * 32-bit value that every submission of every session advances, so a
- * marker committed after a submission completes no earlier than it.
+ * submits, committed to the ticket of the last submission of its queue,
+ * and completed when that ticket is answered: passed, or ended by a reset
+ * or the loss of the device.  The tickets are judged by the caller, who
+ * knows the device's fence and its reset generations.
  */
 
 #include <stddef.h>
@@ -35,10 +35,11 @@ ghci_jobs_init(
 	for (index = 0U; index < GHCI_JOB_MARKERS; index++) {
 		table->markers[index].state = GHCI_JOB_FREE;
 		table->markers[index].completion = NULL;
-		table->markers[index].fence = 0U;
+		table->markers[index].seq = 0U;
+		table->markers[index].generation = 0U;
 	}
 
-	/* No marker is reserved or waiting for a fence. */
+	/* No marker is reserved or waiting for a ticket. */
 	table->reserved = 0U;
 	table->committed = 0U;
 }
@@ -70,19 +71,18 @@ ghci_jobs_reserve(
 }
 
 /*
- * Binds a reserved marker to a fence value.
+ * Binds a reserved marker to a ticket.
  */
 int
 ghci_jobs_commit(
 	struct ghci_job_table *table,
 	unsigned index,
 	void *completion,
-	uint32_t fence,
-	uint32_t completed,
+	uint64_t seq,
+	uint64_t generation,
 	int *passed)
 {
 	struct ghci_job_marker *marker;
-	int reached;
 
 	/* Refuses an index outside the table. */
 	*passed = 0;
@@ -99,21 +99,21 @@ ghci_jobs_commit(
 	/* The reservation ends either way. */
 	table->reserved--;
 
-	/* A fence that has already passed completes the marker at once: the caller does it. */
-	reached = ghci_fence_passed(completed, fence);
-	if (reached != 0) {
+	/* No work outstanding completes the marker at once: the caller does it. */
+	if (seq == 0U) {
 		marker->state = GHCI_JOB_FREE;
 		marker->completion = NULL;
 		*passed = 1;
 		return 0;
 	}
 
-	/* Otherwise the marker waits for the fence; it now counts as committed. */
+	/* Otherwise the marker waits for the ticket; it now counts as committed. */
 	marker->state = GHCI_JOB_COMMITTED;
-	marker->fence = fence;
+	marker->seq = seq;
+	marker->generation = generation;
 	table->committed++;
 
-	/* Succeeded: the marker completes when the fence passes. */
+	/* Succeeded: the marker completes when the ticket is answered. */
 	return 0;
 }
 
@@ -146,7 +146,7 @@ ghci_jobs_cancel(
 
 	/* A normal cancel withdraws a reservation only; nothing completes. */
 	if (fault == 0U) {
-		/* A committed marker is not withdrawn: it completes with its fence. */
+		/* A committed marker is not withdrawn: it completes with its ticket. */
 		if (marker->state != GHCI_JOB_RESERVED)
 			return ESTALE;
 
@@ -212,15 +212,16 @@ ghci_jobs_index(
 unsigned
 ghci_jobs_retire(
 	struct ghci_job_table *table,
-	uint32_t completed,
+	ghci_job_judge judge,
+	void *context,
 	void **done,
 	int *errors,
 	unsigned capacity)
 {
 	struct ghci_job_marker *marker;
+	enum ghci_job_answer answer;
 	unsigned count;
 	unsigned at;
-	int reached;
 
 	/* Looks at every marker that waits, while the caller has room for it. */
 	count = 0U;
@@ -245,16 +246,18 @@ ghci_jobs_retire(
 		if (marker->state != GHCI_JOB_COMMITTED)
 			continue;
 
-		/* A committed marker completes once its fence has passed. */
-		reached = ghci_fence_passed(completed, marker->fence);
-		if (reached != 0) {
-			done[count] = marker->completion;
-			errors[count] = 0;
-			count++;
-			marker->state = GHCI_JOB_FREE;
-			marker->completion = NULL;
-			table->committed--;
-		}
+		/* A committed marker completes once its ticket is answered: passed, or lost to a reset. */
+		answer = judge(context, marker->seq, marker->generation);
+		if (answer == GHCI_JOB_WAITING)
+			continue;
+		done[count] = marker->completion;
+		errors[count] = 0;
+		if (answer == GHCI_JOB_LOST)
+			errors[count] = EIO;
+		count++;
+		marker->state = GHCI_JOB_FREE;
+		marker->completion = NULL;
+		table->committed--;
 	}
 
 	/* Reports the number of completions handed back. */

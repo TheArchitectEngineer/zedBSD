@@ -6,170 +6,128 @@
  */
 
 /*
- * The executor's instance, physical-device, device and queue commands,
- * which the driver answers itself (D).
+ * The instance, the physical device, the device and its queue.
  *
- * The device is one physical device with one queue family of one queue
- * that draws, computes and copies: a GHCI GPU has one ring.  Its limits
- * and features come from the GPU's capability registers (CAPS, CAPS2 and
- * the FMT capability) and from what the shader compiler and the firmware
- * provide; the rest are the smallest values Vulkan 1.0 allows.  The
- * memory is two types: device local, and device local, host visible and
- * coherent, over the GPU's memory the processor reaches through the
- * window (and the rest of it, which only the GPU reaches).
- *
- * vkDestroyDevice is answered here and relayed too: the firmware gives
- * back the objects it still keeps for the device.
+ * The node is one physical device whose answers come from the GPU's
+ * capability registers (vk-caps.c).  vkCreateDevice takes one of the
+ * fifteen GHCI sessions of the hardware for the new VkDevice, and fails
+ * with VK_ERROR_TOO_MANY_OBJECTS when they are all in use.
  */
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include <kern/kcrt.h>
+#include <kern/kmem.h>
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
-#include "../hcr.h"
 #include "vk.h"
-#include "vk-engine.h"
 
 #include "drivers/gpu/i915/vk/vk-codec.inc"
 
 /*
- * The bits of the float values of the limits.
- *
- * Values referenced: IEEE 754-2008 binary32 (sign 31, biased exponent
- * 30:23 with a bias of 127, fraction 22:0).
+ * The version on the wire (1.1, which libvulkan requires and shows
+ * applications as 1.0) and the driver's version.
  */
-#define F32_ONE				0x3f800000U
-#define F32_TWO				0x40000000U
-#define F32_HALF_NEGATIVE		0xbf000000U
-#define F32_0_4375			0x3ee00000U
-#define F32_8192_NEGATIVE		0xc6000000U
-#define F32_8191			0x45fff800U
-
-/* The version the device reports (libvulkan needs a native 1.1) and the driver's version. */
 #define DEVICE_API_VERSION		VK_MAKE_VERSION(1, 1, 0)
 #define DEVICE_DRIVER_VERSION		1U
 
-/* The one queue family and the timelines a queue may complete jobs on (1 to 63). */
+/* The one queue family. */
 #define DEVICE_FAMILIES			1U
 
-/* The largest edge of an image and its most layers. */
-#define IMAGE_EDGE			4096U
-#define IMAGE_LAYERS			256U
-#define IMAGE_EDGE_3D			256U
-#define IMAGE_LEVELS			13U
-
-/* The varying words a GPU without the Vulkan 1.0 core rendering of CAPS[30] keeps per vertex. */
-#define VARYING_WORDS_BASIC		16U
-#define VARYING_WORDS_CORE		64U
-
-/* The most invocations of one workgroup. */
-#define WORKGROUP_INVOCATIONS		128U
-
-/* The bit of CAPS that says the GPU renders the whole of Vulkan 1.0 core (draft). */
-#define CAPS_VULKAN_CORE		(1U << 30)
-
-static int create_instance(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
+static int create_instance(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int destroy_instance(struct i915_wire_reader *reader);
-static int enumerate(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int properties(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int identity(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static VkPhysicalDeviceProperties *device_record(struct ghci_vk_build *build);
-static void fill_limits(struct ghci_device *device, VkPhysicalDeviceLimits *limit);
-static void fill_features(struct ghci_device *device, VkPhysicalDeviceFeatures *features);
-static int features(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int memory_properties(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int families(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int format(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int image_format(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static uint32_t image_format_limits(struct ghci_device *device, uint32_t vk_format, uint32_t type, uint32_t tiling, uint32_t usage, uint32_t create_flags, VkImageFormatProperties *record);
-static int image_format2(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int buffer_external(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int sparse_formats(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int create_device(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int destroy_device(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int device_queue(struct ghci_vk_build *build, uint32_t flags, struct i915_wire_reader *reader);
-static int usage_allowed(uint32_t usage, uint32_t features);
-static int features_within(const VkPhysicalDeviceFeatures *asked, const VkPhysicalDeviceFeatures *offered);
-static void set_float(float *destination, uint32_t bits);
-static uint32_t sample_counts(const struct ghci_device *device);
+static int enumerate(uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int properties(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int identity(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static void device_record(struct ghci_vk_session *session, VkPhysicalDeviceProperties *record);
+static int features(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int memory_properties(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int families(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int format(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int image_format(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int image_format2(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int buffer_external(uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int sparse_formats(uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int create_device(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static uint32_t device_admit(struct ghci_vk_session *session, const VkDeviceCreateInfo *info);
+static int device_open(struct ghci_vk_session *session, uint64_t handle, const VkDeviceCreateInfo *info, uint32_t *result);
+static int destroy_device(struct ghci_vk_session *session, struct i915_wire_reader *reader);
+static int device_queue(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 
 /*
  * Runs an instance, physical-device, device or queue command; *handled
- * stays clear for another route's number.
- *
- * Procedure referenced: zedBSD src/drivers/gpu/powervr/vk/vk-device.c
- * (the wire of each command).
+ * stays clear for another group's number.
  */
 int
 ghci_vk_device_route(
-	struct ghci_vk_build *build,
+	struct ghci_vk_session *session,
 	uint32_t opcode,
-	uint32_t flags,
+	uint32_t requested,
 	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply,
 	int *handled)
 {
 	int error;
 
-	/* Picks the command, or leaves it to another route. */
+	/* Picks the command, or leaves it to another group. */
 	*handled = 1;
 	switch (opcode) {
 	case GPU_OP_CREATE_INSTANCE:
-		error = create_instance(build, flags, reader);
+		error = create_instance(session, requested, reader, reply);
 		break;
 	case GPU_OP_DESTROY_INSTANCE:
 		error = destroy_instance(reader);
 		break;
 	case GPU_OP_ENUMERATE_PHYSICAL_DEVICES:
-		error = enumerate(build, flags, reader);
+		error = enumerate(requested, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_FEATURES:
-		error = features(build, flags, reader);
+		error = features(session, requested, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES:
-		error = format(build, flags, reader);
+		error = format(session, requested, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES:
-		error = image_format(build, flags, reader);
+		error = image_format(session, requested, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES:
-		error = properties(build, flags, reader);
+		error = properties(session, requested, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2:
-		error = identity(build, flags, reader);
+		error = identity(session, requested, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_PROPERTIES:
-		error = families(build, flags, reader);
+		error = families(session, requested, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES:
-		error = memory_properties(build, flags, reader);
+		error = memory_properties(session, requested, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_IMAGE_FORMAT_PROPERTIES2:
-		error = image_format2(build, flags, reader);
+		error = image_format2(session, requested, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_EXTERNAL_BUFFER_PROPERTIES:
-		error = buffer_external(build, flags, reader);
+		error = buffer_external(requested, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_SPARSE_IMAGE_FORMAT_PROPERTIES:
-		error = sparse_formats(build, flags, reader);
+		error = sparse_formats(requested, reader, reply);
 		break;
 	case GPU_OP_CREATE_DEVICE:
-		error = create_device(build, flags, reader);
+		error = create_device(session, requested, reader, reply);
 		break;
 	case GPU_OP_DESTROY_DEVICE:
-		error = destroy_device(build, flags, reader);
+		error = destroy_device(session, reader);
 		break;
 	case GPU_OP_GET_DEVICE_QUEUE2:
-		error = device_queue(build, flags, reader);
+		error = device_queue(session, requested, reader, reply);
 		break;
 	default:
 		*handled = 0;
 		return 0;
 	}
 
-	/* A command that could not be decoded. */
+	/* A command that could not be decoded or run. */
 	if (error != 0)
 		return error;
 
@@ -180,9 +138,10 @@ ghci_vk_device_route(
 /* vkCreateInstance: [u64 1][create info][u64 0][u64 1][instance] -> [result][u64 1][instance]. */
 static int
 create_instance(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	VkInstanceCreateInfo info;
 	uint64_t present;
@@ -192,17 +151,13 @@ create_instance(
 	kern_memset(&info, 0, sizeof(info));
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U)
-		i915_vkc_dec_VkInstanceCreateInfo(reader, &build->session->arena, &info);
+		i915_vkc_dec_VkInstanceCreateInfo(reader, &session->arena, &info);
 	instance = ghci_vk_create_tail(reader);
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* Success and the identity: the instance is the session's alone. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u32(&build->reply, (uint32_t)VK_SUCCESS);
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		drv_i915_wire_reply_u64(&build->reply, instance);
-	}
+	/* The instance is the session's alone and keeps nothing. */
+	ghci_vk_reply_created(reply, requested, (uint32_t)VK_SUCCESS, instance);
 
 	/* Succeeded: the instance exists. */
 	return 0;
@@ -230,39 +185,32 @@ destroy_instance(
  */
 static int
 enumerate(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	uint64_t array_count;
 	uint64_t physical;
-	uint32_t count;
 
-	/* The instance and the count's presence word, then the counts. */
+	/* The instance, the count's presence word and the count, then the array. */
 	(void)drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u64(reader);
-	count = drv_i915_wire_read_u32(reader);
+	(void)drv_i915_wire_read_u32(reader);
 	array_count = drv_i915_wire_read_u64(reader);
 	physical = 0U;
-	if (array_count != 0U)
+	if (array_count == 1U)
 		physical = drv_i915_wire_read_u64(reader);
-	if (reader->error != 0)
+	if (reader->error != 0 || array_count > 1U)
 		return EINVAL;
 
-	/* At most one device, asked for with room for one. */
-	if (array_count > 1U)
-		return EINVAL;
-	if (array_count != 0U && count != 1U)
-		return EINVAL;
-
-	/* Success, one device and its identity when the array holds it. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u32(&build->reply, (uint32_t)VK_SUCCESS);
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		drv_i915_wire_reply_u32(&build->reply, 1U);
-		drv_i915_wire_reply_u64(&build->reply, array_count);
+	/* Success, one device, and its identity when the array holds it. */
+	if (requested != 0U) {
+		drv_i915_wire_reply_u32(reply, (uint32_t)VK_SUCCESS);
+		drv_i915_wire_reply_u64(reply, 1U);
+		drv_i915_wire_reply_u32(reply, 1U);
+		drv_i915_wire_reply_u64(reply, array_count);
 		if (array_count != 0U)
-			drv_i915_wire_reply_u64(&build->reply, physical);
+			drv_i915_wire_reply_u64(reply, physical);
 	}
 
 	/* Succeeded: the device is reported. */
@@ -272,9 +220,10 @@ enumerate(
 /* vkGetPhysicalDeviceProperties: [physical][u64 1] -> [u64 1][properties]. */
 static int
 properties(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	VkPhysicalDeviceProperties *record;
 
@@ -284,15 +233,16 @@ properties(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* The device's record. */
-	record = device_record(build);
+	/* The device's record, in the scratch. */
+	record = ghci_vk_arena_take(session, sizeof(*record));
 	if (record == NULL)
 		return ENOMEM;
+	device_record(session, record);
 
 	/* The presence word and the record. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		i915_vkc_enc_VkPhysicalDeviceProperties(&build->reply, record);
+	if (requested != 0U) {
+		drv_i915_wire_reply_u64(reply, 1U);
+		i915_vkc_enc_VkPhysicalDeviceProperties(reply, record);
 	}
 
 	/* Succeeded: the properties are reported. */
@@ -300,24 +250,27 @@ properties(
 }
 
 /*
- * vkGetPhysicalDeviceProperties2, asked for the device's ID properties
- * only: [physical][u64 1][PROPERTIES_2 sType][u64 1][ID_PROPERTIES sType]
- * [u64 0] -> [u64 1], the two headers, the device and driver UUIDs, the
- * LUID (none), the node mask, the LUID-valid word and the properties.
- * Every session of the device reports the same UUIDs.
+ * vkGetPhysicalDeviceProperties2, asked for the ID properties only:
+ * [physical][u64 1][PROPERTIES_2 sType][u64 1][ID_PROPERTIES sType][u64 0]
+ * -> [u64 1], the two headers, the device and driver UUIDs, the LUID
+ * (none), the node mask, the LUID-valid word and the properties.  Every
+ * session of the device reports the same UUIDs.
  */
 static int
 identity(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	static const uint8_t driver_uuid[VK_UUID_SIZE] = {
-		'z', 'e', 'd', 'B', 'S', 'D', '-', 'g', 'h', 'c', 'i', '-', 'v', 'k', '0', '1'
+		'z', 'e', 'd', 'B', 'S', 'D', '-', 'g', 'h', 'c', 'i', '-', 'v', 'k', '1', '0'
 	};
 	static const uint8_t luid[VK_LUID_SIZE] = { 0 };
 	VkPhysicalDeviceProperties *record;
+	struct ghci_device *device;
 	uint8_t device_uuid[VK_UUID_SIZE];
+	uint32_t ids;
 	uint64_t present;
 	uint64_t chained;
 	uint64_t last;
@@ -331,81 +284,73 @@ identity(
 	chained = drv_i915_wire_read_u64(reader);
 	inner = drv_i915_wire_read_u32(reader);
 	last = drv_i915_wire_read_u64(reader);
-	if (reader->error != 0)
-		return EINVAL;
-	if (present != 1U)
+	if (reader->error != 0 || present != 1U)
 		return EINVAL;
 
 	/* Only the ID properties are known. */
-	if (outer != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2)
+	if (outer != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 || chained != 1U)
 		return ENOTSUP;
-	if (chained != 1U)
-		return ENOTSUP;
-	if (inner != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES)
-		return ENOTSUP;
-	if (last != 0U)
+	if (inner != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES || last != 0U)
 		return ENOTSUP;
 
 	/* The ordinary properties, as the plain query gives them. */
-	record = device_record(build);
+	record = ghci_vk_arena_take(session, sizeof(*record));
 	if (record == NULL)
 		return ENOMEM;
+	device_record(session, record);
 
-	/* The device's UUID: the driver's name and the GPU's vendor and device FourCCs. */
+	/* The device's UUID: the driver's name, the PCI IDs and the GHCI version. */
+	device = session->device;
 	kern_memset(device_uuid, 0, sizeof(device_uuid));
 	kern_memcpy(device_uuid, "ghci", 4U);
-	kern_memcpy(device_uuid + 4U, &build->session->device->vendor_id, 4U);
-	kern_memcpy(device_uuid + 8U, &build->session->device->device_id, 4U);
-	kern_memcpy(device_uuid + 12U, &build->session->device->device_version, 4U);
+	ids = ((uint32_t)device->pci_vendor << 16) | device->pci_device;
+	kern_memcpy(device_uuid + 4U, &ids, 4U);
+	kern_memcpy(device_uuid + 8U, &device->version, 4U);
 
 	/* The two headers, the identity (no Windows adapter: no LUID), then the properties. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		drv_i915_wire_reply_u32(&build->reply, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2);
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		drv_i915_wire_reply_u32(&build->reply, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES);
-		drv_i915_wire_reply_u64(&build->reply, 0U);
-		drv_i915_wire_reply_u64(&build->reply, VK_UUID_SIZE);
-		i915_vkc_reply_bytes(&build->reply, device_uuid, VK_UUID_SIZE);
-		drv_i915_wire_reply_u64(&build->reply, VK_UUID_SIZE);
-		i915_vkc_reply_bytes(&build->reply, driver_uuid, VK_UUID_SIZE);
-		drv_i915_wire_reply_u64(&build->reply, VK_LUID_SIZE);
-		i915_vkc_reply_bytes(&build->reply, luid, VK_LUID_SIZE);
-		drv_i915_wire_reply_u32(&build->reply, 0U);
-		drv_i915_wire_reply_u32(&build->reply, VK_FALSE);
-		i915_vkc_enc_VkPhysicalDeviceProperties(&build->reply, record);
+	if (requested != 0U) {
+		drv_i915_wire_reply_u64(reply, 1U);
+		drv_i915_wire_reply_u32(reply, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2);
+		drv_i915_wire_reply_u64(reply, 1U);
+		drv_i915_wire_reply_u32(reply, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES);
+		drv_i915_wire_reply_u64(reply, 0U);
+		drv_i915_wire_reply_u64(reply, VK_UUID_SIZE);
+		i915_vkc_reply_bytes(reply, device_uuid, VK_UUID_SIZE);
+		drv_i915_wire_reply_u64(reply, VK_UUID_SIZE);
+		i915_vkc_reply_bytes(reply, driver_uuid, VK_UUID_SIZE);
+		drv_i915_wire_reply_u64(reply, VK_LUID_SIZE);
+		i915_vkc_reply_bytes(reply, luid, VK_LUID_SIZE);
+		drv_i915_wire_reply_u32(reply, 0U);
+		drv_i915_wire_reply_u32(reply, VK_FALSE);
+		i915_vkc_enc_VkPhysicalDeviceProperties(reply, record);
 	}
 
 	/* Succeeded: the identity every session of the device reports. */
 	return 0;
 }
 
-/* Fills a cleared record from the scratch with the device's properties; NULL when none is left. */
-static VkPhysicalDeviceProperties *
+/*
+ * Fills a cleared record with the device's properties: the version, the
+ * PCI IDs, the kind of GPU, the node's name and the limits.
+ */
+static void
 device_record(
-	struct ghci_vk_build *build)
+	struct ghci_vk_session *session,
+	VkPhysicalDeviceProperties *record)
 {
 	struct ghci_device *device;
-	VkPhysicalDeviceProperties *record;
 	size_t length;
+	int discrete;
 
-	/* The cleared record. */
-	device = build->session->device;
-	record = ghci_vk_arena_take(build->session, sizeof(*record));
-	if (record == NULL)
-		return NULL;
-
-	/*
-	 * The device: its GHCI vendor and device FourCCs as the numbers, a
-	 * discrete GPU when it has memory of its own, its name and its
-	 * limits.
-	 */
+	/* The version, the PCI IDs, and a discrete GPU when it has local memory. */
+	device = session->device;
+	discrete = ghci_caps_has(&device->caps, GHCI_HAS_DISCRETE);
 	record->apiVersion = DEVICE_API_VERSION;
 	record->driverVersion = DEVICE_DRIVER_VERSION;
-	record->vendorID = device->vendor_id;
-	record->deviceID = device->device_id;
+	record->vendorID = device->pci_vendor;
+	record->deviceID = device->pci_device;
 	record->deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
-	if (device->local_size != 0U)
+	if (discrete)
 		record->deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
 
 	/* The name: the node's, "ghci:<vendor>:<device>". */
@@ -414,217 +359,20 @@ device_record(
 		length = VK_MAX_PHYSICAL_DEVICE_NAME_SIZE - 1U;
 	kern_memcpy(record->deviceName, device->name, length);
 
-	/* The pipeline cache's UUID: the cache is always empty, so any constant does. */
-	kern_memcpy(record->pipelineCacheUUID, "zedBSD-ghci-pc01", VK_UUID_SIZE);
-	fill_limits(device, &record->limits);
-
-	/* Succeeded: the record. */
-	return record;
-}
-
-/*
- * Fills the limits: what the GPU's capability registers say, what the
- * compiler and the firmware provide, and Vulkan 1.0's smallest values for
- * the rest.
- *
- * Values referenced: the Required Limits table of the Vulkan 1.0
- * specification.
- */
-static void
-fill_limits(
-	struct ghci_device *device,
-	VkPhysicalDeviceLimits *limit)
-{
-	uint32_t varying_words;
-	uint32_t attributes;
-	uint32_t texture_slots;
-	uint32_t shared_bytes;
-	uint32_t attachments;
-	uint32_t samples;
-
-	/* The sizes of CAPS2, and what the render output and the varyings take. */
-	attributes = GHCI_CAPS2_ATTRS(device->caps2);
-	texture_slots = GHCI_CAPS2_TEX_SLOTS(device->caps2);
-	shared_bytes = GHCI_CAPS2_LDS_KIB(device->caps2) * 1024U;
-	attachments = device->vk->color_attachments;
-	varying_words = VARYING_WORDS_BASIC;
-	if ((device->caps & CAPS_VULKAN_CORE) != 0U)
-		varying_words = VARYING_WORDS_CORE;
-	samples = sample_counts(device);
-
-	/* Images, buffers and allocations. */
-	limit->maxImageDimension1D = IMAGE_EDGE;
-	limit->maxImageDimension2D = IMAGE_EDGE;
-	limit->maxImageDimension3D = IMAGE_EDGE_3D;
-	limit->maxImageDimensionCube = IMAGE_EDGE;
-	limit->maxImageArrayLayers = IMAGE_LAYERS;
-	limit->maxTexelBufferElements = 65536U;
-	limit->maxUniformBufferRange = 16384U;
-	limit->maxStorageBufferRange = 1U << 27;
-	limit->maxPushConstantsSize = 128U;
-	limit->maxMemoryAllocationCount = GHCI_SESSION_RESOURCES;
-	limit->maxSamplerAllocationCount = 4000U;
-	limit->bufferImageGranularity = GHCI_LAYOUT_ALIGN;
-	limit->sparseAddressSpaceSize = 0U;
-
-	/* Descriptors: the texture slots are the sampled images and samplers a stage takes. */
-	limit->maxBoundDescriptorSets = 4U;
-	limit->maxPerStageDescriptorSamplers = texture_slots;
-	limit->maxPerStageDescriptorUniformBuffers = 12U;
-	limit->maxPerStageDescriptorStorageBuffers = 4U;
-	limit->maxPerStageDescriptorSampledImages = texture_slots;
-	limit->maxPerStageDescriptorStorageImages = 4U;
-	limit->maxPerStageDescriptorInputAttachments = 4U;
-	limit->maxPerStageResources = 128U;
-	limit->maxDescriptorSetSamplers = 96U;
-	limit->maxDescriptorSetUniformBuffers = 72U;
-	limit->maxDescriptorSetUniformBuffersDynamic = 8U;
-	limit->maxDescriptorSetStorageBuffers = 24U;
-	limit->maxDescriptorSetStorageBuffersDynamic = 4U;
-	limit->maxDescriptorSetSampledImages = 96U;
-	limit->maxDescriptorSetStorageImages = 24U;
-	limit->maxDescriptorSetInputAttachments = 4U;
-
-	/* Vertex input, the varyings and the fragment outputs; no tessellation, no geometry. */
-	limit->maxVertexInputAttributes = attributes;
-	limit->maxVertexInputBindings = 16U;
-	limit->maxVertexInputAttributeOffset = 2047U;
-	limit->maxVertexInputBindingStride = 2048U;
-	limit->maxVertexOutputComponents = varying_words;
-	limit->maxFragmentInputComponents = varying_words;
-	limit->maxFragmentOutputAttachments = attachments;
-	limit->maxFragmentDualSrcAttachments = 0U;
-	limit->maxFragmentCombinedOutputResources = attachments + 8U;
-
-	/* Compute: the shared memory of CAPS2, and a workgroup the size of a shader unit's warps. */
-	limit->maxComputeSharedMemorySize = shared_bytes;
-	limit->maxComputeWorkGroupCount[0] = 65535U;
-	limit->maxComputeWorkGroupCount[1] = 65535U;
-	limit->maxComputeWorkGroupCount[2] = 65535U;
-	limit->maxComputeWorkGroupInvocations = WORKGROUP_INVOCATIONS;
-	limit->maxComputeWorkGroupSize[0] = WORKGROUP_INVOCATIONS;
-	limit->maxComputeWorkGroupSize[1] = WORKGROUP_INVOCATIONS;
-	limit->maxComputeWorkGroupSize[2] = 64U;
-
-	/* Precision, draws and sampling. */
-	limit->subPixelPrecisionBits = 4U;
-	limit->subTexelPrecisionBits = 4U;
-	limit->mipmapPrecisionBits = 4U;
-	limit->maxDrawIndexedIndexValue = 0xffffffffU;
-	limit->maxDrawIndirectCount = 1U;
-	set_float(&limit->maxSamplerLodBias, F32_TWO);
-	set_float(&limit->maxSamplerAnisotropy, F32_ONE);
-
-	/* One viewport of the largest framebuffer, within the guard band. */
-	limit->maxViewports = 1U;
-	limit->maxViewportDimensions[0] = IMAGE_EDGE;
-	limit->maxViewportDimensions[1] = IMAGE_EDGE;
-	set_float(&limit->viewportBoundsRange[0], F32_8192_NEGATIVE);
-	set_float(&limit->viewportBoundsRange[1], F32_8191);
-	limit->viewportSubPixelBits = 0U;
-
-	/* Alignments. */
-	limit->minMemoryMapAlignment = 64U;
-	limit->minTexelBufferOffsetAlignment = 16U;
-	limit->minUniformBufferOffsetAlignment = 256U;
-	limit->minStorageBufferOffsetAlignment = 16U;
-
-	/* Texel offsets, gathers and interpolation offsets. */
-	limit->minTexelOffset = -8;
-	limit->maxTexelOffset = 7U;
-	limit->minTexelGatherOffset = -8;
-	limit->maxTexelGatherOffset = 7U;
-	set_float(&limit->minInterpolationOffset, F32_HALF_NEGATIVE);
-	set_float(&limit->maxInterpolationOffset, F32_0_4375);
-	limit->subPixelInterpolationOffsetBits = 4U;
-
-	/* Framebuffers and their samples. */
-	limit->maxFramebufferWidth = IMAGE_EDGE;
-	limit->maxFramebufferHeight = IMAGE_EDGE;
-	limit->maxFramebufferLayers = IMAGE_LAYERS;
-	limit->framebufferColorSampleCounts = samples;
-	limit->framebufferDepthSampleCounts = samples;
-	limit->framebufferStencilSampleCounts = samples;
-	limit->framebufferNoAttachmentsSampleCounts = samples;
-	limit->maxColorAttachments = attachments;
-	limit->sampledImageColorSampleCounts = samples;
-	limit->sampledImageIntegerSampleCounts = VK_SAMPLE_COUNT_1_BIT;
-	limit->sampledImageDepthSampleCounts = samples;
-	limit->sampledImageStencilSampleCounts = VK_SAMPLE_COUNT_1_BIT;
-	limit->storageImageSampleCounts = VK_SAMPLE_COUNT_1_BIT;
-	limit->maxSampleMaskWords = 1U;
-
-	/* No timestamps, no clip or cull distances. */
-	limit->timestampComputeAndGraphics = VK_FALSE;
-	set_float(&limit->timestampPeriod, F32_ONE);
-	limit->maxClipDistances = 0U;
-	limit->maxCullDistances = 0U;
-	limit->maxCombinedClipAndCullDistances = 0U;
-
-	/* Queue priorities, points and lines of width 1, the standard sample places. */
-	limit->discreteQueuePriorities = 2U;
-	set_float(&limit->pointSizeRange[0], F32_ONE);
-	set_float(&limit->pointSizeRange[1], F32_ONE);
-	set_float(&limit->lineWidthRange[0], F32_ONE);
-	set_float(&limit->lineWidthRange[1], F32_ONE);
-	limit->strictLines = VK_FALSE;
-	limit->standardSampleLocations = VK_TRUE;
-
-	/* Copies: whole lines of memory. */
-	limit->optimalBufferCopyOffsetAlignment = GHCI_LAYOUT_ALIGN;
-	limit->optimalBufferCopyRowPitchAlignment = GHCI_LAYOUT_ALIGN;
-	limit->nonCoherentAtomSize = GHCI_LAYOUT_ALIGN;
-}
-
-/*
- * Fills the features: the optional ones the GPU's units, the compiler and
- * the firmware provide.
- */
-static void
-fill_features(
-	struct ghci_device *device,
-	VkPhysicalDeviceFeatures *record)
-{
-	int core;
-
-	/* The Vulkan 1.0 core rendering of CAPS[30] carries most of the optional state. */
-	core = 0;
-	if ((device->caps & CAPS_VULKAN_CORE) != 0U)
-		core = 1;
-
-	/* Required, or provided by the compiler and the firmware on every GHCI GPU. */
-	record->robustBufferAccess = VK_TRUE;
-	record->fullDrawIndexUint32 = VK_TRUE;
-	record->drawIndirectFirstInstance = VK_TRUE;
-	record->vertexPipelineStoresAndAtomics = VK_TRUE;
-	record->fragmentStoresAndAtomics = VK_TRUE;
-
-	/* The render output's and the rasterizer's optional state. */
-	if (core) {
-		record->independentBlend = VK_TRUE;
-		record->depthClamp = VK_TRUE;
-		record->depthBiasClamp = VK_TRUE;
-		record->depthBounds = VK_TRUE;
-		record->occlusionQueryPrecise = VK_TRUE;
-	}
-
-	/* Alpha to one comes with multisampling. */
-	if ((device->caps & GHCI_CAPS_MS4) != 0U)
-		record->alphaToOne = VK_TRUE;
-
-	/* Gathers with offsets come with the texture unit of Vulkan 1.0 core sampling. */
-	if ((device->caps & GHCI_CAPS_TU_FULL) != 0U)
-		record->shaderImageGatherExtended = VK_TRUE;
+	/* The pipeline cache's UUID (the cache keeps nothing), and the limits. */
+	kern_memcpy(record->pipelineCacheUUID, "zedBSD-ghci-pc10", VK_UUID_SIZE);
+	ghci_vk_caps_limits(&device->caps, &record->limits);
 }
 
 /* vkGetPhysicalDeviceFeatures: [physical][u64 1] -> [u64 1][features]. */
 static int
 features(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
-	VkPhysicalDeviceFeatures *record;
+	VkPhysicalDeviceFeatures record;
 
 	/* The physical device and the output's presence word. */
 	(void)drv_i915_wire_read_u64(reader);
@@ -632,90 +380,49 @@ features(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* A cleared record with the device's features. */
-	record = ghci_vk_arena_take(build->session, sizeof(*record));
-	if (record == NULL)
-		return ENOMEM;
-	fill_features(build->session->device, record);
-
-	/* The presence word and the record. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		i915_vkc_enc_VkPhysicalDeviceFeatures(&build->reply, record);
+	/* The presence word and the device's features. */
+	ghci_vk_caps_features(&session->device->caps, &record);
+	if (requested != 0U) {
+		drv_i915_wire_reply_u64(reply, 1U);
+		i915_vkc_enc_VkPhysicalDeviceFeatures(reply, &record);
 	}
 
 	/* Succeeded: the features are reported. */
 	return 0;
 }
 
-/*
- * vkGetPhysicalDeviceMemoryProperties: [physical][u64 1][u64 32][u64 16]
- * -> [u64 1][properties].  Two types, device local (type 0) and host
- * visible and coherent (type 1).  A discrete GPU has two heaps (GHCI
- * section 11.3): its local memory (device local, type 0) and host memory
- * (type 1).  A unified GPU has one device-local heap for both, and its
- * type 1 is device local too.
- */
+/* vkGetPhysicalDeviceMemoryProperties: [physical][u64 1][u64 32][u64 16] -> [u64 1][properties]. */
 static int
 memory_properties(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	VkPhysicalDeviceMemoryProperties *record;
-	struct ghci_device *device;
-	uint64_t local_bytes;
+	uint64_t types;
+	uint64_t heaps;
 
-	/* The physical device, the presence word and the two extents. */
+	/* The physical device, the presence word and the arrays' fixed extents. */
 	(void)drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u64(reader);
-	(void)drv_i915_wire_read_u64(reader);
-	(void)drv_i915_wire_read_u64(reader);
+	types = drv_i915_wire_read_u64(reader);
+	heaps = drv_i915_wire_read_u64(reader);
 	if (reader->error != 0)
 		return EINVAL;
+	if (types != VK_MAX_MEMORY_TYPES || heaps != VK_MAX_MEMORY_HEAPS)
+		return EINVAL;
 
-	/* A cleared record from the scratch. */
-	device = build->session->device;
-	record = ghci_vk_arena_take(build->session, sizeof(*record));
+	/* The record, in the scratch. */
+	record = ghci_vk_arena_take(session, sizeof(*record));
 	if (record == NULL)
 		return ENOMEM;
-
-	/* The local memory the allocators hand out (none on a unified GPU). */
-	local_bytes = 0U;
-	if (device->windowed_extents != NULL)
-		local_bytes += device->windowed.limit - device->windowed.base;
-	if (device->unwindowed_extents != NULL)
-		local_bytes += device->unwindowed.limit - device->unwindowed.base;
-
-	/* The types: device local first, as the specification orders them by fewer properties. */
-	record->memoryTypeCount = GHCI_VK_MEMORY_TYPES;
-	record->memoryTypes[GHCI_VK_MEMORY_DEVICE].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-	record->memoryTypes[GHCI_VK_MEMORY_DEVICE].heapIndex = 0U;
-	record->memoryTypes[GHCI_VK_MEMORY_HOST].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
-	    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-	    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-	record->memoryTypes[GHCI_VK_MEMORY_HOST].heapIndex = 0U;
-
-	/* A unified GPU: one device-local heap of host memory holds both types. */
-	record->memoryHeapCount = 1U;
-	record->memoryHeaps[0].size = GHCI_RESOURCE_MAX_BYTES;
-	record->memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
-
-	/* A discrete GPU: the local memory's heap, and host memory, which is not device local. */
-	if (local_bytes != 0U) {
-		record->memoryHeapCount = 2U;
-		record->memoryHeaps[0].size = local_bytes;
-		record->memoryHeaps[1].size = GHCI_RESOURCE_MAX_BYTES;
-		record->memoryHeaps[1].flags = 0U;
-		record->memoryTypes[GHCI_VK_MEMORY_HOST].propertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-		    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-		record->memoryTypes[GHCI_VK_MEMORY_HOST].heapIndex = 1U;
-	}
+	ghci_vk_caps_memory(&session->device->caps, record);
 
 	/* The presence word and the record. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		i915_vkc_enc_VkPhysicalDeviceMemoryProperties(&build->reply, record);
+	if (requested != 0U) {
+		drv_i915_wire_reply_u64(reply, 1U);
+		i915_vkc_enc_VkPhysicalDeviceMemoryProperties(reply, record);
 	}
 
 	/* Succeeded: the memory is reported. */
@@ -724,14 +431,14 @@ memory_properties(
 
 /*
  * vkGetPhysicalDeviceQueueFamilyProperties: [physical][u64 1][u32 count]
- * [u64 count] -> [u64 1][u32 count][u64 count][families].  One family of
- * one queue that draws, computes and copies.
+ * [u64 count] -> [u64 1][u32 count][u64 count][families].
  */
 static int
 families(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	VkQueueFamilyProperties family;
 	uint64_t array_count;
@@ -742,26 +449,17 @@ families(
 	(void)drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u32(reader);
 	array_count = drv_i915_wire_read_u64(reader);
-	if (reader->error != 0)
-		return EINVAL;
-	if (array_count > DEVICE_FAMILIES)
+	if (reader->error != 0 || array_count > DEVICE_FAMILIES)
 		return EINVAL;
 
 	/* The presence word, the count, then the family when the array holds it. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		drv_i915_wire_reply_u32(&build->reply, DEVICE_FAMILIES);
-		drv_i915_wire_reply_u64(&build->reply, array_count);
-		for (index = 0U; index < array_count; index++) {
-			kern_memset(&family, 0, sizeof(family));
-			family.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
-			family.queueCount = 1U;
-			family.timestampValidBits = 0U;
-			family.minImageTransferGranularity.width = 1U;
-			family.minImageTransferGranularity.height = 1U;
-			family.minImageTransferGranularity.depth = 1U;
-			i915_vkc_enc_VkQueueFamilyProperties(&build->reply, &family);
-		}
+	ghci_vk_caps_family(&session->device->caps, &family);
+	if (requested != 0U) {
+		drv_i915_wire_reply_u64(reply, 1U);
+		drv_i915_wire_reply_u32(reply, DEVICE_FAMILIES);
+		drv_i915_wire_reply_u64(reply, array_count);
+		for (index = 0U; index < array_count; index++)
+			i915_vkc_enc_VkQueueFamilyProperties(reply, &family);
 	}
 
 	/* Succeeded: the family is reported. */
@@ -771,14 +469,13 @@ families(
 /* vkGetPhysicalDeviceFormatProperties: [physical][u32 format][u64 1] -> [u64 1][properties]. */
 static int
 format(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	VkFormatProperties record;
-	uint32_t optimal;
-	uint32_t linear;
-	uint32_t buffer;
+	struct ghci_vk *vk;
 	uint32_t vk_format;
 
 	/* The physical device, the format and the presence word. */
@@ -788,17 +485,12 @@ format(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* The format's features on each tiling and on buffers. */
-	ghci_vk_format_features(build->session->device, vk_format, &optimal, &linear, &buffer);
-	kern_memset(&record, 0, sizeof(record));
-	record.linearTilingFeatures = linear;
-	record.optimalTilingFeatures = optimal;
-	record.bufferFeatures = buffer;
-
-	/* The presence word and the record. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		i915_vkc_enc_VkFormatProperties(&build->reply, &record);
+	/* The format's features on each tiling and in buffers. */
+	vk = session->device->vk;
+	ghci_vk_caps_format(&vk->formats, vk_format, &record);
+	if (requested != 0U) {
+		drv_i915_wire_reply_u64(reply, 1U);
+		i915_vkc_enc_VkFormatProperties(reply, &record);
 	}
 
 	/* Succeeded: the format is reported. */
@@ -812,37 +504,34 @@ format(
  */
 static int
 image_format(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	VkImageFormatProperties record;
-	uint32_t vk_format;
-	uint32_t type;
-	uint32_t tiling;
-	uint32_t usage;
-	uint32_t create_flags;
+	struct ghci_vk *vk;
+	uint32_t words[5];
 	uint32_t result;
+	unsigned index;
 
 	/* The physical device, the format, type, tiling, usage and flags, and the presence word. */
 	(void)drv_i915_wire_read_u64(reader);
-	vk_format = drv_i915_wire_read_u32(reader);
-	type = drv_i915_wire_read_u32(reader);
-	tiling = drv_i915_wire_read_u32(reader);
-	usage = drv_i915_wire_read_u32(reader);
-	create_flags = drv_i915_wire_read_u32(reader);
+	for (index = 0U; index < 5U; index++)
+		words[index] = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	if (reader->error != 0)
 		return EINVAL;
 
 	/* What such an image may be. */
-	result = image_format_limits(build->session->device, vk_format, type, tiling, usage, create_flags, &record);
+	vk = session->device->vk;
+	result = ghci_vk_caps_image_format(&session->device->caps, &vk->formats, words[0], words[1], words[2], words[3], words[4], &record);
 
 	/* The result, the presence word and the limits. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u32(&build->reply, result);
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		i915_vkc_enc_VkImageFormatProperties(&build->reply, &record);
+	if (requested != 0U) {
+		drv_i915_wire_reply_u32(reply, result);
+		drv_i915_wire_reply_u64(reply, 1U);
+		i915_vkc_enc_VkImageFormatProperties(reply, &record);
 	}
 
 	/* Succeeded: the format is reported. */
@@ -850,99 +539,23 @@ image_format(
 }
 
 /*
- * Fills the limits of an image of a format, type, tiling, usage and
- * flags, and reports VK_SUCCESS or VK_ERROR_FORMAT_NOT_SUPPORTED.  Every
- * image is laid out in linear rows, so the tilings take the same images;
- * 4x multisampling takes 2D images of one level that may be attachments.
- */
-static uint32_t
-image_format_limits(
-	struct ghci_device *device,
-	uint32_t vk_format,
-	uint32_t type,
-	uint32_t tiling,
-	uint32_t usage,
-	uint32_t create_flags,
-	VkImageFormatProperties *record)
-{
-	uint32_t optimal;
-	uint32_t linear;
-	uint32_t buffer;
-	uint32_t features;
-	uint32_t known_flags;
-	int allowed;
-
-	/* The format's features on the tiling. */
-	kern_memset(record, 0, sizeof(*record));
-	ghci_vk_format_features(device, vk_format, &optimal, &linear, &buffer);
-	features = optimal;
-	if (tiling == VK_IMAGE_TILING_LINEAR)
-		features = linear;
-
-	/* Usages the features allow, and the flags of Vulkan 1.0 the device takes (no sparse). */
-	allowed = usage_allowed(usage, features);
-	if (!allowed)
-		return (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED;
-	known_flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-	if ((create_flags & ~known_flags) != 0U)
-		return (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED;
-
-	/* The extent and the layers of each type. */
-	record->maxExtent.width = IMAGE_EDGE;
-	record->maxExtent.height = IMAGE_EDGE;
-	record->maxExtent.depth = 1U;
-	record->maxArrayLayers = IMAGE_LAYERS;
-	record->maxMipLevels = IMAGE_LEVELS;
-	if (type == VK_IMAGE_TYPE_1D) {
-		record->maxExtent.height = 1U;
-	} else if (type == VK_IMAGE_TYPE_3D) {
-		record->maxExtent.width = IMAGE_EDGE_3D;
-		record->maxExtent.height = IMAGE_EDGE_3D;
-		record->maxExtent.depth = IMAGE_EDGE_3D;
-		record->maxArrayLayers = 1U;
-		record->maxMipLevels = 9U;
-	} else if (type != VK_IMAGE_TYPE_2D) {
-		kern_memset(record, 0, sizeof(*record));
-		return (uint32_t)VK_ERROR_FORMAT_NOT_SUPPORTED;
-	}
-
-	/* One sample, and four for a plain 2D image that may be an attachment. */
-	record->sampleCounts = VK_SAMPLE_COUNT_1_BIT;
-	if (type == VK_IMAGE_TYPE_2D &&
-	    (create_flags & VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT) == 0U &&
-	    (features & (VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)) != 0U)
-		record->sampleCounts = sample_counts(device);
-
-	/* The largest image is the largest allocation. */
-	record->maxResourceSize = GHCI_RESOURCE_MAX_BYTES;
-
-	/* Succeeded: such an image may be made. */
-	return (uint32_t)VK_SUCCESS;
-}
-
-/*
  * vkGetPhysicalDeviceImageFormatProperties2 with an external memory
- * handle type: [physical][u64 1][IMAGE_FORMAT_INFO_2 sType][u64 1]
- * [EXTERNAL_IMAGE_FORMAT_INFO sType][u64 0][u32 handle type][u32 format]
- * [u32 type][u32 tiling][u32 usage][u32 flags][u64 1]
- * [IMAGE_FORMAT_PROPERTIES_2 sType][u64 1][EXTERNAL_IMAGE_FORMAT_PROPERTIES
- * sType][u64 0] -> [result][u64 1], the two headers, the external memory
- * properties and the image's limits.  The device shares no memory, so
- * the external properties are empty.
+ * handle type (the chains as uapi/gpu-op.h lays them out) -> [result]
+ * [u64 1], the two headers, the external memory properties (none: the
+ * device shares memory only within itself) and the image's limits.
  */
 static int
 image_format2(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	VkImageFormatProperties record;
-	uint32_t vk_format;
-	uint32_t type;
-	uint32_t tiling;
-	uint32_t usage;
-	uint32_t create_flags;
+	struct ghci_vk *vk;
+	uint32_t words[5];
 	uint32_t result;
+	unsigned index;
 
 	/* The physical device and the input chain up to the image's description. */
 	(void)drv_i915_wire_read_u64(reader);
@@ -954,11 +567,8 @@ image_format2(
 	(void)drv_i915_wire_read_u32(reader);
 
 	/* The image, then the output chain's headers. */
-	vk_format = drv_i915_wire_read_u32(reader);
-	type = drv_i915_wire_read_u32(reader);
-	tiling = drv_i915_wire_read_u32(reader);
-	usage = drv_i915_wire_read_u32(reader);
-	create_flags = drv_i915_wire_read_u32(reader);
+	for (index = 0U; index < 5U; index++)
+		words[index] = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
@@ -968,20 +578,21 @@ image_format2(
 		return EINVAL;
 
 	/* The image's limits. */
-	result = image_format_limits(build->session->device, vk_format, type, tiling, usage, create_flags, &record);
+	vk = session->device->vk;
+	result = ghci_vk_caps_image_format(&session->device->caps, &vk->formats, words[0], words[1], words[2], words[3], words[4], &record);
 
 	/* The result, the two headers, no external memory feature, then the limits. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u32(&build->reply, result);
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		drv_i915_wire_reply_u32(&build->reply, VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2);
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		drv_i915_wire_reply_u32(&build->reply, VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES);
-		drv_i915_wire_reply_u64(&build->reply, 0U);
-		drv_i915_wire_reply_u32(&build->reply, 0U);
-		drv_i915_wire_reply_u32(&build->reply, 0U);
-		drv_i915_wire_reply_u32(&build->reply, 0U);
-		i915_vkc_enc_VkImageFormatProperties(&build->reply, &record);
+	if (requested != 0U) {
+		drv_i915_wire_reply_u32(reply, result);
+		drv_i915_wire_reply_u64(reply, 1U);
+		drv_i915_wire_reply_u32(reply, VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2);
+		drv_i915_wire_reply_u64(reply, 1U);
+		drv_i915_wire_reply_u32(reply, VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES);
+		drv_i915_wire_reply_u64(reply, 0U);
+		drv_i915_wire_reply_u32(reply, 0U);
+		drv_i915_wire_reply_u32(reply, 0U);
+		drv_i915_wire_reply_u32(reply, 0U);
+		i915_vkc_enc_VkImageFormatProperties(reply, &record);
 	}
 
 	/* Succeeded: the format is reported. */
@@ -989,17 +600,15 @@ image_format2(
 }
 
 /*
- * vkGetPhysicalDeviceExternalBufferProperties: [physical][u64 1]
- * [EXTERNAL_BUFFER_INFO sType][u64 0][u32 flags][u32 usage][u32 handle
- * type][u64 1][EXTERNAL_BUFFER_PROPERTIES sType][u64 0] -> [u64 1], the
- * header and the external memory properties: none, the device shares no
- * memory.
+ * vkGetPhysicalDeviceExternalBufferProperties with the context's native
+ * handle type (the chains as uapi/gpu-op.h lays them out) -> [u64 1],
+ * the header and the external memory properties: none.
  */
 static int
 buffer_external(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	/* The physical device and the two chains. */
 	(void)drv_i915_wire_read_u64(reader);
@@ -1016,13 +625,13 @@ buffer_external(
 		return EINVAL;
 
 	/* The presence word, the header and three empty words. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		drv_i915_wire_reply_u32(&build->reply, VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES);
-		drv_i915_wire_reply_u64(&build->reply, 0U);
-		drv_i915_wire_reply_u32(&build->reply, 0U);
-		drv_i915_wire_reply_u32(&build->reply, 0U);
-		drv_i915_wire_reply_u32(&build->reply, 0U);
+	if (requested != 0U) {
+		drv_i915_wire_reply_u64(reply, 1U);
+		drv_i915_wire_reply_u32(reply, VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES);
+		drv_i915_wire_reply_u64(reply, 0U);
+		drv_i915_wire_reply_u32(reply, 0U);
+		drv_i915_wire_reply_u32(reply, 0U);
+		drv_i915_wire_reply_u32(reply, 0U);
 	}
 
 	/* Succeeded: no external memory is reported. */
@@ -1036,17 +645,13 @@ buffer_external(
  */
 static int
 sparse_formats(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	/* The physical device, the five words, the presence word and the capacities. */
 	(void)drv_i915_wire_read_u64(reader);
-	(void)drv_i915_wire_read_u32(reader);
-	(void)drv_i915_wire_read_u32(reader);
-	(void)drv_i915_wire_read_u32(reader);
-	(void)drv_i915_wire_read_u32(reader);
-	(void)drv_i915_wire_read_u32(reader);
+	ghci_vk_skip(reader, 5U * 4U);
 	(void)drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
@@ -1054,10 +659,10 @@ sparse_formats(
 		return EINVAL;
 
 	/* None. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		drv_i915_wire_reply_u32(&build->reply, 0U);
-		drv_i915_wire_reply_u64(&build->reply, 0U);
+	if (requested != 0U) {
+		drv_i915_wire_reply_u64(reply, 1U);
+		drv_i915_wire_reply_u32(reply, 0U);
+		drv_i915_wire_reply_u64(reply, 0U);
 	}
 
 	/* Succeeded: the device has no sparse images. */
@@ -1066,271 +671,237 @@ sparse_formats(
 
 /*
  * vkCreateDevice: [physical][u64 1][create info][u64 0][u64 1][device] ->
- * [result][u64 1][device].  Queues of the one family, one queue, and only
- * the features the device reports.
+ * [result][u64 1][device].  One queue of the one family, only features
+ * the device offers, and a GHCI session of the device's own.
  */
 static int
 create_device(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
 	VkDeviceCreateInfo info;
-	VkPhysicalDeviceFeatures offered;
-	struct ghci_vk_object *object;
 	uint64_t present;
-	uint64_t device;
+	uint64_t handle;
 	uint32_t result;
-	uint32_t index;
-	int within;
 	int error;
 
-	/* The physical device, then the create info when present. */
+	/* The physical device, then the create info. */
 	kern_memset(&info, 0, sizeof(info));
 	(void)drv_i915_wire_read_u64(reader);
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U)
-		i915_vkc_dec_VkDeviceCreateInfo(reader, &build->session->arena, &info);
-	device = ghci_vk_create_tail(reader);
-	if (reader->error != 0)
+		i915_vkc_dec_VkDeviceCreateInfo(reader, &session->arena, &info);
+	handle = ghci_vk_create_tail(reader);
+	if (reader->error != 0 || present != 1U)
 		return EINVAL;
 
-	/* Queues of the one family, one queue each. */
-	result = (uint32_t)VK_SUCCESS;
-	for (index = 0U; index < info.queueCreateInfoCount; index++) {
-		/* The create info names its queues. */
-		if (info.pQueueCreateInfos == NULL) {
-			result = (uint32_t)VK_ERROR_INITIALIZATION_FAILED;
-			break;
-		}
-
-		/* A family the device does not have, or more queues than it has. */
-		if (info.pQueueCreateInfos[index].queueFamilyIndex >= DEVICE_FAMILIES) {
-			result = (uint32_t)VK_ERROR_INITIALIZATION_FAILED;
-		} else if (info.pQueueCreateInfos[index].queueCount != 1U) {
-			result = (uint32_t)VK_ERROR_INITIALIZATION_FAILED;
-		}
-	}
-
-	/* Only the features the device reports. */
-	if (result == (uint32_t)VK_SUCCESS && info.pEnabledFeatures != NULL) {
-		kern_memset(&offered, 0, sizeof(offered));
-		fill_features(build->session->device, &offered);
-		within = features_within(info.pEnabledFeatures, &offered);
-		if (!within)
-			result = (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT;
-	}
-
-	/* The device's record: whether it checks buffer bounds, which changes how programs are built. */
+	/* The queues and features asked for, then the device's GHCI session. */
+	result = device_admit(session, &info);
 	if (result == (uint32_t)VK_SUCCESS) {
-		error = ghci_vk_object_add(build->session, GHCI_VK_DEVICE, device, &object);
-		if (error == ENOMEM)
-			return error;
+		error = device_open(session, handle, &info, &result);
 		if (error != 0)
-			result = (uint32_t)VK_ERROR_INITIALIZATION_FAILED;
+			return error;
 	}
-
-	/* A device made with robustBufferAccess has its programs check their buffer offsets. */
-	if (result == (uint32_t)VK_SUCCESS &&
-	    info.pEnabledFeatures != NULL &&
-	    info.pEnabledFeatures->robustBufferAccess != VK_FALSE)
-		object->as.device.robust = 1;
 
 	/* The result, and the identity when it succeeded. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u32(&build->reply, result);
-		if (result == (uint32_t)VK_SUCCESS) {
-			drv_i915_wire_reply_u64(&build->reply, 1U);
-			drv_i915_wire_reply_u64(&build->reply, device);
-		}
-	}
+	ghci_vk_reply_created(reply, requested, result, handle);
 
 	/* Succeeded: the device exists, or the reply says why not. */
 	return 0;
 }
 
 /*
- * vkDestroyDevice: [device][u64 0], no reply body; relayed so the
- * firmware gives back what it still keeps of the device.
+ * Reports whether a device may be made as asked: VK_SUCCESS, or
+ * VK_ERROR_INITIALIZATION_FAILED for queues the device does not have, or
+ * VK_ERROR_FEATURE_NOT_PRESENT for a feature it does not offer.
+ */
+static uint32_t
+device_admit(
+	struct ghci_vk_session *session,
+	const VkDeviceCreateInfo *info)
+{
+	uint32_t index;
+	int within;
+
+	/* One queue of the one family. */
+	if (info->queueCreateInfoCount != 0U && info->pQueueCreateInfos == NULL)
+		return (uint32_t)VK_ERROR_INITIALIZATION_FAILED;
+	for (index = 0U; index < info->queueCreateInfoCount; index++) {
+		if (info->pQueueCreateInfos[index].queueFamilyIndex >= DEVICE_FAMILIES)
+			return (uint32_t)VK_ERROR_INITIALIZATION_FAILED;
+		if (info->pQueueCreateInfos[index].queueCount != 1U)
+			return (uint32_t)VK_ERROR_INITIALIZATION_FAILED;
+	}
+
+	/* Only the features the device offers. */
+	if (info->pEnabledFeatures != NULL) {
+		within = ghci_vk_caps_features_within(&session->device->caps, info->pEnabledFeatures);
+		if (!within)
+			return (uint32_t)VK_ERROR_FEATURE_NOT_PRESENT;
+	}
+
+	/* Succeeded: the device may be made. */
+	return (uint32_t)VK_SUCCESS;
+}
+
+/*
+ * Makes the device's record and object and opens its GHCI session.  The
+ * result says why a device could not be made: all fifteen sessions in
+ * use (VK_ERROR_TOO_MANY_OBJECTS), no room in CP_HEAP's bound
+ * (VK_ERROR_OUT_OF_DEVICE_MEMORY), or a lost GPU.  Returns 0, or an error
+ * that ends the frame (no host memory, a reused identity).
  */
 static int
+device_open(
+	struct ghci_vk_session *session,
+	uint64_t handle,
+	const VkDeviceCreateInfo *info,
+	uint32_t *result)
+{
+	struct ghci_vk_device *device;
+	struct ghci_vk_object *object;
+	struct ghci_vm *vm;
+	unsigned long irq;
+	int error;
+
+	/* The record. */
+	device = kern_calloc(1U, sizeof(*device));
+	if (device == NULL)
+		return ENOMEM;
+	device->session = session;
+	if (info->pEnabledFeatures != NULL && info->pEnabledFeatures->robustBufferAccess != VK_FALSE)
+		device->robust = 1;
+
+	/* The object, before the session, so that nothing is left to undo on the GPU. */
+	error = ghci_vk_object_add(session, GHCI_VK_DEVICE, handle, device, &object);
+	if (error != 0) {
+		kern_free(device);
+		return error;
+	}
+
+	/* One of the hardware's fifteen sessions; a refusal is the reply's. */
+	error = ghci_vm_open(session->device, session->owner, &vm);
+	if (error != 0) {
+		object->device = NULL;
+		ghci_vk_object_destroy(session, object);
+		kern_free(device);
+		*result = ghci_vk_result(error);
+		if (error == ENOMEM)
+			*result = (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
+		return 0;
+	}
+	device->vm = vm;
+
+	/* The device joins the session's, which the job ioctls and the recovery read. */
+	irq = spin_lock_irqsave(&session->device->irq_lock);
+
+	device->next = session->devices;
+	session->devices = device;
+
+	spin_unlock_irqrestore(&session->device->irq_lock, irq);
+
+	/* Succeeded: the device runs in its GHCI session. */
+	*result = (uint32_t)VK_SUCCESS;
+	return 0;
+}
+
+/* vkDestroyDevice: [device][u64 0], no reply body; the device's objects and GHCI session go with it. */
+static int
 destroy_device(
-	struct ghci_vk_build *build,
-	uint32_t flags,
+	struct ghci_vk_session *session,
 	struct i915_wire_reader *reader)
 {
 	struct ghci_vk_object *object;
-	uint64_t device;
-	uint32_t index;
-	size_t start;
-	int error;
+	uint64_t handle;
+	uint64_t allocator;
 
 	/* The device, then the allocator. */
-	start = reader->offset;
-	device = drv_i915_wire_read_u64(reader);
-	(void)drv_i915_wire_read_u64(reader);
-	if (reader->error != 0)
+	handle = drv_i915_wire_read_u64(reader);
+	allocator = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || allocator != 0U)
 		return EINVAL;
 
-	/* The firmware's objects of the device go. */
-	error = ghci_vk_relay(build, GPU_OP_DESTROY_DEVICE, flags, reader, start, &index);
-	if (error != 0)
-		return error;
-
-	/* The driver's record of it. */
-	object = ghci_vk_object_find(build->session, GHCI_VK_DEVICE, device);
+	/* The device, when the session has it. */
+	object = ghci_vk_object_find(session, GHCI_VK_DEVICE, handle);
 	if (object != NULL)
-		ghci_vk_object_remove(build->session, object);
+		ghci_vk_object_destroy(session, object);
 
 	/* Succeeded: the device is destroyed. */
 	return 0;
 }
 
 /*
- * vkGetDeviceQueue2 as libvulkan sends it: [device][u64 1][sType]
- * [u64 1][timeline sType][u64 0][u32 timeline][u32 flags][u32 family]
- * [u32 index][u64 1][queue] -> [u64 1][queue].
+ * vkGetDeviceQueue2 as libvulkan sends it: [device][u64 1][sType][u64 1]
+ * [timeline sType][u64 0][u32 timeline][u32 flags][u32 family][u32 index]
+ * [u64 1][queue] -> [u64 1][queue].  The queue's jobs complete on the
+ * timeline (1 to 63) from now on.
  */
 static int
 device_queue(
-	struct ghci_vk_build *build,
-	uint32_t flags,
-	struct i915_wire_reader *reader)
+	struct ghci_vk_session *session,
+	uint32_t requested,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
 {
-	uint64_t queue;
+	struct ghci_vk_object *device;
+	struct ghci_vk_object *queue;
+	uint64_t handle;
+	uint64_t identity;
+	unsigned long irq;
+	uint32_t record;
 	uint32_t timeline;
 	uint32_t family;
 	uint32_t index;
+	int error;
 
-	/* Up to the timeline, the timeline, the flags, the family, the index, the presence word, the identity. */
-	(void)drv_i915_wire_read_u64(reader);
-	(void)drv_i915_wire_read_u64(reader);
-	(void)drv_i915_wire_read_u32(reader);
+	/* The device, the two headers, the timeline, the flags, the family, the index and the queue. */
+	handle = drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	(void)drv_i915_wire_read_u32(reader);
+	(void)drv_i915_wire_read_u64(reader);
+	record = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
 	timeline = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u32(reader);
 	family = drv_i915_wire_read_u32(reader);
 	index = drv_i915_wire_read_u32(reader);
 	(void)drv_i915_wire_read_u64(reader);
-	queue = drv_i915_wire_read_u64(reader);
-	if (reader->error != 0)
+	identity = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || record != GPU_OP_RECORD_QUEUE_TIMELINE)
 		return EINVAL;
 
-	/* The one queue of the one family, completing jobs on a timeline of 1 to 63. */
-	if (family >= DEVICE_FAMILIES)
+	/* The one queue of the one family of a device of the session, on a timeline of 1 to 63. */
+	device = ghci_vk_object_find(session, GHCI_VK_DEVICE, handle);
+	if (device == NULL || family >= DEVICE_FAMILIES || index != 0U)
 		return EINVAL;
-	if (index != 0U)
-		return EINVAL;
-	if (timeline == 0U)
-		return EINVAL;
-	if (timeline >= GHCI_VK_TIMELINES)
+	if (timeline == 0U || timeline >= GHCI_VK_TIMELINES)
 		return EINVAL;
 
-	/* The session's jobs may name the queue's timeline from now on (the device has one ring). */
-	build->session->timelines |= (uint64_t)1U << timeline;
+	/* The queue's object, once. */
+	queue = ghci_vk_object_find(session, GHCI_VK_QUEUE, identity);
+	if (queue == NULL) {
+		error = ghci_vk_object_add(session, GHCI_VK_QUEUE, identity, device->device, &queue);
+		if (error != 0)
+			return error;
+	}
+	queue->as.queue.timeline = timeline;
+	queue->as.queue.family = family;
+
+	/* The timeline's jobs follow the device's work. */
+	irq = spin_lock_irqsave(&session->device->irq_lock);
+
+	session->timeline_device[timeline] = device->device;
+
+	spin_unlock_irqrestore(&session->device->irq_lock, irq);
 
 	/* The presence word and the identity. */
-	if (flags != 0U) {
-		drv_i915_wire_reply_u64(&build->reply, 1U);
-		drv_i915_wire_reply_u64(&build->reply, queue);
+	if (requested != 0U) {
+		drv_i915_wire_reply_u64(reply, 1U);
+		drv_i915_wire_reply_u64(reply, identity);
 	}
 
 	/* Succeeded: the queue is known. */
 	return 0;
-}
-
-/* Reports whether every usage of an image needs only features the format has: 1 when it does. */
-static int
-usage_allowed(
-	uint32_t usage,
-	uint32_t features)
-{
-	uint32_t known;
-
-	/* Some usage, all of them of Vulkan 1.0, and a format with features. */
-	known = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-	    VK_IMAGE_USAGE_TRANSFER_DST_BIT |
-	    VK_IMAGE_USAGE_SAMPLED_BIT |
-	    VK_IMAGE_USAGE_STORAGE_BIT |
-	    VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT |
-	    VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT |
-	    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT |
-	    VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
-	if (usage == 0U)
-		return 0;
-	if ((usage & ~known) != 0U)
-		return 0;
-	if (features == 0U)
-		return 0;
-
-	/* Each usage against the feature it needs. */
-	if ((usage & VK_IMAGE_USAGE_TRANSFER_SRC_BIT) != 0U && (features & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT) == 0U)
-		return 0;
-	if ((usage & VK_IMAGE_USAGE_TRANSFER_DST_BIT) != 0U && (features & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) == 0U)
-		return 0;
-	if ((usage & VK_IMAGE_USAGE_SAMPLED_BIT) != 0U && (features & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) == 0U)
-		return 0;
-	if ((usage & VK_IMAGE_USAGE_STORAGE_BIT) != 0U && (features & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) == 0U)
-		return 0;
-	if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U && (features & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) == 0U)
-		return 0;
-	if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U && (features & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) == 0U)
-		return 0;
-
-	/* Succeeded: every usage is allowed. */
-	return 1;
-}
-
-/*
- * Reports whether every feature asked for is one offered: 1 when it is.
- * VkPhysicalDeviceFeatures is an array of VkBool32.
- */
-static int
-features_within(
-	const VkPhysicalDeviceFeatures *asked,
-	const VkPhysicalDeviceFeatures *offered)
-{
-	const VkBool32 *asked_words;
-	const VkBool32 *offered_words;
-	size_t count;
-	size_t index;
-
-	/* The two records as their Boolean words. */
-	asked_words = (const VkBool32 *)(const void *)asked;
-	offered_words = (const VkBool32 *)(const void *)offered;
-	count = sizeof(*asked) / sizeof(VkBool32);
-
-	/* A feature asked for that the device does not offer. */
-	for (index = 0U; index < count; index++) {
-		if (asked_words[index] != VK_FALSE && offered_words[index] == VK_FALSE)
-			return 0;
-	}
-
-	/* Succeeded: every feature asked for is offered. */
-	return 1;
-}
-
-/* Fills a float field by its bits, so this file never touches a floating-point register. */
-static void
-set_float(
-	float *destination,
-	uint32_t bits)
-{
-	/* Stores the bits unchanged. */
-	kern_memcpy(destination, &bits, sizeof(bits));
-}
-
-/* Reports the sample counts of attachments and sampled images: 1, and 4 with 4x multisampling. */
-static uint32_t
-sample_counts(
-	const struct ghci_device *device)
-{
-	/* 4x multisampling of CAPS[29]. */
-	if ((device->caps & GHCI_CAPS_MS4) != 0U)
-		return VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT;
-
-	/* One sample. */
-	return VK_SAMPLE_COUNT_1_BIT;
 }

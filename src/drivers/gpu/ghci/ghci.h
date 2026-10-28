@@ -133,6 +133,13 @@
 #define GHCI_WORK_RECOVER		2U
 #define GHCI_WORK_STOP			4U
 #define GHCI_WORK_DISPLAY		8U
+#define GHCI_WORK_RESET			16U
+
+/*
+ * How long the GPU core's reset waits for the service thread to have
+ * reset the device and seen a fence of the driver's come back.
+ */
+#define GHCI_CORE_RESET_WAIT_MS		30000U
 
 /* The outer locks a caller of the gate holds, which the gate lets go of when it waits. */
 #define GHCI_HOLD_DEVICE		1U
@@ -175,8 +182,16 @@ enum ghci_memory_kind {
 /*
  * The life of a GHCI session: open, the culprit of a fault until the
  * reset, waiting to be opened again after a reset, dead after a reset
- * (until its owner closes it), closing until its last fence passes, and
- * retired (its number free again).
+ * (until its owner closes it), closing until its last fence passes,
+ * retired (its number free again), and isolated by the GPU core because
+ * its stop could not be confirmed.
+ *
+ * DEAD and ISOLATED differ in what the GPU may still do: a DEAD session
+ * died in a reset that ended, so the GPU reaches none of its memory and
+ * its unmaps and close give everything back at once.  An ISOLATED
+ * session may still run in the GPU (no reset happened), so its unmaps
+ * and close place nothing and give nothing back: its mappings, number
+ * and chunks stay with the device until the next reset that ends.
  */
 enum ghci_vm_state {
 	GHCI_VM_OPEN = 1,
@@ -184,13 +199,19 @@ enum ghci_vm_state {
 	GHCI_VM_REPLAY_WAIT,
 	GHCI_VM_DEAD,
 	GHCI_VM_CLOSING,
-	GHCI_VM_RETIRED
+	GHCI_VM_RETIRED,
+	GHCI_VM_ISOLATED
 };
 
-/* The life of a mapping: in the page table, or its CMD_VM_UNMAP placed and its fence not yet passed. */
+/*
+ * The life of a mapping: in the page table, its CMD_VM_UNMAP placed and
+ * its fence not yet passed, or given up by its owner in an isolated
+ * session and held until the next reset that ends.
+ */
 enum ghci_mapping_state {
 	GHCI_MAPPING_LIVE = 1,
-	GHCI_MAPPING_UNMAPPING
+	GHCI_MAPPING_UNMAPPING,
+	GHCI_MAPPING_HELD
 };
 
 struct ghci_device;
@@ -339,7 +360,8 @@ struct ghci_mapping {
  * together, so either one reads it.  The arenas are the runs of 2 MiB
  * chunks it owns, l0_marks the level 0 tables counted in its own page
  * table (with PROT), and counted whether its tables are in CP_HEAP's
- * count.
+ * count.  closed says that the owner of an isolated session gave it up:
+ * the record stays with the device until a reset retires it.
  */
 struct ghci_vm {
 	void *owner;
@@ -350,6 +372,7 @@ struct ghci_vm {
 	int counted;
 	int lost_work;
 	int reported;
+	int closed;
 	struct ghci_ticket open_ticket;
 	struct ghci_ticket close_ticket;
 	struct ghci_mapping *mappings;
@@ -372,12 +395,36 @@ struct ghci_resource {
 
 /*
  * One open of the device by the GPU core.  The device's lock protects
- * the list it is on and its resources.
+ * the list it is on and its resources.  vk is the Vulkan executor's side
+ * of the open, from the open to the close (NULL on a device without the
+ * executor).
  */
 struct ghci_session {
 	struct ghci_device *device;
 	struct ghci_session *next;
 	struct ghci_resource *resources;
+	void *vk;
+};
+
+/*
+ * What the core of the driver asks of the Vulkan executor, which binds
+ * the table at the start and keeps it until the detach: the executor's
+ * side of a session's open and close, the memory a blob of an executor's
+ * VkDeviceMemory shows, the completions the service thread retires, and
+ * the executor's own end at the detach.
+ *
+ *  - session_open fails only without memory and leaves nothing behind.
+ *  - session_close cannot fail; it runs before the session's resources go.
+ *  - memory_blob runs under the device's lock and returns the allocation
+ *    of the session's VkDeviceMemory named by blob_id, or NULL.
+ *  - service runs on the service thread and holds no lock of the device.
+ */
+struct ghci_executor_ops {
+	int (*session_open)(struct ghci_device *device, struct ghci_session *session);
+	void (*session_close)(struct ghci_device *device, struct ghci_session *session);
+	struct ghci_allocation *(*memory_blob)(struct ghci_device *device, struct ghci_session *session, uint64_t blob_id);
+	void (*service)(struct ghci_device *device);
+	void (*detach)(struct ghci_device *device);
 };
 
 /*
@@ -545,6 +592,23 @@ struct ghci_device {
 	uint64_t oom_ticks[GHCI_OOM_STORM];
 	unsigned oom_count;
 	unsigned resets;
+
+	/*
+	 * The Vulkan executor (executor_ops NULL without it) and its record,
+	 * from the start to the detach.
+	 */
+	const struct ghci_executor_ops *executor_ops;
+	void *vk;
+
+	/*
+	 * The GPU core's reset (irq_lock): reset_asked tells the service
+	 * thread to run it, reset_answer is its outcome (0 or an error), and
+	 * reset_rounds counts the resets the service ran for the core, so
+	 * that the caller knows its own one ended.
+	 */
+	int reset_asked;
+	int reset_answer;
+	uint64_t reset_rounds;
 };
 
 int ghci_device_start(struct ghci_device *device);
@@ -567,6 +631,7 @@ int ghci_cp_place_fence(struct ghci_device *device, struct ghci_vm *owner, uint3
 int ghci_cp_submit(struct ghci_device *device, struct ghci_vm *vm, const uint32_t *packets, uint32_t dwords, struct ghci_ticket *ticket);
 int ghci_cp_wait(struct ghci_device *device, const struct ghci_ticket *ticket, unsigned milliseconds);
 enum ghci_ticket_state ghci_cp_ticket(struct ghci_device *device, const struct ghci_ticket *ticket);
+enum ghci_ticket_state ghci_cp_ticket_locked(struct ghci_device *device, const struct ghci_ticket *ticket);
 int ghci_cp_await_fence(struct ghci_device *device, uint64_t seq, unsigned milliseconds);
 void ghci_cp_ring_reset(struct ghci_device *device);
 void ghci_cp_run(struct ghci_device *device);
@@ -579,6 +644,8 @@ void ghci_service_step(struct ghci_device *device, unsigned work);
 void ghci_service_stop(struct ghci_device *device);
 void ghci_service_wake(struct ghci_device *device, unsigned work);
 void ghci_recover_wait(struct ghci_device *device);
+void ghci_recover_fault(struct ghci_device *device);
+int ghci_recover_reset(struct ghci_device *device);
 int ghci_poll_start(struct ghci_device *device);
 void ghci_poll_main(void *argument);
 void ghci_poll_stop(struct ghci_device *device);
@@ -607,6 +674,7 @@ int ghci_vm_replay(struct ghci_device *device);
 uint32_t ghci_vm_active_mask(struct ghci_device *device);
 void ghci_vm_settle(struct ghci_device *device);
 unsigned ghci_vm_take_dead(struct ghci_device *device, void **owners, unsigned capacity);
+void ghci_vm_isolate(struct ghci_device *device, struct ghci_vm *vm);
 
 extern const struct drv_gpu_share_ops ghci_share_ops;
 

@@ -6,35 +6,27 @@
  */
 
 /*
- * The Vulkan executor of a GHCI device: a checking relay.
+ * The Vulkan executor of a GHCI device.
  *
  * libvulkan sends the Kei GPU command protocol (uapi/gpu-op.h) to the
- * node.  The GPU's command processor firmware owns the meaning of the
- * Vulkan objects; the executor decodes every command, checks its wire
- * against the shape libvulkan encodes, and sorts it into one of four:
+ * node.  The executor keeps the Vulkan objects in the kernel: it decodes
+ * every command, answers the instance, the physical device and its
+ * limits from the GPU's capability registers, keeps memory, buffers,
+ * images, command pools and buffers, fences, semaphores and events, and
+ * turns a submission into GHCI packets in the ring of the device.
  *
- *  - D: the driver answers it (the instance, the physical device and its
- *    limits, memory requirements and layouts, shader modules, fences);
- *  - R: it is relayed to the firmware as it came;
- *  - R': the driver rewrites it into a GHCI gpu-op of its own (an
- *    allocation becomes GHCI_MEMORY, each stage of a pipeline is compiled
- *    and handed over as GHCI_PROGRAM before the create is relayed);
- *  - X: it is refused, which ends the frame.
+ * One VkDevice is one GHCI session (a number 1 to 15) with its own GPU
+ * addresses, and one executor heap in them for what the driver itself
+ * writes for the GPU.  The objects of a node session live in a table of
+ * the session's, found by their kind and the identity libvulkan chose.
  *
- * The relayed commands of one frame are staged in GPU memory as records
- * [number][flags][result index][arguments] and the ring carries a single
- * GHCI_FRAME packet that points at them.  The replies are all the
- * driver's: a D reply is written while the frame is decoded, a relayed
- * command's reply is laid down at once with its VkResult word left to be
- * filled from the firmware's result record, and the trailer libvulkan
- * polls is stored last, once every result is in.  That happens on the
- * device's service thread when the firmware raises RESULT; the submitting
- * ioctl never waits for the GPU.
- *
- * Locks.  Everything here runs under the device's lock (a mutex), which
- * serializes the decode of every session's frames, the staging ring, the
- * list of frames in flight and the object tables.  The job markers are
- * under the same lock.
+ * Locks.  The GPU core admits one ordinary command of a node session at
+ * a time, so the object table and the arena need no lock of their own.
+ * What the service thread, the job ioctls and the GPU core's recovery
+ * read besides (the sessions of the executor, each session's devices,
+ * timelines, job markers, queued frames and last tickets, and the stop
+ * marks) changes only under the device's irq_lock.  The executor calls
+ * the core's session and memory functions without the device's lock.
  */
 
 #ifndef DRIVERS_GPU_GHCI_VK_VK_H
@@ -43,431 +35,353 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <libc/vulkan/vulkan_core.h>
+
 #include "drivers/gpu/i915/vk/vk-codec.h"
 
 #include "../ghci.h"
 #include "../layout.h"
-#include "vk-node.h"
 
-struct ghci_vk_session;
-struct ghci_vk_frame;
-
-/* The buckets a session's objects are found by. */
+/* The buckets of a session's object table, and the most objects a session keeps. */
 #define GHCI_VK_BUCKETS			256U
-
-/* The most objects the driver keeps for one session. */
 #define GHCI_VK_OBJECTS_MAX		65536U
 
-/* The scratch one command's records are decoded into. */
+/* The scratch one command decodes its records into. */
 #define GHCI_VK_ARENA_BYTES		(256U * 1024U)
 
-/* The staging ring of the device, which holds the frames in flight and their result pages. */
-#define GHCI_VK_STAGING_BYTES		(4U << 20)
-
-/* The most bytes one frame stages, and the most records it carries. */
-#define GHCI_VK_FRAME_BYTES_MAX		(2U << 20)
-#define GHCI_VK_FRAME_RECORDS_MAX	16384U
-
-/* The heap the device lends the firmware for its objects and recordings. */
-#define GHCI_VK_HEAP_BYTES		(16U << 20)
-
-/* How deep command streams in blobs nest, and how much of them one frame copies. */
-#define GHCI_VK_STREAM_DEPTH		4U
-#define GHCI_VK_STREAM_COPY_BYTES	(16U << 20)
-
-/* The shader stages of one pipeline the device runs: vertex and fragment, or compute. */
-#define GHCI_VK_STAGES			2U
-
-/* The attachments and subpasses of a render pass the driver keeps for the compiler. */
-#define GHCI_VK_PASS_ATTACHMENTS	16U
-#define GHCI_VK_PASS_SUBPASSES		8U
-
-/* The timelines a queue may complete jobs on (1 to 63; 0 is the context's own). */
+/* The timelines a queue may name (1 to 63; 0 is the node session's own). */
 #define GHCI_VK_TIMELINES		64U
 
-/* The memory types: device local only, and device local, host visible and coherent. */
-#define GHCI_VK_MEMORY_DEVICE		0U
-#define GHCI_VK_MEMORY_HOST		1U
-#define GHCI_VK_MEMORY_TYPES		2U
-
-/* The VkFormat values of Vulkan 1.0's core formats, 0 to 184. */
+/* The VkFormat values of Vulkan 1.0 (0 to VK_FORMAT_ASTC_12x12_SRGB_BLOCK). */
 #define GHCI_VK_FORMATS			185U
 
-/* The VkResult word of a staged record the firmware has not written yet. */
-#define GHCI_VK_RESULT_PENDING		0x7fffffffU
+/* The completions the service retires in one pass under the interrupt's lock. */
+#define GHCI_VK_DONE_BATCH		32U
 
-/*
- * The kinds of objects the driver keeps.  Every other object (views,
- * layouts, pools, sets, framebuffers, command buffers, semaphores) is the
- * firmware's alone and is relayed without a record here.
- */
+/* The size of the memory heap the device reports, and the largest allocation. */
+#define GHCI_VK_HEAP_SIZE		(256ULL << 20)
+
+/* The alignment of every buffer and image in memory (the tiled subresource's 256 bytes). */
+#define GHCI_VK_ALIGN			256U
+
+/* The first block of a device's executor heap, the largest, and the runs one block keeps. */
+#define GHCI_VK_HEAP_FIRST_BYTES	(64U * 1024U)
+#define GHCI_VK_HEAP_BLOCK_MAX		(16U << 20)
+#define GHCI_VK_HEAP_EXTENTS		256U
+
+/* The most bytes of recorded commands one command buffer keeps. */
+#define GHCI_VK_RECORD_MAX		(16U << 20)
+
+/* The kinds of object the executor keeps; a lookup names the kind it expects. */
 enum ghci_vk_kind {
 	GHCI_VK_DEVICE = 1,
+	GHCI_VK_QUEUE,
 	GHCI_VK_MEMORY,
 	GHCI_VK_BUFFER,
 	GHCI_VK_IMAGE,
-	GHCI_VK_SHADER,
-	GHCI_VK_PIPELINE,
 	GHCI_VK_FENCE,
+	GHCI_VK_SEMAPHORE,
 	GHCI_VK_EVENT,
-	GHCI_VK_QUERY_POOL,
-	GHCI_VK_RENDER_PASS
+	GHCI_VK_COMMAND_POOL,
+	GHCI_VK_COMMAND_BUFFER
+};
+
+/* The life of a command buffer: new or reset, recording, and ended (ready to submit). */
+enum ghci_vk_recording {
+	GHCI_VK_RECORD_INITIAL = 0,
+	GHCI_VK_RECORD_RECORDING,
+	GHCI_VK_RECORD_EXECUTABLE
+};
+
+struct ghci_vk_session;
+struct ghci_vk_object;
+
+/*
+ * The Vulkan format features of each VkFormat on optimal and linear
+ * tiling and in buffers, made once at the attach from the FMT block (or
+ * the table of the specification without it) and not changed after.
+ * from_registers says that FMT was read.
+ */
+struct ghci_vk_formats {
+	uint32_t optimal[GHCI_VK_FORMATS];
+	uint32_t linear[GHCI_VK_FORMATS];
+	uint32_t buffer[GHCI_VK_FORMATS];
+	int from_registers;
 };
 
 /*
- * What a patch of a reply does with a record's result once the firmware
- * wrote it: store the VkResult in the reply, or remember the GPU address
- * the firmware gave an event or a query pool (its aux word), or copy a
- * query pool's results once the work before them has finished.
+ * The executor of one GHCI device, from the attach to the detach.
+ *
+ * sessions lists the node sessions with the executor's side open
+ * (irq_lock), for the service thread's retirement.  refusals counts the
+ * refused commands the log has shown, so that a client cannot flood it;
+ * it is counted without a lock (two sessions at once may show one more).
  */
-enum ghci_vk_patch_kind {
-	GHCI_VK_PATCH_RESULT = 1,
-	GHCI_VK_PATCH_EVENT,
-	GHCI_VK_PATCH_QUERY_POOL,
-	GHCI_VK_PATCH_QUERY_RESULTS
+struct ghci_vk {
+	struct ghci_device *device;
+	struct ghci_vk_formats formats;
+	struct ghci_vk_session *sessions;
+	unsigned refusals;
 };
 
-/* A VkDevice: whether it was made with robustBufferAccess, which changes how shaders are compiled. */
+/*
+ * One block of a device's executor heap: host memory mapped once into
+ * the device's GHCI session, and the allocator of its bytes.  The block
+ * lives until its device is destroyed.
+ */
+struct ghci_vk_heap_block {
+	struct ghci_vk_heap_block *next;
+	struct ghci_allocation *allocation;
+	struct ghci_mapping *mapping;
+	struct ghci_range_map map;
+	struct ghci_range_extent extents[GHCI_VK_HEAP_EXTENTS];
+};
+
+/*
+ * One VkDevice: its GHCI session, its executor heap, and the ticket of
+ * the last work it placed in the ring.  It lives from vkCreateDevice to
+ * vkDestroyDevice (or the node session's close).  next, last and
+ * submitted change under irq_lock; the rest belongs to the session's
+ * commands.
+ */
 struct ghci_vk_device {
+	struct ghci_vk_session *session;
+	struct ghci_vk_device *next;
+	struct ghci_vm *vm;
+	struct ghci_vk_heap_block *heap;
+	uint64_t heap_bytes;
+	struct ghci_ticket last;
+	int submitted;
 	int robust;
 };
 
 /*
- * A VkDeviceMemory: the allocation that holds it, its type and the bytes
- * libvulkan asked for.  The allocation is on the session's list, so the
- * session's close gives it back even when the memory was never freed.
- * An imported memory object is another session's memory, which the object
- * holds (imported) instead of owning it.
+ * A VkDeviceMemory: an allocation of its own (or the allocation of an
+ * imported resource), which it holds, and its mapping in the device's
+ * GHCI session.
  */
 struct ghci_vk_memory {
 	struct ghci_allocation *allocation;
+	struct ghci_mapping *mapping;
 	uint64_t bytes;
 	uint32_t type;
 	int imported;
 };
 
-/* A VkBuffer: its size and usage, which decide its memory requirements. */
+/*
+ * A VkBuffer: its size and use, and where it is bound: the identity of
+ * the memory object (0 until then; the memory may be freed before the
+ * buffer, so it is found again by its identity) and the offset.
+ */
 struct ghci_vk_buffer {
 	uint64_t size;
 	uint32_t usage;
+	uint32_t flags;
+	uint64_t memory;
+	uint64_t offset;
 };
 
 /*
- * A VkImage: what its layout (layout.h) and its memory requirements are
- * computed from.
+ * A VkImage: what it was made as, its linear layout (section 8.5.2 of
+ * the specification) and its size, and where it is bound (the memory
+ * object's identity, as a buffer's).
  */
 struct ghci_vk_image {
 	uint32_t format;
 	uint32_t type;
-	uint32_t width;
-	uint32_t height;
-	uint32_t depth;
-	uint32_t levels;
-	uint32_t layers;
-	uint32_t samples;
 	uint32_t tiling;
 	uint32_t usage;
+	uint32_t flags;
+	struct ghci_layout_image layout;
+	uint64_t bytes;
+	uint64_t memory;
+	uint64_t offset;
 };
 
-/* A VkShaderModule: its SPIR-V words, compiled when a pipeline is made of it. */
-struct ghci_vk_shader {
-	uint32_t *words;
-	uint32_t word_count;
-};
-
-/*
- * A VkPipeline: the GPU memory of its programs, one per stage, given
- * back after the session's last fence when the pipeline is destroyed.
- */
-struct ghci_vk_pipeline {
-	struct ghci_allocation *programs[GHCI_VK_STAGES];
-	unsigned program_count;
-};
-
-/*
- * A VkFence: signaled says it was made or last left signaled by the host;
- * pending says a submission signals it with ticket, the device fence that
- * follows that submission.
- */
+/* A VkFence: signaled on the host, or by the ticket of the submission that signals it. */
 struct ghci_vk_fence {
 	int signaled;
-	int pending;
+	int submitted;
 	struct ghci_ticket ticket;
 };
 
-/*
- * A VkEvent or a VkQueryPool: the GPU address of its words in the
- * firmware's heap, which the firmware reports when it makes the object
- * (known says that report came), and a pool's query count.
- */
-struct ghci_vk_heap_object {
-	uint32_t address;
-	uint32_t count;
-	int known;
+/* A VkEvent: one 64-bit word in the device's executor heap that the host and the GPU set. */
+struct ghci_vk_event {
+	struct ghci_vk_heap_block *block;
+	uint32_t offset;
+	volatile uint64_t *word;
+};
+
+/* A VkQueue: the timeline its jobs complete on. */
+struct ghci_vk_queue {
+	uint32_t timeline;
+	uint32_t family;
+};
+
+/* A VkCommandPool: its flags and queue family. */
+struct ghci_vk_command_pool {
+	uint32_t flags;
+	uint32_t family;
 };
 
 /*
- * A VkRenderPass, as far as the compiler needs it: the format and the
- * samples of each attachment, and each subpass's input attachments by
- * their index (VK_ATTACHMENT_UNUSED for none).
+ * A VkCommandBuffer: its pool, its level, its recording's state, and the
+ * recorded commands as they came on the wire ([number][0][buffer] and
+ * the arguments, one after another), which a submission executes.
+ * failed says that a command could not be kept (the end of the
+ * recording reports it).
  */
-struct ghci_vk_render_pass {
-	uint32_t attachment_count;
-	uint32_t formats[GHCI_VK_PASS_ATTACHMENTS];
-	uint32_t samples[GHCI_VK_PASS_ATTACHMENTS];
-	uint32_t subpass_count;
-	uint32_t input_count[GHCI_VK_PASS_SUBPASSES];
-	uint32_t inputs[GHCI_VK_PASS_SUBPASSES][GHCI_GSI1_INPUT_ATTACHMENTS];
+struct ghci_vk_command_buffer {
+	uint64_t pool;
+	uint32_t level;
+	enum ghci_vk_recording state;
+	int failed;
+	uint8_t *bytes;
+	uint32_t used;
+	uint32_t capacity;
+	uint32_t commands;
 };
 
 /*
- * One object the driver keeps, found by its kind and wire identity in
- * the session's buckets.  It lives from the command that made it to the
- * one that destroyed it, or to the session's close.
+ * One object of a node session, in the session's table from its create to
+ * its destroy.  device is the VkDevice it was made on (a device's own
+ * object points at its record).
  */
 struct ghci_vk_object {
 	struct ghci_vk_object *next;
 	enum ghci_vk_kind kind;
 	uint64_t identity;
+	struct ghci_vk_device *device;
 	union {
-		struct ghci_vk_device device;
 		struct ghci_vk_memory memory;
 		struct ghci_vk_buffer buffer;
 		struct ghci_vk_image image;
-		struct ghci_vk_shader shader;
-		struct ghci_vk_pipeline pipeline;
 		struct ghci_vk_fence fence;
-		struct ghci_vk_heap_object heap;
-		struct ghci_vk_render_pass pass;
+		struct ghci_vk_event event;
+		struct ghci_vk_queue queue;
+		struct ghci_vk_command_pool pool;
+		struct ghci_vk_command_buffer commands;
 	} as;
 };
 
 /*
- * One place in a reply that waits: the staged record whose result it
- * takes, what the result is used for, the reply offset of a VkResult
- * word (or of the results a query copy writes), and the object an
- * address belongs to.  A query copy also keeps its first query, its
- * count, its stride, its flags and its bytes.
- */
-struct ghci_vk_patch {
-	enum ghci_vk_patch_kind kind;
-	uint32_t index;
-	uint32_t offset;
-	uint64_t identity;
-	uint32_t first;
-	uint32_t count;
-	uint32_t stride;
-	uint32_t flags;
-	uint32_t bytes;
-};
-
-/*
- * One frame being decoded.
- *
- * reply is the cursor in the reply region the frame selected, in the
- * blob reply_blob; trailer_offset is where the trailer goes once it was
- * asked for.  stage collects the records to relay (their bytes and their
- * count), patches what the results fill in, releases the allocations to
- * give back once the frame is in the ring, and fences the VkFences its
- * submissions signal.  copy_budget and depth bound the streams in blobs.
- * wait_fence says a reply waits for the session's work to finish.
- */
-struct ghci_vk_build {
-	struct ghci_vk_session *session;
-	struct i915_wire_writer reply;
-	struct ghci_allocation *reply_blob;
-	int trailer;
-	uint32_t trailer_offset;
-	uint8_t *stage;
-	uint32_t stage_bytes;
-	uint32_t stage_capacity;
-	uint32_t records;
-	struct ghci_vk_patch *patches;
-	unsigned patch_count;
-	unsigned patch_capacity;
-	struct ghci_allocation **releases;
-	unsigned release_count;
-	unsigned release_capacity;
-	uint64_t *fences;
-	unsigned fence_count;
-	unsigned fence_capacity;
-	uint64_t copy_budget;
-	unsigned depth;
-	int wait_fence;
-};
-
-/*
- * One frame in flight, from its submission to its completion.
- *
- * The frames of every session are on the device's list in ring order.  A
- * frame with records waits for the firmware's frame result at page +
- * 8 x records; one without (only driver answers, while frames are ahead
- * of it) waits for its turn.  wait_fence makes it also wait for the
- * session's last fence (an empty frame of a context fence).  reply_blob
- * is held until the frame completes.  staging_bytes is what the frame
- * uses up of the staging ring, given back when it retires.
+ * A queued frame of a node session whose completion waits for the
+ * session's work placed until the frame ran (irq_lock).  A frame with
+ * nothing to wait for has ticket.seq 0; failed ends it with an error.
  */
 struct ghci_vk_frame {
 	struct ghci_vk_frame *next;
-	struct ghci_vk_session *session;
 	struct drv_gpu_completion *completion;
-	struct ghci_allocation *reply_blob;
-	int trailer;
-	uint32_t trailer_offset;
-	uint32_t records;
-	volatile uint32_t *page;
-	struct ghci_vk_patch *patches;
-	unsigned patch_count;
-	int wait_fence;
 	struct ghci_ticket ticket;
-	uint32_t staging_bytes;
+	int failed;
 };
 
 /*
- * The executor's part of a device: the firmware's heap, the page the
- * results of the driver's control packets go to, the staging ring and
- * the frames in flight.
+ * The executor's side of one node session, from its open to its close.
  *
- * The staging ring holds each frame's result page and records from head
- * (where the next frame goes) on; used counts the bytes the frames in
- * flight take, with the end of the ring a frame skipped, and a frame
- * never wraps.  frames and frames_last are the list in ring order.
- * heap_ready says the firmware took the heap since its last start, and
- * warps is what the GPU says it runs at once.  faulted says the core
- * asked the device to take no new work.  The format table is read from
- * the GPU once at the start (fmt_present says it has one), with the
- * colour attachments its render output takes.  The device's lock
- * protects all.
- */
-struct ghci_vk_engine {
-	struct ghci_allocation *heap;
-	struct ghci_allocation *control;
-	struct ghci_allocation *staging;
-	uint32_t head;
-	uint32_t used;
-	struct ghci_vk_frame *frames;
-	struct ghci_vk_frame *frames_last;
-	int heap_ready;
-	uint32_t warps;
-	uint32_t registers;
-	int faulted;
-	int fmt_present;
-	uint32_t color_attachments;
-	uint32_t fmt_optimal[GHCI_VK_FORMATS];
-	uint32_t fmt_linear[GHCI_VK_FORMATS];
-	uint32_t fmt_buffer[GHCI_VK_FORMATS];
-};
-
-/*
- * One open's executor session.
- *
- * owner is the device's session (its job tag names the firmware's
- * session).  opened says the firmware took SESSION_OPEN; lost says the
- * firmware's objects of the session are gone (a reset) and every later
- * frame fails.  pending counts its frames in flight.  timelines has bit n
- * once a queue completes jobs on timeline n.  jobs are the session's job
- * markers.  The device's lock protects every field.
+ * The object table, the arena and the opcodes for the log belong to the
+ * session's commands.  Under irq_lock: next (the executor's list), the
+ * devices, the device of each timeline, the job markers (and the
+ * timeline each was reserved on), the queued
+ * frames, the ticket of the session's last work, and the marks the GPU
+ * core's stop and isolation set.
  */
 struct ghci_vk_session {
 	struct ghci_device *device;
 	struct ghci_session *owner;
 	struct ghci_vk_object *buckets[GHCI_VK_BUCKETS];
 	unsigned object_count;
-	int opened;
-	int lost;
-	unsigned pending;
-	uint64_t timelines;
-	struct ghci_job_table jobs;
 	struct i915_wire_arena arena;
 	uint32_t last_opcode;
+	uint32_t failed_opcode;
+	struct ghci_vk_session *next;
+	struct ghci_vk_device *devices;
+	struct ghci_vk_device *timeline_device[GHCI_VK_TIMELINES];
+	struct ghci_job_table jobs;
+	uint32_t marker_timeline[GHCI_JOB_MARKERS];
+	struct ghci_vk_frame *frames;
+	unsigned frame_count;
+	struct ghci_ticket last;
+	int submitted;
+	int stopping;
+	int isolated;
 };
 
-/* A command's handler: sets *handled when the number is its own. */
-typedef int (*ghci_vk_route)(struct ghci_vk_build *build, uint32_t opcode, uint32_t flags, struct i915_wire_reader *reader, int *handled);
-
 /*
- * The sessions (vk-session.c).  The device's lock is held.
+ * A handler of a group of commands: it runs the command when it owns the
+ * opcode (and sets *handled), with the reader after the command's header
+ * and the reply writer after the echoed opcode (written only when
+ * requested).  Returns 0, or the error that ends the frame.
  */
+typedef int (*ghci_vk_route)(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
 
-/* Finds an object of a kind by its identity, or NULL. */
+/* vk-node.c: the executor's attach and the node's operations. */
+int ghci_vk_attach(struct ghci_device *device);
+
+/* vk-object.c: the session's side of the node, its objects and its arena. */
+int ghci_vk_session_open(struct ghci_device *device, struct ghci_session *owner);
+void ghci_vk_session_close(struct ghci_device *device, struct ghci_session *owner);
 struct ghci_vk_object *ghci_vk_object_find(struct ghci_vk_session *session, enum ghci_vk_kind kind, uint64_t identity);
-
-/* Makes and lists an object (zeroed payload).  Returns 0, EEXIST, ENOSPC or ENOMEM. */
-int ghci_vk_object_add(struct ghci_vk_session *session, enum ghci_vk_kind kind, uint64_t identity, struct ghci_vk_object **result);
-
-/* Unlists an object and frees its record (not what it holds). */
-void ghci_vk_object_remove(struct ghci_vk_session *session, struct ghci_vk_object *object);
-
-/* Takes cleared scratch for the current command, or NULL when the arena is used up. */
+int ghci_vk_object_add(struct ghci_vk_session *session, enum ghci_vk_kind kind, uint64_t identity, struct ghci_vk_device *device, struct ghci_vk_object **result);
+void ghci_vk_object_destroy(struct ghci_vk_session *session, struct ghci_vk_object *object);
+void ghci_vk_objects_of_device(struct ghci_vk_session *session, struct ghci_vk_device *device);
 void *ghci_vk_arena_take(struct ghci_vk_session *session, size_t bytes);
 
-/*
- * The frame (vk-stream.c).  The device's lock is held.
- */
-
-/* Decodes, stages and submits one frame of commands of a session. */
-int ghci_vk_submit(struct ghci_device *device, struct ghci_session *owner, const void *wire, uint32_t bytes, uint32_t flags, struct drv_gpu_completion *completion);
-
-/* Waits, a bounded time, for every frame of a session to complete. */
-void ghci_vk_drain(struct ghci_device *device, struct ghci_session *owner);
-
-/* Appends a record to the frame's stage and reports its result index. */
-int ghci_vk_stage(struct ghci_vk_build *build, uint32_t opcode, uint32_t flags, const void *arguments, uint32_t bytes, uint32_t *index);
-
-/* Relays the span of the reader from start as one record. */
-int ghci_vk_relay(struct ghci_vk_build *build, uint32_t opcode, uint32_t flags, struct i915_wire_reader *reader, size_t start, uint32_t *index);
-
-/* Writes a VkResult word to the reply that the record's result fills in later. */
-int ghci_vk_reply_result(struct ghci_vk_build *build, uint32_t index);
-
-/* Asks for a record's aux word to be kept as the GPU address of an event or a query pool. */
-int ghci_vk_patch_address(struct ghci_vk_build *build, enum ghci_vk_patch_kind kind, uint32_t index, uint64_t identity);
-
-/* Adds a patch to the frame and reports it, cleared, for its caller to fill. */
-int ghci_vk_patch_add(struct ghci_vk_build *build, struct ghci_vk_patch **patch);
-
-/* Writes a query copy's results into a reply from the pool's words in the firmware's heap. */
-void ghci_vk_query_copy(struct ghci_device *device, struct ghci_vk_session *session, const struct ghci_vk_patch *patch, uint8_t *view);
-
-/* Gives an allocation back once the frame is in the ring (after its fence). */
-int ghci_vk_release_later(struct ghci_vk_build *build, struct ghci_allocation *allocation);
-
-/* Binds a VkFence to the fence that follows the frame. */
-int ghci_vk_fence_later(struct ghci_vk_build *build, uint64_t identity);
-
-/*
- * The handlers of each group of commands.
- */
-
-/* The instance, the physical device, the device and the queue (vk-device.c). */
-int ghci_vk_device_route(struct ghci_vk_build *build, uint32_t opcode, uint32_t flags, struct i915_wire_reader *reader, int *handled);
-
-/* Memory, buffers, images, their requirements and layouts, fences, events and queries (vk-memory.c). */
-int ghci_vk_memory_route(struct ghci_vk_build *build, uint32_t opcode, uint32_t flags, struct i915_wire_reader *reader, int *handled);
-
-/* Shader modules, pipeline caches and pipelines (vk-program.c). */
-int ghci_vk_program_route(struct ghci_vk_build *build, uint32_t opcode, uint32_t flags, struct i915_wire_reader *reader, int *handled);
-
-/* The other objects, the command buffers, the recorded commands and the queue (vk-relay.c). */
-int ghci_vk_relay_route(struct ghci_vk_build *build, uint32_t opcode, uint32_t flags, struct i915_wire_reader *reader, int *handled);
-
-/*
- * The parts the handlers share.
- */
-
-/* Reads the tail of the create form, [u64 0][u64 1][identity]: the identity, or 0 with the reader's error. */
+/* vk-reply.c: the forms every command shares, the results and the float words. */
 uint64_t ghci_vk_create_tail(struct i915_wire_reader *reader);
-
-/* Reads the destroy form, [device][identity][u64 0]: the identity. */
-uint64_t ghci_vk_destroy_form(struct i915_wire_reader *reader);
-
-/* Reports the bytes of a texel (or of a 4x4 block) of a VkFormat, 0 for a format the device does not have. */
-uint32_t ghci_vk_format_bytes(uint32_t format, uint32_t *block);
-
-/* Reports the VkFormatFeatureFlags of a format for optimal and linear tiling and for buffers. */
-void ghci_vk_format_features(struct ghci_device *device, uint32_t format, uint32_t *optimal, uint32_t *linear, uint32_t *buffer);
-
-/* Reports the VkResult of an executor errno. */
+uint64_t ghci_vk_destroy_form(struct i915_wire_reader *reader, uint64_t *device);
+uint64_t ghci_vk_read_count(struct i915_wire_reader *reader);
+void ghci_vk_skip(struct i915_wire_reader *reader, uint64_t bytes);
+void ghci_vk_reply_created(struct i915_wire_writer *reply, uint32_t requested, uint32_t result, uint64_t identity);
+void ghci_vk_reply_result(struct i915_wire_writer *reply, uint32_t requested, uint32_t result);
 uint32_t ghci_vk_result(int error);
+uint32_t ghci_vk_float_ratio(uint64_t numerator, uint64_t denominator);
+void ghci_vk_set_float(float *destination, uint32_t bits);
 
-#endif /* DRIVERS_GPU_GHCI_VK_VK_H */
+/* vk-dispatch.c and vk-stream.c: the command stream. */
+int ghci_vk_dispatch(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+int ghci_vk_stream_execute(struct ghci_vk_session *session, const void *wire, uint32_t bytes);
+
+/* vk-caps.c: the answers the capability registers give. */
+void ghci_vk_caps_features(const struct ghci_caps *caps, VkPhysicalDeviceFeatures *features);
+void ghci_vk_caps_limits(const struct ghci_caps *caps, VkPhysicalDeviceLimits *limits);
+void ghci_vk_caps_memory(const struct ghci_caps *caps, VkPhysicalDeviceMemoryProperties *memory);
+void ghci_vk_caps_family(const struct ghci_caps *caps, VkQueueFamilyProperties *family);
+uint32_t ghci_vk_caps_sample_counts(const struct ghci_caps *caps);
+void ghci_vk_caps_format(const struct ghci_vk_formats *formats, uint32_t format, VkFormatProperties *properties);
+uint32_t ghci_vk_caps_image_format(const struct ghci_caps *caps, const struct ghci_vk_formats *formats, uint32_t format, uint32_t type, uint32_t tiling, uint32_t usage, uint32_t flags, VkImageFormatProperties *properties);
+int ghci_vk_caps_features_within(const struct ghci_caps *caps, const VkPhysicalDeviceFeatures *asked);
+unsigned ghci_vk_caps_shortfalls(const struct ghci_caps *caps, const struct ghci_vk_formats *formats, const char **names, unsigned capacity);
+
+/* vk-format.c: the formats the hardware takes, and their features. */
+int ghci_vk_format_size(uint32_t format, uint32_t *bytes, uint32_t *block);
+void ghci_vk_formats_table(const struct ghci_caps *caps, struct ghci_vk_formats *formats);
+void ghci_vk_formats_from_bits(const struct ghci_caps *caps, uint32_t format, uint32_t optimal, uint32_t linear, uint32_t buffer, struct ghci_vk_formats *formats);
+void ghci_vk_formats_read(struct ghci_device *device, struct ghci_vk_formats *formats);
+
+/* The routes of the command groups. */
+int ghci_vk_device_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int ghci_vk_memory_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int ghci_vk_command_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+int ghci_vk_queue_route(struct ghci_vk_session *session, uint32_t opcode, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply, int *handled);
+
+/* vk-memory.c: memory, buffers, images and the executor heap. */
+struct ghci_allocation *ghci_vk_memory_blob(struct ghci_device *device, struct ghci_session *owner, uint64_t blob_id);
+int ghci_vk_heap_take(struct ghci_vk_session *session, struct ghci_vk_device *device, uint32_t bytes, uint32_t alignment, struct ghci_vk_heap_block **block, uint32_t *offset);
+void ghci_vk_heap_give(struct ghci_vk_heap_block *block, uint32_t offset);
+void ghci_vk_heap_fini(struct ghci_vk_session *session, struct ghci_vk_device *device);
+void ghci_vk_memory_release(struct ghci_vk_session *session, struct ghci_vk_object *object);
+void ghci_vk_image_layout(uint32_t width, uint32_t height, uint32_t depth, uint32_t levels, uint32_t layers, uint32_t samples, uint32_t texel_bytes, uint32_t block, struct ghci_layout_image *layout);
+
+/* vk-command.c: what a command buffer lets go of. */
+void ghci_vk_commands_release(struct ghci_vk_object *object);
+
+/* vk-queue.c: the completions, the drain and the stop. */
+void ghci_vk_service(struct ghci_device *device);
+void ghci_vk_drain(struct ghci_device *device, struct ghci_vk_session *session);
+int ghci_vk_frame_queue(struct ghci_vk_session *session, uint32_t timeline, struct drv_gpu_completion *completion);
+void ghci_vk_submitted(struct ghci_vk_device *device, const struct ghci_ticket *ticket);
+int ghci_vk_session_pending(struct ghci_vk_session *session);
+void ghci_vk_session_fail(struct ghci_vk_session *session);
+
+#endif

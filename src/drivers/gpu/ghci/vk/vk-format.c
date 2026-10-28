@@ -6,277 +6,427 @@
  */
 
 /*
- * The formats of a GHCI device: the bytes of a texel of each VkFormat the
- * driver lays out, and the format features the device reports.
+ * The formats of the Vulkan executor: the formats the hardware takes,
+ * their sizes, and their Vulkan format features.
  *
- * The GPU says which formats its fixed-function units take through the
- * FMT extended capability (GHCI section 4, draft): the driver reads every
- * VkFormat's features once at the start and adds the features its shader
- * programs provide (storage images and storage texel buffers, which the
- * compiler reaches through memory).  A GPU without the capability takes
- * the formats every GHCI GPU has: RGBA8 and BGRA8 colour, and the D24S8
- * and D32 depth formats.
- *
- * Values referenced: the VkFormat values and the texel sizes of the
- * Vulkan 1.0 core formats (vk.xml, the formats table of the Vulkan
- * specification).
+ * The features come from the FMT block (one VkFormat at a time through
+ * FMT_INDEX) when the device has it, and from the specification's table
+ * of formats narrowed by the capability flags when it does not.  Either
+ * way the driver then drops what it cannot do itself: an sRGB format
+ * without EXT_CAP_FMT0's sRGB bit, a storage image the compiler cannot
+ * address, and the blits of a device without the blit engine are what
+ * the driver's own shaders can do instead (sampled sources, colour
+ * attachment destinations, no depth).
  */
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include <kern/kcrt.h>
-#include <libc/vulkan/vulkan_core.h>
+#include <kern/lock.h>
+#include <uapi/errno.h>
 
 #include "vk.h"
-#include "vk-engine.h"
 
-/* The FMT extended capability and its registers (GHCI section 4, draft). */
-#define FMT_CAPABILITY			10U
+/*
+ * The registers of the FMT block, at the block's offset.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 4.1,
+ * FMT: FMT_INDEX, FMT_OPTIMAL, FMT_LINEAR, FMT_BUFFER).
+ */
 #define FMT_INDEX			0x0U
 #define FMT_OPTIMAL			0x4U
 #define FMT_LINEAR			0x8U
-#define FMT_BUFFER			0xcU
-#define FMT_LIMITS			0x10U
-
-/* The colour attachments FMT_LIMITS reports ([3:0]). */
-#define FMT_LIMITS_ATTACHMENTS(w)	((w) & 0xfU)
-
-/* The features of a sampled colour format the units filter, render to and blend. */
-#define COLOR_FEATURES			(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
-					 VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT | \
-					 VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT | \
-					 VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT | \
-					 VK_FORMAT_FEATURE_BLIT_SRC_BIT | \
-					 VK_FORMAT_FEATURE_BLIT_DST_BIT | \
-					 VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | \
-					 VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
-
-/* The features of a depth format the units render to and sample. */
-#define DEPTH_FEATURES			(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | \
-					 VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT | \
-					 VK_FORMAT_FEATURE_BLIT_SRC_BIT | \
-					 VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | \
-					 VK_FORMAT_FEATURE_TRANSFER_DST_BIT)
+#define FMT_BUFFER			0xCU
 
 /*
- * One run of consecutive VkFormat values whose texels have the same
- * bytes.  The table is constant and lives as long as the kernel.
+ * The bits of FMT_OPTIMAL, FMT_LINEAR and FMT_BUFFER.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 4.1,
+ * FMT_OPTIMAL bits 0 to 8).
  */
-struct format_run {
-	uint32_t first;
-	uint32_t last;
-	uint32_t bytes;
+#define HW_SAMPLE			(1U << 0)
+#define HW_FILTER_LINEAR		(1U << 1)
+#define HW_COLOR_ATTACHMENT		(1U << 2)
+#define HW_BLEND			(1U << 3)
+#define HW_DEPTH_STENCIL		(1U << 4)
+#define HW_VERTEX_BUFFER		(1U << 5)
+#define HW_BLIT_SRC			(1U << 6)
+#define HW_BLIT_DST			(1U << 7)
+#define HW_STORAGE_IMAGE		(1U << 8)
+
+/* What a row of the table says about its format beyond the features. */
+#define ROW_BLOCK			(1U << 0)
+#define ROW_INTEGER			(1U << 1)
+#define ROW_FLOAT			(1U << 2)
+#define ROW_FLOAT32			(1U << 3)
+#define ROW_SRGB			(1U << 4)
+#define ROW_DEPTH			(1U << 5)
+
+/* The guards of the table: none, an EXT_CAP_FMT0 bit (BC1 to BC7 are bits 0 to 6), or ETC2. */
+#define GUARD_NONE			0xFFU
+#define GUARD_ETC2			7U
+
+/* The features most rows share, as FMT_OPTIMAL's bits. */
+#define COLOR_FILTER_BLEND		(HW_SAMPLE | HW_FILTER_LINEAR | HW_COLOR_ATTACHMENT | HW_BLEND)
+#define SAMPLE_FILTER			(HW_SAMPLE | HW_FILTER_LINEAR)
+#define SAMPLE_COLOR			(HW_SAMPLE | HW_COLOR_ATTACHMENT)
+
+/*
+ * One format of the table: its VkFormat, its texel (or 4x4 block) bytes,
+ * the EXT_CAP_FMT0 bit it needs, the features the table gives it
+ * (FMT_OPTIMAL's bits), and what kind of format it is.
+ */
+struct format_row {
+	uint16_t format;
+	uint8_t bytes;
+	uint8_t guard;
+	uint16_t features;
+	uint16_t kind;
 };
 
 /*
- * The formats the driver lays out: the Vulkan 1.0 core formats a GHCI GPU
- * may take (the compressed ones are not among them yet).
+ * The formats the hardware takes and the features the table gives them,
+ * before the capability flags narrow them: CAP_ROP_PACK the colour
+ * attachments of integer and 32-bit float formats, CAP_TEX_FFILT the
+ * linear filter of 16- and 32-bit float formats.  A8B8G8R8 (51, 52, 55,
+ * 56, 57) is taken as R8G8B8A8 (37, 38, 41, 42, 43) is.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 8.5.1,
+ * the table of formats, and its notes on the packed 32-bit formats).
  */
-static const struct format_run format_runs[] = {
-	{ VK_FORMAT_B4G4R4A4_UNORM_PACK16, VK_FORMAT_R5G6B5_UNORM_PACK16, 2U },
-	{ VK_FORMAT_A1R5G5B5_UNORM_PACK16, VK_FORMAT_A1R5G5B5_UNORM_PACK16, 2U },
-	{ VK_FORMAT_R8_UNORM, VK_FORMAT_R8_SRGB, 1U },
-	{ VK_FORMAT_R8G8_UNORM, VK_FORMAT_R8G8_SRGB, 2U },
-	{ VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_A8B8G8R8_SRGB_PACK32, 4U },
-	{ VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_FORMAT_A2B10G10R10_SINT_PACK32, 4U },
-	{ VK_FORMAT_R16_UNORM, VK_FORMAT_R16_SFLOAT, 2U },
-	{ VK_FORMAT_R16G16_UNORM, VK_FORMAT_R16G16_SFLOAT, 4U },
-	{ VK_FORMAT_R16G16B16A16_UNORM, VK_FORMAT_R16G16B16A16_SFLOAT, 8U },
-	{ VK_FORMAT_R32_UINT, VK_FORMAT_R32_SFLOAT, 4U },
-	{ VK_FORMAT_R32G32_UINT, VK_FORMAT_R32G32_SFLOAT, 8U },
-	{ VK_FORMAT_R32G32B32_UINT, VK_FORMAT_R32G32B32_SFLOAT, 12U },
-	{ VK_FORMAT_R32G32B32A32_UINT, VK_FORMAT_R32G32B32A32_SFLOAT, 16U },
-	{ VK_FORMAT_B10G11R11_UFLOAT_PACK32, VK_FORMAT_E5B9G9R9_UFLOAT_PACK32, 4U },
-	{ VK_FORMAT_D16_UNORM, VK_FORMAT_D16_UNORM, 2U },
-	{ VK_FORMAT_X8_D24_UNORM_PACK32, VK_FORMAT_D32_SFLOAT, 4U },
-	{ VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT, 4U }
+static const struct format_row format_rows[] = {
+	{ 9U, 1U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER, 0U },
+	{ 10U, 1U, GUARD_NONE, SAMPLE_FILTER | HW_VERTEX_BUFFER, 0U },
+	{ 13U, 1U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER, ROW_INTEGER },
+	{ 14U, 1U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER, ROW_INTEGER },
+	{ 16U, 2U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER, 0U },
+	{ 17U, 2U, GUARD_NONE, SAMPLE_FILTER | HW_VERTEX_BUFFER, 0U },
+	{ 20U, 2U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER, ROW_INTEGER },
+	{ 21U, 2U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER, ROW_INTEGER },
+	{ 37U, 4U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, 0U },
+	{ 38U, 4U, GUARD_NONE, SAMPLE_FILTER | HW_VERTEX_BUFFER, 0U },
+	{ 41U, 4U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 42U, 4U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 43U, 4U, GUARD_NONE, COLOR_FILTER_BLEND, ROW_SRGB },
+	{ 44U, 4U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER, 0U },
+	{ 50U, 4U, GUARD_NONE, COLOR_FILTER_BLEND, ROW_SRGB },
+	{ 51U, 4U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, 0U },
+	{ 52U, 4U, GUARD_NONE, SAMPLE_FILTER | HW_VERTEX_BUFFER, 0U },
+	{ 55U, 4U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 56U, 4U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 57U, 4U, GUARD_NONE, COLOR_FILTER_BLEND, ROW_SRGB },
+	{ 64U, 4U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER, 0U },
+	{ 70U, 2U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER, 0U },
+	{ 71U, 2U, GUARD_NONE, SAMPLE_FILTER | HW_VERTEX_BUFFER, 0U },
+	{ 74U, 2U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER, ROW_INTEGER },
+	{ 75U, 2U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER, ROW_INTEGER },
+	{ 76U, 2U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_FLOAT },
+	{ 77U, 4U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER, 0U },
+	{ 78U, 4U, GUARD_NONE, SAMPLE_FILTER | HW_VERTEX_BUFFER, 0U },
+	{ 81U, 4U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER, ROW_INTEGER },
+	{ 82U, 4U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER, ROW_INTEGER },
+	{ 83U, 4U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_FLOAT },
+	{ 84U, 2U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER, 0U },
+	{ 86U, 2U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER, 0U },
+	{ 91U, 8U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER, 0U },
+	{ 92U, 8U, GUARD_NONE, SAMPLE_FILTER | HW_VERTEX_BUFFER, 0U },
+	{ 95U, 8U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 96U, 8U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 97U, 8U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_FLOAT },
+	{ 98U, 4U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 99U, 4U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 100U, 4U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_FLOAT | ROW_FLOAT32 },
+	{ 101U, 8U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 102U, 8U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 103U, 8U, GUARD_NONE, SAMPLE_FILTER | HW_COLOR_ATTACHMENT | HW_VERTEX_BUFFER, ROW_FLOAT | ROW_FLOAT32 },
+	{ 104U, 12U, GUARD_NONE, HW_VERTEX_BUFFER, ROW_INTEGER },
+	{ 105U, 12U, GUARD_NONE, HW_VERTEX_BUFFER, ROW_INTEGER },
+	{ 106U, 12U, GUARD_NONE, HW_VERTEX_BUFFER, ROW_FLOAT | ROW_FLOAT32 },
+	{ 107U, 16U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 108U, 16U, GUARD_NONE, SAMPLE_COLOR | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_INTEGER },
+	{ 109U, 16U, GUARD_NONE, COLOR_FILTER_BLEND | HW_VERTEX_BUFFER | HW_STORAGE_IMAGE, ROW_FLOAT | ROW_FLOAT32 },
+	{ 122U, 4U, GUARD_NONE, SAMPLE_FILTER | HW_COLOR_ATTACHMENT | HW_VERTEX_BUFFER, 0U },
+	{ 124U, 2U, GUARD_NONE, HW_SAMPLE | HW_DEPTH_STENCIL, ROW_DEPTH },
+	{ 126U, 4U, GUARD_NONE, HW_SAMPLE | HW_DEPTH_STENCIL, ROW_DEPTH },
+	{ 129U, 4U, GUARD_NONE, HW_SAMPLE | HW_DEPTH_STENCIL, ROW_DEPTH },
+	{ 130U, 8U, GUARD_NONE, HW_SAMPLE | HW_DEPTH_STENCIL, ROW_DEPTH },
+	{ 131U, 8U, 0U, SAMPLE_FILTER, ROW_BLOCK },
+	{ 133U, 8U, 0U, SAMPLE_FILTER, ROW_BLOCK },
+	{ 135U, 16U, 1U, SAMPLE_FILTER, ROW_BLOCK },
+	{ 137U, 16U, 2U, SAMPLE_FILTER, ROW_BLOCK },
+	{ 139U, 8U, 3U, SAMPLE_FILTER, ROW_BLOCK },
+	{ 141U, 16U, 4U, SAMPLE_FILTER, ROW_BLOCK },
+	{ 145U, 16U, 6U, SAMPLE_FILTER, ROW_BLOCK },
+	{ 147U, 8U, GUARD_ETC2, SAMPLE_FILTER, ROW_BLOCK },
+	{ 148U, 8U, GUARD_ETC2, SAMPLE_FILTER, ROW_BLOCK | ROW_SRGB },
+	{ 149U, 8U, GUARD_ETC2, SAMPLE_FILTER, ROW_BLOCK },
+	{ 150U, 8U, GUARD_ETC2, SAMPLE_FILTER, ROW_BLOCK | ROW_SRGB },
+	{ 151U, 16U, GUARD_ETC2, SAMPLE_FILTER, ROW_BLOCK },
+	{ 152U, 16U, GUARD_ETC2, SAMPLE_FILTER, ROW_BLOCK | ROW_SRGB },
+	{ 153U, 8U, GUARD_ETC2, SAMPLE_FILTER, ROW_BLOCK },
+	{ 154U, 8U, GUARD_ETC2, SAMPLE_FILTER, ROW_BLOCK },
+	{ 155U, 16U, GUARD_ETC2, SAMPLE_FILTER, ROW_BLOCK },
+	{ 156U, 16U, GUARD_ETC2, SAMPLE_FILTER, ROW_BLOCK }
 };
 
-/*
- * The formats a compiled program reads and writes through memory as
- * storage images and storage texel buffers (the storage column of the
- * Vulkan 1.0 required formats).
- */
-static const uint32_t storage_formats[] = {
-	VK_FORMAT_R8G8B8A8_UNORM,
-	VK_FORMAT_R8G8B8A8_SNORM,
-	VK_FORMAT_R8G8B8A8_UINT,
-	VK_FORMAT_R8G8B8A8_SINT,
-	VK_FORMAT_R16G16B16A16_UINT,
-	VK_FORMAT_R16G16B16A16_SINT,
-	VK_FORMAT_R16G16B16A16_SFLOAT,
-	VK_FORMAT_R32_UINT,
-	VK_FORMAT_R32_SINT,
-	VK_FORMAT_R32_SFLOAT,
-	VK_FORMAT_R32G32_UINT,
-	VK_FORMAT_R32G32_SINT,
-	VK_FORMAT_R32G32_SFLOAT,
-	VK_FORMAT_R32G32B32A32_UINT,
-	VK_FORMAT_R32G32B32A32_SINT,
-	VK_FORMAT_R32G32B32A32_SFLOAT
-};
-
-static int storage_format(uint32_t format);
-static void fallback_features(uint32_t format, uint32_t *optimal, uint32_t *linear, uint32_t *buffer);
+static const struct format_row *row_of(uint32_t format);
+static uint32_t table_bits(const struct ghci_caps *caps, const struct format_row *row);
+static uint32_t vulkan_bits(uint32_t hw);
 
 /*
- * Reports the bytes of a texel of a VkFormat.
+ * Reports the bytes of a texel (or of a 4x4 block, block 1) of a format
+ * the hardware takes.  Returns 0, or ENOTSUP for another format.
  */
-uint32_t
-ghci_vk_format_bytes(
+int
+ghci_vk_format_size(
 	uint32_t format,
+	uint32_t *bytes,
 	uint32_t *block)
 {
-	unsigned index;
+	const struct format_row *row;
 
-	/* No format of the table is block compressed. */
+	/* A format of the table. */
+	row = row_of(format);
+	if (row == NULL)
+		return ENOTSUP;
+
+	/* Its texel or block. */
+	*bytes = row->bytes;
 	*block = 0U;
+	if ((row->kind & ROW_BLOCK) != 0U)
+		*block = 1U;
 
-	/* The run that holds the format. */
-	for (index = 0U; index < sizeof(format_runs) / sizeof(format_runs[0]); index++) {
-		if (format < format_runs[index].first)
-			continue;
-		if (format > format_runs[index].last)
-			continue;
-
-		/* Succeeded: the run's texel bytes. */
-		return format_runs[index].bytes;
-	}
-
-	/* A format the driver does not lay out. */
-	return 0U;
-}
-
-/*
- * Reads every format's features from the GPU's FMT capability, once at
- * the start, into the engine's table.
- */
-void
-ghci_vk_format_load(
-	struct ghci_device *device)
-{
-	struct ghci_vk_engine *engine;
-	uint32_t registers;
-	uint32_t version;
-	uint32_t format;
-	uint32_t limits;
-	int error;
-
-	/* A GPU without the capability keeps the fallback table. */
-	engine = device->vk;
-	engine->fmt_present = 0;
-	engine->color_attachments = 1U;
-	error = ghci_extcap_find(ghci_read_context, device, device->extcap, device->register_bytes, FMT_CAPABILITY, &registers, &version);
-	if (error != 0)
-		return;
-
-	/* Each VkFormat's three feature words, by its index. */
-	for (format = 0U; format < GHCI_VK_FORMATS; format++) {
-		ghci_write(device, registers + FMT_INDEX, format);
-		engine->fmt_optimal[format] = ghci_read(device, registers + FMT_OPTIMAL);
-		engine->fmt_linear[format] = ghci_read(device, registers + FMT_LINEAR);
-		engine->fmt_buffer[format] = ghci_read(device, registers + FMT_BUFFER);
-	}
-
-	/* The colour attachments the render output takes. */
-	limits = ghci_read(device, registers + FMT_LIMITS);
-	engine->color_attachments = FMT_LIMITS_ATTACHMENTS(limits);
-	if (engine->color_attachments == 0U)
-		engine->color_attachments = 1U;
-
-	/* The table is the GPU's from now on. */
-	engine->fmt_present = 1;
-}
-
-/*
- * Reports the features of a format for optimal and linear tiling and for buffers.
- */
-void
-ghci_vk_format_features(
-	struct ghci_device *device,
-	uint32_t format,
-	uint32_t *optimal,
-	uint32_t *linear,
-	uint32_t *buffer)
-{
-	struct ghci_vk_engine *engine;
-	uint32_t bytes;
-	uint32_t block;
-	int storage;
-
-	/* Nothing for a format the driver does not lay out. */
-	*optimal = 0U;
-	*linear = 0U;
-	*buffer = 0U;
-	bytes = ghci_vk_format_bytes(format, &block);
-	if (bytes == 0U)
-		return;
-	if (format >= GHCI_VK_FORMATS)
-		return;
-
-	/* The GPU's own table, or the formats every GHCI GPU has. */
-	engine = device->vk;
-	if (engine->fmt_present) {
-		*optimal = engine->fmt_optimal[format];
-		*linear = engine->fmt_linear[format];
-		*buffer = engine->fmt_buffer[format];
-	} else {
-		fallback_features(format, optimal, linear, buffer);
-	}
-
-	/* The storage images and storage texel buffers the compiled programs reach through memory. */
-	storage = storage_format(format);
-	if (storage) {
-		*optimal |= VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
-		*linear |= VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
-		*buffer |= VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT;
-	}
-}
-
-/* Reports whether programs reach a format through memory as a storage image: 1 when they do. */
-static int
-storage_format(
-	uint32_t format)
-{
-	unsigned index;
-
-	/* Looks the format up in the storage column. */
-	for (index = 0U; index < sizeof(storage_formats) / sizeof(storage_formats[0]); index++) {
-		if (storage_formats[index] == format)
-			return 1;
-	}
-
-	/* Not a storage format. */
+	/* Succeeded: the size. */
 	return 0;
 }
 
-/* Fills the features of the formats every GHCI GPU has, for a GPU without the FMT capability. */
-static void
-fallback_features(
-	uint32_t format,
-	uint32_t *optimal,
-	uint32_t *linear,
-	uint32_t *buffer)
+/*
+ * Makes the features of every format from the specification's table
+ * and the capability flags, for a device without the FMT block.
+ */
+void
+ghci_vk_formats_table(
+	const struct ghci_caps *caps,
+	struct ghci_vk_formats *formats)
 {
-	/* RGBA8 and BGRA8 colour, linear and optimal alike: every image is laid out in linear rows. */
-	if (format == VK_FORMAT_R8G8B8A8_UNORM || format == VK_FORMAT_B8G8R8A8_UNORM) {
-		*optimal = COLOR_FEATURES;
-		*linear = COLOR_FEATURES;
-		*buffer = VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
+	uint32_t bits;
+	size_t index;
+
+	/* No format has a feature the table does not give it. */
+	kern_memset(formats, 0, sizeof(*formats));
+
+	/* Each row: the same features on both tilings, and the buffer's from the same row. */
+	for (index = 0U; index < sizeof(format_rows) / sizeof(format_rows[0]); index++) {
+		bits = table_bits(caps, &format_rows[index]);
+		ghci_vk_formats_from_bits(caps, format_rows[index].format, bits, bits, bits, formats);
+	}
+}
+
+/*
+ * Makes one format's Vulkan features from FMT's bits for optimal and
+ * linear tiling and for buffers, and drops what the driver cannot do: a
+ * format outside the table, an sRGB format without EXT_CAP_FMT0's bit, a
+ * storage image the table does not give, and a blit the driver's shaders
+ * replace on a device without the blit engine.
+ */
+void
+ghci_vk_formats_from_bits(
+	const struct ghci_caps *caps,
+	uint32_t format,
+	uint32_t optimal,
+	uint32_t linear,
+	uint32_t buffer,
+	struct ghci_vk_formats *formats)
+{
+	const struct format_row *row;
+	uint32_t driver;
+	uint32_t tilings[2];
+	uint32_t texel;
+	unsigned index;
+	int blitter;
+	int srgb;
+
+	/* A format the driver cannot write into a descriptor has no feature. */
+	row = row_of(format);
+	if (row == NULL || format >= GHCI_VK_FORMATS)
+		return;
+
+	/* An sRGB format needs the sRGB bit of EXT_CAP_FMT0. */
+	srgb = ghci_caps_has(caps, GHCI_HAS_SRGB);
+	if ((row->kind & ROW_SRGB) != 0U && !srgb)
+		return;
+
+	/* What the driver itself can do with the format: storage only where the table gives it. */
+	driver = ~(uint32_t)HW_STORAGE_IMAGE;
+	if ((row->features & HW_STORAGE_IMAGE) != 0U)
+		driver = ~0U;
+	blitter = ghci_caps_has(caps, GHCI_HAS_BLT);
+	tilings[0] = optimal & driver;
+	tilings[1] = linear & driver;
+
+	/* Without the blit engine the blits are the driver's draws: a sampled source, a colour destination. */
+	for (index = 0U; index < 2U && !blitter; index++) {
+		tilings[index] &= ~(HW_BLIT_SRC | HW_BLIT_DST);
+		if ((tilings[index] & HW_SAMPLE) != 0U && (row->kind & ROW_DEPTH) == 0U)
+			tilings[index] |= HW_BLIT_SRC;
+		if ((tilings[index] & HW_COLOR_ATTACHMENT) != 0U)
+			tilings[index] |= HW_BLIT_DST;
+	}
+
+	/* The tilings' features, and copies of any format that has one. */
+	formats->optimal[format] = vulkan_bits(tilings[0]);
+	formats->linear[format] = vulkan_bits(tilings[1]);
+	if (formats->optimal[format] != 0U)
+		formats->optimal[format] |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+	if (formats->linear[format] != 0U)
+		formats->linear[format] |= VK_FORMAT_FEATURE_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_TRANSFER_DST_BIT;
+
+	/* Buffers: vertices, texel buffers the texture unit samples, and storage texel buffers. */
+	texel = 0U;
+	if ((buffer & HW_VERTEX_BUFFER) != 0U)
+		texel |= VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
+	if ((buffer & HW_SAMPLE) != 0U && (row->kind & (ROW_BLOCK | ROW_DEPTH)) == 0U)
+		texel |= VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT;
+	if ((buffer & driver & HW_STORAGE_IMAGE) != 0U)
+		texel |= VK_FORMAT_FEATURE_STORAGE_TEXEL_BUFFER_BIT;
+	formats->buffer[format] = texel;
+}
+
+/*
+ * Reads the features of every format of the table from the FMT block, or
+ * makes them from the table on a device without it.  The caller holds
+ * none of the device's locks; FMT_INDEX, the one register the host writes
+ * to index the block, is written under the device's lock.
+ */
+void
+ghci_vk_formats_read(
+	struct ghci_device *device,
+	struct ghci_vk_formats *formats)
+{
+	uint32_t block;
+	uint32_t optimal;
+	uint32_t linear;
+	uint32_t buffer;
+	size_t index;
+
+	/* Without FMT, the table. */
+	if ((device->caps.blocks & (1U << GHCI_EXTCAP_ID_FMT)) == 0U) {
+		ghci_vk_formats_table(&device->caps, formats);
 		return;
 	}
 
-	/* The depth formats of the render output. */
-	if (format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_D32_SFLOAT) {
-		*optimal = DEPTH_FEATURES;
-		return;
+	/* Each format of the table through FMT_INDEX. */
+	kern_memset(formats, 0, sizeof(*formats));
+	block = device->caps.block_offset[GHCI_EXTCAP_ID_FMT];
+	mutex_lock(&device->lock);
+
+	for (index = 0U; index < sizeof(format_rows) / sizeof(format_rows[0]); index++) {
+		ghci_write(device, block + FMT_INDEX, format_rows[index].format);
+		optimal = ghci_read(device, block + FMT_OPTIMAL);
+		linear = ghci_read(device, block + FMT_LINEAR);
+		buffer = ghci_read(device, block + FMT_BUFFER);
+		ghci_vk_formats_from_bits(&device->caps, format_rows[index].format, optimal, linear, buffer, formats);
 	}
 
-	/* The 32-bit float vertex formats of the vertex fetcher. */
-	if (format == VK_FORMAT_R32_SFLOAT ||
-	    format == VK_FORMAT_R32G32_SFLOAT ||
-	    format == VK_FORMAT_R32G32B32_SFLOAT ||
-	    format == VK_FORMAT_R32G32B32A32_SFLOAT)
-		*buffer = VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
+	mutex_unlock(&device->lock);
+
+	/* Succeeded: the features are the device's. */
+	formats->from_registers = 1;
+}
+
+/* Finds the row of a format; NULL for a format the hardware does not take. */
+static const struct format_row *
+row_of(
+	uint32_t format)
+{
+	size_t index;
+
+	/* The table in order. */
+	for (index = 0U; index < sizeof(format_rows) / sizeof(format_rows[0]); index++) {
+		if (format_rows[index].format == format)
+			return &format_rows[index];
+	}
+
+	/* Succeeded: none. */
+	return NULL;
+}
+
+/*
+ * Reports the FMT_OPTIMAL bits the table gives a row on a device with
+ * these capabilities, with the blits of a device that has the blit
+ * engine: sampled formats (depth too) as sources and colour attachments
+ * as destinations.
+ */
+static uint32_t
+table_bits(
+	const struct ghci_caps *caps,
+	const struct format_row *row)
+{
+	uint32_t bits;
+	int etc2;
+	int filter;
+	int packer;
+
+	/* A BC or ETC2 format needs its bit of EXT_CAP_FMT0. */
+	etc2 = ghci_caps_has(caps, GHCI_HAS_ETC2);
+	if (row->guard == GUARD_ETC2 && !etc2)
+		return 0U;
+	if (row->guard < GUARD_ETC2 && (caps->fmt0 & (1U << row->guard)) == 0U)
+		return 0U;
+
+	/* Without the float filter, no linear filter of a float format. */
+	bits = row->features;
+	filter = ghci_caps_has(caps, GHCI_HAS_TEX_FFILT);
+	if ((row->kind & ROW_FLOAT) != 0U && !filter)
+		bits &= ~HW_FILTER_LINEAR;
+
+	/* Without the packer, no integer and no 32-bit float colour attachment. */
+	packer = ghci_caps_has(caps, GHCI_HAS_ROP_PACK);
+	if ((row->kind & (ROW_INTEGER | ROW_FLOAT32)) != 0U && !packer)
+		bits &= ~(HW_COLOR_ATTACHMENT | HW_BLEND);
+
+	/* The blit engine's sources and destinations. */
+	if ((bits & HW_SAMPLE) != 0U)
+		bits |= HW_BLIT_SRC;
+	if ((bits & HW_COLOR_ATTACHMENT) != 0U)
+		bits |= HW_BLIT_DST;
+
+	/* Succeeded: the bits. */
+	return bits;
+}
+
+/*
+ * Reports the Vulkan format features of FMT's bits.
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 4.1,
+ * the Vulkan feature each bit of FMT_OPTIMAL stands for).
+ */
+static uint32_t
+vulkan_bits(
+	uint32_t hw)
+{
+	uint32_t features;
+
+	/* Each bit to its Vulkan feature; the filter and the blend only with what they qualify. */
+	features = 0U;
+	if ((hw & HW_SAMPLE) != 0U)
+		features |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
+	if ((hw & HW_FILTER_LINEAR) != 0U && (hw & HW_SAMPLE) != 0U)
+		features |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+	if ((hw & HW_COLOR_ATTACHMENT) != 0U)
+		features |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+	if ((hw & HW_BLEND) != 0U && (hw & HW_COLOR_ATTACHMENT) != 0U)
+		features |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT;
+	if ((hw & HW_DEPTH_STENCIL) != 0U)
+		features |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+	if ((hw & HW_BLIT_SRC) != 0U)
+		features |= VK_FORMAT_FEATURE_BLIT_SRC_BIT;
+	if ((hw & HW_BLIT_DST) != 0U)
+		features |= VK_FORMAT_FEATURE_BLIT_DST_BIT;
+	if ((hw & HW_STORAGE_IMAGE) != 0U)
+		features |= VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
+
+	/* Succeeded: the features. */
+	return features;
 }
