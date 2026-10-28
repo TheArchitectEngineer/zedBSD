@@ -147,3 +147,9 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 - 再開点（2026-10-28 23:01 P2）: 画面の途切れは underflow ではなく vkAcquireNextImageKHR の止まり（[phase006](phase006/phase.md) の「画面の途切れ」）。
   libvulkan の Wayland の待ちの取りこぼし（50 ms）は直した（7650291df）。残りは約 2 s 周期の 75〜97 ms の止まり（compositor の release か
   present worker の GPU 完了の待ちの見込み）。未実施: venus の回帰・他 arch の libvulkan の build。評価（bench）はこの後。
+- 再開点（2026-10-28 23:40 P2、q1658-i02）: 約 2 s 周期の止まりの原因は Keiland の 2 s ごとの /dev/input の scan で、mouse の無い PS/2 の
+  node（event4）の open が毎回 約 80 ms 待って EIO を返し main loop が止まっていた。直し b574fbf6a（開けなかった node を INPUT の event まで
+  開き直さない）で window の HITCH 0、game は run の開始の direct scanout への切り替えの 1 回だけ。Keiland の protocol の順（frame done・release）は
+  変えていない。venus-reg PASS、arm64・riscv64 の libvulkan と Keiland warning 0。評価: scene-6500 49.2 fps（Linux 50.1、fence は同じ 19.5 ms）、
+  scene-1500 201.8（Linux 200.4）、big・subs は Linux の 1/3〜1/10（[phase006](phase006/phase.md) の「受け入れの評価」）。次は案 4・5 を Q1 と相談。
+  別件（範囲外）: kernel の PS/2 の aux の node が mouse 無しで作られ open が 80 ms 待つ。

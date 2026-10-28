@@ -955,3 +955,54 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
   build の warning 0（Q1 の条件）。compositor が新しい lib で動く形（reboot の後）の計測。
 - 機械の状態: cfg は amdrdna.smu.memory=0（既定）、kernel vmunix-m2j（7650291df の元）、/lib/libvulkan.so は 7650291df の build、/bin/mview は
   10d72c341 の build。
+
+### 約 2 s 周期の止まりの原因と直し（2026-10-28 23:05〜23:30 P2、q1658-i02）
+
+- 原因: Keiland の main loop が 2 s ごと（KWL_INPUT_SCAN_MS）に /dev/input を scan し、まだ読んでいない eventN を開き直す。この機械の
+  /dev/input/event4（「PC/AT PS/2 mouse」、PS/2 の mouse はつながっていない）の open は毎回 約 80 ms 待って EIO（guest で
+  `time dd if=/dev/input/event4 of=/dev/null count=0`: real 0.08、Input/output error。他の event0〜9 は 0.00）。その間 compositor の main loop が
+  止まり、buffer の release・frame done が出ない → mview の acquire が 75〜97 ms 止まる（周期 117 frame ≈ 2.0 s と一致）。
+  pcat の platform の amd64 の機械で PS/2 の mouse が無ければどこでも起きる（desktop の普段の操作にも効く）。
+- 直し（b574fbf6a、libkeiland-backend-zedbsd の input-zedbsd.c・events-zedbsd.c、backend-private.h に input_refused）: scan で open が device の
+  error（EIO・ENXIO・ENODEV）で失敗した eventN を覚え、/dev/system の INPUT（か OVERFLOW）の event が来るまで開き直さない。EACCES（seat の
+  user の物になる前）は今までどおり毎回試す。system の event が無い kernel（events_descriptor < 0）では覚えず今までどおり。
+  Keiland の protocol の振る舞い（frame done・release の順）は変えていない。
+- 実機（/bin/wayland を差し替え（元は /bin/wayland.p2old）、zedBSD を再起動して compositor も 7650291df の libvulkan で、cfg は memory=0）:
+  - window FIFO 12 s: qs40 1 体 HITCH 0（frame_ms_max 18）、1500 体 ×2 HITCH 0（max 18）。直す前は 12 s に 5〜6 回の 87〜100 ms。
+  - game mailbox 4 枚 12 s: 1 体 ×4 で HITCH 1 回ずつ（frame 625〜650 = run の 1.4 s、48〜57 ms）、6500 体 ×1 で 1 回（frame 72、38 ms）。
+    これは run の開始の direct scanout への切り替え（KWL SCANOUT direct=1 switch_ms=51: compositor の swapchain を閉じ display を claim）の
+    1 回だけ。周期の止まりは 0。直す前は約 2 s ごとに 73〜79 ms。
+  - 記録: build/ws291/kw1-win・kw1-win2・kw1-win3・kw1-game・kw1-game2〜4・kw1-game6500。
+- build: amd64 の /bin/wayland（build/ws291/usb、build/ws291-kw1.log）、arm64（config-rpi4、BUILD=build/ws291/rpi4）・riscv64（config-visionfive2、
+  BUILD=build/ws291/vf2）の libvulkan.so と /bin/wayland が rc=0・warning 0（-Werror、wsi-wayland.o・input-zedbsd.o・events-zedbsd.o を含む）。
+- 別件（範囲の外、直していない）: kernel の PS/2 の aux の node が、mouse が無いのに作られ、open のたびに 約 80 ms 待って EIO を返す
+  （src/kern/platform/pcat.c の PS/2 の mouse の attach、drv_pcat_ps2_8042_init）。
+- (a) QEMU Venus の回帰（plan/ws291/tests/venus-reg.sh build/ws291/venus3、image は今の tree の
+  `plan/tools/gpu-boundary/build-forge-image.sh build/ws291/forge`: libvulkan は 7650291df の wsi-wayland.c 込み（sha256 先頭 a03183d47a99d371、
+  amd64 の build/ws291/usb の物と同じ）、compositor は b574fbf6a 込み）: forge-guest・fence-guest・wltest（mailbox、recreate-at=100）・
+  mview（mailbox 4 枚）・mview（--draws=each --submits=20）・compositor の VULKAN_ERROR 0 が全部 ok、PASS。
+
+### 受け入れの評価（2026-10-28 23:35 P2、直しの後、cfg amdrdna.smu.memory=2（負荷に応じた UCLK）、kernel vmunix-m2j）
+
+- bench（`guard.sh build/ws291/bench-k2/g measure.sh bench zedbsd build/ws291/bench-k2`、game mailbox 4 枚 8 s ずつ）と Linux（build/ws291/bench-linux、
+  同じ日 21:27、RADV）:
+
+| run | zedBSD fps | Linux fps | zedBSD frame / fence ms | Linux frame / fence ms |
+| --- | --- | --- | --- | --- |
+| scene-1 | 1584.6 | 9380.1 | 0.63 / 0.09 | 0.11 / 0.06 |
+| scene-1500 | 201.8 | 200.4 | 4.95 / 4.46 | 4.99 / 4.67 |
+| scene-6500 | 49.20 | 50.12 | 20.27 / 19.50 | 19.90 / 19.54 |
+| big-100 | 206.5 | 517.8 | 4.84（record 1.28・submit 1.08） | 1.93（0.79・0.04） |
+| big-1000 | 34.3 | 87.0 | 29.08（record 11.73・submit 11.95） | 11.48（5.41・0.02） |
+| subs-100 | 58.4 | 510.8 | 17.10（submit 15.69） | 1.96（submit 0.91） |
+| subs-1000 | 6.06 | 58.2 | 161.7（submit 151.2） | 17.15（submit 10.26） |
+
+- 読み: GPU の時間（fence）は scene-6500 で Linux と同じ（19.50・19.54）、scene-1500 は Linux 以上。scene-6500 の fps の差（−1.8 %）は CPU 側の
+  約 0.37 ms（present 0.39 対 0.07、submit 0.16 対 0.09）。command の多い big・subs は submit（kernel への往復）が大きく Linux の 1/3〜1/10。
+  → 次は案 4（小さな transaction を呼び手の thread で同期の GPU_COMMAND）・案 5（gpu.c の起床の抑制）で、Q1 に相談（Q1 の指示）。
+- HITCH: 各 run 1 回（scene-1・big-1・big-10・big-100・subs-10・scene-1500・scene-6500、run の 1.4〜1.6 s の direct scanout への切り替え）と、
+  frame が 33 ms を超える big-1000（29 ms 前後の frame の揺れ、18 回）・subs-1000（全 frame 約 160 ms）。周期の止まりは 0。
+  window mode（memory=2）: 1500 体・6500 体 12 s とも HITCH 0（6500 体は 48.8 fps、max 23 ms）。
+- underflow: bench の間の guard の 5 回の読みで underflow=0・timing_underflow=0・hung=0、window の run の後の amdrdnactl status も 0。
+- 機械の状態（23:40）: cfg amdrdna.smu.memory=2、kernel vmunix-m2j、/lib/libvulkan.so は 7650291df の build、/bin/wayland は b574fbf6a の build
+  （元は /bin/wayland.p2old）、/bin/mview は 10d72c341。
