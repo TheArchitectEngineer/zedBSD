@@ -42,6 +42,8 @@
  */
 #define SOCKET_BROADCAST_MAX 32U
 #define SOCKET_RECEIVE_MESSAGES_MAX 8U
+/* The jumbo packets a datagram socket's receive queue holds at most. */
+#define SOCKET_RECEIVE_JUMBO_MAX 2U
 #define SOCKET_BUFFER_DEFAULT (64U * 1024U)
 #define SOCKET_BUFFER_MIN 2048U
 #define SOCKET_BUFFER_MAX (1024U * 1024U)
@@ -118,6 +120,11 @@ struct socket {
 	struct packet_buf *receive_head;
 	struct packet_buf *receive_tail;
 	unsigned receive_packets;
+	/*
+	 * The jumbo packets among them (socket_enqueue_packet keeps a datagram
+	 * socket's to SOCKET_RECEIVE_JUMBO_MAX); guarded by the lock.
+	 */
+	unsigned receive_jumbo;
 	size_t receive_bytes;
 	size_t receive_packet_limit;
 	size_t receive_hiwat_bytes;
