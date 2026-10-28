@@ -30,7 +30,7 @@ if [ $failed = 0 ]; then
 	g put "$wl" /bin/wayland > "$out/put.log" 2>&1 || failed=1
 	g put "$lib" /tmp/libkeiland.so > "$out/put-lib.log" 2>&1 || failed=1
 	g put "$probe" /bin/keiland-system > "$out/put-probe.log" 2>&1 || failed=1
-	G_TIMEOUT=180 g run 'chmod 755 /bin/wayland /bin/keiland-system; cp /tmp/libkeiland.so /lib/libkeiland.so.new && mv /lib/libkeiland.so.new /lib/libkeiland.so; export XDG_RUNTIME_DIR=/tmp HOME=/tmp/p006dev; mkdir -p $HOME; rm -f /tmp/wayland-0; /bin/wayland --testing --glass --timeout=90000 --width=1280 --height=800 > /tmp/daemon.log 2>&1 </dev/null & pid=$!; sleep 8; echo "== dump 1"; keiland-system --timeout-ms=4000 dump scan volume 40 40 0 2>&1; sleep 1; echo "== dump 2"; keiland-system --timeout-ms=2000 dump 2>&1; kill $pid; i=0; while kill -0 $pid 2>/dev/null && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done; if kill -0 $pid 2>/dev/null; then echo "== stopped alive=1"; else echo "== stopped alive=0 tenths=$((i*2))"; fi; echo "== compositor"; grep -E "KWL (READY|THREADS|VOLUME reachable|NETWORK|BT open|PHONE open|MEDIA|EXIT|FAILED)" /tmp/daemon.log' > "$out/guest.out" 2>&1
+	G_TIMEOUT=180 g run 'chmod 755 /bin/wayland /bin/keiland-system; cp /tmp/libkeiland.so /lib/libkeiland.so.new && mv /lib/libkeiland.so.new /lib/libkeiland.so; export XDG_RUNTIME_DIR=/tmp HOME=/tmp/p006dev; mkdir -p $HOME; rm -f /tmp/wayland-0; /bin/wayland --testing --glass --timeout=60000 --width=1280 --height=800 > /tmp/daemon.log 2>&1 </dev/null & pid=$!; sleep 8; echo "== dump 1"; keiland-system --timeout-ms=4000 dump scan volume 40 40 0 2>&1; sleep 1; echo "== dump 2"; keiland-system --timeout-ms=2000 dump 2>&1; a=$(date +%s); kill $pid; wait $pid; b=$(date +%s); echo "== stopped seconds=$((b-a))"; echo "== compositor"; grep -E "KWL (READY|THREADS|VOLUME reachable|NETWORK|BT open|PHONE open|MEDIA|EXIT|FAILED)" /tmp/daemon.log' > "$out/guest.out" 2>&1
 	g run "$stop_all" > /dev/null 2>&1
 fi
 python3 -I - "$GUEST_RUNTIME/qmp.sock" <<'PY' > "$out/quit.log" 2>&1
@@ -84,7 +84,8 @@ else:
 	if not any(re.match(r"KEILAND-SYSTEM audio reachable=1 .*left=40 right=40 muted=0", line) for line in dumps[1]):
 		fail("the second dump has not the volume asked")
 stopped = [line for line in text if line.startswith("== stopped")]
-if not stopped or "alive=0" not in stopped[0]:
-	fail("the compositor did not end after SIGTERM: %r" % stopped)
+seconds = [int(m.group(1)) for m in (re.match(r"== stopped seconds=(\d+)", line) for line in stopped) if m]
+if not seconds or seconds[0] > 10:
+	fail("the compositor did not end within 10 s of SIGTERM: %r" % stopped)
 print("daemon-guest: " + ("PASS" if ok else "FAIL"))
 PY
