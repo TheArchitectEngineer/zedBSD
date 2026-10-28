@@ -3,7 +3,7 @@
 # ws290-p006 compiler
 
 - 親: [WS290](../ws.md)。設計: [design.md](../design.md) §18 の p006（版 4.5、ghci.md cb937e6）。
-- 状態: in-progress（実装と host 試験・build は済み。P3 の review と commit 待ち、2026-10-28 08:44）
+- 状態: cleared（2026-10-28 P3 q1644-i01: gsi1 50 PASS・全 host 試験 PASS、amd64・riscv64 の warning 0、design-reviewer の code の review の M1〜M5 を反映）
 - 依存: p002・p004
 
 ## 範囲
@@ -37,3 +37,10 @@ design §19 の表のうち、この Phase の code に効く物を着手の時�
   - **未実施**: p007 以降の executor から compiler を呼ぶ所（呼ぶ側はまだ無い）。実機・QEMU。規約の全文の見直しは p015。
 
 - 2026-10-28 P3（q1638-i01）: design §18 から立てた。
+- 2026-10-28 P3（q1644-i01）: helper（phase-runner、Opus）の実装を P3 が commit（86ab21fc3 は helper、f0f84bee1 は P3 がまとめて）。design-reviewer（Opus 5.5）の code の review（86ab21fc3・f0f84bee1）: H 1・M 5・L 5。判定は「H1 と M5 の取り決めを design と p007〜p009 に、M1 を直し、M2・M3 を決め、M4 を §19 に入れれば cleared 可」。対応:
+  - H1（STORAGE の image の番地は linear だけ）・M5（取り決めが phase.md にしか無い）: design 版 4.10 の §11.4「p006 で決めた取り決め」に書き、§12 の 2 を `lw` に直し、p008・p009 の phase.md に写した（p007 は helper に伝えた）。
+  - M1（uniform texel buffer の fetch が範囲外を読む）: index を最後の要素（空なら 0）に clamp してから x・y を作る（`gsi1-texture.c`）。
+  - M2（`maxTexelBufferElements`）: design §15.5 に 4,194,304。M3（資源の表が小さい）: 128 entry・4096 byte に広げた（`gsi1-compile.h`・`gsi1-abi.h`、即値は 22 bit で届く）。§15.5 に超える pipeline は作成で断ると書いた。
+  - M4（`ghci_cmd.h` の `GHCI_VS_REG_ATTR` と §12.10.3 の食い違い）: design §19 に書き、ghci-review 第 17 版 N78 を `plan/ws290/ghci-review.md` に用意した（Q1 経由で仕様の担当へ）。p014 に vec2 + vec3 の場面。
+  - L4 の一部（robustBufferAccess の clamp `bytes − 4` の下溢れ）: `minu(bytes − 4, bytes)` で直した。L1〜L3・L4 の残り（texsz.s の CAP_MSAA、LDS と workgroup の大きさの device ごとの検査）・L5 は p008（pipeline の作成の検査）か p015 へ。
+  - 確かめた事: `plan/ws290/tests/gsi1-host-test.sh` 50 PASS。GHCI 有りの amd64・VF2 の vmunix を直しの後に build し exit 0・warning 0（build/ws290-p006-amd64・-vf2）。GHCI 無しの CI の 2 つは helper の build で warning 0（compiler は GHCI 無しでは build に入らない）。

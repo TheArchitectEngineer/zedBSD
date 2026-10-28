@@ -3,6 +3,7 @@
 - Phase: [ws290-p001](phase001/phase.md)。版 1・2: 2026-10-26（P1、q1594）。版 3: 2026-10-27（P3、q1621、書きかけで中断）。**版 4: 2026-10-28（P3、q1636-i01）**。版 3 までの本文は git の履歴（f5fea4c2e など）にあり、この版は 89529de を正本に全部を書き直した。
 - 親: [WS290](ws.md)。前身の設計: [WS288 design](../ws288/design.md) §6（1.1 の driver）。
 - この文書は設計だけ。source は変えていない。
+- **版 4.10（2026-10-28、q1644 P3）: p006 の code の review を受け、§11.4 に compiler と executor の取り決め、§12 の 2 を `lw` に、§15.5 に `maxTexelBufferElements` と資源の表の上限、§19 に N78（属性の register の食い違い）。**
 - **版 4.9（2026-10-28、q1644 P3）: p005 の実装の形を §5.5 の「実装の形」に書いた（arena と chunk の早い返し、勘定の数え方、資源の holds、非同期の close・unmap）。**
 - **状態（2026-10-28、q1641 P3）: 版 4.8（design-reviewer（Opus 5.5）の 4 回目、T01〜T16 の反映の確かめと p004・p005 の穴 H1〜H3・M1〜M9・L1〜L5 を §5・§6・§7・§8・§10・§14 に反映。§24 の「4 回目」）。版 4.7 まで: U の回答（版 4.1）、design-reviewer（Opus 5.5）3 回の指摘（版 4.2〜4.4、§24）を反映し、仕様 cb937e6（回答 第 13.0 版）に追従（版 4.5: N48 で計画の reset を外し、N47・N49・N50・N51・N59・swizzle・unnormalized を使う）。版 4.6: 仕様 20bf888（回答 第 14.0 版）に追従（N62 の sampler の独立の slot `w1[9:6]`、N63 の kind の 1 対 1、N66 の operand 120・121、N70 の DISP_SET 1 + 2N、§11.4 の `maxDescriptorSet*` を 96 に）。版 4.7: 仕様 d9252e4（回答 第 15.0 版）で N73〜N77 が全部解決し、第 16 版で「残る疑問なし」を送った（§19）。**
 
@@ -445,6 +446,16 @@ HW が決める物（§8.4、20bf888 1340・2204 行）: texture の命令の te
 - compiler は pipeline の全 stage（VS と FS）を通して、使う image（sampled image・combined の image）に texture slot を、使う sampler（分かれた sampler・combined の sampler）に sampler slot を別々に振る（combined は texture slot と sampler slot を 1 つずつ取る）。どちらも pipeline の全 stage の和で 16 個まで。答える値は Vulkan 1.0 の最小（`maxPerStageDescriptorSampledImages`・`Samplers` = 16、`maxDescriptorSetSampledImages`・`Samplers` = 96）で、和が 16 を超える pipeline は作成で断って log（U8。d9252e4 の 1342・1436 行と §8.6 が同じ扱いを書く、N74）。
 - constant bank（512 語）: c0〜c23 = push constant の先頭 96 byte、c24〜c31 = HW の鏡、c32〜c39 = push constant の 96〜127 byte（`lwc` で読む）、c40〜 = dynamic offset（set ごとに順）。`maxPushConstantsSize` = 128。`CMD_LOAD_CONST` は 32 語ずつ。
 - UBO は `lw` で読む（1.1 の bank への写しは無い）。`maxUniformBufferRange` 65536。
+- **p006 で決めた取り決め（版 4.10、p006 の code の review の H1・M5）**。executor（p007〜p010）が守る:
+  - descriptor・buffer・scratch の番地は 32 bit の `lw` で読む（`ld.64` は使わない。§5.5 の VA は 32 bit なので、shader が触る物は全部 4 GiB 未満の VA）。
+  - set 3（driver の表）: scratch の番地を stage ごとに 0x00（VS）・0x08（FS）・0x10（CS）。program の `scratch_bytes` が 0 でなければ set 3 を必ず bind する。spill する program は warp あたり 128 byte 以上。
+  - uniform texel buffer は texture slot（幅 256 texel の linear の 2D として texture descriptor を作る）と set 2 の buffer descriptor（要素の数）の 2 つを取る。`maxTexelBufferElements` は 256 × 16384 = 4,194,304（§15.5）。
+  - **STORAGE の usage の image は linear** に作り（compiler の番地の計算は linear だけ）、set 2 の 32 byte の写しには view の subresource（mip・layer）の先頭の番地、`mip_levels` = 1、depth ≥ 1 を書く。
+  - 属性の表（`has_attribute_map`、location ごとの format の成分の数と整数の印）は常に渡し、PSO の attribute slot は location の昇順に詰める。PSO の `varying_count` は VS の program の値。
+  - VS を先に compile し、その資源の表を FS の compile に渡す（同じ binding は同じ slot・entry）。
+  - graphics と compute は table の slot 0〜3 を共有する（§8.4）ので、dispatch の後の draw（と draw の後の dispatch）の前に 4 つの table・c0〜c71 の constant を置き直す。`LOAD_CONST` は c24〜c31 に書かない。
+  - fragment stage の無い pipeline の 2 命令の FS は p008 で executor が作る。
+  - compiler が断る物（U8 の一覧に足す）: 分かれた sampler と descriptor の配列（IR に無い）、資源の表が 128 entry・4096 byte を超える pipeline。
 
 - **attachment の配置（R05、仮）**: §8.4 の attachment の記述に linear・tiled の flag も layer の pitch も無く、`mip_level`・`base_array_layer` から番地を求める方法も無い（ghci-review 第 13 版 N47、H）。答えまで: COLOR_ATTACHMENT・DEPTH_STENCIL_ATTACHMENT・INPUT_ATTACHMENT・TRANSFER_DST（blit・resolve の先）の usage の image は **linear**（§8.5.2 の 64 byte 揃えの行、subresource の配置は §8.5.2）に作り、記述の `*_va` には driver が §8.5.2 で求めた subresource（mip・layer）の先頭の番地を書き、`mip_level` = `base_array_layer` = 0、`layers` = 1。framebuffer の layers > 1 は layer 0 だけに描き（geometry shader が無いので layer を選ぶ shader は無い）、layer 1 以降の loadOp CLEAR と、ClearAttachments の baseArrayLayer > 0 は、layer ごとにその subresource の番地で clear だけの render pass を置く（Q12）。他の image は tiled にしてよい（texture の flags[0]）。答えが (b)（tiled の flag の追加）なら p008・p009 で attachment を tiled にできる。
 - **PSO に無い静的な状態（R07）**: stencil の compare・write mask・reference、depth bias の constant・slope・clamp、blend constant、independentBlend の 0x07〜0x0E（CAP_MRT_BLEND = 1 の時だけ置く。0 で置けば KICK_ABSENT で reset になる、848 行。Q11）は session ごとに残り、BIND_PIPELINE が戻すのは dw9・dw11 だけ（845〜846 行）。executor は BIND_PIPELINE の度に、その pipeline の静的な値（dynamic にした物は記録された値）を `SET_DYNAMIC_STATE` で全部置く。stencil は 3 つを 1 語で書くので、executor が 3 つの値を command buffer の状態として持つ。
@@ -494,7 +505,7 @@ CAP_BLT = 0 の device（と BLT の有無に依らない CopyQueryPoolResults�
 §12.10 で program は header も interface 表も無い純粋な code になり（2247〜2259 行）、資源は descriptor table と constant bank で結ぶ（2261〜2281 行）。直す所:
 
 1. **出力**: `struct ghci_gsi1_program` は code の語、`used_regs`、`lds_bytes`、`local_size`、flag（depth export・discard・centroid・sample shading）、varying の数、そして **executor への資源の表**（GPU には渡さない: texture・sampler の slot の組、set 2 の各 entry の Vulkan の set・binding・要素・種類、dynamic offset の語、push constant の範囲、scratch の bytes per warp）を持つ。header・interface 表を作る code（`gsi1_add_interface` など）を捨てる。
-2. **資源の読み方**: UBO・SSBO・texel buffer は set 2 の buffer descriptor（c28〜c29 の base + entry の offset）を `ld.64` で読み、`lw`・`sw`・`atom` で触る（robustBufferAccess は size で検査）。storage image・input attachment は set 2 の 32 byte の記述から番地を計算（今の kind 9・10 の計算を移す）。sampled image は slot（§11.4）。push constant と dynamic offset は §11.4 の bank の語。scratch の base は set 3 の語。
+2. **資源の読み方**: UBO・SSBO・texel buffer は set 2 の buffer descriptor（c28〜c29 の base + entry の offset）を `lw` で読み（版 4.10: VA は 32 bit なので `ld.64` は使わない）、`lw`・`sw`・`atom` で触る（robustBufferAccess は size で検査）。storage image・input attachment は set 2 の 32 byte の記述から番地を計算（今の kind 9・10 の計算を移す）。sampled image は slot（§11.4）。push constant と dynamic offset は §11.4 の bank の語。scratch の base は set 3 の語。
 3. **stage の I/O**: cf8be08 §12.10.3（cf8be08 の 2283〜2392 行）に従う。vertex の属性は PSO の slot i（format ≠ 0 が有効）ごとに、前の有効な slot の成分の数の累積和 base_i から C_i 個（format の成分の数）の register r[base_i..base_i + C_i − 1] に届く（足りない成分の (0, 0, 0, 1) は compiler が補う。合計 60 を超える pipeline は driver が作成で断り、`VK_ERROR_OUT_OF_DEVICE_MEMORY` と log）。driver は SPIR-V の Location を slot 0 から詰めて付け直し、その表を compiler に渡す。VertexIndex・InstanceIndex は operand 120 `vtx_idx`・121 `inst_idx` で読む（20bf888 §12.3・§12.10.3、N66。register を使わず、`used_regs_vs` に依らない。r60・r61 への配達は使わない）、r62 は compiler の物。export は POS 0x000〜0x003・POINT_SIZE 0x004（無視、大きさ 1）・VARYING 0x010 + w（w = 4L + c、PSO dw13 `varying_count` は vec4 の数）。`lda` の即値は [8:2] PT word（0〜3 = clip の POS、4 + w = varying）・[1:0] 頂点（vertex k は b_k の頂点、Vulkan の順、vertex 0 が provoking で flat はそれを読む）。補間は b0〜b2 と `lda` の積和、noperspective と FragCoord.w は word 3 の w から compiler が作る。clip・割り算・viewport は Vulkan の規則（depth clamp は PSO flags[4]）。fragment の入力 r0〜r9、export COLOR 0x100 + 16k + c（k = 0〜7）・DEPTH 0x104・SAMPLE_MASK 0x105・COLOR0_SRC1 0x108〜0x10B。値は ghci_cmd.h の `GHCI_VS_REG_*`・`GHCI_FS_REG_*`・`GHCI_EXP_*` と照合し、`gsi1-abi.h` の一か所に置く。
 4. **options**: registers = min(63, `RESIDENT_WARPS[23:16]`（0 なら 63）)、samples は CAP_MSAA の時 4（2・4）、sample mask の入力は CAP_MSAA、subgroup・fp16 の命令は出さない（Vulkan 1.0 の SPIR-V では使えない。WS226 で）。
 5. **捨てる制約**: §12.9「Not in version 1」（anisotropic・cube array・MinLod・gather の動的 offset）は compiler が断る（今と同じ）。
@@ -618,6 +629,8 @@ FMT の block が有れば、format ごとに `FMT_INDEX` を書き `FMT_OPTIMAL
 | `maxPerStageResources`・`maxDescriptorSetInputAttachments` | 128・4 | Vulkan の最小 |
 | `shaderSampledImageArrayDynamicIndexing` ほか dynamic indexing | false | texture の slot は即値 sub[3:0]（2161 行） |
 | scratch の大きさ | `RESIDENT_WARPS[15:0]` × bytes per warp | `warp` の範囲（1967 行）。[15:0] を容量と読む仮（ghci-review 第 13 版 N54） |
+| `maxTexelBufferElements` | 4,194,304 | uniform texel buffer を幅 256・高さ 16384 の 2D として読む（§11.4 の p006 の取り決め）。§8.6 の 67,108,864 より小さい（Vulkan 1.0 の最小 65536 は満たす） |
+| `maxDescriptorSetUniformBuffers`・`StorageBuffers`・`StorageImages` と per stage の UBO・SSBO・storage image | §8.6 と上の行のまま。ただし VS と FS の和が資源の表（128 entry・4096 byte、buffer 1 つ 16 byte・image 1 つ 32 byte）を超える pipeline は作成で断る（U8） | compiler の資源の表 |
 | texel buffer の format | UNIFORM は `FMT_BUFFER` か §8.5.1 の Vertex Buffer の列で、compiler が decode できる物。STORAGE は compiler が encode できる物（p006 の表） | §8.5 |
 
 ## 16. platform と userland
@@ -690,7 +703,7 @@ WS の受け入れ（ws.md）との対応: 1.1 の code が無い = p004・p007�
 
 版 4 の S01・S02 は N37〜N46 で解決した（第 12 版）。版 4.1 の design-reviewer で見つけた N47〜N60 は [ghci-review.md](ghci-review.md) 第 13 版で送り、回答 第 13.0 版（cb937e6）で 10 件が解決、4 件が一部。第 14 版（N62〜N72）は回答 第 14.0 版（20bf888）で 7 件が解決、4 件が一部。第 15 版（N73〜N77）は回答 第 15.0 版（d9252e4）で全部解決した。2026-10-28 06:35 の第 16 版で「残る疑問なし」を送り（仕様担当は回答 第 16.0 版で Signoff）、やり取りを閉じた（N01〜N77 の全部が解決）。
 
-**仕様の残りは無い。** d9252e4 で決まった物の driver の扱い:
+**仕様の残り**: d9252e4 の ghci.md の本文には無い。ただし p006 の code の review（M4）で、`include/ghci_cmd.h`（d9252e4）の `GHCI_VS_REG_ATTR(loc, comp)` = 4 × loc + comp が §12.10.3 の累積の base_i と食い違い、`fw/cp/pipeline.c` も古い ATTR_DST の書き方のままと分かった。driver は正本の ghci.md（累積）に従う。食い違いは ghci-review 第 17 版の N78 として用意した（`plan/ws290/ghci-review.md`）。実機（p014）で vec2 + vec3 の属性の場面を足して確かめる。d9252e4 で決まった物の driver の扱い:
 
 | N | 決まった事（d9252e4） | driver（design の節） |
 | --- | --- | --- |
