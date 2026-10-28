@@ -152,6 +152,7 @@ static void disk_copy_info(const struct disk *disk, struct disk_info *info);
 static int bio_admit(struct disk *disk, struct bio *bio);
 static uint64_t disk_stats_now_ns(void);
 static uint64_t disk_stats_stamp(const struct disk *leaf);
+static bool disk_lock_stamped(const struct disk *leaf, uint64_t *now);
 static void disk_stats_start(struct disk *leaf, struct bio *bio, uint64_t now);
 static void disk_stats_end(struct disk *leaf, const struct bio *bio, size_t transferred, int completed,
     uint64_t now);
@@ -1957,8 +1958,7 @@ bio_submit(
 	error = bio_dispatch(bio);
 	if (error != 0) {
 		disk_write_retire(leaf, bio, error, 0);
-		now = disk_stats_stamp(leaf);
-		enabled = disk_lock();
+		enabled = disk_lock_stamped(leaf, &now);
 		leaf->d_inflight--;
 		disk_stats_end(leaf, bio, 0, 0, now);
 		(void)refcount_put_not_last(&leaf->d_refs);
@@ -3521,8 +3521,7 @@ bio_admit(
 		return EOVERFLOW;
 
 	/* Marks the bio submitted and pins the leaf; the time is read before the registry lock. */
-	now = disk_stats_stamp(leaf);
-	enabled = disk_lock();
+	enabled = disk_lock_stamped(leaf, &now);
 	if (disk->d_state != DISK_LIVE || leaf->d_state != DISK_LIVE ||
 	    disk_media_status(disk) != 0) {
 		disk_unlock(enabled);
@@ -3831,6 +3830,32 @@ disk_lock(
 		enabled = false;
 
 	/* Spins until the registry lock is free. */
+	while (!atomic_try_acquire_zero(&disk_registry_lock))
+		hal_compiler_barrier();
+
+	/* Reports the previous interrupt state. */
+	return enabled;
+}
+
+/*
+ * Takes the registry lock like disk_lock(), reading the statistics' time
+ * for leaf once interrupts are off and before the wait for the lock.
+ */
+static bool
+disk_lock_stamped(
+	const struct disk *leaf,
+	uint64_t *now)
+{
+	bool enabled;
+
+	/* Disables interrupts when the HAL provides the routine. */
+	if (hal_irq_disable != NULL)
+		enabled = hal_irq_disable();
+	else
+		enabled = false;
+
+	/* Reads the time, then spins until the registry lock is free. */
+	*now = disk_stats_stamp(leaf);
 	while (!atomic_try_acquire_zero(&disk_registry_lock))
 		hal_compiler_barrier();
 
@@ -4579,8 +4604,10 @@ disk_stats_now_ns(
 /*
  * The time for a request's statistics, read before the registry lock is
  * taken so that the lock is not held over the clock: zero for a disk
- * hw.diskstats does not list.  A request admitted or retired by another
- * CPU between the read and the lock moves a busy stretch's edge by that
+ * hw.diskstats does not list.  The caller reads it with interrupts off
+ * (disk_lock_stamped, or under a bio's lock), so nothing runs between the
+ * read and the lock but the wait for the lock.  A request admitted or
+ * retired by another CPU in that wait moves a busy stretch's edge by that
  * little; every comparison below allows a time older than the one stored.
  */
 static uint64_t

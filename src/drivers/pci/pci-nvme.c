@@ -4881,9 +4881,10 @@ nvme_io_slot_acquire(
 			command_id = drv_nvme_io_next_command_id(index,
 			    &slot->cid_generation);
 
-			/* Checks the drv nvme io lifecycle begin bio result. */
+			/* Checks the drv nvme io lifecycle begin bio result; the slot stays free and hinted. */
 			if (drv_nvme_io_lifecycle_begin_bio(&slot->lifecycle) !=
 			    0) {
+				controller->io_slot_free_hint |= (uint64_t)1 << index;
 				error = EIO;
 				break;
 			}
