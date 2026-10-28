@@ -14,7 +14,10 @@
  * longest frame the interface takes (a jumbo frame where the packet pool
  * has jumbo packets, else 2 KiB): a transmitted
  * frame is copied into the buffer of the next free transmit descriptor,
- * and a received frame is copied out of its buffer into a network packet
+ * unless the controller reaches the packet's own bytes (a coherent DMA and
+ * a packet of the pool, whose physical address is known), when the
+ * descriptor points at the packet, which the driver keeps until the
+ * frame is sent; and a received frame is copied out of its buffer into a network packet
  * before the descriptor goes back to the controller.  One receive
  * descriptor is always kept back, so the ring's tail never meets its
  * head.  No checksum, segmentation or VLAN offload is used.
@@ -322,6 +325,14 @@ struct eqos_device {
 	struct drv_dma_device *dma;
 	struct drv_dma_buffer descriptors;
 	struct drv_dma_buffer tx_buffers;
+	/*
+	 * The packets the transmit descriptors point at in place, by slot (NULL
+	 * for a frame copied into the slot's buffer), and the ones the
+	 * controller has finished, linked by next, which the caller of
+	 * reclaim_tx frees once the lock is released.  Guarded by the lock.
+	 */
+	struct packet_buf *tx_packets[EQOS_TX_COUNT];
+	struct packet_buf *tx_done;
 	struct drv_dma_buffer rx_buffers;
 	struct eqos_descriptor *tx_ring;
 	struct eqos_descriptor *rx_ring;
@@ -390,6 +401,8 @@ static void arm_rx_slot(struct eqos_device *device, unsigned slot);
 static void configure_queues(struct eqos_device *device);
 static void apply_link(struct eqos_device *device);
 static unsigned reclaim_tx(struct eqos_device *device);
+static struct packet_buf *take_tx_done_locked(struct eqos_device *device);
+static void free_tx_done(struct packet_buf *list);
 static unsigned receive_frames(struct net_device *net, unsigned budget);
 static void report_tx_errors(struct net_device *net, unsigned errors);
 static void eqos_interrupt(int irq, kern_irq_ack_t acknowledge, void *argument);
@@ -1354,8 +1367,10 @@ eqos_close(
 	struct net_device *net)
 {
 	struct eqos_device *device;
+	struct packet_buf *done;
 	unsigned long irq;
 	uint32_t value;
+	unsigned slot;
 	int error;
 
 	/* Stops the PLIC from delivering another interrupt. */
@@ -1390,7 +1405,20 @@ eqos_close(
 	write_register(device, EQOS_MAC_CONFIG, value & ~EQOS_MAC_CONFIG_TX);
 	write_register(device, EQOS_CHANNEL_STATUS, 0xffffffffU);
 
+	/* The packets descriptors still held go on the list to free: the DMA has stopped. */
+	for (slot = 0; slot < EQOS_TX_COUNT; slot++) {
+		if (device->tx_packets[slot] == NULL)
+			continue;
+		device->tx_packets[slot]->next = device->tx_done;
+		device->tx_done = device->tx_packets[slot];
+		device->tx_packets[slot] = NULL;
+	}
+	done = take_tx_done_locked(device);
+
 	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* Frees them outside the lock. */
+	free_tx_done(done);
 
 	/* Withdraws the carrier. */
 	(void)net_device_set_carrier(net, 0);
@@ -1410,12 +1438,15 @@ eqos_transmit(
 {
 	struct eqos_device *device;
 	struct eqos_descriptor *descriptor;
+	struct packet_buf *done;
 	uint8_t *buffer;
 	uint64_t address;
+	uint64_t physical;
 	unsigned long irq;
 	unsigned errors;
 	unsigned slot;
 	size_t length;
+	int in_place;
 	int error;
 
 	/* Refuses a missing packet. */
@@ -1429,6 +1460,15 @@ eqos_transmit(
 		packet_buf_free(packet);
 		return EMSGSIZE;
 	}
+
+	/*
+	 * Points the descriptor at the packet itself when the controller
+	 * reaches its bytes; a short frame, which is padded, is copied.
+	 */
+	in_place = 0;
+	if (length >= EQOS_MIN_FRAME && packet_buf_physical(packet, &physical) == 0 &&
+	    drv_dma_physical_address(device->dma, physical, length, 0, &address) == 0)
+		in_place = 1;
 
 	/* Takes a free descriptor, if the interface runs and has a link. */
 	error = 0;
@@ -1451,18 +1491,25 @@ eqos_transmit(
 
 	/* Fills the descriptor and hands it over. */
 	if (error == 0) {
-		/* Copies the frame, padding a short one so no old bytes go out. */
+		/*
+		 * The packet in place, kept until the frame is sent; or the frame
+		 * copied, a short one padded so no old bytes go out.
+		 */
 		slot = device->tx_producer % EQOS_TX_COUNT;
-		buffer = (uint8_t *)device->tx_buffers.address + slot * EQOS_BUFFER_BYTES;
-		kern_memcpy(buffer, packet->data, length);
-		if (length < EQOS_MIN_FRAME) {
-			kern_memset(buffer + length, 0, EQOS_MIN_FRAME - length);
-			length = EQOS_MIN_FRAME;
+		if (in_place) {
+			device->tx_packets[slot] = packet;
+		} else {
+			buffer = (uint8_t *)device->tx_buffers.address + slot * EQOS_BUFFER_BYTES;
+			kern_memcpy(buffer, packet->data, length);
+			if (length < EQOS_MIN_FRAME) {
+				kern_memset(buffer + length, 0, EQOS_MIN_FRAME - length);
+				length = EQOS_MIN_FRAME;
+			}
+			address = device->tx_buffers.device_address + slot * EQOS_BUFFER_BYTES;
 		}
 
-		/* Points the descriptor at the buffer as one whole frame, interrupting when sent. */
+		/* Points the descriptor at the bytes as one whole frame, interrupting when sent. */
 		descriptor = &device->tx_ring[slot];
-		address = device->tx_buffers.device_address + slot * EQOS_BUFFER_BYTES;
 		descriptor->word0 = (uint32_t)address;
 		descriptor->word1 = (uint32_t)(address >> 32);
 		descriptor->word2 = EQOS_TX_INTERRUPT | (uint32_t)length;
@@ -1479,10 +1526,17 @@ eqos_transmit(
 					  (device->tx_producer % EQOS_TX_COUNT) * EQOS_DESCRIPTOR_BYTES));
 	}
 
+	done = take_tx_done_locked(device);
+
 	spin_unlock_irqrestore(&device->lock, irq);
 
-	/* Releases the packet and counts finished frames that failed, outside the lock. */
-	packet_buf_free(packet);
+	/*
+	 * Releases the packet unless a descriptor holds it, the packets of the
+	 * frames finished, and counts the ones that failed, outside the lock.
+	 */
+	if (!in_place || error != 0)
+		packet_buf_free(packet);
+	free_tx_done(done);
 	report_tx_errors(net, errors);
 
 	/* Reports a closed interface, no link or a full ring. */
@@ -1503,6 +1557,7 @@ eqos_poll(
 	unsigned budget)
 {
 	struct eqos_device *device;
+	struct packet_buf *done;
 	unsigned long irq;
 	unsigned errors;
 	unsigned count;
@@ -1515,8 +1570,12 @@ eqos_poll(
 
 	if (device->opened)
 		errors = reclaim_tx(device);
+	done = take_tx_done_locked(device);
 
 	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* The packets of the sent frames, outside the lock. */
+	free_tx_done(done);
 
 	/* Counts sent frames that failed. */
 	report_tx_errors(net, errors);
@@ -1726,6 +1785,7 @@ reclaim_tx(
 	struct eqos_device *device)
 {
 	struct eqos_descriptor *descriptor;
+	struct packet_buf *packet;
 	uint32_t status;
 	unsigned errors;
 
@@ -1743,13 +1803,54 @@ reclaim_tx(
 		if ((status & EQOS_TX_ERROR) != 0)
 			errors++;
 
-		/* Frees the descriptor. */
+		/* Frees the descriptor, and puts the packet it held on the list to free. */
 		descriptor->word3 = 0;
+		packet = device->tx_packets[device->tx_consumer % EQOS_TX_COUNT];
+		if (packet != NULL) {
+			device->tx_packets[device->tx_consumer % EQOS_TX_COUNT] = NULL;
+			packet->next = device->tx_done;
+			device->tx_done = packet;
+		}
 		device->tx_consumer++;
 	}
 
 	/* Reports the failed frames. */
 	return errors;
+}
+
+/*
+ * Takes the list of the packets whose frames the controller has finished,
+ * for the caller to free once it has released the lock.  The caller holds
+ * the lock.
+ */
+static struct packet_buf *
+take_tx_done_locked(
+	struct eqos_device *device)
+{
+	struct packet_buf *list;
+
+	/* The whole list, the device's emptied. */
+	list = device->tx_done;
+	device->tx_done = NULL;
+
+	/* Succeeded: the list, or none. */
+	return list;
+}
+
+/* Frees a list of packets linked by next. */
+static void
+free_tx_done(
+	struct packet_buf *list)
+{
+	struct packet_buf *next;
+
+	/* Each packet in turn. */
+	while (list != NULL) {
+		next = list->next;
+		list->next = NULL;
+		packet_buf_free(list);
+		list = next;
+	}
 }
 
 /*

@@ -21,6 +21,7 @@
 #include "kern/test-fault.h"
 #include "kern/kmem.h"
 #include <kern/kcrt.h>
+#include <hal/types.h>
 
 #include <uapi/errno.h>
 #include <stdbool.h>
@@ -31,6 +32,8 @@ extern void hal_irq_enable(void) __attribute__((weak));
 extern void net_device_ref(struct net_device *) __attribute__((weak));
 extern void net_device_release(struct net_device *) __attribute__((weak));
 extern void kern_logf(const char *format, ...) __attribute__((weak, format(printf, 1, 2)));
+extern int hal_pmem_alloc(size_t req_size, size_t req_align, hal_physaddr_t *block) __attribute__((weak));
+extern void *hal_pmem_to_kernel(hal_physaddr_t paddr) __attribute__((weak));
 
 /*
  * A standard packet's slot and a jumbo packet's: the packet, its inline
@@ -68,6 +71,15 @@ static uint16_t *packet_free_stack;
 static uint16_t *packet_jumbo_free_stack;
 static unsigned packet_count;
 static unsigned packet_jumbo_count;
+
+/*
+ * The physical addresses the two arrays start at, when they came straight
+ * from physical memory (0: not known, as in a host test): a driver that
+ * can reach the memory hands a packet's bytes to its device without
+ * copying them (packet_buf_physical).  Set with the arrays.
+ */
+static hal_physaddr_t packet_pool_physical;
+static hal_physaddr_t packet_jumbo_pool_physical;
 static unsigned packet_free_count;
 static unsigned packet_jumbo_free_count;
 static unsigned packet_used;
@@ -89,6 +101,7 @@ static atomic_uint_t packet_guard;
 static bool packet_lock(void);
 static void packet_unlock(bool enabled);
 static void packet_pool_allocate(void);
+static void *packet_pool_block(size_t bytes, hal_physaddr_t *physical);
 static struct packet_buf *packet_take_standard_locked(void);
 static struct packet_buf *packet_take_jumbo_locked(unsigned flags);
 static void packet_reset(struct packet_buf *packet, uint8_t *storage, size_t capacity, size_t headroom);
@@ -729,7 +742,7 @@ packet_pool_allocate(
 	/* The standard slots and their stack, in one block. */
 	for (count = PACKET_BUF_POOL_COUNT; count != 0; count /= 2U) {
 		bytes = (size_t)count * (sizeof(packet_pool[0]) + sizeof(uint16_t));
-		packet_pool = kern_calloc(1, bytes);
+		packet_pool = packet_pool_block(bytes, &packet_pool_physical);
 		if (packet_pool != NULL)
 			break;
 	}
@@ -740,7 +753,7 @@ packet_pool_allocate(
 	/* The jumbo slots and their stack, where the build has them. */
 	for (count = PACKET_BUF_JUMBO_COUNT; count != 0; count /= 2U) {
 		bytes = (size_t)count * (sizeof(packet_jumbo_pool[0]) + sizeof(uint16_t));
-		packet_jumbo_pool = kern_calloc(1, bytes);
+		packet_jumbo_pool = packet_pool_block(bytes, &packet_jumbo_pool_physical);
 		if (packet_jumbo_pool != NULL)
 			break;
 	}
@@ -753,4 +766,74 @@ packet_pool_allocate(
 	    kern_logf != NULL)
 		kern_logf("net: packet pool short of memory: %u of %u packets, %u of %u jumbo\n", packet_count,
 		    (unsigned)PACKET_BUF_POOL_COUNT, packet_jumbo_count, (unsigned)PACKET_BUF_JUMBO_COUNT);
+}
+
+/*
+ * Takes one array's block: whole pages of physical memory, whose address
+ * is kept, or (without the HAL, in a host test, or when that fails) the
+ * kernel's allocator, with no address known.  The block is zeroed.
+ */
+static void *
+packet_pool_block(
+	size_t bytes,
+	hal_physaddr_t *physical)
+{
+	hal_physaddr_t block;
+	void *address;
+	int error;
+
+	/* Physical pages, mapped through the direct map, when the HAL is there. */
+	*physical = 0;
+	if (hal_pmem_alloc != NULL && hal_pmem_to_kernel != NULL) {
+		error = hal_pmem_alloc(bytes, 4096U, &block);
+		if (error == 0) {
+			address = hal_pmem_to_kernel(block);
+			if (address != NULL) {
+				kern_memset(address, 0, bytes);
+				*physical = block;
+				return address;
+			}
+		}
+	}
+
+	/* The kernel's allocator otherwise. */
+	address = kern_calloc(1, bytes);
+
+	/* The block, or none. */
+	return address;
+}
+
+/*
+ * Reports the physical address of a packet's data, for a driver that
+ * hands the bytes to its device in place.  ENOENT for a packet whose
+ * pool's physical address is not known or that is not the pool's.
+ */
+int
+packet_buf_physical(
+	const struct packet_buf *packet,
+	uint64_t *physical)
+{
+	uintptr_t address;
+	uintptr_t first;
+	uintptr_t end;
+
+	/* A standard packet's data, by its distance from the array's start. */
+	address = (uintptr_t)packet->data;
+	first = (uintptr_t)packet_pool;
+	end = (uintptr_t)&packet_pool[packet_count];
+	if (packet_pool_physical != 0 && address >= first && address < end) {
+		*physical = (uint64_t)packet_pool_physical + (address - first);
+		return 0;
+	}
+
+	/* The same for a jumbo packet. */
+	first = (uintptr_t)packet_jumbo_pool;
+	end = (uintptr_t)&packet_jumbo_pool[packet_jumbo_count];
+	if (packet_jumbo_pool_physical != 0 && address >= first && address < end) {
+		*physical = (uint64_t)packet_jumbo_pool_physical + (address - first);
+		return 0;
+	}
+
+	/* Not known. */
+	return ENOENT;
 }

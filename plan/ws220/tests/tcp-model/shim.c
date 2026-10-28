@@ -27,6 +27,7 @@
 #include "kern/poll.h"
 #include "kern/process.h"
 #include "kern/sched.h"
+#include "kern/uaccess.h"
 #include "kern/signal.h"
 #include "kern/syscall.h"
 #include "kern/thread.h"
@@ -430,6 +431,21 @@ route_lookup_ref(
 
 	/* No other address is reachable. */
 	return ENETUNREACH;
+}
+
+/* The model's writer never sends from pinned user pages (ws221-p008). */
+int
+copyin_pinned(
+	const struct uaccess_pin *pin,
+	size_t offset,
+	void *destination,
+	size_t size)
+{
+	(void)pin;
+	(void)offset;
+	(void)destination;
+	(void)size;
+	return EFAULT;
 }
 
 /* The model's table never changes (ws221-p008). */

@@ -52,6 +52,7 @@ struct cwdinfo;
 struct ucred;
 struct packet_buf;
 struct socket;
+struct uaccess_pin;
 struct thread;
 struct path;
 
@@ -66,6 +67,14 @@ struct socket_ops {
 		      socklen_t *, unsigned);
 	ssize_t (*sendto)(struct socket *, const void *, size_t, int,
 			  const struct sockaddr *, socklen_t);
+	/*
+	 * sendto without an address from a user buffer the caller has pinned
+	 * (length bytes at offset in the pin), copied straight into the
+	 * protocol's own buffers rather than through the system call's bounce
+	 * buffer; NULL where the protocol takes kernel buffers only (write(2)
+	 * then bounces).
+	 */
+	ssize_t (*send_pinned)(struct socket *, const struct uaccess_pin *, size_t, size_t, int);
 	ssize_t (*recvfrom)(struct socket *, void *, size_t, int,
 			    struct sockaddr *, socklen_t *);
 	/*
@@ -183,6 +192,12 @@ int socket_file_create(struct socket *socket, struct file **result);
 int socket_file_reserve(struct file **result);
 int socket_file_attach(struct file *file, struct socket *socket);
 struct socket *socket_from_file(struct file *file);
+/*
+ * Whether write(2) on the file goes straight from the caller's pinned
+ * pages into the socket (socket_file_write_pinned), and the write itself.
+ */
+int socket_file_takes_pinned(struct file *file);
+ssize_t socket_file_write_pinned(struct file *file, const struct uaccess_pin *pin, size_t length);
 int socket_file_ref_get(struct filedesc *fd, int descriptor,
 			struct socket_file_ref *reference);
 void socket_file_ref_put(struct socket_file_ref *reference);
