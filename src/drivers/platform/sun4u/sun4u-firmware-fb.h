@@ -74,4 +74,23 @@ int
 drv_sun4u_fb_register_backend(
 	void);
 
+struct kern_text_range;
+
+/*
+ * Gives the framebuffer up for good once the console has left the display.
+ *
+ * Nothing is drawn on it again, and the kernel's mapping of it is removed
+ * (the hardware is not written).  Returns 0 when nothing left mapped lies
+ * in the count ranges, the error of a removal that failed for a mapping in
+ * them, or EBUSY for a mapping in them the hardware layer keeps.  A later
+ * call waits for the first one's removal and judges what it left against
+ * its own ranges.  The caller stopped the console's drawing first, and
+ * holds /dev/graphics's lock when /dev/graphics draws here; thread
+ * context, it may sleep.  It is also /dev/graphics's backend end.
+ */
+int
+drv_sun4u_fb_end(
+	const struct kern_text_range *ranges,
+	unsigned count);
+
 #endif

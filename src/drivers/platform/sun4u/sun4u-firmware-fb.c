@@ -37,7 +37,9 @@
 #include <kern/boot.h>
 #include <kern/graphics-backend.h>
 #include <kern/kcrt.h>
+#include <kern/lock.h>
 #include <kern/pmem.h>
+#include <kern/text-display.h>
 
 /* The glyphs /dev/graphics hands out: the 8x16 font's ASCII half. */
 #define SUN4U_FB_GLYPHS		128U
@@ -47,6 +49,18 @@
 /* The largest screen the driver accepts, the interface's own limit. */
 #define SUN4U_FB_MAX_SIDE	16384U
 
+/*
+ * The framebuffer's mapping as the end left it: its physical range, and
+ * the error of its removal (0 for a window the hardware layer keeps for
+ * good).  bytes is 0 when nothing was left.
+ */
+struct sun4u_fb_left {
+	uint64_t physical;
+	uint64_t bytes;
+	int error;
+};
+
+static void fb_end_lock_init_once(void);
 static uint32_t fb_value(uint32_t color);
 static void fb_put(unsigned x, unsigned y, uint32_t value);
 static const uint64_t *fb_name(const char *name);
@@ -78,20 +92,43 @@ static const struct drv_graphics_backend sun4u_fb_backend = {
 	.pattern_fill = backend_pattern_fill,
 	.blit_row = backend_blit_row,
 	.flush = backend_flush,
-	.get_glyph = backend_get_glyph
+	.get_glyph = backend_get_glyph,
+	.end = drv_sun4u_fb_end
 };
 #endif
 
 /*
  * The mapped framebuffer and its shape, set once by drv_sun4u_fb_init()
  * from the boot thread before the console or /dev/graphics use them, and
- * only read afterwards.  fb_pixels is NULL until the mapping succeeded.
+ * only read afterwards.  fb_pixels is NULL until the mapping succeeded and
+ * again once the end removed it; fb_mapping, fb_physical and fb_bytes are
+ * the mapping the end removes.
  */
 static volatile uint8_t *fb_pixels;
+static void *fb_mapping;
+static uint64_t fb_physical;
+static size_t fb_bytes;
 static unsigned fb_width;
 static unsigned fb_height;
 static unsigned fb_pitch;
 static unsigned fb_format;
+
+/*
+ * Serializes the end: the first caller removes the mapping, and a later
+ * one waits for it before judging what was left.  Initialized once by the
+ * first drv_sun4u_fb_init(), on the boot thread; fb_end_lock_ready says
+ * it was.
+ */
+static struct mutex fb_end_lock;
+static int fb_end_lock_ready;
+
+/*
+ * Whether the end has run (nothing is drawn or mapped again), and what it
+ * could not remove.  Written once under fb_end_lock (or, with no lock yet,
+ * before anything was mapped) and read under it afterwards.
+ */
+static int fb_ended;
+static struct sun4u_fb_left fb_left;
 
 /*
  * Maps the framebuffer the HAL names.
@@ -110,9 +147,16 @@ drv_sun4u_fb_init(
 	void *mapped;
 	int error;
 
+	/* Readies the end's lock before anything is mapped. */
+	fb_end_lock_init_once();
+
 	/* A second call keeps the first mapping. */
 	if (fb_pixels != NULL)
 		return 0;
+
+	/* Nothing is mapped again once the console has left the display. */
+	if (fb_ended)
+		return ENODEV;
 
 	/* Reads the framebuffer the HAL shows; without one there is none. */
 	phys = fb_name("sun4u.framebuffer.phys");
@@ -153,11 +197,14 @@ drv_sun4u_fb_init(
 	if (error != 0)
 		return error;
 
-	/* Records the shape, then publishes the mapping. */
+	/* Records the shape and the mapping, then publishes the mapping. */
 	fb_width = (unsigned)*width;
 	fb_height = (unsigned)*height;
 	fb_pitch = (unsigned)*pitch;
 	fb_format = (unsigned)*format;
+	fb_mapping = mapped;
+	fb_physical = *phys;
+	fb_bytes = (size_t)size;
 	fb_pixels = mapped;
 
 	/* Succeeded: the framebuffer can be drawn. */
@@ -295,6 +342,93 @@ drv_sun4u_fb_register_backend(
 	/* The kernel has no /dev/graphics to offer it to. */
 	return ENODEV;
 #endif
+}
+
+/*
+ * Gives the framebuffer up for good once the console has left the display.
+ */
+int
+drv_sun4u_fb_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	void *mapping;
+	int overlaps;
+	int error;
+
+	/* Without the lock nothing was ever mapped, and nothing will be. */
+	if (!fb_end_lock_ready) {
+		fb_ended = 1;
+		return 0;
+	}
+
+	/*
+	 * The first end removes the mapping; a later one waits here for it and
+	 * only judges what was left.
+	 */
+	mutex_lock(&fb_end_lock);
+
+	/* Only the first end has a mapping to remove. */
+	if (!fb_ended) {
+		/*
+		 * Nothing is drawn from now on.  The callers stopped every writer
+		 * first: the console's under its own exclusion, /dev/graphics under
+		 * the graphics lock this runs under when it draws here; a fatal
+		 * stop's reveal sees the console ended and draws nothing.
+		 */
+		fb_ended = 1;
+		mapping = fb_mapping;
+		fb_pixels = NULL;
+		fb_mapping = NULL;
+
+		/* Removes the mapping; one the hardware layer keeps, or a failed removal, is left. */
+		if (mapping != NULL) {
+			error = kern_device_unmap(mapping, fb_bytes);
+			if (error == EBUSY) {
+				fb_left.physical = fb_physical;
+				fb_left.bytes = fb_bytes;
+				fb_left.error = 0;
+			} else if (error != 0) {
+				fb_left.physical = fb_physical;
+				fb_left.bytes = fb_bytes;
+				fb_left.error = error;
+			}
+		}
+	}
+
+	/* What was left, against the caller's ranges. */
+	error = 0;
+	if (fb_left.bytes != 0) {
+		overlaps = kern_text_range_overlaps(ranges, count, fb_left.physical, fb_left.bytes);
+		if (overlaps && fb_left.error != 0) {
+			/* A range of the caller's memory whose removal failed. */
+			error = fb_left.error;
+		} else if (overlaps) {
+			/* A range of the caller's memory that stays mapped for good. */
+			error = EBUSY;
+		}
+	}
+
+	mutex_unlock(&fb_end_lock);
+
+	/* Reports a mapping left in the ranges. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: nothing of the framebuffer stays mapped in the ranges. */
+	return 0;
+}
+
+/* Initializes the end's lock on the first start. */
+static void
+fb_end_lock_init_once(
+	void)
+{
+	/* Initializes the lock only once. */
+	if (!fb_end_lock_ready) {
+		(void)mutex_init(&fb_end_lock, LOCK_RANK_DEVICE, "sun4u framebuffer");
+		fb_end_lock_ready = 1;
+	}
 }
 
 /*
