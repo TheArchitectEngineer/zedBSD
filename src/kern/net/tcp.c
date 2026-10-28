@@ -134,6 +134,28 @@
 #define TCP_WSCALE_MAX 14U
 
 /*
+ * This end's window scale shift: the smallest that lets the window cover
+ * the largest receive buffer a socket may ask for (SOCKET_BUFFER_MAX, 1 MB:
+ * 65535 << 5 is just over 2 MB, << 4 just under 1 MB).  The windows it
+ * advertises then go in steps of 32 bytes, always rounded down.
+ */
+#define TCP_RECEIVE_WSCALE 5U
+
+/*
+ * The receive buffer a connection starts with: twice the common default
+ * where the pool is large (the 64-bit machines), so that a window of 128
+ * KB, which the scale lets the peer see, keeps a fast link busy over a
+ * longer round trip.  Its queue's packet limit takes that many bytes
+ * however the segments are cut (TCP_RECEIVE_PACKETS of
+ * SOCKET_STREAM_PACKET_BYTES).  SO_RCVBUF sets another.
+ */
+#if PACKET_BUF_POOL_COUNT >= 1024U
+#define TCP_RECEIVE_BUFFER (128U * 1024U)
+#else
+#define TCP_RECEIVE_BUFFER SOCKET_BUFFER_DEFAULT
+#endif
+
+/*
  * The largest segment this end takes, which the SYN offers (BUG-222): an
  * Ethernet frame's 1500 bytes less the IP and TCP headers.  It fits one
  * packet's storage with its headers.
@@ -162,15 +184,15 @@ struct tcp_segment_addresses {
 };
 
 /*
- * How many packets a socket's receive queue may hold.  The window is a
- * full segment for each one still free, so this is what bounds a transfer
- * over a link with any delay (BUG-222: the common limit of 8 was an 8 KB
- * window, about 1 MB/s on a LAN).  The large pool of the 64-bit machines
- * gives a connection 128, so the 64 KB the queue's bytes allow fit in
- * packets even when the peer's segments are as small as 512 bytes (a
- * segment the queue cannot coalesce into the one before takes a packet of
- * its own): the window promised is then always taken.  The small pool of
- * the 32-bit boards keeps the common limit.
+ * How many packets a socket's receive queue may hold.  The window is
+ * SOCKET_STREAM_PACKET_BYTES for each one still free (the queue fills a
+ * packet to at least that before it takes another), so this is what bounds
+ * a transfer over a link with any delay (BUG-222: the common limit of 8 was
+ * an 8 KB window, about 1 MB/s on a LAN).  The large pool of the 64-bit
+ * machines gives a connection 128, the 128 KB of its buffer
+ * (TCP_RECEIVE_BUFFER) however the peer cuts its segments: the window
+ * promised is then always taken.  The small pool of the 32-bit boards keeps
+ * the common limit.
  */
 #if PACKET_BUF_POOL_COUNT >= 1024U
 #define TCP_RECEIVE_PACKETS 128U
@@ -477,7 +499,7 @@ static int tcp_accept(struct socket *socket, struct socket **result, struct sock
 static int tcp_connect(struct socket *socket, const struct sockaddr *address, socklen_t length, unsigned io_flags);
 static ssize_t tcp_sendto(struct socket *socket, const void *buffer, size_t length, int flags, const struct sockaddr *address, socklen_t address_length);
 static ssize_t tcp_recvfrom(struct socket *socket, void *buffer, size_t length, int flags, struct sockaddr *address, socklen_t *address_length);
-static uint16_t tcp_receive_window(struct tcp_endpoint *endpoint);
+static uint32_t tcp_receive_window(struct tcp_endpoint *endpoint);
 static int tcp_reset_error_locked(const struct tcp_endpoint *endpoint, uint8_t flags, uint32_t acknowledgement);
 static void tcp_send_reset(const struct tcp_segment_addresses *addresses, const struct tcp_wire *segment, size_t payload_length);
 static void tcp_send_reset6(const struct tcp_segment_addresses *addresses, struct packet_buf *packet);
@@ -545,8 +567,9 @@ tcp_socket_create(
 	    &tcp_ops);
 	endpoint->tcp.state = TCP_CLOSED;
 
-	/* Its receive queue takes the packets the window it offers counts (BUG-222). */
+	/* Its receive queue takes the packets the window it offers counts (BUG-222), and the bytes of its buffer. */
 	endpoint->tcp.inet.socket.receive_packet_limit = TCP_RECEIVE_PACKETS;
+	endpoint->tcp.inet.socket.receive_hiwat_bytes = TCP_RECEIVE_BUFFER;
 
 	/* The system's TCP_MAXUNACKTIME (ws220-p005). */
 	endpoint->tcp.maxunack_seconds = CONFIG_TCP_MAXUNACKTIME_MS / 1000U;
@@ -2070,7 +2093,9 @@ tcp_output_segment(
 	uint32_t source;
 	int routed;
 	uint16_t checksum;
-	uint16_t window;
+	uint32_t window;
+	uint16_t field;
+	unsigned shift;
 	uint16_t mss;
 	uint8_t *option;
 	size_t options;
@@ -2184,19 +2209,30 @@ tcp_output_segment(
 
 	/*
 	 * And the window scale option (a NOP, then kind 3, length 3) with this
-	 * end's shift, 0: it takes the peer's scale without scaling its own.
+	 * end's shift.
 	 */
 	if (options == 8U) {
 		option = (uint8_t *)(tcp + 1);
 		option[4] = TCP_OPTION_NOP;
 		option[5] = TCP_OPTION_WSCALE;
 		option[6] = 3U;
-		option[7] = 0U;
+		option[7] = endpoint->tcp.receive_wscale;
 	}
 
+	/*
+	 * The window: scaled by this end's shift once both ends scale, never
+	 * in a SYN (RFC 7323 section 2.2), and rounded down to what the field
+	 * says.  The bytes it says are what the peer was promised.
+	 */
 	window = tcp_receive_window(endpoint);
-	endpoint->tcp.advertised_window = window;
-	wire_put16(tcp->window, window);
+	shift = 0;
+	if (endpoint->tcp.wscale_on != 0 && (flags & TCP_SYN) == 0)
+		shift = endpoint->tcp.receive_wscale;
+	if ((window >> shift) > 0xffffU)
+		window = 0xffffU << shift;
+	field = (uint16_t)(window >> shift);
+	endpoint->tcp.advertised_window = (uint32_t)field << shift;
+	wire_put16(tcp->window, field);
 
 	/* Hands the segment to IPv6, with the checksum over its pseudo-header. */
 	if (ipv6) {
@@ -4953,6 +4989,7 @@ tcp_connect(
 	endpoint->tcp.wscale_offered = 1;
 	endpoint->tcp.wscale_on = 0;
 	endpoint->tcp.peer_wscale = 0;
+	endpoint->tcp.receive_wscale = TCP_RECEIVE_WSCALE;
 
 	/* A new connection measures its own round trip (ws220-p004). */
 	tcp_rtt_forget_locked(endpoint);
@@ -5459,16 +5496,16 @@ tcp_recvfrom(
  *
  * The queue is bounded twice, by bytes and by how many packets it may hold
  * (the packets come from one small pool the whole stack shares), so the
- * window is the smaller of the bytes left and a full segment for each packet
- * left.  A connection that offered segments larger than a standard packet
+ * window is the smaller of the bytes left and SOCKET_STREAM_PACKET_BYTES for
+ * each packet left, which every packet but the last holds at least.  A connection that offered segments larger than a standard packet
  * holds also promises no more than TCP_RECEIVE_JUMBO_MAX jumbo packets,
  * those its queue holds counted, for the pool has few of them.  A peer
  * that keeps within it is never refused.  It is read without
  * the socket lock, because segments are also sent with that lock held; a
- * value a moment old is what any peer sees anyway.  With no window scaling
- * the field holds at most 65535.
+ * value a moment old is what any peer sees anyway.  It is in bytes; the
+ * segment's field scales it.
  */
-static uint16_t
+static uint32_t
 tcp_receive_window(
 	struct tcp_endpoint *endpoint)
 {
@@ -5487,8 +5524,8 @@ tcp_receive_window(
 	if (socket->receive_packet_limit != 0) {
 		packets = socket->receive_packets < socket->receive_packet_limit ?
 		    socket->receive_packet_limit - socket->receive_packets : 0;
-		if (room > packets * TCP_RECEIVE_MSS)
-			room = packets * TCP_RECEIVE_MSS;
+		if (room > packets * SOCKET_STREAM_PACKET_BYTES)
+			room = packets * SOCKET_STREAM_PACKET_BYTES;
 	}
 
 	/* A jumbo segment for each jumbo packet the connection may still hold. */
@@ -5500,10 +5537,10 @@ tcp_receive_window(
 			room = jumbo * mss;
 	}
 
-	/* Clamps to what the header can carry. */
-	if (room > 0xffffU)
-		room = 0xffffU;
-	return (uint16_t)room;
+	/* No more than the largest scaled field says (the caller scales and rounds it). */
+	if (room > (size_t)0xffffU << TCP_WSCALE_MAX)
+		room = (size_t)0xffffU << TCP_WSCALE_MAX;
+	return (uint32_t)room;
 }
 
 /* Shuts down one or both directions, sending a FIN for the write side. */
@@ -6080,6 +6117,7 @@ tcp_passive_syn(
 		child->tcp.wscale_offered = 1;
 		child->tcp.wscale_on = 1;
 		child->tcp.peer_wscale = (uint8_t)offered_wscale;
+		child->tcp.receive_wscale = TCP_RECEIVE_WSCALE;
 	}
 	child->tcp.send_next = (uint32_t)sched_ticks() * 1103515245U +
 	    child->tcp.inet.local_port + source_port;

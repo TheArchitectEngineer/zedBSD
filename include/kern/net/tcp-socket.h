@@ -133,13 +133,14 @@ struct tcp_socket {
 	 * when both ends offered the option in their SYNs: wscale_offered
 	 * says this end's SYN carries it (an active open always, a passive
 	 * one when the peer's SYN did), peer_wscale is the peer's shift, and
-	 * wscale_on says both offered it.  This end's own shift is 0: its
-	 * window never exceeds 64 KB.
+	 * wscale_on says both offered it.  This end's own shift, which its SYN
+	 * offers, scales the windows it advertises once wscale_on is set.
 	 */
 	uint32_t peer_window;
 	uint8_t peer_wscale;
 	uint8_t wscale_offered;
 	uint8_t wscale_on;
+	uint8_t receive_wscale;
 	/*
 	 * The sequence and acknowledgement numbers of the segment peer_window
 	 * was last taken from (RFC 9293's SND.WL1 and SND.WL2).  A segment
@@ -149,8 +150,11 @@ struct tcp_socket {
 	 */
 	uint32_t send_window_sequence;
 	uint32_t send_window_acknowledgement;
-	/* The window last put in a segment; a read that opens it says so. */
-	uint16_t advertised_window;
+	/*
+	 * The window last put in a segment, in bytes (the field scaled back by
+	 * this end's shift); a read that opens it says so.
+	 */
+	uint32_t advertised_window;
 	/*
 	 * The maximum segment size the peer's SYN offered (0: it offered none),
 	 * and the largest payload this end puts in a segment: the smaller of

@@ -129,7 +129,9 @@ unresolved() {
 		status=1
 	fi
 }
-unresolved unresolved 76 unresolved 5 --bytes 16777216 --unresolved-at-ms 100 --unresolved-ms 500
+# (ws221-p009: the 128 KB window holds 128 of the model's 1024-byte segments, so a flight asks ARP 128 times; before,
+# 64 and the bound 76.)
+unresolved unresolved 140 unresolved 5 --bytes 16777216 --unresolved-at-ms 100 --unresolved-ms 500
 # ws220-p003: the neighbour never resolves again: the connection is given up after R2 (100 s), with ARP asked only at the
 # ring's segments and the timer's resends (review-1 G1: before, a retry every 10 ms for ever).
 giveup_unresolved() {
@@ -146,8 +148,8 @@ giveup_unresolved() {
 		echo "  FAIL: $name: gave up after $seconds s, not between R2 (100 s) and 200 s"
 		status=1
 	fi
-	if [ -z "$refusals" ] || [ "$refusals" -gt 84 ]; then
-		echo "  FAIL: $name: $refusals refusals (ARP requests), more than 84 (the flight's 64 and 20 resends)"
+	if [ -z "$refusals" ] || [ "$refusals" -gt 148 ]; then
+		echo "  FAIL: $name: $refusals refusals (ARP requests), more than 148 (the flight's 128 and 20 resends)"
 		status=1
 	fi
 }
@@ -213,8 +215,9 @@ scenario delayed-ack-stream 30 --bytes 16777216 --ack-delay-ms 200 --expect-retr
 scenario rtt-step 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 --peer-window 65535 --limit-s 120 \
     --expect-retransmits-max 64 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:0
 # ws220-p005: the same with zedBSD as the receiver (its window moves): no resend on a reopened window keeps the sample.
+# (ws221-p009: zedBSD's 128 KB window, 128 segments of the flight; the Linux-like peer above keeps 64 KB.)
 scenario rtt-step-zedbsd 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 --limit-s 120 \
-    --expect-retransmits-max 64 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:0
+    --expect-retransmits-max 128 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:0
 # ws220-p004 review-1 G2: B's reader stops for 5 s, B's window closes: A's probes double apart (at most 10, p003: 17739).
 # ws220-p005: the duplicates of the closed window start no fast retransmit; one after the window opens (the hole of a
 # segment B refused) may.

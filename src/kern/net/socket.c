@@ -691,8 +691,13 @@ socket_enqueue_packet(
  * A stream has no boundaries to keep, and the packets come from one small
  * pool the whole stack shares, so small segments are gathered into the room
  * left at the end of the packet already waiting rather than each holding a
- * packet of its own.  A packet that does not fit is queued as it is.  The
- * packet is consumed either way; the result is that of the queueing.
+ * packet of its own.  A packet that does not fit is queued as it is, after
+ * the waiting one is filled with its first bytes while that holds fewer
+ * than SOCKET_STREAM_PACKET_BYTES: every packet but the last then holds at
+ * least that many, which a window counted in bytes relies on (a full-size
+ * segment, larger than that, is never copied).  Nothing is taken unless all
+ * of it is.  The packet is consumed either way; the result is that of the
+ * queueing.
  */
 int
 socket_enqueue_stream(
@@ -702,6 +707,9 @@ socket_enqueue_stream(
 	struct packet_buf *tail;
 	unsigned long irq;
 	size_t room;
+	size_t fill;
+	int jumbo;
+	int error;
 
 	/* Rejects a missing socket or packet. */
 	if (socket == NULL || packet == NULL) {
@@ -709,33 +717,77 @@ socket_enqueue_stream(
 		return EINVAL;
 	}
 
-	/* Adds to the tail when it is open, unshared and has the room. */
 	irq = spin_lock_irqsave(&socket->lock);
 
+	/* Takes nothing on a closed socket or past the byte limit. */
+	if (socket->lifecycle != SOCKET_OPEN ||
+	    packet->length > socket->receive_hiwat_bytes ||
+	    socket->receive_bytes > socket->receive_hiwat_bytes - packet->length) {
+		error = socket->lifecycle != SOCKET_OPEN ? EPIPE : ENOBUFS;
+		spin_unlock_irqrestore(&socket->lock, irq);
+		packet_buf_free(packet);
+		return error;
+	}
+
+	/* The room at the end of the waiting packet, when it is unshared. */
 	tail = socket->receive_tail;
-	if (tail != NULL && socket->lifecycle == SOCKET_OPEN &&
-	    refcount_load(&tail->refcount) == 1U &&
-	    packet->length <= socket->receive_hiwat_bytes &&
-	    socket->receive_bytes <= socket->receive_hiwat_bytes - packet->length) {
+	room = 0;
+	if (tail != NULL && refcount_load(&tail->refcount) == 1U)
 		room = tail->capacity - (size_t)(tail->data - tail->storage) -
 		    tail->length;
-		if (packet->length <= room) {
-			kern_memcpy(tail->data + tail->length, packet->data,
-			    packet->length);
-			tail->length += packet->length;
-			socket->receive_bytes += packet->length;
-			waitq_wake_one(&socket->receive_waitq);
-			spin_unlock_irqrestore(&socket->lock, irq);
-			packet_buf_free(packet);
-			socket_poll_notify(socket);
-			return 0;
-		}
+
+	/* All of it there. */
+	if (packet->length <= room) {
+		kern_memcpy(tail->data + tail->length, packet->data,
+		    packet->length);
+		tail->length += packet->length;
+		socket->receive_bytes += packet->length;
+		waitq_wake_one(&socket->receive_waitq);
+		spin_unlock_irqrestore(&socket->lock, irq);
+		packet_buf_free(packet);
+		socket_poll_notify(socket);
+		return 0;
 	}
+
+	/* Else a packet of its own, when the queue takes one more. */
+	if (socket->receive_packet_limit != 0 &&
+	    socket->receive_packets >= socket->receive_packet_limit) {
+		spin_unlock_irqrestore(&socket->lock, irq);
+		packet_buf_free(packet);
+		return ENOBUFS;
+	}
+
+	/* The waiting packet filled first while it holds too few bytes. */
+	fill = 0;
+	if (room != 0 && tail->length < SOCKET_STREAM_PACKET_BYTES)
+		fill = room;
+	if (fill != 0) {
+		kern_memcpy(tail->data + tail->length, packet->data, fill);
+		tail->length += fill;
+		socket->receive_bytes += fill;
+		(void)packet_buf_pull(packet, fill);
+	}
+
+	/* The rest appended, and one receiver woken. */
+	jumbo = packet->capacity > PACKET_BUF_STORAGE_SIZE;
+	packet->next = NULL;
+	if (socket->receive_tail != NULL)
+		socket->receive_tail->next = packet;
+	else
+		socket->receive_head = packet;
+	socket->receive_tail = packet;
+	socket->receive_packets++;
+	socket->receive_bytes += packet->length;
+	if (jumbo)
+		socket->receive_jumbo++;
+	waitq_wake_one(&socket->receive_waitq);
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
-	/* Queues it as a packet of its own. */
-	return socket_enqueue_packet(socket, packet);
+	socket_poll_notify(socket);
+
+	/* Reports the queued data. */
+	return 0;
 }
 
 /*

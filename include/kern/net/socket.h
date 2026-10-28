@@ -47,6 +47,13 @@
 #define SOCKET_BUFFER_DEFAULT (64U * 1024U)
 #define SOCKET_BUFFER_MIN 2048U
 #define SOCKET_BUFFER_MAX (1024U * 1024U)
+/*
+ * The bytes each packet of a stream's receive queue holds at least, but
+ * the last (socket_enqueue_stream fills a packet holding fewer before it
+ * queues another), so that a queue of N packets more takes N times this
+ * many bytes however the peer cuts its segments.
+ */
+#define SOCKET_STREAM_PACKET_BYTES 1024U
 
 struct file;
 struct filedesc;
