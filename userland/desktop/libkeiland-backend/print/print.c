@@ -194,7 +194,9 @@ struct print_change {
  * checks of the file on a thread of its own instead
  * (kl_backend_print_host), so no writer thread is started and the update
  * does not look at the file; made_generation counts the made changes
- * taken, so that a check read before one is not applied after it.
+ * taken, so that a check read before one is not applied after it.  can
+ * says whether the daemon's program could be run when last looked at (at
+ * the open, and by each check of a hosted backend).
  */
 struct kl_backend_print {
 	char config[512];
@@ -212,6 +214,7 @@ struct kl_backend_print {
 	int stop;
 	int hosted;
 	uint64_t made_generation;
+	int can;
 	struct print_job jobs[KL_BACKEND_PRINT_JOBS_MAX];
 	size_t job_count;
 	struct print_result results[PRINT_RESULTS_MAX];
@@ -248,17 +251,19 @@ struct kl_backend_print {
 /*
  * A check of the settings file for a change another session made, read on
  * the host's thread (kl_backend_print_check_run): the file's time and the
- * made changes taken when it was begun, whether the file was read, and
- * the table read.
+ * made changes taken when it was begun, whether the file was read, the
+ * table read, and whether the daemon's program can be run.
  */
 struct kl_backend_print_check {
 	struct timespec known;
 	uint64_t generation;
 	int loaded;
 	struct print_table table;
+	int can;
 };
 
 static int print_load(const char *config, struct print_table *table);
+static int print_program_can(const char *program);
 static void print_write_one(struct kl_backend_print *print, struct print_change *change);
 static struct print_change *print_next_change(struct kl_backend_print *print, int wait);
 static int print_save(const char *config, struct print_table *table);
@@ -324,8 +329,9 @@ kl_backend_print_open(
 	(void)pthread_mutex_init(&print->lock, NULL);
 	(void)pthread_cond_init(&print->wake, NULL);
 
-	/* The printers kept. */
+	/* The printers kept, and whether the daemon can be run. */
 	(void)print_load(print->config, &print->table);
+	print->can = print_program_can(print->program);
 	return print;
 }
 
@@ -377,19 +383,24 @@ kl_backend_print_close(
 }
 
 /*
- * Tells whether the daemon's program can be run.
+ * Tells whether the daemon's program can be run: looked at now, or for a
+ * hosted backend as its last check found (the host's thread looks).
  */
 int
 kl_backend_print_can(
-	const struct kl_backend_print *print)
+	struct kl_backend_print *print)
 {
-	int status;
-
-	/* The program, executable. */
+	/* Nothing open. */
 	if (print == NULL)
 		return 0;
-	status = access(print->program, X_OK);
-	return status == 0;
+
+	/* The host's checks look at the program. */
+	if (print->hosted)
+		return print->can;
+
+	/* Succeeded: the program as it is now. */
+	print->can = print_program_can(print->program);
+	return print->can;
 }
 
 /*
@@ -545,6 +556,9 @@ kl_backend_print_check_run(
 	struct stat status;
 	int error;
 
+	/* Whether the daemon's program can be run, looked at here too. */
+	check->can = print_program_can(print->program);
+
 	/* The file's time; a file that is not there is not read. */
 	error = stat(print->config, &status);
 	if (error != 0)
@@ -570,6 +584,10 @@ kl_backend_print_check_end(
 	struct kl_backend_print *print,
 	struct kl_backend_print_check *check)
 {
+	/* Whether the daemon's program can be run, as the check found. */
+	if (print != NULL && check != NULL)
+		print->can = check->can;
+
 	/* A table read, and no change made since it began. */
 	if (print != NULL && check != NULL && check->loaded && check->generation == print->made_generation) {
 		print->table = check->table;
@@ -928,6 +946,22 @@ kl_backend_print_take_result(
 	*saved = print->results[0].saved;
 	memmove(&print->results[0], &print->results[1], (print->result_count - 1U) * sizeof(print->results[0]));
 	print->result_count--;
+	return 1;
+}
+
+/* Tells whether a program can be run (an executable file): 1 or 0. */
+static int
+print_program_can(
+	const char *program)
+{
+	int status;
+
+	/* The program, executable. */
+	status = access(program, X_OK);
+	if (status != 0)
+		return 0;
+
+	/* Succeeded: it can be run. */
 	return 1;
 }
 

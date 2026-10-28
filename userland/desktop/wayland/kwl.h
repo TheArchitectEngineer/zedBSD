@@ -64,6 +64,9 @@
 #include <stddef.h>
 #include <sys/types.h>
 
+/* The room for a language's name and its NUL (libkeiland's KL_TR_NAME_MAX). */
+#define KWL_LANGUAGE_NAME_SIZE	32U
+
 /* Bound each connection's wire, descriptor, object and queued-event storage. */
 #define KWL_WIRE_MAX		65532U
 #define KWL_RIGHTS_MAX		32U
@@ -1585,6 +1588,12 @@ struct kwl_server {
 	int32_t ime_method;
 	/* Whether the language of the compositor's text was read once (language.c, WS158); its catalogs are libkeiland's. */
 	unsigned language_set;
+	/*
+	 * The language last asked for, or the one in use after a failure (empty
+	 * before any): the catalogs the file I/O thread reads are used only
+	 * when they are still the language asked for.
+	 */
+	char language_asked[KWL_LANGUAGE_NAME_SIZE];
 	struct kwl_object *drag;
 	int32_t drag_dx;
 	int32_t drag_dy;
@@ -2400,6 +2409,7 @@ void kwl_phone_tick(struct kwl_server *server);
 void kwl_phone_gone(struct kwl_object *object);
 void kwl_phone_refresh(void);
 void kwl_phone_close(struct kwl_server *server);
+void kwl_printers_prepare(struct kwl_server *server);
 int kwl_printers_available(void);
 int kwl_printers_create(struct kwl_object *manager, const unsigned char *bytes, size_t size);
 int kwl_printers_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
@@ -2698,6 +2708,7 @@ void kwl_input_scan(struct kwl_server *server);
  * is worth running (io.c): a newer one replaces one not started yet.
  */
 #define KWL_IO_KEY_DISPLAYS	1U
+#define KWL_IO_KEY_LANGUAGE	2U
 
 void kwl_io_start(struct kwl_server *server);
 void kwl_io_take(struct kwl_server *server);

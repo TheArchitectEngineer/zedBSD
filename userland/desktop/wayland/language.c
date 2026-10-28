@@ -19,14 +19,41 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+
+/* A language libkeiland names fits the name the event loop keeps. */
+_Static_assert(KL_TR_NAME_MAX + 1U <= KWL_LANGUAGE_NAME_SIZE, "language name");
 
 /* The longest line of the system's language file read. */
 #define LANGUAGE_LINE_MAX	32U
 
+/*
+ * A language's catalogs read on the file I/O thread: the language (one of
+ * libkeiland's names, which live as long as the program), and the
+ * catalogs read or the error.
+ */
+struct language_job {
+	struct kwl_lane_job lane;
+	const char *language;
+	int error;
+	struct kl_tr_catalogs *catalogs;
+};
+
 static void language_open(struct kwl_server *server, const char *language, const char *why);
+static void language_applied(struct kwl_server *server, int error, const char *why, const char *by);
+static void language_read_run(struct kwl_lane_job *job);
+static void language_read_done(void *context, struct kwl_lane_job *job);
+static void language_read_drop(struct kwl_lane_job *job);
 static const char *language_weekday(int day, int form);
 static const char *language_month(int month, int form);
+
+/* The operations of a read of the catalogs. */
+static const struct kwl_lane_ops language_read_ops = {
+	language_read_run,
+	language_read_done,
+	language_read_drop
+};
 
 /*
  * Reads the system's language for the login screen.
@@ -50,29 +77,49 @@ kwl_language_system(
 }
 
 /*
- * Takes the session's language from the setting.
+ * Takes the session's language from the setting.  The first is read here
+ * (the session's start, before the screen is shown); a change while the
+ * session runs is read on the file I/O thread and used when it is done.
  */
 void
 kwl_language_set(
 	struct kwl_server *server,
 	int setting)
 {
+	struct language_job *job;
 	const char *language;
 	int differs;
+	int error;
 
 	/* A value no language has is English. */
 	language = kl_tr_language_code(setting);
 	if (language == NULL)
 		language = "en";
 
-	/* The same language, once read, changes nothing. */
-	differs = strcmp(language, kl_tr_language());
+	/* The language asked for last, once read or being read, changes nothing. */
+	differs = strcmp(language, server->language_asked);
 	if (differs == 0 && server->language_set)
 		return;
+	(void)snprintf(server->language_asked, sizeof(server->language_asked), "%s", language);
 
-	/* Succeeded: the catalogs of the language; App Home's picture shows its names (layer-cache.c). */
+	/* The start reads it at once. */
+	if (!server->language_set) {
+		language_open(server, language, "setting");
+		return;
+	}
+
+	/* A change is read on the file I/O thread, which replaces a read not started. */
+	job = calloc(1U, sizeof(*job));
+	if (job != NULL) {
+		job->language = language;
+		error = kwl_io_file_submit(server, &job->lane, &language_read_ops, KWL_IO_KEY_LANGUAGE);
+		if (error == 0)
+			return;
+		free(job);
+	}
+
+	/* Without the thread, or without memory for the job, it is read here. */
 	language_open(server, language, "setting");
-	server->home_picture_stale = 1U;
 }
 
 /*
@@ -108,7 +155,7 @@ kwl_language_date(
 	(void)kl_tr_format(out, size, pattern, weekday, month, day, time_of_day, (const char *)NULL);
 }
 
-/* Reads the catalogs of a language and draws the screen again in it. */
+/* Reads the catalogs of a language here and draws the screen again in it. */
 static void
 language_open(
 	struct kwl_server *server,
@@ -119,11 +166,90 @@ language_open(
 
 	/* The compositor's catalogs (and the shared one); a failure leaves English. */
 	error = kl_tr_open(KWL_LANGUAGE_DOMAIN, language);
+	language_applied(server, error, why, "event-loop");
+}
+
+/*
+ * Draws the screen again in the language the catalogs now give, App
+ * Home's picture with its names (layer-cache.c).
+ */
+static void
+language_applied(
+	struct kwl_server *server,
+	int error,
+	const char *why,
+	const char *by)
+{
+	/* What is in use is what is asked for now (English after a failure, which a new ask tries again). */
+	(void)snprintf(server->language_asked, sizeof(server->language_asked), "%s", kl_tr_language());
+
+	/* The screen and App Home's picture. */
 	server->language_set = 1;
 	server->dirty = 1;
+	server->home_picture_stale = 1U;
 
 	/* The log line the tests read. */
-	printf("KWL LANGUAGE language=%s from=%s error=%d\n", kl_tr_language(), why, error);
+	printf("KWL LANGUAGE language=%s from=%s error=%d by=%s\n", kl_tr_language(), why, error, by);
+}
+
+/* Reads a language's catalogs on the file I/O thread; the texts in use do not change. */
+static void
+language_read_run(
+	struct kwl_lane_job *lane_job)
+{
+	struct language_job *job;
+
+	/* The catalogs, into the job's record. */
+	job = (struct language_job *)lane_job;
+	job->error = kl_tr_read(KWL_LANGUAGE_DOMAIN, job->language, &job->catalogs);
+}
+
+/*
+ * Uses the catalogs read, on the event loop's thread, when they are still
+ * the language asked for (a newer one being read replaces them).
+ */
+static void
+language_read_done(
+	void *context,
+	struct kwl_lane_job *lane_job)
+{
+	struct kwl_server *server;
+	struct language_job *job;
+	int differs;
+
+	server = context;
+	job = (struct language_job *)lane_job;
+
+	/* A language asked for since comes with its own read. */
+	differs = strcmp(job->language, server->language_asked);
+	if (differs != 0) {
+		language_read_drop(lane_job);
+		return;
+	}
+
+	/* The catalogs read, or English after a failure, as kl_tr_open leaves them. */
+	if (job->error == 0)
+		kl_tr_use(job->catalogs);
+	else
+		kl_tr_close();
+	job->catalogs = NULL;
+	language_applied(server, job->error, "setting", "io-file");
+
+	/* The record. */
+	free(job);
+}
+
+/* Frees a read that is not used (replaced, or not run). */
+static void
+language_read_drop(
+	struct kwl_lane_job *lane_job)
+{
+	struct language_job *job;
+
+	/* The catalogs read, if any, then the record. */
+	job = (struct language_job *)lane_job;
+	kl_tr_discard(job->catalogs);
+	free(job);
 }
 
 /* Names a day of the week (0 Sunday) in the language, short or long. */

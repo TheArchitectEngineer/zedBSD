@@ -4,7 +4,7 @@
 
 - Master: [plan/master.md](../master.md)（2026-10-29 作成）。Primary Milestone: MG006。前身の調べ: [WS291](../ws291/ws.md) の
   [keiland-blocking.md](../ws291/keiland-blocking.md)（P2 q1661 の点検、branch `agent/p2-ws291i` にあり main に未 merge）。
-- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) 確定、p001〜p003 cleared、p005 in-progress、p019 は実機の確かめ待ち、p004・p006〜p018 planned）
+- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) 確定、p001〜p003 cleared、p005 in-progress、p019 cleared（RDNA は P2 の q1668）、p004・p006〜p018 planned）
 - 目標: Keiland の compositor の main loop が frame を止める同期の待ちを持たないよう、thread を下の構成に整理する。ゲームモードの
   direct scanout は Vulkan display（`VK_KHR_display`）の仕様の中で実装する。
 
@@ -100,5 +100,5 @@
 | ws309-p016 | Linux・FreeBSD の seat 経由の入力の open（J4） | planned | p003 |
 | ws309-p017 | QEMU の回帰（Venus: 基準・GPU の境界・`KWL THREADS`・`KWL PERF pass`）と遅さの注入の host 試験 | planned | p003〜p014 |
 | ws309-p018 | 規約の全文の見直し | planned | 全て |
-| [ws309-p019](phase019/phase.md) | 試験の screen capture の画素の送りを thread へ（keiland-shot の後の SURFACE_LOST、Q1 の依頼） | in-progress | p002 |
+| [ws309-p019](phase019/phase.md) | 試験の screen capture の画素の送りを thread へ（keiland-shot の後の SURFACE_LOST、Q1 の依頼） | cleared（RDNA の実機は P2 の q1668） | p002 |
 

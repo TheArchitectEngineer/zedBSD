@@ -127,6 +127,32 @@ static const struct kwl_lane_ops printers_file_ops = {
 };
 
 /*
+ * Opens the printers at the start, before the clients come (the event
+ * loop reads no file for them later): the settings file read, the
+ * daemon's program looked at, and the file's work given to the file I/O
+ * thread from now on.
+ */
+void
+kwl_printers_prepare(
+	struct kwl_server *server)
+{
+	struct kl_backend_print *backend;
+	int opened;
+	int can;
+
+	/* The backend open and hosted when it can be. */
+	printers_host(server);
+
+	/* The log says what the clients will be told. */
+	backend = printers_backend();
+	opened = 0;
+	if (backend != NULL)
+		opened = 1;
+	can = kl_backend_print_can(backend);
+	printf("KWL PRINTERS prepared open=%d hosted=%d can=%d\n", opened, printers_state.hosted, can);
+}
+
+/*
  * Tells whether printing is offered: the daemon's program is there.
  */
 int
