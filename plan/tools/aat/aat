@@ -43,7 +43,8 @@ Target options (or AAT_TARGET): --target root@10.0.30.3[:22], --target 5330
 GUEST_RUNTIME/session.json).  The key is the guest harness's
 (plan/tmp/guest/id_ed25519, which the AAT image trusts for root) unless
 --identity names another; a user other than root reaches root through
-sudo -S with AAT_PASSWORD (default "kei").  The default log is AAT_LOG or
+sudo -S with AAT_PASSWORD (default the user's name: the test images'
+password of user is user, and of kei, in the older images, kei).  The default log is AAT_LOG or
 /run/user/1000/session.log.  --local runs every command on this host
 instead (the self-test, tests/run-host.sh).
 """
@@ -189,10 +190,11 @@ class Target:
 
 	def root(self, script: str) -> str:
 		"""Returns a script that runs as root: as it is for root, through sudo -S for another user (the
-		password AAT_PASSWORD, default the test images' "kei"; the script gets no standard input then)."""
+		password AAT_PASSWORD, default the user's name as in the test images, user/user or kei/kei in the older
+		ones; the script gets no standard input then)."""
 		if self.local or self.user == "root":
 			return script
-		password = os.environ.get("AAT_PASSWORD", "kei")
+		password = os.environ.get("AAT_PASSWORD", self.user)
 		return f"printf '%s\\n' {shlex.quote(password)} | sudo -S sh -c {shlex.quote(script)}"
 
 

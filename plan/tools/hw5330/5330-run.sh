@@ -46,8 +46,22 @@ flock 9
 lin() {
 	timeout "${T:-120}" ssh -o BatchMode=yes -o ConnectTimeout=10 "$HOST" "$1"
 }
+# The machine's account: user (password user), or kei (password kei) in an image made before the OS name became
+# zedBSD.  The first answer picks it; until then each call tries user and then kei.
+ZB_USER=
 zb() {
-	timeout "${T:-60}" sshpass -p kei ssh $SO "kei@$ZB" "$1"
+	if [ -n "$ZB_USER" ]; then
+		timeout "${T:-60}" sshpass -p "$ZB_USER" ssh $SO "$ZB_USER@$ZB" "$1"
+		return
+	fi
+	for name in user kei; do
+		if timeout "${T:-60}" sshpass -p "$name" ssh $SO "$name@$ZB" true 2> /dev/null; then
+			ZB_USER=$name
+			timeout "${T:-60}" sshpass -p "$name" ssh $SO "$name@$ZB" "$1"
+			return
+		fi
+	done
+	return 255
 }
 say() {
 	echo "5330-run: $*"
@@ -136,13 +150,21 @@ until zb 'uname -s' 2> /dev/null | grep -qi zedbsd; do
 	sleep 5
 done
 say "zedBSD up after $(($(date +%s) - start + 20)) s"
+
+# Picks the account here, in this shell (the wait above ran zb in a pipeline, whose choice does not come back).
+for name in user kei; do
+	if timeout 30 sshpass -p "$name" ssh $SO "$name@$ZB" true 2> /dev/null; then
+		ZB_USER=$name
+		break
+	fi
+done
 sleep "${SETTLE:-60}"
 T=150 timeout 150 sh plan/tools/hw5330/5330-survey.sh "$ZB" "$NAME" > /dev/null 2>&1 ||
     say "survey failed"
-zb "echo kei | sudo -S /bin/keiland-shot /tmp/$NAME.png" > "$LOGS/$NAME-shot.txt" 2>&1
-timeout 60 sshpass -p kei scp $SO "kei@$ZB:/tmp/$NAME.png" "$LOGS/$NAME.png" > /dev/null 2>&1 || say "no screen shot ($(tail -1 "$LOGS/$NAME-shot.txt"))"
+zb "echo $ZB_USER | sudo -S /bin/keiland-shot /tmp/$NAME.png" > "$LOGS/$NAME-shot.txt" 2>&1
+timeout 60 sshpass -p "$ZB_USER" scp $SO "$ZB_USER@$ZB:/tmp/$NAME.png" "$LOGS/$NAME.png" > /dev/null 2>&1 || say "no screen shot ($(tail -1 "$LOGS/$NAME-shot.txt"))"
 [ -n "${EXTRA:-}" ] && zb "$EXTRA" > "$LOGS/$NAME-extra.txt" 2>&1
-zb 'echo kei | sudo -S reboot' > /dev/null 2>&1
+zb "echo $ZB_USER | sudo -S reboot" > /dev/null 2>&1
 start=$(date +%s)
 until T=8 lin hostname 2> /dev/null | grep -q chaos; do
 	if [ $(($(date +%s) - start)) -gt 300 ]; then

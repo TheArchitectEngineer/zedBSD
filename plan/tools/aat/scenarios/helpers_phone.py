@@ -6,7 +6,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
     helpers_phone.py --outdir OUTDIR [--only REGEX] -- TARGET-OPTIONS     (--list: the ids)
 
 Phone keeps its contacts and timelines under ~/Documents/Phone (one file each); the helpers write two contacts and
-their items there as kei before Phone starts (Ben, the latest, then Aiko), and take the folder away after.  The
+their items there as the session's user before Phone starts (Ben, the latest, then Aiko), and take the folder away after.  The
 phone's backend is the desktop's setting phone.backend, set with /bin/keiland-settings (the test image has it): 1 the
 loopback (a message comes back as "Echo: ..."), 0 none.  The places in the window are view.c's layout: the contacts
 a third of the window (260 to 340), the timeline right of them, the field at the bottom, the call button at the
@@ -20,13 +20,13 @@ import common
 
 run = aatlib.Run.from_command_line("helpers_phone")
 
-FOLDER = "/home/kei/Documents/Phone"
+FOLDER = f"{aatlib.HOME}/Documents/Phone"
 COMPOSER = 60
 SHARE = 0.34
 
 
 def prepare_store(item) -> None:
-	"""Two contacts with a few items in kei's Documents/Phone (Ben's latest, so he is first)."""
+	"""Two contacts with a few items in the session user's Documents/Phone (Ben's latest, so he is first)."""
 	now = int(time.time())
 	script = f"""set -e
 rm -rf {FOLDER}
@@ -36,7 +36,7 @@ printf 'BEGIN:VCARD\\r\\nVERSION:3.0\\r\\nFN:Aiko Tanaka\\r\\nTEL:+81 90 1234 56
 printf 'Kind: text\\nChannel: sms\\nDirection: in\\nDate: {now - 60}\\nState: unread\\n\\nCall me when you can.\\n' > {FOLDER}/messages/aat-ben/1-1-in.txt
 printf 'Kind: text\\nChannel: rcs\\nDirection: in\\nDate: {now - 7200}\\nState: read\\n\\nGood morning!\\n' > {FOLDER}/messages/aat-aiko/1-2-in.txt
 printf 'Kind: call\\nChannel: line\\nDirection: out\\nDate: {now - 3600}\\nState: answered\\nDetail: 2:10\\n\\n\\n' > {FOLDER}/messages/aat-aiko/1-3-out.txt
-chown -R kei {FOLDER}
+chown -R {aatlib.USER} {FOLDER}
 """
 	status, output = run.sh(script)
 	item.step("two contacts in ~/Documents/Phone", output.strip()[-200:])

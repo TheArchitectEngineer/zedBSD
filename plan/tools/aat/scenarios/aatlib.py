@@ -45,9 +45,13 @@ ROOT = HERE.parents[3]
 AAT = HERE.parent / "aat"
 SCENARIOS = ROOT / "tests/scenarios"
 
-# The session's user and its runtime directory (the AAT image logs kei in at boot).
-USER = os.environ.get("AAT_USER", "kei")
-PASSWORD = os.environ.get("AAT_USER_PASSWORD", "kei")
+# The session's user (uid 1000, whom the AAT image logs in at boot), its password and its home.  The images' default
+# user is user (kei in the images made before the OS name became zedBSD); a run reads the name from the target when it
+# starts (Run.find_session_user), unless AAT_USER names it.  A test image's password is the user's name, unless
+# AAT_USER_PASSWORD names another.
+USER = os.environ.get("AAT_USER", "user")
+PASSWORD = os.environ.get("AAT_USER_PASSWORD", USER)
+HOME = f"/home/{USER}"
 
 # Where the samples and the files the items write go on the target.
 SAMPLES = "/tmp/aat-samples"
@@ -242,7 +246,25 @@ class Run:
 		target = [word for word in arguments.target if word != "--"]
 		if not target:
 			parser.error("no target options after --")
-		return cls(scenario, target, Path(arguments.outdir), arguments.only, arguments.log)
+		run = cls(scenario, target, Path(arguments.outdir), arguments.only, arguments.log)
+		run.find_session_user()
+		return run
+
+	def find_session_user(self) -> None:
+		"""Takes the session's user from the target's /etc/passwd (the name of uid 1000: user, or kei in an older
+		image) unless AAT_USER names it; USER, PASSWORD and HOME follow it.  A target that does not answer, and this
+		host (--local, the self-test), keep the default user."""
+		global USER, PASSWORD, HOME
+		if "AAT_USER" in os.environ or "--local" in self.target:
+			return
+		status, text = self.sh("awk -F: '$3 == 1000 { print $1; exit }' /etc/passwd", timeout=30)
+		name = text.strip()
+		if status != 0 or not re.fullmatch(r"[a-z_][a-z0-9_-]*", name):
+			return
+		USER = name
+		if "AAT_USER_PASSWORD" not in os.environ:
+			PASSWORD = name
+		HOME = f"/home/{name}"
 
 	# The tool.
 

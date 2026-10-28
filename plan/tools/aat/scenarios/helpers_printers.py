@@ -8,7 +8,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 The printers are plan/tools/aat/mock-printers.py on this host (an IPP printer at /ipp/print named "Mock Printer",
 and an LPD queue), listening where the target reaches this host ($SSH_CLIENT: 10.0.2.2 for a QEMU guest, whose user
 network reaches this host's 127.0.0.1; the LAN address for the 5330).  The target's printtest adds them through the
-desktop and prints the runner's sample.pdf to each; the documents the mock got must be the sample.  Kei's printers
+desktop and prints the runner's sample.pdf to each; the documents the mock got must be the sample.  The user's printers
 file is removed before and after.
 """
 import hashlib
@@ -23,7 +23,7 @@ import common
 run = aatlib.Run.from_command_line("helpers_printers")
 
 MOCK = aatlib.ROOT / "plan/tools/aat/mock-printers.py"
-CONFIG = "/home/kei/.config/keiland/printers.conf"
+CONFIG = f"{aatlib.HOME}/.config/keiland/printers.conf"
 SAMPLE = f"{aatlib.SAMPLES}/sample.pdf"
 
 

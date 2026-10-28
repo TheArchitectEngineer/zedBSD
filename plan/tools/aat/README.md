@@ -31,7 +31,7 @@ plan/tools/aat/build-image.sh build/aat                 # 5330 用（USB に書�
 export AAT_TARGET=5330                                   # root@10.0.30.3（--target user@host[:port] でも）
 plan/tools/aat/aat check                                 # 届くか、注入・撮影の命令と log があるか
 plan/tools/aat/aat start                                 # aat-input の server を起こす（画面の大きさは撮影から）
-plan/tools/aat/aat type kei; plan/tools/aat/aat key enter    # 例: greeter で login
+plan/tools/aat/aat type user; plan/tools/aat/aat key enter   # 例: greeter で login（古い image は kei）
 plan/tools/aat/aat mark login
 plan/tools/aat/aat wait-log 'ZWL MAP' --since login --timeout 30
 plan/tools/aat/aat windows                               # compositor の ZWL の行から窓の一覧
@@ -50,7 +50,7 @@ plan/tools/aat/aat stop
 - `windows`・`where` は `ZWL MAP`・`ZWL UNMAP`・`ZWL WINDOW centred`・`ZWL RESIZE settled`・`ZWL RESIZE end`・`ZWL GLASS press move` の行から、surface ごとの最後の位置と大きさ。app の名前・題名・titlebar の部品の位置は今の log に無い（下の「P1 への依頼」）。
 - QEMU と実機の証拠は分けて書く。QEMU の guest の判定に console・serial の log を使わない（AGENTS.md）。この道具は SSH と撮影だけを使う。
 
-環境変数: `AAT_TARGET`、`AAT_LOG`、`AAT_INPUT`（既定 `/bin/aat-input`）、`AAT_SHOT`（撮影、既定 `/bin/keiland-shot {path}`）、`AAT_RUN_DIR`（target の撮影と `aat-input start` の出力の一時の置き場、既定 `/tmp/aat`）、`AAT_STATE`（host の状態、既定 `build/aat`）、`AAT_PASSWORD`（root 以外で入った時の sudo、既定 kei）。
+環境変数: `AAT_TARGET`、`AAT_LOG`、`AAT_INPUT`（既定 `/bin/aat-input`）、`AAT_SHOT`（撮影、既定 `/bin/keiland-shot {path}`）、`AAT_RUN_DIR`（target の撮影と `aat-input start` の出力の一時の置き場、既定 `/tmp/aat`）、`AAT_STATE`（host の状態、既定 `build/aat`）、`AAT_PASSWORD`（root 以外で入った時の sudo、既定はその利用者の名前。試験の image は user/user、古い image は kei/kei）。helper（`scenarios/aatlib.py`）は target の uid 1000 の名前を読んで session の利用者とする（`AAT_USER`・`AAT_USER_PASSWORD` で上書き）。
 
 ## target の側の口（P1、ws173-p001・p002）
 

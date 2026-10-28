@@ -23,7 +23,7 @@
 #     measure.sh desktop [--keep] OUT        frame-ops on a fresh session (zedBSD restarted first; --keep: the
 #                                            running one, whose open windows change the steps): OUT/table.txt
 #                                            (printed), session.log, marks, frame-ops.out, shot.png
-#     measure.sh mview OUT [MVIEW-OPTION]... mview in the session (the kei user): its MVIEW lines and the
+#     measure.sh mview OUT [MVIEW-OPTION]... mview in the session (its user): its MVIEW lines and the
 #                                            compositor's KWL SCANOUT lines of the run (printed), OUT/mview.log
 #     measure.sh linux-mview OUT [MVIEW-OPTION]...
 #                                            the Linux reference: mview (linux/build-mview.sh, copied to ~/linux-mview)
@@ -76,6 +76,9 @@ SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no -o User
 mkdir -p "$top/build/tmp"
 ZSSHOPT="$SSHOPT -o ControlMaster=auto -o ControlPath=$top/build/tmp/ssh-%h -o ControlPersist=600"
 SESSION=/run/user/1000/session.log
+# The session's user on the target, as target shell text: the name of uid 1000 (user, or kei in an image made before
+# the OS name became zedBSD).
+SESSION_USER='$(awk -F: '"'"'$3 == 1000 { print $1; exit }'"'"' /etc/passwd)'
 
 say() {
 	echo "measure: $*" >&2
@@ -290,7 +293,7 @@ mview() {
 $WAKE
 rm -f /tmp/mview.log /tmp/mview-scanout.log
 n=\$(wc -l < $SESSION)
-su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 ${ZEDBSD_ENV:-} /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
+su $SESSION_USER -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 ${ZEDBSD_ENV:-} /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
 tail -n +\$n $SESSION | grep -E 'KWL SCANOUT' > /tmp/mview-scanout.log
 EOS
 	zget "$ip" "$out" /tmp/mview.log /tmp/mview-scanout.log || return 1
@@ -307,7 +310,7 @@ profile() {
 $WAKE
 rm -f /tmp/mview.log /tmp/kernel.log
 n=\$(dmesg | wc -l)
-su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 VULKAN_ZEDBSD_SUBMIT_TIMING=1 ${ZEDBSD_ENV:-} /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
+su $SESSION_USER -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 VULKAN_ZEDBSD_SUBMIT_TIMING=1 ${ZEDBSD_ENV:-} /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
 dmesg | tail -n +\$n | grep 'vk timing' > /tmp/kernel.log
 EOS
 	zget "$ip" "$out" /tmp/mview.log /tmp/kernel.log || return 1
@@ -323,7 +326,7 @@ shot() {
 	zrun "$ip" <<EOS || return 1
 $WAKE
 rm -f /tmp/shot.png /tmp/mview-shot.log
-su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=shot --frames=900 --content=none --present=fifo --copies=$copies' > /tmp/mview-shot.log 2>&1 < /dev/null &
+su $SESSION_USER -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=shot --frames=900 --content=none --present=fifo --copies=$copies' > /tmp/mview-shot.log 2>&1 < /dev/null &
 sleep 6
 env XDG_RUNTIME_DIR=/run/user/1000 keiland-shot /tmp/shot.png > /dev/null 2>&1 < /dev/null
 wait
@@ -349,9 +352,9 @@ rm -f /tmp/hang.log /tmp/desktop.png
 n=\$(dmesg | wc -l)
 chmod 755 /tmp/vkhang
 for args in '' '--loops' '--compute --loops'; do
-	su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /tmp/vkhang \$args" >> /tmp/hang.log 2>&1 < /dev/null
+	su $SESSION_USER -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /tmp/vkhang \$args" >> /tmp/hang.log 2>&1 < /dev/null
 done
-su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=after-hang --spin=2 --content=game --present=mailbox --copies=1' >> /tmp/hang.log 2>&1 < /dev/null
+su $SESSION_USER -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=after-hang --spin=2 --content=game --present=mailbox --copies=1' >> /tmp/hang.log 2>&1 < /dev/null
 sleep 2
 keiland-shot /tmp/desktop.png > /dev/null 2>&1 < /dev/null
 dmesg | tail -n +\$n | grep -E 'lost|reset|fence|isolat|fault' >> /tmp/hang.log
@@ -370,7 +373,7 @@ $WAKE
 rm -f /tmp/nggshape.log
 chmod 755 /tmp/nggshape
 while read -r args; do
-	su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 /tmp/nggshape \$args" >> /tmp/nggshape.log 2>&1 < /dev/null
+	su $SESSION_USER -c "env XDG_RUNTIME_DIR=/run/user/1000 /tmp/nggshape \$args" >> /tmp/nggshape.log 2>&1 < /dev/null
 done <<'LIST'
 --indexed --triangles=16 --repeat=1000
 --triangles=50000 --indexed --depth
@@ -455,14 +458,14 @@ $DRIVER_CTL watch 75 > /tmp/watch.log 2>&1 &
 w=\$!
 sleep 1
 for content in game game none game; do
-	su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=logo --spin=2 --content=\$content --present=mailbox --copies=1" >> /tmp/logo.log 2>&1 < /dev/null
+	su $SESSION_USER -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=logo --spin=2 --content=\$content --present=mailbox --copies=1" >> /tmp/logo.log 2>&1 < /dev/null
 	sleep 1
 done
-su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /tmp/vkhang" >> /tmp/logo.log 2>&1 < /dev/null
+su $SESSION_USER -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /tmp/vkhang" >> /tmp/logo.log 2>&1 < /dev/null
 sleep 1
-su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=logo --spin=2 --content=game --present=mailbox --copies=1" >> /tmp/logo.log 2>&1 < /dev/null
+su $SESSION_USER -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=logo --spin=2 --content=game --present=mailbox --copies=1" >> /tmp/logo.log 2>&1 < /dev/null
 sleep 5
-su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=logo --spin=2 --content=game --present=mailbox --copies=1" >> /tmp/logo.log 2>&1 < /dev/null
+su $SESSION_USER -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=logo --spin=2 --content=game --present=mailbox --copies=1" >> /tmp/logo.log 2>&1 < /dev/null
 $DRIVER_CTL display | grep -E '^address' >> /tmp/logo.log
 wait \$w
 $DRIVER_CTL watch 10 > /tmp/watch2.log 2>&1 &

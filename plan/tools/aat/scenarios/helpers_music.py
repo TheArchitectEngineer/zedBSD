@@ -9,7 +9,7 @@ On QEMU the guest needs a sound device for audiod (T1-301: MUSIC AUDIO error=13,
 plan/tools/guest/guest.sh start --qemu-extra '-audiodev none,id=snd0 -device intel-hda -device hda-duplex,audiodev=snd0'.
 
 The songs are two m4a files the host's ffmpeg makes (8 s of 440 Hz and 660 Hz, AAC, with their tags; the first with a
-PNG cover), put in kei's ~/Music/AAT and taken away after.  The places in Music's window are view.c's layout: the
+PNG cover), put in the session user's ~/Music/AAT and taken away after.  The places in Music's window are view.c's layout: the
 albums' column 0.28 of the window's width within 220 and 300, the songs' card 8 to its right on glass, its Play
 button 216 from the card's left and 135 from the top; the bar the bottom 80, its play button in the middle 28 down,
 Next 52 right of it.
@@ -24,11 +24,11 @@ import common
 
 run = aatlib.Run.from_command_line("helpers_music")
 
-FOLDER = "/home/kei/Music/AAT"
+FOLDER = f"{aatlib.HOME}/Music/AAT"
 SONGS = (("01-tone-a.m4a", 440, "Tone A", 1), ("02-tone-b.m4a", 660, "Tone B", 2))
 THIRD = ("03-tone-c.m4a", 880, "Tone C", 3)
-NOT_A_SONG = "/home/kei/not-a-song.m4a"
-MOVED = "/home/kei/02-tone-b.m4a"
+NOT_A_SONG = f"{aatlib.HOME}/not-a-song.m4a"
+MOVED = f"{aatlib.HOME}/02-tone-b.m4a"
 
 # The songs' list (view.c): its header 168 high, rows of 40 from there, inset 16; the search field 16 in from the
 # albums' column, 52 down and 32 high.
@@ -48,7 +48,7 @@ def sized(window, mark, regex):
 
 
 def make_songs(item, songs=SONGS, seconds=8) -> None:
-	"""The songs (the two, or more, of a number of seconds), made on this host and put in kei's Music folder."""
+	"""The songs (the two, or more, of a number of seconds), made on this host and put in the session user's Music folder."""
 	folder = run.outdir / "music"
 	folder.mkdir(parents=True, exist_ok=True)
 	cover = folder / "cover.png"
@@ -64,7 +64,7 @@ def make_songs(item, songs=SONGS, seconds=8) -> None:
 	run.sh(f"rm -rf {FOLDER}; mkdir -p {FOLDER}")
 	for name, _, _, _ in songs:
 		run.aat("put", str(folder / name), f"{FOLDER}/{name}")
-	run.sh(f"chown -R kei /home/kei/Music; chmod -R a+rX {FOLDER}")
+	run.sh(f"chown -R {aatlib.USER} {aatlib.HOME}/Music; chmod -R a+rX {FOLDER}")
 	item.step(f"{len(songs)} songs in ~/Music/AAT", ", ".join(name for name, _, _, _ in songs))
 
 
@@ -160,7 +160,7 @@ def failures(item):
 		# Songs of 20 s: the first must still play when Next is pressed after the stream's loss and its reopening
 		# (T1-455: with 8 s songs the first ended by itself, Next went past the last song and stopped).
 		make_songs(item, SONGS + (THIRD,), seconds=20)
-		run.sh(f"printf 'not an mp4\\n' > {NOT_A_SONG}; chown kei {NOT_A_SONG}; rm -f {MOVED}")
+		run.sh(f"printf 'not an mp4\\n' > {NOT_A_SONG}; chown {aatlib.USER} {NOT_A_SONG}; rm -f {MOVED}")
 		mark = run.mark()
 		window = run.launch(item, "Music")
 		library = run.wait(r"MUSIC LIBRARY songs=\d+ error=\d+", mark, 10)
