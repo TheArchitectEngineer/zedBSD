@@ -1731,7 +1731,9 @@ execute_image_target(
 	nvrtx_vk_image_level(image, level, &offset, &target->width, &target->height, &target->pitch);
 	target->address = va + offset;
 	target->format = format;
-	target->block_linear = image->tiled ? 1U : 0U;
+	target->block_linear = 0U;
+	if (image->tiled)
+		target->block_linear = 1U;
 	return 0;
 }
 

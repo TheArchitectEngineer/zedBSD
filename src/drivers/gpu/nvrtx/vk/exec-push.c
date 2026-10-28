@@ -856,10 +856,14 @@ nvrtx_exec_raster(
 	uint32_t cull_mode,
 	uint32_t front_face)
 {
+	uint32_t culled;
 	uint32_t face;
 
 	/* Culled or not, and which faces. */
-	at = exec_set(push, at, M_OGL_SET_CULL, cull_mode != VK_CULL_MODE_NONE ? V_TRUE : V_FALSE);
+	culled = V_FALSE;
+	if (cull_mode != VK_CULL_MODE_NONE)
+		culled = V_TRUE;
+	at = exec_set(push, at, M_OGL_SET_CULL, culled);
 	if (cull_mode != VK_CULL_MODE_NONE) {
 		face = V_CULL_FACE_FRONT_AND_BACK;
 		if (cull_mode == VK_CULL_MODE_FRONT_BIT)
@@ -895,6 +899,8 @@ nvrtx_exec_depth(
 	const struct nvrtx_exec_depth *depth)
 {
 	uint32_t compare;
+	uint32_t test;
+	uint32_t write;
 
 	/* The function: NEVER to ALWAYS in order. */
 	compare = depth->compare;
@@ -902,8 +908,15 @@ nvrtx_exec_depth(
 		compare = VK_COMPARE_OP_ALWAYS;
 
 	/* The test, the writes (only with the test) and the function. */
-	at = exec_set(push, at, M_SET_DEPTH_TEST, depth->test != 0U ? V_TRUE : V_FALSE);
-	at = exec_set(push, at, M_SET_DEPTH_WRITE, depth->test != 0U && depth->write != 0U ? V_TRUE : V_FALSE);
+	test = V_FALSE;
+	write = V_FALSE;
+	if (depth->test != 0U) {
+		test = V_TRUE;
+		if (depth->write != 0U)
+			write = V_TRUE;
+	}
+	at = exec_set(push, at, M_SET_DEPTH_TEST, test);
+	at = exec_set(push, at, M_SET_DEPTH_WRITE, write);
 	if (depth->test != 0U)
 		at = exec_set(push, at, M_SET_DEPTH_FUNC, V_DEPTH_FUNC_NEVER + compare);
 

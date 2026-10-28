@@ -281,8 +281,10 @@ resource_image_layout(
 		image->level_offset[level] = at;
 		image->level_pitch[level] = (row + NVRTX_VK_GOB_WIDTH - 1U) & ~(NVRTX_VK_GOB_WIDTH - 1U);
 		at += (uint64_t)image->level_pitch[level] * ((height + NVRTX_VK_GOB_HEIGHT - 1U) & ~(NVRTX_VK_GOB_HEIGHT - 1U));
-		width = width > 1U ? width >> 1 : 1U;
-		height = height > 1U ? height >> 1 : 1U;
+		if (width > 1U)
+			width >>= 1;
+		if (height > 1U)
+			height >>= 1;
 	}
 	image->pitch = image->level_pitch[0];
 	image->bytes = at;
@@ -313,8 +315,10 @@ nvrtx_vk_image_level(
 	w = image->width;
 	h = image->height;
 	for (index = 0U; index < level; index++) {
-		w = w > 1U ? w >> 1 : 1U;
-		h = h > 1U ? h >> 1 : 1U;
+		if (w > 1U)
+			w >>= 1;
+		if (h > 1U)
+			h >>= 1;
 	}
 
 	/* Succeeded: the level's place and shape. */
@@ -371,7 +375,9 @@ resource_image_supported(
 		return 0;
 
 	/* No more levels than halving the longer side down to one pixel gives. */
-	side = info->extent.width > info->extent.height ? info->extent.width : info->extent.height;
+	side = info->extent.width;
+	if (info->extent.height > side)
+		side = info->extent.height;
 	levels = 1U;
 	while (side > 1U) {
 		side >>= 1;

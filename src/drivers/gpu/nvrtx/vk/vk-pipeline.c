@@ -342,8 +342,12 @@ pipeline_decode(
 	if (present != 0U) {
 		kern_memset(&depth, 0, sizeof(depth));
 		i915_vkc_dec_VkPipelineDepthStencilStateCreateInfo(reader, &session->arena, &depth);
-		pipeline->depth_test = depth.depthTestEnable != VK_FALSE ? 1U : 0U;
-		pipeline->depth_write = depth.depthWriteEnable != VK_FALSE ? 1U : 0U;
+		pipeline->depth_test = 0U;
+		if (depth.depthTestEnable != VK_FALSE)
+			pipeline->depth_test = 1U;
+		pipeline->depth_write = 0U;
+		if (depth.depthWriteEnable != VK_FALSE)
+			pipeline->depth_write = 1U;
 		pipeline->depth_compare = depth.depthCompareOp;
 		if ((depth.stencilTestEnable != VK_FALSE || depth.depthBoundsTestEnable != VK_FALSE) && refused == 0)
 			refused = ENOTSUP;
