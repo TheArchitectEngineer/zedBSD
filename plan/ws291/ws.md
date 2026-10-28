@@ -137,3 +137,10 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   （build/ws291/case4.patch、window mode の shot で SURFACE_LOST errno 24）。案 5 は未着手。
 - 次: phase006 の「UCLK の再開点」の 1〜3（増分 B の soak → 表・NumOfDisplays・hard min・watermark の display の段の実装 → 受け入れの soak と bench）。
   機械は既定（memory=0）、kernel vmunix-d3、libvulkan 3b、amdrdnactl d2。
+
+## 2026-10-28 q1658（P2、worktree p2-ws291h）
+
+- ユーザーの決定（Q1 経由、原文）「P2はsoakはやめさせて、実装に集中させてください。」「P2が使っている性能評価スクリプトは、今後ほかのGPUのドライバの性能向上に標準で活用したいので、tools/以下のスクリプトとして保存するのが望ましいと思います。」
+  「P2は、評価を中断して、画面へ出す回路のunderflowを先に修正してください。目視でも、かなりの割合で数秒に一回くらい、画面出力が途切れる瞬間があります。解決してから評価に進みます。UCLKの問題は解決とマークしていいです。」
+- 結果: 負荷に応じた UCLK（amdrdna.smu.memory=2、既定は 0 のまま）を実装し SMU の停止 0（UCLK の件は解決）。計測の道具は plan/tools/gpu-perf/ へ（9213987d1）。
+  display の underflow: p-state の plan を 404 us → 520 us にして 0（[phase006](phase006/phase.md) の「q1658」節）。
