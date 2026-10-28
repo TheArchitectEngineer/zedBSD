@@ -454,6 +454,76 @@ int dp_delete(struct dp_table *t, unsigned slot)
 	return parse_parts(t, t->edited);
 }
 
+/*
+ * Replaces the type, PARTUUID, name and attributes of one GPT entry.
+ *
+ * The entry keeps its slot and its extent, so the data in the partition and
+ * every other entry stay as they are.  A change the table would refuse (a
+ * PARTUUID another entry has, a name GPT cannot hold) leaves the entry as it
+ * was.
+ */
+int
+dp_modify(
+	struct dp_table *t,
+	unsigned slot,
+	const char *type,
+	const char *uuid,
+	const char *name,
+	uint64_t attributes)
+{
+	uint8_t previous[128];
+	uint8_t *entry;
+	int error;
+
+	/* Refuses a table the editor may not change and a slot past its end. */
+	if (t->restrictions != 0)
+		return EOPNOTSUPP;
+	if (t->format != DP_GPT)
+		return EOPNOTSUPP;
+	if (slot == 0 || slot > t->slots)
+		return EINVAL;
+
+	/* Refuses an unused slot, which has nothing to change. */
+	entry = t->edited + (size_t)(slot - 1) * 128U;
+	if (zero(entry, 16))
+		return ENOENT;
+
+	/* Keeps the entry so that a refused change can be taken back. */
+	memcpy(previous, entry, sizeof(previous));
+
+	/* Writes the new type and PARTUUID, which must both be valid GUIDs. */
+	error = dp_guid_parse(type, entry);
+	if (error != 0) {
+		memcpy(entry, previous, sizeof(previous));
+		return EINVAL;
+	}
+	error = dp_guid_parse(uuid, entry + 16);
+	if (error != 0) {
+		memcpy(entry, previous, sizeof(previous));
+		return EINVAL;
+	}
+
+	/* Writes the attribute bits and the name in GPT's UTF-16 form. */
+	put64(entry + 48, attributes);
+	error = name_encode(name, entry + 56);
+	if (error != 0) {
+		memcpy(entry, previous, sizeof(previous));
+		return error;
+	}
+
+	/* Rereads the table, which refuses a PARTUUID that another entry has. */
+	error = parse_parts(t, t->edited);
+	if (error != 0) {
+		memcpy(entry, previous, sizeof(previous));
+		(void)parse_parts(t, t->edited);
+		return error;
+	}
+
+	/* Succeeded: the entry is changed in the proposed table. */
+	t->changed = 1;
+	return 0;
+}
+
 static int unchanged(struct dp_table *t, uint64_t lba, const uint8_t *expected, size_t size)
 {
 	uint8_t *actual = malloc(size);

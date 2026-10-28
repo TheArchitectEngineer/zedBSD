@@ -1,6 +1,7 @@
 /* Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib */
 #include "table.h"
 #include <uapi/block.h>
+#include <uapi/gpt-type.h>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -8,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -15,6 +17,69 @@
 /* Machine records contain numeric fields and kernel device/GUID tokens only. */
 static int machine_output;
 static void show_machine(const struct dp_table *, const struct kern_block_info *);
+
+/* The most operations one batch may carry. */
+#define BATCH_OPERATIONS_MAX 32U
+
+/* The most active entries a written GPT may have, as add enforces. */
+#define BATCH_ACTIVE_MAX 16U
+
+/* What one operation of a batch does to its slot. */
+enum batch_kind {
+	BATCH_ADD,
+	BATCH_DELETE,
+	BATCH_SET
+};
+
+/*
+ * One operation of a batch, parsed from the command line.
+ *
+ * The strings point into argv, which outlives the batch.  Fields an
+ * operation does not use stay zero.
+ */
+struct batch_operation {
+	enum batch_kind kind;
+	unsigned slot;
+	uint64_t start;
+	uint64_t count;
+	uint64_t attributes;
+	const char *type;
+	const char *uuid;
+	const char *name;
+};
+
+/*
+ * One GPT type the human listing names.
+ *
+ * The table is constant; a type it does not hold is shown by its GUID
+ * alone.
+ */
+struct type_name {
+	const char *guid;
+	const char *name;
+};
+
+/* The GPT types the human listing names, by their canonical GUIDs. */
+static const struct type_name type_names[] = {
+	{ KERN_GPT_TYPE_EFI_SYSTEM, "EFI-System" },
+	{ KERN_GPT_TYPE_ZEDBSD_UFS, "zedBSD-UFS" },
+	{ KERN_GPT_TYPE_ZEDBSD_SWAP, "zedBSD-swap" },
+	{ KERN_GPT_TYPE_ZEDBSD_UNASSIGNED, "zedBSD-unassigned" },
+	{ KERN_GPT_TYPE_BASIC_DATA, "Microsoft-Basic-Data" },
+	{ KERN_GPT_TYPE_MICROSOFT_RESERVED, "Microsoft-Reserved" },
+	{ KERN_GPT_TYPE_WINDOWS_RECOVERY, "Windows-Recovery" },
+	{ KERN_GPT_TYPE_LINUX_FILESYSTEM, "Linux-filesystem" },
+	{ KERN_GPT_TYPE_LINUX_SWAP, "Linux-swap" },
+	{ KERN_GPT_TYPE_FREEBSD_BOOT, "FreeBSD-boot" },
+	{ KERN_GPT_TYPE_APPLE_APFS, "Apple-APFS" }
+};
+
+static const char *type_name_of(const char *guid);
+static int batch_slot(const char *text, unsigned *slot);
+static int batch_parse(int argc, char **argv, struct batch_operation *operations, unsigned *operation_count);
+static int batch_apply(struct dp_table *table, const struct batch_operation *operations, unsigned operation_count);
+static int batch_confirm(const struct kern_block_info *info);
+static int batch_disk(int argc, char **argv);
 
 static void
 machine_device(const struct kern_block_info *info)
@@ -77,6 +142,9 @@ static void help(void)
 	puts("       diskpart add DISK SLOT START COUNT TYPE [PARTUUID [NAME]]");
 	puts("       diskpart delete DISK SLOT");
 	puts("       diskpart init DISK DISKUUID [START COUNT TYPE PARTUUID NAME]...");
+	puts("       diskpart batch DISK OPERATION...");
+	puts("OPERATION: add SLOT START COUNT TYPE PARTUUID NAME | delete SLOT |");
+	puts("           set SLOT TYPE PARTUUID NAME ATTRIBUTES (GPT only, one write).");
 	puts("SLOT is one-based; START/COUNT are decimal logical sectors.");
 	puts("TYPE: GPT GUID (PARTUUID required), or hexadecimal primary-MBR type.");
 	puts("Edits require interactive device-identity confirmation. No force mode.");
@@ -132,8 +200,9 @@ static void show(const struct dp_table *t)
 	    t->restrictions & DP_UNSUPPORTED ? " [unsupported for editing]" : "", t->count);
 	for (unsigned i = 0; i < t->count; i++) {
 		const struct dp_part *p = &t->parts[i];
-		printf("%u start=%llu count=%llu type=%s uuid=%s name=%s\n", p->slot,
-		    (unsigned long long)p->start, (unsigned long long)p->count, p->type, p->uuid, p->name);
+		printf("%u start=%llu count=%llu type=%s kind=%s uuid=%s name=%s\n", p->slot,
+		    (unsigned long long)p->start, (unsigned long long)p->count, p->type,
+		    type_name_of(p->type), p->uuid, p->name);
 	}
 }
 
@@ -361,6 +430,8 @@ int main(int argc, char **argv)
 	}
 	if (!strcmp(verb, "init"))
 		return initialize_disk(argc, argv);
+	if (!strcmp(verb, "batch"))
+		return batch_disk(argc, argv);
 	editing = !strcmp(verb, "add") || !strcmp(verb, "delete");
 	if ((!strcmp(verb, "show") || !strcmp(verb, "reload")) ? argc != 3 :
 	    !strcmp(verb, "delete") ? argc != 4 :
@@ -439,4 +510,365 @@ done:
 	if (ferror(stdout) && !error) error = EIO;
 	if (error) fprintf(stderr, "diskpart: %s: %s\n", argv[2], strerror(error));
 	return error ? 1 : 0;
+}
+
+/* Names a GPT type for the human listing, or "-" for a type without a name. */
+static const char *
+type_name_of(
+	const char *guid)
+{
+	size_t index;
+	int differs;
+
+	/* Looks the GUID up regardless of the case the table printed it in. */
+	for (index = 0; index < sizeof(type_names) / sizeof(type_names[0]); index++) {
+		differs = strcasecmp(type_names[index].guid, guid);
+		if (differs == 0)
+			return type_names[index].name;
+	}
+
+	/* The type has no name in the table. */
+	return "-";
+}
+
+/* Reads a one-based slot number that a GPT may have. */
+static int
+batch_slot(
+	const char *text,
+	unsigned *slot)
+{
+	uint64_t value;
+	int error;
+
+	/* Reads the decimal number. */
+	error = decimal(text, &value);
+	if (error != 0)
+		return EINVAL;
+
+	/* Refuses slot 0 and a slot past the largest table. */
+	if (value == 0 || value > DP_MAX_SLOTS)
+		return EINVAL;
+
+	/* Succeeded: the slot is in range. */
+	*slot = (unsigned)value;
+	return 0;
+}
+
+/*
+ * Parses a batch's operations from the command line.
+ *
+ * Every number and GUID is checked here, before any device is opened, so
+ * that a mistyped batch never reaches the disk.
+ */
+static int
+batch_parse(
+	int argc,
+	char **argv,
+	struct batch_operation *operations,
+	unsigned *operation_count)
+{
+	struct batch_operation *operation;
+	uint8_t guid[16];
+	int index;
+	int error;
+
+	/* Reads the operations that follow the disk's name, one at a time. */
+	*operation_count = 0;
+	index = 3;
+	while (index < argc) {
+		/* Refuses a batch with more operations than it may carry. */
+		if (*operation_count == BATCH_OPERATIONS_MAX)
+			return E2BIG;
+		operation = &operations[*operation_count];
+		memset(operation, 0, sizeof(*operation));
+
+		/* Takes the operation's word, its slot and the arguments its kind needs. */
+		if (strcmp(argv[index], "add") == 0) {
+			if (argc - index < 7)
+				return EINVAL;
+			operation->kind = BATCH_ADD;
+			error = batch_slot(argv[index + 1], &operation->slot);
+			if (error != 0)
+				return EINVAL;
+			error = decimal(argv[index + 2], &operation->start);
+			if (error != 0)
+				return EINVAL;
+			error = decimal(argv[index + 3], &operation->count);
+			if (error != 0)
+				return EINVAL;
+			operation->type = argv[index + 4];
+			operation->uuid = argv[index + 5];
+			operation->name = argv[index + 6];
+			index += 7;
+		} else if (strcmp(argv[index], "delete") == 0) {
+			if (argc - index < 2)
+				return EINVAL;
+			operation->kind = BATCH_DELETE;
+			error = batch_slot(argv[index + 1], &operation->slot);
+			if (error != 0)
+				return EINVAL;
+			index += 2;
+		} else if (strcmp(argv[index], "set") == 0) {
+			if (argc - index < 6)
+				return EINVAL;
+			operation->kind = BATCH_SET;
+			error = batch_slot(argv[index + 1], &operation->slot);
+			if (error != 0)
+				return EINVAL;
+			operation->type = argv[index + 2];
+			operation->uuid = argv[index + 3];
+			operation->name = argv[index + 4];
+			error = decimal(argv[index + 5], &operation->attributes);
+			if (error != 0)
+				return EINVAL;
+			index += 6;
+		} else {
+			return EINVAL;
+		}
+
+		/* Refuses a GUID that is not one, before the device is touched. */
+		if (operation->kind != BATCH_DELETE) {
+			error = dp_guid_parse(operation->type, guid);
+			if (error != 0)
+				return EINVAL;
+			error = dp_guid_parse(operation->uuid, guid);
+			if (error != 0)
+				return EINVAL;
+		}
+
+		/* Refuses an empty addition. */
+		if (operation->kind == BATCH_ADD && operation->count == 0)
+			return EINVAL;
+
+		/* Counts the operation as taken. */
+		(*operation_count)++;
+	}
+
+	/* Refuses a batch with nothing to do. */
+	if (*operation_count == 0)
+		return EINVAL;
+
+	/* Succeeded: every operation is parsed. */
+	return 0;
+}
+
+/*
+ * Applies a batch's operations to the loaded table, in the order given.
+ *
+ * Only the table in memory changes; dp_write publishes it.  The result
+ * must keep within the active entries a GPT write may have.
+ */
+static int
+batch_apply(
+	struct dp_table *table,
+	const struct batch_operation *operations,
+	unsigned operation_count)
+{
+	const struct batch_operation *operation;
+	unsigned index;
+	int error;
+
+	/* Refuses an MBR, which the batch does not edit. */
+	if (table->format != DP_GPT)
+		return EOPNOTSUPP;
+
+	/* Changes the table one operation at a time, stopping at a refusal. */
+	for (index = 0; index < operation_count; index++) {
+		operation = &operations[index];
+
+		/* Hands the operation to the codec that its kind names. */
+		switch (operation->kind) {
+		case BATCH_ADD:
+			error = dp_add(table, operation->slot, operation->start,
+			    operation->count, operation->type, operation->uuid,
+			    operation->name);
+			break;
+		case BATCH_DELETE:
+			error = dp_delete(table, operation->slot);
+			break;
+		case BATCH_SET:
+			error = dp_modify(table, operation->slot, operation->type,
+			    operation->uuid, operation->name, operation->attributes);
+			break;
+		default:
+			error = EINVAL;
+			break;
+		}
+
+		/* Reports which operation the table refused. */
+		if (error != 0) {
+			fprintf(stderr, "diskpart: batch operation %u refused: %s\n",
+			    index + 1, strerror(error));
+			return error;
+		}
+	}
+
+	/* Refuses a table with more active entries than a write may hold. */
+	if (table->count > BATCH_ACTIVE_MAX)
+		return ENOSPC;
+
+	/* Succeeded: the proposed table holds every operation. */
+	return 0;
+}
+
+/* Asks for the exact WRITE phrase of the disk the batch is about to change. */
+static int
+batch_confirm(
+	const struct kern_block_info *info)
+{
+	char expected[80];
+	char answer[96];
+	char *ending;
+	int flushed;
+
+	/* Shows the phrase that names this disk's registration. */
+	snprintf(expected, sizeof(expected), "WRITE %s:%u", info->name, info->device);
+	printf("Single-administrator operation; not crash-atomic. Type '%s' to write: ", expected);
+	flushed = fflush(stdout);
+	if (flushed != 0)
+		return EIO;
+
+	/* Reads one complete answer line. */
+	if (fgets(answer, sizeof(answer), stdin) == NULL)
+		return ECANCELED;
+	ending = strchr(answer, '\n');
+	if (ending == NULL)
+		return ECANCELED;
+	answer[strcspn(answer, "\r\n")] = '\0';
+
+	/* Refuses any answer but the phrase itself. */
+	if (strcmp(answer, expected) != 0)
+		return ECANCELED;
+
+	/* Succeeded: the operator named this disk. */
+	return 0;
+}
+
+/*
+ * Applies several GPT edits with one confirmation and one write.
+ *
+ * The disk's partitions must all be idle: the kernel must accept a reload
+ * before the batch is shown and again right before it is written, so that
+ * no mounted partition is changed and the new table is the one the kernel
+ * uses afterwards.  The exit status is 0 when the table is written and
+ * reloaded, 3 when it is written but the reload failed, 2 for a bad
+ * command line and 1 for anything else.
+ */
+static int
+batch_disk(
+	int argc,
+	char **argv)
+{
+	struct batch_operation operations[BATCH_OPERATIONS_MAX];
+	struct kern_block_info info;
+	struct dp_table table;
+	struct dp_io io;
+	unsigned operation_count;
+	int reloaded;
+	int loaded;
+	int started;
+	int error;
+	int fd;
+
+	/* Refuses a malformed batch before any device is opened. */
+	if (argc < 4) {
+		help();
+		return 2;
+	}
+	error = batch_parse(argc, argv, operations, &operation_count);
+	if (error != 0) {
+		help();
+		return 2;
+	}
+
+	/* Opens the whole disk for writing. */
+	fd = -1;
+	loaded = 0;
+	started = 0;
+	error = device_open(argv[2], 1, &fd, &info);
+	if (error != 0)
+		goto out;
+
+	/* Requires idle partitions: the kernel must accept a reload now. */
+	reloaded = ioctl(fd, BLKREREADPART, 0);
+	if (reloaded < 0) {
+		error = errno;
+		goto out;
+	}
+
+	/* Reads the table and refuses one the kernel maps differently. */
+	io = (struct dp_io){ &fd, info.sector_count, info.sector_size, fd_read, fd_write, fd_flush };
+	error = dp_load(&table, &io);
+	if (error != 0)
+		goto out;
+	loaded = 1;
+	error = live_extents_match(&info, &table);
+	if (error != 0)
+		goto out;
+
+	/* Shows the disk and the table as it is before the batch. */
+	printf("Target /dev/%s registration=%u sector-size=%u sectors=%llu\n", info.name,
+	    info.device, info.sector_size, (unsigned long long)info.sector_count);
+	show(&table);
+
+	/* Builds the proposed table and shows it. */
+	error = batch_apply(&table, operations, operation_count);
+	if (error != 0)
+		goto out;
+	puts("Proposed table (no filesystem data is moved or formatted):");
+	show(&table);
+
+	/* Asks the operator to name the disk. */
+	error = batch_confirm(&info);
+	if (error != 0)
+		goto out;
+
+	/* Requires idle partitions again after the interactive pause. */
+	reloaded = ioctl(fd, BLKREREADPART, 0);
+	if (reloaded < 0) {
+		error = errno;
+		goto out;
+	}
+	error = live_extents_match(&info, &table);
+	if (error != 0)
+		goto out;
+
+	/* Writes both GPT copies and verifies them. */
+	error = dp_write(&table, &started);
+	if (error != 0) {
+		fprintf(stderr, "diskpart: %s\n", started ?
+		    "Write/flush/verification failed; table may be partially changed. No reload attempted." :
+		    "Write preflight failed; no table bytes written.");
+		goto out;
+	}
+
+	/* Makes the kernel use the new table; a failure leaves it written. */
+	reloaded = ioctl(fd, BLKREREADPART, 0);
+	if (reloaded < 0) {
+		error = errno;
+		fprintf(stderr, "diskpart: Table written and verified, but reload failed: %s.%s\n",
+		    strerror(error), error == EBUSY ? " Reboot required; live devices unchanged" : " No rollback attempted");
+		dp_free(&table);
+		close(fd);
+		return 3;
+	}
+	puts("Table written, flushed, verified; kernel partition devices reloaded.");
+
+out:
+	/* Releases the table and the disk, keeping the first error. */
+	if (loaded)
+		dp_free(&table);
+	if (fd >= 0 && close(fd) < 0 && error == 0)
+		error = errno;
+	if (fflush(stdout) != 0 && error == 0)
+		error = EIO;
+
+	/* Reports a failure, and whether the disk may have changed. */
+	if (error != 0) {
+		fprintf(stderr, "diskpart: %s: %s\n", argv[2], strerror(error));
+		return 1;
+	}
+
+	/* Succeeded: the batch is written and the kernel uses it. */
+	return 0;
 }

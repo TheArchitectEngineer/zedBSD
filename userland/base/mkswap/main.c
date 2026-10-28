@@ -42,8 +42,13 @@ main(
 	/* Rejects missing operands and unknown options before any file access. */
 	if ((argc != 2 && !pristine) || argv[argc - 1][0] == '-') {
 		fprintf(stderr, "usage: mkswap [--verify-pristine] FILE\n");
+		fprintf(stderr, "       mkswap /dev/PARTITION\n");
 		return 2;
 	}
+
+	/* Hands a partition, named under /dev/, to the device mode. */
+	if (!pristine && strncmp(argv[1], "/dev/", 5) == 0)
+		return swap_device_command(argv[1]);
 
 	/* Keeps read-only verification separate from reserved initialization. */
 	path = argv[argc - 1];

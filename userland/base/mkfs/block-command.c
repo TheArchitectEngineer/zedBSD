@@ -11,6 +11,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+static int random_volume_id(uint32_t *volume_id);
+static int parse_sector_size(const char *text, uint32_t *sector_size);
+
 /* Queries the production geometry before a future partition even exists. */
 int
 mkfs_capacity_command(int argc, char **argv)
@@ -23,17 +26,35 @@ mkfs_capacity_command(int argc, char **argv)
 	uint64_t free_bytes;
 	uint64_t free_inodes;
 	uint32_t unit;
+	uint32_t sector_size;
 	unsigned digit;
 	int native;
+	int fat;
+	int sized;
 	int error;
 
-	native = argc == 6 && strcmp(argv[1], "-t") == 0 &&
+	/*
+	 * Takes the optional --sector-size=N before --check-size: the
+	 * geometry of a disk with 4096-byte sectors differs.
+	 */
+	sector_size = 512U;
+	sized = 0;
+	if (argc >= 5 && strncmp(argv[argc - 3], "--sector-size=", 14) == 0) {
+		error = parse_sector_size(argv[argc - 3] + 14, &sector_size);
+		if (error != 0)
+			return 2;
+		sized = 1;
+	}
+
+	/* Accepts the two profiles' exact command lines. */
+	native = argc == 6 + sized && strcmp(argv[1], "-t") == 0 &&
 	    strcmp(argv[2], "ufs") == 0 && strcmp(argv[3], "--profile=native") == 0 &&
-	    strcmp(argv[4], "--check-size") == 0;
-	if (!native && !(argc == 5 && strcmp(argv[1], "-t") == 0 &&
-	    strcmp(argv[2], "fat32") == 0 && strcmp(argv[3], "--check-size") == 0)) {
-		fprintf(stderr, "usage: mkfs -t fat32 --check-size BYTES\n");
-		fprintf(stderr, "       mkfs -t ufs --profile=native --check-size BYTES\n");
+	    strcmp(argv[argc - 2], "--check-size") == 0;
+	fat = argc == 5 + sized && strcmp(argv[1], "-t") == 0 &&
+	    strcmp(argv[2], "fat32") == 0 && strcmp(argv[argc - 2], "--check-size") == 0;
+	if (!native && !fat) {
+		fprintf(stderr, "usage: mkfs -t fat32 [--sector-size=512|4096] --check-size BYTES\n");
+		fprintf(stderr, "       mkfs -t ufs --profile=native [--sector-size=512] --check-size BYTES\n");
 		return 2;
 	}
 	number = argv[argc - 1];
@@ -48,8 +69,14 @@ mkfs_capacity_command(int argc, char **argv)
 			return 2;
 		bytes = bytes * 10U + digit;
 	}
-	if (bytes == 0 || bytes % 512U != 0) {
-		fprintf(stderr, "mkfs: invalid 512-byte-sector size\n");
+	if (bytes == 0 || bytes % sector_size != 0) {
+		fprintf(stderr, "mkfs: the size is not a whole number of %u-byte sectors\n", sector_size);
+		return 1;
+	}
+
+	/* The native UFS profile has no geometry for 4096-byte sectors yet. */
+	if (native && sector_size != 512U) {
+		fprintf(stderr, "mkfs: capacity: %s\n", strerror(EOPNOTSUPP));
 		return 1;
 	}
 	if (native) {
@@ -60,8 +87,8 @@ mkfs_capacity_command(int argc, char **argv)
 		unit = capacity.allocation_size;
 	} else {
 		format = "fat32";
-		error = fat32_format_geometry(bytes / 512U, 512U, 0, 1, &geometry);
-		unit = geometry.sectors_per_cluster * 512U;
+		error = fat32_format_geometry(bytes / sector_size, sector_size, 0, 1, &geometry);
+		unit = geometry.sectors_per_cluster * sector_size;
 		free_bytes = (uint64_t)(geometry.clusters > 0 ? geometry.clusters - 1U : 0) * unit;
 		free_inodes = 0;
 	}
@@ -70,8 +97,8 @@ mkfs_capacity_command(int argc, char **argv)
 		return 1;
 	}
 	/* FAT has no fixed inode table; zero is meaningful only for that profile. */
-	if (printf("format\t1\t%s\t512\t%llu\t%llu\t%llu\t%u\n", format,
-	    (unsigned long long)bytes, (unsigned long long)free_bytes,
+	if (printf("format\t1\t%s\t%u\t%llu\t%llu\t%llu\t%u\n", format,
+	    sector_size, (unsigned long long)bytes, (unsigned long long)free_bytes,
 	    (unsigned long long)free_inodes, unit) < 0 || fflush(stdout) != 0)
 		return 1;
 	return 0;
@@ -90,6 +117,7 @@ mkfs_block_command(int argc, char **argv)
 	size_t length;
 	int fd, error, started, native;
 	uint64_t bytes;
+	uint32_t volume_id;
 
 	native = argc == 5 && strcmp(argv[1], "-t") == 0 &&
 	    strcmp(argv[2], "ufs") == 0 && strcmp(argv[3], "--profile=native") == 0;
@@ -141,8 +169,11 @@ mkfs_block_command(int argc, char **argv)
 		error = EROFS;
 		goto out;
 	}
-	/* Current filesystem mount paths require 512-byte logical sectors. */
-	if (info.sector_size != 512) {
+	/*
+	 * FAT32 is written for 512-byte and 4096-byte logical sectors; the
+	 * native UFS profile has geometry for 512-byte sectors only.
+	 */
+	if (info.sector_size != 512 && (native || info.sector_size != 4096)) {
 		error = EOPNOTSUPP;
 		goto out;
 	}
@@ -151,11 +182,22 @@ mkfs_block_command(int argc, char **argv)
 		goto out;
 	}
 	bytes = info.sector_count * info.sector_size;
+	/*
+	 * A FAT32 volume's serial is random: the loader and the kernel find
+	 * the boot volume by it (boot0=UUID=), so it must not repeat the
+	 * serial of a volume on another disk.
+	 */
+	volume_id = 0;
+	if (!native) {
+		error = random_volume_id(&volume_id);
+		if (error != 0)
+			goto out;
+	}
 	if (native)
 		error = ufs_format_native_validate_size(bytes);
 	else
 		error = fat32_format_geometry(info.sector_count, info.sector_size,
-		    info.parent_offset, info.device, &geometry);
+		    info.parent_offset, volume_id, &geometry);
 	if (error != 0)
 		goto out;
 	if (ioctl(fd, BLKRESERVE, &info) < 0) {
@@ -215,4 +257,45 @@ out:
 	if (fflush(stdout) != 0 || ferror(stdout))
 		return 1;
 	return 0;
+}
+
+/* Draws a nonzero FAT volume serial from the kernel's random source. */
+static int
+random_volume_id(
+	uint32_t *volume_id)
+{
+	uint32_t value;
+	int drawn;
+
+	/* Draws until the serial is not zero, which the loader refuses. */
+	value = 0;
+	while (value == 0) {
+		drawn = getentropy(&value, sizeof(value));
+		if (drawn != 0)
+			return errno;
+	}
+
+	/* Succeeded: the serial is random and nonzero. */
+	*volume_id = value;
+	return 0;
+}
+
+/* Reads a --sector-size value: 512 or 4096. */
+static int
+parse_sector_size(
+	const char *text,
+	uint32_t *sector_size)
+{
+	/* Accepts the two logical sector sizes the formats are made for. */
+	if (strcmp(text, "512") == 0) {
+		*sector_size = 512U;
+		return 0;
+	}
+	if (strcmp(text, "4096") == 0) {
+		*sector_size = 4096U;
+		return 0;
+	}
+
+	/* Refuses any other size. */
+	return EINVAL;
 }
