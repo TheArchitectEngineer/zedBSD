@@ -132,7 +132,7 @@
 | q1665 / q1665-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307e`・branch `agent/p4-ws307e`、基点 main） | [ws307](ws307/ws.md) p002〜p014 | spec.md どおりに実装。toolchain（sysroot.mk・libcxx）・asset の upload・HAL に触れる所は始める前に Q1 へ。QEMU。原文「P4にWS307」 | 返却（p005・p008 の 512・p002 の一部・p007 の HAL の案、f049d689d → main 10bc3185e） |
 | q1665 / q1665-i02 | P4（worktree p4-ws307f、基点 main 35d2a373c） | i01 の続き | i01 と同じ承認 | 返却（p002 の大部分・splash・p003 段 1、246d63690 → main 92e91e61b） |
 | q1665 / q1665-i03 | P4（worktree p4-ws307g、基点 main 92e91e61b） | i01 の続き（p003 段 2 から） | i01 と同じ承認 | 返却（p003 cleared、p006 段 1〜4、1f487021a → main 241c03f1d） |
-| q1665 / q1665-i04 | worktree p4-ws307h、基点 main d94ceac00 | 続き | 同じ承認 | in-progress |
+| q1665 / q1665-i04 | worktree p4-ws307h、基点 main d94ceac00 | 続き | 同じ承認 | 返却・ラップアップ（p005・p006・p008 の 4096 の段、c0974cb41 → main 377efd966。UFS 上の swap file と p008-4k の起動は未判定） |
 | q1666 / q1666-i01 | P5（kernel-and-driver-designer、worktree `/home/awe/zedBSD-worktrees/p5-design`・branch `agent/p5-design`、基点 main） | 詳細の決まっていない WS の設計 | code は書かない。判断は Q1 経由でユーザーへ。P1〜P4・P6 の WS は除く。原文「P5は詳細が決まっていないWSの設計のみを、ユーザの判断を聞きながら全般的に進める」 | 返却（全部 merge 63386d8a4） |
 | q1666 / q1666-i02 | P5（worktree p5-design-b） | i01 の続き | i01 と同じ承認 | 返却（WS303 第 4 版・WS301 第 2 版・WS300 の調べ、6bddb1eda → main d94ceac00） |
 | q1666 / q1666-i03 | worktree p5-design-c、基点 main d94ceac00 | 続き | 同じ承認 | 返却（WS303 第 5 版・WS301 第 3 版の改訂 2・WS300 の読み、7f5ab2b73 → main fb47c73a8） |

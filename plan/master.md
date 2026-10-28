@@ -22,13 +22,13 @@
 | P1 | q1662-i05 返却（ラップアップ） | [ws309](ws309/ws.md): p001〜p007・p019 cleared、p008 は queue lock 済み、次は fence 付きの task。worktree p1-ws309e | QEMU |
 | P2 | q1668-i02 in-progress | [ws291](ws291/ws.md): RDNA で shot の直しの確かめ → big-N・subs-N（q1663 は cleared、merge d6685c55e） | 10.0.10.3 |
 | P3 | q1664 in-progress | [ws221](ws221/ws.md) p002〜p009: §9 は全部推し（ユーザーの回答「全部 推しで (推し)」） | VF2（10.0.30.2）が主、5330 は従、相手は 10.0.10.2 |
-| P4 | q1665-i04 in-progress | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
+| P4 | q1665-i04 返却（ラップアップ） | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
 | P5 | q1666-i04 in-progress | 詳細の決まっていない WS の設計: code は書かない | — |
 | P6 | q1667-i04 返却（ラップアップ） | 実装だけ（merge しない）: WS296 全 Phase（agent/p6-ws296c 1809873bd）、WS282 p002〜p004b（agent/p6-ws282c 677277d8f）、WS284 p002 script・p003 CPU の参照（同じ branch、zedBSD の libyolox.so の build 規則は共有の userland-dynamic.mk に要る、未決）。試験は全部未実施 | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
 
-**ラップアップ（2026-10-29 04:5x ユーザー「P2とP3は継続、それ以外をラップアップしてください。」）: P1・P6 は返却、P4・P5 はラップアップ中、P3 は継続、P2 は次の計測の後に停止（ユーザー「P2は計測を中断して停止し、再開できる地点で終了し、再開を待ちます。中断は強制的ではなく、次の計測が終わった後でいいです。」）。**
+**ラップアップ（2026-10-29 04:5x ユーザー「P2とP3は継続、それ以外をラップアップしてください。」）: P1・P4・P6 は返却、P5 はラップアップ中、P3 は継続、P2 は次の計測の後に停止（ユーザー「P2は計測を中断して停止し、再開できる地点で終了し、再開を待ちます。中断は強制的ではなく、次の計測が終わった後でいいです。」）。**
 
 **中断からの復旧（2026-10-29 04:5x、5 時間の利用の上限の見込み）**: 担当は全員こまめに WIP commit している。復旧は各 branch の先頭と phase.md の再開点から、同じ名前の新しい起動で。
 main に未 merge の branch: `agent/p2-ws291l`（WS291、merge の前に venus-reg と arm64・riscv64 の libvulkan、実機の A/B の結果を見て効果の無い ioctl は入れない）、`agent/p3-ws221`（WS221、他 platform の build を確かめてから）、`agent/p6-ws282c`・`agent/p6-ws296c`（P6、merge しない）。P1・P4・P5 は先頭まで merge 済み（P4 は試験の走行中、P5 は WS301・WS303 の review の走行中）。

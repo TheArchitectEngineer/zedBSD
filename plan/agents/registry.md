@@ -8,7 +8,7 @@
 | P1 | phase-runner | ws309 (q1662-i05) | `/home/awe/zedBSD-worktrees/p1-ws309e` / `agent/p1-ws309e` | returned（2026-10-29 ラップアップ） | c58ed8126 |
 | P2 | phase-runner | ws291 (q1668-i02) | `/home/awe/zedBSD-worktrees/p2-ws291l` / `agent/p2-ws291l` | running | f5c01e255（merge 239e8ed7f） |
 | P3 | phase-runner | ws221 (q1664) | `/home/awe/zedBSD-worktrees/p3-ws221` / `agent/p3-ws221` | running（2026-10-29 01:37） | — |
-| P4 | phase-runner | ws307 (q1665-i04) | `/home/awe/zedBSD-worktrees/p4-ws307h` / `agent/p4-ws307h` | running | 1f487021a（merge 241c03f1d） |
+| P4 | phase-runner | ws307 (q1665-i04) | `/home/awe/zedBSD-worktrees/p4-ws307h` / `agent/p4-ws307h` | returned（2026-10-29 ラップアップ） | c0974cb41（merge 377efd966） |
 | P5 | kernel-and-driver-designer | 設計 (q1666-i04、web の取得は禁止) | `/home/awe/zedBSD-worktrees/p5-design-d` / `agent/p5-design-d` | running | 7f5ab2b73（merge fb47c73a8） |
 | P6 | phase-runner | WS282〜WS284・WS223 の実装 (q1667-i04) | `/home/awe/zedBSD-worktrees/p6-ws282c` / `agent/p6-ws282c` | returned（2026-10-29 ラップアップ、merge しない、先頭 677277d8f） | — |
 
