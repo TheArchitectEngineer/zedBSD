@@ -21,7 +21,7 @@
 
 初期化前にfirmware modeとboot framebufferを出すHDMIを取得し、同じ出力先で表示pipelineを構成する。hardware操作の順序は固定Linux v6.19の実経路と照合する。DRMやclock frameworkのソース構造は移植せず、zedBSDの所有・APIで独立実装する。firmwareの出力先以外を自主的に点灯しない制約、既存modeだけを最初に扱う制約、GPL作業資料の非commit、HAL APIの具体差分事前承認は保持。
 
-変更の起点/新しいverification/resume条件は[p003](phase003/phase.md)、承認文と実行範囲は[実行記録i08](execution-20261009.md#i08の承認設計変更2026-10-09)。p004/V3Dの処理順やAPIは変更せず、V8は今回選択しない。p005のdisplay統合はLinux順で開始する初回scanoutを依存出力とする。
+変更の起点/新しいverification/resume条件はp003（fb1f6afee の plan/ws141/phase003/phase.md）、承認文と実行範囲は[実行記録i08](execution-20261009.md#i08の承認設計変更2026-10-09)。p004/V3Dの処理順やAPIは変更せず、V8は今回選択しない。p005のdisplay統合はLinux順で開始する初回scanoutを依存出力とする。
 
 ## 1. BCM2711 の display と V3D の構成
 

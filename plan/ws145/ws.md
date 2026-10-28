@@ -3,41 +3,49 @@
 # WS145: 印刷（printer の daemon・IPP/LPD で PDF を送る、libkeiland の印刷の口、Settings の Printers の頁）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p004・p007 cleared（printd・IPP/LPD・Settings の Printers・PDF Viewer の Print、受け入れの Brother MFC-L3770CDW））。旧: incomplete（2026-10-08 q910 P2 の照合: p001〜p004・p007 cleared（2026-10-07・08）。残り: p005（Linux・FreeBSD の guest、10/13 以降）、p006（規約、ベータ3）。準正常系は WS177 の案 Q・BUG-271）。残り・制限: p005 の Linux・FreeBSD の guest（test-wait）、p006 規約は一括の見直しへ
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」。根拠: p001〜p004・p007 cleared（printd・IPP/LPD・Settings の Printers・PDF Viewer の Print、T1-318）、p005 は 2026-10-14 Q1 の判定で T1-587 の Debian の印刷）
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: MG005
 Parent: [Master](../master.md)
-Queue: q831（P2）
-Resume point: p002〜p004・p007 を実装（host・build 済み）、T1 待ち。p005（Linux・FreeBSD の guest の確認）と p006（全文規約）は後。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 単一目標
+## 目標
 
 app が libkeiland に PDF の場所を渡して印刷を依頼すると、network の printer（IPP か LPD）で印刷される。printer の一覧と既定の printer を libkeiland から compositor 経由で取れ、Settings の Printers の頁で printer の IP address・port・protocol を設定できる。
 
-## ユーザーの指示（2026-10-04 夜、原文）
+## ユーザーの決定
 
-「SettingsのPrintersは、プリンタのIPアドレス、ポート、プロトコルだけ設定できる画面を追加してほしいです。libkeilandでプリンタ一覧やデフォルトプリンタをコンポジタ経由で取得可能にしましょう。実際のプリントは、libkeilandにPDFの場所を書いて印刷依頼を投げると、libkeiland-backendがプリンタデーモンが未起動なら起動し、デーモンがIPPやLPDのプロトコルでPDFを投げる、という形にしたいです。PDFが最初のフォーマットでOKで、そのあとPostScriptやベンダー形式への変換フィルタなども実装して広げていけばいいと思います。」
+- 2026-10-04 夜「SettingsのPrintersは、プリンタのIPアドレス、ポート、プロトコルだけ設定できる画面を追加してほしいです。libkeilandでプリンタ一覧やデフォルトプリンタをコンポジタ経由で取得可能にしましょう。実際のプリントは、libkeilandにPDFの場所を書いて印刷依頼を投げると、libkeiland-backendがプリンタデーモンが未起動なら起動し、デーモンがIPPやLPDのプロトコルでPDFを投げる、という形にしたいです。PDFが最初のフォーマットでOKで、そのあとPostScriptやベンダー形式への変換フィルタなども実装して広げていけばいいと思います。」
+- 設計 [design.md](design.md) の D2〜D9 はユーザーが決定（p001、2026-10-05〜08）。D6: PDF Viewer の File > Print を含める。
+- 2026-10-08 ユーザー「規約の整形（各 WS の全文規約の Phase）はベータ3」→ p006 は WS の外の一括の見直しへ。
 
-## 範囲（p001 で設計して確定）
+## 結果
 
-1. **Settings の Printers の頁**（今は stub）: printer を足す・消す・既定にする。設定項目は IP address・port・protocol（IPP か LPD）だけ（名前は自動か入力は設計で決める）。
-2. **libkeiland の口**: printer の一覧と既定の printer の取得（compositor の拡張 kl_system_manager_v1 を経て libkeiland-backend）、印刷の依頼（PDF の path を渡す、job の状態の通知・取り消しは設計で決める）。app は OS の口を持たない（Guardrail の「配置」「app と設定」）。
-3. **libkeiland-backend**: 印刷の依頼を受けて、printer の daemon が起動していなければ起動し、job を渡す。2026-10-05 の設計（design.md D1）: daemon は**利用者の権限**の `keiland-printd` で、backend が `posix_spawn` で起動する（root の daemon・setuid・init の service（WS002）は使わない）。printer の設定は利用者ごとの `~/.config/keiland/printers.conf`（D2 は要確認）。
-4. **printer の daemon**（新しい userland の daemon）: job の queue（spool）、IPP（RFC 8011 の Print-Job、HTTP の上）と LPD（RFC 1179）で PDF を送る。最初の形式は PDF だけ（printer が PDF を受ける前提。受けない printer は失敗を返す）。
-5. **後の段**（別の Phase）: PostScript・vendor の形式（PCL・raster など）への変換の filter を足して対応する printer を広げる。printer の発見（mDNS/DNS-SD）は後の候補。
-6. Linux・FreeBSD の Keiland: backend で CUPS などの既存の仕組みを包む（設計で決める）。
-7. 外部の実装を取り込む場合の license の監査（Guardrail・設計方針）。
+- `keiland-printd`（利用者の権限の daemon、spool、IPP（RFC 8011 の Print-Job）と LPD（RFC 1179）で PDF を送る）、libkeiland-backend の print（設定の file `~/.config/keiland/printers.conf`、printd の起動と通信）、compositor の printers の object、libkeiland の印刷の口、`printtest`、Settings の Printers の頁、PDF Viewer の File > Print が main にある。
+- 証拠: QEMU の T1-318 の AAT settings.printers（needs-person）で IPP・LPD の printer の追加と 3 つの job が Done、PDF Viewer の Printed（p002〜p004・p007）。Linux は Debian の QEMU+KVM の T1-587 で IPP・LPD の印刷（p005、2026-10-14 Q1 の判定）。受け入れの機種は Brother MFC-L3770CDW。
 
-## Phase（案）
+## 制限・移管
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws145-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)） | cleared（2026-10-08 Q1） | — |
-| [ws145-p002](phase002/phase.md) | keiland-printd（約束の行・spool・IPP・LPD・寿命）と host の符号化・通し・寿命の試験 | cleared（2026-10-07、T1-318） | p001 |
-| [ws145-p003](phase003/phase.md) | backend の print（設定の file・printd の起動と通信・状態遷移）、compositor の printers の object、protocol version 17、libkeiland の口（KL_VERSION 56 の案）、`printtest`、host の backend の試験 | cleared（2026-10-07、T1-318） | p002 |
-| [ws145-p004](phase004/phase.md) | Settings の Printers の頁（IP address・port・protocol、詳しい設定の path・queue） | cleared（2026-10-07、T1-318） | p003 |
-| [ws145-p005](phase005/phase.md) | Linux・FreeBSD の build と install と Debian の QEMU+KVM・FreeBSD 15 の guest の確認 | in-progress — test-wait（2026-10-13 P2 q953: 規則を足し Linux の build・install・host 試験済み、guest は T1） | cleared（2026-10-14 Q1 判定: T1-587 の Debian で IPP・LPD の印刷と printd、FreeBSD は build・install まで（GPU の無い guest で compositor が起きず印刷は未実施、制限として記録）） |
-| ws145-p006 | 全文の規約の確認と回帰、T1 の QEMU の試験（最後） | planning | p002〜p005 |
-| （別の WS の案） | 変換の filter（PDF → PWG raster・PostScript・PCL）。単一目標の外。D4 の機種が PDF を受けなければ受け入れの前に | — | p002 |
-| [ws145-p007](phase007/phase.md) | PDF Viewer の File > Print（D6: 含める） | cleared（2026-10-07、T1-318） | p003 |
+- FreeBSD は build と install まで（GPU の無い guest で compositor が起きず印刷は未実施）。
+- p005 の phase.md は test-wait のまま（判定は 2026-10-14 Q1 で cleared 相当）。
+- 変換の filter（PDF → PWG raster・PostScript・PCL）、printer の発見（mDNS/DNS-SD）は範囲の外（新しい WS で）。準正常系は WS177 の案 Q と BUG-271。
+- 規約の全文（p006）は WS の外の一括の見直しへ。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws145-p001 | 調査と設計（design.md） | cleared |
+| ws145-p002 | keiland-printd（約束の行・spool・IPP・LPD・寿命）と host 試験 | cleared（T1-318） |
+| ws145-p003 | backend の print、compositor の printers の object、libkeiland の口、`printtest` | cleared（T1-318） |
+| ws145-p004 | Settings の Printers の頁 | cleared（T1-318） |
+| ws145-p005 | Linux・FreeBSD の build と install、Debian・FreeBSD の guest の確認 | phase.md は test-wait のまま。2026-10-14 Q1 の判定: T1-587 の Debian で印刷、FreeBSD は build・install まで |
+| ws145-p006 | 規約の全文と回帰（directory なし） | 規約の全文は WS の外の一括の見直しへ |
+| ws145-p007 | PDF Viewer の File > Print | cleared（T1-318） |
+
+## 記録の所在
+
+設計は [design.md](design.md)。Phase の記録と試験は削除する（Q1）。git の commit `fb1f6afee` の `plan/ws145/` にある。AAT が使う `mock-printers.py` は plan/tools/aat/ へ移す。Queue の履歴は [plan/history](../history/index.md)。

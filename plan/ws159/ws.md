@@ -3,48 +3,51 @@
 # WS159: native のタッチパッド（Intel LPSS の I2C・ACPI の I2C-HID・HID の touchpad）と compositor のタッチパッドの層
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p004・p006 cleared、p005 の実機の UAT の分は 2026-10-13 ユーザー「UATの結果待ちのものは…clearedに」。2026-10-08 夜 ユーザー「Touchpadは動作確認できたので、下記をすべてclose します。」）。旧: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p005 の後半（全文規約）。p002・p006 の 5330 の確認と…。残り・制限: p005 の規約の全文は一括の見直しへ
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」。根拠: p001〜p004・p006 cleared、2026-10-08 夜 ユーザー「Touchpadは動作確認できたので、下記をすべてclose します。」、p005 の実機の UAT は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）
+<!-- retained-after-completion --> phase001 の phase.md は残す: src/drivers/i2c/i2c-hid.c:49・529 と userland/desktop/wayland/touchpad.c:14 の comment が設計（D1・D7）を参照している。source の comment を直す（または仕様を docs/ へ移す）までの間
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: MG003
 Parent: [Master](../master.md)
-Queue: q713（**ベータ1**、2026-10-05 ユーザーのクリックの回答。P1・P2 が空いたら優先して着手）
-Resume point: p001（設計）から。WS049（ACPI AML）の後（ユーザー）。WS049 は p007〜p009・p016・p017 まで済み（実機の UAT 待ち）。
-
-**UAT の image の条件（2026-10-05 Q1）**: main 37d2a16（P1 1a41db3、i2c-hid の probe で `thread_start` を呼ぶ修正）以降で作る。これより前の build では実機の touchpad の thread が動かない（host の試験は thread を自分で走らせていたので見逃した。host-i2c-hid に thread_start の check を追加）。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 単一目標
+## 目標
 
 5330 などのタッチパッドを PS/2 の互換の mouse ではなく I2C-HID の native の device として扱い、多点（MT）と clickpad の押し込みを kernel の evdev に出し、compositor のタッチパッドの層で tap・tap-drag・押し込み・2 本指のスクロール・gesture を作る。
 
-## 経緯とユーザーの指示（2026-10-05）
+## ユーザーの決定
 
-- P1（q700）の調べ: 5330 のタッチパッドは今 "PC/AT PS/2 mouse"・"i8042: mouse id=0 packet=3"（3 byte、wheel なし、`plan/uat/2026-10-04/dmesg.txt:52,360`）。I2C HID の driver は tree に無い。compositor が受けるのは相対の motion と BTN_LEFT/RIGHT だけで、tap は touchpad の firmware が合成している。
-- ユーザー（原文）:「タップダウンを取れない？それは違うと思います。PS/2でもタップダウンもイベントとして取れているように見えました。でも、2本指スクロールは取れないですね。ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。WSを立ててください。」
-- → タップダウン（BUG-190）は PS/2 の経路のまま P1 が調べ直す（q700）。2 本指のスクロール（[BUG-156](../bugs/BUG-156.md)）と押し込み（[BUG-167](../bugs/BUG-167.md)）、タッチパッドの tap-drag の仕様（[BUG-166](../bugs/BUG-166.md) の native の部分）はこの WS で扱う。
+- 2026-10-05「タップダウンを取れない？それは違うと思います。PS/2でもタップダウンもイベントとして取れているように見えました。でも、2本指スクロールは取れないですね。ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。WSを立ててください。」（タップダウンは BUG-190 で PS/2 の経路のまま、2 本指のスクロール BUG-156・押し込み BUG-167・tap-drag BUG-166 はこの WS）
+- 2026-10-05「5330を起動しました。操作はすべて許可します。」（5330 の Linux でタッチパッドの調べに要る操作。採った物は tests/latitude5330-linux/）
+- 2026-10-05: ベータ1（ユーザーのクリックの回答、q713）
+- 2026-10-06（BUG-210）: 実機で touchpad と 2 本指の scroll が動いたユーザー「タッチパッドがI2Cで使えるようになりました。2本指でスクロールができています。」（BUG-210 の記録）
+- 2026-10-08 夜「Touchpadは動作確認できたので、下記をすべてclose します。」
+- 2026-10-13「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」
 
-## 許可（2026-10-05 ユーザー）
+## 結果
 
-「5330を起動しました。操作はすべて許可します。」→ 5330 の Linux（`ssh awe@10.0.30.3`、Debian 6.19.13、sudo は password 無し）で、タッチパッドの調べに要る操作を全部してよい（I2C-HID の device `i2c-VEN_06CB:00`（Synaptics）の情報、HID の report descriptor、evdev の capability と記録、ACPI の table、driver の bind・unbind など）。採った物は `plan/ws159/tests/` に置く。iGPU と AX211 の同時の passthrough はしない（Guardrail）。host の設定を変えたら記録し、終わったら戻すか、残すなら記録する。
+- kernel: Intel LPSS の DesignWare I2C の driver（ACPI の I2cSerialBus・GpioInt、firmware が割り当てない BAR0 を PCI の root の窓から割り当てる、67b70410）、I2C-HID と Precision Touchpad、EVIOCGPROP、evdev の MT と clickpad、GPIO の割り込み（INTC1055、level・active low）で sampling をやめる、input-inject の touchpad。I2C-HID が動く時は PS/2 の aux を使わない。
+- compositor の touchpad の層（tap・tap-drag・押し込み・2 本指のスクロール）。
+- 証拠: QEMU の T1-100（p003）・T1-125 と T1-101（p004）・T1-113 の boot（p002、QEMU に LPSS は無い）、host の試験。実機（5330）: 2026-10-06 のユーザーの確かめ（touchpad と 2 本指の scroll）、2026-10-08 夜「Touchpadは動作確認できた」。
 
-## 範囲（p001 で設計して確定）
+## 制限・移管
 
-1. kernel: Intel LPSS の DesignWare I2C の controller の driver（PCI の device、ACPI の `_CRS` の解析は WS049 p017 の `drv_acpi_resources_walk`）、ACPI の PNP0C50（I2C-HID）の発見と HID の descriptor の取得、HID の report の解析（digitizer: contact・x・y・tip・button・contact count）、evdev への MT（`ABS_MT_*`・`BTN_TOUCH`・`BTN_TOOL_*`）と BTN_LEFT（clickpad）の出力。割り込みは GPIO（ACPI の GpioInt）か APIC。PS/2 の互換の mouse との二重の入力を止める（I2C-HID が動く時は PS/2 の aux を使わない）。
-2. compositor（または libkeiland-backend の入力）: タッチパッドの層。絶対座標から相対の motion（加速は ws089-p024 の曲線）、tap で click、tap-drag（タップの直後約 300ms 以内に触れて動かすとドラッグ、BUG-166 の仕様）、clickpad の押し込み（物理の押し込みのまま動かすとドラッグ）、2 本指のスクロール（自然な方向は Touchpad の設定、既定 ON）、端からの gesture（WS142 の 2・3 本指）、手のひらの除外。Linux・FreeBSD の Keiland は libinput 相当の層を backend で使う。
-3. 設定: Settings の Touchpad の頁（ws089-p024）。
-4. 試験: host の試験（HID の report の解析、touchpad の層の状態機械）、QEMU（I2C-HID の device は QEMU に無い見込み → host の試験と実機）、実機（5330）の UAT。
+- 規約の全文（p005 の後半）は WS の外の一括の見直しへ。
+- 端からの gesture は WS142、Touchpad の設定の頁は ws089-p024。
 
-## Phase（案）
+## Phase 一覧
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws159-p001](phase001/phase.md) | 設計（LPSS I2C・I2C-HID・HID の digitizer・evdev の MT・PS/2 との切替・compositor の touchpad の層・試験） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: Q1 の ACK（2026-10-05）、後続の p003・p004 が cleared。旧: in-progress（2026-10-05 q713-i01 P1: 5330 の Linux の採取と設計を書いた、Q1 の確認待ち）） | WS049 |
-| [ws159-p002](phase002/phase.md) | LPSS の DesignWare I2C の driver と ACPI の I2cSerialBus・GpioInt | cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、実装・host・build と T1-113 の boot まで（QEMU には LPSS が無い）、5330 の実機の確認が残り。BUG-210 の後に実機で touchpad が動いた（2026-10-06 ユーザー）） | p001 |
-| [ws159-p003](phase003/phase.md) | I2C-HID と Precision Touchpad、EVIOCGPROP、input-inject の touchpad | cleared（2026-10-05 Q1、T1-100） | p002 |
-| [ws159-p004](phase004/phase.md) | compositor の touchpad の層（tap・tap-drag・押し込み・2 本指のスクロール） | cleared（2026-10-05 Q1） | p003（host の試験は先に） |
-| [ws159-p005](phase005/phase.md) | 実機の UAT と全文の規約 | planned（実機の UAT の分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。残りは全文の規約の確認（p005 の後半）でベータ3） | p004、p006 |
-| [ws159-p006](phase006/phase.md) | GPIO の割り込み（INTC1055 の pinctrl の GpioInt、level・active low）で sampling（6/25 ms の MMIO）をやめる（電池のため、Q1 の追加、2026-10-05） | cleared（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。旧: in-progress、GPIO の割り込み（hal_irq_set_mode）を実装・build・host 試験、5330 の確認が残り） | p003 |
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws159-p001 | 設計（LPSS I2C・I2C-HID・HID の digitizer・evdev の MT・PS/2 との切替・touchpad の層・試験） | cleared |
+| ws159-p002 | LPSS の DesignWare I2C の driver と ACPI の I2cSerialBus・GpioInt | cleared（2026-10-13 ユーザーの一括、実機は BUG-210 の後に動作） |
+| ws159-p003 | I2C-HID と Precision Touchpad、EVIOCGPROP、input-inject の touchpad | cleared（T1-100） |
+| ws159-p004 | compositor の touchpad の層 | cleared（T1-125・T1-101） |
+| ws159-p005 | 実機の UAT と全文の規約 | planned のまま WS を閉じた（UAT は 2026-10-13 の一括で OK、規約の全文は WS の外の一括の見直しへ） |
+| ws159-p006 | GPIO の割り込みで sampling をやめる | cleared（2026-10-13 ユーザーの一括） |
 
-## 2026-10-06
+## 記録の所在
 
-- BUG-210 resolved: firmware が LPSS I2C の BAR0 を割り当てないので PCI の root の窓（_CRS）から割り当てる（67b70410）。実機で touchpad と 2 本指の scroll が動いた（ユーザー）
+phase001 は上の理由で残す。他の Phase の記録と試験は削除する（Q1）。git の commit `fb1f6afee` の `plan/ws159/` にある。5330 の Linux の採取（latitude5330-linux/）と I2C-HID の host 試験は plan/tools/ へ移す。Queue の履歴は [plan/history](../history/index.md)。

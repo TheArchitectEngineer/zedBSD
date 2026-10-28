@@ -3,378 +3,71 @@
 # WS141: Raspberry Pi 4 のグラフィックス driver（VideoCore VI: HVS・pixelvalve・HDMI の display と V3D 4.2）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: Pi 4 の display・V3D・Vulkan・Keiland の desktop が動く: 2026-10-13 ユーザー「動作OKです」（main 1392d52 の image）、ユーザー「見た目は大丈夫です。描画は2.5倍くらい速くなりました。」「おお、カーソルは60fpsです！」。p007〜p012 cleared。同じ driver は Pi 5（WS279）でも使っている）。旧: incomplete（display/V1〜V10/二device share/Normal NC/worker/SPIR-V compiler/typed Vulkan/native draw-transfer/QueueSubmitとpublic runtimeを実装。host/build/whole ordina…。残り・制限: p013〜p019 の速さ・機能の残り（stencil は Pi 5 で ok）、p001〜p006 の Phase の印
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」。根拠: Pi 4 の display・V3D・Vulkan・Keiland の desktop が動く。ユーザー「見た目は大丈夫です。描画は2.5倍くらい速くなりました。」「おお、カーソルは60fpsです！」、2026-10-13 ユーザー「動作OKです」（main 1392d52 の image、出典は P3 の精査の表）。同じ driver を Pi 5（WS279）でも使う）
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
-Queue: 既存履歴 q691（p001）・q695（p002）。現在の独立セッションの実行範囲は [execution-20261009.md](execution-20261009.md)
-Resume point: accepted→shown median1035ms/user目視1000ms。固定16byte texture copy kernel666078535をSSHで配置・全体照合/reboot済みだがSSH timeout→No route、userへ電源OFF/ON依頼。clipped quad compositor1980286597/949392はbuild済み、復帰後に実機更新してdraw/bytesと応答を測定する。目標33ms以内/16ms stretch未達、p006 submit-i01/WS incomplete、共有投影Q1。
-Target: **ベータ4 以降**（2026-10-05 user「WS037, WS044,WS048,WS141, WS112, WS118, WS124, WS125, WS126, WS119, WS096, WS097, WS039, WS038, WS144, WS143, WS146,WS147, WS152,  WS119, WS080, は、ベータ4以降としてください。…WS027, WS015, WS047, WS028, WS017,  WS077, はキャンセルします。」）
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 独立セッションの担当（2026-10-09）
-
-- ユーザー「WS141をあなたが作業します。P1,P2とは別なセッションです。ws141/ws.mdはあなたがそのセッションが排他的に更新しますが、master.mdは更新しません。同じソースツリーを使いますが、作業は別なディレクトリで行い、パッチをあなたに提供するので、Q1がマージします。」に基づく。
-- 2026-10-09のユーザーの再確認: パッチの提供先はQ1、統合もQ1。この分担を保持する。
-- 追加承認（2026-10-09）: ユーザー「パッチの影響範囲が狭いので、あなたがマージしてOKです。」により、今回のN1/V5準備のmerge担当をCodexへ変更。mainへmerge commit `a326c5e24`で統合済み。最新mainとの統合版でもhost4試験PASS・rpi4 y/n build warning/error 0。詳細は[実行記録i05](execution-20261009.md#i05-mainへの統合2026-10-09)。
-- 継続のV7 noop生成も、同じ狭いWS141の変更としてCodexがmerge `16024f1b9`でmainへ統合済み。統合版のnoop/XML照合・既存4host試験とrpi4 y/n buildは全てPASS・warning/error 0。[実行記録i07](execution-20261009.md#i07の統合結果2026-10-09)。V7の実投入・実機clearanceは保持。
-- 担当: このCodexセッション。`plan/ws141/ws.md` は担当が排他的に更新する。共有のMaster・Queue・Guardrail・他WSは読み取りだけ。共有記録の投影・T1依頼は引き続きQ1。
-- 独立worktree: `/home/awe/zedBSD-claude1/.claude/worktrees/ws141-codex`、branch `codex/ws141-rpi4-gpu`、開始commit `a05865278`。sourceと成果のbuildはこのworktree内で行う。共有LLVMは読み取り専用のsymlinkで参照し、変更・再buildはしない。
-- ユーザー回答「実機確認は後で行う」。p002のP0・V0、p003のN0以降の実機確認は未実施のまま保持し、実機観測が必要な依存は満たした扱いにしない。
-- ユーザー「Q1でのマージは遅らせます。続きをお願いします。」により未マージの変更をこのbranchに積み上げる。N1の配置/コピーとV5のページ表を純粋な準備処理として実装しhost/buildを確認。詳細は[実行記録](execution-20261009.md)。
-- 最初の確認は終了（driver y/n build・stage/list host PASS）。続いて作業資料を復旧した。範囲: p002骨格・p003/N0の既存実装と現在のbuildの整合を調べ、rpi4のdriver有効／無効build、既存の短いhost試験を実施。N1の前に必要な実機N0の写真は後続の再開条件。
-- Q1へ渡す物: WIP commit、対象pathだけのbinary対応patch、基点・検証・実機待ち・残件の記録。
-
-## 単一目標
+## 目標
 
 Raspberry Pi 4（BCM2711、VideoCore VI）で、zedBSD の自前の GPU driver により display（firmware の framebuffer からの引き継ぎ、HDMI の mode set、scanout）と 3D（V3D 4.2 の job の実行）を成立させ、zedBSD の GPU の interface（`struct drv_gpu_interface`、i915 と同じ口）に載せて desktop を表示する。
 
-## ユーザーの指示（2026-10-04）
+## ユーザーの決定
 
-「完全に独立した作業として、Raspberry Pi 4のグラフィックドライバを作成します。i915のときと同じで、Linuxドライバの初期化順やコマンド投入順などをまずドキュメントにして、正本も参照しながら、i915と同じように、我々のインタフェースに適合させていきます。フレームバッファにどこまで進んだかのメッセージを表示することで、少しずつデバッグしながら先に進めます。DRM部分の書き換えは、i915を参考にします。これは独立したWSで、17時以降に着手します。」
+- 2026-10-04「完全に独立した作業として、Raspberry Pi 4のグラフィックドライバを作成します。i915のときと同じで、Linuxドライバの初期化順やコマンド投入順などをまずドキュメントにして、正本も参照しながら、i915と同じように、我々のインタフェースに適合させていきます。フレームバッファにどこまで進んだかのメッセージを表示することで、少しずつデバッグしながら先に進めます。DRM部分の書き換えは、i915を参考にします。これは独立したWSで、17時以降に着手します。」
+- 2026-10-04（ライセンス）「vc4/v3dドライバのソースから作る文書は作業ファイルにして、リポジトリにコミットせず、GPLコードを参考に書き写してもいいことにします。基本は手順を書き写しますが、表現が難しいときはコードを書き写してもいいです。我々のコードを生成する前に、定数はすべて、一括で、独自の名前に変更します。最後にライセンスに問題がないか、コードに類似がないかを監査します。これにより字面でも設計でもGPLコードを含めず、独自ライセンスとします。ファームウェアに相当しそうなBLOBがソースコード中にある場合は、userland/firmwareに移してファイルからロードすることにします。」。register の定義と packet の形を MIT の Mesa・Broadcom の公開の文書・device tree の binding から取り file ごとに license を監査する案に、ユーザー「これはそうしたいですね。」
+- 2026-10-05「WS037, WS044,WS048,WS141, … は、ベータ4以降としてください。」（2026-10-09 の独立のセッションへの割当で再開。ベータ3・4 の段は 2026-10-27 に取り消し）
+- 2026-10-09（独立のセッション）「WS141をあなたが作業します。P1,P2とは別なセッションです。ws141/ws.mdはあなたがそのセッションが排他的に更新しますが、master.mdは更新しません。同じソースツリーを使いますが、作業は別なディレクトリで行い、パッチをあなたに提供するので、Q1がマージします。」「パッチの影響範囲が狭いので、あなたがマージしてOKです。」「実機確認は後で行う」「Q1でのマージは遅らせます。続きをお願いします。」
+- 2026-10-09「Linuxと同じ再初期化へ変更する」（p003 の初回表示を Linux の順の再初期化に）。「mainにマージしてOKです。mailbox修正も承認します。」（WS048 の mailbox の容量 0 の tag の修正）
+- 2026-10-09「続けてください。完成まで自走してください。」「WS141に実行器・compilerも含め、Keiland表示まで進める」（p006 を kernel の Vulkan 実行器と SPIR-V compiler の実装に拡張）
+- 2026-10-11「mainに統合してください」「mainへのコミットは自動でお願いします。」「今後は自動で統合してください。」
+- 2026-10-11 Pi 4 の image は案 A: ユーザー「推し通りです。」（Pi だけの kernel の snapshot の cache と変化した tile の写しを main から外し、実機で確かめた storage cache まで戻した）
+- 2026-10-11 cursor の plane: ユーザー「displayなのにplaneのx,yですか。…cursorと明示されたplaneならいいと思います。」「その案でOKです。」。2026-10-12「待って、ベンダ拡張はおかしいのでは？display の hardware plane を列挙して使う拡張を、標準として使うべきでは？」「VK_KHR_display＋cursor 専用の UAPIでOKです。承認します。」→ vendor の Vulkan 拡張は作らない。cursor 専用の UAPI（`GPU_DISPLAY_CURSOR_SET`・`MOVE`・`HIDE`、無い driver は ENOTSUP）と、libvulkan が VK_KHR_display の plane の 1 つを cursor の plane として見せる。i915 の hardware cursor は別の WS。
+- 2026-10-12 実機: ユーザー「おお、カーソルは60fpsです！」、hardware blend の kernel でユーザー「見た目は大丈夫です。描画は2.5倍くらい速くなりました。」
+- 2026-10-22 ユーザー「stencil の対応をお願いします。」（p017）
 
-## 進め方（i915 の WS029・WS084 と同じ型）
+## 結果
 
-1. **文書が先**: Linux の vc4（display: HVS・pixelvalve・HDMI・firmware KMS）と v3d（V3D 4.2）の driver の**初期化の順と command の投入の順**を、まず文書にする（p001）。正本（Linux の source の tag と path、Mesa の broadcom、Broadcom の公開の文書、device tree の binding）を版と hash 付きで記録し、参照しながら進める。
-2. **我々の interface に合わせる**: DRM の部分（mode set・plane・buffer object・job の submit・fence）は、i915 の zedBSD の書き換え（`src/drivers/gpu/i915/`、`drv_gpu_interface`、resident display）を手本にする。
-3. **段ごとの印を framebuffer に**: firmware が用意した framebuffer（`src/hal/arm64/bsp-rpi4/framebuffer.c`）に、driver が「どの段まで進んだか」の印（例 `v3d: P2 clocks ok`、`hvs: N1 readout done`）を表示し、実機で少しずつ debug する（i915 の N0・N1・P2 の段の印と同じ考え）。
+- `src/drivers/gpu/bcm2711/`（display: HVS・pixelvalve・HDMI、Linux の順の再初期化 R0・flip・合成・resident display・cursor の plane。V3D: power・MMU・buffer object・bin/render・TFU の job・reset・fence。kernel の Vulkan 実行器と SPIR-V → QPU の compiler）と、GPU 共通の SPIR-V の frontend・IR（`src/drivers/gpu/compiler/`、i915 と共有）が main にある。cursor の UAPI は `include/uapi/gpu-display.h`。
+- 実機（Pi 4、ユーザーの確かめ）: N0・R0・V1〜V10、Keiland の desktop の表示、cursor の plane の 60 fps、hardware blend で描画が約 2.5 倍、2026-10-13「動作OKです」。QEMU の raspi4b は HVS・V3D を emulate しないので QEMU の証拠は無い（host 試験と実機だけ）。
+- license と GPL の code との類似の監査は p007（[p007-software-audit.md](p007-software-audit.md)、[rpi4-gpu-license-audit.md](rpi4-gpu-license-audit.md)）。設計は [rpi4-gpu-design.md](rpi4-gpu-design.md)、Codex のセッションの実行記録は [execution-20261009.md](execution-20261009.md)・[handoff-20261009.md](handoff-20261009.md)・[compiler-refactor-20261010.md](compiler-refactor-20261010.md)。
+- 同じ driver が Pi 5（BCM2712、V3D 7.1、[WS279](../ws279/ws.md)）でも使われている。
 
-## ライセンスの扱い（2026-10-04 ユーザーの決定、前の「ライセンスの境界」を置き換える）
+## 制限・移管
 
-2026-10-04 user「vc4/v3dドライバのソースから作る文書は作業ファイルにして、リポジトリにコミットせず、GPLコードを参考に書き写してもいいことにします。基本は手順を書き写しますが、表現が難しいときはコードを書き写してもいいです。我々のコードを生成する前に、定数はすべて、一括で、独自の名前に変更します。最後にライセンスに問題がないか、コードに類似がないかを監査します。これにより字面でも設計でもGPLコードを含めず、独自ライセンスとします。ファームウェアに相当しそうなBLOBがソースコード中にある場合は、userland/firmwareに移してファイルからロードすることにします。」
-
-1. **作業の文書は repository に入れない**: vc4・v3d の GPL の source から作る文書（初期化の順・command の順の書き写し）は `plan/ws141/temp/`（`.gitignore` の `plan/ws*/temp/`）に置き、**commit しない**。手順の書き写しが基本、表現が難しい所は code の書き写しも可。
-2. **定数の一括の改名**: zedBSD の code を書く前に、作業の文書の定数（register・bit・field の名前）を**全て一括で独自の名前に変える**（対応表も temp に置き、commit しない）。zedBSD の code は改名の後の文書から書く。
-3. **最後の監査**: WS の最後に、license の問題が無いか、GPL の code と**字面でも設計でも類似が無いか**を監査する（類似の検出の道具と目視、[p007](phase007/phase.md)）。結果を commit できる形（類似の検出の結果の要約、GPL の file の一覧と hash）で残す。
-4. **BLOB**: source の中に firmware に相当しそうな BLOB（byte の配列など）があれば、`userland/firmware/` に移し、file から load する（RTL8822B・i915 の firmware と同じ形）。license は個別に確かめる。
-5. **register の定義と packet の形の出典**（2026-10-04 ユーザー「これはそうしたいですね。」）: zedBSD の code の register の定義・command の packet の形は、**MIT の Mesa（`src/broadcom/`、例 `cle/v3d_packet.xml`）、Broadcom の公開の文書、device tree の binding** から取り、**file ごとに license を監査**する（path・SHA-256・license の表、[i915-license-audit](../ws029/i915-license-audit.md) の形）。GPL の vc4・v3d は手順の理解と作業の文書のためだけに使う。
-6. zedBSD の code は独自の license（Zlib）。repository には GPL の code・作業の文書を入れない。
-
-## 範囲
-
-- display: firmware の framebuffer の引き継ぎ、HVS（plane の合成）、pixelvalve（timing）、HDMI（mode・EDID・audio は範囲の外）、vblank、scanout の page flip。
-- 3D: V3D 4.2 の power・clock（firmware の mailbox）、MMU、bin/render の control list、CSD（compute）の job、reset、fence。
-- zedBSD の GPU の interface への統合と、desktop（Keiland の compositor）の表示。Vulkan の実行器とSPIR-V compilerはp006で本WSに実装する（2026-10-09ユーザー確定）。
-- 範囲の外: Raspberry Pi 5、DSI の LCD、HDMI の音、video の decode。
-
-## 前提・関係
-
-- [WS048](../ws048/ws.md)（rpi4 の FDT・PCIe・mailbox）、[WS044](../ws044/ws.md)（rpi4 を開発に使える形に、console）。firmware の mailbox は `src/drivers/platform/rpi4/rpi4-firmware.c`。
-- HAL の API の変更が要るときは、差分を plan に置いて承認を得る（AGENTS.md）。
-- 試験: 実機（Raspberry Pi 4、ユーザー）。QEMU の raspi4b は HVS・V3D を emulate しないので、display の印と host の試験（command list の生成など）で補う。
+- 描画の速さの残り（p013 の tile buffer の f16、p015 の UIF、p016 の worker の mutex と cursor、p018 の部分の CopyBufferToImage、p019 の blend の係数）は設計・候補のまま閉じた。GPU の速さは [WS291](../ws291/ws.md) の範囲。
+- p017 の stencil は Pi 5 で readback PASS・Notes の起動まで。線の目視と Pi 4 の実機は未実施。
+- p001〜p006 の phase.md の Status は in-progress のまま WS を閉じた（実装は main。実機の全体の受け入れの記録は無く、上のユーザーの確かめで代える）。
+- 範囲の外: Raspberry Pi 5（WS279）、DSI の LCD、HDMI の音、video の decode。
 
 ## Phase 一覧
 
-| Phase | 目的 | Status | 依存 | 目安 |
-| --- | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 文書: Linux の vc4・v3d の初期化の順と command の投入の順、正本の一覧と license の監査、BCM2711 の display と V3D の構成、我々の interface への対応表、段の印の設計 | in-progress（q691、文書と review 済み、判定待ち） | なし | 4〜6h |
-| [p002](phase002/phase.md) | **定数の一括の改名**（作業の文書、temp）の後に、段の印の仕組み（framebuffer に進み具合を書く debug の口）と driver の骨格（FDT の attach、MMIO の map、clock・power の mailbox、IRQ） | in-progress（q695、実装済み。骨格版のT1-092 PASS、2026-10-09 y/n build・host PASS。実機待ち） | p001 | 4h |
-| [p003](phase003/phase.md) | display: boot出力先/modeの特定→Linux順R0再初期化/初回scanout→vblank/flip/合成/resident統合。旧コピー引き継ぎ/P4後回しは置換 | in-progress（i11 allocator/登録/copy present/2-plane合成/起動診断を実装、host/build PASS。実機待ち） | p002の骨格・WS048 mailbox限定修正。実機のwhole acceptanceは残る | 6h〜 |
-| [p004](phase004/phase.md) | V3D: power・MMU・buffer object、bin/render・TFUのjob、reset、fence（CSDはp006後） | in-progress（V1〜V10/native runnerを実装、固定XML照合・host/build PASS。実機V1〜V10成功、公開描画は未確認） | p002（骨格出力でsoftware準備、hardwareは実機V0確認後） | 6h〜 |
-| [p005](phase005/phase.md) | `drv_gpu_interface` への統合と desktop の表示（Keiland の compositor） | in-progress | p003・p004のsoftware出力、desktopはp006 | 4h〜 |
-| [p006](phase006/phase.md) | kernel Vulkan実行器・SPIR-V compilerとKeiland描画経路（2026-10-09 scope拡張） | in-progress（compiler/native prepared job/public runtime/Keiland software経路とhost/build/stack監査PASS、実機待ち） | p004・p005 | 未見積 |
-| [p007](phase007/phase.md) | 規約の全文の確認と最終の確認。**license と GPL の code との類似の監査**（字面・設計、道具と目視）、BLOB の移動の確認 | cleared（p010差分監査/組合せbuild/main統合済み） | 全て | 3〜4h |
-| [p013](phase013/phase.md) | VC6 の Keiland の描画の速さ（frame 33 ms → 16 ms） | in-progress（hardware blend・compiler の NOP 削減は実機で見た目 OK・速い、tile buffer の f16 は実機待ち） | p006 | 未見積 |
-| [p014](phase014/phase.md) | HVS の cursor plane | in-progress（実機で 60fps、ユーザー確認） | p013 | — |
-| [p015](phase015/phase.md) | GPU が書いて GPU が読む画像を UIF で持つ（設計） | planning（第 3 版） | p013 | 未見積 |
-| [p016](phase016/phase.md) | GPU の実行中に ioctl と cursor を止めない（worker の mutex、cursor の GPU 無しの更新） | planning（設計の第 1 版、review 前） | p014 | 未見積 |
-| [p018](phase018/phase.md) | 部分の CopyBufferToImage の費用（CPU の 64B の写しか GPU の部分の tile pass） | planning（候補の記録、計測で方式を決める） | p016 の (b)、WS211 p003、Pi の計測 | 未投入 |
-| [p017](phase017/phase.md) | bcm2711 の Vulkan の stencil（Notes） | in-progress（2026-10-22 P2、Pi 5 で VKSTENCIL ok・Notes 起動、線の目視と Pi 4 実機が残り） | p016 の (b) | 2026-10-22 P2 |
-| p019（案） | bcm2711 の Vulkan の blend の係数（color の ZERO・SRC_COLOR、alpha の ZERO・ONE、Multiply）（2026-10-13 Q1、WS216 p001 第 2 版の依頼、p017 と同じ担当・時期の推奨。kernel の driver で HAL ではない） | planning | p017 | 未見積 |
-| [p012](phase012/phase.md) | KeilandのEL0 counter例外 | cleared（実機でcounter trap消失・描画送信到達） | p011実機成功、p005/p006起動経路 | 今回有限scope |
-| [p011](phase011/phase.md) | R0拒否とブラックアウトの修正 | cleared（実機R0/list43採用成功） | N0/preflight実機成功 | 今回部分scope |
-| [p010](phase010/phase.md) | core clock/実時間job期限 | cleared（software/実機表示未確認） | main211be00dcと実機ログ | 今回有限scope |
-| [p009](phase009/phase.md) | 実機clock/VA幅の初期化停止修正 | cleared（software。実機未確認） | mainの既存software出力 | 今回有限scope |
-| [p008](phase008/phase.md) | GPU共通SPIR-V frontend/IR、i915・VC4参照移行 | cleared（software/build/host。実機は他Phase） | p006 software出力、p007再監査 | 今回有限scope |
-
-## 要検討・ブロック（2026-10-05）
-
-2026-10-05のユーザー指示で要検討・ブロックしていた。2026-10-09の独立Codexセッションへの割当で作業を再開。実機観測を必要とする段階の依存は、実機確認が後になるという回答に従い未達として保持する。
-
-
-## i08の設計変更と依存待ち（2026-10-09）
-
-- ユーザーのLinux一致要求と回答「Linuxと同じ再初期化へ変更する」によりp003の初回表示手順/検証を変更。R0は通知前の検証と初回frame採用を完了条件とし、旧N1の写真後のraw-copyという手順に代わる。途中の画面消失は承認済み、boot出力先以外を点灯しない規則は保持。p005は新R0の実出力とp004のjobの受け入れが依存で、host PASSだけでは満たさない。p004のV8・p006・p007は今回の選択範囲外。
-- p003の実装/host/build結果と、WS048担当source/header/testの[限定提案](proposed/firmware-empty-tag.diff)を保存。WS048実sourceは未変更、適用回答待ちでi08/p003はuncleared。詳細・exact commands・hash・残件・再開条件は[実行記録](execution-20261009.md#i08の結果と再開条件2026-10-09)と[Phase](phase003/phase.md#i08の保存結果と再開条件2026-10-09)。
-- この構造変更に伴うMaster/共有Queue/Guardrailの旧初期化順と承認の投影はQ1へ保留。p001の判定、実機/QEMU、license/全文準拠p007、WS全体の完了をこの結果で置き換えない。共有mainへは依存を解決・統合検証するまで未merge。
-
-
-## i09: 依存修正とmergeの承認（2026-10-09）
-
-ユーザー「mainにマージしてOKです。mailbox修正も承認します。」でWS048 mailboxの提案3 pathとmain統合を承認。容量0tagを実sourceへ適用し、実mailbox host/新display host/rpi4 y/n buildを確認済み。i08の依存待ちを今回のattemptで解消し、最新mainへ統合を進める。p003/WS全体の実機受け入れ、Q1の共有記録/WS048投影、T1回帰、p007は残る。詳細は[実行記録](execution-20261009.md#i09-mailbox実sourceの確認2026-10-09)。
-
-
-## i09の統合結果（2026-10-09）
-
-mailbox依存と初期表示R0成果を最新mainへ統合済み（dde7c1ba7）。実mailbox host/display host/rpi4 y/n build PASS、warning/error0。i09はsoftware/統合の部分範囲でcleared、p003の実機/後続機能の受け入れは残るためin-progress、WSはincomplete。i08のuncleared履歴は保持。実機の画面・buffer寿命/IRQ、T1回帰、最終監査p007とQ1の共有記録/WS048 body投影は未実施。[exact evidence](execution-20261009.md#i09-mainへの統合結果2026-10-09)。
-
-
-## i10: 同期flip部品（2026-10-09）
-
-ユーザーの継続指示でp003/P1/P2のsoftware/runtime部品を実装。既存mode/channel0/boot HDMIを保ち、caller-owned連続RGB32 bufferをinactive listに公開し、actual selected-PV/current一致で完了する。timeout時は旧/新bufferを保持し、確認済みconsole復帰まで通常flipを拒否する。host3試験/driver y/n build PASS。起動からのflip/allocator/GPU登録・P3・実機受け入れは未実施。p003 in-progress/WS incompleteを保持。変更は同Phase内で、foreign Phaseの契約を変更しない。[詳細と再開条件](execution-20261009.md#i10の実装確認2026-10-09main統合前)。
-
-
-## i10の統合結果（2026-10-09）
-
-同期flip部品をmainへ統合済み（181339820）、統合版もhost3試験/buildがPASS。i10のsoftware/統合部分はcleared。全displayの受け入れではないためp003 in-progress/WS incomplete、残件/再開点は上記と[実行記録](execution-20261009.md#i10のmain統合結果2026-10-09)。Q1の共有投影/回帰依頼は担当から更新しない。
-
-
-## 完成までの自走・p006の実装範囲確定（2026-10-09）
-
-ユーザー「続けてください。完成まで自走してください。」、続く回答「WS141に実行器・compilerも含め、Keiland表示まで進める」で、p006を方針だけからkernel Vulkan実行器/SPIR-V compiler実装に拡張した。p005のdesktopにはp006出力が必要、p007はこの最終sourceも含める。p005/006/007を個別Phaseとして保存し、i11〜i15の有限scopeを実行記録に追加。実機の受け入れはユーザーが後で実施、未確認をcompletedにしない。Masterは変更しない。[正確な承認・境界](execution-20261009.md#完成までの継続承認2026-10-09)。
-
-
-## i11: displayのruntime接続（2026-10-09）
-
-2つの恒久buffer owner、copy present/lease/固定modeのdevice登録、2-planeの位置/alphaとclockの前後処理、P1/P2/P3の実boot診断を追加。host4 PASS、y/n build warning/error0、software部分のみcleared。p003 whole acceptanceとWS completedは実機/console RAM寿命/V3D/Vulkan/最終監査待ち。main統合とi12へ継続する。[結果/再開](execution-20261009.md#i11-display所有合成登録のsoftware結果2026-10-09)。
-
-
-## i11統合とV3Dの再開（2026-10-09）
-
-i11はmain40ce86ac0へ統合、統合版host4とrpi4 y/n build PASS。i12でfixed firmwareのnative PM/reset/clock providerを検証するV1/V2とreset部品をbootへ接続しhost/build確認。V3D registerはまだ読まず、次にV3〜V10を接続する。実機whole acceptance/Vulkan/compiler/最終監査は残る。[詳細](execution-20261009.md#i11のmain統合とi12の再開2026-10-09)。
-
-
-## i12: native V3Dのruntime接続（2026-10-09）
-
-V1〜V10とtrusted CL/TFU/CSD runnerを実装し、actual source host/clear XML/rpi4 y-n buildがPASS、warning/error0。p005へ渡すcallerのbuffer/VA保持・retired=falseのquarantine・common recovery後のrelease、p006のprivate lowering契約を各Phaseへ記録。i12のmain統合確認後にi13へ継続する。実機/console RAM寿命/Vulkan/compiler/最終監査は未達、WS incomplete/p004 in-progressを保持する。[exact scope/commands/制限](execution-20261009.md#i12-native-v3dv1v10のsoftware結果2026-10-09)。
-
-## i12統合・i13開始（2026-10-09）
-
-V1〜V10のsource/host/buildまとまりをmain `30350c8cba31875a01d58f804a5de13a1305a7ee`へ統合。software部分attempt i12はcleared、p004の実機条件は未実施。p005をin-progressにして二deviceのallocation/share/VA/worker統合を進める。p006 Vulkan/compiler/Keilandとp007最終適合は承認済み後続。[詳細](execution-20261009.md#i12統合確認とi13開始2026-10-09)。Master/共有計画/外部公開の投影はQ1が行う。
-
-## i13 checkpoint（2026-10-09）
-
-二device登録・native blob/share/VA・direct scanoutの独立referenceとfailed flush quarantineを実装し、actual source host/rpi4 build PASS、warning0。p005はin-progress、次は非同期worker/common completion/job supervisionとp006 Vulkan/compilerのbinding。Vulkan/Keilandはまだ動作可能と主張しない。実機は未実施、WS incomplete。[詳細/復帰点](execution-20261009.md#i13の二deviceallocation共有の実装2026-10-09継続中)。
-
-
-## i13 worker checkpoint（2026-10-09）
-
-native FIFO workerとsupervised reservationを実装しactual host/rpi4 build PASS。normal cancel/uncertain retain/common callback joinとDMA quarantineを区別。p005はin-progress、p006へ検証済みscoped source出力を渡す。Vulkan/Keiland/実機/最終適合は未達。[詳細](execution-20261009.md#i13-checkpoint-native-workerとsupervised-reservation2026-10-09)。
-
-## i14 compiler checkpoint（2026-10-09）
-
-device-independent Zlib SPIR-V frontendをread-onlyで再利用し、独立QPU4.2 encoder、scalar validation/liveness、二threadのregister管理、VPM vertex/fragment interface、uniform/TMU/float RGBA output/source-over/target swizzle/終了を追加。actual Keilandのquad/panel shaderをcoordinate/vertex/fragment programへ変換し、固定MIT Mesaの独立decoder/repackerとsource/native scalar差分試験PASS、rpi4 build warning/error0。Vulkan command/pipeline/draw runtimeへの接続は次の作業。COMMAND/CAPSETは引き続き未公開、p006/i14はin-progress、WS incomplete。実機のshader/timing/memory/cacheは未検証。[結果と復帰点](execution-20261009.md#i14-compilerのsoftware-checkpoint2026-10-09)。
-
-
-## i14 Vulkan protocol checkpoint（2026-10-09）
-
-独立typed object/sessionの所有とbounded transportを追加。actual source host・actual libvulkan wire writer試験/rpi4 y build PASS、warning/error0。まだtyped GPU runtimeは未接続、COMMAND/CAPSET/JOB未公開。次はinstance/device/query/memory/pipeline/draw/queue、p006/i14はin-progress、WS incomplete。実機とp007の受け入れは未実施。[詳細と復帰点](execution-20261009.md#i14-vulkan-streamのsoftware出力2026-10-09)。
-
-
-## i14 native Vulkan root/query checkpoint（2026-10-09）
-
-実client codecとnative sourceでinstance/device/queue graph・physical queries・domainのcallback lifetimeを接続。承認されたshared4 pathでNormal NC RAMのuser mappingを追加、private buffer/VM alias ownershipも確認。host2/rpi4 y build PASS、warning/error0。次はVkDeviceMemory/nonzero BLOB/resource/pipeline/draw/queue。p005/p006とi13/i14はin-progress、COMMAND/CAPSET/JOB未公開、Keiland/実機/p007は未達。Masterは更新しない。[結果/復帰点](execution-20261009.md#i14-vulkan-native-rootqueryとnormal-nc-owner2026-10-09)。
-
-
-## i14 root/query/Normal NCの統合（2026-10-09）
-
-Q1最新mainを保持し、object/session/transport/root/queryと承認済みNormal NC mappingを統合。統合treeのhost2/rpi4 y-n build PASS、warning/error0。実装途中のVulkan entrypointsはまだ公開しない。i13/i14はin-progress、次はVkDeviceMemory/nonzero BLOB/resource/pipeline/draw/queue。[統合evidence](execution-20261009.md#i14-rootquerynormal-ncのmain統合確認2026-10-09)。
-
-## i14 native memory/BLOB checkpoint（2026-10-09）
-
-lazy VkMemory/type0/export/importとactual placement後のNormal NC backing、nonzero BLOB/resourceへのprivate routingを追加。actual client headerでvoidのopcode echo要求を確認しroot destructionを修正。actual VA/MMUを使うhostでindependent owner/budget/OOM/quarantine PASS、rpi4 y build warning/error0。i13/i14とp005/p006はin-progress、COMMAND/CAPSET/JOB未公開。次はbuffer/image/bindingとtyped rendering runtime、Keiland/実機/p007は未達。Masterは更新しない。[結果/復帰点](execution-20261009.md#i14-vkdevicememoryとplaced-blobのsoftware出力2026-10-09)。
-
-## i14 buffer/image/binding checkpoint（2026-10-09）
-
-実client codecでtyped buffer/image・requirements・same-device memory bind・linear colour pitchを追加。actual VA/MMU hostでbinding/prepared ownerの独立保持、logical extentとrequired sizeの区別、bad bind拒否を確認。host3範囲/rpi4 y build/style PASS。次はview/sampler/shader moduleからtyped draw/runtimeへ、COMMAND/CAPSET/JOB未公開、i13/i14/p005/p006 in-progress。Keiland/実機/p007未達。Master変更無し。[結果/復帰点](execution-20261009.md#i14-bufferimagerequirementsbindingのsoftware出力2026-10-09)。
-
-## i14 immutable input checkpoint（2026-10-09）
-
-colour image view、single-level nearest/linear sampler、owned SPIR-V moduleを実装し、actual client handle/record codec/native hostでparent/job/referenceとarena非依存を確認。host4範囲/rpi4 y build/style PASS、次はdescriptor/pipeline layoutからnative draw/runtimeへ。COMMAND/CAPSET/JOB未公開、i13/i14/p005/p006 in-progress、Keiland/実機/p007未達。[結果/復帰点](execution-20261009.md#i14-immutable-viewsamplerspir-v-moduleのsoftware出力2026-10-09)。Masterは更新しない。
-
-## i14 canonical layout checkpoint（2026-10-09）
-
-descriptor/pipeline layoutのexact client decoder、canonical binding、immutable parent所有、8texture/4uniform/4set/128byte push許可を追加。actual host5範囲/rpi4 y build/style PASS。次はpool/set/updateとdraw descriptor snapshot、public runtime/Keiland/実機/p007未達。i13/i14/p005/p006 in-progress、Master変更無し。[結果/復帰点](execution-20261009.md#i14-canonical-descriptorpipeline-layoutのsoftware出力2026-10-09)。
-
-## i14 pool/set checkpoint（2026-10-09）
-
-descriptor pool lifecycle/complete set batch allocation/freeを接続。old prepared ownersのstorage/chargeをpublic reset/destructionと分離、actual hostでrollback/retentionを確認。host6範囲/rpi4 y build/style PASS、次はdescriptor update/copyとdraw snapshot。i13/i14/p005/p006 in-progress、public runtime/Keiland/実機/p007未達。Master変更無し。[結果/復帰点](execution-20261009.md#i14-descriptor-poolset所有のsoftware出力2026-10-09)。
-
-## i14 descriptor更新 checkpoint（2026-10-09）
-
-ordered write/copy、immutable sampler override、complete staging rollbackとindependent draw descriptor cloneを追加。actual client framing/native host7範囲、RPi4 y build/style PASS。mutable set更新・pool reset・全public resource退役後のprepared exact inputs/backing保持を確認。next render pass/framebuffer/graphics pipeline/native draw/queue、public runtime/Keiland/実機/p007は未達。i13/i14/p005/p006 in-progress、Master変更無し。[結果/限界/復帰点](execution-20261009.md#i14-ordered-descriptor更新とdraw-snapshotのsoftware出力2026-10-09)。
-
-## i14 target checkpoint（2026-10-09）
-
-actual Keiland clear/load/backdropのsingle-colour pass、same-device bound framebuffer、互換性/granularityとindependent target所有を追加。host8範囲/RPi4 y build/style PASS、次はgraphics pipeline/compiler/native draw/queue。public runtime/Keiland/実機/p007未達、i13/i14/p005/p006 in-progress、Master変更無し。[結果/限界/復帰点](execution-20261009.md#i14-render-passframebufferのsoftware出力2026-10-09)。
-
-## i14 compiled pipeline checkpoint（2026-10-09）
-
-actual Keiland quad sourceから3native programsを構築、module entry/stage、varying/FIFO、descriptor type/visibility、push permission、attribute componentをvalidate。independent compiled graphとpartial OOM/unwindをhost9範囲/RPi4 y build/styleで確認。次はactual graphics pipeline wire batchとnative draw/queue、public runtime/Keiland/実機/p007未達。i13/i14/p005/p006 in-progress、Master変更無し。[結果/限界/復帰点](execution-20261009.md#i14-compiled-pipeline-graphのsoftware出力2026-10-09)。
-
-## i14 pipeline wire checkpoint（2026-10-09）
-
-actual selected-state graphics encoder→independent native decoder/compiler/registryを接続、complete batch/fresh vector/legitimate partial successesとprepared public-retirementをhost9範囲/RPi4 y build/styleで確認。有限recordのcompiled stack frameも確認、total runtime pathは後続。次はrecorded commands/native CL/queue/common binding、COMMAND/CAPSET/JOB/public runtime/Keiland/実機/p007未達。i13/i14/p005/p006 in-progress、Master変更無し。[結果/限界/復帰点](execution-20261009.md#i14-graphics-pipeline-wire-batchのsoftware出力2026-10-09)。
-
-## i14 primary/graphics recording checkpoint（2026-10-09）
-
-actual client primary pool/buffer codecsとreal public9vkCmdのfinite native recordingを接続。whole batch rollback、pending mutation拒否、pool非cycle/registry退役とindependent old graph、selected colour clear/raw state/typed interfaces、first node OOM→End failure/clean re-recordを確認。ordinary descriptor update-after-recordの想定をVulkan 1.0仕様へ修正し、set generation/current validationとpending update拒否を追加。host11範囲/RPi4 y build/style PASS、actual native CL/GPU completionの証拠にはしない。p005/p006/i13/i14 in-progress、COMMAND/CAPSET/JOB未公開、Keiland/実機/p007未達。next immutable current draw preparation/native VA/code/uniform/TMU/CL、transfer/barrier/queue/common/public runtime。Master変更無し。[正確な結果/想定訂正/失敗と修正/限界/復帰点](execution-20261009.md#i14-primary-command所有とactual-vkcmd記録のsoftware出力2026-10-09)。
-
-## i14 ordered draw state checkpoint（2026-10-09）
-
-stage別push/partial vertex/dynamic stateとdescriptor prefix互換/disturbance、全graph validation後のCPU-only準備callbackを接続。host12範囲/RPi4 y build/style PASS。独立prepared native owner/code/uniform/TMU/CL、queue/public runtime、Keiland/実機/p007は未達、WS incomplete。Master担当変更無し。[詳細/修正/復帰点](execution-20261009.md#i14-ordered-draw-stateのsoftware出力2026-10-09)。
-
-## i14 prepared CPU graph checkpoint（2026-10-09）
-
-pending primary graphとconsumed descriptorの独立snapshot owner、pending mutation/free/reset guardをhost13範囲/buildで確認。actual native packet/GPU backing/queue/public bindingは後続、uncertain DMA ownerの明示quarantine transferが必要。WS incomplete/p005-p006 in-progress、Keiland/実機/p007未達、Master変更無し。[結果/復帰点](execution-20261009.md#i14-immutable-prepared-cpu-graphのsoftware出力2026-10-09)。
-
-## i14 native records/UIF checkpoint（2026-10-09）
-
-独立private 4.2 byte serializerとraster→strict UIF scratch変換を追加。固定XMLで8 record全byte、inverse block walkerで全pixelとpadding/元raster不変、bounded refusalを確認。rpi4 y build warning/error0、style補助total0。actual FIFO後のscratch生成とowner/clean/retirement、native graphics CL/queue/runtime/Keilandは後続。p006 in-progress、WS incompleteと実機関門を維持。[Phase](phase006/phase.md#i14-native-recordとtexture配置のcheckpoint2026-10-09)と[実行記録](execution-20261009.md#i14-native-shaderfetchtexture-recordとuif変換のsoftware出力2026-10-09)。
-
-## i14 native upload checkpoint（2026-10-09）
-
-actual identified PA reachabilityでcached native allocation/VAを所有し、QPU code全byteとpage padをcleanするhelperを追加。uncertain DMAではroot/mapping保持、confirmed retirement後のflush failureはspace quarantineへNULL消費する。actual MMU/refcount/code/cache/reset境界のhostとy build PASS。whole-job quarantine/native executionは残り、WS incompleteを維持。[Phase](phase006/phase.md#i14-native-upload-owner-checkpoint2026-10-09) / [実行記録](execution-20261009.md#i14-native-upload-storageのsoftware出力2026-10-09)。
-
-## i14 viewport integer lowering checkpoint（2026-10-09）
-
-XY scale/depth range/offsetをkernel整数のみで生成するprivate helperを追加。independent host IEEE oracleで1280有限pairの全bit比較、XML/pixel、y build PASS。実native uniform stream/CL/queueは後続で、p006 in-progress/WS incompleteを保持。[Phase](phase006/phase.md#i14-integer-viewport-uniforms-checkpoint2026-10-09) / [詳細](execution-20261009.md#i14-integer-viewport-uniformのsoftware出力2026-10-09)。
-
-
-## i14 full-image native GPU clear checkpoint（2026-10-10）
-
-actual public vkCmdClearColorImage→typed immutable primary→prepared pending graph→zero-draw native tile clear/storeを接続。TRANSFER_DST用途・bound same-device・remaining ranges・FIFO current layout、独立output/9storage、OOM/budget rollback、zero-draw quarantine/reset lifetimeを確認。actual encoder/native owner＋explicit runner host20範囲、final named RPi4 y warning/error0/checks3/style0 PASS。CPU target write無し。mock runnerはGPU pixelを書かず、実機clear/Keiland成功は未確認。copy/blit/readback・primary queue submit/fence/semaphore/public/common binding・final runtime stack/p007が残り、Phase in-progress/WS incompleteを維持。Master/shared source/HAL/UAPI変更無し。[証拠/失敗と修正/復帰点](execution-20261009.md#i14-full-image-gpu-clearのsoftware出力2026-10-10)。
-
-
-## i14 native image copy/blit checkpoint（2026-10-10）
-
-actual public copy/blit→完全immutable primary/pending graph→内部kernel-compiled texture quad/native passを接続。raw copy、nearest/linear拡縮・両axis反転・RGBA/BGRA conversion、source全sample footprint/physical alias、multi-region FIFO/whole-pass quarantineを確認。temporary数値metaのみで公開仮object無し、CPU destination pixel write無し。actual client/kernel-source＋明示runner host21範囲、final RPi4 y warning/error0/checks3/style0とown SPIR-V validator PASS。実GPU pixelはmockしないため実機/Keiland成功は未確認。buffer readback/transfer・QueueSubmit/fence/semaphore/public/common binding・final stack/p007が残り、Phase in-progress/WS incompleteを維持。Master変更無し。[正確な範囲/codec誤りの修正/確認/復帰点](execution-20261009.md#i14-native-image-copyblitのsoftware出力2026-10-10)。
-
-
-## coherent buffer copy checkpoint（2026-10-10）
-
-actual public CopyBufferのcomplete typed byte vectorをpending primaryへ保持し、FIFO native retirement後のNormal NC CPU転送へ接続。exact13/17byte以外保持、record後source更新、physical alias/末尾failure無部分retain・pending disposalをactual host22範囲で確認。native runnerは起動しない。RPi4 y warning/error0/checks3/style0 PASS。buffer/image upload/readback・queue/fence/semaphore/public/common binding・final stack/p007と実機/Keilandが残り、in-progress/incompleteを維持。Master変更無し。[正確な範囲/検証/復帰点](execution-20261009.md#i14-coherent-buffer-copyのsoftware出力2026-10-10)。
-
-
-## coherent buffer-image transfer checkpoint（2026-10-10）
-
-actual public upload/readbackをimmutable pending primaryとFIFO Normal NC CPU行copyへ接続。部分upload/packedとpadded readback/unused padding alias/late invalid region/OOM/layout failure不変/whole pending lifetimeをactual host23範囲で確認。RPi4 y warning/error0/checks3/scoped style0/diff0 PASS。native GPU launch無し。queue/fence/semaphore/public/common binding・final runtime stack/p007・実機/Keilandが残り、in-progress/incompleteを維持。Master変更無し。[正確な範囲/検証/復帰点](execution-20261009.md#i14-coherent-buffer-image-uploadreadbackのsoftware出力2026-10-10)。
-
-
-## core sync checkpoint（2026-10-10）
-
-native fence/binary semaphoreのtyped device ownership、初期状態/status/atomic reset/destruction/OOMを実装。実client codec/transport＋明示pending/fault modelのhost24範囲、RPi4 y checks3/warning-error0/scoped style0 PASS。QueueSubmit completion/common marker/public binding/Keiland/physical/final runtime stack/p007は残り、in-progress/incompleteを維持。Master変更無し。[詳細/検証/復帰点](execution-20261009.md#i14-core-fencebinary-semaphoreのsoftware出力2026-10-10)。
-
-
-## actual QueueSubmit checkpoint（2026-10-10）
-
-実legacy client submit encoderとnative QueueSubmitを接続。全graph/prepared8MiB/256actionのpreflight後、既存COMMAND worker内でnative退役を直列確認し、binary chainsとfinal native fenceを完成させる。OOM/prefix refusal/one-time/uncertain whole quarantine/empty work fault refusalを実client private encoder＋actual kernel source/明示runner host25範囲で確認。RPi4 y checks3/warning-error0/scoped style0/diff0 PASS。COMMAND/CAPSET/JOB binding/public runtime・final stack/p007・実機/Keilandは残り、in-progress/incompleteを維持。Master変更無し。[exact scope/内部手順/限界/次](execution-20261009.md#i14-actual-legacy-queuesubmitのsoftware出力2026-10-10)。
-
-
-## public Vulkan runtimeの登録と次のsoftware関門（2026-10-10）
-
-[p005](phase005/phase.md#public-runtimeのsoftware-checkpoint2026-10-10)・[p006](phase006/phase.md#public-runtimeのsoftware-checkpoint2026-10-10)を更新。private-onlyからactual render node publicationへ進み、全openにcomplete namespace、actual20route dispatch、immutable async COMMAND、checked domain/real completion/close drain、paired168byte capsetを接続。actual host26とactual renderer register/open/close/OOM/ownership host2 summary、full public LTO retained y buildはPASS。physical Keiland/console RAM lifetimeとwhole stack/p007を未達として保持する。Master/共有記録更新はQ1。詳細は[checkpoint](execution-20261009.md#i14-public-native-vulkan-runtimeの接続2026-10-10)。
-
-
-## public runtime stack修正と次のsoftware確認（2026-10-10）
-
-p006で4件pipelineのtemporary recordをcommand arenaへ移し、LTO frame4560→256byte。shared parserを変更せずprivate graphics stage/constant-depth admissionを追加。実Keiland compiler/深度境界/OOMとactual4件batch/arena reuse、host26/最終RPi4 y/styleはPASS。whole IRQ/caller stack、actual2node runtime、p007全WS監査と実機/Keiland/console RAM寿命は残る。in-progress/incompleteを維持、Master担当変更なし。[証拠/訂正/復帰点](execution-20261009.md#i14-public-runtimeのstack修正とgraphics-admission2026-10-10)。
-
-## software実行の終了（2026-10-10）
-
-i13/i14のsoftware/統合部分とi15/p007をcleared。全実装/検証/監査記録をmainへ統合済み。WS acceptanceの実機/Keiland画面/console RAM寿命は後日確認待ちで、Statusはincompleteを保持する。新Queue・remote公開・Master独自更新は行わない。対象、全commands/hash、user/Q1担当の残る条件は[最終受け渡し](execution-20261009.md#i15-main統合software実行の終了2026-10-10)。
-
-## 共通compilerの追加指示（2026-10-10）
-
-ユーザーが静的レビュー/改善とGPU共通compilerへの抽出を明示して自律実行を依頼。p008を追加しp006のfrontend依存を共通moduleへ移す。p007の旧clearanceはsource変更で失効、今回i18で再確認。WS incomplete/実機ユーザー担当/共有投影Q1を維持。[承認・scope・手順](compiler-refactor-20261010.md)。
-
-## 共通compiler software確認（2026-10-10）
-
-p008/i17をcleared。共通frontend/IR/diagnosticをdrv_gpu_へ移しi915とVC4を接続、heap parse stateと短絡を保つcaller修正を確認。IR token互換、RPi4 y/n・amd64 i915 y build、parser/EU/QPU/client host、ordinary stack margin704 PASS。p007/i18は今回最終sourceのmain統合待ち。WS incompleteと後日実機ユーザー担当は保持。[今回成果と未確認](compiler-refactor-20261010.md)。共有投影はQ1。
-
-
-## 共通compilerのmain統合と今回実行の終了（2026-10-10）
-
-p008/i17とp007/i18をcleared。source `fca9cd37f` を最新mainへmerge `ab268b857` で統合し、212path hash/対象入力一致とclean read-backを確認。静的改善・共通frontend・両driver refactor・最終規約/build/host/stack確認を完了した。WSは実機/Keiland条件が未確認のためincomplete、次はユーザーのRPi4確認。Q1/T1回帰・共有記録/GitHubは担当へ保留する。[exact evidenceと残件](compiler-refactor-20261010.md#i18-main統合今回software実行の終了2026-10-10)。Masterは更新していない。
-
-## 実機初期化停止の修正開始（2026-10-11）
-
-ユーザーのN0/V3ログでクロック準備前の拒否とVA35拒否を確認し、p009を追加。p003/p004の実機条件は未達のまま、今回差分のp007再確認を実行する。既存のhost/build結果は実機成功を意味しない。[scope/証拠](phase009/phase.md)。共有投影はQ1へ保留。
-
-## main統合・read-back（2026-10-11）
-
-ユーザー「mainに統合してください」でsource commit `3e0ef9b456500c0caebf238d5210236948090939` の統合を承認。clean main `091c65e4a` から当該commitへfast-forwardし、変更12pathとconfig.mkが検証済みworktreeとbyte一致すること、evidenceに記録したsource/config/kernel hashが一致することを確認。警告0のarm64 buildと対象host結果がそのまま適用されるため、同一sourceの再buildは実施しない。
-
-main統合完了。p007の今回統合条件も満たしcleared、p009のsoftware clearanceを保持。実機のN0/V4/V5/V6進行とKeiland表示は未確認でWS incompleteを保持する。push・実機更新/再起動は未実施。Master/共有Queue/history/cache/GitHub投影はQ1へ保留。以前の統合承認待ちの記述は当時の履歴。
-
-## p010追加（2026-10-11）
-
-実機でV3〜V9が進み、V10も待機後復帰したという報告を反映。coreのENODEVと過長待機をp010で修正し、p007差分監査を再開。V10フリーズを既知事実とは扱わない。[scope/実機観測](phase010/phase.md)。
-
-## p010 software終了（2026-10-11）
-
-実機ログではV7〜V10とrender node登録成功を確認。残るcore ENODEVと長いtimeoutを修正して対象host/arm64 buildに合格、main統合承認待ち。Keiland/scanoutの受け入れ未達につきWS incompleteを保持。[証拠と再開条件](phase010/evidence.md)。
-
-## 自動統合の承認と統合結果（2026-10-11）
-
-ユーザー「mainへのコミットは自動でお願いします。」、確認回答「今後は自動で統合してください。」により、このセッションの承認済み作業のmainコミット/統合は以後自動実施する。従来のQ1担当による個別main統合確認をこの指示で置換する。pushや実機更新の指示ではない。共有記録への投影は引き続きQ1へ保留。
-
-USB `3e9ace7b9` とGPU `461906448` を専用worktreeでmerge `afe01157f` にまとめ、現在のconfig.mkで `make -j16 build/arm64/vmunix` を実行。warning0/error0、arm64 ELF/raw-image check PASS。USB/GPU sourceが各個別検証版と一致することも確認。clean main `211be00dc` を `afe01157f` へfast-forwardし、変更17path全てが検証済みworktreeとbyte一致した。main統合完了。実機の新core判定/待ち時間/USBログ抑制は未確認で、WSの残る実機条件は保持。push・実機更新/再起動は未実施。
-
-最新USBログでdevice1/port1 `2109:3431` class09、usb-hub、4portsの登録を確認し、slot1の反復Stopped通知がhub監視と整合することを確認。USBキーボードの入力成功を意味しない。GPUは旧版のV7〜V10成功とrender node登録までユーザー確認済み。
-
-## R0 preflightの再調査（2026-10-11）
-
-N0の実機成功とR0 ENOTSUPをSSH/user logで確認。p011の有限調査を開始し、p003/p007へ証拠と診断差分を反映する。R0修復の実機条件は未達。自動main統合のユーザー承認を継続適用。[scope](phase011/phase.md)。
-
-## main統合（2026-10-11）
-
-自動統合の継続承認に基づきsource `0494ed96d` をclean main `21050e5c0` からfast-forward統合。変更5pathとconfig.mkが検証worktreeと一致することをread-back確認。p007の今回診断sourceの規約/build/統合確認はcleared。p011は原因実値・修復待ちでuncleared、WS incompleteを保持する。次回起動の `R0 reject ...` と続く境界error行が再開証拠。push/実機更新/再起動は未実施、共有投影はQ1。
-
-## p011 r0-i02: 実機RGB8の誤拒否修正（2026-10-11）
-
-ユーザーのR0 reject deep-color=00000204で原因が確定。明示的8bpcのCD4を、Linuxの未指定CD0とともに許容する修正を実装し、限定host/build/規約確認はcleared。[証拠と結果](phase011/phase.md)。p011全体は実機scanout未確認でuncleared、WS incomplete。既存の自動main統合承認を適用、Master等の共有投影はQ1に保持する。
-
-## p011 r0-i03: 通知後ブラックアウトの修正（2026-10-11）
-
-R0 begin後の表示消失をSSHで確認し、全カーネル停止ではなくop0の通知応答判定中断と特定。通知のmessage全体成功を採用し再初期化へ進む差分を実装。限定host/build/p007確認はcleared。p003へ通知の扱い変更を記録、p011/WSは実機R0/Keiland未確認でuncleared/incompleteを保持する。[証拠・検証・再開条件](phase011/phase.md)。承認済み自動main統合を適用。
-
-## 実機R0〜V10成功とp012の開始（2026-10-11）
-
-ユーザーの成功ログとSSHでp011をclearedとした。p003のflip/合成/登録、p004のnative job/resetの実機出力を記録。p005/p006のKeilandはcounter-read例外に阻まれるためp012を追加し、既存「Keiland表示まで」の継続承認内でHAL実装の初期化補完を進める。実機証拠/修正/検証は[p012](phase012/phase.md)、過去の未達履歴は保持。p007は最終差分review、Master/共有投影はQ1。
-
-## p012修正版の実機配置（2026-10-11）
-
-ユーザーの明示指示で823f116f5のkernelをRPi4 10.0.30.2の/boot/boot0/vmunixへ配置。UFSへ旧kernel退避、syncとread-backのバイト/SHA256一致を確認し、配置部分はcleared。agentは再起動していない。再開点はユーザーの電源OFF/ON後のSIGBUS消失とKeiland表示確認。p012はuncleared/WS incompleteを保持。[配置承認・結果](phase012/phase.md)。共有投影はQ1。
-
-## p012実機clearと次の障害（2026-10-11）
-
-再起動後のSSH確認でcounter trapは消失し、p012をcleared。p005/p006のKeilandはOUTPUT openまで到達したが、最初の描画submitがVK_ERROR_DEVICE_LOSTでframes0のまま終了する。p006の実機受入れを保持し、原因のjob/MMIO証拠が次の調査点。今回read-only、ソース・実機更新無し。[証拠](phase012/phase.md)。
-
-2026-10-11 checkpoint: stage pause100msの実機初期化成立。CL診断でrender304〜1051ms、IRQ-to-worker20ms以上無し。panelのif-conversionによる全mode評価を7mode shaderへ分割し、数値同等/縮小varying/native shader/arm64 warning0 build検証済み。cksum2734866792/949352を実機に配置して応答時間を比較する。submit-i01 in-progress、master/共有queueは変更なし。
-
-7mode compositor5243251c9はmain統合/実機更新済み。render48〜177msへ改善、prepare/releaseは残る。MMUの有限1024read burstとyield counter版1502649265/8077312をhost/build検証済み、実機配置して比較する。
-
-1024read版の実機maintenance yield0でもprepare/releaseが残る。同pass exact code3/default1を元drawのDMA retirementまで共有する版をhost/arm64 warning0で確認。次はkernelを配置し、全体応答を比較する。p006/submit-i01 in-progress。
-
-2026-10-11 最新再開点: main/実機のshared code版07b549f07（1591733483/8077312）はreboot後SSHが未復帰、電源OFF/ONを依頼済み。次のtranslation batch版1299371254/8077312はsource/host/arm64 warning0/checker検証済みで未配置。SSH復帰後に実機状態を確認し、このkernelを配置・照合・rebootしてprepare/release/renderを比較する。stage pause100msは先の実機で成立、7mode compositorは2734866792/949352で配置済み、GPUexecution48〜177msへ改善は確認済み。全体応答の修復完了とはしない。
-
-
-2026-10-11 graphics lease/console補完: user再作成imageにはinline kernel666078535とcull compositor1980286597が導入済み。UFS51%/tmp8KB/FAT84%で容量不足なし、greeter停止後SSH0.25秒。RPi text suspend/resume未接続を修正し、claim成功でpixel描画停止、confirmed release/closeだけ復帰。failed restore/recovery時のholdは維持、HALはboard-private cons header/retained resumeだけでhal.h/API不変。実callback host PASS（failed release/closeではsuspended維持、recovery claimも維持、successful release/closeはresume）。C全文manual/formatter19範囲比較/diff-check、production style変更範囲0（cons既存6件は未変更）を確認。arm64 make exit0/warning0/error0/checker3PASS、kernel959624230/8077312。実機更新/効果はこれから、33ms未達・submit-i01 in-progress。Q1共有projection/公開は保留のまま。
-
-
-2026-10-11 cursor-only scene cache: private scene.c/h、three-OS source list、compose/damage/shellへ標準Vulkan transfer bufferを追加。cursor前scene capture→fence後valid→unchanged cursor-only region復元→cursor LOAD。client commit/unknown dirtyは再合成、optional failureは旧経路、multiheadは普通の再合成。acquireのTRANSFER wait/partial full-width stride/retained lifetime/old cursor消去をproduction recorder hostとactual device transfer hostでPASS、C全文manual/formatter19範囲/diff-check、arm64 app warning0/error0/checker0、wayland886953165/953832。newコンソール版の36 input software samplesはmin288/median919.5/max1300ms（user窓内約300ms）、33ms未達でcache実機を比較する。p006/submit-i01 in-progress、shared projection/publication保留。
-
-## 2026-10-11 Q1: P3 への引き継ぎ
-
-ユーザーの指示で、WS141 の描画の速さの改善を Codex のセッションから P3（Claude Code のサブエージェント、worktree `/home/awe/zedBSD-worktrees/p3`、branch agent/p3、起点 d27925686）へ引き継ぐ。新しい Phase [ws141-p013](phase013/phase.md)（frame 33 ms → 16 ms）。以後 ws141/ は P3 が書き、Q1 が merge する。
-
-## 2026-10-11 ユーザー「推し通りです。」: Pi 4 の image は案 A
-
-版 B で Wayland が起動直後に落ちた（ユーザー）。amd64 の Venus では同じ compositor が PASS（T1-539）なので、Pi だけの経路（kernel の snapshot の cache 523b18345 と変化した tile の写し 60e18a09f）を main から外した: `src/drivers/gpu/bcm2711/` と `plan/ws141/tests/vulkan-device-host-test.c` を feac3891d（実機で確かめた storage cache まで）に戻した。compositor の変更（staging の 2 枚・hover の記録）は main に残す。2 つの kernel の変更は P3 が Pi で 1 つずつ確かめてから戻す。
-
-## 2026-10-11 ユーザーの決定: cursor の plane
-
-ユーザー「displayなのにplaneのx,yですか。…cursorと明示されたplaneならいいと思います。」「その案でOKです。」→ present に plane の x,y を足さない。cursor 専用の UAPI（`include/uapi/gpu-display.h` に `GPU_DISPLAY_CURSOR_SET`（画像・小さな固定の大きさ・hotspot）・`GPU_DISPLAY_CURSOR_MOVE`（x,y、vblank で）・`GPU_DISPLAY_CURSOR_HIDE`、無い driver は ENOTSUP）と、libvulkan が VK_KHR_display の plane の 1 つを cursor の plane として見せ、その swapchain の present・dstRect を cursor の ioctl に変える。compositor は libvulkan だけのまま。bcm2711 は HVS の display list に cursor の plane を 1 枚。UAPI の差分の設計は P3 が書き、実装の前にユーザーに見せる。HAL は不変。i915 の hardware cursor は後で別の WS（ユーザー）。
-
-## 2026-10-12 ユーザーの承認: cursor の plane は標準の VK_KHR_display＋cursor 専用の UAPI
-
-ユーザー「待って、ベンダ拡張はおかしいのでは？display の hardware plane を列挙して使う拡張を、標準として使うべきでは？」「VK_KHR_display＋cursor 専用の UAPIでOKです。承認します。」→ vendor の Vulkan 拡張は作らない。libvulkan は cursor の plane を VK_KHR_display の plane（能力: 小さな最大の大きさ（64x64）・per-pixel premultiplied の α・一番上の stack）として列挙し、その plane の swapchain の present と VkDisplayPresentInfoKHR の dstRect を kernel の cursor 専用の ioctl（`GPU_DISPLAY_CURSOR_SET`・`MOVE`・`HIDE`、KMS の legacy cursor に相当）に変える。compositor は標準の VK_KHR_display・VK_KHR_display_swapchain だけを使い、能力で cursor の plane を選ぶ（無ければ合成の fallback）。hotspot は compositor が dstRect に含める。phase014 の設計を P3 がこの形に直して実装する。
-
-## 2026-10-12 cursor の plane の実機の結果
-
-main 8eb7c81 の image の Pi 4 で cursor の plane が開き（`KWL CURSOR_PLANE open plane=1 64x64 images=3`）、ユーザー「おお、カーソルは60fpsです！」。窓の中身の frame は約 15 fps のまま（CPU の texture 変換が主因、libvulkan の map の token の直し 3b0d9db5c を試験中）。
-
-## 2026-10-12 hardware blend の実機の結果
-
-P3 の ad7ebb2cb（bcm2711 の draw で hardware blend を使い、shader は tile buffer を読まない）の kernel の Pi 4 で、ユーザー「見た目は大丈夫です。描画は2.5倍くらい速くなりました。」次は shader の compiler の NOP の削減と add/mul の組（P3）。
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws141-p001 | 文書: vc4・v3d の初期化の順と command の順（作業の文書は temp）、正本と license の監査、interface の対応表、段の印 | in-progress のまま WS を閉じた（文書と review は済み、判定の記録なし） |
+| ws141-p002 | 定数の一括の改名、段の印、driver の骨格（FDT・MMIO・mailbox・IRQ） | in-progress のまま WS を閉じた（実装は main、T1-092 PASS） |
+| ws141-p003 | display: Linux の順の再初期化 R0、初回 scanout、vblank・flip・合成・resident | in-progress のまま WS を閉じた（実装は main、実機の R0 は p011 で成功） |
+| ws141-p004 | V3D: power・MMU・buffer object、bin/render・TFU の job、reset、fence | in-progress のまま WS を閉じた（実機で V1〜V10 成功） |
+| ws141-p005 | `drv_gpu_interface` への統合と Keiland の desktop | in-progress のまま WS を閉じた（desktop は実機で表示、ユーザー「動作OKです」） |
+| ws141-p006 | kernel の Vulkan 実行器・SPIR-V compiler・Keiland の描画の経路 | in-progress のまま WS を閉じた（実装は main、実機で描画） |
+| ws141-p007 | 規約の全文、license と GPL の code との類似の監査、BLOB の確認 | cleared |
+| ws141-p008 | GPU 共通の SPIR-V frontend・IR、i915・VC4 の移行 | cleared（software・build・host） |
+| ws141-p009 | 実機の clock・VA 幅の初期化の停止の修正 | cleared（software） |
+| ws141-p010 | core clock・実時間の job の期限 | cleared（software） |
+| ws141-p011 | R0 の拒否とブラックアウトの修正 | cleared（実機 R0 成功） |
+| ws141-p012 | Keiland の EL0 の counter の例外 | cleared（実機で counter trap が消えた） |
+| ws141-p013 | Keiland の描画の速さ（frame 33 ms → 16 ms） | in-progress のまま WS を閉じた（hardware blend・compiler の NOP の削減は実機 OK、tile buffer の f16 は未確認） |
+| ws141-p014 | HVS の cursor plane | in-progress のまま WS を閉じた（実機で 60 fps、ユーザーの確かめ） |
+| ws141-p015 | GPU が書いて読む画像を UIF で持つ（設計） | planning のまま取り下げ（速さは WS291） |
+| ws141-p016 | GPU の実行中に ioctl と cursor を止めない（設計） | planning のまま取り下げ（速さは WS291） |
+| ws141-p017 | bcm2711 の Vulkan の stencil（Notes） | in-progress のまま WS を閉じた（Pi 5 で readback PASS、線の目視と Pi 4 実機は未実施） |
+| ws141-p018 | 部分の CopyBufferToImage の費用（候補） | planning のまま取り下げ |
+| ws141-p019 | bcm2711 の Vulkan の blend の係数（案、directory なし） | planning のまま取り下げ |
+
+## 記録の所在
+
+Phase の計画・結果・試験は削除する（Q1）。git の commit `fb1f6afee` の `plan/ws141/` にある。回帰に使う host 試験（shader の compiler の `shader-host-test.sh` 一式、`host-display-cursor.sh`）は plan/tools/ へ移す（[plan/tools.md](../tools.md)）。Queue の履歴は [plan/history](../history/index.md)。

@@ -2,8 +2,8 @@
 
 # WS143 設計: Bluetooth（ws143-p001）
 
-版: 2026-10-05 第 3 版（P1 generation18、q752）。第 1 版への design-reviewer の指摘 F1〜F25（[phase001/review-1.md](phase001/review-1.md)）と
-第 2 版への指摘 N1〜N17（[phase001/review-2.md](phase001/review-2.md)）を反映した。各節の `[Fn]`・`[Nn]` は、その節が答える指摘。
+版: 2026-10-05 第 3 版（P1 generation18、q752）。第 1 版への design-reviewer の指摘 F1〜F25（fb1f6afee の plan/ws143/phase001/review-1.md）と
+第 2 版への指摘 N1〜N17（fb1f6afee の plan/ws143/phase001/review-2.md）を反映した。各節の `[Fn]`・`[Nn]` は、その節が答える指摘。
 §9 の D1〜D18 は 2026-10-05 夕にユーザーが**全部推奨どおり**に決めた（「HIDが先で、オーディオとPANもほしいですが、ほかの開発項目より
 後回しでいいです。」、master の decisions-log）。以下の「推奨」は決定として読む。
 

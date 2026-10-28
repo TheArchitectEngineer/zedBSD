@@ -2,7 +2,7 @@
 
 # WS141 最終software監査（2026-10-10）
 
-対象: [承認済みi11〜i15](execution-20261009.md#完成までの継続承認2026-10-09)、[p007](phase007/phase.md)。担当Codexの独立worktreeで実施。Master/共有Queue/同期cacheは更新しない。実機確認はユーザー担当で後日という承認を保持する。
+対象: [承認済みi11〜i15](execution-20261009.md#完成までの継続承認2026-10-09)、p007（fb1f6afee の plan/ws141/phase007/phase.md）。担当Codexの独立worktreeで実施。Master/共有Queue/同期cacheは更新しない。実機確認はユーザー担当で後日という承認を保持する。
 
 ## Sourceと規約
 
@@ -18,7 +18,7 @@ C全文[規約](../coding-style.md)と[Guardrail](../guardrail.md)を適用。�
 
 ## 16KiB stack
 
-[再現checker](tests/stack-audit.py)はfinal LTOの全命令でSP減算/preindexを集計する。遅いprologueを見落とした旧checkpointは[訂正](execution-20261009.md#i14-public-runtimeのstack修正とgraphics-admission2026-10-10)を保持。単一local frameやGCされたprivate binaryを全経路の証明にしない。
+再現checker（fb1f6afee の plan/ws141/tests/stack-audit.py）はfinal LTOの全命令でSP減算/preindexを集計する。遅いprologueを見落とした旧checkpointは[訂正](execution-20261009.md#i14-public-runtimeのstack修正とgraphics-admission2026-10-10)を保持。単一local frameやGCされたprivate binaryを全経路の証明にしない。
 
 | Ordinary configured runtime | callerとkernel IRQを含む保守的見積り |
 | --- | ---: |
@@ -46,7 +46,7 @@ IRQ: SAVE_FRAME288 byteを含むarm64_irq_currentの最大5,344 byte。今回の
 - 630改名表はhardware定数旧名の残存0。NULL/EINVALなどkept/API項目はhardware名称の一致と扱わない。各own sourceのZlib headerを確認。
 - LinuxのDRM/atomic/BO/reservation/dma_fence/workqueue/power-runtime構造を移植せず、zedBSDのFDT role、bounded prepared display operation列、permanent copy scanout、private IRQ latch、one native job slot、typed Vulkan registry/command arena/immutable recording/owner DAG/single worker/checked recoveryに組み替えている。Linuxと同じhardware前後関係は保持するが、Linuxのsoftware object/control構造を取り込まない。
 - native packet/texture/QPU形式は固定MIT Mesa XML/sourceのinterface事実。scalar frontend/codecは既存Zlib、backendは独立の単一ALU/liveness/semantic uniform/有限profile実装。MIT oracleはhostで独立照合するだけでkernelへlinkしない。
-- filterは設計で承認された独自計算へ修正。[Mitchell–Netravali原論文](https://www.cs.utexas.edu/~fussell/courses/cs384g-fall2013/lectures/mitchell/Mitchell.pdf)式8にB=C=1/3を代入し、x=(31-2i)/16・Q8最近丸め・対称位相の最大weight補正から独自生成。全8位相和256/9bit/対称性を[有理数checker](tests/filter-coefficients-check.py)で確認、actual display generatorの11 SRAM wordもliteral照合。kernel FP無し。現scanoutはunscaledでfilterを使用しない。
+- filterは設計で承認された独自計算へ修正。[Mitchell–Netravali原論文](https://www.cs.utexas.edu/~fussell/courses/cs384g-fall2013/lectures/mitchell/Mitchell.pdf)式8にB=C=1/3を代入し、x=(31-2i)/16・Q8最近丸め・対称位相の最大weight補正から独自生成。全8位相和256/9bit/対称性を有理数checker（fb1f6afee の plan/ws141/tests/filter-coefficients-check.py）で確認、actual display generatorの11 SRAM wordもliteral照合。kernel FP無し。現scanoutはunscaledでfilterを使用しない。
 - arrayは自作CL packet image、field/sample/corner table、own SPIR-V assemblyからSPIRV-Toolsで生成したmeta shader word列。own assembly→runtime compilerで独立native programを生成する。firmware machine-code BLOBの埋め込みは無く、userland/firmwareへの移動対象無し。VideoCore boot firmwareは既存外部boot配布物、driverはmailboxを使う。
 
 ## actual clientと二node

@@ -1,43 +1,52 @@
 <!-- awesome-plan project=zedbsd record=ws169 -->
+
 # WS169: メーラの app と compositor のメールの API
 
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p000〜p005 cleared（IMAP・SMTP、メールの API、認証 code の自動入力）。p006 の OAuth2 は 2026-10-06 夜 ユーザー（クリック）「今は IMAP/SMTP だけ」で作らない）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p000 を cleared。2026-10-08 q910 P2 の照合: p002〜p005 cleared（T1-298・302）、p000（mock）は T1-181 の撮影の後に p002 以降で実装され Q1…。残り・制限: p007 の規約の全文は一括の見直しへ
-Master: [master](../master.md)
+<!-- awesome-plan-current:start -->
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」。根拠: p000〜p005 cleared（IMAP・SMTP、メールの API、認証 code の自動入力、T1-298・T1-302）。p006 の OAuth2 は 2026-10-06 夜 ユーザー（クリック）「今は IMAP/SMTP だけ」で作らない）
+<!-- retained-after-completion --> phase001 の phase.md は残す: userland/desktop/ の source（browser/shell/mail.c:9、include/keiland/keiland.h:1613、libkeiland/system/kl-system-protocol.h:634、mailer/code.c:9・mail.h:9・secret.c:11、wayland/mail-shell.c:9）の comment が設計の節とユーザーの決定を参照している。source の comment を直す（または仕様を docs/ へ移す）までの間
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
+Related Milestones: —
+Parent: [Master](../master.md)
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
+<!-- awesome-plan-current:end -->
 
-## 由来
+## 目標
 
-ユーザー（2026-10-05）「[メール] - メーラappを追加する - コンポジタにメールAPIを追加する - メーラappはコンポジタに受信を連絡する - 許可されたアプリはコンポジタからメール受信の通知を受け取れる - たとえばブラウザは認証メールの通知を受け取って自動入力できる - バックエンドはIMAP4とSMTPをまずは対応 - GmailとOutlookのバックエンド対応が目標」
+メーラの app と compositor のメールの API を作り、許可された app（例: browser）がメールの受信の通知を受けて認証の code を自動で入力できるようにする。backend はまず IMAP4 と SMTP。
 
-## 優先（2026-10-05）
+## ユーザーの決定
 
-ユーザー（2026-10-05）「WS169も、夕方のUATにあるとうれしいですが、必須ではないです。」
+- 2026-10-05「[メール] - メーラappを追加する - コンポジタにメールAPIを追加する - メーラappはコンポジタに受信を連絡する - 許可されたアプリはコンポジタからメール受信の通知を受け取れる - たとえばブラウザは認証メールの通知を受け取って自動入力できる - バックエンドはIMAP4とSMTPをまずは対応 - GmailとOutlookのバックエンド対応が目標」
+- 2026-10-05「WS169も、夕方のUATにあるとうれしいですが、必須ではないです。」
+- 2026-10-06 夜（Q1 経由、クリック）: (a) password は `~/.config/keiland/mailer-accounts`（0600）に平文で仮置き。読み書きは 1 つの関数（`mailer/secret.c`）に閉じる。秘密の store への置き換えは WS177 の backlog。(b)「今は IMAP/SMTP だけ」: Gmail・Outlook の OAuth2（p006）は作らない（Gmail はアプリ パスワードなら IMAP/SMTP で使える）。
+- 2026-10-08 ユーザー: 規約の全文の Phase はベータ3 → p007 は WS の外の一括の見直しへ。
 
-## 目標（ユーザーの要件）
+## 結果
 
-1. メーラの app を追加する。
-2. compositor にメールの API を追加する。メーラは受信を compositor に知らせる。
-3. 許可された app は compositor からメールの受信の通知を受け取れる（例: browser が認証のメールの通知を受けて code を自動で入力する）。
-4. backend はまず IMAP4 と SMTP。目標は Gmail と Outlook の backend（OAuth2 の認証を含む）。
+- メーラの app（`userland/desktop/mailer/`: account・folder の一覧、一覧・読む・書く、IMAP4（TLS）・SMTP（STARTTLS）の backend と同期、認証 code の抽出）、compositor のメールの API と app ごとの許可（KL_VERSION 54）、browser の認証 code の自動入力（欄が無ければ clipboard と通知）が main にある。
+- 証拠: QEMU の T1-298 の AAT（needs-person、Q1 が PNG で目視: read-compose の log と受信箱 3 通、p002〜p004）、T1-302（`ZBROWSER MAIL fill length=4 error=0`、p005。欄の PNG は撮れていない）。AAT の apps.mailer.read-compose・sign-in-code（`tests/scenarios/apps/mailer/`）。
 
-## 設計で決めること（p001）
+## 制限・移管
 
-- compositor の API の形: Keiland の system protocol の拡張（WS156 の通知の object と同じ作り、same-uid だけ）。受信の事象に何を載せるか（差出人・件名・本文の一部・認証 code の候補の抽出を誰がするか）。
-- 許可の仕組み: どの app が受信の通知を受け取れるか（利用者が Settings で app ごとに許す、既定は拒否）。秘密（本文・code）の扱いと log に出さないこと。
-- 認証 code の自動入力: browser の側の UI（候補を出して利用者が選ぶか、自動で入れるか）。WS156 の通知との関係。
-- backend: IMAP4（IDLE で push、TLS は OpenSSL の package）、SMTP（submission、STARTTLS）。account と password・token の保存（WS163・WS162 の秘密の保存との整合）。Gmail・Outlook は OAuth2（XOAUTH2）で、browser を使う認可の流れ。
-- メーラの app: 一覧・読む・書く・返信・添付、local の保存の場所（WS170 の「~/Documents/ は cloud backed」との整合）。
-- 外部の package の要否（libetpan などか自前か）と license の監査。
+- Gmail・Outlook の OAuth2（p006）はユーザーの決定で作らない。local の cache・offline、添付の保存と送信、HTML の表示、下書きの保存、ISO-2022-JP・Shift_JIS は範囲の外だった（文字コードの一部は WS177 p016 が足した）。password の平文の仮置きの置き換えは WS177 の backlog。
+- 規約の全文（p007）は WS の外の一括の見直しへ。
 
-## Phase
+## Phase 一覧
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| p000 | **UI の mock（夕方の UAT にあると嬉しい・必須でない）**: メーラの app の外側だけ。account・folder の一覧、メールの一覧、読む画面、書く画面（送信は「backend が無い」）。data は固定の試験 data。API・backend は作らない | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T1-181 の撮影の後、p002〜p005 で実装・cleared。旧: in-progress（q744、P2。実装・host の PNG・build 済み、QEMU は T1 待ち。[phase](phase0…） | — |
-| p001 | 要件と設計（API・許可・backend・app） | cleared（q831、P2、[phase](phase001/phase.md)） | — |
-| p002 | compositor のメールの API と許可（host の試験） | cleared（2026-10-07、T1-298） | p001 |
-| p003 | IMAP4・SMTP の backend | cleared（2026-10-07、T1-298） | p001 |
-| p004 | メーラの app（一覧・読む・書く） | cleared（2026-10-07、T1-298） | p002・p003 |
-| p005 | browser の認証 code の自動入力 | cleared（2026-10-07） | p002・p004 |
-| p006 | Gmail・Outlook（OAuth2） | planning（2026-10-06 夜 ユーザー「今は IMAP/SMTP だけ」: 今回は作らない、ベータ2 から外す） | p003 |
-| p007 | 全文規約の見直し | planning | 上の全部 |
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws169-p000 | UI の mock（account・folder・一覧・読む・書く） | cleared（T1-181 の撮影の後、p002〜p005 で実装） |
+| ws169-p001 | 要件と設計（API・許可・backend・app） | cleared |
+| ws169-p002 | compositor のメールの API と許可 | cleared（T1-298） |
+| ws169-p003 | IMAP4・SMTP の backend | cleared（T1-298） |
+| ws169-p004 | メーラの app（一覧・読む・書く） | cleared（T1-298） |
+| ws169-p005 | browser の認証 code の自動入力 | cleared（T1-302） |
+| ws169-p006 | Gmail・Outlook（OAuth2）（directory なし） | planning のまま取り下げ（ユーザー「今は IMAP/SMTP だけ」） |
+| ws169-p007 | 規約の全文の見直し（directory なし） | 規約の全文は WS の外の一括の見直しへ |
+
+## 記録の所在
+
+phase001 は上の理由で残す。他の Phase の記録と試験は削除する（Q1）。git の commit `fb1f6afee` の `plan/ws169/` にある。AAT と fake-mail-server が使う host 試験（`run-host-browser-mail.sh`・`run-host-mail-backend.sh` 一式）は plan/tools/mail/ へ移す。Queue の履歴は [plan/history](../history/index.md)。

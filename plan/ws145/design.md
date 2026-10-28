@@ -4,7 +4,7 @@
 
 [WS145](ws.md) の単一目標「app が libkeiland に PDF の場所を渡すと network の printer（IPP か LPD）で印刷される。一覧と既定の printer を libkeiland から compositor 経由で取れ、Settings の Printers の頁で IP address・port・protocol を設定できる」の設計。ユーザーの指示（2026-10-04 夜、ws.md に原文）に従う。
 
-第 2 版は初版への敵対的レビュー（[phase001](phase001/phase.md) に要旨）の重大 7・中 11・軽 8 の指摘を、第 3 版は第 2 版への 2 回目のレビューの重大 3・中 12・軽 13 を、第 3.1 版は第 3 版への 3 回目のレビュー（重大なし）の中 9 と主な軽を反映した。番号は拡張の protocol を **version 10**、libkeiland を **KL_VERSION 34** とする（version 9・KL 33 は ws132-p009 の媒体の情報が使った。merge の時に他の WS と重なれば Q1 が詰め直す）。
+第 2 版は初版への敵対的レビュー（fb1f6afee の plan/ws145/phase001/phase.md に要旨）の重大 7・中 11・軽 8 の指摘を、第 3 版は第 2 版への 2 回目のレビューの重大 3・中 12・軽 13 を、第 3.1 版は第 3 版への 3 回目のレビュー（重大なし）の中 9 と主な軽を反映した。番号は拡張の protocol を **version 10**、libkeiland を **KL_VERSION 34** とする（version 9・KL 33 は ws132-p009 の媒体の情報が使った。merge の時に他の WS と重なれば Q1 が詰め直す）。
 
 ## 0. 判断の要点
 
