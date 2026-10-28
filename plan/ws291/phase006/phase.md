@@ -774,3 +774,48 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 - 性能（既定の memory=0 では UCLK 100 MHz、scene-6500 約 45 fps）: 上の SMU の決定が先。CPU 側は案 3 の後半（3b、上の設計）、案 4（小さな transaction
   を呼び手の thread で同期の GPU_COMMAND、上限の時間と hang の時の扱いが条件）、案 5（gpu.c の起床の抑制、design-reviewer を通す）。
 - 今日の P2 の SwitchBot: 13:08:15（7 回目、ユーザーが切っていた）、14:25:10（8）、14:51:09（9）、15:14:09（10）。全部 Debian に戻った。
+
+## q1655（2026-10-28 P2、worktree p2-ws291g、基点 main 76a72c12a）
+
+- 承認: q1653 と同じユーザーの文（自律のループ、Fable に何度でも・自律で聞いてよい）。依頼: 既定（UCLK 固定 off）の bench、案 3b・4・5、夜間の (B) の soak。
+- ユーザーの決定（2026-10-28、Q1 経由、原文）「P2は、負荷に応じて上げ下げさせる形、を取ってください。今夜のsoakは不要です。最短ではないものの、
+  よりよい形に仕上げたいです。」→ (B) の soak はやめ、UCLK は固定せず Linux の DC の手順（DCN2.0 の watermark、SMU の watermark の table、
+  NumOfDisplays、DPM_DCEFCLK、p-state の handshake）に沿って PMFW の DPM に負荷で上げ下げさせる形を実装する。Linux は値と手順の参照だけ。
+  受け入れ（Q1）: 長めの soak（負荷と idle の繰り返し）で SMU の停止 0、display の underflow 0、idle で UCLK が下がり負荷で上がる、scene の数が
+  固定の時と同等。既定は完成して確かめるまで off のまま。設計は design-reviewer（opus）と Fable に通す。
+
+### 既定（UCLK 100 MHz）の基準（18:00、main a59767e3 の kernel・libvulkan、build/ws291/measure/base1）
+
+| run | fps | record / submit ms | fence ms |
+| --- | --- | --- | --- |
+| scene-1 | 434.6 | | 1.70 |
+| scene-1500 | 130.5 | | 6.78 |
+| scene-6500 | 45.78 | | 20.78 |
+| big-1000 | 33.3 | 11.5 / 12.4 | |
+| subs-100 | 46.8 | 6.5 / 14.4 | |
+| subs-1000 | 4.77 | 64.8 / 139.5 | |
+
+### 案 3b（commit cf2118327、libvulkan の commands.c・queue.c・internal.h）
+
+- primary の command buffer の End を、recording（head の Reset・Begin、record、End）が batch の 1/4（256 KiB）以下の時は送らずに end_pending として
+  手元で EXECUTABLE にし、vkQueueSubmit の transaction の QUEUE_SUBMIT の前に並べる（同じ cb は attempt の serial で 1 回）。reply は cb ごとの head・End、
+  最後に submit の順。renderer の側の失敗は Submit で OOM はそのまま、他は VK_ERROR_DEVICE_LOST、cb は INVALID。transaction を 1 batch より大きく
+  する recording は先に単独で送る。pending の cb への Begin は先に同期で送る、vkResetCommandBuffer・pool の reset は捨てる（native は recording の
+  まま、次の head の Reset で戻る）。capacity の待ちで送らなかった時は残す。vkQueueWaitIdle・vkDeviceWaitIdle は変えない（pending は未提出の物）。
+- 実機（18:06、kernel は base、build/ws291/measure/lv3b）: nggshape 14 種 ok、shot 1 体 差 0・6500 体 max 1、hang 回復 ok。bench: subs-1000 4.77 → 6.25
+  （record 64.8 → 9.3 ms）、subs-100 46.8 → 56.2、scene・big は run の揺れの内（scene-6500 41.56 の回は acquire 2.40）。
+- 確かめ: amd64・arm64（config-rpi4）・riscv64（config-visionfive2）の libvulkan warning 0、run-dedicated-host.sh PASS、QEMU Venus の回帰
+  （plan/ws291/tests/venus-reg.sh、build/ws291/venus2）: main の libvulkan と 3b とも forge-guest・fence-guest・wltest（mailbox、recreate-at=100）・
+  mview（mailbox 4 枚）・mview（--draws=each --submits=20）・compositor の VULKAN_ERROR 0 が ok。guest の reboot は QEMU の -no-reboot で emulator が
+  終わる（venus1 の FAIL はこれ）ので、put の後は compositor と client を立て直すだけにした。
+
+### 案 4（未 commit、後回し: build/ws291/case4.patch、sha256 先頭 43ba7cc415bab73f、tree は cf2118327 に戻した）
+
+- amdrdna: runtime_command（GPU_COMMAND）を session の worker の queue（queued、frame と marker の数）が空の時に呼び手の thread で走らせ、走る間は
+  pending に数えて stop・drain が待つ。executor の失敗は EIO（一部が走った frame は session の stream を失う）。capset を 176 byte にし native word
+  （"TANZ"）の flag 2 = 同期の command。libvulkan: その flag と GPU_CAP_NOTIFICATION がある時だけ transaction を GPU_COMMAND で送り、EAGAIN なら
+  今の SUBMIT と WAIT へ。
+- 実機（18:13〜18:33、vmunix-k4 a1… と libvulkan-4、build/ws291/measure/c4）: game mode の bench は subs-1000 6.25 → 9.40（submit 147 → 95 ms）、
+  subs-100 56.2 → 73.1、scene・big は不変、nggshape 14 ok、hang 回復 ok。が window mode の shot が 2 回とも落ちた: mview（FIFO）が keiland-shot の後に
+  vkAcquireNextImageKHR = VK_ERROR_SURFACE_LOST_KHR（errno 24、frames=322）。手で同じ手順でも再現。3b だけの時は shot ok。compositor も同じ
+  libvulkan で sync の道を使う。未解析。errno 24 が fd の上限（EMFILE）なら、案 4 の sync の道で fd を閉じ忘れていないかが最初の疑い。
