@@ -3,7 +3,7 @@
 # ws235-p004 RX・TX の ring（v1 の descriptor）、1 queue・1 vector、net の worker への接続
 
 - 親: [WS235](../ws.md)。
-- 状態: in-progress（2026-10-29 07:1x P1、q1669-i02）。code と build まで、実機は未実施。
+- 状態: in-progress（2026-10-29 07:1x P1、q1669-i02）。DHCP・ping は実機で成立（07:2x、下）、TCP（ssh・転送）は未確かめ。
 - 依存: [p002](../phase002/phase.md)。実機は p003 の link と同じ枠で。
 
 ## 範囲（p001 の設計の段 3）

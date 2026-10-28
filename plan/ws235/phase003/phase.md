@@ -3,7 +3,7 @@
 # ws235-p003 MAC・PHY の初期化と link（firmware 無しから）
 
 - 親: [WS235](../ws.md)。
-- 状態: in-progress（2026-10-29 06:4x P1、q1669-i01）。code と build まで。実機は未実施。
+- 状態: in-progress（2026-10-29 P1、q1669-i01・i02）。2.5G の switch との link は成立（07:2x、下）。10G の link は移設の後。
 - 依存: [p002](../phase002/phase.md)。
 
 ## 範囲

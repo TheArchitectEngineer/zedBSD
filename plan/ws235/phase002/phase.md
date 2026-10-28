@@ -3,7 +3,7 @@
 # ws235-p002 共通の骨格: RTL8125 系の PCI の attach・版の判定・OCP の窓・MAC address・割り込み・net device
 
 - 親: [WS235](../ws.md)。
-- 状態: in-progress（2026-10-29 06:3x P1、q1669-i01）。build まで済み、実機の attach は未実施。
+- 状態: in-progress（2026-10-29 P1、q1669-i01・i02）。build と実機の attach（07:2x、下）まで。cleared の判定は p003・p004 とまとめて Q1 へ。
 - 依存: [p001](../phase001/phase.md)。
 
 ## 範囲
