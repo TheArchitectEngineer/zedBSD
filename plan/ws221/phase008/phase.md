@@ -1,9 +1,9 @@
 <!-- awesome-plan project=zedbsd record=ws221-p008 -->
 # ws221-p008: TCP の輻輳の制御と送りの buffer、相手の MSS、`tcp_device_mss`、Nagle（旧 ws220-p006）
 
-Status: planning（2026-10-28 WS220 p006 から移した。設計は WS220 p001 §4 の案のまま、design-reviewer は未）
+Status: in-progress（2026-10-29 P3 q1664: 下の「結果」。残り: 送り ≥ 940 Mbps、byte の送りの buffer（今は ring の packet の copy のまま）、Nagle、gateway 経由の IPv4 の MSS 1460、IPv6 の path MTU の追従は send_mss を establishment で決めるだけ）
 Parent: [WS221](../ws.md)
-Queue: なし
+Queue: q1664 / q1664-i01（P3）
 依存: WS220 p005（main、cleared）。WS221 p005 はこの Phase の `tcp_device_mss` を使う
 
 ## 由来
@@ -34,6 +34,6 @@ Queue: なし
 - `plan/ws220/tests/`（WS220 の完了の後もその場に残す）: `tcp-model/run.sh`（本物の tcp.c の host の模型、scenario を名前で選ぶ）、`tcp-stream-series.sh`（QEMU と実機の長い転送の時系列）、`stream.py`・`analyze.py`、`config-amd64-tcp.mk`・`config-amd64-tcp-wrap.mk`。`userland/tests/tcp-stream`（塞がる送り手）。
 - 既存の網の回帰: `plan/ws033/tests/tcp-receive-speed.sh`・`tcp-loss-speed.sh`・`lan-hotplug.sh`。
 
-## 結果
+## 結果（2026-10-29 P3 q1664）
 
-まだ無い。
+実装と数値は [ws.md](../ws.md) の「結果」の表。試験: WS220 の `tcp-model/run.sh` PASS（scenario を新しい速さに追従させた: model の writer の room に cwnd、batch の終わりの `tcp_ack_flush`、`--expect-retransmits-losses`、persist 系の bytes 64 MB、rtt-step の段を 2 ms、unresolved の上限を flight 分、window-lost の FR 0:1）、`plan/ws221/tests/qemu-tcp.sh` PASS、VF2 実機の `plan/ws221/tests/vf2-tcp.sh`。

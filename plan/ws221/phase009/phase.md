@@ -1,9 +1,9 @@
 <!-- awesome-plan project=zedbsd record=ws221-p009 -->
 # ws221-p009: TCP の受けの窓（窓の約束、受け側の SWS 回避、window scale、delayed ACK）（旧 ws220-p007）
 
-Status: planning（2026-10-28 WS220 p007 から移した。設計は WS220 p001 §4 の案のまま、design-reviewer は未）
+Status: in-progress（2026-10-29 P3 q1664: 下の「結果」。受けは 948 Mbps。残り: 窓を byte で数える（今は packet の上限を 128 にして 512 byte 以上の segment で約束を守る形）、受け側の SWS 回避の見直し、自分の window scale（shift 0 のまま）、delayed ACK の timer（今は 2 つ目か worker の batch の終わり））
 Parent: [WS221](../ws.md)
-Queue: なし
+Queue: q1664 / q1664-i01（P3）
 依存: p008（輻輳の制御と byte の送りの buffer。受けの queue の上限は packet の pool の class を考慮）
 
 ## 由来
@@ -33,6 +33,6 @@ Queue: なし
 - `plan/ws220/tests/`（WS220 の完了の後もその場に残す）: `tcp-model/run.sh`（本物の tcp.c の host の模型、scenario を名前で選ぶ）、`tcp-stream-series.sh`（QEMU と実機の長い転送の時系列）、`stream.py`・`analyze.py`、`config-amd64-tcp.mk`・`config-amd64-tcp-wrap.mk`。`userland/tests/tcp-stream`（塞がる送り手）。
 - 既存の網の回帰: `plan/ws033/tests/tcp-receive-speed.sh`・`tcp-loss-speed.sh`・`lan-hotplug.sh`。
 
-## 結果
+## 結果（2026-10-29 P3 q1664）
 
-まだ無い。
+実装と数値は [ws.md](../ws.md) の「結果」の表。試験: WS220 の `tcp-model/run.sh` PASS（scenario を新しい速さに追従させた: model の writer の room に cwnd、batch の終わりの `tcp_ack_flush`、`--expect-retransmits-losses`、persist 系の bytes 64 MB、rtt-step の段を 2 ms、unresolved の上限を flight 分、window-lost の FR 0:1）、`plan/ws221/tests/qemu-tcp.sh` PASS、VF2 実機の `plan/ws221/tests/vf2-tcp.sh`。
