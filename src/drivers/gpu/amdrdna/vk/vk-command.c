@@ -121,12 +121,11 @@ amdrdna_vk_command_reset(
 			(void)amdrdna_vk_object_release(record->objects[object]);
 		if (record->regions != NULL)
 			kern_free(record->regions);
-		if (record->push != NULL)
-			kern_free(record->push);
 	}
 
-	/* The array stays for the next recording; the state and the error start over. */
+	/* The arrays stay for the next recording; the state and the error start over. */
 	command->record_count = 0U;
+	command->push_used = 0U;
 	command->state = AMDRDNA_VK_COMMAND_INITIAL;
 	command->error = 0;
 }
@@ -539,10 +538,12 @@ command_destroy(
 
 	command = payload;
 
-	/* The records, the array and the command buffer. */
+	/* The records, the arrays and the command buffer. */
 	amdrdna_vk_command_reset(command);
 	if (command->records != NULL)
 		kern_free(command->records);
+	if (command->push_bytes != NULL)
+		kern_free(command->push_bytes);
 	kern_free(command);
 
 	/* Succeeded: the command buffer is gone. */

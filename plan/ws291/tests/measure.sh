@@ -54,7 +54,8 @@
 #
 # The programs copied in: USB_MVIEW, USB_NGGSHAPE, USB_VKHANG (default build/ws291/usb/bin/...).
 # The environment: ZEDBSD_MAC, ZEDBSD_SUBNET (a /24, as 10.0.30), ZEDBSD_BOOT (the UEFI entry), DEBIAN (user@host),
-# KEY (the zedBSD root key).  A candidate for Master's Tools (the same steps serve other GPUs' boards).
+# KEY (the zedBSD root key), ZEDBSD_ENV (variables set for zedBSD's mview in mview, profile and bench, as LINUX_ENV is
+# for Linux's).  A candidate for Master's Tools (the same steps serve other GPUs' boards).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 
@@ -261,7 +262,7 @@ mview() {
 $WAKE
 rm -f /tmp/mview.log /tmp/mview-scanout.log
 n=\$(wc -l < $SESSION)
-su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
+su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 ${ZEDBSD_ENV:-} /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
 tail -n +\$n $SESSION | grep -E 'KWL SCANOUT' > /tmp/mview-scanout.log
 EOS
 	zget "$ip" "$out" /tmp/mview.log /tmp/mview-scanout.log || return 1
@@ -278,7 +279,7 @@ profile() {
 $WAKE
 rm -f /tmp/mview.log /tmp/kernel.log
 n=\$(dmesg | wc -l)
-su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 VULKAN_ZEDBSD_SUBMIT_TIMING=1 /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
+su kei -c 'env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 VULKAN_ZEDBSD_SUBMIT_TIMING=1 ${ZEDBSD_ENV:-} /bin/mview $*' > /tmp/mview.log 2>&1 < /dev/null
 dmesg | tail -n +\$n | grep 'vk timing' > /tmp/kernel.log
 EOS
 	zget "$ip" "$out" /tmp/mview.log /tmp/kernel.log || return 1

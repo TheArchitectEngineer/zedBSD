@@ -185,7 +185,10 @@ struct amdrdna_vk_execute {
 /*
  * What a command buffer's records have bound so far (the index buffer,
  * its offset and VkIndexType among them), and the pass they are in (its
- * colour target, and its depth target when depth_on).
+ * colour target, and its depth target when depth_on).  The drawn_ fields
+ * are what the buffer's last draw wrote of the fixed state (its pipeline,
+ * viewport, scissor and culling words), good while target_written stays
+ * set (every internal draw, transfer, pass and new buffer clears it).
  */
 struct execute_state {
 	const struct amdrdna_vk_pipeline *pipeline;
@@ -197,6 +200,7 @@ struct execute_state {
 	const struct amdrdna_vk_buffer *buffers[AMDRDNA_VK_VERTEX_BINDINGS_MAX];
 	uint64_t offsets[AMDRDNA_VK_VERTEX_BINDINGS_MAX];
 	uint8_t push[AMDRDNA_VK_PUSH_BYTES];
+	const uint8_t *push_bytes;
 	const struct amdrdna_vk_buffer *index_buffer;
 	uint64_t index_offset;
 	uint32_t index_type;
@@ -208,6 +212,10 @@ struct execute_state {
 	VkRect2D area;
 	const struct amdrdna_vk_pipeline *kernel_pipeline;
 	const struct amdrdna_vk_descriptor_set *kernel_sets[AMDRDNA_VK_SETS_MAX];
+	const struct amdrdna_vk_pipeline *drawn_pipeline;
+	uint32_t drawn_viewport[6];
+	int32_t drawn_scissor[4];
+	uint32_t drawn_culling[AMDRDNA_GFX10_NGG_CULL_USER_SGPRS - AMDRDNA_GFX10_NGG_USER_SGPRS];
 };
 
 /*
@@ -258,6 +266,7 @@ static int execute_kernel_resources(const struct amdrdna_gfx10_program *program,
 static int execute_part(struct amdrdna_vk_execute *execute, uint32_t bytes, uint8_t **cpu, uint64_t *va);
 static int execute_begin_pass(struct amdrdna_vk_session *session, struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_draw(struct amdrdna_vk_execute *execute, struct execute_state *state, const struct amdrdna_vk_record *record);
+static int execute_draw_end(struct amdrdna_vk_execute *execute, const struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_draw_call(struct amdrdna_vk_execute *execute, const struct execute_state *state, const struct amdrdna_vk_record *record);
 static int execute_pass_view(const struct amdrdna_vk_framebuffer *framebuffer, uint32_t attachment, const struct amdrdna_vk_view **view);
 static int execute_table(struct amdrdna_vk_execute *execute, const struct amdrdna_gfx10_program *program, uint8_t **cpu, uint64_t *va);
@@ -312,6 +321,9 @@ amdrdna_vk_execute(
 	state = kern_calloc(1U, sizeof(*state));
 	if (state == NULL)
 		return ENOMEM;
+
+	/* The push constant records' bytes. */
+	state->push_bytes = command->push_bytes;
 
 	/* The queue of the command buffer's family: a compute queue for the compute family. */
 	pool = command->pool;
@@ -955,7 +967,7 @@ execute_bind(
 		state->index_type = record->values[0];
 		break;
 	case GPU_OP_CMD_PUSH_CONSTANTS:
-		kern_memcpy(state->push + record->first, record->push, record->count);
+		kern_memcpy(state->push + record->first, state->push_bytes + record->push_at, record->count);
 		break;
 	default:
 		break;
@@ -1310,7 +1322,6 @@ execute_draw(
 	struct amdrdna_vk_blend blend;
 	const uint32_t *viewport;
 	const VkRect2D *scissor;
-	uint32_t culling[AMDRDNA_GFX10_NGG_CULL_USER_SGPRS - AMDRDNA_GFX10_NGG_USER_SGPRS];
 	uint8_t *vertex_table;
 	uint8_t *fragment_table;
 	uint64_t vertex_va;
@@ -1372,6 +1383,24 @@ execute_draw(
 	if (x1 <= x0 || y1 <= y0)
 		return 0;
 
+	/* The viewport: dynamic or the pipeline's. */
+	viewport = pipeline->viewport;
+	if (pipeline->dynamic_viewport != 0U && state->viewport_set)
+		viewport = state->viewport;
+
+	/*
+	 * The draw after another of the same pipeline, viewport and scissor in
+	 * this buffer writes only its tables and first vertex and instance:
+	 * the rest the other draw wrote stays.
+	 */
+	if (state->target_written && state->drawn_pipeline == pipeline &&
+	    kern_memcmp(state->drawn_viewport, viewport, sizeof(state->drawn_viewport)) == 0 &&
+	    state->drawn_scissor[0] == x0 && state->drawn_scissor[1] == y0 && state->drawn_scissor[2] == x1 && state->drawn_scissor[3] == y1) {
+		amdrdna_vk_state_program_data(&execute->pm4, &pipeline->vertex, vertex_va, fragment_va, base_vertex, first_instance, instance_mask,
+					      state->drawn_culling);
+		return execute_draw_end(execute, state, record);
+	}
+
 	/* The targets, once in a buffer: the colour target, and the depth unit's surface or none. */
 	if (!state->target_written) {
 		error = amdrdna_vk_state_target(&execute->pm4, &state->target);
@@ -1384,10 +1413,7 @@ execute_draw(
 		state->target_written = true;
 	}
 
-	/* The viewport (dynamic or the pipeline's) and the scissor. */
-	viewport = pipeline->viewport;
-	if (pipeline->dynamic_viewport != 0U && state->viewport_set)
-		viewport = state->viewport;
+	/* The viewport and the scissor. */
 	amdrdna_vk_state_viewport(&execute->pm4, viewport);
 	amdrdna_vk_state_guard_band(&execute->pm4, viewport, pipeline->topology);
 	amdrdna_vk_state_scissor(&execute->pm4, (uint32_t)x0, (uint32_t)y0, (uint32_t)x1, (uint32_t)y1);
@@ -1410,10 +1436,33 @@ execute_draw(
 	amdrdna_vk_state_depth(&execute->pm4, state->depth_on && pipeline->depth_test != 0U, state->depth_on && pipeline->depth_write != 0U,
 			       pipeline->depth_compare);
 
-	/* The programs with their tables, the first vertex and instance, the culling of a primitive shader that culls, and the draw. */
-	amdrdna_vk_state_culling(viewport, pipeline->topology, pipeline->cull_mode, pipeline->front_face, culling);
+	/* The programs with their tables, the first vertex and instance, the culling of a primitive shader that culls. */
+	amdrdna_vk_state_culling(viewport, pipeline->topology, pipeline->cull_mode, pipeline->front_face, state->drawn_culling);
 	amdrdna_vk_state_programs(&execute->pm4, &pipeline->vertex, &pipeline->fragment, vertex_va, fragment_va, base_vertex, first_instance,
-				  instance_mask, culling);
+				  instance_mask, state->drawn_culling);
+
+	/* What the next draw of the same may leave as it is. */
+	state->drawn_pipeline = pipeline;
+	kern_memcpy(state->drawn_viewport, viewport, sizeof(state->drawn_viewport));
+	state->drawn_scissor[0] = x0;
+	state->drawn_scissor[1] = y0;
+	state->drawn_scissor[2] = x1;
+	state->drawn_scissor[3] = y1;
+
+	/* The draw. */
+	return execute_draw_end(execute, state, record);
+}
+
+/* Writes a draw's packets after its state and counts it. */
+static int
+execute_draw_end(
+	struct amdrdna_vk_execute *execute,
+	const struct execute_state *state,
+	const struct amdrdna_vk_record *record)
+{
+	int error;
+
+	/* The draw. */
 	error = execute_draw_call(execute, state, record);
 	if (error != 0)
 		return error;
