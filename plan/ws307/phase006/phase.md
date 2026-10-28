@@ -3,7 +3,7 @@
 # ws307-p006 kernel の 4096 byte の sector（FAT・UFS・swap）
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §5.9（U17「WS307 で 4096 byte に対応」）。Queue: q1665 / q1665-i03（担当 P4、2026-10-29、worktree p4-ws307g）。
-- Status: in-progress（設計と段 1・2 に着手）
+- Status: in-progress（段 1〜4 を実装、FAT と swap は QEMU の 4096 の NVMe で受け入れ。残り: 段 5（mkfs の UFS の fragment 4096）と UFS の 4096 の試験、USB の 4096、p008 の 4096 の段）
 - 承認: 2026-10-29 ユーザー「P4にWS307」（Q1 の中継）。HAL の API には触れない。
 - 一緒に行う物: p005 の残り（mkfs の native UFS の fragment 4096 の profile）、p008 の 4096 の段（loader の FAT の探索）。
 
@@ -32,3 +32,18 @@
 4. swap の file の extent と format の予約。
 5. mkfs の native UFS の fragment 4096 の profile（p005 の残り）。
 6. QEMU の 4096 の disk の試験（1 本の script）と 512 の回帰。p008 の 4096 の段へ。
+
+## 結果（2026-10-29、P4、q1665-i03）
+
+- 段 1（commit b8d8ae676）: `src/kern/disk.c` に `disk_sector_transfer`・`disk_sector_supported`、`include/kern/disk.h` に `DISK_SECTOR_SIZE`。新しい file にせず disk.c に置いた（各 platform の kernel の source の一覧（sparcv9 を含む）に触れないため）。
+- 段 2（commit 0bebb4b73）: FAT。probe・identify は `disk_sector_supported`、BPB の byte／sector に 2048・4096（`fat_sector_scale`）、BPB の sector が `d_block_size` より小さい volume は拒む、volume の大きさは disk の 512 byte の sector の数（`fat_disk_sectors`）と比べる、`fat_sector_read`・`fat_sector_write`・`fat_sectors_write`・identify の読みを sector の口に、0 埋めの線の揃えは 4096 の disk では run の始まり（partition は block に揃うので同じ）。loop の map は 512 の disk だけのまま。
+- 段 3（commit 0bebb4b73）: UFS。identify・superblock・extent の拒みを `disk_sector_supported` に、`fsize < d_block_size` の volume は EOPNOTSUPP、disk の大きさの比較は `ufs_disk_sectors`、`observed_disk_read`・journal の読み書き・`write_sectors`・j3 の書き込みと home への写し（direct）・replay を sector の口に、group の view の読みは揃った run を block に換える（`ufs_disk_read_view`）、j3 の home への写しの guard は block に換えた範囲（`ufs_sector_blocks`）。
+- 段 4（commit ba7daed55）: swap の file の源は FAT・UFS の extent（512 の単位）を device の block に換えて持つ（block に揃わなければ EINVAL）、page の I/O は block の単位。`file.c` の format の予約も同じ（claim は device の block）。
+- NVMe（この試験に要った）: `include/drivers/pci/pci-nvme-protocol.h` の namespace の検査が LBA 512 だけを受けていた（reason 0x40）。512〜4096（shift 9〜12）を受ける。driver の他の所は `namespace_block_size` で一般。`plan/ws299/tests/qemu-nvme-shapes.sh` の comment「the driver takes only 512-byte blocks」は古くなる（ws299 の物なので Q1 に）。
+
+## 確かめ（2026-10-29、P4）
+
+- build: `make -j48 ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws307-main build/ws307-main/vmunix` rc 0、`warning:`・`error:` 0（段ごとに 4 回）。SSH の guest の image（`sh plan/tools/guest/build-ssh-image.sh build/ws307-ssh`）rc 0、warning は make の jobserver の 1 行だけ。
+- QEMU（KVM、OVMF、`sh plan/ws307/tests/p006-4k.sh build/ws307-ssh/hdd-image.img`、新規。2 台目に `-device nvme,logical_block_size=4096,physical_block_size=4096` の 1 GiB）: `p006-4k: PASS build/ws307-test/p006-4k.uYuD9a`。guest で `diskpart init`（ESP 512 MiB・swap 128 MiB、4096 の sector）、`mkfs -t fat32`、mount、3 MB の乱数の file と 300 file の directory、umount・再 mount で cksum が同じ、FAT の上に swap file（dd・`mkswap`・`swapon`・`swapoff`）、swap の partition（`mkswap /dev/nvme1n1p2`・`swapon`・`swapoff`）。host の mtools で同じ volume を読み、file の cksum が guest と同じ（`HOST CKSUM 3150429007 3182592`）。
+- 512 の回帰: 同じ image の `plan/tools/boot-test.sh`（uefi-nvme）login prompt PASS（`build/ws307-test/p006-boot.ny8kCK/login.png`）。上の試験も 512 の NVMe の UFS の root から起動し SSH で動いた。
+- 未実施: UFS の 4096（mkfs の native UFS の fragment 4096 の profile が要る、段 5）、USB（`usb-storage` の 4096）、host の `fsck.fat`（host に無い）、FAT32 の 4Kn の ESP からの起動（p008 の 4096 の段）。

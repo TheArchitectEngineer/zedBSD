@@ -924,7 +924,11 @@ drv_nvme_identify_namespace_validate(const uint8_t *identify, size_t size,
 		block_shift = format[2U];
 		if (metadata_size != 0U || (identify[26U] & 0x10U) != 0U)
 			reasons |= DRV_NVME_ID_NS_METADATA;
-		if (block_shift != 9U)
+		/*
+		 * Logical blocks of 512 bytes to a page (4096): the sizes the
+		 * disk layer and the filesystems above it read.
+		 */
+		if (block_shift < 9U || block_shift > 12U)
 			reasons |= DRV_NVME_ID_NS_BLOCK_SIZE;
 	}
 	if (profile != NULL) {
