@@ -119,6 +119,16 @@ struct socket {
 	unsigned keepalive;
 	unsigned read_shutdown;
 	unsigned write_shutdown;
+	/*
+	 * Set, and never cleared, once poll or select has looked at the
+	 * socket.  The frequent readiness changes of a socket no one polls
+	 * (each segment queued, each acknowledgement that frees room) then
+	 * skip the system-wide poll channel, which would wake every polling
+	 * thread of the system to scan its descriptors again.  Written and
+	 * read atomically, with a full fence on both sides (socket_poll_watch,
+	 * socket_poll_notify).
+	 */
+	unsigned polled;
 };
 
 #define SOCKET_IO_NONBLOCK 0x0001U
@@ -161,6 +171,8 @@ void socket_close_endpoint(struct socket *socket);
 void socket_release(struct socket *socket);
 int socket_enqueue_packet(struct socket *socket, struct packet_buf *packet);
 int socket_enqueue_stream(struct socket *socket, struct packet_buf *packet);
+void socket_poll_watch(struct socket *socket);
+void socket_poll_notify(struct socket *socket);
 int socket_enqueue_packet_wait(struct socket *socket, struct packet_buf *packet,
 			       int flags, uint64_t timeout_ticks);
 int socket_requeue_packet_front(struct socket *socket,

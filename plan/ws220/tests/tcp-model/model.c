@@ -30,7 +30,8 @@
  *             [--reader-pause-at-ms T --reader-pause-ms D]
  *             [--no-route-at-ms T --no-route-ms D]
  *             [--expect-first-srtt-us LOW:HIGH] [--expect-first-rttvar-us LOW:HIGH]
- *             [--expect-srtt-max-us N] [--expect-retransmits-max N] [--expect-stall-rto]
+ *             [--expect-srtt-max-us N] [--expect-retransmits-max N] [--expect-retransmits-losses]
+ *             [--expect-stall-rto]
  *             [--drop-ab LIST] [--expect-fast-retransmits LOW:HIGH] [--expect-timeouts-max N]
  *             [--close-at-ms T] [--maxunacktime S] [--expect-probe-gap-s LOW:HIGH]
  *             [--quiet]
@@ -89,7 +90,8 @@
  * (ENETUNREACH) for D; the writer then waits 100 ms and writes the same
  * bytes again, as an application would.  The --expect-* options check A's
  * first round-trip sample (RFC 6298 section 2.2), its largest smoothed
- * round trip and its resends at the end; --expect-stall-rto checks that
+ * round trip and its resends at the end (--expect-retransmits-losses: no
+ * more resends than data frames the link lost, ws221-p008); --expect-stall-rto checks that
  * the longest stall is within what the timeouts explain: the doublings of
  * one RTO up to the most the backoff reached (e), (2^(e+1) - 1) RTO + 20 ms
  * (one loss with no backoff: one RTO; a resend lost too, or a loss before
@@ -215,6 +217,7 @@ struct model_settings {
 	uint64_t expect_srtt_max;
 	uint64_t expect_retransmits_max;
 	int expect_retransmits;
+	int expect_retransmits_losses;
 	int expect_stall_rto;
 	uint64_t drop_ab[16];
 	unsigned drop_ab_count;
@@ -609,6 +612,13 @@ main(
 		return 1;
 	}
 
+	/* No resend without a loss, when the scenario asks (each lost data frame is resent once). */
+	if (settings.expect_retransmits_losses && a->counters.retransmit_segments > links[0].lost) {
+		printf("check: FAIL: A resent %llu segments, more than the %llu frames the link lost\n",
+		    (unsigned long long)a->counters.retransmit_segments, (unsigned long long)links[0].lost);
+		return 1;
+	}
+
 	/* A's SRTT at the end, when the scenario says where it should lie. */
 	if (settings.expect_srtt_high != 0) {
 		printf("rtt: srtt_us=%u rttvar_us=%u rto_ms=%llu\n", a->srtt_us, a->rttvar_us,
@@ -832,6 +842,7 @@ parse_settings(
 	settings.expect_srtt_max = 0;
 	settings.expect_retransmits_max = 0;
 	settings.expect_retransmits = 0;
+	settings.expect_retransmits_losses = 0;
 	settings.expect_stall_rto = 0;
 	settings.drop_ab_count = 0;
 	settings.expect_fast_low = 0;
@@ -869,6 +880,10 @@ parse_settings(
 		}
 		if (strcmp(argv[index], "--expect-stall-rto") == 0) {
 			settings.expect_stall_rto = 1;
+			continue;
+		}
+		if (strcmp(argv[index], "--expect-retransmits-losses") == 0) {
+			settings.expect_retransmits_losses = 1;
 			continue;
 		}
 		if (strcmp(argv[index], "--lose-first-syn") == 0) {
@@ -1131,10 +1146,12 @@ link_advance(
 	struct model_frame *frame;
 	struct packet_buf *packet;
 	uint64_t end_ns;
+	int arrived;
 	int purpose;
 	int error;
 
 	/* Each frame whose transmission has ended leaves the device. */
+	arrived = 0;
 	while (link->queue_count != 0 && link->transmit_end_ns <= now_ns) {
 		packet = link->queue[link->queue_first];
 		end_ns = link->transmit_end_ns;
@@ -1187,7 +1204,16 @@ link_advance(
 			link->receive_no_packet++;
 		free(frame);
 		run_applications();
+		arrived = 1;
 	}
+
+	/*
+	 * The network worker has taken what had arrived: the acknowledgements
+	 * TCP delayed for the end of that batch go now (ws221-p009), as the
+	 * kernel's worker sends them after its input.
+	 */
+	if (arrived)
+		tcp_ack_flush();
 }
 
 /* Puts the --peer-window window in a segment from B, with its checksum made again. */
@@ -1412,11 +1438,17 @@ run_writer(
 			return;
 		}
 
-		/* A refusal with room left is a shortage of packets: the kernel's writer sleeps. */
+		/*
+		 * A refusal with room left is a shortage of packets: the kernel's
+		 * writer sleeps.  The room is the peer's window (one segment when
+		 * it is closed) and the congestion window, the smaller (ws221-p008).
+		 */
 		tcp = tcp_of(sender);
 		window = tcp->peer_window;
 		if (window == 0)
-			window = 1024U;
+			window = tcp->send_mss != 0 ? tcp->send_mss : 536U;
+		if (tcp->cwnd != 0 && tcp->cwnd < window)
+			window = tcp->cwnd;
 		in_flight = tcp->send_next - tcp->send_unacknowledged;
 		if (tcp->send_count < TCP_SEND_QUEUE_MAX && (in_flight == 0 || in_flight + (uint32_t)length <= window))
 			send_sleep_until_ns = now_ns + MODEL_SEND_RETRY_NS;

@@ -618,6 +618,9 @@ network_worker(
 			work++;
 		}
 
+		/* The acknowledgements TCP delayed for the end of the batch. */
+		tcp_ack_flush();
+
 		/* Yields between full budgets while work remains. */
 		if (work >= NET_WORK_BUDGET && work_pending()) {
 			sched_yield();
