@@ -4,6 +4,16 @@
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §4.1（レビュー 1）・§4.2・§11 の (1)、J2。Queue: q1662-i04（P1）。
 - 状態: in-progress（2026-10-29 P1。queue の lock は済み、fence 付きの task は未着手）。
+- 再開点（2026-10-29 04:54 P1 q1662-i05、branch `agent/p1-ws309e`、ラップアップ）: source の変更は無い。下の「残り」1 から。
+  - build の手順（確かめた）: worktree の `build/` に main の `build/` の `NoctLang`・`distfiles`・`llvm`・`llvm-build`・`llvm-source`・`sources`・`ws035-sq-venus` の symlink を作り、
+    `make ZEDBSD_CONFIG=plan/ws309/tests/config-amd64-p1.mk build/amd64/bin/wayland -j16`（sysroot は make が作る。基点 11781c470 で exit 0・warning 0）。
+  - 調べた事（実装の案、未実装）: task の完了は FIFO の順に刈るので、main は `compose->task_done`（終わった task の最後の番号）を持ち、image に `task`（その遷移の task の番号、0 は無し）を置けば
+    「`task == 0 || task <= task_done` なら ready」で済む（TASK_DONE で list を歩かない）。render は step の初め（park の外）に受けた task を全て queue の lock の下で fence を付けて submit
+    （answer の list より先に受けた task が job より先の submission order になり、barrier の scope は submission order で queue の中の後の submit に及ぶ）、BLOCKED で task が in flight なら
+    最古の task の fence を KWL_RENDER_POLL_NS 待って WORKED（render_main が cond で眠り込まない）。ops に `submit_task`・`wait_task` を足す（compose.c:1128 の ops の組み立て）。
+    pending の image を外す所: draw-list・cursor box・cursor plane の copy・frame の host の copy の list（shm.c の `list->copies`、`compose->host_images`）。
+    image の破棄が task の in flight と重なる時（shm.c:198 の quiesce の前）の扱いは p009 の遅らせた破棄までは quiesce に頼る（要確認: quiesce が task の fence を覆うか）。
+  - 前の P1 の未実施（まだ未実施）: p008 の queue lock の後の arm64・riscv64 の build、Linux/FreeBSD の build（kl_backend_options に field を足した分）。
 - 依存: p002。
 
 ## 済み（6eab69097）
