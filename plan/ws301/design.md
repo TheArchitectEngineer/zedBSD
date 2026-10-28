@@ -2,15 +2,15 @@
 
 # WS301 設計: CPU の性能と電力の枠組み（DVFS と P-core/E-core の相対の性能）
 
-- 版: **第 3 版の改訂 2**（2026-10-29 P5、q1666-i03。改訂 2 は [design-v3-review.md](design-v3-review.md) の B1・M1〜M12 を反映: CPUID.16H を計算に使わず起動の時に測る、efficient より下にしない、周期の読みで CPU を起こさない、mutex を持って待たない、全 domain の設定は千分率と fields、起動の時は enable しない、Phase の依存。改訂 1 は Q301-2・Q301-8 の答えで、性能の制御を HAL でなく x86 の driver に移した。§0・§3・§4.1・§4.2・§4.7・§4.9・§5・§7・§9 を直した）。第 1 版 → [design-review.md](design-review.md) → 第 2 版（改訂の節の重ね）→ ユーザーの回答（Q301-3・4・5・7）と 5330 の Debian の読み（§2.3）→ この版。
+- 版: **第 3 版の改訂 3**（2026-10-29 P5、q1666-i04。改訂 3 は Q301-1 の答え（HAL を変えない）と [design-v3-review.md](design-v3-review.md) の minor m1〜m17 を反映し、§4.10 の lock の順を WS303 第 5 版に合わせた。行き先は §12。改訂 2 は [design-v3-review.md](design-v3-review.md) の B1・M1〜M12 を反映: CPUID.16H を計算に使わず起動の時に測る、efficient より下にしない、周期の読みで CPU を起こさない、mutex を持って待たない、全 domain の設定は千分率と fields、起動の時は enable しない、Phase の依存。改訂 1 は Q301-2・Q301-8 の答えで、性能の制御を HAL でなく x86 の driver に移した。§0・§3・§4.1・§4.2・§4.7・§4.9・§5・§7・§9 を直した）。第 1 版 → [design-review.md](design-review.md) → 第 2 版（改訂の節の重ね）→ ユーザーの回答（Q301-3・4・5・7）と 5330 の Debian の読み（§2.3）→ この版。
   第 2 版までの「改訂の節を本文の上に重ねる」形をやめ、**この版は一つの本文**にまとめた（前の版は git の履歴）。第 2 版の R1〜R12 は本文に入れ、どこに入ったかを §11 に残す。第 3 版の review は [design-v3-review.md](design-v3-review.md)。
-- 基点: worktree `p5-design-c`（main d94ceac00）。code は書いていない。**推しは HAL を変えない**（§4.2）。前の HAL の差分の案 [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff)（第 3 版、適用しない）は選ばなかった案 C として残す。ユーザー向けの説明は [hal-review.md](hal-review.md)。
+- 基点: worktree `p5-design-d`（main 68ee65381。引用の source は改訂 2 の基点 d94ceac00 から変わっていない、`git diff --stat` で確かめた）。code は書いていない。**HAL を変えない**（§4.2、Q301-1 の答え）。前の HAL の差分の案 [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff)（第 3 版、適用しない）は選ばなかった案 C として残す。ユーザー向けの説明は [hal-review.md](hal-review.md)。
 
 ## 0. ユーザーの決定（原文）と解釈
 
 | 日付 | 原文 | 解釈（P5） |
 | --- | --- | --- |
-| 2026-10-27 | ws.md の 5 つの要求（ステップ・群・設定・取得・最速 = 100 の相対の性能） | 到達目標。ws.md の「単一の到達目標」 |
+| 2026-10-27 | 「CPUの省電力機能のドライバフレームワークを追加（WSを立てて検討）<br>- コアごとのDVFSのステップ(設定可能な値)を取得する機能<br>- どのコア群が電圧や周波数のを共有しているかのグルーピングも取得できる機能<br>- コアごとのDVFSの状態を設定する機能<br>- コアごとのDVFSの状態を取得する機能<br>- 一番速いコアを100としたときのコアごとの性能を取得するP-core/E-core機能」（ws.md の出典） | 到達目標。ws.md の「単一の到達目標」 |
 | 2026-10-27 09:39（クリック、ws.md） | 「UAPI は /dev/system、設定は domain ごとの min・max・desired・EPP、設定できるのは root だけ、HAL の差分の案を作る（承認は差分ごと）。対象はまず amd64（5330 の HWP）、arm64・riscv64 は枠だけ。fan は別の WS（WS303）。」（click の要約） | UAPI の置き場所は下の 2026-10-29 で置き換わる。他は残る |
 | 2026-10-29（Q1 の中継） | 「CPUのスピードは/dev/systemと言ってしまいましたが、/dev/thermalに変更してください。」 | UAPI は WS303 の `/dev/thermal`（group 'T'、`include/uapi/thermal.h`）。`/dev/system` の ioctl と事象の class は作らない |
 | 2026-10-29 Q303-11（WS303 の問い） | 「ストラテジーはかなり抽象化されたものとして、トータルの「performance or balanced or power save or manual」と、マニュアルなら実行速度、騒音、細粒度パワーゲートの3項目を0-100で設定可能に。具体的なプラットフォームへのマッピングはドライバが決める。」 | WS301 は strategy の受け手。strategy から HWP の要求への対応は WS301 の x86 の provider が決める（§4.4） |
@@ -20,8 +20,9 @@
 | 2026-10-29 Q301-7 | 「持たせない (推し)」（Q1 の注: 利用者が選ぶのは WS303 の strategy だけ、CPU ごとの直の値は root の診断用だけ） | WS301 は自分の policy の名前と、policy を選ぶ起動の parameter を持たない（`cpuperf=off`・`cpuperf.hwp=off` は policy でなく、止める・試験の道を選ぶ診断の switch として持つ。第 3 版の review の「改訂 1 の食い違い」への答え）。domain ごとの min・max・desired・EPP の直の設定は root の診断の口として残す（2026-10-27 の決定の「設定」を満たす）。strategy との関係は §4.5 |
 | 2026-10-29 Q301-2（Q1 が firmware の値の誤りを伝えて聞き直した。前の答え「firmware の Nominal (推し)」を置き換える） | 「とりあえず推しにしますが、あとでマッピングを変えられるインタフェースにします。」 | 既定の基準は最大の周波数の比（5330 は E = 75）。基準（相対の性能への写し方）は後で替えられる口にする: provider が出せる基準の一覧を持ち、root が選ぶ（§4.7） |
 | 2026-10-29 Q301-8 | 「P-stateを操作しますが、HALではなくドライバでできるはずです。」 | HWP の無い CPU も P-state を操作する（§4.9）。HAL の差分を増やさず、x86 の driver が CPUID・MSR を自分で扱う。同じ理由で、HWP・HFI・topology も driver で扱い、HAL の追加をやめる案を推しにした（§4.2） |
+| 2026-10-29 Q301-1（Q1 が MSR の例外と Linux の rdmsr_safe を説明して聞き直した） | 「HAL を変えず確かめで守る (推し)」 | HAL は変えない。driver の確かめ（CPUID の bit・allow list・hypervisor では動かない・既定 n）で想定の外れを避け、外れた時は kernel が止まる（有効にした機械だけ）。#GP の安全網は要る時に別の差分で（§4.2） |
 
-未決: Q301-1（HAL を変えない推しでよいか、[hal-review.md](hal-review.md)）。§9 に推しつきで置く。
+未決は無い（WS303 の Q303-17・18 は WS303 の問い、この設計は推し A で書く）。
 
 ## 1. 今の振る舞い（code の事実）
 
@@ -31,7 +32,7 @@
   `prekern_amd64_smp_init`（`src/hal/amd64/smp.c:43〜95`）は BSP を 0、他を MADT の順に密な番号にする。CPUID 1FH/0BH は console の lock の x2APIC の ID だけ（`bsp-pcat/cons.c:580〜616`）。
 - sched: thread は CPU に固定（`sched_set_cpu` は走っていない thread だけ、`src/kern/sched.c:1658〜1668`、呼び手は 0）。
 - ACPI: `_OSC`・`_PDC` を呼ぶ code は無い。そのため 5330 の CPU の SSDT は `_PSS`・`_PSD`・`_CPC` を `Load` しない（§2.1）。
-- 熱: `hw.thermal`（`src/drivers/acpi/acpi-thermal.c`）。熱の上限の口は無い。`/dev/thermal` は WS303 p003 が作る（今は無い）。
+- 熱: `hw.thermal`（`src/drivers/acpi/acpi-thermal.c`）。熱の上限の口は無い。`/dev/thermal` は WS303 p003a が作る（今は無い）。
 
 ## 2. 調べた事実
 
@@ -69,17 +70,18 @@
 | 項目 | 値 | 読み |
 | --- | --- | --- |
 | CPUID.01H:ECX[31] | 0（全 CPU） | hypervisor 無し |
-| CPUID.06H:EAX | 0x00DF8FF7（全 CPU） | HWP・通知・window・EPP・package の要求・Highest の変化・PECI の上書き・HFI・idle の兄弟の無視・HWP_CTL・Thread Director が有る |
+| CPUID.06H:EAX | 0x00DF8FF7（全 CPU） | HWP・通知・window・EPP・package の要求・Highest の変化・PECI の上書き・Flexible HWP（bit 17）・REQUEST の fast access（bit 18）・HFI・idle の兄弟の無視・HWP_CTL・Thread Director が有る（bit 16〜23 = 0xDF、SDM Vol 1 Table 21-16） |
 | CPUID.06H:ECX | 0x409 | APERF/MPERF、EPB、Thread Director の class の数 4（[15:8]） |
 | CPUID.06H:EDX | [7:0] = 3、[11:8] = 0、[31:16] = 0,0,1,1,2,2,2,2,3,3,3,3（CPU 0〜11） | HFI は性能と効率、1 page、**行は P-core の SMT の兄弟で 1 つ、E-core の 4 つ組（CPU 4〜7、8〜11）で 1 つ** |
 | CPUID.1AH:EAX | CPU 0〜3 = 0x40000001、4〜11 = 0x20000001 | P-core 2（SMT 4 thread）、E-core 8 |
 | CPUID.16H | P-core: 2500・4400・100、E-core: 2500・3300・100（MHz） | 最大の周波数が core の種類ごとに違う値で出る |
 | CPUID.1FH | level 1（SMT、shift 1）、level 2（core、shift 6）、sub-leaf 2 は無効 | **module の level は無い**。x2APIC ID は P 0・1・8・9、E 0x10〜0x1E の偶数 |
-| Linux の topology | `cluster_cpus` = 0-1、2-3、4-7、8-11 | Linux は module を L2 の共有（CPUID.04H）から作る。zedBSD も CPUID.04H を使う（§4.1、04H の値そのものは未読） |
+| Linux の topology | `cluster_cpus` = 0-1、2-3、4-7、8-11 | 観測できたのは組と、`cluster_id` が組の先頭の x2APIC ID（0・8・16・24）である事だけ。Linux が L2 の共有（CPUID.04H）から作るというのは**推測**（黒箱の観測からは言えない）。zedBSD は CPUID.04H を使う（§4.1、04H の値そのものは未読） |
 | 0x770 PM_ENABLE | 1（全 CPU） | Linux が enable した（dmesg「intel_pstate: HWP enabled」）。firmware の状態は分からない |
 | 0x771 CAPABILITIES | P: 0x01141538（Highest 56・Guaranteed 21・Efficient 20・Lowest 1）、E: 0x010F0C21（33・12・15・1） | |
-| 0x774 REQUEST | P: 0x3806（Min 6・Max 56・Desired 0・EPP 0）、E: 0x2104（4・33・0・0） | Linux の今の要求（EPP 0 は platform_profile performance と EPP「performance」） |
-| 0x772 REQUEST_PKG／0x776 HWP_CTL | 0x8000FF01／0 | HWP_CTL = 0・bit 42 = 0 → 論理 CPU の要求だけが効く |
+| 0x774 REQUEST | P: 0x3806（Min 6・Max 56・Desired 0・EPP 0）、E: 0x2104（4・33・0・0） | Linux の今の要求（EPP 0）。この記録に `platform_profile` は無い。WS303 の 5330 の読み（同じ日の 02:42、同じ起動かは未確認）では `performance` |
+| 0x772 REQUEST_PKG／0x776 HWP_CTL | 0x8000FF01／0 | HWP_CTL = 0・bit 42 = 0 → 論理 CPU の要求だけが効く（どちらも Linux が動いた後の値で、firmware の値ではない） |
+| 0x773 HWP_INTERRUPT／0x775 PECI_REQUEST_INFO | 5（全 CPU）／未読 | 5 = bit 0（guaranteed の変化）と bit 2（excursion to minimum）の割り込みを Linux が入れた値。0x775 は読んでいない |
 | 0x777 STATUS／0x1B0 EPB | 0／0 | |
 | 0xCE PLATFORM_INFO | 0x0804043DF0811900 | 最大の非 turbo 25（2500 MHz）、最小 4 |
 | MPERF の rate | 2494 MHz | TSC（dmesg 2496 MHz）と同じ。基準は TSC（第 2 版 R9 を確かめた） |
@@ -87,7 +89,7 @@
 | `acpi_cppc`（Linux が `_OSC` の後に読んだ `_CPC`） | P: highest 56・nominal_perf 20・nominal_freq 1600・reference_perf 31、E: 33・12・1600・25 | nominal_freq は両方 1600 で E-core に当たらない（§2.1）。reference_perf × MHz/単位 ≒ 2500（P 31 × 80.6、E 25 × 100）は合う |
 | HFI の MSR 0x17D0・0x17D1 | 0・0 | Linux 6.19 はこの機械で HFI を有効にしていない。**HFI の表の値は読めていない**（有効にするのは MSR の書きで、許されていない） |
 | 0x1A2 TEMPERATURE_TARGET | 0x80640000 | **TjMax 100 °C**（WS303 にも効く: ACPI の TCPU の `_CRT` 110 °C より下で CPU が自分で絞る） |
-| 0x610 PKG_POWER_LIMIT／0x614 | PL1 25 W・PL2 55 W／TDP 15 W（単位 1/8 W） | Dell の thermal mode が performance の時の値（WS303 p004 で他の mode と比べる候補） |
+| 0x610 PKG_POWER_LIMIT／0x614 | PL1 25 W・PL2 55 W／TDP 15 W（単位 1/8 W） | 読んだ時の Dell の thermal mode はこの記録に無い（未確認。WS303 の読みが performance）。WS303 p004 で mode ごとに比べる候補 |
 
 E-core の 4 つ組が clock を共有するかは、書かない読みでは決められない（同じ要求の下では共有しても同じ周波数になる）。HFI の行と L2 が 4 つ組で 1 つなのは共有を示唆するが、証拠ではない（未確認）。
 
@@ -95,10 +97,10 @@ E-core の 4 つ組が clock を共有するかは、書かない読みでは決
 
 | 層 | 責務 | 持たない物 |
 | --- | --- | --- |
-| HAL | **変えない**（推し、Q301-1）。既存の `hal_cpu_notify`（`include/hal/hal.h:170`）で相手の CPU を起こし、kernel の `kernel_cpu_notify_handler`（`src/kern/clock.c:183`）がその CPU の上で枠組みを呼ぶ | CPU の性能の制御、topology の CPUID |
+| HAL | **変えない**（Q301-1 の答え）。既存の `hal_cpu_notify`（`include/hal/hal.h:170`）で相手の CPU を起こし、kernel の `kernel_cpu_notify_handler`（`src/kern/clock.c:183`）がその CPU の上で枠組みを呼ぶ | CPU の性能の制御、topology の CPUID |
 | kernel の枠組み（`src/kern/cpuperf.c`、`include/kern/cpuperf.h`、`CONFIG_CPU_PERF`、既定 n） | domain（周波数の群）と電圧の群の組み立て、相対の性能と基準の選択（§4.7）、strategy の受け手（§4.4）、root の直の設定（§4.5）、熱の上限（§4.6）、CPU ごとの最新の要求の箱と notify の道、provider の口、`/dev/thermal` の ioctl の中身、事象 | hardware の register、arch の命令 |
 | x86 の CPU の性能の driver（`src/drivers/platform/pcat/cpuperf-x86.c` ほか、pcat の platform の build だけ。amd64 で試し、i386 は build だけ） | 各 CPU の上で CPUID・RDMSR・WRMSR を自分で実行する（inline の `__asm__`、前例は `pcat-ide.c:218` の port の命令・`rpi5-serror.c:35` の system register）。topology、HWP（Intel）、legacy の P-state（Intel の EIST、AMD の HwPstate）、HFI の表、MADT（`drv_acpi` の表の貸し）と `_PSS`（あれば）の読み。安全の関門（§4.2） | 方針の表（strategy → 要求は provider の表として持つが、strategy の意味は WS303） |
-| UAPI（`include/uapi/thermal.h`、WS303 p003 が作る file に WS301 の struct を足す） | CPU の表、domain の表、直の設定、相対の性能の基準の選択、事象の record の CPU の種類 | — |
+| UAPI（`include/uapi/thermal.h`、WS303 p003a が作る file に WS301 の struct を足す） | CPU の表、domain の表、直の設定、相対の性能の基準の選択、事象の record の CPU の種類 | — |
 | 道具（`userland/base/cpuperf/` か WS303 の `/sbin/thermal` の sub command、p005 で決める） | 表示と root の直の設定・基準の選択 | strategy の選択（`/sbin/thermal` の物） |
 | WS303 | `/dev/thermal` の device、strategy の選択と受け手の登録の口、passive の判定 | CPU の register |
 
@@ -127,7 +129,9 @@ E-core の 4 つ組が clock を共有するかは、書かない読みでは決
   5. 書く値は範囲を検めてから（lowest ≤ min ≤ max ≤ highest）。
   6. `CONFIG_CPU_PERF` は既定 n（Q301-4）。n の kernel は MSR に一切触らない。
   関門を通った物でも processor が拒めば止まる（HAL の案 C との違い）。その確率は CPUID の bit と allow list で十分に低いと見る（推定）。p007 の受け入れで 5330 の両方の道（HWP・legacy）を確かめる。
-- HWP の順: probe（CPUID）→ PM_ENABLE（package、一度だけで reset まで消えない）→ CAPABILITIES を読む → REQUEST を書く。IA32_HWP_CTL がある時は bit 0 を 0 に保ち（reset の値、5330 は 0、§2.3）、REQUEST の bit 42 を 0 で書く（論理 CPU の要求だけが効く）。
+- HWP の順: probe（CPUID）→ PM_ENABLE（package、一度だけで reset まで消えない）→ CAPABILITIES を読む → REQUEST を書く。IA32_HWP_CTL（CPUID.06H:EAX[22]）がある時は、enable の後に CPU ごとに読み（logical processor の MSR、`sdm-3b.txt:748`）、bit 0 が 1 なら 0 を書く（§2.3 の 0 は Linux の後の値で firmware の値ではない）。REQUEST の bit 42 を 0 で書く（論理 CPU の要求だけが効く）。
+  IA32_HWP_INTERRUPT（0x773）は enable の後に CPU ごとに 0 を書く（割り込みは使わない、§4.10。firmware か前の OS が残した値に依らない）。
+- **起動の時に PM_ENABLE が既に 1**（firmware か、reset を経ない再起動で前の OS が残した。§10 の 6）: probe で CPUID.06H:EAX[7] が立つ時だけ 0x770 を読む（PM_ENABLE は CPUID の bit が立てば enable の前でも読める architectural な MSR）。1 なら HWP の道に決まり（legacy の PERF_CTL は効かない、`cpuperf.hwp=off` は「HWP は既に有効」と log して HWP の道のまま）、CAPABILITIES を読んで表を出す。REQUEST・HWP_CTL・INTERRUPT は最初の要求の時まで書かない（起動で何も書かない規則、§4.4）。
 - MHz の推定の元: 起動の時の測り（§4.7）。基準は TSC の rate（MPERF は TSC の rate で数える、§2.3）。CPUID.16H は SDM が「表示の用途だけ、他の口の値と正しく対応しない」と書く（`sdm-1.txt:27472〜27478`、第 3 版の review の B1）ので計算に使わない。
 - 周期の読みで CPU を起こさない（第 3 版の review の M5）: `delivered_mhz` と HWP_STATUS は、ioctl の読み（GET_CPU）と要求の apply の時にだけ、その CPU で読む。idle の CPU を周期の notify で起こさない（S0 idle の `SLEEP_SPURIOUS_MAX`、`src/kern/sleep.c:56`）。
 - PECI の上書き（CPUID.06H:EAX[16]、5330 は有る）: 「上書きできる」（CPUID）と「今上書き中」（MSR 0x775 IA32_HWP_PECI_REQUEST_INFO の bit、SDM で p004 に確かめる。5330 では未読）を分け、UAPI に今の状態の flag を、読みの時に出す（事象は出さない）。
@@ -143,7 +147,7 @@ E-core の 4 つ組が clock を共有するかは、書かない読みでは決
 
 ### 4.4 strategy の受け手（Q301-7・Q303-11）
 
-- WS301 は自分の policy の名前を持たない。WS303 p003 が作る受け手の口（`kern_thermal_strategy_receiver_register`、WS303 design の V5）に、WS301 の枠組みが受け手として登録する（登録は **WS301 p004** が行う。WS303 の第 4 版の review の M3、WS303 第 5 版 §4.4）。受け手の契約（worker の thread から呼ばれ眠ってよい、2 秒を目安、WS303 の lock を取らない、`is_custom` を lock なしで返す）は WS303 第 5 版 §4.4・§5.1。
+- WS301 は自分の policy の名前を持たない。WS303 p003a が作る受け手の口（`kern_thermal_strategy_receiver_register`、WS303 design の V5）に、WS301 の枠組みが受け手として登録する（登録は **WS301 p004** が行う。WS303 の第 4 版の review の M3、WS303 第 5 版 §4.4）。受け手の契約（worker の thread から呼ばれ眠ってよい、2 秒を目安、WS303 の lock を取らない、`is_custom` を lock なしで返す）は WS303 第 5 版 §4.4・§5.1。
 - 受け手に渡る値: strategy（PERFORMANCE・BALANCED・POWERSAVE・MANUAL）と、MANUAL の時の 3 つの軸 speed・noise・gating（各 0〜100）。受け手は結果（適用・一部・対応外）を返す。3 つの軸の向きは WS303 の Q303-18（推し: 100 = その物が多い。noise 100 = うるさくてよい）。
 - x86 の provider の初期の対応（値は p007 の測りで直す。SDM §17.4.10 の推奨と EPP の範囲から）:
 
@@ -154,6 +158,7 @@ E-core の 4 つ組が clock を共有するかは、書かない読みでは決
 | POWERSAVE | lowest | max(guaranteed, efficient) | 0xC0 |
 | MANUAL | lowest | `min(speed の上限, noise の上限)`: speed の上限 = efficient + (highest − efficient) × speed / 100、noise の上限 = max(guaranteed, efficient) + (highest − max(guaranteed, efficient)) × noise / 100 | 255 × (100 − speed) / 100 |
 
+  PERFORMANCE の min = guaranteed（m9）: SDM §17.4.10（`sdm-3b.txt:1148〜1149`）は min が guaranteed より上だと excursion to minimum の通知が続きうると書く。guaranteed は実行時に下がりうるので、(1) apply のたびに CAPABILITIES を読み直して min = その時の guaranteed にする、(2) 割り込みは使わない（0x773 = 0）ので通知の嵐は起きない、(3) HWP_STATUS の Excursion_To_Minimum（bit 2、`sdm-3b.txt:806`）は GET の読みで `PLATFORM_LIMIT` の flag に写して 0 を書く（事象は出さない）。
   max は efficient（Most Efficient）より下にしない（SDM §17.4.2: それより下の要求は honor されないことがある。5330 の E-core は guaranteed 12 < efficient 15、第 3 版の review の M2）。efficient は実行時に事象なしで変わりうるので、apply のたびに読み直す。noise で CPU の上限を下げるのは「CPU の電力 → fan の音」の対応を driver が決めた物（Q303-11「マッピングはドライバが決める」）。
 
   gating の軸は CPU の性能の要求には使わない（C-state・device の省電力の軸、WS303 の Q303-16）。HWP の activity window は 0（processor に任せる）。
@@ -199,7 +204,7 @@ HWP の道と legacy の道は起動の時に CPU ごとでなく package で 1 
 
 ### 4.9 HWP の無い CPU の P-state（Q301-8「P-stateを操作しますが、HALではなくドライバでできるはずです。」）
 
-HWP は Intel の Skylake（第 6 世代、2015）からの機能で、必ずはない。無い場合: Skylake より前の Intel、AMD（CPPC の MSR は Zen 2 の一部から）、hypervisor の下（QEMU・KVM は HWP を出さない見込み、§10）、arm64・riscv64（x86 の機能でない）。
+HWP は Intel の client では Skylake（第 6 世代、2015）から広く入った機能で、必ずはない（server の Broadwell の Xeon D・E5 v4 も HWP の MSR を持つ、`sdm-vol4.txt:17522〜17545`。世代の線は CPUID の bit で判定し、世代の表を持たない）。無い場合: それより前の Intel、AMD（CPPC の MSR は CPUID Fn8000_0008_EBX[27] で判定する。どの世代から有るかは手元の資料に無く推測）、hypervisor の下（QEMU・KVM は HWP を出さない見込み、§10）、arm64・riscv64（x86 の機能でない）、BIOS の設定で HWP を CPUID から隠した機械（有るかは推測）。
 手元の Intel の機械（5330 = 第 12 世代、SV7 = 第 8 世代）は HWP を持つ（SV7 は世代からの推定、未確認）。OS が何もしないと、周波数は firmware の残した設定と hardware の自動の制御のまま（壊れはしないが省電力の制御が効かない）。
 
 x86 の driver が legacy の P-state を扱う（HAL は変えない、§4.2）。step の表の源は次の順に試す:
@@ -219,10 +224,12 @@ x86 の driver が legacy の P-state を扱う（HAL は変えない、§4.2）
 ### 4.10 資源・並行性・割り込み
 
 - CPU ごとの箱、domain の表、HFI の page（package ごと）は kernel の寿命（CPU の hot-plug は無い）。HFI の page は止めの完了（PTR を 0 にし、hardware の書きが止んだ事を bit 26 で確かめた後）の前に解放しない。
-- lock: 設定の入口（ioctl の直の設定・strategy の受け・熱の上限・基準の選択）は `cpuperf_mutex` で直列。CPU ごとの箱は spinlock（irqsave、notify の handler と共有）。読みの写しは spinlock。MSR の読み書きは notify の handler の中で割り込みを止めた短い区間だけ。
+- lock: 設定の入口（ioctl の直の設定・strategy の受け・熱の上限・基準の選択）は `cpuperf_mutex`（mutex、`LOCK_RANK_DEVICE`）で直列。CPU ごとの箱と読みの写しは CPU ごとの spinlock（`LOCK_RANK_DEVICE`、葉の lock: 持つ間に他の lock を取らない）。notify の handler（割り込みの中）でも取るので、**全部の取り手が irqsave**。
+  notify の道: `kernel_cpu_notify_handler`（`src/kern/clock.c:183〜194`）の EOI の後・`sched_cpu_notify` の前に `kern_cpuperf_notify(cpu)` を足す（kernel の変更、HAL は変えない）。cpuperf の部分は箱の spinlock を取り、provider の `apply`・`sample` を呼び、確かめの数を進め、**spinlock を離してから戻る**（`sched_cpu_notify` は scheduler の lock を取り、`sched_preempt`・`sched_yield` に進みうる、`src/kern/sched.c:1764〜1794`）。MSR の読み書きはこの割り込みを止めた短い区間だけ。
+  事象: handler の中では WS303 の事象を出さない。handler は箱に「変化あり」の印を置き、確かめを待っていた thread（ioctl か WS303 の worker、legacy の governor）が印を見て事象を出す（WS303 の事象の発行は thread の文脈の口だけを使う）。
 - legacy の governor は枠組みの 1 本の kernel の thread（100 ms の周期、CPU ごとの箱に要求を置くだけ）。HWP の道では走らない。
-- strategy の受けは WS303 の strategy の mutex の下から呼ばれる。順は WS303 の strategy の mutex → `cpuperf_mutex` だけ（逆の順を作らない。WS301 から WS303 を呼ぶのは事象の発行だけで、mutex を持たずに出す。直の設定の「CUSTOM」の印も WS301 の中だけに持ち、WS303 の mutex を取らない。WS303 の第 4 版の review の M2）。
-- 割り込みと DMA: 割り込みは使わない（HWP の通知と HFI は周期の読み）。HFI の表は hardware が書く記憶: page を 0 で埋め、止める時は書きが止んでから解放（SDM）。
+- strategy の受けは WS303 の worker の thread（`thermal-work`）から、**WS303 の lock を持たずに**呼ばれる（WS303 第 5 版 §4.4・§4.11）。順は worker → `cpuperf_mutex` → CPU ごとの箱の spinlock。`apply` は `cpuperf_mutex` の下で箱を書いて mutex を離し、mutex を持たずに確かめを 1 秒まで待つ（WS303 の受け手の目安 2 秒の中）。WS301 から WS303 を呼ぶのは事象の発行だけで、lock を持たずに出す。直の設定の「CUSTOM」の印は WS301 の atomic の値で、WS303 は `is_custom` で lock なしで読む（WS303 の第 4 版の review の M2）。
+- 割り込みと DMA: HWP・HFI の割り込みは使わない（HWP_INTERRUPT は 0 を書く、§4.2。HFI は 1 秒の周期の読み、HWP_STATUS は GET と apply の時の読み）。HFI の表は hardware が書く記憶: page を 0 で埋め、止める時は書きが止んでから解放（SDM）。
 
 ### 4.11 失敗と回復
 
@@ -335,12 +342,20 @@ struct thermal_cpu_setting {		/* KERN_THERMAL_SET_CPU_DOMAIN, _IOW, root */
 };	/* 32 bytes */
 ```
 
-番号は WS303 p003 の `include/uapi/thermal.h` の案（ユーザーの review）と一緒に決める。事象は WS303 の事象の record（128 byte）に種類 CPU（能力・相対の性能・domain の設定・platform の制限の変化）を足す。
+欄の決まり（第 3 版の review の m11）:
+
+- 名前の接頭辞: ioctl と flag は `KERN_THERMAL_CPU_*`（WS303 の `KERN_THERMAL_*` の下の CPU の組）。flag の値: `thermal_cpu_info.flags` は `HAS_CONTROL` 0x1・`ESTIMATED_MHZ` 0x2・`LIMITED`（熱の上限で max を切った）0x4・`PLATFORM_LIMIT`（PECI の上書きか excursion）0x8・`CUSTOM`（直の設定が効いている）0x10。`thermal_cpu_domain.flags` は `CUSTOM` 0x1・`LIMITED` 0x2・`PENDING`（要求が箱にあり、まだ確かめが来ていない）0x4。kind は `RANGE` 1・`STEPS` 2。
+- `count`: `thermal_cpu_info.count` は CPU の数（`hal_cpu_count()`）、`thermal_cpu_domain.count` は domain の数。in の index が count 以上なら EINVAL（user は index 0 で数を得て回す）。
+- RANGE の時: `step_count` = 2、`steps[0]` = lowest、`steps[1]` = highest（間の整数は全部書ける）、`step_mhz[0]` = 0（Lowest の MHz は出さない、§4.7）、`step_mhz[1]` = Highest の推定。STEPS の時: `step_count` は 1〜16、`steps[]` は昇順、`step_mhz[]` は段の MHz（不明は 0）。
+- `minimum`・`maximum`・`desired`・`preference` は**今の要求の値**（箱に置いた最新、熱の上限で切る前）。効いているかは `PENDING` の flag と `limit` で読む。ETIMEDOUT の後は要求が箱に残り、`PENDING` が立つ（相手の CPU が notify を受けると消える）。
+- 権限: GET の ioctl は誰でも（`/dev/thermal` の node は 0666、WS303 §4.8）。SET（直の設定・基準の選択）は root だけ（ioctl の中で `cred_is_superuser`）。sessiond 経由の wheel は strategy だけで、WS301 の SET は通らない（Q301-7 の Q1 の注）。
+
+番号は WS303 p003a の `include/uapi/thermal.h` の案（ユーザーの review）と一緒に決める。事象は WS303 の事象の record（128 byte）に種類 CPU（能力・相対の性能・domain の設定・platform の制限の変化）を足す。
 大きさは `_Static_assert` と `offsetof` で固める（第 1 版の review が -m64・-m32 で測った 240 byte の形を保つ）。
 
 ### 5.3 HAL
 
-変えない（推し、§4.2）。第 3 版までの差分の案 [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff) は選ばなかった案 C の記録（当てない）。説明は [hal-review.md](hal-review.md)。
+変えない（Q301-1 の答え、§4.2）。第 3 版までの差分の案 [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff) は選ばなかった案 C の記録（当てない）。説明は [hal-review.md](hal-review.md)。
 
 ## 6. 試験の計画
 
@@ -370,7 +385,7 @@ q35 の既定の CPU（HWP 無し、hypervisor の bit）: `CONFIG_CPU_PERF=y` �
 | Phase | 内容 | 依存 | LW | 受け入れ |
 | --- | --- | --- | --- | --- |
 | p001 | 調査と設計、design-reviewer、ユーザーの判断（Q301-1） | — | 残り 1 | 答え |
-| p002 | 枠組み（domain・電圧の群・相対の性能と基準の選択・strategy の受け・直の設定・熱の上限・最新の要求の箱と notify の道・provider の口）と host 試験 | p001 | 5 | §6.1 の枠組みの部分 PASS、全 platform の build warning 0 |
+| p002 | 枠組み（domain・電圧の群・相対の性能と基準の選択・strategy の受け・直の設定・熱の上限・最新の要求の箱と notify の道・provider の口）と host 試験 | p001 | 5 | §6.1 の枠組みの部分 PASS、全 platform の既定（`CONFIG_CPU_PERF=n`）の build と、`CONFIG_CPU_PERF=y` の build（amd64・i386・arm64・riscv64、sparcv9 はユーザーの物なので Q1 に確かめてから）の warning 0 |
 | p003 | x86 の driver の基礎（CPUID・MSR の小さな file、関門、topology、MADT の UID、notify の handler の道） | p002 | 3 | host 試験（関門・topology）、amd64・i386 の build warning 0、QEMU で provider 無し |
 | p004 | HWP の道（enable の順、能力と Highest の MHz の測り、strategy の対応と受け手の登録、HFI の写し、PECI の flag） | p003、WS303 p003a | 4 | host 試験（5330 の確かめは UAPI の後の p007） |
 | p005 | legacy の P-state（Intel の `_PSS`・0xCE、AMD の HwPstate、governor は `hw.cputimes` の idle の時間で CPU を起こさずに） | p003 | 4 | host 試験（AMD は host 試験だけ。5330 は p007） |
@@ -390,8 +405,7 @@ WS303 の p007（strategy の受け手の登録と passive）は WS301 の p002�
 
 ## 9. ユーザーに決めてほしい点（推しつき）
 
-- **Q301-1 HAL を変えない形でよいか**（§4.2、[hal-review.md](hal-review.md)）: (A, 推し) HAL を変えない。topology・HWP・legacy の P-state・HFI は x86 の driver が CPUID・MSR を自分で扱う（安全の関門は CPUID の bit・hypervisor・allow list・既定 n）。
-  (B) topology だけ HAL に足す（WS302 が `CONFIG_CPU_PERF` と別に topology を要る時、arm64 の DT の topology も HAL が持つ方が揃う）。(C) 第 3 版の差分（HAL が #GP を回復する性能の制御の口）を承認する。
+- Q301-1 は答えを受けた（§0、「HAL を変えず確かめで守る (推し)」）。
 - Q301-2・Q301-8 は答えを受けた（§0）。WS303 の Q303-17（直の設定と strategy の関係）は §4.5 の推し A。
 
 ## 10. 未確認
@@ -401,7 +415,7 @@ WS303 の p007（strategy の受け手の登録と passive）は WS301 の p002�
 3. CPUID.04H の L2 の値そのもの（Linux の `cluster_cpus` からの推定）。
 4. QEMU の KVM で HWP の CPUID が見えるか。
 5. SV7 の HWP（世代からの推定）。
-6. firmware が起動の時に PM_ENABLE を立てているか（Debian の値は Linux の物）。
+6. firmware が起動の時に PM_ENABLE を立てているか（Debian の値は Linux の物）。zedBSD の reboot が ACPI の reset register 以外の道（KBC・triple fault）に落ちた時に PM_ENABLE が消えるか（SDM は RESET だけが消すと書く。INIT だけの道なら次の起動で 1 のまま）。どちらでも §4.2 の「既に 1」の道で動く（p007 で reboot の後の値を読む）。
 7. HWP の有る CPU で PM_ENABLE が 0 の時に EIST の PERF_CTL が効くか、ADL-P（family 6 model 0x9A）が SDM Vol 4 の 0xCE の表にあるか（§4.9、p005・p007）。
 8. WS302 が `CONFIG_CPU_PERF=n` でも topology を要るか（§4.1、Q301-1 の B）。
 9. ACPI 6.5 の節番号（この WS では使わない）。
@@ -409,3 +423,10 @@ WS303 の p007（strategy の受け手の登録と passive）は WS301 の p002�
 ## 11. 第 2 版の改訂（R1〜R12）の行き先
 
 R1 → §4.2（順・関門・hypervisor。#GP の回復は HAL を変えない推しで無くなった）、§0（既定 n は Q301-4 の答え）。R2 → §2.1（動的な SSDT は git にある。Nominal から MHz を取る案は §2.3 の読みで取り下げ）。R3 → §4.3。R4 → §4.1・§4.7。R5 → §4.7。R6 → §4.2。R7 → §5.3（HAL を変えない推しで差分は案 C の記録）。R8 → §4.2。R9 → §2.3（確かめた）。R10 → §6.3 の 4。R11 → §4.8・§6.3 の 5。R12 → §5.2（`/dev/thermal` に移し、policy の ioctl は Q301-7 で外した）。
+
+## 12. 第 3 版の review の minor（m1〜m17）の行き先（改訂 3）
+
+m1 → §2.3（CPUID.06H:EAX の bit 17・18、0x773 = 5、0x775 は未読）。m2 → §2.3（platform_profile と Dell の mode は記録に無い、未確認）。m3 → §2.3（Linux の作りは推測）。
+m4〜m7・m10 → 無くなった（HAL の差分に固有。HAL を変えないので sparcv9 にも触らない）。m8 → §4.2（HWP_CTL は enable の後に読んで直す、0x773 に 0）。m9 → §4.4（min = その時の guaranteed、割り込みなし、excursion は GET の flag）。
+m11 → §5.2 の欄の決まり。m12 → §7 の p002。m13 → ws.md を今の設計の写しに直した。m14 → §0 の 1 行目を原文に。m15 → §4.10（rank、irqsave、`sched_cpu_notify` の前に離す、事象は thread の文脈）。m16 → §4.2（既に 1 の道）・§10 の 6。m17 → §4.9。
+改訂 1 の食い違い（起動の parameter）→ §0 の Q301-7 の解釈（改訂 2 で済み）。§4.10 の「WS303 の strategy の mutex の下から呼ばれる」は WS303 第 5 版と食い違っていたので、worker から lock なしの形に直した。
