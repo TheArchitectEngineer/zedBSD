@@ -765,6 +765,9 @@
  */
 #define AMDRDNA_VK_MOVE_MAX			0x03ffffe0U
 
+/* The context registers (0x28000 to 0x28ffc), one word each. */
+#define AMDRDNA_VK_CONTEXT_REGISTERS		1024U
+
 /*
  * An indirect buffer of packets being written: its words, how many are
  * written, and its capacity.  A packet that would pass the end is not
@@ -772,6 +775,11 @@
  * vertex_stage is the kind of vertex stage the buffer's last draw used
  * (AMDRDNA_VK_STAGE_*): unknown at the start, as the buffer before is not
  * known; a draw by the other kind flushes the geometry engine first.
+ * context_values holds what the buffer last wrote to each context register
+ * whose bit in context_known is set (none at the start and after the
+ * context's reset): a single register set again to the value it holds is
+ * not written, since every context register write after a draw rolls the
+ * context the GPU draws with.
  */
 struct amdrdna_vk_pm4 {
 	uint32_t *words;
@@ -779,6 +787,8 @@ struct amdrdna_vk_pm4 {
 	uint32_t capacity;
 	bool full;
 	uint32_t vertex_stage;
+	uint32_t context_values[AMDRDNA_VK_CONTEXT_REGISTERS];
+	uint32_t context_known[AMDRDNA_VK_CONTEXT_REGISTERS / 32U];
 };
 
 /* The kinds of vertex stage a buffer's draws use: not known yet, a legacy vertex program, a primitive shader. */

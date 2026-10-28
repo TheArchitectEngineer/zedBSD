@@ -22,6 +22,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <kern/kcrt.h>
+
 #include "drivers/gpu/amdrdna/amdrdna-hw.h"
 #include "drivers/gpu/amdrdna/vk/amdrdna-vk-gfx10.h"
 
@@ -29,6 +31,8 @@
 #define PM4_CONTEXT_START_WORDS		5U
 
 static bool pm4_room(struct amdrdna_vk_pm4 *pm4, uint32_t words);
+static void pm4_context_forget(struct amdrdna_vk_pm4 *pm4);
+static void pm4_context_note(struct amdrdna_vk_pm4 *pm4, uint32_t reg, const uint32_t *values, uint32_t count);
 static void pm4_set_run(struct amdrdna_vk_pm4 *pm4, enum amdrdna_register_space space, uint32_t reg, const uint32_t *values, uint32_t count);
 
 /* Starts a buffer over words of capacity words. */
@@ -46,6 +50,9 @@ amdrdna_vk_pm4_start(
 
 	/* What drew before this buffer is not known, so the first draw flushes first. */
 	pm4->vertex_stage = AMDRDNA_VK_STAGE_UNKNOWN;
+
+	/* Nor what its context registers hold. */
+	pm4_context_forget(pm4);
 }
 
 /*
@@ -110,6 +117,9 @@ amdrdna_vk_pm4_context_start(
 		return;
 	pm4->count += amdrdna_pm4_context_loads(pm4->words + pm4->count);
 	pm4->count += amdrdna_pm4_state_reset(pm4->words + pm4->count);
+
+	/* The reset leaves the context registers at their clear state, which is not tracked. */
+	pm4_context_forget(pm4);
 }
 
 /* Sets one context register (byte offset from 0x28000 on). */
@@ -119,8 +129,20 @@ amdrdna_vk_pm4_set_context(
 	uint32_t reg,
 	uint32_t value)
 {
-	/* A run of one. */
+	uint32_t index;
+	uint32_t bit;
+
+	/* A register the buffer set to the value already is left as it is. */
+	index = (reg >> 2) - AMDRDNA_PM4_CONTEXT_FIRST;
+	if (index < AMDRDNA_VK_CONTEXT_REGISTERS) {
+		bit = 1U << (index % 32U);
+		if ((pm4->context_known[index / 32U] & bit) != 0U && pm4->context_values[index] == value)
+			return;
+	}
+
+	/* A run of one, then what the register holds. */
 	pm4_set_run(pm4, AMDRDNA_SPACE_CONTEXT, reg, &value, 1U);
+	pm4_context_note(pm4, reg, &value, 1U);
 }
 
 /* Sets count consecutive context registers from reg. */
@@ -131,8 +153,9 @@ amdrdna_vk_pm4_set_context_run(
 	const uint32_t *values,
 	uint32_t count)
 {
-	/* One packet for the run. */
+	/* One packet for the run, then what the registers hold. */
 	pm4_set_run(pm4, AMDRDNA_SPACE_CONTEXT, reg, values, count);
+	pm4_context_note(pm4, reg, values, count);
 }
 
 /* Sets one shader register (byte offset from 0xb000 on). */
@@ -469,4 +492,47 @@ pm4_set_run(
 	if (!room)
 		return;
 	pm4->count += amdrdna_pm4_registers(pm4->words + pm4->count, space, reg >> 2, values, count, false);
+}
+
+/* Forgets what every context register holds. */
+static void
+pm4_context_forget(
+	struct amdrdna_vk_pm4 *pm4)
+{
+	/* No register is known. */
+	kern_memset(pm4->context_known, 0, sizeof(pm4->context_known));
+}
+
+/*
+ * Notes the values of count context registers from reg written to the
+ * buffer; a run the full buffer dropped leaves them unknown.
+ */
+static void
+pm4_context_note(
+	struct amdrdna_vk_pm4 *pm4,
+	uint32_t reg,
+	const uint32_t *values,
+	uint32_t count)
+{
+	uint32_t first;
+	uint32_t index;
+	uint32_t place;
+	uint32_t bit;
+
+	/* Each register of the run inside the context's space. */
+	first = (reg >> 2) - AMDRDNA_PM4_CONTEXT_FIRST;
+	for (index = 0U; index < count; index++) {
+		place = first + index;
+		if (place >= AMDRDNA_VK_CONTEXT_REGISTERS)
+			break;
+		bit = 1U << (place % 32U);
+
+		/* Known when written, unknown when dropped. */
+		if (pm4->full) {
+			pm4->context_known[place / 32U] &= ~bit;
+		} else {
+			pm4->context_values[place] = values[index];
+			pm4->context_known[place / 32U] |= bit;
+		}
+	}
 }
