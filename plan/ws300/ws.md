@@ -74,3 +74,8 @@ S0i3 の妨げにならない状態（NVMe は D3、link は L1.2 か L2 相当�
 
 - p001 の調べ: 公開の資料 [survey-fable.md](survey-fable.md)、5330 の Debian の読みと firmware の表 [survey-5330.md](survey-5330.md)（2026-10-29、読みだけ。BG5 の PS0〜PS4 と APST・HMB、VMD の下の ASPM・L1SS は Debian でも無効、PMC は PC2 まで、VMD0 の `StorageD3Enable` と PEG0 の D3cold の method）。
 - 設計（design.md）は未着手。次の担当は survey の 2 つと `pci-vmd.c`・`pci-power.c`・`pci-nvme.c` の suspend の code から書き始める。
+
+## 再開点（2026-10-29 P5、q1666-i04、利用の上限の前の途中の保存）
+
+- design.md 第 1 版の下書き（§0〜§3 と §10、§4〜§9 は未着手）。design-reviewer は未実施。次: §4〜§9（状態遷移・lock・失敗・UAPI・試験・Phase と受け入れ・出典・ユーザーへの問い Q300-1〜）を書き、design-reviewer。
+- 同じ時に走っていた review: WS303 第 5 版（plan/ws303/design-v5-review.md）と WS301 改訂 3（plan/ws301/design-v3r3-review.md）の design-reviewer。この時点でどちらも未返却（file 無し）。返ったら反映する。
