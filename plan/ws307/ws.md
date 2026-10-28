@@ -4,7 +4,7 @@
 
 - Status: incomplete（2026-10-28 p001 cleared で実行が始まったので planned から incomplete に。仕様は spec.md で確定。実装 p002〜p014 はユーザーの指示の後）
 - 仕様: [spec.md](spec.md)（確定。ユーザーの確認事項 U1〜U29・J1〜J5 は回答済み（J1 は J5 で置き換え）。design-reviewer の 1〜3 回目の指摘と J5 を反映済み、spec §17）。
-- Resume point: 2026-10-29 q1665-i03（P4、worktree p4-ws307g）: p003 cleared（[phase003/phase.md](phase003/phase.md)）。p006 に着手（[phase006/phase.md](phase006/phase.md)）。p007 は HAL の差分の案（[proposed/hal-fw-variables.md](proposed/hal-fw-variables.md)）でユーザーの承認待ち。次: p006（kernel の 4096、p005 の UFS の fragment 4096 と p008 の 4096 の段と一緒に）、p002 の残り（phase002/phase.md の「残り」）。
+- Resume point: 2026-10-29 q1665-i03（P4、worktree p4-ws307g）: p003 cleared。p006 は段 1〜4（disk の 512 byte の sector の口、FAT・UFS・swap の file・format の予約、NVMe の 4096 の namespace）を実装し、FAT と swap は QEMU の 4096 の NVMe で PASS（[phase006/phase.md](phase006/phase.md)）。次: p006 の段 5（mkfs の native UFS の fragment 4096、p005 の残り、phase006 の「引き継ぎ」に調べた事）と UFS・USB の 4096 の試験 → p008 の 4096 の段 → p009。p007 は HAL の差分の案（[proposed/hal-fw-variables.md](proposed/hal-fw-variables.md)）でユーザーの承認待ち。p002 の残りは phase002/phase.md。
 - Master: [plan/master.md](../master.md)。Primary Milestone: MG003。Related: MG006・MG007。
 - 前身: [WS119](../ws119/ws.md)（インストーラの作り直し、2026-10-28 にこの WS の新設で canceled）。参考: [WS028](../ws028/ws.md)（canceled）、[WS019](../ws019/ws.md)・[WS062](../ws062/ws.md)（completed、disk image の構成）。
 
