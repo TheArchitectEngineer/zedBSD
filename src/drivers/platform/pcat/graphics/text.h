@@ -18,6 +18,7 @@
 
 #include <stdint.h>
 
+struct kern_text_range;
 struct kern_text_snapshot;
 
 /* Light grey on black, the default text attribute. */
@@ -44,6 +45,11 @@ void drv_pcat_text_resume(void);
 void drv_pcat_text_reveal(void);
 void drv_pcat_text_reveal_fatal(void);
 void drv_pcat_text_progress(int end);
+/*
+ * Ends the console's use of the display for good (the board's end op of
+ * kern_text_end()).
+ */
+int drv_pcat_text_end(const struct kern_text_range *ranges, unsigned count);
 
 int drv_pcat_text_snapshot(struct kern_text_snapshot *snapshot);
 

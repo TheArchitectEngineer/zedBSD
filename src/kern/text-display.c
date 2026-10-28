@@ -406,6 +406,55 @@ kern_text_resume(
 }
 
 /*
+ * Ends the console's use of the display for good.
+ */
+int
+kern_text_end(
+	const struct kern_text_range *ranges,
+	unsigned count)
+{
+	const struct kern_text_ops *table;
+	unsigned index;
+	int error;
+
+	/* A list the board can judge: at most KERN_TEXT_END_RANGES, present when counted. */
+	if (count > KERN_TEXT_END_RANGES)
+		return EINVAL;
+	if (count != 0U && ranges == NULL)
+		return EINVAL;
+
+	/* Each range non-empty and not wrapping, so that the overlap test holds. */
+	for (index = 0U; index < count; index++) {
+		/* An empty range says nothing. */
+		if (ranges[index].bytes == 0U)
+			return EINVAL;
+
+		/* A range past the end of the address space wraps. */
+		if (ranges[index].physical + ranges[index].bytes < ranges[index].physical)
+			return EINVAL;
+	}
+
+	/* A board that publishes no console, or one that cannot stop, changes nothing. */
+	table = ops();
+	if (table == NULL || table->end == NULL)
+		return ENOTSUP;
+
+	/* The board stops its console and judges what is left against the ranges. */
+	error = table->end(ranges, count);
+
+	/* A console that stopped has new retained-text state for snapshot consumers. */
+	if (error == 0 || error == EBUSY)
+		text_changed();
+
+	/* Reports a failure the board saw. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: nothing of the console draws on the display or keeps memory in the ranges. */
+	return 0;
+}
+
+/*
  * Renders the published backend's retained cells into caller-owned ordinary RAM.
  */
 int

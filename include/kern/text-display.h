@@ -62,6 +62,44 @@ struct kern_text_snapshot {
 };
 
 /*
+ * One range of processor physical addresses a display driver decodes, which
+ * it may give to others once the console has left the display.
+ */
+struct kern_text_range {
+	uint64_t physical;
+	uint64_t bytes;
+};
+
+/* The most ranges one call to kern_text_end() takes. */
+#define KERN_TEXT_END_RANGES	4U
+
+/*
+ * Reports whether [physical, physical + bytes) meets one of the count
+ * ranges.  Every range and the one asked about are non-empty and do not
+ * wrap; kern_text_end() refuses a list that breaks this.
+ */
+static inline int
+kern_text_range_overlaps(
+	const struct kern_text_range *ranges,
+	unsigned count,
+	uint64_t physical,
+	uint64_t bytes)
+{
+	unsigned index;
+
+	/* Each range against the one asked about. */
+	for (index = 0U; index < count; index++) {
+		/* Two half-open ranges meet when each begins before the other ends. */
+		if (physical < ranges[index].physical + ranges[index].bytes &&
+		    ranges[index].physical < physical + bytes)
+			return 1;
+	}
+
+	/* None meets it. */
+	return 0;
+}
+
+/*
  * One board's character output.
  *
  * Every entry before snapshot is required. The display driver holds the cell state; this
@@ -120,6 +158,25 @@ struct kern_text_ops {
 	 * the splash stops for good).
 	 */
 	void (*progress)(int end);
+
+	/*
+	 * Optionally ends the console's use of the display for good.  After it
+	 * returns 0 or EBUSY nothing of the console (its text, a quiet boot's
+	 * splash, a graphics mode the board's /dev/graphics entered, the
+	 * reveal of a fatal stop, the hardware layer's early console) draws
+	 * on the display again, and every mapping of the display memory made
+	 * for the console or handed over by the hardware layer that can be
+	 * removed is removed; the console's characters still reach its other
+	 * outputs (a serial line, the log), and its cells keep following them.
+	 * Returns 0 when nothing left (a mapping that could not be removed, a
+	 * writer that could not be stopped) lies in one of the count ranges
+	 * (none with count 0); EBUSY when something left does; the error of a
+	 * removal that failed for a mapping in the ranges; or ENOTSUP, changing
+	 * nothing, when the board cannot stop drawing.  A later call returns
+	 * the first result, judged again against its own ranges.  Called in
+	 * thread context with no lock held; it may sleep.
+	 */
+	int (*end)(const struct kern_text_range *ranges, unsigned count);
 };
 
 /*
@@ -157,6 +214,25 @@ void kern_text_reveal_fatal(void);
 void kern_text_kernel_putc(int character);
 void kern_text_progress(void);
 void kern_text_progress_end(void);
+
+/*
+ * Ends the console's use of the display for good, for a display driver
+ * that flipped its first image to the display or is about to give the
+ * memory behind ranges (the processor physical ranges the driver's device
+ * decodes, count of them; count 0, with ranges NULL, gives none) to
+ * others.  The console stops drawing on the display whether or not it
+ * lies in the ranges; its serial output goes on.
+ *
+ * Returns 0 once nothing of the console draws on the display and nothing
+ * left of it can write to or keeps a mapping of memory in the ranges;
+ * EBUSY when the console stopped but a mapping or writer it could not
+ * remove lies in the ranges; ENOTSUP, changing nothing, when no console is
+ * published or the board's console cannot stop; EINVAL, changing nothing,
+ * for an oversized list or an empty or wrapping range; or the error of a
+ * removal that failed for a mapping in the ranges.  The caller holds no
+ * lock; the call may sleep.  There is no way back.
+ */
+int kern_text_end(const struct kern_text_range *ranges, unsigned count);
 
 /* Renders or queries an optional retained-cell snapshot, without reading display memory. */
 int kern_text_snapshot(struct kern_text_snapshot *snapshot);
