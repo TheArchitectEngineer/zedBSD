@@ -147,3 +147,44 @@ struct gpu_job_retire {
 - 実機（RDNA、timing 無し、bench の subs-1000 と subs-100、同じ kernel・libvulkan の組で前後を 3 run ずつ交互に）で、subs-1000 の submit の ms/frame
   の差が、同じ build の run の間の揺れ（最大 − 最小、2 つの値に分かれる時は同じ側の値どうし）を越えて減った時だけ効果ありとする。
   案 A と案 B は別に測る（A だけ、A + B）。効果の無い方は main に入れない（branch に残し、値と判断を phase.md に）。
+
+## design-reviewer（opus、2026-10-29）の指摘と直した形（上の案 A・B の本文より、ここが優先）
+
+- B1（blocker、outcome の決め方）: 走らせる前に stream から queue の操作を探さない（大きな stream は blob で、amdrdna は実行の途中で写す
+  vk-stream.c、userspace が書き換えうる）。outcome は executor が実際に実行した queue の操作の結果（executor の内部の変数、共有の reply は
+  読み直さない）から: 1 つも実行しなかった・全部が確かな拒否 → CANCELED、全部 SUCCESS → COMMITTED、それ以外（SUCCESS と拒否の混在、不確か）→
+  FAULTED。走らせる前の EINVAL は無し。
+- B2（blocker、errno と outcome の約束）: uapi の comment に表で書く。
+  - errno（native を何も走らせていない、record も fence の bind も残らない、sequence は無効）: EINVAL・EACCES・EOPNOTSUPP・EFAULT（入力）・ENOMEM・
+    EAGAIN（completion の slot・fences[]・driver の marker の満杯 → capacity の待ち）・ENODEV（device・session の失敗）。fence の bind の EBUSY は
+    EAGAIN と区別し errno のまま（userspace は今の reserve の EBUSY と同じ扱い）。
+  - return 0 と outcome（native を走らせた、または走らせようとした）: COMMITTED・CANCELED・FAULTED と、`GPU_JOB_SUBMIT_DEFERRED`（4、driver が今は
+    同期で走らせられない、native は何もしていない、record は戻した → userspace は今の 3 本の道）。後戻りは errno でなく DEFERRED で返す。
+  - admit・commit の失敗は cancel の結果によらず FAULTED、session を失う。outcome の copyout の失敗は EFAULT で、job は outcome どおりに残る
+    （userspace は context を lost にする）。outcome が正: userspace は GPU_JOB_SUBMIT の job に COMMIT・CANCEL を出さない。kernel が CANCELED で
+    libvulkan が reply を読めない時は、libvulkan が context を lost にする（共有の fence は unbind のまま: 今の CANCEL_FAULT の ERROR との違いを
+    uapi に書く）。
+- M1（major、DEFERRED の率）: amdrdna の同期の frame は session の queue（frame と marker）が空でない時に断られる（runtime.c 357〜370）。commit の
+  marker は worker が park するまで queued に残るので、A で submit が速くなると DEFERRED が増え、後戻りの道（今より重い）で効果が負になりうる。
+  → 実装の前に今の GPU_COMMAND の EAGAIN の率を subs-1000 で数える（libvulkan の timing に count を足す）。driver の側で「待つ物が marker だけ
+  なら同期の frame を先に走らせる」（marker の runs は park の時に取るので、marker の完了が遅れるだけの安全な側）を検討し、効果の基準に DEFERRED の
+  率を足す。
+- M2（major）: native_submitted は jobs->command を呼ぶ前に必ず立てる（今の GPU_COMMAND と同じ、monitor の stop_begin の近道のため）。
+- M3（major）: drv_gpu_job_ops に member を足すと位置で初期化している 7 driver の build が -Werror で壊れうる → 7 つ全部に NULL を書くか designated
+  に。bit は core が gpu_info_ioctl で合成する（jobs->command がある時 GPU_CAP_JOB_SUBMIT、GPU_CAP_JOB がある時 GPU_CAP_JOB_RETIRE）と決め、
+  登録の許可の表（gpu.c 1051〜）には入れない。
+- M4（major）: reserve の内部の関数は pin した completion を返し、commit・cancel の内部の関数はそれを受ける（gpu_job_observe を通さない: job_action の
+  pin で自分に EBUSY を返すため）。observer_leave は最後に 1 回。unpublished=0 と reservation_pending=1 の順は今のまま。
+- M5（major、案 B の失敗の道）: copyout の失敗でも RETIRED にした各 record に observer_leave(c, 0, 1)（consuming と observers を戻す）。MISSING は
+  reap の中では今の ENOENT（DEVICE_LOST）と同じ扱い。status ≠ 0 の entry があっても、まとめて consume した RETIRED は全部 ledger から外して free
+  してから lost を返す。
+- minor: stream の copyin は reserve の前。案 B の lock は slot を 1 回だけ走査して照合（64×64 を irqsave で持たない）。入力の確かめ（readable、
+  sequence ≠ 0、state・status 0、count ≥ 1、重複は 2 つ目を PENDING、observers の UINT_MAX）、bit は GPU_CAP_JOB と合わせる、dispatch は WAIT と
+  同じく admission の外。libvulkan では SUBMIT は context の mutex の下（vulkan_context_transaction の中）、external_fence_prepare・reap_if・
+  2 回の capacity の snapshot の置き場を決める。
+- 測り方: base・A・B・A+B を別に（A が採られない時でも B を判定できる）。DEFERRED（今は GPU_COMMAND の EAGAIN）の回数も記録。
+- 試験: plan/ws014/tests の host の harness（gpu-job.c・gpu-supervision.c・gpu-uapi-layout.c）を広げる。layout（56・16・32 byte）、失敗の注入
+  （reserve の各段の EAGAIN、fence の EBUSY、stream の EFAULT、command の DEFERRED・EIO、admit の失敗、commit・cancel の失敗、outcome の
+  copyout の EFAULT、別の thread の COMMIT・CANCEL・WAIT CONSUME、B の copyout の失敗・重複・PENDING・MISSING）、venus-reg、全 driver の build。
+- 問題が無いと確かめられた所（reviewer）: admission の中の reserve に deadlock は無い、deadline 切れ・device lost は admit の ENODEV で FAULTED、
+  別の thread は job_action の EBUSY と後の EALREADY、取りこぼしは無い、marker の順は今より厳しい、layout に padding 無し、番号は空き。
