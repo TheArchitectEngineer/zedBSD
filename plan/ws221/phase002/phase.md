@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p002 -->
 # ws221-p002: kernel + ifconfig + ping（pool の 2 class、MTU の口）
 
-Status: in-progress（2026-10-29 P3 q1664: 下の「済み」まで、77bd8ef04。残りは「残り」）
+Status: in-progress（2026-10-29 P3 q1664: 設計の項目は全部済み、b0166efaf。QEMU §8.2 (1)〜(4) PASS。残りは VF2 の確かめ）
 Parent: [WS221](../ws.md)
 Queue: q1664 / q1664-i01（P3）
 設計: [p001](../phase001/phase.md) §3.1・§3.2・§3.3・§3.7（ifconfig・ping）、§9 は全部推し（2026-10-29 ユーザー「全部 推しで (推し)」）
@@ -19,12 +19,24 @@ Queue: q1664 / q1664-i01（P3）
 | `socket_datagram_max`（syscall.c の 4 か所、AF_UNIX は 2048 のまま）、UDP・raw ICMP・ICMP の echo socket・ICMPv6 の echo の返事・packet socket の送りを `alloc_for` に | 52e468447 | VF2（en0 と 5330 を一時 9000）: `ping -s 8972 10.0.30.3` が 8980 bytes で返る |
 | `ping -s SIZE`（8〜65000、既定 56）、sendto の失敗の表示、返事の長さが送りと違えば truncated で数えない、ping6 も | 77bd8ef04 | VF2: `-s 1473` を MTU 1500 で → `ping: sendto: Message too long`、`-s 7` → usage、`ping -6 -s 1000 ::1` が 1008 bytes。5330 の MTU は 1500 に戻した |
 
+| socket ごとの jumbo の受けの上限（`SOCKET_RECEIVE_JUMBO_MAX` 2、stream でない socket、enqueue で数え dequeue・requeue で戻す） | 82d181f4e | build warning 0、tcp-model PASS。実機で上限に当てる試験は未実施（下） |
+| net.tcpstats の header に jumbo の欄（`jumbo_total`・`jumbo_used`・`jumbo_used_max`・`jumbo_reserve`・`jumbo_alloc_failures`、72 byte、version 1 のまま、`_Static_assert` 72）、sysctl が表示し `struct_size` を検める | b0166efaf | QEMU: `jumbo_total=32 … jumbo_reserve=8`（下の qemu-mtu.sh） |
+| QEMU の試験 `plan/ws221/tests/qemu-mtu.sh` と `config-amd64-jumbo.mk`（p001 §8.2 (1)〜(4)。tap の代わりに 2 つ目の user network 10.0.3.0/24 の usb-net を ue1 に） | （この commit） | 下 |
+
+## 試験（2026-10-29、b0166efaf の tree）
+
+- `sh plan/ws221/tests/qemu-mtu.sh` → `qemu-mtu: PASS`（出力 build/tmp/qemu-mtu-1.txt）:
+  (1) `ifconfig ue0 mtu 9000`・`mtu 1279` → 「outside 1280 to the interface's limit」rc=1、ue0 は 1500 のまま。
+  (2) up のまま `ifconfig ue1 mtu 1400` → rc=0、`mtu 1400`、SSH は続く。`mtu default` → 1500。
+  (3) 1400 で `ping -s 1372 10.0.3.2` → 1380 bytes × 2、`-s 1373` → `ping: sendto: Message too long`。IPv6（判定に入れない）: `ping -6 -s 1352 fec0:3::2` → 1360 bytes × 2、1353 → Message too long。
+  (4) `su user -c 'ifconfig ue1 mtu 1400'` → Operation not permitted、ue1 は 1500。`sysctl net.tcpstats` の 1 行目に `jumbo_total=32 jumbo_used=0 jumbo_used_max=0 jumbo_reserve=8 jumbo_alloc_failures=0`。
+- `sh plan/ws221/tests/qemu-tcp.sh build/ws221-jumbo/hdd-image.img 20` → `qemu-tcp: PASS`。
+- `OUT=… sh plan/ws220/tests/tcp-model/run.sh` → `tcp-model: PASS`。
+- 5 platform（`config/ci/config-{amd64,pcat,rpi4,rpi5,zybo}.mk`）の vmunix: 全部 rc=0・warning 0。
+
 ## 残り
 
-- socket ごとの jumbo の上限（2）（p001 §3.1 S7 (b)）。
-- net.tcpstats の header の jumbo の欄（72 byte、p001 §3.1 M6）。
-- QEMU の §8.2 (1)〜(4)（usb-net の 1514 で `mtu 9000` → EINVAL、`mtu 1400` → 成功、ping の長さ）。
-- i386 の build（pcat）は warning 0 を確かめた（6d45f0a87 の tree）。
+- 実機（VF2）で b0166efaf の kernel: `ping -s 8972`（5330 を一時 9000）と send・recv の回帰、socket の jumbo の上限に当てる試験（UDP の jumbo を読まない socket へ続けて送り、3 つ目からが落ちて pool の jumbo が残る）。
 
 ## 記録
 
