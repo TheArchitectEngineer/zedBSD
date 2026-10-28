@@ -1422,6 +1422,12 @@ struct kwl_server {
 	uint64_t pointer_warp;
 	struct kwl_input_settings input_settings_given;
 	int wake[2];
+	/*
+	 * Whether the register was told again after the desktop's first tick,
+	 * which opens the bar's daemons' connections, each with its thread
+	 * (KWL THREADS is told at READY and once more then).
+	 */
+	unsigned threads_told;
 	uint64_t box_last_event_us;
 	uint64_t box_last_write_us;
 	unsigned view_output;
