@@ -15,14 +15,14 @@
 ### 動いている担当と Queue
 
 <!-- master:agents:start -->
-2026-10-28 03:15 から N=3（ユーザー「N=3で作業します。」）、07:1x から WS307 の仕様の P4 を足して 4。台帳は [registry](agents/registry.md)。
+2026-10-28 03:15 から N=3（ユーザー「N=3で作業します。」）、07:1x〜WS307 の仕様の P4 で 4、仕様の確定の後にユーザー「P4は停止して、N=3に戻します。」で 3。台帳は [registry](agents/registry.md)。
 
 | 担当 | Queue | WS | 実機 |
 | --- | --- | --- | --- |
 | P1 | q1646 | [WS299](ws299/ws.md) 5330 の NVMe: p010 O_DIRECT → 乱読み QD32 → UFS の書き → p007 → p008（自律） | 5330 |
 | P2 | q1645 | [WS291](ws291/ws.md) RDNA: scene-6500 44.7 fps（Linux 50.2）、fence の固定の遅れ・vertex・CPU の往復を詰める（自律、Fable は何度でも） | 10.0.10.3（プラグミニ 1 は P2 が入れ直す） |
 | P3 | q1644 | [WS290](ws290/ws.md) GHCI 1.0 の driver: p001〜p004・p013 cleared、p005（session・VM）から | host（VF2＋KC705 は書き込みの知らせの後） |
-| P4 | — | 返却（WS307 の仕様を確定、p001 cleared。BUG-347 resolved）。次の仕事は指示待ち（候補: BUG-348、WS307 の実装 p002〜） | — |
+| P4 | — | 停止（2026-10-28 ユーザー「P4は停止して、N=3に戻します。」）。WS307 の仕様は確定（p001 cleared）、BUG-347 resolved | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
 <!-- master:agents:end -->
