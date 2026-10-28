@@ -124,3 +124,13 @@ kernel に CPU の性能と電力の枠組み（provider の登録の口）を�
 
 - 設計は [design.md](design.md) 第 3 版（一つの本文にまとめた。5330 の Debian の読み §2.3 を反映: MHz/単位は CPUID.16H ÷ Highest、module は L2 の組、HFI は Linux が無効で値は未読、TjMax 100 °C）。HAL の差分の案 [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff) 第 3 版（`highest_khz` を足した）、ユーザー向けの説明 [hal-review.md](hal-review.md)。Phase の表は design.md §7 が本体（上の「Phase の案と見積もり」より優先）。
 - 未決: Q301-1（HAL の差分、hal-review.md を見てから）、Q301-2（相対の性能の源）、Q301-8（HWP の無い CPU）。第 3 版の design-reviewer は未実施（次の作業）。
+
+## ユーザーの回答の第 2 回（2026-10-29、Q1 の中継の原文）
+
+- Q301-2（firmware の値が誤りだった事を伝えて聞き直した。前の答え「firmware の Nominal (推し)」を置き換える）「とりあえず推しにしますが、あとでマッピングを変えられるインタフェースにします。」→ 解釈: 既定は最大の周波数の比（5330 は E = 75）、基準は root が選べ driver が別の源を出せる口にする（design.md §4.7）。
+- Q301-8「P-stateを操作しますが、HALではなくドライバでできるはずです。」→ 解釈: HWP の無い CPU も P-state を操作する（legacy の道、design.md §4.9）。HAL を増やさず x86 の driver が CPUID・MSR を扱う。同じ理由で HWP・HFI・topology も driver に移し、HAL を変えない案を推しにした（design.md §4.2、Q301-1 の問いを [hal-review.md](hal-review.md) で改めた）。
+
+## 再開点（2026-10-29 P5、q1666-i03、改訂 1）
+
+- design.md 第 3 版の改訂 1: HAL を変えない（x86 の driver が CPUID・MSR）、相対の性能の基準を替えられる口、legacy の P-state（`_PSS`・0xCE・AMD の HwPstate と governor、p005）。Phase の表は design.md §7（p001〜p008、約 25 LW）。
+- 未決: Q301-1（HAL を変えない推しでよいか、hal-review.md）。第 3 版の design-reviewer は改訂 1 の前の版を見ている（結果は design-v3-review.md、来たら改訂 1 に照らして反映）。

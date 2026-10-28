@@ -1,81 +1,66 @@
 <!-- awesome-plan project=zedbsd record=ws301-hal-review -->
 
-# WS301 の HAL の追加の説明（ユーザーのレビュー用、Q301-1）
+# WS301 と HAL（ユーザーのレビュー用、Q301-1）
 
-2026-10-29 P5。対象は [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff)（第 3 版、`include/hal/hal.h` への追加だけ、まだ当てていない）。設計の本文は [design.md](design.md)。
+2026-10-29 P5（改訂 1: ユーザーの Q301-8 の答え「P-stateを操作しますが、HALではなくドライバでできるはずです。」を受けて、推しを「HAL を変えない」に替えた）。設計の本文は [design.md](design.md) §4.1・§4.2・§4.9。
 
 ## 1. 用語
 
-- **HAL**: zedBSD の kernel と CPU・board の間の層。CPU の register や firmware の表を直に触るのは HAL だけで、kernel は HAL の関数を呼ぶ。HAL の関数の宣言（`include/hal/hal.h`）を変えるにはユーザーの承認が要る。
-- **DVFS**: CPU の周波数（と電圧）を負荷に合わせて変える事。速くすると電力と熱が増え、遅くすると減る。
-- **HWP**（Hardware P-states）: Intel の CPU（第 6 世代以降）が持つ仕組み。OS は「この範囲で、性能寄りか省電力寄りか」を CPU に伝えるだけで、細かい周波数は CPU が自分で決める。5330 の CPU（i5-1245U）は持つ。
-- **MSR**: CPU の中の設定の register。HWP の設定も MSR に書く。CPU ごと（論理 CPU ごと）にあり、その CPU の上で走る命令でしか読み書きできない。存在しない MSR を触ると CPU が例外（#GP）を起こす。
-- **topology**: どの CPU がどの core・どの束（module）・どの package に属するか。5330 は P-core 2 つ（それぞれ 2 thread、計 4）と E-core 8 つ（4 つずつの 2 束）で、論理 CPU は 12。
-- **core の種類**: 5330 は速い P-core と省電力の E-core の 2 種類（hybrid）。CPU が種類の番号を返す。
-- **HFI**（Hardware Feedback Interface）: CPU が「今それぞれの core がどれだけ速く・効率よく動けるか」を表にして memory に書く仕組み。熱や電力で値が変わる。
-- **相対の性能**: 一番速い core を 100 とした各 core の速さ（ユーザーの要求 (5)）。
+- **HAL**: zedBSD の kernel と CPU・board の間の層。HAL の関数の宣言（`include/hal/hal.h`）を変えるにはユーザーの承認が要る。HAL の役目は「POSIX の kernel に要る低い層の操作」（`hal.h` の先頭の comment）。
+- **driver**: kernel の中で特定の hardware を扱う部分。platform の driver（`src/drivers/platform/pcat/` など）は、その platform の CPU の命令を直に使ってよい（前例: PC の IDE の driver の port の命令、Pi 5 の driver の system register の命令）。
+- **DVFS**: CPU の周波数（と電圧）を負荷に合わせて変える事。
+- **HWP**: Intel の CPU（2015 年の第 6 世代以降）の機能。OS は「この範囲で、性能寄りか省電力寄りか」を伝えるだけで、細かい周波数は CPU が決める。5330 は持つ。
+- **P-state**（legacy）: HWP の前からある方式。CPU の選べる周波数の段（例 0.4〜2.5 GHz の 100 MHz 刻み）から OS が段を選んで書く。OS が負荷を見て段を上げ下げする（governor）。
+- **MSR**: CPU の中の設定の register。HWP も P-state も MSR に書く。論理 CPU ごとにあり、その CPU の上で走る命令でしか読み書きできない。CPU に無い MSR に触ると例外（#GP）が起き、kernel の中では止まる。
+- **CPUID**: CPU に「どの機能を持つか」を聞く命令。MSR が有るかどうかも CPUID の bit で分かる。
+- **topology**: どの CPU がどの core・束（module）・package に属するか。5330 は P-core 2 つ（各 2 thread）と E-core 8 つ（4 つずつ 2 束）、論理 CPU 12。
+- **HFI**: CPU が「今それぞれの core がどれだけ速く・効率よく動けるか」の表を memory に書く仕組み。
 
-## 2. 何のために足すか
+## 2. 推し: HAL を変えない
 
-ユーザーの要求（ws.md の 5 つ）のうち、kernel が CPU の register か firmware の表を読まないと答えられない物があり、それは HAL の中でしか読めない:
+WS301 が要る CPU の操作（topology の読み、HWP、legacy の P-state、HFI）は、全部 **x86 の CPU の性能の driver**（`src/drivers/platform/pcat/` に新しく置く）が CPUID・MSR の命令を自分で実行して行う。HAL の宣言は 1 つも足さない。
 
-| ユーザーの要求 | 要る HAL の口 |
-| --- | --- |
-| (2) どの core 群が電圧や周波数を共有しているか | A: topology（core・module・package、core の種類） |
-| (1) core ごとの DVFS のステップ、(4) 状態の取得 | B: 能力の読み（最低・保証・効率・最高の値）、今の要求と実際の周波数の計数の読み |
-| (3) core ごとの DVFS の状態の設定 | B: enable と要求の書き |
-| (5) 一番速い core を 100 とした相対の性能 | A の core の種類、B の最高の値と周波数、HFI の表 |
+| 要る事 | どうするか | 使う既存の口 |
+| --- | --- | --- |
+| 別の CPU の MSR を読み書きする | kernel がその CPU を起こし、その CPU の上で driver の関数を走らせる | `hal_cpu_notify`（既存の HAL の関数）と kernel の `kernel_cpu_notify_handler` |
+| topology（core・束・package・core の種類） | driver が各 CPU の上で CPUID を読む | 同上 |
+| CPU と firmware の CPU の番号の対応 | driver が ACPI の MADT の表を読む | ACPI の driver の表の貸し（既存） |
+| HWP・P-state・HFI | driver が MSR を書く・読む | 同上 |
+| HFI の表の memory | kernel の物理の page | 既存の kernel の memory の口 |
 
-今の HAL には CPU の数と番号しか無く、MSR を読む口も無い（`include/hal/hal.h:113〜241`）。
+理由:
+1. ユーザーの方向（Q301-8 の原文）。
+2. CPU の性能の制御は HAL の役目（POSIX の kernel に要る低い層）の外。
+3. platform の driver が CPU の命令を直に使う前例がある。
+4. HAL の API が増えない（第 3 版の案は 7 つ増えた）。全 12 の HAL の directory に既定の答えを書く作業も要らない。
 
-## 3. 足す型と関数（第 3 版）
+## 3. 安全の仕組み（HAL を使わない時に失う物と、その代わり）
 
-### A. topology（1 関数）
+失う物: 第 3 版の案では、CPU が MSR の操作を拒んだ時（#GP）に HAL が受け止めて「対応外」で返せた。driver が直に命令を使うと、それは無い（kernel が止まる）。
 
-- `hal_cpu_topology(cpu, &topology)`: CPU の package・die・module・core・thread の番号、core の種類の番号、firmware の CPU の番号を返す。番号が同じなら同じ物を共有する。
-- 知らない HAL（今の arm64・riscv64 など）は「CPU ごとに別の core、種類は不明」と答える。起動の後は変わらない。
-- 5330 では module を「L2 cache を共有する組」から作る（CPU が module の level を直に報告しないため、design.md §2.3）。
+代わりの関門（driver は次を全部満たす MSR にだけ触る）:
+1. **仮想機械では触らない**: CPUID の hypervisor の印が立つ CPU では driver を動かさない（QEMU の上では何もしない）。
+2. **CPU が持つと言う物だけ**: Intel・AMD が仕様で定めた（architectural な）MSR を、それを示す CPUID の bit が立つ時だけ（HWP、HFI、周波数の計数、Intel の P-state、AMD の P-state）。
+3. **model ごとの MSR は表にある CPU だけ**: 仕様で定まらない MSR（Intel の周波数の段の範囲 0xCE など）は、Intel の手引き（SDM Vol 4）の表にその MSR がある CPU の model だけ。
+4. **順を守る**: HWP は enable の前に他の HWP の MSR に触らない（Intel の手引きの規則）。
+5. **値を検める**: 書く値は CPU の報告した範囲の中だけ。
+6. **既定で入らない**: `CONFIG_CPU_PERF` は既定 n（Q301-4「試験が通るまで無効」）。n の kernel は MSR に一切触らない。y の kernel でも起動の parameter `cpuperf=off` で止められる。
+7. **実機で両方の道を確かめる**: 5330 で HWP の道と、HWP を入れない起動（`cpuperf.hwp=off`）での P-state の道を試す（p007）。
 
-### B. 今の CPU の性能の制御（6 関数、機構だけ）
-
-| 関数 | 何をするか |
-| --- | --- |
-| `hal_cpu_perf_capabilities(&caps)` | 呼んだ CPU の制御の能力: 有る機能の flag、最低・効率・保証・最高の値（0〜255 の CPU の単位）、HFI の表の大きさと行、基準の周波数（TSC）、最高の時の周波数（CPUID.16H、第 3 版で足した） |
-| `hal_cpu_perf_enable()` | 呼んだ CPU の HWP を入れる（x86 は reset まで切れない。package 全体） |
-| `hal_cpu_perf_set(&req)` | 呼んだ CPU に要求を書く: 最低・最高・希望（0 は CPU に任せる）・性能と省電力の寄り（EPP） |
-| `hal_cpu_perf_get(&req, &counters)` | 今の要求と、実際の周波数を出すための 2 つの計数（実際の clock と基準の clock）、能力の変化の事象 |
-| `hal_cpu_perf_feedback(address)` | kernel が用意した HFI の表の page を CPU に教える（0 で止める） |
-| `hal_cpu_perf_feedback_copy(buffer, size)` | HFI の表が新しく書かれていたら写し、それから CPU に次を書かせる |
-
-「機構だけ」の意味: HAL はどの値を書くか（性能寄りか省電力寄りか）を決めない。決めるのは kernel（WS303 の strategy から WS301 の枠組みが作る要求）。今の `hal_cpu_idle_suspend` と同じ分け方。
-
-全部「呼んだ CPU」に効く。別の CPU の設定は、kernel がその CPU を起こし（既存の `hal_cpu_notify`）、その CPU の上で呼ぶ。HAL に CPU 間の呼び出しは足さない。
+関門を通っても CPU が拒めば止まる、という残りの危険は、上の 2・3 で十分に小さいと見る（推定。根拠は CPU の仕様が「その bit が立てば MSR が有る」と定める事）。
 
 ## 4. 各機種の扱い
 
-| 機種 | A topology | B 性能の制御 |
-| --- | --- | --- |
-| amd64 の Intel、HWP 有り（5330、SV7 は推定） | CPUID で全部 | HWP で全部（HFI は有る機械だけ） |
-| amd64 の Intel、HWP 無し（第 5 世代以前）・AMD | CPUID で全部 | 全部「対応外」（HAL_ERR_UNSUPPORTED）。AMD の CPPC は後で同じ口に入れられる |
-| amd64 の hypervisor の下（QEMU） | CPUID で | 全部「対応外」 |
-| i386・pc98・arm64・riscv64・他（12 の HAL の directory 全部） | 既定の答え（CPU ごとに別の core） | 全部「対応外」 |
+| 機種 | 扱い |
+| --- | --- |
+| Intel、HWP 有り（5330、SV7 は推定） | HWP の道。HFI が有れば HFI も |
+| Intel、HWP 無し（第 5 世代以前） | P-state の道: firmware の表（`_PSS`、`_OSC` 無しで読める物）か、表にある model なら CPU の 0xCE から段を作り、OS の governor が段を選ぶ |
+| AMD | P-state の道（段の番号だけ、周波数は firmware の表が無ければ不明）。試す機械が無いので host 試験だけ。AMD の CPPC（HWP に似た物）は後で同じ driver に足せる |
+| 仮想機械の中（QEMU） | 何もしない（表は出す、設定は「対応外」） |
+| arm64・riscv64 | この WS は枠だけ（Q301-5）。後の WS で各 board の driver（Pi の firmware、VF2 の clock）が同じ口に入る |
 
-HWP の無い CPU で OS が周波数を制御する道（design.md §4.9、Q301-8）は、この差分には入れていない（推し: 枠だけ）。
+## 5. 判断の点（Q301-1）
 
-## 5. 安全の仕組み
-
-- **起動を壊さない**: CPU が MSR の読み書きを拒んだ時（#GP）、HAL は例外で止まらずに「対応外」を返す（今の HAL の MSR の読み書きは拒みから回復できないので、HAL の実装の中に回復の道を作る）。
-- **順を守る**: Intel の手引き（SDM）は「HWP を入れる前に他の HWP の register に触るな」と書く。HAL は enable の前に能力の値を読まず（0 を返す）、要求の書き・読みは「まだ」（HAL_ERR_STATE）を返す。
-- **既定で入らない**: これらを使う kernel の部分は `CONFIG_CPU_PERF` が既定 n（Q301-4「試験が通るまで無効」）。n の kernel は HAL の B を一度も呼ばず、CPU は今と同じ firmware の設定のまま。
-- **仮想機械では触らない**: hypervisor の印が立つ CPU では B は全部「対応外」。
-- **一度入れると切れない**: HWP の enable は reset まで戻せない（Intel の仕様）。再起動で消えるので、Debian に戻っても困らない。
-- **範囲の検査**: 要求は「最低 ≤ 最小 ≤ 最大 ≤ 最高」を HAL が検め、外れたら書かない（HAL_ERR_INVALID）。
-- **HFI の表**: CPU が書く memory なので、止めが終わる（HAL_OK）まで kernel は page を解放しない。
-
-## 6. 判断の点
-
-1. **A と B を 1 つの差分で承認するか**（推し: 1 つ）。B の値（最高の値）は core の種類（A）が無いと比べられないため、別々に承認しても B だけでは使えない。
-2. **案 (a)「機構だけの口」か、案 (b)「MSR を何でも読み書きできる汎用の口」か**（推し: (a)）。(b) は HAL の関数が少なくて済むが、kernel の中に Intel・AMD の register の番号が散らばり、HAL の「CPU の register は HAL だけ」の境界が崩れる。
-3. **`highest_khz`（第 3 版で足した欄）**: 5330 の firmware が P-core と E-core に同じ周波数（1600 MHz）を報告し、それでは E-core の MHz を正しく出せないため、CPU が core の種類ごとに返す最大の周波数（P 4400・E 3300 MHz）を HAL から渡す。5330 の実測と合った（design.md §2.3）。
-
-選択肢: (A, 推し) 第 3 版をこのまま承認（p003 で実装、p002 は先に stub で進める）。(B) A（topology）だけ先に承認。(C) 今は承認しない（WS301 は HAL の要らない枠組みの host 試験まで）。
+- (A, 推し) **HAL を変えない**（上の 2〜4）。
+- (B) topology だけ HAL に足す。topology は WS302（thread の置き場の判断）も使い、arm64 の device tree の topology も HAL が持つ方が揃う。WS302 が `CONFIG_CPU_PERF` と別に topology を要るなら意味がある（WS302 の設計で分かる）。
+- (C) 第 3 版の差分（HAL が性能の制御の口を持ち、#GP を受け止める）を承認する。安全は一段高いが、HAL の API が 7 つ増え、ユーザーの Q301-8 の方向と違う。差分は [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff) に記録として残す（当てない）。
