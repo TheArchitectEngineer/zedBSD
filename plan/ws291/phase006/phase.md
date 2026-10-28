@@ -895,13 +895,13 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
 
 ### UCLK の再開点（次の担当へ、2026-10-28 19:50）
 
-1. 増分 B: memory=1 + memory_allow=2 で起動し、clocks の行で state=0x0（SR 許可）・underflow=0 を確かめ、soak 60 分 × 2（guard の下）。停止したら dmesg の
-   「smu: hung: display memory handshake」の 4 標本で bit 31（要求）・bit 30（allow）を読む。
+1. （取りやめ、2026-10-28 20:07）増分 B（memory=1 + memory_allow=2 の固定 UCLK の soak）。ユーザー（Q1 経由）「UCLK固定のsoakはやらなくていいと伝えたはずですが」
+   「P2はsoakはやめさせて、実装に集中させてください。」→ soak はしない（固定も受け入れの長いものも）。始めた 1 本（build/ws291/soak-b1、20:01〜）は 13 回・停止 0 で止めた。
 2. 増分 C・D の実装（design-reviewer の B1〜M8 を入れる）: display の段を独立の関数（smu.c か新しい file）にし、A8（takeover）の終わり・
    amdrdna_mode_set の後・reset の A4 の後から呼ぶ。順: DRAM_STATE を 0x30 → watermark の table（TABLE_WATERMARKS = 1、reader 4 行 = UCLK の段の範囲、
    writer 1 行）→ NumOfDisplays = 1 → DCEFCLK の hard min（起動の値か 506）・SOCCLK の hard min → hub の DRAM_CLK_CHANGE の watermark を mode-plan の
    段 0 の UCLK（memory_mts = 100×16）と 404 us で計算した値で 4 set に書く（memory_switch が 0 なら 5 us で計算し UCLK は固定のまま）→ 最後に
    DRAM_STATE を 0x0 → UCLK の hard min を段 0（下ろすのは watermark の後）。shutdown は 0x30 → NumOfDisplays = 0 → hard max を最上段 → all off。
    DEBUG_INDEX と DATA の読みは lock を共有する（control.c と smu_hang_mark）。
-3. 受け入れ（Q1 19:15）: soak（負荷と idle の繰り返し）2 回以上か 2 時間で停止 0・underflow 0、idle で clocks の mem が下がり負荷で上がる、
-   scene の bench が Linux の数以上（同じ条件）。既定は完成して確かめるまで memory=0。
+3. 受け入れ（Q1 19:15、20:10 の指示で soak を除く）: 短い起動の確認（起動の mark・idle で clocks の mem が下がり負荷で上がる・underflow 0）と、
+   scene の bench が Linux の数以上（同じ条件）。長い soak はしない。既定は完成して確かめるまで memory=0。
