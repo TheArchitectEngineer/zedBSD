@@ -112,4 +112,4 @@
 | q1657 / q1657-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws299d`・branch `agent/p1-ws299d`、基点 main） | [ws299](ws299/ws.md)（q1646 の続き） | direct の書き 59% → UFS の書き 55% → mkfs native の write-through → p007 → p008。q1640・q1646 と同じ承認（自律、Fable は何度でも） | in-progress |
 
 | q1658 / q1658-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291h`・branch `agent/p2-ws291h`、基点 main） | [ws291](ws291/ws.md) UCLK の負荷に応じた DPM（段 B〜D）→ 受け入れ → 案 4・5 | q1655 と同じ承認 | in-progress |
-| q1659 / q1659-i01 | P3（phase-runner、worktree `/home/awe/zedBSD-worktrees/p3-ws290h`・branch `agent/p3-ws290h`、agent/p3-ws290g の先から） | [ws290](ws290/ws.md) p017 の残り（段 4・6・8・9・10・7）と QEMU の確かめ | q1656 と同じ承認。Q14「止める (推し)」、M8 は stub を足して試験を直す（Q1） | in-progress |
+| q1659 / q1659-i01 | P3（phase-runner、worktree `/home/awe/zedBSD-worktrees/p3-ws290h`・branch `agent/p3-ws290h`、agent/p3-ws290g の先から） | [ws290](ws290/ws.md) p017 の残り（段 4・6・8・9・10・7）と QEMU の確かめ | q1656 と同じ承認。Q14「止める (推し)」、M8 は stub を足して試験を直す（Q1） | cleared（2026-10-28、merge b99e96139。host 試験・16 build・QEMU 2 本 PASS。p017 は実機（p014・M9）が残り in-progress） |

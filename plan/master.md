@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | P1 | q1657 | [WS299](ws299/ws.md) 5330 の NVMe: direct の書き 59% → UFS の書き 55% → mkfs native → p007 → p008（乱読みは Debian の 99%） | 5330 |
 | P2 | q1658 | [WS291](ws291/ws.md) RDNA: UCLK を負荷に応じた DPM に（段 B〜D）→ 受け入れ（Linux の数以上）→ 案 4・5 | 10.0.10.3（NVMe の zedBSD） |
-| P3 | q1659 | [WS290](ws290/ws.md) GHCI: p016 cleared。p017（全 GPU の最初の flip で console の framebuffer の使用終了）の残りと QEMU の確かめ | host（VF2＋KC705 は書き込みの知らせの後） |
+| P3 | —（q1659 cleared、merge b99e96139） | [WS290](ws290/ws.md) GHCI: p017 は実装・host 試験・QEMU 済み、実機（p014・M9）待ち。p015 は実機の後 | 待機（VF2＋KC705 の書き込みの知らせ待ち） |
 | P4 | — | 停止（2026-10-28 ユーザー「P4は停止して、N=3に戻します。」）。WS307 の仕様は確定（p001 cleared）、BUG-347 resolved | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO（P4 の中断の記録）、[WS304](ws304/ws.md) Pi 5 の NVMe（p003 はハード側の切り分け待ち）。
