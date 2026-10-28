@@ -36,6 +36,7 @@
 #include <uapi/sysctl.h>
 #include "kern/clock.h"
 #include <kern/kcrt.h>
+#include <kern/kmem.h>
 #include <uapi/system.h>
 
 /* disk_cached_transfer()'s write that may stay in the cache for a raw writer. */
@@ -168,6 +169,7 @@ static int disk_cache_enter(struct disk *disk, struct disk **leaf_out);
 static void disk_cache_leave(struct disk *leaf);
 static int disk_transfer_pages_owned(struct disk *disk, enum bio_op op, uint64_t block, uint32_t count, const uint64_t *pages, uint32_t page_count, const struct backing_claim *claim, uint32_t *completed, const struct io_context *context);
 static int disk_cached_transfer(struct disk *disk, uint64_t block, uint32_t count, void *data, int write, struct buf_view *view, const struct io_context *context);
+static int sector_whole_blocks(struct disk *disk, uint64_t block, uint32_t count, void *data, int write, int direct, const struct io_context *context);
 static int async_initialize(void);
 static void async_worker(void *argument);
 static void async_complete(struct bio *bio);
@@ -4710,4 +4712,189 @@ disk_stats_gone(
 
 	/* One more change of the set. */
 	disk_stats_generation++;
+}
+
+/*
+ * Moves sectors of 512 bytes (DISK_SECTOR_SIZE) of a disk, whatever the
+ * size of its blocks.  A filesystem that numbers its volume in such
+ * sectors (FAT, UFS, a swap file's extents) reads and writes through this
+ * on a disk of 4096-byte blocks as on one of 512.
+ *
+ * On a disk of 512-byte blocks the sectors are the blocks and the call is
+ * the block call itself.  On a larger one the sectors that fill whole
+ * blocks go as those blocks; a block of which only some sectors are asked
+ * for is read whole into a bounce buffer, and for a write the sectors are
+ * put in it and the block is written back.  The caller excludes another
+ * writer of the same block, as it excludes one of the same sectors.
+ *
+ * direct chooses the uncached calls (disk_read_direct and
+ * disk_write_direct_context) over the cached ones (disk_read and
+ * disk_write_filesystem_context).
+ */
+int
+disk_sector_transfer(
+	struct disk *disk,
+	uint64_t sector,
+	uint32_t count,
+	void *data,
+	int write,
+	int direct,
+	const struct io_context *context)
+{
+	uint8_t *bytes;
+	uint8_t *bounce;
+	uint32_t per_block;
+	uint32_t within;
+	uint32_t part;
+	uint32_t blocks;
+	uint64_t block;
+	int error;
+
+	/* A call that names no disk or nothing to move. */
+	if (disk == NULL || data == NULL)
+		return EINVAL;
+
+	/* A block that is not whole sectors, or more than a page of them. */
+	error = disk_sector_supported(disk);
+	if (error != 0)
+		return error;
+
+	/* A disk of 512-byte blocks takes the sectors as they are. */
+	per_block = disk->d_block_size / DISK_SECTOR_SIZE;
+	if (per_block == 1U) {
+		error = sector_whole_blocks(disk, sector, count, data, write,
+					    direct, context);
+		return error;
+	}
+
+	/* Moves the whole blocks at once and the ends through the bounce buffer. */
+	bytes = data;
+	bounce = NULL;
+	error = 0;
+	while (count > 0U) {
+		block = sector / per_block;
+		within = (uint32_t)(sector % per_block);
+
+		/* Sectors that start a block and fill it, as many blocks as they fill. */
+		if (within == 0U && count >= per_block) {
+			blocks = count / per_block;
+			error = sector_whole_blocks(disk, block, blocks, bytes,
+						    write, direct, context);
+			if (error != 0)
+				break;
+			sector += (uint64_t)blocks * per_block;
+			count -= blocks * per_block;
+			bytes += (size_t)blocks * disk->d_block_size;
+			continue;
+		}
+
+		/* The sectors of this block asked for: from within to its end, or fewer. */
+		part = per_block - within;
+		if (part > count)
+			part = count;
+
+		/* The bounce buffer, made once for the call. */
+		if (bounce == NULL) {
+			bounce = kern_malloc(disk->d_block_size);
+			if (bounce == NULL) {
+				error = ENOMEM;
+				break;
+			}
+		}
+
+		/* Reads the whole block. */
+		error = sector_whole_blocks(disk, block, 1U, bounce, 0, direct,
+					    NULL);
+		if (error != 0)
+			break;
+
+		/* A read takes its sectors from the block. */
+		if (!write) {
+			kern_memcpy(bytes, bounce + (size_t)within * DISK_SECTOR_SIZE,
+				    (size_t)part * DISK_SECTOR_SIZE);
+		}
+
+		/* A write puts its sectors in the block and writes the block back. */
+		if (write) {
+			kern_memcpy(bounce + (size_t)within * DISK_SECTOR_SIZE, bytes,
+				    (size_t)part * DISK_SECTOR_SIZE);
+			error = sector_whole_blocks(disk, block, 1U, bounce, 1,
+						    direct, context);
+			if (error != 0)
+				break;
+		}
+
+		sector += part;
+		count -= part;
+		bytes += (size_t)part * DISK_SECTOR_SIZE;
+	}
+
+	/* Gives the bounce buffer back. */
+	if (bounce != NULL)
+		kern_free(bounce);
+
+	/* Reports how the transfer went. */
+	return error;
+}
+
+/*
+ * Whether a disk's blocks are whole 512-byte sectors that the sector calls
+ * move: 512 bytes, or a larger power of two no larger than a page.  Returns
+ * 0, or EOPNOTSUPP for another size.
+ */
+int
+disk_sector_supported(
+	const struct disk *disk)
+{
+	uint32_t size;
+
+	/* A block smaller than a sector, or larger than a page. */
+	size = disk->d_block_size;
+	if (size < DISK_SECTOR_SIZE || size > KERN_PAGE_SIZE)
+		return EOPNOTSUPP;
+
+	/* A block that is not a power of two. */
+	if ((size & (size - 1U)) != 0U)
+		return EOPNOTSUPP;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Moves whole blocks by the cached or the uncached calls. */
+static int
+sector_whole_blocks(
+	struct disk *disk,
+	uint64_t block,
+	uint32_t count,
+	void *data,
+	int write,
+	int direct,
+	const struct io_context *context)
+{
+	int error;
+
+	/* An uncached read. */
+	if (!write && direct) {
+		error = disk_read_direct(disk, block, count, data);
+		return error;
+	}
+
+	/* A cached read. */
+	if (!write) {
+		error = disk_read(disk, block, count, data);
+		return error;
+	}
+
+	/* An uncached write. */
+	if (direct) {
+		error = disk_write_direct_context(disk, block, count, data,
+						  context);
+		return error;
+	}
+
+	/* A cached filesystem write. */
+	error = disk_write_filesystem_context(disk, block, count, data,
+					      context);
+	return error;
 }

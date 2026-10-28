@@ -470,4 +470,25 @@ disk_write(
 	uint32_t count,
 	const void *data);
 
+/*
+ * Sectors of 512 bytes, the unit FAT, UFS and a swap file's extents number
+ * a volume in, moved on a disk of any block size from 512 bytes to a page
+ * (disk.c).
+ */
+#define DISK_SECTOR_SIZE	512U
+
+int
+disk_sector_transfer(
+	struct disk *disk,
+	uint64_t sector,
+	uint32_t count,
+	void *data,
+	int write,
+	int direct,
+	const struct io_context *context);
+
+int
+disk_sector_supported(
+	const struct disk *disk);
+
 #endif
