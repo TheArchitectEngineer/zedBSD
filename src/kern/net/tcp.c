@@ -65,7 +65,7 @@
  * header of the longest options.  A connection's segments are its
  * send_mss: the smaller of the peer's offer and what the interface carries.
  */
-#define TCP_SEGMENT_MAX (PACKET_BUF_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM - 60U)
+#define TCP_SEGMENT_MAX (PACKET_BUF_STORAGE_SIZE - PACKET_BUF_DEFAULT_HEADROOM - 64U)
 
 /*
  * The segment size a peer whose SYN offered none takes (RFC 9293 section
@@ -77,9 +77,12 @@
 /*
  * The headroom of a segment's copy in the send ring: the default headroom
  * for the link and IP headers and a TCP header with the longest options,
- * which its first transmission pushes in front of the payload.
+ * which its first transmission pushes in front of the payload.  Two bytes
+ * more than that put the frame of an IPv4 segment without options (54
+ * bytes of headers) on a word, which is where the device's copy of it is
+ * fastest.
  */
-#define TCP_COPY_HEADROOM (PACKET_BUF_DEFAULT_HEADROOM + 60U)
+#define TCP_COPY_HEADROOM (PACKET_BUF_DEFAULT_HEADROOM + 62U)
 
 /* The IPv4 and TCP headers without options, and the IPv6 and TCP headers. */
 #define TCP_HEADERS 40U

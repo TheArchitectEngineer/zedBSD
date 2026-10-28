@@ -1438,8 +1438,13 @@ eqos_transmit(
 	if (!device->opened || device->speed == 0) {
 		error = ENETDOWN;
 	} else {
-		/* Frees what the controller finished, then checks one descriptor is left. */
-		errors = reclaim_tx(device);
+		/*
+		 * Frees what the controller finished only when the ring looks
+		 * full (the network worker's poll frees the rest), then checks
+		 * one descriptor is left.
+		 */
+		if (device->tx_producer - device->tx_consumer >= EQOS_TX_COUNT / 2U)
+			errors = reclaim_tx(device);
 		if (device->tx_producer - device->tx_consumer >= EQOS_TX_COUNT - 1U)
 			error = ENOBUFS;
 	}
