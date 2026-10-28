@@ -498,19 +498,19 @@ static int writeback_line_whole(struct buf *buffer, const struct io_context *dra
 static int writeback_line_runs(struct buf *buffer, const struct io_context *drain, const struct backing_claim *writer);
 static int write_lines(struct disk *disk, uint64_t block, uint32_t count, const void *data, uint64_t pin);
 static void flusher_hooks_init(void);
-static int reserve_bytes(size_t size, int metadata);
+static int reserve_bytes(size_t size, int metadata, int needed);
 static void cancel_reservation(size_t size, int metadata);
 static void commit_reservation(size_t size, int metadata);
-static int alloc_pmem(size_t size, struct kern_pmem *memory, int metadata);
-static int slab_grow(void);
-static struct buf * alloc_metadata(void);
+static int alloc_pmem(size_t size, struct kern_pmem *memory, int metadata, int needed);
+static int slab_grow(int needed);
+static struct buf * alloc_metadata(int needed);
 static void free_metadata(struct buf *buffer);
 static void free_buffer(struct buf *buffer);
 static int busy_acquire(struct buf *buffer);
 static void drop_caller_reference(struct buf *buffer);
 static int read_buffer(struct buf *buffer);
 static int acquire_line(struct disk *disk, uint64_t block, int read_data, struct buf **result);
-static int reference_line(struct disk *disk, uint64_t block, struct buf **result);
+static int reference_line(struct disk *disk, uint64_t block, int needed, struct buf **result);
 static int transfer_run(struct disk *disk, uint64_t block, uint64_t remaining, void *data, int write, uint32_t *transferred, const struct io_context *context);
 static int transfer_run_lines(struct disk *disk, uint64_t block, uint64_t remaining, void *data, int write, uint32_t *transferred, const struct io_context *context, struct buf **lines, uint64_t *generations, uint64_t *pages, unsigned limit, int prefetch);
 static void run_record(int prefetch, enum io_stat_event event, uint64_t bytes);
@@ -537,7 +537,7 @@ static int readahead_running(struct disk *leaf);
 static uint64_t readahead_now_ns(void);
 static void readahead_account(uint64_t *sum, uint64_t value);
 static uint32_t copy_cached_lines(struct disk *disk, uint64_t block, uint64_t remaining, uint8_t *out);
-static struct buf *recycle_line_locked(struct disk *disk, uint64_t line_block, uint64_t line_blocks, uint64_t line_bytes);
+static struct buf *recycle_line_locked(struct disk *disk, uint64_t line_block, uint64_t line_blocks, uint64_t line_bytes, int needed);
 static uint64_t dirty_limit_for(uint64_t cap);
 static int cluster_line_locked(const struct buf *buffer, uint64_t line_blocks);
 static int cluster_take(struct buf *buffer, uint64_t line_blocks);
@@ -613,7 +613,7 @@ buf_init(
 
 	/* Allocates the first header slab. */
 	cache_initialized = 1;
-	if (slab_grow() != 0) {
+	if (slab_grow(0) != 0) {
 		cache_initialized = 0;
 		return ENOMEM;
 	}
@@ -876,7 +876,7 @@ buf_read_view(
 
 	/* Prepares all references without holding any line busy over allocation or reclaim. */
 	while (mapped < end && view->count < BUF_VIEW_MAX_LINES) {
-		error = reference_line(leaf, mapped, &buffer);
+		error = reference_line(leaf, mapped, view->count == 0, &buffer);
 		if (error != 0)
 			break;
 		view->lines[view->count++] = buffer;
@@ -1660,7 +1660,7 @@ buf_unpin(
 	line_start = mapped - mapped % line_blocks;
 	while (line_start < end) {
 		/* Takes the line. */
-		error = reference_line(leaf, line_start, &buffer);
+		error = reference_line(leaf, line_start, 0, &buffer);
 		if (error != 0)
 			return error;
 
@@ -1751,6 +1751,7 @@ buf_writeback_range(
 	uint64_t end;
 	uint64_t line_blocks;
 	uint64_t line_start;
+	unsigned long irq;
 	int error;
 
 	/* An empty range has no lines to write. */
@@ -1771,15 +1772,35 @@ buf_writeback_range(
 	end = mapped + count;
 	line_start = mapped - mapped % line_blocks;
 	while (line_start < end) {
-		/* Takes the line. */
-		error = reference_line(leaf, line_start, &buffer);
-		if (error != 0)
+		/*
+		 * Takes the line only when the cache holds it: a missing line has
+		 * nothing to write, and bringing one in could fail for memory.
+		 */
+		irq = spin_lock_irqsave(&cache_lock);
+
+		buffer = hash_find_locked(leaf, line_start);
+		if (buffer != NULL) {
+			refcount_get(&buffer->b_refs);
+			lru_remove_locked(buffer);
+		}
+
+		spin_unlock_irqrestore(&cache_lock, irq);
+
+		/* Steps over a line the cache does not hold. */
+		if (buffer == NULL) {
+			line_start += line_blocks;
+			continue;
+		}
+
+		/* Becomes the line's busy owner, so that its data holds still. */
+		error = busy_acquire(buffer);
+		if (error != 0) {
+			drop_caller_reference(buffer);
 			return error;
+		}
 
 		/* Writes it back as its own dirtier would; a clean or pinned line is left as it is. */
-		error = busy_acquire(buffer);
-		if (error == 0)
-			error = buf_writeback(buffer);
+		error = buf_writeback(buffer);
 		buf_release(buffer);
 
 		/* Reports why the line could not be written. */
@@ -2555,11 +2576,19 @@ stat_add(
 	(void)atomic_u64_fetch_add_relaxed(counter, value);
 }
 
-/* Reserves bytes under the cap, reclaiming once when they do not fit. */
+/*
+ * Reserves bytes under the cap, reclaiming once when they do not fit.
+ *
+ * Bytes a reader or writer needs now (needed) are admitted past the cap
+ * and past the shared budget's limit under memory pressure, so that the
+ * pressure slows cached I/O instead of failing it; reclaim trims the cache
+ * again once the line is idle.
+ */
 static int
 reserve_bytes(
 	size_t size,
-	int metadata)
+	int metadata,
+	int needed)
 {
 	enum cache_memory_kind kind;
 	int error;
@@ -2569,10 +2598,10 @@ reserve_bytes(
 	/* Reserves shared ownership before the component cap and physical allocation. */
 	kind = metadata ? CACHE_MEMORY_BUF_META : CACHE_MEMORY_BUF_DATA;
 	if (cache_memory_reserve != NULL) {
-		error = cache_memory_reserve(kind, size, 1);
+		error = cache_memory_reserve(kind, size, !needed);
 		if (error != 0 && cache_memory_reclaim != NULL &&
 		    cache_memory_reclaim(size) != 0)
-			error = cache_memory_reserve(kind, size, 1);
+			error = cache_memory_reserve(kind, size, !needed);
 		if (error != 0)
 			return error;
 	}
@@ -2583,10 +2612,11 @@ reserve_bytes(
 	/* Tries before and after one clean reclaim pass; never waits on busy buffers. */
 	for (attempt = 0; attempt < 2U; attempt++) {
 		irq = spin_lock_irqsave(&cache_lock);
-		if (cache_current_bytes <= cache_max_bytes &&
+		if (needed ||
+		    (cache_current_bytes <= cache_max_bytes &&
 		    cache_reserved_bytes <= cache_max_bytes - cache_current_bytes &&
 		    (uint64_t)size <= cache_max_bytes - cache_current_bytes -
-		    cache_reserved_bytes) {
+		    cache_reserved_bytes)) {
 			cache_reserved_bytes += size;
 			spin_unlock_irqrestore(&cache_lock, irq);
 			mutex_unlock(&cache_admission);
@@ -2667,12 +2697,13 @@ commit_reservation(
 		cache_memory_commit(kind, size);
 }
 
-/* Allocates page-aligned physical memory reserved against the cap. */
+/* Allocates page-aligned physical memory reserved against the cap (past it when needed). */
 static int
 alloc_pmem(
 	size_t size,
 	struct kern_pmem *memory,
-	int metadata)
+	int metadata,
+	int needed)
 {
 	size_t reserved;
 	int error;
@@ -2682,7 +2713,7 @@ alloc_pmem(
 		return ENOMEM;
 	reserved = (size + KERN_PAGE_SIZE - 1U) &
 	    ~(size_t)(KERN_PAGE_SIZE - 1U);
-	if (reserve_bytes(reserved, metadata) != 0)
+	if (reserve_bytes(reserved, metadata, needed) != 0)
 		return ENOMEM;
 	memory->size = reserved;
 	error = hal_pmem_alloc(reserved, KERN_PAGE_SIZE, &memory->paddr);
@@ -2703,7 +2734,7 @@ alloc_pmem(
 	 * rounding.
 	 */
 	if (memory->size > reserved) {
-		if (reserve_bytes(memory->size - reserved, metadata) != 0) {
+		if (reserve_bytes(memory->size - reserved, metadata, needed) != 0) {
 			if (hal_pmem_free(&memory->paddr, memory->size) != HAL_OK)
 				HAL_FATAL("buffer allocation rollback failed");
 			cancel_reservation(reserved, metadata);
@@ -2717,10 +2748,10 @@ alloc_pmem(
 	return 0;
 }
 
-/* Adds one slab of buffer headers. */
+/* Adds one slab of buffer headers, past the cap when a line is needed now. */
 static int
 slab_grow(
-	void)
+	int needed)
 {
 	struct kern_pmem memory;
 	struct buf_slab *slab;
@@ -2734,7 +2765,7 @@ slab_grow(
 	header = slab_header_size();
 
 	/* Rejects a failed allocation or a slab the free mask cannot cover. */
-	error = alloc_pmem(BUF_SLAB_BYTES, &memory, 1);
+	error = alloc_pmem(BUF_SLAB_BYTES, &memory, 1, needed);
 	if (error != 0)
 		return error;
 	charged = memory.size;
@@ -2769,10 +2800,10 @@ slab_grow(
 	return 0;
 }
 
-/* Takes a zeroed buffer header from the slabs, growing them when full. */
+/* Takes a zeroed buffer header from the slabs, growing them when full (past the cap when needed). */
 static struct buf *
 alloc_metadata(
-	void)
+	int needed)
 {
 	struct buf_slab_record *record;
 	struct buf_slab *slab;
@@ -2796,7 +2827,7 @@ alloc_metadata(
 			break;
 
 		/* No slab has a free slot: adds one, or gives up when memory is short. */
-		error = slab_grow();
+		error = slab_grow(needed);
 		if (error != 0)
 			return NULL;
 	}
@@ -3001,8 +3032,8 @@ acquire_line(
 	struct buf *buffer;
 	int error;
 
-	/* Prepares the reference before taking busy ownership. */
-	error = reference_line(disk, block, &buffer);
+	/* Prepares the reference before taking busy ownership; the caller needs this line now. */
+	error = reference_line(disk, block, 1, &buffer);
 	if (error != 0)
 		return error;
 	error = busy_acquire(buffer);
@@ -3026,11 +3057,19 @@ acquire_line(
 	return 0;
 }
 
-/* Pins a line without taking busy ownership or performing its data I/O. */
+/*
+ * Pins a line without taking busy ownership or performing its data I/O.
+ *
+ * A line the caller needs now (needed) is not refused for memory pressure:
+ * when the cache cannot grow, an idle clean line is taken over, and
+ * without one the line is allocated past the cap.  Only the physical
+ * allocation failing still reports ENOMEM.
+ */
 static int
 reference_line(
 	struct disk *disk,
 	uint64_t block,
+	int needed,
 	struct buf **result)
 {
 	struct buf *buffer;
@@ -3043,8 +3082,10 @@ reference_line(
 	unsigned bucket;
 	unsigned long irq;
 	struct kern_pmem memory;
+	int pressed;
 
 	candidate = NULL;
+	pressed = 0;
 
 	/* Rejects a missing disk or result, or a disk without a block size. */
 	if (disk == NULL || result == NULL || disk->d_block_size == 0)
@@ -3086,7 +3127,7 @@ reference_line(
 		 * line and allocating another.
 		 */
 		if (candidate == NULL) {
-			buffer = recycle_line_locked(disk, line_block, line_blocks, line_bytes);
+			buffer = recycle_line_locked(disk, line_block, line_blocks, line_bytes, pressed);
 			if (buffer != NULL) {
 				spin_unlock_irqrestore(&cache_lock, irq);
 				stat_add(&stat_misses, 1);
@@ -3098,17 +3139,31 @@ reference_line(
 
 		spin_unlock_irqrestore(&cache_lock, irq);
 
-		/* A miss: prepares a candidate line unlocked. */
+		/*
+		 * A miss: prepares a candidate line unlocked.  A needed line
+		 * refused for memory goes around once more under pressure, to
+		 * take over an idle line or to allocate past the cap.
+		 */
 		if (candidate == NULL) {
-			candidate = alloc_metadata();
+			candidate = alloc_metadata(pressed);
+			if (candidate == NULL && needed && !pressed) {
+				pressed = 1;
+				continue;
+			}
 			if (candidate == NULL)
 				return ENOMEM;
 			error = alloc_pmem((size_t)(line_blocks * disk->d_block_size),
-			    &memory, 0);
+			    &memory, 0, pressed);
 			if (error != 0) {
 				free_metadata(candidate);
-				return error;
+				candidate = NULL;
 			}
+			if (error == ENOMEM && needed && !pressed) {
+				pressed = 1;
+				continue;
+			}
+			if (error != 0)
+				return error;
 
 			commit_reservation(memory.size, 0);
 			candidate->b_block = line_block;
@@ -3346,7 +3401,7 @@ transfer_run_lines(
 	/* Pins and allocates all lines before acquiring any busy ownership. */
 	for (index = 0; index < count; index++) {
 		error = reference_line(disk, block + (uint64_t)index * line_blocks,
-		    &lines[index]);
+		    0, &lines[index]);
 
 		/* A run that already has two lines ends before the line that could not be had. */
 		if (error != 0 && index >= 2U) {
@@ -5673,7 +5728,8 @@ recycle_line_locked(
 	struct disk *disk,
 	uint64_t line_block,
 	uint64_t line_blocks,
-	uint64_t line_bytes)
+	uint64_t line_bytes,
+	int needed)
 {
 	struct buf *buffer;
 	struct buf saved;
@@ -5683,8 +5739,9 @@ recycle_line_locked(
 	unsigned looked;
 	int idle;
 
-	/* Recycles only when another line would not fit under the cap. */
-	if (cache_current_bytes <= cache_max_bytes &&
+	/* Recycles only when another line would not fit under the cap, or memory refused a needed one. */
+	if (!needed &&
+	    cache_current_bytes <= cache_max_bytes &&
 	    cache_reserved_bytes <= cache_max_bytes - cache_current_bytes &&
 	    line_bytes <= cache_max_bytes - cache_current_bytes - cache_reserved_bytes)
 		return NULL;
