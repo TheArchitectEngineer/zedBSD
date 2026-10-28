@@ -154,3 +154,4 @@
 | q1670 / q1670-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291m`・branch `agent/p2-ws291m`、基点 main 42da8d889） | [ws291](ws291/ws.md) の NVIDIA の段 | RTX 2070 で desktop 60 fps・model 50 fps、RDNA の案 A・B は host・QEMU まで | in-progress |
 | q1664 / q1664-i02 | P3（worktree `/home/awe/zedBSD-worktrees/p3-ws221b`・branch `agent/p3-ws221b`、基点 main 42da8d889） | [ws221](ws221/ws.md) p004 から | i01 と同じ承認 | ラップアップ（ユーザーが VF2 を使うため、p004 途中 f2827fdb3、未 merge: net の backend に MTU が無く merge の前提を満たさない） |
 | q1665 / q1665-i05 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307i`・branch `agent/p4-ws307i`、基点 main 42da8d889） | [ws307](ws307/ws.md) p008 の 4096 の起動の直しから | i01 と同じ承認 | in-progress |
+| q1664 / q1664-i03 | P3（worktree `/home/awe/zedBSD-worktrees/p3-ws221c`・branch `agent/p3-ws221c`、基点 92ec21301 = f2827fdb3＋main） | [ws221](ws221/ws.md) p004 の残りから | i01 と同じ承認、VF2 はユーザーが開放（「VF2はしばらく使わなくなりました。開放します。」） | in-progress |
