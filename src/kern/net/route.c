@@ -601,8 +601,10 @@ route_lookup_matching(
 	const struct net_route *best;
 	bool enabled;
 	unsigned best_prefix;
+	unsigned best_index;
 	unsigned index;
 	unsigned prefix;
+	int live;
 
 	best = NULL;
 	best_prefix = 0;
@@ -611,8 +613,42 @@ route_lookup_matching(
 	if (result == NULL)
 		return EINVAL;
 
-	/* Keeps the matching live route with the longest prefix. */
+	/*
+	 * Finds the longest matching prefix first and takes a reference on
+	 * that route's device alone: on the way out of every segment the
+	 * lookup runs twice, and a reference taken and dropped on each route
+	 * that matches costs two passes through the device registry's lock
+	 * apiece.  A best route whose device is going away falls back to the
+	 * full search below.
+	 */
 	enabled = route_lock();
+	best_index = ROUTE_MAX;
+	for (index = 0; index < ROUTE_MAX; index++) {
+		if (!route_used[index] ||
+		    (destination & routes[index].netmask) != routes[index].network)
+			continue;
+		if (device != NULL && routes[index].device != device)
+			continue;
+		prefix = 0;
+		(void)mask_prefix(routes[index].netmask, &prefix);
+		if (best_index == ROUTE_MAX || prefix > best_prefix) {
+			best_index = index;
+			best_prefix = prefix;
+		}
+	}
+
+	/* The best one, when its device is live: copied, the caller owning the reference. */
+	if (best_index != ROUTE_MAX) {
+		live = net_device_ref_live(routes[best_index].device);
+		if (live) {
+			*result = routes[best_index];
+			route_unlock(enabled);
+			return 0;
+		}
+	}
+	best_prefix = 0;
+
+	/* Keeps the matching live route with the longest prefix. */
 	for (index = 0; index < ROUTE_MAX; index++) {
 		prefix = 0;
 		if (!route_used[index] ||
