@@ -379,9 +379,9 @@ bench() {
 		tries=0
 		while [ $tries -lt 3 ]; do
 			if [ "$system" = zedbsd ]; then
-				mview "$bout/$blabel" --token="$blabel" --spin=8 --content=game --present=mailbox $boptions > "$bout/$blabel.txt" 2>&1 < /dev/null
+				mview "$bout/$blabel" --token="$blabel" --spin=8 --content=game --present=mailbox --images=${BENCH_IMAGES:-4} $boptions > "$bout/$blabel.txt" 2>&1 < /dev/null
 			else
-				linux_mview "$bout/$blabel" --token="$blabel" --spin=8 --content=game --present=mailbox $boptions > "$bout/$blabel.txt" 2>&1 < /dev/null
+				linux_mview "$bout/$blabel" --token="$blabel" --spin=8 --content=game --present=mailbox --images=${BENCH_IMAGES:-4} $boptions > "$bout/$blabel.txt" 2>&1 < /dev/null
 			fi
 			grep -q "MVIEW SPIN run=$blabel " "$bout/$blabel.txt" && break
 			tries=$((tries + 1))
