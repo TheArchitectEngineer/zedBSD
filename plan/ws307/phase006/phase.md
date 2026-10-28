@@ -48,6 +48,10 @@
 - 512 の回帰: 同じ image の `plan/tools/boot-test.sh`（uefi-nvme）login prompt PASS（`build/ws307-test/p006-boot.ny8kCK/login.png`）。上の試験も 512 の NVMe の UFS の root から起動し SSH で動いた。
 - 未実施: UFS の 4096（mkfs の native UFS の fragment 4096 の profile が要る、段 5）、USB（`usb-storage` の 4096）、host の `fsck.fat`（host に無い）、FAT32 の 4Kn の ESP からの起動（p008 の 4096 の段）。
 
+## q1665-i04 の再開点（2026-10-29、P4、worktree p4-ws307h）
+
+- 段 5 の実装（`userland/base/mkfs/ufs-format.[ch]`・`block-command.c`）と host の試験 `plan/ws307/tests/host/mkfs-ufs-native-test.sh` は PASS（1 KiB の 3 profile が d94ceac00 の formatter と byte で同じ、4096 の native を mkfs の decoder と loader の reader で読む）。次: target の mkfs の build（warning 0）→ p006-4k の UFS の段 → QEMU。
+
 ## 次の attempt への引き継ぎ（2026-10-29、P4）
 
 - 段 5（mkfs の native UFS の fragment 4096 の profile、p005 の残り）の調べ: `userland/base/mkfs/ufs-format.c` の native の形は fragment 1 KiB・block 8 KiB（frag 8）に固定の数（`FORMAT_FRAGMENT`・`FORMAT_BLOCK`・`FORMAT_DATA_FRAGMENT` 144・`FORMAT_NATIVE_USED` 152、superblock の `sblkno` 64・`cblkno` 72・`iblkno` 80、cg の `IUSEDOFF` 168・`FREEOFF` 200、`FORMAT_IPG` 256、`fsbtodb` 1、`bshift` 13・`fshift` 10、inode の `DI_BLKSIZE` と `DI_BLOCKS` の 16 sector）。案: fragment 4 KiB・block 32 KiB（frag 8 のまま）の profile。fragment の番号は superblock 16（64 KiB）、cg 24、inode の表 32、data は表の後（block に揃える）。cg の大きさが block（32 KiB）以下なので 1 group は最大約 1 GiB、inode を 256／group のままにすると 1 GiB に 256 個で足りない。`ipg` を増やす（inode の bitmap の大きさで `FREEOFF` が動く、kernel は cg の header の offset を読むかを確かめる）か、group を小さくする（今の native と同じく fpg を下げて group を増やす）。kernel の UFS（`ufs.c` の superblock の検査、2639〜2647 付近）と loader の reader（`bootloader/common/ufs-read.c`、block 4096〜65536・fragment ≥ media block）が受ける形かを先に確かめる。`--check-size` の出力と `--sector-size=4096` も。
