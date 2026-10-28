@@ -62,7 +62,6 @@
 
 ## 残り（次の attempt への引き継ぎ）
 
-1. **F**: ユーザーの回答（ws.md の原文）で案 1・字体 b を入れた（下）。tagline の文（絵の「operating system」か Q1 の中継の「powered by zedBSD」か）を Q1 に確かめる。`plan/ws035/tests/p109/compare.py`（完了の WS の試験）が旧い `kei-boot-splash.png` を読む、参照の整理は Q1 に。
-2. **compositor**（`wayland/greeter.c`・`glass.c`・`glass.h`・`shell.c`・`notify-popup.c`）の「Kei」の文字と comment: 最後に、P1（WS309）に Q1 経由で知らせてから小さい commit。
-3. **H の段 2**: archive の中の `Kei-nightly/` と `tools/release/zedbsd-nightly/` の README・THIRD-PARTY・inputs・licenses の文、新しい asset の名前と SHA-256。upload はユーザーの指示まで止める。asset の名前・URL を変える commit は upload の前に main に merge しない。
-4. 試験: image（`plan/ws307/tests/` の config）で boot-test.sh の login prompt（新しい logo）、AAT の login（user/user）、`plan/tools` の道具の回帰を古い kei の image と新しい user の image の両方で、nightly の取得、`git grep -I -i kei` の残りが上の「残す物の一覧」だけ。
+1. **compositor**（`wayland/greeter.c`・`glass.c`・`glass.h`・`shell.c`・`notify-popup.c`）の「Kei」の文字と comment: 最後に、P1（WS309）に Q1 経由で知らせてから小さい commit。
+2. **H の段 2**: archive の中の `Kei-nightly/` と `tools/release/zedbsd-nightly/` の README・THIRD-PARTY・inputs・licenses の文、新しい asset の名前と SHA-256。upload はユーザーの指示まで止める。asset の名前・URL を変える commit は upload の前に main に merge しない。
+3. 試験: image（`plan/ws307/tests/` の config）で boot-test.sh の login prompt（新しい logo）、AAT の login（user/user）、`plan/tools` の道具の回帰を古い kei の image と新しい user の image の両方で、nightly の取得、`git grep -I -i kei` の残りが上の「残す物の一覧」だけ。
