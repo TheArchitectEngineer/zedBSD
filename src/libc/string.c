@@ -174,6 +174,158 @@ static void string_copy_unaligned_words_backward(string_word *destination_end, c
 static void string_fill(unsigned char *destination, unsigned char value, size_t count);
 static void string_fill_words(string_word *destination, string_word pattern, size_t words);
 
+#if defined(__x86_64__)
+/*
+ * Unaligned loads and stores of 2, 4, 8 and 16 bytes for memcpy on amd64,
+ * which loads and stores at any alignment; one instruction each.
+ */
+typedef uint16_t string_u16 __attribute__((__may_alias__, __aligned__(1)));
+typedef uint32_t string_u32 __attribute__((__may_alias__, __aligned__(1)));
+typedef uint64_t string_u64 __attribute__((__may_alias__, __aligned__(1)));
+typedef unsigned char string_v16 __attribute__((__vector_size__(16), __may_alias__, __aligned__(1)));
+
+/*
+ * The length from which memcpy copies with "rep movsb" on a processor with
+ * Enhanced REP MOVSB (CPUID leaf 7, EBX bit 9): the length from which the
+ * microcoded string copy beats a loop of 16-byte moves (the threshold
+ * glibc uses on such processors, Intel 64 and IA-32 Architectures
+ * Optimization Reference Manual, "Enhanced REP MOVSB and STOSB operation").
+ */
+#define STRING_REP_MOVSB_MINIMUM 2048U
+
+/* Whether the processor has Enhanced REP MOVSB: 0 not asked yet, 1 yes, 2 no. */
+static int string_erms;
+
+/* Reports whether "rep movsb" is the fast copy on this processor, asking it once. */
+static int
+string_erms_present(
+	void)
+{
+	unsigned eax;
+	unsigned ebx;
+	unsigned ecx;
+	unsigned edx;
+	int state;
+
+	/* Answers from the first ask (a race only asks twice, with the same answer). */
+	state = __atomic_load_n(&string_erms, __ATOMIC_RELAXED);
+	if (state != 0)
+		return state == 1;
+
+	/* Leaf 7 exists when the highest basic leaf reaches it. */
+	state = 2;
+	__asm__ volatile("cpuid"
+			 : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+			 : "a"(0U), "c"(0U));
+	if (eax >= 7U) {
+		__asm__ volatile("cpuid"
+				 : "=a"(eax), "=b"(ebx), "=c"(ecx), "=d"(edx)
+				 : "a"(7U), "c"(0U));
+		if ((ebx & (1U << 9)) != 0U)
+			state = 1;
+	}
+	__atomic_store_n(&string_erms, state, __ATOMIC_RELAXED);
+	return state == 1;
+}
+
+/*
+ * Copies a block of memory that does not overlap its destination.
+ *
+ * A block up to 64 bytes is copied by loads of its head and its tail that
+ * may overlap in the middle, all loaded before anything is stored, without
+ * a loop.  A longer one goes 32 bytes a time and ends with the 32 bytes of
+ * its tail; from STRING_REP_MOVSB_MINIMUM bytes a processor with Enhanced
+ * REP MOVSB copies it with "rep movsb".
+ */
+void *
+memcpy(
+	void *destination,
+	const void *source,
+	size_t count)
+{
+	unsigned char *to;
+	const unsigned char *from;
+	string_v16 head0;
+	string_v16 head1;
+	string_v16 tail0;
+	string_v16 tail1;
+	uint64_t word0;
+	uint64_t word1;
+	uint32_t half0;
+	uint32_t half1;
+	uint16_t pair0;
+	uint16_t pair1;
+	size_t done;
+
+	to = destination;
+	from = source;
+
+	/* A short block: its head and its tail, which cover it between them. */
+	if (count <= 16U) {
+		if (count >= 8U) {
+			word0 = *(const string_u64 *)(const void *)from;
+			word1 = *(const string_u64 *)(const void *)(from + count - 8U);
+			*(string_u64 *)(void *)to = word0;
+			*(string_u64 *)(void *)(to + count - 8U) = word1;
+		} else if (count >= 4U) {
+			half0 = *(const string_u32 *)(const void *)from;
+			half1 = *(const string_u32 *)(const void *)(from + count - 4U);
+			*(string_u32 *)(void *)to = half0;
+			*(string_u32 *)(void *)(to + count - 4U) = half1;
+		} else if (count >= 2U) {
+			pair0 = *(const string_u16 *)(const void *)from;
+			pair1 = *(const string_u16 *)(const void *)(from + count - 2U);
+			*(string_u16 *)(void *)to = pair0;
+			*(string_u16 *)(void *)(to + count - 2U) = pair1;
+		} else if (count == 1U) {
+			*to = *from;
+		}
+		return destination;
+	}
+	if (count <= 32U) {
+		head0 = *(const string_v16 *)(const void *)from;
+		tail0 = *(const string_v16 *)(const void *)(from + count - 16U);
+		*(string_v16 *)(void *)to = head0;
+		*(string_v16 *)(void *)(to + count - 16U) = tail0;
+		return destination;
+	}
+	if (count <= 64U) {
+		head0 = *(const string_v16 *)(const void *)from;
+		head1 = *(const string_v16 *)(const void *)(from + 16U);
+		tail0 = *(const string_v16 *)(const void *)(from + count - 32U);
+		tail1 = *(const string_v16 *)(const void *)(from + count - 16U);
+		*(string_v16 *)(void *)to = head0;
+		*(string_v16 *)(void *)(to + 16U) = head1;
+		*(string_v16 *)(void *)(to + count - 32U) = tail0;
+		*(string_v16 *)(void *)(to + count - 16U) = tail1;
+		return destination;
+	}
+
+	/* A long block on a processor whose string copy is fast for it. */
+	if (count >= STRING_REP_MOVSB_MINIMUM && string_erms_present()) {
+		__asm__ volatile("rep movsb"
+				 : "+D"(to), "+S"(from), "+c"(count)
+				 :
+				 : "memory");
+		return destination;
+	}
+
+	/* The rest: 32 bytes a time, and the last 32 bytes, which may overlap the loop's last. */
+	tail0 = *(const string_v16 *)(const void *)(from + count - 32U);
+	tail1 = *(const string_v16 *)(const void *)(from + count - 16U);
+	for (done = 0; done + 32U < count; done += 32U) {
+		head0 = *(const string_v16 *)(const void *)(from + done);
+		head1 = *(const string_v16 *)(const void *)(from + done + 16U);
+		*(string_v16 *)(void *)(to + done) = head0;
+		*(string_v16 *)(void *)(to + done + 16U) = head1;
+	}
+	*(string_v16 *)(void *)(to + count - 32U) = tail0;
+	*(string_v16 *)(void *)(to + count - 16U) = tail1;
+
+	/* Succeeded: the destination, as the standard asks. */
+	return destination;
+}
+#else
 /*
  * Copies a block of memory that does not overlap its destination.
  *
@@ -192,6 +344,7 @@ memcpy(
 	/* Succeeded: the destination, as the standard asks. */
 	return destination;
 }
+#endif
 
 /*
  * Copies a block of memory that may overlap its destination.

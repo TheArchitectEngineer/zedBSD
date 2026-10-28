@@ -4,13 +4,13 @@
  *
  *	cpuloop [MILLIONS]
  *
- * Prints four lines: a dependent xorshift chain of MILLIONS million steps
+ * Prints these lines: a dependent xorshift chain of MILLIONS million steps
  * (default 400; the core's clock alone, with the APIC ID and the hybrid
  * core type before and after it), the fill of directio and patwrite
  * (1 MiB of numbered 4 KiB blocks, 256 times), the same fill hot and right
  * after a 0.5 ms sleep (TSC-timed, per MiB, with how often the thread woke
- * on another CPU and on a performance core), and a 64 MiB memcpy repeated
- * 16 times.  Each line is "cpuloop NAME ms=T rate=R".
+ * on another CPU and on a performance core), and the C library's memcpy at
+ * sizes from 8 bytes to 32 MiB (ns per call and MB/s).  Each line is "cpuloop NAME ms=T rate=R".
  *
  * Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
  */
@@ -201,31 +201,32 @@ main(int argc, char **argv)
 		fflush(stdout);
 	}
 
-	/* The C library's memcpy for one word, called with a size the compiler cannot see. */
+	/*
+	 * The C library's memcpy at sizes the compiler cannot see (a volatile
+	 * size), hot in the cache up to 1 MiB: ns per call, and MB/s from 4 KiB.
+	 */
 	{
-		volatile size_t word = 8;
-		uint64_t value = 1;
+		static const size_t sizes[] = { 8, 16, 32, 64, 128, 256, 1024, 4096, 65536, 1048576, 33554432 };
+		volatile size_t size;
+		unsigned long calls;
+		unsigned s;
 
-		started = now_ns();
-		for (i = 0; i < 16U * 1024U * 1024U; i++) {
-			memcpy(b + (i % 4096U) * 8U, &value, word);
-			value++;
+		for (s = 0; s < sizeof(sizes) / sizeof(sizes[0]); s++) {
+			size = sizes[s];
+			calls = 512UL * 1048576UL / (sizes[s] < 64 ? 64 : sizes[s]);
+			if (calls > 16UL * 1048576UL)
+				calls = 16UL * 1048576UL;
+			if (calls < 16)
+				calls = 16;
+			started = now_ns();
+			for (i = 0; i < calls; i++)
+				memcpy(b + (sizes[s] <= 4096 ? (i % 64U) * 8U : 0), a + (sizes[s] <= 4096 ? 4096 : 0), size);
+			elapsed = now_ns() - started;
+			sink = b[17];
+			printf("cpuloop memcpy size=%zu ns_per_call=%.2f MBps=%.0f\n", sizes[s],
+			    (double)elapsed / (double)calls, (double)sizes[s] * (double)calls / 1e6 / ((double)elapsed / 1e9));
+			fflush(stdout);
 		}
-		elapsed = now_ns() - started;
-		sink = b[100];
-		printf("cpuloop memcpy8 ms=%llu ns_per_call=%.2f\n", (unsigned long long)(elapsed / 1000000U),
-		    (double)elapsed / (16.0 * 1024 * 1024));
-		fflush(stdout);
 	}
-
-	/* Memory bandwidth of one thread. */
-	started = now_ns();
-	for (i = 0; i < 16; i++)
-		memcpy(i % 2 ? a : b, i % 2 ? b : a, 64 * MIB);
-	elapsed = now_ns() - started;
-	sink = a[777] + b[999];
-	printf("cpuloop memcpy ms=%llu rate=%.1f MB/s\n", (unsigned long long)(elapsed / 1000000U),
-	    16.0 * 64 * MIB / 1e6 / ((double)elapsed / 1e9));
-	fflush(stdout);
 	return 0;
 }

@@ -126,3 +126,8 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 - 5330 の停止（zb-d2 の後の reboot で desktop のまま固まった）: 2026-10-28 ユーザー「フリーズは再現したときに対策を考え直します。」原因は不明、QEMU の繰り返しでは再現せず（2 回正常）。
 - 戻った時の順: direct の書き 59% の切り分け（Fable 5.1 High に助言を求めてよい、2026-10-28 ユーザー）→ QD32 の測り直し → UFS の file の書き（55%）→ mkfs native の write-through（2026-10-28 ユーザー、UFS の高速化の後、要れば先に）→ p007 → p008。
 - 2026-10-28 18:50 P1（WS308 の後に q1646 を再開）: 乱読み QD32 は WS308 で Debian の 99.3%（direct）・cached 241k になった（[phase010](phase010/phase.md) の「再開」）。direct の書き 59% の切り分けは、基準の取り直しで 5330 の zedBSD が起動の後に答えなくなり止まった（電源の入れ直し待ち）。次は 5330 が戻ってから、p7direct の zedBSD と Debian の取り直し → bs 4 MiB と command の大きさで比べる → UFS の file の書き（55%）→ mkfs native の write-through → p007 → p008。
+
+## 2026-10-28 夜（q1657、P1）
+
+- 承認（ユーザー、2026-10-28）:「P1はfstrimを使った上で、SSDの消去の影響をなるべく排除して、再度目標達成まで継続してください。」「P1は自律的にゴールに向かわせてください。」「…両方でLinuxと同等以上の性能にチューニングしたいです。」「P1は、現在原因がわかっていないパフォーマンスの問題については、Fable 5.1 Highに何度でも助言を求めてOKです。」「さきほどの「mkfs で作った native の UFS が write-through になり、4 GiB の書きが 7 MB/s しか出ない件」は、P1に依頼します。UFS読み書きの高速化のあとに取り組んでもらいます。」「もしUFS読み書きの高速化にwrite-throughに修正が必要なら、先に取り組んだり同時に取り組んだりしてもOKです」
+- 2026-10-28 ユーザー（Q1 経由）「P1はmemcpyを改善して計測し直した後、全体の比較レポートを送ってほしいです。その上で継続判断させてください。」→ Q1: q1657 の範囲に libc の memcpy（`src/libc/string.c`、案 (a): 小さい長さは重なってよい load/store、内部の 2 段の call を無くす、大きい長さは ERMS の時 rep movsb）を足す。build の flag（案 b）と memset はしない。全長さ×alignment の host 試験、memcpy の micro bench と WS299 の全体の測り直し（zedBSD と Debian を同じ時間帯）、1 つの report を Q1 に送って止まる（UFS の書き・mkfs には進まない）。
