@@ -763,7 +763,7 @@ amd64_timecounter_read(
 	if (counter == NULL || frequency_hz == NULL)
 		return false;
 
-	/* Serializes the global guarded reader against local interrupt entry. */
+	/* Reads with local interrupts held off, so an interrupt on this CPU does not split the read. */
 	irq_enabled = hal_irq_disable();
 	result = amd64_timecounter_read_guarded(
 		&read_state,
