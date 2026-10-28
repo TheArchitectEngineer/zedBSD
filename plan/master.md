@@ -40,7 +40,7 @@ web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の ha
 ### 統合の注意
 
 <!-- master:merge:start -->
-- web の取得の禁止（2026-10-29 ユーザー「あとで個別に詳細な事情を説明してください。対策を考えます。それまではWebの取得を頼まないでください。」）: 担当にも配下にも web から資料を取らせない（Fable の配下が bot の確認の回避で権限の判定に 3 回止められた件）。
+- web の取得（2026-10-29）: 一度禁止（Fable の配下が bot の確認の回避で権限の判定に 3 回止められた件）、その後ユーザー「Webから取得してOKです。サブエージェントにWebの取得(GET)を許可して下さい。GETはパラメータなしなら安全と見なしていいです。」→ 担当と配下に web の GET を許す。条件: WebFetch・WebSearch の tool と、パラメータの無い GET の取得（BSD の source の tarball など）。bot の確認・拒否に当たったら即やめて Q1 に報告、User-Agent の変更・別の取り方の再試行はしない。
 - サブエージェントの起動は番号の小さい担当を優先（2026-10-29 ユーザー「P1,P2,..というふうに、数字の小さなエージェントに優先してサブエージェントを起動させてください。必要なら優先度の低いものを停止してください。」）。上限に当たったら Q1 が番号の大きい担当の配下を止める。今の枠: P5 の配下は同時 2 本、P6 は 1 本。
 - 全担当の成果は main に merge 済み（上の Queue の作業中の物を除く）。`agent/p2-ws288-p006` は WS288 の終了で使わない。
 - 既定の config: Pi の BT は config-rpi4.mk・config-rpi5.mk で n（ユーザー）、Pi 5 の GPU（CONFIG_DRIVER_BCM2712_GPU）は CI で n、
@@ -100,7 +100,7 @@ web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の ha
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-352 · q1669 · WS311 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-352 · q1670 · WS311 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的

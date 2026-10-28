@@ -92,3 +92,12 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 - 旧: 受けは基準を満たした（948 Mbps、理論値 949）。送りは 785〜918 Mbps で未達。書き手の thread が 1 CPU の 95 % 前後を使い、どの CPU に載るか（eqos の割り込みの CPU と同じか）で run ごとに揺れる。
 - 測りの道具: sched の tick で中断の PC と kernel thread の入口を数える一時の差分（commit しない、build/tmp/*.patch）。送りの書き手の内訳（7d99bf2d9 の時）: memcpy（copyin の 64 KB の bounce と ring の copy）・eqos_transmit（DMA の buffer への copy と MMIO）・checksum・route と device の ref。
 - 見つけた別件: BUG-350（usb_hub_worker の 100 %、f3d89900a で直した）。
+
+## ユーザーの決定（2026-10-29、10GbE）
+
+- 原文: 「WS221には、10GbEでのTCPスタックの改善を次のフェーズとして作成してお願いしたいです。…それが完成したら、WS221に戻って、10GbEの限界を、RDNA機で試す流れにしたいです。」→ 新しい Phase **p010: 10GbE での TCP の stack の改善**（RDNA 機の RTL8159、相手は centris の 10GbE）。依存: WS235 の RTL8159 の driver。RDNA 機は時間の枠で P2 と分ける。
+- 原文: 「あるいは、排他がちょっと難しいようであれば、ネットワーク改善を優先してもいいです。ネットワークの改善の方が早く終わりそうだからです。」→ Q1: RDNA 機の時間の枠はネットワーク（WS235・WS221）を優先し、P2（WS291）は実機の要らない実装（案 A・B）を先に進め、空いた枠で測る。
+
+| Phase | 目的 | 状態 | 依存 |
+| --- | --- | --- | --- |
+| p010 | 10GbE での TCP の stack の改善（RDNA 機の RTL8159 ↔ centris、限界まで） | planned | WS235（RTL8159）、p002〜p009 |
