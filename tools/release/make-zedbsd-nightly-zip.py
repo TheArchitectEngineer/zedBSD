@@ -24,7 +24,7 @@ DRAFT_MARK = b"not yet confirmed; draft package"
 
 
 def fail(message):
-    print("make-kei-nightly-zip: " + message, file=sys.stderr)
+    print("make-zedbsd-nightly-zip: " + message, file=sys.stderr)
     sys.exit(1)
 
 

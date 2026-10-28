@@ -22,6 +22,8 @@
 - C の base の分（commit a0cc36354）: base の 31 file の版の表示 `(Kei)`、`ar` の `Kei ar 1`、`at` の job の header、`fetch` の User-Agent、service console の題を `ZEDBSD_OS_NAME` に。`ls` の comment。
 - E・G（commit 08b64e95f）: GPU の command protocol の名前（J3）を「zedBSD GPU command protocol」に（`include/uapi/gpu-op.h`、5 つの driver の header、2 つの `vk-stream.c`、libvulkan の Makefile と 2 つの noct の道具、`include/libc/vulkan/API-PROVENANCE.md`。識別子・番号・形は変えていない）。license の記録の文（J3）: `ime/dict/Makefile`・`ime/skk-dict/Makefile`・`SKK-JISYO.ja` の header・それを作る `merge.sh` の雛形の「for Kei」「Kei's input method」を zedBSD に（日付と原文の引用は保つ、「formerly SKK-JISYO.kei」は旧い file 名の注記として残す）。
 
+- H の段 1（mergeable、asset の名前・URL・SHA-256 は不変）: git mv（Q1 の OK、2026-10-29）`tools/release/kei-nightly.mk`→`zedbsd-nightly.mk`、`kei-nightly/`→`zedbsd-nightly/`、`make-kei-nightly-{base,zip}.py`→`make-zedbsd-nightly-{base,zip}.py`。target `zedbsd-nightly-base`・`zedbsd-nightly-zip`、変数 `ZEDBSD_NIGHTLY_*`、出力 `$(BUILD)/zedbsd-nightly.zip`、CI の `ci.yml`・`release.yml`（release の title「zedBSD <名前>」）、`plan/tools/hw5330/README.md` の path。`make -n … zedbsd-nightly-zip` で取得の URL が今の asset のままであることを確かめた。`plan/bugs/BUG-191.md:42` の旧い path は ticket なので Q1 に。
+
 ## 確かめ（2026-10-29、P4）
 
 - build（`ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws307-main`）: getty・sh・monitor・sessiond、変えた base の 29 の program と service → rc 0、`error:`・`warning:` 0。os-release の生成（上）。
@@ -36,6 +38,6 @@
 3. **残すかの判断（Q1）**: file の形の識別子 — libpdf の `/KeiNotesImage`・名前の接頭辞 `Kei`、notes の添付 `kei-notes.bin`・`application/x-kei-notes`、IME の利用者の辞書の置き場 `~/.config/kei/ime`。変えると既存の PDF・notebook・辞書が読めなくなる。案: 書く名前を zedBSD に変え、読む時は両方を受ける（または残す物の一覧に入れる）。`docs/release/zedbsd-1.0.0-beta2*.md`（出した版の記録）は残す案。
 4. **E の残り**: splash・logo・mark の comment（`bootloader/*/logo.c`・`bootx64.c`・`include/kern/text-display.h`・`src/drivers/platform/pcat/graphics/splash.[ch]`・`src/hal/amd64/bsp-pcat/cons.c`（HAL の実装、comment だけ）・`platform/amd64/vmunix.mk`・`tools/build/make-boot-splash.py`）は F と一緒に。
 5. **F 絵（U29・J3）**: `userland/desktop/artwork/kei-boot-splash.png` を「zedBSD」の文字の同じ様式の絵に作り直し（git mv で `zedbsd-boot-splash.png`）、`artwork/mark.c` の mark を描き直す。案の PNG を Q1 経由でユーザーに見せてから入れる。compositor（`wayland/greeter.c`・`glass.c`・`shell.c`・`notify-popup.c`）の「Kei」の文字と comment は P1（WS309）と衝突しうるので、最後に小さい commit で Q1 に知らせて。
-6. **H release**: `tools/release/kei-nightly.mk` ほかの git mv（一覧は Q1 に送った、OK 待ち）、`.github/workflows/ci.yml`・`release.yml`（target・変数・title「zedBSD <名前>」）、archive の中の `Kei-nightly/` の名前に WINQ-EMU の launcher が頼るかの確かめ、新しい asset の名前と SHA-256。upload はユーザーの指示で Q1、upload の前に URL を変える commit を main に merge しない（spec §13a の移行の手順）。
+6. **H release の残り**（段 1 は済み、下）: archive の中の `Kei-nightly/` の名前と `tools/release/zedbsd-nightly/` の README・THIRD-PARTY・inputs・licenses の文（base の archive に入るので、変えると SHA-256 が変わる）、WINQ-EMU の launcher が `Kei-nightly` の名前に頼るかの確かめ、新しい asset の名前と SHA-256。**upload はユーザーの指示まで止める。asset の名前・URL を変える commit は「upload の前に main に merge しない」と commit の報告に書く**（2026-10-29 Q1）。
 7. **README.md**・`config/rootfs-options.list`・`config/ci/*.mk` の comment、`userland/packages`・`userland/x11/zwm/backgrounds`（偽の一致かを確かめる）。
 8. 試験: image（`plan/ws307/tests/` の config）で boot-test.sh の login prompt（新しい logo）、AAT の login（user/user）、`plan/tools` の道具の回帰を古い kei の image と新しい user の image の両方で、nightly の取得、`git grep -I -i kei` の残りが「残す物の一覧」だけ。
