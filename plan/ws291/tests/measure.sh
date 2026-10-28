@@ -40,6 +40,13 @@
 #                                            kernel's lines of the loss and the reset (printed), OUT/desktop.png
 #     measure.sh nggshape OUT                the vertex stage's draw shapes (nggshape, ws291-p005/p006) one by one, each
 #                                            waited for 10 s at most: their NGGSHAPE lines (printed), OUT/nggshape.log
+#     measure.sh logo OUT                    the console's surface between games: amdrdnactl watch reads the plane's
+#                                            surface every 2 ms while mview takes the display over and gives it back
+#                                            (game and window mode, gaps under and over the console's 3 s rest) and
+#                                            vkhang loses its device, then while the compositor is ended (zedBSD is
+#                                            left without its desktop: restart it after); the first runs' pictures
+#                                            and the screen past the console's rest are read; printed: the watch
+#                                            lines, the pixels not black, the kernel's console and lease lines
 #     measure.sh bench zedbsd|linux OUT [LIST]
 #                                            every run of LIST (default bench.list beside this script) on the one
 #                                            system, mview copied first (USB_MVIEW, LINUX_MVIEW); OUT/bench.log and
@@ -404,6 +411,53 @@ bench() {
 	cat "$bout/table.txt"
 }
 
+logo() {
+	out=$1
+	mkdir -p "$out"
+	ip=$(to_zedbsd) || return 1
+	zcp "${USB_VKHANG:-build/ws291/usb/bin/vkhang}" "root@$ip:/tmp/vkhang" || return 1
+	zrun "$ip" <<EOS || return 1
+$WAKE
+rm -f /tmp/watch.log /tmp/logo.log /tmp/logo-kernel.log /tmp/rest.ppm /tmp/after.ppm
+n=\$(dmesg | wc -l)
+chmod 755 /tmp/vkhang
+amdrdnactl watch 75 > /tmp/watch.log 2>&1 &
+w=\$!
+sleep 1
+for content in game game none game; do
+	su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=logo --spin=2 --content=\$content --present=mailbox --copies=1" >> /tmp/logo.log 2>&1 < /dev/null
+	sleep 1
+done
+su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /tmp/vkhang" >> /tmp/logo.log 2>&1 < /dev/null
+sleep 1
+su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=logo --spin=2 --content=game --present=mailbox --copies=1" >> /tmp/logo.log 2>&1 < /dev/null
+sleep 5
+su kei -c "env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 /bin/mview --token=logo --spin=2 --content=game --present=mailbox --copies=1" >> /tmp/logo.log 2>&1 < /dev/null
+amdrdnactl display | grep -E '^address' >> /tmp/logo.log
+wait \$w
+amdrdnactl watch 10 > /tmp/watch2.log 2>&1 &
+w=\$!
+sleep 1
+kill \$(ps -ef | awk '\$0 ~ /bin.wayland --session/ && \$0 !~ /awk/ {print \$2}')
+wait \$w
+amdrdnactl display | grep -E '^(display|address)' >> /tmp/logo.log
+amdrdnactl screen /tmp/after.ppm >> /tmp/logo.log 2>&1
+dmesg | tail -n +\$n | grep -E 'console|display lease|lost|reset' > /tmp/logo-kernel.log
+EOS
+	zget "$ip" "$out" /tmp/watch.log /tmp/watch2.log /tmp/logo.log /tmp/logo-kernel.log /tmp/after.ppm || return 1
+	cat "$out/watch.log"
+	sed 's/^/compositor gone: /' "$out/watch2.log"
+	grep -E 'MVIEW (SPIN|FAILED)|VKHANG|^address|^display|^screen' "$out/logo.log" | cut -c1-160
+	for ppm in after; do
+		python3 -I -c 'import sys
+from PIL import Image
+im = Image.open(sys.argv[1]).convert("RGB")
+print(sys.argv[2], "pixels", im.size[0] * im.size[1], "not black", sum(1 for p in im.getdata() if p != (0, 0, 0)))' "$out/$ppm.ppm" "$ppm"
+	done
+	grep -cE 'display lease .* claimed' "$out/logo-kernel.log" | sed 's/^/leases claimed: /'
+	grep -E 'console' "$out/logo-kernel.log" | sed 's/^.*\] //' | sort | uniq -c
+}
+
 # Puts nicwatch (nicwatch/) on the running zedBSD: the script, its service and its line in /etc/rc.conf.
 nicwatch() {
 	ip=$(to_zedbsd) || return 1
@@ -429,5 +483,6 @@ hang) hang "$@" ;;
 linux-mview) linux_mview "$@" ;;
 bench) bench "$@" ;;
 nggshape) nggshape "$@" ;;
-*) sed -n '2,49p' "$0"; exit 2 ;;
+logo) logo "$@" ;;
+*) sed -n '2,55p' "$0"; exit 2 ;;
 esac

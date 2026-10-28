@@ -103,3 +103,13 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   （phase006 の「残り」）。機械は NVMe の zedBSD（Boot0004）。
 - 2026-10-28 ユーザーの補足「P2のモデル表示のテスト中に、起動ロゴ画面が見えてしまう、というバグです」（mview の表示の試験の間に起動の logo の画面が見える）。
 - 2026-10-28 ユーザー「どこかの経路で、ゲームモードに切り替えるときにGOPのバッファが表示されてしまうのが仕方がないとしても、そのバッファはクリアして黒にしておいてほしいです。」→ display を takeover した後（GPU の使用中）は GOP の buffer を黒で塗り、その後 console が書かないようにする（新しい P2 の最初の作業）。
+
+## 2026-10-28 q1651（P2、worktree p2-ws291e）
+
+- 再開点（2026-10-28 11:15 P2、13 時までの待機の指示で返却）: 起動の logo の件は直して実機で確かめた（[phase006](phase006/phase.md) の「q1651」節:
+  GOP の buffer を黒に塗り、lease の間の切り替えは黒、console は 3 s の rest と shutdown の時だけ再開。logo3 で console の画面の黒でない pixel 0）。
+  未実施は 3 s の rest の後の resume と shutdown の実機、ユーザーの目。CPU 時間は Fable 5.1 High に聞いた（同じ節）: 次は M2（present の copy を
+  飛ばす試し）→ 案 E（libvulkan の Wayland の直の present、Q1 へ案）、executor だけの push の inline と execute_draw の state の差分。
+  機械: NVMe の zedBSD（kernel vmunix-logo2 = この節の build、amdrdnactl に watch）で idle、guard は止めた。今日の P2 の SwitchBot の入れ直しは
+  11:04:25 が 6 回目。
+

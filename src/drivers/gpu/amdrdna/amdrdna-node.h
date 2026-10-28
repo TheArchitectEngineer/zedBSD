@@ -167,8 +167,10 @@ struct amdrdna_vk_timing;
  * power state, and every write to the display's registers.  broken says a
  * flip did not begin (nothing more is flipped); stopped that the machine
  * is going down (nothing more touches the display).  text_held says the
- * kernel's text console is kept from drawing because a frame of the lease
- * is on the screen.  The counts are presentations and leases.
+ * kernel's text console is kept from drawing because frames of leases are
+ * on the screen (it stays so past a lease's end until console_due, a
+ * tick, passes with no lease); console_black that its surface was painted
+ * black since it stopped.  The counts are presentations and leases.
  */
 struct amdrdna_node {
 	struct amdrdna_device *device;
@@ -211,6 +213,8 @@ struct amdrdna_node {
 	int stopped;
 	int powered_off;
 	int text_held;
+	int console_black;
+	uint64_t console_due;
 	int cursor_has_image;
 	int cursor_visible;
 	int32_t cursor_x;

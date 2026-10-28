@@ -1577,6 +1577,10 @@ amdrdna_display_blank(
 	struct amdrdna_device *device,
 	bool blank);
 
+int
+amdrdna_display_console_clear(
+	struct amdrdna_device *device);
+
 uint64_t
 amdrdna_display_topology(
 	struct amdrdna_device *device,
