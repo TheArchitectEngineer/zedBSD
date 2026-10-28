@@ -3,7 +3,7 @@
 # WS235: Realtek RTL8127・8125・8126・8122・8121・8120 の共通の Ethernet driver（まず PCIe の RTL8127 10GbE）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-29 開き直し、P1 が RDNA 機の PCIe の RTL8127 から。下の 2026-10-29 の決定）
+Status: planning（2026-10-29 開き直し、P1 が RDNA 機の PCIe の RTL8127 から。下の 2026-10-29 の決定。p001 in-progress）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 <!-- awesome-plan-current:end -->
@@ -15,23 +15,32 @@ Parent: [Master](../master.md)
 ## 目標
 
 - `src/drivers/ethernet/` に、Realtek の 2.5G〜10G の PCIe の NIC の系列（RTL8125・8126・8127・8122・8121・8120）で共通の driver を作る。chip の差は版の表と chip ごとの hook に閉じ込める。
-- 試験機（Core i5-13400F の desktop、`ssh kei@10.0.30.5`、zedBSD が動く）の PCIe の RTL8127 で、link が上がり、IPv4 の通信と 10GbE に見合う転送ができる。
+- 試験機（2026-10-29 から RDNA 機 10.0.10.3、Debian と zedBSD、相手は centris の X540 `enp94s0f1` に直結）の PCIe の RTL8127 で、link が上がり、IPv4 の通信と、PCIe の上限（8GT/s x1、約 7 Gbit/s。同じ機械の Linux の値が取れればそれ）に見合う転送ができる。
 - 他の chip は版の判定と表まで（実機が無いので未確かめと明記）。
 - server の build の config（`config/ci/config-amd64-server.mk`、ユーザーが作った物）で有効にする。
 
-## Phase と見積もり（Q1、2026-10-14。1 LW ≈ 15〜25 分）
+## Resume point
 
-| ID | 内容 | 見積もり | 依存 |
-| --- | --- | --- | --- |
-| ws235-p001 | 調査と設計: chip の系列の差（MAC の版の判定・PHY・EEE・firmware の patch）、参考にできる source と license（Realtek の BSD の driver、FreeBSD・OpenBSD の re・rge は BSD。Linux の r8169 は GPL なので写さない）、firmware（linux-firmware の `rtl_nic/rtl8127a-*.fw` など、再配布できれば zedBSD-firmware へ）、zedBSD の network stack の口（ifnet・mbuf 相当・checksum の offload）、試験の道（実機、相手の 10GbE の機械） | 4 LW | — |
-| ws235-p002 | 共通の骨格: PCI の ID の表、BAR の MMIO、reset、MAC address、MSI-X/MSI の割り込み、chip の版の判定、`CONFIG_DRIVER_PCI_RTL8125`（仮）、menuconfig の Drivers | 6 LW | p001 |
-| ws235-p003 | RTL8127 の PHY と link: PHY の初期化の手順、firmware の patch の load、auto-negotiation、link の速さ・duplex の報告（**一番不確か**） | 10 LW | p002 |
-| ws235-p004 | RX・TX の descriptor の ring、割り込みの処理、network stack への接続、checksum の offload | 8 LW | p002 |
-| ws235-p005 | 実機の確かめ（link・DHCP・ping・ssh・大きな転送の速さ。相手が 10GbE でなければ相手の速さまで）と直し | 6 LW | p003・p004 |
-| ws235-p006 | 他の chip（8125・8126・8122・8121・8120）の版の表と差の hook（実機は未確かめ） | 4 LW | p003 |
-| ws235-p007 | 規約の全文の確認 | 2 LW | 全て |
+- 2026-10-29 P1（q1669-i01）: p001 の調べと設計を [phase001/phase.md](phase001/phase.md) に。design-reviewer の指摘の反映と Q1 の判定の待ち。次は p002（共通の骨格）。
 
-合計 約 40 LW（実時間で約 10〜17 時間、P の 1 人なら 2〜3 日、並列にすれば短くなる）。p003 の PHY の初期化が資料どおりに行かないと延びる（+10 LW 程度）。
+## Phase（2026-10-29 P1 が p001 でユーザーの順に直した。旧の表と見積もり（2026-10-14 Q1）は git の履歴に）
+
+順はユーザーの「まずRTL81xxのドライバを、他のOSを参考にして作成して動くようにしてから、RTL8127の拡張部分を実装する」: p002〜p005 が RTL81xx の共通の driver で RTL8127 を
+動かす段、p006 が RTL8127 の拡張。見積もりは 1 LW ≈ 15〜25 分。
+
+| ID | 内容 | 見積もり | 状態 | 依存 |
+| --- | --- | --- | --- | --- |
+| [ws235-p001](phase001/phase.md) | 調べと設計: 10.0.10.3 の観測、rge（OpenBSD・FreeBSD）の作りが RTL8127 に当たるか、firmware と license、zedBSD の口、Phase の表 | 4 LW | in-progress（2026-10-29 P1） | — |
+| ws235-p002 | 共通の骨格: PCI の ID、BAR2、bus master、版の判定（TXCFG）、MAC・PHY・CSI・EPHY の OCP の窓、reset、MAC address、1 vector の割り込み、net device の登録、`CONFIG_DRIVER_PCI_RTL8125`、試験の config `plan/ws235/tests/` | 6 LW | planned | p001 |
+| ws235-p003 | MAC・PHY の初期化と link（共通の手順＋RTL8127 に要る MCU・EPHY・PHY の表）: firmware 無しから試し、要れば zedBSD-firmware の手順で（Q1 に先に）。auto-negotiation、link の報告（両側） | 10 LW | planned | p002 |
+| ws235-p004 | RX・TX の ring（v1・v2 の descriptor）、1 queue・1 vector、net の worker への接続（offload 無し） | 8 LW | planned | p002 |
+| ws235-p005 | 実機（共通の段）: link・IPv4（static か DHCP）・ping・ssh・TCP の転送の計測と直し | 6 LW | planned | p003・p004 |
+| ws235-p006 | RTL8127 の拡張: 多 vector の MSI-X、RSS と複数の RX queue、割り込みの抑え、RX の zero copy、約 7 Gbit/s（Linux の値）に近づける。律速が stack なら記録して WS221 と組で Q1 へ | 10 LW | planned | p005 |
+| ws235-p007 | 他の chip の版の表と差の hook（8125・8125B・8125D・8126。実機は未確かめ。8122・8121・8120 は版の値が未確認） | 4 LW | planned | p003 |
+| ws235-p008 | 規約の全文の見直し | 2 LW | planned | 全て |
+
+- server の build の config（`config/ci/config-amd64-server.mk`、ユーザーの物）で有効にするのは、p005 の後にユーザーに頼む（担当は変えない）。
+- 要るユーザーの判断（Q1 へ、p001 の「同じ機械の Linux の値」）: 10.0.10.3 の Debian で RTL8127 を動かす方法（新しい kernel＋linux-firmware の rtl8127a-1.fw か、Realtek の driver）。
 
 ## ユーザーの決定（2026-10-29）
 
@@ -47,3 +56,7 @@ Parent: [Master](../master.md)
 - ユーザーの決定（原文、2026-10-29）: 「はい、なので、まずRTL81xxのドライバを、他のOSを参考にして作成して動くようにしてから、RTL8127の拡張部分を実装するのがいいと思います。付け加えて、このマシンはPCIeの帯域の制約があり、7Gbit/sくらいしか出ないです。」
   - Q1 の解釈: 順は (1) 他の OS（FreeBSD・OpenBSD の rge など）を参考に RTL81xx（RTL8125 系）の共通の driver を作り、RTL8127 を RTL8125 系の multi-gig の NIC として動かす → (2) RTL8127 の拡張の部分（10GbE の速さ、chip の固有の機能）を足す。Phase の表は p001 でこの順に直す。
   - 10.0.10.3 の PCIe の帯域の制約で、10GbE は約 7 Gbit/s が上限（ユーザーの情報）。WS235 p005 と WS221 p010 の受け入れの目標は、この上限（と同じ機械の Linux の値）に合わせる。
+- ユーザーの回答（Q1 経由、2026-10-29 クリック）: RTL8127 の port の相手は「centris の 10GbE に直結」。Q1 の訂正: 直結の相手は centris の `enp94s0f1`
+  （Intel X540-AT2、ixgbe。`enp94s0f0` は LAN の switch 側の 10G）。centris の側の設定は変えない（IP を付けるなどは先に Q1 に案を送る）、ethtool・ip の読みは自由。
+  - 観測（2026-10-29 06:1x P1）: RTL8127 の PHYSTAT（MMIO 0x6c）は driver 無しで 100M full の link を示すが、centris の `enp94s0f1` は `Link detected: no`。
+    食い違いは未確認として [p001](phase001/phase.md) に。X540 の広告は 100baseT・1000baseT・10000baseT（2.5G・5G は無い）。
