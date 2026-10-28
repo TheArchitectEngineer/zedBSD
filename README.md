@@ -42,10 +42,10 @@ Intel GPU driver is tested on:
 
 | Model          | GPU                    | GPU GEN         |
 |----------------|------------------------|-----------------|
-| Core i5 7200U  | Intel HD 620           | Gen9.5          |
-| Core i5 8265U  | Intel UHD 620          | Gen9.5          |
-| Core i5 1135G7 | Intel Iris Xe Graphics | Gen12 Xe-LP TGL |
 | Core i5 1235U  | Intel Iris Xe Graphics | Gen12 Xe-LP ADL |
+| Core i5 1135G7 | Intel Iris Xe Graphics | Gen12 Xe-LP TGL |
+| Core i5 8265U  | Intel UHD 620          | Gen9.5          |
+| Core i5 7200U  | Intel HD 620           | Gen9.5          |
 
 NVIDIA GPU driver is tested on:
 
@@ -200,13 +200,13 @@ in the kernel.
 
 Supported GPUs:
 
-| Vendor         | IP                | Confirmed on            | Description      |
-|----------------|-------------------|-------------------------|------------------|
-| Imagination    | PowerVR           | StarFive Vision Five 2  | Well-optimized   |
-| Broadcom       | VideoCore VI      | Raspberry Pi 4          | Well-optimized   |
-| Intel          | GEN9 to GEN12     | 6th to 12th Intel Core  | Well-optimized   |
-| NVIDIA         | Turing or later   | NVIDIA GeForce RTX 2070 | Modest           |
-| AMD            | RDNA or later     | AMD Radeon RX 5600 XT   | Modest           |
+| Vendor         | IP                | Confirmed on            | Description         |
+|----------------|-------------------|-------------------------|---------------------|
+| Imagination    | PowerVR           | StarFive Vision Five 2  | Desktop-optimized   |
+| Broadcom       | VideoCore VI      | Raspberry Pi 4          | Desktop-optimized   |
+| Intel          | GEN9 to GEN12     | 6th to 12th Intel Core  | Desktop-optimized   |
+| NVIDIA         | Turing or later   | NVIDIA GeForce RTX 2070 | Modest yet          |
+| AMD            | RDNA or later     | AMD Radeon RX 5600 XT   | Game-optimized      |
 
 ---
 
