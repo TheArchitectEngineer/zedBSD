@@ -17,13 +17,15 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* The directory whose eventN nodes are the evdev devices. */
 #define INPUT_DIRECTORY "/dev/input"
 
 static int event_node_name(const char *name);
-static void probe_device(struct kl_backend *backend, const char *path);
+static int node_refused(const struct kl_backend *backend, unsigned long node);
+static void probe_device(struct kl_backend *backend, const char *path, unsigned long node);
 static int read_capabilities(int descriptor, struct kl_backend_input_caps *capabilities);
 
 /*
@@ -31,6 +33,9 @@ static int read_capabilities(int descriptor, struct kl_backend_input_caps *capab
  *
  * A missing directory leaves the seat without devices; it is not an error.
  * The event loop calls this periodically so late devices are picked up.
+ * A node whose open failed with the device's own error is passed by until
+ * the system's events tell of an input device that came or went
+ * (events-zedbsd.c forgets the refusals then).
  */
 void
 kl_backend_input_scan(
@@ -39,8 +44,10 @@ kl_backend_input_scan(
 	DIR *directory;
 	struct dirent *entry;
 	char path[KL_BACKEND_INPUT_PATH_MAX];
+	unsigned long node;
 	int length;
 	int valid;
+	int refused;
 	int open_already;
 
 	/* Without the directory there is nothing to read. */
@@ -60,6 +67,12 @@ kl_backend_input_scan(
 		if (!valid)
 			continue;
 
+		/* A node that refused to open is not opened again while no device came or went. */
+		node = strtoul(entry->d_name + 5, NULL, 10);
+		refused = node_refused(backend, node);
+		if (refused)
+			continue;
+
 		/* An overlong name cannot be an ordinary device node. */
 		length = snprintf(path, sizeof(path), "%s/%s", INPUT_DIRECTORY, entry->d_name);
 		if (length < 0 || (size_t)length >= sizeof(path))
@@ -73,7 +86,7 @@ kl_backend_input_scan(
 			continue;
 
 		/* The compositor classifies the node and keeps it if it is a pointer or a keyboard. */
-		probe_device(backend, path);
+		probe_device(backend, path, node);
 	}
 
 	/* The directory stream is no longer needed. */
@@ -223,11 +236,35 @@ event_node_name(
 	return 1;
 }
 
-/* Opens one node and offers it, with its capability bitmaps, to the compositor. */
+/*
+ * Reports whether eventN refused to open since the system's events last
+ * told of an input device that came or went.  Without the events nothing
+ * would tell when to try again, so no node is passed by.
+ */
+static int
+node_refused(
+	const struct kl_backend *backend,
+	unsigned long node)
+{
+	uint64_t bit;
+
+	/* Without the system's events, and past the remembered nodes, every node is tried. */
+	if (backend->events_descriptor < 0)
+		return 0;
+	if (node >= 64UL * KL_BACKEND_INPUT_REFUSED_WORDS)
+		return 0;
+
+	/* The node's bit. */
+	bit = (uint64_t)1 << (node % 64UL);
+	return (backend->input_refused[node / 64UL] & bit) != 0U;
+}
+
+/* Opens one node (eventN) and offers it, with its capability bitmaps, to the compositor. */
 static void
 probe_device(
 	struct kl_backend *backend,
-	const char *path)
+	const char *path,
+	unsigned long node)
 {
 	struct kl_backend_input_caps capabilities;
 	int descriptor;
@@ -236,8 +273,16 @@ probe_device(
 
 	/* Opens a nonblocking descriptor that children cannot inherit. */
 	descriptor = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-	if (descriptor < 0)
+	if (descriptor < 0) {
+		/*
+		 * The device's own failure is remembered; a node not the
+		 * seat's user's yet (EACCES) is tried at every scan.
+		 */
+		error = errno;
+		if ((error == EIO || error == ENXIO || error == ENODEV) && node < 64UL * KL_BACKEND_INPUT_REFUSED_WORDS)
+			backend->input_refused[node / 64UL] |= (uint64_t)1 << (node % 64UL);
 		return;
+	}
 
 	/* Reads the bits that determine the device's role. */
 	error = read_capabilities(descriptor, &capabilities);

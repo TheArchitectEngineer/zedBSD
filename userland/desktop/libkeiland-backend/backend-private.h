@@ -21,6 +21,12 @@
 #define KL_BACKEND_SESSION_LINE	512U
 
 /*
+ * The evdev nodes (/dev/input/eventN) remembered as refusing to open: N
+ * below 64 times KL_BACKEND_INPUT_REFUSED_WORDS.
+ */
+#define KL_BACKEND_INPUT_REFUSED_WORDS	4U
+
+/*
  * The compositor's backend.
  *
  * Allocated by kl_backend_open and freed by kl_backend_close.  host and
@@ -85,6 +91,15 @@ struct kl_backend {
 	 * state of serving them, NULL while they are not served.
 	 */
 	struct kl_backend_notify *notify;
+	/*
+	 * The evdev nodes whose open failed with the device's own error
+	 * (bit N of the words for /dev/input/eventN) while the system's
+	 * events are heard: the periodic scan passes them by until an input
+	 * device comes or goes, because each open of such a node can block
+	 * the event loop for tens of milliseconds (a PS/2 mouse port without
+	 * a mouse answers EIO only after its timeout).
+	 */
+	uint64_t input_refused[KL_BACKEND_INPUT_REFUSED_WORDS];
 };
 
 /*
