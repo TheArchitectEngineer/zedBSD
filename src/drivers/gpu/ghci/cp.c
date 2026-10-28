@@ -1015,8 +1015,9 @@ release_memory(
 		ghci_memory_quarantine(device, device->fence_page);
 	device->fence_page = NULL;
 
-	/* The quarantine of a lost device, now that the GPU reaches nothing. */
+	/* The quarantine of a lost device, now that the GPU reaches nothing, then the local allocator. */
 	ghci_memory_release_quarantine(device);
+	ghci_memory_local_stop(device);
 }
 
 /*

@@ -417,7 +417,7 @@ memory_properties(
 	record = ghci_vk_arena_take(session, sizeof(*record));
 	if (record == NULL)
 		return ENOMEM;
-	ghci_vk_caps_memory(&session->device->caps, record);
+	ghci_vk_caps_memory(&session->device->caps, ghci_memory_local_bytes(session->device), record);
 
 	/* The presence word and the record. */
 	if (requested != 0U) {

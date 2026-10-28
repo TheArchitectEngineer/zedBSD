@@ -463,6 +463,87 @@ ghci_vk_execute(
 }
 
 /*
+ * Makes the packets that clear bytes of a device's session to zero at a
+ * GPU address, for memory the driver hands a client that may hold what
+ * an earlier client left: a barrier at the head that shows the GPU what
+ * the host wrote (the copy program and its tables), FILL_BUFFER (or the
+ * driver's copy program without the blitter) in pieces, and a barrier at
+ * the tail that puts the zeroes in memory before the fence after them.
+ * Returns 0 with the packets and temporary memory in submission, or the
+ * error (ENOTSUP when the copy program cannot make the clear, ENOMEM,
+ * EIO); the caller ends the submission either way.
+ */
+int
+ghci_vk_execute_clear(
+	struct ghci_vk_session *session,
+	struct ghci_vk_device *device,
+	uint64_t va,
+	uint64_t bytes,
+	struct ghci_vk_submission *submission)
+{
+	struct exec *exec;
+	struct buffer_state *state;
+	uint32_t barrier_words[GHCI_DW_BARRIER];
+	uint32_t fill_words[GHCI_DW_FILL_BUFFER];
+	uint64_t piece;
+	uint32_t flags;
+	int blitter;
+	int error;
+
+	/* Whole words only. */
+	if (bytes == 0U || (bytes & 3U) != 0U)
+		return EINVAL;
+
+	/* The clear's record, and an empty command buffer state the copy program marks. */
+	exec = kern_calloc(1U, sizeof(*exec));
+	if (exec == NULL)
+		return ENOMEM;
+	state = kern_calloc(1U, sizeof(*state));
+	if (state == NULL) {
+		kern_free(exec);
+		return ENOMEM;
+	}
+	buffer_state_reset(state);
+	exec->session = session;
+	exec->device = device;
+	exec->submission = submission;
+	exec->state = state;
+
+	/* The head: what the host wrote is seen. */
+	flags = GHCI_BARRIER_INVAL_ICACHE | GHCI_BARRIER_INVAL_TEX | GHCI_BARRIER_INVAL_L1_DATA | GHCI_BARRIER_INVAL_DESCRIPTOR;
+	put(exec, barrier_words, ghci_cmd_barrier(barrier_words, 0U, 0U, flags));
+
+	/* The zeroes, in pieces FILL_BUFFER takes; a copy program that cannot make one fails the clear. */
+	blitter = has_blitter(exec);
+	while (bytes != 0U && exec->error == 0) {
+		piece = bytes > TRANSFER_BYTES_MAX ? TRANSFER_BYTES_MAX : bytes;
+		if (blitter) {
+			put(exec, fill_words, ghci_cmd_fill_buffer(fill_words, va, (uint32_t)piece, 0U));
+		} else {
+			error = meta_fill(exec, va, piece, 0U);
+			if (error != 0 && exec->error == 0)
+				exec->error = error;
+		}
+		va += piece;
+		bytes -= piece;
+	}
+
+	/* The tail: the zeroes are in memory before the fence. */
+	flags = GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_FLUSH_L2;
+	put(exec, barrier_words, ghci_cmd_barrier(barrier_words, 0U, 0U, flags));
+
+	/* The records go; the packets and memory are the submission's. */
+	error = exec->error;
+	kern_free(state);
+	kern_free(exec);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the packets are made. */
+	return 0;
+}
+
+/*
  * Ends a submission: its temporary memory goes back once ticket has
  * passed or a reset ended it (a submission placed in part has the ticket
  * of ghci_cp_submit_placed(); with no ticket, a submission that was not

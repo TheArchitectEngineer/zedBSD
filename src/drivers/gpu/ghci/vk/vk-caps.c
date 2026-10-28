@@ -341,19 +341,39 @@ ghci_vk_caps_limits(
 }
 
 /*
- * Fills the memory types and heaps: one heap and one type that is device
- * local, host visible and coherent (a unified GPU, and for now a discrete
- * one too, whose local memory is not used yet).
+ * Fills the memory types and heaps.  A unified GPU (local_bytes 0, the
+ * local memory the driver hands out) has one heap and one type that is
+ * device local, host visible and coherent.  A discrete one has two heaps:
+ * local memory, device local, with a type that is device local alone;
+ * and host memory, with a type that is host visible and coherent, for
+ * everything the processor writes or reads.
  */
 void
 ghci_vk_caps_memory(
 	const struct ghci_caps *caps,
+	uint64_t local_bytes,
 	VkPhysicalDeviceMemoryProperties *memory)
 {
 	(void)caps;
 
-	/* One type in one heap. */
+	/* Two heaps on a discrete GPU: local memory first, then host memory. */
 	kern_memset(memory, 0, sizeof(*memory));
+	if (local_bytes != 0U) {
+		memory->memoryTypeCount = 2U;
+		memory->memoryTypes[GHCI_VK_TYPE_LOCAL].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+		memory->memoryTypes[GHCI_VK_TYPE_LOCAL].heapIndex = 0U;
+		memory->memoryTypes[GHCI_VK_TYPE_HOST].propertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+		    VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+		memory->memoryTypes[GHCI_VK_TYPE_HOST].heapIndex = 1U;
+		memory->memoryHeapCount = 2U;
+		memory->memoryHeaps[0].size = local_bytes;
+		memory->memoryHeaps[0].flags = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
+		memory->memoryHeaps[1].size = GHCI_VK_HEAP_SIZE;
+		memory->memoryHeaps[1].flags = 0U;
+		return;
+	}
+
+	/* One type in one heap. */
 	memory->memoryTypeCount = 1U;
 	memory->memoryTypes[0].propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
 	    VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |

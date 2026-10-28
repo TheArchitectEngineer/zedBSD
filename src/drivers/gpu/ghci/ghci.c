@@ -115,10 +115,15 @@ ghci_device_start(
 	/* Whether the device gets the Vulkan executor, and what isolation its sessions have. */
 	choose_policy(device);
 
+	/* The local memory of a discrete GPU, the boot framebuffer in it, and the local window. */
+	(void)ghci_memory_local_start(device);
+
 	/* CP_HEAP, the ring, the fence page, the interrupt and the first fence. */
 	error = ghci_cp_start(device);
-	if (error != 0)
+	if (error != 0) {
+		ghci_memory_local_stop(device);
 		return error;
+	}
 
 	/* The service thread, which recovers from faults and hangs. */
 	error = ghci_service_start(device);
@@ -899,6 +904,10 @@ gpu_resource_read(
 	if (error != 0)
 		return error;
 
+	/* Local memory the local window does not show has no view to read. */
+	if (resource->allocation->view == NULL)
+		return ENOTSUP;
+
 	/* Succeeded: the bytes are copied from the processor's view. */
 	kern_memcpy(buffer, resource->allocation->view + offset, bytes);
 	return 0;
@@ -926,15 +935,31 @@ gpu_resource_write(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the bytes are copied into the processor's view. */
+	/* Local memory the local window does not show has no view to write. */
+	if (resource->allocation->view == NULL)
+		return ENOTSUP;
+
+	/* The bytes are copied into the processor's view. */
 	kern_memcpy(resource->allocation->view + offset, buffer, bytes);
+
+	/*
+	 * A write through the local window is read back at its last byte, so
+	 * that it has reached local memory before a later doorbell (section
+	 * 11.1 of the specification).
+	 */
+	if (resource->allocation->kind == GHCI_MEMORY_LOCAL && bytes != 0U)
+		(void)*(volatile uint8_t *)(resource->allocation->view + offset + bytes - 1U);
+
+	/* Succeeded: the bytes are in the resource. */
 	return 0;
 }
 
 /*
  * Gives the processor's view of a resource for a user mapping: RAM,
- * uncached where the GPU does not snoop the processor's caches.  A blob
- * maps only when it was made mappable.
+ * uncached where the GPU does not snoop the processor's caches, or for
+ * local memory its place in the local window, as device memory.  A blob
+ * maps only when it was made mappable, and local memory only where the
+ * window shows it.
  */
 static int
 gpu_resource_map(
@@ -953,6 +978,20 @@ gpu_resource_map(
 	resource = object;
 	if (resource->blob && (resource->flags & GPU_BLOB_MAPPABLE) == 0U)
 		return EINVAL;
+
+	/* Local memory: the window's place of it, uncached. */
+	if (resource->allocation->kind == GHCI_MEMORY_LOCAL) {
+		/* Local memory the window does not show has no place to map. */
+		if (resource->allocation->view == NULL)
+			return ENOTSUP;
+
+		/* Succeeded: the window's bytes of the run, as device memory. */
+		mapping->physical = device->window_physical + (resource->allocation->bus - device->caps.local_base);
+		mapping->address = resource->allocation->view;
+		mapping->bytes = resource->allocation->bytes;
+		mapping->attributes = DRV_GPU_MAPPING_DEVICE;
+		return 0;
+	}
 
 	/* Succeeded: the run and how the processor sees it. */
 	mapping->physical = resource->allocation->bus;

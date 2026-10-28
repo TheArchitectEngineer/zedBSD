@@ -225,12 +225,16 @@ struct ghci_device;
 struct ghci_arena;
 
 /*
- * One run of physically contiguous memory the GPU reaches.
+ * One run of physically contiguous memory the GPU reaches: host RAM, or
+ * a run of the GPU's local memory.
  *
  * bus is the address the GPU uses (on the platforms the driver knows,
- * the processor's physical address), bytes its size in whole pages, view
- * the processor's kernel view (the direct map, or an uncached mapping on
- * a bus that does not snoop the caches) and run the RAM it is.  The
+ * the processor's physical address; for local memory, its local address),
+ * bytes its size in whole pages, view the processor's kernel view (the
+ * direct map, or an uncached mapping on a bus that does not snoop the
+ * caches; for local memory, its place in the local window, or NULL when
+ * the window does not show it) and run the RAM it is (unused for local
+ * memory).  The
  * allocation lives until its owner gives it back after the GPU is done
  * with it; on a lost device it waits in the quarantine instead.  holds
  * counts what keeps a shared allocation (a resource, an export, a
@@ -530,6 +534,24 @@ struct ghci_device {
 	struct ghci_allocation *quarantined;
 
 	/*
+	 * The GPU's local memory on a discrete device (lock), from the start
+	 * to the detach: local_ready says that the driver hands it out,
+	 * local_map is the allocator of its offsets from LOCAL_BASE and
+	 * local_extents the allocator's table.  The boot framebuffer the
+	 * firmware left scanned out is kept out of it (boot_reserved, at
+	 * boot_offset for boot_bytes) until the release after the driver's
+	 * own first flip.  window_open is what the driver last wrote to
+	 * WINDOW_CTRL.ENABLE.
+	 */
+	int local_ready;
+	struct ghci_range_map local_map;
+	struct ghci_range_extent *local_extents;
+	int boot_reserved;
+	uint32_t boot_offset;
+	uint32_t boot_bytes;
+	int window_open;
+
+	/*
 	 * The ring's bookkeeping (cp_lock): the sequence of the last fence
 	 * placed, and the submissions whose fences have not been seen passed,
 	 * oldest first, in a circle of GHCI_SUBMIT_LOG.
@@ -659,6 +681,11 @@ void ghci_poll_main(void *argument);
 void ghci_poll_stop(struct ghci_device *device);
 
 int ghci_memory_alloc(struct ghci_device *device, uint64_t bytes, uint64_t limit, struct ghci_allocation **result);
+int ghci_memory_alloc_local(struct ghci_device *device, uint64_t bytes, struct ghci_allocation **result);
+int ghci_memory_local_start(struct ghci_device *device);
+void ghci_memory_local_stop(struct ghci_device *device);
+uint64_t ghci_memory_local_bytes(const struct ghci_device *device);
+void ghci_memory_boot_release(struct ghci_device *device);
 int ghci_memory_free(struct ghci_device *device, struct ghci_allocation *allocation);
 void ghci_memory_quarantine(struct ghci_device *device, struct ghci_allocation *allocation);
 void ghci_memory_release_quarantine(struct ghci_device *device);

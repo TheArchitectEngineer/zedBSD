@@ -12,10 +12,14 @@
  * A VkDeviceMemory is host memory below the GPU's limit (or the memory of
  * a resource the node session imported), held by the object and mapped
  * once into the device's GHCI session; its CPU view is the blob libvulkan
- * makes of it.  A buffer or an image is a range of one memory object once
- * it is bound.  Every image is laid out in linear rows (section 8.5.2 of
- * the specification): attachments and storage images must be, and the
- * others may be.
+ * makes of it.  On a discrete GPU, memory of the device-local type is the
+ * GPU's local memory instead, which the GPU clears before the allocation
+ * returns (it may hold what an earlier client left); memory the
+ * processor writes or reads, memory made for export (another process
+ * maps it) and imported memory stay in host memory.  A buffer or an
+ * image is a range of one memory object once it is bound.  Every image
+ * is laid out in linear rows (section 8.5.2 of the specification):
+ * attachments and storage images must be, and the others may be.
  *
  * The executor heaps are what the driver itself writes for the GPU in a
  * device's session: blocks of host memory mapped once and handed out in
@@ -30,6 +34,7 @@
 #include <stdint.h>
 
 #include <kern/kcrt.h>
+#include <kern/klog.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
 #include <uapi/errno.h>
@@ -39,14 +44,16 @@
 
 #include "drivers/gpu/i915/vk/vk-codec.inc"
 
-/* The one memory type. */
-#define MEMORY_TYPES			1U
+/* How long an allocation waits for the GPU to clear its local memory. */
+#define CLEAR_WAIT_MS			10000U
 
 /* A buffer's size in memory is a whole number of words. */
 #define BUFFER_GRANULE			4U
 
 static int allocate_memory(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
-static uint32_t memory_back(struct ghci_vk_session *session, struct ghci_vk_object *object, uint32_t imported, uint64_t bytes);
+static uint32_t memory_back(struct ghci_vk_session *session, struct ghci_vk_object *object, uint32_t imported, int local, uint64_t bytes);
+static uint32_t local_clear(struct ghci_vk_session *session, struct ghci_vk_object *object);
+static uint32_t memory_types(struct ghci_vk_session *session);
 static int free_memory(struct ghci_vk_session *session, enum ghci_vk_kind kind, struct i915_wire_reader *reader);
 static int commitment(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int create_buffer(struct ghci_vk_session *session, uint32_t requested, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -399,6 +406,8 @@ allocate_memory(
 	uint32_t type;
 	uint32_t imported;
 	uint32_t result;
+	int exported;
+	int local;
 	int error;
 
 	/* The device, the allocate info's head and its one chained record. */
@@ -426,17 +435,30 @@ allocate_memory(
 	if (device == NULL)
 		return EINVAL;
 	imported = 0U;
+	exported = 0;
 	if (chain != 0U && record == GPU_OP_RECORD_IMPORT_RESOURCE)
 		imported = value;
-	else if (chain != 0U && record != VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO)
+	else if (chain != 0U && record == VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO)
+		exported = 1;
+	else if (chain != 0U)
 		return EINVAL;
 
 	/* The size and the type the device has. */
 	result = (uint32_t)VK_SUCCESS;
-	if (type >= MEMORY_TYPES || bytes == 0U)
+	if (type >= memory_types(session) || bytes == 0U)
 		result = (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 	else if (bytes > GHCI_VK_HEAP_SIZE)
 		result = (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
+
+	/*
+	 * Local memory for the device-local type of a discrete GPU, unless
+	 * the memory is imported (it is the resource's) or made for export
+	 * (another process maps it, so it stays where the processor reaches
+	 * it).
+	 */
+	local = 0;
+	if (memory_types(session) == 2U && type == GHCI_VK_TYPE_LOCAL && imported == 0U && !exported)
+		local = 1;
 
 	/* The object, then its memory and its mapping; a failure takes the object back. */
 	if (result == (uint32_t)VK_SUCCESS) {
@@ -444,7 +466,7 @@ allocate_memory(
 		if (error != 0)
 			return error;
 		object->as.memory.type = type;
-		result = memory_back(session, object, imported, bytes);
+		result = memory_back(session, object, imported, local, bytes);
 		if (result != (uint32_t)VK_SUCCESS)
 			ghci_vk_object_destroy(session, object);
 	}
@@ -457,16 +479,18 @@ allocate_memory(
 }
 
 /*
- * Gives a memory object its memory (a new allocation, or the imported
- * resource's) and maps it into the device's GHCI session.  Returns the
- * VkResult; on a failure the object holds what it got, which its destroy
- * lets go.
+ * Gives a memory object its memory (a new allocation of host memory, or
+ * of local memory when local is set, or the imported resource's) and maps
+ * it into the device's GHCI session; local memory is cleared by the GPU
+ * before the object is the client's.  Returns the VkResult; on a failure
+ * the object holds what it got, which its destroy lets go.
  */
 static uint32_t
 memory_back(
 	struct ghci_vk_session *session,
 	struct ghci_vk_object *object,
 	uint32_t imported,
+	int local,
 	uint64_t bytes)
 {
 	struct ghci_allocation *allocation;
@@ -494,7 +518,10 @@ memory_back(
 			return (uint32_t)VK_ERROR_INVALID_EXTERNAL_HANDLE;
 		object->as.memory.imported = 1;
 	} else {
-		error = ghci_memory_alloc(device, bytes, 0U, &allocation);
+		if (local)
+			error = ghci_memory_alloc_local(device, bytes, &allocation);
+		else
+			error = ghci_memory_alloc(device, bytes, 0U, &allocation);
 		if (error != 0)
 			return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 		mutex_lock(&device->lock);
@@ -513,7 +540,69 @@ memory_back(
 	if (error != 0)
 		return (uint32_t)VK_ERROR_DEVICE_LOST;
 
+	/* New local memory is cleared before the client has it. */
+	if (allocation->kind == GHCI_MEMORY_LOCAL && imported == 0U)
+		return local_clear(session, object);
+
 	/* Succeeded: the memory is the GPU's at its address in the session. */
+	return (uint32_t)VK_SUCCESS;
+}
+
+/*
+ * Clears a memory object's new local memory to zero with the GPU in the
+ * device's session, and waits for it: the client can neither read the
+ * memory with the GPU before work placed after the clear, nor with the
+ * processor (through a blob in the local window) before the allocation
+ * has returned.  Returns the VkResult: out of device memory when the
+ * clear cannot be made or does not end in time, device lost when the
+ * session or the device is lost.
+ */
+static uint32_t
+local_clear(
+	struct ghci_vk_session *session,
+	struct ghci_vk_object *object)
+{
+	struct ghci_vk_submission submission;
+	struct ghci_vk_device *device;
+	struct ghci_mapping *mapping;
+	struct ghci_ticket ticket;
+	int placed;
+	int error;
+
+	/* The packets that clear the mapping's bytes. */
+	device = object->device;
+	mapping = object->as.memory.mapping;
+	kern_memset(&submission, 0, sizeof(submission));
+	error = ghci_vk_execute_clear(session, device, mapping->va, mapping->bytes, &submission);
+	if (error != 0) {
+		ghci_vk_submission_end(device, &submission, NULL, 0);
+		kern_logf("ghci: %s: vk: local memory not cleared (%d)\n", session->device->name, error);
+		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
+	}
+
+	/*
+	 * The clear and its fence in the device's session.  A clear placed
+	 * in part before a recovery keeps its memory until the reset ends
+	 * its ticket, as a submission does.
+	 */
+	error = ghci_cp_submit_placed(session->device, device->vm, submission.words, submission.used, &ticket, &placed);
+	if (placed) {
+		ghci_vk_submitted(device, &ticket);
+		ghci_vk_submission_end(device, &submission, &ticket, 1);
+	} else {
+		ghci_vk_submission_end(device, &submission, NULL, 0);
+	}
+	if (error != 0)
+		return (uint32_t)VK_ERROR_DEVICE_LOST;
+
+	/* The zeroes are in memory before the client has it. */
+	error = ghci_cp_wait(session->device, &ticket, CLEAR_WAIT_MS);
+	if (error == EIO)
+		return (uint32_t)VK_ERROR_DEVICE_LOST;
+	if (error != 0)
+		return (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
+
+	/* Succeeded: the memory holds zeroes. */
 	return (uint32_t)VK_SUCCESS;
 }
 
@@ -753,7 +842,7 @@ image_admit(
 /*
  * vkGetBufferMemoryRequirements and vkGetImageMemoryRequirements:
  * [device][object][u64 1] -> [u64 1][VkMemoryRequirements]: the size,
- * 256-byte alignment, and the one memory type.
+ * 256-byte alignment, and every memory type of the device.
  */
 static int
 requirements(
@@ -786,7 +875,7 @@ requirements(
 	else
 		record.size = round_up(object->as.image.bytes, GHCI_VK_ALIGN);
 	record.alignment = GHCI_VK_ALIGN;
-	record.memoryTypeBits = (1U << MEMORY_TYPES) - 1U;
+	record.memoryTypeBits = (1U << memory_types(session)) - 1U;
 
 	/* The presence word and the record. */
 	if (requested != 0U) {
@@ -1053,4 +1142,17 @@ heap_grow(
 
 	/* Succeeded: the heap has room. */
 	return 0;
+}
+
+/* Reports the memory types the device answers: two on a discrete GPU whose local memory is in use, else one. */
+static uint32_t
+memory_types(
+	struct ghci_vk_session *session)
+{
+	/* A discrete GPU: local memory and host memory. */
+	if (ghci_memory_local_bytes(session->device) != 0U)
+		return 2U;
+
+	/* Succeeded: one type, in host memory. */
+	return 1U;
 }

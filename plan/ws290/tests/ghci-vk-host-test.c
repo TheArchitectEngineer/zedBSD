@@ -48,6 +48,9 @@
 #define TEST_PCI_VENDOR			0x10eeU
 #define TEST_PCI_DEVICE			0x7024U
 
+/* Where the scenes with a local window say BAR2 is placed. */
+#define TEST_WINDOW_PHYSICAL		0xe0000000ULL
+
 /* The reply blob: its bytes, and where the trailer (the version probe's 20 bytes) goes. */
 #define REPLY_BYTES			4096U
 #define TRAILER_AT			(REPLY_BYTES - 20U)
@@ -98,6 +101,15 @@ static struct ghci_device device;
 /* Whether the sleep hook runs the service thread's work (the core's reset), and that it is running. */
 static int service_auto;
 static int service_running;
+
+/*
+ * What the next start gives the device besides the profile: a local
+ * window over the model's local memory (test_window), and capability
+ * bits taken out of DEVICE_CAPS (test_caps_clear, for a variant of a
+ * profile).
+ */
+static int test_window;
+static uint32_t test_caps_clear;
 
 /* The completions the scenes hand the executor: distinct addresses the stub counts. */
 static char completions[8];
@@ -156,6 +168,9 @@ static void scene_jobs(void);
 static void scene_completions(void);
 static void scene_recovery(void);
 static void scene_core_reset(void);
+static void scene_discrete(void);
+static int allocate_typed(struct node *node, uint64_t handle, uint64_t bytes, uint32_t type, int exported, uint64_t memory, uint32_t *result);
+static int all_bytes(const uint8_t *bytes, uint64_t count, uint8_t value);
 
 /* The operations of the fake bus; they live as long as the test. */
 static const struct ghci_bus_ops fake_bus_ops = {
@@ -187,6 +202,7 @@ main(void)
 	scene_completions();
 	scene_recovery();
 	scene_core_reset();
+	scene_discrete();
 	model_fini();
 
 	/* The counts. */
@@ -246,8 +262,9 @@ start(
 	};
 	int error;
 
-	/* The model and the stubs, with the rules the driver must keep. */
+	/* The model (less the bits the scene takes out) and the stubs, with the rules the driver must keep. */
 	model_init(profile, NULL);
+	model.window[GHCI_REG_DEVICE_CAPS / 4U] &= ~test_caps_clear;
 	stub_reset();
 	stub_lock_order(order, 4U);
 	stub_forbid_wait("ghci fence", "ghci device");
@@ -265,6 +282,11 @@ start(
 	device.bus_ops = &fake_bus_ops;
 	device.pci_vendor = TEST_PCI_VENDOR;
 	device.pci_device = TEST_PCI_DEVICE;
+	if (test_window) {
+		device.window = model.local;
+		device.window_physical = TEST_WINDOW_PHYSICAL;
+		device.window_bytes = MODEL_LOCAL_BYTES;
+	}
 	error = ghci_device_start(&device);
 	return error;
 }
@@ -1132,7 +1154,12 @@ scene_profile(
 	expect(error == 0 && reply32(&node, 12U) == 1U && family.queueFlags == 7U && family.queueCount == 1U &&
 	       family.timestampValidBits == 64U, label);
 
-	/* The memory: one heap of 256 MiB, one type device local, host visible and coherent. */
+	/*
+	 * The memory: one heap of 256 MiB, one type device local, host
+	 * visible and coherent; on a discrete profile two heaps (the local
+	 * memory, device local; host memory) and two types (device local
+	 * alone; host visible and coherent).
+	 */
 	begin(&frame, &node, GPU_OP_GET_PHYSICAL_DEVICE_MEMORY_PROPERTIES, GPU_OP_FLAG_REPLY);
 	put64(&frame, ID_PHYSICAL);
 	put64(&frame, 1U);
@@ -1144,9 +1171,17 @@ scene_profile(
 	arena.used = 0U;
 	i915_vkc_dec_VkPhysicalDeviceMemoryProperties(&reader, &arena, &memory);
 	snprintf(label, sizeof(label), "%s: memory types", name);
-	expect(error == 0 && memory.memoryTypeCount == 1U && memory.memoryTypes[0].propertyFlags == 7U &&
-	       memory.memoryHeapCount == 1U && memory.memoryHeaps[0].size == (256ULL << 20) &&
-	       memory.memoryHeaps[0].flags == 1U, label);
+	if (device_type == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+		expect(error == 0 && memory.memoryTypeCount == 2U &&
+		       memory.memoryTypes[0].propertyFlags == 1U && memory.memoryTypes[0].heapIndex == 0U &&
+		       memory.memoryTypes[1].propertyFlags == 6U && memory.memoryTypes[1].heapIndex == 1U &&
+		       memory.memoryHeapCount == 2U && memory.memoryHeaps[0].size == MODEL_LOCAL_BYTES &&
+		       memory.memoryHeaps[0].flags == 1U && memory.memoryHeaps[1].size == (256ULL << 20) &&
+		       memory.memoryHeaps[1].flags == 0U, label);
+	else
+		expect(error == 0 && memory.memoryTypeCount == 1U && memory.memoryTypes[0].propertyFlags == 7U &&
+		       memory.memoryHeapCount == 1U && memory.memoryHeaps[0].size == (256ULL << 20) &&
+		       memory.memoryHeaps[0].flags == 1U, label);
 
 	/* The session and the device. */
 	node_close(&node);
@@ -2201,4 +2236,248 @@ scene_core_reset(void)
 	expect(device.quarantined == NULL, "core reset: quarantine back");
 	expect(log_names_no_session(), "core reset: the log names no session");
 	stop("core reset");
+}
+
+/*
+ * vkAllocateMemory of a memory type, made for export or not.  Returns
+ * what the frame returned; *result is the VkResult.
+ */
+static int
+allocate_typed(
+	struct node *node,
+	uint64_t handle,
+	uint64_t bytes,
+	uint32_t type,
+	int exported,
+	uint64_t memory,
+	uint32_t *result)
+{
+	struct frame frame;
+	int error;
+
+	/* [device][u64 1][sType][u64 chain] and the export record. */
+	begin(&frame, node, GPU_OP_ALLOCATE_MEMORY, GPU_OP_FLAG_REPLY);
+	put64(&frame, handle);
+	put64(&frame, 1U);
+	put32(&frame, VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO);
+	if (exported) {
+		put64(&frame, 1U);
+		put32(&frame, VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO);
+		put64(&frame, 0U);
+		put32(&frame, VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT);
+	} else {
+		put64(&frame, 0U);
+	}
+
+	/* [u64 size][u32 type][u64 0][u64 1][memory]. */
+	put64(&frame, bytes);
+	put32(&frame, type);
+	put64(&frame, 0U);
+	put64(&frame, 1U);
+	put64(&frame, memory);
+	error = run(node, &frame);
+	*result = reply32(node, 4U);
+	return error;
+}
+
+/* Reports whether every one of count bytes is value: 1 when it is. */
+static int
+all_bytes(
+	const uint8_t *bytes,
+	uint64_t count,
+	uint8_t value)
+{
+	uint64_t index;
+
+	/* Each byte in turn. */
+	for (index = 0U; index < count; index++) {
+		if (bytes[index] != value)
+			return 0;
+	}
+
+	/* Succeeded: all of them are. */
+	return 1;
+}
+
+/*
+ * A discrete device: device-local memory in local memory, mapped with
+ * VM_FLAG_LOCAL and cleared by FILL_BUFFER before the allocation returns
+ * (and by the copy program without the blitter), host-visible and
+ * exported memory in host memory, buffers that take both types, the
+ * upload and the readback of local memory through the local window (and
+ * their refusal without it), a local heap that runs out, and the runs
+ * going back to the allocator.
+ */
+static void
+scene_discrete(void)
+{
+	static const uint8_t written[16] = {
+		1U, 2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U, 11U, 12U, 13U, 14U, 15U, 16U
+	};
+	struct gpu_blob_create request;
+	struct drv_gpu_mapping view;
+	const struct model_command *command;
+	struct ghci_allocation *allocation;
+	struct ghci_vk_object *object;
+	struct ghci_vk_session *session;
+	struct frame frame;
+	struct node node;
+	uint8_t read_back[16];
+	uint64_t offset;
+	unsigned fills;
+	unsigned dispatches;
+	uint32_t result;
+	uint32_t resource_id;
+	void *blob;
+	int error;
+
+	/* A discrete device with a window; local memory holds what an earlier client left. */
+	test_window = 1;
+	error = start(MODEL_KC705_DISCRETE);
+	test_window = 0;
+	if (error == 0)
+		error = node_open(&node);
+	if (error == 0)
+		error = create_device(&node, ID_DEVICE, NULL, &result);
+	expect(error == 0 && result == 0U, "discrete: device");
+	session = ((struct ghci_session *)node.session)->vk;
+	expect(model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U] == 1U, "discrete: window open for the driver");
+	memset(model.local, 0xa5, MODEL_LOCAL_BYTES);
+
+	/* Device-local memory: a run of local memory, mapped with VM_FLAG_LOCAL at its local address. */
+	fills = model_count_commands(GHCI_OP_FILL_BUFFER);
+	error = allocate_typed(&node, ID_DEVICE, 65536U, 0U, 0, ID_MEMORY, &result);
+	object = ghci_vk_object_find(session, GHCI_VK_MEMORY, ID_MEMORY);
+	allocation = object != NULL ? object->as.memory.allocation : NULL;
+	expect(error == 0 && result == 0U && allocation != NULL && allocation->kind == GHCI_MEMORY_LOCAL &&
+	       allocation->bus >= MODEL_LOCAL_BASE && allocation->bus + allocation->bytes <= MODEL_LOCAL_BASE + MODEL_LOCAL_BYTES,
+	       "discrete: device-local memory is local");
+	command = model_last_command(GHCI_OP_VM_MAP);
+	expect(command != NULL && allocation != NULL && (command->words[2] & GHCI_VM_FLAG_LOCAL) != 0U &&
+	       ((uint64_t)command->words[7] << 32 | command->words[6]) == allocation->bus, "discrete: VM_MAP with VM_FLAG_LOCAL");
+
+	/* Cleared by FILL_BUFFER over the whole mapping, before the allocation returned; the next byte is untouched. */
+	command = model_last_command(GHCI_OP_FILL_BUFFER);
+	expect(model_count_commands(GHCI_OP_FILL_BUFFER) == fills + 1U && command != NULL && object != NULL &&
+	       ((uint64_t)command->words[2] << 32 | command->words[1]) == object->as.memory.mapping->va &&
+	       command->words[3] == 65536U && command->words[4] == 0U, "discrete: FILL_BUFFER of zeroes");
+	offset = allocation != NULL ? allocation->bus - MODEL_LOCAL_BASE : 0U;
+	expect(allocation != NULL && all_bytes(model.local + offset, 65536U, 0U) && model.local[offset + 65536U] == 0xa5U,
+	       "discrete: the run holds zeroes only");
+
+	/* Host-visible memory and memory made for export stay in host memory, and are not filled. */
+	fills = model_count_commands(GHCI_OP_FILL_BUFFER);
+	error = allocate_typed(&node, ID_DEVICE, 65536U, 1U, 0, ID_MEMORY + 1U, &result);
+	object = ghci_vk_object_find(session, GHCI_VK_MEMORY, ID_MEMORY + 1U);
+	command = model_last_command(GHCI_OP_VM_MAP);
+	expect(error == 0 && result == 0U && object != NULL && object->as.memory.allocation->kind == GHCI_MEMORY_HOST &&
+	       command != NULL && (command->words[2] & GHCI_VM_FLAG_LOCAL) == 0U, "discrete: host-visible memory is host memory");
+	error = allocate_typed(&node, ID_DEVICE, 65536U, 0U, 1, ID_MEMORY + 2U, &result);
+	object = ghci_vk_object_find(session, GHCI_VK_MEMORY, ID_MEMORY + 2U);
+	expect(error == 0 && result == 0U && object != NULL && object->as.memory.allocation->kind == GHCI_MEMORY_HOST,
+	       "discrete: exported memory is host memory");
+	expect(model_count_commands(GHCI_OP_FILL_BUFFER) == fills, "discrete: host memory not filled");
+	error = allocate_typed(&node, ID_DEVICE, 65536U, 2U, 0, ID_MEMORY + 3U, &result);
+	expect(error == 0 && result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY, "discrete: no third type");
+
+	/* A buffer takes either type. */
+	begin(&frame, &node, GPU_OP_CREATE_BUFFER, GPU_OP_FLAG_REPLY);
+	put64(&frame, ID_DEVICE);
+	put64(&frame, 1U);
+	put32(&frame, VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO);
+	put64(&frame, 0U);
+	put32(&frame, 0U);
+	put64(&frame, 4096U);
+	put32(&frame, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+	put32(&frame, VK_SHARING_MODE_EXCLUSIVE);
+	put32(&frame, 0U);
+	put64(&frame, 0U);
+	put64(&frame, 0U);
+	put64(&frame, 1U);
+	put64(&frame, ID_BUFFER);
+	error = run(&node, &frame);
+	begin(&frame, &node, GPU_OP_GET_BUFFER_MEMORY_REQUIREMENTS, GPU_OP_FLAG_REPLY);
+	put64(&frame, ID_DEVICE);
+	put64(&frame, ID_BUFFER);
+	put64(&frame, 1U);
+	if (error == 0)
+		error = run(&node, &frame);
+	expect(error == 0 && reply32(&node, 28U) == 3U, "discrete: buffer memory types");
+
+	/* The upload and the readback of local memory through the window, and its user mapping as device memory. */
+	memset(&request, 0, sizeof(request));
+	request.bytes = 65536U;
+	request.blob_id = ID_MEMORY;
+	request.flags = GPU_BLOB_MAPPABLE;
+	blob = NULL;
+	error = device.ops.blob_create(&device, node.session, &request, &blob, &resource_id);
+	expect(error == 0 && blob != NULL, "discrete: blob of local memory");
+	if (error == 0) {
+		error = device.ops.resource_write(&device, node.session, blob, 64U, written, sizeof(written));
+		expect(error == 0 && memcmp(model.local + offset + 64U, written, sizeof(written)) == 0, "discrete: upload through the window");
+		memset(read_back, 0, sizeof(read_back));
+		error = device.ops.resource_read(&device, node.session, blob, 64U, read_back, sizeof(read_back));
+		expect(error == 0 && memcmp(read_back, written, sizeof(written)) == 0, "discrete: readback through the window");
+		memset(&view, 0, sizeof(view));
+		error = device.ops.resource_map(&device, node.session, blob, &view);
+		expect(error == 0 && view.physical == TEST_WINDOW_PHYSICAL + offset && view.attributes == DRV_GPU_MAPPING_DEVICE &&
+		       view.address == (void *)(model.local + offset), "discrete: mapped through the window");
+		device.ops.resource_destroy(&device, node.session, blob);
+	}
+
+	/* The local heap runs out: more than local memory has. */
+	error = allocate_typed(&node, ID_DEVICE, MODEL_LOCAL_BYTES + 65536U, 0U, 0, ID_MEMORY + 4U, &result);
+	expect(error == 0 && result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY, "discrete: local heap exhausted");
+
+	/* Freed local memory goes back to the allocator once its unmap passed. */
+	error = destroy(&node, GPU_OP_FREE_MEMORY, ID_DEVICE, ID_MEMORY);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && device.local_map.count == 0U, "discrete: freed local memory back in the allocator");
+	node_close(&node);
+	stop("discrete");
+
+	/* Without a window, local memory has no view: the readback, the upload and the mapping are refused. */
+	error = start(MODEL_KC705_DISCRETE);
+	if (error == 0)
+		error = node_open(&node);
+	if (error == 0)
+		error = create_device(&node, ID_DEVICE, NULL, &result);
+	if (error == 0)
+		error = allocate_typed(&node, ID_DEVICE, 65536U, 0U, 0, ID_MEMORY, &result);
+	expect(error == 0 && result == 0U && model.window[(MODEL_MEM_BLOCK + GHCI_MEM_WINDOW_CTRL) / 4U] == 0U,
+	       "discrete without window: allocated, window closed");
+	memset(&request, 0, sizeof(request));
+	request.bytes = 65536U;
+	request.blob_id = ID_MEMORY;
+	request.flags = GPU_BLOB_MAPPABLE;
+	blob = NULL;
+	error = device.ops.blob_create(&device, node.session, &request, &blob, &resource_id);
+	if (error == 0) {
+		error = device.ops.resource_read(&device, node.session, blob, 0U, read_back, sizeof(read_back));
+		expect(error == ENOTSUP, "discrete without window: readback refused");
+		error = device.ops.resource_write(&device, node.session, blob, 0U, written, sizeof(written));
+		expect(error == ENOTSUP, "discrete without window: upload refused");
+		error = device.ops.resource_map(&device, node.session, blob, &view);
+		expect(error == ENOTSUP, "discrete without window: mapping refused");
+		device.ops.resource_destroy(&device, node.session, blob);
+	}
+	node_close(&node);
+	stop("discrete without window");
+
+	/* Without the blitter, the driver's copy program clears local memory: a dispatch, no FILL_BUFFER. */
+	test_caps_clear = GHCI_CAP_BLT;
+	error = start(MODEL_KC705_DISCRETE);
+	test_caps_clear = 0U;
+	if (error == 0)
+		error = node_open(&node);
+	if (error == 0)
+		error = create_device(&node, ID_DEVICE, NULL, &result);
+	fills = model_count_commands(GHCI_OP_FILL_BUFFER);
+	dispatches = model_count_commands(GHCI_OP_DISPATCH);
+	if (error == 0)
+		error = allocate_typed(&node, ID_DEVICE, 65536U, 0U, 0, ID_MEMORY, &result);
+	expect(error == 0 && result == 0U && model_count_commands(GHCI_OP_FILL_BUFFER) == fills &&
+	       model_count_commands(GHCI_OP_DISPATCH) > dispatches, "discrete without blitter: cleared by the copy program");
+	node_close(&node);
+	stop("discrete without blitter");
 }
