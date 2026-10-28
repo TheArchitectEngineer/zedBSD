@@ -4,7 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」）。旧: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13…
-Resume point: 2026-10-29 05:20 q1664（P3）: 最新の commit は下の表の最後の行（write(2) の socket への pinned の送り）。VF2: recv 948.6・send 932〜935 Mbps（3 回）、send ≥ 940 まであと少し（書き手の CPU 律速、copy と checksum が残り）。VF2 の /boot/boot0/vmunix はその commit の build（前は vmunix.old、元は vmunix.p3orig と host の build/vf2-board-backup/）。5330 の enx6c1ff706148a の MTU は 1500 に戻した（Debian 側の一時の設定だけで、永続の設定は触っていない）。次: send の残り（候補: sendto(2) にも pinned、fused の copy と checksum、TX checksum の offload の可否）、p002 の残り（ws の p002 の行）、p003（RTL8156 の SET_MAX_DATAGRAM_SIZE）、p007（規約の見直し）。§9 は全部推しで決定（下）。旧: p001 の review-2 → §9 の判断（特に Q1・Q4・Q11・Q12・Q13）→ p002（kernel + ifconfig + ping）と p004（設定）を Queue に、p003 の前に descriptor の読み（phase.md §4.1）
+Resume point: 2026-10-29 05:55 q1664（P3）: 性能の受け入れを満たした（下の「結果」の最後の行、5d9898542）。VF2 の /boot/boot0/vmunix は 5d9898542 の build。5330 の MTU は 1500 のまま（触っていない）。次: 他 platform の build を流して Q1 へ SHA、p002 の残り（phase002/phase.md）、p003（RTL8156 の SET_MAX_DATAGRAM_SIZE、dw-eqos は済み）、p004・p005・p006、p007（規約の全文の見直し）。旧: p001 の review-2 → §9 の判断（特に Q1・Q4・Q11・Q12・Q13）→ p002（kernel + ifconfig + ping）と p004（設定）を Queue に、p003 の前に descriptor の読み（phase.md §4.1）
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -86,7 +86,9 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 | f22ba6a27 | 948.4 | 915.8・923.5・923.8 | 送りの ring 128 → 256、書き手を起こすのを ring の半分が空いてから（write の 64 KB の bounce が丸ごと取られる） |
 | 09e15688b | 948.5 | 923.0・886.4 | dw-eqos の TX を pool の packet から直に DMA（pool を物理 page から取り、packet_buf_physical） |
 | 83d44f3e3 | 948.6 | 932.2・935.4・932.9 | write(2) の stream socket は bounce を使わず pin した user の page から TCP の ring の copy へ（send_pinned） |
+| 5d9898542（相手 5330） | 949.0・949.2 | 949.1・949.1・949.1（最遅 948.0） | shutdown が ring の満杯で EAGAIN を返していたのを直した（FIN の前に room を待つ）。相手を 5330 の Debian（同じ switch、`vf2-tcp.sh --peer awe@10.0.30.3,10.0.30.3`）に |
 
-- 受けは基準を満たした（948 Mbps、理論値 949）。送りは 785〜918 Mbps で未達。書き手の thread が 1 CPU の 95 % 前後を使い、どの CPU に載るか（eqos の割り込みの CPU と同じか）で run ごとに揺れる。
+- 2026-10-29 05:5x: 両向きとも基準を満たした（相手 5330 の Debian、30 秒 ×3 の送り 949.1、受け 949.0・949.2、最遅の 1 秒 ≥ 943.8）。centris が相手の時の送りは 932〜948 で揺れる: centris の tcpdump（build/tmp/cap/send.pcap）で隣り合う frame の入れ替わりが 10 秒で約 1.5 万、VF2 の driver で IP ID の順を数えると 240 万 frame で入れ替わり 9 なので、入れ替わりは VF2 の外（switch の間か centris の受け）。TCP は SACK が無いので入れ替わりの dupack で fast retransmit し cwnd を半分にする。入れ替わりへの強さ（SACK・RACK・dupack の閾値の適応）は今の範囲の外で、Future Work の候補。
+- 旧: 受けは基準を満たした（948 Mbps、理論値 949）。送りは 785〜918 Mbps で未達。書き手の thread が 1 CPU の 95 % 前後を使い、どの CPU に載るか（eqos の割り込みの CPU と同じか）で run ごとに揺れる。
 - 測りの道具: sched の tick で中断の PC と kernel thread の入口を数える一時の差分（commit しない、build/tmp/*.patch）。送りの書き手の内訳（7d99bf2d9 の時）: memcpy（copyin の 64 KB の bounce と ring の copy）・eqos_transmit（DMA の buffer への copy と MMIO）・checksum・route と device の ref。
 - 見つけた別件: BUG-350（usb_hub_worker の 100 %、f3d89900a で直した）。
