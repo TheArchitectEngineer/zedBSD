@@ -151,8 +151,10 @@ static int name_append_unsigned(char name[DISK_NAME_MAX], unsigned *at, unsigned
 static void disk_copy_info(const struct disk *disk, struct disk_info *info);
 static int bio_admit(struct disk *disk, struct bio *bio);
 static uint64_t disk_stats_now_ns(void);
-static void disk_stats_start(struct disk *leaf, struct bio *bio);
-static void disk_stats_end(struct disk *leaf, const struct bio *bio, size_t transferred, int completed);
+static uint64_t disk_stats_stamp(const struct disk *leaf);
+static void disk_stats_start(struct disk *leaf, struct bio *bio, uint64_t now);
+static void disk_stats_end(struct disk *leaf, const struct bio *bio, size_t transferred, int completed,
+    uint64_t now);
 static void disk_stats_gone(const struct disk *disk);
 static int bio_dispatch(struct bio *bio);
 static int disk_transfer_direct(struct disk *disk, enum bio_op op, uint64_t block, uint32_t count, void *data, const struct backing_claim *claim, uint32_t *completed, const struct io_context *context);
@@ -1941,6 +1943,7 @@ bio_submit(
 	struct bio *bio)
 {
 	struct disk *leaf;
+	uint64_t now;
 	bool enabled;
 	int error;
 
@@ -1949,14 +1952,15 @@ bio_submit(
 	if (error != 0)
 		return error;
 
-	/* Hands it to the driver, undoing the admission on a refusal. */
+	/* Hands it to the driver, undoing the admission on a refusal (the time read before the registry lock). */
 	leaf = bio->b_leaf_disk;
 	error = bio_dispatch(bio);
 	if (error != 0) {
 		disk_write_retire(leaf, bio, error, 0);
+		now = disk_stats_stamp(leaf);
 		enabled = disk_lock();
 		leaf->d_inflight--;
-		disk_stats_end(leaf, bio, 0, 0);
+		disk_stats_end(leaf, bio, 0, 0, now);
 		(void)refcount_put_not_last(&leaf->d_refs);
 		bio->b_state = BIO_NEW;
 		bio->b_leaf_disk = NULL;
@@ -1984,6 +1988,7 @@ bio_complete(
 	size_t transferred)
 {
 	struct disk *leaf;
+	uint64_t now;
 	unsigned long bio_irq;
 	bool enabled;
 	void (*done)(struct bio *);
@@ -2033,11 +2038,12 @@ bio_complete(
 	done = bio->b_done;
 	disk_write_retire(leaf, bio, error, transferred);
 
-	/* Unpins the leaf. */
+	/* Unpins the leaf; the time for its statistics is read before the registry lock. */
+	now = leaf != NULL ? disk_stats_stamp(leaf) : 0;
 	enabled = disk_lock();
 	if (leaf != NULL && leaf->d_inflight != 0) {
 		leaf->d_inflight--;
-		disk_stats_end(leaf, bio, transferred, 1);
+		disk_stats_end(leaf, bio, transferred, 1, now);
 	}
 
 	/* The completion's pin on the leaf is dropped. */
@@ -3433,6 +3439,7 @@ bio_admit(
 {
 	struct disk *leaf;
 	uint64_t mapped;
+	uint64_t now;
 	unsigned long context_irq;
 	int error;
 	bool enabled;
@@ -3513,7 +3520,8 @@ bio_admit(
 	     bio->b_block_count > leaf->d_block_count - mapped))
 		return EOVERFLOW;
 
-	/* Marks the bio submitted and pins the leaf. */
+	/* Marks the bio submitted and pins the leaf; the time is read before the registry lock. */
+	now = disk_stats_stamp(leaf);
 	enabled = disk_lock();
 	if (disk->d_state != DISK_LIVE || leaf->d_state != DISK_LIVE ||
 	    disk_media_status(disk) != 0) {
@@ -3542,7 +3550,7 @@ bio_admit(
 	bio->b_error = 0;
 	bio->b_state = BIO_SUBMITTED;
 	leaf->d_inflight++;
-	disk_stats_start(leaf, bio);
+	disk_stats_start(leaf, bio, now);
 	refcount_get(&leaf->d_refs);
 	disk_unlock(enabled);
 
@@ -4569,6 +4577,22 @@ disk_stats_now_ns(
 }
 
 /*
+ * The time for a request's statistics, read before the registry lock is
+ * taken so that the lock is not held over the clock: zero for a disk
+ * hw.diskstats does not list.  A request admitted or retired by another
+ * CPU between the read and the lock moves a busy stretch's edge by that
+ * little; every comparison below allows a time older than the one stored.
+ */
+static uint64_t
+disk_stats_stamp(
+	const struct disk *leaf)
+{
+	if (leaf->d_stats_kind == 0U)
+		return 0;
+	return disk_stats_now_ns();
+}
+
+/*
  * A request was admitted to a disk (its d_inflight just counted it, under
  * the registry lock): its submission's time, and the start of a busy
  * stretch when it is the only one outstanding.
@@ -4576,17 +4600,15 @@ disk_stats_now_ns(
 static void
 disk_stats_start(
 	struct disk *leaf,
-	struct bio *bio)
+	struct bio *bio,
+	uint64_t now)
 {
-	uint64_t now;
-
 	/* A disk hw.diskstats does not list keeps no times. */
 	bio->b_submitted_ns = 0;
 	if (leaf->d_stats_kind == 0U)
 		return;
 
 	/* The request's start, and the disk's busy stretch's. */
-	now = disk_stats_now_ns();
 	bio->b_submitted_ns = now;
 	if (leaf->d_inflight == 1U)
 		leaf->d_stats_busy_since_ns = now;
@@ -4603,9 +4625,9 @@ disk_stats_end(
 	struct disk *leaf,
 	const struct bio *bio,
 	size_t transferred,
-	int completed)
+	int completed,
+	uint64_t now)
 {
-	uint64_t now;
 	uint64_t elapsed;
 
 	/* A disk hw.diskstats does not list keeps no times. */
@@ -4613,7 +4635,6 @@ disk_stats_end(
 		return;
 
 	/* The busy stretch ends with the last request outstanding. */
-	now = disk_stats_now_ns();
 	if (leaf->d_inflight == 0U && now >= leaf->d_stats_busy_since_ns)
 		leaf->d_stats_busy_ns += now - leaf->d_stats_busy_since_ns;
 
