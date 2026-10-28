@@ -9,7 +9,7 @@ Related Milestones: MG006, MG008, MG009
 Objectives: O2, O4, O5
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: p001〜p008 cleared。DOC-54 は GPU 文書の保留解除後に Phase 化
+Resume point: p001〜p008 cleared。DOC-54 は [p009](phase009/phase.md)（設計 第 2 版 2026-10-29、p009a・p009b、20 LW、担当は Q1 が割り当てる）
 Target: **ベータ2**（2026-10-13 ユーザー「WS196、WS172、WS009はベータ2に入れます。」。旧: ベータ3（2026-10-08 ユーザー））
 <!-- awesome-plan-current:end -->
 
@@ -27,6 +27,7 @@ Shared tests: [WS009 test index](tests/README.md)
 | [`ws009-p006`](phase006/phase.md) | Complete (`q072`) | Current WLAN, physical USB HID, Intel Mac Variant, Noct 2.0.1, and project-toolchain behavior is published without claiming planned removals or new UAPIs |
 | [`ws009-p007`](phase007/phase.md) | Complete (`q150`) | Architecture, compatibility, console/graphics/system and multi-radio WLAN reconciled; 283 product links pass |
 | [`ws009-p008`](phase008/phase.md) | Complete (`q190`) | Current amd64/PC98 installer and native-root workflows, recovery/limits, producer evidence and 293 product links verified |
+| [`ws009-p009`](phase009/phase.md) | Planned (design 2026-10-29, q1666) | DOC-54 `/dev/gpu` UAPI reference: two stages p009a/p009b, 20 LW; design review in [design-review.md](phase009/design-review.md) |
 
 Documentation work may be extracted alongside a producer WS when it describes
 a newly frozen public interface, but it retains a WS009 Phase ID and acceptance
@@ -79,7 +80,7 @@ than assumed here.
 | DOC-51 | Complete (`q150`) | `/dev/graphics` HAL-bridge reference | GFX takeover design | Framebuffer, mmap/ioctl, ownership, and GPU takeover are specified |
 | DOC-52 | Complete (`q150`) | `/dev/system` HAL-bridge reference | Device/UAPI audit | Operations, permissions, data structures, and architecture hooks are specified |
 | DOC-53 | Complete through `ws009-p004` | evdev and `/dev/input` UAPI reference | IN-00 through the q044 p006/p007 boundary | ABI profile, event semantics, examples, current ownership, and compatibility differences are published without claiming live USB HID |
-| DOC-54 | Producer manual hold; absence documented (`q150`) | `/dev/gpu` UAPI and capability reference | GFX-10 | Versioned object model and supported profiles match headers/tests |
+| DOC-54 | Planned as [`ws009-p009`](phase009/phase.md) (hold lifted 2026-10-27) | `/dev/gpu` UAPI and capability reference | GFX-10 | Versioned object model and supported profiles match headers/tests |
 | DOC-55 | Complete (`q150`) | `networkd`, `net`, `dhcpc`, WPA backend, and rc.conf networking reference | NET-20+ as applicable | Command/config/protocol/error examples pass tests |
 
 ## 3. Required document qualities
