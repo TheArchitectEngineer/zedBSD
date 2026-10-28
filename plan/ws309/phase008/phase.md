@@ -4,7 +4,7 @@
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §4.1（レビュー 1）・§4.2・§11 の (1)、J2。Queue: q1662-i04（P1）。
 - 状態: in-progress（2026-10-29 P1。queue の lock は済み、fence 付きの task は未着手）。
-- 再開点（2026-10-29 05:0x P1 q1662-i05、branch `agent/p1-ws309e`、ラップアップ）: source の変更は無い。下の「残り」1 から。
+- 再開点（2026-10-29 04:54 P1 q1662-i05、branch `agent/p1-ws309e`、ラップアップ）: source の変更は無い。下の「残り」1 から。
   - build の手順（確かめた）: worktree の `build/` に main の `build/` の `NoctLang`・`distfiles`・`llvm`・`llvm-build`・`llvm-source`・`sources`・`ws035-sq-venus` の symlink を作り、
     `make ZEDBSD_CONFIG=plan/ws309/tests/config-amd64-p1.mk build/amd64/bin/wayland -j16`（sysroot は make が作る。基点 11781c470 で exit 0・warning 0）。
   - 調べた事（実装の案、未実装）: task の完了は FIFO の順に刈るので、main は `compose->task_done`（終わった task の最後の番号）を持ち、image に `task`（その遷移の task の番号、0 は無し）を置けば
