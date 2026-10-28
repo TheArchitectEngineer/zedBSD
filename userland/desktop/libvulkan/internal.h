@@ -186,6 +186,8 @@ struct VkCommandBuffer_T {
 	struct vulkan_command_pool *pool;
 	VkCommandBufferLevel level;
 	struct vulkan_writer recording;
+	/* Where the record being encoded straight into recording begins. */
+	size_t record_start;
 	uint32_t state;
 	VkResult error;
 	/*
