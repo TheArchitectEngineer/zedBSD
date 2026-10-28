@@ -23,6 +23,10 @@
  * made and whenever they change; the object that asked gets queued
  * (print's job) and the result.  The backend numbers its requests; a table
  * pairs them with the client's.  Titles and hosts are not logged.
+ *
+ * The settings file is written, and checked once a second for another
+ * session's change, on the compositor's file I/O thread (io.c): the
+ * backend is given to it when the first printers object is made.
  */
 
 #include "kwl.h"
@@ -32,6 +36,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -47,6 +52,9 @@
 /* The most requests waiting for the backend's answer. */
 #define PRINTERS_WAITING_MAX	16U
 
+/* How often the settings file is checked for another session's change (ms). */
+#define PRINTERS_CHECK_MS	1000U
+
 /*
  * A request waiting: the backend's number, the client (by its number) and
  * object, the client's number, and a print's job.
@@ -60,15 +68,41 @@ struct printers_waiting {
 	int used;
 };
 
-/* The printers of the compositor: the backend (opened once), and the requests waiting. */
+/*
+ * A write or a check of the settings file on the file I/O thread: the
+ * lane's job, the backend (open for the process's life), and a check's
+ * record (NULL for a write).
+ */
+struct printers_file_job {
+	struct kwl_lane_job lane;
+	struct kl_backend_print *backend;
+	struct kl_backend_print_check *check;
+};
+
+/*
+ * The printers of the compositor: the backend (opened once), whether its
+ * file is the file I/O thread's (hosted), a write or a check given and
+ * not taken yet, when the file was last checked, and the requests
+ * waiting.  Only the event loop's thread touches it.
+ */
 static struct {
 	struct kl_backend_print *backend;
 	int opened;
+	int hosted;
+	int writing;
+	int checking;
+	uint64_t checked_ms;
 	struct printers_waiting waiting[PRINTERS_WAITING_MAX];
 	uint32_t serial;
 } printers_state;
 
 static struct kl_backend_print *printers_backend(void);
+static void printers_host(struct kwl_server *server);
+static void printers_file(struct kwl_server *server);
+static int printers_file_give(struct kwl_server *server, struct kl_backend_print_check *check);
+static void printers_file_run(struct kwl_lane_job *job);
+static void printers_file_done(void *context, struct kwl_lane_job *job);
+static void printers_file_drop(struct kwl_lane_job *job);
 static int printers_add(struct kwl_object *object, const unsigned char *bytes, size_t size);
 static int printers_number_request(struct kwl_object *object, uint32_t opcode, const unsigned char *bytes, size_t size);
 static int printers_print(struct kwl_object *object, const unsigned char *bytes, size_t size);
@@ -84,6 +118,13 @@ static int printers_title_ok(const char *title);
 static int printers_string(const unsigned char *bytes, size_t size, size_t offset, size_t bound, const char **text, size_t *next);
 static size_t printers_put_string(unsigned char *payload, size_t offset, const char *text);
 static uint32_t printers_word(const unsigned char *bytes, size_t offset);
+
+/* The operations of a write or a check of the settings file on the file I/O thread. */
+static const struct kwl_lane_ops printers_file_ops = {
+	printers_file_run,
+	printers_file_done,
+	printers_file_drop
+};
 
 /*
  * Tells whether printing is offered: the daemon's program is there.
@@ -122,6 +163,9 @@ kwl_printers_create(
 	created = kwl_create(manager->client, id, KWL_SYSTEM_PRINTERS, manager->version);
 	if (created == NULL)
 		return EPROTO;
+
+	/* The backend's file goes to the file I/O thread before any change is asked. */
+	printers_host(manager->client->server);
 
 	/* Its first state. */
 	printers_state_to(manager->client, id);
@@ -177,6 +221,9 @@ kwl_printers_tick(
 	/* Nothing before the first printers object. */
 	if (printers_state.backend == NULL)
 		return;
+
+	/* The settings file's writes and checks given to the file I/O thread. */
+	printers_file(server);
 
 	/* What came. */
 	changed = 0;
@@ -795,4 +842,159 @@ printers_word(
 	/* The word. */
 	memcpy(&word, bytes + offset, sizeof(word));
 	return word;
+}
+
+/*
+ * Gives the backend's settings file to the file I/O thread, once, when it
+ * runs (without it the backend writes on its own thread and checks the
+ * file in its update).
+ */
+static void
+printers_host(
+	struct kwl_server *server)
+{
+	struct kl_backend_print *backend;
+
+	/* Once, with the backend open and the thread running. */
+	backend = printers_backend();
+	if (backend == NULL || printers_state.hosted || !server->io_file_started)
+		return;
+
+	/* Succeeded: the thread writes and checks the file from now on. */
+	kl_backend_print_host(backend);
+	printers_state.hosted = 1;
+}
+
+/*
+ * Gives the file I/O thread the settings file's work of this pass: the
+ * changes waiting written (one write given at a time), and the file
+ * checked once a second for another session's change.
+ */
+static void
+printers_file(
+	struct kwl_server *server)
+{
+	struct kl_backend_print_check *check;
+	uint64_t now;
+	int wanted;
+	int error;
+
+	/* Only a hosted backend. */
+	if (!printers_state.hosted)
+		return;
+
+	/* The changes waiting, when no write is under way. */
+	wanted = kl_backend_print_write_wanted(printers_state.backend);
+	if (wanted && !printers_state.writing) {
+		error = printers_file_give(server, NULL);
+		if (error == 0)
+			printers_state.writing = 1;
+	}
+
+	/* A check, once a second, when none is under way. */
+	now = kwl_milliseconds();
+	if (printers_state.checking || now - printers_state.checked_ms < PRINTERS_CHECK_MS)
+		return;
+	printers_state.checked_ms = now;
+
+	/* What the file was when last read. */
+	check = kl_backend_print_check_begin(printers_state.backend);
+	if (check == NULL)
+		return;
+
+	/* The thread reads the file when another session changed it. */
+	error = printers_file_give(server, check);
+	if (error != 0) {
+		kl_backend_print_check_end(printers_state.backend, check);
+		return;
+	}
+
+	/* Succeeded: the check is under way. */
+	printers_state.checking = 1;
+}
+
+/*
+ * Gives the file I/O thread a write (check NULL) or a check of the
+ * settings file.  Returns 0, ENOMEM, or ENOTSUP without the thread.
+ */
+static int
+printers_file_give(
+	struct kwl_server *server,
+	struct kl_backend_print_check *check)
+{
+	struct printers_file_job *job;
+	int error;
+
+	/* The record. */
+	job = calloc(1U, sizeof(*job));
+	if (job == NULL)
+		return ENOMEM;
+	job->backend = printers_state.backend;
+	job->check = check;
+
+	/* The thread's from here, or freed. */
+	error = kwl_io_file_submit(server, &job->lane, &printers_file_ops, 0U);
+	if (error != 0) {
+		free(job);
+		return error;
+	}
+
+	/* Succeeded: given. */
+	return 0;
+}
+
+/* Writes the changes waiting, or checks the file, on the file I/O thread. */
+static void
+printers_file_run(
+	struct kwl_lane_job *lane_job)
+{
+	struct printers_file_job *job;
+
+	/* A check reads the file when it changed; a write makes the changes. */
+	job = (struct printers_file_job *)lane_job;
+	if (job->check != NULL)
+		kl_backend_print_check_run(job->backend, job->check);
+	else
+		kl_backend_print_write(job->backend);
+}
+
+/*
+ * Takes a write or a check that ran, on the event loop's thread: the
+ * update takes the changes made and tells them, a table read is the
+ * printers' (told at the next update).
+ */
+static void
+printers_file_done(
+	void *context,
+	struct kwl_lane_job *lane_job)
+{
+	struct printers_file_job *job;
+
+	(void)context;
+
+	/* The next write or check may be given; a check's table applied. */
+	job = (struct printers_file_job *)lane_job;
+	if (job->check != NULL) {
+		kl_backend_print_check_end(job->backend, job->check);
+		printers_state.checking = 0;
+	} else {
+		printers_state.writing = 0;
+	}
+
+	/* The record. */
+	free(job);
+}
+
+/* Frees a write or a check that did not run (the thread stopped at the end). */
+static void
+printers_file_drop(
+	struct kwl_lane_job *lane_job)
+{
+	struct printers_file_job *job;
+
+	/* A check's record, then the job's. */
+	job = (struct printers_file_job *)lane_job;
+	if (job->check != NULL)
+		kl_backend_print_check_end(NULL, job->check);
+	free(job);
 }
