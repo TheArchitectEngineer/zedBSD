@@ -1206,3 +1206,7 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
 - 再開点（04:35、未完）: big-N の IB の flush（execute_room で buffer・表が埋まった時）を barrier 無しに（execute_put、ring の fence が EOP で
   L2 を書き戻すので slot の再利用はそれで足り、次の run は cache を空にして始まる）。kernel build warning 0（build/ws291/vmunix-l1）、ws039 の
   amdrdna-vk-host-test 205/205 PASS。実機は未実施。
+- 2026-10-29 ユーザーの回答（クリック）: 1 本の ioctl の案 A「採る (推し)」、案 B「案 A と一緒に」。ユーザー原文「WS291: 足してみて効果のなかったioctlは、
+  採用しなくてもいいです。」→ 効果の基準（測る前、[job-submit-design.md](../job-submit-design.md) の「効果の基準」）: 実機（timing 無し）で同じ組の前後を
+  3 run ずつ交互に、subs-1000 の submit の ms/frame の差が同じ build の run の揺れ（最大 − 最小、二つの値に分かれる時は同じ側どうし）を越えて減った時だけ
+  採る。A だけと A + B を別に測る。効果の無い ioctl は main に入れない（branch に残し、値と判断をここに）。

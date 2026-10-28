@@ -172,3 +172,13 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 - 再開点（2026-10-29 04:15 P2）: [phase006](phase006/phase.md) の「q1668」節。P1 の keiland-shot の直しは RDNA で確かめた（shot 4 回とも DONE）。commit 8f8533e87・
   b3173b786・790aa60d1・bc65b40c0・1824111c8・1132ec5b6。big-1000 35.5 → 57〜59 fps（Linux 87）、subs-1000 1 submit 48 → 39 µs（Linux 10）、scene は不変。
   次: subs-N は GPU core の job の ioctl を 1 本にする設計（Q1 と）、big-N は kernel の decode と executor の draw、GPU の flush の barrier。
+
+## 2026-10-29 q1668-i02（P2、worktree p2-ws291l）
+
+- ユーザーの回答（クリック、2026-10-29、Q1 経由）: 1 本の ioctl の案 A「採る (推し)」、案 B「案 A と一緒に」（[job-submit-design.md](job-submit-design.md)）。
+  outcome を driver が返す形は Q1 の OK（技術の判断）。番号は WS306 の予定と重ならない 'G' 49・50、GPU_CAP 262144・524288（Q1）。
+  進め方（Q1）: 今の commit を venus-reg と arm64・riscv64 の build で確かめて送る → 案 A・B の design を design-reviewer に通す → Q1 に送ってから実装
+  （q1668 の続き、全 driver の build と venus-reg を merge の前に）。
+- ユーザー（2026-10-29、Q1 経由）原文「WS291: 足してみて効果のなかったioctlは、採用しなくてもいいです。」→ 案 A・B は実装して実機で測り、効果が無い
+  （測りの揺れの中）と分かった ioctl は main に入れない（branch に残し、測った値と判断を phase.md に）。効果の基準は測る前に phase.md に書く。
+- 再開点: [phase006](phase006/phase.md) の「q1668-i02」節。
