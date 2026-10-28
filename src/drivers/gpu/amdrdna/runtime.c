@@ -46,25 +46,36 @@
 
 /*
  * The protocol's capset: its id, its bytes and the places of its words,
- * the wire version, the XML version (1.3.269), and the vendor suffix
- * ("SDBZ") with its flags, as libvulkan reads them.
+ * the wire version, the XML version (1.3.269), the vendor suffix
+ * ("SDBZ") with its flags, and the native word ("TANZ") with its flags,
+ * as libvulkan reads them.
  *
  * Values referenced: zedBSD userland/desktop/libvulkan/context.c (the
  * capset the transport asks for and the words it reads).
  */
 #define RUNTIME_CAPSET_ID		4U
-#define RUNTIME_CAPSET_BYTES		168U
+#define RUNTIME_CAPSET_BYTES		176U
 #define RUNTIME_CAPSET_WIRE_AT		0U
 #define RUNTIME_CAPSET_XML_AT		4U
 #define RUNTIME_CAPSET_TIMELINES_AT	152U
 #define RUNTIME_CAPSET_MAGIC_AT		160U
 #define RUNTIME_CAPSET_FLAGS_AT		164U
+#define RUNTIME_CAPSET_NATIVE_AT	168U
+#define RUNTIME_CAPSET_NATIVE_FLAGS_AT	172U
 #define RUNTIME_WIRE_VERSION		1U
 #define RUNTIME_XML_VERSION		((1U << 22) | (3U << 12) | 269U)
 #define RUNTIME_VENDOR_MAGIC		0x5a424453U
 
 /* The flags: opaque sharing, strict queues, checked quiescence (the profile libvulkan pairs with). */
 #define RUNTIME_VENDOR_FLAGS		7U
+
+/*
+ * The native word: its magic, and the flag of a command run at once on
+ * the caller's thread (GPU_COMMAND), its replies written when the call
+ * returns.
+ */
+#define RUNTIME_NATIVE_MAGIC		0x5a4e4154U
+#define RUNTIME_NATIVE_SYNC_COMMAND	2U
 
 /* The bits of a 32-bit word stored byte by byte, lowest first. */
 #define RUNTIME_BYTE_BITS		8U
@@ -96,6 +107,7 @@ static int runtime_reset(void *private_data);
 static void runtime_worker(void *argument);
 static void runtime_completer(void *argument);
 static bool runtime_park(struct amdrdna_node *node, struct amdrdna_node_entry *entry);
+static void runtime_dequeued(struct amdrdna_node *node, struct amdrdna_session *owner);
 static int runtime_runs_wait(struct amdrdna_session *session, const struct amdrdna_space_ticket *runs, unsigned milliseconds);
 static void runtime_retire(struct amdrdna_node *node, struct amdrdna_node_entry *entry);
 static int runtime_execute(struct amdrdna_node *node, struct amdrdna_session *session, const void *wire, uint32_t bytes);
@@ -302,6 +314,8 @@ runtime_capset(
 	runtime_put32(capset->data, RUNTIME_CAPSET_TIMELINES_AT, 1U);
 	runtime_put32(capset->data, RUNTIME_CAPSET_MAGIC_AT, RUNTIME_VENDOR_MAGIC);
 	runtime_put32(capset->data, RUNTIME_CAPSET_FLAGS_AT, RUNTIME_VENDOR_FLAGS);
+	runtime_put32(capset->data, RUNTIME_CAPSET_NATIVE_AT, RUNTIME_NATIVE_MAGIC);
+	runtime_put32(capset->data, RUNTIME_CAPSET_NATIVE_FLAGS_AT, RUNTIME_NATIVE_SYNC_COMMAND);
 	capset->bytes = RUNTIME_CAPSET_BYTES;
 
 	/* Succeeded: the capset is reported. */
@@ -309,8 +323,11 @@ runtime_capset(
 }
 
 /*
- * Runs one frame at once; EAGAIN while queued work of the session has not
- * finished (a frame may not overtake it).
+ * Runs one frame at once on the caller's thread; EAGAIN while frames or
+ * markers of the session are in the worker's queue or running there (a
+ * frame may not overtake them).  The frame counts as the session's
+ * pending work while it runs, so a stop or a drain waits for it; its
+ * waits for the GPU are bounded as the worker's are.
  */
 static int
 runtime_command(
@@ -322,7 +339,7 @@ runtime_command(
 	struct amdrdna_node *node;
 	struct amdrdna_session *owner;
 	unsigned long enabled;
-	uint32_t pending;
+	uint32_t queued;
 	int faulted;
 	int error;
 
@@ -334,28 +351,38 @@ runtime_command(
 	if (bytes == 0U || bytes > GPU_COMMAND_MAX || (bytes & 3U) != 0U)
 		return EINVAL;
 
-	/* Looks at the session's queued work and the fault. */
+	/* Looks at the session's queued work and the fault; a frame that runs counts as pending. */
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
-	pending = owner->pending;
+	queued = owner->queued;
 	faulted = node->faulted;
 	if (owner->stopping != 0)
 		faulted = 1;
+	if (faulted == 0 && queued == 0U)
+		owner->pending++;
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
 	/* A faulted device, or a session being stopped, takes nothing; queued work goes first. */
 	if (faulted != 0)
 		return EIO;
-	if (pending != 0U)
+	if (queued != 0U)
 		return EAGAIN;
 
 	/* Runs the frame through the executor. */
 	error = runtime_execute(node, owner, wire, bytes);
 
-	/* Reports a frame that failed. */
+	/* The frame has ended: the drains look again. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	owner->pending--;
+	waitq_wake_all(&node->retired);
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* A frame that failed may have run in part: as a queued frame's failure, the session's stream is lost. */
 	if (error != 0)
-		return error;
+		return EIO;
 
 	/* Succeeded: the frame ran. */
 	return 0;
@@ -873,6 +900,7 @@ runtime_worker(
 {
 	struct amdrdna_node *node;
 	struct amdrdna_node_entry *entry;
+	struct amdrdna_session *owner;
 	struct drv_gpu_completion *completion;
 	unsigned long enabled;
 	uint64_t observed;
@@ -899,6 +927,7 @@ runtime_worker(
 			node->tail = NULL;
 		entry->next = NULL;
 		entry->state = AMDRDNA_ENTRY_RUNNING;
+		owner = entry->session;
 		faulted = node->faulted;
 
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
@@ -916,7 +945,14 @@ runtime_worker(
 			error = EIO;
 		}
 
-		/* A marker whose session's runs have not all ended goes to the completer. */
+		/*
+		 * A marker whose session's runs have not all ended goes to the
+		 * completer.  The entry leaves the worker's queue before its
+		 * completion (it still counts as pending), a marker once it has
+		 * taken its runs (runtime_park): the command its waiter sends
+		 * next may run at once, and its run is not one the marker waits
+		 * for.
+		 */
 		if (entry->kind == RUNTIME_ENTRY_MARKER && error == 0) {
 			parked = runtime_park(node, entry);
 			if (parked)
@@ -924,6 +960,8 @@ runtime_worker(
 
 			/* The runs ended: whether they did their work. */
 			error = runtime_runs_wait(entry->session, entry->runs, RUNTIME_RUN_MS);
+		} else {
+			runtime_dequeued(node, owner);
 		}
 
 		/* Delivers the completion. */
@@ -933,6 +971,21 @@ runtime_worker(
 		/* Retires the entry: a frame is freed, a marker is free again. */
 		runtime_retire(node, entry);
 	}
+}
+
+/* Takes an entry the worker ran (a frame, or a marker carrying an error) off its session's count of queued entries. */
+static void
+runtime_dequeued(
+	struct amdrdna_node *node,
+	struct amdrdna_session *owner)
+{
+	unsigned long enabled;
+
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	owner->queued--;
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
 }
 
 /*
@@ -1021,9 +1074,14 @@ runtime_park(
 			running = true;
 	}
 
-	/* Parks it behind the parked ones when it must wait, or when others wait already. */
+	/*
+	 * It leaves the worker's queue, with its runs taken (before the
+	 * completer may retire it); then it parks behind the parked ones when
+	 * it must wait, or when others wait already.
+	 */
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
+	entry->session->queued--;
 	if (!running && node->parked_head == NULL) {
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
 		return false;
@@ -1149,8 +1207,9 @@ runtime_enqueue(
 	struct amdrdna_node *node,
 	struct amdrdna_node_entry *entry)
 {
-	/* At the tail. */
+	/* At the tail, counted in its session's queue. */
 	entry->state = AMDRDNA_ENTRY_QUEUED;
+	entry->session->queued++;
 	entry->next = NULL;
 	if (node->tail == NULL) {
 		node->head = entry;

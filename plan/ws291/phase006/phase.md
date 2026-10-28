@@ -1059,7 +1059,11 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
 
 - round の他の段（案 5 の kernel、build/ws291/r-c5a2）: nggshape 14 種 ok、shot 1 体 max 0・6500 体 max 1（over15 0）、hang 回復 ok（vkhang lost →
   queue reset → vkhang --loops・--compute --loops ok、後の mview 1086 fps）。
-- design-reviewer（opus）のレビュー: 結果は下に足す。
+- design-reviewer（opus、2026-10-29 02:05）: blocker・major 0（(a)〜(d) の並びを全部たどって、取りこぼしも永久の待ちも作れない）。minor を入れた
+  （commit は下の案 4 と同じ）: (1) gpu_completion_observer_leave の notify は不要（consume は readable を減らすだけ、空いた slot は poll が
+  報告しない capacity）→ 外した。(2) POLLPRI（display の event）だけを聞く poll では印を立てない（POLLIN・POLLRDNORM の時だけ）。(3) gpu_submit_ioctl
+  の job_action の解除の monitor の起床も同じ条件（gpu_stop_waiting_locked: stop_state が REQUESTED・PENDING）に。reserve・commit などの job の道は
+  新しい deadline を出すので今どおり無条件。(4) comment の直し。直しの後の build も (c) の 6 config で warning 0（build/ws291-k2-*.log）。
 
 ### window mode の shot の SURFACE_LOST（errno 24）の解析（案 4 の前提、2026-10-29 02:10）
 
@@ -1071,3 +1075,38 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
   前の frame の frame callback を受けず VK_TIMEOUT → surface を lost に）。keiland-shot を撮らない同じ run は 900 frame で DONE。compositor は
   生きたまま（pid は前後で同じ）。→ keiland-shot の capture の後、compositor がその window に frame callback を送らなくなる（Keiland の側）。
   libvulkan・amdrdna の不具合ではない。Keiland は P1（WS309）の所有なので触らない（Q1 へ）。
+
+### 案 4: 小さな transaction を呼び手の thread で同期の GPU_COMMAND（2026-10-29 02:00〜02:20）
+
+- 元: q1655 の build/ws291/case4.patch（p2-ws291g、sha256 先頭 43ba7cc415bab73f）。amdrdna の runtime_command は、session の worker の queue
+  （queued: 待っている・走っている frame と marker）が空の時に呼び手の thread で executor を走らせ、走る間は pending に数える（stop・drain が待つ）。
+  executor の失敗は EIO（一部が走った frame は session の stream を失う、queue の frame の失敗と同じ扱い）。capset を 176 byte にし native word
+  （"TANZ"）の flag 2 = 同期の command。libvulkan は flag 2 と GPU_CAP_NOTIFICATION がある時だけ transaction を GPU_COMMAND で送り、EAGAIN なら
+  今の SUBMIT と WAIT。他の backend（venus など）は capset が違うので今の道のまま。
+- 直した所（patch の誤り）: patch は worker が marker を queue から外す（queued--）のを marker が session の runs を写す（runtime_park）前に
+  していた → その間に同期の frame が走ると marker が後の run まで待つ。さらに park の後に外すと completer が先に retire して session が
+  消えうる。→ marker は runtime_park の中、runs を写した後・park と同じ queue_lock の区間で外す。frame は実行の後・完了の前に外す
+  （runtime_dequeued）。
+- 上限の時間と hang（Q1 の条件）: 同期の frame の GPU の待ち（ring の空き・slot）は worker の時と同じ executor の待ちで、同じ上限。hang の時は
+  executor が EIO を返し、libvulkan は device lost（worker の道の「decoder failed」と同じ結果）。同期の間、その open の他の ioctl は今の
+  admission（gpu_session_enter、割り込める待ち）で待つ。実機の hang 段（vkhang の lost → queue reset → 後の vkhang・mview）は ok。
+- 確かめ: amd64 の vmunix・libvulkan warning 0、arm64（config-rpi4）・riscv64（config-visionfive2）の libvulkan.so warning 0（rpi4 の最初の
+  1 回は既存の float の math の sysroot の依存の競合で失敗、sysroot ができた後の 2 回目 rc=0）、QEMU Venus の回帰（build/ws291/venus6、
+  image はこの tree、libvulkan sha256 先頭 f0bb28668843d123 = 実機に入れた物）PASS。
+- 実機（kernel vmunix-c45b = 案 5 と review の直しと案 4、libvulkan-c4a、build/ws291/r-c45b・b-c45b-2・b-c45b-3）: nggshape 14 ok、shot
+  1 体 max 0・6500 体 max 1、hang 回復 ok。bench:
+
+| run | main（前） | 案 5 | 案 5 + 案 4（3 回） | Linux |
+| --- | --- | --- | --- | --- |
+| scene-1500 | 200.70 | 207.07 | 208.07・207.50・208.62 | 200.4 |
+| scene-6500 | 49.18 | 49.59 | 49.53・49.47・49.59（fence 19.82） | 50.12（19.54） |
+| big-1000 | 34.44 | 35.53 | 35.52 | 87.0 |
+| subs-10 | 495.9 | 990.9 | 1329・1293・1274 | |
+| subs-100 | 61.23 | 137.32 | 130.3・132.2・169.1（r-c4a 179.0） | 510.8 |
+| subs-1000（submit ms） | 5.97（153.5） | 14.23（61.5） | 17.64（48.0）・17.79（47.9）・18.56（46.0） | 58.2（10.26） |
+
+- desktop（`measure.sh desktop build/ws291/desk-c45b`、compositor も同期の道）: launch 65・type 61・keys 154・output 67・drag 60・home 66・wiseview 67 fps、
+  scroll 20・hover 23（入力の間隔で決まる、p001 と同じ）、work の max 8 ms。p001 の形のまま。
+- 読み: subs-N の 1 submit は 153 → 約 47 µs（Linux 10）。subs-100 は run により 130 か 170 の二つの値。scene-6500 の差（−1.2 %）は fence
+  （GPU の時間 19.8 対 19.5 ms）。big-1000 は record（libvulkan の encode 10.9 ms）と submit（executor 11.4 ms）で Linux の 1/2.5。
+- 機械の状態: kernel vmunix-c45b、/lib/libvulkan.so は案 4 の build（main の物は /lib/libvulkan.so.main61630）、cfg は ngg=2・memory=2。

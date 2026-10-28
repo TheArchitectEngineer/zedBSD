@@ -391,6 +391,12 @@ struct vulkan_context {
 	 * and it is what lets the video extensions be named at all.
 	 */
 	VkBool32 video_h264;
+	/*
+	 * The native renderer's promise that GPU_COMMAND runs a transaction at
+	 * once on the caller's thread, its replies written when the call
+	 * returns (EAGAIN while earlier work of the session is queued).
+	 */
+	VkBool32 sync_command;
 	uint64_t max_resource_bytes;
 	uint32_t capabilities;
 	uint64_t stream_handle;
