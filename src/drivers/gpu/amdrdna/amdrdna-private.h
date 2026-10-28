@@ -269,7 +269,10 @@ struct amdrdna_power_clock_report {
  * clock floors), memory_follows (the memory clock's floor is its lowest
  * level), the memory clock's floors at idle and while the graphics engine
  * works (memory_idle_floor_mhz, memory_busy_floor_mhz), memory_underflows
- * (the display's underflows the watch found since then), and the clocks and the latency the display's plan is worked out
+ * (the display's underflows the watch found since then), memory_fifo_errors
+ * (the output FIFO's level errors it found), display_watch (the boot
+ * line's amdrdna.smu.display_watch: the watch looks without the step too),
+ * and the clocks and the latency the display's plan is worked out
  * with (memory_plan_set, memory_plan_*).  All of them change only in the
  * bring-up, the reset or under the display's mode lock.
  */
@@ -297,6 +300,8 @@ struct amdrdna_thermal {
 	uint32_t memory_idle_floor_mhz;
 	uint32_t memory_busy_floor_mhz;
 	uint64_t memory_underflows;
+	uint64_t memory_fifo_errors;
+	unsigned display_watch;
 	bool memory_plan_set;
 	uint32_t memory_plan_return_khz;
 	uint32_t memory_plan_fabric_khz;

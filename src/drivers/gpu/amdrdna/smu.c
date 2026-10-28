@@ -381,6 +381,8 @@ amdrdna_a4_power(
 	thermal->memory_display = false;
 	thermal->memory_follows = false;
 	thermal->memory_underflows = 0U;
+	thermal->memory_fifo_errors = 0U;
+	thermal->display_watch = amdrdna_parameter_number("amdrdna.smu.display_watch", 0U);
 	thermal->memory_plan_set = false;
 
 	/* How the clock is raised for work once it moves; nothing is raised until then. */

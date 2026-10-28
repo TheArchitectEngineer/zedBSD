@@ -34,7 +34,7 @@ else
 fi
 # The clocks line every second, on zedBSD, for the whole run.
 total=$((cycles * (load + idle + 8) + 10))
-zs "i=0; while [ \$i -lt $total ]; do echo \"\$(date +%H:%M:%S) \$(amdrdnactl | grep '^clocks ') marks=\$(dmesg | grep -c 'memory display: underflow')\"; sleep 1; i=\$((i + 1)); done > /tmp/dpm-clocks.log 2>&1 < /dev/null &"
+zs "i=0; while [ \$i -lt $total ]; do echo \"\$(date +%H:%M:%S) \$(amdrdnactl | grep '^clocks ') marks=\$(dmesg | grep -cE 'memory display: (underflow|output fifo)')\"; sleep 1; i=\$((i + 1)); done > /tmp/dpm-clocks.log 2>&1 < /dev/null &"
 sleep 5
 : > "$out/cycles.log"
 cycle=0
@@ -56,5 +56,5 @@ while read -r cycle start end fps; do
 	after=$(awk -v e="$end" -v n="$cycle" '$1 > e {for (i = 2; i <= NF; i++) if ($i ~ /^mem=/) print $i}' "$out/clocks.log" | head -"$idle" | sort | uniq -c | tr '\n' ' ')
 	echo "cycle $cycle fps ${fps}: load [$under] idle [$after]"
 done < "$out/cycles.log"
-grep -c 'underflow' "$out/memory-display.log" | sed 's/^/underflow marks: /'
+grep -cE 'underflow|output fifo' "$out/memory-display.log" | sed 's/^/underflow and fifo marks: /'
 tail -3 "$out/memory-display.log"

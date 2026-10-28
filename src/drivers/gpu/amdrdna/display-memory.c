@@ -124,6 +124,31 @@
 /* The underflows of the display the watch marks in the log; it counts the rest. */
 #define MEMORY_UNDERFLOW_MARKS		20U
 
+/*
+ * The output's FIFO status word (between the timing generator and the
+ * transmitter's encoder): its absolute dword index for the first encoder
+ * and the step to the next, the level error (bit 0, the FIFO ran empty or
+ * full: the encoder's stream broke), its acknowledgement (bit 8), and the
+ * lowest and highest levels since the last calibration (bits 25:22,
+ * 20:16).
+ *
+ * Values referenced: Linux v6.12
+ * drivers/gpu/drm/amd/include/asic_reg/dcn/dcn_2_0_0_offset.h
+ * (mmDIG0_DIG_FIFO_STATUS 0x206e, mmDIG1_DIG_FIFO_STATUS 0x216e, base
+ * index 2) with navi10_ip_offset.h (DCN_BASE 0x34c0), and
+ * dcn_2_0_0_sh_mask.h (DIG0_DIG_FIFO_STATUS__DIG_FIFO_LEVEL_ERROR_MASK,
+ * __DIG_FIFO_ERROR_ACK_MASK, __DIG_FIFO_MINIMUM_LEVEL_MASK,
+ * __DIG_FIFO_MAXIMUM_LEVEL_MASK).
+ */
+#define MEMORY_FIFO_STATUS		0x552eU
+#define MEMORY_FIFO_STEP		0x0100U
+#define MEMORY_FIFO_ERROR		0x00000001U
+#define MEMORY_FIFO_ACK			0x00000100U
+#define MEMORY_FIFO_MIN_SHIFT		22U
+#define MEMORY_FIFO_MIN_FIELD		0x0000000fU
+#define MEMORY_FIFO_MAX_SHIFT		16U
+#define MEMORY_FIFO_MAX_FIELD		0x0000001fU
+
 static uint32_t memory_floor(struct amdrdna_device *device, uint32_t clock, uint32_t wanted_mhz, int *error);
 static int memory_table_send(struct amdrdna_device *device);
 static void memory_plan_use(struct amdrdna_device *device, uint32_t display_mhz, uint32_t memory_mhz, uint32_t switch_tenths);
@@ -401,9 +426,10 @@ amdrdna_memory_display_busy(
 }
 
 /*
- * Looks for the display's underflow once a second after the display's
- * step (the power watch), except while a mode set holds the memory clock:
- * an underflow of the plane or
+ * Looks for the display's underflow and the output FIFO's errors once a
+ * second after the display's step (the power watch), except while a mode
+ * set holds the memory clock, or without the step when the boot line asks
+ * (amdrdna.smu.display_watch=1): an underflow of the plane or
  * the timing generator is counted, cleared, and marked with the memory
  * clock the last readings show (the first MEMORY_UNDERFLOW_MARKS of them).
  */
@@ -414,11 +440,34 @@ amdrdna_memory_display_watch(
 	struct amdrdna_thermal *thermal;
 	uint32_t underflow;
 	uint32_t timing_underflow;
+	uint32_t word;
+	uint32_t at;
 
-	/* Only after the display's step, not while a mode set holds the memory clock. */
+	/* Only after the display's step, not while a mode set holds the memory clock; without the step only when amdrdna.smu.display_watch=1. */
 	thermal = &device->thermal;
-	if (!thermal->memory_display || !thermal->memory_plan_set)
+	if (!device->display.taken)
 		return;
+	if (thermal->memory_mode == 2U && (!thermal->memory_display || !thermal->memory_plan_set))
+		return;
+	if (thermal->memory_mode != 2U && thermal->display_watch == 0U)
+		return;
+
+	/* The output FIFO's level error, acknowledged once read. */
+	if (device->gop.has_output) {
+		at = MEMORY_FIFO_STATUS + device->gop.output * MEMORY_FIFO_STEP;
+		word = amdrdna_read(device, at);
+		if ((word & MEMORY_FIFO_ERROR) != 0U) {
+			amdrdna_write(device, at, word | MEMORY_FIFO_ACK);
+			thermal->memory_fifo_errors++;
+			if (thermal->memory_fifo_errors <= MEMORY_UNDERFLOW_MARKS)
+				amdrdna_mark("memory display: output fifo error 0x%08x levels %u-%u (%llu so far), memory clock %uMHz",
+				    (unsigned)word,
+				    (unsigned)((word >> MEMORY_FIFO_MIN_SHIFT) & MEMORY_FIFO_MIN_FIELD),
+				    (unsigned)((word >> MEMORY_FIFO_MAX_SHIFT) & MEMORY_FIFO_MAX_FIELD),
+				    (unsigned long long)thermal->memory_fifo_errors,
+				    thermal->memory_clock);
+		}
+	}
 
 	/* The underflow bits, cleared once read. */
 	underflow = amdrdna_display_underflow_take(device, &timing_underflow);
