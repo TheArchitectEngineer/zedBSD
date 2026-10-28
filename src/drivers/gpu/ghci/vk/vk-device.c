@@ -750,8 +750,10 @@ device_admit(
  * Makes the device's record and object and opens its GHCI session.  The
  * result says why a device could not be made: all fifteen sessions in
  * use (VK_ERROR_TOO_MANY_OBJECTS), no room in CP_HEAP's bound
- * (VK_ERROR_OUT_OF_DEVICE_MEMORY), or a lost GPU.  Returns 0, or an error
- * that ends the frame (no host memory, a reused identity).
+ * (VK_ERROR_OUT_OF_DEVICE_MEMORY), no host memory for the session's
+ * record (VK_ERROR_OUT_OF_HOST_MEMORY), or a lost GPU.  Returns 0, or an
+ * error that ends the frame (no host memory for the device's own record,
+ * a reused identity).
  */
 static int
 device_open(
@@ -788,8 +790,6 @@ device_open(
 		ghci_vk_object_destroy(session, object);
 		kern_free(device);
 		*result = ghci_vk_result(error);
-		if (error == ENOMEM)
-			*result = (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY;
 		return 0;
 	}
 	device->vm = vm;

@@ -164,8 +164,8 @@ ghci_vm_fini(
  * loss to): takes a number and places CMD_SESSION_OPEN.
  *
  * Returns 0 with the session, EBUSY when all fifteen numbers are in use,
- * ENOMEM when CP_HEAP's bound has no room for its tables, or EIO when
- * the device is lost.
+ * ENOSPC when CP_HEAP's bound has no room for its tables, ENOMEM when
+ * the host has no memory for its record, or EIO when the device is lost.
  */
 int
 ghci_vm_open(
@@ -247,7 +247,7 @@ ghci_vm_open(
 		}
 		if (device->heap_used + need > device->heap_budget) {
 			ghci_cp_leave(device);
-			error = ENOMEM;
+			error = ENOSPC;
 			break;
 		}
 
