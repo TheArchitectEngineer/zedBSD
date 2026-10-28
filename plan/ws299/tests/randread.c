@@ -20,7 +20,7 @@
  * its own open of FILE instead of sharing one.  "procs" runs the readers as
  * that many processes instead of threads of one (each opens FILE itself);
  * "notime" leaves the clock out of the loop (the mean and largest read times
- * are then 0); "nullcall" makes each read a getppid() instead, the cost of a
+ * are then 0); "nullcall" makes each read a getpid() instead, the cost of a
  * system call alone at that concurrency.  One line reports the
  * reads, the bytes per second, and the mean and largest read time:
  *
@@ -246,7 +246,7 @@ run(
 
 		before = timed ? now_ns() : 0;
 		if (nullcall) {
-			(void)getppid();
+			(void)getpid();
 		} else if (pread(worker->fd, buffer, block, where) != (ssize_t)block) {
 			worker->failed = 1;
 			break;
