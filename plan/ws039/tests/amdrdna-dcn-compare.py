@@ -168,6 +168,7 @@ NAMES = [
     lambda n: "OTG%d_OTG_CRC0_WINDOWA_Y_CONTROL" % n,
     lambda n: "OTG%d_OTG_CRC0_WINDOWB_X_CONTROL" % n,
     lambda n: "OTG%d_OTG_CRC0_WINDOWB_Y_CONTROL" % n,
+    lambda n: "DCHUBBUB_ARB_DRAM_STATE_CNTL",
 ]
 
 

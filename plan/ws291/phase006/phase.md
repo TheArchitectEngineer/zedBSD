@@ -470,3 +470,37 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
   zedBSD に入れる）。動作: 起動の後 150 s 以内に ue0 に IPv4 の address が付かなければ reboot（BootOrder で Debian に戻る）。連続は 3 回まで
   （/boot/boot0/nicwatch.count、address が付いた起動で 0）。measure.sh の to_zedbsd は zedBSD が上がらず Debian に戻った時に BootNext を 2 回まで繰り返す。
 - guard との順: guard は host から ue0 を通して SMU を見るので、link の無い zedBSD には guard も届かない。nicwatch は試験の負荷の前（起動の直後）だけ働く。
+
+### memory clock（UCLK）を最上段に固定（commit 146fdfe5d）
+
+- 見立ての確かめ: Fable 5.1 High に 2 回聞いた（下）。Linux の pp_dpm_mclk は 100/500/625/875 MHz（idle 100、mview scene-1500 で 500）。zedBSD は UCLK の DPM を
+  許さず、firmware は最下段の 100 MHz のまま（全画面 quad 1 枚 870 µs ≈ 38 GB/s の帯域と合う。A1v の vbios の bootup mclk 875 MHz は起動時の値）。
+- 試し（診断 kernel、guard の下）: (1) UCLK DPM・MEM_VDDCI・MEM_MVDD を許し SetHardMinByFreq(UCLK 875) → 時間切れ（42）で SMU 停止、guard が poweroff
+  （09:27）。(2) 切り替えの間だけ DCHUBBUB_ARB_DRAM_STATE_CNTL に pstate の force allow（0x30）→ SetHardMax は 0、SetHardMin が時間切れで再び停止
+  （09:54）。arbiter の allow（DCHUBBUB_TEST_DEBUG 0xB の bit30）は force の前から 1（0x50777777）で、handshake は原因でなかった。DRAM_STATE_CNTL は
+  0x2（GOP が stutter = self refresh を禁じている）。(3) 切り替えの間だけ stutter の禁止も外し（Linux の hubbub1_allow_self_refresh_control の allow と同じ
+  0x0 に pstate の force allow 0x30）、Fable の次の候補の DPM_SOCCLK・DS_SOCCLK を許す → SetHardMax・SetHardMin とも 0、SMU 正常、underflow 0。
+- 実装（146fdfe5d）: amdrdna-hw.h の AMDRDNA_SMU_CLOCK_FEATURES_LOW を 0x27800b1b（UCLK DPM 3・SOCCLK DPM 4・MEM_VDDCI 8・MEM_MVDD 9・DS_SOCCLK 11 を足す、
+  Linux v6.19 navi10_get_allowed_feature_mask）、smu.c power_memory_clock（UCLK の段を読み、display の arbiter を許した間に hard ceiling → hard floor を最上段、
+  Linux navi10_display_disable_memory_clock_switch・smu_v11_0_set_hard_freq_limited_range）、display.c amdrdna_display_memory_switch_begin/end と dcn の
+  register DCHUBBUB_ARB_DRAM_STATE_CNTL（window 2 の 0x0508）。plan/ws039/tests/amdrdna-dcn-compare.py に新しい register の Linux 名を 1 行。
+- host: amdrdna-host-test（AMDRDNA_LINUX=/home/awe/visionfive-linux）は amdrdna の各 test と dcn-compare（918 registers）PASS。audit-symbols の FAIL 17 は
+  HEAD feb1a5f でも同じ 17 件（既存）。vmunix warning 0。
+- 実機（vmunix-mem1、NVMe の zedBSD、guard の下の round、build/ws291/measure/mem1/）: `A4 memory clock: 4 levels 100-875MHz, held at 875MHz (ceiling 0, floor 0,
+  arbiter 0x00000002)`、nggshape 14 種 ok、shot 1 体 差 0・6500 体 max 1、hang 回復 ok、SMU は通して正常（温度 最高 62 C）。
+
+| run | 前（feat1 + A・C、mailbox 4 枚） | mem1 | Linux（linux-img4） |
+| --- | --- | --- | --- |
+| scene-1 fps / fence | 282 / 1.22 | 949.6 / 0.10 | 9033 / 0.06 |
+| scene-1500 fps / fence / acquire | 141 / 5.56 / 1.00 | 184.3 / 4.36 / 0.53 | 201.3 / 4.63 / 0.04 |
+| scene-6500 fps / frame / fence | 45.4 / 21.93 / 20.78 | 49.05 / 20.34 / 19.20 | 50.04 / 19.94 / 19.56 |
+| big-1000 fps（record / submit） | 17.7（35.3 / 17.2、feat1） | 17.2（38.0 / 18.3） | 84.7（5.57 / 0.02） |
+| subs-1000 fps（record / submit） | 4.06（138 / 101、feat1） | 3.04（152 / 164） | 57.7（6.57 / 10.3） |
+
+- 読み: GPU の時間（fence）は scene-1500・scene-6500 とも Linux より短くなった。残りの差は CPU 側（scene-6500 で acquire 0.46・record 0.27・present 0.25 ms 対
+  Linux 0.04・0.14・0.07）と big-N・subs-N の record・submit（libvulkan ↔ gpu の core の往復）。
+- Fable 5.1 High の助言（3 回目・4 回目、UCLK）要点と採否: 3 回目「UCLK・VDDCI・MVDD を許し NumOfDisplays=0 で hard min/max を 1 回、underflow を見る、
+  GetUMCFWWA を確かめる（bit0 で CDR の回避は不要）」→ 採用したが handshake で止まった。4 回目「PMFW は DCHUBBUB の arbiter の allow を待つ、Linux は DC の
+  init で GOP の pipe を消してから UCLK を動かす。順位 1 = 切り替えの間だけ pstate の force allow、allow が既に 1 で止まるなら DPM_SOCCLK・DS_SOCCLK」→ force
+  allow だけでは止まり、stutter の禁止を外す事と SOCCLK を足して通った。自動の mode1 reset は SMU の停止の回復にまだ使わない（助言どおり、guard の poweroff と
+  入れ直しで戻る）。

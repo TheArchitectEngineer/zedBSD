@@ -142,19 +142,26 @@
  * raised clock under bursts of work keeps a safe voltage: the advanced
  * power-clock control (bit 26), the spread spectrum (bit 37, bit 5 of the
  * high word), the temperature-dependent minimum voltage (bit 39, bit 7)
- * and the droop control (bit 42, bit 10).  The memory clock's levels stay
- * off: the firmware's picture was timed for the memory clock it has.
+ * and the droop control (bit 42, bit 10).  And the memory clock's levels
+ * (bit 3) with the memory's two voltages that Linux always permits with
+ * them (bits 8 and 9), and the system clock's levels (bit 4) and its deep
+ * sleep (bit 11): the power side holds the memory clock at its highest
+ * level once (smu.c), which the firmware does not do while the system
+ * clock stands still.
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
  * (FEATURE_DPM_PREFETCHER_BIT, FEATURE_DPM_GFXCLK_BIT, FEATURE_PPT_BIT,
  * FEATURE_TDC_BIT, FEATURE_GFX_EDC_BIT, FEATURE_VR0HOT_BIT,
  * FEATURE_APCC_PLUS_BIT, FEATURE_GFX_SS_BIT,
- * FEATURE_TEMP_DEPENDENT_VMIN_BIT, FEATURE_APCC_DFLL_BIT) and
+ * FEATURE_TEMP_DEPENDENT_VMIN_BIT, FEATURE_APCC_DFLL_BIT,
+ * FEATURE_DPM_UCLK_BIT, FEATURE_MEM_VDDCI_SCALING_BIT,
+ * FEATURE_MEM_MVDD_SCALING_BIT, FEATURE_DPM_SOCCLK_BIT,
+ * FEATURE_DS_SOCCLK_BIT) and
  * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
  * (navi10_get_allowed_feature_mask: the features always permitted).
  */
-#define AMDRDNA_SMU_CLOCK_FEATURES_LOW	0x27800003U
+#define AMDRDNA_SMU_CLOCK_FEATURES_LOW	0x27800b1bU
 #define AMDRDNA_SMU_CLOCK_FEATURES_HIGH	0x000004a0U
 
 /*
@@ -165,6 +172,15 @@
  * (FEATURE_DPM_GFXCLK_BIT).
  */
 #define AMDRDNA_SMU_FEATURE_GFX_LEVELS	0x00000002U
+
+/*
+ * The memory clock's levels, in the low word of the feature mask.
+ *
+ * Value referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (FEATURE_DPM_UCLK_BIT).
+ */
+#define AMDRDNA_SMU_FEATURE_MEMORY_LEVELS	0x00000008U
 
 /*
  * The sizes of the two tables the driver exchanges with the unit's
@@ -437,6 +453,7 @@ enum amdrdna_dcn_register {
 	AMDRDNA_DCN_TIMING_CRC_WINDOW_A_Y,
 	AMDRDNA_DCN_TIMING_CRC_WINDOW_B_X,
 	AMDRDNA_DCN_TIMING_CRC_WINDOW_B_Y,
+	AMDRDNA_DCN_HUB_DRAM_STATE,
 	AMDRDNA_DCN_REGISTER_COUNT
 };
 

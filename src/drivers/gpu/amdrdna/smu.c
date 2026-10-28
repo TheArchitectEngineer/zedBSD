@@ -130,16 +130,20 @@
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu_v11_0_ppsmc.h
  * (PPSMC_MSG_GetDpmFreqByIndex, PPSMC_MSG_SetSoftMinByFreq,
- * PPSMC_MSG_SetSoftMaxByFreq, PPSMC_MSG_SetWorkloadMask),
+ * PPSMC_MSG_SetSoftMaxByFreq, PPSMC_MSG_SetHardMinByFreq,
+ * PPSMC_MSG_SetHardMaxByFreq, PPSMC_MSG_SetWorkloadMask),
  * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
  * (WORKLOAD_PPLIB_DEFAULT_BIT, WORKLOAD_PPLIB_FULL_SCREEN_3D_BIT,
- * TABLE_DRIVER_SMU_CONFIG, PPCLK_GFXCLK) and
+ * TABLE_DRIVER_SMU_CONFIG, PPCLK_GFXCLK, PPCLK_UCLK) and
  * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
  * (smu_v11_0_get_dpm_level_count, smu_v11_0_get_dpm_freq_by_index,
- * smu_v11_0_set_soft_freq_limited_range: the arguments and the answer).
+ * smu_v11_0_set_soft_freq_limited_range,
+ * smu_v11_0_set_hard_freq_limited_range: the arguments and the answer).
  */
 #define SMU_MESSAGE_FLOOR		0x1aU
 #define SMU_MESSAGE_CEILING		0x1bU
+#define SMU_MESSAGE_HARD_FLOOR		0x1cU
+#define SMU_MESSAGE_HARD_CEILING	0x1dU
 #define SMU_MESSAGE_LEVEL		0x20U
 #define SMU_MESSAGE_WORKLOADS		0x24U
 #define SMU_LEVEL_COUNT			0xffU
@@ -150,6 +154,7 @@
 #define SMU_WORKLOAD_3D			0x02U
 #define SMU_TABLE_SETTINGS		7U
 #define SMU_CLOCK_GFX			0U
+#define SMU_CLOCK_MEMORY		2U
 
 /*
  * The table page: one page of VRAM, as large as the largest table and
@@ -237,7 +242,8 @@ static int power_features_running(struct amdrdna_device *device, uint32_t *low, 
 static void power_features_off(struct amdrdna_device *device);
 static int power_table_send(struct amdrdna_device *device, uint32_t id, const uint8_t *table, size_t bytes);
 static void power_clock_setup(struct amdrdna_device *device, unsigned wanted);
-static int power_clock_levels(struct amdrdna_device *device, uint32_t *count, uint32_t *lowest, uint32_t *highest);
+static int power_clock_levels(struct amdrdna_device *device, uint32_t clock, uint32_t *count, uint32_t *lowest, uint32_t *highest);
+static void power_memory_clock(struct amdrdna_device *device);
 static int power_boost(struct amdrdna_device *device, bool raising);
 static void power_boost_end(struct amdrdna_device *device, unsigned mode, bool raising, int error);
 static int power_readings_fetch(struct amdrdna_device *device, struct amdrdna_power_readings *readings);
@@ -1374,7 +1380,7 @@ power_clock_setup(
 	count = 0U;
 	lowest = 0U;
 	highest = 0U;
-	levels_error = power_clock_levels(device, &count, &lowest, &highest);
+	levels_error = power_clock_levels(device, SMU_CLOCK_GFX, &count, &lowest, &highest);
 
 	/* Tells the firmware the workload is the default one. */
 	workload_error = smu_message(device, SMU_MESSAGE_WORKLOADS, SMU_WORKLOAD_DEFAULT, NULL);
@@ -1411,6 +1417,9 @@ power_clock_setup(
 
 	spin_unlock_irqrestore(&thermal->lock, irq);
 
+	/* Holds the memory clock at its highest level, when its levels run. */
+	power_memory_clock(device);
+
 	/* Marks the setup with each step's answer. */
 	amdrdna_mark("A4 graphics clock: %u levels %u-%uMHz (%d), workload %d, averages %d, ceiling %d, boost %s",
 	    (unsigned)count,
@@ -1424,7 +1433,72 @@ power_clock_setup(
 }
 
 /*
- * Reads how many levels the graphics clock has and the frequency of the
+ * Holds the memory clock at its highest level for the device's life, once
+ * the firmware runs its levels: the ceiling, then the floor, at the
+ * highest.  The firmware otherwise keeps it at the lowest (100 MHz on the
+ * RX 5600 XT, a fifth to a ninth of the bandwidth Linux works with).  The
+ * change waits for the display's hub arbiter, which the firmware's picture
+ * leaves keeping the memory's self refresh off, so the arbiter allows the
+ * change while the two messages run (display.c).
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_display_disable_memory_clock_switch: the memory clock's hard
+ * floor at its highest level while the display cannot take its change) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/smu_v11_0.c
+ * (smu_v11_0_set_hard_freq_limited_range: the ceiling, then the floor).
+ */
+static void
+power_memory_clock(
+	struct amdrdna_device *device)
+{
+	struct amdrdna_thermal *thermal;
+	uint32_t count;
+	uint32_t lowest;
+	uint32_t highest;
+	uint32_t saved;
+	int ceiling_error;
+	int floor_error;
+	int error;
+
+	/* Only while the firmware runs the memory clock's levels. */
+	thermal = &device->thermal;
+	if ((thermal->features_low & AMDRDNA_SMU_FEATURE_MEMORY_LEVELS) == 0U) {
+		amdrdna_mark("A4 memory clock: its levels do not run");
+		return;
+	}
+
+	/* Its levels. */
+	count = 0U;
+	lowest = 0U;
+	highest = 0U;
+	error = power_clock_levels(device, SMU_CLOCK_MEMORY, &count, &lowest, &highest);
+	if (error != 0) {
+		amdrdna_mark("A4 memory clock: no levels (%d)", error);
+		return;
+	}
+
+	/* The ceiling and the floor at the highest level, while the display's arbiter allows the change. */
+	saved = amdrdna_display_memory_switch_begin(device);
+	ceiling_error = smu_message(device, SMU_MESSAGE_HARD_CEILING, (SMU_CLOCK_MEMORY << 16) | highest, NULL);
+	floor_error = EIO;
+	if (ceiling_error == 0)
+		floor_error = smu_message(device, SMU_MESSAGE_HARD_FLOOR, (SMU_CLOCK_MEMORY << 16) | highest, NULL);
+	amdrdna_display_memory_switch_end(device, saved);
+
+	/* Marks the levels and each answer. */
+	amdrdna_mark("A4 memory clock: %u levels %u-%uMHz, held at %uMHz (ceiling %d, floor %d, arbiter 0x%08x)",
+	    (unsigned)count,
+	    (unsigned)lowest,
+	    (unsigned)highest,
+	    (unsigned)highest,
+	    ceiling_error,
+	    floor_error,
+	    (unsigned)saved);
+}
+
+/*
+ * Reads how many levels a clock (SMU_CLOCK_*) has and the frequency of the
  * lowest and the highest, in MHz.
  *
  * Returns 0, EIO when the firmware gives no level, or the error of the
@@ -1438,6 +1512,7 @@ power_clock_setup(
 static int
 power_clock_levels(
 	struct amdrdna_device *device,
+	uint32_t clock,
 	uint32_t *count,
 	uint32_t *lowest,
 	uint32_t *highest)
@@ -1447,7 +1522,7 @@ power_clock_levels(
 
 	/* How many levels. */
 	answer = 0U;
-	error = smu_message(device, SMU_MESSAGE_LEVEL, (SMU_CLOCK_GFX << 16) | SMU_LEVEL_COUNT, &answer);
+	error = smu_message(device, SMU_MESSAGE_LEVEL, (clock << 16) | SMU_LEVEL_COUNT, &answer);
 	if (error != 0)
 		return error;
 
@@ -1457,13 +1532,13 @@ power_clock_levels(
 		return EIO;
 
 	/* The lowest level's frequency. */
-	error = smu_message(device, SMU_MESSAGE_LEVEL, SMU_CLOCK_GFX << 16, &answer);
+	error = smu_message(device, SMU_MESSAGE_LEVEL, clock << 16, &answer);
 	if (error != 0)
 		return error;
 	*lowest = answer & SMU_LEVEL_FREQUENCY_MASK;
 
 	/* The highest level's frequency. */
-	error = smu_message(device, SMU_MESSAGE_LEVEL, (SMU_CLOCK_GFX << 16) | (*count - 1U), &answer);
+	error = smu_message(device, SMU_MESSAGE_LEVEL, (clock << 16) | (*count - 1U), &answer);
 	if (error != 0)
 		return error;
 	*highest = answer & SMU_LEVEL_FREQUENCY_MASK;
