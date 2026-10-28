@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p004 -->
 # ws221-p004: 設定（net.conf の mtu、net の console、reconcile、networkd、policy）
 
-Status: in-progress（2026-10-29 P3 q1664-i03: 実装と host 試験は済み、QEMU の試験を流している）
+Status: cleared（2026-10-29 07:2x P3 q1664-i03: 実装・host 試験・QEMU の試験 PASS・5 platform の build warning 0。実機は p006）
 Parent: [WS221](../ws.md)
 Queue: q1664 / q1664-i02 → q1664-i03（P3）
 設計: [p001](../phase001/phase.md) §3.7（net.conf・net の console・reconcile・networkd の protocol・起動の経路・Settings の経路・host 試験）、§9 は全部推し
@@ -21,11 +21,18 @@ Queue: q1664 / q1664-i02 → q1664-i03（P3）
 
 host 試験の範囲の注: `lan_send_policy` の netconf の item から record への写し（mask の計算を含む）は net/main.c の中で、host 試験は codec の往復までを見る。写しは QEMU の試験 5（起動の経路）で確かめる。
 
-## 残り（再開点）
+## QEMU の試験（2026-10-29）
 
-1. QEMU: `plan/ws221/tests/qemu-netconf-mtu.sh`（image は config-amd64-jumbo.mk、p001 §8.2 の 6・7）: console の `mtu 1400` → commit → net.conf と ifconfig、`no mtu`、`mtu 9000` の拒否、`commit confirmed 1` の timer の rollback、再起動の後の 1400、adapter の抜き差しの後の 1400。2026-10-29 06:45 に流し始めた（出力 build/tmp/qemu-netconf-mtu-1.txt）。
-2. 5 platform の vmunix と net・networkd の build warning 0（merge の前）。
-3. 実機は p006。
+`plan/ws221/tests/qemu-netconf-mtu.sh`（image は config-amd64-jumbo.mk を ebb86c07d の tree で build、judge は SSH と QMP）: 18 の check が全部 ok、`qemu-netconf-mtu: PASS`。
+console に stdin で `mtu 1400` → commit（net.conf の `mtu: 1400`、ue1 1400、SSH 続く）、`no mtu`（key が消え 1500）、`mtu 9000`（networkd が「ue1: mtu 9000 is outside 1280 to the interface's limit」で断り net.conf も 1500 もそのまま）、`commit confirmed 1`（1300、net.conf は書かない、60 s 後に networkd の timer の rollback で 1500 = rollback の `V1 MTU ue1 0`）、`mtu 1400` の commit の後に guest を poweroff して同じ disk で起動（起動の record の経路で ue1 1400）、QMP の device_del・device_add で adapter を抜き差し（policy の経路で 1400）。
+
+途中で見つけた既存の不具合（MTU と無関係、Q1 に報告した）:
+- DHCP の interface が 2 つあり両方が default route を入れると、次の net の commit が全部 `route: Device or resource busy`（reconcile の DEFAULTROUTE_CLEAR の `route delete default` が EBUSY）で失敗する。MTU 無しで再現。試験は ue1 を static にして避けた。Bug の起票は Q1。
+- net の console で candidate が dirty のまま stdin が EOF になると「Discard unsaved changes?」を無限に繰り返した → ebb86c07d で EOF を「捨てて終わる」に直した（`confirm_discard`）。
+
+## build（2026-10-29、aa0aaa093 の tree）
+
+amd64・pcat・rpi4・rpi5・zybo の `vmunix`・`bin/net`・`bin/networkd`: 全部 rc=0・warning 0。rpi4 は `-j8` の新しい BUILD で `src/libc/math` が sysroot の header の前に compile されて一度落ち（並列の依存の穴、この変更と無関係）、`-j` 無しで rc=0。ebb86c07d（net の console の 1 関数）の後は amd64 の net を image の build で確かめた。
 
 ## 実機の状態
 
