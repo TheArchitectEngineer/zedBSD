@@ -84,7 +84,16 @@
 #define META_SOURCE			0U
 #define META_DESTINATION		1U
 
-/* The alignment of a placed program's pipeline state record and of its code. */
+/*
+ * The alignment of a placed program's pipeline state record (128 bytes,
+ * also the 64 BIND_PIPELINE asks) and of its code (a multiple of an
+ * instruction's 8).
+ *
+ * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section 8.2,
+ * GhciPipelineState: 128 bytes, aligned to 64 or 128; section 7.3,
+ * CMD_BIND_PIPELINE: the record's address 64-byte aligned; section 12.4,
+ * Instruction format: every instruction at an 8-byte aligned address).
+ */
 #define META_PSO_ALIGN			128U
 #define META_CODE_ALIGN			64U
 
@@ -93,6 +102,13 @@
 
 /* The most bytes a buffer descriptor reaches (32-bit addresses). */
 #define META_ADDRESS_LIMIT		0x100000000ULL
+
+/*
+ * The most elements one copy takes: the invocations of its last
+ * workgroup still count below 2^32, so that no invocation's element
+ * wraps to one of the copy's.
+ */
+#define META_ELEMENTS_MAX		(0xffffffffU - (GHCI_VK_META_GROUP - 1U))
 
 /*
  * One program's IR being written: the instructions, the uniforms, and
@@ -132,10 +148,12 @@ static uint32_t ir_select(struct meta_builder *builder, uint32_t condition, uint
 static uint32_t ir_load(struct meta_builder *builder, uint32_t buffer, uint32_t offset);
 static void ir_store(struct meta_builder *builder, uint32_t buffer, uint32_t offset, uint32_t value, uint32_t predicate);
 static void ir_atomic(struct meta_builder *builder, uint32_t operation, uint32_t buffer, uint32_t offset, uint32_t value, uint32_t predicate);
+static void ir_fence(struct meta_builder *builder, uint32_t fences);
 static int meta_place(struct ghci_vk_session *session, struct ghci_vk_device *device, struct ghci_gsi1_program *const *programs, struct ghci_vk_meta_pipeline *placed);
 static void meta_pso(struct ghci_gsi1_program *const *programs, uint64_t code, uint64_t fragment, struct ghci_pso *pso);
 static int meta_entry(const struct ghci_gsi1_program *program, uint32_t binding, uint32_t *offset);
 static int meta_span(uint64_t address, uint64_t bytes, uint64_t *base, uint32_t *size);
+static void meta_refuse(struct ghci_vk_session *session, enum ghci_vk_meta_kind kind);
 
 /*
  * Compiles the programs of one of the driver's transfers for a device of
@@ -178,7 +196,9 @@ ghci_vk_meta_compile(
  * Finds one of the driver's transfer programs placed in a device's code
  * heap, compiling it once for the GPU and placing it once for the device
  * at its first use.  Returns 0 with the placed program, ENOMEM, EIO (no
- * room could be made in the heap), or ENOTSUP (the compiler refuses it).
+ * room could be made in the heap), or ENOTSUP (the compiler refuses it,
+ * or its pipeline state cannot hold it; the GPU remembers that, and the
+ * kind is not compiled again).
  */
 int
 ghci_vk_meta_pipeline(
@@ -190,6 +210,7 @@ ghci_vk_meta_pipeline(
 	struct ghci_gsi1_program *programs[GHCI_VK_META_PROGRAMS];
 	struct ghci_gsi1_program *compiled[GHCI_VK_META_PROGRAMS];
 	struct ghci_vk *vk;
+	int refused;
 	int error;
 
 	/* Placed for this device already. */
@@ -200,16 +221,21 @@ ghci_vk_meta_pipeline(
 		return 0;
 	}
 
-	/* The GPU's programs, compiled now when no session has before. */
+	/* The GPU's programs, compiled now when no session has before, unless the compiler refused them. */
 	vk = session->device->vk;
 	mutex_lock(&session->device->lock);
 
 	programs[0] = vk->meta[kind][0];
 	programs[1] = vk->meta[kind][1];
+	refused = vk->meta_refused[kind];
 
 	mutex_unlock(&session->device->lock);
+	if (refused)
+		return ENOTSUP;
 	if (programs[0] == NULL) {
 		error = ghci_vk_meta_compile(&session->device->caps, kind, compiled);
+		if (error == ENOTSUP)
+			meta_refuse(session, kind);
 		if (error != 0)
 			return error;
 
@@ -231,6 +257,8 @@ ghci_vk_meta_pipeline(
 
 	/* The programs' place in the device's code heap. */
 	error = meta_place(session, device, programs, &device->meta[kind]);
+	if (error == ENOTSUP)
+		meta_refuse(session, kind);
 	if (error != 0)
 		return error;
 
@@ -243,8 +271,8 @@ ghci_vk_meta_pipeline(
  * Plans a copy of elements: the descriptors start at the word of each
  * side's first byte and end at the word of its last, and the push
  * constants give the region from there.  Returns 0 with the dispatch, or
- * EINVAL for elements of another size, no elements, more than 2^32 - 1
- * of them, or a side that does not lie below 4 GiB.
+ * EINVAL for elements of another size, no elements, more than
+ * META_ELEMENTS_MAX of them, or a side that does not lie below 4 GiB.
  */
 int
 ghci_vk_meta_copy(
@@ -266,7 +294,7 @@ ghci_vk_meta_copy(
 	if (copy->per_row == 0U || copy->rows == 0U || copy->slices == 0U)
 		return EINVAL;
 	elements = (uint64_t)copy->per_row * copy->rows * copy->slices;
-	if (elements > UINT32_MAX)
+	if (elements > META_ELEMENTS_MAX)
 		return EINVAL;
 
 	/* The bytes from each side's first element to the end of its last. */
@@ -312,8 +340,9 @@ ghci_vk_meta_copy(
  * Plans a copy of query results: count 16-byte slots from source (the
  * first query's slot) to destination, stride bytes apart, with the
  * program's flags (GHCI_VK_META_QUERY_*).  Returns 0 with the dispatch,
- * or EINVAL for no queries, a destination or stride not aligned to the
- * results' size, or a side that does not lie below 4 GiB.
+ * or EINVAL for no queries or more than META_ELEMENTS_MAX, a destination
+ * or stride not aligned to the results' size, or a side that does not
+ * lie below 4 GiB.
  */
 int
 ghci_vk_meta_query(
@@ -331,9 +360,9 @@ ghci_vk_meta_query(
 	uint32_t alignment;
 	int error;
 
-	/* At least one query; results on their own size. */
+	/* At least one query, within the program's count; results on their own size. */
 	kern_memset(dispatch, 0, sizeof(*dispatch));
-	if (count == 0U)
+	if (count == 0U || count > META_ELEMENTS_MAX)
 		return EINVAL;
 	alignment = 4U;
 	result_bytes = 4U;
@@ -659,7 +688,8 @@ build_copy(
  * Writes the query program, as
  *
  *   q = first + group * 64 + local;  inside = q < count;  (q = 0 outside)
- *   slot = source + 16 q: value (two words) at slot, availability at slot + 8;
+ *   slot = source + 16 q: availability at slot + 8, then (after an acquire
+ *   fence) the value's two words at slot;
  *   d = destination + q * stride;
  *   the value (low word, and the high word for 64 bits) at d when it is
  *   available or ANY is set; the availability (1 or 0; a 64-bit word for
@@ -700,17 +730,26 @@ build_query(
 	four = ir_constant(builder, 4U);
 	eight = ir_constant(builder, 8U);
 
-	/* The slot: the value's two words and the availability. */
+	/*
+	 * The slot: the availability first, then an acquire fence, then the
+	 * value's two words, so that a value read as available is the one
+	 * its availability was written after.
+	 *
+	 * Procedure referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+	 * 12.8, Global memory: fence 4 (acquire) before reading data another
+	 * agent wrote).
+	 */
 	operand = ir_constant(builder, META_QUERY_SLOT_BYTES);
 	slot = ir_value(builder, DRV_GPU_IR_IMUL, index, operand);
 	operand = ir_push(builder, GHCI_VK_META_QUERY_SOURCE);
 	slot = ir_value(builder, DRV_GPU_IR_IADD, slot, operand);
-	low = ir_load(builder, META_SOURCE, slot);
-	operand = ir_value(builder, DRV_GPU_IR_IADD, slot, four);
-	high = ir_load(builder, META_SOURCE, operand);
 	operand = ir_value(builder, DRV_GPU_IR_IADD, slot, eight);
 	operand = ir_load(builder, META_SOURCE, operand);
 	available = ir_value(builder, DRV_GPU_IR_INE, operand, zero);
+	ir_fence(builder, DRV_GPU_IR_FENCE_ACQUIRE);
+	low = ir_load(builder, META_SOURCE, slot);
+	operand = ir_value(builder, DRV_GPU_IR_IADD, slot, four);
+	high = ir_load(builder, META_SOURCE, operand);
 
 	/* The flags. */
 	flags = ir_push(builder, GHCI_VK_META_QUERY_FLAGS);
@@ -1292,6 +1331,20 @@ ir_atomic(
 	instruction->src[2] = predicate;
 }
 
+/* Appends a memory fence of the fences (DRV_GPU_IR_FENCE_*). */
+static void
+ir_fence(
+	struct meta_builder *builder,
+	uint32_t fences)
+{
+	struct drv_gpu_shader_ir_inst *instruction;
+
+	/* The fence. */
+	instruction = ir_next(builder);
+	instruction->op = DRV_GPU_IR_FENCE;
+	instruction->immediate = fences;
+}
+
 /*
  * Places the compiled programs of a transfer in a device's code heap:
  * the pipeline state record (a compute pipeline, or a draw's), then the
@@ -1351,13 +1404,17 @@ meta_place(
 	if (programs[1] != NULL)
 		kern_memcpy(view + fragment_at, programs[1]->words, programs[1]->word_count * 4U);
 
-	/* The pipeline state. */
+	/* The pipeline state, and its blend word of colour attachment 0 (little endian). */
 	meta_pso(programs, base + code_at, base + fragment_at, &pso);
 	error = ghci_pso_encode(view, &pso);
 	if (error != 0) {
 		ghci_vk_heap_give(block, offset);
 		return ENOTSUP;
 	}
+	placed->blend_word = (uint32_t)view[GHCI_PSO_BLEND];
+	placed->blend_word |= (uint32_t)view[GHCI_PSO_BLEND + 1U] << 8;
+	placed->blend_word |= (uint32_t)view[GHCI_PSO_BLEND + 2U] << 16;
+	placed->blend_word |= (uint32_t)view[GHCI_PSO_BLEND + 3U] << 24;
 
 	/* The placed programs. */
 	placed->block = block;
@@ -1465,4 +1522,21 @@ meta_span(
 	*base = start;
 	*size = (uint32_t)(end - start);
 	return 0;
+}
+
+/* Marks a kind of the GPU's transfer programs as one the compiler refuses. */
+static void
+meta_refuse(
+	struct ghci_vk_session *session,
+	enum ghci_vk_meta_kind kind)
+{
+	struct ghci_vk *vk;
+
+	/* Once, under the device's lock. */
+	vk = session->device->vk;
+	mutex_lock(&session->device->lock);
+
+	vk->meta_refused[kind] = 1;
+
+	mutex_unlock(&session->device->lock);
 }

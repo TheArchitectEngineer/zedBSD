@@ -1524,6 +1524,7 @@ scene_devices(void)
 static void
 scene_memory(void)
 {
+	struct ghci_layout_image layout;
 	struct gpu_blob_create request;
 	struct ghci_resource *resource;
 	const struct model_command *command;
@@ -1627,6 +1628,36 @@ scene_memory(void)
 	error = run(&node, &frame);
 	expect(error == 0 && reply64(&node, 12U) == 3328U && reply64(&node, 20U) == 128U && reply64(&node, 28U) == 64U &&
 	       reply64(&node, 36U) == 1728U && reply64(&node, 44U) == 128U, "memory: subresource layout");
+
+	/*
+	 * Multisampled layouts (ghci.md section 12.11: rows of P = roundup(width,
+	 * 2) x S x ps, not rounded to 64; the level, and so the layer, rounded up
+	 * to 64): 5 x 3 R8G8B8A8 with 4 samples, rows of 6 x 4 x 4 = 96, a plane
+	 * of 288, layers of 320; 7 x 5 R8 with 2 samples, rows of 8 x 2 = 16, a
+	 * plane of 80, layers of 128; 30 x 10 with one sample keeps its rows of
+	 * 128.
+	 */
+	memset(&layout, 0, sizeof(layout));
+	layout.texel_bytes = 4U;
+	layout.width = 5U;
+	layout.height = 3U;
+	layout.depth = 1U;
+	layout.levels = 1U;
+	layout.layers = 2U;
+	layout.samples = 4U;
+	expect(ghci_layout_row(&layout, 0U) == 96U && ghci_layout_plane(&layout, 0U) == 288U && ghci_layout_layer_stride(&layout) == 320U &&
+	       ghci_layout_size(&layout) == 640U, "memory: a 4-sample 5 x 3 layout, rows of 96, layers of 320");
+	layout.texel_bytes = 1U;
+	layout.width = 7U;
+	layout.height = 5U;
+	layout.samples = 2U;
+	expect(ghci_layout_row(&layout, 0U) == 16U && ghci_layout_plane(&layout, 0U) == 80U && ghci_layout_layer_stride(&layout) == 128U,
+	       "memory: a 2-sample 7 x 5 R8 layout, rows of 16, layers of 128");
+	layout.texel_bytes = 4U;
+	layout.width = 30U;
+	layout.height = 10U;
+	layout.samples = 1U;
+	expect(ghci_layout_row(&layout, 0U) == 128U && ghci_layout_layer_stride(&layout) == 1280U, "memory: one sample keeps rows of 128");
 
 	/* An sRGB image on a device without the sRGB bit is refused (the minimal profile below), a big one too. */
 	error = create_image(&node, ID_DEVICE, VK_FORMAT_R8G8B8A8_UNORM, 16384U, 16384U, 1U, 1U, ID_IMAGE + 1U, &result);

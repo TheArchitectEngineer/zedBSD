@@ -39,6 +39,7 @@
 #include "drivers/gpu/ghci/ghci.h"
 #include "drivers/gpu/ghci/ghci-cmd.h"
 #include "drivers/gpu/ghci/ghci-regs.h"
+#include "drivers/gpu/ghci/compiler/gsi1_isa.h"
 #include "drivers/gpu/ghci/vk/vk.h"
 #include "kern/lock.h"
 #include "uapi/errno.h"

@@ -1032,12 +1032,27 @@ scene_x_indirect(void)
 	}
 }
 
-/* A pipeline barrier's stages and caches (colour writes before fragment shader reads). */
+/*
+ * A pipeline barrier's stages and caches (colour writes before fragment
+ * shader reads, a transfer's writes before the host), and a barrier
+ * between two transfers on the full profile and without the blitter: the
+ * transfer stage is the blitter and the units of the driver's programs
+ * and draws (CS, FS, ROP; without the blitter those alone), and a
+ * transfer's reads invalidate L1 and the texture cache.
+ */
 static void
 scene_x_barriers(void)
 {
+	static const enum model_profile profiles[2] = { MODEL_FULL, MODEL_NO_BLT };
 	const struct model_command *command;
+	uint32_t ops[X_OPS_MAX];
+	uint32_t units;
 	unsigned barriers;
+	unsigned first;
+	unsigned count;
+	unsigned mark;
+	unsigned index;
+	unsigned at;
 	struct node node;
 	int error;
 
@@ -1086,11 +1101,65 @@ scene_x_barriers(void)
 	       command->words[3] == (GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_L1_DATA | GHCI_BARRIER_INVAL_TEX),
 	       "barriers: ROP before FS, flush L1, invalidate L1 and the texture cache");
 	command = &model.commands[model.command_count - 4U];
-	expect(command->opcode == GHCI_OP_BARRIER && command->words[1] == GHCI_STAGE_BLT && command->words[2] == 0U &&
-	       command->words[3] == (GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_FLUSH_L2),
-	       "barriers: BLT before the host, idle and flush L1 and L2");
+	expect(command->opcode == GHCI_OP_BARRIER && command->words[1] == (GHCI_STAGE_BLT | GHCI_STAGE_CS | GHCI_STAGE_FS | GHCI_STAGE_ROP) &&
+	       command->words[2] == 0U && command->words[3] == (GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_FLUSH_L2),
+	       "barriers: the transfer's units (BLT, CS, FS, ROP) before the host, idle and flush L1 and L2");
 	node_close(&node);
 	stop("barriers");
+
+	/* A copy of 256 bytes of whole words, a barrier of its writes before a transfer's reads, a fill: on each profile. */
+	for (index = 0U; index < 2U; index++) {
+		error = x_open(&node, profiles[index]);
+		x_record(&node, ID_X_COMMANDS);
+		x_command(GPU_OP_CMD_COPY_BUFFER, ID_X_COMMANDS);
+		put64(ID_BUFFER);
+		put64(ID_BUFFER);
+		put32(1U);
+		put64(1U);
+		put64(0U);
+		put64(4096U);
+		put64(256U);
+		x_command(GPU_OP_CMD_PIPELINE_BARRIER, ID_X_COMMANDS);
+		put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+		put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+		put32(0U);
+		put32(1U);
+		put64(1U);
+		put32(VK_STRUCTURE_TYPE_MEMORY_BARRIER);
+		put64(0U);
+		put32(VK_ACCESS_TRANSFER_WRITE_BIT);
+		put32(VK_ACCESS_TRANSFER_READ_BIT);
+		put32(0U);
+		put64(0U);
+		put32(0U);
+		put64(0U);
+		x_command(GPU_OP_CMD_FILL_BUFFER, ID_X_COMMANDS);
+		put64(ID_BUFFER);
+		put64(6144U);
+		put64(256U);
+		put32(0U);
+		error |= x_end(&node, ID_X_COMMANDS);
+		mark = model.command_count;
+		error |= x_submit(&node, ID_X_COMMANDS, 0U);
+		count = x_ops(mark, &first, ops);
+
+		/* The barrier after the copy's packet (COPY_BUFFER, or the program's DISPATCH). */
+		for (at = 2U; at < count; at++) {
+			if (ops[at] == GHCI_OP_BARRIER)
+				break;
+		}
+		units = GHCI_STAGE_CS | GHCI_STAGE_FS | GHCI_STAGE_ROP;
+		if (index == 0U)
+			units |= GHCI_STAGE_BLT;
+		command = &model.commands[first + at];
+		expect(error == 0 && at < count && (ops[at - 1U] == GHCI_OP_COPY_BUFFER || ops[at - 1U] == GHCI_OP_DISPATCH) &&
+		       command->words[1] == units && command->words[2] == units &&
+		       command->words[3] == (GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_L1_DATA | GHCI_BARRIER_INVAL_TEX),
+		       index == 0U ? "barriers full: copy, barrier BLT|CS|FS|ROP to BLT|CS|FS|ROP, flush L1, invalidate L1 and the texture cache"
+		                   : "barriers no-blt: copy, barrier CS|FS|ROP to CS|FS|ROP, flush L1, invalidate L1 and the texture cache");
+		node_close(&node);
+		stop("barriers");
+	}
 }
 
 /*
@@ -1415,37 +1484,52 @@ scene_x_queries(void)
 	mark = model.command_count;
 	error |= x_submit(&node, ID_X_COMMANDS, 0U);
 	count = x_ops(mark, &first, ops);
-	expect(error == 0 && count == 20U && ops[2] == GHCI_OP_FILL_BUFFER && ops[3] == GHCI_OP_WRITE_TIMESTAMP && ops[4] == GHCI_OP_FENCE &&
-	       ops[5] == GHCI_OP_BEGIN_RENDER_PASS && ops[6] == GHCI_OP_BEGIN_QUERY && ops[7] == GHCI_OP_END_QUERY &&
-	       ops[8] == GHCI_OP_END_RENDER_PASS && ops[9] == GHCI_OP_FENCE && ops[10] == GHCI_OP_FENCE && ops[11] == GHCI_OP_WAIT_FENCE &&
-	       ops[12] == GHCI_OP_BARRIER && ops[13] == GHCI_OP_BIND_PIPELINE && ops[14] == GHCI_OP_BIND_DESCRIPTOR_TABLE &&
-	       ops[15] == GHCI_OP_LOAD_CONST && ops[16] == GHCI_OP_DISPATCH && ops[17] == GHCI_OP_BARRIER,
-	       "queries: fill, timestamp and its fence, the query in the pass, the event's two fences, its wait and barrier, the copy's program");
-	if (count == 20U) {
+	expect(error == 0 && count == 23U && ops[2] == GHCI_OP_FILL_BUFFER && ops[3] == GHCI_OP_BARRIER && ops[4] == GHCI_OP_WRITE_TIMESTAMP &&
+	       ops[5] == GHCI_OP_FENCE && ops[6] == GHCI_OP_BEGIN_RENDER_PASS && ops[7] == GHCI_OP_BEGIN_QUERY && ops[8] == GHCI_OP_END_QUERY &&
+	       ops[9] == GHCI_OP_END_RENDER_PASS && ops[10] == GHCI_OP_FENCE && ops[11] == GHCI_OP_FENCE && ops[12] == GHCI_OP_WAIT_FENCE &&
+	       ops[13] == GHCI_OP_BARRIER && ops[14] == GHCI_OP_BARRIER && ops[15] == GHCI_OP_BIND_PIPELINE &&
+	       ops[16] == GHCI_OP_BIND_DESCRIPTOR_TABLE && ops[17] == GHCI_OP_LOAD_CONST && ops[18] == GHCI_OP_DISPATCH &&
+	       ops[19] == GHCI_OP_BARRIER && ops[20] == GHCI_OP_BARRIER,
+	       "queries: fill and its barrier, timestamp and its fence, the query in the pass, the event's two fences, its wait and barrier, "
+	       "the copy's program between two barriers");
+	if (count == 23U) {
 		command = &model.commands[first + 2U];
 		expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == pool->va && command->words[3] == 64U && command->words[4] == 0U,
 		       "queries: the reset fills the pool's 64 bytes with 0");
 		command = &model.commands[first + 3U];
+		expect(command->words[1] == 0U && command->words[2] == 0U &&
+		       command->words[3] == (GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_L1_DATA),
+		       "queries: after the reset's fill, a barrier: idle, flush and invalidate L1");
+		command = &model.commands[first + 4U];
 		expect(command->flags == 0U && (command->words[1] | ((uint64_t)command->words[2] << 32)) == pool->va + 16U && command->words[3] == 2U,
 		       "queries: WRITE_TIMESTAMP to the session's address of query 1, bottom of the pipe");
-		command = &model.commands[first + 4U];
+		command = &model.commands[first + 5U];
 		expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == pool->bus + 24U && command->words[3] == 1U &&
 		       command->words[4] == 0U && command->words[5] == GHCI_FENCE_FLAG_MEM_WRITE,
 		       "queries: a fence of 1 on query 1's availability word, no interrupt");
-		command = &model.commands[first + 6U];
+		command = &model.commands[first + 7U];
 		expect(command->words[3] == (1U | GHCI_QUERY_PRECISE | GHCI_QUERY_AVAILABILITY), "queries: BEGIN_QUERY 1, precise, with availability");
-		command = &model.commands[first + 9U];
+		command = &model.commands[first + 10U];
 		expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == event_bus && command->words[3] == 1U &&
 		       command->words[5] == GHCI_FENCE_FLAG_MEM_WRITE, "queries: SetEvent is a fence of 1 on the event's word");
-		command = &model.commands[first + 10U];
+		command = &model.commands[first + 11U];
 		private_bus = command->words[1] | ((uint64_t)command->words[2] << 32);
 		expect(private_bus != event_bus && private_bus != 0U && command->words[3] == 1U && command->words[5] == GHCI_FENCE_FLAG_MEM_WRITE,
 		       "queries: SetEvent's second fence sets a word of the submission's own");
-		command = &model.commands[first + 11U];
+		command = &model.commands[first + 12U];
 		expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == private_bus && command->words[3] == 1U && command->words[4] == 0U,
 		       "queries: WaitEvents after the set waits with WAIT_FENCE for 1 on the submission's word, not the client's");
-		command = &model.commands[first + 12U];
-		expect(command->words[1] == GHCI_STAGE_BLT && command->words[2] == GHCI_STAGE_FS, "queries: the wait's barrier BLT before FS");
+		command = &model.commands[first + 13U];
+		expect(command->words[1] == (GHCI_STAGE_BLT | GHCI_STAGE_CS | GHCI_STAGE_FS | GHCI_STAGE_ROP) && command->words[2] == GHCI_STAGE_FS,
+		       "queries: the wait's barrier: the transfer's units (BLT, CS, FS, ROP) before FS");
+		command = &model.commands[first + 14U];
+		expect(command->words[1] == 0U && command->words[2] == 0U &&
+		       command->words[3] == (GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_L1_DATA),
+		       "queries: before the copy's program, a barrier: idle, flush and invalidate L1");
+		command = &model.commands[first + 19U];
+		expect(command->words[1] == 0U && command->words[2] == 0U &&
+		       command->words[3] == (GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_L1_DATA),
+		       "queries: after the copy's program, the same barrier");
 	}
 
 	/* The host: query 1 available, the others not; the event set. */

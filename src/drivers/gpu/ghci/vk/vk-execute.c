@@ -43,7 +43,10 @@
  * copy of one aspect of a combined depth and stencil image.  Such a
  * program runs in the command buffer's session and takes the pipeline,
  * the tables and the constants: the command buffer's own are placed
- * again before its next draw or dispatch.
+ * again before its next draw or dispatch.  A transfer whose program the
+ * compiler refuses, or that the program cannot reach (memory at or above
+ * 4 GiB, more elements than it counts), is skipped like a command the
+ * device cannot do.
  */
 
 #include <stddef.h>
@@ -94,6 +97,13 @@
 
 /* The bytes of a query's slot (its result, then its availability word). */
 #define QUERY_SLOT_BYTES		16U
+
+/*
+ * The barrier around the writes of the slots that are not the query
+ * unit's or a fence's (a reset's zeros, the copy of the results): every
+ * unit idle, its writes out of L1, and L1 read again.
+ */
+#define QUERY_BARRIER_FLAGS		(GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_L1_DATA)
 
 /*
  * The bytes of the records an indirect draw, an indexed one and a
@@ -328,7 +338,7 @@ static void dispatch(struct exec *exec, uint32_t number, struct i915_wire_reader
 static int dispatch_prepare(struct exec *exec);
 static void barrier(struct exec *exec, uint32_t number, struct i915_wire_reader *reader);
 static void barriers_read(struct i915_wire_reader *reader, uint32_t *source, uint32_t *destination);
-static uint32_t stages_of(uint32_t vulkan);
+static uint32_t stages_of(struct exec *exec, uint32_t vulkan);
 static uint32_t barrier_flags(uint32_t source_access, uint32_t destination_access, uint32_t source_stages, uint32_t destination_stages);
 static void begin_pass(struct exec *exec, struct i915_wire_reader *reader);
 static void read_clear_value(struct i915_wire_reader *reader, uint32_t *value);
@@ -2032,7 +2042,7 @@ barrier(
 		return;
 
 	/* The barrier. */
-	put(exec, words, ghci_cmd_barrier(words, stages_of(source_stages), stages_of(destination_stages),
+	put(exec, words, ghci_cmd_barrier(words, stages_of(exec, source_stages), stages_of(exec, destination_stages),
 		barrier_flags(source_access, destination_access, source_stages, destination_stages)));
 }
 
@@ -2072,12 +2082,25 @@ barriers_read(
 	}
 }
 
-/* Reports the hardware's stages (VF, VS, FS, CS, ROP, BLT) of Vulkan pipeline stages. */
+/*
+ * Reports the hardware's stages (VF, VS, FS, CS, ROP, BLT) of Vulkan
+ * pipeline stages.  The transfer stage is every unit a transfer may run
+ * on: the blitter, and the driver's compute programs and draws (the
+ * compute, fragment and colour stages); a device without the blitter
+ * has the three alone.
+ */
 static uint32_t
 stages_of(
+	struct exec *exec,
 	uint32_t vulkan)
 {
+	uint32_t transfer;
 	uint32_t stages;
+
+	/* The units of a transfer. */
+	transfer = GHCI_STAGE_CS | GHCI_STAGE_FS | GHCI_STAGE_ROP;
+	if (has_blitter(exec))
+		transfer |= GHCI_STAGE_BLT;
 
 	/* Each Vulkan stage's unit. */
 	stages = 0U;
@@ -2094,11 +2117,11 @@ stages_of(
 	if ((vulkan & VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT) != 0U)
 		stages |= GHCI_STAGE_CS;
 	if ((vulkan & VK_PIPELINE_STAGE_TRANSFER_BIT) != 0U)
-		stages |= GHCI_STAGE_BLT;
+		stages |= transfer;
 	if ((vulkan & VK_PIPELINE_STAGE_ALL_GRAPHICS_BIT) != 0U)
 		stages |= GHCI_STAGE_VF | GHCI_STAGE_VS | GHCI_STAGE_FS | GHCI_STAGE_ROP;
 	if ((vulkan & (VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT | VK_PIPELINE_STAGE_ALL_COMMANDS_BIT)) != 0U)
-		stages |= GHCI_STAGE_VF | GHCI_STAGE_VS | GHCI_STAGE_FS | GHCI_STAGE_CS | GHCI_STAGE_ROP | GHCI_STAGE_BLT;
+		stages |= GHCI_STAGE_VF | GHCI_STAGE_VS | GHCI_STAGE_FS | GHCI_STAGE_CS | GHCI_STAGE_ROP | transfer;
 
 	/* Succeeded: the units. */
 	return stages;
@@ -2108,7 +2131,9 @@ stages_of(
  * Reports a barrier's cache operations: writes before it are flushed
  * from L1 (and from L2 for the host to read, after the units are idle);
  * reads after it see memory again (the texture cache for shader and
- * input attachment reads); what the host wrote invalidates the caches.
+ * input attachment reads, and for transfers, which the driver's draws
+ * may make through the texture unit and its programs through L1); what
+ * the host wrote invalidates the caches.
  */
 static uint32_t
 barrier_flags(
@@ -2137,6 +2162,8 @@ barrier_flags(
 		flags |= GHCI_BARRIER_INVAL_L1_DATA;
 	if ((destination_access & (VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INPUT_ATTACHMENT_READ_BIT | VK_ACCESS_MEMORY_READ_BIT)) != 0U)
 		flags |= GHCI_BARRIER_INVAL_TEX;
+	if ((destination_access & (VK_ACCESS_TRANSFER_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT)) != 0U)
+		flags |= GHCI_BARRIER_INVAL_TEX | GHCI_BARRIER_INVAL_L1_DATA;
 	if ((source_access & VK_ACCESS_HOST_WRITE_BIT) != 0U || (source_stages & VK_PIPELINE_STAGE_HOST_BIT) != 0U)
 		flags |= GHCI_BARRIER_INVAL_L1_DATA | GHCI_BARRIER_INVAL_TEX | GHCI_BARRIER_INVAL_DESCRIPTOR;
 	if ((destination_access & VK_ACCESS_HOST_READ_BIT) != 0U || (destination_stages & VK_PIPELINE_STAGE_HOST_BIT) != 0U)
@@ -3067,7 +3094,8 @@ has_blitter(
  * of 64 invocations to a workgroup per GHCI_VK_META_GROUPS_MAX
  * workgroups of elements.  The command buffer's own binds are in the
  * ring no more, and are placed again before its next draw or dispatch.
- * Returns 0, or the error that refuses the submission.
+ * Returns 0, ENOTSUP when the compiler refuses the program (the command
+ * is skipped), or the error that refuses the submission.
  */
 static int
 meta_run(
@@ -3088,10 +3116,10 @@ meta_run(
 	if (exec->error != 0)
 		return exec->error;
 
-	/* The program, in the device's code heap. */
+	/* The program, in the device's code heap; a program the compiler refuses skips the transfer. */
 	error = ghci_vk_meta_pipeline(exec->session, exec->device, dispatch->kind, &pipeline);
 	if (error == ENOTSUP) {
-		refuse(exec, ENOTSUP, "a transfer whose program the compiler refuses");
+		skip_command(exec, "a transfer whose program the compiler refuses");
 		return ENOTSUP;
 	}
 	if (error != 0) {
@@ -3137,7 +3165,13 @@ meta_run(
 	return exec->error;
 }
 
-/* Plans and places a copy of elements with the driver's copy program.  Returns 0, or the error that refuses the submission. */
+/*
+ * Plans and places a copy of elements with the driver's copy program.
+ * Returns 0, ENOTSUP when the program cannot make it (more elements than
+ * it counts, memory at or above 4 GiB, or a program the compiler
+ * refuses: the command is skipped), or the error that refuses the
+ * submission.
+ */
 static int
 meta_copy(
 	struct exec *exec,
@@ -3149,8 +3183,8 @@ meta_copy(
 	/* The plan: within 32-bit addresses and the program's count. */
 	error = ghci_vk_meta_copy(copy, &dispatch);
 	if (error != 0) {
-		refuse(exec, EINVAL, "a transfer the driver's copy program cannot reach");
-		return EINVAL;
+		skip_command(exec, "a transfer the driver's copy program cannot reach");
+		return ENOTSUP;
 	}
 
 	/* The dispatches. */
@@ -3185,8 +3219,8 @@ meta_bytes(
 	copy.source_step[0] = element;
 	copy.destination_step[0] = element;
 	if (bytes / element > UINT32_MAX) {
-		refuse(exec, EINVAL, "a transfer past the driver's copy program's count");
-		return EINVAL;
+		skip_command(exec, "a transfer past the driver's copy program's count");
+		return ENOTSUP;
 	}
 	error = meta_copy(exec, &copy);
 	if (error != 0)
@@ -3531,8 +3565,26 @@ copy_image(
 	end = reader->offset;
 	reader->offset = regions;
 
-	/* Each region's packets. */
+	/*
+	 * A resolve reads the samples once every earlier write has reached
+	 * memory (the blitter, or the texture unit of the driver's draw).
+	 *
+	 * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+	 * 12.11, Resolve: CMD_BARRIER with WAIT_IDLE before the resolve).
+	 */
 	blitter = has_blitter(exec);
+	if (number == GPU_OP_CMD_RESOLVE_IMAGE && count != 0U) {
+		if (blitter) {
+			/* The blitter's RESOLVE_IMAGE. */
+			put(exec, words, ghci_cmd_barrier(words, GHCI_STAGE_ROP, GHCI_STAGE_BLT, GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA));
+		} else {
+			/* The driver's draw, which reads the samples through the texture cache. */
+			put(exec, words, ghci_cmd_barrier(words, GHCI_STAGE_ROP, GHCI_STAGE_FS,
+				GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_TEX));
+		}
+	}
+
+	/* Each region's packets. */
 	for (index = 0U; index < count && reader->error == 0 && exec->error == 0; index++) {
 		image_region_read(reader, number, &region);
 		if (number == GPU_OP_CMD_BLIT_IMAGE && source_3d) {
@@ -3614,8 +3666,11 @@ copy_image(
  * every layer (or a 3D level's depth slice) in one copy: the texels'
  * words, or one aspect's bytes of a combined depth and stencil format,
  * the samples of a multisampled texel side by side, in blocks for a
- * compressed format.  The images have the same texel size (Vulkan's
- * rule for a copy).
+ * compressed format.  The extent counts the source's texels (Vulkan's
+ * rule between a compressed and an uncompressed format), and each side
+ * steps by its own format.  Images of other texel or block sizes, other
+ * samples, or other combined depth and stencil formats (Vulkan's rules
+ * for a copy) refuse the submission.
  */
 static void
 meta_image_copy(
@@ -3628,30 +3683,52 @@ meta_image_copy(
 	const uint32_t *extent)
 {
 	struct ghci_vk_meta_copy copy;
-	uint32_t element;
-	uint32_t image_step;
+	uint32_t element[2];
+	uint32_t image_step[2];
 	uint32_t buffer_step;
-	uint32_t skip;
-	uint32_t per_texel;
-	uint32_t texel_bytes;
-	uint32_t block;
+	uint32_t skip[2];
+	uint32_t per_texel[2];
+	uint32_t texel_bytes[2];
+	uint32_t block[2];
 	uint32_t granule;
+	int combined;
 
-	/* The elements of a texel (with its samples). */
-	meta_texels(source, region->layers[0].aspectMask, &element, &image_step, &buffer_step, &skip, &per_texel);
-	(void)ghci_vk_format_size(source->format, &texel_bytes, &block);
-	granule = block != 0U ? 4U : 1U;
+	/* A combined depth and stencil format on either side. */
+	combined = 0;
+	if (source->format == (uint32_t)VK_FORMAT_D24_UNORM_S8_UINT || source->format == (uint32_t)VK_FORMAT_D32_SFLOAT_S8_UINT)
+		combined = 1;
+	if (destination->format == (uint32_t)VK_FORMAT_D24_UNORM_S8_UINT || destination->format == (uint32_t)VK_FORMAT_D32_SFLOAT_S8_UINT)
+		combined = 1;
+
+	/* The same bytes a texel or block and samples on both sides, and one combined depth and stencil format. */
+	(void)ghci_vk_format_size(source->format, &texel_bytes[0], &block[0]);
+	(void)ghci_vk_format_size(destination->format, &texel_bytes[1], &block[1]);
+	if (texel_bytes[0] != texel_bytes[1] ||
+	    source->layout.samples != destination->layout.samples ||
+	    (combined && source->format != destination->format)) {
+		refuse(exec, EINVAL, "a copy between images of other texel sizes, samples or depth and stencil formats");
+		return;
+	}
+
+	/* The elements of a texel (with its samples) on each side, which move the same bytes. */
+	meta_texels(source, region->layers[0].aspectMask, &element[0], &image_step[0], &buffer_step, &skip[0], &per_texel[0]);
+	meta_texels(destination, region->layers[1].aspectMask, &element[1], &image_step[1], &buffer_step, &skip[1], &per_texel[1]);
+	if (element[0] != element[1] || per_texel[0] != per_texel[1]) {
+		refuse(exec, EINVAL, "a copy between other aspects of its images");
+		return;
+	}
+	granule = block[0] != 0U ? 4U : 1U;
 
 	/* Each side's first element and steps. */
 	kern_memset(&copy, 0, sizeof(copy));
-	copy.source = meta_image_texel(source, source_base, &region->layers[0], region->offsets[0], skip, copy.source_step);
-	copy.destination = meta_image_texel(destination, destination_base, &region->layers[1], region->offsets[2], skip, copy.destination_step);
-	copy.source_step[0] = image_step;
-	copy.destination_step[0] = image_step;
+	copy.source = meta_image_texel(source, source_base, &region->layers[0], region->offsets[0], skip[0], copy.source_step);
+	copy.destination = meta_image_texel(destination, destination_base, &region->layers[1], region->offsets[2], skip[1], copy.destination_step);
+	copy.source_step[0] = image_step[0];
+	copy.destination_step[0] = image_step[1];
 
 	/* The texels of a row, the rows, and the layers or depth slices. */
-	copy.element_bytes = element;
-	copy.per_row = (extent[0] + granule - 1U) / granule * per_texel * source->layout.samples;
+	copy.element_bytes = element[0];
+	copy.per_row = (extent[0] + granule - 1U) / granule * per_texel[0] * source->layout.samples;
 	copy.rows = (extent[1] + granule - 1U) / granule;
 	copy.slices = region->layers[0].layerCount;
 	if (source->type == (uint32_t)VK_IMAGE_TYPE_3D)
@@ -3721,16 +3798,18 @@ meta_draw(
 	const struct ghci_vk_meta_pipeline *pipeline;
 	struct ghci_render_pass_desc desc;
 	uint32_t words[3U + GHCI_CONST_LOAD_MAX];
+	uint32_t payload[4];
 	uint32_t viewport[6];
 	uint64_t desc_va;
 	uint64_t table_va;
 	uint8_t *view;
+	int has;
 	int error;
 
-	/* The programs, in the device's code heap. */
+	/* The programs, in the device's code heap; programs the compiler refuses skip the transfer. */
 	error = ghci_vk_meta_pipeline(exec->session, exec->device, kind, &pipeline);
 	if (error == ENOTSUP) {
-		refuse(exec, ENOTSUP, "a transfer whose program the compiler refuses");
+		skip_command(exec, "a transfer whose program the compiler refuses");
 		return;
 	}
 	if (error != 0) {
@@ -3758,8 +3837,19 @@ meta_draw(
 	}
 	put(exec, words, ghci_cmd_begin_render_pass(words, desc_va, rect, 0U, 0U, 0U, 0U));
 
-	/* The program, the viewport and the scissor of the rectangle. */
+	/*
+	 * The program; with independent blending, colour attachment 0's
+	 * blend word of the program's record (the command buffer's last
+	 * pipeline set its own); the viewport and the scissor of the
+	 * rectangle.
+	 */
 	put(exec, words, ghci_cmd_bind_pipeline(words, pipeline->pso_va));
+	has = ghci_caps_has(&exec->session->device->caps, GHCI_HAS_MRT_BLEND);
+	if (has) {
+		kern_memset(payload, 0, sizeof(payload));
+		payload[0] = pipeline->blend_word;
+		put(exec, words, ghci_cmd_set_dynamic_state(words, GHCI_DYNAMIC_BLEND_ATTACHMENT_0, payload));
+	}
 	viewport[0] = ghci_vk_float_ratio(rect[0], 1U);
 	viewport[1] = ghci_vk_float_ratio(rect[1], 1U);
 	viewport[2] = ghci_vk_float_ratio(rect[2], 1U);
@@ -4538,10 +4628,8 @@ meta_buffer_image(
  * aspect: the bytes of an element (a texel or block of 4, 8 or 16 bytes
  * is moved a word at a time), the bytes from one element to the next in
  * the image and in a buffer, the bytes of the texel before the aspect's
- * (stencil after depth), and the elements of a texel.  Section 8.5.1 of
- * the specification (N13): D24S8 is 32 bits, depth in [23:0] and stencil
- * in [31:24]; D32S8 is 64 bits, depth in [31:0] and stencil in [39:32].
- * A buffer holds 4 bytes of depth or 1 of stencil a texel.
+ * (stencil after depth), and the elements of a texel.  A buffer holds 4
+ * bytes of depth or 1 of stencil a texel.
  */
 static void
 meta_texels(
@@ -4570,7 +4658,15 @@ meta_texels(
 		*per_texel = texel_bytes / 4U;
 	}
 
-	/* One aspect of a combined depth and stencil format (a copy of both aspects is the texel's words). */
+	/*
+	 * One aspect of a combined depth and stencil format (a copy of both
+	 * aspects is the texel's words).
+	 *
+	 * Values referenced: amaterrace-gpu d9252e4 docs/ghci.md (section
+	 * 8.5.2, Depth/Stencil Formats: D24S8 is 32 bits, depth in [23:0] and
+	 * stencil in [31:24]; D32S8 is 64 bits, depth in [31:0] and stencil
+	 * in [39:32]).
+	 */
 	if (image->format == (uint32_t)VK_FORMAT_D24_UNORM_S8_UINT && aspect == (uint32_t)VK_IMAGE_ASPECT_DEPTH_BIT) {
 		*element = 3U;
 		*image_step = 4U;
@@ -4760,7 +4856,7 @@ wait_events(
 	}
 
 	/* The barrier of the wait. */
-	put(exec, words, ghci_cmd_barrier(words, stages_of(source_stages), stages_of(destination_stages),
+	put(exec, words, ghci_cmd_barrier(words, stages_of(exec, source_stages), stages_of(exec, destination_stages),
 		barrier_flags(source_access, destination_access, source_stages, destination_stages)));
 }
 
@@ -4773,7 +4869,8 @@ wait_events(
  * program's without the blitter), and vkCmdCopyQueryPoolResults
  * [pool][first][count][buffer][u64 offset][u64 stride][flags] (the
  * driver's query program on every device: COPY_BUFFER cannot pack the
- * results).
+ * results).  A barrier that waits for every unit follows a reset and
+ * comes before and after a copy.
  */
 static void
 query(
@@ -4843,10 +4940,15 @@ query(
 			break;
 		blitter = has_blitter(exec);
 		if (!blitter) {
+			/* The driver's copy program, without the blitter. */
 			(void)meta_fill(exec, pool->va + (uint64_t)first * QUERY_SLOT_BYTES, (uint64_t)count * QUERY_SLOT_BYTES, 0U);
-			break;
+		} else {
+			/* The blitter's fill. */
+			put(exec, words, ghci_cmd_fill_buffer(words, pool->va + (uint64_t)first * QUERY_SLOT_BYTES, count * QUERY_SLOT_BYTES, 0U));
 		}
-		put(exec, words, ghci_cmd_fill_buffer(words, pool->va + (uint64_t)first * QUERY_SLOT_BYTES, count * QUERY_SLOT_BYTES, 0U));
+
+		/* The zeros are in memory before a query or a fence after writes the slots. */
+		put(exec, words, ghci_cmd_barrier(words, 0U, 0U, QUERY_BARRIER_FLAGS));
 		break;
 	default:
 		if (exec->pass.active) {
@@ -4860,13 +4962,14 @@ query(
 
 /*
  * vkCmdCopyQueryPoolResults of count queries from first: target is the
- * buffer, the offset and the stride.  A wait for the results lets
- * everything placed before finish first (R12: WAIT_IDLE), so that the
- * slots hold them; the driver's query program then writes each query's
- * value (32 or 64 bits) when it is available, or with
- * VK_QUERY_RESULT_PARTIAL_BIT what the slot holds, and the availability
- * after it when asked.  A destination past its buffer or not on the
- * results' size refuses the submission.
+ * buffer, the offset and the stride.  Everything placed before finishes
+ * first (WAIT_IDLE), so that the slots hold what it wrote, and what the
+ * program writes is in memory before the work after it.  The driver's
+ * query program writes each query's value (32 or 64 bits) when it is
+ * available, or with VK_QUERY_RESULT_PARTIAL_BIT or WAIT_BIT what the
+ * slot holds, and the availability after it when asked.  A destination
+ * past its buffer or not on the results' size refuses the submission;
+ * one the program cannot reach (at or above 4 GiB) is skipped.
  */
 static void
 query_copy(
@@ -4883,6 +4986,7 @@ query_copy(
 	uint64_t remaining;
 	uint64_t needed;
 	uint32_t program_flags;
+	uint32_t alignment;
 	int error;
 
 	/* Nothing to copy. */
@@ -4910,18 +5014,23 @@ query_copy(
 		refuse(exec, EINVAL, "a copy of query results past its buffer");
 		return;
 	}
-	error = ghci_vk_meta_query(pool->va + (uint64_t)first * QUERY_SLOT_BYTES, count, va, (uint32_t)target[2], program_flags, &dispatch);
-	if (error != 0) {
+	alignment = (flags & VK_QUERY_RESULT_64_BIT) != 0U ? 8U : 4U;
+	if ((va & (alignment - 1U)) != 0U || (target[2] & (alignment - 1U)) != 0U) {
 		refuse(exec, EINVAL, "a copy of query results not on the results' size");
 		return;
 	}
 
-	/* The work placed before has written the slots. */
-	if ((flags & VK_QUERY_RESULT_WAIT_BIT) != 0U)
-		put(exec, words, ghci_cmd_barrier(words, 0U, 0U, GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_L1_DATA));
+	/* The program's plan: a buffer it cannot reach skips the copy. */
+	error = ghci_vk_meta_query(pool->va + (uint64_t)first * QUERY_SLOT_BYTES, count, va, (uint32_t)target[2], program_flags, &dispatch);
+	if (error != 0) {
+		skip_command(exec, "a copy of query results the driver's program cannot reach");
+		return;
+	}
 
-	/* The program. */
+	/* The work placed before has written the slots; the program, whose results the work after it sees. */
+	put(exec, words, ghci_cmd_barrier(words, 0U, 0U, QUERY_BARRIER_FLAGS));
 	(void)meta_run(exec, &dispatch);
+	put(exec, words, ghci_cmd_barrier(words, 0U, 0U, QUERY_BARRIER_FLAGS));
 }
 
 /*

@@ -249,8 +249,10 @@ enum ghci_vk_meta_kind {
  * heap), the code's words (a draw's vertex program, then its fragment
  * program), and for a compute program the byte offsets in the resource
  * table (set 2) of its source and destination buffers' descriptors, and
- * the table's bytes; a draw reads texture and sampler slot 0.  A zero
- * pso_va is a program not placed yet.
+ * the table's bytes; a draw reads texture and sampler slot 0, and
+ * blend_word is its record's blend word of colour attachment 0 (no
+ * blending, every component written).  A zero pso_va is a program not
+ * placed yet.
  */
 struct ghci_vk_meta_pipeline {
 	struct ghci_vk_heap_block *block;
@@ -263,6 +265,7 @@ struct ghci_vk_meta_pipeline {
 	uint32_t source_entry;
 	uint32_t destination_entry;
 	uint32_t resource_bytes;
+	uint32_t blend_word;
 };
 
 /*
@@ -326,7 +329,10 @@ struct ghci_vk_formats {
  * lock (two sessions at once may show one more).  meta holds the
  * driver's own transfer programs (vk-meta.c), each compiled at its first
  * use and kept to the detach; a slot changes from NULL to its program
- * once, under the device's lock.
+ * once, under the device's lock.  meta_refused marks a kind whose
+ * program the compiler refused (or that does not fit its pipeline
+ * state), set once under the device's lock, so that it is not compiled
+ * again.
  */
 struct ghci_vk {
 	struct ghci_device *device;
@@ -335,6 +341,7 @@ struct ghci_vk {
 	struct wait_queue completing_wake;
 	unsigned refusals;
 	struct ghci_gsi1_program *meta[GHCI_VK_META_KINDS][GHCI_VK_META_PROGRAMS];
+	int meta_refused[GHCI_VK_META_KINDS];
 };
 
 /*

@@ -79,7 +79,9 @@ static void scene_m_images(void);
 static void scene_m_queries(enum model_profile profile);
 static void scene_m_binds(void);
 static void scene_m_refusals(void);
+static void m_copy_image(uint64_t source, uint32_t source_aspect, uint64_t destination, uint32_t destination_aspect);
 static void scene_m_draws(void);
+static void m_draws_record(void);
 static void scene_m_subpass(void);
 
 /* Runs the scenes of the transfer programs and reports.  Returns the exit status. */
@@ -785,6 +787,12 @@ scene_m_queries(
 	unsigned mark;
 	unsigned dispatches;
 	unsigned barrier;
+	unsigned after;
+	const struct ghci_gsi1_program *program;
+	uint32_t word;
+	uint32_t loads_before;
+	uint32_t loads_after;
+	uint32_t acquires;
 	struct node node;
 	int error;
 
@@ -892,19 +900,56 @@ scene_m_queries(
 	value = 0x400000000ULL + 103U;
 	memcpy(reference + M_BUFFER + 6304U, &value, 8U);
 
-	/* The packets: four dispatches of the query program (and the reset's); the wait's barrier before the last. */
+	/*
+	 * The packets: four dispatches of the query program (and the reset's),
+	 * each copy between two barriers of every unit idle, L1 flushed and
+	 * invalidated, and the same barrier after the reset's fill (whose
+	 * program follows the last copy's barrier).
+	 */
 	mark = model.command_count;
 	error |= x_submit(&node, ID_X_COMMANDS, 0U);
 	barrier = 0U;
-	for (index = mark; index < model.command_count; index++) {
+	after = 0U;
+	for (index = mark + 1U; index + 1U < model.command_count; index++) {
 		command = &model.commands[index];
-		if (command->opcode == GHCI_OP_BARRIER && (command->words[3] & GHCI_BARRIER_WAIT_IDLE) != 0U && index + 1U < model.command_count &&
-		    model.commands[index + 1U].opcode == GHCI_OP_BIND_PIPELINE)
+		if (command->opcode != GHCI_OP_BARRIER || command->words[1] != 0U || command->words[2] != 0U ||
+		    command->words[3] != (GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_L1_DATA))
+			continue;
+		if (model.commands[index + 1U].opcode == GHCI_OP_BIND_PIPELINE)
 			barrier++;
+		if (model.commands[index - 1U].opcode == GHCI_OP_DISPATCH)
+			after++;
 	}
-	expect(error == 0 && barrier == 1U && model_count_commands(GHCI_OP_FILL_BUFFER) == 0U,
-	       profile == MODEL_NO_BLT ? "meta queries no-blt: submitted, the wait's barrier, no fill" : "meta queries full: submitted, the wait's barrier");
+	expect(error == 0 && barrier == (profile == MODEL_NO_BLT ? 5U : 4U) && after == (profile == MODEL_NO_BLT ? 5U : 4U) &&
+	       model_count_commands(GHCI_OP_FILL_BUFFER) == 0U,
+	       profile == MODEL_NO_BLT ? "meta queries no-blt: submitted, each copy between two barriers, the reset's fill and its barrier"
+	                               : "meta queries full: submitted, each copy between two barriers");
 	error = m_run(&node, mark, &dispatches);
+
+	/*
+	 * The query program: the availability's read, then fence 4 (acquire,
+	 * ghci.md section 12.8), then the value's two reads (lw is LOAD, fence
+	 * is CUSTOM0 funct3 4 with the fences in the immediate, section 12.4).
+	 */
+	program = ((struct ghci_vk *)device.vk)->meta[GHCI_VK_META_QUERY][0];
+	loads_before = 0U;
+	loads_after = 0U;
+	acquires = 0U;
+	for (index = 0U; program != NULL && index + 1U < program->word_count; index += 2U) {
+		word = program->words[index];
+		if ((word & 0x7fU) == GSI1_OP_CUSTOM0 && ((word >> GSI1_W0_FUNCT3_SHIFT) & 7U) == GSI1_F3_FENCE) {
+			if ((word >> GSI1_W0_IMM_SHIFT) == GSI1_FENCE_ACQUIRE)
+				acquires++;
+			continue;
+		}
+		if ((word & 0x7fU) == GSI1_OP_LOAD && acquires == 0U)
+			loads_before++;
+		if ((word & 0x7fU) == GSI1_OP_LOAD && acquires != 0U)
+			loads_after++;
+	}
+	expect(program != NULL && acquires == 1U && loads_before >= 1U && loads_after >= 2U,
+	       profile == MODEL_NO_BLT ? "meta queries no-blt: the program reads the availability, fence 4, then the value"
+	                               : "meta queries full: the program reads the availability, fence 4, then the value");
 	expect(error == 0 && dispatches == (profile == MODEL_NO_BLT ? 5U : 4U),
 	       profile == MODEL_NO_BLT ? "meta queries no-blt: five dispatches on the GSI1 model" : "meta queries full: four dispatches on the GSI1 model");
 	expect(m_same(memory, reference, "meta queries"),
@@ -1066,14 +1111,20 @@ scene_m_binds(void)
  * What the device cannot make without the blitter, and what Vulkan does
  * not allow: a blit of depth that scales is skipped (nothing placed,
  * the submission runs); a copy of query results 4 bytes into a
- * 64-bit result, and a buffer copy of both aspects of a D24S8 image,
- * refuse the submission.
+ * 64-bit result, a buffer copy of both aspects of a D24S8 image, and
+ * image copies of other texel sizes, a combined depth and stencil
+ * format on one side, or other samples refuse the submission; a
+ * transfer whose program the compiler refuses is skipped, and the
+ * refusal is kept.
  */
 static void
 scene_m_refusals(void)
 {
 	unsigned dispatches;
 	unsigned fences;
+	unsigned lines;
+	uint32_t registers;
+	uint32_t index;
 	struct node node;
 	int error;
 
@@ -1159,25 +1210,137 @@ scene_m_refusals(void)
 	fences = model_count_commands(GHCI_OP_FENCE);
 	expect(error == 0 && x_submit(&node, ID_X_COMMANDS, 0U) == EINVAL && model_count_commands(GHCI_OP_FENCE) == fences,
 	       "meta refusals: both aspects of a D24S8 image to a buffer refuse the submission");
+
+	/* Image copies Vulkan does not allow: R8 to D24S8's depth (1 and 4 bytes a texel), R8G8B8A8 to D24S8 (4 bytes each). */
+	error = m_image(&node, ID_M_R8, VK_FORMAT_R8_UNORM, M_R8_OFFSET);
+	x_record(&node, ID_X_COMMANDS);
+	m_copy_image(ID_M_R8, VK_IMAGE_ASPECT_COLOR_BIT, ID_M_D24S8, VK_IMAGE_ASPECT_DEPTH_BIT);
+	error |= x_end(&node, ID_X_COMMANDS);
+	fences = model_count_commands(GHCI_OP_FENCE);
+	dispatches = model_count_commands(GHCI_OP_DISPATCH);
+	expect(error == 0 && x_submit(&node, ID_X_COMMANDS, 0U) == EINVAL && model_count_commands(GHCI_OP_FENCE) == fences &&
+	       model_count_commands(GHCI_OP_DISPATCH) == dispatches, "meta refusals: a copy of R8 to D24S8 (other texel sizes) refuses the submission");
+	x_record(&node, ID_X_COMMANDS);
+	m_copy_image(ID_X_IMAGE, VK_IMAGE_ASPECT_COLOR_BIT, ID_M_D24S8, VK_IMAGE_ASPECT_DEPTH_BIT);
+	error = x_end(&node, ID_X_COMMANDS);
+	fences = model_count_commands(GHCI_OP_FENCE);
+	expect(error == 0 && x_submit(&node, ID_X_COMMANDS, 0U) == EINVAL && model_count_commands(GHCI_OP_FENCE) == fences,
+	       "meta refusals: a copy of R8G8B8A8 to D24S8 (a combined format on one side) refuses the submission");
+	node_close(&node);
+	stop("meta refusals");
+
+	/* A copy of a 4-sample R8G8B8A8 image to a single-sampled one (the full profile without the blitter, which has 4 samples). */
+	test_caps_off = GHCI_CAP_BLT;
+	error = x_open(&node, MODEL_FULL);
+	test_caps_off = 0U;
+	error |= x_image(&node, ID_X_IMAGE + 1U, ID_X_VIEW + 1U, VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLE_COUNT_4_BIT,
+	                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 0x48000U);
+	x_record(&node, ID_X_COMMANDS);
+	m_copy_image(ID_X_IMAGE + 1U, VK_IMAGE_ASPECT_COLOR_BIT, ID_X_IMAGE, VK_IMAGE_ASPECT_COLOR_BIT);
+	error |= x_end(&node, ID_X_COMMANDS);
+	fences = model_count_commands(GHCI_OP_FENCE);
+	expect(error == 0 && x_submit(&node, ID_X_COMMANDS, 0U) == EINVAL && model_count_commands(GHCI_OP_FENCE) == fences,
+	       "meta refusals: a copy of 4 samples to 1 refuses the submission");
+	node_close(&node);
+	stop("meta refusals");
+
+	/*
+	 * A copy program the compiler refuses (a lane of 8 registers, which
+	 * it would spill past): two fills are skipped with one line of log,
+	 * the submission runs, and the GPU remembers the refusal (with 63
+	 * registers again, the next fill is still skipped, not compiled).
+	 */
+	error = x_open(&node, MODEL_NO_BLT);
+	registers = device.caps.lane_registers;
+	device.caps.lane_registers = 8U;
+	x_record(&node, ID_X_COMMANDS);
+	for (index = 0U; index < 2U; index++) {
+		x_command(GPU_OP_CMD_FILL_BUFFER, ID_X_COMMANDS);
+		put64(ID_BUFFER);
+		put64(256U * index);
+		put64(256U);
+		put32(0x12345678U);
+	}
+	error |= x_end(&node, ID_X_COMMANDS);
+	dispatches = model_count_commands(GHCI_OP_DISPATCH);
+	lines = stub.log_lines;
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	expect(error == 0 && model_count_commands(GHCI_OP_DISPATCH) == dispatches && stub.log_lines == lines + 1U &&
+	       ((struct ghci_vk *)device.vk)->meta_refused[GHCI_VK_META_COPY] && ((struct ghci_vk *)device.vk)->meta[GHCI_VK_META_COPY][0] == NULL,
+	       "meta refusals: fills whose program the compiler refuses are skipped, one line of log, the refusal kept");
+	device.caps.lane_registers = registers;
+	x_record(&node, ID_X_COMMANDS);
+	x_command(GPU_OP_CMD_FILL_BUFFER, ID_X_COMMANDS);
+	put64(ID_BUFFER);
+	put64(0U);
+	put64(256U);
+	put32(0x12345678U);
+	error = x_end(&node, ID_X_COMMANDS);
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	expect(error == 0 && model_count_commands(GHCI_OP_DISPATCH) == dispatches && ((struct ghci_vk *)device.vk)->meta[GHCI_VK_META_COPY][0] == NULL,
+	       "meta refusals: the next fill is skipped without a compile");
 	node_close(&node);
 	stop("meta refusals");
 }
 
 /*
+ * Records a copy of 8 x 8 texels from (0, 0) of level 0, layer 0 of one
+ * image's aspect to (0, 0) of another's.
+ */
+static void
+m_copy_image(
+	uint64_t source,
+	uint32_t source_aspect,
+	uint64_t destination,
+	uint32_t destination_aspect)
+{
+	/* The images and the one region. */
+	x_command(GPU_OP_CMD_COPY_IMAGE, ID_X_COMMANDS);
+	put64(source);
+	put32(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+	put64(destination);
+	put32(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+	put32(1U);
+	put64(1U);
+	put32(source_aspect);
+	put32(0U);
+	put32(0U);
+	put32(1U);
+	put32(0U);
+	put32(0U);
+	put32(0U);
+	put32(destination_aspect);
+	put32(0U);
+	put32(0U);
+	put32(1U);
+	put32(0U);
+	put32(0U);
+	put32(0U);
+	put32(8U);
+	put32(8U);
+	put32(1U);
+}
+
+/*
  * The draws without the blitter (the full profile with CAP_BLT taken
- * away, which keeps multisampling): a blit of layer 1 of an R8G8B8A8
- * image, scaled and flipped on both axes with the linear filter, and a
- * resolve of a 4-sample image moved by (-3, -3).  The packets of each by
- * hand: the render pass of the destination (loaded and stored) over the
- * destination's rectangle, the draw's pipeline, the viewport and
- * scissor of the rectangle, the source's texture and the sampler in sets
- * 0 and 1, the push constants, one triangle.
+ * away, which keeps multisampling): a barrier of colour writes before
+ * transfer reads, a blit of layer 1 of an R8G8B8A8 image, scaled and
+ * flipped on both axes with the linear filter, and a resolve of a
+ * 4-sample image moved by (-3, -3).  The packets of each by hand: the
+ * barrier (the units of the driver's draws), the render pass of the
+ * destination (loaded and stored) over the destination's rectangle, the
+ * draw's pipeline and its blend word of colour attachment 0, the
+ * viewport and scissor of the rectangle, the source's texture and the
+ * sampler in sets 0 and 1, the push constants, one triangle; before the
+ * resolve, a barrier that waits for every unit.  The same recording on
+ * the full profile: the barriers name the blitter, and BLIT and
+ * RESOLVE_IMAGE are the blitter's.
  */
 static void
 scene_m_draws(void)
 {
 	static const uint32_t draw_ops[] = {
-		GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_BIND_PIPELINE, GHCI_OP_SET_VIEWPORT, GHCI_OP_SET_SCISSOR,
+		GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_BIND_PIPELINE, GHCI_OP_SET_DYNAMIC_STATE, GHCI_OP_SET_VIEWPORT, GHCI_OP_SET_SCISSOR,
 		GHCI_OP_BIND_DESCRIPTOR_TABLE, GHCI_OP_BIND_DESCRIPTOR_TABLE, GHCI_OP_LOAD_CONST, GHCI_OP_DRAW, GHCI_OP_END_RENDER_PASS
 	};
 	static const uint32_t blit_push[14] = { 0U, 64U, 40U, 8U, 8U, 40U, 0U, 32U, 30U, 2U, 2U, 30U, 64U, 32U };
@@ -1208,8 +1371,180 @@ scene_m_draws(void)
 	attachment_va = x_va(&node, X_ATTACHMENT_OFFSET);
 	samples_va = x_va(&node, 0x48000U);
 
-	/* The blit and the resolve. */
+	/* The barrier, the blit and the resolve. */
 	x_record(&node, ID_X_COMMANDS);
+	m_draws_record();
+	error = x_end(&node, ID_X_COMMANDS);
+	mark = model.command_count;
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	count = x_ops(mark, &first, ops);
+	held = error == 0 && count == 2U + 1U + 10U + 1U + 10U + 3U && ops[2] == GHCI_OP_BARRIER && ops[13] == GHCI_OP_BARRIER;
+	for (index = 0U; index < 10U && held; index++) {
+		if (ops[3U + index] != draw_ops[index] || ops[14U + index] != draw_ops[index])
+			held = 0;
+	}
+	expect(held && model_count_commands(GHCI_OP_BLIT) == 0U && model_count_commands(GHCI_OP_RESOLVE_IMAGE) == 0U,
+	       "meta draws: the barrier, the blit's draw, the resolve's barrier and draw, no blitter packets");
+	if (!held) {
+		node_close(&node);
+		stop("meta draws");
+		return;
+	}
+	blit = &session_of(&node)->devices->meta[GHCI_VK_META_BLIT];
+	resolve = &session_of(&node)->devices->meta[GHCI_VK_META_RESOLVE_AVERAGE4];
+
+	/*
+	 * The client's barrier of colour writes before transfer reads: ROP
+	 * before the units of the driver's programs and draws (CS, FS, ROP),
+	 * L1 flushed, L1 and the texture cache invalidated.  The resolve's own
+	 * barrier (ghci.md section 12.11): ROP before FS, every unit idle, L1
+	 * flushed, the texture cache invalidated.
+	 */
+	command = &model.commands[first + 2U];
+	expect(command->words[1] == GHCI_STAGE_ROP && command->words[2] == (GHCI_STAGE_CS | GHCI_STAGE_FS | GHCI_STAGE_ROP) &&
+	       command->words[3] == (GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_L1_DATA | GHCI_BARRIER_INVAL_TEX),
+	       "meta draws: the draw's barrier before the blit, ROP to CS|FS|ROP, flush L1, invalidate L1 and the texture cache");
+	command = &model.commands[first + 13U];
+	expect(command->words[1] == GHCI_STAGE_ROP && command->words[2] == GHCI_STAGE_FS &&
+	       command->words[3] == (GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_TEX),
+	       "meta draws: before the resolve, ROP to FS, idle, flush L1, invalidate the texture cache");
+
+	/*
+	 * After each draw's pipeline, colour attachment 0's blend word of its
+	 * record (the device blends each attachment on its own): dw11 at 0x2c of
+	 * ghci.md section 8.2, blending off (bit 0), every component written.
+	 */
+	command = &model.commands[first + 5U];
+	bytes = x_gpu(command->session, blit->pso_va);
+	expect(bytes != NULL && command->words[1] == 0x07U && command->words[2] == (uint32_t)x_load(bytes + 0x2cU, 4U) &&
+	       (command->words[2] & 1U) == 0U && command->words[2] != 0U && command->words[3] == 0U && blit->blend_word == command->words[2],
+	       "meta draws: the blit's SET_DYNAMIC_STATE 0x07 is its record's blend word, no blending");
+	command = &model.commands[first + 16U];
+	expect(command->words[1] == 0x07U && command->words[2] == resolve->blend_word, "meta draws: the resolve's SET_DYNAMIC_STATE 0x07");
+
+	/*
+	 * The blit: the pass of the attachment (colour 0 at 0x00 of ghci.md
+	 * section 8.4's description: its address, row pitch 256, format 37,
+	 * LOAD | STORE) over (8, 2) 32 x 28; the blit's pipeline (its vertex and
+	 * fragment code at 0x00 and 0x08 of the record).
+	 */
+	command = &model.commands[first + 3U];
+	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
+	expect(bytes != NULL && command->words[3] == (8U | (2U << 16)) && command->words[4] == (32U | (28U << 16)) && command->words[8] == 0U &&
+	       x_load(bytes, 8U) == attachment_va && x_load(bytes + 0x08U, 4U) == 256U && bytes[0x0cU] == 37U && bytes[0x0dU] == 0U &&
+	       x_load(bytes + 0x10U, 8U) == 0U, "meta draws: the blit's pass of the attachment, loaded and stored, over the rectangle");
+	command = &model.commands[first + 4U];
+	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
+	expect(bytes != NULL && (command->words[1] | ((uint64_t)command->words[2] << 32)) == blit->pso_va && x_load(bytes, 8U) == blit->code_va &&
+	       x_load(bytes + 0x08U, 8U) == blit->fragment_va && x_load(bytes + 0x10U, 8U) == 0U && blit->fragment_va != 0U,
+	       "meta draws: the blit's pipeline, its vertex and fragment programs");
+
+	/* The viewport and scissor: (8, 2) 32 x 28 (the floats 8, 2, 32, 28; depth 0 to 1). */
+	command = &model.commands[first + 6U];
+	expect(command->words[1] == 0x41000000U && command->words[2] == 0x40000000U && command->words[3] == 0x42000000U &&
+	       command->words[4] == 0x41e00000U && command->words[5] == 0U && command->words[6] == 0x3f800000U,
+	       "meta draws: the blit's viewport is the rectangle");
+	command = &model.commands[first + 7U];
+	expect(command->words[1] == 8U && command->words[2] == 2U && command->words[3] == 32U && command->words[4] == 28U,
+	       "meta draws: the blit's scissor is the rectangle");
+
+	/*
+	 * The texture (section 8.3: layer 1 at 10752, 64 x 32, format 37, one
+	 * level, row pitch 256, one sample, 2D, R G B A as 2 3 4 5) in set 0 and
+	 * the sampler (linear, clamped to the edge) in set 1.
+	 */
+	command = &model.commands[first + 8U];
+	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
+	expect(bytes != NULL && command->words[3] == (0U | (1U << 16)) && x_load(bytes, 8U) == image_va + 10752U &&
+	       x_load(bytes + 0x08U, 2U) == 64U && x_load(bytes + 0x0aU, 2U) == 32U && bytes[0x0eU] == 37U && bytes[0x0fU] == 1U &&
+	       x_load(bytes + 0x10U, 4U) == 256U && bytes[0x18U] == 1U && bytes[0x19U] == 1U &&
+	       x_load(bytes + 0x1cU, 4U) == (2U | (3U << 3) | (4U << 6) | (5U << 9)), "meta draws: the blit's source texture in set 0");
+	command = &model.commands[first + 9U];
+	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
+	expect(bytes != NULL && command->words[3] == (1U | (1U << 16)) && bytes[0] == 1U && bytes[1] == 1U && bytes[3] == 2U && bytes[4] == 2U &&
+	       bytes[5] == 2U, "meta draws: the blit's sampler in set 1, linear, clamped to the edge");
+
+	/* The corners (x: source 0 to 64, destination 40 to 8, viewport 8 to 40; y the same), the source's size; one triangle. */
+	command = &model.commands[first + 10U];
+	held = command->words[1] == 0U && command->words[2] == 14U;
+	for (index = 0U; index < 14U && held; index++) {
+		if (command->words[3U + index] != blit_push[index])
+			held = 0;
+	}
+	expect(held, "meta draws: the blit's push constants c0-c13");
+	command = &model.commands[first + 11U];
+	expect(command->words[1] == 3U && command->words[2] == 1U && command->words[3] == 0U && command->words[4] == 0U, "meta draws: one triangle");
+
+	/* The resolve: the attachment over (5, 6) 10 x 8, the average of four samples, the 4-sample source, the move (-3, -3). */
+	command = &model.commands[first + 14U];
+	expect(command->words[3] == (5U | (6U << 16)) && command->words[4] == (10U | (8U << 16)), "meta draws: the resolve's pass over the rectangle");
+	command = &model.commands[first + 15U];
+	expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == resolve->pso_va && resolve->pso_va != blit->pso_va,
+	       "meta draws: the resolve's pipeline averages four samples");
+	command = &model.commands[first + 19U];
+	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
+	expect(bytes != NULL && x_load(bytes, 8U) == samples_va && bytes[0x18U] == 4U && x_load(bytes + 0x10U, 4U) == 1024U,
+	       "meta draws: the resolve's source texture of four samples, rows of 1024 bytes");
+	command = &model.commands[first + 21U];
+	expect(command->words[2] == 2U && command->words[3] == (uint32_t)-3 && command->words[4] == (uint32_t)-3,
+	       "meta draws: the resolve's move (-3, -3)");
+	node_close(&node);
+	stop("meta draws");
+
+	/* The same recording on the full profile: the barriers name the blitter; BLIT and RESOLVE_IMAGE, no draw. */
+	error = x_open(&node, MODEL_FULL);
+	error |= x_image(&node, ID_X_IMAGE + 1U, ID_X_VIEW + 1U, VK_FORMAT_R8G8B8A8_UNORM, VK_SAMPLE_COUNT_4_BIT,
+	                 VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT, 0x48000U);
+	x_record(&node, ID_X_COMMANDS);
+	m_draws_record();
+	error |= x_end(&node, ID_X_COMMANDS);
+	mark = model.command_count;
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	count = x_ops(mark, &first, ops);
+	expect(error == 0 && count == 2U + 4U + 3U && ops[2] == GHCI_OP_BARRIER && ops[3] == GHCI_OP_BLIT && ops[4] == GHCI_OP_BARRIER &&
+	       ops[5] == GHCI_OP_RESOLVE_IMAGE, "meta draws full: the barrier, BLIT, the resolve's barrier, RESOLVE_IMAGE");
+	if (count == 9U) {
+		command = &model.commands[first + 2U];
+		expect(command->words[1] == GHCI_STAGE_ROP &&
+		       command->words[2] == (GHCI_STAGE_BLT | GHCI_STAGE_CS | GHCI_STAGE_FS | GHCI_STAGE_ROP) &&
+		       command->words[3] == (GHCI_BARRIER_FLUSH_L1_DATA | GHCI_BARRIER_INVAL_L1_DATA | GHCI_BARRIER_INVAL_TEX),
+		       "meta draws full: the draw's barrier before the blit, ROP to BLT|CS|FS|ROP");
+		command = &model.commands[first + 4U];
+		expect(command->words[1] == GHCI_STAGE_ROP && command->words[2] == GHCI_STAGE_BLT &&
+		       command->words[3] == (GHCI_BARRIER_WAIT_IDLE | GHCI_BARRIER_FLUSH_L1_DATA),
+		       "meta draws full: before RESOLVE_IMAGE, ROP to BLT, idle, flush L1");
+	}
+	node_close(&node);
+	stop("meta draws");
+}
+
+/*
+ * Records into the command buffer being recorded a barrier of colour
+ * writes before transfer reads, a blit of the image's layer 1 (64 x 32)
+ * to the attachment's (40, 30)-(8, 2) with the linear filter, and a
+ * resolve of the 4-sample image's (2, 3) 10 x 8 to the attachment's
+ * (5, 6).
+ */
+static void
+m_draws_record(void)
+{
+	/* The barrier. */
+	x_command(GPU_OP_CMD_PIPELINE_BARRIER, ID_X_COMMANDS);
+	put32(VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+	put32(0U);
+	put32(1U);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_MEMORY_BARRIER);
+	put64(0U);
+	put32(VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
+	put32(VK_ACCESS_TRANSFER_READ_BIT);
+	put32(0U);
+	put64(0U);
+	put32(0U);
+	put64(0U);
+
+	/* The blit and the resolve. */
 	x_command(GPU_OP_CMD_BLIT_IMAGE, ID_X_COMMANDS);
 	put64(ID_IMAGE);
 	put32(VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
@@ -1264,93 +1599,6 @@ scene_m_draws(void)
 	put32(10U);
 	put32(8U);
 	put32(1U);
-	error = x_end(&node, ID_X_COMMANDS);
-	mark = model.command_count;
-	error |= x_submit(&node, ID_X_COMMANDS, 0U);
-	count = x_ops(mark, &first, ops);
-	held = error == 0 && count == 2U + 2U * 9U + 3U;
-	for (index = 0U; index < 9U && held; index++) {
-		if (ops[2U + index] != draw_ops[index] || ops[11U + index] != draw_ops[index])
-			held = 0;
-	}
-	expect(held && model_count_commands(GHCI_OP_BLIT) == 0U && model_count_commands(GHCI_OP_RESOLVE_IMAGE) == 0U,
-	       "meta draws: the blit and the resolve are draws, no blitter packets");
-	if (!held) {
-		node_close(&node);
-		stop("meta draws");
-		return;
-	}
-	blit = &session_of(&node)->devices->meta[GHCI_VK_META_BLIT];
-	resolve = &session_of(&node)->devices->meta[GHCI_VK_META_RESOLVE_AVERAGE4];
-
-	/*
-	 * The blit: the pass of the attachment (colour 0 at 0x00 of ghci.md
-	 * section 8.4's description: its address, row pitch 256, format 37,
-	 * LOAD | STORE) over (8, 2) 32 x 28; the blit's pipeline (its vertex and
-	 * fragment code at 0x00 and 0x08 of the record).
-	 */
-	command = &model.commands[first + 2U];
-	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
-	expect(bytes != NULL && command->words[3] == (8U | (2U << 16)) && command->words[4] == (32U | (28U << 16)) && command->words[8] == 0U &&
-	       x_load(bytes, 8U) == attachment_va && x_load(bytes + 0x08U, 4U) == 256U && bytes[0x0cU] == 37U && bytes[0x0dU] == 0U &&
-	       x_load(bytes + 0x10U, 8U) == 0U, "meta draws: the blit's pass of the attachment, loaded and stored, over the rectangle");
-	command = &model.commands[first + 3U];
-	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
-	expect(bytes != NULL && (command->words[1] | ((uint64_t)command->words[2] << 32)) == blit->pso_va && x_load(bytes, 8U) == blit->code_va &&
-	       x_load(bytes + 0x08U, 8U) == blit->fragment_va && x_load(bytes + 0x10U, 8U) == 0U && blit->fragment_va != 0U,
-	       "meta draws: the blit's pipeline, its vertex and fragment programs");
-
-	/* The viewport and scissor: (8, 2) 32 x 28 (the floats 8, 2, 32, 28; depth 0 to 1). */
-	command = &model.commands[first + 4U];
-	expect(command->words[1] == 0x41000000U && command->words[2] == 0x40000000U && command->words[3] == 0x42000000U &&
-	       command->words[4] == 0x41e00000U && command->words[5] == 0U && command->words[6] == 0x3f800000U,
-	       "meta draws: the blit's viewport is the rectangle");
-	command = &model.commands[first + 5U];
-	expect(command->words[1] == 8U && command->words[2] == 2U && command->words[3] == 32U && command->words[4] == 28U,
-	       "meta draws: the blit's scissor is the rectangle");
-
-	/*
-	 * The texture (section 8.3: layer 1 at 10752, 64 x 32, format 37, one
-	 * level, row pitch 256, one sample, 2D, R G B A as 2 3 4 5) in set 0 and
-	 * the sampler (linear, clamped to the edge) in set 1.
-	 */
-	command = &model.commands[first + 6U];
-	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
-	expect(bytes != NULL && command->words[3] == (0U | (1U << 16)) && x_load(bytes, 8U) == image_va + 10752U &&
-	       x_load(bytes + 0x08U, 2U) == 64U && x_load(bytes + 0x0aU, 2U) == 32U && bytes[0x0eU] == 37U && bytes[0x0fU] == 1U &&
-	       x_load(bytes + 0x10U, 4U) == 256U && bytes[0x18U] == 1U && bytes[0x19U] == 1U &&
-	       x_load(bytes + 0x1cU, 4U) == (2U | (3U << 3) | (4U << 6) | (5U << 9)), "meta draws: the blit's source texture in set 0");
-	command = &model.commands[first + 7U];
-	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
-	expect(bytes != NULL && command->words[3] == (1U | (1U << 16)) && bytes[0] == 1U && bytes[1] == 1U && bytes[3] == 2U && bytes[4] == 2U &&
-	       bytes[5] == 2U, "meta draws: the blit's sampler in set 1, linear, clamped to the edge");
-
-	/* The corners (x: source 0 to 64, destination 40 to 8, viewport 8 to 40; y the same), the source's size; one triangle. */
-	command = &model.commands[first + 8U];
-	held = command->words[1] == 0U && command->words[2] == 14U;
-	for (index = 0U; index < 14U && held; index++) {
-		if (command->words[3U + index] != blit_push[index])
-			held = 0;
-	}
-	expect(held, "meta draws: the blit's push constants c0-c13");
-	command = &model.commands[first + 9U];
-	expect(command->words[1] == 3U && command->words[2] == 1U && command->words[3] == 0U && command->words[4] == 0U, "meta draws: one triangle");
-
-	/* The resolve: the attachment over (5, 6) 10 x 8, the average of four samples, the 4-sample source, the move (-3, -3). */
-	command = &model.commands[first + 11U];
-	expect(command->words[3] == (5U | (6U << 16)) && command->words[4] == (10U | (8U << 16)), "meta draws: the resolve's pass over the rectangle");
-	command = &model.commands[first + 12U];
-	expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == resolve->pso_va && resolve->pso_va != blit->pso_va,
-	       "meta draws: the resolve's pipeline averages four samples");
-	command = &model.commands[first + 15U];
-	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
-	expect(bytes != NULL && x_load(bytes, 8U) == samples_va && bytes[0x18U] == 4U && x_load(bytes + 0x10U, 4U) == 1024U,
-	       "meta draws: the resolve's source texture of four samples, rows of 1024 bytes");
-	command = &model.commands[first + 17U];
-	expect(command->words[2] == 2U && command->words[3] == (uint32_t)-3 && command->words[4] == (uint32_t)-3,
-	       "meta draws: the resolve's move (-3, -3)");
-	node_close(&node);
-	stop("meta draws");
 }
 
 /*
@@ -1365,7 +1613,7 @@ scene_m_subpass(void)
 {
 	static const uint32_t expected[] = {
 		GHCI_OP_BIND_SESSION, GHCI_OP_BARRIER, GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_END_RENDER_PASS, GHCI_OP_BARRIER,
-		GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_BIND_PIPELINE, GHCI_OP_SET_VIEWPORT, GHCI_OP_SET_SCISSOR,
+		GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_BIND_PIPELINE, GHCI_OP_SET_DYNAMIC_STATE, GHCI_OP_SET_VIEWPORT, GHCI_OP_SET_SCISSOR,
 		GHCI_OP_BIND_DESCRIPTOR_TABLE, GHCI_OP_BIND_DESCRIPTOR_TABLE, GHCI_OP_LOAD_CONST, GHCI_OP_DRAW, GHCI_OP_END_RENDER_PASS,
 		GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_END_RENDER_PASS, GHCI_OP_BARRIER, GHCI_OP_FENCE, GHCI_OP_BIND_SESSION
 	};
@@ -1485,10 +1733,10 @@ scene_m_subpass(void)
 	command = &model.commands[first + 6U];
 	expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == session_of(&node)->devices->meta[GHCI_VK_META_RESOLVE_AVERAGE4].pso_va,
 	       "meta subpass: the pipeline that averages four samples");
-	command = &model.commands[first + 9U];
+	command = &model.commands[first + 10U];
 	bytes = x_gpu(command->session, command->words[1] | ((uint64_t)command->words[2] << 32));
 	expect(bytes != NULL && x_load(bytes, 8U) == va[0] && bytes[0x18U] == 4U, "meta subpass: colour 1's 4-sample view in set 0");
-	command = &model.commands[first + 11U];
+	command = &model.commands[first + 12U];
 	expect(command->words[2] == 2U && command->words[3] == 0U && command->words[4] == 0U, "meta subpass: no move");
 	node_close(&node);
 	stop("meta subpass");
