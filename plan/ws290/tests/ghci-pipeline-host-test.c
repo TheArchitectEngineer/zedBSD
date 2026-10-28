@@ -12,8 +12,10 @@
  * p008): representative pipelines (a triangle, blending, depth, stencil,
  * multisampling, compute) and their 128-byte pipeline state records, the
  * slot tables, the bytes of the hardware sets of a draw and a dispatch,
- * the descriptor sets' life, and the pipelines refused on devices without
- * the flags they need.
+ * the descriptor sets' life, the pipelines refused on devices without
+ * the flags they need, the specialization of constants, operations and
+ * the workgroup size, Vulkan counts that are not their arrays', and the
+ * session's budget.
  *
  * The executor is driven through the node's operations with frames of
  * the wire built by hand as libvulkan encodes them.  The shaders are
@@ -73,6 +75,12 @@
 #define ID_SET				0x1800U
 #define ID_PIPELINE			0x1900U
 
+/* A count of a graphics pipeline's record one more than its array (make_graphics). */
+#define SKEW_NONE			0U
+#define SKEW_ATTRIBUTES			1U
+#define SKEW_BLEND			2U
+#define SKEW_DYNAMIC			3U
+
 /* The modules the scenes make, by the index of their file. */
 enum module_index {
 	MODULE_TRI_VERT = 0,
@@ -120,7 +128,7 @@ struct test_attribute {
 /*
  * A graphics pipeline a scene makes: its modules (fragment 0 for none),
  * topology, raster state, samples, depth and stencil, blend attachments,
- * dynamic states and vertex input.
+ * dynamic states and vertex input, and a count to skew (SKEW_*).
  */
 struct test_graphics {
 	uint64_t vertex;
@@ -150,6 +158,7 @@ struct test_graphics {
 	uint32_t binding_count;
 	uint32_t strides[4];
 	uint64_t layout;
+	uint32_t skew;
 };
 
 /* The counts of the checks. */
@@ -159,8 +168,9 @@ static unsigned checks_failed;
 /* The device of the scene; one at a time. */
 static struct ghci_device device;
 
-/* The frame the helpers build (one at a time; too large for the stack). */
+/* The frame the helpers build (one at a time; too large for the stack), and what the last run returned. */
 static struct frame frame;
+static int last_run;
 
 /* The SPIR-V of each module and its bytes, read once at the start. */
 static uint8_t modules[MODULES][MODULE_BYTES];
@@ -181,6 +191,7 @@ static void put64(uint64_t value);
 static void put_bytes(const void *data, size_t bytes);
 static void begin(const struct node *node, uint32_t opcode);
 static int run(struct node *node);
+static void vertex_formats(void);
 static uint32_t reply32(const struct node *node, size_t at);
 static uint64_t reply64(const struct node *node, size_t at);
 static void tail(uint64_t identity);
@@ -206,6 +217,8 @@ static void scene_descriptors(void);
 static void scene_refusals(void);
 static void scene_caches(void);
 static void scene_scratch(void);
+static void scene_counts(void);
+static void scene_budget(void);
 
 /* The operations of the fake bus; they live as long as the test. */
 static const struct ghci_bus_ops fake_bus_ops = {
@@ -249,6 +262,8 @@ main(
 	scene_refusals();
 	scene_caches();
 	scene_scratch();
+	scene_counts();
+	scene_budget();
 	model_fini();
 
 	/* The counts. */
@@ -512,7 +527,27 @@ run(
 	put32(GPU_OP_FLAG_REPLY);
 	put64(1U);
 	memset(node->reply, 0, REPLY_BYTES);
-	return device.ops.command(&device, node->session, frame.bytes, (uint32_t)frame.used);
+	last_run = device.ops.command(&device, node->session, frame.bytes, (uint32_t)frame.used);
+	return last_run;
+}
+
+/*
+ * Gives the vertex formats the scenes fetch VERTEX_BUFFER: the model's
+ * FMT reports the features of a few colour formats alone, where a
+ * device's reports those of every format of its table.
+ */
+static void
+vertex_formats(void)
+{
+	static const uint32_t formats[4] = {
+		VK_FORMAT_R32_SFLOAT, VK_FORMAT_R32G32_SFLOAT, VK_FORMAT_R32G32B32_SFLOAT, VK_FORMAT_R32G32B32A32_SFLOAT
+	};
+	struct ghci_vk *vk;
+	unsigned index;
+
+	vk = device.vk;
+	for (index = 0U; index < 4U; index++)
+		vk->formats.buffer[formats[index]] |= VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
 }
 
 /* Reads a 32-bit word of the replies. */
@@ -570,12 +605,13 @@ open_device(
 {
 	int error;
 
-	/* The device and the session. */
+	/* The device and the session, and the vertex formats the scenes fetch. */
 	error = start(profile);
 	if (error == 0)
 		error = node_open(node);
 	if (error != 0)
 		return error;
+	vertex_formats();
 
 	/* vkCreateDevice: one queue of family 0, no feature. */
 	begin(node, GPU_OP_CREATE_DEVICE);
@@ -901,7 +937,7 @@ make_graphics(
 		put32(graphics->strides[index]);
 		put32(VK_VERTEX_INPUT_RATE_VERTEX);
 	}
-	put32(graphics->attribute_count);
+	put32(graphics->attribute_count + (graphics->skew == SKEW_ATTRIBUTES ? 1U : 0U));
 	put64(graphics->attribute_count);
 	for (index = 0U; index < graphics->attribute_count; index++) {
 		put32(graphics->attributes[index].location);
@@ -998,7 +1034,7 @@ make_graphics(
 	put32(0U);
 	put32(graphics->logic);
 	put32(graphics->logic_op);
-	put32(graphics->attachments);
+	put32(graphics->attachments + (graphics->skew == SKEW_BLEND ? 1U : 0U));
 	put64(graphics->attachments);
 	for (index = 0U; index < graphics->attachments; index++) {
 		for (word = 0U; word < 8U; word++)
@@ -1016,7 +1052,7 @@ make_graphics(
 		put32(VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO);
 		put64(0U);
 		put32(0U);
-		put32(graphics->dynamic_count);
+		put32(graphics->dynamic_count + (graphics->skew == SKEW_DYNAMIC ? 1U : 0U));
 		put64(graphics->dynamic_count);
 		for (index = 0U; index < graphics->dynamic_count; index++)
 			put32(graphics->dynamic[index]);
@@ -1473,23 +1509,33 @@ scene_msaa(void)
  * Compute: a workgroup of 64 with shared memory (dw4-5 the code, dw13
  * [23:16] the registers, dw14 64 | 1 << 10 | 1 << 20, dw15 the shared
  * bytes 256), the dynamic storage buffer's offset in c40 and the push
- * constants in c0 and c33; a workgroup of 512 refused; shared memory
- * past LDS_KB refused; a specialized pipeline.
+ * constants in c0 and c33; a set not written and a binding of another
+ * type fill no entry; a workgroup of 512 refused; shared memory past
+ * LDS_KB refused; specialized pipelines (the workgroup's width, a folded
+ * product and shared memory sized by an expression), and an operation
+ * the driver does not fold refused.
  */
 static void
 scene_compute(void)
 {
 	static const uint32_t types[1] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC };
+	static const uint32_t uniform_types[1] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER };
 	static const uint32_t stages[1] = { VK_SHADER_STAGE_COMPUTE_BIT };
 	static const uint32_t spec[4] = { 7U, 9U, 8U, 1U };
+	static const uint32_t wide_spec[6] = { 3U, 16U, 7U, 9U, 8U, 1U };
+	static const uint32_t past_spec[2] = { 3U, 129U };
 	static struct ghci_vk_tables tables;
+	static uint8_t patched[MODULE_BYTES];
 	const struct ghci_vk_pipeline *pipeline;
+	uint32_t at;
+	uint32_t instruction;
 	uint8_t push[GSI1_ABI_PUSH_BYTES];
 	uint8_t expected[GHCI_BUFFER_DESC_BYTES];
 	uint64_t set_layouts[1];
 	uint64_t sets[GHCI_VK_SETS];
 	uint32_t dynamic[1];
 	uint32_t word;
+	uint32_t index;
 	struct node node;
 	uint64_t va;
 	uint32_t result;
@@ -1593,6 +1639,71 @@ scene_compute(void)
 	error = ghci_vk_layout_tables(session_of(&node), pipeline, sets, dynamic, 1U, push, 104U, &tables);
 	expect(error == ENOENT, "compute: an entry of a set not bound");
 
+	/* Six push-constant bytes: the second word has two of them and zeros, nothing read past them. */
+	sets[0] = ID_SET;
+	store_le(push, 4U, 0xffffabcdU, 4U);
+	error = ghci_vk_layout_tables(session_of(&node), pipeline, sets, dynamic, 1U, push, 6U, &tables);
+	expect(error == 0 && tables.bank[0] == 0x1234U && tables.bank[1] == 0xabcdU, "compute: a last partial push-constant word");
+
+	/* A set of the layout not written, and a uniform buffer's binding where the program reads a storage buffer. */
+	begin(&node, GPU_OP_CREATE_DESCRIPTOR_POOL);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(2U);
+	put32(2U);
+	put64(2U);
+	put32(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
+	put32(1U);
+	put32(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	put32(1U);
+	tail(ID_POOL + 1U);
+	error = run(&node);
+	result = make_set_layout(&node, ID_SET_LAYOUT + 1U, 1U, uniform_types, stages, 0U);
+	for (index = 0U; index < 2U; index++) {
+		begin(&node, GPU_OP_ALLOCATE_DESCRIPTOR_SETS);
+		put64(ID_DEVICE);
+		put64(1U);
+		put32(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
+		put64(0U);
+		put64(ID_POOL + 1U);
+		put32(1U);
+		put64(1U);
+		put64(ID_SET_LAYOUT + index);
+		put64(1U);
+		put64(ID_SET + 1U + index);
+		error |= run(&node);
+	}
+	begin(&node, GPU_OP_UPDATE_DESCRIPTOR_SETS);
+	put64(ID_DEVICE);
+	put32(1U);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
+	put64(0U);
+	put64(ID_SET + 2U);
+	put32(0U);
+	put32(0U);
+	put32(1U);
+	put32(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	put64(0U);
+	put64(1U);
+	put64(ID_BUFFER);
+	put64(0U);
+	put64(VK_WHOLE_SIZE);
+	put64(0U);
+	put32(0U);
+	put64(0U);
+	error |= run(&node);
+	expect(error == 0 && result == 0U, "compute: a second set layout and two more sets");
+	sets[0] = ID_SET + 1U;
+	error = ghci_vk_layout_tables(session_of(&node), pipeline, sets, dynamic, 1U, push, 104U, &tables);
+	expect(error == ENOENT, "compute: an entry whose descriptor is not written");
+	sets[0] = ID_SET + 2U;
+	error = ghci_vk_layout_tables(session_of(&node), pipeline, sets, dynamic, 1U, push, 104U, &tables);
+	expect(error == ENOENT, "compute: an entry of a binding of another type");
+
 	/* A workgroup of 512 is refused; shared memory past LDS_KB is refused. */
 	result = make_compute(&node, ID_MODULE + MODULE_WIDE_COMP, ID_LAYOUT, NULL, 0U, ID_PIPELINE + 1U);
 	expect(result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY && pipeline_of(&node, ID_PIPELINE + 1U) == NULL, "compute: 512 invocations refused");
@@ -1600,11 +1711,54 @@ scene_compute(void)
 	result = make_compute(&node, ID_MODULE + MODULE_DYN_COMP, ID_LAYOUT, NULL, 0U, ID_PIPELINE + 2U);
 	expect(result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY && pipeline_of(&node, ID_PIPELINE + 2U) == NULL, "compute: shared memory past LDS_KB refused");
 
-	/* Specialized: SCALE = 9, NEGATE = true; and without the map. */
+	/*
+	 * Specialized: SCALE = 9, NEGATE = true, the width by default (1 x 2
+	 * x 1), the shared array of SCALE * 2 + 1 words (an OpSpecConstantOp
+	 * folded twice: 76 bytes); without the map (4: 36 bytes); and a width
+	 * of 16 (dw14 16 | 2 << 10 | 1 << 20).
+	 */
+	device.caps.lds_bytes = 16384U;
 	result = make_compute(&node, ID_MODULE + MODULE_SPEC_COMP, ID_LAYOUT, spec, 2U, ID_PIPELINE + 3U);
-	expect(result == 0U && pipeline_of(&node, ID_PIPELINE + 3U) != NULL, "compute: specialized");
+	pipeline = pipeline_of(&node, ID_PIPELINE + 3U);
+	expect(result == 0U && pipeline != NULL, "compute: specialized");
+	expect(pipeline != NULL && pso_word(pipeline, 14U) == (1U | (2U << 10) | (1U << 20)) && pso_word(pipeline, 15U) == 76U,
+	       "compute: specialized, the default width and SCALE * 2 + 1 words of shared memory");
 	result = make_compute(&node, ID_MODULE + MODULE_SPEC_COMP, ID_LAYOUT, NULL, 0U, ID_PIPELINE + 4U);
-	expect(result == 0U && pipeline_of(&node, ID_PIPELINE + 4U) != NULL, "compute: default specialization");
+	pipeline = pipeline_of(&node, ID_PIPELINE + 4U);
+	expect(result == 0U && pipeline != NULL && pso_word(pipeline, 15U) == 36U, "compute: default specialization");
+	result = make_compute(&node, ID_MODULE + MODULE_SPEC_COMP, ID_LAYOUT, wide_spec, 3U, ID_PIPELINE + 5U);
+	pipeline = pipeline_of(&node, ID_PIPELINE + 5U);
+	expect(result == 0U && pipeline != NULL && pso_word(pipeline, 14U) == (16U | (2U << 10) | (1U << 20)),
+	       "compute: local_size_x_id specialized to 16 (dw14)");
+	result = make_compute(&node, ID_MODULE + MODULE_SPEC_COMP, ID_LAYOUT, past_spec, 1U, ID_PIPELINE + 6U);
+	expect(result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY && pipeline_of(&node, ID_PIPELINE + 6U) == NULL,
+	       "compute: a specialized width past the limits refused");
+
+	/* The module with its first OpSpecConstantOp made an OpFAdd (129), which the driver does not fold. */
+	memcpy(patched, modules[MODULE_SPEC_COMP], module_bytes[MODULE_SPEC_COMP]);
+	for (at = 5U; at < module_bytes[MODULE_SPEC_COMP] / 4U; at += instruction >> 16) {
+		memcpy(&instruction, patched + 4U * at, 4U);
+		if ((instruction >> 16) == 0U)
+			break;
+		if ((instruction & 0xffffU) == 52U) {
+			store_le(patched, 4U * (at + 3U), 129U, 4U);
+			break;
+		}
+	}
+	begin(&node, GPU_OP_CREATE_SHADER_MODULE);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put64(module_bytes[MODULE_SPEC_COMP]);
+	put64(module_bytes[MODULE_SPEC_COMP] / 4U);
+	put_bytes(patched, module_bytes[MODULE_SPEC_COMP]);
+	tail(ID_MODULE + 0x80U);
+	error = run(&node);
+	result = make_compute(&node, ID_MODULE + 0x80U, ID_LAYOUT, NULL, 0U, ID_PIPELINE + 7U);
+	expect(error == 0 && result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY && pipeline_of(&node, ID_PIPELINE + 7U) == NULL,
+	       "compute: an OpSpecConstantOp the driver does not fold refused");
 
 	node_close(&node);
 	stop("compute");
@@ -1978,6 +2132,50 @@ scene_descriptors(void)
 	error = run(&node);
 	expect(error == EINVAL, "descriptors: an image payload for a uniform buffer");
 
+	/* A write of two uniform buffers from binding 0 walks into binding 1 (a combined image sampler): refused. */
+	begin(&node, GPU_OP_UPDATE_DESCRIPTOR_SETS);
+	put64(ID_DEVICE);
+	put32(1U);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET);
+	put64(0U);
+	put64(ID_SET);
+	put32(0U);
+	put32(0U);
+	put32(2U);
+	put32(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	put64(0U);
+	put64(2U);
+	for (index = 0U; index < 2U; index++) {
+		put64(ID_BUFFER);
+		put64(0U);
+		put64(64U);
+	}
+	put64(0U);
+	put32(0U);
+	put64(0U);
+	error = run(&node);
+	expect(error == EINVAL, "descriptors: a write walking into a binding of another type");
+
+	/* A copy from binding 0 (a uniform buffer) to binding 1 (a combined image sampler): refused. */
+	begin(&node, GPU_OP_UPDATE_DESCRIPTOR_SETS);
+	put64(ID_DEVICE);
+	put32(0U);
+	put64(0U);
+	put32(1U);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET);
+	put64(0U);
+	put64(ID_SET);
+	put32(0U);
+	put32(0U);
+	put64(ID_SET + 5U);
+	put32(1U);
+	put32(0U);
+	put32(1U);
+	error = run(&node);
+	expect(error == EINVAL, "descriptors: a copy between bindings of other types");
+
 	/* Free (FREE_DESCRIPTOR_SET_BIT) makes room again; the pool's reset takes the set with it. */
 	begin(&node, GPU_OP_FREE_DESCRIPTOR_SETS);
 	put64(ID_DEVICE);
@@ -2027,9 +2225,11 @@ scene_descriptors(void)
 /*
  * Pipelines refused on devices without the flags they need (U8): dual
  * source without CAP_DUAL_SOURCE, a logic op without FEATURE[11],
- * attachments blended differently without MRT_BLEND, more attachments
- * than MAX_MRT, more than 16 texture slots over the vertex and fragment
- * stages, more than 60 attribute registers; each with
+ * attachments blended differently without MRT_BLEND (the factors of one
+ * that does not blend do not count), an attribute format without
+ * VERTEX_BUFFER, more attachments than MAX_MRT, more than 16 texture
+ * slots over the vertex and fragment stages, more than 60 attribute
+ * registers; each with
  * VK_ERROR_OUT_OF_DEVICE_MEMORY and no identity, and the same pipelines
  * made with the flags.
  */
@@ -2047,6 +2247,7 @@ scene_refusals(void)
 		VK_SHADER_STAGE_ALL_GRAPHICS, VK_SHADER_STAGE_ALL_GRAPHICS, VK_SHADER_STAGE_ALL_GRAPHICS
 	};
 	struct test_graphics graphics;
+	struct ghci_vk *vk;
 	uint64_t set_layouts[3];
 	struct node node;
 	uint32_t result;
@@ -2097,11 +2298,31 @@ scene_refusals(void)
 	expect(result == 0U && pipeline_of(&node, ID_PIPELINE + 2U) != NULL && pipeline_of(&node, ID_PIPELINE + 2U)->state.blend_count == 0U,
 	       "refusals: the same blend twice without MRT_BLEND");
 
+	/* Two attachments that do not blend, with factors of their own, are blended the same; blending one is not. */
+	graphics.blend[1][1] = VK_BLEND_FACTOR_SRC_ALPHA;
+	graphics.blend[1][2] = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+	result = make_graphics(&node, &graphics, ID_PIPELINE + 7U);
+	expect(result == 0U && pipeline_of(&node, ID_PIPELINE + 7U) != NULL, "refusals: factors of attachments that do not blend do not count");
+	graphics.blend[1][0] = 1U;
+	result = make_graphics(&node, &graphics, ID_PIPELINE + 8U);
+	expect(result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY && pipeline_of(&node, ID_PIPELINE + 8U) == NULL,
+	       "refusals: one attachment blending, the other not, without MRT_BLEND");
+
+
 	/* More attachments than MAX_MRT (1). */
 	device.caps.max_mrt = 1U;
 	result = make_graphics(&node, &graphics, ID_PIPELINE + 3U);
 	expect(result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY && pipeline_of(&node, ID_PIPELINE + 3U) == NULL, "refusals: past MAX_MRT");
 	device.caps.max_mrt = 8U;
+
+	/* An attribute format without VERTEX_BUFFER. */
+	graphics_defaults(&graphics);
+	vk = device.vk;
+	vk->formats.buffer[VK_FORMAT_R32G32_SFLOAT] &= ~(uint32_t)VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT;
+	result = make_graphics(&node, &graphics, ID_PIPELINE + 9U);
+	expect(result == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY && pipeline_of(&node, ID_PIPELINE + 9U) == NULL,
+	       "refusals: an attribute format without VERTEX_BUFFER");
+	vertex_formats();
 
 	/* Eight textures in the vertex stage and nine in the fragment stage: 17 slots. */
 	graphics_defaults(&graphics);
@@ -2274,4 +2495,403 @@ scene_scratch(void)
 
 	node_close(&node);
 	stop("scratch");
+}
+
+/*
+ * Counts that are not their arrays': the shared codec sizes each array by
+ * its own count on the wire, so a Vulkan count field one past it ends the
+ * frame (a set layout's bindings and immutable samplers, a pipeline
+ * layout's set layouts and push-constant ranges, a pool's sizes, the set
+ * layouts of an allocation, a module's words, a specialization's entries
+ * and data, a graphics pipeline's attributes, attachments and dynamic
+ * states); descriptor counts that wrap; a pool's sizes saturated; and a
+ * batch of pipelines whose second cannot be kept takes the first with
+ * it.
+ */
+static void
+scene_counts(void)
+{
+	static const uint32_t types[1] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC };
+	static const uint32_t stages[1] = { VK_SHADER_STAGE_COMPUTE_BIT };
+	static const char *const skew_names[3] = {
+		"counts: vertexAttributeDescriptionCount past the attributes", "counts: attachmentCount past the attachments",
+		"counts: dynamicStateCount past the states"
+	};
+	struct test_graphics graphics;
+	struct ghci_vk_object *object;
+	uint64_t set_layouts[1];
+	struct node node;
+	uint32_t result;
+	uint32_t index;
+	int error;
+
+	/* A device, the set layout and layout of dyn.comp, and its pipeline. */
+	error = open_device(&node, MODEL_FULL);
+	result = make_set_layout(&node, ID_SET_LAYOUT, 1U, types, stages, 0U);
+	set_layouts[0] = ID_SET_LAYOUT;
+	result |= make_layout(&node, ID_LAYOUT, 1U, set_layouts, 104U);
+	result |= make_compute(&node, ID_MODULE + MODULE_DYN_COMP, ID_LAYOUT, NULL, 0U, ID_PIPELINE);
+	expect(error == 0 && result == 0U && pipeline_of(&node, ID_PIPELINE) != NULL, "counts: device");
+
+	/* Bindings of 2 and 0xffffffff descriptors: the sum wraps. */
+	begin(&node, GPU_OP_CREATE_DESCRIPTOR_SET_LAYOUT);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(2U);
+	put64(2U);
+	put32(0U);
+	put32(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	put32(2U);
+	put32(VK_SHADER_STAGE_ALL);
+	put64(0U);
+	put32(1U);
+	put32(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	put32(0xffffffffU);
+	put32(VK_SHADER_STAGE_ALL);
+	put64(0U);
+	tail(ID_SET_LAYOUT + 1U);
+	error = run(&node);
+	expect(error == EINVAL && ghci_vk_object_find(session_of(&node), GHCI_VK_SET_LAYOUT, ID_SET_LAYOUT + 1U) == NULL,
+	       "counts: bindings of 2 and 0xffffffff descriptors refused");
+
+	/* bindingCount 2 over one binding; descriptorCount 2 over one immutable sampler. */
+	begin(&node, GPU_OP_CREATE_DESCRIPTOR_SET_LAYOUT);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(2U);
+	put64(1U);
+	put32(0U);
+	put32(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	put32(1U);
+	put32(VK_SHADER_STAGE_ALL);
+	put64(0U);
+	tail(ID_SET_LAYOUT + 2U);
+	error = run(&node);
+	expect(error == EINVAL, "counts: bindingCount past the bindings");
+	begin(&node, GPU_OP_CREATE_DESCRIPTOR_SET_LAYOUT);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(1U);
+	put64(1U);
+	put32(0U);
+	put32(VK_DESCRIPTOR_TYPE_SAMPLER);
+	put32(2U);
+	put32(VK_SHADER_STAGE_ALL);
+	put64(1U);
+	put64(ID_SAMPLER);
+	tail(ID_SET_LAYOUT + 3U);
+	error = run(&node);
+	expect(error == EINVAL, "counts: descriptorCount past the immutable samplers");
+
+	/* setLayoutCount 2 over one set layout; two push-constant ranges over one; 65 ranges. */
+	begin(&node, GPU_OP_CREATE_PIPELINE_LAYOUT);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(2U);
+	put64(1U);
+	put64(ID_SET_LAYOUT);
+	put32(0U);
+	put64(0U);
+	tail(ID_LAYOUT + 1U);
+	error = run(&node);
+	expect(error == EINVAL, "counts: setLayoutCount past the set layouts");
+	begin(&node, GPU_OP_CREATE_PIPELINE_LAYOUT);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(0U);
+	put64(0U);
+	put32(2U);
+	put64(1U);
+	put32(VK_SHADER_STAGE_ALL);
+	put32(0U);
+	put32(16U);
+	tail(ID_LAYOUT + 2U);
+	error = run(&node);
+	expect(error == EINVAL, "counts: pushConstantRangeCount past the ranges");
+	begin(&node, GPU_OP_CREATE_PIPELINE_LAYOUT);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(0U);
+	put64(0U);
+	put32(65U);
+	put64(65U);
+	for (index = 0U; index < 65U; index++) {
+		put32(VK_SHADER_STAGE_ALL);
+		put32(0U);
+		put32(4U);
+	}
+	tail(ID_LAYOUT + 3U);
+	error = run(&node);
+	expect(error == EINVAL, "counts: more than 64 push-constant ranges");
+
+	/* poolSizeCount 2 over one size; two sizes of 0xffffffff saturate. */
+	begin(&node, GPU_OP_CREATE_DESCRIPTOR_POOL);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(1U);
+	put32(2U);
+	put64(1U);
+	put32(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	put32(1U);
+	tail(ID_POOL);
+	error = run(&node);
+	expect(error == EINVAL, "counts: poolSizeCount past the sizes");
+	begin(&node, GPU_OP_CREATE_DESCRIPTOR_POOL);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(2U);
+	put32(3U);
+	put64(3U);
+	put32(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	put32(0xffffffffU);
+	put32(VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER);
+	put32(0xffffffffU);
+	put32(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
+	put32(2U);
+	tail(ID_POOL + 1U);
+	error = run(&node);
+	object = ghci_vk_object_find(session_of(&node), GHCI_VK_DESCRIPTOR_POOL, ID_POOL + 1U);
+	expect(error == 0 && reply32(&node, 4U) == 0U && object != NULL && object->as.pool_of_sets.capacity[VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER] == 0xffffffffU,
+	       "counts: a pool's sizes saturate");
+
+	/* descriptorSetCount 2 over one set layout (two identities). */
+	begin(&node, GPU_OP_ALLOCATE_DESCRIPTOR_SETS);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
+	put64(0U);
+	put64(ID_POOL + 1U);
+	put32(2U);
+	put64(1U);
+	put64(ID_SET_LAYOUT);
+	put64(2U);
+	put64(ID_SET);
+	put64(ID_SET + 1U);
+	error = run(&node);
+	expect(error == EINVAL && ghci_vk_object_find(session_of(&node), GHCI_VK_DESCRIPTOR_SET, ID_SET) == NULL,
+	       "counts: descriptorSetCount past the set layouts");
+
+	/* codeSize twice the words given. */
+	begin(&node, GPU_OP_CREATE_SHADER_MODULE);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put64(2U * module_bytes[MODULE_DYN_COMP]);
+	put64(module_bytes[MODULE_DYN_COMP] / 4U);
+	put_bytes(modules[MODULE_DYN_COMP], module_bytes[MODULE_DYN_COMP]);
+	tail(ID_MODULE + 0x81U);
+	error = run(&node);
+	expect(error == EINVAL && ghci_vk_object_find(session_of(&node), GHCI_VK_SHADER_MODULE, ID_MODULE + 0x81U) == NULL,
+	       "counts: codeSize past the words");
+
+	/* A specialization of mapEntryCount 2 over one entry, then of dataSize 8 over 4 bytes. */
+	for (index = 0U; index < 2U; index++) {
+		begin(&node, GPU_OP_CREATE_COMPUTE_PIPELINES);
+		put64(ID_DEVICE);
+		put64(0U);
+		put32(1U);
+		put64(1U);
+		put32(VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);
+		put64(0U);
+		put32(0U);
+		put32(VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO);
+		put64(0U);
+		put32(0U);
+		put32(VK_SHADER_STAGE_COMPUTE_BIT);
+		put64(ID_MODULE + MODULE_SPEC_COMP);
+		put64(5U);
+		put_bytes("main", 5U);
+		put64(1U);
+		put32(index == 0U ? 2U : 1U);
+		put64(1U);
+		put32(7U);
+		put32(0U);
+		put64(4U);
+		put64(index == 0U ? 4U : 8U);
+		put64(4U);
+		put32(9U);
+		put64(ID_LAYOUT);
+		put64(0U);
+		put32(0xffffffffU);
+		put64(0U);
+		put64(1U);
+		put64(ID_PIPELINE + 1U);
+		error = run(&node);
+		expect(error == EINVAL && pipeline_of(&node, ID_PIPELINE + 1U) == NULL,
+		       index == 0U ? "counts: mapEntryCount past the entries" : "counts: dataSize past the data");
+	}
+
+	/* A graphics pipeline's attribute, attachment and dynamic state counts one past their arrays. */
+	for (index = SKEW_ATTRIBUTES; index <= SKEW_DYNAMIC; index++) {
+		graphics_defaults(&graphics);
+		graphics.layout = ID_LAYOUT;
+		graphics.dynamic_count = 1U;
+		graphics.dynamic[0] = VK_DYNAMIC_STATE_VIEWPORT;
+		graphics.skew = index;
+		result = make_graphics(&node, &graphics, ID_PIPELINE + 2U);
+		expect(result == ~0U && last_run == EINVAL && pipeline_of(&node, ID_PIPELINE + 2U) == NULL, skew_names[index - SKEW_ATTRIBUTES]);
+	}
+	graphics.skew = SKEW_NONE;
+	result = make_graphics(&node, &graphics, ID_PIPELINE + 2U);
+	expect(result == 0U && pipeline_of(&node, ID_PIPELINE + 2U) != NULL, "counts: the same pipeline with its counts made");
+
+	/* Two compute pipelines whose second identity is taken: neither is made. */
+	begin(&node, GPU_OP_CREATE_COMPUTE_PIPELINES);
+	put64(ID_DEVICE);
+	put64(0U);
+	put32(2U);
+	put64(2U);
+	for (index = 0U; index < 2U; index++) {
+		put32(VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);
+		put64(0U);
+		put32(0U);
+		put_stage(VK_SHADER_STAGE_COMPUTE_BIT, ID_MODULE + MODULE_DYN_COMP, NULL, 0U);
+		put64(ID_LAYOUT);
+		put64(0U);
+		put32(0xffffffffU);
+	}
+	put64(0U);
+	put64(2U);
+	put64(ID_PIPELINE + 3U);
+	put64(ID_PIPELINE);
+	error = run(&node);
+	expect(error == EINVAL && pipeline_of(&node, ID_PIPELINE + 3U) == NULL && pipeline_of(&node, ID_PIPELINE) != NULL,
+	       "counts: a batch whose second pipeline cannot be kept makes none");
+
+	/* The pipeline and layouts keep each set's place of dynamic offsets (set 0: offsets 0 to 0). */
+	expect(pipeline_of(&node, ID_PIPELINE)->dynamic_base[0] == 0U && pipeline_of(&node, ID_PIPELINE)->dynamic_sets[0] == 1U &&
+	       pipeline_of(&node, ID_PIPELINE)->dynamic_base[1] == 1U && pipeline_of(&node, ID_PIPELINE)->dynamic_sets[1] == 0U,
+	       "counts: each set's dynamic offsets");
+
+	node_close(&node);
+	stop("counts");
+}
+
+/*
+ * The session's budget: the objects' bytes are taken and given back, and
+ * a module, a set layout, a pipeline layout, a set and a pipeline past
+ * it are answered VK_ERROR_OUT_OF_HOST_MEMORY.
+ */
+static void
+scene_budget(void)
+{
+	static const uint32_t types[1] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC };
+	static const uint32_t stages[1] = { VK_SHADER_STAGE_COMPUTE_BIT };
+	struct ghci_vk_session *session;
+	uint64_t set_layouts[1];
+	uint64_t before;
+	uint64_t saved;
+	struct node node;
+	uint32_t result;
+	int error;
+
+	/* A device: its modules are charged. */
+	error = open_device(&node, MODEL_FULL);
+	session = session_of(&node);
+	before = session->budget_used;
+	expect(error == 0 && before >= module_bytes[MODULE_TRI_VERT] + module_bytes[MODULE_SPILL_COMP], "budget: the modules are charged");
+
+	/* A set layout takes bytes and its destroy gives them back. */
+	result = make_set_layout(&node, ID_SET_LAYOUT + 1U, 1U, types, stages, 0U);
+	expect(result == 0U && session->budget_used > before, "budget: a set layout is charged");
+	begin(&node, GPU_OP_DESTROY_DESCRIPTOR_SET_LAYOUT);
+	put64(ID_DEVICE);
+	put64(ID_SET_LAYOUT + 1U);
+	put64(0U);
+	error = run(&node);
+	expect(error == 0 && session->budget_used == before, "budget: given back at its destroy");
+
+	/* The objects a set and a pipeline need, then a budget with 16 bytes left. */
+	result = make_set_layout(&node, ID_SET_LAYOUT, 1U, types, stages, 0U);
+	set_layouts[0] = ID_SET_LAYOUT;
+	result |= make_layout(&node, ID_LAYOUT, 1U, set_layouts, 104U);
+	begin(&node, GPU_OP_CREATE_DESCRIPTOR_POOL);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(1U);
+	put32(1U);
+	put64(1U);
+	put32(VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC);
+	put32(1U);
+	tail(ID_POOL);
+	error = run(&node);
+	expect(error == 0 && result == 0U, "budget: layouts and a pool");
+	saved = session->budget_used;
+	session->budget_used = GHCI_VK_BUDGET_BYTES - 16U;
+
+	/* A module, a set layout, a pipeline layout, a set and a pipeline past the budget. */
+	begin(&node, GPU_OP_CREATE_SHADER_MODULE);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put64(module_bytes[MODULE_DYN_COMP]);
+	put64(module_bytes[MODULE_DYN_COMP] / 4U);
+	put_bytes(modules[MODULE_DYN_COMP], module_bytes[MODULE_DYN_COMP]);
+	tail(ID_MODULE + 0x82U);
+	error = run(&node);
+	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY &&
+	       ghci_vk_object_find(session, GHCI_VK_SHADER_MODULE, ID_MODULE + 0x82U) == NULL, "budget: a module past it");
+	result = make_set_layout(&node, ID_SET_LAYOUT + 2U, 1U, types, stages, 0U);
+	expect(last_run == 0 && result == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY &&
+	       ghci_vk_object_find(session, GHCI_VK_SET_LAYOUT, ID_SET_LAYOUT + 2U) == NULL, "budget: a set layout past it");
+	result = make_layout(&node, ID_LAYOUT + 1U, 1U, set_layouts, 0U);
+	expect(last_run == 0 && result == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY &&
+	       ghci_vk_object_find(session, GHCI_VK_PIPELINE_LAYOUT, ID_LAYOUT + 1U) == NULL, "budget: a pipeline layout past it");
+	begin(&node, GPU_OP_ALLOCATE_DESCRIPTOR_SETS);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO);
+	put64(0U);
+	put64(ID_POOL);
+	put32(1U);
+	put64(1U);
+	put64(ID_SET_LAYOUT);
+	put64(1U);
+	put64(ID_SET);
+	error = run(&node);
+	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY &&
+	       ghci_vk_object_find(session, GHCI_VK_DESCRIPTOR_SET, ID_SET) == NULL, "budget: a set past it");
+	result = make_compute(&node, ID_MODULE + MODULE_DYN_COMP, ID_LAYOUT, NULL, 0U, ID_PIPELINE);
+	expect(last_run == 0 && result == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY && pipeline_of(&node, ID_PIPELINE) == NULL,
+	       "budget: a pipeline past it");
+	expect(session->budget_used == GHCI_VK_BUDGET_BYTES - 16U, "budget: nothing taken by the refused");
+
+	/* The budget as it was: the pipeline is made and charged. */
+	session->budget_used = saved;
+	result = make_compute(&node, ID_MODULE + MODULE_DYN_COMP, ID_LAYOUT, NULL, 0U, ID_PIPELINE);
+	expect(result == 0U && pipeline_of(&node, ID_PIPELINE) != NULL && session->budget_used > saved, "budget: a pipeline within it");
+
+	node_close(&node);
+	stop("budget");
 }

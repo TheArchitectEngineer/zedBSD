@@ -25,3 +25,4 @@ design §19: N78（属性の register の累積の base_i と header の 4 × lo
 ## 記録
 
 - 2026-10-28 P3（q1638-i01）: design §18 から立てた。
+- 2026-10-28 P3（q1644-i01）: p008 の review から p009 に渡す物: submit が参照する pipeline・set・view・buffer を fence まで hold する、code の heap（EXEC）と data の heap（EXEC 無し）を分ける（design 版 4.12 §11.4）、dynamic offset は pipeline layout の set ごとの base から作る、`subpass_of` の不正な render pass は断る、`ghci_vk_layout_tables` の ENOENT は draw を飛ばして log。

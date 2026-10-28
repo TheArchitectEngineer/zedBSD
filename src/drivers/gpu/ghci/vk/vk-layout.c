@@ -44,14 +44,20 @@
 #define LAYOUT_DYNAMIC_UNIFORM		((uint32_t)VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
 #define LAYOUT_DYNAMIC_STORAGE		((uint32_t)VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC)
 
-/* The most bindings of a set layout and the most descriptors of a set. */
+/* The most bindings of a set layout, the most descriptors of a set, and the most push-constant ranges of a pipeline layout. */
 #define LAYOUT_BINDINGS_MAX		1024U
 #define LAYOUT_DESCRIPTORS_MAX		4096U
+#define LAYOUT_PUSH_RANGES_MAX		64U
 
 /* The payload a write carries for a descriptor type: image infos, buffer infos or texel buffer views. */
 #define LAYOUT_FAMILY_IMAGE		1U
 #define LAYOUT_FAMILY_BUFFER		2U
 #define LAYOUT_FAMILY_TEXEL		3U
+
+/* The hardware tables a descriptor of a set goes into: set 0's textures, set 1's samplers, set 2's resource table. */
+#define LAYOUT_TABLE_TEXTURE		0U
+#define LAYOUT_TABLE_SAMPLER		1U
+#define LAYOUT_TABLE_RESOURCE		2U
 
 /* A buffer descriptor's flags: read only. */
 #define LAYOUT_BUFFER_READ_ONLY		(1U << 0)
@@ -102,7 +108,9 @@ static int update_write(struct ghci_vk_session *session, struct i915_wire_reader
 static int write_one(struct ghci_vk_session *session, uint32_t type, uint32_t immutable, uint64_t sampler, uint64_t view, const VkDescriptorBufferInfo *buffer, struct ghci_vk_descriptor *descriptor);
 static int update_copy(struct ghci_vk_session *session, const VkCopyDescriptorSet *copy);
 static int destroy_object(struct ghci_vk_session *session, enum ghci_vk_kind kind, struct i915_wire_reader *reader);
-static struct ghci_vk_descriptor *descriptor_at(struct ghci_vk_set *set, uint32_t binding, uint32_t element, uint32_t *type);
+static struct ghci_vk_descriptor *descriptor_at(struct ghci_vk_set *set, uint32_t binding, uint32_t element, const struct ghci_vk_layout_binding **found);
+static int descriptor_fits(uint32_t table, uint32_t kind, const struct ghci_vk_layout_binding *binding, const struct ghci_vk_descriptor *descriptor);
+static int kind_types(uint32_t table, uint32_t kind, uint32_t *types);
 static int descriptor_walk(const struct ghci_vk_set_layout *layout, uint32_t *index, uint32_t *element);
 static int layout_binding_of(const struct ghci_vk_set_layout *layout, uint32_t binding, uint32_t *index);
 static uint32_t layout_family(uint32_t type);
@@ -238,7 +246,9 @@ ghci_vk_set_layout_unhold(
 	if (layout->holds != 0U)
 		return;
 
-	/* The last holder: the bindings, the immutable samplers and the record. */
+	/* The last holder: its budget, the bindings, the immutable samplers and the record. */
+	if (layout->session != NULL)
+		ghci_vk_budget_give(layout->session, layout->charged);
 	kern_free(layout->bindings);
 	kern_free(layout->samplers);
 	kern_free(layout);
@@ -308,8 +318,10 @@ ghci_vk_layout_release(
  * slots and its resource table from the Vulkan sets bound at 0 to 3
  * (sets[i] the identity, 0 for none), its push constants, and its
  * dynamic offsets in the pipeline layout's order.  Returns 0, ENOENT
- * when a slot or an entry names a set or a binding that is not bound,
- * or EINVAL for dynamic offsets that are not the pipeline layout's.
+ * when a slot or an entry names a set or a binding that is not bound, a
+ * binding of a type the slot or entry does not take, or a descriptor
+ * not written, or EINVAL for dynamic offsets that are not the pipeline
+ * layout's.
  */
 int
 ghci_vk_layout_tables(
@@ -324,12 +336,14 @@ ghci_vk_layout_tables(
 {
 	const struct ghci_gsi1_bindings *bindings;
 	const struct ghci_gsi1_resource *entry;
+	const struct ghci_vk_layout_binding *binding;
 	struct ghci_vk_descriptor *descriptor;
 	struct ghci_vk_object *object;
 	struct ghci_vk_set *bound[GHCI_VK_SETS];
-	uint32_t type;
 	uint32_t index;
 	uint32_t bytes;
+	uint32_t word;
+	int error;
 
 	/* The dynamic offsets are the pipeline layout's, and the push constants fit the bank. */
 	if (dynamic_count != pipeline->dynamic_count || push_bytes > GSI1_ABI_PUSH_BYTES)
@@ -353,9 +367,12 @@ ghci_vk_layout_tables(
 			continue;
 		if (bindings->texture[index].set >= GHCI_VK_SETS || bound[bindings->texture[index].set] == NULL)
 			return ENOENT;
-		descriptor = descriptor_at(bound[bindings->texture[index].set], bindings->texture[index].binding, 0U, &type);
+		descriptor = descriptor_at(bound[bindings->texture[index].set], bindings->texture[index].binding, 0U, &binding);
 		if (descriptor == NULL)
 			return ENOENT;
+		error = descriptor_fits(LAYOUT_TABLE_TEXTURE, bindings->texture[index].kind, binding, descriptor);
+		if (error != 0)
+			return error;
 		kern_memcpy(&tables->textures[index * GHCI_TEXTURE_DESC_BYTES], descriptor->texture, GHCI_TEXTURE_DESC_BYTES);
 	}
 	tables->texture_count = bindings->texture_count;
@@ -366,9 +383,12 @@ ghci_vk_layout_tables(
 			continue;
 		if (bindings->sampler[index].set >= GHCI_VK_SETS || bound[bindings->sampler[index].set] == NULL)
 			return ENOENT;
-		descriptor = descriptor_at(bound[bindings->sampler[index].set], bindings->sampler[index].binding, 0U, &type);
+		descriptor = descriptor_at(bound[bindings->sampler[index].set], bindings->sampler[index].binding, 0U, &binding);
 		if (descriptor == NULL)
 			return ENOENT;
+		error = descriptor_fits(LAYOUT_TABLE_SAMPLER, bindings->sampler[index].kind, binding, descriptor);
+		if (error != 0)
+			return error;
 		kern_memcpy(&tables->samplers[index * GHCI_SAMPLER_DESC_BYTES], descriptor->sampler, GHCI_SAMPLER_DESC_BYTES);
 	}
 	tables->sampler_count = bindings->sampler_count;
@@ -378,15 +398,18 @@ ghci_vk_layout_tables(
 		entry = &bindings->resource[index];
 		if (entry->set >= GHCI_VK_SETS || bound[entry->set] == NULL)
 			return ENOENT;
-		descriptor = descriptor_at(bound[entry->set], entry->binding, entry->element, &type);
+		descriptor = descriptor_at(bound[entry->set], entry->binding, entry->element, &binding);
 		if (descriptor == NULL)
 			return ENOENT;
+		error = descriptor_fits(LAYOUT_TABLE_RESOURCE, entry->kind, binding, descriptor);
+		if (error != 0)
+			return error;
 
 		/* An image's texture descriptor takes two units, a buffer's descriptor one. */
 		bytes = GHCI_BUFFER_DESC_BYTES;
 		if (entry->kind == GHCI_GSI1_RESOURCE_STORAGE_IMAGE || entry->kind == GHCI_GSI1_RESOURCE_INPUT_ATTACHMENT)
 			bytes = GHCI_TEXTURE_DESC_BYTES;
-		if (entry->offset + bytes > GSI1_ABI_RESOURCE_TABLE_BYTES)
+		if (entry->offset > GSI1_ABI_RESOURCE_TABLE_BYTES - bytes)
 			return EINVAL;
 		if (bytes == GHCI_TEXTURE_DESC_BYTES)
 			kern_memcpy(&tables->resources[entry->offset], descriptor->texture, bytes);
@@ -395,12 +418,17 @@ ghci_vk_layout_tables(
 	}
 	tables->resource_bytes = bindings->resource_bytes;
 
-	/* The bank: push-constant bytes 0-95 in c0-c23 and 96-127 in c32-c39. */
+	/* The bank: push-constant bytes 0-95 in c0-c23 and 96-127 in c32-c39 (a last partial word zero-filled). */
 	for (index = 0U; index * 4U < push_bytes; index++) {
+		word = 0U;
+		bytes = push_bytes - index * 4U;
+		if (bytes > 4U)
+			bytes = 4U;
+		kern_memcpy(&word, &push[index * 4U], bytes);
 		if (index < GSI1_ABI_PUSH_LOW_WORDS)
-			kern_memcpy(&tables->bank[GSI1_ABI_BANK_PUSH_LOW + index], &push[index * 4U], 4U);
+			tables->bank[GSI1_ABI_BANK_PUSH_LOW + index] = word;
 		else
-			kern_memcpy(&tables->bank[GSI1_ABI_BANK_PUSH_HIGH + index - GSI1_ABI_PUSH_LOW_WORDS], &push[index * 4U], 4U);
+			tables->bank[GSI1_ABI_BANK_PUSH_HIGH + index - GSI1_ABI_PUSH_LOW_WORDS] = word;
 	}
 
 	/* The dynamic offsets from c40, one word each. */
@@ -892,6 +920,7 @@ create_set_layout(
 	uint64_t handle;
 	uint64_t present;
 	uint64_t identity;
+	uint64_t bytes;
 	int error;
 
 	/* The device, the create info and the tail. */
@@ -917,6 +946,19 @@ create_set_layout(
 		ghci_vk_set_layout_unhold(layout);
 		return error;
 	}
+
+	/* Its bytes, within the session's budget (given back when the last hold goes). */
+	bytes = sizeof(*layout) + (uint64_t)layout->binding_count * sizeof(*layout->bindings);
+	if (layout->samplers != NULL)
+		bytes += (uint64_t)layout->descriptor_count * GHCI_SAMPLER_DESC_BYTES;
+	error = ghci_vk_budget_take(session, bytes);
+	if (error != 0) {
+		ghci_vk_set_layout_unhold(layout);
+		ghci_vk_reply_created(reply, requested, (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY, identity);
+		return 0;
+	}
+	layout->session = session;
+	layout->charged = bytes;
 
 	/* The object. */
 	error = ghci_vk_object_add(session, GHCI_VK_SET_LAYOUT, identity, device, &object);
@@ -948,13 +990,15 @@ set_layout_fill(
 	const VkDescriptorSetLayoutBinding *given;
 	struct ghci_vk_layout_binding moved;
 	struct ghci_vk_object *sampler;
+	uint64_t decoded;
 	uint32_t index;
 	uint32_t place;
 	uint32_t element;
 	uint32_t first;
 
-	/* A bounded number of bindings of the Vulkan 1.0 types. */
-	if (info->bindingCount > LAYOUT_BINDINGS_MAX || (info->bindingCount != 0U && info->pBindings == NULL))
+	/* A bounded number of bindings of the Vulkan 1.0 types, each one decoded. */
+	decoded = ghci_vk_decoded_count(session, info->pBindings);
+	if (info->bindingCount > LAYOUT_BINDINGS_MAX || decoded != info->bindingCount)
 		return EINVAL;
 	if (info->bindingCount != 0U) {
 		layout->bindings = kern_calloc(info->bindingCount, sizeof(*layout->bindings));
@@ -966,6 +1010,9 @@ set_layout_fill(
 	for (index = 0U; index < info->bindingCount; index++) {
 		given = &info->pBindings[index];
 		if ((uint32_t)given->descriptorType >= GHCI_VK_DESCRIPTOR_TYPES)
+			return EINVAL;
+		decoded = ghci_vk_decoded_count(session, given->pImmutableSamplers);
+		if (given->pImmutableSamplers != NULL && decoded != given->descriptorCount)
 			return EINVAL;
 		place = index;
 		while (place > 0U && layout->bindings[place - 1U].binding > given->binding) {
@@ -990,9 +1037,9 @@ set_layout_fill(
 		if (index > 0U && layout->bindings[index - 1U].binding == layout->bindings[index].binding)
 			return EINVAL;
 		layout->bindings[index].first = first;
-		first += layout->bindings[index].count;
-		if (first > LAYOUT_DESCRIPTORS_MAX)
+		if (layout->bindings[index].count > LAYOUT_DESCRIPTORS_MAX - first)
 			return EINVAL;
+		first += layout->bindings[index].count;
 		if (layout->bindings[index].type == LAYOUT_DYNAMIC_UNIFORM || layout->bindings[index].type == LAYOUT_DYNAMIC_STORAGE)
 			layout->dynamic_count += layout->bindings[index].count;
 	}
@@ -1045,6 +1092,7 @@ create_pipeline_layout(
 	uint64_t handle;
 	uint64_t present;
 	uint64_t identity;
+	uint64_t decoded;
 	uint32_t index;
 	uint32_t binding;
 	uint32_t element;
@@ -1064,8 +1112,12 @@ create_pipeline_layout(
 	if (device == NULL)
 		return EINVAL;
 
-	/* At most the bound sets' number, each a layout of the session. */
-	if (info.setLayoutCount > GHCI_VK_SETS || (info.setLayoutCount != 0U && info.pSetLayouts == NULL))
+	/* At most the bound sets' number, each a layout of the session, and a bounded number of decoded push-constant ranges. */
+	decoded = ghci_vk_decoded_count(session, info.pSetLayouts);
+	if (info.setLayoutCount > GHCI_VK_SETS || decoded != info.setLayoutCount)
+		return EINVAL;
+	decoded = ghci_vk_decoded_count(session, info.pPushConstantRanges);
+	if (info.pushConstantRangeCount > LAYOUT_PUSH_RANGES_MAX || decoded != info.pushConstantRangeCount)
 		return EINVAL;
 	layout = kern_calloc(1U, sizeof(*layout));
 	if (layout == NULL)
@@ -1082,7 +1134,8 @@ create_pipeline_layout(
 		layout->sets[index] = set_layout;
 		layout->set_count = index + 1U;
 
-		/* The set's dynamic buffers, one per descriptor, in the order of their offsets. */
+		/* The set's dynamic buffers, one per descriptor, in the order of their offsets, from its first. */
+		layout->dynamic_base[index] = layout->dynamic_count;
 		for (binding = 0U; binding < set_layout->binding_count && error == 0; binding++) {
 			if (set_layout->bindings[binding].type != LAYOUT_DYNAMIC_UNIFORM && set_layout->bindings[binding].type != LAYOUT_DYNAMIC_STORAGE)
 				continue;
@@ -1098,14 +1151,15 @@ create_pipeline_layout(
 		}
 		if (error != 0)
 			break;
+		layout->dynamic_sets[index] = layout->dynamic_count - layout->dynamic_base[index];
 	}
+
+	/* The sets past the layout's have no dynamic offset, after the last. */
+	for (index = layout->set_count; index < GHCI_VK_SETS; index++)
+		layout->dynamic_base[index] = layout->dynamic_count;
 
 	/* The push constants' bytes: the end of the furthest range, at most 128. */
 	for (index = 0U; index < info.pushConstantRangeCount && error == 0; index++) {
-		if (info.pPushConstantRanges == NULL) {
-			error = EINVAL;
-			break;
-		}
 		end = info.pPushConstantRanges[index].offset + info.pPushConstantRanges[index].size;
 		if (end > GSI1_ABI_PUSH_BYTES || end < info.pPushConstantRanges[index].offset) {
 			error = EINVAL;
@@ -1123,15 +1177,27 @@ create_pipeline_layout(
 		return error;
 	}
 
+	/* Its bytes, within the session's budget. */
+	error = ghci_vk_budget_take(session, sizeof(*layout));
+	if (error != 0) {
+		for (index = 0U; index < layout->set_count; index++)
+			ghci_vk_set_layout_unhold(layout->sets[index]);
+		kern_free(layout);
+		ghci_vk_reply_created(reply, requested, (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY, identity);
+		return 0;
+	}
+
 	/* The object. */
 	error = ghci_vk_object_add(session, GHCI_VK_PIPELINE_LAYOUT, identity, device, &object);
 	if (error != 0) {
+		ghci_vk_budget_give(session, sizeof(*layout));
 		for (index = 0U; index < layout->set_count; index++)
 			ghci_vk_set_layout_unhold(layout->sets[index]);
 		kern_free(layout);
 		return error;
 	}
 	object->as.pipeline_layout = layout;
+	object->charged = sizeof(*layout);
 
 	/* The result and the identity. */
 	ghci_vk_reply_created(reply, requested, (uint32_t)VK_SUCCESS, identity);
@@ -1155,6 +1221,7 @@ create_pool(
 	uint64_t handle;
 	uint64_t present;
 	uint64_t identity;
+	uint64_t decoded;
 	uint32_t index;
 	uint32_t type;
 	int error;
@@ -1176,13 +1243,19 @@ create_pool(
 	kern_memset(&pool, 0, sizeof(pool));
 	pool.flags = info.flags;
 	pool.max_sets = info.maxSets;
+	decoded = ghci_vk_decoded_count(session, info.pPoolSizes);
+	if (decoded != info.poolSizeCount)
+		return EINVAL;
 	for (index = 0U; index < info.poolSizeCount; index++) {
-		if (info.pPoolSizes == NULL)
-			return EINVAL;
 		type = info.pPoolSizes[index].type;
 		if (type >= GHCI_VK_DESCRIPTOR_TYPES)
 			return EINVAL;
-		pool.capacity[type] += info.pPoolSizes[index].descriptorCount;
+
+		/* The sizes of one type add up, saturated at the largest count. */
+		if (info.pPoolSizes[index].descriptorCount > UINT32_MAX - pool.capacity[type])
+			pool.capacity[type] = UINT32_MAX;
+		else
+			pool.capacity[type] += info.pPoolSizes[index].descriptorCount;
 	}
 
 	/* The object. */
@@ -1272,6 +1345,7 @@ allocate_sets(
 	uint64_t identity;
 	uint64_t present;
 	uint64_t count;
+	uint64_t decoded;
 	uint64_t index;
 	uint64_t made;
 	uint32_t result;
@@ -1284,7 +1358,10 @@ allocate_sets(
 		i915_vkc_dec_VkDescriptorSetAllocateInfo(reader, &session->arena, &info);
 	count = ghci_vk_read_count(reader);
 	identities = drv_i915_wire_read_array(reader, (size_t)count, sizeof(uint64_t));
-	if (reader->error != 0 || present != 1U || count != info.descriptorSetCount || (count != 0U && (identities == NULL || info.pSetLayouts == NULL)))
+	if (reader->error != 0 || present != 1U || count != info.descriptorSetCount || (count != 0U && identities == NULL))
+		return EINVAL;
+	decoded = ghci_vk_decoded_count(session, info.pSetLayouts);
+	if (decoded != count)
 		return EINVAL;
 	pool = ghci_vk_object_find(session, GHCI_VK_DESCRIPTOR_POOL, (uint64_t)(uintptr_t)info.descriptorPool);
 	if (pool == NULL)
@@ -1348,6 +1425,8 @@ set_make(
 	struct ghci_vk_set_layout *layout;
 	struct ghci_vk_object *object;
 	struct ghci_vk_set *set;
+	uint64_t need[GHCI_VK_DESCRIPTOR_TYPES];
+	uint64_t bytes;
 	uint32_t index;
 	uint32_t type;
 	int error;
@@ -1358,24 +1437,35 @@ set_make(
 		return LAYOUT_INVALID;
 	layout = object->as.set_layout;
 
-	/* Room in the pool: a set more, and the descriptors of each type. */
+	/* Room in the pool: a set more, and the descriptors of each type (the bindings of a type together). */
 	counts = &pool->as.pool_of_sets;
 	if (counts->sets >= counts->max_sets)
 		return (uint32_t)VK_ERROR_OUT_OF_POOL_MEMORY;
-	for (index = 0U; index < layout->binding_count; index++) {
-		type = layout->bindings[index].type;
-		if (counts->used[type] + layout->bindings[index].count > counts->capacity[type])
+	kern_memset(need, 0, sizeof(need));
+	for (index = 0U; index < layout->binding_count; index++)
+		need[layout->bindings[index].type] += layout->bindings[index].count;
+	for (type = 0U; type < GHCI_VK_DESCRIPTOR_TYPES; type++) {
+		if ((uint64_t)counts->used[type] + need[type] > counts->capacity[type])
 			return (uint32_t)VK_ERROR_OUT_OF_POOL_MEMORY;
 	}
 
+	/* Its bytes, within the session's budget. */
+	bytes = sizeof(*set) + (uint64_t)layout->descriptor_count * sizeof(*set->descriptors);
+	error = ghci_vk_budget_take(session, bytes);
+	if (error != 0)
+		return (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
+
 	/* The set and its descriptors, the immutable samplers written. */
 	set = kern_calloc(1U, sizeof(*set));
-	if (set == NULL)
+	if (set == NULL) {
+		ghci_vk_budget_give(session, bytes);
 		return (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
 	if (layout->descriptor_count != 0U) {
 		set->descriptors = kern_calloc(layout->descriptor_count, sizeof(*set->descriptors));
 		if (set->descriptors == NULL) {
 			kern_free(set);
+			ghci_vk_budget_give(session, bytes);
 			return (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
 		}
 	}
@@ -1393,6 +1483,7 @@ set_make(
 	if (error != 0) {
 		kern_free(set->descriptors);
 		kern_free(set);
+		ghci_vk_budget_give(session, bytes);
 		if (error == ENOMEM)
 			return (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY;
 		return LAYOUT_INVALID;
@@ -1401,6 +1492,7 @@ set_make(
 	/* The set holds its layout, and the pool counts it. */
 	ghci_vk_set_layout_hold(layout);
 	object->as.set = set;
+	object->charged = bytes;
 	counts->sets++;
 	for (index = 0U; index < layout->binding_count; index++)
 		counts->used[layout->bindings[index].type] += layout->bindings[index].count;
@@ -1502,7 +1594,9 @@ update_sets(
  * Applies one write: [u32 sType][u64 0][u64 set][u32 binding][u32 element]
  * [u32 count][u32 type][u64 n]{[u64 sampler][u64 view][u32 layout]}
  * [u64 n]{VkDescriptorBufferInfo}[u64 n]{[u64 view]}.  A write past a
- * binding goes on into the next ones, as Vulkan's do.
+ * binding goes on into the next ones, as Vulkan's do, which must be of
+ * its type.  A write that fails part of the way leaves the descriptors
+ * before it written (the frame ends).
  */
 static int
 update_write(
@@ -1561,6 +1655,8 @@ update_write(
 		if (error != 0)
 			return EINVAL;
 		binding = &set->layout->bindings[place];
+		if (binding->type != type)
+			return EINVAL;
 		error = write_one(session, type, binding->immutable, images[0], images[1], NULL, &set->descriptors[binding->first + element]);
 		if (error != 0)
 			return error;
@@ -1579,6 +1675,8 @@ update_write(
 		if (error != 0)
 			return EINVAL;
 		binding = &set->layout->bindings[place];
+		if (binding->type != type)
+			return EINVAL;
 		error = write_one(session, type, 0U, 0U, 0U, &buffers[0], &set->descriptors[binding->first + element]);
 		if (error != 0)
 			return error;
@@ -1597,6 +1695,8 @@ update_write(
 		if (error != 0)
 			return EINVAL;
 		binding = &set->layout->bindings[place];
+		if (binding->type != type)
+			return EINVAL;
 		error = write_one(session, type, 0U, 0U, texel, NULL, &set->descriptors[binding->first + element]);
 		if (error != 0)
 			return error;
@@ -1702,7 +1802,11 @@ write_one(
 	return 0;
 }
 
-/* Applies one copy of descriptors between two sets (or within one), going on into the next bindings. */
+/*
+ * Applies one copy of descriptors between two sets (or within one),
+ * going on into the next bindings; each source descriptor's binding is of
+ * the type of the destination's.
+ */
 static int
 update_copy(
 	struct ghci_vk_session *session,
@@ -1743,6 +1847,8 @@ update_copy(
 			return EINVAL;
 		error = descriptor_walk(target->layout, &target_place, &target_element);
 		if (error != 0)
+			return EINVAL;
+		if (source->layout->bindings[source_place].type != target->layout->bindings[target_place].type)
 			return EINVAL;
 		moved = source->descriptors[source->layout->bindings[source_place].first + source_element];
 		if (target->layout->bindings[target_place].immutable != 0U)
@@ -1787,14 +1893,14 @@ destroy_object(
 
 /*
  * Finds the descriptor of a set at a binding and an element, with the
- * binding's type; NULL when the layout has no such descriptor.
+ * binding of the layout; NULL when the layout has no such descriptor.
  */
 static struct ghci_vk_descriptor *
 descriptor_at(
 	struct ghci_vk_set *set,
 	uint32_t binding,
 	uint32_t element,
-	uint32_t *type)
+	const struct ghci_vk_layout_binding **found)
 {
 	uint32_t place;
 	int error;
@@ -1805,8 +1911,109 @@ descriptor_at(
 		return NULL;
 
 	/* Succeeded: the descriptor. */
-	*type = set->layout->bindings[place].type;
+	*found = &set->layout->bindings[place];
 	return &set->descriptors[set->layout->bindings[place].first + element];
+}
+
+/*
+ * Checks that a descriptor fills a texture slot, a sampler slot or a
+ * resource table entry of a kind: a binding of a type the kind takes,
+ * and a descriptor written (or an immutable sampler).  Returns 0, or
+ * ENOENT.
+ */
+static int
+descriptor_fits(
+	uint32_t table,
+	uint32_t kind,
+	const struct ghci_vk_layout_binding *binding,
+	const struct ghci_vk_descriptor *descriptor)
+{
+	uint32_t types[2];
+	int error;
+
+	/* The types the kind takes. */
+	error = kind_types(table, kind, types);
+	if (error != 0)
+		return error;
+	if (binding->type != types[0] && binding->type != types[1])
+		return ENOENT;
+
+	/* A sampler slot of an immutable sampler needs no write. */
+	if (table == LAYOUT_TABLE_SAMPLER && binding->immutable != 0U)
+		return 0;
+
+	/* Anything else must have been written. */
+	if (descriptor->written == 0U)
+		return ENOENT;
+
+	/* Succeeded: the descriptor fills it. */
+	return 0;
+}
+
+/*
+ * Reports the two descriptor types (the same one twice for one) that
+ * fill a texture slot, a sampler slot or a resource table entry of a
+ * kind.  Returns 0, or ENOENT for a kind the driver does not fill.
+ */
+static int
+kind_types(
+	uint32_t table,
+	uint32_t kind,
+	uint32_t *types)
+{
+	/* Set 0's textures: an image of a combined image sampler or a sampled image, or a uniform texel buffer. */
+	if (table == LAYOUT_TABLE_TEXTURE && kind == GHCI_GSI1_TEXTURE_IMAGE) {
+		types[0] = (uint32_t)VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		types[1] = (uint32_t)VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+		return 0;
+	}
+	if (table == LAYOUT_TABLE_TEXTURE && kind == GHCI_GSI1_TEXTURE_TEXEL_BUFFER) {
+		types[0] = (uint32_t)VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
+		types[1] = types[0];
+		return 0;
+	}
+
+	/* Set 1's samplers: of a combined image sampler or a sampler. */
+	if (table == LAYOUT_TABLE_SAMPLER && kind == GHCI_GSI1_SAMPLER_COMBINED) {
+		types[0] = (uint32_t)VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+		types[1] = (uint32_t)VK_DESCRIPTOR_TYPE_SAMPLER;
+		return 0;
+	}
+	if (table != LAYOUT_TABLE_RESOURCE)
+		return ENOENT;
+
+	/* Set 2's entries: each kind's buffer (dynamic or not), texel buffer or image. */
+	switch (kind) {
+	case GHCI_GSI1_RESOURCE_UNIFORM_BUFFER:
+		types[0] = (uint32_t)VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+		types[1] = LAYOUT_DYNAMIC_UNIFORM;
+		break;
+	case GHCI_GSI1_RESOURCE_STORAGE_BUFFER:
+		types[0] = (uint32_t)VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+		types[1] = LAYOUT_DYNAMIC_STORAGE;
+		break;
+	case GHCI_GSI1_RESOURCE_UNIFORM_TEXEL_BUFFER:
+		types[0] = (uint32_t)VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER;
+		types[1] = types[0];
+		break;
+	case GHCI_GSI1_RESOURCE_STORAGE_TEXEL_BUFFER:
+		types[0] = (uint32_t)VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER;
+		types[1] = types[0];
+		break;
+	case GHCI_GSI1_RESOURCE_STORAGE_IMAGE:
+		types[0] = (uint32_t)VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+		types[1] = types[0];
+		break;
+	case GHCI_GSI1_RESOURCE_INPUT_ATTACHMENT:
+		types[0] = (uint32_t)VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
+		types[1] = types[0];
+		break;
+	default:
+		return ENOENT;
+	}
+
+	/* Succeeded: the types. */
+	return 0;
 }
 
 /*
