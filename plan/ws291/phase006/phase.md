@@ -928,3 +928,30 @@ Linux 6.12.5（/home/awe/visionfive-linux、GPL、値と手順の参照だけ）
   DISPCLK の電圧の floor だけ（404 us）では 4 cycle で 3 回（効かない）。UCLK の floor 500（memory_floor_level=1）でも 4 cycle で 2 回（100 MHz の段の問題ではない）。
 - 速さ（scene-6500）: 段 0 の floor だけでは UCLK が負荷の中でも 100/500 を往復し fence 20.1〜20.3 ms（Linux は 500 MHz を保ち 19.54）。busy の floor 500 で fence 19.62〜19.70。
 - UCLK（SMU の停止）の件はユーザーの指示で解決とする（2026-10-28 21:40 頃の Q1 の伝達、上の原文）。残り: display の underflow の根本（2 pipe 分割、Linux の形）と評価。
+
+### 画面の途切れ（2026-10-28 21:50〜23:20、ユーザーの指示「画面へ出す回路のunderflowを先に修正」）
+
+- ユーザー（Q1 経由）「途切れは直近数分で観測できています。」（21:46、520 us の kernel の後）→ underflow の bit（HUBP・OTG）と出力（DIG4）の FIFO の
+  level error（watch で 1 s ごと、37ca3c658 以降・732881c57）はどちらも 0。途切れは underflow ではない。
+- mview に止まりの行（MVIEW HITCH: 33 ms 以上の frame の間隔と、その frame の段の時間。MVIEW HITCHES: 数、10d72c341）を足して測った:
+  止まりは全部 vkAcquireNextImageKHR の中（GPU・submit・present・fence は数 ms）。memory=0（UCLK の DPM 無し）でも同じ。
+  - window mode・FIFO: 約 1 s ごとに 50〜52 ms（時々 98・805 ms）。50 ms 刻み = libvulkan の wsi-wayland.c の wayland_wait の slice。
+  - game mode・mailbox: 約 2 s ごとに 75〜86 ms、時々 700 ms 級。Linux（同じ bench）は frame_ms_max 0.8〜22 ms。
+  - CPU の空白の検出（plan/ws291/tests/gap、gap-build.sh）: 負荷の横でも 1 ms を超える空白 0。compositor の pass も最大 0.5 ms。
+- Fable 5.1 High（22:55）: (a) FIFO の present worker が wayland_wait で fd を poll している間に、main thread（mview の window dispatch、acquire の
+  progress）が frame callback の bytes を読み・dispatch してしまい、worker は 50 ms の slice まで起きない（取りこぼし）。
+  (b) mailbox の 80 ms は client 側の poll ではない（acquire は 10 ms ごとに見る）: compositor が release を 80 ms 送らなかったか、全 image を
+  保持していた。周期 2 s の何かが compositor か backend にある見込み。
+- 直した事（7650291df、libvulkan wsi-wayland.c）: wayland_wait の眠りを、surface の queue の read を prepare したまま poll する形に
+  （wayland_sleep: libwayland の協調の読み）、さらに frame callback で surface の progress pipe に 1 byte を書き、眠りはその pipe も待つ。
+  実機（/lib/libvulkan.so を差し替え、元は /lib/libvulkan.so.p2old、compositor は古い lib のまま）: FIFO の 50 ms 刻みの不定の止まりは消え、
+  残りは約 2 s ごとの 95〜97 ms（12 s に 5〜6 回、window FIFO の軽い scene）と game mode の約 2 s ごとの 73〜79 ms。
+- 診断（7650291df、amdrdna present.c）: 34 ms 以上かかった present を段ごとに mark（present slow）。FIFO の run で 0 回 → kernel の present・flip は止まっていない。
+- 残り（次の担当へ）: 約 2 s 周期の 75〜97 ms の止まり。kernel の present・CPU・compositor の pass は否定。次の候補: libvulkan の present worker の
+  GPU 完了の待ち（commit の前の wait_fd・generation）、Keiland の scanout の release（scanout.c kwl_scanout_ended が ended=0 で release しない、
+  Fable の (b)）、compositor の frame callback の送り。切り分け: Keiland の KWL RELEASE の時刻（at_us が粗いので μs の時計を足す）と
+  mview の HITCH を突き合わせる、worker の待ちの時間を VULKAN TIMING に足す。
+- 未実施: libvulkan の変更の venus の回帰（plan/ws291/tests/venus-reg.sh）、arm64（config-rpi4）・riscv64（config-visionfive2）の libvulkan の
+  build の warning 0（Q1 の条件）。compositor が新しい lib で動く形（reboot の後）の計測。
+- 機械の状態: cfg は amdrdna.smu.memory=0（既定）、kernel vmunix-m2j（7650291df の元）、/lib/libvulkan.so は 7650291df の build、/bin/mview は
+  10d72c341 の build。
