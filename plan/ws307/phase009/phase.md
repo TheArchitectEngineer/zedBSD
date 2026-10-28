@@ -3,7 +3,7 @@
 # ws307-p009 helper install-admin
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §5・§6.1・§6.4・§7・§8・§9（J2・J5・U26）。Queue: q1665 / q1665-i06（担当 P4、2026-10-29、worktree p4-ws307j。i05 は p4-ws307i）。
-- Status: in-progress（段 1 の設計、段 2 の index と unpack を host で確かめた。残り: 段 2 の plan・target、段 3〜7）
+- Status: in-progress（段 1 の設計、段 2（index・unpack・plan・target）を host で確かめた。残り: 段 3〜7）
 - 承認: 2026-10-29 ユーザー「P4にWS307」（Q1 の中継）。HAL の API・toolchain には触れない。Boot####（段 11 の efiboot）は p007 の承認の後で、この Phase では書かない（S11 の案内だけ）。
 - 前提: p003（index と index-sha256.h、live の tree の installer の menu）、p005（diskpart batch・mkswap の partition・mkfs の乱数の serial と 4096）、p008（loader の `kernel=rootpart:`）、p006（4096 の kernel）。
 
@@ -40,4 +40,6 @@
 
 - 段 2 の一部（2026-10-29、P4）: `userland/desktop/installer/admin/index.[ch]`（形式 1 の読み、2 回の走査で依存と setid の unit を slot に、同じ名前・未知の record・未知の依存・長すぎる field の拒み、SHA-256 の照合、依存の閉包（依存を先に、循環は ELOOP）、setid の許可の照合）と `unpack.[ch]`（同じ fd で読みながら SHA-256・大きさの照合、gzip の header・raw deflate・CRC-32 と ISIZE、ustar の checksum と magic、file・directory・symlink だけ、path の安全、成分ごとの `openat(O_NOFOLLOW)`、新しい file だけ（`O_EXCL`）、mode と setid の許可、entry ごとの callback で中止）。
 - host: `sh plan/ws307/tests/host/install-admin-unpack-test.sh`（新規、ASan・UBSan）→ PASS（21 の場合: good の展開と mode・symlink・1777、2 回目の EEXIST、許されない setid、絶対 path、`..`、先の entry の symlink を通る書き（ELOOP で外に書かない）、hard link、pax の header、壊れた header、違う SHA-256・大きさ・CRC-32、依存の順と循環、未知の形式・依存・record、index の digest の一致と不一致）。`INSTALLER_PAYLOAD=<p4-ws307g の build/ws307-main/installer/payload>`（1f487021a の build）で 34 の unit を全て展開し entry の数が index と同じ（lang-clang を含む、52 秒）。
-- 残り: 段 2 の plan・target、段 3〜7。
+- 段 2 の残り（2026-10-29 q1665-i06、P4）: `plan.[ch]`（要求の読み: probe・cancel・edit の 3 種・install、token は空白 1 つ区切りで改行で終わる、長さ付きの field `LEN:BYTES` は空白・改行を含んでも壊れない、途中までの bytes は EAGAIN（session が読み足す）、上限 16384 byte で EMSGSIZE、4 つ組 `REG:START:SECTORS:PARTUUID`（PARTUUID は小文字に）。検査: sector 512・4096、全体の道の ESP ≥ 512 MiB と 1 MiB 単位と disk への収まり、選ぶ道の ESP・root・swap が同じ disk の上で重ならない、unit の重複、利用者の名前（account-admin の規則と root の拒み）・表示名（制御文字と `:` 無し、64 byte）・password（account の core の root の規則: 空でない、256 byte、制御文字無し）・hostname（英小文字・数字・`-`、63 文字、`-` で始まらず終わらない）、edit の 1 MiB の格子・disk の先頭と末尾の 1 MiB の外・新しい ESP の大きさ・2 つの重なり。cfg の文（§7.2 の段 9）。password の memory の消去）と `target.[ch]`（text の編集: passwd の uid 1000 の行の置き換え、shadow の名前の変更と 2 つの hash（account の core の `account_password_hash`・`account_shadow_replace`、base の hash と違うことを確かめる）、group の gid 1000 の名前と全ての member の一覧、rc.conf の `hostname:`、sshd_config の `PermitRootLogin no`（無ければ先頭に）、fstab の swap file の行（1 回だけ）。file: 成分ごとの `openat(O_NOFOLLOW)`、隣の一時の file に書き mode・所有者を保って fsync・rename・directory の fsync。3 つの account の file は全部を作ってから shadow → group → passwd の順に書く。home の rename、`/etc/keiland/autologin`（desktop が無ければ自動 login は ENOENT））。
+- host: `sh plan/ws307/tests/host/install-admin-plan-test.sh`（新規、ASan・UBSan、-lcrypt）→ PASS（105 の ok: 両方の道の要求、全ての prefix が EAGAIN、1 つの buffer の 2 つの要求、文法の拒み 13、検査の拒み 26 と境界の受け入れ 3、cfg の文、userland/base/etc と OpenSSH の sshd_config から作った root への設定（crypt で 2 つの hash を確かめ、sshd・network・wheel・bluetooth・_greeter の名前は EEXIST で 3 つの file が変わらない、同じ名前、desktop 無し、hostname、PermitRootLogin の置き換えと追加、fstab の 1 回、symlink の path の拒み））。EMSGSIZE は正しい要求では届かない（最長の要求は約 9 KiB）ので試験に無い。
+- 残り: 段 3〜7。
