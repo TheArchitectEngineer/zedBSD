@@ -6,7 +6,7 @@
 # ます。"); they go into the image as /usr/share/keiland/ime/skk/SKK-JISYO.X (the fuller) and SKK-JISYO.remacs (the
 # compact one), which the SKK engine looks in after the user's dictionary, in that order.
 #
-# License: Awe Morris holds the copyright; REmacs and its dictionaries are under zlib (relicensed for Kei on
+# License: Awe Morris holds the copyright; REmacs and its dictionaries are under zlib (relicensed for zedBSD on
 # 2026-09-29, WS095 decision D1, and REmacs is in the tree under zlib since 2026-10-04), covered by the project's own
 # license file.  No entry is copied from SKK-JISYO.L (the files' headers say so).
 ZEDBSD_IME_DICT_SKK_MAKEFILE := $(lastword $(MAKEFILE_LIST))

@@ -158,7 +158,7 @@ remains 1.0.
 
 ## The command numbers
 
-The numbers of the Vulkan commands in the stream libvulkan submits are the Kei
+The numbers of the Vulkan commands in the stream libvulkan submits are the zedBSD
 GPU command protocol's, declared in `include/uapi/gpu-op.h` with zedBSD's own
 names (`GPU_OP_CREATE_INSTANCE` and so on), which libvulkan, the i915 Vulkan
 executor and `venus-frame` share. Version 1 reuses the numbers of the Venus

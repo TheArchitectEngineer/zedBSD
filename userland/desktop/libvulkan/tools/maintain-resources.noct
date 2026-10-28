@@ -1,6 +1,6 @@
 // zedBSD; Copyright 2026 Awe Morris; SPDX-License-Identifier: Zlib.
 // Maintains original ordinary Vulkan resource wrappers; production builds use the C include.
-// The Kei GPU command protocol's name of a Vulkan command (uapi/gpu-op.h): vkCmdBindPipeline -> GPU_OP_CMD_BIND_PIPELINE.
+// The zedBSD GPU command protocol's name of a Vulkan command (uapi/gpu-op.h): vkCmdBindPipeline -> GPU_OP_CMD_BIND_PIPELINE.
 func opName(name) {
     var lower = "abcdefghijklmnopqrstuvwxyz";
     var upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
