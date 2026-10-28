@@ -12,6 +12,7 @@
 #include "language.h"
 #include "desktop.h"
 #include "kwl.h"
+#include "threads.h"
 #include "role.h"
 #include "toplevel.h"
 #include "keymap.h"
@@ -335,6 +336,9 @@ main(
 	/* READY appears only after the hardware contract and socket namespace are both usable. */
 	if (error == 0) {
 		printf("KWL READY socket=%s width=%u height=%u timeout_ms=%llu pid=%ld role=%s\n", server.socket_path, server.width, server.height, (unsigned long long)server.timeout_ms, (long)getpid(), kwl_role_name(server.role));
+
+		/* The threads of the compositor's register, by name (threads.c). */
+		kwl_threads_report();
 		error = event_loop(&server);
 	}
 

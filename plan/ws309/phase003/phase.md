@@ -3,7 +3,7 @@
 # ws309-p003 io-device: 入力の device の検出と close を thread へ（zedBSD）
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §4.5。Queue: q1662-i01（P1）。
-- 状態: in-progress（2026-10-29 P1、実装と host 試験まで。QEMU は p017 にまとめる）。
+- 状態: cleared（2026-10-29 02:2x P1: host 試験・build・QEMU の hotplug。RDNA などの実機は未実施）。
 - 出典: ユーザーの決定 1「デバイスの検出はスレッドに追い出してください。」、3「入力スレッドに入力デバイスの検出があるのはおかしい…I/O系にまとめるのがいい」。
 - 依存: p002。前身の P2 の実装（`agent/p2-ws291i` 3d9306f02、backend の中の worker）は merge せず、この Phase の io-device の lane で置き換える（ws.md の未決）。
 
@@ -23,9 +23,14 @@
 - host 試験 `sh plan/ws309/tests/input-find/run.sh`（ASan+UBSan と TSan、/dev/input を --wrap で偽装）: open が lane の thread だけで起きる、EIO の event4 を覚えて 2 回目は開かない、
   device の event の後に再試行、event が無いと毎回試す、既知の path を開かない、begin の写し。
 - `build/amd64/bin/wayland` warning 0、Linux の input-evdev.c が host の cc で `-Wall -Wextra -Werror -fsyntax-only` を通る。
-- QEMU（p017）: 起動の後に keyboard・pointer が attach（`KWL INPUT` の行でなく guest の操作で確かめる）、`aat-input` の stop・start で hotplug の attach と close。未実施。
+- QEMU: 起動の後に keyboard・pointer が attach、`aat-input` の stop・start で hotplug の close と attach、`KWL THREADS` に io-device（`plan/ws309/tests/io-device-guest.sh`）。
 
 ## 記録
 
 - 2026-10-29 P1: host 試験 2 回とも `host-input-find: PASS`。amd64 の `bin/wayland` exit 0・warning 0。Linux の input-evdev.c の syntax の確かめ OK。
 - `plan/tools/system-events/run-host-events.sh` は main で既に link が壊れている（notify-unsupported.c の欠け、P2 の記録と同じ）。この Phase では直さない（plan/tools は Q1 の物、Q1 に報告）。
+- 2026-10-29 02:2x P1 QEMU Venus（image `plan/ws309/tests/config-amd64-p1.mk`、BUILD=build/ws309/img、/bin/wayland を ab0c3a934 の tree の build に差し替え）:
+  `sh plan/ws309/tests/io-device-guest.sh build/ws309/io-device2 build/ws309/img/hdd-image.img build/ws309/bins/wayland-ab0c3a9` → `io-device-guest: PASS`
+  （compositor 自身の出力の行: `KWL THREADS count=1 names=io-device`、READY の後に event0〜3 が attach、aat-input の start で event4〜7 が attach、stop で 4 つとも
+  `INPUT_CLOSED`、再 start で再 attach、`KWL IO ... errno` 無し）。1 回目（build/ws309/io-device）は KWL THREADS の行を足す前の binary で THREADS だけ欠けた（他は同じ）。
+- 未実施: 実機（PS/2 の aux の 80 ms の open が main を止めない事の実測は P2 の RDNA の round で）、riscv64 の build。

@@ -4,7 +4,7 @@
 
 - Master: [plan/master.md](../master.md)（2026-10-29 作成）。Primary Milestone: MG006。前身の調べ: [WS291](../ws291/ws.md) の
   [keiland-blocking.md](../ws291/keiland-blocking.md)（P2 q1661 の点検、branch `agent/p2-ws291i` にあり main に未 merge）。
-- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) とレビューの反映、p002・p003 を実装中）
+- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) 確定、p001〜p003 cleared、p019 は実機の確かめ待ち、p004〜p018 planned）
 - 目標: Keiland の compositor の main loop が frame を止める同期の待ちを持たないよう、thread を下の構成に整理する。ゲームモードの
   direct scanout は Vulkan display（`VK_KHR_display`）の仕様の中で実装する。
 
@@ -29,6 +29,9 @@
    J4（Linux・FreeBSD の seat 経由の入力の open）: 推しのとおり当面は同期のまま残し、WS309 の後の Phase に置く（別の WS にしない）。J2・J3 は Q1 が「推しで OK（技術の判断）」。
    （Q1 の解釈: V2 = compositor が display の swapchain の image を external memory で export して client に渡し、client が直接描く。copy なし。libvulkan の WSI・display の部分を WS309 の範囲に含め P1 の所有に足す。）
 
+- （Q1 の決定、2026-10-29、ユーザーの原文ではない）J5: 下の表の「spawner の process」は Q1 の解釈だったので取り下げ、io-file の thread から `posix_spawn`、pid・kill・`waitpid(WNOHANG)` は main（ユーザーには Q1 が伝え、覆れば P1 に知らせる）。
+  J6: daemon の thread は main で blocking の I/O をする接続だけ（audiod・networkd・bluetoothd・phone・volumed の 5 本）。
+
 ## 決まった構成（解釈。上の原文が正）
 
 | 種類 | thread | 持つ仕事 |
@@ -46,7 +49,7 @@
 | 常駐 | daemon ×5 | audiod、networkd、bluetoothd、bluetoothd（電話）、volumed。接続ごとに 1 本、blocking の I/O |
 | pool | 手書きの照合 | N 本（N の決め方は未決）。同じ文字は最新の 1 件だけ |
 | その都度 | 壁紙・画像の decode | 1 回ごと |
-| process | spawner | Vulkan を開く前に fork しておき、アプリの起動を頼まれる（main は fork しない） |
+| process | （取り下げ、J5） | 起動は io-file の thread から posix_spawn（main は fork しない） |
 
 - fd の event を kernel に足す案は取らない（GPU の完了は VkFence、client の完了は明示の同期の fence、present は thread が同期で待つ）。
 - ゲームモード: 当面は backend（`libkeiland-backend-zedbsd/scanout-zedbsd.c`）が GPU の ioctl を直に呼んでよい（決定 8）。目標は
@@ -69,15 +72,17 @@
 
 ## Resume point
 
-- 2026-10-29 P1（q1662-i01）: p002（lane）と p003（入力の検出の thread）の実装と host 試験まで。次は p004（io-device の残り）か p005（io-file）。判断の点 J5（process の起動）・J6（daemon の基準）は Q1 に送った。
+- 2026-10-29 02:3x P1（q1662-i01）: p001・p002・p003 cleared、p019（shot の送りを thread へ）は QEMU で再現せず RDNA の確かめ待ち。
+  次は p005（io-file: displays.conf の `saved` の答えを書き終わりで返す。displays-shell.c の `displays_pending` の保留の仕組みを広げる案）か p004（io-device の残り）。
+  QEMU の image は `plan/ws309/tests/config-amd64-p1.mk`（BUILD=build/ws309/img）、試験は `plan/ws309/tests/` の io-device-guest.sh・shot-fifo.sh。
 
 ## Phase
 
 | ID | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [ws309-p001](design.md) | 設計の確定（thread の一覧・本数・待ちの点・queue と通知・ゲームモード、敵対的レビューの反映） | in-progress（J5・J6 の答え待ち） | — |
-| [ws309-p002](phase002/phase.md) | 共通の部品: thread の台帳・lane（常駐と pool）、host 試験 | in-progress | p001 |
-| [ws309-p003](phase003/phase.md) | io-device: 入力の device の検出と close を thread へ（zedBSD） | in-progress | p002 |
+| [ws309-p001](design.md) | 設計の確定（thread の一覧・本数・待ちの点・queue と通知・ゲームモード、敵対的レビューの反映） | cleared（判断の点 J1〜J6 は全て決定） | — |
+| [ws309-p002](phase002/phase.md) | 共通の部品: thread の台帳・lane（常駐と pool）、host 試験 | cleared | p001 |
+| [ws309-p003](phase003/phase.md) | io-device: 入力の device の検出と close を thread へ（zedBSD） | cleared（実機は未実施） | p002 |
 | ws309-p004 | io-device の残り: 電源・network の詳細・machine・sysmon、input の detach の ack を wake で | planned | p003 |
 | ws309-p005 | io-file: displays.conf・desktop.conf・printers.conf の書き込み（`saved` は書き終わりで答える）、apps.conf・言語・printers.conf の読み、account・鍵の保存 | planned | p002 |
 | ws309-p006 | daemon ×5 の thread（zedBSD の backend、wake pipe を backend の open の前に） | planned | p002、J6 |
@@ -93,4 +98,5 @@
 | ws309-p016 | Linux・FreeBSD の seat 経由の入力の open（J4） | planned | p003 |
 | ws309-p017 | QEMU の回帰（Venus: 基準・GPU の境界・`KWL THREADS`・`KWL PERF pass`）と遅さの注入の host 試験 | planned | p003〜p014 |
 | ws309-p018 | 規約の全文の見直し | planned | 全て |
+| [ws309-p019](phase019/phase.md) | 試験の screen capture の画素の送りを thread へ（keiland-shot の後の SURFACE_LOST、Q1 の依頼） | in-progress | p002 |
 
