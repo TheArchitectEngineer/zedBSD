@@ -527,6 +527,10 @@ AMD64_KERNEL_SOURCES += \
 	src/drivers/platform/pcat/graphics/text.c \
 	src/drivers/platform/pcat/serial-mirror.c
 endif
+# The camera framework, /dev/camN; the camera source drivers build on it.
+ifneq ($(filter y,$(CONFIG_DRIVER_CAMERA) $(CONFIG_DRIVER_USB_UVC)),)
+AMD64_KERNEL_SOURCES += src/drivers/camera/cam.c
+endif
 AMD64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 	$(KERN_UFS_SOURCES)
 AMD64_KERNEL_SOURCES += $(KERN_BOOT_SOURCES)
