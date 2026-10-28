@@ -105,3 +105,8 @@ kernel に CPU の性能と電力の枠組み（provider の登録の口）を�
 - fan を別の WS にする（推し）か、この WS に入れるか。
 - 範囲: 5330 だけで WS を閉じ、他の arch は別の WS にするか、p007・p008 まで入れるか。
 - `docs/architecture/power-management.md` の「CPU の周波数と熱は対応外」を変えること。
+
+## 設計と再開点（2026-10-29 P5、q1666-i02）
+
+- 設計: [design.md](design.md)（第 2 版）、レビュー [design-review.md](design-review.md)、HAL の差分の案 [proposed/hal-cpu-perf.diff](proposed/hal-cpu-perf.diff)（第 2 版、適用しない、承認待ち）。Phase と LW は design.md の「第 2 版の Phase の表」が本体で、下の「Phase の案と見積もり」より優先する（5330 だけで約 25 LW）。
+- 再開点: ユーザーの判断 Q301-1〜7（design.md の第 2 版の問い）を Q1 経由で待つ。§6.0 の 5330 の Debian の読み（CPUID・MSR）は msr の module の読み込みの許可（Q1）が要る。ACPI 6.5 の節番号は記憶による推定で未確認（ユーザーに PDF を置けるかを Q1 が聞いている）。
