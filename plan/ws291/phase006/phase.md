@@ -621,3 +621,156 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 - 決め手の計測（助言）: M1 = amdrdna.vk.timing と libvulkan の timing で big-1000・subs-1000 を 1 回（End の待ちの割合、op 132/107/91/18、frame あたりの
   run の数と slot 待ち）。M2 = present_copy_shared の copy を飛ばす 10 行の試し（画は誤り、E の上限を測る）。
 - 採否: まだ実施していない（13 時までの待機の指示）。次の担当は M2 → E の案を Q1 へ、並行して executor だけの (2)・(4) から。
+
+## q1653（2026-10-28 P2、worktree p2-ws291f、基点 main 9fda28faf）
+
+- 承認: q1639・q1645・q1651 と同じユーザーの文（自律のループ、Fable に何度でも・自律で聞いてよい）。
+- 機械: 13:02:52〜13:08:07 に ping・SSH とも無応答で、P2 が 13:08:15 に SwitchBot で入れ直した（今日の P2 の 7 回目）。ユーザーの補足（Q1 経由）
+  「P2が待機中にRDNA機の電源を落としたのは私で、今しがた電源を入れました。問題はないです。」→ 不具合ではない、調べの対象にしない。
+- 道具: measure.sh に ZEDBSD_ENV（zedBSD の mview に渡す env、mview・profile・bench）。新しい worktree では plan/tmp/guest/id_ed25519 を chmod 600 に
+  しないと SSH が鍵を捨て、measure.sh where が none を返す（13:02 の無応答の判定の一部はこれと重なった）。
+
+### M1（kernel と libvulkan の時刻、HEAD 9fda28faf の kernel、build/ws291/measure/m1/）
+
+- big-1000（20.5 fps、frame 48.5 = record 31.9 + submit 15.5 ms）: op 132（vkCmdPushConstants の decode）が 66 万回 × 0.8 µs = 1 frame 約 13 ms（record_push の
+  kern_malloc）、op 18（submit = executor）が 1 frame 約 15 ms（16000 draw、約 1 µs/draw）、op 103・107・93 は各 0.1 µs。frame あたり run 約 13。
+- subs-1000（2.5 fps、record 186 + submit 198 ms）: kernel の op の合計は 1 frame 約 60 ms。libvulkan の context_hold は平均 52 µs × 約 3000 回/frame
+  （command buffer ごとに約 3 往復）、VULKAN TIMING submit 平均 204 µs（execute 71）。往復ごとに kernel の処理の外で 30〜50 µs。
+
+### M2（present の copy を飛ばす診断、commit しない: build/ws291/m2/m2.patch、env M2_SKIP_COPY）
+
+| run | copy あり（m2-base） | copy なし（m2-skip） |
+| --- | --- | --- |
+| scene-1 | 814.6 | 1057.1 |
+| scene-1500（acquire / fence） | 180.85（0.54 / 4.43） | 182.81（0.46 / 4.47） |
+| scene-6500（acquire / present / fence） | 49.27（0.37 / 0.30 / 19.13） | 48.73（0.54 / 0.80 / 18.68） |
+
+- 読み: copy（GPU 0.87 ms）は scene の律速でない（mview は 1 frame ずつ fence を待ち、copy は次の frame の CPU 側と重なる）。案 E は効果が小さいので
+  提案しない。scene の残りは CPU 側の acquire（render の完了 → present の worker の commit → compositor の release → acquire の起床の往復）。
+
+### executor の改善（commit 8e4463127、merge f5d2e0f40）
+
+- push constants の bytes を command buffer の連続の領域（push_bytes、record は push_at の位置）に置き、record ごとの kern_malloc・kern_free を無くした
+  （vk-record.c record_push_keep、vk-command.c の reset と destroy、vk-execute.c execute_bind）。
+- execute_draw: 同じ IB の中で pipeline・viewport・scissor が前の draw と同じなら、viewport・guard band・scissor・blend・raster・depth・program の
+  register を書かず、vertex の user SGPR と pixel の table だけ（vk-state.c amdrdna_vk_state_program_data、state_vertex_data に共通化）。internal の
+  draw・transfer・pass・新しい IB は target_written を落とすので、その後は全部を書く。
+- 実機（vmunix-pd1 475d4bcccc7008a7、round、build/ws291/measure/pd1/）: nggshape 14 種 ok、shot 1 体 差 0・6500 体 max 1、hang 回復 ok、SMU 正常（最高 53 C）。
+
+| run | 前（M1・m2-base） | pd1 | Linux（linux-img4） |
+| --- | --- | --- | --- |
+| scene-1500 | 180.9 | 166.9（acquire 1.01） | 201.3 |
+| scene-6500 | 49.3 | 48.9 | 50.0 |
+| big-1000（record / submit） | 20.5（31.9 / 15.5） | 28.3（19.0 / 11.5） | 84.7（5.57 / 0.02） |
+| subs-1000（record / submit） | 2.5（186 / 198） | 3.4（156 / 124） | 57.7（6.57 / 10.3） |
+
+- profile（pd1、build/ws291/measure/pd1p/big）: op 132 は 0.15 µs に。frame あたり run は約 10 のまま（表の領域 768 KiB が 16000 draw × 2 表で埋まる）。
+- audit-symbols: 17 → 18 件の増えた 1 件は display.c の局所変数 'mapped'（1510922e5、q1651 の logo の直し、main は 5fd2dbd00 から）。by_bar に改名
+  （b93e355ea）、FAIL 17 件に戻った。
+
+### timing の上乗せ（2026-10-28 14:00）
+
+- 機械の zedbsd.cfg に `amdrdna.vk.timing=2000` が q1645 から常に入っていた。kernel は command ごとに時刻の読み（amdrdna_display_now_us）と
+  計数の spinlock を通り、big-1000（1 frame 約 54000 command）で約 5 ms/frame の上乗せ（timing ありの record 18.7 → なしの 13.7 ms）。Linux には無い。
+  → bench は timing を外して取る（`measure.sh timing on|off`、`measure.sh cfg NAME [VALUE]`）。profile の時だけ on にする。q1645 以前の big-N・subs-N の
+  数は timing ありの数。
+- 診断（diag1〜diag3、commit しない）: hal_rtc_read_counter 1 回に約 0.04 µs。executor の draw 1 回は約 0.5 µs（表の作成は実 0.17 µs、うち vertex
+  input 0.1 µs）。mview の big-N は group ごとに texture（descriptor set）と pipeline が替わるので、表・state の再利用はほとんど効かない。
+
+### 案 1〜3a（Q1 の OK、2026-10-28、ユーザーの承認は q1653 の文）
+
+- 案 1（b4897a17b、libvulkan wsi-swapchain.c）: 単独の vkCreateSwapchainKHR、MAILBOX、compositor の surface（display_mode 無し、cursor・overlay で
+  ない、import_image あり）、maxImageCount の内の時だけ画像を 1 枚多く作る。minImageCount の報告（capabilities）は不変、shared の作成は対象外。
+  VRAM は 1920×1080 で swapchain の画像 1 枚と GPU present の linear の共有画像 1 枚 ≈ 16.6 MB 増。scene-1500 181 → 190〜194 fps（acquire 0.54 →
+  0.18〜0.24 ms）。
+- 案 2（d162d6700、libvulkan commands.c・internal.h）: vkCmd* を command->recording に直に encode。writer が recording の領域を借り、finish で返す。
+  encode の失敗は record の先頭で切り、command->error に latch して End が返す（今と同じ）。soft limit（VULKAN_RECORDING_BATCH_BYTES）を越える時は
+  前の部分を先に decode、単独で limit を越える record は単独で decode（今と同じ）。big-1000 record 13.7 → 9.9 ms、33.2 → 36.8 fps。
+- executor（6ac6d3754）: 同じ pipeline・binding の続きの draw で表を再利用、push だけ変われば複写、同じ物の再 bind は変化にしない。
+- 案 3a（141ce391d、libvulkan commands.c・internal.h）: vkResetCommandBuffer は local の初期化だけにし、native の Reset は次の Begin の頭へ（2 回続けば
+  release の flag は OR）。vkBeginCommandBuffer は Reset・Begin を recording の先頭に reply を求める形のまま置き（全 backend の protocol は不変）、最初の
+  batch の flush か End と同じ transaction で送って reply を順に読む。renderer の側でしか分からない Reset・Begin の失敗は End（か途中の flush）で返る
+  （vkEndCommandBuffer は OOM 等を返せる）。local の失敗は今どおり Begin・End で返す。End は同期のまま。
+- 確かめ: amd64 の vmunix・libvulkan warning 0、arm64（config-rpi4）・riscv64（config-visionfive2）の libvulkan.so warning 0（案 1・2）、
+  `plan/tools/gpu-boundary/run-dedicated-host.sh` PASS（b113329f3 で直した: -std=c89 → c99、出力は build/tmp、rm を外した）、実機 round（nggshape 14 種
+  ok、shot 1 体 差 0・6500 体 max 1、hang 回復 ok）。
+
+| run（timing 無し） | lv1（案 1 まで） | lv2（案 2 まで） | lv3（案 3a まで） | Linux（linux-img4） |
+| --- | --- | --- | --- | --- |
+| scene-1500 | 190.2 | 193.0 | 194.1 | 201.3 |
+| scene-6500（frame） | 45.3（acquire 2.11 の回） | 49.46（20.17） | 49.73（20.06） | 50.04（19.94） |
+| big-1000（record / submit） | 33.2（13.7 / 11.4） | 36.8（9.9 / 10.1） | 34.7（12.5 / 11.2） | 84.7（5.57 / 0.02） |
+| subs-1000（record / submit） | 3.48（156 / 121） | 3.39（147 / 137） | 4.47（68 / 149） | 57.7（6.57 / 10.3） |
+
+- 読み: scene-6500 の acquire が run により 2 ms に跳ねる（lv1）。frame（約 20 ms）が vblank より長い時の flip との位相の見込み（未確かめ）。
+
+### QEMU Venus の回帰（Q1 の条件、2026-10-28 14:10〜14:45）
+
+- image: `plan/tools/gpu-boundary/build-forge-image.sh build/ws291/forge`（tree は案 1・2 の後）。renderer は main の build/ws035-sq-venus への link。
+  guest は新しい runtime（build/ws291/venus-*）、終わりは QMP の quit（guest.py stop の session.json の削除を避けた）。script は build/tmp/venus-ab.sh。
+- forge-guest PASS。fence-guest: 同じ手順（起動 → libvulkan を put → guest の reboot → wait → fence-guest）で 9fda28faf の libvulkan 3/3 PASS、
+  案 1+2（2ff3d0c73）3/3 PASS、案 3a（141ce391d）1/1 PASS（wltest --mode=mailbox --recreate-at=100、mview mailbox 4 枚、mview --draws=each
+  --submits=20 も完走、compositor の VULKAN_ERROR 0）。起動の直後に待たずに流すと 3/3 FAIL（SSH の banner の時間切れ）、最初の手動の 1 回は
+  zdesktop 自身の display の swapchain が VK_ERROR_NATIVE_WINDOW_IN_USE_KHR（起動直後の display の取り合いの見込み、案 1 の対象外の道）。
+  → 案 1・2 の回帰ではない（同じ手順で前後とも PASS）。fence-guest は起動の後に wait してから流す事。
+
+### SMU の idle の停止（2026-10-28 14:24、14:50）
+
+- 14:24:32: bench の終わりの後（負荷なし、53 C）に hung=1 fault=1、guard が poweroff、14:25:10 に SwitchBot（今日の P2 の 8 回目）。
+- Q1 の指示: UCLK 固定の後に初めて見えた idle の停止なので優先して切り分ける（性能より安全）。kernel に `amdrdna.smu.memory=0`（memory 側の feature を
+  許さず UCLK を固定しない）を足した（e27a16d15）。道具 `plan/ws291/tests/soak.sh OUT [MINUTES [LOAD [IDLE [COPIES]]]]`（guard の下、mview の
+  scene-1500 を 5 s、25 s 休み、繰り返し）。
+- 再現: e27a16d15（DS_SOCCLK あり、UCLK 875 固定）の soak で 14:35 開始、31 回目の後の idle で 14:50:47 に hung=1（直前 14:50:27 正常、52 C）、
+  guard が poweroff、14:51:09 に SwitchBot（9 回目）。
+- Fable 5.1 High の助言（14:45、code と Linux v6.19 を読んだ見立て）: UCLK の hard floor 自体は Linux も DC の p-state 非対応の時に使う形。
+  NumOfDisplays=0 は watermark・DPM_DCEFCLK が無い今は正しい（1 を送らない、推測の watermark を送らない）。本命は DS_SOCCLK（bit 11、idle の時だけ
+  働く SoC clock の deep sleep、Linux は DS_LCLK・DS_DCEFCLK・DPM_DCEFCLK・RSMU_SMN_CG と組で許す。10:58 の MMIO の間接の読みの時の停止とも合う）。
+  SOCCLK DPM（bit 4）は UCLK の最上段の電圧に要る（それ無しで SetHardMin が時間切れだった）。順: (A) DS_SOCCLK を外す、(B) なお止まれば DCN の
+  p-state の force allow を残す（停止が underflow に変わり原因が分かる）、(C) Linux の組（RSMU_SMN_CG・DS_LCLK・DPM_MP0CLK）。SMU の reset は
+  display の全初期化が無い今は入れない。次の停止で mailbox の 3 語・firmware の状態・DCHUBBUB の状態を読む。
+- (A) の kernel（vmunix-mem3）: AMDRDNA_SMU_CLOCK_FEATURES_LOW 0x2780031b（DS_SOCCLK を外す）、smu_hang_mark（停止の時に mailbox の message・
+  argument・answer、firmware の状態語、display の DRAM state を mark）。起動の mark「A4 features all on: 0x00000423a380031b」「A4 memory clock: 4 levels
+  100-875MHz, held at 875MHz (ceiling 0, floor 0, arbiter 0x00000002)」= DS_SOCCLK 無しでも UCLK は 875 に固定できた。40 分の soak を 14:53 から。
+
+### 案 3 の後半（3b）の設計（未実装、Q1 の条件つきの OK 済み、SMU の件の後）
+
+- vkEndCommandBuffer（primary だけ）: End を recording に足して local に EXECUTABLE、送らずに end_pending。secondary と local の失敗は今の同期の道。
+- vkQueueSubmit（queue.c queue_attempt、device->mutex の下）: submit の cb のうち end_pending の物の recording（head の Reset・Begin、record、End）を
+  QUEUE_SUBMIT の前に同じ writer へ並べ（同じ cb の 2 度目は飛ばす印）、reply は head・End・submit の順に読む。送った時（writer.error が無く実行した時）
+  だけ pending を消す。capacity の待ちで送らなかった時は残す。大きい recording（batch の 1/4 超）は先に同期で送る。
+- renderer の側の Reset・Begin・End・record の失敗は Submit で返る: OOM（host・device）はそのまま、それ以外は VK_ERROR_DEVICE_LOST（vkQueueSubmit
+  が返してよい物だけ）。cb は INVALID に。
+- end_pending の cb への vkBeginCommandBuffer は先に pending を同期で送る（kernel の cb が recording のまま Begin を受けないように）。
+  vkResetCommandBuffer・pool の reset・free は pending を捨てる（head の Reset が次の Begin で送られる）。
+- 確かめ: subs-N・big-N・scene の前後、vkQueueWaitIdle・vkDeviceWaitIdle が全部を待つ試験（Q1 の条件、fence 無しの submit を省く (B) は別）、
+  run-dedicated-host.sh、Venus の fence-guest・wltest・mview（同じ手順、wait の後）。
+
+### SMU の切り分けの結果（15:13〜16:00）
+
+| kernel・cfg | soak | 結果 |
+| --- | --- | --- |
+| e27a16d15（memory 側あり、DS_SOCCLK あり、UCLK 875 固定） | 14:35〜 | 31 回目の後の idle、14:50:47 に停止 |
+| vmunix-mem3（memory 側あり、DS_SOCCLK なし、UCLK 875 固定） | 14:53〜 | 37 回目の後の idle、15:13:30 に停止（51 C） |
+| vmunix-mem3 + amdrdna.smu.memory=0（memory 側なし、固定なし） | 15:16〜15:57 | 40 分・77 回、停止 0（最高 59 C、scene-1500 は 146〜149 fps） |
+
+- 15:14:09 に SwitchBot（今日の P2 の 10 回目）。guard.sh は停止の時の dmesg を host の OUT.dmesg に取るようにした（53213c001、前は zedBSD の /tmp に
+  書いて poweroff で失われた）。
+- 判断（性能より安全、Q1 の指示）: 142fd7b88 で amdrdna.smu.memory の既定を 0（memory 側の feature を許さず UCLK を固定しない）。=1 で今までの固定
+  （DS_SOCCLK は許さない）。実験の switch amdrdna.smu.memory_allow=1（固定の後も DCHUBBUB_ARB_DRAM_STATE_CNTL の state change の force allow を
+  残す、self refresh は GOP のまま）。停止の時は smu_hang_mark が mailbox の 3 語・firmware の状態語・DRAM state を mark する。
+- 実機: 既定の起動で「A4 features all on: 0x00000423a3800003」「A4 memory clock: its levels do not run」。
+- 実験 (B)（memory=1 + memory_allow=1）の 40 分 soak を 15:59 から（結果は下）。
+- 実験 (B) の結果: memory=1 + memory_allow=1（UCLK 875 固定、DRAM state に state change の force allow を残す）で 15:59〜16:42 の 40 分・76 回、
+  停止 0（最高 53 C、scene-1500 191〜195 fps）。memory 側ありで force allow なしの 2 回の停止（16 分・20 分）と対照的 → firmware が idle で memory の
+  状態の変更（p-state）を始め、display の hub の許可（GOP の 0x2 で禁じたまま）を待って止まる、という見立てを支える（1 回の soak、未確定）。
+- 機械は既定（memory=0）に戻した（cfg の memory・memory_allow の行を消し、起動の mark で確認、16:45）。
+
+### 残り（次の担当へ、2026-10-28 16:45）
+
+- SMU: (B) を既定にする前に、memory=1 + memory_allow=1 の長い soak（2 時間以上、guard の下）を Q1 に相談の上で。通れば memory_allow の既定を 1、
+  memory の既定を 1 に戻す（UCLK 875 で scene-6500 49.7・scene-1500 194 fps に戻る）。force allow を残す時の副作用（firmware が実際に memory を
+  切り替えると display の underflow が見える）は display の underflow の印で見る。Linux の正規の道（DC の watermark・DPM_DCEFCLK・NumOfDisplays）は
+  大きな作業。
+- 性能（既定の memory=0 では UCLK 100 MHz、scene-6500 約 45 fps）: 上の SMU の決定が先。CPU 側は案 3 の後半（3b、上の設計）、案 4（小さな transaction
+  を呼び手の thread で同期の GPU_COMMAND、上限の時間と hang の時の扱いが条件）、案 5（gpu.c の起床の抑制、design-reviewer を通す）。
+- 今日の P2 の SwitchBot: 13:08:15（7 回目、ユーザーが切っていた）、14:25:10（8）、14:51:09（9）、15:14:09（10）。全部 Debian に戻った。
