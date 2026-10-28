@@ -29,6 +29,7 @@ static int emit_routes6(const struct netconf *, netconf_reconcile_emit, void *);
 static int emit_removed6(const struct netconf *, const struct netconf *, netconf_reconcile_emit, void *);
 static int address6_named(const struct netconf_interface *, const struct netconf_address *);
 static int route6_named(const struct netconf *, const char *);
+static int emit_mtu(const struct netconf *, const struct netconf_interface *, netconf_reconcile_emit, void *);
 
 int
 netconf_reconcile_supported(
@@ -127,6 +128,8 @@ netconf_reconcile(
 			return -1;
 	}
 	for (index = 0U; index < target->interface_count; index++) {
+		if (emit_mtu(previous, &target->interfaces[index], emit, context) != 0)
+			return -1;
 		if (emit_interface(&target->interfaces[index], emit, context) != 0)
 			return -1;
 	}
@@ -495,5 +498,55 @@ route6_named(
 	}
 
 	/* Not routed. */
+	return 0;
+}
+
+/*
+ * Emits an enabled interface's MTU when the target names another one than
+ * the previous program did: the value, or 0 for the device's default when
+ * the target no longer names one.  The interface stays up while it changes.
+ */
+static int
+emit_mtu(
+	const struct netconf *previous,
+	const struct netconf_interface *item,
+	netconf_reconcile_emit emit,
+	void *context)
+{
+	const struct netconf_interface *before;
+	char operands[64];
+	unsigned before_mtu;
+	unsigned mtu;
+	int count;
+	int emitted;
+
+	/* A disabled interface is only taken down. */
+	if (!item->enabled)
+		return 0;
+
+	/* The MTU each side names, 0 for none. */
+	before_mtu = 0U;
+	before = find_interface(previous, item->name);
+	if (before != NULL && before->mtu_set)
+		before_mtu = before->mtu;
+	mtu = 0U;
+	if (item->mtu_set)
+		mtu = item->mtu;
+
+	/* Nothing to do while they agree. */
+	if (mtu == before_mtu)
+		return 0;
+
+	/* The interface and its MTU. */
+	count = snprintf(operands, sizeof(operands), "%s %u", item->name, mtu);
+	if (count < 0 || (size_t)count >= sizeof(operands)) {
+		errno = EOVERFLOW;
+		return -1;
+	}
+	emitted = emit("MTU", operands, context);
+	if (emitted != 0)
+		return -1;
+
+	/* Succeeded. */
 	return 0;
 }
