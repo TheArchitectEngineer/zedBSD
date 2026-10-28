@@ -99,6 +99,10 @@
 #define TCP_OPTION_END 0U
 #define TCP_OPTION_NOP 1U
 #define TCP_OPTION_MSS 2U
+#define TCP_OPTION_WSCALE 3U
+
+/* The largest window scale shift (RFC 7323 section 2.3). */
+#define TCP_WSCALE_MAX 14U
 
 /*
  * The largest segment this end takes, which the SYN offers (BUG-222): an
@@ -405,6 +409,8 @@ static int tcp_maxunack_expired_locked(const struct tcp_endpoint *endpoint, uint
 static void tcp_persist_leave_locked(struct tcp_endpoint *endpoint);
 static int tcp_oldest_fits_window_locked(const struct tcp_endpoint *endpoint);
 static uint32_t tcp_syn_offered_mss(const struct tcp_wire *tcp, size_t header_length);
+static int tcp_syn_offered_wscale(const struct tcp_wire *tcp, size_t header_length);
+static uint32_t tcp_segment_window_locked(const struct tcp_endpoint *endpoint, const struct tcp_wire *tcp);
 static void tcp_start_sending(struct tcp_endpoint *endpoint, uint32_t offered_mss);
 static uint32_t tcp_segment_size_locked(const struct tcp_endpoint *endpoint);
 static uint32_t tcp_send_limit_locked(const struct tcp_endpoint *endpoint);
@@ -412,6 +418,7 @@ static int tcp_send_room_locked(const struct tcp_endpoint *endpoint, size_t leng
 static void tcp_cwnd_grow_locked(struct tcp_endpoint *endpoint, uint32_t acked);
 static void tcp_cwnd_loss_locked(struct tcp_endpoint *endpoint, int timeout);
 static void tcp_ack_delay(struct tcp_endpoint *endpoint);
+static int tcp_send_wake_due_locked(const struct tcp_endpoint *endpoint);
 struct tcp_discard {
 	struct packet_buf *packets[CONFIG_TCP_SEND_QUEUE_MAX];
 	unsigned count;
@@ -451,7 +458,7 @@ static void tcp_keepalive_arm_locked(struct tcp_endpoint *endpoint);
 static struct tcp_endpoint * tcp_lookup(const struct tcp_segment_addresses *addresses, uint16_t source_port, uint16_t destination_port);
 static int tcp_connection_matches(const struct tcp_endpoint *endpoint, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint16_t destination_port);
 static int tcp_listener_matches(const struct tcp_endpoint *endpoint, const struct tcp_segment_addresses *addresses, uint16_t destination_port);
-static struct tcp_endpoint * tcp_passive_syn(struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint32_t sequence, uint32_t offered_mss);
+static struct tcp_endpoint * tcp_passive_syn(struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint32_t sequence, uint32_t offered_mss, int offered_wscale);
 static void tcp_child_addresses(struct tcp_endpoint *child, const struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses);
 static int tcp_input(struct packet_buf *packet, uint32_t source, uint32_t destination);
 static int tcp6_input(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
@@ -1821,6 +1828,10 @@ tcp_stats_fill_locked(
 
 	/* The send side: the peer's window, and the ring that holds what is in flight and what waits unsent. */
 	entry->send_window = tcp->peer_window;
+
+	/* Window scaling, when both ends offered it (RFC 7323). */
+	if (tcp->wscale_on != 0)
+		entry->features |= TCP_STATS_HAVE_WSCALE;
 	entry->in_flight_bytes = sent_end - tcp->send_unacknowledged;
 	entry->send_segments = tcp->send_count;
 	entry->send_ring = TCP_SEND_QUEUE_MAX;
@@ -1929,6 +1940,8 @@ tcp_output_segment(
 	options = 0;
 	if ((flags & TCP_SYN) != 0)
 		options = 4U;
+	if ((flags & TCP_SYN) != 0 && endpoint->tcp.wscale_offered != 0)
+		options += 4U;
 
 	/* Routes the segment: over IPv6 to an IPv6 peer (ws130-p003), else over IPv4. */
 	source = 0;
@@ -1998,10 +2011,22 @@ tcp_output_segment(
 	/* Writes the MSS option (kind 2, length 4) after the fixed header. */
 	if (options != 0) {
 		option = (uint8_t *)(tcp + 1);
-		option[0] = 2U;
+		option[0] = TCP_OPTION_MSS;
 		option[1] = 4U;
 		option[2] = (uint8_t)(mss >> 8);
 		option[3] = (uint8_t)(mss & 0xffU);
+	}
+
+	/*
+	 * And the window scale option (a NOP, then kind 3, length 3) with this
+	 * end's shift, 0: it takes the peer's scale without scaling its own.
+	 */
+	if (options == 8U) {
+		option = (uint8_t *)(tcp + 1);
+		option[4] = TCP_OPTION_NOP;
+		option[5] = TCP_OPTION_WSCALE;
+		option[6] = 3U;
+		option[7] = 0U;
 	}
 
 	window = tcp_receive_window(endpoint);
@@ -2732,6 +2757,79 @@ tcp_syn_offered_mss(
 }
 
 /*
+ * Reads the window scale shift a SYN offers (RFC 7323 section 2.2), no
+ * more than 14, or -1 when it offers none.
+ */
+static int
+tcp_syn_offered_wscale(
+	const struct tcp_wire *tcp,
+	size_t header_length)
+{
+	const uint8_t *options;
+	size_t length;
+	size_t at;
+	uint8_t kind;
+	uint8_t size;
+	unsigned shift;
+
+	/* The options between the fixed header and the data. */
+	options = (const uint8_t *)(tcp + 1);
+	length = header_length - sizeof(*tcp);
+
+	/* Each option in turn until the window scale is found or the options end. */
+	at = 0;
+	while (at < length) {
+		kind = options[at];
+		if (kind == TCP_OPTION_END)
+			break;
+		if (kind == TCP_OPTION_NOP) {
+			at++;
+			continue;
+		}
+
+		/* An option with a length: one that does not fit ends the list. */
+		if (at + 1U >= length)
+			break;
+		size = options[at + 1U];
+		if (size < 2U || at + size > length)
+			break;
+
+		/* The window scale option: kind 3, length 3, the shift (a larger one is taken as 14). */
+		if (kind == TCP_OPTION_WSCALE && size == 3U) {
+			shift = options[at + 2U];
+			if (shift > TCP_WSCALE_MAX)
+				shift = TCP_WSCALE_MAX;
+			return (int)shift;
+		}
+		at += size;
+	}
+
+	/* None offered. */
+	return -1;
+}
+
+/*
+ * Reports the window a segment other than a SYN advertises, in bytes:
+ * its window field shifted by the peer's scale once both ends offered it.
+ * The caller holds the socket lock.
+ */
+static uint32_t
+tcp_segment_window_locked(
+	const struct tcp_endpoint *endpoint,
+	const struct tcp_wire *tcp)
+{
+	uint32_t window;
+
+	/* The field, unscaled without the option. */
+	window = wire_get16(tcp->window);
+	if (endpoint->tcp.wscale_on != 0)
+		window <<= endpoint->tcp.peer_wscale;
+
+	/* Succeeded: the window in bytes. */
+	return window;
+}
+
+/*
  * Sets up what an established connection sends with: the segment size,
  * the smaller of the peer's offer (offered_mss; 0 for none) and what the
  * route's interface carries, and the congestion window it starts with
@@ -2870,6 +2968,40 @@ tcp_send_room_locked(
 
 	/* Succeeded: it fits. */
 	return 1;
+}
+
+/*
+ * Tells whether a writer waiting for room is woken now: when nothing is
+ * left in flight, or when a quarter of the ring's entries and a quarter of
+ * the send limit are free (a low-water mark, as SO_SNDLOWAT), so that a
+ * write queues many segments rather than the one or two an
+ * acknowledgement frees.  The caller holds the socket lock.
+ */
+static int
+tcp_send_wake_due_locked(
+	const struct tcp_endpoint *endpoint)
+{
+	uint32_t in_flight;
+	uint32_t limit;
+	unsigned ring_free;
+
+	/* An empty ring always wakes. */
+	if (endpoint->tcp.send_count == 0)
+		return 1;
+
+	/* Too few free entries. */
+	ring_free = TCP_SEND_QUEUE_MAX - endpoint->tcp.send_count;
+	if (ring_free < (TCP_SEND_QUEUE_MAX + 3U) / 4U)
+		return 0;
+
+	/* Too little of the limit free. */
+	in_flight = tcp_in_flight(endpoint);
+	limit = tcp_send_limit_locked(endpoint);
+	if (in_flight < limit && limit - in_flight >= limit / 4U)
+		return 1;
+
+	/* Not yet. */
+	return 0;
 }
 
 /*
@@ -4516,6 +4648,11 @@ tcp_connect(
 	endpoint->tcp.send_unacknowledged = endpoint->tcp.send_next;
 	endpoint->tcp.state = TCP_SYN_SENT;
 
+	/* The SYN offers window scaling; the SYN-ACK says whether the peer takes it. */
+	endpoint->tcp.wscale_offered = 1;
+	endpoint->tcp.wscale_on = 0;
+	endpoint->tcp.peer_wscale = 0;
+
 	/* A new connection measures its own round trip (ws220-p004). */
 	tcp_rtt_forget_locked(endpoint);
 
@@ -5507,7 +5644,8 @@ tcp_passive_syn(
 	const struct tcp_segment_addresses *addresses,
 	uint16_t source_port,
 	uint32_t sequence,
-	uint32_t offered_mss)
+	uint32_t offered_mss,
+	int offered_wscale)
 {
 	struct socket *created;
 	struct tcp_endpoint *child;
@@ -5539,6 +5677,13 @@ tcp_passive_syn(
 	child->tcp.inet.inet_flags = INET_SOCKET_BOUND | INET_SOCKET_CONNECTED;
 	child->tcp.receive_next = sequence + 1U;
 	child->tcp.peer_mss = offered_mss;
+
+	/* A SYN that offers window scaling is answered with the option, and both ends then scale (RFC 7323). */
+	if (offered_wscale >= 0) {
+		child->tcp.wscale_offered = 1;
+		child->tcp.wscale_on = 1;
+		child->tcp.peer_wscale = (uint8_t)offered_wscale;
+	}
 	child->tcp.send_next = (uint32_t)sched_ticks() * 1103515245U +
 	    child->tcp.inet.local_port + source_port;
 	child->tcp.send_next = tcp_initial_sequence(child->tcp.send_next);
@@ -5770,9 +5915,11 @@ tcp_segment_input(
 	int acknowledges_old;
 	uint32_t overlap;
 	int starts_before;
-	uint16_t segment_window;
-	uint16_t previous_window;
+	uint32_t segment_window;
+	uint32_t previous_window;
+	int offered_wscale;
 	int retired;
+	int wake;
 	int accept_fin;
 	int gap_filled;
 	struct packet_buf *eof;
@@ -5811,7 +5958,7 @@ tcp_segment_input(
 	if (state == TCP_LISTEN) {
 		if ((flags & (TCP_SYN | TCP_ACK | TCP_RST)) == TCP_SYN)
 			(void)tcp_passive_syn(endpoint, addresses, source_port, sequence,
-			    tcp_syn_offered_mss(tcp, header_length));
+			    tcp_syn_offered_mss(tcp, header_length), tcp_syn_offered_wscale(tcp, header_length));
 		packet_buf_free(packet);
 		socket_release(&endpoint->tcp.inet.socket);
 		return 0;
@@ -5920,7 +6067,7 @@ tcp_segment_input(
 			tcp_rtt_handshake_locked(endpoint, acknowledgement, sched_ticks());
 			endpoint->tcp.send_unacknowledged = acknowledgement;
 			tcp_retransmit_reset(endpoint, &retransmit);
-			endpoint->tcp.peer_window = wire_get16(tcp->window);
+			endpoint->tcp.peer_window = tcp_segment_window_locked(endpoint, tcp);
 			endpoint->tcp.send_window_sequence = sequence;
 			endpoint->tcp.send_window_acknowledgement = acknowledgement;
 			endpoint->tcp.state = TCP_ESTABLISHED;
@@ -5965,6 +6112,13 @@ tcp_segment_input(
 			endpoint->tcp.send_unacknowledged = acknowledgement;
 			tcp_retransmit_reset(endpoint, &retransmit);
 			endpoint->tcp.receive_next = sequence + 1U;
+
+			/* Scaling is on when the SYN-ACK offers it too; the SYN-ACK's own window is never scaled. */
+			offered_wscale = tcp_syn_offered_wscale(tcp, header_length);
+			if (offered_wscale >= 0 && endpoint->tcp.wscale_offered != 0) {
+				endpoint->tcp.wscale_on = 1;
+				endpoint->tcp.peer_wscale = (uint8_t)offered_wscale;
+			}
 			endpoint->tcp.peer_window = wire_get16(tcp->window);
 			endpoint->tcp.send_window_sequence = sequence;
 			endpoint->tcp.send_window_acknowledgement = acknowledgement;
@@ -6080,7 +6234,7 @@ tcp_segment_input(
 		 * (SND.WL1 and SND.WL2), so an old one cannot set it back.
 		 */
 		previous_window = endpoint->tcp.peer_window;
-		segment_window = wire_get16(tcp->window);
+		segment_window = tcp_segment_window_locked(endpoint, tcp);
 		window_opened = 0;
 		window_update = 0;
 		if (!acknowledges_old)
@@ -6186,17 +6340,22 @@ tcp_segment_input(
 			endpoint->tcp.counters.immediate_resends++;
 		}
 
-		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
-		retired = retransmit.count != 0;
-		if (retired)
-			tcp_discard_free(&retransmit);
-
 		/*
 		 * A writer waits for room in flight, which an acknowledgement
 		 * makes by retiring segments or by reopening the window; a
-		 * window update alone retires nothing but must wake it too.
+		 * window update alone retires nothing but must wake it too.  It
+		 * is woken once a good part of the room is free, not for every
+		 * acknowledgement: each write then queues many segments.
 		 */
+		retired = retransmit.count != 0;
+		wake = 0;
 		if (retired || window_opened)
+			wake = tcp_send_wake_due_locked(endpoint);
+
+		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
+		if (retired)
+			tcp_discard_free(&retransmit);
+		if (wake)
 			socket_wake_send(&endpoint->tcp.inet.socket);
 	}
 

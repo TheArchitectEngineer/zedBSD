@@ -127,7 +127,18 @@ struct tcp_socket {
 	uint32_t connect_generation;
 	uint32_t active_connect_generation;
 	uint64_t connect_wait_deadline;
-	uint16_t peer_window;
+	/*
+	 * The peer's window in bytes, scaled by its window scale (RFC 7323)
+	 * when both ends offered the option in their SYNs: wscale_offered
+	 * says this end's SYN carries it (an active open always, a passive
+	 * one when the peer's SYN did), peer_wscale is the peer's shift, and
+	 * wscale_on says both offered it.  This end's own shift is 0: its
+	 * window never exceeds 64 KB.
+	 */
+	uint32_t peer_window;
+	uint8_t peer_wscale;
+	uint8_t wscale_offered;
+	uint8_t wscale_on;
 	/*
 	 * The sequence and acknowledgement numbers of the segment peer_window
 	 * was last taken from (RFC 9293's SND.WL1 and SND.WL2).  A segment
