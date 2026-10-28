@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws190-p002: builds and runs the host tests of the fingers' selection's bar (host-text-bar.c with libkeiland's
-# text-bar.c, text-touch.c, ui.c and the widgets, as plan/ws177/tests/host-text-edit.sh links them), plainly and under
+# text-bar.c, text-touch.c, ui.c and the widgets, as the old host-text-edit.sh linked them), plainly and under
 # ASan/UBSan, in a new directory under build/tmp (nothing is removed here; Q1's plan/tools/q1-clean.sh removes old runs).
 #   sh plan/tools/keiui/run-host-touch-select.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -24,7 +24,7 @@ for test in host-text-bar host-touch-select; do
 		fi
 		# shellcheck disable=SC2086
 		cc -std=c11 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror $extra -I"$work/inc" -I. -I$K -I$U/libtruetype \
-			plan/ws190/tests/$test.c \
+			plan/tools/keiui/$test.c \
 			$K/canvas.c $K/text.c $K/icons.c $K/icons-line.c $K/theme.c $K/input.c $K/scroll.c $K/scroll-bar.c \
 			$K/text-touch.c $K/text-bar.c $K/text-select.c $K/ui.c $K/widgets.c $K/field.c $K/text-area.c $K/list.c $K/cards.c \
 			$U/libkeiland/gesture.c $U/libkeiland/motion.c $U/libkeiland/scroll.c \

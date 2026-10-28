@@ -15,7 +15,7 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
-here=$repo/plan/ws229/tests
+here=$repo/plan/tools/i915-gen9
 tools=${BRW_TOOLS:-$repo/build/mesa-tools/build-asm/src/intel/compiler}
 genxml=${GENXML:-$repo/build/mesa-tools/mesa-25.0.7/src/intel/genxml}
 check=${GENXML_CHECK:-$repo/plan/tools/gpu-compute/host/genxml-check.py}
