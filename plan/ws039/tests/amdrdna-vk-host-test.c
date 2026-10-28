@@ -2778,6 +2778,25 @@ test_units(void)
 	amdrdna_vk_pm4_start(&pm4, words, 64);
 	amdrdna_vk_pm4_set_context(&pm4, 0x28238U, 0xe);
 	check(pm4.count == 3U, "units: a new buffer writes a context register again");
+
+	/* The draws' user configuration registers and counts: written once while they hold, again in a new buffer. */
+	amdrdna_vk_pm4_start(&pm4, words, 64);
+	amdrdna_vk_pm4_set_user_config(&pm4, 0x3096cU, 7U);
+	amdrdna_vk_pm4_set_user_config(&pm4, 0x3096cU, 7U);
+	check(pm4.count == 3U, "units: a user configuration register set again to its value is not written");
+	before = pm4.count;
+	amdrdna_vk_pm4_draw_indexed(&pm4, 0x1000U, 300U, 30U, 2U);
+	check(pm4.count == before + 10U, "units: the first indexed draw writes its instances and index buffer size");
+	before = pm4.count;
+	amdrdna_vk_pm4_draw_indexed(&pm4, 0x1000U, 300U, 60U, 2U);
+	check(pm4.count == before + 6U, "units: a draw of the same instances and index buffer size writes the draw alone");
+	before = pm4.count;
+	amdrdna_vk_pm4_draw_indexed(&pm4, 0x1000U, 300U, 60U, 3U);
+	check(pm4.count == before + 8U, "units: a draw of other instances writes the count");
+	amdrdna_vk_pm4_start(&pm4, words, 64);
+	amdrdna_vk_pm4_set_user_config(&pm4, 0x3096cU, 7U);
+	amdrdna_vk_pm4_draw_indexed(&pm4, 0x1000U, 300U, 60U, 3U);
+	check(pm4.count == 13U, "units: a new buffer writes the user configuration register and the counts again");
 	amdrdna_vk_pm4_start(&pm4, words, 16);
 	amdrdna_vk_pm4_event(&pm4, 16, 4);
 	amdrdna_vk_pm4_pad(&pm4, 8);

@@ -765,8 +765,9 @@
  */
 #define AMDRDNA_VK_MOVE_MAX			0x03ffffe0U
 
-/* The context registers (0x28000 to 0x28ffc), one word each. */
+/* The context registers (0x28000 to 0x28ffc) and the user configuration registers tracked (0x30000 to 0x30ffc), one word each. */
 #define AMDRDNA_VK_CONTEXT_REGISTERS		1024U
+#define AMDRDNA_VK_USER_REGISTERS		1024U
 
 /*
  * An indirect buffer of packets being written: its words, how many are
@@ -779,7 +780,11 @@
  * whose bit in context_known is set (none at the start and after the
  * context's reset): a single register set again to the value it holds is
  * not written, since every context register write after a draw rolls the
- * context the GPU draws with.
+ * context the GPU draws with.  user_values and user_known do the same for
+ * the user configuration registers (the draws' primitive and index types
+ * and groups), and instances and index_room (known when draws_known is
+ * set) for the draw packets' instance count and index buffer size, which
+ * the command processor keeps until set again.
  */
 struct amdrdna_vk_pm4 {
 	uint32_t *words;
@@ -789,6 +794,12 @@ struct amdrdna_vk_pm4 {
 	uint32_t vertex_stage;
 	uint32_t context_values[AMDRDNA_VK_CONTEXT_REGISTERS];
 	uint32_t context_known[AMDRDNA_VK_CONTEXT_REGISTERS / 32U];
+	uint32_t user_values[AMDRDNA_VK_USER_REGISTERS];
+	uint32_t user_known[AMDRDNA_VK_USER_REGISTERS / 32U];
+	bool instances_known;
+	uint32_t instances;
+	bool index_room_known;
+	uint32_t index_room;
 };
 
 /* The kinds of vertex stage a buffer's draws use: not known yet, a legacy vertex program, a primitive shader. */
