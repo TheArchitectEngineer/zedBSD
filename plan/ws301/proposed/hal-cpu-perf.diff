@@ -1,5 +1,7 @@
 Proposed change to include/hal/hal.h for WS301 (CPU performance framework).
-NOT APPLIED.  Needs the user's approval (plan/guardrail.md, HAL).  Base: main 63386d8a4.
+NOT APPLIED.  Needs the user's approval (plan/guardrail.md, HAL).
+Not recommended since 2026-10-29 (design.md revision 1 of the third version keeps the HAL
+unchanged; this diff is kept as the rejected option C).  Base: main 63386d8a4.
 Second version (2026-10-29): design-review.md B1, M1-M8 applied.  Design: plan/ws301/design.md.
 Third version (2026-10-29): highest_khz in place of the capabilities' last reserved word
 (the 5330's firmware gives one nominal frequency for both core types, so the kernel
