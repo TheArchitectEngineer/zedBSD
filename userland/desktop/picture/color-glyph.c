@@ -24,6 +24,8 @@
 #define COLOR_SOURCE_MAX	512U
 
 static int color_decode(const struct truetype_color_glyph *glyph, uint32_t **pixels, unsigned *width, unsigned *height);
+static int color_size(const struct truetype_color_glyph *glyph, unsigned *width, unsigned *height);
+static void color_geometry(const struct truetype_color_glyph *found, unsigned source_width, unsigned source_height, unsigned pixels, struct kl_color_image *out);
 static void color_scale(const uint32_t *source, unsigned source_width, unsigned source_height, uint32_t *target, int width, int height);
 static int color_round(float value);
 
@@ -43,7 +45,6 @@ kl_color_glyph(
 	uint32_t *source;
 	unsigned source_width;
 	unsigned source_height;
-	float scale;
 	int error;
 
 	/* The image at the strike nearest the size. */
@@ -61,16 +62,7 @@ kl_color_glyph(
 		return error;
 
 	/* The size asked for over the strike's. */
-	scale = (float)pixels / (float)found.ppem;
-	out->width = color_round((float)source_width * scale);
-	out->height = color_round((float)source_height * scale);
-	if (out->width < 1)
-		out->width = 1;
-	if (out->height < 1)
-		out->height = 1;
-	out->left = color_round((float)found.left * scale);
-	out->top = color_round((float)found.top * scale);
-	out->advance = color_round((float)found.advance * scale);
+	color_geometry(&found, source_width, source_height, pixels, out);
 
 	/* The scaled pixels. */
 	out->pixels = malloc((size_t)out->width * (size_t)out->height * sizeof(uint32_t));
@@ -85,6 +77,93 @@ kl_color_glyph(
 
 	/* Succeeded: the glyph at the size. */
 	return 0;
+}
+
+/*
+ * Measures a face's colour glyph at a size in pixels per em without
+ * decoding it: the box, the place and the advance kl_color_glyph gives,
+ * from the PNG's header alone (out's pixels stay NULL).  Returns 0, ENOENT
+ * when the glyph has no colour image, or another errno value.
+ */
+int
+kl_color_glyph_metrics(
+	struct truetype_face *face,
+	unsigned glyph,
+	unsigned pixels,
+	struct kl_color_image *out)
+{
+	struct truetype_color_glyph found;
+	unsigned source_width;
+	unsigned source_height;
+	int error;
+
+	/* The image at the strike nearest the size. */
+	memset(out, 0, sizeof(*out));
+	error = truetype_set_pixel_size(face, pixels);
+	if (error != 0)
+		return error;
+	error = truetype_color_glyph(face, glyph, &found);
+	if (error != 0)
+		return error;
+
+	/* Its size, from the PNG's header. */
+	error = color_size(&found, &source_width, &source_height);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the box at the size asked for over the strike's. */
+	color_geometry(&found, source_width, source_height, pixels, out);
+	return 0;
+}
+
+/* Reads a colour glyph's PNG header for its size (as color_decode bounds it); 0 or EINVAL. */
+static int
+color_size(
+	const struct truetype_color_glyph *glyph,
+	unsigned *width,
+	unsigned *height)
+{
+	png_image png;
+	int ok;
+
+	/* The header, of a size worth reading. */
+	memset(&png, 0, sizeof(png));
+	png.version = PNG_IMAGE_VERSION;
+	ok = png_image_begin_read_from_memory(&png, glyph->png, glyph->png_size);
+	if (!ok)
+		return EINVAL;
+	*width = png.width;
+	*height = png.height;
+	png_image_free(&png);
+	if (*width == 0U || *height == 0U || *width > COLOR_SOURCE_MAX || *height > COLOR_SOURCE_MAX)
+		return EINVAL;
+
+	/* Succeeded: the source's size. */
+	return 0;
+}
+
+/* Gives the box, the place and the advance of a colour glyph's image of a size at the size asked for. */
+static void
+color_geometry(
+	const struct truetype_color_glyph *found,
+	unsigned source_width,
+	unsigned source_height,
+	unsigned pixels,
+	struct kl_color_image *out)
+{
+	float scale;
+
+	/* The size asked for over the strike's; a box is at least one pixel a side. */
+	scale = (float)pixels / (float)found->ppem;
+	out->width = color_round((float)source_width * scale);
+	out->height = color_round((float)source_height * scale);
+	if (out->width < 1)
+		out->width = 1;
+	if (out->height < 1)
+		out->height = 1;
+	out->left = color_round((float)found->left * scale);
+	out->top = color_round((float)found->top * scale);
+	out->advance = color_round((float)found->advance * scale);
 }
 
 /* Decodes a colour glyph's PNG into premultiplied 0xAARRGGBB pixels. */

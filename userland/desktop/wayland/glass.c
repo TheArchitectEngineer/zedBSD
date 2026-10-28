@@ -153,11 +153,15 @@
 #define GLASS_BITMAP		64U
 
 /*
- * What a glyph worker's job is for: a cell of the atlas's
- * cache, or one of the lock screen clock's large digits.
+ * What a glyph worker's job is for: a cell of the atlas's cache (a glyph's
+ * coverage or a colour glyph's pixels), one of the lock screen clock's
+ * large digits, or the bytes of the fallback or the emoji font.
  */
 #define GLASS_JOB_CELL		0U
 #define GLASS_JOB_LARGE		1U
+#define GLASS_JOB_COLOR		2U
+#define GLASS_JOB_FALLBACK	3U
+#define GLASS_JOB_EMOJI		4U
 
 /* The blurred wallpaper is this many times smaller than the output. */
 #define GLASS_BLUR_SCALE	4U
@@ -297,6 +301,14 @@ struct kwl_glass {
 	unsigned fallback_tried;
 	unsigned emoji_tried;
 	int emoji_face;
+	/*
+	 * The fallback and the emoji fonts being read by the glyph worker
+	 * (1 from the ask, read at the worker's start, until the bytes are
+	 * taken): a character the open fonts lack waits for them, drawn as
+	 * nothing and measured as nothing until then.
+	 */
+	unsigned fallback_loading;
+	unsigned emoji_loading;
 	struct glass_cached cache[GLASS_CELLS];
 	uint32_t cache_top;
 	/*
@@ -369,6 +381,11 @@ static void large_put(struct kwl_glass *glass, const uint8_t *bitmap, uint32_t p
 static const struct glass_glyph *large_glyph_of(struct kwl_glass *glass, uint32_t character);
 static void atlas_put(struct kwl_glass *glass, const uint8_t *bitmap, uint32_t x, uint32_t y, uint32_t width, uint32_t height);
 static int glass_open_face(struct kwl_glass *glass, const char *path);
+static int glass_add_face(struct kwl_glass *glass, void *data, size_t size);
+static int glass_ask_font(struct kwl_glass *glass, const char *path, unsigned kind);
+static void glass_take_font(struct kwl_glass *glass, struct kwl_glyph_job *job);
+static int glass_ask_color(struct kwl_glass *glass, unsigned glyph, enum glass_size size, unsigned slot, const struct kl_color_image *metrics);
+static void glass_take_color(struct kwl_glass *glass, const struct kwl_glyph_job *job);
 static void glass_worker_start(struct kwl_server *server, struct kwl_glass *glass);
 static void glass_worker_font(struct kwl_glass *glass, unsigned slot);
 static void glass_take_cell(struct kwl_glass *glass, const struct kwl_glyph_job *job);
@@ -1515,9 +1532,10 @@ atlas_create(
 	printf("KWL STARTUP step=glyphs-fonts ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/*
-	 * The fallback font is opened on the first character the first font
-	 * lacks (glass_cache_glyph): reading its megabytes here would delay
-	 * the compositor's start.
+	 * The fallback font is read by the glyph worker from its start, the
+	 * emoji font too (glass_worker_start), or without the worker on the
+	 * first character the first font lacks (glass_cache_glyph): reading
+	 * their megabytes here would delay the compositor's start.
 	 */
 	glass->fallback_path = server->fallback_font_path;
 	glass->fallback_tried = 0;
@@ -3516,6 +3534,10 @@ kwl_glass_glyphs_take(
 		next = job->next;
 		if (job->kind == GLASS_JOB_CELL) {
 			glass_take_cell(glass, job);
+		} else if (job->kind == GLASS_JOB_COLOR) {
+			glass_take_color(glass, job);
+		} else if (job->kind == GLASS_JOB_FALLBACK || job->kind == GLASS_JOB_EMOJI) {
+			glass_take_font(glass, job);
 		} else {
 			glass_take_large(glass, job);
 		}
@@ -3890,7 +3912,6 @@ glass_open_face(
 	struct kwl_glass *glass,
 	const char *path)
 {
-	struct truetype_face *face;
 	void *data;
 	size_t size;
 	int error;
@@ -3904,7 +3925,36 @@ glass_open_face(
 	if (data == NULL)
 		return errno;
 
-	/* The font in it. */
+	/* The font in it, kept. */
+	error = glass_add_face(glass, data, size);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the font can render glyphs. */
+	return 0;
+}
+
+/*
+ * Opens a font over a file's bytes and keeps both for the cache (the bytes
+ * are the look's from then on, freed when it could not be opened); returns
+ * 0, ENOENT without room, or EINVAL.
+ */
+static int
+glass_add_face(
+	struct kwl_glass *glass,
+	void *data,
+	size_t size)
+{
+	struct truetype_face *face;
+	int error;
+
+	/* No room for another font. */
+	if (glass->face_count == GLASS_FACES) {
+		free(data);
+		return ENOENT;
+	}
+
+	/* The font in the bytes. */
 	error = truetype_open(data, size, 0U, &face);
 	if (error != 0) {
 		free(data);
@@ -3922,6 +3972,79 @@ glass_open_face(
 
 	/* Succeeded: the font can render glyphs. */
 	return 0;
+}
+
+/*
+ * Asks the glyph worker for a font file's bytes (the fallback or the emoji
+ * font); returns 0, or ENOMEM with nothing asked.
+ */
+static int
+glass_ask_font(
+	struct kwl_glass *glass,
+	const char *path,
+	unsigned kind)
+{
+	struct kwl_glyph_job *job;
+
+	/* The job, the worker's from its submission. */
+	job = calloc(1, sizeof(*job));
+	if (job == NULL)
+		return ENOMEM;
+
+	/* The file to read, kept by the server (or a constant) until the job is taken. */
+	job->task = KWL_GLYPH_TASK_READ;
+	job->path = path;
+	job->kind = kind;
+	kwl_glyph_worker_submit(&glass->worker, job);
+
+	/* Succeeded: the bytes come back as a job taken. */
+	return 0;
+}
+
+/*
+ * Opens the fallback or the emoji font over the bytes the glyph worker
+ * read (the job's bytes become the look's), or tells why it could not be;
+ * the characters that waited for it are measured and drawn from the next
+ * walk on.
+ */
+static void
+glass_take_font(
+	struct kwl_glass *glass,
+	struct kwl_glyph_job *job)
+{
+	const char *path;
+	int error;
+
+	/* The font the bytes are of, read no longer. */
+	if (job->kind == GLASS_JOB_EMOJI) {
+		path = GLASS_EMOJI_FONT;
+		glass->emoji_loading = 0U;
+	} else {
+		path = glass->fallback_path;
+		glass->fallback_loading = 0U;
+	}
+
+	/* The face over the bytes (which are the look's from now on), or the reason there is none. */
+	error = job->error;
+	if (error == 0) {
+		error = glass_add_face(glass, job->data, job->size);
+		job->data = NULL;
+	}
+
+	/* The emoji font's face is asked apart from the others. */
+	if (job->kind == GLASS_JOB_EMOJI) {
+		if (error == 0)
+			glass->emoji_face = (int)glass->face_count - 1;
+		printf("KWL GLASS emoji font: path=%s errno=%d\n", path, error);
+		return;
+	}
+
+	/* The fallback font's line, as when it was opened on the first character it had. */
+	if (error != 0) {
+		printf("KWL GLASS no fallback font: path=%s errno=%d\n", path, error);
+	} else {
+		printf("KWL GLASS fallback font: path=%s faces=%u\n", path, glass->face_count);
+	}
 }
 
 /*
@@ -3951,6 +4074,25 @@ glass_worker_start(
 	for (slot = 0U; slot < glass->face_count; slot++)
 		glass_worker_font(glass, slot);
 	printf("KWL GLASS worker started faces=%u\n", glass->face_count);
+
+	/* The fallback font's file read ahead (one that cannot be asked is read on its first character, as without the worker). */
+	if (glass->fallback_tried == 0U) {
+		error = glass_ask_font(glass, glass->fallback_path, GLASS_JOB_FALLBACK);
+		if (error == 0) {
+			glass->fallback_tried = 1U;
+			glass->fallback_loading = 1U;
+		}
+	}
+
+	/* The emoji font's file likewise, after the fallback's. */
+	if (glass->emoji_tried == 0U) {
+		error = glass_ask_font(glass, GLASS_EMOJI_FONT, GLASS_JOB_EMOJI);
+		if (error == 0) {
+			glass->emoji_tried = 1U;
+			glass->emoji_face = -1;
+			glass->emoji_loading = 1U;
+		}
+	}
 }
 
 /* Gives the glyph worker a font the look opened: its bytes, and the first font's companions. */
@@ -4060,6 +4202,18 @@ glass_cache_glyph(
 			face = glass->faces[which];
 			break;
 		}
+	}
+
+	/*
+	 * No font open has it while the fallback or the emoji font is still
+	 * being read: nothing now, and the character is looked up again once
+	 * the font came (a layer's picture recorded without it is counted with
+	 * the guard's evictions, so that it is drawn again too).
+	 */
+	if (id == 0U && (glass->fallback_loading || glass->emoji_loading)) {
+		if (glass->guard_clock != 0U)
+			glass->guarded_evictions++;
+		return NULL;
 	}
 
 	/* No font open has it: the fallback font, opened once on the first such character. */
@@ -4192,6 +4346,45 @@ glass_cache_color(
 	int error;
 	int line;
 
+	/*
+	 * The glyph worker decodes it when it runs: the box measured here from
+	 * the PNG's header, the cell waiting for its pixels, written at the
+	 * start of a later walk.
+	 */
+	if (glass->worker_running) {
+		error = kl_color_glyph_metrics(glass->faces[glass->emoji_face], id, glass_pixels[size], &image);
+		if (error != 0)
+			return NULL;
+		if (image.width > (int)GLASS_CELL || image.height > (int)GLASS_CELL)
+			return NULL;
+
+		/* The cell's place in the atlas, a new assignment (a worker's result for an earlier one is not written). */
+		cell = &glass->cache[slot];
+		per_row = GLASS_ATLAS_WIDTH / GLASS_CELL;
+		cell->glyph.x = (slot % per_row) * GLASS_CELL;
+		cell->glyph.y = glass->cache_top + (slot / per_row) * GLASS_CELL;
+		glass->cell_generation++;
+		cell->generation = glass->cell_generation;
+
+		/* Asked, or decoded here when the job could not be made. */
+		error = glass_ask_color(glass, id, size, slot, &image);
+		if (error == 0) {
+			cell->glyph.pending = 1U;
+			cell->codepoint = codepoint;
+			cell->size = (unsigned)size;
+			cell->glyph.width = (uint32_t)image.width;
+			cell->glyph.height = (uint32_t)image.height;
+			cell->glyph.left = image.left;
+			cell->glyph.top = image.top;
+			cell->glyph.advance = image.advance;
+			cell->glyph.color = 1;
+			glass->clock++;
+			cell->used = glass->clock;
+			printf("KWL GLASS glyph codepoint=U+%04X size=%u face=emoji cell=%u color=1 pending=1\n", codepoint, (unsigned)size, slot);
+			return &cell->glyph;
+		}
+	}
+
 	/* The glyph's colours at the size, which must fit a cell. */
 	error = kl_color_glyph(glass->faces[glass->emoji_face], id, glass_pixels[size], &image);
 	if (error != 0)
@@ -4269,6 +4462,81 @@ glass_ask_cell(
 
 	/* Succeeded: the cell waits for the worker. */
 	return 0;
+}
+
+/*
+ * Asks the glyph worker for a cell's colour glyph: the glyph and the size
+ * on the emoji font, the box measured here and the cell's assignment.
+ * Returns 0, or ENOMEM with nothing asked (the caller decodes it itself).
+ */
+static int
+glass_ask_color(
+	struct kwl_glass *glass,
+	unsigned glyph,
+	enum glass_size size,
+	unsigned slot,
+	const struct kl_color_image *metrics)
+{
+	struct kwl_glyph_job *job;
+
+	/* The job, the worker's from its submission. */
+	job = calloc(1, sizeof(*job));
+	if (job == NULL)
+		return ENOMEM;
+
+	/* What to decode, and the cell's assignment it is for. */
+	job->task = KWL_GLYPH_TASK_COLOR;
+	job->font = (unsigned)glass->emoji_face;
+	job->pixels = glass_pixels[size];
+	job->glyph = glyph;
+	job->width = (uint32_t)metrics->width;
+	job->height = (uint32_t)metrics->height;
+	job->kind = GLASS_JOB_COLOR;
+	job->slot = slot;
+	job->generation = glass->cache[slot].generation;
+
+	/* After every job asked for before it. */
+	kwl_glyph_worker_submit(&glass->worker, job);
+
+	/* Succeeded: the cell waits for the worker. */
+	return 0;
+}
+
+/*
+ * Writes a decoded colour glyph's pixels into its cell, unless the cell was
+ * given to another glyph since it was asked for; one the worker could not
+ * decode leaves the cell drawing nothing.
+ */
+static void
+glass_take_color(
+	struct kwl_glass *glass,
+	const struct kwl_glyph_job *job)
+{
+	struct glass_cached *cell;
+	uint32_t *row;
+	int line;
+
+	/* The cell holds another glyph now, or no longer waits. */
+	cell = &glass->cache[job->slot];
+	if (cell->generation != job->generation || !cell->glyph.pending)
+		return;
+
+	/* A glyph that could not be decoded is drawn as nothing. */
+	if (job->error != 0) {
+		cell->glyph.pending = 0U;
+		cell->glyph.width = 0U;
+		cell->glyph.height = 0U;
+		printf("KWL GLASS glyph codepoint=U+%04X cell=%u color=1 errno=%d\n", cell->codepoint, job->slot, job->error);
+		return;
+	}
+
+	/* The colours into the cell row by row; the walk's copy takes the atlas. */
+	for (line = 0; line < job->image.height; line++) {
+		row = (uint32_t *)((unsigned char *)glass->atlas.map + (size_t)(cell->glyph.y + (uint32_t)line) * glass->atlas.row_pitch);
+		memcpy(row + cell->glyph.x, job->image.pixels + (size_t)line * (size_t)job->image.width, (size_t)job->image.width * sizeof(uint32_t));
+	}
+	kwl_host_image_written(&glass->atlas);
+	cell->glyph.pending = 0U;
 }
 
 /*
