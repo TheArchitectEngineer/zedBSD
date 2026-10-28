@@ -3,7 +3,7 @@
 # ws307-p005 base の道具（mkswap の partition の mode・diskpart の batch・FAT の乱数の serial・4096 byte の sector）
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §5.3・§5.9・§11.3。Queue: q1665 / q1665-i01（担当 P4、2026-10-29）。
-- Status: in-progress（残り: native UFS の fragment 4096 の profile と QEMU の短い確認。下の「残り」）
+- Status: in-progress（q1665-i04 で残りの 2 つを実装・確かめた。cleared の判定は Q1）
 - 承認: 2026-10-29 ユーザー「P4にWS307」（Q1 の中継）。
 
 ## 目的
@@ -32,7 +32,11 @@ installer の helper（p009）が使う base の道具を足す: `mkswap` の pa
 - `plan/ws307/tests/host/mkfs-fat32-test.c`（`fat32-format.c` と）: 512 MiB の ESP を 512・4096 byte の sector で書いて writer で verify → PASS。`/usr/sbin/fsck.fat -n` が両方を読んだ（`0 files, 1/1032412 clusters`・`0 files, 1/130784 clusters`）。
 - 未実施: guest（QEMU）での `diskpart batch`・`mkswap /dev/…`・`mkfs -t fat32` の 4096 の device（p006 の kernel の FAT の 4096 の後でないと mount できない）。p009 の QEMU の試験で helper から使う時に確かめる。
 
+## q1665-i04（2026-10-29、P4、worktree p4-ws307h）
+
+- native UFS の fragment 4096 の profile: 実装した（commit bfa7afcdb、詳細と host の試験は [phase006/phase.md](../phase006/phase.md) の「q1665-i04 の結果」）。4096 の NVMe の guest で mkfs・mount・読み書きを確かめた。
+- QEMU の短い確認: `sh plan/ws307/tests/p005-batch.sh build/ws307h-ssh/hdd-image.img` PASS（`build/ws307-test/p005-batch.uGro97`、512 と 4096 の NVMe で `diskpart batch`・native UFS・`mkswap /dev/PARTITION`）。`mkfs -t fat32` の 4096 の device は p006-4k で ok。
+
 ## 残り
 
-- native UFS の fragment 4096 の profile（spec §5.9・T19）: formatter の geometry（`ufs-format.c` の `FORMAT_FRAGMENT`・`FORMAT_DATA_FRAGMENT`・cylinder group・tail の 512 byte の sector）を 4096 に一般化する作業で、kernel の UFS の 4096（p006）と合わせて確かめる要る。p006 と同じ attempt で行う。
-- QEMU の短い確認（上の未実施）。
+- 無し（Phase の受け入れの判定は Q1。UFS の上の swap file の 4096 は p006 の再試験の結果待ち）。

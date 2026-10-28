@@ -28,6 +28,12 @@
   - 失敗の 3 つは loader の文字（firmware の console の font）を boot-test.sh の読み手が読めないので、screen shot を目で見て判定した。
 - 観察（直していない、この Phase の外の既存の振る舞い）: cfg に `video=640x480` がある時、loader の root の失敗の文字が画面に出なかった（同じ mode の FAT の kernel の失敗は出る。debug port には出て、CPU は `halt()` の `hlt` に居た、QEMU の monitor の `info registers`）。導入先の cfg は `video=` を持たないので、その形では出る。GOP の mode を変えた後の firmware の console の行の位置の問題と見られる。
 
+## q1665-i04（2026-10-29、P4、worktree p4-ws307h）
+
+- loader の FAT の探索（`bootloader/uefi/volume-discovery.c`、commit f0d3945fa）: media の block は 512〜4096 の 2 の冪、BPB の sector は 512〜4096 で media の block 以上（kernel の FAT と同じ契約）。host 試験 `plan/ws307/tests/host/fat-bpb-4k-test.c`（mkfs の FAT32 を 512・4096 で書き、512・2048・4096・8192 の media で）PASS。WS013 の `plan/ws013/tests/uefi-volume-discovery-test.c` の古い 2 つの期待を直した（d1482e51b、Q1 の指示）、O2 と ASan/UBSan で PASS。BOOTX64.EFI build warning 0・check PASS。
+- 4096 の起動の試験: `plan/ws307/tests/p008-4k-boot.sh`（guest の中で 4Kn の NVMe に ESP と native UFS の root を作り root を写し、その disk だけを `BOOT_NVME_BLOCK_SIZE=4096` の boot-test.sh で起動、e799efd22 で boot-test.sh に足した）。ラップアップの時点で走行中（`build/ws307-test/p008-4k.4KNAxn`）、結果は未記録。
+- j3 の sync の確かめ: 4096 の disk で確かめた（p006-4k、sync だけして mount のまま止めた file を host で loader の reader が同じ cksum で読んだ、`build/ws307-test/p006-4k.O52KLU`）。512 の disk では未実施。
+
 ## 残り
 
 - 4096 byte の段（spec §5.9・§5.10 の p008 の 4096 の段）: loader の FAT の探索（`volume-discovery.c` の `supported_fat_block_size` と BPB の sector）を kernel の FAT（p006）と同じ契約で 4096 に、4Kn の disk の ESP＋root の UFS（fragment 4096、p005 の残り）で起動。p005・p006 の後。
