@@ -3,7 +3,7 @@
 # ws290-p017 boot framebuffer の使用終了の通知と解放
 
 - 親: [WS290](../ws.md)。設計: [design.md](../design.md) §13（版 4.15 の「p012 の実装」の boot framebuffer）と、この phase.md の設計の節（着手で書く）。
-- 状態: planned
+- 状態: in-progress（2026-10-28 P3 q1656-i01）
 - 依存: p012（表示）、p011（local の allocator と `ghci_memory_boot_release`）
 
 ## ユーザーの決定（2026-10-28、原文は ws.md）
@@ -22,6 +22,10 @@
 - Q7（HAL の窓の委譲の形）: 「実装だけで直す (推し)」（クリック）
 - Q8（sun4u・generic の file）: 「最後に、確かめてから (推し)」（クリック）
 - Q9（Phase の分け方）: 「1 つの Phase で」（クリック。推しの「分ける」と違う）
+- hal.h の契約の文: 「変えない、実装だけ (推し)」（クリック）
+- Q10（x68k）・Q11（serial だけの板）: 「x68k は止める、serial だけは足さない (推し)」（クリック）
+- Q12（discrete で boot display が無い時）: 「常に止める」（クリック。推しの「止めない」と違う）
+- Q13（全体の決定、2026-10-28 ユーザーの原文）: 「GHCIに限らず、GPUで最初のフリップをしたら、コンソールはフレームバッファをバックにする点では使用終了します。シリアルバックは終了しません。すべてのアーキテクチャ、すべてのGPUドライバでそうです。」
 
 解釈（この helper、P3 の確かめが要る所は §17）:
 
@@ -40,16 +44,17 @@
 ## 受け入れ
 
 - 設計の review の H が 0。
-- 場面 PASS、build の warning 0。他の GPU driver（amdrdna・i915・powervr）の使い方で振る舞いが変わらない事を build と既存の試験で確かめる。
+- 場面 PASS、build の warning 0。他の GPU driver（amdrdna・i915・nvrtx・powervr・bcm2711・venus）は最初の client の flip までは振る舞いが変わらず、最初の flip で console が framebuffer の backend の使用を終える（Q13。build と既存の試験と 13.6 の (c)）。
 - 実機（GOP の framebuffer の解除の後に console が描かない事）は p014 か Q1 の割当の QEMU で。
 - VF2 の実機の解放の道（§13.7）: U-Boot が KC705 の DISP2 を点けていなければ boot の範囲は無く、その確かめは「該当無し」と記録する（失敗ではない）。
-- 見積り: 14 LW（設計の後の見積りは §14 の 28 LW。この行と ws.md の写しは P3 が直す）。
+- 見積り: 29.5 LW（§14。立てた時の 14 LW を設計の後に 28 LW、Q13 の全 GPU driver の分 1.5 LW を足した）。
 
 ## 設計
 
 2026-10-28 q1644-i01 の P3 の helper が worktree `p3-ws290g`（head 7811b5562）の code を読んで書き、同じ日に design-reviewer（Opus）の review の H1・M1・M2・L1〜L6 と、ユーザーの Q1・Q2・Q4 の答えを反映して直した（head 6250b7f97）。
 同じ日に 2 度目の review（Opus、H 0）の M1〜M4・L1〜L8 と、ユーザーの Q6〜Q9 の答えを反映した（head e18c42e75。7811b5562 からの `src/`・`include/` の差は `src/drivers/gpu/ghci/` の ghci.c・layout.h・recover.c と vk/ だけで、ここで引く file ではない事を `git diff --stat` で確かめた）。
 code の事実には `file:line`（この head の行）を付けた。source は変えていない。
+2026-10-28 q1656-i01 の P3 が Q10〜Q13 と hal.h の文の答えを反映した（版 3: Q13 の全 GPU driver は drv_gpu の core の最初の flip の呼び出し、§3.5）。`gpu.c` の行は worktree `p3-ws290g` の f133a8c51。
 
 ### 0. 要旨
 
@@ -59,7 +64,7 @@ code の事実には `file:line`（この head の行）を付けた。source �
 - 「使用終了」は suspend と違い戻らない（v1）。`kern_text_resume`・`reveal`・`reveal_fatal` は終わった console を描かない。cell は更新し続ける（snapshot と将来の scan-out の切り替えのため）。scan-out を console に戻すのは Future Work。
 - HAL の early console の窓（amd64、VA `0xffffffffc2000000`）: Q1・Q7 で kernel が外す。hal.h を変えず、amd64 の HAL の実装で、`kernel_putc` の公開の後に handoff の framebuffer と同じ物理・同じ大きさ・UC の `hal_space_map_device()` を 1 度だけその窓で返し、その `hal_space_unmap_device()` が全 CPU から global の entry も含めて外す（§11）。framebuffer が固定の窓（0xa0000〜0x100000、0xf0000000〜0xf1000000、0xfec00000〜0xff000000）に掛かる時は外せず `HAL_ERR_BUSY`（何も外さない）。
 - `end` を画面を持つ全部の板の表に足す（Q2・Q4、§10）: PC/AT（amd64・i386）・PC-98・generic の front end と sun4u は鎖の全部。rpi4 は HAL の既存の suspend の口。VF2 と x68k は kernel が `kernel_putc` を公開して HAL の画面の console を黙らせる（VF2 は kernel の UART の出力を足して serial を保つ、x68k は他の出力が無いので klog の ring だけ）。serial だけの板の共通の表は v1 で `end` を持たない（`ENOTSUP`、§17 の Q11）。
-- 他の GPU driver（amdrdna・i915・powervr・bcm2711・venus）と drv_gpu の core は呼ばないので振る舞いは変わらない。ただし同じ機械で GHCI が end を呼んだ後は、彼らの `kern_text_resume` は何も描かない（8.1）。
+- **Q13（全 GPU driver）**: drv_gpu の core（`src/drivers/gpu/gpu.c`）が、どの driver でも最初に成功した client の flip（`GPU_PRESENT`・`GPU_DISPLAY_PRESENT`・`GPU_DISPLAY_COMMIT` の driver の op が 0 を返した時）の後に、lock 無しで 1 度だけ `kern_text_end(NULL, 0)` を呼ぶ（§3.5）。console は全部の architecture・全部の GPU driver（amdrdna・i915・nvrtx・powervr・bcm2711・venus・GHCI）で framebuffer の backend の使用を終え、serial の backend は続く。GHCI は返す memory があるので、加えて自分の latch の後に自分の BAR の範囲で呼ぶ（§3.3、2 度目の呼び出しは最初の結果を GHCI の範囲で判じ直す）。各 GPU driver の source は変えない（amdrdna も）。彼らの `kern_text_suspend`・`resume` は残り、end の後の resume は何も描かない（§3.5・8.1）。
 - user の空間に firmware の framebuffer を map する道は今無い（/dev/graphics に mmap が無く、/dev/mem も無い）。終わった後の /dev/graphics は open も ioctl も `ENODEV`。
 
 ### 1. 今の code（調べた事実）
@@ -211,7 +216,8 @@ struct kern_text_range {
  * EBUSY when the console stopped but a mapping or writer it could not
  * remove lies in the ranges; ENOTSUP, changing nothing, when no console is
  * published or the board's console cannot stop; EINVAL, changing nothing,
- * for an empty, oversized or wrapping range list; or the error of a
+ * for an oversized list or an empty or wrapping range (count 0, with
+ * ranges NULL, is a driver that gives no memory back); or the error of a
  * removal that failed for a mapping in the ranges.  The caller holds no
  * lock; the call may sleep.  There is no way back.
  */
@@ -221,7 +227,7 @@ int kern_text_end(const struct kern_text_range *ranges, unsigned count);
 - 範囲を残す理由（Q6 の後の判断）: 止めるかは範囲で決めない（常に止める）が、止めた後に外せない物（固定の窓・PC-98 の text の VRAM・HAL の direct map や device window）が残り得る板がある。それが呼び手の memory に掛かるかは呼び手が範囲を返して安全かの判断そのもので、範囲が無いと「何か残れば常に `EBUSY`」（VF2 は HAL の device window が常に残るので解放されない）か「残っても 0」（危ない側）のどちらかになる。範囲を付ければ VF2・別の device の上の GOP では 0（解放）、GHCI の BAR の上で外せない時だけ `EBUSY`（保つ）にできる。
 - `EBUSY`・errno の後も console は止まったまま（戻さない）。止める前に断るのは `ENOTSUP`・`EINVAL` だけ（L1。前の版の「HAL がまだ描く時の `EBUSY` で何も変えない」は、HAL を `kernel_putc` の公開で黙らせる形にしたので無い）。
 
-`src/kern/text-display.c`: `ranges` が NULL・`count` が 0 か `KERN_TEXT_END_RANGES` を超える・ある範囲の `bytes` が 0 か `physical + bytes` が桁あふれ → `EINVAL`。`ops()` が NULL か `end` が NULL なら `ENOTSUP`。他は `table->end(ranges, count)` を呼び、0 か `EBUSY` の時 `text_changed()`（:546-571）で snapshot の消費者を起こしてから結果を返す。lock は取らない（今の他の関数と同じ）。重なりの式は 1 つの inline の関数 `kern_text_range_overlaps(ranges, count, physical, bytes)` として header に置き、全部の板が使う（両方とも空でない、桁あふれは前で断る: `a < b + bn && b < a + an`）。
+`src/kern/text-display.c`: `count` が `KERN_TEXT_END_RANGES` を超える・`count` が 0 でなく `ranges` が NULL・ある範囲の `bytes` が 0 か `physical + bytes` が桁あふれ → `EINVAL`。`ops()` が NULL か `end` が NULL なら `ENOTSUP`。他は `table->end(ranges, count)` を呼び、0 か `EBUSY` の時 `text_changed()`（:546-571）で snapshot の消費者を起こしてから結果を返す。lock は取らない（今の他の関数と同じ）。`count` 0（Q13 の core の呼び出し。`ranges` は NULL でよい）は止めて、残る物を判じる範囲が無いので 0（`ENOTSUP` は今と同じ）。重なりの式は 1 つの inline の関数 `kern_text_range_overlaps(ranges, count, physical, bytes)` として header に置き、全部の板が使う（両方とも空でない、桁あふれは前で断る: `a < b + bn && b < a + an`）。
 
 #### 3.2 PC/AT の内部
 
@@ -257,6 +263,15 @@ int kern_text_end(const struct kern_text_range *ranges, unsigned count);
 | serial だけの板 | 足さない（`serial-console.c` の表は `end` が NULL → `ENOTSUP`） | — | — |
 
 - 試験だけで通る重なりの道: PCIe の GHCI が付く板では console の表示の memory は全部 GHCI の BAR の外（PC-98 の legacy・Cirrus の固定の番地、rpi4 の VideoCore の RAM、VF2 の SoC の DRAM）なので、残る物があっても結果は 0。`EBUSY` の道は amd64 で GOP が GHCI の上・固定の窓の時と、host 試験だけ。
+
+#### 3.5 drv_gpu の core（Q13、全 GPU driver）
+
+- 場所: `src/drivers/gpu/gpu.c` に static の `gpu_console_end()` と static の atomic の印 `gpu_console_ended`（0 → 1 を compare-and-swap で 1 度だけ）。呼ぶ所は 3 つの flip の道の成功の後、driver の op が戻り pin を外した後: `gpu_present_ioctl()`（`ops->present` が 0、:3407 の後）、`GPU_DISPLAY_PRESENT`（`gpu_display_present_resource()` が 0 で、ungated の `adoption_wait` も 0 の後、:3905-3920）、`GPU_DISPLAY_COMMIT`（`display->commit` が 0、:4508 の後、全部の plane の unpin の後）。`GPU_DISPLAY_CLAIM` の `kern_text_progress_end()`（:3841-3847）と同じく ioctl の thread の文脈で、core の spinlock・session の lock を持たない（実装の段 11 で 3 つの道を読み直して確かめ、記録する）。
+- 中身: 印が 0 から 1 になった呼び手だけが `kern_text_end(NULL, 0)` を呼ぶ。結果が 0・`ENOTSUP`（serial だけの板など、止める画面が無い）以外なら `kern_logf` を 1 行（`gpu: the text console could not leave the display (%d)`）。結果は flip の成否に混ぜない（flip は成功のまま）。
+- 「最初の flip」の意味: user の client が driver に渡した最初の image。driver が自分で点ける boot の image・lease の終わりの点け直し・VRAM の training の一時の停止は flip ではない（core を通らない）。GPU の計算だけで表示を使わない client は呼ばない。
+- 既存の `kern_text_suspend`・`resume` の呼び手（1.5 の表: amdrdna の lease の frame と lease の終わりの resume・休みの後の resume、amdrdna の VRAM の training、i915 の bootfb の lease、powervr・bcm2711 の lease、/dev/graphics の ENTER）は変えない。end の前は今と同じに止めて戻す。end の後の suspend は描かない状態のまま、resume は `text_ended` を見て描かない（§4）。よって「lease の終わりに console を戻す」形（amdrdna の lease の終わり・休みの 3 s の後の resume を含む）は、最初の client の flip の後は framebuffer に何も描かない。driver が lease の終わりに console の surface（firmware の framebuffer）を scan-out に戻す所は今のまま（driver の持ち物で、その絵は end の時の最後の console の絵か driver が塗った黒）。scan-out を console の backend に戻すのは Future Work（ユーザーの決定の後者）。
+- 2 つの呼び手の順: 普通は core（flip の受付）が先、GHCI（latch の後、自分の BAR の範囲）が後。後の GHCI の呼び出しは「最初の結果を自分の範囲で判じ直す」（§3.1）ので、core の呼び出しで外せなかった物が GHCI の BAR に掛かる時だけ `EBUSY` で範囲を保つ。GHCI が先に呼ぶ道（core の flip より先に GHCI の image が latch される事）は無いが、どちらが先でも結果は同じ。
+- 呼ばない構成: display を持たない GPU（`ops->display` も `ops->present` も無い）は flip の道を通らないので呼ばない。
 
 ### 4. 状態遷移
 
@@ -369,7 +384,7 @@ scan_flush（service 以外、device.lock と display_lock の下）:
 | PC-98・VF2 で残る物が ranges に掛かる（host 試験だけ） | `EBUSY` | 終わり | 範囲を保つ |
 | 表が無い・`end` の無い表（serial だけの板） | `ENOTSUP` | 今のまま | 範囲を保つ |
 | 引数の誤り（GHCI の `bar_count` 0 は呼ばないので起きない） | `EINVAL` | 今のまま | 範囲を保つ |
-| GHCI が UMA（`boot_reserved` 0）・boot display を取らなかった | 呼ばない | 今のまま | 今のまま（§17 の Q12） |
+| GHCI が UMA（`boot_reserved` 0）・boot display を取らなかった | GHCI は呼ばない（core が最初の flip で `(NULL, 0)` で呼ぶ、§3.5） | 終わり（Q12「常に止める」・Q13） | 返す範囲は無い（今のまま） |
 | flip が取られる前の detach・LOST の後の detach | 呼ばない（`present` 0、L7） | 今のまま | detach の今の扱い |
 | `boot_end` が lock を離している間に lease の終わりが boot の image を点け直した（`flips[0]` に boot、または `boot_scanning` 1） | 0 | 終わり | `console = 0`、`kept = 1` のまま。次に自分の image が取られた時 `boot_release`、次の flush で返す |
 | `boot_end` が lock を離している間に detach（`present` 0） | 0 | 終わり | `console = 0`、範囲は返さない（detach が allocator ごと捨てる。phase011 の「解放の前の detach」） |
@@ -384,15 +399,16 @@ scan_flush（service 以外、device.lock と display_lock の下）:
 3. amd64 で framebuffer が固定の窓に掛かり GHCI の BAR の中の機械は、その窓を外せないので範囲を保つ（`EBUSY`）。外すには HAL の実装でその窓の 2 MiB の page を 4 KiB に分ける要がある（Future Work 候補）。
 4. VF2 の HAL の fbcons の画面の mapping（device window）は外せない（kernel に口が無い）。SoC の DRAM で GHCI の BAR に掛からないので解放に影響しない。HDMI の画面は最後の絵のまま残る。
 5. x68k は end の後の文字が klog の ring だけになる（他の出力が無い）。GHCI は付かないので実際には呼ばれない。
-6. PC/AT の同じ機械で i915・amdrdna も居る時、end の後の彼らの `kern_text_resume` は何も描かない。
-7. serial だけの板（riscv・m68k などの virt）は `end` を持たず `ENOTSUP`（GHCI は付かない）。
+6. 最初の client の flip（どの GPU driver でも、§3.5）の後は、i915・amdrdna・powervr・bcm2711 の `kern_text_resume`（lease の終わり、amdrdna の休みの 3 s の後を含む）は何も描かない。lease の終わりに driver が firmware の framebuffer を scan-out に戻すと、end の時の最後の console の絵（か driver の塗った黒）が見え、新しい文字は serial と klog にだけ出る（Q13「シリアルバックは終了しません」）。
+7. serial だけの板（riscv・m68k などの virt）は `end` を持たず `ENOTSUP`（Q11。そこで GPU の flip があっても console はそのまま。HAL が RAM の framebuffer に描く板では画面の文字も続く）。
+8. QEMU の venus（virtio-gpu）で Keiland が最初に present した後も console は画面に描かない（login の画面は Keiland が描く）。GPU を使わない回帰の試験（AGENTS.md §9）は flip が無いので変わらない。
 
 ### 9. GHCI の側
 
 - `boot_console = 1` の置き換え: `boot_take()` は今まで通り 1 にするが、0 にするのは `kern_text_end()` が 0 を返した時だけ（試験の `boot_console = 0` の直書きは stub の結果に替える）。
 - 呼ぶ時: `taken()` で最初の自分の image が取られ、boot の範囲が allocator の外にあり（discrete、`device->boot_reserved`）、BAR の範囲がある（`bar_count` > 0）時に `end_due`。実際の呼び出しは次の service 以外の `ghci_scan_flush()` の終わりで、lock 無し。その後 `ghci_memory_boot_release()`（lock 無し、`memory.c:568-570` の約束通り）。
 - 渡す範囲: `bars[0..bar_count)` をそのまま `struct kern_text_range` に写す（BAR0 の全体と BAR2 の全体）。boot framebuffer の CPU の物理を window から計算しない（§15）。
-- UMA は呼ばない: 返す範囲が無いので今の振る舞いを保つ（Q3、推しどおり）。discrete で boot display を取らなかった時（firmware が DISP2 を点けていない）も同じ扱いで呼ばない（解釈、§17 の Q12）。
+- GHCI の自分の呼び出しは返す範囲がある時だけ（discrete で boot display を取った時）。UMA と、discrete で boot display を取らなかった時（firmware が DISP2 を点けていない）は GHCI は呼ばないが、console は core の最初の flip の呼び出し（§3.5）で止まる（Q12「常に止める」・Q13。Q3 の「UMA は通知しない」は GHCI の範囲の通知だけに残る）。
 - 今の解放の道（`boot_release`、`scan_flush` :2557-2561）にも `boot_in_use` の確かめを足す（boot の image の flip が置かれた後に範囲を返さない。§4）。
 - detach・停止・panic の `boot_kept` の条件（`display-scan.c:356`・:667・:2136）は変えない。
 - log: 成功「ghci: %s: boot framebuffer given back」（今の文、`display-scan.c:2580`）、失敗「ghci: %s: boot framebuffer kept: the console cannot leave it (%d)」。
@@ -416,7 +432,7 @@ scan_flush（service 以外、device.lock と display_lock の下）:
 | 構成 | console の表示の memory | GHCI の `kern_text_end` | 他の driver |
 | --- | --- | --- | --- |
 | QEMU の guest に KC705 の GHCI を渡す（`config-amd64-ghci.mk`、GOP は QEMU の stdvga） | stdvga の BAR | 0 → console は止まり、範囲を返す | panic の表示（BUG-158）も無くなる（Q6） |
-| amd64 で GOP が i915・amdrdna の上、GHCI も居る | i915・amdrdna の BAR | 0 → 止まり、範囲を返す | i915・amdrdna の lease の suspend・resume は呼べるが、resume は何も描かない |
+| amd64 で GOP が i915・amdrdna の上、GHCI も居る | i915・amdrdna の BAR | 0 → 止まり、範囲を返す | 最初の flip がどの driver でも core が止める（§3.5）。i915・amdrdna の lease の suspend・resume は呼べるが、resume は何も描かない |
 | amd64 で GOP が GHCI の上、i915・amdrdna も居る | GHCI の BAR2 | 0 → 止まり範囲を返す（固定の窓なら `EBUSY`） | 同上 |
 | GHCI が 2 枚 | 1 枚の BAR2 か別の device | 最初の 1 枚が止め、両方 0（残る物が自分の BAR に掛からない限り） | — |
 | VF2 + KC705（p014） | SoC の DRAM | 0 → HDMI の console は止まり、範囲を返す | powervr の lease は今のまま |
@@ -442,8 +458,8 @@ scan_flush（service 以外、device.lock と display_lock の下）:
 
 ### 12. 既存の framework との関係
 
-- drv_gpu の core（`gpu.c`）は変えない。`GPU_DISPLAY_CLAIM` の通知（1.5）はそのまま。
-- `kern_text_suspend`・`resume` の意味は変えない。end を呼ぶのは GHCI だけ。GHCI の居ない機械（GHCI の config の無い build を含む）では何も変わらない。GHCI が end を呼んだ後は、他の driver が resume を呼んでも何も描かない（10.1）。
+- drv_gpu の core（`gpu.c`）に、最初の client の flip の後の `kern_text_end(NULL, 0)` を足す（§3.5、Q13）。`GPU_DISPLAY_CLAIM` の通知（1.5）はそのまま。各 GPU driver の source は変えない。
+- `kern_text_suspend`・`resume` の意味は end の前は変えない。end を呼ぶのは core（全 GPU driver の最初の flip）と GHCI（返す範囲がある時）。GPU の flip の無い機械・build では何も変わらない。end の後は、どの driver が resume を呼んでも何も描かない（8.1 の 6）。
 - cdev: /dev/graphics の node は消さない（file を開いた者がいるかもしれないため）。`ENODEV` で断る。
 - `include/kern/graphics-backend.h`（generic の front end）: 末尾に省略可の `end` を足す（3.4、Q2 の答え）。全部の backend の表（今は `sun4u_fb_backend` だけ）は designated initializer か確かめ、そうでなければ段 7 で直す。`:21-28` の「card の driver の乗っ取りは boot の時だけ、firmware の mapping は返さない」の記述に「使用終了の後は返す」を足す。
 - serial: `src/drivers/serial/ns16550.c`・`include/drivers/serial/ns16550.h` に送る関数を足す（今の入力の道と riscv-virt の使い方は変えない）。
@@ -512,6 +528,7 @@ scan_flush（service 以外、device.lock と display_lock の下）:
 - 回帰（end を呼ばない build）: `config/ci/config-amd64.mk` の image を `plan/tools/boot-test.sh`（`uefi-usb`）、i386 を `BOOT_MODE=bios-ide` で login prompt。
 - end の道（QEMU に GHCI は無いので試験だけの引き金）: `plan/ws290/tests/config-amd64-text-end.mk`（`config/ci/config-amd64.mk` を include、`ZEDBSD_GRAPHICAL_BOOT := n`、`ZEDBSD_BOOT_KERNEL_MESSAGES := y`、`CONFIG_PCAT_SERIAL_MIRROR := y`、`ZEDBSD_TEST_CPPFLAGS := -DKERN_TEST_TEXT_END_SECONDS=45`（`Makefile:890`））。`text.c` に `#ifdef KERN_TEST_TEXT_END_SECONDS` の kernel thread を置き（Q5 の推しどおり）、text の init から 45 s 後に handoff の範囲で `kern_text_end()` を 1 回呼び、結果を static の変数 `text_end_test_result` と `text_end_test_done` に置く（log の行も出すが判定に使わない）。
 - script（AGENTS.md §9: console・serial の log で判定しない。L4）: QMP と gdbstub（`-gdb tcp::<port>`）付きで起動 → `plan/tools/guest/serial.py` で login（対話）→ 20 s の時点で gdb で `linear_pixels`・`linear_physical` と HAL の窓の状態（HELD）を記録し、`linear_physical` が固定の窓に掛かるかを先に見る（掛かれば `EBUSY` を期待し「固定の窓」と出す）→ QMP の HMP `gva2gpa 0xffffffffc2000000+offset`（HAL の窓）が handoff の物理を返す事を記録 → gdb で `text_end_test_done` が 1 になるまで（上限 90 s）見て、`text_end_test_result` が 0（固定の窓なら `EBUSY`）→ 直後に HAL の窓の `gva2gpa` が unmapped（PTE 無し）、gdb で HAL の窓の状態が REMOVED、`device_mappings`（`space.c:141`）に `linear_physical` の entry が無い、`text_ended` が 1 → QMP の screendump A → serial.py で `echo MARKER > /dev/console` を打つ → screendump B → A と B が画素で同じ（console が描かない）→ gdb で `text_cells` に MARKER が入った（cell は更新、L1）→ `plan/ws290/tests/graphics-probe.c`（`--file` で入れる）を serial.py で走らせ、終了の値が `ENODEV` を示す。解除は再利用され得る VA を `x/1wx` で読む方法では判定しない（PTE・HAL の状態で見る）。要約だけを出す。
+- (c) core の道（Q13、§3.5）: `config/ci/config-amd64.mk` の graphical boot（Keiland が venus の virtio-gpu に present する）の image を QMP と gdbstub 付きで起動し、gdb で `gpu_console_ended` が 1・`text_ended` が 1 になるまで（上限 120 s）見て、QMP の screendump を 2 枚（serial.py で `echo MARKER > /dev/console` の前後）撮り、Keiland の絵が MARKER で変わらない事を見る（console の log では判定しない）。
 - 未実施になる物: panic の後の画面（host の (b) で代える）、GHCI の上の GOP（13.7）、SMP の各 CPU の TLB に古い global の entry が残らない事（QEMU の TCG では観測できない。host の 13.3 の assert で代える）。
 
 #### 13.7 実機
@@ -533,10 +550,11 @@ scan_flush（service 以外、device.lock と display_lock の下）:
 | 8 | rpi4・x68k・VF2 の表の `end`、ns16550 の送り、VF2 の UART の probe | `src/drivers/platform/rpi4/rpi4-console.c`・`src/drivers/platform/x68k/x68k-console.c`・`src/kern/platform/visionfive2.c`・`src/drivers/serial/ns16550.c`・`include/drivers/serial/ns16550.h` | 2.5 | 13.4 の各板、riscv64（VF2・virt）・rpi4・x68k の build の warning 0 |
 | 9 | 他の板の host 試験 | `plan/ws290/tests/text-end-boards-host-test.c`・`.sh` | 2 | 13.4 の全場面 PASS（段 7 の分は段 7 の後） |
 | 10 | build の全部と QEMU の script・config・probe、p014 の確かめの手順（実行は Q1 の割当で） | `plan/ws290/tests/config-amd64-text-end.mk`・`text-end-qemu.sh`・`graphics-probe.c`、p014 の段 3 の script への足し（p014 の持ち主と合わせる） | 2.5 | 13.5 の warning 0、13.6 の要約 PASS（QEMU は Q1 の割当の後）、13.7 は p014 で |
+| 11 | drv_gpu の core の `gpu_console_end()`（§3.5）。3 つの flip の道の lock の無い事を読み直して記録。GHCI と分けた commit | `src/drivers/gpu/gpu.c` | 1.5 | amd64（i915・amdrdna・nvrtx・venus 有り）・VF2（powervr）・rpi4（bcm2711）の build の warning 0、13.6 の (c) |
 | 7（最後） | generic の front end の `end` と sun4u の console・firmware fb の end。着手の前に Q1 がユーザーに main の checkout の未 commit の変更の有無を確かめる（Q8） | `include/kern/graphics-backend.h`・`src/drivers/generic/graphics-device.c`・`src/drivers/platform/sun4u/sun4u-console.c`・`sun4u-firmware-fb.c`・`.h` | 2.5 | 13.4 の generic・sun4u、ws275 の試験 PASS、sparcv9 の build の warning 0 |
 
-- 合計 28 LW（2 + 3 + 3 + 2.5 + 2.5 + 3.5 + 2 + 2.5 + 2 + 2.5 + 2.5）。前の版の 27 LW に、VF2 を止めるための kernel の UART の送り（段 8 の +1）を足した。2 度目の review の M4 の通り、前の版の分け方の「段 1〜5 と 10 で 20 LW」は誤りで 19 LW だった。Q9 で分けないので分け方の表は無くした。受け入れの「見積り: 14 LW」と ws.md の表の写しは P3 が直す。
-- 段 1〜3 は順に依存、段 3a は段 3 と並べられる（結合は段 3 の窓の受け取り）。段 5 は段 1 の宣言だけに依存（stub で先に試せる）。段 6・8・9 は段 1 だけに依存。段 7 は最後。他の helper が `src/drivers/gpu/ghci/vk/**` と一部の試験を直しているので、段 5 の `ghci-stubs.c`・`ghci-driver-host-test.c` は P3 が持ち主を確かめてから。
+- 合計 29.5 LW（2 + 3 + 3 + 2.5 + 2.5 + 3.5 + 2 + 2.5 + 2 + 2.5 + 1.5 + 2.5。Q13 の全 GPU driver の分は段 11 の 1.5 LW）。それより前の版は 28 LW（2 + 3 + 3 + 2.5 + 2.5 + 3.5 + 2 + 2.5 + 2 + 2.5 + 2.5）。前の版の 27 LW に、VF2 を止めるための kernel の UART の送り（段 8 の +1）を足した。2 度目の review の M4 の通り、前の版の分け方の「段 1〜5 と 10 で 20 LW」は誤りで 19 LW だった。Q9 で分けないので分け方の表は無くした。受け入れの「見積り: 14 LW」と ws.md の表の写しは P3 が直す。
+- 段 11 は段 1 の宣言だけに依存し、段 2・3 の後に QEMU の (c) で確かめる。段 1〜3 は順に依存、段 3a は段 3 と並べられる（結合は段 3 の窓の受け取り）。段 5 は段 1 の宣言だけに依存（stub で先に試せる）。段 6・8・9 は段 1 だけに依存。段 7 は最後。他の helper が `src/drivers/gpu/ghci/vk/**` と一部の試験を直しているので、段 5 の `ghci-stubs.c`・`ghci-driver-host-test.c` は P3 が持ち主を確かめてから。
 
 ### 15. 選ばなかった案と理由
 
@@ -553,7 +571,8 @@ scan_flush（service 以外、device.lock と display_lock の下）:
 - **固定の窓の framebuffer も外す（2 MiB を 4 KiB に分ける）**: 他の device と共有の窓の page table を起動の後に作り替える事になり、HAL の変更が大きい。framebuffer がそこに入り GHCI の上の機械は稀で、`EBUSY` で範囲を保てば安全（8.1 の 3、Future Work 候補）。
 - **VF2 で捨てる `kernel_putc` を公開する（UART を足さない）**: VF2 の serial は唯一の観察の道（p014 の試験も serial と SSH）で、end の後に serial の出力を失うのは受け入れられない。kernel の ns16550 の driver に送りを足す方が小さい（1 LW）。
 - **VF2 で HAL の fbcons を止める口・device window を外す口を HAL に足す**: Q1「HAL APIは追加せず」に反し、`kernel_putc` の公開で HAL は既存の契約（`hal.h:80-86`）どおり画面に触らなくなるので要らない。
-- **drv_gpu の core の `GPU_DISPLAY_CLAIM`（`gpu.c:3841-3847`）で呼ぶ**: 全 GPU driver の振る舞いが変わる。範囲の外。
+- **各 GPU driver の最初の flip の所に呼び出しを足す（Q13 の後に考えた）**: driver ごとに flip の道（amdrdna の present・lease の frame、i915 の bootfb・xd-display、powervr・bcm2711・nvrtx・venus の display）が違い、多くは自分の display の mutex の下で進む（`kern_text_end` は眠り `graphics_lock` を取るので lock の順の確かめが driver ごとに要る）。core の 3 つの flip の道は全 driver が通る ioctl の文脈で lock が無く、1 か所で全部の driver と今後の driver を覆い、作業中の driver（amdrdna）を触らない。GHCI だけは latch と返す範囲が要るので自分でも呼ぶ。
+- **drv_gpu の core の `GPU_DISPLAY_CLAIM`（`gpu.c:3841-3847`）で呼ぶ**: claim は flip ではない（ユーザーの言う「最初のフリップ」より前で、claim の後に flip せずに release する client もある）。flip の受付の後にした。
 - **`kern_text_suspend` に「戻さない」の印を足す**: suspend は数えず戻せる前提で 8 か所以上が使う（1.5）。意味を混ぜると resume の側の全部を見直す要がある。
 - **`kern_text_register()` で serial の表に差し替える**: PC/AT の serial の mirror は text 層の `putc` の中（`text.c:408`）にあり、差し替えると cell も snapshot も失う。
 - **end で `text_pixels` を NULL にする**: `reveal_fatal` の lock 無しの道が画素ごとに読む（:340）ので、競合で NULL に書く。`text_ended` で止める（L2）。
@@ -571,9 +590,9 @@ scan_flush（service 以外、device.lock と display_lock の下）:
 
 ### 17. ユーザー・Q1 の判断の項目
 
-答えの出た物（2026-10-28、Q1 経由、原文は上の「設計の判断の項目への答え」）: Q1〜Q9。設計に反映した（§3・§10・§11・§13・§14）。
+答えの出た物（2026-10-28、Q1 経由、原文は上の「設計の判断の項目への答え」）: Q1〜Q13 と hal.h の文。設計に反映した（§3・§10・§11・§13・§14、Q12・Q13 は §3.5・§8・§9）。下の表は問いの記録として残す（Q10・Q11 は推しどおり、Q12 は「常に止める」、Q13 は全 GPU driver に広げる答え）。
 
-残りの問い（推しどおりなら P3 の判断で進めてよい物は、そう書いた）:
+問い（答えは上）:
 
 | ID | 問い | 推し | 他の案 |
 | --- | --- | --- | --- |
@@ -594,3 +613,4 @@ scan_flush（service 以外、device.lock と display_lock の下）:
 - 2026-10-28 P3 の helper（q1644-i01）: design-reviewer（Opus）の review を反映した。H1（`kern_text_end` に呼び手の BAR の範囲を付け、console の表示が重ならなければ `ENOENT` で何も変えない。GHCI は 0・`ENOENT` で範囲を返す。10.1 に複数の GPU）、M1（§11・§3.1 の契約の文を、消える物と残る物に直した）、M2（GHCI の場面 8〜10、kernel の場面 (c)(g)(i)、QEMU の判定を委譲の窓の確かめと PTE・HAL の状態に）、L1〜L6（cell の更新、`text_pixels` を NULL にしない、lock 前の /dev/graphics、register の読み、lock の確かめを段 5 に、8.1 の既知の制限）。code は変えていない。
 - 2026-10-28 P3 の helper（q1644-i01）: ユーザーの Q1・Q2・Q4 の答え（P3 経由、原文は上）を反映した。既存の HAL の関数では early console の窓を外せない事を code で確かめ（§1.3）、hal.h を変えずに amd64 の HAL の実装で既存の map・unmap の口から委譲する形にした（§11、Q7）。全部の板の表に `end` を足し（§1.8・§3.4・§10）、VF2 は `ENOENT` で解放、p014 の確かめを §13.7 に置いた。前の版の案 B と Q1〜Q5 の表を取り下げ、Q6〜Q9 を残した。見積りは 27 LW（分けるなら 20 + 8、Q9。受け入れの 14 LW と ws.md の写しは P3 が直す）。code は変えていない。
 - 2026-10-28 P3 の helper（q1644-i01）: 2 度目の design-reviewer（Opus、H 0）の M1〜M4・L1〜L8 と、ユーザーの Q6「常に止める」・Q7「実装だけで直す (推し)」・Q8「最後に、確かめてから (推し)」・Q9「1 つの Phase で」（Q1 経由で P3 が伝えた）を反映した。M1: 窓の entry は global で今の shootdown（CR3 の読み直し）では消えない事を code で確かめ（§6）、窓の解除に CR4.PGE を落として戻す新しい種類の shootdown を選び（§11 の 3、invlpg の案を選ばなかった理由も）、13.3 で shootdown の種類を assert する。M2: hal.h の契約の文の差分を `plan/ws290/proposed/p017-hal-fb-handover.diff` に置いたが、Q7 の答えと今の文（`hal.h:773-779`・:787-789・:80-86）で文の変更は要らないと判じ、参考として当てない（§11）。M3: 窓は `kernel_putc` の公開の後に handoff と同じ物理・同じ大きさの 1 つの呼び手にだけ渡し、backend は end の中で受けて外す。M4: LW の和を直し（前の版の 20 は 19）、Q9 で分けないので分け方の表を無くした（28 LW）。L1〜L8: §3.1 の契約の文、固定の窓は重なりで判定、「mapping」の意味を 1 つに（§2）、QEMU の判定を gdb の変数と serial.py の対話に、ユーザーの答えの原文、VF2 の DISP2 が点いていない時の「該当無し」を受け入れに、`!present` の時の `end_due`、guard の 4 か所を段 2 と (b) に。Q6 で `ENOENT` を無くし、範囲は止めた後に残る物の判断だけに残した（§3.1、§15）。VF2 は kernel の ns16550 に送りを足して `kernel_putc` を公開し HAL の fbcons を黙らせる（§3.4）。残りの問いは Q10〜Q13。code は変えていない。
+- 2026-10-28 P3（q1656-i01）: helper の設計（0c308bd91 で commit）に、ユーザーの Q10〜Q13 と hal.h の文の答え（原文は上）を反映した。Q13 の全 GPU driver は drv_gpu の core（`gpu.c`）の 3 つの flip の道の成功の後の `kern_text_end(NULL, 0)` 1 度で行い（§3.5、`count` 0 を許す §3.1）、各 GPU driver の source（amdrdna を含む）は変えない。既存の suspend・resume の呼び手との関係（end の後の resume は描かない、amdrdna の lease の終わり・休みの後の resume も）を §3.5・8.1 の 6 に。Q12 で GHCI の自分の呼び出しは返す範囲がある時だけのまま、console は core が止める（§8・§9）。段 11（1.5 LW）を足し 29.5 LW。QEMU の (c) を 13.6 に。design-reviewer の review は未。
