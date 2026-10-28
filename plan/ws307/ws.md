@@ -104,6 +104,7 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 
 - 2026-10-29 HAL の案（p007）へのユーザーの回答（原文、Q1 の中継）:「UEFIに限らないファームウェア環境変数という概念で作り直してみてください。もう一度レビューして承認します。」→ UEFI に限らない firmware の環境変数の抽象で案を作り直し、design-reviewer を通して Q1 に送る（[proposed/hal-fw-variables.md](proposed/hal-fw-variables.md)）。
 - 2026-10-29 形式の識別子（原文、ユーザーのクリック、Q1 の中継）:「全部置き換え」→ `/KeiNotesImage`・`kei-notes.bin`・`application/x-kei-notes`・libpdf の `Kei` の接頭辞・`~/.config/kei/ime` を zedBSD の名に置き換え、古い名は読まない（移行の code は書かない、Q1 の中継の解釈）。
+- 2026-10-29 F（U29・J3 の案へのユーザーの回答、原文、クリック、Q1 の中継）: mark「案1にします。このマークは尖石遺跡の縄文時代の子孫繁栄の神様の石の棒や石の舟のご神体をモチーフにしています。」、字体「b Lato Light＋tagline」→ mark は今のまま（mark.c は描き直さない）、「zedBSD」は Lato Light。案 b の絵の tagline は「operating system」（字間を空けた Lato Regular）で、P4 はその絵のとおりに入れた（Q1 の中継の文は「tagline「powered by zedBSD」を残す」、食い違いは Q1 に確かめる）。Lato の OFL の記録を絵の出典（`userland/desktop/artwork/README.md`）に。
 - 2026-10-29 Q1 の判断（q1665-i02）: 試験の data の SSID `Kei Lab` と mail の試験の人名 `Kei`・`kei@example.net` は OS 名でないので残す（p002 の「残す物の一覧」）。
 - 2026-10-29 Q1 の判断（q1665）: p002 の git mv の一覧（`tools/release/kei-nightly*` の 4 件と `kei-boot-splash.png`）は OK（splash の中身は F の新しい絵をユーザーに見せた後）。`docs/release/zedbsd-1.0.0-beta2*.md` は履歴として残す。compositor の 4 file は最後に小さく（P1 に知らせてから）。nightly の asset の upload はユーザーの指示まで止め、URL を変える commit は main に merge しない印を付ける。
 

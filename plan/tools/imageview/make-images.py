@@ -3,7 +3,7 @@
 
     plan/tools/imageview/make-images.py OUTDIR
 
-From the Kei splash in the tree (userland/desktop/artwork/kei-boot-splash.png) and drawn shapes:
+From the boot splash in the tree (userland/desktop/artwork/zedbsd-boot-splash.png) and drawn shapes:
 01-splash.png (the splash as it is), 02-landscape.jpg (the splash enlarged to 4032x2268, a phone
 photo's size), 03-portrait.jpg (stored on its side with EXIF orientation 6, shown upright),
 04-mark.png (a transparent picture), 05-anim.gif (an animated GIF of four frames), 06-pixels.png
@@ -18,7 +18,7 @@ from PIL import Image, ImageDraw
 out = sys.argv[1]
 os.makedirs(out, exist_ok=True)
 root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../..")
-splash = Image.open(os.path.join(root, "userland/desktop/artwork/kei-boot-splash.png")).convert("RGB")
+splash = Image.open(os.path.join(root, "userland/desktop/artwork/zedbsd-boot-splash.png")).convert("RGB")
 
 # The splash, and the splash as a large photo.
 splash.save(os.path.join(out, "01-splash.png"))

@@ -44,7 +44,8 @@
 - 試験の道具の直し: `plan/ws089/tests/host-kl-system.c` に `kl_system_phone_*`・`kl_system_displays_rotation*` の stub 7 つ（commit b7578341a、host-build.sh の link の既存の失敗）。`plan/tools/pdf/run-pdf-tools.sh` の golden（commit da90c27b7）: 基点の f9077504e は object としてあるが、その時 libpdf は `userland/base/libpdf/` にあったので path を直し、`-I.` を足した（`userland/desktop/paths.h` と os-name.h）。完了 WS の試験 3 本（`plan/ws095/tests/ime-p004.sh`・`plan/ws127/tests/bug177-guest.sh`・`plan/ws128/tests/terminal-p011-ime.sh`）を git rm、`userland/tests/ime-probe` の comment の参照を外した（commit 1b7b7b7fe）。
 - E（commit edf0dbe17）: loader・kernel の splash・HAL の bsp の実装（`cons.c`）の comment の「Kei splash」を「boot splash」に（comment だけ）。`platform/amd64/vmunix.mk`・`tools/build/make-boot-splash.py` の file の名前は F の後。
 - README.md の用語の「Kei」の行を「Disk images」に（commit 081df0d8e）。`tests/scenarios` の利用者の名前（passkey の行 `user:1000`、`auth\nuser`）、About の `PRETTY_NAME` の例、文（commit d1b3911c7）。
-- F（U29・J3、案）: 今の splash から「Kei」と「powered by zedBSD」を消して背景で埋め、Lato Light（OFL）で「zedBSD」を mark の幅に置いた案 1（mark は今のまま）と、mark を「Z」（上下の淡い青の glass の棒と、左下の濃い青から右上へ渡る葉）に描き直した案 2。PNG は `build/ws307-test/logo/`（P4 の worktree、git に入れない）。Q1 経由でユーザーの選択待ち。
+- F（U29・J3、ユーザーの回答の後）: git mv `userland/desktop/artwork/kei-boot-splash.png` → `zedbsd-boot-splash.png`、中身を案 b（mark は今のまま、「zedBSD」Lato Light、tagline「operating system」）に。`platform/amd64/vmunix.mk`・`tools/build/make-boot-splash.py`・`artwork/README.md`（出典と Lato の OFL、mark の由来）・`mark.c`・`mark.h`・`plan/tools/imageview/make-images.py` の名前と comment。`make … build/ws307-main/boot-logo.ppm` → 1920x1080、spinner は消えた（目で見た）。
+- F（案、前の段）: 今の splash から「Kei」と「powered by zedBSD」を消して背景で埋め、Lato Light（OFL）で「zedBSD」を mark の幅に置いた案 1（mark は今のまま）と、mark を「Z」（上下の淡い青の glass の棒と、左下の濃い青から右上へ渡る葉）に描き直した案 2。PNG は `build/ws307-test/logo/`（P4 の worktree、git に入れない）。Q1 経由でユーザーの選択待ち。
 
 ## 確かめ q1665-i02（2026-10-29、P4）
 
@@ -61,7 +62,7 @@
 
 ## 残り（次の attempt への引き継ぎ）
 
-1. **F**: ユーザーの選択（案 1・2、字体）の後、`kei-boot-splash.png` を git mv で `zedbsd-boot-splash.png` にして中身を替え、`platform/amd64/vmunix.mk`・`tools/build/make-boot-splash.py`・`artwork/README.md` の名前と comment を直す。案 2 なら `artwork/mark.c` の mark を Z に描き直す（Settings・Files・imageview・compositor が使う）。
+1. **F**: ユーザーの回答（ws.md の原文）で案 1・字体 b を入れた（下）。tagline の文（絵の「operating system」か Q1 の中継の「powered by zedBSD」か）を Q1 に確かめる。`plan/ws035/tests/p109/compare.py`（完了の WS の試験）が旧い `kei-boot-splash.png` を読む、参照の整理は Q1 に。
 2. **compositor**（`wayland/greeter.c`・`glass.c`・`glass.h`・`shell.c`・`notify-popup.c`）の「Kei」の文字と comment: 最後に、P1（WS309）に Q1 経由で知らせてから小さい commit。
 3. **H の段 2**: archive の中の `Kei-nightly/` と `tools/release/zedbsd-nightly/` の README・THIRD-PARTY・inputs・licenses の文、新しい asset の名前と SHA-256。upload はユーザーの指示まで止める。asset の名前・URL を変える commit は upload の前に main に merge しない。
 4. 試験: image（`plan/ws307/tests/` の config）で boot-test.sh の login prompt（新しい logo）、AAT の login（user/user）、`plan/tools` の道具の回帰を古い kei の image と新しい user の image の両方で、nightly の取得、`git grep -I -i kei` の残りが上の「残す物の一覧」だけ。

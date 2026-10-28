@@ -1241,15 +1241,15 @@ $(eval $(call ZEDBSD_ROOTFS_UFS_IMAGE_RULE,$(AMD64_ARCH_UFS_IMAGE),amd64))
 rootfs: $(BUILD)/rootfs/.stamp
 
 # ws035-p096: the boot logo on the boot FAT (/logo.ppm: the ZEDBSD FAT32 partition of the native layout (WS238), the payload FAT of the BIOS image), drawn by the
-# UEFI and the BIOS loaders when zedbsd.cfg names it (logo=logo.ppm).  ws035-p107: it is the Kei boot splash
-# (userland/desktop/artwork/kei-boot-splash.png, 1920x1080 without its spinner, "fit=contain" since ws035-p112: the loaders draw it in the
+# UEFI and the BIOS loaders when zedbsd.cfg names it (logo=logo.ppm).  ws035-p107: it is the boot splash
+# (userland/desktop/artwork/zedbsd-boot-splash.png, 1920x1080 without its spinner, "fit=contain" since ws035-p112: the loaders draw it in the
 # middle over black bars, shrunk only when the screen is smaller, and the
 # kernel's quiet console draws the spinner, src/drivers/platform/pcat/graphics/splash.c).
 AMD64_BOOT_LOGO := $(BUILD)/boot-logo.ppm
 
-$(AMD64_BOOT_LOGO): tools/build/make-boot-splash.py userland/desktop/artwork/kei-boot-splash.png
+$(AMD64_BOOT_LOGO): tools/build/make-boot-splash.py userland/desktop/artwork/zedbsd-boot-splash.png
 	@mkdir -p $(dir $@)
-	$(PYTHON) tools/build/make-boot-splash.py userland/desktop/artwork/kei-boot-splash.png $@.tmp
+	$(PYTHON) tools/build/make-boot-splash.py userland/desktop/artwork/zedbsd-boot-splash.png $@.tmp
 	mv -f $@.tmp $@
 
 # The BIOS image's zedbsd.cfg gets the graphical boot's lines too when ZEDBSD_GRAPHICAL_BOOT is y
