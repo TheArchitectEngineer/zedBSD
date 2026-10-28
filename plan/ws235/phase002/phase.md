@@ -9,7 +9,7 @@
 ## 範囲
 
 1. `src/drivers/ethernet/rtl8125.c`（と `include/drivers/ethernet/rtl8125.h`）: PCI の ID の表（10ec:8125・8126・8127）、BAR2 の MMIO（無ければ attach しない）、
-   bus master、TXCFG の版の判定と版の表（RTL8125・8125B・8125D×2・8126×2・8127、RTL8127ATF は MAC OCP 0xd006 で）、MAC・PHY の OCP の窓・CSI・EPHY の読み書き、
+   bus master、TXCFG の版の判定と版の表（RTL8125・8125B・8125D×2・8126×2・8127、RTL8127ATF は MAC OCP 0xd006 で）、MAC・PHY の OCP の窓の読み書き（CSI・EPHY は使う p003 で）、
    OOB からの抜け、reset、MAC address（MMIO 0x19e0・0x19e4 と 0x00）、1 vector の割り込み（MSI-X か MSI）、net device の登録（link は down のまま、送受は p004）。
 2. build: `CONFIG_DRIVER_PCI_RTL8125`（`config/drivers/pci.drivers`・`menu.list` の Ethernet、Makefile の既定 n と `-D`、`platform/amd64/vmunix.mk`、`src/kern/platform/pcat.c` の登録）。
 3. 試験の config: `plan/ws235/tests/config-amd64-rtl8127.mk`。
