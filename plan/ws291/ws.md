@@ -173,12 +173,10 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   b3173b786・790aa60d1・bc65b40c0・1824111c8・1132ec5b6。big-1000 35.5 → 57〜59 fps（Linux 87）、subs-1000 1 submit 48 → 39 µs（Linux 10）、scene は不変。
   次: subs-N は GPU core の job の ioctl を 1 本にする設計（Q1 と）、big-N は kernel の decode と executor の draw、GPU の flush の barrier。
 
-<<<<<<< HEAD
 ## 2026-10-29 ユーザーの決定（submit の ioctl）
 
 - P2 の設計の案（plan/ws291/job-submit-design.md）へのユーザーの回答（クリック）: 案 A（GPU_JOB_SUBMIT）「採る (推し)」、案 B（GPU_JOB_RETIRE）「案 A と一緒に」。続けて原文「WS291: 足してみて効果のなかったioctlは、採用しなくてもいいです。」
 - Q1: 番号は WS306 の予定（'G' 46〜48、GPU_CAP 131072）を避けて 'G' 49・50、GPU_CAP 262144・524288。outcome を driver が返す形は Q1 が OK。実装して実機で測り、効果が揺れを超えない ioctl は main に入れない。
-=======
 ## 2026-10-29 q1668-i02（P2、worktree p2-ws291l）
 
 - ユーザーの回答（クリック、2026-10-29、Q1 経由）: 1 本の ioctl の案 A「採る (推し)」、案 B「案 A と一緒に」（[job-submit-design.md](job-submit-design.md)）。
@@ -190,4 +188,3 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 - 再開点（2026-10-29 05:05 P2、ユーザーの指示で計測を止めて返却）: [phase006](phase006/phase.md) の「q1668-i02」節の最後の再開点。
   libvulkan の private fence の直しで subs-1000 の 1 submit 約 3.5 µs 減（効果あり）、kernel の flush の barrier 無しと record の直の decode で
   big-1000 約 +2.5 %（効果あり、小さい）。案 A・B の design は reviewer 済み、実装は Q1 の OK の後。
->>>>>>> e6283eb70
