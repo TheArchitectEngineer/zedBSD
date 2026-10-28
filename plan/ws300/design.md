@@ -21,7 +21,7 @@
 - PCI の共通の S0 idle（`src/drivers/pci/pci-power.c`、file の先頭 8〜31）: **driver の付いた function だけ**を集め（`count_visitor`・`collect_visitor` 726〜769）、深い順に suspend（`suspend_entry` 821〜900: driver の suspend → `drv_pci_device_save_state` → wake → D3hot → platform）、resume は逆順（`resume_entry` 902〜977）。1 つ失敗すれば全部を戻して中止（650〜672）。
   save は header 64 byte・MSI・PCIe の 4 つの control・LTR・L1SS の 2 つの control・MSI-X の表（159〜293）。`drv_pci_device_keep_d0`（525〜547）で D0 のまま眠らせられる。
 - 結果: 5330 を NVMe（VMD の下、深さ 2）から起動すると、NVMe → VMD の順に suspend し VMD が EBUSY → NVMe を resume → S0 idle は中止（ws.md の「今の事実」、`plan/ws298/design.md:170〜172`）。隠れた root port（深さ 1）は driver が無いので集めに入らない。
-- NVMe: `nvme_suspend`（`pci-nvme.c:2073〜2102`、2026-10-27 の行、読み直しは §10）は CC.SHN → disable → D3hot。APST・Feature 02h・HMB の code は無い（ws.md）。
+- NVMe: `nvme_suspend`（今の main では `pci-nvme.c:2265〜`、`nvme_resume` 2303〜。ws.md の 2073〜2102 は古い行）は CC.SHN → disable → D3hot（ws.md の 2026-10-27 の読み、本文は読み直していない §10）。APST（0x0C）・Feature 02h の定義は無い。**HMB（0x0D）は今は有る**（`include/drivers/pci/pci-nvme-protocol.h:55`、Set Features の組み立て 462〜463。ws.md の「HMB は無い」は古い）。suspend・resume での HMB の扱いは未読（§10）。
 - ASPM・L1SS・LTR を設定する code は無い（save と restore だけ）。
 
 ## 2. 調べた事実（要約、詳細は survey の 2 つ）
@@ -47,6 +47,6 @@
 ## 10. 未確認
 
 1. VMD の D3hot で隠れた root port の config が失われるか（p002 で zedBSD の上で D3hot の前後に読む）。
-2. `pci-nvme.c` の suspend・resume の行（2026-10-27 の読み、読み直す）。
+2. `pci-nvme.c` の suspend・resume の本文と、HMB を shutdown の前に返させ resume で渡し直しているか（NVMe Base 2.0e §8.9）。
 3. zedBSD の起動の時の隠れた root port の L1SS・LTR の値（Debian の値は Linux の後かもしれない）。
 4. GNVS の `VDSD`・`STD3`・`VMS0` の値。
