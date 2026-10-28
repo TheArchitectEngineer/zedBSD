@@ -24,7 +24,7 @@
 | P3 | q1664 in-progress | [ws221](ws221/ws.md) p002〜p009: §9 は全部推し（ユーザーの回答「全部 推しで (推し)」） | VF2（10.0.30.2）が主、5330 は従、相手は 10.0.10.2 |
 | P4 | q1665-i04 in-progress | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
 | P5 | q1666-i04 in-progress | 詳細の決まっていない WS の設計: code は書かない | — |
-| P6 | q1667-i04 in-progress | WS223・WS282〜WS284・WS243・WS296 の実装: 試験なし、main に merge しない、incomplete のまま | — |
+| P6 | q1667-i04 返却（ラップアップ） | 実装だけ（merge しない）: WS296 全 Phase（agent/p6-ws296c 1809873bd）、WS282 p002〜p004b（agent/p6-ws282c 677277d8f）、WS284 p002 script・p003 CPU の参照（同じ branch、zedBSD の libyolox.so の build 規則は共有の userland-dynamic.mk に要る、未決）。試験は全部未実施 | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
 
