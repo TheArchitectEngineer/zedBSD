@@ -3,7 +3,7 @@
 # ws308-p002 起床の道と NVMe の command_lock、amd64 の timecounter の大域の lock
 
 - 親: [WS308](../ws.md)。Queue: q1650（担当 P1）。前提: [p001](../phase001/phase.md) の 5330 の区間の計測。
-- Status: in-progress（2026-10-28 P1: q1652 で a609f74a1、5330 で direct QD32 223.8k IOPS＝同じ時間帯の Debian 225.5k の 99.3%、cached 240.4k。回帰の試験の残り（timeout・stop・detach の最中の眠る者、TSC の無い機械）あり）
+- Status: cleared（2026-10-28 P1: a609f74a1・7aa9288b8。5330 で direct QD32 224.2k IOPS＝同じ時間帯の Debian 225.8k の 99.3%（b8ce0cdc3、[p006](../phase006/phase.md)）。timeout の最中の眠る者と I/O の最中の reboot（qemu-nvme-timeout.sh）、TSC の bit の無い CPU の起動は PASS。stop・detach の最中の眠る者だけの試験は未実施）
 - Disposition: normal
 - 範囲の決定: 2026-10-28 ユーザー「P1の触る範囲が広がるのはOKです。」→ Q1: src/drivers/pci/pci-nvme.c（command_lock）を WS308 の所有に。Q1: src/hal/amd64/bsp-pcat/timecounter-policy.c の実装の直し（hal.h の宣言・契約は変えない）を WS308 の所有に、条件「時刻の単調性（CPU をまたいでも戻らない）と、TSC が信頼できない機械・QEMU の fallback を壊さない事を、host 試験か QEMU の多 CPU で確かめる。他の platform の timecounter には触らない。」
 

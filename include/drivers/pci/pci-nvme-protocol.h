@@ -1033,9 +1033,11 @@ drv_nvme_prp_fill(
 #define DRV_NVME_IO_CID_SLOT_BITS	6U
 #define DRV_NVME_IO_CID_SLOTS		((1U << DRV_NVME_IO_CID_SLOT_BITS) - 1U)
 
+/* Builds the identifier of a slot's command from the slot's number and generation. */
 static inline uint16_t
 drv_nvme_io_command_id(unsigned slot, unsigned generation)
 {
+	/* Reports the generation above the slot number plus one. */
 	return (uint16_t)(((generation << DRV_NVME_IO_CID_SLOT_BITS) |
 	    (slot + 1U)) & 0xffffU);
 }
@@ -1049,12 +1051,17 @@ drv_nvme_io_next_command_id(unsigned slot, unsigned *generation)
 {
 	uint16_t command_id;
 
+	/* Names the command by the next generation of the slot. */
 	(*generation)++;
 	command_id = drv_nvme_io_command_id(slot, *generation);
+
+	/* Steps over the one identifier the device reserves. */
 	if (command_id == 0xffffU) {
 		(*generation)++;
 		command_id = drv_nvme_io_command_id(slot, *generation);
 	}
+
+	/* Reports the identifier of the slot's next command. */
 	return command_id;
 }
 
@@ -1064,9 +1071,12 @@ drv_nvme_io_command_slot(uint16_t command_id, unsigned slot_count, unsigned *slo
 {
 	unsigned low;
 
+	/* Refuses an identifier whose slot number is not one of the queue's slots. */
 	low = command_id & DRV_NVME_IO_CID_SLOTS;
 	if (low == 0U || low > slot_count || slot_count > DRV_NVME_IO_CID_SLOTS)
 		return 0;
+
+	/* Succeeded: the identifier names slot number low minus one. */
 	*slot = low - 1U;
 	return 1;
 }

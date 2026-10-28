@@ -20,13 +20,6 @@ struct vmspace;
 struct vmspace_pinned_page;
 
 /*
- * A pin captures every backing-page identity in a user range and keeps its
- * storage resident while a syscall performs an operation which cannot safely
- * be rolled back.  The virtual mappings may subsequently disappear or be
- * replaced.  Pins are owned by the calling thread and must not survive a
- * syscall return.
- */
-/*
  * A pin of at most UACCESS_PIN_INLINE_PAGES pages (a 4 KiB buffer that
  * crosses a page boundary) keeps its page records inside the pin, so that
  * the common small transfer does not allocate; pages then points into the
@@ -36,6 +29,13 @@ struct vmspace_pinned_page;
 #define UACCESS_PIN_INLINE_PAGES	2U
 #define UACCESS_PIN_INLINE_WORDS	12U
 
+/*
+ * A pin captures every backing-page identity in a user range and keeps its
+ * storage resident while a syscall performs an operation which cannot safely
+ * be rolled back.  The virtual mappings may subsequently disappear or be
+ * replaced.  Pins are owned by the calling thread and must not survive a
+ * syscall return.
+ */
 struct uaccess_pin {
 	uintptr_t address;
 	size_t size;

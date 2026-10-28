@@ -200,7 +200,8 @@ cred_may_trace(
 }
 
 /*
- * Reads the credential of the current process without a reference.
+ * Reads the credential the current thread's system call uses, without a
+ * reference.  The thread holds one until its next system call.
  */
 const struct ucred *
 cred_current(
@@ -215,12 +216,21 @@ cred_current(
 	if (thread->proc == NULL)
 		return NULL;
 
-	/* Reports the process credential. */
+	/* Reports the thread's credential once a system call has taken it. */
+	if (thread->cred != NULL)
+		return thread->cred;
+
+	/*
+	 * Only a system call asks for a user thread's credential, and it
+	 * took one at its entry; what is left is a kernel thread, whose
+	 * process0 credential is never replaced.
+	 */
 	return thread->proc->cred;
 }
 
 /*
- * Takes a reference on the credential of the current process.
+ * Takes a reference on the credential the current thread's system call
+ * uses.
  */
 struct ucred *
 cred_current_ref(
@@ -234,8 +244,17 @@ cred_current_ref(
 	if (thread == NULL)
 		return NULL;
 
-	/* References the process credential. */
-	cred = cred_process_ref(thread->proc);
+	/*
+	 * References the credential the thread's system call uses, so that a
+	 * call checks everything against one credential; a thread without
+	 * one takes the process's under its lock.
+	 */
+	if (thread->cred != NULL) {
+		cred = thread->cred;
+		cred_ref(cred);
+	} else {
+		cred = cred_process_ref(thread->proc);
+	}
 
 	/* Reports the referenced credential, or none. */
 	return cred;

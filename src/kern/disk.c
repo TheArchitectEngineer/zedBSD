@@ -154,8 +154,7 @@ static uint64_t disk_stats_now_ns(void);
 static uint64_t disk_stats_stamp(const struct disk *leaf);
 static bool disk_lock_stamped(const struct disk *leaf, uint64_t *now);
 static void disk_stats_start(struct disk *leaf, struct bio *bio, uint64_t now);
-static void disk_stats_end(struct disk *leaf, const struct bio *bio, size_t transferred, int completed,
-    uint64_t now);
+static void disk_stats_end(struct disk *leaf, const struct bio *bio, size_t transferred, int completed, uint64_t now);
 static void disk_stats_gone(const struct disk *disk);
 static int bio_dispatch(struct bio *bio);
 static int disk_transfer_direct(struct disk *disk, enum bio_op op, uint64_t block, uint32_t count, void *data, const struct backing_claim *claim, uint32_t *completed, const struct io_context *context);
@@ -2039,7 +2038,9 @@ bio_complete(
 	disk_write_retire(leaf, bio, error, transferred);
 
 	/* Unpins the leaf; the time for its statistics is read before the registry lock. */
-	now = leaf != NULL ? disk_stats_stamp(leaf) : 0;
+	now = 0;
+	if (leaf != NULL)
+		now = disk_stats_stamp(leaf);
 	enabled = disk_lock();
 	if (leaf != NULL && leaf->d_inflight != 0) {
 		leaf->d_inflight--;
@@ -3847,6 +3848,7 @@ disk_lock_stamped(
 	uint64_t *now)
 {
 	bool enabled;
+	int acquired;
 
 	/* Disables interrupts when the HAL provides the routine. */
 	if (hal_irq_disable != NULL)
@@ -3856,8 +3858,11 @@ disk_lock_stamped(
 
 	/* Reads the time, then spins until the registry lock is free. */
 	*now = disk_stats_stamp(leaf);
-	while (!atomic_try_acquire_zero(&disk_registry_lock))
+	acquired = atomic_try_acquire_zero(&disk_registry_lock);
+	while (!acquired) {
 		hal_compiler_barrier();
+		acquired = atomic_try_acquire_zero(&disk_registry_lock);
+	}
 
 	/* Reports the previous interrupt state. */
 	return enabled;
@@ -4614,9 +4619,15 @@ static uint64_t
 disk_stats_stamp(
 	const struct disk *leaf)
 {
+	uint64_t now;
+
+	/* A disk hw.diskstats does not list needs no time. */
 	if (leaf->d_stats_kind == 0U)
 		return 0;
-	return disk_stats_now_ns();
+
+	/* Reports the time read from the clock. */
+	now = disk_stats_now_ns();
+	return now;
 }
 
 /*

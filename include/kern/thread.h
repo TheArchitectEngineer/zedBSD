@@ -22,6 +22,7 @@
 #include <stdint.h>
 
 struct process;
+struct ucred;
 
 #define THREAD_FLAG_IDLE	0x00000001U
 #define SIGNAL_NEST_MAX		HAL_SIGNAL_NEST_MAX
@@ -98,6 +99,13 @@ struct thread {
 	struct wait_queue join_waitq;
 	struct sched sched;
 	struct thread *proc_next;
+
+	/*
+	 * The credential this thread's system calls use, a reference taken
+	 * from the process at each system call entry.  Only the thread itself
+	 * changes it, and the last thread_release() drops it.
+	 */
+	struct ucred *cred;
 
 	/*
 	 * Protected by the thread ID registry lock.

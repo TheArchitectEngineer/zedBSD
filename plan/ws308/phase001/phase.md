@@ -3,7 +3,7 @@
 # ws308-p001 計測と設計（read・write の syscall の並列性を止める lock）
 
 - 親: [WS308](../ws.md)。Queue: q1650（担当 P1）。
-- Status: in-progress（2026-10-28 P1: QEMU の計測と Fable 5.1 High の助言まで。次は 5330 の区間の計測、設計は未着手）
+- Status: cleared（2026-10-28 P1: QEMU と 5330 の区間の計測、Fable 5.1 High の助言、設計（p002〜p004）と design-reviewer まで。結果は p002・p003）
 - Disposition: normal
 
 ## 計測（2026-10-28、P1、QEMU/KVM 8 vCPU、serial の image、`randread`）

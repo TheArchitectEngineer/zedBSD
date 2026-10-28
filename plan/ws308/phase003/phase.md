@@ -3,7 +3,7 @@
 # ws308-p003 syscall の I/O の道で kernel heap を確保しない
 
 - 親: [WS308](../ws.md)。Queue: q1650（担当 P1）。前提: [p001](../phase001/phase.md)。
-- Status: in-progress（2026-10-28 P1: 実装 01e701914、5330 の計測へ）
+- Status: cleared（2026-10-28 P1: 01e701914。5330 で cached QD32 241.2k IOPS（b8ce0cdc3、[p006](../phase006/phase.md)））
 - Disposition: normal
 
 ## 事実（p001）

@@ -27,7 +27,9 @@
  *   - a forker: fork, the child reads into the middle of a private area with
  *     pread, checks the pattern around the read and the data against a
  *     fresh pread, writes its copy of a page of the parent (which the parent
- *     must not see), and exits 0 on success;
+ *     must not see), and exits 0 on success (100 + errno when its mmap fails, 200 + errno when its pread
+ *     fails, 4 to 6 when the data is wrong; "fork_status" is the wait status of the first child that failed);
+ *     a fork() refused with ENOMEM or EAGAIN (which POSIX allows, and a hog may cause) is counted apart;
  *   - with "hog MIB": a child process that keeps touching MIB MiB of memory
  *     (pushes pages to swap);
  *   - with "setuid" (as root): a thread that switches the effective user
@@ -77,6 +79,9 @@ static unsigned long fork_failures;
 static unsigned long setuid_rounds;
 static unsigned long setuid_errors;
 static int first_errno;
+static int first_fork_status = -1;	/* wait status of the first failed child (-1: none) */
+static int fork_refused_errno;		/* errno of the first fork() refused (ENOMEM or EAGAIN may happen under a hog) */
+static unsigned long fork_refusals;
 static pthread_mutex_t count_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* xorshift64* of a caller's state. */
@@ -212,11 +217,11 @@ child_check(uint64_t seed)
 
 	copy = mmap(NULL, 4U * PAGE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (copy == MAP_FAILED)
-		return 2;
+		return 100 + (errno & 31);
 	memset(copy, 0xa5, 4U * PAGE);
 	offset = (off_t)((seed % (blocks - 2U)) * PAGE);
 	if (pread(fd, copy + PAGE, PAGE, offset) != PAGE || pread(fd, fresh, PAGE, offset) != PAGE)
-		return 3;
+		return 200 + (errno & 31);
 	for (index = 0; index < PAGE; index++) {
 		if (copy[index] != 0xa5 || copy[2U * PAGE + index] != 0xa5)
 			return 4;
@@ -238,6 +243,7 @@ forker(void *argument)
 	uint64_t state = 1234;
 	unsigned long made = 0;
 	unsigned long failed = 0;
+	unsigned long refused = 0;
 	int status;
 	pid_t pid;
 
@@ -248,16 +254,24 @@ forker(void *argument)
 			_exit(child_check(next_random(&state)));
 		next_random(&state);
 		if (pid < 0) {
-			failed++;
+			if (fork_refused_errno == 0)
+				fork_refused_errno = errno;
+			if (errno != ENOMEM && errno != EAGAIN)
+				failed++;
+			refused++;
 			usleep(1000);
 			continue;
 		}
-		if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		if (waitpid(pid, &status, 0) != pid || !WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+			if (first_fork_status == -1)
+				first_fork_status = status;
 			failed++;
+		}
 		made++;
 	}
 	count(&forks, made);
 	count(&fork_failures, failed);
+	count(&fork_refusals, refused);
 	return NULL;
 }
 
@@ -364,15 +378,20 @@ main(int argc, char **argv)
 			hog(hog_mib);
 	}
 
+	/*
+	 * The mapper starts last: the holes its munmap leaves in the region are free address space, where the
+	 * stack and TLS mmap(NULL) of a thread created after it could land and then be replaced by its MAP_FIXED
+	 * mmap or read into by the readers.
+	 */
 	for (index = 0; index < READERS; index++)
 		pthread_create(&threads[thread_count++], NULL, reader, (void *)(uintptr_t)(index + 1U));
-	if (with_mapper)
-		pthread_create(&threads[thread_count++], NULL, mapper, NULL);
 	pthread_create(&threads[thread_count++], NULL, checker, NULL);
 	if (with_fork)
 		pthread_create(&threads[thread_count++], NULL, forker, NULL);
 	if (use_setuid)
 		pthread_create(&threads[thread_count++], NULL, switcher, NULL);
+	if (with_mapper)
+		pthread_create(&threads[thread_count++], NULL, mapper, NULL);
 	sleep((unsigned)seconds);
 	stopping = 1;
 	for (index = 0; index < thread_count; index++)
@@ -389,8 +408,8 @@ main(int argc, char **argv)
 	ok = errors == 0 && vector_mismatches == 0 && fork_failures == 0 && setuid_errors == 0 &&
 	    reads != 0 && vector_checks != 0 && (forks != 0 || !with_fork) && seen == PAGE;
 	printf("iostress errno=%d reads=%lu efault=%lu errors=%lu mapper=%lu vectors=%lu mismatches=%lu forks=%lu "
-	    "fork_failures=%lu setuid=%lu setuid_errors=%lu result=%s\n",
+	    "fork_failures=%lu fork_status=%d fork_refused=%lu fork_errno=%d setuid=%lu setuid_errors=%lu result=%s\n",
 	    first_errno, reads, faults, errors, mapper_rounds, vector_checks, vector_mismatches, forks, fork_failures,
-	    setuid_rounds, setuid_errors, ok ? "PASS" : "FAIL");
+	    first_fork_status, fork_refusals, fork_refused_errno, setuid_rounds, setuid_errors, ok ? "PASS" : "FAIL");
 	return ok ? 0 : 1;
 }

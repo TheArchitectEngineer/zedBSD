@@ -598,7 +598,7 @@ signal_kill(
 	info.pid = sender->pid;
 	sender_cred = cred_process_ref(sender);
 	if (sender_cred != NULL)
-		info.uid = sender_cred->euid;
+		info.uid = sender_cred->ruid;
 	else
 		info.uid = 0;
 	cred_release(sender_cred);
