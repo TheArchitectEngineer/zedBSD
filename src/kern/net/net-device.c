@@ -1041,11 +1041,18 @@ net_device_transmit(
 	device_unlock(enabled);
 	error = device->ops->transmit(device, packet);
 
-	/* Accounts the result. */
+	/*
+	 * Accounts the result.  A full transmit queue (ENOBUFS, EBUSY) is a
+	 * drop and not an error, as FreeBSD's struct if_data keeps the
+	 * queue's drops (ifi_oqdrops) apart from ifi_oerrors: the frame was
+	 * never tried, and a sender that keeps it (TCP) hands it over again.
+	 */
 	enabled = device_lock();
 	if (error == 0) {
 		device->tx_packets++;
 		device->tx_bytes += length;
+	} else if (error == ENOBUFS || error == EBUSY) {
+		device->tx_dropped++;
 	} else {
 		device->tx_errors++;
 		device->tx_dropped++;
