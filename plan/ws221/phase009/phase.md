@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p009 -->
 # ws221-p009: TCP の受けの窓（窓の約束、受け側の SWS 回避、window scale、delayed ACK）（旧 ws220-p007）
 
-Status: in-progress（2026-10-29 P3 q1664-i04: 受け側の SWS 回避は 9592ac4be（VF2 で非退行）。残り: slow-reader の receive_refused 0（送り側の窓 0 の扱いの作り直しが要る、下の i04）、delayed ACK の timer（P3 は「足さない」を推す、Q1 の判断待ち）
+Status: cleared（2026-10-29 P3 q1664-i04: 受け側の SWS 回避 9592ac4be、VF2 の非退行 PASS。slow-reader の refusal 0 は Future Work、delayed ACK の timer は足さない（Q1 の判断、下の i04 の決定））
 Parent: [WS221](../ws.md)
 Queue: q1664 / q1664-i01（P3）
 依存: p008（輻輳の制御と byte の送りの buffer。受けの queue の上限は packet の pool の class を考慮）
@@ -67,3 +67,9 @@ Q1（2026-10-29）: 「p008・p009 の残り（自分の window scale の広告�
 - 969.3 の run: 1 秒だけ 393 Mbps、受けで out_of_order 6・old 1（線の上の損失を Linux の送り手が SACK 無しで回復）
 - 相手 centris（この host）: 1500 で受け 948.2・948.6、送り 928.0・931.1（centris の受けの入れ替わり、前と同じ）
 - 終わりに VF2 の en0 と 5330 の enx6c1ff706148a は 1500（読み戻し済み）。VF2 の /boot/boot0/vmunix は 9592ac4be の tree の build、vmunix.old は a774d28e3 の tree の build（その前は vmunix.old に 13a032348 があった物を vf2-tcp.sh が上書き）
+
+### i04 の決定（2026-10-29 Q1、技術の判断）
+
+- 原文:「(A) slow-reader の probe を 0 にする作りの替えは Future Work（byte の送りの buffer と一緒に、WS311 の後に再評価）。(B) delayed ACK の 40 ms の timer は足さない、設計として phase009 に記録して閉じてよい。」
+- 設計の記録（delayed ACK）: 受けは in-order の 2 つ目の segment で即 ACK、一つだけの時は network worker がその時に来ていた input を全部取った後（batch の終わり、`tcp_ack_flush`）に ACK する。RFC 1122 4.2.3.2（500 ms 以内、2 つ目の full segment で ACK）と RFC 5681 4.2 を満たす。40 ms の timer は ACK の数を減らす効果が LAN の速い流れでは無く（2 つ目の segment がすぐ来る）、相手の Nagle と組んで 40 ms の待ちを作るので足さない。
+- Future Work（slow-reader の probe）: 送り手が窓 0・flight 0 の時にすぐ full の segment の probe を送る（`tcp_send_room_locked` の「一つは常に送れる」）のを、送る時に窓を見る作り（FreeBSD: 最初の probe は persist の間隔の後、1 byte）に替える。byte の送りの buffer（p008 の i04）と一緒に WS311 の後に再評価する。
