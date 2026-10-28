@@ -146,6 +146,7 @@ static DEVFS_HIGH int hidraw_name(const char *name);
 static DEVFS_HIGH int bridge_name(const char *name);
 static DEVFS_HIGH int smartcard_name(const char *name);
 static DEVFS_HIGH int bluetooth_name(const char *name);
+static DEVFS_HIGH int camera_name(const char *name);
 static DEVFS_HIGH int backlight_name(const char *name);
 static DEVFS_HIGH ino_t cdev_directory(const char *name);
 static DEVFS_HIGH int devfs_cdev_inode(struct inode *directory, struct cdev *device, struct inode **result);
@@ -501,6 +502,26 @@ bluetooth_name(
 	return 1;
 }
 
+/* Identifies the cameras' nodes, /dev/cam<n>. */
+static DEVFS_HIGH int
+camera_name(
+	const char *name)
+{
+	int comparison;
+
+	/* Camera nodes are named cam<n>. */
+	comparison = kern_strncmp(name, "cam", 3);
+	if (comparison != 0)
+		return 0;
+
+	/* The number follows at once. */
+	if (name[3] < '0' || name[3] > '9')
+		return 0;
+
+	/* Succeeded: the name is a camera's. */
+	return 1;
+}
+
 /* Identifies names owned by the /dev/backlight namespace (ws113-p013). */
 static DEVFS_HIGH int
 backlight_name(
@@ -562,6 +583,7 @@ devfs_cdev_inode(
 	int smartcard;
 	int bluetooth;
 	int bridge;
+	int camera;
 
 	/* Creates a generation-unique inode and gives it one cdev reference. */
 	number = cdev_generation(device);
@@ -580,18 +602,20 @@ devfs_cdev_inode(
 	 * alone: the daemon's privileged part opens it (ws143, D16), and so is
 	 * the node it makes its HID devices on (the input bridge, ws143-p005).
 	 * The Zynq's programmable logic is root's: whoever opens it rewrites
-	 * the hardware (WS286).
+	 * the hardware (WS286).  A camera is root's until sessiond gives it
+	 * to the seat's user: whoever opens it sees the room.
 	 */
 	backlight = backlight_name(device->name);
 	raw = hidraw_name(device->name);
 	smartcard = smartcard_name(device->name);
 	bluetooth = bluetooth_name(device->name);
 	bridge = bridge_name(device->name);
+	camera = camera_name(device->name);
 	if (event_name(device->name))
 		mode = 0640U;
 	else if (backlight)
 		mode = 0644U;
-	else if (raw || smartcard || bluetooth || bridge)
+	else if (raw || smartcard || bluetooth || bridge || camera)
 		mode = 0600U;
 	else if (kern_strcmp(device->name, "input-inject") == 0)
 		mode = 0600U;
