@@ -24,6 +24,11 @@ Parent: [Master](../master.md)
 - 2026-10-29 07:0x P1（q1669-i02、worktree p1-ws235b）: p001 cleared（判断の 5 件の回答は下の「p001 の判断」と phase001 の末尾）。p002・p003 は code と build まで。
   2026-10-29 07:20〜07:30 の RDNA 機の枠で 3 回: attach・link（2.5G の switch）・DHCP・LAN 越しの ping 200/200 は成立、ssh は未成立（下の p004）。
   次は RTL8127 の 10G の switch への移設の後の枠で `LANTEST=2 rtl-link.sh`（ue0 を落として rge0 だけで ssh・転送）。
+- 2026-10-29 08:3x P1（q1669-i03、worktree p1-ws235c）: ユーザー「移設完了、起動済みです。」（RTL8127 は 10GbE の switch）。枠は P2 の次（Q1 の知らせ待ち）。
+  用意: kernel `build/ws235/amd64-c/vmunix`（main 7b297b46a、cksum 4251467738）、`rtl-link.sh` の LANTEST=2 は ue0 の connected route も消す
+  （閉じた device の route が残り、返事が ue0 に向かうため）、`PERF=` で tcp-perf の両向き、`POWERCYCLE=1`。Linux の基準は `linux-base.sh survey|install|measure`。
+  枠の中の順: `POWERCYCLE=1 LANTEST=2 PERF=build/ws235/amd64-c/bin/tcp-perf sh plan/ws235/tests/rtl-link.sh build/ws235/amd64-c/vmunix build/tmp/ws235-link-4`
+  → 通れば `linux-base.sh survey`（install・measure は時間が残れば）。
 
 ## Phase（2026-10-29 P1 が p001 でユーザーの順に直した。旧の表と見積もり（2026-10-14 Q1）は git の履歴に）
 
