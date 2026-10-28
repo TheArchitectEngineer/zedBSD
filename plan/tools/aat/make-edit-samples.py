@@ -13,7 +13,7 @@ the AAT's document, basic_objects below):
   2. /Rotate 90, an image through cm
   3. two content streams, the second with a filter the reader does not read (/JBIG2Decode): the page is not editable
   4. an image, then q nested 70 deep (past the interpreter's 63) and an image inside: the second is left out
-  5. an image named /KeiIm0, as a revision Notes saved before would name it: an update's names take another prefix
+  5. an image named /ZedBSDIm0, as a revision Notes saved before would name it: an update's names take another prefix
   6. text in three fonts for the characters of the codes (p002b): Helvetica in WinAnsiEncoding (F1), Helvetica with a
      /ToUnicode CMap that makes <41> a Z (F2), and the host's DejaVu Sans whole as a CIDFontType2 in Identity-H without
      /ToUnicode (F3, its codes the glyphs)
@@ -78,8 +78,8 @@ def main() -> int:
 		stream(b"<< /Filter /JBIG2Decode >>", b"\x00\x01\x02\x03"),
 		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources " + resources + b" /Contents 14 0 R >>",
 		stream(b"<< >>", page4),
-		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << /XObject << /KeiIm0 5 0 R >> >> /Contents 16 0 R >>",
-		stream(b"<< >>", b"q 20 0 0 20 30 30 cm /KeiIm0 Do Q\n"),
+		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << /XObject << /ZedBSDIm0 5 0 R >> >> /Contents 16 0 R >>",
+		stream(b"<< >>", b"q 20 0 0 20 30 30 cm /ZedBSDIm0 Do Q\n"),
 		b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << /Font << /F1 19 0 R /F2 20 0 R /F3 22 0 R >> >> /Contents 18 0 R >>",
 		stream(b"<< >>", b"BT /F1 12 Tf 10 80 Td (AB) Tj ET BT /F2 12 Tf 10 60 Td (AB) Tj ET BT /F3 12 Tf 10 40 Td <0024> Tj ET\n"),
 		b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
