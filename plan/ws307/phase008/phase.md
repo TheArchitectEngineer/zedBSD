@@ -46,3 +46,9 @@
 - loader は 4Kn の ESP の cfg を見つけ、root の UFS（fragment 4 KiB）から kernel を読んで起動した（loader の 4096 は動いた）。
 - kernel は「vfs: scan nvme0n1 geometry error=21: 2 entries」の後「vfs: boot0 selector resolution failed (error 3)」「VFS initialization failed (3)」で止まる。boot0=UUID=4FAE-A0BC（ESP の FAT の serial）の解決が 4096 の disk で失敗。kernel の boot の volume の探索（geometry の scan と FAT の serial の照合）に 512 の前提が残っている見込み。
 - 次の起動の最初の作業: src/kern の vfs の boot の探索（「geometry error」を出す所）を 4096 に。
+
+## q1665-i05（2026-10-29、P4、worktree p4-ws307i）
+
+- p008-4k の FAIL の原因（gdbstub で確かめた。`p008-4k.4KNAxn` の disk4k.img の qcow2 の写しを OVMF・4096 の NVMe で起動し、hbreak で `block_identity_get`・`fat_identify`・`ufs_identify`・`parse_bpb` の戻り値を見た）: ESP（nvme0n1p1）で `fat_identify` は 0、`block_identity_get` は EINVAL。512 の前提ではなく、guest の `mkfs -t fat32` の ESP の label が placeholder の "NO NAME" で、`fat_identify` が label の文字を残したまま flag を立てず、`filesystem_identity_valid`（flag の無い field は 0）が拒んでいた。host の tool で作る今の image の ESP は label を持つので出なかった。installer が作る ESP でも同じく起きる。
+- 直し（commit f553c82ba、`src/drivers/fs/fat.c`）: placeholder と空白の label は 0 にして flag を立てない（空白の label で flag 付きの空の文字になる誤りも）。vmunix build warning 0。
+- 再試験: 下に記録する。
