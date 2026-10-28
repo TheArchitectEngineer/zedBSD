@@ -25,6 +25,10 @@
    （(b) = ゲームモードもアプリは buffer を compositor に送り、compositor が flip に積み、buffer が画面から外れたら release をアプリに返す。アプリは acquire で空きを待つ）
 8. 「そうすると、ゲームモードについてはバックエンドがカーネルを呼んでもいいことにします。でも、せっかくならVulkan displayの仕様内で実装したいです。工数が多くてもかまいません。Vulkan displayをOSの正式APIに採用しているのが、このOSのウリの1つでもあるので。」
 
+9. （2026-10-29 P1 の設計の判断の点への回答、Q1 経由）J1 game mode の Vulkan の形: ユーザーの回答（クリック）「V2 swapchain 共有 (推し)」。
+   J4（Linux・FreeBSD の seat 経由の入力の open）: 推しのとおり当面は同期のまま残し、WS309 の後の Phase に置く（別の WS にしない）。J2・J3 は Q1 が「推しで OK（技術の判断）」。
+   （Q1 の解釈: V2 = compositor が display の swapchain の image を external memory で export して client に渡し、client が直接描く。copy なし。libvulkan の WSI・display の部分を WS309 の範囲に含め P1 の所有に足す。）
+
 ## 決まった構成（解釈。上の原文が正）
 
 | 種類 | thread | 持つ仕事 |
@@ -59,11 +63,10 @@
 - P2 の q1661（`agent/p2-ws291i` 3d9306f02 の backend の入力の検出の worker、467f1cabc・1a0ead286 の記録）: アドホックにしない決定 2 により
   main に merge せず保留。この WS の I/O-1 の実装で置き換える。main には b574fbf6a（開けなかった node を覚える）が入っている。
 
+## 設計
+
+- [design.md](design.md)（2026-10-29 P1、thread の一覧・本数・待ちの点・queue と通知・ゲームモード・判断の点 J1〜J4）。
+
 ## Phase
 
-設計の確定の後に分ける（未作成）。
-
-## ユーザーの決定（2026-10-29、q1662）
-
-- J1 ゲームモードの present: ユーザーの回答（クリック）「V2 swapchain 共有 (推し)」→ compositor が display の swapchain の image を external memory で export して client に渡し、client が直接描く（copy なし、標準の拡張の範囲）。libvulkan の WSI・display の変更は WS309 の範囲（Q1）。
-- J2（queue は render と cursor の 2 本が mutex の下で使う）・J3（spawner が落ちたら作り直さず errno で失敗）・J4（seat 経由の入力の open は同期のまま、WS309 の後の Phase）: P1 の推しで Q1 が決めた（技術の判断）。
+設計のレビューの後に分ける（未作成）。
