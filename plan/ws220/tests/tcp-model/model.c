@@ -1256,16 +1256,30 @@ link_advance(
 		tcp_ack_flush();
 }
 
-/* Puts the --peer-window window in a segment from B, with its checksum made again. */
+/*
+ * Puts the --peer-window window in a segment from B, with its checksum made
+ * again: in bytes, so the field is in the scale A takes B's windows in
+ * (none in a SYN).
+ */
 static void
 rewrite_window(
 	struct model_frame *frame)
 {
+	struct tcp_socket *a;
 	uint16_t checksum;
+	unsigned field;
+
+	/* The field: the bytes, scaled as A reads them. */
+	field = settings.peer_window;
+	a = sender != NULL ? tcp_of(sender) : NULL;
+	if (a != NULL && a->wscale_on != 0 && (frame->data[13] & 0x02U) == 0)
+		field >>= a->peer_wscale;
+	if (field > 0xffffU)
+		field = 0xffffU;
 
 	/* The window field (bytes 14 and 15) and the checksum (16 and 17) of the TCP header. */
-	frame->data[14] = (uint8_t)(settings.peer_window >> 8);
-	frame->data[15] = (uint8_t)(settings.peer_window & 0xffU);
+	frame->data[14] = (uint8_t)(field >> 8);
+	frame->data[15] = (uint8_t)(field & 0xffU);
 	frame->data[16] = 0;
 	frame->data[17] = 0;
 	checksum = net_checksum_pseudo(frame->source, frame->destination, IPPROTO_TCP, frame->data, frame->length);
