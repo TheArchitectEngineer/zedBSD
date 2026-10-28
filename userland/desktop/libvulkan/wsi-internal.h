@@ -267,6 +267,13 @@ struct vulkan_wsi_platform_ops {
 	 * free, VK_NOT_READY when none is waiting for that, VK_TIMEOUT.
 	 */
 	VkResult (*reclaim)(void *, uint64_t);
+	/*
+	 * The fd a blocked acquire also waits on, readable (POLLIN) when the
+	 * window system may have sent an image back: a Wayland connection,
+	 * whose wl_buffer.release the next progress reads.  NULL when the
+	 * backend has none (wait_descriptor is the display's, POLLPRI).
+	 */
+	int (*wait_input)(void *);
 };
 
 VkResult vulkan_wsi_display_node_query(struct VkPhysicalDevice_T *physical, uint32_t index, uint32_t *count, struct gpu_display_info *request, uint64_t *device_id, char *path);

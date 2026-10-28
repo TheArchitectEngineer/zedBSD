@@ -104,6 +104,7 @@ static void wayland_global(void *data, struct wl_registry *registry, uint32_t na
 static void wayland_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static void wayland_buffer_release(void *data, struct wl_buffer *buffer);
 static void wayland_frame_done(void *data, struct wl_callback *callback, uint32_t milliseconds);
+static int wayland_wait_input(void *private_lease);
 
 /* This immutable process-lifetime table selects shared-image operations for Wayland surfaces. */
 static const struct vulkan_wsi_platform_ops wayland_platform = {
@@ -111,7 +112,8 @@ static const struct vulkan_wsi_platform_ops wayland_platform = {
 	wayland_claim, wayland_release, NULL, wayland_wait, wayland_destroy,
 	wayland_import, wayland_present, wayland_progress, wayland_available, wayland_destroy_image, NULL, wayland_present_sync, NULL, NULL,
 	wayland_commit_early, wayland_composite_alpha, wayland_damage, NULL,
-	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL
+	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+	wayland_wait_input
 };
 
 /* Registry discovery and buffer ownership are delivered only on the WSI queue. */
@@ -886,6 +888,23 @@ wayland_progress(
 
 	/* Succeeded: private callbacks were dispatched without consuming application events. */
 	return VK_SUCCESS;
+}
+
+/*
+ * Reports the connection's fd, which a blocked acquire waits on beside its
+ * wake pipe: an image the compositor sends back arrives there.
+ */
+static int
+wayland_wait_input(
+	void *private_lease)
+{
+	struct wayland_lease *lease;
+
+	/* The surface's connection. */
+	lease = private_lease;
+
+	/* Succeeded: its fd. */
+	return wl_display_get_fd(lease->surface->display);
 }
 
 /* Reports compositor ownership without reading or dispatching a socket under K/U state locks. */

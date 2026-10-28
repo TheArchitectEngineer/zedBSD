@@ -1635,7 +1635,8 @@ struct kwl_server {
 	/*
 	 * The game mode (scanout.c, ws122-p005b): the backend's direct scanout
 	 * while a fullscreen video or game shows alone (NULL in window mode),
-	 * the window it shows and the image the display holds, the frames
+	 * the window it shows, the image the display holds and the one its
+	 * present in flight shows next (NULL when none is), the frames
 	 * presented, the last reason it was left or not entered (logged once),
 	 * a window the display refused, the window last logged, and the
 	 * pointer's place and when it last moved.
@@ -1643,6 +1644,7 @@ struct kwl_server {
 	struct kl_backend_scanout *scanout;
 	struct kwl_object *scanout_surface;
 	struct kwl_object *scanout_front;
+	struct kwl_object *scanout_flight;
 	uint64_t scanout_frames;
 	unsigned scanout_reason;
 	struct kwl_object *scanout_refused;
@@ -2205,6 +2207,8 @@ int kwl_shot_option(struct kwl_server *server, const char *argument);
 struct kl_backend_scanout;
 int kwl_scanout_pass(struct kwl_server *server, struct kwl_object *top);
 void kwl_scanout_leave(struct kwl_server *server, unsigned reason);
+int kwl_scanout_fd(struct kwl_server *server);
+void kwl_scanout_ended(struct kwl_server *server);
 void kwl_scanout_surface_gone(struct kwl_server *server, struct kwl_object *surface);
 void kwl_shot_open(struct kwl_server *server);
 void kwl_shot_close(struct kwl_server *server);

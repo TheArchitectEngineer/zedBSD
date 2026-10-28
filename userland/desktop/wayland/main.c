@@ -864,12 +864,14 @@ event_loop(
 	size_t index;
 	size_t wake_slot;
 	size_t frame_slot;
+	size_t scanout_slot;
 	size_t first_fence;
 	size_t first_os;
 	size_t os_count;
 	unsigned fence;
 	int waiting;
 	int retire_ready;
+	int scanout_fd;
 	uint64_t mark;
 	uint64_t part;
 	int timeout;
@@ -945,6 +947,14 @@ event_loop(
 		frame_slot = 0;
 		if (server->frame_fd >= 0) {
 			frame_slot = count;
+			count++;
+		}
+
+		/* Then the game mode's present in flight, which ends at the display's refresh. */
+		scanout_slot = 0;
+		scanout_fd = kwl_scanout_fd(server);
+		if (scanout_fd >= 0) {
+			scanout_slot = count;
 			count++;
 		}
 
@@ -1029,6 +1039,12 @@ event_loop(
 			descriptors[frame_slot].events = POLLIN;
 		}
 
+		/* The game mode's present tells its end. */
+		if (scanout_slot != 0) {
+			descriptors[scanout_slot].fd = scanout_fd;
+			descriptors[scanout_slot].events = POLLIN;
+		}
+
 		/* An acquire fence wakes the loop when its image is rendered; the scheduler then takes it. */
 		index = first_fence;
 		for (client = server->clients; client != NULL; client = client->next) {
@@ -1105,6 +1121,8 @@ event_loop(
 		part = kwl_cycles();
 		if (frame_slot != 0 && descriptors[frame_slot].revents != 0)
 			kwl_frame_done(server);
+		if (scanout_slot != 0 && descriptors[scanout_slot].revents != 0)
+			kwl_scanout_ended(server);
 		kwl_compose_poll(server);
 		kwl_glass_glyphs_poll(server);
 		server->perf.frame_done_cycles += kwl_cycles() - part;

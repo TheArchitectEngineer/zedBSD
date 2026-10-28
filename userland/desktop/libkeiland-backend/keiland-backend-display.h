@@ -77,20 +77,31 @@ VkResult kl_backend_display_release(struct kl_backend *backend, const struct kl_
  *   kl_backend_scanout_open     claims the display for an output of the
  *       given size (after the swapchain has gone); 0, ENOTSUP, or the
  *       claim's failure
- *   kl_backend_scanout_present  shows a buffer (one of the GPU buffers'
- *       protocol, keiland-backend-gpu.h, whose rendering is done) as the
- *       whole output; the one it replaces is no longer read when it
- *       returns.  0, EINVAL for a buffer that cannot be scanned out (not a
- *       GPU buffer, another size), or the present's failure
- *   kl_backend_scanout_close    releases the display (the swapchain may be
- *       made again); NULL does nothing
+ *   kl_backend_scanout_begin    begins showing a buffer (one of the GPU
+ *       buffers' protocol, keiland-backend-gpu.h, whose rendering is done)
+ *       as the whole output and returns at once; one present is in flight
+ *       at a time.  0, EBUSY while one is, EINVAL for a buffer that cannot
+ *       be scanned out (not a GPU buffer, another size), or the import's
+ *       failure
+ *   kl_backend_scanout_fd       the fd that becomes readable when the
+ *       present in flight has ended (for the compositor's poll), -1 when
+ *       none is in flight
+ *   kl_backend_scanout_end      takes the present in flight once it has
+ *       ended: 1 with its outcome (0: the display reads the buffer, and the
+ *       one it replaces is no longer read; or the present's failure), 0
+ *       while it has not ended or none is in flight
+ *   kl_backend_scanout_close    waits for the present in flight, then
+ *       releases the display (the swapchain may be made again); NULL does
+ *       nothing
  */
 struct kl_backend_scanout;
 struct kl_backend_protocol_host;
 struct kl_backend_resource;
 int kl_backend_scanout_possible(struct kl_backend *backend, uint32_t width, uint32_t height);
 int kl_backend_scanout_open(struct kl_backend *backend, uint32_t width, uint32_t height, struct kl_backend_scanout **scanout);
-int kl_backend_scanout_present(struct kl_backend_scanout *scanout, const struct kl_backend_protocol_host *host, struct kl_backend_resource *buffer);
+int kl_backend_scanout_begin(struct kl_backend_scanout *scanout, const struct kl_backend_protocol_host *host, struct kl_backend_resource *buffer);
+int kl_backend_scanout_fd(struct kl_backend_scanout *scanout);
+int kl_backend_scanout_end(struct kl_backend_scanout *scanout, int *result);
 void kl_backend_scanout_close(struct kl_backend_scanout *scanout);
 
 /*

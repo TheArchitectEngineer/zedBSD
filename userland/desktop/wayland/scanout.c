@@ -17,8 +17,12 @@
  * Each pass the rules (scanout-rules.c) decide from the facts gathered
  * here.  To enter, the swapchain is closed once no frame is in flight
  * (libvulkan gives the display back) and the backend claims the display;
- * each new image of the window is then presented, its frame callbacks
- * done and the image it replaces let go.  As soon as the facts change --
+ * each new image of the window is then presented, and when the present has
+ * ended (the backend's thread makes it while the compositor takes the
+ * clients' commits, so a mailbox client's replaced images go back at
+ * once) the frame callbacks are done and the image it replaces let go.
+ * One present is in flight at a time; the newest image goes next.  As
+ * soon as the facts change --
  * something to draw over it (an edge's gesture, App Home, a menu, the
  * keyboard), the pointer moving, a screenshot asked, another size -- the
  * backend releases the display and window mode opens the swapchain again
@@ -46,6 +50,7 @@ static void scanout_facts(struct kwl_server *server, struct kwl_object *top, str
 static int scanout_overlay(struct kwl_server *server, struct kwl_object *top);
 static int scanout_enter(struct kwl_server *server, struct kwl_object *top);
 static void scanout_frame(struct kwl_server *server, struct kwl_object *top);
+static void scanout_refuse(struct kwl_server *server, struct kwl_object *top, int error);
 static void scanout_callbacks(struct kwl_server *server, struct kwl_object *shown);
 static void scanout_note(struct kwl_server *server, struct kwl_object *top, unsigned reason);
 
@@ -117,11 +122,14 @@ kwl_scanout_leave(
 	if (server->scanout == NULL)
 		return;
 
-	/* The display goes back, then the image it showed. */
+	/* The display goes back once the present in flight has ended, then the images it showed. */
 	kl_backend_scanout_close(server->scanout);
 	server->scanout = NULL;
 	front = server->scanout_front;
 	server->scanout_front = NULL;
+	kwl_buffer_put(front);
+	front = server->scanout_flight;
+	server->scanout_flight = NULL;
 	kwl_buffer_put(front);
 
 	/* The log, and window mode's frame from the next pass. */
@@ -325,9 +333,9 @@ scanout_enter(
 }
 
 /*
- * Shows a window's new image straight: presented, its frame callbacks
- * (and the hidden windows') done, the image it replaces let go.  A present
- * that fails leaves the game mode.
+ * Shows a window's new image straight: its present begun, unless one is in
+ * flight (its end shows the newest image next).  A present that cannot
+ * begin leaves the game mode.
  */
 static void
 scanout_frame(
@@ -335,39 +343,102 @@ scanout_frame(
 	struct kwl_object *top)
 {
 	struct kwl_object *buffer;
-	struct kwl_object *previous;
 	int error;
 
 	/* Input goes to the window shown. */
 	server->front_surface = kwl_desktop_front(server, top);
 	kwl_seat_focus(server);
 
+	/* One present at a time. */
+	if (server->scanout_flight != NULL)
+		return;
+
 	/* Only a new image is presented. */
 	buffer = top->current;
 	if (buffer == NULL || (buffer == server->scanout_front && !top->fresh))
 		return;
 
-	/* The image to the display; a failure is the backend's refusal from now. */
-	error = kl_backend_scanout_present(server->scanout, kwl_gpu_host(), kwl_gpu_resource(buffer));
+	/* The image to the display's thread; a failure is the backend's refusal from now. */
+	error = kl_backend_scanout_begin(server->scanout, kwl_gpu_host(), kwl_gpu_resource(buffer));
 	if (error != 0) {
-		printf("KWL SCANOUT present errno=%d surface=%u\n", error, top->id);
-		server->scanout_refused = top;
-		kwl_scanout_leave(server, KWL_SCANOUT_REFUSED);
+		scanout_refuse(server, top, error);
 		return;
 	}
 
-	/* The display holds the new image; the one it replaces is let go. */
-	previous = server->scanout_front;
+	/* The present holds the image until it has ended. */
 	kwl_buffer_get(buffer);
-	server->scanout_front = buffer;
-	kwl_buffer_put(previous);
+	server->scanout_flight = buffer;
 	top->fresh = 0;
-	server->scanout_frames++;
 	server->dirty = 0;
 	server->damaged = 0;
+}
+
+/*
+ * Reports the fd that becomes readable when the game mode's present in
+ * flight has ended (for the main loop's poll), -1 when none is.
+ */
+int
+kwl_scanout_fd(
+	struct kwl_server *server)
+{
+	/* Only in the game mode, with a present in flight. */
+	if (server->scanout == NULL || server->scanout_flight == NULL)
+		return -1;
+
+	/* Succeeded: the backend's fd. */
+	return kl_backend_scanout_fd(server->scanout);
+}
+
+/*
+ * Takes the game mode's present once it has ended: the display holds its
+ * image, the one it replaces is let go and the frame callbacks are done
+ * (the next pass shows a newer image).  A present that failed leaves the
+ * game mode.
+ */
+void
+kwl_scanout_ended(
+	struct kwl_server *server)
+{
+	struct kwl_object *previous;
+	int result;
+	int ended;
+
+	/* Only a present in flight that has ended. */
+	if (server->scanout == NULL || server->scanout_flight == NULL)
+		return;
+	result = 0;
+	ended = kl_backend_scanout_end(server->scanout, &result);
+	if (!ended)
+		return;
+
+	/* A failure is the backend's refusal from now. */
+	if (result != 0) {
+		scanout_refuse(server, server->scanout_surface, result);
+		return;
+	}
+
+	/* The display holds the image; the one it replaces is let go. */
+	previous = server->scanout_front;
+	server->scanout_front = server->scanout_flight;
+	server->scanout_flight = NULL;
+	kwl_buffer_put(previous);
+	server->scanout_frames++;
 
 	/* The window draws its next frame; the hidden windows are not kept waiting. */
-	scanout_callbacks(server, top);
+	scanout_callbacks(server, server->scanout_surface);
+}
+
+/* Leaves the game mode because the display refused a window's image: the window stays composed until it goes or asks again. */
+static void
+scanout_refuse(
+	struct kwl_server *server,
+	struct kwl_object *top,
+	int error)
+{
+	/* Logged, then window mode. */
+	printf("KWL SCANOUT present errno=%d surface=%u\n", error, top != NULL ? top->id : 0U);
+	server->scanout_refused = top;
+	kwl_scanout_leave(server, KWL_SCANOUT_REFUSED);
 }
 
 /* Does the frame callbacks of every surface: the one shown, and the others the game mode hides. */

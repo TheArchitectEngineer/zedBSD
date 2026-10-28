@@ -96,7 +96,8 @@ mview_renderer_open(
 	uint32_t copies,
 	int each_draw,
 	uint32_t submits,
-	int cull_all)
+	int cull_all,
+	uint32_t images)
 {
 	VkApplicationInfo application;
 	VkInstanceCreateInfo instance;
@@ -114,6 +115,7 @@ mview_renderer_open(
 	renderer->each_draw = each_draw;
 	renderer->submits = submits;
 	renderer->cull_all = cull_all;
+	renderer->images = images;
 
 	/* The application requests only standard instance extensions. */
 	extensions[0] = VK_KHR_SURFACE_EXTENSION_NAME;
@@ -892,6 +894,13 @@ renderer_swapchain(
 	/* Prefers triple buffering within the advertised native image-count range. */
 	if (create.minImageCount < 3U)
 		create.minImageCount = 3U;
+
+	/* An image count asked for (--images) replaces it, within the advertised range. */
+	if (renderer->images != 0U) {
+		create.minImageCount = renderer->images;
+		if (create.minImageCount < capabilities.minImageCount)
+			create.minImageCount = capabilities.minImageCount;
+	}
 
 	/* A nonzero maximum also constrains implementations that permit only two images. */
 	if (capabilities.maxImageCount != 0U && create.minImageCount > capabilities.maxImageCount)

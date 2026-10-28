@@ -662,8 +662,8 @@ vkAcquireNextImageKHR(
 	wake.write_fd = -1;
 	registered = NULL;
 	if (timeout != 0) {
-		/* Wayland keeps its existing finite event-dispatch progression. */
-		if (chain->surface->platform->wait_descriptor != NULL)
+		/* A display's events, or a window system's connection, wake the wait as well as the image-state changes. */
+		if (chain->surface->platform->wait_descriptor != NULL || chain->surface->platform->wait_input != NULL)
 			registered = &wake;
 	}
 
@@ -4117,9 +4117,14 @@ swapchain_acquire(
 			return error;
 		}
 
-		/* A finite caller deadline takes priority over the protocol progress interval. */
+		/*
+		 * A finite caller deadline takes priority over the protocol progress
+		 * interval.  A direct display wakes on its own events alone; a window
+		 * system's connection still looks every interval, for a release
+		 * another thread read off the connection into the surface's queue.
+		 */
 		delay = WSI_PROGRESS_INTERVAL;
-		if (wake != NULL)
+		if (wake != NULL && chain->surface->platform->wait_descriptor != NULL)
 			delay = UINT64_MAX;
 
 		/* Finite application deadlines constrain both native fd and protocol waits. */
@@ -4136,7 +4141,7 @@ swapchain_acquire(
 				delay = remaining;
 		}
 
-		/* Direct display sleeps on real fd readiness, with no periodic progress quantum. */
+		/* A direct display or a window system's connection sleeps on fd readiness (the display with no periodic quantum). */
 		if (wake != NULL) {
 			pthread_mutex_unlock(&swapchain_mutex);
 			error = swapchain_poll(chain, wake, delay);
@@ -4196,7 +4201,7 @@ swapchain_acquire(
 	return VK_SUCCESS;
 }
 
-/* Waits on native errors, topology and independent image-ownership publication. */
+/* Waits on native errors, topology, a display's events or a window system's connection, and independent image-ownership publication. */
 static VkResult
 swapchain_poll(
 	struct vulkan_swapchain *chain,
@@ -4211,8 +4216,13 @@ swapchain_poll(
 	/* Ignoring ordinary GPU POLLIN avoids spinning on another observer's retained completion. */
 	memset(descriptors, 0, sizeof(descriptors));
 	descriptors[0].fd = chain->device->object.context->fd;
-	descriptors[1].fd = chain->surface->platform->wait_descriptor(chain->lease);
-	descriptors[1].events = POLLPRI;
+	if (chain->surface->platform->wait_descriptor != NULL) {
+		descriptors[1].fd = chain->surface->platform->wait_descriptor(chain->lease);
+		descriptors[1].events = POLLPRI;
+	} else {
+		descriptors[1].fd = chain->surface->platform->wait_input(chain->lease);
+		descriptors[1].events = POLLIN;
+	}
 	descriptors[2].fd = wake->read_fd;
 	descriptors[2].events = POLLIN;
 	deadline = NULL;
