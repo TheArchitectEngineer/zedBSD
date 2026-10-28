@@ -12,7 +12,7 @@
 
 ## 再開点（2026-10-29 P6）
 
-1. zedBSD の package の build（`ZEDBSD_USER_PROGRAMS += libyolox` の config で `$(BUILD)/dynamic/libyolox.so`）、arm64（rpi5）を arch に足すかの判断。
+1. zedBSD の package の build: `plan/ws284/tests/config.mk`（`ZEDBSD_USER_PROGRAMS += libyolox`）で `make ... build/ws282/p6c-amd64/dynamic/libyolox.so` は「No rule to make target」で rc 2（2026-10-29）。shared library の規則は `platform/common/userland-dynamic.mk` に library ごとに書かれている（libmedia の例）ので、そこに libyolox を足す必要がある（共有の build の file なので未着手、Q1 の判断）。arm64（rpi5）を arch に足すかの判断も。
 2. host の試験 T2b（小さな合成の ZNET を書いて壊す）・T2（make-reference.sh の出力と比べる program）を書く。`Makefile.linux` は未作成。
 3. graph.c（GPU の融合と分割と割り当て）は p004 と一緒に。p004 の Vulkan の backend は未着手。
 4. p002 の残り: package `yolox-nano-weights`（取得・変換・固定の SHA-256・install・NOTICE・manifest。固定の SHA-256 は変換を一度流すまで決まらない）は未着手。変換の script（cf0b079e5）と参照の script（ffeaeced5）は書いた、流していない。
