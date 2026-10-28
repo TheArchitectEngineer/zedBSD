@@ -4,7 +4,7 @@
 
 - Master: [plan/master.md](../master.md)（2026-10-29 作成）。Primary Milestone: MG006。前身の調べ: [WS291](../ws291/ws.md) の
   [keiland-blocking.md](../ws291/keiland-blocking.md)（P2 q1661 の点検、branch `agent/p2-ws291i` にあり main に未 merge）。
-- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) 確定、p001〜p003 cleared、p005 in-progress、p019 cleared（RDNA は P2 の q1668）、p004・p006〜p018 planned）
+- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) 確定、p001〜p003・p005・p019 cleared、p004 in-progress、p006〜p018 planned）
 - 目標: Keiland の compositor の main loop が frame を止める同期の待ちを持たないよう、thread を下の構成に整理する。ゲームモードの
   direct scanout は Vulkan display（`VK_KHR_display`）の仕様の中で実装する。
 
@@ -72,6 +72,7 @@
 
 ## Resume point
 
+- 2026-10-29 03:2x P1（q1662-i03、branch `agent/p1-ws309c`）: p005 cleared（言語・apps.conf・account・鍵・printers の open、QEMU `plan/ws309/tests/io-read-guest.sh` PASS）。p019 cleared（P2 の q1668）。次は p004。
 - 2026-10-29 02:4x P1（q1662-i02、branch `agent/p1-ws309b`、d5fb0bd08・c3b274d51）: p005 は displays.conf（`saved` は書き終わりで答える）・desktop.conf の Log Out・printers.conf まで済み。
   次は p005 の残り（言語の catalog・apps.conf の読み、account・鍵の保存、[phase.md](phase005/phase.md) の「残り」）、その後 p004。QEMU は `plan/ws309/tests/io-file-guest.sh`。
 - 2026-10-29 02:3x P1（q1662-i01）: p001・p002・p003 cleared、p019（shot の送りを thread へ）は QEMU で再現せず RDNA の確かめ待ち。
@@ -86,7 +87,7 @@
 | [ws309-p002](phase002/phase.md) | 共通の部品: thread の台帳・lane（常駐と pool）、host 試験 | cleared | p001 |
 | [ws309-p003](phase003/phase.md) | io-device: 入力の device の検出と close を thread へ（zedBSD） | cleared（実機は未実施） | p002 |
 | ws309-p004 | io-device の残り: 電源・network の詳細・machine・sysmon、input の detach の ack を wake で | planned | p003 |
-| [ws309-p005](phase005/phase.md) | io-file: displays.conf・desktop.conf・printers.conf の書き込み（`saved` は書き終わりで答える）、apps.conf・言語・printers.conf の読み、account・鍵の保存 | in-progress | p002 |
+| [ws309-p005](phase005/phase.md) | io-file: displays.conf・desktop.conf・printers.conf の書き込み（`saved` は書き終わりで答える）、apps.conf・言語・printers.conf の読み、account・鍵の保存 | cleared（account の実行と実機は未実施） | p002 |
 | ws309-p006 | daemon ×5 の thread（zedBSD の backend、wake pipe を backend の open の前に） | planned | p002、J6 |
 | ws309-p007 | font の thread: 予備の font・emoji の先読み、rasterize、color emoji の decode | planned | p002 |
 | ws309-p008 | render を GPU の queue の唯一の持ち主に (1): fence 付きの task と queue の lock | planned | p002 |

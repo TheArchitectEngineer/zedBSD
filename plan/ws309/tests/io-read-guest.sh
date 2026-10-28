@@ -2,20 +2,22 @@
 # ws309: on QEMU's Venus guest, the compositor's reads that went to the io-file thread: the language's catalogs
 # (ui.language changed while the session runs), App Home's apps.conf and its programs looked up, and the printers
 # opened before READY.  The guest is started from IMAGE in OUT/runtime; WAYLAND is put in as /bin/wayland, LIBKEILAND
-# as /lib/libkeiland.so (by a rename, so that a program running keeps its copy) and SETTINGS as /bin/keiland-settings;
-# a compositor of its own (--testing, HOME=/tmp/p005read) runs while keiland-settings sets ui.language to 1, 0, then
-# 1 and 0 at once, and the compositor's own KWL lines are collected.  The guest is ended by QEMU's monitor.  Prints
+# as /lib/libkeiland.so (by a rename, so that a program running keeps its copy), SETTINGS as /bin/keiland-settings and
+# PROBE as /bin/keiland-system; a compositor of its own (--testing --glass, HOME=/tmp/p005read) runs while keiland-settings
+# sets ui.language to 1, 0, then 1 and 0 at once, and the probe saves a network's key (the network does not exist, so
+# its join may fail), and the compositor's own KWL lines are collected.  The guest is ended by QEMU's monitor.  Prints
 # "io-read-guest: PASS" when io-file is in KWL THREADS, every language after the start came by=io-file with error=0
 # in the order asked (ja, en, then en last), Home's list came by=io-file with some apps before "KWL HOME prepared",
-# and the printers were prepared open and hosted before READY.
-#   usage: plan/ws309/tests/io-read-guest.sh OUT IMAGE WAYLAND LIBKEILAND SETTINGS
+# the printers were prepared open and hosted before READY, and the key was saved by=io-file with error=0.
+#   usage: plan/ws309/tests/io-read-guest.sh OUT IMAGE WAYLAND LIBKEILAND SETTINGS PROBE
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-out=${1:?usage: io-read-guest.sh OUT IMAGE WAYLAND LIBKEILAND SETTINGS}
+out=${1:?usage: io-read-guest.sh OUT IMAGE WAYLAND LIBKEILAND SETTINGS PROBE}
 image=${2:?}
 wl=${3:?}
 lib=${4:?}
 settings=${5:?}
+probe=${6:?}
 top=$(pwd)
 mkdir -p "$out"
 GUEST_RUNTIME=$top/$out/runtime
@@ -31,7 +33,8 @@ if [ $failed = 0 ]; then
 	g put "$wl" /bin/wayland > "$out/put.log" 2>&1 || failed=1
 	g put "$lib" /tmp/libkeiland.so > "$out/put-lib.log" 2>&1 || failed=1
 	g put "$settings" /bin/keiland-settings > "$out/put-settings.log" 2>&1 || failed=1
-	G_TIMEOUT=180 g run 'chmod 755 /bin/wayland /bin/keiland-settings; cp /tmp/libkeiland.so /lib/libkeiland.so.new && mv /lib/libkeiland.so.new /lib/libkeiland.so; export XDG_RUNTIME_DIR=/tmp HOME=/tmp/p005read; mkdir -p $HOME; rm -f /tmp/wayland-0; /bin/wayland --testing --timeout=60000 --width=1280 --height=800 > /tmp/io-read.log 2>&1 </dev/null & sleep 6; keiland-settings --timeout-ms=10000 set ui.language 1 > /tmp/settings.out 2>&1; sleep 1; keiland-settings --timeout-ms=10000 set ui.language 0 >> /tmp/settings.out 2>&1; sleep 1; keiland-settings --timeout-ms=10000 set ui.language 1 set ui.language 0 >> /tmp/settings.out 2>&1; sleep 2; cat /tmp/settings.out; echo "== compositor"; grep -E "KWL (READY|THREADS|LANGUAGE|HOME (read|prepared|skip)|PRINTERS prepared|IO)" /tmp/io-read.log' > "$out/guest.out" 2>&1
+	g put "$probe" /bin/keiland-system > "$out/put-probe.log" 2>&1 || failed=1
+	G_TIMEOUT=180 g run 'chmod 755 /bin/wayland /bin/keiland-settings /bin/keiland-system; cp /tmp/libkeiland.so /lib/libkeiland.so.new && mv /lib/libkeiland.so.new /lib/libkeiland.so; export XDG_RUNTIME_DIR=/tmp HOME=/tmp/p005read; mkdir -p $HOME; rm -f /tmp/wayland-0; /bin/wayland --testing --glass --timeout=60000 --width=1280 --height=800 > /tmp/io-read.log 2>&1 </dev/null & sleep 6; keiland-settings --timeout-ms=10000 set ui.language 1 > /tmp/settings.out 2>&1; sleep 1; keiland-settings --timeout-ms=10000 set ui.language 0 >> /tmp/settings.out 2>&1; sleep 1; keiland-settings --timeout-ms=10000 set ui.language 1 set ui.language 0 >> /tmp/settings.out 2>&1; sleep 2; keiland-system --timeout-ms=20000 save-key p1-ws309-test p1-ws309-key > /tmp/probe.out 2>&1; sleep 1; cat /tmp/settings.out /tmp/probe.out; echo "== compositor"; grep -E "KWL (READY|THREADS|MODE|LANGUAGE|HOME (read|prepared|skip)|PRINTERS prepared|IO|SYSTEM network|NETWORK key)" /tmp/io-read.log' > "$out/guest.out" 2>&1
 	g run "$stop_all" > /dev/null 2>&1
 fi
 python3 -I - "$GUEST_RUNTIME/qmp.sock" <<'PY' > "$out/quit.log" 2>&1
@@ -69,6 +72,10 @@ if prepared < 0:
 	fail("the printers were not prepared open and hosted")
 elif ready >= 0 and prepared > ready:
 	fail("the printers were prepared after READY")
+if index_of(r"KWL SYSTEM network key saved ssid=p1-ws309-test error=0 by=io-file") < 0:
+	fail("the key was not saved by io-file with error=0")
+if any("p1-ws309-key" in line for line in text if line.startswith("KWL")):
+	fail("the key is in the compositor's log")
 results = [line for line in text if line.startswith("KEILAND-SETTINGS result")]
 if len(results) < 4 or any("error=0" not in line for line in results):
 	fail("%d settings results, 4 with error=0 wanted" % len(results))
