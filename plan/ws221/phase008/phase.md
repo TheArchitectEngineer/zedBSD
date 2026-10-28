@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p008 -->
 # ws221-p008: TCP の輻輳の制御と送りの buffer、相手の MSS、`tcp_device_mss`、Nagle（旧 ws220-p006）
 
-Status: in-progress（2026-10-29 P3 q1664: 下の「結果」。残り: 送り ≥ 940 Mbps、byte の送りの buffer（今は ring の packet の copy のまま）、Nagle、gateway 経由の IPv4 の MSS 1460、IPv6 の path MTU の追従は send_mss を establishment で決めるだけ）
+Status: in-progress（2026-10-29 P3 q1664-i03: 送り ≥ 940 は済み（VF2 で 949、MTU 9000 で 991）、gateway 経由の IPv4 の MSS 1460 と `tcp_device_mss` は p005（d17b806f1）で入れた。残り: byte の送りの buffer（今は ring の packet の copy）、Nagle、IPv6 の path MTU の追従（send_mss は establishment で決めるだけ）
 Parent: [WS221](../ws.md)
 Queue: q1664 / q1664-i01（P3）
 依存: WS220 p005（main、cleared）。WS221 p005 はこの Phase の `tcp_device_mss` を使う

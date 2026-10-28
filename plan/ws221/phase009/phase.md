@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p009 -->
 # ws221-p009: TCP の受けの窓（窓の約束、受け側の SWS 回避、window scale、delayed ACK）（旧 ws220-p007）
 
-Status: in-progress（2026-10-29 P3 q1664: 下の「結果」。受けは 948 Mbps。残り: 窓を byte で数える（今は packet の上限を 128 にして 512 byte 以上の segment で約束を守る形）、受け側の SWS 回避の見直し、自分の window scale（shift 0 のまま）、delayed ACK の timer（今は 2 つ目か worker の batch の終わり））
+Status: in-progress（2026-10-29 P3 q1664-i03: 自分の window scale と byte で数える窓は 13a032348 で済み（下の「i03 の結果」）。残り: 受け側の SWS 回避の見直し、delayed ACK の timer（今は 2 つ目か worker の batch の終わり）、slow-reader の receive_refused 0）
 Parent: [WS221](../ws.md)
 Queue: q1664 / q1664-i01（P3）
 依存: p008（輻輳の制御と byte の送りの buffer。受けの queue の上限は packet の pool の class を考慮）
@@ -36,3 +36,14 @@ Queue: q1664 / q1664-i01（P3）
 ## 結果（2026-10-29 P3 q1664）
 
 実装と数値は [ws.md](../ws.md) の「結果」の表。試験: WS220 の `tcp-model/run.sh` PASS（scenario を新しい速さに追従させた: model の writer の room に cwnd、batch の終わりの `tcp_ack_flush`、`--expect-retransmits-losses`、persist 系の bytes 64 MB、rtt-step の段を 2 ms、unresolved の上限を flight 分、window-lost の FR 0:1）、`plan/ws221/tests/qemu-tcp.sh` PASS、VF2 実機の `plan/ws221/tests/vf2-tcp.sh`。
+
+## i03 の結果（2026-10-29 P3 q1664-i03、13a032348）
+
+Q1（2026-10-29）: 「p008・p009 の残り（自分の window scale の広告、byte の受けの窓）は WS311 の前提にもなるので、WS221 の中で済ませておいて。」
+
+| 項目 | 内容 |
+| --- | --- |
+| byte で数える窓 (a) | `socket_enqueue_stream` を 1 つの lock の下に書き直した: 全部が tail に入れば今まで通り、入らなければ tail が `SOCKET_STREAM_PACKET_BYTES`（1024）より少ない時だけ tail を先頭の bytes で満たし、残りを自分の packet に（全部を取れる時だけ取る）。queue の packet は最後のもの以外 1024 byte 以上を持つので、窓の packet の上限を「空き packet × 1024」にした（前は × 1460 で 512 byte 未満の segment で約束が破れた）。全長の segment（1024 より大きい）は写さない |
+| 自分の window scale (c) | SYN の option の shift を `TCP_RECEIVE_WSCALE` 5（`SOCKET_BUFFER_MAX` 1 MB を覆う最小）に。両端が option を出した接続は窓の field を 5 bit 右へ（SYN では scale しない、32 byte に切り捨て）、`advertised_window` は byte の値（uint32）で持つ |
+| 受けの buffer の既定 | 64-bit（pool 1024）の TCP の接続は 128 KB（`TCP_RECEIVE_BUFFER`、128 packet × 1024 と同じ）。32-bit は 64 KB のまま。`SO_RCVBUF` で変えられる |
+| 試験 | tcp-model PASS: model の `--peer-window` を A の読む scale で書く形に直し、窓が 128 KB になって flight が 128 segment になった 3 つの上限（unresolved 76→140、unresolved-giveup 84→148、rtt-step-zedbsd 64→128）を追従させた。rtt-10ms は 6.1→12.2 MB/s（窓 / RTT）、lan-loss-1-zedbsd 14.1→12.0、no-route 58.3→50.9（flight が大きい分の損失）。qemu-tcp.sh PASS（53.0・56.6 Mbps）。VF2 実機（相手 5330 の Debian、Q1 の許可、flock）: 1500 で受け 949.3・949.3、送り 949.1・949.1（受けの窓 131072）、9000 で受け 990.6・990.8（前の 987 から上がった）、送り 990.9・990.9（受けの窓 71680 = jumbo 8 × 8960）、両方 receive_refused 0・再送 0 |
