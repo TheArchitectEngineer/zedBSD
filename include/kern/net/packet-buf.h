@@ -29,6 +29,13 @@
  * receive (PACKET_BUF_ALLOC_RECEIVE): a sender or a copy that would take
  * one of the last of them is refused, so the frames that arrive still
  * find a packet while sockets hold the others.
+ *
+ * In the same way PACKET_BUF_HOLD_RESERVE standard packets are kept from
+ * a caller that holds its packet for as long as a peer takes to answer
+ * (PACKET_BUF_ALLOC_HOLD: TCP's copies for retransmission): the senders to
+ * slow peers together take no more than the rest, and the frames that
+ * arrive, the receive queues and the packets that only pass through
+ * (acknowledgements, datagrams, resends) still find one.
  */
 #if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
     defined(HAL_ARCH_RISCV64)
@@ -36,11 +43,13 @@
 #define PACKET_BUF_JUMBO_STORAGE_SIZE	9216U
 #define PACKET_BUF_JUMBO_COUNT		32U
 #define PACKET_BUF_JUMBO_RESERVE	8U
+#define PACKET_BUF_HOLD_RESERVE		256U
 #else
 #define PACKET_BUF_POOL_COUNT		32U
 #define PACKET_BUF_JUMBO_STORAGE_SIZE	2048U
 #define PACKET_BUF_JUMBO_COUNT		0U
 #define PACKET_BUF_JUMBO_RESERVE	0U
+#define PACKET_BUF_HOLD_RESERVE		8U
 #endif
 #define PACKET_BUF_STORAGE_SIZE	2048U
 
@@ -49,6 +58,8 @@
 
 /* packet_buf_alloc_for: the caller is a driver's receive, which may take the reserved jumbo packets. */
 #define PACKET_BUF_ALLOC_RECEIVE	0x1U
+/* packet_buf_alloc_for: the caller holds the packet until a peer answers, and leaves the reserved standard packets. */
+#define PACKET_BUF_ALLOC_HOLD		0x2U
 #define PACKET_BUF_DEFAULT_HEADROOM	64U
 #define PACKET_OFFSET_NONE	UINT16_MAX
 
@@ -58,7 +69,7 @@ struct net_device;
  * The packet pool's use at one moment (packet_buf_pool_usage): for the
  * standard packets and then the jumbo ones, the class's size, the packets
  * taken now and the most ever taken, and how many allocations found none
- * free (for the jumbo class, none outside the reserve), and the jumbo
+ * free to them (outside the reserve the caller may not take), and the jumbo
  * packets kept for the drivers' receive.
  */
 struct packet_buf_pool_usage {

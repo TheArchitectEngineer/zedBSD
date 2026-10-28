@@ -31,6 +31,7 @@ static void check(int condition, const char *what);
 static void test_classes(void);
 static void test_reserve(void);
 static void test_standard_exhaustion(void);
+static void test_hold_reserve(void);
 static void test_copy(void);
 
 /* The kcrt copies are the host's. */
@@ -88,6 +89,8 @@ main(void)
 	test_reserve();
 	packet_buf_pool_init();
 	test_standard_exhaustion();
+	packet_buf_pool_init();
+	test_hold_reserve();
 	packet_buf_pool_init();
 	test_copy();
 
@@ -247,6 +250,55 @@ test_standard_exhaustion(void)
 	/* All given back. */
 	for (index = 0; index < PACKET_BUF_POOL_COUNT; index++)
 		packet_buf_free(taken[index]);
+	packet_buf_pool_usage(&usage);
+	check(usage.used == 0U, "every standard packet is back");
+}
+
+/*
+ * ws221-p008: the copies a sender holds (PACKET_BUF_ALLOC_HOLD) leave the
+ * last PACKET_BUF_HOLD_RESERVE standard packets, which the drivers'
+ * receive and the other callers still take.
+ */
+static void
+test_hold_reserve(void)
+{
+	struct packet_buf_pool_usage usage;
+	struct packet_buf *taken[PACKET_BUF_POOL_COUNT];
+	struct packet_buf *extra;
+	unsigned held;
+	unsigned count;
+	int error;
+
+	/* Holders take all but the reserve. */
+	held = 0;
+	for (;;) {
+		extra = packet_buf_alloc_for(64U, 1460U, PACKET_BUF_ALLOC_HOLD, &error);
+		if (extra == NULL)
+			break;
+		taken[held++] = extra;
+	}
+	check(held == PACKET_BUF_POOL_COUNT - PACKET_BUF_HOLD_RESERVE, "holders take all but the reserve");
+	check(error == ENOBUFS, "a holder refused is ENOBUFS");
+	packet_buf_pool_usage(&usage);
+	check(usage.alloc_failures == 1U, "the holder refused is counted");
+
+	/* The reserve goes to a receive and to a caller that does not hold. */
+	count = held;
+	extra = packet_buf_alloc_for(0, 1514U, PACKET_BUF_ALLOC_RECEIVE, &error);
+	check(extra != NULL, "a receive takes a reserved packet");
+	if (extra != NULL)
+		taken[count++] = extra;
+	while (count < PACKET_BUF_POOL_COUNT) {
+		extra = packet_buf_alloc_for(64U, 100U, 0, &error);
+		check(extra != NULL, "a passing packet takes a reserved one");
+		if (extra == NULL)
+			break;
+		taken[count++] = extra;
+	}
+
+	/* All given back. */
+	while (count != 0)
+		packet_buf_free(taken[--count]);
 	packet_buf_pool_usage(&usage);
 	check(usage.used == 0U, "every standard packet is back");
 }

@@ -69,8 +69,10 @@ enum tcp_state {
 
 /*
  * One segment in the send ring: its copy, where it lies in the sequence
- * space, its TCP flags, and whether it went out as a probe of a window
- * that could not take it (ws220-p005; set when it is marked sent).  The
+ * space, its TCP flags, whether it went out as a probe of a window that
+ * could not take it (ws220-p005; set when it is marked sent), and whether
+ * it has never been handed to the device (fresh: a short last segment
+ * that Nagle's algorithm holds takes the next write's bytes).  The
  * payload is length bytes at payload_offset in the copy's storage: the
  * copy itself carries the segment's first transmission, which pushes the
  * headers in front of the payload, so its data pointer is not the
@@ -84,6 +86,7 @@ struct tcp_pending {
 	uint16_t payload_offset;
 	uint8_t flags;
 	uint8_t probe;
+	uint8_t fresh;
 };
 
 /*
@@ -227,6 +230,20 @@ struct tcp_socket {
 	/* The ring's copies that are jumbo packets (within TCP_SEND_JUMBO_MAX). */
 	unsigned send_jumbo;
 	/*
+	 * The payload bytes of the ring's entries, which the socket's send
+	 * buffer (SO_SNDBUF, send_hiwat_bytes) bounds: a data segment joins
+	 * the ring while they stay within it, or the ring has no data.
+	 */
+	size_t send_bytes;
+	/*
+	 * Nagle's algorithm as Minshall changed it (and Linux has it): the
+	 * end of the last data segment shorter than send_mss handed to the
+	 * device, while send_small_outstanding says it is not yet
+	 * acknowledged.  Only then is a short last entry held back.
+	 */
+	uint32_t send_small_end;
+	unsigned send_small_outstanding;
+	/*
 	 * Set while one thread hands unsent entries to the device with the
 	 * socket lock released; another that queues meanwhile leaves its
 	 * entry unsent for that one to send, so entries go out in order.
@@ -355,9 +372,9 @@ struct tcp_socket {
 	unsigned maxunack_seconds;
 	uint64_t unack_since;
 	/*
-	 * TCP_NODELAY as the caller set it, and the idle-probe state for
-	 * SO_KEEPALIVE: when the next probe is due and how many have gone
-	 * unanswered.
+	 * TCP_NODELAY as the caller set it (set: Nagle's algorithm holds no
+	 * short segment), and the idle-probe state for SO_KEEPALIVE: when the
+	 * next probe is due and how many have gone unanswered.
 	 */
 	unsigned nodelay;
 	uint64_t keepalive_deadline;
