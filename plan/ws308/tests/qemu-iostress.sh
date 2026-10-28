@@ -4,7 +4,9 @@
 # through the cache.  The guest has MEMORY (default 1G), so "hog" pushes pages to swap.  Each run lasts SECONDS
 # (default 30).  Then four processes write 32 MiB each with O_DIRECT 4 KiB requests and fsync, at once, and the guest
 # must still answer.
-#   sh plan/ws308/tests/qemu-iostress.sh IMAGE
+#   [IOSTRESS_RUNS='nvme1n1 direct;nvme0n1 hog 1200'] sh plan/ws308/tests/qemu-iostress.sh IMAGE
+# IOSTRESS_RUNS: the runs, ";" between them, each a disk under /dev and iostress's words (default: direct, cached,
+# direct with seteuid, cached with a 1200 MiB hog, and the boot disk direct with the hog and seteuid).
 # IMAGE: plan/tools/posix/config-amd64-serial.mk with /root/iostress and /root/directio (ZEDBSD_EXTRA_FILES, built
 # from iostress.c as randread is, and by build-randread.sh).  W is build/tmp/qemu-iostress (a fresh run each time).  The last line is "qemu-iostress: PASS|FAIL ...".
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -37,9 +39,13 @@ $S login > /dev/null
 out=$W/guest.txt
 : > "$out"
 runs=0
-for how in "/dev/nvme1n1 $SECONDS_RUN direct" "/dev/nvme1n1 $SECONDS_RUN" "/dev/nvme1n1 $SECONDS_RUN direct setuid" \
-	"/dev/nvme1n1 $SECONDS_RUN hog 1200" "/dev/nvme0n1 $SECONDS_RUN direct hog 1200 setuid"; do
-	command="/root/iostress $how size 256; echo iostress-rc=\$?"
+RUNS=${IOSTRESS_RUNS:-"nvme1n1 direct;nvme1n1;nvme1n1 direct setuid;nvme1n1 hog 1200;nvme0n1 direct hog 1200 setuid"}
+IFS=';'
+set -- $RUNS
+unset IFS
+for how in "$@"; do
+	command="/root/iostress /dev/${how%% *} $SECONDS_RUN ${how#* } size 256; echo iostress-rc=\$?"
+	[ "${how#* }" = "$how" ] && command="/root/iostress /dev/$how $SECONDS_RUN size 256; echo iostress-rc=\$?"
 	echo "guest\$ $command" >> "$out"
 	$S run "$command" >> "$out" 2>&1
 	runs=$((runs + 1))

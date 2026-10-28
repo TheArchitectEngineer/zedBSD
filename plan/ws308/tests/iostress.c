@@ -11,7 +11,7 @@
  * of user buffers (ws308-p006).  It builds like randread.c (build-randread.sh
  * builds every .c it is given; cc -O2 -pthread on Linux).
  *
- *	iostress FILE SECONDS [direct] [hog MIB] [setuid] [size MIB]
+ *	iostress FILE SECONDS [direct] [hog MIB] [setuid] [nofork] [nomap] [size MIB]
  *
  * For SECONDS it runs at once:
  *   - 8 readers: pread of 4 KiB, or 8 KiB across a page boundary, into a
@@ -22,7 +22,8 @@
  *   - a mapper: munmap and MAP_FIXED mmap of 4 pages of the region, and
  *     mprotect of 4 pages to read-only and back;
  *   - a checker: preadv with 16 vectors of 300 bytes across pages, compared
- *     with one pread of the same range;
+ *     with one pread of the same range (on a descriptor without O_DIRECT,
+ *     which takes no unaligned vectors);
  *   - a forker: fork, the child reads into the middle of a private area with
  *     pread, checks the pattern around the read and the data against a
  *     fresh pread, writes its copy of a page of the parent (which the parent
@@ -31,8 +32,10 @@
  *     (pushes pages to swap);
  *   - with "setuid" (as root): a thread that switches the effective user
  *     between 1 and 0 while the readers run on descriptors opened before.
+ * "nofork" and "nomap" leave out the forker and the mapper.
  * The first 256 MiB of FILE are read; "size MIB" gives the size of a device
- * whose lseek does not.  One line reports the counts and ends with "result=PASS" or "result=FAIL".
+ * whose lseek does not.  One line reports the first unexpected errno of a
+ * reader and the counts, and ends with "result=PASS" or "result=FAIL".
  */
 
 #define _GNU_SOURCE
@@ -57,6 +60,7 @@
 #define VECTOR_BYTES 300
 
 static int fd;
+static int plain_fd;
 static uint64_t blocks;
 static unsigned char *region;
 static unsigned char *cow_page;
@@ -72,6 +76,7 @@ static unsigned long forks;
 static unsigned long fork_failures;
 static unsigned long setuid_rounds;
 static unsigned long setuid_errors;
+static int first_errno;
 static pthread_mutex_t count_lock = PTHREAD_MUTEX_INITIALIZER;
 
 /* xorshift64* of a caller's state. */
@@ -116,8 +121,11 @@ reader(void *argument)
 			done++;
 		else if ((got < 0 && errno == EFAULT) || (got > 0 && got < (ssize_t)length))
 			faulted++;
-		else
+		else {
+			if (got < 0 && first_errno == 0)
+				first_errno = errno;
 			failed++;
+		}
 	}
 	count(&reads, done);
 	count(&faults, faulted);
@@ -178,8 +186,8 @@ checker(void *argument)
 			vectors[index].iov_len = VECTOR_BYTES;
 		}
 		offset = (off_t)((next_random(&state) % (blocks - 4U)) * PAGE);
-		if (preadv(fd, vectors, VECTORS, offset) != VECTORS * VECTOR_BYTES ||
-		    pread(fd, plain, sizeof(plain), offset) != (ssize_t)sizeof(plain)) {
+		if (preadv(plain_fd, vectors, VECTORS, offset) != VECTORS * VECTOR_BYTES ||
+		    pread(plain_fd, plain, sizeof(plain), offset) != (ssize_t)sizeof(plain)) {
 			failed++;
 			continue;
 		}
@@ -296,6 +304,8 @@ main(int argc, char **argv)
 	int flags = O_RDONLY;
 	size_t hog_mib = 0;
 	size_t size_mib = 0;
+	int with_fork = 1;
+	int with_mapper = 1;
 	pid_t hog_pid = -1;
 	off_t size;
 	unsigned seen;
@@ -303,7 +313,7 @@ main(int argc, char **argv)
 	int ok;
 
 	if (argc < 3) {
-		fprintf(stderr, "usage: iostress FILE SECONDS [direct] [hog MIB] [setuid] [size MIB]\n");
+		fprintf(stderr, "usage: iostress FILE SECONDS [direct] [hog MIB] [setuid] [nofork] [nomap] [size MIB]\n");
 		return 2;
 	}
 	seconds = atoi(argv[2]);
@@ -314,11 +324,16 @@ main(int argc, char **argv)
 			hog_mib = (size_t)atol(argv[++index]);
 		else if (strcmp(argv[index], "setuid") == 0)
 			use_setuid = 1;
+		else if (strcmp(argv[index], "nofork") == 0)
+			with_fork = 0;
+		else if (strcmp(argv[index], "nomap") == 0)
+			with_mapper = 0;
 		else if (strcmp(argv[index], "size") == 0 && index + 1U < (unsigned)argc)
 			size_mib = (size_t)atol(argv[++index]);
 	}
 	fd = open(argv[1], flags);
-	if (fd < 0) {
+	plain_fd = open(argv[1], O_RDONLY);
+	if (fd < 0 || plain_fd < 0) {
 		perror("open");
 		return 2;
 	}
@@ -351,9 +366,11 @@ main(int argc, char **argv)
 
 	for (index = 0; index < READERS; index++)
 		pthread_create(&threads[thread_count++], NULL, reader, (void *)(uintptr_t)(index + 1U));
-	pthread_create(&threads[thread_count++], NULL, mapper, NULL);
+	if (with_mapper)
+		pthread_create(&threads[thread_count++], NULL, mapper, NULL);
 	pthread_create(&threads[thread_count++], NULL, checker, NULL);
-	pthread_create(&threads[thread_count++], NULL, forker, NULL);
+	if (with_fork)
+		pthread_create(&threads[thread_count++], NULL, forker, NULL);
 	if (use_setuid)
 		pthread_create(&threads[thread_count++], NULL, switcher, NULL);
 	sleep((unsigned)seconds);
@@ -370,10 +387,10 @@ main(int argc, char **argv)
 	for (index = 0; index < PAGE; index++)
 		seen += cow_page[index] == 0x11;
 	ok = errors == 0 && vector_mismatches == 0 && fork_failures == 0 && setuid_errors == 0 &&
-	    reads != 0 && vector_checks != 0 && forks != 0 && seen == PAGE;
-	printf("iostress reads=%lu efault=%lu errors=%lu mapper=%lu vectors=%lu mismatches=%lu forks=%lu "
+	    reads != 0 && vector_checks != 0 && (forks != 0 || !with_fork) && seen == PAGE;
+	printf("iostress errno=%d reads=%lu efault=%lu errors=%lu mapper=%lu vectors=%lu mismatches=%lu forks=%lu "
 	    "fork_failures=%lu setuid=%lu setuid_errors=%lu result=%s\n",
-	    reads, faults, errors, mapper_rounds, vector_checks, vector_mismatches, forks, fork_failures,
+	    first_errno, reads, faults, errors, mapper_rounds, vector_checks, vector_mismatches, forks, fork_failures,
 	    setuid_rounds, setuid_errors, ok ? "PASS" : "FAIL");
 	return ok ? 0 : 1;
 }
