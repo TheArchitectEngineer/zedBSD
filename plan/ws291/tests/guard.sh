@@ -6,6 +6,8 @@
 # (mview, vkhang, nggshape) is killed, the kernel's log is kept in OUT.dmesg, zedBSD is powered off and the command is
 # stopped.  The guard's lines go to OUT.guard; it prints "guard: tripped ..." when it acted.
 #   usage: plan/ws291/tests/guard.sh OUT COMMAND [ARG...]
+# Each answer's clocks line (the memory clock, the hub's memory state, the underflow) is logged with the power line;
+# a round without an answer is logged as "no answer (N)" (the machine is then judged by whoever watches the log).
 # The machine's state that made the guard (2026-10-28): the firmware stopped answering, the fan stood at 0 rpm and the
 # GPU kept working.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -24,16 +26,24 @@ mkdir -p "$(dirname "$out")"
 power_line() {
 	ip=$(ip neigh | awk -v mac="$ZEDBSD_MAC" '$0 ~ mac && $0 !~ /FAILED/ && $1 ~ /^[0-9.]+$/ {print $1; exit}')
 	[ -n "$ip" ] || return 1
-	timeout 20 ssh -i "$KEY" $SSHOPT "root@$ip" "amdrdnactl | grep '^power '" 2> /dev/null
+	timeout 20 ssh -i "$KEY" $SSHOPT "root@$ip" "amdrdnactl | grep '^power \|^clocks '" 2> /dev/null
 }
 
 "$@" &
 child=$!
 tripped=0
+silent=0
 while kill -0 $child 2> /dev/null; do
 	sleep "$seconds"
-	line=$(power_line) || continue
-	echo "$(date +%H:%M:%S) $line" >> "$out.guard"
+	lines=$(power_line)
+	line=$(echo "$lines" | grep '^power ')
+	if [ -z "$line" ]; then
+		silent=$((silent + 1))
+		echo "$(date +%H:%M:%S) no answer ($silent)" >> "$out.guard"
+		continue
+	fi
+	silent=0
+	echo "$(date +%H:%M:%S) $(echo "$lines" | tr '\n' ' ')" >> "$out.guard"
 	why=""
 	case "$line" in
 	*hung=1*) why="smu hung" ;;

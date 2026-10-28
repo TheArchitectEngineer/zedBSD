@@ -157,6 +157,24 @@
 #define SMU_CLOCK_MEMORY		2U
 
 /*
+ * The question to the firmware about the memory controller's firmware
+ * (its answer: bit 0, the controller's firmware is later than version
+ * 136; bit 1, its hybrid clock-and-data recovery is off), which decides
+ * the workaround the memory clock's levels need on this GPU.
+ *
+ * Values referenced: Linux v6.12
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu_v11_0_ppsmc.h
+ * (PPSMC_MSG_GetUMCFWWA) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_run_umc_cdr_workaround: the answer's bits).
+ */
+#define SMU_MESSAGE_MEMORY_WORKAROUND	0x50U
+
+/* The samples of the hub's memory state handshake a hang's mark takes, and the time between them. */
+#define SMU_HANG_HANDSHAKES		4U
+#define SMU_HANG_HANDSHAKE_US		5000U
+
+/*
  * The table page: one page of VRAM, as large as the largest table and
  * aligned to it.
  */
@@ -1470,6 +1488,7 @@ power_memory_clock(
 	uint32_t lowest;
 	uint32_t highest;
 	uint32_t saved;
+	uint32_t answer;
 	int ceiling_error;
 	int floor_error;
 	int error;
@@ -1490,6 +1509,11 @@ power_memory_clock(
 		amdrdna_mark("A4 memory clock: no levels (%d)", error);
 		return;
 	}
+
+	/* The memory controller's answer about its workaround, marked. */
+	answer = 0U;
+	error = smu_message(device, SMU_MESSAGE_MEMORY_WORKAROUND, 0U, &answer);
+	amdrdna_mark("A4 memory clock: the memory controller's workaround answer 0x%08x (%d)", (unsigned)answer, error);
 
 	/* The ceiling and the floor at the highest level, while the display's arbiter allows the change. */
 	saved = amdrdna_display_memory_switch_begin(device);
@@ -2309,6 +2333,10 @@ smu_hang_mark(
 	struct amdrdna_device *device,
 	uint32_t message)
 {
+	uint32_t handshake[SMU_HANG_HANDSHAKES];
+	unsigned sample;
+
+	/* The mailbox, the firmware's state word and the hub's memory state. */
 	amdrdna_mark("smu: hung at 0x%x: mailbox message 0x%x argument 0x%x answer 0x%x, firmware 0x%08x, display memory state 0x%08x",
 	    (unsigned)message,
 	    (unsigned)amdrdna_block_read(device, AMDRDNA_BLOCK_SMU, AMDRDNA_SMU_WINDOW_MAILBOX, AMDRDNA_SMU_REG_MESSAGE),
@@ -2316,6 +2344,17 @@ smu_hang_mark(
 	    (unsigned)amdrdna_block_read(device, AMDRDNA_BLOCK_SMU, AMDRDNA_SMU_WINDOW_MAILBOX, AMDRDNA_SMU_REG_RESPONSE),
 	    (unsigned)amdrdna_far_read(device, AMDRDNA_SMU_FAR_FIRMWARE_STATE),
 	    (unsigned)amdrdna_display_memory_state(device));
+
+	/* The hub's memory state handshake, four times 5 ms apart (bit 31: the firmware asks; bit 30: the arbiter allows). */
+	for (sample = 0U; sample < SMU_HANG_HANDSHAKES; sample++) {
+		handshake[sample] = amdrdna_display_memory_handshake(device);
+		kern_usleep_range(SMU_HANG_HANDSHAKE_US, SMU_HANG_HANDSHAKE_US + SMU_HANG_HANDSHAKE_US / 4U);
+	}
+	amdrdna_mark("smu: hung: display memory handshake 0x%08x 0x%08x 0x%08x 0x%08x",
+	    (unsigned)handshake[0],
+	    (unsigned)handshake[1],
+	    (unsigned)handshake[2],
+	    (unsigned)handshake[3]);
 }
 
 /* Waits for a nonzero answer word, each millisecond for 2 s; 0 when none came. */

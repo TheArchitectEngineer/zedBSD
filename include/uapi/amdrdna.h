@@ -175,7 +175,14 @@
  * dispatch check compared.  From A5s on: the GPU address spaces open
  * (bits 15:0) and kept because their work never ended (bits 31:16), the
  * drops of the hub contexts' translations, and the GPU device's state
- * (AMDRDNA_DEVICE_*).
+ * (AMDRDNA_DEVICE_*).  From A4 on: the memory clock and the display's
+ * return clock the firmware last reported (MHz, 0 when it reports none).
+ * From A6 on, read as the call is answered: the display hub's memory
+ * state control word, its memory state handshake (its test debug word
+ * 0xB: bit 30 the arbiter allows the change, bit 31 the firmware asks for
+ * it), and the plane's underflow bits and the timing generator's
+ * underflow as they stand, the memory clock change's watermark of set A
+ * (reference clock cycles) and the test debug index as read back.
  */
 struct amdrdna_status {
 	uint32_t version;
@@ -263,6 +270,14 @@ struct amdrdna_status {
 	uint32_t spaces;
 	uint32_t context_flushes;
 	uint32_t device_flags;
+	uint32_t memory_clock;
+	uint32_t return_clock;
+	uint32_t memory_state;
+	uint32_t memory_handshake;
+	uint32_t underflow_now;
+	uint32_t timing_underflow_now;
+	uint32_t switch_mark;
+	uint32_t handshake_index;
 };
 
 /* Asks the driver to run every stage up to target (AMDRDNA_IOC_ADVANCE, root only). */
@@ -413,7 +428,7 @@ struct amdrdna_screen {
 	uint32_t reserved[4];
 };
 
-_Static_assert(sizeof(struct amdrdna_status) == 352U, "amdrdna status ABI size");
+_Static_assert(sizeof(struct amdrdna_status) == 384U, "amdrdna status ABI size");
 _Static_assert(offsetof(struct amdrdna_status, frame_buffer_base) == 96U, "amdrdna status ABI alignment");
 _Static_assert(offsetof(struct amdrdna_status, gart_base) == 184U, "amdrdna status ABI alignment");
 _Static_assert(sizeof(struct amdrdna_advance) == 32U, "amdrdna advance ABI size");
