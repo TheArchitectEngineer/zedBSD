@@ -26,6 +26,7 @@
 
 /* What kwl_media_tick found changed (the backend's KL_BACKEND_VOLUMES_CHANGED_* bits). */
 unsigned kwl_media_tick(struct kwl_server *server);
+void kwl_media_close(void);
 size_t kwl_media_volumes(struct kl_backend_volume *list, size_t capacity);
 int kwl_media_ask(int mount, const char *id, uint32_t *request);
 int kwl_media_take_result(uint32_t *request, int *error, char *user, size_t size);

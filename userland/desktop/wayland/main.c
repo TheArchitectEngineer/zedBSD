@@ -13,6 +13,7 @@
 #include "desktop.h"
 #include "kwl.h"
 #include "threads.h"
+#include "media.h"
 #include "role.h"
 #include "toplevel.h"
 #include "keymap.h"
@@ -222,6 +223,18 @@ main(
 		backend_options.greeter_descriptor = server.auth_fd;
 	else
 		backend_options.session_descriptor = server.control_fd;
+
+	/*
+	 * The threads' wake pipe first, lent to the backend with the thread
+	 * register for the daemons' connections' threads (without the pipe
+	 * the backend's updates find their state on their own).
+	 */
+	error = kwl_wake_open(&server);
+	if (error != 0)
+		printf("KWL FAILED site=wake errno=%d\n", error);
+	backend_options.threads.wake_descriptor = server.wake[1];
+	backend_options.threads.start = kwl_thread_start_lent;
+	backend_options.threads.ended = kwl_thread_ended;
 	error = kl_backend_open(&backend_options, &backend_host, &server.backend);
 	if (error != 0)
 		printf("KWL BACKEND unavailable errno=%d\n", error);
@@ -1315,8 +1328,13 @@ service_cleanup(
 	/* The session's settings are kept for the next login (settings.c). */
 	kwl_settings_close(server);
 
-	/* The system extension's threads end before the backend closes (system.c). */
+	/* The system extension's threads end before the backend closes (system.c), with the Bluetooth's and the phone's connections. */
 	kwl_system_close(server);
+
+	/* The daemons' connections the bar follows, each with its thread (network.c, media.c, volume.c). */
+	kwl_network_close();
+	kwl_media_close();
+	kwl_volume_close(server);
 
 	/* Returns the OS resources after input and display cleanup. */
 	kwl_os_close(server);
@@ -1329,6 +1347,9 @@ service_cleanup(
 	/* Closes the operating system's side last, after everything that used it. */
 	kl_backend_close(server->backend);
 	server->backend = NULL;
+
+	/* No thread writes to the wake pipe any more. */
+	kwl_wake_close(server);
 
 	/* Succeeded: the service retains no listener, client or Vulkan object. */
 	return;

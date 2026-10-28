@@ -78,6 +78,7 @@
  */
 
 #include "language.h"
+#include "threads.h"
 #include "desktop.h"
 #include "extras.h"
 #include "menu.h"
@@ -3446,6 +3447,12 @@ kwl_glass_tick(
 
 	/* What audiod reported, and the volume's sends held back (volume.c). */
 	kwl_volume_tick(server);
+
+	/* The bar's daemons' connections, each with its thread, are open from the first tick on: the register is told once more. */
+	if (!server->threads_told) {
+		server->threads_told = 1U;
+		kwl_threads_report();
+	}
 
 	/* The desktops' slide draws every frame until it is done. */
 	if (server->desktop_moving) {

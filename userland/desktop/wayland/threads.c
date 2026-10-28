@@ -72,6 +72,32 @@ kwl_thread_start(
 }
 
 /*
+ * Starts a thread lent to the backend under a name, with every signal
+ * blocked, and gives its handle: the backend joins it itself and then
+ * calls kwl_thread_ended with the same name.  Returns 0, or the errno
+ * value of pthread_create (the thread is then not started).
+ */
+int
+kwl_thread_start_lent(
+	const char *name,
+	void *(*run)(void *),
+	void *argument,
+	pthread_t *handle)
+{
+	struct kwl_thread thread;
+	int error;
+
+	/* The thread, in the register under its name. */
+	error = kwl_thread_start(&thread, name, run, argument);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the backend holds the handle to join. */
+	*handle = thread.thread;
+	return 0;
+}
+
+/*
  * Starts a detached thread of the compositor's own under a name, with
  * every signal blocked: nobody joins it, and it calls kwl_thread_ended
  * with the same name as it ends.  Returns 0, or the errno value of

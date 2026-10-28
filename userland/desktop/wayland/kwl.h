@@ -1422,6 +1422,12 @@ struct kwl_server {
 	uint64_t pointer_warp;
 	struct kwl_input_settings input_settings_given;
 	int wake[2];
+	/*
+	 * Whether the register was told again after the desktop's first tick,
+	 * which opens the bar's daemons' connections, each with its thread
+	 * (KWL THREADS is told at READY and once more then).
+	 */
+	unsigned threads_told;
 	uint64_t box_last_event_us;
 	uint64_t box_last_write_us;
 	unsigned view_output;
@@ -2648,6 +2654,7 @@ int kwl_network_key(struct kwl_server *server, uint32_t key, uint32_t state);
 int kwl_network_motion(struct kwl_server *server);
 int kwl_network_is_open(void);
 struct kl_backend_network *kwl_network_watch(void);
+void kwl_network_close(void);
 void kwl_network_state(struct kl_backend_network_state *state);
 size_t kwl_network_scan(struct kl_backend_network_ap *aps, size_t capacity);
 void kwl_network_key_failed(struct kwl_server *server, const char *ssid, int error);
@@ -2656,6 +2663,7 @@ void kwl_network_details(struct kwl_server *server, const struct kl_backend_netw
 void kwl_network_scan_hold(unsigned on);
 void kwl_volume_tick(struct kwl_server *server);
 void kwl_volume_keep(struct kwl_server *server, const char *why);
+void kwl_volume_close(struct kwl_server *server);
 void kwl_volume_report(unsigned *restored, unsigned *available, unsigned *value, unsigned *muted);
 int kwl_volume_request(struct kwl_server *server, unsigned value, unsigned muted);
 int kwl_volume_request_channels(struct kwl_server *server, unsigned left, unsigned right, unsigned muted);
@@ -2735,6 +2743,8 @@ void kwl_io_input_close(struct kwl_server *server, int descriptor);
 int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
 int kwl_input_alt_held(const struct kwl_server *server);
 int kwl_input_attach(struct kwl_server *server, int descriptor, const char *path, unsigned pointer, unsigned keyboard, unsigned direct, const struct input_absinfo *x, const struct input_absinfo *y);
+int kwl_wake_open(struct kwl_server *server);
+void kwl_wake_close(struct kwl_server *server);
 int kwl_threads_prepare(struct kwl_server *server);
 int kwl_input_threads_start(struct kwl_server *server);
 void kwl_input_threads_stop(struct kwl_server *server);

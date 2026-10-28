@@ -355,41 +355,80 @@ kwl_input_forget(
 }
 
 /*
- * Makes the pipe the compositor's threads wake the main thread with and
- * the cursor's box (ws213-p004), before the output and its cursor plane
- * open: the cursor thread reads the box from the plane's opening on.
+ * Makes the pipe the compositor's threads (and the backend's, which it is
+ * lent to) wake the main thread with, before the backend opens.  It stays
+ * until kwl_wake_close, after every thread that writes to it has ended.
+ * Returns 0 or an errno value.
  */
 int
-kwl_threads_prepare(
+kwl_wake_open(
 	struct kwl_server *server)
 {
 	unsigned index;
 	int error;
 
 	/* Made once. */
-	if (server->threads_prepared)
+	if (server->wake[0] >= 0)
 		return 0;
 
 	/* The wake pipe; neither end blocks or goes to a program the compositor starts. */
 	error = pipe(server->wake);
-	if (error != 0)
+	if (error != 0) {
+		server->wake[0] = -1;
+		server->wake[1] = -1;
 		return errno;
+	}
 	for (index = 0; index < 2U; index++) {
 		(void)fcntl(server->wake[index], F_SETFL, O_NONBLOCK);
 		(void)fcntl(server->wake[index], F_SETFD, FD_CLOEXEC);
 	}
 
+	/* Succeeded: the threads can wake the main thread. */
+	return 0;
+}
+
+/*
+ * Closes the wake pipe once no thread writes to it any more (the last
+ * step of the compositor's cleanup).
+ */
+void
+kwl_wake_close(
+	struct kwl_server *server)
+{
+	unsigned index;
+
+	/* Each end that is open. */
+	for (index = 0; index < 2U; index++) {
+		if (server->wake[index] >= 0)
+			close(server->wake[index]);
+		server->wake[index] = -1;
+	}
+}
+
+/*
+ * Makes sure of the wake pipe and makes the cursor's box (ws213-p004),
+ * before the output and its cursor plane open: the cursor thread reads the
+ * box from the plane's opening on.
+ */
+int
+kwl_threads_prepare(
+	struct kwl_server *server)
+{
+	int error;
+
+	/* Made once. */
+	if (server->threads_prepared)
+		return 0;
+
+	/* The wake pipe, unless made before the backend. */
+	error = kwl_wake_open(server);
+	if (error != 0)
+		return error;
+
 	/* The box, its place given when the input thread starts. */
 	error = kwl_cursor_box_init(&server->cursor_box, server->pointer_x, server->pointer_y, server->width, server->height);
-	if (error != 0) {
-		for (index = 0; index < 2U; index++) {
-			close(server->wake[index]);
-			server->wake[index] = -1;
-		}
-
-		/* No box, no pipe. */
+	if (error != 0)
 		return error;
-	}
 
 	/* Succeeded: the threads can share the box. */
 	server->threads_prepared = 1U;
@@ -444,8 +483,8 @@ kwl_input_threads_start(
 
 /*
  * Stops the input thread, which then uses no descriptor, and frees what it
- * leaves, the box and the wake pipe (the devices stay open for
- * kwl_input_cleanup).  The cursor thread has stopped with the output.
+ * leaves, the box (the devices stay open for kwl_input_cleanup, the wake
+ * pipe for kwl_wake_close).  The cursor thread has stopped with the output.
  */
 void
 kwl_input_threads_stop(
@@ -466,12 +505,8 @@ kwl_input_threads_stop(
 	if (!server->threads_prepared)
 		return;
 
-	/* The box and the wake pipe. */
+	/* The box. */
 	kwl_cursor_box_destroy(&server->cursor_box);
-	for (index = 0; index < 2U; index++) {
-		close(server->wake[index]);
-		server->wake[index] = -1;
-	}
 
 	/* Nothing is left to share. */
 	server->threads_prepared = 0U;

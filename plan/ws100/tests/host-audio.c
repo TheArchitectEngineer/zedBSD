@@ -12,7 +12,9 @@
  * AUDIO_SOCKET_PATH), a child process that answers HELLO with WELCOME,
  * SUBSCRIBE with DONE and the volume, DEVICE_VOLUME with DONE and the new
  * volume, and FEEDBACK with ERROR EINVAL (an audiod without it), then goes
- * away and comes back.  Prints "host-audio: N/M passed".
+ * away and comes back.  The backend's connection is a thread's of its own
+ * (daemon-link-zedbsd.c), so the event loop has no descriptor to poll.
+ * Prints "host-audio: N/M passed".
  *
  *   plan/ws100/tests/host-audio.sh
  */
@@ -77,7 +79,7 @@ main(
 	kl_backend_audio_get_state(audio, &state);
 	check(state.reachable == 1U && state.device == 1U && state.rate == 48000U, "reachable with the device after connecting");
 	check(state.left == 70U && state.right == 70U && state.muted == 0U, "the volume as it stands");
-	check(kl_backend_audio_fd(audio) >= 0, "a descriptor while connected");
+	check(kl_backend_audio_fd(audio) < 0, "nothing to poll while connected: the link's thread reads");
 
 	/* 3. A set comes back as a report. */
 	error = kl_backend_audio_set_volume(audio, 35U, 35U, 1U);
@@ -90,7 +92,8 @@ main(
 	error = kl_backend_audio_feedback(audio);
 	check(error == 0, "feedback sent");
 	wait_update(audio, 0U, &seen);
-	check(kl_backend_audio_fd(audio) >= 0, "still connected after an ERROR");
+	kl_backend_audio_get_state(audio, &state);
+	check(state.reachable == 1U && (seen & KL_BACKEND_AUDIO_CHANGED_REACHABLE) == 0U, "still connected after an ERROR");
 
 	/* 5. audiod goes: not reachable; it comes back with no device: reachable, device 0. */
 	kill(child, SIGTERM);
@@ -209,7 +212,7 @@ pretend_serve(
 				welcome.header.type = AUDIOD_WELCOME;
 				welcome.header.length = sizeof(welcome);
 				welcome.header.serial = header.serial;
-				welcome.version = AUDIOD_VERSION;
+				welcome.version = AUDIOD_PROTOCOL_VERSION_1;
 				welcome.device = device;
 				welcome.rate = 48000U;
 				welcome.channels = 2U;
