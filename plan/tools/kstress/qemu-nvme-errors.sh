@@ -6,7 +6,7 @@
 # sector: they must all succeed), and at last a read of the bad sector alone (EIO) and of the next 4 KiB line (data;
 # a cached read of the bad sector's own line fails as a whole).
 # The guest must stay usable throughout.
-#   sh plan/ws308/tests/qemu-nvme-errors.sh IMAGE
+#   sh plan/tools/kstress/qemu-nvme-errors.sh IMAGE
 # IMAGE: plan/tools/posix/config-amd64-serial.mk with randread in /root (ZEDBSD_EXTRA_FILES).  W is
 # build/tmp/qemu-nvme-errors (a fresh run each time).  The last line is "qemu-nvme-errors: PASS|FAIL ...".
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
