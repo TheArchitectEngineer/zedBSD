@@ -3,7 +3,7 @@
 # WS235: Realtek RTL8127・8125・8126・8122・8121・8120 の共通の Ethernet driver（まず PCIe の RTL8127 10GbE）
 
 <!-- awesome-plan-current:start -->
-Status: planning（2026-10-29 開き直し、P1 が RTL8159 から。下の 2026-10-29 の決定）
+Status: planning（2026-10-29 開き直し、P1 が RDNA 機の PCIe の RTL8127 から。下の 2026-10-29 の決定）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 <!-- awesome-plan-current:end -->
@@ -39,4 +39,5 @@ Parent: [Master](../master.md)
 - 原文（Q1 の問いへの答え）: 「PCIeのRTL8159です。半年くらい前に発売されたばかりで、あなたの学習データにはないでしょうが、Webを検索すれば出ますし、RDNAマシンを見ればわかります。」、WS309 は「止める」。
 - 原文（web）: 「LinuxはやっとRTL8159がメインラインに入ったところだと聞きました。もしかしたらまだstagingかもしれないですが、あるそうです。Webから取得してOKです。サブエージェントにWebの取得(GET)を許可して下さい。GETはパラメータなしなら安全と見なしていいです。」
 - 原文: 「これからPCIeボードを挿します。」（2026-10-29 05:3x 頃）
-- Q1 の解釈: この WS を開き直し、最初の chip を RTL8127 から RTL8159（RDNA 機 10.0.10.3 の PCIe）に替える。p001 の調べで RTL8159 の系列（RTL8127 などとの差）を確かめ、Phase の表を直す。Linux の driver は GPL: guardrail のとおり値・表は block ごとの出典で使えるが、code・comment・構造は写さない（操作の手順の引用は WS039 にだけ明示の許可があるので、要れば Q1 経由でユーザーに聞く）。RDNA 機は P2（WS291）と時間の枠で分ける（plan/tools.md の「RDNA 機の時間の枠」）。
+- Q1 の解釈: この WS を開き直し、最初の chip を RTL8127 から RTL8127（RDNA 機 10.0.10.3 の PCIe）に替える。p001 の調べで RTL8127 の系列（RTL8127 などとの差）を確かめ、Phase の表を直す。Linux の driver は GPL: guardrail のとおり値・表は block ごとの出典で使えるが、code・comment・構造は写さない（操作の手順の引用は WS039 にだけ明示の許可があるので、要れば Q1 経由でユーザーに聞く）。RDNA 機は P2（WS291）と時間の枠で分ける（plan/tools.md の「RDNA 機の時間の枠」）。
+- 訂正（原文、2026-10-29）: 「すみません、チップ名を間違いました。RTL8127です。」→ 上の原文の「RTL8159」は RTL8127 の誤り。この WS の元の目標（まず PCIe の RTL8127）のまま、試験機は RDNA 機（10.0.10.3）。
