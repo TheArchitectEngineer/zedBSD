@@ -199,6 +199,15 @@ struct VkCommandBuffer_T {
 	size_t head_bytes;
 	uint32_t head_opcodes[2];
 	uint32_t head_replies;
+	/*
+	 * A primary command buffer's End, kept with its recording for the
+	 * submission that names it (end_pending): the recording travels in
+	 * that submission's transaction, ahead of the submit.  end_serial is
+	 * the submission attempt that last wrote it, so a command buffer named
+	 * twice travels once.
+	 */
+	VkBool32 end_pending;
+	uint64_t end_serial;
 	uint32_t state;
 	VkResult error;
 	/*
@@ -784,6 +793,24 @@ void
 vulkan_command_record_finish(
 	struct VkCommandBuffer_T *command,
 	struct vulkan_writer *writer);
+
+/*
+ * A command buffer whose End waits for its submission: its recording is
+ * written ahead of the submit (one serial per attempt), then its replies
+ * read in the same order; the caller holds the device mutex.
+ */
+VkResult
+vulkan_command_pending_write(
+	struct VkCommandBuffer_T *command,
+	struct vulkan_writer *writer,
+	uint64_t serial,
+	uint32_t *replies);
+
+VkResult
+vulkan_command_pending_read(
+	struct VkCommandBuffer_T *command,
+	struct vulkan_reader *reader,
+	uint64_t serial);
 
 /* Checks a video profile list on an image query against the one supported profile. */
 VkResult

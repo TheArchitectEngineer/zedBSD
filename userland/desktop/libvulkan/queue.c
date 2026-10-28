@@ -43,6 +43,15 @@ struct vulkan_queue_fence {
 	enum queue_fence_state state;
 };
 
+/*
+ * The submission attempts, one serial each: a command buffer whose End
+ * waits for its submission is written once in an attempt that names it
+ * more than once.  Advanced atomically.
+ */
+static uint64_t queue_end_serial;
+
+static void queue_write_pending(struct vulkan_writer *writer, uint32_t count, const VkSubmitInfo *submits, uint64_t serial, uint32_t *replies);
+static VkResult queue_execute_pending(struct VkDevice_T *device, const struct vulkan_writer *writer, uint32_t count, const VkSubmitInfo *submits, uint64_t serial, uint32_t replies, struct vulkan_reader *reader, VkResult *ended);
 static VkResult queue_private_fence(struct VkQueue_T *queue, struct vulkan_queue_fence **result);
 static VkResult queue_enqueue(struct VkQueue_T *queue, uint32_t count, const VkSubmitInfo *submits, const VkBindSparseInfo *binds, VkFence fence, VkBool32 sparse, VkBool32 locked);
 static VkResult queue_attempt(struct VkQueue_T *queue, uint32_t count, const VkSubmitInfo *submits, const VkBindSparseInfo *binds, VkFence fence, VkBool32 sparse, struct vulkan_queue_transaction *transaction, struct vulkan_sync *completion, VkBool32 *accepted, uint64_t *capacity_sequence, VkBool32 *prepared);
@@ -420,8 +429,12 @@ queue_attempt(
 	struct vulkan_writer writer;
 	struct vulkan_reader reader;
 	VkResult status;
+	VkResult ended;
 	size_t index;
 	uint32_t request;
+	uint32_t replies;
+	uint32_t opcode;
+	uint64_t serial;
 	uint64_t mark;
 
 	/* Each attempt owns fresh wire and reply storage, with no reserved K job initially. */
@@ -436,12 +449,23 @@ queue_attempt(
 	pthread_mutex_lock(&device->mutex);
 	vulkan_timing_add(VULKAN_TIMING_DEVICE_LOCK, mark, 0);
 
+	/*
+	 * The command buffers whose End waits for this submission: their
+	 * recordings lie first in the same transaction, once each, and their
+	 * replies come before the submission's.
+	 */
+	serial = __atomic_add_fetch(&queue_end_serial, 1U, __ATOMIC_RELAXED);
+	replies = 0U;
+	if (sparse == VK_FALSE)
+		queue_write_pending(&writer, count, submits, serial, &replies);
+
 	/* Both native entrypoints use the same count and binary synchronization layout. */
-	if (sparse != VK_FALSE) {
-		vulkan_command_begin(&writer, GPU_OP_QUEUE_BIND_SPARSE);
-	} else {
-		vulkan_command_begin(&writer, GPU_OP_QUEUE_SUBMIT);
-	}
+	opcode = GPU_OP_QUEUE_SUBMIT;
+	if (sparse != VK_FALSE)
+		opcode = GPU_OP_QUEUE_BIND_SPARSE;
+	vulkan_write_u32(&writer, opcode);
+	vulkan_write_u32(&writer, GPU_OP_FLAG_REPLY);
+	writer.opcode = opcode;
 
 	/* A failure observed while capacity was unavailable invalidates this retry before submission. */
 	status = vulkan_sync_device_status_locked(device);
@@ -473,7 +497,12 @@ queue_attempt(
 
 	/* The decoded native result alone decides whether this transaction consumed its waits. */
 	mark = vulkan_timing_start();
-	status = vulkan_command_execute(device->object.context, &writer, 8, &reader, VK_TRUE);
+	ended = VK_SUCCESS;
+	if (replies == 0U) {
+		status = vulkan_command_execute(device->object.context, &writer, 8, &reader, VK_TRUE);
+	} else {
+		status = queue_execute_pending(device, &writer, count, submits, serial, replies, &reader, &ended);
+	}
 	vulkan_timing_add(VULKAN_TIMING_EXECUTE, mark, 0);
 	if (status == VK_SUCCESS) {
 		*accepted = VK_TRUE;
@@ -497,6 +526,17 @@ queue_attempt(
 	mark = vulkan_timing_start();
 	status = vulkan_sync_job_finish(queue, completion, reservation, status, *accepted);
 	vulkan_timing_add(VULKAN_TIMING_FINISH, mark, 0);
+
+	/*
+	 * An ended recording the renderer failed is the submission's
+	 * failure: out of memory as it is, any other as a lost device (the
+	 * results vkQueueSubmit may return).
+	 */
+	if (ended != VK_SUCCESS) {
+		status = VK_ERROR_DEVICE_LOST;
+		if (ended == VK_ERROR_OUT_OF_HOST_MEMORY || ended == VK_ERROR_OUT_OF_DEVICE_MEMORY)
+			status = ended;
+	}
 	vulkan_sync_device_error(device, status);
 
 	pthread_mutex_unlock(&device->mutex);
@@ -508,6 +548,99 @@ queue_attempt(
 		return status;
 
 	/* Succeeded: the kernel owns this exact native job independently of userspace progress. */
+	return VK_SUCCESS;
+}
+
+/*
+ * Writes, ahead of the submission, the recordings of the submitted
+ * command buffers whose End waits for it, in submission order, each
+ * once, and counts the replies they ask for.
+ */
+static void
+queue_write_pending(
+	struct vulkan_writer *writer,
+	uint32_t count,
+	const VkSubmitInfo *submits,
+	uint64_t serial,
+	uint32_t *replies)
+{
+	struct VkCommandBuffer_T *command;
+	uint32_t request;
+	uint32_t index;
+
+	/* Every command buffer of every submit, in order; a failure stays on its command buffer. */
+	for (request = 0; request < count; request++) {
+		for (index = 0; index < submits[request].commandBufferCount; index++) {
+			command = (struct VkCommandBuffer_T *)submits[request].pCommandBuffers[index];
+			(void)vulkan_command_pending_write(command, writer, serial, replies);
+		}
+	}
+
+	/* Succeeded: the recordings lie ahead of the submission. */
+	return;
+}
+
+/*
+ * Runs a submission that carries ended recordings and reads its replies:
+ * the recordings' (in the order queue_write_pending() wrote them, their
+ * first failure in ended), then the submission's, whose result is
+ * returned.
+ */
+static VkResult
+queue_execute_pending(
+	struct VkDevice_T *device,
+	const struct vulkan_writer *writer,
+	uint32_t count,
+	const VkSubmitInfo *submits,
+	uint64_t serial,
+	uint32_t replies,
+	struct vulkan_reader *reader,
+	VkResult *ended)
+{
+	struct vulkan_context *context;
+	struct VkCommandBuffer_T *command;
+	uint32_t request;
+	uint32_t index;
+	uint32_t opcode;
+	VkResult status;
+
+	/* The transaction, with room for every reply. */
+	context = device->object.context;
+	*ended = VK_SUCCESS;
+	status = vulkan_context_execute(context, writer, ((size_t)replies + 1U) * 8U, reader);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* The recordings' replies, walking the command buffers as they were written. */
+	for (request = 0; request < count; request++) {
+		for (index = 0; index < submits[request].commandBufferCount; index++) {
+			command = (struct VkCommandBuffer_T *)submits[request].pCommandBuffers[index];
+			status = vulkan_command_pending_read(command, reader, serial);
+			if (*ended == VK_SUCCESS)
+				*ended = status;
+		}
+	}
+
+	/* A reply out of order or cut short leaves the stream undecodable. */
+	if (reader->error != VK_SUCCESS) {
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
+		return VK_ERROR_DEVICE_LOST;
+	}
+
+	/* The submission's own reply. */
+	opcode = vulkan_read_u32(reader);
+	if (reader->error != VK_SUCCESS || opcode != writer->opcode) {
+		reader->error = VK_ERROR_DEVICE_LOST;
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
+		return VK_ERROR_DEVICE_LOST;
+	}
+	status = vulkan_read_result(reader);
+	if (status == VK_ERROR_DEVICE_LOST)
+		vulkan_context_error(context, VK_ERROR_DEVICE_LOST);
+	if (status != VK_SUCCESS)
+		return status;
+
+	/* Succeeded: the submission was accepted. */
 	return VK_SUCCESS;
 }
 
