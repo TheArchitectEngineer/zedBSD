@@ -1,14 +1,14 @@
 #!/bin/sh
-# ws291: reads the display's memory-clock registers of the RX 5600 XT under Linux (amdgpu's debugfs amdgpu_regs, as root
+# gpu-perf amdrdna: reads the display's memory-clock registers of the RX 5600 XT under Linux (amdgpu's debugfs amdgpu_regs, as root
 # by sudo) on the Debian system, from the host: the hub's DRAM state control and watermark set select, the four sets'
 # memory-clock change, urgency and self-refresh watermarks, each pipe's plane control (underflow bits 30:28), its
 # global TTU, its vblank and prefetch fields, and each timing generator's underflow word and VSTARTUP; printed as
 # "name dword-address value".  With "clear" first it clears the underflow bits (plane bit 31, timing bit 12).
-#   usage: plan/ws291/tests/linux-dcn-regs.sh [clear]
+#   usage: plan/tools/gpu-perf/amdrdna/linux-dcn-regs.sh [clear]
 # Register offsets: Linux v6.12 dcn_2_0_0_offset.h, base index 2 = 0x34c0 (navi10_ip_offset.h DCN_BASE).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-DEBIAN=${DEBIAN:-awe@10.0.10.3}
+. plan/tools/gpu-perf/conf.sh
 clear=${1:-}
 timeout 120 ssh -o BatchMode=yes -o ConnectTimeout=8 "$DEBIAN" "sudo -n python3 -I - $clear" <<'PY'
 import os, sys, struct

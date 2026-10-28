@@ -21,7 +21,7 @@
 - `--content=none|video|game`: wp_content_type_v1 の manager を bind し、最初の commit の前に surface の content type を言う（compositor に無ければ言わない）。
 - `--present=fifo|mailbox|immediate`: surface が持つ時だけその mode、無ければ FIFO。`MVIEW PRESENT` の行に asked・mode・copies・content・content_manager。
 - `--copies=N`（1〜4096）: 1 frame に model を N 個描く。列は √N の切り上げ、行はその残り、copy ごとに view 平面の pan を model の直径ずつずらし、視点を列の数の倍だけ下げる（全体が見える）。copy ごとに material の group の数だけ draw（qs40 は 16 group）。
-- Linux の build: `plan/ws291/tests/linux/build-mview.sh OUT`（system の libwayland-client・Vulkan loader・Mesa の WSI、wayland-scanner の xdg-shell と content-type の code、`linux/content-type-shim.c`）。Keiland の Linux build（keiland-linux.mk）は Keiland の libwayland と WSI を挟むので基準に使わない。
+- Linux の build: `plan/tools/gpu-perf/linux/build-mview.sh OUT`（system の libwayland-client・Vulkan loader・Mesa の WSI、wayland-scanner の xdg-shell と content-type の code、`linux/content-type-shim.c`）。Keiland の Linux build（keiland-linux.mk）は Keiland の libwayland と WSI を挟むので基準に使わない。
 
 ## benchmark の作り直し（2026-10-26 ユーザー、Q1 経由）
 
@@ -31,7 +31,7 @@
   - `--draws=each`: copy ごとに 16 draw（firstInstance = copy）。1 回の submit に 16×copies の draw（大きな command buffer）。
   - `--submits=N`: frame を N 個の command buffer に分け、N 回の vkQueueSubmit で出す（最初の pass が clear、途中は load・store、最後が present）。copy は N 個に等分。`--draws=each --copies=N --submits=N` で 1 submit あたり 1 copy（16 draw）の N 回の submit。
   - `MVIEW STAGES` の record は frame の全 command buffer の記録、submit は全 vkQueueSubmit、fence は GPU の完了の待ち。
-- 計測の組（`plan/ws291/tests/bench.list`、`measure.sh bench zedbsd|linux OUT` で 1 回に流し `mview-table.py` で表に）: scene-1・scene-1500・scene-6500（instanced）、big-1・10・100・1000（1 submit に 16〜16000 draw）、subs-10・100・1000（N submit × 16 draw）。各 8 秒、MAILBOX、content game。
+- 計測の組（`plan/tools/gpu-perf/bench.list`、`measure.sh bench zedbsd|linux OUT` で 1 回に流し `mview-table.py` で表に）: scene-1・scene-1500・scene-6500（instanced）、big-1・10・100・1000（1 submit に 16〜16000 draw）、subs-10・100・1000（N submit × 16 draw）。各 8 秒、MAILBOX、content game。
 
 ## 結果
 
@@ -52,7 +52,7 @@
 
 - 決めた scene: **`mview --spin=10 --content=game --present=mailbox --copies=1500`**（1920x1080、qs40、vertex shading）。Linux 50.9 fps。IMMEDIATE も MAILBOX と同じ（1400 で 53.6）。FIFO の 1 copy は 59.9（60 Hz の上限）。
 - mview は 1 frame ずつ CPU の記録と GPU の完了を待つ（command buffer 1 本と fence 1 個）ので、frame の時間は record（1500×16 draw の記録、CPU）と fence（GPU）の和。zedBSD でも同じ program なので比べられるが、driver の記録の道（zedBSD は vkCmd* を executor へ送る）の速さも含む。
-- 計測: `plan/ws291/tests/measure.sh linux-mview OUT --token=... --spin=10 --content=game --present=mailbox --copies=1500`。
+- 計測: `plan/tools/gpu-perf/measure.sh linux-mview OUT --token=... --spin=10 --content=game --present=mailbox --copies=1500`。
 
 ### Linux（作り直した benchmark、2026-10-27 00:00、build/ws291/measure/bench-linux-2/table.txt、時間は frame あたり ms）
 

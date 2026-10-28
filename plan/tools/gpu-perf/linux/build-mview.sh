@@ -1,8 +1,8 @@
 #!/bin/sh
-# ws291: builds mview (userland/tests/mview) for Debian with the system's libwayland-client, Vulkan loader and Mesa
-# WSI (the Linux reference of the 3D scene, ws291-p002), and its model under OUT/share/mview/qs40:
+# gpu-perf: builds mview (userland/tests/mview) for Debian with the system's libwayland-client, Vulkan loader and Mesa
+# WSI (the Linux reference of the 3D scene, measure.sh linux-mview), and its model under OUT/share/mview/qs40:
 #
-#     plan/ws291/tests/linux/build-mview.sh OUT
+#     plan/tools/gpu-perf/linux/build-mview.sh OUT
 #
 # Run from the top of the tree on a Debian 13 host with gcc, wayland-scanner, wayland-protocols, libwayland-dev and
 # libvulkan-dev.  Keiland's Linux build (keiland-linux.mk) is not used: it puts Keiland's libwayland and WSI under
@@ -10,7 +10,7 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
 out=$1
-here=plan/ws291/tests/linux
+here=plan/tools/gpu-perf/linux
 gen=$out/gen
 protocols=/usr/share/wayland-protocols
 mkdir -p "$gen/wayland" "$out/bin" "$out/share/mview/qs40/tex"

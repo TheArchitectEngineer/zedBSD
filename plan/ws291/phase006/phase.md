@@ -147,7 +147,7 @@
   compact_vertices_after_culling）。
 - host: compiler host test 58 PASS（+nggc 6 本、新しい番号の場所から読む番号を instance にずらす変異で 6 本 FAIL）、vk host 197 PASS、vmunix warning 0
   （00322fad8ae84b83）。mview の program は 640 語、31 VGPR（culling part 側が最大）。
-- 実機（vmunix-defer1、ngg=2、`plan/ws291/tests/round.sh`、build/ws291/measure/defer1b/）:
+- 実機（vmunix-defer1、ngg=2、`plan/tools/gpu-perf/round.sh`、build/ws291/measure/defer1b/）:
 
 | 確認 | 結果 |
 | --- | --- |
@@ -328,7 +328,7 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
   warm reboot した事が原因の見込み（Debian の amdgpu が初期化できない）。
 - Q1 の指示（07:15）: (1) 長い試験は温度・fan・SMU を見張り、異常で負荷を止めて poweroff、(2) driver も thermal fault で負荷を止める、(3) わざと
   SMU を壊さない、(4) Linux で同じ負荷を比べる。→ commit 31129fc30: smu.c の power_fault が device を failed にして仕事を止め、fan を thermal block 直で
-  100 % に。plan/ws291/tests/guard.sh（20 秒ごとに amdrdnactl の power 行、hung=1・fault=1・90 C 以上・driver が回す時の fan 停止で mview・vkhang を
+  100 % に。plan/tools/gpu-perf/guard.sh（20 秒ごとに amdrdnactl の power 行、hung=1・fault=1・90 C 以上・driver が回す時の fan 停止で mview・vkhang を
   kill して poweroff）、round.sh は guard の下で走る。Linux（07:20、amdgpu）で bench の全部: SMU の error なし、48 C・fan 1170 rpm（表は下）。
 - Fable 5.1 High の助言 2 回目（SMU、要点）: mailbox・HDP・table の手順は Linux と同じで、0x10410d は結果。MP1・THM・GC が同じ秒に壊れたので電源の
   領域の問題。本命は SMU の feature の組: gfxclk の DPM を動かしながら、Linux が常に許す電圧の保護（APCC_DFLL の droop 制御、TEMP_DEPENDENT_VMIN、
@@ -465,7 +465,7 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 
 ### ue0 の自己 reboot（nicwatch）
 
-- ユーザーの指示（2026-10-28、上の BootNext の節）で、試験の image と機械の設定だけに入れた（base の既定の image には入れない）: `plan/ws291/tests/nicwatch/`
+- ユーザーの指示（2026-10-28、上の BootNext の節）で、試験の image と機械の設定だけに入れた（base の既定の image には入れない）: `plan/tools/gpu-perf/nicwatch/`
   （nicwatch.sh と service）、`plan/ws291/tests/rc.conf`（base の rc.conf に nicwatch の行を足した写し、ZEDBSD_TEST_RC_CONF）、`measure.sh nicwatch`（動いている
   zedBSD に入れる）。動作: 起動の後 150 s 以内に ue0 に IPv4 の address が付かなければ reboot（BootOrder で Debian に戻る）。連続は 3 回まで
   （/boot/boot0/nicwatch.count、address が付いた起動で 0）。measure.sh の to_zedbsd は zedBSD が上がらず Debian に戻った時に BootNext を 2 回まで繰り返す。
@@ -718,7 +718,7 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 
 - 14:24:32: bench の終わりの後（負荷なし、53 C）に hung=1 fault=1、guard が poweroff、14:25:10 に SwitchBot（今日の P2 の 8 回目）。
 - Q1 の指示: UCLK 固定の後に初めて見えた idle の停止なので優先して切り分ける（性能より安全）。kernel に `amdrdna.smu.memory=0`（memory 側の feature を
-  許さず UCLK を固定しない）を足した（e27a16d15）。道具 `plan/ws291/tests/soak.sh OUT [MINUTES [LOAD [IDLE [COPIES]]]]`（guard の下、mview の
+  許さず UCLK を固定しない）を足した（e27a16d15）。道具 soak.sh（2026-10-28 削除済み、git の履歴）`soak.sh OUT [MINUTES [LOAD [IDLE [COPIES]]]]`（guard の下、mview の
   scene-1500 を 5 s、25 s 休み、繰り返し）。
 - 再現: e27a16d15（DS_SOCCLK あり、UCLK 875 固定）の soak で 14:35 開始、31 回目の後の idle で 14:50:47 に hung=1（直前 14:50:27 正常、52 C）、
   guard が poweroff、14:51:09 に SwitchBot（9 回目）。

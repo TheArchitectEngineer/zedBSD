@@ -48,7 +48,7 @@ frame-ops（`plan/tools/frame-ops/frame-ops.sh`、起動直後の session、fram
 
 ## 計測の自動化（Master の Tools の候補）
 
-`plan/ws291/tests/measure.sh`（2026-10-26 Q1 の依頼「計測は 1 本の script に」）: host から 1 回の呼び出しで、どちらの OS が動いているかの判定、
+`plan/tools/gpu-perf/measure.sh`（2026-10-26 Q1 の依頼「計測は 1 本の script に」）: host から 1 回の呼び出しで、どちらの OS が動いているかの判定、
 Debian からの BootNext と zedBSD の IP の待ち（MAC から ip neigh、無ければ subnet の ping の sweep）、zedBSD への file・kernel の配置と再起動、
 frame-ops の実行・log の回収・frame-times.py の表、mview の実行と `KWL SCANOUT` の行の抜き出しをし、要約だけを出す。長い log は OUT に残す。
 RDNA で確立し、NVIDIA・PowerVR の板には MAC・subnet・Debian・boot の項目の環境変数を変えて使う見込み。

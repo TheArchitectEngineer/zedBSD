@@ -1,4 +1,4 @@
-# ws291: the mview runs measure.sh bench makes, one a line: LABEL|OPTIONS (each with --spin=8 --content=game
+# gpu-perf: the mview runs measure.sh bench makes, one a line: LABEL|OPTIONS (each with --spin=8 --content=game
 # --present=mailbox --images=4 added: four images, as Linux's RADV gives a Wayland mailbox swapchain; BENCH_IMAGES
 # changes the count).  scene: the heavy 3D scene, instanced (the vertices, indices and places stay in
 # buffers; 16 draws a frame).  big-N: one submission of N copies drawn one by one (16 N draws).  subs-N: N

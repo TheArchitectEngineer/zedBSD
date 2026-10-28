@@ -1,10 +1,10 @@
 #!/bin/sh
-# ws291: the short check of the memory clock that follows the load (amdrdna.smu.memory=2) on the RX 5600 XT machine,
+# gpu-perf amdrdna: the short check of the memory clock that follows the load (amdrdna.smu.memory=2) on the RX 5600 XT machine,
 # from the host at the top of the tree, under the power guard (guard.sh): CYCLES times mview's scene of COPIES copies
 # for LOAD seconds (MODE game: game mode, mailbox; window: composed, FIFO), then IDLE seconds; amdrdnactl's clocks line
 # read every second the whole time with the count of the kernel's underflow marks so far (OUT/clocks.log).  Prints each cycle's memory clocks under load and at idle, the
 # fps, and the kernel's "memory display" lines (the display step and the underflows the power watch counted).
-#   usage: plan/ws291/tests/dpm-check.sh OUT [CYCLES [LOAD [IDLE [MODE [COPIES]]]]]   (default 4 6 12 game 1500)
+#   usage: plan/tools/gpu-perf/amdrdna/dpm-check.sh OUT [CYCLES [LOAD [IDLE [MODE [COPIES]]]]]   (default 4 6 12 game 1500)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 out=${1:?usage: dpm-check.sh OUT [CYCLES [LOAD [IDLE [MODE [COPIES]]]]]}
@@ -13,14 +13,14 @@ load=${3:-6}
 idle=${4:-12}
 mode=${5:-game}
 copies=${6:-1500}
-m=plan/ws291/tests/measure.sh
+m=plan/tools/gpu-perf/measure.sh
 mkdir -p "$out"
 if [ -z "${DPM_GUARDED:-}" ]; then
-	DPM_GUARDED=1 exec sh plan/ws291/tests/guard.sh "$out/dpm" sh "$0" "$out" "$cycles" "$load" "$idle" "$mode" "$copies"
+	DPM_GUARDED=1 exec sh plan/tools/gpu-perf/guard.sh "$out/dpm" sh "$0" "$out" "$cycles" "$load" "$idle" "$mode" "$copies"
 fi
 top=$(pwd)
+. plan/tools/gpu-perf/conf.sh
 KEY=${KEY:-$top/plan/tmp/guest/id_ed25519}
-ZEDBSD_MAC=${ZEDBSD_MAC:-6c:1f:f7:1a:08:b6}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 ip=$(ip neigh | awk -v mac="$ZEDBSD_MAC" '$0 ~ mac && $0 !~ /FAILED/ && $1 ~ /^[0-9.]+$/ {print $1; exit}')
 [ -n "$ip" ] || { echo "dpm-check: zedBSD does not answer"; exit 1; }
