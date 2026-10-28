@@ -41,6 +41,7 @@ RDNA 機の枠（P1、06:20〜07:05 の予定）を 06:19 に早く返した（l
 | FreeBSD `sys/dev/rge/if_rge.c` | main（2026-10-29 の取得） | BSD-2-Clause（Kevin Lo、Adrian Chadd） | 7a424d8c8da10c24049c0bc643104ecdb2364cb8ce7d7dab309f0e9a0693ebf5 |
 | Linux `drivers/net/ethernet/realtek/r8169_phy_config.c` | master（2026-10-29 の取得） | GPL-2.0-only（値・表だけを block ごとの出典で使う） | 11a8ef375261e3aa3575ac641ea413f3c951d2cbf3b716bfd241b2c9ef78819c |
 | linux-firmware `WHENCE` | gitlab の main | — | a3453858252ab19d0655ce0a1d4144f583b13d0be56ae0ab9a7a2e7751c32bcd |
+| FreeBSD `sys/dev/rge/`（if_rge.c・if_rge_hw.c・if_rge_hw.h・if_rge_microcode.h・if_rgereg.h・if_rgevar.h ほか）| main 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189（2026-10-28 20:26 UTC）、2026-10-29 07:03 P1 が git.freebsd.org/src.git の shallow・sparse の clone で（判断 1）。worktree p1-ws235b の `build/tmp/ws235-fbsd-070331/` | BSD-2-Clause（microcode は「Hardware programming portions from Realtek Semiconductor.」の表示つき） | if_rge_hw.c 70c6b9ea…、if_rge_microcode.h e5b1944a…、if_rgereg.h 5d177ec6…（全部は phase004 の記録の時に） |
 
 - 取れなかった物: raw.githubusercontent.com の Linux `r8169_main.c`・`r8169.h`・`drivers/net/phy/realtek/realtek_main.c` は 429（rate-limited）。規則どおり止め、
   別の host で取り直さない（Q1 2026-10-29「Linux の r8169_main.c は今は別の host でも取らない」）。cgit.freebsd.org の `sys/dev/rge/` の
