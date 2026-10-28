@@ -71,6 +71,20 @@ struct fake_node {
 	unsigned published;
 };
 
+/*
+ * One open file of a camera node.
+ *
+ * The descriptor holds the file and every device mapping holds it too, as
+ * vm_device_create() does in the kernel, so the node's close runs only
+ * when the last of them lets go.  The file keeps its node referenced, as
+ * the devfs inode an open file names does.
+ */
+struct fake_file {
+	struct file file;
+	struct fake_node *node;
+	unsigned holds;
+};
+
 /* What a sleep does in place of another CPU. */
 enum sleep_mode {
 	SLEEP_REFUSE,
@@ -112,6 +126,11 @@ static volatile unsigned sleeps;
 /* The fake camera and the device the framework made of it. */
 static struct fake_source source;
 static struct drv_cam_device *camera;
+
+/*
+ * Forward declaration.
+ */
+static void file_put(struct file *file);
 
 /* ---------------------------------------------------------------- */
 /* Kernel services.                                                 */
@@ -493,6 +512,9 @@ vm_device_create(
 	assert(max_prot == KERN_PROT_READ);
 	mapping = calloc(1, sizeof(*mapping));
 	assert(mapping != NULL);
+
+	/* The mapping holds the file, so its close waits for the munmap. */
+	((struct fake_file *)file)->holds++;
 	mapping->file = file;
 	mapping->physical = physical;
 	mapping->address = address;
@@ -511,10 +533,17 @@ static void
 mapping_drop(
 	struct vm_device_mapping *mapping)
 {
+	struct file *file;
+
+	/* The driver's release runs first, while the file is still open. */
 	assert(live_mappings != 0U);
 	live_mappings--;
+	file = mapping->file;
 	mapping->release(mapping->owner);
 	free(mapping);
+
+	/* Then the mapping lets the file go, which may close it. */
+	file_put(file);
 }
 
 /* ---------------------------------------------------------------- */
@@ -844,33 +873,56 @@ camera_open(
 	void)
 {
 	struct fake_node *node;
-	struct file *file;
+	struct fake_file *open_file;
 	int error;
 
 	node = node_find("cam0");
 	assert(node != NULL);
-	file = calloc(1, sizeof(*file));
-	assert(file != NULL);
-	file->f_data = node->cdev.data;
+	open_file = calloc(1, sizeof(*open_file));
+	assert(open_file != NULL);
+	open_file->file.f_data = node->cdev.data;
+	open_file->node = node;
+	open_file->holds = 1U;
 	node->refs++;
-	error = node->cdev.ops->open(file);
+	error = node->cdev.ops->open(&open_file->file);
 	assert(error == 0);
 
-	return file;
+	return &open_file->file;
 }
 
-/* Closes a file of /dev/cam0; the node may already be withdrawn. */
+/*
+ * Drops one hold of a file; the last one closes it through the node,
+ * which may already be withdrawn.
+ */
+static void
+file_put(
+	struct file *file)
+{
+	struct fake_file *open_file;
+	struct fake_node *node;
+	int error;
+
+	open_file = (struct fake_file *)file;
+	assert(open_file->holds != 0U);
+	open_file->holds--;
+	if (open_file->holds != 0U)
+		return;
+
+	node = open_file->node;
+	error = node->cdev.ops->close(file);
+	assert(error == 0);
+	node_put(node);
+	free(open_file);
+}
+
+/* Closes the descriptor of a file of /dev/cam0. */
 static void
 camera_close(
 	struct fake_node *node,
 	struct file *file)
 {
-	int error;
-
-	error = node->cdev.ops->close(file);
-	assert(error == 0);
-	node_put(node);
-	free(file);
+	assert(((struct fake_file *)file)->node == node);
+	file_put(file);
 }
 
 /* Issues an ioctl on a file of /dev/cam0. */
@@ -1606,10 +1658,13 @@ case_unregister(
 	struct cam_request_buffers request;
 	struct cam_format format;
 	struct cam_buffer buffer;
+	struct vm_device_mapping *mapping;
 	struct fake_node *node;
 	struct file *file;
 	host_thread_t holder;
 	host_thread_t releaser;
+	const volatile uint8_t *bytes;
+	unsigned pages;
 	short revents;
 	int error;
 
@@ -1627,6 +1682,11 @@ case_unregister(
 	assert(error == 0);
 	error = camera_ioctl(node, file, CAM_STREAM_ON, NULL);
 	assert(error == 0);
+
+	/* A buffer stays mapped across the retirement. */
+	error = node->cdev.ops->mmap(file, 0, KERN_PAGE_SIZE, KERN_PROT_READ, &mapping);
+	assert(error == 0);
+	pages = live_pmem;
 
 	/* An ioctl is held open inside the source. */
 	source.enum_block = 1U;
@@ -1662,6 +1722,18 @@ case_unregister(
 	/* The close after the retirement does not stop the source again. */
 	camera_close(node, file);
 	assert(source.stops == 1U);
+
+	/*
+	 * The mapping still holds the file, so the buffers and the device
+	 * remain and the mapped page reads; the munmap closes the file and
+	 * the finalizer frees them.
+	 */
+	assert(live_pmem == pages);
+	bytes = mapping->address;
+	assert(bytes[0] == 0U);
+	mapping_drop(mapping);
+	assert(source.stops == 1U);
+	assert(live_pmem == 0U);
 	printf("unregister: PASS\n");
 }
 

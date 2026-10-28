@@ -3,7 +3,7 @@
 # ws282-p002 camera の枠組み（/dev/camN）
 
 - Parent: [ws282](../ws.md)、Queue: q1667 / q1667-i01（P6 の配下、実装だけ・試験なし） → q1667-i03（P6、branch agent/p6-ws282b、基点 1190b629c）
-- Status: in-progress（枠組みと host 試験の source は実装済み・試験未実施、branch agent/p6-ws282b、先頭 f30258b62。残りは「再開点」）。2026-10-29 01:5x、P6 の指示（優先度の調整）で途中で止めた → 2026-10-29 q1667-i03 で続き。
+- Status: in-progress（枠組みと host 試験の source は実装済み・試験未実施、branch agent/p6-ws282c。mapping の寿命は fixture の直しで閉じた（末尾）。試験は未実施）。2026-10-29 01:5x、P6 の指示（優先度の調整）で途中で止めた → 2026-10-29 q1667-i03 で続き。
 
 ## 実装した事と file（SHA 0eea3815d）
 
@@ -48,3 +48,10 @@
 1. 上の (1)(2) の cam.c の直し（mapping が device の参照を持つ、owner の close は mapping が残る間は stream を止めない、最後の munmap で stop と解放）。
 2. p003 から（下の元の再開点の 3〜4）。rpi4 の config での build も。
 
+
+## 2026-10-29 P6（q1667-i04、branch agent/p6-ws282c、基点 c60cdbd44）
+
+- 上の (1)(2) を読み直した: **cam.c の不具合ではなく、host の fixture が kernel の契約を写していなかった**。kernel では `vm_device_create` が file を `file_ref` し、`vm_device_put` は driver の release の後に `file_close` する（`src/kern/vm/device.c` の `vm_device_create`・`vm_device_put`）ので、mapping が残る間は cdev の close が来ない（design §3.1）。open の file は devfs の inode を通して cdev の generation を持つ（`include/kern/cdev.h` の `cdev_register_managed` の注記）ので、退役の後も最後の close まで device と buffer は残る。cam.c は直していない。
+- fixture（`plan/ws282/tests/cam-host-test.c`）を直した: `struct fake_file`（file・node・holds）、descriptor と mapping が 1 つずつ hold を持ち、最後の hold で `ops->close` と node の参照を落とす `file_put`。`mapping_drop` は release の後に `file_put`（kernel と同じ順）。`case_unregister` に「退役をまたいで buffer を mmap したまま → close → page が読める・buffer が残る → munmap で close と finalizer、pmem 0、stop は 1 回のまま」を足した。
+- 確かめた事: `sh plan/ws282/tests/run-cam-host-test.sh --compile-only` rc 0（通常と ASan/UBSan、-Werror）。rpi4: `make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/ws282/p6c-rpi4 build/ws282/p6c-rpi4/vmunix` rc 0・warning 0、cam.o あり（log は worktree の `build/ws282/logs/rpi4-vmunix.log`）。**試験は流していない**。
+- Status: 実装済み・試験未実施（branch agent/p6-ws282c）。cleared にしない。

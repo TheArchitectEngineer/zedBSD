@@ -19,7 +19,7 @@
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（/dev/camN の API、uvc、xHCI の isochronous の制約、試験、Phase）→ [design.md](design.md)（版 3。版 1 の review は [phase001/review-20261023.md](phase001/review-20261023.md)、版 2 の review は [phase001/review-v2-20261023.md](phase001/review-v2-20261023.md)） | — | in-progress（2026-10-23 P3、版 3。Q1 の判定と版 3 の review 待ち） |
-| [p002](phase002/phase.md) | 枠組み: `include/uapi/camera.h`（layout と `_Static_assert`）、`src/drivers/camera/cam.c`（cdev と退役（停止の一本化・admission）、所有、0 埋めの buffer と mmap、slot の API、queue、DEQUEUE の timeout、poll、metadata、counters、状態機械、FAULT）、host の試験（design §11、6〜8 LW） | p001 | in-progress（枠組みと host 試験の source は実装済み・試験未実施、branch agent/p6-ws282b、先頭 f30258b62。mapping の寿命の直しが残る） |
+| [p002](phase002/phase.md) | 枠組み: `include/uapi/camera.h`（layout と `_Static_assert`）、`src/drivers/camera/cam.c`（cdev と退役（停止の一本化・admission）、所有、0 埋めの buffer と mmap、slot の API、queue、DEQUEUE の timeout、poll、metadata、counters、状態機械、FAULT）、host の試験（design §11、6〜8 LW） | p001 | in-progress（実装済み・試験未実施、branch agent/p6-ws282c。mapping の寿命は fixture の直し（cam.c は契約どおり）） |
 | p003 | uvc の bind と descriptor の解析（MJPEG の 11 byte の形、GUID の byte 列）と dump、VS の claim、PROBE/COMMIT と補正、`ENOSPC`、登録、build。devfs の 0600（Q1）。板（5330 + HDMI capture + webcam）で dump、仕様の節の確定（3〜4 LW） | p002 | planned |
 | p004a | xHCI の HS isoch IN の実地（URB の予約・投入の順の ring・worker・halt だけ、`camcap --probe-only`）。xHCI の不具合は BUG の ticket にして WS197 へ（2〜3 LW） | p003 | planned |
 | p004b | streaming（payload の解析と frame の組み立て、COMMIT の再送、watchdog、bulk は host 試験のみ）、`camcap`・`camcommon`。板で最初の frame（P ≤ 1024 の mode、5〜7 LW） | p004a | planned |
@@ -48,3 +48,4 @@
 - 2026-10-29 01:56 P6 の配下: p002 の一部を実装（camera.h・cam.h・cam.c・amd64 の build の登録・camcommon、SHA 0eea3815d、cam.c は compile で warning 0）。P6 の指示（優先度）で止めた。未着手: cam-host-test、arm64/riscv64 の登録、p003〜p004b、camcap。再開点は [phase002](phase002/phase.md) の「再開点」。未 commit の物は無し。
 - 2026-10-29 P6（q1667-i03、agent/p6-ws282b、基点 1190b629c）: p002 の続き。arm64・riscv64 の vmunix.mk に cam.c（5ff18cf2e、amd64・rpi5・visionfive2 の vmunix が rc 0・warning 0）、`plan/ws282/tests/cam-host-test.c` と `run-cam-host-test.sh`（f30258b62、compile だけ確かめた、流していない）。cam.c に mapping の寿命の不足を 2 つ読んだ（close で stream を止める、mapping が device の参照を持たない）。再開点は [phase002](phase002/phase.md) の末尾。
 
+- 2026-10-29 P6（q1667-i04、agent/p6-ws282c、基点 c60cdbd44）: p002 の mapping の寿命の 2 点は cam.c でなく host の fixture が file の hold を写していなかった物と分かり、fixture を直した（cam.c は変えず）。rpi4 の vmunix も rc 0・warning 0。試験は未実施。続きは p003。
