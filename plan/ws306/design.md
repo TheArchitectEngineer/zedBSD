@@ -5,6 +5,39 @@
 Parent: [WS306](ws.md)。作成 2026-10-29 P5（q1666、設計だけ）。照合した tree: main 61630bb0b。
 ユーザーの決定の原文は ws.md の「ユーザーの決定」。ここでの「推し」はユーザーが決めていない点（§9 の問い）。
 
+## 第 2 版の改訂（2026-10-29 P5、[design-review.md](design-review.md) の blocker 1・major 8・minor 13 を反映。この節が下の本文に優先する）
+
+| # | 改訂 | review |
+| --- | --- | --- |
+| X1 | **option を `ngg` と `ngg_cull` に分ける**。ゲーム最適化が ON の session は option の bit だけで決め（`ngg` off → 従来の vertex、`ngg` on・`ngg_cull` off → passthrough の NGG、両方 on → culling の NGG）、OFF の session は boot の行 `amdrdna.vk.ngg`（0/1/2、`vk-node.c:149`）で決める。boot の行が 0 でも 2 でも ON の session の option が名前どおりに効く。ユーザーの原文「このゲーム最適化がかかっているときだけ、NGGをmesh shader以外でも有効にする」は NGG そのものを指す | B1 |
+| X2 | **専用の latch**: `native_submitted` の意味を借りない。session に `game_frozen` を持ち、最初の GPU に届く ioctl（`GPU_COMMAND`・`GPU_COMMAND_SUBMIT`・`SUBMIT_SYNC`・`GPU_JOB_COMMIT` など、admission の外の経路 gpu.c 2016・2071 を含む）が admission の lock の下で 1 回だけ `game_apply` を呼んで凍らせる。以後の `GPU_GAME_SET` は EBUSY。backend の compile（`vk-pipeline.c:691`）と executor（`vk-execute.c:610`）は凍った値だけを読む | M1 |
+| X3 | **名前と版は libvulkan で上書きしない**: native の driver では kernel の executor（`vk-device.c`）が既に deviceName・driverVersion を返す。各 driver が 1 つの識別（`game_identity`）を持ち、executor も `GPU_GAME_INFO` もそれを使う。venus は host の値のまま（kernel の venus は host の名前を知らない）。driverVersion の数の読み方は vendor ごとに違うので、vendorID を変えずに zedBSD の版の数を入れない（`driver_version` の文字列と `driver_version_number` は zedBSD の driver の版で、Vulkan の driverVersion には写さない） | M2 |
+| X4 | **ゲームの手順と関数**: libvulkan の zedBSD の関数を 2 つ: 一覧（名前・既定・説明）と識別（GPU の名前・driver の名前・版の文字列・今効いている option）。関数は instance と physical device の上で動き、ゲームは「探りの instance → 読む → 消す → 環境変数を設定 → 本番の instance」の 2 段で選ぶ（試験に入れる）。名前は `vk` で始めない（Khronos の名前空間を避ける）ので、libvulkan の `exports.map`（`global: vk*; local: *;`）に名前を足す | M3 |
+| X5 | 安全の規則に足す: session をまたいで共有する画像・buffer（export・import の allocation、scanout）の中身の形を変える option は作らない（例に書いた `fast_clear` は消す。共有の画像の圧縮の形が相手の session と食い違う） | M4 |
+| X6 | **WS291 の要素と OFF の時の速さ**: WS291 が culling を既定にした後では「OFF＝今と同じ」と「OFF の時は最適化なし」が両立しない。基準の案: 正しさに影響しうる・ゲームの不具合を起こしうる最適化は option（既定 ON）、desktop を含む全員に安全な物は常に入れる。→ Q306-6 | M5 |
+| X7 | 版の規則: `driver_version` は driver の挙動（option の意味・既定）が変わるたびに上げる。libvulkan の版は環境変数の解読の版として別に出す（識別の関数に入れる） | M6 |
+| X8 | p007（文書）は WS009 の ws009-p009（`docs/reference/gpu.md`）の完了に依存。file の所有は Q1 が調整 | M7 |
+| X9 | 試験に足す: SET と投入の同時（X2 の latch）、boot の行と option の組の表（X1、0/1/2 × ON/OFF × option）、venus の名前・版が変わらない回帰、fork・dup の後の session、display の session に効かない、新しい struct の `_Static_assert`（info 160・option 176・set 40 byte、review が x86_64 と -m32 で確かめた）、解読の負の例、OFF の時の速さの回帰（WS291 の測りの script） | M8 |
+| X10 | minor: ops の新しい欄は struct の最後、登録の検査（gpu.c の validate）に足す。`GPU_CAP_GAME` は render の node だけ。SET は writable を求める（推しの判断を変える）。文法に driver ごとの区切りの記号（`:`）を予約。環境変数の値は `0`・`1` 以外を OFF にし stderr に 1 行。`VK_KHR_driver_properties` は WS226（Vulkan 1.2 以上）の後。p003 の試験は p004 に依存。vulkaninfo は 8 LW の前に下見の段（soname・C++17・header の版）。amdrdna の製品名は表が無いので出典と license を決める段が要る。pipeline cache を出す時は効いている option を key に入れる。ws.md の「process ごと」は「open ごと」と読む | minor |
+
+### 第 2 版の Phase の表（§11 を置き換える。LW は ±50%）
+
+| Phase | 内容 | 依存 | LW |
+| --- | --- | --- | --- |
+| p002 | UAPI の header、核（ioctl・latch・解読・ops）、host 試験 | p001 | 11 |
+| p003 | libvulkan（変数・SET・2 つの関数・exports.map） | p002、p004 | 6 |
+| p004 | 全 driver の識別（`game_identity`、executor も使う、amdrdna の製品名の出典） | p002 | 6 |
+| p005 | amdrdna の option（`ngg`・`ngg_cull`、WS291 の要素の移し替え）、実機の測り | p002、WS291 の RDNA の完了、Q306-6 | 10（WS291 の後に見積もり直す） |
+| p006 | vulkaninfo の下見と移植 | p003 | 10 |
+| p007 | 文書 | p003、ws009-p009 | 2 |
+| p008 | 規約の全文の見直し | 全部 | 3 |
+
+計 48 LW。
+
+### 第 2 版のユーザーに聞く点（Q1 へ）
+
+- Q306-6 WS291 の最適化の扱い: 推し「正しさやゲームの互換に影響しうる物は option（ゲーム最適化が ON の時だけ、既定 ON の option）、desktop を含む全員に安全な物は常に入れる。OFF の session は boot の行の既定のまま」。選択肢: (b) WS291 の要素を全部 option にし、OFF の session は最適化なし（desktop が遅くなりうる）。
+
 ## 0. 要点
 
 - `/dev/gpuN` の open（session）ごとに、ゲーム最適化の ON/OFF と option の組を持つ。option の表は driver が持ち、文字列の解読と検査は共通の層（`gpu.c`）が一様に行う。

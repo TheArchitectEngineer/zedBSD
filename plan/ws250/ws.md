@@ -22,6 +22,9 @@ Resume point: 2026-10-15 夜 ユーザーの即時中断で止めた。design.md
 
 - 2026-10-29 ユーザーの回答（クリック、Q1 の中継）Q250-4「案 A を必須に」（推しでない方）。→ 解釈: session ごとの channel を必須の範囲に（design.md の第 4 版の改訂）。session ごとの worker を必須に含めるかは Q250-5 で聞く。
 
+- 2026-10-29 聞き直し: Q250-2（WS305 の VFIO）の答えは前提の誤り（WS305 は止めたまま、passthrough の画面は screendump に写らない）で、WS242 の Q242-4 と同じ問いで聞き直した。ユーザーの回答（クリック）Q242-4「RDNA と差し替え (推し)」（WS250 の実機も同じ）、Q250-5「含める (推し)」。
+  → 解釈: 実機は RDNA と差し替えた素の起動。session ごとの worker（第 4 版の p005）を必須に含める（必須 34 LW）。
+
 ## 今の振る舞い（Q1 の調べ、2026-10-15、main 5027043ab）
 
 - executor は投入ごとに driver の fence を 2 秒待ち（`vk-node.c` の `VK_NODE_RUN_US`）、来なければ EIO → app に `VK_ERROR_DEVICE_LOST`（`vk-queue.c` の `queue_result`）。走り続ける shader は止めない。
