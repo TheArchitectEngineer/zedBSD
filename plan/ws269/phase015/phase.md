@@ -22,7 +22,7 @@
 
 `userland/tests/vkreset/`（main.c・hang.comp・shader.h・Makefile）。
 
-- 既定の gpu-selftest には入れない。`plan/ws269/tests/p010/config-visionfive2-selftest.mk` に `vkreset` を足した。
+- 既定の gpu-selftest には入れない。`plan/tools/powervr/p010/config-visionfive2-selftest.mk` に `vkreset` を足した。
 - link の規則は `platform/common/userland-dynamic.mk`。amd64 の静的 program の一覧からは外した（`platform/amd64/vmunix.mk`）。
 - 手で `vkreset --isolated` と流す。引数が無いと 2 で終わる。
 
@@ -35,7 +35,7 @@
 
 - **host の確かめ**:
   - hang.comp は powervr の compiler で compile できる（host の probe で `error=0 length=344`）。
-  - VF2 の build: `timeout 3600 make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-visionfive2-selftest.mk BUILD=build/q1519 -j16 vmunix build/q1519/bin/vkreset` で rc=0、自前の source の warning は 0。
+  - VF2 の build: `timeout 3600 make ZEDBSD_CONFIG=plan/tools/powervr/p010/config-visionfive2-selftest.mk BUILD=build/q1519 -j16 vmunix build/q1519/bin/vkreset` で rc=0、自前の source の warning は 0。
 - **draw が入っていない**: 同じ process の段に draw は入れていない。新しい process の draw は、下の手順の vkmatrix と gpu-selftest で見る。
 
 ### code で読んだ回復の道（driver は変えていない）

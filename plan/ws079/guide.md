@@ -40,7 +40,7 @@ L3 を Future Work に移すのは受け入れの縮小なので**人間の判�
 | 何 | 証拠 |
 | --- | --- |
 | 全 Phase（p001〜p016）cleared | [ws.md](ws.md) の Phase の表 |
-| S8・S9 の QEMU の通し（注入の touch と pen） | phase016（fb1f6afee の `plan/ws079/phase016/phase.md`）: `demo-s8-s9: PASS`、scroll の turn 最長 142 ms、page の frame 最長 140 ms。2026-09-30 夕の統合の tree でも PASS（[ws090 p011](../ws090/phase011/phase.md) の「統合の試験」、140・148 ms）。ws099-p015 の後も PASS（page の frame 135 ms、[ws099 の表](../ws099/ws.md)） |
+| S8・S9 の QEMU の通し（注入の touch と pen） | phase016（fb1f6afee の `plan/ws079/phase016/phase.md`）: `demo-s8-s9: PASS`、scroll の turn 最長 142 ms、page の frame 最長 140 ms。2026-09-30 夕の統合の tree でも PASS（ws090 p011（fb1f6afee の `plan/ws090/phase011/phase.md`） の「統合の試験」、140・148 ms）。ws099-p015 の後も PASS（page の frame 135 ms、[ws099 の表](../ws099/ws.md)） |
 | 規約の全文の照合 | phase009（fb1f6afee の `plan/ws079/phase009/phase.md`）（style-check 0、`style-extra.py` 7 件は規約に当たらない） |
 | host 試験（2026-10-01 にこの手引きの作成で再実行） | `run-pdf-writer: ok`（約 5 秒）、`run-notes-host: ok`（約 16 秒）、`run-pdfviewer-host: ok`（約 31 秒）。`run-pdf-render.sh`（引数なし）は既定の fuzz の回数が多く 115 秒の timeout に掛かった。`run-pdf-render.sh 100` は `run-pdf-render: ok`（約 38 秒）→ 下の command は `100` を渡す |
 | 実機（5330）・Windows の QEMU での S8・S9 | **未実施**。手順の 1 枚は [demo-s8-s9-manual.md](demo-s8-s9-manual.md) |
@@ -131,12 +131,12 @@ AGENTS.md「記録の置き場所」の完了の形: ws.md を Status: completed
 
 | # | 未知 | なぜ要るか | 調べ方 |
 | --- | --- | --- | --- |
-| U1 | 5330 の passthrough の guest の画面の大きさと App Home の tile の座標 | p020 の pointer の座標 | `plan/ws075/tests/hdmi-h4-hw.sh ctl shot desk` → `fetch` → `OUTDIR/shots/desk-live.png` を見る。tile の並びは `plan/ws035/demo/apps.conf` の順（Files・Notes・Settings・Terminal・PDF Viewer・Image Viewer・Text Editor・Browser・Model viewer・Gears・X terminal）。c5-hw.sh:26 の座標は 1920x1080 の並び |
+| U1 | 5330 の passthrough の guest の画面の大きさと App Home の tile の座標 | p020 の pointer の座標 | `plan/tools/i915-hw/hdmi-h4-hw.sh ctl shot desk` → `fetch` → `OUTDIR/shots/desk-live.png` を見る。tile の並びは `plan/ws035/demo/apps.conf` の順（Files・Notes・Settings・Terminal・PDF Viewer・Image Viewer・Text Editor・Browser・Model viewer・Gears・X terminal）。c5-hw.sh:26 の座標は 1920x1080 の並び |
 | U2 | 角の swipe が passthrough の usb-tablet の drag で起きるか | S8 の入口 | `zdesktop-p010.sh` は QMP の pointer の drag で通っている（Venus）。passthrough でも `h4-ctl.py pointer drag` は同じ usb-tablet。session の log の `ZWL CORNER commit` で確かめる |
 | U3 | 5330 の実機の i915 での頁送りの時間 | L2 の 200 ms | p020 の `TURN done ... ms=`。QEMU の Venus の 142 ms と比べる。超えたら p016 の判断（先読みの cache を小さな Phase で）を見直す。描画の中身は `userland/desktop/pdfviewer/view.c` の prefetch |
-| U4 | Notes の線の遅れ（全画面は ws099-p015 以後は常に合成） | S8 の「線が遅れなく付いてくる」 | ws099-p015 の計測（QEMU の pen の遅れ中央値 74 → 117 ms）は `plan/ws099/tests/p015-pen-latency.sh IMAGE OUTDIR`（Venus、§5.2 の demo の image、注入の pen）。5330 の passthrough には pen が無い（QEMU は usb-tablet と usb-kbd だけ、`plan/ws075/tests/hdmi/h4-qemu.sh:33`）ので、実機の線の遅れはユーザーの目視。数値の目標は台本に無いので、遅いと感じたらユーザーに報告して判断を待つ |
+| U4 | Notes の線の遅れ（全画面は ws099-p015 以後は常に合成） | S8 の「線が遅れなく付いてくる」 | ws099-p015 の計測（QEMU の pen の遅れ中央値 74 → 117 ms）は `plan/ws099/tests/p015-pen-latency.sh IMAGE OUTDIR`（Venus、§5.2 の demo の image、注入の pen）。5330 の passthrough には pen が無い（QEMU は usb-tablet と usb-kbd だけ、`plan/tools/i915-hw/hdmi/h4-qemu.sh:33`）ので、実機の線の遅れはユーザーの目視。数値の目標は台本に無いので、遅いと感じたらユーザーに報告して判断を待つ |
 | U5 | デモで開く PDF をどこに置くか（kei の home は sessiond が最初の login で空で作る、`userland/desktop/sessiond/session.c:511`） | S9 の素材 | WS091 の J8「デモの画像は main が選ぶ」と同じく **main（とユーザー）の判断**。今は USB メモリか Files の copy（demo-s8-s9-manual.md の「用意」）。image に入れるなら WS075 の `build-demo-image.sh` の変更を main に依頼する |
-| U6 | 外付けの touch LCD と AES pen の HID の descriptor（L3） | 完了の条件 2 の実機 | 機材が戻ったら `plan/ws075/tests/hdmi-h1-hw.sh`（5330 の host の USB を記録し、新しい device の report descriptor を取る）。kernel の解析は `src/drivers/usb/hid-digitizer.c`・`hid-touch.c`、host の試験 `run-hid-pen.sh`・`run-hid-touch.sh` に descriptor を足して確かめる |
+| U6 | 外付けの touch LCD と AES pen の HID の descriptor（L3） | 完了の条件 2 の実機 | 機材が戻ったら `plan/tools/i915-hw/hdmi-h1-hw.sh`（5330 の host の USB を記録し、新しい device の report descriptor を取る）。kernel の解析は `src/drivers/usb/hid-digitizer.c`・`hid-touch.c`、host の試験 `run-hid-pen.sh`・`run-hid-touch.sh` に descriptor を足して確かめる |
 
 判定に QEMU の console・serial の log を使わない（AGENTS.md）。guest の中の program の log は SSH（`plan/tools/guest/guest.py run`）か、
 passthrough では image から読む（上の p020）。
@@ -243,7 +243,7 @@ sh plan/ws075/demo/build-demo-image.sh build/<W>-demo-pt passthrough > build/<W>
 | --- | --- |
 | libpdf | §5.1 の全て、§5.2 |
 | PDF Viewer | `run-pdf-render.sh 100`・`run-pdfviewer-host.sh`、§5.2、`plan/ws090/tests/viewers-p008.sh`（使い方は先頭） |
-| Notes | `run-notes-host.sh`、`plan/ws081/tests/run-notestouch.sh`、§5.2、§5.4 |
+| Notes | `run-notes-host.sh`、`plan/tools/touch/run-notestouch.sh`、§5.2、§5.4 |
 | kernel の HID・注入 | `run-hid-pen.sh`・`run-hid-touch.sh`、§5.3、boot test（commands.md §4） |
 | compositor の tablet・touch・角 | §5.3、§5.4 の p010、WS099 の C9（commands.md §5） |
 | 全て | 最後に build の warning 0（commands.md §1）と boot test（commands.md §4）。規約は `python3 plan/tools/style-check.py <file>...` と `python3 plan/ws079/tests/style-extra.py <file>...` |

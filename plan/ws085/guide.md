@@ -59,7 +59,7 @@ ws.md の `Queue: q499` は古い（q499 は終わっている。今の Queue �
 | 所有者の切替で QEMU が止まる原因（BUG-101） | デモで Log Out・app の終了をする | ユーザーに Log Out → login と、Files の開閉を 5 回してもらう。止まったら QEMU の画面（SDL）と PowerShell の QEMU の stderr（`boot.bat` の窓）の最後の行を送ってもらう（host の QEMU の log であり、guest の console の log ではない）。guest の側は SSH で `/run/user/1000/session.log` の `ZWL` の最後の行と `/var/log/sessiond.log` の `SESSIOND HANDOFF` を読む |
 | vendor の fork の変更が commit・push されたか | Kei-nightly の base の zip（WS088）と再現の build | ユーザーに聞く（ws.md「vendorの変更はユーザーがレビューしてcommit/pushする」、WS088 の Resume point「fork の commit とユーザーの確認待ち」）。`awemorris/qemu-win32-vulkan`・`awemorris/virglrenderer`（WS088 の ws.md） |
 | QEMU の fork の差分（mapped blob の表示面、SDL の指、usb-multitouch） | 不具合が QEMU の側の時の直し | この checkout に source が無い。renderer の差分だけ [p001 の patch](phase001/winq-virglrenderer-alpha10.patch) にある。QEMU の差分はユーザーの fork（WS088 の ws.md）。Windows の build の参考は Linux の `~/linux-pc98/scripts/build-qemu-win64.sh`（p001、存在を 2026-10-01 確認） |
-| アニメーションの速度（合成の frame の間隔） | デモの見た目（S8・S9） | WS081 の p017 の session の `--log-frames` の image を使えば、`ZWL COMPOSE … at_ms=` の間隔で測れる（[WS081 の p017](../ws081/phase017/phase.md)） |
+| アニメーションの速度（合成の frame の間隔） | デモの見た目（S8・S9） | WS081 の p017 の session の `--log-frames` の image を使えば、`ZWL COMPOSE … at_ms=` の間隔で測れる（WS081 の p017（fb1f6afee の `plan/ws081/phase017/phase.md`）） |
 | guest の不具合の切り分け（Linux の QEMU で再現する時） | — | QEMU の console・serial の log では判定しない。kernel は gdbstub（`GUEST_RUNTIME=… python3 plan/tools/guest/guest.py kgdb --symbols <BUILD>/vmunix 'bt'`）、monitor・QMP（`plan/tools/qmp.py <runtime>/qmp.sock query-status`）、user は zdesktop の log |
 
 ## コマンド
@@ -95,7 +95,7 @@ OUTPUT=build/<W>/boot plan/tools/boot-test.sh build/<W>-criteria/hdd-image.img; 
 
 - 起動: `C:\Work\winq-zedbsd\boot.bat`（自分の directory に移って QEMU を相対 path で起動。`-L share`、WHPX、Venus、SDL、`-device usb-multitouch,bus=xhci.0,port=1`、COM1 は stdio。p001「Windows配布フォルダ」）。
 - image: `C:\Work\winq-zedbsd\data\hdd-image.img` を上書き（元を残すなら先に名前を変える）。
-- SSH: `ssh -p 2222 root@127.0.0.1`（password `root`、boot.bat の `hostfwd=tcp::2222-:22` が要る: [WS081 の windows-touch.md](../ws081/tests/windows-touch.md) の「用意」2）。file は `scp -P 2222 root@127.0.0.1:<path> .`（PowerShell の `>` は UTF-16 で書くので使わない）。
+- SSH: `ssh -p 2222 root@127.0.0.1`（password `root`、boot.bat の `hostfwd=tcp::2222-:22` が要る: WS081 の windows-touch.md（fb1f6afee の `plan/ws081/tests/windows-touch.md`） の「用意」2）。file は `scp -P 2222 root@127.0.0.1:<path> .`（PowerShell の `>` は UTF-16 で書くので使わない）。
 - 元の `C:\WINQ-EMU\bin` は変えない（p001）。
 
 ## 実機（Dell Latitude 5330）

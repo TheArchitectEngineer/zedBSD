@@ -139,7 +139,7 @@ tools・history・emoji・p026 の 次のApp が `tool …: no place MISSING`、
 
 ### AAT の image
 
-AAT 4 本（`bugs.osk-flick-terminal`・`bugs.phone-ime-flick`・`bugs.osk-qwerty-ime`・`desktop.osk.prediction`）の文書の準備は全て「AAT の image」で、session（App Home からの起動）・Phone・`keiland-settings`・`aat-input`・`keiland-shot` を使う。AAT の標準の image（`plan/tools/aat/config-amd64-aat.mk` → `plan/ws159/tests/config-amd64-uat.mk` → `config/current-uat.mk` → `config/release/config-amd64-beta2.mk` → `config/ci/config-amd64.mk`）には `keiland-ime`・`ime-dict-ja`・`ime-dict-skk`・terminal・textedit・phone が入っており、外す行も無い。よって AAT 4 本は **AAT の標準の image**（`plan/tools/aat/build-image.sh BUILD`）で流す。IME の image（`build-ime-image.sh`）は osk-guest.sh 用のまま（ime-probe が要る）。image の作り方は変えない。
+AAT 4 本（`bugs.osk-flick-terminal`・`bugs.phone-ime-flick`・`bugs.osk-qwerty-ime`・`desktop.osk.prediction`）の文書の準備は全て「AAT の image」で、session（App Home からの起動）・Phone・`keiland-settings`・`aat-input`・`keiland-shot` を使う。AAT の標準の image（`plan/tools/aat/config-amd64-aat.mk` → `plan/tools/aat/config-amd64-uat.mk` → `config/current-uat.mk` → `config/release/config-amd64-beta2.mk` → `config/ci/config-amd64.mk`）には `keiland-ime`・`ime-dict-ja`・`ime-dict-skk`・terminal・textedit・phone が入っており、外す行も無い。よって AAT 4 本は **AAT の標準の image**（`plan/tools/aat/build-image.sh BUILD`）で流す。IME の image（`build-ime-image.sh`）は osk-guest.sh 用のまま（ime-probe が要る）。image の作り方は変えない。
 
 ### 確かめた事（host のみ。QEMU は T1 の再試験）
 

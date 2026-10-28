@@ -35,7 +35,7 @@ p004のMMS text-only判断から、ユーザー指示で写真/動画の双方�
 
 ユーザーがCLI所有のメディアDB、compositor経由の取得・追加・監視、Photos再読込、Phoneの＋とDnDを先行指定。MMS送受信接続はその後（確認質問の前提と回答）。従来のPhone独自メディア保存の設計を置き換える。現在のMIME/Get/Push/backend変更は未統合・未完了の途中資料としてこのworktreeに保存。共有codecの画像/動画各262147 bytes roundtripとbMessageはhost PASS、bt-bmsg 90 checks PASS、MAP回帰は旧仕様assertを修正中。新メディアAPIの完成後、FD運搬と送受信を新基盤へ接続して再検証する。Phaseはclearedにしない。
 
-2026-10-10再設計の反映: メディアCLI/compositorの[ws157-p006](../../ws157/phase006/phase.md)とPhoneの[ws197-p011](../phase011/phase.md)の出力を次回の前提にする。取得/保存はパスとメタデータのAPI、draft選択は共通media chooserに接続する。元の写真/動画4機能の義務は保持するが、ユーザーの最新限定により今回Queueで実装再開しない。旧MIME試作のscope/evidenceは[履歴](../history/mms-prototype-20261010.md)へ保存。
+2026-10-10再設計の反映: メディアCLI/compositorのws157-p006（fb1f6afee の `plan/ws157/phase006/phase.md`）とPhoneの[ws197-p011](../phase011/phase.md)の出力を次回の前提にする。取得/保存はパスとメタデータのAPI、draft選択は共通media chooserに接続する。元の写真/動画4機能の義務は保持するが、ユーザーの最新限定により今回Queueで実装再開しない。旧MIME試作のscope/evidenceは[履歴](../history/mms-prototype-20261010.md)へ保存。
 
 2026-10-10前提の更新: ws157-p006/p007とws197-p011はhost/build scope cleared、main `874e12d3b`。後続MMSはmediastorageのMedia JSON/Filesとlibkeiland path-list APIへ接続する。p010自体はunclearedを維持し、今回finite Queueは終了。新しい試行にはQueue選択/承認を記録する。
 
@@ -80,7 +80,7 @@ mainへ受信source/evidence `035d1d25b` をfast-forward統合済み。source同
 | `sh plan/ws197/tests/bt-phone-host-test.sh`（OUT=build/ws197-p010-bthost） | 全 PASS。runner に libmms を足した（main で bt-mms・bt-bmsg・bt-map が link できなかった）。bt-map の試験が btd_map_init で MAS の body を捨てて LSan が leak を出していたので、試験の start で free（試験の直し）。新: bt-map の MMS の push（TYPE:MMS、MIME の本体、大きい物の複数 Put、2 つ目の大きい物は busy、MIME でない物は argument、番号、MMS を受けない phone は no-send）、bt-phoneio の type=mms の長さ（16 MiB まで、type 2 回・他の type は拒否） |
 | `sh plan/ws197/tests/phone-backend-host-test.sh` | PASS（新: MMS の line と本体、結果、pipe と fd 無しは EINVAL） |
 | `sh plan/ws197/tests/phone-shell-host-test.sh` | PASS（新: version 32 の send_mms が backend に届き fd を compositor が close、done OK、version 27 は EPROTO） |
-| `sh plan/ws157/tests/run-host-mediastorage.sh`（host-media-select に libmms を足し、下書きの MIME の試験を追加） | 全 PASS（写真と動画と caption が 1 つの MIME、他の会話の下書きは残る、無ければ ENOENT） |
+| `sh plan/tools/media/run-host-mediastorage.sh`（host-media-select に libmms を足し、下書きの MIME の試験を追加） | 全 PASS（写真と動画と caption が 1 つの MIME、他の会話の下書きは残る、無ければ ENOENT） |
 | zedBSD named build（config/current-uat.mk、BUILD=build/ws197-p010）: libkeiland.so・phone・wayland・bluetoothd・photos・settings | rc 0、warning 0 |
 | Linux: libkeiland.so・wayland・mediastorage | rc 0、warning 0 |
 | style-check（変えた file）・`git diff --check`・`exports.py --check`・`keiland-os-boundary/check.sh` | 新規 0・PASS |

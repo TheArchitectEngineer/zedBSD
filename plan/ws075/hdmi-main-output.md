@@ -43,7 +43,7 @@
 
 ## 4. Phase の分け方（案）と試験
 
-QEMU は i915 の HDMI を試せない。各 Phase の最後は実機（5330 + 10 インチ LCD、`plan/ws075/tests/test-hw.sh` と `flock /tmp/i915-hw.lock`）。host 試験は `tests/display/host-*.c`。
+QEMU は i915 の HDMI を試せない。各 Phase の最後は実機（5330 + 10 インチ LCD、`plan/tools/i915-hw/test-hw.sh` と `flock /tmp/i915-hw.lock`）。host 試験は `tests/display/host-*.c`。
 
 | Phase（案） | 内容 | 試験 |
 | --- | --- | --- |

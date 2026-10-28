@@ -20,7 +20,7 @@ keyboard（矢印・Ctrl+A・Esc）、配置の保存（`~/.config/keiland/deskt
 | `userland/desktop/files/ui-desktop.c` | 配置は layout から（`desktop_layout`、size か listing が変わった時に計算し直す、保存の場所は最初に 1 回読む）、選択の見た目（icon の後ろの淡い地、名前の青い pill）、rubber band、入力 `fm_desktop_event`（左 click で選択、Ctrl で追加、Shift で範囲、空いた所から band、double click で開く、Enter で選択を開く（最大 8）、矢印で最も近い項目へ、Ctrl+A・Esc）、`fm_desktop_open_selected`（file は `fm_open_entry(…, 0)`、folder は `fm_apps_spawn` で `/bin/files FOLDER`）、`fm_desktop_item_at` |
 | `userland/desktop/files/files.h`・`main.c`・`Makefile` | `struct fm_desktop`（places・saved・band・click）、`app->desk`、宣言、desktop の入力を `fm_desktop_event` へ、終わりに `fm_desktop_release` |
 
-試験: `plan/ws094/tests/host-desktop.c`（grid・配置・保存の読み書き・Clean Up、20 件）、`files-desktop-guest.sh` に手順 `input` を足した。
+試験: `plan/tools/files-desktop/host-desktop.c`（grid・配置・保存の読み書き・Clean Up、20 件）、`files-desktop-guest.sh` に手順 `input` を足した。
 
 ## 確認（ここまで）
 
@@ -28,7 +28,7 @@ keyboard（矢印・Ctrl+A・Esc）、配置の保存（`~/.config/keiland/deskt
 | --- | --- |
 | build（`make … BUILD=build/ws094-amd64 build/ws094-amd64/bin/files`） | rc 0、warning 0 |
 | style（ui-desktop.c・desktop-layout.c・host-desktop.c） | 0 件 |
-| host（`sh plan/ws094/tests/host-desktop.sh`） | PASS（20 件） |
+| host（`sh plan/tools/files-desktop/host-desktop.sh`） | PASS（20 件） |
 | guest（QEMU、Venus、`files-desktop-guest.sh build/ws094-shots/p004 install show input`） | PASS: click で photo.png の選択（`selected.png`、淡い地と青い pill）、↑ で notes.txt、Enter で利用者の一覧の way（`env > ~/env.txt # %f`）が起き、**起こされた program の環境に `KEILAND_DESKTOP_TOKEN` が無い**（`HOME` はある）、Projects の double click で新しい Files の窓、空いた所からの band で先頭の項目を選ぶ（log）。zdesktop の ERROR 0 |
 
 ## 未実施（次に行うこと）

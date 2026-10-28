@@ -35,6 +35,6 @@ PS/2 互換の touchpad が 2 本指の scroll を IntelliMouse の wheel とし
 - build: `make -j8 ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-settings.mk BUILD=build/p1-q640 build/p1-q640/vmunix` → exit 0、warning 0、`amd64 vmunix check: PASS`。
 - host: host-ps2-wheel（2026-10-19 削除: WS275 p004 の 8042 の移動で古くなり、回帰の一覧に無いので 2026-10-06 の基準で削除。git の履歴に残る） → `host-ps2-wheel: PASS`（driver を 8042 と mouse の model で動かす。標準・IntelliMouse・Explorer の
   識別と packet size、rate の復帰、動き（9 bit の符号）、縦・横の wheel、side button、scroll の packet で side が保たれる）。
-- QEMU（T1 に依頼）: `plan/ws081/tests/ps2-wheel-qemu.sh IMAGE BUILD`（usb-tablet の無い q35 の guest で PS/2 mouse だけにし、QMP の wheel 3 上・2 下、
+- QEMU（T1 に依頼）: `plan/tools/touch/ps2-wheel-qemu.sh IMAGE BUILD`（usb-tablet の無い q35 の guest で PS/2 mouse だけにし、QMP の wheel 3 上・2 下、
   動き、左・side の click を guest の `ps2wheel`（evdev を読む probe）で数える）。未実施（結果待ち）。
 - 実機（5330）は未実施。S2 で kernel log の `i8042: mouse id=` と 2 本指の scroll を見る。

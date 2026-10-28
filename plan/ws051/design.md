@@ -229,7 +229,7 @@ TBT-alt（TBT PLL、`TC_COLD_OFF` の well と PCODE）と legacy の mode（TC 
   resume で init_mode と detect をやり直す（WS052 の device の表の i915 の行に載せる）。
 - **TCSS_DDI_STATUS の pin・HPD_LIVE**（L2）: Linux 6.8 が pin の field を使うのは display 20（LNL）だけで、HPD_LIVE の bit は未使用。ADL-P では
   診断の値として読み、判断には FIA と DE の HPD を使う。
-- **試験の環境**（H6）: zedBSD の i915 の「実機」の試験は 5330 の上の QEMU の VFIO の passthrough（`plan/ws075/tests/test-hw.sh`、GOP は走らない）。
+- **試験の環境**（H6）: zedBSD の i915 の「実機」の試験は 5330 の上の QEMU の VFIO の passthrough（`plan/tools/i915-hw/test-hw.sh`、GOP は走らない）。
   VFIO では FIA・TCSS・DDI は guest から見えるが、DP mode の突入と TCSS の電源は host の Debian（ucsi_acpi、thunderbolt、xHCI の runtime PM）が握り、
   UAT の (1)・TC cold の結果を汚す。native（zedBSD を 5330 で直接起動）か、VFIO で host の typec・thunderbolt と TCSS の PM を止めるか、正解値を
   bare metal の Linux で採るか（共有の試験 host の vfio-pci を外す、他の担当の `/tmp/i915-hw.lock` を止める）を §13 で決める。正解値は debugfs の

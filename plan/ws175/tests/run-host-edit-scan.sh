@@ -16,7 +16,7 @@ ln -sf "$(pwd)/include/libc/md5.h" "$out/include/md5.h"
 ln -sf "$(pwd)/include/libc/sha1.h" "$out/include/sha1.h"
 mkdir -p "$out/include/truetype"
 ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
-python3 plan/ws175/tests/make-edit-samples.py "$out" >/dev/null
+python3 plan/tools/aat/make-edit-samples.py "$out" >/dev/null
 # ws175-p005: the replacement fonts as the desktop installs them, in a folder of the test's own.
 mkdir -p "$out/fonts"
 ln -sf "$(pwd)/userland/desktop/fonts/Mahora-Regular.ttf" "$out/fonts/keiland.ttf"

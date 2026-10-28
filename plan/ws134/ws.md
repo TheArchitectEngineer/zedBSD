@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-27 P3 の精査 q1608。p001〜p008・p011〜p013 cleared、p003 は実機の fps 21（UAT 2026-10-04）で cleared。p009・p010 の実機の分は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」で OK。Pi 5 でも 2026-10-22 ユーザー「System Monitor を開いて、中身が出ました。」）
+<!-- retained-after-completion --> tests/ の 7 項目 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
 Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: —

@@ -81,7 +81,7 @@ qemu-system-x86_64 -machine q35,accel=kvm -cpu host -smp 4 -m 8G \
 
 ### 3.3 guest の image
 
-- config: `plan/ws037/tests/config-amd64-nvrtx.mk`（作る）= `include config/ci/config-amd64.mk` に `CONFIG_DRIVER_PCI_NVRTX := y`、`ZEDBSD_USER_PROGRAMS += nvidia-gsp-firmware`、`ZEDBSD_GRAPHICAL_BOOT := n`、`ZEDBSD_GRAPHICAL_LOGIN := n`、`ZEDBSD_BOOT_KERNEL_MESSAGES := y`、`ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=<段>`。firmware の license は `yes | make firmware-licenses`（T1 の image の作り方の規則、AGENTS.md の「試験の image の作り方」）。
+- config: `plan/tools/nvrtx/config-amd64-nvrtx.mk`（作る）= `include config/ci/config-amd64.mk` に `CONFIG_DRIVER_PCI_NVRTX := y`、`ZEDBSD_USER_PROGRAMS += nvidia-gsp-firmware`、`ZEDBSD_GRAPHICAL_BOOT := n`、`ZEDBSD_GRAPHICAL_LOGIN := n`、`ZEDBSD_BOOT_KERNEL_MESSAGES := y`、`ZEDBSD_BOOT_EXTRA_LINES := nvrtx.gsp=1 nvrtx.stop=<段>`。firmware の license は `yes | make firmware-licenses`（T1 の image の作り方の規則、AGENTS.md の「試験の image の作り方」）。
 - 段ごとに image を作り直さず、boot の語は image の boot の config の最後の行なので、T1 は段の語だけを変えた image を作る（`BUILD` を段ごとに分ける）。
 
 ### 3.4 何を見るか（判定）
@@ -119,7 +119,7 @@ qemu-system-x86_64 -machine q35,accel=kvm -cpu host -smp 4 -m 8G \
 | 単位 | commit | 中身 |
 | --- | --- | --- |
 | 4a | `59cd3b4b9` | `nvrtx-gsp.h`・`wire.c`・`image.c`・`layout.c`・`radix3.c`・`queue.c`（hardware に触れない部品） |
-| R0 の config | `0ea563474` | `plan/ws037/tests/config-amd64-nvrtx.mk`（`NVRTX_RUN=R0〜R4`） |
+| R0 の config | `0ea563474` | `plan/tools/nvrtx/config-amd64-nvrtx.mk`（`NVRTX_RUN=R0〜R4`） |
 | 4b | `6229ea0b1` | attach が bind して worker を起こす（suspend は EBUSY）。`file.c`（root の mount を待ち、GSP の image は section の表だけ読んで `.fwimage` を 1 MiB の DMA の chunk へ直に）、`memory.c`、`rom.c`（PRAMIN、だめなら PROM。窓の切り替えだけ書いてすぐ戻す）、`vbios.c`（image の連鎖・BIT・falcon の表・FWSEC v2・command 欄）、`gsp.c`（P0） |
 | 4c | `0a8e41fbd` | `falcon.c`（reset・PIO・boot）、`boot.c`（FWSEC を GSP の falcon で `acr/bl.bin` 経由、booter を SEC2 で、region の解除）。P0 に device info の表から SEC2 の reset bit。P1a（devinit の完了待ち）、P1b（WPR2 が既にあれば書かずに止まる、bus master、FWSEC-FRTS、0x1438 と WPR2 で判定） |
 | 4d | `09d88f135` | `records.c`（system info 928 byte・registry 3 項目・unload・sequencer の解読）、`rpc.c`（送信と doorbell、sequence での照合、sequencer の実行）。P2a（system info と registry を積む → GSP の falcon を RISC-V の mode へ → libos の番地 → booter_load → app の版 → RISC-V の確認）、P2b（init done を 10 s 待つ） |

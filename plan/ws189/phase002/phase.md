@@ -41,7 +41,7 @@ compositor（`userland/desktop/wayland/`）:
 - `userland/tests/data-probe/main.c`: drag の受け（enter ですぐ receive して `when=early`、copy で受け、drop で `when=drop`、finish）。
 - `plan/ws189/tests/host-dnd-state.c`・`run-host-dnd-state.sh`（印の表の全部の組）。
 - AAT（draft）: `tests/scenarios/desktop/dnd/`（same-program-windows・refused-mark・dock-spring・early-receive・across-displays、text-between-windows は p003）。
-  試験の image: `plan/ws189/tests/config-amd64-aat-dnd.mk`（AAT の image に data-probe）。
+  試験の image: `plan/tools/aat/config-amd64-aat-dnd.mk`（AAT の image に data-probe）。
 
 ### 確認（2026-10-08、P1）
 

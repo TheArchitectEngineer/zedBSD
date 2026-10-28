@@ -54,8 +54,8 @@ WS099 の基準 C6（窓 10 個で pointer の移動から表示まで中央値 
 `c6.py OUTDIR...` は run ごとの中央値・p90 と、全 run の試料をまとめた中央値・p90・run の中央値の幅と標準偏差、C6 の判定
 （まとめた中央値 ≤ 50 ms、5 run 未満は判定としない）を出す。
 
-Tools 節への登録（main に依頼）: `plan/ws075/tests/hdmi/measure-apps.sh`（1 run の計測、C6 の試料を含む）と
-`plan/ws075/tests/hdmi/c6.py`（5 run 以上をまとめた C6 の判定）。
+Tools 節への登録（main に依頼）: `plan/tools/i915-hw/hdmi/measure-apps.sh`（1 run の計測、C6 の試料を含む）と
+`plan/tools/i915-hw/hdmi/c6.py`（5 run 以上をまとめた C6 の判定）。
 
 ## 2. select の flag の再利用
 
@@ -119,9 +119,9 @@ summarize の列は h4-ctl の nearest-rank の値）。
 | 確認 | 結果 |
 | --- | --- |
 | `sh plan/ws031/tests/run-vk-host-tests.sh`（全 10 個） | PASS |
-| `sh plan/ws075/tests/guard/run.sh`、`run-vk-gentool-test.sh`（BRW_TOOLS=Mesa 25.0） | PASS |
+| `sh plan/tools/i915-hw/guard/run.sh`、`run-vk-gentool-test.sh`（BRW_TOOLS=Mesa 25.0） | PASS |
 | `plan/tools/style-check.py`（compile.c、前との差分） | 新しい指摘 0 |
-| `plan/ws075/tests/test-hw.sh`（sel の code、`I915_HOST=solaris10-man`） | vkx 9/9・vke1 6/6・vke2 17/17・vkc 9/9 PASS（`build/ws075-p024/hw-*/run.log`） |
+| `plan/tools/i915-hw/test-hw.sh`（sel の code、`I915_HOST=solaris10-man`） | vkx 9/9・vke1 6/6・vke2 17/17・vkc 9/9 PASS（`build/ws075-p024/hw-*/run.log`） |
 | QEMU の boot test | 未実施（compiler の 1 file の変更で、demo の image の boot は実機の passthrough の 8 run で通っている。QEMU の GPU の無い boot は compiler を使わない） |
 
 ## 未実施・残り

@@ -25,7 +25,7 @@ Origin: [backlog-p2](../backlog-p2.md) の 9（WS175 ws175-p008）、[案](../ph
 ## 確認（host・build、2026-10-08）
 
 - `sh plan/ws177/tests/host-text-edit.sh` → PASS（plain と ASan/UBSan、22 の check）: 語の移動、Shift の選択、undo 2 回・redo（Ctrl+Shift+Z・Ctrl+Y）、redo の無い時、undo の後の打鍵で redo が消える、Ctrl+A・C、Ctrl+X、Ctrl+V、paste と cut をそれぞれ 1 段で戻す（cut の戻しで選択も戻る）、`kl_field_set` の後の Ctrl+Z は何もしない、secret の field の Ctrl+C・X、text area の改行を含む undo、2000 byte の paste と 1 段の戻し、text area の語。
-- 回帰: `plan/ws090/tests/host-input.sh`（96/96）、`plan/ws090/tests/host-widgets.sh`（94/94）、`plan/ws177/tests/host-field-limit.sh`（PASS）、`plan/tools/textedit/host-core.sh`（58/58）。
+- 回帰: `plan/tools/input/host-input.sh`（96/96）、`plan/ws090/tests/host-widgets.sh`（94/94）、`plan/ws177/tests/host-field-limit.sh`（PASS）、`plan/tools/textedit/host-core.sh`（58/58）。
 - build（warning 0）: zedBSD `make -j16 BUILD=build/p1-k ZEDBSD_CONFIG=plan/ws089/tests/config-amd64-settings.mk build/p1-k/dynamic/libkeiland.so build/p1-k/bin/notes build/p1-k/bin/settings build/p1-k/bin/files build/p1-k/bin/textedit`、Linux `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p1-linux all`。style-check: ui.c・text-area.c・field.c は前と同じ件数（既存の物だけ）。`check-scenarios.py` PASS。
 
 ## 未実施

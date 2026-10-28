@@ -10,7 +10,7 @@ if [ ! -e "$out/client-headers/vulkan" ]; then
     ln -s "$task_root/include/libc/vulkan" "$out/client-headers/vulkan"
 fi
 cc -std=c99 -D_POSIX_C_SOURCE=200809L -include time.h -Wall -Wextra -Werror \
-    -ffunction-sections -fdata-sections -Iplan/ws141/tests/host -I"$out/client-headers" -Iinclude -Isrc -I. \
+    -ffunction-sections -fdata-sections -Iplan/tools/v3d-qpu/host -I"$out/client-headers" -Iinclude -Isrc -I. \
     plan/ws141/tests/vulkan-stream-host-test.c src/drivers/gpu/bcm2711/vk/vulkan-stream.c \
     src/drivers/gpu/i915/vk/vk-codec.c userland/desktop/libvulkan/wire.c \
     -Wl,--gc-sections -o "$out/vulkan-stream-host-test"

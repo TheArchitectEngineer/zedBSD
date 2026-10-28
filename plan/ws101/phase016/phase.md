@@ -87,7 +87,7 @@ GPU の call ごと（最初の call の後の 5 回の中央値。入力と出�
 
 | 確認 | 命令 | 結果 |
 | --- | --- | --- |
-| build | `make -j16 ZEDBSD_CONFIG=plan/ws101/tests/hw/g3/config.mk BUILD=build/amd64 build/amd64/dynamic/libEGL.so build/amd64/dynamic/libGLESv2.so` | rc 0、warning 0（Noct・toolchain は build していない） |
+| build | `make -j16 ZEDBSD_CONFIG=plan/tools/gpu-compute/hw/g3/config.mk BUILD=build/amd64 build/amd64/dynamic/libEGL.so build/amd64/dynamic/libGLESv2.so` | rc 0、warning 0（Noct・toolchain は build していない） |
 | style | `plan/tools/style-check.py`（変えた 7 file）、`git diff --check` | 0 件 |
 | 計測 | `BIN=build/amd64 NOCT=build/ws101-p011-hw/rootfs/bin/noct plan/ws101/tests/time-split.sh build/ws101-p016/qemu` | 上の表（`build/ws101-p016/qemu/split.txt`）。CPU と GPU の checksum が同じ、check wrong=0 |
 | 回帰: trace なし | `KEI_GLES_COMPUTE_TRACE` なしで GPU の run | check wrong=0、時間の行は出ない |

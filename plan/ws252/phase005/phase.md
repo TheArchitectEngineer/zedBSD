@@ -15,8 +15,8 @@ Queue: q1599-i01（P4）
 ## 確かめた事（2026-10-26）
 
 - `sh plan/ws252/tests/render-host/run.sh`（新しい試験、ws229 の state-test を版 11 に広げた写し）: Gen12 と Gen9 の state・batch の 35 file が 684a5243f と byte で一致、ICL の 12 batch（738 命令）と 14 構造体が Mesa の gen110.xml で decode でき（field の外の bit 無し）、Gen12 との field の差は列挙した理由の物だけ → PASS。
-- `sh plan/ws252/tests/eu-gen11/run.sh`（新しい試験、Mesa 25.0.7 の brw_disasm/brw_asm `--gen=icl` を `plan/ws101/tests/host/mesa-tools.sh` で build）: encoder、vkdemo・mview・tests/render の vertex・fragment・geometry、ws229 の render target の module、compute の全部が disasm で誤り無く再 assemble で同じ bytes、拒むべき module は拒まれる、意図の 9 項目（barrier mask 0x7f000000・WAIT・SLM の fence・reply の MOV・URB bit 無し・sampler header を r0 から写さない・target 3 の header・dual の mlen/ex_mlen）→ PASS。
-- 既存の回帰: `plan/ws229/tests/eu-gen9-host.sh` PASS、`plan/ws031/tests/run-vk-gentool-test.sh`（Gen12）PASS。build 3 組 warning 0。
+- `sh plan/ws252/tests/eu-gen11/run.sh`（新しい試験、Mesa 25.0.7 の brw_disasm/brw_asm `--gen=icl` を `plan/tools/gpu-compute/host/mesa-tools.sh` で build）: encoder、vkdemo・mview・tests/render の vertex・fragment・geometry、ws229 の render target の module、compute の全部が disasm で誤り無く再 assemble で同じ bytes、拒むべき module は拒まれる、意図の 9 項目（barrier mask 0x7f000000・WAIT・SLM の fence・reply の MOV・URB bit 無し・sampler header を r0 から写さない・target 3 の header・dual の mlen/ex_mlen）→ PASS。
+- 既存の回帰: `plan/tools/i915-gen9/eu-gen9-host.sh` PASS、`plan/ws031/tests/run-vk-gentool-test.sh`（Gen12）PASS。build 3 組 warning 0。
 
 ## 制限・未確認
 

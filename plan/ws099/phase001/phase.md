@@ -47,7 +47,7 @@ App Home と Wiseview の開閉の log には時刻が無かったので、次�
 | C3 | PASS | p138: Notes の swipe → Esc で作業の領域の中央（x=128 y=98）、title bar の drag で動き、2 回目の swipe → Esc で戻り先へ |
 | C4 | PASS | p137: 閉じた窓（kill・close button）の次の窓が enter と key を受け、別の desktop の窓は受けない |
 | C5 | **FAIL（QEMU）** | 窓 10 個、Wiseview と App Home の開閉 12 回の全て: 要求から最初の frame まで **102〜215 ms**（基準 100 ms。ほぼ全てが 101〜105 ms、App Home の最初の開きだけ 213〜215 ms）、開ききるまで 243〜390 ms、frame の間隔の最大 129〜215 ms（開閉の途中の frame は 2〜3 枚）。止まりはしない（全ての開閉が開ききり・閉じきった）。**QEMU の Venus の frame の間隔（約 130〜140 ms）が主**で、基準の 100 ms は実機の数（WS075）。実機は未計測 |
-| C6 | 未実施 | 実機（5330）の計測（`plan/ws075/tests/hdmi/measure-apps.sh`、WS075）。QEMU では測らない |
+| C6 | 未実施 | 実機（5330）の計測（`plan/tools/i915-hw/hdmi/measure-apps.sh`、WS075）。QEMU では測らない |
 | C7 | PASS（範囲は一部） | 6 枚 × 2（時計・窓の題）の 12 点が全て 4.5 以上。最小 **5.48**（Aurora の system bar の時計、ガラスの輝度 0.345）、次に 6.24（Twilight の時計）。窓の title は 9.07 以上。**client が描くガラスの上の文字（Settings の頁の説明、Files の文字）は測っていない**（旧 ws035-p135 の懸念はこちら） |
 | C8 | PASS | p134: Terminal の本体 4/4 直角・title bar 丸い、dock・戻しも同じ、他の窓は両方丸い |
 | C9 | PASS | p052・p053・p072・p076・p126・p128・p134・p137・p138 の 9 本が全て PASS（新しい guest で 1 本ずつ） |

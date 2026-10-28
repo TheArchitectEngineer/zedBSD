@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-27 P3 の精査 q1608。p001・p002・p004〜p006 cleared（2026-10-07 T1-315: libmedia、`<video>`、JS の HTMLMediaElement、音と controls）。H.264 の hardware decode の土台は WS083（Vulkan Video）、native の再生は WS202 で main に統合）
+<!-- retained-after-completion --> Phase phase001・phase004 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
 Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Objectives: O2

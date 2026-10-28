@@ -27,10 +27,10 @@ WS101 の genxml の decoder。
 | `src/drivers/gpu/i915/intel/genxml.h` | GPGPU の packet の header・長さ・field の位置（Mesa 25.0.7 の gen120/gen110/gen80/gen60.xml と genX_pipeline.c・genX_cmd_compute.c、sha256 を記載） |
 | `platform/amd64/vmunix.mk` | `render/compute.c` |
 | `plan/ws031/tests/i915-vk-render-stubs.inc` | 末尾に `drv_i915_gfx_dispatch()` の stub（呼び出しの数と最後の group を記録して 0）。main の許可（2026-09-30）による追加だけ |
-| `plan/ws101/tests/host/executor-test.c` | dispatch が stub に group を渡すこと、command buffer の実行が 0 で dispatch を 2 回目に 4×2×1 で呼ぶこと（ENOTSUP の期待を置き換え） |
-| `plan/ws101/tests/host/compute-batch-test.c`（新） | compute.c を別名で TU に含め、add.spv・ids.spv の pipeline を wire で作り、手で作った set で slot を書いて word ごとに確かめ、batch と IDD を file に書く |
-| `plan/ws101/tests/host/genxml-check.py`（新） | Mesa 25.0.7 の `intel_genxml.py` で gen120.xml を import の連鎖ごと読み、batch の全 dword を render engine の命令として decode（未知の header・field の外の bit は FAIL）、命令・field を Mesa の名前で照合（`exact` は列挙しない field が 0）、末尾の命令の順、GPGPU への切り替えの前後と 3D に戻る前の PIPE_CONTROL、IDD（`INTERFACE_DESCRIPTOR_DATA`） |
-| `plan/ws101/tests/host/run.sh` | 6. として batch の試験と genxml の照合（`GENXML` で genxml の dir を変えられる） |
+| `plan/tools/gpu-compute/host/executor-test.c` | dispatch が stub に group を渡すこと、command buffer の実行が 0 で dispatch を 2 回目に 4×2×1 で呼ぶこと（ENOTSUP の期待を置き換え） |
+| `plan/tools/gpu-compute/host/compute-batch-test.c`（新） | compute.c を別名で TU に含め、add.spv・ids.spv の pipeline を wire で作り、手で作った set で slot を書いて word ごとに確かめ、batch と IDD を file に書く |
+| `plan/tools/gpu-compute/host/genxml-check.py`（新） | Mesa 25.0.7 の `intel_genxml.py` で gen120.xml を import の連鎖ごと読み、batch の全 dword を render engine の命令として decode（未知の header・field の外の bit は FAIL）、命令・field を Mesa の名前で照合（`exact` は列挙しない field が 0）、末尾の命令の順、GPGPU への切り替えの前後と 3D に戻る前の PIPE_CONTROL、IDD（`INTERFACE_DESCRIPTOR_DATA`） |
+| `plan/tools/gpu-compute/host/run.sh` | 6. として batch の試験と genxml の照合（`GENXML` で genxml の dir を変えられる） |
 
 ws031 の `run-vk-host-tests.sh` の実行器の一覧に compute.c は足していない（stub の `drv_i915_gfx_dispatch()` と重複するため。stub だけで link が通る）。
 
@@ -38,7 +38,7 @@ ws031 の `run-vk-host-tests.sh` の実行器の一覧に compute.c は足して
 
 | コマンド | 結果 |
 | --- | --- |
-| `plan/ws101/tests/host/run.sh` | PASS。p002（compile・disasm/asm・lower）、p003（実行器。dispatch は stub に 4×2×1 で渡り、group 0 は呼ばない）、p004: add の slot（IDD の word 2・5・6・7、group の数、push constant n、3 つの storage の address と range 1024、8 thread の ID）、`VK_WHOLE_SIZE` と端を越える range が buffer の端で切れる、ids の slot（system の storage buffer が slot の group の数を指し 12 bytes）。genxml: add・ids とも 26 命令 127 dword を decode、add の 13 項目・ids の 4 項目が一致（VFE の max threads 671/447・URB・CURBE の割り当て・scratch（ids: per-thread 2 = 4 KiB、base 0x20000）、CURBE の load の長さと 0x1000、IDD の load の 32 と 0、walker の thread 数・group の x/y/z（ids は 3×2×5）・right/bottom mask、MEDIA_STATE_FLUSH、末尾の 10 命令の順、3 つの PIPE_CONTROL の flag、IDD の preemption 無効・per-thread 4・thread 数・cross-thread の長さ、その他の field 0） |
+| `plan/tools/gpu-compute/host/run.sh` | PASS。p002（compile・disasm/asm・lower）、p003（実行器。dispatch は stub に 4×2×1 で渡り、group 0 は呼ばない）、p004: add の slot（IDD の word 2・5・6・7、group の数、push constant n、3 つの storage の address と range 1024、8 thread の ID）、`VK_WHOLE_SIZE` と端を越える range が buffer の端で切れる、ids の slot（system の storage buffer が slot の group の数を指し 12 bytes）。genxml: add・ids とも 26 命令 127 dword を decode、add の 13 項目・ids の 4 項目が一致（VFE の max threads 671/447・URB・CURBE の割り当て・scratch（ids: per-thread 2 = 4 KiB、base 0x20000）、CURBE の load の長さと 0x1000、IDD の load の 32 と 0、walker の thread 数・group の x/y/z（ids は 3×2×5）・right/bottom mask、MEDIA_STATE_FLUSH、末尾の 10 命令の順、3 つの PIPE_CONTROL の flag、IDD の preemption 無効・per-thread 4・thread 数・cross-thread の長さ、その他の field 0） |
 | 変異の試験（compute.c を一時的に変えて `compute-batch-test`＋`genxml-check.py`） | walker の y と z の入れ替え → genxml が FAIL、VFE の URB entries の位置の誤り → field の外の bit で FAIL、walker の後の MEDIA_STATE_FLUSH の削除 → 順で FAIL、IDD の cross-thread の位置の誤り → C の検査で FAIL、scratch の pointer の shift の誤り → FAIL、walker に余分な dword → 未知の dword で FAIL。元に戻して（`cmp` で同一を確認）PASS |
 | `sh plan/ws031/tests/run-vk-host-tests.sh <each>` | spirv・lower・resdispatch・eu・compile・pipe PASS。cmd（link の失敗）・res・sync・cmdbuf は FAIL だが、HEAD（p004 の前）の `git archive` の tree でも同じ assertion の行で落ちる既存の不足（WS075 の p024 が直す）。cmdbuf は `test_blend_state` で止まるので、その後の段（draw の push data を含むかもしれない）は両方とも走っていない |
 | `make ZEDBSD_CONFIG=/home/awe/zedBSD-rpi4/config.mk BUILD=build/ws101-p002 -j16 vmunix` | PASS（warning 0、amd64 vmunix check PASS、`drv_i915_gfx_dispatch`・`_build` が vmunix に在る） |

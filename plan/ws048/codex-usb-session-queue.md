@@ -8,7 +8,7 @@ Finite bounds: inspect/fix confirmed platform/build glue omissions, warning0 tar
 | Attempt | Phase | Status | Dependency |
 | --- | --- | --- | --- |
 | rpi4-usb-session-20261011-i01 | [ws048-p009](phase009/phase.md) | uncleared（USB実機待ち、source/build済み） | main fbcb2b543 and user physical observation |
-| rpi4-usb-session-20261011-i02 | [ws193-p009](../ws193/phase009/phase.md) | cleared（限定source/option/image受入） | existing bootargs/sessiond APIs and current RPi4 packaging |
+| rpi4-usb-session-20261011-i02 | ws193-p009（fb1f6afee の `plan/ws193/phase009/phase.md`） | cleared（限定source/option/image受入） | existing bootargs/sessiond APIs and current RPi4 packaging |
 
 Graph: main/context → both items; items independent. No automatic next Queue. Physical verification is user-owned. Shared Master/Queue/history/GitHub reconciliation pending Q1.
 

@@ -17,5 +17,5 @@ BROWSER_HOST_BUILD="$base" sh plan/ws074/tests/host-build.sh "$variant"
 ${CC:-cc} $flags -Iuserland/desktop/include -o "$base/$variant/host-browser-o" plan/ws177/tests/host-browser-o.c \
 	-L"$base/$variant" -Wl,-rpath,'$ORIGIN' -l:libbrowser.so -lvulkan -ldl
 F=userland/desktop/fonts
-timeout 60 "$base/$variant/host-browser-o" plan/ws177/tests/pages/ime-form.html $F/Mahora-Regular.ttf \
+timeout 60 "$base/$variant/host-browser-o" plan/tools/pdf/pages/ime-form.html $F/Mahora-Regular.ttf \
 	$F/JetBrainsMono-Regular.ttf $F/DroidSansFallbackFull.ttf

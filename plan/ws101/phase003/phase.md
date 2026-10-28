@@ -23,13 +23,13 @@ bind point の分離（pipeline と descriptor set）、vkCmdDispatch（opcode 1
 | `src/drivers/gpu/i915/render/objects.c` | opcode 66 の routing |
 | `src/drivers/gpu/i915/render/command.c` | vkCmdBindDescriptorSets の bind point を記録、vkCmdDispatch の記録、実行の bind point の分離（`i915_execute_bind_pipeline`・`i915_execute_bind_set`）、`i915_execute_dispatch`（compute の pipeline が無い・group の数の上限の超過は EINVAL、group 0 は何もしない、それ以外は XXX で ENOTSUP。batch は p004） |
 | `src/drivers/gpu/i915/render/instance.c` | `maxComputeWorkGroupCount` を `I915_GFX_MAX_GROUP_COUNT` から |
-| `plan/ws101/tests/host/executor-test.c`（新）・`run.sh` | wire を通した試験（ws031 の stub を読み取りで再利用、command.c を試験の TU に含める） |
+| `plan/tools/gpu-compute/host/executor-test.c`（新）・`run.sh` | wire を通した試験（ws031 の stub を読み取りで再利用、command.c を試験の TU に含める） |
 
 ## 確認
 
 | コマンド | 結果 |
 | --- | --- |
-| `TMPDIR=… plan/ws101/tests/host/run.sh` | PASS（p002 の compiler の試験と p003 の実行器の試験）。add.comp の compute pipeline が bind point COMPUTE・8 thread・right mask 0xff で公開、vertex の module・specialization・未知の module は作成の失敗で何も公開しない、session を閉じると何も残らない。(4,2,3) の group の表（3 thread の全 channel の x・y・z・index）。compute の module を graphics の両 stage に使うと作成の失敗、vkdemo の pipeline は作れて bind point GRAPHICS。記録: compute の pipeline・compute の bind point の set・4×2×1 の dispatch の op。bind point の分離（互いに上書きしない）。dispatch: pipeline 無しと 65536 group は EINVAL、group 0 は 0、他は ENOTSUP、command buffer の実行は dispatch で ENOTSUP で止まる |
+| `TMPDIR=… plan/tools/gpu-compute/host/run.sh` | PASS（p002 の compiler の試験と p003 の実行器の試験）。add.comp の compute pipeline が bind point COMPUTE・8 thread・right mask 0xff で公開、vertex の module・specialization・未知の module は作成の失敗で何も公開しない、session を閉じると何も残らない。(4,2,3) の group の表（3 thread の全 channel の x・y・z・index）。compute の module を graphics の両 stage に使うと作成の失敗、vkdemo の pipeline は作れて bind point GRAPHICS。記録: compute の pipeline・compute の bind point の set・4×2×1 の dispatch の op。bind point の分離（互いに上書きしない）。dispatch: pipeline 無しと 65536 group は EINVAL、group 0 は 0、他は ENOTSUP、command buffer の実行は dispatch で ENOTSUP で止まる |
 | 変異の試験（stage の検査を一時的に外す） | 試験が「compute の module の graphics pipeline が作れてしまう」で FAIL（検査が効いている）。元に戻して PASS |
 | `sh plan/ws031/tests/run-vk-host-tests.sh <each>` | resdispatch・pipe PASS。cmd（link の失敗）・res・sync・cmdbuf は FAIL だが main の checkout の同じ試験と同じ所で落ちる既存の不足（WS075 の p024 が直す）。cmdbuf は早い段で止まるので、その後の段は両方とも走っていない |
 | `make ZEDBSD_CONFIG=/home/awe/zedBSD-rpi4/config.mk BUILD=build/ws101-p002 -j16 vmunix` | PASS（warning 0、vmunix check） |

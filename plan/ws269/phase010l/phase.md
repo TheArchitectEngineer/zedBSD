@@ -26,12 +26,12 @@
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| executor の frame（切り替え 0） | `sh plan/ws269/tests/p009/run.sh build/p010l/p009-0 0` | 175 passed、0 failed |
-| executor の frame（切り替え 1） | `sh plan/ws269/tests/p009/run.sh build/p010l/p009-1 1` | 175 passed、0 failed |
-| p010 の host 試験 | `sh plan/ws269/tests/p010/run.sh build/p010l/p010` | 全部 0 failed |
-| p006（SLC の flag） | `sh plan/ws269/tests/p006/run.sh build/p010l/p006` | PASS 95、FAIL 0 |
+| executor の frame（切り替え 0） | `sh plan/tools/powervr/p009/run.sh build/p010l/p009-0 0` | 175 passed、0 failed |
+| executor の frame（切り替え 1） | `sh plan/tools/powervr/p009/run.sh build/p010l/p009-1 1` | 175 passed、0 failed |
+| p010 の host 試験 | `sh plan/tools/powervr/p010/run.sh build/p010l/p010` | 全部 0 failed |
+| p006（SLC の flag） | `sh plan/tools/powervr/p006/run.sh build/p010l/p006` | PASS 95、FAIL 0 |
 | VF2 の kernel | `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p010l/vf2 vmunix -j16` | rc 0、warning 0 |
-| VF2 の selftest の image | `make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-visionfive2-selftest.mk BUILD=build/p010l/img disk-image -j16` | rc 0、vkimage・powervr・libvulkan の warning 0 |
+| VF2 の selftest の image | `make ZEDBSD_CONFIG=plan/tools/powervr/p010/config-visionfive2-selftest.mk BUILD=build/p010l/img disk-image -j16` | rc 0、vkimage・powervr・libvulkan の warning 0 |
 
 - 試験の中身（p009 の frame）:
   - external の image が作れる。export と import が作れる。import は blob 自身の buffer を map する。

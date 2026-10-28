@@ -28,7 +28,7 @@ Queue: q937（[P1 の lane](../../agents/P1/queue.md)）
 | --- | --- |
 | `make BUILD=build/ws157-q937 ZEDBSD_CONFIG=config/current-uat.mk … bin/phone bin/photos dynamic/libkeiland.so bin/wayland` | rc 0、warning 0 |
 | `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws157-q937-linux all` | rc 0、warning 0 |
-| `sh plan/ws157/tests/run-host-mediastorage.sh build/ws157-q937-host build/ws157-q937-linux` | 全 PASS（wire: 2 つの list を待たずに出して両方の答え、3 つ目を cancel して何も残らない。receive: 待たない取り込みが待つ形と同じ path） |
+| `sh plan/tools/media/run-host-mediastorage.sh build/ws157-q937-host build/ws157-q937-linux` | 全 PASS（wire: 2 つの list を待たずに出して両方の答え、3 つ目を cancel して何も残らない。receive: 待たない取り込みが待つ形と同じ path） |
 | `sh plan/ws197/tests/picker-model-host-test.sh` | PASS |
 | `python3 userland/desktop/libkeiland/exports.py --check`、`plan/tools/keiland-os-boundary/check.sh` | ok、PASS |
 | `plan/tools/style-check.py`（変えた C） | 新しい指摘 0 |

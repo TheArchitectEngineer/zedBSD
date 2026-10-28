@@ -23,7 +23,7 @@ Keiland 本体（compositor・system bar・greeter・lock の画面）と Keilan
 ## 関係する既存の項目
 
 - [F-068](../future-work.md)（2026-10-02 user「日本語UIはベータ1に入れません。ローカライズの仕組みをあとで実装して、複数の言語…」）→ この WS へ昇格（Future Work の行を promoted に）。
-- [ws089-p015](../ws089/phase015/phase.md)（Settings の日本語の UI）・[ws127-p005](../ws127/phase005/phase.md)（Files の日本語の UI）→ この WS の p004・p005 に吸収（2026-10-05 夜のユーザーの判断 ⑤）。元の Phase は canceled（吸収）で、その記録は Q1 が書く。
+- ws089-p015（fb1f6afee の `plan/ws089/phase015/phase.md`）（Settings の日本語の UI）・[ws127-p005](../ws127/phase005/phase.md)（Files の日本語の UI）→ この WS の p004・p005 に吸収（2026-10-05 夜のユーザーの判断 ⑤）。元の Phase は canceled（吸収）で、その記録は Q1 が書く。
 - [WS154](../ws154/ws.md)（Settings の Languages の頁）→ 言語の選択はここに置く（IME の選択と同じ頁）。
 
 ## 範囲（p001 で設計して確定）

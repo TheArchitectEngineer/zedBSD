@@ -29,7 +29,7 @@ Commands/results/commit/environment/artifacts/skipped checks: 未実施（計画
 
 ## p001契約調査による詳細化（2026-10-02）
 
-[origin p001](../phase001/phase.md)、[契約](../phase001/contracts.md)、[ID/完了比較](../phase001/identity-completion.md)、[fixture](../phase001/fixtures.md)、[WS summary](../ws.md)を入力とする。
+origin p001（fb1f6afee の `plan/ws113/phase001/phase.md`）、契約（fb1f6afee の `plan/ws113/phase001/contracts.md`）、ID/完了比較（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）、fixture（fb1f6afee の `plan/ws113/phase001/fixtures.md`）、[WS summary](../ws.md)を入力とする。
 
 Procedure: public libkeilandだけでmode二択、出力一覧、extended配置drag draft/edge snap/Apply/cancel、mirror配置dragの無効化を実装する。Apply前にhardwareを変更しない。hotplug通知・stale再読込・backend failure・適用成功だが保存失敗を実状態に合わせて表示する。
 
@@ -39,7 +39,7 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 ## 採択済local port ID / native capability入力
 
-[main採択A2とsource](../phase001/identity-completion.md)、[native capability結線](../phase001/native-contract.md)を使う。自Phaseへの影響: Settingsはkind/portから人向けlabelを表示、driver EDIDnameの同handle書換に依存しない。
+main採択A2とsource（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）、native capability結線（fb1f6afee の `plan/ws113/phase001/native-contract.md`）を使う。自Phaseへの影響: Settingsはkind/portから人向けlabelを表示、driver EDIDnameの同handle書換に依存しない。
 後続の実装権限/依存は不変。actual API番号/layout/共有callback差分は選定前にowner/main review、HAL変更なら事前承認。
 
 ## Event
@@ -48,13 +48,13 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 2026-10-02 / ws113-contract-design-20261002-a3-ws113-p006: p001のsource/一次仕様で明らかになった不足に合わせ、上記の自Phase procedureと検証/resumeを詳細化。D02/D03/D08/D09を適用。driver/GPU/Vulkan direct call無しを監査。draftとauthoritative snapshotが競合する場合の利用者操作、接続0/1/2、未対応server、保存失敗を確認。WS089の旧stub履歴を遡及変更しない。 origin/WSリンクは上記。planned/Queue noneを保持。GitHub body/comment/Projectはmainへdelivery依頼pending。
 
-2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p006: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: 非重複/辺連結edge snapを配置draft/Apply検査へ。 [origin](../phase001/phase.md)/[詳細](../phase001/identity-completion.md)/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
+2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p006: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: 非重複/辺連結edge snapを配置draft/Apply検査へ。 origin（fb1f6afee の `plan/ws113/phase001/phase.md`）/詳細（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
 
-2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p006: mainのD-ID A2/旧bootpreferred技術採択messageを受領。Settingsはkind/portから人向けlabelを表示、driver EDIDnameの同handle書換に依存しない。 [origin](../phase001/phase.md)/[sourceと範囲](../phase001/identity-completion.md)/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
+2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p006: mainのD-ID A2/旧bootpreferred技術採択messageを受領。Settingsはkind/portから人向けlabelを表示、driver EDIDnameの同handle書換に依存しない。 origin（fb1f6afee の `plan/ws113/phase001/phase.md`）/sourceと範囲（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
 
 ## 2026-10-05 計画（q702、ベータ2）
 
-入力: [契約の確定](../phase001/contracts-beta2.md) D-MODES・D-BRIGHT、contracts.md §8 の Settings の段。
+入力: 契約の確定（fb1f6afee の `plan/ws113/phase001/contracts-beta2.md`） D-MODES・D-BRIGHT、contracts.md §8 の Settings の段。
 
 範囲（`userland/desktop/settings/`、`page-look.c` の `se_display_draw` を新しい `page-display.c` へ）: libkeiland の `kl_system_displays_*` だけを使う。
 - 頁の上: 出力の配置の図（出力ごとの card に label・解像度、内蔵は panel の印）。拡張の時は card を drag で動かせ、離すと辺に snap（重ならない・辺で連結）。drag は draft だけを変え、Apply で送る。

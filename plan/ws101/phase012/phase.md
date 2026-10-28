@@ -32,7 +32,7 @@ Queue: なし
    （`build/demo-lcdN` は main の答えに置き換える。`rootfs/bin/noct` と `bin/noct` が違う時がある: p017 の追記の注。image に入るのは `rootfs/` の物）
 2. passthrough で事前に通す（lock は script が取る。他の実機の試験と同時にしない）:
    ```
-   plan/ws101/tests/demo/s13-hw.sh build/demo-lcdN/hdd-image.img build/ws101-p012/s13-pt
+   plan/tools/gpu-compute/demo/s13-hw.sh build/demo-lcdN/hdd-image.img build/ws101-p012/s13-pt
    ```
    `build/ws101-p012/s13-pt/shots/*-s13-live.png` を読み、「The results are the same on the CPU and the GPU.」を確かめる。
    （passthrough 用の image は `passthrough` の語付きで build した物。素の機械の image とは VBT が違う: `build-demo-image.sh` の先頭。passthrough の image が無ければこの段は飛ばして「未実施」と書く）

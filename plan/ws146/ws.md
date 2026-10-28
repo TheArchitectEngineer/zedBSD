@@ -29,7 +29,7 @@ SSH で接続できる server を利用者のオンラインストレージと�
 - **server 側**: 初回の接続で server に agent（Python の script など、server に要る物を最小に）を転送し、SSH の上で動かす。agent が file の木と metadata の database を管理し、変更の差分を返す。
 - **client 側**: 同期の daemon。database の差分で双方向に同期し、衝突を扱う。file の本体は必要な時に取得する（placeholder・on-the-fly のアクセス）。手元の cache の管理。
 - **on-the-fly のアクセスの仕組み**: [WS150](../ws150/ws.md)（userland の file system の kernel の枠組み、FUSE に当たる物）の上に作る（2026-10-04 ユーザー、WS150 が先）。
-- **desktop**: Files（WS127）での表示（同期の状態・手元に無い印）、Settings の Sharing の頁での設定（[ws089-p025](../ws089/phase025/phase.md) の「あとでクラウドストレージ」）。Linux・FreeBSD の Keiland の扱い。
+- **desktop**: Files（WS127）での表示（同期の状態・手元に無い印）、Settings の Sharing の頁での設定（ws089-p025（fb1f6afee の `plan/ws089/phase025/phase.md`） の「あとでクラウドストレージ」）。Linux・FreeBSD の Keiland の扱い。
 - 鍵・認証（SSH の鍵、Keiland の秘密の store）、暗号、server の agent の安全性（server の上で走る code）。
 
 ## Phase（案）

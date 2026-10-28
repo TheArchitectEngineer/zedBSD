@@ -7,7 +7,7 @@
 
 /*
  * The kernel services the display sources name but the BUG-268 unplug
- * test does not reach (copied from plan/ws084/tests/native-decide-stubs.c
+ * test does not reach (copied from plan/tools/i915-display/native-decide-stubs.c
  * without the worker's wake, which the test counts itself).
  */
 

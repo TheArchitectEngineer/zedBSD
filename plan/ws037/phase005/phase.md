@@ -58,7 +58,7 @@ Queue: Q1 の割当（2026-10-14「次は p005 … を 4a〜4e と同じ形で�
 
 ## 4. run（方式 B、p004 の R0〜R4 に続く）
 
-`plan/ws037/tests/config-amd64-nvrtx.mk` に足す。boot の語は全部 `nvrtx.gsp=1` と次の stop。
+`plan/tools/nvrtx/config-amd64-nvrtx.mk` に足す。boot の語は全部 `nvrtx.gsp=1` と次の stop。
 
 | run | 語 | 合格の印 |
 | --- | --- | --- |
@@ -158,7 +158,7 @@ T2（[results-20261014-nvrtx-r3-retest3](../../agents/T2/results-20261014-nvrtx-
 
 ### T2 への手順（R5〜R7、main の `b8803ff5e` 以降）
 
-image は `plan/ws037/tests/config-amd64-nvrtx.mk` の `NVRTX_RUN=R5`・`R6`・`R7`（host の ~/nvrtx/v4R6・v4R7 は前の版なので作り直す）。各 run の前に host の reboot と `prepare.sh --check`。判定は今までどおり画面の PNG（`dmesg | grep nvrtx`）。
+image は `plan/tools/nvrtx/config-amd64-nvrtx.mk` の `NVRTX_RUN=R5`・`R6`・`R7`（host の ~/nvrtx/v4R6・v4R7 は前の版なので作り直す）。各 run の前に host の reboot と `prepare.sh --check`。判定は今までどおり画面の PNG（`dmesg | grep nvrtx`）。
 
 | run | 合格の印 | 後始末 |
 | --- | --- | --- |
@@ -180,7 +180,7 @@ image は `plan/ws037/tests/config-amd64-nvrtx.mk` の `NVRTX_RUN=R5`・`R6`・`
 - `struct nvrtx_engine_state` に `scheduled`・`copy_made`（作った物だけを外す）。
 - P3 の client・device・subdevice は今までどおり残す（R4・R5 はそれで P7 ok）。
 
-検証: `CONFIG_DRIVER_PCI_NVRTX=y` の kernel（`plan/ws037/tests/config-amd64-nvrtx.mk`、`BUILD=build/ws037-y`）rc 0・warning 0・`kernel include check: PASS`・`amd64 vmunix check: PASS`。host 試験 `nvrtx-gsp-host-test.sh` 149 項目 PASS（firmware の cache が無いので実 file の項目は飛ばし）。実機は未実施。
+検証: `CONFIG_DRIVER_PCI_NVRTX=y` の kernel（`plan/tools/nvrtx/config-amd64-nvrtx.mk`、`BUILD=build/ws037-y`）rc 0・warning 0・`kernel include check: PASS`・`amd64 vmunix check: PASS`。host 試験 `nvrtx-gsp-host-test.sh` 149 項目 PASS（firmware の cache が無いので実 file の項目は飛ばし）。実機は未実施。
 
 ### T2 への手順（R6 の再試験と R7）
 

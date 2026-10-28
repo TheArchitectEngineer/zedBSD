@@ -24,7 +24,7 @@ main の WS075 の登録（2026-09-27）。試験は amd64 のみ、phase の最
 
 ## 設計
 
-- `plan/ws075/tests/shader-survey/survey.py`: SPIR-V を `spirv-dis --raw-id` で読み、i915 の parser の規則（下）を写した表で
+- `plan/tools/i915-hw/shader-survey/survey.py`: SPIR-V を `spirv-dis --raw-id` で読み、i915 の parser の規則（下）を写した表で
   拒まれるものを全て数える。規則の正本は i915 の `compiler/spirv.c` で、表の各行に元の関数名を書く。写しの誤りは、各 shader の
   最初の拒否を i915 の compiler そのもの（`plan/ws068/tests/i915-shader-check` を host で）と比べて確かめる（survey の最初の不足が
   i915-shader-check の拒否と同じ opcode であること）。
@@ -39,7 +39,7 @@ main の WS075 の登録（2026-09-27）。試験は amd64 のみ、phase の最
     GLSL.std.450 の一部・`OpImageSampleImplicitLod` だけ）。
   - GLSL.std.450: `i915_spirv_lower_extended` の case の一覧。
   - builtin: `compile.c`・`spirv.c` の受ける BuiltIn の一覧。
-- `plan/ws075/tests/shader-survey/run.sh`: 対象の SPIR-V（client のものは build と同じ flag か checked-in の SPIR-V） を集めて survey.py に渡し、`build/ws075-p001/` に shader ごとの不足と、
+- `plan/tools/i915-hw/shader-survey/run.sh`: 対象の SPIR-V（client のものは build と同じ flag か checked-in の SPIR-V） を集めて survey.py に渡し、`build/ws075-p001/` に shader ごとの不足と、
   不足ごとの shader の数の表を書く。egltest・glxtest の shader は C の source の文字列の定数から取り出し、同じ file の
   vertex・fragment（・geometry）を GLSL の host 試験の `glsl-test link` で組にして link する（組にならないものは外して数える）。
 - 実行器の command: `plan/ws075/tests/vk-calls.py` が client の source（と libGLESv2・libEGL）の `vk*` の呼出しを数え、
@@ -55,7 +55,7 @@ main の WS075 の登録（2026-09-27）。試験は amd64 のみ、phase の最
 
 ### 1. 実機の出発点（i915、capture。QEMU の Venus ではない）
 
-`plan/ws075/tests/capture-hw.sh zdesktop zdesktop build/ws075-p001/hw-zdesktop`（`CAPTURE=zdesktop plan/ws031/tests/vkloop-hw.sh zdesktop`
+`plan/tools/i915-hw/capture-hw.sh zdesktop zdesktop build/ws075-p001/hw-zdesktop`（`CAPTURE=zdesktop plan/ws031/tests/vkloop-hw.sh zdesktop`
 を `flock /tmp/i915-hw.lock` の下で）: **status pass、6 検査全て PASS**（desktop_drawn、dock_changes_view、wiseview_changes_view、
 wiseview_closes、close_ends_viewer、desktop_after_close）。今の main の zdesktop（glass の title bar、backdrop のぼかし
 `ZWL BACKDROP ready width=240 height=135`、Wiseview、docking）と mview・wl_shm の窓が実機の実行器で描けた。executor の拒否・
@@ -66,7 +66,7 @@ wiseview_closes、close_ends_viewer、desktop_after_close）。今の main の z
 走らせた誤り。client は `regenerate.py` で `glslc -O`（関数を inline 化）で作るので、実際の SPIR-V は通る（下の 2 の検査も
 build の flag で作る形に直した）。
 
-### 2. shader（host、`plan/ws075/tests/shader-survey/run.sh`、出力 `build/ws075-p001/shaders/`）
+### 2. shader（host、`plan/tools/i915-hw/shader-survey/run.sh`、出力 `build/ws075-p001/shaders/`）
 
 対象 122 module: client の shader（build と同じ flag か checked-in の SPIR-V）16、GLSL の host 試験の program と libGL の固定機能
 （`build/ws068-glsl-host`）、egltest・glxtest の場面から取り出して zedBSD の GLSL compiler で link した program。

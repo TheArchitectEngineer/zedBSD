@@ -47,7 +47,7 @@ build の warning 0（zedBSD と Linux の keiland-linux.mk）、host の試験�
 | Linux の Keiland（`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws132-keiland-linux all`） | 成功、warning 0 |
 | FreeBSD の Keiland | **未実施**（この host に FreeBSD の build 環境が無い。変更は source の一覧に stub を 1 つ足しただけ） |
 | `sh plan/tools/keiland-os-boundary/check.sh` | PASS |
-| `sh plan/ws132/tests/run-host-events.sh`（ASan・UBSan） | 54 checks passed: poll に seat の後ろで加わる、INPUT・AC・BATTERY の 4 件で各 callback 1 回、POLLIN の無い poll は読まない、power・sleep の button、PRESS でない POWER は無視、蓋の開閉、OVERFLOW で両方、20 件を 1 回の poll で全部読み callback 1 回、端切れと終わりで閉じる |
+| `sh plan/tools/system-events/run-host-events.sh`（ASan・UBSan） | 54 checks passed: poll に seat の後ろで加わる、INPUT・AC・BATTERY の 4 件で各 callback 1 回、POLLIN の無い poll は読まない、power・sleep の button、PRESS でない POWER は無視、蓋の開閉、OVERFLOW で両方、20 件を 1 回の poll で全部読み callback 1 回、端切れと終わりで閉じる |
 | `plan/ws131/tests/host-power.sh`・`host-session.sh`・`host-seat-freebsd.sh`・`host-seat-linux.sh` | 6/6・31/31・13/13・12/12 passed |
 | `plan/ws005/tests/bug149-build.sh` | build 成功 |
 | style-check（新しい file、変えた hunk） | 指摘 0（`power-zedbsd.c:84` の既存の指摘は変えていない行） |

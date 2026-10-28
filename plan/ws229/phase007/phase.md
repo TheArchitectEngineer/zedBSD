@@ -37,9 +37,9 @@ Parent: [ws229](../ws.md)
 
 | コマンド | 結果 |
 | --- | --- |
-| `sh plan/ws229/tests/host/run.sh` | PASS。Gen12 の 17 file が 03dee2287 と byte 同一、882 命令を gen120/gen90 で decode |
-| `sh plan/ws229/tests/eu-gen9-host.sh` | PASS |
-| `sh plan/ws229/tests/eu-test-gen9-host.sh` | PASS（Gen12 の batch が SHA-256 0978611… で不変、Gen9 の 64 命令・14 期待） |
+| `sh plan/tools/i915-gen9/host/run.sh` | PASS。Gen12 の 17 file が 03dee2287 と byte 同一、882 命令を gen120/gen90 で decode |
+| `sh plan/tools/i915-gen9/eu-gen9-host.sh` | PASS |
+| `sh plan/tools/i915-gen9/eu-test-gen9-host.sh` | PASS（Gen12 の batch が SHA-256 0978611… で不変、Gen9 の 64 命令・14 期待） |
 | `sh plan/ws229/tests/gen12-golden/run.sh` | PASS。543 行が d1e743394 と同一、Gen9 の smoke は 202 write・24 step |
 | `sh src/drivers/gpu/i915/tests/contracts/run.sh` | PASS。11 contract、39 check（reset）0 failure、ASan/UBSan |
 | `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/p007/k64 vmunix` | rc 0、warning 0、vmunix check PASS |

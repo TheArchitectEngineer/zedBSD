@@ -27,7 +27,7 @@ ws.md の「デザイン案」の要素（このままでなく要素として�
 
 ## 確かめ
 
-- host: `sh plan/ws155/tests/run-host-calendar.sh` → PASS 7（start・select（FLIP 10-05→10-14）・drop（DROP Work 10-22）・next（11-22）・hide（Work を隠す）・motion・reduced）。今日は 2026-10-05 に固定。
+- host: `sh plan/tools/calendar/run-host-calendar.sh` → PASS 7（start・select（FLIP 10-05→10-14）・drop（DROP Work 10-22）・next（11-22）・hide（Work を隠す）・motion・reduced）。今日は 2026-10-05 に固定。
 - PNG（`build/ws155/`）: `host-calendar-start.png`、呼吸の `breath-0..3`（1.75 s 毎）、頁めくりの `flip-0..5`（110 ms 毎）、`drag`（drag の途中）、沈む `sink-0..2`、`november`、`hidden`、`reduced`、`glass`（壁紙をぼかした近似の地）。日めくりの部分の animation は `host-calendar-desk.gif`。
 - build: `make ZEDBSD_CONFIG=plan/ws155/tests/config-amd64-calendar.mk BUILD=build/ws155-zed build/ws155-zed/bin/calendar` が warning 0。`sinf` などは zedBSD の libc.so にあることを確かめた。host の gcc `-Werror`・clang `-Wshadow` も 0。
 - style-check: 新しい file は違反 0。

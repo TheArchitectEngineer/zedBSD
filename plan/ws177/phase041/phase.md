@@ -56,7 +56,7 @@ Origin: [backlog-p2](../backlog-p2.md) 18・19・22・25 行（WS128 ws128-p004�
 
 ## 確認
 
-- host: `plan/ws177/tests/host-pdf-find-l.sh` の find の群（python で作る PDF: 行をまたぐ語・ハイフンの語・空白の多い行・全角と半角・
+- host: `plan/tools/pdf/host-pdf-find-l.sh` の find の群（python で作る PDF: 行をまたぐ語・ハイフンの語・空白の多い行・全角と半角・
   濁点の結合と半角カナ・ギリシャとキリルの大文字・合字の glyph（ToUnicode で U+FB01）・ToUnicode の無い font）。各 query の
   一致の頁・範囲・数、tick で数え終える、知らせの文。既存の `plan/ws128/tests/run-host-pdfviewer-find.sh`。
 - build warning 0、style-check。QEMU（T1）は p043 の後にまとめて。
@@ -75,7 +75,7 @@ Origin: [backlog-p2](../backlog-p2.md) 18・19・22・25 行（WS128 ws128-p004�
 
 | コマンド | 結果 |
 | --- | --- |
-| `sh plan/ws177/tests/host-pdf-find-l.sh`（libpdf と PDF Viewer の核、C89 -pedantic、plain と ASan+UBSan） | 両方 `52 passed, 0 failed`、`host-pdf-find-l: PASS` |
+| `sh plan/tools/pdf/host-pdf-find-l.sh`（libpdf と PDF Viewer の核、C89 -pedantic、plain と ASan+UBSan） | 両方 `52 passed, 0 failed`、`host-pdf-find-l: PASS` |
 | `sh plan/ws128/tests/run-host-page-text.sh`・`run-host-pdfviewer-find.sh`（既存の回帰） | PASS・PASS |
 | `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/p1-uat build/p1-uat/bin/pdfviewer build/p1-uat/bin/wayland build/p1-uat/dynamic/libpdf.so` | rc 0、warning 0 |
 | `python3 plan/tools/style-check.py`（変えた file） | 指摘 0（titlebar-shell.c 1830・1838 と menu.c 139 の既存の指摘は変えていない行） |

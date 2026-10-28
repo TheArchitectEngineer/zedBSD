@@ -143,7 +143,7 @@ make -j64 ZEDBSD_CONFIG=plan/ws102/tests/config-amd64-inset.mk BUILD=build/<W>-i
 ### 5.2 host 試験（GPU・QEMU 不要、各 10〜15 秒）
 
 ```
-sh plan/ws094/tests/host-desktop.sh; echo "exit=$?"
+sh plan/tools/files-desktop/host-desktop.sh; echo "exit=$?"
 sh plan/ws094/tests/host-thumb.sh build/<W>/host-thumb; echo "exit=$?"
 sh plan/tools/files/host-model.sh; echo "exit=$?"
 ```
@@ -159,11 +159,11 @@ host の準備（host の起動ごとに 1 回）: `sudo modprobe vgem && sudo c
 export GUEST_RUNTIME=$PWD/build/<W>-run
 sh plan/ws035/tests/zdesktop-guest.sh start build/<W>-inset/hdd-image.img
 sh plan/ws035/tests/zdesktop-guest.sh wait --timeout 240
-BIN=build/<W>-inset sh plan/ws094/tests/files-desktop-guest.sh build/<W>/l1 install show watch input saved
-BIN=build/<W>-inset sh plan/ws094/tests/files-desktop-guest.sh build/<W>/menu install show menu
-BIN=build/<W>-inset sh plan/ws094/tests/files-desktop-guest.sh build/<W>/drag install show drag
-BIN=build/<W>-inset sh plan/ws094/tests/files-desktop-guest.sh build/<W>/touch install show touch
-BIN=build/<W>-inset sh plan/ws094/tests/files-desktop-guest.sh build/<W>/perf install perf100
+BIN=build/<W>-inset sh plan/tools/files-desktop/files-desktop-guest.sh build/<W>/l1 install show watch input saved
+BIN=build/<W>-inset sh plan/tools/files-desktop/files-desktop-guest.sh build/<W>/menu install show menu
+BIN=build/<W>-inset sh plan/tools/files-desktop/files-desktop-guest.sh build/<W>/drag install show drag
+BIN=build/<W>-inset sh plan/tools/files-desktop/files-desktop-guest.sh build/<W>/touch install show touch
+BIN=build/<W>-inset sh plan/tools/files-desktop/files-desktop-guest.sh build/<W>/perf install perf100
 sh plan/ws035/tests/zdesktop-guest.sh stop
 unset GUEST_RUNTIME
 ```

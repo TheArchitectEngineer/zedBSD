@@ -27,7 +27,7 @@ WS256 の source に入る依頼（design §9 の R1・R2・R4 の text の部�
 ### 確かめ（2026-10-20）
 
 - build（warning 0）: `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/ws277-p003-vf2 vmunix` → 0、warning 0。`config-riscv64-virt.mk BUILD=build/ws277-p003-rv`・`config-amd64.mk BUILD=build/ws277-p003-amd64` → 0、warning 0。
-- host: `plan/ws256/tests/vf2-soc/run.sh build/ws277-p003-host` → `PASS: 0 failure(s)`（VOUT の 19 項目・PMU の 6 項目を追加。既存の「表の外の clock」の項目は 58 が表に入ったので 57 に変更）。`plan/ws256/tests/serial/run.sh build/ws277-p003-serial` → all PASS（`drv_serial_console_ops()` の 2 項目を追加）。`plan/ws277/tests/p002/run.sh` → 16 passes 0 failures。新しい `plan/ws277/tests/p003/run.sh build/ws277-p003-fatal` → 10 passes 0 failures（probe は書かない、fatal の印、12 の書き込みの順と値、空いた lock は 1 回、塞がった lock は 4096 回試して書く）。
+- host: `plan/ws256/tests/vf2-soc/run.sh build/ws277-p003-host` → `PASS: 0 failure(s)`（VOUT の 19 項目・PMU の 6 項目を追加。既存の「表の外の clock」の項目は 58 が表に入ったので 57 に変更）。`plan/tools/vf2-host/serial/run.sh build/ws277-p003-serial` → all PASS（`drv_serial_console_ops()` の 2 項目を追加）。`plan/ws277/tests/p002/run.sh` → 16 passes 0 failures。新しい `plan/ws277/tests/p003/run.sh build/ws277-p003-fatal` → 10 passes 0 failures（probe は書かない、fatal の印、12 の書き込みの順と値、空いた lock は 1 回、塞がった lock は 4096 回試して書く）。
 - 未実施: 「この CPU が lock を持つ時は trylock しない」の host 試験（lock の owner が dc8200.c の static で偽れない）。実機（U5 は p003 の本体の後）。QEMU は起動していない。
 - T1 への依頼: 不要と判断。serial-console は追加だけで riscv-virt の経路（`drv_serial_console_init()`）は不変。VF2 の起動の確かめは実機（WS256 #10・#15 の方法が決まった後）。
 

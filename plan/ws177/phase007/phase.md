@@ -19,11 +19,11 @@ Origin: [backlog-p2](../backlog-p2.md) の 26・27・28・30・31（WS164 ws164-
 | 30 小さい窓・長い文 | 段の header（題と要約）を自前で描き、要約を `kl_text_break` で最大 4 行に折り返す（Welcome の段の挨拶の 2 行目も）。bar は Back・Next の幅を測り、点の列が重なるなら点を描かない。失敗の言葉は点の代わりに 2 行まで |
 | 31 keyboard | `se_welcome_key`（page の key の後、ui の key の前）: Enter で Next（Done では Start）、Esc で閉じる（印を付けない、`WELCOME closed step=N`）、Alt+Left・Alt+Right で Back・Next。page の field が key を取る時（Wi-Fi の鍵）はそちらが先 |
 
-- 試験（WS164・WS089 は未完了）: `plan/ws164/tests/run-host-welcome.sh` に key（Enter・Alt+Left・Alt+Right・Esc で印無し）、560x620 の窓、Network の段の `nonet`・`joinfail` を足し、`plan/ws089/tests/host-network.c` に scenario `nonet`・`joinfail` を足した。QEMU: `plan/ws177/tests/welcome-p007.sh`（Files の起動の失敗）。
+- 試験（WS164・WS089 は未完了）: `plan/tools/keiland/run-host-welcome.sh` に key（Enter・Alt+Left・Alt+Right・Esc で印無し）、560x620 の窓、Network の段の `nonet`・`joinfail` を足し、`plan/ws089/tests/host-network.c` に scenario `nonet`・`joinfail` を足した。QEMU: `plan/ws177/tests/welcome-p007.sh`（Files の起動の失敗）。
 
 ## 確認（host・build、2026-10-08）
 
-- `sh plan/ws164/tests/run-host-welcome.sh` → PASS（11 + 7 の ok）。絵（host の renderer）: 560x620 の Network（点は入る）、420x800 の Done（要約が 3 行に折り返し、点は消える）、`nonet`・`joinfail` の段の文。
+- `sh plan/tools/keiland/run-host-welcome.sh` → PASS（11 + 7 の ok）。絵（host の renderer）: 560x620 の Network（点は入る）、420x800 の Done（要約が 3 行に折り返し、点は消える）、`nonet`・`joinfail` の段の文。
 - build（warning 0）: `make BUILD=build/p1-d ZEDBSD_CONFIG=plan/ws169/tests/config-amd64-mailer.mk build/p1-d/bin/settings`。style-check: welcome.c・main.c 0、ui.c 5 → 5（既存）。
 
 ## 未実施

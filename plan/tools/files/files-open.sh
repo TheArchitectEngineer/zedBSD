@@ -113,7 +113,7 @@ opened() {
 
 # The programs under test, the folder, the compositor and files.
 python3 plan/tools/imageview/make-images.py build/ws093-images >/dev/null
-python3 plan/ws081/tests/make-touch-pdf.py build/ws093-images/doc.pdf >/dev/null
+python3 plan/tools/touch/make-touch-pdf.py build/ws093-images/doc.pdf >/dev/null
 printf 'Meeting notes\n\n- Kei demo on Friday\n- Open pictures and text from Files\n' > build/ws093-images/notes.txt
 printf '<!doctype html>\n<html><head><title>Kei page</title></head><body><h1>Hello from Files</h1><p>This page was opened by a double click.</p></body></html>\n' > build/ws093-images/page.html
 guest "$stop_all" >/dev/null

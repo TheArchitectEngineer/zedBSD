@@ -39,7 +39,7 @@ p008（済み）。WS101 と libegl・libglesv2 を共有する（[WS101 guide](
 5. host の回帰:
    ```
    sh plan/ws068/tests/glsl-host/run.sh build/ws068-p009/glsl-host
-   sh plan/ws101/tests/gles/run.sh build/ws068-p009/ws101-gles
+   sh plan/tools/gpu-compute/gles/run.sh build/ws068-p009/ws101-gles
    ```
 6. Venus（image を作り、[guide.md](../guide.md) 5.3 の形で全 egl・glx の試験）:
    ```
@@ -51,8 +51,8 @@ p008（済み）。WS101 と libegl・libglesv2 を共有する（[WS101 guide](
    その上で guide.md 5.3 の for の行（egl-p008〜glx-p033）と x11-p004・x11-p005。効果の計測: 同じ guest で
    `time /bin/egltest --platform=display --frames=300 --delay-ms=0 --token=t`（p009 の前の library と後の library を `plan/tools/guest/guest.py put` で入れ替えて比べる）。
    `sh plan/ws035/tests/zdesktop-guest.sh stop`。
-7. WS101 の回帰（compute の pbuffer の道）: WS101 の guide 5.3 の `plan/ws101/tests/gles/build-image.sh` と `venus.sh`（`ws101 venus: PASS`）。
-8. 実機（passthrough）: `BUILD=build/ws068-p009-gles plan/ws101/tests/hw/gles-hw.sh build/ws068-p009/gles-hw`（`gles-hw: PASS`）。p038 が出来ていれば `es-hw.sh` も。
+7. WS101 の回帰（compute の pbuffer の道）: WS101 の guide 5.3 の `plan/tools/gpu-compute/gles/build-image.sh` と `venus.sh`（`ws101 venus: PASS`）。
+8. 実機（passthrough）: `BUILD=build/ws068-p009-gles plan/tools/gpu-compute/hw/gles-hw.sh build/ws068-p009/gles-hw`（`gles-hw: PASS`）。p038 が出来ていれば `es-hw.sh` も。
 9. boot test: `OUTPUT=build/ws068-p009/boot plan/tools/boot-test.sh build/ws068-p009-glsl/hdd-image.img`。PNG をユーザーに見せる。
 
 ## 設計（2026-10-05 P1 generation17 の第 1 版。code を読んだ結果）
@@ -97,7 +97,7 @@ p008（済み）。WS101 と libegl・libglesv2 を共有する（[WS101 guide](
 
 - libGLESv2 の「番号が進めば全部終わった」の前提を使う所を全部直す必要がある（grep の結果: `state->frame` との比較が 4 か所、`gles_collect`、`frame++` が 3 か所、`glFinish`）。
   見落とすと GPU が読んでいる buffer を書き換える（描画の乱れ）。回帰の egl-p008〜p030 と ws101 の venus.sh で確かめる。
-- WS101 と libegl・libglesv2 を共有するので、WS101 の host 試験（`plan/ws101/tests/gles/run.sh`）も build の後に流す。
+- WS101 と libegl・libglesv2 を共有するので、WS101 の host 試験（`plan/tools/gpu-compute/gles/run.sh`）も build の後に流す。
 - 運用の変更（2026-10-03）により、Venus・実機の試験は実装の担当が流さず T1 に依頼する（上の手順 6〜9 は T1 への依頼の中身として使う）。
 
 ## 完了の条件
@@ -129,7 +129,7 @@ p008（済み）。WS101 と libegl・libglesv2 を共有する（[WS101 guide](
 | `python3 plan/tools/style-check.py userland/desktop/libegl/*.c userland/desktop/libegl/zegl.h userland/desktop/libglesv2/*.c userland/desktop/libglesv2/gles.h` | 指摘 0 |
 | `git diff --check` | 問題なし |
 | `sh plan/ws068/tests/glsl-host/run.sh build/ws068-p009/glsl-host` | `glsl-host: PASS` |
-| `sh plan/ws101/tests/gles/run.sh build/ws068-p009/ws101-gles` | `ws101 gles host test PASS` |
+| `sh plan/tools/gpu-compute/gles/run.sh build/ws068-p009/ws101-gles` | `ws101 gles host test PASS` |
 | 比べるための前の library | `build/ws068-p009-base/dynamic/libEGL.so`・`libGLESv2.so`（commit 7dd0e207 の 1 つ前の source） |
 | Venus（T1-180、main d4808731） | egl-p008〜p030・glx-p013・p031・p033 の 16 本が全部 exit 0、x11-p004 PASS、boot test PASS。x11-p005 は `ZGEARS START … version="1.4 zedBSD` の期待が古い（今の名乗りは `1.4 Kei (fixed function on OpenGL ES 2.0 on Vulkan)`）だけで FAIL。期待を直した（`plan/tools/x11/x11-p005.sh` 54 行）、再試験待ち |
 | WS101 の venus.sh | 未実施（T1-180 の (5)、後で） |

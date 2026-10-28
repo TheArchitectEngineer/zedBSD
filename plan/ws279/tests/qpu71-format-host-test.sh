@@ -8,7 +8,7 @@ out=${1:-build/ws279-qpu71-host}
 mesa=plan/ws141/temp/mesa/src
 mkdir -p "$out/mesa-host/util"
 # Minimal standard helper declarations replace build-system-only Mesa util dependencies (the same shims as
-# plan/ws141/tests/qpu-format-host-test.sh).  The encoder, decoder, enums and device description stay unmodified.
+# plan/tools/v3d-qpu/qpu-format-host-test.sh).  The encoder, decoder, enums and device description stay unmodified.
 cat > "$out/mesa-host/util/macros.h" <<'HEADER'
 #ifndef WS279_MESA_HOST_MACROS_H
 #define WS279_MESA_HOST_MACROS_H

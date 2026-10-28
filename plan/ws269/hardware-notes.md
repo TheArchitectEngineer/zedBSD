@@ -101,7 +101,7 @@ WS269 の ws.md（2026-10-21 時点）の「知見と制約」の節を、WS の
 
 - compiler は群の間に間隔を入れない（Mesa と同じ）。
 - 以前「hazard」に見えた現象（半分の lane の値が壊れる）の原因は、PDS の不備（local id の DOUTW が無い）だった。
-- Mesa の pco の命令列は `plan/ws269/tests/p008/mesa-pco-fill-bxe-4-32.txt` にある（q1481）。
+- Mesa の pco の命令列は `plan/tools/powervr/p008/mesa-pco-fill-bxe-4-32.txt` にある（q1481）。
 
 ### 6. memory と cache
 

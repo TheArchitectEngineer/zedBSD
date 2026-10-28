@@ -20,7 +20,7 @@
 - checkpoint は `torch.save` の zip 形式（974 entry、`archive/data.pkl` と `archive/data/N`）。key は `start_epoch`・`model`・`optimizer`・`amp`。torch を使わず、許す class を `collections.OrderedDict`・`torch._utils._rebuild_tensor_v2`・`torch.*Storage` だけにした unpickler で `model` を読んだ。conv・BN の tensor の名前と形は §1 の構造と全て一致し、全て FloatStorage（fp32）。BN を畳んだ後の parameter は 904,463（README の 0.91 M と合う）。
 - BN の eps 1e-3 で畳んだ値は ONNX の initializer と最大の相対差 1.22e-7 で一致（1e-5 では 2.05）。ONNX の op は Conv 113・Add 7・MaxPool 3・Resize 2・Sigmoid 110（review の確かめ）。
 - 表（付録 A）と数は [phase001/graph.py](phase001/graph.py) で出した。416 で 0.5226 G MAC。第 2 版の GPU の計画の数（§3.4〜§3.6、§5）は `python3 -I graph.py 416 gpu 8`（と `320 gpu 8`、`416 gpu 8 list`）の出力。
-- Pi 5 の V3D は WS279 p002 の実機の記録で **V3D 7.1.10・12 QPU・1.15 GHz**（[plan/ws279/phase002/phase.md](../ws279/phase002/phase.md)）。§5 はこの値を使う（第 1 版の 800 MHz は誤り）。
+- Pi 5 の V3D は WS279 p002 の実機の記録で **V3D 7.1.10・12 QPU・1.15 GHz**（plan/ws279/phase002/phase.md（fb1f6afee の `plan/ws279/phase002/phase.md`））。§5 はこの値を使う（第 1 版の 800 MHz は誤り）。
 
 未確認: PyTorch で model を実際に動かした出力（host に torch が無い。p002 の T1）。V3D の TMU の実効の帯域と L2T の大きさ、dispatch の 1 回の費用（WS283 p007 の R5）。
 

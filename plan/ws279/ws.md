@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: Pi 5 で Keiland が GPU で動く: 2026-10-22 ユーザー「System Monitor を開いて、中身が出ました。」「マウスを動かして、cursor が十分滑らかです。」、2026-10-23 ユーザー「Notesは問題なかったです。」（stencil）。D1〜D4 は 2026-10-21 ユーザー「Pi5のdecisionは推しでOKです」で決定済み）
+<!-- retained-after-completion --> tests/ の 5 項目 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
 Completed: 2026-10-27（q1608）
 Primary Milestone: MG008
 Related Milestones: MG006

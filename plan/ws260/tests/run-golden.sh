@@ -8,7 +8,7 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e
 cd "$(dirname "$0")/../../.."
-. plan/ws084/tests/display-host-lib.sh
+. plan/tools/i915-display/display-host-lib.sh
 record=0
 if [ "${1:-}" = "--record" ]; then
 	record=1
@@ -19,10 +19,10 @@ G=plan/ws260/tests/golden
 OUT=${1:-build/tmp/ws260-golden}
 fresh_out "$OUT"
 I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c ${I915_HOST_EXTRA_PRODUCTION:-}"
-i915_display_host_build "$OUT/modeset" "$T/host-gen9-modeset-test.c" "$T/gen9-fake-hw.c" plan/ws084/tests/native-decide-stubs.c
-i915_display_host_build "$OUT/outputs" "$T/host-gen9-outputs-test.c" "$T/gen9-fake-hw.c" plan/ws084/tests/native-decide-stubs.c
+i915_display_host_build "$OUT/modeset" "$T/host-gen9-modeset-test.c" "$T/gen9-fake-hw.c" plan/tools/i915-display/native-decide-stubs.c
+i915_display_host_build "$OUT/outputs" "$T/host-gen9-outputs-test.c" "$T/gen9-fake-hw.c" plan/tools/i915-display/native-decide-stubs.c
 i915_display_host_build "$OUT/golden" "$T/host-gen9-golden-test.c" "$T/gen9-fake-hw.c" plan/ws260/tests/golden-stubs.c
-i915_display_host_build "$OUT/table" "$T/host-gen9-mode-table.c" plan/ws084/tests/native-decide-stubs.c
+i915_display_host_build "$OUT/table" "$T/host-gen9-mode-table.c" plan/tools/i915-display/native-decide-stubs.c
 "$OUT/modeset" "$OUT/modeset.txt"
 "$OUT/outputs" "$OUT/outputs.txt"
 "$OUT/golden" "$OUT/backlight.txt"

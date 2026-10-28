@@ -44,7 +44,7 @@ transfer の command の組み立て（copy と clear、src/dst の矩形と PBE
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| host 試験 | `sh plan/ws269/tests/p010/run.sh OUT`（`transfer-host-test.c` を足した） | `transfer-program host test: 15 passed, 0 failed`。同じ run.sh の stage 24・image 55・target 77・kick 50・selftest 0 failed・data 83・render 26 も PASS |
+| host 試験 | `sh plan/tools/powervr/p010/run.sh OUT`（`transfer-host-test.c` を足した） | `transfer-program host test: 15 passed, 0 failed`。同じ run.sh の stage 24・image 55・target 77・kick 50・selftest 0 failed・data 83・render 26 も PASS |
 | M9 の照合（tree に入れない） | `build/p010f/m9.c`（Mesa の `gen_pack_header.py` を `python3 -I` で走らせた `build/p010f/gen/{cr,pbestate,texstate}.h`） | `M9: 77 words/values compared, 183 fields, 0 mismatches`。clear 3 件・copy 3 件（linear 64×64・1920×1080、twiddled の内側の矩形・320×240）の ISP_RENDER・ORIGIN・MTILE_SIZE・BGOBJVALS・ISP_CTL・PIXEL_OUTPUT_CTRL・FRAG_SCREEN・ISP_AA・PDS_BGRND 3・USC_CLEAR_REGISTER・PBE の state word 1 と reg word 1、transfer の sampler の 2 word、float 3 |
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p010f/vf2 vmunix -j16` | rc=0、`warning:` 0 件、transfer-program.o を link |
 

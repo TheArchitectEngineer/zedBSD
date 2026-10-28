@@ -36,14 +36,14 @@ Status: cleared（2026-10-19 Q1 の判定: 板の前の code の Phase。DW MMC 
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| host 試験（driver と glue） | `plan/ws256/tests/dw-mmc/run.sh build/p014-host` | exit 0、PASS 60・FAIL 0（log build/tmp/p014-host.log、`OK: 0 failure(s)` が driver・glue の 2 回） |
+| host 試験（driver と glue） | `plan/tools/vf2-host/dw-mmc/run.sh build/p014-host` | exit 0、PASS 60・FAIL 0（log build/tmp/p014-host.log、`OK: 0 failure(s)` が driver・glue の 2 回） |
 | 既存の vf2-soc の host 試験（回帰） | `plan/ws256/tests/vf2-soc/run.sh build/p014-vf2soc` | exit 0、PASS 94・FAIL 0（vf2 の CRG・pinctrl・syscon・fdt は今回変えていない） |
 | VF2 の vmunix | `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p014-vf2 -j16 vmunix` | exit 0、`warning:`・`error:` 0（build/tmp/p014-vf2-4.log）。dw-mmc.o・vf2-mmc.o・gpt.o・pcat.o を compile |
 | virt の vmunix | `make ZEDBSD_CONFIG=config/ci/config-riscv64-virt.mk BUILD=build/p014-riscv64-virt -j16 vmunix` | exit 0、`warning:`・`error:` 0（build/tmp/p014-virt-2.log） |
 
 - rpi4・amd64 は build していない（共有の file は riscv64 の `vmunix.mk` の vf2 の行だけで、fdt.c・disklabel は変えていない）。
 
-host 試験の中身（`plan/ws256/tests/dw-mmc/`: `dw-mmc-host-test.c` は fake の controller（register を memory に持ち、command register の start bit で command を走らせる）と fake の SD card、`vf2-mmc.dts` は VF2 の形の木（mmc0・disabled の node・mmc1 と板の property））:
+host 試験の中身（`plan/tools/vf2-host/dw-mmc/`: `dw-mmc-host-test.c` は fake の controller（register を memory に持ち、command register の start bit で command を走らせる）と fake の SD card、`vf2-mmc.dts` は VF2 の形の木（mmc0・disabled の node・mmc1 と板の property））:
 - 空の slot は ENODEV で command 0 本。同じ unit の 2 回目は EBUSY。
 - SDHC（32 bit FIFO、VERID 0x290a）: command の順が CMD0・8・ACMD41×2（1 回目は busy）・2・3・9・7・16・ACMD51・ACMD6・CMD6×2。全部の command に start と hold、CMD12・13 以外に wait_prvdata、CMD0 は初期化の clock で応答無し、CMD8 の引数 0x123 と CRC、ACMD41 の 0x40300000 と CRC 無し、CMD2・9 は long、CMD9・7 は RCA、CMD16 は 512、ACMD51 は data の read、ACMD6 は 2、CMD6 は 0x00ffffff → 0x80fffff1。clock の分周は 62（399 kHz）→ 1（24.75 MHz）→ 0（49.5 MHz）。CTYPE は 4 bit、FIFOTH は (2, 15, 16)、DMA は off、PWREN は 1。CID（manufacturer・OEM・product・revision・serial）、CSD 版 2 の容量（C_SIZE 59639 → 61071360 block）、disk の名前・容量・block の大きさ・run の上限。
 - 読み書き: CMD17（block 100）、CMD18 の 8 block（auto stop、BYTCNT 4096）、CMD24 の後に CMD13、CMD25 の 3 block（auto stop）、書いた物の読み戻し、200 block は 128＋72 の 2 run、flush。
@@ -74,4 +74,4 @@ p015 の時に追加で見るとよい事（design §3.3 の実機の試験）: 
 - 実機の確かめ（p015 の時、上の 1〜9）。
 - IDMAC（DMA）: design §3.3 で p014 の後半か Future Work。p023（coherency の確かめ）の結果の後に、HCON の DMA64 で descriptor の 32/64 bit を決め、§2.4 の短い確かめを SD の scratch の partition で流す。今回は未着手（Q1 の依頼の範囲が PIO）。
 - design §3.3 の sample phase の文言の直し（上の「設計との違い」、Q1 へ）。
-- 試験 `plan/ws256/tests/dw-mmc/` を回帰に残すかは Q1 の判断（残すなら Master の Tools・試験の一覧へ）。
+- 試験 `plan/tools/vf2-host/dw-mmc/` を回帰に残すかは Q1 の判断（残すなら Master の Tools・試験の一覧へ）。

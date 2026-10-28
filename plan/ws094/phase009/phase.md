@@ -49,8 +49,8 @@ zdesktop の `ZWL DESKTOP start` から main() まで。調べるための一時
 | `userland/desktop/files/present.c`・`window.h` | `fm_present_instance`（instance だけ先に作る。`fm_present_open` は作られていなければ作る）。frame の record と submit の時間 `submit_ms` |
 | `userland/desktop/files/ui-desktop.c`・`files.h`・`desktop-layout.c` | **変わった cell だけの描き直し**: 各 cell を描いたときの記録（場所・選択・cut・thumbnail）を持ち、同じ listing・大きさで、項目の上に何も無い（band・drag・drop・message・進行・質問・名前の欄が無い）ときは、記録の変わった cell だけを消して cell の clip の中で描き直す。項目が別の cell へ動いたときや、上に何かがあるときは全体を描く。選択された名前の pill を cell の中に収めた（長い名前で左右に 1 px 出ていた） |
 | `userland/desktop/wayland/desktop.c` | `ZWL DESKTOP drawn at_ms`（desktop の program が起動してから最初に zdesktop がその image を描いた時刻）。Files の ready ではなく画面に出た時刻を測る (a') に使う |
-| `plan/ws094/tests/files-desktop-guest.sh` | `perf100` に (a') `drawn_ms` と内訳の行（`perf100-steps.txt`） |
-| `plan/ws094/tests/host-desktop.c` | 部分の描き直しの試験: 選択の変化の後の frame が、描いていない所（隅の印）を残し、同じ状態を全体で描いた絵と 1 画素も違わない（1 つ選ぶ、長い名前を Ctrl で足す、全部外す） |
+| `plan/tools/files-desktop/files-desktop-guest.sh` | `perf100` に (a') `drawn_ms` と内訳の行（`perf100-steps.txt`） |
+| `plan/tools/files-desktop/host-desktop.c` | 部分の描き直しの試験: 選択の変化の後の frame が、描いていない所（隅の印）を残し、同じ状態を全体で描いた絵と 1 画素も違わない（1 つ選ぶ、長い名前を Ctrl で足す、全部外す） |
 
 試して戻したもの: desktop の swapchain を 2 枚にする（import を 1 枚減らす）。surface の minImageCount が 3 で、3 枚のまま変わらなかった。
 
@@ -60,7 +60,7 @@ zdesktop の `ZWL DESKTOP start` から main() まで。調べるための一時
 | --- | --- | --- |
 | build | `make -j16 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/amd64 build/amd64/bin/files build/amd64/bin/wayland build/amd64/dynamic/libkeiland.so` | rc 0、warning 0 |
 | style | `plan/tools/style-check.py`（ui-desktop.c・files.h・main.c・present.c・window.h・desktop-layout.c・wayland/desktop.c・host-desktop.c）、`git diff --check` | 0 件（main.c の既存の 2 件を除く） |
-| host | `plan/ws094/tests/host-desktop.sh`、`plan/tools/files/host-model.sh` | PASS、PASS |
+| host | `plan/tools/files-desktop/host-desktop.sh`、`plan/tools/files/host-model.sh` | PASS、PASS |
 | guest: 計測 | `BIN=build/amd64 files-desktop-guest.sh build/ws094-shots/p009 install perf100`（image は `build/ws081/demo-win-venus.img` の複写） | 下の表 |
 | guest: 回帰 | `… install show watch input saved`、`… install show menu`、`… install show drag` | PASS、PASS、PASS |
 | boot test | `OUTPUT=build/ws094-p009-boot plan/tools/boot-test.sh build/ws094-run/disk.img` | PASS（`build/ws094-p009-boot/login.png`） |

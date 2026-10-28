@@ -29,7 +29,7 @@ Commands/results/commit/environment/artifacts/skipped checks: 未実施（計画
 
 ## p001契約調査による詳細化（2026-10-02）
 
-[origin p001](../phase001/phase.md)、[契約](../phase001/contracts.md)、[ID/完了比較](../phase001/identity-completion.md)、[fixture](../phase001/fixtures.md)、[WS summary](../ws.md)を入力とする。
+origin p001（fb1f6afee の `plan/ws113/phase001/phase.md`）、契約（fb1f6afee の `plan/ws113/phase001/contracts.md`）、ID/完了比較（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）、fixture（fb1f6afee の `plan/ws113/phase001/fixtures.md`）、[WS summary](../ws.md)を入力とする。
 
 Procedure: root output_token/ownership_epochにpopup/subsurface/transient/decoration/shadowを従属させ、owner以外のrender listへ一切追加しない。global pointerのshared-edge越境でgrab offsetを保持してtree全体を1回切替、motion更新の後にbutton処理。大delta/負origin/nonshared edge/小target/未ACK resizeを扱う。disconnectは残るownerへtree退避、0台park。D-ATOMIC採択のphysical transition順を実装し、未採択解釈を勝手に緩和しない。
 
@@ -39,7 +39,7 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 ## 採択済local port ID / native capability入力
 
-[main採択A2とsource](../phase001/identity-completion.md)、[native capability結線](../phase001/native-contract.md)を使う。自Phaseへの影響: 退避先のdeterministic key順はA2の検証済local key、persist不可ならsession tokenの決定的順。reconnect同port新generation、window奪回無し。
+main採択A2とsource（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）、native capability結線（fb1f6afee の `plan/ws113/phase001/native-contract.md`）を使う。自Phaseへの影響: 退避先のdeterministic key順はA2の検証済local key、persist不可ならsession tokenの決定的順。reconnect同port新generation、window奪回無し。
 後続の実装権限/依存は不変。actual API番号/layout/共有callback差分は選定前にowner/main review、HAL変更なら事前承認。
 
 ## Event
@@ -48,9 +48,9 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 2026-10-02 / ws113-contract-design-20261002-a3-ws113-p007: p001のsource/一次仕様で明らかになった不足に合わせ、上記の自Phase procedureと検証/resumeを詳細化。D04–D07/D10を適用。root boundsが境界を跨いでも別outputに一部を描かない。logical ownerと実scanoutを別証拠にする。旧window有りqueued frame/高速往復/切断during drag/grab cancelを確認。p006との新依存は追加しない。 origin/WSリンクは上記。planned/Queue noneを保持。GitHub body/comment/Projectはmainへdelivery依頼pending。
 
-2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p007: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: 退避窓の自動奪回無し、edge連結入力を採用。D-ATOMIC回答前にphysical解釈を採択しない。 [origin](../phase001/phase.md)/[詳細](../phase001/identity-completion.md)/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
+2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p007: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: 退避窓の自動奪回無し、edge連結入力を採用。D-ATOMIC回答前にphysical解釈を採択しない。 origin（fb1f6afee の `plan/ws113/phase001/phase.md`）/詳細（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
 
-2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p007: mainのD-ID A2/旧bootpreferred技術採択messageを受領。退避先のdeterministic key順はA2の検証済local key、persist不可ならsession tokenの決定的順。reconnect同port新generation、window奪回無し。 [origin](../phase001/phase.md)/[sourceと範囲](../phase001/identity-completion.md)/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
+2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p007: mainのD-ID A2/旧bootpreferred技術採択messageを受領。退避先のdeterministic key順はA2の検証済local key、persist不可ならsession tokenの決定的順。reconnect同port新generation、window奪回無し。 origin（fb1f6afee の `plan/ws113/phase001/phase.md`）/sourceと範囲（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
 
 ## 2026-10-08 実装（q855、P1）
 
@@ -82,4 +82,4 @@ PASS（QEMU Venus 2 出力、`displays-p007: PASS`: 新しい窓は anchor、Sup
 
 ## 5330 の実機の UAT（2026-10-08 ユーザー）
 
-「2つめのディスプレイにカーソール移動でき、ウィンドウも移動できました。」→ mouse の跨ぎと窓の移動は実機で OK。リサイズが効かない件と head の dock・状態・App Home の背景は [p015](../phase015/phase.md)。
+「2つめのディスプレイにカーソール移動でき、ウィンドウも移動できました。」→ mouse の跨ぎと窓の移動は実機で OK。リサイズが効かない件と head の dock・状態・App Home の背景は p015（fb1f6afee の `plan/ws113/phase015/phase.md`）。

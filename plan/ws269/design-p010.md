@@ -296,7 +296,7 @@ compiler を通さず、encoder で直に書く物（p009 の `compute-program.c
 
 ### 8.2 userland の試験 program `gpu-selftest`
 
-- 置き場所: `userland/tests/gpu-selftest/`。VF2 の試験の image（`plan/ws269/tests/p010/config-visionfive2-selftest.mk`）に入れる。通常の image には入れない（D-P2）。
+- 置き場所: `userland/tests/gpu-selftest/`。VF2 の試験の image（`plan/tools/powervr/p010/config-visionfive2-selftest.mk`）に入れる。通常の image には入れない（D-P2）。
 - 出力: 1 段 1 行、`gpu-selftest: <段>: ok` / `fail(<理由>)` / `skip(<前の段>)`、最後に `gpu-selftest: N ok, M fail, K skip`。
 - 各段は fork した子で、**子はそれぞれ自分の VkInstance・device を作る**（親は Vulkan を開かない。Minor 8）。上限 10 秒（present は 30 秒）、時間内に終わらなければ kill して `fail(timeout)`。
 - 段（順に）:
@@ -374,7 +374,7 @@ LW は粗い（8 LW ≈ 実時間 2〜3 h）。「T1」は QEMU の他の platfo
 - 各 Phase の phase.md の必須項目:
   - 出典は **使う block の直前の複数行の comment** に `Value(s) referenced:`・`Procedure referenced:`（版と path と名前、M 番号は書かない）。file の先頭には書かない（Guardrail）。source に WS・Phase・plan の参照を書かない（Guardrail の「source の中の開発の管理情報」）。
   - 段の行（§8.1）を、その Phase が作る段の成功・失敗の道に入れる。gpu-selftest の段をその Phase で足す。
-  - 実機の文面は `plan/ws269/tests/p010/` の試験の image で、ユーザーが選べる試験の一覧へ。
+  - 実機の文面は `plan/tools/powervr/p010/` の試験の image で、ユーザーが選べる試験の一覧へ。
 
 ## 11. 危険
 

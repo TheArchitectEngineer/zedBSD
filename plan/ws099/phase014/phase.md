@@ -18,7 +18,7 @@ Queue: q578 / q578-i01 / P9
 ## 手順（2026-10-01 追記）
 
 1. `plan/ws099/tests/c10-hw.sh IMAGE OUTDIR [MINUTES]` を `c5-hw.sh` を元に書く（`c5-hw.sh:15-57` の形をそのまま使う）:
-   - `H4_MINUTES=$((MINUTES + 20)) plan/ws075/tests/hdmi-h4-hw.sh start IMAGE OUTDIR`、`sleep 75`。
+   - `H4_MINUTES=$((MINUTES + 20)) plan/tools/i915-hw/hdmi-h4-hw.sh start IMAGE OUTDIR`、`sleep 75`。
    - App Home の 10 個の app を開く（`c5-hw.sh:27-30` の tiles の loop）。`ctl shot opened`。
    - MINUTES（既定 60）の間、1 周: `ctl hmp "sendkey meta_l-tab"`・2 秒・`ctl hmp "sendkey esc"`・2 秒（Wiseview）、
      `ctl pointer move 22 16 sleep 100 down up sleep 2000`・`ctl hmp "sendkey esc"`・2 秒（App Home）、

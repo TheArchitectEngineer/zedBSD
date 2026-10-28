@@ -22,7 +22,7 @@ Origin: [backlog-p2](../backlog-p2.md) の 71・80・82・83・84（WS169 ws169-
 ## 確認（host・build、2026-10-08）
 
 - `sh plan/ws177/tests/host-mail-n2.sh` → host-mail-n2 PASS 16（CA を渡さない偽の server で IMAP・SMTP の untrusted と 64 桁の指紋、違う pin は untrusted、正しい pin で login・送信、CAPABILITY、Trash の削除で INBOX が 3→2、STARTTLS を断る IMAP と出さない SMTP の `ML_ERROR_NO_TLS`、日付が「Yesterday」になる・同じ日は書き直さない、account の変更で message を捨てる・削除で後ろの account の番号が詰まる、pin の保存と読み戻し、password を忘れる）、host-mail-view PASS 10（600 通の folder で Up・Down が最新と最古に届く、Edit Account の form、Remove の Esc で残る・Enter で index 付きの request、Add Account の form が空、証明書の問いの Esc と Enter、16 個の account の sidebar が窓より高い）。ASan・UBSan。
-- 回帰: `plan/ws169/tests/run-host-mail-backend.sh`（host-mail-backend・host-mail-sync PASS）、`run-host-mailer.sh`（18 PASS）。
+- 回帰: `plan/tools/mail/run-host-mail-backend.sh`（host-mail-backend・host-mail-sync PASS）、`run-host-mailer.sh`（18 PASS）。
 - build（warning 0）: `make -j16 BUILD=build/p1-mailer ZEDBSD_CONFIG=plan/ws169/tests/config-amd64-mailer.mk build/p1-mailer/bin/mailer`。style-check（mailer の全 .c）0。`git diff --check` 0。
 
 ## 未実施・制限

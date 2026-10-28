@@ -59,4 +59,4 @@ Resume point: なし（新しい要求は新しい WS として立てる。こ�
 
 ## 記録の所在
 
-Phase の計画・結果と実機の試験の手順（`plan/ws278/phase001`〜`phase009`、`plan/ws278/tests/rpi5-hw-test.md`）は削除する。git の commit `fb1f6afee` の `plan/ws278/` にある。Queue の履歴は [plan/history](../history/index.md)。
+Phase の計画・結果と実機の試験の手順（`plan/ws278/phase001`〜`phase009`、`plan/ws278/rpi5-hw-test.md`）は削除する。git の commit `fb1f6afee` の `plan/ws278/` にある。Queue の履歴は [plan/history](../history/index.md)。

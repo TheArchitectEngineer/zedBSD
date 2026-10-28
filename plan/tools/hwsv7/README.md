@@ -39,7 +39,7 @@ iGPU が `8086:5917` で vfio-pci に付き group に単独、`/dev/kvm`、OVMF�
 
 ## 3. 5330 との違い（`plan/ws031/tests/hw-machine.sh`）
 
-`vkloop-hw.sh`・`plan/ws075/tests/test-hw.sh`・`plan/ws101/tests/hw/run-hw.sh` は `hw-machine.sh` を読み、`I915_MACHINE`（既定 `5330`）で
+`vkloop-hw.sh`・`plan/tools/i915-hw/test-hw.sh`・`plan/tools/gpu-compute/hw/run-hw.sh` は `hw-machine.sh` を読み、`I915_MACHINE`（既定 `5330`）で
 次を決める。環境に既に値がある変数はそれが勝つ。
 
 | 変数 | 5330 | sv7 | 理由 |
@@ -61,14 +61,14 @@ iGPU が `8086:5917` で vfio-pci に付き group に単独、`/dev/kvm`、OVMF�
 
 ```sh
 # 全部（image は lock の外で先に作り、次に lock の下で 1 つずつ。1 場面 5〜10 分）
-I915_MACHINE=sv7 OUT=build/<WS>-sv7 plan/ws101/tests/hw/run-hw.sh <TAG> ktest eu vkcs vkx vke1 vke2 vkc
+I915_MACHINE=sv7 OUT=build/<WS>-sv7 plan/tools/gpu-compute/hw/run-hw.sh <TAG> ktest eu vkcs vkx vke1 vke2 vkc
 # 1 つだけ
-I915_MACHINE=sv7 OUT=build/<WS>-sv7 plan/ws101/tests/hw/run-hw.sh <TAG> eu
+I915_MACHINE=sv7 OUT=build/<WS>-sv7 plan/tools/gpu-compute/hw/run-hw.sh <TAG> eu
 ```
 
 - `timeout` で括らない（中で build 3000 秒・run 3600 秒の上限が付く）。Bash の background で走らせて待つ。run の間は tree を編集しない。
 - 結果: `OUT/hw-<scenario>-<TAG>/run.log` の verdict の行（`test-hw.sh` が最後に `verdict` の行を出す）。`serial.log` は guest の log の写し。
-- image の build だけ（QEMU を起動しない）: `I915_MACHINE=sv7 BUILD=build/<dir> ZEDBSD_CONFIG=plan/ws075/tests/config-test-hw.mk VKLOOP_BUILD_ONLY=1 plan/ws031/tests/vkloop-hw.sh test <scenario>`。
+- image の build だけ（QEMU を起動しない）: `I915_MACHINE=sv7 BUILD=build/<dir> ZEDBSD_CONFIG=plan/tools/i915-hw/config-test-hw.mk VKLOOP_BUILD_ONLY=1 plan/ws031/tests/vkloop-hw.sh test <scenario>`。
   image の boot の config（`BUILD/zedbsd-native-uefi-…-i915.gen9=on.cfg`）の最後の行が `i915.gen9=on` になる。
 
 ## 5. 止まったとき

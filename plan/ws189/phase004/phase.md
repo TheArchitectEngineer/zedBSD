@@ -19,7 +19,7 @@ Design: [p001](../phase001/phase.md) §4.8。由来: 2026-10-08 ユーザーの�
 - `main.c`: 「Attach…」は `kl_file_chooser`（開く）で file を読み込む（1 つ 25 MiB まで、合計も）。窓は `KL_DROP_URIS | KL_DROP_IMAGE` を受け、作成中で問いの無い時だけ
   copy と答える（ほかは 0）。drop: file 名は `file://` を %XX から戻して各 file を読む、画像は `image.png`（在れば `image 2.png`）。送った時と Cancel で添付を空にする。
   型は拡張子から（png・jpg・jpeg・gif・pdf・txt、ほかは application/octet-stream）。
-- 試験: host `plan/ws189/tests/host-mail-attach.c`（compose.c と mime.c を host で: 添付 2 つの message を書き、Mail 自身の `ml_mime_parse` で本文と添付の名前・大きさを読み戻す、
+- 試験: host `plan/tools/mail/host-mail-attach.c`（compose.c と mime.c を host で: 添付 2 つの message を書き、Mail 自身の `ml_mime_parse` で本文と添付の名前・大きさを読み戻す、
   base64 を自前で読み戻して bytes が一致、日本語の名前の RFC 2231）。AAT `apps.mailer.attach-drop`（偽の server、tests/scenarios/apps/mailer/）。
 
 ## 記録
@@ -32,13 +32,13 @@ Design: [p001](../phase001/phase.md) §4.8。由来: 2026-10-08 ユーザーの�
   chip（名前と KB、外す x、入りきらない分は +N）、drop の間は行を `kl_drop_frame` で光らせる。
 - `mailer/main.c`: Attach... の `kl_file_chooser`、file を読んで添付（25 MiB まで）、窓は `KL_DROP_URIS | KL_DROP_IMAGE` を受け、作成中（form・問いの無い時）だけ copy と答える。
   drop: file 名（`file://`、%XX を戻す）の各 file、画像は `image.png`（重なれば `image 2.png`）。送る時は `ml_compose_with`。log `ATTACH add|remove|asked|chooser`・`DND drop`。
-- 試験: `plan/ws189/tests/host-mail-attach.c`・`run-host-mail-attach.sh`（ASan・UBSan）。他の WS の host 試験の source の一覧に新しい file を足した（機能に追従）:
-  `plan/ws169/tests/run-host-mailer.sh`（libkeiland の drop-look.c）、`plan/ws175/tests/run-host-notes-edit.sh`（picture/png-write.c）。
+- 試験: `plan/tools/mail/host-mail-attach.c`・`run-host-mail-attach.sh`（ASan・UBSan）。他の WS の host 試験の source の一覧に新しい file を足した（機能に追従）:
+  `plan/tools/mail/run-host-mailer.sh`（libkeiland の drop-look.c）、`plan/ws175/tests/run-host-notes-edit.sh`（picture/png-write.c）。
 
 ### 確認（2026-10-08、P1）
 
 - `make ... BUILD=build/ws189 build/ws189/bin/mailer`: rc 0、warning 0。
-- `sh plan/ws189/tests/run-host-mail-attach.sh`: ok（multipart、ASCII と日本語の名前、base64 の bytes の一致、Mail 自身の `ml_mime_parse` で本文と 1 つ目の添付の名前、添付 0 は単一の part、17 個は EINVAL）。
+- `sh plan/tools/mail/run-host-mail-attach.sh`: ok（multipart、ASCII と日本語の名前、base64 の bytes の一致、Mail 自身の `ml_mime_parse` で本文と 1 つ目の添付の名前、添付 0 は単一の part、17 個は EINVAL）。
 - 回帰の host 試験（変えた file を compile する物）: `run-host-mailer.sh` PASS、`run-host-notes-edit.sh` PASS、`run-pdfviewer-host.sh` ok、`run-host-pdfviewer-find.sh` PASS。
 - style-check（変えた file）: 新しい指摘 0。
 - 未実施（2026-10-08 の時点）: AAT `apps.mailer.attach-drop` のシナリオ（未作成）、QEMU（T1）、自己レビュー。

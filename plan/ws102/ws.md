@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-27 P3 の精査 q1608。L1・L2 は達成（flick・QWERTY・手書きの面・作業の領域・編集の面・クリップボードの履歴・色付きの絵文字、main）。L3 の速さ（p010・p011）は 2026-09-30 午後 ユーザー「いったん描画の高速化はラップアップして…」で優先を下げた）
+<!-- retained-after-completion --> Phase phase019とtests/ の 3 項目 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
 Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: MG006

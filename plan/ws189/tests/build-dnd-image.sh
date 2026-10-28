@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws189 (T1-433〜439): builds the AAT image with the drag-and-drop config (plan/ws189/tests/config-amd64-aat-dnd.mk); a copy of plan/tools/aat/build-image.sh with that config.  Before: ws173-p003 builds the AAT image (config-amd64-aat.mk) with plan/tools/guest/test-image.sh.  Root's authorized key
+# ws189 (T1-433〜439): builds the AAT image with the drag-and-drop config (plan/tools/aat/config-amd64-aat-dnd.mk); a copy of plan/tools/aat/build-image.sh with that config.  Before: ws173-p003 builds the AAT image (config-amd64-aat.mk) with plan/tools/guest/test-image.sh.  Root's authorized key
 # and the SSH host keys come from the guest harness (plan/tools/guest/guest.py extra-files, made once under
 # plan/tmp/guest), so aat reaches root with the harness's key; the harness's /etc/net.conf is left out, because it
 # addresses QEMU's USB network adapter and would replace the machine's own network settings.
@@ -25,4 +25,4 @@ for word in $files; do
 	pending=
 done
 # shellcheck disable=SC2086
-exec plan/tools/guest/test-image.sh --no-harness plan/ws189/tests/config-amd64-aat-dnd.mk "$build" $keep "$@"
+exec plan/tools/guest/test-image.sh --no-harness plan/tools/aat/config-amd64-aat-dnd.mk "$build" $keep "$@"

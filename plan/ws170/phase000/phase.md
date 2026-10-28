@@ -33,7 +33,7 @@ Phone の app の外側だけ。連絡先の一覧 → 連絡先ごとの iOS �
 
 ## 確かめ
 
-- host: `sh plan/ws170/tests/run-host-phone.sh` → PASS 10（glass-ben を含む。start・select-kenji・select-ben・send（`NOBACKEND action=send contact=1 length=5`）・call・search・narrow-open・narrow-back・key-down）。PNG は `build/ws170/host-phone-{start,kenji,ben,send,call,search,narrow-list,narrow-timeline,narrow-back}.png`（目で見て確かめた）。
+- host: `sh plan/tools/phone/run-host-phone.sh` → PASS 10（glass-ben を含む。start・select-kenji・select-ben・send（`NOBACKEND action=send contact=1 length=5`）・call・search・narrow-open・narrow-back・key-down）。PNG は `build/ws170/host-phone-{start,kenji,ben,send,call,search,narrow-list,narrow-timeline,narrow-back}.png`（目で見て確かめた）。
 - build: `make ZEDBSD_CONFIG=plan/ws170/tests/config-amd64-phone.mk BUILD=build/ws170-zed build/ws170-zed/bin/phone` が warning 0（`-Os -Wall -Wextra -Werror`）。host の gcc も `-Wall -Wextra -Werror` で 0。
 - style-check: 新しい file は違反 0。
 - QEMU（T1 に依頼する）: App Home から Phone を起動し、一覧とタイムラインの PNG、送信と電話の chip の PNG。

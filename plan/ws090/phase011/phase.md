@@ -40,7 +40,7 @@ Queue: なし（2026-09-30 Q1 の割り当て、p008 の次）
 | --- | --- | --- |
 | build（`-Werror`、libkeiui・terminal・notes・viewers・textedit） | — | exit 0、warning 0 |
 | `plan/ws081/tests/run-termtouch.sh` | —（touch.c は変えていない） | ok（20） |
-| `plan/ws081/tests/run-notestouch.sh` | — | ok（52） |
+| `plan/tools/touch/run-notestouch.sh` | — | ok（52） |
 | `plan/ws079/tests/run-notes-host.sh` | — | ok |
 | WS081 の guest 試験（`p011`・`p013`・`p014`・`p015`、この tree の demo の image、`build/ws090/p11-guest.sh`） | p011・p013・p014 PASS、p015 は SSH の put の失敗で FAIL（環境、再実行していない） | **4/4 PASS**（`build/ws090-shots/p11-new/`） |
 | Terminal の zdesktop の回帰（`build/ws090/zterm-guest.sh`、同じ image） | 未実施 | p079（clipboard）・p093（選択と drag out）・p100（PRIMARY）・p114（scrollback）・p086（tabs）**PASS**。p088 **FAIL**（Files から Files の drag の段と Terminal への drop の段がともに MISSING。この image に p088 の前提の sample home が無い可能性。前の binary では未確認） |

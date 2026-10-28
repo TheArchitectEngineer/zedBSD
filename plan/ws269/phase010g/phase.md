@@ -40,7 +40,7 @@ Venus の command の decode と render の job の列の組み立てまで。jo
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| host 試験 | `sh plan/ws269/tests/p010/run.sh OUT`（`pass-host-test.c` を足した） | `render-pass host test: 15 passed, 0 failed`。同じ run.sh の他（stage 24・image 55・target 77・kick 50・selftest・data 83・render 26・transfer 22・render-load 5）も PASS |
+| host 試験 | `sh plan/tools/powervr/p010/run.sh OUT`（`pass-host-test.c` を足した） | `render-pass host test: 15 passed, 0 failed`。同じ run.sh の他（stage 24・image 55・target 77・kick 50・selftest・data 83・render 26・transfer 22・render-load 5）も PASS |
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p010g/vf2 vmunix -j16` | rc=0、warning 0 |
 
 - 未実施: vk-pass.c の wire の decode と `powervr_vk_render_jobs` の host 試験（kernel の object の層に依るので host では作れなかった。decode の形は i915 と同じ）、QEMU・実機。PBE の word（`powervr_render_pbe_words`）は job の `surface` と `area` からそのまま作れる。

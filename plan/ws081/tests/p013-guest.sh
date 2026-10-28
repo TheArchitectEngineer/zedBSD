@@ -10,7 +10,7 @@
 #  3. The pen writes on the zoomed page (NOTES STROKE); a finger's drag writes nothing.
 #  4. The pen coming near reaches Notes (NOTES HOVER source=1), which the palm rule rests on.  A finger under the
 #     hovering pen cannot be made here: the injector takes one device at a time (a second opener gets EBUSY), so
-#     the palm itself is judged by the host test (plan/ws081/tests/host-notestouch.c) and on the device.
+#     the palm itself is judged by the host test (plan/tools/touch/host-notestouch.c) and on the device.
 #  5. A double tap goes back to the whole page (NOTES TOUCH double-tap zoom=1.000).
 #  6. A tap on the toolbar's New Page button presses it (NOTES PAGE current=1 count=2 new).
 # Each script waits 2.6 s after declaring its device before it touches: the compositor finds a new evdev node by

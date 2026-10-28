@@ -46,5 +46,5 @@ Phase の記録は完了に伴い削除した（git の履歴に残る）。
 
 ## 試験と道具
 
-- make の差分試験は `plan/ws046/tests/make-diff.py`（`cases/parallel.sh` を含む 100 件）。
+- make の差分試験は `plan/tools/make/make-diff.py`（`cases/parallel.sh` を含む 100 件）。
 - p003 で `plan/tools/` に置いた: `guest/hybrid-image.sh`（main の guest image の複写にこの tree の kernel・libc・make・sh を入れる）、`guest/make-cases.sh`（guest で make の差分試験）、`process/vfork-test.c`・`process/guest-vfork.sh`（fork の copy on write、vfork、posix_spawn、同時の fork）。

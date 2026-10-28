@@ -13,7 +13,7 @@ Queue: q713 / q713-i01（2026-10-05 ユーザーのクリックの回答「ベ�
 evdev の multitouch（protocol B）で出し、compositor のタッチパッドの層で tap・tap-drag・押し込み・2 本指のスクロールを作る。
 この Phase は設計だけ。実装は p002〜p004、実機の確認は p005。
 
-## 事実（2026-10-05、5330 の Linux で採った。`plan/ws159/tests/latitude5330-linux/`）
+## 事実（2026-10-05、5330 の Linux で採った。`plan/tools/hid/latitude5330-linux/`）
 
 採取の許可: 2026-10-05 ユーザー「5330を起動しました。操作はすべて許可します。」（Q1 の中継）。
 
@@ -129,4 +129,4 @@ kernel は「指の位置と押し込みを正しく出す」だけを担い、g
 ## 記録
 
 - host の変更（5330 の Linux）: `i2c-dev` の module を load した（残す）。`i2c_hid_acpi` と `i2c_designware.1` を unbind→bind した（元に戻した）。dynamic debug を一時的に on にした（off に戻した）。`/tmp` に試験の script を置いた。
-- 採取の道具: `plan/ws159/tests/i2c-hid-poll-probe.py`、`evdev-absinfo.py`、`touch-record.sh`。
+- 採取の道具: `plan/tools/hid/i2c-hid-poll-probe.py`、`evdev-absinfo.py`、`touch-record.sh`。

@@ -22,4 +22,4 @@ $cc -std=gnu11 -O1 -g -Wall -Wextra -Werror -I "$root/include" $extra \
 	-c "$root/plan/ws159/tests/host-ptp.c" -o "$out/host-ptp.o"
 $cc -Wl,--gc-sections $extra "$out/host-ptp.o" "$out/hid-report.o" \
 	"$out/hid-digitizer.o" "$out/hid-touch.o" -o "$out/host-ptp"
-"$out/host-ptp" "$root/plan/ws159/tests/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin"
+"$out/host-ptp" "$root/plan/tools/hid/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin"

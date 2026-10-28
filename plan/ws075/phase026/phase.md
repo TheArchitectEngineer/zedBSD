@@ -16,7 +16,7 @@ C6（窓 10 個で pointer の移動から表示まで中央値 50 ms 以内、�
 ## 観測の道具（常設）
 
 - worker（`src/drivers/gpu/i915/worker.c`）: context ごとの記録に、同期の batch（executor の submit、呼び手が眠る）の queue の待ち
-  （`queue_ns`）と queue から終わりまで（`round_ns`）を足した。`plan/ws075/tests/hdmi/engine-gdb.sh` が gdb で読み、session ごとに
+  （`queue_ns`）と queue から終わりまで（`round_ns`）を足した。`plan/tools/i915-hw/hdmi/engine-gdb.sh` が gdb で読み、session ごとに
   run あたりの engine・queue・round と、round が時間に占める割合を出す。
 - executor（`render/draw.c`・`draw.h`）: session ごとの frame の時間を 5 秒ごとに kernel log へ（毎秒 10 submit 以上の session だけ）:
   `i915: vk: session N: frames F in T ms: per submit R runs (X full) O ops (most M), in submit U us (runs, record), between B us`。

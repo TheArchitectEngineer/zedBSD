@@ -59,7 +59,7 @@ Parent: [WS181](../ws.md)
 - style-check: 新規の違反 0（arrange-shell.c・home.c・shell.c は前後とも 12 件、既存）。`git diff --check` ok。
 - host の絵 `plan/ws181/tests/p005-host.py`・`p007-host.py` は ws099 の p034 の bar の model（desktops の pill が真ん中）から位置を取るので、7. の新しい位置を描かない（review の絵だけ、合否には使わない）。
 - 1. の確かめのため、光る項目が変わる時に `KWL ARRANGE menu lit item=NAME` を出す。
-- QEMU の試験（T1 が流す）: 新しい `plan/ws181/tests/p009-guest.sh BUILD OUTDIR`（pen の guest、7・1・6・5・4・3 の順、合格は最後の行 `ws181-p009: PASS`、PNG は p009-bar・p009-menu-gap・p009-calendar-arranged・p009-home-first-drag・p009-home-last-drag）。guest に /bin/calendar が無ければ、試験の間だけ wltest の窓を開く script を置く。
+- QEMU の試験（T1 が流す）: 新しい `plan/tools/desktop-guest/p009-guest.sh BUILD OUTDIR`（pen の guest、7・1・6・5・4・3 の順、合格は最後の行 `ws181-p009: PASS`、PNG は p009-bar・p009-menu-gap・p009-calendar-arranged・p009-home-first-drag・p009-home-last-drag）。guest に /bin/calendar が無ければ、試験の間だけ wltest の窓を開く script を置く。
 - 未実施: QEMU（T1）、5320 の UAT。
 
 ## T1-361 の判定（2026-10-07 Q1）
@@ -70,4 +70,4 @@ FAIL（QEMU、pen の guest、main 9588f60bc）: `ws181-p009: FAIL`、14 項目�
 
 - source の不具合ではなく、試験の準備の失敗。T1-361 の証拠: p009 の 2 回（`t1-361-out`・`t1-361-out2` の zdesktop.log）は `KWL GLASS desktops x=591`（古い、真ん中の pill）で `menu lit` も 0、その後に同じ guest・同じ `build/t1-361` で流した ws181-guest.sh（`t1-361-out-ws181/zdesktop.log`、22:04）は `desktops x=917`・`menu lit` 1 で、新しい compositor が動いていた。2 つの script の準備（stop_all → `put … /bin/wayland` → 起動）は同じ文面なので、p009 の時は `/bin/wayland` への複写が効かず（`put` は出力を捨てていた）、image の古い compositor を試験した。
 - 推定（未観測）: guest が起動した直後は image 自身の compositor（sessiond の greeter など）が `/bin/wayland` を動かしており、stop_all の後も再起動されて上書きが拒まれた（数分後の ws181-guest.sh の時には止んでいた）。ps の記録が無いので確定していない。
-- 直し（`plan/ws181/tests/p009-guest.sh`）: 試験の compositor は他の process が動かさない名前 `/bin/wayland-p009` に置いて起動する（stop_all・alive の照合もその名前を含める）。`/bin/wayland-p009`・`/bin/wltest` は複写の後に guest と host の `cksum` を比べ、違えば `setup:` の行と `ws181-p009: FAIL` で止まる。scp の出力は `OUTDIR/put.txt`、stop の前後の `ps -A -o pid,args` は `OUTDIR/ps.txt` に残す（image の compositor が動いていたかの確かめ）。`sh -n` ok。QEMU は T1 の再試験。
+- 直し（`plan/tools/desktop-guest/p009-guest.sh`）: 試験の compositor は他の process が動かさない名前 `/bin/wayland-p009` に置いて起動する（stop_all・alive の照合もその名前を含める）。`/bin/wayland-p009`・`/bin/wltest` は複写の後に guest と host の `cksum` を比べ、違えば `setup:` の行と `ws181-p009: FAIL` で止まる。scp の出力は `OUTDIR/put.txt`、stop の前後の `ps -A -o pid,args` は `OUTDIR/ps.txt` に残す（image の compositor が動いていたかの確かめ）。`sh -n` ok。QEMU は T1 の再試験。

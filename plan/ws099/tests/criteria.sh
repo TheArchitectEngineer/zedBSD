@@ -7,7 +7,7 @@
 #     IMAGE     default build/ws099-criteria.img
 #     OUTDIR    default build/ws099-criteria (results.txt: one line per test; the tests' outputs and pictures)
 #     CRITERIA  default all: C1 C2 C3 C4 C5 C6 C7 C8 C9 C10 (C9 runs the regression list C9_TESTS)
-# C6 is the machine's (plan/ws075/tests/hdmi/measure-apps.sh on the 5330): it is listed as not run here.
+# C6 is the machine's (plan/tools/i915-hw/hdmi/measure-apps.sh on the 5330): it is listed as not run here.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -117,7 +117,7 @@ for criterion in $criteria; do
 		;;
 	C4) run C4 p137 1280x800 sh plan/ws035/tests/zdesktop-p137.sh "$out/c4" ;;
 	C5) run C5 c5-transitions 1280x800 sh plan/ws099/tests/c5-transitions.sh "$out/c5" ;;
-	C6) echo "C6 measure-apps NOT-RUN the machine's measure (plan/ws075/tests/hdmi/measure-apps.sh on the 5330)" | tee -a "$results" ;;
+	C6) echo "C6 measure-apps NOT-RUN the machine's measure (plan/tools/i915-hw/hdmi/measure-apps.sh on the 5330)" | tee -a "$results" ;;
 	C7) run C7 c7-contrast 1280x800 sh plan/ws099/tests/c7-contrast.sh "$out/c7" ;;
 	C8) run C8 p134 1280x800 sh plan/ws035/tests/zdesktop-p134.sh "$out/c8" ;;
 	C9)

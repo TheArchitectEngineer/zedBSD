@@ -5,7 +5,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
     helpers_photos.py --outdir OUTDIR [--only REGEX] -- TARGET-OPTIONS     (--list: the ids)
 
-The photos are the ones plan/ws157/tests/make-photos.py --view makes on this host (PIL): nine pictures over three
+The photos are the ones plan/tools/aat/make-photos.py --view makes on this host (PIL): nine pictures over three
 months of 2026, a JPEG turned by its EXIF, a PNG, a GIF and one damaged JPEG.  They are put in kei's ~/AATPhotos and
 imported with /bin/photos --import (ws157-p004: copied to ~/Pictures/Library/img/YYYY/MM/DD, the database in
 ~/Pictures/Library/db).  The library, the thumbnails' cache and ~/AATPhotos are taken away before and after.  The
@@ -27,7 +27,7 @@ run = aatlib.Run.from_command_line("helpers_photos")
 SOURCE = "/home/kei/AATPhotos"
 LIBRARY = "/home/kei/Pictures/Library"
 CACHE = "/home/kei/.cache/keiland/photos"
-MAKER = pathlib.Path(__file__).resolve().parents[4] / "plan/ws157/tests/make-photos.py"
+MAKER = pathlib.Path(__file__).resolve().parents[4] / "plan/tools/aat/make-photos.py"
 
 
 def sized(window, mark):

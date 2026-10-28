@@ -29,4 +29,4 @@ read-compose と同じ偽の server（`--arrivals 1`: Mail が IDLE に入ると
 1〜4 の正解。
 
 ## 注記
-通知の popup の位置は ws156-p003 の板（画面の幅の 5 分の 1、高さ 76、下の端から 48 の中央）。titlebar の control「Code 7351」を押す経路は T1-302 で確かめた（control の位置は log に無いので撮影を見て押す）。page の focus が欄に無く、one-time-code の欄も無い時は、入れずに clipboard に置き、「Sign-in code copied」の通知を出す（`ZBROWSER MAIL copied length=4 clipboard=1 notified=1`、host の試験 `plan/ws169/tests/run-host-browser-mail.sh`）。助け: `plan/tools/aat/scenarios/helpers_mailer.py`。
+通知の popup の位置は ws156-p003 の板（画面の幅の 5 分の 1、高さ 76、下の端から 48 の中央）。titlebar の control「Code 7351」を押す経路は T1-302 で確かめた（control の位置は log に無いので撮影を見て押す）。page の focus が欄に無く、one-time-code の欄も無い時は、入れずに clipboard に置き、「Sign-in code copied」の通知を出す（`ZBROWSER MAIL copied length=4 clipboard=1 notified=1`、host の試験 `plan/tools/mail/run-host-browser-mail.sh`）。助け: `plan/tools/aat/scenarios/helpers_mailer.py`。

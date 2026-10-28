@@ -179,7 +179,7 @@ D1〜D9 の推奨の評価は §4。足すべき問い（D10〜D12）は §5。
 
 - 根拠: `touch.h:8-33`（double tap で拡大）、§7「書く指の begin〜end が同じ条件なら塗る（double tap の拡大と衝突させない）」。
 - 起こる状況: Finger が on の時の 1 回目の tap で塗り、2 回目の tap で拡大（か二度目の塗り）になる。どう衝突させないかが書かれていない。
-- 直し方: 塗りの道具で Finger が on の間は double tap の拡大を止める、か 1 回目の tap を double tap の時間だけ待ってから塗る、を決めて §7 に書く。`plan/ws081/tests/host-notestouch.c` に試験を足す（WS081 の試験なので Q1 に依頼）。
+- 直し方: 塗りの道具で Finger が on の間は double tap の拡大を止める、か 1 回目の tap を double tap の時間だけ待ってから塗る、を決めて §7 に書く。`plan/tools/touch/host-notestouch.c` に試験を足す（WS081 の試験なので Q1 に依頼）。
 
 ## 4. D1〜D9 の推奨の評価
 

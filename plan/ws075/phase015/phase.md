@@ -15,7 +15,7 @@ Phase disposition: normal
 1. [BUG-085](../../bugs/BUG-085.md) の再試験: BUG-091 の修正（ws075-p014）の入った kernel で、egltest6 と p005 の場面の capture の run を
    各 5 回以上（どちらも wlkill の順序を含む zdesktop の構成）。停止・凍結の数を前後で記録し、再現すれば gdbstub で compositor と
    GPU core の状態を取り原因を探す。
-2. 道具: `plan/ws075/tests/hdmi/h4-ctl.py shot` が表示中の（live の）scanout buffer を選ぶ（BUG-091 の agent の発見: H4 の黒い greeter の
+2. 道具: `plan/tools/i915-hw/hdmi/h4-ctl.py shot` が表示中の（live の）scanout buffer を選ぶ（BUG-091 の agent の発見: H4 の黒い greeter の
    画像は表示していない buffer だった）。
 3. 時間が残れば: H4 の提案 2（login・logout の lease の替わり目で HDMI を暗くしない）。先に今の暗転の時間を測る。
 
@@ -23,10 +23,10 @@ Phase disposition: normal
 
 | 所 | 内容 |
 | --- | --- |
-| `plan/ws075/tests/bug085-hw.sh IMAGE OUTDIR [SCENARIO]` | vkloop-hw.sh の作った zdesktop の capture の image を、lock の下で 5330 の passthrough で 1 回走らせる。QEMU に gdbstub（5330 の 127.0.0.1:1235、接続するまで guest は止まらない）を付け、`bug085/b085-watch.py` が capture の frame の止まり（25 秒）・kernel の fault を印の file にし、通常の終わり（init の power-off）から 8 秒で QEMU を終える。停止・fault が 420 秒を過ぎても続くと QEMU と lock を保ったまま gdb の手順を出し、`OUTDIR/release` で終える。OUTDIR に debugcon の kernel の全 log・serial・harness・capture の画像と result.json・guest の disk の log |
-| `plan/ws075/tests/bug085/b085-qemu.sh`・`b085-watch.py` | 上の 5330 側（run-parity-vk.sh の基準の条件 + QMP + USB + gdbstub、i915-capture.py を並べて走らせる） |
-| `plan/ws075/tests/hdmi/h4-ctl.py`（`shot`） | 表示中の buffer を選ぶ: まず QEMU の monitor の `info pci` から passthrough の iGPU の BAR0 を取り、`xp` で pipe A・B の primary plane の `PLANE_SURFLIVE`（0x701ac・0x711ac）を読んで A・B の surface と照合する。読めなければ kernel の log の今の lease の `picture up`・`flip N` の最後（kernel は lease の最初の 3 flip だけを log するので、3 flip を超えた lease では「古いかもしれない」と注記）。NAME.json に `live`・`live_source`・`surfaces` |
-| `plan/ws075/tests/hdmi/h4-png.py` | NAME.json の `live` の buffer を NAME-live.png にも書く |
+| `plan/tools/i915-hw/bug085-hw.sh IMAGE OUTDIR [SCENARIO]` | vkloop-hw.sh の作った zdesktop の capture の image を、lock の下で 5330 の passthrough で 1 回走らせる。QEMU に gdbstub（5330 の 127.0.0.1:1235、接続するまで guest は止まらない）を付け、`bug085/b085-watch.py` が capture の frame の止まり（25 秒）・kernel の fault を印の file にし、通常の終わり（init の power-off）から 8 秒で QEMU を終える。停止・fault が 420 秒を過ぎても続くと QEMU と lock を保ったまま gdb の手順を出し、`OUTDIR/release` で終える。OUTDIR に debugcon の kernel の全 log・serial・harness・capture の画像と result.json・guest の disk の log |
+| `plan/tools/i915-hw/bug085/b085-qemu.sh`・`b085-watch.py` | 上の 5330 側（run-parity-vk.sh の基準の条件 + QMP + USB + gdbstub、i915-capture.py を並べて走らせる） |
+| `plan/tools/i915-hw/hdmi/h4-ctl.py`（`shot`） | 表示中の buffer を選ぶ: まず QEMU の monitor の `info pci` から passthrough の iGPU の BAR0 を取り、`xp` で pipe A・B の primary plane の `PLANE_SURFLIVE`（0x701ac・0x711ac）を読んで A・B の surface と照合する。読めなければ kernel の log の今の lease の `picture up`・`flip N` の最後（kernel は lease の最初の 3 flip だけを log するので、3 flip を超えた lease では「古いかもしれない」と注記）。NAME.json に `live`・`live_source`・`surfaces` |
+| `plan/tools/i915-hw/hdmi/h4-png.py` | NAME.json の `live` の buffer を NAME-live.png にも書く |
 
 build（worktree、BUG-089 の回避: `build/{NoctLang,distfiles,llvm,llvm-source,sources,ws035-fonts,ws035-wallpaper}` と
 `toolchain/llvm/distfiles` を main への symlink、patch の mtime を main に合わせた。`make -n` で LLVM の configure・install が無いことを
@@ -132,8 +132,8 @@ kernel の log を出すものは compositor までない）。process の状態
 ## 最初の試みの時点の残り（再開で済んだ）
 
 - BUG-085: egltest6 をあと 4 回以上、p005 の 7 場面（`build/b085-e5`）を 5 回以上:
-  `plan/ws075/tests/bug085-hw.sh build/b085-e6/hdd-image.img build/b085-runs/e6-N`、
-  `plan/ws075/tests/bug085-hw.sh build/b085-e5/hdd-image.img build/b085-runs/e5-N`（1 回約 6 分、image は worktree で上の手順で作り直す）。
+  `plan/tools/i915-hw/bug085-hw.sh build/b085-e6/hdd-image.img build/b085-runs/e6-N`、
+  `plan/tools/i915-hw/bug085-hw.sh build/b085-e5/hdd-image.img build/b085-runs/e5-N`（1 回約 6 分、image は worktree で上の手順で作り直す）。
   停止したら script の出す手順で gdb（`thread apply all bt`、compositor の thread、GPU core の session の予約・fence・待ち）。
   判定: `capture/result.json` の scenes_shown、`guest-logs.txt` の zdesktop.log の最後の frame と `WLKILL`、`EGLTEST SCENES DONE`、`stall`・`fault` の印。
 - `h4-ctl.py shot` の live の選択を実機（`hdmi-h4-hw.sh`）で確かめる（register の `xp` が vfio の BAR を読めるか。読めなければ log の選択になる）。

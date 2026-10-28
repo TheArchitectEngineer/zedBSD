@@ -150,7 +150,7 @@ lowering は今のまま 1 演算ずつ出すが、語に encode せず「演算
 ### 正しさの確かめ
 
 - compiler の中の検証器: 並べた語を順に模擬し、各演算の各 source が program の順の最後の書き手の値（版）を見ること、書き込みの着地が program の順であること、上の待ち・peripheral・switch・thrend の規則を確かめる。通らなければ逐次の出力。
-- host: `plan/ws141/tests/qpu-machine.c`（新規、試験用）: Mesa の decoder で語を読み、add と mul を同じ語で同時に（読みは語の始め、書き込みは着地の時）実行し、SFU・r5・flag の着地の時刻、着地前の読み（assert）、thread switch（accumulator・flag を壊す、ldtmu・TLB の時期）、thrend の規則、peripheral の数を模擬する。
+- host: `plan/tools/v3d-qpu/qpu-machine.c`（新規、試験用）: Mesa の decoder で語を読み、add と mul を同じ語で同時に（読みは語の始め、書き込みは着地の時）実行し、SFU・r5・flag の着地の時刻、着地前の読み（assert）、thread switch（accumulator・flag を壊す、ldtmu・TLB の時期）、thrend の規則、peripheral の数を模擬する。
   - `shader-host-test.sh`: 全部の Keiland の shader と variant を、SPIR-V の解釈（sqrt は native と同じ式）と模擬で、ランダムの入力の多数の試行で比べる。app の shader（compile できる物全部）も。命令数の表を出す。
   - `glass-shader-host-test.sh`: glass（light・dark・generic）の SPIR-V の解釈と、compile した native の模擬の結果の一致を、同じ格子（3,856,896 fragment）で。
   - `qpu-format-host-test.sh`: 組んだ語（両 ALU・cond の組み合わせ・port の共有・signal と small immediate）を Mesa の oracle で decode し、意味と repack の一致。
@@ -193,9 +193,9 @@ lowering は今のまま 1 演算ずつ出すが、語に encode せず「演算
 
 ### 確かめ（host、2026-10-12 P3）
 
-- `plan/ws141/tests/shader-host-test.sh`（書き直し）: tree の全 shader（Keiland の quad・panel の generic と 8 variant・batch、app の 13 組、R/B の入れ替えの両方、coordinate・vertex も）を compile し、新規の `plan/ws141/tests/qpu-machine.c`（Mesa の decoder で語を読み、両 ALU を語の始めに読んで着地の時刻に書く、SFU は 2 語後・r5 は 1 語後に着地、着地前の読み・飛行中の書き込みの重なり・switch をまたぐ accumulator と flag・switch の窓の SFU/ldvary/ldtmu・lookup の無い switch・scoreboard 前の TLB・thrend の窓の rf の書き込みと rf0〜2 の読み・peripheral の数・SFU の間隔を失敗にする 1 lane の模擬）で走らせ、SPIR-V の解釈（sqrt は native と同じ x×rsqrt(x)）と tile の half の **bit の一致**。Keiland は決定的な入力 32 試行＋乱数 96 試行、app は乱数 96 試行（ゴミで埋めた register、varying は値をそのまま運ぶ形）。PASS。命令数の表もここで出る。
-- `plan/ws211/tests/glass-shader-host-test.sh`: 3,856,896 fragment の格子で、glass（light・dark・generic）の native の program を模擬し、SPIR-V の解釈と全 channel が bit 一致。PASS（2 分半）。
-- `plan/ws141/tests/qpu-format-host-test.sh`: 組んだ語（port の共有、3 つ目の register・異なる small immediate の拒否、add の mov の OR、add/mul の predicate と push の全組み合わせ、両方の push の拒否、switch と 6 種の signal の合成、small immediate や TILE との合成の拒否、ALU の取り違えの拒否）を Mesa の oracle で decode・repack。PASS。
+- `plan/tools/v3d-qpu/shader-host-test.sh`（書き直し）: tree の全 shader（Keiland の quad・panel の generic と 8 variant・batch、app の 13 組、R/B の入れ替えの両方、coordinate・vertex も）を compile し、新規の `plan/tools/v3d-qpu/qpu-machine.c`（Mesa の decoder で語を読み、両 ALU を語の始めに読んで着地の時刻に書く、SFU は 2 語後・r5 は 1 語後に着地、着地前の読み・飛行中の書き込みの重なり・switch をまたぐ accumulator と flag・switch の窓の SFU/ldvary/ldtmu・lookup の無い switch・scoreboard 前の TLB・thrend の窓の rf の書き込みと rf0〜2 の読み・peripheral の数・SFU の間隔を失敗にする 1 lane の模擬）で走らせ、SPIR-V の解釈（sqrt は native と同じ x×rsqrt(x)）と tile の half の **bit の一致**。Keiland は決定的な入力 32 試行＋乱数 96 試行、app は乱数 96 試行（ゴミで埋めた register、varying は値をそのまま運ぶ形）。PASS。命令数の表もここで出る。
+- `plan/tools/v3d-qpu/glass-shader-host-test.sh`: 3,856,896 fragment の格子で、glass（light・dark・generic）の native の program を模擬し、SPIR-V の解釈と全 channel が bit 一致。PASS（2 分半）。
+- `plan/tools/v3d-qpu/qpu-format-host-test.sh`: 組んだ語（port の共有、3 つ目の register・異なる small immediate の拒否、add の mov の OR、add/mul の predicate と push の全組み合わせ、両方の push の拒否、switch と 6 種の signal の合成、small immediate や TILE との合成の拒否、ALU の取り違えの拒否）を Mesa の oracle で decode・repack。PASS。
 - 故意の誤り（scheduler の内部の検証器を外して）: SFU の待ち・ldtmu の待ち・r5 の待ち・switch をまたぐ演算・WAR・WAW・scoreboard 前の TLB・thrend の窓・SFU の間隔・accumulator の segment・sample の switch の 3 語前の置き・TLB を 1 つ目の switch の 2 語後・accumulator の WAR、を 1 つずつ入れて模擬が全部検出。「SFU を switch の窓に」「switch の前の作業の下限を 1 語緩める」の 2 つは今の shader では起きず未検出（検証器の規則とは別に模擬の規則はある）。内部の検証器も WAR・switch・TLB・SFU の鎖の誤りで逐次へ戻すことを確認（着地の時刻の表は scheduler と共有なので、その誤りは host の模擬だけが見つける）。
 - `vulkan-device-host-test.sh`・`v3d-hardware-host-test.sh` PASS。rpi4 の vmunix（`make -j16 -o …/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix`）warning 0、`build/arm64/vmunix` cksum 1265685035 8163328。
 - `plan/tools/style-check.py`: 変えた kernel の file と試験の file で指摘 0。
@@ -219,7 +219,7 @@ lowering は今のまま 1 演算ずつ出すが、語に encode せず「演算
   - 浮動小数の恒等式: x*1.0、x+(−0.0)、x−(+0.0) を x に。結果を読むのが全部 FADD・FSUB・FMUL の時だけ（それらは x を同じ入力の扱い（denormal の flush・signalling NaN の quiet）で読むので区別できない）。出力・比較・bit の move・texture の座標・特殊関数が読む時は残す。x+0（−0 の扱い）、x*0（NaN）、結合則の並べ替え、FMAX(x,x)（signalling NaN を quiet する）はしない。
   - skip の block と texture の guard: `runs_every_block` の backend（bcm2711: 全 block を走らせ全 channel を sample する）では印と guard を落とす。そうでない backend（i915）では、印か guard のある program は手を付けない（skip されうる block をまたいで値を共有すると、block が計算しなかった値を読むため）。
 - `src/drivers/gpu/bcm2711/shader.c`: parse の後に `optimize_options`（fragment: 全 slot・simplify、coordinate: position、vertex: position＋key の varying、どちらも simplify なし＝ CSE・DCE だけ）で pass を通し、4→2 thread の試み（`compile_stage` に分けた）を書き換えた program で行う。書き換えた program を native の compiler が ENOMEM 以外で拒否したら元の IR で compile し直す（元の結果と diagnostic を保つ）。`binary->optimized`（`shader.h`）で、書き換えた program から lower した物かを示す。
-- 一覧: `platform/arm64/vmunix.mk`（compiler/optimize.c）、`plan/ws210/tests/spike/count.sh`、`plan/ws141/tests/shader-host-test.sh`・`vulkan-sources.sh`、`plan/ws211/tests/glass-shader-host-test.sh`。
+- 一覧: `platform/arm64/vmunix.mk`（compiler/optimize.c）、`plan/ws210/tests/spike/count.sh`、`plan/tools/v3d-qpu/shader-host-test.sh`・`vulkan-sources.sh`、`plan/tools/v3d-qpu/glass-shader-host-test.sh`。
 
 ### i915 では使わない（今は）理由
 
@@ -250,8 +250,8 @@ lowering は今のまま 1 演算ずつ出すが、語に encode せず「演算
 
 ### 確かめ（host、2026-10-12 P3）
 
-- `plan/ws141/tests/shader-host-test.sh`: PASS。tree の全 shader・variant・R/B を、qpu-machine.c の模擬と SPIR-V の解釈（書き換え前の IR）で bit 一致（Keiland は決定的 32＋乱数 96、app は乱数 96）。lookup の数の比較は「書き換え後 ≤ 元」に（generic panel は 8 → 6: 重複と読まれない sample）。全 program が `binary->optimized == 1`（fallback を通っていない）を確かめる。足した `verify_optimizer`: 手で組んだ IR（各規則の当たる例と、当たってはいけない近い例: +0 の和、−0 の差、出力が読む x*1.0、FMIN の両順、FSUB の両順、NaN・±0 の FMIN/FMAX・比較、不正確な I2F、mod 32 の shift ほか）を書き換えの前と後で解釈し、4096 回の乱数（±0・±1・quiet NaN・±inf・denormal・整数の bit を含む）で全出力の bit が一致、残る命令の数で解釈に見えない規則（出力が読む恒等式、vertex で簡約しない、FMIN の順）を確かめる。skip の block と guard: `runs_every_block = 0` は手付かず、1 は印・guard・重複が消える。
-- `plan/ws211/tests/glass-shader-host-test.sh`: PASS（3,856,896 fragment、light 85・dark 98・generic 254 語、全 channel bit 一致）。lookup の比較を「≤」に（WS211 の試験の 1 行）。
+- `plan/tools/v3d-qpu/shader-host-test.sh`: PASS。tree の全 shader・variant・R/B を、qpu-machine.c の模擬と SPIR-V の解釈（書き換え前の IR）で bit 一致（Keiland は決定的 32＋乱数 96、app は乱数 96）。lookup の数の比較は「書き換え後 ≤ 元」に（generic panel は 8 → 6: 重複と読まれない sample）。全 program が `binary->optimized == 1`（fallback を通っていない）を確かめる。足した `verify_optimizer`: 手で組んだ IR（各規則の当たる例と、当たってはいけない近い例: +0 の和、−0 の差、出力が読む x*1.0、FMIN の両順、FSUB の両順、NaN・±0 の FMIN/FMAX・比較、不正確な I2F、mod 32 の shift ほか）を書き換えの前と後で解釈し、4096 回の乱数（±0・±1・quiet NaN・±inf・denormal・整数の bit を含む）で全出力の bit が一致、残る命令の数で解釈に見えない規則（出力が読む恒等式、vertex で簡約しない、FMIN の順）を確かめる。skip の block と guard: `runs_every_block = 0` は手付かず、1 は印・guard・重複が消える。
+- `plan/tools/v3d-qpu/glass-shader-host-test.sh`: PASS（3,856,896 fragment、light 85・dark 98・generic 254 語、全 channel bit 一致）。lookup の比較を「≤」に（WS211 の試験の 1 行）。
 - `plan/ws210/tests/spike/count.sh` PASS、`plan/ws141/tests/vulkan-device-host-test.sh` PASS。
 - 故意の誤り（optimize.c を 1 つずつ変えて shader-host-test を走らせる、28 種）: FSUB・FMUL・FMIN・ISUB を可換に、push の offset・UBO の location を無視、恒等式の定数を 0.5 に、+0 の和・−0 の差を消す、読み手の制限を外す、vertex でも簡約、sample の結果の取り違え、DCE が第 1 source だけを生かす、要る slot・最後の store を落とす、skip の印を無視、FABS(FNEG) を copy、定数の FNEG で符号を反転しない、SELECT の腕の取り違え、x&0 を x に、x^x を 1 に、ASR を論理 shift に、不正確な I2F を畳む、U2F を符号付きに、±0 の FMAX を畳む、NaN の比較を畳む、FGE を > に → 27 種を検出。検出しないのは「shift の数を mod 64 に」だけ（host の x86 の shift が 5 bit で mask するので結果が同じ。規則は mod 32 のまま）。
 - rpi4 の vmunix（`make -j16 -o …/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix`）warning 0、`build/arm64/vmunix` cksum 994222987 8183808。

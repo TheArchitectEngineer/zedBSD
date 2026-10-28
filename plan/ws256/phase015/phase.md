@@ -37,11 +37,11 @@ Status: in-progress（2026-10-20: ユーザーの VF2 の実機（2026-10-20 06:
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| native の image の host 試験（新規） | `plan/ws256/tests/native-image/run.sh build/p015-host` | exit 0、PASS 40・FAIL 0。小さい木から `--raw` の UFS（16 MiB）、firmware 無し・有り（stand-in の SPL・itb）の 2 つの image: GPT の header と entry の CRC、partition の type の並び、ESP の開始（2048・16384）、root の label・開始・大きさ・中身が root.ufs と一致・UFS の validate・marker・file、scratch の label と大きさ、ESP の file（loader・cfg・vmunix、root.img は無し）と serial 5A45-4253、SPL・itb の位置と byte。断る場合 3 つ（root 2 つ、firmware の片方、大きすぎる itb） |
+| native の image の host 試験（新規） | `plan/tools/vf2-host/native-image/run.sh build/p015-host` | exit 0、PASS 40・FAIL 0。小さい木から `--raw` の UFS（16 MiB）、firmware 無し・有り（stand-in の SPL・itb）の 2 つの image: GPT の header と entry の CRC、partition の type の並び、ESP の開始（2048・16384）、root の label・開始・大きさ・中身が root.ufs と一致・UFS の validate・marker・file、scratch の label と大きさ、ESP の file（loader・cfg・vmunix、root.img は無し）と serial 5A45-4253、SPL・itb の位置と byte。断る場合 3 つ（root 2 つ、firmware の片方、大きすぎる itb） |
 | VF2 の vmunix と image | `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p015-vf2 -j16 build/p015-vf2/vmunix build/p015-vf2/disk.img build/p015-vf2/native.img` | exit 0、`warning:` 0（build/tmp/p015-vf2-2.log）。native.img 404,750,336 byte、`fdisk -l`: p1 EFI System 2048〜133119、p2 FreeBSD UFS `zedBSD-root` 133120〜657407、p3 `zedBSD-scratch` 657408〜788479。ESP: `EFI/`・`zedbsd.cfg`（2 行）・`vmunix`、serial 5A45-4253 |
 | virt（PCI）の vmunix と image | `make ZEDBSD_CONFIG=plan/ws256/tests/config-riscv64-virt-pci.mk BUILD=build/p015-virt -j16 build/p015-virt/vmunix build/p015-virt/disk.img build/p015-virt/native.img` | exit 0、`warning:` 0（build/tmp/p015-virt-1.log） |
 
-- 試験 `plan/ws256/tests/native-image/` を回帰に残すかは Q1 の判断（image の道具を変える時に使う。残すなら Master の Tools・試験の一覧へ）。
+- 試験 `plan/tools/vf2-host/native-image/` を回帰に残すかは Q1 の判断（image の道具を変える時に使う。残すなら Master の Tools・試験の一覧へ）。
 - 未実施: QEMU（T1 へ、下）、実機、firmware 付きの image の本物の SPL・itb（host に `u-boot-starfive` が無い）。
 
 ## T1 への依頼文（Q1 が番号を付けて送る）
@@ -77,7 +77,7 @@ Status: in-progress（2026-10-20: ユーザーの VF2 の実機（2026-10-20 06:
 - T1 の走り A・C・D の結果を Q1 が判定（それまで cleared にしない）。
 - 実機の確かめ（上の手順、板の接続・#10・#15・#27 の後）。firmware 付きの image は本物の SPL・itb で確かめていない。
 - `rootpart=` の無い SD（legacy の autoroot の予備）は試していない。
-- 試験 `plan/ws256/tests/native-image/` の扱い（Q1）。
+- 試験 `plan/tools/vf2-host/native-image/` の扱い（Q1）。
 
 ## T1-735 の結果（2026-10-19 Q1）
 

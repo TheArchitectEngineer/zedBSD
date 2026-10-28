@@ -17,7 +17,7 @@ image=$1
 out=$2
 minutes=${3:-60}
 host=${I915_HOST:-solaris10-man}
-h4=plan/ws075/tests/hdmi-h4-hw.sh
+h4=plan/tools/i915-hw/hdmi-h4-hw.sh
 owner=/tmp/i915-h4-owner
 case "$minutes" in
 ''|*[!0-9]*) echo "c10-hw: MINUTES must be a positive integer" >&2; exit 2 ;;

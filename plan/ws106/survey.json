@@ -7426,7 +7426,7 @@
       ]
     },
     {
-      "path": "plan/ws075/tests/shader-survey/run.sh",
+      "path": "plan/tools/i915-hw/shader-survey/run.sh",
       "role": "current source/build/runner/documentation",
       "lines": [
         {
@@ -7704,7 +7704,7 @@
       ]
     },
     {
-      "path": "plan/ws101/tests/host/run.sh",
+      "path": "plan/tools/gpu-compute/host/run.sh",
       "role": "current source/build/runner/documentation",
       "lines": [
         {
@@ -7714,7 +7714,7 @@
       ]
     },
     {
-      "path": "plan/ws101/tests/noct/g3-venus.sh",
+      "path": "plan/tools/gpu-compute/noct/g3-venus.sh",
       "role": "current source/build/runner/documentation",
       "lines": [
         {

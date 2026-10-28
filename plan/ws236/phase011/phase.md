@@ -362,7 +362,7 @@ Phase disposition: normal
 | --- | --- |
 | rpi4・amd64 の `bin/wayland` | rc 0、warning 0 |
 | host の cc で `dmabuf/gpu-dmabuf.c`・`drm/display-drm.c` の syntax check | 指摘 0 |
-| `sh plan/ws213/tests/list-replay-host-test.sh`（draw list の replay、copy_image を含む） | PASS |
+| `sh plan/tools/compositor/list-replay-host-test.sh`（draw list の replay、copy_image を含む） | PASS |
 | style-check（変えた file、HEAD との差） | 新しい指摘 0 |
 
 - 未実施: Pi 実機（依頼 8）。5330・Venus は policy が off なので build だけ（`KWL COPY` の行が出ないこと）。

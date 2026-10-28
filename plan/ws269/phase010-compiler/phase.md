@@ -45,7 +45,7 @@
 | `src/drivers/gpu/powervr/shader-private.h` | 作業の memory（caller が渡す、compiler は allocate しない） |
 | `src/drivers/gpu/powervr/shader-spirv.c` | SPIR-V の読み（2 pass: 宣言 → entry の構造化 CFG の walk、関数の inline、vector の scalar 化、GLSL.std.450 の展開） |
 | `src/drivers/gpu/powervr/shader-backend.c` | 命令の選択・register の割り当て・制御の lowering（execution mask counter）・group への encode |
-| `plan/ws269/tests/p010-compiler/` | host 試験（interpreter `ir-run.c`、machine の simulator `machine-run.c`、`compile-host-test.c`、試験の shader、`run.sh`） |
+| `plan/tools/powervr/p010-compiler/` | host 試験（interpreter `ir-run.c`、machine の simulator `machine-run.c`、`compile-host-test.c`、試験の shader、`run.sh`） |
 
 ### 中間形の決め事
 
@@ -80,8 +80,8 @@ compute の今の道: p009 の executor（`vk-queue.c`）は DOUTD の shared �
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| compiler の host 試験 | `timeout 300 sh plan/ws269/tests/p010-compiler/run.sh build/ws269-p010c/host` | `powervr compiler host test: 298 passed, 0 failed`、`powervr compiler group host test: 20 passed, 0 failed`（2026-10-20） |
-| p008・p009 の host 試験（encoder と executor） | `sh plan/ws269/tests/p008/run.sh build/ws269-p010c/p008`、`sh plan/ws269/tests/p009/run.sh build/ws269-p010c/p009` | encode 91/0、compute 70/0、executor 112/0（executor は compiler の出力と bytes で比べる形に直した） |
+| compiler の host 試験 | `timeout 300 sh plan/tools/powervr/p010-compiler/run.sh build/ws269-p010c/host` | `powervr compiler host test: 298 passed, 0 failed`、`powervr compiler group host test: 20 passed, 0 failed`（2026-10-20） |
+| p008・p009 の host 試験（encoder と executor） | `sh plan/tools/powervr/p008/run.sh build/ws269-p010c/p008`、`sh plan/tools/powervr/p009/run.sh build/ws269-p010c/p009` | encode 91/0、compute 70/0、executor 112/0（executor は compiler の出力と bytes で比べる形に直した） |
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/ws269-p010c-vf2 -j16 vmunix`（log `build/ws269-p010c/vf2.log`、最後の版は `vf2b.log`） | rc=0、`warning:` 0（vf2.log・vf2b.log の両方） |
 | amd64 の kernel（powervr は build しない、確かめのため） | `... config/ci/config-amd64.mk BUILD=build/ws269-p010c-amd64 ... vmunix`（log `amd64.log`） | rc=0、`warning:` 0 |
 | riscv64-virt の kernel（共有の `platform/riscv64/vmunix.mk` を変えたため） | `... config-riscv64-virt.mk BUILD=build/ws269-p010c-virt ... vmunix`（log `virt.log`） | rc=0、`warning:` 0 |
@@ -112,7 +112,7 @@ host 試験の中身:
 2. 属性の 8・16 bit の format の変換、discard、FragCoord・VertexIndex・InstanceIndex、depth の書き、compute の shared memory・barrier・atomic、texture の LOD 指定・配列・cube、switch、早い return: どれも inventory の shader が使わないので未実装（ENOTSUP）。p011 で数える。
 3. design-p010.md §5.4 の固定の program（EOT・SR/PT・transfer）が要る命令の一覧が P1 から届いたら encoder に足す（今は smp brief・ditr・emitpix・upck・uvsw を足した。fitr/fitrp（backend の形）は BXE では使わないので足していない）。
 4. 規約の全文の見直し（p012）の前に: `shader-spirv.c` は長い（約 3,500 行）。関数の分け方は見直しの時に。
-5. Q1 への片付けの依頼（rm は Q1）: 置き換えで使われなくなった `src/drivers/gpu/powervr/spirv-fill.c`・`spirv-fill.h`、p009 の `plan/ws269/tests/p009/spirv-host-test.c` と `shaders/constant.comp`・`index.comp`・`reject-branch.comp`・`reject-local.comp`・`reject-read.comp`（どの試験からも参照しない。`fill`・`offset`・`reject-size` は使う）、`build/ws269-p010c/`・`build/ws269-p010c-vf2/`・`build/ws269-p010c-virt/`・`build/ws269-p010c-amd64/`。p009 の phase.md の spirv-fill の記述は履歴として残す（この Phase が置き換えた）。
+5. Q1 への片付けの依頼（rm は Q1）: 置き換えで使われなくなった `src/drivers/gpu/powervr/spirv-fill.c`・`spirv-fill.h`、p009 の `plan/tools/powervr/p009/spirv-host-test.c` と `shaders/constant.comp`・`index.comp`・`reject-branch.comp`・`reject-local.comp`・`reject-read.comp`（どの試験からも参照しない。`fill`・`offset`・`reject-size` は使う）、`build/ws269-p010c/`・`build/ws269-p010c-vf2/`・`build/ws269-p010c-virt/`・`build/ws269-p010c-amd64/`。p009 の phase.md の spirv-fill の記述は履歴として残す（この Phase が置き換えた）。
 
 ## 気付いた事（Q1 へ）
 

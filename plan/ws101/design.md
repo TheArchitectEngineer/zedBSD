@@ -546,16 +546,16 @@ toolchain の変更でもある）ことになり、判断 D5 とする。
 試験の build の kernel は 16 MiB の上限（AMD64_KERNEL_MAX_BYTES）の近く（WS075 の注意）。期待値の配列は小さく保ち（生成の式を C で持つ）、
 大きな state は heap に置く。
 
-### 5.2 host の試験（`plan/ws101/tests/host/`）
+### 5.2 host の試験（`plan/tools/gpu-compute/host/`）
 
 - **encoder**: 新しい命令（SLM の read・write、A64・SLM の atomic の応答の有無、fence（exec size 1）、gateway の barrier、`sync.bar`・`sync.allwr`、
   TS への EOT）の語を Mesa 25.0.7 の `brw_disasm --gen=adl` で読み、期待の mnemonic と field（SFID、message の型、BTI、aop）を照合し、
   `brw_asm` で組み直して同じ bytes になることを確かめる（`plan/ws031/tests/run-vk-gentool-test.sh` の encoder の検査の形。tool は
   `BRW_TOOLS=/home/awe/p014-c/mesa/build-asm/src/intel/compiler`）。加えて **descriptor の数値を decode して、control の bit 5（応答）と rlen の
   一致、mlen・ex_mlen を確かめる**（disassembler は応答の bit を表示しない。レビュー H4）。
-- **compile**: compute の SPIR-V（vkcs・GLES の試験の shader、**Noct の生成する shader の形**）を `plan/ws075/tests/guard/shader-dump.c` と
+- **compile**: compute の SPIR-V（vkcs・GLES の試験の shader、**Noct の生成する shader の形**）を `plan/tools/i915-hw/guard/shader-dump.c` と
   同じ形の dumper（compute の stage を足した WS101 の複写）で compile し、disassembler が全命令を受けること、組み直しが同じ bytes、
-  `scoreboard-check.h` が健全と言うこと（`plan/ws075/tests/guard/run.sh` の形）。
+  `scoreboard-check.h` が健全と言うこと（`plan/tools/i915-hw/guard/run.sh` の形）。
 - **Noct の shader の形の fixture**: Noct の `accel_shader_source.c` の GLSL の形（`if (…)` の次の行に `return;` だけ、`uint(int(a)/int(b))`、`%`、
   `coherent`・`readonly`、複数 kernel の region が結果 word を読む形、結果 word への `atomicAdd`）を fixture にし、libglesv2 の GLSL →
   `spirv-val` → i915 の host の compile に通す（p008・p010）。
@@ -569,9 +569,9 @@ toolchain の変更でもある）ことになり、判断 D5 とする。
 
 ### 5.3 実機（5330）
 
-- passthrough: `plan/ws075/tests/test-hw.sh vkcs OUTDIR`（`flock /tmp/i915-hw.lock` を取る。WS075 のエージェントと共有の lock。BUILD は
+- passthrough: `plan/tools/i915-hw/test-hw.sh vkcs OUTDIR`（`flock /tmp/i915-hw.lock` を取る。WS075 のエージェントと共有の lock。BUILD は
   WS101 の worktree の build）。GLES と Noct の user の program は `plan/ws031/tests/vkloop-hw.sh` の service の鎖（vkprobe）の形の
-  WS101 の複写（`plan/ws101/tests/hw/`）で、同じ lock の下で走らせる。
+  WS101 の複写（`plan/tools/gpu-compute/hw/`）で、同じ lock の下で走らせる。
 - 回帰: 同じ lock の下で `vkx`・`vke1`・`vke2`・`vkc`（実行器の変更の Phase ごと）。
 - 素の機械（G1 の受け入れの残り、G3 の時間、G4）: ユーザー（p012）。
 - GPU が固まったとき: serial の log を読んで判定しない。guest を gdbstub で止め（QEMU の `-S -gdb`）、i915 の error の register
@@ -601,7 +601,7 @@ toolchain の変更でもある）ことになり、判断 D5 とする。
 | p008 | GLSL ES 3.10 の compute（§3.2、barrier の規則の検査、Noct の shader の形の fixture） | p001（p002〜p007 と並行できる）、D4（main の記録） | host: spirv-val、lavapipe、i915 の host の compile |
 | p009 | libglesv2・libegl の ES 3.1 の compute の API（§3.3: shader・program・link・layout・stageFlags、dispatch、buffer の target と usage、SSBO の binding（4）、device が書いた印と `used`、garbage の回収、`glMemoryBarrier`、query）、`gl31.h`、export と stub、版の名乗り（D1）、libGL への漏れの分離、GLES の compute の試験の program。**Venus で G2** | p008、D1 | Venus の試験、egltest の既存の場面の回帰 |
 | p010 | GLES の compute の **i915 での G2**（passthrough）: 基本は p005 の後、shared・barrier の試験は p006、indirect は p007 の後。Noct の shader の形の fixture を i915 で | p009、p005（p006・p007 の分は後） | 5330 の passthrough の試験 |
-| p011 | Noct: **toolchain の部分（§4.1 の patch・Makefile・zedbsd.cmake、host の Noct の作り直し）は main が D2 の許可の後に行う**。WS101 の分: G3 の見本（`plan/ws101/tests/noct/`、N = 4,000,000）、型名と offload の確認、CPU の時間の先の測定、Venus で正しさ、5330 の passthrough で正しさと時間 | p010、D2、D3、D5 | Venus・passthrough の run、時間の記録 |
+| p011 | Noct: **toolchain の部分（§4.1 の patch・Makefile・zedbsd.cmake、host の Noct の作り直し）は main が D2 の許可の後に行う**。WS101 の分: G3 の見本（`plan/tools/gpu-compute/noct/`、N = 4,000,000）、型名と offload の確認、CPU の時間の先の測定、Venus で正しさ、5330 の passthrough で正しさと時間 | p010、D2、D3、D5 | Venus・passthrough の run、時間の記録 |
 | p012 | 素の 5330: G1 の受け入れの残り（vkcs）、G3 の時間、G4 の fg010 の台本の場面（CPU と GPU の時間を並べる script と手順、GPU が固まったときの回復の手順）。ユーザーの確認 | p011 | ユーザーの確認 |
 | p013 | 規約の全文との照合（WS101 の全ての変更）と回帰（host、vkx・vke1・vke2・vkc・vkcs・GLES、boot test） | p002〜p012 | 全文の review と回帰の記録 |
 

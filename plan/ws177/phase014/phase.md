@@ -17,7 +17,7 @@ Origin: [backlog-p2](../backlog-p2.md) の 85・86・87・88・115（WS169 ws169
 - **語の境（backlog 76、案 N から前倒し）**: 上の英字の code が語の位置を要るので、同じ関数で語の境を入れた。ASCII の語は語の全体だけ（前に英字が無い、後に英字が無いか複数形の s）。「shipping」の pin、「barcode」の code は数えない。N の Phase では済みとして扱う。
 - **2 分の時間切れ（88）**: `shell_mail_timeout` を足し、main loop の待ちに offer の残り時間を入れた（前は loop が他の理由で起きた時に見るだけ）。
 - **通知の click の経路の QEMU の確認（87）**: 通知の popup（WS156 p003）ができたので、AAT `apps.mailer.sign-in-code` の段 3 を「popup の本文を click」に変えた（helper が `KWL NOTIFY show` の後に画面の下の中央を click し、`KWL NOTIFY activate`・`fill length=4`・`code-length=4`・`TITLEBAR code=0` を見る）。titlebar の control の経路は T1-302 で確かめ済み。
-- 変更: `userland/desktop/browser/shell/mail.c`・`internal.h`・`shell.c`、`userland/desktop/mailer/code.c`。試験: `plan/ws177/tests/host-mail-code.{c,sh}`（新）、`plan/ws169/tests/host-browser-mail.c`（新しい fake と check、WS169 の回帰の試験）、AAT `tests/scenarios/apps/mailer/sign-in-code.md`・`plan/tools/aat/scenarios/helpers_mailer.py`。
+- 変更: `userland/desktop/browser/shell/mail.c`・`internal.h`・`shell.c`、`userland/desktop/mailer/code.c`。試験: `plan/ws177/tests/host-mail-code.{c,sh}`（新）、`plan/tools/mail/host-browser-mail.c`（新しい fake と check、WS169 の回帰の試験）、AAT `tests/scenarios/apps/mailer/sign-in-code.md`・`plan/tools/aat/scenarios/helpers_mailer.py`。
 
 ## 判断が要る点（ユーザー、記録して先へ）
 
@@ -28,8 +28,8 @@ Origin: [backlog-p2](../backlog-p2.md) の 85・86・87・88・115（WS169 ws169
 ## 確認（host・build、2026-10-08）
 
 - `sh plan/ws177/tests/host-mail-code.sh` → PASS（ASan/UBSan、15 の check）: 英字の code（is・`:`・`：`・数字より先）、宣伝の SAVE20 を取らない、小文字の語・大文字だけの語を取らない、`G-482913` は数字、shipping・barcode を数えない、複数形の codes、PIN、前からの数字の規則（年、語の中の数字）。
-- `sh plan/ws169/tests/run-host-browser-mail.sh build/tmp/p1-n4/host-browser-mail` → PASS 14（前の 9 に、通知が page の title を言う、時間切れの残り（90000 ms・0・-1）、英字の code の `KeyX` と Shift、欄が無い時の clipboard と code の無い通知、log に英字の code も無い）。
-- `sh plan/ws169/tests/run-host-mail-backend.sh build/tmp/p1-n4/backend` → host-mail-backend・host-mail-sync PASS（code の前の 5 つの check を含む）。
+- `sh plan/tools/mail/run-host-browser-mail.sh build/tmp/p1-n4/host-browser-mail` → PASS 14（前の 9 に、通知が page の title を言う、時間切れの残り（90000 ms・0・-1）、英字の code の `KeyX` と Shift、欄が無い時の clipboard と code の無い通知、log に英字の code も無い）。
+- `sh plan/tools/mail/run-host-mail-backend.sh build/tmp/p1-n4/backend` → host-mail-backend・host-mail-sync PASS（code の前の 5 つの check を含む）。
 - build（warning 0）: `make -j16 BUILD=build/p1-mailer ZEDBSD_CONFIG=plan/ws169/tests/config-amd64-mailer.mk build/p1-mailer/bin/browser build/p1-mailer/bin/mailer`。style-check（mail.c・code.c・shell.c）0。`git diff --check` 0。`check-scenarios.py` PASS。
 
 ## 未実施

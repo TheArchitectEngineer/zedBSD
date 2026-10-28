@@ -31,4 +31,4 @@ since: ws177-p021
 1〜5 の正解（1 は error=0 の続き、または notice の後の再生のどちらか）。
 
 ## 注記
-助け: `plan/tools/aat/scenarios/helpers_music.py` の `apps.music.failures`（3 曲と not-a-song.m4a を作って置き、終わりに guest の中で消す）。片付け: 4 で mv した file、`not-a-song.m4a`、`/tmp/aat-music-time`、`~/Music/AAT` を消す。decode の失敗（16 個続けて decode できない）と読みの失敗は host の試験（`plan/ws177/tests/host-music-play.sh`）で確かめる。
+助け: `plan/tools/aat/scenarios/helpers_music.py` の `apps.music.failures`（3 曲と not-a-song.m4a を作って置き、終わりに guest の中で消す）。片付け: 4 で mv した file、`not-a-song.m4a`、`/tmp/aat-music-time`、`~/Music/AAT` を消す。decode の失敗（16 個続けて decode できない）と読みの失敗は host の試験（`plan/tools/music/host-music-play.sh`）で確かめる。

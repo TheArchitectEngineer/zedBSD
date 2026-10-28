@@ -28,7 +28,7 @@ Queue: q843（P2、Q1 の ACK 2026-10-07「範囲 1〜5 で ACK、c10 の窓が�
 - `userland/desktop/wayland/shell.c`: `draw_system_bar`（Home の上は `draw_home_status` だけ）、`draw_status`（pill は呼ぶ側）、`home_bar_passes`、`kwl_glass_button`（Home の前に判定）、`bar_press`（Home の間は時計だけ）、`draw_desktops`（capsule・点）、`DESKTOP_DOT`・`DESKTOP_SHOWN_WIDTH`、`window_resized`・`kwl_glass_committed`（古い image の判定）、`kwl_glass_desktop_turn` の削除。
 - `arrange-shell.c`: メニューの cell・描画・開く・item の矩形・act、key、`kwl_arrange_draw_mark` の削除、`arrange_labels` の削除。`glass.h`・`kwl.h` の宣言。
 - `userland/desktop/locale/wayland.keys`・`ja/wayland.tr`: layout の名前の 5 行を削除（使われなくなった）。
-- 試験: `plan/ws181/tests/ws181-guest.sh` の C10 に `fits_slot`（各 client の最後の `KWL GLASS resized` が適用の後に来て、最後の `KWL CONFIGURE` の大きさと同じ）を足し、3 つの窓が枠の大きさを描くまで最大 8 秒待ってから撮る（`arranged-size-<client>` の判定）。終わりに zdesktop.log の全行と wltest の RESIZE の行を out に保存。`tests/scenarios/desktop/windows/arrange.md` の手順 1・2・6 を新しいメニューと「pill で desktop は切り替わらない」に。
+- 試験: `plan/tools/desktop-guest/ws181-guest.sh` の C10 に `fits_slot`（各 client の最後の `KWL GLASS resized` が適用の後に来て、最後の `KWL CONFIGURE` の大きさと同じ）を足し、3 つの窓が枠の大きさを描くまで最大 8 秒待ってから撮る（`arranged-size-<client>` の判定）。終わりに zdesktop.log の全行と wltest の RESIZE の行を out に保存。`tests/scenarios/desktop/windows/arrange.md` の手順 1・2・6 を新しいメニューと「pill で desktop は切り替わらない」に。
 - host の PNG: `plan/ws181/tests/p005-host.sh`（ws099-p034 の host の renderer の上に `p005-host.py`、arrange.c の枠は `p005-icon-dump.c`）→ `build/review/ws181-p005.png`。
 
 ## 確かめ（2026-10-07）

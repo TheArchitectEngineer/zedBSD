@@ -39,18 +39,18 @@ p002〜p017 の code（p017 の扱いが決まった後の最終の source）。
 3. 全文の review: coding-style.md の §14（Review checklist）の各項目を、2 の file の WS101 の部分について読む。機械で見られない規則（§5 の段落、§6 の control flow、§10 の comment、§12 の環境変数 `KEI_GLES_COMPUTE_TRACE`）を表にする。
 4. 回帰（順に。image の build は 1 つずつ、実機は lock の script だけ）:
    ```
-   sh plan/ws101/tests/host/run.sh
-   sh plan/ws101/tests/glsl/run.sh build/ws101-p013/glsl
-   sh plan/ws101/tests/gles/run.sh build/ws101-p013/gles-host
+   sh plan/tools/gpu-compute/host/run.sh
+   sh plan/tools/gpu-compute/glsl/run.sh build/ws101-p013/glsl
+   sh plan/tools/gpu-compute/gles/run.sh build/ws101-p013/gles-host
    sh plan/ws068/tests/glsl-host/run.sh build/ws101-p013/ws068-glsl-host
-   make -j16 ZEDBSD_CONFIG=plan/ws101/tests/hw/g3/config.mk BUILD=build/ws101-p013-lib build/ws101-p013-lib/dynamic/libGLESv2.so build/ws101-p013-lib/dynamic/libEGL.so build/ws101-p013-lib/bin/glescompute > build/ws101-p013/lib.log 2>&1; echo "exit=$?"
-   plan/ws101/tests/gles/build-image.sh build/ws101-p013-img > build/ws101-p013/img.log 2>&1; echo "exit=$?"
-   IMAGE=build/ws101-p013-img/hdd-image.img SYMBOLS=build/ws101-p013-img/vmunix GUEST_RUNTIME=$PWD/build/ws101-p013-run plan/ws101/tests/gles/venus.sh build/ws101-p013/venus
-   OUT=build/ws101-p013-hw plan/ws101/tests/hw/run-hw.sh r1 vkcs vkx vke1 vke2 vkc; echo "exit=$?"
-   BUILD=build/ws101-p013-gles plan/ws101/tests/hw/gles-hw.sh build/ws101-p013/gles-hw
+   make -j16 ZEDBSD_CONFIG=plan/tools/gpu-compute/hw/g3/config.mk BUILD=build/ws101-p013-lib build/ws101-p013-lib/dynamic/libGLESv2.so build/ws101-p013-lib/dynamic/libEGL.so build/ws101-p013-lib/bin/glescompute > build/ws101-p013/lib.log 2>&1; echo "exit=$?"
+   plan/tools/gpu-compute/gles/build-image.sh build/ws101-p013-img > build/ws101-p013/img.log 2>&1; echo "exit=$?"
+   IMAGE=build/ws101-p013-img/hdd-image.img SYMBOLS=build/ws101-p013-img/vmunix GUEST_RUNTIME=$PWD/build/ws101-p013-run plan/tools/gpu-compute/gles/venus.sh build/ws101-p013/venus
+   OUT=build/ws101-p013-hw plan/tools/gpu-compute/hw/run-hw.sh r1 vkcs vkx vke1 vke2 vkc; echo "exit=$?"
+   BUILD=build/ws101-p013-gles plan/tools/gpu-compute/hw/gles-hw.sh build/ws101-p013/gles-hw
    OUTPUT=build/ws101-p013/boot plan/tools/boot-test.sh build/ws101-p013-img/hdd-image.img; echo "exit=$?"
    ```
-   G3 の passthrough（`g3-hw.sh`）は [guide.md](../guide.md) 3.2 の提案 B の後に `G3_NOCT=build/demo-lcd9/bin/noct BUILD=build/ws101-p013-g3 plan/ws101/tests/hw/g3-hw.sh build/ws101-p013/g3-hw`。
+   G3 の passthrough（`g3-hw.sh`）は [guide.md](../guide.md) 3.2 の提案 B の後に `G3_NOCT=build/demo-lcd9/bin/noct BUILD=build/ws101-p013-g3 plan/tools/gpu-compute/hw/g3-hw.sh build/ws101-p013/g3-hw`。
 5. 結果を下の「確認」に、command・結果・未実施を分けて書く。boot test の PNG（`build/ws101-p013/boot/login.png`）をユーザーに見せる。
 
 ## 完了の条件
@@ -83,9 +83,9 @@ style-check: `compile-compute.inc`・`spirv-compute.inc` は forward-declaration
 | command | 結果 |
 | --- | --- |
 | `make BUILD=build/p013-k -j16 vmunix`（既定の config.mk） | exit 0、warning 0 |
-| `sh plan/ws101/tests/host/run.sh`（Mesa の道具あり） | PASS |
-| `sh plan/ws101/tests/glsl/run.sh build/ws101-glsl-p013` | PASS（10 shader の往復を含む） |
-| `sh plan/ws075/tests/guard/run.sh` | PASS |
+| `sh plan/tools/gpu-compute/host/run.sh`（Mesa の道具あり） | PASS |
+| `sh plan/tools/gpu-compute/glsl/run.sh build/ws101-glsl-p013` | PASS（10 shader の往復を含む） |
+| `sh plan/tools/i915-hw/guard/run.sh` | PASS |
 | `sh plan/ws031/tests/run-vk-host-tests.sh` | PASS（cmd spirv lower res resdispatch sync eu compile pipe cmdbuf） |
 | `sh plan/ws068/tests/i915-shader-check/run.sh` | exit 0 |
 | `BRW_TOOLS=build/mesa-tools/... sh plan/ws031/tests/run-vk-gentool-test.sh` | PASS |

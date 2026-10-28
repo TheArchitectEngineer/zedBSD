@@ -11,14 +11,14 @@ Queue: q946（2026-10-13 Q1 の依頼、P1）。承認はユーザーの再開�
 
 - 設計は [p001 §8](../phase001/phase.md#8-段の分け方と受け入れ試験) の p007 の行、試験の案は [p006 §9](../phase006/phase.md)。
 - 依存: p002〜p006 の出力（main に入っている。p004〜p006 は test-wait で、その画の確かめがこの Phase）。
-- q946（準備）の範囲: AAT の scenario 2 つ（`tests/scenarios/apps/notes/draw-tools.md`・`fill-region.md`）、その補助（`plan/tools/aat/scenarios/helpers_notes_edit.py` の `apps.notes.draw-tools`・`apps.notes.fill-region`）、試験の image の config（`plan/ws216/tests/config.mk`）、T1 への依頼。QEMU は担当が起動しない（T1）。
+- q946（準備）の範囲: AAT の scenario 2 つ（`tests/scenarios/apps/notes/draw-tools.md`・`fill-region.md`）、その補助（`plan/tools/aat/scenarios/helpers_notes_edit.py` の `apps.notes.draw-tools`・`apps.notes.fill-region`）、試験の image の config（`plan/tools/aat/config-amd64-notes-pen.mk`）、T1 への依頼。QEMU は担当が起動しない（T1）。
 - 触らない: Notes・libpdf の source、`plan/tools/aat/` の共有の道具（`aat`・runner・`config-amd64-aat.mk`）、toolchain・HAL。
 
 ## 1. 試験の image
 
-- `plan/ws216/tests/config.mk` = AAT の image（`plan/tools/aat/config-amd64-aat.mk`）＋ `peninject`（試験のペン）。AGENTS.md の「試験の image の作り方」どおり config.mk の build だけで、`--file` の複写は無い。
-- PDF（`edit-basic.pdf`）は image に入れない。補助が host で `plan/ws175/tests/make-edit-samples.py` で作り、run の時に scenario の folder に置く（既存の `apps.notes.pdf-*` と同じ）。
-- build: `AAT_CONFIG=plan/ws216/tests/config.mk plan/tools/aat/build-image.sh BUILD`（T1 の worktree の `build/` の中、image の build は `flock /tmp/zedbsd-image-build.lock`）。
+- `plan/tools/aat/config-amd64-notes-pen.mk` = AAT の image（`plan/tools/aat/config-amd64-aat.mk`）＋ `peninject`（試験のペン）。AGENTS.md の「試験の image の作り方」どおり config.mk の build だけで、`--file` の複写は無い。
+- PDF（`edit-basic.pdf`）は image に入れない。補助が host で `plan/tools/aat/make-edit-samples.py` で作り、run の時に scenario の folder に置く（既存の `apps.notes.pdf-*` と同じ）。
+- build: `AAT_CONFIG=plan/tools/aat/config-amd64-notes-pen.mk plan/tools/aat/build-image.sh BUILD`（T1 の worktree の `build/` の中、image の build は `flock /tmp/zedbsd-image-build.lock`）。
 
 ## 2. scenario と補助
 
@@ -45,7 +45,7 @@ Queue: q946（2026-10-13 Q1 の依頼、P1）。承認はユーザーの再開�
 
 > **T1 依頼（ws216-p007、Notes の描く道具と塗りつぶし）**
 > - tree: main に q946 の merge が入った SHA（helper と scenario が要る）。
-> - image: `AAT_CONFIG=plan/ws216/tests/config.mk plan/tools/aat/build-image.sh build/<T1 の dir>`（AAT の image ＋ `peninject`）。`--file` の複写は無い。使い回しの image なら notes・libpdf・peninject が依頼の tree で作り直されたことを確かめる。
+> - image: `AAT_CONFIG=plan/tools/aat/config-amd64-notes-pen.mk plan/tools/aat/build-image.sh build/<T1 の dir>`（AAT の image ＋ `peninject`）。`--file` の複写は無い。使い回しの image なら notes・libpdf・peninject が依頼の tree で作り直されたことを確かめる。
 > - 流す: `plan/tools/aat/run-aat.sh qemu OUTDIR apps.notes.draw-tools apps.notes.fill-region`（任意で同じ起動に `apps.notes.draw-stroke apps.notes.pdf-edit-multipage` を足すと p006 の helper の追従も見られる）。
 > - 合否: 両 scenario の verdict が `needs-person`（機械の判定は全部通った）で、撮影を見て: 筆は入りと抜きが細く中が太い、鉛筆に粒があり区間の継ぎ目に線が無い、水彩は半透明で交差が濃く青と赤が減法で混ざる、帯が toolbar の下に 6 つ並ぶ、開き直しが前と同じ、塗りが円の線まで届き白い隙間が無く線が上、「Already filled」と「Tap to fill」が見える、消しゴムで塗りだけ消え undo で戻る、PDF の白い正方形だけが塗られる、Poppler の頁が画面に近い。`fail` は理由の行と `OUTDIR/logs/ID.log`・`records/ID.md` を返す。
 > - 撮る PNG: 補助が撮る（draw-tools: `brush-pencil`・`watercolor`・`strip`・`all-tools`・`reopened`・`poppler`、fill-region: `filled`・`already-filled`・`tap-to-fill`・`erased`・`undone`・`pdf-filled`・`poppler`）。
@@ -61,7 +61,7 @@ Queue: q946（2026-10-13 Q1 の依頼、P1）。承認はユーザーの再開�
 | `tests/scenarios/apps/notes/draw-tools.md`（新） | §2 |
 | `tests/scenarios/apps/notes/fill-region.md`（新） | §2 |
 | `plan/tools/aat/scenarios/helpers_notes_edit.py` | §2 の補助 |
-| `plan/ws216/tests/config.mk`（新） | §1 |
+| `plan/tools/aat/config-amd64-notes-pen.mk`（新） | §1 |
 
 ### 5.2 command と結果（host）
 
@@ -69,7 +69,7 @@ Queue: q946（2026-10-13 Q1 の依頼、P1）。承認はユーザーの再開�
 - `python3 plan/tools/aat/scenarios/helpers_notes_edit.py --list` → 2 つの id が出る。`python3 -m py_compile` ok。
 - 補助の関数の host の確かめ（scratchpad の小さな script、`--list` の形で module を読み込み）: `pen_script()` が `size 32767 32767`・`wait 3000`・`tool pen`・hover・`down … 0 20 -15`・筆圧の最大 4095 の 88 行、`PICTURE_SQUARE` = (192.0, 495.0)。
 - `sh plan/tools/aat/tests/run-host.sh` → `aat-host: PASS`。
-- config の確かめ: `make -f <Makefile を include して ZEDBSD_USER_PROGRAMS を出す小さな makefile> ZEDBSD_CONFIG=plan/ws216/tests/config.mk` で `aat-input`・`keiland-shot`・`notes`・`peninject` が入る。
+- config の確かめ: `make -f <Makefile を include して ZEDBSD_USER_PROGRAMS を出す小さな makefile> ZEDBSD_CONFIG=plan/tools/aat/config-amd64-notes-pen.mk` で `aat-input`・`keiland-shot`・`notes`・`peninject` が入る。
 
 ### 5.3 未実施・制限
 

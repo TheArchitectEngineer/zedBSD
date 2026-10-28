@@ -28,7 +28,7 @@ source は 244091c0b と main 4f87ce7ba で同じことを確かめ main で読�
 
 **C-8. 依存の書き方と Phase の状態の投影。** ws.md:36 は p006 の依存を「p004、p005」、p004・p005 は test-wait で clearance は p007 を待ち p007 は p006 に依存して輪。ws.md の p006 の行は planned、phase.md は in-progress。案: 「main に入った p004・p005 の出力（notes_fill_page()・notes_fill_notice()・頂点の塊）」の出力の依存に直し ws.md の行も直す。
 
-**C-9. p001 の受け入れ・計画との差を記録していない。** p001 §8 の p006 の行と §9 の WS081 の行には touch.c の double tap の停止、host-notes-fill-touch.c、受け入れ「塗りの道具・Finger on で double tap が拡大しない」がある。touch.c を変えない理由は正しい（touch.c:808-811）が U の表に受け入れと証拠が無い。案: U5 に plan/ws081/tests/run-notestouch.sh（Master に登録済み）を足し p001 §8 との差を書く。
+**C-9. p001 の受け入れ・計画との差を記録していない。** p001 §8 の p006 の行と §9 の WS081 の行には touch.c の double tap の停止、host-notes-fill-touch.c、受け入れ「塗りの道具・Finger on で double tap が拡大しない」がある。touch.c を変えない理由は正しい（touch.c:808-811）が U の表に受け入れと証拠が無い。案: U5 に plan/tools/touch/run-notestouch.sh（Master に登録済み）を足し p001 §8 との差を書く。
 
 ## 軽微
 

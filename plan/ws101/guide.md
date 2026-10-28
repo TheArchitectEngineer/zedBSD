@@ -52,10 +52,10 @@
 | --- | --- | --- |
 | p001 | 設計 | [design.md](design.md) |
 | p002〜p004 | compiler（GLCompute、SLM 以外）・実行器の object・batch | host の試験 PASS（2026-10-01 にも再実行して PASS、下の 6 章） |
-| p005〜p007 | 5330 の passthrough で vkcs 9 → 15 → 21/21、回帰 vkx 9/9・vke1 6/6・vke2 17/17・vkc 9/9 | phase007（fb1f6afee の `plan/ws101/phase007/phase.md`）、`OUT=build/ws101-p007-hw plan/ws101/tests/hw/run-hw.sh r1 vkcs vkx vke1 vke2 vkc` |
-| p008 | GLSL ES 3.10 の compute | `plan/ws101/tests/glsl/run.sh` PASS（2026-10-01 再実行 PASS） |
+| p005〜p007 | 5330 の passthrough で vkcs 9 → 15 → 21/21、回帰 vkx 9/9・vke1 6/6・vke2 17/17・vkc 9/9 | phase007（fb1f6afee の `plan/ws101/phase007/phase.md`）、`OUT=build/ws101-p007-hw plan/tools/gpu-compute/hw/run-hw.sh r1 vkcs vkx vke1 vke2 vkc` |
+| p008 | GLSL ES 3.10 の compute | `plan/tools/gpu-compute/glsl/run.sh` PASS（2026-10-01 再実行 PASS） |
 | p009 | libglesv2・libegl の ES 3.1 の compute の API。Venus で glescompute PASS | phase009（fb1f6afee の `plan/ws101/phase009/phase.md`） |
-| p010 | passthrough で glescompute・egltest feedback・queries PASS | `plan/ws101/tests/hw/gles-hw.sh` |
+| p010 | passthrough で glescompute・egltest feedback・queries PASS | `plan/tools/gpu-compute/hw/gles-hw.sh` |
 | p011（p014 を含む） | toolchain の差分（main が適用）、`mix.nct`・`s13.sh`、G3 の一致（passthrough・Venus） | phase011（fb1f6afee の `plan/ws101/phase011/phase.md`） |
 | p015 | demo の image の Terminal で S13 が通る（passthrough） | phase015（fb1f6afee の `plan/ws101/phase015/phase.md`）、`plan/ws101/phase015/s13-live.png`（fb1f6afee） |
 | p016 | 時間の分解（QEMU）。道具 `KEI_GLES_COMPUTE_TRACE=2`・`tests/time-split.sh`・`tests/time-split.py` | phase016（fb1f6afee の `plan/ws101/phase016/phase.md`） |
@@ -80,10 +80,10 @@ repo は `/home/awe/zedBSD-rpi4` から `/home/awe/zedBSD-claude1` に移った�
 
 | file:line | 既定値 | 影響 |
 | --- | --- | --- |
-| `plan/ws101/tests/hw/g3-hw.sh:20` | `NOCT=/home/awe/zedBSD-rpi4/build/demo-lcd9/bin/noct` | 既定のままでは「no accelerator-enabled noct」で止まる |
-| `plan/ws101/tests/hw/g3-hw.sh:24`、`gles-hw.sh:19` | fonts `/home/awe/zedBSD-rpi4/build/ws035-fonts` | `[ -f ]` で飛ばすだけ（font 無しの image になる）。`build/ws035-fonts/Inter.ttf` はある |
-| `plan/ws101/tests/demo/build-s13-image.sh:12・15` | NOCT、wallpaper | NOCT は止まる。wallpaper は飛ばす |
-| `plan/ws101/tests/noct/g3-venus.sh:21` | NOCT | 止まる |
+| `plan/tools/gpu-compute/hw/g3-hw.sh:20` | `NOCT=/home/awe/zedBSD-rpi4/build/demo-lcd9/bin/noct` | 既定のままでは「no accelerator-enabled noct」で止まる |
+| `plan/tools/gpu-compute/hw/g3-hw.sh:24`、`gles-hw.sh:19` | fonts `/home/awe/zedBSD-rpi4/build/ws035-fonts` | `[ -f ]` で飛ばすだけ（font 無しの image になる）。`build/ws035-fonts/Inter.ttf` はある |
+| `plan/tools/gpu-compute/demo/build-s13-image.sh:12・15` | NOCT、wallpaper | NOCT は止まる。wallpaper は飛ばす |
+| `plan/tools/gpu-compute/noct/g3-venus.sh:21` | NOCT | 止まる |
 
 さらに **`NOCT` を環境変数で渡すと、`userland/base/noct/Makefile:56` の `NOCT ?= …`（host の noct）を上書きし、image の build が
 `native-swap-1024m.img` で失敗する**（guest の ELF を host で走らせる。p017 の 5330 の追記で P1 が発見）。`g3-hw.sh`・`build-s13-image.sh` は
@@ -120,7 +120,7 @@ accel の前の物で、`rootfs/usr/share/gpudemo` も無い（`bin/noct` だけ
 | 提案 | ID | 目的 | 触る file | 受け入れ |
 | --- | --- | --- | --- | --- |
 | A（判断） | — | p017 の扱いと G3 の「CPU より速い」: (a) p017 を canceled（理由: 2026-09-30 ユーザー「今のまま」）にして G3 の受け入れを「一致と offload の証拠」に縮める、(b) uncleared のまま WS を incomplete で止める。**人間の判断**なので main がユーザーに出す | ws.md・phase017（main） | 決定が ws.md に記録される |
-| B | ws101-p020 | 試験の script の path と `NOCT` の衝突を直す: 既定の noct を repo の相対の `build/demo-lcd9/bin/noct`、fonts を `build/ws035-fonts`、wallpaper を `build/ws035-wallpaper/wallpaper-1080.ppm` に。環境変数の名前を `S13_NOCT`（build-s13-image.sh）・`G3_NOCT`（g3-hw.sh）・`NOCT` のまま（g3-venus.sh・time-split.sh は make を呼ばない）に | `plan/ws101/tests/hw/g3-hw.sh`・`gles-hw.sh`・`demo/build-s13-image.sh`・`noct/g3-venus.sh`（WS101 の plan の中だけ。source は触らない） | `bash -n` の 4 本が 0、`grep -rn zedBSD-rpi4 plan/ws101/tests` が 0 件、`G3_HW_BUILD_ONLY=1 BUILD=build/<W>-g3 plan/ws101/tests/hw/g3-hw.sh build/<W>/g3`（image の build だけ）が `g3-hw: built` を出す |
+| B | ws101-p020 | 試験の script の path と `NOCT` の衝突を直す: 既定の noct を repo の相対の `build/demo-lcd9/bin/noct`、fonts を `build/ws035-fonts`、wallpaper を `build/ws035-wallpaper/wallpaper-1080.ppm` に。環境変数の名前を `S13_NOCT`（build-s13-image.sh）・`G3_NOCT`（g3-hw.sh）・`NOCT` のまま（g3-venus.sh・time-split.sh は make を呼ばない）に | `plan/tools/gpu-compute/hw/g3-hw.sh`・`gles-hw.sh`・`demo/build-s13-image.sh`・`noct/g3-venus.sh`（WS101 の plan の中だけ。source は触らない） | `bash -n` の 4 本が 0、`grep -rn zedBSD-rpi4 plan/ws101/tests` が 0 件、`G3_HW_BUILD_ONLY=1 BUILD=build/<W>-g3 plan/tools/gpu-compute/hw/g3-hw.sh build/<W>/g3`（image の build だけ）が `g3-hw: built` を出す |
 | C | ws101-p019 | p012 から「素の 5330 で S13（G4）と回復の手順」だけを分ける（デモ critical。vkcs の素の機械の run は p012 に残す。素の機械で試験の kernel を起こす方法が未知のため、下の 4 章） | `plan/ws101/phase019/phase.md`、記録だけ（source は触らない） | 素の 5330 の Terminal の画面（写真）に「The results are the same on the CPU and the GPU.」、3 回続けて通る、回復の手順が台本の形で phase.md にある |
 
 p019 を採るなら、phase012（fb1f6afee の `plan/ws101/phase012/phase.md`） の手順の A を p019 へ移し、p012 は B だけにする。
@@ -129,15 +129,15 @@ p019 を採るなら、phase012（fb1f6afee の `plan/ws101/phase012/phase.md`�
 
 | 未知 | 調べ方 |
 | --- | --- |
-| 5330 の gpu-wait 167 ms（1 call の 78%）の中身: i915 の実行器の dispatch の実行時間か、submit と完了の同期の往復か | **「今のまま」なので調べるのは再開の時だけ**。方法: passthrough の H4 の run（`plan/ws075/tests/hdmi-h4-hw.sh start`）の間に `plan/ws075/tests/hdmi/engine-gdb.sh VMUNIX SECONDS`（gdbstub で i915 の worker の context ごとの engine の時間・queue の待ち・round trip を読む。script の先頭 1〜10 行）を S13 の GPU の run と同時に走らせる。VMUNIX は image の BUILD の `vmunix` |
+| 5330 の gpu-wait 167 ms（1 call の 78%）の中身: i915 の実行器の dispatch の実行時間か、submit と完了の同期の往復か | **「今のまま」なので調べるのは再開の時だけ**。方法: passthrough の H4 の run（`plan/tools/i915-hw/hdmi-h4-hw.sh start`）の間に `plan/tools/i915-hw/hdmi/engine-gdb.sh VMUNIX SECONDS`（gdbstub で i915 の worker の context ごとの engine の時間・queue の待ち・round trip を読む。script の先頭 1〜10 行）を S13 の GPU の run と同時に走らせる。VMUNIX は image の BUILD の `vmunix` |
 | 素の 5330 で S13 の時間・結果が passthrough と同じか | p012（p019）で測る。passthrough は CPU 10 ms・GPU 221 ms |
-| 素の 5330 で試験の kernel（vkcs）を走らせる方法 | 今の vkcs は `plan/ws075/tests/test-hw.sh`（passthrough の QEMU）だけ。素の機械で走らせた記録は無い。調べ方: `plan/ws031/tests/vkloop-hw.sh` の image（`VKLOOP_BUILD_ONLY=1` で作る `hdd-image.img`）を USB に書いて素の 5330 で起こせるか、`plan/tools/hw5330/README.md`（作成中）と WS075・WS084 の素の機械の手順で確かめる。分からなければ G1 の素の機械の分を「未実施」と書き、main に報告 |
+| 素の 5330 で試験の kernel（vkcs）を走らせる方法 | 今の vkcs は `plan/tools/i915-hw/test-hw.sh`（passthrough の QEMU）だけ。素の機械で走らせた記録は無い。調べ方: `plan/ws031/tests/vkloop-hw.sh` の image（`VKLOOP_BUILD_ONLY=1` で作る `hdd-image.img`）を USB に書いて素の 5330 で起こせるか、`plan/tools/hw5330/README.md`（作成中）と WS075・WS084 の素の機械の手順で確かめる。分からなければ G1 の素の機械の分を「未実施」と書き、main に報告 |
 | GPU が固まった時の回復（デモ中） | design.md §8 の最後の行。手順の候補: (1) Terminal で Ctrl+C、(2) 新しい Terminal で同じ script、(3) session の logout と login、(4) 機械の再起動（電源 button 長押し → USB boot）。どれが効くかは素の 5330 で、固まる状態を作らずに「Ctrl+C で止めて再実行」まで確かめる。**GPU を故意に固めない** |
 | `--gpu` が黙って CPU に戻る条件 | Noct は書き換えを断ると黙って CPU で走る（phase011「Noct の書き方で分かったこと」）。offload の証拠は `KEI_GLES_COMPUTE_TRACE=1` の `gles: compute dispatch` の行の数（`userland/desktop/libglesv2/compute.c:494〜510`）。s13.sh は「(N kernels ran on the GPU)」で数を出す（N=6 が正しい） |
 | Noct の accel の中身 | `userland/base/noct/noct/src/accel/accel_opengles.c`（2069 行。call ごとの buffer の作成・`glBufferData`・dispatch・`glFinish`・`glMapBufferRange`・`glDeleteBuffers` は 1588〜2040 行）。**読むだけ。変更は toolchain（main の許可）** |
 | libglesv2 の compute の時間の内訳 | `KEI_GLES_COMPUTE_TRACE=2`（`userland/desktop/libglesv2/gles.c:226〜250`）で `gles: time step=NAME us=N bytes=B` を stderr へ。集計は `python3 plan/ws101/tests/time-split.py GPU.log CPU.log`。spare の定数は `userland/desktop/libglesv2/gles.h:151〜159`（`GLES_SPARES` 8、`GLES_SPARE_BYTES` 64 MiB、`GLES_SPARE_FRAMES` 8、`GLES_ON_DEVICE_MIN` 64 KiB） |
-| compiler・実行器の誤り（再発時） | host の試験 `plan/ws101/tests/host/run.sh`: Mesa 25.0.7 の `brw_disasm`・`brw_asm`（`BRW_TOOLS`、既定 `build/mesa-tools/build-asm/src/intel/compiler`、run.sh:24）で byte の往復、Mesa の genxml（`GENXML`、既定 `build/mesa-tools/mesa-25.0.7/src/intel/genxml`、run.sh:25）で batch と IDD を decode（`tests/host/genxml-check.py`）。実行器の source は `src/drivers/gpu/i915/render/compute.c`・`command.c`、compiler は `src/drivers/gpu/i915/compiler/spirv.c`・`eu.c` |
-| GLSL ES 3.10 の compute の誤り（再発時） | `plan/ws101/tests/glsl/run.sh`: 自前の compiler（`userland/desktop/libglesv2/glsl/*.c`）→ `spirv-val --target-env vulkan1.0` → i915 の host の compile（`tests/host/compute-dump.c`）→ brw の往復 → host の lavapipe（`VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json`、run.sh:155）で実行し C と照合。新しい shader は `tests/glsl/pass/*.comp`、断るべき物は `tests/glsl/fail/*.comp`（`// expect:` の行） |
+| compiler・実行器の誤り（再発時） | host の試験 `plan/tools/gpu-compute/host/run.sh`: Mesa 25.0.7 の `brw_disasm`・`brw_asm`（`BRW_TOOLS`、既定 `build/mesa-tools/build-asm/src/intel/compiler`、run.sh:24）で byte の往復、Mesa の genxml（`GENXML`、既定 `build/mesa-tools/mesa-25.0.7/src/intel/genxml`、run.sh:25）で batch と IDD を decode（`tests/host/genxml-check.py`）。実行器の source は `src/drivers/gpu/i915/render/compute.c`・`command.c`、compiler は `src/drivers/gpu/i915/compiler/spirv.c`・`eu.c` |
+| GLSL ES 3.10 の compute の誤り（再発時） | `plan/tools/gpu-compute/glsl/run.sh`: 自前の compiler（`userland/desktop/libglesv2/glsl/*.c`）→ `spirv-val --target-env vulkan1.0` → i915 の host の compile（`tests/host/compute-dump.c`）→ brw の往復 → host の lavapipe（`VK_DRIVER_FILES=/usr/share/vulkan/icd.d/lvp_icd.json`、run.sh:155）で実行し C と照合。新しい shader は `tests/glsl/pass/*.comp`、断るべき物は `tests/glsl/fail/*.comp`（`// expect:` の行） |
 | GPU が固まる（試験中） | serial・console の log で判定しない（AGENTS.md）。QEMU の `-S -gdb` で止め、i915 の error の register（EIR・IPEHR・ACTHD・INSTDONE）を monitor・gdb で読む（design.md §5.3）。同じ条件の変更無しの再試行は 3 回まで |
 
 ## 5. コマンド
@@ -148,26 +148,26 @@ general な build・boot test は [plan/ws104/commands.md](../ws104/commands.md)
 ### 5.1 host の試験（GPU も QEMU も要らない。2026-10-01 に 5 本とも PASS、各 1〜25 秒）
 
 ```
-sh plan/ws101/tests/host/run.sh                      # 最後の行 "ws101 host test PASS"
-sh plan/ws101/tests/glsl/run.sh build/<W>/glsl       # "ws101 glsl compute host test PASS"
-sh plan/ws101/tests/gles/run.sh build/<W>/gles-host  # "ws101 gles host test PASS"
+sh plan/tools/gpu-compute/host/run.sh                      # 最後の行 "ws101 host test PASS"
+sh plan/tools/gpu-compute/glsl/run.sh build/<W>/glsl       # "ws101 glsl compute host test PASS"
+sh plan/tools/gpu-compute/gles/run.sh build/<W>/gles-host  # "ws101 gles host test PASS"
 sh plan/ws068/tests/glsl-host/run.sh build/<W>/ws068-glsl-host   # WS068 の回帰 "glsl-host: PASS"
 sh plan/ws068/tests/spirv-host/run.sh build/<W>/spirv-host       # "spirv-host: PASS"
 ```
 
 - `host/run.sh` は作業の dir を `mktemp -d "${TMPDIR:-/tmp}/ws101-host.XXXXXX"`（run.sh:26）に作り、終わりに消す。
-- 要る host の道具: `glslc`、`spirv-val`、`cc`、Mesa の `brw_disasm`・`brw_asm`・genxml（2026-10-05: 旧 `/home/awe/p014-c` は無くなったので、checkout の `build/mesa-tools` に `sh plan/ws101/tests/host/mesa-tools.sh` で作る。tarball を取って release notes の SHA-256 と照合し、intel の tools だけを meson で build、約 2 分。無ければ `host/run.sh`・`glsl/run.sh`・`plan/ws075/tests/guard/run.sh` は往復と genxml の decode を「NOT RUN」と出し、それ以外の検査だけで PASS（制限付き）と言う。`BRW_TOOLS`・`GENXML` で別の build を指せる）、lavapipe（`/usr/share/vulkan/icd.d/lvp_icd.json`）。
+- 要る host の道具: `glslc`、`spirv-val`、`cc`、Mesa の `brw_disasm`・`brw_asm`・genxml（2026-10-05: 旧 `/home/awe/p014-c` は無くなったので、checkout の `build/mesa-tools` に `sh plan/tools/gpu-compute/host/mesa-tools.sh` で作る。tarball を取って release notes の SHA-256 と照合し、intel の tools だけを meson で build、約 2 分。無ければ `host/run.sh`・`glsl/run.sh`・`plan/tools/i915-hw/guard/run.sh` は往復と genxml の decode を「NOT RUN」と出し、それ以外の検査だけで PASS（制限付き）と言う。`BRW_TOOLS`・`GENXML` で別の build を指せる）、lavapipe（`/usr/share/vulkan/icd.d/lvp_icd.json`）。
 
 ### 5.2 library と program だけの build（image は作らない）
 
 ```
-make -j16 ZEDBSD_CONFIG=plan/ws101/tests/hw/g3/config.mk BUILD=build/<W>-lib \
+make -j16 ZEDBSD_CONFIG=plan/tools/gpu-compute/hw/g3/config.mk BUILD=build/<W>-lib \
     build/<W>-lib/dynamic/libGLESv2.so build/<W>-lib/dynamic/libEGL.so build/<W>-lib/bin/glescompute build/<W>-lib/bin/egltest
 python3 plan/tools/style-check.py userland/desktop/libglesv2/*.c userland/desktop/libglesv2/gles.h   # 実行 bit が無いので python3 で
 git diff --check
 ```
 
-- `g3/config.mk` は noct を外している（`plan/ws101/tests/hw/g3/config.mk`）ので Noct は build されない。`make -n` で確かめた（noct・NoctLang・llvm の行 0）。
+- `g3/config.mk` は noct を外している（`plan/tools/gpu-compute/hw/g3/config.mk`）ので Noct は build されない。`make -n` で確かめた（noct・NoctLang・llvm の行 0）。
 - p016・p017 は `BUILD=build/amd64` で build したが、**共有の `build/amd64` を上書きしないよう、自分の `build/<W>-lib` を使う**。
 
 ### 5.3 QEMU の Venus
@@ -175,17 +175,17 @@ git diff --check
 image（1 つずつ。**他の image の build と同時に走らせない**）:
 
 ```
-plan/ws101/tests/gles/build-image.sh build/<W>-img > build/<W>/img-build.log 2>&1; echo "exit=$?"
+plan/tools/gpu-compute/gles/build-image.sh build/<W>-img > build/<W>/img-build.log 2>&1; echo "exit=$?"
 ```
 
 - `gles/build-image.sh:10` の既定は `build/ws101-p009-img`。この checkout には無い（2026-10-01）ので必ず作る。
-- 構成は `plan/ws101/tests/gles/config-amd64-compute.mk`（WS068 の lean な GLSL の image + glescompute。noct・clang・libcxx を外す）。
+- 構成は `plan/tools/gpu-compute/gles/config-amd64-compute.mk`（WS068 の lean な GLSL の image + glescompute。noct・clang・libcxx を外す）。
 
 GLES 3.1 の compute（G2）:
 
 ```
 IMAGE=build/<W>-img/hdd-image.img SYMBOLS=build/<W>-img/vmunix GUEST_RUNTIME=$PWD/build/<W>-run \
-    plan/ws101/tests/gles/venus.sh build/<W>/venus
+    plan/tools/gpu-compute/gles/venus.sh build/<W>/venus
 ```
 
 - PASS: 最後の行 `ws101 venus: PASS`（auto・default・repeat 1000 の 3 つと compositor の生存、venus.sh:42〜66）。
@@ -195,7 +195,7 @@ G3（Noct の GPU の見本、正しさだけ。Venus の時間は参考にな�
 
 ```
 NOCT=build/demo-lcd9/bin/noct IMAGE=build/<W>-img/hdd-image.img SYMBOLS=build/<W>-img/vmunix \
-    GUEST_RUNTIME=$PWD/build/<W>-run plan/ws101/tests/noct/g3-venus.sh build/<W>/g3-venus
+    GUEST_RUNTIME=$PWD/build/<W>-run plan/tools/gpu-compute/noct/g3-venus.sh build/<W>/g3-venus
 ```
 
 - PASS: `g3-venus: PASS`（CPU と GPU の `MIX check=1001 wrong=0`、checksum 一致、dispatch 数 ≥ ROUNDS、g3-venus.sh:53〜62）。
@@ -218,17 +218,17 @@ GUEST_RUNTIME=$PWD/build/<W>-run BIN=build/<W>-lib NOCT=build/demo-lcd9/bin/noct
 i915 の kernel の試験（G1 の vkcs と実行器の回帰）:
 
 ```
-OUT=build/<W>-hw plan/ws101/tests/hw/run-hw.sh r1 vkcs vkx vke1 vke2 vkc
+OUT=build/<W>-hw plan/tools/gpu-compute/hw/run-hw.sh r1 vkcs vkx vke1 vke2 vkc
 ```
 
-- 各場面の image を lock の外で `OUT/SCENARIO` に build（`VKLOOP_BUILD_ONLY=1`、上限 3000 s）してから、`plan/ws075/tests/test-hw.sh` で lock の下で走らせる（上限 3600 s、lock の待ちを含む）。
+- 各場面の image を lock の外で `OUT/SCENARIO` に build（`VKLOOP_BUILD_ONLY=1`、上限 3000 s）してから、`plan/tools/i915-hw/test-hw.sh` で lock の下で走らせる（上限 3600 s、lock の待ちを含む）。
 - 試験の組（`I915_TEST_SET`）は場面ごとに `vkloop-hw.sh` が選ぶ（vkcs は `compute`、vkx・vkc・vke1・vke2 はそれぞれ自分の組、q762 で既定の `all` は廃止: 全ての場面を入れた kernel は上限を超える）。走っている間は tree を編集しない（lock の中の make が拾う、run-hw.sh:6）。
 - PASS: 終了 code 0。結果は `OUT/hw-SCENARIO-r1/`（vkcs 21/21、vkx 9/9、vke1 6/6、vke2 17/17、vkc 9/9 が前回）。
 
 GLES 3.1 の compute（G2）と egltest feedback・queries:
 
 ```
-BUILD=build/<W>-gles plan/ws101/tests/hw/gles-hw.sh build/<W>/gles-hw
+BUILD=build/<W>-gles plan/tools/gpu-compute/hw/gles-hw.sh build/<W>/gles-hw
 ```
 
 - `GLES_HW_BUILD_ONLY=1` で image の build だけ（gles-hw.sh:32）。lock は copy・run・読み取りの間だけ（約 6 分）。
@@ -238,7 +238,7 @@ G3（S13 の script と mix.nct の CPU・GPU、passthrough）:
 
 ```
 # 提案 B（p020）の後
-G3_NOCT=build/demo-lcd9/bin/noct BUILD=build/<W>-g3 plan/ws101/tests/hw/g3-hw.sh build/<W>/g3-hw
+G3_NOCT=build/demo-lcd9/bin/noct BUILD=build/<W>-g3 plan/tools/gpu-compute/hw/g3-hw.sh build/<W>/g3-hw
 ```
 
 - **提案 B の前は `NOCT=…` を渡すと image の build が壊れ（2 章）、既定の path も無い**。直す前に走らせるなら、`build/<W>/g3-hw.sh` に複写して
@@ -249,12 +249,12 @@ S13 を demo の image の Terminal で（手の操作の再現、passthrough）
 
 ```
 # image（提案 B の後は S13_NOCT）
-S13_NOCT=build/demo-lcd9/bin/noct plan/ws101/tests/demo/build-s13-image.sh build/<W>-demo
+S13_NOCT=build/demo-lcd9/bin/noct plan/tools/gpu-compute/demo/build-s13-image.sh build/<W>-demo
 # run（lock は start〜stop、H4_MINUTES 既定 12、BOOT_S 既定 150、RUN_S 既定 60）
-plan/ws101/tests/demo/s13-hw.sh build/<W>-demo/hdd-image.img build/<W>/s13-hw
+plan/tools/gpu-compute/demo/s13-hw.sh build/<W>-demo/hdd-image.img build/<W>/s13-hw
 ```
 
-- 構成は `plan/ws101/tests/demo/config.mk`（`plan/ws075/demo/config-demo-hdmi.mk` から noct を外した物。gpudemo は入る）。
+- 構成は `plan/tools/gpu-compute/demo/config.mk`（`plan/ws075/demo/config-demo-hdmi.mk` から noct を外した物。gpudemo は入る）。
 - 判定は撮った PNG（`build/<W>/s13-hw/shots/*-s13-live.png`）を読む（s13-hw.sh:7）。Terminal の tile の座標 (1031,386) は `plan/ws035/demo/apps.conf` の 4 番目（s13-hw.sh:23〜24）。apps.conf の並びが変わったら座標を直す。
 - PNG はユーザーに見せる。
 

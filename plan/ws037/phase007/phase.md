@@ -77,7 +77,7 @@ texture の段（1 の 3）では SET_TEX_HEADER_POOL_A..C（0x1574）・SET_TEX
 | `mmu.c`・`nvrtx-gsp.h` | `nvrtx_mmu_gr_map_vram`（VRAM、非 privileged・書き込み可、足しただけ） |
 | `nvrtx-gpu.h`・`stage.c`・`nvrtx-private.h` | `struct nvrtx_draw_state`、handle、VA の約束、`nvrtx.draw=1` |
 | `platform/amd64/vmunix.mk` | NVRTX=y の時だけ 2 file |
-| `plan/ws037/tests/config-amd64-nvrtx.mk` | `NVRTX_RUN=R7d`（`nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1 nvrtx.draw=1`） |
+| `plan/tools/nvrtx/config-amd64-nvrtx.mk` | `NVRTX_RUN=R7d`（`nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1 nvrtx.draw=1`） |
 
 出典（MIT、Mesa 25.3.6、sha256）: `headers/nvidia/classes/clc597.h`（4b47ff26…e39d）、`clc597tex.h`（15f53cf3…2595）、`cl9097tex.h`（0b1bc445…1162）、`vulkan/nvk_cmd_draw.c`（1efce360…f927）、`nvk_cmd_clear.c`（2eee3340…3515）、`nvk_shader.c`（57d46463…a0）、`nvk_sampler.c`（119f8e76…cb85）、`nil/descriptor.rs`（b46b470d…369e）。file の先頭の注記に全文の hash。
 
@@ -85,9 +85,9 @@ texture の段（1 の 3）では SET_TEX_HEADER_POOL_A..C（0x1574）・SET_TEX
 
 | コマンド | 結果 |
 | --- | --- |
-| `sh plan/ws037/tests/nvrtx-sm75-host-test.sh` | `150 checks, 0 failures`（stage C までの分に加えて: draw の push を decode して clc597.h の method の番号で 40 項目（SET_OBJECT、colour target 0 の 9 語、null target、viewport の 128.0、pipeline の type と address と group、cbuf 0、vertex stream、texture の pool、clear、BEGIN・6 頂点・END、全 header が subchannel 0 の incrementing）、TIC・TSC の欄を clc597tex.h の位置で、draw の 4 つの program を IR から compile して interpreter で走らせる（頂点の位置、texture の座標、単色、sample）、`nvrtx_mmu_gr_map_vram` の entry） |
+| `sh plan/tools/nvrtx/nvrtx-sm75-host-test.sh` | `150 checks, 0 failures`（stage C までの分に加えて: draw の push を decode して clc597.h の method の番号で 40 項目（SET_OBJECT、colour target 0 の 9 語、null target、viewport の 128.0、pipeline の type と address と group、cbuf 0、vertex stream、texture の pool、clear、BEGIN・6 頂点・END、全 header が subchannel 0 の incrementing）、TIC・TSC の欄を clc597tex.h の位置で、draw の 4 つの program を IR から compile して interpreter で走らせる（頂点の位置、texture の座標、単色、sample）、`nvrtx_mmu_gr_map_vram` の entry） |
 | `sh plan/ws037/tests/nvrtx-gsp-host-test.sh` | `PASS nvrtx gsp: 222 checks`（main の取り込みの後） |
-| `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-p007 build/ws037-p007/vmunix` | rc 0、`warning:` 0 行、`kernel include check: PASS`、`amd64 vmunix check: PASS`。既定 n の build は `vmunix.mk` の NVRTX の `ifeq` の中だけの変更なので変わらない |
+| `make -j16 ZEDBSD_CONFIG=plan/tools/nvrtx/config-amd64-nvrtx.mk BUILD=build/ws037-p007 build/ws037-p007/vmunix` | rc 0、`warning:` 0 行、`kernel include check: PASS`、`amd64 vmunix check: PASS`。既定 n の build は `vmunix.mk` の NVRTX の `ifeq` の中だけの変更なので変わらない |
 | `git diff --check` | 出力なし |
 
 未実施: 実機（R7d）。push の method の順と値は NVK の読みに基づくが、MME の macro を通す NVK の state（SET_PRIV_REG の 2 つ、anti-alias の macro、shadow scratch）は送っていない（危険 1）。
@@ -96,7 +96,7 @@ texture の段（1 の 3）では SET_TEX_HEADER_POOL_A..C（0x1574）・SET_TEX
 
 前提: R7c（P9c）が合格。合格していなければ R7d は流さない（P9g は P9c の確かめの後でしか動かない）。
 
-image: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r7d NVRTX_RUN=R7d`（main の merge の commit で）。run の前に host の reboot と `prepare.sh --check`。判定は今までどおり画面の PNG（`dmesg | grep nvrtx`）。
+image: `plan/tools/guest/test-image.sh --no-harness plan/tools/nvrtx/config-amd64-nvrtx.mk build/ws037-nvrtx/r7d NVRTX_RUN=R7d`（main の merge の commit で）。run の前に host の reboot と `prepare.sh --check`。判定は今までどおり画面の PNG（`dmesg | grep nvrtx`）。
 
 合格の印（R7c の `P9c ok: compute wrote 32 words of 42` の後、P8 の前に）:
 
@@ -130,7 +130,7 @@ FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（�
 
 | 確認 | 結果 |
 | --- | --- |
-| `sh plan/ws037/tests/nvrtx-sm75-host-test.sh` | `159 checks, 0 failures`（draw の push に 4 項目: type 0 を書かない、POST_Z_PS_IMASK 0、VRS 16 個 0、hybrid AA 1） |
+| `sh plan/tools/nvrtx/nvrtx-sm75-host-test.sh` | `159 checks, 0 failures`（draw の push に 4 項目: type 0 を書かない、POST_Z_PS_IMASK 0、VRS 16 個 0、hybrid AA 1） |
 | `make -j16 BUILD=build/p2/amd64 ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p2/amd64/vmunix`（p2 worktree） | rc 0・warning 0・include check / vmunix check PASS、`git diff --check` 0 |
 | 実機（R7d の再試験） | **未実施**。手順は 7 節のまま（image の語は既定 on の後 `nvrtx.gsp=1 nvrtx.gr=1 nvrtx.compute=1 nvrtx.draw=1 nvrtx.disp=0 nvrtx.resident=0`、`config-amd64-nvrtx.mk` の `NVRTX_RUN=R7d`）。FAIL で同じ SPH の誤りなら、`DS_HWW_ESR` の bit の変化（17・19 が消えたか）を記録 |
 
@@ -197,7 +197,7 @@ FAIL の時に PNG に残す物: `P9g fail: … target (x, y) is X, want Y`（�
 
 #### T への手順（R9w、方式 B、rombar=0 で可）
 
-image: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9w NVRTX_RUN=R9w`（merge の commit）。run の前に host の reboot と `prepare.sh --check`。判定は guest の kernel の印（screendump か `dmesg | grep nvrtx`）。
+image: `plan/tools/guest/test-image.sh --no-harness plan/tools/nvrtx/config-amd64-nvrtx.mk build/ws037-nvrtx/r9w NVRTX_RUN=R9w`（merge の commit）。run の前に host の reboot と `prepare.sh --check`。判定は guest の kernel の印（screendump か `dmesg | grep nvrtx`）。
 合格: R7g の印（P5g の ok）に続いて `P9w begin` → `P9w arena at …, own buffers … bytes` → `P9w page tables at …` → `P9w ok: vaspace` → `P9w ok: work channel 4 on runlist N` → **`P9w ok: fence 1 after N us`** → `P8 ok: display …` → `P8b off (nvrtx.disp=0); stopping after P8a` → `P8 done; …` → `P6 ok: channel and vaspace freed`（**`P6: N work frees failed` が無い**）→ `P7 ok: region torn down` → login prompt。
 FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore …)` なら channel は作れたが GPU が entry を実行していない）、`rm: class … status …`・`rm: control … status …`、`P6 channel error: …` を記録。`P7 fail` なら host を reboot。
 
@@ -238,7 +238,7 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 
 | コマンド | 結果 |
 | --- | --- |
-| `sh plan/ws037/tests/nvrtx-vk-host-test.sh` | `PASS nvrtx vk: 59 checks`（object の登録と 3000 個の索引、transport（reply・probe・blob の stream の copy・入れ子の上限・容量・不正）、libvulkan の writer で instance → 列挙 → family → format → memory → device → queue → idle → destroy） |
+| `sh plan/tools/nvrtx/nvrtx-vk-host-test.sh` | `PASS nvrtx vk: 59 checks`（object の登録と 3000 個の索引、transport（reply・probe・blob の stream の copy・入れ子の上限・容量・不正）、libvulkan の writer で instance → 列挙 → family → format → memory → device → queue → idle → destroy） |
 | vmunix（`build/p2/amd64`） | rc 0・warning 0・include/vmunix check PASS |
 | 実機 | 未実施（node に CAPSET・COMMAND・NOTIFICATION・JOB はまだ付けていない: 次の D2 の残り） |
 
@@ -257,7 +257,7 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 
 | コマンド | 結果 |
 | --- | --- |
-| `sh plan/ws037/tests/nvrtx-vk-host-test.sh` | `PASS nvrtx vk: 60 checks`（queue の timeline 3 の記録を足した） |
+| `sh plan/tools/nvrtx/nvrtx-vk-host-test.sh` | `PASS nvrtx vk: 60 checks`（queue の timeline 3 の記録を足した） |
 | vmunix（`build/p2/amd64`） | rc 0・warning 0 |
 | runtime.c の host 試験 | 無し（kernel の spinlock・waitq・thread に依る。review で確かめた: GPU core の契約（JOB に NOTIFICATION と recovery.fault、cancel の後の capacity の通知は core、drain は close で pending 0 まで）、completion はちょうど 1 回） |
 | 実機 | 未実施（D3 の後に vkdemo の offscreen と合わせて T1 へ） |
@@ -307,14 +307,14 @@ FAIL の時: `P9w fail: …`（`the first fence 1 did not come (…, semaphore �
 | コマンド | 結果 |
 | --- | --- |
 | `sh plan/ws037/tests/nvrtx-vk-d3-host-test.sh` | `PASS nvrtx vk d3: 98 checks`（libvulkan の writer と codec の encoder で作った wire を dispatcher に通す。memory・attach・bind・requirements・layout・import、view・sampler、compositor の quad.vert／quad.frag（glslc）の pipeline の compile、descriptor、pass、framebuffer、記録 13 件の command buffer の submit → push を解読して target（0xcf）・clear 2 回・draw 3 回（quad・copy・buffer→image）・program の address・blend・viewport（scale 32、copy の 8 と offset 18）・scissor・barrier・TIC の address と pitch・cbuf0 の handle と push、揃わない region の CPU の複写、fence の signal、漏れ無し） |
-| `sh plan/ws037/tests/nvrtx-vk-host-test.sh` | `PASS nvrtx vk: 60 checks` |
+| `sh plan/tools/nvrtx/nvrtx-vk-host-test.sh` | `PASS nvrtx vk: 60 checks` |
 | vmunix（`build/p2/amd64`） | rc 0・warning 0 |
 | vkquad（`ZEDBSD_USER_PROGRAMS="libvulkan vkquad"`） | rc 0 |
 | 実機 | **未実施**（R9w の後に R9v を T へ） |
 
 #### T への手順（R9v、方式 B、rombar=1）
 
-前提: R9w（work channel）が通ること（T1-658 で PASS 済み、R9v は同じ channel を使う）。語は `nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.vk=1`: 方式 B の guest では firmware の console が RTX に無いので、`nvrtx.disp.test=1`（自前の帯の surface での takeover、R8c と同じ）が無いと head は firmware のままで GPU device（P8c）が登録されない（T1-672 の FAIL の原因）。起動の印に `P8c ok: gpu device registered` が要る。image は harness 入りで（SSH の鍵と `/etc/net.conf`）`plan/tools/guest/test-image.sh plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9v NVRTX_RUN=R9v`。QEMU は host の `~/nvrtx/start-rombar1-net.sh`（usb-net と hostfwd、T1-664 と同じ）。run の前に host の reboot と `prepare.sh --check`、run の後も host の reboot（GSP は残る）。判定は SSH で guest の中の出力と dmesg（serial・console の log では判定しない）。
+前提: R9w（work channel）が通ること（T1-658 で PASS 済み、R9v は同じ channel を使う）。語は `nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.vk=1`: 方式 B の guest では firmware の console が RTX に無いので、`nvrtx.disp.test=1`（自前の帯の surface での takeover、R8c と同じ）が無いと head は firmware のままで GPU device（P8c）が登録されない（T1-672 の FAIL の原因）。起動の印に `P8c ok: gpu device registered` が要る。image は harness 入りで（SSH の鍵と `/etc/net.conf`）`plan/tools/guest/test-image.sh plan/tools/nvrtx/config-amd64-nvrtx.mk build/ws037-nvrtx/r9v NVRTX_RUN=R9v`。QEMU は host の `~/nvrtx/start-rombar1-net.sh`（usb-net と hostfwd、T1-664 と同じ）。run の前に host の reboot と `prepare.sh --check`、run の後も host の reboot（GSP は残る）。判定は SSH で guest の中の出力と dmesg（serial・console の log では判定しない）。
 1. SSH で `dmesg | grep nvrtx`: R9w の `P9w ok: fence 1 after N us` と R8c の `P8c ok: gpu device registered, …`。
 2. SSH で `vkquad` → 1 行。合格は **`VKQUAD ok device=… pixels=4096`**。
 3. （D5、vkquad の後に）SSH で `display-events --frames=60 --hold=3 --watch=0` → `DISPLAY-EVENTS swapchain index=0 result=0`・`present index=0 frames=60 result=0`・`first-pixel index=0 result=0`・`done error=0` が合格（power の行の結果は記録だけ: power は EOPNOTSUPP の仕様）。swapchain の image を同じ node の blob として複写なしで出すか、複写で出すかは libvulkan が決める（dmesg と display-events の行で分かる範囲を記録）。
@@ -323,7 +323,7 @@ FAIL の時: vkquad の行（`VKQUAD fail <段> <VkResult>`、pixel なら座標
 
 #### T への手順（R9k、D6 の desktop。R9v が通った後）
 
-image は harness 入りで `plan/tools/guest/test-image.sh plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r9k NVRTX_RUN=R9k`（main の image と同じ graphical の boot と login、`nvrtx.gsp=1 nvrtx.disp.own=1 nvrtx.vk=1`、compositor の capture、keiland-shot）。QEMU は `~/nvrtx/start-rombar1-net.sh`、run の前後に host の reboot。判定は SSH（serial・console の log は使わない）。
+image は harness 入りで `plan/tools/guest/test-image.sh plan/tools/nvrtx/config-amd64-nvrtx.mk build/ws037-nvrtx/r9k NVRTX_RUN=R9k`（main の image と同じ graphical の boot と login、`nvrtx.gsp=1 nvrtx.disp.own=1 nvrtx.vk=1`、compositor の capture、keiland-shot）。QEMU は `~/nvrtx/start-rombar1-net.sh`、run の前後に host の reboot。判定は SSH（serial・console の log は使わない）。
 1. 起動から 60 秒後に SSH で `dmesg | grep nvrtx` の全文（`P8c ok`・`P9w ok`、`nvrtx: vk: command N refused`・`D3 fail`・`a stage … did not compile` の有無）。
 2. SSH で `ps -ax | grep -E 'wayland|sessiond'`（compositor が動いているか）と `ls /dev/gpu*`。
 3. SSH で `keiland-shot /tmp/r9k.png` → `KEILAND-SHOT /tmp/r9k.png 1280x1024` が合格の印、PNG を scp で host へ取り、結果の md に貼る（login の画面か desktop が描かれていること）。
@@ -394,7 +394,7 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 3. image（`config-amd64-nvrtx.mk` に足した）:
    - **RAk**: main の image の既定（graphical boot・graphical login、kernel の行は出さない）＋語 `nvrtx.vk=1`＋`display-inventory`。合格: RTX の monitor に boot の logo → GSP の起動の間の一時的な黒は可 → Keiland の desktop（panel・wallpaper・Welcome の window）。
    - **RAd**（RAk が FAIL の時の切り分け）: RAk に kernel の行を画面に出す（`ZEDBSD_BOOT_KERNEL_MESSAGES := y`、graphical boot n）。最後に見えた `N1`・`P0`・`P4m`・`P8b`・`P8c`・`P9w` の印を写真に撮る。graphical boot n なので GOP は 640x480 になり、RAk（1920x1080）とは mode が違う点に注意（切り分けの用で、合格の判定は RAk）。
-   - 手順は phase006 の RA と同じ: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/rak NVRTX_RUN=RAk`、USB に書き、BIOS は CSM off・primary display が PEG、RTX の出力に monitor。
+   - 手順は phase006 の RA と同じ: `plan/tools/guest/test-image.sh --no-harness plan/tools/nvrtx/config-amd64-nvrtx.mk build/ws037-nvrtx/rak NVRTX_RUN=RAk`、USB に書き、BIOS は CSM off・primary display が PEG、RTX の出力に monitor。
 
 ## 方法 A の 1 回目（RAk、2026-10-15、ユーザーが RTX 機 10.0.30.5 を USB から素で起動、Q1 が SSH で調べた）
 
@@ -410,7 +410,7 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
   - P8b: console が mode 以下なら受ける。最初の commit の head の viewport を in＝console（640x480）・out＝mode（1280x1024）にして head の scaler で拡大（firmware の armed の `view 01e00280`／`04000500` と同じ）。window は console の大きさのまま。mode より大きい console は従来どおり firmware に残す（head の scaler は拡大だけ）。
   - P8c: GPU device の大きさを mode の可視の大きさにする（以前は surfaces[0]＝console の大きさ）。compositor の frame（1280x1024）と console（640x480）の間の flip では、core に viewport in を書き、window の release を core と、core の release を window と interlock する（nouveau の head と plane を一緒に commit する順）。refresh は P8b が set した mode の raster・clock から。
   - 変えた file: `src/drivers/gpu/nvrtx/scanout.c`・`disp-first.c`・`nvrtx-disp.h`・`nvrtx-gpu.h`・`present.c`、host 試験 `plan/ws037/tests/nvrtx-gsp-host-test.c`（拡大の core の 54 語、view の変更の 13 語、core と interlock の flip）。
-- 確かめ: `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-p2b build/ws037-p2b/vmunix` rc 0・warning 0・include check / vmunix check PASS。`plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 278 checks。`git diff --check` 0。実機は未実施。
+- 確かめ: `make -j16 ZEDBSD_CONFIG=plan/tools/nvrtx/config-amd64-nvrtx.mk BUILD=build/ws037-p2b build/ws037-p2b/vmunix` rc 0・warning 0・include check / vmunix check PASS。`plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 278 checks。`git diff --check` 0。実機は未実施。
 - 実機の確かめ（T1、RTX 機 10.0.30.5 に SSH）: 今の USB の image（RAk、main a3cf77c12）の kernel だけを差し替える（a3cf77c12 以降 `include/uapi`・`src/kern` の変更なし）。見る行: `P8b console 640x480 pitch 4096 at the VRAM's start, shown at 1280x1024`、`P8b ok: mode set (1280x1024 on SOR 1), surface A 640x480 shown`、`P8b ok: head 0 shows the console`、`P8c ok: gpu device registered, display 1280x1024`、`P8c lease N claimed`、`P8c view 1280x1024 shown at 1280x1024`。`P8b fail`・`P8c fail`・sessiond の `CONSOLE reason=no-display` が無いこと。
 - 残り（範囲外）: loader の GOP の選び方。graphical boot は 1920x1080 だけを求め、無ければ firmware の今の mode（ここでは 640x480）のまま。1920x1080 以下で一番大きい mode を選ぶ案を Q1 に送った（boot loader は別 WS の所有）。
 
@@ -423,7 +423,7 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
   2. **PRAMIN の書き込みが届かない**（window の base の競合など）: → page の entry を書いたら最初と最後を PRAMIN で読み返し、違えば 1 度書き直し、なお違えば EIO（`vram_place_ptes`、実行時の `nvrtx_bo_map` も同じ道）。root の entry も書いた後に読み返し、違えば `P4m: the root's entry reads …, … written` で EIO。
   3. **RM が root の entry を戻す・window の mode が変わる・MMU が fault を記録**: → 自己試験が失敗したら 1 度だけ回復を試みる。まず `P4m retry:` の 4 行（読んだ値、root の entry と ours、試験の run の page entry と wants、BAR1 の mode 0xb80f40・MMU の other fault の記録 0xb83090／0xb83080・84）を出し、表を全部（console の page ごと）書き直して root を切り替え、試験の run を map し直し、1 ms 待って読み直す。通れば `P4m retry: the window reads back after the tables were written again` の後に `P4m ok`、だめなら従来の `P4m fail: bar1 reads … (%d)`（%d は今は EIO の 5）。
 - 変えた file: `src/drivers/gpu/nvrtx/vram.c`、`src/drivers/gpu/nvrtx/nvrtx-gpu.h`（`bar1_root_ours`）、host 試験 `plan/ws037/tests/nvrtx-gsp-host-test.c`（console の page を入れた BAR1 の表の 7 項目）。
-- 確かめ: `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-p2c build/ws037-p2c/vmunix` rc 0・warning 0・kernel include check PASS・amd64 vmunix check PASS。`plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 285 checks（278→285）。`git diff --check` 0。**実機は未実施**。
+- 確かめ: `make -j16 ZEDBSD_CONFIG=plan/tools/nvrtx/config-amd64-nvrtx.mk BUILD=build/ws037-p2c build/ws037-p2c/vmunix` rc 0・warning 0・kernel include check PASS・amd64 vmunix check PASS。`plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 285 checks（278→285）。`git diff --check` 0。**実機は未実施**。
 - 実機の確かめ（T1 に依頼）: RTX 機 10.0.30.5 で kernel を `build/ws037-p2c/vmunix` に差し替え、reboot を 5 回。毎回 `P4m ok`・`P8c ok: gpu device registered`・sessiond の session（wayland）の起動を見る。`P4m retry:` の行が出たらその 4 行が原因の切り分けの材料（root の entry が ours でない＝RM が戻した、page entry が wants でない＝PRAMIN の書き込みが届かない、両方合っている＝TLB・fault の側）。
 
 ## 方法 A の P4m の間欠の失敗の解析と 2 回目の直し（P2、2026-10-15、Fable 5.1、build と host 試験まで、実機は未）
@@ -436,7 +436,7 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
   1. P4m の表を書く前に、MMU の fault status（0xb83094）か record（0xb83090）が 0 でなければ `P4m bar1 before the tables: fault status …, record … at …: engine E type T client C access A` を出す（PASS の run にも出るので、古い記録の有無を pass/fail で比べられる）。
   2. 自己試験が失敗した時の回復を 6 round に: 毎 round で fault status の DROPPED（7:0）と VALID（31）を write-1-to-clear（nouveau の tu102 fault handler が 0xb83094 に 0x80000000 を書くのと同じ）→ hub の TLB invalidate → 待ち（1,2,4,8,16,32 ms）→ 読み直し。round 2 は表の書き直し（従来の retry）、round 3 は **instance block の +0x200 の root を読んで static info と比べ（`P4m retry: instance block … names root …`）、違えば採用して表を書き直し、0xb80f40 に今の値を書いて bind をやり直す**（0xb80f50 の pending を poll）。通れば `P4m retry: the window reads back after <round の名>`、各 round の失敗は `P4m retry N (<名>): bar1 reads …`。
   3. 失敗の報告に fault status・engine id・decode を足した（`P4m retry: fault status …, record … at …: engine … type … client … access …`）。
-- 確かめ: `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-p2d build/ws037-p2d/vmunix` rc 0・warning 0・kernel include check PASS・amd64 vmunix check PASS。`plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 285。`git diff --check` 0。**実機は未実施**。
+- 確かめ: `make -j16 ZEDBSD_CONFIG=plan/tools/nvrtx/config-amd64-nvrtx.mk BUILD=build/ws037-p2d build/ws037-p2d/vmunix` rc 0・warning 0・kernel include check PASS・amd64 vmunix check PASS。`plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 285。`git diff --check` 0。**実機は未実施**。
 - 実機の確かめ（T1 に依頼）: RTX 機 10.0.30.5 で kernel を `build/ws037-p2d/vmunix` に差し替え、reboot 10 回。毎回 `P4m ok`・`P8c ok: gpu device registered`・session（wayland）の起動。全 run の `P4m bar1 before the tables` の行と、出た時の `P4m retry` の行（どの round で通ったか、instance block の root、fault status）を集める: round 1 で通る＝fault の状態、round 3 で通る＝bind/root、round 4 以降＝RM の busy、全部 FAIL＝別の原因（record の VA・client で切り分け）。
 
 ## reboot・shutdown で GSP を止める（P2、2026-10-15、Fable 5.1、build と host 試験まで、実機は未）
@@ -463,7 +463,7 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 
 ### 確かめ
 
-- `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-p2e build/ws037-p2e/vmunix` rc 0・warning 0・kernel include check PASS・amd64 vmunix check PASS。
+- `make -j16 ZEDBSD_CONFIG=plan/tools/nvrtx/config-amd64-nvrtx.mk BUILD=build/ws037-p2e build/ws037-p2e/vmunix` rc 0・warning 0・kernel include check PASS・amd64 vmunix check PASS。
 - `plan/ws037/tests/nvrtx-gsp-host-test.sh` PASS 285（変えた所は hardware を触る file なので host 試験の項目は足していない）。`git diff --check` 0。
 - pci.c は全 platform 共通なので `config/ci/config-amd64.mk`・`config/ci/config-rpi4.mk` の vmunix も build（結果は下の行）。
 - **実機・QEMU は未実施**（T1 に依頼、下）。
@@ -546,10 +546,10 @@ Q1 の指示: 方法 A（RTX 2070 の機械 10.0.30.5 を USB から素で起動
 
 | コマンド | 結果 |
 | --- | --- |
-| `make -j16 BUILD=build/p4perf/nvrtx ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk build/p4perf/nvrtx/vmunix` | rc 0・warning 0・include/vmunix check PASS |
+| `make -j16 BUILD=build/p4perf/nvrtx ZEDBSD_CONFIG=plan/tools/nvrtx/config-amd64-nvrtx.mk build/p4perf/nvrtx/vmunix` | rc 0・warning 0・include/vmunix check PASS |
 | `make -j16 BUILD=build/p4perf/ci ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p4perf/ci/vmunix` | rc 0・warning 0・vmunix check PASS |
 | `sh plan/ws037/tests/nvrtx-vk-d3-host-test.sh` | PASS 119（F2 の CPU の複写の計数 1、F3 の skew した upload: header の address 0x30008040・pitch 64・u 1〜5・scissor） |
-| `sh plan/ws037/tests/nvrtx-vk-host-test.sh` / `nvrtx-gsp-host-test.sh` | PASS 60 / PASS 304 |
+| `sh plan/tools/nvrtx/nvrtx-vk-host-test.sh` / `nvrtx-gsp-host-test.sh` | PASS 60 / PASS 304 |
 | 実機 | **未実施**（T1 へ: T1-695 と同じ 3 場面の KWL PERF と `nvrtx.vk.perf=1` の行） |
 
 危険: F3 の texture の 32 byte 境界は texture header の field（address の bit 31:5）から決めた。実機で文字の upload（Terminal・Files の中身）の絵が崩れないことを T1 の画面（keiland-shot か写真）で確かめる。

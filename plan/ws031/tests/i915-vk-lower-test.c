@@ -1850,7 +1850,7 @@ test_remainders(void)
 	printf("  remainders: SRem(-7,3) = -1, SRem(7,-3) = 1, SMod(-7,3) = 2, SMod(7,-3) = -2, FRem(-7.5,2) = -1.5, FMod = 0.5\n");
 }
 
-/* Loads a SPIR-V file of plan/ws075/tests/switch/. */
+/* Loads a SPIR-V file of plan/tools/i915-hw/switch/. */
 static uint32_t *
 load_switch_spv(const char *name, size_t *words)
 {
@@ -1859,7 +1859,7 @@ load_switch_spv(const char *name, size_t *words)
 	long size;
 	uint32_t *code;
 
-	snprintf(path, sizeof(path), "%s/plan/ws075/tests/switch/%s", VK_REPO, name);
+	snprintf(path, sizeof(path), "%s/plan/tools/i915-hw/switch/%s", VK_REPO, name);
 	file = fopen(path, "rb");
 	assert(file != NULL);
 	fseek(file, 0, SEEK_END);

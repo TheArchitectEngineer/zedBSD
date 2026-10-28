@@ -8,7 +8,7 @@
 /*
  * The host stand-ins the display 9 golden scenes need beyond
  * src/drivers/gpu/i915/tests/display/host-kernel.c: the same services as
- * plan/ws084/tests/native-decide-stubs.c, except that the boot line is
+ * plan/tools/i915-display/native-decide-stubs.c, except that the boot line is
  * empty, so every boot word takes its default.  Every other stand-in ends
  * the test with the name of the service.
  */

@@ -43,7 +43,7 @@ Queue: なし（2026-09-30 Q1 の割り当て）
 
 ## 試験
 
-- `plan/ws094/tests/host-desktop.c` に 2 つの試験を足した。`host-desktop.sh` は **PASS**。
+- `plan/tools/files-desktop/host-desktop.c` に 2 つの試験を足した。`host-desktop.sh` は **PASS**。
   - `check_label`: 1 行、空白で 2 行、一杯で 2 行、40 文字（英語と日本語）で「…」と拡張子、全ての行が 88 px に収まる。
   - `check_resize`: 1920 で保存の場所、1280 で空いた cell、1920 に戻して保存の場所。
 - 新規 `plan/ws094/tests/desktop-p010.sh IMAGE OUTDIR`（QEMU の Venus、`plan/ws102/tests/build-inset-image.sh` の image）:

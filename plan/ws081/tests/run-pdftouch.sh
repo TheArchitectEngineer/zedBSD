@@ -21,7 +21,7 @@ for header in truetype/truetype.h keiland/keiland.h; do
 done
 
 # The test document: eight Letter pages, each with bands of colour and as many squares as its number.
-python3 "$root/plan/ws081/tests/make-touch-pdf.py" "$out/touch.pdf"
+python3 "$root/plan/tools/touch/make-touch-pdf.py" "$out/touch.pdf"
 
 # libpdf's sources, as its Makefile lists them (userland/desktop/libpdf/Makefile's LIBPDF_SOURCES).
 libpdf="writer.c update.c outline.c object.c reader.c filter.c ccitt.c image.c display.c content.c editor.c tounicode.c

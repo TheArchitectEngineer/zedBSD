@@ -8,7 +8,7 @@
 /*
  * Host model of one V3D 7.1 QPU lane running a native program (ws279-p004).
  *
- * The 7.1 copy of plan/ws141/tests/qpu-machine.h.  The words are read with
+ * The 7.1 copy of plan/tools/v3d-qpu/qpu-machine.h.  The words are read with
  * the unmodified MIT Mesa decoder.  Both ALUs of a word read their sources
  * when the word starts and write when it ends; a special function's result
  * lands a word later, a varying's coefficient in rf0 a word later.  A read

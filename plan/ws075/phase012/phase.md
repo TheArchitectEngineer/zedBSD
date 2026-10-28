@@ -32,7 +32,7 @@ firmware の eDP の表示（bare metal の GOP）を止めるのは従来どお
 
 ## 試験
 
-### host（`plan/ws075/tests/hdmi/host-output-test.sh`、新規）
+### host（`plan/tools/i915-hw/hdmi/host-output-test.sh`、新規）
 
 `src/kern/boot.c` と `output.c` を host の clang（ASan・UBSan、`--gc-sections`）で link。**80 checks, 0 failures**:
 parameter（hdmi/auto、無し、他の語・壊れた mode・重複の拒否）、`WxH[@R]` の読み取り（境界、壊れた形 7 つ）、H1 の LCD の EDID
@@ -42,7 +42,7 @@ CVT-RB（1920x1280@60 は LCD の timing と clock の刻み以外一致、VESA 
 
 ### 実機（5330、VFIO passthrough の QEMU の guest。2026-09-28）
 
-`plan/ws075/tests/hdmi-h2-hw.sh OUTDIR "BOOT LINES" [秒...]`（新規）: zdesktop の image（`KEILAND_APP=home`、compositor は
+`plan/tools/i915-hw/hdmi-h2-hw.sh OUTDIR "BOOT LINES" [秒...]`（新規）: zdesktop の image（`KEILAND_APP=home`、compositor は
 `--width/--height` なし = display の preferred の大きさ、`hdmi/run-zdesktop-full.sh`）を `ZEDBSD_BOOT_EXTRA_LINES` 付きで build し、
 lock の下で QMP 付きで起動、resident の 2 つの buffer を monitor の `memsave`（kernel の連続した仮想 address）で保存して PNG にする
 （`hdmi/shot.py`・`hdmi/raw2png.py`）。同時に 5330 の USB を記録（`hdmi/usb-poll.sh`）。

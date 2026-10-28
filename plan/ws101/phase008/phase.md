@@ -27,21 +27,21 @@ shared、barrier と規則、atomic、`.length()`、SPIR-V 1.0 の出力、Noct 
 | `emit.h`・`emit.c` | GLCompute の entry と `LocalSize`、compute の built-in の decoration、std430 の型（`OpTypeRuntimeArray`、ArrayStride、Offset、列優先の MatrixStride、bool は uint）、buffer block は `BufferBlock` の Uniform 変数（set 0、binding 56 + n、memory の qualifier を member の NonWritable・NonReadable・Coherent・Volatile・Restrict に）、shared は Workgroup 変数、buffer の読み書き（葉、bool の変換、集合は部分ごと、**行列は列ごと**: i915 は memory の行列の load・store を断るため）、`OpArrayLength`（int へ bitcast）、atomic（buffer は Device の scope、shared は Workgroup、relaxed。`atomicCompSwap(mem, compare, data)` は Value = data、Comparator = compare）、`barrier()` は `OpControlBarrier(Workgroup, Workgroup, AcquireRelease|WorkgroupMemory)`（glslang と同じ）、memory barrier は `OpMemoryBarrier`。**loop の中に return を持つ compute の main** は一度だけ回る loop の中で走らせる（inline の関数の early return と同じ形。i915 は loop の中の OpReturn を断るため。design §3.2 の「未確認、p008 で確かめる」を確かめて直した） |
 | `link.c`・`glsl.c` | `glsl_link_compute()`（既定の uniform block・uniform block は draw の program と同じ配置、buffer block は binding 56 + n、同じ binding の 2 つを断る、storage の情報と local size）、`glsl_compute_layout()`、program の解放に storage |
 
-## 試験（`plan/ws101/tests/glsl/`、新）
+## 試験（`plan/tools/gpu-compute/glsl/`、新）
 
 | file | 内容 |
 | --- | --- |
 | `glsl-compute.c` | host の driver: `link`（compile・link・SPIR-V・local size と storage の表示）、`expect`（失敗と log の `// expect:` の照合） |
 | `vk-compute.c` | host の Vulkan（lavapipe）の compute の実行器: 各 shader を compile・link し、binding 56 + n の storage と binding 0 の既定の uniform block を置いて dispatch し、C の計算と比べる |
-| `pass/` | add（早期の return、uniform、instance 名の有無、readonly・writeonly）、ids（全 built-in と `gl_WorkGroupSize`）、atomic（int・uint の全 atomic、応答の有無）、shared（shared の tile の転置と barrier）、reduce（shared の木の和、barrier 6 つ、shared の atomic）、length（run-time array と 12 byte の struct の配列、sized の配列）、layout（std430 の offset: vec3、float、vec2 の配列、mat2、struct の配列、bool、ivec4、局所の struct の写し）、noct（`plan/ws101/tests/host/shaders/noct.comp`: Noct の `accel_shader_source.c` の GLES の形）、noct-ops（Noct の他の形: 結果の word の読み、算術・shift・bit 演算・6 つの比較・選択）、loopret（loop の中の return） |
+| `pass/` | add（早期の return、uniform、instance 名の有無、readonly・writeonly）、ids（全 built-in と `gl_WorkGroupSize`）、atomic（int・uint の全 atomic、応答の有無）、shared（shared の tile の転置と barrier）、reduce（shared の木の和、barrier 6 つ、shared の atomic）、length（run-time array と 12 byte の struct の配列、sized の配列）、layout（std430 の offset: vec3、float、vec2 の配列、mat2、struct の配列、bool、ivec4、局所の struct の写し）、noct（`plan/tools/gpu-compute/host/shaders/noct.comp`: Noct の `accel_shader_source.c` の GLES の形）、noct-ops（Noct の他の形: 結果の word の読み、算術・shift・bit 演算・6 つの比較・選択）、loopret（loop の中の return） |
 | `fail/` | 17: barrier が if・loop・return の後・main 以外、shared の初期化子、局所の変数への atomic、readonly への書きと atomic、途中の unsized、group の大きさ、local size 無し、3.00 の buffer、binding の範囲、std140 の buffer、同じ binding、compute の in、member の memory qualifier |
-| `run.sh` | 1. pass の link → spirv-val（vulkan1.0）→ i915 の host の compile（`plan/ws101/tests/host/compute-dump.c`）→ Mesa の brw_disasm/brw_asm の往復、2. fail、3. lavapipe の実行 |
+| `run.sh` | 1. pass の link → spirv-val（vulkan1.0）→ i915 の host の compile（`plan/tools/gpu-compute/host/compute-dump.c`）→ Mesa の brw_disasm/brw_asm の往復、2. fail、3. lavapipe の実行 |
 
 ## 確認
 
 | コマンド | 結果 |
 | --- | --- |
-| `plan/ws101/tests/glsl/run.sh build/ws101-p008/glsl` | PASS。pass の 10 shader が link・spirv-val・i915 の compile（scoreboard 健全、descriptor の検査）・disasm/asm の往復を通る。fail の 17 が期待の文言で失敗。lavapipe で 10 shader が C の計算と一致 |
+| `plan/tools/gpu-compute/glsl/run.sh build/ws101-p008/glsl` | PASS。pass の 10 shader が link・spirv-val・i915 の compile（scoreboard 健全、descriptor の検査）・disasm/asm の往復を通る。fail の 17 が期待の文言で失敗。lavapipe で 10 shader が C の計算と一致 |
 | `plan/ws068/tests/glsl-host/run.sh`（WS068 の GLSL compiler の回帰。読むだけで実行） | compile・link・blocks・i915・run（21 の実行の試験）は全て PASS。**`fail/version.vert` だけ FAIL**: この試験は「`#version 310 es` は未対応」を期待していたが、p008 で 310 es を受けるようにしたため。WS068 の file なので変えていない（main への依頼: 期待を `#version 320 es` と「GLSL version 320 is not supported」に変える） |
 | image の build（compute の組、`build/ws101-p008/vkcs`、`VKLOOP_BUILD_ONLY=1`。libglesv2 と libGL（GLSL の source を組み込む）を target の compiler で build） | PASS。GLSL の 13 の source が build され、新しい warning 0（log の warning 2 つは make の jobserver と `userland/base/noct` の既存のもの） |
 

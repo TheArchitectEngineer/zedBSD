@@ -271,7 +271,7 @@ BOOT_THEN:
   (1) double click で反転した語（選択の表示）、(2) 貼られて実行された行、(3) Xzed の pointer が移動前と後の PNG で動いたこと、の
   どれが見えるかで判定する（PNG はユーザーにも見せる）。色の判定は目視に代えない。
 - 回帰（T1、1 つの QEMU ずつ）: pcat の bios-ide の login、pcat の PS/2（D5 で ps2 を移すため。bios-ide の login の試験は `type:` が
-  serial なので PS/2 を通らない。`keys:` の step を含む試験と `plan/ws081/tests/ps2-wheel-qemu.sh`（T1-015 で使用）を流す、m-11）、
+  serial なので PS/2 を通らない。`keys:` の step を含む試験と `plan/tools/touch/ps2-wheel-qemu.sh`（T1-015 で使用）を流す、m-11）、
   amd64 の uefi-nvme の login、sun4u の login（text の console の引き継ぎ）。
 
 ## 6. 変える file（sparcv9 はユーザーの担当、→D6）

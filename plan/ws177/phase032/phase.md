@@ -20,7 +20,7 @@ Origin: [BUG-271](../../bugs/BUG-271.md)、T1-460・T1-466。
 - `printd/net.c`・`printd.h`: `pd_send_file_chunked`（取り消しは chunk の間で、`pd_send_file` と同じ）。
 - Get-Job-Attributes の `job-state-reasons` を読み（`ipp_add_reason`、keyword を comma で 128 byte まで）、job の state か reasons が変わるたびに syslog に `job N printer state S reasons R`。
 - busy（0x0507）の答えでも job-id があれば、送り直さずにその job を見る（printer が job を作ったのに送り直して 2 つ目を作るのを防ぐ）。
-- mock（`plan/ws145/tests/mock-printers.py`、AAT も使う）は chunked の本体も読み、Print-Job の本体の来方を `ipp-N.transfer` に。`printd-test.py` に `ipp-chunked`。p022 の mock（`plan/ws177/tests/mock-printers-q.py`）も chunked の本体を読む（読まないと printd の送信を待って止まった）。
+- mock（`plan/tools/aat/mock-printers.py`、AAT も使う）は chunked の本体も読み、Print-Job の本体の来方を `ipp-N.transfer` に。`printd-test.py` に `ipp-chunked`。p022 の mock（`plan/ws177/tests/mock-printers-q.py`）も chunked の本体を読む（読まないと printd の送信を待って止まった）。
 
 ## 確認
 

@@ -10,7 +10,7 @@ Phase disposition: normal
 
 ## 範囲
 
-p001 の survey（`plan/ws075/tests/shader-survey/run.sh`）で libGLESv2 の生成する shader の不足のうち、GLES 2 の shader の核に当たるもの:
+p001 の survey（`plan/tools/i915-hw/shader-survey/run.sh`）で libGLESv2 の生成する shader の不足のうち、GLES 2 の shader の核に当たるもの:
 
 1. 補間: Flat（18 module）、Centroid、NoPerspective（vertex の output は効果なし、fragment の input は線形の barycentric が要る）。
 2. 整数の入力（vertex の属性と varying、Flat と組）: `load of an input that is not a float scalar or vector`（ws031-p038）。
@@ -134,7 +134,7 @@ p001 の survey（`plan/ws075/tests/shader-survey/run.sh`）で libGLESv2 の生
 | host: gentool（`BRW_TOOLS=/home/awe/p014-c/mesa/build-asm/src/intel/compiler plan/ws031/tests/run-vk-gentool-test.sh`、新しい shader を含む） | PASS（Mesa 25.0.7 の brw_asm・brw_disasm が全命令を受け、再 assemble が一致） |
 | survey | 122 module、不足 29（33 から）。p004 の範囲の不足 0（残りは p005 以降と Grad）。compiler の拒否と全一致 |
 | style-check | spirv.c 29 → 9、compile.c 14 → 13、generality.c 17 → 16、features.c 18 → 18、他は同じか 0 |
-| 実機 vke2（`plan/ws075/tests/test-hw.sh vke2 build/ws075-p004/hw-vke2`） | 1 回目 NOPERSP FAIL（linear の値が壊れる）→ CLIP の bit を直して **PASS 17/17** |
+| 実機 vke2（`plan/tools/i915-hw/test-hw.sh vke2 build/ws075-p004/hw-vke2`） | 1 回目 NOPERSP FAIL（linear の値が壊れる）→ CLIP の bit を直して **PASS 17/17** |
 | 実機 vke1・vkx・vkc | **PASS 4/4**（TEXOPS を含む）・**9/9**・**9/9** |
 | 実機 capture: zdesktop、zdesktop-x11（GLX の zgears） | **6/6**・**6/6**（`build/ws075-p004/hw-zdesktop`・`hw-x11`、画像は `build/ws031-shots/ws075-p004-20260927-*.png`） |
 | QEMU（Venus） | 未実施（i915 の実行器だけの変更） |

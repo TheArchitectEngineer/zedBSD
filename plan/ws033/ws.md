@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-27 P3 の精査 q1608。ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」: 有線 LAN の後挿し・抜去・networking.wait は p001 で QEMU で通り、code は main。p002 は実機の立会いだけ、p003 の規約は WS の外の一括の見直しへ）
+<!-- retained-after-completion --> tests/ の 8 項目 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
 Completed: 2026-10-27（q1608 の精査）
 Primary Milestone: MG005
 Related Milestones: MG003

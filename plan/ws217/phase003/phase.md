@@ -213,7 +213,7 @@ T1-583（p002b）の不具合も同じ attempt で直した: `POLICY default`（
 ### 16.3 Linux・FreeBSD の EVIOCGPROP の影響（Q1 の依頼）
 
 - 分類の入力が増えるだけで、`kwl_input_probe` の順は不変: pen（BTN_TOOL_PEN と pressure）→ touch pad（MT と `INPUT_PROP_POINTER`）→ touch screen（MT）→ keyboard → 絶対の pointer → 相対の pointer。
-- 5330 の Linux の記録 `plan/ws159/tests/latitude5330-linux/input-devices.txt`: Touchpad は `PROP=5`（POINTER と BUTTONPAD）→ これまで Linux では MT なので **touch screen** として扱われていた（指が絶対の点として写る）のが、zedBSD と同じ touch pad の層（相対の動き・tap・scroll）になる。PS/2 の mouse は `PROP=1` だが MT でないので不変、他の device は `PROP=0` で不変。touch pad の層は Linux の build に既に入っており（`Makefile.linux:16`）、host 試験 `run-host-touchpad.sh` が PASS。
+- 5330 の Linux の記録 `plan/tools/hid/latitude5330-linux/input-devices.txt`: Touchpad は `PROP=5`（POINTER と BUTTONPAD）→ これまで Linux では MT なので **touch screen** として扱われていた（指が絶対の点として写る）のが、zedBSD と同じ touch pad の層（相対の動き・tap・scroll）になる。PS/2 の mouse は `PROP=1` だが MT でないので不変、他の device は `PROP=0` で不変。touch pad の層は Linux の build に既に入っており（`Makefile.linux:16`）、host 試験 `run-host-touchpad.sh` が PASS。
 - touch screen（Linux は `INPUT_PROP_DIRECT`）は不変。pen は display の pen（DIRECT）だけ direct、Intuos などの板（POINTER）は非 direct: 0° では写像は同じ（Linux・FreeBSD は hw180 が無く回転を出さない、D14）。
 - QEMU+KVM の Linux guest での確かめは T1 の範囲（WS131 の Debian guest、touch pad の device が無いので分類の行 `KWL INPUT` だけ）。実機の Linux は未実施。
 

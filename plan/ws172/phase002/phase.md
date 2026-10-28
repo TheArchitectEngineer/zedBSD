@@ -24,7 +24,7 @@ WS: [ws172](../ws.md)
 - `plan/ws172/tests/sessiond-auth-host-test.sh`: ok（数の規則、偽の passkey での遅れ・TOUCH・busy・CANCEL・期限の KILL・uid の食い違い・空白の label・greeter と session の要求の制限、ASan・UBSan）
 - `plan/ws131/tests/host-session.sh`: 48/48（新しい要求と答え）
 - `plan/ws131/tests/host-system.sh`: PASS（set_pin の答えと refused の語、enrolled event、古い PIN の file の削除）
-- `plan/ws131/tests/host-power.sh`・`host-seat-linux.sh`・`host-seat-freebsd.sh`・`plan/ws132/tests/run-host-events.sh`・`plan/ws089/tests/host-build.sh`・`run-host-account-admin.sh`: 通過
+- `plan/ws131/tests/host-power.sh`・`host-seat-linux.sh`・`host-seat-freebsd.sh`・`plan/tools/system-events/run-host-events.sh`・`plan/ws089/tests/host-build.sh`・`run-host-account-admin.sh`: 通過
 - `plan/tools/keiland-linux/makefile-sync.sh`: PASS（WS173 の shot-none.c の sync の規則を足した）、`header-check.sh`: PASS
 - zedBSD の build（-Werror）: sessiond・wayland・settings・account-admin・libkeiland、warning 0。style-check: 新しい・変えた file で新しい指摘 0
 

@@ -77,7 +77,7 @@ SPILLMIX（spill.frag と vio16.vert の draw を同じ command buffer で交互
 | --- | --- |
 | `make BUILD=build/p013-k -j16 vmunix` | exit 0、warning 0 |
 | `sh plan/ws031/tests/run-vk-host-tests.sh` | PASS |
-| `sh plan/ws101/tests/host/run.sh` | PASS |
+| `sh plan/tools/gpu-compute/host/run.sh` | PASS |
 
 増分 1 の 3（2026-10-05、合間の仕事）: `plan/ws031/tests/p024/run.sh` と GLSL 8 本（ASan・UBSan の下の i915-shader-check）: loops8 受ける・
 loops9 断る（loops nested too deep）・ifs31 受ける・ifs40 断る（constructs nested too deep）、noinput・divzero（実行時の 0 と INT_MIN/-1）・

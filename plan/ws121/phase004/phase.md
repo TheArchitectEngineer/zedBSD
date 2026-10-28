@@ -6,7 +6,7 @@ Status: cleared（2026-10-07 Q1 の判定: T1-315 の AAT browser.video（`MEDIA
 Disposition: normal
 Parent: [WS121](../ws.md)
 Queue: q831（2026-10-07、P2）
-依存: [p002](../phase002/phase.md)（libmedia）。p003（Range の loader）は後に回した: 今は remote の media を loader で全体を取る（64 MiB まで、U7 の既定）
+依存: p002（fb1f6afee の `plan/ws121/phase002/phase.md`）（libmedia）。p003（Range の loader）は後に回した: 今は remote の media を loader で全体を取る（64 MiB まで、U7 の既定）
 
 ## 範囲（正常系）
 

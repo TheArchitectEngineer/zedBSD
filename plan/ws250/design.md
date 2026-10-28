@@ -338,7 +338,7 @@ struct nvrtx_node {
 
 ### 6.1 host 試験（QEMU も実機も要らない）
 
-`plan/ws250/tests/nvrtx-channel-host-test.sh`（`plan/ws037/tests/nvrtx-vk-host-test.sh` と同じ作り: kernel の C を host の cc で、stub を test の C に）:
+`plan/ws250/tests/nvrtx-channel-host-test.sh`（`plan/tools/nvrtx/nvrtx-vk-host-test.sh` と同じ作り: kernel の C を host の cc で、stub を test の C に）:
 
 1. channel の状態機械: READY → LOST（1 回だけ、最初の理由）、LOST の submit は ENODEV、wait は ECANCELED、kill の各 call の status の組み合わせ（全部 0 → FREED、どれか失敗 → STUCK）、close の資源の扱い（STUCK は返さない）。RM の call は stub（status を script で与える）。
 2. RM の param の layout: STOP_CHANNEL（bImmediate の offset）、RESET_CHANNEL の 4 欄、DISABLE_CHANNELS の欄の offset と大きさ（header から計算した値と一致）。
@@ -352,7 +352,7 @@ GPU が無いので nvrtx の道は通らない。boot の回帰（`plan/tools/b
 
 ### 6.3 実機（RTX 2070、10.0.30.5、方法 A の素の起動、T1 に依頼）
 
-image: `plan/ws037/tests/config-amd64-nvrtx.mk` の RAk（方法 A、`nvrtx.vk=1`）に `vkhang`・`vkquad`・`keiland-shot` を足した config（`plan/ws250/tests/config-amd64-nvrtx-hang.mk`、`include` で ws037 の物を読み、`ZEDBSD_USER_PROGRAMS += vkhang vkquad keiland-shot`、`ZEDBSD_TEST_SCREEN_CAPTURE=y`）。kernel の差し替えと reboot、SSH での観測は T1-684・T1-692 の手順（`/boot/boot0/vmunix` の複写、dmesg の `nvrtx` の行、sessiond.log、ps）。
+image: `plan/tools/nvrtx/config-amd64-nvrtx.mk` の RAk（方法 A、`nvrtx.vk=1`）に `vkhang`・`vkquad`・`keiland-shot` を足した config（`plan/ws250/tests/config-amd64-nvrtx-hang.mk`、`include` で ws037 の物を読み、`ZEDBSD_USER_PROGRAMS += vkhang vkquad keiland-shot`、`ZEDBSD_TEST_SCREEN_CAPTURE=y`）。kernel の差し替えと reboot、SSH での観測は T1-684・T1-692 の手順（`/boot/boot0/vmunix` の複写、dmesg の `nvrtx` の行、sessiond.log、ps）。
 
 **試験の app `vkhang`**（新、`userland/tests/vkhang/`、p004）: Vulkan 1.0 の API だけで、vkquad と同じ道（offscreen の 64x64 の target）に **fragment shader が無限 loop**（`while (x != 0) x = x * 3 + 1;` の形で uniform から来る値、compiler が消せない）の quad を 1 つ描き、vkQueueSubmit → vkWaitForFences の結果を 1 行で出す: `VKHANG lost after=<ms> result=<VkResult>`（DEVICE_LOST が期待）、`VKHANG fail <step>`。option `--loops N` で有限の loop（正常に終わる対照）、`--draws N` で連続の submit。compute pipeline は executor が拒むので使わない（fragment の loop でも GPU の上の挙動は同じ「WFI に来ない draw」）。
 

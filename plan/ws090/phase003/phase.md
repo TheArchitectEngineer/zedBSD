@@ -50,7 +50,7 @@ Text Editor が libkeiui を link するには image への登録（config の 3
 ## 試験
 
 - build: `build/ws090-p002-build.sh`（worktree の中）→ exit 0、warning 0。export は `kui_*` の 83 個（`nm -D`）。
-- host: `sh plan/ws090/tests/host-input.sh`（libkeiui の scroll・input・text-touch・ui と libkeiland の gesture・motion・scroller を Linux で build）→ **63/63**。
+- host: `sh plan/tools/input/host-input.sh`（libkeiui の scroll・input・text-touch・ui と libkeiland の gesture・motion・scroller を Linux で build）→ **63/63**。
   - scroll: glide の 1 時定数で `100 × (1 − 1/e)`（±0.01）、止まる、2 回の wheel が足される、端、reveal の下と上、key の行・page・端・始め、内容が短く
     なった時に戻る、bar が動いた後に出て 1 秒後に消える、X だけの scroll は Y の wheel を無視、軸の無い scroll は拒否。
   - 指の scroll: drag と fling の後の位置が **libkeiland の scroller を直接動かした位置と frame ごとに同じ**、飛んで止まる。

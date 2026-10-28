@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws099-p002 (C5): App Home's and Wiseview's openings and closings on the 5330's i915 passthrough (WS075's harness,
-# plan/ws075/tests/hdmi-h4-hw.sh, which takes the machine under flock /tmp/i915-hw.lock), with the ten applications
+# plan/tools/i915-hw/hdmi-h4-hw.sh, which takes the machine under flock /tmp/i915-hw.lock), with the ten applications
 # of App Home open (plan/ws035/demo/apps.conf, opened by App Home's search).  ROUNDS times: Wiseview opened with Super+Tab and closed
 # with Esc, App Home opened with the launcher and closed with Esc.  The compositor logs each request's first frame
 # (KWL FIRST_FRAME what=... ms=..., the request to the frame's submission, ws099-p002) in the session's log, which
@@ -17,7 +17,7 @@ out=$2
 rounds=${3:-3}
 limit=${LIMIT_MS:-100}
 host=${I915_HOST:-solaris10-man}
-h4=plan/ws075/tests/hdmi-h4-hw.sh
+h4=plan/tools/i915-hw/hdmi-h4-hw.sh
 ctl() { timeout 120 "$h4" ctl "$@"; }
 mkdir -p "$out"
 

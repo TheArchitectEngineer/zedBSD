@@ -29,7 +29,7 @@ WS094 の完了（p007）にはこれらの解消が要る。2026-10-02 user: WS
 
 - 上の指摘が全て直るか、直さない理由（規則の解釈）が表にある。`style-check.py` の対象の file で新しい違反 0、既存の例外（`files/main.c` 2・`picture.c` の setjmp 1）だけ。
 - build（`files`・`wayland`・`imageview`・`libkeiland.so`）の warning 0。
-- host: `plan/ws094/tests/host-desktop.sh`・`host-thumb.sh`・`plan/tools/files/host-model.sh`・`plan/tools/imageview/run-host.sh` PASS。
+- host: `plan/tools/files-desktop/host-desktop.sh`・`host-thumb.sh`・`plan/tools/files/host-model.sh`・`plan/tools/imageview/run-host.sh` PASS。
 - guest（QEMU の Venus）: `files-desktop-guest.sh install show input menu saved prune`、`criteria.sh … C9`（p076 の FAIL は BUG-125 の状態に従って区別）、boot test PASS。
 
 ## 検証の方法と範囲

@@ -38,9 +38,9 @@ commit 58b9027a（試験は別の commit）。設計からの変更: 2 本指の
 | app | Phone・Mailer・Calendar・file chooser: `KL_WINDOW_AXIS` と `KL_WINDOW_AXIS_STOP` を `kl_ui_axis` に。**Settings**（自前の窓と scroll）: axis の source・stop・端数、指が握った pane（page か list）を即座に動かし、離すと速度で飛ぶ（時定数 325 ms の指数の減衰、20 px/s 未満か端で止まる、log `ZSETTINGS KINETIC start pane=… velocity=…` と `KINETIC stop`）。飛ぶ間は 8 ms ごとに frame |
 | Phone の padding（BUG-218） | glass の時の card の周りの margin 12 → 0、間の gap 10 → 8（Settings の glass と同じ） |
 
-確認（host）: `plan/ws090/tests/host-input.sh` 72/72（新: track の速度・休んだ指・`kl_scroll_axis` の即座の移動と離した後の飛行・wheel の glide・`kl_ui_axis` の
+確認（host）: `plan/tools/input/host-input.sh` 72/72（新: track の速度・休んだ指・`kl_scroll_axis` の即座の移動と離した後の飛行・wheel の glide・`kl_ui_axis` の
 window event からの通し）。`plan/ws159/tests/run-host-touchpad.sh` ok（25）、`plan/ws142/tests/run-host-gesture.sh` ok（62）、
-`plan/ws170/tests/run-host-phone.sh` PASS、`plan/ws090/tests/host-widgets.sh` 94/94、`plan/ws089/tests/host-build.sh` built。build: wayland・settings・phone・
+`plan/tools/phone/run-host-phone.sh` PASS、`plan/ws090/tests/host-widgets.sh` 94/94、`plan/ws089/tests/host-build.sh` built。build: wayland・settings・phone・
 mailer・calendar・files（zedBSD）warning 0、keiland-linux.mk exit 0、`exports.py --check` ok。`ui/scroll.c` を使う他の host の script（keiui の chooser、
 textedit の core、ws102 の inset、ws155 の calendar、ws170 の phone、ws090 の widgets）に `ui/axis-track.c` を足した。そのうち chooser・textedit・
 inset・calendar・ws089 の dark は **この変更の前から** `kl_appearance_get`・`kl_theme_choose` の未定義で link できない（既存の壊れ、未修正）。

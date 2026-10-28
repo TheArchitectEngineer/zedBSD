@@ -16,6 +16,6 @@ Graph: i01 / i02 / i03 → i04。同期公開なし・QEMU/aggregate make check/
 
 ## 2026-10-10 最終結果 / Past Log
 
-全4attempt cleared。source `e654733f1eb6e1296eacf34b5dff6002a5dd17e1` をmainへ統合、HEADとclean状態を読み返した。[検証記録](../ws157/tests/media-uat-verification-20261010.md)。Phone起動SIGSEGVは実機再現/修正版exit0、提供JPEGはGPU16MiB制限を避けるCPU描画で実機exit0、mediastorageは原寸metadata/import成功。短いhost probe4本PASS、named build/Linux lib warning0、変更source全文規約の新規finding0（既存30件を保持）。
+全4attempt cleared。source `e654733f1eb6e1296eacf34b5dff6002a5dd17e1` をmainへ統合、HEADとclean状態を読み返した。[検証記録](../../ws157/media-uat-verification-20261010.md)。Phone起動SIGSEGVは実機再現/修正版exit0、提供JPEGはGPU16MiB制限を避けるCPU描画で実機exit0、mediastorageは原寸metadata/import成功。短いhost probe4本PASS、named build/Linux lib warning0、変更source全文規約の新規finding0（既存30件を保持）。
 
 実機5file更新済み（Photos最終CRC3049254075）、新しい添付viewer/thumbnail・Files drag・folder chooser・背景importのGUI UATは次回アプリ起動でユーザー確認。WS197のMMS送信/HFP/PBAP/p009、WS127 p007、WS157ベータ3の全体受入は残る。既存JPEG2件のサムネイルEINVALは原因/旧版同条件未確認であり、この提供JPEGの修正と混同しない。共有master/Queue/cacheへの投影はQ1、GitHub未公開。次Queueは開始しない。

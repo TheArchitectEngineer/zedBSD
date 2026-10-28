@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: VF2 の板で Keiland の desktop が PowerVR で動く（beta2.md U36、2026-10-21: desktop・3 window・lockup 無し・vkmatrix 36/36、gpu-selftest 13/13）。2026-10-21 ユーザー「表示内容自体は完璧です」）
+<!-- retained-after-completion --> Phase phase002 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
 Completed: 2026-10-27（q1608）
 Primary Milestone: MG008
 Related Milestones: MG006

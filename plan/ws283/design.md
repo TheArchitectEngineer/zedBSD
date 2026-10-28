@@ -339,7 +339,7 @@ ID: host の試験は **HT**、実機の試験は **HW**、risk は **RK**（第
 
 Q1 の判断:
 
-- **D5**: `plan/ws141/tests/qpu-machine.c`・`qpu-machine.h` と `plan/ws279/tests/qpu71-machine.c`・`qpu71-machine.h` を `plan/tools/v3d-qpu/` に移し、Master の Tools に登録する。使っている所（`plan/ws141/tests/shader-host-test.{c,sh}`、`plan/ws279/tests/shader71-host-test.{c,sh}`、`plan/ws211/tests/glass-shader-host-test.sh`）の path も直す（他の WS の file なので Q1 が行う）。
+- **D5**: `plan/tools/v3d-qpu/qpu-machine.c`・`qpu-machine.h` と `plan/ws279/tests/qpu71-machine.c`・`qpu71-machine.h` を `plan/tools/v3d-qpu/` に移し、Master の Tools に登録する。使っている所（`plan/ws141/tests/shader-host-test.{c,sh}`、`plan/ws279/tests/shader71-host-test.{c,sh}`、`plan/tools/v3d-qpu/glass-shader-host-test.sh`）の path も直す（他の WS の file なので Q1 が行う）。
 - **H1**: WS284 は spec constant を使わない（build の時の variant と push constant）。WS283 は今は前段に `OpSpecConstant` を足さない。
 - **M5**: COMPUTE の flag は bcm2711 の compute が十分になってから（p010 の実機の後、p012）。`CONFIG_DRIVER_BCM2711_COMPUTE` で gate する（§2.6）。
 

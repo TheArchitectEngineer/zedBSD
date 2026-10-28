@@ -95,7 +95,7 @@ p009・p004 の新しい実装は 10/10 までに入れるか、10/17 の後に�
 
 | 提案 | ID | 目的 | 触る file | 受け入れ |
 | --- | --- | --- | --- | --- |
-| A | ws068-p038 | i915 の passthrough で GLES 2.0・3.0 と GL 3.x の既存の試験の program を走らせ、受け入れ 3 の証拠を取る。新しい API は足さない。i915 の compiler・実行器が断る scene は Bug にする（直すのは WS075・WS031 か新しい Phase） | 新: `plan/ws068/tests/hw/es-hw.sh`・`plan/ws068/tests/hw/es/`（`config.mk`・`run-es.sh`・`rc.conf`・service の file）。`plan/ws101/tests/hw/gles-hw.sh`・`gles/` の複写を元に作る。source は触らない | 下の「p038 の手順」の判定で、全 scene の `EGLTEST CHECK … failures=0 glerror=0x0` と `EGLTEST DONE … failures=0`、glxtest の `GLXTEST GL32 ready failures=0` ほか。通らない scene は Bug Ticket（症状・scene・log の行）と Bug Board の行 |
+| A | ws068-p038 | i915 の passthrough で GLES 2.0・3.0 と GL 3.x の既存の試験の program を走らせ、受け入れ 3 の証拠を取る。新しい API は足さない。i915 の compiler・実行器が断る scene は Bug にする（直すのは WS075・WS031 か新しい Phase） | 新: `plan/ws068/tests/hw/es-hw.sh`・`plan/ws068/tests/hw/es/`（`config.mk`・`run-es.sh`・`rc.conf`・service の file）。`plan/tools/gpu-compute/hw/gles-hw.sh`・`gles/` の複写を元に作る。source は触らない | 下の「p038 の手順」の判定で、全 scene の `EGLTEST CHECK … failures=0 glerror=0x0` と `EGLTEST DONE … failures=0`、glxtest の `GLXTEST GL32 ready failures=0` ほか。通らない scene は Bug Ticket（症状・scene・log の行）と Bug Board の行 |
 | B（判断） | — | 保留の p037・p034〜p036 を WS068 の受け入れから外すか（WS068 を「GL 3.2 まで」で完了にできるようにする）。**人間の判断** | ws.md（main） | 決定が ws.md に記録される |
 
 #### p038 の手順（案。Phase を作る時に phase.md へ写す）
@@ -103,13 +103,13 @@ p009・p004 の新しい実装は 10/10 までに入れるか、10/17 の後に�
 1. 複写（`<W>` = `ws068-p038`）:
    ```
    mkdir -p plan/ws068/tests/hw/es
-   cp plan/ws101/tests/hw/gles-hw.sh plan/ws068/tests/hw/es-hw.sh
-   cp plan/ws101/tests/hw/gles/run-zdesktop.sh plan/ws101/tests/hw/gles/poweroff plan/ws101/tests/hw/gles/rc.conf plan/ws068/tests/hw/es/
-   cp plan/ws101/tests/hw/gles/gles1 plan/ws068/tests/hw/es/es1
+   cp plan/tools/gpu-compute/hw/gles-hw.sh plan/ws068/tests/hw/es-hw.sh
+   cp plan/tools/gpu-compute/hw/gles/run-zdesktop.sh plan/tools/gpu-compute/hw/gles/poweroff plan/tools/gpu-compute/hw/gles/rc.conf plan/ws068/tests/hw/es/
+   cp plan/tools/gpu-compute/hw/gles/gles1 plan/ws068/tests/hw/es/es1
    ```
 2. `plan/ws068/tests/hw/es/config.mk`: `include plan/ws031/tests/config-zdesktop-hw.mk`（egltest・glxtest・libgl・xserver・zgears を含む）と
    `ZEDBSD_USER_PROGRAMS := $(filter-out browser files libz-compat libpng-compat noct libcxx clang,$(ZEDBSD_USER_PROGRAMS))`（**noct を外す: toolchain**）。
-3. `plan/ws068/tests/hw/es/run-es.sh`（`plan/ws101/tests/hw/gles/run-gles.sh` の `run()` の形）: compositor の窓で
+3. `plan/ws068/tests/hw/es/run-es.sh`（`plan/tools/gpu-compute/hw/gles/run-gles.sh` の `run()` の形）: compositor の窓で
    `egltest --display=/tmp/wayland-0 --size=640x400 --scene=S --frames=60 --delay-ms=30 --token=S` を S = draw glsl glsl3 fbo cube es3 formats volumes targets blits queries feedback の順に
    （log は `/var/log/egl-S.log`）、pbuffer の `egltest --platform=pbuffer --scene=draw --frames=60 --token=pb`、
    xserver（`DISPLAY=:0 /bin/xserver &`、`plan/ws068/tests/glx-p033.sh:51` の形）の下で `glxtest --gl3`・`--gl31`・`--gl32`（各 `--frames=60 --delay-ms=30 --token=gN`）。
@@ -147,8 +147,8 @@ general な build・boot test は [plan/ws104/commands.md](../ws104/commands.md)
 sh plan/ws068/tests/glsl-host/run.sh build/<W>/glsl-host       # 最後の行 "glsl-host: PASS"
 sh plan/ws068/tests/spirv-host/run.sh build/<W>/spirv-host     # "spirv-host: PASS"
 sh plan/ws068/tests/i915-shader-check/run.sh build/<W>/i915-shaders   # shader ごとに "accepted" か "REFUSED by …"（main.c:93〜112）。PASS の行は無い
-sh plan/ws101/tests/glsl/run.sh build/<W>/ws101-glsl           # libglesv2 の GLSL を変えたら WS101 の compute も "ws101 glsl compute host test PASS"
-sh plan/ws101/tests/gles/run.sh build/<W>/ws101-gles           # "ws101 gles host test PASS"
+sh plan/tools/gpu-compute/glsl/run.sh build/<W>/ws101-glsl           # libglesv2 の GLSL を変えたら WS101 の compute も "ws101 glsl compute host test PASS"
+sh plan/tools/gpu-compute/gles/run.sh build/<W>/ws101-gles           # "ws101 gles host test PASS"
 ```
 
 要る host の道具: `cc`、`glslc`、`spirv-val`、`spirv-dis`、lavapipe（`/usr/share/vulkan/icd.d/lvp_icd.json`）。
@@ -199,7 +199,7 @@ sh plan/ws035/tests/zdesktop-guest.sh stop
 今ある WS068 に効く実機の試験（WS101 の script。egltest feedback・queries を含む）:
 
 ```
-BUILD=build/<W>-gles plan/ws101/tests/hw/gles-hw.sh build/<W>/gles-hw      # "gles-hw: PASS"
+BUILD=build/<W>-gles plan/tools/gpu-compute/hw/gles-hw.sh build/<W>/gles-hw      # "gles-hw: PASS"
 ```
 
 - `GLES_HW_BUILD_ONLY=1` で build だけ（gles-hw.sh:32）。fonts の既定 path（gles-hw.sh:19）は旧 `/home/awe/zedBSD-rpi4` で、無ければ font 無しで進む。
@@ -222,7 +222,7 @@ p038 を作った後: `BUILD=build/ws068-p038-hw plan/ws068/tests/hw/es-hw.sh bu
 ## 7. 注意
 
 - **保留を守る**: p037・p034〜p036（GL 3.3 以降）はユーザーの指示まで実装しない。p035 の GLES 3.1 の compute は WS101 の物。
-- **libglesv2・libegl は WS101 と共有**。変えたら WS101 の host の試験（5.1）と `plan/ws101/tests/gles/venus.sh`（WS101 の guide の 5.3）も走らせる。
+- **libglesv2・libegl は WS101 と共有**。変えたら WS101 の host の試験（5.1）と `plan/tools/gpu-compute/gles/venus.sh`（WS101 の guide の 5.3）も走らせる。
   frame の扱い（p009）は compute の pbuffer の道（`gles_frame_wait`・garbage・spare）に効く。
 - **Noct**: WS068 の試験の構成に noct を入れない（`config-amd64-glsl.mk` は外している。新しい構成も `$(filter-out noct,…)`）。noct を含む構成で
   `ZEDBSD_NOCT_ACCEL := y` だと Noct の target が build される（toolchain、main の許可が要る）。

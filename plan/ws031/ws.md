@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-27 00:09 ユーザー「WS031をcompletedにしてください。」。cleared の候補の p019・p020・p032・p033・p039 は cleared、残りの未完の Phase は取り下げ。WS の受け入れの全部の確認ではなくユーザーの判断による完了）
+<!-- retained-after-completion --> tests/ の 24 項目 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
 Completed: 2026-10-27（ユーザーの判断）
 Primary Milestone: MG006
 Related Milestones: MG003

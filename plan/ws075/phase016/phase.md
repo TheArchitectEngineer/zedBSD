@@ -40,13 +40,13 @@ capture の build（`I915_TEST_CAPTURE`）は window を使わないので変わ
 
 ## 測り方（道具）
 
-- `plan/ws075/tests/hdmi/h4-ctl.py watch SECONDS MS`: 2 つ目の QMP の socket で、passthrough の iGPU の BAR0 を `xp` で読み、pipe B の
+- `plan/tools/i915-hw/hdmi/h4-ctl.py watch SECONDS MS`: 2 つ目の QMP の socket で、passthrough の iGPU の BAR0 を `xp` で読み、pipe B の
   `TRANSCONF`（0x71008）・`PLANE_CTL_1_B`（0x71180）・`PLANE_SURFLIVE`（0x711ac）・frame counter を 20 ms ごとに標本化し、変化を
   `watch.log` に書く（`hdmi-h4-hw.sh fetch` が取る）。
-- `plan/ws075/tests/hdmi/h4-blank.py OUTDIR`: `watch.log` と kernel の log の buffer A の surface から、**暗**（transcoder か plane が off）と
+- `plan/tools/i915-hw/hdmi/h4-blank.py OUTDIR`: `watch.log` と kernel の log の buffer A の surface から、**暗**（transcoder か plane が off）と
   **黒**（点け直しの後、消したままの buffer A を flip の前に出している間）の区間を出す。register の上の時間で、実物の monitor が
   信号を見つけ直す時間（LCD によっては 1〜3 秒）は含まない。
-- `plan/ws075/tests/hdmi/h4-cycle.sh OUTDIR COUNT`: session から Log Out（App Home (22,16) → Log Out (1031,617)）→ greeter の lease を
+- `plan/tools/i915-hw/hdmi/h4-cycle.sh OUTDIR COUNT`: session から Log Out（App Home (22,16) → Log Out (1031,617)）→ greeter の lease を
   待ち撮影 → Enter で login → session の lease を待ち撮影、を COUNT 回。時刻は `actions.log`。
 
 ## 結果（実機 = 5330 の VFIO passthrough の QEMU guest。HDMI 1920x1280、pipe B、DVI。2026-09-28）

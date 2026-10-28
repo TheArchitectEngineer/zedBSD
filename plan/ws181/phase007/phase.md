@@ -25,7 +25,7 @@ Q1 の補足: T1-346 の c10-arrange-menu.png ではメニューがほぼ不透�
 2. `shell.c`（`kwl_glass_draw`、8 行）: メニューが出ている間（開く・閉じるの animation も、`kwl_arrange_showing`）だけ、`kwl_arrange_draw` の前に既存の `draw_backdrop`（壁紙・desktop の icon・窓を 1/8 で blur、keyboard_blur と同じ経路）を呼び、後で `kwl_backdrop_reset`。frosted が off と Home の上では呼ばない。
 3. 開く: 180 ms（`ARRANGE_MENU_OPEN_MS`）、ease-out cubic。pill の真ん中・bar の中から pill の幅の倍率（最小 0.15）で、全体（影・glass・光る cell・絵）を一様に拡大して本来の場所へ。白 0.92 → 0.34、全体の opacity 0.5 → 1。広がり終わった最初の frame で log `KWL ARRANGE menu settled ms=N`。
 4. 閉じる: 120 ms（`ARRANGE_MENU_CLOSE_MS`）の fade（opacity → 0、上辺の中央を軸に倍率 → 0.96）、閉じた時の広がりの程度から。入力は閉じた時点で受けない。開いている間の当たり判定は animation の途中でも全体の矩形のまま（変えていない）。
-5. 試験の追従: `plan/ws181/tests/ws181-guest.sh` の C10 で click の直後に `c10-menu-opening`、0.3 秒後に `menu-settled` の確かめと `c10-arrange-menu`。`tests/scenarios/desktop/windows/arrange.md` の手順 1・2 を今のメニュー（7 つの形、2 列、glass、開き方）に。
+5. 試験の追従: `plan/tools/desktop-guest/ws181-guest.sh` の C10 で click の直後に `c10-menu-opening`、0.3 秒後に `menu-settled` の確かめと `c10-arrange-menu`。`tests/scenarios/desktop/windows/arrange.md` の手順 1・2 を今のメニュー（7 つの形、2 列、glass、開き方）に。
 6. host の PNG: `plan/ws181/tests/p007-host.sh`（`p007-host.py`、p005-host.py と ws099-p034 の host の renderer の上）→ `build/review/ws181-p007.png`: 前（p006）と、45・90・135・180 ms。後ろに T1-346 と同じく緑・黄の窓を置き、blur で透けるのを見る。
 
 ## 確かめ（2026-10-07）

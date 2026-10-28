@@ -6,7 +6,7 @@
 | file | 役目 |
 | --- | --- |
 | `aat` | CLI（python3）。下の命令 |
-| `config-amd64-aat.mk` | AAT の image の config: UAT の config（`plan/ws159/tests/config-amd64-uat.mk`）＋試験の注入（`CONFIG_INPUT_TEST_INJECT`、`aat-input`）＋撮影の口（`ZEDBSD_TEST_SCREEN_CAPTURE`、`keiland-shot`）。製品の config には入れない |
+| `config-amd64-aat.mk` | AAT の image の config: UAT の config（`plan/tools/aat/config-amd64-uat.mk`）＋試験の注入（`CONFIG_INPUT_TEST_INJECT`、`aat-input`）＋撮影の口（`ZEDBSD_TEST_SCREEN_CAPTURE`、`keiland-shot`）。製品の config には入れない |
 | `build-image.sh` | AAT の image を作る（root の鍵と host 鍵は guest の harness の物、harness の `net.conf` は入れない） |
 | `tests/run-host.sh` | host の自己試験（`--local`、偽の `aat-input`（`fake-aat-input.py`）と偽の撮影 `fake-shot.py`） |
 
@@ -69,8 +69,8 @@ plan/tools/aat/aat stop
 ## 自己試験
 
 - host（実装の担当）: `sh plan/tools/aat/tests/run-host.sh` → `aat-host: PASS`。CLI・`aat-input` に送る命令・拒否・mark と wait-log・`windows`（client ごと）・転送（ssh を通ること）・シナリオの文書と suite の形・runner（補助の pass、hands の needs-person、記録と撮影）を、偽の `aat-input` と撮影で確かめる。
-- QEMU（T1）: 撮影の口のある image（`plan/ws173/tests/config-amd64-aat.mk`、T1-200 の物でよい）を `plan/tools/titlebar/menu-guest.sh start IMAGE`（`GUEST_RUNTIME=build/ws070-run`）。この image に session は無いので log は `--log /tmp/zdesktop.log`。
+- QEMU（T1）: 撮影の口のある image（`plan/tools/aat/config-amd64-aat-menu.mk`、T1-200 の物でよい）を `plan/tools/titlebar/menu-guest.sh start IMAGE`（`GUEST_RUNTIME=build/ws070-run`）。この image に session は無いので log は `--log /tmp/zdesktop.log`。
   1. `aat --qemu check`（rc 0: `have /dev/input-inject`・`have /bin/aat-input`・`have /bin/keiland-shot`、log は有無だけ）、`aat --qemu run 'uname -a'`、`put`・`get` の往復、`mark`・`run 'echo hello >> /tmp/x.log'`・`wait-log hello --since m --log /tmp/x.log`。
-  2. compositor と窓（`plan/ws173/tests/aat-p002.sh` の 1. と同じ: `aat --qemu run` で `/bin/wayland --testing --width=1280 --height=800 --glass > /tmp/zdesktop.log` と `seat-probe`）。
+  2. compositor と窓（`plan/tools/aat/aat-p002.sh` の 1. と同じ: `aat --qemu run` で `/bin/wayland --testing --width=1280 --height=800 --glass > /tmp/zdesktop.log` と `seat-probe`）。
   3. `aat --qemu start`（数秒で返り `screen 1280x800`）、`aat --qemu shot a.png`（PNG 1280x800）、`click`・`drag`・`wheel`・`key`・`type`、`windows --log /tmp/zdesktop.log`、各段で `shot`、`stop`。合格: 各命令が 0 で終わり、PNG に操作の結果が見える。撮影が失敗したら、aat の出す行（状態・user・`ls -l`）をそのまま返す。
   4. 全部の項目（`run-aat.sh`、ws173-p004）は session のある AAT の image（`config-amd64-aat.mk`）で。

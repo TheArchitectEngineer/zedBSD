@@ -19,7 +19,7 @@ Queue: P4（2026-10-12 Q1「p003 に着手してよい」）
 
 ## 受け入れの条件
 
-1. host: `plan/ws213/tests/list-replay-host-test.sh`（p003 で作る）で、p001 の 9 節 (a) の全場面の命令の列が直の記録と一致（descriptor set の handle は（import、種類）に正規化）。golden は p003 の最初の commit で取る。
+1. host: `plan/tools/compositor/list-replay-host-test.sh`（p003 で作る）で、p001 の 9 節 (a) の全場面の命令の列が直の記録と一致（descriptor set の handle は（import、種類）に正規化）。golden は p003 の最初の commit で取る。
 2. build warning 0（下のコマンド）。
 3. T1（i915 の 5330・Venus の QEMU）: shot.c の画が前と同じ、`KWL VULKAN_ERROR`・`KWL FAILED` なし。T1 の 1 回は 30 分まで。
 4. Pi: `KWL STARTUP step=cursor-shapes` の ms が 50ms 以下（READY 全体の差は boot ごとの揺れと同じ大きさなので使わない、review-4 L-c）。walk と再生の時間を pointer だけ（10 秒）・App Home の開閉（5 回）・drag（10 秒）で測る（1 boot、ユーザーか Q1 の手で）。
@@ -46,7 +46,7 @@ Queue: P4（2026-10-12 Q1「p003 に着手してよい」）
 
 ## 確かめ（2026-10-12 P4）
 
-- 受け入れ 1（host）: `sh plan/ws213/tests/list-replay-host-test.sh` → PASS（799 行）。golden は最初の commit 0585fac33 で直の記録（vkCmd* を直に呼ぶ版）から取った。場面: plain の look（デスクトップ・窓 2 つと sub-surface・popup・cursor）、App Home（layer の pass、床の線 85 本を束で 62＋18＋5、tile と label、frame で layer の絵を描く）、App Home の束なし、drag の部分の描き直し（pass_load・damage の renderArea・cut の scissor と戻し）、backdrop（frame の pass の終わり、小さい pass、ぼかし 2 回、load の pass で再開）、heads 2 つ（mirror の barrier・clear・blit、extended の pass、present への barrier）、layer の静かな焼き、scene の復元と取り込み（scene.c）、shot の取り込み（memory・buffer・image の barrier）。descriptor set は（image、種類）の名前に正規化して比べる。一覧の伸び（1024 op・64KiB を超える、3000 push＋600 quad）で全部の op・値・頂点が残ることも見る。一覧の外の vkCmd* が無いことを grep で見る。
+- 受け入れ 1（host）: `sh plan/tools/compositor/list-replay-host-test.sh` → PASS（799 行）。golden は最初の commit 0585fac33 で直の記録（vkCmd* を直に呼ぶ版）から取った。場面: plain の look（デスクトップ・窓 2 つと sub-surface・popup・cursor）、App Home（layer の pass、床の線 85 本を束で 62＋18＋5、tile と label、frame で layer の絵を描く）、App Home の束なし、drag の部分の描き直し（pass_load・damage の renderArea・cut の scissor と戻し）、backdrop（frame の pass の終わり、小さい pass、ぼかし 2 回、load の pass で再開）、heads 2 つ（mirror の barrier・clear・blit、extended の pass、present への barrier）、layer の静かな焼き、scene の復元と取り込み（scene.c）、shot の取り込み（memory・buffer・image の barrier）。descriptor set は（image、種類）の名前に正規化して比べる。一覧の伸び（1024 op・64KiB を超える、3000 push＋600 quad）で全部の op・値・頂点が残ることも見る。一覧の外の vkCmd* が無いことを grep で見る。
   - 制限: 場面は compose_record と callee の命令の並びを試験の中で組み立てた物で、batch.c・compose-bind.c・scene.c・draw-list.c は本物を通すが、compose.c・glass.c・shell.c・heads.c・backdrop.c・layer-cache.c の walk そのものは host で動かしていない（それらの変更は vkCmd*→kwl_list_* の 1 対 1 の置き換えで、同じ引数を写して同じ順に再生することをこの試験が op の種類ごとに確かめる）。実物の画面の一致は T1 の shot で確かめる（受け入れ 3）。
 - `sh plan/ws213/tests/cursor-due-host-test.sh` → PASS。main の時点で既に FAIL だった（ws211-p006 が保留を 1 refresh − 2.5ms に変えた後、試験の due の値 12・7ms が古かった）ので 10・5ms に直した（p002 の記録の「12・7ms」は当時の値）。
 - WS211 の host 試験 anim・batch・bind → PASS。

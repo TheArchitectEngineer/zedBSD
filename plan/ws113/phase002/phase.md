@@ -100,7 +100,7 @@ C4 は Q1 が決定（GOP の引き継ぎと外部の優先の削除は WS113 p0
 - QEMU（T1、`config-amd64-p002.mk`）: i915 は QEMU に無いので回帰だけ: `plan/tools/boot-test.sh` PASS、guest で `display-inventory` が Venus の inventory（count 1 以上、sequence 1）を出す。
 - 実機（5330、i915 の lock、ユーザーと。p008 にまとめてよい）: (1) eDP だけで起動 → `i915: N0: the firmware's output: DP SST on DDI A`、desktop が eDP に出る、display-inventory が eDP 1 行。(2) eDP + HDMI（GOP は eDP）で起動 → HDMI が点かない、display-inventory が 2 行（eDP active=1、HDMI connected=1 active=0 mode=EDID の値）。(3) `display-inventory --watch=60` の間に HDMI を抜き差し → sequence が進み HDMI の connected が 0・1 と変わる、desktop は eDP のまま。(4) `display=hdmi` を付けて起動 → 「ignored」の log、eDP のまま。
 - 未確認の点（Q1）: lit な pipe が無い時に内蔵の panel を点けるのは規則の外の判断（firmware の画面が無いので）。UEFI の起動では起きない見込み。GOP が HDMI で HDMI を駆動できない時は出力なし（画面が暗い）。
-- WS075 の古い試験（`plan/ws075/tests/hdmi-h2-hw.sh`、`display=hdmi` で HDMI を強制する前提）と demo の `display=edp` は、この変更で意味が無くなった（log に ignored と出るだけ）。WS075 の物なので変えていない。
+- WS075 の古い試験（`plan/tools/i915-hw/hdmi-h2-hw.sh`、`display=hdmi` で HDMI を強制する前提）と demo の `display=edp` は、この変更で意味が無くなった（log に ignored と出るだけ）。WS075 の物なので変えていない。
 
 ### ユーザーの決定の反映（2026-10-05、q702-i02 の続き）
 

@@ -42,7 +42,7 @@ kern_free(void *pointer)
 #include "../../../src/drivers/gpu/i915/compiler/eu.c"
 #include "../../../src/drivers/gpu/i915/compiler/compile.c"
 #include "../../../src/drivers/gpu/i915/tests/fixtures/generality-shaders-gen.inc"
-#include "../../ws075/tests/guard/scoreboard-check.h"
+#include "../../tools/i915-hw/guard/scoreboard-check.h"
 
 static uint32_t *
 load_spv(const char *name, size_t *words)

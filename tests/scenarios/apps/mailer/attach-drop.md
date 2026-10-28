@@ -14,7 +14,7 @@ ws189-p004（ユーザーの決定「WS189 で添付も作る」）: 作成の p
 multipart/mixed（本文と base64 の添付）になることを確かめる。
 
 ## 準備
-`apps.mailer.read-compose` の準備と手順 1〜2（偽の server、account を足す）。試験の image は `plan/ws189/tests/config-amd64-aat-dnd.mk`。runner の試料
+`apps.mailer.read-compose` の準備と手順 1〜2（偽の server、account を足す）。試験の image は `plan/tools/aat/config-amd64-aat-dnd.mk`。runner の試料
 `/tmp/aat-samples/sample.png` と `sample.pdf`。kei で `mkdir -p ~/attach && cp /tmp/aat-samples/sample.pdf ~/attach/report.pdf && echo attached > ~/attach/note.txt`。
 Files を `files ~/attach` で開き、Photos を開いて `sample.png` が grid にあること（Photos の試料の場所は `apps.photos` のシナリオと同じ）。窓は重ならないように置く。
 
@@ -40,5 +40,5 @@ Files を `files ~/attach` で開き、Photos を開いて `sample.png` が grid
 1〜6 の正解。見えは撮影（添付の行、drop の枠、chip）。
 
 ## 注記
-- 添付の上限: 16 個、合計 25 MiB（越えると「No more files fit in this message.」）。host 試験 `plan/ws189/tests/run-host-mail-attach.sh` が RFC 2231 の日本語の名前と上限を確かめる。
+- 添付の上限: 16 個、合計 25 MiB（越えると「No more files fit in this message.」）。host 試験 `plan/tools/mail/run-host-mail-attach.sh` が RFC 2231 の日本語の名前と上限を確かめる。
 - 後片付け: `rm -r ~/attach`（guest の中）。

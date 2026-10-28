@@ -45,7 +45,7 @@ p010n に依らない部分だけ: pixel event の PDS・EOT の USC・static �
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| host 試験 | `sh plan/ws269/tests/p010/run.sh OUT`（`render-host-test.c` を足した） | `render-program host test: 26 passed, 0 failed`。他の段（stage 24・image 55・target 77・kick 50・selftest 0 failed・data 83）も PASS |
+| host 試験 | `sh plan/tools/powervr/p010/run.sh OUT`（`render-host-test.c` を足した） | `render-program host test: 26 passed, 0 failed`。他の段（stage 24・image 55・target 77・kick 50・selftest 0 failed・data 83）も PASS |
 | USC の bytes | 同上: 各固定の program を、compiler の back end（`shader_backend_group`、p010-compiler の group 試験で Mesa の表と照合済み）で同じ group を作り encode した bytes と比べる。emitpix の byte（0xc2）は Mesa の I_BACKEND の piece から | EOT・clear・colour・vertex の 4 つ一致 |
 | M9 の照合（一度だけ、tree に入れない） | Mesa 26.2.5（`build/ws269-p014/mesa/mesa-26.2.5`、p014 で取得済みの tarball）の `csbgen/gen_pack_header.py` を `python3 -I` で走らせ `build/p010e/gen/{vdm,ppp,pbestate,cr,pds}.h` を作り、`build/p010e/m9.c` で zedBSD の word と Mesa の pack を比べる | `M9: 87 words/values compared, 346 fields, 0 mismatches`。内訳: PBE 10 件（R8G8B8A8 の LINEAR 64×64・1920×1080・部分の area、twiddled 64×64・320×240、B8G8R8A8、sRGB 2、R8、R8G8）× 5 word、CR_PDS_BGRND 3、EVENT_PIXEL_PDS 3、PPP 19＋2、VDM 10。生成した header の sha256 の頭: cr `16f0f16f6e450483`、pbestate `f4a38b2818f29fe8`（p010c と同じ）、pds `c145534e2010959a`、ppp `d6ff74caa570dcb4`、vdm `71e7e8fcd9c3b83c` |
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p010e/vf2 vmunix -j16` | rc=0、`warning:` 0 件、render-program.o を link |
@@ -71,7 +71,7 @@ p010n に依らない部分だけ: pixel event の PDS・EOT の USC・static �
 | `powervr_render_load_shared` | 8 word を shared 0 へ DMA する PDS（data-program.c） | `pvr_load_op_pds_data_create_and_upload` |
 
 - background の 3 word（`pds_bgnd`・`pds_pr_bgnd`）は今の `powervr_render_background_words`（kick の PDS ＋ この shared の program、shared_registers 8）で作れる。
-- 確認: `sh plan/ws269/tests/p010/run.sh OUT` に `render-load-host-test.c` を足して `render-load-program host test: 5 passed, 0 failed`（program を back end の group から作り直した bytes と一致、shared の word、PDS、refusal）。sampler の word は p010f の M9 で Mesa の transfer の sampler と照合済み。VF2 の kernel（`BUILD=build/p010f/vf2 vmunix`）rc=0、warning 0。
+- 確認: `sh plan/tools/powervr/p010/run.sh OUT` に `render-load-host-test.c` を足して `render-load-program host test: 5 passed, 0 failed`（program を back end の group から作り直した bytes と一致、shared の word、PDS、refusal）。sampler の word は p010f の M9 で Mesa の transfer の sampler と照合済み。VF2 の kernel（`BUILD=build/p010f/vf2 vmunix`）rc=0、warning 0。
 - 未実施: 実機。kick への組み込み（load op LOAD の時の background と `pds_pr_bgnd`）は後半。
 
 ## q1380-i01（2026-10-20 P1、後半の kernel 側）
@@ -83,18 +83,18 @@ main d0d40dd4c を merge（ce7d84418）: P2 の render-program.{c,h} をその�
 - `render-check.c`（`CONFIG_POWERVR_RENDER_CHECK=y` の時）: 自分の session、render context、64×64 の target、GENERAL（VDM stream・PPP・頂点・64×64 R8G8B8A8 LINEAR の attachment）、PDS・USC の窓の buffer に P2 の program（EOT と pixel event、clear の background と shared の色、三角形の colour・vertex・PDS）を置き、P2 の PPP・VDM・PBE の word と render-command で command を組み、`powervr_session_kick_render`（117＋101）→ `powervr_render_finish`（上限 2 秒、`ta`・`3d` の段の行）→ 読み返し。clear 赤 0xff0000ff、三角形 緑 0xff00ff00、頂点 (8,8)(56,8)(32,56)。辺から 1 pixel 程度の pixel は判定しない。
 - 出す行（UAT で止まった所が読めるように）: `powervr: render check: prepared …` / `FAILED at <段> (<errno>)`、`kicked (geometry to G, fragment to F)` / `FAILED at kick`、`fence reached (geometry g, fragment f)` / `FAILED at fence (err; geometry g of G, fragment f of F)`、`OK (N pixels judged)` / `FAILED at read back: pixel (x, y) is 0x…, want 0x…`、と `ta`・`3d` の段の行。時間切れの時は session を abandoned にして core に残す（memory も解放しない）。
 - `render-target.c`: `powervr_target_layout_of`（tile 数と region header の大きさを command に渡す）。
-- `plan/ws269/tests/p010/config-visionfive2-selftest.mk`: `CONFIG_POWERVR_RENDER_CHECK := y`（UAT の試験の image で render check が走る）。
+- `plan/tools/powervr/p010/config-visionfive2-selftest.mk`: `CONFIG_POWERVR_RENDER_CHECK := y`（UAT の試験の image で render check が走る）。
 - render context の 1 halt の仮の `pds_pr_bgnd` は、command が background を持たない時の既定として残した（render check は自分の clear の background を `pds_bgnd`・`pds_pr_bgnd` の両方に入れる）。
 
 確かめ（2026-10-20）:
 
 | 確かめ | 結果 |
 | --- | --- |
-| `sh plan/ws269/tests/p010/run.sh build/p010n/p010` | stage 24/0、image 55/0、target 77/0、kick 81/0、program 38/0、**command 22/0**、selftest 0 failed、data 83/0、render-program 26/0、transfer-program 15/0 |
+| `sh plan/tools/powervr/p010/run.sh build/p010n/p010` | stage 24/0、image 55/0、target 77/0、kick 81/0、program 38/0、**command 22/0**、selftest 0 failed、data 83/0、render-program 26/0、transfer-program 15/0 |
 | p009 | 165 passed, 0 failed |
 | M9（tree の外、`build/p010n/m9/compare.c`） | 63 words/values, 197 fields, 0 mismatches（ISP_CTL・USC_PIXEL_OUTPUT_CTRL・ISP_BGOBJVALS・PPP_CTRL・TE_PSG・resume の PDS_STATE0 を足した） |
 | VF2・riscv64-virt・amd64 の vmunix | rc=0、warning 0 |
-| VF2 render check 付き、試験の image の config（`plan/ws269/tests/p010/config-visionfive2-selftest.mk`、`BUILD=build/p010n/selftest`） | rc=0、warning 0、render-check.o あり |
+| VF2 render check 付き、試験の image の config（`plan/tools/powervr/p010/config-visionfive2-selftest.mk`、`BUILD=build/p010n/selftest`） | rc=0、warning 0、render-check.o あり |
 
 QEMU・実機は未実施（QEMU に VF2 の GPU は無い）。実機で見る点（ユーザーの UAT の一覧へ）:
 - `render check:` の行がどこまで進むか、`ta`・`3d` の段の行。

@@ -28,7 +28,7 @@ compositor の 1 run の engine の時間と latency が p021 より悪くなら
      ENDIF の後の in flight の token は body の後の部分集合）。
   4. out-of-order の命令は空いている次の token を取る（全て使用中なら一番古いものを待って使う）。
   5. IF の JIP・UIP、ENDIF・WHILE の JIP を、間に入った・抜けた sync.nop の分だけ動かす（飛び先の待ちから）。
-- 独立の検査 `plan/ws075/tests/guard/scoreboard-check.h`: kernel を順に歩き、in flight の token の宛先を待たずに触る命令、source を待たずに
+- 独立の検査 `plan/tools/i915-hw/guard/scoreboard-check.h`: kernel を順に歩き、in flight の token の宛先を待たずに触る命令、source を待たずに
   書く命令、使用中の token を取る命令、loop の境目と EOT の前に残る token を fault にする。register の範囲は encoder と別に書いた。
   compile の host fixture（`i915-vk-compile-test.c`）の EU model が走らせる全ての kernel と、`guard/run.sh` の module に掛ける。
 
@@ -66,6 +66,6 @@ compositor の 1 run の engine の時間と latency が p021 より悪くなら
 ### branch の扱い
 
 効果が測れない変更を demo の前の tree に入れる危険を避け、`eu.c`・`eu.h`・`compile.c` を a85ea4cc に戻した（差分は
-`plan/ws075/phase022/scoreboard-pass.patch`、`git apply` で戻せる）。検査の道具 `plan/ws075/tests/guard/scoreboard-check.h`（compile の
+`plan/ws075/phase022/scoreboard-pass.patch`、`git apply` で戻せる）。検査の道具 `plan/tools/i915-hw/guard/scoreboard-check.h`（compile の
 host fixture と guard/run.sh で全 kernel に掛ける）は残す（今の encoder の出力にも sound。宛先の無い message の token は .src の待ちで
 空く、を今の encoder の前提として書いた）。

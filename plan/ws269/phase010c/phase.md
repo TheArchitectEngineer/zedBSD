@@ -27,7 +27,7 @@ kernel（`src/drivers/gpu/powervr/`）:
 userland:
 - `userland/tests/vkimage/`（新規 package `vkimage`）: linear の SAMPLED が出ていない、external の宣言の image が `FEATURE_NOT_PRESENT`、LINEAR の 100×10 の rowPitch が 32 の倍数、OPTIMAL の image の memory・bind・view・sampler。1 行 `vkimage: <device>: PASS|FAIL, …`。
 - `gpu-selftest`: `image` の段が vkimage を実行（`-i PATH`、既定 `/bin/vkimage`、exit 0 で ok、他は出力の行を理由に）。vkcompute の実行を `run_program` に分けた（exec 失敗の行が `_exit` で消えていたので `fflush` を足した）。package の require に `tests/vkimage`。
-- `plan/ws269/tests/p010/config-visionfive2-selftest.mk` に vkimage。
+- `plan/tools/powervr/p010/config-visionfive2-selftest.mk` に vkimage。
 
 共有の file（Q1 の merge で確認を）: `platform/riscv64/vmunix.mk`（vk-image.c・image-state.c）、`platform/common/userland-dynamic.mk`（vkimage を vkcompute と同じ形の dynamic の Vulkan client に）、`platform/amd64/vmunix.mk`（静的の command の除外の列に vkimage）。HAL・toolchain は変えていない。
 
@@ -47,13 +47,13 @@ Mesa との違い・決めた事:
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| image-state の host 試験と p010a の試験 | `sh plan/ws269/tests/p010/run.sh build/p010c/p010` | `stage-host-test: 24 passed, 0 failed`、`image-host-test: 55 passed, 0 failed`、`selftest-host: 0 failed`（8 場面、新しく image の段の fail の場面） |
-| executor（Venus の frame、M8 を含む） | `sh plan/ws269/tests/p009/run.sh build/p010c/p009` | `powervr executor host test: 157 passed, 0 failed`（p009 の 109 に image の frame: RGBA8 の linear に SAMPLED なし・TRANSFER あり、linear の sampled の照会が `FORMAT_NOT_SUPPORTED`、external の宣言の image・export・import が `FEATURE_NOT_PRESENT`、100 texel の linear の rowPitch 416、30×20 optimal が 4096 byte・alignment 4096、bind・view・sampler、view の word の address が memory + bind の offset） |
+| image-state の host 試験と p010a の試験 | `sh plan/tools/powervr/p010/run.sh build/p010c/p010` | `stage-host-test: 24 passed, 0 failed`、`image-host-test: 55 passed, 0 failed`、`selftest-host: 0 failed`（8 場面、新しく image の段の fail の場面） |
+| executor（Venus の frame、M8 を含む） | `sh plan/tools/powervr/p009/run.sh build/p010c/p009` | `powervr executor host test: 157 passed, 0 failed`（p009 の 109 に image の frame: RGBA8 の linear に SAMPLED なし・TRANSFER あり、linear の sampled の照会が `FORMAT_NOT_SUPPORTED`、external の宣言の image・export・import が `FEATURE_NOT_PRESENT`、100 texel の linear の rowPitch 416、30×20 optimal が 4096 byte・alignment 4096、bind・view・sampler、view の word の address が memory + bind の offset） |
 | M9 | 上の節 | 0 mismatches |
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p010c/visionfive2 vmunix -j16` | rc=0、`warning:`・`error:` 0 件 |
 | riscv64-virt | 同 `config-riscv64-virt.mk BUILD=build/p010c/riscv64-virt` | rc=0、0 件 |
 | amd64 | 同 `config-amd64.mk BUILD=build/p010c/amd64`（vmunix.mk の変更の後にもう一度） | rc=0、0 件 |
-| VF2 の試験の image | `timeout 3600 make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-visionfive2-selftest.mk BUILD=build/p010c/img disk-image -j16` | rc=0、自分の file の warning 0。`rootfs/bin/vkimage`・`gpu-selftest`・`vkcompute` |
+| VF2 の試験の image | `timeout 3600 make ZEDBSD_CONFIG=plan/tools/powervr/p010/config-visionfive2-selftest.mk BUILD=build/p010c/img disk-image -j16` | rc=0、自分の file の warning 0。`rootfs/bin/vkimage`・`gpu-selftest`・`vkcompute` |
 | `git diff --check` | | 空 |
 
 未実施: 実機（VF2）での vkimage・gpu-selftest の `image` の段。QEMU（Venus の host）での vkimage。

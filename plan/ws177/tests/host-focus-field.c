@@ -68,7 +68,7 @@ main(void)
 	}
 
 	/* The page with the fields, laid out. */
-	error = browser_view_load(view, "plan/ws177/tests/pages/focus-field.html");
+	error = browser_view_load(view, "plan/tools/pdf/pages/focus-field.html");
 	if (error == 0)
 		error = browser_view_settle(view, 0.0, BROWSER_SETTLE_LAYOUT);
 	test_check("load", error == 0, "");
@@ -90,7 +90,7 @@ main(void)
 	test_check("typed", error == 0 && strcmp(test_console, "value=42") == 0, test_console);
 
 	/* A page without one: ENOENT, and nothing is focused. */
-	error = browser_view_load(view, "plan/ws177/tests/pages/no-field.html");
+	error = browser_view_load(view, "plan/tools/pdf/pages/no-field.html");
 	if (error == 0)
 		error = browser_view_settle(view, 0.0, BROWSER_SETTLE_LAYOUT);
 	test_console[0] = '\0';

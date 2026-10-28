@@ -51,7 +51,7 @@ GIF は `DGifOpen` に memory の読み手を渡して `DGifSlurp` の後、最�
 | `plan/tools/files/host-build.sh` | host の build に libjpeg-compat・libgif-compat・`picture.c` |
 | `plan/tools/imageview/run-host.sh` | Image Viewer の host の build に `picture.c` |
 | `plan/ws094/tests/host-thumb.c`・`host-thumb.sh` | 新規の host 試験（下） |
-| `plan/ws094/tests/files-desktop-guest.sh` | `install` が `wayland`・`files` の put を 3 回まで試す（起動の直後は greeter の compositor の終わりが間に合わず put が失敗した。p008・p009 でも 1 回目が失敗していた） |
+| `plan/tools/files-desktop/files-desktop-guest.sh` | `install` が `wayland`・`files` の put を 3 回まで試す（起動の直後は greeter の compositor の終わりが間に合わず put が失敗した。p008・p009 でも 1 回目が失敗していた） |
 
 ## 確認
 
@@ -60,7 +60,7 @@ GIF は `DGifOpen` に memory の読み手を渡して `DGifSlurp` の後、最�
 | build | `make -j16 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/amd64 build/amd64/bin/files build/amd64/bin/wayland build/amd64/bin/imageview …/libkeiland.so …/libgif-compat.so …/libjpeg-compat.so` | rc 0、warning 0（link の規則を足す前は `DGifOpen` などが未定義で失敗） |
 | style | `plan/tools/style-check.py`（picture.c・picture.h・thumb.c・image.c・host-thumb.c）、`plan/tools/imageview/style-extra.py`、`git diff --check` | style-check は picture.c の `setjmp` の 1 件だけ（Image Viewer の元の code にも同じ 1 件があり、setjmp は条件の中に置く必要がある）。style-extra は thumb.c の既存の 3 件だけ |
 | host: 新 | `plan/ws094/tests/host-thumb.sh` | PASS。JPEG の RGB・grey・CMYK が PIL と一致（worst 0）、EXIF の向き 1〜8 が PIL の `exif_transpose` と一致（5〜8 は辺が入れ替わる）、GIF の透明色・動画の最初の frame が一致、壊れた file 4 種（途中で切れた JPEG、中身がでたらめな JPEG と GIF、frame の無い GIF）が `EINVAL` |
-| host: 回帰 | `plan/tools/files/host-model.sh`、`plan/ws094/tests/host-desktop.sh`、`plan/tools/imageview/run-host.sh` | PASS、PASS、PASS（Image Viewer の jpeg・exif・cmyk・gif の比較を含む） |
+| host: 回帰 | `plan/tools/files/host-model.sh`、`plan/tools/files-desktop/host-desktop.sh`、`plan/tools/imageview/run-host.sh` | PASS、PASS、PASS（Image Viewer の jpeg・exif・cmyk・gif の比較を含む） |
 | guest: Files | `BIN=build/amd64 files-desktop-guest.sh build/ws094-shots/p013 install perf100`（image は `build/ws081/demo-win-venus.img` の複写。画像 20 のうち jpg 8・gif 4） | PASS。`ZFILES THUMB` の jpg・gif がすべて error=0（jpg 256x144、EXIF 6 の 03-portrait の複写は 144x256 で縦、gif 256x192）。画面 `build/ws094-shots/p013/perf100.png` に jpg・gif の thumbnail（縦の写真は正立） |
 | guest: Image Viewer | `imageview-guest.sh build/ws094-shots/p013-iv install fit next portrait rotate alpha gif pixels broken` | PASS（jpg 4032x2268、EXIF の縦 1060x1882、gif 4 frame、壊れた png の拒否。`portrait.png`） |
 | boot test | `OUTPUT=build/ws094-p013-boot plan/tools/boot-test.sh build/ws094-run/disk.img` | PASS（`build/ws094-p013-boot/login.png`） |

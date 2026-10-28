@@ -60,7 +60,7 @@ Queue: [P1 の lane](../../agents/P1/queue.md)
 - `wayland/shaders/panel.frag`: 角丸の SDF・影・ring・文字（atlas の alpha）・画像・blur を mode で切り替え、`-DKWL_PANEL_MODE=n` の 7 つの variant。bcm2711 と i915 で動いている。
 - `monitor/render.c`＋`shaders/shape.frag`: 頂点あたり 16 float の非 instancing の shape と glyph の 2 pipeline。i915 で動いている。
 - `libbrowser/paint/vulkan.c`: instancing、shelf の atlas、offscreen と readback、CPU の renderer と画素で合わせる設計、`plan/ws074/tests/gpu-compare.py`（host の lavapipe で GPU と CPU を比べる、channel の差 2・画素の 0.1%）。instancing・`gl_FragCoord` を使うので bcm2711 では動かない。
-- shader の道具: 各 package の `shaders/regenerate.py` が `glslc --target-env=vulkan1.0 -O`＋`spirv-val` で SPIR-V を作り、`shaders.h` を commit する。i915 の確かめは `plan/ws075/tests/guard/run.sh`、bcm2711 は `plan/ws141/tests/shader-host-test.sh`（compositor の shader、Mesa の oracle を temp に要する。`bcm2711_shader_compile` は oracle 無しで host で link できる: `spirv.c`・`shader*.c`・`qpu.c`）。dev host には glslc・spirv-val・lavapipe がある。
+- shader の道具: 各 package の `shaders/regenerate.py` が `glslc --target-env=vulkan1.0 -O`＋`spirv-val` で SPIR-V を作り、`shaders.h` を commit する。i915 の確かめは `plan/tools/i915-hw/guard/run.sh`、bcm2711 は `plan/tools/v3d-qpu/shader-host-test.sh`（compositor の shader、Mesa の oracle を temp に要する。`bcm2711_shader_compile` は oracle 無しで host で link できる: `spirv.c`・`shader*.c`・`qpu.c`）。dev host には glslc・spirv-val・lavapipe がある。
 
 ### driver の制約（共通の部分集合を決める）
 

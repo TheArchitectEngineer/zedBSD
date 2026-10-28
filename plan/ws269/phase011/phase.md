@@ -63,14 +63,14 @@
 
 - `src/drivers/gpu/powervr/render-pass.{c,h}`: `powervr_render_job_continue`。
 - `src/drivers/gpu/powervr/vk-pass.c`: job が満ちたら続ける。room が無ければ E2BIG。
-- `plan/ws269/tests/p010/pass-host-test.c`: 満ちていない job は続けない。満ちた job は STORE になり、次は LOAD で pass の store を保ち、draw 0・同じ area・同じ surface。
-- `plan/ws269/tests/p010-compiler/compile-host-test.c`: libkeiland の canvas.vert・canvas.frag を足した。
+- `plan/tools/powervr/p010/pass-host-test.c`: 満ちていない job は続けない。満ちた job は STORE になり、次は LOAD で pass の store を保ち、draw 0・同じ area・同じ surface。
+- `plan/tools/powervr/p010-compiler/compile-host-test.c`: libkeiland の canvas.vert・canvas.frag を足した。
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| p010 の host 試験 | `sh plan/ws269/tests/p010/run.sh build/p011/p010` | 全部 0 failed（render-pass 18 passed） |
-| compiler | `sh plan/ws269/tests/p010-compiler/run.sh build/p011/comp` | 396 passed・0 failed、group 20 passed |
-| executor の frame | `sh plan/ws269/tests/p009/run.sh build/p011/p009` | 175 passed、0 failed |
+| p010 の host 試験 | `sh plan/tools/powervr/p010/run.sh build/p011/p010` | 全部 0 failed（render-pass 18 passed） |
+| compiler | `sh plan/tools/powervr/p010-compiler/run.sh build/p011/comp` | 396 passed・0 failed、group 20 passed |
+| executor の frame | `sh plan/tools/powervr/p009/run.sh build/p011/p009` | 175 passed、0 failed |
 | VF2 の kernel | `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p011/vf2 vmunix -j16` | rc 0、warning 0 |
 
 - 未実施:
@@ -86,7 +86,7 @@
 
 ## 後半（q1394-i01）: Keiland に似た frame の host 試験
 
-p009 の executor の host 試験（Venus の frame）に `frame_keiland`・`replies_keiland`（`plan/ws269/tests/p009/frame-host.c`）を足した。command の順と wire の形は compose.c と libvulkan の encoder（pipeline.c の `pipeline_encode_graphics`、commands.c の render pass の begin と clear の color）に合わせた。frame の中身は次のとおり。
+p009 の executor の host 試験（Venus の frame）に `frame_keiland`・`replies_keiland`（`plan/tools/powervr/p009/frame-host.c`）を足した。command の順と wire の形は compose.c と libvulkan の encoder（pipeline.c の `pipeline_encode_graphics`、commands.c の render pass の begin と clear の color）に合わせた。frame の中身は次のとおり。
 
 - 64x64 の BGRA8 の target・view・pass（CLEAR・STORE）・framebuffer。vertex buffer。
 - compositor の quad.vert・quad.frag と libkeiland の canvas.vert・canvas.frag の module。
@@ -115,8 +115,8 @@ host の stub（`vk-host-test.c`）は transfer と render job の kick を順�
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| executor の frame（切り替え 0・1） | `sh plan/ws269/tests/p009/run.sh build/p011b/p009-0 0`（と `1`） | どちらも 240 passed、0 failed |
-| p010 の host 試験 | `sh plan/ws269/tests/p010/run.sh build/p011b/p010` | 全部 0 failed |
+| executor の frame（切り替え 0・1） | `sh plan/tools/powervr/p009/run.sh build/p011b/p009-0 0`（と `1`） | どちらも 240 passed、0 failed |
+| p010 の host 試験 | `sh plan/tools/powervr/p010/run.sh build/p011b/p010` | 全部 0 failed |
 | VF2 の kernel | `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p011b/vf2 vmunix -j16` | rc 0、warning 0 |
 
 ### P1 の file に要る物（後半で増えた分）

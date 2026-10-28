@@ -45,13 +45,13 @@ Resume point: なし
 | `main.c` | `finger_write`・`finger_contact`。`app_finger` が書く event を pointer の入力（`NOTES_SOURCE_POINTER`、`NOTES_POINTER_PRESSURE`）にして `app_input` に通す。取り消しは `app_abort_contact`（線を捨てる。`NOTES ABORT stroke`）。pointer・ペンが contact を取ったら指の後の event は無視（`app_end_contact` が `finger_contact` を 0 に）。ペンの近さを知らせた直後にも `app_finger`。action `NOTES_ACTION_FINGER` で切り替え、status に「One finger writes, two fingers scroll」／「Fingers scroll and zoom」、`NOTES FINGER write=` の log |
 | `ui.c`・`app.h` | 道具の群の後に「Finger」の button（入の間は Kei の青の pill）、`NOTES_ACTION_FINGER`（14）、`notes_ui_state.finger_write` |
 | `plan/ws081/design.md` §5.6 | 「指で書く」の追記 |
-| `plan/ws081/tests/host-notestouch.c`（`test_write` を追加）・`p015-guest.sh`（新） | 試験（下） |
+| `plan/tools/touch/host-notestouch.c`（`test_write` を追加）・`p015-guest.sh`（新） | 試験（下） |
 
 ## 確認（実行したもの）
 
 | 確認 | 結果 |
 | --- | --- |
-| `plan/ws081/tests/run-notestouch.sh`（`-Wall -Wextra -Werror -Wconversion`） | `host-notestouch: ok (52 checks)`（p013 の 30 に 22 を足した） |
+| `plan/tools/touch/run-notestouch.sh`（`-Wall -Wextra -Werror -Wconversion`） | `host-notestouch: ok (52 checks)`（p013 の 30 に 22 を足した） |
 | 同上、`EXTRA_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -O1"` | ok（52 checks） |
 | 足した試験の中身 | 切の間の指は何も書かない。入の間の一本指は BEGIN・17 の MOTION（報告の全部）・END を出し、始まりは触れた点、終わりは最後の報告の点、時刻は指の時刻、頁は動かない。30 ms 後の二本目は書きかけを取り消し（BEGIN・ABORT、END なし）、二本指で scroll する。60 px 動いた 100 ms 後の二本目も取り消す。同時の二本指の pinch は書かずに拡大する。400 ms・200 px 書いた後の二本目は無視され、線は続いて頁は動かない。toolbar の tap は tap のまま。double tap は点を二つ書き拡大しない。ペンの接近・compositor の cancel は取り消し。書く間に切にすると最後の報告の点で END。glide している頁は書く指の下で止まる |
 | mutation（scratchpad の script、有効な 11 個: grace の時間、slop、ペンの取り消し、cancel の取り消し、切の END、glide の停止、toolbar の判定、handover の follow、MOTION の push、double tap の抑止 ほか） | 10 個が FAIL。double tap の抑止を消した mutation は残る（入の間の一本指は gesture に渡らないので double tap が起きない。同値）。compile の通らなかった 2 個は数えない |

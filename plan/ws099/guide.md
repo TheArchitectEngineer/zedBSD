@@ -77,7 +77,7 @@ ws.md の段の表にある p013（BUG-119 の電源断の実装）は ws073-p04
 | 5330 の素の起動（USB）で C1 の黒い画面が出るか | QEMU の passthrough は firmware の GOP と i915 の引き継ぎが違う | ユーザーの目視（p012）。黒が出たら、出た替わり目（起動・login・Log Out・Shut Down）と秒数を聞き、WS084（i915 の引き継ぎ）の担当へ渡す。エージェントは 5330 に SSH で入り `/var/log/sessiond.log` の `SESSIOND` の行の時刻と照らす（console の log ではない） |
 | 5330 で Shut Down が電源を切るか（BUG-119） | QEMU では `guest-shutdown` で終わるが、5330 の ACPI の S5 は未確認 | ユーザーの目視（電源の LED が消える、10 秒以内）。切れないなら、`drv_acpi_poweroff()`（`grep -rn drv_acpi_poweroff src/`）の `_S5` の値と PM1 の書き込みを ws073 の担当へ |
 | 5330 の 1 時間で zdesktop が落ちるか | QEMU の 1 時間は Venus の上の話で、i915 の job の時間切れ・BUG-117 系は 5330 だけ | p014 の `c10-hw.sh`。落ちたら session.log の最後の `ZWL` の行と `SESSIOND GREETER failed reason=`、i915 の状態は WS075 の `engine-gdb.sh` で読む |
-| C6 の残りの差（約 7 ms） | 基準 50 ms を保つ判断（2026-09-30 朝） | WS075 の担当。WS099 では値の記録だけ。`plan/ws075/tests/hdmi/c6.py OUTDIR...` |
+| C6 の残りの差（約 7 ms） | 基準 50 ms を保つ判断（2026-09-30 朝） | WS075 の担当。WS099 では値の記録だけ。`plan/tools/i915-hw/hdmi/c6.py OUTDIR...` |
 | QEMU の guest の zdesktop が固まる・落ちる | 試験の FAIL の切り分け | QEMU の console・serial の log では判定しない（AGENTS.md）。user の process は guest の lldb（criteria の image に lldb は無いので、`guest.py run 'ps -A'` と zdesktop の log `/run/user/1000/session.log`・`/tmp/zdesktop.log`）。kernel は gdbstub: `GUEST_RUNTIME=$PWD/build/ws035-sq-run python3 plan/tools/guest/guest.py kgdb --symbols build/<W>-criteria/vmunix 'info threads' 'bt'`。画面は QMP（`plan/ws035/tests/zdesktop-shot.py OUT.png --runtime build/ws035-sq-run`） |
 
 ## コマンド
@@ -157,7 +157,7 @@ sh plan/ws035/tests/zdesktop-guest.sh stop
 
 ### passthrough（エージェントが自動で使う。i915 を QEMU に渡した 5330）
 
-- 道具は WS075 の `plan/ws075/tests/hdmi-h4-hw.sh`。5330 の host は `I915_HOST`（既定 `solaris10-man`）。
+- 道具は WS075 の `plan/tools/i915-hw/hdmi-h4-hw.sh`。5330 の host は `I915_HOST`（既定 `solaris10-man`）。
 - **lock**: `start` が `flock /tmp/i915-hw.lock` を取り（`hdmi/h4-lock.sh`）、`stop` まで持つ。他の run が持っている間は待つ。`start` を `timeout` で囲まない（`hdmi-h4-hw.sh:17-21`）。
   owner は `/tmp/i915-h4-owner`。`ctl`・`fetch` は自分の run が lock を持つ時だけ動く。
 - 5330 の host の `~/bigbang/h4/` は全ての run で共有。同時に 1 run。
@@ -166,11 +166,11 @@ sh plan/ws035/tests/zdesktop-guest.sh stop
 | --- | --- | --- | --- | --- |
 | C5（開閉の最初の frame） | `sh plan/ws099/tests/c5-hw.sh build/<W>-pt/hdd-image.img build/<W>/c5-hw 3` | `build/<W>/c5-hw/first-frames.txt`・`session.log`・`shots/*-live.png` | `C5-HW RESULT count=N max_ms=M over=0` と `c5-hw: PASS` | 約 8 分（未計測。`H4_MINUTES=20` で上限、`c5-hw.sh:25`） |
 | BUG-121（角の drag 20 回） | `sh plan/ws099/tests/resize-hw.sh build/<W>-pt/hdd-image.img build/<W>/resize-hw 20` | `build/<W>/resize-hw/` | `RESIZE-HW RESULT drags=20 vanished=0` と `resize-hw: PASS` | 約 15 分（未計測） |
-| C6（記録だけ） | `sh plan/ws075/tests/hdmi/measure-apps.sh build/<W>-pt/hdd-image.img build/<W>-pt/vmunix build/<W>/c6-run1` を 5 回（run2…run5）、その後 `python3 plan/ws075/tests/hdmi/c6.py build/<W>/c6-run1 build/<W>/c6-run2 build/<W>/c6-run3 build/<W>/c6-run4 build/<W>/c6-run5` | 各 `measure.txt` | `c6.py` の中央値と判定（50 ms） | 1 run 約 10 分（未計測） |
+| C6（記録だけ） | `sh plan/tools/i915-hw/hdmi/measure-apps.sh build/<W>-pt/hdd-image.img build/<W>-pt/vmunix build/<W>/c6-run1` を 5 回（run2…run5）、その後 `python3 plan/tools/i915-hw/hdmi/c6.py build/<W>/c6-run1 build/<W>/c6-run2 build/<W>/c6-run3 build/<W>/c6-run4 build/<W>/c6-run5` | 各 `measure.txt` | `c6.py` の中央値と判定（50 ms） | 1 run 約 10 分（未計測） |
 | C10（1 時間、提案の新しい script） | p014（fb1f6afee の `plan/ws099/phase014/phase.md`） の手順 | — | `c10-hw: PASS` | 約 75 分 |
 
 - 判定は script の PASS の行と画面（`shots/*-live.png`）と、guest の disk から読んだ session.log（compositor の log）。`hdmi-h4-hw.sh stop` が取る `kernel.log`・`serial.log` で合否を決めない。
-- 途中で止める時: `plan/ws075/tests/hdmi-h4-hw.sh stop build/<W>/c5-hw`（lock を返す）。
+- 途中で止める時: `plan/tools/i915-hw/hdmi-h4-hw.sh stop build/<W>/c5-hw`（lock を返す）。
 
 ### 素の起動（USB、ユーザーの目視）
 

@@ -143,13 +143,13 @@ byte で比べる）にする。Files の host の描画は `sh plan/tools/files
 
 ```
 sh plan/ws090/tests/host-draw.sh
-sh plan/ws090/tests/host-input.sh
+sh plan/tools/input/host-input.sh
 sh plan/ws090/tests/host-widgets.sh
 sh plan/tools/keiui/host-chooser.sh
 sh plan/tools/textedit/host-core.sh
 sh plan/ws102/tests/host-inset.sh
 sh plan/ws081/tests/run-termtouch.sh
-sh plan/ws081/tests/run-notestouch.sh
+sh plan/tools/touch/run-notestouch.sh
 sh plan/ws079/tests/run-pdf-render.sh 100
 sh plan/ws079/tests/run-pdfviewer-host.sh
 sh plan/tools/imageview/run-host.sh

@@ -14,7 +14,7 @@ ws189 の設計 §0 の欠け 1・§3.6: 1 つの client が複数の wl_data_de
 全部の device に送り（enter・motion・leave）、型を受けた最初の device にだけ drop を送ることを確かめる。
 
 ## 準備
-desktop。試験の image は `plan/ws189/tests/config-amd64-aat-dnd.mk`（AAT の image に `data-probe`）。kei で `data-probe --token=two --two-devices` を開き
+desktop。試験の image は `plan/tools/aat/config-amd64-aat-dnd.mk`（AAT の image に `data-probe`）。kei で `data-probe --token=two --two-devices` を開き
 （1 つの窓に data device が 2 つ）、Terminal（`echo dndsame` を打って Enter）と重ならないように置く。
 
 ## 操作と確認

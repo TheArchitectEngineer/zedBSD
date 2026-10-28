@@ -7,7 +7,7 @@ Disposition: normal
 Parent: [WS132](../ws.md)
 Focused goal: fg019（ベータ1）
 Queue: q723（P2、ws132-p004 → p005）
-依存: [p002](../phase002/phase.md)（`/dev/system` の DISK の事象、main に統合済み）、[p003](../phase003/phase.md)（backend の事象の口）
+依存: p002（fb1f6afee の `plan/ws132/phase002/phase.md`）（`/dev/system` の DISK の事象、main に統合済み）、p003（fb1f6afee の `plan/ws132/phase003/phase.md`）（backend の事象の口）
 
 ## ユーザーの決定（D3、2026-10-05 未明、[p001](../phase001/phase.md) の末尾）
 

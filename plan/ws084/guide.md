@@ -117,7 +117,7 @@ passthrough（solaris10-man の QEMU）も同じで、**takeover の経路は素
 
 | 試験 | コマンド | 状態 |
 | --- | --- | --- |
-| 出力の選択（`display=`・EDID の再試行） | `sh plan/ws075/tests/hdmi/host-output-test.sh build/<W>/h2` | 2026-10-01 PASS（`host-output-test: 80 checks, 0 failures`、約 1 秒） |
+| 出力の選択（`display=`・EDID の再試行） | `sh plan/tools/i915-hw/hdmi/host-output-test.sh build/<W>/h2` | 2026-10-01 PASS（`host-output-test: 80 checks, 0 failures`、約 1 秒） |
 | RPS の contract | `sh src/drivers/gpu/i915/tests/contracts/run.sh rps` | 2026-10-01 PASS（74 checks、約 3 秒） |
 | N0 の判定（`host-native-decide-test.c`） | p004 の手順 3 で道具を戻してから `sh plan/ws084/tests/run-native-decide-host-test.sh` | 未実行（link の不足が既知） |
 
@@ -125,7 +125,7 @@ passthrough（solaris10-man の QEMU）も同じで、**takeover の経路は素
 
 一般の手順は [plan/tools/hw5330/README.md](../tools/hw5330/README.md)（別の agent が作成中。機械と host・passthrough の lock・USB の単独の起動・demo の image の節）。ここは WS084 に固有の所だけ。
 
-- **この WS の実機は素の 5330 だけ**（ユーザーが USB から UEFI で起動）。passthrough（`plan/ws075/tests/hdmi-h4-hw.sh`、`flock /tmp/i915-hw.lock`）は firmware の画面が無いので
+- **この WS の実機は素の 5330 だけ**（ユーザーが USB から UEFI で起動）。passthrough（`plan/tools/i915-hw/hdmi-h4-hw.sh`、`flock /tmp/i915-hw.lock`）は firmware の画面が無いので
   takeover を通らない。passthrough は「takeover と無関係な経路（入力の遅れ、GPU の時間）」を切り分けるときだけ（2026-09-29 の `h4-ctl.py latency A 10` の形、
   [WS075 の guide](../ws075/guide.md) §6）。素の 5330 で起動している間は passthrough の host（solaris10-man = 10.0.10.25）が居ないので、passthrough の lock を取る他の agent の試験と
   時間が重ならないよう main が調整する。

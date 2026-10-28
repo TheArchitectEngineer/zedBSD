@@ -82,7 +82,7 @@ Queue: main の依頼（2026-09-30「ws090-p004（窓の土台と Text Editor �
 ### host・build・boot（`build/ws090/p004-final.sh`、出力 `build/ws090/p004-final.out`）
 
 - build（`-Werror`）: `libkeiui.so`・`/bin/textedit`・`wayland`・`terminal` 等 exit 0、warning 0。
-- host: `plan/tools/textedit/host-core.sh` 34/34、`plan/ws090/tests/host-input.sh` 63/63（つまみの握りのずれに合わせて 2 つの期待を直した）、
+- host: `plan/tools/textedit/host-core.sh` 34/34、`plan/tools/input/host-input.sh` 63/63（つまみの握りのずれに合わせて 2 つの期待を直した）、
   `plan/ws090/tests/host-draw.sh` 13/13、`plan/tools/keiland/host-chooser.sh` 75/75。
 - 規約: `style-check.py`（libkeiui・textedit・試験）違反 0、`git diff --check` 0。
 - boot test: `build-ssh-image.sh build/amd64`（exit 0、log の warning に libkeiui・textedit・libkeiland の file は 0）→ `boot-test.sh` **PASS**

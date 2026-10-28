@@ -38,7 +38,7 @@ Logs are under `/home/awe/zedBSD-worktrees/b2/build/b2-ws094-p007/`.
 
 | Check | Command / result |
 | --- | --- |
-| Desktop host | `sh plan/ws094/tests/host-desktop.sh` / exit 0, host-desktop PASS |
+| Desktop host | `sh plan/tools/files-desktop/host-desktop.sh` / exit 0, host-desktop PASS |
 | Thumbnail host | `sh plan/ws094/tests/host-thumb.sh build/b2-ws094-p007/host-thumb` / exit 0, all fixtures PASS |
 | Model host | `sh plan/tools/files/host-model.sh` / exit 0 |
 | Image Viewer host | `sh plan/tools/imageview/run-host.sh build/b2-ws094-p007/imageview-host` / exit 0 |

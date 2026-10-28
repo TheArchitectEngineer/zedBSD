@@ -24,7 +24,7 @@ Origin: [backlog-p2](../backlog-p2.md) 20・21・24 行（WS128 ws128-p004）、
 
 ## 確認
 
-- host: `plan/ws177/tests/host-pdf-find-l.sh` の select の群（ws128 の edit-basic.pdf と p041 の PDF）: 2 頁にまたがる drag と copy、
+- host: `plan/tools/pdf/host-pdf-find-l.sh` の select の群（ws128 の edit-basic.pdf と p041 の PDF）: 2 頁にまたがる drag と copy、
   ダブル・トリプルクリック、Ctrl+A の copy、長押しの語と handle の移動（頁をまたぐ）、tap で外す、回転した頁（edit-basic の 3 頁）の
   塗りの画素（多角形の外が塗られない）。frame を PNG に。
 - build warning 0、style-check。指の実機は UAT。
@@ -44,7 +44,7 @@ Origin: [backlog-p2](../backlog-p2.md) 20・21・24 行（WS128 ws128-p004）、
 
 | コマンド | 結果 |
 | --- | --- |
-| `sh plan/ws177/tests/host-pdf-find-l.sh`（libpdf と PDF Viewer の核、C89 -pedantic、plain と ASan+UBSan） | 両方 `52 passed, 0 failed`、`host-pdf-find-l: PASS` |
+| `sh plan/tools/pdf/host-pdf-find-l.sh`（libpdf と PDF Viewer の核、C89 -pedantic、plain と ASan+UBSan） | 両方 `52 passed, 0 failed`、`host-pdf-find-l: PASS` |
 | `sh plan/ws128/tests/run-host-page-text.sh`・`run-host-pdfviewer-find.sh`（既存の回帰） | PASS・PASS |
 | `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/p1-uat build/p1-uat/bin/pdfviewer build/p1-uat/bin/wayland build/p1-uat/dynamic/libpdf.so` | rc 0、warning 0 |
 | `python3 plan/tools/style-check.py`（変えた file） | 指摘 0（titlebar-shell.c 1830・1838 と menu.c 139 の既存の指摘は変えていない行） |

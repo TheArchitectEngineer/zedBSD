@@ -27,12 +27,12 @@ Worktree: `/home/awe/zedBSD-worktrees/p1`、branch `agent/p1`、base main fc3d31
 
 | Queue / attempt | Phase | Scope | Approval | Timebox | State |
 | --- | --- | --- | --- | --- | --- |
-| q590 / q590-i01 | [ws004-p051](../../ws004/phase051/phase.md) | BUG-134: AX211 の passthrough での再現・解析・driver の修正と確認（phase.md の範囲） | 2026-10-02 user「PCIパススルーでQEMUを起動してデバッグしておいてほしいです。これは最初に取り組みましょう！」 | 4 時間 | finished / uncleared（実機試験待ち） |
-| q594 / q594-i01 | [ws129-p009](../../ws129/phase009/phase.md) | デモの image を CI 設定の土台に、boot-test の timeout | 2026-10-02 user「デモのイメージはCI設定をベースに変更しましょう。」 | 3 時間 | finished / cleared |
+| q590 / q590-i01 | ws004-p051（fb1f6afee の `plan/ws004/phase051/phase.md`） | BUG-134: AX211 の passthrough での再現・解析・driver の修正と確認（phase.md の範囲） | 2026-10-02 user「PCIパススルーでQEMUを起動してデバッグしておいてほしいです。これは最初に取り組みましょう！」 | 4 時間 | finished / uncleared（実機試験待ち） |
+| q594 / q594-i01 | ws129-p009（fb1f6afee の `plan/ws129/phase009/phase.md`） | デモの image を CI 設定の土台に、boot-test の timeout | 2026-10-02 user「デモのイメージはCI設定をベースに変更しましょう。」 | 3 時間 | finished / cleared |
 
 | q596 / q596-i01 | [ws005-p018](../../ws005/phase018/phase.md) | WiFi の利用者の流れの調査と契約 | 継続 dispatch（user 2026-10-02） | 3 時間 | finished / cleared |
 
-| q598 / q598-i01 | [ws033-p001](../../ws033/phase001/phase.md) | USB の LAN の hotplug を QEMU で | 継続 dispatch | 3 時間 | finished / uncleared（WiFi 優先で中断） |
+| q598 / q598-i01 | ws033-p001（fb1f6afee の `plan/ws033/phase001/phase.md`） | USB の LAN の hotplug を QEMU で | 継続 dispatch | 3 時間 | finished / uncleared（WiFi 優先で中断） |
 | q599 / q599-i01 | [ws005-p019](../../ws005/phase019/phase.md) | BUG-138 WiFi menu・利用者の join の実装 | 2026-10-02 user「実装をお願いします。優先度高いです。」 | 4 時間 | finished / uncleared（networkd の owner 変更がユーザーの明示の承認待ち） |
 | q601 / q601-i01 | [ws118-p001](../../ws118/phase001/phase.md) | 5320 の遠隔 log 用 image | 継続 dispatch | 3 時間 | in-progress（再開） |
 | q599 / q599-i02 | [ws005-p019](../../ws005/phase019/phase.md) | network group の利用者に WiFi の制御を許可し desktop から on/off・join（i02） | 2026-10-02 user（明示の承認）:「WiFiの制御は、networkグループに入っているユーザには許可する、でどうですか？」 | 4 時間 | finished / uncleared（permission の再拒否、ユーザーの直接の許可待ち） |
@@ -78,7 +78,7 @@ Next（予約、2026-10-03 user）: q635 BUG-149（kernel の poll の SHUT_WR �
 2026-10-03 / P1 の後: user「P1でBUG-149をクリアした後、ほかに関連バグが見つかっていなければ、いったんラップアップして、P3をN=1のシリアル区間で実行しましょう」→ q635 が cleared かつ関連の新しい bug が無ければ P1 を通常のラップアップで終了、以後 N=1（P3 だけ）。関連の bug が見つかったら Q1 が user に報告して判断を仰ぐ。
 | P1-merge ws113-p015 | — | 43d35865a（kl_scroll）・9d04591db・583caebf8 | wayland/{apps-bar,arrange-shell,heads,plane,shell,...}・libkeiland scroll・plan/ws113 | integrated 79b9b1b83（2026-10-08、T1-380 待ち） |
 
-2026-10-13 夜 / q940（新しい世代）: user「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」→ [ws216-p004](../../ws216/phase004/phase.md) Notes の画面の再開。前の世代の書きかけは Q1 が agent/p1 6b09ad269（WIP）に救った（写し build/salvage-20261013/p1-569d8e952.patch）。main を取り込み → build・host 試験 → §7 の記録 → Q1 に merge 依頼 → QEMU の確かめは T1 への依頼を Q1 に送る。State: active。
+2026-10-13 夜 / q940（新しい世代）: user「N=2で、P1,P3を起動し、T1でテストする流れで、実行を再開してください。」→ ws216-p004（fb1f6afee の `plan/ws216/phase004/phase.md`） Notes の画面の再開。前の世代の書きかけは Q1 が agent/p1 6b09ad269（WIP）に救った（写し build/salvage-20261013/p1-569d8e952.patch）。main を取り込み → build・host 試験 → §7 の記録 → Q1 に merge 依頼 → QEMU の確かめは T1 への依頼を Q1 に送る。State: active。
 - q940 結果（2026-10-13 夜）: 981e20f1b → main cae6db34f（Q1 が render.c の塊・組の pipeline の確保と解放を review）。host 244 checks ×3（plain・ASan・UBSan）0 failed、amd64・rpi4・Linux の notes の build warning 0。ws216-p004 は test-wait（画の確かめは p007 の T1 にまとめる、P1 の推奨を Q1 が採用）。
 
 2026-10-13 夜 / q942: [ws216-p005](../../ws216/ws.md) 領域の塗りつぶし（同じ P1 の続き、WS216 の表の「p004〜p006 は同じ担当が順に」）。承認: ユーザーの再開の指示と WS216 の D1〜D12。p004 の成果は main cae6db34f に統合済み（p004 の clearance は p007 の T1 の後）。State: active。
@@ -87,7 +87,7 @@ Next（予約、2026-10-03 user）: q635 BUG-149（kernel の poll の SHUT_WR �
 2026-10-13 夜 / q944: ws216-p006 Notes の描く道具の UI（button と帯、Tool menu、key、色と太さの表、pen・mouse・指での選択と塗り、AAT の helper の追従、塗りの間の表示 L-8）。同じ P1 の続き。承認: ユーザーの再開の指示と WS216 の D1〜D12。p005 の出力は main 6c703b2fc。State: active。
 - q944 結果（2026-10-13 夜）: ws216-p006 設計 244091c0b → design review（plan/ws216/phase006/review-1.md、ユーザーの決定 4 件）・p005 の code review（code-review-1.md）の直しを含め a7043d57e → main 3f22c82ec（main で notes の build warning 0）。host U1〜U5 済み、test-wait（U6 は p007 の T1）。P1 の世代はここで終わり（context 約 75 万 token）。
 
-2026-10-13 夜 / q946（P1 の新しい世代）: ws216-p007 の準備: AAT の scenario（tests/scenarios/apps/notes/draw-tools.md・fill-region.md）と試験の image の config（plan/ws216/tests/config.mk）を書き、T1 の依頼の文面を Q1 に。承認: ユーザーの再開の指示と WS216 の D1〜D12。State: active。
+2026-10-13 夜 / q946（P1 の新しい世代）: ws216-p007 の準備: AAT の scenario（tests/scenarios/apps/notes/draw-tools.md・fill-region.md）と試験の image の config（plan/tools/aat/config-amd64-notes-pen.mk）を書き、T1 の依頼の文面を Q1 に。承認: ユーザーの再開の指示と WS216 の D1〜D12。State: active。
 - q946 結果（2026-10-13 夜、P1 の新しい世代）: ws216-p007 の phase.md・AAT の scenario 2 つ・helper・config を d83ef6a03 → main 79a932b8c。Q1 が標準の AAT の image（plan/tools/aat/config-amd64-aat.mk）に peninject を足した。test-wait（T1-580）。
 
 2026-10-13 夜 / q948（P1 の第 2 世代の続き）: ws217-p002b 画面の回転の turn（compositor の 90/270°）。ユーザー（AskUserQuestion「WS217 p002b 画面の 90° 回転」）。p002a の出力は main（T1-576 の (B) 待ち）。State: active。

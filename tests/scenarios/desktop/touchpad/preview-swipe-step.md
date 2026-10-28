@@ -10,7 +10,7 @@ since: ws142-p009
 ---
 
 ## 目的
-preview（switcher）の 2 本指の swipe が 1 回で 1 つ（BUG-215）、下端からの 2 本指の上で App Home・上端からの 2 本指の下で WiseView（2026-10-13 ユーザーの指示、touch panel の端と同じ。前は上端で App Home、ws181-p008）、App Home と WiseView の間の行き来、App Home の上で 2 本指で下へ払って閉じる（ws181-p012、2026-10-13 ユーザー「トラックパッドも下へ払って閉じる形に変えます。」、touch panel の Home の上の下への drag と同じ）、全画面から下端の 2 本指の上で最大化（BUG-228）、端の帯に 2 本のうち 1 本があれば端の gesture（ws181-p008）になることを人の指で確かめる。QEMU の注入の版は plan/ws142/tests/p010-guest.sh の 2.・6.・7.・8. と plan/ws142/tests/p003-guest.sh の 1.・2.・7b.・7c.・7d.・7e. と plan/ws181/tests/p009-guest.sh の 3.。
+preview（switcher）の 2 本指の swipe が 1 回で 1 つ（BUG-215）、下端からの 2 本指の上で App Home・上端からの 2 本指の下で WiseView（2026-10-13 ユーザーの指示、touch panel の端と同じ。前は上端で App Home、ws181-p008）、App Home と WiseView の間の行き来、App Home の上で 2 本指で下へ払って閉じる（ws181-p012、2026-10-13 ユーザー「トラックパッドも下へ払って閉じる形に変えます。」、touch panel の Home の上の下への drag と同じ）、全画面から下端の 2 本指の上で最大化（BUG-228）、端の帯に 2 本のうち 1 本があれば端の gesture（ws181-p008）になることを人の指で確かめる。QEMU の注入の版は plan/ws142/tests/p010-guest.sh の 2.・6.・7.・8. と plan/ws142/tests/p003-guest.sh の 1.・2.・7b.・7c.・7d.・7e. と plan/tools/desktop-guest/p009-guest.sh の 3.。
 
 ## 準備
 5330 の desktop で 3 つ以上の app を開く。

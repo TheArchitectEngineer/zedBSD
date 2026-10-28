@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: native の再生（libmedia の H.264・AAC）の software を main に統合、p013 の UAT は 2026-10-13 ユーザー「WS202のp013はUAT OKでした。」。p012 の残りは実機と T1 の確かめ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）
+<!-- retained-after-completion --> tests/ の 4 項目 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
 Completed: 2026-10-27（q1608 の精査）
 Primary Milestone: MG006
 Related Milestones: —

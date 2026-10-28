@@ -128,13 +128,13 @@ P1 の render-job.c・transfer-job.c・render-check.c を読み、P2 の関数�
 - `image-state.{c,h}`: `powervr_format_clear_words` を新しく作った。transfer-program.c の clear の pack（half・unorm8 の変換を含む）をここへ移した。`powervr_transfer_clear_colour` はこれを呼ぶ。
 - `render-pass.{c,h}`: render pass の begin と ClearAttachments の colour の clear を、format の clear の word にした。
 - 試験:
-  - `plan/ws269/tests/p010/pass-host-test.c`: clear の期待を pack した word にした（1.0,0,0,1 → 0xff0000ff、緑 0.5 → 0x00008000）。
-  - `plan/ws269/tests/p009/vk-host-test.c`（P1 の q1398 の frame の試験）: clear の青を、pack した word の byte で見るようにした（1.0 → 255、0x3e20a0a1 → 40）。
+  - `plan/tools/powervr/p010/pass-host-test.c`: clear の期待を pack した word にした（1.0,0,0,1 → 0xff0000ff、緑 0.5 → 0x00008000）。
+  - `plan/tools/powervr/p009/vk-host-test.c`（P1 の q1398 の frame の試験）: clear の青を、pack した word の byte で見るようにした（1.0 → 255、0x3e20a0a1 → 40）。
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| p009（切り替え 0・1） | `sh plan/ws269/tests/p009/run.sh build/p013/p009-0 0`（と `1`） | どちらも 511 passed、0 failed |
-| p010 | `sh plan/ws269/tests/p010/run.sh build/p013/p010` | 全部 0 failed |
+| p009（切り替え 0・1） | `sh plan/tools/powervr/p009/run.sh build/p013/p009-0 0`（と `1`） | どちらも 511 passed、0 failed |
+| p010 | `sh plan/tools/powervr/p010/run.sh build/p013/p010` | 全部 0 failed |
 | VF2 の kernel | `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p013/vf2 vmunix -j16` | rc 0、warning 0 |
 
 - 未実施: 実機（CLEAR の pass の色は実機で初めて確かめられる）。
@@ -260,12 +260,12 @@ sample の段の道（通しで読んだ）:
   - 待ったら `gpu-selftest: waited N s for the GPU to attach` を 1 行出す。上限を越えて firmware がまだ `-` なら `kernel: fail(attach timeout, firmware=-)`。
   - attaching は「一度 0 より大きく見えた後の 0」だけを終わりとみなす。late start が始まる前の 0 で、すぐ終わらないようにするため。
 - 2 回の行: `-c` は stdout と `/dev/console` の両方に書いていた。boot の service（init）の stdout が console なので、同じ行が 2 回出た。`-c` でも stdout が console そのもの（同じ char の device、または同じ file）なら、console へは書かないようにした（`stdout_is_console`）。実機の init の stdout が別の名前の device（rdev が違う）なら、まだ 2 回出る（実機で確かめる）。
-- 試験: `plan/ws269/tests/p010/selftest-host.sh` に `late` を足した（最初は `firmware=-`、2.5 秒後に ok → `waited 3 s` の後、13 ok）。
+- 試験: `plan/tools/powervr/p010/selftest-host.sh` に `late` を足した（最初は `firmware=-`、2.5 秒後に ok → `waited 3 s` の後、13 ok）。
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| host | `sh plan/ws269/tests/p010/selftest-host.sh build/p015` | 0 failed（late を含む） |
-| VF2 の試験の image | `make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-visionfive2-selftest.mk BUILD=build/p015/img disk-image -j16` | rc 0、warning 0 |
+| host | `sh plan/tools/powervr/p010/selftest-host.sh build/p015` | 0 failed（late を含む） |
+| VF2 の試験の image | `make ZEDBSD_CONFIG=plan/tools/powervr/p010/config-visionfive2-selftest.mk BUILD=build/p015/img disk-image -j16` | rc 0、warning 0 |
 
 - 未実施:
   - 120 秒の上限を越える場合の host 試験（時間がかかるので）。
@@ -425,7 +425,7 @@ mainline と照らした結果（v7.3 の `pvr_ccb.c`・`pvr_fw.c`・`pvr_rogue_
   - どこで lockup するかで、原因が CDM の command・context（end only）、fence の PDS program（fence）、kernel の PDS・USC の program（両方通って kernel で落ちる）のどれかに絞れる。
 - heap page 0xc020a000（unnamed）: firmware の 20 の record の外。session の FW の context の record（render の module が同じ heap から取る物）の見込み。slot 2 の位置の 1 は、その record の field である可能性が高い。名前を付けるのは後で（急がない）。
 - CDM の command の残りの field（cdm_resume_pds1・cdm_item・compute_cluster）は今回入れていない。switch を外した状態では resume は使われず、cdm_item・compute_cluster は Mesa でも feature（compute_morton_capable・cluster_grouping）がある時だけ。BXE-4-32 の feature の値は次に確かめる。
-- 確かめ: 試験の image の config（`plan/ws269/tests/p010/config-visionfive2-selftest.mk`、compute check を含む）の vmunix（`build/q1412/st`）は warning 0。通常の VF2 の config には compute check が入らない。
+- 確かめ: 試験の image の config（`plan/tools/powervr/p010/config-visionfive2-selftest.mk`、compute check を含む）の vmunix（`build/q1412/st`）は warning 0。通常の VF2 の config には compute check が入らない。
 
 ## q1413-i01（P1、2026-10-20）: compute の lockup — resume の PDS1
 
@@ -1039,7 +1039,7 @@ source の変更は無し。
   - `build_kernel` に workgroup の数を渡し、PDS は workgroup の program にする。
   - slot の data の 4 語を書き、kernel の usc_common に 3、PDS の temp に 4 を渡す。
   - 0 の時は今までの kernel を workgroup ごとに出す形。上の 3 の compiler の変更が main に入ったら 1 にする。
-- 確認: RISC-V の self-test の build を、`POWERVR_EXECUTOR_ONE_KERNEL` を 1 にした時と 0 にした時の両方で行い、どちらも warning 0（commit は 0）。`plan/ws269/tests/p008/run.sh` は encode 94/94・compute 76/76 PASS。板は未実施。
+- 確認: RISC-V の self-test の build を、`POWERVR_EXECUTOR_ONE_KERNEL` を 1 にした時と 0 にした時の両方で行い、どちらも warning 0（commit は 0）。`plan/tools/powervr/p008/run.sh` は encode 94/94・compute 76/76 PASS。板は未実施。
 - 未確認の仮定: DOUTW の COMMON_STORE の address が係数 register の番号であること（Mesa の barrier_coefficient・work_group_input_regs と同じ扱い）、z が temp 3 であること（Mesa の add_base_workgroup の {0,1,3}）。
 
 ## q1468 / q1468-i01（2026-10-20）
@@ -1362,7 +1362,7 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
 
 ## q1501 / q1501-i01（2026-10-21）: Mesa の 3 kernel の compute stream（switch）
 
-- Mesa の vkcompute の stream（`plan/ws269/tests/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt`）は 3 kernel と terminate からなる:
+- Mesa の vkcompute の stream（`plan/tools/powervr/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt`）は 3 kernel と terminate からなる:
   - K0 は shared register を確保する kernel（usc_common 64 byte、target ALL、sd NONE、usc_common_shared、PDS の data 32 byte、max_instances 8、1 instance）。
   - K1 は dispatch（sd_type USC）。
   - K2 は fence（sd PDS、usc_common_shared、max_instances 8）。
@@ -1440,9 +1440,9 @@ csbgen（Mesa 25.0.7 の `gen_pack_header.py` の `__pvr_address`: `((addr >> sh
 - 生成物と build:
   - shader（GLSL）は `shaders/`、`shaders/regenerate.py` で `shader.h`（SPIR-V の語）を生成する。build に shader の compiler は要らない。
   - `platform/common/userland-dynamic.mk` に vkmatrix の dynamic の link の規則（vkstage と同じ形、libvulkan.so）を足した。package の platform は visionfive2 だけ。
-  - `plan/ws269/tests/p010/config-visionfive2-selftest.mk` に vkmatrix を足した。
+  - `plan/tools/powervr/p010/config-visionfive2-selftest.mk` に vkmatrix を足した。
 - 確認:
-  - host の lavapipe（`plan/ws269/tests/vkmatrix/run.sh OUTDIR`）で 13/13 PASS。
+  - host の lavapipe（`plan/tools/powervr/vkmatrix/run.sh OUTDIR`）で 13/13 PASS。
   - RISC-V の build（`bin/vkmatrix`、libvulkan.so の dynamic、warning 0）。
   - 板は未実施（Q1 が /bin に置いて流す）。
 

@@ -20,11 +20,11 @@ Approval: current user 2026-10-02「では、N=3で作業を開始してくだ�
 Commands run from the B2 worktree. Evidence is under `build/b2-ws094-p011/`.
 
 - Baseline host-desktop initially failed two font checks because worktree assets were absent. Copying existing Inter/JetBrains fonts and wallpaper from claude1, plus host Droid fallback/license into B2 build, recovered baseline PASS. No product source fix was needed.
-- `sh plan/ws094/tests/host-desktop.sh`: PASS, including added prune checks (`host-desktop.log`).
+- `sh plan/tools/files-desktop/host-desktop.sh`: PASS, including added prune checks (`host-desktop.log`).
 - `sh plan/tools/files/host-model.sh`: PASS (`host-model.log`).
 - `sh plan/ws094/tests/host-thumb.sh build/b2-ws094-p011/host-thumb`: PASS (`host-thumb.log`).
 - `python3 plan/tools/style-check.py` for the three production files and host test: baseline 3 pre-existing findings; final 0.
-- `git diff --check` and `sh -n plan/ws094/tests/files-desktop-guest.sh`: PASS.
+- `git diff --check` and `sh -n plan/tools/files-desktop/files-desktop-guest.sh`: PASS.
 - Initial target build using frozen shared sysroot failed in existing libvulkan because cached public Vulkan headers omit current KHR memory requirements definitions (`bin-build.log`). Files changed source compiled. No shared tree was modified.
 - B main authorized copying sysroot to B2 private build and reflecting the current public Vulkan headers. Overlay file/hash evidence: `sysroot-vulkan-overlay.json`; private path `build/b2-ws094-p011/toolchain-cache/sysroot`. Dry runs prevent sysroot regeneration and LLVM/Noct rebuild.
 
@@ -60,13 +60,13 @@ All guest commands used `GUEST_RUNTIME=/home/awe/zedBSD-worktrees/b2/build/b2-ws
 
 | Check | Command / evidence under build/b2-ws094-p011 | Outcome |
 | --- | --- | --- |
-| Current host layout | `sh plan/ws094/tests/host-desktop.sh` / host-desktop-final.log | PASS, including failed→successful listing recovery |
+| Current host layout | `sh plan/tools/files-desktop/host-desktop.sh` / host-desktop-final.log | PASS, including failed→successful listing recovery |
 | Current host model | `build/ws071-host/files-model` against a disposable test directory / host-model-final.log | PASS (script also passed before final cache-field adjustment) |
 | Thumbnail decoder | `sh plan/ws094/tests/host-thumb.sh build/b2-ws094-p011/host-thumb` / host-thumb.log | PASS |
 | Current target build | Exact private-sysroot command above / bin-build-final.log | exit 0, warnings 0 |
 | Full C rules on changed code | Manual review against coding-style.md; style-check.py on desktop-layout.c/ui-desktop.c/files.h/host-desktop.c | PASS, tool total 0 |
-| Whitespace / shell | `git diff --check`; `sh -n plan/ws094/tests/files-desktop-guest.sh` | PASS |
-| New pruning / overflow | `sh plan/ws094/tests/files-desktop-guest.sh build/b2-ws094-p011/prune install show saved prune` / prune-result.log | PASS, ERROR/FAILED absent |
+| Whitespace / shell | `git diff --check`; `sh -n plan/tools/files-desktop/files-desktop-guest.sh` | PASS |
+| New pruning / overflow | `sh plan/tools/files-desktop/files-desktop-guest.sh build/b2-ws094-p011/prune install show saved prune` / prune-result.log | PASS, ERROR/FAILED absent |
 | Existing L1 | same script `build/b2-ws094-p011/l1 install show watch input saved` / l1-result.log | PASS |
 | Existing drag / DnD | same script `build/b2-ws094-p011/drag install show drag` / drag-result.log | PASS |
 | Existing menus | same script `build/b2-ws094-p011/menu install show menu` / menu-result.log | PASS, including rename/Trash/copy/paste/New Folder/Clean Up |

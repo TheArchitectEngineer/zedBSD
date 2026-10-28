@@ -47,7 +47,7 @@
 **M4. D3(a)（font を generic へ移す）が、全 platform の起動の判定と amd64 の HAL を壊す**
 - 根拠: `plan/tools/boot-test.py:43,394-395` は `src/drivers/platform/pcat/graphics/vgafont.c` を path で読み、symbol `drv_pcat_vgafont16` で解析します。
 - amd64 の HAL `src/hal/amd64/bsp-pcat/cons.c:29,817` も同じ header と symbol を使い、`platform/amd64/vmunix.mk:454` は graphics の有無に依らず compile しています。
-- 他にも `plan/ws035/tests/guest-console.py`、`plan/ws073/tests/*.py`、`plan/ws174/tests/run-boot-keys-qemu.py`、`plan/ws256/tests/boot-test-host.py` が参照しています。§6 の表にはどれも無く、pcat の回帰では検出できません（boot-test 自体が壊れるため）。
+- 他にも `plan/ws035/tests/guest-console.py`、`plan/ws073/tests/*.py`、`plan/tools/boot-keys/run-boot-keys-qemu.py`、`plan/tools/vf2-host/boot-test-host.py` が参照しています。§6 の表にはどれも無く、pcat の回帰では検出できません（boot-test 自体が壊れるため）。
 - 修正案: D3 の既定を (b)「sun4u の kernel が pcat の vgafont.c をそのまま compile」に変える。移す場合は、Q1 による boot-test.py の追従を先に済ませることを依存に書く。
 
 **M5. 行の buffer 4096 byte を写すと、実機の解像度で BLIT が黙って失敗する（§1「sun4u も同じ値」）**

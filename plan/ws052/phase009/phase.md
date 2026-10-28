@@ -115,7 +115,7 @@ core の再初期化）、GGTT、resume で suspend の前の出力先（panel �
 ### 5330 の UAT の手順（ws159-p005 にそのまま追記できる形）
 
 前提:
-- image に `sleepctl` が要る。ws159 の `plan/ws159/tests/config-amd64-uat.mk` に `ZEDBSD_USER_PROGRAMS += sleepctl` を足す（WS159 の file なので
+- image に `sleepctl` が要る。ws159 の `plan/tools/aat/config-amd64-uat.mk` に `ZEDBSD_USER_PROGRAMS += sleepctl` を足す（WS159 の file なので
   Q1 が足す）。
 - `sleepctl devices` は全 device を suspend して直ちに resume する（CPU の深い idle・S0i3 には入らない。それは p006）。
 - p005（止めて入る）の前なので、suspend は **suspend の口の無い最初の driver**（5330 では LPSS-I2C の touchpad・HDA・Wi-Fi のどれか）で中止し、

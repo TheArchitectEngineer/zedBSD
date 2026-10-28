@@ -27,6 +27,6 @@ ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \
 	userland/desktop/photos/exif.c userland/desktop/photos/library.c userland/desktop/photos/db.c \
 	userland/desktop/photos/import.c userland/desktop/preview/client.c userland/desktop/preview/linux/spawn.c "$dir/sha2.o" -o "$out"
 run=$(mktemp -d "$(pwd)/$dir/photos-db.XXXXXX")
-python3 plan/ws157/tests/make-photos.py "$run/Pictures"
-python3 plan/ws157/tests/make-photos.py --other "$run/Other"
+python3 plan/tools/aat/make-photos.py "$run/Pictures"
+python3 plan/tools/aat/make-photos.py --other "$run/Other"
 TZ=UTC timeout 60 "$out" "$run/Pictures" "$run/Other" "$run/Library"

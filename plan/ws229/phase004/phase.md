@@ -43,17 +43,17 @@ batch を取らない state の書き手は `_gen` の版を足し、古い名�
 
 ## 確かめ（host）
 
-- `GENXML=<mesa>/src/intel/genxml BRW_TOOLS=<mesa build>/src/intel/compiler sh plan/ws229/tests/host/run.sh`（新しい試験）→ PASS:
+- `GENXML=<mesa>/src/intel/genxml BRW_TOOLS=<mesa build>/src/intel/compiler sh plan/tools/i915-gen9/host/run.sh`（新しい試験）→ PASS:
   - Gen12: draw（depth・stencil・blend・scratch）、indexed draw（GS・SGVS）、fill と copy の rectangle、shared memory と indirect の dispatch、surface state・sampler・IDD・空の window の 14 file が、03dee2287（p004 の前）の tree で同じ試験を `-DTEST_BASELINE` で build した物と byte で同一。
   - 12 batch（736 命令）と 14 構造体が、Gen12 は gen120.xml、Gen9 は gen90.xml（gen80 → gen75 … の継承、`plan/ws083/tests/genxml-decode.py` の解決と sha256 の pin）で全 dword が命令に入り、field の外の bit が無い。両版を命令ごとに並べ、同じ名の field は同じ値（違ってよい物は理由付きの表、`gen9-check.py`）。
   - 空の window: brw_disasm で Gen9（skl）4 個、Gen12（tgl）4 個の EOT の send。
 - `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws229-p004/k64 vmunix` → PASS（-Werror、warning 0、amd64 vmunix check PASS）。
-- `plan/ws083/tests/genxml-decode.py --root gen90.xml`（新しい選択肢）、`--self-test`（gen120）0 failures。`plan/ws101/tests/host/genxml-check.py` に省略できる第 3 引数 ROOT（既定 gen120.xml）。
+- `plan/ws083/tests/genxml-decode.py --root gen90.xml`（新しい選択肢）、`--self-test`（gen120）0 failures。`plan/tools/gpu-compute/host/genxml-check.py` に省略できる第 3 引数 ROOT（既定 gen120.xml）。
 
 ## 未実施・残り
 
 - 実機（Gen9 の GT で描けるか）は p005。QEMU は使っていない。
-- `plan/ws101/tests/host/run.sh`・`plan/ws031/tests/run-vk-host-tests.sh`・`plan/ws075/tests/run-host-layered.sh` は走らせていない（ws101 の script は `rm -rf` の trap を持つので担当は走らせない）。Gen12 の byte の同一は上の試験で draw・rectangle・dispatch・state の全部の書き手について確かめた。kernel（EU）の byte は `drv_i915_shader_compile_stage()` が `compile_gen(…, 12, …)` の wrapper なので同一。
+- `plan/tools/gpu-compute/host/run.sh`・`plan/ws031/tests/run-vk-host-tests.sh`・`plan/ws075/tests/run-host-layered.sh` は走らせていない（ws101 の script は `rm -rf` の trap を持つので担当は走らせない）。Gen12 の byte の同一は上の試験で draw・rectangle・dispatch・state の全部の書き手について確かめた。kernel（EU）の byte は `drv_i915_shader_compile_stage()` が `compile_gen(…, 12, …)` の wrapper なので同一。
 - review-1 M9 のうち: GPGPU の post-sync の CS stall は、zedBSD の post-sync の PIPE_CONTROL（fence.c・query）が 3D でしか出ないので不要と判断し変えていない。VF cache の 4 GiB の別名は、毎 operation の context setup で VF cache を invalidate しているので追加の追跡はしていない。
 - `tests/fixtures/draw-fixture.c`（kernel の試験の Gen12 の draw）は Gen9 の形にしていない（p005 で Gen9 の機械で使うなら直す）。
 - scratch の thread ID の数（heap.h）は Gen12 の大きい値のまま（Gen9 の必要数より大きい）。
@@ -67,13 +67,13 @@ batch を取らない state の書き手は `_gen` の版を足し、古い名�
 | --- | --- | --- |
 | fixture の版 | `drv_i915_draw_fixture_write_state_gen()`・`_build_batch_gen()`・`_mocs_gen()`（9 で Gen9、他は Gen12）。古い名前は Gen12 の wrapper（byte 不変）。内部の batch に `graphics_ver` | draw-fixture.[ch] |
 | Gen9 の batch | render/state.c の Gen9 の形に合わせた: PIPE_CONTROL の HDC flush の代わりに DC flush、PIPELINE_SELECT 0x69040300、STATE_BASE_ADDRESS 19 dword、DEPTH_BOUNDS・VF_SGVS_2・CPS_POINTERS・PRIMITIVE_REPLICATION を出さない、VB の L3 bypass を立てない、3DSTATE_URB_VS/HS/DS/GS（VS は chunk 4 から 928 entry、他は chunk 20 で 0）、SF の deref 0、DEPTH_BUFFER の format を 20:18、STENCIL_BUFFER 5 dword、RSS dw1 bit 31（unorm path）を立てない、uncached MOCS は index 0。invalidate の PIPE_CONTROL（CS stall と invalidate だけ）に Gen9 では stall at scoreboard を足した（SKL PRM の CS stall の制約、iris と同じ） | draw-fixture.c |
-| Gen9 の pixel shader | Gen12 の SIMD8 版と同じ手順（f1 に pixel mask、A64 untyped write で marker 0xc0ffee01 を 0x100400c10 へ、g112-g115 の赤を headerless の RT write と EOT）。Mesa 25.0.7 の `brw_asm --gen=skl` で組んだ 192 byte。後ろの 832 byte は Gen9 の EOT（GEN9_EOT_ONLY）で敷く | draw-fixture.c、plan/ws229/tests/fixtures/draw-fixture-ps-gen9.asm |
+| Gen9 の pixel shader | Gen12 の SIMD8 版と同じ手順（f1 に pixel mask、A64 untyped write で marker 0xc0ffee01 を 0x100400c10 へ、g112-g115 の赤を headerless の RT write と EOT）。Mesa 25.0.7 の `brw_asm --gen=skl` で組んだ 192 byte。後ろの 832 byte は Gen9 の EOT（GEN9_EOT_ONLY）で敷く | draw-fixture.c、plan/tools/i915-gen9/fixtures/draw-fixture-ps-gen9.asm |
 | Gen12 だけの binary の拒否 | `drv_i915_tex_fixture_supported()`（Gen9 で 0）。draw-test.c の tex・t3・bl はこれで、r1 は compute の半分が eu-test の Gen12 の kernel と batch なので Gen9 で拒否。log「not run: … Gen12 only (graphics version 9)」を出し `I915_TEST_SKIPPED`（scenarios.h、-1）を返し、runner は `SKIP` と log（PASS にも FAIL にもしない）。draw は Gen9 の fixture で走り、Gen9 の select の確かめ（0x69040300 が 1 つ、他の select 無し）を draw-test.c に置いた | draw-test.c・runner.c・scenarios.h・README.md |
 | `vkref-generated.inc` | どの source からも include されていない（`git grep vkref`）。拒否する呼び手が無いので変えていない | — |
-| ついで（Q1 経由の P1 の報告） | `plan/ws101/tests/host/genxml-check.py` の要約の行が xml の名前の代わりに命令の名前を出していた（`name` の使い回し）。`root_xml` に分けた | genxml-check.py |
+| ついで（Q1 経由の P1 の報告） | `plan/tools/gpu-compute/host/genxml-check.py` の要約の行が xml の名前の代わりに命令の名前を出していた（`name` の使い回し）。`root_xml` に分けた | genxml-check.py |
 
 確かめ（host、QEMU は使っていない）:
-- `GENXML=<p1>/build/mesa-tools/mesa-25.0.7/src/intel/genxml BRW_TOOLS=<p1>/build/mesa-tools/build-asm/src/intel/compiler sh plan/ws229/tests/host/run.sh` → PASS。
+- `GENXML=<p1>/build/mesa-tools/mesa-25.0.7/src/intel/genxml BRW_TOOLS=<p1>/build/mesa-tools/build-asm/src/intel/compiler sh plan/tools/i915-gen9/host/run.sh` → PASS。
   - fixture の Gen12 の batch・state page・RSS の 3 file が 03dee2287 の tree の古い API の出力と byte で同一（計 17 file）。新しい tree の中でも古い名前と `_gen(…, 12)` の出力が同一（assert）。
   - 12-fixture-draw と 9-fixture-draw を gen120.xml・gen90.xml で decode（全 dword が命令、field の外の bit 無し）、両版を命令ごとに並べ field を比べて PASS（14 batch・882 命令・16 構造体）。gen9-check.py の変更: MI_STORE_DATA_IMM の 64 bit の Immediate Data が 4 dword の命令で切れる分を読む（以前は field ごと捨てて stray と判定）、Stall At Pixel Scoreboard の版の差を理由付きで表に。
   - Gen9 の shader が .asm の `brw_asm --gen=skl` の 192 byte と同一、後ろが Gen9 の EOT の send 52 個（brw_disasm）。
@@ -102,8 +102,8 @@ batch を取らない state の書き手は `_gen` の版を足し、古い名�
   `i915_r1_write_c1_state(page, 12)` の 4096 byte が変更前の手書きの値（kernel・IDD の dw2=1<<20・marker 0xdead0000）と同一、
   `(page, 9)` が Gen9 の kernel と `fill_idd(9)`（dw2=0）を持つ。Gen12 の c1 の batch は `build_batch_gen(…, 12)` そのもの（旧名の wrapper の中身）、
   draw の batch・state は run.sh が旧名と `_gen(…, 12)` の同一を確かめている。
-- `GENXML=<p1>/build/mesa-tools/mesa-25.0.7/src/intel/genxml BRW_TOOLS=<p1>/build/mesa-tools/build-asm/src/intel/compiler sh plan/ws229/tests/host/run.sh` → PASS（Gen12 の 17 file が 03dee2287 と同一、14 batch・882 命令）。
-- 同じ環境で `sh plan/ws229/tests/eu-test-gen9-host.sh` → PASS（eu-gen12 の batch の SHA-256 09786119…0fe6 が Gen9 化の前と同一）。
+- `GENXML=<p1>/build/mesa-tools/mesa-25.0.7/src/intel/genxml BRW_TOOLS=<p1>/build/mesa-tools/build-asm/src/intel/compiler sh plan/tools/i915-gen9/host/run.sh` → PASS（Gen12 の 17 file が 03dee2287 と同一、14 batch・882 命令）。
+- 同じ環境で `sh plan/tools/i915-gen9/eu-test-gen9-host.sh` → PASS（eu-gen12 の batch の SHA-256 09786119…0fe6 が Gen9 化の前と同一）。
 
 取りやめた物: Q1 経由のユーザーの指示で一度「全部入り」の scenario `gen9`（eu → vkcs → vkx → vke1 → vke2 → vkc を 1 回の起動で）と
 1 つの USB の image を作りかけた（337700822・077df9995・1bed58a61）が、同じ日のユーザーの指示「全部入りの Gen9 の imageはいらないです。」で

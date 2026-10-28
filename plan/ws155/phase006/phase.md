@@ -33,12 +33,12 @@ Queue: Q1 の依頼（2026-10-13、P1）
 ## 変えた path
 
 - `userland/desktop/calendar/view.c`（`view_pill_open`、`view_cell` の double の処理、冒頭の注釈）
-- `plan/ws155/tests/host-calendar.c`（double click・double tap・Cancel・Save の上書き・pill の外の試験、`test_double`）
+- `plan/tools/calendar/host-calendar.c`（double click・double tap・Cancel・Save の上書き・pill の外の試験、`test_double`）
 - `tests/scenarios/apps/calendar/event.md`（3 段目: pill の double click で編集、Cancel）、`plan/tools/aat/scenarios/helpers_calendar.py`（その自動の段）
 
 ## 確かめ（2026-10-13、P1）
 
-- host: `sh plan/ws155/tests/run-host-calendar.sh build/ws155-p006/host-calendar` → PASS 19（p003 の 13 に pill-open・pill-cancel・pill-tap（指の double tap）・pill-save（`EVENT saved … date=2026-10-22 … start=540 end=600 error=0`）・pill-count（項目の数が変わらない＝上書き）・pill-none を足した）。絵 `build/ws155-p006/host-calendar-pill-editor.png`（「Edit Event」、Delete・Cancel・Save）を目で見た。
+- host: `sh plan/tools/calendar/run-host-calendar.sh build/ws155-p006/host-calendar` → PASS 19（p003 の 13 に pill-open・pill-cancel・pill-tap（指の double tap）・pill-save（`EVENT saved … date=2026-10-22 … start=540 end=600 error=0`）・pill-count（項目の数が変わらない＝上書き）・pill-none を足した）。絵 `build/ws155-p006/host-calendar-pill-editor.png`（「Edit Event」、Delete・Cancel・Save）を目で見た。
 - build warning 0: amd64 `make -j16 ZEDBSD_CONFIG=plan/ws155/tests/config-amd64-calendar.mk BUILD=build/ws155-p006-zed build/ws155-p006-zed/bin/calendar`、rpi4 `make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/ws155-p006-rpi4 build/ws155-p006-rpi4/bin/calendar`、`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws155-p006-linux all`（成功・warning 0。ただし keiland-linux は calendar を build しない、`keiland-linux.mk` に calendar の規則が無い）。
 - style-check（view.c・host-calendar.c）: 新しい指摘 0（既存の 3 件は変えていない所）。`check-scenarios.py` PASS。
 - 未実施: QEMU（T1 に AAT `apps.calendar.event` を依頼）、実機。
@@ -72,13 +72,13 @@ Queue: Q1 の依頼（2026-10-13、P1）
 ### 変えた path
 
 - `userland/desktop/calendar/view.c`（`view_pill_at`・`view_blank`・`view_new`・`view_editor_over`、`view_cell`・`view_list`・`view_drop`・`cal_view_draw`、冒頭の注釈）
-- `plan/ws155/tests/host-calendar.c`（blank-*・week-row*・narrow-* の試験、`test_has`・`test_absent`・`test_narrow`、狭い窓の幅）
+- `plan/tools/calendar/host-calendar.c`（blank-*・week-row*・narrow-* の試験、`test_has`・`test_absent`・`test_narrow`、狭い窓の幅）
 - `tests/scenarios/apps/calendar/event.md`（4 段目: 今日の cell の pill の下の click で新規作成、Cancel。旧 4 段目は 5 段目）、`plan/tools/aat/scenarios/helpers_calendar.py`（その自動の段）
 - `tests/scenarios/apps/calendar/navigate.md`・`plan/tools/aat/scenarios/helpers_apps.py`（`apps.calendar.navigate` の窓の真ん中の click が空き地に当たって新規作成が開いたら panel の Cancel で閉じる）
 
 ### 確かめ（2026-10-13、P1）
 
-- host: `sh plan/ws155/tests/run-host-calendar.sh build/ws155-p006b/host-calendar` → PASS 37、FAIL 0（前の 19 に、月の空き地の click（blank-month・blank-new・blank-cancel）、pill の外の double click（blank-double・pill-none・blank-double-cancel）、狭い窓 900 px（narrow-blank・narrow-new・narrow-veil＝重ねた画面の左の日の click が通らない・narrow-save＝27 日に 09:00〜10:00 で保存）、週の行の click が新規作成にならず編集（week-row・week-row-only・week-row-cancel）、週・日の空き地（blank-week・blank-week-new＝Work を隠した後なので Personal・blank-day・…）を足した。select・drop・pill-* の既存の段はそのまま PASS）。絵 `build/ws155-p006b/host-calendar-narrow-editor.png`（狭い窓、months の上の「New Event」の card）・`host-calendar-week-new.png`（週の 7 日の新規作成）を目で見た。
+- host: `sh plan/tools/calendar/run-host-calendar.sh build/ws155-p006b/host-calendar` → PASS 37、FAIL 0（前の 19 に、月の空き地の click（blank-month・blank-new・blank-cancel）、pill の外の double click（blank-double・pill-none・blank-double-cancel）、狭い窓 900 px（narrow-blank・narrow-new・narrow-veil＝重ねた画面の左の日の click が通らない・narrow-save＝27 日に 09:00〜10:00 で保存）、週の行の click が新規作成にならず編集（week-row・week-row-only・week-row-cancel）、週・日の空き地（blank-week・blank-week-new＝Work を隠した後なので Personal・blank-day・…）を足した。select・drop・pill-* の既存の段はそのまま PASS）。絵 `build/ws155-p006b/host-calendar-narrow-editor.png`（狭い窓、months の上の「New Event」の card）・`host-calendar-week-new.png`（週の 7 日の新規作成）を目で見た。
 - build warning 0（`-Werror`、rc=0）: amd64 `make -j16 ZEDBSD_CONFIG=plan/ws155/tests/config-amd64-calendar.mk BUILD=build/ws155-p006b-zed build/ws155-p006b-zed/bin/calendar`、rpi4 `make -j16 ZEDBSD_CONFIG=config/ci/config-rpi4.mk BUILD=build/ws155-p006b-rpi4 build/ws155-p006b-rpi4/bin/calendar`（log `build/ws155-p006b/rpi4.log`、warning 0）。
 - style-check（view.c・host-calendar.c）: 新しい指摘 0（既存の 3 件のみ）。`git diff --check` OK。`check-scenarios.py` PASS（152）。
 - 未実施: QEMU（T1 に AAT を依頼）、実機。

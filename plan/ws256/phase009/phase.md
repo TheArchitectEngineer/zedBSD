@@ -22,11 +22,11 @@ Status: cleared（2026-10-18 Q1 判定: T1-707 の D で既存の amd64 の mode
   - `--pattern` を繰り返せる（`action=append`、既定は今の login の pattern 1 つ）。複数の時は各々が別の画面で見えてよい（boot の log が 25 行を超えて最初の行が流れても数える）。最初に見えた画面を `login-N.png`・`.txt` に残す。1 つの時は今までと同じ（`login.png` だけ）。
   - `--interval`、`--serial`、`--then-type`・`--then-expect`（順に並べる）、`--then-timeout`（既定 120 秒）。
   - serial の socket は打つためだけに使う。QEMU は接続した client が読まないと guest の出力で止まり得るので、thread が読んで捨てる（保存しない・判定に使わない）。判定は画面だけ。
-- `plan/ws256/tests/boot-test-host.py`（新）: QEMU 無しの host の試験。偽の QMP（font で描いた 640x400 の画面を順に返す）と偽の serial（打たれた行を記録）で boot-test.py を走らせる。
+- `plan/tools/vf2-host/boot-test-host.py`（新）: QEMU 無しの host の試験。偽の QMP（font で描いた 640x400 の画面を順に返す）と偽の serial（打たれた行を記録）で boot-test.py を走らせる。
 
 ## host の試験（2026-10-18）
 
-- `PYTHONDONTWRITEBYTECODE=1 python3 -I plan/ws256/tests/boot-test-host.py build/tmp/ws256-p009.XXXXXX` → 8 件 PASS（既定の pattern、既定で per-pattern の画面を残さない、prompt が出ない時の FAIL と画面の保存、3 つの pattern が別の画面で、1 つ欠けて FAIL、段の打つ順 root・root・uname -m、最後の画面に riscv64、`--serial` 無しの段は拒む）。
+- `PYTHONDONTWRITEBYTECODE=1 python3 -I plan/tools/vf2-host/boot-test-host.py build/tmp/ws256-p009.XXXXXX` → 8 件 PASS（既定の pattern、既定で per-pattern の画面を残さない、prompt が出ない時の FAIL と画面の保存、3 つの pattern が別の画面で、1 つ欠けて FAIL、段の打つ順 root・root・uname -m、最後の画面に riscv64、`--serial` 無しの段は拒む）。
 - `bash -n plan/tools/boot-test.sh` OK。偽の emulator（引数を file に書いて終わる script を `QEMU=` に）で: uefi-nvme と raspi4b の QEMU の引数が変更前の script と同じ（work の path を除いて diff 0）。riscv64-virt（INITRD・BOOT_APPEND・QEMU_EXTRA 付き）と riscv64-uboot の引数は上のとおり。`BOOT_THEN=bogus` は「unknown BOOT_THEN step」で exit 1。
 - 実際の QEMU の起動は未実施（P2 は QEMU を起動しない）。amd64 の image での既存の mode の 1 回の確認と riscv64-virt の起動は T1 に依頼する（p003 の依頼と一緒）。
 

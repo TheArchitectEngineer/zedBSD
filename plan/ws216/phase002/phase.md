@@ -92,7 +92,7 @@ void pdf_outline_ranges_free(ranges, range_count);
 | A10 | `pdftoppm -r 600` で、同じ alpha の 2 区間に分けた鉛筆の形と 1 つの形の差の画素の数を記録（継ぎ目の髪の毛の線、M5） |
 | A11 | 既存の libpdf の host 試験（`plan/ws079/tests/run-pdf-writer.sh`・`run-pdf-reader.sh`・`run-pdf-render.sh 100`・`run-pdf-update.sh`、`plan/ws175/tests/run-host-clean.sh`）が通る |
 
-試験: `plan/ws216/tests/run-pdf-tools.sh`（`host-pdf-tools.c` を plain・ASan・UBSan で）。出力は worktree の `build/ws216-p002-host/`。
+試験: `plan/tools/pdf/run-pdf-tools.sh`（`host-pdf-tools.c` を plain・ASan・UBSan で）。出力は worktree の `build/ws216-p002-host/`。
 
 ## 5. 実行の記録（2026-10-13 P1、agent/p1、base main f9077504e）
 
@@ -108,12 +108,12 @@ void pdf_outline_ranges_free(ranges, range_count);
 | `reader.c` | content の hash: Flate だけ（DecodeParms なし）を decode して hash、decode 後 64 MiB 超・他の filter は ENOTSUP |
 | `content.c`・`display.c`・`raster.c`・`internal.h` | tiling pattern（PaintType 1）の fill: tile を list に一度だけ作り（画像 1 枚の cell はその画素、他は 8 px/pt で cell を rasterize、BBox の写し、入れ子 2 段）、`PDF_ITEM_PATTERN` を周期の折り返しの bilinear で塗る |
 | 3 つの Makefile | `paint.c` を足した（M-12） |
-| `plan/ws216/tests/host-pdf-tools.c`・`run-pdf-tools.sh`（新） | 下の受け入れ |
+| `plan/tools/pdf/host-pdf-tools.c`・`run-pdf-tools.sh`（新） | 下の受け入れ |
 | `plan/ws079/tests/host-pdf-reader.c` | 「壊れた Flate の content の hash は ENOTSUP」の期待を PDF_EFORMAT に（Flate を decode するようになった仕様の変更に試験を追従。1 行） |
 
 ### 5.2 受け入れの結果（host、gcc 14.2.0、poppler 25.03.0、Ghostscript 10.05.1、qpdf 12.2.0）
 
-`sh plan/ws216/tests/run-pdf-tools.sh` → `run-pdf-tools: ok`（plain・ASan・UBSan で outline と write、ASan で render）。
+`sh plan/tools/pdf/run-pdf-tools.sh` → `run-pdf-tools: ok`（plain・ASan・UBSan で outline と write、ASan で render）。
 
 | # | 結果 |
 | --- | --- |

@@ -90,11 +90,11 @@ Q1（q879）:「libkeiland の present を、変わった所（damage）だけ�
 
 - host:
   - `sh plan/ws090/tests/host-present-copy.sh`（新規）→ 5 checks、0 failures。2000 個の乱数の frame で、part だけの写しが全体の写しと byte で一致した（canvas の pitch は frame より広い）。clip の 4 件も通った。
-  - `sh plan/ws094/tests/host-desktop.sh` → PASS。`partial_same` に「描画が変えた pixel は全て frame_part の中」の check（17 回）を足した。
+  - `sh plan/tools/files-desktop/host-desktop.sh` → PASS。`partial_same` に「描画が変えた pixel は全て frame_part の中」の check（17 回）を足した。
   - `run-host-phone.sh` は前と同じく PASS。
 - build（warning 0）: `make BUILD=build/bug221 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk` で libvulkan.so・libkeiland.so・files・mailer・calendar・phone・settings・notes。`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/bug221-linux all`（rc 0）。
 - QEMU（T1、層 3 の後にまとめて頼む案）:
-  - `plan/ws094/tests/files-desktop-guest.sh OUTDIR install show input` の `DESKTOP band frames=… present_ms=…` を T1-385（present_ms 124）と比べる。
+  - `plan/tools/files-desktop/files-desktop-guest.sh OUTDIR install show input` の `DESKTOP band frames=… present_ms=…` を T1-385（present_ms 124）と比べる。
   - 回帰: Files（files-regress）・Settings（settings-regress）・Notes。
 - 層 1・2・4 だけでは compositor が desktop の commit ごとに全体を描くので、present_ms はあまり下がらない見込み（compositor の負荷は層 3 で下がる）。
 

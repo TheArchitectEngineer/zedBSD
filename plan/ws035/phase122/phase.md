@@ -17,7 +17,7 @@ Queue: なし（2026-09-29 main の割り当て「Notes の toolbar」、demo cr
 
 ## 原因と設計
 
-1. Eraser の button は、mode の切り替え（stroke 単位 ⇄ 部分、[ws079-p011](../../ws079/phase011/phase.md)）で後ろの button が動かないように、
+1. Eraser の button は、mode の切り替え（stroke 単位 ⇄ 部分、ws079-p011（fb1f6afee の `plan/ws079/phase011/phase.md`））で後ろの button が動かないように、
    長い方の label「Part Eraser」の幅を取り、「Eraser」を中央に置いていた。そのため「Eraser」の左に（幅の差の半分）の余白が出て、
    Marker との間だけ広く見えた。
    - 直し方: Eraser の label は他の tool と同じく button の左から 12 px、選んだときの pill は label に合わせる。幅の差（slack）は tool の group の

@@ -30,8 +30,8 @@ Phase disposition: normal
 | `plan/ws075/demo/rc.conf`・`greeter_gpu`・`greeter-gpu.sh` | 下の不具合 2 の回避: service `greeter` の代わりに `greeter_gpu`（`/dev/gpu0` を最大 120 秒待ってから `exec /sbin/sessiond`、待った秒数は `/var/log/greeter-gpu.log`）。rc.conf は base の rc.conf に greeter を無効、greeter_gpu を有効にしたもの |
 | `src/drivers/gpu/i915/display/vblank.c` | 不具合 1 の修正（下） |
 | `src/drivers/gpu/i915/display/output.c` | 試験の switch `-DI915_TEST_HDMI_ABSENT=1`: HDMI の probe の答えを disconnected とみなす（抜いた cable と同じ分岐）。既定の build には入らない |
-| `plan/ws075/tests/hdmi-h4-hw.sh start IMAGE OUTDIR \| ctl ARGS... \| fetch OUTDIR \| stop OUTDIR` | 実機を段ごとに動かす: `start` は lock（`hdmi/h4-lock.sh` が `/tmp/i915-hw.lock` を stop まで持つ）、image と helper を `~/bigbang/h4/` へ、QEMU を起動（`hdmi/h4-qemu.sh`）。`ctl` は `hdmi/h4-ctl.py`（`shot NAME`: std VGA の screendump と resident の 2 つの buffer の memsave、`pointer`（move・down・up・sleep・drag）、`keys`、`hmp`、`load 秒 周期 X0 Y0 X1 Y1`（2 つ目の QMP socket で往復の drag）、`quit`）。`fetch` は log と PNG（`hdmi/h4-png.py`）、`stop` は QEMU の終了、guest の disk の log、lock の返却 |
-| `plan/ws075/tests/hdmi/h4-qemu.sh` | 5330 の上で QEMU（run-parity-vk.sh の基準の条件 + std VGA + QMP 2 つ + USB tablet・keyboard、`H4_MINUTES` 分で打ち切り）。起動直後から std VGA を 250 ms ごとに撮る（resident の buffer ができるまで、`shots/splash-*.ppm`） |
+| `plan/tools/i915-hw/hdmi-h4-hw.sh start IMAGE OUTDIR \| ctl ARGS... \| fetch OUTDIR \| stop OUTDIR` | 実機を段ごとに動かす: `start` は lock（`hdmi/h4-lock.sh` が `/tmp/i915-hw.lock` を stop まで持つ）、image と helper を `~/bigbang/h4/` へ、QEMU を起動（`hdmi/h4-qemu.sh`）。`ctl` は `hdmi/h4-ctl.py`（`shot NAME`: std VGA の screendump と resident の 2 つの buffer の memsave、`pointer`（move・down・up・sleep・drag）、`keys`、`hmp`、`load 秒 周期 X0 Y0 X1 Y1`（2 つ目の QMP socket で往復の drag）、`quit`）。`fetch` は log と PNG（`hdmi/h4-png.py`）、`stop` は QEMU の終了、guest の disk の log、lock の返却 |
+| `plan/tools/i915-hw/hdmi/h4-qemu.sh` | 5330 の上で QEMU（run-parity-vk.sh の基準の条件 + std VGA + QMP 2 つ + USB tablet・keyboard、`H4_MINUTES` 分で打ち切り）。起動直後から std VGA を 250 ms ごとに撮る（resident の buffer ができるまで、`shots/splash-*.ppm`） |
 
 ## 見つけた不具合と対処
 
@@ -116,7 +116,7 @@ HDMI sink is connected at boot: rc=13)`。greeter と session が eDP の 1920x1
   ZEDBSD_TEST_CPPFLAGS=-DI915_TEST_HDMI_ABSENT=1`。compiler の warning は外部の Noct の既存の 1 件だけ（kernel・driver は 0）。
   共有の `build/llvm` は触っていない（BUG-089 の回避: `build/llvm-source`・`toolchain/llvm/distfiles` を main への symlink、patch の mtime を
   main に合わせた）。
-- host: `plan/ws075/tests/hdmi/host-output-test.sh` → 80 checks, 0 failures（output.c の既定の build）。vblank.c の host 試験は無い
+- host: `plan/tools/i915-hw/hdmi/host-output-test.sh` → 80 checks, 0 failures（output.c の既定の build）。vblank.c の host 試験は無い
   （実機の run3・run4 が証拠）。
 - 規約: `plan/tools/style-check.py` で変えた行（`vblank.c` の `i915_lcd_kernel_frame()`、`output.c` の追加）の指摘 0（vblank.c の他の行の
   既存の指摘は別）。`git diff --check` 清浄。

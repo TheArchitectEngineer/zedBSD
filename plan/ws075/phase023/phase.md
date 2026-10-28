@@ -10,9 +10,9 @@ Phase disposition: normal
 
 ## 計測の方法
 
-実機の 5330 の VFIO passthrough の QEMU、demo の passthrough の image、kei の session。`plan/ws075/tests/hdmi/measure-apps.sh`
+実機の 5330 の VFIO passthrough の QEMU、demo の passthrough の image、kei の session。`plan/tools/i915-hw/hdmi/measure-apps.sh`
 （lock の下で desktop だけの物差し → App Home の 10 app を開く → 同じ物差し → session ごとの engine の時間（`engine-gdb.sh`）→ 撮影）を
-各 image で 2 回。表は `plan/ws075/tests/hdmi/summarize.py` の出力。「1 run」は最も engine を使う session（compositor）の 1 回の実行の時間。
+各 image で 2 回。表は `plan/tools/i915-hw/hdmi/summarize.py` の出力。「1 run」は最も engine を使う session（compositor）の 1 回の実行の時間。
 
 試験の build の変更は tree に入れていない（patch と shader は `plan/ws075/phase023/exp/`）:
 
@@ -105,10 +105,10 @@ host の試験:
 | `sh plan/ws031/tests/run-vk-host-tests.sh <name>`（spirv・lower・eu・compile・pipe・resdispatch、各 plain と ASan/UBSan） | PASS |
 | 同 cmd・res・sync・cmdbuf | FAIL（cmd は link の未定義 `drv_i915_gfx_object_create` など、res は `opcode 78 routed to the res module` の assert）。p023 の前の tree（HEAD 5dfe65e0 の複写）でも同じく FAIL なので p023 と無関係の既存の失敗（未調査、main へ報告） |
 | `BRW_TOOLS=/home/awe/p014-c/mesa/build-asm/src/intel/compiler sh plan/ws031/tests/run-vk-gentool-test.sh` | PASS |
-| `sh plan/ws075/tests/guard/run.sh`（brw_asm の照合・scoreboard の検査を含む） | PASS |
+| `sh plan/tools/i915-hw/guard/run.sh`（brw_asm の照合・scoreboard の検査を含む） | PASS |
 | `python3 plan/tools/style-check.py`（変更した file、前の tree との差分） | compiler の source は新しい指摘 0。試験の EU model に 3 件（WHILE の既存の処理と同じ形の nested declaration・call-in-condition・blank-after-brace）を残した |
 
-| `plan/ws075/tests/test-hw.sh`（最終の code c55586b5、`I915_HOST=solaris10-man`、`BUILD=build/ws075-p023/<場面>`） | vkx 9/9・vke1 6/6・vke2 17/17・vkc 9/9 PASS（`build/ws075-p023/hw-*/run.log` の verdict の行） |
+| `plan/tools/i915-hw/test-hw.sh`（最終の code c55586b5、`I915_HOST=solaris10-man`、`BUILD=build/ws075-p023/<場面>`） | vkx 9/9・vke1 6/6・vke2 17/17・vkc 9/9 PASS（`build/ws075-p023/hw-*/run.log` の verdict の行） |
 | QEMU の boot test（GPU なし、`OUTPUT=build/ws075-p023/boot-test plan/tools/boot-test.sh` に最終の demo の image の複写） | PASS（`build/ws075-p023/boot-test/login.png`） |
 
 ### 実機の passthrough（5330、QEMU の VFIO passthrough。素の 5330 ではない）
@@ -116,7 +116,7 @@ host の試験:
 image は `plan/ws075/demo/build-demo-image.sh build/ws075-p008/pt passthrough ZEDBSD_GRAPHICAL_BOOT=n
 "ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical"` で、compiler の file だけを変えた 4 つ（`build/ws075-p023/*.img`、kernel は `vmunix-*`）:
 pre（compiler を 5dfe65e0 = p023 の前に戻す）、post（be3f7089、flag の clear が無い）、fix（1fc4d352、clear を足した）、
-tune（c55586b5、短い囲いに IF を付けない、最終）。各 run は `plan/ws075/tests/hdmi/measure-apps.sh`、表は `summarize.py`。
+tune（c55586b5、短い囲いに IF を付けない、最終）。各 run は `plan/tools/i915-hw/hdmi/measure-apps.sh`、表は `summarize.py`。
 pre・post・fix・tune を交互に（pre 1 → post 1 → pre 2 → post 2 → fix 1 → pre 3 → fix 2 → tune 1 → tune 2）。
 
 | run | 10 app: flip の率 | 10 app: latency 中央値（範囲） | compositor: 占有・1 run・run/s | engine 全体 | desktop だけ |

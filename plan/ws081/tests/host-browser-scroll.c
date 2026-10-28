@@ -7,7 +7,7 @@
 
 /*
  * ws081-p006: the host test of the view's placed scroll (<browser/browser.h>
- * version 2) on plan/ws081/tests/pages/scroll.html: a green canvas, a red
+ * version 2) on plan/tools/touch/pages/scroll.html: a green canvas, a red
  * block at the top, a 3000-pixel gap and a blue block at the end, and a
  * listener that writes each wheel event to the console.
  *

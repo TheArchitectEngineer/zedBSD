@@ -22,7 +22,7 @@ Resume point: p001 の設計から。
 - 画面の左上から右下への swipe で、右上の swipe（OSK）と同じ animation で左手デバイスが左から出る。出た後は左・右・下・上の端へ移せる。
 - 部品: 回転ダイヤル、垂直ホイール（どちらもカチカチの音）、ボタン 2 列 × 5 個。
 - 操作は Wayland の input の事象として app に届く（どの protocol・事象にするか（key・axis・tablet の pad など）は p001 で決めてユーザーに確かめる）。
-- 今 App Home の入口の左上の swipe は [ws181-p008](../ws181/phase008/phase.md) で整理する。
+- 今 App Home の入口の左上の swipe は ws181-p008（fb1f6afee の `plan/ws181/phase008/phase.md`） で整理する。
 
 ## Phase
 

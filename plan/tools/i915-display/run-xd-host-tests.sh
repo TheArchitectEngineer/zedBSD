@@ -3,7 +3,7 @@
 # model (src/drivers/gpu/i915/tests/display/xd-fake-regs.c), under ASan/UBSan, with the lock order record.
 #   sh plan/tools/i915-display/run-xd-host-tests.sh [OUT]   (default build/ws245-host)
 # Each test is built with the display host library (every display source as production, host-kernel.c's stand-ins;
-# plan/ws084/tests/display-host-lib.sh).  The tests:
+# plan/tools/i915-display/display-host-lib.sh).  The tests:
 #   host-xd-io-test        the register window: access, waits, the write record, the mailbox, the lock order
 #   host-xd-platform-test  the platform descriptions: PCI ids, steppings, PCH ids, the description rows
 #   host-xd-vbt-test       the VBT, OpRegion and EDID decode on made-up tables, against the old parser on Alder Lake-P
@@ -107,7 +107,7 @@
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -e
 cd "$(dirname "$0")/../../.."
-. plan/ws084/tests/display-host-lib.sh
+. plan/tools/i915-display/display-host-lib.sh
 T=src/drivers/gpu/i915/tests/display
 OUT=${1:-build/ws245-host}
 mkdir -p "$OUT"
@@ -115,7 +115,7 @@ I915_HOST_EXTRA_PRODUCTION="src/drivers/gpu/i915/perf.c ${I915_HOST_EXTRA_PRODUC
 failed=0
 for test in host-xd-io-test host-xd-platform-test host-xd-vbt-test host-xd-survey-test host-xd-aux-test host-xd-gmbus-test host-xd-panel-test host-xd-power-test host-xd-dmc-test host-xd-clock-test host-xd-dpll-test host-xd-ddi-test host-xd-dp-test host-xd-pipe-test host-xd-dbuf-test host-xd-core-test host-xd-takeover-test host-xd-screen-test host-xd-output-test host-xd-edp-test host-xd-tc-test host-xd-tc-port-test host-xd-cover-test host-xd-icl-test host-xd-picture-test host-xd-hpd-test host-xd-diag-test host-xd-bandwidth-test host-display-power-test host-capture-test host-output-link-test; do
 	test -f "$T/$test.c" || continue
-	i915_display_host_build "$OUT/$test" "$T/$test.c" "$T/xd-fake-regs.c" plan/ws084/tests/native-decide-stubs.c
+	i915_display_host_build "$OUT/$test" "$T/$test.c" "$T/xd-fake-regs.c" plan/tools/i915-display/native-decide-stubs.c
 	if ! "$OUT/$test"; then
 		failed=1
 	fi
@@ -141,7 +141,7 @@ if ! python3 -I plan/tools/i915-display/check-display-steps.py src/drivers/gpu/i
 	failed=1
 fi
 # The log words of the display (design.md section 6.4): the development stage symbols and the old run prefix are gone
-# from the display's files, and the three lines the HDMI harness reads (plan/ws075/tests/hdmi/h4-ctl.py) keep their
+# from the display's files, and the three lines the HDMI harness reads (plan/tools/i915-hw/hdmi/h4-ctl.py) keep their
 # format.
 if grep -nE '"i915: (N0|N1|N0-lite \(xd\)|LCD-B|P5-0|LAST-RESORT)' src/drivers/gpu/i915/display/*.c \
     | grep -v '/gen9-'; then

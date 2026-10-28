@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-27 P3 の精査 q1608。kernel・libvulkan の段は main。2026-10-13 ユーザー「いや、これ以上詰めなくていいです。」で描画の最適化を終え、compositor の段 p005・p006 は未投入で終了）
+<!-- retained-after-completion --> tests/ の 2 項目 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
 Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: MG008

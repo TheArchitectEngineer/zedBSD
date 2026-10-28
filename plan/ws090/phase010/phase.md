@@ -31,7 +31,7 @@ Status: 実装と host の確認まで済み、T1 の結果待ち。
   - text input: frame の後に `kl_ui_window_text(app->rename_ui, kui)`（main.c）。
   - q816 の暫定の IME（`fm_field_text_input`・`fm_field_delete_before`・`fm_field_draw` の preedit・`app->preedit`・caret）を除いた。`fm_field` は場所と検索の欄の model に残る（title bar の欄の文字を持つ）。
   - `/` は確定の時に今までどおり拒む（`fm_action_rename_end`）。欄の文字の大きさは libkeiland の欄の 14 px（Files の名前は 12 px）、grid の欄の高さ 22→24。
-- 試験: `plan/tools/files/host-build.sh` に libkeiland の `ui.c`・`field.c`・`input.c`・`theme.c`・`scroll.c`・`text-touch.c` と appearance の stand-in（`plan/tools/files/host-appearance.c`、新規）、`host-render.c` は改名の間は入力ごとに frame を描いて `fm_rename_take`。`plan/ws094/tests/host-desktop.c` の改名を `kl_field_set` に、font を tree の `userland/desktop/fonts/` に（`build/ws035-fonts` は無い、2 件の FAIL の原因）。
+- 試験: `plan/tools/files/host-build.sh` に libkeiland の `ui.c`・`field.c`・`input.c`・`theme.c`・`scroll.c`・`text-touch.c` と appearance の stand-in（`plan/tools/files/host-appearance.c`、新規）、`host-render.c` は改名の間は入力ごとに frame を描いて `fm_rename_take`。`plan/tools/files-desktop/host-desktop.c` の改名を `kl_field_set` に、font を tree の `userland/desktop/fonts/` に（`build/ws035-fonts` は無い、2 件の FAIL の原因）。
 
 ### 確認
 

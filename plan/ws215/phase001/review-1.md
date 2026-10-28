@@ -10,7 +10,7 @@
 中3 attach は sleep しない（B3）が B4・B6 は mailbox（sleep、rpi4-firmware.c:264-269,386-390、EBUSY も）→ 判定を worker に移すか attach で sleep してよいと明記、GET_CLOCK_RATE の clock ID は mailbox の UART（2）で DT の cprman の 0x13 ではない、clock が 0 なら SET_CLOCK_STATE と SET_CLOCK_RATE。
 中4 PL011（ARM の PL011 TRM）: IBRD・FBRD の後に LCR_H を書かないと反映されない、TX の割り込みは FIFO を先に詰めないと上がらない、ring が満ちた時は RXIM と RTIM の両方を mask（level の SPI）、DR の bit 8〜11 の誤りを ISR から worker へ渡す（byte だけの ring では B9 ができない）、arm,pl011-axi は 32bit の access だけの可能性（推測）。
 中5 H4 の同期の喪失の検出: ACL の上限 4096（usb-bt.c:602）で 1 byte の喪失が最大 4KB を飲む → class の acl_data_max を transport に、event code の妥当性、packet の途中で一定時間 byte が来なければ喪失。
-中6 値の出典の表（0xFC18・FC2E・FC4C・FC4E・FC01・FC1C と引数、plan/ws214/phase003/hvs-values.md の形）を p003 の条件に、cts-event-workaround の手順は GPL の code か commit message にしか無い可能性 →「公開の patch の説明」（:86）は B19 と矛盾、GPL でない資料かユーザーの判断。
+中6 値の出典の表（0xFC18・FC2E・FC4C・FC4E・FC01・FC1C と引数、plan/ws214/hvs-values.md の形）を p003 の条件に、cts-event-workaround の手順は GPL の code か commit message にしか無い可能性 →「公開の patch の説明」（:86）は B19 と矛盾、GPL でない資料かユーザーの判断。
 中7 段の分け: CONFIG_INPUT_BRIDGE は kernel の driver（Makefile:245、amd64 の vmunix.mk:349-355、arm64 に規則なし）、p002 に kernel の作業、p003 の p002 への依存（:149 と :155 の矛盾、smoke に arm64 の bt-probe）、p003 の WS206（B12 の helper）への依存を表に。
 中8 config.txt の変更が計測の時期と重なる（master.md:550,553）→ config.txt の生成を CONFIG_DRIVER_BCM2711_BT=y かつ serial=n の時だけにし計測が終わるまで既定 n（またはユーザーに）、clock は mailbox で core・v3d・arm を前後で読む。config.txt の利用者 5 か所（bootloader.mk:4、disk-image.mk:10、vmunix.mk:595・602、check-rpi4-hdd-image.py:87）、実機へ config.txt を届ける手順。
 中9 SCO（B10・B16）: UART に isochronous の拍が無い、bluetooth.h:24-29 の「36ms を queue、満ちたら EAGAIN」→ controller の SCO の buffer と Synchronous Flow Control か transport の拍、ws197-p007b への依存。

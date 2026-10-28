@@ -4,6 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: completed（2026-10-27 P3 の精査 q1608。p001〜p008・p011〜p015 cleared（p008・p012〜p014 は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。2026-10-08 ユーザーの UAT「HDMIに出力されました。extendもmirrorも動いています。」。p010 は 2026-10-04 ユーザー「KMSでのLinux・FreeBSD用互換実装は、あとまわしにしてよいです（別Phaseにする）」）
+<!-- retained-after-completion --> Phase phase004・phase005・phase006・phase007とtests/ の 4 項目 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
 Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: MG001（GPU・API の契約と回帰の証拠）

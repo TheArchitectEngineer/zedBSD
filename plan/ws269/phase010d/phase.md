@@ -51,9 +51,9 @@ kernel（`src/drivers/gpu/powervr/`）:
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| target の host 試験と p010a・p010c の試験 | `sh plan/ws269/tests/p010/run.sh build/p010d/p010` | `stage-host-test: 24 passed, 0 failed`、`image-host-test: 55 passed, 0 failed`、`target-host-test: 77 passed, 0 failed`、`selftest-host: 0 failed` |
-| executor（p009） | `sh plan/ws269/tests/p009/run.sh build/p010d/p009` | `powervr executor host test: 160 passed, 0 failed` |
-| MMU（p006） | `sh plan/ws269/tests/p006/run.sh build/p010d/p006` | `PASS 68 FAIL 0` |
+| target の host 試験と p010a・p010c の試験 | `sh plan/tools/powervr/p010/run.sh build/p010d/p010` | `stage-host-test: 24 passed, 0 failed`、`image-host-test: 55 passed, 0 failed`、`target-host-test: 77 passed, 0 failed`、`selftest-host: 0 failed` |
+| executor（p009） | `sh plan/tools/powervr/p009/run.sh build/p010d/p009` | `powervr executor host test: 160 passed, 0 failed` |
+| MMU（p006） | `sh plan/tools/powervr/p006/run.sh build/p010d/p006` | `PASS 68 FAIL 0` |
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p010d/visionfive2 vmunix -j16` | rc=0、`warning:`・`error:` 0 件、`render-target.o`・`render-target-layout.o` あり |
 | riscv64-virt | 同 `config-riscv64-virt.mk BUILD=build/p010d/riscv64-virt` | rc=0、0 件 |
 | amd64 | 同 `config-amd64.mk BUILD=build/p010d/amd64` | rc=0、0 件 |

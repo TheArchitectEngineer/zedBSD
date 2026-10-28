@@ -30,7 +30,7 @@ design-p010.md §9 の D-P1〜D-P7。D-P3 は (b)（Q1 の判断）。新しく 
 | 確かめ | 結果 |
 | --- | --- |
 | 追補の文書 | 版 2 を書いた（2026-10-20 q1367）。末尾 §12 にレビュー 1 の全指摘への対応の表 |
-| p010a の code の comment | Guardrail の開発の管理情報（`ws269-p010a`・`design-p010.md`）を stage.c・stage-log.c・stage.h・gpu-selftest の main.c・Makefile から消した（cbb9bc09e）。段の名前の console の行を `render-node` に揃え、host 試験 `plan/ws269/tests/p010/run.sh build/p010a/host4` で `stage-host-test: 24 passed, 0 failed`、`selftest-host: 0 failed`（1a5d6a3e9） |
+| p010a の code の comment | Guardrail の開発の管理情報（`ws269-p010a`・`design-p010.md`）を stage.c・stage-log.c・stage.h・gpu-selftest の main.c・Makefile から消した（cbb9bc09e）。段の名前の console の行を `render-node` に揃え、host 試験 `plan/tools/powervr/p010/run.sh build/p010a/host4` で `stage-host-test: 24 passed, 0 failed`、`selftest-host: 0 failed`（1a5d6a3e9） |
 | design-reviewer | 版 1 はレビュー 1（[design-p010-review-1.md](../design-p010-review-1.md)）。版 2 はレビュー 2（[design-p010-review-2.md](../design-p010-review-2.md)、Blocker なし）。版 2.1 は Q1 の差分の確認（再レビューは要らない、review 2 の結論） |
 | 版 2.1 | 2026-10-20 q1370。末尾 §13 にレビュー 2 の全指摘への対応の表。主な変更: 時間切れの後は HWRT・free list を core に残す、PBE の clip を必須に、combined kick・FENCE_PR・`pds_pr_bgnd`・cleanup ctl、static data area（BUG-342）、105/112 の扱い、p010n の実機を p010e へ、p010f に transfer の context の recovery、§5.4 の O-ENC の固定、LW 105〜107 |
 

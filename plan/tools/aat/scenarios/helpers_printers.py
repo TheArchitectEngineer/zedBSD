@@ -5,7 +5,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
     helpers_printers.py --outdir OUTDIR [--only REGEX] -- TARGET-OPTIONS     (--list: the ids)
 
-The printers are plan/ws145/tests/mock-printers.py on this host (an IPP printer at /ipp/print named "Mock Printer",
+The printers are plan/tools/aat/mock-printers.py on this host (an IPP printer at /ipp/print named "Mock Printer",
 and an LPD queue), listening where the target reaches this host ($SSH_CLIENT: 10.0.2.2 for a QEMU guest, whose user
 network reaches this host's 127.0.0.1; the LAN address for the 5330).  The target's printtest adds them through the
 desktop and prints the runner's sample.pdf to each; the documents the mock got must be the sample.  Kei's printers
@@ -22,7 +22,7 @@ import common
 
 run = aatlib.Run.from_command_line("helpers_printers")
 
-MOCK = aatlib.ROOT / "plan/ws145/tests/mock-printers.py"
+MOCK = aatlib.ROOT / "plan/tools/aat/mock-printers.py"
 CONFIG = "/home/kei/.config/keiland/printers.conf"
 SAMPLE = f"{aatlib.SAMPLES}/sample.pdf"
 

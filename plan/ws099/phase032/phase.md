@@ -15,7 +15,7 @@ Queue: q718 / q718-i01（Q1 の投入）
 
 1. 右上の通知領域の WiFi の icon を **Alt を押しながらクリック**すると、普段の menu（AP の一覧）の代わりに詳しい情報の popup を出す（macOS の Option+クリックに当たる）。
 2. 出す情報の案（設計で決める）: interface の名前、SSID・BSSID、IPv4 の address・mask・router・DNS、IPv6（zedBSD ではまだ無い）、MAC address、channel・周波数・band、信号の強さ（dBm）、送受信の速さ（PHY の rate）、送受信の packet・byte の数と error の数、接続してからの時間。
-3. 経路: compositor の中の system bar → libkeiland-backend（OS ごとの network の情報の口、zedBSD は networkd・`net`・kernel の統計）。Settings の Network の頁の情報（[ws089-p022](../../ws089/phase022/phase.md) の Ethernet の読むだけの項目）と同じ口を使う。値の更新（popup を開いている間は 1 秒ごとなど）。
+3. 経路: compositor の中の system bar → libkeiland-backend（OS ごとの network の情報の口、zedBSD は networkd・`net`・kernel の統計）。Settings の Network の頁の情報（ws089-p022（fb1f6afee の `plan/ws089/phase022/phase.md`） の Ethernet の読むだけの項目）と同じ口を使う。値の更新（popup を開いている間は 1 秒ごとなど）。
 4. 有線の icon（ある場合）にも同じ Alt+クリックを付けるかは設計で決める。
 
 ## 受け入れ（案）

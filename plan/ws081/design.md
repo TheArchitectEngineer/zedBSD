@@ -1,8 +1,8 @@
 # WS081 設計: touch の時刻・補間と予測・app への渡し方・慣性（ws081-p001）
 
 2026-09-29、WS081 の作業用サブエージェント。対象は [ws.md](ws.md) の「設計で決めること」の全項目。数式の比較の数値は、
-host の試験 [tests/motion-compare.c](tests/motion-compare.c)（決定的。`plan/ws081/tests/run-motion-compare.sh` で build・実行し、
-出力を [tests/motion-compare.out](tests/motion-compare.out) と照合する）の出力から引いた。design-reviewer の敵対的レビュー（§13）の指摘を
+host の試験 tests/motion-compare.c（fb1f6afee の `plan/ws081/tests/motion-compare.c`）（決定的。`plan/ws081/tests/run-motion-compare.sh` で build・実行し、
+出力を tests/motion-compare.out（fb1f6afee の `plan/ws081/tests/motion-compare.out`） と照合する）の出力から引いた。design-reviewer の敵対的レビュー（§13）の指摘を
 source と試算で確かめて反映した。実機の証拠は無い（touch LCD は未着）。
 
 ## 1. 今の事実（2026-09-28 の main のコード）

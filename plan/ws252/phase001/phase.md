@@ -20,7 +20,7 @@
 
 - RKL・ADL-S/RPL-S は Gen12 の今の道に表の行（engine の mask、Wa_1607297627、ID は `identifiers[]` と `device.c` の 2 つ。xd の表は既に持つ）を足すだけ。xd の表との統合は WS245 と合わせる（Q1）。DMA の幅は差が無い。GuC/HuC は不要（execlists）。
 - ICL は Gen11 の第 3 の版。版を見る所を grep で全部分けた（design.md §6.2）。見積もりは WS229 の GT 系 8 LW と比べて出し直し、RKL・ADL-S だけで約 12 LW、ICL の分は約 15〜17 LW（p004〜p006 の 14 ＋ p007 の ICL 分 1〜3）、全部で約 27〜29 LW。
-- 実機は無い（13400F は iGPU 無し）。試験は既存の `plan/ws252/tests/gen12-golden/` を直して使い、新しい platform の期待は Linux から抜き出す小さな script（p002・p004）。ICL の compiler・state は Master の Tools の `eu-gen9-host.sh`・`ws229/tests/host/run.sh` を `--gen=icl`・gen110.xml に広げる。どれも今の tree で動くかは未確認。
+- 実機は無い（13400F は iGPU 無し）。試験は既存の `plan/ws252/tests/gen12-golden/` を直して使い、新しい platform の期待は Linux から抜き出す小さな script（p002・p004）。ICL の compiler・state は Master の Tools の `eu-gen9-host.sh`・`tools/i915-gen9/host/run.sh` を `--gen=icl`・gen110.xml に広げる。どれも今の tree で動くかは未確認。
 - D1=A は「既定の image では付けない、試験の config.mk の build option で ID を足す」（前例 `CONFIG_AMDRDNA_CONTROL`、共有の Makefile の調整は Q1）。p007 の依存は群ごとの D1 の表（design.md §5）。
 - 見つけた事: Linux の Gen12 の MOCS との差（TGL・RKL の表、entry 63）は WS252 の外、[BUG-335](../../bugs/BUG-335.md)。
 - ユーザーの判断: D2 → D1-R →（D2=全部の時だけ）D1-I → D3 → D5 の順（design.md §8）。D6 は決定済み、D4 は WS の外へ。

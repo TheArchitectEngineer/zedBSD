@@ -100,7 +100,7 @@ kernel log (last lines):
 
 - rpi4 の vmunix（`make -j8 -o $PWD/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix`）: watch だけ（59e0af6d7）と全部（5c13a029f）の両方 rc 0・warning 0・`arm64 vmunix check: PASS`。
 - amd64 の vmunix（`ZEDBSD_CONFIG=config/ci/config-amd64.mk build/amd64/vmunix`、lock.c・klog.c を含む）rc 0・warning 0。
-- host: `plan/ws213/tests/lock-host-test.sh` PASS、`plan/ws141/tests/vulkan-device-host-test.sh` PASS、`plan/ws141/tests/v3d-hardware-host-test.sh` PASS。stall watch は HAL の asm（TPIDR_EL1・CNTPCT）に依るので host 試験は無し（未実施）。kernel.elf の逆 asm で `spin_lock_irqsave` に IRQ を止めた場所の記録、`spin_trylock` に countdown が入ったことを確かめた。
+- host: `plan/tools/kernel-lock/lock-host-test.sh` PASS、`plan/ws141/tests/vulkan-device-host-test.sh` PASS、`plan/ws141/tests/v3d-hardware-host-test.sh` PASS。stall watch は HAL の asm（TPIDR_EL1・CNTPCT）に依るので host 試験は無し（未実施）。kernel.elf の逆 asm で `spin_lock_irqsave` に IRQ を止めた場所の記録、`spin_trylock` に countdown が入ったことを確かめた。
 - QEMU・Pi の実機: 未実施（Q1 が置いてユーザーに再現を頼む）。
 
 ### Pi に置く物

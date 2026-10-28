@@ -180,7 +180,7 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   （私たちは 32 byte、Mesa は PBE の 2 pixel）は Mesa の `pvr_arch_tex_state.c`・`pvr_image.c` と矛盾しない。読むだけでは原因が出ない。
 - 診断: vkmatrix に sample-linear-1180（1180x8）と sample-linear-65（65x3）を足した。LINEAR R8G8B8A8 を mapping から行ごとに書き、
   nearest で 32x32 の quad に sample して、pixel ごとに比べる。
-  lavapipe（`plan/ws269/tests/vkmatrix/run.sh`）で 22/22 PASS。VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。
+  lavapipe（`plan/tools/powervr/vkmatrix/run.sh`）で 22/22 PASS。VF2 の vmunix と bin/vkmatrix は rc 0、warning 0。
 - 次: 板で sample-linear-* の結果（PASS、FAIL、lockup）を見て、desktop の前に linear の sampling だけを切り分ける。
 
 ## 板の経過（2026-10-21 Q1、desktop の 2〜4 回目）
@@ -377,7 +377,7 @@ Keiland が使い、vkmatrix 15/15・gpu-selftest 13/13 で確かめていない
   - `image_copy_record` は copy の範囲の行だけを vkCmdCopyImage し（空なら copy しない）、範囲を空にする。
   - 作ったばかりの image は全部の行を写す。
 - 確認:
-  - `plan/ws213/tests/list-replay-host-test.sh` は PASS（shm.c の vkCmd の数は 4 のまま）。
+  - `plan/tools/compositor/list-replay-host-test.sh` は PASS（shm.c の vkCmd の数は 4 のまま）。
   - desktop の config で VF2 の `bin/wayland` は rc 0、warning 0。
   - 板（KWL PERF の比較）は未実施。
 - d35（ea331254e、非同期の submit と DM overlap を on）: 同時の試験 PASS・HWR 0、vkmatrix 29/29、vkcoherency PASS、vkreset PASS（5 s、`no progress for 5000 ms`）、gpu-selftest 13/13 → on のまま。

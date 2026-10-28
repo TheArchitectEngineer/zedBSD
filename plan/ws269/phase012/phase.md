@@ -34,7 +34,7 @@ grep と読みで次を探した: 関数の結果を直に返す `return f(…)`
 
 - 一斉の読みは grep の型に当たる物まで。全部の文の段落の comment・宣言の順・空行の規則を 1 文ずつは見ていない（後半か、変更の時に）。
 - 出典の 1 行目が `Procedure referenced: zedBSD src/…` の形（同じ行に path）が vk-transfer.c・render-check.c に残る（複数行の comment の中なので規則の「1 行の comment にしない」には当たる。改行の位置だけの違い）。
-- host 試験の file（plan/ws269/tests/p010/*.c）は試験の道具として短い形（1 行の stand-in の関数）を残した。
+- host 試験の file（plan/tools/powervr/p010/*.c）は試験の道具として短い形（1 行の stand-in の関数）を残した。
 
 ## 確かめ（2026-10-20）
 
@@ -89,7 +89,7 @@ userland は vkstage と gpu-selftest の P2 の分。書き方だけを直し�
 ### 残した例外・未了
 
 - 一斉の読みは grep の型に当たる物まで。compiler（shader-*）は全体が短い comment の書き方なので、すべての文の段落の comment・`Succeeded:` の comment・宣言の順を 1 文ずつは見ていない。変更の時に直す。
-- host 試験の file（plan/ws269/tests/p009・p010・p010-compiler）は試験の道具として短い形を残した。
+- host 試験の file（plan/tools/powervr/p009・p010・p010-compiler）は試験の道具として短い形を残した。
 
 ### 前の項目（1）: keiland の frame の期待を main の挙動に
 
@@ -162,17 +162,17 @@ userland は vkstage と gpu-selftest の P2 の分。書き方だけを直し�
 - **段落の注釈**: render-job.c・render-check.c・vk-queue.c・compute-program.c・render-queue.c・render-target.c・firmware-boot.c・vkreset の、注釈の無い制御文と段落に足した。
 - **goto の後始末の label**: render-target.c と render-context.c で、label の後に注釈を足した。
 - **source の中の plan/ と WS の参照**: 6 か所を外した。
-  - compute-program.c/.h と vk-queue.c の `plan/ws269/tests/p008/…` は「Mesa 26.2.5 を host で drm shim で動かした時の stream」と書き直した。
+  - compute-program.c/.h と vk-queue.c の `plan/tools/powervr/p008/…` は「Mesa 26.2.5 を host で drm shim で動かした時の stream」と書き直した。
   - render-job.c・vkimage・vkcoherency の `ws269-p0xx` は消した。
 
 ### 確かめ（2026-10-21、worktree /home/awe/zedBSD-worktrees/p1、QEMU と板は使っていない）
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| VF2 の kernel と userland | `timeout 3000 make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-visionfive2-selftest.mk BUILD=build/q1522 -j16 vmunix build/q1522/bin/{vkreset,vkmatrix,vkcoherency,gpu-selftest,vkimage}` | rc=0、warning 0 |
-| p009 の host 試験 | `sh plan/ws269/tests/p009/run.sh build/q1522-host/p009` | 505 passed、0 failed |
-| p010 の host 試験 | `sh plan/ws269/tests/p010/run.sh build/q1522-host/p010` | rc=0、15 本とも 0 failed |
-| gpu-selftest の host 試験 | `sh plan/ws269/tests/p010/selftest-host.sh build/q1522-host/st` | 0 failed |
+| VF2 の kernel と userland | `timeout 3000 make ZEDBSD_CONFIG=plan/tools/powervr/p010/config-visionfive2-selftest.mk BUILD=build/q1522 -j16 vmunix build/q1522/bin/{vkreset,vkmatrix,vkcoherency,gpu-selftest,vkimage}` | rc=0、warning 0 |
+| p009 の host 試験 | `sh plan/tools/powervr/p009/run.sh build/q1522-host/p009` | 505 passed、0 failed |
+| p010 の host 試験 | `sh plan/tools/powervr/p010/run.sh build/q1522-host/p010` | rc=0、15 本とも 0 failed |
+| gpu-selftest の host 試験 | `sh plan/tools/powervr/p010/selftest-host.sh build/q1522-host/st` | 0 failed |
 | 空白 | `git diff --check` | 出力なし |
 
 ### 残した物・未了

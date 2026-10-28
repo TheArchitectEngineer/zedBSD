@@ -49,7 +49,7 @@ design との差:
 | --- | --- | --- |
 | build | `make … BUILD=build/ws094-amd64 build/ws094-amd64/bin/files …/bin/wayland …/dynamic/libkeiland.so` | rc 0、warning 0 |
 | style | `plan/tools/style-check.py`（ui-desktop.c・ui-desktop-actions.c・desktop-layout.c・ui-context.c・menu.c・menu-shell.c・host-desktop.c）、`git diff --check` | 0 件（main.c の 3 件は以前からのもの） |
-| host | `plan/ws094/tests/host-desktop.sh`（p005 の分を足した）、`plan/tools/files/host-model.sh` | PASS、PASS。p005 で足した確認: shown が配置で保たれ、新しい項目は空いた cell に入る。rename で shown と saved が移る。Clean Up で shown が消える。desktop の 2 つの menu の行。F2 の field と Enter で名前が変わる |
+| host | `plan/tools/files-desktop/host-desktop.sh`（p005 の分を足した）、`plan/tools/files/host-model.sh` | PASS、PASS。p005 で足した確認: shown が配置で保たれ、新しい項目は空いた cell に入る。rename で shown と saved が移る。Clean Up で shown が消える。desktop の 2 つの menu の行。F2 の field と Enter で名前が変わる |
 | guest: menu（新しい手順） | `files-desktop-guest.sh build/ws094-shots/p005-final install show menu` | PASS（下） |
 | 回帰: p003・p004 の手順 | `files-desktop-guest.sh … install show watch input saved` | PASS |
 | 回帰: probe | `desktop-guest.sh … install role refuse input home-drag dnd restart` | PASS |

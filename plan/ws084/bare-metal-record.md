@@ -68,7 +68,7 @@ WS084 の完了（2026-10-27）の前の ws.md の 16 行目以降をそのま�
 - `display.c` `i915_driver_register`: `n0.takeover` のとき `power_domains_enable` を遅らせる（`dprobe.power_domains_enable_deferred`、以前から宣言だけあった）。
 - `modeset.c` resident の開始: takeover の成功の後に遅らせた `power_domains_enable` を行い、`n0.takeover` を消す（2 回目の lease で takeover をやり直さない）。
 - `output.c`: `display=hdmi` のとき、未接続（EAGAIN）なら 250 ms ごとに最大 6 秒 probe をやり直す（USB 給電の LCD の controller が EDID に答えるまで）。`display=auto` は待たない。
-- 検証: kernel と image の build（warning 0）、`plan/ws075/tests/hdmi/host-output-test.sh` 80 checks 0 failures（host の `<time.h>` を先に読む flag を足した）、
+- 検証: kernel と image の build（warning 0）、`plan/tools/i915-hw/hdmi/host-output-test.sh` 80 checks 0 failures（host の `<time.h>` を先に読む flag を足した）、
   QEMU の boot test PASS（`build/ws084-boot-test/login.png`、sshd 起動）。実機: 未実施。
 
 ### p002 の 2 回目（2026-09-29、demo-hdmi4 の実機の dmesg）
@@ -134,9 +134,9 @@ vblank の配列（停止要因 5〜7）、N0 が active な pipe で止まら�
 
 ユーザー:「マウスの移動をしても描画が1秒後ですね。…QEMUでパススルーして、マウス移動から描画までの時間を計ったりできますか？」（5330 は Linux、10.0.10.25。
 `~/.ssh/config` の `solaris10-man` を 10.0.10.25 に書き直した）。
-- 道具: `plan/ws075/tests/hdmi/h4-ctl.py latency PIPE COUNT`（足した。tablet を 40 px 動かし、pipe の `PLANE_SURFLIVE` を passthrough の BAR 越しに xp で読んで
+- 道具: `plan/tools/i915-hw/hdmi/h4-ctl.py latency PIPE COUNT`（足した。tablet を 40 px 動かし、pipe の `PLANE_SURFLIVE` を passthrough の BAR 越しに xp で読んで
   次の flip までの時間。続けて入力なしの 3 秒の flip の数）。image `plan/ws075/demo/build-demo-image.sh build/demo-lcd-pt passthrough`（display=edp）、
-  `plan/ws075/tests/hdmi-h4-hw.sh start|ctl|stop`、結果 `build/ws084-pt1/`。
+  `plan/tools/i915-hw/hdmi-h4-hw.sh start|ctl|stop`、結果 `build/ws084-pt1/`。
 - QEMU（passthrough、firmware の画面なし＝takeover なし）: 10/10 flip、中央値 49.1 ms（40.6〜49.5）、入力なしは 3 秒で 0 flip。
   perf の行は present 1 回の GPU 約 15 ms、flip 1〜7 ms。
 - 結論: 約 1 秒の遅れは bare metal（takeover の後）だけのもの。GPU の描画や compositor の経路一般の問題ではない。疑い: takeover の後に残る状態

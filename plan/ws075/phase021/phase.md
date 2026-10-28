@@ -44,18 +44,18 @@ send の数がそのまま thread の待ちの長さになる。
 
 ## 検証
 
-- host: `plan/ws075/tests/guard/run.sh`（新規）: panel.frag・quad.frag・browser の display.frag・switch.frag・loop.frag（loop の中の guard、新規）を
+- host: `plan/tools/i915-hw/guard/run.sh`（新規）: panel.frag・quad.frag・browser の display.frag・switch.frag・loop.frag（loop の中の guard、新規）を
   compile、Mesa の brw_disasm で読み brw_asm で戻して同じ byte、IF と ENDIF の対、分岐の中の send が全て IF の中、loop の中の ENDIF の JIP が
   WHILE。PASS。IF・ENDIF の encoding は Mesa の assembler と bit まで一致（試しの program）。
 - host: `run-vk-host-tests.sh` の spirv・lower・eu・compile・pipe・resdispatch PASS、`run-vk-gentool-test.sh`（BRW_TOOLS=Mesa 25.0 の build）PASS。
 - 規約: `plan/tools/style-check.py` で変更の前後を比べ、足した行の指摘（条件の中の呼出し 2・段落の comment 2）を直した。
 - QEMU の boot test（GPU なし）: PASS（`build/ws075-p021/boot-test/login.png`）。
-- host: shader の survey（`plan/ws075/tests/shader-survey/run.sh`、99 module）: compiler の拒否は前からの 2 つ（samplerBuffer の textureSize・
+- host: shader の survey（`plan/tools/i915-hw/shader-survey/run.sh`、99 module）: compiler の拒否は前からの 2 つ（samplerBuffer の textureSize・
   sampler2DMS の fetch、p007 の範囲）だけ。
 
 ### 実機（5330 の VFIO passthrough の QEMU、demo の passthrough の image、kei の session）
 
-`plan/ws075/tests/hdmi/measure-apps.sh IMAGE VMUNIX OUTDIR`（新規: lock の下で desktop だけの物差し → App Home の 10 app を開く
+`plan/tools/i915-hw/hdmi/measure-apps.sh IMAGE VMUNIX OUTDIR`（新規: lock の下で desktop だけの物差し → App Home の 10 app を開く
 （`apps8.sh`、main が Settings・Image Viewer を足した後の App Home）→ 同じ物差し → context ごとの engine の時間（`engine-gdb.sh`）→ 撮影 → 返す）。
 比較の image は同じ tree の p021 の前（`build/ws075-p021/noguard.img`: compiler の file だけ merge の時点 4e17c34f に戻して build）と後（`guard.img`）。
 
@@ -79,7 +79,7 @@ send の数がそのまま thread の待ちの長さになる。
 ### 変えた file
 
 - `src/drivers/gpu/i915/compiler/ir.h`・`spirv.c`・`compile.c`・`eu.c`・`eu.h`、`src/drivers/gpu/i915/intel/eu-encoding-gen12.h`。
-- `plan/ws075/tests/guard/`（`shader-dump.c`・`run.sh`・`loop.frag` と spv）、`plan/ws075/tests/hdmi/`（`engine-gdb.sh`・`measure-apps.sh`・
+- `plan/tools/i915-hw/guard/`（`shader-dump.c`・`run.sh`・`loop.frag` と spv）、`plan/tools/i915-hw/hdmi/`（`engine-gdb.sh`・`measure-apps.sh`・
   `apps8.sh` の 10 app の配置）。
 
 ### 残り・次

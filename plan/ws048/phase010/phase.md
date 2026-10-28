@@ -13,7 +13,7 @@ Standards: AGENTS.md、Guardrail、C全文/.clang-format、automation。WS203 p0
 
 ## Terminal scoped result / 2026-10-11
 
-限定source/build criteria cleared。[最終差分・commands・versions・旧/新対照・全文規約・limitations](../../ws203/tests/initialization-repair-20261011.md)。現在config warning0 arm64 kernel build、DMA/GENET既存host checksとGIC/MMIO限定check PASS。実機は未実施、親WSの受入未達を保持。先行Phaseの過去outcomeは書き換えない。main統合承認待ち、共有投影/GitHubはQ1 pending。
+限定source/build criteria cleared。最終差分・commands・versions・旧/新対照・全文規約・limitations（fb1f6afee の `plan/ws203/tests/initialization-repair-20261011.md`）。現在config warning0 arm64 kernel build、DMA/GENET既存host checksとGIC/MMIO限定check PASS。実機は未実施、親WSの受入未達を保持。先行Phaseの過去outcomeは書き換えない。main統合承認待ち、共有投影/GitHubはQ1 pending。
 
 ## Main integration / 2026-10-11
 
