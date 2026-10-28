@@ -19,7 +19,7 @@ Resume: 今回の有限実装/host/build scopeはcleared。実機GUI UATは記�
 
 ユーザー: 「CLIは写真取得に関して、写真の一覧のメタデータを返し、その中にファイルのパスが入っていればいいです。写真本体はファイル経由でやりとりしましょう。写真の追加に関しては、このパスの写真を追加して、というリストを渡しましょう。」取得はバージョン付きTSVのID・絶対パス・hash・サイズ・日時・寸法・favorite・rotation・元の名前。追加は標準入力の改行区切りパスリスト。画像/動画本体はCLI/拡張IPCへ載せない。保存形式は後述のユーザー指定によりJSONへ置き換える。PNGのDnDだけは既存の画像drop APIで受信後、Phoneの一時ファイルへ保存して仮添付する。
 
-2026-10-10依存の明確化: [ws157-p006](../../ws157/phase006/phase.md)のメディアAPI出力を前提にPhoneの＋・DnD・会話IDに紐づいた未送信draftを判定する。p006のAPI出力はhost-media-wireとnamed buildで確認済み。MMS送信を行わず、添付ありのSendはcaptionだけを送らずdraftを保持して未対応を案内する。Phone変更の全文規約・build・host試験も本Phaseに含める。
+2026-10-10依存の明確化: ws157-p006（fb1f6afee の `plan/ws157/phase006/phase.md`）のメディアAPI出力を前提にPhoneの＋・DnD・会話IDに紐づいた未送信draftを判定する。p006のAPI出力はhost-media-wireとnamed buildで確認済み。MMS送信を行わず、添付ありのSendはcaptionだけを送らずdraftを保持して未対応を案内する。Phone変更の全文規約・build・host試験も本Phaseに含める。
 
 ## 2026-10-10 通信境界の明確化
 
@@ -31,7 +31,7 @@ Resume: 今回の有限実装/host/build scopeはcleared。実機GUI UATは記�
 
 ## 2026-10-10 最終検証
 
-[コマンド・source範囲・結果・限界](../../ws157/tests/verification-20261010.md)。実装/host/build criteriaはPASS、例外なし。main統合を行い、統合後にscoped clearanceを記録する。実機GUI UATとMMS転送は成功扱いにしない。
+[コマンド・source範囲・結果・限界](../../ws157/verification-20261010.md)。実装/host/build criteriaはPASS、例外なし。main統合を行い、統合後にscoped clearanceを記録する。実機GUI UATとMMS転送は成功扱いにしない。
 
 ## 2026-10-10 outcome / main統合
 

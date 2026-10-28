@@ -8,7 +8,7 @@
 /*
  * The V3D 7.1 native shader compiler checked against the source program (ws279-p004).
  *
- * The 7.1 copy of plan/ws141/tests/shader-host-test.c: the compiler is built
+ * The 7.1 copy of plan/tools/v3d-qpu/shader-host-test.c: the compiler is built
  * from the shared files and the 7.1 copies (qpu71.c, shader71-lower.c,
  * shader71-output.c, shader71-schedule.c), and the words run on the 7.1 lane
  * model (qpu71-machine.c).  The rest of the description is the original's.

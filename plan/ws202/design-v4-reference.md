@@ -1,6 +1,6 @@
 # 読取りreference: Q1 main c301a01a8 WS202 design第4版
 
-> main統合追記: [最新の統合記録](main-integration-20261010.md)。以下の独立worktree時点の未merge/未実装/pendingは履歴。標準readbackの旧offline p016は[ws202-p017](phase017/phase.md)へmapping修復し、mainのp016（ref-list）を維持した。
+> main統合追記: [最新の統合記録](main-integration-20261010.md)。以下の独立worktree時点の未merge/未実装/pendingは履歴。標準readbackの旧offline p016はws202-p017（fb1f6afee の plan/ws202/phase017/phase.md）へmapping修復し、mainのp016（ref-list）を維持した。
 
 SHA-256: 6850399cce2c357053153d01aee73dd35a5afa30f0af04f3b097c3a1e91696bc。ユーザー確定済みnative-only/app fallback/HE-AAC拒否/標準readbackが競合する記述に優先。元のQ1ファイルは変更していない。
 

@@ -24,6 +24,6 @@ $cc $hflags -c plan/ws143/tests/hid-input-host-test.c -o "$OUT/hid-input-host-te
 $cc $san "$OUT/hid-input-host-test.o" "$OUT/hid-input-old.o" "$OUT/hid-report.o" "$OUT/hid-digitizer.o" \
 	"$OUT/hid-touch.o" "$OUT/hid-input.o" "$OUT/input-bridge-setup.o" -o "$OUT/hid-report-fuzz"
 timeout 300 "$OUT/hid-report-fuzz" fuzz "$total" "$seed" \
-	plan/ws159/tests/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin \
+	plan/tools/hid/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin \
 	plan/bugs/bug105/logi-bolt-c548-if0.rdesc plan/bugs/bug105/logi-bolt-c548-if1.rdesc \
 	plan/bugs/bug105/logi-bolt-c548-if2.rdesc

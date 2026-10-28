@@ -40,12 +40,12 @@ WS068 の全ての変更の規約の全文（[plan/coding-style.md](../../coding
    ```
    sh plan/ws068/tests/glsl-host/run.sh build/ws068-p007/glsl-host
    sh plan/ws068/tests/spirv-host/run.sh build/ws068-p007/spirv-host
-   sh plan/ws101/tests/glsl/run.sh build/ws068-p007/ws101-glsl
-   sh plan/ws101/tests/gles/run.sh build/ws068-p007/ws101-gles
+   sh plan/tools/gpu-compute/glsl/run.sh build/ws068-p007/ws101-glsl
+   sh plan/tools/gpu-compute/gles/run.sh build/ws068-p007/ws101-gles
    plan/ws068/tests/build-glsl-image.sh build/ws068-p007-glsl > build/ws068-p007/img.log 2>&1; echo "exit=$?"
    ```
    Venus: guide.md 5.3 の起動と for の行（egl-p008〜glx-p033）と x11-p004・x11-p005（`GUEST_RUNTIME=$PWD/build/ws068-p007-run`）。
-   実機: `BUILD=build/ws068-p007-gles plan/ws101/tests/hw/gles-hw.sh build/ws068-p007/gles-hw`、p038 があれば `es-hw.sh`。
+   実機: `BUILD=build/ws068-p007-gles plan/tools/gpu-compute/hw/gles-hw.sh build/ws068-p007/gles-hw`、p038 があれば `es-hw.sh`。
    boot test: `OUTPUT=build/ws068-p007/boot plan/tools/boot-test.sh build/ws068-p007-glsl/hdd-image.img`。
 5. 結果を「確認」に、command・結果・未実施を分けて書く。
 

@@ -1,7 +1,7 @@
 # WS112: 形式・依存・CI成果物契約
 
 Status: q585-i01の設計調査。下記commandは後続Queueの実装/確認手順であり、今回build/package/CI実行はしていない。
-Observation: 2026-10-02。正本: [設計](design.md)、[入力/実source証拠](phase001/survey.md)。
+Observation: 2026-10-02。正本: [設計](design.md)、入力/実source証拠（fb1f6afee の `plan/ws112/phase001/survey.md`）。
 
 ## native build・encoder
 

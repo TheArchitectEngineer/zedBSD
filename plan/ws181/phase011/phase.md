@@ -14,7 +14,7 @@ Queue: Q1 の投入（2026-10-08 夜、通常の優先度、承認済み）
 
 - `bar_layout_on`: desktops の pill は窓が dock していない時 bar の中央（`output.x + (width − pill の幅) / 2`）、dock している時は p009 の位置（status の pill のすぐ左）。docked の layout が入る animation（`bar_dock`、head の bar は即座）に合わせて 2 つの位置の間を動く。中央が status の側より右になる狭い画面では status の側。title と menu の領域（`desktops_line`）は pill の位置から決まる（dock の時は p009 と同じ）。
 - `KWL GLASS desktops x=` の log は pill が動くたびに出し直す（前は最初の 1 回だけ。試験は最後の行を読む）。
-- 試験の追随: `plan/ws181/tests/p009-guest.sh` の 7（pill が中央、1280 幅で最初の slot が 591）、`ws181-guest.sh` の B9（b を dock した後、pill が 640 より右）。
+- 試験の追随: `plan/tools/desktop-guest/p009-guest.sh` の 7（pill が中央、1280 幅で最初の slot が 591）、`ws181-guest.sh` の B9（b を dock した後、pill が 640 より右）。
 
 ## 確認
 

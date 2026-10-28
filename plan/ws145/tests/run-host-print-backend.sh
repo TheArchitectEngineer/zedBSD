@@ -16,7 +16,7 @@ cc $flags -Iuserland/desktop/printd userland/desktop/printd/*.c -o "$dir/keiland
 folder=$(mktemp -d "$dir/print-backend.XXXXXX")
 mkdir -m 700 "$folder/runtime"
 python3 -c 'import os, sys; open(sys.argv[1], "wb").write(b"%PDF-1.4\n" + os.urandom(100000) + b"\n%%EOF\n")' "$folder/doc.pdf"
-python3 plan/ws145/tests/mock-printers.py "$folder/printers" > "$folder/ports" &
+python3 plan/tools/aat/mock-printers.py "$folder/printers" > "$folder/ports" &
 mock=$!
 trap 'kill $mock 2>/dev/null' EXIT
 tries=0

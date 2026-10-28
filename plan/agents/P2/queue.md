@@ -30,13 +30,13 @@ Worktree: `/home/awe/zedBSD-worktrees/p2`、branch `agent/p2`、base main fc3d31
 
 | Queue / attempt | Phase | Scope | Approval | Timebox | State |
 | --- | --- | --- | --- | --- | --- |
-| q591 / q591-i01 | [ws099-p020](../../ws099/phase020/phase.md) | BUG-125 の原因特定と compositor の修正 | 2026-10-02 user「作業を開始しましょう。」 | 4h | finished / uncleared |
+| q591 / q591-i01 | ws099-p020（fb1f6afee の `plan/ws099/phase020/phase.md`） | BUG-125 の原因特定と compositor の修正 | 2026-10-02 user「作業を開始しましょう。」 | 4h | finished / uncleared |
 
-| q609 / q609-i01 | [ws099-p023](../../ws099/phase023/phase.md) | BUG-136/137 と直す前からの C 基準の失敗 | user 2026-10-02 | 4h | finished / cleared |
+| q609 / q609-i01 | ws099-p023（fb1f6afee の `plan/ws099/phase023/phase.md`） | BUG-136/137 と直す前からの C 基準の失敗 | user 2026-10-02 | 4h | finished / cleared |
 | q618 / q618-i01 | [ws114-p008](../../ws114/phase008/phase.md) | KDE の server decoration、既定 SSD | user 2026-10-03 | 4h | finished / cleared |
-| q620 / q620-i01 | [ws099-p021](../../ws099/phase021/phase.md) | C2 の geometry・BUG-127 | 自走 | 3h | finished / uncleared |
-| q622 / q622-i01 | [ws094-p014](../../ws094/phase014/phase.md) | 規約の指摘の直し | 自走 | 2h | finished / cleared |
-| q625 / q625-i01 | [ws099-p024](../../ws099/phase024/phase.md) | BUG-147 の試験の頑健化 | 自走 | 3h | in-progress |
+| q620 / q620-i01 | ws099-p021（fb1f6afee の `plan/ws099/phase021/phase.md`） | C2 の geometry・BUG-127 | 自走 | 3h | finished / uncleared |
+| q622 / q622-i01 | ws094-p014（fb1f6afee の `plan/ws094/phase014/phase.md`） | 規約の指摘の直し | 自走 | 2h | finished / cleared |
+| q625 / q625-i01 | ws099-p024（fb1f6afee の `plan/ws099/phase024/phase.md`） | BUG-147 の試験の頑健化 | 自走 | 3h | in-progress |
 
 Next（予約）: debug を続ける（BUG-147 の後: 優先度の高い bug。ws089-p019 と ws113 は WS131 の後に組み直す）
 

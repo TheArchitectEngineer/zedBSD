@@ -2,7 +2,7 @@
 # ws081-p006: the browser's fingers on the pen test guest (main's pen image, with the injector and touchinject).
 # The compositor, the browser (with libbrowser, libgif-compat and libkeiland) and touchinject under test are copied
 # into the running guest (1280x800, the touch screen declared 0..1279 by 0..799, so a finger's numbers are the
-# output's pixels).  The browser shows plan/ws081/tests/pages/touch.html (a red block at the top, 60 rows, a blue
+# output's pixels).  The browser shows plan/tools/touch/pages/touch.html (a red block at the top, 60 rows, a blue
 # block at the end, on a green canvas; its listeners write mousedown, click and wheel to the console) at 900x640.
 # The browser's own log (/tmp/b.log, its ZBROWSER lines) and the compositor's are read through SSH; nothing reads
 # the console.
@@ -114,7 +114,7 @@ put "$build/dynamic/libkeiland.so" /lib/libkeiland.so
 put "$build/dynamic/libz-compat.so" /lib/libz-compat.so
 put "$build/dynamic/libpng-compat.so" /lib/libpng-compat.so
 put "$build/dynamic/libjpeg-compat.so" /lib/libjpeg-compat.so
-put plan/ws081/tests/pages/touch.html /tmp/touch.html
+put plan/tools/touch/pages/touch.html /tmp/touch.html
 guest 'chmod 755 /bin/wayland /bin/browser /bin/touchinject; echo made' >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0 /tmp/zdesktop.log
 /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass > /tmp/zdesktop.log 2>&1 </dev/null &

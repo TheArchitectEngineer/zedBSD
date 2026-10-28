@@ -66,7 +66,7 @@ libkeiui の source を `libkeiland/ui/` に移し、`libkeiui.so` を無くす�
 - `plan/ws102/tests/host-inset.sh`（3）
 - `plan/ws101/p011-toolchain/config.diff`（3）
 - `plan/ws090/tests/viewers-p008.sh`（3）
-- `plan/ws090/tests/host-input.sh`（3）
+- `plan/tools/input/host-input.sh`（3）
 - `plan/ws090/tests/host-draw.sh`（3）
 - `plan/ws090/tests/config-amd64-textinput.mk`（3）
 - `plan/tools/textedit/host-core.sh`（3）
@@ -140,7 +140,7 @@ libkeiui の source を `libkeiland/ui/` に移し、`libkeiui.so` を無くす�
 - `plan/ws102/tests/host-inset.c`（1）
 - `plan/ws102/tests/edit-guest.sh`（1）
 - `plan/ws090/tests/textinput-p013.sh`（1）
-- `plan/ws090/tests/host-input.c`（1）
+- `plan/tools/input/host-input.c`（1）
 - `plan/ws081/tests/config-amd64-demo-win.mk`（1）
 - `plan/ws079/tests/run-pdfviewer-host.sh`（1）
 - `plan/ws079/tests/host-pdfviewer.c`（1）

@@ -13,7 +13,7 @@ since: ws128-p004
 PDF Viewer の Find（titlebar の find field、F3・Shift+F3）と、文字の drag の選択・Ctrl+C の copy を確かめる（ws128-p004）。
 
 ## 準備
-補助（`plan/tools/aat/scenarios/helpers_pdfviewer_find.py`）が host で `plan/ws175/tests/make-edit-samples.py` の `edit-basic.pdf`（3 頁。1 頁の段落の 1 行目は「The quick brown fox jumps over the lazy dog」、3 頁は `/Rotate 90`）を作り、target の `/tmp/aat-work/pdf-find.pdf` に置く。
+補助（`plan/tools/aat/scenarios/helpers_pdfviewer_find.py`）が host で `plan/tools/aat/make-edit-samples.py` の `edit-basic.pdf`（3 頁。1 頁の段落の 1 行目は「The quick brown fox jumps over the lazy dog」、3 頁は `/Rotate 90`）を作り、target の `/tmp/aat-work/pdf-find.pdf` に置く。
 
 ## 操作と確認
 1. 操作: kei で `pdfviewer /tmp/aat-work/pdf-find.pdf`。
@@ -31,4 +31,4 @@ PDF Viewer の Find（titlebar の find field、F3・Shift+F3）と、文字の 
 1〜4（3a を含む）の log。撮影の塗りの位置は人が見る。
 
 ## 注記
-ws128-p004 の正常系。頁をまたぐ選択・語と行・Ctrl+A・指の長押しと handle・一致の規則と数・titlebar の無い時の窓の中の検索の欄は ws177-p040〜p043（host の試験 `plan/ws177/tests/host-pdf-find-l.sh`）。log の SELECT の行の後ろに `to-page=`、COPY の行の後ろに `unreadable=` が付く（ws177-p042）。
+ws128-p004 の正常系。頁をまたぐ選択・語と行・Ctrl+A・指の長押しと handle・一致の規則と数・titlebar の無い時の窓の中の検索の欄は ws177-p040〜p043（host の試験 `plan/tools/pdf/host-pdf-find-l.sh`）。log の SELECT の行の後ろに `to-page=`、COPY の行の後ろに `unreadable=` が付く（ws177-p042）。

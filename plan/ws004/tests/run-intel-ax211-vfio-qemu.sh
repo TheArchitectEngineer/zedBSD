@@ -223,7 +223,7 @@ if [ -n "$igpu_bdf" ]; then
 	[ "$(basename "$(readlink -f "$igpu_device/driver")")" = vfio-pci ] ||
 		fail "$igpu_bdf is not owned by vfio-pci"
 	# The i915 passthrough needs a shared guest memory backend and a
-	# 39-bit physical address limit (plan/ws075/tests/hdmi/h4-qemu.sh).
+	# 39-bit physical address limit (plan/tools/i915-hw/hdmi/h4-qemu.sh).
 	cpu="$cpu,host-phys-bits-limit=39"
 	set -- "$@" -object "memory-backend-memfd,id=mem,size=${memory}M,share=on" \
 		-machine memory-backend=mem \

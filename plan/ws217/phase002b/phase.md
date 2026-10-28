@@ -276,7 +276,7 @@ Prerequisites: p002a の出力（main 済み: `rotate.c`・`kwl_output_size_set`
 - `python3 userland/desktop/wayland/shaders/regenerate.py`（glslc・spirv-val）→ 差分は `kwl_turn_vert` の追加だけ。
 - `sh plan/ws217/tests/host-rotate.sh` → PASS（plain・ASan/UBSan）。`host-displays-conf.sh`・`host-scanout-rules.sh` PASS。
 - 回帰: `plan/ws113/tests/host-output-switch.sh`・`host-displays.sh`・`host-arrange.sh` PASS、`plan/ws211/tests/anim-host-test.sh` PASS、`plan/ws213/tests/cursor-due-host-test.sh` PASS、`plan/ws141/tests/vulkan-cursor-host.sh` PASS。
-- `plan/ws213/tests/list-replay-host-test.sh`（master の試験の一覧に登録）: `kwl_scene_copy` の引数が増えたので link が壊れる。2 つの呼び出しに `VK_IMAGE_LAYOUT_PRESENT_SRC_KHR` を足した写し（`build/tmp/ws217-lr.*`）で流すと出力が golden と byte 同一（scene の barrier の layout と stage は 0° で今のまま）。WS213 の path なので Q1 に直しを頼む（§11.5）。
+- `plan/tools/compositor/list-replay-host-test.sh`（master の試験の一覧に登録）: `kwl_scene_copy` の引数が増えたので link が壊れる。2 つの呼び出しに `VK_IMAGE_LAYOUT_PRESENT_SRC_KHR` を足した写し（`build/tmp/ws217-lr.*`）で流すと出力が golden と byte 同一（scene の barrier の layout と stage は 0° で今のまま）。WS213 の path なので Q1 に直しを頼む（§11.5）。
 - `sh plan/tools/keiland-os-boundary/check.sh` → PASS。`python3 -I plan/tools/style-check.py`（変えた 13 file）: main の時から増えた指摘は 0（新しい 2 file も 0）。`git diff --check` 空。
 
 ### 11.4 T1 の依頼（Q1 へ送った文面と同じ）
@@ -293,7 +293,7 @@ Prerequisites: p002a の出力（main 済み: `rotate.c`・`kwl_output_size_set`
 
 ### 11.5 Q1 への依頼
 
-- `plan/ws213/tests/list-replay-host-test.c` の 2 行（1110 と 1122 の `kwl_scene_copy(&server->compose->scene, target, image, …)` に `VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, ` を足す）。写しで golden と一致を確かめた。WS213 の path なので P1 は変えていない（許可があれば P1 が直す）。
+- `plan/tools/compositor/list-replay-host-test.c` の 2 行（1110 と 1122 の `kwl_scene_copy(&server->compose->scene, target, image, …)` に `VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, ` を足す）。写しで golden と一致を確かめた。WS213 の path なので P1 は変えていない（許可があれば P1 が直す）。
 - `plan/ws141/tests/scene-cache-host.c` は main で既に `kwl_scene_copy` の引数が合っていない（5 つで呼ぶ）。今の master の一覧に無いので、試験の整理の基準（2026-10-06）で削除の候補。
 
 ## 12. review-1 への対応（2026-10-13、Q1 の決め）

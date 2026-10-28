@@ -46,8 +46,8 @@ vkFreeDescriptorSets（使う client が今は無い）。
 | Venus の回帰 | 未実施（i915 の driver だけの変更。Venus の guest は i915 を使わない） |
 
 実機の test build は kernel の console を serial に出す構成が要る（worktree に `config.mk` が無く、zdesktop の構成は serial を
-出さないので verdict の行が読めなかった）。`plan/ws075/tests/config-test-hw.mk`（zdesktop の構成 + `CONFIG_PCAT_SERIAL_MIRROR`）を
-足した: `BUILD=build/resident-vkx ZEDBSD_CONFIG=plan/ws075/tests/config-test-hw.mk flock /tmp/i915-hw.lock
+出さないので verdict の行が読めなかった）。`plan/tools/i915-hw/config-test-hw.mk`（zdesktop の構成 + `CONFIG_PCAT_SERIAL_MIRROR`）を
+足した: `BUILD=build/resident-vkx ZEDBSD_CONFIG=plan/tools/i915-hw/config-test-hw.mk flock /tmp/i915-hw.lock
 plan/ws031/tests/vkloop-hw.sh test vkx`。
 
 ### 制限・移管

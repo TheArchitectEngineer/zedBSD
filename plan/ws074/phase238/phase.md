@@ -18,7 +18,7 @@ Pi の V3D の kernel の Vulkan が `vkCreateGraphicsPipelines failed (-8)` で
 
 ## 確かめ（host、lavapipe）
 
-- build warning 0。bcm2711 の compiler: `sh plan/ws141/tests/shader-host-test.sh`（Mesa の oracle は p3 の worktree の `plan/ws141/temp/mesa` を複写）で "browser paint" が refused でなくなり、frag 147・vertex 255・coord 170 命令で native に compile、timing model の 1 レーンの結果が scalar の source と一致、全体 PASS。そのため `plan/ws141/tests/shader-host-test.c` の表の "browser paint" の refused の印を 1→0 に変えた（WS141 の file、Q1 は merge 時に確認を）。
+- build warning 0。bcm2711 の compiler: `sh plan/tools/v3d-qpu/shader-host-test.sh`（Mesa の oracle は p3 の worktree の `plan/ws141/temp/mesa` を複写）で "browser paint" が refused でなくなり、frag 147・vertex 255・coord 170 命令で native に compile、timing model の 1 レーンの結果が scalar の source と一致、全体 PASS。そのため `plan/tools/v3d-qpu/shader-host-test.c` の表の "browser paint" の refused の印を 1→0 に変えた（WS141 の file、Q1 は merge 時に確認を）。
 - lavapipe の GPU 描画（`--render-gpu`）の前後を 97 頁（`plan/ws074/tests/pages/*.html` と Acid3 の reference）で比較: 画素が違うのは 16 頁で、うち button-center・input-radius は p236・p237 の変更による期待どおりの差。ほか 14 頁は半透明の縁の画素で最大 ±2（多くは ±1）、Acid3 の reference を含む残り 81 頁は完全一致。差の理由は、UNORM8 の出力に premultiplied を量子化して渡すため（straight の SRC_ALPHA では float で混ぜていた）。完全に同一にはならない。
 - Acid3 score 100・差 0（CPU）、Acid2 差 873（不変）。
 - 未実施: Pi 4 実機、i915・Venus での描画（lavapipe のみ）。Q1 経由で T2 に依頼。

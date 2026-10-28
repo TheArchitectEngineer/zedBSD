@@ -50,7 +50,7 @@ Q1（2026-10-07）: 判断 1〜8 を既定どおりで承認、Phase の ID は 
 | `python3 plan/tools/style-check.py`（変えた file） | 増えない（pipeline-prepare.c は 1 → 0） |
 | `git diff --check` | 問題無し |
 
-- 範囲外（Q1 へ）: `plan/ws101/tests/host/compute-batch-test.c` の `drv_i915_gfx_window` の stub に gs_code/gs_bytes の 2 引数が要る（P1 の範囲外なので差分を Q1 に送った）。また `plan/ws101/tests/host/run.sh` は今の main で既に link に失敗する（executor の一覧に `render/video.c` が無い、WS083 の後）。
+- 範囲外（Q1 へ）: `plan/tools/gpu-compute/host/compute-batch-test.c` の `drv_i915_gfx_window` の stub に gs_code/gs_bytes の 2 引数が要る（P1 の範囲外なので差分を Q1 に送った）。また `plan/tools/gpu-compute/host/run.sh` は今の main で既に link に失敗する（executor の一覧に `render/video.c` が無い、WS083 の後）。
 - 未実施: 実機（b5 で T1）。b1 だけでは GS の draw は refuse（b2 で 3DSTATE_GS）。
 
 

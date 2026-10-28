@@ -47,10 +47,10 @@ repo の root から。手引きは [guide.md](../guide.md)。
 3. host-native-decide-test の道具を戻す（WS031 の片付けで削除、`1e867fbf` で消えた）:
    ```
    mkdir -p plan/ws084/tests
-   git show 1e867fbf^:plan/ws031/tests/display-host-lib.sh > plan/ws084/tests/display-host-lib.sh
+   git show 1e867fbf^:plan/ws031/tests/display-host-lib.sh > plan/tools/i915-display/display-host-lib.sh
    git show 1e867fbf^:plan/ws031/tests/native-decide-host-test.c | head -40
    git show 1e867fbf^:plan/ws031/tests/run-native-decide-host-test.sh > plan/ws084/tests/run-native-decide-host-test.sh
-   sed -i 's|plan/ws031/tests/display-host-lib.sh|plan/ws084/tests/display-host-lib.sh|' plan/ws084/tests/run-native-decide-host-test.sh
+   sed -i 's|plan/ws031/tests/display-host-lib.sh|plan/tools/i915-display/display-host-lib.sh|' plan/ws084/tests/run-native-decide-host-test.sh
    timeout 120 sh plan/ws084/tests/run-native-decide-host-test.sh; echo "exit=$?"
    ```
    （runner は `cd "$(dirname "$0")/../../.."` で root に移るので、plan/ws084/tests/ に置いても同じ形で動く。出力は `${TMPDIR:-/tmp}/ws031-native-decide-host-test`。）
@@ -83,9 +83,9 @@ local の git に有った（`git show` で表示だけ、file は作らない�
 - 案の build（完了の条件 2）: 2 つの patch を当てた tree で `make -j16 BUILD=build/p2-ws084-p004 ZEDBSD_CONFIG=plan/ws075/demo/config-demo-hdmi.mk build/p2-ws084-p004/vmunix`
   → warning 0、vmunix の check PASS（d1 はその後に注の 1 行と空行だけ足した: style-check の blank-after-brace）。build の後 `git checkout -- modeset.c` で戻した。2 つの patch は
   どちらの順でも `git apply --check` が通る（hunk が重ならない）。source は変えていない。
-- host-native-decide-test（完了の条件 3）: `plan/ws084/tests/display-host-lib.sh`・`run-native-decide-host-test.sh` に戻した（`1e867fbf^` の WS031 の道具から。元の `rm -rf` は
+- host-native-decide-test（完了の条件 3）: `plan/tools/i915-display/display-host-lib.sh`・`run-native-decide-host-test.sh` に戻した（`1e867fbf^` の WS031 の道具から。元の `rm -rf` は
   `plan/tools/fresh-out.sh` の新しい directory に置き換え、削除の command は無い）。link の不足は `drv_i915_perf_*`（`perf.c` を production として link）と
-  `sched_sleep`・`drv_pci_device_address`・`drv_i915_worker_sync_backlight`（`plan/ws084/tests/native-decide-stubs.c` の stand-in、呼ばれたら abort）。
+  `sched_sleep`・`drv_pci_device_address`・`drv_i915_worker_sync_backlight`（`plan/tools/i915-display/native-decide-stubs.c` の stand-in、呼ばれたら abort）。
   流すと 14 checks のうち 2 つが古い期待（p001 の前の「active な pipe は STOP」）で FAIL → `host-native-decide-test.c` の NATIVE-1（PROCEED・takeover・stop 無し）と
   TWO-WALLS（VT-d の translation が stop、active な pipe は記録だけ）を 2026-09-29 の判断に合わせて直した。結果 `sh plan/ws084/tests/run-native-decide-host-test.sh build/p2-ws084-nd4/test`
   → `native_decide_host_test: 14 checks, 0 failures`。

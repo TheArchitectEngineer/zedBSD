@@ -23,7 +23,7 @@ $cc $hflags $extra -c plan/ws143/tests/hid-input-host-test.c -o "$OUT/hid-input-
 $cc $extra -Wl,--gc-sections "$OUT/hid-input-host-test.o" "$OUT/hid-input-old.o" "$OUT/hid-report.o" \
 	"$OUT/hid-digitizer.o" "$OUT/hid-touch.o" "$OUT/hid-input.o" "$OUT/input-bridge-setup.o" -o "$OUT/hid-input-host-test"
 timeout 300 "$OUT/hid-input-host-test" check \
-	plan/ws159/tests/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin \
+	plan/tools/hid/latitude5330-linux/synaptics-06cb-ce65-rdesc.bin \
 	plan/bugs/bug105/logi-bolt-c548-if0.rdesc plan/bugs/bug105/logi-bolt-c548-if1.rdesc \
 	plan/bugs/bug105/logi-bolt-c548-if2.rdesc \
 	plan/bugs/BUG-267/touchscreen-if0.rdesc plan/bugs/BUG-267/touchscreen-if1.rdesc \

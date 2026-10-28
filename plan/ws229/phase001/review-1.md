@@ -78,7 +78,7 @@
   - `render/fence.c`、`render/vulkan.c:104-109`（video の gate）、`render/instance.c:284`（"Gen12 Xe"）
   - `tests/fixtures/draw-fixture.c:428, 1081`
   - `include/kern/boot.h`（phase.md:194 の新しい boot の key）
-- **重なり**: p003 は `plan/ws101/tests/host/`（directory 全体）を持ち、p004 は `plan/ws101/tests/host/genxml-check.py` を持つ。同じ path が両方に入っている。
+- **重なり**: p003 は `plan/tools/gpu-compute/host/`（directory 全体）を持ち、p004 は `plan/tools/gpu-compute/host/genxml-check.py` を持つ。同じ path が両方に入っている。
 - **規則との衝突**: p003・p004 が他の WS の plan/tests（ws101・ws075・ws031・ws083）を直す設計になっている。AGENTS.md の「subagent の修正可能範囲」は、割り当てられた WS の `plan/wsNNN/` だけを認めている。Q1 の許可を取るか、`plan/ws229/tests/` に写して使う必要がある。
 - **WS229 の外との衝突**: WS051・WS113・WS083・WS075 と bug の修正が、同じ時期に device.c・display/*・render/* を変えている。§5 は「3 人の衝突」しか見ていない。
 - **効く Phase**: p002・p003・p004。§5 の表を直すのは Q1。

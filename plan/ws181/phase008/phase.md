@@ -35,7 +35,7 @@ Queue: q851 / q851-i01（ユーザーの UAT 2026-10-07）
 ## 試験の追従（2026-10-07 P2）
 
 - host: `plan/ws181/tests/host-edge.c`（depth の 10 例、`run-host-edge.sh` に `-lm`）、`plan/ws142/tests/host-gesture.c`（case 6・23: 1 本だけ端 → 今は BOTTOM2・TOP2、6b: 1 本だけ左の端 → LEFT2）。
-- QEMU の試験（T1 が流す）: `plan/ws181/tests/ws181-guest.sh` の B7（半分で止めた `b7-home-half.png`、角の drag は何もしない、角の click で開閉）、`plan/ws142/tests/p003-guest.sh` の 7b（1 本だけ右の端）・7c（TOP2 → Home、`home-pad.png`、短い TOP2 は戻る）、`plan/ws142/tests/p010-guest.sh` の 2.（TOP2 → Home → Esc、bar の title の 2 回 click で floating）、`plan/ws079/tests/zdesktop-p010.sh`・`zdesktop-p013-touch.sh`（Home を角の drag → click・tap で開く）、`tests/scenarios/desktop/touchpad/preview-swipe-step.md` の 3.・5.。
+- QEMU の試験（T1 が流す）: `plan/tools/desktop-guest/ws181-guest.sh` の B7（半分で止めた `b7-home-half.png`、角の drag は何もしない、角の click で開閉）、`plan/ws142/tests/p003-guest.sh` の 7b（1 本だけ右の端）・7c（TOP2 → Home、`home-pad.png`、短い TOP2 は戻る）、`plan/ws142/tests/p010-guest.sh` の 2.（TOP2 → Home → Esc、bar の title の 2 回 click で floating）、`plan/ws079/tests/zdesktop-p010.sh`・`zdesktop-p013-touch.sh`（Home を角の drag → click・tap で開く）、`tests/scenarios/desktop/touchpad/preview-swipe-step.md` の 3.・5.。
 
 ## 確認
 

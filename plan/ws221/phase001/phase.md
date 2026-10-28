@@ -111,7 +111,7 @@ review の「§9 の推奨の妥当性」の欠落（Q11・Q12・Q13、5320 の�
 - 送る segment は常に `TCP_MSS` = 1024（tcp.c:54、2504〜2505）。再送の経路は `uint8_t payload[TCP_MSS]` を stack に持つ（tcp.c:467）。
 - SYN・SYN-ACK の MSS option は定数 `TCP_RECEIVE_MSS` 1460・IPv6 1440（tcp.c:62・65、1396〜1400）。相手の MSS option は読まない。
 - 受けの window は「残り byte と残り packet 数 × 1460 の小さい方」（tcp.c:2726〜2733）。receive queue の packet の上限 44（`TCP_RECEIVE_PACKETS`、tcp.c:94、tcp.c:310 で socket に）、reorder は 64-bit で 44・32-bit で 16（tcp-socket.h:52〜55）。送りの写しは接続ごとに 8（`CONFIG_TCP_SEND_QUEUE_MAX`、tcp-socket.h:36〜39）。
-- WS220 の計画: p006 で「segment は min(相手の MSS, device の MTU − 40)、byte の送り buffer」、p007 で「受けの queue を byte で数える、window scale」（[ws220-p001 §4](../../ws220/phase001/phase.md) 154〜155 行）。WS220 p002（正しさ）は実装済みで T1 の試験待ち。
+- WS220 の計画: p006 で「segment は min(相手の MSS, device の MTU − 40)、byte の送り buffer」、p007 で「受けの queue を byte で数える、window scale」（ws220-p001 §4（fb1f6afee の `plan/ws220/phase001/phase.md`） 154〜155 行）。WS220 p002（正しさ）は実装済みで T1 の試験待ち。
 
 ### 1.5 CDC ECM の driver（`src/drivers/usb/usb-cdc-ecm.c`）
 

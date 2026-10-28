@@ -8,7 +8,7 @@
 /*
  * Host model of one V3D 7.1 QPU lane running a native program (ws279-p004).
  *
- * The 7.1 copy of plan/ws141/tests/qpu-machine.c; see qpu71-machine.h.  The
+ * The 7.1 copy of plan/tools/v3d-qpu/qpu-machine.c; see qpu71-machine.h.  The
  * timing and transaction rules are the 7.1 hardware facts of WS279's design
  * section 3 (Mesa 25.3.6 src/broadcom/compiler/qpu_schedule.c and
  * qpu_validate.c, the 7.x branches); the decoder is the unmodified MIT Mesa

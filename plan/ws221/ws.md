@@ -28,12 +28,18 @@ Related Milestones: なし
 | p002（案） | kernel + ifconfig + ping: packet の pool を 2 つの class（標準 2 KB・jumbo 9 KB × 32、driver の受けの予約 8、64-bit だけ）に、`packet_buf_alloc_for`、datagram の上限を family ごとに（`syscall.c` の 4 か所）、socket ごとの jumbo の上限、`net_device.mtu_max`・`mtu_default`・`set_mtu`・`net_device_set_mtu`（up でも可）・`net_device_frame_max`、`net_device_receive` の MTU 超え、UAPI `SIOCSIFMTU`（0 = 既定）と `CHANGE` の event、IPv6 の `ra_mtu` と追従、net.tcpstats の header の jumbo の欄（WS220 の UAPI、順は Q1）、`ifconfig IF mtu N|default`、`ping -s` と sendto の失敗の表示 | 無し（sysctl.h は WS220 p002 の merge の後） | planning（p001 の review-2 と §9 Q1・Q2・Q3・Q8・Q13 の後） |
 | p003（案） | driver: **最初に descriptor の読み**（phase.md §4.1: RTL8156 と UGREEN の `wMaxSegmentSize`・NTB parameter・caps。1514 なら止めて報告）→ CDC ECM（`frame_max`、MTU に依らない受信 URB（review S5）、`set_mtu`、log）、CDC NCM（codec の max datagram を可変に、NTB 32 KB/16 KB、`SET_MAX_DATAGRAM_SIZE` と読み戻しと STALL の fallback、bit 3 の無い device、ENOBUFS で続ける、log）。host の NCM の wire 試験 | p002、descriptor の読み | planning |
 | p004（案） | 設定: net.conf の `mtu`、`net` の console の `mtu N`・`no mtu`、reconcile の `MTU IF N|0`（DOWN/UP を挟まない）、networkd の `NETWORKD_OP_MTU`・`FIELD_MTU`、`LAN_ENABLE` の record の末尾 `mtu N` と `lan_policy_decode`（語数 7）、policy の `mtu`、`lan_configure_steps` の up の前、`lan_configure_policy`（Settings の経路）、docs | p002（host 試験は独立） | planning（review S6・M5・M8・M10 で phase.md §3.7 を書き直し済み） |
-| p005（案） | TCP: SYN の MSS を `tcp_device_mss`（WS220 p006 の物。MTU − 40/−60 と slot の上限の小さい方、IPv6 は path MTU、gateway 経由の IPv4 は 1460）に、受けの window の jumbo の上限 | p002、**WS220 p006・p007** が main に入って cleared | planning |
+| p005（案） | TCP: SYN の MSS を `tcp_device_mss`（p008 の物、旧 WS220 p006。MTU − 40/−60 と slot の上限の小さい方、IPv6 は path MTU、gateway 経由の IPv4 は 1460）に、受けの window の jumbo の上限 | p002、**p008・p009**（旧 WS220 p006・p007）が main に入って cleared | planning |
 | p006（案） | 実機の受け入れ: 5330（RTL8156）と Pi 4（UGREEN 2.5GbE）で、jumbo の switch の上の 9000 の相手と 1500 の相手の混在、大きい ping（長さの一致）、TCP の継続の転送（両向き） | p003・p004・p005 | planning（ユーザーの機械と時期） |
-| p007（案） | 規約の全文の見直し（WS の全ての C、試験を含む） | p002〜p005 | planning |
+| p007（案） | 規約の全文の見直し（WS の全ての C、試験を含む） | p002〜p005・p008・p009 | planning |
+| [p008](phase008/phase.md) | TCP の輻輳の制御（cwnd・ssthresh・IW 10）と byte の送りの buffer、相手の MSS と `tcp_device_mss`（slot の上限・IPv6 の path MTU・gateway 経由の IPv4）、Nagle（旧 WS220 p006） | WS220 p005（main） | planning |
+| [p009](phase009/phase.md) | TCP の受けの窓: 窓の約束（byte で数える）、受け側の SWS 回避、window scale、delayed ACK（旧 WS220 p007） | p008 | planning |
 
 p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descriptor の `wMaxSegmentSize` が 1514 で変えられないので、QEMU では MTU の口（拒否・保存・既定に戻す・再起動）と回帰だけを確かめ、jumbo の data の経路は実機だけ（phase.md §1.10・§8）。代替として host の Linux の USB gadget（dummy_hcd + f_ncm、module はこの host にある）を QEMU の `usb-host` で渡す案を §8.4 に書いた（可否は未確認、Q12）。
 判断の要る点（推奨つき）は phase.md §9 の Q1〜Q13: MTU の変更は up のままでも可（第 1 版から変更、理由は review S5・M10）、jumbo 32 のうち予約 8、最小 MTU は常に 1280、IPv4 は gateway 経由の MSS を 1460 に抑え ICMP の読みは Future Work、`no mtu` は既定に戻す、descriptor の読みの手段と 1514 の時の扱い、5320 を対象外に、gadget の試し、枯渇の方針。
+
+## WS220 から移した Phase（2026-10-28）
+
+ユーザーの回答（クリック、2026-10-28）「WS221 へ移す (推し)」→ WS220（completed）の未着手の p006（輻輳の制御と送りの buffer、`tcp_device_mss` の持ち主）と p007（受けの窓）を、この WS の [p008](phase008/phase.md)・[p009](phase009/phase.md) にした（P4、q1660）。設計の案と 2026-10-13 の記録は各 phase.md に写した。p005（TCP の MSS）は p008・p009 の後。
 
 ## ユーザーの決定（2026-10-13）
 

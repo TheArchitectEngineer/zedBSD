@@ -47,7 +47,7 @@ local log/hash remains recorded. Full local target logs remain under
 
 | Check | Final result |
 | --- | --- |
-| `sh plan/ws094/tests/host-desktop.sh` | exit 0 / PASS |
+| `sh plan/tools/files-desktop/host-desktop.sh` | exit 0 / PASS |
 | `sh plan/ws094/tests/host-thumb.sh build/b2-ws094-p007/host-thumb` | exit 0 / all picture fixtures PASS |
 | `sh plan/tools/files/host-model.sh` | exit 0 / PASS |
 | `sh plan/tools/imageview/run-host.sh build/b2-ws094-p007/imageview-host` | exit 0 / PASS |

@@ -34,7 +34,7 @@ T1-538 で、取り込んだ動画の寸法が 0、日付が取り込みの日�
 | `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws157-q937-linux -j16 all` | rc 0、warning 0 |
 | `sh plan/ws157/tests/run-host-preview-info.sh build/ws157-q937-linux` | all PASS。Linux の preview（seccomp）で: 5 MiB の mdat（64 bit の size）の後ろの moov、音の track が先の 1920×1080・taken 1700000000・`zone=utc`。version 1 の mvhd・tkhd で 1/4 回転 → 1080×1920・taken 1700086400。moov の途中で切れた file → 寸法 0。creation 0 → 640×480・taken 空・`zone` 無し。AVI 720×576。reader: `zone=utc` を受ける、`zone=jst` は EPROTO、前の例は全部そのまま |
 | `make BUILD=build/ws157-q937 ZEDBSD_CONFIG=config/current-uat.mk -j16 …/bin/keiland-preview …/bin/mediastorage …/bin/photos …/bin/files …/bin/settings` | rc 0、warning 0 |
-| `sh plan/ws157/tests/run-host-mediastorage.sh build/ws157-q937-host build/ws157-q937-linux` | rc 0、全 PASS |
+| `sh plan/tools/media/run-host-mediastorage.sh build/ws157-q937-host build/ws157-q937-linux` | rc 0、全 PASS |
 | `python3 plan/tools/style-check.py`（info.c・client.c・import.c） | 指摘 0 |
 
 ## 未実施

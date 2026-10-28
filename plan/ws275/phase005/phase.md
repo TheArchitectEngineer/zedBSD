@@ -57,7 +57,7 @@ BOOT_THEN: type:root / type:startx & / expect:^root@\S+:\S*\$ / keys:echo ws275-
   mouse:-2000,-2000 / mouse:58,58 / mouse:0,0,left / mouse:0,0,left / mouse:0,0,middle / keys: / expect:^sh: ws275-ok: not found
 最後の PNG で画素: (800,756) が 0x17212b（8 bpp は (0x00,0x24,0x00) ±4）、(1016,200) が userland/x11/zwm/backgrounds/1024x768.ppm の同じ点
 （8 bpp は RGB332 の量子化 ±4）。原点が合わなければ PNG から原点を求めて返す。PNG は全部 Q1 へ。
-回帰: pcat bios-ide login、pcat PS/2（keys: を含む試験と plan/ws081/tests/ps2-wheel-qemu.sh）、amd64 uefi-nvme login、sun4u login（config-sun4u.mk）。
+回帰: pcat bios-ide login、pcat PS/2（keys: を含む試験と plan/tools/touch/ps2-wheel-qemu.sh）、amd64 uefi-nvme login、sun4u login（config-sun4u.mk）。
 ```
 
 ## 変えた file

@@ -8,7 +8,7 @@
 | 正本 | 版 | 取得元（`plan/ws039/temp/`、commit しない） | 用途 |
 | --- | --- | --- | --- |
 | Linux（amdgpu・DC・swsmu） | tag `v6.19`（commit `05f7e89ab9731565d8a62e3b5d1ec206485eeb0b`、nvrtx と同じ） | `https://github.com/torvalds/linux`（sparse: `drivers/gpu/drm/amd/amdgpu/`・`include/`・`pm/swsmu/{smu11,inc,*.c}`・`display/dc/`・`display/include/`・`display/amdgpu_dm/`（2026-10-15 に追加）、`include/uapi/drm/amdgpu_drm.h`） | register の offset・bit、IP discovery の表、firmware の container、PSP・SMU の command と手順、GMC・IH・CP・SDMA・DCN の手順と値 |
-| Mesa（RADV・ACO・common・registers） | tag `mesa-25.3.6`（commit `06f9e28304d5d3f109c33535c1c25b9df5769af2`） | `https://gitlab.freedesktop.org/mesa/mesa.git`（sparse: `src/amd/`・`docs/license.rst`・`include/drm-uapi/amdgpu_drm.h`） | 描画の state の register と値、記述子の形、user SGPR の約束、cache の flush、chip の識別。compiler（p007）の出典は Mesa 25.0.7 の tarball（P5 の表、[phase007](phase007/phase.md)） |
+| Mesa（RADV・ACO・common・registers） | tag `mesa-25.3.6`（commit `06f9e28304d5d3f109c33535c1c25b9df5769af2`） | `https://gitlab.freedesktop.org/mesa/mesa.git`（sparse: `src/amd/`・`docs/license.rst`・`include/drm-uapi/amdgpu_drm.h`） | 描画の state の register と値、記述子の形、user SGPR の約束、cache の flush、chip の識別。compiler（p007）の出典は Mesa 25.0.7 の tarball（P5 の表、phase007（fb1f6afee の `plan/ws039/phase007/phase.md`）） |
 | linux-firmware | tag `20260410`（commit `dc85ccedc9c973682fbcf4d628ca61174bcc3120`、AX211・i915・nvidia-gsp と同じ） | `https://gitlab.com/kernel-firmware/linux-firmware.git`（sparse: `amdgpu/navi1*`・`WHENCE`・`LICENSE.amdgpu`） | Navi10 の firmware（BLOB） |
 | libdrm の `amdgpu.ids`、`pci.ids` | host の sysroot と `/usr/share/misc/pci.ids`（2025.06.09） | 読むだけ | RX 5600 XT の revision、RDNA3 の device id |
 
@@ -20,7 +20,7 @@
 2. **Mesa の `src/amd` は MIT 563・表記なし 128**。表記なしの物（`registers/*.json`・`docs/license.rst`）は Mesa の既定（`docs/license.rst`: 大部分 MIT、file ごとに SPDX を見よ）に従う。
 3. **BLOB**: Navi10 の firmware は AMD の `LICENSE.amdgpu`（SHA-256 `572872598565dc3513470de971a32bf9db301f47afeef3636345eadae33b2eee`。要点: binary の形の再配布可、notice の再掲が条件、reverse engineering・decompile・disassemble の禁止。`WHENCE` の SHA-256 `c282239a5a2d849677e9304e6f361e475e1b6e71e7c771c03f8986f71b309527`）。base の system・kernel・repository の source には入れず、`userland/firmware/` の既定 off の package（design の 4.1）にし、driver が file から load する。driver は MIT の header（`amdgpu_ucode.h`）が定める container の欄だけを読み、payload を解析しない。source の中に firmware に当たる byte の配列は、取得範囲では golden の register の表（データ）だけで、BLOB は無い（p010 で再確認）。
 4. VBIOS（AtomBIOS）は A1v で data の表の header と欄を読む（読むだけ。改訂 2 から。p002 の実装）。image は repository に入れない（試験は実機から取り出した image を `plan/ws039/temp/` に置いて使う）。
-5. **p007（compiler）の出典は Mesa 25.0.7**（P5 の tarball、SHA-256 は [phase007](phase007/phase.md) の表。下の Mesa 25.3.6 の表の同名の file は driver の側の参照で、p007 の block の comment と P5 の `amdrdna-compiler-license-audit.md` は 25.0.7 の版と SHA-256 を使う。review M9）。
+5. **p007（compiler）の出典は Mesa 25.0.7**（P5 の tarball、SHA-256 は phase007（fb1f6afee の `plan/ws039/phase007/phase.md`） の表。下の Mesa 25.3.6 の表の同名の file は driver の側の参照で、p007 の block の comment と P5 の `amdrdna-compiler-license-audit.md` は 25.0.7 の版と SHA-256 を使う。review M9）。
 6. **zedBSD の code は Zlib**。出典の copyright・MIT の表示は付けない（データの引用なので）。file の先頭に出典を書かず、block ごとに「Value(s) referenced:」「Procedure referenced:」を書く（design の 13.2）。
 
 ## file ごとの表（作業の文書と design.md が参照した file）
@@ -254,7 +254,7 @@
 
 ### linux-firmware 20260410（commit `dc85ccedc9c973682fbcf4d628ca61174bcc3120`）
 
-全部 `LICENSE.amdgpu`（再配布の条件つき）。package に入れる 11 file（`navi10_mec2.bin` は `navi10_mec.bin` と同じ byte）。`navi10_ta.bin`・`navi10_vcn.bin`・`navi10_gpu_info.bin` は入れない（design の 4.1）。大きさと SHA-256 は [phase001/phase.md](phase001/phase.md) の表（2026-10-15 に再計算して一致を確かめた）。
+全部 `LICENSE.amdgpu`（再配布の条件つき）。package に入れる 11 file（`navi10_mec2.bin` は `navi10_mec.bin` と同じ byte）。`navi10_ta.bin`・`navi10_vcn.bin`・`navi10_gpu_info.bin` は入れない（design の 4.1）。大きさと SHA-256 は phase001/phase.md（fb1f6afee の `plan/ws039/phase001/phase.md`） の表（2026-10-15 に再計算して一致を確かめた）。
 
 | file | SHA-256 | 扱い |
 | --- | --- | --- |

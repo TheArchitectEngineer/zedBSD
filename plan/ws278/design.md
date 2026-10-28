@@ -82,7 +82,7 @@ disable_overscan=1
 QEMU に raspi5 の machine は無い。確認は host の試験と実機だけ。
 
 - host（担当が流す）: build（warning 0）、Pi 5 の 2 つの dtb を HAL の FDT の parser で読む試験（uart・mailbox・GIC・SD・memory・CPU の数と PSCI）、image の検査（MBR・FAT32・file の一致・UFS の root）、rpi4 の kernel.elf が変わらない事。
-- 実機（Q1 経由でユーザーに頼む。手順は `plan/ws278/tests/rpi5-hw-test.md`）:
+- 実機（Q1 経由でユーザーに頼む。手順は `plan/ws278/rpi5-hw-test.md`）:
   1. `build/rpi5/hdd-image.img` を SD card に書く（`dd if=… of=/dev/sdX bs=4M conv=fsync`）。
   2. Pi 5 の HDMI0 に monitor をつなぎ、SD を入れて電源を入れる。
   3. 期待: bootloader の画面の後、framebuffer に `RPI5 ENTRY`… の HAL の log、kernel の log、`login:` の prompt。写真を撮る。

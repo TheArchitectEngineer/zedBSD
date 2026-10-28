@@ -115,8 +115,8 @@ host で実際に確かめたこと（scratchpad の中だけで行い、tree �
 
 ### H-07 試験の image の構成（`config-media-hw.mk`）では p012 の C と p013 の UAT ができない
 
-- 根拠: phase011:29-30・design.md:511-512「`config-media-hw.mk`: `include plan/ws075/tests/config-test-hw.mk` の後に filter-out libavcodec と
-  media-probe」。`config-test-hw.mk:1-5` は「i915 test build on the passthrough of the 5330」（`plan/ws075/tests/test-hw.sh:2-5` は guest の
+- 根拠: phase011:29-30・design.md:511-512「`config-media-hw.mk`: `include plan/tools/i915-hw/config-test-hw.mk` の後に filter-out libavcodec と
+  media-probe」。`config-test-hw.mk:1-5` は「i915 test build on the passthrough of the 5330」（`plan/tools/i915-hw/test-hw.sh:2-5` は guest の
   serial の log から判定を読む）。その連鎖（`plan/ws031/tests/config-zdesktop-hw.mk:4-12` → `plan/ws035/tests/config-amd64-userland.mk:28-39`）の
   `ZEDBSD_USER_PROGRAMS` には **libmedia・videoplayer・music・openssh が無い**（grep で 0 件）。`ZEDBSD_GRAPHICAL_BOOT := n`（同 :10）。
 - 起こること: `media-probe` は libmedia が無く動かない。Video Player・Music も無い。SSH（p012:28「SSH」）ができない。passthrough の guest で

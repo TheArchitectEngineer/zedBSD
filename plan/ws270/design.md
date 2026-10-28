@@ -10,7 +10,7 @@
 
 ### 1.1 build の状況（p002 の後）
 
-ws270-p002（q1336 d9a4dc026、q1338 の直し）で、設計の判断に依らない build の不足は直った。試しの config は [tests/config-visionfive2-desktop.mk](tests/config-visionfive2-desktop.mk)（visionfive2 の config に rpi4 の desktop の program の組。firmware・bluetooth・wifi・powervr-firmware・noct・emacs を除く）。
+ws270-p002（q1336 d9a4dc026、q1338 の直し）で、設計の判断に依らない build の不足は直った。試しの config は tests/config-visionfive2-desktop.mk（`fb1f6afee` の `plan/ws270/tests/config-visionfive2-desktop.mk`）（visionfive2 の config に rpi4 の desktop の program の組。firmware・bluetooth・wifi・powervr-firmware・noct・emacs を除く）。
 
 | 版 1 で見た失敗 | 直した所（p002） |
 | --- | --- |

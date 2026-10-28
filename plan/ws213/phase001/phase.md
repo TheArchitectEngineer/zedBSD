@@ -25,7 +25,7 @@ Queue: P4（2026-10-12 Q1 が割り当て）
 - 2026-10-12 Q1 の判断（review-2）: K1 は「2 段の pull」、H-a は「R は待ちの間 Vulkan を呼ばない、walk の中の M の作成・破棄は許す」の不変条件で同期の依頼をやめる、H-c は shm の memcpy を M の walk の中に残し release は写した直後、H-d は cursor の shm を M が同期で作成・書き込み、退役は plane の fence も待つ。
 - 2026-10-12 Q1 の判断（review-4 H-B）: ユーザーの目標は「すべて 60fps」、cursor の 60fps は必達。pointer の経路（evdev の読み取り→加速→C の受け箱）を M から外す形を本案に、client への pointer の通知は M が受けて送る。walk の分割は代替として 11 節に。p004 の受け入れに M の 1 pass の最長と、動いている間の C の受け箱の更新の間隔の p99・最長 ≤ 1 refresh、p003 の閾値は p90 か最長。
 - 2026-10-12 Q1 の判断（review-5、S2 条件付き可）: N-1〜N-4 を設計の文に反映し再 review は不要（Q1 の確認）。未決への答え: p003 の重いコマ（300 draw 以上）の閾値は walk の p90 ≤ 16.7ms・最長 ≤ 25ms。p004 の `pass_max` ≤ 33.3ms は場面 (1)〜(3) で判定し、(4) の app の起動は p99 を記録。box_lag の p99 は必達、最長は kernel の長い transaction が原因と分かれば uncleared として WS208（SMP）・kernel への依存で返す条件付き。box_lag の最長と `hold_us` の時刻の対応を記録の項目に。make が sysroot を作り直そうとしたら止まって main に報告、を p003〜p006 の build の注記に。
-- この Phase は設計だけ（p002 の M0・C0 は Q1 の指示で先に実装、記録は [p002](../phase002/phase.md)）。
+- この Phase は設計だけ（p002 の M0・C0 は Q1 の指示で先に実装、記録は p002（fb1f6afee の `plan/ws213/phase002/phase.md`））。
 
 ## review-1 への対応
 
@@ -441,11 +441,11 @@ CPU の重い所（main）: glyph の raster（glass.c:3052、`KWL GLASS glyph` 
 | Phase | 内容 | 受け入れ（各 phase.md に同じ物） | 状態・順 |
 | --- | --- | --- | --- |
 | p001 | 調査と設計（この文書） | design-reviewer の review を通る（S2 の部分は第 5 版の差分の確認） | 第 6 版（review-5 で S2 条件付き可、N-1〜N-4 の反映は Q1 が確認） |
-| [p002](../phase002/phase.md) | M0 と C0 | host 試験 PASS、build warning 0、Pi で `cursor presents=` が約 60/s 以下、present の間隔が約 16.7ms | 実装済み、Pi・T1 の確認待ち |
-| [p003](../phase003/phase.md) | S1: display list（同じ thread で再生）、cursor の形の起動時の batch の作成、`kwl_import` の世代 | 9 節 (a) の再生の等価が全場面で一致、build warning 0、T1 で shot の画が前と同じ、Pi で `KWL STARTUP step=cursor-shapes` の ms（batch の作成だけを独立に出す、review-4 L-c）が 50ms 以下、walk と再生の時間を分けて測る。**p004 に進む閾値**（review-4 H-B: 中央値でなく p90 と最長）: Pi で walk（M の時間）が普通のコマ（100 draw 未満）の p90 8ms 以下かつ最長 16.7ms 以下、App Home のコマ（300 draw 以上）の p90 16.7ms 以下かつ最長 25ms 以下（review-5 N-6 の Q1 の判断。33.3ms では p004 の `pass_max` ≤ 33.3ms に余裕が無い。今の記録＋End は 48 / 62 / 93）。満たさなければ WS211 の削減を先にする（p004 の依存、review-4 L-f） | 着手は Q1 の指示（P3 との順） |
-| [p004](../phase004/phase.md) | S2: R・C・I の thread（2 段の pull、want の規則と R の持つ画像、不変条件、park、FIFO、host image の書き込みの規則、cursor の 2 枚、C の持ち物の分け方、pointer の経路の I への移動、client の破棄の延ばし） | 9 節 (b)〜(i)・(k)・(l) の決定的な host 試験と (m) の thread と TSan の host 試験が PASS、Linux の build を ThreadSanitizer 付きで動かして WS213 の thread と lock の報告 0（WS131 の Debian の QEMU+KVM guest、T1、9 節の方針）、T1（i915・Venus）で回帰なし、Pi で 6.4 の場面: **box_lag の p99 ≤ 16.7ms（必達）と最長 ≤ 16.7ms（原因が kernel の長い transaction なら uncleared で WS208・kernel への依存、6.4）**、M の 1 pass の最長 ≤ 33.3ms（場面 (1)〜(3)、(4) は p99 を記録）、walk の外の M の Vulkan の最長 ≤ 16.7ms、`KWL LAT` の入力→walk の中央値が p003 より改善、C の present の全段の最長を記録 | p003 の閾値を満たした後（満たさなければ WS211 の削減の後）、p001 の S2 の確認の後 |
-| [p005](../phase005/phase.md) | S3: W（glyph・壁紙・大きな字） | 9 節 (j) PASS、日本語の UI で初出の字の多い画面で walk の最長が p004 より下がる、壁紙の変更の間も box_lag の p99・最長 ≤ 16.7ms（6.4 と同じ条件）と M の 1 pass の最長 ≤ 33.3ms、T1 で回帰なし | p004 の後 |
-| [p006](../phase006/phase.md) | 規約の全文の見直し | WS213 の C の全部を plan/coding-style.md の全文と照らして直す、build warning 0、host 試験 PASS | 最後 |
+| p002（fb1f6afee の `plan/ws213/phase002/phase.md`） | M0 と C0 | host 試験 PASS、build warning 0、Pi で `cursor presents=` が約 60/s 以下、present の間隔が約 16.7ms | 実装済み、Pi・T1 の確認待ち |
+| p003（fb1f6afee の `plan/ws213/phase003/phase.md`） | S1: display list（同じ thread で再生）、cursor の形の起動時の batch の作成、`kwl_import` の世代 | 9 節 (a) の再生の等価が全場面で一致、build warning 0、T1 で shot の画が前と同じ、Pi で `KWL STARTUP step=cursor-shapes` の ms（batch の作成だけを独立に出す、review-4 L-c）が 50ms 以下、walk と再生の時間を分けて測る。**p004 に進む閾値**（review-4 H-B: 中央値でなく p90 と最長）: Pi で walk（M の時間）が普通のコマ（100 draw 未満）の p90 8ms 以下かつ最長 16.7ms 以下、App Home のコマ（300 draw 以上）の p90 16.7ms 以下かつ最長 25ms 以下（review-5 N-6 の Q1 の判断。33.3ms では p004 の `pass_max` ≤ 33.3ms に余裕が無い。今の記録＋End は 48 / 62 / 93）。満たさなければ WS211 の削減を先にする（p004 の依存、review-4 L-f） | 着手は Q1 の指示（P3 との順） |
+| p004（fb1f6afee の `plan/ws213/phase004/phase.md`） | S2: R・C・I の thread（2 段の pull、want の規則と R の持つ画像、不変条件、park、FIFO、host image の書き込みの規則、cursor の 2 枚、C の持ち物の分け方、pointer の経路の I への移動、client の破棄の延ばし） | 9 節 (b)〜(i)・(k)・(l) の決定的な host 試験と (m) の thread と TSan の host 試験が PASS、Linux の build を ThreadSanitizer 付きで動かして WS213 の thread と lock の報告 0（WS131 の Debian の QEMU+KVM guest、T1、9 節の方針）、T1（i915・Venus）で回帰なし、Pi で 6.4 の場面: **box_lag の p99 ≤ 16.7ms（必達）と最長 ≤ 16.7ms（原因が kernel の長い transaction なら uncleared で WS208・kernel への依存、6.4）**、M の 1 pass の最長 ≤ 33.3ms（場面 (1)〜(3)、(4) は p99 を記録）、walk の外の M の Vulkan の最長 ≤ 16.7ms、`KWL LAT` の入力→walk の中央値が p003 より改善、C の present の全段の最長を記録 | p003 の閾値を満たした後（満たさなければ WS211 の削減の後）、p001 の S2 の確認の後 |
+| p005（fb1f6afee の `plan/ws213/phase005/phase.md`） | S3: W（glyph・壁紙・大きな字） | 9 節 (j) PASS、日本語の UI で初出の字の多い画面で walk の最長が p004 より下がる、壁紙の変更の間も box_lag の p99・最長 ≤ 16.7ms（6.4 と同じ条件）と M の 1 pass の最長 ≤ 33.3ms、T1 で回帰なし | p004 の後 |
+| p006（fb1f6afee の `plan/ws213/phase006/phase.md`） | 規約の全文の見直し | WS213 の C の全部を plan/coding-style.md の全文と照らして直す、build warning 0、host 試験 PASS | 最後 |
 
 Future Work（2026-10-12 Q1 が記入）: F-094 client の画像の import を R へ、F-095 GPU と walk を重ねる・2 コマ飛ばす、F-096 cursor の plane に別の VkDevice。kernel の CURSOR_SET・MOVE の時刻の log は Q1 が WS141（P3）に依頼。
 
@@ -504,7 +504,7 @@ Future Work（2026-10-12 Q1 が記入）: F-094 client の画像の import を R
 ## 12. 結果の記録（この Phase）
 
 - 調べたこと: 1 節（source の地図、Pi の既存の log の集計。P3 の boot の b4・b6・b10）。
-- 変えた file: この phase.md、[summary.md](summary.md)（ユーザー向けの要約）、[review-1](review-1.md)〜[review-5](review-5.md)（design-reviewer の要点の写し）、ws.md、p002〜p006 の phase.md。p002 の source は [p002](../phase002/phase.md)。
+- 変えた file: この phase.md、[summary.md](summary.md)（ユーザー向けの要約）、[review-1](review-1.md)〜[review-5](review-5.md)（design-reviewer の要点の写し）、ws.md、p002〜p006 の phase.md。p002 の source は p002（fb1f6afee の `plan/ws213/phase002/phase.md`）。
 - 第 5 版（2026-10-12）: review-4 の H-A〜H-C、M-A〜M-E、L-a〜L-f を反映。Q1 の方針で pointer の経路を入力の thread I へ（6.1）。
 - 第 6 版（2026-10-12）: review-5 の N-1〜N-7 と Q1 の答え（p003 の重いコマの閾値、`pass_max` の場面、box_lag の最長の条件、`hold_us` の対応、build の注記）、WS141 p016 review-B4 の WS213 に関わる点（C の copied の gate、受け入れの分担、C と R の queue の同時使用は B-u の前提、L1 の位置付け、M の `vkQueueWaitIdle` を外す）を反映。ユーザー向けの要約 [summary.md](summary.md) を足した。
 - 次: Q1 が N-1〜N-4 の反映を確かめる（再 review は不要）。ユーザーの設計の review。p003 の着手は Q1 の指示（WS211 との順）。

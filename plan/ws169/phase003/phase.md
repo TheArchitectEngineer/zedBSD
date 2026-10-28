@@ -23,7 +23,7 @@ Queue: q831（2026-10-06、P2）
 
 ## 確かめ
 
-- host: `sh plan/ws169/tests/run-host-mail-backend.sh` → PASS 50（ASan・UBSan、host の OpenSSL）。`fake-mail-server.py`（試験の CA と localhost の証明書をその場で作る）に対して、IMAP を最初から TLS と STARTTLS の 2 通りで（login・誤った password の EACCES・folder・select・最新 2 通と添付・既読・UID の後・\Seen・Archive への移動・Sent への APPEND・IDLE の新着と code）、SMTP を 465 と 587 の 2 通りで（server が受けた bytes が同じ、envelope、行頭の dot）。MIME の 5 通と code の 5 件、compose の読み戻し。
+- host: `sh plan/tools/mail/run-host-mail-backend.sh` → PASS 50（ASan・UBSan、host の OpenSSL）。`fake-mail-server.py`（試験の CA と localhost の証明書をその場で作る）に対して、IMAP を最初から TLS と STARTTLS の 2 通りで（login・誤った password の EACCES・folder・select・最新 2 通と添付・既読・UID の後・\Seen・Archive への移動・Sent への APPEND・IDLE の新着と code）、SMTP を 465 と 587 の 2 通りで（server が受けた bytes が同じ、envelope、行頭の dot）。MIME の 5 通と code の 5 件、compose の読み戻し。
 - build: `make -j16 ZEDBSD_CONFIG=plan/ws169/tests/config-amd64-mailer.mk BUILD=build/ws169-zed build/ws169-zed/bin/mailer` が warning 0。`style-check.py` が新しい 7 file で 0。
 - 未実施: QEMU（実の server には繋がない。T1 の試験は p004 の後に同じ偽の server を guest の外に立てて）、実の Gmail・ISP の server。
 

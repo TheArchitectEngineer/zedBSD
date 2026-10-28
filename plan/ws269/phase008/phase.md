@@ -32,7 +32,7 @@ Pi 4 の compiler（`src/drivers/gpu/bcm2711/qpu.c`・`shader*.c`、WS141）は 
 | `src/drivers/gpu/powervr/usc-encode.h`・`.c`（新規） | USC の命令 group の encoder（`powervr_usc_program_encode`・`powervr_usc_group_size`）と、各 phase の operation の encoder（main の unit の float の加算・乗算、fused multiply-add、単項（rcp・rsq・log・exp・byp・微分など）、pack、32/64 bit の整数の加算・乗加算、test、条件付き move。back end の load・store（burst の即値と register）、data fence、atomic、vertex の出力（write・emit・cut・endtask）。bitwise の unit の phase 0（count・shift・即値 16/32 bit）・phase 1（論理）・phase 2（shift と test）。control の unit の branch、条件実行、mutex、nop、field の無い操作（wop・wdf・lapc・savl）、shared base） |
 | `src/drivers/gpu/powervr/pds-encode.h`・`.c`（新規） | PDS の命令（add32・add64・shift と論理 32 bit・compare（register・即値）・branch・load・store・wdf・limm・halt・nop・DMA の乗加算（ddmad）・data の出力（dout））と、data の word（shading の task の issue の 64 bit、DMA の address の 64 bit と control の 32 bit、ddmad の control の 64 bit） |
 | `platform/riscv64/vmunix.mk` | `CONFIG_DRIVER_POWERVR` の時に上の 2 file を build |
-| `plan/ws269/tests/p008/`（新規） | `run.sh`・`encode-host-test.c` |
+| `plan/tools/powervr/p008/`（新規） | `run.sh`・`encode-host-test.c` |
 
 encoder は libc に依らず（`stdint.h`・`stddef.h`・`uapi/errno.h` だけ）、p006 の `gpu-mmu.c` と同じく host でも build できる。compiler（共有の IR からの選択・register の割当・scheduling）は p009 以降で、この encoder を使う。
 
@@ -73,8 +73,8 @@ encoder は libc に依らず（`stdint.h`・`stddef.h`・`uapi/errno.h` だけ�
 | `src/drivers/gpu/powervr/render.c` | self-test の後、node の登録の前に `powervr_compute_check` があれば呼ぶ（weak、通常の kernel では NULL で何もしない） |
 | `src/drivers/gpu/powervr/interface.h` | `POWERVR_CLIENT_COMPUTE`（205 \| TASK \| magic）、命令の 96 byte と stream・resume の位置 |
 | `platform/riscv64/vmunix.mk` | `compute-program.c` を常に（powervr と一緒に）、`compute-check.c` を `CONFIG_POWERVR_COMPUTE_CHECK=y` の時だけ |
-| `plan/ws269/tests/p008/config-visionfive2-compute.mk`（新規） | 試験の kernel の構成（CI の VF2 の構成 + `CONFIG_POWERVR_COMPUTE_CHECK := y`）。WS256 p023 の `vf2-dmatest` と同じ流儀 |
-| `plan/ws269/tests/p008/compute-host-test.c`（新規）・`run.sh` | 組んだ program の bit 列の host 試験 |
+| `plan/tools/powervr/p008/config-visionfive2-compute.mk`（新規） | 試験の kernel の構成（CI の VF2 の構成 + `CONFIG_POWERVR_COMPUTE_CHECK := y`）。WS256 p023 の `vf2-dmatest` と同じ流儀 |
+| `plan/tools/powervr/p008/compute-host-test.c`（新規）・`run.sh` | 組んだ program の bit 列の host 試験 |
 
 通常の image（`config/ci/config-visionfive2.mk`）は check を含まず、起動の時間は変わらない。
 
@@ -107,7 +107,7 @@ kick の待ちは 1 回 2 秒。時間切れの時は buffer と session を GPU
 
 ### 実機の試験の文面（T1・ユーザー向け、beta2 の U29 の続き）
 
-image: `make ZEDBSD_CONFIG=plan/ws269/tests/p008/config-visionfive2-compute.mk BUILD=build/uat/vf2-compute -j16 build/uat/vf2-compute/native.img`（U29 と同じく firmware の LICENSE.powervr の同意の後。通常の U29 の image では下の 3 行は出ない）。起動は U27・U29 と同じ。U29 の p006 の 3 行の `render node ready` の直前に次の 3 行が出る:
+image: `make ZEDBSD_CONFIG=plan/tools/powervr/p008/config-visionfive2-compute.mk BUILD=build/uat/vf2-compute -j16 build/uat/vf2-compute/native.img`（U29 と同じく firmware の LICENSE.powervr の同意の後。通常の U29 の image では下の 3 行は出ない）。起動は U27・U29 と同じ。U29 の p006 の 3 行の `render node ready` の直前に次の 3 行が出る:
 
 | 行 | 期待 | 読み方 |
 | --- | --- | --- |
@@ -137,7 +137,7 @@ image: `make ZEDBSD_CONFIG=plan/ws269/tests/p008/config-visionfive2-compute.mk B
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| host 試験 | `timeout 120 sh plan/ws269/tests/p008/run.sh build/ws269-p008/host` | `powervr encode host test: 91 passed, 0 failed`。期待の bytes・word は Mesa の field の表から手で組み、各 case の comment に field の並びを書いた（operation 33 形、group 8 本（3 group の program の alignment、2 group の penultimate の pad を含む）、PDS の命令 14・data の word 5、拒否の case 25） |
+| host 試験 | `timeout 120 sh plan/tools/powervr/p008/run.sh build/ws269-p008/host` | `powervr encode host test: 91 passed, 0 failed`。期待の bytes・word は Mesa の field の表から手で組み、各 case の comment に field の並びを書いた（operation 33 形、group 8 本（3 group の program の alignment、2 group の penultimate の pad を含む）、PDS の命令 14・data の word 5、拒否の case 25） |
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/ws269-p006-vf2 vmunix`（log `build/ws269-p008/vf2.log`、BUILD の名前は p006 の物を使った） | rc=0、`warning:`・`error:` 0 件（-Werror）。`usc-encode.c`・`pds-encode.c` が compile・link された |
 | 開発中の照合（commit しない、試験ではない） | Mesa の generator（`pco_isa.h.py`・`pco_common.h.py`、mako）で作った `pco_isa.h` の encode 関数と、`pvr_rogue_pds_encode.h` の関数を host で呼び、同じ field の値で encoder の出力と比べた（`build/ws269-p008/dev/xcheck.c`・`xpds.c`） | USC: 全部の operation の形の全組合せ・乱数の main の group 200,000 本（使えた物）・control の header で 91,646 件一致、0 件不一致。PDS: 13 命令 × 200,000 の乱数で 2,600,000 件一致、0 件不一致。この照合で、destination の配列の範囲外の読み（修正済み）と、未定義の ctrlop を受けていた事（修正済み）を見つけた |
 
@@ -148,8 +148,8 @@ image: `make ZEDBSD_CONFIG=plan/ws269/tests/p008/config-visionfive2-compute.mk B
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| host 試験 | `timeout 120 sh plan/ws269/tests/p008/run.sh build/ws269-p008/host` | `powervr encode host test: 91 passed, 0 failed`（`powervr_usc_program_encode` を `powervr_usc_program_build` の包みにした後も同じ）、`powervr compute host test: 70 passed, 0 failed`（control stream の 7 語 × 2 と終端、PDS の data・code の語、temps の field、書き込みの program の group の数（2,058）・8 byte の終わり・group 0・1・9〜11・13・最後の st・end の bytes、temps の program の group 0・1・9 の bytes、FW の命令の語、拒否の case。期待は cdm.xml・pvr_rogue_pds_defs.h・pco_isa.py の field から手で組み、各 case の comment に field を書いた） |
-| VF2 の試験の kernel | `timeout 3600 make ZEDBSD_CONFIG=plan/ws269/tests/p008/config-visionfive2-compute.mk BUILD=build/ws269-p008-vf2 vmunix`（log `build/ws269-p008/vf2-compute.log`、名前の定数の整理の後に `vf2-compute2.log` で再 build、同じく rc=0・0 件） | rc=0、`warning:` 0 件（-Werror）。`compute-program.c`・`compute-check.c` が compile・link、`nm` で `powervr_compute_check` が定義済み |
+| host 試験 | `timeout 120 sh plan/tools/powervr/p008/run.sh build/ws269-p008/host` | `powervr encode host test: 91 passed, 0 failed`（`powervr_usc_program_encode` を `powervr_usc_program_build` の包みにした後も同じ）、`powervr compute host test: 70 passed, 0 failed`（control stream の 7 語 × 2 と終端、PDS の data・code の語、temps の field、書き込みの program の group の数（2,058）・8 byte の終わり・group 0・1・9〜11・13・最後の st・end の bytes、temps の program の group 0・1・9 の bytes、FW の命令の語、拒否の case。期待は cdm.xml・pvr_rogue_pds_defs.h・pco_isa.py の field から手で組み、各 case の comment に field を書いた） |
+| VF2 の試験の kernel | `timeout 3600 make ZEDBSD_CONFIG=plan/tools/powervr/p008/config-visionfive2-compute.mk BUILD=build/ws269-p008-vf2 vmunix`（log `build/ws269-p008/vf2-compute.log`、名前の定数の整理の後に `vf2-compute2.log` で再 build、同じく rc=0・0 件） | rc=0、`warning:` 0 件（-Werror）。`compute-program.c`・`compute-check.c` が compile・link、`nm` で `powervr_compute_check` が定義済み |
 | VF2 の通常の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/ws269-p008-vf2b vmunix`（log `build/ws269-p008/vf2-plain.log`） | rc=0、`warning:` 0 件。`compute-check.c` は build されず、`nm` で `powervr_compute_check` は weak の未定義（`w`、呼ばれない） |
 | riscv64-virt の kernel（共有の `platform/riscv64/vmunix.mk` に触れたため） | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-riscv64-virt.mk BUILD=build/ws269-p008-virt vmunix`（log `build/ws269-p008/virt.log`） | rc=0、`warning:` 0 件、`error:` 0 件 |
 
@@ -159,8 +159,8 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| host 試験 | `timeout 120 sh plan/ws269/tests/p008/run.sh build/q1369/p008` | encode 91 passed 0 failed、compute 70 passed 0 failed（group 0 の期待を movs1 の 12 byte に。header・phase 2・is4・destination は手で、source の 4 byte は encoder の配置のまま） |
-| p009・p010-compiler の host 試験 | `sh plan/ws269/tests/p009/run.sh build/q1369/p009`・`.../p010-compiler/run.sh build/q1369/p010-compiler` | executor 112/0、compiler 298/0、group 20/0 |
+| host 試験 | `timeout 120 sh plan/tools/powervr/p008/run.sh build/q1369/p008` | encode 91 passed 0 failed、compute 70 passed 0 failed（group 0 の期待を movs1 の 12 byte に。header・phase 2・is4・destination は手で、source の 4 byte は encoder の配置のまま） |
+| p009・p010-compiler の host 試験 | `sh plan/tools/powervr/p009/run.sh build/q1369/p009`・`.../p010-compiler/run.sh build/q1369/p010-compiler` | executor 112/0、compiler 298/0、group 20/0 |
 | kernel | `make ZEDBSD_CONFIG=config/ci/config-{visionfive2,riscv64-virt,amd64}.mk BUILD=build/q1369-<c> vmunix -j16` | 3 つとも rc=0、`warning:` 0 件 |
 
 - 実機の compute check（U35）は未実施。片付け: `build/q1369/`・`build/q1369-visionfive2/`・`build/q1369-riscv64-virt/`・`build/q1369-amd64/`・`build/q1369-*.log`。
@@ -206,9 +206,9 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| host（p008） | `sh plan/ws269/tests/p008/run.sh build/p016/p008` | encode 94/0、compute 70/0 |
-| host（p009） | `sh plan/ws269/tests/p009/run.sh build/p016/p009 0` | 511 passed、0 failed |
-| VF2 の vmunix（compute の check 入り） | `make ZEDBSD_CONFIG=plan/ws269/tests/p008/config-visionfive2-compute.mk BUILD=build/p016/vf2 vmunix -j16` | rc 0、warning 0。`build/p016/vf2/vmunix` |
+| host（p008） | `sh plan/tools/powervr/p008/run.sh build/p016/p008` | encode 94/0、compute 70/0 |
+| host（p009） | `sh plan/tools/powervr/p009/run.sh build/p016/p009 0` | 511 passed、0 failed |
+| VF2 の vmunix（compute の check 入り） | `make ZEDBSD_CONFIG=plan/tools/powervr/p008/config-visionfive2-compute.mk BUILD=build/p016/vf2 vmunix -j16` | rc 0、warning 0。`build/p016/vf2/vmunix` |
 
 - 直し自体はまだ無い。板の probe の 2 行で原因を決めて、次の Queue で直す。
 - 片付け（Q1 に依頼）: `build/p016/`（vmunix を取り出した後）。
@@ -242,7 +242,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | 確認 | 結果 |
 | --- | --- |
 | p008 の host（encode 94、compute 70） | 0 failed |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p017/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p017/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p017/`。
 
@@ -269,7 +269,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | --- | --- |
 | p008 の host（encode 94、compute 70） | 0 failed |
 | probe の encode（12 種、host） | 全部 0、長さ 64〜144 byte |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p018/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p018/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p018/`（vmunix の後）。
 
@@ -289,7 +289,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - temporaries は store が 9（r8 まで）、temps は 8 のまま（offset は r2 に）、fill は 8。
   - COMPUTED・ZERO_MADD・CONSTANT・MOVED の probe は、IMADD の影響を見るために前の形のまま残した。
 - r1 が壊れる理由（IMADD32 の何が dst 以外の register を書くのか）は分かっていない。Mesa は address を add64 で作り、IMADD32 の結果を address の対に置かない。
-- 試験: `plan/ws269/tests/p008/compute-host-test.c` の期待を新しい group の並びに直した。
+- 試験: `plan/tools/powervr/p008/compute-host-test.c` の期待を新しい group の並びに直した。
   - store: group 3 が madd32（offset）、4 が r0、6 が add64_32、11 が add64_32。
   - temps: 15 group で、10 が add64_32、14 が end。
 
@@ -297,7 +297,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | --- | --- |
 | p008 の host | encode 94/0、compute 73/0 |
 | p009 の host（切り替え 0） | 511 passed、0 failed |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p019/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p019/vf2/vmunix`） | rc 0、warning 0 |
 
 - 板で見ること:
   - `compute kernel: OK, 16384/16384`。
@@ -318,13 +318,13 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - store の program は、step ごとに address を作り直す: step の offset（immediate k×128）→ base の対（r10・r11、最初に 1 回だけ書く）＋ instance の offset（r8）を add64 → それに step の offset を add64 → data を pass → st → wait。step から step へ address を運ばない。
   - 1 step は 6 group、512 step で 29,776 byte（USC の room の 32 KiB に収まる）。
   - store の kick の temporaries を 16 にした（`POWERVR_COMPUTE_STORE_TEMPORARIES`。使うのは r0〜r11）。field の単位が思っていたのと違っても、各 instance に足りるようにするため。
-- 試験: `plan/ws269/tests/p008/compute-host-test.c` の store の group の期待を新しい並びに直した（6＋6×512＋1 group、7・8 が add64、10 が st、11 が wdf）。使わなくなった `immediate_r0` を外した。
+- 試験: `plan/tools/powervr/p008/compute-host-test.c` の store の group の期待を新しい並びに直した（6＋6×512＋1 group、7・8 が add64、10 が st、11 が wdf）。使わなくなった `immediate_r0` を外した。
 
 | 確認 | 結果 |
 | --- | --- |
 | p008 の host | encode 94/0、compute 72/0 |
 | p009 の host（切り替え 0） | 511 passed、0 failed |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p020/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p020/vf2/vmunix`） | rc 0、warning 0 |
 
 - 板の読み方:
   - kernel が OK、または fault 無しで正しい word が増えるなら、運ぶ register が壊れていた（重なり）。
@@ -353,7 +353,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | 確認 | 結果 |
 | --- | --- |
 | p008 の host | encode 94/0、compute 72/0 |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p021/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p021/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p021/`。
 
@@ -383,7 +383,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | 確認 | 結果 |
 | --- | --- |
 | p008 の host | encode 94/0、compute 72/0 |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p022/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p022/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p022/`。
 
@@ -395,7 +395,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 - **M9（register の operand の encode）**:
   - Mesa 26.2.5 の `pco_isa.h.py`・`pco_common.h.py` から `pco_isa.h` を生成した。usc-encode.c の lower の source の 8 form、upper の 8 form、destination の 5 form の layout（`layout_place`）の bytes を、Mesa の `pco_src_*_encode`・`pco_dst_*_encode` の bytes と比べた。register は各 form の bank と index の上限の中で乱数（r0〜r3 も r4 以上も、bank も、mux も含む）。
   - 結果は **84000 passed、0 failed**。register の番号と bank の field（r4 以上、src2、dst の bank を含む）は Mesa と bit 単位で一致する。
-  - 試験は `plan/ws269/tests/p008/m9-forms.sh MESA_SRC OUTDIR`（`m9-forms.c`、Mesa の展開した tree が要る）。
+  - 試験は `plan/tools/powervr/p008/m9-forms.sh MESA_SRC OUTDIR`（`m9-forms.c`、Mesa の展開した tree が要る）。
 - group の並び（読みで確かめた）:
   - Mesa の `pco_encode_igrp` の順（header、命令は後ろの phase から、lower、upper、iss、dest、padding）と同じ。
   - main・bitwise の group は使わない側の source の 1 byte の form も出す（Mesa の `pco_igrp_src_variant` も、control 以外は必ず出す）。
@@ -424,7 +424,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | M9（operand の form） | 84000 passed、0 failed |
 | p008 の host | encode 94/0、compute 72/0 |
 | probe の encode（16 種、host） | 全部 0 |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p023/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p023/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p023/`。
 
@@ -449,7 +449,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | --- | --- |
 | p008 の host | encode 94/0、compute 72/0 |
 | probe 16 種・fill（144 byte）・temps（168 byte）・store 512 step（29,776 byte）の encode（host） | 全部 0 |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p024/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p024/vf2/vmunix`） | rc 0、warning 0 |
 
 - 板で見ること:
   - `compute kernel: OK 16384/16384`。
@@ -479,7 +479,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
     - probe の temporaries は 15。store の 16 で r14 まで足りる。
   - **compiler の back end（`shader-backend.c`）にも同じ誤りがあった**: st の data は任意の値の register で、address は r6・r7。data を r8（`TEMP_STORE_DATA`、新しく予約）に MOVE してから st する形にした。値の register は r9（`TEMP_FIRST_VALUE`）から。vk の compute（vkcompute の fill）の store も、これで並びが正しくなる。
 - 試験:
-  - `plan/ws269/tests/p008/compute-host-test.c` の temps の group 11 を r6 にした。
+  - `plan/tools/powervr/p008/compute-host-test.c` の temps の group 11 を r6 にした。
   - compiler の host 試験（396・group 20）は、そのまま PASS。
 
 | 確認 | 結果 |
@@ -489,7 +489,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | p009（切り替え 0） | 511 passed、0 failed |
 | p010 | 全部 0 failed |
 | probe 16 種・fill・temps・store 512 step の encode | 全部 0 |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p025/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p025/vf2/vmunix`） | rc 0、warning 0 |
 
 - 板で見ること:
   - kernel が OK。
@@ -516,13 +516,13 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
     - store・probe・短い store の field は Mesa の通り 4 単位（`powervr_compute_temporaries_field(…, 4)`）にした。
     - wide の temps は field 16 のまま（比べ用）。
     - grid は `CHECK_GRID 0` で既定では走らせない。走らせる時も、狭い cell の fault が後を潰さないよう、最後に回した。
-- 試験: `plan/ws269/tests/p008/compute-host-test.c` の store の KERNEL0 の期待を `0x00000106`（unified 0）にし、unified の入力 2 で `0x00001106` を足した。
+- 試験: `plan/tools/powervr/p008/compute-host-test.c` の store の KERNEL0 の期待を `0x00000106`（unified 0）にし、unified の入力 2 で `0x00001106` を足した。
 
 | 確認 | 結果 |
 | --- | --- |
 | p008 の host | encode 94/0、compute 73/0 |
 | p009（切り替え 0） | 511 passed、0 failed |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p026/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p026/vf2/vmunix`） | rc 0、warning 0 |
 
 - 板で見ること:
   - kernel が OK のまま。
@@ -549,7 +549,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | 確認 | 結果 |
 | --- | --- |
 | p008 の host | encode 94/0、compute 73/0 |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p027/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p027/vf2/vmunix`） | rc 0、warning 0 |
 
 - 板で見ること:
   - 4 step が 128/128 で lockup しない。
@@ -586,7 +586,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | 確認 | 結果 |
 | --- | --- |
 | p008 の host | encode 94/0、compute 76/0 |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p028/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p028/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p028/`。
 
@@ -612,7 +612,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | --- | --- |
 | p008 の host | encode 94/0、compute 76/0 |
 | probe 18 種・fill（144 byte）・temps（112 byte）・store 512 step の encode | 全部 0 |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p029/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p029/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p029/`。
 
@@ -625,7 +625,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
     - 範囲は register の pair を丸ごと数える。st は address の対と data（＋2）を読むとみなし、load と sample は 4 つ書くとみなす（安全側）。
     - 挿入より後に着地する branch の target は、一緒に動かす。その group 自身への branch は、最初の nop に着地する。
   - `shader_backend_hazards`（残った hazard の数）を足した。
-- 試験（`plan/ws269/tests/p010-compiler/`）:
+- 試験（`plan/tools/powervr/p010-compiler/`）:
   - `compile-host-test.c` で、compile したすべての shader に「hazard 0」の確かめを足した。
   - nop を入れる仕組みの単体の試験（`test_hazard_spacing`）を足した: 読んだ直後に書くと hazard 1 → nop 2 つ → 書きは後ろへ、branch は最初の nop へ → hazard 0。
   - `machine-run.c`（simulator）に `KIND_NOP` を足した。
@@ -690,7 +690,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | p009 | 511 passed、0 failed |
 | p010 | 全部 0 failed |
 | probe 20 種の encode | 全部 0 |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p032/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p032/vf2/vmunix`） | rc 0、warning 0 |
 
 - 板で見ること:
   - compute check の `wait between groups` が ffffffff。
@@ -735,7 +735,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | compiler の host | 455 passed、0 failed |
 | p009 | 511 passed、0 failed |
 | p010 | 全部 0 failed |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p033/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p033/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p033/`。
 
@@ -777,7 +777,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | p008 | encode 94/0、compute 76/0 |
 | p009 | 511 passed、0 failed |
 | p010 | 全部 0 failed |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p034/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p034/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p034/`。
 
@@ -808,7 +808,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 | 確認 | 結果 |
 | --- | --- |
 | p008 の host | encode 94/0、compute 76/0 |
-| VF2 の vmunix（`plan/ws269/tests/p008/config-visionfive2-compute.mk`、`build/p035/vf2/vmunix`） | rc 0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p008/config-visionfive2-compute.mk`、`build/p035/vf2/vmunix`） | rc 0、warning 0 |
 
 - 片付け（Q1 に依頼）: `build/p035/`。
 
@@ -829,7 +829,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
      - register ごとに: r22 ＝ 下位＋K×4、r24:r25 ＝ add64(r22, r23, r20)、r26 ＝ rK、st r26 → [r24]（data ＝ address＋2）、wdf
    - 使う temps は 27。field は ceil(28/4) ＝ 7。program は 1,256〜1,656 byte で、置き場は `USC_COMPILED` の後の 8 KiB。
    - 行の形: `dump N/55 lane L (e, bytes): r0 … r15`。lane は 0・1・31。行の前に `compiled fill dump: run at HI_LO, dump at +1c8000` を出す。
-3. **host の simulator の対の値**: `plan/ws269/tests/p008/fill-registers.sh OUTDIR ADDRESS`（新規、`fill-registers.c`）。
+3. **host の simulator の対の値**: `plan/tools/powervr/p008/fill-registers.sh OUTDIR ADDRESS`（新規、`fill-registers.c`）。
    - ADDRESS には板の `run at` の値に 0x1c0000 を足した値を渡す。
    - fill を同じ値で inline に compile し、machine-run で先頭 N group に end を足して走らせる。同じ形の `dump N/55 lane L (0): r0 … r15` を出す。最後に全体の program の 3x+7 を確かめる。
    - 板の行と diff すれば、**最初に食い違う N（4 group の幅）** が分かる。address を含む register は、ADDRESS を板の値にすれば一致する。
@@ -1229,7 +1229,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 - 代わりに、**Mesa 26.2.5 の Vulkan driver（pco の compiler）を host で build** して、**drm-shim**（`libpowervr_noop_drm_shim.so`、`PVR_SHIM_DEVICE_BVNC=36.50.54.182` ＝ BXE-4-32）の上で、userland の vkcompute（host 用に build）を走らせた。`PCO_DEBUG_PRINT=cs,binary` で IR と binary を取った。
   - build に要った host の package（sudo apt）: llvm-19-dev、libclang-19-dev、libclc-19(-dev)、libllvmspirvlib-19-dev、llvm-spirv-19、libdrm-dev、glslang-tools、spirv-tools。
   - meson: `-Dvulkan-drivers=imagination -Dtools=drm-shim,imagination -Dllvm=enabled -Dmesa-clc=enabled`。
-  - 結果の全文（IR と binary）: `plan/ws269/tests/p008/mesa-pco-fill-bxe-4-32.txt`。
+  - 結果の全文（IR と binary）: `plan/tools/powervr/p008/mesa-pco-fill-bxe-4-32.txt`。
 - Mesa の命令列（block B2、if (vi0 < 32) の中）:
 
 | 群 | Mesa | 我々の同じ op の bytes |
@@ -1437,7 +1437,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - host の Mesa 26.2.5（scratchpad の mesa26、drm-shim、BVNC 36.50.54.182 ＝ BXE-4-32）で vkcompute を `PVR_DEBUG=cs` で走らせた。
   - Mesa の dumper は global offset が無くても KERNEL9〜11 を読むので、2 つ目以降の kernel の解読がずれる。scratch の Mesa の dumper だけを直した（offset がある時だけ読む）。
   - dispatch の PDS program は、scratch の Mesa の `pvr_arch_pipeline.c` に表示を足して取った。
-  - 全文: `plan/ws269/tests/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt`。
+  - 全文: `plan/tools/powervr/p008/mesa-pco-vkcompute-stream-bxe-4-32.txt`。
 - **Mesa の vkcompute の compute stream ＝ kernel 3 つ＋終わり**:
   - K0（shared の確保）: usc_common 64 byte、pds_data 32 byte、usc_target ALL、sd NONE、usc_common_shared 1、1 wg、max_instances 8、size 1。
   - K1（dispatch）: 下の表。
@@ -1622,7 +1622,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
   - 行は部ごとに `… N rounds, S stale, W wrong[, first at round R word W: 0x…, expected 0x…]`、最後に PASS か FAIL。終了 status は PASS の時だけ 0。
 - **host（llvmpipe）**: buffer type 0（coherent）は 1000 回、image は 200 回で、どちらも 0 stale・0 wrong の PASS（0.43 秒）。
 - **VF2 の build**:
-  - `plan/ws269/tests/p008/config-visionfive2-coherency.mk`（gpu-selftest の構成に vkcoherency を足す）で、`build/p2q1508/vf2/bin/vkcoherency` を作った（rc 0）。
+  - `plan/tools/powervr/p008/config-visionfive2-coherency.mk`（gpu-selftest の構成に vkcoherency を足す）で、`build/p2q1508/vf2/bin/vkcoherency` を作った（rc 0）。
   - この build のために、共有の build の規則に vkcoherency を足した（vkcompute と同じ形）。`platform/common/userland-dynamic.mk` の `DYNAMIC_PORTABLE_PROGRAMS` と link の規則、`platform/amd64/vmunix.mk` の filter-out の一覧。WS の外の file なので、Q1 が確認する。
   - 板では `/bin/vkcoherency` を手で流す。
 
@@ -1696,14 +1696,14 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 
 | path | 何を確かめるか | 実行の仕方 | 所要 |
 | --- | --- | --- | --- |
-| `plan/ws269/tests/p008/run.sh` | USC・PDS の encoder（encode-host-test）と compute の program・kernel の語（compute-host-test。手書きの kernel の kick、shared の kernel、workgroup の PDS ＝ Mesa の bytes、field の計算） | `sh plan/ws269/tests/p008/run.sh OUTDIR` → `encode … 0 failed`、`compute … 0 failed` | 1.4 秒 |
-| `plan/ws269/tests/p008/m9-forms.sh` | USC の operand の形を、Mesa 26.2.5 の生成した `pco_isa.h` の encoder と乱数で照合 | `sh plan/ws269/tests/p008/m9-forms.sh <mesa-26.2.5 の展開先> OUTDIR` → `m9 operand forms: 84000 passed, 0 failed`（Mesa の tarball は `build/ws269-p014/mesa/`） | 0.7 秒 |
-| `plan/ws269/tests/p008/fill-registers.sh` | vkcompute の fill を compiler が出す形で host の simulator に流し、prefix ごとの register を出す。板の compute check の dump（DIAGNOSTICS）と照合し、全体の 32/32 も確かめる | `sh plan/ws269/tests/p008/fill-registers.sh OUTDIR <run の address＋0x1c0000>` → 最後の行 `whole program (0): 32/32 …` | 2 秒 |
-| `plan/ws269/tests/p009/run.sh` | Venus の frame の decode と executor（vk-queue。1 kernel の dispatch、PDS の配置、stream） | `sh plan/ws269/tests/p009/run.sh OUTDIR` → `executor host test: … 0 failed` | 5 秒 |
-| `plan/ws269/tests/p010-compiler/run.sh` | SPIR-V → USC の compiler。interpreter と machine の simulator の一致、group の bytes と Mesa の表の照合（glslc が要る） | `sh plan/ws269/tests/p010-compiler/run.sh OUTDIR` → `compiler host test: … 0 failed`、`group host test: … 0 failed` | 5 秒 |
-| `plan/ws269/tests/p008/mesa-pco-fill-bxe-4-32.txt`、`mesa-pco-vkcompute-stream-bxe-4-32.txt` | 参照資料: Mesa 26.2.5 が BXE-4-32 に出す fill の USC と compute の stream・PDS（drm-shim の host の build で取った） | 読むだけ（取り直す手順は phase008 の q1481・q1494） | ― |
+| `plan/tools/powervr/p008/run.sh` | USC・PDS の encoder（encode-host-test）と compute の program・kernel の語（compute-host-test。手書きの kernel の kick、shared の kernel、workgroup の PDS ＝ Mesa の bytes、field の計算） | `sh plan/tools/powervr/p008/run.sh OUTDIR` → `encode … 0 failed`、`compute … 0 failed` | 1.4 秒 |
+| `plan/tools/powervr/p008/m9-forms.sh` | USC の operand の形を、Mesa 26.2.5 の生成した `pco_isa.h` の encoder と乱数で照合 | `sh plan/tools/powervr/p008/m9-forms.sh <mesa-26.2.5 の展開先> OUTDIR` → `m9 operand forms: 84000 passed, 0 failed`（Mesa の tarball は `build/ws269-p014/mesa/`） | 0.7 秒 |
+| `plan/tools/powervr/p008/fill-registers.sh` | vkcompute の fill を compiler が出す形で host の simulator に流し、prefix ごとの register を出す。板の compute check の dump（DIAGNOSTICS）と照合し、全体の 32/32 も確かめる | `sh plan/tools/powervr/p008/fill-registers.sh OUTDIR <run の address＋0x1c0000>` → 最後の行 `whole program (0): 32/32 …` | 2 秒 |
+| `plan/tools/powervr/p009/run.sh` | Venus の frame の decode と executor（vk-queue。1 kernel の dispatch、PDS の配置、stream） | `sh plan/tools/powervr/p009/run.sh OUTDIR` → `executor host test: … 0 failed` | 5 秒 |
+| `plan/tools/powervr/p010-compiler/run.sh` | SPIR-V → USC の compiler。interpreter と machine の simulator の一致、group の bytes と Mesa の表の照合（glslc が要る） | `sh plan/tools/powervr/p010-compiler/run.sh OUTDIR` → `compiler host test: … 0 failed`、`group host test: … 0 failed` | 5 秒 |
+| `plan/tools/powervr/p008/mesa-pco-fill-bxe-4-32.txt`、`mesa-pco-vkcompute-stream-bxe-4-32.txt` | 参照資料: Mesa 26.2.5 が BXE-4-32 に出す fill の USC と compute の stream・PDS（drm-shim の host の build で取った） | 読むだけ（取り直す手順は phase008 の q1481・q1494） | ― |
 | `userland/tests/vkcompute`（`/bin/vkcompute`） | 1 dispatch（128 wg、4096 語）の Vulkan compute の端から端 | 板: `/bin/vkcompute`（gpu-selftest の compute の段でも流れる）→ `vkcompute: PowerVR … : PASS, 4096/4096 words`。host: lavapipe で同じ行 | 板 1 秒未満 |
-| `userland/tests/vkcoherency`（`/bin/vkcoherency`、image は `plan/ws269/tests/p008/config-visionfive2-coherency.mk`） | CPU と GPU の cache の整合の stress: host-visible の全 memory 型で buffer の 1000 回の往復、image の clear→copy→CPU の読みを 200 回 | 板: `/bin/vkcoherency` → 部ごとに `… 1000 rounds, 0 stale, 0 wrong`、`image: 200 rounds, 0 stale, 0 wrong`、最後に `vkcoherency: … : PASS`。host（lavapipe）は 0.4 秒で PASS | 板は未計測（板 96 で PASS） |
+| `userland/tests/vkcoherency`（`/bin/vkcoherency`、image は `plan/tools/powervr/p008/config-visionfive2-coherency.mk`） | CPU と GPU の cache の整合の stress: host-visible の全 memory 型で buffer の 1000 回の往復、image の clear→copy→CPU の読みを 200 回 | 板: `/bin/vkcoherency` → 部ごとに `… 1000 rounds, 0 stale, 0 wrong`、`image: 200 rounds, 0 stale, 0 wrong`、最後に `vkcoherency: … : PASS`。host（lavapipe）は 0.4 秒で PASS | 板は未計測（板 96 で PASS） |
 
 - compute check（kernel の中、`CONFIG_POWERVR_COMPUTE_CHECK`）の既定の行は、起動の dmesg の回帰として読める。
   - `compute kernel: OK, 16384/16384 words written`
@@ -1715,7 +1715,7 @@ q1369（2026-10-20 P2）: 書き込み・temps の program の instance number�
 
 ### (2) 削除の候補（削除は Q1）
 
-- 基準: master.md の一覧、complete でない WS の未完了の Phase、tests/ のシナリオ、T1 の未実行の依頼のどこからも参照されていない物。plan/ws269/tests/p008・p009・p010-compiler の file は、全部が上の一覧か ws269 の未完了の Phase（phase009・010q ほか）から参照されているので、**repo の中で消す file は無い**。
+- 基準: master.md の一覧、complete でない WS の未完了の Phase、tests/ のシナリオ、T1 の未実行の依頼のどこからも参照されていない物。plan/tools/powervr/p008・p009・p010-compiler の file は、全部が上の一覧か ws269 の未完了の Phase（phase009・010q ほか）から参照されているので、**repo の中で消す file は無い**。
   - `p008/config-visionfive2-compute.mk` は phase009 から参照されている。
   - `p009/config-*-vkcompute.mk` は ws.md・phase009・T1 の requests から参照されている。
   - timing・mesa-form・field の掃引の code は、q1500 で compute-check.c から既に消した。timing の記録は phase.md の履歴の文だけで、file は無い。

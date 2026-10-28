@@ -20,7 +20,7 @@ T1 の QEMU（Venus）で AAT の 5 シナリオを 1 回の QEMU の起動で�
 - **補助**（新規 `plan/tools/aat/scenarios/helpers_notes_edit.py`、Q1 の指示「helper を書いて active にするか」）: 各シナリオの手順を AAT の命令で行い、
   log の行で確かめ、撮影し、保存した PDF を host に取って `qpdf --check`・`pdftotext`・`pdffonts`・`pdfimages -list`・`pdftoppm` で読む。見た目は
   needs-person（撮影を Q1 が見る）。
-  - 試料: host で `plan/ws175/tests/make-edit-samples.py` が新しく書く `edit-basic.pdf`（3 頁の US Letter。1 頁は DejaVu Sans を段落の字だけに subset
+  - 試料: host で `plan/tools/aat/make-edit-samples.py` が新しく書く `edit-basic.pdf`（3 頁の US Letter。1 頁は DejaVu Sans を段落の字だけに subset
     した TrueType の 4 行と JPEG、2 頁は Helvetica の 1 行、3 頁は `/Rotate 90` の 2 行）と、PIL の `picture.png`（alpha つき）・`landscape.jpg`。
     target の `/tmp/aat-work/notes-<id>-<時刻>/` に置き kei の持ち物にする（scenario ごとに別の folder: 前の run の journal を拾わない。file chooser は
     名前の頭の字と Enter で選ぶ）。image には何も足さない（試験の image の規則）。

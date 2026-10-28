@@ -59,7 +59,7 @@ ws094-p009 で分かったこと: zdesktop は client の GPU の buffer（wl_bu
 | --- | --- | --- |
 | build | `make -j16 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/amd64 build/amd64/bin/wayland …`、`plan/ws099/tests/build-criteria-image.sh build/amd64` | rc 0、warning 0 |
 | style | `plan/tools/style-check.py`（import.c・compose.c・compose.h・home.c） | 0 件 |
-| 計測 | `plan/ws099/tests/import-launch.sh`（新規）、`plan/ws094/tests/files-desktop-guest.sh … install perf100` | 上の表 |
+| 計測 | `plan/ws099/tests/import-launch.sh`（新規）、`plan/tools/files-desktop/files-desktop-guest.sh … install perf100` | 上の表 |
 | 回帰: C9 | `plan/ws099/tests/criteria.sh build/ws099-p016-criteria.img build/ws099-p016/criteria C9 C5` | C9 の 10 本すべて PASS（p052・p053・p072・p076・p126・p128・p134・p137・p138・cursor-owner）。C5 は FAIL（上、前と同じ） |
 | 回帰: WS079-p010 | `plan/ws079/tests/zdesktop-p010.sh build/amd64 build/ws099-p016/p010` | PASS |
 | 回帰: Vulkan と wl_shm の client | zdesktop の上で `wlshm`・`mview --windowed`・`wltest --windowed` を起動（`ZWL MAP` 3、`ZWL IMPORT` 6、ERROR・FAILED 無し）、App Home からの Files・Model viewer（上の計測） | PASS（`build/ws099-p016/clients.png`、`after/Files.png`、`after/Model-viewer.png`） |

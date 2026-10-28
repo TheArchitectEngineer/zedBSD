@@ -3,43 +3,54 @@
 # WS229: i915 を Gen9・Gen9.5（Core の 6〜10 世代の iGPU）に対応させる
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p005・p007 cleared（Gen9 の GT・EU・3D と compute、既定で有効でベータ2 に入った）。p006（Gen9 の display controller）は WS237（2026-10-15 ユーザー「Gen9は残りの安全策の作業をマージしたら終了です」、completed）と WS260（gen9 の display の書き直し）で達成）。旧: incomplete（2026-10-14 p001 cleared、p002〜p004 を並行で実装）
+Status: completed（2026-10-27 P3 の精査 q1608。Gen9 の GT・EU・3D と compute は既定で有効でベータ2 に入った。p006 の display controller は WS237（2026-10-15 ユーザー「Gen9は残りの安全策の作業をマージしたら終了です」）と WS260 で扱った）
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O1
 Parent: [Master](../master.md)
-Queue: q977（p002、P2）・q978（p003、P1）・q979（p004、P3）
-Target: ベータ2 に入れば入れる（2026-10-14 ユーザー「Gen9対応は進めて、今日の夕方のコードフリーズに間に合えば入れます。間に合わなくてもドロップはオーケーです。」）。間に合わなければベータ3
-Resume point: p001。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
-
-## 原文（2026-10-14 ユーザー）
-
-「i915ドライバを、Core i5 の第8世代のiGPUに対応させるの、どれくらい難しいと思う？Gen9かGen9.5のEUって、命令が2つペアになってた気がする。EUコンパイラは流用できるんだろうか。」
-「了解。これはベータ2の必須ではないけど、裏で走らせてくれる？まずGOPのバッファのままで表示できるようにして、最後にディスプレイコントローラもドライバを実装する。」
 
 ## 目標
 
-- Gen9（Skylake・Kaby Lake）と Gen9.5（Coffee Lake・Whiskey Lake・Comet Lake など）の iGPU で、i915 の GT（render・compute・blit）と EU コンパイラの後段を動かし、Vulkan（libvulkan）が使えること。
-- 段階: (1) 表示は GOP の framebuffer のまま（display controller に触らない）で GT と EU を動かす。(2) 最後に Skylake 系の display controller（DPLL・DDI の buffer translation・power well・watermark・CDCLK・PCH の hotplug・DMC）を実装する。
-- 今の Gen11・Gen12 の経路を壊さない（Tiger Lake・Alder Lake の 5320・5330）。
+Gen9（Skylake・Kaby Lake）と Gen9.5（Coffee Lake・Whiskey Lake・Comet Lake など）の iGPU で、i915 の GT（render・compute・blit）と EU コンパイラの後段を動かし、Vulkan（libvulkan）を使えるようにする。段階は (1) GOP の framebuffer のままで GT と EU、(2) 最後に Skylake 系の display controller。Gen11・Gen12 の経路（5320・5330）を壊さない。
 
-## Q1 の見積もり（2026-10-14、±50 %）
+## ユーザーの決定
 
-GOP のままで GT と EU: 6〜8 LW。display controller を足して全体: 10〜15 LW。p001 の調べで締める。
+- 2026-10-14（原文）「i915ドライバを、Core i5 の第8世代のiGPUに対応させるの、どれくらい難しいと思う？Gen9かGen9.5のEUって、命令が2つペアになってた気がする。EUコンパイラは流用できるんだろうか。」「了解。これはベータ2の必須ではないけど、裏で走らせてくれる？まずGOPのバッファのままで表示できるようにして、最後にディスプレイコントローラもドライバを実装する。」
+- 2026-10-14「Gen9対応は進めて、今日の夕方のコードフリーズに間に合えば入れます。間に合わなくてもドロップはオーケーです。」
+- 2026-10-14（実機）「手元には第6、7，8、11，12、13世代、のCore i5があります。」「全部Laptopです。」
+- 2026-10-15（WS237）「Gen9は残りの安全策の作業をマージしたら終了です」
 
-## 実機（2026-10-14 ユーザー）
+## 結果
 
-「手元には第6、7，8、11，12、13世代、のCore i5があります。」「全部Laptopです。」→ 6 世代（Skylake、Gen9）・7 世代（Kaby Lake、Gen9.5）・8 世代（Kaby Lake R か Whiskey Lake、Gen9.5）で実機の確かめができる。11〜13 世代の laptop（Tiger Lake・Alder Lake-P・Raptor Lake-P）は今の PCI ID にあり、Gen12 の経路の回帰に使う。
+- p002: GT の起動（request.c・boot の key `i915.gen9`・suspend の拒否・N0-lite）、main 93787f2be。host の受け入れで Gen12 の起動の書き込み 543 行が基準と同一。
+- p003: EU の符号化（Gen9、SENDS、fence の stall）、main 28d6deaae。Gen12 の 88 の kernel の byte が同一、Gen9 の 96 の往復。
+- p004: 3D と compute の state（Gen9）、main 42431971b。Gen12 の byte が同一、gen90.xml の厳密な decode。
+- p005: Gen9.5 の実機（Let's Note SV7、UHD 620、QEMU の passthrough）で ktest・eu・vkcs・vkx・vke1・vke2・vkc・draw・r1 が全部 PASS（T1-608・T1-612）、5330（Gen12）の回帰。
+- p007: 規約の全文の見直し（host の試験 5 本 PASS・byte 不変）。
+- 既定で有効。Gen9 の display controller は WS237・WS260 の物（この WS の p006 では実装していない）。
 
-## Phase
+## 制限・移管
 
-| Phase | 目的 | Status | 依存 |
-| --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 調べと設計（a〜d の答え、Phase の分け方 §5、見積もり 14.5 LW） | cleared（2026-10-14） | — |
-| [p002](phase002/phase.md) | GT の起動（Gen9）、request.c・boot の key `i915.gen9`・suspend の拒否・N0-lite | in-progress — merge 済み（93787f2be）、host の受け入れ PASS（Gen12 の起動の書き込み 543 行が d1e743394 と同一）。5330 の回帰（T1-606）と実機は p005 | p001 |
-| [p003](phase003/phase.md) | EU の符号化（Gen9）、`drv_i915_shader_compile_gen()`、SENDS、fence の stall | in-progress — merge 済み（28d6deaae）、host の受け入れ PASS（Gen12 の 88 の kernel の byte が同一、Gen9 の 96 の往復と期待の byte）。実機は p005 | p001 |
-| [p004](phase004/phase.md) | 3D と compute の state（Gen9）、compile の呼び手の切り替え、video の gate | in-progress — merge 済み（42431971b）、host の受け入れ PASS（Gen12 の byte が同一、gen90.xml の厳密な decode）。実機は p005 | p001 |
-| [p005](phase005/phase.md) | Vulkan の通しと実機（6・7・8 世代を USB で）、5330 の回帰 | cleared（2026-10-18 Q1: phase.md に合わせた。旧: planned（q980、P1。準備から）） | p002〜p004 |
-| p006 | display controller（Gen9） | planned（今日の範囲外） | p005 |
-| [p007](phase007/phase.md) | 規約の全文の見直し | cleared（2026-10-14、host の試験 5 本 PASS・byte 不変。実機の試験は p005 の後に回帰が要る） | p005 |
+- 6 世代（Skylake）・7 世代（Kaby Lake）の実機は未確認（記録は Gen9.5 の SV7 だけ）。
+- display controller（p006）は WS237・WS260 へ。
+- 回帰に残す試験（`eu-gen9-host.sh`、`host/run.sh`、`eu-test-gen9-host.sh`、`run-bootfb-host-test.sh`）は plan/tools/ へ移す（Q1 の OK の後）。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws229-p001 | 調べと設計（Phase の分け方、見積もり 14.5 LW） | cleared |
+| ws229-p002 | GT の起動（Gen9） | in-progress のまま閉じた（main 93787f2be、実機は p005 で PASS） |
+| ws229-p003 | EU の符号化（Gen9） | in-progress のまま閉じた（main 28d6deaae、実機は p005 で PASS） |
+| ws229-p004 | 3D と compute の state（Gen9） | in-progress のまま閉じた（main 42431971b、実機は p005 で PASS） |
+| ws229-p005 | Vulkan の通しと実機、5330 の回帰 | cleared（T1-608・T1-612） |
+| ws229-p006 | display controller（Gen9） | この WS では未着手。WS237・WS260 で扱った |
+| ws229-p007 | 規約の全文の見直し | cleared |
+
+## 記録の所在
+
+Phase の計画・結果・試験は削除する（回帰に残す試験は plan/tools/ へ移す）。git の commit `fb1f6afee` の `plan/ws229/` にある。Queue の履歴は [plan/history](../history/index.md)。

@@ -60,9 +60,9 @@ boot test はどれも未実施。
    git apply --3way plan/ws075/phase031/exp/text-batch.patch
    git diff --stat
    ```
-2. host で shader を確かめる（text.vert・text.frag が i915 の compiler で accepted、scoreboard sound）。`plan/ws075/tests/guard/run.sh` は panel・quad・
+2. host で shader を確かめる（text.vert・text.frag が i915 の compiler で accepted、scoreboard sound）。`plan/tools/i915-hw/guard/run.sh` は panel・quad・
    browser の shader だけを見るので、text の 2 つは shaders.h から SPIR-V を出して `shader-dump` に掛ける（guard/run.sh の python の部分の名前を
-   `zwl_text_vert`・`zwl_text_frag` に替えた形。名前は patch の shaders.h で確かめる）。既存の guard は `sh plan/ws075/tests/guard/run.sh` で PASS のまま。
+   `zwl_text_vert`・`zwl_text_frag` に替えた形。名前は patch の shaders.h で確かめる）。既存の guard は `sh plan/tools/i915-hw/guard/run.sh` で PASS のまま。
 3. image を 2 つ（base = patch の前の main、batch = patch の後）。順に、同時に build しない:
    ```
    plan/ws075/demo/build-demo-image.sh build/ws075-p031/base-pt passthrough ZEDBSD_GRAPHICAL_BOOT=n "ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical"
@@ -71,9 +71,9 @@ boot test はどれも未実施。
    （base は patch を当てる前の tree で作る。worktree を 2 つ使うか、base を先に作ってから patch を当てる。）
 4. 実機の passthrough（lock は script が取る。1 つずつ）:
    ```
-   plan/ws075/tests/hdmi/measure-apps.sh build/ws075-p031/base-pt/hdd-image.img build/ws075-p031/base-pt/vmunix build/ws075-p031/base
-   for n in 1 2 3 4 5; do plan/ws075/tests/hdmi/measure-apps.sh build/ws075-p031/batch-pt/hdd-image.img build/ws075-p031/batch-pt/vmunix build/ws075-p031/m$n; done
-   python3 plan/ws075/tests/hdmi/c6.py build/ws075-p031/m1 build/ws075-p031/m2 build/ws075-p031/m3 build/ws075-p031/m4 build/ws075-p031/m5
+   plan/tools/i915-hw/hdmi/measure-apps.sh build/ws075-p031/base-pt/hdd-image.img build/ws075-p031/base-pt/vmunix build/ws075-p031/base
+   for n in 1 2 3 4 5; do plan/tools/i915-hw/hdmi/measure-apps.sh build/ws075-p031/batch-pt/hdd-image.img build/ws075-p031/batch-pt/vmunix build/ws075-p031/m$n; done
+   python3 plan/tools/i915-hw/hdmi/c6.py build/ws075-p031/m1 build/ws075-p031/m2 build/ws075-p031/m3 build/ws075-p031/m4 build/ws075-p031/m5
    ```
 5. 画素の比較: guide.md §6.6 の python を `build/ws075-p031/base/shots build/ws075-p031/m1/shots` で。
 6. stress: guide.md §6.3 を batch の image で（OUTDIR `build/ws075-p031/s1`）。

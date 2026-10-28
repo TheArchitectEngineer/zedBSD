@@ -5,7 +5,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
     helpers_pdfviewer_find.py --outdir OUTDIR [--only REGEX] -- TARGET-OPTIONS     (--list: the ids)
 
-The document is WS175's edit-basic.pdf (plan/ws175/tests/make-edit-samples.py, written on the host and put in
+The document is WS175's edit-basic.pdf (plan/tools/aat/make-edit-samples.py, written on the host and put in
 /tmp/aat-work/pdf-find.pdf).  The viewer's lines (PDFVIEWER ...) say what Find and the selection did; the place of
 the first line's words is the viewer's layout of the scroll mode fitting the width (its margin of 16 pixels; the scale
 fits the widest page, the sample's turned third page of 792 points, and a narrower page is centred: the first, US
@@ -21,7 +21,7 @@ import common
 
 run = aatlib.Run.from_command_line("helpers_pdfviewer_find")
 
-SAMPLES = aatlib.ROOT / "plan/ws175/tests/make-edit-samples.py"
+SAMPLES = aatlib.ROOT / "plan/tools/aat/make-edit-samples.py"
 REMOTE = f"{aatlib.WORK}/pdf-find.pdf"
 
 # The viewer's layout (pdfviewer/viewer.h PV_MARGIN) and the sample's page and first line (BASIC_* in the sample).

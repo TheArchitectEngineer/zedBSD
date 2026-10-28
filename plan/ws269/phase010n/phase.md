@@ -32,8 +32,8 @@ session と heap の API は変えていない（P2 の p010h への影響なし
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| p010 の host 試験 | `sh plan/ws269/tests/p010/run.sh build/p010n/p010` | stage 24/0、image 55/0、target 77/0、**kick 50/0**、selftest-host 0 failed |
-| executor（p009） | `sh plan/ws269/tests/p009/run.sh build/p010n/p009` | 160 passed, 0 failed |
+| p010 の host 試験 | `sh plan/tools/powervr/p010/run.sh build/p010n/p010` | stage 24/0、image 55/0、target 77/0、**kick 50/0**、selftest-host 0 failed |
+| executor（p009） | `sh plan/tools/powervr/p009/run.sh build/p010n/p009` | 160 passed, 0 failed |
 | VF2・riscv64-virt・amd64 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-<c>.mk BUILD=build/p010n/<c> vmunix -j16` | 3 つとも rc=0、warning 0、error 0 |
 
 kick-host-test の中身: KICK・117 の word（kick_data の各 offset、cleanup、FRAG_PR の 0）、geometry の fence（seqno − 1）、static state の 2 core × 2 buffer の全 offset、105 の frame の読みと 4 つの段への割り当て、値付きの段の行（最長の行が 64 byte に収まる）。期待値は v7.3 の check header から手で書いた。QEMU・実機は未実施（設計どおり実機は p010e）。
@@ -56,16 +56,16 @@ kick-host-test の中身: KICK・117 の word（kick_data の各 offset、cleanu
 - `render.c`: node の起動で SR の USC を作る、`render_close` は全部の context の cleanup を呼ぶ、`CONFIG_POWERVR_RENDER_CHECK` の weak の `powervr_render_check` を compute check の後に呼ぶ。
 - `render-check.c`（新規、`CONFIG_POWERVR_RENDER_CHECK=y` の時だけ build）: 骨。自分の session、render context、64×64 の target、terminate だけの VDM stream（GENERAL）を作り、geometry の stream base を入れて 3 つの kick の command を組み、kick はせずに `powervr: render check: built, not run (no fragment programs yet)` を出して session を閉じる（fragment には pixel event の PDS と EOT の USC が要り、p010e の範囲）。
 - `platform/riscv64/vmunix.mk`: render-program.c・render-context.c、`CONFIG_POWERVR_RENDER_CHECK` の時の render-check.c。
-- 試験: `plan/ws269/tests/p010/program-host-test.c`（新規、PDS の word・SR と PT の PDS の golden（Mesa の手順から手で計算）・task の word・USC の build）、`kick-host-test.c` に static state の新しい形・sequence の golden（waits 2 個・0 個・31 個・32 個の拒否、既定の background の有無）・stalled・free list・terminate・stream base・background の語。`run.sh` に program-host-test を足した（kick と data は残した）。
+- 試験: `plan/tools/powervr/p010/program-host-test.c`（新規、PDS の word・SR と PT の PDS の golden（Mesa の手順から手で計算）・task の word・USC の build）、`kick-host-test.c` に static state の新しい形・sequence の golden（waits 2 個・0 個・31 個・32 個の拒否、既定の background の有無）・stalled・free list・terminate・stream base・background の語。`run.sh` に program-host-test を足した（kick と data は残した）。
 
 ## 確かめ（q1377-i01、2026-10-20 09:40）
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| p010 の host 試験 | `sh plan/ws269/tests/p010/run.sh build/p010n/p010` | stage 24/0、image 55/0、target 77/0、**kick 81/0**、**program 38/0**、selftest-host 0 failed、data 83/0 |
-| executor（p009） | `sh plan/ws269/tests/p009/run.sh build/p010n/p009` | 162 passed, 0 failed |
-| p006 | `sh plan/ws269/tests/p006/run.sh build/p010n/p006` | PASS 68 FAIL 0 |
-| compiler（p010-compiler） | `sh plan/ws269/tests/p010-compiler/run.sh build/p010n/p010c` | 318/0、group 20/0 |
+| p010 の host 試験 | `sh plan/tools/powervr/p010/run.sh build/p010n/p010` | stage 24/0、image 55/0、target 77/0、**kick 81/0**、**program 38/0**、selftest-host 0 failed、data 83/0 |
+| executor（p009） | `sh plan/tools/powervr/p009/run.sh build/p010n/p009` | 162 passed, 0 failed |
+| p006 | `sh plan/tools/powervr/p006/run.sh build/p010n/p006` | PASS 68 FAIL 0 |
+| compiler（p010-compiler） | `sh plan/tools/powervr/p010-compiler/run.sh build/p010n/p010c` | 318/0、group 20/0 |
 | M9（tree の外） | Mesa 26.2.5 の tarball（sha256 `794b3d17…a0a5`）を `build/p010n/dl/` に取り、`src/imagination` を展開、`vdm.xml`・`ppp.xml`・`cr.xml`・`lls.xml` の blob SHA は scratchpad の写しと一致（f6a8a84a・61605e64・82302665・a736a938）。`python3 -I …/gen_pack_header.py <xml> > build/p010n/gen/<x>.h`、`build/p010n/m9/compare.c` で zedBSD の word と csbgen の pack を比べた | `M9: 57 words/values compared, 182 fields, 0 mismatches`（task 0〜2 の store・resume を 5 つの置き場所で、VDM・TA の state base、VDM の stream base、terminate、BGRND0/1/3、LLS の大きさと alignment） |
 | VF2・riscv64-virt・amd64 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-<c>.mk BUILD=build/p010n/<c> vmunix -j16` | 3 つとも rc=0、warning 0、error 0 |
 | render check 付きの VF2 | 上に `CONFIG_POWERVR_RENDER_CHECK=y`、`BUILD=build/p010n/vf2-check` | rc=0、warning 0（render-check.o ができた） |
@@ -82,9 +82,9 @@ QEMU・実機は未実施（設計どおり実機は p010e。この Phase では
 
 ## commit
 
-- f55160351: `plan/ws269/tests/p010/target-host-test.c`（p010d の commit から漏れていた分、Q1 の依頼）
+- f55160351: `plan/tools/powervr/p010/target-host-test.c`（p010d の commit から漏れていた分、Q1 の依頼）
 - 3d5f4b8b2: 上の source と kick-host-test・run.sh
-- 片付け（Q1 へ）: `plan/ws269/tests/p010/run.sh.new`（誤って作った空の file、untracked）
+- 片付け（Q1 へ）: `plan/tools/powervr/p010/run.sh.new`（誤って作った空の file、untracked）
 - q1377-i01: 2edec387f（pds-encode・render-program・static state の形・program-host-test・run.sh）、9de43386e（sequence・stalled・free list の印・kick の試験）、d337c9b7c（render-context.c・render-check.c・render-queue.c の一般化と kick・recovery・notice・render.c・vmunix.mk）、dd53a7bb8（`pds_pr_bgnd` の仮の program と background の語）、と下の phase.md・ws.md の commit
 
 ## q1388-i01（2026-10-20 P1）: compute の context の CDM の cswitch state

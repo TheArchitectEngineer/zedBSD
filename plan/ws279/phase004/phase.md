@@ -53,7 +53,7 @@ zedBSD の Pi 4 の compiler は、共有の SPIR-V の前段（`src/drivers/gpu
 ### 試験（`plan/ws279/tests/`）
 
 - `qpu71-format-host-test.sh`・`.c`: WS141 の oracle の作り（`plan/ws141/temp/mesa` の Mesa の `qpu_pack.c`・`qpu_instr.c` を変えずに host で compile）を使い、ver 71 で、全部の op を decode して op・raddr・waddr・flag・signal を確かめ、Mesa の packer で作り直した語と一致する事を確かめる。拒む組（small immediate 2 つ、small immediate と signal、accumulator、addressed な signal と条件）も確かめる。
-- `qpu71-machine.c`・`.h`: WS141 の 4.2 の lane の model（`plan/ws141/tests/qpu-machine.c`）を写して 7.1 の決まりにした物。
+- `qpu71-machine.c`・`.h`: WS141 の 4.2 の lane の model（`plan/tools/v3d-qpu/qpu-machine.c`）を写して 7.1 の決まりにした物。
 - `shader71-host-test.sh`・`.c`: WS141 の `shader-host-test.c` を写し、7.1 の compiler と 7.1 の lane の model で、木の全部の shader（Keiland・app・texture の copy）を source の program と bit 単位で比べる。
 
 ## 記録
@@ -71,7 +71,7 @@ zedBSD の Pi 4 の compiler は、共有の SPIR-V の前段（`src/drivers/gpu
   - `sh plan/ws279/tests/qpu71-format-host-test.sh`: PASS。全部の semantic な op を add・mul の各 ALU で 64 通りの register の組で encode し、Mesa 25.3.6 の 7.1 decoder で op・unpack・raddr・waddr を確かめ、Mesa の packer が decode した命令からも semantic な記述だけからも同じ語を作る事を確かめた。idle の語 0x38003186bb03f000、全 signal と addressed な書き先、thrsw との組、48 個の small immediate を 4 つの読み口で、条件の全部の組、拒む組（small immediate 2 つ・signal や thrsw との組・accumulator・7.1 で予約の magic・addressed な signal と条件・両 ALU の push・FMAX の同じ入力）。
   - `sh plan/ws279/tests/shader71-host-test.sh`: PASS。WS141 の試験の写しで、木の全部の shader（Keiland・app・driver の texture の copy の meta の vert/frag）を 7.1 の compiler で compile し、7.1 の lane の model（`qpu71-machine.c`、WS141 の 4.2 の model を 7.1 の決まりに書き直した物）で走らせ、source の program の解釈と bit 単位で比べた。fragment は全部 schedule され（4 thread が多い）、program の長さは 4.2 と同じか短い（例 kwl panel 254→229 語、monitor shape 175→147 語、kwl panel 7 98→95 語）。拒む shader は 4.2 と同じ（mview cutout・pixel、libGL の frag、vkdemo の vert）。
   - 試験の試験（変異）: W を rf0 に戻す、SFU の間を 1 にする、rf0 の着きを 0 語にする、rf0 の読みを switch で守らない、の 4 つの変更はどれも試験が落とした。
-  - Pi 4 の `sh plan/ws141/tests/shader-host-test.sh`: PASS（共有の file を変えていない事の確かめ）。
+  - Pi 4 の `sh plan/tools/v3d-qpu/shader-host-test.sh`: PASS（共有の file を変えていない事の確かめ）。
   - kernel の flag での compile: `build/llvm/bin/clang --target=aarch64-unknown-zedbsd` に `platform/arm64/vmunix.mk` の ARM64_CPPFLAGS・ARM64_CFLAGS（`-Os -Wall -Wextra -Werror`、rpi5 の define）と kernel の object の `-fno-builtin -fno-strict-aliasing` で qpu71・shader71-lower・shader71-output・shader71-schedule・shader・shader-analyze を compile し、warning 0。rpi5 の kernel の全体の build と link はしていない（switch が無いので）。
 - 規約: 新しく書いた所（qpu71.c、試験、各 file の 7.1 の差の部分）は coding-style の全文で書いた。4.2 の file から写した本体は元の file の書き方のまま。全文の見直しは p009。
 - 未実施: 実機・QEMU（Pi 5 の V3D の emulation は無い）。lane の model は test の model で、cycle の model ではない。7.1 で緩められる決まり（thrsw の遅延の語の ldvary、thread end の遅延の語の register の書き込み、SFU の次の語の読み）は使っていない（確かな側）。

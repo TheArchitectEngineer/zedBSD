@@ -76,7 +76,7 @@ nvrtx.disp=1 の時だけ、P8a の後に走る（既定は P8a で止まり `P8
 
 | 確認 | 結果 |
 | --- | --- |
-| nvrtx=y の kernel（`make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-y vmunix`） | rc 0・warning 0・`kernel include check: PASS`・`amd64 vmunix check: PASS`、`git diff --check` 0 |
+| nvrtx=y の kernel（`make -j16 ZEDBSD_CONFIG=plan/tools/nvrtx/config-amd64-nvrtx.mk BUILD=build/ws037-y vmunix`） | rc 0・warning 0・`kernel include check: PASS`・`amd64 vmunix check: PASS`、`git diff --check` 0 |
 | host 試験 `sh plan/ws037/tests/nvrtx-gsp-host-test.sh` | PASS 194 項目（P8b の display の records 12 項目を足した。firmware の cache が無いので実 file の項目は飛ばし） |
 | 既定 n | 新しい file は `CONFIG_DRIVER_PCI_NVRTX=y` の時だけ build（vmunix.mk）。既定の build と動作は不変 |
 | 実機（方式 B、rombar=1） | **未実施**（R8b を T へ） |
@@ -129,7 +129,7 @@ T1-642（`plan/agents/T1/results-20261015-nvrtx-r7c.md` の末尾、rombar=1、m
 
 ### T への手順（R8b の再試験、rombar=1。2026-10-15 夜に既定 on の語へ更新）
 
-image は main の `7ca217eab` 以降（P1 の直し `476ca3ba5` と既定 on を含む）で `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r8b NVRTX_RUN=R8b`。boot の語は **`nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.resident=0`**（既定 on の後は `nvrtx.disp=1` は無い語。`disp.test=1` が帯の surface・flip・step ごとの 5 秒の待ちを出し、`resident=0` が最後に GSP を止める）。QEMU は `~/nvrtx/start-rombar1.sh`。run の前に host の reboot と `prepare.sh --check`。step ごとに 5 秒止まる（screendump は 5 秒おきが望ましい。ユーザーの目視は不要、上の「R8 の合格の条件」）。全体で P8b は約 40 秒（step 4 つ × 5 秒、帯 10 秒 × 2）。
+image は main の `7ca217eab` 以降（P1 の直し `476ca3ba5` と既定 on を含む）で `plan/tools/guest/test-image.sh --no-harness plan/tools/nvrtx/config-amd64-nvrtx.mk build/ws037-nvrtx/r8b NVRTX_RUN=R8b`。boot の語は **`nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.resident=0`**（既定 on の後は `nvrtx.disp=1` は無い語。`disp.test=1` が帯の surface・flip・step ごとの 5 秒の待ちを出し、`resident=0` が最後に GSP を止める）。QEMU は `~/nvrtx/start-rombar1.sh`。run の前に host の reboot と `prepare.sh --check`。step ごとに 5 秒止まる（screendump は 5 秒おきが望ましい。ユーザーの目視は不要、上の「R8 の合格の条件」）。全体で P8b は約 40 秒（step 4 つ × 5 秒、帯 10 秒 × 2）。
 
 合格（screendump）: `P8 ok: display, heads f, windows ff, lit 1` → `P8b begin` → `P8b head 0 armed: view … raster … clock …, SOR 1 …` → `P8b head 0 mode: 1280x1024, view out …` → `P8b surfaces 1280x1024 pitch 5120 at … and …` → `P8b channel c57d.0 made` → `P8b step 1: core channel made (5 s)` → `P8b core start notified after N us` → `P8b step 2: core start released (5 s)` → `P8b core disable notified after N us` → `P8b step 3: head disabled (5 s)` → `P8b SOR n assigned to display 200 (the firmware's was 1)` → `P8b core owners notified after N us` → `P8b step 4: head enabled (5 s)` → `P8b channel c57e.0 made` → `P8b core show notified after N us` → `P8b ok: mode set (1280x1024 on SOR n), surface A shown` → `P8b window flip notified after N us` → `P8b ok: flip, surface B shown` → `P8b ok: head 0 shows the driver's surfaces` → **`P8 done; this revision ends at P8c`**（以前の `P8 done; stopping (this revision ends at P8b)` から変わった）→ `P6 ok: channel and vaspace freed`（`P8b: N channel frees failed`・`P6: N display frees failed` が無い）→ `P7 ok: region torn down` → login prompt。
 - 方式 B では GOP の画面が emulated の VGA にあるので `P0 console …` の行は出ない（console の保持は方法 A の物）。`P0 skipped: …` が出たら語の `nvrtx.gsp=1` が欠けている。
@@ -227,7 +227,7 @@ Q1 の依頼（Keiland の compositor を RTX に出すまでの不足分、順�
 
 | 確認 | 結果 |
 | --- | --- |
-| nvrtx=y の kernel（`make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws037-y vmunix`） | rc 0・warning 0・`kernel include check: PASS (420 objects)`・`amd64 vmunix check: PASS`、`git diff --check` 0 |
+| nvrtx=y の kernel（`make -j16 ZEDBSD_CONFIG=plan/tools/nvrtx/config-amd64-nvrtx.mk BUILD=build/ws037-y vmunix`） | rc 0・warning 0・`kernel include check: PASS (420 objects)`・`amd64 vmunix check: PASS`、`git diff --check` 0 |
 | host 試験 `sh plan/ws037/tests/nvrtx-gsp-host-test.sh` | PASS 233 項目（P8c の cursor・control の records 11 項目を足した。firmware の cache が無いので実 file の項目は飛ばし） |
 | probe（`make … BUILD=build/ws037-y ZEDBSD_USER_PROGRAMS=display-scanout build/ws037-y/bin/display-scanout`） | rc 0（-Wall -Wextra -Werror） |
 | 既定 n | 新しい file は vmunix.mk の NVRTX の ifeq の中だけ。既定の kernel は build していない（変えた行は ifeq の中だけ） |
@@ -235,7 +235,7 @@ Q1 の依頼（Keiland の compositor を RTX に出すまでの不足分、順�
 
 ### T への手順（R8d、rombar=1。R8c（T1-647）が PASS してから）
 
-image は main に merge した commit で `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r8d NVRTX_RUN=R8d`（語は R8c と同じ `nvrtx.gsp=1 nvrtx.disp.test=1`）。QEMU は `~/nvrtx/start-rombar1.sh`、run の前に host の reboot と `prepare.sh --check`。GSP は止まらないので run の後は **host を reboot**。GPU の node が複数なら nvrtx の物を `--node=/dev/gpuN` で（`display-scanout` の `driver=nvrtx` で分かる）。
+image は main に merge した commit で `plan/tools/guest/test-image.sh --no-harness plan/tools/nvrtx/config-amd64-nvrtx.mk build/ws037-nvrtx/r8d NVRTX_RUN=R8d`（語は R8c と同じ `nvrtx.gsp=1 nvrtx.disp.test=1`）。QEMU は `~/nvrtx/start-rombar1.sh`、run の前に host の reboot と `prepare.sh --check`。GSP は止まらないので run の後は **host を reboot**。GPU の node が複数なら nvrtx の物を `--node=/dev/gpuN` で（`display-scanout` の `driver=nvrtx` で分かる）。
 
 1. 起動の印: R8c の印（`P8b ok: …`、`P8c begin`）に続いて `P8c channel c57a.0 made` → `P8c ok: cursor plane 64x64 at …` → `P8c ok: gpu device registered, display 1280x1024 at 60020 mHz` → `P8c: the GSP stays up until power-off` → login prompt。
 2. `display-inventory --node=/dev/gpuN`: `DISPLAY-INVENTORY sequence=1 count=1` と output の行（R8c と同じ）。
@@ -279,7 +279,7 @@ FAIL の時: `P8c fail: …`（`cursor channel has N free entries`・`channel at
 
 ### T への手順（RA、方法 A: RTX 2070 の機械（10.0.30.5）を USB から素で起動）
 
-image: `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/ra NVRTX_RUN=RA`（main の merge の commit、firmware の license は `yes | make firmware-licenses`）。USB に書いて RTX の出力に monitor を繋いで起動（BIOS で CSM off、primary display が PEG）。判定はユーザーの目視と写真（serial は無い）。
+image: `plan/tools/guest/test-image.sh --no-harness plan/tools/nvrtx/config-amd64-nvrtx.mk build/ws037-nvrtx/ra NVRTX_RUN=RA`（main の merge の commit、firmware の license は `yes | make firmware-licenses`）。USB に書いて RTX の出力に monitor を繋いで起動（BIOS で CSM off、primary display が PEG）。判定はユーザーの目視と写真（serial は無い）。
 合格: `N1 gop WxH … in bar1 at +0` → `P0 console … kept` → `P0 ok …` → … → `P4m console: bar1 0..… on the VRAM's start again` → `P8 ok: display … lit 1` → `P8b console …` → `P8b ok: head 0 shows the console` → `P8c ok: gpu device registered …` → login prompt が **RTX の monitor に出続ける**（GSP の起動の間に一時的に印が欠けるのは可）。`display-inventory` で nvrtx の output の行。
 FAIL の時: 最後に見えた印の写真。`P0 console …: cannot be kept`（GOP の位置・形式）、`P4m fail: the console's …`、`P8b: the console is …, the mode …`（大きさの違い）は値を記録。画面が消えたら、その直前の印。
 
@@ -332,7 +332,7 @@ FAIL の時: 最後に見えた印の写真。`P0 console …: cannot be kept`�
 
 ### T への手順（R8b、方式 B rombar=1、合格は kernel log に display の制御の error が無いこと）
 
-image: この commit を含む main で `plan/tools/guest/test-image.sh --no-harness plan/ws037/tests/config-amd64-nvrtx.mk build/ws037-nvrtx/r8b NVRTX_RUN=R8b`（語 `nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.resident=0`）。QEMU は `~/nvrtx/start-rombar1.sh`、run の前に host の reboot と `prepare.sh --check`。
+image: この commit を含む main で `plan/tools/guest/test-image.sh --no-harness plan/tools/nvrtx/config-amd64-nvrtx.mk build/ws037-nvrtx/r8b NVRTX_RUN=R8b`（語 `nvrtx.gsp=1 nvrtx.disp.test=1 nvrtx.resident=0`）。QEMU は `~/nvrtx/start-rombar1.sh`、run の前に host の reboot と `prepare.sh --check`。
 合格の印（順に）: `P8 output …`（出力ごと）→ `P8 ok: display, heads f, windows ff, outputs …` → `P8b begin` → `P8b channels: core, windows ff, immediate ff, cursors f` → `P8b step 1: channels made (5 s)` → `P8b output … lit on head 0: SOR 1 TMDS-A` → `P8b connected …` → `P8b EDID …`（無ければ mode は armed）→ `P8b head 0 armed: …` → `P8b head 0 mode (…): 1280x1024 …` → `P8b surfaces …` → `P8b core mode notified after N us` → `P8b step 2: core released with the mode (5 s)` → `P8b core with window notified after N us` → `P8b window first notified after N us` → `P8b ok: mode set (1280x1024 on SOR 1), surface A shown` → `P8b window flip notified …` → `P8b ok: flip, surface B shown` → `P8b ok: head 0 shows the driver's surfaces` → `P8 done; this revision ends at P8c` → `P6 ok …`（`P8b: N channel frees failed`・`P6: N display frees failed` が無い）→ `P7 ok: region torn down` → login prompt。
 error に数える行は「R8 の合格の条件」の節のとおり。FAIL なら `P8b fail: …` の前後と dump の 3 行（`P8b core exception …`・`P8b other …`・`P8b error … supervisor main … window exception …`）を記録（読み方は「FAIL の読み方」）。
 

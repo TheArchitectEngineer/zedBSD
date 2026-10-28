@@ -1351,8 +1351,8 @@
       "after": "plan/ws074/tests/host-build.sh"
     },
     {
-      "before": "plan/ws075/tests/shader-survey/run.sh",
-      "after": "plan/ws075/tests/shader-survey/run.sh"
+      "before": "plan/tools/i915-hw/shader-survey/run.sh",
+      "after": "plan/tools/i915-hw/shader-survey/run.sh"
     },
     {
       "before": "plan/ws075/tests/vk-calls.py",
@@ -1363,12 +1363,12 @@
       "after": "plan/ws079/tests/p012-guest.sh"
     },
     {
-      "before": "plan/ws101/tests/host/run.sh",
-      "after": "plan/ws101/tests/host/run.sh"
+      "before": "plan/tools/gpu-compute/host/run.sh",
+      "after": "plan/tools/gpu-compute/host/run.sh"
     },
     {
-      "before": "plan/ws101/tests/noct/g3-venus.sh",
-      "after": "plan/ws101/tests/noct/g3-venus.sh"
+      "before": "plan/tools/gpu-compute/noct/g3-venus.sh",
+      "after": "plan/tools/gpu-compute/noct/g3-venus.sh"
     },
     {
       "before": "platform/amd64/vmunix.mk",

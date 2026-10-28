@@ -34,7 +34,7 @@ Resume point: 16:30 に main を締め、17:00 までに S1 の image と手順�
 3. Settings からの AP の切替え（2.4↔5GHz）、誤った鍵で別の AP へ join → もとの AP に戻る。
 4. guest（機械）の再起動の後の再接続、off の保持（off で再起動 → off、on で再起動 → on）、接続中の network の delete → 切断と探索。
 5. p024: 起動時の system の store での自動再接続、login で kei の store、logout で除去。
-6. [ws131-p003](../ws131/phase003/phase.md) の統合の後: Settings・system bar からの誤った鍵・正しい鍵の join（BUG-149 の回避の確認）、拒否された鍵の削除（ユーザーの決定 (2)）。
+6. ws131-p003（fb1f6afee の `plan/ws131/phase003/phase.md`） の統合の後: Settings・system bar からの誤った鍵・正しい鍵の join（BUG-149 の回避の確認）、拒否された鍵の削除（ユーザーの決定 (2)）。
 
 手順の土台（QEMU の passthrough 用、実機に合わせて直す）: `plan/ws005/phase020/rtl-guest.sh`・`build-rtl-image.sh`・`wifi-key.sh`、[phase020](../ws005/phase020/phase.md) の q631-i01 の節の「未実施（再開点）」。
 

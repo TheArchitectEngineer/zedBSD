@@ -20,7 +20,7 @@ Queue: Q1 の dispatch（2026-10-05 夜、P1 へ p002・p003・p005）。承認:
 | --- | --- | --- |
 | host 試験 O1〜O10 | `timeout 120 plan/ws174/tests/run-boot-override-host-test.sh` | `43 checks, 0 failures` ×2（通常、ASan/UBSan） |
 | host 試験 O11 | `timeout 300 plan/ws174/tests/run-boot-override-kernel-host-test.sh` | `72 checks, 0 failures`（clang、ASan/UBSan。3 cfg × 4 key の組で kernel の parser が 0、kmsg・login の値、unknown の数（logo・video）） |
-| UEFI loader の build | `make -j16 ZEDBSD_CONFIG=plan/ws174/tests/config-amd64-keys.mk BUILD=build/ws174-keys build/ws174-keys/uefi/BOOTX64.EFI` | rc 0、warning 0、`BOOTX64.EFI check: PASS` |
+| UEFI loader の build | `make -j16 ZEDBSD_CONFIG=plan/tools/boot-keys/config-amd64-keys.mk BUILD=build/ws174-keys build/ws174-keys/uefi/BOOTX64.EFI` | rc 0、warning 0、`BOOTX64.EFI check: PASS` |
 | BIOS loader と config の形式が不変 | `git diff --stat` | `bootloader/pcat`・`pc98`・`bios`・`zedbsd-config.*`・cfg の生成の rule は変えていない |
 
 - QEMU・実機: この Phase の範囲外（p003 で T1 に依頼）。

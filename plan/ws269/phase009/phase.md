@@ -36,7 +36,7 @@
 | `render-runtime.c`（新規） | capset、同期の frame、queue の frame、job の reserve・commit・cancel・capacity |
 | `render.c`・`render-private.h`・`render-queue.c` | blob の identifier と session の list、`blob_id` の blob（memory の buffer を写す）、close で executor を閉じる、ring の entry に error と marker、marker の解放と capacity の通知、空の job 以外の frame を `powervr_render_frame` へ |
 | `platform/riscv64/vmunix.mk` | 上の file と i915 の `codec.c` を VF2 の powervr に |
-| `plan/ws269/tests/p009/` | host 試験（下） |
+| `plan/tools/powervr/p009/` | host 試験（下） |
 
 ### capset（WS277 R7 との関係、Q1 へ報告）
 
@@ -73,9 +73,9 @@ USC の program（`powervr_compute_fill_program`）: r7 = 番号（sr51）、r0�
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| host 試験 | `timeout 300 sh plan/ws269/tests/p009/run.sh build/ws269-p009/host` | `powervr spirv host test: 69 passed, 0 failed`（glslc で作った 4 つの受ける shader の index・値・set・binding・workgroup、4 つの断る shader、切れた module・壊れた magic、fill の program の長さ（≤ 512、8 byte の終わり）・即値の bytes の位置・拒否の case）、`powervr executor host test: 109 passed, 0 failed`（libvulkan の `wire.c`・`codec.c` をそのまま link し、libvulkan の各 file と同じ framing で frame を書いて executor に通す: instance・列挙・properties（名前・1.1・workgroup の上限）・features・memory（2 type・1 heap・flags）・family・device・queue（timeline 1 の bit）、memory と blob_id の blob（同じ buffer、大きさ違いは EINVAL）、buffer・requirements・bind・module 2 つ（subset の外も作成は成功）・layout・pipeline（subset の外は FEATURE_NOT_PRESENT と null）・pool・set・update・command pool・buffer・begin・記録・end・fence・submit・fence の status、decoder の trailer。submit が core に出した stream: workgroup 3 つの kernel の 7 語、各 USC の program が `powervr_compute_fill_program(memory + 128g, 32, 3, 96g + 7)` と同じ bytes、PDS の program、fence の kernel、終わりの語、slot 0 の fence の program。途中で切れた frame は拒否） |
+| host 試験 | `timeout 300 sh plan/tools/powervr/p009/run.sh build/ws269-p009/host` | `powervr spirv host test: 69 passed, 0 failed`（glslc で作った 4 つの受ける shader の index・値・set・binding・workgroup、4 つの断る shader、切れた module・壊れた magic、fill の program の長さ（≤ 512、8 byte の終わり）・即値の bytes の位置・拒否の case）、`powervr executor host test: 109 passed, 0 failed`（libvulkan の `wire.c`・`codec.c` をそのまま link し、libvulkan の各 file と同じ framing で frame を書いて executor に通す: instance・列挙・properties（名前・1.1・workgroup の上限）・features・memory（2 type・1 heap・flags）・family・device・queue（timeline 1 の bit）、memory と blob_id の blob（同じ buffer、大きさ違いは EINVAL）、buffer・requirements・bind・module 2 つ（subset の外も作成は成功）・layout・pipeline（subset の外は FEATURE_NOT_PRESENT と null）・pool・set・update・command pool・buffer・begin・記録・end・fence・submit・fence の status、decoder の trailer。submit が core に出した stream: workgroup 3 つの kernel の 7 語、各 USC の program が `powervr_compute_fill_program(memory + 128g, 32, 3, 96g + 7)` と同じ bytes、PDS の program、fence の kernel、終わりの語、slot 0 の fence の program。途中で切れた frame は拒否） |
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/ws269-p009-vf2 vmunix -j16`（log `build/ws269-p009/vf2.log`） | rc=0、`warning:`・`error:` 0 件（-Werror）。`llvm-nm` で `powervr_spirv_fill_parse`・`runtime_capset` が link されている（LTO で local） |
-| VF2 の p008 の試験の kernel（render-private.h を変えたため） | `... ZEDBSD_CONFIG=plan/ws269/tests/p008/config-visionfive2-compute.mk BUILD=build/ws269-p009-vf2c vmunix -j16`（log `vf2-compute.log`） | rc=0、0 件 |
+| VF2 の p008 の試験の kernel（render-private.h を変えたため） | `... ZEDBSD_CONFIG=plan/tools/powervr/p008/config-visionfive2-compute.mk BUILD=build/ws269-p009-vf2c vmunix -j16`（log `vf2-compute.log`） | rc=0、0 件 |
 | riscv64-virt | `... ZEDBSD_CONFIG=config/ci/config-riscv64-virt.mk BUILD=build/ws269-p009-virt vmunix -j16`（log `virt.log`） | rc=0、0 件 |
 | amd64 | `... ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws269-p009-amd64 vmunix -j16`（log `amd64.log`） | rc=0、0 件 |
 
@@ -87,12 +87,12 @@ USC の program（`powervr_compute_fill_program`）: r7 = 番号（sr51）、r0�
 ### libvulkan が VF2 の image に入らなかった理由
 
 - 規則の不足ではなかった。libvulkan は menu が `desktop` なので platform は `*`（`Makefile` の `ZEDBSD_USERLAND_PACKAGE`）、riscv64 の link の規則は `platform/common/userland-dynamic.mk` の共通の物（WS270 p002 で riscv64 も include）。VF2 の image に入らなかったのは、`config/ci/config-visionfive2.mk` の `ZEDBSD_USER_PROGRAMS` に libvulkan（と依存の libwayland-client）が無いだけ。
-- よって直しは試験の config で選ぶ事だけ: `plan/ws269/tests/p009/config-visionfive2-vkcompute.mk`（CI の config に `libwayland-client libvulkan vkcompute` を足し、`powervr-firmware` を外す）。build で `rootfs/lib/libvulkan.so` と `rootfs/bin/vkcompute` が入る事を確かめた。
+- よって直しは試験の config で選ぶ事だけ: `plan/tools/powervr/p009/config-visionfive2-vkcompute.mk`（CI の config に `libwayland-client libvulkan vkcompute` を足し、`powervr-firmware` を外す）。build で `rootfs/lib/libvulkan.so` と `rootfs/bin/vkcompute` が入る事を確かめた。
 
 ### vkcompute（`userland/tests/vkcompute/`）
 
 - `main.c`: 最初の physical device、compute の family の queue 1 つ、HOST_VISIBLE|HOST_COHERENT の memory の storage buffer（4096 語、0xa5 で埋める）、set 0 binding 0、`vkCmdDispatch(128, 1, 1)`、compute→host の barrier、fence（5 秒まで）、map して `3x + 7` を数え、1 行を出す。exit は PASS の時だけ 0。
-- `fill.comp` と `shader.h`: `plan/ws269/tests/p009/shaders/fill.comp` と同じ shader。`glslc --target-env=vulkan1.0 -mfmt=num` の出力を `shader.h` に埋め込んだ（host 試験の run.sh と同じ flag なので、host 試験が受けた words と同じ。build に glslc は要らない）。
+- `fill.comp` と `shader.h`: `plan/tools/powervr/p009/shaders/fill.comp` と同じ shader。`glslc --target-env=vulkan1.0 -mfmt=num` の出力を `shader.h` に埋め込んだ（host 試験の run.sh と同じ flag なので、host 試験が受けた words と同じ。build に glslc は要らない）。
 - package: `userland/tests/vkcompute/Makefile`（platform `amd64 visionfive2`、既定で入らない、require `desktop/libvulkan`）。link の規則は `platform/common/userland-dynamic.mk`（vkdemo と同じ形、`DYNAMIC_PORTABLE_PROGRAMS` に追加）、amd64 の `vmunix.mk` の静的の command の除外にも追加。
 - 出力の device の名前は `deviceName` そのもの（PowerVR では `zedBSD powervr (PowerVR BXE-4-32)`）。
 
@@ -100,7 +100,7 @@ USC の program（`powervr_compute_fill_program`）: r7 = 番号（sr51）、r0�
 
 | 確かめ | コマンド | 結果 |
 | --- | --- | --- |
-| VF2 の試験の image | `timeout 3600 make ZEDBSD_CONFIG=plan/ws269/tests/p009/config-visionfive2-vkcompute.mk BUILD=build/ws269-p009-vk disk-image -j16`（log `build/ws269-p009/vk-vf2.log`） | rc=0、`warning:` 0 件。`build/ws269-p009-vk/disk.img`、`rootfs/lib/libvulkan.so`・`rootfs/bin/vkcompute`（RISC-V の PIE、interpreter `/lib/ld.so`） |
+| VF2 の試験の image | `timeout 3600 make ZEDBSD_CONFIG=plan/tools/powervr/p009/config-visionfive2-vkcompute.mk BUILD=build/ws269-p009-vk disk-image -j16`（log `build/ws269-p009/vk-vf2.log`） | rc=0、`warning:` 0 件。`build/ws269-p009-vk/disk.img`、`rootfs/lib/libvulkan.so`・`rootfs/bin/vkcompute`（RISC-V の PIE、interpreter `/lib/ld.so`） |
 | amd64 の vkcompute | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-amd64.mk ZEDBSD_USER_PROGRAMS="libwayland-client libvulkan vkcompute" BUILD=build/ws269-p009-vka build/ws269-p009-vka/bin/vkcompute -j16`（log `vk-amd64.log`） | rc=0、0 件 |
 | host（Linux の loader と lavapipe） | `cc -std=c99 -Wall -Wextra -Werror userland/tests/vkcompute/main.c -lvulkan` を実行 | `vkcompute: llvmpipe (LLVM 19.1.7, 256 bits): PASS, 4096/4096 words`、rc=0（program と shader の正しさ。zedBSD の libvulkan・powervr ではない） |
 
@@ -115,7 +115,7 @@ USC の program（`powervr_compute_fill_program`）: r7 = 番号（sr51）、r0�
 
 ## 実機の試験の文面（T1・ユーザー向け、VF2）
 
-image: `make ZEDBSD_CONFIG=plan/ws269/tests/p009/config-visionfive2-vkcompute.mk VKCOMPUTE_FIRMWARE=powervr-firmware BUILD=build/<dir> disk-image`（LICENSE.powervr を読んで同意の後）。U29 と同じ手順で VF2 に書き、login して:
+image: `make ZEDBSD_CONFIG=plan/tools/powervr/p009/config-visionfive2-vkcompute.mk VKCOMPUTE_FIRMWARE=powervr-firmware BUILD=build/<dir> disk-image`（LICENSE.powervr を読んで同意の後）。U29 と同じ手順で VF2 に書き、login して:
 
 ```
 vkcompute

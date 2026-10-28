@@ -17,12 +17,12 @@ Origin: [backlog-p2](../backlog-p2.md) の 69・70・72・73・74・75（WS169 w
 - **UID MOVE・UIDPLUS（73）**: CAPABILITY（ws177-p015）に MOVE があれば `UID MOVE`、無ければ COPY・`\Deleted`・UIDPLUS があれば `UID EXPUNGE uid`（他の `\Deleted` の message を消さない）、無ければ `EXPUNGE`。
 - **宛先の名の encoded word と折り返し（74）**: `compose.c` が To・Cc を項目ごとに分け、ASCII でない名を `=?UTF-8?B?...?= <addr>` にする。長い encoded の値は文字の境で 45 byte ずつの複数の word に分ける（前は 1 つの word で、長い件名は空になった）。To・Cc は項目の間の `,` で、ASCII の件名は空白で、78 文字の前に折り返す。
 - **SMTP の AUTH LOGIN（75）**: EHLO の `AUTH` の行を読み、PLAIN が無く LOGIN だけなら `AUTH LOGIN`（334 に user と password を base64 で）。本文は quoted-printable（7 bit）なので 8BITMIME の無い server でもそのまま通る（変更なし、説明を source に書いた）。
-- 変更: `userland/desktop/mailer/{mail.h,mime.c,imap.c,smtp.c,compose.c,sync.c,Makefile}`、新規 `jis.c`・`jisx0208.h`・`structure.c`。試験の道具: `plan/tools/mail/fake-mail-server.py` に任意の選択肢 `--caps`・`--large`・`--japanese-folders`・`--smtp-auth` と、FETCH の partial・`BODY.PEEK[section]`・`BODYSTRUCTURE`・`UID MOVE`・`UID EXPUNGE` を足した（選択肢の無い時の振る舞いは前と同じ。partial は小さい message では変わらない）。`plan/ws169/tests/run-host-mail-backend.sh` と `plan/ws177/tests/host-mail-n2.sh` の compile の一覧に jis.c・structure.c を足した。試験: `plan/ws177/tests/host-mail-n.{c,sh}`（新）。
+- 変更: `userland/desktop/mailer/{mail.h,mime.c,imap.c,smtp.c,compose.c,sync.c,Makefile}`、新規 `jis.c`・`jisx0208.h`・`structure.c`。試験の道具: `plan/tools/mail/fake-mail-server.py` に任意の選択肢 `--caps`・`--large`・`--japanese-folders`・`--smtp-auth` と、FETCH の partial・`BODY.PEEK[section]`・`BODYSTRUCTURE`・`UID MOVE`・`UID EXPUNGE` を足した（選択肢の無い時の振る舞いは前と同じ。partial は小さい message では変わらない）。`plan/tools/mail/run-host-mail-backend.sh` と `plan/ws177/tests/host-mail-n2.sh` の compile の一覧に jis.c・structure.c を足した。試験: `plan/ws177/tests/host-mail-n.{c,sh}`（新）。
 
 ## 確認（host・build、2026-10-08）
 
 - `sh plan/ws177/tests/host-mail-n.sh` → PASS 19（ASan・UBSan）: ISO-2022-JP・Shift_JIS・EUC-JP の本文と半角カナ、ISO-2022-JP の encoded word の件名、文字でない byte の U+FFFD、BODYSTRUCTURE（file が先・入れ子の alternative・単独の part・literal は EPROTO）、日本語の名の encoded word・78 文字の折り返し・長い日本語の件名の読み戻し、偽の server で MOVE・UIDPLUS の capability、日本語の folder 名（1 つは literal）、4 通目の 2 MB のメールを structure で取る（件名・file の後の本文・file の大きさ）、UID MOVE、UID EXPUNGE が他の `\Deleted` を消さない、AUTH LOGIN。
-- 回帰: `plan/ws169/tests/run-host-mail-backend.sh`（host-mail-backend・host-mail-sync PASS）、`run-host-mailer.sh`（18 PASS）、`plan/ws177/tests/host-mail-n2.sh`（n2 PASS 16・view PASS 10）、`host-mail-code.sh` PASS。
+- 回帰: `plan/tools/mail/run-host-mail-backend.sh`（host-mail-backend・host-mail-sync PASS）、`run-host-mailer.sh`（18 PASS）、`plan/ws177/tests/host-mail-n2.sh`（n2 PASS 16・view PASS 10）、`host-mail-code.sh` PASS。
 - build（warning 0）: `make -j16 BUILD=build/p1-mailer ZEDBSD_CONFIG=plan/ws169/tests/config-amd64-mailer.mk build/p1-mailer/bin/mailer`。style-check（mailer の全 .c）0。`git diff --check` 0。
 - license: `jisx0208.h` は NoctLang（Awe Morris、Zlib）の表の写し。他の新しい file は自作。
 

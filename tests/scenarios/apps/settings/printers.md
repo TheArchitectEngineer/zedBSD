@@ -13,7 +13,7 @@ since: ws145
 desktop が printer を覚え（`~/.config/keiland/printers.conf`）、libkeiland に PDF を渡すと keiland-printd が IPP と LPD で printer に送り、Settings の Printers の頁に printer と job が出ることを確かめる（WS145 p002〜p004）。
 
 ## 準備
-host で `plan/ws145/tests/mock-printers.py`（IPP は `/ipp/print` で名前「Mock Printer」、LPD）を target から届く address（QEMU なら 10.0.2.2）で。kei の printers.conf を消す。runner の試料 `/tmp/aat-samples/sample.pdf`。image に keiland-printd と printtest。
+host で `plan/tools/aat/mock-printers.py`（IPP は `/ipp/print` で名前「Mock Printer」、LPD）を target から届く address（QEMU なら 10.0.2.2）で。kei の printers.conf を消す。runner の試料 `/tmp/aat-samples/sample.pdf`。image に keiland-printd と printtest。
 
 ## 操作と確認
 1. 操作: kei として `printtest add ipp ADDRESS IPP の port`、`printtest add lpd ADDRESS LPD の port raw`、3 秒後に `printtest list`。

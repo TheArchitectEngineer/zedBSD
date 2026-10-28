@@ -7,7 +7,7 @@ Finite scope: 現在のRPi4 configのmissing libbrowser.so build ruleと同じ�
 
 | Attempt | Phase | Status | Dependency |
 | --- | --- | --- | --- |
-| rpi4-config-build-20261011-i01 | [ws193-p008](phase008/phase.md) | cleared | main ad9d2f6d3のregistry/config |
+| rpi4-config-build-20261011-i01 | ws193-p008（fb1f6afee の plan/ws193/phase008/phase.md） | cleared | main ad9d2f6d3のregistry/config |
 
 Graph: p005〜p007 main source → p008。
 Outlook: 指定configのビルド確認と具体的成果の統合。全CPUで全packageの移植は対象外。
@@ -15,4 +15,4 @@ Outlook: 指定configのビルド確認と具体的成果の統合。全CPUで�
 ## Outcome / 2026-10-11
 
 Selected configの通常make -j16とcheck-disk-image PASS。初期missing rule、arm64 package/ELF設定、最終image容量不足を修正。最終source review済み。
-Evidence: [build summary](tests/rpi4-build-20261011.md), [Phase outcome](phase008/phase.md)。実機未実施、main具体的commit承認・共有Past Log/Master投影・GitHub公開はQ1 pending。新Queueは開始しない。
+Evidence: build summary（fb1f6afee の plan/ws193/tests/rpi4-build-20261011.md）, Phase outcome（fb1f6afee の plan/ws193/phase008/phase.md）。実機未実施、main具体的commit承認・共有Past Log/Master投影・GitHub公開はQ1 pending。新Queueは開始しない。

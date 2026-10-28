@@ -8,7 +8,7 @@ Purpose/finite scope: 1項目、既存driver bool一覧のmenu/保存とtarget h
 
 | Attempt | Phase | Status | Dependency |
 | --- | --- | --- | --- |
-| menuconfig-drivers-20261010-i01 | [ws193-p007](phase007/phase.md) | cleared | p006 source c2b97e953 on main |
+| menuconfig-drivers-20261010-i01 | ws193-p007（fb1f6afee の plan/ws193/phase007/phase.md） | cleared | p006 source c2b97e953 on main |
 
 Graph: p006 source → p007。
 Outlook: 具体的成果のmain統合承認、shared計画/規則の投影はQ1。driverの新CPUへの実装移植はこのQueue外。push無し、自動次Queue無し。

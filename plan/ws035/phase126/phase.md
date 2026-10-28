@@ -23,7 +23,7 @@ F-048 の案は 2 つ（[login-manager-design.md](../login-manager-design.md) §
 | 案 | 中身 | 要るもの | 判断 |
 | --- | --- | --- | --- |
 | A（本案） | lease を持った `/dev/gpu0` の fd を sessiond → greeter → session と渡す | libvulkan の「開いた fd と lease を使う」入口（`VK_KHR_display` の外の zedBSD 固有の入口、WS075・libvulkan の持ち主と相談）、渡した後の取り上げ（kernel の revoke、別 WS）。greeter の root でない uid と session の uid の間で同じ open file を共有するので、revoke が無いと greeter の残りが session の画面を描ける | 人間の判断が要る（§8-2 の revoke、libvulkan の API）。この Phase では扱わない |
-| **B（代案、採る）** | Venus の driver が、lease の終わりに最後の画を scanout に保ち、次の lease の最初の frame で置き換える | driver の中だけ。i915 は [ws075-p016](../../ws075/phase016/phase.md) で同じ考え（release で最後の絵を次の lease の flip まで保つ）を実装済み | 判断が要らない。HAL・UAPI・libvulkan を変えない |
+| **B（代案、採る）** | Venus の driver が、lease の終わりに最後の画を scanout に保ち、次の lease の最初の frame で置き換える | driver の中だけ。i915 は ws075-p016（fb1f6afee の `plan/ws075/phase016/phase.md`） で同じ考え（release で最後の絵を次の lease の flip まで保つ）を実装済み | 判断が要らない。HAL・UAPI・libvulkan を変えない |
 
 B で黒が消える理由: 今の黒は (1) release で driver が scanout を外し（`SET_SCANOUT` の resource 0）、(2) 起きた console の worker が隠れた console の
 snapshot（p101 で黒）を描くことから来る。その後の取る側の Vulkan の device・swapchain の作成と最初の frame（p101 の内訳で約 0.5 秒 + α）の間、

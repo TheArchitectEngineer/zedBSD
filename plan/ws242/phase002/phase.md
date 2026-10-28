@@ -8,7 +8,7 @@ Parent: [WS242](../ws.md)
 Queue: Q1 の割当（2026-10-15、P4）。ユーザー「nvrtxドライバは、RTX 20/30/40/50までのSMで対応できるようにしたいです。20/30/40はSPIR-V loweringのみで対応できそうですか？」「20/30/40は、30/40の動作確認なしで、とりあえず対応しておいてください。」「20/30/40対応も独立したWSにして、今から作業します。」
 依存: なし（host で作って確かめる）。driver の呼び手が chip の SM を渡すのは ws242-p001（P2）。
 実行者: P4（phase-runner）
-元の記録: compiler の全体は [ws037-p008](../../ws037/phase008/phase.md)（SM75）。
+元の記録: compiler の全体は [ws037-p008](../../ws037/sm75-compiler.md)（SM75）。
 
 ## 1. 範囲と受け入れ
 
@@ -67,12 +67,12 @@ driver との口（Q1 経由で P2 に渡した、2026-10-15）: driver の呼�
 | コマンド | 結果 |
 | --- | --- |
 | 変更前後の SM75 の出力の比較（使い捨ての dump、desktop 44 と試験の 11 の module、code・register 数・SPH・binding） | 55 module 全て byte 単位で同じ（sm 無しの関数と `_sm(75)` の両方） |
-| `sh plan/ws037/tests/nvrtx-sm75-host-test.sh` | `287 checks, 0 failures`（compile して走らせる部分を 75・86・89 で回す。新しい check: LDG・STG・ATOMG の memory order の欄を SM ごと、SM89 の add.comp の global の access が全て 7、SM80・SM120 の拒否） |
-| `sh plan/ws037/tests/nvrtx-sm75-desktop-test.sh --strict` | `138 compiled, 0 refused, 0 disagreed with the IR`（46 module × 3 SM、各 200 入力。SM75 は sm 無しの関数の出力と同じことも確かめる） |
-| `make -j16 ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk BUILD=build/ws242-p002 build/ws242-p002/vmunix` | rc 0、`warning:` 0、`kernel include check: PASS`、`amd64 vmunix check: PASS` |
+| `sh plan/tools/nvrtx/nvrtx-sm75-host-test.sh` | `287 checks, 0 failures`（compile して走らせる部分を 75・86・89 で回す。新しい check: LDG・STG・ATOMG の memory order の欄を SM ごと、SM89 の add.comp の global の access が全て 7、SM80・SM120 の拒否） |
+| `sh plan/tools/nvrtx/nvrtx-sm75-desktop-test.sh --strict` | `138 compiled, 0 refused, 0 disagreed with the IR`（46 module × 3 SM、各 200 入力。SM75 は sm 無しの関数の出力と同じことも確かめる） |
+| `make -j16 ZEDBSD_CONFIG=plan/tools/nvrtx/config-amd64-nvrtx.mk BUILD=build/ws242-p002 build/ws242-p002/vmunix` | rc 0、`warning:` 0、`kernel include check: PASS`、`amd64 vmunix check: PASS` |
 | `git diff --check` | 出力なし |
 
-- interpreter（`plan/ws037/tests/sm75-machine.c`）は program の `shader_model` で表を選ぶ（SM80 の表は NAK から試験の側で別に書いた）。global の access の memory order の欄も SM ごとに調べる。
+- interpreter（`plan/tools/nvrtx/sm75-machine.c`）は program の `shader_model` で表を選ぶ（SM80 の表は NAK から試験の側で別に書いた）。global の access の memory order の欄も SM ごとに調べる。
 - 感度（schedule.c の Ampere の値を Turing の値に変えて流し、戻した）: 述語 13→12 は host 試験が 12 件、可変の読み 4→3 は host 14 件・desktop 42 module、AGU の読み 5→4 は host 22 件・desktop 19 module で検出。IMAD.WIDE→加数 4→2 は検出されない（その組を作る program が無い。今の lowering の加数は LDC の結果か RZ）。
 - SM86 と SM89 の出力は同じ（表が同じ）。SM75 との差は制御の bit・global の memory order と、latency の違いによる block の中の並びの違い。
 

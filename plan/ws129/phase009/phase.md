@@ -49,7 +49,7 @@ Queue: q594 / q594-i01（P1）
 
 新デモの実効の値と CI の差は `ZEDBSD_BOOT_EXTRA_LINES=display=edp` と program の `settings`・`zterm`・`gpudemo` の 3 つだけ（比べた結果）。
 
-この config を include する他の config: `plan/ws101/tests/demo/config.mk`（noct を除く）は新しい土台をそのまま継ぐ。`plan/ws004/tests/config-ax211-desktop.mk`（P1 の q590 の道具）も同じ。
+この config を include する他の config: `plan/tools/gpu-compute/demo/config.mk`（noct を除く）は新しい土台をそのまま継ぐ。`plan/ws004/tests/config-ax211-desktop.mk`（P1 の q590 の道具）も同じ。
 `plan/ws081/tests/config-amd64-demo-win.mk`・`plan/ws035/tests/config-amd64-demo-venus.mk` は include していない（影響なし）。
 
 ### 2. `boot-test.sh` の QMP screendump の 30 秒の timeout

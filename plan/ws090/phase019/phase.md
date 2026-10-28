@@ -38,7 +38,7 @@ Q1 の確認（main 065e75461）: libkeiland の慣性（`kl_scroll_axis`・`kl_
   `kl_scroll_axis`・`_axis_stop` は scroller に委ね、`struct kl_scroll` から axis の欄を除いた。
 - Settings: `se_kinetic` を「指が持つ pane・飛んでいるか・`kl_scroller`」に。`ui_kinetic_step` は scroller の位置を pane に置くだけ（端を越えたら端で止める）。
   `UI_KINETIC_TAU_MS`・`UI_KINETIC_SLOWEST` と指数の式を削除。手触りは他の app と同じ（tau 0.45 s＋摩擦 300 px/s²、最低 300 px/s）。log `KINETIC hold|start|none|stop` は保つ。
-- 試験: `plan/ws090/tests/host-input.c` に scroller の素の touch pad の試験（compositor の時刻が 5 s ずれても step の時計で飛ぶ、速度 3000 px/s、飛行を捕まえる、休んだ指は投げない）。
+- 試験: `plan/tools/input/host-input.c` に scroller の素の touch pad の試験（compositor の時刻が 5 s ずれても step の時計で飛ぶ、速度 3000 px/s、飛行を捕まえる、休んだ指は投げない）。
   host-input 78/78、ws081 の host-scroll 88、host-widgets 94/94、host-core 53/53、host-inset・phone・calendar PASS、host-chooser 85/85、ws089 host-build、
   zedBSD の libkeiland.so・settings、keiland-linux（warning 0）。FreeBSD の build は未実施。
 

@@ -7,7 +7,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
     helpers_notes_edit.py --outdir OUTDIR [--only REGEX] -- TARGET-OPTIONS     (--list: the ids)
 
 Each scenario gets a folder of its own on the target, /tmp/aat-work/notes-ID-PID/, with the document
-(edit-basic.pdf, which plan/ws175/tests/make-edit-samples.py writes on the host) as notes-edit.pdf and the
+(edit-basic.pdf, which plan/tools/aat/make-edit-samples.py writes on the host) as notes-edit.pdf and the
 pictures (picture.png with alpha, landscape.jpg; PIL on the host) beside it, so that Notes' journal of
 another run is never recovered and the file chooser finds the pictures by their first letter.  Notes is
 started as the session's user with the document; its places come from its own lines: NOTES LAYOUT (the
@@ -16,7 +16,7 @@ and the window's place from the compositor's.  The saved document is taken to th
 qpdf, pdftotext, pdffonts and pdfimages.  What only a person can judge (how the page looks) is left to
 the screenshots (needs-person).
 
-The drawing tools' strokes are drawn with the test pen (peninject, in the image of plan/ws216/tests/config.mk), so that
+The drawing tools' strokes are drawn with the test pen (peninject, in the image of plan/tools/aat/config-amd64-notes-pen.mk), so that
 they carry a pressure.  The injector admits four opens and aat-input holds all four, so the helper stops aat-input,
 replays the pen's script and starts aat-input again (Pen.draw).
 """
@@ -34,7 +34,7 @@ import common
 
 run = aatlib.Run.from_command_line("helpers_notes_edit")
 
-SAMPLES = aatlib.ROOT / "plan/ws175/tests/make-edit-samples.py"
+SAMPLES = aatlib.ROOT / "plan/tools/aat/make-edit-samples.py"
 
 # Notes' toolbar actions (userland/desktop/notes/app.h).
 SELECT = 16
@@ -638,7 +638,7 @@ def pen_script(points: list[tuple[float, float]]) -> str:
 
 
 def has_pen() -> bool:
-	"""Whether the image has the test pen (peninject: plan/ws216/tests/config.mk has it, the plain AAT image not)."""
+	"""Whether the image has the test pen (peninject: plan/tools/aat/config-amd64-notes-pen.mk has it, the plain AAT image not)."""
 	status, output = run.sh("test -x /bin/peninject && echo pen=yes || echo pen=no")
 	return "pen=yes" in output
 
@@ -781,7 +781,7 @@ def draw_tools(item):
 	item.check(b"/PatternType 1" in parts, "the saved PDF has no tiling pattern (the pencil's grain)")
 	page_picture(item, path, "poppler")
 	if not pen:
-		item.failed("the image has no test pen (peninject), so the strokes had no pressure: build it with plan/ws216/tests/config.mk")
+		item.failed("the image has no test pen (peninject), so the strokes had no pressure: build it with plan/tools/aat/config-amd64-notes-pen.mk")
 	item.person(f"{brush}; {pencil}; {water}; {made}; the screenshots: the brush thin at its ends and thick in the middle, "
 		"the pencil's grain with no lines at its sections' joins, the watercolours darker where they cross (blue and red mixed "
 		"as paint), the strip under the toolbar, the same page after opening again, and Poppler's page near the screen's")

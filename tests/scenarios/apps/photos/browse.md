@@ -15,7 +15,7 @@ since: ws157
 同じ写真は 2 度取り込まれないことを確かめる（WS157 p004・p005、2026-10-07 ユーザーの要件）。
 
 ## 準備
-host で `plan/ws157/tests/make-photos.py --view` が 9 枚を作る（2026 年 9 月 2 枚・8 月 3 枚・7 月 4 枚、EXIF の向きで回る JPEG（hill.jpg）、PNG、GIF、壊れた JPEG）。
+host で `plan/tools/aat/make-photos.py --view` が 9 枚を作る（2026 年 9 月 2 枚・8 月 3 枚・7 月 4 枚、EXIF の向きで回る JPEG（hill.jpg）、PNG、GIF、壊れた JPEG）。
 kei の `~/AATPhotos` に置き、PNG・GIF・壊れた JPEG の時刻を `touch -t` で 7 月にする。`~/Pictures/Library` と縮小画像の cache（`~/.cache/keiland/photos`）は無い。
 
 ## 操作と確認

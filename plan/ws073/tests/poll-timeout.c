@@ -19,7 +19,7 @@
  *   busy   one end of a socketpair whose other end a child writes one byte to
  *          every 5 ms, read at once, so poll often returns with data (what
  *          desktop-probe's connection to the compositor sees);
- *   probe  desktop-probe's loop (plan/ws094/tests/desktop-probe.c): poll with
+ *   probe  desktop-probe's loop (plan/tools/files-desktop/desktop-probe.c): poll with
  *          TIMEOUT_MS until time() has advanced 3 s, COUNT times, on a
  *          socketpair nobody writes;
  *   hup    COUNT times a new socketpair whose other end a child closes by

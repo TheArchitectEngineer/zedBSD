@@ -2,7 +2,7 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""A small IMAP4rev1 and SMTP server for Mail's tests (ws169-p003): the host tests (plan/ws169/tests/run-host-mail-backend.sh)
+"""A small IMAP4rev1 and SMTP server for Mail's tests (ws169-p003): the host tests (plan/tools/mail/run-host-mail-backend.sh)
 and the AAT helper of tests/scenarios/apps/mailer/ (plan/tools/aat/scenarios/helpers_mailer.py).
 
     fake-mail-server.py CERT KEY OUTDIR [--bind ADDRESS] [--arrivals N]

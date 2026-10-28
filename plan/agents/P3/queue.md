@@ -5,7 +5,7 @@ Worktree: `/home/awe/zedBSD-worktrees/p3`、branch `agent/p3`、base codex/rpi4-
 
 | Queue | Phase | State |
 | --- | --- | --- |
-| q936 | [ws141-p013](../../ws141/phase013/phase.md) | active |
+| q936 | ws141-p013（fb1f6afee の `plan/ws141/phase013/phase.md`） | active |
 
 ---
 

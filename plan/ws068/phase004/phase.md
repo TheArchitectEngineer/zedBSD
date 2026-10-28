@@ -91,8 +91,8 @@ Queue: q747（P1、ベータ2。p009 → p004 → p007）
 | `make -j16 ZEDBSD_CONFIG=plan/ws068/tests/config-amd64-glsl.mk BUILD=build/ws068-p009-lib …/libEGL.so …/libGLESv2.so …/libGL.so …/bin/egltest` | rc=0、warning 0 |
 | `sh plan/ws068/tests/glsl-host/run.sh build/ws068-p004/glsl-host` | `glsl-host: PASS`（vk-run 24 試験、新しい 3 つを含む。`es2: done`） |
 | `sh plan/ws068/tests/spirv-host/run.sh build/ws068-p004/spirv-host` | `spirv-host: PASS` |
-| `sh plan/ws101/tests/gles/run.sh build/ws068-p004/ws101-gles` | PASS |
-| `sh plan/ws101/tests/glsl/run.sh …` | FAIL（`re-assembled` の 10 件）。変更の前の source でも同じ 10 件で FAIL（`build/ws068-p004-ws101s-base.log`）: host の `brw_asm` の再アセンブルの不一致で、この Phase の変更によらない（既存。Q1 に報告） |
+| `sh plan/tools/gpu-compute/gles/run.sh build/ws068-p004/ws101-gles` | PASS |
+| `sh plan/tools/gpu-compute/glsl/run.sh …` | FAIL（`re-assembled` の 10 件）。変更の前の source でも同じ 10 件で FAIL（`build/ws068-p004-ws101s-base.log`）: host の `brw_asm` の再アセンブルの不一致で、この Phase の変更によらない（既存。Q1 に報告） |
 | style-check | 新しい file（`es2.c`・`es2.h`）は 0、変えた file は base との比較で新しい指摘 0 |
 | `sh -n plan/ws068/tests/egl-p004.sh` | OK |
 | Venus（T1）・実機 | **未実施**（T1 に依頼） |

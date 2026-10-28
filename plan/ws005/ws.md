@@ -24,6 +24,6 @@ Queue: なし
 
 ## 残した物
 
-- `tests/`: [WS129 p011](../ws129/phase011/phase.md) の release の試験の一覧から `bug149-check.sh` などが参照されるので残す。次に変更へ追従させる時に試験の整理の基準（AGENTS.md）を当てる。
+- `tests/`: WS129 p011（fb1f6afee の `plan/ws129/phase011/phase.md`） の release の試験の一覧から `bug149-check.sh` などが参照されるので残す。次に変更へ追従させる時に試験の整理の基準（AGENTS.md）を当てる。
 - `network-improvements-2026-09-11.md`（設計の記録）。
 - Phase の directory は削除した（git の履歴にある）。

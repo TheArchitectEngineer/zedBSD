@@ -197,7 +197,7 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
 1. 今の tree（main）の image で、実機の passthrough の capture: `egltest6` の 4 場面 targets・blits・queries・feedback が failures 0、
    `egltest` の p005 の 7 場面（glsl・glsl3・fbo・cube・es3・formats・volumes）が failures 0、capture の検査 `desktop_drawn`・`scenes_shown` が true
    （増分 6 の r5 で `scenes_shown` が false だった件の原因を説明するか直す）。
-2. texel buffer（samplerBuffer の texelFetch・textureSize）と sampler2DMS の texelFetch: host の survey（`plan/ws075/tests/shader-survey/run.sh`）の
+2. texel buffer（samplerBuffer の texelFetch・textureSize）と sampler2DMS の texelFetch: host の survey（`plan/tools/i915-hw/shader-survey/run.sh`）の
    `gaps.txt` にこの 2 つが無い、または device の feature として断り、断ることを記録する（ws.md の受け入れ 2 の「断って記録」）。
 3. 回帰: `sh plan/ws031/tests/run-vk-host-tests.sh` の全 10 個 PASS、test-hw の vkx 9/9・vke1 6/6・vke2 17/17・vkc 9/9、boot test PASS。
 
@@ -209,7 +209,7 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
 1. host の survey で今の不足を数える（2 の範囲）:
    ```
    sh plan/ws068/tests/glsl-host/run.sh
-   sh plan/ws075/tests/shader-survey/run.sh build/<W>/shaders
+   sh plan/tools/i915-hw/shader-survey/run.sh build/<W>/shaders
    grep -iE 'buffer|ms|multisample' build/<W>/shaders/gaps.txt
    ```
 2. 実機の capture（1 の範囲）。どちらも `vkloop-hw.sh` が lock の中で image を build するので、他の image の build と重ねない。host は今 `solaris10-man`:
@@ -220,7 +220,7 @@ D24S8・D32S8（stencil）、multisample。failures: targets 16・blits 10・que
    cp -r /tmp/capture-last build/<W>/egltest-capture; cp /tmp/zdesktop-guest-logs.txt build/<W>/egltest-guest-logs.txt
    ```
    `/tmp/capture-last` と `/tmp/zdesktop-guest-logs.txt` は次の run が上書きするので、各 run の直後に写す（lock を外した後に他の agent の run が始まり得る。
-   lock の中で写したいなら `plan/ws075/tests/capture-hw.sh` の形に倣う）。読むもの: `*-capture/result.json`（`desktop_drawn`・`scenes_shown`）、
+   lock の中で写したいなら `plan/tools/i915-hw/capture-hw.sh` の形に倣う）。読むもの: `*-capture/result.json`（`desktop_drawn`・`scenes_shown`）、
    guest の log（egltest の行の failures の数。guest の disk の log で、QEMU の serial ではない）、`*-capture/sheet.png`（ユーザーに見せる）。
 3. 不足を直す（compiler: `src/drivers/gpu/i915/compiler/spirv.c`・`compile.c`、executor: `src/drivers/gpu/i915/render/image.c`・`descriptor.c`・`state.c`）。
    増分ごとに host の fixture（`sh plan/ws031/tests/run-vk-host-tests.sh "pipe cmdbuf compile"`）を先に通す。

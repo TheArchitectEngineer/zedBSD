@@ -28,7 +28,7 @@ WS108はQEMU内native buildと別fresh guest runtimeを実装済み、completed�
 Debian/UbuntuのQEMU build指示は保持する。新OSもQEMUで対象OSのnative compiler/system librariesを使う案とし、技術的成立性とboot検証ルールの適用をp001で照合する。
 Raspberry Pi OSの実rootfsを使用し、Debian arm64をその名前で出荷しない。board用imageを汎用QEMUでそのまま起動できるとは仮定しない。
 arm64のTCG build時間やnative依存不足が判明したら調査範囲内で記録し、対象OS/CPUを勝手に変更せず計画を見直す。
-追加CPU版・実機GPU/WiFi/audio・FreeBSD packageは含めない。[公式input調査](phase001/survey.md)に5OSの版付きURL/hashと観測結果を記録。
+追加CPU版・実機GPU/WiFi/audio・FreeBSD packageは含めない。公式input調査（fb1f6afee の `plan/ws112/phase001/survey.md`）に5OSの版付きURL/hashと観測結果を記録。
 Ubuntu/Fedora/Archのchecksum署名は小metadataで暗号検証、image本体は未取得。Debian既存pin/公式unsigned cloud入力の限界とRPi image署名の後続検証を[環境契約](native-environments.md)に分けて保存。
 RPiは公式2026-09-15 Lite Trixie arm64 rootfsを固定候補入力とし、外側既存Debian13 pinned QEMU VM＋内側rootfs native arm64 compiler/QEMU-user方式をmainの委任された通常技術判断で採用。補助kernel案との境界/負担差と採用根拠は環境契約に保存。実成立やp003実行は未確認/未承認。
 新OS guestのboot方法は次exact Queueへ判断元/Guardrailの適用を含め、今回未決を解消したと扱わない。

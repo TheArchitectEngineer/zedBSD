@@ -1,13 +1,25 @@
 <!-- awesome-plan project=zedbsd record=ws170 -->
+
 # WS170: Phone の app（連絡先・SMS/MMS/RCS・VoIP を統合したタイムライン）
 
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p000〜p004 cleared（連絡先とタイムライン）、UAT は 2026-10-13 ユーザーの一括の cleared。本物の SMS・通話は WS197）。旧: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p005）。旧: incomplete（2026-10-08 Q1 の判…。残り・制限: p005 の規約の全文は一括の見直しへ
-Master: [master](../master.md)
+<!-- awesome-plan-current:start -->
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」。根拠: p000〜p004 cleared（連絡先とタイムライン、T1-298）、UAT は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」。本物の SMS・通話は WS197）
+<!-- retained-after-completion --> phase001 の phase.md は残す: userland/desktop/include/keiland/keiland.h:1654、libkeiland/system/kl-system-protocol.h:665、phone/phone.h:13、wayland/phone-shell.c:9 の comment が設計の §3 と保存の形を参照している。source の comment を直す（または仕様を docs/ へ移す）までの間
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
+Related Milestones: —
+Parent: [Master](../master.md)
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
+<!-- awesome-plan-current:end -->
 
-## 由来
+## 目標
 
-ユーザー（2026-10-05）:
+最初の範囲（ユーザー）: 連絡先から連絡先ごとのタイムラインを表示するところまで。最終の世界観は、キャリアの技術（SMS・MMS・RCS・回線の通話）とインターネットの技術（VoIP、将来の標準）をブリッジし、1 つの app で連絡先ごとに統一の操作で扱うこと。
+
+## ユーザーの決定
+
+- 2026-10-05:
 
 「[Phone app]
 - 連絡先、SMS/MMS/RCS、VoIPを統合した総合phoneソフト
@@ -29,53 +41,32 @@ Primary Milestone: MG006
 - まずは連絡先からタイムラインを表示するところまで実装
 - 本物のメッセージ送受信や通話はあとで実装」
 
-## 優先（2026-10-05）
+- 2026-10-05 11 時前「WS170は、ガワのインタフェースのモックだけでよいので、優先して作ってみてください。12時に予定しているUATのあとでいいです。おそらく17時か18時頃にもう一度UATをやるので、そのときにあればうれしいですが、必須ではないです。」
+- 2026-10-08 ユーザー: 規約の全文の Phase はベータ3 → p005 は WS の外の一括の見直しへ。
+- 2026-10-10: Bluetooth のスマホの bridge（SMS の MAP、連絡先の PBAP、通話の HFP）の層の流れと interface は [WS197](../ws197/ws.md) p004 で確定（ユーザーの指示で P1）。
+- 2026-10-13「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」
 
-ユーザー（2026-10-05 11 時前）「WS170は、ガワのインタフェースのモックだけでよいので、優先して作ってみてください。12時に予定しているUATのあとでいいです。おそらく17時か18時頃にもう一度UATをやるので、そのときにあればうれしいですが、必須ではないです。」
+## 結果
 
-## 目標
+- Phone の app（`userland/desktop/phone/`: 連絡先の一覧と iOS のメッセージ風のタイムライン、送信の欄と電話の button）、連絡先と会話の `~/Documents/` の保存、compositor のメッセージの API の骨格（KL_VERSION 55）と偽の backend が main にある。2026-10-10 に WS197 p004b・p004c が保存（E.164 の key、Source ごとの index）・同期・「Use as phone」・SMS の通知を足した。
+- 証拠: QEMU の T1-298 の AAT（needs-person、Q1 が PNG で目視: SEND・STATUS・RECEIVED の log と Echo の PNG、backend 0 で拒否、p002〜p004）。実機は 2026-10-13 のユーザーの一括の cleared（個別の観察の記録は無い）。
 
-最終の目標（世界観）: キャリアの技術（SMS・MMS・RCS・回線の通話）とインターネットの技術（VoIP、将来の標準）をブリッジし、1 つの app で連絡先ごとに統一の操作で扱う。
+## 制限・移管
 
-1. 連絡先ごとに iOS のメッセージ風のタイムライン。タイムラインからメッセージか電話ができる。
-2. compositor にメッセージを操作する API を足す。compositor の backend が対応していれば SMS を送受信できる。
-3. backend: local のモデム、または連携するスマホの app 経由（Bluetooth でなく IP でも可、SMS・MMS・通話をブリッジ。スマホは持ち歩いても家に固定してもよい。家ではスマホを部屋で充電し Keiland のタブレットを持ち歩く使い方）。
-4. メッセージと添付は失われないよう、cloud storage に back された local の folder（`~/Documents/` 以下は cloud backed とみなす）に置いて管理する。
-5. VoIP は対応の provider を backend で足せる（電話番号の gateway・VoIP だけの gateway）。option。
-6. chat・messenger は無理に統合しない。native の Web・app を勧め、API の backend で一部を統合できる option。
-7. messaging は今は RCS に焦点。将来のインターネットの標準に移れる構造にする。
+- 本物の SMS・MMS・RCS の送受信、モデム、スマホの bridge、VoIP、chat の API の統合は範囲の外。Bluetooth のスマホの bridge は WS197。
+- 規約の全文（p005）は WS の外の一括の見直しへ。
 
-**最初の範囲（ユーザー）**: 連絡先からタイムラインを表示するところまで。本物のメッセージの送受信と通話は後。
+## Phase 一覧
 
-## 設計で決めること（p001）
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws170-p000 | UI の mock（連絡先の一覧とタイムライン、固定の試験 data） | cleared（T1-177b の撮影の後、p002〜p004 で実装） |
+| ws170-p001 | 要件と設計（保存の形・API・backend の口・UI） | cleared |
+| ws170-p002 | 連絡先と会話の保存（`~/Documents/`） | cleared（T1-298） |
+| ws170-p003 | Phone の app: 連絡先の一覧とタイムライン | cleared（T1-298） |
+| ws170-p004 | compositor のメッセージの API の骨格と偽の backend | cleared（T1-298） |
+| ws170-p005 | 規約の全文の見直し（directory なし） | 規約の全文は WS の外の一括の見直しへ |
 
-- 保存の形: 連絡先（vCard か独自か）、会話とメッセージ（`~/Documents/` の下の file の配置、1 メッセージ 1 file か会話ごとの log か、添付の置き方、同期の衝突に強い形）。
-- compositor のメッセージの API: Keiland の system protocol の拡張（WS156・WS169 と同じ作り）。backend（モデム・スマホの bridge・VoIP・chat の API）の plug-in の口と、app への事象（受信・送信の状態・着信）。
-- スマホの bridge の protocol（IP の上、認証と暗号、家の LAN と外から）。スマホ側の app は別の WS（将来）。
-- タイムラインの UI: 連絡先の一覧 → 連絡先のタイムライン（メッセージの吹き出し・通話の記録・添付）、送信の欄と電話の button（最初は backend が無い旨を出す）。
-- 試験: 試験用の偽の backend（タイムラインに出す data）。
+## 記録の所在
 
-## Phase
-
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| p000 | **UI の mock（優先、夕方の UAT が目安・必須でない）**: Phone の app の外側だけ。連絡先の一覧 → 連絡先ごとの iOS のメッセージ風のタイムライン（吹き出し・通話の記録・添付の表示）、送信の欄と電話の button（押すと「backend が無い」）。data は app の中の固定の試験 data。保存・API・backend は作らない | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T1-177b の撮影の後、p002〜p004 で実装・cleared。旧: in-progress（q743、P2。実装・host の PNG・build 済み、QEMU は T1 待ち。[phase](phase0…） | — |
-| p001 | 要件と設計（保存の形・API・backend の口・UI。世界観の全体と最初の範囲を分ける） | cleared（q831、P2、[phase](phase001/phase.md)） | — |
-| p002 | 連絡先と会話の保存（`~/Documents/`）、host の試験 | cleared（2026-10-07、T1-298） | p001 |
-| p003 | Phone の app: 連絡先の一覧とタイムラインの表示（保存から、送受信と通話は p004 の口で） | cleared（2026-10-07、T1-298） | p002・p004 |
-| p004 | compositor のメッセージの API の骨格と偽の backend | cleared（2026-10-07、T1-298） | p001 |
-| 後（別の Phase、範囲の外） | 本物の SMS・MMS・RCS の送受信、モデム、スマホの bridge、VoIP、chat の API の統合。Bluetooth のスマホの bridge（SMS の MAP、連絡先の PBAP、通話の HFP）の層の流れと interface は [WS197 p004](../ws197/phase004/phase.md)（2026-10-10 ユーザーの指示で P1 が確定） | — | — |
-| p005 | 全文規約の見直し（最初の範囲） | planning | p002〜p004 |
-
-## スマホ連携の SMS の流れ（2026-10-10、WS197 p004）
-
-本物の SMS（Bluetooth の MAP でスマホ経由）の層の流れ（Phone の app → libkeiland → compositor → libkeiland-backend → bluetoothd）、各境界の interface、保存の持ち主（Phone の app だけ）、同期（pull、目印は app）、WS170 の store・app・compositor・libkeiland の変更の一覧は [ws197-p004](../ws197/phase004/phase.md) が正。p001 §3 の API の拡張と p002 の store の変更（Source・番号の key の会話・同期の目印）はそこに従う。
-
-## 2026-10-06 UAT のフィードバック
-
-- BUG-218 本体の padding を Settings と同じに、慣性の開始の遅れ。BUG-203・204 の IME と OSK は直し済み・T1-217 待ち
-
-## 2026-10-10 WS197 p004b による変更（Q1）
-
-WS197 p004b（778c1e377）が userland/desktop/phone を変えた: 保存（番号の key は E.164、既定の国番号 81、会話の file、Source ごとの key の index、自分の送信の写しの重ね、知らない header を保つ）と同期（sync/bt-<address>.state の目印、§6.1・§6.2 の同期の手順、送信、既読の handle、`--peer NUMBER`）。設計は [WS197 p004](../ws197/phase004/phase.md) §6。試験は plan/ws197/tests/phone-store-host-test.sh。
-WS197 p004c（e7a478d33）: Settings の Bluetooth の「Use as phone」で phone.backend を 2（bluetooth）に、Phone の app が居ない時の SMS の通知を compositor が出す（notify.allow.phone、click で `phone --peer` を起動）。
+phase001 は上の理由で残す。他の Phase の記録と試験は削除する（Q1）。git の commit `fb1f6afee` の `plan/ws170/` にある。Queue の履歴は [plan/history](../history/index.md)。

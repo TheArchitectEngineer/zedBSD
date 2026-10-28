@@ -3,38 +3,44 @@
 # WS190: 文字の欄と Text Editor の指での選択（ダブルタップ・端の drag・コピーの popup）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p003 は各 phase.md で cleared（T1-443・T1-445・T1-449 PASS）、p004 も cleared（2026-10-18 Q1）。ws.md の表が古かった（beta2.md「記録のずれ」））。旧: incomplete
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p004 は各 phase.md で cleared（T1-443・T1-445・T1-449 PASS、p004 の規約は 2026-10-09）。ws.md の表が古かった）
+<!-- retained-after-completion --> Phase phase001 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
+Completed: 2026-10-27（q1608 の精査）
 Primary Milestone: MG006
+Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
-Focused goal: fg019（ベータ2）
-Queue: q899（P1、2026-10-08 午後）。2026-10-08 q902 P1 の照合: p002・p003 は T1-443・T1-445 が未実行
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 由来（2026-10-08 ユーザー）
+## 目標
 
-「1行および複数行のテキストフィールドコンポーネントでは、テキストをダブルタップすると、選択モードになり、開始端、終了端をドラッグ操作で決定でき、指を離すと、コピーと切り取りのボタンがポップアップするといいなあ。別実装になるけど、テキストエディタも。今実装しているドラッグ処理のあとに実装しよう。」
+libkeiland の 1 行の欄（kl_field）と複数行の欄（text area）、Text Editor で、ダブルタップで語を選んで選択の mode に入り、開始端・終了端の handle を drag で決め、指を離すとコピー・切り取り・貼り付け・すべて選択の popup が出る。
 
-## 決定（2026-10-08 ユーザー、クリックの回答）
+## ユーザーの決定
 
-- popup のボタンは **コピー・切り取り・貼り付け・すべて選択**（選択が無ければコピー・切り取りを出さない、clipboard が空なら貼り付けを出さない、読み取り専用の欄では切り取り・貼り付けを出さない、秘密の欄（パスワード）ではコピー・切り取りを出さない、は Q1 の推しとして設計で確かめる）。
+- 2026-10-08（由来）「1行および複数行のテキストフィールドコンポーネントでは、テキストをダブルタップすると、選択モードになり、開始端、終了端をドラッグ操作で決定でき、指を離すと、コピーと切り取りのボタンがポップアップするといいなあ。別実装になるけど、テキストエディタも。今実装しているドラッグ処理のあとに実装しよう。」
+- 2026-10-08（クリックの回答）popup のボタンはコピー・切り取り・貼り付け・すべて選択。
 
-## 既にある物（2026-10-08 Q1 の確認）
+## 結果
 
-- libkeiland の `kl_text_touch`（`kl_text_touch_tap(…, twice)`、`kl_text_touch_drag_begin/drag/end`、`kl_text_touch_draw_handles`、`KL_TEXT_TOUCH_MENU`）。Text Editor（textedit/app.c・main.c）が使っている。libkeiland の欄（kl_field・text area）はまだ使っていない。
-- libkeiland の欄の clipboard・undo（KL_VERSION 67、ws177-p013）。
+- libkeiland の欄に kl_text_touch を組み込み、popup の部品（kl_text_bar）を足した。Text Editor に同じ操作と popup を足した（main）。
+- QEMU: T1-443 1〜5 PASS（6 は OSK の無い image で not-run）、T1-445 1〜6 PASS、T1-449 の速い drag PASS。規約の見直し（p004）は build と host 試験 PASS。
 
-## 範囲
+## 制限・移管
 
-- libkeiland の 1 行の欄（kl_field）と複数行の欄（text area）: ダブルタップで語を選んで選択の mode、開始端・終了端の handle の drag、指を離すと popup。
-- Text Editor: 同じ操作（別の実装、kl_text_touch の今の使い方に popup を足す）。
-- 試験: host の試験と、AAT（aat-input の touch で）。
+- T1-443 の 6（OSK との重なり）は not-run。実機の確認は未実施。
 
-## Phase（案）
+## Phase 一覧
 
-| Phase | 目的 | Status | 依存 |
-| --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計: kl_field・text area への kl_text_touch の組み込み、popup の部品（位置・画面の端・画面 keyboard との重なり）、Text Editor の popup | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）） | | WS189 |
-| [p002](phase002/phase.md) | libkeiland の欄 | test-wait（T1-443、未実行） | p001 |
-| [p003](phase003/phase.md) | Text Editor | test-wait（T1-445、未実行） | p002（kl_text_bar・kl_text_touch の bar） |
-| p004 | 規約の全文の見直し（WS の変えた C） | cleared（2026-10-18 Q1: phase.md に合わせた。旧: planned（ベータ3 に回す: 2026-10-08 ユーザーの決定「規約の整形はベータ3」、Q1）） | p002・p003 |
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws190-p001 | 設計（kl_field・text area への kl_text_touch、popup の部品、Text Editor の popup） | cleared（2026-10-08） |
+| ws190-p002 | libkeiland の欄 | cleared（2026-10-08、T1-443・T1-449） |
+| ws190-p003 | Text Editor | cleared（2026-10-08、T1-445） |
+| ws190-p004 | 規約の全文の見直し | cleared（2026-10-09） |
+
+## 記録の所在
+
+Phase の計画・設計・結果・試験は削除した。git の commit `fb1f6afee` の `plan/ws190/` にある。Queue の履歴は [plan/history](../history/index.md)。

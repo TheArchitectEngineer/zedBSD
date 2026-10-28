@@ -64,7 +64,7 @@ for variant in plain asan ubsan; do
 	# shellcheck disable=SC2086
 	"$cc" $flags $model userland/desktop/notes/picture-file.c plan/ws175/tests/host-notes-picture.c $objects -lm -o "$out/host-notes-picture-$variant"
 	mkdir -p "$out/$variant"
-	python3 plan/ws175/tests/make-edit-samples.py "$out/$variant" >/dev/null
+	python3 plan/tools/aat/make-edit-samples.py "$out/$variant" >/dev/null
 	convert -size 8x4 gradient:blue-green -quality 90 "$out/$variant/insert.jpg"
 	convert -size 7x5 gradient:red-yellow -depth 8 "PNG24:$out/$variant/insert.png"
 	if "$out/host-notes-edit-$variant" "$out/$variant" > "$out/notes-edit-$variant.txt" 2>&1; then

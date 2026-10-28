@@ -34,8 +34,8 @@ kernel（`src/drivers/gpu/powervr/`）:
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| descriptor と PDS の program | `sh plan/ws269/tests/p010/run.sh build/p010h/p010` | `data-host-test: 83 passed, 0 failed`（layout の場所と拒否、pack info 8 format、buffer・image・sampler の bytes と gather、resolve 11 load、shared の program の data 33 word・code 11 word を Mesa の DOUT・DOUTD・DOUTW の field から組んだ期待と比べる、空は halt、vertex の program の DDMAD・DOUTW・DOUTU・halt と data の大きさ 16・8・3）。同じ run の `stage-host-test`・`image-host-test`・`selftest-host` も PASS |
-| compute の道の回帰（executor） | `sh plan/ws269/tests/p009/run.sh build/p010h/p009` | `powervr executor host test: 162 passed, 0 failed`（compute の frame の後、set の 16 byte の buffer descriptor が buffer の address と大きさを持つことを足した） |
+| descriptor と PDS の program | `sh plan/tools/powervr/p010/run.sh build/p010h/p010` | `data-host-test: 83 passed, 0 failed`（layout の場所と拒否、pack info 8 format、buffer・image・sampler の bytes と gather、resolve 11 load、shared の program の data 33 word・code 11 word を Mesa の DOUT・DOUTD・DOUTW の field から組んだ期待と比べる、空は halt、vertex の program の DDMAD・DOUTW・DOUTU・halt と data の大きさ 16・8・3）。同じ run の `stage-host-test`・`image-host-test`・`selftest-host` も PASS |
+| compute の道の回帰（executor） | `sh plan/tools/powervr/p009/run.sh build/p010h/p009` | `powervr executor host test: 162 passed, 0 failed`（compute の frame の後、set の 16 byte の buffer descriptor が buffer の address と大きさを持つことを足した） |
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p010h/visionfive2 vmunix -j16` | rc=0、`warning:`・`error:` 0 件 |
 | riscv64-virt | 同 `config-riscv64-virt.mk BUILD=build/p010h/riscv64-virt` | rc=0、0 件 |
 | amd64 | 同 `config-amd64.mk BUILD=build/p010h/amd64` | rc=0、0 件 |

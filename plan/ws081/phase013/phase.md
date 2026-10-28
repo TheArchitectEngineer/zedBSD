@@ -41,13 +41,13 @@ design §3.8・§5.6 は「Notes は指で線」でしたが、main の指示「
 | `userland/base/tests/touchinject/main.c`（main の依頼、BUG-099） | 各 exit の経路で理由を stderr に出す。replay の成功で `touchinject: done lines=N`、途中の中断で行と理由、script の読みの失敗・既定の screen の失敗・`close` の失敗、`-c`・`-s`・`-d`・`-t` の失敗 |
 | `plan/ws081/tests/p012-guest.sh`・`p013-guest.sh`（BUG-099） | 共通の `inject` を通す。`replay=0` の行が無ければ、SSH の状態と出力の全部を `OUTDIR/SCRIPT.failed.log` に残す。build の touchinject を guest に置いてから走る |
 | `plan/bugs/BUG-099.md`・`plan/known-bugs.md` の BUG-099 の行 | 診断の追加を記録（unreproduced / tracking のまま） |
-| `plan/ws081/tests/host-notestouch.c`・`run-notestouch.sh`・`p013-guest.sh`（新） | 試験（下） |
+| `plan/tools/touch/host-notestouch.c`・`run-notestouch.sh`・`p013-guest.sh`（新） | 試験（下） |
 
 ## 確認（実行したもの）
 
 | 確認 | 結果 |
 | --- | --- |
-| `plan/ws081/tests/run-notestouch.sh`（touch.c と libkeiland、`-Wall -Wextra -Werror -Wconversion`） | `host-notestouch: ok (30 checks)` |
+| `plan/tools/touch/run-notestouch.sh`（touch.c と libkeiland、`-Wall -Wextra -Werror -Wconversion`） | `host-notestouch: ok (30 checks)` |
 | 同上、`EXTRA_CFLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all -O1"` | ok（30 checks） |
 | 同上の中身 | 倍率 1 の位置が `notes_view_layout` と一致し、drag で動かない。二本指の拡大: 比 2 で約 1.85 倍、指の間の点が 1 pt 以内。4 倍で止まり、この時は横も scroll するので両軸の点が保たれる。頁全体より小さくならない。3% の変化では拡大しない。拡大した頁は flick に付いて動き、glide して止まる。上端の rubber band と戻り。double tap で頁全体と 2 倍（縦の点を保ち、横は収まるので中央）。toolbar の tap は 1 回だけ取れ、頁の tap は取れない。toolbar からの drag は動かさない。ペンが近い時と離れて 200 ms の指は掌（動かない）で、離れて十分後は動く。ペンが drag を cancel し、glide を止める。別の頁は上端から |
 | mutation（scratchpad の script、10 個: 掌の時間、4 倍の上限、5% の閾値、double tap の倍率、toolbar の判定、ペンの近さ、拡大の下限、fling の速度、anchor の x・y） | 9 個が FAIL。残った 1 個（`touch_zoom_about` の下限 1 を 0.5 に）は、`notes_touch_layout` が毎 frame 同じ下限で抑えるので同値 |

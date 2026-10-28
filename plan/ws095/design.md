@@ -5,7 +5,7 @@
 2026-09-29 ws095-p001。目標は [ws.md](ws.md) のユーザーの要望（原文）。この文書は設計だけで、source は変えない（他のエージェントが
 wayland・terminal・browser・textedit を変えている最中のため）。人間の判断が要る点は §14 に既定と一緒に挙げる。
 2026-09-29 に design-reviewer の敵対的なレビュー（指摘 45 件、うち高 9）を受け、source で確かめて反映した（反映の記録は
-[phase001/phase.md](phase001/phase.md) の「レビューの反映」）。本文の「(R: A1)」等はレビューの指摘の番号。
+`plan/ws095/phase001/phase.md`（fb1f6afee） の「レビューの反映」）。本文の「(R: A1)」等はレビューの指摘の番号。
 
 ## 1. 範囲
 
@@ -440,7 +440,7 @@ REmacs の辞書は作者の文章の語彙が中心で、日常の基本の語�
 p003 の結果（2026-09-29、案）: `userland/desktop/ime/dict/SKK-JISYO.kei` に **337 見出し**（okuri-ari 約 110、okuri-nasi 約 225）の案を書いた。
 分類: 代名詞・指示語、疑問の語、挨拶と決まった言い方、時と数（何時・曜日）、家族、基本の名詞、外来語（カタカナ）、かなで書くことの多い語、
 基本の動詞（読む・買う・分かる・終わる 等、同じ読みの X の語より先に出したい語）、基本の形容詞（i と k の見出しの組）。語の一覧と相談の点は
-[phase003/phase.md](phase003/phase.md)。量と語はユーザーの答えで直す。
+`plan/ws095/phase003/phase.md`（fb1f6afee）。量と語はユーザーの答えで直す。
 
 **p003 の相談の答え（ユーザー、2026-09-29 夜、main 経由）**:
 1. 量: 千語まで広げる。
@@ -603,7 +603,7 @@ app の callback にまとめ、leave で preedit を消す。app ごとの結�
 
 ## 15. p004 の実装で決めたこと（2026-09-29）
 
-§2〜§5・§8 の設計を実装して、guest で確かめた（[phase004/phase.md](phase004/phase.md)）。設計から変えた点・細部を決めた点:
+§2〜§5・§8 の設計を実装して、guest で確かめた（`plan/ws095/phase004/phase.md`（fb1f6afee））。設計から変えた点・細部を決めた点:
 
 - **起動と信頼（§2.1）**: `input-method.c` の `zwl_ime_start()`（`listen_socket` の後、login の画面では起こさない）が `/usr/libexec/keiland-ime` を
   `socketpair` と `fork`・`execl`（sh を挟まない）で起こし、子に `WAYLAND_SOCKET` で fd を渡す。zdesktop の側の端は `zwl_client` を作って

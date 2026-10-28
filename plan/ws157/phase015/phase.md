@@ -27,7 +27,7 @@ Queue: P1 の lane（p012 の #11、2026-10-11 ユーザー承認「全部承認
 | `make BUILD=build/ws157-q937 ZEDBSD_CONFIG=config/current-uat.mk -j16 …/bin/photos …/bin/phone …/bin/keiland-preview …/bin/files …/bin/settings …/bin/imageview …/bin/notes …/bin/music` | rc 0、warning 0 |
 | `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws157-q937-linux -j16 all` | rc 0、warning 0 |
 | `sh plan/ws157/tests/run-host-preview-sizes.sh build/ws157-q937-linux`（新） | all PASS: 12 MP の JPEG の cover 160 → 160×160、contain 2048 → 2048×1536、Phone の 480 → 480×360、EXIF の 90° → 1536×2048、小さい写真は大きくしない（120×90）、54 MP は拒否（status 3） |
-| `sh plan/ws157/tests/run-host-mediastorage.sh build/ws157-q937-host build/ws157-q937-linux` | rc 0（受けた写真が `ph_preview` で 2×3 の絵になる、を含む） |
+| `sh plan/tools/media/run-host-mediastorage.sh build/ws157-q937-host build/ws157-q937-linux` | rc 0（受けた写真が `ph_preview` で 2×3 の絵になる、を含む） |
 | `python3 plan/tools/style-check.py`（変えた C） | 新しい指摘 0（host-media-receive.c:127 は以前からの物） |
 
 ## 判断（Q1 経由でユーザーへ）

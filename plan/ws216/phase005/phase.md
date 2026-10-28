@@ -170,6 +170,6 @@ p006 で `notes_fill_page()` の背景の引数を `int background` から帯ご
 ### 6.5 未実施・残り
 
 - QEMU・実機の画と時間は無い（p007 で T1、Pi 4 は p009）。p007 の T1 の依頼は p006 の UI の後にまとめる。
-- M-5 の続き: 帯ごとに PDF の display list を帯の大きさに CPU で raster にして背景に使う → p006 で入れた（[p006 §6](../phase006/phase.md)）。
+- M-5 の続き: 帯ごとに PDF の display list を帯の大きさに CPU で raster にして背景に使う → p006 で入れた（p006 §6（fb1f6afee の `plan/ws216/phase006/phase.md`））。
 - FreeBSD の native の build。
 - 規約の全文の見直しは p008。

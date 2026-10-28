@@ -60,13 +60,13 @@ WS075（i915 のネイティブ実行器で今のデスクトップとグラフ�
 
 | 物 | 状態 | 再開の条件 |
 | --- | --- | --- |
-| [p006](phase006/phase.md) | in-progress、段の外（後回し） | texel buffer（samplerBuffer）・sampler2DMS の texelFetch、増分 6 の実機の再確認。デモの台本は使わない。10-10 より前に main が選んだとき |
+| p006（fb1f6afee の `plan/ws075/phase006/phase.md`） | in-progress、段の外（後回し） | texel buffer（samplerBuffer）・sampler2DMS の texelFetch、増分 6 の実機の再確認。デモの台本は使わない。10-10 より前に main が選んだとき |
 | p007（GL 3.2 の geometry shader・gl_Layer・PrimitiveId） | planning、段の外、phase.md 無し | 着手前に分ける（ws.md）。受け入れ 2 の `--gl32` は「feature として断る」でも満たせる |
 | p010（規約の照合・統合回帰） | planning、phase.md 無し | WS の完了の直前（全 Phase の後） |
-| [p017](phase017/phase.md)（BUG-058 の再試験） | uncleared（6 回で再現せず） | BUG-058 が再発したとき |
-| [p018](phase018/phase.md)（非同期の実行器） | uncleared（計測で効果が小さい見込み） | L3 の手 3。描画の高速化の再開の後 |
-| [p022](phase022/phase.md)（scoreboard の緩和） | uncleared、patch 保留 | 命令の並べ替えを入れるとき |
-| [p031](phase031/phase.md)（L3: 文字の draw をまとめる） | uncleared、patch `phase031/exp/text-batch.patch` | **ユーザーが描画の高速化の再開を言うとき**。2026-10-01 の確認: patch は `git apply` では当たらない（compose.c・glass.c が後で変わった）、`git apply --3way` なら衝突なく当たる（`--check` で確認）|
+| p017（fb1f6afee の `plan/ws075/phase017/phase.md`）（BUG-058 の再試験） | uncleared（6 回で再現せず） | BUG-058 が再発したとき |
+| p018（fb1f6afee の `plan/ws075/phase018/phase.md`）（非同期の実行器） | uncleared（計測で効果が小さい見込み） | L3 の手 3。描画の高速化の再開の後 |
+| p022（fb1f6afee の `plan/ws075/phase022/phase.md`）（scoreboard の緩和） | uncleared、patch 保留 | 命令の並べ替えを入れるとき |
+| p031（fb1f6afee の `plan/ws075/phase031/phase.md`）（L3: 文字の draw をまとめる） | uncleared、patch `phase031/exp/text-batch.patch` | **ユーザーが描画の高速化の再開を言うとき**。2026-10-01 の確認: patch は `git apply` では当たらない（compose.c・glass.c が後で変わった）、`git apply --3way` なら衝突なく当たる（`--check` で確認）|
 | （候補）draw ごとの pipeline の停止と flush の削減 | planning | p023 の (b) で効かなかった。L3 の手 2 と合わせて考える |
 | （候補）GPU の object の枠 128（BUG-120） | planning | 下の提案 p032 |
 
@@ -76,7 +76,7 @@ WS075（i915 のネイティブ実行器で今のデスクトップとグラフ�
 | --- | --- | --- |
 | [BUG-120](../bugs/BUG-120.md) | reproduced（passthrough）/ tracking | 窓 30 個で `gt memory: object pool exhausted`。`I915_GT_MAX_OBJECTS 128U`（`src/drivers/gpu/i915/memory.h:73`）。デモの 10 窓では出ない。提案 p032 |
 | [BUG-058](../bugs/BUG-058.md) | tracking | p017。再発時に setup の段の印と SIGSEGV の handler |
-| [BUG-085](../bugs/BUG-085.md) | tracking | 再発時に `plan/ws075/tests/bug085-hw.sh` の印の後に gdb |
+| [BUG-085](../bugs/BUG-085.md) | tracking | 再発時に `plan/tools/i915-hw/bug085-hw.sh` の印の後に gdb |
 | [BUG-095](../bugs/BUG-095.md) | tracking（base system の判断） | capture の image の power-off が終わらない。試験の終わりは `hdmi-h4-hw.sh stop` が QEMU を quit する |
 | [BUG-117](../bugs/BUG-117.md) | resolved（p025） | 素の 5330 での確認が残り |
 | [BUG-121](../bugs/BUG-121.md)・[BUG-122](../bugs/BUG-122.md) | resolved（WS099） | 再発時は `plan/ws099/tests/resize-hw.sh` |
@@ -90,10 +90,10 @@ WS075（i915 のネイティブ実行器で今のデスクトップとグラフ�
 | --- | --- | --- | --- |
 | 1 | **提案 p032**（新）: BUG-120 の object の枠 | 窓 30 個で GPU の object が尽きない | 10-10 より前。デモの 10 窓には要らないので、上位の WS の後 |
 | 2 | **提案 p033**（新）: 素の 5330 での S11 の確認（L2 の段の実機の 1 回） | デモの実機で窓 10 個が止まらず動くことを、ユーザーの目と ssh の数値で確かめる | ユーザーが 5330 を USB で起動できるとき。WS084 の p003（10 回の起動）と同じ機会にまとめてよい |
-| 3 | [p006](phase006/phase.md) の残り | texel buffer・sampler2DMS、増分 6 の実機の再確認 | 段の外。main が選んだとき、10-10 より前 |
+| 3 | p006（fb1f6afee の `plan/ws075/phase006/phase.md`） の残り | texel buffer・sampler2DMS、増分 6 の実機の再確認 | 段の外。main が選んだとき、10-10 より前 |
 | 4 | p007（分けてから） | GL 3.2 の stage | 段の外。断る方針でよいかを main に確かめてから |
 | 5 | p010 | 規約の全文との照合・統合回帰（WS の完了の条件） | 全 Phase の後 |
-| 保留 | [p031](phase031/phase.md)→ L3 の手 2・3（p018） | C6 50 ms | **ユーザーが描画の高速化の再開を言うとき**だけ |
+| 保留 | p031（fb1f6afee の `plan/ws075/phase031/phase.md`）→ L3 の手 2・3（p018） | C6 50 ms | **ユーザーが描画の高速化の再開を言うとき**だけ |
 
 ### 提案 p032: BUG-120（GPU の object の枠）
 
@@ -122,9 +122,9 @@ WS075（i915 のネイティブ実行器で今のデスクトップとグラフ�
 | --- | --- | --- |
 | U1 draw 1 つの固定の費用（約 25 µs）の内訳 | L3 の手 2（状態の書き直しを減らす）の効き | draw ごとに `i915_draw_build_batch`（`render/draw.c:896`）が `drv_i915_gfx_emit_context_setup`（`render/state.c:748`、`draw.c:920` から）を呼び、PIPELINE_SELECT（`state.c:773`）と STATE_BASE_ADDRESS（`state.c:783`）を毎回出す。p030 の手 2: SBA と PIPELINE_SELECT を batch の最初だけにした 1 run の実験の build で C6 を 1 run 測る（source は main に出さず `phaseNNN/exp/` に patch）。PRM の根拠は Mesa の genxml（`/home/awe/p014-c/mesa/src/intel/genxml/gen120.xml` の STATE_BASE_ADDRESS・PIPELINE_SELECT、`/home/awe/p014-c/mesa/src/intel/compiler/` の brw_*）と Linux の参照（`plan/ws031/linux-parity/linux-reference/i915-src/`）。**描画の高速化の再開まで着手しない** |
 | U2 slot が尽きて frame の途中で run が走る | run の数（1 frame 4〜7）と同期の往復 | `render/heap.h:40-41`（slot 16 KiB × 128）、`render/draw.c:328`（`slot_next >= I915_GFX_SLOTS` で途中の run）。p028 で 512 は効かなかった（記録） |
-| U3 executor の frame の内訳 | どこに時間が行くか | executor の session ごとの log（`render/draw.c:1137` の `i915: vk: session N: frames ...`、p026 で常設）、`plan/ws075/tests/hdmi/engine-gdb.sh`（gdbstub で `i915_worker_run`（`worker.c:1149`）の context の engine_ns を読む、kernel log を使わない） |
-| U4 compiler の命令の正しさ | 新しい shader（text.frag など）や compiler の変更 | `plan/ws075/tests/guard/run.sh`（Mesa の brw_disasm・brw_asm と byte で比べ、scoreboard を `guard/scoreboard-check.h` で検査。道具は既定で checkout の `build/mesa-tools/build-asm/src/intel/compiler/`、`sh plan/ws101/tests/host/mesa-tools.sh` で作る（2026-10-05、旧 `/home/awe/p014-c` は無くなった）。無ければ disassembly の検査は NOT RUN と出る。PASS 1 秒）。1 つの SPIR-V は `shader-dump vertex|fragment FILE.spv OUT.bin`（`guard/shader-dump.c`）。分岐の skip は `compiler/compile.c:3585`（`i915_compile_skips`）〜`:4124`、guard の texture は `:3536`、scoreboard は `compiler/eu.c:1205`・`:1839` |
-| U5 shader の不足（受け入れ 3） | 受け入れ 3 の再確認 | `plan/ws075/tests/shader-survey/run.sh build/<W>/shaders`（先に `plan/ws068/tests/glsl-host/run.sh` で `build/ws068-glsl-host` を作る、run.sh の先頭）。出力 `modules.txt`・`gaps.txt`・`first.txt`。未実行（2026-10-01） |
+| U3 executor の frame の内訳 | どこに時間が行くか | executor の session ごとの log（`render/draw.c:1137` の `i915: vk: session N: frames ...`、p026 で常設）、`plan/tools/i915-hw/hdmi/engine-gdb.sh`（gdbstub で `i915_worker_run`（`worker.c:1149`）の context の engine_ns を読む、kernel log を使わない） |
+| U4 compiler の命令の正しさ | 新しい shader（text.frag など）や compiler の変更 | `plan/tools/i915-hw/guard/run.sh`（Mesa の brw_disasm・brw_asm と byte で比べ、scoreboard を `guard/scoreboard-check.h` で検査。道具は既定で checkout の `build/mesa-tools/build-asm/src/intel/compiler/`、`sh plan/tools/gpu-compute/host/mesa-tools.sh` で作る（2026-10-05、旧 `/home/awe/p014-c` は無くなった）。無ければ disassembly の検査は NOT RUN と出る。PASS 1 秒）。1 つの SPIR-V は `shader-dump vertex|fragment FILE.spv OUT.bin`（`guard/shader-dump.c`）。分岐の skip は `compiler/compile.c:3585`（`i915_compile_skips`）〜`:4124`、guard の texture は `:3536`、scoreboard は `compiler/eu.c:1205`・`:1839` |
+| U5 shader の不足（受け入れ 3） | 受け入れ 3 の再確認 | `plan/tools/i915-hw/shader-survey/run.sh build/<W>/shaders`（先に `plan/ws068/tests/glsl-host/run.sh` で `build/ws068-glsl-host` を作る、run.sh の先頭）。出力 `modules.txt`・`gaps.txt`・`first.txt`。未実行（2026-10-01） |
 | U6 GT の周波数（素の 5330） | 素の 5330 で RPS が上がるか（p020 は passthrough のみ） | `gt-power.c:1162`（`i915_rps_tick`、busy の時間の評価）、`:316`（`drv_i915_rps_enable`）。passthrough は `h4-ctl.py freq SECONDS MS move`（RPNSWREQ と CAGF を BAR から）。素の 5330 は `dmesg | grep 'i915: rps'` |
 | U7 BUG-120 の窓あたりの object の数 | p032 の上限の決め方 | `memory.c:141` の確保の数を、窓を 1 個ずつ開いて `gm->objects[]` の in_use を gdbstub で数える（engine-gdb.sh の形で symbol を nm から） |
 | U8 p006 の scenes_shown が false（p005 の 7 場面の capture が同じ絵） | 受け入れ 2 | p006 の「検証」表の最後。capture の更新の遅れか停止か。`CAPTURE=zdesktop-egltest KEILAND_APP=egltest BUILD=... plan/ws031/tests/vkloop-hw.sh zdesktop` の再実行と result.json の hash |
@@ -164,9 +164,9 @@ grep -E ':[0-9]+:[0-9]+: warning:' build/<W>/kernel.log | wc -l
 | --- | --- | --- | --- |
 | executor の fixture（10 個、ASan つき） | `sh plan/ws031/tests/run-vk-host-tests.sh` | **2 分を超える**（2 分で cmd〜eu の 7 個が PASS、pipe・cmdbuf・compile は未了）。background で走らせる | `WS031 vk host fixtures PASS: ...` |
 | 1 つだけ | `sh plan/ws031/tests/run-vk-host-tests.sh "pipe cmdbuf"` | — | 同上 |
-| compiler の guard（Mesa の disasm と byte 比較） | `sh plan/ws075/tests/guard/run.sh` | 約 1 秒、PASS | `ws075-p021 guard host test PASS` |
-| shader の survey（受け入れ 3） | `sh plan/ws068/tests/glsl-host/run.sh` の後 `sh plan/ws075/tests/shader-survey/run.sh build/<W>/shaders` | 未計測 | `gaps.txt` が空 |
-| 出力の選択（`display=`・EDID） | `sh plan/ws075/tests/hdmi/host-output-test.sh build/<W>/h2` | 約 1 秒 | `host-output-test: 80 checks, 0 failures` |
+| compiler の guard（Mesa の disasm と byte 比較） | `sh plan/tools/i915-hw/guard/run.sh` | 約 1 秒、PASS | `ws075-p021 guard host test PASS` |
+| shader の survey（受け入れ 3） | `sh plan/ws068/tests/glsl-host/run.sh` の後 `sh plan/tools/i915-hw/shader-survey/run.sh build/<W>/shaders` | 未計測 | `gaps.txt` が空 |
+| 出力の選択（`display=`・EDID） | `sh plan/tools/i915-hw/hdmi/host-output-test.sh build/<W>/h2` | 約 1 秒 | `host-output-test: 80 checks, 0 failures` |
 | driver の contract（RPS など） | `sh src/drivers/gpu/i915/tests/contracts/run.sh rps`（既定は全 7 個） | rps は約 3 秒 | `i915 contract tests PASS: rps (ordinary + ASan/UBSan)` |
 
 ### 5.4 QEMU（Venus）の回帰
@@ -193,23 +193,23 @@ grep -E ':[0-9]+:[0-9]+: warning:' build/<W>/kernel.log | wc -l
 # 1. image（§5.2 C）。build は lock の外で、他の image の build と重ねない
 plan/ws075/demo/build-demo-image.sh build/<W>-pt passthrough ZEDBSD_GRAPHICAL_BOOT=n "ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical"
 # 2. C6 の 1 run（lock を取り、120 秒待ち、desktop → 10 app → rate・latency・c6 40 試行 → engine-gdb → 撮影 → 返す）
-plan/ws075/tests/hdmi/measure-apps.sh build/<W>-pt/hdd-image.img build/<W>-pt/vmunix build/<W>/m1
+plan/tools/i915-hw/hdmi/measure-apps.sh build/<W>-pt/hdd-image.img build/<W>-pt/vmunix build/<W>/m1
 # 3. 同じ image で m2〜m5 を 1 つずつ（並べない）。まとめ:
-python3 plan/ws075/tests/hdmi/c6.py build/<W>/m1 build/<W>/m2 build/<W>/m3 build/<W>/m4 build/<W>/m5
+python3 plan/tools/i915-hw/hdmi/c6.py build/<W>/m1 build/<W>/m2 build/<W>/m3 build/<W>/m4 build/<W>/m5
 ```
 
-- measure-apps.sh（`plan/ws075/tests/hdmi/measure-apps.sh:17-37`）は `hdmi-h4-hw.sh start`（`flock /tmp/i915-hw.lock` を background の `h4-lock.sh` が持つ、`hdmi-h4-hw.sh:48-51`）から `stop` まで自分で行う。1 run 約 10 分（未計測の目安）。
+- measure-apps.sh（`plan/tools/i915-hw/hdmi/measure-apps.sh:17-37`）は `hdmi-h4-hw.sh start`（`flock /tmp/i915-hw.lock` を background の `h4-lock.sh` が持つ、`hdmi-h4-hw.sh:48-51`）から `stop` まで自分で行う。1 run 約 10 分（未計測の目安）。
 - 結果: `build/<W>/mN/measure.txt`（`c6 samples:` の行、`rate:` の行）、`shots/`（`a-<app>-live.png` は apps8.sh の各 app の後、`end1`・`end2`）、`kernel.log`、`guest-logs.txt`。
 - c6.py の読み: run ごとの中央値・p90、全体の中央値・p90、run の中央値の幅、判定（`LIMIT_MS = 50.0`、`c6.py:18`）。段の判定は全体の中央値（L1 100、L2 75、L3 50 ms）。
 
 ### 6.3 止まらないこと（stress）
 
 ```
-plan/ws075/tests/hdmi-h4-hw.sh start build/<W>-pt/hdd-image.img build/<W>/s1
+plan/tools/i915-hw/hdmi-h4-hw.sh start build/<W>-pt/hdd-image.img build/<W>/s1
 sleep 120
-plan/ws075/tests/hdmi/apps8.sh 8000
-plan/ws075/tests/hdmi/stress-117.sh 100 | tee build/<W>/s1/stress.txt
-plan/ws075/tests/hdmi-h4-hw.sh stop build/<W>/s1
+plan/tools/i915-hw/hdmi/apps8.sh 8000
+plan/tools/i915-hw/hdmi/stress-117.sh 100 | tee build/<W>/s1/stress.txt
+plan/tools/i915-hw/hdmi-h4-hw.sh stop build/<W>/s1
 ```
 
 PASS: 最後の行 `stress-117: no stop`（各 round は `C n: N flips in 3 s`、0 flip の round で止まる、`stress-117.sh:17-24`）。`start` は lock を待つ（timeout で切らない、`hdmi-h4-hw.sh:16-20`）。
@@ -218,9 +218,9 @@ PASS: 最後の行 `stress-117: no stop`（各 round は `C n: N flips in 3 s`�
 
 | 試験 | コマンド |
 | --- | --- |
-| vkx・vke1・vke2・vkc（期待: 9/9・6/6・17/17・9/9） | `I915_HOST=solaris10-man BUILD=build/<W>/vkx plan/ws075/tests/test-hw.sh vkx build/<W>/hw-vkx`（vke1・vke2・vkc も同じ形、BUILD を場面ごとに） |
-| zdesktop の capture（受け入れ 1） | `I915_HOST=solaris10-man BUILD=build/<W>/zd plan/ws075/tests/capture-hw.sh zdesktop zdesktop build/<W>/hw-zdesktop` |
-| files の場面（9 検査） | `I915_HOST=solaris10-man KEILAND_APP=home BUILD=build/<W>/files plan/ws075/tests/capture-hw.sh files zdesktop build/<W>/hw-files` |
+| vkx・vke1・vke2・vkc（期待: 9/9・6/6・17/17・9/9） | `I915_HOST=solaris10-man BUILD=build/<W>/vkx plan/tools/i915-hw/test-hw.sh vkx build/<W>/hw-vkx`（vke1・vke2・vkc も同じ形、BUILD を場面ごとに） |
+| zdesktop の capture（受け入れ 1） | `I915_HOST=solaris10-man BUILD=build/<W>/zd plan/tools/i915-hw/capture-hw.sh zdesktop zdesktop build/<W>/hw-zdesktop` |
+| files の場面（9 検査） | `I915_HOST=solaris10-man KEILAND_APP=home BUILD=build/<W>/files plan/tools/i915-hw/capture-hw.sh files zdesktop build/<W>/hw-files` |
 | System Menu（11 検査） | `I915_HOST=solaris10-man plan/tools/titlebar/menu-hw.sh build/<W>/hw-menu` |
 | 窓の角の drag（BUG-121） | `plan/ws099/tests/resize-hw.sh build/<W>-pt/hdd-image.img build/<W>/resize 20`（`RESIZE-HW RESULT drags=N vanished=0` と `resize-hw: PASS`） |
 
@@ -232,11 +232,11 @@ PASS: 最後の行 `stress-117: no stop`（各 round は `C n: N flips in 3 s`�
 
 | コマンド | 出力 |
 | --- | --- |
-| `plan/ws075/tests/hdmi-h4-hw.sh ctl rate A 10` | `rate: N flips ...`（pointer を 8 ms ごとに動かす間の flip/s） |
-| `plan/ws075/tests/hdmi-h4-hw.sh ctl c6 A 40 960 100` | `c6 samples: ...`、中央値・p90（壁紙の上の 960,100 で） |
-| `plan/ws075/tests/hdmi-h4-hw.sh ctl freq 10 100 move` | GT の要求と実際の周波数（MHz）の平均・最小・最大 |
-| `plan/ws075/tests/hdmi-h4-hw.sh ctl shot NAME` → `fetch OUTDIR` | `shots/NAME-live.png`（画面の buffer、`h4-png.py`） |
-| `RATE_XY="1700 1000" plan/ws075/tests/hdmi/engine-gdb.sh build/<W>-pt/vmunix 10` | session ごとの engine の占有・1 run の時間（gdbstub） |
+| `plan/tools/i915-hw/hdmi-h4-hw.sh ctl rate A 10` | `rate: N flips ...`（pointer を 8 ms ごとに動かす間の flip/s） |
+| `plan/tools/i915-hw/hdmi-h4-hw.sh ctl c6 A 40 960 100` | `c6 samples: ...`、中央値・p90（壁紙の上の 960,100 で） |
+| `plan/tools/i915-hw/hdmi-h4-hw.sh ctl freq 10 100 move` | GT の要求と実際の周波数（MHz）の平均・最小・最大 |
+| `plan/tools/i915-hw/hdmi-h4-hw.sh ctl shot NAME` → `fetch OUTDIR` | `shots/NAME-live.png`（画面の buffer、`h4-png.py`） |
+| `RATE_XY="1700 1000" plan/tools/i915-hw/hdmi/engine-gdb.sh build/<W>-pt/vmunix 10` | session ごとの engine の占有・1 run の時間（gdbstub） |
 
 ### 6.6 画素の比較（p031 の再開、compositor を変えた Phase）
 

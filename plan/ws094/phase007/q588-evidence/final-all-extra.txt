@@ -8,8 +8,8 @@ userland/desktop/keiland/keiland.h:871: split-args-first: int keiland_motion_poi
 userland/desktop/keiland/keiland.h:932: split-args: double maximum_y, double viewport_width, double viewport_height);
 userland/desktop/keiland/keiland.h:1034: split-args-first: int keiland_gesture_down(struct keiland_gesture *gesture, int32_t id, uint64_t time_us, uint64_t arrival_us, double x,
 userland/desktop/keiland/keiland.h:1038: split-args-first: int keiland_gesture_motion(struct keiland_gesture *gesture, int32_t id, uint64_t time_us, uint64_t arrival_us, double x,
-plan/ws094/tests/desktop-probe.c:122: split-args: 0, NULL
-plan/ws094/tests/desktop-probe.c:139: split-args: 1, surface_events
+plan/tools/files-desktop/desktop-probe.c:122: split-args: 0, NULL
+plan/tools/files-desktop/desktop-probe.c:139: split-args: 1, surface_events
 userland/desktop/files/main.c:100: no-decl-comment: static struct fm_present main_present;
 userland/desktop/files/main.c:101: no-decl-comment: static struct fm_app main_app;
 userland/desktop/files/main.c:102: no-decl-comment: static struct fm_text main_text;

@@ -3,84 +3,79 @@
 # WS090: widget・control の共有 library（慣性の smooth scroll を含む）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: libkeiland の widget・慣性の scroll・Mahora の font は main（p001〜p008・p010・p011・p013〜p017・p019〜p025 cleared、p020・p021 は 2026-10-13 ユーザー「今の外観で OK」）。2026-10-08 夜 ユーザー「WS050・WS051・WS090・WS183 は実機で動作を確認」。p009・p018 は T1 PASS で判定だけ）。旧: incomplete。残り・制限: p026 の層 3（任意の速さ）、p012 の規約は一括の見直しへ
+Status: completed（2026-10-27 P3 の精査 q1608。2026-10-08 夜 ユーザー「WS050・WS051・WS090・WS183 は実機で動作を確認」、p020・p021 は 2026-10-13 ユーザー「今の外観で OK」）
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: MG006
 Objectives: O2
 Parent: [Master](../master.md)
 Queue: なし
-Resume point: 2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p007・p010・p017・p023 cleared（残りは 5330 の UAT へ）。p009・p018・p020・p021 は PNG をユーザーに見せるまで保留。 2026-10-08 q902 P1 の照合: p015・p025 cleared。p007・p009・p010・p017・p018・p023 は T1 の結果が揃い Q1 の判定待ち（表）。p020・p021 はユーザーの PNG の確認待ち。p026 の層 3 は 5330 の測定の後。Wi-Fi の鍵・Disconnect・copy の取り消しの × は 5330。p012 の全文規約はベータ3。
-旧 resume: 2026-10-08 q858（P1）: p007・p009・p010・p021・p023 は実装済みで test-wait、p025 は cleared。残りは T1 の手の確認（p007 の秘密の欄、p010 の各 view の改名、p023 の前後の撮影）とユーザーの撮影の確認。q858 で p023 の icon だけのボタンを libkeiland の `kl_icon_button`（KL_VERSION 60）に（T1 未）。p011（Terminal・Notes の窓）は uncleared のまま、再開はユーザーが言うとき。p015（案）・p012 は planning
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
-作業の手引き（2026-10-01）: [guide.md](guide.md)
 
-## 目標（2026-09-29 ユーザー）
+## 目標
 
-「スクロールやボタンなど、ウィジェットやコントロールを共有ライブラリにする。独自のものでよい。慣性スムーズスクロールは少なくともライブラリにして再利用したい。」
+2026-09-29 ユーザー「スクロールやボタンなど、ウィジェットやコントロールを共有ライブラリにする。独自のものでよい。慣性スムーズスクロールは少なくともライブラリにして再利用したい。」
 
-- 今は Files・Terminal・Notes・PDF Viewer・ブラウザ・（作成中の）Settings が、scroll・button・list・sidebar・card 等をそれぞれ持つ。慣性の scroll は
-  WS081 で `libkeiland/motion.c`・scroller・gesture にまとめ始めた。
-- 独自の共有 library（Kei の見た目、Vulkan と Wayland の上）に、少なくとも慣性の smooth scroll（touch・wheel・key・overscroll の rubber band）を
-  部品として出し、既存の app を順に移す。button・toggle・slider・list・sidebar・card・text field 等の範囲と、library の名前・置き場（libkeiland を
-  広げるか、新しい library か）・API の形は p001 で決める。新しい app（WS089 Settings、WS091・WS092）はこれを使う。
+各 app が個別に持っていた scroll・button・list・sidebar・card などを、Kei の見た目の独自の共有 library（Vulkan と Wayland の上）にまとめ、少なくとも慣性の smooth scroll（touch・wheel・key・overscroll の rubber band）を部品として出し、既存の app を移す。設計は [design.md](design.md)。
 
-## Phase
+## ユーザーの決定
 
-| Phase | 目的 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws090-p001](phase001/phase.md) | 設計（[design.md](design.md)） | cleared（2026-09-29） | — |
-| [ws090-p002](phase002/phase.md) | libkeiui の骨組みと描画の層（canvas・text・icons・theme）（Settings の書き換えは p007 へ） | cleared（2026-09-29。`libkeiui.so` warning 0、host 13/13 で Files・Settings と byte で一致） | p001 |
-| [ws090-p003](phase003/phase.md) | scroll view（`kui_scroll`）と入力の層（`kui_ui`）と文字の view の touch（`kui_text_touch`: 1 本指で選択・2 本指で scroll、2026-09-29 ユーザー） | cleared（2026-09-29。KUI_VERSION 2、host 63/63、慣性は scroller と frame ごとに一致。Text Editor への組み込みと QEMU は p004） | p002 |
-| [ws090-p004](phase004/phase.md) | 窓の土台（`kui_window`、Vulkan・shm・無し）、Text Editor の窓・present・touch（`kui_text_touch`・`kui_scroll`）・clipboard、image への登録 | cleared（2026-09-30。KUI_VERSION 3、QEMU で開く・編集・保存・1 本指の選択・つまみ・2 本指の scroll・double tap・long press・wheel・clipboard・PRIMARY、host 34/63/13/75、boot PASS） | p003 |
-| [ws090-p005](phase005/phase.md) | 部品（button・switch・slider・field・list・sidebar・card・row・header・dialog・chip・progress）と見本の program | cleared（2026-09-30。KUI_VERSION 4、host 94/94、QEMU で pointer・key・touch・dialog と Text Editor の回帰、boot PASS） | p003 |
-| [ws090-p006](phase006/phase.md) | file chooser を libkeiui へ、libkeiland から取り除く（KEILAND_VERSION）、Text Editor の chooser・dialog・chip | cleared（2026-09-30。KUI_VERSION 5・KEILAND_VERSION 16、host-chooser 85/85、QEMU で Open・Save As・上書き・取り消し・BUG-112 の回避なしの開閉 13 回・dialog、boot PASS） | p004・p005 |
-| [ws090-p007](phase007/phase.md) | Settings の欄を libkeiland の `kl_field` へ（2026-10-06 に範囲を更新、描画の層は p009） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）。Wi-Fi の鍵の欄は 5330 の UAT へ） | | | p009 |
-| [ws090-p008](phase008/phase.md) | PDF Viewer・Image Viewer を移す | cleared（2026-09-30。`kui_window`（Image Viewer は自前の画像の present を残し `KUI_PRESENT_NONE`）、`kui_file_chooser`、KUI_VERSION 10（全画面）、PDF の password の card は keyboard の inset で上へ。demo-s8-s9 前後 PASS、Image Viewer の guest 試験と touch-guest PASS、C9 10/10（2 件は再実行）、boot PASS） | p006 |
-| [ws090-p009](phase009/phase.md) | Files と Settings の描画の層（canvas・text・icons）を libkeiland へ（2026-10-06 に範囲を更新、scroll は範囲の外） | test-wait → Q1 の判定待ち（q817 で実装。T1-261 で files-regress・files-p018・desktop-guest・settings-regress PASS、T1-272 で files-desktop-guest PASS。ユーザーが見る撮影は T1-373 (4) の t1 の worktree build/t1-373/shots/（85・95〜97・21・100・121・140〜142）） | | WS131 p019・p020 |
-| [ws090-p010](phase010/phase.md) | Files の名前の変更の欄を `kl_field` へ（2026-10-06 に範囲を更新、窓は WS131 p020 で済み） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）） | | | p009 |
-| [ws090-p011](phase011/phase.md) | Terminal・Notes: 窓（見せ方は無し）。scroll の model は p015（案）へ（2026-09-30 Q1） | cleared（2026-09-30: 統合の試験 demo-s8-s9.sh で合格（ユーザーの指示）、Terminal と p088 は未切り分け、実機は未実施） | p004 |
-| ws090-p015（案） | Terminal・Notes の scroll を `kui_scroll` へ。`kui_scroll` に rubber band の境界と位置の引き継ぎ（`keiland_scroller_set_position` の相当）を足すことを含む。WS081 の host 試験 2 本（`run-termtouch.sh`・`run-notestouch.sh`）の変更が要る（2026-09-30 Q1） | cleared（2026-10-08 Q1、T1-382。[phase015](phase015/phase.md) の kl_scroll で実施） | | p011 |
-| [ws090-p013](phase013/phase.md) | `kui_window` の text-input-v3 の受け口と Text Editor（WS102 の D1、2026-09-30 ユーザー） | cleared（2026-09-30。KUI_VERSION 6、QEMU の IME で `漢字`・`かな` が Text Editor に入り保存、host の回帰、boot PASS。WS102 の keyboard は未 merge で未実施） | p004 |
-| ws090-p014 | file chooser を親の窓の title bar にぶら下がる sheet にする（2026-09-30 ユーザー、下の節）: compositor が `xdg_toplevel.set_parent` の親を覚え、libkeiui の chooser が sheet を求めた子の窓を、自分の title bar を持たず親の title bar の下に付けて前面に出す（親と一緒に動く・前に出る・最小化する、親への入力は sheet が閉じるまで止める、開閉の動き）。親が無いときは今の独立の窓 | cleared（2026-09-30、P4、QEMU。[phase.md](phase014/phase.md)。Titlebar の mode 3 SHEET（version 3、KEILAND_VERSION 20）、chooser は不透明） | p006 |
-| ws090-p012 | 規約の全文との照合と回帰 | planning（全文規約はベータ3、2026-10-08 ユーザー） | | 全て |
-| [ws090-p016](phase016/phase.md) | File Chooser の右の pane の白い背景を左と揃える、または左右とも desktop を少し透かす（2026-10-05 ユーザー） | cleared（2026-10-05 Q1） | p014 |
-| [ws090-p017](phase017/phase.md) | 設計 — libkeiland の慣性 scroll（全ての窓）と開始の遅れ | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）） | | | — |
-| [ws090-p018](phase018/phase.md) | 設計 — pointer の追従の再描画を一定の frame rate に（hover・drag の範囲選択） | test-wait → Q1 の判定待ち（T1-233 files-regress PASS、Mail・Calendar は T1-389、Phone は T1-393 の PNG（Q1 の目視）。frame の callback の集約は任意の残り） | | — |
-| [ws090-p019](phase019/phase.md) | 慣性 scroll を libkeiland に一本化する（全ての app） | cleared（詳細は phase.md） | — |
-| [ws090-p020](phase020/phase.md) | UI の font を Mahora へ（Regular・Mono・Bold） | cleared（2026-10-13 ユーザー（AskUserQuestion）「今の外観で OK」） | | — |
-| [ws090-p021](phase021/phase.md) | 全ての app の窓の中身の padding を 0 に（title bar と同じ幅、title bar との間は compositor の定数） | cleared（2026-10-13 ユーザー（AskUserQuestion）「今の外観で OK」） | | — |
-| [ws090-p022](phase022/phase.md) | 全ての文字の入力で IME を受け付ける、自前の text box を libkeiland の部品へ | cleared（2026-10-07、項目 6 は p025 へ） | — |
-| [ws090-p023](phase023/phase.md) | Files・Settings の残りの自前の UI 部品を libkeiland の部品へ | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）。copy の取り消しの × と Wi-Fi の Disconnect は 5330 の UAT へ） | | | — |
-| [ws090-p024](phase024/phase.md) | libkeiland に複数選択の list と icon の grid の部品を足し、Files の list・grid の view を置き換える | cleared（詳細は phase.md） | — |
-| [ws090-p025](phase025/phase.md) | Browser の web の form の欄で IME を受け付ける（p022 の項目 6 を分けた） | cleared（2026-10-07 Q1、T1-328・T1-338） | — |
-| [ws090-p026](phase026/phase.md) | 変わった所だけを present する（VK_KHR_incremental_present、kl_window_present_part、compositor の client の damage、BUG-221 の残り） | present の時間を damage の大きさに比例させる | in-progress（2026-10-08 P1 q879: 層 1・2・4 は T1-400 の回帰で fail 0（Q1）。層 3 は Q1 の判断で保留、5330 で `ZFILES DESKTOP band`・`KWL PERF` を測ってから決める） | | p018 |
+- 2026-09-29「テキストエディタのファイルピッカーは、KeiのUIライブラリに入れるのがいいと思いました。」→ 最初の共有の部品は file chooser。
+- 2026-09-29: 文字の view の touch は 1 本指で選択・2 本指で scroll（p003）。
+- 2026-09-30「File Pickerは、独立したタイトルバーを持つウィンドウではなく、親ウィンドウのタイトルバーにぶらさがって前面に表示されるスタイルにしたいです。親ウィンドウがない場合は独立にします。可能でしょうか？」→ p014。
+- 2026-09-30「File Chooserは透過ウィンドウをやめましょう。」→ p014 で chooser の窓を不透明に。
+- 2026-10-05: File Chooser の右の pane の白い背景を左と揃える、または左右とも desktop を少し透かす → p016。
+- 2026-10-08「規約の整形（各 WS の全文規約の Phase）はベータ3」→ p012 は WS の外の一括の見直しへ。
+- 2026-10-08 夜「WS050・WS051・WS090・WS183 は実機で動作を確認」。
+- 2026-10-13（AskUserQuestion）「今の外観で OK」→ p020（Mahora の font）・p021（窓の中身の padding 0）。
 
-p007〜p011 は app ごとに独立で、デモ（10/17）の前は 10/10 までに移し終えたものだけ残す（design.md J5）。
+## 結果
 
-## 2026-09-29 の申し送り（main）
+- 共有の部品は libkeiland（`kl_*`）にまとめた。最初に libkeiui（`kui_*`: scroll view・入力の層・窓の土台・部品・file chooser・text-input-v3）を作り、後に描画の層（canvas・text・icons）・欄（`kl_field`）・慣性の scroll（`kl_scroll`）・複数選択の list と icon の grid を libkeiland へ一本化した（p009・p015・p017・p019・p024）。
+- 移した app: Text Editor・PDF Viewer・Image Viewer・Terminal・Notes・Files・Settings（欄と自前の部品）。全ての文字の入力で IME（p022）、Browser の form の欄の IME（p025）。
+- file chooser は親の title bar の下の sheet（Titlebar の mode 3 SHEET、KEILAND_VERSION 20）で不透明（p014・p016）。UI の font は Mahora（p020）、窓の中身の padding は 0（p021）。
+- pointer の追従の再描画（hover・drag）を一定の frame rate に（p018）、変わった所だけの present（VK_KHR_incremental_present の層 1・2・4、p026）。
+- 証拠は QEMU（Venus）の host 試験・guest 試験・T1 の回帰（T1-245・T1-261・T1-272・T1-382・T1-400 ほか）。実機（5330）は 2026-10-08 夜のユーザーの動作の確認。
 
-- WS089（Settings）は files の `canvas.c`・`text.c`・`icons.c` と `artwork/mark.c` を source のまま共有して compile している（ws089-p002）。files に target 別の CPPFLAGS が付くと中身が変わりうる。共有の library にするときの最初の対象の候補（F-038 を昇格したもの）。
-- 2026-09-29 ユーザー:「テキストエディタのファイルピッカーは、KeiのUIライブラリに入れるのがいいと思いました。」→ 最初の共有の部品はファイルピッカー（Open・Save As の chooser）。今は libkeiland に `keiland_file_chooser_*` として置き（WS092 のエージェントが作る）、WS090 の library の設計の時にそこへ移す。
+## 制限・移管
 
-### ユーザーの要望（2026-09-30、file chooser の sheet）
+- p026 の層 3 は Q1 の判断で保留のまま閉じた（5330 で `ZFILES DESKTOP band`・`KWL PERF` を測ってから決める予定だった）。
+- p009・p018 は T1 の PASS の後の Q1 の判定の印が付かないまま閉じた（実装は main）。
+- 規約の全文（p012）は WS の外の一括の見直しへ。
+- Wi-Fi の鍵の欄・Disconnect・copy の取り消しの × の 5330 の個別の UAT は未確認。
 
-「File Pickerは、独立したタイトルバーを持つウィンドウではなく、親ウィンドウのタイトルバーにぶらさがって前面に表示されるスタイルにしたいです。
-親ウィンドウがない場合は独立にします。可能でしょうか？」→ ws090-p014。
+## Phase 一覧
 
-- libkeiui の `kui_file_chooser_open` は既に親の `xdg_toplevel` に `set_parent` している。zdesktop の `toplevel_set_parent`（toplevel.c）は親を確かめるだけで
-  覚えず、窓は独立に置いている。
-- Q1 の案: sheet は opt-in（Keiland の protocol の flag。他の toolkit の `set_parent` の dialog は今のまま）。sheet の窓は、自分の title bar を持たず、親の浮いた
-  title bar の下辺に上端を付けて親の横の中央に置き（幅は親より狭く）、上から滑り出す。親を動かす・前に出す・最小化する・Wiseview では一緒に扱う。
-  sheet が開いている間は、親の本体への入力を止める（親の title bar の drag だけは効く）。
-- 同日の追加（ユーザー）:「File Chooserは透過ウィンドウをやめましょう。」→ p014 の中で、file chooser の窓（sheet・独立の両方）を不透明の地にする。
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws090-p001 | 設計（design.md） | cleared（2026-09-29） |
+| ws090-p002 | libkeiui の骨組みと描画の層 | cleared（2026-09-29、host 13/13） |
+| ws090-p003 | scroll view・入力の層・文字の view の touch | cleared（2026-09-29、host 63/63） |
+| ws090-p004 | 窓の土台（`kui_window`）と Text Editor | cleared（2026-09-30、QEMU） |
+| ws090-p005 | 部品（button〜progress）と見本の program | cleared（2026-09-30、host 94/94・QEMU） |
+| ws090-p006 | file chooser を libkeiui へ | cleared（2026-09-30、QEMU） |
+| ws090-p007 | Settings の欄を `kl_field` へ | cleared（2026-10-08 Q1 の判定） |
+| ws090-p008 | PDF Viewer・Image Viewer を移す | cleared（2026-09-30、QEMU） |
+| ws090-p009 | Files と Settings の描画の層を libkeiland へ | test-wait のまま WS を閉じた（T1-261・T1-272 PASS、Q1 の判定の印なし。実装は main） |
+| ws090-p010 | Files の名前の変更の欄を `kl_field` へ | cleared（2026-10-08 Q1 の判定） |
+| ws090-p011 | Terminal・Notes の窓 | cleared（2026-09-30、統合の試験 demo-s8-s9.sh） |
+| ws090-p012 | 規約の全文との照合と回帰 | 規約の全文は WS の外の一括の見直しへ（Phase の directory なし） |
+| ws090-p013 | `kui_window` の text-input-v3 と Text Editor | cleared（2026-09-30、QEMU の IME） |
+| ws090-p014 | file chooser を親の title bar の sheet に | cleared（2026-09-30、QEMU） |
+| ws090-p015 | Terminal・Notes の scroll を `kl_scroll` へ | cleared（2026-10-08 Q1、T1-382） |
+| ws090-p016 | File Chooser の右の pane の背景 | cleared（2026-10-05 Q1、T1-117） |
+| ws090-p017 | 慣性 scroll と開始の遅れ（BUG-211・BUG-218） | cleared（2026-10-08 Q1 の判定） |
+| ws090-p018 | pointer の追従の再描画の frame rate（BUG-221・BUG-226） | test-wait のまま WS を閉じた（T1-233・T1-389・T1-393、Q1 の判定の印なし。frame の callback の集約は任意の残り） |
+| ws090-p019 | 慣性 scroll を libkeiland に一本化 | cleared（2026-10-06 Q1、QEMU の T1） |
+| ws090-p020 | UI の font を Mahora へ | cleared（2026-10-13 ユーザー「今の外観で OK」） |
+| ws090-p021 | 窓の中身の padding を 0 に | cleared（2026-10-13 ユーザー「今の外観で OK」） |
+| ws090-p022 | 全ての文字の入力で IME、自前の text box を libkeiland へ | cleared（2026-10-07 Q1） |
+| ws090-p023 | Files・Settings の残りの自前の UI 部品 | cleared（2026-10-08 Q1 の判定） |
+| ws090-p024 | 複数選択の list と icon の grid | cleared（2026-10-07 Q1、T1-282） |
+| ws090-p025 | Browser の web の form の欄の IME | cleared（2026-10-07 Q1、T1-328・T1-338） |
+| ws090-p026 | 変わった所だけを present する | in-progress のまま WS を閉じた（層 1・2・4 は T1-400 で回帰 fail 0、層 3 は保留） |
 
+## 記録の所在
 
-## 2026-10-06 UAT のフィードバック
-
-- BUG-211 慣性 scroll を libkeiland の UI の scroll に（scroll bar を使う全ての窓）→ **新しい Phase**。BUG-218 Phone の慣性の開始の遅れ（約 300 ms → 50 ms 以内、最大 80 ms）を共通の実装で
-- BUG-226 左の pane の hover の再描画の遅れ（Files・Mail・Calendar・Settings）: CPU の合成を調べ、無ければ frame rate の安定化 → **新しい Phase**（BUG-221 と共通の仕組み）
-
-## Phase（2026-10-06 追加: 再設計）
-
-- [ws090-p017](phase017/phase.md) 設計と実装: 慣性 scroll と開始の遅れ（test-wait、q790 で実装 58b9027a。他の app の慣性は残り）
-- [ws090-p018](phase018/phase.md) 設計と実装: pointer の追従の再描画の frame rate（test-wait、q791）
+Phase の計画・結果・試験（`phaseNNN/`・`tests/`）と作業の手引き（`guide.md`）は削除する（Q1 の pipeline）。git の commit `fb1f6afee` の `plan/ws090/` にある。Queue の履歴は [plan/history](../history/index.md)。

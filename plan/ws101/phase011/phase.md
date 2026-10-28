@@ -38,8 +38,8 @@ main が差分を当て（commit 189c3bf1）、demo の構成の build（`build/
 | `mix.nct` | 整数の hash の DOALL（8 回の「乗算・加算」と「xor・論理 shift」、要素あたり 32 演算）。`noct -O2 -j --gc-tenure-size=100000000 [--gpu] mix.nct [N] [ROUNDS] [time\|notime]`。出力: 各 call の ms（zedBSD の `BeUI.getMilliseconds`）、最初と残りの中央値・最良、出力の checksum（重み付きの和と xor）、1001 要素の CPU の scalar の関数との照合 |
 | `s13.sh` | CPU の run と GPU の run（各 6 call）を続けて走らせ、中央値の時間を並べ、速い方と倍率、結果の一致を出す。GPU の run は `KEI_GLES_COMPUTE_TRACE=1` で dispatch の数も出す |
 | `userland/desktop/libglesv2/compute.c` | `KEI_GLES_COMPUTE_TRACE` を環境に置くと、dispatch ごとに stderr に 1 行（offload の証拠。既定では何も出さない） |
-| `plan/ws101/tests/noct/g3-venus.sh` | Venus の guest に accel の noct と mix.nct を写し、`--gpu-list`・CPU の run・GPU の run（trace）を比べる |
-| `plan/ws101/tests/hw/g3-hw.sh`・`g3/` | 5330 の passthrough: gles の image（glescompute 入り）に gpudemo と accel の noct（`NOCT`、既定は main の demo の build）を足し、compositor の下で s13.sh、CPU の run、GPU の run を順に走らせ、guest の disk の log で判定 |
+| `plan/tools/gpu-compute/noct/g3-venus.sh` | Venus の guest に accel の noct と mix.nct を写し、`--gpu-list`・CPU の run・GPU の run（trace）を比べる |
+| `plan/tools/gpu-compute/hw/g3-hw.sh`・`g3/` | 5330 の passthrough: gles の image（glescompute 入り）に gpudemo と accel の noct（`NOCT`、既定は main の demo の build）を足し、compositor の下で s13.sh、CPU の run、GPU の run を順に走らせ、guest の disk の log で判定 |
 
 ### Noct の書き方で分かったこと（見本の形を決めたもの）
 
@@ -56,8 +56,8 @@ main が差分を当て（commit 189c3bf1）、demo の構成の build（`build/
 
 | 確認 | 結果 |
 | --- | --- |
-| `plan/ws101/tests/noct/g3-venus.sh build/ws101-p011-venus`（Venus、N = 4,000,000、8 call） | **PASS**: CPU・GPU とも check 1001 wrong 0、checksum 一致（sum=-1291579143 xor=757251536）、GPU の dispatch 8（62,500 group ずつ）。時間は CPU 20 ms、GPU 826 ms（host の lavapipe、参考にならない） |
-| `plan/ws101/tests/hw/g3-hw.sh build/ws101-p011-g3-hw`（**5330 の QEMU passthrough、i915**。lock 09:20:01〜09:26:13） | **PASS**: s13.sh が「results are the same」、mix.nct の CPU・GPU とも check 1001 wrong 0、checksum 一致（Venus と同じ値）、GPU の dispatch 8、compositor は各 run の後も生きていた |
+| `plan/tools/gpu-compute/noct/g3-venus.sh build/ws101-p011-venus`（Venus、N = 4,000,000、8 call） | **PASS**: CPU・GPU とも check 1001 wrong 0、checksum 一致（sum=-1291579143 xor=757251536）、GPU の dispatch 8（62,500 group ずつ）。時間は CPU 20 ms、GPU 826 ms（host の lavapipe、参考にならない） |
+| `plan/tools/gpu-compute/hw/g3-hw.sh build/ws101-p011-g3-hw`（**5330 の QEMU passthrough、i915**。lock 09:20:01〜09:26:13） | **PASS**: s13.sh が「results are the same」、mix.nct の CPU・GPU とも check 1001 wrong 0、checksum 一致（Venus と同じ値）、GPU の dispatch 8、compositor は各 run の後も生きていた |
 | └ 時間（5330 の passthrough） | **CPU: 中央値 10 ms（9〜10）、GPU: 中央値 260 ms（255〜271、最初の call 365 ms）。GPU は CPU の約 26 倍遅い** |
 | s13.sh の倍率の表示 | 実機の run の表示は「The GPU is 0.0 times as fast」だった（遅い側を考えていなかった）。後で「The CPU is 26.1 times as fast as the GPU.」と出す形に直し、awk の式を host で確かめた（実機では未再実行） |
 | libglesv2 の build（trace の追加） | image の build で PASS（`-Werror`）。style-check 違反 0 |

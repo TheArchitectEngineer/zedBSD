@@ -40,7 +40,7 @@ env='export XDG_RUNTIME_DIR=/tmp WAYLAND_DISPLAY=wayland-0;'
 status=0
 
 # The programs and the document under test.
-python3 plan/ws081/tests/make-touch-pdf.py "$out/touch.pdf"
+python3 plan/tools/touch/make-touch-pdf.py "$out/touch.pdf"
 guest "$stop_all" >/dev/null
 put "$build/bin/wayland" /bin/wayland
 put "$build/bin/pdfviewer" /bin/pdfviewer

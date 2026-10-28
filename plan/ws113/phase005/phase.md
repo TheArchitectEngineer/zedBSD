@@ -29,7 +29,7 @@ Commands/results/commit/environment/artifacts/skipped checks: 未実施（計画
 
 ## p001契約調査による詳細化（2026-10-02）
 
-[origin p001](../phase001/phase.md)、[契約](../phase001/contracts.md)、[ID/完了比較](../phase001/identity-completion.md)、[fixture](../phase001/fixtures.md)、[WS summary](../ws.md)を入力とする。
+origin p001（fb1f6afee の `plan/ws113/phase001/phase.md`）、契約（fb1f6afee の `plan/ws113/phase001/contracts.md`）、ID/完了比較（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）、fixture（fb1f6afee の `plan/ws113/phase001/fixtures.md`）、[WS summary](../ws.md)を入力とする。
 
 Procedure: 専用managerのbegin/output/done snapshot、changed、expected topology/config serial+token/genのconfiguration/apply/result、request_idを確定。public libkeilandがregistry/version/object/snapshot/callback寿命とENOTSUPを包む。active session peer credentialはOS moduleで確認する通常案。compositor-owned displays.confのversion/persistent keyとtemp/flush/rename、appliedとsavedを別結果にする。
 
@@ -39,7 +39,7 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 ## 採択済local port ID / native capability入力
 
-[main採択A2とsource](../phase001/identity-completion.md)、[native capability結線](../phase001/native-contract.md)を使う。自Phaseへの影響: snapshot key/label/persistableはA2 schema/一意性を検査。保存を同machine/PCI port scopeに限定、kind/portの人向けlabelを公開、UUID問い合わせを必須にしない。
+main採択A2とsource（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）、native capability結線（fb1f6afee の `plan/ws113/phase001/native-contract.md`）を使う。自Phaseへの影響: snapshot key/label/persistableはA2 schema/一意性を検査。保存を同machine/PCI port scopeに限定、kind/portの人向けlabelを公開、UUID問い合わせを必須にしない。
 後続の実装権限/依存は不変。actual API番号/layout/共有callback差分は選定前にowner/main review、HAL変更なら事前承認。
 
 ## Event
@@ -48,13 +48,13 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 2026-10-02 / ws113-contract-design-20261002-a3-ws113-p005: p001のsource/一次仕様で明らかになった不足に合わせ、上記の自Phase procedureと検証/resumeを詳細化。D07–D09を適用。partial snapshotをUIへ公開しない、stale/duplicate/missing/overflow/unsupported/unauthorized/busy/backend/rollback/persistence結果を分ける。私有Vulkan identity APIは未採択。snapshot clone/draftとclient切断退役、独立clientの変更通知を確認。 origin/WSリンクは上記。planned/Queue noneを保持。GitHub body/comment/Projectはmainへdelivery依頼pending。
 
-2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p005: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: active session同UID peer検査、Settings限定secret無し、保存keyはstandard policy詳細を待つ。 [origin](../phase001/phase.md)/[詳細](../phase001/identity-completion.md)/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
+2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p005: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: active session同UID peer検査、Settings限定secret無し、保存keyはstandard policy詳細を待つ。 origin（fb1f6afee の `plan/ws113/phase001/phase.md`）/詳細（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
 
-2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p005: mainのD-ID A2/旧bootpreferred技術採択messageを受領。snapshot key/label/persistableはA2 schema/一意性を検査。保存を同machine/PCI port scopeに限定、kind/portの人向けlabelを公開、UUID問い合わせを必須にしない。 [origin](../phase001/phase.md)/[sourceと範囲](../phase001/identity-completion.md)/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
+2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p005: mainのD-ID A2/旧bootpreferred技術採択messageを受領。snapshot key/label/persistableはA2 schema/一意性を検査。保存を同machine/PCI port scopeに限定、kind/portの人向けlabelを公開、UUID問い合わせを必須にしない。 origin（fb1f6afee の `plan/ws113/phase001/phase.md`）/sourceと範囲（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
 
 ## 2026-10-05 計画（q702、ベータ2）
 
-入力: [契約の確定](../phase001/contracts-beta2.md) D-PROTO・D-AUTH2・D-STORE・D-BRIGHT・D-BRIGHT-KEY・D-BRIGHT-BOOT、contracts.md §8。
+入力: 契約の確定（fb1f6afee の `plan/ws113/phase001/contracts-beta2.md`） D-PROTO・D-AUTH2・D-STORE・D-BRIGHT・D-BRIGHT-KEY・D-BRIGHT-BOOT、contracts.md §8。
 
 範囲:
 - protocol（`userland/desktop/libkeiland/system/kl-system-protocol.h`、compositor `wayland/system.c`、libkeiland `system/system-protocol.c`）: `kl_system_manager_v1` version 4 の request 7 `get_displays(new_id kl_system_displays_v1)`。`kl_system_displays_v1`: event `begin(topology_serial hi/lo, config_serial hi/lo, mode, health)`・`output(token hi/lo, generation hi/lo, key, label, x, y, width, height, refresh_mhz, flags（internal・active・anchor・has_backlight）, brightness)`・`done`・`result(request, status, applied, saved)`。request `configure(request, expected serials, mode)` + `place(request, token, x, y)` + `apply(request)`、`set_brightness(request, token, level)`、`destroy`。status は stale・invalid・unsupported・unauthorized・busy・backend_failed・rollback_failed を分ける。

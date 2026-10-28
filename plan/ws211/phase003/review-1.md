@@ -13,5 +13,5 @@ M6 flush の一覧に layer-cache.c が無い（543・550・554・556・615 行�
 M7 Pi の絵の比較が落ちている（p001 397 行）→ Pi でも shot.c で KWL_BATCH=0 と比べる、T1 の 1 回は KWL_BATCH_CHECK の build。
 M8 16KiB の計算は正しい（kernel は宣言した入力の scalar 数×4×頂点数 vulkan-native-draw.c:832-838、1235）が、vert が mode ごとの入力だけを宣言する前提、coordinate と vertex の入力数の一致（822-830）→ vert も mode ごとの variant、host 試験で input_count×4×6×n ≤ 16384。
 
-Low: L1 ws.md の Resume point と p002 の Status が古い。L2 0.28・0.23・662 コマの元の log を plan/ws211 に要約。L3 頂点の buffer は 1MiB 固定の HOST_COHERENT で常時 map（compose.c:1426 と同じ選び方）、Pi の 8MiB の連続確保の危険が消える。L4 並べ替えの後も kwl_hover_probe の順を保つ（home.c:1997）。L5 色を R32 に詰める案を採らない理由。L6 shader の host 試験は plan/ws141/tests/shader-host-test.sh 依存、Tools への登録を Q1 に。L7 i915 の native compiler が flat を扱うかは推測、host の compiler の試験で。
+Low: L1 ws.md の Resume point と p002 の Status が古い。L2 0.28・0.23・662 コマの元の log を plan/ws211 に要約。L3 頂点の buffer は 1MiB 固定の HOST_COHERENT で常時 map（compose.c:1426 と同じ選び方）、Pi の 8MiB の連続確保の危険が消える。L4 並べ替えの後も kwl_hover_probe の順を保つ（home.c:1997）。L5 色を R32 に詰める案を採らない理由。L6 shader の host 試験は plan/tools/v3d-qpu/shader-host-test.sh 依存、Tools への登録を Q1 に。L7 i915 の native compiler が flat を扱うかは推測、host の compiler の試験で。
 設計どおりと確かめた点: mode ごとの attribute の表は panel.frag と合う、連続した同じ鍵だけを結ぶ限り順は保たれる、光どうしは順に依らない、時計と名前で 2 束、vkCmdDraw(6n,1,first,0) は Pi と i915 で扱える、頂点の buffer 1 つで足りる、backdrop の小さな pass の座標系は同じ。

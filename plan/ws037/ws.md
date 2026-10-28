@@ -3,89 +3,66 @@
 # WS037: nvrtx — NVIDIA GeForce RTX 2000 以降（Turing〜Blackwell）の GPU driver
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: nvrtx は main にあり既定で on（config/ci/config-amd64.mk）。RTX 2070 で passthrough の desktop（R8b〜R9k PASS、T1-678）と素の起動の desktop の session 5/5（T1-684）。速さは WS291（NVIDIA の p010・p011）、RTX 20/30/40 は WS242、NVDEC は WS243、取り消しと復帰は WS250 に分けてある）。旧: incomplete（2026-10-14 開始。2026-10-15: パススルーで R8b〜R8d・R9v・R9k が PASS（desktop の描画）、方法 A（素の起動）で desktop の session 5/5（T1-684）、その後 T1-691 で P4m の間欠の失敗が再発。描画の速さは [WS2…。残り・制限: P4m の間欠の失敗（T1-691）、p001・p003〜p008 の Phase の印、p009 規約は一括の見直しへ
+Status: completed（2026-10-27 P3 の精査 q1608。ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」: nvrtx は main にあり既定で on、RTX 2070 で passthrough の desktop と素の起動の desktop の session が通った。速さ・RTX 30/40・NVDEC・取り消しと復帰は別の WS）
+Completed: 2026-10-27（q1608 の精査）
 Primary Milestone: MG006
 Related Milestones: なし
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q692（p001）。2026-10-14 以降は Q1 の割当で進め、queue.md に行が無い（次の session で補う）
-Resume point（2026-10-15 Q1、記録の整合の点検）: (1) T1-691 の P4m の間欠の失敗（MMU の fault 00110802 at 0x1d0000、retry でも直らない）の解析の続き（[phase007](phase007/phase.md) の終わりの節）。(2) reboot の時の GSP の停止はメモだけ（ユーザー「WSにメモしておいて、あまり深追いしない」）。(3) `nvrtx.disp.own=1` を既定にするかはユーザーの判断待ち（Master の open-decisions）。(4) 各 Phase の clearance の判定（p006 は cleared の候補）は未。runtime の段の既定 on と GSP の firmware の image への収録が済んだかは、この点検では確かめていない。
-Target: ベータ2（2026-10-16 夕）。**既定は on**（2026-10-15 ユーザー、config/ci/config-amd64.mk と config/drivers/pci.drivers は y。ユーザーの config.mk は n でユーザーの意図どおり）。以前の「既定 off で入れる」（2026-10-14）と「ベータ4 以降」（2026-10-05）は置き換え。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 単一目標
+## 目標
 
-zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVIDIA の RTX 2000 以降（Turing SM75・Ampere SM86・Ada SM89・Blackwell SM120、GTX 16xx も Turing として含む）の display と 3D・compute を成立させ、zedBSD の GPU の interface（`struct drv_gpu_interface`、i915 と同じ口）に載せる。最初の対象の世代は p001 で決める（予約の時の対象は RTX 2070）。
+zedBSD の自前の GPU driver **nvrtx**（`src/drivers/gpu/nvrtx/`）で、NVIDIA の RTX 2000 以降（Turing SM75 を最初に。GTX 16xx を含む）の display と 3D・compute を成立させ、zedBSD の GPU の interface（`struct drv_gpu_interface`、i915 と同じ口）に載せる。最初の対象は RTX 2070（TU106）。範囲の外: Pascal 以前、video の encode・decode、複数 GPU、SLI。設計は [nvrtx-design.md](nvrtx-design.md)、試験機は [host.md](host.md)、license の監査は [nvrtx-license-audit.md](nvrtx-license-audit.md)。
 
-## ユーザーの指示
+## ユーザーの決定
 
-- 2026-09-23（予約）: 「RTX 2070をターゲットにして、NVIDIA GPUのドライバを実装する。」別契約のエージェントが担当する予定の番号の予約だった。
-- 2026-10-04: 「rtx 2000以降を対象に、nvrtxというドライバを開発します。やりかたはVC4と同じです。WSを作ってください。」→ この WS を nvrtx として作り直す（Q1）。
-- 範囲の外: GTX 10xx 以前（Pascal 以前）。理由: shader の ISA が別の系統（SM50 系の 64 bit 命令と制御語）で、Pascal は reclocking の署名付き firmware が公開されず低クロックのままになる（2026-10-04 Q1 の説明、ユーザー了承）。
+- 2026-09-23（予約）: 「RTX 2070をターゲットにして、NVIDIA GPUのドライバを実装する。」
+- 2026-10-04: 「rtx 2000以降を対象に、nvrtxというドライバを開発します。やりかたはVC4と同じです。WSを作ってください。」、「RTX 2070の実機があり、そのホストをあとで伝えるので、それさえわかれば作業を開始できるように」。Pascal 以前は範囲の外（Q1 の説明にユーザーが了承）。
+- 2026-10-14: 「事情が変わりました。…RTX対応ができる可能性があります。やりましょう。」、「パススルーできるLinuxが必要ですか？もしそうなら、すぐにOSをインストールします。」
+- 2026-10-14 夜: 「* R6 の「channel を残したまま止める」場合の片付け * 3D の初期状態（golden context） * display * shader の compiler ここまでベータ2に入れます。作業を続けてください。」、「ESP/FAT32分離が終わったら、RTX対応を2エージェントで実施してOKです。displayとcompilerは平行にできそうです。」
+- 2026-10-15（p006）: 「R8の終了条件にユーザテストを入れません。あなたはパススルー環境でテストして、カーネルログから、ディスプレイ制御のエラーを見ることができ…」、「R8bについては、Nouveauのソースコードの初期化手順と寸分違わぬように初期化してみてください。」、「RTXで実画面にカラーバーが出ているのを目視しました。」
+- 2026-10-15: 「nvrtxはmainでデフォルトで有効にしてください。」（CONFIG と runtime の renderer を既定で on、`nvrtx.vk=0` で off）。
+- 2026-10-15（GSP の停止）: 「再起動の時にGSPを、止めます」、「GSPを止める処理については、WSにメモしておいて、あまり深追いしない」。
+- 2026-10-15（速さ）: 「RTXでの描画が遅いです。RPi4と大差ないです。」→「F1〜F3 を進める」「計数の行を出す」。
+- 2026-10-15（RTX 30・40）: 「nvrtxドライバは、RTX 20/30/40/50までのSMで対応できるようにしたいです。」「20/30/40は、30/40の動作確認なしで、とりあえず対応しておいてください。firmwareも追加しておきます。あと、20/30/40の全モデルで認識できるようにしてください。50は別WSを作り、あとでnvrtxに追加します。」「この作業はいったん記録してから開始してください。50はまだ開始しないでください。」→ RTX 30・40 は [WS242](../ws242/ws.md)、描画の速さは [WS241](../ws241/ws.md)、RTX 50 は [WS240](../ws240/ws.md) に分けた。
+- 2026-10-15: 「サブエージェントP4を起動して、RTXコンパイラの作業をお願いします。」（p008）
 
-## 進め方（[WS141](../ws141/ws.md) の vc4 と同じ）
+### ライセンスの扱い（WS141 の vc4 と同じ方式）
 
-1. **文書が先**: nouveau（GSP の道）の初期化の順、GSP の RPC の流れ、channel（GPFIFO・push buffer）の command の投入の順、display（NVDisplay）、MMU、Mesa の NVK・NAK の世代の差（Turing〜Blackwell）を文書にする（p001）。
-2. **我々の interface に合わせる**: DRM の部分は i915 の zedBSD の書き換え（`drv_gpu_interface`・resident display・buffer object・fence）を手本にする。
-3. **段の印**: UEFI の GOP の framebuffer に「どの段まで進んだか」の印を出し、少しずつ debug する（i915 の N0・N1・P2 と同じ）。
-4. **試験**: 開発の host（centris）に NVIDIA の GPU を挿す予定（2026-10-04 ユーザー、WS139 U5）。i915 と同じく VFIO の passthrough で QEMU の guest に渡して試す（[WS029](../ws029/ws.md) p006 の道）。host の操作は試験の担当と Q1。
+GPL の source から作る作業の文書は `plan/ws037/temp/` に置き commit しない。code を書く前に作業の文書の定数を一括で独自の名前に変える。register・method・packet の形は MIT の source（nouveau の MIT の file、Mesa の NVK・NAK、open-gpu-kernel-modules・open-gpu-doc の MIT の側）から取り、file ごとに path・SHA-256・license を監査の表にする。GSP の firmware は `userland/firmware/nvidia-gsp/` に置き file から load する。zedBSD の code は Zlib。
 
-## ライセンスの扱い（WS141 と同じ方式、2026-10-04 ユーザー「やりかたはVC4と同じです」）
+## 結果
 
-1. GPL の source（nouveau の GPL の部分があれば、open-gpu-kernel-modules の GPL の側）から作る作業の文書は `plan/ws037/temp/` に置き、**commit しない**。手順の書き写しが基本、表現が難しい所は code の書き写しも可。
-2. zedBSD の code を書く前に、作業の文書の**定数を全て一括で独自の名前に変える**（p003 の最初、code を書く前）。
-3. register の定義・method（class の命令）・packet の形は、**MIT の source** から取り、file ごとに path・SHA-256・license を監査の表にする: nouveau（`drivers/gpu/drm/nouveau/`、大部分 MIT。file ごとに確かめる）、Mesa の NVK・NAK（`src/nouveau/`、MIT）、NVIDIA の open-gpu-kernel-modules・open-gpu-doc の MIT の側。
-4. **BLOB**: GSP の firmware（`gsp-*.bin`、NVIDIA の再配布の license）と、source の中の firmware に相当する BLOB は `userland/firmware/`（例 `userland/firmware/nvidia-gsp/`）に置き、file から load する。license を個別に確かめる。
-5. WS の最後に、license と GPL の code との字面・設計の類似を監査する。zedBSD の code は Zlib。
+- 文書（p001）: 初期化の順・GSP の RPC・channel の command の順・NAK の世代の差・interface の対応表・段の印（N0・N1・P0〜P9、[nvrtx-design.md](nvrtx-design.md) の 3 節）。
+- driver（p003〜p007）: 定数の改名と骨格、GSP の起動（FWSEC-FRTS・booter・GSP-RM・RPC・停止）、VRAM の allocator・MMU・BAR1・golden context・channel・GPFIFO・semaphore の fence・回復、display（GOP の readout、GSP の RM の display で mode set・scanout・flip、cursor・event）、3D の投入と `drv_gpu_ops` への統合。
+- shader の compiler（p008）: SPIR-V → SM75（NAK の事実）。desktop の全 shader（41 module）が compile でき、IR の参照の interpreter と一致（host）。
+- 実機（RTX 2070、QEMU+VFIO の passthrough）: R5〜R7・R8b〜R8d・R9v・R9k が PASS、D6（T1-678）で Keiland の desktop が nvrtx の renderer で描かれた。方法 A（素の起動）で desktop の session 5/5（T1-684）。ユーザーが実の monitor でカラーバーを目視（p006）。
+- 既定で on（`config/ci/config-amd64.mk`・`config/drivers/pci.drivers` は y、runtime の renderer も既定 on）。
 
-## 範囲
+## 制限・移管
 
-- GSP の boot（firmware の load、RISC-V の GSP の起動）と RPC、MMU、channel と GPFIFO、fence（semaphore）、reset。
-- display: GOP の framebuffer の引き継ぎ、NVDisplay の mode set・scanout・page flip（GSP 経由の部分を含む）。
-- 3D・compute の class（世代ごとの class の番号と共通の method）、`drv_gpu_interface` への統合、desktop の表示。
-- shader の compiler（SPIR-V → SM70 系の ISA）: NAK の構成（共通の IR と最適化、世代ごとの encoder）を参考に、別の Phase か別の WS（i915 の WS031 にあたる）で決める。
-- 範囲の外: Pascal 以前、video の encode・decode、複数 GPU、SLI。
+- 方法 A の P4m（VRAM の BAR1 の自己試験）の間欠の失敗（T1-691、MMU の fault `00110802 at 0x1d0000`）: 2 回の手当て（console の window・PRAMIN の読み返し・6 round の回復と fault status の消去）と reboot での GSP の停止を build と host 試験まで。実機の確認は未実施。Bug の ticket は無い。
+- 実機の確認は未実施: p003〜p005 の T の項目の一部、F1〜F3（速さ）。速さは WS241・WS291、RTX 30/40 は WS242、NVDEC は WS243、取り消しと復帰は WS250。
+- `nvrtx.disp.own=1` を既定にするかはユーザーの判断のまま（未決）。
+- p009（規約の全文・license と GPL との類似の監査・BLOB の確認）は WS の外の一括の見直しへ。
 
 ## Phase 一覧
 
-最初の対象は **RTX 2070（TU106、Turing）**（2026-10-04 ユーザー「RTX 2070の実機があり」）。Ampere 以降は後で足す（class の番号と GSP の firmware の版の差分）。
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws037-p001 | 文書: 初期化の順・GSP の RPC・channel・NAK の世代の差・license の監査・段の印・試験の道 | in-progress のまま WS を閉じた（文書と review の反映済み） |
+| ws037-p002 | 試験機（RTX 2070）の調査と試験の道 | planned のまま WS を閉じた（方式 B の host は用意され、実機の試験は p004 以降で実施） |
+| ws037-p003 | 定数の一括の改名、driver の骨格、段の印 N0・N1 | in-progress のまま WS を閉じた（実装・build・host 試験、実機は後の段で通過） |
+| ws037-p004 | GSP の起動（P0〜P3・P7） | in-progress のまま WS を閉じた（実装、実機の R0・R1 以降の段は後の run で通過） |
+| ws037-p005 | VRAM・MMU・BAR1・golden context・channel・fence・回復（P4〜P6） | in-progress のまま WS を閉じた（R5〜R7 実機 PASS、P4m の間欠の失敗は上の制限） |
+| ws037-p006 | display（P8） | in-progress のまま WS を閉じた（cleared の候補: R8b・R8c・R8d PASS、目視なしのユーザーの基準） |
+| ws037-p007 | 3D・compute の投入と `drv_gpu_ops` への統合（P9）、desktop | in-progress のまま WS を閉じた（D3・D5・D6 実機 PASS、F1〜F3 は実機未実施） |
+| ws037-p008 | shader の compiler（SPIR-V → SM75） | in-progress のまま WS を閉じた（全 41 module が compile、IR と一致。GPU の確かめは p007 の D6 で） |
+| ws037-p009 | 規約の全文・license と GPL との類似の監査・BLOB の確認 | planning のまま WS を閉じた（WS の外の一括の見直しへ） |
 
-| Phase | 目的 | Status | 依存 | 目安 |
-| --- | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 文書: 初期化の順・GSP の RPC・channel の command の順（作業の文書は temp）、NAK の世代の差、正本と license の監査、interface の対応表、段の印の設計、試験の道 | in-progress（文書と review の反映済み、判断の項目を 2026-10-14 に締めた。clearance は Q1） | なし（host 無しで可） | 6h |
-| [p002](phase002/phase.md) | 試験機（RTX 2070）の調査（読むだけ）と試験の道（A: USB から素で起動、B: VFIO）、今の zedBSD が RTX 2070 の GOP に出ること | planned（host 10.0.30.5 に Linux を入れて方式 B、host の準備は Q1） | [host.md](host.md) | 3〜4h |
-| [p003](phase003/phase.md) | 定数の一括の改名、driver の骨格（PCI・BAR・`CONFIG_DRIVER_PCI_NVRTX`）、段の印 N0（chip の ID を読むだけ） | in-progress（実装・build・host 試験済み、実機は T1 待ち） | p001・p002 | 4h |
-| [p004](phase004/phase.md) | GSP の起動: VBIOS の FWSEC（FRTS）、booter、GSP-RM の firmware（既定 off の firmware の package、`/lib/firmware/nvidia/tu102/`）の load、RISC-V の GSP の起動、RPC の初期化と停止（[design](nvrtx-design.md) の段 P0〜P3・P7）。4a〜4e に分け、どこで切っても既定が変わらない | in-progress（4a〜4e 実装・build・host 試験済み、実機（方式 B）は T1 待ち） | p003 | 6h〜 |
-| [p005](phase005/phase.md) | VRAM の allocator・MMU・BAR1/BAR2・GR の golden context と TU10x の scrubber・channel・GPFIFO・semaphore の fence・回復（段 P4〜P6） | in-progress（R5〜R7・R7g は実機 PASS。2026-10-15: P4m（VRAM の allocator と BAR1、`7a60b2445`）を実装、build と host 試験まで、実機は R8b・R8c の P4m の行で。BAR2 は未） | p004 | 6h〜 |
-| [p006](phase006/phase.md) | display: GOP の引き継ぎ（readout）、GSP の RM の display で mode set・scanout・page flip（i915 の resident display を手本、段 P8）。text console の付け直し | in-progress（2026-10-15: P8a 実機 PASS。P8b は R8b FAIL → nouveau の初回の commit に直した `476ca3ba5`（T1-645 待ち）。P8c（GPU の device・display の ops、`nvrtx.resident=1`）実装 `2c4d1a39f`、R8c は R8b の後） | p005（VRAM の allocator と BAR1 の map） | 6h〜 |
-| [p007](phase007/phase.md) | 3D（TU102_A 系の class）・compute の投入と `drv_gpu_ops` への統合（段 P9）、desktop の表示 | in-progress（2026-10-15 P3: 段 P9g（`nvrtx.draw=1`、P9c の channel に 3D の object、単色の quad を system memory と VRAM の target に、texture の quad）を実装・build・host 試験済み、R7d は T 待ち。`drv_gpu_ops` への統合は未） | p005・p006・kernel の Venus の executor と compiler（p008 の方針、[design](nvrtx-design.md) 8.0） | 6h〜 |
-| [p008](phase008/phase.md) | shader の compiler（SPIR-V → SM75、共有の front と IR、NAK（MIT）の事実）。WS037 の Phase に決めた（判断の項目 8・16） | in-progress（2026-10-15 P3: 段 A・B・C・E を実装。2026-10-15 P4: desktop の全 shader（41 module）が compile でき、IR の参照の interpreter と一致（texelFetch・texel offset・2D の一般の message を足した、[p008](phase008/phase.md) の 11 節）。build と host まで、GPU の確かめは p007 の投入の後） | p001 | 2h＋段 A〜E |
-| p009 | 規約の全文の確認、license と GPL の code との類似の監査、BLOB（GSP の firmware）の確認 | planning | 全て | 4h |
+## 記録の所在
 
-各段の印（GOP の framebuffer）と段の名前の正は [design](nvrtx-design.md) の 3 節: N0 発見と ID → N1 GOP の readout → P0 GSP の起動の準備 → P1 devinit 待ち・FWSEC-FRTS → P2 booter と GSP の起動 → P3 RM の object → P4 VRAM・MMU → P5 channel・fence → P6 回復 → P7 停止 → P8 display の引き継ぎ → P9 最初の 3D の job。i915 の N0・N1・P2 と同じ考え。
-
-## 要検討・ブロック（2026-10-05、2026-10-14 に解除）
-
-2026-10-05 にユーザーの指示で要検討の状態にしてブロックした。2026-10-14 のユーザーの指示（上の Status）で解除。
-
-## 2026-10-14 夜 ユーザーの判断: ベータ2 に入れる範囲
-
-「* R6 の「channel を残したまま止める」場合の片付け * 3D の初期状態（golden context） * display * shader の compiler ここまでベータ2に入れます。作業を続けてください。」
-→ 実機（VFIO）で R0〜R6 の GPU の仕事（copy engine の fill と fence）まで通った後の判断。順: R6 の片付け → 5f（golden context と scrubber）→ p006（display）→ p007・p008（3D と shader の compiler、SPIR-V → SM75、Mesa の NAK（MIT）を参考）。既定 off（`CONFIG_DRIVER_PCI_NVRTX` 既定 n）のまま入れ、通った段まで。担当: P1 が WS238 の後に R6 の片付け〜display、shader の compiler は先に空いた P（P2 の BUG-312 の後か P3 の WS237 の後）。
-- 2026-10-14 夜 ユーザー「ESP/FAT32分離が終わったら、RTX対応を2エージェントで実施してOKです。displayとcompilerは平行にできそうです。」→ P1: R6 の片付け・golden context・display、P3: shader の compiler（WS237 を止めて移る）。P2 の BUG-312 の後の予告は取り消し。
-
-## 引き継ぎ（2026-10-15 夜、Q1、サーバの再起動の前）
-
-- main に入った物: P4m（VRAM の heap・BAR1）、P8b の直し（nouveau と同じ最初の commit、DFP_ASSIGN_SOR）、P8c（resident・GPU device・display）、display の event・control・cursor・share（R8d）、p007 の draw（P9g）、P1 の SPH の初めの直し（7ce6e4019）。
-- 実機: R7c PASS。R7d FAIL（`Graphics Exception: Shader Program Header`、ESR 0x405840=0xa0000・0x405848=0x80000）。R8b の再試験（T1-645）・R8c（T1-647）・R8d（T1-652）は未実施（ユーザーが monitor を見る）。
-- 2026-10-15 ユーザー: nvrtx を既定で on。CONFIG は y 済み。runtime の段の既定 on・opt-out・方法 A（USB から素で起動）・GSP の firmware の image への収録は P1 の作業中の patch（plan/history/agents-p1/wrapup-20261015.patch、base 0e33f93cf）で未完。
-- R7d の SPH の直しは P3 の patch（plan/history/agents-p3/wrapup-20261015.patch、base e1e8cad65、P1 の 7ce6e4019 と同じ file を変えるので手で合わせる）。
-
-## RTX 30・40 の対応（2026-10-15 ユーザー、Q1 の記録）
-ユーザー（原文）:「nvrtxドライバは、RTX 20/30/40/50までのSMで対応できるようにしたいです。」「20/30/40は、30/40の動作確認なしで、とりあえず対応しておいてください。firmwareも追加しておきます。あと、20/30/40の全モデルで認識できるようにしてください。50は別WSを作り、あとでnvrtxに追加します。」「この作業はいったん記録してから開始してください。50はまだ開始しないでください。」
-- driver の側（P2、ws037-p009「RTX 30・40 の対応（driver）」）: 20/30/40 の全 chip（TU102・104・106・116・117、GA102・103・104・106・107、AD102・103・104・106・107）の PCI の device id と chip id の認識、chip の世代ごとの表（firmware の名前・class・QMD の版・起動の差）、firmware の package に GA10x・AD10x の GSP-RM・booter・bootloader を足す、起動・RM・class の差の切り替え。
-- compiler の側（P4、phase008 の新しい節「SM86・SM89」）: SM86・SM89 の encode・latency・規則の差を切り替え、SM75 の出力は byte 単位で不変。
-- 30/40 は実機の確かめなし（host 試験と build まで）。RTX 2070 の今の動き（方法 A で desktop）を壊さない。
-- RTX 50（Blackwell、SM120）は [WS240](../ws240/ws.md)（planning、まだ開始しない）。
-
-- 2026-10-15: RTX 30・40 の対応は [WS242](../ws242/ws.md)、描画の速さは [WS241](../ws241/ws.md) に独立（ユーザー）。
+Phase の計画・結果は削除する。git の commit `fb1f6afee` の `plan/ws037/` にある（P4m の解析は phase007 の終わりの節、compiler は phase008）。試験は `plan/tools/` へ移す（Q1 の OK の後）。Queue の履歴は [plan/history](../history/index.md)。

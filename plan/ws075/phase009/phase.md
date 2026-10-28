@@ -62,9 +62,9 @@ p002〜p008 で新しく出た i915 の bug は無い（p008 の「request の�
 - `src/drivers/gpu/i915/worker.c`: `I915_WORKER_CONTEXTS` 8 → 32 と理由の comment。
 - `src/drivers/gpu/i915/compiler/spirv.c`: `i915_spirv_lower_switch()`、`switch_edges`（edge の表の大きさ）、file の説明。
 - `plan/ws031/tests/i915-vk-lower-test.c`: `test_switch`（下）、refusal の試験から OpSwitch を外した。
-- `plan/ws075/tests/switch/`: `switch.frag`（6 literal、同じ target の 2 literal、fall-through、default と同じ target の case、早い return）と
+- `plan/tools/i915-hw/switch/`: `switch.frag`（6 literal、同じ target の 2 literal、fall-through、default と同じ target の case、早い return）と
   glslc の `switch.frag.spv`・`-O` の `switch-O.frag.spv`。
-- `plan/ws075/tests/hdmi/h4-ctl.py`: `keys` に shift の記号（`> < | & _ :`）と `;`（terminal で redirect を打つため）。
+- `plan/tools/i915-hw/hdmi/h4-ctl.py`: `keys` に shift の記号（`> < | & _ :`）と `;`（terminal で redirect を打つため）。
 - `plan/bugs/BUG-094.md`・`plan/known-bugs.md` の BUG-094 の行: resolved（下）。
 
 ### 検証

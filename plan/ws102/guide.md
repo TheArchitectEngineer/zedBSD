@@ -28,11 +28,11 @@ S14 は Windows の上の QEMU（WS085）の touch で見せる（master「デ�
 
 | 項目 | 状態 | 証拠 |
 | --- | --- | --- |
-| flick（かな・英字・数字・記号）、QWERTY、補助の key、手書き（stub） | QEMU PASS | [p003](phase003/phase.md)・[p006](phase006/phase.md)・[p020](phase020/phase.md)・[p008](phase008/phase.md) |
-| 作業の領域・inset・caret の中央寄せ | QEMU PASS（実機は未実施） | [p007](phase007/phase.md)・[p015](phase015/phase.md) |
-| 2 本指の連打（ROUTE_OSK） | QEMU PASS | [p009](phase009/phase.md) |
-| 道具の面（編集・直前の app・履歴）、`keiland_edit_v1`、クリップボードの履歴 | QEMU PASS。p024 は受け入れの手順だけ PASS、**全手順の回帰・C9・boot test は未実施** | [p016](phase016/phase.md)・[p017](phase017/phase.md)・[p018](phase018/phase.md)・[p023](phase023/phase.md)・[p024](phase024/phase.md) |
-| 色の絵文字（font・libtruetype・描画の fallback） | QEMU と host PASS | [p019](phase019/phase.md) |
+| flick（かな・英字・数字・記号）、QWERTY、補助の key、手書き（stub） | QEMU PASS | p003（fb1f6afee の `plan/ws102/phase003/phase.md`）・p006（fb1f6afee の `plan/ws102/phase006/phase.md`）・p020（fb1f6afee の `plan/ws102/phase020/phase.md`）・p008（fb1f6afee の `plan/ws102/phase008/phase.md`） |
+| 作業の領域・inset・caret の中央寄せ | QEMU PASS（実機は未実施） | p007（fb1f6afee の `plan/ws102/phase007/phase.md`）・p015（fb1f6afee の `plan/ws102/phase015/phase.md`） |
+| 2 本指の連打（ROUTE_OSK） | QEMU PASS | p009（fb1f6afee の `plan/ws102/phase009/phase.md`） |
+| 道具の面（編集・直前の app・履歴）、`keiland_edit_v1`、クリップボードの履歴 | QEMU PASS。p024 は受け入れの手順だけ PASS、**全手順の回帰・C9・boot test は未実施** | p016（fb1f6afee の `plan/ws102/phase016/phase.md`）・p017（fb1f6afee の `plan/ws102/phase017/phase.md`）・p018（fb1f6afee の `plan/ws102/phase018/phase.md`）・p023（fb1f6afee の `plan/ws102/phase023/phase.md`）・p024（fb1f6afee の `plan/ws102/phase024/phase.md`） |
+| 色の絵文字（font・libtruetype・描画の fallback） | QEMU と host PASS | p019（fb1f6afee の `plan/ws102/phase019/phase.md`） |
 | 絵文字の面（keyboard の tab） | 未実装。tab は無効（`userland/desktop/wayland/keyboard.c:3457-3459` が 0 を返す、`:3580-3582` は何もしない） | p022（planned） |
 | 統合の試験 `demo-s8-s9.sh` | PASS（2026-09-30 夕 Q1、main 722de611） | p024 の「統合の試験」 |
 
@@ -49,9 +49,9 @@ D3・D4 は既定のまま。
 
 ## 次の作業の順番（再開の後）
 
-1. **ws102-p024 の残りの回帰**（新しい Phase は要らない。p024 の phase.md に [手順](phase024/phase.md) を追記した）。
+1. **ws102-p024 の残りの回帰**（新しい Phase は要らない。p024 の phase.md に 手順（fb1f6afee の `plan/ws102/phase024/phase.md`） を追記した）。
    全手順の osk-guest・1920x1080・WS079-p010・C9・boot test を最新の main で流し、p024 の「未実施」を埋める。FAIL が出たら uncleared の新しい試みとして記録。
-2. **[ws102-p022](phase022/phase.md) 絵文字の面**（planned。手順は phase.md）。
+2. **ws102-p022（fb1f6afee の `plan/ws102/phase022/phase.md`） 絵文字の面**（planned。手順は phase.md）。
 3. **ws102-p013 L4（Windows の QEMU の物理の touch）**: WS085 の Windows の image に今の keyboard が入り、WS081 の L2（host の touch が Kei に届く）を
    ユーザーが確かめた後。エージェントはユーザーの手順の 1 枚（下の「Windows」）を渡し、結果を記録する。
 4. **ws102-p014 全文の規約と回帰**（WS の最後）: WS102 の全ての source の変更（`keyboard.c`・`keyboard-layout.c`・`keyboard-hand.c`・`touch.c` の ROUTE_OSK・`inset.c`・`edit.c`・`clipboard.c`、
@@ -130,7 +130,7 @@ unset GUEST_RUNTIME
 - 5330 の素の起動では keyboard は mouse で開ける（右下・左下の角の drag）。一般の手順は [plan/tools/hw5330/README.md](../tools/hw5330/README.md)。WS102 に固有の 5330 の試験は今は無い
   （作業の領域と inset の実機の確認が未実施: p007・p015）。確かめるなら 5330 の demo の image（`sh plan/ws075/demo/build-demo-image.sh build/<W>-demo`）で、ユーザーに
   「左下の角から内へ drag → QWERTY で Text Editor に打つ → 右下から flick」を見てもらう。
-- **Windows の QEMU（L4、S14 の本番）**: image は WS081 の `plan/ws081/tests/build-demo-win.sh`（Text Editor 入り）。複写と起動は [WS081 の windows-touch.md](../ws081/tests/windows-touch.md) の「用意」。
+- **Windows の QEMU（L4、S14 の本番）**: image は WS081 の `plan/ws081/tests/build-demo-win.sh`（Text Editor 入り）。複写と起動は WS081 の windows-touch.md（fb1f6afee の `plan/ws081/tests/windows-touch.md`） の「用意」。
   ユーザーの手順（p013 で渡す）: (1) boot.bat で起動、(2) 右下の角から指で内へ swipe し flick で「あいうえお」、(3) 左下の角から swipe し QWERTY で「Hello」、
   手書きの面に切り替えて 1 文字書く、(4) Text Editor に入ったかを見る。3 回通して報告。
 

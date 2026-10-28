@@ -26,7 +26,7 @@ design.md §4・§5（目標 5・6）と、2026-10-07 のユーザーの回答�
 
 ## 記録
 
-- 2026-10-07 P2: ba36a7e3c（arrange.c/h・arrange-shell.c・shell.c・seat.c・kwl.h・glass.h・Makefile 3 つ・翻訳・host 試験・zdesktop-p065.sh）、52c7c378a（QEMU の試験 `plan/ws181/tests/ws181-guest.sh`、WS181 全体の A1〜C12）、4ab495ae4（AAT の scenario の draft `tests/scenarios/desktop/windows/arrange.md`）、ce31f69b1（正常系の外を plan/ws177/backlog-p2.md へ）。
+- 2026-10-07 P2: ba36a7e3c（arrange.c/h・arrange-shell.c・shell.c・seat.c・kwl.h・glass.h・Makefile 3 つ・翻訳・host 試験・zdesktop-p065.sh）、52c7c378a（QEMU の試験 `plan/tools/desktop-guest/ws181-guest.sh`、WS181 全体の A1〜C12）、4ab495ae4（AAT の scenario の draft `tests/scenarios/desktop/windows/arrange.md`）、ce31f69b1（正常系の外を plan/ws177/backlog-p2.md へ）。
 
 ## 確認
 

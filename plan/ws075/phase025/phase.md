@@ -44,7 +44,7 @@ harness（`hdmi-h4-hw.sh stop`）は kei の session の log（/run/user/1000/se
 - 10 app の上にさらに App Home の 10 app を 2 回開く（計 30 窓）: `gt memory: object pool exhausted (128 slots)` が続き、ある app の
   vkUpdateDescriptorSets と bind が「0x6a1 は session の descriptor set でない」で拒まれた。compositor は止まらない。GPU の object の
   128 の枠が尽きて作れない物が出るのは別の制限（元の 2 回の log には exhausted が無い）。
-- stress C（`plan/ws075/tests/hdmi/stress-117.sh`: 10 app の上で Model viewer を App Home から開き q で閉じる、を繰り返し、毎回 flip の数で
+- stress C（`plan/tools/i915-hw/hdmi/stress-117.sh`: 10 app の上で Model viewer を App Home から開き q で閉じる、を繰り返し、毎回 flip の数で
   描画が生きているか見る）: 40 回のうち 1 回、exhausted 無しに、ある app の set 0x1c1 が alloc の後に表から消えていた
   （update と bind が「session の set でない」）。その瞬間の log は別の session の pipeline の compile（表への追加）と入り混じっていた。
 

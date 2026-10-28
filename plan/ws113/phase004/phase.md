@@ -29,7 +29,7 @@ Commands/results/commit/environment/artifacts/skipped checks: 未実施（計画
 
 ## p001契約調査による詳細化（2026-10-02）
 
-[origin p001](../phase001/phase.md)、[契約](../phase001/contracts.md)、[ID/完了比較](../phase001/identity-completion.md)、[fixture](../phase001/fixtures.md)、[WS summary](../ws.md)を入力とする。
+origin p001（fb1f6afee の `plan/ws113/phase001/phase.md`）、契約（fb1f6afee の `plan/ws113/phase001/contracts.md`）、ID/完了比較（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）、fixture（fb1f6afee の `plan/ws113/phase001/fixtures.md`）、[WS summary](../ws.md)を入力とする。
 
 Procedure: outputごとのcompose/swapchain/render状態とdynamic wl_outputを作る。0接続でもserver/device watcherを保持。extendedはsigned global originとhalf-open境界、mirrorは1論理desktopを各native modeへGPU aspect-fitし黒帯をopaqueに塗る。全接続集合のvalidate/stage/applyとrollback/degradedの実状態を保持する。起動/保存anchorは採択されたpolicyに従う。
 
@@ -39,7 +39,7 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 ## 採択済local port ID / native capability入力
 
-[main採択A2とsource](../phase001/identity-completion.md)、[native capability結線](../phase001/native-contract.md)を使う。自Phaseへの影響: 保存keyはlocal port scope。connected集合を旧bootpreferredで隠さず全参加。unknown/invalid keyでもworking状態を保ち、mode/capability validate。
+main採択A2とsource（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）、native capability結線（fb1f6afee の `plan/ws113/phase001/native-contract.md`）を使う。自Phaseへの影響: 保存keyはlocal port scope。connected集合を旧bootpreferredで隠さず全参加。unknown/invalid keyでもworking状態を保ち、mode/capability validate。
 後続の実装権限/依存は不変。actual API番号/layout/共有callback差分は選定前にowner/main review、HAL変更なら事前承認。
 
 ## Event
@@ -48,13 +48,13 @@ Status/dependenciesは上記のまま。未採択architecture/製品判断とact
 
 2026-10-02 / ws113-contract-design-20261002-a3-ws113-p004: p001のsource/一次仕様で明らかになった不足に合わせ、上記の自Phase procedureと検証/resumeを詳細化。D01–D03/D06、H08を適用。異解像度で四隅全contentを確認、common mode/driver retiming/refresh同期を仮定しない。配置overflow、資源不足、切断中applyのtruthful snapshotを確認。p007へroot ownerを使える描画/input/output契約を渡す。 origin/WSリンクは上記。planned/Queue noneを保持。GitHub body/comment/Projectはmainへdelivery依頼pending。
 
-2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p004: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: 初回全extended/internal anchor、非重複/辺で連結/edge snapをoutput state/input契約へ。 [origin](../phase001/phase.md)/[詳細](../phase001/identity-completion.md)/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
+2026-10-02 / ws113-technical-choice-20261002-a3-ws113-p004: mainのdelegated technical decision messageからD-BOOT/LAYOUT/REC/AUTH/PORT通常案を採択記録。自Phase影響: 初回全extended/internal anchor、非重複/辺で連結/edge snapをoutput state/input契約へ。 origin（fb1f6afee の `plan/ws113/phase001/phase.md`）/詳細（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）/[WS](../ws.md)。依存/Queue権限不変、main remote delivery pending。
 
-2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p004: mainのD-ID A2/旧bootpreferred技術採択messageを受領。保存keyはlocal port scope。connected集合を旧bootpreferredで隠さず全参加。unknown/invalid keyでもworking状態を保ち、mode/capability validate。 [origin](../phase001/phase.md)/[sourceと範囲](../phase001/identity-completion.md)/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
+2026-10-02 / ws113-local-port-id-20261002-a3-ws113-p004: mainのD-ID A2/旧bootpreferred技術採択messageを受領。保存keyはlocal port scope。connected集合を旧bootpreferredで隠さず全参加。unknown/invalid keyでもworking状態を保ち、mode/capability validate。 origin（fb1f6afee の `plan/ws113/phase001/phase.md`）/sourceと範囲（fb1f6afee の `plan/ws113/phase001/identity-completion.md`）/[WS](../ws.md)。既往eventを保存し、該当current designを更新。p001 in-progress、他Phase planned/Queue none。main remote delivery pending。
 
 ## 2026-10-05 計画（q702、ベータ2）
 
-入力: [契約の確定](../phase001/contracts-beta2.md) D-BOOT2・D-HOTPLUG・D-RELEASE・D-STORE・D-QEMU、contracts.md §5・§6。
+入力: 契約の確定（fb1f6afee の `plan/ws113/phase001/contracts-beta2.md`） D-BOOT2・D-HOTPLUG・D-RELEASE・D-STORE・D-QEMU、contracts.md §5・§6。
 
 範囲（compositor `userland/desktop/wayland/`、GPU は libvulkan だけ）: 出力の表（token・persistent key・generation・状態 detected → validated → claimed → active → retiring → gone）、出力ごとの display の surface・swapchain・合成、global の論理座標（signed、half-open、辺で連結）、全拡張と全 mirror（mirror は各出力の native の mode へ aspect-fit、黒い帯、独立の swapchain）、device event の fence で再列挙して出力を足す・外す、0 台で server を保つ、出力ごとの `wl_output` の global（add・remove）、displays.conf の読み書き（D-STORE、明るさは p005）、設定の transaction（validate → 準備 → 再照合 → 適用 → 実 present の確認 → snapshot の publish、失敗は rollback か実状態を degraded で公開）。input の clamp を出力の集合の境界に（contracts.md §6 の共有の辺の処理）。
 

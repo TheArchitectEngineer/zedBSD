@@ -24,10 +24,10 @@ WS190 の phase002・phase003 が変えた C コード（libkeiland の text-bar
 
 ### build と試験
 
-- build 対象: `make -j16 ZEDBSD_CONFIG=plan/ws190/tests/config-amd64-aat-touch.mk BUILD=build/p3-ws190 build/p3-ws190/dynamic/libkeiland.so build/p3-ws190/bin/textedit build/p3-ws190/bin/kuidemo`。
+- build 対象: `make -j16 ZEDBSD_CONFIG=plan/tools/aat/config-amd64-aat-touch.mk BUILD=build/p3-ws190 build/p3-ws190/dynamic/libkeiland.so build/p3-ws190/bin/textedit build/p3-ws190/bin/kuidemo`。
   - ビルド成功（既存の成果物から変わらず）、warning 0（clang -Werror）。
 
-- host 試験: `sh plan/ws190/tests/run-host.sh`。
+- host 試験: `sh plan/tools/keiui/run-host-touch-select.sh`。
   - host-text-bar: 47/47 PASS（plain・2 回実行で同じ結果）。
   - host-touch-select: 44/44 PASS（plain・2 回実行で同じ結果）。
   - ws190-host: PASS（ASan/UBSan）。

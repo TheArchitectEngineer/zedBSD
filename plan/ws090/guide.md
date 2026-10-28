@@ -41,10 +41,10 @@ p009・p010（Files）をデモの後に回すかは §3 の判断 J-A（人間�
 | Phase | 内容 | 証拠 |
 | --- | --- | --- |
 | p001〜p006 | 設計、描画の層、scroll・入力・文字の touch、窓の土台と Text Editor、部品と kuidemo、file chooser を libkeiui へ | 各 phase.md。KUI_VERSION 2〜5、KEILAND_VERSION 16 |
-| p008 | PDF Viewer・Image Viewer を `kui_window` と `kui_file_chooser` へ（KUI_VERSION 10） | [phase008](phase008/phase.md): demo-s8-s9 前後 PASS、`viewers-p008.sh` PASS、Image Viewer の guest と touch PASS、C9、boot |
-| p011 | Terminal・Notes の窓を `kui_window`（`KUI_PRESENT_NONE`）へ（KUI_VERSION 11） | [phase011](phase011/phase.md): 統合の試験 demo-s8-s9 PASS（ユーザーの指示で合格）。Terminal の p088 は FAIL のまま未切り分け |
-| p013 | `kui_window` の text-input-v3、Text Editor（KUI_VERSION 6） | [phase013](phase013/phase.md): `textinput-p013.sh` PASS |
-| p014 | file chooser を親の title bar の下の sheet に、不透明（Titlebar の mode 3 SHEET、KEILAND_VERSION 20） | [phase014](phase014/phase.md): `sheet-guest.sh` PASS、C9 10/10、boot |
+| p008 | PDF Viewer・Image Viewer を `kui_window` と `kui_file_chooser` へ（KUI_VERSION 10） | phase008（fb1f6afee の `plan/ws090/phase008/phase.md`）: demo-s8-s9 前後 PASS、`viewers-p008.sh` PASS、Image Viewer の guest と touch PASS、C9、boot |
+| p011 | Terminal・Notes の窓を `kui_window`（`KUI_PRESENT_NONE`）へ（KUI_VERSION 11） | phase011（fb1f6afee の `plan/ws090/phase011/phase.md`）: 統合の試験 demo-s8-s9 PASS（ユーザーの指示で合格）。Terminal の p088 は FAIL のまま未切り分け |
+| p013 | `kui_window` の text-input-v3、Text Editor（KUI_VERSION 6） | phase013（fb1f6afee の `plan/ws090/phase013/phase.md`）: `textinput-p013.sh` PASS |
+| p014 | file chooser を親の title bar の下の sheet に、不透明（Titlebar の mode 3 SHEET、KEILAND_VERSION 20） | phase014（fb1f6afee の `plan/ws090/phase014/phase.md`）: `sheet-guest.sh` PASS、C9 10/10、boot |
 | host（2026-10-01、この手引きの作成で再実行） | `host-input: 63/63 passed`・`host-widgets: 94/94 passed`（約 6 秒）・`host-draw: 13/13 passed`・`host-chooser: 85/85 passed`・`host-core: 34/34`・`host-termtouch: ok (20 checks)`・`host-notestouch: ok (52 checks)`・`run-pdfviewer-host: ok` | — |
 
 今の版: `KUI_VERSION 11`（`include/libc/keiui.h:51`）、`KEILAND_VERSION 20`（`include/libc/keiland.h:49`）。
@@ -54,8 +54,8 @@ p009・p010（Files）をデモの後に回すかは §3 の判断 J-A（人間�
 | Phase | Status | 止めている物 |
 | --- | --- | --- |
 | p016（提案、下） | — | なし |
-| [p015](phase015/phase.md) | planning | なし（p011 は cleared）。WS081 の試験 2 本の変更に main の許可 |
-| [p007](phase007/phase.md) | planning | **WS089 の完了**（と WS104 の settings の Phase との順） |
+| p015（fb1f6afee の `plan/ws090/phase015/phase.md`） | planning | なし（p011 は cleared）。WS081 の試験 2 本の変更に main の許可 |
+| p007（fb1f6afee の `plan/ws090/phase007/phase.md`） | planning | **WS089 の完了**（と WS104 の settings の Phase との順） |
 | p009・p010 | planning | **WS094 の完了**（Files に `--desktop`、2026-09-29 main）。WS094 は incomplete（p011・p012・p007 が planned、p009 が uncleared） |
 | p012 | planning | 全て |
 
@@ -79,8 +79,8 @@ p007・p009・p010・p015 は app ごとに独立で、途中で止めても他�
 | 順 | Phase | 目的 | 条件 | 見込み |
 | --- | --- | --- | --- | --- |
 | 1 | **ws090-p016（提案）** | Terminal の p088（drop）の FAIL の切り分け（p011 の残り） | なし | 小。guest の試験 2〜3 本 |
-| 2 | [ws090-p015](phase015/phase.md) | Terminal・Notes の scroll を `kui_scroll` へ | 10/10 までに終わる見込みのときだけ。WS081 の試験の変更は main の許可 | 中 |
-| 3 | [ws090-p007](phase007/phase.md) | Settings を libkeiui へ | WS089 の完了の後、WS104 の p001〜p003・p007 の後（または main が順を決める）。10/10 まで | 中〜大 |
+| 2 | ws090-p015（fb1f6afee の `plan/ws090/phase015/phase.md`） | Terminal・Notes の scroll を `kui_scroll` へ | 10/10 までに終わる見込みのときだけ。WS081 の試験の変更は main の許可 | 中 |
+| 3 | ws090-p007（fb1f6afee の `plan/ws090/phase007/phase.md`） | Settings を libkeiui へ | WS089 の完了の後、WS104 の p001〜p003・p007 の後（または main が順を決める）。10/10 まで | 中〜大 |
 | 4 | ws090-p009・p010 | Files | WS094 の完了。**判断 J-A** | 大（Files は 2.9 万行） |
 | 5 | ws090-p012 | 規約の全文と回帰 | 全て（デモの前に止めた Phase は除いて、移した分だけで行うかは main の判断） | 中 |
 
@@ -112,7 +112,7 @@ p007・p009・p010・p015 は app ごとに独立で、途中で止めても他�
 
 ### 3.2 p015・p007
 
-手順と完了の条件は各 phase.md（2026-10-01 に作った）: [phase015/phase.md](phase015/phase.md)・[phase007/phase.md](phase007/phase.md)。
+手順と完了の条件は各 phase.md（2026-10-01 に作った）: `plan/ws090/phase015/phase.md`（fb1f6afee）・`plan/ws090/phase007/phase.md`（fb1f6afee）。
 
 ### 3.3 p009・p010（Files、判断 J-A の後）
 
@@ -143,13 +143,13 @@ byte で比べる）にする。Files の host の描画は `sh plan/tools/files
 
 ```
 sh plan/ws090/tests/host-draw.sh
-sh plan/ws090/tests/host-input.sh
+sh plan/tools/input/host-input.sh
 sh plan/ws090/tests/host-widgets.sh
 sh plan/tools/keiui/host-chooser.sh
 sh plan/tools/textedit/host-core.sh
 sh plan/ws102/tests/host-inset.sh
 sh plan/ws081/tests/run-termtouch.sh
-sh plan/ws081/tests/run-notestouch.sh
+sh plan/tools/touch/run-notestouch.sh
 sh plan/ws079/tests/run-pdf-render.sh 100
 sh plan/ws079/tests/run-pdfviewer-host.sh
 sh plan/tools/imageview/run-host.sh

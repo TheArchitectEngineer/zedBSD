@@ -1,5 +1,5 @@
-# The machines the i915 passthrough tests run on (sourced by plan/ws031/tests/vkloop-hw.sh, plan/ws075/tests/test-hw.sh
-# and plan/ws101/tests/hw/run-hw.sh).  I915_MACHINE picks one (default 5330); a variable already set in the
+# The machines the i915 passthrough tests run on (sourced by plan/ws031/tests/vkloop-hw.sh, plan/tools/i915-hw/test-hw.sh
+# and plan/tools/gpu-compute/hw/run-hw.sh).  I915_MACHINE picks one (default 5330); a variable already set in the
 # environment wins over the machine's value.  Each machine keeps the same ~/bigbang/ (run-parity-vk.sh and
 # igpu-mode.sh, plan/ws031/tests/host/) and runs the guest with its iGPU 0000:00:02.0 on vfio-pci.
 #

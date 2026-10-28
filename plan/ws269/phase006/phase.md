@@ -36,7 +36,7 @@
 | `firmware-boot.c` | 遅い段を「file を読む」と「保持した file から起こす」（`bring_up`）に分け、`powervr_firmware_restart`（processor を止め、IRQ を外し、block を返し、電源を切って入れ直し、保持した file から起こす。root を待たず file を読まない）を足した。health check は `commands.c` を使う。成功の後に `powervr_render_start`、失敗なら §3.1 の失敗の道と `powervr_render_abandon`。IRQ の handler は render の service を起こす |
 | `powervr.c` | `powervr_power_up`（power_up と register の窓の写像。identity は attach の時の物） |
 | `platform/riscv64/vmunix.mk` | 新しい 5 file を `CONFIG_DRIVER_POWERVR` の時に build |
-| `plan/ws269/tests/p006/`（新規） | `run.sh`・`gpu-mmu-host-test.c` |
+| `plan/tools/powervr/p006/`（新規） | `run.sh`・`gpu-mmu-host-test.c` |
 
 出典は block ごとの `Value(s) referenced:` / `Procedure referenced:`。p006 で新しく参照した値・手順は vendor の tree に同梱の mainline の driver（StarFive Linux `JH7110_VisionFive2_6.12.y_devel` 4cecf169f38e の `drivers/gpu/drm/imagination/`、`~/visionfive-linux`）から取り、その版を書いた（p005 の v7.3 の値と同じ FW の interface の版の header）。code・構造・名前は写していない。
 
@@ -75,7 +75,7 @@ void powervr_buffer_release(struct powervr_buffer *buffer);
 | VF2 の kernel | `timeout 1800 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/ws269-p006-vf2 vmunix` | rc=0、`warning:`・`error:` 0 件（-Werror）。新しい 5 file を含む 13 file が compile され、vmunix に `powervr: render node ready ...`・`powervr: coherency (firmware writes): ...` の文字列 |
 | riscv64-virt の kernel | `timeout 1800 make ZEDBSD_CONFIG=config/ci/config-riscv64-virt.mk BUILD=build/ws269-p006-virt vmunix` | rc=0、`warning:`・`error:` 0 件（powervr は build されない構成。変更の影響が無い事の確かめ） |
 | amd64 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws269-p006-amd64 vmunix` | rc=0、`warning:`・`error:` 0 件（同上） |
-| host 試験（p006） | `timeout 120 sh plan/ws269/tests/p006/run.sh build/ws269-p006-host` | `PASS 54 FAIL 0`。entry の bit（catalogue・directory・page、CC が立たない事、SLC bypass・read only、40 bit）、map と 3 段の walk、2 MiB・1 GiB の境を跨ぐ map、重なりの EEXIST と不変、引数の拒否 5 通り、unmap と再 map、途中の失敗で何も残らない事、fini で table と管理の memory が全部返る事、address の空間（guard、隙間の再利用、拒否、満杯）、heap の page の map（claim・take・give・満杯・境界） |
+| host 試験（p006） | `timeout 120 sh plan/tools/powervr/p006/run.sh build/ws269-p006-host` | `PASS 54 FAIL 0`。entry の bit（catalogue・directory・page、CC が立たない事、SLC bypass・read only、40 bit）、map と 3 段の walk、2 MiB・1 GiB の境を跨ぐ map、重なりの EEXIST と不変、引数の拒否 5 通り、unmap と再 map、途中の失敗で何も残らない事、fini で table と管理の memory が全部返る事、address の空間（guard、隙間の再利用、拒否、満杯）、heap の page の map（claim・take・give・満杯・境界） |
 | host 試験（p005、追従） | `timeout 120 sh plan/ws269/tests/p005/run.sh build/ws269-p006-p005host build/ws269-p002/fw/rogue_36.50.54.182_v1.fw` | `PASS 99 FAIL 0` |
 | host 試験（p004、追従） | `timeout 120 sh plan/ws269/tests/p004/run.sh build/ws269-p006-p004host` | PASS（0 failures） |
 | host 試験（p007、追従） | `timeout 120 sh plan/ws269/tests/p007/run.sh build/ws269-p006-p007host` | `display-host-test: PASS` |
@@ -97,7 +97,7 @@ void powervr_buffer_release(struct powervr_buffer *buffer);
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/ws269-p006-vf2 vmunix`（log `build/q1344-vf2.log`） | rc=0、`warning:`・`error:` 0 件。`gpu-mmu.c`・`render.c` が compile された |
 | riscv64-virt の kernel | 同上 `config-riscv64-virt.mk`、`build/ws269-p006-virt` | rc=0、`warning:`・`error:` 0 件 |
 | amd64 の kernel | 同上 `config-amd64.mk`、`build/ws269-p006-amd64` | rc=0、`warning:`・`error:` 0 件 |
-| host 試験（p006 を拡張） | `timeout 120 sh plan/ws269/tests/p006/run.sh build/ws269-p006-host` | `PASS 68 FAIL 0`（追加 14: SLC の選択 4 通り（private・mappable・shareable・両方）、run の検査 10 通り（DMA32 の内・境・跨ぎ、上限なし、揃い・不揃い・1、2 冪でない、空、wrap）） |
+| host 試験（p006 を拡張） | `timeout 120 sh plan/tools/powervr/p006/run.sh build/ws269-p006-host` | `PASS 68 FAIL 0`（追加 14: SLC の選択 4 通り（private・mappable・shareable・両方）、run の検査 10 通り（DMA32 の内・境・跨ぎ、上限なし、揃い・不揃い・1、2 冪でない、空、wrap）） |
 
 未実施: QEMU（起動しない指示）、実機。R3 の効果（GPU が書いた non-mappable な shareable の image で古い画が出ない事）は WS277 p006 の実機（U9）で確かめる。render の ops の中の分岐（placed の確保・解放の道）は host 試験が無く、実機で確かめる。
 

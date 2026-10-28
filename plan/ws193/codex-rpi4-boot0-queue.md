@@ -7,14 +7,14 @@ Finite scope: current RPi4 native UFS autoroot retains the loader-origin FAT in 
 
 | Attempt | Phase | Status | Dependencies |
 | --- | --- | --- | --- |
-| rpi4-boot0-20261011-i01 | [ws193-p011](phase011/phase.md) | cleared | integrated common VFS; read-only native UFS evidence |
+| rpi4-boot0-20261011-i01 | ws193-p011（fb1f6afee の plan/ws193/phase011/phase.md） | cleared | integrated common VFS; read-only native UFS evidence |
 
 Graph: existing native UFS boot (context) → i01 → user physical mount/kernel-update acceptance (context).
 Shared projections/GitHub are Q1 pending. No automatic next Queue.
 
 ## Outcome
 
-Source/build item cleared. [Evidence](tests/rpi4-boot0-20261011.md): common boot context retains the native-root boot FAT and RPi4 slot0 publishes read-write at /boot/boot0 without image/swap references. Production publication models PASS, amd64 VFS compile and arm64 kernel/image build PASS warning0, final full C review/diff-check PASS. Main concrete-commit approval is pending; physical FAT write/kernel update is unverified. No swap activation, push/deployment/reboot or next Queue.
+Source/build item cleared. Evidence（fb1f6afee の plan/ws193/tests/rpi4-boot0-20261011.md）: common boot context retains the native-root boot FAT and RPi4 slot0 publishes read-write at /boot/boot0 without image/swap references. Production publication models PASS, amd64 VFS compile and arm64 kernel/image build PASS warning0, final full C review/diff-check PASS. Main concrete-commit approval is pending; physical FAT write/kernel update is unverified. No swap activation, push/deployment/reboot or next Queue.
 
 ## main integration / 2026-10-11
 

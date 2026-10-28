@@ -43,7 +43,7 @@ Status: cleared（2026-10-19 Q1 の判定、T1-720。走り A は boot-test の 
 ## 確かめた事（host、2026-10-19）
 
 - `make ZEDBSD_CONFIG=plan/ws256/tests/config-riscv64-virt.mk -j16 build/riscv64-virt/vmunix build/riscv64-virt/root-bare.img`: exit 0、`warning:` 0 行・`error:` 0 行（log `build/tmp/p008-build1.log`・`p008-build2.log`、worktree p2）。新しい TU（riscv-virt.c・ns16550.c・serial-console.c・ramdisk.c）が compile された事を log で確かめた。vmunix の強い undefined 0（vmunix.mk の検査）。
-- `plan/ws256/tests/serial/run.sh OUTDIR`: 26 件 PASS（virt 風の木で ns16550a・0x10000000・0x100 byte・shift 0・幅 1・IRQ 10・busy 無し、start 前の byte を捨てる、IER の受信 bit、byte の access、2 回目の start の拒否、割り込みで 'ab'、EOI 1 回、USR に触らない。DW の木で disabled の UART を飛ばし 0x10000000・shift 2・幅 4・IRQ 32・busy 有り、word の access、IIR 0x7 で USR を 1 回読む、CR → LF・DEL → BS で console へ、1 回の割り込みは 64 byte まで、次の割り込みで残り）。src は kernel の `ns16550.c`・`fdt.c`・`serial-console.c` を host の cc で、MMIO・IRQ・tty は fixture。
+- `plan/tools/vf2-host/serial/run.sh OUTDIR`: 26 件 PASS（virt 風の木で ns16550a・0x10000000・0x100 byte・shift 0・幅 1・IRQ 10・busy 無し、start 前の byte を捨てる、IER の受信 bit、byte の access、2 回目の start の拒否、割り込みで 'ab'、EOI 1 回、USR に触らない。DW の木で disabled の UART を飛ばし 0x10000000・shift 2・幅 4・IRQ 32・busy 有り、word の access、IIR 0x7 で USR を 1 回読む、CR → LF・DEL → BS で console へ、1 回の割り込みは 64 byte まで、次の割り込みで残り）。src は kernel の `ns16550.c`・`fdt.c`・`serial-console.c` を host の cc で、MMIO・IRQ・tty は fixture。
 - `plan/ws256/tests/ramdisk/run.sh OUTDIR`: 21 件 PASS（root-bare.img を作り、ramdisk の端数・NULL・長い名前・2 つ目の拒否、ram0 の名前と block 数、2 block の read、MBR の signature、p1 FAT16・p2 0xa5、p2 が disk の終わりまで、**kernel の `mbr.c` の scan** で p1 2048/16384・p2 が root・p3/p4 無し、p2 に UFS の magic、1 block の write が memory を変える、flush）。
 - `mdir`・`minfo` で p1 が FAT16（label ZEDBOOT）、python で MBR の表を確かめた。
 - `git diff --check` 0。

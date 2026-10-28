@@ -3,83 +3,68 @@
 # WS236: Raspberry Pi 4（VideoCore VI）の動画の再生の hardware 支援
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: ゴールの 720p30 を遅れなく再生は T1-690 で達成の扱い（ws236/ws.md、2026-10-15 ユーザーが Pi 4 の再生の限界を 720p30 と決めた）。VCHIQ・VIDEO は既定で on。p012 は 2026-10-15 ユーザーの決定で canceled）。旧: incomplete（2026-10-14 着手、P3。2026-10-15 ユーザー: VCHIQ・VIDEO を既定で on（config/ci/config-rpi4.mk は y）。Pi 4 の再生は 720p30 が限界でゴールは 720p30 を遅れなく（T1-690 で達成の扱い）、1080p・60 fp…。残り・制限: p001〜p005・p007・p011 の Phase の印、1080p・60 fps は範囲の外
+Status: completed（2026-10-27 P3 の精査 q1608。2026-10-15 ユーザー「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」でゴールを 720p30 にし、T1-690 で 720p30 の shown 289/300。VCHIQ・VIDEO は既定で on）
+<!-- retained-after-completion --> tests/ の 4 項目 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
-Related: [WS141](../ws141/ws.md)（VC6 の display と V3D）、[WS202](../ws202/ws.md)（libmedia の H.264・AAC の再生、今は software と i915 の Vulkan Video）、[WS207](../ws207/ws.md) p004（HDMI の音、同じ VCHIQ を使う）
-Resume point（2026-10-15 Q1、記録の整合の点検）: 残りは優先度が低い: Pi を main の libvulkan・wayland に戻して 720p30 を確かめる、Phase の状態の整理（p001〜p005・p007・p011 が in-progress、p006・p008 が uncleared、p009 は設計だけ）、p007。
+Related: [WS141](../ws141/ws.md)（VC6 の display と V3D）、[WS202](../ws202/ws.md)（libmedia の H.264・AAC の再生）、[WS207](../ws207/ws.md)（HDMI の音、同じ VCHIQ）
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## ユーザーの指示（原文、2026-10-14）
+## 目標
 
-「VC6での動画再生支援に対応するWSを作れますか？見積もりをください。」
+Pi 4 の VideoCore の VPU の H.264 の decode（VCHIQ と MMAL の `video_decode`）を、libvulkan の Vulkan Video（`VK_KHR_video_queue`・`VK_KHR_video_decode_queue`・`VK_KHR_video_decode_h264`）として kernel の側の Vulkan の executor に実装し、libmedia の `media_vkvideo_ops` と Video Player で再生する。設計は [design.md](design.md)（review は [review-1.md](review-1.md)）。
 
-## 前提（Q1 の理解、2026-10-14 の作成時。決定と設計で置き換わった点は design.md が正）
+## ユーザーの決定
 
-- RPi4 の H.264 の decode（最大 1080p60）は VideoCore の VPU の firmware（start4.elf）の中にあり、ARM 側からは VCHIQ（mailbox と共有のメモリの message の口）越しに MMAL の `video_decode` を使う。Linux では bcm2835-codec（V4L2 の M2M）がこれを包む。H.264 の encode も同じ道にある（Pi 4 まで）。
-- HEVC（最大 4Kp60）は別の専用の block（rpivid、stateless）。公開の datasheet は無く、資料は Linux の driver（GPL）だけ。写さずに作るには register の振る舞いを独自に書き起こす必要があり、危険が大きい。
-- V3D（WS141）は 3D の GPU で、動画の codec は持たない。Vulkan Video は VC6 では使えないので、libmedia に RPi4 用の backend（`media_vchiq_ops` 仮）を足す形になる。
-- VCHIQ の driver は WS207 p004（HDMI の音）と共通にできる。
+- 2026-10-14（原文）「VC6での動画再生支援に対応するWSを作れますか？見積もりをください。」
+- 2026-10-14「VC6では、Vulkan VIdeoのドライバとして実装してほしいです。V3Dと連携しなかったとしても。可能ですか？HEVCはライセンスがないのでやらないです。エンコードは今回は置いておきます。」
+- 2026-10-15「最新のカーネルでOKです。まずはビデオ再生をテストしてください。」
+- 2026-10-15「Pi4ビデオの最適化、進めてください。Video.mp4を遅れなく再生できることをゴールとします。」（p008）
+- 2026-10-15「デコーダの出力は、おそらくVideoCore でテクスチャとして使える形式なのでは？それを特別に利用したらどうですか？」（p009）、判断「案 1 を WS236 の Phase で」（p011）
+- 2026-10-15（Q1 の依頼「メモリ帯域を計算してみてください」の後）「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」「Pi4は直接的にデコーダを使うなら1080pもギリギリいけるのでしょうが、Vulkanのバッファにデコードする場合はこれが限界なんです。」
+- 2026-10-15「1080pや60fpsはもう計測しなくていいです」
+- 2026-10-15（クリック）A3（p012 の direct の swapchain）を「revert する」（720p30 では fps が変わらず合成の 1 frame が延びたため）。
+- 2026-10-15: VCHIQ・VIDEO を既定で on（`config/ci/config-rpi4.mk` は y）。
 
-## 決定（2026-10-14 ユーザー）
+## 結果
 
-「VC6では、Vulkan VIdeoのドライバとして実装してほしいです。V3Dと連携しなかったとしても。可能ですか？HEVCはライセンスがないのでやらないです。エンコードは今回は置いておきます。」
+- VCHIQ の核（p002、main e4c3fce22、WS207 と共用）、MMAL の `video_decode` の client と R1 の probe（p003）、V3D の Vulkan の executor の video decode（p004）、libmedia・Video Player・vkvideo-probe（p005）は main。
+- Pi 4 の実機（main 2597b86）で vkvideo-probe の 3 本の全 28 frame が参照と bit 単位で一致。
+- p006 の直し（最初の 1 枚、cached の MMAL の memory、step の decode ほか、49a7e41f2）。1080p30 は約 15 fps で未達（uncleared）。
+- p010 の decode の depth（kernel の executor の settling list）: T1-671 で depth 1.4〜1.7、probe 一致（cleared）。
+- p011 の案 1（decoder の出力を GPU の texture に、表示を GPU で）: T1-687 PASS（全画面で VPU が止まらない）、T1-688。T1-690（Pi 4 実機、QEMU 不使用）で 720p30 の shown 289/300、1080p30 267/300、60p は約 30 fps。
+- p012（A3）はユーザーの決定で revert（canceled）。
 
-- 形: libvulkan の Vulkan Video（`VK_KHR_video_queue`・`VK_KHR_video_decode_queue`・`VK_KHR_video_decode_h264`）を、i915 と同じく kernel の側の Vulkan の executor で実装する。V3D の device に decode の queue を足せなければ、decode の queue だけを持つ別の VkPhysicalDevice でよい。libmedia は今の `media_vkvideo_ops` の道をそのまま使う。
-- HEVC はやらない（license が無い）。encode は今回は外す。
+## 制限・移管
 
-## 危険（Q1 の推測）
+- 1080p・60 fps は範囲の外（2026-10-15 ユーザー）。
+- Pi を main の libvulkan・wayland に戻しての 720p30 の確かめ、seek、長時間の再生は未実施。
+- HEVC・encode は対象外。
+- decoder の出力を HVS の overlay に直に載せる案 2（p009）は設計だけ。
+- p007 の規約の全文は WS の外の一括の見直しへ（2026-10-08 ユーザー「規約の整形（各 WS の全文規約の Phase）はベータ3」、2026-10-27 の精査で一括の見直しに読み替え）。
+- 試験の stream と probe の data を作る道具（`make-probe-data.py`・`dump-compare.py` と入力の h264）は plan/tools/ へ移す（Q1 の OK の後）。
 
-- MMAL の `video_decode` は stateful（bitstream を渡すと decoder が自分で DPB を持ち、表示の順に出す）。Vulkan Video は stateless（アプリが SPS・PPS を StdVideo の構造で、slice を bitstream で渡し、DPB の image と参照の slot をアプリが管理し、1 回の decode が 1 枚を decode の順に出す）。橋渡しに、(a) StdVideo の SPS・PPS から NAL を組み直して MMAL に流す、(b) アプリの DPB の image は形だけにする、(c) MMAL の並べ替えの遅れを無くす設定（表示の順でなく decode の順に出す、または POC の対応で戻す）、が要る。(c) が firmware の設定で出来なければ、遅れを吸収する queue を executor に置く。
-- 出力の buffer: MMAL（VPU）が書ける memory に VkImage を置く必要がある（RPi4 は CMA 相当の共有の memory）。zero-copy にできなければ 1 回の copy。
+## Phase 一覧
 
-## Phase と見積もり（2026-10-14 改訂）
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws236-p001 | 調査と設計（VCHIQ・MMAL・Vulkan Video の橋渡し） | in-progress（第 1 版）のまま閉じた。設計は design.md |
+| ws236-p002 | kernel: VCHIQ の核 | in-progress のまま閉じた（main e4c3fce22、実機は p003 以降で動作） |
+| ws236-p003 | kernel: MMAL の `video_decode` の client と R1 の probe | in-progress のまま閉じた（実機の probe は全 frame 一致） |
+| ws236-p004 | kernel の Vulkan の executor の video decode | in-progress のまま閉じた（実機で再生） |
+| ws236-p005 | libmedia・Video Player・vkvideo-probe | in-progress のまま閉じた（実機で再生） |
+| ws236-p006 | 実機の確かめと直し（1080p） | uncleared（1080p は約 15 fps、後に 1080p は範囲の外） |
+| ws236-p008 | 再生の速さ: Video.mp4 を遅れなく | uncleared（T1-663、1080p で約 4〜5 fps。p010・p011 へ） |
+| ws236-p009 | decoder の出力を GPU・HVS で直に使う道の調べと設計 | 設計だけ（案 0 は p010、案 1 は p011、案 2 は未着手） |
+| ws236-p010 | decode の depth（案 0） | cleared（T1-671） |
+| ws236-p011 | 案 1: decoder の出力を GPU の texture に、表示を GPU で | in-progress のまま閉じた（T1-687・T1-690、720p30 で shown 289/300） |
+| ws236-p012 | Pi の WSI の direct の swapchain（A3） | canceled（2026-10-15 ユーザーの決定で revert） |
+| ws236-p007 | 規約の全文の確認 | WS の外の一括の見直しへ |
 
-| ID | 内容 | 見積もり | 依存 |
-| --- | --- | --- | --- |
-| [ws236-p001](phase001/phase.md) | 調査と設計（[design.md](design.md)、in-progress: 第 1 版、review 待ち）: VCHIQ・MMAL の message、参考の source の license、MMAL の decode の順・遅れの設定、Vulkan Video の stateless の API との橋渡しの設計、VkImage の memory、V3D の device に queue を足すか別の device か | 6 LW | — |
-| [ws236-p002](phase002/phase.md) | kernel: VCHIQ の driver の核（WS207 p004 と共用、in-progress: 実装・host 試験済み、main に merge 済み e4c3fce22、実機は p003 の probe と一緒） | 10 LW | p001 |
-| [ws236-p003](phase003/phase.md) | kernel: MMAL の `video_decode` の client（H.264、port・buffer・EOS・flush）と R1 の probe（in-progress: 実装・host 試験済み、test-wait（T1 の実機の probe）） | 10 LW | p002 |
-| [ws236-p004](phase004/phase.md) | kernel の Vulkan の executor（in-progress: 実装・build 済み、実機は p005 の依頼と一緒）: VC6 の video の device と decode の queue、video session・parameters、decode の command を MMAL へ（NAL の組み直し、DPB の形だけの扱い、順の調整）、libvulkan の device の列挙 | 12 LW | p003 |
-| [ws236-p005](phase005/phase.md) | libmedia（`media_vkvideo_ops`）と Video Player での再生、`vkvideo-probe` の試験（in-progress: probe の直し済み、libmedia は無変更、test-wait（T1）） | 3 LW | p004 |
-| [ws236-p006](phase006/phase.md) | 実機の確かめ（1080p の H.264 の mp4、CPU の使用率、seek、長時間）と直し（uncleared 2026-10-15: 画は実機で全 frame 一致、1080p は約 15 fps で速さが未達） | 5 LW | p005 |
-| [ws236-p008](phase008/phase.md) | 再生の速さ: Video.mp4 を遅れなく（in-progress、P3、2026-10-15 ユーザー「Pi4ビデオの最適化、進めてください。Video.mp4を遅れなく再生できることをゴールとします。」）: VPU へ複数の unit を重ねる pipeline、place・readback の短縮 | 8 LW | p006 |
-| [ws236-p009](phase009/phase.md) | decoder の出力を GPU・HVS で直に使う道の調べと設計（設計済み、実装はユーザーの判断待ち、P3、2026-10-15 ユーザー「デコーダの出力は、おそらくVideoCore でテクスチャとして使える形式なのでは？それを特別に利用したらどうですか？」）: 推す順は 案 0（depth 1.0 の直し、libvulkan の私的な fence が decode を 1 枚ずつにしている見当、0.5〜2 LW）→ 案 1（videoplayer が NV12 の image を V3D で sample して描く、R8・RG8 の texture と TFU、20〜31 LW）→ 後で案 2（HVS の overlay に NV12） | 調べ 2 LW | p008 |
-| [ws236-p010](phase010/phase.md) | decode の depth（案 0、in-progress、P3、2026-10-15、実装・host 試験・build 済み、T2 の Pi 実機待ち）: libvulkan の私的な fence で decode の execution が frame まで queue を塞いでいた。kernel の executor に settling list を足し、execution は送った時点で queue を離れ、fence の signal と自分の marker だけを frame の後にした（libvulkan・libmedia は変えない） | 2 LW | p009 |
-| [ws236-p011](phase011/phase.md) | 案 1: decoder の出力を GPU の texture に、表示を GPU で（in-progress、P3、2026-10-15 ユーザーの判断「案 1 を WS236 の Phase で」）: a. TFU の probe（R8・RG8 の UIF、YUV 入力）、b. VPU の bulk を NV12 の image へ直に、c. V3D の R8・RG8 の texture と plane の view、d. libmedia の GPU の picture、e. videoplayer の描画を Vulkan に | 20〜31 LW | p009・p010 |
-| [ws236-p012](phase012/phase.md) | Pi の WSI の direct の swapchain（in-progress、P3、2026-10-15 Q1 の判断で p011 の A3 を分けた）: bcm2711 の renderer が約束する時、swapchain の image を共有の image そのものにして present の copy を無くす（libvulkan・kernel の capset の bit・compositor の opt-in）、規約の全文の見直しを含める | 4〜8 LW | p011 |
-| [ws236-p007](phase007/phase.md) | 規約の全文の確認 | 2 LW | 全て |
+## 記録の所在
 
-合計 約 48 LW（実時間で約 12〜20 時間）。p004 の stateful と stateless の橋渡しが一番不確か（+8 LW 程度の振れ）。HEVC・encode は対象外。
-
-## 引き継ぎ（2026-10-15 夜、Q1、サーバの再起動の前）
-
-- p006 の直し（最初の 1 枚を押し出す灰色の I slice、1〜14 の +1、cached の MMAL の memory、step の decode、cost の log、BUG-314 の EIO の log）は main に merge 済み（49a7e41f2）、build・host 試験のみ。
-- 実機の試験（T1-653、phase006 の「T への依頼」）は未実施: 新しい kernel で Pi が起動 54 秒で停止（BUG-317）。ユーザーは「最新のカーネルでOKです。まずはビデオ再生をテストしてください。」、Pi の SD を書き直し中。
-- 再開: ユーザーの知らせの後、最新の main の CI の kernel（config/ci/config-rpi4.mk）で phase006 の手順 3〜7 を流し、結果をユーザーに伝える。止まる地点: Pi が応答しなくなったら止めてユーザーに聞く。
-- 残り: libmedia の uncached の読み（WS202・WS141）、seek、p007（規約）。
-
-## 実機の結果（2026-10-15、Q1）
-
-- Pi 4 の実機（main 2597b86）で、vkvideo-probe の 3 本の全 28 frame が参照と bit 単位で一致（frame 0 も出る）。probe の hash の不一致は probe の tile の判定の不具合で、Q1 が直した。
-- Video Player の 1080p30 は約 15 fps（shown 76・late 224）。VPU の frame を 1 枚ずつ約 32 ms 待つのが主因（cached の写しで readback は 2.5 ms に）。次は複数の picture を同時に渡す pipeline（新しい Phase の候補、ユーザーの判断で）。
-- 詳細は [phase006](phase006/phase.md) の「実機の結果」。
-
-## メモリ帯域の試算（2026-10-15 Q1、ユーザーの依頼「メモリ帯域を計算してみてください」、実測ではない）
-
-全画面・画面 1280x720 の今の道（A1・A3 は revert 済み）。1 frame の大きさ: 720p の NV12 1.38 MB、1080p の NV12 3.11 MB、画面の RGBA 3.69 MB。
-
-| 段（720p 動画の 1 表示 frame） | 読み＋書き |
-| --- | --- |
-| VPU の decode（出力 1＋参照の読み 約 2 枚） | 約 4.1 MB |
-| TFU で Y・UV を UIF へ | 2.8 MB |
-| Video Player の shader（NV12 を読み RGBA を書く） | 5.1 MB |
-| libvulkan の present の写し | 7.4 MB |
-| compositor の TFU（窓の画） | 7.4 MB |
-| compositor の合成 | 7.4 MB |
-| compositor の present の写し | 7.4 MB |
-| 計 | 約 42 MB／frame |
-
-HVS の scanout（3.69 MB × 60 Hz ≈ 0.22 GB/s）を足して、720p30 約 1.5 GB/s、720p60 約 2.7 GB/s、1080p30 約 1.8 GB/s、1080p60 約 3.3 GB/s。Pi 4 の LPDDR4-3200 ×32 bit の理論値は 12.8 GB/s、持続の実効は 3〜4 割（約 4〜5 GB/s、memcpy で 2.5〜3 GB/s）、tile・参照の読みは連続でないので効率はさらに下がり、CPU・VPU・V3D・HVS が 1 本の bus を取り合う。→ 720p30 は収まり、720p60・1080p は実効の上限に当たる（60p が約 30 fps で頭打ちの実測と合う）。decoder の出力を HVS に直に載せる道なら 1 frame 約 4〜6 MB で 1080p も届く計算。推定: 参照の読みの量・実効の帯域・access の効率は未測定。
-ユーザーの判断（2026-10-15）:「1080pは要件から外します。」「720p 30fpsがこのマシンの限界値です。」「Pi4は直接的にデコーダを使うなら1080pもギリギリいけるのでしょうが、Vulkanのバッファにデコードする場合はこれが限界なんです。」
+Phase の計画・結果・試験は削除する（道具は plan/tools/ へ移す）。git の commit `fb1f6afee` の `plan/ws236/` にある。Queue の履歴は [plan/history](../history/index.md)。

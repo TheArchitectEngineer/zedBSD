@@ -8,13 +8,13 @@ Queue: P2（2026-10-14、conformance 担当）
 
 ## 範囲
 
-`src/drivers/pci/pci-ahci.c`、`include/drivers/pci/pci-ahci.h`・`pci-ahci-protocol.h`、`src/kern/platform/pcat.c` の AHCI の部分、`plan/ws231/tests/ahci-protocol-test.c` を `plan/coding-style.md` の全文と照らした。動作・API・ABI・計算の順序・error の値は変えていない。
+`src/drivers/pci/pci-ahci.c`、`include/drivers/pci/pci-ahci.h`・`pci-ahci-protocol.h`、`src/kern/platform/pcat.c` の AHCI の部分、`plan/tools/ahci/ahci-protocol-test.c` を `plan/coding-style.md` の全文と照らした。動作・API・ABI・計算の順序・error の値は変えていない。
 
 ## 実行
 
 - `python3 plan/tools/style-check.py <各 file>`（修正の前後）。clang-format は host に無く未実施。
 - `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/p2-conf build/p2-conf/vmunix -j16`: exit 0、warning 0、`amd64 vmunix check: PASS`。
-- `sh plan/ws231/tests/run-ahci-protocol-test.sh`: c89 -pedantic の PASS、ASan・UBSan の PASS。
+- `sh plan/tools/ahci/run-ahci-protocol-test.sh`: c89 -pedantic の PASS、ASan・UBSan の PASS。
 - `git diff --check`: 問題なし。
 
 ## 直した規則

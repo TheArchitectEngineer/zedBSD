@@ -1,7 +1,7 @@
 [
   {
     "check": "desktop",
-    "command": "sh plan/ws094/tests/host-desktop.sh",
+    "command": "sh plan/tools/files-desktop/host-desktop.sh",
     "exit": 0
   },
   {

@@ -3,19 +3,18 @@
 # WS083: Vulkan Video の拡張と i915 の対応（最初の目標 H.264 の decode）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p008 cleared（p007 は 2026-10-13 ユーザーの実機の確かめ「OKでした」）。Vulkan Video は既定で on（2026-10-11 ユーザー）。p009 は 2026-10-10 ユーザー「P2はp009は不要です。p007, p008完了でラップアップでいいです。」）。旧: incomplete（ベータ2 の範囲は完了（2026-10-13、2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）、残りは規約の全文の見直し（ベータ3、p009。p007 は 2026-10-13 ユーザーの実機の確かめ「O…。残り・制限: 規約の全文は一括の見直しへ
+Status: completed（2026-10-27 P3 の精査 q1608。ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p008 cleared（p007 は 2026-10-13 ユーザーの実機の確かめ「OKでした」）。Vulkan Video は既定で on。p009 は 2026-10-10 ユーザー「P2はp009は不要です。p007, p008完了でラップアップでいいです。」）
+<!-- retained-after-completion --> tests/ の 2 項目 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
+Completed: 2026-10-27（q1608 の精査）
 Primary Milestone: MG006
 Related Milestones: MG002
 Objectives: O1
 Parent: [Master](../master.md)
-Queue: q897（P2、2026-10-08 午後: 設計と実装の照合の review、p008 の host の分）
-Resume point: 2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p001 cleared。p002・p004 は T1-435 の後。旧: 2026-10-08 午後 P2（q897）: 人の判断 H1〜H5・HD1〜HD6 は 2026-10-07 に全部決定（master.md の 2026-10-07 の行）、design は第 3.1 版（review 3 回、§15〜§17）。p002・p003a は実装と host 試験済み、p003b cleared、p004 は T1-371（QEMU §8.2）PASS、p006a・p007 は host の範囲が済み。残りは実機（p005 の VCS の bring-up と I frame の hash、p006b の P・B の hash、p007 の人工の hang からの回復; 5330 の UAT の後に Q1 が T1 へ）と p008 の host の分（result status query、利用者への案内）。p009（全文規約の見直し）はベータ3（2026-10-08 ユーザー「コーディング規約による整形はベータ3でやります」）。
-2026-10-02 user: fg019（ベータ1、10/17）に入れる。「Vulkanのビデオ再生拡張をIntel Xe-LPで実装する。H.264を最初のターゲットとする。」動画プレーヤ（WS122）・ブラウザ（WS121）の土台（VA-API の WS123 は canceled、アプリが Vulkan Video を直接使う）。2026-10-07 ユーザーの回答で、p001・p002 と host で作れる所までエージェントが進める（10-02 の「別セッション」の指示を置き換え）。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 目標（2026-09-28 ユーザー）
-
-「WSを追加します。OSCデモの必須ではないです。Vulkan Video拡張を追加して、i915のドライバ対応を行います。H.264を最初のターゲットにします。」
+## 目標
 
 - 自前の libvulkan（`userland/desktop/libvulkan`）に Vulkan Video の拡張（`VK_KHR_video_queue`・`VK_KHR_video_decode_queue`・
   `VK_KHR_video_decode_h264`）を足し、i915 の driver（5330、Alder Lake、Gen12）の video の engine（VCS、MFX）で H.264 を decode する。
@@ -23,63 +22,27 @@ Resume point: 2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p001 cleared。p0
   参照の decoder（host の ffmpeg 等）の出力と一致する。I frame から、次に P・B と DPB。
 - encode（`VK_KHR_video_encode_h264`）・H.265・AV1 は後（Future）。
 
-## 設計で決めること（p001）
+設計は [design.md](design.md)（第 3.1 版、review 3 回）、GPU の UAPI の差分の案は [proposed/](proposed/README.md)、利用者向けの説明は `docs/reference/vulkan-video.md`。
 
-- **API の面**: video の queue family と capability の報告、`VkVideoSessionKHR`・session parameters（SPS・PPS）、video の format と
-  image の用途（decode の出力・DPB）、`vkCmdBeginVideoCodingKHR`・`vkCmdDecodeVideoKHR`、query（decode の結果の status）。
-  Vulkan Video では app が bitstream の SPS・PPS・slice header を解析して `StdVideo*` の構造体で渡す。
-- **i915 の側**: VCS（video の engine）の立ち上げ（ring・context・submission、今の render の engine の仕組みとの共通化）、Gen12 の MFX の
-  AVC の VLD の decode の command（`MFX_PIPE_MODE_SELECT`・`MFX_SURFACE_STATE`・`MFX_PIPE_BUF_ADDR_STATE`・`MFX_IND_OBJ_BASE_ADDR_STATE`・
-  `MFX_BSP_BUF_BASE_ADDR_STATE`・`MFX_AVC_IMG_STATE`・`MFX_QM_STATE`・`MFX_AVC_DIRECTMODE_STATE`・`MFX_AVC_SLICE_STATE`・
-  `MFD_AVC_BSD_OBJECT` 等）、NV12 の tile の形、firmware（H.264 の decode に HuC が要らないことの確認）。資料は Intel の公開の PRM と Mesa・
-  intel-media-driver を参照し、code は写さない（license の方針に従う）。
-- **memory**: bitstream の buffer、DPB の image の配置、MV の buffer、row store 等の scratch。
-- **試験**: 実機（5330）だけ（Venus・lavapipe は Vulkan Video を持たない見込み）。試験の stream の license（自作の stream を host の ffmpeg・
-  x264 で作り、tree には入れない、または自由な license のもの）。frame ごとの hash で参照と比べる。
-- **利用者**: 試験の app（例 `vkvideo-probe`）。その後に mview・ブラウザの `<video>`（WS074 の範囲の外）等の利用は別に判断する。
+## ユーザーの決定
 
-## Phase（案）
+- 2026-09-28: 「WSを追加します。OSCデモの必須ではないです。Vulkan Video拡張を追加して、i915のドライバ対応を行います。H.264を最初のターゲットにします。」
+- 2026-10-02: fg019（ベータ1、10/17）に入れる。「Vulkanのビデオ再生拡張をIntel Xe-LPで実装する。H.264を最初のターゲットとする。」動画プレーヤ（WS122）・ブラウザ（WS121）の土台（VA-API の WS123 は canceled、アプリが Vulkan Video を直接使う）。
+- 2026-10-07: 人の判断 H1〜H5・HD1〜HD6 を全部決定（design.md）。p001・p002 と host で作れる所までエージェントが進める（10-02 の「別セッション」の指示を置き換え）。
+- 2026-10-10: 「P2はp009は不要です。p007, p008完了でラップアップでいいです。」
+- 2026-10-11: 「Vulkan Videoをデバッグオプションでなくてデフォルトで有効な機能にしてください。」
+- 2026-10-13: p007 の実機の確かめ「OKでした」。「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」
+- 2026-10-27（q1608）: 「…masterとWSを修正して、completedやcanceledにしてください。」
 
-| Phase | 目的 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws083-p001](phase001/phase.md) | 設計（[design.md](design.md)） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）） | | — |
-| [ws083-p002](phase002/phase.md) | libvulkan の骨組み（拡張・queue family・capability・format・session・parameters・record・sync2 の翻訳・capset の native の語）、host の試験 | cleared（2026-10-10 Q1、5330 の実機で照合） | p001、H1・H2・H3・HD1・HD6（決定済み） |
-| [ws083-p003a](phase003a/phase.md) | i915: engine record VCS0、worker の engine ごとの context、遅延の VCS0 の context、hang の封じ込め | cleared（2026-10-10 Q1、5330 の実機で照合） | p001 |
-| [ws083-p003b](phase003b/phase.md) | 実行器の video の module、capset の native の語と family 1、video の submit の骨組み | cleared（2026-10-07 Q1） | p002、p003a |
-| [ws083-p004](phase004/phase.md) | MFX AVC の I frame の builder（genxml-video.h、NV12 Tile Y）、genxml の独立の decoder、試験の stream、`vkvideo-probe` | cleared（2026-10-10 Q1、5330 の実機で照合） | p003b、H4・H5・HD4 |
-| ws083-p005 | 実機: VCS の bring-up と I frame の hash（`i915.debug=video`）、HuC 不要の確認 | **cleared**（2026-10-10 Q1、ユーザーの依頼で 5330 の実機（image 588c5cd、boot に i915.debug=video）で SSH: dmesg に `Vulkan video decode is offered on a GT with VCS0`・`engine[2] vcs0 … reset_domain=0x20`・`capset declares H.264 video decode`、`vkvideo-probe --list` は `video families 1, video extensions 3`、I frame の i-baseline-64・i-main-352-slices・i-high-352-cqm は各 3 frames 3 match。HuC の行は無く、無しで通る） | p004、5330 |
-| [ws083-p006a](phase006a/phase.md) | P・B と DPB、scaling list の fall-back、複数 slice の host の試験（vkvideo-probe の DPB と表示順） | cleared（2026-10-10 Q1、5330 の実機で照合） | p004 |
-| ws083-p006b | P・B と DPB の実機の hash | **cleared**（2026-10-10 Q1、5330 の実機: p-baseline-64 10/10・pb-main-352 15/15・pb-high-352-pyramid 15/15 match、hang・reset の行なし、compositor は生きている） | p005、p006a |
-| [ws083-p007](phase007/phase.md) | `GRDOM_MEDIA` の engine 単位の reset と VCS の hang の回復 | cleared（2026-10-13 ユーザーの実機の確かめ「OKでした」、GPU が固まった時の回復） | p005 |
-| ws083-p008 | 性能、`i915.debug=video` の門の既定化（p007 の後）、利用者への案内、SAMPLED・TRANSFER_SRC（HD5: 要らない）、result status query | cleared（2026-10-10 Q1） | p006b、p007（host の分は無し） |
-| ws083-p009 | 全文規約確認と回帰（必須の最終確認） | planning（ベータ3、2026-10-08 ユーザー） | 全 Phase |
+## 結果
 
-## 設計と実装の照合の review（2026-10-08 q897、design-reviewer、HEAD 40766787a、読むだけ）
+- libvulkan の Vulkan Video（`VK_KHR_video_queue`・`video_decode_queue`・`video_decode_h264`、sync2 の翻訳、capset の native の語）（p002）、i915 の VCS0 の engine・context・hang の封じ込め（p003a）、実行器の video の module と submit（p003b）、MFX AVC の builder・genxml の独立の decoder・試験の stream・`vkvideo-probe`（p004）、P・B と DPB（p006a）、`GRDOM_MEDIA` の engine 単位の reset と hang の回復（p007）、性能・門・result status query（p008）。
+- 実機（5330）: p005 の VCS の bring-up と I frame の hash、p006b の P・B の hash（p-baseline-64 10/10・pb-main-352 15/15・pb-high-352-pyramid 15/15 一致）、p007 はユーザーの確かめ「OKでした」。
+- 設計と実装の照合の review（2026-10-08 q897、design-reviewer）: blocking 無し。R-S1（upper bound を page の終わりに）・R-S2（止まった後の ECANCELED）・R-S3（quarantine の session の video を拒む）・R-S5（VCS0 の timeout 1 秒）・R-S6（libvulkan の native の経路の host 試験）を直した。R-S4（ready-to-reset の無い時の reset）は実機で。
 
-blocking 無し。MFX の命令列（順・opcode・長さ・全 field）・slice の開始と長さ・zig-zag と default の表・wire の並び・NV12 の pitch と Y offset・GRDOM 0x20 は Mesa の genxml・ANV と一致。指摘と対応（2026-10-08 Q1 の判断 (a): R-S1・S2・S3・S5・S6 を p005 の前に q897 で直す、R-S4 は実機で）:
+## 制限・移管
 
-| ID | 内容 | 所在 | 案 |
-| --- | --- | --- | --- |
-| R-S1 | bitstream の Upper Bound が 4 KiB に整列していない（PRM は bits 47:12 の見込み、未確認）。ANV は 0 を書く | vk/vk-video.c（`bitstream_end`）、video-mfx.c | 4 KiB に切り上げるか ANV と同じ 0、U18 は実機で |
-| R-S2 | video が止まった後の EIO（何も走らせない）を hang と見て無関係な session を quarantine | worker.c（`video_dead` で EIO）、vk/vk-video.c（EIO → quarantine） | 止まっている時は別の errno、quarantine は wait の ETIMEDOUT・EIO だけ |
-| R-S3 | quarantine の session が新しい video session を作り decode を続けられる（hang の上限 3 を 1 つの app が使い切れる） | vk/vk-video.c の session create・`drv_i915_video_submit` | quarantined なら submit は DEVICE_LOST、create は INITIALIZATION_FAILED |
-| R-S4 | ready-to-reset が来ないと engine reset を諦める（R1） | reset.c | VCS0 だけ handshake を省いた 2 回目の GDRST 0x20、実機で |
-| R-S5 | VCS も RCS 用の 10 秒の timeout、worker 1 本なので desktop が止まる | worker.c | VCS0 は 1 秒程度 |
-| R-S6 | 試験の空白: libvulkan の native の経路（context.c の 176 byte、`physical_load_video`、D3、device.c の依存）は host 試験が無い／D17 の 1〜4・7〜9 の境界試験が無い／Tile Y の試験は同じ関数で往復／golden は同じ判断（D21・upper bound・MOCS）から | plan/ws083/tests | native の経路の stub の host 試験、D17 の境界試験、実機で 64x64 の tile 0 の生の bytes を ffmpeg の plane と比べる手順 |
-| R-M1〜M9 | setup の slot が参照と同じでも拒まない、4 byte の start code の直後の次の slice で BSD の長さ 0、skew＋開始の 29 bit の切り捨てを検べない、1 submit に session 5 つ以上で DEVICE_LOST、`i915_video_write` の ENOSPC が DEVICE_LOST、skip の log の static の数え上げ（32 回で無言）、parameters NULL の decode が skip（D18 が筋）、design §3.2 の event・ExecuteCommands と実装の違い、§6.2 の flush と 1 decode ごとの run | vk/vk-video.c ほか | 各々の案は review の原文（Q1 への報告）に |
-
-対応（q897、2026-10-08 午後 P2、host・build）:
-- R-S1（p004 の直し）: `vk/vk-video.c` の upper bound を buffer の終わりの page の終わりに切り上げ（memory は page で bind されるので同じ memory の中）。試験: roundtrip で 4000 byte の buffer の `MFX_IND_OBJ_BASE_ADDR_STATE` の upper bound が page の終わり。
-- R-S2（p007 の直し）: worker は video が止まった後の VCS0 の request を `ECANCELED`（何も走らせない）で返し、`i915_video_run` は ECANCELED を quarantine にせず EIO（submit は DEVICE_LOST）。試験: roundtrip（quarantine にならない、log）、vcs-worker（止まった後の run は ECANCELED）。
-- R-S3（p007 の直し）: quarantine の session は video の submit が DEVICE_LOST（log）、video session の create が INITIALIZATION_FAILED。試験: roundtrip（hang の後、engine が戻っても submit・create を拒む）。render の側の quarantine の門は WS083 の外（未対応、Q1 へ）。
-- R-S5（p007 の直し）: VCS0 の request の timeout を 1 秒（`I915_WORKER_VIDEO_TIMEOUT_MS`）、RCS は 10 秒のまま。hang の log の ms は使った timeout。
-- R-S6: (1) 新 `run-host-libvulkan-native.sh`: `host-libvulkan-native.c`（instance.c・device.c を取り込み、physical_load_queues・physical_load_video・D3 の濾し・拡張の列挙・device_validate の依存）と `host-libvulkan-capset.c`（context.c の 176 byte の native の語、open と ioctl を stand-in に）。(2) D17 の境界: 値の検べを `drv_i915_video_mfx_check_sets`（video-mfx.c へ移した、動作は同じ）にして `host-mfx-avc.c` の `case_set_bounds` で各値の最後に通る値と最初に断る値、roundtrip で item 3（image より大きい picture）・7（page に揃わない picture）・5（buffer を越える range）。item 8 の slice の長さと 9 の 256 を越える slice は wire の stream を変える必要があり未。(3) Tile Y の生の bytes の比べは実機の手順（T1-435 に足す文を Q1 へ）。(4) golden が同じ判断から作られている点は記録のみ。
-- 他の WS の runner: `plan/ws101/tests/host/run.sh` の executor の list に `forget`（BUG-260 で増えた file、無いと link できない、main の時点で壊れていた）を足した。
-- 確認: run-host-libvulkan-native・-status・-video、run-host-video-roundtrip（2026-10-13 削除: src/drivers/gpu/i915/compiler/spirv.c が無くなり build できず、Tools・未完了の Phase から参照が無いため、試験の整理の基準）、run-host-mfx-avc、run-host-vcs-worker、run-host-boot-video、ws031 run-vk-host-tests、ws075 run-host-layered、ws101 host/run.sh すべて PASS。`make -j16 BUILD=build/p2-k ZEDBSD_CONFIG=config/ci/config-amd64.mk ZEDBSD_USER_PROGRAMS="libvulkan vkvideo-probe" build/p2-k/vmunix build/p2-k/dynamic/libvulkan.so build/p2-k/bin/vkvideo-probe` warning 0。実機は未。
-
-残件（2026-10-08 Q1 の指示で記録）: render 側の quarantine の門。hang した session（quarantined）でも render の stream の入口（`vk/vk-command.c` の `i915_command_render`）は quarantine を見ず、graphics の family の submit・新しい resource は続けられる（design §6.1 の「quarantine はその session の新しい resource・job を拒む」に届いていない）。R-S3 は video の submit と video session の create だけを拒む。直すなら WS031（i915 の Vulkan 実行器）の側の別 Queue。
-
-## 制限（p008、2026-10-10 P2）
+（p008、2026-10-10 P2 の記録。既定は 2026-10-11 のユーザーの決定で ON）
 
 利用者向けの説明は `docs/reference/vulkan-video.md`。WS083 の到達点の制限:
 
@@ -88,5 +51,29 @@ blocking 無し。MFX の命令列（順・opcode・長さ・全 field）・slic
 - **規格に合わない点**（HD6）: N1 apiVersion 1.0 のまま video の拡張を名乗る（sync2 は 1.0 の command への翻訳）、N2 ycbcr の拡張無しで NV12 と plane の aspect、N3 OPTIMAL の subresource layout を返す、N4 slice が 256 を超える picture は飛ばす（libvulkan の README）。result status の pool は profile を見ない。
 - **出力の使い道**: decode の picture は host から読むだけ（SAMPLED・TRANSFER_SRC は無い、HD5）。表示には app が de-tile して別の image に写す。
 - **実機で確かめた範囲**: 5330（Alder Lake-P、Gen12）で `tests/streams` の 6 本（I 3・P/B 3、CAVLC・CABAC・複数 slice・非対称の scaling list・weighted・list の modification・B pyramid と MMCO 1）の全 frame の hash が一致、result status は COMPLETE。long term・frame_num の gap・MMCO 5・4 byte の start code・1080p の hash は host の golden だけ（実機の hash は未）。
-- **hang の回復**: VCS0 の engine 単位の reset（GRDOM_MEDIA）と上限 3 回は実装と host 試験済み、実機（p007 の F1・F2、試験の kernel が要る）は未実施。hang した session の quarantine は video の submit・session の create だけを拒み、render の stream の入口は見ない（WS031 の側の残件、上の review の節）。
+- **hang の回復**: VCS0 の engine 単位の reset（GRDOM_MEDIA）と上限 3 回は実装と host 試験済み、実機（p007 の F1・F2、試験の kernel が要る）は p008 の時点で未実施、後に 2026-10-13 ユーザーの実機の確かめ「OKでした」で p007 は cleared。hang した session の quarantine は video の submit・session の create だけを拒み、render の stream の入口は見ない（WS031 の側の残件、上の review の節）。
 - **性能**（T1-435 の E・E2、5330）: 1920x1080 の H.264（Baseline・Main・High、60 frame）で 1 decode の mean 4.2〜5.2 ms、longest 8 ms（probe は 1 decode ごとに submit と wait、worker は 1 本で同期）。60 fps に余裕。decode と同時の描画の fps への影響（U8）は測っていない。
+
+- 残件（2026-10-08 Q1 の指示で記録）: render 側の quarantine の門。hang した session（quarantined）でも render の stream の入口（`vk/vk-command.c` の `i915_command_render`）は quarantine を見ず、graphics の family の submit・新しい resource は続けられる（design §6.1 の「quarantine はその session の新しい resource・job を拒む」に届いていない）。R-S3 は video の submit と video session の create だけを拒む。直すなら WS031（i915 の Vulkan 実行器）の側の別 Queue。
+- 規約の全文（p009）は 2026-10-10 ユーザーの決定で不要。
+- 試験（`tests/`、試験の stream の生成を含む）は WS202・WS229・WS252 の試験と vkvideo-probe が使うので `plan/tools/` へ移す（Q1 の OK の後）。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws083-p001 | 設計 | cleared（2026-10-08 Q1） |
+| ws083-p002 | libvulkan の骨組み、host の試験 | cleared（2026-10-10 Q1、5330 の実機で照合） |
+| ws083-p003a | i915: VCS0、engine ごとの context、hang の封じ込め | cleared（2026-10-10 Q1） |
+| ws083-p003b | 実行器の video の module、submit の骨組み | cleared（2026-10-07 Q1） |
+| ws083-p004 | MFX AVC の I frame の builder、genxml の decoder、試験の stream、vkvideo-probe | cleared（2026-10-10 Q1） |
+| ws083-p005 | 実機: VCS の bring-up と I frame の hash | cleared（2026-10-10 Q1、5330） |
+| ws083-p006a | P・B と DPB（host） | cleared（2026-10-10 Q1） |
+| ws083-p006b | P・B と DPB の実機の hash | cleared（2026-10-10 Q1、5330） |
+| ws083-p007 | `GRDOM_MEDIA` の reset と VCS の hang の回復 | cleared（2026-10-13 ユーザー「OKでした」） |
+| ws083-p008 | 性能、門の既定化、result status query | cleared（2026-10-10 Q1） |
+| ws083-p009 | 全文規約確認と回帰 | 取り下げ（2026-10-10 ユーザー「P2はp009は不要です。…」） |
+
+## 記録の所在
+
+Phase の計画・結果は削除する。git の commit `fb1f6afee` の `plan/ws083/` にある。Queue の履歴は [plan/history](../history/index.md)。

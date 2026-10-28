@@ -49,7 +49,7 @@ Queue: P3（2026-10-12 ユーザー「WS211 p003, WS141 (b)、さらに上記ア
 - **M7 Pi の絵の比較**: Pi でも shot.c で `KWL_BATCH=0` と比べる。T1 の 1 回は `KWL_BATCH_CHECK` の build で流す。
 - **M8 16KiB**: vert も mode ごとの variant にし、宣言する入力を mode ごとの物だけにする（coordinate と vertex の入力数を揃える）。host 試験で input_count×4×6×n ≤ 16384 を確かめる。
 - **段 2 の進め方**: まず床（solid の 192 片）だけを束ね、Pi で前後の rec・prep・記録の時間と頂点の詰め直しの増え（uncached から 4 byte ずつ、床は読み 2.3k → 13.8k）を測る。減る draw（188 × 5〜20µs）と比べて、続けるか決める。
-- **L1**: ws.md の Resume point を直す。**L2**: 実測の元の log の要約を plan/ws211 に置く。**L3**: 頂点の buffer は 1MiB 固定の HOST_COHERENT で常に map する（compose.c の corners と同じ選び方）。Pi で 8MiB の連続確保の危険を避けるため。**L5**: 色を R32 に詰める案は採らない。shader の unpack の対応が bcm2711・i915 の compiler で確かでないため。**L6**: shader の host 試験は plan/ws141/tests/shader-host-test.sh に依る。Tools への登録は Q1 に頼む。**L7**: i915 の native compiler が flat を扱うかは、host の compiler の試験で確かめる。
+- **L1**: ws.md の Resume point を直す。**L2**: 実測の元の log の要約を plan/ws211 に置く。**L3**: 頂点の buffer は 1MiB 固定の HOST_COHERENT で常に map する（compose.c の corners と同じ選び方）。Pi で 8MiB の連続確保の危険を避けるため。**L5**: 色を R32 に詰める案は採らない。shader の unpack の対応が bcm2711・i915 の compiler で確かでないため。**L6**: shader の host 試験は plan/tools/v3d-qpu/shader-host-test.sh に依る。Tools への登録は Q1 に頼む。**L7**: i915 の native compiler が flat を扱うかは、host の compiler の試験で確かめる。
 - 段 1 の試験: `plan/ws211/tests/bind-host-test.sh`（新規）。確かめること: 同じ鍵で bind しない、別の set、quad の layout の後の同じ set の bind し直し、消した後の bind、command の数、log が無い時。結果は PASS。
 
 ## 段

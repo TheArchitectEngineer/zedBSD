@@ -83,7 +83,7 @@ Resume point: なし（素の 5330 での確認はユーザーの作業。下の
 | `src/drivers/gpu/i915/worker.c` | request を出してから終わりを見るまでを busy に数える（`i915_worker_run`）。同期の batch が先の work の後ろに並ぶとき boost（`i915_worker_queue_sync`） |
 | `src/drivers/gpu/i915/tests/contracts/rps_contract_test.c`（新）・`run.sh`・`README.md`・`host_kernel.c`・`host_unreached.c` | RPS の contract test（下）。`kern_deadline_after` を host の stand-in に移した（delayed work が使う） |
 | `src/drivers/gpu/i915/tests/execution/ktest-gt.c` | 期待値を RPNSWREQ=最低・LOW_POWER の閾値・判定の関数に |
-| `plan/ws075/tests/hdmi/h4-ctl.py` | `freq SECONDS MS [move]`（RPNSWREQ と RPSTAT1 の CAGF を xp で読む） |
+| `plan/tools/i915-hw/hdmi/h4-ctl.py` | `freq SECONDS MS [move]`（RPNSWREQ と RPSTAT1 の CAGF を xp で読む） |
 
 ## 確認（実行したもの）
 
@@ -96,7 +96,7 @@ Resume point: なし（素の 5330 での確認はユーザーの作業。下の
 | 規約（`plan/tools/style-check.py`） | 新しい指摘は critical section の本体と unlock の行の paragraph-comment（既存と同じ形）と contract test の `contract_section`（既存の contract test と同じ形）だけ。irq.c の指摘の数は変更の前と同じ |
 | QEMU の boot test（GPU なし、main の `build/amd64/hdd-image.img` の複写の ESP の vmunix をこの tree の kernel に替えた `build/p020/hdd-image.img`） | PASS（`build/p020/boot-test/login.png`） |
 
-実機（5330 の VFIO passthrough の QEMU guest、`plan/ws075/tests/hdmi-h4-hw.sh`、`flock /tmp/i915-hw.lock`）。image は `build/p020/base.img`
+実機（5330 の VFIO passthrough の QEMU guest、`plan/tools/i915-hw/hdmi-h4-hw.sh`、`flock /tmp/i915-hw.lock`）。image は `build/p020/base.img`
 （ws075-i915 の p008 の `irq.img` の複写、i915 は main 4e95147f と同じ、RP0 固定）と `build/p020/rps.img`（同じ image の ESP の vmunix だけを
 この tree の同じ引数の kernel に替えた）。desktop の起動の約 130 秒後から測った:
 

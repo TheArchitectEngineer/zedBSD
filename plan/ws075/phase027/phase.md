@@ -17,8 +17,8 @@ Phase disposition: normal
 - image: この tree（bcc5fdd6 = main を取り込んだ後、p026 の pacing の変更を含む）を `plan/ws075/demo/build-demo-image.sh build/ws075-p008/pt passthrough
   ZEDBSD_GRAPHICAL_BOOT=n "ZEDBSD_BOOT_EXTRA_LINES=display=edp login=graphical"` で（`build/ws075-p027/l1.img`、source の未 commit の変更 0）。
 - 5330 の QEMU の VFIO passthrough（`flock /tmp/i915-hw.lock` の下、hdmi-h4-hw.sh）。
-- 止まらないこと: 10 app を開き `plan/ws075/tests/hdmi/stress-117.sh 100`、stop の後に kernel log の `draw refused`・`not a descriptor set`・`exhausted`。
-- C6: `plan/ws075/tests/hdmi/measure-apps.sh` を同じ image で 5 run、`plan/ws075/tests/hdmi/c6.py`。
+- 止まらないこと: 10 app を開き `plan/tools/i915-hw/hdmi/stress-117.sh 100`、stop の後に kernel log の `draw refused`・`not a descriptor set`・`exhausted`。
+- C6: `plan/tools/i915-hw/hdmi/measure-apps.sh` を同じ image で 5 run、`plan/tools/i915-hw/hdmi/c6.py`。
 
 ## 結果
 

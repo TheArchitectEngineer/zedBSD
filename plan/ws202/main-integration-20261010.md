@@ -10,7 +10,7 @@ Status: finished。i01 cleared（main統合/build/対象回帰の部分scope）�
 - main基点: `c301a01a80bc7d4b16ce5a4e49fa8ab50bcbb607`（clean）。独立branch: `codex/ws202-native-media`、source commit `b43d8c1421ab8a90a2efb28c165e0bdcfa0ca200`、最終records `214df66771912c99705526d0006e9a07ec80d79e`。
 - 累積source-only binary patch: 4036810 bytes、SHA-256 `b3a214b1eca0eaaea48cd4c3543741ead8d9272be7ccff0a4ed338c063a3e6d2`。mainでapply-check PASS後に適用。i915/libvulkan標準NV12 readback、AAC-LC、H.264/parser/DPB/Vulkan runtime、native-only libmedia、app所有fallback、MP4 metadata、Video Player/Music、probe、固定入力、host/docs/buildを含む。
 - mainのdesign第4版、review-001/002/003、全acceptance、Phase目的は保持。ユーザーの後の明示方針を現在の契約として追記し、独立worktreeのdated結果/承認/履歴を保存。旧degraded/ライブラリ内FFmpeg/Intel Tile Y読み出し/答え待ちを現在の手順として扱わない。
-- offline ID衝突を修復: mainの`ws202-p016`はref-listのまま。独立branchの標準readbackの旧p016を、未使用確認した[ws202-p017](phase017/phase.md)へ由来付きでmapping。i03承認/結果/元commit/旧IDを保存。p009/p010はp017の実装済み出力へ依存、physical hash未確認でwholeをclearedにしない。
+- offline ID衝突を修復: mainの`ws202-p016`はref-listのまま。独立branchの標準readbackの旧p016を、未使用確認したws202-p017（fb1f6afee の plan/ws202/phase017/phase.md）へ由来付きでmapping。i03承認/結果/元commit/旧IDを保存。p009/p010はp017の実装済み出力へ依存、physical hash未確認でwholeをclearedにしない。
 - H.264規格8.2.4.2.3のnon-existing frameのB-list除外の訂正をp008/p015/p016/p009/design/WSへ投影。欠けた必要参照はdrop、実GPU DPBへfake referenceを渡さない。
 - p001〜p011/p015/p016/p017はsoftware出力を保存してwhole uncleared。p012/T1・p013/User UAT・whole p014はplanned。software部分i11 clearedはこれらの免除ではない。WSはincomplete。
 

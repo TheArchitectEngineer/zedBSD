@@ -8,10 +8,10 @@
 /*
  * ws101-p002: compiles one compute SPIR-V module with the i915 executor's
  * compiler on the host, checks the kernel and writes its EU code for Mesa's
- * disassembler (plan/ws101/tests/host/run.sh).
+ * disassembler (plan/tools/gpu-compute/host/run.sh).
  *
  * The checks, each printed as a line the script reads:
- *   - the scoreboard is sound (plan/ws075/tests/guard/scoreboard-check.h);
+ *   - the scoreboard is sound (plan/tools/i915-hw/guard/scoreboard-check.h);
  *   - every SEND's descriptor fields agree: a data-port atomic asks for the
  *     old value (message control bit 5) exactly when it has a reply
  *     register, and its message is two address registers long (A64) or one
@@ -27,7 +27,7 @@
  *   compute-dump -gen9 FILE.spv OUT.bin
  *                                      (ws229-p003) compiles for Gen9 and writes the kernel; the
  *                                      scoreboard and descriptor checks read the Gen12 layout and are
- *                                      left out (plan/ws229/tests/eu-gen9-host.sh judges the kernel with
+ *                                      left out (plan/tools/i915-gen9/eu-gen9-host.sh judges the kernel with
  *                                      Mesa's --gen=skl tools)
  */
 
@@ -55,7 +55,7 @@ kern_free(
 #include "../../../../src/drivers/gpu/compiler/spirv.c"
 #include "../../../../src/drivers/gpu/i915/compiler/eu.c"
 #include "../../../../src/drivers/gpu/i915/compiler/compile.c"
-#include "../../../ws075/tests/guard/scoreboard-check.h"
+#include "../../../tools/i915-hw/guard/scoreboard-check.h"
 
 /* The Gen12 SEND opcode, and the shared functions a compute kernel sends to. */
 #define DUMP_OP_SEND		0x31U

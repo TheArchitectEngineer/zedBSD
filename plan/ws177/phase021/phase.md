@@ -39,7 +39,7 @@ Origin: [backlog-p2](../backlog-p2.md) の 113・114（ws120-p009）、[案](../
 ## 確認
 
 - build: `make -j16 ZEDBSD_CONFIG=config/current-uat.mk BUILD=build/amd64 build/amd64/bin/music build/amd64/bin/videoplayer` → exit 0、warning 0（-Werror）。style-check（music の全部と videoplayer/audio.c）→ 指摘なし。
-- host（新規）: `sh plan/ws177/tests/host-music-play.sh` → PASS（3 回連続、ASan・UBSan。play.c を container・decoder・音の stream の stand-in で: 最後まで鳴る、16 個続けて decode できない → MU_FAIL_DECODE・止まる・1 回だけ、15 個続けてを 2 回 → 失敗にならず終わる（`draining` の不具合の回帰も兼ねる）、読みの誤り → MU_FAIL_READ、次の曲で失敗が残らない）。
+- host（新規）: `sh plan/tools/music/host-music-play.sh` → PASS（3 回連続、ASan・UBSan。play.c を container・decoder・音の stream の stand-in で: 最後まで鳴る、16 個続けて decode できない → MU_FAIL_DECODE・止まる・1 回だけ、15 個続けてを 2 回 → 失敗にならず終わる（`draining` の不具合の回帰も兼ねる）、読みの誤り → MU_FAIL_READ、次の曲で失敗が残らない）。
 - host（既存に追加）: `plan/ws120/tests/run-host-music.sh` → PASS（search-space・search-escape・search-enter を足した。view.c の直しを外すと search-escape・search-enter が FAIL になることを確かめた）。`plan/ws177/tests/host-music-m.sh` → PASS（p020 の回帰）。（この試験は WS の完了で 2026-10-13 に削除）
 - 新しい世代（2026-10-08 夜）: NOTICE の log を足して build（`build/amd64/bin/music`）exit 0・warning 0、style-check 指摘なし、host 4 本（run-host-music・host-music-play・host-music-m・run-host-music-library）PASS、`check-scenarios.py` PASS、helper は `py_compile` のみ（QEMU は T1）。
 - 未実施: main.c の流れ（連打のまとめ、gone、lost の開き直し、Files の理由）は host で組めず、QEMU の T1 に `apps.music.failures`（新しい scenario、`tests/scenarios/apps/music/failures.md`）で依頼する。

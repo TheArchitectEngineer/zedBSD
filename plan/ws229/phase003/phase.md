@@ -40,12 +40,12 @@ Queue: q978（P1）
 | --- | --- | --- |
 | Gen12 の byte が前後で同一 | 変更前（d1e743394）と後で、encoder の試験・vkdemo・mview・compiler/generality/feature-shaders の 70 kernel と ws101・vkcs の compute 18 kernel（計 88）を作り `cmp`（作業用の script は scratchpad、出力は `build/ws229-p003/`） | 88 個すべて同一（最後の commit 4891934b5 の後でも） |
 | Gen12 の往復（既存） | `BRW_TOOLS=build/mesa-tools/build-asm/src/intel/compiler sh plan/ws031/tests/run-vk-gentool-test.sh` | WS031 gentool test PASS |
-| Gen9 の往復と意図 | `plan/ws229/tests/eu-gen9-host.sh`（新） | PASS: encoder・全 vertex/fragment/geometry module（拒否すべき 7 個は拒否）・ws229 の MRT の 2 module（Gen12 でも往復）・compute 18 個の計 96 kernel が `--gen=skl` で byte 一致。encoder の byte は人が呼び出しと照らした期待の listing `eu-gen9-expect.asm` を brw_asm で組んだ byte と一致（review-1 M6）。generator の Gen9 の形 9 点（barrier の mask と WAIT、fence と reply の MOV、終了の bit 4、sampler の header、MRT の header の index と word 15、dual の mlen 6/ex_mlen 4）を listing で確認 |
+| Gen9 の往復と意図 | `plan/tools/i915-gen9/eu-gen9-host.sh`（新） | PASS: encoder・全 vertex/fragment/geometry module（拒否すべき 7 個は拒否）・ws229 の MRT の 2 module（Gen12 でも往復）・compute 18 個の計 96 kernel が `--gen=skl` で byte 一致。encoder の byte は人が呼び出しと照らした期待の listing `eu-gen9-expect.asm` を brw_asm で組んだ byte と一致（review-1 M6）。generator の Gen9 の形 9 点（barrier の mask と WAIT、fence と reply の MOV、終了の bit 4、sampler の header、MRT の header の index と word 15、dual の mlen 6/ex_mlen 4）を listing で確認 |
 | kernel の build | `make -j32 build/amd64/vmunix`（worktree の build/amd64、clang -Werror） | rc 0、warning 0、`amd64 vmunix check: PASS` |
 | host の厳しい flag | `cc -std=gnu11 -Wall -Wextra -Werror -Wdeclaration-after-statement -pedantic` で eu.c・compile.c | warning 0 |
 
 未実施:
-- `plan/ws101/tests/host/run.sh` と `plan/ws075/tests/guard/run.sh` は走らせていない（どちらも script の中で `rm -rf` する。2026-10-06 の規則で担当は rm を走らせない）。両者が compile する kernel の byte は上の 88 個の比較で変更前と同一なので、Gen12 の結果は変わらない。Gen9 の分は eu-gen9-host.sh が同じ module を扱う。
+- `plan/tools/gpu-compute/host/run.sh` と `plan/tools/i915-hw/guard/run.sh` は走らせていない（どちらも script の中で `rm -rf` する。2026-10-06 の規則で担当は rm を走らせない）。両者が compile する kernel の byte は上の 88 個の比較で変更前と同一なので、Gen12 の結果は変わらない。Gen9 の分は eu-gen9-host.sh が同じ module を扱う。
 - 実機・QEMU: なし（Gen9 の GT は QEMU に無い。message の意味（header の中身、fence の待ち、SENDS の payload の再利用の安全）は p005 の実機でしか確かめられない）。
 
 ## 残課題
@@ -53,5 +53,5 @@ Queue: q978（P1）
 - `tests/execution/eu-test.c` の Gen9 の kernel: GT の版（p002 の `gt->graphics_ver`）で選ぶ必要があり、p002 の契約が main に入ってから p005 で足す。
 - 呼び手（`render/pipeline-prepare.c`・`render/blit.c`）は Gen12 の名前のまま。Gen9 で `drv_i915_shader_compile_gen(..., gt->graphics_ver, ...)` を呼ぶ 1 行ずつの差分は p004（呼び手の所有者）か p005。
 - geometry shader の Gen9 の payload・URB の意味は符号化（往復）しか見ていない（設計 §3.1 の「同じ」の判断のまま）。
-- `plan/ws229/tests/eu-gen9-host.sh` は回帰の試験として残す価値がある（Gen9 の encoder の唯一の試験）。Q1 が master.md の Tools・試験の一覧に登録するか判断する。
+- `plan/tools/i915-gen9/eu-gen9-host.sh` は回帰の試験として残す価値がある（Gen9 の encoder の唯一の試験）。Q1 が master.md の Tools・試験の一覧に登録するか判断する。
 - 規約の全文の見直しは p007。

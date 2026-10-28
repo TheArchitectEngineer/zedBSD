@@ -28,7 +28,7 @@ Worktree: `.claude/worktrees/ws197-media-receive`、branch codex/ws197-media-rec
 主要コマンド (worktree内):
 
 ```sh
-ASAN_OPTIONS=detect_leaks=0 sh plan/ws157/tests/run-host-mediastorage.sh build/ws197-media-receive-host build/ws197-media-receive-linux
+ASAN_OPTIONS=detect_leaks=0 sh plan/tools/media/run-host-mediastorage.sh build/ws197-media-receive-host build/ws197-media-receive-linux
 ASAN_OPTIONS=detect_leaks=0 OUT=build/ws197-media-receive-host/backend sh plan/ws197/tests/phone-backend-host-test.sh
 ASAN_OPTIONS=detect_leaks=0 OUT=build/ws197-media-receive-host/shell sh plan/ws197/tests/phone-shell-host-test.sh
 ASAN_OPTIONS=detect_leaks=0 OUT=build/ws197-media-receive-host/store sh plan/ws197/tests/phone-store-host-test.sh
@@ -105,7 +105,7 @@ Android MAPはrootのleaf Content-Typeにもboundaryを追加してpartを送る
 
 - `mms-media-host-test`: ASan/UBSan PASS。上記3外側typeのsynthetic phone-shaped MIMEで、本文にheadersを含めずdecoded image byteを保持。
 - `bt-mms-host-test`: ASan/UBSan PASS。
-- `sh plan/ws157/tests/run-host-mediastorage.sh build/ws197-media-receive-host build/ws197-media-receive-linux`: PASS。production Phone fixtureもleaf root+boundaryへ変更し、実Wayland/compositor/CLIを通すPNG原本byte/decode2×3/重複/保存message再openを確認。既存runnerのCLI failure表示は期待された失敗ケース。
+- `sh plan/tools/media/run-host-mediastorage.sh build/ws197-media-receive-host build/ws197-media-receive-linux`: PASS。production Phone fixtureもleaf root+boundaryへ変更し、実Wayland/compositor/CLIを通すPNG原本byte/decode2×3/重複/保存message再openを確認。既存runnerのCLI failure表示は期待された失敗ケース。
 - 前節のnamed buildと同じsysroot/CPPFLAGSでbluetoothd、wayland、phoneの3targetを再build: exit0、warning/error0。libkeiland ABI/sourceは今回変更なし。
 - `python3 plan/tools/style-check.py userland/desktop/libmms/mms.c plan/ws197/tests/mms-media-host-test.c plan/ws197/tests/host-media-receive.c --summary`: total0。C全文/manual review、edited hunk format、`git diff --check` PASS。
 

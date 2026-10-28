@@ -38,8 +38,8 @@ file の増減に追従する画面と log、host の試験、build の warning 
 | --- | --- | --- |
 | build | `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws094-amd64 build/ws094-amd64/bin/{wayland,files,imageview,textedit} build/ws094-amd64/dynamic/libkeiland.so …` | rc 0、warning 0 |
 | style | `python3 plan/tools/style-check.py`（libkeiland/desktop.c・files/ui-desktop.c・wayland/desktop.c・host-desktop.c）、`git diff --check` | 0 件 |
-| host | `sh plan/ws094/tests/host-desktop.sh`、`sh plan/tools/files/host-model.sh` | PASS（cell 6 件、files-model） |
-| guest（QEMU、Venus） | main の `build/ws035-sq/hdd-image.img` の複写で `sh plan/ws094/tests/files-desktop-guest.sh build/ws094-shots/p003 install show watch window` | PASS: compositor が `--desktop-client='/bin/files --desktop'` で Files を起こし（token は環境）、role（0,34 1280×766）、Files の configure、5 項目が右上から（1 番目 1168,16、5 番目 1168,432）、`~/Desktop` に file を足すと数秒で 6 項目、消すと 5 項目、Files の窓は icon の上。画面 `build/ws094-shots/p003/`（desktop・added・window） |
+| host | `sh plan/tools/files-desktop/host-desktop.sh`、`sh plan/tools/files/host-model.sh` | PASS（cell 6 件、files-model） |
+| guest（QEMU、Venus） | main の `build/ws035-sq/hdd-image.img` の複写で `sh plan/tools/files-desktop/files-desktop-guest.sh build/ws094-shots/p003 install show watch window` | PASS: compositor が `--desktop-client='/bin/files --desktop'` で Files を起こし（token は環境）、role（0,34 1280×766）、Files の configure、5 項目が右上から（1 番目 1168,16、5 番目 1168,432）、`~/Desktop` に file を足すと数秒で 6 項目、消すと 5 項目、Files の窓は icon の上。画面 `build/ws094-shots/p003/`（desktop・added・window） |
 | 回帰（Files） | `BIN=build/ws094-amd64 sh plan/tools/files/files-open.sh … mouse`（WS093 の起動の試験、main.c の窓の分を関数に分けた回帰） | PASS |
 | 回帰（compositor） | `sh plan/ws094/tests/desktop-guest.sh … install role refuse input restart`（既定を戻した後） | PASS |
 | boot | `plan/tools/boot-test.sh build/ws094-run/disk.img` | PASS（`build/ws094-shots/p003/boot-login.png`） |

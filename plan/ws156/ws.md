@@ -3,48 +3,50 @@
 # WS156: app の通知（画面の下の中央を流れる headline の popup と、ring の形の通知の log）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p004 cleared（popup と ring の log）、p005 の実機の UAT は 2026-10-13 ユーザー「UATの結果待ちのものは…clearedに」。p006（Linux の D-Bus）は 2026-10-05 ユーザー「実装はあと回しでいいです。」）。旧: incomplete。残り・制限: p006 の T1、規約の全文は一括の見直しへ
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」。根拠: p001〜p004 cleared（popup と ring の log、T1-269・T1-375b）、実機の UAT は 2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」、p006（Linux の D-Bus）は 2026-10-14 Q1 の判定で T1-588 の Debian の通知）
+<!-- retained-after-completion --> phase001 の phase.md は残す: userland/desktop/ の通知の source（include/keiland/keiland.h:1557、libkeiland/system/kl-system-protocol.h:608、wayland/notify*.c・notify*.h・media.c・network.c、libkeiland-backend-linux/notify-linux.c、libkeiland-backend/unsupported/notify-unsupported.c）の comment が設計の節を仕様として参照している。source の comment を直す（または仕様を docs/ へ移す）までの間
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
-Queue: なし（担当と時期は未定）
-Resume point: 2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p001 cleared。 2026-10-08 q902 P1 の照合: p002〜p004 cleared。p001（設計、H1〜H7 は 2026-10-05 夜に決定、p002〜p004 で実装）は Q1 の判定待ち。残りは p005 の 5330 の UAT（popup の動き・× ・hotkey の log）。p005 の全文規約はベータ3（2026-10-08 ユーザー）、p006（Linux の D-Bus）は 10/13 以降。旧: 2026-10-08 Q1: p003・p004 cleared（T1-375b PASS）。残りは p005 の全文の規約と実機の UAT。以前: p002 cleared（T1-269）。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 単一目標
+## 目標
 
 app から通知を出せる仕組みを作り、画面の下の中央を headline の news の板のように流れる popup で見せ、消えた後も hotkey で ring の形の log を左右にたどれるようにする。
 
-## ユーザーの要望（2026-10-04 夜、原文）
+## ユーザーの決定
 
-「既存の右上の通知領域ではなく、アプリ通知の実装についてです。WindowsやMacだと、通知領域近辺にポップアップが出て、そのあとは画面右側に通知が一覧になって出ると思います。ポップアップは我々も出そうと思いますが、画面中央の下部に、画面サイズの20%程度のポップアップにしたいです。また、画面右下に、画面右端から出てきて、フェードインしながら画面中央にしゅっと素早く移動して、3秒とどまったら、画面左端にしゅっと素早く移動してアルファ値もフェードアウトして消えていくのがいいです。ヘッドラインニュースのボードみたいなものをイメージしています。通知は消えたあとも、ホットキーでリング上に左右に移動してログを見られるといいですね。通知は表示中はバツボタンで消せるといいです。ログの端、最新まで来ると、通知をすべて消去、というボタンがあるといいです。個別に消した通知はログに残さない方がいいです。」
+- 2026-10-04 夜「既存の右上の通知領域ではなく、アプリ通知の実装についてです。WindowsやMacだと、通知領域近辺にポップアップが出て、そのあとは画面右側に通知が一覧になって出ると思います。ポップアップは我々も出そうと思いますが、画面中央の下部に、画面サイズの20%程度のポップアップにしたいです。また、画面右下に、画面右端から出てきて、フェードインしながら画面中央にしゅっと素早く移動して、3秒とどまったら、画面左端にしゅっと素早く移動してアルファ値もフェードアウトして消えていくのがいいです。ヘッドラインニュースのボードみたいなものをイメージしています。通知は消えたあとも、ホットキーでリング上に左右に移動してログを見られるといいですね。通知は表示中はバツボタンで消せるといいです。ログの端、最新まで来ると、通知をすべて消去、というボタンがあるといいです。個別に消した通知はログに残さない方がいいです。」
+- 2026-10-05「Linuxではlibkeiland-backendにD-bus機能を入れて通知を取ればいいですね。実装はあと回しでいいです。設計だけ記録してください。」
+- 2026-10-05 夜: 設計の H1〜H7 をユーザーが決定（p001）。
+- 2026-10-08 ユーザー: 規約の全文の Phase はベータ3 → p005 の規約は WS の外の一括の見直しへ。
+- 2026-10-13「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」
 
-## 仕様（ユーザーの要望から、Q1 の整理。細部は p001 で決める）
+## 結果
 
-1. **popup の位置と大きさ**: 画面の下の中央、画面の大きさの約 20%。
-2. **動き**（headline の news の板）: 画面の右下、右端の外から現れ、fade-in しながら画面の中央へ素早く（しゅっと）移る → 中央で 3 秒とどまる → 画面の左端へ素早く移りながら alpha を fade-out して消える。続けて通知が来た時の並び（順に流す・前の物を早送りする）は p001 で決める。
-3. **表示中の × ボタン**: 表示中の通知を × で消せる。**個別に消した通知は log に残さない**。
-4. **log**: 消えた（流れ去った）通知は log に残る。**hotkey** で log を開き、**ring の形に左右へ**たどれる。log の端（最新）まで来ると「**通知をすべて消去**」の button がある。
-5. 既存の右上の通知領域（system bar の icon）とは別の仕組み。
+- 通知の口（Keiland の拡張の protocol `kl_system_notify_v1` と libkeiland の `kl_*notify*`）、compositor の popup（右から中央、3 秒、左へ fade-out、× で消す、全画面・lock の扱い、system の通知）、hotkey の ring の log（すべて消去、個別に消した物は残さない）、Linux の libkeiland-backend の D-Bus の `org.freedesktop.Notifications` が main にある。2026-10-10 に WS197 p004c が lock_text（ロック画面に出す文）を足した。
+- 証拠: QEMU の T1-269（p002）・T1-375b（p003・p004、20 項目 ok）、Debian の QEMU+KVM の T1-588（p006）。実機（5330）は 2026-10-13 のユーザーの一括の cleared（個別の観察の記録は無い）。
 
-## 範囲（p001 で設計して確定）
+## 制限・移管
 
-- app から通知を出す口: 標準の freedesktop の Desktop Notifications（D-Bus）は zedBSD に D-Bus が無いので、Keiland の拡張の Wayland protocol か libkeiland の口（`kl_notify_*` など）。Linux・FreeBSD の Keiland で D-Bus の通知を受けるかも検討。
-- 通知の内容（app の名前・icon・題・本文・動作の button の有無・緊急度）、同じ app の通知の置き換え、全画面の時・lock の時の扱い（Privacy の頁（WS148）の「lock の画面で通知を出すか」と関係）。
-- compositor の描画（Vulkan、animation の曲線、fade、20% の大きさの文字の配置）、hotkey の割り当て、log の保存（session の中だけか、再起動を越えて残すか）。
-- 使う側: カレンダー（WS155）の予定の時刻、system の事象（電池・PnP・WiFi の失敗（BUG-187）など、WS132）。
+- FreeBSD の D-Bus の通知は後（範囲の外）。
+- p006 の phase.md は test-wait のまま（判定は 2026-10-14 Q1 で cleared 相当）。
+- 規約の全文（p005）は WS の外の一括の見直しへ。
 
-## Phase（案）
+## Phase 一覧
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws156-p001](phase001/phase.md) | 設計（通知の口・内容・popup の動き・log と hotkey・保存・試験の方法） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）） | | — |
-| [ws156-p002](phase002/phase.md) | 通知の口（protocol・libkeiland）と compositor の受け取り | cleared（2026-10-06 Q1、T1-269。実機は UAT） | p001 |
-| [ws156-p003](phase003/phase.md) | popup の描画と動き（右から中央、3 秒、左へ fade-out）、× で消す、全画面・lock、system の通知 | cleared（2026-10-08 Q1、T1-375b PASS 20 項目） | p002 |
-| [ws156-p004](phase004/phase.md) | log（hotkey、ring の左右、すべて消去、個別に消した物は残さない） | cleared（2026-10-08 Q1、T1-375b PASS） | p003 |
-| ws156-p005 | 全文の規約と QEMU の回帰（T1）、実機の UAT | uncleared（5330 の実機の UAT の分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。QEMU の回帰は T1-375b PASS（20 項目 ok）。残りは全文の規約の見直しでベータ3（2026-10-08 ユーザー）） | p002〜p004 |
-| [ws156-p006](phase006/phase.md) | Linux: libkeiland-backend の D-Bus の `org.freedesktop.Notifications`（設計 p001 §11、2026-10-05 ユーザー「実装はあと回し」） | in-progress / test-wait（2026-10-13 P3 q955: 実装・host の試験（偽の bus 41 checks・本物の dbus-daemon と gdbus）・Linux と zedBSD の build は済み、Linux の QEMU+KVM の guest は T1 待ち） | cleared（2026-10-14 Q1 判定: T1-588 の Debian で D-Bus の通知・popup・log・NotificationClosed） |
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws156-p001 | 設計（通知の口・内容・popup の動き・log と hotkey・保存・試験） | cleared（H1〜H7 はユーザーが決定） |
+| ws156-p002 | 通知の口（protocol・libkeiland）と compositor の受け取り | cleared（T1-269） |
+| ws156-p003 | popup の描画と動き、× で消す、全画面・lock、system の通知 | cleared（T1-375b） |
+| ws156-p004 | log（hotkey、ring の左右、すべて消去） | cleared（T1-375b） |
+| ws156-p005 | 全文の規約と QEMU の回帰、実機の UAT（directory なし） | uncleared。実機の UAT は 2026-10-13 の一括、規約の全文は WS の外の一括の見直しへ |
+| ws156-p006 | Linux: libkeiland-backend の D-Bus の通知 | phase.md は test-wait のまま。2026-10-14 Q1 の判定: T1-588 の Debian で D-Bus の通知・popup・log・NotificationClosed |
 
-## 2026-10-10 WS197 p004c による変更（Q1）
+## 記録の所在
 
-通知に lock_text を足した（notify_v1 の request 3 post_lock、manager の版 27、`kl_system_notify_lock`・`kl_app_notify_lock`）。ロック画面は lock_text のある通知だけを、その文だけで出す。WS197 の SMS の通知（本文はロック画面に出さない）のため。設計は [WS197 p004](../ws197/phase004/phase.md)。試験は WS156 の notify-model・notify-flow。
+phase001 は上の理由で残す。他の Phase の記録と試験は削除する（Q1）。git の commit `fb1f6afee` の `plan/ws156/` にある。Queue の履歴は [plan/history](../history/index.md)。

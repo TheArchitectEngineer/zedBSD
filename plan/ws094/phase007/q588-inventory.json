@@ -105,8 +105,8 @@
       "manual_scope": "setup, build/install membership, assertions and cleanup contracts"
     },
     {
-      "path": "plan/ws094/tests/desktop-probe.c",
-      "original_path": "plan/ws094/tests/desktop-probe.c",
+      "path": "plan/tools/files-desktop/desktop-probe.c",
+      "original_path": "plan/tools/files-desktop/desktop-probe.c",
       "ws_record_commits": [
         "fc29e1f2256e6532b54c41aec5c152c46ce53bf5",
         "2c82629dd0b6c04a31775baa277167b3f9a80dec"
@@ -122,8 +122,8 @@
       "manual_scope": "complete file"
     },
     {
-      "path": "plan/ws094/tests/files-desktop-guest.sh",
-      "original_path": "plan/ws094/tests/files-desktop-guest.sh",
+      "path": "plan/tools/files-desktop/files-desktop-guest.sh",
+      "original_path": "plan/tools/files-desktop/files-desktop-guest.sh",
       "ws_record_commits": [
         "3d09f8c29a1d0f8f44fa5d8f67ac33495e8452b1",
         "6acfb6166e9ea5dd773be8b8a20cbca60a1b9d9d",
@@ -155,8 +155,8 @@
       "manual_scope": "setup, build/install membership, assertions and cleanup contracts"
     },
     {
-      "path": "plan/ws094/tests/host-desktop.c",
-      "original_path": "plan/ws094/tests/host-desktop.c",
+      "path": "plan/tools/files-desktop/host-desktop.c",
+      "original_path": "plan/tools/files-desktop/host-desktop.c",
       "ws_record_commits": [
         "45f8d2da21093886e3ecd0114c3fa9059d80482b",
         "3d09f8c29a1d0f8f44fa5d8f67ac33495e8452b1",
@@ -187,8 +187,8 @@
       "manual_scope": "complete file"
     },
     {
-      "path": "plan/ws094/tests/host-desktop.sh",
-      "original_path": "plan/ws094/tests/host-desktop.sh",
+      "path": "plan/tools/files-desktop/host-desktop.sh",
+      "original_path": "plan/tools/files-desktop/host-desktop.sh",
       "ws_record_commits": [
         "05e418fe2023871dc80a29f02111b7c5d7c91335",
         "79038551979d8154e41573720278c6f88ab6aa98"

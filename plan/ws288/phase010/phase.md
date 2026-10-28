@@ -47,7 +47,7 @@ host の試験が PASS（件数を記録）、zedBSD の vmunix の build が wa
 ### 確認（自分で実行）
 
 - host 試験 `plan/ws288/tests/gsi1-host-test.sh`（`AMATERRACE_GPU=<amaterrace-gpu>`）: **29 passed, 0 failed**（数えた値。符号化の既知の 54 語が gsi1asm の結果と一致し gsi1dis で往復、全 28 module の code が gsi1dis → gsi1asm で同じ語に戻る（`.inst` 無し）、compute 14・fragment 8・vertex 2 を gsi1model で走らせ IR の参照（`gsi1-reference.c`）と一致、texture 系 4 は往復と命令の確認。model に TU が無いので texture の実行は未実施）。
-- 他の backend の host 試験（front end の変更の回帰）: `plan/ws039/tests/amdrdna-compiler-host-test.sh` PASS（PASS 行 46、FAIL 0）、`plan/ws037/tests/nvrtx-sm75-host-test.sh` 287 checks 0 failures。bcm2711（`plan/ws141/tests/shader-host-test.sh`）は `plan/ws141/temp/mesa` が worktree に無く**未実施**、i915 の compiler の試験も**未実施**。
+- 他の backend の host 試験（front end の変更の回帰）: `plan/ws039/tests/amdrdna-compiler-host-test.sh` PASS（PASS 行 46、FAIL 0）、`plan/tools/nvrtx/nvrtx-sm75-host-test.sh` 287 checks 0 failures。bcm2711（`plan/tools/v3d-qpu/shader-host-test.sh`）は `plan/ws141/temp/mesa` が worktree に無く**未実施**、i915 の compiler の試験も**未実施**。
 - kernel の flag での build（名指しの target、warning 0）: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk build/amd64/kern64/src/drivers/gpu/ghci/compiler/gsi1-*.o …/compiler/spirv.o optimize.o`、同じく `config-zybo.mk` の `build/zybo/kernel/…`: どちらも exit 0、warning 0。GHCI の driver の config が無いので vmunix への link は p006 で（**vmunix の link は未実施**）。
 - QEMU・Verilator・板: 使っていない（p011 で）。
 

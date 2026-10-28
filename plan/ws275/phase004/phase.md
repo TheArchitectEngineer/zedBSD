@@ -86,7 +86,7 @@ graphics（X）と色の点は p005 の後の p006（`/dev/graphics` は sun4u �
    判定: 画面（PNG）に login と `ws275-ok` の行。`keys:` は QEMU の sendkey＝i8042 なので、`expect` が合えば PS/2 の poll の道が通った。
    合わない時は PNG と、gdbstub で `screen_on`・`i8042_polled`・`fb_format`・`fb_width` の値（`vmunix` の symbol）を返してほしい。
    x8・x32 の画面の字が灰色（0xaaaaaa）で読めること。色の R と B の順はこの画面では見えない（灰色と白だけ）ので p006。
-2. pcat の回帰: bios-ide の login と `keys:` の 1 本、`plan/ws081/tests/ps2-wheel-qemu.sh`（T1-015 で使用）。
+2. pcat の回帰: bios-ide の login と `keys:` の 1 本、`plan/tools/touch/ps2-wheel-qemu.sh`（T1-015 で使用）。
 
 ## T1-745 の欠陥の修正（q1322-i01、2026-10-19 P1）
 

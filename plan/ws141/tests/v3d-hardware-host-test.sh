@@ -7,7 +7,7 @@ out=${1:-build/ws141-v3d-hardware-host}
 mkdir -p "$out"
 cc -std=c99 -D_POSIX_C_SOURCE=200809L -include time.h -Wall -Wextra -Werror \
     -ffunction-sections -fdata-sections \
-    -Iplan/ws141/tests/host -Iinclude -Isrc -I. plan/ws141/tests/v3d-hardware-host-test.c \
+    -Iplan/tools/v3d-qpu/host -Iinclude -Isrc -I. plan/ws141/tests/v3d-hardware-host-test.c \
     plan/ws141/tests/display-lock-host.c src/drivers/gpu/bcm2711/v3d-hardware.c \
     src/drivers/gpu/bcm2711/mmu.c src/drivers/gpu/bcm2711/v3d-job.c \
     src/drivers/gpu/bcm2711/v3d-diagnostic.c src/drivers/gpu/bcm2711/v3d-tfu-probe.c src/drivers/gpu/bcm2711/cl.c \

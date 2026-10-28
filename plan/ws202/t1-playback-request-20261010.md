@@ -1,13 +1,13 @@
 # WS202: Q1からT1へ渡す再生確認依頼
 
-> main統合追記: [最新の統合記録](main-integration-20261010.md)。以下の独立worktree時点の未merge/未実装/pendingは履歴。標準readbackの旧offline p016は[ws202-p017](phase017/phase.md)へmapping修復し、mainのp016（ref-list）を維持した。
+> main統合追記: [最新の統合記録](main-integration-20261010.md)。以下の独立worktree時点の未merge/未実装/pendingは履歴。標準readbackの旧offline p016はws202-p017（fb1f6afee の plan/ws202/phase017/phase.md）へmapping修復し、mainのp016（ref-list）を維持した。
 
 状態: **main統合済み、T1確認は準備済み・未投入・未実施**。ユーザーがこのsessionのmain統合を承認。[main統合build/回帰](main-integration-20261010.md)を参照。実装担当はAGENTS.mdの「試験の担当T1」に従い、QEMU/実機を起動していない。mainへの統合は済み、共有QueueへのT1投入はQ1担当。WS202の完了を証明した記録ではない。
 
 ## 入力とbuild
 
 - 構成: `plan/ws202/tests/config-media.mk`（CI構成からlibavcodec packageを除外、media-probeを追加）。i915 Vulkan Videoが既定ONのmainと統合する。
-- source-owned入力: [tests/streams/README.md](tests/streams/README.md)。過去のbuild成果をimage入力にしない。
+- source-owned入力: tests/streams/README.md（fb1f6afee の plan/ws202/tests/streams/README.md）。過去のbuild成果をimage入力にしない。
 - 出力に必要なprogram: libmedia・libvulkan・videoplayer・music・audiod・openssh・media-probe。package一覧でlibavcodecがないことを確認する。
 - 通常の試験image作成（Q1/T1専用、実装担当は未実行）:
 

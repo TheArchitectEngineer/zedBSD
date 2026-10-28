@@ -3,55 +3,59 @@
 # WS220: TCP の転送の速さの安定（継続の転送ですぐ 1 MB/s 未満に落ちる、window の制御の直し）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 落ちる仕組みの直しは main: p003（送りの packet の不足）・p004（RTO）・p005（NewReno・persist）cleared（T1-581・T1-577・T1-585、損失 0.1 % で up 3.66 MB/s）、2026-10-13 夜 ユーザー（AskUserQuestion）「main に残し、直しを急ぐ」。p002（剰余の比較ほか）も c13a8413f で main）。旧: incomplete（2026-10-13 Q1 作成。P1 が p001 を実行: 読み・net.tcpstats・host の模型・直しの設計は済み、T1 の基線の測りと design-reviewer 待ち）。残り・制限: p002 の QEMU の確かめは未実施、p006〜p009 は案のまま（BUG-222 の USB LAN の遅さは Bug で）
-Resume point: [p001](phase001/phase.md) の §6（T1 の依頼 A・B）と §8（ユーザーの判断: QEMU の網、RTO の最小）→ 基線の後に目標の値をここに書き、p002 以後を Queue に
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 落ちる仕組みの直し p003〜p005 は main で cleared。未着手の p006・p007 は 2026-10-28 ユーザーの回答「WS221 へ移す (推し)」で WS221 の p008・p009 へ）
+<!-- retained-after-completion --> tests/ は残す: `userland/tests/tcp-stream`（Makefile・main.c の comment）が `plan/ws220/tests/tcp-stream-series.sh` を名指し、WS221 p008・p009 が模型と時系列の道具を使う
+Completed: 2026-10-27（q1608）。2026-10-28 に残りの Phase を WS221 へ移した（q1660）
 Primary Milestone: MG005
 Related Milestones: なし
+Objectives: —
+Parent: [Master](../master.md)
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-- 2026-10-13 ユーザー:「TCPですが、60秒以上の転送も計測してください。そうでないとTCP Windowの実装の問題が見えないです。」→ WS220 の T1 の測りは全部 60 秒を超える転送を含める（損失 0 の 1 GiB と時系列の前半・後半の比較）。
+## 目標
 
-## 原文（2026-10-13 ユーザー）
+TCP の送り・受けの制御（`src/kern/net/tcp.c` ほか）を直し、継続の転送で速さが落ちず、損失があっても回復して戻る。
 
-「WSを作ります。TCPのコントロールが不安定です。ウィンドウ制御がよくないと思われ、継続した転送で、TCPの速度がすぐに1MB/s未満になります。これを解決します。」
+## ユーザーの決定
 
-## 目的と完了の条件
+- 2026-10-13（原文）「WSを作ります。TCPのコントロールが不安定です。ウィンドウ制御がよくないと思われ、継続した転送で、TCPの速度がすぐに1MB/s未満になります。これを解決します。」
+- 2026-10-13「TCPですが、60秒以上の転送も計測してください。そうでないとTCP Windowの実装の問題が見えないです。」→ T1 の測りは全部 60 秒を超える転送を含める。
+- 2026-10-13（p001 の後）「はい、推奨でいいです。」→ QEMU の受け入れは usb-net（CDC ECM）のまま。RTO の最小は 200 ms（RFC 6298 の式に最小の項 200 ms を入れる形）。
+- 2026-10-13「遅くなった時の向きは受信です」「接続を諦めるまでの時間は延ばしてよいです。」→ 症状は受けの向き。SYN の再送を諦めるまでは RFC 1122 の R2 に合わせて最低 3 分。
+- 2026-10-13（ws220-p005 review-1 M7・M8、ユーザーの決定）「FreeBSD と同じ＋p006 で pool を切り離す (Recommended)」→ 窓 0 の相手は FreeBSD と同じ persist と `TCP_MAXUNACKTIME`（既定 0）。答え続ける相手が pool を握る問題は送りの buffer の切り離し（旧 p006(b)、今は WS221 p008）で解く。
+- 2026-10-13 夜（AskUserQuestion）「main に残し、直しを急ぐ」。
+- 2026-10-28 ユーザーの回答（クリック）「WS221 へ移す (推し)」→ 未着手の p006（輻輳の制御と送りの buffer、`tcp_device_mss` の持ち主）・p007（受けの窓）を WS221 の [p008](../ws221/phase008/phase.md)・[p009](../ws221/phase009/phase.md) に移した。
 
-対象は `src/kern/net/tcp.c`・`inet-socket.c`・`socket.c` など、TCP の送り・受けの制御（受けの window の広告と更新、window scale、送りの輻輳の window と slow start・congestion avoidance、再送の timer（RTO・RTT の推定）、fast retransmit・recovery、delayed ACK、Nagle、socket の buffer の大きさ）。
+## 結果
 
-1. 原因を測って特定する: 継続の転送（例: 数百 MB を 1 本の TCP で、zedBSD が送り・受けの両方）で、時間ごとの速さ・cwnd・受けの window・再送・重複 ACK・RTO を記録する道具（kernel の counter か trace、host の tcpdump/pcap）を作り、落ちる仕組みを記録する。
-2. 直す: 継続の転送で速さが落ちず、有線（Gigabit の Ethernet）で回線か相手の上限に近い速さを保つ。損失があっても回復して戻る。
-3. 受け入れ: QEMU（virtio-net、host との間）と実機（5330・Pi 4 の GENET の有線）で、送り・受けの両向きに 1 GB の継続の転送の速さの時系列が、落ち込みから戻り、平均が目標以上（目標の値は p001 の測りの後に決める）。損失を入れた試験（QEMU の netem などで 0.1〜1 %）でも止まらず回復する。
-4. 既存の網の試験の回帰が無い。build の warning 0、規約の全文の見直し。
+- 測りの道具: kernel の `net.tcpstats`（sysctl、508d33db9）、長い転送の時系列 `tests/tcp-stream-series.sh`、本物の tcp.c の host の模型 `tests/tcp-model/run.sh`、`userland/tests/tcp-stream`（塞がる送り手）。
+- 直し（main）: p002 正しさ（sequence の剰余の比較、SND.WL1/WL2、重なりのある segment、諦めの時間、RFC 5961、c13a8413f）、p003 送りの packet の不足、p004 RTT と RTO（RFC 6298）、p005 fast retransmit・NewReno・persist。
+- QEMU の証拠（T1）: T1-581（同じ session の基線より全部の値で良い）、T1-577、T1-585（損失 0.1 % の up 3.66 MB/s、損失 1 % 完走 2.89 MB/s、60 秒を超える損失 0 の転送で後半/前半 97〜100 %）。実機の測りは未実施。
 
-## Phase
+## 制限・移管
 
-| Phase | 内容 | Status |
+- p002 の QEMU の確かめ（T1）は未実施。
+- 輻輳の制御・byte の送りの buffer・`tcp_device_mss`（旧 p006）と受けの窓（旧 p007）は WS221 の p008・p009。
+- 受けの SACK（旧 p008 の候補）は行き先が無いまま閉じた。
+- USB LAN の遅さは [BUG-222](../bugs/BUG-222.md)。TCP の ISN と SYN flood は Future Work の F-100・F-101。
+- 規約の全文は WS の外の一括の見直しへ。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 調べと測り: 今の TCP の制御の読み、測りの道具（net.tcpstats、tcp-stream-series.sh、本物の tcp.c の host の模型）、落ちる仕組みの特定、直しの設計 → design-reviewer | in-progress（T1 の基線待ち） |
-| [p002](phase002/phase.md) | 正しさ: sequence の剰余の比較（wrap の後に ACK を全部捨てる）、SND.WL1/WL2、重なりのある segment、諦めの時間（R2: data 100 s・SYN 180 s）、RST の窓の検査と同期済みの SYN への ACK（RFC 5961）、S2（net.tcpstats の sequence は superuser だけ）、測りの道具の直し（review S1・S3・S8） | in-progress（2026-10-13 P4 c13a8413f、実装・模型・build 済み、T1 の QEMU 待ち） |
-| [p003](phase003/phase.md) | 送りの packet の不足: device が拒んだ data の segment で書き手が 10 ms 眠らない、未送信を順に出す、ACK の出し直し | cleared（2026-10-13 Q1 判定: 同じ session の基線と比べる基準（T1-581）で k2＝p003＋p004 が k1＝p002 より全部の値で良い、損失のある時は T1-577 で大きく改善。T1-577 の T1-574 との差は環境） |
-| [p004](phase004/phase.md) | RTT の推定と RTO（RFC 6298）: SRTT・RTTVAR、Karn、RTO = SRTT + max(G, 4·RTTVAR, 200 ms)、SYN の 3 s | cleared（2026-10-13 Q1 判定: T1-581 と T1-577（features=0x22・rtt_samples・rto_ms 203〜204・backoff 0）、同じ session の基線の基準） |
-| [p005](phase005/phase.md) | fast retransmit と NewReno の回復、窓 0 の probe と FreeBSD と同じ persist（`TCP_MAXUNACKTIME`）、窓が開いた時の再送を外す | cleared（2026-10-14 Q1 判定: T1-585 で features=0x32、損失 0.1 ％ の up 3.66 MB/s と fast_retransmits 221、損失 1 ％ 完走 2.89 MB/s、60 秒を超える損失 0 の転送で速さが落ちない（後半/前半 97〜100 ％）） |
-| p006（案） | 輻輳の制御（cwnd）と byte の送りの buffer、相手の MSS、Nagle | planning |
-| p007（案） | 受けの窓の約束、受け側の SWS 回避、window scale、delayed ACK | planning |
-| p008（案） | 受けの SACK（RFC 2018） | planning（候補） |
-| p009（案） | 規約の全文の見直し（WS の全ての C、試験を含む） | planning |
+| ws220-p001 | 調べと測り、道具、host の模型、直しの設計 | in-progress のまま WS を閉じた（設計と道具は済み、T1 の基線と design-reviewer は未） |
+| ws220-p002 | 正しさ（剰余の比較・WL1/WL2・重なり・諦めの時間・RFC 5961） | in-progress のまま WS を閉じた（実装は main c13a8413f、QEMU の確かめは未実施） |
+| ws220-p003 | 送りの packet の不足 | cleared（T1-581） |
+| ws220-p004 | RTT の推定と RTO（RFC 6298） | cleared（T1-581・T1-577） |
+| ws220-p005 | fast retransmit と NewReno、persist | cleared（T1-585） |
+| ws220-p006 | 輻輳の制御と送りの buffer、相手の MSS、Nagle | WS221 p008 へ移した（2026-10-28 ユーザー） |
+| ws220-p007 | 受けの窓、SWS 回避、window scale、delayed ACK | WS221 p009 へ移した（2026-10-28 ユーザー） |
+| ws220-p008 | 受けの SACK（候補） | 候補のまま閉じた（行き先なし） |
+| ws220-p009 | 規約の全文の見直し | WS の外の一括の見直しへ |
 
-試験と道具（[tests/](tests/)）: `tcp-model/run.sh`（本物の tcp.c の host の模型と WS220 の目標の scenario、`run.sh NAME...` で選ぶ、全部で約 5 分）、`tcp-stream-series.sh`（QEMU と実機の長い転送の時系列と host の capture、run は down・down-disk・up・up-ssh、T1）、`stream.py`・`analyze.py`（`analyze: wire` の行で 100 ms の停止）、`config-amd64-tcp.mk`（SSH の guest + sysctl + tcp-stream）、`config-amd64-tcp-wrap.mk`（ISN を wrap の 16 MiB 前に）、`userland/tests/tcp-stream`（塞がる送り手）。WS の完了の時に回帰に残す物は master.md の Tools に移す。
+## 記録の所在
 
-## ユーザーの決定（2026-10-13、p001 の後）
-
-ユーザー（原文）:「はい、推奨でいいです。」→ QEMU の受け入れは usb-net（CDC ECM）のまま（virtio-net は足さない、完了の条件 3 の「virtio-net」は usb-net に読み替え）。RTO の最小は 200 ms（Linux・FreeBSD と同じ、RFC 6298 の SHOULD の 1 s から外れることを phase.md に記録）。
-
-2026-10-13 Q1: review-1 の判定「致命的 0、重大 8、p002 は条件つきで開始可」。T1 の依頼 A（基線、T1-569 の再実行）は S1（塞がる送り手と disk へ書く down の run を足す）・S3（veth・bridge・tap の tso/gso/gro を切る）・S8（sample の細かさ、頭と尻の 0、4 GiB の wrap、目標の自己参照）を直してから。S2（net.tcpstats が superuser でなくても全接続の sequence・address・port を出す、main に入っている）は p002 と一緒に直す（superuser でなければ sequence の 3 つの欄を 0）。S6: ユーザーに伝えた「RTO の最小 200 ms は Linux・FreeBSD と同じ」は不正確（Linux は SRTT + max(4·RTTVAR, 200 ms) の形、review の記憶）→ 単純な 200 ms の床ではなく RFC 6298 の式に最小の項 200 ms を入れる形にし、ユーザーに訂正を報告する。依存: WS221（Jumbo frame）の MTU と MSS。p003 以後は S4〜S7 を設計に入れてから。
-
-2026-10-13 ユーザー（原文）:「遅くなった時の向きは受信です」「接続を諦めるまでの時間は延ばしてよいです。」→ 症状は受けの向き（zedBSD が受ける）。基線の測りと直しの順は受けの側（候補 5・6・7、p007）を重く見る。SYN の再送を諦めるまでの時間は RFC 1122 の R2 に合わせて最低 3 分に延ばす（利用者に見える変更として承認済み）。
-
-2026-10-13 Q1（WS221 p001 の依頼）: p006・p007 の設計に「MSS・segment の大きさは `tcp_device_mss(device)`（interface の MTU − 40/−60）から決め、定数にしない」「受けの queue の上限は packet の pool の class（標準 2 KB × 256、jumbo 9216 × 32）を考慮」を入れる。WS221 p005（TCP の MSS）は WS220 p006・p007 の後。
-
-2026-10-13 Q1（WS221 review-1 S3）: MSS を MTU − 40/−60 で決める時は packet の slot の大きさでも抑える（lo0 の MTU 65535 で segment が slot を超え、自分の機械への TCP が止まる）。p006 の設計にこれを入れる。tcp_device_mss の持ち主は WS220 p006（WS221 p005 はそれを使う、review M7）。
-
-2026-10-13 Q1（WS221 第 2 版 §3.4 の要件、p006 に写す）: (1) `tcp_device_mss` は slot の上限で抑える（暫定 `PACKET_BUF_STORAGE_SIZE − 64`、WS221 p002 の `net_device_frame_max(device)` で置き換える）、(2) IPv6 は送る時の path MTU − 60（`ipv6_route_source`）、(3) IPv4 の gateway 経由（`route.gateway != 0`）は min(1460, MTU − 40)、on-link だけ device の MTU。`tcp_stats_header` の 48 → 72 byte の拡張（WS221 M6）は WS221 p002 が行う（WS220 p002 は main に入った後なので順は問題なし、読み手は struct_size で読む）。
-
-2026-10-13 P3（ws220-p005 review-1 M7・M8、ユーザーの決定「FreeBSD と同じ＋p006 で pool を切り離す (Recommended)」）: p005 は窓 0 の相手を FreeBSD と同じ persist（間隔 clamp(RTO × backoff, 5 s, 60 s)、答えない相手は 12 段と min(2 h, RTO × 2559) の沈黙で、close の後は 60 s の沈黙で落とす）と `TCP_MAXUNACKTIME`（既定 0）で扱う。答え続ける相手が共有の packet の pool を接続ごとに最大 8 個握れる問題は **p006(b)（送りの buffer を pool から切り離す）で解く**。pool の逼迫で落とす・`TCP_MAXUNACKTIME` の既定を 0 以外にする、は入れない。cwnd の無い NewReno（損失の後も送る量を減らさない）は送りの ring が 8 segment の間だけ許し、**ring の既定（`CONFIG_TCP_SEND_QUEUE_MAX`）を広げるのは p006(a)（cwnd）の後に限る**。p001 §4 の目標の移し替え（Q1 の判断）: rtt-10ms-loss-0.1 の 2 MB/s は p006 へ（ring の上限 0.78 MB/s）、slow-reader の `immediate_resends` 0 は p007(a) へ。
+Phase の計画・設計・review は削除した。git の commit `fb1f6afee` の `plan/ws220/` にある（直しの設計は `phase001/phase.md` §4）。試験の道具は [tests/](tests/) に残す。Queue の履歴は [plan/history](../history/index.md)。

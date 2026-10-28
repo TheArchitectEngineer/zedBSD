@@ -3,36 +3,48 @@
 # WS218: Intel WiFi（AX211）driver の license の表示を実態に合わせる（OpenBSD・Intel の license の削除の監査）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 の監査は済み、p002 は実装・build・host 試験・機械比較済み（AX211 の出典の整理は WS248 と同じ）。残りは AX211 の QEMU・実機の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-15 Q1 訂正: p001 は監査を実施済み・判定待ちの記録のまま、p002 は実装・build・host 試験済みで AX211 の QEMU・実機の試験待ち。旧: planning（2026-10-13 Q1 作成））。残り・制限: 実機の確認は未実施
+Status: completed（2026-10-27 P3 の精査 q1608。p001 の監査は済み、p002 は実装・build・host 試験・機械比較済み、残りは AX211 の QEMU・実機の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG005
 Related Milestones: なし
+Parent: [Master](../master.md)
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 原文（2026-10-13 ユーザー）
+## 目標
 
-「WSの追加
+`src/drivers/wifi/intel-ax211/` が OpenBSD の iwx(4) と類似していないこと、定数の名前が Intel の header の名前を使わず table が公開の資料から導けることを確かめ、OpenBSD・Intel の license の表示（`tools/release/license-components.json` の `intel-ax211-driver`、`/usr/share/licenses/intel-ax211-driver/LICENSE`、source の頭の注記）を外し、引用元の表示を引用の箇所に残す。firmware の package（`intelax211-firmware`）の license は対象外。
+
+## ユーザーの決定
+
+- 2026-10-13（原文）「WSの追加
 ・Intel WiFiドライバがOpenBSDのドライバと類似していないことを確認して、OpenBSDのライセンスを削除する。引用元としての表示は、引用箇所に残す。
 ・Intel WiFiドライバの定数がIntelのヘッダの名前を使っていないことを確認し、テーブルも仕様書から導けることをを確認して、Intelのライセンスを削除する。引用元としての表示は、引用箇所に残す。」
+- 2026-10-13（p001 の後）「Intel WiFiのOpenBSD由来については、引用を明示して、著作権を外します。それは著作権法上、認められているのではないでしょうか。外していいと思います。」
+- 2026-10-13「net80211 の作者（Onoe・Leffler）の注記を外して、出典を IEEE 802.11 に書き換えてよい。」
+- 2026-10-13（Intel の部分）「intel_ax211_context_info_gen3は、構造体のコメントに出典を明記すれば、Intelの著作権表示なしでOKです。」「Intelのヘッダも、シンボル名を変えて、関連する連続するマクロ定義の先頭や、enumのコメントなど、ブロックごとに出典を書いて、シンボル名が一致しないようにして、Intelの著作権表示を外します。ファイルヘッダに、Intelのヘッダを1次資料として、値を収集した旨、書いておいてください。翻案であるとの指摘を受けないように、これまでの実装からわかっている事実をコメントでブロックごとに書き加え、定数がどこでどのようい利用され、どのような意味を持つかなど、詳細に記述してください。他のOSのドライバ開発者にとって有用なドキュメントになる体裁であれば、翻案ではなく独自の価値をもつ資料になり得ます。」
+- 2026-10-13「ほかの OS のドライバを作る人にも役立つ資料であるから、これはIntelヘッダの翻案ではないと、ファイルヘッダに書きましょう。以上で問題ないです。」
 
-## 目的と完了の条件
+## 結果
 
-対象は `src/drivers/wifi/intel-ax211/` と、その license の表示（`tools/release/license-components.json` の `intel-ax211-driver`、`/usr/share/licenses/intel-ax211-driver/LICENSE`、source の頭の注記）。
+- p001: OpenBSD iwx(4) との比較と、定数の名前・table の出典の監査（P1、機械比較の道具は scratchpad）。MSI-X の cause の表（transport.c）は書き直す判断。
+- p002: 約 170 の定数と struct の tag・Intel に特有の field 名の付け直し、block ごとの出典と実装から分かった事実の comment、各 file の頭の注記（1 次資料・翻案ではない旨）、bss.c・bss.h の出典を IEEE 802.11 に、Intel の著作権表示と license の file・inventory の除去。build・host 試験・機械比較まで（P3）。
+- 削除を頼んだ 3 path（`userland/base/licenses/intel-ax211-driver/` の LICENSE・Makefile、`plan/ws004/tests/run-intel-ax211-driver-license-test.sh`）は tree に無い（2026-10-28 に確かめた）。
+- AX211 の QEMU・実機の回帰は未実施。
 
-1. OpenBSD の iwx(4) の source と比べ、構造・関数の分け方・表現が類似していない（独立に書かれた）ことを、比較の方法と結果つきで記録する。類似が見つかった所は書き直すか、license を残す判断をユーザーに返す。
-2. 定数の名前が Intel の header（iwlwifi の `iwl-*.h`・`fw/api/*.h` など）の名前を使っていないこと、table（command の id・TLV・register の値など）が公開の仕様書（または firmware の公開の format の記述）から導けることを、出典つきで記録する。導けない値は出典の候補をユーザーに返す。
-3. 1・2 が確かめられたら、OpenBSD・Intel の license の本文と inventory の記載を外し、引用元としての表示（「この値は … による」など）は引用の箇所に残す。firmware の package（`intelax211-firmware`）の license は対象外で変えない。
-4. license の inventory の試験（`plan/ws129/tests/license-inventory-test.sh`）が PASS、build の warning 0。
+## 制限・移管
 
-## Phase
+- 実機の確認は未実施（AX211 の接続の回帰）。AX211 の出典の整理は WS248 と同じ扱い。
+- p002 の記録に残る 2 つの事実（latency tolerance の no-snoop、SOC の flag）を直すかは判断されないまま閉じた。
 
-| Phase | 内容 | Status |
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 監査: OpenBSD iwx(4) との比較、定数の名前と table の出典の調べ、結果の記録（削除の可否の判断材料） | in-progress（監査は済み、2026-10-13 のユーザーの決定で p002 へ。Status の締めが残る） |
-| [p002](phase002/phase.md) | 削除と引用の表示の整理、名前の付け直し、block ごとの出典の comment（ユーザーの決定 2026-10-13） | in-progress（実装・build・host 試験・機械比較済み、T1・実機の試験待ち、削除 3 path は Q1） |
+| ws218-p001 | 監査: OpenBSD iwx(4) との比較、定数の名前と table の出典 | in-progress のまま閉じた（監査は済み、ユーザーの決定で p002 へ） |
+| ws218-p002 | license の表示の削除、引用の表示、名前の付け直し、block ごとの出典の comment | in-progress のまま閉じた（実装・build・host 試験・機械比較済み、QEMU・実機は未実施） |
 
-## ユーザーの決定（2026-10-13、p001 の後）
+## 記録の所在
 
-- 「Intel WiFiのOpenBSD由来については、引用を明示して、著作権を外します。それは著作権法上、認められているのではないでしょうか。外していいと思います。」→ OpenBSD の license を外し、引用元の表示を引用の箇所に残す（p001 の (D)）。MSI-X の cause の表（transport.c:130-134）は p001 の推奨どおり書き直す。
-- 「net80211 の作者（Onoe・Leffler）の注記を外して、出典を IEEE 802.11 に書き換えてよい。」→ bss.c・bss.h の注記を外し、出典を IEEE 802.11 にする。
-- Intel の部分（2026-10-13 ユーザー、原文）:「intel_ax211_context_info_gen3は、構造体のコメントに出典を明記すれば、Intelの著作権表示なしでOKです。」「Intelのヘッダも、シンボル名を変えて、関連する連続するマクロ定義の先頭や、enumのコメントなど、ブロックごとに出典を書いて、シンボル名が一致しないようにして、Intelの著作権表示を外します。ファイルヘッダに、Intelのヘッダを1次資料として、値を収集した旨、書いておいてください。翻案であるとの指摘を受けないように、これまでの実装からわかっている事実をコメントでブロックごとに書き加え、定数がどこでどのようい利用され、どのような意味を持つかなど、詳細に記述してください。他のOSのドライバ開発者にとって有用なドキュメントになる体裁であれば、翻案ではなく独自の価値をもつ資料になり得ます。」→ p002 で: 約 170 の定数と struct の tag・Intel に特有の field 名を付け直し（Intel・iwx の名前と一致しない）、連続する macro・enum の block ごとに出典（Intel の header の file と版）と、zedBSD の実装から分かった事実（どこでどう使い、何を意味するか）の comment を書き、各 file の頭に「Intel の header を 1 次資料として値を収集した」旨を書き、Intel の著作権表示と license の file・inventory を外す。`intel_ax211_context_info_gen3` は名前を付け直し、構造体の comment に出典を明記する。
-- 2026-10-13 ユーザー（原文）:「ほかの OS のドライバを作る人にも役立つ資料であるから、これはIntelヘッダの翻案ではないと、ファイルヘッダに書きましょう。以上で問題ないです。」→ 各 file の頭に、値を集め実装から分かった使い方と意味を独自に書き加えた資料で Intel の header の翻案ではない旨を書く。p002 の範囲はこれで確定。
+Phase の計画・結果は削除する。git の commit `fb1f6afee` の `plan/ws218/` にある。Queue の履歴は [plan/history](../history/index.md)。

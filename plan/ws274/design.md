@@ -218,8 +218,8 @@ weak extern は、coding-style.md:139-143（「file の間で code を移す時�
 - **名前の衝突:** 同じ名前で別の中身の物（alloc_vm_page・find_page・struct vm_page_slab）は、別々の内部 header に置くか file の中に留めれば衝突しません。外に出す一般名（find_page、queue_insert、overlaps、destroy_object など）は、移動の段では名前を変えず内部の header だけに宣言し、S8 で `vm_object_`・`vmspace_` の接頭辞を付ける案です（判断 6-6）。
 - **coding style:** static を外に出すと「公開関数は static より前、複数行の注記」（coding-style.md:176-213）に反します。WS106 と同じ「配置変更だけの例外」をユーザーに承認してもらうのが既定です（判断 6-1）。
 - **試験の link の list と、関数を名前で切り出す試験:**
-  - `plan/ws213/tests/kd-host-test.sh`（master.md:1215 に登録）: 43 行で src/kern/vm.c から 3 関数を切り出します → path を metadata-lock.c に直します。
-  - `plan/ws213/tests/pin-host-test.sh`（master.md:1216 に登録）: 36-47 行で vmspace.c から define を取り、`^static ...` の forward 宣言を grep し、15 関数を切り出します。find_region_locked・find_page・copy_backing などが外に出ると grep が外れます → 複数の file と内部の header から取るように直します。
+  - `plan/tools/latency/kd-host-test.sh`（master.md:1215 に登録）: 43 行で src/kern/vm.c から 3 関数を切り出します → path を metadata-lock.c に直します。
+  - `plan/tools/kernel-lock/pin-host-test.sh`（master.md:1216 に登録）: 36-47 行で vmspace.c から define を取り、`^static ...` の forward 宣言を grep し、15 関数を切り出します。find_region_locked・find_page・copy_backing などが外に出ると grep が外れます → 複数の file と内部の header から取るように直します。
   - 登録されていない、完了・closed の WS の試験は、追従の時の基準（AGENTS.md の 2026-10-06）に従い、直さずに削除を Q1 に頼みます:
     - plan/ws073/tests/region-index-host.sh（WS073 は completed）
     - plan/ws073/tests/swap-slot-host.sh（swap.c を移す場合）
@@ -289,7 +289,7 @@ weak extern は、coding-style.md:139-143（「file の間で code を移す時�
   - `make -j16` で warning 0 の build を 3 つ: amd64（LTO）、gcc で LTO なしの sparcv9 か x68k、object の一覧を持つ pcat。
   - 照合の script で、全部の関数の本文が同じであること。
   - vmunix の `nm` を比べ、増えた global が外に出した物だけであること。
-  - 関係する host の試験: `sh plan/ws213/tests/kd-host-test.sh`、`pin-host-test.sh`（どちらも最後が PASS）。
+  - 関係する host の試験: `sh plan/tools/latency/kd-host-test.sh`、`pin-host-test.sh`（どちらも最後が PASS）。
 - **最後:**
   - 11 の platform を全部 build します。
   - T1 に頼む起動の確かめ（1 つの QEMU でまとめて流す）:
@@ -333,5 +333,5 @@ weak extern は、coding-style.md:139-143（「file の間で code を移す時�
 - /home/awe/zedBSD-claude1/src/kern/vm.c
 - /home/awe/zedBSD-claude1/src/kern/vmspace.c
 - /home/awe/zedBSD-claude1/Makefile（KERN_NET_SOURCES の手本 771-805）と /home/awe/zedBSD-claude1/platform/amd64/vmunix.mk（と他の 10 の vmunix.mk）
-- /home/awe/zedBSD-claude1/plan/ws213/tests/pin-host-test.sh と /home/awe/zedBSD-claude1/plan/ws213/tests/kd-host-test.sh
+- /home/awe/zedBSD-claude1/plan/tools/kernel-lock/pin-host-test.sh と /home/awe/zedBSD-claude1/plan/tools/latency/kd-host-test.sh
 - /home/awe/zedBSD-claude1/plan/coding-style.md（2〜3 節）と /home/awe/zedBSD-claude1/plan/standards/ws106-relocation.md（例外の手本）

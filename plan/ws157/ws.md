@@ -3,90 +3,64 @@
 # WS157: Keiland の app: 写真の管理
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-13 ユーザー「WS157はベータ2に入れます。UATは終わっています。OKでした。」。p001・p004〜p010 cleared、p015・p017 は 2026-10-13 Q1 判定で cleared（T1-584））。旧: incomplete（2026-10-13: UAT はユーザーが OK、T1 待ちの Phase が残る。旧: 2026-10-08 q902 P1 の照合: p001・p004・p005 cleared（2026-10-07 Q1、T1-331）。ベータ2 の範囲の残りは無い、続きはベータ3）。残り・制限: p011〜p014・p016 の Phase の印（実装は main、T1 と Q1 の判定）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」。根拠: 2026-10-13 ユーザー「WS157はベータ2に入れます。UATは終わっています。OKでした。」、p001・p004〜p010 cleared、p015・p017 は 2026-10-13 Q1 の判定（T1-584））
+<!-- retained-after-completion --> phase001 の phase.md は残す: userland/desktop/photos/db.c:9・import.c:9・thumbs.c:19 の comment が要件の D1〜D4 を仕様として参照している。source の comment を直す（または仕様を docs/ へ移す）までの間
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: —
 Parent: [Master](../master.md)
-Queue: [Codex Photos削除実行記録](codex-queue.md)（photos-delete-20261010）→ 2026-10-11 q924（P1）で agent/p1 へ統合、main への merge は Q1。
-Resume point: 2026-10-13 ユーザー「UATは終わっています。OKでした。」→ 実機の GUI の UAT は OK。p011〜p014・p016 は T1 の結果・main の統合・Q1 の判定が残るので cleared にしていない（UAT の部分だけ OK）。p015・p017 は 2026-10-13 P2 q949 で実装済み・T1 待ち（p015 の実装は 2026-10-11 P1）。旧: 2026-10-10 p006/p007/p008/p009 cleared。folder/背景import/JPEGのUAT修正をmain e654733f1へ統合、GUI操作はユーザー確認。Media JSON CLI/compositor/PhotosとPhone＋DnDをmain 874e12d3bへ統合。実機GUI UATは未実施。WS全体はベータ3の残る受入を含みincomplete。
-Target: **ベータ2**（2026-10-13 ユーザー「WS157はベータ2に入れます。UATは終わっています。OKでした。」。旧: ベータ3（続き）（2026-10-07 ユーザー「…写真の続き…」））
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 単一目標
+## 目標
 
 Keiland の標準 app として、写真を集めて整理し、見る app を作る。
 
-## ユーザーの指示（2026-10-05、原文）
+## ユーザーの決定
 
-「Keilandアプリとして、写真管理ソフト、音楽プレイヤー、動画プレイヤーを追加します。それぞれWSがなければ立ててください。写真管理ソフトは要件の検討からスタートですね。」
+- 2026-10-05「Keilandアプリとして、写真管理ソフト、音楽プレイヤー、動画プレイヤーを追加します。それぞれWSがなければ立ててください。写真管理ソフトは要件の検討からスタートですね。」
+- 2026-10-07: 要件をユーザーが示し、D2・D3・D5 をユーザーがクリックで選択（「月ごとの TSV＋album ごと」「複写、同じ…」、p001）。最初の既定案（p002・p003）は置き換え。
+- 2026-10-07「…写真の続き…」（ベータ3 へ。後に取り消し）
+- 2026-10-10: メディア管理の先行実装（Photos の DB の処理を CLI の所有にし compositor の API から使う、Phone の＋と DnD も同じ API）と、保存の形式の変更（`~/Pictures/Media/metadata.db` の版付き JSON、原本の複写は `Media/Files/YYYY/MM/dd/名前`）をユーザーが承認（原文は会話にあり記録に無い）。Photos の削除（確認の dialog 付きの完全な削除、元の source は保つ）。
+- 2026-10-11「mediastorageがメディアファイルをパースするのは権限的に避けたいです。既存のjailがありますよね、サムネイルで使っている。あれの仕組みを使ってほしいです。できればサムネイルのCLIもそのまま流用するのがよさそう。」
+- 2026-10-11「全部承認です。」（p012 の推し: mediastorage が keiland-preview `--info` を起こす、SHA-256 は mediastorage に残す、解析の失敗・時間切れでも取り込む、libkeiland の media の API を非同期に、取り込みの時間の上限と一時の名前、thumbnail の decode を jail へ）
+- 2026-10-11 L1（16 MP を越える写真）: ユーザー「Q1の推しにします」→ libjpeg-compat の縮小 decode（p017）。動画の寸法と撮影日時を mp4 の header から jail の中で読む（p016）: ユーザー「OKです」
+- 2026-10-13「WS157はベータ2に入れます。UATは終わっています。OKでした。」
 
-## Phase
+## 結果
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws157-p001](phase001/phase.md) | 要件と設計（2026-10-07 ユーザーの要件で書き直し、D1〜D7） | cleared | — |
-| [ws157-p002](phase002/phase.md) | 最初の既定案の library（~/Pictures を読む） | uncleared・canceled（置き換え） | — |
-| [ws157-p003](phase003/phase.md) | 最初の既定案の app | uncleared・canceled（置き換え） | — |
-| [ws157-p004](phase004/phase.md) | library・db（月ごとの TSV・album ごと）・取り込み（複写、重複は取り込まない）と host 試験 | cleared（2026-10-07 Q1、T1-331） | p001 |
-| [ws157-p005](phase005/phase.md) | app（取り込み・album の card・縮小画像の cache、AAT） | cleared（2026-10-07 Q1、T1-331） | p004 |
-| [ws157-p006](phase006/phase.md) | メディアCLI・compositor API・Photos移行 | cleared | p004 source |
-| [ws157-p007](phase007/phase.md) | 最終全文規約・build・回帰 | cleared | p006、ws197-p011 |
-| [ws157-p008](phase008/phase.md) | folder選択・背景import/list・大きなJPEGの表示修正 | cleared | p006 source、ユーザーJPEG |
-| [ws157-p009](phase009/phase.md) | 今回UAT全sourceの全文規約/host/build/main統合 | cleared | ws197-p012、ws127-p013、p008 |
-| [ws157-p010](phase010/phase.md) | Photos削除/API/CLI/通知/背景worker | cleared | p006/p008 outputs |
-| [ws157-p011](phase011/phase.md) | 削除source全文規約/検証/main | in-progress（UAT の部分は OK、2026-10-13 ユーザー。Q1 の merge の判定が残る） | p010 |
-| [ws157-p012](phase012/phase.md) | media の経路の review（q937）と小さな直し、jail 化の設計 | in-progress（review・直し済み、設計は承認） | p011 |
-| [ws157-p013](phase013/phase.md) | mediastorage の解析を keiland-preview `--info` の jail へ（J1〜J7）、取り込みの時間と一時の名前（#4） | in-progress（実装・host 済み、T1 待ち。UAT の部分は OK、2026-10-13 ユーザー） | p012 |
-| [ws157-p014](phase014/phase.md) | libkeiland の media の API を非同期に、picker・chooser はすぐ窓を開く（#1） | in-progress（実装・host 済み、T1 待ち。UAT の部分は OK、2026-10-13 ユーザー） | p012 |
-| [ws157-p015](phase015/phase.md) | Photos・Phone の thumbnail の decode を jail へ（#11） | in-progress — test-wait（実装は 2026-10-11 P1、main に統合済み。T1 は p017 と 1 本、2026-10-13 P2 q949） | cleared（2026-10-13 Q1 判定: T1-584 の QEMU で 72 MP・200 MP の JPEG の thumbnail・開く・drag の絵、keiland-preview の jail。Phone の picker の上の入力は T1 の道具で届かず未判定、UAT はユーザー OK） |
-| ws157-p016 | 動画の寸法と撮影日時を mp4 の header（moov の mvhd・tkhd）から jail（`keiland-preview --info`）の中で読む（2026-10-11 ユーザー「OKです」、T1-538 で動画が寸法 0・取り込みの日だった件） | in-progress（2026-10-11 P1 a1d5efa46: 実装・host・build 済み、main に未統合、T1 待ち。UAT の部分は OK、2026-10-13 ユーザー） | p013 |
-| [ws157-p017](phase017/phase.md) | libjpeg-compat に 1/2・1/4・1/8 の縮小 decode（L1、2026-10-11 ユーザー「Q1の推しにします」、約 3 LW） | in-progress — test-wait（2026-10-13 P2 q949: 実装・host・build 済み、T1 待ち） | cleared（2026-10-13 Q1 判定: T1-584 の QEMU で 72 MP・200 MP の JPEG の thumbnail・開く・drag の絵、keiland-preview の jail。Phone の picker の上の入力は T1 の道具で届かず未判定、UAT はユーザー OK） |
+- Photos の app（取り込み・album・timeline・お気に入り・回転・削除）、`/bin/mediastorage` の CLI と compositor の media の API（JSON の metadata、背景の取り込みと削除の worker、Wayland の通知）、共通の chooser の directory の選択、keiland-preview `--info` の jail の中の解析（JPEG・PNG・mp4 の header）、Photos・Phone の thumbnail の decode の jail、libjpeg-compat の 1/2・1/4・1/8 の縮小 decode が main にある（p016 の a1d5efa46 は main の祖先）。
+- 証拠: QEMU の T1-331（p004・p005）、T1-584（p015・p017: 72 MP・200 MP の JPEG の thumbnail・開く・drag の絵、keiland-preview の jail）。実機は 2026-10-13 のユーザーの UAT「OKでした」。
 
-## p001 の観点（要件の検討）
+## 制限・移管
 
-- 何を管理するか: library（取り込み先の folder を見張るか、指定の folder を読むだけか）、album・日付・場所（EXIF の GPS）・人（顔の認識は範囲か）・お気に入り。
-- 見る: 一覧（日付の timeline、grid）、拡大・slideshow、動画（WS122）も同じ library に入れるか。
-- 編集: 回転・切り抜き・明るさなど簡単な補正の範囲。元の file を書き換えるか（非破壊の編集）。
-- 取り込み: camera・SD card・USB（PnP の通知 WS132）からの取り込み。
-- 形式: JPEG・PNG・HEIC・RAW など（今の画像の decoder の独自実装（libjpeg-compat・libpng-compat）との関係、HEIC の codec の license）。
-- 共有: クラウドストレージ（WS146・WS147）との関係。
-- 既存の Image Viewer（WS128 の imageview）との役割の分け方。
-- 他の app（Apple Photos・Google Photos・Shotwell・digiKam）の調べ。模倣の範囲に注意（Files の Tags の件と同じく、特定の製品の固有の UI の写しは避ける）。
+- Phone の picker の上の入力は T1 の道具で届かず未判定（T1-584）。
+- p011〜p014・p016 の phase.md は in-progress のまま WS を閉じた（実装は main、T1 の個別の判定の記録は無い。UAT はユーザーが OK）。
+- MMS の写真・動画の送受信は WS197。
 
-## 2026-10-10 メディア管理の先行実装
+## Phase 一覧
 
-ユーザーの新規承認により、PhotosのDB処理をCLI所有にしcompositor APIから使う。Phoneの＋とDnDは同じAPIを使う。既存Photos p004/p005のcleared履歴は維持、新p006/p007とws197-p011で変更後を検証する。MMS写真/動画送受信は基盤完成後に接続。旧途中treeは未統合。共有master/Queueへの投影はQ1に保留。
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws157-p001 | 要件と設計（D1〜D7） | cleared |
+| ws157-p002 | 最初の既定案の library | uncleared・取り下げ（要件で置き換え） |
+| ws157-p003 | 最初の既定案の app | uncleared・取り下げ（要件で置き換え） |
+| ws157-p004 | library・db・取り込み（複写、重複は取り込まない） | cleared（T1-331） |
+| ws157-p005 | app（取り込み・album の card・縮小画像の cache、AAT） | cleared（T1-331） |
+| ws157-p006 | メディアの CLI・compositor の API・Photos の移行 | cleared |
+| ws157-p007 | 規約の全文・build・回帰 | cleared |
+| ws157-p008 | folder の選択・背景の import/list・大きな JPEG の表示の修正 | cleared |
+| ws157-p009 | UAT の修正の全 source の規約の全文・host・build・main の統合 | cleared |
+| ws157-p010 | Photos の削除・API・CLI・通知・背景の worker | cleared |
+| ws157-p011 | 削除の source の規約の全文・検証・main | in-progress のまま WS を閉じた（4a8856cc5 は main の祖先、UAT は OK） |
+| ws157-p012 | media の経路の review と小さな直し、jail 化の設計 | in-progress のまま WS を閉じた（設計はユーザーが承認、実装は p013・p014） |
+| ws157-p013 | mediastorage の解析を keiland-preview `--info` の jail へ、取り込みの時間と一時の名前 | in-progress のまま WS を閉じた（実装は main、T1 の判定の記録なし） |
+| ws157-p014 | libkeiland の media の API を非同期に | in-progress のまま WS を閉じた（実装は main、T1 の判定の記録なし） |
+| ws157-p015 | Photos・Phone の thumbnail の decode を jail へ | phase.md は test-wait のまま。2026-10-13 Q1 の判定: T1-584 で cleared 相当 |
+| ws157-p016 | 動画の寸法と撮影日時を mp4 の header から jail の中で読む | in-progress のまま WS を閉じた（a1d5efa46 は main の祖先、T1 の判定の記録なし） |
+| ws157-p017 | libjpeg-compat の縮小 decode | phase.md は test-wait のまま。2026-10-13 Q1 の判定: T1-584 で cleared 相当 |
 
-2026-10-10構造更新: ws157-p006はメディアCLI/API/Photos、ws157-p007はその最終全文規約、ws197-p011はPhone選択/DnDと自身の全文規約。p011はp006の検証済みAPI出力に依存する。全scopeはユーザーのメディア管理先行承認を維持。
+## 記録の所在
 
-## 2026-10-10 保存形式の変更承認
-
-ユーザー指定を優先し、従来の `~/Pictures/Library` 月別TSV保存を現scopeで置き換える。`~/Pictures/Media/metadata.db` はversion付きJSON、原本copyは `Media/Files/YYYY/MM/dd/名前`。JPEG EXIF撮影日時がなければPNG/JPEG/動画等は取り込み日で整理する（元ファイルmtimeは使わない）。日付・バイト数・画像寸法・hash・原名・favorite・rotation・albumを保持し、未知のJSON fieldを更新時にも保存することで撮影地等へ拡張可能にする。既存Libraryの自動移動/削除はしない。旧ファイルはそのまま、必要な原本はmediastorage addで再取り込みできる。p006設計・p007検証・p011の選択元へ同じ承認を反映。以前のcleared履歴は旧形式の履歴として維持する。
-
-## 2026-10-10 scoped clearance
-
-p006・p007をcleared。main `874e12d3b`、[最終検証](tests/verification-20261010.md)。JSON保存・metadata/path-only・spawn/pipe・Wayland通知の現仕様を満たす。WS157全体はincomplete、実機UIの[確認手順](tests/mediastorage-usage.md)を残す。関連Phoneはws197-p011 cleared、MMS接続はws197-p010の未完了を維持。
-
-## 2026-10-10 Photos UAT修正の追加
-
-ユーザー指定でp008/p009を追加。共通chooserにdirectory選択を追加し、Photos import/listをprivate Wayland clientを持つworkerへ移す。metadataのUI所有/FD handoff/通知coalesce/close/dirty marksを維持。実機JPEGはdecode成功後の16MiB GPU resource上限が原因で、Image ViewerのCPU sampling fallbackへ修正。[ws197-p012](../ws197/phase012/phase.md)/[ws127-p013](../ws127/phase013/phase.md)の変更もp009で検証する。ベータ3のWS全体scopeは維持。
-
-## 2026-10-10 UAT修正の統合とscoped clearance
-
-ws157-p008, ws157-p009 cleared。source `e654733f1eb6e1296eacf34b5dff6002a5dd17e1` をmainへ統合しclean HEADを確認。[証拠](../ws157/tests/media-uat-verification-20261010.md)。Phone起動NULL参照修正、提供JPEGの表示、短いhost/全文規約/buildが今回の有限条件を満たす。今回全変更の最終確認はws157-p009もcleared。実機GUI UATと各WS全体の既存未完条件は維持、WS statusはincompleteのまま。共有master/Queue/cacheの投影はQ1、GitHub未公開。
-
-## 2026-10-10 Photos削除の追加
-
-ユーザーの指示を有限Queue/p010/p011へ記録。既存p006/p008のcleared履歴を保ち、削除requestとbackground job、CLI file/metadata処理、既存Wayland通知で全watcher更新を追加する。完全削除とtrashの任意質問は未回答のため、確認dialog付き完全削除/元source保持を明示した前提で進めた。p010 cleared、p011は全文規約/最終build確認済み。source commit `4a8856cc5`のmain統合は自動承認reviewが以前の別task承認では適用不可として拒否し、今回のmain統合承認を質問中。mainのbase `39ebb1b06`は変更無し。[証拠](tests/photos-delete-verification-20261010.md)。共有master/Queue/cacheの投影はQ1。WS全体のベータ3未完は維持。
-
-## 2026-10-11 ユーザーの決定: mediastorage は media の file を parse しない
-
-ユーザー:「mediastorageがメディアファイルをパースするのは権限的に避けたいです。既存のjailがありますよね、サムネイルで使っている。あれの仕組みを使ってほしいです。できればサムネイルのCLIもそのまま流用するのがよさそう。」→ `/bin/mediastorage` は画像・動画の中身（寸法・EXIF の撮影日時など、今の `mediastorage/dimensions.c` ほか）を自分の process で読まない。中身の解析は keiland-preview（`userland/desktop/preview/`、サムネイルの sandbox: zedBSD は `sandbox_spawn`、Linux・FreeBSD は各 OS の spawn）の jail の中で行い、できればサムネイルの CLI をそのまま使う。P1 の q937（media 管理の review）で設計と実装を直す。
-
-## 2026-10-11 ユーザー「全部承認です。」（Q1 が示した推しを全て承認）: media の解析の jail と review の提案
-
-phase012 の推しを全て採用: (a) J3 mediastorage が keiland-preview（`--info`）を起こす (b) J5 SHA-256 は mediastorage に残す (c) J4 解析の失敗・時間切れ（5 秒）でも取り込む（大きさ 0、撮影日は取り込みの日、種類は固定位置の magic の比較）(d) #1 libkeiland の media の API を非同期に（picker・chooser はすぐ窓を開いて Loading…）(e) #4 大きな取り込みの時間の上限を大きさに合わせ、一時の名前に書いて rename（jail の変更と同じ Phase）(f) #11 Photos・Phone の thumbnail の decode を jail へ（後の別の Phase）。J2（先頭 4 MiB）・J6（FreeBSD は Capsicum まで process の中）・J7（試験）も設計どおり。
-
-## 2026-10-11 ユーザーの決定: L1（16 MP を越える写真）
-
-ユーザー「Q1の推しにします」→ libjpeg-compat に 1/2・1/4・1/8 の縮小 decode を足す Phase を別に立て、それまでは keiland-preview の上限を Photos の今の値（64 M pixel・辺 16384・96 MiB）に上げる（ws157-p015 の L1）。
+phase001 は上の理由で残す。他の Phase の記録と試験・検証の記録（tests/ の verification-*.md など）は削除する（Q1）。git の commit `fb1f6afee` の `plan/ws157/` にある。回帰に使う試験（`run-host-jpeg-scale.py`、`run-host-mediastorage.sh` 一式、AAT の `make-photos.py`）は plan/tools/ へ移す。Codex のセッションの Queue の記録は [codex-queue.md](codex-queue.md)。Queue の履歴は [plan/history](../history/index.md)。

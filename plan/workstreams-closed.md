@@ -37,9 +37,9 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS034](ws034/ws.md) | MG002 | アプリケーション拡充と kernel・libc の是正 | canceled（2026-10-05） | package の導入 |
 | [WS035](ws035/ws.md) | MG006 | デスクトップ環境とアプリケーション | completed | 2026-09-30 ユーザーの判断で閉じた（目標が 2026-09-23 のまま古く、ゴールが不明確）。p001〜p138: compositor・sessiond・greeter・lock・Keiland の app・audiod・起動の短縮ほか。Chromium は取り消し（ユーザー「独自にBrowserを書いているから」）。デモまでの仕上げは WS099。`plan/ws035/tests/` は共有の道具として残す（plan/tools への移動は後の整理） |
 | [WS036](ws036/ws.md) | MG008 | amd64 の成果を他 platform へ（aarch64 を含む） | completed | 2026-09-27 完了（p021 全 platform の回帰と規約、p026〜p029、p027 は案 A: boot の parameter の parser を緩めた）。実機は未実施。toolchain の cache（zedbsd8）は 2026-09-27 に rev-0 へ upload 済み |
-| [WS037](ws037/ws.md) | MG006 | **nvrtx**: NVIDIA RTX 2000 以降（Turing〜Blackwell、GTX 16xx を含む）の GPU driver。WS141 の vc4 と同じ進め方（文書が先、GPL の作業の文書は commit しない、定数の一括の改名、最後に類似の監査、GSP の firmware は userland/firmware）。Pascal 以前は範囲の外（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | P4m の間欠の失敗（T1-691）、p001・p003〜p008 の Phase の印、p009 規約は一括の見直しへ |
+| [WS037](ws037/ws.md) | MG006 | **nvrtx**: NVIDIA RTX 2000 以降（Turing〜Blackwell、GTX 16xx を含む）の GPU driver。WS141 の vc4 と同じ進め方（文書が先、GPL の作業の文書は commit しない、定数の一括の改名、最後に類似の監査、GSP の firmware は userland/firmware）。Pascal 以前は範囲の外（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | P4m の間欠の失敗（T1-691、手当ては実機未確認）、`nvrtx.disp.own` の既定は未決、p009 規約は一括の見直しへ |
 | [WS038](ws038/ws.md) | MG006 | Intel Arc dGPU（予約） | canceled（2026-10-27 00:18、WS295 の xe に含める） | — |
-| [WS039](ws039/ws.md) | MG006 | AMD RDNA GPU（amdrdna） | completed（2026-10-27 精査 q1608） | p006・p007・p012・p015・p019 の Phase の印、p018、p010 規約は一括の見直しへ |
+| [WS039](ws039/ws.md) | MG006 | AMD RDNA GPU（amdrdna） | completed（2026-10-27 精査 q1608） | p018（BUG-331）は ticket で、p019 の速さは WS291、p010 規約は一括の見直しへ |
 | [WS040](ws040/ws.md) | MG008 | 時間の単位を tick 周期から導く | completed | — |
 | [WS041](ws041/ws.md) | MG006 | 起きた thread の即時実行 | completed | — |
 | [WS042](ws042/ws.md) | MG002 | `/bin/sh` の POSIX 互換性 | completed | — |
@@ -130,20 +130,20 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS138](ws138/ws.md) | MG006 | 背景の画像を PPM から PNG に（F-071。起動の decode は prefetch の thread へ） | completed | 2026-10-05 完了（PNG・JPEG の背景、PPM の読みを削除、試験は plan/tools/wallpaper） |
 | [WS139](ws139/ws.md) | MG006 | desktop の性能の台帳と改善（F-072。開発の host の Venus は lavapipe の CPU、E2 の 5330 の測定は未実施） | closed（2026-10-13 ユーザー） | — |
 | [WS140](ws140/ws.md) | MG002 | ld.so の依存・object・handle の上限を動的に（F-070。main は 32・16 のまま） | completed | 2026-10-05 完了（ld.so の上限を動的に、amd64、試験は plan/tools/rtld） |
-| [WS141](ws141/ws.md) | MG006 | Raspberry Pi 4 のグラフィックス driver（VideoCore VI: HVS・pixelvalve・HDMI と V3D 4.2）。Linux の vc4・v3d の初期化の順と command の順を先に文書にし、i915 の書き換えを手本に我々の interface へ。framebuffer に段の印。Linux の vc4・v3d は GPL なので code は写さない（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | p013〜p019 の速さ・機能の残り（stencil は Pi 5 で ok）、p001〜p006 の Phase の印 |
+| [WS141](ws141/ws.md) | MG006 | Raspberry Pi 4 のグラフィックス driver（VideoCore VI: HVS・pixelvalve・HDMI と V3D 4.2）。Linux の vc4・v3d の初期化の順と command の順を先に文書にし、i915 の書き換えを手本に我々の interface へ。framebuffer に段の印。Linux の vc4・v3d は GPL なので code は写さない（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | 描画の速さの残り（p013・p015・p016・p018・p019）は WS291、p017 の線の目視と Pi 4 実機は未実施、p001〜p006 は in-progress のまま閉じた |
 | [WS142](ws142/ws.md) | MG006 | デスクトップのアプリの切り替え: Windows キーでアプリの一覧、タッチパッドの端からの 2 本指（Wiseview・仮想デスクトップ）、上部のバーのアプリの一覧とプレビュー、3 本指のタップ・Alt+Tab の切り替え（2026-10-04 ユーザーの要望） | completed（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」） | p001〜p006 cleared（QEMU）。5330 の UAT 待ち（実機は第 1 段の外） |
-| [WS143](ws143/ws.md) | MG006 | Bluetooth（Settings の stub の頁の実体、HCI・daemon・desktop の経路）。ベータ2 の実装の項目、時期は未定（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | p003・p005・p006 の Phase の印、p007 Linux の backend の T1 の再試験、p009 規約は一括の見直しへ。A2DP・PAN は F-082 |
-| [WS145](ws145/ws.md) | MG006 | 印刷: printer の daemon（IPP・LPD で PDF）、libkeiland の印刷の口と printer の一覧（compositor 経由、backend が daemon を起動）、Settings の Printers の頁（IP・port・protocol）、後に PostScript・vendor の filter（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | p005 の Linux・FreeBSD の guest（test-wait）、p006 規約は一括の見直しへ |
+| [WS143](ws143/ws.md) | MG006 | Bluetooth（Settings の stub の頁の実体、HCI・daemon・desktop の経路）。ベータ2 の実装の項目、時期は未定（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | p003・p005 は in-progress のまま閉じた（実機は p008 で確かめた）、p009 規約は一括の見直しへ。A2DP・PAN は F-082 |
+| [WS145](ws145/ws.md) | MG006 | 印刷: printer の daemon（IPP・LPD で PDF）、libkeiland の印刷の口と printer の一覧（compositor 経由、backend が daemon を起動）、Settings の Printers の頁（IP・port・protocol）、後に PostScript・vendor の filter（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | FreeBSD は build・install まで（印刷は未実施）、p006 規約は一括の見直しへ |
 | [WS148](ws148/ws.md) | MG006 | Settings の Privacy の頁の検討（要らなければ頁を削除、要るなら設計と実装）（2026-10-04 ユーザー） | completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）） | — |
 | [WS149](ws149/ws.md) | MG006 | Settings の Security の頁の検討（要らなければ頁を削除、要るなら設計と実装。WS148 の Privacy と項目を分け合う）（2026-10-04 ユーザー） | completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）） | — |
 | [WS151](ws151/ws.md) | MG006 | Settings の Accessibility の頁の検討（要らなければ頁を削除、要るなら設計と実装。見る・聞く・操作・読み上げ）（2026-10-04 ユーザー） | completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）） | — |
-| [WS154](ws154/ws.md) | MG006 | Settings の Languages の頁で IME を選ぶ（日本語・SKK・なし=英語）と、SKK の IME の新しい実装（辞書は Emacs の物）（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | 規約の全文は一括の見直しへ |
+| [WS154](ws154/ws.md) | MG006 | Settings の Languages の頁で IME を選ぶ（日本語・SKK・なし=英語）と、SKK の IME の新しい実装（辞書は Emacs の物）（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | SKK の >・/・#・Tab・注釈は F-079、規約の全文は一括の見直しへ |
 | [WS155](ws155/ws.md) | MG006 | Keiland の app: カレンダー・スケジューラ・オーガナイザ（まず簡単な物）（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | p005 の規約の全文は一括の見直しへ |
-| [WS156](ws156/ws.md) | MG006 | app の通知: 画面の下の中央を流れる headline の popup（右から中央、3 秒、左へ fade-out、× で消す）と hotkey の ring の log（すべて消去、個別に消した物は残さない）（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | p006 の T1、規約の全文は一括の見直しへ |
-| [WS157](ws157/ws.md) | MG006 | Keiland の app: 写真の管理（p001 は要件の検討）（2026-10-05 ユーザー） | completed（2026-10-27 精査 q1608） | p011〜p014・p016 の Phase の印（実装は main、T1 と Q1 の判定） |
+| [WS156](ws156/ws.md) | MG006 | app の通知: 画面の下の中央を流れる headline の popup（右から中央、3 秒、左へ fade-out、× で消す）と hotkey の ring の log（すべて消去、個別に消した物は残さない）（2026-10-04 ユーザー） | completed（2026-10-27 精査 q1608） | 規約の全文は一括の見直しへ。FreeBSD の D-Bus の通知は範囲の外 |
+| [WS157](ws157/ws.md) | MG006 | Keiland の app: 写真の管理（p001 は要件の検討）（2026-10-05 ユーザー） | completed（2026-10-27 精査 q1608） | p011〜p014・p016 は in-progress のまま閉じた（実装は main、UAT は OK）、Phone の picker の上の入力は未判定（T1-584） |
 | [WS159](ws159/ws.md) | MG006 | native のタッチパッド（LPSS I2C・I2C-HID・HID の digitizer、evdev の MT）と compositor のタッチパッドの層（tap・tap-drag・押し込み・2 本指のスクロール）（2026-10-05 ユーザー「ACPI AMLを実装したあと、I2C-HIDを実装しましょう。compositorのtouchpad層も作りましょう。」） | completed（2026-10-27 精査 q1608） | p005 の規約の全文は一括の見直しへ |
 | [WS160](ws160/ws.md) | MG002 | su・sudo・passwd（2026-10-05 ユーザー「su, sudoを実装してください。」・passwd も実装） | completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）） | なし |
-| [WS161](ws161/ws.md) | MG006 | YubiKey のサポート（最初は USB の FIDO2、目標は NFC の CTAP2）（2026-10-05 ユーザーの追加） | completed（2026-10-27 精査 q1608） | Linux・FreeBSD の FIDO2（ベータ3）、p007 規約は一括の見直しへ |
+| [WS161](ws161/ws.md) | MG006 | YubiKey のサポート（最初は USB の FIDO2、目標は NFC の CTAP2）（2026-10-05 ユーザーの追加） | completed（2026-10-27 精査 q1608） | NFC の実機は未実施、Linux・FreeBSD の FIDO2 は入れない（ユーザーの決定）、規約の全文は一括の見直しへ |
 | [WS162](ws162/ws.md) | MG006 | FIDO2 の login（greeter・lock の画面で security key で login）（2026-10-05 ユーザーの追加） | completed（WS172・WS199 で達成）（2026-10-27 精査 q1608） | — |
 | [WS163](ws163/ws.md) | MG006 | 数字 6 桁の login（PIN、greeter・lock の画面）（2026-10-05 ユーザーの追加） | completed（WS172 に吸収、WS172 p002 の PASS） | — |
 | [WS164](ws164/ws.md) | MG006 | OS の起動時の Welcome の画面（既存の Start で足りるかの検討から）（2026-10-05 ユーザーの追加） | completed（2026-10-27 精査 q1608） | p003 の規約の全文は一括の見直しへ |
@@ -151,15 +151,15 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS166](ws166/ws.md) | MG006 | IME の予測変換（2026-10-05 ユーザーの追加） | completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）） | — |
 | [WS167](ws167/ws.md) | MG006 | GPU の command の protocol を Venus の番号の流用から独自の名前と番号に（Venus と一致する内容から始め、Venus の番号を再利用したことを header に書き、Google の著作権の表示を外せるようにする）（2026-10-05 ユーザーの追加） | completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）） | — |
 | [WS168](ws168/ws.md) | MG006 | プレビュー（縮小表示）を作る隔離された専用の command（chroot・他の file の open・network・fork の禁止、fd 0・1 だけ）（2026-10-05 ユーザーの追加） | completed（2026-10-13 ユーザー「完了の記録だけが残る物: WS120・WS168・WS178・WS187 →closeしてください。」） | — |
-| [WS169](ws169/ws.md) | MG006 | メーラの app と compositor のメールの API（許可された app が受信の通知を受ける、browser の認証 code の自動入力、IMAP4・SMTP から Gmail・Outlook へ）（2026-10-05 ユーザーの追加） | completed（2026-10-27 精査 q1608） | p007 の規約の全文は一括の見直しへ |
-| [WS170](ws170/ws.md) | MG006 | Phone の app（連絡先・SMS/MMS/RCS・VoIP を統合したタイムライン、compositor のメッセージの API、モデム・スマホの bridge の backend。最初は連絡先からタイムラインの表示まで）（2026-10-05 ユーザーの追加） | completed（2026-10-27 精査 q1608） | p005 の規約の全文は一括の見直しへ |
-| [WS173](ws173/ws.md) | MG006 | AAT（Agent Acceptance Test）: /dev/input-inject のマウスとキーボード、試験の image だけの画面の撮影、SSH の host の道具で、エージェントが素の 5330 を操作して受け入れを確かめる。UAT はデバイス系と使用感に絞り AAT の後に遅らせる（2026-10-05 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施（p005） |
+| [WS169](ws169/ws.md) | MG006 | メーラの app と compositor のメールの API（許可された app が受信の通知を受ける、browser の認証 code の自動入力、IMAP4・SMTP から Gmail・Outlook へ）（2026-10-05 ユーザーの追加） | completed（2026-10-27 精査 q1608） | OAuth2 はユーザーの決定で作らない、規約の全文は一括の見直しへ |
+| [WS170](ws170/ws.md) | MG006 | Phone の app（連絡先・SMS/MMS/RCS・VoIP を統合したタイムライン、compositor のメッセージの API、モデム・スマホの bridge の backend。最初は連絡先からタイムラインの表示まで）（2026-10-05 ユーザーの追加） | completed（2026-10-27 精査 q1608） | 本物の SMS・通話は WS197、規約の全文は一括の見直しへ |
+| [WS173](ws173/ws.md) | MG006 | AAT（Agent Acceptance Test）: /dev/input-inject のマウスとキーボード、試験の image だけの画面の撮影、SSH の host の道具で、エージェントが素の 5330 を操作して受け入れを確かめる。UAT はデバイス系と使用感に絞り AAT の後に遅らせる（2026-10-05 ユーザー） | completed（2026-10-27 精査 q1608） | p005（素の 5330 の AAT）は未実施のまま閉じた |
 | [WS174](ws174/ws.md) | MG003 | 起動時に Ctrl で kernel の message を console に、Shift で console の login に（UEFI の bootloader だけ、BIOS は後日）（2026-10-05 ユーザー） | completed（2026-10-27 精査 q1608） | p004 BIOS（後日、ユーザー）、実機の確認は未実施 |
 | [WS175](ws175/ws.md) | MG006 | Notes で PDF の画像と文字を編集（移動・大きさ・差し替え・挿入、文字の編集・削除・挿入・font、複数頁）（2026-10-06 ユーザー） | completed（2026-10-27 精査 q1608） | 目視の確認は未実施、p011 の規約は一括の見直しへ |
 | [WS177](ws177/ws.md) | MG006 | ベータ2 積み残し（準正常系・異常系） | completed（2026-10-27 精査 q1608） | p019 の残り（Browser、WS074 と一緒） |
 | [WS178](ws178/ws.md) | MG006 | OpenGL を Desktop へ、GLX を xserver へ | completed（2026-10-13 ユーザー「完了の記録だけが残る物: WS120・WS168・WS178・WS187 →closeしてください。」） | — |
 | [WS179](ws179/ws.md) | MG006 | UI のアクセントカラーを選べるように | completed（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2.2）） | — |
-| [WS181](ws181/ws.md) | MG006 | 窓の docked・floating・最小化の状態、App Home の独立のモード、gesture、整列のメニューと整列モード（UAT 2026-10-07） | completed（2026-10-27 精査 q1608） | — |
+| [WS181](ws181/ws.md) | MG006 | 窓の docked・floating・最小化の状態、App Home の独立のモード、gesture、整列のメニューと整列モード（UAT 2026-10-07） | completed（2026-10-27 精査 q1608） | p012 の 3 回目（page の送りの量）の QEMU は未実施 |
 | [WS182](ws182/ws.md) | MG006 | 電源ボタンで Log Out・Shut Down などのメニュー（ベータ2 の最後、2026-10-07 ユーザー） | completed（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」） | p001 設計 |
 | [WS183](ws183/ws.md) | MG003 | I2C HID の Extended Interrupt と TGL の GPIO の group（5320 の touchpad を割り込みで、ベータ2・後回し） | completed（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」） | p001 |
 | [WS187](ws187/ws.md) | MG006 | ロック画面（大きな時計、下部から上へのスワイプ・wheel での解除、自動の lock の猶予、Password・PIN・Hardware Key の選択、2026-10-08 ユーザー） | completed（2026-10-13 ユーザー「完了の記録だけが残る物: WS120・WS168・WS178・WS187 →closeしてください。」） | — |
@@ -175,29 +175,28 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS199](ws199/ws.md) | MG006 | Settings のセキュリティキーの独立の頁とウィザード（2026-10-10 ユーザーの UAT、ベータ2） | completed | p001 |
 | [WS200](ws200/ws.md) | MG006 | Settings の Users のパスワード変更のウィザードと認証方式の選択（2026-10-10 ユーザーの UAT、ベータ2） | completed（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」） | p001 |
 | [WS202](ws202/ws.md) | MG006 | libavcodec なしで libmedia だけで mp4（H.264 は Vulkan Video・AAC-LC は自前）と .m4a を再生（Video Player・Music）（2026-10-11 ユーザー、設計だけ、実装は別のセッション） | completed（2026-10-27 精査 q1608） | BUG-300（スライダー）は Bug で、p014 の規約は一括の見直しへ、実機の全項目は未確認 |
-| [WS203](ws203/ws.md) | MG005 | Raspberry Pi 4 内蔵 Ethernet (BCM2711 GENET v5) | completed（2026-10-27 精査 q1608） | 実機の確認は未実施 |
+| [WS203](ws203/ws.md) | MG005 | Raspberry Pi 4 内蔵 Ethernet (BCM2711 GENET v5) | completed（2026-10-27 精査 q1608） | 実機で link・IPv4・SSH は確認（2026-10-11）、DHCP の lease の出所と抜き差しは未確認 |
 | [WS206](ws206/ws.md) | MG005 | Raspberry Pi 4 の WiFi（2026-10-11 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認（scan・WPA2・DHCP）は未実施、p007 の規約は一括の見直しへ |
-| [WS207](ws207/ws.md) | MG006 | Raspberry Pi 4 のオーディオ（再生・録音）（2026-10-11 ユーザー） | completed（2026-10-27 ユーザーの回答「completed」） | p001 の判断、p002 の実機、p003・p004 |
+| [WS207](ws207/ws.md) | MG006 | Raspberry Pi 4 のオーディオ（再生・録音）（2026-10-11 ユーザー） | completed（2026-10-27 ユーザーの回答「completed」） | 3.5 mm の音（p002）は実装・host まで、実機は未確認。録音（p003）・HDMI（p004）は未実装 |
 | [WS208](ws208/ws.md) | MG008 | arm64 の HAL の SMP（Pi 4 の 4 core）（2026-10-11 ユーザー） | completed（2026-10-27 精査 q1608） | p005 の reboot 10 回は未実施、p006 の規約は一括の見直しへ |
-| [WS210](ws210/ws.md) | MG006 | Keiland の app の描画を GPU へ（libkeiland の canvas・文字・画像を Vulkan で）（2026-10-12 ユーザー） | completed（2026-10-27 ユーザー「これはすでにVF2での最適化で完了しています。completedにしてください。」） | p001 の確認から（Guardrail「画像の処理は GPU で」の残り） |
-| [WS211](ws211/ws.md) | MG006 | Pi 4 の compositor の描画の削減（App Home の遷移のクロスフェード、draw の束ね）（2026-10-12 ユーザー） | completed（2026-10-27 精査 q1608） | p002（クロスフェード）は終了の時に未実装、p004 の規約は一括の見直しへ |
+| [WS210](ws210/ws.md) | MG006 | Keiland の app の描画を GPU へ（libkeiland の canvas・文字・画像を Vulkan で）（2026-10-12 ユーザー） | completed（2026-10-27 ユーザー「これはすでにVF2での最適化で完了しています。completedにしてください。」） | VF2 での最適化で完了（ユーザー）。中間の p013・p014 は main、GPU の canvas の核（p003〜p012）は未着手 |
+| [WS211](ws211/ws.md) | MG006 | Pi 4 の compositor の描画の削減（App Home の遷移のクロスフェード、draw の束ね）（2026-10-12 ユーザー） | completed（2026-10-27 精査 q1608） | p001・p003 の段 2 以降は未着手で終了、p004 の規約は一括の見直しへ（p002 のクロスフェードは main 4c3a56cf9） |
 | [WS213](ws213/ws.md) | MG006 | compositor の thread 化（入力・cursor と描画の分離、重いコマの間も入力と cursor が止まらない）（2026-10-12 ユーザー） | completed（2026-10-27 精査 q1608） | p006 の規約は一括の見直しへ、box_lag の数値は未確認 |
 | [WS214](ws214/ws.md) | MG006 | 窓をディスプレイの重ね合わせ（HVS の plane）に載せる（Pi 4、drag・dock の間 GPU が窓を描き直さない）（2026-10-12 ユーザー「ぜんぶやりましょう。」） | completed（2026-10-27 精査 q1608） | p005・p006（案、未投入）は終了、p002 の規約と類似の監査は一括の見直しへ |
-| [WS215](ws215/ws.md) | MG005 | Raspberry Pi 4 の Bluetooth（内蔵の BCM43455、UART の HCI）（2026-10-12 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施。p008（SCO と HFP）は HFP と一緒にベータ3 |
+| [WS215](ws215/ws.md) | MG005 | Raspberry Pi 4 の Bluetooth（内蔵の BCM43455、UART の HCI）（2026-10-12 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施。p008（SCO と HFP）は WS197 の HFP と一緒に（ベータ3 の段は 2026-10-27 に取り消し） |
 | [WS216](ws216/ws.md) | MG006 | Notes の描く道具（筆・鉛筆・領域の塗りつぶし・水彩）（2026-10-13 ユーザーの UAT） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施、p008 の規約は一括の見直しへ |
-| [WS217](ws217/ws.md) | MG006 | 画面の回転（Settings の Display、縦長で Notes を使う）（2026-10-13 ユーザーの UAT） | completed（2026-10-27 精査 q1608） | p005（複数 head の回転）・p006（pen と display の結び付け）・p009〜p011（scanout の 180°）は未着手、実機の確認は未実施 |
 | [WS218](ws218/ws.md) | MG005 | Intel WiFi（AX211）driver の license の表示を実態に合わせる（OpenBSD・Intel の license の削除の監査）（2026-10-13 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施 |
 | [WS219](ws219/ws.md) | MG006 | Venus の protocol の op の流用の整理（定数名の付け直し、Venus の著作権表示を外し引用の明記に留める）（2026-10-13 ユーザー） | completed（2026-10-27 精査 q1608） | — |
-| [WS220](ws220/ws.md) | MG005 | TCP の転送の速さの安定（継続の転送ですぐ 1 MB/s 未満に落ちる、window の制御の直し）（2026-10-13 ユーザー） | completed（2026-10-27 精査 q1608） | p002 の QEMU の確かめは未実施、p006〜p009 は案のまま（BUG-222 の USB LAN の遅さは Bug で） |
+| [WS220](ws220/ws.md) | MG005 | TCP の転送の速さの安定（継続の転送ですぐ 1 MB/s 未満に落ちる、window の制御の直し）（2026-10-13 ユーザー） | completed（2026-10-27 精査 q1608） | p002 の QEMU の確かめは未実施。p006・p007 は WS221 の p008・p009 へ移した（2026-10-28 ユーザー）、SACK は行き先なし。tests/ は残す |
 | [WS224](ws224/ws.md) | MG006 | Vulkan の header の著作権表示の形（zedBSD の file header の下に Khronos の表示を別の block で、派生物、解説は入れない）（2026-10-13 ユーザー） | completed（2026-10-13） | Q1 |
 | [WS227](ws227/ws.md) | MG002 | menuconfig の Base・Desktop の表示名の整理、画像と PDF の library を Desktop へ、Linux・FreeBSD に zedBSD 独自の base の命令（2026-10-14 ユーザー） | completed（2026-10-14） | — |
 | [WS228](ws228/ws.md) | MG002 | 独自実装の簡単な vi を base に足す（2026-10-14 ユーザー、ベータ2 の最後の機能） | completed（2026-10-14） | — |
-| [WS229](ws229/ws.md) | MG006 | i915 を Gen9・Gen9.5（Core の 6〜10 世代の iGPU）に対応（GOP のままで GT と EU → 最後に display controller）（2026-10-14 ユーザー、ベータ2 に入る、既定で有効） | completed（2026-10-27 精査 q1608） | — |
+| [WS229](ws229/ws.md) | MG006 | i915 を Gen9・Gen9.5（Core の 6〜10 世代の iGPU）に対応（GOP のままで GT と EU → 最後に display controller）（2026-10-14 ユーザー、ベータ2 に入る、既定で有効） | completed（2026-10-27 精査 q1608） | 6・7 世代の実機は未確認、display controller は WS237・WS260 |
 | [WS230](ws230/ws.md) | MG006 | i915 の GuC 対応（2026-10-14 ユーザー、ベータ3） | canceled（2026-10-27 04:13 Q1: 2026-10-27 ユーザー「i915のGuCは実装せず、xeドライバを開発するときにGuC対応を実装することにします。」、WS295 へ） | 未割当 |
-| [WS231](ws231/ws.md) | MG002 | AHCI（SATA）の driver（2026-10-14 ユーザー、ベータ2 に入る） | completed（2026-10-27 精査 q1608） | NCQ・TRIM・hotplug・ATAPI は後（ws231/ws.md）、実機の SATA は未確認 |
-| [WS232](ws232/ws.md) | MG002 | menuconfig に i386（PC-9800・PC/AT）と Retro の menu（Xzed・zwm・zshell・zterm）（2026-10-14 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施 |
+| [WS231](ws231/ws.md) | MG002 | AHCI（SATA）の driver（2026-10-14 ユーザー、ベータ2 に入る） | completed（2026-10-27 精査 q1608） | NCQ・TRIM・hotplug・ATAPI は入れていない（行き先は未定）、実機の SATA は未確認 |
+| [WS232](ws232/ws.md) | MG002 | menuconfig に i386（PC-9800・PC/AT）と Retro の menu（Xzed・zwm・zshell・zterm）（2026-10-14 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施、pc98 の QEMU の login の結果は記録に無い |
 | [WS233](ws233/ws.md) | MG002 | firmware を awemorris/zedBSD-firmware から取る | completed（2026-10-27 精査 q1608） | p002 の license の画面の端末での目視は未実施 |
-| [WS236](ws236/ws.md) | MG006 | Raspberry Pi 4（VideoCore VI）の動画の再生の hardware 支援 | completed（2026-10-27 精査 q1608） | p001〜p005・p007・p011 の Phase の印、1080p・60 fps は範囲の外 |
+| [WS236](ws236/ws.md) | MG006 | Raspberry Pi 4（VideoCore VI）の動画の再生の hardware 支援 | completed（2026-10-27 精査 q1608） | 720p30 で shown 289/300（T1-690）、1080p・60 fps は範囲の外、seek・長時間は未実施 |
 | [WS237](ws237/ws.md) | MG006 | i915 の Gen9・Gen9.5（第 6〜10 世代 Core）の display controller の制御 | completed（2026-10-15 ユーザー「Gen9は残りの安全策の作業をマージしたら終了です） | — |
 | [WS238](ws238/ws.md) | MG004 | amd64 の native の image を ESP（loader だけ）・FAT32（kernel と boot の設定）・UFS の root・swap の構成にする | completed（2026-10-27 精査 q1608） | 実機の確認は未実施 |
 | [WS239](ws239/ws.md) | MG002 | Wayland（compositor）の起動の失敗時に text console の login へ戻す | completed（2026-10-27 精査 q1608） | p002 の QEMU の確かめは未実施 |
@@ -214,7 +213,7 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS255](ws255/ws.md) | MG001 | 試験機（5330・RDNA 機）の zedBSD の試験の image を静的な IP に（2026-10-16 ユーザー） | canceled（2026-10-27 ユーザーの回答「取り下げ」、WS254 の DHCP の取り直しで足りる、BUG-328 は Bug に残す） | BUG-328 の直し |
 | [WS256](ws256/ws.md) | MG008 | StarFive VisionFive 2（JH7110、RISC-V）への移植（2026-10-18 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認（音・coherency・PERST）は未実施、p018 の ssh |
 | [WS258](ws258/ws.md) | MG001 | 全ドライバの出典の表記を guardrail に（file の先頭から block へ）（2026-10-18 ユーザー） | completed（2026-10-18、残りは WS244・WS259） | — |
-| [WS259](ws259/ws.md) | MG005 | RTL8822B の表（rtl8822b-tables.inc）を値の引用に書き換える（2026-10-18 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施、package の directory の削除は Q1 |
+| [WS259](ws259/ws.md) | MG005 | RTL8822B の表（rtl8822b-tables.inc）を値の引用に書き換える（2026-10-18 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施（license の package の directory は削除済み） |
 | [WS260](ws260/ws.md) | MG006 | i915 の Gen9 の display（gen9-*.c）を xd と同じく自前で書き直す（2026-10-18 ユーザー） | completed（2026-10-27 精査 q1608） | 実機の確認は未実施 |
 | [WS261](ws261/ws.md) | MG008 | include/kern/boot.h から PC-98・Raspberry Pi の固有の構造体を除く（2026-10-18 ユーザー） | completed（2026-10-18） | — |
 | [WS262](ws262/ws.md) | MG001 | boot loader（bootloader/）をコーディング規約の全文に合わせる（2026-10-18 ユーザー） | completed（2026-10-19） | — |
@@ -224,15 +223,15 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS266](ws266/ws.md) | MG008 | m68k（68030）の virt（QEMU）への移植、framebuffer の console・VFS の段まで（2026-10-18 ユーザー） | completed（2026-10-19） | — |
 | [WS267](ws267/ws.md) | MG008 | sun4u（sparcv9）を再び build できるようにし、QEMU で動かす（2026-10-18 ユーザー） | completed（2026-10-19） | — |
 | [WS268](ws268/ws.md) | MG008 | x68k（X68000）を再び build できるようにする（起動は任意、2026-10-18 ユーザー） | completed（2026-10-19） | — |
-| [WS269](ws269/ws.md) | MG008 | VisionFive 2 の GPU（PowerVR BXE-4-32）の driver（2026-10-19 ユーザー） | completed（2026-10-27 精査 q1608） | p004〜p017 の Phase の印と実機の行の確かめ（実機の確認は未実施の行あり）、速さは WS291（PowerVR の model 50 fps） |
-| [WS270](ws270/ws.md) | MG008 | VisionFive 2 で Keiland の desktop を動かし、OS を完全に動かす（2026-10-19 ユーザー） | completed（2026-10-27 精査 q1608） | 速さの残り（drag の acquire など）は WS291（PowerVR）、p002・p004・p006a の Phase の印 |
+| [WS269](ws269/ws.md) | MG008 | VisionFive 2 の GPU（PowerVR BXE-4-32）の driver（2026-10-19 ユーザー） | completed（2026-10-27 精査 q1608） | Phase ごとの実機の確かめは未実施（板の通しで代えた）、長時間の安定性・p017 の段階 B・C は未、速さは WS291（PowerVR の model 50 fps） |
+| [WS270](ws270/ws.md) | MG008 | VisionFive 2 で Keiland の desktop を動かし、OS を完全に動かす（2026-10-19 ユーザー） | completed（2026-10-27 精査 q1608） | 重い 3D の速さは WS291（PowerVR）。VF2 の画面なしの実機（p004）は未実施 |
 | [WS271](ws271/ws.md) | MG008 | MIPS32（mipsel）の QEMU malta への移植、framebuffer の console・VFS の段まで（2026-10-19 ユーザー） | completed（2026-10-19、QEMU malta の MIPS32 で VFS の段まで、T1-725・728・730・734） | — |
 | [WS272](ws272/ws.md) | MG008 | MIPS64（mips64el）の QEMU malta への移植、framebuffer の console・VFS の段まで（2026-10-19 ユーザー） | completed（2026-10-19、QEMU malta の MIPS64R2-generic で VFS の段まで、512M の high の alias も、T1-731・733・734） | — |
 | [WS274](ws274/ws.md) | MG001 | 仮想メモリの code（vm.c・vmspace.c など）を src/kern/vm/ に分けて整理する（2026-10-19 ユーザー） | completed（2026-10-19、src/kern/vm/ の 26 file、T1-741 まで PASS） | — |
 | [WS276](ws276/ws.md) | MG008 | m68k（x68k・m68k-virt）の静的な program の TLS を kernel と libc で支える（2026-10-19、q1301 の所見） | completed（2026-10-19、m68k の静的な TLS、T1-741） | — |
 | [WS277](ws277/ws.md) | MG008 | VisionFive 2 の DC8200 の display driver（zero copy の scanout）（2026-10-20 ユーザー） | completed（2026-10-27 精査 q1608） | U0〜U11 の行の確認は未実施 |
-| [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | completed（2026-10-27 精査 q1608） | p001〜p009 の Phase の印（実機の行の確かめは未実施）、BT（無効）、BUG-345 |
-| [WS279](ws279/ws.md) | MG008 | Raspberry Pi 5 の GPU（V3D 7.1）と display（HVS6）（2026-10-21 ユーザー） | completed（2026-10-27 精査 q1608） | GPU の速さ（Master の優先順「Pi 5 の残り: ユーザーの指示の時」） |
+| [WS278](ws278/ws.md) | MG008 | Raspberry Pi 5 対応（config/ci/config-rpi5.mk、必要なら GPU・WiFi）（2026-10-21 ユーザー） | completed（2026-10-27 精査 q1608） | Phase ごとの実機の確かめは未実施（UAT の通しで合格）、BT（無効）、BUG-345 |
+| [WS279](ws279/ws.md) | MG008 | Raspberry Pi 5 の GPU（V3D 7.1）と display（HVS6）（2026-10-21 ユーザー） | completed（2026-10-27 精査 q1608） | GPU の速さ（Master の優先順「Pi 5 の残り: ユーザーの指示の時」）、p009 の license・類似の監査は未実施 |
 | [WS286](ws286/ws.md) | MG008 | Digilent ZYBO（初代、Zynq Z-7010）への移植: ARMv7-A の HAL と JTAG の起動、PL（FPGA）の block を動かすまで（USB は外す） | completed | 2026-10-23 完了: 実機の ZYBO で JTAG の起動・UART の login・`fpgaload`/`fpgareg` で PL の block（ID・SCRATCH・COUNTER・LED・IRQ 61）。残り（PL310/L2、SMP の CPU1、armv7 の struct stat の詰めた timespec、ptrace の user VA の icache）は ws.md |
 | [WS288](ws288/ws.md) | MG008 | FPGA の GPU の IP（display controller・command processor・blitter・vertex fetcher・rasterizer・shader unit・texture unit・ROP・memory controller）、ZYBO で workflow、本命は KC705 | closed（2026-10-26 22:57、ユーザーの指示。amaterrace-gpu は他の担当へ、zedBSD の driver は WS290） | 2026-10-24 ユーザーの決定で目標の板は KC705 だけ、RTL を揃えるのを優先（板は p024、timing は p025）。cleared p002〜p005・p007・p008・p012・p017・p023、in-progress p001・p006（branch）・p009。引き継ぎ [handover-20261024-2230.md](ws288/handover-20261024-2230.md) |
 | [WS289](ws289/ws.md) | MG008 | ZYBO の単独起動: SD（SDIO0）・LAN（GEM0 + RTL8211E、SSH）・SD からの起動（BOOT.BIN）。root を SD に。SDHCI・Cadence GEM の共通の部分を汎用の driver に分ける | completed | 2026-10-23 completed。実機の ZYBO が SD の BOOT.BIN → SPL Falcon → FIT kernel で単独起動し、root は SD、LAN 1000 Mbps・DHCP・SSH、`deploy.sh` で kernel 更新と reboot ができる。汎用の SDHCI・Cadence GEM の core を Pi 4/Pi 5/ZYBO の glue に分けた。100/10 Mbps は未確認 |

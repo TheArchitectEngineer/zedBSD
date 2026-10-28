@@ -15,7 +15,7 @@ command は repo の root から。`<W>` は作業の名前（例 `ws081-p017`�
 | --- | --- | --- |
 | L1 | Linux の QEMU の注入の touch で tap・double tap・長押し・慣性の scroll・pinch が 6 app で動く | 済み（p001〜p006・p010〜p015） |
 | L2 | Windows の QEMU で host の touch が Kei に届く。報告の率 ≥ 60 Hz、欠け 0（10 秒の drag） | 道具と image は済み（p016・p018）。**ユーザーの Windows での計測が未実施** |
-| L3 | Windows の QEMU で指を置いてから画面の反応まで p95 ≤ 50 ms、慣性の scroll の frame の間隔の最大 ≤ 33 ms | 未着手（[p017](phase017/phase.md)）。2026-09-30 午後のユーザーの判断で「WS081 の L3 は後ろ」 |
+| L3 | Windows の QEMU で指を置いてから画面の反応まで p95 ≤ 50 ms、慣性の scroll の frame の間隔の最大 ≤ 33 ms | 未着手（p017（fb1f6afee の `plan/ws081/phase017/phase.md`））。2026-09-30 午後のユーザーの判断で「WS081 の L3 は後ろ」 |
 | L4 | 外付けの touch LCD | p007（planning、ユーザーが別に計画） |
 | 最後 | 全文の規約と回帰 | p009（planning） |
 
@@ -25,12 +25,12 @@ command は repo の root から。`<W>` は作業の名前（例 `ws081-p017`�
 
 | 項目 | 状態 | 証拠 |
 | --- | --- | --- |
-| kernel: 1 報告 1 時刻、Scan Time の `MSC_TIMESTAMP` | 済み | [p002](phase002/phase.md) |
-| 補間・予測の library（`userland/desktop/libkeiland/motion.c`）、慣性の scroller と gesture（`scroll.c`・`gesture.c`） | 済み。host 試験 PASS（2026-10-01 にこの手引きの作成で `run-scroll.sh`・`run-motion.sh` を流し直して ok） | [p003](phase003/phase.md)・[p005](phase005/phase.md) |
-| compositor の resampling・予測・指の drag and drop | 済み | [p004](phase004/phase.md)・[p014](phase014/phase.md) |
-| app: Files・Terminal・PDF Viewer・Notes・ブラウザ | 済み（Linux の QEMU の注入） | [p010](phase010/phase.md)・[p011](phase011/phase.md)・[p012](phase012/phase.md)・[p013](phase013/phase.md)・[p015](phase015/phase.md)・[p006](phase006/phase.md) |
-| L2 の道具 `touchlog`・`touch-latency.py`・ユーザーの手順 | 済み（Linux の QEMU で 60 Hz・90 Hz・欠け 3 を正しく数えた） | [p016](phase016/phase.md)、[windows-touch.md](tests/windows-touch.md) |
-| Windows 用の demo の image | `build/ws081-demo-win/hdd-image.img`（2026-09-30 11:06、main の checkout にある）。**WS103（2026-10-01 完了）より前の build** | [p018](phase018/phase.md) |
+| kernel: 1 報告 1 時刻、Scan Time の `MSC_TIMESTAMP` | 済み | p002（fb1f6afee の `plan/ws081/phase002/phase.md`） |
+| 補間・予測の library（`userland/desktop/libkeiland/motion.c`）、慣性の scroller と gesture（`scroll.c`・`gesture.c`） | 済み。host 試験 PASS（2026-10-01 にこの手引きの作成で `run-scroll.sh`・`run-motion.sh` を流し直して ok） | p003（fb1f6afee の `plan/ws081/phase003/phase.md`）・p005（fb1f6afee の `plan/ws081/phase005/phase.md`） |
+| compositor の resampling・予測・指の drag and drop | 済み | p004（fb1f6afee の `plan/ws081/phase004/phase.md`）・p014（fb1f6afee の `plan/ws081/phase014/phase.md`） |
+| app: Files・Terminal・PDF Viewer・Notes・ブラウザ | 済み（Linux の QEMU の注入） | p010（fb1f6afee の `plan/ws081/phase010/phase.md`）・p011（fb1f6afee の `plan/ws081/phase011/phase.md`）・p012（fb1f6afee の `plan/ws081/phase012/phase.md`）・p013（fb1f6afee の `plan/ws081/phase013/phase.md`）・p015（fb1f6afee の `plan/ws081/phase015/phase.md`）・p006（fb1f6afee の `plan/ws081/phase006/phase.md`） |
+| L2 の道具 `touchlog`・`touch-latency.py`・ユーザーの手順 | 済み（Linux の QEMU で 60 Hz・90 Hz・欠け 3 を正しく数えた） | p016（fb1f6afee の `plan/ws081/phase016/phase.md`）、windows-touch.md（fb1f6afee の `plan/ws081/tests/windows-touch.md`） |
+| Windows 用の demo の image | `build/ws081-demo-win/hdd-image.img`（2026-09-30 11:06、main の checkout にある）。**WS103（2026-10-01 完了）より前の build** | p018（fb1f6afee の `plan/ws081/phase018/phase.md`） |
 | Windows の計測（L2） | 未実施（ユーザー） | — |
 
 既知の bug: [BUG-099](../bugs/BUG-099.md)（unreproduced / tracking、touchinject の replay の成否の行。診断の出力は p013 で入れた。再び出たら `SCRIPT.failed.log` を読む）。
@@ -43,10 +43,10 @@ ws.md の段の表の L3 の「p018（係数の調整）」の ID は、Windows 
 1. **L2 の計測（ユーザー）とその判定**。エージェントの用意:
    1. Windows 用の image を作り直す（WS103 の compositor の変更を入れるため）: 下の「コマンド」の `build-demo-win.sh`。
    2. image か Kei-nightly の zip をユーザーに渡す（下の「Windows に渡す」）。
-   3. ユーザーが [windows-touch.md](tests/windows-touch.md) の「用意」と「3 行」を行い、`SUMMARY` の 6 行を送る。
-   4. 判定は windows-touch.md の「結果の読み方」の表（`rate_hz` ≥ 60、`scan_gaps` 0、`arrival_gaps` 0、median ≤ 16.7 ms）。結果は [p017](phase017/phase.md) の「前提: L2 の結果」に書き、ws.md の段の表の L2 に記録。
+   3. ユーザーが windows-touch.md（fb1f6afee の `plan/ws081/tests/windows-touch.md`） の「用意」と「3 行」を行い、`SUMMARY` の 6 行を送る。
+   4. 判定は windows-touch.md の「結果の読み方」の表（`rate_hz` ≥ 60、`scan_gaps` 0、`arrival_gaps` 0、median ≤ 16.7 ms）。結果は p017（fb1f6afee の `plan/ws081/phase017/phase.md`） の「前提: L2 の結果」に書き、ws.md の段の表の L2 に記録。
    - L2 が不合格なら p017 に進まず、原因の Phase を提案する（`scan_gaps` が多い → QEMU の fork の SDL の間引き: WS085 の担当。`arrival_gaps` だけ → Kei の USB の poll: `src/drivers/usb/hid-touch.c`・`usb-hid.c` の touch の経路を調べる Phase）。
-2. **[ws081-p017](phase017/phase.md) L3 の計測**（手順は phase.md に追記した）。ユーザーの 2 回目の Windows の操作が要る。
+2. **ws081-p017（fb1f6afee の `plan/ws081/phase017/phase.md`） L3 の計測**（手順は phase.md に追記した）。ユーザーの 2 回目の Windows の操作が要る。
 3. **ws081-p019（提案）係数の調整**: p017 が L3 を満たさない時だけ。design §3.9 の既定（`motion.c:38-112`・`scroll.c:33-60` の `#define`）と design §10 の 1〜3 の
    ユーザーの判断（`E`、連続の fling の加速、`τ`・`μ`）を、p017 の Windows の log に合わせて直す。host の試験（`run-motion.sh`・`run-scroll.sh`・各 app の `run-*touch.sh`）を全て流し直し、
    p017 の計測をもう一度。係数を変えるなら design §10 の既定の案を変えることになるので、ユーザーに値と理由を示して決めてもらう。
@@ -79,7 +79,7 @@ sh plan/ws081/tests/run-scroll.sh build/<W>/scroll
 sh plan/ws081/tests/run-hid-scantime.sh build/<W>/hid
 sh plan/ws081/tests/run-filestouch.sh build/<W>/files
 sh plan/ws081/tests/run-termtouch.sh build/<W>/term
-sh plan/ws081/tests/run-notestouch.sh build/<W>/notes
+sh plan/tools/touch/run-notestouch.sh build/<W>/notes
 sh plan/ws081/tests/run-pdftouch.sh build/<W>/pdf
 sh plan/ws081/tests/run-browsertouch.sh build/<W>/browser
 ```
@@ -126,7 +126,7 @@ sh plan/ws081/tests/touchlog-check.sh build/<W>-touchlog/hdd-image.img build/<W>
 
 - 5330 の内蔵の画面には touch が無い（デモは mouse と keyboard）。WS081 に 5330 の試験は無い。一般の手順は [plan/tools/hw5330/README.md](../tools/hw5330/README.md)。
 - **Windows の QEMU** が WS081 の実機に当たる。エージェントは Windows を操作できない。ユーザーの手順は 3 行以内（ws.md の進め方）。
-  手順の正本は [windows-touch.md](tests/windows-touch.md)（L2）と [p017](phase017/phase.md)（L3）。
+  手順の正本は windows-touch.md（fb1f6afee の `plan/ws081/tests/windows-touch.md`）（L2）と p017（fb1f6afee の `plan/ws081/phase017/phase.md`）（L3）。
   - 起動: `C:\Work\winq-zedbsd\boot.bat`（WS085 p001。WHPX・Venus・SDL・usb-multitouch・usb-net）。
   - SSH: `ssh -p 2222 root@127.0.0.1`（password `root`）。boot.bat に `hostfwd=tcp::2222-:22` が無ければ足す（windows-touch.md「用意」2）。
   - 出力: touchlog の `SUMMARY` の 6 行（L2）、session の log（L3）。PASS の基準は上の段の表。

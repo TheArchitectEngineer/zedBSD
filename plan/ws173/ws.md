@@ -1,34 +1,49 @@
 <!-- awesome-plan project=zedbsd record=ws173 -->
+
 # WS173: AAT（Agent Acceptance Test）— エージェントが素の実機を SSH で操作して受け入れを確かめる枠組み
 
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p004・p006 cleared（/dev/input-inject・keiland-shot・plan/tools/aat/）。残りは p005（素の 5330 での AAT）の実機の確認だけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001・p002・p003・p006 を cleared。残りは p005（素の 5330 の AAT）。2026-10-08 q910 P2 の照合: p004 cleared（表を直した）、p001・p002（T1…。残り・制限: 実機の確認は未実施（p005）
-Master: [master](../master.md)
+<!-- awesome-plan-current:start -->
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」。根拠: p001〜p004・p006 cleared（/dev/input-inject・keiland-shot・plan/tools/aat/・シナリオの runner）。残りは p005（素の 5330 での AAT）の実機の確認だけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
+Related Milestones: —
+Parent: [Master](../master.md)
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
+<!-- awesome-plan-current:end -->
 
-## 由来（ユーザー、2026-10-05 夕）
+## 目標
 
-Q1 の問い「実機をベアメタル起動したときに、SSH越しにマウスイベントを投げて、スクリーンショットを撮り、それを取得するようなコマンドを作れますか？」への Q1 の案（/dev/input-inject にマウスとキーボードを足す、試験の image だけの画面の撮影、host の道具）に、ユーザー「では、それを実装して、AAT (Agent Acceptance Test)としてください。UATの必須確認項目は今挙げてくれたようなデバイス系と、全体の使用感に絞ります。AATの枠組みが完成した時点で実装されている機能でイメージを作成して、AATを実施、フィードバックを記録してください。UATはそのあとに遅らせます。UATの時刻は追ってお知らせします。」
+/dev/input-inject のマウスとキーボード、試験の image だけの画面の撮影、SSH の host の道具で、エージェントが素の実機（5330）を操作して受け入れを確かめる（AAT）。UAT はデバイス系と使用感に絞り AAT の後に遅らせる。
 
-## 決まったこと
+## ユーザーの決定
 
-- 実装の承認: `/dev/input-inject` にマウス（相対の移動・button・wheel）とキーボードの種類を足す（UAPI `include/uapi/input-inject.h` の追加、承認済み）。画面の撮影の口は試験の image だけ（製品には入れない）。host の道具。
-- UAT の必須の確認は、デバイス系（電源 button・蓋・USB の抜き差し・touchpad の指・YubiKey と NFC の実物・音・Wi-Fi の実機の電波・S0 idle）と全体の使用感に絞る。それ以外は AAT。
-- AAT の枠組みができた時点で実装済みの機能で image を作り、AAT を行い、結果（feedback）を記録する。UAT はその後（時刻はユーザーが後で知らせる）。
+- 2026-10-05 夕（Q1 の問い「実機をベアメタル起動したときに、SSH越しにマウスイベントを投げて、スクリーンショットを撮り、それを取得するようなコマンドを作れますか？」への案に）「では、それを実装して、AAT (Agent Acceptance Test)としてください。UATの必須確認項目は今挙げてくれたようなデバイス系と、全体の使用感に絞ります。AATの枠組みが完成した時点で実装されている機能でイメージを作成して、AATを実施、フィードバックを記録してください。UATはそのあとに遅らせます。UATの時刻は追ってお知らせします。」
+- 承認: `/dev/input-inject` にマウス（相対の移動・button・wheel）とキーボードを足す UAPI（`include/uapi/input-inject.h`）。画面の撮影の口は試験の image だけ（製品には入れない）。UAT の必須の確認はデバイス系（電源 button・蓋・USB の抜き差し・touchpad の指・YubiKey と NFC の実物・音・Wi-Fi の実機の電波・S0 idle）と全体の使用感。
+- 2026-10-05「AATはテストシナリオのドキュメントを元にエージェントが操作できるように設計してください。特殊な設計というわけではないですが。シナリオテスティングのシナリオは、ソースコードと同じように、我々の大きな財産です。tests/以下に整理して管理しましょう。AATにおいて、どのシナリオを実行するかは、考えてやっていきたいですね。OSの機能性ごととか、アプリごとの回帰試験のシナリオとか。新規実装した場合は、シナリオテストの合格を目指す、テスト駆動を取り入れるとか。リグレッションの範囲を考えてシナリオを選んだり、あるシナリオ集合に名前をつけてたまにフル回帰テストをしたり。」「plan/tests.md にまとめるのがいいですね。」
+- 2026-10-13（AskUserQuestion）p005 の起動の方法「ユーザーが USB で起動」（AAT の image を USB に焼いて 1 回起動、T1 が SSH で操作、ESP には書かない）
+- 2026-10-27「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」
 
-## Phase
+## 結果
 
-| Phase | 内容 | 担当 | Status | 依存 |
-| --- | --- | --- | --- | --- |
-| p001 | kernel: `/dev/input-inject` にマウスとキーボード（UAPI の追加、試験の kernel の設定だけ） | P1 | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T1-200 で aat-p002 PASS。旧: Q1 の判定待ち（2026-10-05 Q1 の注記: T1-200 で aat-p002 PASS（2026-10-08 q910 P2 …） | — |
-| p002 | compositor: 試験の image だけの画面の撮影の口と `keiland-shot`（i915 の実機で合成した画面を読み戻して PNG、QEMU でも同じ口） | P1 | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T1-200 で aat-p002 PASS。旧: Q1 の判定待ち（2026-10-05 Q1 の注記: T1-200 で aat-p002 PASS。phase.md は in-progr…） | — |
-| [p003](phase003/phase.md) | host の道具 `plan/tools/aat/`（SSH で click・drag・wheel・key・type・shot の取得・log の行の待ち）と AAT の image の config | P2 | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: T1-200c PASS、その後の AAT の実行で使われている。旧: test-done（2026-10-07: T1-200c 以降の AAT の実行で target で確認、判定は Q1）） | p001・p002 |
-| p004 | AAT の項目の一覧（今の実装済みの機能、UAT の項目から機器と使用感を除いた物）と判定の基準 | Q1 | cleared（2026-10-06 Q1 判定: T1-202c の smoke 8 本 pass、full 79 本の判定の一覧（2026-10-08 q910 P2 の照合で phase.md に合わせた。旧: planning） | — |
-| p005 | 素の 5330 で AAT を行い、結果を記録 | T1 か専任 | planned（起動の方法は 2026-10-13 ユーザー（AskUserQuestion）「ユーザーが USB で起動」: AAT の image を USB に焼いて 1 回起動、T1 が SSH で操作、ESP には書かない） | p001〜p004、素の起動の方法（ユーザーの判断） |
+- kernel の `/dev/input-inject` のマウスとキーボード（試験の kernel の設定だけ）、compositor の試験の image だけの撮影の口と `keiland-shot`、`aat-input`、host の道具 [plan/tools/aat/](../tools/aat/README.md)（click・drag・wheel・key・type・shot・wait-log、AAT の image の config、シナリオの選択の helper と suite の runner）、シナリオの置き場 `tests/scenarios/`（[plan/tests.md](../tests.md)、[tests/README.md](../../tests/README.md)）が main にある。
+- 証拠: QEMU の T1-200（aat-p002）・T1-200c（host の道具）・T1-202c（smoke 8 本 pass、full 79 本の判定の一覧）、その後の AAT の実行（T1-232・T1-305 ほか）で使われている。
 
-- 2026-10-05 Q1: p001・p002（P1）は T1-200 で aat-p002 PASS、p003（P2 の host の道具）は T1-200c で PASS（QEMU、注入・撮影・転送・log の待ち）。AAT の土台は QEMU で動く。残り: p004 の項目と scenarios、素の 5330 での最初の実行（ユーザーが USB で起動）。
+## 制限・移管
 
-## シナリオの設計（2026-10-05 ユーザー）
+- p005（素の 5330 での AAT の実行と結果の記録）は実機で行った記録が無い（未実施）。2026-10-27 のユーザーの規則で WS を閉じた。
 
-ユーザー「AATはテストシナリオのドキュメントを元にエージェントが操作できるように設計してください。特殊な設計というわけではないですが。シナリオテスティングのシナリオは、ソースコードと同じように、我々の大きな財産です。tests/以下に整理して管理しましょう。AATにおいて、どのシナリオを実行するかは、考えてやっていきたいですね。OSの機能性ごととか、アプリごとの回帰試験のシナリオとか。新規実装した場合は、シナリオテストの合格を目指す、テスト駆動を取り入れるとか。リグレッションの範囲を考えてシナリオを選んだり、あるシナリオ集合に名前をつけてたまにフル回帰テストをしたり。」
+## Phase 一覧
 
-→ まとめは [plan/tests.md](../tests.md)（2026-10-05 ユーザー「plan/tests.md にまとめるのがいいですね。」で docs から移した）、[tests/README.md](../../tests/README.md)。シナリオの項目は 目的・操作・確認事項・正解・確認方法（Markdown か JSON）。シナリオは top の `tests/scenarios/{os,desktop,apps}/` の Markdown（header に id・status（draft・active・retired）・areas・paths・machine・human、本文は Setup・Steps（Expect つき、pixel の座標を書かない）・Pass・Notes）、suite は `tests/suites/<name>.suite`（smoke・full・area・app・hardware）。新しい機能は draft のシナリオを先に書いて合格で active（テスト駆動）、変更は paths で選ぶ、bug は再現のシナリオを足す、定期とリリースの前に full。p004 は plan/tools/aat/scenarios/ でなくこの形で tests/ に作る。p006 として「シナリオの選択の helper（git の範囲 → paths）と suite の実行の runner」。
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws173-p001 | kernel: `/dev/input-inject` にマウスとキーボード（directory は p002 と共有） | cleared（T1-200） |
+| ws173-p002 | compositor: 試験の image だけの撮影の口と `keiland-shot` | cleared（T1-200） |
+| ws173-p003 | host の道具 `plan/tools/aat/` と AAT の image の config | cleared（T1-200c） |
+| ws173-p004 | AAT の項目の一覧と判定の基準 | cleared（T1-202c） |
+| ws173-p005 | 素の 5330 で AAT を行い結果を記録（directory なし） | planned のまま WS を閉じた（実機は未実施、2026-10-27 のユーザーの規則） |
+| ws173-p006 | シナリオの選択の helper（git の範囲 → paths）と suite の runner | cleared（T1-202c・T1-232・T1-305） |
+
+## 記録の所在
+
+Phase の記録と試験は削除する（Q1）。git の commit `fb1f6afee` の `plan/ws173/` にある。plan/tools/aat/README.md の自己試験が使う QEMU の image の config と `aat-p002.sh` は plan/tools/aat/ へ移す。Queue の履歴は [plan/history](../history/index.md)。

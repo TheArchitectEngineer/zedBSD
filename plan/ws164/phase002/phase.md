@@ -31,7 +31,7 @@ Queue: q821（P2 の第 1 段の列、2026-10-06 Q1）
 
 | コマンド | 結果 |
 | --- | --- |
-| `sh plan/ws164/tests/run-host-welcome.sh <scratch>`（新規: Settings の host の描画で About の button → 5 段 → Back → Start using Kei、Skip。各段の PNG） | 8/8、PASS。PNG を目視（Welcome・Network（Wi-Fi の一覧）・Look・Keys・Done、帯の点と Back・Next） |
+| `sh plan/tools/keiland/run-host-welcome.sh <scratch>`（新規: Settings の host の描画で About の button → 5 段 → Back → Start using Kei、Skip。各段の PNG） | 8/8、PASS。PNG を目視（Welcome・Network（Wi-Fi の一覧）・Look・Keys・Done、帯の点と Back・Next） |
 | `sh plan/tools/settings/host-store.sh`・`host-settings.sh`（key の表の追加の回帰） | 43/43・38/38 |
 | build: zedBSD の `bin/settings`（-Werror）、keiland-linux の `bin/settings` | warning 0 |
 | style-check（welcome.c・page-about.c・main.c・look.c・settings-keys.c、ui.c の変えた所） | 新しい違反 0（ui.c の既存の 5 件は前から） |
@@ -57,7 +57,7 @@ ws177 の backlog-p2 の 29 行「言語と入力の段（WS154 の Languages）
 - `settings/welcome.c`: 段を 6 つに（Welcome・Network・Look・**Languages**・Keys・Done、log の名前は `languages`）。Languages の段は header「Languages and input」の下に `se_languages_draw`（入力の方式と表示の言語、管理者には login の画面の言語）を描き、その段の controls は Languages の頁の物（`welcome_page` が `SE_PAGE_LANGUAGES` を返す）。
 - Keys の段の desktop の移動を「Alt+Shift+Left / Right」に（ws181-p010 の key、同じ q875 の 1 番の commit）。
 - 翻訳: `locale/settings.keys` に段の header 2 つ、`locale/ja/settings.tr` を `tools/i18n/tr.py update` で更新して日本語を入れた（`tr.py check`: 140 entries、140 translated、0 problems）。
-- host の試験 `plan/ws164/tests/run-host-welcome.sh` を 6 段に。Languages の段で control 5（日本語）→ 4（英語）を押し、`LANGUAGES ui language=ja`・`=en` が出ること（その段の switch が Languages の頁の物）を足した。結果: PASS（11 項目 ok、PNG は `build/ws164-welcome.run.v8NJhF/4-languages.png`・`5-keys.png`）。
+- host の試験 `plan/tools/keiland/run-host-welcome.sh` を 6 段に。Languages の段で control 5（日本語）→ 4（英語）を押し、`LANGUAGES ui language=ja`・`=en` が出ること（その段の switch が Languages の頁の物）を足した。結果: PASS（11 項目 ok、PNG は `build/ws164-welcome.run.v8NJhF/4-languages.png`・`5-keys.png`）。
 - 試験の道具の直し（同じ commit）: Settings の host の renderer（`plan/ws089/tests/host-build.sh`）が link できなくなっていた（printers・displays・power の `kl_system_*` と WS168 の `preview_picture` が無い）。`plan/ws089/tests/host-kl-system.c` に compositor が無い時の答えの stand-in を足し、`plan/ws089/tests/host-preview.c`（新規、壁紙の tile を process の中で共有の decoder で読む）を build に入れた。
 - build（warning 0）: `make -j16 BUILD=build/ws164-p002 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk build/ws164-p002/bin/settings`（rc 0）。
 - QEMU: 未実施（T1 で Welcome を流すなら、T1-269 (2) の手順で Next を 1 回多く押す）。

@@ -14,8 +14,8 @@ WS160（su・sudo・passwd、Settings の Users）、WS089 p027（About の版�
 
 ## 0. image（Q1）
 
-- config: [`plan/ws159/tests/config-amd64-uat.mk`](../tests/config-amd64-uat.mk)。release の config（root は lock、user は kei、password は `kei`、sshd あり）を開発 build にし、事象の reader（`systemevents`）を足しただけ。
-- build（main の最新で）: `plan/tools/guest/test-image.sh --no-harness plan/ws159/tests/config-amd64-uat.mk build/uat-0505`。出力は `build/uat-0505/hdd-image.img`。USB に書いて 5330 を UEFI から起動（[hw5330 の手引き](../../tools/hw5330/README.md) の 2 節、書き方はユーザー）。
+- config: [`plan/tools/aat/config-amd64-uat.mk`](../tests/config-amd64-uat.mk)。release の config（root は lock、user は kei、password は `kei`、sshd あり）を開発 build にし、事象の reader（`systemevents`）を足しただけ。
+- build（main の最新で）: `plan/tools/guest/test-image.sh --no-harness plan/tools/aat/config-amd64-uat.mk build/uat-0505`。出力は `build/uat-0505/hdd-image.img`。USB に書いて 5330 を UEFI から起動（[hw5330 の手引き](../../tools/hw5330/README.md) の 2 節、書き方はユーザー）。
 - 証拠の回収（任意、UAT の後に）: 5330 の address が分かれば centris から `plan/ws159/tests/uat-collect.sh HOST [OUTDIR] [PASSWORD]`（kei で SSH、root の log は sudo）。`OUTDIR/summary.txt` に下の項目が見る行がまとまる。password を変えた後は 3 番目の引数に新しい password。
 - 端末の操作は Terminal の app（kei）で行う。
 
@@ -105,7 +105,7 @@ WS160（su・sudo・passwd、Settings の Users）、WS089 p027（About の版�
 
 ## UAT の image（2026-10-05 04:29 Q1）
 
-`plan/tools/guest/test-image.sh --no-harness plan/ws159/tests/config-amd64-uat.mk build/uat-0505` を main 7debc4ba（ws159-p006 の割り込み・i2c-hid の thread_start の直し・WS160 p001/p002・q722・WS132 p003 を含む）で build、exit 0、`check-amd64-native-image: OK`。`/home/awe/zedBSD-claude1/build/uat-0505/hdd-image.img`（2216689664 byte、sha256 830d2498f85213e8bda5ff0a0d9d1d938f05df92c57a13ebafdc5b1b115206c6）。QEMU の boot の確認は T1-124。video player（ws122）と release の license の直しはこの image に入っていない。
+`plan/tools/guest/test-image.sh --no-harness plan/tools/aat/config-amd64-uat.mk build/uat-0505` を main 7debc4ba（ws159-p006 の割り込み・i2c-hid の thread_start の直し・WS160 p001/p002・q722・WS132 p003 を含む）で build、exit 0、`check-amd64-native-image: OK`。`/home/awe/zedBSD-claude1/build/uat-0505/hdd-image.img`（2216689664 byte、sha256 830d2498f85213e8bda5ff0a0d9d1d938f05df92c57a13ebafdc5b1b115206c6）。QEMU の boot の確認は T1-124。video player（ws122）と release の license の直しはこの image に入っていない。
 
 注（2026-10-05 Q1）: ws142-p003（d1a57d3a）が入った image では、項目 2.10 の 3 本指の tap は中 click でなく TAP3（switcher の gesture、UI は ws142-p005 まで log だけ）。中 click は 3 本指の押し込み（D1）。build/uat-0505 は 7debc4ba なので旧の動作（中 click）。
 

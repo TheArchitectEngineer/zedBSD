@@ -29,5 +29,5 @@ Queue: Q1（2026-10-05、P2）
 ## 確かめ
 
 - build: zedBSD の `bin/wayland`・`bin/settings`・`bin/keiland-ime`（warning 0）、Linux の Keiland（warning 0）。style-check: `page-languages.c` は違反 0、変えた既存の file（`input-method.c`・`settings.c`・`look.c`・`pages.c`・`ime/main.c`）は関数ごとに増えていない。
-- QEMU（T1 に依頼）: `plan/ws154/tests/languages-p002.sh`（image は `plan/ws154/tests/config-amd64-languages.mk`）。既定の ja、none（Alt+Space で日本語にならない）、skk（`Kanji` Space → ▼漢字 → Enter で 漢字）、ja に戻す、Settings の Languages の頁の SKK の switch で skk になる（PNG 2 枚）。
+- QEMU（T1 に依頼）: `plan/ws154/tests/languages-p002.sh`（image は `plan/tools/ime/config-amd64-languages.mk`）。既定の ja、none（Alt+Space で日本語にならない）、skk（`Kanji` Space → ▼漢字 → Enter で 漢字）、ja に戻す、Settings の Languages の頁の SKK の switch で skk になる（PNG 2 枚）。
 - 未実施: FreeBSD の build、実機。

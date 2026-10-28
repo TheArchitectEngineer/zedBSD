@@ -51,5 +51,5 @@ db の sync の衝突の合わせ込み（2 台で同じ月を変えた時）、
 ## 4. Phase
 
 - p002・p003（最初の既定案の実装）: canceled（2026-10-07 ユーザーの要件で置き換え）。
-- [p004](../phase004/phase.md): library・db・取り込み（`photos.h`・`library.c`・`db.c`・`import.c`・`exif.c`）と host 試験。
-- [p005](../phase005/phase.md): app（取り込み・album・縮小画像の cache、AAT）、T1。
+- p004（fb1f6afee の plan/ws157/phase004/phase.md）: library・db・取り込み（`photos.h`・`library.c`・`db.c`・`import.c`・`exif.c`）と host 試験。
+- p005（fb1f6afee の plan/ws157/phase005/phase.md）: app（取り込み・album・縮小画像の cache、AAT）、T1。

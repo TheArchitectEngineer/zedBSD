@@ -49,7 +49,7 @@ PNG は /home/awe/zedBSD-worktrees/t1/build/t1-425/shots/。
 
 - **(d) 合成中に別の欄を click**: libbrowser の `input_set_focus`（page/input.c）が、focus が離れる要素の合成中の文字を捨てていた（`page_compose_end`）→ 新しい `page_compose_commit`（page/form.c）で value の caret に入れ、input を blur の前に出す（同じ欄の click と同じ）。Tab の移動も同じ道。IME 側の合成も落とすため、libbrowser に public の pure query `browser_view_text_session(view)`（`uint64_t`、上位 32 bit は view の page の数、下位は document の `compose_session`）を足した。`compose_session` は focus が別の要素へ移る時、page 自身が合成を終えた時（click の commit、script の value、要素が文書から外れた時）に増える。browser の shell（`shell_text_input`）は値が変わったら `kl_window_text_input(…, 0)` を先に呼び、同じ frame で元の wanted に戻す → compositor は disable で IME を deactivate、enable で activate し、IME（ime/method.c）は activate・deactivate で engine を reset する。libkeiland・compositor の API の変更は無し。BROWSER_API_VERSION は 2 のまま（export の追加のみ、browser-component の規則どおり C の数だけ）。
 - **(b) 画面 keyboard が欄の種類に従う**: compositor の OSK（keyboard.c）が、IME の served の text input の purpose（text-input-v3）を毎 tick に見て（`keyboard_follow_field`）、種類（`kwl_field_kind`: digits・number・phone → number、email、url、他は text）が変わったら面を変える: flick は number → 数字の面、email・url → alpha、text → user が text の欄で最後に使った面。QWERTY は新しい面 `email`（space の横が @）・`url`（/）・`number`（電話の 3 列の数字と - + . * # の pad）を足し（keyboard-layout.c、`KWL_QWERTY_FACES` 5）、種類の面で開く。face key は letters 系 → symbols → 欄の面、pad → letters。log `KWL OSK field purpose=N kind=… face=… qface=…`、QWERTY が開いていれば `KWL OSK qrect` を出し直す。key を押している間は変えない。title は email「ABC @」、url「ABC /」、number「123」。
-- 試験の直し: `plan/ws090/tests/host-browser-ime.c` の「focus: the composing ends」は捨てる前提だった → value に入り input が出ることを確かめる形に直した。`plan/ws177/tests/pages/ime-form.html` に name の blur の log を足した。
+- 試験の直し: `plan/ws090/tests/host-browser-ime.c` の「focus: the composing ends」は捨てる前提だった → value に入り input が出ることを確かめる形に直した。`plan/tools/pdf/pages/ime-form.html` に name の blur の log を足した。
 
 ### 確認（host・build、2026-10-08 P2）
 
@@ -60,4 +60,4 @@ PNG は /home/awe/zedBSD-worktrees/t1/build/t1-425/shots/。
 
 ### 未実施・再開の時の T1 の依頼（案）
 
-IME 入りの image（`plan/ws095/tests/build-ime-image.sh` の形に browser）で `plan/ws177/tests/pages/ime-form.html`: (d) name で合成中に mail の欄を click → console に `input name …` が `blur name …` より前、mail に何も合成されない、次の入力が新しい欄に正しく入る（前の合成が持ち越されない）、compositor の log に `KWL IME deactivate`・`activate`。(b) QWERTY と flick を開いたまま mail・code・name を順に focus → `KWL OSK field … kind=email qface=email`・`kind=number qface=number`・`kind=text qface=letters` と面の PNG。mailer の shell（mail.c）は同じ口を使っていない（未確認）。
+IME 入りの image（`plan/ws095/tests/build-ime-image.sh` の形に browser）で `plan/tools/pdf/pages/ime-form.html`: (d) name で合成中に mail の欄を click → console に `input name …` が `blur name …` より前、mail に何も合成されない、次の入力が新しい欄に正しく入る（前の合成が持ち越されない）、compositor の log に `KWL IME deactivate`・`activate`。(b) QWERTY と flick を開いたまま mail・code・name を順に focus → `KWL OSK field … kind=email qface=email`・`kind=number qface=number`・`kind=text qface=letters` と面の PNG。mailer の shell（mail.c）は同じ口を使っていない（未確認）。

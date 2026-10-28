@@ -1,6 +1,6 @@
 # WS202 native AAC・共通音声: 継続中の証拠（2026-10-10）
 
-> main統合追記: [最新の統合記録](main-integration-20261010.md)。以下の独立worktree時点の未merge/未実装/pendingは履歴。標準readbackの旧offline p016は[ws202-p017](phase017/phase.md)へmapping修復し、mainのp016（ref-list）を維持した。
+> main統合追記: [最新の統合記録](main-integration-20261010.md)。以下の独立worktree時点の未merge/未実装/pendingは履歴。標準readbackの旧offline p016はws202-p017（fb1f6afee の plan/ws202/phase017/phase.md）へmapping修復し、mainのp016（ref-list）を維持した。
 
 Parent: [WS202](ws.md)、承認/active Queue: [codex-ws202-playback](policy-20261010.md#自走の実行承認-codex-ws202-playback)。i06/i07を継続。動画プレイヤでのnative H.264+AAC-LC再生が目標であり、以下の部分成果で自走を終了しない。
 

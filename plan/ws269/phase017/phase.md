@@ -138,7 +138,7 @@
 
 | 確かめ | 結果 |
 | --- | --- |
-| VF2 の vmunix（`plan/ws269/tests/p010/config-visionfive2-selftest.mk`、`BUILD=build/q1528`） | rc=0、warning 0 |
+| VF2 の vmunix（`plan/tools/powervr/p010/config-visionfive2-selftest.mk`、`BUILD=build/q1528`） | rc=0、warning 0 |
 | p009 の host 試験（executor） | 505 passed、0 failed（点の stub は「kick で届く」） |
 | p010 の host 試験 | rc=0、全部 0 failed |
 | gpu-selftest の host 試験 | 0 failed |

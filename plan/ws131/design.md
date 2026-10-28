@@ -34,29 +34,29 @@ backend は 1 領域ずつ移し、各 Phase の終わりに 3 OS の build と�
 
 | Phase | 線 | 目的（一行） | 終わった時に成り立つこと | 依存 | 目安 |
 | --- | --- | --- | --- | --- | --- |
-| [p003](phase003/phase.md) | backend | 土台と **network** | 3 OS の backend の tree と build、network の OS の code が backend に、system bar の WiFi が backend を使う | p002 の承認、P1 の `network-zedbsd.c` の merge | 4〜5 h |
-| [p004](phase004/phase.md) | backend | **音声** | audio の OS の code が backend に、system bar の音量が backend を使う | p003 | 3〜4 h |
-| [p005](phase005/phase.md) | backend | **電源** | 電源の状態と操作の領域（zedBSD の greeter の POWER、他は unsupported。Linux の logind は D-Bus が移る p006 で有効に） | p004 | 3〜4 h |
-| [p006](phase006/phase.md) | backend | **seat・session** | logind・直の seat・seatd・VT・sessiond の受け渡し（READY/GO/RELEASED/LOGOUT/QUIT・AUTH・UNLOCK）が backend に、callback の約束 | p005 | 4〜5 h |
-| [p007](phase007/phase.md) | backend | **入力** | evdev の走査・device の読み・lease が backend に | p006 | 3〜4 h |
-| [p008](phase008/phase.md) | backend | **表示** | 表示の node と取得・解放が backend に | p007 | 3〜4 h |
-| [p009](phase009/phase.md) | backend | **GPU の buffer** と境界の確定 | GPU の buffer の protocol が backend に（protocol の host の interface）、compositor の OS の dir が 0、配置の Guardrail と checker を確定 | p008 | 4〜5 h |
-| [p010](phase010/phase.md) | 拡張 | 拡張の protocol と設定の記録 | `kl_system_manager_v1`・`kl_system_*`、compositor の store と worker の thread。**毎秒の監視はまだ残す** | p004（p005 の後なら電源も） | 4〜5 h |
-| [p011](phase011/phase.md) | 拡張 | Settings を拡張へ、監視の除去、libkeiland の OS を 0 に | Settings が `kl_system_*`、毎秒の `stat` の監視を除く（BUG-125 の原因）、旧 network・audio・preferences の API と道具の向け直し、書き手の Guardrail | p010、WS089・P1 の区切り | 4〜5 h |
-| [p012](phase012/phase.md) | toolkit | libkeiui を libkeiland へ**移す**（名前は変えない） | `libkeiland/ui/`、`libkeiui.so` が無い、Files・config・package・header の install の取りこぼし無し | p003 の merge、ベータ1 の app の区切り | 4 h |
-| [p013](phase013/phase.md) | 名前 | 旧 libkeiui の名前を `kl_`・`KL_` に | `kui_`→`kl_`（341）、`keiui.h` は互換の macro、`keiland-ui.h` | p012 | 3〜4 h |
-| [p014](phase014/phase.md) | 名前 | 旧 libkeiland の名前を `kl_`・`KL_` に | `keiland_`→`kl_`・`KEILAND_`→`KL_`（266、paths.h を除く）、互換の macro | p013、p011 | 3〜4 h |
-| [p015](phase015/phase.md) | toolkit | app の骨組みの API | `kl_app`、宣言的な menu・titlebar・glass | p014・p010 | 4〜5 h |
-| [p016](phase016/phase.md) | app | Text Editor | 新 API・新名、自前の結線が無い | p015 | 3〜4 h |
-| [p017](phase017/phase.md) | app | PDF Viewer・Image Viewer | 同 | p016 | 3〜4 h |
-| [p018](phase018/phase.md) | app | Terminal・Notes | DnD・primary・tablet・fd の監視が libkeiland に | p016 | 4〜5 h |
-| [p019](phase019/phase.md) | app | Settings の窓 | 自前の窓と present が無い | p011・p016 | 4 h |
-| [p020](phase020/phase.md) | app | Files | toplevel と desktop surface、DnD の source | p018 | 4〜5 h |
-| [p021](phase021/phase.md) | 名前 | compositor の内部の名前を `kwl_`・`KWL_` に | `zwl_`→`kwl_`（494）・`ZWL_`→`KWL_`（271）、`zwl*.h`→`kwl*.h`。log の文字列は変えない | p009、p011 | 3〜4 h |
-| [p022](phase022/phase.md) | 名前 | compositor の log の接頭辞を `KWL ` に | `"ZWL "` を読む試験 201 本を同時に直す | p021 | 3〜4 h |
-| [p025](phase025/phase.md) | app | browser の shell の窓（D7） | shell の自前の窓（`window.c` 1,176 行）と present を `kl_app` と `kl_window_vulkan_surface` に、URL の field を宣言的な titlebar に。libbrowser は触らない。WS074 との衝突は開始の前に Q1 がユーザーに確認 | p020 | 4〜5 h |
-| [p023](phase023/phase.md) | 終わり | 互換の除去・header の一本化・PnP | 旧名の互換と `keiui.h`・`keiland-ui.h` を除き `keiland.h` 一つ。WS132 があれば PnP | p016〜p020・p025、p022 | 3〜4 h |
-| [p024](phase024/phase.md) | 終わり | 全文規約と 3 OS の回帰、WS の完了 | 全 checker・全回帰 | 全て | 4〜6 h |
+| p003（fb1f6afee の `plan/ws131/phase003/phase.md`） | backend | 土台と **network** | 3 OS の backend の tree と build、network の OS の code が backend に、system bar の WiFi が backend を使う | p002 の承認、P1 の `network-zedbsd.c` の merge | 4〜5 h |
+| p004（fb1f6afee の `plan/ws131/phase004/phase.md`） | backend | **音声** | audio の OS の code が backend に、system bar の音量が backend を使う | p003 | 3〜4 h |
+| p005（fb1f6afee の `plan/ws131/phase005/phase.md`） | backend | **電源** | 電源の状態と操作の領域（zedBSD の greeter の POWER、他は unsupported。Linux の logind は D-Bus が移る p006 で有効に） | p004 | 3〜4 h |
+| p006（fb1f6afee の `plan/ws131/phase006/phase.md`） | backend | **seat・session** | logind・直の seat・seatd・VT・sessiond の受け渡し（READY/GO/RELEASED/LOGOUT/QUIT・AUTH・UNLOCK）が backend に、callback の約束 | p005 | 4〜5 h |
+| p007（fb1f6afee の `plan/ws131/phase007/phase.md`） | backend | **入力** | evdev の走査・device の読み・lease が backend に | p006 | 3〜4 h |
+| p008（fb1f6afee の `plan/ws131/phase008/phase.md`） | backend | **表示** | 表示の node と取得・解放が backend に | p007 | 3〜4 h |
+| p009（fb1f6afee の `plan/ws131/phase009/phase.md`） | backend | **GPU の buffer** と境界の確定 | GPU の buffer の protocol が backend に（protocol の host の interface）、compositor の OS の dir が 0、配置の Guardrail と checker を確定 | p008 | 4〜5 h |
+| p010（fb1f6afee の `plan/ws131/phase010/phase.md`） | 拡張 | 拡張の protocol と設定の記録 | `kl_system_manager_v1`・`kl_system_*`、compositor の store と worker の thread。**毎秒の監視はまだ残す** | p004（p005 の後なら電源も） | 4〜5 h |
+| p011（fb1f6afee の `plan/ws131/phase011/phase.md`） | 拡張 | Settings を拡張へ、監視の除去、libkeiland の OS を 0 に | Settings が `kl_system_*`、毎秒の `stat` の監視を除く（BUG-125 の原因）、旧 network・audio・preferences の API と道具の向け直し、書き手の Guardrail | p010、WS089・P1 の区切り | 4〜5 h |
+| p012（fb1f6afee の `plan/ws131/phase012/phase.md`） | toolkit | libkeiui を libkeiland へ**移す**（名前は変えない） | `libkeiland/ui/`、`libkeiui.so` が無い、Files・config・package・header の install の取りこぼし無し | p003 の merge、ベータ1 の app の区切り | 4 h |
+| p013（fb1f6afee の `plan/ws131/phase013/phase.md`） | 名前 | 旧 libkeiui の名前を `kl_`・`KL_` に | `kui_`→`kl_`（341）、`keiui.h` は互換の macro、`keiland-ui.h` | p012 | 3〜4 h |
+| p014（fb1f6afee の `plan/ws131/phase014/phase.md`） | 名前 | 旧 libkeiland の名前を `kl_`・`KL_` に | `keiland_`→`kl_`・`KEILAND_`→`KL_`（266、paths.h を除く）、互換の macro | p013、p011 | 3〜4 h |
+| p015（fb1f6afee の `plan/ws131/phase015/phase.md`） | toolkit | app の骨組みの API | `kl_app`、宣言的な menu・titlebar・glass | p014・p010 | 4〜5 h |
+| p016（fb1f6afee の `plan/ws131/phase016/phase.md`） | app | Text Editor | 新 API・新名、自前の結線が無い | p015 | 3〜4 h |
+| p017（fb1f6afee の `plan/ws131/phase017/phase.md`） | app | PDF Viewer・Image Viewer | 同 | p016 | 3〜4 h |
+| p018（fb1f6afee の `plan/ws131/phase018/phase.md`） | app | Terminal・Notes | DnD・primary・tablet・fd の監視が libkeiland に | p016 | 4〜5 h |
+| p019（fb1f6afee の `plan/ws131/phase019/phase.md`） | app | Settings の窓 | 自前の窓と present が無い | p011・p016 | 4 h |
+| p020（fb1f6afee の `plan/ws131/phase020/phase.md`） | app | Files | toplevel と desktop surface、DnD の source | p018 | 4〜5 h |
+| p021（fb1f6afee の `plan/ws131/phase021/phase.md`） | 名前 | compositor の内部の名前を `kwl_`・`KWL_` に | `zwl_`→`kwl_`（494）・`ZWL_`→`KWL_`（271）、`zwl*.h`→`kwl*.h`。log の文字列は変えない | p009、p011 | 3〜4 h |
+| p022（fb1f6afee の `plan/ws131/phase022/phase.md`） | 名前 | compositor の log の接頭辞を `KWL ` に | `"ZWL "` を読む試験 201 本を同時に直す | p021 | 3〜4 h |
+| p025（fb1f6afee の `plan/ws131/phase025/phase.md`） | app | browser の shell の窓（D7） | shell の自前の窓（`window.c` 1,176 行）と present を `kl_app` と `kl_window_vulkan_surface` に、URL の field を宣言的な titlebar に。libbrowser は触らない。WS074 との衝突は開始の前に Q1 がユーザーに確認 | p020 | 4〜5 h |
+| p023（fb1f6afee の `plan/ws131/phase023/phase.md`） | 終わり | 互換の除去・header の一本化・PnP | 旧名の互換と `keiui.h`・`keiland-ui.h` を除き `keiland.h` 一つ。WS132 があれば PnP | p016〜p020・p025、p022 | 3〜4 h |
+| p024（fb1f6afee の `plan/ws131/phase024/phase.md`） | 終わり | 全文規約と 3 OS の回帰、WS の完了 | 全 checker・全回帰 | 全て | 4〜6 h |
 
 初版（14 Phase、約 50 h）からの変更: backend を 7 領域の 7 Phase に、名前の改名を 4 段（p013・p014・p021・p022）に、libkeiui の吸収を「移す」と「改名」に割った（review 15）。browser の shell の窓の移行は D7 の決定（2026-10-03 user「D7,browserのshellもlibkeilandで書きましょう。」）で p025 として足した（ID は新規、順は p020 の後・p023 の前）。見積もりは review 15 の幅に合わせた。
 

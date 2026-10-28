@@ -2,7 +2,7 @@
 
 # WS256 の設計: riscv64 の HAL と StarFive VisionFive 2（JH7110）への移植
 
-2026-10-18 P2（q1243、[ws256-p001](phase001/phase.md)）。改訂 2（q1243-i02、[design-review-1.md](design-review-1.md) の全件を反映。対応の表は §11）。2026-10-19 P2（q1275）: [design-peripherals.md](design-peripherals.md) §8 の 7 件の直し（表は §12）。親: [WS256](ws.md)。code は書かない。
+2026-10-18 P2（q1243、ws256-p001（`fb1f6afee` の `plan/ws256/phase001/phase.md`））。改訂 2（q1243-i02、[design-review-1.md](design-review-1.md) の全件を反映。対応の表は §11）。2026-10-19 P2（q1275）: [design-peripherals.md](design-peripherals.md) §8 の 7 件の直し（表は §12）。親: [WS256](ws.md)。code は書かない。
 HAL の API（`include/hal/`）の差分は [proposed/hal-riscv64.md](proposed/hal-riscv64.md) に、kernel の boot の ledger（`include/kern/boot.h`）の差分は [proposed/boot-h-riscv64.md](proposed/boot-h-riscv64.md) に案として置き、ユーザーの事前承認・決定の前は適用しない。
 外部の code（Linux・OpenSBI・U-Boot・QEMU）は手順と値を学ぶために読んだだけで、この文書にも zedBSD の code にも code・comment・構造を写さない（§0.2）。
 

@@ -42,7 +42,7 @@ touch panel の下端の swipe（`home.c` の `kwl_home_edge_press`・`home_rise
 
 - `plan/ws142/tests/p003-guest.sh`: 1.・2.（BOTTOM2 → App Home、`home-pad.png`、短い・遅いのは `pad back`）、5.（UP3 の数え直し）、7c.（TOP2 → Wiseview、`wiseview-pad.png`、短いのは `cancel`）、新しい 7d.（Home → TOP2 → Wiseview → BOTTOM2 → Home → Esc）、8.（全画面の上で Home が開かない）。
 - `plan/ws142/tests/p010-guest.sh`: 2.（BOTTOM2 → App Home → Esc）、6.（TOP2 → Wiseview）。
-- `plan/ws181/tests/p009-guest.sh`: 変更なし（App Home の上の BOTTOM2 で閉じる、意味は同じ）。
+- `plan/tools/desktop-guest/p009-guest.sh`: 変更なし（App Home の上の BOTTOM2 で閉じる、意味は同じ）。
 - `tests/scenarios/desktop/touchpad/preview-swipe-step.md`（3. を下端に、3b. の行き来を追加）・`wiseview-swipe.md`（1. を上端に）。
 - host `plan/ws142/tests/host-gesture.c`: touchpad の認識だけの試験で、変更なし。
 - 削除する試験: なし。
@@ -98,7 +98,7 @@ desktop・Wiseview の上の pad、touch panel の gesture は変えていない
 ### 試験の追従
 
 - host `plan/ws142/tests/host-gesture.c`: 32.〜36.（頼まれた時の真ん中の下 20 mm が DOWN2 で付いて flick、遅いのは flick でない、上・横は scroll、上端からは TOP2 のまま、下端の帯から下は DOWN2、頼まれていない・頼みを外した時は下も scroll）。101 checks。
-- `plan/ws181/tests/p009-guest.sh` の 3.: App Home の上で真ん中から下 30 mm → `kind=down2`・`closing=1`・`close via=pad`、下端の帯から下でも `closing=1`、短く遅いのは `pad stays`、下端から上（BOTTOM2）は何もしない（Esc で閉じる = 開いたまま）。`close via=pad` の照合を `close via=pad `（空白付き、`pad-top` と分ける）に。
+- `plan/tools/desktop-guest/p009-guest.sh` の 3.: App Home の上で真ん中から下 30 mm → `kind=down2`・`closing=1`・`close via=pad`、下端の帯から下でも `closing=1`、短く遅いのは `pad stays`、下端から上（BOTTOM2）は何もしない（Esc で閉じる = 開いたまま）。`close via=pad` の照合を `close via=pad `（空白付き、`pad-top` と分ける）に。
 - `plan/ws142/tests/p003-guest.sh` の新しい 7e.: App Home を下端から開き、横の 2 本指は gesture でなく開いたまま、真ん中から下で閉じる、desktop の上の同じ下は gesture でない。8. の数を 6・6 に。
 - `plan/ws142/tests/p010-guest.sh`: App Home は Esc で閉じていて pad で閉じないので変更なし。
 - AAT `tests/scenarios/desktop/touchpad/preview-swipe-step.md`: 3b. から「App Home の上で下端から上 → desktop」を外し、新しい 3c.（下へ払って閉じる・戻すと開いたまま・横は page・下端から上は何もしない）。
@@ -149,7 +149,7 @@ App Home の page が送られる経路は 3 つある。
 
 ### 試験の追従
 
-- `plan/ws181/tests/p009-guest.sh` の 4.: drag は 400 px（1280 の出力で前の 320 px・今の 160 px のどちらも超える）、1 枚めの右・最後の page の左は端で止まる。閾値に依らないので変更なし（pen の guest は Home が 1 page で、4. の送りは流れない）。
+- `plan/tools/desktop-guest/p009-guest.sh` の 4.: drag は 400 px（1280 の出力で前の 320 px・今の 160 px のどちらも超える）、1 枚めの右・最後の page の左は端で止まる。閾値に依らないので変更なし（pen の guest は Home が 1 page で、4. の送りは流れない）。
 - `plan/ws142/tests/`・`tests/scenarios/desktop/`: page の送りの量に依る試験は無い（touchpad の preview-swipe-step.md の 3c. の「横へは page」は閉じないことを見るだけ）。変更なし。
 - host 試験: `home_page_release` を host で動かす試験は無い（home.c の host の試験は無い）。定数 1 つの変更で、読んで確かめた。
 - 削除する試験: なし。

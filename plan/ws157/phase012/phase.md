@@ -65,6 +65,6 @@ Queue: q937（[P1 の lane](../../agents/P1/queue.md)）
 | --- | --- |
 | `make BUILD=build/ws157-q937 ZEDBSD_CONFIG=config/current-uat.mk … bin/phone bin/photos bin/wayland bin/mediastorage bin/audio-loop` | rc 0、warning 0 |
 | `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws157-q937-linux all` | rc 0、warning 0 |
-| `sh plan/ws157/tests/run-host-mediastorage.sh build/ws157-q937-host build/ws157-q937-linux` | 全 PASS（media wire の external CLI の notify・watch、backend、selection、receive） |
+| `sh plan/tools/media/run-host-mediastorage.sh build/ws157-q937-host build/ws157-q937-linux` | 全 PASS（media wire の external CLI の notify・watch、backend、selection、receive） |
 
 未実施: QEMU（T1: 初回の picker の再現と Phone の log、Photos の動画の icon、picker の見出し）。

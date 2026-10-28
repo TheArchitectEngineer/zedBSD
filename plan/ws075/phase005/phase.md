@@ -115,7 +115,7 @@ Phase disposition: normal
 | host の vk の fixture spirv・lower・eu・compile・pipe・resdispatch | PASS（res は sampler の語を cube override に、resdispatch は D16・depth の sampling・3D の報告に合わせた） |
 | host の fixture cmd・res・sync・cmdbuf | 既存の失敗（routing・sync・記録の log の期待が他の変更で古い。p005 の前から。cmdbuf は SetLineWidth を SetDepthBounds に替えたが、先にまだ古い期待。p010 へ） |
 | gentool（Mesa brw_disasm/brw_asm）: feature の shader を足した 44+ 個 | PASS（texkinds.frag 387 命令、texops.frag 140 命令） |
-| shader survey（`plan/ws075/tests/shader-survey/run.sh`、規則を p005 に合わせた） | 122 module 中 gap は 29 → **13**、残りは MRT・geometry・buffer texture・multisample（p006・p007）。compiler の拒否と survey の gap は一致 |
+| shader survey（`plan/tools/i915-hw/shader-survey/run.sh`、規則を p005 に合わせた） | 122 module 中 gap は 29 → **13**、残りは MRT・geometry・buffer texture・multisample（p006・p007）。compiler の拒否と survey の gap は一致 |
 | 実機 vke1（`build/ws075-p005/hw-vke1-2`） | **PASS 6/6**（BLEND・UBO・TEX3・TEXOPS・**TEXKINDS**・**LEVELDRAW**） |
 | 実機 vke2・vkx・vkc（`build/ws075-p005/r1-*`） | **PASS 17/17・9/9・9/9** |
 | 実機 capture zdesktop（`r1-zdesktop`） | FAIL: BUG-077（mview の接続の直後に render engine の停止、device lost） |

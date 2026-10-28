@@ -27,7 +27,7 @@ sRGB・R8・R8G8・R16 の image は使われていない。このため R32_SFL
 
 ## 確認
 
-- host: `sh plan/ws269/tests/p010/run.sh build/p010fmt/host` 全 PASS（image 55、transfer 27 ほか 0 failed）。image の「表に無い format」の試験は R16_UNORM に変えた。
+- host: `sh plan/tools/powervr/p010/run.sh build/p010fmt/host` 全 PASS（image 55、transfer 27 ほか 0 failed）。image の「表に無い format」の試験は R16_UNORM に変えた。
   transfer に sRGB・F16x4・R8・R8G8・R32・R32x4 の clear pack の試験を追加。
 - M9: Mesa 26.2.5 の `pvr_float_to_f16` の本体を `build/p010fmt/h.c` に抜き出し、`half_from_float` と代表値15個＋0x1235 刻みの全正の float で比較、不一致 0。
 - VF2: `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p010fmt/vf2 vmunix -j16` rc 0、warning 0。
@@ -96,8 +96,8 @@ sRGB・R8・R8G8・R16 の image は使われていない。このため R32_SFL
   `pvr_pbe_setup_codegen_defaults` と同じ形。読むだけでは原因を決められなかったので、診断の build にした。
 - vkmatrix: `wide_compare` は、違う texel の数、どこかで違った word の位置の bit mask、最初の違う texel の全 word（seen/wanted）を出す。
   新しい case clear-64・clear-128（vkCmdClearColorImage → copy out）で image→buffer の leg だけを試す。
-- 確認: `plan/ws269/tests/vkmatrix/run.sh build/q1520-vkm`（lavapipe）20/20 PASS。VF2 `vmunix` と `bin/vkmatrix`
-  （`plan/ws269/tests/p010/config-visionfive2-selftest.mk`、`BUILD=build/q1520/vf2`）rc 0、warning 0。driver の source は変えていない。
+- 確認: `plan/tools/powervr/vkmatrix/run.sh build/q1520-vkm`（lavapipe）20/20 PASS。VF2 `vmunix` と `bin/vkmatrix`
+  （`plan/tools/powervr/p010/config-visionfive2-selftest.mk`、`BUILD=build/q1520/vf2`）rc 0、warning 0。driver の source は変えていない。
 - 次: board の出力（word の位置、clear-* の結果）で、壊れる leg（buffer→image／image→buffer／PBE）を決めて直す。
 
 ### board 99 と次の診断（2026-10-21）

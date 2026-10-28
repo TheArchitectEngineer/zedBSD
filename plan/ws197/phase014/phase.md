@@ -49,7 +49,7 @@ A4（keiland-os-boundary、`phone/main.c` の attachment の viewer の posix_sp
 | `make -j16 BUILD=build/ws197-p014 ZEDBSD_CONFIG=config/current-uat.mk … build/ws197-p014/{dynamic/libkeiland.so,bin/phone,bin/wayland,bin/photos}` | rc 0、warning 0 |
 | `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws197-p014-linux …/lib/libkeiland.so …/bin/mediastorage` | rc 0、warning 0（gcc） |
 | `sh plan/ws197/tests/picker-model-host-test.sh`（新、ASan/UBSan） | PASS ×3: 並び、album の行を除く、選択の番号と上限と詰め、答えの順と動画の判定、答えの後は不変、thread のサムネイル（写真 2 つで decoder 2 回、動画は icon）、cache の書き込み、2 つ目の picker は cache から（decoder 0 回、色が一致）、単一選択の移動、double click、cancel、上限超え EINVAL、壊れた snapshot 4 種 |
-| `sh plan/ws157/tests/run-host-mediastorage.sh <tmp> build/ws197-p014-linux` | 全 PASS（media selection の既存の試験を含む） |
+| `sh plan/tools/media/run-host-mediastorage.sh <tmp> build/ws197-p014-linux` | 全 PASS（media selection の既存の試験を含む） |
 | `python3 plan/tools/style-check.py`（新 4 file と試験） | 0 |
 | `exports.py --check`・`git diff --check`・`keiland-os-boundary/check.sh` | PASS |
 

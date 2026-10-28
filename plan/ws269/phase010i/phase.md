@@ -41,7 +41,7 @@ kick に依らない部分: pipeline の decode、compile の入力（key）、v
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| host 試験 | `sh plan/ws269/tests/p010/run.sh OUT`（`draw-host-test.c` を足した） | `render-draw host test: 30 passed, 0 failed`（vkdemo・vkstage の colour・texture の pipeline を key 付きで compile、varyings、PPP・VDM の golden、indexed の list、viewport・scissor、refusal）。同じ run.sh の他（stage 24・image 55・target 77・kick 81・program 38・command 22・selftest・data 83・render 26・transfer 22・render-load 5・render-pass 15）も PASS |
+| host 試験 | `sh plan/tools/powervr/p010/run.sh OUT`（`draw-host-test.c` を足した） | `render-draw host test: 30 passed, 0 failed`（vkdemo・vkstage の colour・texture の pipeline を key 付きで compile、varyings、PPP・VDM の golden、indexed の list、viewport・scissor、refusal）。同じ run.sh の他（stage 24・image 55・target 77・kick 81・program 38・command 22・selftest・data 83・render 26・transfer 22・render-load 5・render-pass 15）も PASS |
 | M9 の照合（tree に入れない） | `build/p010i/m9.c`（Mesa 26.2.5 の gen_pack_header を `python3 -I` で走らせた ppp・vdm・pds・ipf の header） | `M9: 41 words/values compared, 112 fields, 0 mismatches`（vkdemo の PPP 25 word、DOUTI 2、VDM 12、indexed の INDEX_LIST0、IPF_SCISSOR_WORD_0） |
 | VF2 の kernel | `timeout 3600 make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p010i/vf2 vmunix -j16` | rc=0、warning 0 |
 
@@ -64,7 +64,7 @@ kick に依らない部分: pipeline の decode、compile の入力（key）、v
 
 ## q1388-i01（2026-10-20 P1）: render-job の draw の置き方の host 試験
 
-- `plan/ws269/tests/p010/job-host-test.c`（新規、run.sh に）: kernel の memory・写像・context・kick を host の stand-in にして、draw 2 つの job を `powervr_render_job_run` に通し、geometry の command の stream（draw ごとの PPP の block と address、count 3、2 つ目の後の terminate）、PPP の slot の間隔、2 つ目の draw の push constant、set の写しの位置と中身、fragment の command の scissor の表（2 entry が違う）と depth bias の表、USC の buffer の code の並び（vertex・fragment・vertex・fragment）を見る。16/0。
+- `plan/tools/powervr/p010/job-host-test.c`（新規、run.sh に）: kernel の memory・写像・context・kick を host の stand-in にして、draw 2 つの job を `powervr_render_job_run` に通し、geometry の command の stream（draw ごとの PPP の block と address、count 3、2 つ目の後の terminate）、PPP の slot の間隔、2 つ目の draw の push constant、set の写しの位置と中身、fragment の command の scissor の表（2 entry が違う）と depth bias の表、USC の buffer の code の並び（vertex・fragment・vertex・fragment）を見る。16/0。
 
 ## q1391-i01（2026-10-20 P1）: kernel の job check
 

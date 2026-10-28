@@ -31,7 +31,7 @@
 | 順 | 出典 | 使い方 |
 | --- | --- | --- |
 | 1 | **Linux v6.8.12** `drivers/gpu/drm/i915/`（展開 `/home/awe/zedBSD-worktrees/p1/build/ws229-p001/linux/linux-6.8.12/`、WS229 p001 が kernel.org の tarball を検証して展開した物、読むだけ） | 手順（register の列・待ち・条件分岐の規則）と値（offset・bit・表）の第一の出典。読む分岐は **`DISPLAY_VER == 11/12/13`、`IS_ICELAKE`、`IS_TIGERLAKE`、`IS_ROCKETLAKE`、`IS_ALDERLAKE_S`（RPL-S を含む）、`IS_ALDERLAKE_P`（ADL-N・RPL-P・RPL-U を含む）、`PCH_ICP/TGP/ADP`**。DG1・DG2・JSL/EHL・display 14 以降の分岐は読まない |
-| 2 | 実機の実測。5330（ADL-P）: `plan/ws031/display-ref/`（Linux の register dump・dmesg・debugfs・DPCD・EDID）、`plan/ws051/tests/m3-5330-20261007/`（USB-C DP を挿した 2 画面の dump、`debugfs/`）。**5330 の VBT の生の bytes と `vbt-decode.txt` は 2026-10-14・15 のユーザーの判断で削除済み（無い）**。5320（TGL）: register の dump は無い（WS118 の遠隔 log だけ） | 値の照合と host 試験の oracle（§6.3）。display 12 の oracle は Linux の表の値だけ（実測は無い） |
+| 2 | 実機の実測。5330（ADL-P）: `plan/ws031/display-ref/`（Linux の register dump・dmesg・debugfs・DPCD・EDID）、`plan/ws051/m3-5330-20261007/`（USB-C DP を挿した 2 画面の dump、`debugfs/`）。**5330 の VBT の生の bytes と `vbt-decode.txt` は 2026-10-14・15 のユーザーの判断で削除済み（無い）**。5320（TGL）: register の dump は無い（WS118 の遠隔 log だけ） | 値の照合と host 試験の oracle（§6.3）。display 12 の oracle は Linux の表の値だけ（実測は無い） |
 | 3 | Intel の公開の PRM（下の表。`/home/awe/zedBSD-worktrees/p2/plan/ws245/temp/` に PDF と `pdftotext -layout` の text。git には入れない。再取得は `https://cdrdv2.intel.com/v1/dl/getcontent/<id>`） | register の意味（field の定義）と、Linux の code だけでは読めない理由（なぜその順か）の補助。**値の出典にもしてよい**（§7 #11、「Value(s) referenced: IHD-OS-…」だけの block を許す）。Linux と食い違えば Linux |
 
 PRM の版: Alder Lake（ADL-P・ADL-S）の版は公開されていない（2026-10-15 に索引 `developer-reference/1-0/overview.html` を確認: Alchemist、Rocket Lake、
@@ -593,7 +593,7 @@ struct i915_xd_irq_hooks { void (*post_enable)(void *ctx, unsigned pipe_mask); i
 - backlight device（`/dev/backlight/backlight0`）の get/set/power、range は PWM の周期（5330 は 96000。VBT の 200 Hz と raw clock 19.2 MHz から）。
 - hotplug: HDMI（DDI B）と USB-C DP（TC1/TC2）の plug/unplug で topology の event、head の claim で 2 画面、unplug で window を抜ける、TC の partner gone、**出力の移動と戻り（`i915_display_move`、firmware の出力への戻り、sleep の後の panel への戻り）、head を灯す時の resident の 2 pipe の灯し直し**（§4.2 の契約）。
 - suspend/resume: DC9 を通って戻り、次の present で灯る。
-- log: `i915: takeover: …`、`i915: resident …`、`i915: display …`、`i915: hpd …`、`i915: TC: …`、`i915: dmc: …`、`i915: bootfb: …`、`i915: gen9 …`（Gen9 は無関係）は保つ（AAT・T1 の script・ユーザーの目視が読む接頭辞）。**`i915: N0 …`・`i915: N1 …` は開発の段の符号**（WS237 の設計の段の名前: `plan/ws237/design.md:40`）なので guardrail「source の中の開発の管理情報」に当たると読み（既定。レビュー 5 の M10、§7 #34）、**N0 の行は p036 で `i915: firmware: …`、N1 の行は p037 で `i915: takeover: …` に替える**。`N0` を読む道具（`plan/ws084/tests/run-native-decide-host-test.sh`・`reboot-loop.sh`）は同じ段で R11 の基準（参照されていなければ直さず消す）で扱う。Linux の段の名前を含む文言（`P2`・`P3`・`P5c`・`P7 intel_opregion_register`、`Found …`、`bw:`、`cdclk:`、`opregion …`）は捨てる（段で触る file の物はその段で: R11）。**master.md の Tools の WS075 の H4 の harness（`plan/ws075/tests/hdmi/h4-ctl.py:62-64`）が正規表現で読む `modeset.c:3802`・`:3904` の行と `present.c:1711` の flip の行は、全文の書式を p049・p050・p039 で保つ**（レビュー 3 の m13）。残す文言と捨てる文言の一覧は p042 で確定し §6.4 に書く。
+- log: `i915: takeover: …`、`i915: resident …`、`i915: display …`、`i915: hpd …`、`i915: TC: …`、`i915: dmc: …`、`i915: bootfb: …`、`i915: gen9 …`（Gen9 は無関係）は保つ（AAT・T1 の script・ユーザーの目視が読む接頭辞）。**`i915: N0 …`・`i915: N1 …` は開発の段の符号**（WS237 の設計の段の名前: `plan/ws237/design.md:40`）なので guardrail「source の中の開発の管理情報」に当たると読み（既定。レビュー 5 の M10、§7 #34）、**N0 の行は p036 で `i915: firmware: …`、N1 の行は p037 で `i915: takeover: …` に替える**。`N0` を読む道具（`plan/ws084/tests/run-native-decide-host-test.sh`・`reboot-loop.sh`）は同じ段で R11 の基準（参照されていなければ直さず消す）で扱う。Linux の段の名前を含む文言（`P2`・`P3`・`P5c`・`P7 intel_opregion_register`、`Found …`、`bw:`、`cdclk:`、`opregion …`）は捨てる（段で触る file の物はその段で: R11）。**master.md の Tools の WS075 の H4 の harness（`plan/tools/i915-hw/hdmi/h4-ctl.py:62-64`）が正規表現で読む `modeset.c:3802`・`:3904` の行と `present.c:1711` の flip の行は、全文の書式を p049・p050・p039 で保つ**（レビュー 3 の m13）。残す文言と捨てる文言の一覧は p042 で確定し §6.4 に書く。
 - **display 12**: 今の code の TGL の分岐（5320 で確認済み: eDP・backlight・suspend）を xd の display 12 の行で保つ。TGL の TC port と RKL・ADL-S は新しい機能（§1.1）で、受け入れは host 試験と「一覧に載せた実機の確かめ」。
 
 ## 5. データの扱い（register の offset・bit・表）
@@ -617,7 +617,7 @@ struct i915_xd_irq_hooks { void (*post_enable)(void *ctx, unsigned pipe_mask); i
 - 名前は独自: `I915_XD_<REG>` / `I915_XD_<REG>_<FIELD>`（PRM の register の名前を大文字で。Linux の macro 名（`ICL_DPCLKA_CFGCR0`、`SKL_BOTTOM_COLOR`、`_MMIO_PIPE`）は使わない）。instance は `#define I915_XD_TRANS_HTOTAL(trans) (0x60000 + 0x1000 * (trans))` の形（offset の算術はデータ）。platform で offset が違う register（TC PLL の enable、pipe DMC の base、ADL-S の DPCLKA_CFGCR）は platform の記述の field か、別の名前の define。
 - 表は `static const struct` の配列。配列の要素の comment に行の意味（rate、voltage level、platform）を書く。表の構造（struct の field の並び）は自分で決める（Linux の struct を写さない）。
 - VBT・OpRegion・DPCD・EDID の layout は **offset と幅の表**（`#define I915_XD_VBT_CHILD_DVO_PORT 2` …）で持ち、packed struct は作らない。読みは `i915_xd_get8/16/32(bytes, off)`。
-- 試験の fixture: 5330 の EDID・DPCD・register の語は今の `tests/display/dp-fixture-latitude5330.h` と `plan/ws031/display-ref/`、`plan/ws051/tests/m3-5330-20261007/` を使う。**VBT と OpRegion の fixture は合成**（試験の code が V1 の layout の表から bytes を組み立てる。実物の bytes は使わない: §7 #7）。display 12 の fixture は Linux の表の値から（実測は無い）。
+- 試験の fixture: 5330 の EDID・DPCD・register の語は今の `tests/display/dp-fixture-latitude5330.h` と `plan/ws031/display-ref/`、`plan/ws051/m3-5330-20261007/` を使う。**VBT と OpRegion の fixture は合成**（試験の code が V1 の layout の表から bytes を組み立てる。実物の bytes は使わない: §7 #7）。display 12 の fixture は Linux の表の値から（実測は無い）。
 
 ### 5.2 register の出典の対応（grep で確かめた物。第一の出典は Linux、PRM は照合）
 
@@ -809,7 +809,7 @@ p002（土台）と p004（VBT・EDID の解析）は cleared（呼ばれない�
 | `tests/display/host-kernel.c`、`host-test.c/.h` | own の host 試験の枠。残す。`host-kernel.c:27` と `host-native-decide-test.c:19-20` の `internal.h`・`takeover.h` の include は p050 で `display-internal.h`・`xd.h` に（§6.2 の p050 の行と同じ: レビュー 5 の m9） |
 | `plan/ws051/tests/host-tc.c`、`host-tc-tables.c`、`host-dpext.c`、`host-dpext-link.c`、`host-dkl-test.c`、`host-power-map.c`、`host-vbt-pll.c`、`host-n1-tc.c`、`host-unplug-gop.c`、`plan/bugs/BUG-266/tests/`、`BUG-268/tests/` | 期待値（TC PLL の語、DKL の語、power の表、fallback の列）を p023・p028・p040・p052 に移す。`host-tc.sh`（power.c・tc.c・dkl-phy.c・hotplug.c・state.c・takeover.c を compile）と `host-vbt-pll.sh`（takeover.c）は `master.md` の Tools の行: **壊れた段（早ければ p023・p028）で期待値を移し、Tools の行の修正か削除を Q1 に頼む**（p043 まで放置しない: レビュー 4 の M10） |
 | `host-native-decide-test.c`、`host-bootfb-test.c`、`host-gen9-*` | 残す（own・Gen9）。native-decide は p036 で xd-takeover に付け替える |
-| `plan/ws031/display-ref/`、`plan/ws051/tests/m3-5330-20261007/` | 残す（oracle のデータ。VBT の bytes は無い） |
+| `plan/ws031/display-ref/`、`plan/ws051/m3-5330-20261007/` | 残す（oracle のデータ。VBT の bytes は無い） |
 | p002・p004 の `host-xd-regs-test`・`host-xd-io-test`・`host-xd-platform-test`・`host-xd-vbt-test`、`check-xd-regs-linux.sh`、`check-xd-tables-linux.py`、`check-xd-vbt-layout-linux.sh` | 残して段ごとに足す。`host-xd-regs-test`（旧 header と比べる）は p043 で dump の一覧と比べる形に置き換える |
 
 #### 6.4.1 log の文言の一覧（p042 で確定、2026-10-17）
@@ -819,9 +819,9 @@ p002（土台）と p004（VBT・EDID の解析）は cleared（呼ばれない�
 | 接頭辞 | 出す所 | 読む物 |
 | --- | --- | --- |
 | `i915: survey <回> <名前>=…`・`i915: survey <回> pipe …`・`i915: survey: lit/NOT lit: …`・`i915: w: …`・`i915: w <語>` | survey.c・mmio-record.c | `plan/ws245/tests/5330-survey.sh`・`5330-survey-diff.py`（書式は正規表現で固定） |
-| `i915: resident display: buffers …`・`… picture up (buffer A surf …)`・`… flip <n>: surf … -> …` | resident.c・present.c | `plan/ws075/tests/hdmi/h4-ctl.py:62-64`（3 行の書式は run-xd-host-tests の grep で固定。§4.4 の `modeset.c:3802`・`:3904` は p050 で resident.c に移った） |
+| `i915: resident display: buffers …`・`… picture up (buffer A surf …)`・`… flip <n>: surf … -> …` | resident.c・present.c | `plan/tools/i915-hw/hdmi/h4-ctl.py:62-64`（3 行の書式は run-xd-host-tests の grep で固定。§4.4 の `modeset.c:3802`・`:3904` は p050 で resident.c に移った） |
 | `i915: takeover: …`・`i915: firmware: …`（旧 N0） | resident.c・xd-takeover.c・display.c | 5330 の回帰の目視、`reboot-loop.sh` の `takeover:` |
-| `i915: display: …`・`i915: display run: …`（旧 `LCD-B`）・`i915: display head: …`・`i915: display output: …` | display.c・run-log.c・power.c・head.c・output.c | 目視。`display run:` は `plan/ws075/tests/hdmi-h1-hw.sh:47`・`hdmi/usb-poll.sh:20` の進み具合の表示の grep（`LCD-B` を読む: 直しは Q1） |
+| `i915: display: …`・`i915: display run: …`（旧 `LCD-B`）・`i915: display head: …`・`i915: display output: …` | display.c・run-log.c・power.c・head.c・output.c | 目視。`display run:` は `plan/tools/i915-hw/hdmi-h1-hw.sh:47`・`hdmi/usb-poll.sh:20` の進み具合の表示の grep（`LCD-B` を読む: 直しは Q1） |
 | `i915: hpd …`・`i915: hotplug path: …`・`i915: TC: …`・`i915: DP-ext: …` | hpd.c・tc-port.c・xd-dp.c など | 目視 |
 | `i915: dmc: …`・`i915: bootfb: …`・`i915: capture: …`・`i915: xd: …`・`i915: stop: …`・`i915: opregion: …` | 各 file | 目視 |
 | `i915: gen9 …`・`i915: N0-lite (gen9): …` | gen9-*.c（WS244、この WS の外） | — |
@@ -1069,7 +1069,7 @@ B1（記録の誤り）は Q1 が取り消し済み。下の表は B2〜B6・M1�
 | m10 §8 の Phase の番号 | 直した（注記） | §8 の冒頭に改訂 2 の番号である事と換算の訂正を書いた | §8 |
 | m11 platform の数の数え方 | 直した | 記述は 10 行（ICL を足すまで 9 行）で揃えた | §3.1、p002、p012 |
 | m12 `drm_dp.h` の license、`intel_gt_regs.h` の path | 直した | `include/drm/display/drm_dp.h` の先頭（Keith Packard の許諾）。§5.2 に行を足し、path を `gt/` に | §5.2 |
-| m13 H4 の harness が読む log の全文 | 直した | `plan/ws075/tests/hdmi/h4-ctl.py:62-64`。§4.4 に書式を保つ 3 行を書いた | §4.4 |
+| m13 H4 の harness が読む log の全文 | 直した | `plan/tools/i915-hw/hdmi/h4-ctl.py:62-64`。§4.4 に書式を保つ 3 行を書いた | §4.4 |
 | m14 `host-kernel.c` の include | 直した | `host-kernel.c:27`、`host-native-decide-test.c:19-20`。p013 で付け替え | §6.4 |
 | m15 W1 の列が Linux の struct と 1 対 1 | 直した（記録） | 列の出典を PRM の "Power Wells" の表の列とし、監査で示す記録を書いた | §5.3 |
 | m16 legacy の印の補正と TBT PLL | 直した | `intel_tc.c:422-448`、`intel_dpll_mgr.c:3884-3900, 4032-4033` | §2.8 |

@@ -24,7 +24,7 @@ Queue: q831（2026-10-07、P2）
 
 ## 確かめ
 
-- host: `sh plan/ws169/tests/run-host-browser-mail.sh` → PASS 9（listen、code 無しの mail は offer しない、titlebar の「Code 482913」、通知の ACTION、通知の click で打つ・control が外れる、時間切れで取り下げ、titlebar の control で打つ、log に code が無い）。ASan・UBSan。
+- host: `sh plan/tools/mail/run-host-browser-mail.sh` → PASS 9（listen、code 無しの mail は offer しない、titlebar の「Code 482913」、通知の ACTION、通知の click で打つ・control が外れる、時間切れで取り下げ、titlebar の control で打つ、log に code が無い）。ASan・UBSan。
 - host: `run-host-mail-backend.sh`（backend・thread）PASS、`run-host-mailer.sh` PASS 14。
 - build: zedBSD の `bin/browser`・`bin/mailer` warning 0。style-check（mail.c・titlebar.c・shell.c・mailer の全 file）0。
 - 未実施: QEMU（T1、AAT の `apps.mailer.read-compose`・`apps.mailer.sign-in-code`）、通知の popup からの入力（WS156 p003 の後）。

@@ -9,7 +9,7 @@
  * The host test of the Precision Touchpad path (ws159-p003).
  *
  * It parses the Latitude 5330's touchpad report descriptor (Synaptics
- * 06CB:CE65, taken from its Linux, plan/ws159/tests/latitude5330-linux/)
+ * 06CB:CE65, taken from its Linux, plan/tools/hid/latitude5330-linux/)
  * with the unchanged kernel HID files, and checks: the touch pad with five
  * fingers, one button and the fingers' range and resolution; the feature
  * fields the I2C-HID driver sets (Device Mode, Surface and Button Switch,

@@ -87,10 +87,10 @@ p016 の候補 2 つを libGLESv2 の中だけで実装する。toolchain と No
 
 | 確認 | 命令 | 結果 |
 | --- | --- | --- |
-| build | `make -j16 ZEDBSD_CONFIG=plan/ws101/tests/hw/g3/config.mk BUILD=build/amd64 build/amd64/dynamic/libGLESv2.so build/amd64/dynamic/libEGL.so build/amd64/bin/glescompute build/amd64/bin/egltest` | rc 0、warning 0（Noct・toolchain は build していない） |
+| build | `make -j16 ZEDBSD_CONFIG=plan/tools/gpu-compute/hw/g3/config.mk BUILD=build/amd64 build/amd64/dynamic/libGLESv2.so build/amd64/dynamic/libEGL.so build/amd64/bin/glescompute build/amd64/bin/egltest` | rc 0、warning 0（Noct・toolchain は build していない） |
 | style | `plan/tools/style-check.py userland/desktop/libglesv2/*.c gles.h`、`git diff --check` | 0 件 |
 | 一致 | `time-split.sh` の 3 回 | CPU と GPU の checksum が同じ（sum=-1291579143 xor=757251536）、check wrong=0 |
-| host | `plan/ws101/tests/gles/run.sh` | PASS（reflect-host 0 of 10 failed） |
+| host | `plan/tools/gpu-compute/gles/run.sh` | PASS（reflect-host 0 of 10 failed） |
 | guest: glescompute（venus.sh と同じ 3 つ、zdesktop の上） | `glescompute`、`--platform=default`、`--repeat=1000` | 3 つとも `GLESCOMPUTE DONE failures=0`、compositor は生きている |
 | guest: egltest | `--scene=feedback`・`--scene=queries`（60 frame） | どちらも failures=0 |
 | guest: S13 | `sh /usr/share/gpudemo/s13.sh`（accel 付きの Noct を /bin/noct に入れて） | exit 0、結果が同じ |
@@ -111,9 +111,9 @@ p016 の候補 2 つを libGLESv2 の中だけで実装する。toolchain と No
 
 ## 5330 の追記（2026-09-30、P1 が Q1 の依頼で計測）
 
-5330 の QEMU の VFIO passthrough（`plan/ws075/tests/hdmi-h4-hw.sh`、`flock /tmp/i915-hw.lock` の下）。素の 5330 ではない。
+5330 の QEMU の VFIO passthrough（`plan/tools/i915-hw/hdmi-h4-hw.sh`、`flock /tmp/i915-hw.lock` の下）。素の 5330 ではない。
 
-- image: `plan/ws101/tests/demo/build-s13-image.sh` と同じ中身を、main（p017 を取り込んだ後、wt/ws075 の 6b409c04）から `build/ws075-s13` に作った。
+- image: `plan/tools/gpu-compute/demo/build-s13-image.sh` と同じ中身を、main（p017 を取り込んだ後、wt/ws075 の 6b409c04）から `build/ws075-s13` に作った。
   accel 付きの Noct は `.claude/worktrees/ws101-compute/build/ws101-p011-hw/rootfs/bin/noct`（Noct と toolchain は build していない）。
   - 注: 同じ directory の `bin/noct` は accel 無しの build（「GPU acceleration is not available in this build.」、1 回目の run で判明）。accel 付きは
     `rootfs/bin/noct`（libGLESv2 を読む）。
@@ -142,4 +142,4 @@ p015 の実機は 27.7 倍（p011 の GPU 260 ms / CPU 10 ms）。
 - 1 call の 215 ms のうち 167 ms（78%）は GPU の submit と完了の待ち（gpu-wait）。Noct 自身は 35 ms、libGLESv2 の copy は 8 ms。
   QEMU（Venus）の 212 ms と同じくらいだが、内訳は GPU の待ちが大半（QEMU は Noct 95・待ち 70〜79）。
 - CPU は 1 run 10 ms（CPU の 22 倍の遅さ）。GPU の待ちの中身（i915 の実行器の compute の dispatch の実行時間か、同期の往復か）は
-  この計測では分からない。次の切り分けは i915 の engine の時間（`plan/ws075/tests/hdmi/engine-gdb.sh` の session ごとの engine・queue・round）。
+  この計測では分からない。次の切り分けは i915 の engine の時間（`plan/tools/i915-hw/hdmi/engine-gdb.sh` の session ごとの engine・queue・round）。

@@ -27,7 +27,7 @@ Queue: q821（P2 の第 1 段の列、2026-10-06 Q1）
 | コマンド | 結果 |
 | --- | --- |
 | `sh plan/ws158/tests/tr-host-test.sh`（catalog 3 つの `check --strict`、tr.py の自己試験） | PASS（settings 105/105 訳済み） |
-| `sh plan/ws164/tests/run-host-welcome.sh` | PASS（welcome.c の挨拶の変更の後） |
+| `sh plan/tools/keiland/run-host-welcome.sh` | PASS（welcome.c の挨拶の変更の後） |
 | build: zedBSD の `bin/settings` | warning 0 |
 
 ## 未実施・残り

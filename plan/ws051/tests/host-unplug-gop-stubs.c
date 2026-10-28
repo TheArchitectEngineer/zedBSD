@@ -8,7 +8,7 @@
 /*
  * The kernel services the display sources name but the ws051-p005b unplug
  * test does not reach (as plan/bugs/BUG-268/tests/unplug-stubs.c: from
- * plan/ws084/tests/native-decide-stubs.c without the worker's wake, which
+ * plan/tools/i915-display/native-decide-stubs.c without the worker's wake, which
  * the test counts itself).
  */
 

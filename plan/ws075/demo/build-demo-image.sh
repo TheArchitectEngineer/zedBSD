@@ -14,7 +14,7 @@
 #
 # The image is BUILD/hdd-image.img; write it to a USB stick and boot the machine from it (UEFI), or edit the boot
 # parameters afterwards in zedbsd.cfg on its ZEDBSD FAT32 partition (WS238; docs/reference/kernel-boot-parameters.md).
-# "passthrough" is accepted for the 5330's QEMU passthrough (plan/ws075/tests/hdmi-h4-hw.sh) and changes nothing
+# "passthrough" is accepted for the 5330's QEMU passthrough (plan/tools/i915-hw/hdmi-h4-hw.sh) and changes nothing
 # since the captured VBT it put in the kernel was removed (2026-10-14, ws233-p001).  Further words go to make, e.g.
 # "ZEDBSD_BOOT_EXTRA_LINES=display=hdmi display.mode=1920x1080@60" or ZEDBSD_TEST_CPPFLAGS=-DI915_TEST_HDMI_ABSENT=1.
 # Give each variant a build directory of its own: make does not see a change of the C flags.

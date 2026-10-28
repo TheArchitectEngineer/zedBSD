@@ -53,7 +53,7 @@
 7. **試験の道の穴（§4）**
    - gen12-golden（`run.sh` 冒頭）は「基準の commit と今の tree の出力が同じか」だけを見ます。基準に無い RKL・ADL-S・ICL の列は、比べる相手がありません。
    - 新しい platform の誤りを host で見つけるのは、§4-2 の「Linux から機械的に抜き出した期待」だけです。これは新しい道具なのに、どの Phase にも LW にも入っていません。「新しい harness は作らず」とも食い違います。
-   - §4-4 は Mesa の道具を新たに使う形です。しかし Master の Tools には、既に WS229 の道具が載っています。`plan/ws229/tests/eu-gen9-host.sh`（`--gen=skl` の往復、master.md:1176）と `plan/ws229/tests/host/run.sh`（gen90/gen120.xml の decode、1177）です。これらを `--gen=icl`・gen110.xml に広げる、と書くのが筋です。
+   - §4-4 は Mesa の道具を新たに使う形です。しかし Master の Tools には、既に WS229 の道具が載っています。`plan/tools/i915-gen9/eu-gen9-host.sh`（`--gen=skl` の往復、master.md:1176）と `plan/tools/i915-gen9/host/run.sh`（gen90/gen120.xml の decode、1177）です。これらを `--gen=icl`・gen110.xml に広げる、と書くのが筋です。
    - Mesa の tree は `/home/awe/zedBSD-worktrees/p1/build/mesa-tools/` にだけあります。main の checkout の `build/` にはありません（確かめた）。
    - 修正案: §4-2 の抜き出しの script を p002（RKL・ADL-S の列）と p004（ICL）の作業と LW に入れます。§4-4 は既存の 2 つの道具の拡張と書きます。
 

@@ -1,58 +1,59 @@
 <!-- awesome-plan project=zedbsd record=ws143 -->
 
-# WS143: Bluetooth（Settings の Bluetooth の頁の実体、ベータ2）
+# WS143: Bluetooth（Settings の Bluetooth の頁の実体）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-10 ユーザー「Bluetoothはキーボード、マウスについて接続確認、利用可能であることを確認できました。」→ ws143-p008 cleared、ベータ2 の release に入った。p001・p002・p004 cleared）。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc §2）: p004 cleared。p003・p005 は i02 以降まで保留。次は q904（p005 i02、P1）。 2026-10-08 q902 P1 の照合: p001・p002 cleared、p003〜p006 は…。残り・制限: p003・p005・p006 の Phase の印、p007 Linux の backend の T1 の再試験、p009 規約は一括の見直しへ。A2DP・PAN は F-082
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」。根拠: 2026-10-10 ユーザー「Bluetoothはキーボード、マウスについて接続確認、利用可能であることを確認できました。」→ p008（5330 の UAT）cleared）
+<!-- retained-after-completion --> phase003〜phase007 の phase.md は残す: bluetoothd・bt-hci-loopback・libkeiland の Bluetooth の source の comment が、これらの節を仕様として参照している（userland/base/bluetoothd/*.c・*.h、src/drivers/generic/bt-hci-loopback.c、userland/desktop/ の bluetooth-*.c ほか）。source の comment を直す（または仕様を docs/ へ移す）までの間
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: MG005
 Parent: [Master](../master.md)
-Queue: なし（2026-10-08 q902 の照合の時点。過去: q752・q860・q878・q883・q888（P2）、q896（P1））
-Resume point: 2026-10-08 夜 q904 P1: p005 i02（BR/EDR）と i03（LE の HOGP）を実装、host 試験 PASS、T1-463 の直し済み、T1 の再試験（bt-hid-p005.sh（LE を含む）と p002〜p004）待ち → phase005 の「i03 の記録」。次は i04（5330 の実機の門）。旧: p005 i02（BR/EDR の HID host）を i02a〜i02d まで実装、host 試験 PASS、T1 の依頼（bt-hid-p005.sh と p002〜p004 の回帰）待ち → phase005 の「i02d の記録」。旧 2026-10-08 夜 q904 P1: p005 i02a・i02b 済み、i02c の途中（hid.c と口、host 試験と handoff の接続は未）→ phase005 の「i02c の途中の記録」。旧 2026-10-08 q902 P1 の照合: p003 i01・p004（T1-409・426）・p005 i01a〜c（T1-419・426・432・423）は Q1 の判定待ち。次: T1-446（p006 の 2 点の直しの再試験）、p005 i02（BR/EDR の HID host）→ i03（LE）→ i04（5330 の門）、p003 i02（intelbt と 5330）、p008 の UAT。p007 は 10/13 以降、p009 はベータ3。旧: p001 は cleared の提案。p002 に着手。
-Target: **ベータ2**（2026-10-05 の朝の user の「ベータ4以降」の後、同日の再編「ベータ3とベータ3の内容を、ベータ2に移動します」で WS143 を含むベータ3・ベータ4 以降の項目をベータ2 に移した（master の記録、Q1 の確認）。前の指示: user「WS037, WS044,WS048,WS141, ... WS143, ... は、ベータ4以降としてください。」）
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 単一目標
+## 目標
 
-Settings で stub になっている Bluetooth の頁を実体にし、zedBSD で Bluetooth の device（まず 5330 の AX211 の Bluetooth の半分、USB 8087:0033）を見つけ、pairing・接続・切断ができるようにする。
+Settings で stub になっている Bluetooth の頁を実体にし、zedBSD で Bluetooth の device（まず 5330 の AX211 の Bluetooth の半分、USB 8087:0033）を見つけ、pairing・接続・切断ができるようにする。最初の profile は HID（BR/EDR の HID と LE の HOGP のキーボード・マウス）。
 
-## ユーザーの指示（2026-10-04 夜）
+## ユーザーの決定
 
-「SettingsでスタブになってるBluetoothは、ベータ2（時期未定）での実装項目として、WSだけ作っておいてください。」
+- 2026-10-04 夜「SettingsでスタブになってるBluetoothは、ベータ2（時期未定）での実装項目として、WSだけ作っておいてください。」
+- 2026-10-05 朝「WS037, WS044,WS048,WS141, ... WS143, ... は、ベータ4以降としてください。」→ 同日の再編「ベータ3とベータ3の内容を、ベータ2に移動します」で WS143 はベータ2 へ。
+- 2026-10-05 夕: [design.md](design.md) §9 の D1〜D18 をユーザーが全部推奨どおりに決定（HID が先、A2DP・PAN は別、firmware の load と HCI core は userland の daemon（D15）など）。A2DP・PAN はユーザー「HIDが先で…」（F-082）。
+- 2026-10-08 夕 UAT（5330）: ユーザー「Bluetooth is not available on this computerになっています。」（当時は UAT の image に bluetoothd が無く、intelbt の load が未実装だった）
+- 2026-10-08 ユーザー「規約の整形（各 WS の全文規約の Phase）はベータ3」→ p009 は WS の外の一括の見直しへ。
+- 2026-10-10 ユーザー「Bluetoothはキーボード、マウスについて接続確認、利用可能であることを確認できました。」
 
-## 範囲（p001 で設計して確定、2026-10-05 夕 ユーザーが §9 の D1〜D18 を全部推奨どおりに決定）
+## 結果
 
-- kernel: USB の transport `bt-usb` と HCI の packet の char device `/dev/bluetoothN`、HID の入力の口 `/dev/input/bridge`、`/dev/system` の resume の
-  class（D2・D3。D15 の決定で、firmware の load と HCI core は kernel から userland の daemon へ移した）。
-- userland: Bluetooth の daemon `bluetoothd`（firmware の load、HCI・L2CAP・SMP・SDP・GATT・HID host、pairing・鍵の保存・接続の管理、
-  特権の分離）と CLI `bt`。firmware の optional の package `intelbt`。
-- desktop: libkeiland-backend の Bluetooth の口、compositor の拡張（kl_system_manager_v1）、Settings の Bluetooth の頁（今の stub を置き換え）、system bar の表示。Linux・FreeBSD の Keiland では各 OS の Bluetooth の仕組み（BlueZ など）を backend で包む。
-- 最初の profile は HID（BR/EDR の HID と LE の HOGP のキーボード・マウス）。A2DP と PAN は要るが他の開発の後、別の WS（D1）。
-- 外部の実装・license の境界（Guardrail・設計方針）。firmware は userland/firmware の規約。
+- kernel: USB の transport `bt-usb` と HCI の char device `/dev/bluetoothN`（`include/uapi/bluetooth.h`）、HID の入力の口 `/dev/input/bridge`、試験の loopback の controller（`src/drivers/generic/bt-hci-loopback.c`）。
+- userland: `bluetoothd`（firmware の load、HCI・L2CAP・SMP・SDP・GATT・HID host（BR/EDR と HOGP）、pairing・鍵の保存、特権の分離）、CLI `bt`、firmware の package `intelbt`（`userland/firmware/intelbt`）。`config/current-uat.mk` に `bluetoothd bt intelbt-firmware`。
+- desktop: libkeiland-backend の Bluetooth の口、compositor の拡張、Settings の Bluetooth の頁、system bar、pairing の確認の窓。Linux の backend（BlueZ、p007）。
+- 証拠: QEMU の T1-384（p002）、T1-409・T1-426（p004）、T1-438・T1-446（p006）、Debian 13 の QEMU+KVM の T1-593・T1-604・T1-605（p007）。実機: 5330 でユーザーの BR/EDR・LE のキーボード・マウスの接続（2026-10-10、p008）。
 
-## Phase
+## 制限・移管
 
-設計は [design.md](design.md)（第 3 版と §9 の決定）。各 Phase は着手の前に詳細設計を phase.md に書き、design-reviewer を通す（§10.1）。
-HID の経路は p002〜p005、利用者に見える形は p006。
+- A2DP（音声）と PAN（network）は [future-work.md](../future-work.md) の F-082。スマホの profile は WS197。
+- p003（5330 での firmware の load と scan の T1 の確かめ）と p005（i02・i03 の T1 の再試験、i04 の 5330 の実機の門）の phase.md は in-progress のまま WS を閉じた。p008 のユーザーの実機の確かめで代える。
+- FreeBSD の backend は未対応の表示だけ。
+- 規約の全文（p009）は WS の外の一括の見直しへ。
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [ws143-p001](phase001/phase.md) | 調査と設計（device・firmware・HCI・profile の範囲・desktop の経路・試験の方法） | cleared（2026-10-08 Q1） | | — |
-| [ws143-p002](phase002/phase.md) | 5330 の descriptor と版を T1 で取る。kernel の `bt-usb`（普通と bootloader の経路、寿命、境界、backpressure）と `/dev/bluetoothN`（`include/uapi/bluetooth.h`、D2）。resume は `/dev/system` の POWER の `sleep.end` を使い、UAPI は足さない（詳細設計 §1）。試験の道具 `bt-probe`、試験の kernel の loopback の controller。host の試験（組み直しと境界、悪い device、取り外し） | cleared（2026-10-08 Q1、T1-384 QEMU PASS。5330 の passthrough は未、T1-378 は 5330 が Linux の時） | | p001 |
-| [ws143-p003](phase003/phase.md) | firmware の package `intelbt`、bluetoothd の transport・firmware の load（§3）・HCI core・scan、CLI `bt show`・`bt scan`、Read Local Supported Commands の記録。T1 の passthrough で load と scan | in-progress（i01 は T1-402 PASS（2 回目、1 回目は FAIL）で Q1 の判定待ち。i02 の intelbt の package と 5330 の firmware の load・scan（D13）は未着手） | | p002 |
-| [ws143-p004](phase004/phase.md) | L2CAP、SSP の event、LE の SMP（D10）、暗号（D5 b1、無ければ b2）、鍵の保存、特権の分離（D16 a）、`_bluetooth` の account（D17）、socket の口の権限（D8） | cleared（2026-10-08 Q1 の判定（sweep-beta2-rc §2）） | | | p003 |
-| [ws143-p005](phase005/phase.md) | usb-hid の glue の共有の module への refactor と USB の回帰、`/dev/input/bridge`（D3）、hid-report.c の fuzz、SDP・GATT client、HID host（BR/EDR と HOGP）、再接続、切断で key を離す | in-progress（i01a T1-419 PASS、i01b T1-421 FAIL → T1-426 input-bridge-p005 PASS・T1-432 の順序依存の直し PASS、i01c T1-423 boot PASS（i2c-hid の touchpad の実機の回帰は 5330）。i02（BR/EDR の HID host）・i03（LE の HOGP）は q904 P1 が実装、T1 待ち（bt-hid-p005、T1-463 は直して再試験待ち）。i04（5330 の実機の門、Q20 で p006 の前の必須）も未） | | p004（i02 は p004 の cleared） |
-| ws143-p006 | desktop: backend の口、zedBSD の backend、API と protocol の版、Settings の頁、system bar、pairing の確認の窓 | test-wait（q896 P1 実装、T1-438 一部 PASS（差 2 点）、直しの再試験 T1-446 は未実行） | | p005 |
-| [ws143-p007](phase007/phase.md) | Linux の backend（D-Bus の拡張、BlueZ）、FreeBSD の未対応の表示 | 実装済み・T1 の再試験待ち（2026-10-14 P3: T1-604 は文が PASS、観察の直し（窓の Cancel で自分の pairing をすぐ終える、Pair の終わりで窓と保留の Agent の call を終える）を入れた（phase007 §12、56f416f41、host 試験 66 checks PASS）、§12.5 の再試験待ち。旧 P3: T1-593 は Linux の部分が Connect を除き PASS、Connect の失敗が「The pairing was refused.」になる誤りと pairing の拒否の errno の写しを直した（phase007 §11、eb79dde1c、host 試験 PASS）。旧 P3 q967: review-1 の後の第 2 版（§9）で実装、host 試験 PASS（54 checks、ASan+UBSan）、Linux の compositor の build warning 0。QEMU の Debian と FreeBSD の PNG は T1） | | p006 |
-| [ws143-p008](phase008/phase.md) | UAT（5330 の素の機械、D18。ユーザーの BR/EDR と LE のキーボード・マウス）、Wi-Fi との共存 | cleared（2026-10-18 Q1: phase.md に合わせた。旧: planned（手順と確認の項目 B1〜B14 は 2026-10-09 夜 P1。5330 とユーザーの BR/EDR・LE の機器、T1-502 の後）） | | p006、device の機種 |
-| ws143-p009 | 規約の全文との照合と回帰 | planned（全文規約はベータ3、2026-10-08 ユーザー） | | p002〜p008 |
+## Phase 一覧
 
-## UAT（2026-10-08 夕、5330）
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws143-p001 | 調査と設計（device・firmware・HCI・profile・desktop の経路・試験） | cleared（D1〜D18 はユーザーが決定） |
+| ws143-p002 | `bt-usb` と `/dev/bluetoothN`、試験の道具 `bt-probe`、loopback の controller | cleared（T1-384 QEMU PASS。5330 の passthrough は未実施） |
+| ws143-p003 | firmware の package `intelbt`、bluetoothd の transport・firmware の load・HCI core・scan、`bt show`・`bt scan` | in-progress のまま WS を閉じた（実装は main、i01 は T1-402 PASS、5330 の load・scan の T1 は未実施。p008 で実機の接続を確かめた） |
+| ws143-p004 | L2CAP、SSP、LE の SMP、暗号、鍵の保存、特権の分離、`_bluetooth` の account | cleared |
+| ws143-p005 | usb-hid の glue の共有、`/dev/input/bridge`、SDP・GATT client、HID host（BR/EDR と HOGP） | in-progress のまま WS を閉じた（実装は main、i02・i03 の T1 の再試験は記録なし。p008 で実機の接続を確かめた） |
+| ws143-p006 | desktop: backend の口、API と protocol の版、Settings の頁、system bar、pairing の窓 | cleared（T1-438・T1-446） |
+| ws143-p007 | Linux の backend（BlueZ）、FreeBSD の未対応の表示 | cleared（T1-593・T1-604・T1-605） |
+| ws143-p008 | UAT（5330、ユーザーの BR/EDR と LE のキーボード・マウス） | cleared（2026-10-10 ユーザーの確かめ） |
+| ws143-p009 | 規約の全文との照合と回帰（directory なし） | 規約の全文は WS の外の一括の見直しへ |
 
-- ユーザー:「Bluetooth is not available on this computerになっています。」→ 今の段階では想定どおり（Q1）: UAT の image（config.mk・current-uat）に bluetoothd・bt が入っていない（入っているのは試験の config の plan/ws143/tests/config-amd64-bt-desktop.mk だけ）、5330 の AX211 の Bluetooth は firmware の package `intelbt` の load（p003 i02）が未実装で controller が上がらない、BR/EDR・LE の HID host（p005 i02〜i04）も未。実機で使えるようになるのは p003 i02・p005 i02 の後に UAT の config へ bluetoothd を足してから。
-- 2026-10-08 夜 q907 P1: `config/current-uat.mk` に `bluetoothd bt intelbt-firmware`（D14）を足し、base の `etc/rc.conf` に
-  `bluetoothd`（enabled・optional: package の無い image では黙って飛ばす）。account（`_bluetooth`）の無い install では daemon が
-  log を出して exit 0 で起動しない（B6 のまま、init は再起動しない）。`config.mk` は git の外（`.gitignore`）なので、手元の config.mk
-  で UAT を作る時は同じ 3 つを足す（Q1）。rc が boot で起動するようになったので、loopback の試験（bt-loopback-p002・bt-daemon-p003・
-  bt-pair-p004・bt-hid-p005）と AAT の bluetooth-pair・bluetooth-menu は先に `service stop bluetoothd` で止めてから自分の daemon を
-  起こす形に直した。QEMU の確認は T1（Q1 経由）。
+## 記録の所在
+
+設計は [design.md](design.md)。phase003〜phase007 の phase.md は上の理由で残す。他の Phase の記録は削除する（Q1）。git の commit `fb1f6afee` の `plan/ws143/` にある。Bluetooth の host 試験と QEMU の試験の script は plan/tools/ へ移す（[plan/tools.md](../tools.md)）。2026-10-08 の緊急のラップアップの救出物 `wip-20261008/` は fb1f6afee に残る。Queue の履歴は [plan/history](../history/index.md)。

@@ -1,34 +1,45 @@
 <!-- awesome-plan project=zedbsd record=ws162 -->
+
 # WS162: FIDO2 の login
 
-Status: completed（WS172・WS199 で達成）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: 2026-10-05 夜 ユーザーの決定で WS172 に吸収（未着手の p002〜p004 は canceled → WS172 p003）。FIDO2 の login は 2026-10-10 ユーザーの UAT「FIDO2 の鍵の登録と login ができた（BUG-279 close）」（WS199））。旧: incomplete（2026-10-05 夜のユーザーの決定で **WS172 に吸収**。未着手の p002〜p004 は cancel して WS172 p003 に移した。この WS では以後実行しない。もとは 2026-10-05 追加、ベータ2、q771）
-Master: [master](../master.md)
+<!-- awesome-plan-current:start -->
+Status: completed（WS172・WS199 で達成）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」。根拠: 2026-10-05 夜 ユーザーの決定で WS172 に吸収、FIDO2 の login は 2026-10-10 ユーザー「FIDO2のキー登録とログインができました」（BUG-279 resolved、WS199））
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
+Related Milestones: —
+Parent: [Master](../master.md)
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
+<!-- awesome-plan-current:end -->
 
-## 由来
+## 目標
 
-ユーザー（2026-10-05）「FIDO2ログイン」
+greeter と lock の画面で、登録した security key（WS161）で login・unlock する。
 
-## 範囲（案、p001 の設計で確定する）
+## ユーザーの決定
 
-greeter と lock の画面で、登録した security key（WS161）で login・unlock する。登録は Settings の Users の頁。password との併用の規則は設計で決める。
+- 2026-10-05「FIDO2ログイン」（ベータ2）
+- 2026-10-05 夕「sessiondに制御を入れず、libfido2をコンポジタのgreeterが直接叩くモックアップを作ってください。設定は~/.configの中でOKです。」
+- 2026-10-05 夜（Q1 経由）: WS172 に吸収。FIDO2 の login は WS172（`/sbin/passkey` と `/usr/libexec/passkey-fido2`、sessiond の外部の認証）の p003 が持つ。上の mock は作らない。
+- 2026-10-10「FIDO2のキー登録とログインができました」（BUG-279 の解決）
 
-## mock への変更（2026-10-05 夕のユーザー）
+## 結果
 
-「sessiondに制御を入れず、libfido2をコンポジタのgreeterが直接叩くモックアップを作ってください。設定は~/.configの中でOKです。」と libpasskey の決定で、
-sessiond の口と `/etc/keiland/fido-keys` をやめ、compositor が libpasskey で鍵と話し、保存は `~/.config/keiland/passkeys`。lock の画面は compositor だけで済む。
-greeter は WS163 の G1 と同じ壁（`_greeter` は利用者の home を読めず、login は password の AUTH だけ）があり、hmac-secret で password を包む案を含む判断 K1 待ち（p001 §9.4）。
+この WS では code を作っていない。FIDO2 の login は [WS172](../ws172/ws.md) p003 と [WS199](../ws199/ws.md) で main に入り、2026-10-10 にユーザーが実機で登録と login を確かめた。
 
-## WS172 への吸収（2026-10-05 夜、ユーザーの決定、Q1 経由）
+## 制限・移管
 
-FIDO2 の login は WS172（`/sbin/passkey` と `/usr/libexec/passkey-fido2`、sessiond の外部の認証）の p003 が持つ。mock（compositor が libpasskey で直接鍵と話し、
-`~/.config/keiland/passkeys` に保存）は作らない。p001 の設計（第 2 版 §9、判断 K1〜K3）は WS172 p001 の設計（`/etc/passkey`、root の検証、機器の子の sandbox）に置き換わった。
+- p001 の設計（第 2 版 §9、判断 K1〜K3）は WS172 p001 の設計（`/etc/passkey`、root の検証、機器の子の sandbox）に置き換わった。
 
-## Phase
+## Phase 一覧
 
-| Phase | 内容 | Status | Disposition | 依存 |
-| --- | --- | --- | --- | --- |
-| [ws162-p001](phase001/phase.md) | 要件と設計 | planning（第 1 版、第 2 版 §9 q771。K1〜K3 は問わない） | canceled（WS172 p001 の設計に置き換え） | WS161 |
-| ws162-p002 | 保存（`~/.config/keiland/passkeys`）と lock の画面の「Use security key」、host 試験 | planned | canceled → WS172 p003 | WS161 p004、K2 |
-| ws162-p003 | Settings の登録・削除、greeter（K1）、T1 | planned | canceled → WS172 p003 | p002、K1・K3 |
-| ws162-p004 | 実機の UAT、全文規約 | planned | canceled → WS172 p003（UAT）・p006（規約） | p003、WS161 p006 |
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws162-p001 | 要件と設計 | planning のまま取り下げ（WS172 p001 の設計に置き換え） |
+| ws162-p002 | 保存と lock の画面の「Use security key」 | 取り下げ → WS172 p003 |
+| ws162-p003 | Settings の登録・削除、greeter | 取り下げ → WS172 p003 |
+| ws162-p004 | 実機の UAT、規約の全文 | 取り下げ → WS172 p003（UAT）・p006（規約） |
+
+## 記録の所在
+
+Phase の記録は削除する（Q1）。git の commit `fb1f6afee` の `plan/ws162/` にある。Queue の履歴は [plan/history](../history/index.md)。

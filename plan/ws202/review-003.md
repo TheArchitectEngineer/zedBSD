@@ -1,7 +1,7 @@
 # WS202 design 第 3 版の敵対的 review（review-003、範囲を絞った 3 回目）
 
-対象: [design.md](design.md) 第 3 版の §1.4・§5.1〜§5.9（特に §5.3・§5.3.1 D25・§5.6 D29・§5.1 D28）、§16.2 の対応表、[p009](phase009/phase.md)・[p015](phase015/phase.md)・
-[p016](phase016/phase.md)。前の review は [review-002](review-002.md)（p015・p009 が NO-GO、原因は H2-01・M2-01・M2-02）。他の Phase は §16.2 の反映を軽く見ただけ。
+対象: [design.md](design.md) 第 3 版の §1.4・§5.1〜§5.9（特に §5.3・§5.3.1 D25・§5.6 D29・§5.1 D28）、§16.2 の対応表、p009（fb1f6afee の plan/ws202/phase009/phase.md）・p015（fb1f6afee の plan/ws202/phase015/phase.md）・
+p016（fb1f6afee の plan/ws202/phase016/phase.md）。前の review は [review-002](review-002.md)（p015・p009 が NO-GO、原因は H2-01・M2-01・M2-02）。他の Phase は §16.2 の反映を軽く見ただけ。
 review の担当: design-reviewer（2026-10-10、3 回目）。読むだけで、source・設計文書は変えていない。この file だけを新しく書いた。
 
 照らした code（main の作業ツリー、`3b697e81e`）: `userland/tests/vkvideo-probe/`（`dpb.c` 全文、`h264.c` の picture の組み立て・slice header・POC、`h264.h`）、

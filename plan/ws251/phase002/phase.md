@@ -40,7 +40,7 @@ Parent: [WS251](../ws.md)
   （plan/tools・plan/ws*/tests・tests/ を grep。`plan/tools/i915-display/run-xd-host-tests.sh` の検査は gen9- の file を除外しており、新しい語は禁止の語に当たらない）。
 - 確かめた事: build 3 組（`sh build/tmp/kbuild.sh ws251p002-g1`）default・vke2・execution とも rc=0 warning 0。基準（`ws251p002-base`、e9157f2c2）と
   `build/tmp/ws251-objcmp.sh ws251p002-base ws251p002-g1` で src/drivers/gpu の object（270/273/280）を比べ、違うのは log を変えた gen9-firmware.o だけ。
-  `sh plan/tools/i915-display/run-xd-host-tests.sh build/ws251p002-xd` all passed、`sh plan/ws075/tests/hdmi/host-output-test.sh build/ws251p002-h2` 80 checks, 0 failures。
+  `sh plan/tools/i915-display/run-xd-host-tests.sh build/ws251p002-xd` all passed、`sh plan/tools/i915-hw/hdmi/host-output-test.sh build/ws251p002-h2` 80 checks, 0 failures。
 - 未確認: WS237 の gen9 の host 試験（`plan/ws237/tests/run-gen9-*-host-test.sh`）と WS229 の `run-bootfb-host-test.sh`（ラップアップで未実施）。
 
 ### 群 2: i915 render（`src/drivers/gpu/i915/render/`）— 済み（2026-10-18 q1242、P1）

@@ -56,7 +56,7 @@ Pi 4 で使う driver のうち、「割り込みを止めれば排他」（UP �
 
 - rpi4 の vmunix: `make -j8 -o $PWD/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix` rc 0・warning 0、`arm64 vmunix check: PASS`、cksum 3361400286 8200192、SHA256 a9d6c6d0…2492（`build/ws208-pi/vmunix` に複写）。
 - amd64 の vmunix: `make -j8 -o …/build/amd64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-amd64.mk build/amd64/vmunix` rc 0・warning 0。
-- host: `plan/ws213/tests/lock-host-test.sh`・`pin-host-test.sh`・`kd-host-test.sh`、`plan/ws141/tests/display-host-test.sh`、`plan/ws214/tests/display-p003a-host.sh` が全て PASS。`tests/rpi4-fdt-host-test.c` PASS（4 CPUs）。
+- host: `plan/tools/kernel-lock/lock-host-test.sh`・`pin-host-test.sh`・`kd-host-test.sh`、`plan/ws141/tests/display-host-test.sh`、`plan/ws214/tests/display-p003a-host.sh` が全て PASS。`tests/rpi4-fdt-host-test.c` PASS（4 CPUs）。
 - QEMU（T1）・実機（p005）: 未実施。
 
 ### main に入れてよい形か

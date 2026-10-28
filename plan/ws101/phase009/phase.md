@@ -32,11 +32,11 @@ GLES の compute の試験の program を作り、Venus で G2 を確かめる�
 | `userland/desktop/glescompute/`（新） | GLES の compute の試験の program（既定では image に入らない、`USERLAND_glescompute_DEFAULT` = n）。Noct と同じ順（surfaceless → default display）の pbuffer の ES 3 の context で: 版、上限、add（uniform・早期の return・workgroup size の query）、noct（Noct の shader の形: int の除算・剰余・shift・`?:`・atomicAdd の和）、shared（shared と barrier の workgroup の和）、indirect（offset 4 の grid）、chain（読み戻しなしの 2 つの dispatch）、release（dispatch の記録を `eglMakeCurrent(NO_CONTEXT)` と再取得をまたぐ）、repeat（毎回 `glBufferData` の 256 KiB の buffer で dispatch と読み戻し）、errors（program 無し、group の数の超過、compute の program の draw、compute と vertex の link、binding 4、不正な barrier の bit、stub の `glDrawArraysIndirect`） |
 | `platform/amd64/vmunix.mk` | `/bin/glescompute` の link の規則（egltest と同じ形、libEGL・libGLESv2・libc）。既定の構成には入らないので既定の動作は変わらない |
 
-## 試験（`plan/ws101/tests/gles/`、新）
+## 試験（`plan/tools/gpu-compute/gles/`、新）
 
 | file | 内容 |
 | --- | --- |
-| `reflect-host.c`・`run.sh` | host: `plan/ws101/tests/glsl/pass/*.comp` を GLSL の compiler で link し、libglesv2 の `gles_spirv_reflect` で読む（GLCompute、storage と shared を uniform から外す、add.comp の uniform n・k）。ASan・UBSan |
+| `reflect-host.c`・`run.sh` | host: `plan/tools/gpu-compute/glsl/pass/*.comp` を GLSL の compiler で link し、libglesv2 の `gles_spirv_reflect` で読む（GLCompute、storage と shared を uniform から外す、add.comp の uniform n・k）。ASan・UBSan |
 | `config-amd64-compute.mk`・`build-image.sh` | Venus の guest の image（WS068 の lean な GLSL の image に glescompute を足す、`build/ws101-p009-img`） |
 | `venus.sh` | guest を自分の runtime（`build/ws101-p009-run`）で起動し、compositor（`/bin/wayland`）を走らせたまま glescompute を auto（surfaceless）・default（default display の pbuffer）・repeat 1000 で実行し、各 run の後に compositor が生きていることを確かめる |
 
@@ -45,11 +45,11 @@ GLES の compute の試験の program を作り、Venus で G2 を確かめる�
 | コマンド | 結果 |
 | --- | --- |
 | libGLESv2 の build（target の compiler、`-Wall -Wextra -Werror`） | PASS（warning 0） |
-| `plan/ws101/tests/gles/build-image.sh`（image の build。libGL も同じ source で build） | PASS（初回は glescompute の link の規則が無く失敗 → vmunix.mk に規則を足して PASS） |
-| `plan/ws101/tests/gles/run.sh build/ws101-p009-gleshost` | PASS（10 shader、0 failed） |
+| `plan/tools/gpu-compute/gles/build-image.sh`（image の build。libGL も同じ source で build） | PASS（初回は glescompute の link の規則が無く失敗 → vmunix.mk に規則を足して PASS） |
+| `plan/tools/gpu-compute/gles/run.sh build/ws101-p009-gleshost` | PASS（10 shader、0 failed） |
 | `plan/ws068/tests/spirv-host/run.sh`（spirv.c の回帰） | PASS |
 | `plan/tools/style-check.py`（新しい C の file: compute.c・es31.c・glescompute/main.c・reflect-host.c。変えた file は HEAD との差分で新しい違反 0） | 違反 0（最初の run の後に直し、image を build し直して下の venus.sh を最終の code で再実行） |
-| `plan/ws101/tests/gles/venus.sh build/ws101-p009-venus`・最終の code で `build/ws101-p009-venus2`（Venus、host の Vulkan は lavapipe） | **両方 PASS**。auto（surfaceless）・default・repeat（1000 回）とも `GLESCOMPUTE DONE failures=0`、全 step PASS。「OpenGL ES 3.1 Kei」「OpenGL ES GLSL ES 3.10」3.1、上限 count 65535×3・size 1024×3・invocation 1024・binding 4・block 4・alignment 16・shared 32768・block size 134217728。compositor は 4 回の確認で生きていた |
+| `plan/tools/gpu-compute/gles/venus.sh build/ws101-p009-venus`・最終の code で `build/ws101-p009-venus2`（Venus、host の Vulkan は lavapipe） | **両方 PASS**。auto（surfaceless）・default・repeat（1000 回）とも `GLESCOMPUTE DONE failures=0`、全 step PASS。「OpenGL ES 3.1 Kei」「OpenGL ES GLSL ES 3.10」3.1、上限 count 65535×3・size 1024×3・invocation 1024・binding 4・block 4・alignment 16・shared 32768・block size 134217728。compositor は 4 回の確認で生きていた |
 | WS068 の Venus の回帰（同じ image、`build/ws101-p009-egl/`）: egl-p020（GLSL ES 3.00）・egl-p024（ES 3.0 の buffer・VAO・UBO）・egl-p027（query・fence） | PASS |
 | egl-p030（transform feedback と GL_VERSION 3.0） | **FAIL（予想どおり）**: 捕捉の 6 つの結果と捕捉した位置の正方形は緑、「GL_VERSION が OpenGL ES 3.0 で始まる」の正方形（(480,400)）だけ赤。`display.png`・`wayland.png` は `build/ws101-p009-egl/egl-p030/` |
 | libGL の回帰（同じ image、`build/ws101-p009-glx/`）: glx-p031（desktop GL 3.1）・glx-p033（3.2） | PASS（libGL は libglesv2 の変えた source を組み込む） |
@@ -103,5 +103,5 @@ GLES の compute の試験の program を作り、Venus で G2 を確かめる�
 ## 残り
 
 - main への依頼: WS068 の egltest の `feedback.c` の版の検査を 3.1 も受けるように（egl-p030 の回帰を直す）。
-- main への依頼: Tools 節への登録（`plan/ws101/tests/gles/run.sh`・`venus.sh`・`build-image.sh`）。
+- main への依頼: Tools 節への登録（`plan/tools/gpu-compute/gles/run.sh`・`venus.sh`・`build-image.sh`）。
 - D1 はユーザーの判断のまま（既定の案で実装した。変えるなら `gles_compute_offered` の条件と `glGetString` の分岐を戻す）。

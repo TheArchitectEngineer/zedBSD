@@ -13,7 +13,7 @@ since: ws190-p002
 WS190（ユーザーの要望「テキストをダブルタップすると選択モードになり、開始端・終了端をドラッグで決め、指を離すとコピーと切り取りのボタンがポップアップ」、plan/ws190/phase001/phase.md §1）: libkeiland の 1 行の欄と text area で、指の double tap が語を選んで両端に handle と編集の bar（切り取り・コピー・貼り付け・すべて選択のうち効く物）を出し、handle の drag で端が動き、bar の button が clipboard と undo を通って効くことを確かめる。
 
 ## 準備
-- 試験の image は `plan/ws190/tests/config-amd64-aat-touch.mk`（AAT の image ＋ kuidemo。aat-input に touch screen がある）。desktop は `plan/ws035/tests/zdesktop-guest.sh start IMAGE`（Venus）で起動。
+- 試験の image は `plan/tools/aat/config-amd64-aat-touch.mk`（AAT の image ＋ kuidemo。aat-input に touch screen がある）。desktop は `plan/ws035/tests/zdesktop-guest.sh start IMAGE`（Venus）で起動。
 - `aat start`、kei で `kuidemo --height=820` を開く（stderr の `KUIDEMO` の行は session.log）。窓の位置は `aat windows`、Controls の頁の Settings の card の Name・Password・Notes の欄の位置は撮影から読む（文字の左端は欄の左端から 12 px、1 行の欄の文字の縦の中央は欄の中央、Notes の 1 行目の中央は欄の上端から 18 px、2 行目は 38 px）。
 - 指は `aat tap X Y`（`--count 2` で double tap）、`aat touch-down 0 X Y`・`aat touch-move 0 X Y`・`aat touch-up 0`。handle の knob は選択の端の文字の境の下、欄の下端の少し上（1 行の欄で上端から 30 px ほど）にある。`aat mark start` は手順 1 の前。
 
@@ -36,5 +36,5 @@ WS190（ユーザーの要望「テキストをダブルタップすると選択
 
 ## 注記
 - 欄の double tap は 400 ms 以内（kl_ui の click の格上げ）、`aat tap --count 2` は 120 ms で叩く。handle の knob の届く範囲（半径 22 px）の中の tap は handle の物で、選択を変えない。
-- mouse の double click は今のまま全文を選び、bar を出さない（手順には入れない、host 試験 `plan/ws190/tests/host-touch-select.c` が確かめる）。
+- mouse の double click は今のまま全文を選び、bar を出さない（手順には入れない、host 試験 `plan/tools/keiui/host-touch-select.c` が確かめる）。
 - Notes の文字の box・Settings・Files の改名の欄は指の選択を使わない（WS190 §1.5、Future Work F-087・F-088）。

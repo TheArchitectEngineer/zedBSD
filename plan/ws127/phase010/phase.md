@@ -15,7 +15,7 @@ Queue: q705-i01（P2 generation14）
 
 1. title bar の directory の名前（breadcrumb、`ZWL_CONTROL_BREADCRUMB`）をタップ・クリックすると、path の入力欄（今の path を全部選んだ状態）に変わる。Enter で移動、Esc か focus を失うと元の breadcrumb に戻る。存在しない path・権限の無い path の表示。`~` の展開。
 2. **path の候補**: 文字を入力してから約 1 秒（timer、入力のたびに延ばす）で、入力中の path の親の directory の中から、入力した前方と合う directory（と file を含めるかは設計で決める）の候補を dropdown で出す。上下の key・タップ・クリックで選べる。選ぶと欄に補い、directory なら続けて入力できる。
-3. 入力欄では IME が使える（[BUG-177](../../bugs/BUG-177.md) の Files の検索欄の IME と同じ text-input の扱い、[ws095-p016](../../ws095/phase016/phase.md) の app ごとの IME の状態）。
+3. 入力欄では IME が使える（[BUG-177](../../bugs/BUG-177.md) の Files の検索欄の IME と同じ text-input の扱い、ws095-p016（fb1f6afee の `plan/ws095/phase016/phase.md`） の app ごとの IME の状態）。
 4. title bar の描画と入力は compositor の server-side の title bar（zwl の titlebar の control）か Files の側かを、今の breadcrumb の実装に合わせて設計で決める。タップの扱いは [BUG-190](../../bugs/BUG-190.md)（タップダウンを押下に）と揃える。
 
 ## 受け入れ（案）

@@ -38,7 +38,7 @@ review-1 への決定（Q1: 全部案どおり、技術の範囲）:
 | C-6 | 道具・最後の描く道具・帯の遷移を `notes_ui_tools_press()`（ui.c、純粋な関数）にし、host で表の試験 |
 | C-7 | UI の試験は tree の `userland/desktop/fonts/Mahora-Regular.ttf` を開き、face があることを確かめてから比べる（font 無しでももう一度流す） |
 | C-8 | 依存を「main に入った p003〜p005 の出力」と書き、ws.md の行を直した |
-| C-9 | p001 §8 との差: `touch.c` は変えず、double tap の停止は WS081 の `plan/ws081/tests/run-notestouch.sh`（Finger on の double tap は拡大しない）で確かめる。`host-notes-fill-touch.c` は作らない |
+| C-9 | p001 §8 との差: `touch.c` は変えず、double tap の停止は WS081 の `plan/tools/touch/run-notestouch.sh`（Finger on の double tap は拡大しない）で確かめる。`host-notes-fill-touch.c` は作らない |
 | L-1 | 消しゴムの時の色は最後の描く道具に戻す。最後の描く道具は帯・key・menu・描く道具の button で替わる |
 | L-2 | 幅の点の半径は道具ごとの等間隔の組 |
 | L-3 | 帯の card は影を描かない（影が絵の下端で切れて頁の上に出るので）。縁の線で分ける |
@@ -117,7 +117,7 @@ review-1 への決定（Q1: 全部案どおり、技術の範囲）:
 （§10 の後に Q1 へ送った文面と同じ）
 
 > **T1 依頼（ws216-p007、Notes の描く道具と塗りつぶし）**
-> - image: `plan/ws216/tests/config.mk`（無ければ `config/current-uat.mk` と同じ内容で作る、Q1 の判断）での build。複写する file は無い（Notes の新しい頁で描く）。PDF の上の塗りは WS175 の `make-edit-samples.py` の `edit-basic.pdf` を `--file` で home に置く。
+> - image: `plan/tools/aat/config-amd64-notes-pen.mk`（無ければ `config/current-uat.mk` と同じ内容で作る、Q1 の判断）での build。複写する file は無い（Notes の新しい頁で描く）。PDF の上の塗りは WS175 の `make-edit-samples.py` の `edit-basic.pdf` を `--file` で home に置く。
 > - scenario（新、p007 で書く。`tests/scenarios/apps/notes/draw-tools.md`・`fill-region.md`）:
 >   1. draw-tools: Notes を開き、key B・L・W で筆・鉛筆・水彩を選び（`NOTES TOOL 49 name=brush` など）、それぞれ `peninject` の筆圧 0→最大の線を描く（`NOTES STROKE … tool=2|3|4`）。描く道具の button（48）を押して `NOTES DRAWS open`、`NOTES BUTTONS` の帯の Marker（2）を押して `NOTES TOOL 2 name=highlighter` と `NOTES DRAWS closed`。undo・redo。保存して開き直し、同じ画面。撮影（各道具の線、帯が開いた toolbar）。log に `NOTES PIPE made name=grain`・`name=multiply`、`NOTES PIPE fallback` が無い。
 >   2. fill-region: key F で塗り（`NOTES TOOL 52 name=fill`）。ペンで閉じた円を描き、その内側を click → `NOTES FILL made place=0 …`（`NOTES FILL bands=… background_us=0`）、円の内側が塗られ線は上。もう一度同じ所を click → `NOTES FILL refused reason=same` と notice "Already filled"。塗りの上で drag → `NOTES FILL moved` と "Tap to fill"。消しゴム（key E）を円の中心に下ろす → 塗りだけが消える（`NOTES ERASE … removed=1`）、undo で戻る。`edit-basic.pdf` を開き、その頁の上の囲まれた所を click → `background_us` が 0 でない `NOTES FILL made`。撮影（塗った円、PDF の上の塗り）。
@@ -145,7 +145,7 @@ review-1 への決定（Q1: 全部案どおり、技術の範囲）:
 - `ZEDBSD_CONFIG=config/current-uat.mk make build/amd64/bin/notes`・`ZEDBSD_CONFIG=config/ci/config-rpi4.mk make build/arm64/bin/notes`・`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws216-linux build/ws216-linux/bin/notes`: exit 0、`warning:` 0。
 - `sh plan/ws216/tests/run-notes-ui.sh` → `run-notes-ui: ok`（64 checks、0 failed × plain・ASan・UBSan）。
 - `sh plan/ws216/tests/run-notes-fill.sh` → `run-notes-fill: ok`（160 checks、0 failed × 3）。
-- `run-notes-render.sh` ok、`run-notes-tools.sh` ok、`plan/ws079/tests/run-notes-host.sh` ok、`plan/ws175/tests/run-host-notes-edit.sh` PASS、`plan/ws175/tests/run-host-clean.sh` PASS、`plan/ws081/tests/run-notestouch.sh build/ws216-p006-touch` → `host-notestouch: ok (54 checks)`。
+- `run-notes-render.sh` ok、`run-notes-tools.sh` ok、`plan/ws079/tests/run-notes-host.sh` ok、`plan/ws175/tests/run-host-notes-edit.sh` PASS、`plan/ws175/tests/run-host-clean.sh` PASS、`plan/tools/touch/run-notestouch.sh build/ws216-p006-touch` → `host-notestouch: ok (54 checks)`。
 - `git diff --check` 空。
 
 ### 10.3 制限

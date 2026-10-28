@@ -11,7 +11,7 @@ Resume point: なし（cleared）。残課題は下の「残課題」
 
 ## 範囲
 
-[ws099-p008](../../ws099/phase008/phase.md) の確認（`/sbin/poweroff` の後も QEMU は `VM status: running`、全 CPU が HLT）と案に従い、
+ws099-p008（fb1f6afee の `plan/ws099/phase008/phase.md`） の確認（`/sbin/poweroff` の後も QEMU は `VM status: running`、全 CPU が HLT）と案に従い、
 kernel に ACPI の S5 の電源断を足し、init が電源断を頼むようにする。HAL の API（`include/hal/hal.h`）は変えない。
 greeter の「Shutting down…」の表示は ws099-p009（本 Phase の範囲外）。
 

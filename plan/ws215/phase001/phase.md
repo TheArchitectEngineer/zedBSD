@@ -59,7 +59,7 @@ review-2 の要点は [review-2.md](review-2.md)。判定は「p002 は進めて
 | 軽微 古い記述 | `emulated_board()` は main の `drv_rpi4_board_emulated()`（`rpi4-board.c`、Q1 の補足）を使う。`drv_rpi4_firmware_init` の SMP の不安全は済み（8155669d4）。B4・B12・B20 の該当の文はこれに読み替える | B4、B12、B20 |
 | 軽微 vmunix.mk の行番号 | config.txt の利用者は `platform/arm64/vmunix.mk` の hdd-image の規則の `$(ARM64_PLATFORM)/config.txt` の 2 か所（行番号は動くので p003 で grep で拾う。p002 の後は 626・633 行） | B2（p003） |
 | 軽微 mailbox の GPIO の答えの状態の語 | WS206 の W3 の helper が検査する（中-A の行） | B12 |
-| 軽微 Pi の既定の image に bluetoothd を入れるか | **既に入っている**（[p002](../phase002/phase.md) で判明: base の package は platform が `*`、`config-rpi4.mk` に bluetoothd・bt）。D1「Bluetooth はデフォルト有効」に従い入れたまま。controller が無い間は 2 秒ごとに node を探すだけで log を出さない（p002 の節） | p002 |
+| 軽微 Pi の既定の image に bluetoothd を入れるか | **既に入っている**（p002（fb1f6afee の `plan/ws215/phase002/phase.md`） で判明: base の package は platform が `*`、`config-rpi4.mk` に bluetoothd・bt）。D1「Bluetooth はデフォルト有効」に従い入れたまま。controller が無い間は 2 秒ごとに node を探すだけで log を出さない（p002 の節） | p002 |
 | 値の出典の表 | p003・p005 の入る時に、(e1)(e2) の行に file の path・commit・行を足し、自前の値（静かな窓 10 ms、byte の間の 100 ms、空き待ち 1 s、送りの止まり 2 s、daemon の T 60 秒、HUNT の opcode の一致）は「自前の決め」と明記する | 2a 節 |
 | D5 | (b) の前に **(c) ARM の公開の PL011 の errata・TRM の改訂を探す**を足した（9 節） | 9 節 |
 
@@ -107,7 +107,7 @@ review-2 の要点は [review-2.md](review-2.md)。判定は「p002 は進めて
 
 ## 2a. 値の出典の表（p003・p005 の入る条件）
 
-[WS214 の hvs-values.md](../../ws214/phase003/hvs-values.md) の形。新しく使う値ごとに、値・使う所・出典・確かめ方。zedBSD の名前は実装の時に足す。**この表の p003 の行が全部出典つきで埋まっていることを p003 の入る条件、p005 の行を p005 の入る条件にする。** 出典の記号: (d) 公開の文書、(e1) Zephyr の `drivers/bluetooth/hci/h4_ifx_cyw43xxx.c`（Apache-2.0、Infineon の CYW43xxx の H4 の driver）、(e2) Android の `system/bluetooth/brcm_patchram_plus/brcm_patchram_plus.c`（Apache-2.0、Broadcom）、(f) firmware の file を自分で数えた、(c) 実機。Apache-2.0 の code からは値と順序の事実だけを取り、code・comment・構造は写さない（B19）。2026-10-13 に P3 が (e1)(e2) の license と下の値を web で読んで確かめた。
+[WS214 の hvs-values.md](../../ws214/hvs-values.md) の形。新しく使う値ごとに、値・使う所・出典・確かめ方。zedBSD の名前は実装の時に足す。**この表の p003 の行が全部出典つきで埋まっていることを p003 の入る条件、p005 の行を p005 の入る条件にする。** 出典の記号: (d) 公開の文書、(e1) Zephyr の `drivers/bluetooth/hci/h4_ifx_cyw43xxx.c`（Apache-2.0、Infineon の CYW43xxx の H4 の driver）、(e2) Android の `system/bluetooth/brcm_patchram_plus/brcm_patchram_plus.c`（Apache-2.0、Broadcom）、(f) firmware の file を自分で数えた、(c) 実機。Apache-2.0 の code からは値と順序の事実だけを取り、code・comment・構造は写さない（B19）。2026-10-13 に P3 が (e1)(e2) の license と下の値を web で読んで確かめた。
 
 | 値 | 使う所 | 出典 | 確かめ | 段 |
 | --- | --- | --- | --- | --- |

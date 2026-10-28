@@ -31,13 +31,13 @@ Queue: q933（[P1 の lane](../../agents/P1/queue.md)）
 - `src/drivers/platform/rpi4/rpi4-audio.c`・`rpi4-audio.h`（新規、driver）
 - `src/drivers/platform/rpi4/rpi4-audio-ring.c`・`rpi4-audio-ring.h`（新規、hardware に触れない計算: duty、channel の順、control block の輪、fragment と position）
 - `src/kern/platform/rpi4.c`、`Makefile`、`platform/arm64/vmunix.mk`、`config/drivers/architecture/arm64.drivers`、`config/drivers/menu.list`
-- 試験: `plan/ws207/tests/rpi4-audio-ring-test.c`・`run-rpi4-audio-ring-test.sh`
+- 試験: `plan/tools/rpi4-audio/rpi4-audio-ring-test.c`・`run-rpi4-audio-ring-test.sh`
 
 ## 確かめ（2026-10-11 P1、host のみ）
 
 | 確かめ | 結果 |
 | --- | --- |
-| `sh plan/ws207/tests/run-rpi4-audio-ring-test.sh`（通常と ASan/UBSan） | `rpi4-audio-ring: all PASS` ×2（duty の端と中央・全 sample で単調、左右の順、8 block の輪の TI 0x00010149・source・next の wrap、fragment と position の端と外） |
+| `sh plan/tools/rpi4-audio/run-rpi4-audio-ring-test.sh`（通常と ASan/UBSan） | `rpi4-audio-ring: all PASS` ×2（duty の端と中央・全 sample で単調、左右の順、8 block の輪の TI 0x00010149・source・next の wrap、fragment と position の端と外） |
 | `make ZEDBSD_CONFIG=plan/ws203/tests/config-rpi4.mk -j16 build/arm64/vmunix` | rc 0、warning 0、`arm64 vmunix check: PASS`、`drv_rpi4_audio_init` が kernel にある |
 | 同じ config で `CONFIG_DRIVER_BCM2711_AUDIO=n BUILD=build/ws207-off` | rc 0、warning 0、PASS |
 | `python3 plan/tools/style-check.py`（新しい 4 file と試験） | 指摘 0（`rpi4.c` の 3 件は以前からの物） |

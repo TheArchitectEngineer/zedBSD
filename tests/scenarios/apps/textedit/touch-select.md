@@ -13,7 +13,7 @@ since: ws190-p003
 WS190 p003（plan/ws190/phase001/phase.md §3）: Text Editor の本文で、指の double tap の語と 1 本指の drag の選択の上に編集の bar（切り取り・コピー・貼り付け・すべて選択のうち効く物）が出て、button が効き、long press の context menu と key で bar が消えることを確かめる。
 
 ## 準備
-- 試験の image は `plan/ws190/tests/config-amd64-aat-touch.mk`（aat-input に touch screen）。desktop は `plan/ws035/tests/zdesktop-guest.sh start IMAGE`。
+- 試験の image は `plan/tools/aat/config-amd64-aat-touch.mk`（aat-input に touch screen）。desktop は `plan/ws035/tests/zdesktop-guest.sh start IMAGE`。
 - kei で `textedit /tmp/aat-work/touch.txt`（新しい file）を開き、本文を click して `one two` `key enter` `three four` `key enter` `five` と打つ（3 行）。本文の行の位置は撮影から読む。`aat mark start`。
 
 ## 操作と確認

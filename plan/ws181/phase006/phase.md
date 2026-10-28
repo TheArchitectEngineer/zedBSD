@@ -21,7 +21,7 @@ Queue: q844（P2、Q1 の ACK 2026-10-07「(1)〜(3) で ACK、1 枚目は時計
 1. 整列のメニュー（`arrange-shell.c`）: 536×260（ws181-p005 の 268×52 の幅 2 倍・高さ 5 倍）、2 列 × 4 行の cell（258×56、間 8）、行 1: 左右・上下、行 2: 左 1 列＋右の縦分割（left-main）・右 1 列＋左の縦分割（right-main）、行 3: 上 1 行＋下の横分割（top-main）・下 1 行＋上の横分割（bottom-main）、行 4: タイル（2 列の幅の 1 つ）。絵は 60×40（arrange.c の枠を 5 分の 1 に）、文字無し。key は左右で 1 つ、上下で 1 行。`arrange.c`・`arrange.h` に top-main・bottom-main（上限 4、1 つなら全面、主は上（下）半分、他は残りの半分に横並び）、番号をメニューの順に（log の名前は今までどおり、新しい 2 つは top-main・bottom-main）。
 2. App Home（`home.c`）: icon の grid を画面の下（下から 72 px、page の点の上）に寄せる。1 枚目 = 時計＋icon 2 行（12 個）、2 枚目から 4 行（24 個）、page の数と選択の page はこれで数える（`home_page_of`・`home_page_first`）。時計（`home_draw_clock`）: 時:分 を 64 px（`glass.c` の新しい大きさ `SIZE_CLOCK`、atlas は空白・数字・: だけ、font は今の Mahora）、その下に長い日付を 24 px、1 枚目と一緒に横へ動く、検索の時は出さない。page 送りは今の横の drag・wheel・PageUp/PageDown・選択の移動。
 3. 仮想 desktop（`kwl.h`・`main.c`・`shell.c`・`icons.c`・`icons.h`）: 4 → 3（`KWL_APPS_DESKTOPS` 3）、session は真ん中（`KWL_DESKTOP_START` 1、log では desktop=2）から。pill の印は猫（左）・鳥（真ん中）・ウサギ（右）のシルエット（`GLASS_ICON_DESKTOP_CAT`・`BIRD`・`RABBIT`、icons.c の自作の部品: 点・三角・箱・線）、今いる desktop は accent の色、他は淡い灰。最初の (3) の「正円の点」（右と下の欠けは solid の形の quad が box ちょうどのため）は置き換えで使わない。
-4. 試験の追従: `plan/ws181/tests/ws181-guest.sh`（desktop=1 → 2、右へ運ぶのは 3）、`plan/ws142/tests/p003-guest.sh`（真ん中から右 → 3、左 → 2 → 1、端で止まる）、`plan/ws142/tests/p004-guest.sh`（2・3）、`tests/scenarios/desktop/windows/arrange.md`、`plan/ws181/tests/host-arrange.c`（top-main・bottom-main）。
+4. 試験の追従: `plan/tools/desktop-guest/ws181-guest.sh`（desktop=1 → 2、右へ運ぶのは 3）、`plan/ws142/tests/p003-guest.sh`（真ん中から右 → 3、左 → 2 → 1、端で止まる）、`plan/ws142/tests/p004-guest.sh`（2・3）、`tests/scenarios/desktop/windows/arrange.md`、`plan/ws181/tests/host-arrange.c`（top-main・bottom-main）。
 
 ## 確かめ（2026-10-07）
 

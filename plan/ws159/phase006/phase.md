@@ -27,7 +27,7 @@ Intel の pinctrl（INTC1055）の GPIO の driver の最小（pad の IRQ の�
 ## 確認
 
 - `plan/ws159/tests/run-host-intel-gpio.sh`: ok（19 checks、ASan・UBSan でも ok）。5330 の GPCL の 18 group・SBRG 0xfd000000・GPI0 の 4 つの範囲で、pin 327 が DW0 0xfd6a0ae0 の page を map、DW0 0x80800102 は high・bit 1 を消すと low、pin 400 は group 無しで拒む、範囲の外は拒む。
-- `plan/ws159/tests/run-host-i2c-hid.sh`: line の run は ok（71 checks、line が idle の間は 1 回も読まない）、sample の run は ok（80 checks）。ASan・UBSan でも ok。
+- `plan/tools/hid/run-host-i2c-hid.sh`: line の run は ok（71 checks、line が idle の間は 1 回も読まない）、sample の run は ok（80 checks）。ASan・UBSan でも ok。
 - vmunix（CI の config、LPSS y）warning 0・check PASS。style-check: 新しい file 0（host の試験の setjmp の 1 件は C の規則で条件の中）。
 - 未実施: QEMU（LPSS も INTC1055 も無いので、起動が変わらないことだけ）、実機（5330 で `reads on its line` が出て、触れた時だけ読むこと）。
 
@@ -58,7 +58,7 @@ Intel の pinctrl（INTC1055）の GPIO の driver の最小（pad の IRQ の�
 | pcat（i386）・pc98・rpi4（arm64）の vmunix（`config/ci/config-*.mk`） | 成功（PC/AT の contract OK、pc98 の stage2、arm64 vmunix check PASS） |
 | sparcv9（sun4u）・x68k の vmunix | **link まで行かない（この変更の前から）**: main で `src/hal/pmem-constraints.c` が無く（make の規則が無い）、`src/hal/sparcv9/irq.c`・`m68k/bsp-x68k/irq.c` は `hal_irq_get_affinity` の型が今の hal.h と違って compile できない。足した `hal_irq_set_mode` には error が無い（compiler の error は全部 `hal_irq_affinity`） |
 | `plan/ws159/tests/run-host-intel-gpio.sh`（ASan・UBSan でも） | mode の run 56 checks、nomode の run 32 checks。別の系統・firmware の pad は拒む、IRQ 14 を level・low で取り unmask、GPI_IE の bit 7、発火で user の handler 1 回・GPI_IE の bit が消え GPI_IS の bit 7 だけ消える・EOI、arm で戻る、どの pad でもない発火で mask と諦め。nomode では有効にならず IRQ 14 は返され unmask されない |
-| `plan/ws159/tests/run-host-i2c-hid.sh`（ASan・UBSan でも） | line 74・sample 81・irq 75 checks。irq: 有効・発火・arm、眠りは最大 1 秒、line が idle の間の読みは 0 |
+| `plan/tools/hid/run-host-i2c-hid.sh`（ASan・UBSan でも） | line 74・sample 81・irq 75 checks。irq: 有効・発火・arm、眠りは最大 1 秒、line が idle の間の読みは 0 |
 | style-check | 新しい・変えた所の指摘 0（host の試験の setjmp は従来の注記どおり） |
 | QEMU | **未実施**（QEMU に INTC1055 も LPSS も無い。起動が変わらないことを T1 の boot-test で見る） |
 | 実機（5330） | **未実施**。見る物: log `intel-gpio: pin 327 interrupts through irq 14` と `i2c-hid: … reads on its interrupt`、指を置いた時だけ I2C を読む（`irq 14 fired for no pad` が出ないこと）、操作の遅れ、電池の減り |

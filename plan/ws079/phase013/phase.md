@@ -41,7 +41,7 @@ build: 試験の image `plan/ws079/tests/config-amd64-pen.mk`（worktree の `bu
 `make -j16 … build/amd64/bin/wayland` は rc=0・warning 0（`-Wall -Wextra -Werror`）。`plan/tools/style-check.py`（shell.c・objects.c・zwl.h）の指摘 0、`git diff --check` 問題なし。
 clang-format は host に無く未実施。
 
-[zdesktop-p013.sh](../tests/zdesktop-p013.sh)（`pen-guest.sh start build/amd64/hdd-image.img` の guest、1280x800、pointer は `qmp-pointer.py`、判定は compositor の log と VNC の画素）: **PASS**（最終の run）。
+zdesktop-p013.sh（fb1f6afee の `plan/ws079/tests/zdesktop-p013.sh`）（`pen-guest.sh start build/amd64/hdd-image.img` の guest、1280x800、pointer は `qmp-pointer.py`、判定は compositor の log と VNC の画素）: **PASS**（最終の run）。
 3 つの wltest の窓 a（f4f7fc）・b（c8d8ec）・c（e8c8b0）を、それぞれ一番上の間にタイトルバーの drag で階段に置いてから:
 
 | # | 確かめたこと | 結果 |
@@ -91,7 +91,7 @@ build（worktree の `build/amd64`、`ZEDBSD_CONFIG=plan/ws079/tests/config-amd6
 `make -j16 … build/amd64/bin/wayland build/amd64/bin/tablet-probe build/amd64/dynamic/libwayland-client.so` は rc=0・warning 0。sysroot は共有の写しに変えた header（`wayland/wayland-client-protocol.h`）を手で写した。
 `plan/tools/style-check.py`（touch.c・touch.h・touch-protocol.c・input.c・seat.c・shell.c・objects.c・protocol.c・tablet-probe）の指摘 0（corner.c の 3 件は HEAD の既存のもの）。whitespace の検査（diff --check）問題なし。clang-format は host に無く未実施。
 
-[zdesktop-p013-touch.sh](../tests/zdesktop-p013-touch.sh)（`pen-guest.sh start build/amd64/hdd-image.img`、1280x800、touchinject の台本は画面の画素、判定は compositor・probe の log と VNC の画素）: **PASS**（run4、全段）。
+zdesktop-p013-touch.sh（fb1f6afee の `plan/ws079/tests/zdesktop-p013-touch.sh`）（`pen-guest.sh start build/amd64/hdd-image.img`、1280x800、touchinject の台本は画面の画素、判定は compositor・probe の log と VNC の画素）: **PASS**（run4、全段）。
 
 | # | 確かめたこと | 結果 |
 | --- | --- | --- |

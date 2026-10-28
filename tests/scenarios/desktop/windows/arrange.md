@@ -10,7 +10,7 @@ since: WS181-p004
 ---
 
 ## 目的
-2026-10-07 の UAT（WS181）の整列のメニューと整列モード: pill のどこを tap してもメニューが開き（メニューは今の desktop に対して、desktop の切り替えは swipe・key だけ、ws181-p005）、7 つの形で今の位置から大まかに窓を枠へ置き、整列モードの title の drag は入れ替え、dock（double click・bar への drag）で整列モードが終わり、戻すと普通の floating になること。QEMU の自動の版は plan/ws181/tests/ws181-guest.sh の C10〜C12。
+2026-10-07 の UAT（WS181）の整列のメニューと整列モード: pill のどこを tap してもメニューが開き（メニューは今の desktop に対して、desktop の切り替えは swipe・key だけ、ws181-p005）、7 つの形で今の位置から大まかに窓を枠へ置き、整列モードの title の drag は入れ替え、dock（double click・bar への drag）で整列モードが終わり、戻すと普通の floating になること。QEMU の自動の版は plan/tools/desktop-guest/ws181-guest.sh の C10〜C12。
 
 ## 準備
 窓の mode で Files・Terminal・Calculator を開く（3 つとも floating）。

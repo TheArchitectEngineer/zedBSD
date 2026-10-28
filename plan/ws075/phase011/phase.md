@@ -16,14 +16,14 @@ EDID、点く mode、DVI、HDMI の前後の USB の device を記録する。
 
 ## 手順と道具
 
-- `plan/ws075/tests/hdmi-h1-hw.sh SCENARIO OUTDIR [FLAGS]`（新規）: `/tmp/i915-hw.lock` の下で `vkloop-hw.sh test SCENARIO` を走らせ、
+- `plan/tools/i915-hw/hdmi-h1-hw.sh SCENARIO OUTDIR [FLAGS]`（新規）: `/tmp/i915-hw.lock` の下で `vkloop-hw.sh test SCENARIO` を走らせ、
   同時に 5330 の Linux で USB の device（sysfs）を 1 秒ごとに記録する（guest の serial log の最新の HDMI の行と並べる）。run の前に
   無かった device が現れたら、その場で `lsusb -v`、`/sys/bus/hid/devices/*/report_descriptor`、`usbhid-dump -e descriptor` を取る。
   guest（QEMU）は物理の USB controller を passthrough していないので、touch の HID が見えるのは 5330 の host の側である。
 - 試験の場面の変更（driver ではない）: `hdmi-output.c` の HDMI-B に build の switch を足した。`-DI915_TEST_HDMIB_CEA16`（CEA 16、
   1920x1080@60、148.5 MHz）、`-DI915_TEST_HDMIB_NATIVE`（この LCD の EDID の DTD1、1920x1280@60、164.36 MHz、+h −v）。既定は
   従来どおり CEA 4（1280x720）。mode を log に出す。window は `-DI915_TEST_HDMIB_WINDOW_MS=60000`。
-- build: `BUILD=build/h1`（worktree の中）、`plan/ws075/tests/config-test-hw.mk`。
+- build: `BUILD=build/h1`（worktree の中）、`plan/tools/i915-hw/config-test-hw.mk`。
 
 ## 結果（実機、2026-09-28、5330 の VFIO passthrough の QEMU の guest。QEMU の emulation の証拠ではない）
 

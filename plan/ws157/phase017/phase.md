@@ -27,13 +27,13 @@ Queue: q949（P2、2026-10-13。承認: ユーザー「これ以上ベータ2に
 | `libjpeg-compat/huffman.c`・`internal.h` | plane に `block_size`・`blocks_across`・`blocks_down`。block の位置・範囲の判定・係数の index をこれで（`jpeg_compat_transform` が全体か縮小の IDCT を選ぶ）。単独 component の scan の block の数は `width_in_blocks`・`height_in_blocks` |
 | `desktop/picture/picture.c`・`.h` | `kl_picture_jpeg_reduced(file, data, size, box_side, cover, max_side, max_pixels, …)`: 比 d は cover なら d×箱の長辺 ≤ 画像の短辺、contain なら d×箱の長辺 ≤ 画像の長辺を満たす最大の 8・4・2（どちら向きの EXIF でも足りる）。`kl_picture_jpeg` は box 0（縮小なし）で呼ぶ。**上限の判定を `jpeg_start_decompress` の前**（`jpeg_calc_output_dimensions` の後）に移した（今までは全体を decode してから拒否していた。Image Viewer・Notes・Music も同じ E2BIG を decode の前に返す） |
 | `desktop/preview/decode.c`・`preview.h` | JPEG を `kl_picture_jpeg_reduced`（箱は要求の長辺、cover は要求のまま）で。上限（64 M pixel・辺 16384）は縮小後の大きさに掛かる |
-| 試験 | 新 `plan/ws157/tests/host-jpeg-scale.c`（driver）と `run-host-jpeg-scale.py`。`run-host-preview-sizes.sh` を改めた（下） |
+| 試験 | 新 `plan/tools/image/host-jpeg-scale.c`（driver）と `run-host-jpeg-scale.py`。`run-host-preview-sizes.sh` を改めた（下） |
 
 ## 確かめ（2026-10-13 P2、host）
 
 | コマンド | 結果 |
 | --- | --- |
-| `python3 plan/ws157/tests/run-host-jpeg-scale.py`（新、ASan/UBSan） | all PASS: 16 file（Pillow の 4:4:4・4:2:2・4:2:0・gray・17×9・3×2、cjpeg の 2x1・1x2・2x2・4x1・3x1・4x2・restart・progressive・progressive 4:4:4・q100）× 1/1・1/2・1/4・1/8 で、大きさが djpeg（libjpeg-turbo）の `-scale 1/N` と一致、samples の差は最大 2（1/1 と 1/8 は殆ど 0）、PSNR は 57.7〜99 dB。壊した file 144 回の decode で crash 0 |
+| `python3 plan/tools/image/run-host-jpeg-scale.py`（新、ASan/UBSan） | all PASS: 16 file（Pillow の 4:4:4・4:2:2・4:2:0・gray・17×9・3×2、cjpeg の 2x1・1x2・2x2・4x1・3x1・4x2・restart・progressive・progressive 4:4:4・q100）× 1/1・1/2・1/4・1/8 で、大きさが djpeg（libjpeg-turbo）の `-scale 1/N` と一致、samples の差は最大 2（1/1 と 1/8 は殆ど 0）、PSNR は 57.7〜99 dB。壊した file 144 回の decode で crash 0 |
 | `python3 plan/ws074/tests/run-jpeg-tests.py --keep build/ws157-p017-ws074jpeg`（WS074 の回帰、1/1 の経路） | PASS: 193 file が djpeg と byte まで一致（変更前と同じ）、cut・arithmetic の拒否・markers・damaged 144 で crash 0 |
 | `sh plan/ws157/tests/run-host-preview-sizes.sh build/ws157-p017-linux`（preview は `prlimit --as=1 GiB --cpu=10` の下、jail と同じ） | all PASS: 前からの 7 件に加え、72 MP の JPEG の thumbnail（今までは status 3 で拒否）→ 160×160、4096 の箱 → 4096×3641、**200 MP（16320×12240、73 MB）の JPEG** の cover 160・contain 2048・4096 → 160×160・2048×1536・4096×3072、72 MP の PNG（全体を decode）は status 3 で拒否 |
 | 200 MP の時間（この host、`/usr/bin/time`） | cover 160: 2.66 s・最大常駐 94 MB、contain 2048: 3.85 s・158 MB、4096: 5.49 s・414 MB（Huffman の decode が大半。73 MB の file の全体を読むため） |

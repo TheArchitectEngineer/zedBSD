@@ -3,42 +3,53 @@
 # WS214: 窓をディスプレイの重ね合わせ（HVS の plane）に載せる（Pi 4）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p003a・p003b・p004 の実装は main（114e7c68c、UAPI は 2026-10-12 ユーザーの承認）。2026-10-13 ユーザー「いや、これ以上詰めなくていいです。」で描画の最適化を終えた）。旧: incomplete（2026-10-18 Q1: Phase を実行済みなので planning から直した。旧: planning（2026-10-12 Q1 作成、ユーザーの承認））。残り・制限: p005・p006（案、未投入）は終了、p002 の規約と類似の監査は一括の見直しへ
+Status: completed（2026-10-27 P3 の精査 q1608。kernel・libvulkan の段は main。2026-10-13 ユーザー「いや、これ以上詰めなくていいです。」で描画の最適化を終え、compositor の段 p005・p006 は未投入で終了）
+<!-- retained-after-completion --> tests/ の 2 項目 はその場に残す: src/・userland/・platform/・Makefile・config/ の source か build の file が path を名指す（AGENTS.md §10 の source の comment の掃除の後に消す。2026-10-28 Q1 の方針、q1660）
+Completed: 2026-10-27（q1608）
 Primary Milestone: MG006
 Related Milestones: MG008
 Parent: [Master](../master.md)
-Queue: P2（p001 の調べと設計から）
-Resume point: p003a・p003b は実装・host 試験・build 済み（main 114e7c68c、[phase003a](phase003a/phase.md)・[phase003b](phase003b/phase.md)、hvs-load で Pi の帯域を測る手順は phase003b）、clear は Pi（焼き直しの後）と T1（i915・Venus）の後。p004（libvulkan の overlay）を P2 で着手（clear は WS141 p016 B-u の Pi の受け入れの後）。
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
-
-## 由来
-
-2026-10-12 ユーザー:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案 1〜4（1 damage を複数の四角のまま描く、2 窓を HVS の plane に載せる、3 CPU の記録・decode の使い回し、4 app の present の部分化）にユーザー「ぜんぶやりましょう。」。この WS は案 2。1 は WS211、3 は WS211、4 は WS210 p013。
 
 ## 目標
 
-Pi 4（bcm2711）で、窓の移動（drag）・dock と undock の拡大縮小の間、GPU が窓の中身を描き直さない。HVS（ディスプレイの合成器）の plane に窓の絵を載せ、位置・大きさだけを変える。GPU は窓の中身が変わった時だけ動く。
+Pi 4（bcm2711）で、窓の移動（drag）・dock と undock の拡大縮小の間、GPU が窓の中身を描き直さない。HVS（ディスプレイの合成器）の plane に窓の絵を載せ、位置・大きさだけを変える。i915・Venus・Linux・FreeBSD では今どおりの合成（fallback）。
 
-## 範囲（p001 で決める）
+## ユーザーの決定
 
-- HVS の plane の数・拡大縮小・alpha・format・dlist の更新の制約（bcm2711 の display driver、src/drivers/gpu/bcm2711/ の display-*.c）。
-- kernel・libvulkan の口（今の cursor の plane と同じく VK_KHR_display の plane か、private の口か）。HAL・UAPI の変更が要るなら差分ごとの承認。
-- compositor（userland/desktop/wayland/）がどの窓を plane に載せるか（glass・影・角の丸み・blur の扱い、重なり、damage との両立、WS213 の描画の thread・cursor の thread との関係）。
-- i915・Venus・Linux・FreeBSD では今どおりの合成（plane が無い時の fallback）。
-- 試験: host、T1（回帰）、Pi（drag・dock の fps、GPU の時間）。
+- 2026-10-12（由来）:「画面更新の分割って、もっと高度化できそうですか？無理ですか？」→ Q1 の案 1〜4 に「ぜんぶやりましょう。」この WS は案 2（窓を HVS の plane に）。案 1・3 は WS211、案 4 は WS210 p013。
+- 2026-10-12: 窓の前後の入れ替えは範囲の外。
+- 2026-10-12（クリック）「WS214 にも広げる」: 公開の文書の無い HVS5 の scaled の plane の値も WS141 と同じ規則（値はハードウェアの事実として使い、名前・配置・comment は写さない）で使う。値ごとの出典は [hvs-values.md](hvs-values.md)（[Guardrail](../guardrail.md) の GPL の節が参照）。
+- 2026-10-12: p003b の UAPI（COMMIT・OVERLAY_INFO・HAS_OVERLAYS、WAIT を眠る形に）の承認。
+- 2026-10-13「いや、これ以上詰めなくていいです。」（描画の最適化の終了）
 
-## 完了の条件（仮）
+## 結果
 
-Pi 4 で窓の drag と dock・undock のアニメが 60fps（窓の前後の入れ替えは範囲外、2026-10-12 ユーザー）（実機の log とユーザーの確認）、その間の GPU の時間が窓の中身の変化分だけ。i915・Venus で回帰が無い（T1）。
+- p003a（kernel: display の op の gate 外し、状態から作る list と 3 slot の差し替え、coalesce、IRQ の採用の記録と waitq、WS141 p016 B-k2）は main（4438fc682）。
+- p003b（UAPI、overlay の unscaled・scaled・LBM、帯域の予算と ENOSPC、値の出典の表と GPL の監査）は main（114e7c68c）。
+- p004（libvulkan の overlay の plane、plane ごとの present、切り替えの保留、位置だけの fast path）は main（046a376af）。
+- いずれも host 試験と build まで。Pi の `hvs-load` の帯域の実測と T1（i915・Venus）の回帰は未実施のまま閉じた（2026-10-28 に commit が main の履歴にあることを `git merge-base --is-ancestor` で確かめた）。
 
-## Phase
+## 制限・移管
 
-| Phase | 内容 | Status | 依存 |
-| --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 調べと設計（HVS の plane の能力と制約、口、compositor の載せ方、fallback、試験）→ design-reviewer | planning（第 3 版、review-2 を反映、Q1 の確かめの前） | — |
-| p003a | kernel（core と bcm2711、担当 1 人、WS141 p016 B-k2 を含む、**承認不要**）: display の op の gate 外し（table_lock・pin・`adoption_wait`）、状態から作る list と 3 slot の差し替え、primary も coalesce（settle・EBUSY をやめる）、IRQ の採用の記録と waitq、既存の op（PRESENT・PRESENT_SYNC・CURSOR_*）を状態の変更に、借りの thread の文脈の解放、lease の失効、copy の経路、console の省略、underrun の計数。UAPI と WAIT は今のまま | 実装と host・build 済み（4438fc682）、Pi・T1 待ち | —（承認不要） |
-| p003b | kernel（p003a と同じ担当、**UAPI の承認の後**）: UAPI（COMMIT・OVERLAY_INFO・HAS_OVERLAYS、WAIT を眠る形に、番号を controller の 1 本に）、overlay（unscaled・scaled・LBM）、帯域の予算と ENOSPC、値の出典の表と GPL の監査、Pi の帯域の実測（`hvs-load`） | 実装と host・build 済み（114e7c68c）、Pi・T1 待ち | p003a、UAPI の承認（ユーザー、p001 の 9 の 1） |
-| [p004](phase004/phase.md) | libvulkan: overlay の plane、plane ごとの present、切り替えの保留（`min_primary`、置き換え、期限と単独の flush）と primary との 1 commit、隠す約束、位置だけの fast path、借りと acquire、失敗した保留は primary ごと捨てる | 実装と host・build 済み（046a376af）、T1・WS141 p016 B-u の Pi 待ち | p003b、WS141 p016 B-u の Pi の受け入れ |
-| p005 | compositor: drag の間の窓の plane と上の帯（bar）の plane（焼き、入る・戻る、C への持ち主の移し、fallback） | 案（未投入） | p004、WS213 p004 の clear、ユーザーの判断（glass の blur・中身の停止） |
-| p006 | compositor: dock・undock・pull back の HVS の拡大縮小 | 案（未投入） | p005、p003b の帯域の実測 |
-| p002 | 規約の全文の見直し（最後に行う）と、新しい HVS の code の GPL との類似の監査 | planned | p003a〜p006 |
+- compositor の段（p005 drag の間の窓と bar の plane、p006 dock・undock の HVS の拡大縮小）は案のまま未投入で終了。目標の「drag・dock の間 GPU が窓を描き直さない」は compositor の側では未達。
+- p002 の規約の全文と新しい HVS の code の GPL との類似の監査は WS の外の一括の見直しへ（2026-10-08 ユーザー「規約の整形（各 WS の全文規約の Phase）はベータ3」、2026-10-27 の精査で一括の見直しに読み替え）。
+- 回帰に残す試験（`vulkan-overlay-host.sh`、`display-p003a-host.sh`）は plan/tools/ へ移す（Q1 の OK の後）。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws214-p001 | 調べと設計（HVS の plane の能力と制約、口、compositor の載せ方、fallback、試験） | planning（第 3 版、review-2 を反映）のまま閉じた。実装は p003a〜p004 |
+| ws214-p003a | kernel（承認不要）: gate 外し、状態から作る list、coalesce、B-k2 | in-progress のまま閉じた（main 4438fc682、host・build 済み、Pi・T1 は未実施） |
+| ws214-p003b | kernel（UAPI の承認の後）: COMMIT・OVERLAY_INFO・WAIT、overlay、帯域の予算 | in-progress のまま閉じた（main 114e7c68c、host・build 済み、Pi・T1 は未実施） |
+| ws214-p004 | libvulkan: overlay の plane と present | in-progress のまま閉じた（main 046a376af、host・build 済み） |
+| ws214-p005 | compositor: drag の間の窓と bar の plane | 案のまま未投入で終了 |
+| ws214-p006 | compositor: dock・undock の HVS の拡大縮小 | 案のまま未投入で終了 |
+| ws214-p002 | 規約の全文の見直しと GPL との類似の監査 | WS の外の一括の見直しへ |
+
+## 記録の所在
+
+値の出典の表 [hvs-values.md](hvs-values.md) は phase003/ から WS の直下へ移す（Q1 の OK の後。license の出典の記録として残す）。他の Phase の計画・結果・試験は削除する。git の commit `fb1f6afee` の `plan/ws214/` にある。Queue の履歴は [plan/history](../history/index.md)。

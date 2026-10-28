@@ -1,6 +1,6 @@
 #!/bin/sh
 # ws099-p011 (BUG-121): the corner drags of resize-stress.sh on the 5330's i915 passthrough (WS075's harness,
-# plan/ws075/tests/hdmi-h4-hw.sh, which takes the machine under flock /tmp/i915-hw.lock), in the case BUG-121 was
+# plan/tools/i915-hw/hdmi-h4-hw.sh, which takes the machine under flock /tmp/i915-hw.lock), in the case BUG-121 was
 # seen in (ws075-p025): the ten applications of App Home open in hdmi/apps8.sh's order (Model viewer eighth, as in
 # p025; ORDER=top opens it last, so it is on top and, on the 1920x1080 panel, reaches the bottom edge), then COUNT drags
 # of Model viewer's corners, in pairs (inwards, then back by the same distance, so its outline comes back and the
@@ -17,7 +17,7 @@ image=$1
 out=$2
 total=${3:-20}
 host=${I915_HOST:-solaris10-man}
-h4=plan/ws075/tests/hdmi-h4-hw.sh
+h4=plan/tools/i915-hw/hdmi-h4-hw.sh
 ctl() { timeout 120 "$h4" ctl "$@"; }
 mkdir -p "$out"
 

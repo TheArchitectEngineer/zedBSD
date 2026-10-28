@@ -103,7 +103,7 @@ Q1（2026-10-05）「BUG-171 の判断待ちの間は、WS089 p017b（残りの 
 ### 確認（host）
 
 - build: zedBSD の phone・mailer・calendar・videoplayer・kuidemo・textedit・notes・pdfviewer・imageview・settings（warning 0）、`make keiland-linux`（warning 0）、exports `--check` ok。
-- host: `plan/ws079/tests/run-notes-host.sh` ok、`plan/ws081/tests/run-notestouch.sh` ok（52）、`plan/ws079/tests/run-pdfviewer-host.sh` ok。
+- host: `plan/ws079/tests/run-notes-host.sh` ok、`plan/tools/touch/run-notestouch.sh` ok（52）、`plan/ws079/tests/run-pdfviewer-host.sh` ok。
 - style-check: 変えた file の件数は増やしていない。
 - 範囲外の観察（Q1 へ）: `plan/ws081/tests/run-pdftouch.sh` は今回の前から壊れている（`chooser.c` が無い、`keiland-ui.h`・`keiui.h` の link が無い、host-pdftouch.c が今の touch の API と合わない）。小さくないので直していない。
 

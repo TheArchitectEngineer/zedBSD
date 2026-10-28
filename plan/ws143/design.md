@@ -2,8 +2,8 @@
 
 # WS143 設計: Bluetooth（ws143-p001）
 
-版: 2026-10-05 第 3 版（P1 generation18、q752）。第 1 版への design-reviewer の指摘 F1〜F25（[phase001/review-1.md](phase001/review-1.md)）と
-第 2 版への指摘 N1〜N17（[phase001/review-2.md](phase001/review-2.md)）を反映した。各節の `[Fn]`・`[Nn]` は、その節が答える指摘。
+版: 2026-10-05 第 3 版（P1 generation18、q752）。第 1 版への design-reviewer の指摘 F1〜F25（fb1f6afee の plan/ws143/phase001/review-1.md）と
+第 2 版への指摘 N1〜N17（fb1f6afee の plan/ws143/phase001/review-2.md）を反映した。各節の `[Fn]`・`[Nn]` は、その節が答える指摘。
 §9 の D1〜D18 は 2026-10-05 夕にユーザーが**全部推奨どおり**に決めた（「HIDが先で、オーディオとPANもほしいですが、ほかの開発項目より
 後回しでいいです。」、master の decisions-log）。以下の「推奨」は決定として読む。
 
@@ -31,7 +31,7 @@ file の sha256 は main.c `ebee5557…`・iwmbt_hw.c `12d4ef01…`・iwmbt_fw.c
 
 | 事実 | 出典 |
 | --- | --- |
-| 5330 の Bluetooth は USB 8087:0033（AX211 の CNVi の Bluetooth の半分） | [plan/ws075/phase011/phase.md](../ws075/phase011/phase.md) 53 行、[BUG-158](../bugs/BUG-158.md) 233 行 [F10] |
+| 5330 の Bluetooth は USB 8087:0033（AX211 の CNVi の Bluetooth の半分） | plan/ws075/phase011/phase.md（fb1f6afee の `plan/ws075/phase011/phase.md`） 53 行、[BUG-158](../bugs/BUG-158.md) 233 行 [F10] |
 | 8087:0033 は Intel の TLV 形式の版の応答（Read Version の parameter 0xFF）を返す世代。FreeBSD は enum 名 `IWMBT_DEVICE_9260` の組で扱う（名前は 9260 だが、本物の 9260 の 0x0025 は別の組） | FreeBSD main.c 72〜87 行の表 [F10] |
 | USB の Bluetooth の controller の標準の形: interface 0（class E0/01/01）の endpoint 0 の class の control で HCI command、interrupt IN（0x81）で HCI event、bulk IN（0x82）・OUT（0x02）で ACL。interface 1 は isochronous（SCO） | Bluetooth Core 5.4 Vol 4 Part B §2、FreeBSD iwmbt_hw.h 79〜82 行 |
 | Intel の bootloader の時だけ、Secure Send（0xFC09）の断片を **bulk OUT** で送り、各断片の応答は **bulk IN** に来る。download の完了の vendor event（0xFF、1 byte 目 0x06）は interrupt IN | FreeBSD iwmbt_hw.c 53〜95 行・380〜404 行 [F1] |

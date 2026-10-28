@@ -19,7 +19,7 @@ make の機能を数え、`userland/base/make` の設計（file の分け方、�
    代入の種類、関数、自動変数、特別な target、pattern rule と suffix rule、target ごとの変数、再帰の `$(MAKE)`、`MAKEFLAGS` の使い方。
 2. GNU make で `make -n`・`make`・`make install DESTDIR=...`・`make check` を走らせ、どの rule と機能が実際に通るかを確かめる。
 3. 結果から設計を書く。範囲外（`-j`、jobserver）は入れない。
-4. 差分試験の土台: `plan/ws046/tests/make-diff.py`（case の Makefile を GNU make と我々の make で走らせ、stdout・stderr の要点・status・作られた file を比べる）と、最初の case 群。
+4. 差分試験の土台: `plan/tools/make/make-diff.py`（case の Makefile を GNU make と我々の make で走らせ、stdout・stderr の要点・status・作られた file を比べる）と、最初の case 群。
    我々の make はまだ無いので、この Phase では GNU make だけで case が期待どおりに動くことを確かめる。
 
 ## 受け入れ
@@ -95,7 +95,7 @@ gnulib の `maint.mk`（maintainer 用、`$(call)`・`$(eval)` 相当の `define
 
 ### 試験
 
-- 差分試験 `plan/ws046/tests/make-diff.py`: case（`cases/*.sh`）を dash で走らせ、GNU make と我々の make の stdout と status を比べる（make 自身の
+- 差分試験 `plan/tools/make/make-diff.py`: case（`cases/*.sh`）を dash で走らせ、GNU make と我々の make の stdout と status を比べる（make 自身の
   message の行と、`$(MAKE)` の path は除く）。今 91 件: POSIX 45（`posix.sh`）、automake の idiom 15（`automake.sh`）、GNU の機能 31（`gnu.sh`）。
   GNU make だけで全て status 0（下の検証）。
 - 実 package（p004）: host で我々の make を build し、expat・zlib・coreutils を `configure && make && make check && make install DESTDIR=` して、

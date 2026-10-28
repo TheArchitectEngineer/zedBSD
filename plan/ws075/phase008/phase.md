@@ -67,7 +67,7 @@ request worker（`worker.c`）が engine に出した request の終わりを待
 - `src/drivers/gpu/i915/worker.c`: `i915_worker_wait()` を上の設計のとおりに（期限は tick、sequence は CSB の処理の前に読む、
   1 tick の安全網、handler が無ければ 50 µs の busy-wait）。起きた理由の数（`wait_interrupts`・`wait_timeouts`）と停止の log の行。
   HAL・UAPI は変えていない。
-- `plan/ws075/tests/hdmi/h4-ctl.py`: `rate PIPE SECONDS`（pointer を 8 ms ごとに 40 px 往復させながら PLANE_SURFLIVE の変化を数え、
+- `plan/tools/i915-hw/hdmi/h4-ctl.py`: `rate PIPE SECONDS`（pointer を 8 ms ごとに 40 px 往復させながら PLANE_SURFLIVE の変化を数え、
   入力の続く間の flip の率を出す）。以後の性能の Phase の物差し。
 
 ### 検証
@@ -80,7 +80,7 @@ request worker（`worker.c`）が engine に出した request の終わりを待
 | Venus の回帰 | 未実施（Venus の driver・共通の GPU core は変えていない。i915 の file だけ） |
 | host の i915 の試験 | 該当なし（worker・irq は host の fixture に無い。`run-vk-host-tests.sh` の範囲は render/ と compiler/） |
 
-実機（5330 の VFIO passthrough の QEMU guest、4 vCPU、KVM。`plan/ws075/tests/hdmi-h4-hw.sh`、`flock /tmp/i915-hw.lock` の下）。
+実機（5330 の VFIO passthrough の QEMU guest、4 vCPU、KVM。`plan/tools/i915-hw/hdmi-h4-hw.sh`、`flock /tmp/i915-hw.lock` の下）。
 image は変更の前 `build/ws075-p008/base.img`（main 249e5ab1 の tree）と後 `build/ws075-p008/irq.img`、同じ引数の demo の passthrough の image。
 desktop（kei の自動の login の session）の起動の約 100 秒後から、PLANE_SURFLIVE（pipe A）を QMP の xp で読んで測った:
 
@@ -98,7 +98,7 @@ desktop（kei の自動の login の session）の起動の約 100 秒後から�
 - request の終わりを見つけた所（`i915_worker_wait+485`）に hardware breakpoint を置き、直前の眠りの結果（`%ebx`）を 150 回: 0（割込み）149 回、
   ETIMEDOUT 1 回。**request の終わりはほぼ全て割込みで知る**。1 tick の期限は GPU の実行中（約 6〜15 ms）に 1 ms ごとに worker を起こす
   （上の 13861）が、終わりの検出は割込みが先に来る。期限で終わりを見つけたのは 150 回に 1 回（割込みが無かったか遅れた）。
-- 実行器の回帰: `plan/ws075/tests/test-hw.sh vkx`（i915 の試験の build、`BUILD=build/ws075-p008/vkx`）: 試験の場面の verdict の行 PASS（9 of 9）。
+- 実行器の回帰: `plan/tools/i915-hw/test-hw.sh vkx`（i915 の試験の build、`BUILD=build/ws075-p008/vkx`）: 試験の場面の verdict の行 PASS（9 of 9）。
   WS075 の既存の場面と同じく試験の build の verdict の行で判定した。
 
 ### 所見（次の Phase へ）

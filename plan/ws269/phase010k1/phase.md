@@ -27,20 +27,20 @@ libvulkan の WSI の readback の道は既にある（`userland/desktop/libvulk
 
 - `userland/tests/vkstage/main.c` の `present`: acquire の semaphore → ClearColorImage の submit（acquire を待ち、clear の semaphore と fence を signal）→ present（clear の semaphore を待つ）、**3 秒**出す（`VKSTAGE_PRESENT_SECONDS`、design §8.2）。PASS の行に秒を出す。semaphore の destroy を足した。
 - `userland/tests/gpu-selftest/main.c`: `present-clear` の説明（3 秒、readback の道）。段の動きは変わらない。
-- `src/drivers/gpu/powervr/vk-pass.c`: decode する render area を memset で初期化（gcc -O1 の maybe-uninitialized）。`plan/ws269/tests/p009/run.sh` の `-Wno-maybe-uninitialized` を外した。
+- `src/drivers/gpu/powervr/vk-pass.c`: decode する render area を memset で初期化（gcc -O1 の maybe-uninitialized）。`plan/tools/powervr/p009/run.sh` の `-Wno-maybe-uninitialized` を外した。
 
 ## 確認（2026-10-20）
 
 | 確認 | コマンド | 結果 |
 | --- | --- | --- |
-| executor の host 試験（gcc -O1、-Wno-maybe-uninitialized なし） | `sh plan/ws269/tests/p009/run.sh OUT` | `powervr executor host test: 165 passed, 0 failed` |
+| executor の host 試験（gcc -O1、-Wno-maybe-uninitialized なし） | `sh plan/tools/powervr/p009/run.sh OUT` | `powervr executor host test: 165 passed, 0 failed` |
 | vkstage（host の llvmpipe） | `cc ... userland/tests/vkstage/main.c -lvulkan`、`clear`・`draw`・`present` | clear・draw PASS。present は host に display が無く `FAIL, no display -3`（期待どおり） |
-| gpu-selftest の host 試験 | `sh plan/ws269/tests/p010/selftest-host.sh OUT` | 0 failed |
-| VF2 の試験の image | `timeout 3600 make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-visionfive2-selftest.mk BUILD=build/p010k1/img disk-image -j16` | rc=0、vkstage・gpu-selftest・libvulkan・powervr に warning 0、`rootfs/bin/vkstage` あり |
+| gpu-selftest の host 試験 | `sh plan/tools/powervr/p010/selftest-host.sh OUT` | 0 failed |
+| VF2 の試験の image | `timeout 3600 make ZEDBSD_CONFIG=plan/tools/powervr/p010/config-visionfive2-selftest.mk BUILD=build/p010k1/img disk-image -j16` | rc=0、vkstage・gpu-selftest・libvulkan・powervr に warning 0、`rootfs/bin/vkstage` あり |
 
 - 未実施: 実機（VF2 の HDMI の単色の画面、gpu-selftest の `present-clear: ok`）。readback の道を通る present の host 試験（libvulkan の WSI を fake の device で回す試験は無く、作らなかった）。
 - 実機の前提: P1 の q1385 の transfer の job（ClearColorImage・CopyImageToBuffer）と vk-queue の submit が main に入ること。
 
 ## 残り
 
-- 実機（T1）: VF2 の selftest の image で `gpu-selftest: present-clear: ok` と画面の単色（clear の色 0.25, 0.5, 0.75）を見る。依頼文: 「`make ZEDBSD_CONFIG=plan/ws269/tests/p010/config-visionfive2-selftest.mk SELFTEST_FIRMWARE=powervr-firmware BUILD=build/<dir> disk-image` の image を VF2 に書いて起動し、HDMI に 3 秒の単色（RGB ≒ 64, 128, 191）が出ること、console の `gpu-selftest: present-clear: ok` を写真で。」（P1 の q1385 の merge の後）。
+- 実機（T1）: VF2 の selftest の image で `gpu-selftest: present-clear: ok` と画面の単色（clear の色 0.25, 0.5, 0.75）を見る。依頼文: 「`make ZEDBSD_CONFIG=plan/tools/powervr/p010/config-visionfive2-selftest.mk SELFTEST_FIRMWARE=powervr-firmware BUILD=build/<dir> disk-image` の image を VF2 に書いて起動し、HDMI に 3 秒の単色（RGB ≒ 64, 128, 191）が出ること、console の `gpu-selftest: present-clear: ok` を写真で。」（P1 の q1385 の merge の後）。

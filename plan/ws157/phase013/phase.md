@@ -33,7 +33,7 @@ Queue: q937（[P1 の lane](../../agents/P1/queue.md)）
 | `make BUILD=build/ws157-q937 ZEDBSD_CONFIG=config/current-uat.mk … bin/mediastorage bin/keiland-preview dynamic/libkeiland.so bin/files bin/settings bin/wayland` | rc 0、warning 0 |
 | `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws157-q937-linux all` | rc 0、warning 0 |
 | `sh plan/ws157/tests/run-host-preview-info.sh build/ws157-q937-linux`（新） | all PASS: Linux の preview（seccomp）で PNG 37×19、GIF 21×13、EXIF 付き JPEG 640×480・taken 1700000000、EXIF 無し JPEG（taken 空）、切れた JPEG（寸法 0）、SOF だけの JPEG、動画の先頭（kind=video）、雑音・空（kind=none）。reader: 良い答え、版・kind・寸法・日時の悪い答え（EPROTO、何も残さない）、失敗の status（EINVAL）、30 秒寝る子（5 秒で ETIMEDOUT）、本物の子 |
-| `sh plan/ws157/tests/run-host-mediastorage.sh build/ws157-q937-host build/ws157-q937-linux`（preview の wrapper を足した） | 全 PASS（寸法・EXIF の日付は jail の答えから、`.incoming` の古い複写が次の取り込みで消え Files/ に `import-*` が無い） |
+| `sh plan/tools/media/run-host-mediastorage.sh build/ws157-q937-host build/ws157-q937-linux`（preview の wrapper を足した） | 全 PASS（寸法・EXIF の日付は jail の答えから、`.incoming` の古い複写が次の取り込みで消え Files/ に `import-*` が無い） |
 | `sh plan/ws157/tests/run-host-photos-db.sh … [LINUX_BUILD]`（同じ wrapper） | PASS |
 | `plan/tools/style-check.py`（変えた C） | 新しい指摘 0 |
 

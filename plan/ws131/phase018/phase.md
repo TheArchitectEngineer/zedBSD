@@ -80,7 +80,7 @@ q812（ws090-p020）の後に再開。Notes は P2 の WS175 p007・p008 の統�
 ### 確認
 
 - build: zedBSD amd64 の libkeiland・terminal・notes（exit 0、warning 0）、`make keiland-linux` の gcc と clang（exit 0、warning・error 0）。`exports.py --check` OK。
-- host: `sh plan/ws131/tests/host-tabs.sh`（新規、titlebar の stub で tab の表の送信と input）PASS 19 項目。`plan/ws081/tests/run-termtouch.sh` ok (20)、`plan/ws090/tests/host-pad.sh` ok (7)、`plan/ws081/tests/run-notestouch.sh` ok (52)。
+- host: `sh plan/ws131/tests/host-tabs.sh`（新規、titlebar の stub で tab の表の送信と input）PASS 19 項目。`plan/ws081/tests/run-termtouch.sh` ok (20)、`plan/ws090/tests/host-pad.sh` ok (7)、`plan/tools/touch/run-notestouch.sh` ok (52)。
 - 未実施: FreeBSD の build、keiland-os-boundary（Q1）、QEMU（T1）: Terminal の clipboard・PRIMARY・drop・drag・tab（zdesktop-p079・p086・p088・p091・p093・p100・p103・p111、ws081 p014-guest）、Notes の pen（ws079 notes-pen・notes-p011、ws128 notes-p002）、run-termtouch の guest、demo-s8-s9、boot-test、Linux の 2 app の PNG と Terminal の shell。
 
 ## q807-i03（P1、2026-10-06）: T1-248・T1-254 の残りの FAIL の切り分け

@@ -130,7 +130,7 @@ p005 i06/i07を実装し、host回帰・最終変更source全文規約・zedBSD/
 
 ## 2026-10-10 scoped clearance
 
-ws197-p011 cleared、前提のws157-p006/p007もcleared。main `874e12d3b`、[最終検証](../ws157/tests/verification-20261010.md)。写真/動画の未送信draftとtext appendを実装、MMS送受信接続の完了とはしない。p010はuncleared、旧試作treeを維持。HFP/PBAP UAT/最終WS conformanceが残るためWSはincomplete。共有記録の投影はQ1に保留。
+ws197-p011 cleared、前提のws157-p006/p007もcleared。main `874e12d3b`、[最終検証](../ws157/verification-20261010.md)。写真/動画の未送信draftとtext appendを実装、MMS送受信接続の完了とはしない。p010はuncleared、旧試作treeを維持。HFP/PBAP UAT/最終WS conformanceが残るためWSはincomplete。共有記録の投影はQ1に保留。
 
 ## 2026-10-10 受信メディアのcheckpoint
 
@@ -152,7 +152,7 @@ main統合checkpoint: `035d1d25b` (WIP) fast-forward済み、c43a01797の既存�
 
 ## 2026-10-10 UAT修正の統合とscoped clearance
 
-ws197-p012 cleared。source `e654733f1eb6e1296eacf34b5dff6002a5dd17e1` をmainへ統合しclean HEADを確認。[証拠](../ws157/tests/media-uat-verification-20261010.md)。Phone起動NULL参照修正、提供JPEGの表示、短いhost/全文規約/buildが今回の有限条件を満たす。今回全変更の最終確認はws157-p009もcleared。実機GUI UATと各WS全体の既存未完条件は維持、WS statusはincompleteのまま。共有master/Queue/cacheの投影はQ1、GitHub未公開。
+ws197-p012 cleared。source `e654733f1eb6e1296eacf34b5dff6002a5dd17e1` をmainへ統合しclean HEADを確認。[証拠](../ws157/media-uat-verification-20261010.md)。Phone起動NULL参照修正、提供JPEGの表示、短いhost/全文規約/buildが今回の有限条件を満たす。今回全変更の最終確認はws157-p009もcleared。実機GUI UATと各WS全体の既存未完条件は維持、WS statusはincompleteのまま。共有master/Queue/cacheの投影はQ1、GitHub未公開。
 
 ## 2026-10-10 Bluetooth復旧の追加指示
 

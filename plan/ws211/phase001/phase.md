@@ -393,7 +393,7 @@ Queue: P3（Q1 が割り当て、2026-10-12）
   - build（上の 4 つ）。
   - `plan/ws211/tests/layer-key-host-test.c`（新規）: 鍵の変化ごとに描き直す範囲が 1.2 の表どおりになること。矩形の和が 1.3 の届く範囲を覆うこと（隣の光を含む）。検索・ページめくりの間は絵を使わないこと。desktop の変化の印が 1.6 の事象でだけ立ち、drag・hover・cursor の commit では立たないこと。
   - `plan/ws211/tests/batch-host-test.c`（新規）: 頂点の値が今の push constant の経路の値と一致すること（NDC の角、uv、box、dark の色、layer の変換、head の差し引き、opacity を掛けた色）。鍵での切れ目、大きな形と glass の切れ目、flush の後の順、溢れの fallback。
-  - shader: `plan/ws141/tests/shader-host-test.sh` に `panel-batch` の variant を足し、bcm2711 の compiler で通す。i915 の compiler の host 試験にも通す。
+  - shader: `plan/tools/v3d-qpu/shader-host-test.sh` に `panel-batch` の variant を足し、bcm2711 の compiler で通す。i915 の compiler の host 試験にも通す。
 - **参照との比較（M7）**: compositor に `--no-layer-cache`（今の描き方）を足す。束ねには `KWL_BATCH=0` を使う。同じ操作の後の静止した絵を shot.c の capture で撮り、参照と比べて 2 LSB 以内であることを確かめる。T1 は Venus と i915（実機）で、Pi は P3 が撮る（Pi は readback がある）。アニメのコマは見た目の変化を受け入れたので比べない（L8）。比べる場面:
   - hover の出入り（前と後の icon、隣の光）。
   - 分の繰り上がり（時計の帯）。
@@ -407,7 +407,7 @@ Queue: P3（Q1 が割り当て、2026-10-12）
   - dmesg の perf（draws・prep・rec・tfu・snap・upd・hold_us）と flip perf。
   - ユーザーの確認: 開閉が滑らか、最初に開く時に待たない、hover・時計・印・ページ・言語・壁紙の後の絵が正しい、起動の時の icon と窓、検索・ページめくり、引っかかりが無い。
 - **T1**: Venus と i915 で、開閉のアニメが `KWL VULKAN_ERROR` 無しで終わること、`KWL BATCH unavailable`・`KWL LAYER unavailable` が出ないこと、上の参照との比較。
-- 道具: `plan/ws141/tests/shader-host-test.sh` と `kwl-latency.py` は WS141（未完了）の物を使う。WS211 の回帰で使い続けるなら、master の Tools への登録を Q1 に頼む。
+- 道具: `plan/tools/v3d-qpu/shader-host-test.sh` と `kwl-latency.py` は WS141（未完了）の物を使う。WS211 の回帰で使い続けるなら、master の Tools への登録を Q1 に頼む。
 - **受け入れの数値は段 0 の後に Q1 とユーザーで決める**（H4）。目安は、開く 280ms の間のコマが今より多いこと、Home を焼く全体の draw、desktop の 1 コマの draw、Pi の記録の時間。
 
 ## 未決（Q1・ユーザー）

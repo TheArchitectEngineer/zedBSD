@@ -57,7 +57,7 @@ mailer の compose.c・view.c・main.c、plan/ws189/tests の host-png-write.c�
 - build: `make -j16 ZEDBSD_CONFIG=plan/ws035/tests/config-amd64-zdesktop.mk BUILD=build/p3-ws189 build/p3-ws189/dynamic/libkeiland.so build/p3-ws189/dynamic/libbrowser.so build/p3-ws189/bin/{wayland,files,photos,notes,pdfviewer,mailer,textedit,browser,data-probe}`: rc 0、warning 0。
   `make -j16 keiland-linux KEILAND_LINUX_BUILD=build/p3-ws189-linux`: rc 0、warning 0。
 - host 試験（全部 PASS）: plan/ws189/tests の run-host-png-write.sh・run-host-dnd-state.sh（165 検査）・run-host-mail-attach.sh、
-  plan/ws169/tests/run-host-mailer.sh、plan/ws175/tests/run-host-notes-edit.sh、plan/ws177/tests/host-pdf-find-l.sh（plain と ASan）、plan/ws128/tests/run-host-pdfviewer-find.sh（plain と ASan）。
+  plan/tools/mail/run-host-mailer.sh、plan/ws175/tests/run-host-notes-edit.sh、plan/tools/pdf/host-pdf-find-l.sh（plain と ASan）、plan/ws128/tests/run-host-pdfviewer-find.sh（plain と ASan）。
 - 未実施: QEMU・実機の回帰（WS の最後に T1 へ、Q1 経由）、plan/ws079/tests/run-pdfviewer-host.sh（build/ws079-p006-host/notes.pdf が要る）。
 
 ## 結果

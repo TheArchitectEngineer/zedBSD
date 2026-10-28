@@ -24,10 +24,10 @@ log からは 1 と 2 を分けられない。この Phase は分けるための
 
 ## 受け入れの条件
 
-1. K-D: rpi4 と amd64 の vmunix が warning 0。`kern.perf=1` の無い boot では動作が今と同じ（測る所は全部 `sched_perf_active` の 0 で素通り）。host 試験 `plan/ws213/tests/kd-host-test.sh` PASS（plain と ASan+UBSan）。
+1. K-D: rpi4 と amd64 の vmunix が warning 0。`kern.perf=1` の無い boot では動作が今と同じ（測る所は全部 `sched_perf_active` の 0 で素通り）。host 試験 `plan/tools/latency/kd-host-test.sh` PASS（plain と ASan+UBSan）。
 2. K-D の Pi の 1 boot（焼き直しの後、BUG-294 で今は root の UFS が書けない）で、`KWL CURSOR_LAG` の 17ms 超えの行ごとに、下の「読み方」で原因を 1・2・両方・どちらでもない に分けた表を作る（Q1 かユーザーの手で）。
 3. K-1・K-2 の設計が design-reviewer を通る（Q1）。実装は別の Phase（K-D の結果で要る方だけ）。
-4. K2-1・K2-8・KD-1・K-2 (b): rpi4 と amd64 の vmunix が warning 0。host 試験 `plan/ws213/tests/lock-host-test.sh`・`pin-host-test.sh`・`kd-host-test.sh` が PASS（plain と ASan+UBSan）。T1 の amd64 の boot の回帰（下の「T1 で見る点」）が PASS。
+4. K2-1・K2-8・KD-1・K-2 (b): rpi4 と amd64 の vmunix が warning 0。host 試験 `plan/tools/kernel-lock/lock-host-test.sh`・`pin-host-test.sh`・`kd-host-test.sh` が PASS（plain と ASan+UBSan）。T1 の amd64 の boot の回帰（下の「T1 で見る点」）が PASS。
 
 ## review-1 の対応（2026-10-12）
 
@@ -111,7 +111,7 @@ make BUILD=build/<自分の dir> -o <絶対 path>/build/arm64/sysroot/.zedbsd-sy
 ### 確かめた事
 
 - build（warning 0）: rpi4 `make -o /home/awe/zedBSD-worktrees/p9/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix`（`arm64 vmunix check: PASS`）、amd64 `make -o .../build/amd64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-amd64.mk build/amd64/vmunix`（`amd64 vmunix check: PASS`）、rpi4 + `-DSCHED_WAKE_LATENCY=1`（上）。`kern: perf at_ms` の文字列が rpi4 の vmunix に入り、`vm_metadata_enter` が関数のまま残る（LTO で inline されない）ことを `llvm-nm` で確かめた。
-- host: `sh plan/ws213/tests/kd-host-test.sh` → `kd-host-test: PASS`（plain と ASan+UBSan）。`sched.c`・`vm.c` から関数を切り出し、本物の `struct thread`・`struct process` と偽の counter・tick・mutex で: woken の待ちと ahead、preempted を別に、同じ優先度の残りは dropped・低い優先度は数えない、自分への切り替えは数えない、steal の ahead -1、CPU をまたぐ最長の合わせ、消した印は測らない、3GHz の 1 時間でも溢れない換算、metadata の takes・waits・待ちの最長と呼び出し元・持ちの最長と switched・持たれている時は窓を次へ残す。dropped の数えを消す変異で FAIL になることを確かめた。
+- host: `sh plan/tools/latency/kd-host-test.sh` → `kd-host-test: PASS`（plain と ASan+UBSan）。`sched.c`・`vm.c` から関数を切り出し、本物の `struct thread`・`struct process` と偽の counter・tick・mutex で: woken の待ちと ahead、preempted を別に、同じ優先度の残りは dropped・低い優先度は数えない、自分への切り替えは数えない、steal の ahead -1、CPU をまたぐ最長の合わせ、消した印は測らない、3GHz の 1 時間でも溢れない換算、metadata の takes・waits・待ちの最長と呼び出し元・持ちの最長と switched・持たれている時は窓を次へ残す。dropped の数えを消す変異で FAIL になることを確かめた。
 - sched・vm の既存の host 試験は tree に無かった（`git grep` で `src/kern/sched.c`・`vm.c`・`lock.c` を build する試験は無い。`plan/ws073/tests/region-index-host.sh` は vmspace の region の索引で無関係、かつ host の rm を含むので走らせていない）。
 - 未実施: QEMU・実機（Pi は焼き直しの後、`kern.perf=1` を足した 1 boot）。T1 には頼んでいない（`kern.perf=1` の無い boot は動作が同じで、有効にした時の確認は Pi で行う。amd64 の起動の回帰を見るなら T1 の boot-test 1 回）。
 
@@ -125,7 +125,7 @@ commit: 874b5f935（K2-1・K2-8、`lock-host-test.sh`、review-1.md）、a30ce8e
 - 副作用の違い: 今までは忙しく回る間に `waitq_sleep` が stop の要求で `thread->stop_interrupted = 1` を立て得た（`mutex_lock` 自体は取るまで回るので、system call は EINTR を返さず、印だけが残る）。割り込み不可の眠りはこの印を立てない。stop・signal は今どおり user へ戻る点で扱われる。
 - 起床の持ち去り（実装中に見つけた既存の欠陥、同じ関数）: release で起こされた割り込み可能な待ち手が、起きた後の terminate・cancel・stop の確かめ（`waitq.c:183-193`）で EINTR を返すと、release の起床を持ったまま抜ける。lock は FREE か、FREE から CAS で取った thread（その release は誰も起こさない）が持ち、他の待ち手は眠ったまま残る。`mutex_sleep_take` が EINTR で抜ける時、待ち行列が空でなければ 1 つ起こす（`mutex_sleep_give_up`）。起きた待ち手は lock を取るか、CONTENDED に戻して眠り直す（余分な起床は無害）。K2-1 で割り込み不可の待ち手（signal でも起きない）が増えるので、この直しが要る。
 - K2-8: `mutex_spin_take` は `hal_cpu_count() <= 1` なら 1 回だけ見て（FREE なら取る）、`hal_atomic_relax` で回らない。多 CPU は今と同じ 256 回の見直し（relax は見直しの間だけになり 257 → 256 回）。
-- host 試験 `plan/ws213/tests/lock-host-test.sh`: `lock.c` の mutex の関数を切り出し、本物の `struct mutex`・`struct thread` と偽の waitq（signal の保留中の割り込み可能な眠りは眠らずに EINTR、他の眠りは持ち主の本物の `mutex_unlock` を走らせて起こす）・偽の CPU 数で: signal の保留中の `mutex_lock` が割り込み不可で 1 回眠って取る（EINTR の繰り返し 0）、1 CPU で relax 0 回・4 CPU で 256 回、FREE は guard・眠り無しで取る、割り込み可能な形は今どおり EINTR、EINTR で抜けた待ち手が次の待ち手を 1 つ起こす・誰もいなければ起こさない。旧 `lock.c` では 10 項目が FAIL（忙しい回りは 50 回で偽の持ち主が放して止まる）。
+- host 試験 `plan/tools/kernel-lock/lock-host-test.sh`: `lock.c` の mutex の関数を切り出し、本物の `struct mutex`・`struct thread` と偽の waitq（signal の保留中の割り込み可能な眠りは眠らずに EINTR、他の眠りは持ち主の本物の `mutex_unlock` を走らせて起こす）・偽の CPU 数で: signal の保留中の `mutex_lock` が割り込み不可で 1 回眠って取る（EINTR の繰り返し 0）、1 CPU で relax 0 回・4 CPU で 256 回、FREE は guard・眠り無しで取る、割り込み可能な形は今どおり EINTR、EINTR で抜けた待ち手が次の待ち手を 1 つ起こす・誰もいなければ起こさない。旧 `lock.c` では 10 項目が FAIL（忙しい回りは 50 回で偽の持ち主が放して止まる）。
 
 ### KD-1（`src/kern/sched.c`）
 
@@ -139,7 +139,7 @@ commit: 874b5f935（K2-1・K2-8、`lock-host-test.sh`、review-1.md）、a30ce8e
 - `copyin`・`copyout`: `user_range_check` を外した（同じ確かめを pin が locks の下で行う）。返す errno は今と同じ（destination・source が NULL は EFAULT、範囲は EFAULT、ENOMEM は ENOMEM）。
 - metadata の入り（準備済みの時）: 4 page 以下の copyin・copyout は **1 回**（今は 1 ＋ N ＋ 1）、それより長い写しは 2 回（確かめと pin）。準備の無い時は 1 ＋（fault する page ごとに 1）＋ 1。exec・elf・ptrace の `vmspace_copy_to`・`vmspace_copy_from` も同じ道を通る。
 - 持つ時間: 大きな pin（GPU の import の 512 page）は、locks の下の walk が 2 回から 3 回（準備・validate・pin）になる。K-D の `hold max_us` の `at` が `vmspace_pin_user_pages` なら見る。
-- host 試験 `plan/ws213/tests/pin-host-test.sh`: `copyin`・`copyout` と `copy_backing`・pin・範囲の確かめ・準備の確かめを切り出し、本物の `struct vmspace`・`vm_region`・`vm_page` と偽の fault・backing・数える metadata lock で: 準備済みの 2 page は入り 1 回・fault 0・byte が届く、後半が無い範囲・後半が読み取りだけの copyout は fault 0・書き込み無しで EFAULT、準備の無い 3 page は 3 回 fault して写す、6 page は入り 2 回・確保 1 回、6 page の後に無い範囲は確保 0・fault 0 で EFAULT、COW の page は 1 回 fault して写す、fault が準備にしない page は 1 回の fault の後に pin される（fault の繰り返しは 100 回で FAIL）、fault の ENOMEM は ENOMEM。変異（stack の配列を使わない、範囲の確かめを最初の回で飛ばす（旧の順）、fault の直後も準備を確かめる）がそれぞれ FAIL になることを確かめた。
+- host 試験 `plan/tools/kernel-lock/pin-host-test.sh`: `copyin`・`copyout` と `copy_backing`・pin・範囲の確かめ・準備の確かめを切り出し、本物の `struct vmspace`・`vm_region`・`vm_page` と偽の fault・backing・数える metadata lock で: 準備済みの 2 page は入り 1 回・fault 0・byte が届く、後半が無い範囲・後半が読み取りだけの copyout は fault 0・書き込み無しで EFAULT、準備の無い 3 page は 3 回 fault して写す、6 page は入り 2 回・確保 1 回、6 page の後に無い範囲は確保 0・fault 0 で EFAULT、COW の page は 1 回 fault して写す、fault が準備にしない page は 1 回の fault の後に pin される（fault の繰り返しは 100 回で FAIL）、fault の ENOMEM は ENOMEM。変異（stack の配列を使わない、範囲の確かめを最初の回で飛ばす（旧の順）、fault の直後も準備を確かめる）がそれぞれ FAIL になることを確かめた。
 
 ### 確かめた事
 
@@ -189,7 +189,7 @@ WS208 p007 の全部入りの kernel（`p29-kernel.elf`）で、使っている�
 ### 試験
 
 - `plan/ws213/tests/current-host-test.sh`（新）: `running_task`・`hal_task_get_current` を切り出し、本物の pthread の 2 task を 2 つの模擬 CPU に置き、scheduler の thread が両方の割り込みが開いている時だけ 2 task の CPU を入れ替える。`hal_task_get_current()` が常に自分を返すこと。旧 `task.c` では `121913 moves, 266999 wrong answers` で FAIL、直した後は PASS（plain と TSan）。
-- `plan/ws213/tests/pin-host-test.sh`（足した）: 偽の metadata lock・`vm->lock` を持ち主を覚える本物の pthread の mutex にし、持ち主でない release・二重の取り・順序（metadata が先）・lock を持ったままの fault を違反として数える。pthread の 3 つの copy（4 page 以下 2 つ、6 page 1 つ）と、locks の下で page を外す・COW にする・2 つ目の region を外して戻す thread を同時に走らせる。違反 0・copy の byte が読み戻せる・pin が全部戻ることを確かめる（plain、ASan+UBSan、TSan で PASS）。`vmspace_pin_user_pages` の `mutex_lock(&vm->lock)` を消す変異で FAIL（`vm->lock released by a thread that does not hold it`）。この試験は直す前の kernel の source でも PASS する（K-2 (b) の locks は正しく、原因は HAL）。
+- `plan/tools/kernel-lock/pin-host-test.sh`（足した）: 偽の metadata lock・`vm->lock` を持ち主を覚える本物の pthread の mutex にし、持ち主でない release・二重の取り・順序（metadata が先）・lock を持ったままの fault を違反として数える。pthread の 3 つの copy（4 page 以下 2 つ、6 page 1 つ）と、locks の下で page を外す・COW にする・2 つ目の region を外して戻す thread を同時に走らせる。違反 0・copy の byte が読み戻せる・pin が全部戻ることを確かめる（plain、ASan+UBSan、TSan で PASS）。`vmspace_pin_user_pages` の `mutex_lock(&vm->lock)` を消す変異で FAIL（`vm->lock released by a thread that does not hold it`）。この試験は直す前の kernel の source でも PASS する（K-2 (b) の locks は正しく、原因は HAL）。
 - `lock-host-test.sh`・`kd-host-test.sh` PASS。
 - build（warning 0）: rpi4 `make -o /home/awe/zedBSD-worktrees/p9/build/arm64/sysroot/.zedbsd-sysroot-complete ZEDBSD_CONFIG=config/ci/config-rpi4.mk build/arm64/vmunix`（`arm64 vmunix check: PASS`）、amd64 同じく `config-amd64.mk`（`amd64 vmunix check: PASS`）。
 - 未実施: Pi 4（4 core）での確かめ（Q1 が vmunix を置く）、T1 の amd64 の boot。

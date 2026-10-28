@@ -38,7 +38,7 @@ done
 set -- $(cat "$out/server/ports")
 status=0
 SSL_CERT_FILE=/nonexistent timeout 60 "$out/host-mail-n2" "$2" "$4" "$out/home" || status=1
-# The view, with libkeiland's widgets (as plan/ws169/tests/run-host-mailer.sh builds it).
+# The view, with libkeiland's widgets (as plan/tools/mail/run-host-mailer.sh builds it).
 mkdir -p "$out/inc/keiland" "$out/inc/truetype"
 cp userland/desktop/include/truetype/truetype.h "$out/inc/truetype/"
 cp userland/desktop/include/keiland/keiland.h "$out/inc/keiland/"

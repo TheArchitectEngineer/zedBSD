@@ -8,7 +8,7 @@ Phase の ID は Master の next から Q1 が割り当てる。ここでは仮�
 
 - kernel の driver: firmware の起動、render node、kernel の自己試験（compute check、render check の terminate-state → 三角形 → transfer → job check）が全部 ok。
 - userland: gpu-selftest は 13 ok / 0 fail / 0 skip。kernel・node・vkcompute（128 workgroup）・image・clear・copy・draw・sample・depth・present-clear・present が ok。HDMI に vkdemo の cube の animation を出した。
-- 原因と直しの要約は [phase010q](phase010q/phase.md) の先頭。
+- 原因と直しの要約は phase010q（`fb1f6afee` の `plan/ws269/phase010q/phase.md`） の先頭。
 
 ## (1) 完了の条件（ws.md）のうち未達の項目
 

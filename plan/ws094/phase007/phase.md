@@ -37,7 +37,7 @@ format・style・build・試験を流し、範囲の中の違反を直す。新�
    ```
    sh plan/ws102/tests/build-inset-image.sh build/ws094-p007-inset > build/ws094-p007/inset-build.log 2>&1; echo "exit=$?"
    grep -E ':[0-9]+:[0-9]+: warning:' build/ws094-p007/inset-build.log | grep -vE '/packages/|^\.\./src/|userland/base/noct/noct/' | wc -l
-   sh plan/ws094/tests/host-desktop.sh; sh plan/ws094/tests/host-thumb.sh build/ws094-p007/host-thumb; sh plan/tools/files/host-model.sh; sh plan/tools/imageview/run-host.sh
+   sh plan/tools/files-desktop/host-desktop.sh; sh plan/ws094/tests/host-thumb.sh build/ws094-p007/host-thumb; sh plan/tools/files/host-model.sh; sh plan/tools/imageview/run-host.sh
    sh plan/ws094/tests/build-probe.sh build/ws094-p007-inset
    ```
    guest（guide.md §5.3、`<W>` = `ws094-p007`）: `files-desktop-guest.sh` の `install show watch input saved`・`install show menu`・`install show drag`・

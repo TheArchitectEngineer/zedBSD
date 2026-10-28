@@ -96,7 +96,7 @@ Queue: P3（2026-10-12 Q1 の割り当て）
 
 - `plan/ws211/tests/damage-host-test.sh`: PASS（p008 の 9 件、2 窓の commit が 2 つの四角、四角の規則 8 件、乱数の 2000 組で「4 つ以内・重ならない・足した四角はどれか 1 つに入る」）。
 - `plan/ws211/tests/native-pass-boxes-host-test.sh`: PASS（800x480 で箱なし 104、時計とセルで 6 supertile、含まれる箱・共有する tile は 1 度、狭い長方形、範囲外・逆・多すぎる箱の拒否、1920x1080 の 2×2 の group で 135 と 5、copy の pass、`bcm2711_native_pass_tiles` 6・20・510）。
-- 既存: `plan/ws141/tests/native-pass-host-test.sh` PASS（XML の oracle）、`plan/ws141/tests/vulkan-device-host-test.sh` PASS（v3d-memory.c を含む）、`plan/ws213/tests/list-replay-host-test.sh` PASS、`plan/ws211/tests/batch-host-test.sh`・`bind-host-test.sh` PASS。
+- 既存: `plan/ws141/tests/native-pass-host-test.sh` PASS（XML の oracle）、`plan/ws141/tests/vulkan-device-host-test.sh` PASS（v3d-memory.c を含む）、`plan/tools/compositor/list-replay-host-test.sh` PASS、`plan/ws211/tests/batch-host-test.sh`・`bind-host-test.sh` PASS。
 - build（main 0ebd1eef3 を merge した agent/p3 dbb54a207）: rpi4 の `build/arm64/bin/wayland` と `build/arm64/vmunix`（`-o <worktree>/build/arm64/sysroot/.zedbsd-sysroot-complete`）で warning 0。amd64・Linux・FreeBSD の build は未実施。
 
 ### Pi（place24、未実施）

@@ -7,7 +7,7 @@
 
 /*
  * ws128-p004: libpdf's page text (pdf_page_text_open) on the WS175
- * samples (plan/ws175/tests/make-edit-samples.py): edit-basic.pdf's
+ * samples (plan/tools/aat/make-edit-samples.py): edit-basic.pdf's
  * paragraph in a subset TrueType font and its /Rotate 90 page, and
  * edit-images.pdf's lines in Helvetica.  Checks the characters, the line
  * ends, the space made between two strings apart, and the corners.

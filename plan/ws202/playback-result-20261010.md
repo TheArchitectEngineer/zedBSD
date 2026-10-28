@@ -1,6 +1,6 @@
 # WS202: native再生のsoftware実装・検証結果（2026-10-10）
 
-> main統合追記: [最新の統合記録](main-integration-20261010.md)。以下の独立worktree時点の未merge/未実装/pendingは履歴。標準readbackの旧offline p016は[ws202-p017](phase017/phase.md)へmapping修復し、mainのp016（ref-list）を維持した。
+> main統合追記: [最新の統合記録](main-integration-20261010.md)。以下の独立worktree時点の未merge/未実装/pendingは履歴。標準readbackの旧offline p016はws202-p017（fb1f6afee の plan/ws202/phase017/phase.md）へmapping修復し、mainのp016（ref-list）を維持した。
 
 Event: `ws202-native-playback-software-20261010`。Owner: 独立Codex session、worktree `.claude/worktrees/ws202-codex`、branch `codex/ws202-native-media`。承認は[policyのcodex-ws202-playback](policy-20261010.md#自走の実行承認-codex-ws202-playback)。main/共有計画/他WS/同期/toolchainを変更していない。実装commitと統合patchは[Q1 handoff](handoff-20261010.md)の最新追記。
 
@@ -43,7 +43,7 @@ Event: `ws202-native-playback-software-20261010`。Owner: 独立Codex session、
 - MP4のpasp、colr nclx/nclc、edit-list end_us、cttsなしflagをtrack末尾に追加。既存track prefixは保持、内部library/appを一緒にrebuild。
 - Video Playerはcodec/backend別OPEN、SAR fit、seek trim、runtime failure notice、pause/end/closeのFRAMES/time_ms/late。ENDは音ringの消費を待つ。Musicもnative backend log・seek preroll/trim・失敗通知を実装。
 - `userland/tests/media-probe/`は実際のlibmedia.soだけをlink。visible CPU NV12のPTS/SHA-256、48kHz stereo PCMの1024frame RMS、seek、同時2decoder、open/総処理時間を提供。参照の未消費末尾と空outputはfailure。GPU実行時間とtransfer時間を別々に測ったとは称さない。
-- 新probeのpackage/amd64のlibmedia link recipeとimage選択を追加。英語利用者文書は`docs/reference/media-playback.md`。source-ownedの2秒fixtureと12秒open GOP UAT/参照を[tests/streams](tests/streams/README.md)へ保存。
+- 新probeのpackage/amd64のlibmedia link recipeとimage選択を追加。英語利用者文書は`docs/reference/media-playback.md`。source-ownedの2秒fixtureと12秒open GOP UAT/参照をtests/streams（fb1f6afee の plan/ws202/tests/streams/README.md）へ保存。
 
 ## 最終確認（2026-10-10 JST）
 

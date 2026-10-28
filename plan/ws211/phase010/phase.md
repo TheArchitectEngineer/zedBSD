@@ -110,7 +110,7 @@ Queue: P4（2026-10-12 ユーザー「ぜんぶやりましょう。」、Q1 の
 - **f3c506c85（WS141 の試験、Q1 の許可）**: `plan/ws141/tests/vulkan-device-host-test.sh` は main で既に link できなかった（`vulkan_content_note_image`）。今回 `kern_rtc_read_counter` も要るので、stub を `plan/ws141/tests/vulkan-device-link-stubs.c` に置き、script の cc の行に足した。
 - **af2dd3887（compositor）**: `compose.c` の `compose_replay_commands` は、host image の copy が 0 個のコマで copy_command の Begin・End をしない（往復 2 回減る。`compose_op_run` は前から frame_copies が 0 なら command だけを送っている）。render thread の各段の時間を `kwl_render_outcome`（`render-thread.h`、5 つの値と copied）に入れ、main が `KWL PERF rec frames= copied= begin= encode= end= submit= present= | max end= submit= present=`（ms、5 秒の窓）を出す（`kwl.h`・`main.c`）。
   - あわせて `plan/ws211/tests/anim-host-test.c` の link の壊れ（ws213-p004 の `kwl_compose_want_layer` の stub が無い、main で既に FAIL）を直した。
-- **c8fbd678a（ws213 の試験）**: P3 の p009 で `kwl_scene_copy` に `restore` が増えたので、`plan/ws213/tests/list-replay-host-test.c` の 2 か所を直した（golden は同じ）。
+- **c8fbd678a（ws213 の試験）**: P3 の p009 で `kwl_scene_copy` に `restore` が増えたので、`plan/tools/compositor/list-replay-host-test.c` の 2 か所を直した（golden は同じ）。
 
 ## 4. 確かめ（2026-10-12 P4、host）
 

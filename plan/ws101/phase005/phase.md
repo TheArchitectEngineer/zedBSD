@@ -25,9 +25,9 @@ draw の側の変更（storage を持つ draw の `transfer_pending`、range の
 | `src/drivers/gpu/i915/tests/render/README.md` | suite の表と生成の手順に vkcs |
 | `platform/amd64/vmunix.mk` | 試験の source の一覧に `tests/render/compute.c` |
 | `src/drivers/gpu/i915/render/draw.c` | scratch の確保の log に compute の部分（大きさ・id 数・offset） |
-| `plan/ws101/tests/hw/run-hw.sh`（新） | 場面の image を lock の外で build し、`test-hw.sh` で順に走らせる。この Phase で走らせた `build/ws101-p005/run-hw.sh` を一般化したもの（この形では未実行） |
+| `plan/tools/gpu-compute/hw/run-hw.sh`（新） | 場面の image を lock の外で build し、`test-hw.sh` で順に走らせる。この Phase で走らせた `build/ws101-p005/run-hw.sh` を一般化したもの（この形では未実行） |
 
-## 確認（実機 = 5330 の QEMU passthrough。`plan/ws075/tests/test-hw.sh`、`flock /tmp/i915-hw.lock` の下、image は lock の外で先に build）
+## 確認（実機 = 5330 の QEMU passthrough。`plan/tools/i915-hw/test-hw.sh`、`flock /tmp/i915-hw.lock` の下、image は lock の外で先に build）
 
 | 確認 | 結果 |
 | --- | --- |
@@ -36,7 +36,7 @@ draw の側の変更（storage を持つ draw の `transfer_pending`、range の
 | `test-hw.sh vkcs`（r1） | verdict PASS（9 of 9）。ONE・ADD・ID・ODD・PUSH・ATOMIC-SSBO・MIXED・MANYOPS・SPILL。`hw-vkcs-r1` |
 | `test-hw.sh vkcs`（r2、最終の tree。draw.c の log の変更を含む） | verdict PASS（9 of 9）。scratch の log: `compute 2048 for 768 ids at +0x1000`（1576960 bytes = 0x1000 + 2048 × 768）。`hw-vkcs-r2` |
 | compute pipeline の出来（r1 の log） | ONE 384 bytes 1 thread right mask 0x1、ADD 8 thread、ID 3 thread、ODD 2 thread right mask 0x7f、PUSH cross-thread 6、ATOMIC 2816 bytes、MIXED 3696 bytes、INC 736 bytes、SPILL 36352 bytes r95 scratch 2048 |
-| `plan/ws101/tests/host/run.sh` | PASS（p002〜p004 の host の試験。draw.c の log の変更の後） |
+| `plan/tools/gpu-compute/host/run.sh` | PASS（p002〜p004 の host の試験。draw.c の log の変更の後） |
 | host の compile（`compute-dump` と Mesa の brw_disasm/brw_asm で vkcs の 9 kernel） | 全 kernel が compile、disassembler が全命令を受け、組み直しが同じ bytes。SPILL は scratch 2048（-O）、ほかは 0 |
 | vkcs の場面の kernel の flag での compile | warning 0（`-Wall -Wextra -Werror`、`-Wframe-larger-than=8192`） |
 | `git diff --check` | OK |

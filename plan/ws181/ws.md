@@ -2,55 +2,69 @@
 
 # WS181: 窓の docked・floating・最小化の状態、App Home の独立のモード、gesture、整列のメニューと整列モード（UAT 2026-10-07）
 
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p010 cleared、p011 は 2026-10-13 ユーザー（AskUserQuestion）「今の動きで OK」で cleared、p012 は T1-559・T1-560 PASS と実機の感触の UAT（2026-10-13 ユーザー「UATの結果待ちのものは…clearedに」））。旧: incomplete（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p011 はユーザーの返事待ちで保留。2026-10-08 q910 P2 の照合: p001〜p010 は cleared（表を直した）、p011 は T1-462 の log PASS で PNG をユーザーが見た後…
-Master: [master](../master.md)
+<!-- awesome-plan-current:start -->
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p010 cleared、p011 は 2026-10-13 ユーザー（AskUserQuestion）「今の動きで OK」、p012 は T1-559・T1-560 PASS と実機の感触の UAT（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」））
+Completed: 2026-10-27（q1608 の精査）
 Primary Milestone: MG006
+Related Milestones: なし
+Objectives: —
+Parent: [Master](../master.md)
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
+<!-- awesome-plan-current:end -->
 
-## 由来（ユーザー、2026-10-07、原文）
+## 目標
 
-> UATフィードバックです。挙動の調整です。
-> ・ドックされたウィンドウをフローティング化したとき、ほかのウィンドウはすべてフローティングであってほしいです。現状ではバックグラウンドのウィンドウがドックされているケースが存在して、そのバックグラウンドウィンドウに切り替えると、動作がinconsistentになっているようで、くりっくされるとフローティング化するように見えました。
-> ・ウィンドウをドックしたとき、他のウィンドウは表示されなくなりますよね。そのあと、ドックされたウィンドウを閉じたとき、ほかのウィンドウはフローティング状態で表示されるのがいいと思います。もちろん、明示的に最小化したウィンドウは区別して、最小化のままで表示しないのがいいと思います。ドッキングで他のウィンドウが非表示になったときの非表示と、最小化で明示的に行った非表示は、状態として分けて考えるのがいいですね。
-> ・App Homeが、ホーム画面というよりもエスケープメニューみたいに感じてしまいます。ウィンドウを端に寄せてチラ見せしているのをやめて、完全に独立したモードにしたいです。また、画面下端からのスワイプアップでホーム画面へ、画面上端からのスワイプダウンでウィンドウ一覧へ、さらにドックバーを触ってからのドラッグでフローティング化とそのまま連続してウィンドウ移動、という遷移にしたいです。
-> ・さらに、仮想デスクトップ切り替えのスイッチがドックバーにありますよね。ここをタップすると、ウィンドウ整列のメニューが表示されたらうれしいです。水平に等分するように整列、垂直に等分するように整列、右に1つと左に垂直分割で整列、みたいな感じです。整列と書いたのは、どのアプリをどこに整列するかを、今のウィンドウ位置から大まかに選べたらいいなと思ったからです。また、整列モードという状態を導入して、整列モードでウィンドウタイトルバーをドラッグすると、他の整列枠のウィンドウと、整列の位置を入れ替えられるのがいいと思います。整列モードで、どれかのウィンドウタイトルバーをダブルクリックするか、ドックバーにドラッグすると、最大化されて、整列モードは終わります。最大化モードが終わったとき、整列モードではないふつうのフローティングモードになっており、わざわざ整列の解除手順を学ばなくてもよい仕組みにしたいです。
+1. docked の窓を floating にした時、他の窓もすべて floating（裏に docked の窓が残らない）。
+2. docked で他の窓が隠れた「docking の隠れ」と明示の「最小化」を別の状態にする。docked の窓を閉じたら docking で隠れた窓は floating で戻り、最小化の窓は最小化のまま。
+3. App Home を、窓を端に寄せて覗かせる形でなく、完全に独立した home の画面にする。
+4. gesture: 下端から上へ swipe → home、上端から下へ swipe → 窓の一覧、dock の bar を触ってから drag → floating にしてそのまま窓を動かす。
+5. dock の bar の仮想 desktop の switch を tap → 整列のメニュー（水平・垂直の等分、片側 1 つと縦の分割、格子など）。
+6. 整列モード: title bar の drag で枠の窓を入れ替え、double click か dock の bar への drag で最大化して整列モードを終える。最大化が終わると普通の floating。
 
-## 目標（整理）
+## ユーザーの決定
 
-1. **docked から floating へ**: docked の窓を floating にした時、他の窓もすべて floating（裏に docked の窓が残らない）。
-2. **隠れの 2 つの状態**: docked で他の窓が隠れた「docking の隠れ」と、明示の「最小化」を別の状態にする。docked の窓を閉じたら、docking で隠れた窓は floating で表示に戻り、最小化の窓は最小化のまま。
-3. **App Home を独立のモードに**: 窓を端に寄せて覗かせるのをやめ、完全に独立した home の画面にする。
-4. **gesture の遷移**: 画面の下端から上へ swipe → home、上端から下へ swipe → 窓の一覧、dock の bar を触ってから drag → floating にしてそのまま窓を動かす。
-5. **整列のメニュー**: dock の bar の仮想 desktop の切り替えの switch を tap → 整列のメニュー（水平に等分、垂直に等分、右に 1 つと左に縦の分割、など）。どの app をどの枠にするかは今の窓の位置から大まかに決める。
-6. **整列モード**: 整列モードで title bar を drag すると、他の枠の窓と位置を入れ替える。整列モードで title bar の double click か dock の bar への drag → その窓が最大化され整列モードは終わる。最大化が終わると普通の floating（整列の解除の手順は要らない）。
+- 2026-10-07（由来、UAT フィードバック、原文）
+  > UATフィードバックです。挙動の調整です。
+  > ・ドックされたウィンドウをフローティング化したとき、ほかのウィンドウはすべてフローティングであってほしいです。現状ではバックグラウンドのウィンドウがドックされているケースが存在して、そのバックグラウンドウィンドウに切り替えると、動作がinconsistentになっているようで、くりっくされるとフローティング化するように見えました。
+  > ・ウィンドウをドックしたとき、他のウィンドウは表示されなくなりますよね。そのあと、ドックされたウィンドウを閉じたとき、ほかのウィンドウはフローティング状態で表示されるのがいいと思います。もちろん、明示的に最小化したウィンドウは区別して、最小化のままで表示しないのがいいと思います。ドッキングで他のウィンドウが非表示になったときの非表示と、最小化で明示的に行った非表示は、状態として分けて考えるのがいいですね。
+  > ・App Homeが、ホーム画面というよりもエスケープメニューみたいに感じてしまいます。ウィンドウを端に寄せてチラ見せしているのをやめて、完全に独立したモードにしたいです。また、画面下端からのスワイプアップでホーム画面へ、画面上端からのスワイプダウンでウィンドウ一覧へ、さらにドックバーを触ってからのドラッグでフローティング化とそのまま連続してウィンドウ移動、という遷移にしたいです。
+  > ・さらに、仮想デスクトップ切り替えのスイッチがドックバーにありますよね。ここをタップすると、ウィンドウ整列のメニューが表示されたらうれしいです。水平に等分するように整列、垂直に等分するように整列、右に1つと左に垂直分割で整列、みたいな感じです。整列と書いたのは、どのアプリをどこに整列するかを、今のウィンドウ位置から大まかに選べたらいいなと思ったからです。また、整列モードという状態を導入して、整列モードでウィンドウタイトルバーをドラッグすると、他の整列枠のウィンドウと、整列の位置を入れ替えられるのがいいと思います。整列モードで、どれかのウィンドウタイトルバーをダブルクリックするか、ドックバーにドラッグすると、最大化されて、整列モードは終わります。最大化モードが終わったとき、整列モードではないふつうのフローティングモードになっており、わざわざ整列の解除手順を学ばなくてもよい仕組みにしたいです。
+- 2026-10-07（クリック）段と優先: ベータ2、UAT として優先。整列のメニューの形は全部（水平に等分、垂直に等分、右に 1 つと左に縦の分割、左に 1 つと右に縦の分割（「左に1つ、右に縦分割も。」）、格子）。
+- 2026-10-08「では、Alt+Shift+左右で仮想デスクトップ移動、ではどうですか？」（p010）
+- 2026-10-08 夜（UAT）「ドックバーの仮想デスクトップのislandなのですが、使ってみたところ、やっぱりdockバーの中央がいい気がしました。ただ、dockingしたときは、今の位置にするのがいいと思います。試作の繰り返しで申し訳なく思いますが、通常優先度でスケジューリングしておいて、あとで見せてください！」（p011）
+- 2026-10-13（AskUserQuestion、p011）「今の動きで OK」
+- 2026-10-13（p012、原文）「タッチパネルの下端からスワイプするとApp Homeが出ますが、トラックパッドの下端からスワイプするとウィンドウ一覧が出ますね。トラックパッドの下端からスワイプすると、App Homeが出るようにしてください。同様に、トラックパッドの上端からスワイプすると、App Homeが出ているので、これはウィンドウ一覧に変更してください。」「・トラックパッドも下へ払って閉じる形に変えます。」「・App Homeで、ページ送りに必要なスワイプ量を半分にしてほしいです。」
+- 2026-10-13「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」
 
-## 決定（2026-10-07 ユーザー、クリック）
+## 結果
 
-- 段と優先: ベータ2、UAT として優先（P2 が hardware より先に）。
-- 整列のメニューの形（全部）: 水平に等分（左右に並べる）、垂直に等分（上下に並べる）、右に 1 つと左に縦の分割、左に 1 つと右に縦の分割（ユーザーの追加「左に1つ、右に縦分割も。」）、格子（2×2 など）。
+- compositor に窓の状態の機械（floating・docked・docking の隠れ・最小化・整列）、独立の App Home（時計・下寄せ・page、3 つの仮想 desktop）、端の gesture（touch panel と touchpad）、整列のメニュー（glass の 7 つの形の grid、pill から広がる開き方）と整列モード、Alt+Shift+左右の仮想 desktop の移動、bar の中央の仮想 desktop の island を入れた。
+- QEMU: T1-342・345・346・347・349・359・362・391・559・560 で ws181-guest.sh ほかが PASS、Q1 が PNG を目視。実機の感触はユーザーの UAT（2026-10-13）。
 
-## Phase（案）
+## 制限・移管
 
-| Phase | 内容 | Status |
+- p012 の 3 回目（App Home の page の送りの量を touch panel・mouse で幅 / 8 に）の QEMU（T1）は未実施。touchpad の送りの量は変えていない（P4 が出した案 (a)(b) への答えの記録は無い）。
+- 規約の全文の見直しは WS の外の一括の見直しへ（2026-10-08 ユーザー「規約の整形（各 WS の全文規約の Phase）はベータ3」）。
+- 関連: ws142（app の切り替え・gesture）、[WS099](../ws099/ws.md)（compositor）、`docs/architecture/keiland.md` の Desktop modes。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
 | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（窓の状態の機械: floating・docked・docking の隠れ・最小化・整列、App Home の独立のモード、gesture、整列のメニューと整列モード）、design-reviewer 2 回 | cleared（2026-10-07 Q1） |
-| [p002](phase002/phase.md) | 状態（目標 1・2） | cleared（2026-10-07 Q1 の判定: T1-342 で ws181-guest.sh status 0（A1〜C12）・p010-guest.sh・zdesktop-p013-touch.sh・zdesktop-p010.sh・zdesktop-p065.sh P…）（2026-10-08 q910 P2 の照合で phase.md に合わせた。旧: in-progress（実装済み、QEMU 待ち）） |
-| [p003](phase003/phase.md) | App Home の独立のモードと gesture（目標 3・4） | cleared（2026-10-07 Q1 の判定: T1-342 で ws181-guest.sh status 0（A1〜C12）・p010-guest.sh・zdesktop-p013-touch.sh・zdesktop-p010.sh・zdesktop-p065.sh P…）（2026-10-08 q910 P2 の照合で phase.md に合わせた。旧: in-progress（実装済み、QEMU 待ち）） |
-| [p004](phase004/phase.md) | 整列のメニューと整列モード（目標 5・6） | cleared（2026-10-07 Q1 の判定: T1-342 で ws181-guest.sh status 0（A1〜C12）・p010-guest.sh・zdesktop-p013-touch.sh・zdesktop-p010.sh・zdesktop-p065.sh P…）（2026-10-08 q910 P2 の照合で phase.md に合わせた。旧: in-progress（実装済み、QEMU 待ち）） |
-| [p005](phase005/phase.md) | UAT 2026-10-07 の 2 回目: App Home の上の bar（status と時計だけ白）、整列のメニュー（絵だけ・今の desktop・glass）、pill（印を外す・capsule 半分・点を正円）、整列の適用で窓が枠の大きさにならない件 | cleared（2026-10-07 Q1 の判定: T1-345 で ws181-guest.sh status 0（arranged-size を含む）、Q1 が PNG を目視: App Home の上は bar 無しで status と時計だけ白、整列のメニューは 5 つ…）（2026-10-08 q910 P2 の照合で phase.md に合わせた。旧: in-progress（実装・host まで、QEMU は T1）） |
-| [p006](phase006/phase.md) | UAT 2026-10-07 の 3 回目: 整列のメニューの大きな grid（7 つの形）、App Home の時計と下寄せ・page、3 つの仮想 desktop（真ん中から、猫・鳥・ウサギ） | cleared（2026-10-07 Q1、T1-346・347） |
-| [p007](phase007/phase.md) | UAT 2026-10-07 の 4 回目: 整列のメニューを窓の panel と同じ本当の glass（後ろが blur で透ける）に、pill から広がって透けていく開き方（180 ms）と閉じる fade | cleared（T1-349 QEMU） |
-| [p008](phase008/phase.md) | UAT 2026-10-07 の 5 回目: App Home への遷移を iOS と同じ奥へ・奥から、touchpad の端の 2 本指 swipe は 1 本が端なら、上端の swipe down を App Home へ、左上の角の drag を外す | cleared（2026-10-07 Q1 の判定: T1-359 QEMU PASS（ws181-guest・p003-guest 7b/7c・p010-guest・zdesktop-p010・zdesktop-p013-touch、全 status 0）。5320 の実機の …）（2026-10-08 q910 P2 の照合で phase.md に合わせた。旧: in-progress（実装・host まで、QEMU は T1）） |
-| [p009](phase009/phase.md) | UAT 2026-10-07 の 6 回目（5320）: 整列の popup のちらつき、描画の重さ、App Home の下端の 2 本指で戻る・頁の端・日付、整列モードの calendar、仮想 desktop の island を通知の左へ | cleared（T1-362 QEMU） | p008 |
-| [p010](phase010/phase.md) | Alt+Shift+左右で仮想 desktop を移る（2026-10-08 ユーザー「では、Alt+Shift+左右で仮想デスクトップ移動、ではどうですか？」、Ctrl+Shift+左右は app の単語の選択と重なるので変えた）。compositor に既存の Alt+Shift+矢印の bind は無い。Emacs の M-S-左右（shift-select の単語）と terminal の Alt+Shift+矢印の escape は compositor が取ると app に届かなくなる | cleared（2026-10-08 Q1 判定、T1-391 QEMU PASS）（2026-10-08 q910 P2 の照合で phase.md に合わせた。旧: test-wait（2026-10-08 P1 q875 実装・build、QEMU は p010-guest.sh を T1 へ）） | p009 |
-| [p011](phase011/phase.md) | 2026-10-08 夜 の UAT: bar の仮想 desktop の island を bar の中央に、窓が dock している時は今の位置（status のすぐ左）のまま、dock の animation で 2 つの位置の間を動く | cleared（2026-10-13 ユーザー（AskUserQuestion）「今の動きで OK」。T1-462 の PNG は Q1 が誤って消した、UAT の画面で判断） | p009 |
-| [p012](phase012/phase.md) | 2026-10-13 ユーザーの指示: touchpad の下端から上 → App Home、上端から下 → Wiseview（touch panel の端と同じ）。p008 の範囲 3（上端 → App Home）を置き換える。App Home の上の上端 → Wiseview、Wiseview の上の下端 → App Home。2 回目「トラックパッドも下へ払って閉じる形に変えます。」: App Home の上で 2 本指で下へ払うと指に付いて閉じる（DOWN2）、p009 の範囲 3（下端から上で閉じる）を置き換える。3 回目「App Homeで、ページ送りに必要なスワイプ量を半分にしてほしいです。」: touch panel・mouse の横の drag の送りを幅 / 4 → 幅 / 8（touchpad は 4 mm の決めが量なので変えず、判断待ち） | in-progress（実機の感触の UAT の分は OK（2026-10-13 ユーザー「UATの結果待ちのものは、すべてテスト済みなのでclearedにして進めたりcloseしたりしてください。」）。1・2 回目は T1-559・T1-560（QEMU）PASS。3 回目（App Home の page の送りの量を半分に）の QEMU（T1）が未実施で残り。touchpad の送りの量は判断待ちで変えていない） | p008 |
+| ws181-p001 | 設計（窓の状態の機械、App Home、gesture、整列）、design-reviewer 2 回 | cleared（2026-10-07） |
+| ws181-p002 | 状態（目標 1・2） | cleared（2026-10-07、T1-342） |
+| ws181-p003 | App Home の独立のモードと gesture（目標 3・4） | cleared（2026-10-07、T1-342） |
+| ws181-p004 | 整列のメニューと整列モード（目標 5・6） | cleared（2026-10-07、T1-342） |
+| ws181-p005 | UAT の 2 回目（App Home の上の bar、整列のメニュー、pill、枠の大きさ） | cleared（2026-10-07、T1-345） |
+| ws181-p006 | UAT の 3 回目（7 つの形の grid、App Home の時計と page、3 つの仮想 desktop） | cleared（2026-10-07、T1-346・347） |
+| ws181-p007 | UAT の 4 回目（glass の整列のメニューと開き方） | cleared（2026-10-07、T1-349） |
+| ws181-p008 | UAT の 5 回目（App Home への遷移、touchpad の端の swipe） | cleared（2026-10-07、T1-359） |
+| ws181-p009 | UAT の 6 回目（5320: popup のちらつき、描画の重さ、App Home の戻り、island の位置） | cleared（2026-10-07、T1-362） |
+| ws181-p010 | Alt+Shift+左右で仮想 desktop を移る | cleared（2026-10-08、T1-391） |
+| ws181-p011 | 仮想 desktop の island を bar の中央に（dock の時は今の位置） | cleared（2026-10-13 ユーザー「今の動きで OK」） |
+| ws181-p012 | touchpad の端の swipe を touch panel と同じに、下へ払って閉じる、page の送りの量を半分に | in-progress のまま WS を閉じた（1・2 回目は T1-559・T1-560 PASS と実機の UAT、3 回目の QEMU は未実施） |
 
-## 関連
+## 記録の所在
 
-- ws142（app の切り替え・Alt+Tab・gesture）、ws099（compositor）、2026-10-06 の「最大化は desktop の tablet mode」の解釈（master の decisions-log）、docs/architecture/keiland.md の Desktop modes。
-
-
-## 追加の要望（2026-10-08 夜 ユーザーの UAT）
-
-- ユーザー:「ドックバーの仮想デスクトップのislandなのですが、使ってみたところ、やっぱりdockバーの中央がいい気がしました。ただ、dockingしたときは、今の位置にするのがいいと思います。試作の繰り返しで申し訳なく思いますが、通常優先度でスケジューリングしておいて、あとで見せてください！」
-- → [p011](phase011/phase.md)（2026-10-08 夜 P2）: bar の仮想 desktop の island を bar の中央に置く。窓が bar に dock している時は今の位置のまま。実装したら撮影をユーザーに見せる。
+Phase の計画・設計・結果・試験は削除した。git の commit `fb1f6afee` の `plan/ws181/` にある。Queue の履歴は [plan/history](../history/index.md)。

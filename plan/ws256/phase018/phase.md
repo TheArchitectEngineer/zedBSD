@@ -34,7 +34,7 @@ Status: in-progress（2026-10-20 ユーザーの VF2 の実機: link up 1000 Mbp
 | --- | --- | --- |
 | host 試験（新規） | `plan/ws256/tests/dw-eqos/run.sh build/p018-host/dw-eqos` | exit 0、PASS 210・FAIL 0（通常と ASan/UBSan の 2 本 × 105、log build/tmp/p018-eqos.log） |
 | 既存の VF2 の SoC の host 試験（vf2-crg を変えた） | `plan/ws256/tests/vf2-soc/run.sh build/p018-host/vf2-soc` | exit 0、PASS 94・FAIL 0 |
-| 既存の DW MMC の host 試験（vf2-crg を使う） | `plan/ws256/tests/dw-mmc/run.sh build/p018-host/dw-mmc` | exit 0、PASS 60・FAIL 0 |
+| 既存の DW MMC の host 試験（vf2-crg を使う） | `plan/tools/vf2-host/dw-mmc/run.sh build/p018-host/dw-mmc` | exit 0、PASS 60・FAIL 0 |
 | VF2 の vmunix | `make ZEDBSD_CONFIG=config/ci/config-visionfive2.mk BUILD=build/p018-vf2 -j16 vmunix` | exit 0、warning・error 0（main の 0398b03d4 の p020 を merge した上、log build/tmp/p018-vf2.log）。vmunix に dw-eqos・yt8531・vf2-ethernet の文字列 25 個 |
 | virt の vmunix（vmunix.mk を変えた） | `make ZEDBSD_CONFIG=config/ci/config-riscv64-virt.mk BUILD=build/p018-virt -j16 vmunix` | exit 0、warning 0 |
 

@@ -145,7 +145,7 @@ IH の処理は **割り込みの handler では writeback の wptr を読んで
 
 ### 4.1 package（判断 1 の回答）
 
-`userland/firmware/README.md` の規約に合わせ、**既定 off の独立の firmware の package `userland/firmware/amd-navi/`（package `amd-navi-firmware`）**。base の system と kernel に同梱しない。取得は nvidia-gsp と同じ形: `zedbsd-firmware.mk` の `ZEDBSD_FIRMWARE_REPOSITORY_URL`（awemorris/zedBSD-firmware の固定の commit）の `amd-navi/` から先に取り、無ければ linux-firmware の tag `20260410`（commit `dc85ccedc9c973682fbcf4d628ca61174bcc3120`、`git.kernel.org/.../linux-firmware.git/plain/<path>?id=<commit>`）から取る。どちらでも size と SHA-256（[phase001/phase.md](phase001/phase.md) の表）を照合する。**zedBSD-firmware の repository へ file を置くのはユーザー（repository の所有者）**: p004 で置く file の一覧（path・size・SHA-256、`LICENSE.amdgpu`・`WHENCE` の該当の行）を Q1 に渡す。置かれるまでは linux-firmware からの取得で動く。
+`userland/firmware/README.md` の規約に合わせ、**既定 off の独立の firmware の package `userland/firmware/amd-navi/`（package `amd-navi-firmware`）**。base の system と kernel に同梱しない。取得は nvidia-gsp と同じ形: `zedbsd-firmware.mk` の `ZEDBSD_FIRMWARE_REPOSITORY_URL`（awemorris/zedBSD-firmware の固定の commit）の `amd-navi/` から先に取り、無ければ linux-firmware の tag `20260410`（commit `dc85ccedc9c973682fbcf4d628ca61174bcc3120`、`git.kernel.org/.../linux-firmware.git/plain/<path>?id=<commit>`）から取る。どちらでも size と SHA-256（phase001/phase.md（fb1f6afee の `plan/ws039/phase001/phase.md`） の表）を照合する。**zedBSD-firmware の repository へ file を置くのはユーザー（repository の所有者）**: p004 で置く file の一覧（path・size・SHA-256、`LICENSE.amdgpu`・`WHENCE` の該当の行）を Q1 に渡す。置かれるまでは linux-firmware からの取得で動く。
 
 | file（`amdgpu/`） | install | 扱い |
 | --- | --- | --- |
@@ -741,7 +741,7 @@ hardware の操作の手順を参考にした関数は、関数の直前（か�
 
 | Phase | 段 | 内容 | 依存 | 見込み |
 | --- | --- | --- | --- | --- |
-| [p001](phase001/phase.md) | — | この文書（改訂 2）、license の監査、review | — | 済の見込み（4〜6 LW） |
+| p001（fb1f6afee の `plan/ws039/phase001/phase.md`） | — | この文書（改訂 2）、license の監査、review | — | 済の見込み（4〜6 LW） |
 | p002 | A0・A1・A1v | Linux の amdgpu の dump との照合（12.5、Q1 の許可）、骨格（PCI の attach、BAR の map、`CONFIG_DRIVER_PCI_AMDRDNA` は済）、RDNA1〜3 の device id の表、IP discovery の parser、resizable BAR の capability と BAR0 の大きさの読み（log だけ、§15 #7）、GOP の readout と clock の読み、VBIOS（VFCT か ROM の BAR）と data の表の parser、PSP の runtime DB の parser、VRAM の配置、段の印、control の node（`/dev/amdrdna0`、UAPI、`amdrdnactl`）、boot の parameter、独自の名前の register の表、監査の script、host 試験 (b)(f)(g)(i)。**実機: A0・A1・A1v の ok** | 実機（RX 5600 XT を挿した 10.0.10.3）、ACPI の table の公開の口の差分（`plan/ws039/proposed/acpi-table-lookup.diff`、Q1 の判断。無ければ A1v は ROM の BAR か skip） | 5〜6 LW |
 | p003 | A2 | BAR0 の 256 MiB の窓の map（2 つの pool、§15 #7）、GMC（FB、allocator（下 32 MiB の予約を含む）、GART、両 hub の VMID 0、context 1〜15、HDP）、IH（ring・MSI の用意、thread、dispatch。enable は A3）、VM fault の受け、host 試験 (d) の前半。**実機: A2 の ok、underflow 0** | p002 | 3〜5 LW |
 | p004 | A3t・A3・A4（Tier S） | firmware の package（zedBSD-firmware への file の一覧を Q1 へ）、container の parser、root の mount 後の load、memory training（console の停止・退避・blank・training・戻し）、IH の enable、PSP の bootloader・ring・TOC・TMR・LOAD_IP_FW・AUTOLOAD・ASD、**SMU の mailbox と版の読みと Tier S（THM の固定の duty の fan、THM の温度の読み、監視の thread）**、停止の PSP・SMU の部分、host 試験 (a)(c)。**実機: A3t・A3 の ok と A4 の `mode=S`（温度と fan の回転が読め fan が回る。cold power cycle の往復を含む）** | p003 | 6〜8 LW |
@@ -750,7 +750,7 @@ hardware の操作の手順を参考にした関数は、関数の直前（か�
 | p011 | A5s | session: pasid・動的な VMID・page table・BO・VM の flush、`drv_gpu_ops` の open〜SHARE・recovery（fault・stop）、停止の hook、GPU device の登録（renderer だけ）、capset の骨、host 試験 (d) の後半。**実機: A5s の ok、`/dev/gpu0` が出る** | p005 | 5〜7 LW |
 | p013 | A5c | 取り消しと復帰: run の期限（config）、session の状態機械（11.3）、GFX の queue の reset（MQD の写しからの戻し、preamble の出し直し）、compute の queue の reset、record の backup と流し直し（fence の packet、2 回目の取り消し）、`isolate` と quarantine、compute 専用の family の最小の経路、`vkhang`（`userland/tests/vkhang/`、無限 loop の fragment と compute）、host 試験 (k)。**実機: vkhang の app だけ DEVICE_LOST、reset の後 desktop 継続、vkquad ok、compute の queue の reset** | p011、p008（vkhang は Vulkan の app なので A9 の後に実機） | 6〜8 LW |
 | p006 | A6〜A8 | client の surface と flip、vblank・flip・HPD の割り込み、cursor、display・scanout の ops と DISPLAY_CONTROL、display 付きの登録、release で GOP に戻す。**実機: A6〜A8 の ok（画面はユーザーの目視）** | p003（display 自体は PSP に依らない）、p011（登録） | 5〜8 LW |
-| [p007](phase007/phase.md) | — | compiler（P5）。driver との口は 9.2。段 A〜F は済、段 D の続きと P3 とのすり合わせ | なし（host） | 残り 2〜4 LW（p007 の記録） |
+| p007（fb1f6afee の `plan/ws039/phase007/phase.md`） | — | compiler（P5）。driver との口は 9.2。段 A〜F は済、段 D の続きと P3 とのすり合わせ | なし（host） | 残り 2〜4 LW（p007 の記録） |
 | p008 | A9 | executor（nvrtx の写しと PM4 の hardware の部分）、記述子、draw・dispatch、renderer の node、run の期限、vkquad。**実機: A9 の ok、vkquad の pixel の一致** | p011・p007 | 8〜12 LW |
 | p009 | — | compositor が amdrdna で描く、`amdrdna.auto` の既定を上げる、reboot の後片付け。**実機: desktop** | p006・p008 | 2〜4 LW |
 | p014 | A10 | i915 の present の大きさの変更の扱いの確認、AtomBIOS の command の表の interpreter（dry run と oracle の host 試験 (j)、oracle は tarball の取得）、AUX・DDC の engine、DPCD・EDID の読み、link の状態の readout、`display.mode` の ENUMERATE・VALIDATE（boot の clock の中の mode だけ）。**実機: A10 の ok（読むだけ）** | p006、p002（VBIOS） | 7〜10 LW |

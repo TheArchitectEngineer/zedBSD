@@ -12,7 +12,7 @@
 ## 目的と完了の条件
 
 1. encoder を SMP（texture）・FITR/FITRP（補間）・EMITPIX と、vertex・fragment の compiler（[p014](../phase014/phase.md)）・EOT・SR/PT・transfer の固定の program（design-p010.md §5.4）が要る命令に広げる。
-2. 広げた命令ごとに、Mesa 26.2.5 の `pco_isa.py`・`pco_map.py` の field から手で組んだ bytes と比べる host 試験（`plan/ws269/tests/p008/`・`p010-compiler/`）が PASS。
+2. 広げた命令ごとに、Mesa 26.2.5 の `pco_isa.py`・`pco_map.py` の field から手で組んだ bytes と比べる host 試験（`plan/tools/powervr/p008/`・`p010-compiler/`）が PASS。
 3. build（VF2・riscv64-virt・amd64）warning 0。
 4. **O-ENC**: 上の encoder と host 試験が main に merge 済み。
 
@@ -30,7 +30,7 @@
 
 - 結論: **今の encoder で書ける**（encoder の変更なし）。Mesa 26.2.5 の SR（`pco/usclib/common.cl` の `load_store_sr`）は `dma_ld_shregs_pco`・`dma_st_shregs_pco` を使い、`pco_trans_nir.c` はそれを「offset を index register 0 へ mov」と「index 0 を通した shared register 0 を宛先（ld は s3）・元（st は s0）にする `ld.regbl`・`st32.regbl`」に落とす（`pco_map.py` の O_LD_REGBL・O_ST32_REGBL）。burst の長さは register から（1024 語は 0）。
 - `powervr_usc_load/store` の `burst = 0`・`burst_source` が regbl の形（op の bytes は p008 の既存の試験）。index の bank は `POWERVR_USC_BANK_INDEXED_0`（6）、register の番号は F_IDXBANK と offset<<3（index register 自身は idx 0b101 で 5、shared は 0b011 で 3）を 11 bit の形で（`register_bits`）。
-- host 試験（`plan/ws269/tests/p008/encode-host-test.c`、手で組んだ bytes と比べる、+3）: index register 0 への mov（宛先 0x85 0x0c）、shared register の burst の ld（s3 = 0x83 0x0c 0x00）、st（s0 に index 0 の shared、s2 に burst、s3 に address）。p008 encode 94/0。
+- host 試験（`plan/tools/powervr/p008/encode-host-test.c`、手で組んだ bytes と比べる、+3）: index register 0 への mov（宛先 0x85 0x0c）、shared register の burst の ld（s3 = 0x83 0x0c 0x00）、st（s0 に index 0 の shared、s2 に burst、s3 に address）。p008 encode 94/0。
 - 注: Mesa の SR の store は `idf` の flag を付ける（`pco_ops.py` の OM_IDF）が、op の bytes には field が無い（schedule の側の扱い）。SR の program（p010n）で store の後に fence（`powervr_usc_fence`）を置くかは p010n で Mesa の出力と照らす。
 - 結果: O-ENC の命令は §5.4 の全部が書ける。merge の依頼は Q1 へ（この commit）。
 

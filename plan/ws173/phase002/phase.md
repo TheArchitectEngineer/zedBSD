@@ -22,5 +22,5 @@ Status: cleared（2026-10-08 Q1 の判定（sweep-beta2-rc2 §2）: p001・p002 
 
 - build（warning 0）: kernel（injector あり）、compositor（capture あり・なし）、`aat-input`、`keiland-shot`、`make keiland-linux`。
 - host: `plan/ws173/tests/keiland-shot-host-test.sh` PASS（偽の compositor の socket、PNG を python で復号して画素を照らす）。
-- QEMU（T1）: **未実施**。`plan/ws173/tests/aat-p002.sh`（image は `plan/ws173/tests/config-amd64-aat.mk`）。
+- QEMU（T1）: **未実施**。`plan/tools/aat/aat-p002.sh`（image は `plan/tools/aat/config-amd64-aat-menu.mk`）。
 - 実機: 未実施（i915 の swapchain の readback は AAT の最初の実行で確かめる）。

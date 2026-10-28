@@ -204,7 +204,7 @@ if (due) {
     - M5: canvas に複数矩形の clip は足さない（公開の `struct kl_canvas` を変えない、p001 の A2）。部分は近ければまとめる（外接の箱が和の 1.5 倍以下、最大 4）。
       - 根拠（host、Files）: 1 回の部分の走査の固定の費用は約 0.2ms（sidebar の 1 行の部分、224x58 で 0.24ms）。行あたりの画素の費用は 1 行（216x30）で約 0.1〜0.2ms。
       - 離れた 2 行は 2 回の走査の方が、間の行を全部描くより安い。Pi での比は p013 の baseline と合わせて測る。
-    - M6: Mailer の host の試験（plan/ws169/tests/run-host-mailer.sh）18 PASS（hover-part を含む）。
+    - M6: Mailer の host の試験（plan/tools/mail/run-host-mailer.sh）18 PASS（hover-part を含む）。
     - L2: keiland.h の F3 の注記に「KL_VERSION 90 から」の意味の変化を書いた。新しい source の file は無い（Makefile 3 つは不変）。exports は 4 名。
     - L3: drawn_hot が無い（invalid）時は何も足さない（ui_damage_key は invalid の key で 0）。
     - 試験: run-host-kl-ui-lit.sh 22 PASS。Phone 19・Calendar 13・Music 16・Mailer 18 PASS。Files の保留の hover の画素は 3 場面で一致。
@@ -296,7 +296,7 @@ if (due) {
   - 画素の一致（host、前の text.c・view.c の build と比べた）: Calendar の左ペインの 4 組・months の cell の 2 組・Settings の 4 page × 2 組。hover の後の絵と全体の絵がどれも 0 画素の差。hover の後の絵は、同じ build の全体の描画とも一致した。
   - 判断（数からの推測）: Pi の hover の 1 フレームの CPU の描画は、Calendar で約 2〜11ms→約 2ms、Settings で約 3〜6ms（×18 の見込み）。compositor の 1 コマ 15〜36ms より小さい。よって遅れの主因は描画ではなく、pacing（前のフレームの callback を待つ）・present（acquire・fence）・compositor の次のコマの段の和と見込む。Pi の trace の `paced_us`・`draw_us`・`present_us`・`lat_us` で確かめる。
   - 見つけた事（直していない）: Text Editor の自前の glyph の cache（userland/desktop/textedit/text.c:621）が同じ hash を使う。WS210 p008 か別の依頼で直す。
-  - 試験: run-host-kl-ui-lit.sh 46 PASS、run-host-present-damage.sh（host-trace を含む）0 failures、run-host-calendar.sh 13 PASS。build: rpi4・amd64 の libkeiland.so・settings・calendar が warning 0。exports.py --check。keiland-os-boundary は B5 が FAIL（plan/ws141/tests/shader-host-test.c の keiland_inputs、main から merge した物で、この変更とは関係ない）。Linux・FreeBSD の libkeiland の build、QEMU、Pi は未実施。
+  - 試験: run-host-kl-ui-lit.sh 46 PASS、run-host-present-damage.sh（host-trace を含む）0 failures、run-host-calendar.sh 13 PASS。build: rpi4・amd64 の libkeiland.so・settings・calendar が warning 0。exports.py --check。keiland-os-boundary は B5 が FAIL（plan/tools/v3d-qpu/shader-host-test.c の keiland_inputs、main から merge した物で、この変更とは関係ない）。Linux・FreeBSD の libkeiland の build、QEMU、Pi は未実施。
 
 ## Phase の中の順
 

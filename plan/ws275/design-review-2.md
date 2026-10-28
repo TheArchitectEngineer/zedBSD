@@ -97,7 +97,7 @@
   - zterm の原点は code で決まっていて (22,34) です（`zwm/main.c:980` の frame は client の要求の x,y、`:1020` で client を (2,26) に入れる）。(20,8) は zwm が管理に失敗した時だけです。候補を残しても害はありません。
 - **m-9. HAL から kernel への画面の引き継ぎ**: publish の時に fb を消すのか、HAL の行の下から続けるのかが書かれていません。kernel の grid は 80×(高さ/16) で、HAL は 80×25 です。
 - **m-10. platform の境界**: pcat の `vgafont.c`（`drv_pcat_vgafont16`）を sun4u の kernel で compile するのは、driver の配置の方針（Guardrail l.18）を越えます。例外として記録するか、F-111 で boot-test.py の追従と一緒に移すと書いてください。
-- **m-11. pcat の PS/2 の回帰が具体的でない**: bios-ide の login の試験では PS/2 は動きません（`type:` は serial）。`keys:` の step と、`plan/ws081/tests/ps2-wheel-qemu.sh`（T1-015 で使用）を回帰に挙げてください。
+- **m-11. pcat の PS/2 の回帰が具体的でない**: bios-ide の login の試験では PS/2 は動きません（`type:` は serial）。`keys:` の step と、`plan/tools/touch/ps2-wheel-qemu.sh`（T1-015 で使用）を回帰に挙げてください。
 - **m-12. HAL の差分の D4(b)**: proposed の i8042 の行は D4(a)・(b) の 2 案を持ち、差分ごとの承認に対して具体的ではありません。D4 を先に聞くか、両案の差分を並べてください。
 
 ### 確かめて問題が無かった事

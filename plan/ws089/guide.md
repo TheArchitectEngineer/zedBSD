@@ -40,7 +40,7 @@ WS089（設定のアプリ Settings）を、追加の調査なしで続けるた
 
 | Phase | 内容 | 証拠 |
 | --- | --- | --- |
-| p001〜p009 | 設計、骨格、検索、desktop の設定（`keiland_preferences_*`）、Network、Appearance・Wallpaper・Display・Storage、Mouse・Keyboard・Sound、生成の壁紙、規約と回帰とデモの通し | 各 phase.md。[phase006](phase006/phase.md): `settings-regress.sh` の 8 本が PASS（p002・p008 は試験の期待を直して）、boot test PASS |
+| p001〜p009 | 設計、骨格、検索、desktop の設定（`keiland_preferences_*`）、Network、Appearance・Wallpaper・Display・Storage、Mouse・Keyboard・Sound、生成の壁紙、規約と回帰とデモの通し | 各 phase.md。phase006（fb1f6afee の `plan/ws089/phase006/phase.md`）: `settings-regress.sh` の 8 本が PASS（p002・p008 は試験の期待を直して）、boot test PASS |
 | 後からの変更（他の WS） | ws100-p005（Sound の頁の slider と mute、`settings/sound.c`）、ws090-p014（chooser の sheet、Settings は chooser を使わない）、KEILAND_VERSION 13 → 20 | [ws100 の ws.md](../ws100/ws.md) の p005（`volume-p005: PASS`） |
 | host（2026-10-01、この手引きの作成で再実行） | `sh plan/ws089/tests/host-build.sh` → `built build/ws089-host/settings-render`（exit 0）、`sh plan/ws089/tests/host-preferences.sh` → `host-preferences: PASS`、`build/ws089-host/settings-render --page=network draw=...` が描けた | — |
 
@@ -85,10 +85,10 @@ master の優先（2026-09-30 夜）: WS099・WS079・WS090・**WS089**…。202
 ### 3.2 ws089-p011（提案）: 5330 の passthrough で S7
 
 - 目的: i915 の実機の GPU で、壁紙の差し替え・透明度 85% の窓・検索が見た目どおりに動くことを、エージェントが画面で確かめる。
-- 型: [plan/ws099/tests/c5-hw.sh](../ws099/tests/c5-hw.sh)（WS075 の `plan/ws075/tests/hdmi-h4-hw.sh` の上で pointer と key を送り、session の log を
+- 型: [plan/ws099/tests/c5-hw.sh](../ws099/tests/c5-hw.sh)（WS075 の `plan/tools/i915-hw/hdmi-h4-hw.sh` の上で pointer と key を送り、session の log を
   Terminal で `/home/kei` に写して image から `ufs-cat.py` で読む。**`/run` は disk に無い**、c5-hw.sh:7）。
 - 新しい file（WS089 の範囲）: `plan/ws089/tests/settings-s7-hw.sh IMAGE OUTDIR`:
-  1. `H4_MINUTES=20 plan/ws075/tests/hdmi-h4-hw.sh start IMAGE OUTDIR`、75 秒待つ（kei の autologin）。
+  1. `H4_MINUTES=20 plan/tools/i915-hw/hdmi-h4-hw.sh start IMAGE OUTDIR`、75 秒待つ（kei の autologin）。
   2. App Home の Settings: `ctl pointer move 22 16 sleep 100 down up sleep 1500 move 887 386 sleep 150 down up sleep 8000`（c5-hw.sh:26 の `settings:887:386`。
      先に `ctl shot home` で tile の位置を確かめる、§4 U1）。`ctl shot settings`。
   3. 検索: `ctl hmp "sendkey ctrl-f"`、`ctl keys "wall"`、`ctl hmp "sendkey ret"`（Wallpaper の頁）、`ctl shot search`。
@@ -123,7 +123,7 @@ ws.md「WS の完了の処理に要ること」のとおり。AGENTS.md の完�
 | --- | --- | --- | --- |
 | U1 | 5330 の passthrough の画面の大きさ、App Home の Settings の tile、Wallpaper の頁の tile と Appearance の slider の座標 | p011 の pointer | `hdmi-h4-hw.sh ctl shot NAME` → `fetch OUTDIR` → `OUTDIR/shots/NAME-live.png` を見る。host でも `build/ws089-host/settings-render --size=1920x1080 --page=wallpaper hits` が click の領域を出す（`plan/ws089/tests/host-render.c` の頭の注釈、`hits`）。窓の位置は compositor が決めるので、画面の座標 = 窓の左上 + hits の座標。host には `/usr/share/keiland/wallpapers/` が無く、Wallpaper の頁の tile は既定の 1 枚だけ（2026-10-01 に `ZSETTINGS LOOK pictures count=1`）なので、2 枚目からの tile の位置は guest の画面で決める |
 | U2 | 1 回目の起動の直後の FAIL（p004 の注記） | 回帰の信頼 | 再び出たら、試験の直後に `GUEST_RUNTIME=... python3 plan/tools/guest/guest.py run 'cat /tmp/zdesktop.log; ps'` で zdesktop と greeter・session の重なりを見る（console は読まない） |
-| U3 | i915 で透明度 85% の窓の frame の率（D の危険、p004 の未実施） | S7 の見た目の滑らかさ | p011 で透明度 85% の窓を出したまま `ctl rate A 10`（`plan/ws075/tests/hdmi/h4-ctl.py` の `rate`、flip の数/秒。pipe は `ctl shot` の json の live の pipe）。目標の数値は無いので、100% の時と比べて報告する |
+| U3 | i915 で透明度 85% の窓の frame の率（D の危険、p004 の未実施） | S7 の見た目の滑らかさ | p011 で透明度 85% の窓を出したまま `ctl rate A 10`（`plan/tools/i915-hw/hdmi/h4-ctl.py` の `rate`、flip の数/秒。pipe は `ctl shot` の json の live の pipe）。目標の数値は無いので、100% の時と比べて報告する |
 | U4 | 壁紙の差し替えの時間（1920x1080） | S7 | p011 の log の `LOOK set key=wallpaper` と `ZWL PREFERENCES key=wallpaper applied` の間。時刻が log に無いので、画面を 0.5 秒ごとに撮る（`ctl splash` は VGA 用。`shot` を loop で）か、ユーザーの体感 |
 | U5 | 実機の Wi-Fi（RTL8822B など）での Network の頁の join | 受け入れ 2 の実機 | 5330 の単独の実機でユーザーが Wi-Fi の頁で SSID を選び鍵を入れる。networkd の状態は SSH で `cat /run/...`（networkd の socket の path は `userland/desktop/libkeiland/network-link.c` を見る） |
 
@@ -223,7 +223,7 @@ sh plan/ws075/demo/build-demo-image.sh build/<W>-demo-pt passthrough > build/<W>
   `host-preferences.sh` の header の path（`include/libc/keiland.h`・`truetype.h` → `userland/desktop/include/`）を変える（[plan/ws104/patches/](../ws104/patches/)）。
   ws104-p001 の後は §5.1 の command はそのまま、script の中の header の path が変わる。**Settings の source や `plan/ws089/tests/` を変える Phase は WS104 と同時に
   走らせず、main に順を確かめる。** WS104・WS105 の Phase はこの WS の作業で触らない。
-- **WS090 の p007**（Settings の libkeiui への移行）はこの WS の完了の後。手順は [plan/ws090/phase007/phase.md](../ws090/phase007/phase.md)。
+- **WS090 の p007**（Settings の libkeiui への移行）はこの WS の完了の後。手順は plan/ws090/phase007/phase.md（fb1f6afee の `plan/ws090/phase007/phase.md`）。
 - **runtime の衝突**: Settings の試験の既定は全て `build/ws089-run`（`settings-guest.sh`・`settings-regress.sh`・`settings-p00*.sh`）。2 つの agent が既定のまま
   流すと同じ guest を奪い合う。いつも `GUEST_RUNTIME=$PWD/build/<W>-settings-run` を付ける。`volume-p004.sh`・`volume-p005.sh` は `build/ws100-run` に固定。
 - **既定の BUILD を上書きしない**: `build-settings-image.sh` は BUILD を省くと `build/amd64`。`settings-guest.sh start` は IMAGE を省くと `build/amd64/hdd-image.img`。

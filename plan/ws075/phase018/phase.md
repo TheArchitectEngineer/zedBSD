@@ -39,9 +39,9 @@ batch の終わりを待たないと書けない。
 main（p009 の merge の後、a6e4970d 系 + 5e93e06f）の demo の passthrough の image（`build/ws075-p018/base.img`）。
 main の USB HID・PS/2 の変更の後、desktop だけの物差しは大きく良くなった（p008 の 19.6 flip/s・49 ms → **56.4 flip/s・15.8 ms**）。
 
-8 app を開いた desktop（`plan/ws075/tests/hdmi/apps8.sh`）: **7.4 flip/s、latency 中央値 31.6 ms（7.3〜115）**、入力なしで 8 flip/s（Gears）。
+8 app を開いた desktop（`plan/tools/i915-hw/hdmi/apps8.sh`）: **7.4 flip/s、latency 中央値 31.6 ms（7.3〜115）**、入力なしで 8 flip/s（Gears）。
 
-gdbstub で読んだ内訳（`plan/ws075/tests/hdmi/perf-gdb.sh`: 5 秒の窓の i915 の perf の合計、kernel の log を読まない）:
+gdbstub で読んだ内訳（`plan/tools/i915-hw/hdmi/perf-gdb.sh`: 5 秒の窓の i915 の perf の合計、kernel の log を読まない）:
 5 秒に batch 1085、engine（submit から CSB の完了まで）3363 ms = **GPU 67% が塞がる**。CPU は 4 vCPU の 75% が idle（gdb の `info threads` の 30 回の標本、halted 90/120）。
 
 どの process が GPU を使うか（flush の入口の hardware breakpoint で current の process の名前と session、`worker.c` に足した
@@ -73,7 +73,7 @@ image の draw でも 8 回の sampler の message を出す。Venus（host の 
 
 - `src/drivers/gpu/i915/worker.c`: `struct i915_worker_context` に `engine_ns`・`engine_runs`（context ごとの engine の時間。worker だけが足し、
   debugger で読む）。
-- `plan/ws075/tests/hdmi/apps8.sh`（8 app を順に開く）、`perf-gdb.sh`（i915 の perf の窓を gdb で）、`h4-ctl.py`（`rate PIPE SECONDS [X Y]`、
+- `plan/tools/i915-hw/hdmi/apps8.sh`（8 app を順に開く）、`perf-gdb.sh`（i915 の perf の窓を gdb で）、`h4-ctl.py`（`rate PIPE SECONDS [X Y]`、
   `keys` の `* "`）、`hdmi-h4-hw.sh`（下）。
 
 ### 実機の harness の事故と対策（2026-09-29）

@@ -24,9 +24,9 @@ Queue: Q1 の dispatch（2026-10-05 夜、P1 へ p002・p003・p005）。承認:
 | --- | --- | --- |
 | host 試験 K1・K2 | `timeout 120 plan/ws174/tests/run-boot-keys-host-test.sh`（cc = gcc）と `CC=clang ... build/ws174-host-clang` | `30 checks, 0 failures` ×4（gcc・clang、通常・ASan/UBSan。mock は ms_abi の callback） |
 | host 試験 O1〜O11（p002 の回帰） | `run-boot-override-host-test.sh`・`run-boot-override-kernel-host-test.sh` | 43/0 ×2、72/0 |
-| UEFI loader | `make -j16 ZEDBSD_CONFIG=plan/ws174/tests/config-amd64-keys.mk BUILD=build/ws174-keys build/ws174-keys/uefi/BOOTX64.EFI` | rc 0、warning 0（`-Werror`）、未解決の symbol なし、`BOOTX64.EFI check: PASS` |
+| UEFI loader | `make -j16 ZEDBSD_CONFIG=plan/tools/boot-keys/config-amd64-keys.mk BUILD=build/ws174-keys build/ws174-keys/uefi/BOOTX64.EFI` | rc 0、warning 0（`-Werror`）、未解決の symbol なし、`BOOTX64.EFI check: PASS` |
 | amd64 BIOS loader（共有の parser・logo-path は不変） | 同じ BUILD で `build/ws174-keys/bootloader/BOOTZBSD.EXE` | rc 0、warning 0 |
-| amd64 image | `flock /tmp/zedbsd-image-build.lock timeout 5400 plan/tools/guest/test-image.sh plan/ws174/tests/config-amd64-keys.mk build/ws174-keys` | rc 0、`check-amd64-native-image: ... OK`。log の warning は openssh・openssl の package と noct の既存の物で、bootloader・kernel の file には 0。cfg は `kernel=vmunix rootpart=… swap0=… logo=logo.ppm login=graphical kmsg=quiet`（cfg の生成は不変） |
+| amd64 image | `flock /tmp/zedbsd-image-build.lock timeout 5400 plan/tools/guest/test-image.sh plan/tools/boot-keys/config-amd64-keys.mk build/ws174-keys` | rc 0、`check-amd64-native-image: ... OK`。log の warning は openssh・openssl の package と noct の既存の物で、bootloader・kernel の file には 0。cfg は `kernel=vmunix rootpart=… swap0=… logo=logo.ppm login=graphical kmsg=quiet`（cfg の生成は不変） |
 | QEMU script の判定の部品 | `run-boot-keys-qemu.py` の `classify()` を合成の PPM（640x480 の text、1920x1080 の中央 80x30 の text、市松、黒）と実際の `boot-logo.ppm` を 1920x1080 に置いた画面で | text・text・logo・other・logo。ブロック文字（塊の明暗）は text に数えない |
 | `git diff --check` | | 0 |
 
@@ -43,8 +43,8 @@ Queue: Q1 の dispatch（2026-10-05 夜、P1 へ p002・p003・p005）。承認:
 
 ## T1 への依頼（Q1 経由）
 
-- image: branch `agent/p1` の commit `b6af5b35`（source の最終。これより後の commit は plan の記録だけ）か、それを merge した main で `plan/tools/guest/test-image.sh plan/ws174/tests/config-amd64-keys.mk build/ws174-keys`（graphical boot、`kmsg=quiet`）。
-- 実行: `timeout 1800 plan/ws174/tests/run-boot-keys-qemu.sh build/ws174-keys/hdd-image.img <OUTDIR>`。cell ごとに image の複写と OVMF の変数の複写から QEMU を起動し直す（同時に 1 つ、`-no-reboot`、NVMe の boot disk、usb-net port 2、usb-kbd port 3、QMP）。key は QMP `send-key`（0.1 s ごと、hold 50 ms、修飾 key も毎回押し直す）。
+- image: branch `agent/p1` の commit `b6af5b35`（source の最終。これより後の commit は plan の記録だけ）か、それを merge した main で `plan/tools/guest/test-image.sh plan/tools/boot-keys/config-amd64-keys.mk build/ws174-keys`（graphical boot、`kmsg=quiet`）。
+- 実行: `timeout 1800 plan/tools/boot-keys/run-boot-keys-qemu.sh build/ws174-keys/hdd-image.img <OUTDIR>`。cell ごとに image の複写と OVMF の変数の複写から QEMU を起動し直す（同時に 1 つ、`-no-reboot`、NVMe の boot disk、usb-net port 2、usb-kbd port 3、QMP）。key は QMP `send-key`（0.1 s ごと、hold 50 ms、修飾 key も毎回押し直す）。
 - 5 cell と判定（screendump の PNG と SSH だけ。console・serial の log は読まない）:
 
 | cell | 操作 | (a) 画面 | (b) | (c) SSH |
@@ -81,7 +81,7 @@ T1-213（main 357fed03、run 1・再試行・`--no-usb-kbd --cells C1`）は FAI
 直し（待ち時間は足さない）:
 
 - `bootloader/uefi/boot-keys.c`: `ReadKeyStrokeEx` が `EFI_NOT_READY` を返した時、その `KeyState` を `zbl_uefi_boot_keys_from_state()` に通して `held` に足す（`EFI_SHIFT_STATE_VALID` が無ければ 0）。毎回 `data` を 0 にしてから呼ぶので、状態を埋めない firmware では何も足さない。他の error（`EFI_DEVICE_ERROR` 等）の `data` は信じない。S0・S1 の 2 点で「その瞬間に押されている Ctrl/Shift」が読めるので、firmware が前の event を読み捨てても、押したままなら検出される。
-- `plan/ws174/tests/run-boot-keys-qemu.py`: QMP `input-send-event` で、修飾 key を押したまま Space を 0.1 s ごとに叩く（Space は 50 ms で離す）。修飾 key は 0.1 s ごとに down を送り直す（押されている間は何も変えず、firmware や kernel の USB の reset で QEMU の usb-hid が状態を忘れた後に押し直す）。送信をやめる時に離す。C4 は chord ごとに前の chord の修飾 key を離す。R0（`--ctrl-alone`）は Ctrl だけを押したまま（Space なし）。
+- `plan/tools/boot-keys/run-boot-keys-qemu.py`: QMP `input-send-event` で、修飾 key を押したまま Space を 0.1 s ごとに叩く（Space は 50 ms で離す）。修飾 key は 0.1 s ごとに down を送り直す（押されている間は何も変えず、firmware や kernel の USB の reset で QEMU の usb-hid が状態を忘れた後に押し直す）。送信をやめる時に離す。C4 は chord ごとに前の chord の修飾 key を離す。R0（`--ctrl-alone`）は Ctrl だけを押したまま（Space なし）。
 - docs（`docs/reference/kernel-boot-parameters.md` §7c、`bootloader/uefi/README.md`）: loader は queue と「その瞬間の修飾 key の状態」を読む、と書き直した。主の手順（押したまま Space を叩く）は不変。
 
 待つ案（短い polling の窓、`WaitForEvent` と timer）は採らなかった: 原因 1 を直せば、押したままの key は待たずに S0・S1 で読める。再試験でも C1〜C3 が落ちる時に Q1 に諮る（下の「残る案」）。
@@ -92,8 +92,8 @@ T1-213（main 357fed03、run 1・再試行・`--no-usb-kbd --cells C1`）は FAI
 | --- | --- | --- |
 | host 試験 K1〜K3 | `timeout 120 plan/ws174/tests/run-boot-keys-host-test.sh`、`CC=clang ... build/ws174-host-clang` | `41 checks, 0 failures` ×4（gcc・clang、通常・ASan/UBSan）。K3 を追加: 空の queue と押された Ctrl → KMSG、Ctrl+Shift → 両方、queue の Ctrl と押された Shift → 両方、離した後も保つ、VALID なし → 0、状態を埋めない firmware → 足さない、`EFI_DEVICE_ERROR` の状態は無視 |
 | host 試験 O1〜O10（回帰） | `run-boot-override-host-test.sh` | 43/0 ×2 |
-| UEFI loader | `make -j16 ZEDBSD_CONFIG=plan/ws174/tests/config-amd64-keys.mk BUILD=build/ws174-keys build/ws174-keys/uefi/BOOTX64.EFI` | rc 0、warning 0、`BOOTX64.EFI check: PASS` |
-| amd64 image | `flock /tmp/zedbsd-image-build.lock timeout 5400 plan/tools/guest/test-image.sh plan/ws174/tests/config-amd64-keys.mk build/ws174-keys` | rc 0、log の warning 0、`check-amd64-native-image: ... OK` |
+| UEFI loader | `make -j16 ZEDBSD_CONFIG=plan/tools/boot-keys/config-amd64-keys.mk BUILD=build/ws174-keys build/ws174-keys/uefi/BOOTX64.EFI` | rc 0、warning 0、`BOOTX64.EFI check: PASS` |
+| amd64 image | `flock /tmp/zedbsd-image-build.lock timeout 5400 plan/tools/guest/test-image.sh plan/tools/boot-keys/config-amd64-keys.mk build/ws174-keys` | rc 0、log の warning 0、`check-amd64-native-image: ... OK` |
 | 送り方の部品 | `Guest.send_chord()` を偽の QMP で（ctrl+spc → shift+spc → ctrl+shift+spc → ctrl） | 修飾 key の down＋spc の down、spc の up、次の chord に無い修飾 key の up、最後に全部の up の順 |
 | `git diff --check` | | 0 |
 
@@ -106,8 +106,8 @@ T1-213（main 357fed03、run 1・再試行・`--no-usb-kbd --cells C1`）は FAI
 
 ### T1 への再依頼（Q1 経由）
 
-- image: branch `agent/p1` のこの commit（または merge 後の main）で `flock /tmp/zedbsd-image-build.lock plan/tools/guest/test-image.sh plan/ws174/tests/config-amd64-keys.mk BUILD`。
-- 実行: `timeout 1800 plan/ws174/tests/run-boot-keys-qemu.sh BUILD/hdd-image.img OUTDIR --ctrl-alone`（R0 は参考、判定に入れない）。cell と判定は上の表のまま。ただし key は「修飾 key を押したまま Space を叩く」（`input-send-event`）、(c) は `sysctl kern.boot.login`（`-n` なし）の値。
+- image: branch `agent/p1` のこの commit（または merge 後の main）で `flock /tmp/zedbsd-image-build.lock plan/tools/guest/test-image.sh plan/tools/boot-keys/config-amd64-keys.mk BUILD`。
+- 実行: `timeout 1800 plan/tools/boot-keys/run-boot-keys-qemu.sh BUILD/hdd-image.img OUTDIR --ctrl-alone`（R0 は参考、判定に入れない）。cell と判定は上の表のまま。ただし key は「修飾 key を押したまま Space を叩く」（`input-send-event`）、(c) は `sysctl kern.boot.login`（`-n` なし）の値。
 - C1〜C3 の全部で検出されなければ `--no-usb-kbd --cells C1` を 1 回。
 - 記録（判定ではない）: R0 の結果（Space なしの Ctrl の押しっぱなしが効くか）、C1・C3 の `loader_modes`、C1 の最初の frame の告知。
 

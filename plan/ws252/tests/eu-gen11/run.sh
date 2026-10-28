@@ -11,7 +11,7 @@
 # them.
 #
 #   plan/ws252/tests/eu-gen11/run.sh      (BRW_TOOLS: a Mesa 25.0.7 build's src/intel/compiler, default
-#                                          build/mesa-tools/build-asm/src/intel/compiler: plan/ws101/tests/host/mesa-tools.sh)
+#                                          build/mesa-tools/build-asm/src/intel/compiler: plan/tools/gpu-compute/host/mesa-tools.sh)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../../.." && pwd)
@@ -23,7 +23,7 @@ work=$fresh_dir
 status=0
 
 if [ ! -x "$tools/brw_disasm" ] || [ ! -x "$tools/brw_asm" ]; then
-	echo "FAIL: no brw_disasm/brw_asm under $tools (plan/ws101/tests/host/mesa-tools.sh builds them, or set BRW_TOOLS)"
+	echo "FAIL: no brw_disasm/brw_asm under $tools (plan/tools/gpu-compute/host/mesa-tools.sh builds them, or set BRW_TOOLS)"
 	exit 1
 fi
 
@@ -87,7 +87,7 @@ for spv in "$repo"/userland/tests/mview/shaders/*.spv "$repo"/src/drivers/gpu/i9
 		echo "$name: FAIL refused for Ice Lake: $(cat "$work/$name.log")"; status=1
 	fi
 done
-for source in "$repo"/plan/ws229/tests/shaders/*.frag; do
+for source in "$repo"/plan/tools/i915-gen9/shaders/*.frag; do
 	name=$(basename "$source")
 	glslc --target-env=vulkan1.0 -o "$work/$name.spv" "$source" || { echo "$name: FAIL glslc"; status=1; continue; }
 	if "$work/eudump" -gen11 fragment "$work/$name.spv" "$work/$name.bin" 2> "$work/$name.log"; then
@@ -99,7 +99,7 @@ done
 
 # 3. The compute modules.
 mkdir -p "$work/cs"
-for source in "$repo"/plan/ws101/tests/host/shaders/*.comp "$repo"/src/drivers/gpu/i915/tests/render/compute-shaders/*.comp; do
+for source in "$repo"/plan/tools/gpu-compute/host/shaders/*.comp "$repo"/src/drivers/gpu/i915/tests/render/compute-shaders/*.comp; do
 	name=$(basename "$source" .comp)
 	glslc --target-env=vulkan1.0 -fshader-stage=compute -o "$work/cs/$name.spv" "$source" || { echo "$name: FAIL glslc"; status=1; continue; }
 	if "$work/cdump" -gen11 "$work/cs/$name.spv" "$work/cs/$name.bin" > "$work/cs/$name.log" 2>&1; then

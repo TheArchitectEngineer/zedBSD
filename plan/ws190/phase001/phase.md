@@ -224,7 +224,7 @@ void kl_text_bar_draw(const struct kl_text_bar *bar, const struct kl_style *styl
 
 ### 4.1 host（短いもの）
 
-`plan/ws190/tests/run-host.sh`（host の cc、ASan・UBSan、libkeiland の file を直に compile、ws177 の host 試験の形）:
+`plan/tools/keiui/run-host-touch-select.sh`（host の cc、ASan・UBSan、libkeiland の file を直に compile、ws177 の host 試験の形）:
 
 1. `kl_text_bar_buttons`: §1.2 の全ての組。
 2. `kl_text_bar_layout`: 上・下・重ねる（handle との重なり）・左右の端・範囲より広い・範囲が低すぎる・keyboard の inset・選択が見えない・半分見える。
@@ -233,7 +233,7 @@ void kl_text_bar_draw(const struct kl_text_bar *bar, const struct kl_style *styl
 5. 欄と kl_ui（偽の canvas と font）: 指の double tap → 語と mode、handle の drag（down・motion・up）、handle の上の tap・long press で変わらない、handle の上の 2 本指は頁の scroll、bar の Copy・Cut（undo で戻る）・Paste・Select All、bar の key が app に渡らない（B1）、欄の外の tap・key・preedit・focus の移動・`kl_field_set` で mode を出る、frame の後に欄の struct を壊しても次の handle の drag が app の memory に触らない（ASan、B2）、秘密の欄、mouse の double click は全文、modal の dialog が後にある frame は bar 無し、`kl_ui_set_text_bar(…, 0)`。
 6. text area: double tap、下の handle を次の行へ、Select All。
 
-既存の host 試験（変える code を通る、回帰）: `plan/ws090/tests/host-input.sh`・`host-widgets.sh`、`plan/ws177/tests/host-text-edit.sh`・`host-field-limit.sh`、`plan/tools/textedit/host-core.sh`。
+既存の host 試験（変える code を通る、回帰）: `plan/tools/input/host-input.sh`・`host-widgets.sh`、`plan/ws177/tests/host-text-edit.sh`・`host-field-limit.sh`、`plan/tools/textedit/host-core.sh`。
 
 ### 4.2 build と検べ
 
@@ -242,7 +242,7 @@ void kl_text_bar_draw(const struct kl_text_bar *bar, const struct kl_style *styl
 
 ### 4.3 AAT（T1 に依頼）
 
-- image: `plan/ws190/tests/config-amd64-aat-touch.mk`（AAT の config ＋ kuidemo、統合済み）。
+- image: `plan/tools/aat/config-amd64-aat-touch.mk`（AAT の config ＋ kuidemo、統合済み）。
 - シナリオ `tests/scenarios/desktop/widgets/touch-select.md`（suite の full への追加は Q1 に依頼）:
   - 準備: kei で `kuidemo --height=820` を開く（stderr の `KUIDEMO` の行は session.log）。窓の位置は `aat windows`、欄の位置は撮影から読む（Controls の頁の Settings の card の Name・Password・Notes）。
   1. Name を tap、`aat key ctrl+a`・`aat key backspace`、`aat type 'hello world'`。`world` の上を `aat tap X Y --count 2` → `KUIDEMO SELECT id=name anchor=6 caret=11`、撮影で両端の handle と bar（Cut・Copy・Paste は clipboard 次第・Select All）。

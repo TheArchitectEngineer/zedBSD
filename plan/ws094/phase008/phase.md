@@ -26,7 +26,7 @@ WS094 の段 L3（ws.md の「段（L1〜L5）」）の計測の手順を作り�
 | `userland/desktop/files/ui-desktop.c` | `DESKTOP ready` の行に `at_ms=`（同じ時計）と `newest_age_ms=`（その描画の時点で、最も新しい項目の mtime からの経過。実時間の時計）。項目の選択の時刻を `select_ms` に残す |
 | `userland/desktop/files/files.h` | `struct fm_desktop` の `select_ms` |
 | `userland/desktop/files/main.c` | 選択の後の最初の present で `DESKTOP select-frame ms=`（選択の時刻から present の後まで） |
-| `plan/ws094/tests/files-desktop-guest.sh` | 手順 `perf100`。`install` は先に compositor を止める（graphical な image の greeter の compositor が `/bin/wayland` を開いたままで、put が失敗した） |
+| `plan/tools/files-desktop/files-desktop-guest.sh` | 手順 `perf100`。`install` は先に compositor を止める（graphical な image の greeter の compositor が `/bin/wayland` を開いたままで、put が失敗した） |
 
 `perf100` の中身: `/tmp/dhome100/Desktop` に画像 20（make-images.py の有効な 6 枚の複写。png・jpg・gif）、folder 10、text 70 を作る。
 3 回、compositor を立て直して、(a) `ready items=100` の at_ms − `ZWL DESKTOP start` の at_ms、(b) `added-N.txt` を作って

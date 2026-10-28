@@ -28,7 +28,7 @@ Queue: q862 / q862-i01（P1）
    ```
    mkdir -p build/ws090-p015
    sh plan/ws081/tests/run-termtouch.sh build/ws090-p015/termtouch-before
-   sh plan/ws081/tests/run-notestouch.sh build/ws090-p015/notestouch-before
+   sh plan/tools/touch/run-notestouch.sh build/ws090-p015/notestouch-before
    cp build/ws090-p015/termtouch-before/host-termtouch.log build/ws090-p015/termtouch-before.log
    cp build/ws090-p015/notestouch-before/host-notestouch.log build/ws090-p015/notestouch-before.log
    ```
@@ -44,7 +44,7 @@ Queue: q862 / q862-i01（P1）
    - `void kui_scroll_set_position(struct kui_scroll *scroll, double x, double y);`（glide を止め、scroller にも同じ位置を入れる。指が触れている間は何もしない、
      今の `kui_scroll_press`（scroll.c:302-318）の「触れていなければ位置を入れてから press」と同じ規則）。
    - `KUI_VERSION` を 1 つ上げる（2026-10-01 は 11 → 12。適用の直前に main の値を確かめ、main の最新の次にする）。header の版の列に 1 行。
-4. libkeiui の host 試験に足す（`plan/ws090/tests/host-input.c`、WS090 の file）: 負の最小の境界での drag・overscroll・rubber band の戻り、`set_position` の後の
+4. libkeiui の host 試験に足す（`plan/tools/input/host-input.c`、WS090 の file）: 負の最小の境界での drag・overscroll・rubber band の戻り、`set_position` の後の
    drag の始まり、glide 中の `set_position`。`keiland_scroller` を直に使った場合と frame ごとに同じ位置になること（p003 の試験と同じ比べ方）。
 5. Terminal・Notes の touch.c を `struct kui_scroll` に替える（gesture（`keiland_gesture`）と motion はそのまま。scroll だけ）。各 Makefile の依存と
    `platform/amd64/vmunix.mk` の link は p011 で `libkeiui` が入っている（変えない）。
@@ -52,12 +52,12 @@ Queue: q862 / q862-i01（P1）
    `-Wconversion` で compile するので、scroll.c がそれで通るかを先に `cc -Wconversion -Werror -c` で確かめる。通らなければ libkeiui の側を直す）。
 7. 確かめ:
    ```
-   sh plan/ws090/tests/host-input.sh
+   sh plan/tools/input/host-input.sh
    sh plan/ws090/tests/host-widgets.sh
    sh plan/tools/textedit/host-core.sh
    sh plan/tools/keiui/host-chooser.sh
    sh plan/ws081/tests/run-termtouch.sh build/ws090-p015/termtouch-after
-   sh plan/ws081/tests/run-notestouch.sh build/ws090-p015/notestouch-after
+   sh plan/tools/touch/run-notestouch.sh build/ws090-p015/notestouch-after
    sh plan/ws079/tests/run-notes-host.sh
    ```
    PASS: `host-input: N/N passed`・`host-widgets: 94/94 passed`・`host-core: 34/34`・`host-chooser: 85/85 passed`、WS081 の 2 本が手順 1 と同じ件数で FAIL 0、
@@ -79,7 +79,7 @@ Queue: q862 / q862-i01（P1）
 
 ## 未知
 
-- `-Wconversion` の下で `scroll.c` が通るか（手順 6）: 2026-10-01 の scroll.c は通る（`clang -std=gnu11 -O2 -Wall -Wextra -Werror -Wconversion -Wno-sign-conversion -Ibuild/ws090/inc -c userland/desktop/libkeiui/scroll.c -o /dev/null` が exit 0。`build/ws090/inc` は `sh plan/ws090/tests/host-input.sh` が作る）。足した関数の後にもう一度確かめる。
+- `-Wconversion` の下で `scroll.c` が通るか（手順 6）: 2026-10-01 の scroll.c は通る（`clang -std=gnu11 -O2 -Wall -Wextra -Werror -Wconversion -Wno-sign-conversion -Ibuild/ws090/inc -c userland/desktop/libkeiui/scroll.c -o /dev/null` が exit 0。`build/ws090/inc` は `sh plan/tools/input/host-input.sh` が作る）。足した関数の後にもう一度確かめる。
 - Terminal の view は「行」の単位（`touch_position()` が行と pixel の offset から位置を作る）で、`kui_scroll` の bars（`kui_scroll_draw_bars`）は使わない。
   bars を使わないことで `kui_scroll` の `moved_us` の扱いに差が出ないか（見るのは `kui_scroll_step` の戻り値だけにする）。
 

@@ -45,11 +45,11 @@ Parent: [WS241](../ws.md)
 
 | コマンド | 結果 |
 | --- | --- |
-| `make -j16 BUILD=build/p1perf/nvrtx ZEDBSD_CONFIG=plan/ws037/tests/config-amd64-nvrtx.mk build/p1perf/nvrtx/vmunix` | rc 0・warning 0・vmunix check PASS（cksum 3200698666 3607808） |
+| `make -j16 BUILD=build/p1perf/nvrtx ZEDBSD_CONFIG=plan/tools/nvrtx/config-amd64-nvrtx.mk build/p1perf/nvrtx/vmunix` | rc 0・warning 0・vmunix check PASS（cksum 3200698666 3607808） |
 | `make -j16 BUILD=build/p1perf/ci ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p1perf/ci/vmunix` | rc 0・warning 0・vmunix check PASS |
 | `sh plan/ws037/tests/nvrtx-vk-d3-host-test.sh` | PASS 122（新: 0x021c なし、0x0da4＝0x1011 が run ごとに 1 回、draw＋quad の計数 4） |
-| `sh plan/ws037/tests/nvrtx-vk-host-test.sh` / `nvrtx-gsp-host-test.sh` | PASS 60 / PASS 285（firmware の directory 無しの skip を除く） |
-| `sh plan/ws037/tests/nvrtx-sm75-host-test.sh` / `nvrtx-sm75-desktop-test.sh` | 170 checks 0 failures（0x021c なし、0x0da4＝0x1011）/ 46 compiled 0 disagreed |
+| `sh plan/tools/nvrtx/nvrtx-vk-host-test.sh` / `nvrtx-gsp-host-test.sh` | PASS 60 / PASS 285（firmware の directory 無しの skip を除く） |
+| `sh plan/tools/nvrtx/nvrtx-sm75-host-test.sh` / `nvrtx-sm75-desktop-test.sh` | 170 checks 0 failures（0x021c なし、0x0da4＝0x1011）/ 46 compiled 0 disagreed |
 | 実機 | **未実施**（T1-697 へ依頼） |
 
 T1-697 の依頼（Q1 経由）: T1-696 と同じ 3 場面（静止 20 s・Files 20 s・Terminal の無限 echo＋Files 20 s）を nvrtx.vk.perf=1 で、(a) nvrtx.boost=1 なし、(b) あり の 2 回。見る物: KWL PERF（frame_ms・rec submit・acquire）、kernel.log の perf の 5 行（runs・frames/flips・gpu・draws・streams）、`P9p` の行、`D3 fail`・`a command buffer did not run`・`rm: control` の有無、画面の崩れ（X1 で shader の cache の扱いを変えたので、Terminal・Files の文字と窓の絵）。

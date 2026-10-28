@@ -32,6 +32,6 @@ Graph: media-cli → media-api → phone-select → conformance。MMS codec/Get/
 
 ## 2026-10-10 実行終了
 
-4 itemはすべてcleared（本scopeのみ）。source commit `874e12d3b`、main fast-forward/read-back確認済み。[最終検証](../ws157/tests/verification-20261010.md)・[CLI利用法/実機手順](../ws157/tests/mediastorage-usage.md)。zedBSD 5 named targetsとLinux all warning0、ASan/UBSan host回帰と境界PASS。WS157/WS197はincomplete。実機GUIとMMS転送は未実施。共有master/Queue/Guardrail/cache投影はQ1に保留。local-onlyでremote sync義務なし。
+4 itemはすべてcleared（本scopeのみ）。source commit `874e12d3b`、main fast-forward/read-back確認済み。[最終検証](../../ws157/verification-20261010.md)・[CLI利用法/実機手順](../../ws157/mediastorage-usage.md)。zedBSD 5 named targetsとLinux all warning0、ASan/UBSan host回帰と境界PASS。WS157/WS197はincomplete。実機GUIとMMS転送は未実施。共有master/Queue/Guardrail/cache投影はQ1に保留。local-onlyでremote sync義務なし。
 
 Upcoming Work Outlook（未選択・自動開始なし）: Media/Phoneの実機UI手順、p010のMMS写真/動画Get/Push接続（別treeの試作あり）、WS197 HFP/PBAP UAT/最終conformance。scope/依存を確認して次Queueへ選択する。

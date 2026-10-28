@@ -31,7 +31,7 @@ Parent: [WS083](../ws.md)
 | `sh plan/ws083/tests/run-host-mfx-avc.sh` | 4 case（intra-cqm 548・references 406・flat 535・defaults 535 の check）とも 0 failures、plain・ASan/UBSan。builder の変異 4 種（pitch の shift、zig-zag の逆、D21 の 0、long term の bit）は全て検出 |
 | `sh plan/ws083/tests/run-host-video-roundtrip.sh` | PASS（p003b の全 case ＋ IDR と P の batch 36 命令 89 checks を genxml で、NV12 の layout 16x16・1920x1080・4096x4096・100x50、NV12 は image_slice が拒む） |
 | `sh plan/ws083/tests/run-host-vkvideo-probe.sh` | 3 本の stream とも、reader が全 picture（IDR・intra・slice の数）と cqm の PPS（list 0xdb）を読み、ffmpeg の frame を Tile Y にして de-tile・hash した値が参照と一致（plain・ASan/UBSan） |
-| `sh plan/ws031/tests/run-vk-host-tests.sh`、`sh plan/ws075/tests/run-host-layered.sh`、`sh plan/ws101/tests/host/run.sh` | PASS |
+| `sh plan/ws031/tests/run-vk-host-tests.sh`、`sh plan/ws075/tests/run-host-layered.sh`、`sh plan/tools/gpu-compute/host/run.sh` | PASS |
 | `make -j16 BUILD=build/p2-k ZEDBSD_CONFIG=config/ci/config-amd64.mk build/p2-k/vmunix` | 成功 warning 0（kernel include check・vmunix check PASS） |
 | `make … ZEDBSD_USER_PROGRAMS="libvulkan vkvideo-probe" build/p2-k/bin/vkvideo-probe` | 成功 warning 0（-Wall -Wextra -Werror、check-dynamic-elf PASS） |
 

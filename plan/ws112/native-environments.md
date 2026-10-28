@@ -1,7 +1,7 @@
 # WS112: 公式入力・native環境・後続command
 
 Status: q585-i01の有限調査。Observation: 2026-10-02 UTC。image本体取得、guest起動、rootfs展開、buildは未実施。
-入力の全URL/hashは[調査表](phase001/survey.md)、encoder/成果物は[package契約](package-contract.md)。
+入力の全URL/hashは調査表（fb1f6afee の `plan/ws112/phase001/survey.md`）、encoder/成果物は[package契約](package-contract.md)。
 
 ## inputとtrustの確認
 

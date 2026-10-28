@@ -2,12 +2,12 @@
 
 | Queue / attempt | Phase | Scope | Approval | Timebox | State |
 | --- | --- | --- | --- | --- | --- |
-| q593 / q593-i01 | [ws095-p012](../../ws095/phase012/phase.md) | IME の辞書を千語に拡張、held-out で測る | 2026-10-02 user「作業を開始しましょう。」 | 4h | finished / cleared |
+| q593 / q593-i01 | ws095-p012（fb1f6afee の `plan/ws095/phase012/phase.md`） | IME の辞書を千語に拡張、held-out で測る | 2026-10-02 user「作業を開始しましょう。」 | 4h | finished / cleared |
 
 | q595 / q595-i01 | [ws127-p001](../../ws127/phase001/phase.md) | Files の棚卸し（source 不変） | 継続 dispatch（user 2026-10-02） | 3h | finished / cleared |
-| q603 / q603-i01 | [ws095-p013](../../ws095/phase013/phase.md) | BUG-139 preedit の大きさ | user 2026-10-02 | 4h | finished / cleared |
-| q604 / q604-i01 | [ws095-p005](../../ws095/phase005/phase.md) | 候補の窓と右上の IME の status | user 2026-10-02 | 4h | finished / cleared |
-| q606 / q606-i01 | [ws129-p010](../../ws129/phase010/phase.md) | 全 desktop app と base の config | user 2026-10-02 | 3h | finished / uncleared（i386 未検証） |
+| q603 / q603-i01 | ws095-p013（fb1f6afee の `plan/ws095/phase013/phase.md`） | BUG-139 preedit の大きさ | user 2026-10-02 | 4h | finished / cleared |
+| q604 / q604-i01 | ws095-p005（fb1f6afee の `plan/ws095/phase005/phase.md`） | 候補の窓と右上の IME の status | user 2026-10-02 | 4h | finished / cleared |
+| q606 / q606-i01 | ws129-p010（fb1f6afee の `plan/ws129/phase010/phase.md`） | 全 desktop app と base の config | user 2026-10-02 | 3h | finished / uncleared（i386 未検証） |
 
 Next（予約）: ws127-p002（Files の改善）→ ws089-p010
 

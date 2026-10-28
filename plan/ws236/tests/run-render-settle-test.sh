@@ -9,7 +9,7 @@ mkdir -p "$repo/build/tmp"
 work=$(mktemp -d "$repo/build/tmp/ws236-settle.XXXXXX")
 cc -std=c99 -D_POSIX_C_SOURCE=200809L -D_GNU_SOURCE -include time.h -Wall -Wextra -Werror -O1 -g \
 	-fsanitize=address,undefined -ffunction-sections -fdata-sections \
-	-I"$repo/plan/ws141/tests/host" -I"$repo/include" -I"$repo/src" -I"$repo" \
+	-I"$repo/plan/tools/v3d-qpu/host" -I"$repo/include" -I"$repo/src" -I"$repo" \
 	"$repo/plan/ws236/tests/render-settle-host-test.c" "$repo/src/drivers/gpu/bcm2711/render-worker.c" \
 	-Wl,--gc-sections -o "$work/render-settle-test"
 UBSAN_OPTIONS=halt_on_error=1 "$work/render-settle-test"

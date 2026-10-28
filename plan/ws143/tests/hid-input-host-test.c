@@ -75,7 +75,7 @@
 
 /*
  * The Latitude 5330's touchpad's finger report (report ID 3, 30 bytes with
- * the ID, plan/ws159/tests/latitude5330-linux/rdesc.txt): five fingers of
+ * the ID, plan/tools/hid/latitude5330-linux/rdesc.txt): five fingers of
  * 40 bits (confidence, tip, a contact ID of 3 bits, X 0..1336 and Y 0..760
  * of 16 bits each), the Scan Time at bit 200, the Contact Count at 216 and
  * the button at 224.

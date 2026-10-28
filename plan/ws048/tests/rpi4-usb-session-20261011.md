@@ -1,7 +1,7 @@
 # RPi4 USB / sessiond boot option / 2026-10-11
 
 Base main fbcb2b543; owned worktree `.claude/worktrees/rpi4-usb-session`, branch `codex/rpi4-usb-session`.
-User scope and physical observations are in [ws048-p009](../phase009/phase.md) and [ws193-p009](../../ws193/phase009/phase.md).
+User scope and physical observations are in [ws048-p009](../phase009/phase.md) and ws193-p009（fb1f6afee の `plan/ws193/phase009/phase.md`）.
 Config snapshot: [selected config](rpi4-usb-session-config-20261011.mk).
 
 ## Findings and changes

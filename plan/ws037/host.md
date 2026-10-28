@@ -40,5 +40,5 @@
 
 ## 2026-10-14 夜 P1: WPR2 と host の reboot（T2 の R2・R3）
 
-- FWSEC-FRTS が張った WPR2 は、GSP を起こさずに解く道が無い（booter_unload は mailbox 0x29 で断る、[p004](phase004/phase.md) の「R2・R3 の結果への対応」）。**host の warm reboot（`sudo reboot`）で WPR2 は消える**（R2 の後の reboot で R3 の P1b が ok）。
+- FWSEC-FRTS が張った WPR2 は、GSP を起こさずに解く道が無い（booter_unload は mailbox 0x29 で断る、p004（fb1f6afee の plan/ws037/phase004/phase.md） の「R2・R3 の結果への対応」）。**host の warm reboot（`sudo reboot`）で WPR2 は消える**（R2 の後の reboot で R3 の P1b が ok）。
 - FLR・bus reset で消えるかは未確認。

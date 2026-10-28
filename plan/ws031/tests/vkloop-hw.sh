@@ -32,7 +32,7 @@
 #                                                      vkdemo starts TEST_WAIT_S (default 90) seconds later than
 #                                                      usual, so a long scenario ends before the application runs
 #        plan/ws031/tests/vkloop-hw.sh "test <scenario> -DFOO=1"             (flags after the scenario)
-#                                                      a scenario builds with plan/ws075/tests/config-test-hw.mk (the
+#                                                      a scenario builds with plan/tools/i915-hw/config-test-hw.mk (the
 #                                                      console mirrored to the serial log) and the test set of
 #                                                      platform/amd64/vmunix.mk that holds it (q762), unless
 #                                                      ZEDBSD_CONFIG or I915_TEST_SET says otherwise; display_ktest's
@@ -75,8 +75,8 @@ case "$EXTRA" in test*)
 	fi
 	export I915_TEST_SET
 	# A scenario's verdict lines are read from the serial log: the kernel's console must be mirrored there
-	# (plan/ws075/tests/config-test-hw.mk; T1-190 ran the default image without it and saw no line).
-	ZEDBSD_CONFIG=${ZEDBSD_CONFIG:-plan/ws075/tests/config-test-hw.mk} ;;
+	# (plan/tools/i915-hw/config-test-hw.mk; T1-190 ran the default image without it and saw no line).
+	ZEDBSD_CONFIG=${ZEDBSD_CONFIG:-plan/tools/i915-hw/config-test-hw.mk} ;;
 esac
 WAYLAND_RUN=0
 case "$EXTRA" in wayland*)

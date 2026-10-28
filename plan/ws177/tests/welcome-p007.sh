@@ -7,7 +7,7 @@
 #     started (WELCOME files-failed error=N), Settings stays and says so (welcome-files-failed.png, review).
 #  3. Enter again (the button is Close now): Settings ends without starting Files (no second WELCOME files line).
 #  4. /bin/files put back; no failure in zdesktop's log.
-# The keys, the narrow window, the Network step's notes and Esc are the host test's (plan/ws164/tests/run-host-welcome.sh).
+# The keys, the narrow window, the Network step's notes and Esc are the host test's (plan/tools/keiland/run-host-welcome.sh).
 # PASS: every "ok" line and the last line welcome-p007: PASS.
 #   plan/ws177/tests/welcome-p007.sh [OUTDIR]   (default build/ws177-p007)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib

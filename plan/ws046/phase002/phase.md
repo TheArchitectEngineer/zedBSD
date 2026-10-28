@@ -15,7 +15,7 @@ Queue: q401（q401-i01）
 
 ## 受け入れ
 
-- host で build した make が差分試験の `posix.sh` 45 件で GNU make と同じ（`plan/ws046/tests/make-diff.py --make`）。
+- host で build した make が差分試験の `posix.sh` 45 件で GNU make と同じ（`plan/tools/make/make-diff.py --make`）。
 - 新しい code が `plan/coding-style.md` に合う（`style-check.py` の違反 0）。host の `cc -Wall -Wextra` と zedBSD の build で warning 0。
 - config に `make` を足して amd64 の image を build、guest で posix の case を走らせる（p004 の前の確かめ）、boot test。
 
