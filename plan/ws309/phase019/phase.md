@@ -3,7 +3,7 @@
 # ws309-p019 試験の screen capture（keiland-shot）の画素の送りを thread へ
 
 - 親: [WS309](../ws.md)。Queue: q1662-i01（P1）。
-- 状態: in-progress（2026-10-29 P1）。
+- 状態: cleared（2026-10-29 03:04 Q1 経由: P2 の q1668 が RDNA の実機で確かめた）。
 - 出典: 2026-10-29 Q1「P2 が見つけた compositor の不具合: keiland-shot で撮った後、compositor がその window へ frame callback を送らなくなり、client の libvulkan の FIFO の
   10 s の watchdog が切れて SURFACE_LOST（errno 24 = EAGAIN）。…shot の経路の frame callback の扱いを、今の thread の整理の中で直して（独立の小さな修正にできるなら先に commit して SHA を）。」
   P2 の診断: [ws291 phase006](../../ws291/phase006/phase.md) の「window mode の shot の SURFACE_LOST（errno 24）の解析」（RDNA の実機、main の kernel でも、撮らなければ 900 frame 完走）。
@@ -21,7 +21,7 @@
 - QEMU Venus（`plan/ws309/tests/shot-fifo.sh`、image `plan/ws309/tests/config-amd64-p1.mk`）: mview（FIFO、900 frame）の 6 s で keiland-shot、mview が status 0（DONE）と shot=0。
   `SHOT_STALL=15`（keiland-shot を 0.3 s の後 15 s 止めて遅い読み手にする）で、直した版は mview が status 0、直す前の版は止まる（仮説の確かめ）。
 - `bin/wayland`（試験の config）warning 0。
-- RDNA の実機（P2 の round の shot の段）は Q1 の割当で（未実施）。
+- RDNA の実機（P2 の round の shot の段）: 2026-10-29 P2 の q1668 で済み（記録の末尾）。
 
 ## 記録
 
@@ -33,3 +33,6 @@
   再現しない時の次の手がかり: compositor の `--log-frames` で shot の前後の `KWL LAT`・`KWL PERF pass` を見て、main が止まったか、frame を出し続けて callback だけ落ちたかを分ける。
 - build: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/amd64 build/amd64/bin/wayland`（shot-none.c、main.c の KWL THREADS）と
   `ZEDBSD_CONFIG=plan/ws309/tests/config-amd64-p1.mk BUILD=build/ws309/img build/ws309/img/bin/wayland`（shot.c）が exit 0・warning 0。
+- 2026-10-29 03:04 Q1 から P1 へ（P2 の q1668 の結果）: RDNA の実機で main 9402d4c74 の /bin/wayland（この直しを含む）の `measure.sh shot`（1 体・6500 体 × 2 回）が
+  4 回とも `MVIEW DONE frames=900`、SURFACE_LOST 0、画は Linux と max 0/1。直す前の build は 8 回とも 280〜343 frame で SURFACE_LOST。
+  log は P2 の `/home/awe/zedBSD-worktrees/p2-ws291k/build/ws291/shotchk.out`（P1 は読んでいない、Q1 の伝えたとおりに記録）。→ cleared。

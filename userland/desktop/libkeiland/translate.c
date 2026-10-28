@@ -25,7 +25,9 @@
  * point into that copy, and an open-addressing table of their hashes finds
  * them.  A program has its own domain's catalog and the shared one
  * (KL_TR_SHARED_DOMAIN), looked in in that order.  Everything belongs to
- * the one thread that uses the library's windows.
+ * the one thread that uses the library's windows, except that kl_tr_read
+ * reads catalogs on any thread into a record of their own, which that
+ * thread then uses (kl_tr_use) or frees (kl_tr_discard).
  */
 
 #include <keiland/keiland.h>
@@ -107,6 +109,11 @@ struct tr_state {
 	struct tr_catalog catalogs[TR_CATALOGS];
 };
 
+/* A language's catalogs kl_tr_read read and nobody uses yet. */
+struct kl_tr_catalogs {
+	struct tr_state state;
+};
+
 /*
  * The languages ui.language numbers, in its order: 0 is English, the
  * texts of the source.
@@ -120,6 +127,8 @@ static const char *const tr_languages[] = { "en", "ja" };
  */
 static struct tr_state tr_state;
 
+static int tr_state_read(struct tr_state *state, const char *directory, const char *domain, const char *language);
+static void tr_state_use(const struct tr_state *state);
 static int tr_name_valid(const char *name);
 static int tr_catalog_read(struct tr_catalog *catalog, const char *directory, const char *language, const char *domain);
 static int tr_catalog_parse(struct tr_catalog *catalog);
@@ -169,53 +178,89 @@ kl_tr_open_directory(
 {
 	struct tr_state fresh;
 	int error;
-	int differs;
+
+	/* The catalogs read; a failure leaves every text in English. */
+	error = tr_state_read(&fresh, directory, domain, language);
+	if (error != 0) {
+		kl_tr_close();
+		return error;
+	}
+
+	/* Succeeded: the old catalogs go (the texts they gave are no longer valid). */
+	tr_state_use(&fresh);
+	return 0;
+}
+
+/*
+ * Reads a program's catalogs in a language from the installed directory
+ * into a record of its own, on any thread: the texts in use are not
+ * touched.
+ */
+int
+kl_tr_read(
+	const char *domain,
+	const char *language,
+	struct kl_tr_catalogs **out)
+{
+	struct kl_tr_catalogs *catalogs;
+	int error;
+
+	/* Nothing until it is read. */
+	if (out == NULL)
+		return EINVAL;
+	*out = NULL;
+
+	/* The record. */
+	catalogs = calloc(1U, sizeof(*catalogs));
+	if (catalogs == NULL)
+		return ENOMEM;
+
+	/* The catalogs, into the record. */
+	error = tr_state_read(&catalogs->state, TR_DIRECTORY, domain, language);
+	if (error != 0) {
+		free(catalogs);
+		return error;
+	}
+
+	/* Succeeded: the caller's until kl_tr_use or kl_tr_discard. */
+	*out = catalogs;
+	return 0;
+}
+
+/*
+ * Makes the catalogs kl_tr_read read the ones in use, on the thread that
+ * uses the texts, and frees their record.
+ */
+void
+kl_tr_use(
+	struct kl_tr_catalogs *catalogs)
+{
+	/* Nothing read. */
+	if (catalogs == NULL)
+		return;
+
+	/* The old catalogs go, then the record that carried the new ones. */
+	tr_state_use(&catalogs->state);
+	free(catalogs);
+}
+
+/*
+ * Frees catalogs kl_tr_read read that are not to be used.
+ */
+void
+kl_tr_discard(
+	struct kl_tr_catalogs *catalogs)
+{
 	unsigned index;
 
-	/* Only names that make a plain path; a refusal leaves every text in English, as any failure does. */
-	error = EINVAL;
-	if (directory != NULL)
-		error = tr_name_valid(domain);
-	if (error == 0)
-		error = tr_name_valid(language);
-	if (error != 0) {
-		kl_tr_close();
-		return error;
-	}
+	/* Nothing read. */
+	if (catalogs == NULL)
+		return;
 
-	/* The new state, empty until its catalogs are read. */
-	memset(&fresh, 0, sizeof(fresh));
-	(void)snprintf(fresh.language, sizeof(fresh.language), "%s", language);
-	(void)snprintf(fresh.domain, sizeof(fresh.domain), "%s", domain);
-
-	/*
-	 * English is the source's own text: no catalog is read, and any other
-	 * language reads the program's domain, then the shared one.
-	 */
-	differs = strcmp(language, "en");
-	if (differs != 0) {
-		/* The program's own catalog. */
-		error = tr_catalog_read(&fresh.catalogs[0], directory, language, domain);
-
-		/* The shared one, after it read. */
-		if (error == 0)
-			error = tr_catalog_read(&fresh.catalogs[1], directory, language, KL_TR_SHARED_DOMAIN);
-	}
-
-	/* A failure leaves every text in English. */
-	if (error != 0) {
-		for (index = 0; index < TR_CATALOGS; index++)
-			tr_catalog_free(&fresh.catalogs[index]);
-		kl_tr_close();
-		return error;
-	}
-
-	/* The old catalogs go; the texts they gave are no longer valid. */
-	kl_tr_close();
-	tr_state = fresh;
-
-	/* Succeeded: the texts are the language's. */
-	return 0;
+	/* Each catalog's memory, then the record. */
+	for (index = 0; index < TR_CATALOGS; index++)
+		tr_catalog_free(&catalogs->state.catalogs[index]);
+	free(catalogs);
 }
 
 /*
@@ -433,6 +478,77 @@ kl_tr_format(
 
 	/* Succeeded: the whole text is written. */
 	return 0;
+}
+
+/*
+ * Reads a program's catalogs in a language from a directory into state,
+ * touching nothing else (any thread may call it).  Returns 0, or EINVAL,
+ * ENOMEM or EFBIG with state holding nothing.
+ */
+static int
+tr_state_read(
+	struct tr_state *state,
+	const char *directory,
+	const char *domain,
+	const char *language)
+{
+	int error;
+	int differs;
+	unsigned index;
+
+	/* Nothing until it is read. */
+	memset(state, 0, sizeof(*state));
+
+	/* Only names that make a plain path. */
+	error = EINVAL;
+	if (directory != NULL)
+		error = tr_name_valid(domain);
+	if (error == 0)
+		error = tr_name_valid(language);
+	if (error != 0)
+		return error;
+
+	/* The names of the state. */
+	(void)snprintf(state->language, sizeof(state->language), "%s", language);
+	(void)snprintf(state->domain, sizeof(state->domain), "%s", domain);
+
+	/*
+	 * English is the source's own text: no catalog is read, and any other
+	 * language reads the program's domain, then the shared one.
+	 */
+	differs = strcmp(language, "en");
+	if (differs != 0) {
+		/* The program's own catalog. */
+		error = tr_catalog_read(&state->catalogs[0], directory, language, domain);
+
+		/* The shared one, after it read. */
+		if (error == 0)
+			error = tr_catalog_read(&state->catalogs[1], directory, language, KL_TR_SHARED_DOMAIN);
+	}
+
+	/* A failure keeps nothing. */
+	if (error != 0) {
+		for (index = 0; index < TR_CATALOGS; index++)
+			tr_catalog_free(&state->catalogs[index]);
+		memset(state, 0, sizeof(*state));
+		return error;
+	}
+
+	/* Succeeded: the state holds the language's catalogs. */
+	return 0;
+}
+
+/*
+ * Makes a state read by tr_state_read the one in use; the old catalogs go
+ * (the texts they gave are no longer valid).
+ */
+static void
+tr_state_use(
+	const struct tr_state *state)
+{
+	/* The old catalogs, then the new ones in their place. */
+	kl_tr_close();
+	tr_state = *state;
 }
 
 /*

@@ -237,12 +237,33 @@ struct home_app {
 };
 
 /*
- * The applications, read once when Home first opens.  home_app_count is 0
- * until then; the list is not read again while the compositor runs.
+ * An applications' list as it is read: on the file I/O thread, whose job
+ * it is part of, or here without the thread.
+ */
+struct home_list {
+	struct home_app apps[HOME_APPS_MAX];
+	unsigned count;
+};
+
+/* A read of the list on the file I/O thread. */
+struct home_read_job {
+	struct kwl_lane_job lane;
+	struct home_list list;
+};
+
+/*
+ * The applications, read once when Home first opens or is read ahead.
+ * home_app_count is 0 until then; the list is not read again while the
+ * compositor runs.  home_apps_reading is set while the file I/O thread
+ * reads it (Home shows no icons until it is taken).
  */
 static struct home_app home_apps[HOME_APPS_MAX];
 static unsigned home_app_count;
 static unsigned home_apps_read;
+static unsigned home_apps_reading;
+
+/* The list read here when the file I/O thread does not take it (too large for the stack). */
+static struct home_list home_list_here;
 
 /*
  * Whether Home's opening was prepared ahead (home_prepare, ws099-p035c):
@@ -301,14 +322,19 @@ static const char home_characters[HOME_KEYS] = {
 };
 
 static void home_read_apps(struct kwl_server *server);
+static void home_list_read(struct home_list *list);
+static void home_list_take(struct kwl_server *server, struct home_list *list);
+static void home_read_run(struct kwl_lane_job *job);
+static void home_read_done(void *context, struct kwl_lane_job *job);
+static void home_read_drop(struct kwl_lane_job *job);
 static int home_present(const char *name, const char *command);
-static void home_add_app(const char *name, const char *command, const char *keywords, uint32_t rgb, const char *picture);
+static void home_add_app(struct home_list *list, const char *name, const char *command, const char *keywords, uint32_t rgb, const char *picture);
 static void home_draw_letter(struct kwl_server *server, struct kwl_list *command, const struct home_app *app, int32_t x, int32_t y, float left, float top, float size, int over, float opacity);
 static void home_stage(struct kwl_server *server, struct kwl_list *command, float x, float y, float width, float height, const float (*under)[4], unsigned under_count);
 static void home_stage_shapes(struct kwl_server *server, struct kwl_list *command, float x, float y, float width, float height);
 static void home_stage_picture(struct kwl_server *server, struct kwl_list *command);
 static void home_draw_tile(struct kwl_server *server, struct kwl_list *command, float left, float top, float size, const float *color);
-static void home_parse_line(char *line);
+static void home_parse_line(struct home_list *list, char *line);
 static uint32_t home_hex(const char *text);
 static void home_layout(struct kwl_server *server);
 static unsigned home_page_of(unsigned slot);
@@ -344,6 +370,13 @@ static void home_draw_dots(struct kwl_server *server, struct kwl_list *command, 
 static void home_select(struct kwl_server *server, int selected);
 static void home_rise_release(struct kwl_server *server);
 static void home_page_follow(struct kwl_server *server, int32_t dx, int32_t dy);
+
+/* The operations of a read of the list on the file I/O thread. */
+static const struct kwl_lane_ops home_read_ops = {
+	home_read_run,
+	home_read_done,
+	home_read_drop
+};
 
 /*
  * Returns how far Home is open now: 0 closed, 1 open, between while the
@@ -1714,21 +1747,50 @@ kwl_home_dismiss(
 	home_close(server, progress, via);
 }
 
-/* Reads the applications' list once: the file, or the built-in list when there is none; a login session adds Log Out. */
+/*
+ * Reads the applications' list once: on the file I/O thread, whose list
+ * a later pass takes (Home shows no icons meanwhile), or here without it.
+ */
 static void
 home_read_apps(
 	struct kwl_server *server)
+{
+	struct home_read_job *job;
+	int error;
+
+	/* Read once, or being read. */
+	if (home_apps_read || home_apps_reading)
+		return;
+
+	/* The file I/O thread reads the file and looks each program up. */
+	job = calloc(1U, sizeof(*job));
+	if (job != NULL) {
+		error = kwl_io_file_submit(server, &job->lane, &home_read_ops, 0U);
+		if (error == 0) {
+			home_apps_reading = 1U;
+			return;
+		}
+		free(job);
+	}
+
+	/* Without the thread, or without memory for the job, it is read here. */
+	memset(&home_list_here, 0, sizeof(home_list_here));
+	home_list_read(&home_list_here);
+	home_list_take(server, &home_list_here);
+}
+
+/*
+ * Reads the applications' list: the file, or the built-in list when there
+ * is none.  It touches only the list (the file I/O thread calls it).
+ */
+static void
+home_list_read(
+	struct home_list *list)
 {
 	char line[320];
 	FILE *file;
 	char *end;
 	char *got;
-	int managed;
-
-	/* Read once. */
-	if (home_apps_read)
-		return;
-	home_apps_read = 1;
 
 	/* The file, a line an application; blank lines and # comments are skipped. */
 	file = fopen(HOME_APPS_PATH, "r");
@@ -1744,7 +1806,7 @@ home_read_apps(
 				*end = '\0';
 			if (line[0] == '\0' || line[0] == '#')
 				continue;
-			home_parse_line(line);
+			home_parse_line(list, line);
 		}
 
 		/* The file is not needed again. */
@@ -1752,33 +1814,95 @@ home_read_apps(
 	}
 
 	/* Without a usable file, the desktop's applications (ws129-p010: Settings, and no test client). */
-	if (home_app_count == 0U) {
-		home_add_app("Terminal", KEILAND_BINDIR "/terminal", "term shell console sh", 0x323a4eU, "terminal");
-		home_add_app("Model viewer", KEILAND_BINDIR "/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU, "model");
-		home_add_app("X terminal", "/bin/sh " KEILAND_LIBEXECDIR "/keiland-x11 " KEILAND_BINDIR "/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U, "xterm");
-		home_add_app("Gears", "/bin/sh " KEILAND_LIBEXECDIR "/keiland-x11 " KEILAND_BINDIR "/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU, "gears");
-		home_add_app("Files", KEILAND_BINDIR "/files", "files file manager folder finder browse", 0x2f7cf6U, "files");
-		home_add_app("Notes", KEILAND_BINDIR "/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U, "notes");
-		home_add_app("Settings", KEILAND_BINDIR "/settings", "settings preferences control panel system network wifi display sound wallpaper about", 0x6b7a8fU, "settings");
-		home_add_app("PDF Viewer", KEILAND_BINDIR "/pdfviewer", "pdf viewer document reader", 0xd9534fU, "pdf");
-		home_add_app("Image Viewer", KEILAND_BINDIR "/imageview", "image picture photo viewer png jpeg gif", 0x3fa36bU, "image");
-		home_add_app("Text Editor", KEILAND_BINDIR "/textedit", "text editor edit txt notepad write", 0x1f9e9aU, "text");
-		home_add_app("Browser", KEILAND_BINDIR "/browser", "browser web www html internet", 0x3a8fd8U, "browser");
+	if (list->count == 0U) {
+		home_add_app(list, "Terminal", KEILAND_BINDIR "/terminal", "term shell console sh", 0x323a4eU, "terminal");
+		home_add_app(list, "Model viewer", KEILAND_BINDIR "/mview --windowed --size=960x640", "3d mview model vulkan viewer", 0xe07a5aU, "model");
+		home_add_app(list, "X terminal", "/bin/sh " KEILAND_LIBEXECDIR "/keiland-x11 " KEILAND_BINDIR "/zterm -geometry 80x24", "x11 xterm zterm", 0x4a4a78U, "xterm");
+		home_add_app(list, "Gears", "/bin/sh " KEILAND_LIBEXECDIR "/keiland-x11 " KEILAND_BINDIR "/zgears --frames=0", "gears opengl glx x11 3d", 0xd05a3aU, "gears");
+		home_add_app(list, "Files", KEILAND_BINDIR "/files", "files file manager folder finder browse", 0x2f7cf6U, "files");
+		home_add_app(list, "Notes", KEILAND_BINDIR "/notes", "notes note notebook pen handwriting draw pdf", 0xe0a526U, "notes");
+		home_add_app(list, "Settings", KEILAND_BINDIR "/settings", "settings preferences control panel system network wifi display sound wallpaper about", 0x6b7a8fU, "settings");
+		home_add_app(list, "PDF Viewer", KEILAND_BINDIR "/pdfviewer", "pdf viewer document reader", 0xd9534fU, "pdf");
+		home_add_app(list, "Image Viewer", KEILAND_BINDIR "/imageview", "image picture photo viewer png jpeg gif", 0x3fa36bU, "image");
+		home_add_app(list, "Text Editor", KEILAND_BINDIR "/textedit", "text editor edit txt notepad write", 0x1f9e9aU, "text");
+		home_add_app(list, "Browser", KEILAND_BINDIR "/browser", "browser web www html internet", 0x3a8fd8U, "browser");
 	}
+}
+
+/*
+ * Makes a list read Home's, on the event loop's thread: a login session
+ * adds Lock Screen and Power Off (Log Out in its dialog) as the last icons.
+ */
+static void
+home_list_take(
+	struct kwl_server *server,
+	struct home_list *list)
+{
+	int managed;
 
 	/* A login's session locks (ws035-p102) and ends with Power Off's dialog (ws099-p037, Log Out in it), the last icons. */
 	managed = 0;
 	if (server->session)
 		managed = kl_backend_session_managed(server->backend);
 	if (managed)
-		home_add_app("Lock Screen", HOME_LOCK, "lock screen away", 0x5a6aa0U, "lock");
+		home_add_app(list, "Lock Screen", HOME_LOCK, "lock screen away", 0x5a6aa0U, "lock");
 	if (server->session)
-		home_add_app("Power Off", HOME_POWER, "power off shut down shutdown restart reboot logout log out sign out exit session end", 0x6a7488U, "power");
+		home_add_app(list, "Power Off", HOME_POWER, "power off shut down shutdown restart reboot logout log out sign out exit session end", 0x6a7488U, "power");
+
+	/* The list is Home's for the compositor's life, and the screen shows it. */
+	memcpy(home_apps, list->apps, sizeof(home_apps));
+	home_app_count = list->count;
+	home_apps_read = 1U;
+	server->dirty = 1;
 }
 
-/* Adds an application to the list, when there is room; its picture is named as icons.c names it ("" for none). */
+/* Reads the list on the file I/O thread. */
+static void
+home_read_run(
+	struct kwl_lane_job *lane_job)
+{
+	struct home_read_job *job;
+
+	/* The file and each program looked up, into the job's list. */
+	job = (struct home_read_job *)lane_job;
+	home_list_read(&job->list);
+}
+
+/* Takes the list read, on the event loop's thread. */
+static void
+home_read_done(
+	void *context,
+	struct kwl_lane_job *lane_job)
+{
+	struct home_read_job *job;
+
+	/* Home's list from now on. */
+	job = (struct home_read_job *)lane_job;
+	home_apps_reading = 0U;
+	home_list_take(context, &job->list);
+	printf("KWL HOME read apps=%u by=io-file\n", home_app_count);
+
+	/* The record. */
+	free(job);
+}
+
+/* Frees a read that did not run (the thread stopped before it). */
+static void
+home_read_drop(
+	struct kwl_lane_job *lane_job)
+{
+	/* Nothing was read; the event loop has ended. */
+	home_apps_reading = 0U;
+	free(lane_job);
+}
+
+/*
+ * Adds an application to a list, when there is room; its picture is named
+ * as icons.c names it ("" for none).  It touches only the list.
+ */
 static void
 home_add_app(
+	struct home_list *list,
 	const char *name,
 	const char *command,
 	const char *keywords,
@@ -1789,7 +1913,7 @@ home_add_app(
 	int present;
 
 	/* A full list takes no more. */
-	if (home_app_count >= HOME_APPS_MAX)
+	if (list->count >= HOME_APPS_MAX)
 		return;
 
 	/* An application whose program or files are not on this system is not shown. */
@@ -1798,7 +1922,7 @@ home_add_app(
 		return;
 
 	/* The application's texts and its colour. */
-	app = &home_apps[home_app_count];
+	app = &list->apps[list->count];
 	snprintf(app->name, sizeof(app->name), "%s", name);
 	snprintf(app->command, sizeof(app->command), "%s", command);
 	snprintf(app->keywords, sizeof(app->keywords), "%s", keywords);
@@ -1809,7 +1933,7 @@ home_add_app(
 
 	/* The picture on its tile; a name icons.c does not know leaves the first letter. */
 	app->picture = kwl_icon_named(picture);
-	home_app_count++;
+	list->count++;
 }
 
 /*
@@ -1858,6 +1982,7 @@ home_present(
 /* Reads one line of the list: name|command|keywords|RRGGBB|picture (the last three may be left out). */
 static void
 home_parse_line(
+	struct home_list *list,
 	char *line)
 {
 	static char empty[1];
@@ -1886,7 +2011,7 @@ home_parse_line(
 		return;
 
 	/* Succeeded: the application joins the list (grey without a colour, its first letter without a picture). */
-	home_add_app(fields[0], fields[1], fields[2], home_hex(fields[3]), fields[4]);
+	home_add_app(list, fields[0], fields[1], fields[2], home_hex(fields[3]), fields[4]);
 }
 
 /* Reads an RRGGBB colour; a malformed one is a mid grey. */
@@ -2739,8 +2864,13 @@ kwl_home_open_app(
 	int same;
 	int switched;
 
-	/* The list (read once). */
+	/* The list (read once); while the file I/O thread reads it, the request is refused for now. */
 	home_read_apps(server);
+	if (home_apps_reading) {
+		*running = 0;
+		printf("KWL HOME open name=%s via=%s error=%d\n", name, via, EAGAIN);
+		return EAGAIN;
+	}
 
 	/* The application of the name. */
 	for (index = 0U; index < home_app_count; index++) {

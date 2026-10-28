@@ -1230,9 +1230,11 @@ struct kl_backend_print *kl_backend_print_open(const char *config_path, const ch
 void kl_backend_print_close(struct kl_backend_print *print);
 
 /*
- * Tells whether printing can be offered: the daemon's program is there.
+ * Tells whether printing can be offered: the daemon's program is there,
+ * as it is now, or after kl_backend_print_host as the host's last check
+ * found (looked at by the open and by each kl_backend_print_check_run).
  */
-int kl_backend_print_can(const struct kl_backend_print *print);
+int kl_backend_print_can(struct kl_backend_print *print);
 
 /*
  * Reads what the daemon said and the settings file changed by another

@@ -266,6 +266,10 @@ main(
 	if (error == 0)
 		kwl_io_start(&server);
 
+	/* A session's printers, opened before the clients come; their file is the file I/O thread's from then on (printers-shell.c). */
+	if (error == 0 && !server.greeter)
+		kwl_printers_prepare(&server);
+
 	/* How long the notifications' bus, the wallpaper's reading thread and the threads' pipe took to start. */
 	step_start = startup_step("prepare", step_start);
 

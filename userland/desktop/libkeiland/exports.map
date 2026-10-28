@@ -234,6 +234,9 @@
 		kl_tr_open;
 		kl_tr_open_directory;
 		kl_tr_close;
+		kl_tr_read;
+		kl_tr_use;
+		kl_tr_discard;
 		kl_tr_language;
 		kl_tr_language_code;
 		kl_tr;

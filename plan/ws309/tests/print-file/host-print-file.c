@@ -12,12 +12,15 @@
  * kl_backend_print_write on another thread, and answered by the update with
  * the file written; the update does not read the file while hosted; a
  * check reads another session's change; a check begun before a change made
- * is not applied after it, and the next check applies the file.
+ * is not applied after it, and the next check applies the file; a hosted
+ * backend answers whether the daemon's program can be run as its last
+ * check found.
  */
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
 #include <errno.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,6 +50,7 @@ main(void)
 {
 	struct kl_backend_print *print;
 	struct kl_backend_print *other;
+	struct kl_backend_print *daemon;
 	struct kl_backend_print_check *early;
 	struct test_check run;
 	pthread_t thread;
@@ -55,6 +59,8 @@ main(void)
 	unsigned changed;
 	unsigned saved;
 	char folder[256];
+	char program[320];
+	int descriptor;
 	char *made;
 	int error;
 	int taken;
@@ -125,6 +131,24 @@ main(void)
 	kl_backend_print_check_end(print, run.check);
 	(void)kl_backend_print_update(print, &changed);
 	check((changed & KL_BACKEND_PRINT_CHANGED_LIST) != 0U && printers(print) == 4U, "the next check applies the file");
+
+	/* The daemon's program: a hosted backend answers what its last check found, not what is there now. */
+	(void)snprintf(program, sizeof(program), "%s/keiland-printd", folder);
+	daemon = kl_backend_print_open(test_config, folder, program);
+	check(kl_backend_print_can(daemon) == 0, "no program at the open");
+	kl_backend_print_host(daemon);
+	descriptor = open(program, O_WRONLY | O_CREAT, 0755);
+	check(descriptor >= 0, "the program made");
+	if (descriptor >= 0)
+		(void)close(descriptor);
+	check(kl_backend_print_can(daemon) == 0, "hosted: the program is not looked at by the call");
+	run.print = daemon;
+	run.check = kl_backend_print_check_begin(daemon);
+	(void)pthread_create(&thread, NULL, check_run, &run);
+	(void)pthread_join(thread, NULL);
+	kl_backend_print_check_end(daemon, run.check);
+	check(kl_backend_print_can(daemon) == 1, "hosted: the check found the program");
+	kl_backend_print_close(daemon);
 
 	/* A change still waiting is made by the close. */
 	error = kl_backend_print_add(print, KL_BACKEND_PRINTER_LPD, "10.0.0.5", 515U, "lp", &request);
