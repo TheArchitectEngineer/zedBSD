@@ -226,6 +226,11 @@ struct model_settings {
 	int expect_stall_rto;
 	uint64_t drop_ab[16];
 	unsigned drop_ab_count;
+	/* --drop-ab-run AT_MS:US (ws221-p008): A's data frames lost for US microseconds from AT_MS into the transfer, a burst. */
+	uint64_t drop_run_first;
+	uint64_t drop_run_count;
+	/* --expect-stall-max-ms N: the reader got nothing for no longer than N ms at a time. */
+	uint64_t expect_stall_max_ms;
 	uint64_t expect_fast_low;
 	uint64_t expect_fast_high;
 	int expect_fast;
@@ -577,6 +582,11 @@ main(
 	mean = 0.0;
 	if (now_ns > start_ns)
 		mean = (double)received / 1048576.0 / ((double)(now_ns - start_ns) / 1e9);
+	/* The longest stall, against what the scenario expects. */
+	if (settings.expect_stall_max_ms != 0 && longest_stall_ns > settings.expect_stall_max_ms * 1000000ULL)
+		printf("check: FAIL: the reader got nothing for %.1f ms, more than %llu\n", (double)longest_stall_ns / 1e6,
+		    (unsigned long long)settings.expect_stall_max_ms);
+
 	/* The data segments A sent, against what the scenario expects of Nagle's algorithm. */
 	if (settings.expect_segments_max != 0 || settings.expect_segments_min != 0) {
 		printf("tcp-model: data segments %llu\n", (unsigned long long)tcp_of(sender)->counters.data_segments_out);
@@ -1100,6 +1110,10 @@ parse_settings(
 			settings.expect_timeouts = 1;
 		} else if (strcmp(argv[index], "--close-at-ms") == 0) {
 			settings.close_at_ns = strtoull(argv[index + 1], NULL, 0) * 1000000ULL;
+		} else if (strcmp(argv[index], "--drop-ab-run") == 0) {
+			parse_range(argv[index + 1], &settings.drop_run_first, &settings.drop_run_count);
+		} else if (strcmp(argv[index], "--expect-stall-max-ms") == 0) {
+			settings.expect_stall_max_ms = strtoull(argv[index + 1], NULL, 0);
 		} else if (strcmp(argv[index], "--expect-segments-max") == 0) {
 			settings.expect_segments_max = strtoull(argv[index + 1], NULL, 0);
 		} else if (strcmp(argv[index], "--expect-segments-min") == 0) {
@@ -1172,12 +1186,18 @@ dropped_on_purpose(
 	unsigned index;
 
 	/* Only A's data frames after the connection count. */
-	if (link != &links[0] || settings.drop_ab_count == 0 || transfer_start_ns == 0)
+	if (link != &links[0] || (settings.drop_ab_count == 0 && settings.drop_run_count == 0) || transfer_start_ns == 0)
 		return 0;
 	header = (size_t)(packet->data[12] >> 4) * 4U;
 	if (packet->length <= header)
 		return 0;
 	data_frames_ab++;
+
+	/* Within the burst. */
+	if (settings.drop_run_count != 0 &&
+	    now_ns - transfer_start_ns >= settings.drop_run_first * 1000000ULL &&
+	    now_ns - transfer_start_ns < settings.drop_run_first * 1000000ULL + settings.drop_run_count * 1000ULL)
+		return 1;
 
 	/* One of the numbers named. */
 	for (index = 0; index < settings.drop_ab_count; index++) {

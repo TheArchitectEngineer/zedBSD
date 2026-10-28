@@ -72,7 +72,10 @@ enum tcp_state {
  * space, its TCP flags, whether it went out as a probe of a window that
  * could not take it (ws220-p005; set when it is marked sent), and whether
  * it has never been handed to the device (fresh: a short last segment
- * that Nagle's algorithm holds takes the next write's bytes).  The
+ * that Nagle's algorithm holds takes the next write's bytes), and whether
+ * it was made unsent again after it went (rewound: by a timeout's
+ * go-back-N or a Packet Too Big; its next sending is a resend, counted so
+ * and never timed).  The
  * payload is length bytes at payload_offset in the copy's storage: the
  * copy itself carries the segment's first transmission, which pushes the
  * headers in front of the payload, so its data pointer is not the
@@ -87,6 +90,7 @@ struct tcp_pending {
 	uint8_t flags;
 	uint8_t probe;
 	uint8_t fresh;
+	uint8_t rewound;
 };
 
 /*
@@ -251,6 +255,13 @@ struct tcp_socket {
 	 */
 	uint32_t send_small_end;
 	unsigned send_small_outstanding;
+	/*
+	 * The end of the most ever handed to the device (BSD's snd_max): a
+	 * timeout's go-back-N or a Packet Too Big makes entries unsent again
+	 * that the peer may have had all along, and its acknowledgement of
+	 * them, up to here, is taken.
+	 */
+	uint32_t send_max;
 	/*
 	 * Set while one thread hands unsent entries to the device with the
 	 * socket lock released; another that queues meanwhile leaves its
