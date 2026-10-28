@@ -433,3 +433,40 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
   回避は取り消した（Q1: 二度としない）。代わりにユーザーの指示（2026-10-28）「P2は、USB NICが通信できない（DHCPが取得できないとか、ue0が異常状態）のとき、
   自分で再起動するように、serivceを登録すれば、とりあえず問題を回避して継続できると思いますので、P2の判断でこれを行ってよいです。」で zedBSD の側に
   自己 reboot の service を入れる（試験の image・設定だけ）。
+
+### NVMe の zedBSD の区画（2026-10-28、ユーザーの指示）
+
+- ユーザー（2026-10-28）「P2は、5330と同じように、NVMeにzedBSDをインストールしてから作業を継続する方がいいような気がします。USBメモリが半導体供給不足で手に入りづらいからです。」、
+  空きが無いので案を送り、ユーザーの答え（クリック）「ext4 を縮め、root 32 GiB」。
+- 手順（5330 の q1612 と同じ形）: `plan/ws291/tests/rdna-live-usb.sh`（SystemRescue 13.02 の live USB、stick を書いて cmp で比べた、UEFI の
+  `Boot0006 SystemRescue USB ws291`、BootNext で 61 秒）→ live で `e2fsck -f -p`（exit 0）→ `resize2fs -p /dev/nvme0n1p2 400000M`・`e2fsck -f -n` →
+  `sfdisk --no-act -N 2` で確かめて p2 を 854675456 sector に（start・PARTUUID 不変）→ `resize2fs -p`（区画いっぱい 106834432 block）・`e2fsck -f -n` →
+  `sfdisk --no-act --append` の後に p4〜p6 を append → `sfdisk -V`（No errors）・`wipefs -n` → `mkfs.vfat -F 32 -n ZEDBSD p4` → `back`（Debian の / は
+  3178a5c0-… で rw、401G、swap p3、running）。
+
+| 区画 | start（sector） | size | type | PARTLABEL（PARTUUID） |
+| --- | --- | --- | --- | --- |
+| p1 | 2048 | 976 MiB | EFI System | Debian の ESP（65DA-5619、不変） |
+| p2 | 2000896 | 854675456（407.5 GiB、前は 924405760） | Linux filesystem | Debian の /（ext4 3178a5c0-…、PARTUUID 82a12d78-… 不変） |
+| p4 | 856676352 | 256 MiB | Microsoft basic data | zedBSD-nvme-boot（d335c6ec-77ea-486f-8a95-57f10a367f0a、FAT32 3D43-9082） |
+| p5 | 857200640 | 32 GiB | FreeBSD UFS | zedBSD-nvme-root（b98d1f62-b4da-4a95-b71d-151e14565490） |
+| p6 | 924309504 | 1 GiB | FreeBSD swap | zedBSD-nvme-swap（feff9017-d794-4405-afbe-15f33796e92f） |
+| p3 | 926406656 | 24 GiB | Linux swap | Debian の swap（e9129310-…、不変） |
+
+- 前後の表: build/ws291/nvme/sfdisk-before.txt・dumpe2fs-before.txt・after.txt・debian-after.txt（git の外）。
+- zedBSD を書く: `plan/ws291/tests/rdna-nvme.sh image IMG [LINE...]`（Debian で `rdna-nvme-write.sh` が root の UFS を p5 に書いて
+  plan/tools/hw5330/ufs-grow.py で 32 GiB に広げ、swap を p6、vmunix・logo・zedbsd.cfg（NVMe の PARTLABEL）を p4、loader を Debian の ESP の
+  `\EFI\zedbsd\BOOTX64.EFI`）、`rdna-nvme.sh kernel VMUNIX`。UEFI の entry は `Boot0004 zedBSD NVMe`（BootOrder の外、measure.sh の ZEDBSD_BOOT の既定）。
+- image: `make ZEDBSD_CONFIG=plan/ws291/tests/config.mk BUILD=build/ws291/img ZEDBSD_TEST_RC_CONF=plan/ws291/tests/rc.conf ZEDBSD_TEST_IMAGE_TAG=ws291
+  ZEDBSD_TEST_EXTRA_FILES="…" disk-image`（root の鍵 plan/tmp/guest・host の鍵・session.sh・autologin・nicwatch。引数は build/ws291/img-testfiles2.txt）、
+  cfg に `amdrdna.vk.timing=2000`・`amdrdna.vk.ngg=2`、kernel は feb1a5f の clean な build（d81dfb6c28666715）。
+- 確かめ（09:50）: BootNext 0004 で zedBSD が NVMe から起動（`/dev/nvme0n1p5 on / type ufs`）、root の SSH、SMU 正常、nicwatch が動いた（count 0）。
+  USB の stick は SystemRescue のまま（zedBSD の起動に使わない）。
+
+### ue0 の自己 reboot（nicwatch）
+
+- ユーザーの指示（2026-10-28、上の BootNext の節）で、試験の image と機械の設定だけに入れた（base の既定の image には入れない）: `plan/ws291/tests/nicwatch/`
+  （nicwatch.sh と service）、`plan/ws291/tests/rc.conf`（base の rc.conf に nicwatch の行を足した写し、ZEDBSD_TEST_RC_CONF）、`measure.sh nicwatch`（動いている
+  zedBSD に入れる）。動作: 起動の後 150 s 以内に ue0 に IPv4 の address が付かなければ reboot（BootOrder で Debian に戻る）。連続は 3 回まで
+  （/boot/boot0/nicwatch.count、address が付いた起動で 0）。measure.sh の to_zedbsd は zedBSD が上がらず Debian に戻った時に BootNext を 2 回まで繰り返す。
+- guard との順: guard は host から ue0 を通して SMU を見るので、link の無い zedBSD には guard も届かない。nicwatch は試験の負荷の前（起動の直後）だけ働く。

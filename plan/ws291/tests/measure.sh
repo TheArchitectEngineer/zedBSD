@@ -1,12 +1,15 @@
 #!/bin/sh
 # ws291: the measurements of the RX 5600 XT machine in one command each, run from the host at the top of the tree.
-# Debian 13 is the machine's normal system (awe@10.0.10.3); zedBSD starts from the USB stick once with UEFI BootNext
-# and gets its address by DHCP on the USB LAN adapter (found by its MAC).  Every step has a time limit; the long logs
+# Debian 13 is the machine's normal system (awe@10.0.10.3); zedBSD starts from its NVMe partitions (rdna-nvme.sh, UEFI
+# entry "zedBSD NVMe") once with UEFI BootNext and gets its address by DHCP on the USB LAN adapter Debian uses too
+# (found by its MAC).  Every step has a time limit; the long logs
 # stay in OUT, the command prints only the summary.
 #
 #     measure.sh where                       which system runs: "zedbsd IP", "linux" or "none"
 #     measure.sh zedbsd                      zedBSD running (BootNext from Debian when Debian runs); prints its IP
 #     measure.sh linux                       Debian running (zedBSD rebooted: BootOrder brings Debian back)
+#     measure.sh nicwatch                    puts nicwatch/ on the running zedBSD (reboots itself when its USB LAN
+#                                            adapter gets no address; to_zedbsd then boots it again, twice at most)
 #     measure.sh deploy [--kernel VMUNIX] [DEST=SRC]...
 #                                            files copied into the running zedBSD (the kernel to /boot/boot0/vmunix,
 #                                            the old one kept as vmunix.old), then zedBSD restarted (via Debian)
@@ -51,7 +54,7 @@ set -u
 top=$(pwd)
 ZEDBSD_MAC=${ZEDBSD_MAC:-6c:1f:f7:1a:08:b6}
 ZEDBSD_SUBNET=${ZEDBSD_SUBNET:-10.0.30}
-ZEDBSD_BOOT=${ZEDBSD_BOOT:-0005}
+ZEDBSD_BOOT=${ZEDBSD_BOOT:-0004}
 DEBIAN=${DEBIAN:-awe@10.0.10.3}
 KEY=${KEY:-$top/plan/tmp/guest/id_ed25519}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
@@ -152,7 +155,15 @@ to_zedbsd() {
 	say "Debian: BootNext $ZEDBSD_BOOT, reboot"
 	deb "sudo efibootmgr -q -n $ZEDBSD_BOOT && (sleep 1; sudo systemctl reboot) > /dev/null 2>&1 &" || return 1
 	sleep 30
-	wait_for zedbsd 300 > /dev/null || return 1
+	# A zedBSD whose USB LAN adapter got no link reboots by itself into Debian (nicwatch); BootNext again, twice at most.
+	tries=0
+	until wait_for zedbsd 300 > /dev/null; do
+		tries=$((tries + 1))
+		[ $tries -le 2 ] && linux_up || return 1
+		say "Debian came back (zedBSD had no link): BootNext again"
+		deb "sudo efibootmgr -q -n $ZEDBSD_BOOT && (sleep 1; sudo systemctl reboot) > /dev/null 2>&1 &" || return 1
+		sleep 30
+	done
 	ip=$(zedbsd_ip)
 	# The session's compositor starts after the network; wait for its log.
 	end=$(($(date +%s) + 120))
@@ -393,10 +404,20 @@ bench() {
 	cat "$bout/table.txt"
 }
 
+# Puts nicwatch (nicwatch/) on the running zedBSD: the script, its service and its line in /etc/rc.conf.
+nicwatch() {
+	ip=$(to_zedbsd) || return 1
+	zcp "$(dirname "$0")/nicwatch/nicwatch.sh" "root@$ip:/etc/nicwatch.sh" || return 1
+	zcp "$(dirname "$0")/nicwatch/service" "root@$ip:/etc/service.d/nicwatch" || return 1
+	zs "$ip" "chmod 755 /etc/nicwatch.sh; grep -q '^  nicwatch:' /etc/rc.conf || printf '  # Reboots when ue0 gets no address (plan/ws291/tests/nicwatch).\\n  nicwatch:\\n    enabled: true\\n    optional: true\\n' >> /etc/rc.conf; sync; tail -4 /etc/rc.conf" || return 1
+	say "nicwatch put in (from the next boot)"
+}
+
 command=${1:-}
 [ $# -gt 0 ] && shift
 case $command in
 where) where ;;
+nicwatch) nicwatch ;;
 zedbsd) to_zedbsd ;;
 linux) to_linux && echo linux ;;
 deploy) deploy "$@" ;;
