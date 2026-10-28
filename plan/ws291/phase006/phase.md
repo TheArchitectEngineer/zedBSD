@@ -539,3 +539,25 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
 - UCLK: 最上段に固定（146fdfe5d）。shutdown の時に固定を外す事、SMU の停止の時の自動 mode1 reset は未実施（Fable の助言どおり今は guard の poweroff と入れ直し）。
 - 機械: zedBSD は NVMe（Boot0004）、kernel は dfcaa14e5 の build（vmunix-dfcaa14）、Keiland・libvulkan は main の A・C の物、nicwatch あり。USB の stick は
   ユーザーが抜いた。今日の P2 の SwitchBot の入れ直しは 5 回（08:17:38・08:58:48・09:18:11・09:28:18・09:54:54）、全部 Debian に戻った。
+
+### 起動の logo（GOP の buffer）が試験中に見える件（2026-10-28 ユーザーの報告、未修正・手がかりだけ）
+
+- ユーザー（2026-10-28）「P2のテスト中に、OSの起動ロゴ画面がちらついて表示されています。GOPの内容でしょうか？もしかして、メッセージ表示のたびにコンソールを
+  書き換えていたりしますか？GPU使用中はコンソール出力は完全に止めて、内容をアップデートしないようになっているかを確認していただき、さらに、GOPのバッファが
+  一瞬ひょうじされてしまっている理由を解析し、修正してください。」「P2のモデル表示のテスト中に、起動ロゴ画面が見えてしまう、というバグです」
+- code で見つけた経路（未確かめ、実機の標本は取っていない）: src/drivers/gpu/amdrdna/present.c の present_end_lease は、lease の frame が出ていれば
+  console の surface（display->console = GOP の buffer、起動の logo と console の文字）へ flip し（amdrdna_display_show(device, device->display.console)）、
+  present_text_give_back で kern_text_resume（console が文字を描き直す）。lease の間は present_text_hold（kern_text_suspend）で console は止まっている
+  ので、「GPU の使用中の console の書き換え」は lease の間は無い。が、lease は mview の試験のたびに切れる:
+  - game mode に入る時: Keiland が window mode の swapchain を閉じる（libvulkan が display を返す = lease の終わり → GOP の buffer へ flip、console 再開）
+    → scanout の claim（新しい lease）→ 最初の present で client の buffer へ flip。間が KWL SCANOUT の switch_ms（33〜62 ms）= 2〜4 frame の logo。
+  - game mode を出る時（mview の終わり、pointer の動き、overlay）: scanout の close（lease の終わり → GOP の buffer）→ window mode の swapchain を開き直して
+    最初の合成の present まで同じく logo が出る。
+  - session の lost・hang の回復・compositor の再起動も lease の終わりを通る。
+- 直し方の案（amdrdna の中、present.c）: lease の終わりで console へ flip せず plane を blank（amdrdna_display_blank、blend の背景 = 黒）にして console の
+  停止も続ける。次の lease の最初の present で flip の後に unblank。一定時間（例 3 s）新しい lease が無い時か amdrdna_display_stop（shutdown）の時だけ
+  console の surface へ flip して unblank・kern_text_resume。時間切れの判定の置き場（既存の thread か timer）は要設計。blank 中は flip_wait が待たない
+  （display->blanked）事と、lease の power-off（node->powered_off も blank を使う）との重なりに注意。
+- 確かめ方の案: (a) amdrdna_display_show の各 flip で、console の address へ flip した時刻と理由を mark に出し（診断）、round・game mode の出入り・hang の
+  試験で 0 回を数える、(b) display_shown_address（DCN の surface の address の register）を present の thread とは別に周期で標本化して console の address
+  を見た回数を数える、(c) ユーザーに mview の試験（scene の起動・終了と game mode の出入り）を見てもらい logo が出ないかを確かめる手順を渡す。
