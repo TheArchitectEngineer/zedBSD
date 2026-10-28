@@ -12,7 +12,22 @@
 
 ## Phase
 
-設計: [design.md](design.md)（第 3 版、2026-10-29 P5、q1666）、レビュー [design-review.md](design-review.md)（第 1 版）・design-v3-review.md（第 3 版）。Phase の表は design.md の「第 3 版の Phase の表」が本体（下は写し）。
+設計: [design.md](design.md)（**第 5 版**、2026-10-29 P5、q1666-i03、一つの本文にまとめた）。review: [design-review.md](design-review.md)（第 1 版）・[design-v3-review.md](design-v3-review.md)（第 3 版）・[design-v4-review.md](design-v4-review.md)（第 4 版）。Phase の表は design.md §7 が本体（下は写し）。
+
+| Phase | 内容 | 依存 | LW | 状態 |
+| --- | --- | --- | --- | --- |
+| p001 | 調査と設計、design-reviewer | — | 残り 1 | in-progress（第 5 版。Q303-15〜19 待ち、第 5 版の review は未実施） |
+| p002 | ACPI WMI の層、harness の移しと拡張 | p001 | 6 | planning |
+| p003a | registry・`/dev/thermal`・UAPI の案（ユーザーの review）・`/sbin/thermal`・`hw.thermal` を同じ写しから | p001 | 6 | planning |
+| p003b | 見張りの thread と非常の停止（init の SIGUSR2・直の切り）・試験の注入 | p003a | 5 | planning |
+| p004 | Dell の provider と 5330 の試験 | p002、p003a | 7 | planning |
+| p005 | sessiond の THERMAL の要求 | p003a | 2 | planning |
+| p006 | Pi 5 の provider | p003a、p003b | 3 | planning |
+| p007 | passive（WS301 の上限） | p003b、WS301 p002・p004 | 2 | planning |
+| p009 | monitor と sysctl の道具を `/dev/thermal` へ、`hw.thermal` を外す | p003a | 2 | planning |
+| p008 | 規約の全文と文書 | p004〜p007、p009 | 2 | planning |
+
+合計 約 35 LW。WS301 の strategy の受け手は WS301 p004 が作る。
 
 ## ユーザーの回答（2026-10-29、Q1 の中継、原文）
 
@@ -22,23 +37,12 @@
 - Q1 の決定（2026-10-29）: AML の harness は p002 で `plan/tools/aml-host/` に移す。`/dev/acpi` は BUG-351。
 - ユーザーの回答の第 2 回（2026-10-29、Q1 の中継の原文と解釈は design.md の「第 4 版への追記」）: Q303-9/10「/dev/thermal に移す・root/wheel」、Q303-11「ストラテジーはかなり抽象化されたものとして、トータルの「performance or balanced or power save or manual」と、マニュアルなら実行速度、騒音、細粒度パワーゲートの3項目を0-100で設定可能に。具体的なプラットフォームへのマッピングはドライバが決める。」、Q303-12「GPL の値を出典つきで (推し)」、Q303-13/14「推しの組 (推し)」。残りの問い Q303-15〜17。
 
-| Phase | 内容 | 依存 | 状態 |
-| --- | --- | --- | --- |
-| p001 | 調査と設計、design-reviewer | — | in-progress（第 4 版。Q303-9〜15 待ち） |
-| p002 | ACPI WMI の層、harness の移しと拡張（6 LW） | p001 | planning |
-| p003 | registry・`/dev/thermal`・非常の停止（init の SIGUSR2・直の切り）・試験の注入・`/sbin/thermal`（8 LW） | p001 | planning |
-| p004 | Dell の provider と 5330 の試験（7 LW） | p002、p003 | planning |
-| p005 | sessiond の THERMAL の要求（2 LW） | p003 | planning |
-| p006 | Pi 5 の provider（profile と boost、3 LW） | p003 | planning |
-| p007 | WS301 の policy の受け手と passive（2 LW） | p003、WS301 p002・p003・p004 | planning |
-| p008 | 規約の全文と文書（2 LW） | p004〜p007、p009 | planning |
-| p009 | monitor と sysctl の道具を `/dev/thermal` へ、`hw.thermal` を外す（2 LW） | p003 | planning |
 
-## 再開点（2026-10-29 P5、q1666-i02）
+## 再開点（2026-10-29 P5、q1666-i02、古い。下の i03 が新しい）
 
 - 設計の第 4 版（ユーザーの回答 Q303-1〜8 と第 3 版の review を反映）。聞き直し Q303-9〜15（design.md の第 4 版の問いが最新）の答えを待つ。p003 は 8 LW、合計 約 30 LW（design.md の第 4 版の変更）。
 - 5330 の Debian の読みの記録（2026-10-29 02:42、読みだけ）は scratchpad にあり git に入れていない。要る値は design.md §2.3 に写した。
 
 ## 再開点（2026-10-29 P5、q1666-i03）
 
-- 第 4 版の design-reviewer の結果: [design-v4-review.md](design-v4-review.md)（blocker 1・major 11・minor 16。B1 は「層の形では一意に読めない、第 5 版で本文を 1 つに統合」）。反映（第 5 版、統合した本文）は未着手。Q303-15〜17 の答え待ち。
+- 第 4 版の review（[design-v4-review.md](design-v4-review.md)、blocker 1・major 11・minor 16）を反映した第 5 版（一つの本文）を書いた。行き先は design.md §11。第 5 版の design-reviewer は未実施。問いは Q303-15〜19（design.md §9、ユーザー向けの説明は [user-questions.md](user-questions.md)）。
