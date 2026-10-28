@@ -45,6 +45,25 @@
 8. 順: A 5330 の区間の計測 → B 起床の道（lock の外の起床・起こされた thread の置き場所・idle の C-state）→ C syscall の I/O の道の確保を無くす → D syscall ごとの process->lock を無くす → E vmspace の rwlock の pin → F command_lock の残り・heap の magazine・複数 queue（数が要る時だけ）→ 規約。順は A の数で決める。
 9. 要る回帰試験: QD32 の受け入れ、fork と COW の負荷、pread と munmap・mmap・mprotect の競争、記憶の圧迫と swap、setuid の競争、I/O の間の signal と exec、readv/writev（16 iovec・page を跨ぐ）と O_DIRECT の揃わない buffer、boot-test と `tests/scenarios/`。→ 採用（p00x の回帰の Phase の中身）。
 
+## 5330 の区間の計測（2026-10-28、P1、q1650、Q1 の OK の後）
+
+- kernel: 一時の計測の kernel（`build/p1-w308m/vmunix`、main 7b6a2f4a3 ＋ 計測の差分 `build/tmp/exp-io.patch`・`build/tmp/exp-io.h`、commit しない）。syscall の入口（pread・read）で thread に時刻、NVMe の最初の post で「入口→post」、完了の待ちから起きた所で時刻、syscall の戻りで「起床→戻り」と「入口→戻り」を CPU ごとの数に足し、nvme の 4096 command ごとの行と一緒に `exp:` の行で出す。metadata の mutex・heap lock は trylock の失敗（待ち）を、pin の `vm->lock` も trylock の失敗を数えた。
+- 手順: `RANDREAD_DIR=build/tmp/tools2 sh plan/ws299/tests/nvme-bench-5330.sh zedbsd w308-a build/p1-w308m/vmunix qdprobe`（`bench-zedbsd.sh qdprobe`: randread を QD1・QD32、direct・cached、thread・process、getpid だけ。各 15 秒、notime）。reboot して Debian に戻った（固まらなかった）。log は worktree の `build/hw5330/ws299/w308-a-qdprobe.txt`。
+
+| 負荷（4 KiB、QD） | IOPS | 入口→post | post→CQ | CQ→waiter | 起床→戻り | 入口→戻り |
+| --- | --- | --- | --- | --- | --- | --- |
+| direct QD1 | 13386 | 1 µs | 64 µs | 1 µs | 1 µs | 67 µs |
+| direct QD32（thread） | 124620 | 69〜71 µs | 91〜93 µs | 35〜37 µs | 43〜46 µs | 254〜260 µs |
+| direct QD32（process） | 124275 | 69 µs | 92〜93 µs | 35〜37 µs | 41〜42 µs | 253〜257 µs |
+| cached QD1 | 14279 | 2 µs | 64〜65 µs | 1 µs | 3 µs | 65〜66 µs |
+| cached QD32（thread） | 139233 | 82〜83 µs | 89〜90 µs | 29 µs | 41 µs | 229 µs |
+| cached QD32（process） | 136333 | 78〜79 µs | 89〜90 µs | 30〜31 µs | 43〜45 µs | 230 µs |
+
+- 待ちの数（4096 command ごと）: metadata の mutex の待ち direct QD32 で取りの 8〜10%・cached QD32 で 20%（thread）・11%（process）、pin の `vm->lock` の待ちは 0、heap lock の待ち direct 1%・cached 4〜5%。
+- getpid だけ: 1 thread 5.56M/s、32 thread 649k/s、32 process 9.10M/s（syscall の入口の process 単位の取り合いは大きいが、I/O の QD32 は thread と process で同じ＝I/O の頭打ちは process 単位の lock ではない）。
+- 読み: device の外の 3 区間（入口→post、CQ→waiter、起床→戻り）が QD1 の約 1 µs から QD32 で 35〜80 µs に伸びる。CPU は 8 割 idle なので spin で CPU を食うのではなく、待ちが直列に並ぶ。最有力は NVMe の割り込み: 1 本の vector の CPU が CQ を順に処理し、`command_lock` を持ったまま 1 完了ごとに `waitq_wake_all`（起床・IPI）する。その間 submit（begin_bio・slot_acquire・post は command_lock）と完了後（slot_release・end_bio）の thread が lock を待ち、後ろの waiter ほど起床が遅れる（CQ→waiter 36 µs）。加えて amd64 の timecounter の読み（大域の exchange lock、1 I/O で約 5 回）と metadata の mutex の眠り。
+- → p002（起床の道と command_lock、timecounter）を最初にする。
+
 ## 再開点（2026-10-28、P1）
 
-- 次: 5330 の区間の計測（一時の計測の kernel）を Q1 の OK の後に。続いて設計（B〜E）→ design-reviewer。
+- 次: p002 の設計（NVMe の割り込みの起床を command_lock の外へ・submit と release の lock の回数・timecounter の大域の lock）→ design-reviewer → 実装 → 同じ区間の計測で比べる。p003〜p005 の設計はその数の後。
