@@ -996,9 +996,10 @@ queue_reset_completed(
 	VkResult status;
 
 	/*
-	 * The ledger, reaped once when it has grown, tells which jobs ended:
-	 * asking the kernel about each slot costs a system call a slot, and a
-	 * slot whose ended record is not yet consumed is only taken by a later
+	 * The ledger, reaped once, tells which jobs ended: asking the kernel
+	 * about each slot costs a system call a slot.  The reap consumes every
+	 * ended record (each needs that once), so the batch takes about every
+	 * slot whose job ended; one that ends after the reap waits for a later
 	 * batch (the ledger is bounded, so is the cache).
 	 */
 	status = vulkan_sync_ledger_reap(queue->device->object.context);

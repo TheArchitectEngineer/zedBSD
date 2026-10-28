@@ -38,7 +38,7 @@ for pair in "$@"; do
 	printf '%s\n' "$runs" | while read -r opts; do
 		n=$((n + 1))
 		timeout 300 sh $m profile "$dir/prof$n" --spin=8 --content=game --present=mailbox --images=4 $opts \
-			> "$dir/prof$n.out" 2>&1
+			> "$dir/prof$n.out" 2>&1 < /dev/null
 		echo "== $label profile $n ($opts) rc=$?"
 		grep -E 'MVIEW (SPIN|FAILED)|VULKAN TIMING' "$dir/prof$n.out" | tail -2
 	done

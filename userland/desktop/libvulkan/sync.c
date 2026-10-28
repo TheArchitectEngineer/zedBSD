@@ -1137,7 +1137,9 @@ vulkan_sync_job_status(
 }
 
 /*
- * Reclaims the ledger's ended jobs when it has grown, as a submission does.
+ * Reclaims every ended job on the ledger, however short it is: one system
+ * call for each record without a waiter, which each ended record needs
+ * once anyway.
  */
 VkResult
 vulkan_sync_ledger_reap(
@@ -1149,7 +1151,7 @@ vulkan_sync_ledger_reap(
 	/* The reap consumes kernel records only while the context owns every ledger pointer. */
 	pthread_mutex_lock(&context->mutex);
 
-	status = sync_notifications_reap_if(context, &retired, 0);
+	status = sync_notifications_reap_if(context, &retired, 1);
 
 	pthread_mutex_unlock(&context->mutex);
 
