@@ -1529,6 +1529,15 @@ amdrdna_display_memory_switch_end(
 	struct amdrdna_device *device,
 	uint32_t saved);
 
+uint32_t
+amdrdna_display_memory_state(
+	struct amdrdna_device *device);
+
+void
+amdrdna_display_memory_switch_hold(
+	struct amdrdna_device *device,
+	uint32_t saved);
+
 int
 amdrdna_display_flip_wait(
 	struct amdrdna_device *device,

@@ -1073,6 +1073,30 @@ amdrdna_display_memory_switch_end(
 }
 
 /*
+ * Puts the arbiter's word back as amdrdna_display_memory_switch_end() does,
+ * but with the DRAM's state change still allowed by force (the self
+ * refresh as it was): a later change of the memory clock the firmware
+ * makes by itself does not wait for the display.
+ */
+void
+amdrdna_display_memory_switch_hold(
+	struct amdrdna_device *device,
+	uint32_t saved)
+{
+	/* The word before, the state change allowed. */
+	display_write(device, AMDRDNA_DCN_HUB_DRAM_STATE, 0U, saved | DISPLAY_DRAM_STATE_CHANGE_ALLOW);
+}
+
+/* Reads the display hub's memory state word (DCHUBBUB_ARB_DRAM_STATE_CNTL) as it is. */
+uint32_t
+amdrdna_display_memory_state(
+	struct amdrdna_device *device)
+{
+	/* The word. */
+	return display_read(device, AMDRDNA_DCN_HUB_DRAM_STATE, 0U);
+}
+
+/*
  * Blanks the plane (the screen shows the blend unit's background, black)
  * or shows it again; the timing generator keeps running.  A blank waits
  * first, for at most 100 ms, until the plane has no request outstanding.
