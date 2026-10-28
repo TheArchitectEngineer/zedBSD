@@ -2,7 +2,7 @@
 
 # WS191 の設計: 再生の音の stream を libkeiland の口へ（第 5 版、ws191-p001）
 
-Parent: [WS191](ws.md)。事実の調べと第 1 版への review（blocking 3・should-fix 12・minor 12）は [phase001](phase001/phase.md)。
+Parent: [WS191](ws.md)。事実の調べと第 1 版への review（blocking 3・should-fix 12・minor 12）は phase001（fb1f6afee の plan/ws191/phase001/phase.md）。
 第 2 版の変更の要点は §12 の対応表（第 1 版の review の ID ごと）、第 3 版は §13（第 2 版の review、blocking 1・should-fix 10・minor 15、phase001 に記録）、第 4 版は §14（第 3 版の review、blocking 1・should-fix 7・minor 12）、第 5 版は §15（第 4 版の review、blocking 0・should-fix 5・minor 12）。
 
 ## 1. 目的と境界

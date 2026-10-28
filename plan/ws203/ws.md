@@ -1,70 +1,47 @@
 <!-- awesome-plan project=zedbsd record=ws203 -->
 # WS203: Raspberry Pi 4 内蔵 Ethernet (BCM2711 GENET v5)
 
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001・p002・p004 cleared（GENET と BCM54213PE の driver、main 7b16e364c）。残りの p003 は Pi 4 の実機の有線 LAN・DHCP・SSH の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）。旧: incomplete。残り・制限: 実機の確認は未実施
+<!-- awesome-plan-current:start -->
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001・p002・p004 cleared（GENET と BCM54213PE の driver、main 7b16e364c）。残りの p003 は Pi 4 の実機の有線 LAN・DHCP・SSH の確かめだけ → 2026-10-27 ユーザー「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」）
+Completed: 2026-10-27（q1608 の精査）
 Primary Milestone: MG005
-Related Milestones: MG003, MG008
+Related Milestones: MG003・MG008
+Objectives: —
 Parent: [Master](../master.md)
-Owner: Codex / codex/rpi4-genet / `.claude/worktrees/rpi4-genet`
-Queue: [scoped Queue](codex-queue.md)
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
+<!-- awesome-plan-current:end -->
 
-## 目的・受入
+## 目標
 
-ユーザー 2026-10-11「とりあえず、RPi4のEthernetドライバを実装できますか？デバッグが楽になると思います。」を実行する。USBとは独立したGENETとBCM54213PE PHYを既存network stackに登録し、既存networkd/DHCP/SSHから利用できるようにする。実機受入は有線LANのリンク、DHCP、SSH接続。ソース受入はFDT、DMA、PHY、送受信、close/reopen、build optionの実装とwarning0のarm64 kernel buildおよび限定ホスト検証。
+USB とは独立した GENET v5 と BCM54213PE の PHY を既存の network stack に登録し、既存の networkd・DHCP・SSH から使えるようにする。範囲は MTU 1500、ring 16、IPv4/IPv6 の既存の stack。offload・jumbo・WOL・suspend・複数 queue は含まない。HAL の API は変えない。
 
-## 範囲・制約
+## ユーザーの決定
 
-初版はRPi4のGENET v5、通常MTU1500、標準ring16、IPv4/IPv6の既存stack。offload、jumbo、WOL、suspend、複数queueは含まない。ハードウェア非搭載・disabled node・初期化失敗でbootを止めない。GENETは既存FDT/MMIO/DMA/IRQ/net_device APIを利用しHAL APIを変更しない。コントローラIRQに加え短い周期のpollでPHYリンクとIRQ取り逃しを回復する。
+- 2026-10-11（由来）「とりあえず、RPi4のEthernetドライバを実装できますか？デバッグが楽になると思います。」
+- 2026-10-11「src/drivers/ethernet/bcm54213pe.c と、src/drivers/platform/rpi4/rpi4-ethernet.c に分けて実装するのがいいと思います。」、続けて訂正「rpi4-ethernet.c に GENETのMACがあるんじゃないかなあ？」→ GENET の MAC・DMA・ring・net_device・FDT・board の起動は `rpi4-ethernet.c`、外付けの PHY だけ `bcm54213pe.c`（MDIO の callback で繋ぐ）。
+- 2026-10-11「mainに統合をお願いします。」（e9ddb4540・d1def8aef）、「main仁藤剛してください。」（7b16e364c の統合の承認への回答）。
+- 2026-10-27（完了の根拠、q1608 経由）「実機確認だけが残っているWSやPhaseは、古いものはclearedにしてしまいます。」
 
-[Guardrail](../guardrail.md)、[C全文](../coding-style.md)、[automation](../standards/automation.md)、[scoped ownership](../agents/protocol.md)を適用。FreeBSD GENET/brgphyからハードウェアのoffset/bit/動作だけを確認し、ソース・構造・commentを写さずZlibの独自実装。GPL例外の範囲拡張は行わない。共有toolchainはread-only。QEMU/image build/pushは行わない。main統合は具体的成果の承認後。
+## 結果
 
-## Phase一覧
+- `src/drivers/platform/rpi4/rpi4-ethernet.c`（GENET の MAC・DMA・ring・net_device・FDT）と `src/drivers/ethernet/bcm54213pe.c`（PHY）を実装し、全 CPU 共通の Ethernet の menu で ON/OFF（RPi4 で既定 ON）。実機の初期化の失敗を GIC の trigger・MMIO の共有の alias・非 coherent な DMA の page で直した（p004）。warning 0 の arm64 kernel の build と限定の host 試験 PASS。main 7b16e364c。
+- 実機（2026-10-11、ユーザーの報告と read-only の SSH）: 10.0.30.2 で en0 UP/RUNNING、IPv4 あり、1000 Mbps full-duplex、RX/TX の counter が進み error・drop 0、SSH が通った。
 
-| Phase | 目的・goal | 状態 | 依存 |
-| --- | --- | --- | --- |
-| [ws203-p001](phase001/phase.md) | FDT/PHY/DMA/ring/net_device driverとbuild/menu配線 | cleared | main a094b953c の既存API |
-| [ws203-p002](phase002/phase.md) | 最終ソースのC全文適合、warning0 build、送受信/異常系の限定host model | cleared | p001のソース成果 |
-| [ws203-p003](phase003/phase.md) | 実機有線LAN/DHCP/SSH受入 | uncleared | p001,p002とユーザー実機 |
-| [ws203-p004](phase004/phase.md) | 実機初期化失敗のGIC/MMIO補完と最終規約/build | cleared | 現mainと実機写真 |
+## 制限・移管
 
-Resume: p003実機初期化失敗、p004の限定source/build修正はcleared、main7b16e364cへ統合済み。新SDイメージからp003 DHCP/SSH再確認へ。F-029のpromotion、Master登録/focus/priority、共有Queue/history/cache/GitHub投影はQ1保留（共有記録を編集しない）。USBのws048-p009実機失敗調査は別件として残る。
+- DHCP の lease の出所とケーブルの抜き差しは個別に確かめていない（実機の残りの確認は未実施）。
+- USB の ws048-p009 の実機の失敗は別件。
 
-## 2026-10-11 分割の指示
+## Phase 一覧
 
-ユーザー「src/drivers/ethernet/bcm54213pe.c と、src/drivers/platform/rpi4/rpi4-ethernet.c に分けて実装するのがいいと思います。」を適用。MAC/PHY/DMA/net_deviceの制御はbcm54213pe.c、FDT解析・board handoffはrpi4-ethernet.cへ分割。hardware driverはFDTを読まず、platform configを受け取る。scope/受入/API責務は維持。p002は分割後ソースを検証する。共有Masterは編集しない。
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws203-p001 | FDT・PHY・DMA・ring・net_device の driver と build・menu の配線 | cleared（2026-10-11） |
+| ws203-p002 | 最終 source の規約の全文、warning 0 の build、限定の host model | cleared（2026-10-11） |
+| ws203-p003 | 実機の有線 LAN・DHCP・SSH の受け入れ | uncleared のまま WS を閉じた（link・IPv4・SSH・送受信は実機で確認、DHCP の lease の出所と抜き差しは未確認） |
+| ws203-p004 | 実機の初期化の失敗の GIC・MMIO の補完と規約・build | cleared（2026-10-11、7b16e364c） |
 
-### 分割の訂正（同日、ユーザー「rpi4-ethernet.c に GENETのMACがあるんじゃないかなあ？」）
+## 記録の所在
 
-上の分割説明は訂正。GENET MAC/DMA/ring/net_device/FDT/board起動をrpi4-ethernet.c、外付けBCM54213PE PHYだけをbcm54213pe.cへ置く。PHYはcaller-owned clause-22 MDIO callbackを使い、GENET MMIOに依存しない。旧説明と訂正の履歴を保持する。p002はこの最終構造で検証する。
-
-## 2026-10-11 scoped Queue終了
-
-p001/p002はclear。最終実装はGENET MAC/DMA/ring/net_device/FDTをrpi4-ethernet.c、外付けPHYをbcm54213pe.cに所有させる。両者をMDIO callbackで接続。全CPU共通Ethernet menuでGENETをON/OFF可能、RPi4で既定ON。USB/PCIeの動作に依存せずen0を登録する。既存networkdのup/DHCP経路はsourceで確認。
-
-[結果・手順・規約適合・制約](tests/results.md)。WSの実機受入は未達なのでincompleteを維持。p003はユーザー実機でリンク/DHCP/SSHを確認するhandoff、今Queueはfinished。main merge ACK、共有Master/focus/priority/Queue/history/F-029投影とGitHub publicationはQ1保留。
-
-Submission: `e9ddb4540` (`WIP`), merge request `ws203-genet-20261011`. Integration SHA/ACK pending.
-
-## 2026-10-11 main統合ACK
-
-ユーザー「mainに統合をお願いします。」に従い、実装 `e9ddb4540` と記録 `d1def8aef` をmainへfast-forward統合。source hashes一致、mainの共通Ethernet menu・現在のRPi4 configでGENET=y・arm64への2 driver source登録をread-back確認。main統合の前提は満たした。p003は新イメージと実機DHCP/SSH結果待ち。WSはincompleteのまま。pushなし。共有Master/Queue/history/F-029/GitHubは別途Q1が投影する。
-
-## 2026-10-11 network startup UAT investigation
-
-User reports sshd process startup and apparent link, with DHCP address missing. p003 retains actual lease/SSH/traffic criteria; [source/image inspection](tests/network-startup-20261011.md) confirms configs match amd64 and automatic LAN management exists. Await actual service/network observations; no source changes or acceptance promotion. Shared projection/GitHub pending Q1.
-
-## 2026-10-11 実機初期化失敗の修正開始
-
-[ws203-p004](phase004/phase.md)を追加、GIC trigger/MMIO releaseを修正する。先行のsource/build clearanceと未達の実機受入を区別し保持。[限定Queue](../ws203/codex-repair-20261011.md)。既存HAL APIの補完のみ、共有投影はQ1 pending。
-
-### 修正source/build結果
-
-[ws203-p004](phase004/phase.md)の限定source/build criteria cleared。GIC trigger/MMIO共有alias、非coherent DMAのpage backingを修正し、現在config warning0 kernel buildと限定host checks PASS。[証拠](../ws203/tests/initialization-repair-20261011.md)。実機DHCP/SSH・USB入力は未確認なのでWSはincomplete、次は新imageでuser受入。main統合と共有投影はpending。
-
-## Main integration / 2026-10-11
-
-Current user「main仁藤剛してください。」を直前の7b16e364c統合承認への回答（mainに統合してください）として受領。clean main6b722f47eから修正7b16e364c53761f96a982797f88793f7f520dbb6へfast-forward統合、競合なし。先行read-only調査記録08e919a08も含む。main上で全8 source/test SHA256一致、source diffなし、現在config.mkが検証済みworktreeとbyte-identicalであることをread-back確認。前turnのwarning0 kernel buildと限定host checksが統合sourceに適用されるため追加のbuild/試験は行わない。sourceのmain統合は完了、先行の承認待ち表記は当時の履歴。新imageでの実機DHCP/SSH・USB入力受入は未達のまま、WS203/WS048はincomplete。pushなし。共有Master/Queue/history/FutureWork/GitHubはQ1投影保留。
-
-## SSH physical evidence / 2026-10-11
-
-User reports Ethernet working and supplies 10.0.30.2. Read-only SSH succeeds (g402598d arm64); en0 UP/RUNNING, IPv4 assigned, 1000Mbps full-duplex, RX/TX counters both advance, errors/dropped zero. GENET ready/RX-TX enabled/link-up confirms p004 startup repair on hardware. DHCP lease origin and cable unplug/replug were not separately verified; p003 stays uncleared for remaining full physical criteria, WS incomplete. No remote mutation/restart. Shared projections/GitHub Q1 pending.
+Phase の計画・結果・試験の証拠（`tests/`）は削除した。git の commit `fb1f6afee` の `plan/ws203/` にある。Queue の記録は [codex-queue.md](codex-queue.md)・[codex-repair-20261011.md](codex-repair-20261011.md)、履歴は [plan/history](../history/index.md)。

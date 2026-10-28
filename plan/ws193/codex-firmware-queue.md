@@ -9,7 +9,7 @@ Finite scope: 1項目、registry/fixture/readmeの修正・対象host確認・�
 
 | Attempt | Phase | Status | Dependency |
 | --- | --- | --- | --- |
-| menuconfig-firmware-20261010-i01 | [ws193-p006](phase006/phase.md) | cleared | p005 source fe4300313 on main |
+| menuconfig-firmware-20261010-i01 | ws193-p006（fb1f6afee の plan/ws193/phase006/phase.md） | cleared | p005 source fe4300313 on main |
 
 Graph: p005 source → p006。
 Outlook: 実機での利用はユーザー、shared計画/規則への投影とGitHub公開はQ1。pushなし、自動次Queueなし。

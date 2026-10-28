@@ -3,37 +3,50 @@
 # WS191: 再生の音を libkeiland の audio stream の口へ（compositor・backend、3 OS）
 
 <!-- awesome-plan-current:start -->
-Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p005 cleared（kl_audio_、zedBSD・Linux・FreeBSD の backend、videoplayer・music の移行））。旧: incomplete（2026-10-13 P2 q964 の照合: p001〜p004 は各 phase.md で cleared（2026-10-08 Q1、T1-444・T1-448・T1-454）、残りは p005（規約、ベータ3）。ベータ2 の範囲は完了の見込み、判定は Q1）
+Status: completed（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001〜p005 cleared（kl_audio_、zedBSD・Linux・FreeBSD の backend、videoplayer・music の移行））
+Completed: 2026-10-27（q1608 の精査）
 Primary Milestone: MG006
 Related Milestones: MG007
 Objectives: O2
 Parent: [Master](../master.md)
-Queue: q895（P2、WS083 の後に回した 2026-10-08 午後）
+Queue: なし
+Resume point: なし（新しい要求は新しい WS として立てる。この WS は再開しない）
 <!-- awesome-plan-current:end -->
 
-## 由来（2026-10-08 昼 ユーザー、クリックの回答）
+## 目標
 
-WS188 p003 の検査で、動画（videoplayer/audio.c）・音楽（music）・libmedia が再生の音を zedBSD の audiod に直に流している（userland/base/audiod/protocol.h を include、AF_UNIX で AUDIOD_SOCKET_PATH、shm の ring）と分かった。ユーザー:「libkeilandのaudio streamの口に移す」（Guardrail「Bluetooth と Display も compositor 経由」の規則、サウンドも同様）。
-
-## 到達目標
-
-- libkeiland に音の stream の口（開く・形式・書く・止める・遅れの問い合わせ）を作り、compositor・libkeiland-backend が OS ごとに流す: zedBSD は audiod、Linux は alsa-lib を dlopen した PCM の default（普通は pipewire-alsa を通って PipeWire、ユーザーの決定 H2）、FreeBSD は OSS。音の出力は libkeiland-backend の中、公開 API は kl_audio_（ユーザー 2026-10-08 午後）。
+- libkeiland に音の stream の口（開く・形式・書く・止める・遅れの問い合わせ、公開 API は kl_audio_）を作り、compositor・libkeiland-backend が OS ごとに流す: zedBSD は audiod、Linux は alsa-lib を dlopen した PCM の default、FreeBSD は OSS。
 - videoplayer・music・libmedia をその口に移し、境界の検査の許可の表の PENDING の行を外す。
-- 遅れ（A/V の同期）と大きなデータの受け渡し（shm）を compositor を通しても保つ設計。
+- 遅れ（A/V の同期）と大きなデータの受け渡し（shm）を compositor を通しても保つ。
 
-## Phase（案）
+設計は [design.md](design.md)。
 
-| Phase | 目的 | Status | 依存 |
-| --- | --- | --- | --- |
-| [p001](phase001/phase.md) | 設計（stream の口、compositor の中継か fd の受け渡しか、遅れ、3 OS の backend）、design-reviewer | cleared（2026-10-08 Q1: 第 4・5 版の design-reviewer が blocking 0） | — |
-| [p002](phase002/phase.md) | libkeiland・compositor・zedBSD の backend | cleared（2026-10-08 Q1、T1-444 PASS） | p001 |
-| [p003](phase003/phase.md) | app の移行（videoplayer・music）、libmedia から音を外す | cleared（2026-10-08 Q1、T1-444 PASS） | p002 |
-| [p004](phase004/phase.md) | Linux・FreeBSD の backend | cleared（2026-10-08 夜 Q1、T1-448 FreeBSD・T1-454 Linux PASS） | p002 |
-| p005 | 規約の全文の見直し | cleared（2026-10-18 Q1: phase.md に合わせた。旧: planned（ユーザーの決定でベータ 3 に回す、2026-10-08 夜）） | p003・p004 |
+## ユーザーの決定
 
-## 2026-10-13 P2 q964 の照合
+- 2026-10-08 昼（クリックの回答、由来）「libkeilandのaudio streamの口に移す」（WS188 p003 の検査で videoplayer・music・libmedia が audiod に直に流していると分かった後。Guardrail「Bluetooth と Display も compositor 経由」と同じ規則を音にも）。
+- 2026-10-08 午後「サウンドはlibkeiland-backendに入れてください。libkeilandのAPIはkl_audio_がいいです。」
+- 2026-10-08 午後（H2）Linux の再生の経路は alsa-lib を dlopen、無ければ stream を断る。
 
-- 表の p001〜p004 を各 phase.md の Status（全て cleared、2026-10-08 Q1）に合わせた（表は in-progress・planned のまま古かった）。
-- 到達目標（libkeiland の音の stream の口、compositor・backend が zedBSD の audiod・Linux の alsa-lib（dlopen）・FreeBSD の OSS に流す、videoplayer・music の移行と libmedia から音を外す）は p001〜p004 の証拠で満たされている。残りは p005（規約の全文、ユーザーの決定でベータ3）。
-- 未確かめの観察（ticket なし）: p002・p003 の clear の注「Video Player の時計が wall の約 2 倍に見えた（未確認、P2 が確かめる）」は、その後の確かめの記録が無い。QEMU で確かめる要がある（T1 で Video Player の 20 秒の sample の再生の秒を測る）。直すか ticket にするかは Q1 の判断。
-- master.md の WS191 の行（「planning」「p001 設計」）は古い（Q1 の投影）。
+## 結果
+
+- libkeiland の kl_audio_stream、compositor の中継、zedBSD の backend（audiod）、Linux（alsa-lib の dlopen、memfd の ring）・FreeBSD（OSS）の backend を実装し、videoplayer・music を移した。libmedia から音を外した（main）。
+- QEMU: T1-444 PASS（Music・Video Player の音が kl_audio_stream を通り WAV に音、pause で無音、seek で flush）。T1-448 FreeBSD・T1-454 Linux PASS。
+
+## 制限・移管
+
+- T1-444 の注「Video Player の時計が wall の約 2 倍に見えた」はその後の確かめの記録が無い（未確認、ticket なし）。
+- 実機 5330 で音が出ることのユーザーの UAT は記録が無い（未確認）。
+
+## Phase 一覧
+
+| Phase | 目的 | 結果 |
+| --- | --- | --- |
+| ws191-p001 | 設計（stream の口、中継か fd の受け渡しか、遅れ、3 OS）、design-reviewer | cleared（2026-10-08、第 4・5 版で blocking 0） |
+| ws191-p002 | libkeiland・compositor・zedBSD の backend | cleared（2026-10-08、T1-444） |
+| ws191-p003 | app の移行（videoplayer・music）、libmedia から音を外す | cleared（2026-10-08、T1-444） |
+| ws191-p004 | Linux・FreeBSD の backend | cleared（2026-10-08、T1-448・T1-454） |
+| ws191-p005 | 規約の全文の見直し | cleared（2026-10-09） |
+
+## 記録の所在
+
+Phase の計画・結果・試験は削除した。git の commit `fb1f6afee` の `plan/ws191/` にある。Queue の履歴は [plan/history](../history/index.md)。

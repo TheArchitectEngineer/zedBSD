@@ -1,6 +1,6 @@
 # WS202 i04/i05: bitsとAAC入力の部分結果（2026-10-10）
 
-> main統合追記: [最新の統合記録](main-integration-20261010.md)。以下の独立worktree時点の未merge/未実装/pendingは履歴。標準readbackの旧offline p016は[ws202-p017](phase017/phase.md)へmapping修復し、mainのp016（ref-list）を維持した。
+> main統合追記: [最新の統合記録](main-integration-20261010.md)。以下の独立worktree時点の未merge/未実装/pendingは履歴。標準readbackの旧offline p016はws202-p017（fb1f6afee の plan/ws202/phase017/phase.md）へmapping修復し、mainのp016（ref-list）を維持した。
 
 Parent: [WS202](ws.md)。承認/境界: [有限実行AAC入力](policy-20261010.md#有限実行-codex-ws202-20261010-aac-input)。独立worktree `.claude/worktrees/ws202-codex`、branch `codex/ws202-native-media`。mainのsource/共有計画/同期を変更していない。
 

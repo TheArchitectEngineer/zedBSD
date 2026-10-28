@@ -9,7 +9,7 @@ Finite scope: 1項目、対象host確認・FFmpeg arm64 build・変更全文レ�
 
 | Attempt | Phase | Scope | Status | Dependency |
 | --- | --- | --- | --- | --- |
-| menuconfig-userland-20261010-i01 | [ws193-p005](phase005/phase.md) | 共通registryで選択・保存、arm64 FFmpeg build | cleared | p004 source 93914124c on main |
+| menuconfig-userland-20261010-i01 | ws193-p005（fb1f6afee の plan/ws193/phase005/phase.md） | 共通registryで選択・保存、arm64 FFmpeg build | cleared | p004 source 93914124c on main |
 
 Graph: p004 source → p005。toolchainは既存成果のread-only利用。
 Outlook: main統合の具体的成果の確認、実機でのメディア再生はユーザー。共有記録・GitHub公開はQ1。
