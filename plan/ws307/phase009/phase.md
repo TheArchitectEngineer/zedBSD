@@ -2,7 +2,7 @@
 
 # ws307-p009 helper install-admin
 
-- 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §5・§6.1・§6.4・§7・§8・§9（J2・J5・U26）。Queue: q1665 / q1665-i05（担当 P4、2026-10-29、worktree p4-ws307i）。
+- 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §5・§6.1・§6.4・§7・§8・§9（J2・J5・U26）。Queue: q1665 / q1665-i06（担当 P4、2026-10-29、worktree p4-ws307j。i05 は p4-ws307i）。
 - Status: in-progress（段 1 の設計、段 2 の index と unpack を host で確かめた。残り: 段 2 の plan・target、段 3〜7）
 - 承認: 2026-10-29 ユーザー「P4にWS307」（Q1 の中継）。HAL の API・toolchain には触れない。Boot####（段 11 の efiboot）は p007 の承認の後で、この Phase では書かない（S11 の案内だけ）。
 - 前提: p003（index と index-sha256.h、live の tree の installer の menu）、p005（diskpart batch・mkswap の partition・mkfs の乱数の serial と 4096）、p008（loader の `kernel=rootpart:`）、p006（4096 の kernel）。

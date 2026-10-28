@@ -3,7 +3,7 @@
 # ws307-p005 base の道具（mkswap の partition の mode・diskpart の batch・FAT の乱数の serial・4096 byte の sector）
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §5.3・§5.9・§11.3。Queue: q1665 / q1665-i01（担当 P4、2026-10-29）。
-- Status: in-progress（q1665-i04 で残りの 2 つを実装・確かめた。cleared の判定は Q1）
+- Status: cleared（2026-10-29 Q1 の判定: 4096 の NVMe・USB の FAT・swap・UFS と 512 の回帰が QEMU で PASS）
 - 承認: 2026-10-29 ユーザー「P4にWS307」（Q1 の中継）。
 
 ## 目的

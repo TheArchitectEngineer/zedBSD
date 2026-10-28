@@ -3,7 +3,7 @@
 # ws307-p008 boot loader が UFS から kernel を読む
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §5.9（loader の FAT・firmware の FAT）・§5.10。Queue: q1665 / q1665-i01（担当 P4、2026-10-29）。
-- Status: in-progress（512 byte の段は受け入れを満たした。残り: 4096 byte の段（p005 の UFS の fragment 4096・p006 の後）と j3 の sync の確かめ。下の「残り」）
+- Status: in-progress（2026-10-29 Q1 の判定: 512 と 4096 の段は受け入れを満たした。残り: 512 の disk の j3 の sync の確かめ（p009 の段 7 の QEMU で））
 - 出典: 2026-10-28 ユーザー「P4に、ESPにカーネルをインストールすると回答してしまいましたが、ブートローダがUFSからカーネルをロードできるようにしたいです。そのphaseを作ってほしいです。」
 
 ## 結果（2026-10-29、P4）
