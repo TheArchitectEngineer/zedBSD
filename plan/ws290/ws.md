@@ -199,3 +199,4 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 - 2026-10-28 p017 の追加の答え（クリック）: Q7「実装だけで直す (推し)」、Q6「常に止める」、Q8「最後に、確かめてから (推し)」、Q9「1 つの Phase で」。
 - 2026-10-28 第 21 版（C01・C02 の確かめ、N81）→ 回答 第 21.0 版（amaterrace-gpu 1a20ca1、「FULL APPROVE（完全承認・最終 Signoff）」）: C01・C02 PASS。N81: occlusion の counter は device に 1 つ、`CMD_BIND_SESSION` で 0 に戻るので、BEGIN_QUERY から END_QUERY までは 1 つの session の列として ring に分けずに置く（ghci.md 644072a §7.3）。p016 の直しで query の間は切らない（event の待ちは BEGIN_QUERY の前で切る）。driver の正本は ghci.md 644072a。専門の code review のやり取りは完了、見張りは止めた。
 - 2026-10-28 p017 の答え: hal.h の文は「変えない、実装だけ (推し)」。Q10・Q11「x68k は止める、serial だけは足さない (推し)」。Q12「常に止める」。Q13: 2026-10-28 ユーザー（p017 Q13 への答え、原文）「GHCIに限らず、GPUで最初のフリップをしたら、コンソールはフレームバッファをバックにする点では使用終了します。シリアルバックは終了しません。すべてのアーキテクチャ、すべてのGPUドライバでそうです。」
+- 2026-10-28 Q1: 段 3a（HAL の early console の窓の委譲）は、hal.h を変えない答えで決まったので実装してよいと P3 に伝えた。gpu.c の変更（8f560010f）は全 GPU の機械の console に効くので、QEMU の確かめの後に merge。
