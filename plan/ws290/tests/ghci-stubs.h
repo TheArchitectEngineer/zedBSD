@@ -22,7 +22,12 @@
 
 #include <stdint.h>
 
+#include "kern/text-display.h"
+
 struct drv_gpu_ops;
+
+/* The hook a test runs inside kern_text_end(), with the hook's argument. */
+typedef void (*stub_text_end_hook)(void *argument);
 
 /* The locks the stubs follow at once. */
 #define STUB_HELD_MAX			16U
@@ -70,6 +75,19 @@ struct stub_state {
 	int quiet;
 	const void *core_ops;
 	void *core_private;
+
+	/*
+	 * kern_text_end(): the result it gives (ENOTSUP after stub_reset), the
+	 * calls, the calls made while a lock was held, the ranges of the last
+	 * call, and a hook run inside it.
+	 */
+	int text_end_result;
+	unsigned text_end_calls;
+	unsigned text_end_held;
+	struct kern_text_range text_end_ranges[KERN_TEXT_END_RANGES];
+	unsigned text_end_count;
+	stub_text_end_hook text_end_hook;
+	void *text_end_argument;
 };
 
 /* The stubs' state; stub_reset clears it. */

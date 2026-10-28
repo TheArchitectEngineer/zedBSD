@@ -149,6 +149,9 @@ static void scene_display_hotplug(void);
 static void scene_display_errors(void);
 static void scene_display_reset(void);
 static void scene_display_boot(void);
+static void scene_display_boot_end(void);
+static void boot_end_relight(void *argument);
+static void boot_end_bars(void);
 static void scene_display_panic(void);
 static void scene_display_detach(void);
 static void scene_display_none(void);
@@ -265,6 +268,7 @@ main(void)
 	scene_display_errors();
 	scene_display_reset();
 	scene_display_boot();
+	scene_display_boot_end();
 	scene_display_panic();
 	scene_display_detach();
 	scene_display_none();
@@ -3395,6 +3399,132 @@ boot_display_host(void)
 	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_V_BP) / 4U] = 20U;
 	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_SYNC_POL) / 4U] = 3U;
 	model.window[(MODEL_DISP2_BLOCK + GHCI_DC_PCLK_SEL) / 4U] = 1U;
+}
+
+/*
+ * The console's leaving of the boot display: after the driver's first
+ * flip is taken the console is told once, with no lock held and the
+ * device's BARs; the boot range goes back only when it left (0), and is
+ * kept on any other result, without BARs, or when the boot image is lit
+ * again meanwhile.
+ */
+static void
+scene_display_boot_end(void)
+{
+	struct ghci_resource *storage;
+	uint64_t sequence;
+	int error;
+
+	/* Told and left: the range goes back, once, and the detach turns the controller dark. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(GHCI_DC_CTRL_ENABLE, MODEL_LOCAL_BASE + 0x100000U, 4096U, 256U);
+	error = start_device_window();
+	boot_end_bars();
+	stub.text_end_result = 0;
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(2560U * 480U, 0);
+	if (error == 0)
+		error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 0, &sequence);
+	ghci_scan_flush(&device);
+	expect(error == 0 && stub.text_end_calls == 0U && device.boot_reserved, "display boot end: not told before the flip is taken");
+	error = device.ops.display->adoption_wait(&device, display_open, display_lease, &sequence, NULL);
+	ghci_scan_flush(&device);
+	expect(error == 0 && stub.text_end_calls == 1U && stub.text_end_held == 0U && stub.text_end_count == 2U &&
+	    stub.text_end_ranges[0].physical == 0x80000000ULL && stub.text_end_ranges[0].bytes == 0x1000ULL &&
+	    stub.text_end_ranges[1].physical == 0x400000000ULL && stub.text_end_ranges[1].bytes == 0x200000000ULL,
+	    "display boot end: told once, unlocked, with the whole BARs");
+	expect(!device.display.boot_console && !device.display.boot_kept && !device.boot_reserved && device.boot_count == 0U &&
+	    device.window_users == 0U, "display boot end: given back once the console left");
+	ghci_scan_flush(&device);
+	expect(stub.text_end_calls == 1U, "display boot end: told only once");
+	device.ops.resource_destroy(&device, display_open, storage);
+	device.ops.close(&device, display_open);
+	end_scene("display boot end: left");
+	expect((dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) == 0U, "display boot end: dark at the detach after the release");
+
+	/* Refused (the board cannot stop, or something stays mapped in the BARs): the range is kept. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(GHCI_DC_CTRL_ENABLE, MODEL_LOCAL_BASE + 0x100000U, 4096U, 256U);
+	error = start_device_window();
+	boot_end_bars();
+	stub.text_end_result = EBUSY;
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(2560U * 480U, 0);
+	if (error == 0)
+		error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	ghci_scan_flush(&device);
+	ghci_scan_flush(&device);
+	expect(error == 0 && stub.text_end_calls == 1U && device.display.boot_console && device.display.boot_kept && device.boot_reserved &&
+	    device.window_users == 1U, "display boot end: kept when the console stays (once)");
+	device.ops.resource_destroy(&device, display_open, storage);
+	device.ops.close(&device, display_open);
+	end_scene("display boot end: refused");
+	expect(dc_read(GHCI_DC_FB_BASE) == (uint32_t)MODEL_LOCAL_BASE + 0x100000U && (dc_read(GHCI_DC_CTRL) & GHCI_DC_CTRL_ENABLE) != 0U,
+	    "display boot end: shown again at the detach when kept");
+
+	/* No BARs: not told, kept. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(GHCI_DC_CTRL_ENABLE, MODEL_LOCAL_BASE + 0x100000U, 4096U, 256U);
+	error = start_device_window();
+	device.bar_count = 0U;
+	stub.text_end_result = 0;
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(2560U * 480U, 0);
+	if (error == 0)
+		error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	ghci_scan_flush(&device);
+	expect(error == 0 && stub.text_end_calls == 0U && device.display.boot_kept && device.boot_reserved, "display boot end: not told without BARs");
+	device.ops.resource_destroy(&device, display_open, storage);
+	device.ops.close(&device, display_open);
+	end_scene("display boot end: no BARs");
+
+	/* The boot image lit again while the console was told: left, but kept until the next own image. */
+	prepare_scene(MODEL_KC705_DISCRETE, NULL);
+	boot_display(GHCI_DC_CTRL_ENABLE, MODEL_LOCAL_BASE + 0x100000U, 4096U, 256U);
+	error = start_device_window();
+	boot_end_bars();
+	stub.text_end_result = 0;
+	stub.text_end_hook = boot_end_relight;
+	if (error == 0)
+		error = display_take();
+	storage = display_storage(2560U * 480U, 0);
+	if (error == 0)
+		error = display_present(storage, 640U, 480U, 2560U, 0U, GPU_DISPLAY_PRESENT_FIFO, 1, &sequence);
+	ghci_scan_flush(&device);
+	expect(error == 0 && stub.text_end_calls == 1U && !device.display.boot_console && device.display.boot_kept && device.boot_reserved,
+	    "display boot end: kept while the boot image is lit again");
+	stub.text_end_hook = NULL;
+	device.ops.resource_destroy(&device, display_open, storage);
+	device.ops.close(&device, display_open);
+	end_scene("display boot end: lit again");
+}
+
+/* Stands for the end of a lease that lights the boot image while the console is told. */
+static void
+boot_end_relight(
+	void *argument)
+{
+	(void)argument;
+
+	/* The controller scans the boot image again. */
+	device.display.boot_scanning = 1;
+}
+
+/* Gives the device a BAR0 of a page and a BAR2 of 8 GiB, as the bus glue would. */
+static void
+boot_end_bars(void)
+{
+	/* The registers' BAR. */
+	device.bars[0].physical = 0x80000000ULL;
+	device.bars[0].bytes = 0x1000ULL;
+
+	/* The local window's BAR, whole. */
+	device.bars[1].physical = 0x400000000ULL;
+	device.bars[1].bytes = 0x200000000ULL;
+	device.bar_count = 2U;
 }
 
 /*
