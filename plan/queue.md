@@ -124,7 +124,8 @@
 | --- | --- | --- | --- | --- |
 | q1662 / q1662-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws309`・branch `agent/p1-ws309`、基点 main） | [ws309](ws309/ws.md) | 設計の確定（pool の N は CPU 数で固定、ユーザーの回答「CPU 数で固定 (推し)」）→ design-reviewer → Phase の分割（Q1 に表を送る）→ 実装と試験。原文「P1にWS309」。q1661 の branch は置き換え（読むだけ） | 返却（p001〜p003 cleared、ef99d4812 → main b9f358a5a） |
 | q1662 / q1662-i02 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws309b`・branch `agent/p1-ws309b`、基点 main b9f358a5a） | [ws309](ws309/ws.md) p005 から | i01 と同じ承認 | 返却（p005 の displays・desktop・printers、56702e0fb → main 9402d4c74） |
-| q1662 / q1662-i03 | P1（worktree p1-ws309c、基点 main 9402d4c74） | ws309 p005 の残りから | i01 と同じ承認 | in-progress |
+| q1662 / q1662-i03 | P1（worktree p1-ws309c、基点 main 9402d4c74） | ws309 p005 の残りから | i01 と同じ承認 | 返却（p004・p005・p019 cleared、30650bb3b → main 2bf956f01） |
+| q1662 / q1662-i04 | P1（worktree p1-ws309d、基点 main 5b32eb44c） | ws309 p006 から | i01 と同じ承認 | in-progress |
 | q1663 / q1663-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291j`・branch `agent/p2-ws291j`、基点 main） | [ws291](ws291/ws.md) p006 の続き | 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3。原文「P2にWS291の続き」。q1658 と同じ自律の承認 | cleared（2026-10-29、919a05b78 → main。案 5・案 4、subs-1000 5.97→18 fps、venus-reg PASS） |
 | q1664 / q1664-i01 | P3（phase-runner、worktree `/home/awe/zedBSD-worktrees/p3-ws221`・branch `agent/p3-ws221`、基点 main） | [ws221](ws221/ws.md) p002〜p009 | §9 は全部推し（ユーザーの回答「全部 推しで (推し)」）。kernel・driver・設定・TCP、5330 で 1GbE を使い切るまで TCP を最適化。原文「P3にWS221と、ついでに同じWS内で、1GbEの性能を使い切れるまでTCPスタックの最適化、5330を利用。」。5330 は P3 に割当 | in-progress |
 | q1665 / q1665-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307e`・branch `agent/p4-ws307e`、基点 main） | [ws307](ws307/ws.md) p002〜p014 | spec.md どおりに実装。toolchain（sysroot.mk・libcxx）・asset の upload・HAL に触れる所は始める前に Q1 へ。QEMU。原文「P4にWS307」 | 返却（p005・p008 の 512・p002 の一部・p007 の HAL の案、f049d689d → main 10bc3185e） |
