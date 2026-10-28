@@ -306,9 +306,8 @@ amd64_timecounter_read_state_init(
 	if (state == NULL)
 		return;
 
-	/* Clears publication and serialization state with relaxed stores. */
+	/* Clears publication state with relaxed stores. */
 	__atomic_store_n(&state->available, 0U, __ATOMIC_RELAXED);
-	__atomic_store_n(&state->lock, 0U, __ATOMIC_RELAXED);
 	__atomic_store_n(&state->last_sample, 0U, __ATOMIC_RELAXED);
 	state->frequency_hz = 0U;
 }
@@ -400,6 +399,12 @@ amd64_timecounter_cas_selftest(void)
 
 /*
  * Samples a published timecounter while enforcing global monotonicity.
+ *
+ * No lock is taken: every CPU reads the counter at once, and the
+ * compare-exchange maximum on the shared last sample alone keeps a read from
+ * returning less than any read that returned before it.  The frequency does
+ * not change while the counter is published (a publish refuses a published
+ * state), so a reader that observed the publication reads one frequency.
  */
 bool
 amd64_timecounter_read_guarded(
@@ -410,6 +415,7 @@ amd64_timecounter_read_guarded(
 	uint64_t *frequency_hz)
 {
 	uint64_t raw;
+	uint64_t seen;
 	uint64_t frequency;
 	int result;
 
@@ -423,19 +429,14 @@ amd64_timecounter_read_guarded(
 	    frequency_hz == NULL)
 		return false;
 
-	/* Acquires the private global timecounter critical section. */
-	while (__atomic_exchange_n(
-	    &state->lock,
-	    1U,
-	    __ATOMIC_ACQUIRE) != 0U) {
-		/*
-		 * The HAL wrapper disables local interrupts before entering this
-		 * private global critical section.
-		 */
-	}
-
 	/* Samples only while acquire-observing a published counter. */
 	if (__atomic_load_n(&state->available, __ATOMIC_ACQUIRE) != 0U) {
+		/*
+		 * The maximum published before this sample: only a sample below it
+		 * stepped back.  A sample above it that another CPU's later sample
+		 * overtook before this one was published is no regression.
+		 */
+		seen = __atomic_load_n(&state->last_sample, __ATOMIC_RELAXED);
 		raw = sample(context);
 
 		/*
@@ -447,17 +448,14 @@ amd64_timecounter_read_guarded(
 		 */
 		{
 			/*
-			 * This sample-and-update runs under state->lock (a global exchange
-			 * lock the HAL wrapper enters with interrupts disabled), so it is
-			 * already serialized and IRQ-safe.  The compare-exchange loop also
-			 * makes "advance to the maximum" correct on its own: a concurrent
-			 * later-but-smaller sample can never push the shared value backwards
-			 * (a plain compare-then-store could, if the outer lock were removed).
+			 * The compare-exchange loop makes "advance to the maximum"
+			 * correct without a lock: a concurrent later-but-smaller sample
+			 * can never push the shared value backwards.
 			 */
 			uint64_t before = raw;
 
 			raw = amd64_timecounter_monotonic_max(&state->last_sample, raw);
-			if (raw > before) {
+			if (before < seen) {
 				/* The published maximum refused a backwards step. */
 				static uint32_t regress_logged;
 
@@ -475,9 +473,6 @@ amd64_timecounter_read_guarded(
 			result = 1;
 		}
 	}
-
-	/* Releases the global read lock on every acquired path. */
-	__atomic_store_n(&state->lock, 0U, __ATOMIC_RELEASE);
 
 	/* Hides outputs when sampling was unavailable or regressed. */
 	if (!result)

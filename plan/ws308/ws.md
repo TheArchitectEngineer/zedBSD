@@ -24,8 +24,8 @@ read・write・pread・pwrite・vector の syscall の I/O の道の並列性を
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 計測（QEMU の標本、5330 の 1 I/O の区間）と設計、Fable の助言、design-reviewer | — | in-progress（q1650） |
-| p002 | 起床の道と NVMe の command_lock（lock の外の wake_one、submit・release の lock を 1 回に、slot の空きの list、起こされた thread の置き場所） | p001 | planned |
-| p003 | syscall の I/O の道で heap を確保しない（pin の内の配列、vector の 1 配列、block の bounce の thread ごとの page） | p001 | planned |
+| [p002](phase002/phase.md) | 起床の道と NVMe の command_lock（割り込みの起床を command_lock の外へ、command id で slot を O(1) で引く、amd64 の timecounter の大域の lock を外す。submit・release の lock の回数は次） | p001 | in-progress（実装・review の反映、5330 で direct QD32 124.6k→143.2k IOPS） |
+| [p003](phase003/phase.md) | syscall の I/O の道で heap を確保しない（pin の内の配列、block device の bounce を shared の I/O pool から） | p001 | in-progress（実装 01e701914、5330 で cached QD32 139k→172k IOPS（p002 と合わせて）） |
 | p004 | syscall ごとの process->lock を無くす（thread ごとの credential の参照と世代、signal の要約の語、user probe の数を CPU ごとに） | p001 | planned |
 | p005 | pin を大域の metadata の mutex なしで（vmspace ごとの rwlock、書き手の監査と lock の順） | p001 | planned |
 | p006 | 回帰（QD32 の受け入れ、fork/COW・munmap/mprotect と pread の競争・swap・setuid の競争・signal と exec・readv/writev・O_DIRECT、QEMU の全 boot、全 platform の build、5330） | p002〜p005 | planned |

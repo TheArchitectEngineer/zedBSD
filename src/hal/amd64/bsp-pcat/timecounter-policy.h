@@ -59,7 +59,6 @@ struct amd64_timecounter_probe_result {
 struct amd64_timecounter_read_state {
 	volatile uint64_t last_sample;
 	uint64_t frequency_hz;
-	volatile unsigned lock;
 	volatile unsigned available;
 };
 

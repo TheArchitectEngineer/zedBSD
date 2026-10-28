@@ -30,6 +30,12 @@
 #include <kern/pmem.h>
 #include <limits.h>
 
+_Static_assert(UACCESS_PIN_INLINE_PAGES * sizeof(struct vmspace_pinned_page) <=
+    sizeof(((struct uaccess_pin *)0)->inline_pages),
+    "a pin's inline storage must hold its inline page records");
+_Static_assert(_Alignof(struct vmspace_pinned_page) <= _Alignof(uint64_t),
+    "a pin's inline storage must be aligned for its page records");
+
 #define UACCESS_EXT __attribute__((section(".hightext")))
 #define PAGE_SIZE KERN_PAGE_SIZE
 
@@ -175,17 +181,24 @@ uaccess_pin_vmspace(
 		return ENOMEM;
 	}
 
-	pages = kern_calloc(page_count, sizeof(*pages));
-	if (pages == NULL) {
-		vmspace_put(vm);
-		return ENOMEM;
+	/* A small range keeps its records inside the pin; a larger one allocates them. */
+	if (page_count <= UACCESS_PIN_INLINE_PAGES) {
+		pages = (struct vmspace_pinned_page *)pin->inline_pages;
+		kern_memset(pages, 0, page_count * sizeof(*pages));
+	} else {
+		pages = kern_calloc(page_count, sizeof(*pages));
+		if (pages == NULL) {
+			vmspace_put(vm);
+			return ENOMEM;
+		}
 	}
 
 	/* Pins the pages; the pin then owns them independently of the vmspace. */
 	error = vmspace_pin_user_pages(vm, address, size, prot, pages, page_count);
 	vmspace_put(vm);
 	if (error != 0) {
-		kern_free(pages);
+		if (pages != (struct vmspace_pinned_page *)pin->inline_pages)
+			kern_free(pages);
 		if (error == ENOMEM)
 			return ENOMEM;
 		return EFAULT;
@@ -242,7 +255,8 @@ uaccess_unpin(
 
 	/* Releases the pages and clears the pin. */
 	vmspace_unpin_user_pages(pin->pages, pin->page_count);
-	kern_free(pin->pages);
+	if (pin->pages != (struct vmspace_pinned_page *)pin->inline_pages)
+		kern_free(pin->pages);
 	kern_memset(pin, 0, sizeof(*pin));
 }
 

@@ -2821,13 +2821,29 @@ sys_close_call(
 }
 
 /*
+ * Tells whether a transfer of a file borrows its bounce from the shared I/O
+ * pool: a regular file or a block device, whose transfer waits for a disk
+ * at most, never for another process the way a pipe, a socket or a
+ * terminal can.
+ */
+static int
+syscall_io_pooled(
+	struct file *file)
+{
+	if (file->f_inode == NULL)
+		return 0;
+	return file->f_inode->i_type == INODE_REG ||
+	    file->f_inode->i_type == INODE_BLOCK;
+}
+
+/*
  * Picks the bounce buffer of one transfer.
  *
  * A short transfer uses the caller's stack buffer.  A transfer of a regular
  * file or a block device longer than one pool batch first gets a heap buffer
  * of up to SYSCALL_LARGE_CHUNK, so the disk sees long requests (ws299).
- * Otherwise a regular file borrows shared scratch without allocation or
- * waiting.  A pipe, socket or device gets a heap buffer of up to
+ * Otherwise a regular file or a block device borrows shared scratch without
+ * allocation or waiting.  A pipe, socket or other device gets a heap buffer of up to
  * SYSCALL_STREAM_CHUNK: it may block while it holds it, so it does not take
  * from the shared pool, and a read of it ends after one backend transfer, so
  * a stack-sized buffer would cut every read to SYSCALL_IO_CHUNK bytes.  Any
@@ -2863,7 +2879,7 @@ syscall_io_buffer(struct file *file, size_t length, uint8_t *fallback,
 		}
 	}
 
-	if (file->f_inode != NULL && file->f_inode->i_type == INODE_REG) {
+	if (syscall_io_pooled(file)) {
 		buffer = io_pool_borrow(length, capacity);
 		if (buffer == NULL)
 			return fallback;
@@ -2894,7 +2910,7 @@ syscall_io_buffer_release(struct file *file, uint8_t *buffer,
 		return;
 	}
 
-	if (file->f_inode != NULL && file->f_inode->i_type == INODE_REG)
+	if (syscall_io_pooled(file))
 		io_pool_release(buffer);
 	else
 		kern_free(buffer);

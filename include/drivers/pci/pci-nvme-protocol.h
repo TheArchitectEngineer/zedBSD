@@ -1023,4 +1023,52 @@ drv_nvme_prp_fill(
 	return 1;
 }
 
+/*
+ * An I/O command identifier names its slot: the slot's number plus one in
+ * the low DRV_NVME_IO_CID_SLOT_BITS bits, and the slot's generation (how
+ * many commands it has carried, wrapping) above them.  It is never zero, and
+ * two commands outstanding at once never share one, because their slots
+ * differ.  A queue has at most DRV_NVME_IO_CID_SLOTS slots.
+ */
+#define DRV_NVME_IO_CID_SLOT_BITS	6U
+#define DRV_NVME_IO_CID_SLOTS		((1U << DRV_NVME_IO_CID_SLOT_BITS) - 1U)
+
+static inline uint16_t
+drv_nvme_io_command_id(unsigned slot, unsigned generation)
+{
+	return (uint16_t)(((generation << DRV_NVME_IO_CID_SLOT_BITS) |
+	    (slot + 1U)) & 0xffffU);
+}
+
+/*
+ * Advances a slot's generation and names its next command, skipping FFFFh,
+ * which the error information log uses for an error of no command.
+ */
+static inline uint16_t
+drv_nvme_io_next_command_id(unsigned slot, unsigned *generation)
+{
+	uint16_t command_id;
+
+	(*generation)++;
+	command_id = drv_nvme_io_command_id(slot, *generation);
+	if (command_id == 0xffffU) {
+		(*generation)++;
+		command_id = drv_nvme_io_command_id(slot, *generation);
+	}
+	return command_id;
+}
+
+/* Finds the slot a command identifier names; 0 when it names none of slot_count. */
+static inline int
+drv_nvme_io_command_slot(uint16_t command_id, unsigned slot_count, unsigned *slot)
+{
+	unsigned low;
+
+	low = command_id & DRV_NVME_IO_CID_SLOTS;
+	if (low == 0U || low > slot_count || slot_count > DRV_NVME_IO_CID_SLOTS)
+		return 0;
+	*slot = low - 1U;
+	return 1;
+}
+
 #endif
