@@ -261,6 +261,7 @@ RISCV64_PCI_DEVICE_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/p
 	src/drivers/gpu/ghci/vk/vk-format.c src/drivers/gpu/ghci/vk/vk-device.c src/drivers/gpu/ghci/vk/vk-memory.c \
 	src/drivers/gpu/ghci/vk/vk-command.c src/drivers/gpu/ghci/vk/vk-queue.c \
 	src/drivers/gpu/ghci/vk/vk-layout.c src/drivers/gpu/ghci/vk/vk-pipeline.c src/drivers/gpu/ghci/vk/vk-pass.c src/drivers/gpu/ghci/vk/vk-execute.c \
+	src/drivers/gpu/ghci/vk/vk-meta.c \
 	$(filter-out $(RISCV64_PLATFORM_SOURCES_$(ZEDBSD_BOARD)),src/drivers/gpu/i915/vk/vk-codec.c)
 endif
 

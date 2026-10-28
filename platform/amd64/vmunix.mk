@@ -296,6 +296,7 @@ AMD64_GHCI_SOURCES += src/drivers/gpu/ghci/ghci.c src/drivers/gpu/ghci/pci-attac
 	src/drivers/gpu/ghci/vk/vk-format.c src/drivers/gpu/ghci/vk/vk-device.c src/drivers/gpu/ghci/vk/vk-memory.c \
 	src/drivers/gpu/ghci/vk/vk-command.c src/drivers/gpu/ghci/vk/vk-queue.c \
 	src/drivers/gpu/ghci/vk/vk-layout.c src/drivers/gpu/ghci/vk/vk-pipeline.c src/drivers/gpu/ghci/vk/vk-pass.c src/drivers/gpu/ghci/vk/vk-execute.c \
+	src/drivers/gpu/ghci/vk/vk-meta.c \
 	$(filter-out $(AMD64_I915_SOURCES) $(AMD64_NVRTX_SOURCES) $(AMD64_AMDRDNA_COMPILER_SOURCES),src/drivers/gpu/compiler/spirv.c src/drivers/gpu/compiler/optimize.c) \
 	$(filter-out $(AMD64_I915_SOURCES) $(AMD64_NVRTX_SOURCES) $(AMD64_AMDRDNA_VK_SOURCES),src/drivers/gpu/i915/vk/vk-codec.c)
 endif
