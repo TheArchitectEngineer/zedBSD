@@ -428,5 +428,8 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
   boot-000154.txt（08:53〜08:57）と正常の boot-000148.txt・boot-000155.txt の比較: 失敗の boot も kernel・desktop・GPU は動き続けた（compositor の run が
   60 s ごと）。違いは USB の LAN（RTL8156 0bda:8156、usb-cdc-ncm の ue0）の「ue0 link 2500 Mb/s」が無い事だけ = link が上がらず DHCP・SSH が無い。
   GPU の hang ではない。（保存された log の比較は止まる段の特定のためで、試験の判定ではない。）
-- 回避（Q1 の OK）: measure.sh の to_zedbsd で、Debian から BootNext で再起動する前に USB NIC（ZEDBSD_NIC=0bda:8156）だけ sysfs の authorized=0 で
-  Linux から外す。効果は以後の deploy で見る。
+- 回避の試み（取り消し）: measure.sh で BootNext の前に Debian の USB NIC を sysfs の authorized=0 で外す回避を 184beb3c9 に入れたが、Debian の 10.0.10.3
+  も同じ RTL8156（enx6c1ff71a08b6、onboard の enp5s0 は DOWN）を使うので 09:11 に Debian の通信を切った。09:18:11 に P2 が SwitchBot で入れ直し（3 回目）。
+  回避は取り消した（Q1: 二度としない）。代わりにユーザーの指示（2026-10-28）「P2は、USB NICが通信できない（DHCPが取得できないとか、ue0が異常状態）のとき、
+  自分で再起動するように、serivceを登録すれば、とりあえず問題を回避して継続できると思いますので、P2の判断でこれを行ってよいです。」で zedBSD の側に
+  自己 reboot の service を入れる（試験の image・設定だけ）。

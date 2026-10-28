@@ -43,7 +43,7 @@
 #                                            the table of fps and the frame's stages (printed, OUT/table.txt)
 #
 # The programs copied in: USB_MVIEW, USB_NGGSHAPE, USB_VKHANG (default build/ws291/usb/bin/...).
-# The environment: ZEDBSD_MAC, ZEDBSD_NIC (its USB vendor:product), ZEDBSD_SUBNET (a /24, as 10.0.30), ZEDBSD_BOOT (the UEFI entry), DEBIAN (user@host),
+# The environment: ZEDBSD_MAC, ZEDBSD_SUBNET (a /24, as 10.0.30), ZEDBSD_BOOT (the UEFI entry), DEBIAN (user@host),
 # KEY (the zedBSD root key).  A candidate for Master's Tools (the same steps serve other GPUs' boards).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -53,7 +53,6 @@ ZEDBSD_MAC=${ZEDBSD_MAC:-6c:1f:f7:1a:08:b6}
 ZEDBSD_SUBNET=${ZEDBSD_SUBNET:-10.0.30}
 ZEDBSD_BOOT=${ZEDBSD_BOOT:-0005}
 DEBIAN=${DEBIAN:-awe@10.0.10.3}
-ZEDBSD_NIC=${ZEDBSD_NIC:-0bda:8156}
 KEY=${KEY:-$top/plan/tmp/guest/id_ed25519}
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 # The commands to zedBSD share one SSH connection, used again and again (its sshd leaves sessions stuck now and then,
@@ -151,9 +150,6 @@ to_zedbsd() {
 	ip=$(zedbsd_ip) && { echo "$ip"; return 0; }
 	linux_up || { say "neither system answers"; return 1; }
 	say "Debian: BootNext $ZEDBSD_BOOT, reboot"
-	# zedBSD's USB LAN adapter (RTL8156, 0bda:8156) sometimes gets no link after Linux used it: Debian lets
-	# go of it first (unconfigured, its drivers detached); no other USB device is touched.
-	deb "for d in /sys/bus/usb/devices/*; do [ \"\$(cat \$d/idVendor 2>/dev/null):\$(cat \$d/idProduct 2>/dev/null)\" = $ZEDBSD_NIC ] && echo 0 | sudo tee \$d/authorized > /dev/null; done; true" || return 1
 	deb "sudo efibootmgr -q -n $ZEDBSD_BOOT && (sleep 1; sudo systemctl reboot) > /dev/null 2>&1 &" || return 1
 	sleep 30
 	wait_for zedbsd 300 > /dev/null || return 1
