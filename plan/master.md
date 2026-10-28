@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | P1 | q1662-i05 返却（ラップアップ） | [ws309](ws309/ws.md): p001〜p007・p019 cleared、p008 は queue lock 済み、次は fence 付きの task。worktree p1-ws309e | QEMU |
 | P2 | q1668-i02 停止（再開待ち） | [ws291](ws291/ws.md): RDNA で shot の直しの確かめ → big-N・subs-N（q1663 は cleared、merge d6685c55e） | 10.0.10.3 |
-| P3 | q1664 in-progress | [ws221](ws221/ws.md) p002〜p009: §9 は全部推し（ユーザーの回答「全部 推しで (推し)」） | VF2（10.0.30.2）が主、5330 は従、相手は 10.0.10.2 |
+| P3 | q1664 in-progress（WS221 の jumbo の残り） | [ws221](ws221/ws.md) p002〜p009: §9 は全部推し（ユーザーの回答「全部 推しで (推し)」） | VF2（10.0.30.2）が主、5330 は従、相手は 10.0.10.2 |
 | P4 | q1665-i04 返却（ラップアップ） | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
 | P5 | q1666-i04 停止（ユーザー） | 詳細の決まっていない WS の設計: code は書かない | — |
 | P6 | q1667-i04 返却（ラップアップ） | 実装だけ（merge しない）: WS296 全 Phase（agent/p6-ws296c 1809873bd）、WS282 p002〜p004b（agent/p6-ws282c 677277d8f）、WS284 p002 script・p003 CPU の参照（同じ branch、zedBSD の libyolox.so の build 規則は共有の userland-dynamic.mk に要る、未決）。試験は全部未実施 | — |

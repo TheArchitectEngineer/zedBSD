@@ -7,7 +7,7 @@
 | --- | --- | --- | --- | --- | --- |
 | P1 | phase-runner | ws309 (q1662-i05) | `/home/awe/zedBSD-worktrees/p1-ws309e` / `agent/p1-ws309e` | returned（2026-10-29 ラップアップ） | c58ed8126 |
 | P2 | phase-runner | ws291 (q1668-i02) | `/home/awe/zedBSD-worktrees/p2-ws291l` / `agent/p2-ws291l` | returned（2026-10-29 停止、06:15 に再開の予定） | e6283eb70（merge 3ca557953） |
-| P3 | phase-runner | ws221 (q1664) | `/home/awe/zedBSD-worktrees/p3-ws221` / `agent/p3-ws221` | running（2026-10-29 01:37） | — |
+| P3 | phase-runner | ws221 (q1664-i01) | `/home/awe/zedBSD-worktrees/p3-ws221` / `agent/p3-ws221` | running（返却の後、Q1 の「続けて」で同じ起動が再開） | e7f69889a（merge c42014745） |
 | P4 | phase-runner | ws307 (q1665-i04) | `/home/awe/zedBSD-worktrees/p4-ws307h` / `agent/p4-ws307h` | returned（2026-10-29 ラップアップ） | c0974cb41（merge 377efd966） |
 | P5 | kernel-and-driver-designer | 設計 (q1666-i04) | `/home/awe/zedBSD-worktrees/p5-design-d` / `agent/p5-design-d` | stopped（2026-10-29 ユーザーが停止） | 8d9ea93ce（merge e24ab6ebf） |
 | P6 | phase-runner | WS282〜WS284・WS223 の実装 (q1667-i04) | `/home/awe/zedBSD-worktrees/p6-ws282c` / `agent/p6-ws282c` | returned（2026-10-29 ラップアップ、merge しない、先頭 677277d8f） | — |
