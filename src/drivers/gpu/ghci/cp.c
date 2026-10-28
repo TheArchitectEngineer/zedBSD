@@ -498,14 +498,50 @@ ghci_cp_submit(
 	uint32_t dwords,
 	struct ghci_ticket *ticket)
 {
+	struct ghci_ticket placed_ticket;
+	int placed;
+	int error;
+
+	/* The submission; what a failure placed is the reset's to throw away, and its ticket is not reported. */
+	error = ghci_cp_submit_placed(device, vm, packets, dwords, &placed_ticket, &placed);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the submission is in the ring. */
+	*ticket = placed_ticket;
+	return 0;
+}
+
+/*
+ * Submits packets as ghci_cp_submit() does, and reports in *placed
+ * whether any of them reached the ring.  When some did and the
+ * submission failed (EIO: a recovery began in the middle), *ticket is
+ * still a ticket of the generation they were placed in: one whose fence
+ * was placed, or one past every fence placed, which the reset that
+ * throws them away ends (GHCI_TICKET_FAILED once it has, pending until
+ * then), so that what they read is kept until the GPU can no longer run
+ * them.  With nothing placed, *placed is 0 and *ticket is not set.
+ */
+int
+ghci_cp_submit_placed(
+	struct ghci_device *device,
+	struct ghci_vm *vm,
+	const uint32_t *packets,
+	uint32_t dwords,
+	struct ghci_ticket *ticket,
+	int *placed)
+{
 	enum ghci_gate gate;
 	uint32_t bind[GHCI_DW_BIND_SESSION];
+	unsigned long irq;
 	uint32_t session;
 	uint32_t start;
+	int fenced;
 	int walker;
 	int error;
 
 	/* A run of packets the ring cannot take is refused before anything is placed. */
+	*placed = 0;
 	error = ghci_cp_check_packets(packets, dwords);
 	if (error != 0)
 		return error;
@@ -538,15 +574,35 @@ ghci_cp_submit(
 	}
 
 	/* The packets, and the fence that says they are done. */
+	fenced = 0;
 	if (error == 0)
 		error = ghci_cp_place(device, packets, dwords);
-	if (error == 0)
+	if (error == 0) {
 		error = ghci_cp_place_fence(device, vm, start, ticket);
+		if (error == 0)
+			fenced = 1;
+	}
 
 	/* Session 0 again, so that the driver's later packets do not run in the client's session. */
 	if (error == 0 && walker) {
 		(void)ghci_cmd_bind_session(bind, 0U);
 		error = ghci_cp_place(device, bind, GHCI_DW_BIND_SESSION);
+	}
+
+	/*
+	 * A part placed without its fence: a ticket past every fence placed,
+	 * in the generation the part was placed in, which only the reset
+	 * that throws the part away ends.
+	 */
+	if (device->ring.wptr != start)
+		*placed = 1;
+	if (*placed && !fenced) {
+		irq = spin_lock_irqsave(&device->irq_lock);
+
+		ticket->seq = device->fence_placed + 1U;
+		ticket->generation = device->generation;
+
+		spin_unlock_irqrestore(&device->irq_lock, irq);
 	}
 
 	/* The doorbell for what was placed, even a part a recovery will throw away. */

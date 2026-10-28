@@ -428,8 +428,10 @@ ghci_vm_close(
 /*
  * Maps an allocation into a session: takes GPU addresses in a chunk the
  * session owns and places CMD_VM_MAP.  flags adds GHCI_VM_FLAG_EXEC for
- * code; the access and coherence are the driver's.  The placement is not
- * waited for: the processor runs the ring in order.
+ * code and GHCI_VM_MAP_NO_WRITE for memory the GPU only reads (the
+ * mapping then lacks GHCI_VM_FLAG_WRITE); the rest of the access and the
+ * coherence are the driver's.  The placement is not waited for: the
+ * processor runs the ring in order.
  *
  * Returns 0 with the mapping, which holds the allocation; ENOTSUP for
  * local memory; ENOMEM when no addresses or no room in CP_HEAP's bound
@@ -449,10 +451,10 @@ ghci_vm_map(
 	uint64_t va;
 	int error;
 
-	/* Host memory only; the only flag a caller adds is EXEC. */
+	/* Host memory only; the flags a caller adds are EXEC and NO_WRITE. */
 	if (allocation->kind != GHCI_MEMORY_HOST)
 		return ENOTSUP;
-	if ((flags & ~GHCI_VM_FLAG_EXEC) != 0U)
+	if ((flags & ~(GHCI_VM_FLAG_EXEC | GHCI_VM_MAP_NO_WRITE)) != 0U)
 		return EINVAL;
 
 	/* The mapping's record. */
@@ -462,7 +464,9 @@ ghci_vm_map(
 	mapping->vm = vm;
 	mapping->allocation = allocation;
 	mapping->bytes = allocation->bytes;
-	mapping->flags = HOST_MAP_FLAGS | flags;
+	mapping->flags = HOST_MAP_FLAGS | (flags & GHCI_VM_FLAG_EXEC);
+	if ((flags & GHCI_VM_MAP_NO_WRITE) != 0U)
+		mapping->flags &= ~GHCI_VM_FLAG_WRITE;
 	mapping->state = GHCI_MAPPING_LIVE;
 
 	/* Mappings that finished unmapping give their addresses back first. */

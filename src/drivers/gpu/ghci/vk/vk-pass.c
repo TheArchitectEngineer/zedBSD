@@ -398,6 +398,7 @@ create_framebuffer(
 	VkFramebufferCreateInfo info;
 	struct ghci_vk_object *device;
 	struct ghci_vk_object *object;
+	struct ghci_vk_object *view;
 	uint64_t *views;
 	uint64_t handle;
 	uint64_t present;
@@ -428,9 +429,12 @@ create_framebuffer(
 		return 0;
 	}
 
-	/* The views, each an image view of the session. */
+	/* The views, each an image view of the session at least as large as the framebuffer. */
 	for (index = 0U; index < info.attachmentCount; index++) {
-		if (ghci_vk_object_find(session, GHCI_VK_IMAGE_VIEW, (uint64_t)(uintptr_t)info.pAttachments[index]) == NULL)
+		view = ghci_vk_object_find(session, GHCI_VK_IMAGE_VIEW, (uint64_t)(uintptr_t)info.pAttachments[index]);
+		if (view == NULL)
+			return EINVAL;
+		if (view->as.image_view.width < info.width || view->as.image_view.height < info.height || view->as.image_view.layers < info.layers)
 			return EINVAL;
 	}
 	charged = (uint64_t)info.attachmentCount * sizeof(uint64_t);

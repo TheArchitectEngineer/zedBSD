@@ -29,6 +29,7 @@
 #include <stdint.h>
 
 #include <drivers/gpu/gpu.h>
+#include <kern/device-io.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
 #include <kern/waitq.h>
@@ -421,6 +422,7 @@ queue_submit(
 	struct ghci_ticket ticket;
 	uint64_t handle;
 	int recorded;
+	int placed;
 	uint64_t count;
 	uint64_t index;
 	uint64_t signal;
@@ -467,11 +469,17 @@ queue_submit(
 
 	/* The work and its fence in the device's session (the queue holds no lock of the device). */
 	result = (uint32_t)VK_SUCCESS;
-	error = ghci_cp_submit(session->device, device->vm, submission.words, submission.used, &ticket);
+	error = ghci_cp_submit_placed(session->device, device->vm, submission.words, submission.used, &ticket, &placed);
 	if (error != 0)
 		result = (uint32_t)VK_ERROR_DEVICE_LOST;
 
-	/* The ticket the fence, the jobs, the frames and the submission's memory wait for. */
+	/*
+	 * The ticket the fence, the jobs, the frames and the submission's
+	 * memory wait for.  A submission placed in part before a recovery
+	 * has a ticket too, which the reset ends: what it reads is kept
+	 * until then, and it is the device's last work.  One that placed
+	 * nothing gives its memory back at once.
+	 */
 	if (result == (uint32_t)VK_SUCCESS) {
 		ghci_vk_submitted(device, &ticket);
 		if (fence != NULL) {
@@ -480,8 +488,11 @@ queue_submit(
 			fence->as.fence.ticket = ticket;
 		}
 		ghci_vk_submission_end(device, &submission, &ticket, 1);
+	} else if (placed) {
+		ghci_vk_submitted(device, &ticket);
+		ghci_vk_submission_end(device, &submission, &ticket, 1);
 	} else {
-		ghci_vk_submission_end(device, &submission, NULL, error == EIO);
+		ghci_vk_submission_end(device, &submission, NULL, 0);
 	}
 
 	/* The result. */
@@ -1142,8 +1153,12 @@ query_results(
 	drv_i915_wire_reply_u64(reply, bytes);
 	for (index = 0U; index < count; index++) {
 		slot = object->as.query_pool.view + (uint64_t)(first + index) * QUERY_SLOT_BYTES;
-		kern_memcpy(&value, slot, 8U);
 		kern_memcpy(&available, slot + 8U, 8U);
+
+		/* The GPU writes the result before the availability word: the result is read after it. */
+		kern_io_read_barrier();
+
+		kern_memcpy(&value, slot, 8U);
 		if (available != 0U)
 			available = 1U;
 		if (width == 8U) {
