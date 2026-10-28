@@ -797,6 +797,21 @@ reset_and_check(
 	}
 	device->resets++;
 
+	/*
+	 * The memory must be ready before any register is set again or the
+	 * ring runs; a memory that does not become ready is a reset that
+	 * did not end.
+	 *
+	 * Values referenced: amaterrace-gpu c74accc docs/ghci.md (section
+	 * 3.3, CTRL.RESET and STATUS.MEM_READY after a reset; section 10, the
+	 * driver's recovery waits for MEM_READY).
+	 */
+	error = ghci_wait_register(device, GHCI_REG_STATUS, GHCI_STATUS_MEM_READY, GHCI_STATUS_MEM_READY, GHCI_MEMORY_WAIT_MS);
+	if (error != 0) {
+		kern_logf("ghci: %s: memory not ready after the reset (status %08x)\n", device->name, (unsigned)ghci_read(device, GHCI_REG_STATUS));
+		return EIO;
+	}
+
 	/* The registers the reset keeps, as the driver wrote them. */
 	offsets[0] = GHCI_REG_RING_BASE_LO;
 	want[0] = (uint32_t)device->ring.memory->bus;

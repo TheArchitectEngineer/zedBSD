@@ -337,6 +337,16 @@ ghci_fence_read(
 	if (again != high)
 		low = word[0];
 
+	/*
+	 * Nothing the caller reads after the fence (the GPU's writes it
+	 * orders) is read before it, on a processor that reorders loads.
+	 *
+	 * Values referenced: amaterrace-gpu c74accc docs/ghci.md (section
+	 * 9.1, a fence's memory write follows the writes of the work before
+	 * it).
+	 */
+	kern_io_read_barrier();
+
 	/* Succeeded: the fence as the device last wrote it. */
 	return (again << 32) | low;
 }
