@@ -199,8 +199,9 @@ static const uint16_t mark_set_offsets[AMDRDNA_DISPLAY_PIPES] = {
  * clocks each timing generator (mmOTG0_PHYPLL_PIXEL_RATE_CNTL), and the
  * first CRC's two windows (mmOTG0_OTG_CRC0_WINDOWA_X_CONTROL,
  * mmOTG0_OTG_CRC0_WINDOWA_Y_CONTROL, mmOTG0_OTG_CRC0_WINDOWB_X_CONTROL,
- * mmOTG0_OTG_CRC0_WINDOWB_Y_CONTROL), and the hub arbiter's DRAM state
- * control (mmDCHUBBUB_ARB_DRAM_STATE_CNTL).
+ * mmOTG0_OTG_CRC0_WINDOWB_Y_CONTROL), the hub arbiter's DRAM state
+ * control (mmDCHUBBUB_ARB_DRAM_STATE_CNTL), and the hub's test debug
+ * index and data (mmDCHUBBUB_TEST_DEBUG_INDEX, mmDCHUBBUB_TEST_DEBUG_DATA).
  * derived: the distances are the differences between the offsets of
  * instance 1 and instance 0 in the same header; a scaler register's
  * distance from its pixel processor's control word is the same in all six
@@ -361,7 +362,9 @@ static const struct dcn_place dcn_places[AMDRDNA_DCN_REGISTER_COUNT] = {
 	{ 2U, 0x1b6bU, 0x0080U, NULL },
 	{ 2U, 0x1b6cU, 0x0080U, NULL },
 	{ 2U, 0x1b6dU, 0x0080U, NULL },
-	{ 2U, 0x0508U, 0x0000U, NULL }
+	{ 2U, 0x0508U, 0x0000U, NULL },
+	{ 2U, 0x053dU, 0x0000U, NULL },
+	{ 2U, 0x053eU, 0x0000U, NULL }
 };
 
 /*

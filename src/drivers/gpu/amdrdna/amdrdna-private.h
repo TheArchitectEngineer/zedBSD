@@ -1533,6 +1533,16 @@ uint32_t
 amdrdna_display_memory_state(
 	struct amdrdna_device *device);
 
+uint32_t
+amdrdna_display_memory_handshake(
+	struct amdrdna_device *device);
+
+void
+amdrdna_display_memory_marks(
+	struct amdrdna_device *device,
+	uint32_t *switch_mark,
+	uint32_t *debug_index);
+
 void
 amdrdna_display_memory_switch_hold(
 	struct amdrdna_device *device,

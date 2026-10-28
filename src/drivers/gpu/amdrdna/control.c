@@ -609,6 +609,14 @@ control_fill(
 	if (status->stage >= AMDRDNA_STAGE_A5)
 		control_fill_spaces(device, status);
 
+	/* The display hub's memory state and the underflow as they stand, once the driver took the display over. */
+	if (status->stage >= AMDRDNA_STAGE_A6) {
+		status->memory_state = amdrdna_display_memory_state(device);
+		status->memory_handshake = amdrdna_display_memory_handshake(device);
+		status->underflow_now = amdrdna_display_underflow(device, &status->timing_underflow_now);
+		amdrdna_display_memory_marks(device, &status->switch_mark, &status->handshake_index);
+	}
+
 	/* Publishes the flags. */
 	status->flags = flags;
 }
@@ -691,6 +699,8 @@ control_fill_power(
 	status->temperature_highest = thermal->highest;
 	status->temperature_limit = thermal->limit;
 	status->thermal_alerts = (uint32_t)(thermal->high_alerts + thermal->low_alerts + thermal->critical_alerts);
+	status->memory_clock = thermal->memory_clock;
+	status->return_clock = thermal->return_clock;
 	if (thermal->faulted)
 		flags |= AMDRDNA_STATUS_THERMAL_FAULT;
 	if (thermal->hung)

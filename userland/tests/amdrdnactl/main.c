@@ -323,6 +323,13 @@ control_status(
 	printf("sessions spaces=%u held=%u flushes=%u device=0x%x\n",
 	    (unsigned)(status.spaces & 0xffffU), (unsigned)(status.spaces >> 16),
 	    (unsigned)status.context_flushes, (unsigned)status.device_flags);
+
+	/* The memory clock, and the display hub's memory state and underflow as they stand (from stage A6). */
+	printf("clocks mem=%uMHz dcef=%uMHz state=0x%x handshake=0x%08x underflow=%u timing_underflow=%u switch_mark=%u index=0x%x\n",
+	    (unsigned)status.memory_clock, (unsigned)status.return_clock,
+	    (unsigned)status.memory_state, (unsigned)status.memory_handshake,
+	    (unsigned)status.underflow_now, (unsigned)status.timing_underflow_now,
+	    (unsigned)status.switch_mark, (unsigned)status.handshake_index);
 	return 0;
 }
 

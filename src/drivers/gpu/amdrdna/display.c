@@ -94,6 +94,7 @@
  * _ENABLE, DCHUBBUB_ARB_ALLOW_PSTATE_CHANGE_FORCE_VALUE, _ENABLE).
  */
 #define DISPLAY_DRAM_SELF_REFRESH_FORCE	0x00000003U
+#define DISPLAY_HUB_DEBUG_PSTATE	0x0000000bU
 #define DISPLAY_DRAM_STATE_CHANGE_ALLOW	0x00000030U
 #define DISPLAY_PLANE_IDLE		0x00000002U
 #define DISPLAY_PLANE_UNDERFLOW_SHIFT	28U
@@ -1094,6 +1095,41 @@ amdrdna_display_memory_state(
 {
 	/* The word. */
 	return display_read(device, AMDRDNA_DCN_HUB_DRAM_STATE, 0U);
+}
+
+/*
+ * Reads the hub's memory state handshake as its test debug word shows it
+ * (index 0xB): bits 0 to 27 each plane's and cursor's allowing of the
+ * memory's state change, bits 28 and 29 the write-back's, bit 30 the
+ * arbiter's allowing, and bit 31 the request of the system-management
+ * unit's firmware for the change.
+ *
+ * Values referenced: Linux v6.12
+ * drivers/gpu/drm/amd/display/dc/hubbub/dcn10/dcn10_hubbub.c
+ * (hubbub1_verify_allow_pstate_change_high: debug_index 0xB for DCN 2.0
+ * and the comment on the word's bits) and
+ * drivers/gpu/drm/amd/include/asic_reg/dcn/dcn_2_0_0_offset.h
+ * (mmDCHUBBUB_TEST_DEBUG_INDEX, mmDCHUBBUB_TEST_DEBUG_DATA).
+ */
+uint32_t
+amdrdna_display_memory_handshake(
+	struct amdrdna_device *device)
+{
+	/* The index of the handshake's word, then the word. */
+	display_write(device, AMDRDNA_DCN_HUB_DEBUG_INDEX, 0U, DISPLAY_HUB_DEBUG_PSTATE);
+	return display_read(device, AMDRDNA_DCN_HUB_DEBUG_DATA, 0U);
+}
+
+/* Reads the hub's memory clock change watermark of set A and its test debug index, as they stand. */
+void
+amdrdna_display_memory_marks(
+	struct amdrdna_device *device,
+	uint32_t *switch_mark,
+	uint32_t *debug_index)
+{
+	/* The two words. */
+	*switch_mark = display_read(device, AMDRDNA_DCN_HUB_SWITCH_MARK, 0U);
+	*debug_index = display_read(device, AMDRDNA_DCN_HUB_DEBUG_INDEX, 0U);
 }
 
 /*
