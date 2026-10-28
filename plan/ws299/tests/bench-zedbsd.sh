@@ -18,11 +18,13 @@
 #        boot) in 1 MiB requests and synced, read back in 1 MiB and 4 MiB requests, P7_MIB MiB of the data region
 #        read in 1 MiB requests, and random 4 KiB reads at depth 1 and 32 (randread direct, one description and
 #        one per thread).
+# qdprobe: where depth 32 stops: random 4 KiB reads at depth 32 as threads and as processes, direct and through
+#        the cache, without the clock in the loop, and getppid() alone at depth 32 (threads and processes).
 # Every timed step prints "step NAME bytes=N" and the /bin/time lines (real/user/sys); the summary is made on the
 # build host (summary.py).  The only file removed is WFILE_NEW, inside zedBSD, before it is written again.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
-MODE=${1:?read|write|p7rawwrite|p7rawread|p7fswrite|p7fsread|p7direct}
+MODE=${1:?read|write|p7rawwrite|p7rawread|p7fswrite|p7fsread|p7direct|qdprobe}
 DEV=/dev/nvme0n1
 SWAP=/dev/nvme0n1p6
 R0_MIB=${R0_MIB:-25681}
@@ -212,6 +214,14 @@ p7direct)
 		"$RANDREAD" $DEV 4096 $depth "$RAND_SECONDS" "$R0_MIB" "$R_MIB" direct fdeach
 	done
 	snap rand-direct
+	;;
+qdprobe)
+	for how in "direct" "direct procs" "direct notime" "direct procs notime" "notime" "procs notime" \
+	    "nullcall notime" "nullcall procs notime"; do
+		echo "step qd32-$(echo "$how" | tr ' ' '-') bytes=0"
+		"$RANDREAD" $DEV 4096 32 "$RAND_SECONDS" "$R0_MIB" "$R_MIB" $how
+	done
+	snap qdprobe
 	;;
 esac
 echo "bench done"

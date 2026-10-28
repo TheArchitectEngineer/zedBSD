@@ -3,7 +3,7 @@
 # ws299-p010 block device の O_DIRECT
 
 - 親: [WS299](../ws.md)。Queue: q1640 / q1640-i01（担当 P1）。番号は P1 の仮（Q1 が表と依存を決める）。
-- Status: planning（2026-10-28 P1: 設計（kernel-and-driver-designer の案、P1 が決めた点を併記）、design-reviewer へ）
+- Status: in-progress（2026-10-28 P1、q1646 paused: 実装・host・QEMU・5330 の測定まで。direct の書き 59%・QD32 48% が未達、WS308 の後に戻る）
 - 出典: 2026-10-28 ユーザー（Q1 経由）「raw の冷えた読み 4 GiBは、zedBSDではpage cache経由なのか、directなのか。zedBSDでもどちらの経路でも読めるなら、両方でLinuxと同等以上の性能にチューニングしたいです。」、P1 の案 B に対しユーザーのクリック「O_DIRECT を UAPI に足す」。Q1: block device の open に O_DIRECT（Linux と同じ意味: cache を通らず、重なる dirty の line は先に書き戻して無効にする）、揃わない offset・長さの扱いも Linux に合わせて決めて記録、regular file は EINVAL か無視かを決めて記録、受け入れに direct の読み・書き（Debian の direct 2.1 GB/s 以上、書きも Debian の direct と比べる）。
 
 ## 今の事実
@@ -64,6 +64,46 @@
 - 低: Linux 6.x の buffer の揃いは dma_alignment（STATX_DIOALIGN）で、上の「logical block の揃いを求める」は不正確。device の終わりを越える書きは Linux が短い数、zedBSD は ENOSPC（違いとして記録）。io_stats に道の数を足すなら末尾に足し VERSION を上げ userland の sysctl も直す。mutation の slot（上限 64）を書き 1 回で 2〜3 個使う。staging の pool の確保の失敗・全部使用中の fallback を書く。ws.md の表と依存は Q1。`directio.c` が O_DIRECT を見るには sysroot の header の更新が要るかもしれない（toolchain の範囲、Q1 の許可の要否を確かめる）。libc の O_RSYNC の comment（`include/libc/fcntl.h`:17）を直す。
 - 足す試験: 既存の regular file に O_TRUNC|O_DIRECT で中身が残る、tmpfs の mknod の node、`/dev/fd/N`、root を mount したままの whole disk の direct、signal の短い数が block の倍数、転送中の munmap、誤りの注入、O_DSYNC の flush、BLKRESERVE の fd、F_SETFL の切り替え、512 B の sector の 4 KiB に揃わない offset、coherent でない arch（arm64・riscv64 の QEMU）の B の道、MAP_SHARED|MAP_ANONYMOUS の buffer。
 
-## 再開点（2026-10-28、P1）
+## 実装（2026-10-28、P1、q1646、b809c70d1）
 
-- 設計と review は済み、実装は未着手（P1 の context の都合で次の起動へ）。順: a 意味と正しさ（UAPI・open・F_SETFL・揃い・B の道・prepare/finish、host と QEMU）→ b 速さ（pdirect・A の道・pool・BIO 2 本）→ 5330。
+- 2026-10-28 Q1: file.c（open の検査・F_SETFL）・syscall.c（bounce の振り分け）・include/kern/file.h（pdirect）を p010 の範囲として触ってよい。
+- UAPI: `O_DIRECT 0x100000`（include/uapi/fcntl.h）。libc は変えない（flag をそのまま渡す）。
+- open（file.c）: mask に O_DIRECT。inode を決めた直後・O_TRUNC の前に `i_fop->pdirect` が無ければ EINVAL（regular・tmpfs の mknod の node も）。O_CREAT で新しく作る時も作る前に EINVAL（何も作らない）。`/dev/fd/N` は元の description に O_DIRECT が無いのに求めたら EINVAL。`file_open_resolved` は O_DIRECT を受けない（今の mask のまま EINVAL）。
+- F_SETFL（syscall.c）: mask を `O_APPEND|O_NONBLOCK|O_DIRECT` に、pdirect の無い file に O_DIRECT は EINVAL。
+- syscall（read・write・pread/pwrite・readv/writev）: `file_io_direct(file)` の時は bounce を取らず、`file_io_transfer_pinned`（file.c）で要求の全体を pdirect に渡す（vector は element ごと、短い element で止める）。O_SYNC・O_DSYNC の file_fsync（disk 全体の buf_sync）はしない（M3、pdirect が device の flush だけをする）。
+- devfs `block_pdirect`: offset・長さが logical block の倍数でなければ EINVAL、長さ 0 は 0、範囲は今の `devfs_block_io_range_prepare`（読みは短く、書きは ENOSPC）、1 回は 0x7ffff000 byte まで（Linux と同じ上限、越える分は短い数）。claim の fd は `disk_admin_io_begin` で cache を見ない（M4）、他は `disk_direct_begin`（`disk_cache_enter` と同じ受け入れ）→ 書きは `backing_mutation_begin_disk` → `buf_direct_prepare` → 1 MiB ごとの piece → 書きは `buf_direct_prepare(…, 1)` をもう一度（finish、誤りの道でも）→ O_SYNC・O_DSYNC の書きは `bio_flush` だけ。piece の間で signal を見て、動いた数（block の倍数）を返す。
+- A（その場）: piece の頭が利用者の page の頭で、page が `VMSPACE_PINNED_PRIVATE` の間、`disk_transfer_pages_claimed`（disk.c、`disk_transfer_pages_context` に claim を足した形）で page 列の DMA。読みは終わった page を `vm_private_page_mark_dirty`（copyout と同じ）。MAP_SHARED・device の page で piece を切る。
+- B（staging）: page の頭でない buffer・page 列を持たない disk・shared の page は `kern_malloc` の staging（piece ごと、最大 1 MiB）と `disk_read_direct`・`disk_write_direct(_claimed)`、`copyin_pinned`・`copyout_pinned`。P1 の決定: 設計の「1 MiB × 4 の pool」は作らない（B は速さの受け入れの外、M5。pool の確保・使用中の fallback の扱いが要らない）。
+- piece の切り方は純関数 `include/kern/buf-direct.h`（`buf_direct_misaligned`・`buf_direct_page_piece`・`buf_direct_staged_piece`）: 512 B の sector で buffer が page の途中なら次の page の頭までを staging、その先を A。
+- cache との整合 `buf_direct_prepare(disk, block, count, invalidate)`（buf.c）: 範囲の line を `BUF_GATHER_HOLD`（64）ずつ cache_lock の 1 回の保持で hash から引き、1 本ずつ busy を取り、転送中（io_inflight）なら待ち、`buf_writeback` と `unjournaled_write_line`（`buf_writeback_cached` と同じ）で書き戻し、invalidate の時は dirty が残れば（journal の pin）EBUSY、無ければ `BUF_VALID` を外して generation を進める（view も無効になる）。line を持ったまま他の line を待たない。
+- P1 の決定: 「BIO 2 本を重ねる」（M5）はしない。NVMe の submit は呼び手の thread で BIO を終わりまで流す同期の形で、1 本の thread から 2 本を同時に出せない。1 MiB の BIO は driver が 256 KiB × 4 を同時に出す（p004）。5330 の数で足りなければ見直す。
+- io_stats に A・B の道の数は足さない（UAPI の VERSION を上げない）。
+
+## 試験（2026-10-28、P1）
+
+- host: `plan/ws299/tests/host/buf-direct-test.c` PASS（揃いの判定、aligned 4 MiB は 1 MiB × 4 をその場、512 B ずれは頭と尾を staging、奇数の address は全部 staging、4 KiB の disk で 512 B ずれは staging）。
+- build: config-5330（`build/p1-p010b`）・pcat・visionfive2・rpi4・m68k-virt で rc 0・warning 0。
+- QEMU `plan/ws299/tests/qemu-directio.sh`（serial の image に `directio`、NVMe 512 B の disk と AHCI の disk）: PASS。`directio check` の全項目が両方で ok: regular file の EINVAL、O_TRUNC|O_DIRECT で中身が残る、O_CREAT|O_DIRECT で作られない、F_SETFL の EINVAL と切り替え、揃わない offset・長さの EINVAL、長さ 0、aligned 1 MiB・4 MiB、buffered の dirty の後の direct の読み、cache に載った範囲の direct の書きの後の buffered の読み、dirty の上の direct の書き、512 B ずれ・奇数の address の buffer、MAP_SHARED|MAP_ANONYMOUS、readv/writev と offset、O_DSYNC、`/dev/fd/N`（足すのは EINVAL、同じ description は ok）、device の終わり（読みは短く、書きは ENOSPC）、fork と並べた読み。QEMU の direct の 256 MiB: 書き 133 MB/s、読み 4 MiB 3016 MB/s・1 MiB 3158 MB/s（file を背にした QEMU の数で比べない）。
+- 回帰（O_DIRECT の無い道）: `boot-test.sh` PASS（`build/tmp/boot-test-p010/login.png`）、`qemu-nvme-shapes.sh` PASS（5 checksums equal）。
+- 未実施: 転送中の munmap、signal の短い数、誤りの注入、BLKRESERVE の fd の direct、root を mount したままの whole disk の direct、coherent でない arch（arm64・riscv64 の QEMU）の A の道。
+
+## 5330 の測定（2026-10-28、P1、kernel `build/p1-p010b/vmunix` = b809c70d1、p7 は測る前に Debian から blkdiscard、fstrim・休みは今までどおり）
+
+| 測る物 | Debian（`deb-d-p7direct`、directio） | zedBSD（`zb-d1`・`zb-d2`） | 比 |
+| --- | --- | --- | --- |
+| p7 direct 書き 4 GiB、1 MiB の要求＋fsync | 1434 MB/s | 849（zb-d2。zb-d1 は directio の出力の flush 漏れで数が無い） | 59% |
+| p7 direct 読み 4 GiB、1 MiB | 2694 | 2558 | 95% |
+| p7 direct 読み 4 GiB、4 MiB | 3039 | 2581 | 85% |
+| data 範囲の direct 読み 4 GiB、1 MiB | 1555 | 1564 | 101% |
+| 乱読み 4 KiB direct QD1（randread direct） | 57.8（read の基準、HMB on） | 57.9・57.0（fdeach 59.8・58.1） | 99〜100% |
+| 乱読み 4 KiB direct QD32 | 964 | 473.8・467.2（fdeach 463.9・446.8） | 48% |
+
+- 以前の受け入れの基準「Debian の dd iflag=direct 2.1 GB/s」は p7raw の後の数。同じ回の directio の Debian の数（上）と比べる。
+- QD32 は direct でも cached（p006 の 424〜445）と同じ約 11 万 IOPS で止まる。CPU 12 個は約 8 割 idle、nvme の post→完了 平均 80 µs。全ての read/write の syscall が `uaccess_pin` → `vmspace_pin_user_pages`（src/kern/vm/vmspace-copy.c）で大域の mutex `metadata_lock`（src/kern/vm/metadata-lock.c）を取るのが有力な原因（読みで見つけた、数での確かめは WS308）。
+- 5330 の停止: zb-d2 の測定（bench done・dmesg の回収まで）の後の reboot の命令の後、zedBSD が desktop を表示したまま入力を受け付けずに止まった（ユーザーの観察「入力受け付けない状態でデスクトップが表示されていました。」、ユーザーが電源を入れ直した）。同じ kernel の zb-d1 は reboot できた。QEMU（serial の image、8 CPU、NVMe）で同じ手順＋reboot を繰り返す `plan/ws299/tests/qemu-direct-reboot.sh` で 2 回とも正常に reboot（3 回目は途中で止めた）。途中で止まって見えた時の gdbstub では全 CPU が idle、thread は全て普通の待ち（serial の印の取りこぼしで guest は止まっていなかった）。原因は不明。2026-10-28 ユーザー「フリーズは再現したときに対策を考え直します。」
+
+## 再開点（2026-10-28、P1、q1646 paused）
+
+- 2026-10-28 ユーザー「仮想メモリのロックの変更は、P1の担当にして、一時的にそれに対応する別なWSを処理して、そのあとでNVMeのWSに戻りましょう。」→ q1646 は止め、WS308（VM の lock）の後に戻る。
+- 残り: direct の書き 59% の切り分け（bs=4 MiB の書き、NVMe の command 128 KiB×8 で比べる。原因の分からない性能の問題は Fable 5.1 High に助言を求めてよい、2026-10-28 ユーザー）、4 MiB の読み 85%、QD32（WS308 の後に測り直す）、試験の残り（上の「未実施」）。5330 の停止は再現した時に考え直す。
+- 道具: `randread` に `procs`・`notime`・`nullcall`（thread と process、syscall だけの比較）、`bench-zedbsd.sh qdprobe`、`qemu-qdprobe.sh`（kern.perf=1 の image で metadata lock の takes・waits）を足した（未実行）。

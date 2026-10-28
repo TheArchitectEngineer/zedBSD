@@ -79,7 +79,7 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 | [p004](phase004/phase.md) | raw の block device の先読み（buffer cache の worker で device の待ちと CPU の仕事を重ねる）。複数の queue・VMD の vector は p007 の乱読みの測定の後に要否（2026-10-28 Q1） | p003 | 6 | in-progress（実装・QEMU・5330 済み、raw の読み 4 GiB 中央値 1917 MB/s。Q1 の判定待ち、q1634） |
 | [p005](phase005/phase.md) | 連続の読み書き: UFS の file の readahead の窓と cluster の読み書き、書きの合流（raw の先読みは p004 へ、2026-10-28 Q1） | p002・p004 | 4 | in-progress（raw 書き 119%・raw 読み 150%・UFS 読み 126%、UFS 書き 55% で未達、2026-10-28 P1） |
 | [p006](phase006/phase.md) | HMB（DRAM-less の BG5） | p003 | 4 | in-progress（実装・5330 で動作、QD1 98%。QD32 は 44% で未達、2026-10-28 P1） |
-| [p010](phase010/phase.md) | block device の O_DIRECT（2026-10-28 ユーザー「O_DIRECT を UAPI に足す」、Q1 が p010 に確定、p007 の前） | p004・p005 | 4 | planning（設計・design-reviewer 済み、実装は未着手） |
+| [p010](phase010/phase.md) | block device の O_DIRECT（2026-10-28 ユーザー「O_DIRECT を UAPI に足す」、Q1 が p010 に確定、p007 の前） | p004・p005 | 4 | in-progress（実装 b809c70d1・QEMU PASS・5330: direct 読み 95〜101%、書き 59%、QD32 48%。q1646 paused） |
 | p007 | 5330 の測定の受け入れと回帰（QEMU の nvme・USB の起動は T、5330 は 1 本の script） | p002〜p006・p010 | 2 | planned |
 | p008 | 規約の全文の見直し | p007 | 2 | planned |
 | [p009](phase009/phase.md) | 5330 の NVMe の root を p5 いっぱいに（`ufs-grow.py`、UFS の群の探しを O(1)）と、大きな file の sync の 2 乗の直し（reboot が止まった） | p002 | 2 | cleared（2026-10-28 Q1 判定: 受け入れ 3 点を QEMU・5330 で確かめた。xattr・msync の道を狙う試験は未実施のまま） |
@@ -116,3 +116,10 @@ Dell Latitude 5330（Intel VMD 8086:467f の下の KIOXIA BG5 KBG50ZNS256G、DRA
 - 受け入れ（Debian の 95%）の今: 達＝raw の連続の書き（1837/1549）・読み（cache 経由 1.80/1.2 GB/s）、UFS の file の読み（1518/1200）、乱読み QD1（56.5/57.8）。未達＝UFS の file の書き（983/1775、55%）、乱読み QD32（424/964、44%）、direct の読み書き（O_DIRECT が未実装）。
 - 次の順（推し）: (1) p010 O_DIRECT の実装（[phase010](phase010/phase.md) の設計と review の反映方針どおり、a 正しさ → b 速さ）。(2) 乱読み QD32 の頭打ち（device の待ち 78 µs で出ている command が平均 8 本、CPU 42 µs/IO。`randread.c` に `fdeach`（thread ごとに open）を足してある: 共有の fd の lock か、buffer cache・`disk_lock`・NVMe の `command_lock`・VMD の 1 vector かを切り分ける。O_DIRECT の後は direct でも測る）。(3) UFS の書きの CPU（書き手 1 本が律速、allocation run ごとの CG・inode の更新と metadata の buf の読み書き。run を 1 MiB にしても効かなかった）。(4) p007（QEMU の回帰 `build/tmp/qemu-suite.sh` の形を `plan/ws299/tests/` に移す、`5330-run.sh` の素の起動、他機種）。(5) p008 規約（source の `ws299` などの開発の管理情報、`buf: readahead` と nvme の測る口の log を消すか CONFIG にするか）。
 - 片付け（Q1 に頼む）: 5330 の `/home/awe/ws299/data.bin`（12 GiB）は乱読みと data の範囲の読みにまだ使うので残す。build/tmp/src-73135a9ec（73135a9ec の kernel の build の一時物）、build/tmp/qemu-* の古い run は消してよい。
+
+### 再開点（2026-10-28、P1、q1646 paused）
+
+- p010（O_DIRECT）: 実装 b809c70d1（UAPI `O_DIRECT 0x100000`、open・F_SETFL・`/dev/fd`、syscall の 4 経路、devfs `block_pdirect`、`buf_direct_prepare`）。host・build 5 config warning 0・QEMU（`qemu-directio.sh`、boot-test、nvme-shapes）PASS。5330: direct の読み 95〜101%、書き 59%、乱読み direct QD1 99〜100%・QD32 48%。詳細と表は [phase010](phase010/phase.md)。
+- 2026-10-28 ユーザー「仮想メモリのロックの変更は、P1の担当にして、一時的にそれに対応する別なWSを処理して、そのあとでNVMeのWSに戻りましょう。」→ q1646 は paused、[WS308](../ws308/ws.md)（VM の metadata lock、QD32 の頭打ちの有力な原因）の後に戻る。
+- 5330 の停止（zb-d2 の後の reboot で desktop のまま固まった）: 2026-10-28 ユーザー「フリーズは再現したときに対策を考え直します。」原因は不明、QEMU の繰り返しでは再現せず（2 回正常）。
+- 戻った時の順: direct の書き 59% の切り分け（Fable 5.1 High に助言を求めてよい、2026-10-28 ユーザー）→ QD32 の測り直し → UFS の file の書き（55%）→ mkfs native の write-through（2026-10-28 ユーザー、UFS の高速化の後、要れば先に）→ p007 → p008。

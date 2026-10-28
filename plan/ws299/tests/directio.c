@@ -165,6 +165,7 @@ measure(int write_mode, const char *path, unsigned long mib, unsigned long bs_ki
 	printf("directio %s mib=%lu bs_kib=%lu ms=%llu MBps=%.1f\n", write_mode ? "write" : "read",
 	    mib, bs_kib, (unsigned long long)(elapsed / 1000000U),
 	    (double)mib * MIB / 1e6 / ((double)elapsed / 1e9));
+	fflush(stdout);
 	return 0;
 }
 
@@ -413,9 +414,11 @@ check(const char *device, const char *file)
 	close(fd);
 	if (failures != 0) {
 		printf("directio check: FAIL %d\n", failures);
+		fflush(stdout);
 		return 1;
 	}
 	printf("directio check: PASS\n");
+	fflush(stdout);
 	return 0;
 }
 
