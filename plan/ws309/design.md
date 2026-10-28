@@ -180,6 +180,7 @@
 - main の API（`kl_backend_<daemon>_update/get_*/request/take_*`）の形は変えない: update は lock の下で写しを取るだけ、request は依頼を積んで依頼の pipe に 1 byte。
   thread は状態が変わった時に共通の wake pipe に 1 byte（backend は `kl_backend_open` の時に host から wake の fd を受ける）。
 - phone の `send_mms` の `pread`（MIME の file の読み込み）も phone の thread へ。
+- 意味の変化（p006、Q1 OK 2026-10-29）: 送れなかった依頼の errno（connect・send の失敗、phone の queue の満杯など thread の側で分かる物）は、同期の戻り値でなく結果（network の DONE と get_request、volumes・bluetooth・phone の result、audio は REACHABLE の変化）で返る。引数の誤りと最後の写しで分かる ENOTCONN・EBUSY は今どおり同期。
 - Linux・FreeBSD の backend（wpa・ALSA・OSS・BlueZ の D-Bus）は今のまま（待つ所は job の thread か非 blocking）。§9。
 - **5 本に絞った基準**（レビュー 9）: main で blocking の I/O（blocking の `connect`、blocking の send、timed read）をする daemon の接続を 1 本ずつ thread にする。今それに当たるのが
   audiod・networkd・bluetoothd・phone（bluetoothd）・volumed の 5 つ。非 blocking で待たない接続（audiod の stream ごとの接続 audio-stream-zedbsd.c:200、sessiond session-zedbsd.c:1089、

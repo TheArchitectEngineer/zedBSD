@@ -72,6 +72,7 @@
 
 ## Resume point
 
+- 2026-10-29 P1（q1662-i04、branch `agent/p1-ws309d`）: p006 実装済み・host 試験 PASS（[phase.md](phase006/phase.md)）。残りは arm64・riscv64 の build と QEMU。
 - 2026-10-29 03:28 P1（q1662-i03）: p004 cleared（io-device を全 backend で起動、電源・details・sysmon を io-device へ、machine は A2 machine-read、QEMU `plan/ws309/tests/io-device2-guest.sh` PASS）。次は p006（daemon ×5）。
 - 2026-10-29 03:1x P1（q1662-i03、branch `agent/p1-ws309c`）: p005 cleared（言語・apps.conf・account・鍵・printers の open、QEMU `plan/ws309/tests/io-read-guest.sh` PASS）。p019 cleared（P2 の q1668）。次は p004。
 - 2026-10-29 02:4x P1（q1662-i02、branch `agent/p1-ws309b`、d5fb0bd08・c3b274d51）: p005 は displays.conf（`saved` は書き終わりで答える）・desktop.conf の Log Out・printers.conf まで済み。
@@ -89,7 +90,7 @@
 | [ws309-p003](phase003/phase.md) | io-device: 入力の device の検出と close を thread へ（zedBSD） | cleared（実機は未実施） | p002 |
 | [ws309-p004](phase004/phase.md) | io-device の残り: 電源・network の詳細・sysmon（machine は A2 の machine-read、detach の ack は p016） | cleared（実機・Linux/FreeBSD は未実施） | p003 |
 | [ws309-p005](phase005/phase.md) | io-file: displays.conf・desktop.conf・printers.conf の書き込み（`saved` は書き終わりで答える）、apps.conf・言語・printers.conf の読み、account・鍵の保存 | cleared（account の実行と実機は未実施） | p002 |
-| ws309-p006 | daemon ×5 の thread（zedBSD の backend、wake pipe を backend の open の前に） | planned | p002、J6 |
+| [ws309-p006](phase006/phase.md) | daemon ×5 の thread（zedBSD の backend、wake pipe を backend の open の前に） | in-progress | p002、J6 |
 | ws309-p007 | font の thread: 予備の font・emoji の先読み、rasterize、color emoji の decode | planned | p002 |
 | ws309-p008 | render を GPU の queue の唯一の持ち主に (1): fence 付きの task と queue の lock | planned | p002 |
 | ws309-p009 | 同 (2)(3): 遅らせた破棄（serial・descriptor set・二重の image）、quiesce と main の `vkDeviceWaitIdle` を消す | planned | p008 |
