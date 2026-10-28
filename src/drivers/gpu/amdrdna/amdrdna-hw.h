@@ -184,6 +184,20 @@
 #define AMDRDNA_SMU_MEMORY_FEATURES_LOW	0x00000318U
 
 /*
+ * The display engine's clock's levels (bit 7), permitted with the memory
+ * side when the firmware moves the memory clock with the load
+ * (amdrdna.smu.memory=2): the display's step then gives that clock a
+ * floor the display's plan was worked out with, as Linux does.
+ *
+ * Values referenced: Linux v6.12
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (FEATURE_DPM_DCEFCLK_BIT) and
+ * drivers/gpu/drm/amd/pm/swsmu/smu11/navi10_ppt.c
+ * (navi10_get_allowed_feature_mask).
+ */
+#define AMDRDNA_SMU_DISPLAY_FEATURES_LOW	0x00000080U
+
+/*
  * The graphics clock's levels, in the low word of the feature mask.
  *
  * Value referenced: Linux v6.19
@@ -229,6 +243,27 @@
  * (navi10_get_default_config_table_settings).
  */
 #define AMDRDNA_SMU_SETTINGS_BYTES	44U
+
+/*
+ * The firmware's watermark table (its table 1): the display's clock
+ * ranges, a row each, and the watermark set the display hub uses within
+ * a range.  Two groups of four rows of 44 bytes (the writers' by the
+ * system clock, then the readers' by the display engine's clock), each
+ * row the clock's range and the memory clock's range in MHz (16 bits
+ * each) and the set (a byte), then the firmware's own words; the table
+ * ends in more of them.
+ *
+ * Values referenced: Linux v6.12
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (WatermarkRowGeneric_t, NUM_WM_RANGES, WM_SOCCLK, WM_DCEFCLK,
+ * Watermarks_t, TABLE_WATERMARKS).
+ */
+#define AMDRDNA_SMU_WATERMARKS_TABLE	1U
+#define AMDRDNA_SMU_WATERMARKS_BYTES	384U
+#define AMDRDNA_SMU_WATERMARK_ROW_BYTES	44U
+#define AMDRDNA_SMU_WATERMARK_ROWS	4U
+#define AMDRDNA_SMU_WATERMARK_WRITERS	0U
+#define AMDRDNA_SMU_WATERMARK_READERS	1U
 #define AMDRDNA_SMU_AVERAGE_MS		10U
 
 /*
@@ -718,7 +753,10 @@ struct amdrdna_transmitter_command {
  * the surface's pitch in pixels (linear, 32 bits a pixel, shown unscaled
  * on one pipe with a cursor), and the clocks the board runs in kHz (the hub's reference, the data fabric's return clock, the
  * fabric, the display clock, the pipe clock) and the memory's transfer
- * rate in MT/s.
+ * rate in MT/s, and the memory clock change's latency in tenths of a
+ * microsecond (0: the latency of a change between the memory clock's
+ * levels; the power side gives a shorter one when it holds the clock and
+ * the firmware only pauses the memory now and then).
  */
 struct amdrdna_mode_plan_input {
 	uint32_t h_total;
@@ -735,6 +773,7 @@ struct amdrdna_mode_plan_input {
 	uint32_t display_khz;
 	uint32_t pipe_khz;
 	uint32_t memory_mts;
+	uint32_t switch_tenths;
 };
 
 /*
@@ -2142,6 +2181,12 @@ amdrdna_power_features_on(
 
 void
 amdrdna_power_settings_build(
+	uint8_t *table);
+
+void
+amdrdna_power_watermarks_build(
+	const uint32_t *memory_mhz,
+	unsigned count,
 	uint8_t *table);
 
 /* command-format.c: the ring commands. */

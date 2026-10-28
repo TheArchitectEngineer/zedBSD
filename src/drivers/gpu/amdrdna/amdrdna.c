@@ -341,6 +341,7 @@ amdrdna_shutdown(
 	 * as far as each ran.
 	 */
 	amdrdna_node_stop(device);
+	amdrdna_memory_display_end(device);
 	amdrdna_display_stop(device);
 	amdrdna_engines_stop(device);
 	amdrdna_power_stop(device);
@@ -599,6 +600,12 @@ amdrdna_run_stage(
 		break;
 	case AMDRDNA_STAGE_A6:
 		error = amdrdna_a6_takeover(device);
+		if (error == 0) {
+			/* The display's part of the memory clock's levels, once the display is the driver's. */
+			mutex_lock(&device->display.mode_lock);
+			amdrdna_memory_display_start(device);
+			mutex_unlock(&device->display.mode_lock);
+		}
 		break;
 	case AMDRDNA_STAGE_A7:
 		error = amdrdna_a7_cursor(device);

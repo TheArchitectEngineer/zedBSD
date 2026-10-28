@@ -730,7 +730,8 @@ amdrdna_mode_set(
 		return ERANGE;
 	}
 
-	/* The plan at the board's clocks. */
+	/* The memory clock stays where it is while the mode changes; the plan at the board's clocks. */
+	amdrdna_memory_display_hold(device);
 	error = modeset_input(device, timing, &input);
 	if (error != 0)
 		return error;
@@ -764,6 +765,9 @@ amdrdna_mode_set(
 		return EIO;
 	}
 
+	/* The display's part of the memory clock's levels again, for the new mode. */
+	amdrdna_memory_display_start(device);
+
 	/* Says how it went. */
 	amdrdna_mark("mode set ok %ux%u@%u.%03u pclk=%ukHz (was %ux%u) start=%u frames=%u underflow=0 crc=%08x/%08x",
 	    timing->width,
@@ -779,6 +783,73 @@ amdrdna_mode_set(
 	    (unsigned)check.blue);
 
 	/* Succeeded: the mode is shown. */
+	return 0;
+}
+
+/*
+ * Works out the display plan of the mode the timing generator shows, at
+ * the clocks the board runs (or those the display's part of the memory
+ * clock's levels gives instead), and with program set writes the plane's
+ * fields, the hub's watermarks and the global sync from it under the
+ * update lock, then looks at the picture.  Needs only the pipe stage A6
+ * took over.  The caller holds the display's mode lock or runs the
+ * bring-up or the reset.
+ *
+ * Returns 0; ENOENT before the takeover; the plan's error; or EIO when
+ * the picture underflowed or stopped after the writes.
+ *
+ * Procedure referenced: Linux v6.19
+ * drivers/gpu/drm/amd/display/dc/hwss/dcn20/dcn20_hwseq.c
+ * (dcn20_program_front_end_for_ctx with the same stream: the pipe's
+ * deadlines and the hub's watermarks of the new bandwidth state).
+ */
+int
+amdrdna_mode_replan(
+	struct amdrdna_device *device,
+	bool program,
+	struct amdrdna_mode_plan *plan)
+{
+	struct modeset_pipe pipe;
+	struct amdrdna_timing now;
+	struct amdrdna_mode_plan_input input;
+	struct modeset_check check;
+	int error;
+
+	/* The pipe the firmware lit and stage A6 took over. */
+	if (!device->display.taken)
+		return ENOENT;
+	pipe = (struct modeset_pipe){ 0 };
+	pipe.timing = device->gop.timing;
+	pipe.plane = device->gop.plane;
+	pipe.pixel = device->gop.plane;
+
+	/* The plan of the mode shown. */
+	modeset_timing_now(device, &pipe, &now);
+	error = modeset_input(device, &now, &input);
+	if (error != 0)
+		return error;
+	error = amdrdna_mode_plan(&input, plan);
+	if (error != 0)
+		return error;
+
+	/* Only the plan was asked. */
+	if (!program)
+		return 0;
+
+	/* The plane's fields, the watermarks and the global sync, under the update lock, then a look. */
+	modeset_lock(device, &pipe, true);
+	modeset_plane(device, &pipe, plan);
+	modeset_marks(device, plan, input.reference_khz);
+	modeset_sync(device, &pipe, &now, plan);
+	modeset_lock(device, &pipe, false);
+	modeset_look(device, &pipe, &now, MODESET_LOOK_FRAMES, &check);
+	if (!modeset_good(&check)) {
+		amdrdna_mark("mode replan fail: %ux%u frames=%u underflow=%u/%u", now.width, now.height, (unsigned)check.frames,
+		    (unsigned)check.underflow, (unsigned)check.timing_underflow);
+		return EIO;
+	}
+
+	/* Succeeded: the mode runs on the new plan. */
 	return 0;
 }
 
@@ -902,10 +973,11 @@ modeset_input(
 	*input = (struct amdrdna_mode_plan_input){ 0 };
 	amdrdna_mode_timing_input(timing, device->gop.pitch_word + 1U, input);
 
-	/* The clocks. */
+	/* The clocks, and those the display's part of the memory clock's levels works with instead. */
 	error = amdrdna_mode_clocks(device, input);
 	if (error != 0)
 		return error;
+	amdrdna_memory_plan_clocks(device, input);
 
 	/* Succeeded: the input is complete. */
 	return 0;

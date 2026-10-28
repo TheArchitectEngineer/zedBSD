@@ -428,8 +428,10 @@ reset_quiet(
 	/* The engines, the power unit and the secure OS's ring, as far as they ran. */
 	if (reached >= AMDRDNA_STAGE_A5)
 		amdrdna_engines_stop(device);
-	if (reached >= AMDRDNA_STAGE_A4)
+	if (reached >= AMDRDNA_STAGE_A4) {
+		amdrdna_memory_display_end(device);
 		amdrdna_power_stop(device);
+	}
 	if (reached >= AMDRDNA_STAGE_A3)
 		amdrdna_psp_stop(device);
 
@@ -795,6 +797,11 @@ reset_stages(
 		error = amdrdna_a4_power(device);
 		if (error != 0)
 			return error;
+
+		/* The display's part of the memory clock's levels again, when the display is the driver's. */
+		mutex_lock(&device->display.mode_lock);
+		amdrdna_memory_display_start(device);
+		mutex_unlock(&device->display.mode_lock);
 	}
 
 	/* The engines. */

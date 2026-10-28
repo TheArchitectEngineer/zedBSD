@@ -215,6 +215,16 @@ struct amdrdna_power_clock_report {
 };
 
 /*
+ * The memory clock's levels the power side keeps the frequencies of (the
+ * firmware's watermark table has a row for four).
+ *
+ * Value referenced: Linux v6.12
+ * drivers/gpu/drm/amd/pm/swsmu/inc/pmfw_if/smu11_driver_if_navi10.h
+ * (NUM_WM_RANGES).
+ */
+#define AMDRDNA_MEMORY_LEVELS		4U
+
+/*
  * The power and thermal side of the driver (stage A4: the unit's firmware
  * runs the fan and the thermal control, or the driver drives the fan at a
  * static duty when the firmware will not).
@@ -247,6 +257,20 @@ struct amdrdna_power_clock_report {
  * publishes (the readings, the fault and the alert counts), the boost's
  * state and the thread's stop, and waitq wakes the thread to stop or to
  * raise the clock.
+ *
+ * memory_mode is the boot line's amdrdna.smu.memory: the memory clock's
+ * levels off (0), held at the highest (1), or moved by the firmware with
+ * the load once the display's step (display-memory.c) has told the
+ * firmware what the display needs (2).  With its levels running,
+ * memory_levels_mhz holds the frequency of each of the first
+ * memory_level_count levels and memory_saved_state the hub's memory state
+ * word as stage A4 found it.  The display's step keeps memory_display
+ * (the firmware counts the display, has its watermark table and the
+ * clock floors), memory_follows (the memory clock's floor is its lowest
+ * level), memory_underflows (the display's underflows the watch found
+ * since then), and the clocks and the latency the display's plan is worked out
+ * with (memory_plan_set, memory_plan_*).  All of them change only in the
+ * bring-up, the reset or under the display's mode lock.
  */
 struct amdrdna_thermal {
 	struct mutex mailbox;
@@ -263,6 +287,18 @@ struct amdrdna_thermal {
 	uint32_t features_high;
 	bool clock_levels;
 	bool memory_levels;
+	unsigned memory_mode;
+	unsigned memory_level_count;
+	uint32_t memory_levels_mhz[AMDRDNA_MEMORY_LEVELS];
+	uint32_t memory_saved_state;
+	bool memory_display;
+	bool memory_follows;
+	uint64_t memory_underflows;
+	bool memory_plan_set;
+	uint32_t memory_plan_return_khz;
+	uint32_t memory_plan_fabric_khz;
+	uint32_t memory_plan_mts;
+	uint32_t memory_plan_switch_tenths;
 	unsigned mode;
 	unsigned duty_percent;
 	unsigned limit;
@@ -1027,6 +1063,49 @@ void
 amdrdna_power_busy(
 	struct amdrdna_device *device);
 
+int
+amdrdna_smu_message(
+	struct amdrdna_device *device,
+	uint32_t message,
+	uint32_t argument,
+	uint32_t *answer);
+
+int
+amdrdna_smu_table_send(
+	struct amdrdna_device *device,
+	uint32_t id,
+	const uint8_t *table,
+	size_t bytes);
+
+int
+amdrdna_smu_clock_level(
+	struct amdrdna_device *device,
+	uint32_t clock,
+	uint32_t level,
+	uint32_t *mhz);
+
+/* display-memory.c: the display's part of the memory clock's levels. */
+void
+amdrdna_memory_display_start(
+	struct amdrdna_device *device);
+
+void
+amdrdna_memory_display_hold(
+	struct amdrdna_device *device);
+
+void
+amdrdna_memory_display_end(
+	struct amdrdna_device *device);
+
+void
+amdrdna_memory_display_watch(
+	struct amdrdna_device *device);
+
+void
+amdrdna_memory_plan_clocks(
+	struct amdrdna_device *device,
+	struct amdrdna_mode_plan_input *input);
+
 /* cp.c: stage A5's command processor. */
 int
 amdrdna_cp_settings(
@@ -1398,6 +1477,12 @@ amdrdna_mode_set(
 	const struct amdrdna_timing *timing);
 
 int
+amdrdna_mode_replan(
+	struct amdrdna_device *device,
+	bool program,
+	struct amdrdna_mode_plan *plan);
+
+int
 amdrdna_mode_output(
 	struct amdrdna_device *device,
 	bool on);
@@ -1528,6 +1613,11 @@ void
 amdrdna_display_memory_switch_end(
 	struct amdrdna_device *device,
 	uint32_t saved);
+
+uint32_t
+amdrdna_display_underflow_take(
+	struct amdrdna_device *device,
+	uint32_t *timing_underflow);
 
 uint32_t
 amdrdna_display_memory_state(
