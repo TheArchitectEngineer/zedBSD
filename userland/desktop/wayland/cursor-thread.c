@@ -502,7 +502,9 @@ cursor_present(
 			submit.pCommandBuffers = &cursor->commands[image];
 			submit.signalSemaphoreCount = 1U;
 			submit.pSignalSemaphores = &cursor->ready[image];
+			pthread_mutex_lock(cursor->queue_lock);
 			result = vkQueueSubmit(cursor->queue, 1U, &submit, cursor->fences[image]);
+			pthread_mutex_unlock(cursor->queue_lock);
 		}
 
 		/* A failed copy stops the thread's Vulkan. */
@@ -552,7 +554,9 @@ cursor_present(
 	present.pSwapchains = &cursor->output.swapchain;
 	present.pImageIndices = &image;
 	mark = kwl_cycles();
+	pthread_mutex_lock(cursor->queue_lock);
 	result = vkQueuePresentKHR(cursor->queue, &present);
+	pthread_mutex_unlock(cursor->queue_lock);
 	if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
 		cursor_fail(cursor, "present", result);
 		return CURSOR_FAILED;

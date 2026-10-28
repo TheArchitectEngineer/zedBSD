@@ -581,7 +581,7 @@ kwl_glass_landscape(
 	/* The frames in flight read the images; they end first. */
 	started = kwl_milliseconds();
 	kwl_compose_quiesce(server);
-	(void)vkDeviceWaitIdle(server->compose->device);
+	kwl_device_wait_idle(server->compose);
 
 	/* The landscape is a picture without pixels. */
 	memset(&picture, 0, sizeof(picture));
@@ -624,7 +624,7 @@ kwl_glass_resize(
 	/* The frames in flight read the images; they end first. */
 	started = kwl_milliseconds();
 	kwl_compose_quiesce(server);
-	(void)vkDeviceWaitIdle(server->compose->device);
+	kwl_device_wait_idle(server->compose);
 
 	/* The images of the old size go. */
 	kwl_host_image_release(server->compose, &glass->wallpaper);
@@ -864,7 +864,7 @@ kwl_glass_wallpaper_poll(
 	/* The frames in flight read the images; they end first. */
 	started = kwl_milliseconds();
 	kwl_compose_quiesce(server);
-	(void)vkDeviceWaitIdle(server->compose->device);
+	kwl_device_wait_idle(server->compose);
 
 	/*
 	 * The rows the thread drew at the output's size are copied in;
@@ -2971,7 +2971,7 @@ glass_large_prepare(
 			return EIO;
 	} else if (!glass->worker_running) {
 		kwl_compose_quiesce(server);
-		(void)vkDeviceWaitIdle(server->compose->device);
+		kwl_device_wait_idle(server->compose);
 	}
 
 	/*

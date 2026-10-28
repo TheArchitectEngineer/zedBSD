@@ -138,6 +138,14 @@ kwl_compose_open(
 		return ENOMEM;
 	server->compose = compose;
 
+	/* The queue's lock, before any thread can use the queue. */
+	error = pthread_mutex_init(&compose->queue_lock, NULL);
+	if (error != 0) {
+		server->compose = NULL;
+		free(compose);
+		return error;
+	}
+
 	/* The instance, the device and its graphics queue. */
 	started = kwl_milliseconds();
 	result = compose_device(compose);
@@ -658,7 +666,7 @@ kwl_compose_output_close(
 	kwl_cursor_plane_close(server);
 
 	/* No frame may still use the swapchain's images. */
-	(void)vkDeviceWaitIdle(compose->device);
+	kwl_device_wait_idle(compose);
 
 	/* The heads go with the output. */
 	kwl_heads_close_all(server);
@@ -1055,7 +1063,7 @@ kwl_compose_close(
 
 	/* The device idle, then the output's objects. */
 	if (compose->device != VK_NULL_HANDLE)
-		(void)vkDeviceWaitIdle(compose->device);
+		kwl_device_wait_idle(compose);
 	kwl_compose_output_close(server);
 	kwl_arrow_destroy(server);
 	kwl_glass_close(server);
@@ -1104,6 +1112,7 @@ kwl_compose_close(
 
 	/* The display list's memory, then the state. */
 	kwl_list_free(&compose->list);
+	(void)pthread_mutex_destroy(&compose->queue_lock);
 	free(compose);
 	server->compose = NULL;
 }
@@ -2686,6 +2695,46 @@ kwl_compose_list_begin(
 
 	/* The glyphs rendered meanwhile, written into the atlas inside the walk (its copy goes with this drawing). */
 	kwl_glass_glyphs_take(compose);
+}
+
+/*
+ * Takes the queue's lock before a submit, a present or a wait idle on the
+ * compose's queue (render, cursor and main threads share it).
+ */
+void
+kwl_queue_lock(
+	struct kwl_compose *compose)
+{
+	/* Held only around the queue's calls. */
+	(void)pthread_mutex_lock(&compose->queue_lock);
+}
+
+/*
+ * Gives the queue's lock back.
+ */
+void
+kwl_queue_unlock(
+	struct kwl_compose *compose)
+{
+	/* The next thread's call may go. */
+	(void)pthread_mutex_unlock(&compose->queue_lock);
+}
+
+/*
+ * Waits for the device to be idle under the queue's lock (Vulkan wants
+ * every queue of the device untouched meanwhile).  Only where the main
+ * thread may still wait: the output's changes and the end.
+ */
+void
+kwl_device_wait_idle(
+	struct kwl_compose *compose)
+{
+	/* Every queue's work done, no other thread submitting meanwhile. */
+	kwl_queue_lock(compose);
+
+	(void)vkDeviceWaitIdle(compose->device);
+
+	kwl_queue_unlock(compose);
 }
 
 /*
@@ -4663,18 +4712,21 @@ compose_op_run(
 		submit.pCommandBuffers = buffers;
 	}
 
-	/* The submission, timed for KWL PERF rec. */
+	/* The submission, timed for KWL PERF rec, and the presents after it, under the queue's lock. */
+	kwl_queue_lock(compose);
 	mark = kwl_cycles();
 	result = vkQueueSubmit(compose->queue, 1U, &submit, slot->fence);
 	outcome->submit_cycles = kwl_cycles() - mark;
 	outcome->queued_us = kwl_log_us();
 	if (result != VK_SUCCESS) {
+		kwl_queue_unlock(compose);
 		outcome->result = result;
 		return;
 	}
 
 	/* A layer's picture presents nothing. */
 	if (job->kind != KWL_RENDER_FRAME) {
+		kwl_queue_unlock(compose);
 		outcome->run_cycles = kwl_cycles() - start;
 		return;
 	}
@@ -4705,6 +4757,7 @@ compose_op_run(
 		outcome->heads[index] = 1U;
 		outcome->head_results[index] = vkQueuePresentKHR(compose->queue, &present);
 	}
+	kwl_queue_unlock(compose);
 
 	/* The present's end, and the render thread's time of the job. */
 	outcome->present_cycles = kwl_cycles() - mark;

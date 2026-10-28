@@ -357,12 +357,14 @@ import_layout(
 		submit.pCommandBuffers = &command;
 
 		/* Submits the finished barrier before the first sampling frame. */
+		kwl_queue_lock(compose);
 		status = vkQueueSubmit(compose->queue, 1U, &submit, VK_NULL_HANDLE);
-	}
 
-	/* The barrier is done before the first frame samples the image. */
-	if (status == VK_SUCCESS)
-		status = vkQueueWaitIdle(compose->queue);
+		/* The barrier is done before the first frame samples the image (the cursor's thread waits for the queue's lock meanwhile). */
+		if (status == VK_SUCCESS)
+			status = vkQueueWaitIdle(compose->queue);
+		kwl_queue_unlock(compose);
+	}
 
 	/* The command buffer is not kept. */
 	vkFreeCommandBuffers(compose->device, compose->pool, 1U, &command);

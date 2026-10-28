@@ -54,8 +54,9 @@ enum kwl_cursor_step {
  * The cursor thread and the plane's presentation it owns.
  *
  * The device and queue are the compositor's (the queue is shared with the
- * frames: libvulkan serializes it, ws141-p016 B-u); every other object is
- * the thread's.  held says which cursor image (its address, generation and
+ * frames: each submit and present is made under the compose's queue lock,
+ * queue_lock, as Vulkan's external synchronization wants); every other
+ * object is the thread's.  held says which cursor image (its address, generation and
  * version) each swapchain image holds; pinned which of the box's two copies
  * the image's last copy read (-1 none), released once its fence is seen
  * done.  source, generation, version, x and y are what was presented last,
@@ -71,6 +72,7 @@ struct kwl_cursor_thread {
 	VkInstance instance;
 	VkDevice device;
 	VkQueue queue;
+	pthread_mutex_t *queue_lock;
 	struct vkdemo_display output;
 	VkCommandPool pool;
 	VkCommandBuffer commands[KWL_CURSOR_THREAD_IMAGES];

@@ -490,12 +490,14 @@ kwl_host_image_batch_end(
 		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submit.commandBufferCount = 1U;
 		submit.pCommandBuffers = &command;
+		kwl_queue_lock(compose);
 		result = vkQueueSubmit(compose->queue, 1U, &submit, VK_NULL_HANDLE);
-	}
 
-	/* One wait for all of them, before the first frame. */
-	if (result == VK_SUCCESS)
-		result = vkQueueWaitIdle(compose->queue);
+		/* One wait for all of them, before the first frame (under the queue's lock: the start, before the cursor's thread). */
+		if (result == VK_SUCCESS)
+			result = vkQueueWaitIdle(compose->queue);
+		kwl_queue_unlock(compose);
+	}
 
 	/* The command buffer is not kept. */
 	vkFreeCommandBuffers(compose->device, compose->pool, 1U, &command);
@@ -995,12 +997,14 @@ image_layout(
 		submit.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 		submit.commandBufferCount = 1U;
 		submit.pCommandBuffers = &command;
+		kwl_queue_lock(compose);
 		result = vkQueueSubmit(compose->queue, 1U, &submit, VK_NULL_HANDLE);
-	}
 
-	/* The barrier is done before the first frame samples the image. */
-	if (result == VK_SUCCESS)
-		result = vkQueueWaitIdle(compose->queue);
+		/* The barrier is done before the first frame samples the image (the cursor's thread waits for the queue's lock meanwhile). */
+		if (result == VK_SUCCESS)
+			result = vkQueueWaitIdle(compose->queue);
+		kwl_queue_unlock(compose);
+	}
 
 	/* The command buffer is not kept. */
 	vkFreeCommandBuffers(compose->device, compose->pool, 1U, &command);

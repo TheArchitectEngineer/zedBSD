@@ -1075,7 +1075,7 @@ heads_close(
 	 */
 	kwl_compose_park(server);
 	kwl_compose_forget(server, 0U, 1U << (unsigned)(head - compose->heads));
-	(void)vkDeviceWaitIdle(compose->device);
+	kwl_device_wait_idle(compose);
 
 	/* Its objects, then the display given back once its swapchain is gone. */
 	heads_targets_destroy(compose, head);
