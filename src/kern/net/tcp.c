@@ -3092,10 +3092,12 @@ tcp_send_room_locked(
 
 /*
  * Tells whether a writer waiting for room is woken now: when nothing is
- * left in flight, or when a quarter of the ring's entries and a quarter of
- * the send limit are free (a low-water mark, as SO_SNDLOWAT), so that a
- * write queues many segments rather than the one or two an
- * acknowledgement frees.  The caller holds the socket lock.
+ * left in flight, or when half the ring's entries and a quarter of the
+ * send limit are free (a low-water mark, as SO_SNDLOWAT), so that a write
+ * queues many segments rather than the one or two an acknowledgement
+ * frees, and the system call's 64 KB pieces of a write are taken whole
+ * rather than copied in for a part of them.  The caller holds the socket
+ * lock.
  */
 static int
 tcp_send_wake_due_locked(
@@ -3111,7 +3113,7 @@ tcp_send_wake_due_locked(
 
 	/* Too few free entries. */
 	ring_free = TCP_SEND_QUEUE_MAX - endpoint->tcp.send_count;
-	if (ring_free < (TCP_SEND_QUEUE_MAX + 3U) / 4U)
+	if (ring_free < (TCP_SEND_QUEUE_MAX + 1U) / 2U)
 		return 0;
 
 	/* Too little of the limit free. */
