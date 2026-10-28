@@ -15,6 +15,15 @@
 
 #define QUEUE_FENCE_RESET_BATCH 64U
 
+/*
+ * A reset is a native transaction: one that would reset fewer than
+ * QUEUE_FENCE_RESET_MIN fences makes a new fence instead, until the queue
+ * caches QUEUE_FENCE_CACHE_MAX of them, so a queue that submits without
+ * fences again and again resets its fences in large batches.
+ */
+#define QUEUE_FENCE_RESET_MIN 32U
+#define QUEUE_FENCE_CACHE_MAX 256U
+
 /* Private identities remain exclusive during unlocked admission waits and GPU execution. */
 enum queue_fence_state {
 	QUEUE_FENCE_EMPTY,
@@ -992,6 +1001,7 @@ queue_reset_completed(
 	struct vulkan_queue_fence *slot;
 	struct vulkan_sync *sync;
 	uint32_t count;
+	uint32_t cached;
 	uint32_t index;
 	VkResult status;
 
@@ -1008,7 +1018,11 @@ queue_reset_completed(
 
 	/* Preparing callers and already-reset slots are not native GPU completion candidates. */
 	count = 0U;
+	cached = 0U;
 	for (slot = queue->private_fences; slot != NULL; slot = slot->next) {
+		/* The cache's size decides whether a small batch is worth its transaction. */
+		cached++;
+
 		/* A host marker's final native access must retire before that identity is reset. */
 		if (slot->state == QUEUE_FENCE_INFLIGHT) {
 			sync = vulkan_sync_object((uint64_t)(uintptr_t)slot->fence);
@@ -1035,6 +1049,10 @@ queue_reset_completed(
 
 	/* No terminal work means that another exclusive caller needs a new native identity. */
 	if (count == 0U)
+		return VK_SUCCESS;
+
+	/* A small batch waits for more ended jobs while the cache may still grow; the caller makes a fence. */
+	if (count < QUEUE_FENCE_RESET_MIN && cached < QUEUE_FENCE_CACHE_MAX)
 		return VK_SUCCESS;
 
 	/* One native transaction resets all selected proofs after their final marker accesses ended. */
