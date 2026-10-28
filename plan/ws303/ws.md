@@ -12,6 +12,19 @@
 
 ## Phase
 
+設計: [design.md](design.md)（第 2 版、2026-10-29 P5、q1666）、レビュー [design-review.md](design-review.md)。Phase の表は design.md の「第 2 版の Phase の表」が本体（下は写し）。
+WS301 p002 への依存は、passive cooling を入れる時（Q303-6 の B）だけに要る（推しの A では外れる、ユーザーの判断待ち）。
+
 | Phase | 内容 | 依存 | 状態 |
 | --- | --- | --- | --- |
-| p001 | 調査と設計（ACPI の _FAN・_TZ、EC、Dell の SMM／WMI、UAPI） | WS301 p002 | planned |
+| p001 | 調査と設計（ACPI の fan・DPTF、EC、Dell の WMI、UAPI）、design-reviewer | — | in-progress（設計の第 2 版まで。ユーザーの判断 Q303-1〜8 待ち） |
+| p002 | ACPI WMI の層と host の harness の拡張（6 LW） | p001、harness の置き場所（Q1） | planning |
+| p003 | registry・UAPI・`thermal` の道具（5 LW） | p001（Q303-1） | planning |
+| p004 | Dell の provider と 5330 の試験（6 LW） | p002、p003、Q303-7・8 | planning |
+| p005 | Pi 5 の fan を registry に（1 LW） | p003 | planning |
+| p006 | 規約の全文と文書（2 LW） | p004、p005 | planning |
+
+## 再開点（2026-10-29 P5、q1666-i02）
+
+- 設計の第 2 版まで。ユーザーの判断 Q303-1〜8（design.md §8 と第 2 版の改訂の問い）を Q1 経由で待つ。答えが来たら design.md に原文と解釈を書き、Phase の表を確定する。
+- 5330 の Debian の読みの記録（2026-10-29 02:42、読みだけ）は scratchpad にあり git に入れていない。要る値は design.md §2.3 に写した。
