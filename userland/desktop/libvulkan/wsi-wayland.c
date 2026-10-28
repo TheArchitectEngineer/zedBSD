@@ -14,9 +14,11 @@
 #include <wayland-client.h>
 #include "userland/desktop/libwayland/keiland-gpu-buffer-v1-client-protocol.h"
 #include <errno.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 /* The longest one sleep on the connection lasts while waiting for frame progress, in milliseconds. */
 #define WAYLAND_WAIT_SLICE_MS	50
@@ -45,6 +47,9 @@ struct wayland_surface {
 	VkBool32 lost;
 	uint32_t factory_name;
 	uint32_t factory_version;
+
+	/* Written when a frame callback arrives, whichever thread ran it: a FIFO wait sleeps on it beside the connection. */
+	int progress_pipe[2];
 };
 
 /* A wl_buffer retains a capability on the server until its own protocol retirement. */
@@ -99,6 +104,7 @@ static void wayland_damage(void *private_lease, int32_t x, int32_t y, int32_t wi
 static VkBool32 wayland_available(void *private_image);
 static void wayland_destroy_image(void *private_image);
 static VkResult wayland_dispatch(struct wayland_surface *surface);
+static VkResult wayland_sleep(struct wayland_surface *surface, int milliseconds);
 static VkResult wayland_surface_initialize(struct vulkan_surface *surface, const VkWaylandSurfaceCreateInfoKHR *info);
 static void wayland_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void wayland_global_remove(void *data, struct wl_registry *registry, uint32_t name);
@@ -500,7 +506,6 @@ wayland_wait(
 	uint64_t timeout)
 {
 	struct wayland_lease *lease;
-	struct pollfd descriptor;
 	struct timespec started;
 	struct timespec now;
 	uint64_t elapsed;
@@ -546,12 +551,9 @@ wayland_wait(
 		remaining = WAYLAND_WAIT_SLICE_MS;
 		if (timeout != UINT64_MAX && (timeout - elapsed) / 1000000ULL < (uint64_t)remaining)
 			remaining = (int)((timeout - elapsed) / 1000000ULL) + 1;
-		descriptor.fd = wl_display_get_fd(lease->surface->display);
-		descriptor.events = POLLIN;
-		descriptor.revents = 0;
-		status = poll(&descriptor, 1U, remaining);
-		if (status < 0 && errno != EINTR)
-			return VK_ERROR_SURFACE_LOST_KHR;
+		error = wayland_sleep(lease->surface, remaining);
+		if (error != VK_SUCCESS)
+			return error;
 	}
 
 	/* Succeeded: the selected frame sequence completed on the private queue. */
@@ -589,6 +591,12 @@ wayland_destroy(
 	/* All proxies assigned to this queue have now been retired. */
 	if (surface->queue != NULL)
 		wl_event_queue_destroy(surface->queue);
+
+	/* The progress pipe, when it was made. */
+	if (surface->progress_pipe[0] >= 0)
+		close(surface->progress_pipe[0]);
+	if (surface->progress_pipe[1] >= 0)
+		close(surface->progress_pipe[1]);
 
 	/* Failed mutex initialization must not be followed by mutex destruction. */
 	if (surface->mutex_ready != VK_FALSE)
@@ -1032,6 +1040,89 @@ wayland_dispatch(
 	return VK_SUCCESS;
 }
 
+/*
+ * Sleeps on the connection for at most `milliseconds` with a read of the
+ * surface's queue prepared through the sleep, or until a frame callback
+ * another thread ran writes the progress pipe, then reads what came and
+ * runs the queue's callbacks.  Another thread that reads the connection
+ * meanwhile (the application's own queue, an acquire) cannot take the
+ * compositor's answer away from this sleep: while this read is prepared,
+ * that thread's read waits for this one, which then takes the bytes and
+ * queues each event for its owner.
+ *
+ * Returns VK_SUCCESS, or VK_ERROR_SURFACE_LOST_KHR for a broken connection
+ * or a lost surface.
+ *
+ * Procedure referenced: libwayland (wayland-client.c,
+ * wl_display_prepare_read_queue, wl_display_read_events: the reader count
+ * that makes the last prepared reader read for all).
+ */
+static VkResult
+wayland_sleep(
+	struct wayland_surface *surface,
+	int milliseconds)
+{
+	struct pollfd descriptors[2];
+	struct pollfd descriptor;
+	unsigned char tokens[16];
+	VkBool32 lost;
+	int status;
+
+	/* Runs the queue's waiting callbacks until a read can be prepared on it. */
+	pthread_mutex_lock(&surface->mutex);
+	for (;;) {
+		status = wl_display_dispatch_queue_pending(surface->display, surface->queue);
+		if (status < 0) {
+			pthread_mutex_unlock(&surface->mutex);
+			return VK_ERROR_SURFACE_LOST_KHR;
+		}
+		status = wl_display_prepare_read_queue(surface->display, surface->queue);
+		if (status == 0)
+			break;
+		if (errno != EAGAIN) {
+			pthread_mutex_unlock(&surface->mutex);
+			return VK_ERROR_SURFACE_LOST_KHR;
+		}
+	}
+	pthread_mutex_unlock(&surface->mutex);
+
+	/* The requests go out before the sleep, so the compositor can answer them. */
+	(void)wl_display_flush(surface->display);
+
+	/* Sleeps with the read prepared (or until a frame callback another thread ran), then reads or gives the read up. */
+	memset(descriptors, 0, sizeof(descriptors));
+	descriptors[0].fd = wl_display_get_fd(surface->display);
+	descriptors[0].events = POLLIN;
+	descriptors[1].fd = surface->progress_pipe[0];
+	descriptors[1].events = POLLIN;
+	status = poll(descriptors, 2U, milliseconds);
+	while (read(surface->progress_pipe[0], tokens, sizeof(tokens)) > 0)
+		continue;
+	descriptor = descriptors[0];
+	if (status > 0 && (descriptor.revents & POLLIN) != 0) {
+		status = wl_display_read_events(surface->display);
+		if (status < 0)
+			return VK_ERROR_SURFACE_LOST_KHR;
+	} else {
+		wl_display_cancel_read(surface->display);
+		if (status < 0 && errno != EINTR)
+			return VK_ERROR_SURFACE_LOST_KHR;
+		if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+			return VK_ERROR_SURFACE_LOST_KHR;
+	}
+
+	/* Runs the callbacks of what was read, under the surface's lock as every dispatch is. */
+	pthread_mutex_lock(&surface->mutex);
+	status = wl_display_dispatch_queue_pending(surface->display, surface->queue);
+	lost = __atomic_load_n(&surface->lost, __ATOMIC_ACQUIRE);
+	pthread_mutex_unlock(&surface->mutex);
+	if (status < 0 || lost != VK_FALSE)
+		return VK_ERROR_SURFACE_LOST_KHR;
+
+	/* Succeeded: the connection was waited on and its answer taken in. */
+	return VK_SUCCESS;
+}
+
 /* Discovers the private fd transport through a standard Wayland registry roundtrip. */
 static VkResult
 wayland_surface_initialize(
@@ -1048,6 +1139,8 @@ wayland_surface_initialize(
 
 	/* Generic teardown can reach every partially initialized platform resource. */
 	memset(surface, 0, sizeof(*surface));
+	surface->progress_pipe[0] = -1;
+	surface->progress_pipe[1] = -1;
 	generic->platform_private = surface;
 	surface->surface = generic;
 	surface->display = info->display;
@@ -1059,6 +1152,14 @@ wayland_surface_initialize(
 
 	/* The destructor may destroy this mutex only after successful initialization. */
 	surface->mutex_ready = VK_TRUE;
+
+	/* The pipe a FIFO wait wakes on when another thread ran the frame callback it waits for. */
+	status = pipe2(surface->progress_pipe, O_CLOEXEC | O_NONBLOCK);
+	if (status != 0) {
+		surface->progress_pipe[0] = -1;
+		surface->progress_pipe[1] = -1;
+		return VK_ERROR_OUT_OF_HOST_MEMORY;
+	}
 
 	/* Allocates the queue that separates native progress from application dispatch. */
 	surface->queue = wl_display_create_queue(info->display);
@@ -1193,6 +1294,7 @@ wayland_frame_done(
 	struct wayland_frame **link;
 	struct wayland_lease *lease;
 	uint64_t completed;
+	unsigned char token;
 
 	(void)milliseconds;
 
@@ -1202,6 +1304,10 @@ wayland_frame_done(
 	completed = __atomic_load_n(&lease->completed, __ATOMIC_RELAXED);
 	if (frame->sequence > completed)
 		__atomic_store_n(&lease->completed, frame->sequence, __ATOMIC_RELEASE);
+
+	/* Wakes a FIFO wait sleeping in another thread (a full pipe is already a wake). */
+	token = 1;
+	(void)write(lease->surface->progress_pipe[1], &token, 1U);
 
 	/* Finds this one-shot callback in the lease while the private queue mutex is held. */
 	link = &lease->frames;

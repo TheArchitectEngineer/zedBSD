@@ -162,7 +162,8 @@ struct amdrdna_vk_timing;
  * one open at a time and the frames it presents.  present_lock puts the
  * presentations, the lease's end and a blob's going off the screen in one
  * order; display_lock (taken after present_lock, never with lock) guards
- * the lease (owner, lease, next_lease, sequence, shown and its time), the
+ * the lease (owner, lease, next_lease, sequence, shown and its time, the
+ * presentations slower than the mark's limit in slow_presents), the
  * frame the next copied presentation goes to, the cursor's state, the
  * power state, and every write to the display's registers.  broken says a
  * flip did not begin (nothing more is flipped); stopped that the machine
@@ -207,6 +208,7 @@ struct amdrdna_node {
 	uint64_t next_lease;
 	uint64_t sequence;
 	uint64_t shown_time_ns;
+	uint64_t slow_presents;
 	struct amdrdna_resource *shown;
 	unsigned next_frame;
 	int broken;
