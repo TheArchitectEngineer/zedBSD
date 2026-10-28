@@ -9,7 +9,7 @@
 - **HAL**: zedBSD の kernel と CPU・board の間の層。HAL の関数の宣言（`include/hal/hal.h`）を変えるにはユーザーの承認が要る。HAL の役目は「POSIX の kernel に要る低い層の操作」（`hal.h` の先頭の comment）。
 - **driver**: kernel の中で特定の hardware を扱う部分。platform の driver（`src/drivers/platform/pcat/` など）は、その platform の CPU の命令を直に使ってよい（前例: PC の IDE の driver の port の命令、Pi 5 の driver の system register の命令）。
 - **DVFS**: CPU の周波数（と電圧）を負荷に合わせて変える事。
-- **HWP**: Intel の CPU（2015 年の第 6 世代以降）の機能。OS は「この範囲で、性能寄りか省電力寄りか」を伝えるだけで、細かい周波数は CPU が決める。5330 は持つ。
+- **HWP**: Intel の CPU の機能（PC 向けは 2015 年の第 6 世代以降、server の一部は Broadwell の Xeon D・E5 v4 から）。OS は「この範囲で、性能寄りか省電力寄りか」を伝えるだけで、細かい周波数は CPU が決める。5330 は持つ。
 - **P-state**（legacy）: HWP の前からある方式。CPU の選べる周波数の段（例 0.4〜2.5 GHz の 100 MHz 刻み）から OS が段を選んで書く。OS が負荷を見て段を上げ下げする（governor）。
 - **MSR**: CPU の中の設定の register。HWP も P-state も MSR に書く。論理 CPU ごとにあり、その CPU の上で走る命令でしか読み書きできない。CPU に無い MSR に触ると例外（#GP）が起き、kernel の中では止まる。
 - **CPUID**: CPU に「どの機能を持つか」を聞く命令。MSR が有るかどうかも CPUID の bit で分かる。
@@ -48,6 +48,8 @@ WS301 が要る CPU の操作（topology の読み、HWP、legacy の P-state、
 7. **実機で両方の道を確かめる**: 5330 で HWP の道と、HWP を入れない起動（`cpuperf.hwp=off`）での P-state の道を試す（p007）。
 
 関門を通っても CPU が拒めば止まる、という残りの危険は、上の 2・3 で十分に小さいと見る（推定。根拠は CPU の仕様が「その bit が立てば MSR が有る」と定める事）。
+
+- **周波数の推定に CPU の「最大の周波数」の欄（CPUID.16H）を使わない**: Intel の手引きが「表示の用途だけ」と書くため。最大の周波数は起動の時に短く測る（Q301-2 の「最大の周波数の比」はこの測りで出す）。
 
 ## 4. 各機種の扱い
 
