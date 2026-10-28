@@ -208,7 +208,7 @@ zedBSD の `src/drivers/gpu/ghci/` を、amaterrace-gpu の `docs/ghci.md`（895
 ## 再開点（2026-10-28、P3 q1656-i01）
 
 - branch agent/p3-ws290g。commit: 段 1〜3（text-display・PC/AT の text・/dev/graphics・backend）e0bb46bc9、段 11（gpu.c）8f560010f、段 3a（amd64 HAL の early console の窓の委譲・global の TLB flush）2eb8a847b、段 5（GHCI の `boot_end`・`bars[]`・host の場面 4 つ）0786e7285、設計 版 4 と L2 の直し a1eba2f30。
-- 確かめた事: `ghci-host-test.sh` rc=0（driver 1061/0 ほか全 PASS）、GHCI 有りの amd64・VF2 の vmunix warning 0（段 5 の後）、`config/ci/config-amd64.mk` の vmunix warning 0（段 3a の後）。
+- 確かめた事: `ghci-host-test.sh` rc=0（driver 1061/0 ほか全 PASS）、`text-end-host-test.sh` PASS（0cf7f9210）、`plan/tools/i915-display/run-xd-host-tests.sh` all passed、GHCI 有りの amd64・VF2 の vmunix warning 0、`config/ci/` の amd64・pcat・pc98・rpi4・rpi5・visionfive2・riscv64-virt・m68k-virt・armv7-virt・intelmac・ppc32-mac99・ppc64-pseries・riscv32-virt・zybo の vmunix rc=0・warning 0（pcat は de6c7ea99 の直しの後）。先頭 de6c7ea99 の上にこの記録。
 - 残り（phase017 §14 の順）: 段 2 の試験の引き金（`KERN_TEST_TEXT_END_SECONDS`）、段 4（kernel の側の host 試験 `text-end-host-test.c`、13.2 の (j) を含む）、段 3a の host 試験（13.3）、段 6（PC-98）、段 8（rpi4・x68k・VF2 の end、ns16550 の送り、VF2 の UART は `/chosen/stdout-path`、VF2 の debug write の 2 度出し M4）、段 9、段 10（全 build、QEMU の script: stdvga を GOP・venus を別 device、stdvga の head の screendump か pmemsave で判定、M7）、段 7（sun4u・generic、最後に Q1 経由でユーザーに確かめてから、M5）。
 - 待ち: Q14（core の呼び出しで /dev/graphics も止めるか、推し: 止める。今の実装は止める）、M8（gpu-test-fd.c の stub か 3 本の試験の削除、Q1 の判断）。merge は Q1 の指示どおり、他の platform の build・host 試験と QEMU の確かめの後。
 - 実機: i915（5330）・amdrdna の graphical boot の確かめ（review 3 の M9）は Q1 の割当で。
