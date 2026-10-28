@@ -79,7 +79,7 @@ grep -q "^usr/bin/su	base	su	f	4755$" "$out/manifest" && ok "su keeps 4755" || b
 # Refusals.
 refused() { if run; then bad "$1 (accepted)"; elif grep -q "$2" "$out/run.txt"; then ok "$1"; else bad "$1"; fi; }
 echo z > "$t/etc/stray"; refused "a file of no unit is refused" "no unit: /etc/stray"
-rm "$t/etc/stray"
+mv "$t/etc/stray" "$out/stray.moved"
 chmod 4755 "$t/usr/bin/files"; refused "set-user-ID not asked for is refused" "not asked for: /usr/bin/files"
 chmod 0755 "$t/usr/bin/files"
 printf 'P\tprobe\ttests\ttests/probe\tbasic\t\t\nC\t/usr/bin/files\n' >> "$out/owners"
