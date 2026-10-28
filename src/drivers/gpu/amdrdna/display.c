@@ -1425,7 +1425,7 @@ amdrdna_display_screen(
 	uint32_t words;
 	uint32_t copied;
 	bool outside;
-	bool mapped;
+	bool by_bar;
 	int error;
 
 	/* The display must be the driver's. */
@@ -1461,7 +1461,7 @@ amdrdna_display_screen(
 		return ENOMEM;
 
 	/* A surface outside the window: its whole pages of the BAR mapped for the copy, when the BAR reaches them. */
-	mapped = false;
+	by_bar = false;
 	base = NULL;
 	if (outside) {
 		first = vram & ~((uint64_t)DISPLAY_SCREEN_PAGE_BYTES - 1U);
@@ -1470,7 +1470,7 @@ amdrdna_display_screen(
 		error = drv_pci_device_map_bar_region(device->pci, AMDRDNA_BAR_VRAM, first, (size_t)(last - first),
 		    DRV_PCI_MAP_READ | DRV_PCI_MAP_NOCACHE, &mapping);
 		if (error == 0) {
-			mapped = true;
+			by_bar = true;
 			base = (volatile const uint8_t *)mapping.address + (vram - first);
 		}
 		error = 0;
@@ -1487,7 +1487,7 @@ amdrdna_display_screen(
 			break;
 
 		/* The row through the bounce buffer: from a mapping, or a word at a time through the indirect window. */
-		if (mapped) {
+		if (by_bar) {
 			source = (volatile const uint32_t *)(volatile const void *)(base + (uint64_t)line * display->stride);
 			for (word = 0U; word < words; word++)
 				row[word] = source[word];
@@ -1508,7 +1508,7 @@ amdrdna_display_screen(
 
 	/* The bounce buffer and the copy's mapping go. */
 	kern_free(row);
-	if (mapped)
+	if (by_bar)
 		drv_pci_device_unmap_bar(device->pci, &mapping);
 
 	/* Reports a copy the caller's buffer refused. */
