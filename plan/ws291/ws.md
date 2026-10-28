@@ -88,3 +88,4 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   thread の起床 3 回、phase006 の見立て）、(2) 頂点の側の 0.8 ms（s_barrier の数、position の fetch）、(3) big-N・subs-N の CPU 側（executor の外の往復が大半）、
   (4) SMU が長い負荷で壊れないかを guard の下で見続ける（壊れたら mode1 の reset と shutdown の時の reset が候補）。長い試験は必ず round.sh か guard.sh の下で。
 - 2026-10-28 ユーザー「P2は、USB NICが通信できない（DHCPが取得できないとか、ue0が異常状態）のとき、自分で再起動するように、serivceを登録すれば、とりあえず問題を回避して継続できると思いますので、P2の判断でこれを行ってよいです。」「P2は、5330と同じように、NVMeにzedBSDをインストールしてから作業を継続する方がいいような気がします。USBメモリが半導体供給不足で手に入りづらいからです。」 → P2 が NIC の監視の service（WS291 の image だけ）と、RDNA の機械の NVMe の zedBSD の区画への移行を行う（空きが無く ext4 を縮める時はユーザーに確かめる）。
+- 2026-10-28 RDNA の機械の NVMe の区画: ユーザーの答え（クリック）「ext4 を縮め、root 32 GiB」→ live USB で Debian の ext4 を縮め、zedBSD の boot 256 MiB・root 32 GiB・swap 1 GiB（P2）。
