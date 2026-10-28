@@ -105,3 +105,4 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 - 訂正（原文、2026-10-29）: 「すみません、チップ名を間違いました。RTL8127です。」→ p010 の NIC は RDNA 機の PCIe の RTL8127。
 - ユーザー（原文、2026-10-29）「このマシンはPCIeの帯域の制約があり、7Gbit/sくらいしか出ないです。」→ p010 の目標は 10.0.10.3 で約 7 Gbit/s（PCIe の帯域の上限）を基準にする。
 - Q1 の判断（2026-10-29）: checksum・TSO の offload の stack の口（packet-buf・net-device の flag）は p010 で設計する（WS235 の RTL8127 の driver は offload 無しで先に動かし、口ができたら WS235 p006 で driver の側を足す）。
+- 2026-10-29 ユーザーの指示（原文）「CUBICを実装して、性能がよくなったらCUBICに切り替えるWSを作って、取り組んでほしいです。jumbo frameの続きでやってほしいです。」→ Q1 が WS311 を作った。WS221 の後に P3 が続けて取り組む。
