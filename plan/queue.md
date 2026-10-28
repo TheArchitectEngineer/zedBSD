@@ -109,7 +109,7 @@
 
 | q1656 / q1656-i01 | P3（phase-runner、worktree `/home/awe/zedBSD-worktrees/p3-ws290g`（helper の未 commit の差分を引き継ぐため同じ worktree）・branch `agent/p3-ws290g`） | [ws290](ws290/ws.md) p016 の直しの確かめと commit → p017（全 backend・全 GPU driver の console の使用終了） | q1644 と同じ承認。p017 のユーザーの答え（Q1〜Q13、hal.h は変えない）と 2026-10-28 の全体の決定（GPU の最初の flip で console の framebuffer の backend は使用終了、serial は続く、全 arch・全 GPU driver）。Q1 が src/drivers/gpu/gpu.c（flip の道の kern_text_end の 1 か所）を所有に追加 | p016 cleared。p017 は段 1〜3・3a・5・11 まで（P3 返却 23f23a5c5、merge は QEMU の確かめの後）。続きは q1659 |
 
-| q1657 / q1657-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws299d`・branch `agent/p1-ws299d`、基点 main） | [ws299](ws299/ws.md)（q1646 の続き） | direct の書き 59% → UFS の書き 55% → mkfs native の write-through → p007 → p008。q1640・q1646 と同じ承認（自律、Fable は何度でも） | in-progress |
+| q1657 / q1657-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws299d`・branch `agent/p1-ws299d`、基点 main） | [ws299](ws299/ws.md)（q1646 の続き） | direct の書き 59% → UFS の書き 55% → mkfs native の write-through → p007 → p008。q1640・q1646 と同じ承認（自律、Fable は何度でも） | cleared（2026-10-28 21:50、merge f88836330。memcpy の改善と全体の測り直しの後、ユーザーの継続の判断待ちで停止） |
 
 | q1658 / q1658-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291h`・branch `agent/p2-ws291h`、基点 main） | [ws291](ws291/ws.md) UCLK の負荷に応じた DPM（段 B〜D）→ 受け入れ → 案 4・5 | q1655 と同じ承認 | in-progress |
 | q1659 / q1659-i01 | P3（phase-runner、worktree `/home/awe/zedBSD-worktrees/p3-ws290h`・branch `agent/p3-ws290h`、agent/p3-ws290g の先から） | [ws290](ws290/ws.md) p017 の残り（段 4・6・8・9・10・7）と QEMU の確かめ | q1656 と同じ承認。Q14「止める (推し)」、M8 は stub を足して試験を直す（Q1） | cleared（2026-10-28、merge b99e96139。host 試験・16 build・QEMU 2 本 PASS。p017 は実機（p014・M9）が残り in-progress） |
