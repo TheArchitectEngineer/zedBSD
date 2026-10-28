@@ -66,8 +66,12 @@ static int stream_nested(struct stream_frame *frame, struct i915_wire_reader *re
 static int stream_blob(struct ghci_vk_session *session, uint32_t resource_id, uint8_t **cpu, uint64_t *bytes);
 
 /*
- * Runs one submitted frame (a copy the caller owns).  Returns 0 once
- * every command ran, EIO for a session the GPU core stopped or isolated,
+ * Runs one submitted frame (a copy the caller owns), and then lets the
+ * submissions the session's devices hold back go as far as they may on
+ * this thread, which may wait for the ring's room: a piece the service
+ * thread cannot place at once (one longer than half the ring between two
+ * cuts) then goes at the client's next frame.  Returns 0 once every
+ * command ran, EIO for a session the GPU core stopped or isolated,
  * EINVAL for a malformed command, or the error of the command that
  * failed.
  */
@@ -79,6 +83,7 @@ ghci_vk_stream_execute(
 {
 	struct stream_frame frame;
 	struct i915_wire_reader reader;
+	struct ghci_vk_device *device;
 	unsigned long irq;
 	int stopped;
 	int error;
@@ -108,6 +113,12 @@ ghci_vk_stream_execute(
 	mutex_lock(&session->hold_lock);
 
 	error = stream_run(&frame, &reader);
+
+	/* The held submissions, as far as they may go now (the frame's error is the frame's alone). */
+	for (device = session->devices; device != NULL; device = device->next) {
+		if (device->holds != NULL)
+			(void)ghci_vk_holds_advance(session, device, 1);
+	}
 
 	mutex_unlock(&session->hold_lock);
 	if (error != 0)

@@ -94,11 +94,21 @@ static int x_host_event(struct node *node, uint32_t opcode, uint64_t event);
 static uint32_t x_fence_status(struct node *node, uint64_t fence);
 static int x_create(struct node *node, uint32_t opcode, uint32_t type, uint64_t identity);
 static unsigned x_fills(unsigned mark, uint32_t *values);
-static unsigned x_ring_fences(unsigned mark);
 static int x_other_open(struct node *node);
 static void scene_x_hold(void);
 static void scene_x_hold_fail(void);
 static void scene_x_hold_pieces(void);
+static unsigned x_piece_fills(unsigned mark, unsigned *fills, unsigned capacity);
+static unsigned x_find(unsigned mark, uint32_t opcode, unsigned nth);
+static void x_dispatch(uint64_t commands);
+static void x_dispatch_bound(uint64_t commands);
+static void x_pass_indexed(uint64_t commands, int bound);
+static void x_set_event(uint64_t commands, uint32_t opcode, uint64_t event);
+static void scene_x_hold_rebind(void);
+static void scene_x_hold_stretch(void);
+static void scene_x_hold_ends(void);
+static void scene_x_hold_lost(void);
+static void scene_x_hold_budget(void);
 
 /* Runs the scenes of the execution and reports.  Returns the exit status. */
 static int
@@ -140,6 +150,11 @@ execute_main(
 	scene_x_hold();
 	scene_x_hold_fail();
 	scene_x_hold_pieces();
+	scene_x_hold_rebind();
+	scene_x_hold_stretch();
+	scene_x_hold_ends();
+	scene_x_hold_lost();
+	scene_x_hold_budget();
 	model_fini();
 
 	/* The counts. */
@@ -3165,22 +3180,6 @@ x_fills(
 	return count;
 }
 
-/* Counts the fences with the interrupt (the ends of what was placed in the ring) the model ran after mark. */
-static unsigned
-x_ring_fences(
-	unsigned mark)
-{
-	unsigned index;
-	unsigned count;
-
-	count = 0U;
-	for (index = mark; index < model.command_count; index++) {
-		if (model.commands[index].opcode == GHCI_OP_FENCE && (model.commands[index].words[5] & GHCI_FENCE_FLAG_IRQ) != 0U)
-			count++;
-	}
-	return count;
-}
-
 /*
  * Opens a second node session on the started device with a VkDevice, its
  * queue on timeline 1, a command pool with one primary command buffer,
@@ -3476,12 +3475,25 @@ scene_x_hold_fail(void)
  * A held submission larger than half of a 4 KiB ring, which an earlier
  * submission's set on the GPU lets go: the service thread places it in
  * pieces the ring takes at once (each with its fence), in order, and its
- * fence signals after the last.
+ * fence signals after the last.  The pieces by hand: the ring is 1024
+ * dwords, so a plain cut comes every 128 dwords or more (an eighth) and
+ * the service places at most 512 - 18 = 494 dwords of packets at once.
+ * The held submission is the head barrier (dwords 0-3), the wait's cut at
+ * 4 and its barrier (4-7), 400 fills of 5 dwords from 8 (fill i at
+ * 8 + 5i) and the tail barrier (2008-2011).  Its plain cuts are before
+ * fill 25 (dword 133, 129 past the wait's cut) and every 26 fills after
+ * (130 dwords): 133, 263, ..., 1953 (15 cuts).  The client places the
+ * head (0-3) at the submission, since the set has not run; the service
+ * then places 4-392 (fills 0-76: the cut at 523 is 519 past 4), 393-782
+ * (fills 77-154), 783-1172 (155-232), 1173-1562 (233-310) and 1563-2011
+ * (311-399, with the tail: 449 dwords).  With the set's own submission,
+ * 7 fences with the interrupt.
  */
 static void
 scene_x_hold_pieces(void)
 {
 	uint32_t values[X_FILLS_MAX];
+	unsigned fills[8];
 	struct node node;
 	unsigned rounds;
 	unsigned count;
@@ -3489,6 +3501,7 @@ scene_x_hold_pieces(void)
 	unsigned index;
 	unsigned heads;
 	unsigned tails;
+	unsigned pieces;
 	int held;
 	int error;
 
@@ -3530,9 +3543,12 @@ scene_x_hold_pieces(void)
 			held = 0;
 	}
 	ghci_service_step(&device, GHCI_WORK_RECLAIM);
-	expect(held && x_ring_fences(mark) >= 1U + 4U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS &&
-	       model.waiting_fence == 0,
-	       "hold pieces: 400 fills in order, in pieces each with its fence; the fence signals after the last");
+	expect(held && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS && model.waiting_fence == 0,
+	       "hold pieces: 400 fills in order; the fence signals after the last");
+	pieces = x_piece_fills(mark, fills, 8U);
+	expect(pieces == 7U && fills[0] == 0U && fills[1] == 0U && fills[2] == 77U && fills[3] == 78U && fills[4] == 78U &&
+	       fills[5] == 78U && fills[6] == 89U,
+	       "hold pieces: 7 fences: the set, the head, then 77, 78, 78, 78 and 89 fills");
 
 	/* Each piece shows the GPU the host's writes at its head and puts the GPU's in memory at its tail. */
 	heads = 0U;
@@ -3545,7 +3561,7 @@ scene_x_hold_pieces(void)
 		if (model.commands[index].words[3] == GHCI_VK_TAIL_FLAGS)
 			tails++;
 	}
-	expect(heads == tails && heads + 1U >= x_ring_fences(mark), "hold pieces: a head barrier and a tail barrier around each piece");
+	expect(heads == 7U && tails == 7U, "hold pieces: 7 head and 7 tail barriers: the set's, and one of each around each piece");
 
 	/* A wait inside a render pass holds the submission from where the pass begins, never inside it. */
 	error = x_host_event(&node, GPU_OP_RESET_EVENT, ID_X_EVENT);
@@ -3568,4 +3584,674 @@ scene_x_hold_pieces(void)
 	       "hold pieces: the host's set places the pass whole");
 	node_close(&node);
 	stop("hold pieces");
+}
+
+/*
+ * Counts the fills of the buffer's first word in each piece of a client's
+ * session the model ran after mark, a piece ending at each fence with the
+ * interrupt in a client's session (the driver's own, of session 0, are
+ * not counted): fills (at most capacity of them) gets each piece's count.
+ * Returns the number of pieces.
+ */
+static unsigned
+x_piece_fills(
+	unsigned mark,
+	unsigned *fills,
+	unsigned capacity)
+{
+	const struct model_command *command;
+	unsigned index;
+	unsigned count;
+	unsigned in_piece;
+
+	count = 0U;
+	in_piece = 0U;
+	for (index = mark; index < model.command_count; index++) {
+		command = &model.commands[index];
+		if (command->opcode == GHCI_OP_FILL_BUFFER && command->words[3] == 4U)
+			in_piece++;
+		if (command->opcode != GHCI_OP_FENCE || (command->words[5] & GHCI_FENCE_FLAG_IRQ) == 0U || command->session == 0U)
+			continue;
+		if (count < capacity)
+			fills[count] = in_piece;
+		count++;
+		in_piece = 0U;
+	}
+	return count;
+}
+
+/* Reports the record of the nth (from 0) packet of an opcode the model ran after mark, or UINT32_MAX. */
+static unsigned
+x_find(
+	unsigned mark,
+	uint32_t opcode,
+	unsigned nth)
+{
+	unsigned index;
+
+	for (index = mark; index < model.command_count; index++) {
+		if (model.commands[index].opcode != opcode)
+			continue;
+		if (nth == 0U)
+			return index;
+		nth--;
+	}
+	return UINT32_MAX;
+}
+
+/* Appends vkCmdDispatch of 2 x 1 x 1. */
+static void
+x_dispatch(
+	uint64_t commands)
+{
+	x_command(GPU_OP_CMD_DISPATCH, commands);
+	put32(2U);
+	put32(1U);
+	put32(1U);
+}
+
+/* Appends the binds of dyn.comp, its set (dynamic offset 256) and push constants (0x1234, 0x5678), then a dispatch. */
+static void
+x_dispatch_bound(
+	uint64_t commands)
+{
+	x_command(GPU_OP_CMD_BIND_PIPELINE, commands);
+	put32(VK_PIPELINE_BIND_POINT_COMPUTE);
+	put64(ID_X_COMPUTE);
+	x_command(GPU_OP_CMD_BIND_DESCRIPTOR_SETS, commands);
+	put32(VK_PIPELINE_BIND_POINT_COMPUTE);
+	put64(ID_LAYOUT);
+	put32(0U);
+	put32(1U);
+	put64(1U);
+	put64(ID_SET);
+	put32(1U);
+	put64(1U);
+	put32(256U);
+	x_command(GPU_OP_CMD_PUSH_CONSTANTS, commands);
+	put64(ID_LAYOUT);
+	put32(VK_SHADER_STAGE_COMPUTE_BIT);
+	put32(0U);
+	put32(8U);
+	put64(8U);
+	put32(0x1234U);
+	put32(0x5678U);
+	x_dispatch(commands);
+}
+
+/*
+ * Appends a render pass with an indexed draw of 3 indices; with bound,
+ * the binds first: the triangle with a dynamic viewport (ID_PIPELINE + 1),
+ * its vertex buffer, a 16-bit index buffer at 0x100 of the buffer and the
+ * viewport (2, 3, 64, 32, 0, 1).
+ */
+static void
+x_pass_indexed(
+	uint64_t commands,
+	int bound)
+{
+	x_begin_pass(commands, 64U, 32U);
+	if (bound) {
+		x_bind_triangle(commands, ID_PIPELINE + 1U, 0U);
+		x_command(GPU_OP_CMD_BIND_INDEX_BUFFER, commands);
+		put64(ID_BUFFER);
+		put64(0x100U);
+		put32(VK_INDEX_TYPE_UINT16);
+		x_command(GPU_OP_CMD_SET_VIEWPORT, commands);
+		put32(0U);
+		put32(1U);
+		put64(1U);
+		put32(0x40000000U);
+		put32(0x40400000U);
+		put32(0x42800000U);
+		put32(0x42000000U);
+		put32(0U);
+		put32(0x3f800000U);
+	}
+	x_command(GPU_OP_CMD_DRAW_INDEXED, commands);
+	put32(3U);
+	put32(1U);
+	put32(0U);
+	put32(0U);
+	put32(0U);
+	x_command(GPU_OP_CMD_END_RENDER_PASS, commands);
+}
+
+/* Appends vkCmdSetEvent or vkCmdResetEvent of an event after the transfers. */
+static void
+x_set_event(
+	uint64_t commands,
+	uint32_t opcode,
+	uint64_t event)
+{
+	x_command(opcode, commands);
+	put64(event);
+	put32(VK_PIPELINE_STAGE_TRANSFER_BIT);
+}
+
+/*
+ * The binds a held submission places again: after a plain cut (the
+ * service places the submission in pieces, and the GPU may lose the
+ * session's binds between two), a dispatch places the compute pipeline,
+ * its table and constants again (the push constants and the dynamic
+ * offset), and the render pass after it the graphics pipeline, the
+ * viewport, scissor and static state, the vertex and the index buffer;
+ * a submission that is not held has no plain cut and places nothing
+ * again.  After a reset (another session's fault) between two pieces,
+ * the piece after the cut binds everything again and runs.
+ */
+static void
+scene_x_hold_rebind(void)
+{
+	static const uint32_t compute[] = {
+		GHCI_OP_BIND_PIPELINE, GHCI_OP_BIND_DESCRIPTOR_TABLE, GHCI_OP_LOAD_CONST, GHCI_OP_LOAD_CONST, GHCI_OP_DISPATCH
+	};
+	static const uint32_t graphics[] = {
+		GHCI_OP_BEGIN_RENDER_PASS, GHCI_OP_BIND_PIPELINE, GHCI_OP_SET_VIEWPORT, GHCI_OP_SET_SCISSOR,
+		GHCI_OP_SET_DYNAMIC_STATE, GHCI_OP_SET_DYNAMIC_STATE, GHCI_OP_SET_DYNAMIC_STATE, GHCI_OP_SET_DYNAMIC_STATE,
+		GHCI_OP_BIND_VERTEX_BUFFERS, GHCI_OP_BIND_INDEX_BUFFER, GHCI_OP_DRAW_INDEXED, GHCI_OP_END_RENDER_PASS
+	};
+	const struct model_command *command;
+	uint32_t ops[X_OPS_MAX];
+	unsigned fills[8];
+	struct node other;
+	struct node node;
+	unsigned rounds;
+	unsigned found;
+	unsigned mark;
+	unsigned index;
+	uint32_t culprit;
+	int error;
+
+	/* A 4 KiB ring, the compute set and pipeline, the triangle with a dynamic viewport, an event. */
+	test_ring_bytes = 4096U;
+	error = x_open(&node, MODEL_FULL);
+	test_ring_bytes = 0U;
+	error |= x_compute_set(&node);
+	error |= (int)x_triangle(&node, VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST, VK_DYNAMIC_STATE_VIEWPORT, ID_PIPELINE + 1U);
+	error |= x_create(&node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_X_EVENT);
+	expect(error == 0, "hold rebind: objects");
+
+	/* The set; then the wait, a bound dispatch, 40 fills, a dispatch, a bound pass, 40 fills, a pass. */
+	x_record(&node, ID_X_COMMANDS);
+	x_set_event(ID_X_COMMANDS, GPU_OP_CMD_SET_EVENT, ID_X_EVENT);
+	error = x_end(&node, ID_X_COMMANDS);
+	x_record(&node, ID_X_COMMANDS + 1U);
+	x_wait(ID_X_COMMANDS + 1U, ID_X_EVENT);
+	x_dispatch_bound(ID_X_COMMANDS + 1U);
+	for (index = 0U; index < 40U; index++)
+		x_fill(ID_X_COMMANDS + 1U, 0x700U + index);
+	x_dispatch(ID_X_COMMANDS + 1U);
+	x_pass_indexed(ID_X_COMMANDS + 1U, 1);
+	for (index = 0U; index < 40U; index++)
+		x_fill(ID_X_COMMANDS + 1U, 0x740U + index);
+	x_pass_indexed(ID_X_COMMANDS + 1U, 0);
+	error |= x_end(&node, ID_X_COMMANDS + 1U);
+	mark = model.command_count;
+	model_hold(1);
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	error |= x_submit(&node, ID_X_COMMANDS + 1U, ID_X_FENCE);
+	model_hold(0);
+	model_tick();
+	for (rounds = 0U; rounds < 16U && model_count_commands(GHCI_OP_DRAW_INDEXED) < 2U; rounds++) {
+		model_tick();
+		ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	}
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && x_piece_fills(mark, fills, 8U) > 3U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS,
+	       "hold rebind: the service places the held submission in pieces; its fence signals");
+
+	/* The dispatch after the fills: the pipeline, the table and the constants again. */
+	found = x_find(mark, GHCI_OP_DISPATCH, 1U);
+	for (index = 0U; index < 5U && found != UINT32_MAX && found >= 4U; index++)
+		ops[index] = model.commands[found - 4U + index].opcode;
+	expect(found != UINT32_MAX && found >= 4U && x_same(ops, 5U, compute, 5U) && model.commands[found - 5U].opcode == GHCI_OP_FILL_BUFFER,
+	       "hold rebind: after a plain cut the dispatch places BIND_PIPELINE, its table and two LOAD_CONST again");
+	if (found != UINT32_MAX && found >= 4U) {
+		command = &model.commands[found - 2U];
+		expect(command->words[1] == 0U && command->words[3] == 0x1234U && command->words[4] == 0x5678U,
+		       "hold rebind: the push constants again");
+		command = &model.commands[found - 1U];
+		expect(command->words[1] == 32U && command->words[3 + 8U] == 256U, "hold rebind: the dynamic offset again");
+	}
+
+	/* The pass after the fills: everything the draw reads again, with the recorded viewport. */
+	found = x_find(mark, GHCI_OP_BEGIN_RENDER_PASS, 1U);
+	for (index = 0U; index < 12U && found != UINT32_MAX && found + index < model.command_count; index++)
+		ops[index] = model.commands[found + index].opcode;
+	expect(found != UINT32_MAX && index == 12U && x_same(ops, 12U, graphics, 12U) && model.commands[found - 1U].opcode == GHCI_OP_FILL_BUFFER,
+	       "hold rebind: the pass after the fills places the pipeline, its state, the vertex and index buffers again");
+	if (found != UINT32_MAX && index == 12U) {
+		expect(model.commands[found + 2U].words[1] == 0x40000000U && model.commands[found + 2U].words[3] == 0x42800000U,
+		       "hold rebind: the recorded viewport again");
+		command = &model.commands[found + 9U];
+		expect((command->words[1] | ((uint64_t)command->words[2] << 32)) == x_va(&node, 0x80000U + 0x100U) && command->words[3] == 0U,
+		       "hold rebind: the 16-bit index buffer again");
+	}
+
+	/* Not held: no plain cut, and the dispatch after the fills places nothing again. */
+	x_record(&node, ID_X_COMMANDS + 2U);
+	x_dispatch_bound(ID_X_COMMANDS + 2U);
+	for (index = 0U; index < 40U; index++)
+		x_fill(ID_X_COMMANDS + 2U, 0x780U + index);
+	x_dispatch(ID_X_COMMANDS + 2U);
+	error = x_end(&node, ID_X_COMMANDS + 2U);
+	mark = model.command_count;
+	error |= x_submit(&node, ID_X_COMMANDS + 2U, 0U);
+	found = x_find(mark, GHCI_OP_DISPATCH, 1U);
+	expect(error == 0 && found != UINT32_MAX && model.commands[found - 1U].opcode == GHCI_OP_FILL_BUFFER &&
+	       x_find(mark, GHCI_OP_BIND_PIPELINE, 1U) == UINT32_MAX && x_piece_fills(mark, fills, 8U) == 1U,
+	       "hold rebind: a submission that is not held: one piece, and the dispatch follows the fills");
+
+	/* A reset between two pieces: a bound dispatch placed, another session's fault, then the rest. */
+	error = x_host_event(&node, GPU_OP_RESET_EVENT, ID_X_EVENT);
+	x_record(&node, ID_X_COMMANDS + 2U);
+	x_dispatch_bound(ID_X_COMMANDS + 2U);
+	x_wait(ID_X_COMMANDS + 2U, ID_X_EVENT);
+	x_dispatch(ID_X_COMMANDS + 2U);
+	error |= x_end(&node, ID_X_COMMANDS + 2U);
+	mark = model.command_count;
+	error |= x_submit(&node, ID_X_COMMANDS + 2U, ID_X_FENCE);
+	model_tick();
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && model_count_commands(GHCI_OP_DISPATCH) != 0U && x_find(mark, GHCI_OP_DISPATCH, 0U) != UINT32_MAX &&
+	       x_find(mark, GHCI_OP_DISPATCH, 1U) == UINT32_MAX, "hold rebind: the piece before the wait ran");
+	error = x_other_open(&other);
+	culprit = 0U;
+	if (session_of(&other)->devices != NULL)
+		culprit = session_of(&other)->devices->vm->session;
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, culprit, 0x2000U, 0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && culprit != 0U && session_of(&node)->hold_count == 1U, "hold rebind: another session's reset leaves the held work");
+	mark = model.command_count;
+	error = x_host_event(&node, GPU_OP_SET_EVENT, ID_X_EVENT);
+	model_tick();
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	found = x_find(mark, GHCI_OP_DISPATCH, 0U);
+	for (index = 0U; index < 5U && found != UINT32_MAX && found >= 4U; index++)
+		ops[index] = model.commands[found - 4U + index].opcode;
+	expect(error == 0 && found != UINT32_MAX && found >= 4U && x_same(ops, 5U, compute, 5U) &&
+	       x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS,
+	       "hold rebind: after the reset the rest binds everything again and runs; its fence signals");
+	node_close(&other);
+	node_close(&node);
+	stop("hold rebind");
+}
+
+/*
+ * A held submission whose stretch between two cuts is longer than a
+ * 4 KiB ring, behind an earlier submission's set on the GPU: an
+ * occlusion query begun outside a render pass around 220 fills keeps
+ * plain cuts out (the cuts by hand: the wait's at dword 4, after the
+ * head barrier; the query from 8 to 11, the fills from 12 to 1111, the
+ * query's end from 1112 to 1115; then a plain cut before the first of 30
+ * fills, at 1116, and one 26 fills later, at 1246).  The service thread
+ * never places the 1112 dwords from 4 to 1115 (more than the ring); the
+ * client's poll of the fence places the rest whole, and the fence
+ * signals.  A wait for the host inside such a query cuts the submission
+ * before the query's begin, so that the query runs in one piece of the
+ * session (the occlusion counter is one for the device and a session's
+ * bind clears it: ghci.md 644072a section 7.3), and the dispatch inside
+ * it binds everything again.
+ */
+static void
+scene_x_hold_stretch(void)
+{
+	static const uint32_t query[] = {
+		GHCI_OP_BEGIN_QUERY, GHCI_OP_FILL_BUFFER, GHCI_OP_BIND_PIPELINE, GHCI_OP_BIND_DESCRIPTOR_TABLE, GHCI_OP_LOAD_CONST,
+		GHCI_OP_LOAD_CONST, GHCI_OP_DISPATCH, GHCI_OP_BARRIER, GHCI_OP_FILL_BUFFER, GHCI_OP_END_QUERY
+	};
+	uint32_t values[X_FILLS_MAX];
+	uint32_t ops[X_OPS_MAX];
+	const struct ghci_vk_submission *submission;
+	unsigned fills[4];
+	struct node node;
+	unsigned found;
+	unsigned rounds;
+	unsigned pieces;
+	unsigned count;
+	unsigned mark;
+	unsigned index;
+	int ordered;
+	int error;
+
+	/* A 4 KiB ring, an event and an occlusion pool of two queries. */
+	test_ring_bytes = 4096U;
+	error = x_open(&node, MODEL_FULL);
+	test_ring_bytes = 0U;
+	error |= x_create(&node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_X_EVENT);
+	begin(&node, GPU_OP_CREATE_QUERY_POOL);
+	put64(ID_DEVICE);
+	put64(1U);
+	put32(VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO);
+	put64(0U);
+	put32(0U);
+	put32(VK_QUERY_TYPE_OCCLUSION);
+	put32(2U);
+	put32(0U);
+	tail(ID_X_OCCLUSION);
+	error |= run(&node);
+	error |= (int)reply32(&node, 4U);
+	error |= x_compute_set(&node);
+	expect(error == 0, "hold stretch: objects");
+
+	/* The set; then the wait, the query around 220 fills, and 30 fills. */
+	x_record(&node, ID_X_COMMANDS);
+	x_set_event(ID_X_COMMANDS, GPU_OP_CMD_SET_EVENT, ID_X_EVENT);
+	error = x_end(&node, ID_X_COMMANDS);
+	x_record(&node, ID_X_COMMANDS + 1U);
+	x_wait(ID_X_COMMANDS + 1U, ID_X_EVENT);
+	x_command(GPU_OP_CMD_BEGIN_QUERY, ID_X_COMMANDS + 1U);
+	put64(ID_X_OCCLUSION);
+	put32(0U);
+	put32(0U);
+	for (index = 0U; index < 220U; index++)
+		x_fill(ID_X_COMMANDS + 1U, 0x2000U + index);
+	x_command(GPU_OP_CMD_END_QUERY, ID_X_COMMANDS + 1U);
+	put64(ID_X_OCCLUSION);
+	put32(0U);
+	for (index = 220U; index < 250U; index++)
+		x_fill(ID_X_COMMANDS + 1U, 0x2000U + index);
+	error |= x_end(&node, ID_X_COMMANDS + 1U);
+	mark = model.command_count;
+	model_hold(1);
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	error |= x_submit(&node, ID_X_COMMANDS + 1U, ID_X_FENCE);
+
+	/* No plain cut while the query is active. */
+	submission = NULL;
+	if (session_of(&node)->devices != NULL && session_of(&node)->devices->holds != NULL)
+		submission = &session_of(&node)->devices->holds->submission;
+	expect(error == 0 && submission != NULL && submission->used == 1270U && submission->cut_count == 3U &&
+	       submission->cuts[0].at == 4U && submission->cuts[0].count == 1U && submission->cuts[1].at == 1116U &&
+	       submission->cuts[1].count == 0U && submission->cuts[2].at == 1246U,
+	       "hold stretch: cuts at 4 (the wait), 1116 and 1246: none inside the query");
+
+	/* The set runs; the service cannot place the stretch. */
+	model_hold(0);
+	model_tick();
+	for (rounds = 0U; rounds < 8U; rounds++) {
+		model_tick();
+		ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	}
+	expect(x_fills(mark, values) == 0U && session_of(&node)->hold_count == 1U && x_piece_fills(mark, fills, 4U) == 2U,
+	       "hold stretch: the service does not place a stretch longer than the ring");
+
+	/* The client polls the fence: the rest is placed whole, and the fence signals. */
+	(void)x_fence_status(&node, ID_X_FENCE);
+	for (rounds = 0U; rounds < 8U && x_fills(mark, values) < 250U; rounds++) {
+		model_tick();
+		ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	}
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	count = x_fills(mark, values);
+	ordered = count == 250U;
+	for (index = 0U; index < count && ordered; index++) {
+		if (values[index] != 0x2000U + index)
+			ordered = 0;
+	}
+	pieces = x_piece_fills(mark, fills, 4U);
+	expect(ordered && pieces == 3U && fills[2] == 250U && session_of(&node)->hold_count == 0U &&
+	       x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS && model_count_commands(GHCI_OP_BEGIN_QUERY) == 1U &&
+	       model_count_commands(GHCI_OP_END_QUERY) == 1U,
+	       "hold stretch: the poll places the rest in one piece: 250 fills in order; the fence signals");
+
+	/* A bound dispatch, a fill, then a query around a fill, a dispatch, a wait for the host and a fill; a fill after. */
+	error = x_host_event(&node, GPU_OP_RESET_EVENT, ID_X_EVENT);
+	x_record(&node, ID_X_COMMANDS + 2U);
+	x_dispatch_bound(ID_X_COMMANDS + 2U);
+	x_fill(ID_X_COMMANDS + 2U, 0x801U);
+	x_command(GPU_OP_CMD_BEGIN_QUERY, ID_X_COMMANDS + 2U);
+	put64(ID_X_OCCLUSION);
+	put32(1U);
+	put32(0U);
+	x_fill(ID_X_COMMANDS + 2U, 0x802U);
+	x_dispatch(ID_X_COMMANDS + 2U);
+	x_wait(ID_X_COMMANDS + 2U, ID_X_EVENT);
+	x_fill(ID_X_COMMANDS + 2U, 0x803U);
+	x_command(GPU_OP_CMD_END_QUERY, ID_X_COMMANDS + 2U);
+	put64(ID_X_OCCLUSION);
+	put32(1U);
+	x_fill(ID_X_COMMANDS + 2U, 0x804U);
+	error |= x_end(&node, ID_X_COMMANDS + 2U);
+	mark = model.command_count;
+	error |= x_submit(&node, ID_X_COMMANDS + 2U, ID_X_FENCE);
+	model_tick();
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	count = x_fills(mark, values);
+	expect(error == 0 && count == 1U && values[0] == 0x801U && x_find(mark, GHCI_OP_BEGIN_QUERY, 0U) == UINT32_MAX &&
+	       session_of(&node)->hold_count == 1U, "hold stretch: a wait inside a query holds from the query's begin");
+	error = x_host_event(&node, GPU_OP_SET_EVENT, ID_X_EVENT);
+	model_tick();
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	found = x_find(mark, GHCI_OP_BEGIN_QUERY, 0U);
+	for (index = 0U; index < 10U && found != UINT32_MAX && found + index < model.command_count; index++)
+		ops[index] = model.commands[found + index].opcode;
+	count = x_fills(mark, values);
+	expect(error == 0 && found != UINT32_MAX && found >= 2U && index == 10U && x_same(ops, 10U, query, 10U) &&
+	       model.commands[found - 2U].opcode == GHCI_OP_BIND_SESSION && model.commands[found - 2U].words[1] != 0U &&
+	       model.commands[found - 1U].opcode == GHCI_OP_BARRIER && count == 4U && values[3] == 0x804U &&
+	       x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS,
+	       "hold stretch: the host's set places the query whole in one piece, the dispatch in it bound again");
+	node_close(&node);
+	stop("hold stretch");
+}
+
+/*
+ * The word of an event placed work sets and then resets is not taken for
+ * set while that work runs: a wait behind it stays held when the word
+ * shows 1 between the set and the reset, and after the work ran (the
+ * word 0); the host's set lets it go.  The stop of the session ends what
+ * it holds with an error: the stop wakes the service thread, the fence
+ * is lost and the marker behind it ends with EIO, and the stop poll is
+ * done.
+ */
+static void
+scene_x_hold_ends(void)
+{
+	struct drv_gpu_completion *completion;
+	static char completions[1];
+	uint32_t values[X_FILLS_MAX];
+	struct ghci_vk_object *object;
+	struct node node;
+	unsigned completed;
+	unsigned mark;
+	void *token;
+	int error;
+
+	/* The device and an event. */
+	completion = (struct drv_gpu_completion *)(void *)&completions[0];
+	error = x_open(&node, MODEL_FULL);
+	error |= x_create(&node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_X_EVENT);
+	object = ghci_vk_object_find(session_of(&node), GHCI_VK_EVENT, ID_X_EVENT);
+	expect(error == 0 && object != NULL, "hold ends: objects");
+	if (object == NULL) {
+		node_close(&node);
+		stop("hold ends");
+		return;
+	}
+
+	/* Placed work that sets and resets the event, held by the processor; a wait behind it. */
+	x_record(&node, ID_X_COMMANDS);
+	x_set_event(ID_X_COMMANDS, GPU_OP_CMD_SET_EVENT, ID_X_EVENT);
+	x_set_event(ID_X_COMMANDS, GPU_OP_CMD_RESET_EVENT, ID_X_EVENT);
+	error = x_end(&node, ID_X_COMMANDS);
+	x_record(&node, ID_X_COMMANDS + 1U);
+	x_wait(ID_X_COMMANDS + 1U, ID_X_EVENT);
+	x_fill(ID_X_COMMANDS + 1U, 0x601U);
+	error |= x_end(&node, ID_X_COMMANDS + 1U);
+	mark = model.command_count;
+	model_hold(1);
+	error |= x_submit(&node, ID_X_COMMANDS, 0U);
+	error |= x_submit(&node, ID_X_COMMANDS + 1U, ID_X_FENCE);
+
+	/* The word at 1 between the set and the reset: still held. */
+	*object->as.event.word = 1U;
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && x_fills(mark, values) == 0U && session_of(&node)->hold_count == 1U,
+	       "hold ends: a word at 1 while the work that resets it runs does not let the wait go");
+
+	/* The work ran: the word is 0, still held; the host's set lets it go. */
+	model_hold(0);
+	model_tick();
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(*object->as.event.word == 0U && x_fills(mark, values) == 0U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_NOT_READY,
+	       "hold ends: after the set and the reset ran, the wait is still held");
+	error = x_host_event(&node, GPU_OP_SET_EVENT, ID_X_EVENT);
+	model_tick();
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && x_fills(mark, values) == 1U && values[0] == 0x601U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS,
+	       "hold ends: the host's set places it; the fence signals");
+
+	/* Held work with its fence and a marker; the stop wakes the service, which ends both. */
+	error = x_host_event(&node, GPU_OP_RESET_EVENT, ID_X_EVENT);
+	x_record(&node, ID_X_COMMANDS + 1U);
+	x_wait(ID_X_COMMANDS + 1U, ID_X_EVENT);
+	x_fill(ID_X_COMMANDS + 1U, 0x602U);
+	error |= x_end(&node, ID_X_COMMANDS + 1U);
+	mark = model.command_count;
+	error |= x_submit(&node, ID_X_COMMANDS + 1U, ID_X_FENCE);
+	completed = stub.completions;
+	error |= device.ops.jobs->reserve(&device, node.session, 1U, completion, &token);
+	error |= device.ops.jobs->commit(&device, node.session, token, completion);
+	model_tick();
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && session_of(&node)->hold_count == 1U && stub.completions == completed, "hold ends: held, the marker waits");
+	device.service_work = 0U;
+	error = device.ops.recovery->stop_begin(&device, node.session, 0);
+	expect(error == 0 && (device.service_work & GHCI_WORK_RECLAIM) != 0U, "hold ends: the stop wakes the service thread");
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	object = ghci_vk_object_find(session_of(&node), GHCI_VK_FENCE, ID_X_FENCE);
+	expect(session_of(&node)->hold_count == 0U && object != NULL && object->as.fence.lost && stub.completions == completed + 1U &&
+	       stub.last_completion_error == EIO && x_fills(mark, values) == 0U,
+	       "hold ends: the stop ends the held work: its fence is lost, its marker EIO, nothing of it runs");
+	expect(device.ops.recovery->stop_poll(&device, node.session) == 0, "hold ends: the stop poll is done");
+	node_close(&node);
+	stop("hold ends");
+}
+
+/*
+ * The loss of the GPU ends what a session holds with an error: its fence
+ * is lost and the marker behind it ends with EIO, nothing of it runs;
+ * the next context fence of the timeline ends with EIO (the held work
+ * it follows failed), and the one after it completes.
+ */
+static void
+scene_x_hold_lost(void)
+{
+	struct drv_gpu_completion *completion[3];
+	static char completions[3];
+	uint32_t values[X_FILLS_MAX];
+	struct node node;
+	unsigned completed;
+	unsigned count;
+	unsigned mark;
+	void *token;
+	int error;
+
+	/* The device, an event, held work with its fence and a marker. */
+	for (count = 0U; count < 3U; count++)
+		completion[count] = (struct drv_gpu_completion *)(void *)&completions[count];
+	error = x_open(&node, MODEL_FULL);
+	error |= x_create(&node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_X_EVENT);
+	x_record(&node, ID_X_COMMANDS);
+	x_wait(ID_X_COMMANDS, ID_X_EVENT);
+	x_fill(ID_X_COMMANDS, 0x603U);
+	error |= x_end(&node, ID_X_COMMANDS);
+	mark = model.command_count;
+	error |= x_submit(&node, ID_X_COMMANDS, ID_X_FENCE);
+	completed = stub.completions;
+	error |= device.ops.jobs->reserve(&device, node.session, 1U, completion[0], &token);
+	error |= device.ops.jobs->commit(&device, node.session, token, completion[0]);
+	model_tick();
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && session_of(&node)->hold_count == 1U && stub.completions == completed, "hold lost: held, the marker waits");
+
+	/* The GPU is lost: the held work fails. */
+	device.ops.recovery->fault(&device, EIO);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(session_of(&node)->hold_count == 0U && stub.completions == completed + 1U && stub.last_completion_error == EIO &&
+	       x_fills(mark, values) == 0U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_ERROR_DEVICE_LOST,
+	       "hold lost: the loss ends the held work: its fence is lost, its marker EIO, nothing of it runs");
+
+	/* The next context fence reports the failure; the one after it does not. */
+	error = device.ops.commands->submit(&device, node.session, NULL, 0U, GPU_COMMAND_CONTEXT_FENCE, 1U, completion[1]);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && stub.completions == completed + 2U && stub.last_completion_error == EIO,
+	       "hold lost: the next context fence of the timeline ends with EIO");
+	error = device.ops.commands->submit(&device, node.session, NULL, 0U, GPU_COMMAND_CONTEXT_FENCE, 1U, completion[2]);
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && stub.completions == completed + 3U && stub.last_completion_error == 0,
+	       "hold lost: the context fence after it completes");
+	node_close(&node);
+	stop("hold lost");
+}
+
+/*
+ * The budget of held work: a held submission takes its host memory and
+ * its temporary memory (a 64 KiB chunk for its SetEvent's word) of the
+ * session's budget.  With 32 KiB left it is refused with
+ * VK_ERROR_OUT_OF_DEVICE_MEMORY, with 64 bytes left with
+ * VK_ERROR_OUT_OF_HOST_MEMORY, and nothing is held or taken; within the
+ * budget it is held, and it gives what it took back once placed.
+ */
+static void
+scene_x_hold_budget(void)
+{
+	struct ghci_vk_session *session;
+	const struct ghci_vk_hold *hold;
+	uint32_t values[X_FILLS_MAX];
+	struct node node;
+	uint64_t saved;
+	uint64_t taken;
+	unsigned mark;
+	int error;
+
+	/* The device and two events; the wait, a set of the other event and a fill. */
+	error = x_open(&node, MODEL_FULL);
+	error |= x_create(&node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_X_EVENT);
+	error |= x_create(&node, GPU_OP_CREATE_EVENT, VK_STRUCTURE_TYPE_EVENT_CREATE_INFO, ID_X_EVENT + 1U);
+	x_record(&node, ID_X_COMMANDS);
+	x_wait(ID_X_COMMANDS, ID_X_EVENT);
+	x_set_event(ID_X_COMMANDS, GPU_OP_CMD_SET_EVENT, ID_X_EVENT + 1U);
+	x_fill(ID_X_COMMANDS, 0x604U);
+	error |= x_end(&node, ID_X_COMMANDS);
+	expect(error == 0, "hold budget: objects");
+	session = session_of(&node);
+	saved = session->budget_used;
+	mark = model.command_count;
+
+	/* 32 KiB left: the temporary memory does not fit. */
+	session->budget_used = GHCI_VK_BUDGET_BYTES - 32768U;
+	error = x_submit(&node, ID_X_COMMANDS, ID_X_FENCE);
+	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_ERROR_OUT_OF_DEVICE_MEMORY && session->hold_count == 0U &&
+	       session->budget_used == GHCI_VK_BUDGET_BYTES - 32768U, "hold budget: 32 KiB left: OUT_OF_DEVICE_MEMORY, nothing held");
+
+	/* 64 bytes left: the host memory does not fit. */
+	session->budget_used = GHCI_VK_BUDGET_BYTES - 64U;
+	error = x_submit(&node, ID_X_COMMANDS, ID_X_FENCE);
+	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_ERROR_OUT_OF_HOST_MEMORY && session->hold_count == 0U &&
+	       session->budget_used == GHCI_VK_BUDGET_BYTES - 64U, "hold budget: 64 bytes left: OUT_OF_HOST_MEMORY, nothing held");
+
+	/* Within the budget: held, with its 64 KiB chunk and its host memory taken. */
+	session->budget_used = saved;
+	error = x_submit(&node, ID_X_COMMANDS, ID_X_FENCE);
+	hold = NULL;
+	if (session->devices != NULL)
+		hold = session->devices->holds;
+	taken = session->budget_used - saved;
+	expect(error == 0 && reply32(&node, 4U) == (uint32_t)VK_SUCCESS && hold != NULL && hold->submission.temp_bytes == 65536U &&
+	       hold->charged == taken && taken > 65536U && x_fills(mark, values) == 0U,
+	       "hold budget: within the budget: held; its 64 KiB chunk and its host memory are taken");
+
+	/* The host's set: placed, and the budget goes back. */
+	error = x_host_event(&node, GPU_OP_SET_EVENT, ID_X_EVENT);
+	model_tick();
+	ghci_service_step(&device, GHCI_WORK_RECLAIM);
+	expect(error == 0 && session->budget_used == saved && session->hold_count == 0U && x_fills(mark, values) == 1U &&
+	       values[0] == 0x604U && x_fence_status(&node, ID_X_FENCE) == (uint32_t)VK_SUCCESS,
+	       "hold budget: placed, the budget goes back; the fence signals");
+	node_close(&node);
+	stop("hold budget");
 }
