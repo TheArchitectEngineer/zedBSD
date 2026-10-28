@@ -11,12 +11,15 @@
  * counters, sampled by libkeiland-backend's monitor area, for the System
  * Monitor.
  *
- * The samples are taken on a thread of their own while a monitor object
- * exists (reading the memory walks the kernel's pages, and a disk's
- * statistics may wait on a lock: the event loop never does either).  The
- * thread keeps the latest sample and the latest info under a lock; the
- * event loop takes them once a pass (kwl_sysmon_tick) and tells every
- * monitor object.
+ * The samples are taken on the device I/O thread (io.c) while a monitor
+ * object exists (reading the memory walks the kernel's pages, and a disk's
+ * statistics may wait on a lock: the event loop never does either): the
+ * event loop gives it a sample's job at the shortest period asked, one at
+ * a time, the info read every few samples, and tells every monitor object
+ * the sample and a new info when the job is taken (kwl_sysmon_tick).  The
+ * backend's monitor is the device I/O thread's: opened by the first job,
+ * closed by a job after the last object went (or at the compositor's end,
+ * after the thread).
  *
  * The flow is held by the clients (design.md review 2): an object hears
  * no sample before it acked the last, and none when its client's queue
@@ -31,7 +34,6 @@
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
 #include <errno.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,43 +52,65 @@
 #define SYSMON_EVENT_MAX	256U
 
 /*
- * The sampling: the thread and the lock and condition it waits on (ready
- * once made), and, under the lock, whether the thread is asked to stop and
- * whether it has ended, the period it samples at, and the latest sample
- * and info with their serials (0: none yet).
- *
- * The event loop's alone: whether the thread runs, the serials it took
- * last, its copies of what it took (the sample with its serial), when it
- * last looked for the objects, and how many there were.  One per process.
+ * The sampling, the event loop's: whether it runs (a monitor object
+ * exists), the period it samples at, when the next sample's job is due,
+ * whether a sample's job is under way and how many were given (the info is
+ * read with every SYSMON_INFO_EVERY-th), whether the backend's monitor may
+ * be open on the device I/O thread, the latest sample and info with their
+ * serials (0: none yet), the serials told last, when it last looked for
+ * the objects, and how many there were.  One per process.
  */
 struct sysmon_state {
-	pthread_t thread;
-	pthread_mutex_t lock;
-	pthread_cond_t wake;
-	unsigned lock_ready;
-	unsigned stop;
-	unsigned ended;
-	uint32_t period_ms;
-	struct kl_backend_monitor_sample sample;
-	uint32_t sample_serial;
-	struct kl_backend_monitor_info info;
-	uint32_t info_serial;
 	unsigned running;
-	uint32_t taken_sample;
-	uint32_t taken_info;
+	uint32_t period_ms;
+	uint64_t next_ms;
+	unsigned sampling;
+	unsigned given;
+	unsigned opened;
 	struct kl_backend_monitor_sample current;
 	uint32_t current_serial;
 	struct kl_backend_monitor_info current_info;
+	uint32_t info_serial;
+	uint32_t taken_sample;
+	uint32_t taken_info;
 	uint64_t scanned_ms;
 	unsigned subscribers;
 };
 
+/*
+ * A job of the device I/O thread: a sample (with the info when info is
+ * set, published when it is the first or the devices changed), or the
+ * monitor's close (close set).  error and info_error say how the readings
+ * went; info_new whether the info is new.
+ */
+struct sysmon_job {
+	struct kwl_lane_job lane;
+	unsigned close;
+	unsigned info;
+	int error;
+	int info_error;
+	unsigned info_new;
+	struct kl_backend_monitor_sample sample;
+	struct kl_backend_monitor_info read;
+};
+
+/*
+ * The backend's monitor and the generation of the info last published:
+ * the device I/O thread's alone (or the event loop's where the thread does
+ * not run, and at the end after it stopped).
+ */
+static struct kl_backend_monitor *sysmon_monitor;
+static uint64_t sysmon_generation;
+static unsigned sysmon_have_info;
+
 /* The one sampling of the process, zero until the first monitor object (see struct sysmon_state). */
 static struct sysmon_state sysmon_state;
 
-static void *sysmon_run(void *argument);
-static int sysmon_start(void);
-static void sysmon_stop(void);
+static void sysmon_give(struct kwl_server *server, unsigned close);
+static void sysmon_run(struct kwl_lane_job *job);
+static void sysmon_done(void *context, struct kwl_lane_job *job);
+static void sysmon_drop(struct kwl_lane_job *job);
+static void sysmon_monitor_close(void);
 static void sysmon_scan(struct kwl_server *server);
 static void sysmon_tell(struct kwl_server *server);
 static void sysmon_send_info(struct kwl_object *object);
@@ -97,6 +121,13 @@ static size_t sysmon_put_word(unsigned char *payload, size_t offset, uint32_t wo
 static size_t sysmon_put_wide(unsigned char *payload, size_t offset, uint64_t wide);
 static size_t sysmon_put_string(unsigned char *payload, size_t offset, const char *text);
 static uint32_t sysmon_word(const unsigned char *bytes, size_t offset);
+
+/* The operations of a sample's job and a close's on the device I/O thread. */
+static const struct kwl_lane_ops sysmon_ops = {
+	sysmon_run,
+	sysmon_done,
+	sysmon_drop
+};
 
 /*
  * Makes a monitor object for a manager's get_monitor (new id, period):
@@ -128,7 +159,7 @@ kwl_sysmon_create(
 	created->monitor_info = 0;
 	printf("KWL SYSTEM monitor client=%llu id=%u period=%u\n", (unsigned long long)manager->client->number, id, created->monitor_period);
 
-	/* The info, when the thread has read one. */
+	/* The info, when one was read. */
 	if (sysmon_state.taken_info != 0U)
 		sysmon_send_info(created);
 
@@ -184,8 +215,8 @@ kwl_sysmon_request(
 
 /*
  * Looks after the monitor once a pass: the objects counted now and then
- * (the thread started for the first, stopped after the last, at the
- * shortest period asked), and a new sample told to every object.
+ * (the sampling started for the first, stopped after the last, at the
+ * shortest period asked), and the next sample's job given when it is due.
  */
 void
 kwl_sysmon_tick(
@@ -200,13 +231,18 @@ kwl_sysmon_tick(
 		sysmon_scan(server);
 	}
 
-	/* A new sample, to every object. */
-	if (sysmon_state.running)
-		sysmon_tell(server);
+	/* The next sample, at the period, once the last is taken. */
+	if (sysmon_state.running &&
+	    !sysmon_state.sampling &&
+	    now >= sysmon_state.next_ms) {
+		sysmon_state.next_ms = now + sysmon_state.period_ms;
+		sysmon_give(server, 0U);
+	}
 }
 
 /*
- * Stops the sampling at the compositor's end, waiting for the thread.
+ * Stops the sampling at the compositor's end, after the device I/O thread
+ * (its jobs were dropped): the backend's monitor is closed here.
  */
 void
 kwl_sysmon_close(
@@ -214,199 +250,159 @@ kwl_sysmon_close(
 {
 	UNUSED_PARAMETER(server);
 
-	/* The thread, when it runs. */
-	if (!sysmon_state.running)
-		return;
-	sysmon_stop();
-	(void)pthread_join(sysmon_state.thread, NULL);
+	/* Nothing samples any more. */
 	sysmon_state.running = 0;
-}
-
-/* The sampling thread: samples at the period until it is asked to stop, the info every few samples. */
-static void *
-sysmon_run(
-	void *argument)
-{
-	struct kl_backend_monitor *monitor;
-	struct kl_backend_monitor_sample *sample;
-	struct kl_backend_monitor_info *info;
-	struct timespec until;
-	uint64_t generation;
-	unsigned count;
-	unsigned stop;
-	uint32_t period;
-	int error;
-	int have_info;
-	int ready;
-	int changed;
-
-	UNUSED_PARAMETER(argument);
-
-	/* The backend's monitor and the room for a sample and an info. */
-	monitor = kl_backend_monitor_open();
-	sample = calloc(1, sizeof(*sample));
-	info = calloc(1, sizeof(*info));
-	generation = 0;
-	have_info = 0;
-	count = 0;
-
-	/* Each sample until asked to stop. */
-	for (;;) {
-		/* The info first and every few samples; a new one when the devices changed. */
-		ready = 0;
-		if (monitor == NULL) {
-			ready = 0;
-		} else if (sample == NULL) {
-			ready = 0;
-		} else if (info != NULL) {
-			ready = 1;
-		}
-
-		/* Read when due; published when it is the first or the devices changed. */
-		if (ready && count % SYSMON_INFO_EVERY == 0U) {
-			error = kl_backend_monitor_info(monitor, info);
-			changed = 0;
-			if (error != 0) {
-				changed = 0;
-			} else if (!have_info) {
-				changed = 1;
-			} else if (info->generation != generation) {
-				changed = 1;
-			}
-
-			/* A new info for the event loop. */
-			if (changed) {
-				generation = info->generation;
-				have_info = 1;
-				pthread_mutex_lock(&sysmon_state.lock);
-
-				/* The info and its serial, which tells the event loop it is new. */
-				sysmon_state.info = *info;
-				sysmon_state.info_serial++;
-
-				/* The event loop may take it. */
-				pthread_mutex_unlock(&sysmon_state.lock);
-			}
-		}
-
-		/* The sample. */
-		if (ready) {
-			error = kl_backend_monitor_sample(monitor, sample);
-			if (error == 0) {
-				pthread_mutex_lock(&sysmon_state.lock);
-
-				/* The sample and its serial, which tells the event loop it is new. */
-				sysmon_state.sample = *sample;
-				sysmon_state.sample_serial++;
-
-				/* The event loop may take it. */
-				pthread_mutex_unlock(&sysmon_state.lock);
-			}
-		}
-
-		/* The wait until the next, or the stop. */
-		count++;
-		pthread_mutex_lock(&sysmon_state.lock);
-
-		/* The deadline: the period from now, on the clock the condition waits by. */
-		period = sysmon_state.period_ms;
-		(void)clock_gettime(CLOCK_REALTIME, &until);
-		until.tv_sec += (time_t)(period / 1000U);
-		until.tv_nsec += (long)(period % 1000U) * 1000000L;
-		if (until.tv_nsec >= 1000000000L) {
-			until.tv_sec++;
-			until.tv_nsec -= 1000000000L;
-		}
-		while (!sysmon_state.stop) {
-			error = pthread_cond_timedwait(&sysmon_state.wake, &sysmon_state.lock, &until);
-			if (error != 0)
-				break;
-		}
-
-		/* Whether it was asked to stop, before the lock goes. */
-		stop = sysmon_state.stop;
-
-		/* The event loop may change the period again. */
-		pthread_mutex_unlock(&sysmon_state.lock);
-
-		/* Asked to stop. */
-		if (stop)
-			break;
-	}
-
-	/* The monitor and the room go; the event loop joins the thread when it sees it ended. */
-	kl_backend_monitor_close(monitor);
-	free(sample);
-	free(info);
-	pthread_mutex_lock(&sysmon_state.lock);
-
-	/* Ended: the event loop may join it. */
-	sysmon_state.ended = 1;
-
-	/* The last the thread touches. */
-	pthread_mutex_unlock(&sysmon_state.lock);
-
-	/* Succeeded: the thread ends. */
-	return NULL;
-}
-
-/* Starts the sampling thread; returns 0 or an errno value. */
-static int
-sysmon_start(void)
-{
-	int error;
-
-	/* The lock and the condition, once. */
-	if (!sysmon_state.lock_ready) {
-		error = pthread_mutex_init(&sysmon_state.lock, NULL);
-		if (error != 0)
-			return error;
-		error = pthread_cond_init(&sysmon_state.wake, NULL);
-		if (error != 0) {
-			(void)pthread_mutex_destroy(&sysmon_state.lock);
-			return error;
-		}
-
-		/* Both are ready for good. */
-		sysmon_state.lock_ready = 1;
-	}
-
-	/* Not asked to stop, not ended. */
-	sysmon_state.stop = 0;
-	sysmon_state.ended = 0;
-
-	/* The thread. */
-	error = pthread_create(&sysmon_state.thread, NULL, sysmon_run, NULL);
-	if (error != 0)
-		return error;
-
-	/* The thread runs. */
-	sysmon_state.running = 1;
-
-	/* Succeeded: the sampling runs. */
-	return 0;
-}
-
-/* Asks the sampling thread to stop (it ends after the sample it may be taking). */
-static void
-sysmon_stop(void)
-{
-	/* The stop, and the thread woken from its wait. */
-	pthread_mutex_lock(&sysmon_state.lock);
-
-	/* The flag the thread looks at after each wait, and the wait cut short. */
-	sysmon_state.stop = 1;
-	pthread_cond_signal(&sysmon_state.wake);
-
-	/* The thread may see it now. */
-	pthread_mutex_unlock(&sysmon_state.lock);
+	sysmon_state.sampling = 0;
+	sysmon_monitor_close();
+	sysmon_state.opened = 0;
 }
 
 /*
- * Counts the monitor objects and their shortest period: the thread starts
- * for the first, follows the period, and is asked to stop after the last
- * (and joined once it ended, so that the event loop never waits for a
- * sample).
+ * Gives the device I/O thread a sample's job (close 0) or the monitor's
+ * close (close 1); without the thread it runs here.  Without memory for
+ * the job, the sample is skipped (the next comes at the period) and the
+ * close waits for the end.
+ */
+static void
+sysmon_give(
+	struct kwl_server *server,
+	unsigned close)
+{
+	struct sysmon_job *job;
+	int error;
+
+	/* The job's record. */
+	job = calloc(1U, sizeof(*job));
+	if (job == NULL)
+		return;
+	job->close = close;
+
+	/* The info with the first sample and every few. */
+	if (!close) {
+		if (sysmon_state.given % SYSMON_INFO_EVERY == 0U)
+			job->info = 1U;
+		sysmon_state.given++;
+		sysmon_state.sampling = 1U;
+		sysmon_state.opened = 1U;
+	}
+
+	/* The thread runs it; without it, it runs here. */
+	error = kwl_io_device_submit(server, &job->lane, &sysmon_ops, 0U);
+	if (error != 0) {
+		sysmon_run(&job->lane);
+		sysmon_done(server, &job->lane);
+	}
+}
+
+/* Takes a sample (and the info when asked), or closes the monitor, on the device I/O thread. */
+static void
+sysmon_run(
+	struct kwl_lane_job *lane_job)
+{
+	struct sysmon_job *job;
+	int error;
+
+	/* The close: the monitor goes, and the next sampling starts afresh. */
+	job = (struct sysmon_job *)lane_job;
+	if (job->close) {
+		sysmon_monitor_close();
+		return;
+	}
+
+	/* The backend's monitor, opened by the first sample. */
+	if (sysmon_monitor == NULL)
+		sysmon_monitor = kl_backend_monitor_open();
+	if (sysmon_monitor == NULL) {
+		job->error = ENODEV;
+		job->info_error = ENODEV;
+		return;
+	}
+
+	/* The info when due: new when it is the first or the devices changed. */
+	job->info_error = ENOENT;
+	if (job->info) {
+		error = kl_backend_monitor_info(sysmon_monitor, &job->read);
+		job->info_error = error;
+		if (error != 0) {
+			job->info_new = 0U;
+		} else if (!sysmon_have_info) {
+			job->info_new = 1U;
+		} else if (job->read.generation != sysmon_generation) {
+			job->info_new = 1U;
+		}
+
+		/* A new info is the one published from now. */
+		if (job->info_new) {
+			sysmon_generation = job->read.generation;
+			sysmon_have_info = 1U;
+		}
+	}
+
+	/* The sample. */
+	error = kl_backend_monitor_sample(sysmon_monitor, &job->sample);
+	job->error = error;
+}
+
+/*
+ * Takes a sample's job, on the event loop's thread: the sample and a new
+ * info become the latest and are told to every monitor object.
+ */
+static void
+sysmon_done(
+	void *context,
+	struct kwl_lane_job *lane_job)
+{
+	struct sysmon_job *job;
+
+	/* A close needs nothing more. */
+	job = (struct sysmon_job *)lane_job;
+	if (job->close) {
+		free(job);
+		return;
+	}
+
+	/* The latest, with serials that tell the objects they are new. */
+	sysmon_state.sampling = 0U;
+	if (job->info_new) {
+		sysmon_state.current_info = job->read;
+		sysmon_state.info_serial++;
+	}
+	if (job->error == 0) {
+		sysmon_state.current = job->sample;
+		sysmon_state.current_serial++;
+	}
+	free(job);
+
+	/* Told to every object that may hear it, while the sampling runs. */
+	if (sysmon_state.running)
+		sysmon_tell(context);
+}
+
+/* Frees a job that did not run (the thread stopped at the end; the close then comes from kwl_sysmon_close). */
+static void
+sysmon_drop(
+	struct kwl_lane_job *lane_job)
+{
+	/* Nothing waits for it. */
+	sysmon_state.sampling = 0U;
+	free(lane_job);
+}
+
+/* Closes the backend's monitor, on the thread that owns it; the next info is the first again. */
+static void
+sysmon_monitor_close(void)
+{
+	/* The monitor, if open. */
+	kl_backend_monitor_close(sysmon_monitor);
+	sysmon_monitor = NULL;
+	sysmon_generation = 0U;
+	sysmon_have_info = 0U;
+}
+
+/*
+ * Counts the monitor objects and their shortest period: the sampling
+ * starts for the first and follows the period, and stops after the last
+ * (the backend's monitor closed on the device I/O thread).
  */
 static void
 sysmon_scan(
@@ -416,8 +412,6 @@ sysmon_scan(
 	struct kwl_object *object;
 	uint32_t period;
 	unsigned count;
-	unsigned ended;
-	int error;
 
 	/* Each live monitor object, and the shortest period. */
 	count = 0;
@@ -439,52 +433,26 @@ sysmon_scan(
 		printf("KWL SYSTEM monitor subscribers=%u period=%u\n", count, period);
 	sysmon_state.subscribers = count;
 
-	/* A thread asked to stop is joined once it ended. */
-	if (sysmon_state.running && sysmon_state.stop) {
-		pthread_mutex_lock(&sysmon_state.lock);
-
-		/* Whether the thread has ended. */
-		ended = sysmon_state.ended;
-
-		/* The thread may still be ending. */
-		pthread_mutex_unlock(&sysmon_state.lock);
-
-		/* Still taking its last sample. */
-		if (!ended)
-			return;
-		(void)pthread_join(sysmon_state.thread, NULL);
-		sysmon_state.running = 0;
-	}
-
-	/* No object: the thread is asked to stop. */
+	/* No object: the sampling stops, and the monitor is closed after the sample under way. */
 	if (count == 0U) {
-		if (sysmon_state.running && !sysmon_state.stop)
-			sysmon_stop();
+		sysmon_state.running = 0U;
+		if (sysmon_state.opened) {
+			sysmon_state.opened = 0U;
+			sysmon_give(server, 1U);
+		}
 		return;
 	}
 
-	/* The period the thread samples at. */
-	if (sysmon_state.lock_ready) {
-		pthread_mutex_lock(&sysmon_state.lock);
-
-		/* The shortest period asked. */
-		sysmon_state.period_ms = period;
-
-		/* The thread takes it at its next wait. */
-		pthread_mutex_unlock(&sysmon_state.lock);
-	} else {
-		sysmon_state.period_ms = period;
-	}
-
-	/* The thread, for the first object. */
+	/* The shortest period asked; the first object's sampling starts at once. */
+	sysmon_state.period_ms = period;
 	if (!sysmon_state.running) {
-		error = sysmon_start();
-		if (error != 0)
-			printf("KWL SYSTEM monitor thread error=%d\n", error);
+		sysmon_state.running = 1U;
+		sysmon_state.given = 0U;
+		sysmon_state.next_ms = 0U;
 	}
 }
 
-/* Takes the thread's new sample (and info) and tells every monitor object that may hear it. */
+/* Tells every monitor object that may hear it the latest sample (and a new info). */
 static void
 sysmon_tell(
 	struct kwl_server *server)
@@ -495,21 +463,9 @@ sysmon_tell(
 	uint32_t info_serial;
 	size_t needed;
 
-	/* The thread's latest, copied when it is new. */
-	pthread_mutex_lock(&sysmon_state.lock);
-
-	/* The serials, and copies of what is new. */
-	sample_serial = sysmon_state.sample_serial;
+	/* The serials of the latest. */
+	sample_serial = sysmon_state.current_serial;
 	info_serial = sysmon_state.info_serial;
-	if (info_serial != sysmon_state.taken_info)
-		sysmon_state.current_info = sysmon_state.info;
-	if (sample_serial != sysmon_state.taken_sample) {
-		sysmon_state.current = sysmon_state.sample;
-		sysmon_state.current_serial = sample_serial;
-	}
-
-	/* The thread may write the next. */
-	pthread_mutex_unlock(&sysmon_state.lock);
 
 	/* Nothing new. */
 	if (sample_serial == sysmon_state.taken_sample && info_serial == sysmon_state.taken_info)

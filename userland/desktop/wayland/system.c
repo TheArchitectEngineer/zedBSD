@@ -26,13 +26,13 @@
  *
  * Nothing here waits on the disk, the network daemon or the system bus in
  * the event loop (WS131 review 7): a key is saved on the file I/O thread,
- * the network's details (the interfaces, the DNS servers, the saved
- * networks, read from the kernel and files) are read by a thread of the
- * network's, and the power's state (logind's answers on Linux) by a thread
- * of the power's, each one job at a time; a key is not saved while the
- * details are read, nor the details read while a key is saved.  The system bar saves its keys and learns the saved
- * networks through the same thread (WS131 p011).  A key is never written
- * to the log.
+ * and the network's details (the interfaces, the DNS servers, the saved
+ * networks, read from the kernel and files) and the power's state
+ * (logind's answers on Linux) are read on the device I/O thread (io.c),
+ * one reading of each at a time; a key is not saved while the details
+ * are read, nor the details read while a key is saved.  The system bar
+ * saves its keys and learns the saved networks the same way (WS131
+ * p011).  A key is never written to the log.
  *
  * A key saved is joined in three steps within the one request (design.md
  * section 4.1 item 4): the key is saved, the network daemon is told the
@@ -59,7 +59,6 @@
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
 
 #include <errno.h>
-#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -131,33 +130,28 @@ struct system_key_job {
 	int error;
 };
 
-/* The jobs of the threads. */
-#define SYSTEM_JOB_DETAILS	2U
-#define SYSTEM_JOB_POWER	3U
-
-/*
- * One job of a thread: what it is, its input (the backend for the power),
- * and its outputs.  lock
- * guards done, which the thread sets last; the event loop reads the
- * outputs only after it saw done and joined the thread.  started is the
- * event loop's alone.
- */
-struct system_job {
-	pthread_t thread;
-	pthread_mutex_t lock;
-	unsigned lock_ready;
-	unsigned kind;
-	struct kl_backend *backend;
-	int error;
+/* The network's details as one reading found them: the interfaces, the DNS servers and the saved networks. */
+struct system_details {
 	struct kl_backend_network_link links[KL_BACKEND_NETWORK_LINKS_MAX];
 	size_t link_count;
 	char dns[KL_BACKEND_NETWORK_DNS_MAX][KL_BACKEND_NETWORK_ADDRESS_MAX];
 	size_t dns_count;
 	char saved[KL_BACKEND_NETWORK_SCAN_MAX][KL_BACKEND_NETWORK_SSID_MAX];
 	size_t saved_count;
+};
+
+/* A reading of the details on the device I/O thread. */
+struct system_details_job {
+	struct kwl_lane_job lane;
+	struct system_details read;
+};
+
+/* A reading of the power's state on the device I/O thread: the backend (open while the thread runs), and what it read. */
+struct system_power_job {
+	struct kwl_lane_job lane;
+	struct kl_backend *backend;
+	int error;
 	struct kl_backend_power_state power;
-	unsigned done;
-	unsigned started;
 };
 
 /*
@@ -213,7 +207,9 @@ struct system_details_wait {
  *   - the objects waiting for the details (waiting, counted by
  *     details_count, bar for the system bar's saved networks) and those
  *     the reading under way answers (serving, serving_count, serving_bar);
- *   - the two threads' jobs;
+ *   - whether the details are being read and the last reading
+ *     (details_read, the objects it answers are sent it), and whether the
+ *     power is being read;
  *   - what the objects were last told of the sound and the power (so that
  *     only a change is told): power_started once the first read of the
  *     power began, power_read once one ended (a power object made before
@@ -245,8 +241,9 @@ struct system_state {
 	struct system_details_wait serving[SYSTEM_DETAILS_WAITING];
 	unsigned serving_count;
 	unsigned serving_bar;
-	struct system_job network_job;
-	struct system_job power_job;
+	unsigned details_reading;
+	struct system_details details_read;
+	unsigned power_reading;
 	struct kl_backend_audio_state audio;
 	unsigned audio_told;
 	struct kl_backend_power_state power;
@@ -320,15 +317,16 @@ static void system_network_state(struct kwl_object *object);
 static void system_network_scan(struct kwl_object *object);
 static void system_network_details_send(struct kwl_object *object);
 static void system_network_finish(struct kwl_server *server, int error);
-static void system_network_job_take(struct kwl_server *server);
 static void system_network_job_next(struct kwl_server *server);
+static void system_details_read(struct kwl_server *server);
+static void system_details_run(struct kwl_lane_job *job);
+static void system_details_done(void *context, struct kwl_lane_job *job);
+static void system_details_drop(struct kwl_lane_job *job);
 static void system_details_take(struct kwl_server *server);
-static void system_power_job_take(struct kwl_server *server);
 static void system_power_read(struct kwl_server *server);
-static int system_job_finished(struct system_job *job);
-static int system_job_start(struct system_job *job, unsigned kind);
-static void system_job_wait(struct system_job *job);
-static void *system_job_run(void *argument);
+static void system_power_run(struct kwl_lane_job *job);
+static void system_power_done(void *context, struct kwl_lane_job *job);
+static void system_power_drop(struct kwl_lane_job *job);
 static void system_audio_state(struct kwl_object *object);
 static void system_power_state(struct kwl_object *object);
 static void system_devices_state(struct kwl_object *object);
@@ -345,6 +343,20 @@ static const struct kwl_lane_ops system_account_ops = {
 	system_account_run,
 	system_account_done,
 	system_account_drop
+};
+
+/* The operations of a reading of the details on the device I/O thread. */
+static const struct kwl_lane_ops system_details_ops = {
+	system_details_run,
+	system_details_done,
+	system_details_drop
+};
+
+/* The operations of a reading of the power on the device I/O thread. */
+static const struct kwl_lane_ops system_power_ops = {
+	system_power_run,
+	system_power_done,
+	system_power_drop
 };
 
 /* The operations of a key saved on the file I/O thread. */
@@ -532,13 +544,11 @@ kwl_system_tick(
 		system_power_read(server);
 	}
 
-	/* The threads' jobs, once they are done, and the network thread's next job. */
-	system_network_job_take(server);
-	system_power_job_take(server);
+	/* The network's next work (the readings and the key saved are taken when their threads are done, io.c). */
 	system_network_job_next(server);
 
 	/* The power changed: read again once the read under way (begun before the change) is done (ws132-p003). */
-	if (system_state.power_again && !system_state.power_job.started) {
+	if (system_state.power_again && !system_state.power_reading) {
 		system_state.power_again = 0U;
 		system_power_read(server);
 	}
@@ -728,9 +738,9 @@ kwl_system_close(
 	kwl_media_library_close();
 	kwl_audio_close(server);
 
-	/* A job under way ends on its own (a file read or written to its end, a bus call answered). */
-	system_job_wait(&system_state.network_job);
-	system_job_wait(&system_state.power_job);
+	/* The readings under way ended with the device I/O thread, before (io.c). */
+	system_state.details_reading = 0U;
+	system_state.power_reading = 0U;
 
 	/* Nothing waits any more, and no key stays in memory. */
 	system_wipe(system_state.wait.key, sizeof(system_state.wait.key));
@@ -2989,7 +2999,7 @@ system_network_details_send(
 	struct kwl_object *object)
 {
 	const struct kl_backend_network_link *link;
-	const struct system_job *job;
+	const struct system_details *job;
 	unsigned char payload[SYSTEM_EVENT_MAX];
 	char hardware[18];
 	uint32_t flags;
@@ -2997,7 +3007,7 @@ system_network_details_send(
 	size_t index;
 
 	/* Each interface. */
-	job = &system_state.network_job;
+	job = &system_state.details_read;
 	for (index = 0; index < job->link_count && index < KL_BACKEND_NETWORK_LINKS_MAX; index++) {
 		/* Its flags and its hardware address as text. */
 		link = &job->links[index];
@@ -3089,26 +3099,10 @@ system_network_finish(
 	memset(wait, 0, sizeof(*wait));
 }
 
-/* Takes the network thread's finished reading: the details sent. */
-static void
-system_network_job_take(
-	struct kwl_server *server)
-{
-	int finished;
-
-	/* Nothing finished yet. */
-	finished = system_job_finished(&system_state.network_job);
-	if (!finished)
-		return;
-
-	/* Succeeded: the details go to everyone the reading answers. */
-	system_details_take(server);
-}
-
 /*
- * Starts the network's next work when the network's thread and the key's
- * saving are free: a key waiting first (on the file I/O thread), else the
- * details when anyone waits for them.
+ * Starts the network's next work when no reading of the details and no
+ * key's saving is under way: a key waiting first (on the file I/O thread),
+ * else the details when anyone waits for them (on the device I/O thread).
  */
 static void
 system_network_job_next(
@@ -3119,7 +3113,7 @@ system_network_job_next(
 
 	/* The details are being read, or a key saved: the files are not read and written at once. */
 	wait = &system_state.wait;
-	if (system_state.network_job.started)
+	if (system_state.details_reading)
 		return;
 	if (wait->stage == SYSTEM_NETWORK_SAVING)
 		return;
@@ -3139,14 +3133,92 @@ system_network_job_next(
 		return;
 
 	/* Those waiting now are the ones this reading answers. */
-	error = system_job_start(&system_state.network_job, SYSTEM_JOB_DETAILS);
-	if (error != 0)
-		return;
 	memcpy(system_state.serving, system_state.details, system_state.details_count * sizeof(system_state.details[0]));
 	system_state.serving_count = system_state.details_count;
 	system_state.serving_bar = system_state.details_bar;
 	system_state.details_count = 0U;
 	system_state.details_bar = 0U;
+
+	/* The reading. */
+	system_details_read(server);
+}
+
+/*
+ * Reads the details for those the reading serves: on the device I/O
+ * thread, or here without it.  Without memory for the job, those served
+ * wait for the next reading.
+ */
+static void
+system_details_read(
+	struct kwl_server *server)
+{
+	struct system_details_job *job;
+	int error;
+
+	/* The job's record; without it the objects served wait again. */
+	job = calloc(1U, sizeof(*job));
+	if (job == NULL) {
+		memcpy(system_state.details, system_state.serving, system_state.serving_count * sizeof(system_state.serving[0]));
+		system_state.details_count = system_state.serving_count;
+		system_state.details_bar = system_state.serving_bar;
+		system_state.serving_count = 0U;
+		system_state.serving_bar = 0U;
+		return;
+	}
+
+	/* The thread reads; without it, it is read here. */
+	system_state.details_reading = 1U;
+	error = kwl_io_device_submit(server, &job->lane, &system_details_ops, 0U);
+	if (error != 0) {
+		system_details_run(&job->lane);
+		system_details_done(server, &job->lane);
+	}
+}
+
+/* Reads the network's details on the device I/O thread. */
+static void
+system_details_run(
+	struct kwl_lane_job *lane_job)
+{
+	struct system_details_job *job;
+	size_t count;
+
+	/* The interfaces, the DNS servers and the saved networks. */
+	job = (struct system_details_job *)lane_job;
+	count = kl_backend_network_get_links(job->read.links, KL_BACKEND_NETWORK_LINKS_MAX);
+	job->read.link_count = count;
+	count = kl_backend_network_get_dns(job->read.dns, KL_BACKEND_NETWORK_DNS_MAX);
+	job->read.dns_count = count;
+	count = kl_backend_network_get_saved(job->read.saved, KL_BACKEND_NETWORK_SCAN_MAX);
+	job->read.saved_count = count;
+}
+
+/* Takes a reading of the details, on the event loop's thread: sent to everyone it answers. */
+static void
+system_details_done(
+	void *context,
+	struct kwl_lane_job *lane_job)
+{
+	struct system_details_job *job;
+
+	/* The last reading from now on, and the next work may start. */
+	job = (struct system_details_job *)lane_job;
+	system_state.details_read = job->read;
+	system_state.details_reading = 0U;
+	free(job);
+
+	/* Succeeded: the details go to everyone the reading answers. */
+	system_details_take(context);
+}
+
+/* Frees a reading that did not run (the thread stopped at the end). */
+static void
+system_details_drop(
+	struct kwl_lane_job *lane_job)
+{
+	/* Nothing was read; the event loop has ended. */
+	system_state.details_reading = 0U;
+	free(lane_job);
 }
 
 /* Sends a finished reading of the details to each object it answers, with its result, and the saved networks to the bar. */
@@ -3155,13 +3227,13 @@ system_details_take(
 	struct kwl_server *server)
 {
 	const struct system_details_wait *waiting;
-	struct system_job *job;
+	struct system_details *job;
 	struct kwl_object *object;
 	size_t count;
 	unsigned index;
 
 	/* Each object still there: the details, then its result. */
-	job = &system_state.network_job;
+	job = &system_state.details_read;
 	for (index = 0; index < system_state.serving_count; index++) {
 		waiting = &system_state.serving[index];
 		object = system_network_object(server, waiting->client, waiting->object);
@@ -3188,21 +3260,21 @@ system_details_take(
 	}
 }
 
-/* Takes the power thread's finished read, and tells every power object the first state and each change. */
+/* Takes a read of the power, on the event loop's thread, and tells every power object the first state and each change. */
 static void
-system_power_job_take(
-	struct kwl_server *server)
+system_power_done(
+	void *context,
+	struct kwl_lane_job *lane_job)
 {
-	struct system_job *job;
-	int finished;
+	struct system_power_job *job;
+	struct kwl_server *server;
 	int differs;
 	int first;
 
-	/* Nothing finished yet. */
-	job = &system_state.power_job;
-	finished = system_job_finished(job);
-	if (!finished)
-		return;
+	/* The next read may start. */
+	server = context;
+	job = (struct system_power_job *)lane_job;
+	system_state.power_reading = 0U;
 
 	/* The first read is the first state, which every power object waits for. */
 	first = 0;
@@ -3210,8 +3282,10 @@ system_power_job_take(
 		first = 1;
 
 	/* A state that could not be read keeps the last one; a first one that could not says nothing is known. */
-	if (job->error != 0 && !first)
+	if (job->error != 0 && !first) {
+		free(job);
 		return;
+	}
 	if (job->error != 0) {
 		memset(&job->power, 0, sizeof(job->power));
 		job->power.source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
@@ -3222,8 +3296,34 @@ system_power_job_take(
 	differs = memcmp(&job->power, &system_state.power, sizeof(job->power));
 	system_state.power = job->power;
 	system_state.power_read = 1U;
+	free(job);
 	if (differs != 0 || first)
 		system_tell(server, KWL_SYSTEM_POWER, system_power_state, KL_SYSTEM_POWER_EVENT_DONE);
+}
+
+/* Reads the power's state on the device I/O thread. */
+static void
+system_power_run(
+	struct kwl_lane_job *lane_job)
+{
+	struct system_power_job *job;
+	int error;
+
+	/* The backend's state of the power. */
+	job = (struct system_power_job *)lane_job;
+	memset(&job->power, 0, sizeof(job->power));
+	error = kl_backend_power_get_state(job->backend, &job->power);
+	job->error = error;
+}
+
+/* Frees a read that did not run (the thread stopped at the end). */
+static void
+system_power_drop(
+	struct kwl_lane_job *lane_job)
+{
+	/* Nothing was read; the event loop has ended. */
+	system_state.power_reading = 0U;
+	free(lane_job);
 }
 
 /*
@@ -3239,106 +3339,33 @@ kwl_system_power_changed(
 	system_state.power_again = 1U;
 }
 
-/* Starts reading the power's state on its thread, unless a read is under way. */
+/* Starts reading the power's state on the device I/O thread (here without it), unless a read is under way. */
 static void
 system_power_read(
 	struct kwl_server *server)
 {
-	struct system_job *job;
+	struct system_power_job *job;
 	int error;
 
 	/* One read at a time; the one under way answers the new object too. */
-	job = &system_state.power_job;
-	if (job->started)
+	if (system_state.power_reading)
 		return;
 
-	/* The read. */
-	job->backend = server->backend;
-	error = system_job_start(job, SYSTEM_JOB_POWER);
-	if (error != 0)
-		printf("KWL SYSTEM power read error=%d\n", error);
-}
-
-/* Tells whether a thread's job is finished, and joins the thread then (its outputs are the event loop's from here). */
-static int
-system_job_finished(
-	struct system_job *job)
-{
-	unsigned done;
-
-	/* Nothing under way. */
-	if (!job->started)
-		return 0;
-
-	/* Samples whether the thread is done. */
-	(void)pthread_mutex_lock(&job->lock);
-
-	done = job->done;
-
-	(void)pthread_mutex_unlock(&job->lock);
-
-	/* Still working. */
-	if (!done)
-		return 0;
-
-	/* The thread's end. */
-	(void)pthread_join(job->thread, NULL);
-	job->started = 0U;
-
-	/* Succeeded: the job's outputs are ready. */
-	return 1;
-}
-
-/* Starts a thread on a job; returns 0, EBUSY while one is under way, or the errno value of the thread. */
-static int
-system_job_start(
-	struct system_job *job,
-	unsigned kind)
-{
-	int error;
-
-	/* One job at a time. */
-	if (job->started)
-		return EBUSY;
-
-	/* The lock, once. */
-	if (!job->lock_ready) {
-		error = pthread_mutex_init(&job->lock, NULL);
-		if (error != 0)
-			return error;
-		job->lock_ready = 1U;
+	/* The job's record. */
+	job = calloc(1U, sizeof(*job));
+	if (job == NULL) {
+		printf("KWL SYSTEM power read error=%d\n", ENOMEM);
+		return;
 	}
+	job->backend = server->backend;
 
-	/* The job, and no outputs yet. */
-	job->kind = kind;
-	job->error = 0;
-	job->link_count = 0U;
-	job->dns_count = 0U;
-	job->saved_count = 0U;
-	job->done = 0U;
-
-	/* The thread. */
-	error = pthread_create(&job->thread, NULL, system_job_run, job);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the job is under way. */
-	job->started = 1U;
-	return 0;
-}
-
-/* Waits for a thread's job under way, at the end. */
-static void
-system_job_wait(
-	struct system_job *job)
-{
-	/* Nothing under way. */
-	if (!job->started)
-		return;
-
-	/* The thread's end. */
-	(void)pthread_join(job->thread, NULL);
-	job->started = 0U;
+	/* The thread reads; without it, it is read here. */
+	system_state.power_reading = 1U;
+	error = kwl_io_device_submit(server, &job->lane, &system_power_ops, 0U);
+	if (error != 0) {
+		system_power_run(&job->lane);
+		system_power_done(server, &job->lane);
+	}
 }
 
 /*
@@ -3437,47 +3464,6 @@ system_key_drop(
 	job = (struct system_key_job *)lane_job;
 	system_wipe(job->key, sizeof(job->key));
 	free(job);
-}
-
-/* A thread: reads the network's details, or reads the power's state, away from the event loop. */
-static void *
-system_job_run(
-	void *argument)
-{
-	struct system_job *job;
-	size_t count;
-	int error;
-
-	/* The job the thread was started on. */
-	job = argument;
-
-	/* The job's work. */
-	error = 0;
-	switch (job->kind) {
-	case SYSTEM_JOB_DETAILS:
-		count = kl_backend_network_get_links(job->links, KL_BACKEND_NETWORK_LINKS_MAX);
-		job->link_count = count;
-		count = kl_backend_network_get_dns(job->dns, KL_BACKEND_NETWORK_DNS_MAX);
-		job->dns_count = count;
-		count = kl_backend_network_get_saved(job->saved, KL_BACKEND_NETWORK_SCAN_MAX);
-		job->saved_count = count;
-		break;
-	default:
-		memset(&job->power, 0, sizeof(job->power));
-		error = kl_backend_power_get_state(job->backend, &job->power);
-		break;
-	}
-
-	/* How it went, for the event loop after the join. */
-	(void)pthread_mutex_lock(&job->lock);
-
-	job->error = error;
-	job->done = 1U;
-
-	(void)pthread_mutex_unlock(&job->lock);
-
-	/* Succeeded: the thread ends. */
-	return NULL;
 }
 
 /* Sends the sound's state. */

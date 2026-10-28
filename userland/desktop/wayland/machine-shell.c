@@ -15,8 +15,8 @@
  * the language file when a client asks.
  *
  * A file system's size (a network mount) and the accounts (a directory
- * service) may wait, so a reading runs on a thread of its own, one at a
- * time; the queries that come during one wait for the next
+ * service) may wait, so a reading runs on a thread of its own
+ * ("machine-read" in the threads' register), one at a time; the queries that come during one wait for the next
  * (machine-wait.c), and a reading reads what its queries ask together.
  * Each reading's job is on the heap and its thread is detached: the event
  * loop looks at the job each pass and answers its queries when it is done.
@@ -44,6 +44,9 @@
 
 /* A parameter a function does not use. */
 #define UNUSED_PARAMETER(name)	((void)(name))
+
+/* The name of a reading's thread in the threads' register. */
+#define MACHINE_THREAD		"machine-read"
 
 /* How long a reading may take before it is given up, in milliseconds. */
 #define MACHINE_STALL_MS	10000U
@@ -310,8 +313,6 @@ machine_begin(
 	struct kwl_server *server)
 {
 	struct machine_job *job;
-	pthread_attr_t attributes;
-	pthread_t thread;
 	uint32_t what;
 	int error;
 
@@ -333,12 +334,7 @@ machine_begin(
 	job->what = what;
 
 	/* The thread, detached: nobody joins it, the job tells its end. */
-	error = pthread_attr_init(&attributes);
-	if (error == 0) {
-		(void)pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
-		error = pthread_create(&thread, &attributes, machine_run, job);
-		(void)pthread_attr_destroy(&attributes);
-	}
+	error = kwl_thread_start_detached(MACHINE_THREAD, machine_run, job);
 
 	/* No thread: the queries are answered failed. */
 	if (error != 0) {
@@ -395,12 +391,14 @@ machine_run(
 		machine_given_up--;
 		(void)pthread_mutex_unlock(&machine_lock);
 		free(job);
+		kwl_thread_ended(MACHINE_THREAD);
 		return NULL;
 	}
 	job->done = 1U;
 	(void)pthread_mutex_unlock(&machine_lock);
 
-	/* Succeeded: the event loop answers from the job. */
+	/* Succeeded: the event loop answers from the job; the thread leaves the register. */
+	kwl_thread_ended(MACHINE_THREAD);
 	return NULL;
 }
 

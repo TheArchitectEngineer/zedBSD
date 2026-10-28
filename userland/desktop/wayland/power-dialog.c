@@ -12,7 +12,8 @@
  * backend-host.c) open it: the desktop darkens in POWER_OPEN_MS, and a
  * card in the middle offers Power Off, Restart, Log Out and Cancel
  * (power-layout.c).  Power Off and Restart are asked of the session's
- * backend when it offers them (kl_backend_power_get_state's actions; a
+ * backend when it offers them (kl_backend_power_get_state's actions, as
+ * the power was last read, backend-host.c; a
  * zedBSD session offers them to root and wheel only, and shows them faint
  * to other users), Log Out
  * ends the session as App Home's Log Out did, Cancel closes it.  Esc, a
@@ -63,30 +64,30 @@ kwl_power_dialog_open(
 	const char *source)
 {
 	struct kwl_power_dialog *dialog;
-	struct kl_backend_power_state state;
 	unsigned poweroff_bit;
 	unsigned reboot_bit;
 	unsigned poweroff;
 	unsigned restart;
-	int error;
 
 	/* Shown already: nothing more. */
 	dialog = &server->power_dialog;
 	if (dialog->open && !dialog->closing)
 		return;
 
-	/* The choices: Log Out and Cancel always, Power Off and Restart when the session's backend offers them. */
+	/*
+	 * The choices: Log Out and Cancel always, Power Off and Restart when the
+	 * session's backend offers them as the power was last read (the start,
+	 * each change; the event loop does not ask the backend here).
+	 */
 	memset(dialog, 0, sizeof(*dialog));
 	dialog->enabled = KWL_POWER_BIT(KWL_POWER_LOGOUT) | KWL_POWER_BIT(KWL_POWER_CANCEL);
-	memset(&state, 0, sizeof(state));
-	error = kl_backend_power_get_state(server->backend, &state);
 	poweroff_bit = KL_BACKEND_POWER_ACTION_BIT(KL_BACKEND_POWER_POWEROFF);
 	reboot_bit = KL_BACKEND_POWER_ACTION_BIT(KL_BACKEND_POWER_REBOOT);
 	poweroff = 0U;
 	restart = 0U;
-	if (error == 0 && (state.actions & poweroff_bit) != 0U)
+	if ((server->power.actions & poweroff_bit) != 0U)
 		poweroff = 1U;
-	if (error == 0 && (state.actions & reboot_bit) != 0U)
+	if ((server->power.actions & reboot_bit) != 0U)
 		restart = 1U;
 	if (poweroff)
 		dialog->enabled |= KWL_POWER_BIT(KWL_POWER_POWEROFF);

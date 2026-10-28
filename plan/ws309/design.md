@@ -32,17 +32,18 @@
 | T3 | 常駐 | display | 1 | display の状態の変更の直列化: swapchain・surface の作り直し、modeset、回転、hotplug の列挙、direct scanout の claim・release、backlight の ioctl | `vkCreateSwapchainKHR`（claim）、`vkDestroySwapchainKHR`（release）、`GPU_DISPLAY_CLAIM/RELEASE`、cursor thread の join、render の drain の待ち | 変更の完了（新しい swapchain の写し・失敗） |
 | T4 | 常駐 | present | 1 | game mode の present（今は backend の `GPU_DISPLAY_PRESENT`、目標は §6） | present の ioctl（1 refresh） | 前の buffer の release（共通の wake pipe） |
 | T5 | 常駐 | input | 1 | evdev の read だけ（今のまま、device の検出を入れない） | 今のまま | 今のまま |
-| T6 | 常駐 | io-device | 1 | I/O-1: 入力の device の検出（readdir・open・capability・close）、電源の読み取り、network の詳細の読み取り、machine の読み取り（statvfs）、sysmon の標本 | device の open（PS/2 の aux で 約 80 ms）、ioctl | 開いた device の一覧、電源の状態、各 job の答え |
+| T6 | 常駐 | io-device | 1 | I/O-1: 入力の device の検出（readdir・open・capability・close、backend が自分で開く時だけ）、電源の読み取り（power の変化の時。起動（READY の前）と sleep の答え（lid をその場で規則に渡す）は main の同期のまま、p004 の Q1 の判断）、network の詳細の読み取り、sysmon の標本（machine の読みは A2） | device の open（PS/2 の aux で 約 80 ms）、ioctl | 開いた device の一覧、電源の状態、各 job の答え |
 | T7 | 常駐 | io-file | 1 | I/O-2: 設定の file の書き込みと fsync（displays.conf・desktop.conf・printers.conf）、file の読み込み（apps.conf・言語の catalog・printers.conf の読み直し）、遅い処理（account の helper、network の鍵の保存、process の起動 §4.10） | write・fsync（UFS で秒）・rename、read、helper の終わり、posix_spawn | 書いた・読んだ結果（`saved` の答えはここから） |
 | T8 | 常駐 | font | 1 | 予備の font・emoji の font の file の先読み、字形の rasterize、color emoji の decode と縮小（§4.6、metrics は main が bytes の上の自分の face で引く） | file の read、rasterize | font の bytes、字形の coverage、color の画素 |
 | T9 | 常駐 | blur | 1 | 壁紙のすりガラスの blur（CPU、決定 6）と、出力の大きさへの縮小 | 計算だけ | blur した画素 |
 | T10〜T14 | 常駐 | audiod・networkd・bluetoothd・phone・volumed | 5 | daemon の接続ごとに 1 本、blocking の I/O（connect・send・timed read） | connect、recv、2 s の timed read | 状態の写し、答え、event |
 | P1 | pool | hand-N | N（§5） | 手書きの照合 | 計算だけ（最初に template の読み込み） | 候補 |
 | A1 | その都度 | decode | 0〜1 | 壁紙・画像の file の read と decode（1 回ごと） | read、decode | decode した画素（blur へ渡す） |
+| A2 | その都度 | machine-read | 0〜1 | machine の読み（名前・file system の大きさ（statvfs）・account・mount）。detached、同時に 1 本、10 s で諦めて query を failed で答え、止まった読みが残る間の query は即 failed、終了でも待たない（p004 の Q1 の判断: T6 に載せると止まった mount の後ろで入力の検出と終了の join が止まる） | statvfs、account の読み | 読んだ部分（main が tick で見る） |
 | S | （J5） | — | 0 | process の起動: T7 からの `posix_spawn`（vfork）、spawner の process は作らない（§4.10、J5 の Q1 の決定） | — | pid |
 
 - 常駐の thread の数: main を除いて 14（T1〜T14、T2 は output の間）＋ pool の N。今ある thread で無くなる物: glass の loader・prefetch（A1 と T9 へ）、heads の writer・settings の writer・print の writer（T7 へ）、
-  hand の loader（P1 へ）、machine-shell・sysmon・system.c の job・account の job（T6 へ）、scanout-zedbsd の present thread（T4 へ）、P2 の input の worker（T6 へ、merge しない）。
+  hand の loader（P1 へ）、sysmon・system.c の job（T6 へ）、account の job（T7 へ）、machine-shell は A2（名前を付けて台帳へ）、scanout-zedbsd の present thread（T4 へ）、P2 の input の worker（T6 へ、merge しない）。
 - Linux・FreeBSD の audio の pump（stream ごとの real-time の thread）は compositor の zedBSD の構成の外で、今のまま残す（§9）。
 - 名前: libc に `pthread_setname_np` が無い（`include/libc/pthread.h`）。名前は compositor の thread の台帳（§3.1）が持ち、起動の時に `KWL THREADS` の 1 行で名前と本数を出す。
 

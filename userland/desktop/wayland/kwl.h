@@ -1373,12 +1373,17 @@ struct kwl_server {
 	uint64_t input_settle_until;
 	/*
 	 * The device I/O thread (io.c): io_device runs the jobs that may wait
-	 * for a device (the input devices' opening and closing), io_started
-	 * says it runs.  input_finding is set from a finding's submission to
-	 * its taking, so that the scans do not pile up behind a slow open.
+	 * for a device or the kernel (the input devices' opening and closing,
+	 * the power's state, the network's details, the computer's readings,
+	 * the monitor's samples), io_started says it runs, and io_input says
+	 * it opens and closes the input devices too (a backend whose seat
+	 * opens them does not).  input_finding is set from a finding's
+	 * submission to its taking, so that the scans do not pile up behind a
+	 * slow open.
 	 */
 	struct kwl_lane io_device;
 	unsigned io_started;
+	unsigned io_input;
 	unsigned input_finding;
 	/*
 	 * The file I/O thread (io.c): io_file runs the jobs that read or
@@ -1436,6 +1441,13 @@ struct kwl_server {
 	struct kl_backend *backend;
 	/* The power as last read (ws132-p003): at start-up and at each power_changed; the bar shows the battery when percent >= 0. */
 	struct kl_backend_power_state power;
+	/*
+	 * Whether the bar's power is being read on the device I/O thread
+	 * (backend-host.c), and whether it changed again during the read (read
+	 * once more when it is done).
+	 */
+	unsigned power_reading;
+	unsigned power_again;
 	/*
 	 * The lid (backend-host.c, ws132-p008): its state and whether the lock
 	 * standing is its own (lid.c); whether the screen is out (drawn black);
@@ -2131,6 +2143,7 @@ void kwl_backend_power_changed(void *data);
 void kwl_backend_power_button(void *data, unsigned button);
 void kwl_backend_lid_changed(void *data, unsigned open);
 void kwl_power_read(struct kwl_server *server);
+void kwl_power_read_later(struct kwl_server *server);
 int kwl_lock(struct kwl_server *server, const char *reason);
 void kwl_lock_release(struct kwl_server *server, const char *reason);
 void kwl_lid_screen_restore(struct kwl_server *server);
@@ -2709,12 +2722,14 @@ void kwl_input_scan(struct kwl_server *server);
  */
 #define KWL_IO_KEY_DISPLAYS	1U
 #define KWL_IO_KEY_LANGUAGE	2U
+#define KWL_IO_KEY_MONITOR	3U
 
 void kwl_io_start(struct kwl_server *server);
 void kwl_io_take(struct kwl_server *server);
 void kwl_io_stop(struct kwl_server *server);
 int kwl_io_input_find(struct kwl_server *server);
 int kwl_io_file_submit(struct kwl_server *server, struct kwl_lane_job *job, const struct kwl_lane_ops *ops, uint64_t key);
+int kwl_io_device_submit(struct kwl_server *server, struct kwl_lane_job *job, const struct kwl_lane_ops *ops, uint64_t key);
 void kwl_io_file_finish(struct kwl_server *server);
 void kwl_io_input_close(struct kwl_server *server, int descriptor);
 int kwl_input_probe(struct kwl_server *server, int descriptor, const char *path, const struct kl_backend_input_caps *capabilities);
