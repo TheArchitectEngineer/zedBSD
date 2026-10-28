@@ -6,6 +6,7 @@
 # mounted), stops the guest and reads the FAT volume back on the host (fsck.fat when present, mtools) and the UFS
 # files through the loaders' reader (plan/ws307/tests/host/ufs-cat.c) on 4096-byte blocks.  The summary is the
 # steps' lines and "p006-4k: PASS|FAIL OUT".  Output goes to a new build/ws307-test/p006-4k.*.
+# P006_BUS=usb puts the second disk on USB mass storage (its own xHCI) instead of NVMe.
 #   sh plan/ws307/tests/p006-4k.sh IMAGE
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -17,7 +18,12 @@ export GUEST_RUNTIME="$(pwd)/$out/guest"
 truncate -s 1G "$out/disk4k.img"
 cp --sparse=always "$image" "$out/boot.img"
 g() { timeout 900 python3 plan/tools/guest/guest.py "$@"; }
-g start "$out/boot.img" --qemu-extra "-drive file=$out/disk4k.img,if=none,id=p006k,format=raw -device nvme,serial=p006k,drive=p006k,logical_block_size=4096,physical_block_size=4096" > "$out/start.txt" 2>&1
+second="-device nvme,serial=p006k,drive=p006k,logical_block_size=4096,physical_block_size=4096"
+if [ "${P006_BUS:-nvme}" = usb ]; then
+	second="-device qemu-xhci,id=p006x -device usb-storage,bus=p006x.0,drive=p006k,logical_block_size=4096,physical_block_size=4096"
+fi
+echo "BUS ${P006_BUS:-nvme}"
+g start "$out/boot.img" --qemu-extra "-drive file=$out/disk4k.img,if=none,id=p006k,format=raw $second" > "$out/start.txt" 2>&1
 status=0
 if g wait --timeout 300 > "$out/wait.txt" 2>&1; then
 	g put plan/ws307/tests/p006-4k-guest-steps.sh /tmp/p006-steps.sh > /dev/null 2>&1 || true
