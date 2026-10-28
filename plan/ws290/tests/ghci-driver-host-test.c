@@ -193,6 +193,7 @@ static void scene_lost_work(void);
 static void scene_vm_retry(void);
 static void scene_resources(void);
 static void scene_vm_edges(void);
+static void scene_reset_mem_ready(void);
 static void action_fault_then_recover(void);
 static void scene_local(void);
 static void scene_local_lost(void);
@@ -250,6 +251,7 @@ main(void)
 	scene_vm_retry();
 	scene_resources();
 	scene_vm_edges();
+	scene_reset_mem_ready();
 	scene_local();
 	scene_local_lost();
 	scene_boot_ranges();
@@ -3901,4 +3903,33 @@ scene_display_release_wait(void)
 	device.ops.close(&device, display_open);
 	display_open = NULL;
 	end_scene("display release wait");
+}
+
+/*
+ * The recovery waits for MEM_READY after the reset before it sets the
+ * device up again: a memory late to be ready is waited for, one that
+ * never is loses the device.
+ */
+static void
+scene_reset_mem_ready(void)
+{
+	int error;
+
+	/* A device fault with the memory ready only after 20 reads. */
+	error = start_scene(MODEL_KC705_UMA, NULL);
+	expect(error == 0, "reset memory: started");
+	model.switches.mem_ready_reads = 20U;
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(device.state == GHCI_STATE_RUNNING && device.resets == 1U && model.mem_ready_reads_left == 0U,
+	    "reset memory: late memory waited for");
+
+	/* A memory that never becomes ready is a reset that did not end. */
+	stub.ticks += kern_ms_to_ticks(GHCI_FAULT_STORM_MS + 1000U);
+	model.switches.mem_ready_reads = 1000000U;
+	model_inject(GHCI_FAULT_KIND_AXI_ERROR, GHCI_UNIT_CP, 0U, 0x1000U, 0);
+	ghci_service_step(&device, GHCI_WORK_RECOVER);
+	expect(device.state == GHCI_STATE_LOST, "reset memory: never ready loses the device");
+	model.switches.mem_ready_reads = 0U;
+	end_scene("reset memory");
 }
