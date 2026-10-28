@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | P1 | q1669-i02 in-progress | [ws235](ws235/ws.md) RTL81xx の共通の driver → RTL8127（10.0.10.3）。WS309 は止めた（p001〜p007・p019 cleared、再開点は p008 の残り 1） | 10.0.10.3（時間の枠） |
 | P2 | q1670 in-progress | [ws291](ws291/ws.md) の NVIDIA の段（RTX 2070）、RDNA の案 A・B は host・QEMU まで | 10.0.10.3（時間の枠） |
-| P3 | q1664-i03 in-progress | [ws221](ws221/ws.md) p004 cleared、次は p005。VF2 はユーザーが開放 | VF2 |
+| P3 | q1664-i03 返却 | [ws221](ws221/ws.md) p004・p005 cleared、受けの窓を byte・window scale shift 5。残り p008・p009 の残り・p006・p007、その後 WS311（CUBIC）、p010 は WS235 の後 | VF2（空き） |
 | P4 | q1665-i07 in-progress（p009 install-admin の段 5 から） | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
 | P5 | q1666-i04 停止（ユーザー） | 詳細の決まっていない WS の設計: code は書かない | — |
 | P6 | q1667-i04 返却（ラップアップ） | 実装だけ（merge しない）: WS296 全 Phase（agent/p6-ws296c 1809873bd）、WS282 p002〜p004b（agent/p6-ws282c 677277d8f）、WS284 p002 script・p003 CPU の参照（同じ branch、zedBSD の libyolox.so の build 規則は共有の userland-dynamic.mk に要る、未決）。試験は全部未実施 | — |
