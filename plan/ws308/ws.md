@@ -28,7 +28,7 @@ read・write・pread・pwrite・vector の syscall の I/O の道の並列性を
 | [p003](phase003/phase.md) | syscall の I/O の道で heap を確保しない（pin の内の配列、block device の bounce を shared の I/O pool から） | p001 | in-progress（実装 01e701914、5330 で cached QD32 139k→172k IOPS（p002 と合わせて）） |
 | p004 | syscall ごとの process->lock を無くす（thread ごとの credential の参照と世代、signal の要約の語、user probe の数を CPU ごとに） | p001 | planned（取り下げの候補: I/O の QD32 は thread と process で同じで、数の目標は p002・p003 で達した。Q1・ユーザーの判断待ち） |
 | p005 | pin を大域の metadata の mutex なしで（vmspace ごとの rwlock、書き手の監査と lock の順） | p001 | planned（取り下げか後回しの候補: 待ちは取りの 8〜15% だが数の目標は達した。Q1・ユーザーの判断待ち） |
-| p006 | 回帰（QD32 の受け入れ、fork/COW・munmap/mprotect と pread の競争・swap・setuid の競争・signal と exec・readv/writev・O_DIRECT、QEMU の全 boot、全 platform の build、5330） | p002〜p005 | planned |
+| [p006](phase006/phase.md) | 回帰（QD32 の受け入れ、fork/COW・munmap/mprotect と pread の競争・swap・setuid の競争・signal と exec・readv/writev・O_DIRECT、QEMU の全 boot、全 platform の build、5330） | p002〜p005 | in-progress（NVMe の timeout・停止・bounce、iostress。WS308 の退行は無し。前からの不具合 3 つ: setuid と I/O で guest が壊れる、fork・munmap・O_DIRECT で user の #GP、圧迫で cached の読みが EINTR） |
 | p007 | 規約の全文の見直し | p006 | planned |
 
 - p002〜p005 の順は p001 の 5330 の区間の数で決める（数が要らない Phase は取り下げる）。heap の per-CPU の magazine・NVMe の複数 queue は、p002〜p005 の後に 5330 で足りない時だけ足す。
@@ -50,4 +50,7 @@ read・write・pread・pwrite・vector の syscall の I/O の道の並列性を
 
 - commit（agent/p1-ws308b、基点 main 9fda28faf）: a609f74a1（NVMe の空き slot の hint・遅延の計測の間引き・完了の返却と end_bio を 1 回の保持に、disk の統計の時計を disk_registry_lock の外へ、transfer_run の 1 行の早い戻り、Debian の測り直しの道具 `plan/ws308/tests/debian-qdstat.sh`）と、この記録の commit。
 - 数（5330、同じ時間帯）: 乱読み 4 KiB QD32 direct 223.8k IOPS（916.7 MB/s）＝Debian 225.5k（923.5 MB/s）の 99.3%、process 99.6%、QD1 105%、cached QD32 240.4k（984.6 MB/s、以前の基準 964 の 102%）。今日の Debian は以前の 964 MB/s でなく 923 MB/s（[p002](phase002/phase.md)）。→ 数の目標（Debian の 95% 以上）は達した。
-- 残り: (1) 回帰の試験（timeout・stop・detach の最中に slot に眠る者、TSC の無い機械の起動）と p006 の負荷（fork/COW・munmap/mprotect と pread の競争・swap・setuid・signal と exec・readv/writev）、(2) p004・p005 を取り下げるか（Q1・ユーザー）、(3) p007 規約の全文の見直し、(4) syscall の外の 4.8 µs の計測の食い違い（p002 の「計測の kernel」の項、目標には要らない）。a609f74a1 の design-reviewer は依頼中。
+- design-reviewer（a609f74a1）: High・Medium 0。Low 2 件（disk の統計の時計の preempt の穴、lifecycle の失敗で hint の bit が落ちる）を 7aa9288b8 で直した。
+- 試験（[p006](phase006/phase.md)）: QEMU の NVMe の shapes・directio・errors・readahead・grow-reboot・cache-stress・timeout（新）・bounce を強いた shapes、TSC の bit の無い CPU の boot-test は PASS。iostress（新）で前からの不具合 3 つ（WS308 の前の main でも出る）。
+- 残り: (1) 前からの不具合 3 つを Bug にするか、p004 を「setuid と I/O で credential が溜まる」の直しとして残すか（Q1・ユーザー）、(2) p005 の取り下げか後回し（Q1・ユーザー）、(3) p006 の signal と exec、(4) p007 規約の全文の見直し（a609f74a1・7aa9288b8 の pci-nvme.c・buf.c・disk.c を含む）、(5) syscall の外の 4.8 µs の計測の食い違い（目標には要らない）。
+- 消してほしい物（Q1 に頼む）: 一時の build `build/p1-m1`〜`m3`・`p1-k1`・`p1-q1`〜`q7`（q4・q7 は今の試験の image なので最後に）・`p1-o-*`・`build/tmp/base-src`（WS308 の前の main の写しと image）、未追跡の `include/kern/exp-io.h`（計測の header、`build/tmp/m3-exp-io.h` に写しあり）。
