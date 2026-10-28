@@ -156,6 +156,12 @@ $(INSTALLER_INDEX_HASH): $(INSTALLER_INDEX)
 	@value="#define INSTALL_ADMIN_INDEX_SHA256 \"$$(sha256sum $< | cut -d' ' -f1)\""; \
  if ! test -f $@ || ! grep -Fqx -- "$$value" $@; then printf '%s\n' "$$value" > $@.tmp; mv -f $@.tmp $@; fi
 
+# The helper's main.c includes that header (index-sha256.h), so its object is built again when the index changes;
+# the include path is its own (private), not the index's prerequisites'.
+INSTALLER_ADMIN_MAIN_OBJ := $(AMD64_APP_OBJ)/userland/desktop/installer/admin/main.o
+$(INSTALLER_ADMIN_MAIN_OBJ): private DYNAMIC_CPPFLAGS += -I$(INSTALLER_DIR)
+$(INSTALLER_ADMIN_MAIN_OBJ): $(INSTALLER_INDEX_HASH)
+
 $(INSTALLER_AUTOLOGIN):
 	@mkdir -p $(dir $@)
 	printf '%s\n' user > $@.tmp

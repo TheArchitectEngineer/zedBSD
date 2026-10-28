@@ -30,16 +30,22 @@
 
 #include <stdio.h>
 
-/* What a session holds from its start to its end. */
+/*
+ * What a session holds from its start to its end: the index it checks
+ * requests against, where it reports, where a cancellation comes from,
+ * the disk its first writing request bound it to, and whether the
+ * installer has cancelled (or gone).
+ */
 struct admin_session {
 	const struct installer_index *index;
 	FILE *output;
 	int input;
 	uint64_t disk;
 	int bound;
+	int canceled;
 };
 
 int session_edit(struct admin_session *session, const struct plan_request *request);
-int session_install(struct admin_session *session, const struct plan_request *request);
+int session_install(struct admin_session *session, struct plan_request *request);
 
 #endif
