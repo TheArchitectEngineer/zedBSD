@@ -123,7 +123,7 @@
 | Queue | 担当 | Phase | 範囲 | 結果 |
 | --- | --- | --- | --- | --- |
 | q1662 / q1662-i01 | P1（phase-runner、worktree `/home/awe/zedBSD-worktrees/p1-ws309`・branch `agent/p1-ws309`、基点 main） | [ws309](ws309/ws.md) | 設計の確定（pool の N は CPU 数で固定、ユーザーの回答「CPU 数で固定 (推し)」）→ design-reviewer → Phase の分割（Q1 に表を送る）→ 実装と試験。原文「P1にWS309」。q1661 の branch は置き換え（読むだけ） | in-progress |
-| q1663 / q1663-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291j`・branch `agent/p2-ws291j`、基点 main） | [ws291](ws291/ws.md) p006 の続き | 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3。原文「P2にWS291の続き」。q1658 と同じ自律の承認 | in-progress |
+| q1663 / q1663-i01 | P2（phase-runner、worktree `/home/awe/zedBSD-worktrees/p2-ws291j`・branch `agent/p2-ws291j`、基点 main） | [ws291](ws291/ws.md) p006 の続き | 案 5 → 案 4（ユーザーの回答「両方 (推し)」）、実機 10.0.10.3。原文「P2にWS291の続き」。q1658 と同じ自律の承認 | cleared（2026-10-29、919a05b78 → main。案 5・案 4、subs-1000 5.97→18 fps、venus-reg PASS） |
 | q1664 / q1664-i01 | P3（phase-runner、worktree `/home/awe/zedBSD-worktrees/p3-ws221`・branch `agent/p3-ws221`、基点 main） | [ws221](ws221/ws.md) p002〜p009 | §9 は全部推し（ユーザーの回答「全部 推しで (推し)」）。kernel・driver・設定・TCP、5330 で 1GbE を使い切るまで TCP を最適化。原文「P3にWS221と、ついでに同じWS内で、1GbEの性能を使い切れるまでTCPスタックの最適化、5330を利用。」。5330 は P3 に割当 | in-progress |
 | q1665 / q1665-i01 | P4（phase-runner、worktree `/home/awe/zedBSD-worktrees/p4-ws307e`・branch `agent/p4-ws307e`、基点 main） | [ws307](ws307/ws.md) p002〜p014 | spec.md どおりに実装。toolchain（sysroot.mk・libcxx）・asset の upload・HAL に触れる所は始める前に Q1 へ。QEMU。原文「P4にWS307」 | in-progress |
 | q1666 / q1666-i01 | P5（kernel-and-driver-designer、worktree `/home/awe/zedBSD-worktrees/p5-design`・branch `agent/p5-design`、基点 main） | 詳細の決まっていない WS の設計 | code は書かない。判断は Q1 経由でユーザーへ。P1〜P4・P6 の WS は除く。原文「P5は詳細が決まっていないWSの設計のみを、ユーザの判断を聞きながら全般的に進める」 | in-progress |
