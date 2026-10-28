@@ -76,7 +76,37 @@
 - 条件の差: weston は NVK では全 repaint が「Using render-only state composition」（`[state] no overlay plane support`、dmabuf の modifier は
   NVIDIA_BLOCK_LINEAR_2D）で、RDNA の RADV のような plane-only（direct scanout）にならない。Linux 側は合成の分（1080p の 1 枚）を含む。
 
-### 再開点（2026-10-29 06:40 P2）
+### BAR1 の window の直し（06cdbf381、印 cf48046e5）
 
-- 実機: Debian、RTX は vfio-pci、lock は返した。NVMe の zedBSD の kernel は 1746f7c18 の build（cfg は不変、ngg・memory の amdrdna の行は無害）。
-- 次: host で BAR1 の window の直し（使用量を数える印 → host-visible だけ map）→ 次の枠で desktop と scene-5000。
+- 06cdbf381: blob を作る時に window に map しない（VRAM は PRAMIN で 0 に clear、`nvrtx_bo_clear`）。CPU が初めて触る時に map（`nvrtx_node_backing_cpu`:
+  resource の read・write・map、transport の stream・reply の blob、cursor の画、executor の CPU の copy は `nvrtx_vk_memory_cpu`）、その後は VRAM を返すまで
+  map のまま。`nvrtx_bo_map` は二重 map を防ぐため確かめを lock の下に。window の使用・peak を nvrtx.vk.perf=1 の `perf: window` の行に、満杯は最初の
+  8 回を `window full` の印に。ABI・HAL・libvulkan は不変。Q1 の形の案（host-visible の type だけ map）でなく「要る時だけ map」にした理由: nvrtx の
+  memory type は 1 つ（DEVICE_LOCAL・HOST_VISIBLE・COHERENT）で、libvulkan は host-visible の type の blob に必ず MAPPABLE を付けるので、flag では分けられない。
+- cf48046e5: VRAM の allocator の満杯（`vram full`）と work channel の VA の満杯（`work space full`）の印（各 8 回まで）。
+- 確かめ（host）: vmunix（ws291 の config）warning 0、plan/tools/nvrtx/nvrtx-vk-host-test.sh PASS 60 checks（`nvrtx_vk_memory_cpu` の stub を足した）。
+
+### 実機の A/B（2026-10-29 07:04〜07:19、plan/ws291/tests/rtx-window-ab.sh、build/ws291/rtx/ab1、desk-l2）
+
+- eager（全 blob を作る時に map、nvrtx-eager-map.patch、vmunix-eager1 cksum 997937608）と lazy（06cdbf381、vmunix-lazy1 827899503）を nvrtx.vk.perf=1 で。
+
+| | eager | lazy |
+| --- | --- | --- |
+| window の peak（frame-ops と probe の後） | 245936 / 253504 KiB、`window full` 2 回（16384・8100 KiB の要求） | 106984 / 253504 KiB、満杯 0 |
+| terminal | `vkAllocateMemory result=-2 errno=8` | 開く |
+| frame-ops | terminal が無く type〜drag は空振り | 全段が動く |
+
+- lazy の desktop（counts 無し、ab1/lazy-nocount-desk と desk-l2）: keys 143〜167、output 65〜69、type 60、home 61〜62、wiseview 61〜64、launch 48〜49
+  （terminal の起動の 1 回 78〜88 ms）、**scroll 19〜20、hover 21〜23、drag 32〜35 fps**（RDNA の p001 は全段 60）。
+- 次の壁 (1): desktop の後の mview の swapchain が `work space full: 8100 KiB asked, 18688 KiB free in 8 runs`（vmunix-lazy2 = cf48046e5 の build、
+  cksum 204755418）。work channel の GPU の VA の users の部分は 0x28100000〜0x40000000（約 383 MiB、`NVRTX_WORK_VA_BYTES` = PD の 1 entry の 512 MiB）。
+- 次の壁 (2): 起動の直後（client 無し）の mview は `api=depth format result=-11`（VK_ERROR_FORMAT_NOT_SUPPORTED）。nvrtx の executor に depth の形式が無い。
+- keiland-shot は eager・lazy とも撮れた（6222418 byte、shot の ERROR buffer は最初の起動の時だけ、未解析）。
+- 手順の注意: `pkill -f rtx-window-ab.sh` は同じ語を含む自分の shell も止める（tools.md の注意と同じ、exit 144）。
+
+### 再開点（2026-10-29 07:20 P2）
+
+- 実機: Debian、RTX は vfio-pci、lock は返した。NVMe の zedBSD の kernel は vmunix-lazy2（cf48046e5 の build、cksum 204755418、前の物は vmunix.old）、
+  cfg の nvrtx.vk.perf の行は外した。
+- 次（Q1 に聞いた）: (1) work channel の VA を複数の 512 MiB の directory に広げる、(2) executor に depth・index の draw・mip（mview が動くまで、新しい
+  Phase の案 p010a）、desktop の scroll・hover・drag の 20〜35 fps の調べ。案 A・B（RDNA）は host の harness の runner が tree に無く後回し。

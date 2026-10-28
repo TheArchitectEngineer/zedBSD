@@ -47,7 +47,7 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 | [p006](phase006/phase.md) | RDNA: NGG B+C（primitive の culling と頂点の詰め直し・属性の後回しを Mesa の形で一緒に。2026-10-27 14:50 Q1: compaction 無しの culling は GFX10 で止まる（仮説 A）ので p007 と統合） | p005 | in-progress（q1668: big-1000 35.5 → 57〜59 fps（Linux 87）、subs-1000 1 submit 48 → 39 µs（Linux 10）、scene-1500 209・scene-6500 49.6（Linux 200.4・50.1）） |
 | p007 | RDNA: NGG C（vertex の詰め直しと属性の後回し、wave をまたぐ subgroup）、目標 GPU 約 20 ms | p006 | p006 に統合（2026-10-27 14:50 Q1。目標 GPU 約 20 ms は p006 の受け入れへ） |
 | p008〜p009 | RDNA: HTILE、guard band、CPU 側の record（2.3 ms）の短縮 | p007 | — |
-| [p010](phase010/phase.md) | NVIDIA（RTX 2070）: nvrtx の起動、desktop の計測と 60 fps、Linux の NVK の基準 | 機械の入れ替え（2026-10-29 ユーザー）、P2 | in-progress（q1670: 起動・表示 ok、client の memory が BAR1 の window の満杯で失敗、NVK の scene-5000 50.1 fps） |
+| [p010](phase010/phase.md) | NVIDIA（RTX 2070）: nvrtx の起動、desktop の計測と 60 fps、Linux の NVK の基準 | 機械の入れ替え（2026-10-29 ユーザー）、P2 | in-progress（q1670: 起動・表示 ok、BAR1 の window の直しで client が動く、VA の満杯と depth の形式が次、NVK の scene-5000 50.1 fps） |
 | p011 | NVIDIA: Linux（NVK）で約 50 fps の scene（qs40 ×5000）での差の計測と 50 fps（p012〜p019 は改善の予備） | p010 | planned |
 | p020 | PowerVR（VF2）: model の 50 fps（RDNA で確立した手順、P3） | RDNA の手順の確立（p002 と最初の改善） | planned |
 | 最後 | 規約の全文の見直し | 実装の全部 | — |
@@ -200,5 +200,6 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   計測の時だけ sysfs で vfio-pci から外して nouveau（GSP）を読み込み、終わったら vfio-pci に戻す。
 - Q1 の判断: nvrtx の BAR1 の window の満杯（device-local も常に map）は NVIDIA の段の目標を塞ぐので WS291 の中で直す（形は host-visible で要る物だけ map、
   前後の使用量を記録、WS250 の design.md の前提と食い違わない形）。
-- 再開点（2026-10-29 06:40 P2）: [phase010](phase010/phase.md) の「再開点」。RTX 2070 で nvrtx は起動・表示（GSP-RM・takeover・gpu device・compositor）、
-  client の Vulkan の memory が ENOSPC で全部失敗。NVK の基準: scene-5000 50.1 fps（weston は render-only、direct scanout でない）。
+- 再開点（2026-10-29 07:20 P2）: [phase010](phase010/phase.md) の「再開点」。BAR1 の window の直し（06cdbf381）で window の peak 246 → 107 MiB、
+  terminal が開き frame-ops の全段が動く（scroll・hover・drag は 20〜35 fps）。次の壁: work channel の VA（約 383 MiB）の満杯と、executor に depth の形式が無い
+  （mview が動かない）。NVK の基準: scene-5000 50.1 fps（weston は render-only、direct scanout でない）。
