@@ -10,5 +10,6 @@ mkdir -p "$out"
 ${CC:-cc} -std=gnu89 -Wall -Wextra -Werror -D_GNU_SOURCE -I. -Iinclude -fsanitize=address,undefined -g \
     userland/desktop/libkeiland-backend/backend.c userland/desktop/libkeiland-backend/session/session-none.c \
     userland/desktop/libkeiland-backend/unsupported/seat-unsupported.c \
+    userland/desktop/libkeiland-backend/unsupported/notify-unsupported.c \
     userland/desktop/libkeiland-backend-zedbsd/events-zedbsd.c plan/tools/system-events/host-events.c -o "$out/host-events"
 exec "$out/host-events"
