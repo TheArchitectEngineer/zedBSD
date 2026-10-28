@@ -375,3 +375,58 @@ Linux（bench-linux-3、p003）: scene-6500 50.1 fps・fence 19.53、scene-1500 
   起床、core から user の thread への起床、または GPU 側の run ごとの固定の仕事（始めの ACQUIRE_MEM の GL2 の WB+INV など）。区間ごとの時刻を
   取る計測が次（EOP の割り込みの時刻と marker の完了の時刻、GPU の timestamp の始めと終わり）。
 - 機械（08:05）: stick は vmunix-feat1（1b9cc7865 の動作、cksum 1397306155）、zedBSD で起動中、SMU 正常。入れ直しは今日 P2 が 2 回（06:45:47、07:10:00）。
+
+## q1645（2026-10-28 P2、worktree p2-ws291d、基点 main 04f63dbb7）
+
+- 承認（ユーザー 2026-10-28）: q1639 と同じ文に加え「P2は何度でもFableに聞いてください。」。Q1 の追加（2026-10-28）: fence の遅れが kernel の scheduler・起床の道に
+  ある時の直しと libvulkan ↔ gpu core の往復の直しは、案を Q1 に送り OK の後。
+
+### acquire の待ち（scene-1・scene-1500 の frame の半分）
+
+- 見つけた事（vmunix-feat1、build/ws291/measure/kwl-i4.log）: mview の swapchain の image 数を変えると scene-1 は 3 枚 59.9・4 枚 115.7・5 枚 175.2 fps
+  = 約 60×(N−2)。原因 2 つ: (a) Keiland の game mode の direct scanout は GPU_DISPLAY_PRESENT の ioctl の中で flip の latch（次の vblank）まで main loop が
+  眠り、client の commit も置き換えた mailbox の image の release も vblank ごとにまとめてしか出ない（amdrdna present.c は flip の latch を待って返る）。
+  (b) libvulkan の Wayland の acquire は image が空くのを pthread_cond_clockwait の 10 ms（WSI_PROGRESS_INTERVAL、tick に丸まる）で待ち、その間 socket の
+  wl_buffer.release を読まない（release から次の commit まで約 10 ms、build/ws291/measure/kwl-a4.log）。
+- Linux の RADV の Wayland は mailbox で minImageCount 4（Mesa wsi_common_wayland.c wsi_wl_surface_get_min_image_count）。Linux の mview は 4 枚、zedBSD は 3 枚
+  だった。Linux の bench を --images=4 で取り直して同じ数（build/ws291/measure/linux-img4: scene-1 9033、scene-1500 201.3、scene-6500 50.0、big-1000 84.7、
+  subs-1000 57.7 fps）。
+- 直した事（Q1 の OK、2026-10-28）: 5f9ec7f08 = 案 A（Keiland: game mode の present を backend の thread に移し、完了を pipe の fd で main loop の poll に
+  知らせる。scanout-zedbsd.c の kl_backend_scanout_begin・_fd・_end、DRM の stub、wayland/scanout.c・kwl.h・main.c。flip 中も commit を処理し、置き換えた
+  queued はすぐ release、front と flip 中の image は flip の完了まで保持、game mode を出る時は in-flight の完了を待つ）、9b876b5fe = 案 C（libvulkan: platform の
+  ops に wait_input（POLLIN で待つ fd）、Wayland は wl_display_get_fd、acquire は Wayland も wake の pipe と接続の fd で待つ。10 ms の上限は他の thread が
+  socket を読んだ時のため残す。timeout 0 は従来どおり NOT_READY、有限の timeout は残りで切る）、632d172dc = B1（mview --images=N、bench は 4）。
+- 実機（vmunix-fdiag5 = 診断の mark だけ足した kernel、Keiland・libvulkan は A・C）: mview mailbox 4 枚 scene-1 101 → 282 fps、scene-1500 70 → 141 fps
+  （acquire 7.9 → 1.0 ms）、scene-6500 45.4（acquire 0.5）、fifo 57 fps。frame-ops の desktop 全段 60 fps 前後（build/ws291/measure/desk-ac/table.txt:
+  launch 65・type 62・keys 75・output 72・drag 58・home 64・wiseview 63、scroll・hover は入力の間隔、shot の画面は正常）。shot 1 体 差 0・6500 体 max 1。
+  game mode の入り → pointer で出る → 再入り → window の終わりで出る、videoplayer --fullscreen の game mode 入り（KWL SCANOUT の行）。
+- build: zedBSD の wayland・libvulkan・mview・wltest・vkdemo の warning 0、Linux の Keiland（keiland-linux.mk all）warning 0。libvulkan-compat（Linux・FreeBSD の
+  Keiland の Vulkan）は別の code で変えていない。FreeBSD の build は未実施（DRM の stub は Linux と同じ file）。
+- 他の GPU: present は GPU 共通の GPU_DISPLAY_PRESENT の ioctl を backend の thread から呼ぶだけで、kernel の各 driver（i915・nvrtx・PowerVR・venus・bcm2711）の
+  present は同期のまま（code の上の確かめ）。
+- 既存の事（今回の変更と無関係）: wltest は amdrdna の executor が command 121 を拒否（EISDIR）して新旧どちらの libvulkan でも vkEndCommandBuffer で失敗。
+  vkdemo は compositor が display を持つので EIO。shot の mview が約 300 frame で surface lost（errno 24）になるのは q1639 の feat1 の round でも同じ。
+- 残り: acquire 1.0 ms（scene-1500）。image 4 枚のうち表示中・flip 中・queued・present 中で、present の commit を待つ見込み（未確かめ）。
+
+### fence の段ごとの計測（診断 kernel、commit しない: build/ws291/fdiag5.patch）
+
+- 診断: runtime の worker・completer の時刻、graphics の run ごとの GPU の timestamp（run の先頭・IB の前・IB の後、write-back page の 1024 から seq ごと）と
+  CPU の submit 時刻、IB の klog への dump（build/ws291/measure/ibd/ib512.dec・ib3392.dec、pm4-decode.py と Mesa の gfx10.json）。counter は 100 MHz。
+- 結果: frame ごとに run が 2 つ: 大きな run（mview の scene: 全画面 quad の clear と 16 draw）と 512 語の run（libvulkan の present の copy: 全画面 quad、
+  linear の 8888 を linear へ）。512 語の run は GPU で約 0.87 ms（gfxclk 800 / 1780 MHz で変わらない）。scene-1 の大きな run は 1.25 ms、scene-6500 は 20.4 ms
+  （Linux の fence 全体 19.5）。worker の待ち 5 µs、executor 15〜30 µs、completer の seen から完了 11 µs、run の前置き（sync・flush・ACQUIRE_MEM）1〜2 µs
+  → fence の時間は GPU の上の時間で、起床の遅れではない。
+- 見立て: 全画面 quad 1 枚が約 19 GB/s。zedBSD は SMU の UCLK の DPM を許していない（amdrdna-hw.h「The memory clock's levels stay off」）。Linux の
+  pp_dpm_mclk は 100/500/625/875 MHz で、mview scene-1500 の負荷で 500 MHz（idle は 100）。zedBSD の memory clock は 100 MHz のままの見込み（GDDR6 192 bit で
+  約 38 GB/s、read+write の quad で 19 GB/s と合う）。clear の quad と present の copy の quad で 1 frame 約 1.7 ms = scene-6500 の差のほぼ全部。
+  UCLK を上げる手順（DCN の p-state との関係）を Fable 5.1 High に問い合わせ中（下）。
+
+### BootNext の後に zedBSD が戻らない件（BUG-348、Q1 が登録）
+
+- 今日 4 回（04:10・06:37・08:08・08:51）。P2 の入れ直し: 08:17:38（1 回目）、08:58:48（2 回目）、どちらも Debian に戻った。
+- 切り分け: zedBSD の boot の log（/boot/boot0/log、取った写しは build/ws291/measure/boothang/）の失敗の boot boot-000147.txt（08:09〜08:14）・
+  boot-000154.txt（08:53〜08:57）と正常の boot-000148.txt・boot-000155.txt の比較: 失敗の boot も kernel・desktop・GPU は動き続けた（compositor の run が
+  60 s ごと）。違いは USB の LAN（RTL8156 0bda:8156、usb-cdc-ncm の ue0）の「ue0 link 2500 Mb/s」が無い事だけ = link が上がらず DHCP・SSH が無い。
+  GPU の hang ではない。（保存された log の比較は止まる段の特定のためで、試験の判定ではない。）
+- 回避（Q1 の OK）: measure.sh の to_zedbsd で、Debian から BootNext で再起動する前に USB NIC（ZEDBSD_NIC=0bda:8156）だけ sysfs の authorized=0 で
+  Linux から外す。効果は以後の deploy で見る。
