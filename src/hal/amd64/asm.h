@@ -56,6 +56,10 @@ asm_load_cr3(
 void
 asm_flush_tlb(void);
 
+/* Flushes the current CPU's whole translation cache, global entries too. */
+void
+asm_flush_tlb_global(void);
+
 void
 asm_lidt(
 	const void *descriptor);

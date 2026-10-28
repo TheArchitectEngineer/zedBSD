@@ -99,7 +99,35 @@ struct amd64_shootdown_request {
 	hal_space_t space;
 	void *vaddr;
 	size_t size;
+	unsigned global;
 	volatile uint64_t pending;
+};
+
+/*
+ * The states of the early console's mapping of the boot framebuffer: none
+ * (no framebuffer), held by the early console, given to the kernel's
+ * console (one mapping request of exactly the framebuffer once the kernel
+ * prints), and removed.
+ */
+enum amd64_fb_window_state {
+	AMD64_FB_WINDOW_NONE,
+	AMD64_FB_WINDOW_HELD,
+	AMD64_FB_WINDOW_GIVEN,
+	AMD64_FB_WINDOW_REMOVED
+};
+
+/*
+ * The early console's mapping of the boot framebuffer: its state, the
+ * framebuffer's physical base and size as the kernel reads them, the
+ * kernel address of its first byte, and the system directory entries it
+ * takes from AMD64_FRAMEBUFFER_PD_FIRST.
+ */
+struct amd64_fb_window {
+	enum amd64_fb_window_state state;
+	hal_physaddr_t physical;
+	size_t size;
+	uintptr_t address;
+	unsigned pd_count;
 };
 
 typedef char amd64_user_pointer_window_assert[
@@ -157,6 +185,13 @@ static struct amd64_space *space_registry;
 static struct amd64_shootdown_request
     shootdowns[AMD64_SHOOTDOWN_REQUESTS];
 
+/*
+ * The early console's mapping of the boot framebuffer.  Set while the
+ * system page table is built; its state changes under the address-space
+ * registry lock.
+ */
+static struct amd64_fb_window fb_window;
+
 static paddr_t cpu_physical_max(void);
 static int ram_allocate(void *context, uint64_t *physical, uint64_t **table);
 static uint64_t *ram_resolve(void *context, uint64_t physical);
@@ -178,12 +213,15 @@ static void table_count_adjust(uint64_t *owner, int delta);
 static uint64_t *walk_leaf(struct amd64_space *space, uintptr_t address, int create, uint64_t **owner);
 static int table_is_empty(const struct amd64_table_page *page);
 static uint64_t *table_owner_of(struct amd64_space *space, uint64_t *table);
-static void flush_request_range(hal_space_t handle, void *vaddr, size_t size);
+static void flush_request_range(hal_space_t handle, void *vaddr, size_t size, unsigned global);
 static uint64_t *table_at(uint64_t entry);
 static struct amd64_table_page *detach_empty_tables(struct amd64_space *space);
 static void free_detached_tables(struct amd64_table_page *page);
 static uint64_t leaf_flags(uint32_t attr);
 static void shootdown(hal_space_t handle, void *vaddr, size_t size);
+static void shootdown_request(hal_space_t handle, void *vaddr, size_t size, unsigned global);
+static int fb_window_give(hal_physaddr_t physical, size_t size, uint32_t attr, void **address);
+static int fb_window_remove(void *address, size_t size, int *matched);
 static void service_shootdowns(hal_cpu_id_t cpu);
 static int user_page_allowed(hal_physaddr_t physical, uint32_t attr);
 static int device_fixed_range(hal_physaddr_t physical, size_t size, void **address);
@@ -317,6 +355,7 @@ hal_space_map_device(
 	uint32_t attr,
 	void **vaddr)
 {
+	int given;
 	int fixed;
 	int error;
 
@@ -346,6 +385,11 @@ hal_space_map_device(
 	if (paddr > acpi_physical_max || size - 1U > acpi_physical_max - paddr)
 		return HAL_ERR_INVALID;
 
+	/* The early console's mapping of exactly the boot framebuffer goes to the kernel's console once it prints. */
+	given = fb_window_give(paddr, size, attr, vaddr);
+	if (given)
+		return HAL_OK;
+
 	/* Preserves the boot-established legacy mappings without replacing PTEs. */
 	fixed = device_fixed_range(paddr, size, vaddr);
 	if (fixed)
@@ -371,12 +415,23 @@ hal_space_unmap_device(
 	uintptr_t address;
 	uint64_t physical;
 	void *fixed_address;
+	int matched;
 	int fixed;
 	int error;
 
 	/* Rejects an empty release before decoding a permanent legacy view. */
 	if (vaddr == NULL || size == 0)
 		return HAL_ERR_INVALID;
+
+	/* The early console's mapping, given to the kernel's console, goes (or stays, in a fixed window). */
+	error = fb_window_remove(vaddr, size, &matched);
+	if (matched) {
+		if (error != HAL_OK)
+			return error;
+
+		/* Succeeded: no CPU keeps a translation of the framebuffer through it. */
+		return HAL_OK;
+	}
 
 	/* Recognizes only the exact fixed windows established by early paging. */
 	address = (uintptr_t)vaddr;
@@ -494,6 +549,8 @@ prekern_amd64_space_init(
 	unsigned chunks;
 	unsigned chunk;
 	uint64_t framebuffer_tables[2];
+	uint64_t aligned;
+	uint64_t end;
 	uint64_t efer;
 	uint64_t flags;
 	uintptr_t cr0;
@@ -592,6 +649,15 @@ prekern_amd64_space_init(
 		    AMD64_FRAMEBUFFER_PD_COUNT, system_framebuffer_edges, framebuffer_tables,
 		    framebuffer->physical_base, framebuffer->size, acpi_physical_max))
 			HAL_FATAL("amd64 framebuffer MMIO geometry invalid");
+
+		/* The early console draws through it until the kernel's console takes it over. */
+		aligned = framebuffer->physical_base & ~(uint64_t)0x1fffffU;
+		end = (framebuffer->physical_base + framebuffer->size + PAGE_SIZE - 1U) & ~(uint64_t)(PAGE_SIZE - 1U);
+		fb_window.state = AMD64_FB_WINDOW_HELD;
+		fb_window.physical = framebuffer->physical_base;
+		fb_window.size = (size_t)framebuffer->size;
+		fb_window.address = (uintptr_t)(ZBL6_FRAMEBUFFER_VIRTUAL_BASE + (framebuffer->physical_base - aligned));
+		fb_window.pd_count = (unsigned)((end - aligned + 0x1fffffU) / 0x200000U);
 	}
 
 	/* Gives legacy VGA/ROM its own uncached window, outside the RAM map. */
@@ -2232,12 +2298,28 @@ leaf_flags(
 	return flags;
 }
 
-/* Invalidates matching translations on every ready CPU. */
+/* Invalidates matching non-global translations on every ready CPU. */
 static void
 shootdown(
 	hal_space_t handle,
 	void *vaddr,
 	size_t size)
+{
+	/* An ordinary request leaves the global entries. */
+	shootdown_request(handle, vaddr, size, 0U);
+}
+
+/*
+ * Invalidates matching translations on every ready CPU; a global request
+ * (only for the system space) also removes every global entry and the
+ * paging-structure caches.
+ */
+static void
+shootdown_request(
+	hal_space_t handle,
+	void *vaddr,
+	size_t size,
+	unsigned global)
 {
 	struct amd64_shootdown_request *request;
 	struct amd64_percpu *target;
@@ -2324,6 +2406,7 @@ shootdown(
 	request->space = handle;
 	request->vaddr = vaddr;
 	request->size = size;
+	request->global = global;
 	__atomic_store_n(&request->pending, pending, __ATOMIC_RELEASE);
 	__atomic_store_n(&request->active, 1U, __ATOMIC_RELEASE);
 
@@ -2347,7 +2430,7 @@ shootdown(
 	/* Invalidates the sender when it currently uses the affected space. */
 	current_space = current_space_load();
 	if (handle == HAL_SPACE_SYS || current_space == handle)
-		flush_request_range(handle, vaddr, size);
+		flush_request_range(handle, vaddr, size, global);
 
 	/*
 	 * Waits for acknowledgements while servicing reciprocal requests.  Page
@@ -2372,16 +2455,24 @@ shootdown(
  *
  * A small user range is invalidated page by page, which keeps the rest of
  * the TLB; a request with no range, a large one, or one for the system
- * space reloads CR3 as before.
+ * space reloads CR3 as before; a global request flushes every entry,
+ * global ones too.
  */
 static void
 flush_request_range(
 	hal_space_t handle,
 	void *vaddr,
-	size_t size)
+	size_t size,
+	unsigned global)
 {
 	uintptr_t address;
 	uintptr_t end;
+
+	/* A global request leaves no translation at all. */
+	if (global != 0U) {
+		asm_flush_tlb_global();
+		return;
+	}
 
 	/* Flushes everything for a whole-space, large, or system request. */
 	if (handle == HAL_SPACE_SYS ||
@@ -2432,7 +2523,7 @@ service_shootdowns(
 			continue;
 
 		/* Flushes locally before acknowledging the request. */
-		flush_request_range(request->space, request->vaddr, request->size);
+		flush_request_range(request->space, request->vaddr, request->size, request->global);
 		(void)__atomic_fetch_and(
 		    &request->pending,
 		    ~bit,
@@ -3104,4 +3195,115 @@ current_space_store(
 			 : "r"(handle),
 			   "i"(AMD64_PERCPU_CURRENT_SPACE)
 			 : "memory");
+}
+
+/*
+ * Gives the early console's mapping of the boot framebuffer to the
+ * kernel's console: the first mapping request of exactly the framebuffer
+ * (its physical base and size, uncached and writable) once the kernel
+ * prints through kernel_putc, when the early console draws through it no
+ * more.  Returns 1 with address set, or 0 for every other request.
+ */
+static int
+fb_window_give(
+	hal_physaddr_t physical,
+	size_t size,
+	uint32_t attr,
+	void **address)
+{
+	void (*printer)(int);
+	bool enabled;
+	int given;
+
+	/* Only the uncached writable mapping the window is. */
+	if (attr != (HAL_SPACE_READ | HAL_SPACE_WRITE | HAL_SPACE_NOCACHE))
+		return 0;
+
+	/* Only once the kernel prints, so that the early console no longer draws. */
+	printer = __atomic_load_n(&kernel_putc, __ATOMIC_ACQUIRE);
+	if (printer == NULL)
+		return 0;
+
+	enabled = registry_lock_enter();
+
+	/* Only the framebuffer itself, while the early console holds it. */
+	given = 0;
+	if (fb_window.state == AMD64_FB_WINDOW_HELD && fb_window.physical == physical && fb_window.size == size) {
+		fb_window.state = AMD64_FB_WINDOW_GIVEN;
+		*address = (void *)fb_window.address;
+		given = 1;
+	}
+
+	registry_lock_leave(enabled);
+
+	/* Reports whether the request took the window. */
+	return given;
+}
+
+/*
+ * Removes the early console's mapping of the boot framebuffer once it was
+ * given and its holder releases it (address and size as given): the early
+ * console forgets it, the directory entries go, and every CPU drops every
+ * translation, global ones included.  A framebuffer that meets one of the
+ * fixed windows shares their large pages and stays mapped (HAL_ERR_BUSY,
+ * nothing changes).  matched says whether the release was of the window.
+ */
+static int
+fb_window_remove(
+	void *address,
+	size_t size,
+	int *matched)
+{
+	uint64_t physical_end;
+	unsigned index;
+	unsigned slot;
+	bool enabled;
+	int fixed;
+
+	enabled = registry_lock_enter();
+
+	/* Only the window as it was given. */
+	*matched = 0;
+	if (fb_window.state != AMD64_FB_WINDOW_GIVEN || fb_window.address != (uintptr_t)address || fb_window.size != size) {
+		registry_lock_leave(enabled);
+		return HAL_OK;
+	}
+	*matched = 1;
+
+	/* A framebuffer meeting a fixed window (legacy, low MMIO, APIC) cannot lose its pages. */
+	physical_end = fb_window.physical + fb_window.size;
+	fixed = 0;
+	if (fb_window.physical < 0x100000U && physical_end > 0xa0000U)
+		fixed = 1;
+	if (fb_window.physical < 0xf1000000U && physical_end > 0xf0000000U)
+		fixed = 1;
+	if (fb_window.physical < 0xff000000U && physical_end > 0xfec00000U)
+		fixed = 1;
+	if (fixed) {
+		registry_lock_leave(enabled);
+		return HAL_ERR_BUSY;
+	}
+
+	/* The window is the remover's alone from here. */
+	fb_window.state = AMD64_FB_WINDOW_REMOVED;
+
+	registry_lock_leave(enabled);
+
+	/* The early console forgets it first. */
+	pcat_cons_framebuffer_release();
+
+	/* The directory entries and the edge tables of the window. */
+	for (index = 0U; index < fb_window.pd_count; index++)
+		__atomic_store_n(&system_mmio_pd[AMD64_FRAMEBUFFER_PD_FIRST + index], 0U, __ATOMIC_RELEASE);
+	for (index = 0U; index < 2U; index++) {
+		/* Every entry of one edge table. */
+		for (slot = 0U; slot < 512U; slot++)
+			__atomic_store_n(&system_framebuffer_edges[index][slot], 0U, __ATOMIC_RELEASE);
+	}
+
+	/* Every CPU drops every translation, the global ones of the window too. */
+	shootdown_request(HAL_SPACE_SYS, NULL, 0, 1U);
+
+	/* Succeeded: the window is gone. */
+	return HAL_OK;
 }
