@@ -54,7 +54,7 @@ mkfs_capacity_command(int argc, char **argv)
 	    strcmp(argv[2], "fat32") == 0 && strcmp(argv[argc - 2], "--check-size") == 0;
 	if (!native && !fat) {
 		fprintf(stderr, "usage: mkfs -t fat32 [--sector-size=512|4096] --check-size BYTES\n");
-		fprintf(stderr, "       mkfs -t ufs --profile=native [--sector-size=512] --check-size BYTES\n");
+		fprintf(stderr, "       mkfs -t ufs --profile=native [--sector-size=512|4096] --check-size BYTES\n");
 		return 2;
 	}
 	number = argv[argc - 1];
@@ -74,14 +74,10 @@ mkfs_capacity_command(int argc, char **argv)
 		return 1;
 	}
 
-	/* The native UFS profile has no geometry for 4096-byte sectors yet. */
-	if (native && sector_size != 512U) {
-		fprintf(stderr, "mkfs: capacity: %s\n", strerror(EOPNOTSUPP));
-		return 1;
-	}
+	/* A 4096-byte disk takes the native UFS profile of 4 KiB fragments. */
 	if (native) {
 		format = "ufs-native";
-		error = ufs_format_native_capacity(bytes, &capacity);
+		error = ufs_format_native_capacity(bytes, sector_size, &capacity);
 		free_bytes = capacity.free_bytes;
 		free_inodes = capacity.free_inodes;
 		unit = capacity.allocation_size;
@@ -170,10 +166,10 @@ mkfs_block_command(int argc, char **argv)
 		goto out;
 	}
 	/*
-	 * FAT32 is written for 512-byte and 4096-byte logical sectors; the
-	 * native UFS profile has geometry for 512-byte sectors only.
+	 * FAT32 and native UFS are written for 512-byte and 4096-byte
+	 * logical sectors; UFS takes 4 KiB fragments on the latter.
 	 */
-	if (info.sector_size != 512 && (native || info.sector_size != 4096)) {
+	if (info.sector_size != 512 && info.sector_size != 4096) {
 		error = EOPNOTSUPP;
 		goto out;
 	}
@@ -194,7 +190,7 @@ mkfs_block_command(int argc, char **argv)
 			goto out;
 	}
 	if (native)
-		error = ufs_format_native_validate_size(bytes);
+		error = ufs_format_native_validate_size(bytes, info.sector_size);
 	else
 		error = fat32_format_geometry(info.sector_count, info.sector_size,
 		    info.parent_offset, volume_id, &geometry);
@@ -234,9 +230,9 @@ mkfs_block_command(int argc, char **argv)
 	}
 	started = 1;
 	if (native) {
-		error = ufs_format_native_write(fd, bytes);
+		error = ufs_format_native_write(fd, bytes, info.sector_size);
 		if (error == 0)
-			error = ufs_format_native_verify(fd, bytes);
+			error = ufs_format_native_verify(fd, bytes, info.sector_size);
 	} else {
 		error = fat32_format_write(fd, &geometry);
 		if (error == 0)
