@@ -81,3 +81,9 @@ userland: ifconfig、ping、net（main.c・netconf.c・netconf.h・protocol.c・
 ## 消したい物
 
 なし（build/p7-*.log・build/p7-* の使い捨てがあるが build/ は git に入らない）。
+
+## P3 の後の確かめ（2026-10-29 09:1x、d62b3924f の tree）
+
+- build: amd64・pcat・rpi4・rpi5・zybo の vmunix・bin/net・bin/networkd が全部 rc=0・warning 0（rpi4・rpi5 は -j 無し）。VF2 の kernel（`config-vf2-tcp.mk`）rc=0・warning 0（sha256 fd1c4fd1f241165c…）。
+- VF2 実機（相手 5330、flock /tmp/i915-hw.lock）: 1500 で送り 949.0・936.1（最遅 922.7、その run の再送 0・dupack 0、損失でなく run ごとの揺れ）、受け 949.3。9000 で受け 990.6、送り 990.8。終わりに VF2 en0・5330 とも 1500。
+- 書き方だけの変更の非退行として、上と tcp-model の PASS で足りると P3 は判断した。
