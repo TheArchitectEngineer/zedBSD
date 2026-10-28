@@ -107,3 +107,4 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 - Q1 の判断（2026-10-29）: checksum・TSO の offload の stack の口（packet-buf・net-device の flag）は p010 で設計する（WS235 の RTL8127 の driver は offload 無しで先に動かし、口ができたら WS235 p006 で driver の側を足す）。
 - 2026-10-29 ユーザーの指示（原文）「CUBICを実装して、性能がよくなったらCUBICに切り替えるWSを作って、取り組んでほしいです。jumbo frameの続きでやってほしいです。」→ Q1 が WS311 を作った。WS221 の後に P3 が続けて取り組む。
 - ユーザーの判定（原文、2026-10-29、p005 の VF2 の値: MTU 9000 で受け 987.1・送り 990.7〜990.9、理論 991）: 「VF2で受信が若干遅いのは、割り込み応答性能なのかなあ。なんだろうね。まあこの水準なら合格です。」→ 受けの約 0.4 % の差は合格。原因は未確かめ（候補: 受けの copy と software の checksum、接続ごとの受けの jumbo の上限 8（窓 約 72 KB）、2 segment に 1 つの delayed ACK、割り込みの応答）。
+- Q1 の判断（2026-10-29、P3 の問い）: p008 の「byte の送りの buffer」は案 B（ring を保ち、送りの copy は標準の packet の受けの予約を取らない＋接続ごとの送りを SO_SNDBUF の byte で抑える、Nagle と IPv6 の Packet Too Big は ring の上で）。ユーザーの決定「FreeBSD と同じ＋p006 で pool を切り離す (Recommended)」の目的（答え続ける相手が pool を握らない）はこれで満たせる、と Q1 が読んだ。byte の buffer そのものは Future Work（WS311 の後に再評価）。
