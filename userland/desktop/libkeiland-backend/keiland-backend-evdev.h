@@ -64,6 +64,58 @@ struct kl_backend_input_caps {
  */
 void kl_backend_input_scan(struct kl_backend *backend);
 
+/* The nodes the compositor names as read already, and the nodes one finding opens, at most. */
+#define KL_BACKEND_INPUT_KNOWN_MAX	64U
+#define KL_BACKEND_INPUT_FOUND_MAX	32U
+
+/*
+ * One node a finding opened: its descriptor (the finder's until the
+ * compositor keeps it or has it closed), its path and its capabilities.
+ */
+struct kl_backend_input_node {
+	int descriptor;
+	char path[KL_BACKEND_INPUT_PATH_MAX];
+	struct kl_backend_input_caps caps;
+};
+
+/*
+ * One finding of the input devices away from the event loop.
+ *
+ * The event loop's thread fills the paths the compositor reads already
+ * (known) and calls kl_backend_input_find_begin, which copies what the
+ * finding needs of the backend's state; kl_backend_input_find then runs on
+ * another thread and fills the nodes it opened.  The record is a copy:
+ * the finding reads nothing the event loop changes meanwhile.
+ */
+struct kl_backend_input_find {
+	unsigned known_count;
+	char known[KL_BACKEND_INPUT_KNOWN_MAX][KL_BACKEND_INPUT_PATH_MAX];
+	unsigned events_heard;
+	uint64_t refused_generation;
+	unsigned count;
+	struct kl_backend_input_node nodes[KL_BACKEND_INPUT_FOUND_MAX];
+};
+
+/*
+ * Tells whether the backend opens the input devices itself, so that the
+ * opening may run on a thread of the compositor's (kl_backend_input_find):
+ * 1 on zedBSD; 0 where a seat service opens them for the event loop
+ * (Linux and FreeBSD), whose compositor calls kl_backend_input_scan.
+ */
+int kl_backend_input_find_supported(void);
+
+/*
+ * Prepares a finding on the event loop's thread (after the compositor has
+ * filled known), and runs it on any one thread at a time: every evdev node
+ * not known is opened and its capabilities read, nothing is offered and
+ * no callback is called.  Returns 0, or ENOTSUP where the backend does not
+ * open the devices itself.  A node whose open failed with the device's own
+ * error is passed by until the system's events tell of an input device
+ * that came or went.
+ */
+void kl_backend_input_find_begin(struct kl_backend *backend, struct kl_backend_input_find *find);
+int kl_backend_input_find(struct kl_backend *backend, struct kl_backend_input_find *find);
+
 /*
  * Reads an axis's range, the device's name, its identity: 0 or an errno
  * value.
@@ -81,6 +133,8 @@ ssize_t kl_backend_input_read(int descriptor, struct input_event *events, size_t
 
 /*
  * Closes a device the compositor kept, through the seat that opened it.
+ * Where kl_backend_input_find_supported says 1, it may be called on a
+ * thread of the compositor's (a device's close can wait for its driver).
  */
 void kl_backend_input_close(struct kl_backend *backend, int descriptor);
 

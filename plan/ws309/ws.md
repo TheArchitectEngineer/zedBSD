@@ -4,7 +4,7 @@
 
 - Master: [plan/master.md](../master.md)（2026-10-29 作成）。Primary Milestone: MG006。前身の調べ: [WS291](../ws291/ws.md) の
   [keiland-blocking.md](../ws291/keiland-blocking.md)（P2 q1661 の点検、branch `agent/p2-ws291i` にあり main に未 merge）。
-- Status: planning（pool の N は決定、2026-10-29 q1662 P1 が設計の確定 → Phase の分割 → 実装）
+- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) とレビューの反映、p002・p003 を実装中）
 - 目標: Keiland の compositor の main loop が frame を止める同期の待ちを持たないよう、thread を下の構成に整理する。ゲームモードの
   direct scanout は Vulkan display（`VK_KHR_display`）の仕様の中で実装する。
 
@@ -67,6 +67,30 @@
 
 - [design.md](design.md)（2026-10-29 P1、thread の一覧・本数・待ちの点・queue と通知・ゲームモード・判断の点 J1〜J4）。
 
+## Resume point
+
+- 2026-10-29 P1（q1662-i01）: p002（lane）と p003（入力の検出の thread）の実装と host 試験まで。次は p004（io-device の残り）か p005（io-file）。判断の点 J5（process の起動）・J6（daemon の基準）は Q1 に送った。
+
 ## Phase
 
-設計のレビューの後に分ける（未作成）。
+| ID | 目的 | 状態 | 依存 |
+| --- | --- | --- | --- |
+| [ws309-p001](design.md) | 設計の確定（thread の一覧・本数・待ちの点・queue と通知・ゲームモード、敵対的レビューの反映） | in-progress（J5・J6 の答え待ち） | — |
+| [ws309-p002](phase002/phase.md) | 共通の部品: thread の台帳・lane（常駐と pool）、host 試験 | in-progress | p001 |
+| [ws309-p003](phase003/phase.md) | io-device: 入力の device の検出と close を thread へ（zedBSD） | in-progress | p002 |
+| ws309-p004 | io-device の残り: 電源・network の詳細・machine・sysmon、input の detach の ack を wake で | planned | p003 |
+| ws309-p005 | io-file: displays.conf・desktop.conf・printers.conf の書き込み（`saved` は書き終わりで答える）、apps.conf・言語・printers.conf の読み、account・鍵の保存 | planned | p002 |
+| ws309-p006 | daemon ×5 の thread（zedBSD の backend、wake pipe を backend の open の前に） | planned | p002、J6 |
+| ws309-p007 | font の thread: 予備の font・emoji の先読み、rasterize、color emoji の decode | planned | p002 |
+| ws309-p008 | render を GPU の queue の唯一の持ち主に (1): fence 付きの task と queue の lock | planned | p002 |
+| ws309-p009 | 同 (2)(3): 遅らせた破棄（serial・descriptor set・二重の image）、quiesce と main の `vkDeviceWaitIdle` を消す | planned | p008 |
+| ws309-p010 | blur の thread とその都度の decode（壁紙・出力の大きさ・回転） | planned | p009 |
+| ws309-p011 | 手書きの照合の pool（N = min(max(CPU−1,1),4)） | planned | p002 |
+| ws309-p012 | display の thread（swapchain・modeset・回転・hotplug の列挙・scanout の可否と claim・release・backlight、seat の pause） | planned | p009 |
+| ws309-p013 | present の常駐の thread（暫定の ioctl、共通の wake） | planned | p012 |
+| ws309-p014 | process の起動（J5 の形）と clipboard の書き込みを poll で | planned | p005、J5 |
+| ws309-p015 | game mode の V2: libvulkan の display の swapchain の image の export、compositor の受け渡し | planned | p013 |
+| ws309-p016 | Linux・FreeBSD の seat 経由の入力の open（J4） | planned | p003 |
+| ws309-p017 | QEMU の回帰（Venus: 基準・GPU の境界・`KWL THREADS`・`KWL PERF pass`）と遅さの注入の host 試験 | planned | p003〜p014 |
+| ws309-p018 | 規約の全文の見直し | planned | 全て |
+

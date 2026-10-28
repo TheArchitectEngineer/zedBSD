@@ -54,6 +54,9 @@ WAYLAND_FREEBSD_SOURCES := userland/desktop/wayland/main.c \
 	userland/desktop/wayland/draw-list.c \
 	userland/desktop/wayland/render-thread.c \
 	userland/desktop/wayland/glyph-worker.c \
+	userland/desktop/wayland/threads.c \
+	userland/desktop/wayland/lane.c \
+	userland/desktop/wayland/io.c \
 	userland/desktop/wayland/batch.c \
 	userland/desktop/wayland/damage.c \
 	userland/desktop/wayland/greeter.c \

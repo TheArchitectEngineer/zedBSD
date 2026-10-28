@@ -205,7 +205,7 @@ kl_backend_events_poll_done(
 	 * went may be one that refused to open, which the next scan tries again.
 	 */
 	if ((asked & EVENTS_INPUT) != 0U)
-		memset(backend->input_refused, 0, sizeof(backend->input_refused));
+		backend->input_refused_generation++;
 	if ((asked & EVENTS_INPUT) != 0U && backend->host.input_changed != NULL)
 		backend->host.input_changed(backend->host.data);
 	if ((asked & EVENTS_POWER) != 0U && backend->host.power_changed != NULL)
