@@ -19,7 +19,7 @@
 
 | 担当 | Queue | WS | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1646 | [WS299](ws299/ws.md) 5330 の NVMe: p010 O_DIRECT → 乱読み QD32 → UFS の書き → p007 → p008（自律） | 5330 |
+| P1 | q1650 | [WS308](ws308/ws.md) VM の metadata の lock（一時、終わったら [WS299](ws299/ws.md) の q1646 に戻る）。Fable の助言 OK | 5330・QEMU |
 | P2 | q1645 | [WS291](ws291/ws.md) RDNA: scene-6500 44.7 fps（Linux 50.2）、fence の固定の遅れ・vertex・CPU の往復を詰める（自律、Fable は何度でも） | 10.0.10.3（プラグミニ 1 は P2 が入れ直す） |
 | P3 | q1644 | [WS290](ws290/ws.md) GHCI 1.0 の driver: p001〜p004・p013 cleared、p005（session・VM）から | host（VF2＋KC705 は書き込みの知らせの後） |
 | P4 | — | 停止（2026-10-28 ユーザー「P4は停止して、N=3に戻します。」）。WS307 の仕様は確定（p001 cleared）、BUG-347 resolved | — |
@@ -84,7 +84,7 @@
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-349 · q1650 · WS308 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-349 · q1651 · WS309 · KL_VERSION 96。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
@@ -152,6 +152,7 @@ BUG-349 · q1650 · WS308 · KL_VERSION 96。使う前に衝突を確かめる�
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
 | [WS296](ws296/ws.md) | MG001 | src/drivers（gpu/ を除く）の comment から開発の管理情報を消し、XXX の規約の当て直し（usb など 11 file） | planned | 18 LW、担当の起動はユーザーの指示の時 |
 | [WS307](ws307/ws.md) | MG003 | Keiland のアプリとしての zedBSD のグラフィカルなインストーラ（UEFI＋ACPI の PC、ウィザード、disk 全体／partition の選択、base・desktop・firmware・packages の tarball）（2026-10-28 ユーザー） | planned（p001 cleared、仕様は spec.md） | 実装 p002〜p014（134 LW、指示の後） |
+| [WS308](ws308/ws.md) | MG004 | VM の metadata の大域の lock の取り合いを無くす（read・write の syscall の並列性、WS299 の QD32 の頭打ち）（2026-10-28 ユーザー） | incomplete | p001 計測と設計（q1650、P1）→ 後に WS299 に戻る |
 
 ### 保留の WS（何をやるかは Q1 とユーザーが整理中）
 
