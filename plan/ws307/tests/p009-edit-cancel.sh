@@ -23,7 +23,7 @@ else
 	echo "p009-edit-cancel: the live system did not answer" > "$out/steps.txt"
 fi
 g stop > /dev/null 2>&1 || true
-grep -E '^(DISK|STEP|OUT|PROBE|NW|P009E)' "$out/steps.txt" || true
+grep -E '^(DISK|STEP|OUT|REQ|ERR|PROBE|NW|P009E)' "$out/steps.txt" || true
 grep -q '^P009E DONE' "$out/steps.txt" || status=1
 grep -q '^STEP .* fail' "$out/steps.txt" && status=1
 [ $status -eq 0 ] && echo "p009-edit-cancel: PASS $out" || echo "p009-edit-cancel: FAIL $out"

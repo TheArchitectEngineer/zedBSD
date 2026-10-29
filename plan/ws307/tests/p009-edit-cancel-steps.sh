@@ -50,6 +50,9 @@ grep '^FAIL' $w/esp2.out | sed 's/^/OUT esp2 /'
 step second-esp-refused grep -q '^FAIL edit' $w/esp2.out
 printf '%s\n' "edit delete $(disk_words) part $reg:5244928:2097152:$uuid" > $w/del.req
 session $w/del.req $w/del.out
+cat $w/del.req | sed 's/^/REQ del /'
+grep -E '^(STATE|FAIL|DONE)' $w/del.out | sed 's/^/OUT del /'
+tail -3 $w/del.out.err | sed 's/^/ERR del /'
 step delete grep -q '^DONE' $w/del.out
 probe
 step one-gone test "$(awk -F'\t' -v r="$reg" '$1 == "part" && $2 == r' $w/probe.txt | wc -l | tr -d ' ')" = 2
