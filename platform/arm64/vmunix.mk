@@ -102,6 +102,26 @@ ARM64_BOARD_KERNEL_SOURCES_rpi5 := \
 	src/kern/uncached.c \
 	src/drivers/generic/fdt.c src/drivers/generic/dma.c \
 	src/drivers/pci/pci.c src/drivers/pci/pci-brcmstb.c
+# The ODROID-C5's platform binding and its SoC's drivers: the debug UART's
+# console, the SD card, the USB host in front of the xHCI driver, and the
+# Ethernet port on the DesignWare EQoS driver.  The SoC's own sources are
+# listed by platform/arm64/s905x5m.mk.
+include platform/arm64/s905x5m.mk
+ARM64_BOARD_KERNEL_SOURCES_odroid-c5 := \
+	src/kern/platform/odroid-c5.c \
+	src/drivers/platform/rpi4/rpi4-console.c \
+	$(ARM64_S905X5M_SOURCES) \
+	src/kern/dcache.c \
+	src/kern/uncached.c \
+	src/drivers/generic/fdt.c src/drivers/generic/dma.c
+# The Mali GPU and its display (platform/arm64/mali.mk), when the build asks for it.
+ifeq ($(ZEDBSD_BOARD)$(CONFIG_DRIVER_MALI_GPU),odroid-c5y)
+include platform/arm64/mali.mk
+ARM64_BOARD_KERNEL_SOURCES_odroid-c5 += \
+	$(filter-out $(KERN_GPU_SOURCES),src/drivers/gpu/gpu.c src/drivers/gpu/gpu-fence.c) \
+	$(ARM64_MALI_SOURCES)
+endif
+
 # The NVMe driver behind the Pi 5's external PCIe port, when the build asks
 # for it.
 ifeq ($(CONFIG_DRIVER_PCI_NVME),y)
