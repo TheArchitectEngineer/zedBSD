@@ -486,7 +486,11 @@ admin_session(void)
 			error = 0;
 			break;
 		} else if (request->verb == PLAN_PROBE) {
+			/* A probe that fails says so, for the installer waits for its end. */
 			error = probe_report(stdout);
+			if (error != 0)
+				fprintf(stdout, "FAIL probe %d %s\n", error, strerror(error));
+			error = 0;
 		} else if (request->verb == PLAN_INSTALL) {
 			error = session_install(&session, request);
 		} else {
