@@ -3,7 +3,7 @@
 # ws309-p012 display の thread（T3）: swapchain・modeset・回転・hotplug の列挙・scanout の可否と claim・release・backlight、seat の pause
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §4.3（T3）・§4.1 の park と drain の行（レビュー 2）・§4.7（回転の壁紙）・§6（ゲームモード）。Queue: q1662-i08（P1）。
-- 状態: in-progress（2026-10-29 q1662-i09 P1、branch `agent/p1-ws309i`、基点 518fd6e33）。
+- 状態: cleared（2026-10-29 22:5x q1662-i09 P1、branch `agent/p1-ws309i`、基点 518fd6e33。判定 1〜7 を満たした。下の「結果」の未実施を参照）。
 - 依存: p009（cleared）。p010 から回転の壁紙（`kwl_glass_size_prepare`、2026-10-29 Q1 の判断）。
 - 受け入れに足す物（2026-10-29 Q1 の決定）: BUG-353（RTX 2070 で mview をゲームの表示（mailbox）で一度動かすと、後の mview の window が写らない）をこの中で直し、
   `plan/ws291/tests/rtx-mview-order.sh` で確かめる（10.0.10.3 の枠は Q1 が割り当てる）。
@@ -132,7 +132,23 @@
   - 直し（55ef19028）: 出力の let-go で glass maps を破棄しない（大きさの違う map は次の描画で作り直す既存の仕組み、glass-map.c。exit では device の idle の後に破棄）。
     amd64・Linux warning 0、QEMU `scanout-guest.sh` PASS（build/ws309/p012t）、`resize-guest.sh` PASS（build/ws309/p012u、移動の区間の pass_max_us 0.96 s → 0.63 s、
     large.png の glass を目で確かめた）。
-  - RTX の次の run（23:10〜23:40 の枠）: 1 回目 p012 の tip（2474418728、55ef19028 の前）、2 回目 55ef19028（720781269）。どちらも kernel rtxk・libkeiland 1274512932。
+  - 層の絵も保つ（799e52d4c）: 出力の let-go で layers を破棄せず、`kwl_layers_open` が同じ大きさの絵を使い直す（新しい generation、何も描かれていない扱い）。
+    違う大きさなら open の時に破棄して作る。exit で device の idle の後に破棄。amd64・Linux・arm64（rpi5）・riscv64（visionfive2-keiland）warning 0、
+    QEMU scanout（p012v、take 397 → 132 ms）・resize（p012w、pass_max_us 0.80 s）・rotate（p012x）・grave（p012y）・hand（p012z）PASS。
+  - RTX（2026-10-29 22:39〜22:48、10.0.10.3 の lock を P1 が保持、`plan/ws309/tests/rtx-bug353-pair.sh`、出力 `build/tmp/rtx-r2.out`・`build/ws309/rtx/r2/`）:
+    kernel rtxk 4097497588・libkeiland 1274512932。
+    - run1（p012 の tip 2474418728、保つ前）: a=2・c=2・f=2、rtx-bug353 PASS。ただし leave の後の take が main で 1050 ms、glass maps の作り直しが約 2.4 s、
+      mview の最初の import は写しの約 2.6 s 前（余裕が小さい）。
+    - run2（799e52d4c の 3652972380）: a=2・c=2・f=2、KWL FAILED・VULKAN_ERROR 無し、rtx-bug353 PASS。take 270 ms（`LAYER ready … kept=1`）、
+      glass maps の作り直し無し、window mode の switch_ms 1077（基点 2032、run1 1828）。e（5000）は `run2/e-shot5000-small.png` を目で確かめ、格子の model が写る。
+    - 終わり: stick の /bin/wayland 1664242966・/lib/libvulkan.so 3046047400・/lib/libkeiland.so 786582375（元の *.p012old と一致）、NVMe の /boot/boot0/vmunix は
+      vmunix-va1 1463007375（前の P1 の記録の戻す先。vmunix.old は P5 の script が上書きしたので証拠に使わなかった）。Debian、RTX の 4 function が vfio-pci。
+      stick に *.p012old が残る（消すかは Q1）。
+  - BUG-353 の結論: GPU・nvrtx の誤りではなく、leave の後に compositor の main が塞がれ（基点: 開き直し 2 s と glass maps 約 3.9 s）、試験の写し（mview の起動から 6 s）より
+    window の最初の commit が遅れた。p012 の非同期の開き直し（T3）と、同じ大きさの glass maps・層の絵を保つ形で、main の塞がりは最長 270 ms（take）に下がった。
+- 未実施・残り: backlight の成功の経路と lid（実機）、Settings の要求の中の移動と head の閉じ（その場のまま）、seat の pause の答えを T3 の完了で（p016）、
+  take の残り（targets・scene・turn、RTX で 270 ms）と let-go の残り（scene・backdrop・turn・targets）の破棄を main から出すこと、nvrtx の memory の確保が
+  大きさに比例して遅い件（8 MB で約 0.5 s、compositor の外。nvrtx の担当に知らせるかは Q1）。
 
 ## 注意
 

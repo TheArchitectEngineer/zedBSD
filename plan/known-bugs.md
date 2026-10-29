@@ -220,7 +220,7 @@ remain as traceable history and are not new implementation work.
 | [BUG-350](bugs/BUG-350.md) | VF2 で usb_hub_worker が 1 CPU を常に 100 % 使う（idle でも） | fixed（確かめ: VF2・QEMU、P3 f3d89900a: USB の同期待ちの yield の回し続けを wait queue に） |
 | [BUG-351](bugs/BUG-351.md) | /dev/acpi が 0666 で一般の user が AML の method（EC の書き・SMI）を評価できる見込み（source の読み、未試験） | open |
 | [BUG-352](bugs/BUG-352.md) | DHCP の interface が 2 つで両方が default route を入れると、次からの net の commit が `route: Device or resource busy` で失敗（rollback も degraded） | open |
-| [BUG-353](bugs/BUG-353.md) | RTX 2070 で mview をゲームの表示（mailbox）で一度動かすと、後から開いた mview の window が写らない | open |
+| [BUG-353](bugs/BUG-353.md) | RTX 2070 で mview をゲームの表示（mailbox）で一度動かすと、後から開いた mview の window が写らない | reproduced（実機） / fixed（WS309 p012、agent/p1-ws309i、未 merge） |
 | [BUG-354](bugs/BUG-354.md) | `top -b` が全ての process の %CPU を 0.0 と出す（未確認） | open |
 | [BUG-355](bugs/BUG-355.md) | native の UFS への大きい書き込みが約 1 MB/s（2 GiB の swap file に約 30 分） | open |
 | [BUG-356](bugs/BUG-356.md) | Venus の desktop が動く時、networkd の pump の経路の競合で LAN_ENABLE が「mismatched networkd response」で失敗し ue0 が設定されない（SSH が上がらない） | closed（2026-10-29 Q1 の判定、fd29cf832、QEMU で確かめた） |

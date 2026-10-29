@@ -4,7 +4,7 @@
 
 - Master: [plan/master.md](../master.md)（2026-10-29 作成）。Primary Milestone: MG006。前身の調べ: [WS291](../ws291/ws.md) の
   [keiland-blocking.md](../ws291/keiland-blocking.md)（P2 q1661 の点検、branch `agent/p2-ws291i` にあり main に未 merge）。
-- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) 確定、p001〜p011・p019 cleared、p012〜p018 planned）
+- Status: incomplete（2026-10-29 q1662 P1: 設計 [design.md](design.md) 確定、p001〜p012・p019 cleared、p013〜p018 planned）
 - 目標: Keiland の compositor の main loop が frame を止める同期の待ちを持たないよう、thread を下の構成に整理する。ゲームモードの
   direct scanout は Vulkan display（`VK_KHR_display`）の仕様の中で実装する。
 
@@ -72,6 +72,7 @@
 
 ## Resume point
 
+- 2026-10-29 22:5x P1（q1662-i09、branch `agent/p1-ws309i`、799e52d4c の後の記録）: p012 cleared（RTX の BUG-353 の試験 PASS、[phase.md](phase012/phase.md) の「結果」）。次は p013（present の常駐の thread）。
 - 2026-10-29 15:1x P1（q1662-i09、branch `agent/p1-ws309i`、WIP 5f4a72a75）: p012 は park と drain の非同期・T3 の lane・出力の移動・window mode の open・ゲームモードの入りまで（[phase.md](phase012/phase.md) の「結果」）。RTX の BUG-353 は枠待ち。
 - 2026-10-29 14:3x P1（q1662-i08、branch `agent/p1-ws309h`、ラップアップ）: p012 は調べと実装の手順まで（[phase.md](phase012/phase.md)、source の変更なし）。次の起動は p012 の手順 1（非同期の park と drain）から。
 - 2026-10-29 14:2x P1（q1662-i08、branch `agent/p1-ws309h`）: p011 cleared（手書きの照合の pool hand-1〜hand-N）。次は p012（display の thread）。
@@ -105,7 +106,7 @@
 | [ws309-p009](phase009/phase.md) | 同 (2)(3): 遅らせた破棄（serial・descriptor set・二重の image）、quiesce と main の `vkDeviceWaitIdle` を消す | cleared（実機・FreeBSD の build は未実施。park の手順の wait は p012） | p008 |
 | [ws309-p010](phase010/phase.md) | blur の thread とその都度の decode（壁紙・出力の大きさ） | cleared（QEMU `grave-guest.sh`・`resize-guest.sh`。回転の `kwl_glass_size_prepare` は p012 へ（2026-10-29 Q1 の判断）。実機は未実施） | p009 |
 | [ws309-p011](phase011/phase.md) | 手書きの照合の pool（N = min(max(CPU−1,1),4)） | cleared（host `hand-pool/run.sh`・QEMU `hand-guest.sh`。実機は未実施） | p002 |
-| [ws309-p012](phase012/phase.md) | display の thread（swapchain・modeset・回転・hotplug の列挙・scanout の可否と claim・release・backlight、seat の pause）。回転の壁紙（`kwl_glass_size_prepare`）を A1・T9 へ（p010 から、2026-10-29 Q1 の判断）。BUG-353 をこの中で直し、受け入れに RTX の再現（`plan/ws291/tests/rtx-mview-order.sh`、実機の枠は Q1、2026-10-29 Q1 の決定） | in-progress（q1662-i09: 非同期の park と drain・T3・移動・window mode・ゲームモードの入り。QEMU resize・grave・hand・scanout PASS。RTX は枠待ち） | p009 |
+| [ws309-p012](phase012/phase.md) | display の thread（swapchain・modeset・回転・hotplug の列挙・scanout の可否と claim・release・backlight、seat の pause）。回転の壁紙（`kwl_glass_size_prepare`）を A1・T9 へ（p010 から、2026-10-29 Q1 の判断）。BUG-353 をこの中で直し、受け入れに RTX の再現（`plan/ws291/tests/rtx-mview-order.sh`、実機の枠は Q1、2026-10-29 Q1 の決定） | cleared（q1662-i09: 非同期の park と drain・T3・移動・window mode・ゲームモード・回転・head・列挙・backlight・lid、glass maps と層の絵を保つ。QEMU resize・grave・hand・scanout・rotate PASS、RTX `rtx-bug353-pair.sh` PASS（BUG-353）。backlight・lid の実機は未実施） | p009 |
 | ws309-p013 | present の常駐の thread（暫定の ioctl、共通の wake） | planned | p012 |
 | ws309-p014 | process の起動（J5 の形）と clipboard の書き込みを poll で | planned | p005、J5 |
 | ws309-p015 | game mode の V2: libvulkan の display の swapchain の image の export、compositor の受け渡し | planned | p013 |
