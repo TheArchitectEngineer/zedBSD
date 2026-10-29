@@ -141,6 +141,7 @@ target_create_pass(
 				pass->depth = 1U;
 				pass->depth_attachment = attachment;
 				pass->depth_load_op = info.pAttachments[attachment].loadOp;
+				pass->stencil_load_op = info.pAttachments[attachment].stencilLoadOp;
 			}
 		}
 	}
@@ -155,7 +156,7 @@ target_create_pass(
 /*
  * Reports whether a render pass is one subpass writing at most one colour
  * attachment, in a colour format, and at most one depth attachment, in
- * D32_SFLOAT, and nothing else.
+ * a depth format (D32_SFLOAT, D24_UNORM_S8_UINT), and nothing else.
  */
 static int
 target_pass_supported(
@@ -171,14 +172,14 @@ target_pass_supported(
 	if (info->attachmentCount > NVRTX_VK_ATTACHMENTS_MAX)
 		return 0;
 
-	/* The depth attachment, when there is one, is the pass's attachment in D32_SFLOAT. */
+	/* The depth attachment, when there is one, is the pass's attachment in a depth format. */
 	subpass = &info->pSubpasses[0];
 	if (subpass->pDepthStencilAttachment != NULL) {
 		attachment = subpass->pDepthStencilAttachment->attachment;
 		if (attachment != VK_ATTACHMENT_UNUSED) {
 			if (attachment >= info->attachmentCount || info->pAttachments == NULL)
 				return 0;
-			if (info->pAttachments[attachment].format != VK_FORMAT_D32_SFLOAT)
+			if (!nvrtx_vk_format_depth(info->pAttachments[attachment].format))
 				return 0;
 			if (info->pAttachments[attachment].samples != VK_SAMPLE_COUNT_1_BIT)
 				return 0;

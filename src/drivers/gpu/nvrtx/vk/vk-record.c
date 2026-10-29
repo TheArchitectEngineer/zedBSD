@@ -895,8 +895,8 @@ record_push(
  * vkCmdBeginRenderPass: [present]{[sType][pNext][pass][framebuffer]
  * [VkRect2D][count][count]{clear}}[contents].  The pass is the record's
  * object 0, the framebuffer its object 1; the render area, the first
- * clear colour and the first clear depth are kept.  A clear is [0]{colour}
- * or [1][depth][stencil].
+ * clear colour and the first clear depth with its stencil are kept.  A
+ * clear is [0]{colour} or [1][depth][stencil].
  */
 static int
 record_begin_pass(
@@ -914,6 +914,7 @@ record_begin_pass(
 	uint32_t colours;
 	uint32_t depths;
 	uint32_t depth;
+	uint32_t stencil;
 	int error;
 
 	/* The begin info. */
@@ -930,7 +931,7 @@ record_begin_pass(
 	if (reader->error != 0 || count > NVRTX_VK_REGIONS_MAX)
 		return EINVAL;
 
-	/* The clear values: the first colour is kept in values 0 to 3, the first depth (a float's bits) in value 4. */
+	/* The clear values: the first colour is kept in values 0 to 3, the first depth (a float's bits) in value 4, its stencil in value 5. */
 	colours = 0U;
 	depths = 0U;
 	for (index = 0U; index < count; index++) {
@@ -946,9 +947,11 @@ record_begin_pass(
 			colours++;
 		} else if (kind == 1U) {
 			depth = drv_i915_wire_read_u32(reader);
-			(void)drv_i915_wire_read_u32(reader);
-			if (depths == 0U)
+			stencil = drv_i915_wire_read_u32(reader);
+			if (depths == 0U) {
 				record->values[RECORD_COLOUR_WORDS] = depth;
+				record->values[RECORD_COLOUR_WORDS + 1U] = stencil;
+			}
 			depths++;
 		} else {
 			return EINVAL;

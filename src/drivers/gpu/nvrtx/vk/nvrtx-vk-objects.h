@@ -23,6 +23,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "drivers/gpu/nvrtx/vk/nvrtx-exec.h"
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk.h"
 
 /*
@@ -86,6 +87,13 @@ struct nvrtx_vk_buffer {
 #define NVRTX_VK_GOB_BYTES		512U
 
 /*
+ * A depth image with a stencil takes whole pages of its memory: its pages
+ * are of the S8Z24 memory kind while it is a depth target, which no other
+ * resource's bytes may share.
+ */
+#define NVRTX_VK_KIND_ALIGN		4096U
+
+/*
  * The two-plane 4:2:0 format of the video decoder's pictures, and the
  * boundary a video image starts on in its memory (whole blocks of its
  * block-linear planes).
@@ -100,7 +108,10 @@ struct nvrtx_vk_buffer {
  * linear; one of more levels is tiled: block linear in one-GOB blocks, each
  * level a block-linear surface of its own after the one before (the
  * texture header's mipmapped layout for blocks one GOB high).  A depth
- * image (D32_SFLOAT, one level) is block linear in one-GOB blocks too.
+ * image (D32_SFLOAT, or D24_UNORM_S8_UINT with a stencil, four bytes a
+ * pixel either way, one level) is block linear in one-GOB blocks too; one
+ * with a stencil takes whole pages, which are of the S8Z24 kind once kinded
+ * is set (its first use as a depth target).
  * A video image (NV12, one level) has two block-linear planes in blocks
  * two GOBs high, each pitch bytes a row, plane n at plane_offset[n] and
  * plane_rows[n] rows tall: the luma bytes, then the chroma pairs at half
@@ -117,6 +128,8 @@ struct nvrtx_vk_image {
 	uint64_t bytes;
 	uint32_t levels;
 	bool depth;
+	bool stencil;
+	bool kinded;
 	bool tiled;
 	bool video;
 	uint64_t plane_offset[2];
@@ -238,7 +251,8 @@ struct nvrtx_vk_descriptor_set {
 /*
  * A VkRenderPass of one subpass writing at most one colour attachment and
  * at most one depth attachment: whether the subpass writes each, its
- * number among the pass's attachments, its format and its load operation.
+ * number among the pass's attachments, its format and its load operation
+ * (the depth attachment's stencil load operation too).
  */
 struct nvrtx_vk_render_pass {
 	uint32_t colour;
@@ -248,6 +262,7 @@ struct nvrtx_vk_render_pass {
 	uint32_t depth;
 	uint32_t depth_attachment;
 	uint32_t depth_load_op;
+	uint32_t stencil_load_op;
 };
 
 /* A VkFramebuffer: its size and the views of its attachments in order, held. */
@@ -301,8 +316,9 @@ struct nvrtx_vk_vertex_attribute {
 /*
  * A graphics VkPipeline: its two programs in a run of the executor's GPU
  * memory (code_token names the run to the node), the vertex input, the
- * topology, the culling, the depth test, the blend of the colour attachment, and the
- * viewport and scissor unless they are dynamic (floats as their bits).
+ * topology, the culling, the depth and stencil tests, the blend of the
+ * colour attachment, and the viewport and scissor unless they are dynamic
+ * (floats as their bits).
  */
 struct nvrtx_vk_pipeline {
 	void *code_token;
@@ -319,6 +335,9 @@ struct nvrtx_vk_pipeline {
 	uint32_t depth_test;
 	uint32_t depth_write;
 	uint32_t depth_compare;
+	uint32_t stencil_test;
+	struct nvrtx_exec_stencil_face stencil_front;
+	struct nvrtx_exec_stencil_face stencil_back;
 	uint32_t blend_enable;
 	uint32_t blend_src_colour;
 	uint32_t blend_dst_colour;
@@ -416,6 +435,7 @@ void *nvrtx_vk_payload(struct nvrtx_vk_session *session, enum i915_vk_object_kin
 int nvrtx_vk_free_payload(struct nvrtx_vk_session *session, void *payload);
 
 bool nvrtx_vk_format_colour(uint32_t format);
+bool nvrtx_vk_format_depth(uint32_t format);
 void nvrtx_vk_image_level(const struct nvrtx_vk_image *image, uint32_t level, uint64_t *offset, uint32_t *width, uint32_t *height, uint32_t *pitch);
 int nvrtx_vk_buffer_address(const struct nvrtx_vk_buffer *buffer, uint64_t *va, uint8_t **cpu);
 int nvrtx_vk_image_address(const struct nvrtx_vk_image *image, uint64_t *va, uint8_t **cpu);

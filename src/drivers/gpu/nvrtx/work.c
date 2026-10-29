@@ -851,6 +851,57 @@ nvrtx_work_unmap(
 }
 
 /*
+ * Writes the entries of a run already mapped for the users again, of a
+ * memory kind (NVRTX_MMU_KIND_*): the same VRAM pages at the same
+ * addresses, the kind in each entry; stale translations are dropped before
+ * the call returns.  The caller makes sure no work uses the run meanwhile.
+ * Returns EINVAL for a run not on page boundaries, ENOMEM, or the entries'
+ * write's error.
+ */
+int
+nvrtx_work_remap_vram(
+	struct nvrtx_gpu *gpu,
+	uint64_t va,
+	uint64_t physical,
+	uint64_t size,
+	uint32_t kind)
+{
+	struct nvrtx_work_state *work;
+	uint8_t *entries;
+	uint64_t pages;
+	int error;
+
+	work = &gpu->work;
+
+	/* Whole pages only. */
+	if (size == 0U || (size & 0xfffU) != 0U || (physical & 0xfffU) != 0U || (va & 0xfffU) != 0U)
+		return EINVAL;
+
+	/* The run's entries of the kind. */
+	pages = size / NVRTX_GSP_PAGE_SIZE;
+	entries = kern_malloc((size_t)pages * 8U);
+	if (entries == NULL)
+		return ENOMEM;
+	nvrtx_mmu_gr_entries_vram_kind(entries, physical, pages, kind);
+
+	/* Written over the old ones under the space's lock. */
+	mutex_lock(&work->lock);
+
+	error = work_entries_write(gpu, va, entries, pages);
+
+	mutex_unlock(&work->lock);
+
+	kern_free(entries);
+
+	/* Reports entries that could not be written. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the run is of the kind. */
+	return 0;
+}
+
+/*
  * Clears a run of the VRAM to zero with the copy engine on the driver's
  * channel and waits for it: a page of system memory holds the fill's push
  * buffer, the run and the page are mapped into the space for the fill and

@@ -27,6 +27,7 @@
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
+#include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
 #include "drivers/gpu/nvrtx/vk/nvrtx-video.h"
 
@@ -119,6 +120,28 @@ nvrtx_vk_format_colour(
 	case VK_FORMAT_B8G8R8A8_SRGB:
 	case VK_FORMAT_R8G8B8A8_UNORM:
 	case VK_FORMAT_R8G8B8A8_SRGB:
+		return true;
+	default:
+		break;
+	}
+
+	/* Any other format is not one. */
+	return false;
+}
+
+/*
+ * Reports whether a format is one of the depth formats a depth attachment
+ * is in: D32_SFLOAT, and D24_UNORM_S8_UINT with a stencil (four bytes a
+ * pixel either way).
+ */
+bool
+nvrtx_vk_format_depth(
+	uint32_t format)
+{
+	/* The two depth formats. */
+	switch (format) {
+	case VK_FORMAT_D32_SFLOAT:
+	case VK_FORMAT_D24_UNORM_S8_UINT:
 		return true;
 	default:
 		break;
@@ -275,13 +298,16 @@ resource_image_layout(
 		return;
 	}
 
-	/* A depth image: GOB rows and GOB heights. */
-	if (image->format == VK_FORMAT_D32_SFLOAT) {
+	/* A depth image: GOB rows and GOB heights (with its stencil, the same four bytes a pixel). */
+	if (nvrtx_vk_format_depth(image->format)) {
 		row = image->width * NVRTX_VK_PIXEL_BYTES;
 		image->depth = true;
+		image->stencil = (image->format == VK_FORMAT_D24_UNORM_S8_UINT);
 		image->pitch = (row + NVRTX_VK_GOB_WIDTH - 1U) & ~(NVRTX_VK_GOB_WIDTH - 1U);
 		height = (image->height + NVRTX_VK_GOB_HEIGHT - 1U) & ~(NVRTX_VK_GOB_HEIGHT - 1U);
 		image->bytes = (uint64_t)image->pitch * height;
+		if (image->stencil)
+			image->bytes = (image->bytes + NVRTX_VK_KIND_ALIGN - 1U) & ~((uint64_t)NVRTX_VK_KIND_ALIGN - 1U);
 		image->level_offset[0] = 0U;
 		image->level_pitch[0] = image->pitch;
 		return;
@@ -357,8 +383,8 @@ nvrtx_vk_image_level(
 /*
  * Reports whether an image is one the executor lays out: 2D, one layer,
  * one sample, within the largest side; a colour format of any number of
- * levels, or D32_SFLOAT of one level as a depth attachment (sampled or
- * copied it is not); 2 for an NV12 video picture, which only a device
+ * levels, or a depth format (D32_SFLOAT, D24_UNORM_S8_UINT) of one level
+ * as a depth attachment (sampled or copied it is not); 2 for an NV12 video picture, which only a device
  * with the video decoder lays out.
  */
 static int
@@ -415,7 +441,7 @@ resource_image_supported(
 	}
 
 	/* A depth attachment of one level, nothing else done with it. */
-	if (info->format == VK_FORMAT_D32_SFLOAT) {
+	if (nvrtx_vk_format_depth(info->format)) {
 		if (info->mipLevels != 1U)
 			return 0;
 		if ((info->usage & ~(uint32_t)(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT)) != 0U)
@@ -551,7 +577,7 @@ resource_create_view(
 	} else if (info.subresourceRange.baseMipLevel >= picture->levels || info.subresourceRange.baseArrayLayer != 0U) {
 		error = EINVAL;
 	} else if (picture->depth) {
-		if (info.format != VK_FORMAT_D32_SFLOAT)
+		if (info.format != picture->format)
 			error = ENOTSUP;
 	} else if (picture->video) {
 		plane = resource_view_plane(&info);
@@ -693,18 +719,34 @@ resource_buffer_destroy(
 	return 0;
 }
 
-/* Destroys an image nothing holds: it lets its memory go. */
+/*
+ * Destroys an image nothing holds: a depth image with a stencil gives its
+ * pages their pitch kind back (the work that drew into it has ended, as
+ * Vulkan has its destruction wait for), then it lets its memory go.
+ */
 static int
 resource_image_destroy(
 	struct nvrtx_vk_session *session,
 	void *payload)
 {
+	const struct nvrtx_vk_memory *memory;
 	struct nvrtx_vk_image *image;
+	uint64_t va;
+	uint8_t *cpu;
 	int error;
 
-	UNUSED_PARAMETER(session);
-
 	image = payload;
+
+	/* The stencil image's pages back to the pitch kind, while its memory is still there. */
+	if (image->kinded) {
+		memory = image->memory->payload;
+		error = nvrtx_vk_image_address(image, &va, &cpu);
+		if (error == 0)
+			error = nvrtx_vk_memory_kind(session->owner, memory->backing, image->offset, va, image->bytes, NVRTX_MMU_KIND_PITCH);
+		if (error != 0)
+			kern_logf("nvrtx: vk: a stencil image's pages kept their kind (%d)\n", error);
+		image->kinded = false;
+	}
 
 	/* The memory may go with it when nothing else holds the memory. */
 	error = nvrtx_vk_object_release(image->memory);
