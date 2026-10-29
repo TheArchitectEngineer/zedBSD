@@ -152,3 +152,37 @@
 - 次の枠の script: `sh plan/ws291/tests/rtx-depth-probe.sh build/ws291/rtx/p1 build/ws291/vmunix-va1 build/ws291/vmunix-p010a4 build/ws291/vmunix-z-nowrite`
   （各 kernel で shot 1 と dmesg 全部、最後に vmunix-va1 を戻して Debian）。vmunix-p010a4 = 63ebcaf71（cksum 869726610）、
   vmunix-z-nowrite = 同じ tree で draw の depth write だけを切った実験（cksum 4163372434、source には残していない）。
+
+## q1670-i04（P2、worktree p2-ws291p、2026-10-29）
+
+### 実機（10:28〜10:46、10.0.10.3、DP、lock は P2）
+
+- `sh plan/ws291/tests/rtx-depth-probe.sh build/ws291/rtx/p1 build/ws291/vmunix-va1 build/ws291/vmunix-p010a4 build/ws291/vmunix-z-nowrite`:
+  p1/1（vmunix-p010a4 = 63ebcaf71、cksum 869726610、depth あり）の shot 1 は model・texture・背景が出て、Linux の参照（RADV の
+  linux-shot-1.png、p2-ws291 の build から複写）と 16 段以上違う画素が 2 / 2073600。`vk: gr after a run` の行は無し（GR の trap 無し）。
+  p1/2（vmunix-z-nowrite）は前後が崩れる（depth の write が効いている事の裏付け）。p1/2 の shot.png は m4・m6 の shot.png と byte まで同じ:
+  test が LESS_OR_EQUAL で clear が 1.0、write が無いので全ての fragment が通り、depth 無しと同じ描画になる（静止画、全画面）。
+- 前回の「depth test で全体が消える」は depth ではなかった。`sh plan/ws291/tests/rtx-mview-order.sh build/ws291/rtx/o1 build/ws291/vmunix-p010a4`:
+  a-shot1（起動の直後）は出る。b-one（mview の spin、mailbox）の後の c-shot1・e-shot5000・f-shot1 は mview の window が写らず、
+  desktop（Settings の Welcome）だけ。m3 の shot は spin の後に撮っていた。同じ起動の中で mailbox の mview の後の mview（fifo）の window が
+  画面に出ない別の不具合（原因は未調べ、depth・p010a の範囲の外の見込み。Q1 に報告）。
+- `sh plan/ws291/tests/rtx-scene-profile.sh build/ws291/rtx/s1 build/ws291/vmunix-va1 build/ws291/vmunix-p010a4 5000`（起動の直後の shot 5000、
+  nvrtx.vk.perf=1 で mview 5000 copies 12 s）: shot 5000 は格子の 5000 体が出る（build/ws291/rtx/s1/shot-small.png、Linux の 5000 の参照は無く
+  画素の比較は未実施）。MVIEW SPIN 42.24 fps（frame 23.63 ms、record 1.32、submit 21.63、present 0.40）。kernel の perf（5 s ごと）:
+  runs 434 avg 10074 us、gpu avg 9802 us、frames 868、flips 217（43/s）。起動の直後の compositor だけの run は gpu avg 1635 us。
+  1 frame に 2 run（mview と compositor の見込み）で、GPU の時間は 1 frame に約 19.6 ms、残り約 4 ms は CPU と同期の待ち。
+- o1 の d-many（depth あり）は 42.13 fps、b-one は 444.00 fps。m3 の 42.02 fps も depth が効いた状態の値だった（kernel は同じ 759123d87 の形）。
+- 返却: 10:46 Debian（`measure.sh where` = linux）、RTX の 4 function は vfio-pci、BootOrder 0002,0000、NVMe の kernel は vmunix-va1
+  （cksum 1463007375）、zedbsd.cfg の nvrtx.vk.perf の行は 0。lock は free。
+
+### p010a の受け入れの今
+
+- 済み: amd64 の vmunix の warning 0 と host 試験（i03 の記録）、実機の mview copies 1 の深度の前後と texture（Linux の RADV の参照と 2 画素差）、
+  5000 copies が動く（42.1〜42.2 fps、p011 の起点）。
+- 未実施: NVK（Linux の RTX）の参照の shot との比較（RADV の参照で代用）、5000 copies の画素の比較、spin の後に window が出ない件。
+
+### p011 の見立て（host で次に進める）
+
+- vkQueueSubmit は GPU を待つ（vk-execute.c の execute_flush → nvrtx_vk_gpu_run が fence を待つ）。amdrdna は待たない形（slot と parked の marker、
+  completer の thread）。GPU が 1 frame に約 19.6 ms なので、待たない形で CPU の約 4 ms を重ねれば 50 fps 前後に届く見込み。足りなければ
+  vertex の program（SM75 の compiler）の質を見る。
