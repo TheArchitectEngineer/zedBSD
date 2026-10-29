@@ -19,7 +19,8 @@
  *   current attribute value from glVertexAttribP4ui (unsigned) and from
  *   glVertexAttribP3ui (signed), an RGB10_A2UI texture drawn into, and
  *   (when the context names GL_ARB_tessellation_shader; skipped, green,
- *   otherwise) a quad patch tessellated over the target.
+ *   otherwise) a quad patch tessellated over the target, and a square
+ *   drawn by glDrawArraysIndirect (GL_ARB_draw_indirect).
  *
  * The start's checks each print a line; a check whose value is not the
  * expected one fails the run.
@@ -33,7 +34,7 @@
 #include <string.h>
 
 /* The outcomes shown, the side of the framebuffer object, and the attribute locations of the corners and of a colour. */
-#define GL33_OUTCOMES		9U
+#define GL33_OUTCOMES		10U
 #define GL33_SIDE		8
 #define GL33_POSITION		0U
 #define GL33_COLOUR		1U
@@ -146,7 +147,7 @@ static const char gl33_attrib_fragment_source[] =
 /* The names of the outcomes. */
 static const char *const gl33_names[GL33_OUTCOMES] = {
 	"version", "time-elapsed", "timestamps", "dual-layout", "dual-bound", "packed-unsigned", "packed-signed", "rgb10-a2ui",
-	"tessellation"
+	"tessellation", "draw-indirect"
 };
 
 /* The tessellation shaders: a patch of the square's four corners, its quad domain over them, green. */
@@ -206,6 +207,7 @@ static void gl33_dual(GLuint program, unsigned outcome, const char *what);
 static void gl33_packed(GLuint program, GLenum type, GLuint value, int four, unsigned outcome, const char *what);
 static void gl33_rgb10_a2ui(void);
 static void gl33_tessellation(void);
+static void gl33_draw_indirect(void);
 static int gl33_expect(const char *what, long got, long expected);
 
 /*
@@ -279,6 +281,7 @@ glxtest_gl33_start(void)
 	gl33_packed(gl33_attrib_turned, GL_INT_2_10_10_10_REV, 511U, 0, 6U, "packed-signed");
 	gl33_rgb10_a2ui();
 	gl33_tessellation();
+	gl33_draw_indirect();
 
 	/* The window again, and no error the checks did not expect. */
 	glBindFramebuffer(GL_FRAMEBUFFER, 0U);
@@ -325,15 +328,15 @@ glxtest_gl33_draw(
 		gl33_quad(x, y, 0.2f, 0.25f, rgb);
 	}
 
-	/* The next cell (the second of the third row) with the fixed function, as the compatibility profile keeps it. */
+	/* The next cell (the third of the third row) with the fixed function, as the compatibility profile keeps it. */
 	glBindVertexArray(0U);
 	glUseProgram(0U);
 	glColor3f(0.0f, 1.0f, 0.0f);
 	glBegin(GL_QUADS);
-	glVertex2f(-0.45f, -0.91f);
-	glVertex2f(-0.05f, -0.91f);
-	glVertex2f(-0.05f, -0.41f);
-	glVertex2f(-0.45f, -0.41f);
+	glVertex2f(0.05f, -0.91f);
+	glVertex2f(0.45f, -0.91f);
+	glVertex2f(0.45f, -0.41f);
+	glVertex2f(0.05f, -0.41f);
 	glEnd();
 }
 
@@ -860,6 +863,52 @@ gl33_tessellation(void)
 			glDeleteShader(shaders[index]);
 	}
 	gl33_outcomes[8] = passed;
+}
+
+/*
+ * Checks GL_ARB_draw_indirect: the square drawn green over the red
+ * target by a command (4 vertices, 1 instance, from 0) in the indirect
+ * buffer, and the buffer's binding read back.
+ */
+static void
+gl33_draw_indirect(void)
+{
+	static const GLuint command[4] = { 4U, 1U, 0U, 0U };
+	GLuint buffer;
+	GLint bound;
+	GLenum error;
+	unsigned got;
+	int passed;
+
+	/* The command in a buffer bound to the target. */
+	glGenBuffers(1, &buffer);
+	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, buffer);
+	glBufferData(GL_DRAW_INDIRECT_BUFFER, (GLsizeiptr)sizeof(command), command, GL_STATIC_DRAW);
+	bound = 0;
+	glGetIntegerv(GL_DRAW_INDIRECT_BUFFER_BINDING, &bound);
+	passed = gl33_expect("indirect-binding", (long)bound, (long)buffer);
+
+	/* The square over red, drawn by the command. */
+	gl33_clear(GL33_RED);
+	glUseProgram(gl33_plain);
+	glUniform4f(gl33_plain_rect, 0.0f, 0.0f, 1.0f, 1.0f);
+	glUniform4f(gl33_plain_colour, 0.0f, 1.0f, 0.0f, 1.0f);
+	glDrawArraysIndirect(GL_TRIANGLE_STRIP, NULL);
+	error = glGetError();
+	passed &= gl33_expect("indirect-glerror", (long)error, (long)GL_NO_ERROR);
+	got = gl33_read(GL33_SIDE / 2, GL33_SIDE / 2);
+	printf("GLXTEST GL33 draw-indirect got=%06x\n", got);
+	passed &= gl33_expect("draw-indirect", (long)got, (long)GL33_GREEN);
+
+	/* A misaligned offset is refused. */
+	glDrawArraysIndirect(GL_TRIANGLE_STRIP, (const void *)2);
+	error = glGetError();
+	passed &= gl33_expect("indirect-misaligned", (long)error, (long)GL_INVALID_VALUE);
+
+	/* The buffer goes. */
+	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0U);
+	glDeleteBuffers(1, &buffer);
+	gl33_outcomes[9] = passed;
 }
 
 /* Prints one of the start's checks, counting it when the value is not the one expected; returns 1 when it is. */

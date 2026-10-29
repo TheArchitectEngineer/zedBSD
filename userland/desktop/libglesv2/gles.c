@@ -2595,6 +2595,10 @@ gles_desktop_integers(
 	case GL_MAX_GEOMETRY_OUTPUT_VERTICES:
 		values[0] = (GLint)state->limits.maxGeometryOutputVertices;
 		return 1U;
+	case GL_DRAW_INDIRECT_BUFFER_BINDING:
+		/* The buffer indirect draws read (GL_ARB_draw_indirect). */
+		values[0] = gles_buffer_name(state->draw_indirect_buffer);
+		return 1U;
 	case GL_MAX_GEOMETRY_UNIFORM_COMPONENTS:
 		values[0] = 1024;
 		return 1U;

@@ -447,6 +447,12 @@ GLAPI void APIENTRY glDispatchCompute(GLuint num_groups_x, GLuint num_groups_y, 
 GLAPI void APIENTRY glDispatchComputeIndirect(GLintptr indirect);
 GLAPI void APIENTRY glMemoryBarrier(GLbitfield barriers);
 
+/* OpenGL 4.0's indirect draws (GL_ARB_draw_indirect on 3.1 to 3.3 contexts). */
+#define GL_DRAW_INDIRECT_BUFFER		0x8F3F
+#define GL_DRAW_INDIRECT_BUFFER_BINDING	0x8F43
+GLAPI void APIENTRY glDrawArraysIndirect(GLenum mode, const void *indirect);
+GLAPI void APIENTRY glDrawElementsIndirect(GLenum mode, GLenum type, const void *indirect);
+
 #ifdef __cplusplus
 }
 #endif

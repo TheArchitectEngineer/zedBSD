@@ -61,6 +61,7 @@ static const struct fixed_extension_entry fixed_extensions[] = {
 	{ "GL_ARB_depth_buffer_float", 30U, 0, 0U },
 	{ "GL_ARB_depth_clamp", 30U, 0, 0U },
 	{ "GL_ARB_draw_elements_base_vertex", 30U, 0, 0U },
+	{ "GL_ARB_draw_indirect", 31U, 0, 0U },
 	{ "GL_ARB_draw_instanced", 30U, 0, 0U },
 	{ "GL_ARB_explicit_attrib_location", 33U, 0, 0U },
 	{ "GL_ARB_framebuffer_object", 30U, 0, 0U },

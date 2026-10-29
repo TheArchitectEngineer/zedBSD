@@ -736,6 +736,8 @@ timed_delete_buffers(
 			state->storage_buffer = NULL;
 		if (state->dispatch_buffer == buffer)
 			state->dispatch_buffer = NULL;
+		if (state->draw_indirect_buffer == buffer)
+			state->draw_indirect_buffer = NULL;
 
 		/*
 		 * Taken out of every vertex array: the bound one's (the
@@ -1608,9 +1610,11 @@ buffer_slot(
 		break;
 	}
 
-	/* Desktop GL's buffer texture target (libGL). */
+	/* Desktop GL's buffer texture and indirect draw targets (libGL). */
 	if (target == GL_TEXTURE_BUFFER && gles_fixed != NULL)
 		return &state->texture_buffer;
+	if (target == GL_DRAW_INDIRECT_BUFFER && gles_fixed != NULL)
+		return &state->draw_indirect_buffer;
 
 	/* OpenGL ES 3.1's shader storage and dispatch targets, in a context that offers compute (ws101-p009). */
 	if (target == GL_SHADER_STORAGE_BUFFER && state->compute)

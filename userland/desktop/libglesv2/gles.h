@@ -1294,6 +1294,9 @@ struct gles_state {
 
 	/* The buffer bound to desktop GL's GL_TEXTURE_BUFFER target (libGL; glTexBuffer names its buffer itself). */
 	struct gles_buffer *texture_buffer;
+
+	/* The buffer desktop GL's indirect draws read their commands from (GL_DRAW_INDIRECT_BUFFER, libGL). */
+	struct gles_buffer *draw_indirect_buffer;
 	struct gles_buffer *feedback_buffer;
 
 	/* The indexed binding points of uniform buffers and of transform feedback buffers. */

@@ -99,11 +99,13 @@
 		glDispatchCompute;
 		glDispatchComputeIndirect;
 		glDrawArrays;
+		glDrawArraysIndirect;
 		glDrawArraysInstanced;
 		glDrawBuffer;
 		glDrawBuffers;
 		glDrawElements;
 		glDrawElementsBaseVertex;
+		glDrawElementsIndirect;
 		glDrawElementsInstanced;
 		glDrawElementsInstancedBaseVertex;
 		glDrawRangeElements;
