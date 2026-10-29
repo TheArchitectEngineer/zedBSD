@@ -1097,10 +1097,18 @@ lower_instruction(
 	case DRV_GPU_IR_LOAD_SHARED:
 	case DRV_GPU_IR_STORE_SHARED:
 		lower_storage(c, inst);
+
+		/* A store to a storage buffer writes memory the draw's kill must wait for. */
+		if (inst->op == DRV_GPU_IR_STORE_STORAGE)
+			c->program->writes_memory = 1U;
 		break;
 
 	case DRV_GPU_IR_ATOMIC:
 		lower_atomic(c, inst);
+
+		/* An atomic on a buffer or an image writes memory; one on shared memory does not leave the workgroup. */
+		if (inst->location != DRV_GPU_IR_LOCATION_SHARED)
+			c->program->writes_memory = 1U;
 		break;
 
 	case DRV_GPU_IR_LOAD_SYSTEM:
@@ -1129,6 +1137,10 @@ lower_instruction(
 	case DRV_GPU_IR_IMAGE_READ:
 	case DRV_GPU_IR_IMAGE_WRITE:
 		lower_image(c, inst);
+
+		/* A store to a storage image writes memory. */
+		if (inst->op == DRV_GPU_IR_IMAGE_WRITE)
+			c->program->writes_memory = 1U;
 		break;
 
 	case DRV_GPU_IR_KILL:

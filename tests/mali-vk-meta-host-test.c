@@ -14,10 +14,13 @@
  * and two storage buffers (set 0, bindings 0 and 1) whose lengths it
  * does not read; the clear's vertex program the position program alone
  * from the vertex index; the clear's fragment program one colour at the
- * location the module is moved to, for each of the eight.  The modules
- * (the colour one at location 0 and 3) are written to the directory
- * named by the argument, when one is given, for a decode with the
- * compiler's host test.
+ * location the module is moved to, for each of the eight; the aspect
+ * copy a compute program of eight by eight threads reading 52 bytes of
+ * push constants and two storage buffers like the blit's.  The
+ * conversion of a depth to a 16- and 24-bit normalized value is checked
+ * against values worked by hand.  The modules (the colour one at
+ * location 0 and 3) are written to the directory named by the argument,
+ * when one is given, for a decode with the compiler's host test.
  *
  * cc -std=gnu11 -DKERN_USER_ABI_LP64 -Iinclude -Isrc -I. -idirafter libc/include -Wall -Wextra -Werror \
  *    tests/mali-vk-meta-host-test.c src/drivers/gpu/mali/vk/vk-meta-spirv.c \
@@ -49,6 +52,8 @@ void kern_free(void *pointer);
 static void expect(const char *name, uint64_t got, uint64_t want);
 static struct mali_shader_program *compile(const char *name, const uint32_t *words, size_t count, uint32_t stage);
 static void check_blit(void);
+static void check_aspect(void);
+static void check_unorm(void);
 static void check_clear_vertex(void);
 static void check_clear_color(uint32_t location);
 static void write_module(const char *directory, const char *name, const uint32_t *words, size_t count);
@@ -96,6 +101,7 @@ main(
 		write_module(argv[1], "meta-blit.spv", mali_meta_blit_spirv, mali_meta_blit_words);
 		write_module(argv[1], "meta-clear-vertex.spv", mali_meta_clear_vertex_spirv, mali_meta_clear_vertex_words);
 		write_module(argv[1], "meta-clear-color-0.spv", mali_meta_clear_color_spirv, mali_meta_clear_color_words);
+		write_module(argv[1], "meta-aspect.spv", mali_meta_aspect_spirv, mali_meta_aspect_words);
 		error = mali_meta_clear_color_at(moved, sizeof(moved) / sizeof(moved[0]), 3);
 		expect("colour moved for the file", (uint64_t)error, 0);
 		if (error == 0)
@@ -108,9 +114,11 @@ main(
 
 	/* Each program. */
 	check_blit();
+	check_aspect();
 	check_clear_vertex();
 	for (location = 0; location < LOCATIONS; location++)
 		check_clear_color(location);
+	check_unorm();
 
 	/* The report. */
 	if (failures != 0) {
@@ -189,6 +197,85 @@ check_blit(void)
 
 	expect("blit bindings 0 and 1", bindings, 3);
 	mali_shader_program_free(program);
+}
+
+/* Checks the aspect copy's shape: the blit's, with its own push constants. */
+static void
+check_aspect(void)
+{
+	struct mali_shader_program *program;
+	uint32_t index;
+	uint32_t bindings;
+
+	/* The compute program. */
+	program = compile("aspect", mali_meta_aspect_spirv, mali_meta_aspect_words, MALI_SHADER_COMPUTE);
+	if (program == NULL)
+		return;
+
+	/* Its workgroup, its push constants, nothing else. */
+	expect("aspect compute", program->stage, MALI_SHADER_COMPUTE);
+	expect("aspect group x", program->local_size[0], MALI_META_ASPECT_GROUP);
+	expect("aspect group y", program->local_size[1], MALI_META_ASPECT_GROUP);
+	expect("aspect group z", program->local_size[2], 1);
+	expect("aspect push", program->push_bytes, MALI_META_ASPECT_PUSH_BYTES);
+	expect("aspect no textures", program->texture_count, 0);
+	expect("aspect no images", program->image_count, 0);
+	expect("aspect no local storage", program->tls_bytes, 0);
+	expect("aspect no shared memory", program->shared_bytes, 0);
+	expect("aspect FAU fits", program->fau_words <= 64U, 1);
+	expect("aspect registers fit", program->work_registers <= 64U, 1);
+
+	/* Its two storage buffers at set 0, bindings 0 and 1, inside the FAU words, lengths not read. */
+	expect("aspect two buffers", program->buffer_count, 2);
+	bindings = 0;
+	for (index = 0; index < program->buffer_count && index < 2U; index++) {
+		expect("aspect buffer set", program->buffers[index].set, 0);
+		expect("aspect buffer storage", program->buffers[index].kind, MALI_SHADER_BUFFER_STORAGE);
+		expect("aspect buffer in FAU", program->buffers[index].fau_word + 2U <= program->fau_words, 1);
+		expect("aspect buffer after push", program->buffers[index].fau_word >= MALI_META_ASPECT_PUSH_BYTES / 4U, 1);
+		expect("aspect length not read", program->buffers[index].size_fau_word, MALI_SHADER_NO_FAU_WORD);
+		if (program->buffers[index].binding < 2U)
+			bindings |= 1U << program->buffers[index].binding;
+	}
+
+	expect("aspect bindings 0 and 1", bindings, 3);
+	mali_shader_program_free(program);
+}
+
+/*
+ * Checks the depth conversion against values worked by hand: the ends,
+ * a half (0.5 * 65535 = 32767.5 rounds up), a quarter, three quarters
+ * (12582911.25 rounds down), the largest float below one, the smallest
+ * normal float, and the values clamped (negative, above one, NaN,
+ * infinity).
+ */
+static void
+check_unorm(void)
+{
+	/* Sixteen bits. */
+	expect("unorm16 0.0", mali_meta_unorm(0x00000000U, 0xffffU), 0);
+	expect("unorm16 1.0", mali_meta_unorm(0x3f800000U, 0xffffU), 0xffff);
+	expect("unorm16 0.5", mali_meta_unorm(0x3f000000U, 0xffffU), 0x8000);
+	expect("unorm16 0.25", mali_meta_unorm(0x3e800000U, 0xffffU), 0x4000);
+	expect("unorm16 1/65535", mali_meta_unorm(0x37800080U, 0xffffU), 1);
+	expect("unorm16 0.4/65535", mali_meta_unorm(0x36cccccdU, 0xffffU), 0);
+	expect("unorm16 0.6/65535", mali_meta_unorm(0x3719999aU, 0xffffU), 1);
+
+	/* Twenty-four bits. */
+	expect("unorm24 0.0", mali_meta_unorm(0x00000000U, 0xffffffU), 0);
+	expect("unorm24 1.0", mali_meta_unorm(0x3f800000U, 0xffffffU), 0xffffff);
+	expect("unorm24 0.5", mali_meta_unorm(0x3f000000U, 0xffffffU), 0x800000);
+	expect("unorm24 0.75", mali_meta_unorm(0x3f400000U, 0xffffffU), 0xbfffff);
+	expect("unorm24 just below 1", mali_meta_unorm(0x3f7fffffU, 0xffffffU), 0xfffffe);
+	expect("unorm24 smallest normal", mali_meta_unorm(0x00800000U, 0xffffffU), 0);
+
+	/* Clamped and refused values. */
+	expect("unorm24 -0.5", mali_meta_unorm(0xbf000000U, 0xffffffU), 0);
+	expect("unorm24 -0.0", mali_meta_unorm(0x80000000U, 0xffffffU), 0);
+	expect("unorm24 2.0", mali_meta_unorm(0x40000000U, 0xffffffU), 0xffffff);
+	expect("unorm24 infinity", mali_meta_unorm(0x7f800000U, 0xffffffU), 0xffffff);
+	expect("unorm24 NaN", mali_meta_unorm(0x7fc00000U, 0xffffffU), 0);
+	expect("unorm16 denormal", mali_meta_unorm(0x00000001U, 0xffffU), 0);
 }
 
 /* Checks the clear's vertex program. */

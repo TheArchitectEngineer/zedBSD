@@ -3,7 +3,7 @@
 # ws313-p011: Mali の render の node・scheduler・Vulkan の executor・CS の命令の builder
 
 Status: in-progress（実装済み・実機未試験）
-Queue: q1675-i02（P7 の配下 D）、q1675-i03 の一部（P7 の配下 D2: render pass の LOAD・display の import）、q1675-i04 の一部（P7 の配下 D3: WLS の dispatch・拡大の blit、続けて clear attachments・depth と sample mask を書く fragment program の DCD・ZSD）、q1675-i05 の一部（P7: FBD の大きさの修正・depth attachment、配下 P7-B: mip level）
+Queue: q1675-i02（P7 の配下 D）、q1675-i03 の一部（P7 の配下 D2: render pass の LOAD・display の import）、q1675-i04 の一部（P7 の配下 D3: WLS の dispatch・拡大の blit、続けて clear attachments・depth と sample mask を書く fragment program の DCD・ZSD）、q1675-i05 の一部（P7: FBD の大きさの修正・depth attachment、配下 P7-B: mip level）、q1687-i01 の一部（P7: pass の中の depth・stencil の clear、memory に書く program の kill。配下 P7-C: D24S8 の aspect の copy・vkCmdClearDepthStencilImage）
 WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配下 C（§12）。
 
 ## ユーザーの指示（原文、2026-10-29、Q1 経由）
@@ -85,11 +85,34 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 
 判断（推しで進めた所）:
 - depth・stencil の LOAD は FBD の「Z Preload Enable」「S Preload Enable」（v10.xml に有る field）で。**Mesa はこの bit を使わず、frame shader の pre-frame の draw で読み戻す**。実機で depth の LOAD が効かない・fault するなら、bit を外して frame shader（ZS_EMIT で書く preload の program）にする。desktop の経路に depth は無い。
-- kill/update の「program が memory に書く」は false にした（program に印が無い）。storage に書く fragment program と depth test の組み合わせは Mesa と違いうる。
-- D24S8 の depth aspect の buffer→image の copy は 4 byte を書くので stencil の byte も上書きする。stencil aspect の copy は log を出して飛ばす。pass の中の vkCmdClearAttachments の depth・stencil の aspect、vkCmdClearDepthStencilImage は未対応（前と同じ）。
+- ~~kill/update の「program が memory に書く」は false にした~~（q1687-i01 で compiler の `writes_memory` を使う）。
+- ~~D24S8 の depth aspect の buffer→image の copy は stencil の byte も上書きする。stencil aspect の copy は飛ばす。pass の中の clear attachments の depth・stencil、vkCmdClearDepthStencilImage は未対応~~（q1687-i01 で実装、実機未試験）。
 - plane の slice stride（word 6）は level の bytes を書く（Mesa は 2D・1 sample で 0）。1 level で今までの値のまま。
 
 確かめ（host と build だけ）: 下の「確かめ」の i05 の行。
+
+## 実装（q1687-i01、P7 と配下 P7-C、2026-10-29、実機未試験）
+
+| file | 中身 |
+| --- | --- |
+| `vk-draw.c`（P7） | pass の中の vkCmdClearAttachments の depth・stencil の aspect: 矩形ごとに clear の program（vertex と location 0 の colour）で 1 本の draw。depth は vertex の z が 0 なので恒等の viewport の depth の offset に clear の depth の float の bit を入れる。ZSD は pass が持ち clear が名指す aspect だけ: depth は test ALWAYS・write、stencil は test・3 つの op が REPLACE・compare ALWAYS・mask 0xff・reference が clear の値（両 face）。colour は書かない（全 target の blend の write mask 0、DCD1 の render target mask 0）。kill と update は `mali_surface_kill_flags`（ALWAYS なので weak early）。colour の clear の語は前と同じ（関数を attachment の 7 語を取る形にしただけ） |
+| `vk-draw.c`（P7、c08176e6c、**desktop の経路**） | fixed function の blend の memory format（blend descriptor の word 3）: 8 bit UNORM の format（R8・RG8・RGBA8・BGRA8、sRGB は bit 20）は Mesa の `pan_blendable_formats`（BFMT_SRGB → MALI_BLEND_PU_R8G8B8A8）と同じ「RGBA8 TB」（v10.xml の Format 237、RGBA 順）、他の format は自分の pixel word を RGBA 順で（panvk_vX_blend.c は fixed function の RGB1 を RGBA に直す）。今までは 187（RGBA8 UNORM）<<12 を書いていた（下の「残り」3 の「blend の memory format、未確認」）。全ての draw・pass の中の clear・pre-frame の preload の blend の語が変わる。**実機未確認**。夜に色がおかしい・blend の fault の時は、試した main がこの commit の前か後かを先に確かめる。戻すなら `blend_format` の 1 関数 |
+| `vk-draw.c`（P7） | program が memory に書く（compiler の `writes_memory`、[phase010](../phase010/phase.md) の q1687-i01）時、draw の pixel kill を Force Late に（depth attachment の有無とも。update はそのまま）。desktop の 60 program は 0 なので desktop の draw の語は変わらない |
+
+| 配下 P7-C: `vk-meta-spirv.{c,h}`・`vk-meta.{c,h}`・`render.h`・`vk-build.h` | 新しい compute の meta program「aspect copy」（`MALI_VK_META_ASPECT` = 10、`MALI_RENDER_META_PROGRAMS` 11）: 8×8×1、z が layer、push 13 語（幅・高さ、両側の byte の pitch・layer・texel の byte 数 1 か 4・shift、mask、value、flags）。field = (source の語 >> ((byte の位置 & 3)·8 + shift)) & mask、CONSTANT の時は value。書きは SHARED の時 atomicAnd・atomicOr（4 texel が 1 語を共有する stencil の byte）、他は texel の語の read-modify-write。関数・early return 無し。address が 4 の倍数でない・offset が 0x7fffffff を超える時は ENOTSUP。`mali_meta_unorm`（float を使わない unorm16・24、最近接、[0,1] に clamp、NaN と負は 0）。blit の形の確かめは `compute_fits` に分けて共有（blit の判定は前と同じ） |
+| 配下 P7-C: `vk-command.c`・`vk-queue.c` | vkCmdClearDepthStencilImage（opcode 120）を decode（present 1 の時に depth の bit と stencil）して run: D16（unorm16 を 2 つ）・X8_D24（unorm24）・D32（float の bit）・D24S8 の両 aspect（unorm24 \| stencil<<24）は `mali_cs_fill_rows`、D24S8 の片方の aspect は CONSTANT の aspect program（level ごとに 1 run）。D24S8 の aspect の copy: buffer→image の depth は下位 24 bit だけ（stencil を保つ）、buffer→image・image→buffer の stencil（詰めた byte ↔ bit 24..31、image→buffer は atomic で周りの byte を保つ）、vkCmdCopyImage の D24S8 どうしの片方の aspect。image→buffer の depth と両 aspect の copy は前の CS の行の copy のまま |
+| `sched.c`（P7） | 失敗した submission の行の文言: `… ran the executor's own programs (%x); later work that needs them (blits, clears, copies of one aspect) is not run`（bit 10 = 0x400 が aspect program） |
+
+| `vk-draw.c`・`vk-desc.{c,h}`（P7、db080e110、**desktop の経路**、配下 P7-R の Mesa との照合から） | P7-R（読むだけ）が desktop の経路の descriptor・CS の命令・staging register を Mesa 26.2.6 の v10.xml・panvk と照合（bit の位置・enum・register 番号の誤りは無し）。Mesa が立てて executor が 0 の値などを、P7 が Mesa の行で確かめて直した: DCD0 の scissor to bounding box（bit 23、全ての draw と clear。panvk の prepare_dcd）、DCD2 の write mask（書く target の bit 12..23、read mask 0）、pass の終わりの texture cache の invalidate（FLUSH_CACHE2 の other INVALIDATE と wait、panvk の add_memory_dependency）、shader program の bit 8（fragment は GL の coverage bitmask、position は half warp、varying と compute は 0。`MALI_DESC_STAGE_VARYING` の印）、FBD の tie-break rule 2（MINUS_180_IN_0_OUT）・point sprite の origin の bit 15 を 0（Vulkan は上左）・depth attachment の無い pass の Z internal format を D24、blend の round to FB precision（bit 11、全て）と sRGB（bit 10、memory format の bit 20 の時）、sampler の compare function の向き（Mesa の pan_flip_compare_func: LESS↔GREATER、LEQUAL↔GEQUAL）、tiler の level の数が 2 未満なら 8 とみなす（features が読めなかった時の mask 0 を避ける） |
+
+判断（推しで進めた所）:
+- P7-R の指摘で直さなかった物（夜の後）: blend の write mask 0 の target を Mesa の OFF の mode にすること、SRC_ALPHA_SATURATE と同じ非自明な factor の組の blend equation（desktop は使わない見込み）、blend constant の field、plane の slice stride を 2D で 0 に（前の判断どおり）、instance の vertex attribute の offset enable と INSTANCE_OFFSET（firstInstance が 0 でない instanced draw だけ）、dispatch・transfer の後の cache の invalidate（今は pass の後だけ）、pre-frame の DCD の scissor to bounding box。
+- D24S8 の layout: 1 語の bit 0..23 が depth、24..31 が stencil（Mesa の pan_desc.c の translate_zs_format・translate_s_format で Z24S8 と X24S8 が 1 つの surface、bit の配置は pipe_format の名前の慣例から。u_format.csv とは照合していない）。
+- buffer→image の D24S8 の depth で program が使えない時は、前（語ごとの copy で stencil を上書き）と違い skip して 1 行（submission で 1 度 `mali: vk: a copy or a clear of one aspect of a depth and stencil image is not run`）。stencil を壊さない方を採った（P7-C の推し、P7 が同意）。
+- 結果を使わない atomic も ATOM_RETURN になる（compiler の最適化の余地。動作は同じ）。
+- depth の clear を fragment の gl_FragDepth でなく vertex の z（viewport の offset）で: Mesa の vk_meta_clear.c と同じ形。clear の program を足さずに済む。depth は draw の depth の clamp（0〜1）と ZSD の clamp [0, 1] を通る。
+- depth・stencil の clear の fragment program は colour の location 0 の物を使い、blend と render target mask で何も書かせない。render target mask が 0 の時に hardware が fragment の thread を省くかは未確認（省いても depth・stencil は固定の機能なので結果は同じ見込み）。
+- memory に書く program の kill: Mesa の pan_earlyzs.c（副作用のある shader は late kill）に合わせた。vk-surface.c の `mali_surface_kill_flags` は前から `writes_memory` を見る形で、印が無いので false だった。
 
 ## 判断（推しで進めた所）
 
@@ -133,6 +156,8 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 
 ## 夜の serial で見る行（`mali:` で始まる。gpu.md §9 の行の後）
 
+（q1687-i01）depth・stencil の aspect: `mali: vk: a copy or a clear of one aspect of a depth and stencil image is not run`（submission で 1 度）、program の不足は node で 1 度 `mali: vk: the program that copies or clears one aspect of a depth and stencil image is not compiled (E) at I: reason; that work is not run`・`… <理由>; that work is not run`、code は session で 1 度 `… has no memory (E)`・`… is not mapped (E)`。`a copy of a stencil aspect is not run` は stencil を持たない format への stencil の copy の時だけ。desktop の起動ではどれも出ない見込み。
+
 1. `mali: queue: group 0 stream 0 started on an empty ring (… N registers)`。**N が 96 未満**なら executor は `the command stream has N registers, 96 needed` で submit を拒否する（render の node 自体は出る）。
 2. `mali: queue self-test: NOP and SYNC_ADD64 ran (sync 0 -> 1, 40 bytes through the ring)`。失敗なら `mali: queue self-test failed (…): sync …, fault …, fatal …` と `mali: queue self-test: group 0 stream 0 insert … extract … active … at … wait … blocked … resource … fault … fatal … group state …`。extract が 0 のままなら doorbell か ring の address（AS 1）の問題、fatal の下の byte が exception type。
 3. `mali: queue: group 1 stream 0 started on an empty ring (… ring at 100000, doorbell 2 …)`（render の stream）。
@@ -144,7 +169,7 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 9. （D2）display: `mali: display lease N: shared frames flipped`（import を OSD1 に直に。期待する行）・`shared frames copied`（import を CPU で写す。flip の条件を外れた）・`copied-in frames flipped`・`copied-in frames copied`（従来の copy の route）。import の拒否は `mali: display: an image is not imported (E): the image <理由>; its frames are copied`（1 度）。gpu.md §5 の「display lease N: frames flipped / copied」の行の形が変わった。
 
 10. （D3）WLS の dispatch: 前の `mali: vk: a dispatch with workgroup memory is not run` は出なくなる。shared が 1 MiB を超える program だけ `mali: vk: a dispatch of N bytes of workgroup memory is not run`（session で 1 度、submission は失敗）。shared を使う compute の submission が FAULT したら 6 の行（fault の address が stage の WLS の memory の範囲か見る）。**行が出ず結果が正しければ成功**（compute の出力を照合する試験は無い）。
-11. （D3）拡大・縮小・flip・RGBA↔BGRA の blit: `a scaling or converting blit is not run` は、4 byte/px の RGBA8・BGRA8（UNORM・sRGB）以外・3D・program が無い時だけ出る（submission で 1 度）。program の不足は node で 1 度 `mali: vk: the program that scales or converts a blit is not compiled (E) at I: reason; that work is not run` か `mali: vk: the program that scales or converts a blit <理由>; that work is not run`、code は session で 1 度 `mali: vk: the code of the program that scales or converts a blit has no memory (E) …`・`… is not mapped (E) …`。blit を含む submission が失敗したら 6 の行の後に `mali: render: submission K ran the executor's own programs (1); later blits and clears that need them are not run`。mirror（`heads.c`）の拡大の画面・cursor の形式の変換の blit が出れば成功（目で見る）。
+11. （D3）拡大・縮小・flip・RGBA↔BGRA の blit: `a scaling or converting blit is not run` は、4 byte/px の RGBA8・BGRA8（UNORM・sRGB）以外・3D・program が無い時だけ出る（submission で 1 度）。program の不足は node で 1 度 `mali: vk: the program that scales or converts a blit is not compiled (E) at I: reason; that work is not run` か `mali: vk: the program that scales or converts a blit <理由>; that work is not run`、code は session で 1 度 `mali: vk: the code of the program that scales or converts a blit has no memory (E) …`・`… is not mapped (E) …`。blit を含む submission が失敗したら 6 の行の後に `mali: render: submission K ran the executor's own programs (1); later work that needs them (blits, clears, copies of one aspect) is not run`（q1687-i01 で文言を変えた）。mirror（`heads.c`）の拡大の画面・cursor の形式の変換の blit が出れば成功（目で見る）。
 12. （D3 の続き）clear attachments: 前の `a clear of attachments inside a pass is not run` は、layer 0 でない矩形と program が無い時だけ出る。program の不足は node で 1 度 `mali: vk: the program that places a clear inside a pass …`（vertex）か `mali: vk: the program that colours a clear inside a pass …`（fragment）、`… is not compiled (E) at I: reason; that work is not run` か `… <理由>; that work is not run`。code は session で 1 度 `mali: vk: the code of the program … has no memory (E)`・`is not mapped (E)`。clear を含む submission の失敗は 6 の行の後に `mali: render: submission K ran the executor's own programs (M); …`（M の bit 1 が vertex、bit 2+L が location L）。desktop（compositor）は vkCmdClearAttachments を使わないので、desktop の起動では新しい行は出ない見込み。
 
 ## 確かめ
@@ -176,13 +201,17 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 - （D3 の続き）未実施: clear の draw の host 試験（vk-draw.c は kernel に依るので、stream と descriptor を偽の memory で組み立てる試験は無い。program の形だけ確かめた）、実機（clear の draw が GPU で動くか、location 1 以上の fragment program の ATEST、恒等の viewport の y の向き）。
 
 - （i05、2026-10-29）`sh plan/ws313/tests/c5-build-check.sh i05c` → ALL PASS（5 つの vmunix の warning 0、host: vk-desc 89・vk-surface 155・vk-frame 49・meta 125・compiler 37 行・desktop 60/60 他）。desktop の listing 67 本は前と SAME。FBD の修正の commit だけで odroid-c5・odroid-c5-keiland の vmunix warning 0、vk-frame 49・vk-desc 78。
+- （q1687-i01、2026-10-29）c08176e6c（P7 の clear・kill・blend の format、compiler の writes_memory と offset の試験）を git archive で build/p7e-tip/tree に書き出して `sh plan/ws313/tests/c5-build-check.sh tip` → ALL PASS（5 つの vmunix の warning 0、vk-desc 89・vk-surface 155・vk-frame 49・meta 125・compiler 39 PASS 行・desktop 60/60 他）。配下 P7-C（5eff8e541）: odroid-c5-keiland の vmunix warning 0、`tests/mali-vk-meta-host-test.c` → all checks passed (168)（aspect の形 24・unorm 19 を含む）、aspect program の SPIR-V は glslc の出力と cmp で一致、`mali-compiler-host-test.c`＋模型（asan・ubsan）で meta-aspect・meta-blit とも PASS、program の式を Python で 4 つの場合を手で確かめた（試験の file ではない）。
+- （q1687-i01）154f46ed6（P7-C の作業と sched.c の文言を含む）を build/p7e-tip2/tree に書き出して `c5-build-check.sh tip2` → ALL PASS（5 つの vmunix の warning 0、meta 168、compiler 39 PASS 行、desktop 60/60 他）。
+- （q1687-i01）db080e110（P7-R の照合からの修正）を build/p7e-tip3/tree に書き出して `c5-build-check.sh tip3` → ALL PASS（5 つの vmunix の warning 0、vk-desc 94・vk-frame 49・meta 168・compiler 39・desktop 60/60 他）。
+- （q1687-i01）未実施: 実機（全部: depth・stencil の clear の draw、late kill、blend の memory format 237、aspect program の compute と SSBO の atomic、CS の行の copy と compute の書きの順序、D24S8 の bit の配置）、QEMU（無い）、vk-draw.c と vk-queue.c の kernel 側の host 試験（無い）。
 - （i05）未実施: 実機（全部: FBD の 128 byte、ZS 拡張と ZSD、kill/update、depth の preload の bit、level の plane の並び、sampler の LOD）、QEMU（無い）、vk-draw.c の depth の経路の host 試験（kernel に依るので無い。packer は vk-surface の試験）。
 
 ## 残り（夜の結果で直す順）
 
 1. self-test と render の stream の起動（上の 1〜4）。
 2. compute の dispatch（`vkdemo` の compute、C の compute shader）: RUN_COMPUTE の task increment（今は 1）、TSD、FAU の pointer の形。
-3. 三角形: RUN_IDVS の staging register、tiler context・heap、FBD・RT、blend の memory format（BGRA を RGBA 順にしている、未確認）、ZSD。
+3. 三角形: RUN_IDVS の staging register、tiler context・heap、FBD・RT、blend の memory format（q1687-i01 で Mesa の RGBA8 TB に、実機未確認）、ZSD。
 4. compositor: ~~LOAD の pass の pre-frame の shader~~（D2 で実装、実機未試験）、~~clear attachments~~（D3 で draw、実機未試験）、~~拡大の blit、cursor の形式の変換の blit~~（D3 で compute の blit、実機未試験）、AFBC 無しの性能、target 1 以上の LOAD。
 5. 改善: 非同期の submit（ring に複数の job、IRQ で完了）、TILER_OOM、~~shared memory~~（D3 で WLS、実機未試験）、~~mip・depth~~（i05、実機未試験）、WLS の instance の数を GPU の THREAD_MAX_THREADS・THREAD_FEATURES から。
 

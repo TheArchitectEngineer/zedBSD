@@ -32,6 +32,7 @@
 #include "drivers/gpu/mali/vk/vk-build.h"
 #include "drivers/gpu/mali/vk/vk-desc.h"
 #include "drivers/gpu/mali/vk/vk-meta.h"
+#include "drivers/gpu/mali/vk/vk-meta-spirv.h"
 
 #include "drivers/gpu/i915/vk/vk-codec.inc"
 
@@ -80,6 +81,30 @@
 #define WLS_TOTAL_MAX		(32ULL << 20)
 #define WLS_ALIGN		4096U
 
+/*
+ * A texel of D24_UNORM_S8_UINT: one 32-bit word, the depth's 24-bit
+ * normalized value in bits 0..23 and the stencil in bits 24..31 (the
+ * framebuffer writes the attachment so, and a copy's depth aspect in a
+ * buffer is the same word with its top byte undefined).  The fields'
+ * shifts and masks, and the highest 16- and 24-bit normalized values.
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/lib/pan_desc.c (translate_zs_format and
+ * translate_s_format: the ZS format D24S8 and the stencil format X24S8
+ * of one surface for PIPE_FORMAT_Z24_UNORM_S8_UINT, whose name puts the
+ * depth in the low 24 bits and the stencil above them, as X24S8 names
+ * 24 unused low bits under the stencil); the Vulkan specification 1.0
+ * (the buffer layout of a depth aspect of D24_UNORM_S8_UINT as
+ * X8_D24_UNORM_PACK32, of a stencil aspect as tightly packed S8_UINT
+ * bytes).
+ */
+#define D24S8_DEPTH_SHIFT	0U
+#define D24S8_DEPTH_MASK	0x00ffffffU
+#define D24S8_STENCIL_SHIFT	24U
+#define D24S8_STENCIL_MASK	0xffU
+#define UNORM16_MAX		0xffffU
+#define UNORM24_MAX		0x00ffffffU
+
 /* A dispatch's workgroup memory: the instances a core, an instance's bytes, and the base. */
 struct workgroup_memory {
 	uint32_t instances;
@@ -100,6 +125,13 @@ static void run_fill_buffer(struct mali_vk_build *build, const struct mali_vk_re
 static void run_copy_image(struct mali_vk_build *build, const struct mali_vk_record *entry);
 static void run_buffer_image(struct mali_vk_build *build, const struct mali_vk_record *entry, bool to_image);
 static void run_clear_image(struct mali_vk_build *build, const struct mali_vk_record *entry);
+static void run_clear_depth(struct mali_vk_build *build, const struct mali_vk_record *entry);
+static void clear_depth_range(struct mali_vk_build *build, const struct mali_vk_image *image, const VkImageSubresourceRange *range, uint32_t pattern, uint32_t depth, uint32_t stencil);
+static uint32_t pack_depth(const struct mali_vk_format *format, uint32_t depth_bits, uint32_t stencil);
+static uint32_t format_aspects(const struct mali_vk_format *format);
+static void copy_image_aspect(struct mali_vk_build *build, const struct mali_vk_image *source, const struct mali_vk_image *destination, const VkImageCopy *copy, uint32_t layers);
+static void buffer_image_aspect(struct mali_vk_build *build, const struct mali_vk_buffer *buffer, const struct mali_vk_image *image, const VkBufferImageCopy *region, uint32_t layers, uint64_t buffer_pitch, uint64_t buffer_layer, bool to_image);
+static void run_aspect(struct mali_vk_build *build, const struct mali_vk_meta_aspect *aspect);
 static bool blit_is_copy(const VkImageBlit *blit, const struct mali_vk_image *source, const struct mali_vk_image *destination);
 static void run_blit(struct mali_vk_build *build, const VkImageBlit *blit, const struct mali_vk_image *source, const struct mali_vk_image *destination, uint32_t filter);
 static void copy_span(struct mali_vk_build *build, uint64_t destination, uint64_t source, uint64_t bytes);
@@ -720,6 +752,9 @@ run_records(
 		case GPU_OP_CMD_CLEAR_COLOR_IMAGE:
 			run_clear_image(build, entry);
 			break;
+		case GPU_OP_CMD_CLEAR_DEPTH_STENCIL_IMAGE:
+			run_clear_depth(build, entry);
+			break;
 		case GPU_OP_CMD_BEGIN_RENDER_PASS:
 			error = mali_vk_draw_pass(build, command, &index);
 			if (error != 0 && build->error == 0)
@@ -1063,6 +1098,7 @@ run_copy_image(
 	uint32_t destination_level;
 	uint32_t layers;
 	uint32_t layer;
+	uint32_t aspect;
 	uint64_t from;
 	uint64_t to;
 
@@ -1125,6 +1161,19 @@ run_copy_image(
 			continue;
 		if (destination_layer >= destination->layers || layers > destination->layers - destination_layer)
 			continue;
+
+		/*
+		 * One aspect of a copy between two depth and stencil images
+		 * moves its field alone, keeping the other's bits; both aspects
+		 * are the whole words below.
+		 */
+		aspect = 0;
+		if (entry->opcode == GPU_OP_CMD_COPY_IMAGE && source->format->vk == VK_FORMAT_D24_UNORM_S8_UINT && destination->format->vk == VK_FORMAT_D24_UNORM_S8_UINT)
+			aspect = copies[index].srcSubresource.aspectMask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT);
+		if (aspect == VK_IMAGE_ASPECT_DEPTH_BIT || aspect == VK_IMAGE_ASPECT_STENCIL_BIT) {
+			copy_image_aspect(build, source, destination, &copies[index], layers);
+			continue;
+		}
 
 		/* Each layer's rows of the level. */
 		for (layer = 0; layer < layers; layer++) {
@@ -1226,6 +1275,9 @@ run_buffer_image(
 	uint64_t buffer_layer;
 	uint64_t image_place;
 	uint64_t buffer_place;
+	uint32_t aspects;
+	uint32_t buffer_texel;
+	bool stencil;
 	uint32_t row_texels;
 	uint32_t image_rows;
 	uint32_t index;
@@ -1260,11 +1312,24 @@ run_buffer_image(
 			continue;
 		pitch = image->level[level].pitch;
 
-		/* A stencil aspect's bytes are not a texel's: its copy is not run. */
+		/*
+		 * The bytes of a texel in the buffer: a stencil aspect's one
+		 * byte (only an image with a stencil has it), every other
+		 * aspect's the whole texel.
+		 */
+		aspects = format_aspects(image->format);
+		buffer_texel = image->format->bytes;
+		stencil = false;
 		if ((regions[index].imageSubresource.aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT) != 0U) {
-			kern_logf("mali: vk: a copy of a stencil aspect is not run\n");
-			continue;
+			if ((aspects & VK_IMAGE_ASPECT_STENCIL_BIT) == 0U) {
+				kern_logf("mali: vk: a copy of a stencil aspect is not run\n");
+				continue;
+			}
+			buffer_texel = 1U;
+			stencil = true;
 		}
+
+		/* The region inside the level. */
 		if (regions[index].imageOffset.x < 0 || regions[index].imageOffset.y < 0 || width == 0U || height == 0U)
 			continue;
 		if ((uint32_t)regions[index].imageOffset.x + width > image->level[level].width || (uint32_t)regions[index].imageOffset.y + height > image->level[level].height)
@@ -1274,7 +1339,7 @@ run_buffer_image(
 		row_texels = regions[index].bufferRowLength;
 		if (row_texels == 0U)
 			row_texels = width;
-		buffer_pitch = (uint64_t)row_texels * image->format->bytes;
+		buffer_pitch = (uint64_t)row_texels * buffer_texel;
 
 		/* The layers, inside the image; a layer's rows in the buffer are as many as said, or the region's. */
 		layers = regions[index].imageSubresource.layerCount;
@@ -1286,8 +1351,19 @@ run_buffer_image(
 		if (image_rows < height)
 			image_rows = height;
 		buffer_layer = buffer_pitch * image_rows;
-		if (regions[index].bufferOffset + buffer_layer * (layers - 1U) + buffer_pitch * (height - 1U) + (uint64_t)width * image->format->bytes > buffer->size)
+		if (regions[index].bufferOffset + buffer_layer * (layers - 1U) + buffer_pitch * (height - 1U) + (uint64_t)width * buffer_texel > buffer->size)
 			continue;
+
+		/*
+		 * A stencil aspect moves its bytes alone; so does a depth aspect
+		 * into an image that also holds a stencil, which keeps the
+		 * stencil.  A depth aspect out of it is the whole words, the
+		 * stencil's byte in the top byte Vulkan leaves undefined.
+		 */
+		if (stencil || (to_image && aspects == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))) {
+			buffer_image_aspect(build, buffer, image, &regions[index], layers, buffer_pitch, buffer_layer, to_image);
+			continue;
+		}
 
 		/* Each layer's rows one way or the other. */
 		for (layer = 0; layer < layers; layer++) {
@@ -1353,6 +1429,338 @@ run_clear_image(
 			}
 		}
 	}
+}
+
+/*
+ * Runs vkCmdClearDepthStencilImage: each range's levels of its layers
+ * filled with the packed depth and stencil (the depth converted to the
+ * format's normalized value, rounded to nearest, or kept as its float
+ * bits), or, for one aspect of an image holding both, that aspect's
+ * field written alone.
+ */
+static void
+run_clear_depth(
+	struct mali_vk_build *build,
+	const struct mali_vk_record *entry)
+{
+	const struct mali_vk_image *image;
+	const VkImageSubresourceRange *ranges;
+	uint32_t pattern;
+	uint32_t depth;
+	uint32_t stencil;
+	uint32_t index;
+
+	/* A bound image of a depth format. */
+	if (entry->objects[0] == NULL)
+		return;
+	image = entry->objects[0]->payload;
+	if (mali_vk_image_address(image) == 0U || !image->format->depth)
+		return;
+
+	/* The whole texel's pattern, and the fields a single aspect writes. */
+	stencil = entry->values[1] & D24S8_STENCIL_MASK;
+	pattern = pack_depth(image->format, entry->values[0], stencil);
+	depth = mali_meta_unorm(entry->values[0], UNORM24_MAX);
+
+	/* Each range. */
+	ranges = entry->data;
+	for (index = 0; index < entry->values[7] && ranges != NULL && build->error == 0; index++)
+		clear_depth_range(build, image, &ranges[index], pattern, depth, stencil);
+}
+
+/*
+ * Clears one range of a depth image: its levels and layers inside the
+ * image, each level's rows of each layer filled with the pattern when
+ * the range clears every aspect the format has, or one run of the
+ * aspect copy a level writing the depth's or the stencil's field alone.
+ */
+static void
+clear_depth_range(
+	struct mali_vk_build *build,
+	const struct mali_vk_image *image,
+	const VkImageSubresourceRange *range,
+	uint32_t pattern,
+	uint32_t depth,
+	uint32_t stencil)
+{
+	struct mali_vk_meta_aspect aspect;
+	uint32_t aspects;
+	uint32_t layers;
+	uint32_t layer;
+	uint32_t levels;
+	uint32_t level;
+
+	/* The aspects of the format the range clears; none clears nothing. */
+	aspects = range->aspectMask & format_aspects(image->format);
+	if (aspects == 0U)
+		return;
+
+	/* The layers and the levels inside the image. */
+	layers = range->layerCount;
+	if (layers == VK_REMAINING_ARRAY_LAYERS && range->baseArrayLayer < image->layers)
+		layers = image->layers - range->baseArrayLayer;
+	if (layers == 0U || range->baseArrayLayer >= image->layers || layers > image->layers - range->baseArrayLayer)
+		return;
+	levels = range->levelCount;
+	if (levels == VK_REMAINING_MIP_LEVELS && range->baseMipLevel < image->levels)
+		levels = image->levels - range->baseMipLevel;
+	if (levels == 0U || range->baseMipLevel >= image->levels || levels > image->levels - range->baseMipLevel)
+		return;
+
+	/* Every aspect: each level's rows of each layer, in whole words (a 16-bit texel's pattern repeats). */
+	if (aspects == format_aspects(image->format)) {
+		for (level = range->baseMipLevel; level < range->baseMipLevel + levels; level++) {
+			for (layer = 0; layer < layers; layer++) {
+				mali_cs_fill_rows(&build->cs,
+						  MALI_VK_DATA_REGISTER,
+						  MALI_VK_SCRATCH_REGISTER,
+						  mali_vk_image_level_address(image, level, range->baseArrayLayer + layer),
+						  (int32_t)image->level[level].pitch,
+						  pattern,
+						  (uint32_t)(((uint64_t)image->level[level].width * image->format->bytes + 3U) & ~3ULL),
+						  image->level[level].height,
+						  MALI_VK_SLOT_LOAD_STORE);
+			}
+		}
+
+		return;
+	}
+
+	/* One aspect of a depth and stencil texel: its field, the value, written alone. */
+	kern_memset(&aspect, 0, sizeof(aspect));
+	aspect.layers = layers;
+	aspect.target_step = 4U;
+	aspect.flags = MALI_META_ASPECT_CONSTANT;
+	if (aspects == VK_IMAGE_ASPECT_DEPTH_BIT) {
+		aspect.target_shift = D24S8_DEPTH_SHIFT;
+		aspect.mask = D24S8_DEPTH_MASK;
+		aspect.value = depth;
+	} else {
+		aspect.target_shift = D24S8_STENCIL_SHIFT;
+		aspect.mask = D24S8_STENCIL_MASK;
+		aspect.value = stencil;
+	}
+
+	/* One run a level, its layers in the run. */
+	for (level = range->baseMipLevel; level < range->baseMipLevel + levels && build->error == 0; level++) {
+		aspect.target = mali_vk_image_level_address(image, level, range->baseArrayLayer);
+		aspect.width = image->level[level].width;
+		aspect.height = image->level[level].height;
+		aspect.target_pitch = image->level[level].pitch;
+		aspect.target_layer = image->layer_bytes;
+		run_aspect(build, &aspect);
+	}
+}
+
+/*
+ * Packs a depth clear (the float's bits) and a stencil into the texel
+ * of a depth format, repeated to 32 bits: D16 the 16-bit normalized
+ * depth twice, X8_D24 the 24-bit one with a zero top byte, D24S8 the
+ * 24-bit one under the stencil, D32 the float's bits.
+ */
+static uint32_t
+pack_depth(
+	const struct mali_vk_format *format,
+	uint32_t depth_bits,
+	uint32_t stencil)
+{
+	uint32_t texel;
+
+	/* One case a depth format. */
+	switch (format->vk) {
+	case VK_FORMAT_D16_UNORM:
+		texel = mali_meta_unorm(depth_bits, UNORM16_MAX) * 0x00010001U;
+		break;
+	case VK_FORMAT_X8_D24_UNORM_PACK32:
+		texel = mali_meta_unorm(depth_bits, UNORM24_MAX) << D24S8_DEPTH_SHIFT;
+		break;
+	case VK_FORMAT_D24_UNORM_S8_UINT:
+		texel = (mali_meta_unorm(depth_bits, UNORM24_MAX) << D24S8_DEPTH_SHIFT) | (stencil << D24S8_STENCIL_SHIFT);
+		break;
+	default:
+		texel = depth_bits;
+		break;
+	}
+
+	/* Succeeded: the pattern. */
+	return texel;
+}
+
+/* Gives the aspects a format's texel holds: depth and stencil, depth alone, or colour. */
+static uint32_t
+format_aspects(
+	const struct mali_vk_format *format)
+{
+	/* D24S8 is the one format of both. */
+	if (format->vk == VK_FORMAT_D24_UNORM_S8_UINT)
+		return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+
+	/* The other depth formats. */
+	if (format->depth)
+		return VK_IMAGE_ASPECT_DEPTH_BIT;
+
+	/* A colour format. */
+	return VK_IMAGE_ASPECT_COLOR_BIT;
+}
+
+/*
+ * Copies one aspect (the depth or the stencil alone) of a region
+ * between two D24S8 images (checked inside both levels and layer ranges
+ * by the caller): that field of each texel, the target's other bits
+ * kept, the layers in one run.
+ */
+static void
+copy_image_aspect(
+	struct mali_vk_build *build,
+	const struct mali_vk_image *source,
+	const struct mali_vk_image *destination,
+	const VkImageCopy *copy,
+	uint32_t layers)
+{
+	struct mali_vk_meta_aspect aspect;
+	uint32_t source_level;
+	uint32_t destination_level;
+
+	/* Both sides' first texels, pitches and layers, a word a texel. */
+	source_level = copy->srcSubresource.mipLevel;
+	destination_level = copy->dstSubresource.mipLevel;
+	kern_memset(&aspect, 0, sizeof(aspect));
+	aspect.source = mali_vk_image_level_address(source, source_level, copy->srcSubresource.baseArrayLayer);
+	aspect.source += (uint64_t)copy->srcOffset.y * source->level[source_level].pitch + (uint64_t)copy->srcOffset.x * 4U;
+	aspect.target = mali_vk_image_level_address(destination, destination_level, copy->dstSubresource.baseArrayLayer);
+	aspect.target += (uint64_t)copy->dstOffset.y * destination->level[destination_level].pitch + (uint64_t)copy->dstOffset.x * 4U;
+	aspect.width = copy->extent.width;
+	aspect.height = copy->extent.height;
+	aspect.layers = layers;
+	aspect.source_pitch = source->level[source_level].pitch;
+	aspect.target_pitch = destination->level[destination_level].pitch;
+	aspect.source_layer = source->layer_bytes;
+	aspect.target_layer = destination->layer_bytes;
+	aspect.source_step = 4U;
+	aspect.target_step = 4U;
+
+	/* The field: the depth's low 24 bits, or the stencil's top byte. */
+	if ((copy->srcSubresource.aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) != 0U) {
+		aspect.source_shift = D24S8_DEPTH_SHIFT;
+		aspect.target_shift = D24S8_DEPTH_SHIFT;
+		aspect.mask = D24S8_DEPTH_MASK;
+	} else {
+		aspect.source_shift = D24S8_STENCIL_SHIFT;
+		aspect.target_shift = D24S8_STENCIL_SHIFT;
+		aspect.mask = D24S8_STENCIL_MASK;
+	}
+
+	/* The run. */
+	run_aspect(build, &aspect);
+}
+
+/*
+ * Copies one aspect of a region between a buffer and a D24S8 image
+ * (checked inside the level, the layers and the buffer by the caller):
+ * the stencil's packed bytes in the buffer, or the depth's words, and
+ * the field alone in each texel word of the image.  Into the image the
+ * texel's other field is kept; out of it the buffer's bytes around the
+ * region's stencil bytes are kept, several of them sharing a word.
+ */
+static void
+buffer_image_aspect(
+	struct mali_vk_build *build,
+	const struct mali_vk_buffer *buffer,
+	const struct mali_vk_image *image,
+	const VkBufferImageCopy *region,
+	uint32_t layers,
+	uint64_t buffer_pitch,
+	uint64_t buffer_layer,
+	bool to_image)
+{
+	struct mali_vk_meta_aspect aspect;
+	uint64_t image_place;
+	uint64_t buffer_place;
+	uint32_t level;
+	uint32_t buffer_step;
+	uint32_t shift;
+	uint32_t mask;
+
+	/* The image's first texel, and the buffer's. */
+	level = region->imageSubresource.mipLevel;
+	image_place = mali_vk_image_level_address(image, level, region->imageSubresource.baseArrayLayer);
+	image_place += (uint64_t)region->imageOffset.y * image->level[level].pitch + (uint64_t)region->imageOffset.x * 4U;
+	buffer_place = mali_vk_buffer_address(buffer) + region->bufferOffset;
+
+	/* The field: the stencil's byte (one a texel in the buffer), or the depth's 24 bits (a word a texel). */
+	if ((region->imageSubresource.aspectMask & VK_IMAGE_ASPECT_STENCIL_BIT) != 0U) {
+		buffer_step = 1U;
+		shift = D24S8_STENCIL_SHIFT;
+		mask = D24S8_STENCIL_MASK;
+	} else {
+		buffer_step = 4U;
+		shift = D24S8_DEPTH_SHIFT;
+		mask = D24S8_DEPTH_MASK;
+	}
+
+	/* The run's extent and field. */
+	kern_memset(&aspect, 0, sizeof(aspect));
+	aspect.width = region->imageExtent.width;
+	aspect.height = region->imageExtent.height;
+	aspect.layers = layers;
+	aspect.mask = mask;
+
+	/* The two sides one way or the other; the buffer's packed stencil bytes share words. */
+	if (to_image) {
+		aspect.source = buffer_place;
+		aspect.source_pitch = buffer_pitch;
+		aspect.source_layer = buffer_layer;
+		aspect.source_step = buffer_step;
+		aspect.target = image_place;
+		aspect.target_pitch = image->level[level].pitch;
+		aspect.target_layer = image->layer_bytes;
+		aspect.target_step = 4U;
+		aspect.target_shift = shift;
+	} else {
+		aspect.source = image_place;
+		aspect.source_pitch = image->level[level].pitch;
+		aspect.source_layer = image->layer_bytes;
+		aspect.source_step = 4U;
+		aspect.source_shift = shift;
+		aspect.target = buffer_place;
+		aspect.target_pitch = buffer_pitch;
+		aspect.target_layer = buffer_layer;
+		aspect.target_step = buffer_step;
+		if (buffer_step == 1U)
+			aspect.flags = MALI_META_ASPECT_SHARED;
+	}
+
+	/* The run. */
+	run_aspect(build, &aspect);
+}
+
+/*
+ * Writes one run of the aspect copy; a run it cannot take is left out,
+ * said once a submission, and the stage's failure fails the submission.
+ */
+static void
+run_aspect(
+	struct mali_vk_build *build,
+	const struct mali_vk_meta_aspect *aspect)
+{
+	int error;
+
+	/* The compute run. */
+	error = mali_vk_meta_aspect(build, aspect);
+	if (error == 0)
+		return;
+
+	/* A run the program does not take. */
+	if (error == ENOTSUP) {
+		if (!build->aspect_warned)
+			kern_logf("mali: vk: a copy or a clear of one aspect of a depth and stencil image is not run\n");
+		build->aspect_warned = true;
+		return;
+	}
+
+	/* The stage's failure fails the submission. */
+	if (build->error == 0)
+		build->error = error;
 }
 
 /* Copies one span: its whole words as one row; a span of other bytes is left out once with a line. */
