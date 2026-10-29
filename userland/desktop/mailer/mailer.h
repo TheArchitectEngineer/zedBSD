@@ -67,6 +67,9 @@ struct ml_message {
 	char *message_id;
 };
 
+/* The code of the event the thread posts when results wait (kl_app_post). */
+#define ML_POST_RESULTS		1U
+
 /* The actions of the menu, the keys and the buttons. */
 #define ML_ACTION_NEW		1U
 #define ML_ACTION_SEND		2U

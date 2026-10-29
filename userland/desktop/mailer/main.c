@@ -164,6 +164,7 @@ static void ml_refresh_all(struct ml_window *mailer);
 static void ml_status_time(struct ml_window *mailer, const char *what);
 static void ml_codes_changed(void *data, const char *key, const char *value, unsigned flags);
 static void ml_sync_begin(struct ml_window *mailer);
+static int ml_sync_ready(void *context);
 static void ml_servers_restart(struct ml_window *mailer);
 static int ml_form_config(struct ml_window *mailer, struct ml_account_config *config);
 static void ml_request_check(struct ml_window *mailer);
@@ -431,9 +432,10 @@ ml_loop(
 				continue;
 			}
 
-			/* The thread's results. */
-			if (event.kind == KL_APP_FD) {
-				ml_results(mailer);
+			/* The thread's results (a thread stopped since may have posted for none). */
+			if (event.kind == KL_APP_POST && event.code == ML_POST_RESULTS) {
+				if (mailer->sync != NULL)
+					ml_results(mailer);
 				continue;
 			}
 
@@ -858,7 +860,7 @@ ml_servers_start(
 	ml_sync_begin(mailer);
 }
 
-/* Starts the thread with the accounts of the store and watches its results. */
+/* Starts the thread with the accounts of the store; it posts when results wait. */
 static void
 ml_sync_begin(
 	struct ml_window *mailer)
@@ -869,18 +871,13 @@ ml_sync_begin(
 
 	/* The thread. */
 	accounts = ml_accounts(&count);
-	error = ml_sync_start(accounts, count, &mailer->sync);
+	error = ml_sync_start(accounts, count, ml_sync_ready, mailer->app, &mailer->sync);
 	if (error != 0) {
 		ml_log("SYNC failed error=%d", error);
 		(void)snprintf(mailer->view.status, sizeof(mailer->view.status), "Mail cannot reach the servers (%d).", error);
 		mailer->sync = NULL;
 		return;
 	}
-
-	/* Its results' descriptor watched by the application's loop. */
-	error = kl_app_watch_fd(mailer->app, ml_sync_fd(mailer->sync), KL_APP_FD_READ);
-	if (error != 0)
-		ml_log("SYNC watch error=%d", error);
 
 	/* The thread gets every account's mail first by itself. */
 	if (count != 0U)
@@ -896,9 +893,8 @@ static void
 ml_servers_restart(
 	struct ml_window *mailer)
 {
-	/* The old thread, its descriptor no longer watched. */
+	/* The old thread. */
 	if (mailer->sync != NULL) {
-		(void)kl_app_watch_fd(mailer->app, ml_sync_fd(mailer->sync), 0U);
 		ml_sync_stop(mailer->sync);
 		mailer->sync = NULL;
 	}
@@ -906,6 +902,30 @@ ml_servers_restart(
 	/* The new one. */
 	ml_sync_begin(mailer);
 	ml_log("SYNC restarted");
+}
+
+/*
+ * Tells the window's loop that results wait, on the thread (the context
+ * is the application): an event posted to the application.  Returns 0, or
+ * the post's error (the thread tries again with its next result).
+ */
+static int
+ml_sync_ready(
+	void *context)
+{
+	struct kl_app *app;
+	int error;
+
+	/* The post (refused only for want of memory). */
+	app = context;
+	error = kl_app_post(app, ML_POST_RESULTS, NULL);
+	if (error != 0) {
+		ml_log("SYNC post error=%d", error);
+		return error;
+	}
+
+	/* Succeeded: the window was told. */
+	return 0;
 }
 
 /* Takes the thread's results into the store and the view. */

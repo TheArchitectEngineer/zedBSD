@@ -74,16 +74,20 @@ struct sync_account {
 };
 
 /*
- * The thread and its queues: the thread, its pipes (to wake it, and to
- * wake the window), the lock over the queues and the stop flag, the jobs
- * and the results (first and last of each list), and the accounts (the
- * thread's own, in the window's order).
+ * The thread and its queues: the thread, its pipe (to wake it among the
+ * servers' sockets it waits for), the window's function told when results
+ * wait (with its context) and whether it was told since the window last
+ * found none, the lock over the queues, the flag and the stop flag, the
+ * jobs and the results (first and last of each list), and the accounts
+ * (the thread's own, in the window's order).
  */
 struct ml_sync {
 	pthread_t thread;
 	int started;
 	int wake[2];
-	int done[2];
+	int (*ready)(void *context);
+	void *ready_context;
+	int told;
 	pthread_mutex_t lock;
 	int stopping;
 	struct ml_job *jobs;
@@ -137,13 +141,18 @@ static void sync_post(struct ml_sync *sync, struct ml_result *result);
 static uint64_t sync_now_ms(void);
 
 /*
- * Starts the thread with the accounts the window has.  Returns 0 with the
- * thread, or an errno value.
+ * Starts the thread with the accounts the window has; ready is called on
+ * the thread, with context, when a result waits and the window was not told
+ * since it last found none (the window then takes them with ml_sync_take
+ * until none is left).  ready returns 0 when the window was told; otherwise
+ * the next result tries again.  Returns 0 with the thread, or an errno value.
  */
 int
 ml_sync_start(
 	const struct ml_account_config *accounts,
 	size_t count,
+	int (*ready)(void *context),
+	void *context,
 	struct ml_sync **made)
 {
 	struct ml_sync *sync;
@@ -157,8 +166,8 @@ ml_sync_start(
 		return ENOMEM;
 	sync->wake[0] = -1;
 	sync->wake[1] = -1;
-	sync->done[0] = -1;
-	sync->done[1] = -1;
+	sync->ready = ready;
+	sync->ready_context = context;
 	(void)pthread_mutex_init(&sync->lock, NULL);
 
 	/* The accounts. */
@@ -170,18 +179,14 @@ ml_sync_start(
 	/* How many were taken. */
 	sync->account_count = index;
 
-	/* The pipes, the window's end not blocking. */
+	/* The pipe that wakes the thread. */
 	status = pipe(sync->wake);
-	if (status == 0)
-		status = pipe(sync->done);
 	if (status != 0) {
 		ml_sync_stop(sync);
 		return errno;
 	}
 
-	/* The window's ends and the thread's writing end never block. */
-	(void)fcntl(sync->done[0], F_SETFL, O_NONBLOCK);
-	(void)fcntl(sync->done[1], F_SETFL, O_NONBLOCK);
+	/* The window's end never blocks. */
 	(void)fcntl(sync->wake[1], F_SETFL, O_NONBLOCK);
 
 	/* The thread. */
@@ -249,23 +254,8 @@ ml_sync_stop(
 		(void)close(sync->wake[0]);
 	if (sync->wake[1] >= 0)
 		(void)close(sync->wake[1]);
-	if (sync->done[0] >= 0)
-		(void)close(sync->done[0]);
-	if (sync->done[1] >= 0)
-		(void)close(sync->done[1]);
 	(void)pthread_mutex_destroy(&sync->lock);
 	free(sync);
-}
-
-/*
- * Gives the descriptor the window watches: readable when results wait.
- */
-int
-ml_sync_fd(
-	const struct ml_sync *sync)
-{
-	/* The results' pipe's reading end. */
-	return sync->done[0];
 }
 
 /*
@@ -306,7 +296,7 @@ ml_sync_queue(
 
 /*
  * Takes the oldest result: 1 with it (the caller releases it), 0 when none
- * waits.  The pipe's bytes are read too.
+ * waits.
  */
 int
 ml_sync_take(
@@ -314,15 +304,8 @@ ml_sync_take(
 	struct ml_result *result)
 {
 	struct ml_result *first;
-	char bytes[64];
-	ssize_t read_count;
 
-	/* The wake-up bytes (as many as there are). */
-	do {
-		read_count = read(sync->done[0], bytes, sizeof(bytes));
-	} while (read_count > 0);
-
-	/* The first result. */
+	/* The first result; none left means the window is to be told of the next one. */
 	pthread_mutex_lock(&sync->lock);
 
 	first = sync->results;
@@ -330,7 +313,8 @@ ml_sync_take(
 		sync->results = first->next;
 		if (sync->results == NULL)
 			sync->results_last = NULL;
-	}
+	} else
+		sync->told = 0;
 
 	pthread_mutex_unlock(&sync->lock);
 
@@ -1124,15 +1108,16 @@ sync_result(
 	return result;
 }
 
-/* Queues a result and wakes the window. */
+/* Queues a result, and tells the window unless it was told already. */
 static void
 sync_post(
 	struct ml_sync *sync,
 	struct ml_result *result)
 {
-	char byte;
+	int tell;
+	int error;
 
-	/* At the end of the list. */
+	/* At the end of the list; the window is to be told when it was not. */
 	pthread_mutex_lock(&sync->lock);
 
 	result->next = NULL;
@@ -1141,12 +1126,27 @@ sync_post(
 	else
 		sync->results = result;
 	sync->results_last = result;
+	tell = 0;
+	if (!sync->told && sync->ready != NULL) {
+		sync->told = 1;
+		tell = 1;
+	}
 
 	pthread_mutex_unlock(&sync->lock);
 
-	/* The window woken. */
-	byte = 'r';
-	(void)write(sync->done[1], &byte, 1U);
+	/* Not to be told. */
+	if (!tell)
+		return;
+
+	/* The window told; when it cannot be, the next result tries again. */
+	error = sync->ready(sync->ready_context);
+	if (error != 0) {
+		pthread_mutex_lock(&sync->lock);
+
+		sync->told = 0;
+
+		pthread_mutex_unlock(&sync->lock);
+	}
 }
 
 /* Reports a monotonic time in ms. */

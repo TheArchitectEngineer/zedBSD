@@ -9,8 +9,9 @@
  * The Wayland window of terminal: a window of libkeiland's application
  * (WS131 p018, kl_app; ws090-p011 before), whose surface the terminal
  * draws on with its own Vulkan (KL_PRESENT_NONE).  The application waits
- * for the compositor and the shells' pseudo-terminals together
- * (kl_app_watch_fd).
+ * for the compositor and the shells together: each shell is a process of
+ * the application on a terminal of its own (kl_process), whose output and
+ * end come as the application's events.
  *
  * The application queues the window's input; this file takes it into what
  * the main loop reads.  A key press is turned into bytes at once (keys.c)
@@ -70,7 +71,6 @@ static const struct wl_callback_listener window_pace_listener = {
 };
 
 static void window_pace_forget(struct terminal_window *window);
-static void window_watch(struct terminal_window *window, const int *others, unsigned count);
 static void window_event(struct terminal_window *window, const struct kl_window_event *event);
 static void window_selection(const struct kl_window_event *event);
 static void window_drop_enter(const struct kl_window_event *event);
@@ -165,38 +165,37 @@ terminal_window_open(
 }
 
 /*
- * Waits for the compositor or another descriptor (the shells') and takes
- * what happened: the window's input, and which descriptors are ready.
+ * Waits for the compositor or the shells and takes what happened: the
+ * window's input, and what each shell told.
  *
  * `timeout` is in milliseconds (-1 waits for ever; a held key's repeat or
- * input already queued waits less); ready[i] tells whether others[i] has
- * something to read or has hung up.  Returns 0, or -1 when the connection
- * is broken.
+ * input already queued waits less); ready[i] has what shells[i] told
+ * (KL_PROCESS_READY_*: output to read, room for the keys, its end).
+ * Returns 0, or -1 when the connection is broken.
  */
 int
 terminal_window_dispatch(
 	struct terminal_window *window,
-	const int *others,
+	struct kl_process *const *shells,
 	unsigned count,
 	int timeout,
-	int *ready)
+	unsigned *ready)
 {
 	struct kl_app_event event;
 	unsigned index;
 	int status;
 	int taken;
 
-	/* The descriptors watched are the shells' now; none is ready yet. */
-	window_watch(window, others, count);
+	/* No shell told anything yet. */
 	for (index = 0; index < count; index++)
-		ready[index] = 0;
+		ready[index] = 0U;
 
 	/* The compositor and the shells, together (a held key repeats within, after its release if that came). */
 	status = kl_app_dispatch(window->app, timeout);
 	if (status != 0)
 		return -1;
 
-	/* What happened, in its order: the window's input, and the shells that wrote or hung up. */
+	/* What happened, in its order: the window's input, and what the shells told. */
 	for (;;) {
 		taken = kl_app_take(window->app, &event);
 		if (taken == 0)
@@ -209,12 +208,12 @@ terminal_window_dispatch(
 			continue;
 		}
 
-		/* A shell's descriptor. */
-		if (event.kind != KL_APP_FD)
+		/* A shell's news. */
+		if (event.kind != KL_APP_PROCESS)
 			continue;
 		for (index = 0; index < count; index++) {
-			if (others[index] == event.fd)
-				ready[index] = 1;
+			if (shells[index] == event.process)
+				ready[index] |= event.ready;
 		}
 	}
 
@@ -408,56 +407,6 @@ window_pace_forget(
 
 	/* Nothing awaited. */
 	terminal_pace_clear(&window->pace);
-}
-
-/*
- * Watches the shells' descriptors for reading, as many as there are now:
- * one no longer among them stops being watched.
- */
-static void
-window_watch(
-	struct terminal_window *window,
-	const int *others,
-	unsigned count)
-{
-	unsigned kept;
-	unsigned index;
-	unsigned other;
-	int found;
-	int error;
-
-	/* The ones watched that are gone stop being watched. */
-	kept = 0;
-	for (index = 0; index < window->watched_count; index++) {
-		found = 0;
-		for (other = 0; other < count; other++) {
-			if (others[other] == window->watched[index])
-				found = 1;
-		}
-		if (!found) {
-			(void)kl_app_watch_fd(window->app, window->watched[index], 0U);
-			continue;
-		}
-		window->watched[kept] = window->watched[index];
-		kept++;
-	}
-	window->watched_count = kept;
-
-	/* The new ones are watched. */
-	for (other = 0; other < count && window->watched_count < TERMINAL_TABS; other++) {
-		found = 0;
-		for (index = 0; index < window->watched_count; index++) {
-			if (window->watched[index] == others[other])
-				found = 1;
-		}
-		if (found)
-			continue;
-		error = kl_app_watch_fd(window->app, others[other], KL_APP_FD_READ);
-		if (error != 0)
-			continue;
-		window->watched[window->watched_count] = others[other];
-		window->watched_count++;
-	}
 }
 
 /* Turns one input of the window into the terminal's. */

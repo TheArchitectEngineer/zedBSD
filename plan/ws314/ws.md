@@ -24,6 +24,7 @@
 11. 「keiland-programming.mdをレビューしました。まず、コードスニペットがわかりづらかったです。スニペットではなく、完全に動くソースファイル全体をなるべく毎回示すのがいいと思います。また、そのせいでkl_uiの説明がぜんぜん理解できなかったです。kl_buttonのスニペットしか示されていないのに、kl_uiがどういうものであるかを説明していて、これは意味不明でした。kl_uiのサンプル全体をまず示して、その中でkl_buttonがどういう風に使われているのかを示し、全体としてkl_uiやフレーム、immediateモードという概念を、どう使うのかというサンプルから、帰納的に理解しつつ、演繹的な説明を参照できるように、書き換えていきたいです。一方で、Opus 5.5はこのようなドキュメント作成が苦手です。そこで、このようなサンプル全文を提示して帰納的な理解を促しつつ演繹的な説明も行うスタイルを、Opus 5.5がドキュメント概要として設計し、keiland-programming.mdに、ここにこういう説明を入れる、というコメントを入れていってほしいです。そのあとで、Sonnetで書き直しを行います。Sonnetは人間向けの文章が得意だからです。」（2026-10-30）
 12. 「kl_appに、システムの言語の変更を通知するイベントを追加してほしいです。KeilandのリファクタのWSに追加しておいてください。」（2026-10-30）
 13. 「kl_appの言語変更イベントは、変更された言語名も通知するのがいいです。連続する変更が短時間にあると、kl_settingsの読みが最新とは限らないからです。」（2026-10-30、p015 に効く）
+
 ## 承認された案（2026-10-30 Q1 の提案、上の 7 で承認）
 
 - **app・window への event の post**: thread から呼べる `kl_app_post`（と `kl_window_post`）。Mailer の pipe 2 本を外す。起こす仕組みは platform の層に閉じる。
@@ -42,15 +43,17 @@
 | [ws314-p001](phase001/phase.md) | `keiland.h` を `keiland_*.h` に分ける（定義の移動だけ、API・ABI は変えない。KL_VERSION の履歴の comment の置き場所も）。comment から開発の管理情報を除く（決定 10） | cleared | — |
 | [ws314-p002](phase002/phase.md) | `docs/` に Keiland のプログラミングの解説（英語）: app → window → titlebar → ui と main loop → widget → menu → その他。fd の API は書かない | cleared | p001 |
 | [ws314-p003](phase003/phase.md) | 設計: post・`kl_process`・`kl_instance` の event・libbrowser の network の thread（[design.md](design.md)、design-reviewer） | cleared（判断 A〜D 待ち） | p001 |
-| ws314-p004 | `kl_app_post`・`kl_window_post` の実装と Mailer の移行 | in-progress | p003 |
-| ws314-p005 | `kl_process_*` の実装と Installer・Terminal・起動する program の移行 | planned | p003 |
-| ws314-p006 | `kl_instance` の event と Settings の移行 | planned | p004 |
+| [ws314-p004](phase004/phase.md) | `kl_app_post`・`kl_window_post` の実装と Mailer の移行 | cleared（QEMU の Mailer は未実施） | p003 |
+| [ws314-p005](phase005/phase.md) | `kl_process_*` の核と Installer・Terminal・Phone の移行（design.md §4） | cleared（Installer・Phone の QEMU は未実施） | p003・p004 |
+| [ws314-p006](phase006/phase.md) | `kl_instance` の event と Settings の移行 | cleared（Settings の 2 回目の起動の QEMU は未実施） | p004 |
 | ws314-p007 | libbrowser の network の thread と Browser の shell の移行 | planned | p004 |
-| ws314-p008 | `kl_app_watch_fd`・`kl_instance_fd` を公開の API から外す（KL_VERSION を上げる）、Linux・FreeBSD の build | planned | p004〜p007 |
-| ws314-p009 | 解説に新しい API（post・process・instance）を足す | planned | p008 |
+| ws314-p008 | `kl_app_watch_fd`・`kl_instance_fd` を公開の API から外す（KL_VERSION を上げる）、Linux・FreeBSD の build | planned | p004〜p007・p013・p014 |
+| ws314-p009 | 解説に新しい API（post・process・instance）を足す | planned | p008・p012 |
 | ws314-p010 | 規約の全文の見直し | planned | p009 |
 | ws314-p011 | 解説の構成の設計（Opus）: 章ごとに完全に動く source の全文を示し、そこから帰納的に分からせ演繹的な説明も引ける構成。keiland-programming.md に「ここにこういう説明を入れる」の comment を入れ、例の全文は compile・実行で確かめる | cleared | p002 |
 | ws314-p012 | 解説の書き直し（Sonnet）: p011 の構成と comment に沿って人間向けの文章に | cleared | p011 |
+| ws314-p013 | `kl_launch` と Files・Settings・PDF Viewer・Terminal の新しい窓の移行（design.md §5） | planned | p005 |
+| ws314-p014 | Preview の API から fd・pid を外し、`waitpid`・`kill` を Preview の platform の file へ（design.md §4.5） | planned | p003 |
 | ws314-p015 | kl_app に system の言語の変更を知らせる event（`KL_APP_LANGUAGE` の類）を足す。event は変わった先の言語の名前（"ja" など）を運ぶ（決定 13）。今の kl_settings の読み（kl_settings_dispatch）との関係、translation（kl_tr）の読み直しの手順、解説への記述（p009 と一緒に） | planned | p004 |
 
 ## Resume point
@@ -66,3 +69,15 @@
   既存の `kl_window_post(window, code)`（KL_WINDOW_POST、dispatch の中で同じ thread から入力を積む）がある。`kl_app_post` は thread から呼べる別物として設計する。
 - 2026-10-30 P2（再開）: p003 cleared（[design.md](design.md)、design-reviewer 23 件を反映）。ユーザーの判断 A〜D を Q1 へ（phase003 の phase.md）。
   p004 を実装中（libkeiland の post と Mailer、host の試験 tests/post-test.c は PASS）。
+- 2026-10-30 P2: p004 cleared（KL_VERSION 97）。p005 は実装・build（3 arch・Linux、warning 0）・Linux の host の試験まで（KL_VERSION 98）。
+  残り: p005 の zedBSD（QEMU）の試験、`keiland-os-boundary` の許可の行（Q1）。
+- 2026-10-30 P2: p006 実装・build（3 arch・Linux、warning 0）・host の試験（KL_VERSION 99）。p005・p006 の zedBSD の試験は `plan/ws314/tests/guest.sh`。
+- 再開点（2026-10-30 P2、context の残りが少ないため返却）: p003〜p006 cleared（[design.md](design.md) §13 に p015 の設計を足した）。
+  次は p013（`kl_launch`: platform/ に二重の fork の起動（親で path・argv・envp・token を作り、子は async-signal-safe だけ、design §5）、
+  Files の `apps.c`・Settings の `posix_spawn(files)`・PDF Viewer の `notes` と `waitpid(-1)`・Terminal の新しい窓。終わったら
+  `plan/tools/keiland-os-boundary/app-allow.tsv` の terminal・settings・pdfviewer・files の A4 の行を外す）、p014（Preview の API）、p015
+  （`KL_APP_LANGUAGE`、design §13、KL_VERSION 100 の見込み。Q1 に番号を確かめる）、p007（libbrowser、design §7）、p008、p009（p012 の後）、p010。
+  手がかり: 実装は `libkeiland/platform/`（platform.h・platform-posix.c・process-posix.c）と `libkeiland/process.c`・`instance.c`・`ui/app.c`。
+  試験: `plan/ws314/tests/host-test.sh {post,process,instance} BUILD`（Linux の build、TSan は build dir の名前に tsan）、zedBSD は
+  `plan/ws314/tests/guest.sh OUT IMGBUILD`（image は `config-amd64-guest.mk`）、build は `build-zedbsd.sh NAME ARCH "PROGRAMS"`
+  （riscv64 の sysroot の header が古いまま残る時は header を touch して再 build）。判断 A〜D はユーザーの返事待ち（B は推しの形で実装済み）。

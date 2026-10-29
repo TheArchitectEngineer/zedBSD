@@ -570,11 +570,9 @@ struct terminal_renderer {
  * main loop.
  */
 struct terminal_window {
-	/* libkeiland's application and window, and the shells' descriptors the application watches. */
+	/* libkeiland's application and window. */
 	struct kl_app *app;
 	struct kl_window *kui;
-	int watched[TERMINAL_TABS];
-	unsigned watched_count;
 
 	/* The touch inputs not yet taken by the main loop, oldest first (ws081-p011; a full queue drops the newest). */
 	struct terminal_touch_event touches[TERMINAL_TOUCH_EVENTS];
@@ -748,7 +746,7 @@ void terminal_renderer_close(struct terminal_renderer *renderer);
 
 /* The window (window.c). */
 int terminal_window_open(struct terminal_window *window, const char *display, uint32_t width, uint32_t height);
-int terminal_window_dispatch(struct terminal_window *window, const int *others, unsigned count, int timeout, int *ready);
+int terminal_window_dispatch(struct terminal_window *window, struct kl_process *const *shells, unsigned count, int timeout, unsigned *ready);
 void terminal_window_close(struct terminal_window *window);
 void terminal_window_type(struct terminal_window *window, const char *bytes, size_t length);
 void terminal_window_set_fullscreen(struct terminal_window *window, int fullscreen);

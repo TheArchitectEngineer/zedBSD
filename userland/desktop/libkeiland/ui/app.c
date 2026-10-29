@@ -14,18 +14,23 @@
  * keiui_app_global for a display's global before they would search with a
  * registry and a roundtrip of their own.
  *
- * The windows' inputs and the descriptors watched become one queue of
- * events.  A dispatch waits for the compositor or a descriptor, no longer
- * than until a held key's repeat is due, reads and runs the compositor's
- * events, queues the descriptors that became ready, and then presses the
- * keys whose repeat is due -- after the events read with them, so that a
- * release among them stops a repeat first (BUG-111).
+ * The windows' inputs, the events posted and the descriptors watched
+ * become one queue of events.  A dispatch waits for the compositor, the
+ * wake of the posts or a descriptor, no longer than until a held key's
+ * repeat is due, reads and runs the compositor's events, moves the posts
+ * that wait into the queue, queues the descriptors that became ready, and
+ * then presses the keys whose repeat is due -- after the events read with
+ * them, so that a release among them stops a repeat first.
  *
- * The library runs on one thread; the list of the applications open is
- * the library's own.
+ * The library runs on the application's thread; only a post comes from
+ * another, and it waits in the application's list of posts (under its lock)
+ * until the dispatch takes it.  The list of the applications open is the
+ * library's own.
  */
 
 #include "window.h"
+
+#include "userland/desktop/libkeiland/process.h"
 
 #include <keiland/keiland.h>
 
@@ -45,6 +50,10 @@ static int app_wait(const struct kl_app *app, int timeout_ms, uint64_t now_us);
 static void app_repeat(struct kl_app *app);
 static struct kl_app_event *app_slot(struct kl_app *app);
 static void app_appearance(void *data, unsigned appearance);
+static void app_posts_move(struct kl_app *app);
+static int app_post_deliver(struct kl_app *app, struct kl_app_event *event);
+static void app_post_orphan(struct kl_app_event *event);
+static int app_has_window(const struct kl_app *app, const struct kl_window *window);
 
 /* The registry's callbacks, for as long as the application lives. */
 static const struct wl_registry_listener app_registry_listener = {
@@ -73,6 +82,23 @@ kl_app_open(
 		errno = ENOMEM;
 		return NULL;
 	}
+
+	/* The posts' list, its lock and its wake, for the application's thread. */
+	app->thread = keiui_thread_self();
+	error = keiui_lock_open(&app->post_lock);
+	if (error != 0) {
+		free(app);
+		errno = error;
+		return NULL;
+	}
+	error = keiui_wake_open(&app->post_wake);
+	if (error != 0) {
+		keiui_lock_close(&app->post_lock);
+		free(app);
+		errno = error;
+		return NULL;
+	}
+	app->post_open = 1;
 
 	/* The app_id its windows get. */
 	if (options != NULL && options->application != NULL) {
@@ -143,14 +169,19 @@ kl_app_close(
 	struct kl_app *app)
 {
 	struct kl_app **link;
+	struct keiui_post *post;
 
 	/* No application, nothing to close. */
 	if (app == NULL)
 		return;
 
-	/* Each window (its close takes it out of the list). */
+	/* Each window (its close takes it out of the list), and each process (its threads no longer reach the application). */
 	while (app->windows != NULL)
 		kl_window_close(app->windows);
+	if (app->post_open) {
+		keiui_processes_close(app);
+		keiui_instances_unbind(app);
+	}
 
 	/* The appearance, the system and the menu service. */
 	kl_appearance_close(app->appearance);
@@ -172,6 +203,19 @@ kl_app_close(
 		wl_registry_destroy(app->registry);
 	if (app->display != NULL)
 		wl_display_disconnect(app->display);
+
+	/* The posts never taken (the threads that posted have ended), their wake and their lock. */
+	if (app->post_open) {
+		while (app->post_first != NULL) {
+			post = app->post_first;
+			app->post_first = post->next;
+			free(post);
+		}
+		keiui_wake_close(&app->post_wake);
+		keiui_lock_close(&app->post_lock);
+	}
+
+	/* The record. */
 	free(app->application);
 	free(app);
 }
@@ -186,10 +230,11 @@ kl_app_dispatch(
 	struct kl_app *app,
 	int timeout_ms)
 {
-	struct pollfd descriptors[1U + KL_APP_FDS_MAX];
+	struct pollfd descriptors[2U + KL_APP_FDS_MAX];
 	struct kl_window *window;
 	unsigned index;
 	unsigned used;
+	unsigned watched;
 	int status;
 
 	/* Each window's editing state as it is now goes out with what is flushed (edit.c). */
@@ -219,7 +264,9 @@ kl_app_dispatch(
 		return -1;
 	}
 
-	/* No longer than until a repeat is due, and not at all while events wait. */
+	/* The processes' and the copies' news so far, then no longer than until a repeat is due, and not at all while events wait. */
+	keiui_processes_queue(app);
+	keiui_instances_queue(app);
 	timeout_ms = app_wait(app, timeout_ms, kl_clock_us());
 
 	/* The compositor's descriptor, then each one watched. */
@@ -237,6 +284,13 @@ kl_app_dispatch(
 		descriptors[used].revents = 0;
 		used++;
 	}
+
+	/* The posts' wake, last. */
+	watched = used;
+	descriptors[used].fd = keiui_wake_descriptor(&app->post_wake);
+	descriptors[used].events = POLLIN;
+	descriptors[used].revents = 0;
+	used++;
 
 	/* Waits for any of them. */
 	status = poll(descriptors, (nfds_t)used, timeout_ms);
@@ -261,8 +315,11 @@ kl_app_dispatch(
 	if (status < 0)
 		return -1;
 
-	/* The descriptors that became ready, then the repeats now due. */
-	app_fd_events(app, descriptors, used);
+	/* The posts that wait, the processes' news, the descriptors that became ready, then the repeats now due. */
+	app_posts_move(app);
+	keiui_processes_queue(app);
+	keiui_instances_queue(app);
+	app_fd_events(app, descriptors, watched);
 	app_repeat(app);
 
 	/* Succeeded: the events so far are queued. */
@@ -316,6 +373,96 @@ kl_app_watch_fd(
 }
 
 /*
+ * Posts an event of the program's own (KL_APP_POST) to the application,
+ * from any thread.
+ */
+int
+kl_app_post(
+	struct kl_app *app,
+	uint32_t code,
+	void *data)
+{
+	struct kl_app_event event;
+	int error;
+
+	/* No application. */
+	if (app == NULL)
+		return EINVAL;
+
+	/* The event, posted. */
+	memset(&event, 0, sizeof(event));
+	event.kind = KL_APP_POST;
+	event.code = code;
+	event.data = data;
+	event.fd = -1;
+	error = keiui_app_post_event(app, &event);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: posted. */
+	return 0;
+}
+
+/*
+ * Posts an event to the application from any thread (kl_app_post's way):
+ * the application's thread queues it at once while no post waits before it,
+ * any other post waits in the list for the dispatch, and the first one in
+ * the list rings the wake.  Returns 0, or ENOMEM.
+ */
+int
+keiui_app_post_event(
+	struct kl_app *app,
+	const struct kl_app_event *event)
+{
+	struct kl_app_event now;
+	struct keiui_post *post;
+	int own;
+	int queued;
+	int first;
+
+	/* The application's thread, with no post before it: straight into the queue, while it has room. */
+	own = keiui_thread_is(app->thread);
+	if (own) {
+		now = *event;
+		keiui_lock_take(&app->post_lock);
+
+		queued = 0;
+		if (app->post_first == NULL)
+			queued = app_post_deliver(app, &now);
+
+		keiui_lock_give(&app->post_lock);
+		if (queued)
+			return 0;
+	}
+
+	/* A post to wait in the list. */
+	post = malloc(sizeof(*post));
+	if (post == NULL)
+		return ENOMEM;
+	post->event = *event;
+	post->next = NULL;
+
+	/* At the list's end; the first one rings the wake. */
+	keiui_lock_take(&app->post_lock);
+
+	first = 0;
+	if (app->post_last != NULL)
+		app->post_last->next = post;
+	else {
+		app->post_first = post;
+		first = 1;
+	}
+	app->post_last = post;
+
+	keiui_lock_give(&app->post_lock);
+	if (first)
+		keiui_wake_ring(&app->post_wake);
+
+	/* Succeeded: it waits for the dispatch. */
+	return 0;
+}
+
+/*
  * Takes the oldest event: 1 with it in *event, 0 when none is queued.
  */
 int
@@ -327,10 +474,12 @@ kl_app_take(
 	if (app->event_count == 0U)
 		return 0;
 
-	/* The oldest event, and the queue moves on. */
+	/* The oldest event, and the queue moves on (a process may queue its next one). */
 	*event = app->events[app->event_first];
 	app->event_first = (app->event_first + 1U) % KEIUI_APP_EVENTS;
 	app->event_count--;
+	keiui_process_taken(event);
+	keiui_instance_taken(event);
 
 	/* Succeeded: one event taken. */
 	return 1;
@@ -486,6 +635,7 @@ keiui_app_forget(
 	struct kl_window *window)
 {
 	struct kl_window **link;
+	struct keiui_post *post;
 	unsigned kept;
 	unsigned index;
 	unsigned from;
@@ -499,10 +649,22 @@ keiui_app_forget(
 		}
 	}
 
-	/* The queue again without the window's events. */
+	/* The posts waiting for it are the application's now (their data is not lost). */
+	keiui_lock_take(&app->post_lock);
+
+	for (post = app->post_first; post != NULL; post = post->next) {
+		if (post->event.window == window)
+			app_post_orphan(&post->event);
+	}
+
+	keiui_lock_give(&app->post_lock);
+
+	/* The queue again without the window's events, but its posts, which become the application's. */
 	kept = 0;
 	for (index = 0; index < app->event_count; index++) {
 		from = (app->event_first + index) % KEIUI_APP_EVENTS;
+		if (app->events[from].window == window && app->events[from].input.kind == KL_WINDOW_POST)
+			app_post_orphan(&app->events[from]);
 		if (app->events[from].window == window)
 			continue;
 		to = (app->event_first + kept) % KEIUI_APP_EVENTS;
@@ -761,4 +923,220 @@ app_appearance(
 	if (event == NULL)
 		return;
 	event->kind = KL_APP_THEME;
+}
+
+/*
+ * Moves the posts that wait into the queue, as far as it has room: the
+ * list is taken whole under the lock and what does not fit goes back to
+ * its head, with the wake rung again so that the next dispatch does not
+ * sleep on it.
+ */
+static void
+app_posts_move(
+	struct kl_app *app)
+{
+	struct keiui_post *list;
+	struct keiui_post *post;
+	struct keiui_post *last;
+	int queued;
+
+	/* The wake heard; a post made from now on rings it again. */
+	keiui_wake_clear(&app->post_wake);
+
+	/* The list, taken whole. */
+	keiui_lock_take(&app->post_lock);
+
+	list = app->post_first;
+	app->post_first = NULL;
+	app->post_last = NULL;
+
+	keiui_lock_give(&app->post_lock);
+
+	/* Each post in order, while the queue has room. */
+	while (list != NULL) {
+		queued = app_post_deliver(app, &list->event);
+		if (!queued)
+			break;
+		post = list;
+		list = list->next;
+		free(post);
+	}
+
+	/* All moved. */
+	if (list == NULL)
+		return;
+
+	/* The rest before what was posted meanwhile, and the wake again. */
+	for (last = list; last->next != NULL; last = last->next)
+		continue;
+
+	keiui_lock_take(&app->post_lock);
+
+	last->next = app->post_first;
+	if (app->post_first == NULL)
+		app->post_last = last;
+	app->post_first = list;
+
+	keiui_lock_give(&app->post_lock);
+	keiui_wake_ring(&app->post_wake);
+}
+
+/*
+ * Queues one posted event on the application's thread: a window's post
+ * among the window's inputs when the window is still the application's,
+ * otherwise as the application's own.  Returns 1 when it was queued, 0 when
+ * the queue has no room.
+ */
+static int
+app_post_deliver(
+	struct kl_app *app,
+	struct kl_app_event *event)
+{
+	struct kl_app_event *slot;
+	int present;
+	int error;
+
+	/* No room. */
+	if (app->event_count == KEIUI_APP_EVENTS)
+		return 0;
+
+	/* A window's post to a window that is gone is the application's. */
+	if (event->window != NULL) {
+		present = app_has_window(app, event->window);
+		if (!present)
+			app_post_orphan(event);
+	}
+
+	/* A window's post, among its inputs. */
+	if (event->kind == KL_APP_WINDOW && event->window != NULL) {
+		error = keiui_window_post_input(event->window, event->input.code, event->input.data);
+		if (error == 0)
+			return 1;
+		app_post_orphan(event);
+	}
+
+	/* The application's own. */
+	slot = app_slot(app);
+	if (slot == NULL)
+		return 0;
+	*slot = *event;
+
+	/* Succeeded: queued. */
+	return 1;
+}
+
+/*
+ * Makes a window's post the application's (its window closed): KL_APP_POST
+ * with the code and the data, window NULL.
+ */
+static void
+app_post_orphan(
+	struct kl_app_event *event)
+{
+	uint32_t code;
+	void *data;
+
+	/* A window's post keeps its code and data. */
+	if (event->kind == KL_APP_WINDOW && event->input.kind == KL_WINDOW_POST) {
+		code = event->input.code;
+		data = event->input.data;
+		memset(event, 0, sizeof(*event));
+		event->kind = KL_APP_POST;
+		event->code = code;
+		event->data = data;
+		event->fd = -1;
+	}
+
+	/* No window either way. */
+	event->window = NULL;
+}
+
+/* Reports whether a window is one of the application's still. */
+static int
+app_has_window(
+	const struct kl_app *app,
+	const struct kl_window *window)
+{
+	const struct kl_window *each;
+
+	/* Each window of the application. */
+	for (each = app->windows; each != NULL; each = each->app_next) {
+		if (each == window)
+			return 1;
+	}
+
+	/* Not one of them. */
+	return 0;
+}
+
+/*
+ * Gives the next slot of the application's queue, zeroed (for the
+ * library's other files), or NULL when the queue is full.
+ */
+struct kl_app_event *
+keiui_app_slot(
+	struct kl_app *app)
+{
+	/* The slot. */
+	return app_slot(app);
+}
+
+/*
+ * Takes a process's events out of the application's queue (the others
+ * keep their order).
+ */
+void
+keiui_app_forget_process(
+	struct kl_app *app,
+	const struct kl_process *process)
+{
+	unsigned kept;
+	unsigned index;
+	unsigned from;
+	unsigned to;
+
+	/* The queue again without the process's events. */
+	kept = 0;
+	for (index = 0; index < app->event_count; index++) {
+		from = (app->event_first + index) % KEIUI_APP_EVENTS;
+		if (app->events[from].process == process)
+			continue;
+		to = (app->event_first + kept) % KEIUI_APP_EVENTS;
+		if (to != from)
+			app->events[to] = app->events[from];
+		kept++;
+	}
+
+	/* The queue is as long as what was kept. */
+	app->event_count = kept;
+}
+
+/*
+ * Takes a copy's events out of the application's queue (the others keep
+ * their order).
+ */
+void
+keiui_app_forget_instance(
+	struct kl_app *app,
+	const struct kl_instance *instance)
+{
+	unsigned kept;
+	unsigned index;
+	unsigned from;
+	unsigned to;
+
+	/* The queue again without the copy's events. */
+	kept = 0;
+	for (index = 0; index < app->event_count; index++) {
+		from = (app->event_first + index) % KEIUI_APP_EVENTS;
+		if (app->events[from].instance == instance)
+			continue;
+		to = (app->event_first + kept) % KEIUI_APP_EVENTS;
+		if (to != from)
+			app->events[to] = app->events[from];
+		kept++;
+	}
+
+	/* The queue is as long as what was kept. */
+	app->event_count = kept;
 }

@@ -32,11 +32,15 @@ extern "C" {
  * (network, sound, power, kl_system) is the application's too.  A window made
  * by kl_window_open is still a connection of its own.
  *
- * Every call is made from the one thread that opened the application.
+ * Every call is made from the one thread that opened the application, but
+ * kl_app_post and kl_window_post (KL_VERSION 97), which the program's other
+ * threads call to hand the application's thread an event of their own.
  */
 struct kl_app;
 struct kl_system;
 struct kl_glass_panel;
+struct kl_process;
+struct kl_instance;
 
 /* The most descriptors an application watches (16 before KL_VERSION 51). */
 #define KL_APP_FDS_MAX		64U
@@ -50,6 +54,9 @@ struct kl_glass_panel;
 #define KL_APP_WINDOW		1U
 #define KL_APP_FD		2U
 #define KL_APP_THEME		3U
+#define KL_APP_POST		4U
+#define KL_APP_PROCESS		5U
+#define KL_APP_INSTANCE	6U
 
 /*
  * What an application is opened with.  Either pointer may be NULL:
@@ -67,7 +74,15 @@ struct kl_app_options {
  * chosen), for KL_APP_FD the descriptor and what it became (KL_APP_FD_*);
  * KL_APP_THEME (KL_VERSION 35) says the desktop's appearance changed and
  * kl_theme_default's colours with it, for the application to draw its
- * windows again (kl_appearance_get(NULL) tells which).
+ * windows again (kl_appearance_get(NULL) tells which); KL_APP_POST
+ * (KL_VERSION 97) is the program's own, with the code and the data
+ * kl_app_post was given (or kl_window_post's, window NULL, when the window
+ * closed before it came); KL_APP_PROCESS (KL_VERSION 98) is a process's
+ * news (<keiland/keiland_process.h>): the process, and in ready what it
+ * tells (KL_PROCESS_READY_*); KL_APP_INSTANCE (KL_VERSION 99) says later
+ * starts of the program handed requests to its copy that runs (instance,
+ * bound with kl_instance_bind): the program takes them with
+ * kl_instance_take until none is left.
  */
 struct kl_app_event {
 	unsigned kind;
@@ -75,6 +90,10 @@ struct kl_app_event {
 	struct kl_window_event input;
 	int fd;
 	unsigned ready;
+	uint32_t code;
+	void *data;
+	struct kl_process *process;
+	struct kl_instance *instance;
 };
 
 /*
@@ -103,6 +122,20 @@ int kl_app_dispatch(struct kl_app *app, int timeout_ms);
  * Returns 0, EINVAL, or ENOSPC past KL_APP_FDS_MAX.
  */
 int kl_app_watch_fd(struct kl_app *app, int fd, unsigned events);
+
+/*
+ * KL_VERSION 97: posts an event of the program's own (KL_APP_POST with code
+ * and data) to the application, from any thread.  The application's own
+ * thread queues it at once, after the events queued so far; another
+ * thread's post wakes kl_app_dispatch and is queued there, after the
+ * compositor's events read with it.  The posts of one thread arrive in the
+ * order they were made, and none is dropped: what the queue has no room for
+ * waits for the next dispatch.  The data goes to the one who takes the
+ * event.  The program ends the threads that post before it closes the
+ * application (the posts not taken by then are dropped, their data with
+ * them).  Returns 0, EINVAL, or ENOMEM.
+ */
+int kl_app_post(struct kl_app *app, uint32_t code, void *data);
 
 /*
  * Takes the oldest event.  Returns 1 with it in *event, 0 when none is queued.

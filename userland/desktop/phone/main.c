@@ -44,8 +44,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdarg.h>
-#include <spawn.h>
-#include <sys/wait.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -181,8 +179,8 @@ struct ph_window {
 	int moving;
 	int glass_decided;
 
-	/* Viewer children are reaped without waiting for their windows to close. */
-	pid_t viewers[16];
+	/* The viewers started, processes of the application (NULL: a free slot); each slot is freed when its viewer ends. */
+	struct kl_process *viewers[16];
 
 	/* The second of the call's time drawn last (ws197-p006). */
 	uint64_t call_second;
@@ -268,7 +266,7 @@ static void ph_imports_taken(struct ph_window *phone);
 static void ph_imports_failed(struct ph_window *phone, const struct ph_import *import, int error);
 static void ph_imports_free(struct ph_window *phone);
 static void ph_open_media(struct ph_window *phone, const struct ph_request *request);
-static void ph_reap_viewers(struct ph_window *phone);
+static void ph_viewer_ended(struct ph_window *phone, struct kl_process *process);
 static void ph_send(struct ph_window *phone, long contact);
 static void ph_call(struct ph_window *phone, long contact);
 static void ph_save_contact(struct ph_window *phone);
@@ -539,7 +537,6 @@ ph_loop(
 		/* Waits for the compositor, or for the time something moves. */
 		now = kl_clock_us();
 		wait = ph_wait(phone, now);
-		ph_reap_viewers(phone);
 		status = kl_app_dispatch(phone->app, wait);
 		if (status != 0) {
 			ph_log("DONE reason=disconnected");
@@ -555,6 +552,12 @@ ph_loop(
 			/* The desktop's appearance changed: the theme's colours are new, the window is drawn again (ws089-p017). */
 			if (event.kind == KL_APP_THEME) {
 				phone->dirty = 1;
+				continue;
+			}
+
+			/* A viewer ended: its slot is free. */
+			if (event.kind == KL_APP_PROCESS && (event.ready & KL_PROCESS_READY_EXIT) != 0U) {
+				ph_viewer_ended(phone, event.process);
 				continue;
 			}
 
@@ -1520,19 +1523,18 @@ ph_open_media(
 	struct ph_window *phone,
 	const struct ph_request *request)
 {
-	char *arguments[3];
+	struct kl_process_options options;
+	const char *arguments[3];
 	size_t slot;
 	int error;
-	extern char **environ;
 
 	/* Only a saved original's absolute path can be opened. */
 	if (request->path[0] != '/')
 		return;
 
-	/* Finds a child slot after collecting viewers which have already closed. */
-	ph_reap_viewers(phone);
+	/* Finds a free slot (a viewer's slot is freed when it ends). */
 	for (slot = 0U; slot < 16U; slot++) {
-		if (phone->viewers[slot] == 0)
+		if (phone->viewers[slot] == NULL)
 			break;
 	}
 
@@ -1549,16 +1551,13 @@ ph_open_media(
 	arguments[0] = KEILAND_BINDIR "/imageview";
 	if (request->video)
 		arguments[0] = KEILAND_BINDIR "/videoplayer";
-	arguments[1] = (char *)request->path;
+	arguments[1] = request->path;
 	arguments[2] = NULL;
-	error = posix_spawn(&phone->viewers[slot],
-			    arguments[0],
-			    NULL,
-			    NULL,
-			    arguments,
-			    environ);
+	memset(&options, 0, sizeof(options));
+	options.argv = arguments;
+	error = kl_process_start(phone->app, &options, &phone->viewers[slot]);
 	if (error != 0) {
-		phone->viewers[slot] = 0;
+		phone->viewers[slot] = NULL;
 		ph_view_notice(&phone->view,
 			       "The attachment viewer could not be started.",
 			       kl_clock_us());
@@ -1568,22 +1567,21 @@ ph_open_media(
 	ph_log("VIEWER error=%d", error);
 }
 
-/* Collects only viewer children, keeping every UI dispatch nonblocking. */
+/* Frees the slot of a viewer that ended. */
 static void
-ph_reap_viewers(
-	struct ph_window *phone)
+ph_viewer_ended(
+	struct ph_window *phone,
+	struct kl_process *process)
 {
 	size_t slot;
-	pid_t collected;
-	int status;
 
-	/* Live viewers stay independent until their own close action. */
+	/* The viewer's slot. */
 	for (slot = 0U; slot < 16U; slot++) {
-		if (phone->viewers[slot] <= 0)
+		if (phone->viewers[slot] != process)
 			continue;
-		collected = waitpid(phone->viewers[slot], &status, WNOHANG);
-		if (collected > 0 || (collected < 0 && errno == ECHILD))
-			phone->viewers[slot] = 0;
+		kl_process_close(process);
+		phone->viewers[slot] = NULL;
+		return;
 	}
 }
 

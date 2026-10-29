@@ -19,6 +19,7 @@
 
 #include "declare.h"
 #include "internal.h"
+#include "userland/desktop/libkeiland/platform/platform.h"
 #include "present-damage.h"
 #include "trace.h"
 
@@ -118,6 +119,16 @@ struct keiui_app_global {
  * asked for), and the next application open (the library's list, read by
  * libkeiland's objects to bind from an application's registry).
  */
+/*
+ * An event posted that waits for the application's dispatch (kl_app_post,
+ * kl_window_post from another thread): the event as it is to be queued, and
+ * the next one.
+ */
+struct keiui_post {
+	struct kl_app_event event;
+	struct keiui_post *next;
+};
+
 struct kl_app {
 	struct wl_display *display;
 	struct wl_registry *registry;
@@ -132,6 +143,26 @@ struct kl_app {
 	struct kl_app_event events[KEIUI_APP_EVENTS];
 	unsigned event_first;
 	unsigned event_count;
+
+	/*
+	 * The events posted that wait for a dispatch, oldest first (post_lock
+	 * holds them, for they come from any thread): post_wake is rung when
+	 * the first comes, and the dispatch moves them into the queue.  thread
+	 * is the application's, whose posts go straight into the queue while
+	 * none waits here.
+	 */
+	struct keiui_lock post_lock;
+	struct keiui_post *post_first;
+	struct keiui_post *post_last;
+	struct keiui_wake post_wake;
+	int post_open;
+	keiui_thread_id thread;
+
+	/* The processes the application started, a list through their app_next (process.c). */
+	struct kl_process *processes;
+
+	/* The copies of programs bound to the application, a list through their app_next (instance.c). */
+	struct kl_instance *instances;
 
 	/* The descriptors watched and what for (KL_APP_FD_*). */
 	int fds[KL_APP_FDS_MAX];
@@ -606,6 +637,16 @@ struct kl_window {
 /* An application's part of its windows (app.c): an event queued for a window (NULL when full), a window gone, and the menu service. */
 struct kl_window_event *keiui_app_push(struct kl_app *app, struct kl_window *window);
 void keiui_app_forget(struct kl_app *app, struct kl_window *window);
+int keiui_app_post_event(struct kl_app *app, const struct kl_app_event *event);
+struct kl_app_event *keiui_app_slot(struct kl_app *app);
+void keiui_app_forget_process(struct kl_app *app, const struct kl_process *process);
+void keiui_app_forget_instance(struct kl_app *app, const struct kl_instance *instance);
+
+/* The copies bound to an application (instance.c): their events queued, one taken, and every one unbound. */
+void keiui_instances_queue(struct kl_app *app);
+void keiui_instance_taken(struct kl_app_event *event);
+void keiui_instances_unbind(struct kl_app *app);
+int keiui_window_post_input(struct kl_window *window, uint32_t code, void *data);
 struct kl_menu_service *keiui_app_menu_service(struct kl_app *app);
 
 /* A window of an application (window.c). */

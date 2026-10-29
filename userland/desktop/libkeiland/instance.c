@@ -27,6 +27,7 @@
 #include <keiland/keiland.h>
 
 #include "ui/internal.h"
+#include "ui/window.h"
 
 #include <wayland-client.h>
 #include "userland/desktop/libwayland/xdg-activation-v1-client-protocol.h"
@@ -52,19 +53,38 @@
 /* How many roundtrips the wait for a token's text may take. */
 #define ACTIVATION_ROUNDTRIPS	4
 
+/* The most requests a bound copy keeps until the program takes them (more are refused). */
+#define INSTANCE_PENDING	8U
+
 /* The room the two lines of a handed-over request take: the request, the token, and their line ends. */
 #define INSTANCE_MESSAGE_MAX	(KL_INSTANCE_REQUEST_MAX + KL_ACTIVATION_TOKEN_MAX + 2U)
 
 /*
  * The one copy of a program: its listening socket, and the socket file's
  * path and identity (only the file this copy made is removed when it
- * stops).
+ * stops).  Bound to an application (kl_instance_bind), a thread of its own
+ * (kl-instance) takes the later starts' requests: the application, its
+ * list through app_next and whether an event of it is queued (the
+ * application's thread's), the thread and the pipe that stops it, and,
+ * under the lock, the requests waiting (a ring of INSTANCE_PENDING).
  */
 struct kl_instance {
 	int listener;
 	char path[sizeof(((struct sockaddr_un *)0)->sun_path)];
 	dev_t device;
 	ino_t inode;
+
+	struct kl_app *app;
+	struct kl_instance *app_next;
+	int queued;
+	keiui_thread_id thread;
+	int control[2];
+
+	struct keiui_lock lock;
+	char requests[INSTANCE_PENDING][KL_INSTANCE_REQUEST_MAX];
+	char tokens[INSTANCE_PENDING][KL_ACTIVATION_TOKEN_MAX];
+	unsigned first;
+	unsigned count;
 };
 
 /*
@@ -83,6 +103,9 @@ static int instance_hand_over(int connection, const char *name, const char *requ
 static int instance_write(int connection, const char *bytes, size_t length);
 static int instance_read(int connection, char *message, size_t size);
 static int instance_token_valid(const char *token);
+static int instance_receive(struct kl_instance *instance, char *request, size_t request_size, char *token, size_t token_size);
+static void *instance_run(void *argument);
+static void instance_unbind(struct kl_instance *instance);
 static struct xdg_activation_v1 *activation_bind(struct wl_display *display);
 static void activation_done(void *data, struct xdg_activation_token_v1 *object, const char *token);
 
@@ -124,6 +147,8 @@ kl_instance_open(
 	if (created == NULL)
 		return ENOMEM;
 	created->listener = -1;
+	created->control[0] = -1;
+	created->control[1] = -1;
 
 	/* The socket's path, in a runtime directory that is the user's alone. */
 	error = instance_path(name, created->path, sizeof(created->path));
@@ -187,7 +212,58 @@ kl_instance_fd(
 }
 
 /*
- * Takes one request a later start handed over.
+ * Has the requests of later starts arrive as the application's
+ * KL_APP_INSTANCE events: a thread of the copy's own takes them.
+ */
+int
+kl_instance_bind(
+	struct kl_instance *instance,
+	struct kl_app *app)
+{
+	int status;
+	int error;
+
+	/* A copy not bound yet. */
+	if (instance == NULL || app == NULL || instance->app != NULL)
+		return EINVAL;
+
+	/* The lock and the pipe that stops the thread. */
+	error = keiui_lock_open(&instance->lock);
+	if (error != 0)
+		return error;
+	status = pipe2(instance->control, O_CLOEXEC | O_NONBLOCK);
+	if (status != 0) {
+		error = errno;
+		keiui_lock_close(&instance->lock);
+		return error;
+	}
+
+	/* The application's, then the thread. */
+	instance->app = app;
+	instance->first = 0;
+	instance->count = 0;
+	error = keiui_thread_start_joined(instance_run, instance, &instance->thread);
+	if (error != 0) {
+		instance->app = NULL;
+		(void)close(instance->control[0]);
+		(void)close(instance->control[1]);
+		instance->control[0] = -1;
+		instance->control[1] = -1;
+		keiui_lock_close(&instance->lock);
+		return error;
+	}
+
+	/* One of the application's copies. */
+	instance->app_next = app->instances;
+	app->instances = instance;
+
+	/* Succeeded: later starts arrive as events. */
+	return 0;
+}
+
+/*
+ * Takes one request a later start handed over: one the thread kept when
+ * the copy is bound, else the next start waiting.
  */
 int
 kl_instance_take(
@@ -197,57 +273,40 @@ kl_instance_take(
 	char *token,
 	size_t token_size)
 {
-	char message[INSTANCE_MESSAGE_MAX + 1U];
-	char *line_end;
-	char *token_text;
-	char *token_end;
 	size_t request_length;
 	size_t token_length;
-	int connection;
-	int valid;
-	int error;
+	int taken;
 
 	/* No copy, nothing handed over. */
 	if (instance == NULL || instance->listener < 0)
 		return 0;
 
-	/* The next start waiting, if any. */
-	connection = accept(instance->listener, NULL, NULL);
-	if (connection < 0)
-		return 0;
+	/* Not bound: the next start waiting, read now. */
+	if (instance->app == NULL) {
+		taken = instance_receive(instance, request, request_size, token, token_size);
+		return taken;
+	}
 
-	/* Its two lines, read within a short wait, then the connection goes. */
-	error = instance_read(connection, message, sizeof(message));
-	(void)close(connection);
-	if (error != 0)
-		return 0;
+	/* Bound: the oldest request kept, when it fits where it goes. */
+	keiui_lock_take(&instance->lock);
 
-	/* The request's line. */
-	line_end = strchr(message, '\n');
-	if (line_end == NULL)
-		return 0;
-	*line_end = '\0';
+	taken = 0;
+	while (instance->count != 0U && !taken) {
+		request_length = strlen(instance->requests[instance->first]);
+		token_length = strlen(instance->tokens[instance->first]);
+		if (request_length < request_size && token_length < token_size) {
+			snprintf(request, request_size, "%s", instance->requests[instance->first]);
+			snprintf(token, token_size, "%s", instance->tokens[instance->first]);
+			taken = 1;
+		}
+		instance->first = (instance->first + 1U) % INSTANCE_PENDING;
+		instance->count--;
+	}
 
-	/* The token's line (empty when the start had none). */
-	token_text = line_end + 1;
-	token_end = strchr(token_text, '\n');
-	if (token_end == NULL)
-		return 0;
-	*token_end = '\0';
+	keiui_lock_give(&instance->lock);
 
-	/* Both fit where they go, and the token has a token's characters. */
-	request_length = strlen(message);
-	token_length = strlen(token_text);
-	if (request_length >= request_size || token_length >= token_size)
-		return 0;
-	valid = instance_token_valid(token_text);
-	if (!valid)
-		return 0;
-
-	/* Succeeded: the request and its token are the caller's. */
-	snprintf(request, request_size, "%s", message);
-	snprintf(token, token_size, "%s", token_text);
-	return 1;
+	/* One taken, or none waits. */
+	return taken;
 }
 
 /*
@@ -263,6 +322,10 @@ kl_instance_close(
 	/* No copy, nothing to close. */
 	if (instance == NULL)
 		return;
+
+	/* A bound copy's thread stops first. */
+	if (instance->app != NULL)
+		instance_unbind(instance);
 
 	/* The socket file goes when it is still the one this copy made. */
 	error = lstat(instance->path, &status);
@@ -760,4 +823,231 @@ activation_done(
 	if (length < sizeof(wait->token))
 		snprintf(wait->token, sizeof(wait->token), "%s", token);
 	wait->done = 1;
+}
+
+/*
+ * Takes the next start waiting on the listening socket: accepts it, reads
+ * its two lines within a short wait and checks them.  Returns 1 with the
+ * request and the token copied, 0 when none waits or what came is not a
+ * request.
+ */
+static int
+instance_receive(
+	struct kl_instance *instance,
+	char *request,
+	size_t request_size,
+	char *token,
+	size_t token_size)
+{
+	char message[INSTANCE_MESSAGE_MAX + 1U];
+	char *line_end;
+	char *token_text;
+	char *token_end;
+	size_t request_length;
+	size_t token_length;
+	int connection;
+	int valid;
+	int error;
+
+	/* The next start waiting, if any. */
+	connection = accept(instance->listener, NULL, NULL);
+	if (connection < 0)
+		return 0;
+
+	/* Its two lines, read within a short wait, then the connection goes. */
+	error = instance_read(connection, message, sizeof(message));
+	(void)close(connection);
+	if (error != 0)
+		return 0;
+
+	/* The request's line. */
+	line_end = strchr(message, '\n');
+	if (line_end == NULL)
+		return 0;
+	*line_end = '\0';
+
+	/* The token's line (empty when the start had none). */
+	token_text = line_end + 1;
+	token_end = strchr(token_text, '\n');
+	if (token_end == NULL)
+		return 0;
+	*token_end = '\0';
+
+	/* Both fit where they go, and the token has a token's characters. */
+	request_length = strlen(message);
+	token_length = strlen(token_text);
+	if (request_length >= request_size || token_length >= token_size)
+		return 0;
+	valid = instance_token_valid(token_text);
+	if (!valid)
+		return 0;
+
+	/* Succeeded: the request and its token are the caller's. */
+	snprintf(request, request_size, "%s", message);
+	snprintf(token, token_size, "%s", token_text);
+	return 1;
+}
+
+/*
+ * The thread of a bound copy: waits for a later start or its stop, keeps
+ * each request (up to INSTANCE_PENDING), and rings the application's wake
+ * when the first waits.
+ */
+static void *
+instance_run(
+	void *argument)
+{
+	char request[KL_INSTANCE_REQUEST_MAX];
+	char token[KL_ACTIVATION_TOKEN_MAX];
+	struct kl_instance *instance;
+	struct pollfd descriptors[2];
+	unsigned slot;
+	int received;
+	int status;
+
+	/* The copy. */
+	keiui_thread_name("kl-instance");
+	instance = argument;
+
+	/* Each wait: a start, or the stop. */
+	for (;;) {
+		descriptors[0].fd = instance->listener;
+		descriptors[0].events = POLLIN;
+		descriptors[0].revents = 0;
+		descriptors[1].fd = instance->control[0];
+		descriptors[1].events = POLLIN;
+		descriptors[1].revents = 0;
+		status = poll(descriptors, 2, -1);
+		if (status < 0 && errno == EINTR)
+			continue;
+		if (status < 0 || descriptors[1].revents != 0)
+			break;
+
+		/* Each start waiting, kept while there is room. */
+		for (;;) {
+			received = instance_receive(instance, request, sizeof(request), token, sizeof(token));
+			if (!received)
+				break;
+
+			keiui_lock_take(&instance->lock);
+
+			if (instance->count < INSTANCE_PENDING) {
+				slot = (instance->first + instance->count) % INSTANCE_PENDING;
+				snprintf(instance->requests[slot], sizeof(instance->requests[slot]), "%s", request);
+				snprintf(instance->tokens[slot], sizeof(instance->tokens[slot]), "%s", token);
+				instance->count++;
+				if (instance->count == 1U)
+					keiui_wake_ring(&instance->app->post_wake);
+			}
+
+			keiui_lock_give(&instance->lock);
+		}
+	}
+
+	/* Stopped. */
+	return NULL;
+}
+
+/*
+ * Stops a bound copy's thread and takes the copy out of its application:
+ * out of the list and its events out of the queue.
+ */
+static void
+instance_unbind(
+	struct kl_instance *instance)
+{
+	struct kl_instance **link;
+	struct kl_app *app;
+	const char byte = 1;
+	ssize_t written;
+
+	/* The thread told to stop, and waited for. */
+	do {
+		written = write(instance->control[1], &byte, 1);
+	} while (written < 0 && errno == EINTR);
+	keiui_thread_join(instance->thread);
+
+	/* Out of the application's list and queue. */
+	app = instance->app;
+	for (link = &app->instances; *link != NULL; link = &(*link)->app_next) {
+		if (*link == instance) {
+			*link = instance->app_next;
+			break;
+		}
+	}
+	keiui_app_forget_instance(app, instance);
+
+	/* The pipe and the lock; the copy is no application's any more. */
+	(void)close(instance->control[0]);
+	(void)close(instance->control[1]);
+	instance->control[0] = -1;
+	instance->control[1] = -1;
+	keiui_lock_close(&instance->lock);
+	instance->app = NULL;
+	instance->app_next = NULL;
+	instance->queued = 0;
+}
+
+/*
+ * Queues an event for each bound copy with requests waiting and none
+ * queued (the application's dispatch).
+ */
+void
+keiui_instances_queue(
+	struct kl_app *app)
+{
+	struct kl_instance *instance;
+	struct kl_app_event *event;
+	unsigned count;
+
+	/* Each copy bound to the application. */
+	for (instance = app->instances; instance != NULL; instance = instance->app_next) {
+		if (instance->queued)
+			continue;
+
+		/* Whether requests wait. */
+		keiui_lock_take(&instance->lock);
+
+		count = instance->count;
+
+		keiui_lock_give(&instance->lock);
+		if (count == 0U)
+			continue;
+
+		/* Its event, while the queue has room. */
+		event = keiui_app_slot(app);
+		if (event == NULL)
+			return;
+		event->kind = KL_APP_INSTANCE;
+		event->instance = instance;
+		event->fd = -1;
+		instance->queued = 1;
+	}
+}
+
+/*
+ * Notes that a copy's event was taken, so that the next one may be queued.
+ */
+void
+keiui_instance_taken(
+	struct kl_app_event *event)
+{
+	/* A copy's event. */
+	if (event->kind != KL_APP_INSTANCE || event->instance == NULL)
+		return;
+
+	/* None of it queued now. */
+	event->instance->queued = 0;
+}
+
+/*
+ * Unbinds every copy bound to an application that closes.
+ */
+void
+keiui_instances_unbind(
+	struct kl_app *app)
+{
+	/* Each copy (its unbinding takes it out of the list). */
+	while (app->instances != NULL)
+		instance_unbind(app->instances);
 }

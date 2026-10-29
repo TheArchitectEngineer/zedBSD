@@ -81,12 +81,10 @@ struct se_window {
 	unsigned event_count;
 
 	/*
-	 * Another descriptor the wait wakes for, -1 for none: the one copy's
-	 * socket, which a later start of Settings makes readable (ws089-p016),
-	 * and whether the application watches it.
+	 * Whether a later start of Settings handed requests to this copy since
+	 * the main loop last took them (the application's KL_APP_INSTANCE).
 	 */
-	int extra_fd;
-	int extra_watched;
+	int handed_over;
 };
 
 /*
