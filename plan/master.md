@@ -20,7 +20,7 @@
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
 | P1 | q1662-i09 in-progress | [ws309](ws309/ws.md) p012（display の thread・park と drain・回転・BUG-353）、worktree p1-ws309i | 10.0.10.3（時間の枠） |
-| P2 | q1682-i02 cleared・返却 | [ws068](ws068/ws.md) Venus の試験は全部 PASS、main に merge。次の Queue は未割当（試験待ち: agent/p2-ws242・agent/p2-ws217） | — |
+| P2 | q1686-i01 in-progress | [ws068](ws068/ws.md) p034〜p036 の残りの実装と Venus の試験（q1682 は cleared、main fe49f1d60。試験待ち: agent/p2-ws242・agent/p2-ws217） | — |
 | P3 | q1679-i02 in-progress | [ws221](ws221/ws.md) p010 の非退行と recv の詰め、worktree p3-ws221g | VF2・5330、10.0.10.3（時間の枠） |
 | P4 | q1665-i10 in-progress | [ws307](ws307/ws.md) p011 の通しの試験 → 日本語の画面の撮影、worktree p4-ws307n（試験待ち: agent/p4-ws283） | QEMU |
 | P5 | q1677-i02 in-progress | [ws243](ws243/ws.md) を main に合わせ、RTX 2070 で p004、worktree p5-ws243 | 10.0.10.3（時間の枠） |
@@ -98,7 +98,7 @@ main に未 merge の branch は [registry](agents/registry.md) の試験待ち�
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-358 · q1686 · WS314 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-358 · q1687 · WS314 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
