@@ -8,16 +8,17 @@
 /*
  * ws068-p016..p018: runs zedBSD's GLSL compiler on the host.
  *
- *   glsl-test compile vert|frag|geom FILE [DEFAULT_VERSION]
+ *   glsl-test compile vert|frag|geom|tesc|tese FILE [DEFAULT_VERSION]
  *       compiles one shader and prints "compiled" or the info log
  *   glsl-test expect vert|frag FILE [DEFAULT_VERSION]
  *       compiles a shader that must fail, and checks the log against the
  *       file's "// expect: TEXT" lines (each TEXT must be in the log)
  *   glsl-test link VERT FRAG OUT_PREFIX [DEFAULT_VERSION] [NAME=LOCATION ...]
  *       compiles and links two shaders (and the geometry shader of VERT's
- *       name with .geom when there is one, WS068 p032), writes
- *       OUT_PREFIX.vert.spv and OUT_PREFIX.frag.spv (and
- *       OUT_PREFIX.geom.spv), and prints the uniforms
+ *       name with .geom when there is one, WS068 p032, and the
+ *       tessellation shaders of its name with .tesc and .tese, p034),
+ *       writes OUT_PREFIX.vert.spv and OUT_PREFIX.frag.spv (and
+ *       OUT_PREFIX.geom.spv, .tesc.spv, .tese.spv), and prints the uniforms
  */
 
 #include "../../../../userland/desktop/libglesv2/glsl/glsl.h"
@@ -32,6 +33,7 @@ static int test_compile(int argc, char **argv);
 static int test_expect(int argc, char **argv);
 static int test_link(int argc, char **argv);
 static int test_write(const char *path, const uint32_t *code, size_t words);
+static int test_optional(const char *vertex_path, const char *extension, unsigned stage, unsigned version, struct glsl_shader **shader);
 
 /*
  * Runs one command.
@@ -124,6 +126,12 @@ test_stage(
 	differs = strcmp(name, "geom");
 	if (differs == 0)
 		return GLSL_STAGE_GEOMETRY;
+	differs = strcmp(name, "tesc");
+	if (differs == 0)
+		return GLSL_STAGE_TESS_CONTROL;
+	differs = strcmp(name, "tese");
+	if (differs == 0)
+		return GLSL_STAGE_TESS_EVALUATION;
 
 	/* The vertex stage. */
 	return GLSL_STAGE_VERTEX;
@@ -254,12 +262,14 @@ test_link(
 	struct glsl_program program;
 	struct glsl_shader *vertex;
 	struct glsl_shader *geometry;
+	struct glsl_shader *tess_control;
+	struct glsl_shader *tess_evaluation;
 	struct glsl_shader *fragment;
+	static const char *const names[GLSL_STAGES] = { "vert", "frag", "geom", "comp", "tesc", "tese" };
 	unsigned version;
 	unsigned count;
 	unsigned index;
 	char path[1024];
-	char *dot;
 	char *source;
 	char *log;
 	char *equals;
@@ -305,29 +315,21 @@ test_link(
 		return 1;
 	}
 
-	/* The geometry shader of the vertex shader's name, when there is one. */
-	geometry = NULL;
-	(void)snprintf(path, sizeof(path), "%s", argv[2]);
-	dot = strrchr(path, '.');
-	if (dot != NULL)
-		(void)snprintf(dot, sizeof(path) - (size_t)(dot - path), ".geom");
-	source = test_read(path);
-	if (source != NULL) {
-		geometry = glsl_compile(GLSL_STAGE_GEOMETRY, source, version, &log);
-		free(source);
-		if (log != NULL)
-			printf("%s", log);
-		free(log);
-		if (geometry == NULL) {
-			printf("link: the geometry shader did not compile\n");
-			return 1;
-		}
+	/* The geometry and tessellation shaders of the vertex shader's name, when there are some. */
+	status = test_optional(argv[2], ".geom", GLSL_STAGE_GEOMETRY, version, &geometry);
+	status |= test_optional(argv[2], ".tesc", GLSL_STAGE_TESS_CONTROL, version, &tess_control);
+	status |= test_optional(argv[2], ".tese", GLSL_STAGE_TESS_EVALUATION, version, &tess_evaluation);
+	if (status != 0) {
+		printf("link: a shader did not compile\n");
+		return 1;
 	}
 
 	/* The link. */
-	status = glsl_link_stages(vertex, geometry, fragment, bindings, count, NULL, 0U, &program, &log);
+	status = glsl_link_pipeline(vertex, tess_control, tess_evaluation, geometry, fragment, bindings, count, NULL, 0U, &program, &log);
 	glsl_shader_free(vertex);
 	glsl_shader_free(geometry);
+	glsl_shader_free(tess_control);
+	glsl_shader_free(tess_evaluation);
 	glsl_shader_free(fragment);
 	if (status != 0) {
 		printf("link FAILED: %s", log);
@@ -364,9 +366,11 @@ test_link(
 	status = test_write(path, program.code[0], program.words[0]);
 	(void)snprintf(path, sizeof(path), "%s.frag.spv", argv[4]);
 	status |= test_write(path, program.code[1], program.words[1]);
-	if (program.code[GLSL_STAGE_GEOMETRY] != NULL) {
-		(void)snprintf(path, sizeof(path), "%s.geom.spv", argv[4]);
-		status |= test_write(path, program.code[GLSL_STAGE_GEOMETRY], program.words[GLSL_STAGE_GEOMETRY]);
+	for (index = GLSL_STAGE_GEOMETRY; index < GLSL_STAGES; index++) {
+		if (program.code[index] == NULL)
+			continue;
+		(void)snprintf(path, sizeof(path), "%s.%s.spv", argv[4], names[index]);
+		status |= test_write(path, program.code[index], program.words[index]);
 	}
 
 	/* The program goes. */
@@ -399,5 +403,44 @@ test_write(
 		return -1;
 
 	/* Succeeded. */
+	return 0;
+}
+
+/* Compiles the shader of a vertex shader's path with another extension, when there is one (*shader NULL otherwise); nonzero when it does not compile. */
+static int
+test_optional(
+	const char *vertex_path,
+	const char *extension,
+	unsigned stage,
+	unsigned version,
+	struct glsl_shader **shader)
+{
+	char path[1024];
+	char *dot;
+	char *source;
+	char *log;
+
+	/* The path with the extension. */
+	*shader = NULL;
+	(void)snprintf(path, sizeof(path), "%s", vertex_path);
+	dot = strrchr(path, '.');
+	if (dot != NULL)
+		(void)snprintf(dot, sizeof(path) - (size_t)(dot - path), "%s", extension);
+
+	/* No such shader. */
+	source = test_read(path);
+	if (source == NULL)
+		return 0;
+
+	/* Compiled, with its log. */
+	*shader = glsl_compile(stage, source, version, &log);
+	free(source);
+	if (log != NULL)
+		printf("%s", log);
+	free(log);
+	if (*shader == NULL)
+		return 1;
+
+	/* Succeeded: the shader. */
 	return 0;
 }

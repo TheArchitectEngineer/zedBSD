@@ -290,6 +290,16 @@ glsl_version_mask(
 	if (shader->es)
 		return GLSL_IN_ES100;
 
+	/* Desktop 4.00 on: everything of 3.30, with tessellation. */
+	if (shader->version >= GLSL_VERSION_400)
+		return GLSL_IN_330 | GLSL_IN_400 | GLSL_IN_TESS;
+
+	/* Desktop 1.50 and 3.30 with GL_ARB_tessellation_shader. */
+	if (shader->tessellation && shader->version == GLSL_VERSION_150)
+		return GLSL_IN_150 | GLSL_IN_TESS;
+	if (shader->tessellation && shader->version == GLSL_VERSION_330)
+		return GLSL_IN_330 | GLSL_IN_TESS;
+
 	/* Desktop 1.10 to 3.30. */
 	switch (shader->version) {
 	case GLSL_VERSION_110:

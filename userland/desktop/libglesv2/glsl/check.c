@@ -54,6 +54,10 @@ static void check_invariant(struct glsl_shader *shader, struct glsl_node *node);
 static void check_interface(struct glsl_shader *shader, struct glsl_node *node);
 static void check_default_layout(struct glsl_shader *shader, struct glsl_node *node);
 static const struct glsl_type *check_geometry_input(struct glsl_shader *shader, const struct glsl_type *type, unsigned line);
+static void check_tess_layout(struct glsl_shader *shader, struct glsl_node *node);
+static int check_tess_arrayed(const struct glsl_shader *shader, unsigned storage, unsigned patch);
+static const struct glsl_type *check_tess_array(struct glsl_shader *shader, const struct glsl_type *type, unsigned storage, unsigned line);
+static void check_patch(struct glsl_shader *shader, struct glsl_node *type_node, unsigned line);
 static void check_uniform_block(struct glsl_shader *shader, struct glsl_node *node);
 static void check_storage_block(struct glsl_shader *shader, struct glsl_node *node);
 static void check_local_size(struct glsl_shader *shader, struct glsl_node *node);
@@ -130,6 +134,14 @@ glsl_check(
 	struct glsl_node *node;
 	struct glsl_symbol *symbol;
 	struct glsl_function *function;
+	unsigned mask;
+
+	/* A tessellation shader needs GLSL 4.00 or GL_ARB_tessellation_shader. */
+	mask = glsl_version_mask(shader);
+	if ((shader->stage == GLSL_STAGE_TESS_CONTROL || shader->stage == GLSL_STAGE_TESS_EVALUATION) && (mask & GLSL_IN_TESS) == 0U) {
+		glsl_error(shader, 0U, "tessellation shaders need GLSL 4.00 or GL_ARB_tessellation_shader");
+		return;
+	}
 
 	/* The global scope with the built-ins; OpenGL ES fragment shaders have no default float precision. */
 	check_push_scope(shader);
@@ -159,6 +171,12 @@ glsl_check(
 	/* A compute shader says its workgroup size (ws101-p008). */
 	if (shader->stage == GLSL_STAGE_COMPUTE && shader->local_size[0] == 0U)
 		glsl_error(shader, 0U, "a compute shader needs its workgroup size ('layout(local_size_x = 64) in;')");
+
+	/* A tessellation control shader says its output patch's vertices, an evaluation shader its domain. */
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL && shader->tess_vertices == 0U)
+		glsl_error(shader, 0U, "a tessellation control shader needs its output vertices ('layout(vertices = 3) out;')");
+	if (shader->stage == GLSL_STAGE_TESS_EVALUATION && shader->tess_domain == GLSL_PRIMITIVE_NONE)
+		glsl_error(shader, 0U, "a tessellation evaluation shader needs its domain ('layout(triangles) in;')");
 
 	/* A geometry shader says its primitives and how many vertices it emits. */
 	if (shader->stage == GLSL_STAGE_GEOMETRY) {
@@ -446,6 +464,7 @@ check_interface(
 	unsigned where;
 	unsigned index;
 	int allowed;
+	int arrayed;
 
 	/* A uniform block. */
 	type_node = node->child[0];
@@ -498,6 +517,25 @@ check_interface(
 		return;
 	}
 
+	/* A tessellation shader's per-vertex block is an array of the patch's vertices, with an instance name (no patch blocks). */
+	if (type_node->patch) {
+		glsl_error(shader, node->line, "patch blocks are not supported (declare patch variables)");
+		return;
+	}
+	arrayed = check_tess_arrayed(shader, storage, 0U);
+	if (arrayed) {
+		if (instance == NULL || (instance->flags & GLSL_NODE_ARRAY) == 0U) {
+			glsl_error(shader, node->line, "a tessellation shader's per-vertex block needs an instance name and \"[]\"");
+			return;
+		}
+
+		/* The array of the vertices' blocks. */
+		array = check_array(shader, type, instance, instance->child[0], node->line);
+		array = check_tess_array(shader, array, storage, node->line);
+		check_block_variable(shader, instance->name, array, where, type_node->interpolation, node->line);
+		return;
+	}
+
 	/* With an instance name: one variable of the struct. */
 	if (instance != NULL) {
 		if ((instance->flags & GLSL_NODE_ARRAY) != 0U)
@@ -532,6 +570,18 @@ check_default_layout(
 	type_node = node->child[0];
 	if ((type_node->layout & GLSL_LAYOUT_LOCAL_SIZE) != 0U) {
 		check_local_size(shader, node);
+		return;
+	}
+
+	/* A tessellation shader's patch layouts. */
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL || shader->stage == GLSL_STAGE_TESS_EVALUATION) {
+		check_tess_layout(shader, node);
+		return;
+	}
+
+	/* The tessellation layouts elsewhere. */
+	if ((type_node->layout & (GLSL_LAYOUT_VERTICES | GLSL_LAYOUT_SPACING | GLSL_LAYOUT_ORDER | GLSL_LAYOUT_POINT_MODE)) != 0U) {
+		glsl_error(shader, node->line, "vertices, spacing, vertex order and point_mode layouts are for tessellation shaders");
 		return;
 	}
 
@@ -637,6 +687,188 @@ check_geometry_input(
 
 	/* Succeeded: the array. */
 	return type;
+}
+
+/*
+ * Checks a tessellation shader's qualifiers alone: a control shader's
+ * output vertices ("layout(vertices = 3) out;", which sizes gl_out and
+ * the unsized per-vertex outputs after it), or an evaluation shader's
+ * domain, spacing, vertex order and point mode ("layout(triangles,
+ * equal_spacing, ccw) in;").  Each may be declared again only the same.
+ */
+static void
+check_tess_layout(
+	struct glsl_shader *shader,
+	struct glsl_node *node)
+{
+	struct glsl_node *type_node;
+	struct glsl_symbol *out;
+	unsigned layout;
+
+	/* The layouts given, and only a stage's own. */
+	type_node = node->child[0];
+	layout = type_node->layout;
+	if ((layout & (GLSL_LAYOUT_PRIMITIVE | GLSL_LAYOUT_VERTICES | GLSL_LAYOUT_SPACING | GLSL_LAYOUT_ORDER | GLSL_LAYOUT_POINT_MODE)) == 0U)
+		return;
+	if ((layout & GLSL_LAYOUT_MAX_VERTICES) != 0U) {
+		glsl_error(shader, node->line, "max_vertices is a geometry shader's layout");
+		return;
+	}
+
+	/* A control shader: "layout(vertices = N) out;" and nothing else. */
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL) {
+		if (type_node->storage != GLSL_STORAGE_OUT || layout != GLSL_LAYOUT_VERTICES) {
+			glsl_error(shader, node->line, "a tessellation control shader's layout is 'layout(vertices = N) out;'");
+			return;
+		}
+		if (type_node->vertices == 0U || type_node->vertices > GLSL_MAX_PATCH_VERTICES) {
+			glsl_error(shader, node->line, "vertices must be 1 to %u", GLSL_MAX_PATCH_VERTICES);
+			return;
+		}
+		if (shader->tess_vertices != 0U && shader->tess_vertices != type_node->vertices) {
+			glsl_error(shader, node->line, "the output vertices are declared twice, differently");
+			return;
+		}
+
+		/* The vertices, and gl_out sized by them. */
+		shader->tess_vertices = type_node->vertices;
+		out = check_lookup(shader, "gl_out");
+		if (out != NULL && out->type->kind == GLSL_KIND_ARRAY)
+			out->type = glsl_type_array(&shader->arena, out->type->element, shader->tess_vertices);
+		return;
+	}
+
+	/* An evaluation shader: input layouts of its domain and how it is cut. */
+	if (type_node->storage != GLSL_STORAGE_IN || (layout & GLSL_LAYOUT_VERTICES) != 0U) {
+		glsl_error(shader, node->line, "a tessellation evaluation shader's layouts qualify 'in'");
+		return;
+	}
+
+	/* The domain: triangles, quads or isolines, once. */
+	if ((layout & GLSL_LAYOUT_PRIMITIVE) != 0U) {
+		if (type_node->primitive != GLSL_PRIMITIVE_TRIANGLES &&
+		    type_node->primitive != GLSL_PRIMITIVE_QUADS &&
+		    type_node->primitive != GLSL_PRIMITIVE_ISOLINES) {
+			glsl_error(shader, node->line, "a tessellation domain is triangles, quads or isolines");
+			return;
+		}
+		if (shader->tess_domain != GLSL_PRIMITIVE_NONE && shader->tess_domain != type_node->primitive) {
+			glsl_error(shader, node->line, "the domain is declared twice, differently");
+			return;
+		}
+
+		/* Kept. */
+		shader->tess_domain = type_node->primitive;
+	}
+
+	/* The spacing and the vertex order, each once. */
+	if ((layout & GLSL_LAYOUT_SPACING) != 0U) {
+		if (shader->tess_spacing != 0U && shader->tess_spacing != type_node->spacing)
+			glsl_error(shader, node->line, "the spacing is declared twice, differently");
+		shader->tess_spacing = type_node->spacing;
+	}
+	if ((layout & GLSL_LAYOUT_ORDER) != 0U) {
+		if (shader->tess_order != 0U && shader->tess_order != type_node->order)
+			glsl_error(shader, node->line, "the vertex order is declared twice, differently");
+		shader->tess_order = type_node->order;
+	}
+
+	/* Points instead of the domain's primitives. */
+	if ((layout & GLSL_LAYOUT_POINT_MODE) != 0U)
+		shader->tess_point_mode = 1U;
+}
+
+/*
+ * Reports whether a tessellation shader's input or output of a storage
+ * is per vertex (an array of the patch's vertices): every input of both
+ * stages and every output of a control shader, but not a patch variable.
+ */
+static int
+check_tess_arrayed(
+	const struct glsl_shader *shader,
+	unsigned storage,
+	unsigned patch)
+{
+	/* A patch variable is one per patch. */
+	if (patch)
+		return 0;
+
+	/* Both stages' inputs, a control shader's outputs. */
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL && (storage == GLSL_STORAGE_IN || storage == GLSL_STORAGE_OUT))
+		return 1;
+	if (shader->stage == GLSL_STAGE_TESS_EVALUATION && storage == GLSL_STORAGE_IN)
+		return 1;
+
+	/* Anything else is not. */
+	return 0;
+}
+
+/*
+ * Returns the type of a tessellation shader's per-vertex input or output:
+ * an array of the patch's vertices.  An unsized input takes
+ * gl_MaxPatchVertices; an unsized control shader's output the output
+ * vertices (declared before it), a sized one must have them.  An error
+ * type when it is not an array.
+ */
+static const struct glsl_type *
+check_tess_array(
+	struct glsl_shader *shader,
+	const struct glsl_type *type,
+	unsigned storage,
+	unsigned line)
+{
+	/* An error stays one; anything else must be an array. */
+	if (type->kind == GLSL_KIND_ERROR)
+		return type;
+	if (type->kind != GLSL_KIND_ARRAY) {
+		glsl_error(shader, line, "a tessellation shader's per-vertex inputs and outputs are arrays ('in vec4 v[];')");
+		return glsl_type_error();
+	}
+
+	/* An input: unsized is gl_MaxPatchVertices. */
+	if (storage == GLSL_STORAGE_IN) {
+		if (type->length == 0U)
+			type = glsl_type_array(&shader->arena, type->element, GLSL_MAX_PATCH_VERTICES);
+		return type;
+	}
+
+	/* An output: the vertices' number is known once the layout came. */
+	if (shader->tess_vertices == 0U) {
+		glsl_error(shader, line, "declare the output vertices ('layout(vertices = 3) out;') before the outputs");
+		return glsl_type_error();
+	}
+
+	/* An unsized one takes it, a sized one must have it. */
+	if (type->length == 0U) {
+		type = glsl_type_array(&shader->arena, type->element, shader->tess_vertices);
+		return type;
+	}
+	if (type->length != shader->tess_vertices) {
+		glsl_error(shader, line, "the output array's size is not the %u output vertices", shader->tess_vertices);
+		return glsl_type_error();
+	}
+
+	/* Succeeded: the array. */
+	return type;
+}
+
+/* Checks a patch qualifier: only a tessellation control shader's output or an evaluation shader's input has one. */
+static void
+check_patch(
+	struct glsl_shader *shader,
+	struct glsl_node *type_node,
+	unsigned line)
+{
+	/* A control shader's output. */
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL && type_node->storage == GLSL_STORAGE_OUT)
+		return;
+
+	/* An evaluation shader's input. */
+	if (shader->stage == GLSL_STAGE_TESS_EVALUATION && type_node->storage == GLSL_STORAGE_IN)
+		return;
+
+	/* Anything else. */
+	glsl_error(shader, line, "patch qualifies a tessellation control shader's outputs and an evaluation shader's inputs");
 }
 
 /*
@@ -1125,6 +1357,7 @@ check_variable(
 	struct glsl_symbol *symbol;
 	const struct glsl_type *type;
 	unsigned where;
+	int arrayed;
 
 	/* The variable's type: the declaration's, or an array of it. */
 	type = base_type;
@@ -1138,6 +1371,13 @@ check_variable(
 	/* A geometry shader's input: an array of the input primitive's vertices. */
 	if (global && shader->stage == GLSL_STAGE_GEOMETRY && type_node->storage == GLSL_STORAGE_IN)
 		type = check_geometry_input(shader, type, variable->line);
+
+	/* A tessellation shader's patch variable, or a per-vertex one: an array of the patch's vertices. */
+	if (type_node->patch)
+		check_patch(shader, type_node, variable->line);
+	arrayed = check_tess_arrayed(shader, type_node->storage, type_node->patch);
+	if (global && arrayed)
+		type = check_tess_array(shader, type, type_node->storage, variable->line);
 
 	/* The name. */
 	check_reserved_name(shader, variable->name, variable->line);
@@ -1156,6 +1396,7 @@ check_variable(
 	symbol->precision = type_node->precision;
 	symbol->centroid = type_node->centroid;
 	symbol->invariant = type_node->invariant;
+	symbol->patch = type_node->patch;
 	symbol->where = where;
 	variable->symbol = symbol;
 	if (global)

@@ -40,6 +40,15 @@
 #define GLSL_VERSION_330	330U
 #define GLSL_VERSION_ES310	310U
 
+/* Desktop GLSL 4.00 to 4.60 (a 4.x shader's version mask is 3.30's and GLSL_IN_400). */
+#define GLSL_VERSION_400	400U
+#define GLSL_VERSION_410	410U
+#define GLSL_VERSION_420	420U
+#define GLSL_VERSION_430	430U
+#define GLSL_VERSION_440	440U
+#define GLSL_VERSION_450	450U
+#define GLSL_VERSION_460	460U
+
 /* The kinds of tokens. */
 #define GLSL_TOKEN_EOF		0U
 #define GLSL_TOKEN_IDENTIFIER	1U
@@ -147,7 +156,8 @@ enum glsl_keyword {
 	GLSL_K_VOLATILE,
 	GLSL_K_RESTRICT,
 	GLSL_K_READONLY,
-	GLSL_K_WRITEONLY
+	GLSL_K_WRITEONLY,
+	GLSL_K_PATCH
 };
 
 /* The kinds of types. */
@@ -243,6 +253,13 @@ enum glsl_keyword {
 #define GLSL_BUILTIN_NUM_WORK_GROUPS 18U
 #define GLSL_BUILTIN_LOCAL_INVOCATION_INDEX 19U
 
+/* The tessellation shaders' built-ins: the levels, the coordinate, the patch's vertices and the invocation. */
+#define GLSL_BUILTIN_TESS_LEVEL_OUTER 20U
+#define GLSL_BUILTIN_TESS_LEVEL_INNER 21U
+#define GLSL_BUILTIN_TESS_COORD	22U
+#define GLSL_BUILTIN_PATCH_VERTICES 23U
+#define GLSL_BUILTIN_INVOCATION_ID 24U
+
 /*
  * A geometry shader's primitives (the layouts "in" and "out" give), and
  * how many vertices each input primitive has, by its number.
@@ -255,6 +272,20 @@ enum glsl_keyword {
 #define GLSL_PRIMITIVE_TRIANGLES_ADJACENCY 5U
 #define GLSL_PRIMITIVE_LINE_STRIP 6U
 #define GLSL_PRIMITIVE_TRIANGLE_STRIP 7U
+
+/* A tessellation evaluation shader's other domains (its triangles are GLSL_PRIMITIVE_TRIANGLES). */
+#define GLSL_PRIMITIVE_QUADS	8U
+#define GLSL_PRIMITIVE_ISOLINES	9U
+
+/* A tessellation evaluation shader's spacings and vertex orders (0: not given; equal spacing and ccw then). */
+#define GLSL_SPACING_EQUAL	1U
+#define GLSL_SPACING_FRACTIONAL_EVEN 2U
+#define GLSL_SPACING_FRACTIONAL_ODD 3U
+#define GLSL_ORDER_CW		1U
+#define GLSL_ORDER_CCW		2U
+
+/* gl_MaxPatchVertices: the size of a tessellation shader's unsized per-vertex inputs. */
+#define GLSL_MAX_PATCH_VERTICES	32U
 
 /* The kinds of symbols. */
 #define GLSL_SYMBOL_VARIABLE	1U
@@ -496,6 +527,17 @@ struct glsl_node {
 	/* A fragment output's layout index: which input of a dual-source blend it is (desktop GLSL 3.30). */
 	unsigned output_index;
 
+	/*
+	 * Tessellation: the patch qualifier, and a layout's output vertices
+	 * (a control shader's), spacing, vertex order and point mode (an
+	 * evaluation shader's; its domain is the primitive).
+	 */
+	unsigned patch;
+	unsigned vertices;
+	unsigned spacing;
+	unsigned order;
+	unsigned point_mode;
+
 	/* GLSL ES 3.10 (ws101-p008): the memory qualifiers (GLSL_MEMORY_*), a layout's binding and workgroup size. */
 	unsigned memory;
 	unsigned binding;
@@ -562,6 +604,9 @@ struct glsl_symbol {
 
 	/* A fragment output's layout index (0 without one; 1 is the second colour a dual-source blend reads). */
 	unsigned explicit_index;
+
+	/* A tessellation shader's patch variable (a control shader's output, an evaluation shader's input), one per patch. */
+	unsigned patch;
 
 	/* A uniform block's member without an instance name: the block's symbol and the member's index. */
 	struct glsl_symbol *block;
@@ -644,6 +689,15 @@ struct glsl_builtin {
  * GLSL_IN_ES300 and this bit, so it has everything 3.00 has.
  */
 #define GLSL_IN_ES310		0x200U
+
+/*
+ * Desktop GLSL 4.00 on: a 4.x shader's version mask has GLSL_IN_330 and
+ * this bit, so it has everything 3.30 has.  GLSL_IN_TESS is in the mask
+ * of a shader that has tessellation (4.00 on, or 1.50 and 3.30 with
+ * GL_ARB_tessellation_shader).
+ */
+#define GLSL_IN_400		0x400U
+#define GLSL_IN_TESS		0x800U
 
 /* The versions that share a feature. */
 #define GLSL_IN_ALL		0x1efU
@@ -728,6 +782,12 @@ struct glsl_builtin {
 /* Desktop GLSL 3.30's index of a fragment output (dual-source blending). */
 #define GLSL_LAYOUT_INDEX	0x800U
 
+/* Tessellation's layouts: a control shader's output vertices, an evaluation shader's spacing, vertex order and point mode. */
+#define GLSL_LAYOUT_VERTICES	0x1000U
+#define GLSL_LAYOUT_SPACING	0x2000U
+#define GLSL_LAYOUT_ORDER	0x4000U
+#define GLSL_LAYOUT_POINT_MODE	0x8000U
+
 /* No location given. */
 #define GLSL_NO_LOCATION	0xffffffffU
 
@@ -771,6 +831,20 @@ struct glsl_shader {
 	unsigned local_size[3];
 	unsigned control_depth;
 	unsigned returned;
+
+	/*
+	 * Tessellation: whether GL_ARB_tessellation_shader was enabled (a
+	 * desktop 1.50 or 3.30 shader; 4.00 on has it), a control shader's
+	 * output vertices (0 until its layout), and an evaluation shader's
+	 * domain (GLSL_PRIMITIVE_TRIANGLES, _QUADS, _ISOLINES; NONE until its
+	 * layout), spacing, vertex order and point mode.
+	 */
+	unsigned tessellation;
+	unsigned tess_vertices;
+	unsigned tess_domain;
+	unsigned tess_spacing;
+	unsigned tess_order;
+	unsigned tess_point_mode;
 
 	/* The preprocessed tokens, and the parser's position in them. */
 	struct glsl_token *tokens;
