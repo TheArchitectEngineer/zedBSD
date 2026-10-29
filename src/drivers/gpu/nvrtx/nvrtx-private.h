@@ -197,6 +197,28 @@ struct nvrtx_chip {
 };
 
 /*
+ * What the attach does with one GPU, and the reason its mark gives.
+ *
+ * Decided by nvrtx_boot_choose() from the family record, whether the
+ * firmware's picture is on the GPU and the boot's nvrtx.gsp parameter, so
+ * every combination can be checked on the host.
+ */
+enum nvrtx_boot_choice {
+	/* Boots the GSP on a family seen working on real hardware. */
+	NVRTX_BOOT_START = 0,
+	/* Boots the GSP on a family not yet seen working on real hardware. */
+	NVRTX_BOOT_START_UNSEEN,
+	/* Leaves the GPU to the firmware because the boot says nvrtx.gsp=0. */
+	NVRTX_BOOT_LEAVE_OFF,
+	/* Leaves the GPU to the firmware because the chip has no GSP path. */
+	NVRTX_BOOT_LEAVE_NO_PATH,
+	/* Leaves a family not yet seen on real hardware to the firmware (nvrtx.gsp=1 boots it). */
+	NVRTX_BOOT_LEAVE_UNSEEN,
+	/* Leaves a GPU the firmware showed no picture on (nvrtx.gsp=1 boots it). */
+	NVRTX_BOOT_LEAVE_NO_PICTURE
+};
+
+/*
  * One product (PCI device ID) of the chips the driver knows.
  *
  * The product names a board, the chip names the silicon; the chip is
@@ -298,6 +320,16 @@ nvrtx_identify(
 	uint32_t ident0,
 	uint32_t ident1,
 	struct nvrtx_chip *chip);
+
+/*
+ * Decides whether the attach boots the GSP on a GPU or leaves it to the firmware.
+ */
+enum nvrtx_boot_choice
+nvrtx_boot_choose(
+	const struct nvrtx_profile *profile,
+	int gop_on_gpu,
+	bool gsp_wanted,
+	bool gsp_forced);
 
 /*
  * Finds the product a PCI device ID names.

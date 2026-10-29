@@ -113,6 +113,7 @@ nvrtx_attach(
 {
 	struct nvrtx_device device;
 	const struct nvrtx_profile *profile;
+	enum nvrtx_boot_choice choice;
 	bool off;
 	bool allowed;
 	bool gsp_wanted;
@@ -165,24 +166,40 @@ nvrtx_attach(
 	gsp_wanted = nvrtx_stage_gsp_wanted();
 	gsp_forced = nvrtx_stage_gsp_forced();
 	profile = device.chip.profile;
-	if (gsp_wanted &&
-	    profile != NULL &&
-	    ((profile->verified != 0 && device.gop_on_gpu != 0) || gsp_forced)) {
+	choice = nvrtx_boot_choose(profile, device.gop_on_gpu, gsp_wanted, gsp_forced);
+
+	/* Keeps the function and starts the boot, or marks why the GPU stays with the firmware. */
+	switch (choice) {
+	case NVRTX_BOOT_START:
+	case NVRTX_BOOT_START_UNSEEN:
+		/* A family not yet seen working says so before its boot starts. */
+		if (choice == NVRTX_BOOT_START_UNSEEN) {
+			nvrtx_stage_mark("console done; %s (%s) not yet seen on hardware, booting it",
+			    device.chip.name,
+			    profile->name);
+		}
+
+		/* Takes the function and starts the worker of the GSP boot. */
 		error = nvrtx_keep(&device);
 		if (error == 0)
 			return 0;
 
 		nvrtx_stage_mark("console done; the GSP boot not started (%d)", error);
-	} else if (!gsp_wanted) {
+		break;
+	case NVRTX_BOOT_LEAVE_OFF:
 		nvrtx_stage_mark("console done; %s left to the firmware (nvrtx.gsp=0)", device.chip.name);
-	} else if (profile == NULL) {
+		break;
+	case NVRTX_BOOT_LEAVE_NO_PATH:
 		nvrtx_stage_mark("console done; no GSP path for %s yet", device.chip.name);
-	} else if (profile->verified == 0) {
+		break;
+	case NVRTX_BOOT_LEAVE_UNSEEN:
 		nvrtx_stage_mark("console done; %s (%s) not yet seen on hardware, left to the firmware (nvrtx.gsp=1 boots it)",
 		    device.chip.name,
 		    profile->name);
-	} else {
+		break;
+	case NVRTX_BOOT_LEAVE_NO_PICTURE:
 		nvrtx_stage_mark("console done; no firmware picture on %s, left to the firmware (nvrtx.gsp=1 boots it)", device.chip.name);
+		break;
 	}
 
 	/* Gives the registers and the command bits back. */

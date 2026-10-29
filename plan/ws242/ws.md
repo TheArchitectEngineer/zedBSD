@@ -32,7 +32,7 @@ nvrtx が RTX 20（Turing、GTX 16xx を含む）・30（Ampere）・40（Ada）
 | --- | --- | --- | --- | --- |
 | ws242-p001 | driver: 全 chip の PCI id・chip id の認識、chip の世代の表、firmware の package（GA10x・AD10x）、起動・RM・class・QMD の差 | in-progress（残り＝再開点 1〜3 は p003〜p005 へ移した。uncleared で閉じる案は Q1） | — | P2 |
 | ws242-p002 | compiler: SM86・SM89 の encode・latency・規則（SM75 の出力は不変） | in-progress（実装・host 試験・build まで） | — | P4 |
-| ws242-p003 | [host 試験の復元と追従、identify・profile・製品・起動の判断](phase003/phase.md) | planned | — | P2（q1678-i01） |
+| ws242-p003 | [host 試験の復元と追従、identify・profile・製品・起動の判断](phase003/phase.md) | in-progress（実装済み・試験未実施） | — | P2（q1678-i01） |
 | ws242-p004 | [SM を compiler に、QMD 3.0・class・PCAS2_B、HBLANK_DELAY](phase004/phase.md) | planned | p003 | P2（q1678-i01） |
 | ws242-p005 | [scrub 済みの末尾 256 MiB の検査、firmware の package の確かめ](phase005/phase.md) | planned | p003 | P2（q1678-i01） |
 | ws242-p006 | [段ごとに諦めて firmware の画面に戻す道](phase006/phase.md) | planned | p004 | P2（q1678-i01） |
