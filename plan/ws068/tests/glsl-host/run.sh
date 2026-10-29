@@ -94,8 +94,13 @@ done
 grep -q "^uniform gl_DepthRange.near " "$out/es2-builtins.vert.reflect.txt" || fail "es2-builtins.vert reflection lacks gl_DepthRange.near"
 echo "es2: done"
 
+# 3d. ws068-p037: a dual-source blend's second colour carries Index 1 at location 0, the first none (0).
+grep -q "^out factor location=0 index=1" "$out/dual330.frag.reflect.txt" || fail "dual330 reflection lacks the index 1 output"
+grep -q "^out colour location=0 index=0" "$out/dual330.frag.reflect.txt" || fail "dual330 reflection lacks the index 0 output"
+echo "dual: done"
+
 # 4. The i915 compiler takes the shaders that stay inside what it supports; a geometry stage after its vertex stage (ws075-p007a).
-I915_PAIRS=${I915_PAIRS:-scene fixed scene300 glsl150-geometry}
+I915_PAIRS=${I915_PAIRS:-scene fixed scene300 glsl150-geometry dual330}
 for name in $I915_PAIRS; do
 	"$out/i915-check" vertex "$out/$name.vert.linked.spv" || fail "i915 $name.vert"
 	if [ -f "$out/$name.geom.linked.spv" ]; then

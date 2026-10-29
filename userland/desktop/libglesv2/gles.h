@@ -63,6 +63,28 @@
 #define GL_QUERY_BY_REGION_NO_WAIT 0x8E16
 #endif
 
+/* Desktop GL 3.3's timer queries (libGL): the elapsed time of commands, the GPU's time, and the bits of the counters. */
+#ifndef GL_TIME_ELAPSED
+#define GL_TIME_ELAPSED		0x88BF
+#endif
+#ifndef GL_TIMESTAMP
+#define GL_TIMESTAMP		0x8E28
+#endif
+#ifndef GL_QUERY_COUNTER_BITS
+#define GL_QUERY_COUNTER_BITS	0x8864
+#endif
+
+/* Desktop GL 3.3's blending with the fragment shader's second colour (libGL). */
+#ifndef GL_SRC1_COLOR
+#define GL_SRC1_COLOR			0x88F9
+#define GL_ONE_MINUS_SRC1_COLOR		0x88FA
+#define GL_ONE_MINUS_SRC1_ALPHA		0x88FB
+#define GL_MAX_DUAL_SOURCE_DRAW_BUFFERS	0x88FC
+#endif
+#ifndef GL_SRC1_ALPHA
+#define GL_SRC1_ALPHA			0x8589
+#endif
+
 /* Desktop GL 3.0's context state (libGL answers them). */
 #ifndef GL_CONTEXT_FLAGS
 #define GL_CONTEXT_FLAGS	0x821E
@@ -373,6 +395,17 @@ struct gles_query {
 	unsigned slot_count;
 	unsigned slot_capacity;
 	GLuint primitives;
+
+	/*
+	 * A timer query's timestamps (desktop GL 3.3, libGL): the slots of the
+	 * timestamp pool written (GL_TIME_ELAPSED's begin and end, or
+	 * glQueryCounter's one) with the frames that wrote them, and how many
+	 * were written (fewer when there was no surface to record into: the
+	 * result is 0 then).
+	 */
+	uint32_t stamp_slots[2];
+	uint64_t stamp_frames[2];
+	unsigned stamp_count;
 };
 
 /*
@@ -876,17 +909,24 @@ struct gles_program {
 	unsigned capture_stride;
 	GLenum capture_mode;
 
-	/* The locations glBindFragDataLocation gave fragment shader outputs, by name, for the next link (libGL). */
+	/*
+	 * The locations glBindFragDataLocation gave fragment shader outputs,
+	 * by name, for the next link, and the indexes
+	 * glBindFragDataLocationIndexed gave with them (0: the first colour;
+	 * desktop GL, libGL).
+	 */
 	char frag_bound_names[GLES_DRAW_BUFFERS][GLES_NAME];
 	GLuint frag_bound_locations[GLES_DRAW_BUFFERS];
+	GLuint frag_bound_indexes[GLES_DRAW_BUFFERS];
 	unsigned frag_bound_count;
 
 	/* Whether the fragment shader has an input interpolated flat, which takes GL's provoking vertex. */
 	int flat_inputs;
 
-	/* The fragment shader's outputs, by name and location (glGetFragDataLocation). */
+	/* The fragment shader's outputs, by name, location and index (glGetFragDataLocation, glGetFragDataIndex). */
 	char output_names[GLES_DRAW_BUFFERS][GLES_NAME];
 	GLint output_locations[GLES_DRAW_BUFFERS];
+	GLint output_indexes[GLES_DRAW_BUFFERS];
 	unsigned output_count;
 
 	/* The uniforms and the locations of their elements. */
@@ -1577,6 +1617,7 @@ void gles_queries_suspend(struct gles_state *state);
 void gles_queries_release(struct gles_state *state);
 int gles_frame_wait(struct zegl_context *context, struct gles_state *state, uint64_t frame);
 void gles_query_primitives(struct gles_state *state, GLuint primitives);
+int gles_query_timestamp(struct zegl_context *context, struct gles_state *state, GLint64 *value);
 
 /* program.c: shaders and programs. */
 void gles_program_release(struct gles_state *state, struct gles_program *program);
@@ -1600,6 +1641,11 @@ struct gles_spirv_variable {
 	GLenum type;
 	GLint size;
 	unsigned components;
+
+	/* Its id, and a fragment output's Index (0 without one) and the word it is in (0: no Index decoration). */
+	uint32_t id;
+	uint32_t index;
+	size_t index_word;
 };
 
 struct gles_spirv {

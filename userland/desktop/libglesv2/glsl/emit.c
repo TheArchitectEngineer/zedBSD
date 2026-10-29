@@ -1377,6 +1377,12 @@ emit_interface_decorations(
 	glsl_module_decorate(state->module, variable, SPV_DECORATION_LOCATION, &value, 1U);
 	glsl_module_name(state->module, variable, symbol->name);
 
+	/* A fragment output that is a dual-source blend's second colour. */
+	if (symbol->where == GLSL_VAR_OUTPUT && symbol->explicit_index != 0U) {
+		value = symbol->explicit_index;
+		glsl_module_decorate(state->module, variable, SPV_DECORATION_INDEX, &value, 1U);
+	}
+
 	/* Interpolation (integers into a fragment shader are always flat). */
 	if (symbol->interpolation == GLSL_INTERP_FLAT) {
 		glsl_module_decorate(state->module, variable, SPV_DECORATION_FLAT, NULL, 0U);

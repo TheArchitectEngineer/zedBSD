@@ -493,6 +493,9 @@ struct glsl_node {
 	unsigned primitive;
 	unsigned max_vertices;
 
+	/* A fragment output's layout index: which input of a dual-source blend it is (desktop GLSL 3.30). */
+	unsigned output_index;
+
 	/* GLSL ES 3.10 (ws101-p008): the memory qualifiers (GLSL_MEMORY_*), a layout's binding and workgroup size. */
 	unsigned memory;
 	unsigned binding;
@@ -556,6 +559,9 @@ struct glsl_symbol {
 
 	/* The location a layout qualifier gave (GLSL_NO_LOCATION: none). */
 	unsigned explicit_location;
+
+	/* A fragment output's layout index (0 without one; 1 is the second colour a dual-source blend reads). */
+	unsigned explicit_index;
 
 	/* A uniform block's member without an instance name: the block's symbol and the member's index. */
 	struct glsl_symbol *block;
@@ -718,6 +724,9 @@ struct glsl_builtin {
 #define GLSL_LAYOUT_STD430	0x100U
 #define GLSL_LAYOUT_BINDING	0x200U
 #define GLSL_LAYOUT_LOCAL_SIZE	0x400U
+
+/* Desktop GLSL 3.30's index of a fragment output (dual-source blending). */
+#define GLSL_LAYOUT_INDEX	0x800U
 
 /* No location given. */
 #define GLSL_NO_LOCATION	0xffffffffU

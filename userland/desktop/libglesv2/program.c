@@ -56,6 +56,10 @@
 /* SPIR-V's execution model of a compute shader (GLCompute). */
 #define PROGRAM_MODEL_COMPUTE	5U
 
+/* SPIR-V's OpDecorate and its Index decoration (a fragment output's dual-source blend input, desktop GL 3.3). */
+#define PROGRAM_OP_DECORATE	71U
+#define PROGRAM_DECORATION_INDEX 32U
+
 /* Desktop GL's names of its 1D sampler types, which OpenGL ES has none of. */
 #define PROGRAM_SAMPLER_1D		0x8B5DU
 #define PROGRAM_SAMPLER_1D_SHADOW	0x8B61U
@@ -80,6 +84,8 @@ static void program_glsl_types(struct gles_program *program, const struct glsl_p
 static GLenum program_sampler_type(const struct glsl_uniform_info *info);
 static int program_buffer_sampler(GLenum type);
 static int program_flat_inputs(const uint32_t *code, size_t words);
+static void program_bind_output(GLuint name, GLuint color, GLuint index, const GLchar *output);
+static int program_output_indexes(struct gles_spirv *fragment, uint32_t **code, size_t *words, char *log);
 static int program_glsl_blocks(struct gles_program *program, const struct glsl_program *linked, char *log);
 static int program_spirv_blocks(struct gles_program *program, const struct gles_spirv *spirv, unsigned stage, char *log);
 static int program_merge(struct gles_program *program, struct gles_spirv *spirv, char *log);
@@ -1172,17 +1178,80 @@ glBindFragDataLocation(
 	GLuint color,
 	const GLchar *output)
 {
+	/* The first colour of the draw buffer. */
+	program_bind_output(name, color, 0U, output);
+}
+
+/*
+ * Gives a fragment shader output a draw buffer and which colour of a
+ * dual-source blend it is (index 0 or 1) for the program's next link
+ * (desktop GL 3.3, libGL).
+ */
+GL_APICALL void GL_APIENTRY
+glBindFragDataLocationIndexed(
+	GLuint name,
+	GLuint color,
+	GLuint index,
+	const GLchar *output)
+{
+	/* The colour given. */
+	program_bind_output(name, color, index, output);
+}
+
+/*
+ * Returns which colour of a dual-source blend a fragment shader output of
+ * a linked program is (0 or 1), or -1 (desktop GL 3.3, libGL).
+ */
+GL_APICALL GLint GL_APIENTRY
+glGetFragDataIndex(
+	GLuint name,
+	const GLchar *output)
+{
+	struct zegl_context *context;
+	struct gles_program *program;
+	unsigned index;
+	int differs;
+
+	/* A linked program. */
+	context = gles_context();
+	program = program_get(context, name);
+	if (program == NULL)
+		return -1;
+	if (!program->linked) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return -1;
+	}
+
+	/* The output of that name. */
+	for (index = 0U; index < program->output_count; index++) {
+		differs = strcmp(program->output_names[index], output);
+		if (differs == 0)
+			return program->output_indexes[index];
+	}
+
+	/* None. */
+	return -1;
+}
+
+/* Records a draw buffer and an index glBindFragDataLocation(Indexed) gave an output name, for the program's next link. */
+static void
+program_bind_output(
+	GLuint name,
+	GLuint color,
+	GLuint index,
+	const GLchar *output)
+{
 	struct zegl_context *context;
 	struct gles_program *program;
 	unsigned slot;
 	int differs;
 
-	/* The program, and a draw buffer. */
+	/* The program, a draw buffer, and the first or second colour (the second only of the draw buffers a dual-source blend has). */
 	context = gles_context();
 	program = program_get(context, name);
 	if (program == NULL)
 		return;
-	if (color >= GLES_DRAW_BUFFERS) {
+	if (color >= GLES_DRAW_BUFFERS || index > 1U || (index == 1U && color != 0U)) {
 		gles_error(context, GL_INVALID_VALUE);
 		return;
 	}
@@ -1215,6 +1284,7 @@ glBindFragDataLocation(
 	/* Recorded for the next link. */
 	(void)snprintf(program->frag_bound_names[slot], GLES_NAME, "%s", output);
 	program->frag_bound_locations[slot] = color;
+	program->frag_bound_indexes[slot] = index;
 }
 
 /*
@@ -2932,6 +3002,97 @@ program_spirv_blocks(
 }
 
 /*
+ * Checks the fragment outputs' dual-source blend indexes after the
+ * bindings, and gives an Index decoration to each output that is the
+ * second colour without one (an OpDecorate after its Location's, so the
+ * words after it move: nothing may use the reflected words afterwards).
+ * Replaces *code with the longer copy when one is made.  Returns 0, or -1
+ * with the log.
+ */
+static int
+program_output_indexes(
+	struct gles_spirv *fragment,
+	uint32_t **code,
+	size_t *words,
+	char *log)
+{
+	const struct gles_spirv_variable *output;
+	uint32_t *longer;
+	size_t ends[GLES_ATTRIBS * 2U];
+	uint32_t ids[GLES_ATTRIBS * 2U];
+	size_t end;
+	uint32_t id;
+	size_t from;
+	size_t to;
+	unsigned count;
+	unsigned index;
+	unsigned place;
+
+	/* The second colours: only at location 0 (the one draw buffer a dual-source blend has), and those to decorate in the order of their words. */
+	count = 0U;
+	for (index = 0U; index < fragment->output_count; index++) {
+		output = &fragment->outputs[index];
+		if (output->index == 0U)
+			continue;
+		if (output->location != 0U || output->size > 1) {
+			(void)snprintf(log, PROGRAM_LOG, "output '%s' is a second colour at a location other than 0\n", output->name);
+			return -1;
+		}
+
+		/* One with the decoration already, or without a Location to follow. */
+		if (output->index_word != 0U || output->location_word == 0U)
+			continue;
+
+		/* After its Location's OpDecorate (4 words, the location the last), kept sorted. */
+		end = output->location_word + 1U;
+		id = output->id;
+		for (place = count; place > 0U && ends[place - 1U] > end; place--) {
+			ends[place] = ends[place - 1U];
+			ids[place] = ids[place - 1U];
+		}
+
+		/* Its place in the sorted list. */
+		ends[place] = end;
+		ids[place] = id;
+		count++;
+	}
+
+	/* Nothing to add. */
+	if (count == 0U)
+		return 0;
+
+	/* A copy with room for the new decorations. */
+	longer = malloc((*words + count * 4U) * sizeof(uint32_t));
+	if (longer == NULL) {
+		(void)snprintf(log, PROGRAM_LOG, "out of memory\n");
+		return -1;
+	}
+
+	/* The words copied in order, each new OpDecorate %id Index 1 after the instruction it follows. */
+	from = 0U;
+	to = 0U;
+	for (index = 0U; index < count; index++) {
+		memcpy(longer + to, *code + from, (ends[index] - from) * sizeof(uint32_t));
+		to += ends[index] - from;
+		from = ends[index];
+		longer[to++] = (4U << 16) | PROGRAM_OP_DECORATE;
+		longer[to++] = ids[index];
+		longer[to++] = PROGRAM_DECORATION_INDEX;
+		longer[to++] = 1U;
+	}
+
+	/* The rest. */
+	memcpy(longer + to, *code + from, (*words - from) * sizeof(uint32_t));
+	to += *words - from;
+
+	/* Succeeded: the code is the longer copy. */
+	free(*code);
+	*code = longer;
+	*words = to;
+	return 0;
+}
+
+/*
  * Links SPIR-V of the two stages (and of a geometry stage between them,
  * NULL for none): the interfaces, the attribute and varying locations,
  * gl_Position made Vulkan's (in the last stage before the rasterizer),
@@ -3016,6 +3177,9 @@ program_link_code(
 				continue;
 			fragment.outputs[index].location = program->frag_bound_locations[other];
 			fragment_code[fragment.outputs[index].location_word] = program->frag_bound_locations[other];
+			fragment.outputs[index].index = program->frag_bound_indexes[other];
+			if (fragment.outputs[index].index_word != 0U)
+				fragment_code[fragment.outputs[index].index_word] = program->frag_bound_indexes[other];
 		}
 	}
 
@@ -3027,6 +3191,7 @@ program_link_code(
 	for (index = 0U; index < fragment.output_count && program->output_count < GLES_DRAW_BUFFERS; index++) {
 		(void)snprintf(program->output_names[program->output_count], GLES_NAME, "%s", fragment.outputs[index].name);
 		program->output_locations[program->output_count] = (GLint)fragment.outputs[index].location;
+		program->output_indexes[program->output_count] = (GLint)fragment.outputs[index].index;
 		program->output_count++;
 	}
 
@@ -3051,6 +3216,16 @@ program_link_code(
 			input->location = vertex.outputs[other].location;
 			fragment_code[input->location_word] = vertex.outputs[other].location;
 		}
+	}
+
+	/* The second colours glBindFragDataLocationIndexed gave outputs without an Index decoration get one (last: the words move). */
+	status = program_output_indexes(&fragment, &fragment_code, &fragment_words, log);
+	if (status != 0) {
+		free(vertex_code);
+		free(fragment_code);
+		gles_spirv_free(&vertex);
+		gles_spirv_free(&fragment);
+		return -1;
 	}
 
 	/* The attributes. */

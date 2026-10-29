@@ -388,6 +388,29 @@ GLAPI void APIENTRY glGetMultisamplefv(GLenum pname, GLuint index, GLfloat *val)
 GLAPI void APIENTRY glGetTexLevelParameteriv(GLenum target, GLint level, GLenum pname, GLint *params);
 GLAPI void APIENTRY glGetTexLevelParameterfv(GLenum target, GLint level, GLenum pname, GLfloat *params);
 
+/* OpenGL 3.3's timer queries, dual-source blending and packed current attribute values. */
+#define GL_TIME_ELAPSED			0x88BF
+#define GL_TIMESTAMP			0x8E28
+#define GL_QUERY_COUNTER_BITS		0x8864
+#define GL_SRC1_COLOR			0x88F9
+#define GL_SRC1_ALPHA			0x8589
+#define GL_ONE_MINUS_SRC1_COLOR		0x88FA
+#define GL_ONE_MINUS_SRC1_ALPHA		0x88FB
+#define GL_MAX_DUAL_SOURCE_DRAW_BUFFERS	0x88FC
+GLAPI void APIENTRY glQueryCounter(GLuint id, GLenum target);
+GLAPI void APIENTRY glGetQueryObjecti64v(GLuint id, GLenum pname, GLint64 *params);
+GLAPI void APIENTRY glGetQueryObjectui64v(GLuint id, GLenum pname, GLuint64 *params);
+GLAPI void APIENTRY glBindFragDataLocationIndexed(GLuint program, GLuint colorNumber, GLuint index, const GLchar *name);
+GLAPI GLint APIENTRY glGetFragDataIndex(GLuint program, const GLchar *name);
+GLAPI void APIENTRY glVertexAttribP1ui(GLuint index, GLenum type, GLboolean normalized, GLuint value);
+GLAPI void APIENTRY glVertexAttribP2ui(GLuint index, GLenum type, GLboolean normalized, GLuint value);
+GLAPI void APIENTRY glVertexAttribP3ui(GLuint index, GLenum type, GLboolean normalized, GLuint value);
+GLAPI void APIENTRY glVertexAttribP4ui(GLuint index, GLenum type, GLboolean normalized, GLuint value);
+GLAPI void APIENTRY glVertexAttribP1uiv(GLuint index, GLenum type, GLboolean normalized, const GLuint *value);
+GLAPI void APIENTRY glVertexAttribP2uiv(GLuint index, GLenum type, GLboolean normalized, const GLuint *value);
+GLAPI void APIENTRY glVertexAttribP3uiv(GLuint index, GLenum type, GLboolean normalized, const GLuint *value);
+GLAPI void APIENTRY glVertexAttribP4uiv(GLuint index, GLenum type, GLboolean normalized, const GLuint *value);
+
 #ifdef __cplusplus
 }
 #endif

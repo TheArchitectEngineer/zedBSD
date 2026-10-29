@@ -73,7 +73,7 @@ static const struct glsl_type *link_input_type(const struct glsl_shader *consume
 static void link_outputs(struct link_state *state, struct glsl_shader *fragment);
 static struct glsl_symbol *link_find(struct glsl_shader *shader, const char *name, unsigned where);
 static struct glsl_symbol *link_find_varying(struct glsl_shader *producer, struct glsl_symbol *input, const struct glsl_type *type);
-static int link_take_output(struct link_state *state, struct glsl_symbol *symbol, unsigned char *taken);
+static int link_take_output(struct link_state *state, struct glsl_symbol *symbol, unsigned char taken[2][LINK_MAX_LOCATIONS]);
 static void link_info(struct link_state *state, struct glsl_program *program);
 static void link_leaves(struct link_state *state, const struct glsl_type *type, const char *name, struct glsl_uniform_info *out, unsigned *count, unsigned capacity);
 static void link_block_infos(struct link_state *state, struct glsl_shader *shader, unsigned stage, struct glsl_program *program);
@@ -701,7 +701,7 @@ link_outputs(
 	struct glsl_shader *fragment)
 {
 	struct glsl_symbol *symbol;
-	unsigned char taken[LINK_MAX_LOCATIONS];
+	unsigned char taken[2][LINK_MAX_LOCATIONS];
 	unsigned location;
 	unsigned builtins;
 	unsigned outputs;
@@ -744,7 +744,7 @@ link_outputs(
 		if (symbol->location != GLSL_NO_LOCATION)
 			continue;
 		for (location = 0U; location < LINK_MAX_LOCATIONS; location++) {
-			if (taken[location])
+			if (taken[0][location])
 				continue;
 			symbol->location = location;
 			break;
@@ -768,8 +768,9 @@ static int
 link_take_output(
 	struct link_state *state,
 	struct glsl_symbol *symbol,
-	unsigned char *taken)
+	unsigned char taken[2][LINK_MAX_LOCATIONS])
 {
+	unsigned char *row;
 	unsigned locations;
 	unsigned slot;
 
@@ -780,15 +781,24 @@ link_take_output(
 		return -1;
 	}
 
-	/* Each location once. */
+	/* A dual-source blend's second colour goes to the one draw buffer such a blend has. */
+	if (symbol->explicit_index != 0U && symbol->location + locations > 1U) {
+		link_error(state, "output '%s' has index 1 at a location other than 0", symbol->name);
+		return -1;
+	}
+
+	/* Each location once for each index. */
+	row = taken[0];
+	if (symbol->explicit_index != 0U)
+		row = taken[1];
 	for (slot = 0U; slot < locations; slot++) {
-		if (taken[symbol->location + slot]) {
+		if (row[symbol->location + slot]) {
 			link_error(state, "two fragment shader outputs share location %u", symbol->location + slot);
 			return -1;
 		}
 
 		/* Taken now. */
-		taken[symbol->location + slot] = 1U;
+		row[symbol->location + slot] = 1U;
 	}
 
 	/* Succeeded: taken. */

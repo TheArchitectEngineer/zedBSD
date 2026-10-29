@@ -62,6 +62,7 @@ static void draw_dynamic(struct gles_state *state, struct zegl_context *context,
 static VkRect2D draw_scissor_rect(struct gles_state *state, const struct gles_target *target);
 static void draw_clear_buffer(GLenum buffer, GLint drawbuffer, const VkClearValue *value, VkImageAspectFlags aspects);
 static VkBlendFactor draw_blend_factor(GLenum factor);
+static int draw_dual_source(const struct gles_raster *raster);
 static VkBlendOp draw_blend_op(GLenum equation);
 static VkStencilOp draw_stencil_op(GLenum op);
 
@@ -1416,6 +1417,7 @@ draw_program(
 	const VkDescriptorBufferInfo *capture_buffer;
 	int restarted;
 	int capturing;
+	int dual;
 	int strip;
 	int status;
 
@@ -1556,8 +1558,16 @@ draw_program(
 	if (status != 0)
 		return;
 
-	/* The pipeline for the state, and the descriptors. */
+	/* The pipeline's state: a dual-source blend (desktop GL 3.3) writes one draw buffer at most. */
 	draw_raster(state, &target, topology, &raster);
+	dual = draw_dual_source(&raster);
+	if (dual && (target.draw_mask & ~1U) != 0U) {
+		free(list);
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* The pipeline for the state, and the descriptors. */
 	pipeline = draw_pipeline(state, &target, &raster, &layout);
 	if (pipeline == VK_NULL_HANDLE) {
 		gles_error(context, GL_OUT_OF_MEMORY);
@@ -3673,12 +3683,54 @@ draw_blend_factor(
 		return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
 	case GL_SRC_ALPHA_SATURATE:
 		return VK_BLEND_FACTOR_SRC_ALPHA_SATURATE;
+	case GL_SRC1_COLOR:
+		/* Desktop GL 3.3's second colour of the fragment shader (glBlendFunc* takes them only when the device blends so). */
+		return VK_BLEND_FACTOR_SRC1_COLOR;
+	case GL_ONE_MINUS_SRC1_COLOR:
+		return VK_BLEND_FACTOR_ONE_MINUS_SRC1_COLOR;
+	case GL_SRC1_ALPHA:
+		return VK_BLEND_FACTOR_SRC1_ALPHA;
+	case GL_ONE_MINUS_SRC1_ALPHA:
+		return VK_BLEND_FACTOR_ONE_MINUS_SRC1_ALPHA;
 	default:
 		break;
 	}
 
 	/* GL_ONE (and a pipeline without blending). */
 	return VK_BLEND_FACTOR_ONE;
+}
+
+/* Reports whether a pipeline's blending reads the fragment shader's second colour (a dual-source blend). */
+static int
+draw_dual_source(
+	const struct gles_raster *raster)
+{
+	uint32_t factors[4];
+	unsigned index;
+
+	/* Without blending, no factor is read. */
+	if (raster->blend == 0U)
+		return 0;
+
+	/* Any of the four factors that is one of the second colour's. */
+	factors[0] = raster->blend_src_rgb;
+	factors[1] = raster->blend_dst_rgb;
+	factors[2] = raster->blend_src_alpha;
+	factors[3] = raster->blend_dst_alpha;
+	for (index = 0U; index < 4U; index++) {
+		switch (factors[index]) {
+		case GL_SRC1_COLOR:
+		case GL_ONE_MINUS_SRC1_COLOR:
+		case GL_SRC1_ALPHA:
+		case GL_ONE_MINUS_SRC1_ALPHA:
+			return 1;
+		default:
+			break;
+		}
+	}
+
+	/* Every factor is one of the first colour's or a constant. */
+	return 0;
 }
 
 /* Returns Vulkan's blend operation for a GL equation. */

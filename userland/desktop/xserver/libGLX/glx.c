@@ -60,6 +60,7 @@
 #define GLX_GL_THREE			30U
 #define GLX_GL_THREE_ONE		31U
 #define GLX_GL_THREE_TWO		32U
+#define GLX_GL_THREE_THREE		33U
 
 /* GL's GL_CONTEXT_PROFILE_MASK bits (0 before 3.2, which has no profiles). */
 #define GLX_GL_CORE			0x1
@@ -845,8 +846,8 @@ glXCreateNewContext(
 
 /*
  * Makes a context for a config with attributes (GLX_ARB_create_context):
- * an OpenGL 3.2 context of the profile asked for (core by default) for
- * version 3.2, an OpenGL 3.1 context (with GL_ARB_compatibility) for 3.1,
+ * an OpenGL 3.2 or 3.3 context of the profile asked for (core by default)
+ * for those versions, an OpenGL 3.1 context (with GL_ARB_compatibility) for 3.1,
  * an OpenGL 3.0 one for any version up to 3.0 (3.0 is compatible with the
  * earlier versions; profiles are chosen from 3.2 on); NULL for a later
  * version or an attribute not understood.  Sharing is not there yet.
@@ -980,10 +981,10 @@ glx_visual_info(
 }
 
 /*
- * Reads glXCreateContextAttribsARB's attributes: a version up to 3.2,
+ * Reads glXCreateContextAttribsARB's attributes: a version up to 3.3,
  * either profile, the debug and forward-compatible flags (the latter from
  * 3.0), RGBA.  Returns 0 with the context's version (GLX_GL_*),
- * GL_CONTEXT_FLAGS and GL_CONTEXT_PROFILE_MASK (3.2's), or -1 for
+ * GL_CONTEXT_FLAGS and GL_CONTEXT_PROFILE_MASK (from 3.2), or -1 for
  * anything else.
  */
 static int
@@ -1029,22 +1030,24 @@ glx_attributes(
 		}
 	}
 
-	/* A version there is: 1.0 to 1.5, 2.0, 2.1, 3.0, 3.1 or 3.2. */
+	/* A version there is: 1.0 to 1.5, 2.0, 2.1, or 3.0 to 3.3. */
 	if (major < 1 ||
 	    major > 3 ||
 	    minor < 0)
 		return -1;
 	if ((major == 1 && minor > 5) ||
 	    (major == 2 && minor > 1) ||
-	    (major == 3 && minor > 2))
+	    (major == 3 && minor > 3))
 		return -1;
 
-	/* The context's: 3.1 or 3.2 when asked for, else 3.0. */
+	/* The context's: 3.1, 3.2 or 3.3 when asked for, else 3.0. */
 	*version = GLX_GL_THREE;
 	if (major == 3 && minor == 1)
 		*version = GLX_GL_THREE_ONE;
 	if (major == 3 && minor == 2)
 		*version = GLX_GL_THREE_TWO;
+	if (major == 3 && minor == 3)
+		*version = GLX_GL_THREE_THREE;
 
 	/* Known flags, forward compatibility from 3.0 only, and one known profile. */
 	if ((bits & ~(GLX_CONTEXT_DEBUG_BIT_ARB | GLX_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB)) != 0)
@@ -1054,9 +1057,9 @@ glx_attributes(
 	if (profile_bits != GLX_CONTEXT_CORE_PROFILE_BIT_ARB && profile_bits != GLX_CONTEXT_COMPATIBILITY_PROFILE_BIT_ARB)
 		return -1;
 
-	/* A 3.2 context's profile (GL's bits are GLX's). */
+	/* The profile of a 3.2 or later context (GL's bits are GLX's). */
 	*profile = 0;
-	if (*version == GLX_GL_THREE_TWO)
+	if (*version >= GLX_GL_THREE_TWO)
 		*profile = profile_bits;
 
 	/* Succeeded: GL's spelling of the flags. */

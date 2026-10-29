@@ -51,12 +51,14 @@ struct fixed_extension_entry {
 
 /* The extensions, by name. */
 static const struct fixed_extension_entry fixed_extensions[] = {
+	{ "GL_ARB_blend_func_extended", 33U, 0 },
 	{ "GL_ARB_compatibility", 31U, 1 },
 	{ "GL_ARB_copy_buffer", 30U, 0 },
 	{ "GL_ARB_depth_buffer_float", 30U, 0 },
 	{ "GL_ARB_depth_clamp", 30U, 0 },
 	{ "GL_ARB_draw_elements_base_vertex", 30U, 0 },
 	{ "GL_ARB_draw_instanced", 30U, 0 },
+	{ "GL_ARB_explicit_attrib_location", 33U, 0 },
 	{ "GL_ARB_framebuffer_object", 30U, 0 },
 	{ "GL_ARB_half_float_vertex", 30U, 0 },
 	{ "GL_ARB_instanced_arrays", 30U, 0 },
@@ -65,16 +67,20 @@ static const struct fixed_extension_entry fixed_extensions[] = {
 	{ "GL_ARB_provoking_vertex", 30U, 0 },
 	{ "GL_ARB_sampler_objects", 30U, 0 },
 	{ "GL_ARB_seamless_cube_map", 30U, 0 },
+	{ "GL_ARB_shader_bit_encoding", 33U, 0 },
 	{ "GL_ARB_sync", 30U, 0 },
 	{ "GL_ARB_texture_buffer_object", 30U, 0 },
 	{ "GL_ARB_texture_float", 30U, 0 },
 	{ "GL_ARB_texture_multisample", 32U, 0 },
 	{ "GL_ARB_texture_rectangle", 30U, 0 },
 	{ "GL_ARB_texture_rg", 30U, 0 },
+	{ "GL_ARB_texture_rgb10_a2ui", 33U, 0 },
 	{ "GL_ARB_texture_storage", 30U, 0 },
 	{ "GL_ARB_texture_swizzle", 30U, 0 },
+	{ "GL_ARB_timer_query", 33U, 0 },
 	{ "GL_ARB_uniform_buffer_object", 30U, 0 },
-	{ "GL_ARB_vertex_array_object", 30U, 0 }
+	{ "GL_ARB_vertex_array_object", 30U, 0 },
+	{ "GL_ARB_vertex_type_2_10_10_10_rev", 33U, 0 }
 };
 
 /*
@@ -1465,11 +1471,15 @@ fixed_string(
 	if (version == 30U && name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"1.30";
 
-	/* An OpenGL 3.2 context's, with GLSL 1.50. */
+	/* An OpenGL 3.2 context's, with GLSL 1.50, and a 3.3 one's, with GLSL 3.30. */
 	if (version == 32U && name == GL_VERSION)
 		return (const GLubyte *)"3.2 " ZEDBSD_OS_NAME " (OpenGL ES 3.0 on Vulkan)";
 	if (version == 32U && name == GL_SHADING_LANGUAGE_VERSION)
 		return (const GLubyte *)"1.50";
+	if (version == 33U && name == GL_VERSION)
+		return (const GLubyte *)"3.3 " ZEDBSD_OS_NAME " (OpenGL ES 3.0 on Vulkan)";
+	if (version == 33U && name == GL_SHADING_LANGUAGE_VERSION)
+		return (const GLubyte *)"3.30";
 
 	/* Their extensions. */
 	if (version >= 30U && name == GL_EXTENSIONS) {
@@ -1500,6 +1510,8 @@ fixed_glsl_version(void)
 		return 140U;
 	if (version == 32U)
 		return 150U;
+	if (version == 33U)
+		return 330U;
 
 	/* An OpenGL 1.4 context takes any. */
 	return 0U;

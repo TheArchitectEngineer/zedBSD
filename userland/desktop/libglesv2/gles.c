@@ -598,12 +598,35 @@ glBlendFuncSeparate(
 	GLenum sfactorAlpha,
 	GLenum dfactorAlpha)
 {
+	struct zegl_context *context;
 	struct gles_state *state;
+	GLenum factors[4];
+	unsigned index;
 
-	/* The four factors. */
-	state = gles_state(gles_context());
+	/* A context with its state. */
+	context = gles_context();
+	state = gles_state(context);
 	if (state == NULL)
 		return;
+
+	/* The second colour's factors only in desktop GL 3.3 on a device that blends with it. */
+	factors[0] = sfactorRGB;
+	factors[1] = dfactorRGB;
+	factors[2] = sfactorAlpha;
+	factors[3] = dfactorAlpha;
+	for (index = 0U; index < 4U; index++) {
+		if (factors[index] != GL_SRC1_COLOR &&
+		    factors[index] != GL_ONE_MINUS_SRC1_COLOR &&
+		    factors[index] != GL_SRC1_ALPHA &&
+		    factors[index] != GL_ONE_MINUS_SRC1_ALPHA)
+			continue;
+		if (gles_fixed == NULL || !state->display->features.dualSrcBlend) {
+			gles_error(context, GL_INVALID_ENUM);
+			return;
+		}
+	}
+
+	/* The four factors. */
 	state->blend_src_rgb = sfactorRGB;
 	state->blend_dst_rgb = dfactorRGB;
 	state->blend_src_alpha = sfactorAlpha;
@@ -1303,6 +1326,12 @@ glGetInteger64v(
 		return;
 	}
 
+	/* The GPU's time (desktop GL 3.3's timer queries, libGL). */
+	if (pname == GL_TIMESTAMP && gles_fixed != NULL) {
+		(void)gles_query_timestamp(context, state, data);
+		return;
+	}
+
 	/* A server wait (glClientWaitSync) is never refused for its length. */
 	if (pname == GL_MAX_SERVER_WAIT_TIMEOUT) {
 		data[0] = INT64_MAX;
@@ -1972,6 +2001,14 @@ gles_integers(
 		return 1U;
 	case GL_MAX_DRAW_BUFFERS:
 		values[0] = (GLint)GLES_DRAW_BUFFERS;
+		return 1U;
+	case GL_MAX_DUAL_SOURCE_DRAW_BUFFERS:
+		/* Desktop GL 3.3's dual-source blending: one draw buffer when the device blends so. */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = 0;
+		if (state->display->features.dualSrcBlend)
+			values[0] = 1;
 		return 1U;
 	case GL_DRAW_BUFFER0:
 	case GL_DRAW_BUFFER1:

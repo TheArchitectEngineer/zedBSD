@@ -20,6 +20,7 @@
 		glBindBufferBase;
 		glBindBufferRange;
 		glBindFragDataLocation;
+		glBindFragDataLocationIndexed;
 		glBindFramebuffer;
 		glBindRenderbuffer;
 		glBindSampler;
@@ -153,6 +154,7 @@
 		glGetDoublev;
 		glGetError;
 		glGetFloatv;
+		glGetFragDataIndex;
 		glGetFragDataLocation;
 		glGetFramebufferAttachmentParameteriv;
 		glGetInteger64i_v;
@@ -164,7 +166,9 @@
 		glGetProgramBinary;
 		glGetProgramInfoLog;
 		glGetProgramiv;
+		glGetQueryObjecti64v;
 		glGetQueryObjectiv;
+		glGetQueryObjectui64v;
 		glGetQueryObjectuiv;
 		glGetQueryiv;
 		glGetRenderbufferParameteriv;
@@ -254,6 +258,7 @@
 		glProvokingVertex;
 		glPushAttrib;
 		glPushMatrix;
+		glQueryCounter;
 		glReadBuffer;
 		glReadPixels;
 		glRectf;
@@ -388,6 +393,14 @@
 		glVertexAttribI4uiv;
 		glVertexAttribI4usv;
 		glVertexAttribIPointer;
+		glVertexAttribP1ui;
+		glVertexAttribP1uiv;
+		glVertexAttribP2ui;
+		glVertexAttribP2uiv;
+		glVertexAttribP3ui;
+		glVertexAttribP3uiv;
+		glVertexAttribP4ui;
+		glVertexAttribP4uiv;
 		glVertexAttribPointer;
 		glVertexPointer;
 		glViewport;

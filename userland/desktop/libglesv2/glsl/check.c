@@ -63,6 +63,7 @@ static int check_buffer_readonly(const struct glsl_symbol *symbol);
 static const struct glsl_type *check_block_type(struct glsl_shader *shader, struct glsl_node *node, unsigned storage);
 static void check_block_variable(struct glsl_shader *shader, const char *name, const struct glsl_type *type, unsigned where, unsigned interpolation, unsigned line);
 static void check_location(struct glsl_shader *shader, struct glsl_node *type_node, struct glsl_symbol *symbol, unsigned line);
+static void check_output_index(struct glsl_shader *shader, struct glsl_node *type_node, struct glsl_symbol *symbol, unsigned line);
 static const struct glsl_type *check_type(struct glsl_shader *shader, struct glsl_node *type_node);
 static const struct glsl_type *check_struct(struct glsl_shader *shader, struct glsl_node *type_node);
 static const struct glsl_type *check_array(struct glsl_shader *shader, const struct glsl_type *element, struct glsl_node *owner, struct glsl_node *size, unsigned line);
@@ -845,6 +846,45 @@ check_location(
 	symbol->explicit_location = type_node->location;
 }
 
+/* Checks a layout index: a desktop GLSL 3.30 fragment shader's output with a location, 0 or 1 (which colour of a dual-source blend). */
+static void
+check_output_index(
+	struct glsl_shader *shader,
+	struct glsl_node *type_node,
+	struct glsl_symbol *symbol,
+	unsigned line)
+{
+	int allowed;
+
+	/* The version: desktop GLSL 3.30. */
+	allowed = glsl_since(shader, GLSL_VERSION_330, 0U);
+	if (!allowed) {
+		glsl_error(shader, line, "layout(index) needs GLSL 3.30");
+		return;
+	}
+
+	/* A fragment output. */
+	if (shader->stage != GLSL_STAGE_FRAGMENT || symbol->where != GLSL_VAR_OUTPUT) {
+		glsl_error(shader, line, "layout(index) is only for fragment shader outputs");
+		return;
+	}
+
+	/* With a location of its own. */
+	if ((type_node->layout & GLSL_LAYOUT_LOCATION) == 0U) {
+		glsl_error(shader, line, "layout(index) needs a layout(location) too");
+		return;
+	}
+
+	/* The first or the second colour. */
+	if (type_node->output_index > 1U) {
+		glsl_error(shader, line, "layout(index) must be 0 or 1");
+		return;
+	}
+
+	/* The index. */
+	symbol->explicit_index = type_node->output_index;
+}
+
 /* Resolves a type specifier node to a type: a built-in, a struct defined or named, and an array of it. */
 static const struct glsl_type *
 check_type(
@@ -1124,6 +1164,10 @@ check_variable(
 	/* A location a layout gave. */
 	if ((type_node->layout & GLSL_LAYOUT_LOCATION) != 0U)
 		check_location(shader, type_node, symbol, variable->line);
+
+	/* An index a layout gave. */
+	if ((type_node->layout & GLSL_LAYOUT_INDEX) != 0U)
+		check_output_index(shader, type_node, symbol, variable->line);
 
 	/* The initializer, which also sizes an unsized array. */
 	check_initializer(shader, symbol, variable, global);

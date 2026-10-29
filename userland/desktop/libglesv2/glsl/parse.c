@@ -971,6 +971,7 @@ parse_layout(
 	int is_row;
 	int is_column;
 	int is_location;
+	int is_index;
 	int is_max;
 	int is_std430;
 	int is_binding;
@@ -995,6 +996,7 @@ parse_layout(
 		is_row = glsl_token_is(token, "row_major");
 		is_column = glsl_token_is(token, "column_major");
 		is_location = glsl_token_is(token, "location");
+		is_index = glsl_token_is(token, "index");
 		is_max = glsl_token_is(token, "max_vertices");
 		is_std430 = glsl_token_is(token, "std430");
 		is_binding = glsl_token_is(token, "binding");
@@ -1048,6 +1050,14 @@ parse_layout(
 				glsl_fatal(shader, value->line, "a layout location must be an integer");
 			type->layout |= GLSL_LAYOUT_LOCATION;
 			type->location = value->integer;
+		} else if (is_index) {
+			/* index = an integer (desktop GLSL 3.30's dual-source blending). */
+			parse_expect(shader, GLSL_P_ASSIGN, "'='");
+			value = parse_take(shader);
+			if (value->kind != GLSL_TOKEN_INT && value->kind != GLSL_TOKEN_UINT)
+				glsl_fatal(shader, value->line, "a layout index must be an integer");
+			type->layout |= GLSL_LAYOUT_INDEX;
+			type->output_index = value->integer;
 		} else {
 			glsl_error(shader, token->line, "unknown layout qualifier '%.*s'", (int)token->length, token->text);
 		}

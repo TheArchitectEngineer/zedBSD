@@ -21,6 +21,8 @@
  * an OpenGL 3.1 one after the same checks, and the scene is gl31.c's.
  * With --gl32 (WS068 p033) it is an OpenGL 3.2 compatibility one, after
  * checking a core profile's context too, and the scene is gl32.c's.
+ * With --gl33 it is an OpenGL 3.3 compatibility one, and the scene is
+ * gl33.c's.
  *
  * Every outcome is one line: GLXTEST DONE on a clean end, GLXTEST FAILED
  * naming what failed otherwise.
@@ -32,6 +34,7 @@
 #include "gl3.h"
 #include "gl31.h"
 #include "gl32.h"
+#include "gl33.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -95,7 +98,7 @@ main(
 	/* The command line. */
 	status = glxtest_parse(argc, argv, &options);
 	if (status != 0) {
-		fprintf(stderr, "usage: glxtest [--size=WxH] [--frames=N] [--delay-ms=N] [--token=NAME] [--gl3|--gl31|--gl32]\n");
+		fprintf(stderr, "usage: glxtest [--size=WxH] [--frames=N] [--delay-ms=N] [--token=NAME] [--gl3|--gl31|--gl32|--gl33]\n");
 		return 2;
 	}
 
@@ -175,8 +178,10 @@ main(
 	       (const char *)glGetString(GL_VERSION), (int)glXIsDirect(display, context));
 	fflush(stdout);
 
-	/* The scene's program, buffers and texture (OpenGL 3.0's or 3.1's checks). */
-	if (options.gl3 && options.gl3_minor == 2) {
+	/* The scene's program, buffers and texture (OpenGL 3.0's to 3.3's checks). */
+	if (options.gl3 && options.gl3_minor == 3) {
+		status = glxtest_gl33_start();
+	} else if (options.gl3 && options.gl3_minor == 2) {
 		status = glxtest_gl32_start();
 	} else if (options.gl3 && options.gl3_minor == 1) {
 		status = glxtest_gl31_start();
@@ -208,7 +213,9 @@ main(
 		(void)XGetGeometry(display, window, &root, &x, &y, &width, &height, &border, &depth);
 
 		/* The scene. */
-		if (options.gl3 && options.gl3_minor == 2) {
+		if (options.gl3 && options.gl3_minor == 3) {
+			glxtest_gl33_draw((int)width, (int)height);
+		} else if (options.gl3 && options.gl3_minor == 2) {
 			glxtest_gl32_draw((int)width, (int)height);
 		} else if (options.gl3 && options.gl3_minor == 1) {
 			glxtest_gl31_draw((int)width, (int)height);
@@ -219,6 +226,8 @@ main(
 		}
 
 		/* The first frame's colours read back. */
+		if (frame == 1U && options.gl3 && options.gl3_minor == 3)
+			failures = glxtest_gl33_check((int)width, (int)height, options.token) + checks;
 		if (frame == 1U && options.gl3 && options.gl3_minor == 2)
 			failures = glxtest_gl32_check((int)width, (int)height, options.token) + checks;
 		if (frame == 1U && options.gl3 && options.gl3_minor == 1)
@@ -316,6 +325,14 @@ glxtest_parse(
 			continue;
 		}
 
+		/* An OpenGL 3.3 context and its scene. */
+		differs = strcmp(argv[index], "--gl33");
+		if (differs == 0) {
+			options->gl3 = 1;
+			options->gl3_minor = 3;
+			continue;
+		}
+
 		/* The name of the run in the log lines. */
 		differs = strncmp(argv[index], "--token=", 8U);
 		if (differs == 0) {
@@ -381,7 +398,7 @@ glxtest_sleep(
  * Makes the OpenGL 3.0 context of --gl3 or the 3.1 one of --gl31 (a
  * minor version; compatibility profile) with glXCreateContextAttribsARB,
  * found by glXGetProcAddress, after checking
- * the other contexts: OpenGL 3.3 is refused, an OpenGL 1.4 context from
+ * the other contexts: OpenGL 4.7 (no such version) is refused, an OpenGL 1.4 context from
  * glXCreateNewContext reports 1.4, a forward-compatible 3.0 context
  * reports its flag.  Adds the checks that failed to *checks; NULL when
  * the context cannot be made.
@@ -395,7 +412,7 @@ glxtest_gl3_context(
 {
 	static const int config_attributes[] = { GLX_DEPTH_SIZE, 24, None };
 	static const int later_attributes[] = {
-		GLX_CONTEXT_MAJOR_VERSION_ARB, 3, GLX_CONTEXT_MINOR_VERSION_ARB, 3,
+		GLX_CONTEXT_MAJOR_VERSION_ARB, 4, GLX_CONTEXT_MINOR_VERSION_ARB, 7,
 		GLX_CONTEXT_PROFILE_MASK_ARB, GLX_CONTEXT_CORE_PROFILE_BIT_ARB, None
 	};
 	static const int forward_attributes[] = {
@@ -429,7 +446,7 @@ glxtest_gl3_context(
 	if (create == NULL)
 		return NULL;
 
-	/* OpenGL 3.3 is refused. */
+	/* OpenGL 4.7, which there is not, is refused. */
 	other = create(display, config, NULL, True, later_attributes);
 	later_refused = 0;
 	if (other == NULL)
