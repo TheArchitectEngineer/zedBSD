@@ -3,7 +3,7 @@
 
 Status: in-progress（2026-10-29 P3 q1679-i01: send 6280 Mbit/s（Linux 6808 の 92 %）、recv 3320〜3401（Linux 5458、未達）。recv は SACK と ACK の順の調べが次）
 Parent: [WS221](../ws.md)
-Queue: q1679 / q1679-i01（P3）
+Queue: q1679 / q1679-i01・i02（P3）
 依存: WS235（RTL8127 の driver、completed）、p002〜p009、WS311（CUBIC、completed）
 
 ## 由来と目標
@@ -58,6 +58,26 @@ Queue: q1679 / q1679-i01（P3）
 - recv の律速は CPU ではない: 読み手・worker・割り込みのどれも飽和しない。窓 128 KB（TCP_RECEIVE_PACKETS 128）と相手（Linux の Reno 型の回復、SACK 無しの相手に対して）の振る舞いで決まっている。
 - 読み手を速くすると（直の経路）相手の偽の fast retransmit が増え、遅くなる。zedBSD 側に欠け・入れ替わりは無い。相手から見た重複 ACK の出どころ（読み手の window update と worker の ACK が別の thread から別の順で device に入る、など）は未特定。次は centris で zedBSD の ACK を tcpdump で見て（ack 番号と窓の並び）確かめる。
 - 窓を広げると（768 KB）NIC の取りこぼしから崩れる。SACK（F-WS311-sack）が無いと 10GbE の損失の回復が遅い。recv を Linux の 5458 に近づけるには、SACK と ACK の順の直しが先と見る。
+
+## q1679-i02（2026-10-29 22:2x〜、P3 の再起動。前の P3 は 16:50 頃に止まった）
+
+### 非退行（worker の起こしの直しと checksum の口は全 NIC に効く）
+
+| 対象 | kernel | 結果 |
+| --- | --- | --- |
+| VF2（dw-eqos、相手 5330 の Debian、30 s） | b36ed1860 の tree（be5651cd） | `vf2-tcp.sh --runs send,send,recv,recv i02-nonreg`: send 949.1・949.2、recv 949.3・949.3 Mbit/s、最遅の 1 秒 ≥ 947.5、RX errors 0、PASS（ws.md の 8ea1d234c の 948.9・949.1 と同じ水準） |
+| 5330（RTL8156、CDC NCM、相手 centris、30 s、同じ userland で kernel だけを A/B: `MODE=--nvme-kernel 5330-ncm.sh`） | p010 の前（main af875cc26）と b36ed1860 の tree を交互に | 前: send 267.0・265.1、recv 696.1・555.1。今: send 270.5・267.7、recv 647.3・637.3（image の 1 回目 10 s は 274.6・617.4、30 s は 270.8・642.8）。recv は同じ kernel で 555〜696 と揺れ、差は揺れの中。ping -s 1476・1472 が通る、mtu_max 1504 |
+| host | — | tcp-model PASS、amd64・pcat・rpi4・rpi5・zybo・RTL8127 の config・VF2 の vmunix の build warning 0、style-check tcp.c 115 → 113・socket.c 27 → 27 |
+
+- 5330 の NVMe の zedBSD の区画には build/i02-5330 の image（config-5330-jumbo.mk、b36ed1860 の tree）、kernel は同じ tree の物が入ったまま。Debian に戻した。VF2 の /boot/boot0/vmunix は be5651cd（b36ed1860 の tree）、vmunix.old はその前。
+- 5330 の image の build: この worktree の build/sources は main への link でなく、firmware の license の確かめで止まった。main の build/sources/firmware を build/i02-fw に複写し、`*_FIRMWARE_CACHE_ROOT` をそこに向けて build（license は受け入れていない、main の build に書いていない）。
+
+### ACK の順（前の P3 の差分を確かめて b36ed1860 に）
+
+- 直し（b36ed1860）: `socket_enqueue_stream_advance` が receive queue に積むのと同じ socket の lock の中で receive_next を進め、`tcp_output_segment` が ACK の値と窓を同じ lock の中で読む。前は、積んでから receive_next を進めるまでの間に別の thread（読み手の window update）が作った segment が、古い receive_next と既に狭まった窓を運んだ。呼び手は socket の lock を持たない（`tcp_send_segment_at`・`_carried` の注）、input は worker の 1 thread なので、前の `receive_next == sequence` の確かめは要らない。
+- `ack-order.py` に IPv4 の ID による分け: 古い ACK（最後に進めた ACK より後ろ）の ID が、その進めた ACK の ID より前なら「IP の出力の後で追い越された」、後なら「stack が古い点を読んで作った」。zedBSD は IP の出力の順に ID を振る。
+- 前の P3 の capture（相手 centris、zedBSD が受け、20 s）: 4b39403c5 の tree（i02-base 1 回目）は古い ACK 111815 のうち作りの遅れ 862・追い越し 110953。ACK の直しの kernel（前の P3 の build/p010/fix、56e121052dc551a5。b36ed1860 と同じ code かは未確かめ、i02-fix 1 回目）は 136431 のうち作りの遅れ 0・追い越し 136431。直しで作りの遅れは消えた。残りの殆どは IP の出力の後の入れ替わり: centris の受けの queue（ixgbe の flow director ATR が、送り手の thread の CPU に合わせて受けの queue を移す。zedBSD の ACK は queue 1・2 と 14〜31 に分かれた）か、zedBSD の IP の出力から device の ring までの間（RTL8127 の TX の ring は 1 つ）。
+- 同じ capture の recv: 4b39403c5 の tree 3303・3556・3683・3120、その直しの kernel 2923・2967・3001・3141 Mbit/s（相手の TCPFastRetrans は前 113〜903、今 15〜166）。fast retransmit は減ったが recv は上がっていない。
 
 ## 未実施・残り
 

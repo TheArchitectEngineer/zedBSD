@@ -194,6 +194,7 @@ void socket_close_endpoint(struct socket *socket);
 void socket_release(struct socket *socket);
 int socket_enqueue_packet(struct socket *socket, struct packet_buf *packet);
 int socket_enqueue_stream(struct socket *socket, struct packet_buf *packet);
+int socket_enqueue_stream_advance(struct socket *socket, struct packet_buf *packet, uint32_t *next);
 /*
  * The longest datagram a socket sends or receives in one call: a packet's
  * storage, the largest (jumbo) one for the Internet families, the standard

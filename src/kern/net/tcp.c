@@ -2660,6 +2660,8 @@ tcp_output_segment(
 	struct net_device *device;
 	struct packet_buf *packet;
 	struct tcp_wire *tcp;
+	unsigned long irq;
+	uint32_t acknowledgement;
 	struct in6_addr source6;
 	struct ipv6_way way6;
 	unsigned long generation;
@@ -2787,7 +2789,6 @@ tcp_output_segment(
 	wire_put16(tcp->source, endpoint->tcp.inet.local_port);
 	wire_put16(tcp->destination, endpoint->tcp.inet.remote_port);
 	wire_put32(tcp->sequence, sequence);
-	wire_put32(tcp->acknowledgement, endpoint->tcp.receive_next);
 	tcp->data_offset = (uint8_t)((5U + options / 4U) << 4);
 	tcp->flags = flags;
 
@@ -2811,6 +2812,17 @@ tcp_output_segment(
 		option[6] = 3U;
 		option[7] = endpoint->tcp.receive_wscale;
 	}
+
+	/*
+	 * The acknowledgement and the window, from one hold of the socket
+	 * lock, under which receive_next and the receive queue move together:
+	 * a segment never tells of an old receive_next with a window the data
+	 * after it already narrowed (to the peer a duplicate acknowledgement),
+	 * and two threads sending at once do not interleave the edge.
+	 */
+	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	acknowledgement = endpoint->tcp.receive_next;
 
 	/*
 	 * The window: scaled by this end's shift once both ends scale, never
@@ -2841,8 +2853,13 @@ tcp_output_segment(
 		window = 0xffffU << shift;
 	field = (uint16_t)(window >> shift);
 	endpoint->tcp.advertised_window = (uint32_t)field << shift;
-	endpoint->tcp.receive_edge = endpoint->tcp.receive_next + endpoint->tcp.advertised_window;
+	endpoint->tcp.receive_edge = acknowledgement + endpoint->tcp.advertised_window;
 	endpoint->tcp.receive_edge_set = 1;
+
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
+
+	/* Both in their fields. */
+	wire_put32(tcp->acknowledgement, acknowledgement);
 	wire_put16(tcp->window, field);
 
 	/* A copy sent before may carry the marks of its last way out. */
@@ -6975,10 +6992,10 @@ tcp_receive_sws_step(
  * each packet left, which every packet but the last holds at least.  A connection that offered segments larger than a standard packet
  * holds also promises no more than TCP_RECEIVE_JUMBO_MAX jumbo packets,
  * those its queue holds counted, for the pool has few of them.  A peer
- * that keeps within it is never refused.  It is read without
- * the socket lock, because segments are also sent with that lock held; a
- * value a moment old is what any peer sees anyway.  It is in bytes; the
- * segment's field scales it.
+ * that keeps within it is never refused.  A segment's output reads it
+ * under the socket lock, with the receive_next it goes with; a reader
+ * deciding whether to tell the peer of room reads it without, a value a
+ * moment old.  It is in bytes; the segment's field scales it.
  */
 static uint32_t
 tcp_receive_window(
@@ -7826,6 +7843,8 @@ tcp_segment_input(
 	int accept_payload;
 	int discard_payload;
 	int queued;
+	int advanced;
+	int enqueue_error;
 	int window_opened;
 	int duplicate;
 	int counted;
@@ -8399,19 +8418,32 @@ tcp_segment_input(
 			return EINVAL;
 		}
 
+		/*
+		 * Queued with receive_next moved past it in the same hold of
+		 * the socket lock, so that no segment sent meanwhile tells of
+		 * the old receive_next with a window this payload already
+		 * narrowed (to the peer a duplicate acknowledgement).
+		 */
 		queued = 1;
+		advanced = 0;
 		if (!discard_payload) {
-			queued = socket_enqueue_stream(&endpoint->tcp.inet.socket,
-			    packet) == 0;
+			enqueue_error = socket_enqueue_stream_advance(&endpoint->tcp.inet.socket, packet,
+			    &endpoint->tcp.receive_next);
 			packet = NULL;
+			queued = 0;
+			if (enqueue_error == 0) {
+				queued = 1;
+				advanced = 1;
+			}
 		}
 
+		/* A discarded payload moves receive_next here; a queued one is counted. */
 		socket_irq = spin_lock_irqsave(
 		    &endpoint->tcp.inet.socket.lock);
-		if (queued && endpoint->tcp.receive_next == sequence) {
+		if (queued && !advanced && endpoint->tcp.receive_next == sequence)
 			endpoint->tcp.receive_next += (uint32_t)payload_length;
+		if (queued)
 			endpoint->tcp.counters.data_bytes_in += payload_length;
-		}
 
 		/* A segment the receive queue had no room for is counted for net.tcpstats. */
 		if (!queued)
@@ -8791,18 +8823,18 @@ tcp_reorder_drain(
 			}
 		}
 
-		/* The rest queued (a queue without room frees it: the peer sends it again). */
-		error = socket_enqueue_stream(&tcp->inet.socket, packet);
+		/*
+		 * The rest queued, receive_next past it in the same hold of the
+		 * lock (a queue without room frees it: the peer sends it again).
+		 */
+		error = socket_enqueue_stream_advance(&tcp->inet.socket, packet, &tcp->receive_next);
 		if (error != 0)
 			return;
 
-		/* Succeeded for this one: receive_next past it. */
+		/* Succeeded for this one: counted. */
 		irq = spin_lock_irqsave(&tcp->inet.socket.lock);
 
-		if (tcp->receive_next == sequence + taken) {
-			tcp->receive_next = sequence + length;
-			tcp->counters.data_bytes_in += length - taken;
-		}
+		tcp->counters.data_bytes_in += length - taken;
 
 		spin_unlock_irqrestore(&tcp->inet.socket.lock, irq);
 	}

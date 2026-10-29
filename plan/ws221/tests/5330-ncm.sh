@@ -11,7 +11,8 @@
 # 5330-run.sh then takes its survey, reboots to Debian and compares.  Output: build/ws221-5330/NAME (fresh-out.sh):
 # summary.txt (the lines above), extra.txt (the whole EXTRA output), run.txt (5330-run.sh), peer.log.
 #   plan/ws221/tests/5330-ncm.sh IMAGE NAME [SECONDS]
-# VF2_HOST (default kei@10.0.30.2), VF2_PASSWORD (default kei).  The 5330's Debian network settings are not touched.
+# MODE=--nvme-kernel makes IMAGE a kernel, put alone on the NVMe's zedBSD (the userland stays the one an image run
+# wrote): an A/B of two kernels on the same userland.  VF2_HOST (default kei@10.0.30.2), VF2_PASSWORD (default kei).  The 5330's Debian network settings are not touched.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -48,7 +49,7 @@ extra="$extra ifconfig ue0 | head -1; s=\$(( \$(ifconfig ue0 | sed -n 's/.* mtu 
 extra="$extra echo ping-size=\$s; ping -c 3 -W 3 -s \$s $vf2_ip; ping -c 3 -W 3 -s 1472 $vf2_ip; echo ---;"
 extra="$extra sysctl net.tcpstats | head -1; ifconfig ue0"
 # 5330-run.sh gives each zedBSD command T seconds (default 60); the EXTRA step needs the transfers and the pings.
-T=$((seconds * 2 + 120)) EXTRA=$extra timeout 2400 sh plan/tools/hw5330/5330-run.sh --nvme-image "$image" "ws221-$name" > "$out/run.txt" 2>&1
+T=$((seconds * 2 + 120)) EXTRA=$extra timeout 2400 sh plan/tools/hw5330/5330-run.sh "${MODE:---nvme-image}" "$image" "ws221-$name" > "$out/run.txt" 2>&1
 status=$?
 cp build/hw5330/logs/ws221-$name-extra.txt "$out/extra.txt" 2> /dev/null
 kill "$peer" 2> /dev/null
