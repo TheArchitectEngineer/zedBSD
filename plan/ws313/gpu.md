@@ -278,3 +278,54 @@ file の並び（案）:
 - **LOAD の pre-frame の draw**（2026-10-29 q1675-i03、`vk/vk-frame.c`・`vk/vk-preload.c`）: colour target 0 が LOAD の pass は FBD の pre-frame 0 に frame shader の DCD（FragCoord で前の内容を texelFetch する fragment program、node で 1 回 compile）。mode は INTERSECT（CLEAR の target があれば ALWAYS）。失敗は 1 行で従来の cleared tile に戻り、pre-frame を含む submission の FAULT・timeout の後は node の preload を止める。
 - **clean tile write**: CLEAR かつ STORE の RT に立てた（primitive の無い tile も書き戻す。前は古い内容が残った）。
 - **未確認の点**（夜に見る）: 動いている group の AS の差し替え、FLUSH_CACHE2 の flush id 0、RUN_COMPUTE の task increment 1、HEAP_SET 無しの tiler、blend の memory format、sample の位置の表、tiler の hierarchy mask、RT の swizzle（BGRA）、DCD flags の early/late。
+
+## 14. spill する fragment の TLS の読み先（q1675-i04、P7、2026-10-29、資料で確かめた・実機未試験）
+
+問い（phase010「他への案」）: spill する fragment の program は TLS（thread local storage）を draw の TSD（IDVS の staging register）から読むか、FBD の Local Storage から読むか。
+
+資料から分かった事（Mesa 26.2.6、MIT）:
+
+- v10 の FBD（`genxml/v10.xml` の aggregate "Framebuffer"）は Parameters と Padding だけで、**Local Storage の section が無い**。`lib/pan_desc.c` の `pan_emit_fbd` が FBD に TLS を詰めるのは `PAN_ARCH <= 5` だけ。よって v10 には「FBD の Local Storage」という読み先が無い。
+- RUN_IDVS の fragment の TSD は `fragment_tsd_select` の bit で IDVS SR の TSD_0（24）か TSD_2（28）を選ぶ（`genxml/cs_builder.h` の `cs_run_idvs`: `frag_sel.tsd == 2 || 0`）。panvk の v10 は TSD_0 だけを書き（`vulkan/csf/panvk_vX_cmd_draw.c` の `update_tls`、`PAN_ARCH < 12` の枝）、TLS の大きさは vertex と fragment の `tls_size` の大きい方（同じ関数の MAX3）。
+- frame shader の DCD（pre-frame）は DCD の Shader Environment の "Thread storage"（v10.xml の struct "Shader Environment" word 12）から読む（panvk の `cmd_emit_dcd` は `cfg.shader.thread_storage = cmdbuf->state.gfx.tsd`）。
+
+この driver（`vk/vk-draw.c`）との照合: RUN_IDVS は `mali_cs_run_idvs(0, true, false, false, false, true, false)` で fragment の tsd の選択は 0（TSD_0）、draw() は spill の時に vertex と fragment の大きい方の `tls_bytes` で TSD を作って TSD_0（`MALI_CS_IDVS_TSD`）に書く（TSD_2 にも同じ値を書くが、選ばれないので無害）。pre-frame の DCD は pass の TSD（TLS 無し。preload の program は spill しない）。**資料の上では今の形で正しい**（fragment は draw の TSD_0 から読む）。
+
+残る未確認（実機でしか分からない）: G310 の firmware・hardware が資料どおり fragment の TLS を TSD_0 から取るか、TLS の大きさ（1 thread の bytes × 2048 thread × core の番号の範囲）が足りるか、`base >> 8`・packed の address mode。
+
+実機で見る手順（夜の後、desktop が出た後に。1 本の script にまとめる時の材料。今夜の desktop の 60 module は spill しないので、この確かめは desktop の受け入れとは別）:
+
+1. host で spill する fragment の試験の program を作る: `plan/ws313/tests/mali-compiler-shaders/` の spill.comp と同じ形（多くの値を同時に生かす）の fragment shader（例: 64 個の varying でない値を texture の読みから作り、全部の和を colour に出す。期待の色を host の 1 lane の模型で計算できる形）。`mali-compiler-host-test.sh` に通し、listing に TLS の STORE と LOAD があり `tls_bytes` が 0 でない事を確かめる。
+2. その shader で 1 枚の quad を 64×64 の linear の image に描き、`vkCmdCopyImageToBuffer` で読み戻して期待の色と比べる小さな Vulkan の program（`vkdemo` の graphics の経路か、`userland/` の既存の Vulkan の試験の program に shader を差し替える形）を image に `--file` で入れる。
+3. C5 の上で SSH から走らせ、(a) 色が一致すれば fragment の TLS は TSD_0 から正しく読まれている、(b) `mali: render: submission K failed` と `mali: MMU fault … address …` が出て fault の address が 0 の近くか TLS の範囲の外なら、TLS の pointer が読まれていない（TSD の選択か descriptor の形を疑う。`fragment_tsd_select` を 1 にして TSD_2 で試すのが次の 1 手）、(c) 色が違う（fault 無し）なら thread ごとの区画の計算（thread 数 2048 の推定、`TLS Size` の shift）を疑う。
+4. 判定は SSH の出力（期待の色との一致の数）と、失敗の時の `mali:` の行（serial の対話で読む。ws.md の §8 の判断で ODROID-C5 の実機は生きた serial の対話を許可済み）。
+
+## 15. 他の GPU の executor との Vulkan の対応範囲（q1675-i04、P7、2026-10-29）
+
+source（この worktree、基点 main 3eb150f35）を読んで並べた。各 driver の `vk/` の device・render pass・image の受け入れの判定と、recorded command の処理の有無（`GPU_OP_CMD_*` の扱い）、compiler の IR の op の扱いから。**実行で確かめた表ではない**（各 GPU の実機の状態は各 WS の記録が本体）。○ = 実装あり、△ = 一部、— = 無い（拒否・skip・未公表）。
+
+| 項目 | nvrtx | amdrdna | powervr | bcm2711 | Mali（i03 まで） | Mali（i04 の後） |
+| --- | --- | --- | --- | --- | --- | --- |
+| API の版 | 1.1 | 1.1 | 1.1 | 1.0 | 1.1 | 1.1 |
+| graphics の pipeline | ○ | ○ | ○ | ○ | ○ | ○ |
+| compute の pipeline・dispatch | —（vkCreateComputePipelines は未実装） | ○（compute の queue） | ○ | —（graphics だけの device） | ○（WLS 無し） | 下の WLS の行 |
+| workgroup の shared memory（WLS） | — | ○（compiler） | — | — | —（dispatch を拒否） | （D3 の結果で埋める） |
+| render pass | 1 subpass、colour 1・depth D32 | 1 subpass、colour 1・depth | 1 subpass、colour・depth | 1 subpass、colour・depth | 1 subpass、colour 4 まで、depth 無し | 同じ |
+| depth attachment | ○（D32_SFLOAT） | ○ | ○ | ○ | — | — |
+| MSAA | —（1 sample） | — | — | — | — | — |
+| mip level | 15 | 15 | 13 | 1 | 1 | 1 |
+| array layer・cube | —（1 layer） | cube（compiler） | — | — | ○（layer 256、cube・cube array） | ○ |
+| storage image | —（format に STORAGE が無い） | — | — | — | ○（8） | ○ |
+| texture の gather・compare | — | ○ | — | — | ○ | ○ |
+| textureGrad（微分の指定） | — | ○ | — | — | — | — |
+| clear attachments（pass の中） | — | — | ○ | — | —（skip） | （D3） |
+| 拡大・縮小の blit | ○（quad の draw、nearest・linear） | ○（同） | ○（transfer） | ○（nearest・linear） | —（同じ大きさ・形式だけ） | （D3） |
+| render pass の LOAD | ○（immediate の描画、clear でなければ残る） | ○（同） | ○（tile への load） | ○（tile への load） | ○（colour target 0、pre-frame の draw） | ○ |
+| FragDepth・SampleMask | — | — | — | — | — | （A3） |
+| UBO の vector load | — | — | — | — | —（1 語ずつ） | （A3） |
+| register の spill | — | — | — | — | ○（TLS、compute・graphics） | ○ |
+| query（occlusion・timestamp） | — | — | — | △（vkCreateQueryPool の一部） | — | — |
+| indirect の draw・dispatch | — | — | — | — | — | — |
+| fill・update buffer | — | — | — | — | ○（fill） | ○ |
+
+読み方: どの executor も desktop（Keiland の compositor）の範囲を中心に作られ、Vulkan 1.1 の必須の全部は持たない。Mali は i03 までで depth attachment と mip level を除く多くの行で他の GPU と並ぶか上回る。他の GPU が持ち Mali に無い大きな物は **depth attachment** と **mip level**（nvrtx・amdrdna・powervr）、**textureGrad**（amdrdna）。これらは q1675-i04 の範囲の外（次の Queue の候補として Q1 へ）。
