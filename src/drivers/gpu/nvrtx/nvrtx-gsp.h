@@ -710,6 +710,18 @@ struct nvrtx_fwsec {
 #define NVRTX_CTL_SCHEDULE		0xa06f0103U
 
 /*
+ * A channel's stop (off its runlist, preempted at once when asked) and its
+ * reset (the channel and its engine).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/ctrl/ctrla06f/ctrla06fgpfifo.h
+ * (NVA06F_CTRL_CMD_STOP_CHANNEL) and
+ * src/common/sdk/nvidia/inc/ctrl/ctrl906f.h (NV906F_CTRL_CMD_RESET_CHANNEL).
+ */
+#define NVRTX_CTL_STOP_CHANNEL		0xa06f0112U
+#define NVRTX_CTL_RESET_CHANNEL		0x906f0102U
+
+/*
  * The classes of address-space and copy-channel on Turing (a generation's own
  * are its profile's).
  *
@@ -929,6 +941,7 @@ int nvrtx_mmu_gr_map_system(uint8_t *image, uint64_t va_base, uint64_t va_bytes,
 int nvrtx_mmu_gr_map_vram(uint8_t *image, uint64_t va_base, uint64_t va_bytes, uint64_t va, uint64_t physical, uint64_t size);
 size_t nvrtx_mmu_gr_pte_offset(uint64_t va_base, uint64_t va_bytes, uint64_t va);
 void nvrtx_mmu_gr_entries_vram(uint8_t *entries, uint64_t physical, uint64_t pages);
+void nvrtx_mmu_gr_entries_privileged(uint8_t *entries, uint64_t physical, uint64_t pages, int read_only);
 void nvrtx_mmu_gr_entries_system(uint8_t *entries, const uint64_t *pages, size_t count);
 
 int nvrtx_vbios_walk(const uint8_t *rom, size_t size, struct nvrtx_vbios *vbios);

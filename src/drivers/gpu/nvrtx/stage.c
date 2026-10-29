@@ -109,6 +109,18 @@
 #define STAGE_VK_PERF_TOKEN		"nvrtx.vk.perf=1"
 
 /*
+ * The whole token that puts every session's work on the one work channel
+ * instead of a channel of its own.
+ */
+#define STAGE_CHANNELS_OFF_TOKEN	"nvrtx.channels=0"
+
+/*
+ * The whole token that keeps a session's channel on the GPU when its work
+ * did not end (the loss is only reported), to watch what the GSP does.
+ */
+#define STAGE_KILL_OFF_TOKEN		"nvrtx.kill=0"
+
+/*
  * The whole token that stops the GSP after the takeover instead of keeping the
  * GPU device.
  */
@@ -354,6 +366,43 @@ nvrtx_stage_vk_perf_wanted(void)
 
 	/* Without it no counts are written. */
 	return false;
+}
+
+/*
+ * Reports whether each session gets a channel of its own (nvrtx.channels=0
+ * puts every session's work on the one work channel instead; on by default).
+ */
+bool
+nvrtx_stage_channels_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.channels=0 among the boot parameters. */
+	present = stage_token_present(STAGE_CHANNELS_OFF_TOKEN);
+	if (present)
+		return false;
+
+	/* Without it every session gets its own channel. */
+	return true;
+}
+
+/*
+ * Reports whether a session's channel whose work did not end is stopped on
+ * the GPU (nvrtx.kill=0 keeps it running and only reports the loss; on by
+ * default).
+ */
+bool
+nvrtx_stage_kill_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.kill=0 among the boot parameters. */
+	present = stage_token_present(STAGE_KILL_OFF_TOKEN);
+	if (present)
+		return false;
+
+	/* Without it a channel whose work did not end is stopped. */
+	return true;
 }
 
 /*
