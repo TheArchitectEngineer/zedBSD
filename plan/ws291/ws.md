@@ -227,3 +227,12 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
   42.24 → 45.3 fps（submit 21.6 → 0.16 ms）。残りは mview の record 1.36 ms（UC の user の map の見込み、339ddc909 で write-combine、実機は次の枠）と GPU の約 0.85 ms。
 - 再開点（12:15 P2）: 339ddc909（blob の user の map を write-combine、record 1.36 → 0.08 ms）と de077be78（completer の起床の遅れ）で scene-5000 は
   49.1〜49.5 fps（NVK 50.1、単独の run 49.1）。frame のうち GPU 19.5 ms。50 以上を確かにするのは GPU の側（p012 以降の予備）。判定は Q1。
+
+## 2026-10-30 q1693-i01（P5、worktree p5-ws291、NVIDIA の段）
+
+- 承認: Queue q1693-i01（2026-10-30 ユーザー「…そのあと、デスクトップ機では、RTXドライバの最適化に進んでください。エージェントは再利用しても新規で立ててもOKです。」）。
+  RDNA の案 4・5 と同じ形（native の sync command）を nvrtx に当てるのは Q1 の判断（WS291 の範囲の普通の技術の判断、ユーザーの回答「両方 (推し)」「まずはデフォルト有効で実装して…」に沿う）。
+- 再開点（05:05 P5）: [phase011](phase011/phase.md) の「q1693-i01」節。compiler の FFMA（効果なし・merge 済み 374eb20c3）、nvrtx の bench（big-1000 1.32 fps 対 NVK 136.2、
+  subs-1000 6.65 対 75.4）、host blob（e8f83ab8f、big-1000 → 20〜24 fps）、sync command（5a2c5f4ff）。dirty state（5ec449b99）と slot の続き（57f4c5a62）は効果なし。
+  次は kernel の record の decode（1 MiB に 3.7 ms）と subs の 1 submit の kernel 66 µs の内訳。
+
