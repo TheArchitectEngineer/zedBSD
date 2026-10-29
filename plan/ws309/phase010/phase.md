@@ -3,7 +3,7 @@
 # ws309-p010 blur の thread（T9）とその都度の decode（A1）: 壁紙・出力の大きさ・回転
 
 - 親: [WS309](../ws.md)、設計 [design.md](../design.md) §2（T9・A1）・§3.2（lane）・§3.5（その都度）・§4.7。Queue: q1662-i07（P1）。
-- 状態: in-progress（2026-10-29 14:0x P1。T9・A1 と会話の中の壁紙・landscape・出力の大きさの変化まで実装、QEMU `grave-guest.sh` PASS。残りは下の「残り」）。
+- 状態: in-progress（2026-10-29 13:3x P1。T9・A1 と会話の中の壁紙・landscape・出力の大きさの変化まで実装、QEMU `grave-guest.sh` PASS。残りは下の「残り」）。
 - 依存: p009（cleared）。
 
 ## 今（基点 166958a7a、branch `agent/p1-ws309g`）

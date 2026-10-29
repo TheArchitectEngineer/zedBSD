@@ -72,7 +72,7 @@
 
 ## Resume point
 
-- 2026-10-29 14:0x P1（q1662-i07、branch `agent/p1-ws309g`、b6b5b788c）: p010 は T9（blur の lane）・A1（loader は decode だけ）・landscape・`kwl_glass_resize` まで、QEMU `grave-guest.sh` PASS。次は [phase.md](phase010/phase.md) の「残り」1（回転は p012 と一緒かを Q1 に）・2。
+- 2026-10-29 13:3x P1（q1662-i07、branch `agent/p1-ws309g`、b6b5b788c）: p010 は T9（blur の lane）・A1（loader は decode だけ）・landscape・`kwl_glass_resize` まで、QEMU `grave-guest.sh` PASS。次は [phase.md](phase010/phase.md) の「残り」1（回転は p012 と一緒かを Q1 に）・2。
 - 2026-10-29 13:1x P1（q1662-i07、branch `agent/p1-ws309g`、4b9d7d3d7）: p009 cleared（墓へ全ての解放、client の切断の quiesce を消す、glass の waits を消す。QEMU `plan/ws309/tests/grave-guest.sh` PASS）。次は p010。
 - 2026-10-29 12:3x P1（q1662-i06、branch `agent/p1-ws309f`、b5416a6fa）: p009 は遅らせた破棄の仕組みと shm の image まで。次は [phase.md](phase009/phase.md) の「残り」1 から。
 - 2026-10-29 12:2x P1（q1662-i06、branch `agent/p1-ws309f`）: p008 cleared（fence 付きの task、QEMU `plan/ws309/tests/task-guest.sh` PASS、host `plan/ws309/tests/render-task/run.sh` PASS）。次は p009（遅らせた破棄、[phase.md](phase008/phase.md) の「設計からの変え方」の task の解放の待ちを置き換える）。
