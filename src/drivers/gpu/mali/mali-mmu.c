@@ -348,6 +348,55 @@ mali_group_alloc(
 	return 0;
 }
 
+/*
+ * Removes a run of a space's mappings, and flushes the slot's view of
+ * the run when the slot is translating.  The tables stay.
+ */
+int
+mali_as_unmap(
+	struct mali_device *device,
+	struct mali_address_space *space,
+	uint64_t gpu_address,
+	uint64_t bytes)
+{
+	int error;
+
+	/* Clears the entries of every page of the run. */
+	error = mali_pt_unmap(&space->tables, gpu_address, bytes);
+	if (error != 0)
+		return error;
+
+	/* A slot that translates may still hold the old entries. */
+	if (space->enabled) {
+		error = mali_as_flush(device, space, gpu_address, bytes);
+		if (error != 0)
+			return error;
+	}
+
+	/* Succeeded: the GPU no longer reaches the run. */
+	return 0;
+}
+
+/*
+ * Frees every table page of a space that no slot translates through any
+ * more.
+ */
+void
+mali_as_destroy(
+	struct mali_address_space *space)
+{
+	unsigned index;
+
+	/* Each page's view, then its run. */
+	for (index = 0; index < space->table_count; index++) {
+		(void)kern_pmem_unmap_uncached(space->table_views[index], (size_t)MALI_PT_PAGE_BYTES);
+		(void)kern_pmem_free(&space->table_runs[index]);
+	}
+
+	/* Nothing is left of it. */
+	kern_memset(space, 0, sizeof(*space));
+}
+
 /* Hands the builder one zeroed table page of the space, with its uncached view. */
 static int
 table_allocate(

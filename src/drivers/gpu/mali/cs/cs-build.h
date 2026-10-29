@@ -258,4 +258,19 @@ void mali_cs_copy(struct mali_cs *cs, unsigned data, unsigned scratch, uint64_t 
  */
 void mali_cs_fill(struct mali_cs *cs, unsigned data, unsigned scratch, uint64_t destination, uint32_t pattern, uint64_t bytes, unsigned load_store_slot);
 
+/*
+ * Writes a loop that copies rows rows of row_bytes (a multiple of four)
+ * from one GPU address to another, each row's start moved on by its
+ * stride; data is the first of sixteen work registers, scratch the even
+ * first of eight more (two address pairs, two row starts, two counts).
+ */
+void mali_cs_copy_rows(struct mali_cs *cs, unsigned data, unsigned scratch, uint64_t destination, int32_t destination_stride, uint64_t source, int32_t source_stride, uint32_t row_bytes, uint32_t rows, unsigned load_store_slot);
+
+/*
+ * Writes a loop that fills rows rows of row_bytes (a multiple of four)
+ * at a GPU address with one 32-bit pattern, each row's start moved on by
+ * the stride; registers as mali_cs_copy_rows().
+ */
+void mali_cs_fill_rows(struct mali_cs *cs, unsigned data, unsigned scratch, uint64_t destination, int32_t stride, uint32_t pattern, uint32_t row_bytes, uint32_t rows, unsigned load_store_slot);
+
 #endif

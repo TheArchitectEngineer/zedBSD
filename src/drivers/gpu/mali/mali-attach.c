@@ -166,6 +166,11 @@ drv_mali_gpu_attach(
 	if (error != 0)
 		return -error;
 
+	/* The lock the later stage's thread and the render node share the firmware under. */
+	error = mutex_init(&device->lock, LOCK_RANK_DEVICE, "mali-gpu");
+	if (error != 0)
+		return -error;
+
 	/* The later stage on a thread of its own; nobody joins it. */
 	error = kthread_create(late_thread, device, SCHED_PRIORITY_DEFAULT, &thread);
 	if (error != 0) {
@@ -463,10 +468,17 @@ late_bring_up(
 
 	kern_logf("mali: firmware answers; MCU enabled\n");
 
-	/* The driver's own stream; its failure leaves the firmware running. */
+	/* The driver's own stream and its self-test; its failure leaves the firmware running. */
 	error = mali_queue_start(device);
-	if (error != 0)
+	if (error != 0) {
 		kern_logf("mali: queue not started (%d)\n", error);
+		return 0;
+	}
+
+	/* The render node over a stream that runs work; its failure leaves the rest running. */
+	error = mali_render_start(device);
+	if (error != 0)
+		kern_logf("mali: render node not started (%d)\n", error);
 
 	/* Succeeded: the firmware runs. */
 	return 0;
@@ -536,9 +548,13 @@ watch(
 	for (;;) {
 		sched_sleep(sched_ticks() + kern_ms_to_ticks(REPORT_MS));
 
-		/* Faults, and the microcontroller's status. */
+		/* Faults, and the microcontroller's status, while no submission uses the firmware. */
+		mutex_lock(&device->lock);
+
 		mali_gpu_report_events(device);
 		mali_csf_report_status(device);
+
+		mutex_unlock(&device->lock);
 
 		/* The first job interrupt says the line works; later ones are routine. */
 		jobs = __atomic_exchange_n(&device->job_events, 0U, __ATOMIC_ACQ_REL);
@@ -552,7 +568,13 @@ watch(
 		if (reports % PING_EVERY_REPORTS != 0U || unanswered >= PINGS_UNANSWERED_MAX)
 			continue;
 
+		/* The ping, likewise between submissions. */
+		mutex_lock(&device->lock);
+
 		error = mali_csf_ping(device);
+
+		mutex_unlock(&device->lock);
+
 		if (error == 0) {
 			unanswered = 0U;
 			continue;
