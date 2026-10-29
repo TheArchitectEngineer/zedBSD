@@ -17,7 +17,7 @@
 
 - image: `build/p6-image.sh`（= `flock /tmp/zedbsd-image-build.lock sh plan/tools/guest/test-image.sh plan/ws312/tests/config-amd64-frag.mk build/ws312-frag`）、rc=0、
   tree は f28f69e72 と同じ source（fca883bb5 以後は記録だけ）。warning 477 は perl の locale の注意と外部の OpenSSH の物だけ（kernel・udp6-recv は 0）。
-- 試験: `timeout 900 sh plan/ws312/tests/qemu-frag.sh build/ws312-frag/hdd-image.img build/ws312-qemu`、rc=0、最後の行 `qemu-frag: PASS`、`ok:` 20 行・`FAIL:` 0 行:
+- 試験: `timeout 900 sh plan/ws312/tests/qemu-frag.sh build/ws312-frag/hdd-image.img build/ws312-qemu`、rc=0、最後の行 `qemu-frag: PASS`、`ok:` 19 行・`FAIL:` 0 行:
   - guest の address、udp6-recv の ready、namespace から guest への ping。
   - 1. `ping -6 -c 3 -s 1400`（namespace の route `fd00:312::2 dev p6v1 mtu lock 1280`）: `1408 bytes from` が 3 行。
   - 2. UDP 1400・4000・8000 byte が長さと FNV-1a（b2eb9e95・133e4645・74c0d745）の一致で届いた。12000 byte（上限の外）は届かない。
@@ -28,6 +28,8 @@
   - 5. `ping -6 -s 3000`: 2 送って 0 受け（判定しない。返りの 3048 byte は送りの fragment が要り範囲の外）。
   - 6. guest は最後まで SSH に答えた。
   - 最後の行 `teardown: p6tap0 p6v0 p6br0 netns:p6ws312 all gone`（作った link と netns を消して読み戻した）。
+- 再実行（p004 の書き方の直しの後、tip 4cdc4f19f、image を作り直して）: `build/p6-final.sh` で host 試験 PASS、ci-amd64・ci-rpi4・ci-riscv64-virt の vmunix が rc=0 warning 0、
+  image rc=0 warning 0、`qemu-frag.sh` rc=0・`ok:` 19・`FAIL:` 0・`qemu-frag: PASS`・`teardown: p6tap0 p6v0 p6br0 netns:p6ws312 all gone`（`build/ws312-qemu2.log`）。
 - 成果物: `build/ws312-qemu.log`（要約）、`build/ws312-qemu/`（各項目の出力、`udp6.log` は guest の受け手の出力）。git に入れない。
 
 ## 未実施・観察
