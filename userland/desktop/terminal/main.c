@@ -39,7 +39,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 /* The font the terminal uses unless told otherwise, and its size in pixels. */
@@ -1236,55 +1235,45 @@ main_menu_state(
 }
 
 /*
- * Starts another terminal for a new window, the way this one was run.  It
- * is started through a child that ends at once, so that it is nobody's
- * child to wait for.
+ * Starts another terminal for a new window, the way this one was run,
+ * apart from this one (it keeps nothing of this terminal's).
  */
 static void
 main_new_window(
 	const struct main_options *options,
 	const struct main_run *run)
 {
+	struct kl_launch_options launch;
+	const char *arguments[4];
 	char token[64];
 	char display[128];
-	char *arguments[4];
-	pid_t child;
-	pid_t grandchild;
-	int status;
+	int error;
 
-	/* The child, which starts the terminal and ends. */
-	child = fork();
-	if (child < 0)
-		return;
-	if (child == 0) {
-		/* The terminal's process; the child that made it ends (as does a child whose fork failed). */
-		grandchild = fork();
-		if (grandchild != 0)
-			_exit(0);
+	/* Nothing of the run is handed over. */
+	(void)run;
 
-		/* It keeps nothing of this terminal's (the shells' terminals are not passed on). */
-		(void)run;
+	/* The same program, its log lines named after this run's. */
+	(void)snprintf(token, sizeof(token), "--token=%s-new", options->token);
+	arguments[0] = options->program;
+	arguments[1] = token;
+	arguments[2] = NULL;
 
-		/* The same program, its log lines named after this run's. */
-		(void)snprintf(token, sizeof(token), "--token=%s-new", options->token);
-		arguments[0] = (char *)options->program;
-		arguments[1] = token;
-		arguments[2] = NULL;
-
-		/* The same display, when this one was given one. */
-		if (options->display != NULL) {
-			(void)snprintf(display, sizeof(display), "--display=%s", options->display);
-			arguments[2] = display;
-			arguments[3] = NULL;
-		}
-
-		/* Only a failed exec comes back. */
-		(void)execv(options->program, arguments);
-		_exit(127);
+	/* The same display, when this one was given one. */
+	if (options->display != NULL) {
+		(void)snprintf(display, sizeof(display), "--display=%s", options->display);
+		arguments[2] = display;
+		arguments[3] = NULL;
 	}
 
-	/* The child ends at once. */
-	(void)waitpid(child, &status, 0);
+	/* The terminal, on its way; a start that failed leaves this window as it was. */
+	memset(&launch, 0, sizeof(launch));
+	launch.argv = arguments;
+	launch.from = main_window.kui;
+	error = kl_launch(main_window.app, &launch);
+	if (error != 0) {
+		printf("ZTERM NEW-WINDOW failed run=%s errno=%d\n", options->token, error);
+		fflush(stdout);
+	}
 }
 
 /*

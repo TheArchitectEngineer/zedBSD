@@ -44,6 +44,7 @@ LIBKEILAND_SOURCES += \
 	userland/desktop/libkeiland/platform/platform-posix.c \
 	userland/desktop/libkeiland/platform/process-posix.c \
 	userland/desktop/libkeiland/process.c \
+	userland/desktop/libkeiland/launch.c \
 	userland/desktop/libkeiland/ui/declare.c \
 	userland/desktop/libkeiland/ui/globals.c \
 	userland/desktop/libkeiland/ui/window-declare.c \

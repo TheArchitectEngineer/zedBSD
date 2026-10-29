@@ -29,11 +29,9 @@
 
 #include <errno.h>
 #include <limits.h>
-#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 /* The font used unless told otherwise. */
@@ -142,9 +140,6 @@ static uint32_t *main_pixels;
 
 /* The canvas over main_pixels, which the viewer draws each frame into. */
 static struct pv_canvas main_canvas;
-
-/* The environment a started program inherits. */
-extern char **environ;
 
 static int main_parse(int argc, char **argv, struct main_options *options);
 static const char *main_value(const char *argument, const char *name);
@@ -442,7 +437,6 @@ main_loop(
 	struct pv_state state;
 	uint64_t started;
 	uint64_t now;
-	pid_t ended;
 	int prefetched;
 	int taken;
 	int status;
@@ -563,13 +557,6 @@ main_loop(
 		main_state(&state);
 		pv_menu_refresh(&main_menu, &state);
 		pv_titlebar_refresh(&main_titlebar, &state);
-
-		/* Started programs that ended are reaped. */
-		for (;;) {
-			ended = waitpid(-1, NULL, WNOHANG);
-			if (ended <= 0)
-				break;
-		}
 
 		/* The close button, Quit, or Close on an empty window end the run. */
 		if (main_closed != 0 || main_app.want_close != 0) {
@@ -983,10 +970,10 @@ main_opened(void)
 static void
 main_annotate(void)
 {
+	struct kl_launch_options options;
 	char resolved[PATH_MAX];
-	char *arguments[3];
+	const char *arguments[3];
 	char *absolute;
-	pid_t child;
 	int usable;
 	int error;
 
@@ -1004,10 +991,13 @@ main_annotate(void)
 		snprintf(resolved, sizeof(resolved), "%s", main_app.document.path);
 
 	/* Starts Notes with the path. */
-	arguments[0] = "notes";
+	arguments[0] = MAIN_NOTES;
 	arguments[1] = resolved;
 	arguments[2] = NULL;
-	error = posix_spawn(&child, MAIN_NOTES, NULL, NULL, arguments, environ);
+	memset(&options, 0, sizeof(options));
+	options.argv = arguments;
+	options.from = main_window.kui;
+	error = kl_launch(main_kl, &options);
 	if (error != 0) {
 		pv_app_message(&main_app, "Notes could not be started.", 4000U);
 		pv_log("ANNOTATE failed errno=%d", error);
@@ -1015,7 +1005,7 @@ main_annotate(void)
 	}
 
 	/* Succeeded: Notes opens the document. */
-	pv_log("ANNOTATE program=%s path=%s pid=%ld", MAIN_NOTES, resolved, (long)child);
+	pv_log("ANNOTATE program=%s path=%s", MAIN_NOTES, resolved);
 }
 
 /* Takes the desktop's new appearance: the viewer is drawn again in its colours. */

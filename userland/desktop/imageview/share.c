@@ -41,6 +41,19 @@ static const char *share_type(const char *format);
 static const char *share_base(const char *path);
 
 /*
+ * Attaches the application and the window the applications that open an
+ * image are started from.
+ */
+void
+iv_share_attach(
+	struct kl_app *app,
+	struct kl_window *window)
+{
+	/* Files' starts, from the viewer's application and window. */
+	fm_apps_attach(app, window);
+}
+
+/*
  * Moves a file to its trash (the home trash, or its volume's), with the
  * record of where it was, and writes where it went in the trash.
  *

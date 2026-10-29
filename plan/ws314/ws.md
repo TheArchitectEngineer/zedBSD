@@ -52,8 +52,8 @@
 | ws314-p010 | 規約の全文の見直し | planned | p009 |
 | ws314-p011 | 解説の構成の設計（Opus）: 章ごとに完全に動く source の全文を示し、そこから帰納的に分からせ演繹的な説明も引ける構成。keiland-programming.md に「ここにこういう説明を入れる」の comment を入れ、例の全文は compile・実行で確かめる | cleared | p002 |
 | ws314-p012 | 解説の書き直し（Sonnet）: p011 の構成と comment に沿って人間向けの文章に | cleared | p011 |
-| ws314-p013 | `kl_launch` と Files・Settings・PDF Viewer・Terminal の新しい窓の移行（design.md §5） | planned | p005 |
-| ws314-p014 | Preview の API から fd・pid を外し、`waitpid`・`kill` を Preview の platform の file へ（design.md §4.5） | planned | p003 |
+| [ws314-p013](phase013/phase.md) | `kl_launch` と Files・Settings・PDF Viewer・Terminal の新しい窓の移行（design.md §5） | in-progress（build・host 済み、QEMU 中） | p005 |
+| [ws314-p014](phase014/phase.md) | Preview の API から fd・pid を外し、`waitpid`・`kill` を Preview の platform の file へ（design.md §4.5） | in-progress（build・host 済み、QEMU 未） | p003 |
 | ws314-p015 | kl_app に system の言語の変更を知らせる event（`KL_APP_LANGUAGE` の類）を足す。event は変わった先の言語の名前（"ja" など）を運ぶ（決定 13）。今の kl_settings の読み（kl_settings_dispatch）との関係、translation（kl_tr）の読み直しの手順、解説への記述（p009 と一緒に） | planned | p004 |
 
 ## Resume point

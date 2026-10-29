@@ -1818,6 +1818,7 @@ int fm_apps_is_quicklook(const struct fm_opener *opener);
 int fm_apps_set_default(const char *type, const struct fm_opener *opener);
 int fm_apps_clear_default(const char *type);
 int fm_apps_has_default(const char *type);
+void fm_apps_attach(struct kl_app *app, struct kl_window *window);
 int fm_apps_launch(const struct fm_opener *opener, const char *path);
 int fm_apps_spawn(char *const arguments[]);
 
