@@ -355,6 +355,8 @@ static int glass_shadow_picture(struct kwl_server *server, const struct glass_sh
 static int glass_ring_hollow(struct kwl_server *server, struct kwl_list *command, const struct glass_shape *shape);
 static unsigned glass_count_kind_of(const float *constants);
 static int wallpaper_create(struct kwl_server *server, struct kwl_glass *glass, uint32_t width, uint32_t height);
+static int wallpaper_renew(struct kwl_server *server, struct kwl_glass *glass);
+static int glass_image_renew(struct kwl_server *server, struct kwl_import *place, uint32_t width, uint32_t height, VkSampler sampler);
 static int glass_size_make(struct kwl_server *server, uint32_t width, uint32_t height, struct kwl_glass_size *size);
 static int wallpaper_fill(struct kwl_glass *glass, const char *path, uint32_t width, uint32_t height);
 static int wallpaper_draw(struct kwl_glass *glass, struct wallpaper_picture *given, uint32_t width, uint32_t height);
@@ -551,9 +553,10 @@ kwl_glass_close(
  * like a picture and kwl_glass_wallpaper_poll shows it; while
  * the thread reads another picture the event loop draws it at once.
  *
- * The images keep their size and their descriptors, so only their pixels
- * change; the device finishes what it is drawing from them first.  The
- * whole output is drawn again.  Returns 0 or an errno value.
+ * It is drawn into new images of the same size, which take the old ones'
+ * places; the old ones go once the frames given before have completed, so
+ * nothing waits.  The whole output is drawn again.  Returns 0 or an errno
+ * value (the wallpaper shown stays).
  */
 int
 kwl_glass_landscape(
@@ -578,10 +581,11 @@ kwl_glass_landscape(
 			return 0;
 	}
 
-	/* The frames in flight read the images; they end first. */
+	/* New images to draw into; the frames in flight go on with the old ones, let go after them. */
 	started = kwl_milliseconds();
-	kwl_compose_quiesce(server);
-	kwl_device_wait_idle(server->compose);
+	error = wallpaper_renew(server, server->compose->glass);
+	if (error != 0)
+		return error;
 
 	/* The landscape is a picture without pixels. */
 	memset(&picture, 0, sizeof(picture));
@@ -604,9 +608,9 @@ kwl_glass_landscape(
 /*
  * Makes the look's output-sized images again for an output of another size:
  * the wallpaper and its blurred copy, with the picture the
- * settings hold now.  The device finishes what it is drawing from them
- * first.  Returns 0 or an errno value (the look is then drawn without its
- * wallpaper until the next change).
+ * settings hold now.  The old ones go once the frames given before have
+ * completed, with no wait.  Returns 0 or an errno value (the look is then
+ * drawn without its wallpaper until the next change).
  */
 int
 kwl_glass_resize(
@@ -621,12 +625,8 @@ kwl_glass_resize(
 		return 0;
 	glass = server->compose->glass;
 
-	/* The frames in flight read the images; they end first. */
+	/* The images of the old size go once the frames given before have completed. */
 	started = kwl_milliseconds();
-	kwl_compose_quiesce(server);
-	kwl_device_wait_idle(server->compose);
-
-	/* The images of the old size go. */
 	kwl_host_image_release(server->compose, &glass->wallpaper);
 	kwl_host_image_release(server->compose, &glass->blurred);
 
@@ -861,10 +861,18 @@ kwl_glass_wallpaper_poll(
 		return 1;
 	}
 
-	/* The frames in flight read the images; they end first. */
+	/* New images to write into; the frames in flight go on with the old ones, let go after them. */
 	started = kwl_milliseconds();
-	kwl_compose_quiesce(server);
-	kwl_device_wait_idle(server->compose);
+	*error = wallpaper_renew(server, server->compose->glass);
+	if (*error != 0) {
+		free(picture.data);
+		free(glass_loader.rows);
+		free(glass_loader.blurred);
+		glass_loader.rows = NULL;
+		glass_loader.blurred = NULL;
+		printf("KWL GLASS no wallpaper: path=%s errno=%d\n", glass_loader.path, *error);
+		return 1;
+	}
 
 	/*
 	 * The rows the thread drew at the output's size are copied in;
@@ -933,6 +941,77 @@ wallpaper_create(
 		return error;
 
 	/* Succeeded: the wallpaper is drawn. */
+	return 0;
+}
+
+/*
+ * Gives the wallpaper and its frosted glass new images of the output's
+ * size for a new picture (written by the caller), the old ones let go
+ * once the frames given before have completed.  Returns 0, or EIO with the
+ * old images kept.
+ */
+static int
+wallpaper_renew(
+	struct kwl_server *server,
+	struct kwl_glass *glass)
+{
+	struct kwl_import blurred;
+	VkResult result;
+	int error;
+
+	/* The frosted glass's first, aside, so that a failure of either keeps both old ones. */
+	memset(&blurred, 0, sizeof(blurred));
+	result = kwl_host_image_create(server->compose, server->width / GLASS_BLUR_SCALE, server->height / GLASS_BLUR_SCALE, server->compose->linear_sampler, &blurred);
+	if (result != VK_SUCCESS) {
+		kwl_host_image_release(server->compose, &blurred);
+		return EIO;
+	}
+	error = glass_image_renew(server, &glass->wallpaper, server->width, server->height, server->compose->sampler);
+	if (error != 0) {
+		kwl_host_image_release(server->compose, &blurred);
+		return error;
+	}
+
+	/* The new frosted glass takes the old one's place, which goes after the frames given before. */
+	blurred.version = glass->blurred.version + 1U;
+	blurred.draw = glass->blurred.draw;
+	kwl_host_image_release(server->compose, &glass->blurred);
+	kwl_host_image_move(server->compose, &blurred, &glass->blurred);
+	return 0;
+}
+
+/*
+ * Puts a new host image of a size in place of the one there (none, or one
+ * frames given before may still sample): the old one is let go after
+ * them (kwl_compose_bury), the new one keeps its way of drawing and a
+ * later version (the pictures that show it are told apart).  Its staging
+ * is the caller's to write.  Returns 0, or EIO with the old image kept.
+ */
+static int
+glass_image_renew(
+	struct kwl_server *server,
+	struct kwl_import *place,
+	uint32_t width,
+	uint32_t height,
+	VkSampler sampler)
+{
+	struct kwl_import fresh;
+	VkResult result;
+
+	/* The new image, aside. */
+	memset(&fresh, 0, sizeof(fresh));
+	result = kwl_host_image_create(server->compose, width, height, sampler, &fresh);
+	if (result != VK_SUCCESS) {
+		kwl_host_image_release(server->compose, &fresh);
+		return EIO;
+	}
+
+	/* It follows the old one, which goes once nothing given uses it; then it takes the place. */
+	fresh.version = place->version + 1U;
+	fresh.draw = place->draw;
+	if (place->image != VK_NULL_HANDLE || place->staging != VK_NULL_HANDLE)
+		kwl_host_image_release(server->compose, place);
+	kwl_host_image_move(server->compose, &fresh, place);
 	return 0;
 }
 
@@ -2961,17 +3040,19 @@ glass_large_prepare(
 		return EINVAL;
 
 	/*
-	 * The image the first time; later the frames in flight that read it end
-	 * before the event loop draws it again (the glyph worker's digits are
-	 * written at the start of a walk, when no frame is in flight).
+	 * The image the first time; later the event loop draws into a new one,
+	 * the frames in flight going on with the old one, let go after them
+	 * (the glyph worker's digits are written at the start of a walk, when
+	 * no frame in flight copies a host image).
 	 */
 	if (glass->large.image == VK_NULL_HANDLE) {
 		result = kwl_host_image_create(server->compose, GLASS_LARGE_WIDTH, GLASS_LARGE_HEIGHT, server->compose->sampler, &glass->large);
 		if (result != VK_SUCCESS)
 			return EIO;
 	} else if (!glass->worker_running) {
-		kwl_compose_quiesce(server);
-		kwl_device_wait_idle(server->compose);
+		error = glass_image_renew(server, &glass->large, GLASS_LARGE_WIDTH, GLASS_LARGE_HEIGHT, server->compose->sampler);
+		if (error != 0)
+			return error;
 	}
 
 	/*

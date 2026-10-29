@@ -551,15 +551,13 @@ kwl_client_destroy(
 	unsigned long long number;
 	unsigned index;
 
-	/* A frame in flight may hold this client's buffers and callbacks; it finishes first (each step is timed, BUG-239). */
+	/* Each step is timed (BUG-239). */
 	server = client->server;
 	started = kwl_milliseconds();
 	cleanup_import_us = 0U;
 	cleanup_backend_us = 0U;
 	cleanup_imports = 0U;
 	cleanup_retire_server = server;
-	kwl_compose_quiesce(server);
-	quiesced = kwl_milliseconds();
 
 	/* The input method's connection lets go of what it held (input-method.c). */
 	kwl_ime_client_gone(client);
@@ -571,8 +569,14 @@ kwl_client_destroy(
 	if (server->cursor_client == client)
 		kwl_cursor_default(server);
 
-	/* Fatal status suppresses events while destructors unwind dependent objects. */
+	/*
+	 * Fatal status suppresses events while destructors unwind dependent
+	 * objects; the frames in flight give back what they hold of this client
+	 * without waiting (the images they sample wait for them).
+	 */
 	client->fatal = 1;
+	kwl_compose_client_gone(server, client);
+	quiesced = kwl_milliseconds();
 	printf("KWL CLEANUP client=%llu objects=%u unread_fds=%u\n", (unsigned long long)client->number, client->object_count, client->right_count);
 
 	/* Surfaces own all callback lists and buffer-use holds, so retire them first. */
