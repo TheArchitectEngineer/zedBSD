@@ -2066,9 +2066,11 @@ gles_integers(
 		values[0] = (GLint)gles_samples_max(state);
 		return 1U;
 	case GL_NUM_COMPRESSED_TEXTURE_FORMATS:
-	case GL_COMPRESSED_TEXTURE_FORMATS:
-		values[0] = 0;
+		/* OpenGL ES 3.0's ETC2 and EAC formats (decoded on the CPU). */
+		values[0] = (GLint)gles_compressed_formats(NULL);
 		return 1U;
+	case GL_COMPRESSED_TEXTURE_FORMATS:
+		return gles_compressed_formats(values);
 	case GL_UNPACK_ALIGNMENT:
 		values[0] = state->unpack_alignment;
 		return 1U;

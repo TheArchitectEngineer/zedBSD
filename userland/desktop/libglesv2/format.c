@@ -412,6 +412,23 @@ gles_texels_halve(
 }
 
 /*
+ * Converts a float to a half float, rounding to the nearest (etc2.c's
+ * 11-bit channels are kept so).
+ */
+uint16_t
+gles_half_from_float(
+	float value)
+{
+	uint16_t half;
+
+	/* The conversion the texel formats use. */
+	half = format_half(value);
+
+	/* Succeeded: the half float. */
+	return half;
+}
+
+/*
  * Converts a half float (IEEE binary16) to a float.
  */
 float

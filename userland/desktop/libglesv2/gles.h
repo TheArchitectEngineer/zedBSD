@@ -1641,11 +1641,18 @@ GLenum gles_texels_convert(const struct gles_format *storage, GLenum format, GLe
 GLenum gles_texels_from_rgba8(const struct gles_format *storage, const unsigned char *rgba, size_t count, unsigned char **out);
 int gles_texels_halve(const struct gles_format *format, const unsigned char *source, int source_width, int source_height, int source_depth, int halve_depth, unsigned char **out, int *width, int *height, int *depth);
 float gles_half_float(uint16_t half);
+uint16_t gles_half_from_float(float value);
 size_t gles_pixel_size(GLenum format, GLenum type);
 const struct gles_format *gles_format_renderable(struct gles_state *state, GLenum internal);
 int gles_read_format_ok(const struct gles_format *storage, GLenum format, GLenum type);
 void gles_read_format(const struct gles_format *storage, GLenum *format, GLenum *type);
 void gles_texels_read(const struct gles_format *storage, const unsigned char *kept, size_t count, GLenum format, GLenum type, unsigned char *out);
+
+/* etc2.c: OpenGL ES 3.0's compressed formats (ETC2 and EAC), decoded on the CPU into their kept forms. */
+const struct gles_format *gles_compressed_format(GLenum internal);
+size_t gles_compressed_size(GLenum internal, GLsizei width, GLsizei height, GLsizei depth);
+unsigned gles_compressed_formats(GLint *values);
+void gles_compressed_decode(const struct gles_format *format, const unsigned char *data, GLsizei width, GLsizei height, unsigned char *out);
 
 /* pixels.c: the pixel store and the pixel buffers of the application's pixels. */
 GLenum gles_unpack(struct gles_state *state, GLenum format, GLenum type, GLsizei width, GLsizei height, GLsizei depth, const void *pixels, const void **packed, unsigned char **owned);
