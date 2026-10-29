@@ -35,6 +35,7 @@
 static void adopt_commit(struct kwl_server *server, struct kwl_object *surface);
 static void place_window(struct kwl_server *server, struct kwl_object *surface);
 static int enter_window_mode(struct kwl_server *server);
+static void window_mode_opened(struct kwl_server *server, int error, void *context);
 
 /*
  * Reports whether a surface's queued image may be used: each of its acquire
@@ -618,38 +619,66 @@ place_window(
 }
 
 /*
- * Enters window mode, once at the start: the swapchain is made over the
- * display once sessiond hands it over.
+ * Enters window mode, at the start and back from the game mode: the
+ * swapchain is made over the display (once sessiond hands it over, the
+ * first time) by a change of the display (display-thread.c), and the
+ * passes go on meanwhile.  Returns EAGAIN while the change runs (the
+ * cursor plane waits, and window mode is entered when it ends), or the
+ * failure to begin it.
  */
 static int
 enter_window_mode(
 	struct kwl_server *server)
 {
-	uint64_t start;
 	int error;
 
+	/* A change running (this one, or another) is waited for by the later passes. */
+	if (kwl_display_busy(server))
+		return EAGAIN;
+
 	/* The switch is timed from here (KWL MODE). */
-	start = kwl_milliseconds();
+	server->mode_start_ms = kwl_milliseconds();
 
 	/*
 	 * The display surface and the pipelines need no lease, so they are made
 	 * while the display is still another's (ws035-p130); a failure is tried
-	 * again below, after the hand-over.
+	 * again by the open, after the hand-over.
 	 */
 	(void)kwl_compose_output_prepare(server);
 
 	/* The first time, sessiond hands the display over (the greeter goes first). */
 	kwl_handoff_wait(server);
 
-	/* The swapchain over the display. */
-	error = kwl_compose_output_open(server);
+	/* The swapchain over the display, made while the passes go on. */
+	error = kwl_display_output_open(server, window_mode_opened, NULL);
 	if (error != 0)
 		return error;
+
+	/* Window mode is entered when the open ends (at once where its steps run here). */
+	if (!server->windowed)
+		return EAGAIN;
+	return 0;
+}
+
+/* Window mode's output opened (or failed to): the next pass draws a frame; a failure ends the compositor. */
+static void
+window_mode_opened(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	/* Any failure ends the compositor. */
+	(void)context;
+	if (error != 0) {
+		printf("KWL MODE_ERROR errno=%d\n", error);
+		kwl_fatal("KWL FAILED site=window_mode errno=%d", error);
+		server->failed = 1;
+		return;
+	}
 
 	/* Succeeded: the next pass draws a frame. */
 	server->windowed = 1;
 	server->dirty = 1;
-	server->mode_switch_ms = kwl_milliseconds() - start;
+	server->mode_switch_ms = kwl_milliseconds() - server->mode_start_ms;
 	printf("KWL MODE window switch_ms=%llu at_ms=%llu\n", (unsigned long long)server->mode_switch_ms, (unsigned long long)kwl_milliseconds());
-	return 0;
 }

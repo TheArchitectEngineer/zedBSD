@@ -10,7 +10,9 @@
  * (userland/desktop/wayland/render-thread.c): a task is submitted before
  * a list given after it, completions come in the order the tasks were
  * given, a failed submission is told in its turn, tasks run while the
- * thread is parked, and a stop waits for the tasks in flight.
+ * thread is parked, a park asked without waiting is answered only after
+ * the task given before it (drained) and told after its completion, and a
+ * stop waits for the tasks in flight.
  */
 
 #include "userland/desktop/wayland/render-thread.h"
@@ -148,6 +150,34 @@ main(void)
 		count = take_tasks(&render, numbers, results, 8U, &ready);
 	}
 	check(count == 1U && numbers[0] == 5U, "C: task 5 completed and told while parked");
+	kwl_render_unpark(&render);
+
+	/* E: a park asked without waiting drains the task given before it, and is told after the task's completion. */
+	kwl_render_task(&render, task_new(7U));
+	sleep_ms(20U);
+	message = calloc(1, sizeof(*message));
+	check(message != NULL, "E: message");
+	kwl_render_park_request(&render, message);
+	sleep_ms(50U);
+	pthread_mutex_lock(&render.lock);
+
+	check(render.parked == 0U, "E: not parked before task 7 completes");
+
+	pthread_mutex_unlock(&render.lock);
+	count = take_tasks(&render, numbers, results, 8U, &ready);
+	check(count == 0U, "E: nothing told before task 7's fence");
+	signal_fence(7U);
+	count = 0U;
+	for (index = 0U; index < 100U && count < 2U; index++) {
+		sleep_ms(10U);
+		count += take_tasks(&render, numbers + count, results + count, 8U - count, &ready);
+	}
+	check(count == 2U && numbers[0] == 7U && numbers[1] == 0U, "E: task 7's completion, then the park's message");
+	pthread_mutex_lock(&render.lock);
+
+	check(render.parked == 1U, "E: parked");
+
+	pthread_mutex_unlock(&render.lock);
 	kwl_render_unpark(&render);
 
 	/* D: a stop waits for the task in flight. */
@@ -385,6 +415,13 @@ take_tasks(
 		if (message->kind == KWL_RENDER_TASK_DONE && count < capacity) {
 			numbers[count] = (unsigned)message->number;
 			results[count] = message->result;
+			count++;
+		}
+
+		/* A park's message is told as the number 0. */
+		if (message->kind == KWL_RENDER_PARKED && count < capacity) {
+			numbers[count] = 0U;
+			results[count] = VK_SUCCESS;
 			count++;
 		}
 		free(message);

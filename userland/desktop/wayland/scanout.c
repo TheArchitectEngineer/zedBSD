@@ -15,8 +15,11 @@
  * libvulkan as before (display.c).
  *
  * Each pass the rules (scanout-rules.c) decide from the facts gathered
- * here.  To enter, the swapchain is closed once no frame is in flight
- * (libvulkan gives the display back) and the backend claims the display;
+ * here.  To enter, the display thread asks the backend whether the
+ * display can show the window, then the swapchain is closed in a change of
+ * the display (display-thread.c: the frame in flight completes first,
+ * libvulkan gives the display back) and the backend claims the display,
+ * while window mode's passes go on;
  * each new image of the window is then presented, and when the present has
  * ended (the backend's thread makes it while the compositor takes the
  * clients' commits, so a mailbox client's replaced images go back at
@@ -48,7 +51,10 @@
 
 static void scanout_facts(struct kwl_server *server, struct kwl_object *top, struct kwl_scanout_facts *facts);
 static int scanout_overlay(struct kwl_server *server, struct kwl_object *top);
-static int scanout_enter(struct kwl_server *server, struct kwl_object *top);
+static void scanout_enter(struct kwl_server *server, struct kwl_object *top);
+static void scanout_answered(struct kwl_server *server, int error, void *context);
+static void scanout_parked(struct kwl_server *server, int error, void *context);
+static void scanout_closed(struct kwl_server *server, int error, void *context);
 static void scanout_frame(struct kwl_server *server, struct kwl_object *top);
 static void scanout_refuse(struct kwl_server *server, struct kwl_object *top, int error);
 static void scanout_callbacks(struct kwl_server *server, struct kwl_object *shown);
@@ -67,7 +73,6 @@ kwl_scanout_pass(
 {
 	struct kwl_scanout_facts facts;
 	unsigned reason;
-	int error;
 
 	/* The pass's facts and the rules' answer. */
 	scanout_facts(server, top, &facts);
@@ -91,18 +96,18 @@ kwl_scanout_pass(
 		return 0;
 	}
 
-	/* The swapchain goes only once no frame is in flight; a later pass tries again. */
-	if (server->compose == NULL || server->compose->in_flight)
+	/* One entry at a time, not while the display changes; a later pass tries again. */
+	if (server->compose == NULL || server->scanout_entering != NULL || kwl_display_busy(server))
 		return 0;
 
-	/* Enters: the swapchain closed, the display claimed; a refusal stays window mode for this window. */
-	error = scanout_enter(server, top);
-	if (error != 0)
-		return 0;
-
-	/* Succeeded: the first image goes straight to the display. */
-	scanout_frame(server, top);
-	return 1;
+	/*
+	 * Enters, while window mode draws on: the display thread asks whether
+	 * the display can show it, then the swapchain is closed and the display
+	 * claimed (scanout_answered); a later pass shows the first image
+	 * straight.  A refusal stays window mode for this window.
+	 */
+	scanout_enter(server, top);
+	return 0;
 }
 
 /*
@@ -155,7 +160,9 @@ kwl_scanout_surface_gone(
 	if (server->scanout != NULL && server->scanout_surface == surface)
 		kwl_scanout_leave(server, KWL_SCANOUT_NO_WINDOW);
 
-	/* A window the display refused, and the last one logged. */
+	/* A window being entered, a window the display refused, and the last one logged. */
+	if (server->scanout_entering == surface)
+		server->scanout_entering = NULL;
 	if (server->scanout_refused == surface)
 		server->scanout_refused = NULL;
 	if (server->scanout_noted == surface)
@@ -280,56 +287,122 @@ scanout_overlay(
 }
 
 /*
- * Enters the game mode for a window: the backend's answer that the display
- * can show it, the swapchain closed (libvulkan gives the display back), the
- * backend's claim.  Returns 0, or the answer's or the claim's failure (the
- * window is then refused until it goes or asks again; after a claim's
- * failure window mode opens the swapchain again, after the answer's it was
- * never closed).
+ * Enters the game mode for a window (design 4.3): the display thread asks
+ * the backend first, without claiming, whether the display can show it
+ * straight; scanout_answered goes on with the answer.
  */
-static int
+static void
 scanout_enter(
 	struct kwl_server *server,
 	struct kwl_object *top)
 {
-	uint64_t started;
-	int error;
+	/* The question, for the display's mode (the physical size, WS217). */
+	server->scanout_entering = top;
+	server->scanout_entering_ms = kwl_milliseconds();
+	(void)kwl_display_scanout_query(server, server->compose->mode_width, server->compose->mode_height, scanout_answered, NULL);
+}
 
-	/*
-	 * Asks first, without claiming, whether the display can show the
-	 * window straight: a display that cannot (the Raspberry Pi 4's, Linux,
-	 * FreeBSD) keeps the output open, as closing and opening it again for
-	 * nothing stopped the Pi 4's firmware video decoder (ws236-p011).
-	 */
-	error = kl_backend_scanout_possible(server->backend, server->compose->mode_width, server->compose->mode_height);
+/*
+ * Goes on entering the game mode with the backend's answer: a display that
+ * cannot show the window straight (the Raspberry Pi 4's, Linux, FreeBSD)
+ * keeps the output open, as closing and opening it again for nothing
+ * stopped the Pi 4's firmware video decoder (ws236-p011).  One that can
+ * closes the swapchain in a change of the display (libvulkan gives the
+ * display back), if the window is still to be shown straight.
+ */
+static void
+scanout_answered(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	struct kwl_scanout_facts facts;
+	struct kwl_object *top;
+	unsigned reason;
+
+	/* The window went meanwhile. */
+	(void)context;
+	top = server->scanout_entering;
+	if (top == NULL)
+		return;
+
+	/* Refused: the window stays composed until it goes or asks again. */
 	if (error != 0) {
+		server->scanout_entering = NULL;
 		server->scanout_refused = top;
 		server->dirty = 1;
 		printf("KWL SCANOUT direct=0 reason=backend errno=%d surface=%u client=%llu output=kept\n", error, top->id, (unsigned long long)top->client->number);
-		return error;
+		return;
 	}
 
-	/* The swapchain goes. */
-	started = kwl_milliseconds();
-	kwl_compose_output_close(server);
-	server->windowed = 0;
+	/* The facts as they are now: a window no longer to be shown straight stays composed. */
+	scanout_facts(server, top, &facts);
+	reason = kwl_scanout_decide(&facts);
+	if (reason != KWL_SCANOUT_DIRECT || top != kwl_top_window(server)) {
+		server->scanout_entering = NULL;
+		return;
+	}
 
-	/* The backend claims the display for its mode (the physical size, WS217). */
+	/* The swapchain goes in a change of the display; one running already is waited for by a later pass. */
+	error = kwl_display_begin(server, scanout_parked, NULL);
+	if (error != 0)
+		server->scanout_entering = NULL;
+}
+
+/* Entering the game mode, the render thread parked: the swapchain closes. */
+static void
+scanout_parked(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	/* The close. */
+	(void)error;
+	kwl_display_close(server, scanout_closed, context);
+}
+
+/*
+ * Entering the game mode, the swapchain closed: the backend claims the
+ * display for its mode (the physical size, WS217), and the change ends.  A
+ * window gone meanwhile, or a claim's failure, leaves window mode to open
+ * the swapchain again at the next pass.
+ */
+static void
+scanout_closed(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	struct kwl_object *top;
+
+	/* Window mode opens again from the next pass unless the claim holds. */
+	(void)error;
+	(void)context;
+	top = server->scanout_entering;
+	server->scanout_entering = NULL;
+	server->windowed = 0;
+	if (top == NULL) {
+		kwl_display_end(server);
+		return;
+	}
+
+	/* The claim. */
 	error = kl_backend_scanout_open(server->backend, server->compose->mode_width, server->compose->mode_height, &server->scanout);
 	if (error != 0) {
 		server->scanout = NULL;
 		server->scanout_refused = top;
 		server->dirty = 1;
 		printf("KWL SCANOUT direct=0 reason=backend errno=%d surface=%u client=%llu\n", error, top->id, (unsigned long long)top->client->number);
-		return error;
+		kwl_display_end(server);
+		return;
 	}
 
-	/* Succeeded: the window is shown straight from now. */
+	/* Succeeded: the window is shown straight from the next pass. */
 	server->scanout_surface = top;
 	server->scanout_frames = 0U;
 	server->scanout_noted = NULL;
-	printf("KWL SCANOUT direct=1 surface=%u client=%llu switch_ms=%llu\n", top->id, (unsigned long long)top->client->number, (unsigned long long)(kwl_milliseconds() - started));
-	return 0;
+	printf("KWL SCANOUT direct=1 surface=%u client=%llu switch_ms=%llu\n", top->id, (unsigned long long)top->client->number, (unsigned long long)(kwl_milliseconds() - server->scanout_entering_ms));
+	kwl_display_end(server);
 }
 
 /*

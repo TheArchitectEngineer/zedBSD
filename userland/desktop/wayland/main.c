@@ -1159,6 +1159,7 @@ event_loop(
 		if (scanout_slot != 0 && descriptors[scanout_slot].revents != 0)
 			kwl_scanout_ended(server);
 		kwl_compose_poll(server);
+		kwl_display_take(server);
 		kwl_glass_glyphs_poll(server);
 		kwl_glass_blur_take(server);
 		kwl_keyboard_hand_take(server);

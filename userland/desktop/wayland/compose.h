@@ -391,6 +391,24 @@ struct kwl_head {
 struct kwl_cursor_thread;
 
 /*
+ * What a step of a change of the display goes on with (display-thread.c):
+ * called on the main thread with the step's result (0 or an errno) and the
+ * context it was given.
+ */
+typedef void kwl_display_fn(struct kwl_server *server, int error, void *context);
+
+/*
+ * A cursor plane taken off its output for its close (cursor-plane.c): the
+ * cursor thread's record, the plane's copies the thread reads until it has
+ * stopped, and whether the plane showed the cursor.
+ */
+struct kwl_cursor_parts {
+	struct kwl_cursor_thread *thread;
+	struct kwl_import *copies[KWL_CURSOR_COPIES];
+	unsigned shown;
+};
+
+/*
  * The output's cursor plane (cursor-plane.c, ws141-p014): a small
  * VK_KHR_display plane above the output's, with per-pixel premultiplied
  * alpha, that shows the cursor without composing a frame.  Since
@@ -769,6 +787,28 @@ struct kwl_compose {
 	struct kwl_render_message ready;
 	unsigned ready_valid;
 	unsigned park_depth;
+	/*
+	 * The display thread (display-thread.c, design 4.3): one thread of a
+	 * lane that makes and destroys the output's swapchain, its surface and
+	 * the cursor plane's, takes and gives back the display and asks the
+	 * backend about the game mode, while the event loop goes on.
+	 * display_started says it runs.  display_busy says a change of the
+	 * display runs (from its begin to its end): nothing is wanted of the
+	 * render thread meanwhile.  display_parking says its park is asked and
+	 * not answered yet; display_step and display_context are what runs
+	 * when it is (the render thread parked and drained).  display_inline
+	 * counts the callers that run the changes' steps on the event loop's
+	 * thread and wait (the end, the hand-over, the seat's pause), as they do
+	 * without the thread.  display_began_ms is when the change began.
+	 */
+	struct kwl_lane display_lane;
+	unsigned display_started;
+	unsigned display_busy;
+	unsigned display_parking;
+	kwl_display_fn *display_step;
+	void *display_context;
+	unsigned display_inline;
+	uint64_t display_began_ms;
 	uint64_t walk_cycles;
 	uint64_t frame_number;
 	uint64_t want_ms;
@@ -951,6 +991,23 @@ int kwl_compose_render_start(struct kwl_server *server);
 int kwl_compose_want_layer(struct kwl_server *server);
 int kwl_compose_host_writable(struct kwl_server *server);
 void kwl_compose_park(struct kwl_server *server);
+void kwl_compose_want_nothing(struct kwl_server *server);
+void kwl_compose_output_let_go(struct kwl_server *server);
+int kwl_compose_output_take(struct kwl_server *server, unsigned scene_supported, struct kwl_cursor_thread *cursor, VkExtent2D plane_extent, uint32_t plane_index);
+
+/* The display thread and the changes of the display (display-thread.c). */
+void kwl_display_start(struct kwl_server *server);
+void kwl_display_stop(struct kwl_server *server);
+void kwl_display_take(struct kwl_server *server);
+void kwl_display_parked(struct kwl_server *server);
+int kwl_display_busy(struct kwl_server *server);
+void kwl_display_settle(struct kwl_server *server);
+int kwl_display_begin(struct kwl_server *server, kwl_display_fn *parked, void *context);
+void kwl_display_end(struct kwl_server *server);
+void kwl_display_close(struct kwl_server *server, kwl_display_fn *then, void *context);
+void kwl_display_open(struct kwl_server *server, kwl_display_fn *then, void *context);
+int kwl_display_scanout_query(struct kwl_server *server, uint32_t width, uint32_t height, kwl_display_fn *then, void *context);
+int kwl_display_output_open(struct kwl_server *server, kwl_display_fn *then, void *context);
 void kwl_compose_unpark(struct kwl_server *server);
 void kwl_compose_forget(struct kwl_server *server, unsigned output, unsigned heads_mask);
 uint64_t kwl_compose_generation(struct kwl_compose *compose);
@@ -983,6 +1040,7 @@ VkDescriptorSet kwl_layers_anim_picture(struct kwl_server *server, float uv[4]);
 VkResult kwl_compose_set_get(struct kwl_compose *compose, VkDescriptorSet *result);
 void kwl_compose_set_put(struct kwl_compose *compose, VkDescriptorSet set);
 int kwl_output_switch(struct kwl_server *server, VkDisplayKHR target);
+int kwl_output_move(struct kwl_server *server, const VkDisplayKHR *candidates, const unsigned char *clear_kept, unsigned count, kwl_display_fn *then, void *context);
 VkRenderPass kwl_compose_target_pass(const struct kwl_compose *compose, unsigned slot, unsigned load);
 VkResult kwl_compose_display_read(struct kwl_server *server, VkDisplayKHR display, uint32_t *width, uint32_t *height, uint32_t *refresh, char *name, size_t size);
 
@@ -1028,8 +1086,12 @@ const struct kwl_import *kwl_compose_surface_image(const struct kwl_object *surf
 int kwl_compose_cursor_source(struct kwl_server *server, const struct kwl_import **image, int32_t *hotspot_x, int32_t *hotspot_y);
 
 /* The cursor plane's swapchain, made after the output's and destroyed before it (cursor-plane.c). */
-void kwl_cursor_plane_open(struct kwl_server *server);
 void kwl_cursor_plane_close(struct kwl_server *server);
+struct kwl_cursor_thread *kwl_cursor_plane_make(struct kwl_compose *compose, const struct vkdemo_display *output, VkExtent2D *extent, uint32_t *index);
+void kwl_cursor_plane_adopt(struct kwl_server *server, struct kwl_cursor_thread *cursor, VkExtent2D extent, uint32_t index);
+void kwl_cursor_plane_detach(struct kwl_server *server, struct kwl_cursor_parts *parts);
+int kwl_cursor_plane_stop(struct kwl_compose *compose, struct kwl_cursor_thread *cursor);
+void kwl_cursor_plane_detached(struct kwl_server *server, struct kwl_cursor_parts *parts, int error);
 
 /* The display's acquisition and release through libkeiland-backend (os.c, ws131-p008). */
 VkResult kwl_os_display_acquire(struct kwl_server *server, VkPhysicalDevice physical, VkDisplayKHR display);

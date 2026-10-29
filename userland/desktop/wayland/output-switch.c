@@ -39,10 +39,43 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* How often the hotplug fence is looked at (ms): each look is a request to the display node. */
 #define OUTPUT_HOTPLUG_MS	250U
+
+/* The most displays one move tries: the one shown, the machine's own, and every one connected. */
+#define OUTPUT_MOVE_MAX		(KWL_COMPOSE_DISPLAYS + 2U)
+
+/*
+ * A move of the output (kwl_output_move): the displays to try in order
+ * (candidates, count of them, the next to try), for each whether nothing
+ * is kept off from its try on, what goes on with the result (then and
+ * context), the last try's result (error); and the try running: its
+ * display (target), size, refresh and name, what the output had to go
+ * back to, and whether it is the same display opened again.
+ */
+struct output_move {
+	VkDisplayKHR candidates[OUTPUT_MOVE_MAX];
+	unsigned char clear_kept[OUTPUT_MOVE_MAX];
+	unsigned count;
+	unsigned next;
+	kwl_display_fn *then;
+	void *context;
+	int error;
+	VkDisplayKHR target;
+	uint32_t width;
+	uint32_t height;
+	uint32_t refresh;
+	char name[KWL_COMPOSE_NAME];
+	VkDisplayKHR old_display;
+	uint32_t old_mode_width;
+	uint32_t old_mode_height;
+	uint32_t old_refresh;
+	char old_name[KWL_COMPOSE_NAME];
+	int reopen;
+};
 
 /*
  * A turn of the anchor on the same panel, for the pointer's move to the
@@ -64,6 +97,16 @@ static int output_index(const struct kwl_compose *compose, VkDisplayKHR display)
 static void output_hotplug_register(struct kwl_server *server);
 static void output_recover(struct kwl_server *server);
 static int output_fail_back(struct kwl_server *server);
+static void output_failed_back(struct kwl_server *server, int error, void *context);
+static void output_recover_rest(struct kwl_server *server);
+static void output_recovered(struct kwl_server *server, int error, void *context);
+static void output_move_parked(struct kwl_server *server, int error, void *context);
+static void output_move_try(struct kwl_server *server, struct output_move *move);
+static void output_move_closed(struct kwl_server *server, int error, void *context);
+static void output_move_opened(struct kwl_server *server, int error, void *context);
+static void output_move_back(struct kwl_server *server, int error, void *context);
+static void output_move_end(struct kwl_server *server, struct output_move *move, int error);
+static void output_sync_then(struct kwl_server *server, int error, void *context);
 static void output_resized(struct kwl_server *server, unsigned glass_rebuild);
 static void output_pointer_clamp(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
 static void output_pointer_turn(const void *context, const struct kwl_plane_rect *outputs, int32_t *x, int32_t *y, unsigned *output);
@@ -90,9 +133,11 @@ kwl_output_tick(
 	now = kwl_milliseconds();
 	kwl_displays_pending_tick(server, now);
 
-	/* Only a device that follows the hotplug, while window mode runs. */
+	/* Only a device that follows the hotplug, while window mode runs and the display does not change. */
 	compose = server->compose;
 	if (compose == NULL || compose->register_device_event == NULL || !server->windowed)
+		return;
+	if (kwl_display_busy(server))
 		return;
 
 	/* Not too often. */
@@ -144,9 +189,15 @@ kwl_output_tick(
 		}
 	}
 
-	/* The display under the output is gone: the output moves. */
+	/*
+	 * The display under the output is gone: the output moves, while the
+	 * passes go on; the heads are brought in line by a later look, after
+	 * the output opened again (heads_stale).
+	 */
 	if (compose->output_lost == 1U)
 		output_recover(server);
+	if (kwl_display_busy(server))
+		return;
 
 	/*
 	 * The heads brought in line: after the hotplug's enumeration, after the
@@ -167,13 +218,12 @@ kwl_output_tick(
 }
 
 /*
- * Moves the output to another display: the swapchain closed and the display
- * given back, a swapchain opened on the other display at its native size,
- * and the desktop fitted to it.  An output closed (its display gone, and
- * no other taken) is opened on the display.  Returns 0, ENODEV before
- * window mode, ENXIO for a display not connected now, or EAGAIN when its
- * swapchain was refused (the output is back on the display it had, when it
- * could be).
+ * Moves the output to another display and waits for the move (where the
+ * caller needs its result on return: the lid, Settings' anchor turned off):
+ * the move's steps run on the event loop's thread (kwl_output_move).
+ * Returns 0, ENODEV before window mode, ENXIO for a display not connected
+ * now, or EAGAIN when its swapchain was refused (the output is back on the
+ * display it had, when it could be).
  */
 int
 kwl_output_switch(
@@ -181,88 +231,228 @@ kwl_output_switch(
 	VkDisplayKHR target)
 {
 	struct kwl_compose *compose;
-	char old_name[KWL_COMPOSE_NAME];
-	char name[KWL_COMPOSE_NAME];
-	VkDisplayKHR old_display;
-	uint32_t old_mode_width;
-	uint32_t old_mode_height;
-	uint32_t old_refresh;
-	uint32_t width;
-	uint32_t height;
-	uint32_t refresh;
-	VkResult result;
-	int index;
+	int result;
 	int error;
-	int reopen;
 
 	/* Only window mode's output moves. */
 	compose = server->compose;
 	if (compose == NULL || !server->windowed)
 		return ENODEV;
 
-	/* The display it shows already. */
-	if (target == compose->display && compose->output_open && !compose->output_lost)
-		return 0;
+	/* A change running ends first; this one's steps run here. */
+	kwl_display_settle(server);
+	result = EINPROGRESS;
+	compose->display_inline++;
+	error = kwl_output_move(server, &target, NULL, 1U, output_sync_then, &result);
+	compose->display_inline--;
+	if (error != 0)
+		return error;
 
-	/* The other display's size, refresh and name; one not connected now cannot take the output. */
-	result = kwl_compose_display_read(server, target, &width, &height, &refresh, name, sizeof(name));
-	if (result != VK_SUCCESS) {
-		printf("KWL OUTPUT switch refused name=%s result=%d\n", name, (int)result);
-		return ENXIO;
+	/* The move's result. */
+	return result;
+}
+
+/*
+ * Moves the output to the first of some displays that takes it, in a
+ * change of the display (display-thread.c) while the passes go on: for
+ * each display in turn, the swapchain closed and the display given back, a
+ * swapchain opened on the other display at its native size, and the
+ * desktop fitted to it; a display whose swapchain is refused is marked
+ * limited and the output goes back to the display it had, then the next is
+ * tried.  An output closed (its display gone, and no other taken) is opened
+ * on the display.  clear_kept (NULL for none) says for each display that
+ * nothing is kept off from its try on (the machine's own display again,
+ * ws113-p004b).  then(server, error, context) is called at the end with 0
+ * (a display took the output, or shows it already), ENXIO (the last was not
+ * connected) or EAGAIN (the last refused it).  Returns 0 when the move
+ * began, ENODEV before window mode, EINVAL without a display, ENOMEM, or
+ * EBUSY while another change of the display runs (the caller tries again
+ * later).
+ */
+int
+kwl_output_move(
+	struct kwl_server *server,
+	const VkDisplayKHR *candidates,
+	const unsigned char *clear_kept,
+	unsigned count,
+	kwl_display_fn *then,
+	void *context)
+{
+	struct kwl_compose *compose;
+	struct output_move *move;
+	unsigned index;
+	int error;
+
+	/* Only window mode's output moves, to some display. */
+	compose = server->compose;
+	if (compose == NULL || !server->windowed)
+		return ENODEV;
+	if (count == 0U)
+		return EINVAL;
+	if (kwl_display_busy(server))
+		return EBUSY;
+
+	/* The displays to try, in their order. */
+	move = calloc(1, sizeof(*move));
+	if (move == NULL)
+		return ENOMEM;
+	if (count > OUTPUT_MOVE_MAX)
+		count = OUTPUT_MOVE_MAX;
+	for (index = 0U; index < count; index++) {
+		move->candidates[index] = candidates[index];
+		if (clear_kept != NULL)
+			move->clear_kept[index] = clear_kept[index];
+	}
+	move->count = count;
+	move->then = then;
+	move->context = context;
+	move->error = ENXIO;
+
+	/* The change, which goes on once the render thread is parked. */
+	error = kwl_display_begin(server, output_move_parked, move);
+	if (error != 0) {
+		free(move);
+		return error;
 	}
 
-	/*
-	 * What the output had, to go back to: the display, its mode and
-	 * refresh (the angles it showed are compose->opened, WS217).
-	 */
-	old_display = compose->display;
-	old_mode_width = compose->mode_width;
-	old_mode_height = compose->mode_height;
-	old_refresh = server->refresh;
-	memcpy(old_name, compose->display_name, sizeof(old_name));
+	/* Succeeded: the move runs. */
+	return 0;
+}
 
-	/* The same display opened again (another generation of it, or back after a wait) is not a move. */
-	reopen = 0;
-	if (target == old_display)
-		reopen = 1;
+/* A move, the render thread parked: the first display tried. */
+static void
+output_move_parked(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	/* The tries. */
+	(void)error;
+	output_move_try(server, context);
+}
 
-	/* The swapchain closed and the display given back. */
-	kwl_compose_output_close(server);
+/*
+ * Tries the next display of a move: one shown already ends it, one not
+ * connected now is passed over, any other closes the output (the move
+ * goes on at output_move_closed).  With none left the move ends with the
+ * last try's result.
+ */
+static void
+output_move_try(
+	struct kwl_server *server,
+	struct output_move *move)
+{
+	struct kwl_compose *compose;
+	VkResult result;
+
+	/* Each display left, in its order. */
+	compose = server->compose;
+	while (move->next < move->count) {
+		move->target = move->candidates[move->next];
+		if (move->clear_kept[move->next])
+			compose->kept_off = VK_NULL_HANDLE;
+		move->next++;
+
+		/* The display it shows already. */
+		if (move->target == compose->display && compose->output_open && !compose->output_lost) {
+			output_move_end(server, move, 0);
+			return;
+		}
+
+		/* The other display's size, refresh and name; one not connected now cannot take the output. */
+		result = kwl_compose_display_read(server, move->target, &move->width, &move->height, &move->refresh, move->name, sizeof(move->name));
+		if (result != VK_SUCCESS) {
+			printf("KWL OUTPUT switch refused name=%s result=%d\n", move->name, (int)result);
+			move->error = ENXIO;
+			continue;
+		}
+
+		/*
+		 * What the output had, to go back to: the display, its mode and
+		 * refresh (the angles it showed are compose->opened, WS217).
+		 */
+		move->old_display = compose->display;
+		move->old_mode_width = compose->mode_width;
+		move->old_mode_height = compose->mode_height;
+		move->old_refresh = server->refresh;
+		memcpy(move->old_name, compose->display_name, sizeof(move->old_name));
+
+		/* The same display opened again (another generation of it, or back after a wait) is not a move. */
+		move->reopen = 0;
+		if (move->target == move->old_display)
+			move->reopen = 1;
+
+		/* The swapchain closed and the display given back. */
+		kwl_display_close(server, output_move_closed, move);
+		return;
+	}
+
+	/* None took the output. */
+	output_move_end(server, move, move->error);
+}
+
+/*
+ * A move's try, the output closed: the other display, at its native size
+ * (unrotated until the output's opening chooses the angle displays.conf
+ * keeps for its key, kwl_compose_output_prepare, WS217), is opened.
+ */
+static void
+output_move_closed(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	struct kwl_compose *compose;
+	struct output_move *move;
+
+	/* The other display. */
+	(void)error;
+	move = context;
+	compose = server->compose;
 	compose->output_lost = 0U;
+	compose->display = move->target;
+	memcpy(compose->display_name, move->name, sizeof(compose->display_name));
+	kwl_output_size_set(server, move->width, move->height, KWL_ROTATE_0);
+	server->refresh = move->refresh;
+	kwl_display_open(server, output_move_opened, move);
+}
 
-	/*
-	 * The other display, at its native size: unrotated until the output's
-	 * opening chooses the angle displays.conf keeps for its key
-	 * (kwl_compose_output_prepare, WS217).
-	 */
-	compose->display = target;
-	memcpy(compose->display_name, name, sizeof(compose->display_name));
-	kwl_output_size_set(server, width, height, KWL_ROTATE_0);
-	server->refresh = refresh;
-	error = kwl_compose_output_open(server);
+/*
+ * A move's try, the other display opened (or refused): refused (the limit
+ * of outputs shown at once), the display is marked and the output goes
+ * back; taken, the move ends.
+ */
+static void
+output_move_opened(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	struct kwl_compose *compose;
+	struct output_move *move;
+	int index;
+
+	/* Refused: marked, and the output goes back to what it had. */
+	move = context;
+	compose = server->compose;
 	if (error != 0) {
-		/* Refused (the limit of outputs shown at once): marked, and the output goes back. */
-		index = output_index(compose, target);
+		index = output_index(compose, move->target);
 		if (index >= 0)
 			compose->limited |= (uint32_t)1U << (unsigned)index;
-		printf("KWL OUTPUT switch failed name=%s errno=%d\n", name, error);
-		compose->display = old_display;
-		memcpy(compose->display_name, old_name, sizeof(compose->display_name));
-		kwl_output_size_set(server, old_mode_width, old_mode_height, compose->opened.rotation);
+		printf("KWL OUTPUT switch failed name=%s errno=%d\n", move->name, error);
+		compose->display = move->old_display;
+		memcpy(compose->display_name, move->old_name, sizeof(compose->display_name));
+		kwl_output_size_set(server, move->old_mode_width, move->old_mode_height, compose->opened.rotation);
 		compose->rotation_selected = compose->opened.selected;
 		compose->scanout_rotation = compose->opened.scanout;
 		compose->turn_rotation = compose->opened.turn;
-		server->refresh = old_refresh;
-		error = kwl_compose_output_open(server);
-		if (error != 0) {
-			/* Neither display: the output waits for the next hotplug. */
-			printf("KWL OUTPUT none: the display it had did not open again errno=%d\n", error);
-			compose->output_lost = 2U;
-		}
-
-		/* The move was refused. */
-		return EAGAIN;
+		server->refresh = move->old_refresh;
+		kwl_display_open(server, output_move_back, move);
+		return;
 	}
+
+	/* The desktop follows what the output shows now against what it showed when it last opened (review-4 C7). */
+	(void)kwl_output_rotated(server);
 
 	/*
 	 * A move is proven by its first frame (BUG-266): until it is
@@ -270,10 +460,10 @@ kwl_output_switch(
 	 * display opened again proves nothing new.
 	 */
 	compose->switch_failed = 0U;
-	if (!reopen) {
+	if (!move->reopen) {
 		compose->switch_proving = 1U;
-		compose->switch_from = old_display;
-		memcpy(compose->switch_from_name, old_name, sizeof(compose->switch_from_name));
+		compose->switch_from = move->old_display;
+		memcpy(compose->switch_from_name, move->old_name, sizeof(compose->switch_from_name));
 	}
 
 	/*
@@ -286,14 +476,70 @@ kwl_output_switch(
 		kwl_outputs_changed(server);
 
 	/* The log tells a move from the same display opened again (the tests read it). */
-	if (reopen) {
-		printf("KWL OUTPUT reopen name=%s width=%u height=%u refresh_mhz=%u\n", compose->display_name, width, height, refresh);
+	if (move->reopen) {
+		printf("KWL OUTPUT reopen name=%s width=%u height=%u refresh_mhz=%u\n", compose->display_name, move->width, move->height, move->refresh);
 	} else {
-		printf("KWL OUTPUT switch name=%s width=%u height=%u refresh_mhz=%u\n", compose->display_name, width, height, refresh);
+		printf("KWL OUTPUT switch name=%s width=%u height=%u refresh_mhz=%u\n", compose->display_name, move->width, move->height, move->refresh);
 	}
 
 	/* Succeeded: the output shows the target display. */
-	return 0;
+	output_move_end(server, move, 0);
+}
+
+/* A refused try, the output opened back on the display it had (or not): the next display is tried. */
+static void
+output_move_back(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	struct output_move *move;
+
+	/* Back, the desktop following what it shows; neither display: the output waits for the next hotplug. */
+	move = context;
+	if (error == 0) {
+		(void)kwl_output_rotated(server);
+	} else {
+		printf("KWL OUTPUT none: the display it had did not open again errno=%d\n", error);
+		server->compose->output_lost = 2U;
+	}
+
+	/* The try was refused; the next one. */
+	move->error = EAGAIN;
+	output_move_try(server, move);
+}
+
+/* Ends a move: the change ends, then its result is told. */
+static void
+output_move_end(
+	struct kwl_server *server,
+	struct output_move *move,
+	int error)
+{
+	kwl_display_fn *then;
+	void *context;
+
+	/* The record goes first. */
+	then = move->then;
+	context = move->context;
+	free(move);
+
+	/* The change ends, then the result. */
+	kwl_display_end(server);
+	if (then != NULL)
+		then(server, error, context);
+}
+
+/* Keeps the result of a move whose steps ran here. */
+static void
+output_sync_then(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	/* The result for the caller. */
+	(void)server;
+	*(int *)context = error;
 }
 
 /*
@@ -807,9 +1053,7 @@ output_recover(
 {
 	struct kwl_compose *compose;
 	VkResult listed;
-	unsigned index;
-	int shown;
-	int error;
+	int started;
 
 	/*
 	 * The displays as they are now.  An unreadable list waits for the next
@@ -823,35 +1067,86 @@ output_recover(
 		return;
 	}
 
-	/* A move whose first frame the display refused: back to the display it left (BUG-266). */
+	/* A move whose first frame the display refused: back to the display it left (BUG-266), the rest after its failure. */
 	if (compose->switch_failed) {
-		error = output_fail_back(server);
-		if (error == 0)
+		started = output_fail_back(server);
+		if (started)
 			return;
 	}
 
+	/* The display it had, the machine's own, any other. */
+	output_recover_rest(server);
+}
+
+/*
+ * Moves the output from a lost display to the display it had when it is
+ * still connected and its move did not fail, else to the machine's own
+ * display (nothing kept off from then on, ws113-p004b), else to any other
+ * connected one.  Without one, the output waits for the next hotplug.
+ */
+static void
+output_recover_rest(
+	struct kwl_server *server)
+{
+	VkDisplayKHR candidates[OUTPUT_MOVE_MAX];
+	unsigned char clear_kept[OUTPUT_MOVE_MAX];
+	struct kwl_compose *compose;
+	unsigned count;
+	unsigned index;
+	int internal;
+	int shown;
+	int error;
+
 	/* The display it had, when it is still connected and its move did not fail. */
+	compose = server->compose;
+	count = 0U;
 	shown = output_index(compose, compose->display);
 	if (shown >= 0 && (compose->move_failed & ((uint32_t)1U << (unsigned)shown)) == 0U) {
-		error = kwl_output_switch(server, compose->display);
-		if (error == 0)
-			return;
+		candidates[count] = compose->display;
+		clear_kept[count] = 0U;
+		count++;
 	}
 
 	/* The machine's own display first. */
-	error = kwl_output_use_internal(server);
+	for (index = 0U; index < compose->display_count; index++) {
+		internal = output_internal(compose, index);
+		if (!internal)
+			continue;
+		candidates[count] = compose->displays[index];
+		clear_kept[count] = 1U;
+		count++;
+		break;
+	}
+
+	/* Any other display connected. */
+	for (index = 0U; index < compose->display_count && count < OUTPUT_MOVE_MAX; index++) {
+		candidates[count] = compose->displays[index];
+		clear_kept[count] = 0U;
+		count++;
+	}
+
+	/* The move, while the passes go on. */
+	error = ENOENT;
+	if (count > 0U)
+		error = kwl_output_move(server, candidates, clear_kept, count, output_recovered, NULL);
+	if (error != 0)
+		output_recovered(server, error, NULL);
+}
+
+/* A lost output's move ended: without a display taking it, the output waits for the next hotplug. */
+static void
+output_recovered(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	/* Taken. */
+	(void)context;
 	if (error == 0)
 		return;
 
-	/* Any other display connected. */
-	for (index = 0U; index < compose->display_count; index++) {
-		error = kwl_output_switch(server, compose->displays[index]);
-		if (error == 0)
-			return;
-	}
-
-	/* None: the output waits for the next hotplug. */
-	compose->output_lost = 2U;
+	/* None. */
+	server->compose->output_lost = 2U;
 	printf("KWL OUTPUT waiting: no display takes the output errno=%d\n", error);
 }
 
@@ -859,8 +1154,9 @@ output_recover(
  * Takes the output back to the display it left, after the display it moved
  * to refused the move's first frame (BUG-266): the failed display is not
  * moved to again until the next hotplug, the display left is on again, and
- * the clients hear the displays as they are.  Returns 0, ENXIO when the
- * display left is gone, or the move's error.
+ * the clients hear the displays as they are (output_failed_back).  Returns
+ * 1 when the move back began (the rest of the recovery follows its
+ * failure), 0 when it could not (the display left is gone).
  */
 static int
 output_fail_back(
@@ -868,6 +1164,7 @@ output_fail_back(
 {
 	struct kwl_compose *compose;
 	char failed_name[KWL_COMPOSE_NAME];
+	VkDisplayKHR back_display;
 	int failed;
 	int back;
 	int error;
@@ -888,23 +1185,46 @@ output_fail_back(
 	back = output_index(compose, compose->switch_from);
 	if (back < 0) {
 		printf("KWL OUTPUT switch failed name=%s: the display it left is gone\n", failed_name);
-		return ENXIO;
+		return 0;
 	}
 
 	/* The move back. */
 	printf("KWL OUTPUT switch failed name=%s back=%s\n", failed_name, compose->switch_from_name);
-	error = kwl_output_switch(server, compose->switch_from);
+	back_display = compose->switch_from;
+	error = kwl_output_move(server, &back_display, NULL, 1U, output_failed_back, NULL);
 	if (error != 0)
-		return error;
+		return 0;
+
+	/* Succeeded: the move back runs. */
+	return 1;
+}
+
+/*
+ * The move back after a refused first frame ended: back, the display is on
+ * again and the clients (Settings) hear the displays as they are; refused,
+ * the rest of the recovery is tried.
+ */
+static void
+output_failed_back(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	struct kwl_compose *compose;
+
+	/* Refused: the display it had, the machine's own, any other. */
+	(void)context;
+	compose = server->compose;
+	if (error != 0) {
+		output_recover_rest(server);
+		return;
+	}
 
 	/* Going back is not a move to prove: the display showed the desktop before. */
 	compose->switch_proving = 0U;
 
 	/* The display it went back to is on again, and the clients (Settings) hear the displays as they are. */
 	kwl_displays_move_failed(server, compose->display_name);
-
-	/* Succeeded: the output is back on the display it left. */
-	return 0;
 }
 
 /*

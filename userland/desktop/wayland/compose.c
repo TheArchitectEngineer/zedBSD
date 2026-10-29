@@ -79,7 +79,6 @@ static int compose_region(struct kwl_server *server, uint32_t image, VkRect2D *r
 static int compose_turn_region(struct kwl_server *server, VkRect2D *region, VkRect2D *rects, unsigned *rect_count);
 static int compose_region_since(struct kwl_server *server, uint64_t frame, uint64_t last, uint32_t image, VkRect2D *region, VkRect2D *rects, unsigned *rect_count);
 static void compose_walk_timed(struct kwl_server *server, uint64_t walk, uint64_t replay, unsigned quiet);
-static int compose_output_open_parked(struct kwl_server *server);
 static void compose_want(struct kwl_server *server, enum kwl_render_kind kind);
 static void compose_stalled(struct kwl_server *server);
 static void compose_message(struct kwl_server *server, const struct kwl_render_message *message);
@@ -243,6 +242,9 @@ kwl_compose_open(
 
 	/* How long the render thread took to start. */
 	printf("KWL STARTUP step=render-thread ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+
+	/* The display thread, which changes the output's swapchain from now on (without it the changes run here). */
+	kwl_display_start(server);
 
 	/* Succeeded: window mode can open its output. */
 	return 0;
@@ -417,40 +419,6 @@ kwl_compose_output_prepare(
 }
 
 /*
- * Creates the swapchain of window mode's display surface (preparing the
- * surface first when that was not done), which claims the display.
- */
-int
-kwl_compose_output_open(
-	struct kwl_server *server)
-{
-	struct kwl_compose *compose;
-	int error;
-
-	/* An open output needs nothing. */
-	compose = server->compose;
-	if (compose->output_open)
-		return 0;
-
-	/* The render thread parked while the output's swapchain is made. */
-	kwl_compose_park(server);
-	error = compose_output_open_parked(server);
-	kwl_compose_unpark(server);
-	if (error != 0)
-		return error;
-
-	/*
-	 * The desktop follows what the output shows now against what it
-	 * showed when it last opened (review-4 C7): another logical
-	 * size (a move to a display of another size), another angle.
-	 */
-	(void)kwl_output_rotated(server);
-
-	/* Succeeded: window mode owns the display through the swapchain. */
-	return 0;
-}
-
-/*
  * Gives the render pass a frame's target is drawn with: the one
  * that clears it, or, with load, the one that keeps its pixels (made by
  * kwl_compose_load_pass the first time it is needed).  The anchor and the
@@ -513,79 +481,38 @@ kwl_compose_target_layout(
 	return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 }
 
-/* Opens the output, the render thread parked (kwl_compose_output_open). */
-static int
-compose_output_open_parked(
-	struct kwl_server *server)
+/*
+ * Takes in the output's swapchain the display thread made (in
+ * compose->output, display-thread.c), the render thread parked: a view,
+ * framebuffer and semaphore for each image, the turn image, the scene,
+ * the displays' choice, the cursor plane (its objects made by the display
+ * thread with the swapchain, cursor NULL for none) and the layers' pictures.
+ * Returns 0, or EIO when the targets could not be made (the swapchain is
+ * destroyed and the display given back here: a failure's path).
+ */
+int
+kwl_compose_output_take(
+	struct kwl_server *server,
+	unsigned scene_supported,
+	struct kwl_cursor_thread *cursor,
+	VkExtent2D plane_extent,
+	uint32_t plane_index)
 {
 	struct kwl_compose *compose;
 	uint64_t started;
 	VkResult result;
-	int readback;
-	unsigned scene_supported;
-	int error;
-
-	/* The surface, and the pass and pipelines for its format. */
-	compose = server->compose;
-	error = kwl_compose_output_prepare(server);
-	if (error != 0)
-		return error;
-
-	/* Gives Vulkan the display permission before creating its swapchain. */
-	result = kwl_os_display_acquire(server, compose->physical, compose->display);
-	if (result != VK_SUCCESS) {
-		printf("KWL VULKAN_ERROR operation=display-acquire result=%d\n", (int)result);
-		vkdemo_display_close(compose->instance, compose->device, &compose->output);
-		compose->output_prepared = 0;
-		return EIO;
-	}
-
-	/*
-	 * Its FIFO swapchain, in the format the pipelines were made for; its
-	 * images are a copy's source when the display allows it, for the
-	 * mirror's heads and a test image's capture.
-	 */
-	started = kwl_milliseconds();
-	readback = 1;
-	scene_supported = 1U;
-	result = vkdemo_display_create_swapchain_usage(
-		compose->physical,
-		compose->device,
-		compose->family,
-		&compose->output,
-		VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-
-	/* A surface without both transfer directions keeps the existing capture-only path. */
-	if (result == VK_ERROR_FORMAT_NOT_SUPPORTED) {
-		scene_supported = 0U;
-		result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, readback);
-	}
-
-	/* A surface without readback retains the ordinary colour-only swapchain. */
-	if (result == VK_ERROR_FORMAT_NOT_SUPPORTED && readback) {
-		/* A display whose images cannot be read back still shows the desktop, without the capture. */
-		printf("KWL SHOT unsupported: the swapchain images cannot be a copy's source\n");
-		readback = 0;
-		result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &compose->output, 0);
-	}
-	compose->readback = (unsigned)readback;
-	if (result != VK_SUCCESS ||
-	    compose->output.image_count > KWL_SWAPCHAIN_MAX ||
-	    compose->output.format != compose->format) {
-		printf("KWL VULKAN_ERROR operation=swapchain result=%d images=%u format=%d\n", (int)result, compose->output.image_count, (int)compose->output.format);
-		vkdemo_display_close(compose->instance, compose->device, &compose->output);
-		kwl_os_display_release(server, compose->physical, compose->display);
-		compose->output_prepared = 0;
-		return EIO;
-	}
 
 	/* A view, framebuffer and semaphore for each swapchain image. */
-	printf("KWL STARTUP step=output-swapchain ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+	compose = server->compose;
 	started = kwl_milliseconds();
 	result = compose_targets(compose);
 	if (result != VK_SUCCESS) {
 		printf("KWL VULKAN_ERROR operation=targets result=%d\n", (int)result);
 		compose_targets_destroy(compose);
+		if (cursor != NULL) {
+			(void)kwl_cursor_plane_stop(compose, cursor);
+			free(cursor);
+		}
 		vkdemo_display_close(compose->instance, compose->device, &compose->output);
 		kwl_os_display_release(server, compose->physical, compose->display);
 		compose->output_prepared = 0;
@@ -625,7 +552,8 @@ compose_output_open_parked(
 	compose->heads_stale = 1U;
 
 	/* The cursor plane, when the output has one (it borrows the output's claim). */
-	kwl_cursor_plane_open(server);
+	if (cursor != NULL)
+		kwl_cursor_plane_adopt(server, cursor, plane_extent, plane_index);
 
 	/* The layers' pictures, made with the output (layer-cache.c). */
 	kwl_layers_open(server);
@@ -638,66 +566,50 @@ compose_output_open_parked(
 }
 
 /*
- * Destroys the swapchain and the display surface once the device is idle,
- * which gives the display back (to the greeter's hand-over, or at exit).
+ * Lets go of what the output's frames use, the render thread parked and
+ * drained (nothing it submitted still runs, display-thread.c): the images
+ * it holds are forgotten, the heads closed, the layers' pictures, the
+ * scene, the backdrop, the glass maps, the turn image and the targets
+ * destroyed.  The cursor plane, the swapchain and the surface are the
+ * display thread's to destroy after.  Nothing is wanted without an output.
  */
 void
-kwl_compose_output_close(
+kwl_compose_output_let_go(
 	struct kwl_server *server)
 {
 	struct kwl_compose *compose;
 
-	/* A closed output has nothing to destroy. */
+	/* The images held of the swapchains about to go. */
 	compose = server->compose;
-	if (compose == NULL)
-		return;
-
-	/* A surface prepared but never given a swapchain goes on its own. */
-	if (!compose->output_open) {
-		if (compose->output_prepared)
-			vkdemo_display_close(compose->instance, compose->device, &compose->output);
-		compose->output_prepared = 0;
-		return;
-	}
-
-	/*
-	 * The render thread parks after the frame in flight and forgets the
-	 * images it holds; the cursor thread stops; both before anything waits
-	 * on the device, and the cursor's plane goes.
-	 */
-	kwl_compose_park(server);
 	kwl_compose_forget(server, 1U, (1U << KWL_HEADS) - 1U);
-	kwl_cursor_plane_close(server);
-
-	/* No frame may still use the swapchain's images. */
-	kwl_device_wait_idle(compose);
 
 	/* The heads go with the output. */
 	kwl_heads_close_all(server);
 
-	/* The layers' pictures, the backdrop, the targets, then the swapchain and surface. */
+	/* The layers' pictures, the backdrop, the targets. */
 	kwl_layers_close(compose);
 	kwl_scene_close(&compose->scene, compose->device);
 	kwl_backdrop_destroy(compose);
 	kwl_glass_maps_destroy(compose);
 	kwl_turn_close(compose, &compose->turn);
 	compose_targets_destroy(compose);
-	vkdemo_display_close(compose->instance, compose->device, &compose->output);
 
-	/* Gives back the display only after its acquired swapchain is gone. */
-	kwl_os_display_release(server, compose->physical, compose->display);
-
-	/* Marks the output as available for the next handoff. */
-	compose->output_prepared = 0;
+	/* No frame of the output from now on. */
 	compose->output_open = 0;
-	printf("KWL OUTPUT closed\n");
-
-	/* Nothing is wanted without an output, and the render thread goes on. */
 	compose_want(server, KWL_RENDER_NONE);
-	kwl_compose_unpark(server);
+}
 
-	/* Succeeded: the swapchain and OS display ownership are released. */
-	return;
+/*
+ * Says nothing is to be drawn, for a change of the display (display-thread.c).
+ */
+void
+kwl_compose_want_nothing(
+	struct kwl_server *server)
+{
+	/* Without the thread there is no want. */
+	if (server->compose == NULL)
+		return;
+	compose_want(server, KWL_RENDER_NONE);
 }
 
 /*
@@ -734,9 +646,9 @@ kwl_compose_draw(
 	unsigned cursor_id;
 	VkResult result;
 
-	/* Only with an output, and while another frame may be drawn now (compose_may_draw). */
+	/* Only with an output not being changed, and while another frame may be drawn now (compose_may_draw). */
 	compose = server->compose;
-	if (!compose->output_open || compose->output_lost)
+	if (!compose->output_open || compose->output_lost || compose->display_busy)
 		return 0;
 	allowed = compose_may_draw(server);
 	if (!allowed)
@@ -1003,6 +915,7 @@ kwl_compose_poll(
 	struct kwl_render_message *message;
 	struct kwl_compose *compose;
 	unsigned destroyed;
+	unsigned parked;
 
 	/* Nothing runs without the thread. */
 	compose = server->compose;
@@ -1016,14 +929,22 @@ kwl_compose_poll(
 		server->failed = 1;
 	}
 
-	/* Each message, freed once applied. */
+	/* Each message, freed once applied; a park asked without waiting is told after the completions before it. */
+	parked = 0U;
 	messages = kwl_render_take(&server->compose->render);
 	while (messages != NULL) {
 		message = messages;
 		messages = message->next;
-		compose_message(server, message);
+		if (message->kind == KWL_RENDER_PARKED)
+			parked = 1U;
+		else
+			compose_message(server, message);
 		free(message);
 	}
+
+	/* The change of the display that asked for the park goes on (display-thread.c). */
+	if (parked)
+		kwl_display_parked(server);
 
 	/* The images let go that nothing given uses any more, told with the frames' lines (--log-frames). */
 	destroyed = compose_graves(compose, 0U);
@@ -1143,6 +1064,9 @@ kwl_compose_close(
 	if (compose == NULL)
 		return;
 
+	/* A change of the display running ends, and the display thread stops (the output's close runs here). */
+	kwl_display_stop(server);
+
 	/* The frame in flight completes, the tasks recorded are given, the render thread stops after them, then the output goes, then the arrow. */
 	(void)kwl_compose_complete(server);
 	kwl_compose_task_flush(compose);
@@ -1261,9 +1185,9 @@ kwl_compose_want_frame(
 {
 	struct kwl_compose *compose;
 
-	/* Only with an output to draw. */
+	/* Only with an output to draw, and not while the display changes. */
 	compose = server->compose;
-	if (compose == NULL || !compose->render_started || !compose->output_open || compose->output_lost)
+	if (compose == NULL || !compose->render_started || !compose->output_open || compose->output_lost || compose->display_busy)
 		return;
 
 	/* The frame. */
@@ -1280,9 +1204,9 @@ kwl_compose_want_layer(
 {
 	struct kwl_compose *compose;
 
-	/* Only with the thread. */
+	/* Only with the thread, and not while the display changes. */
 	compose = server->compose;
-	if (compose == NULL || !compose->render_started)
+	if (compose == NULL || !compose->render_started || compose->display_busy)
 		return 0;
 
 	/* The picture wanted. */
@@ -1301,7 +1225,9 @@ kwl_compose_want_layer(
  * (the output's or a head's swapchain, design 4.8): it parks after the
  * frame in flight, whose completion is applied here.  Parks nest; the
  * thread goes on when the outermost ends.  A thread that does not park in
- * time ends the compositor, as no Vulkan call is safe under it.
+ * time ends the compositor, as no Vulkan call is safe under it.  A change
+ * of the display whose park is asked and not answered yet ends first
+ * (display-thread.c): its park is the thread's.
  */
 void
 kwl_compose_park(
@@ -1314,6 +1240,8 @@ kwl_compose_park(
 	compose = server->compose;
 	if (compose == NULL || !compose->render_started)
 		return;
+	if (compose->display_parking)
+		kwl_display_settle(server);
 	compose->park_depth++;
 	if (compose->park_depth > 1U)
 		return;

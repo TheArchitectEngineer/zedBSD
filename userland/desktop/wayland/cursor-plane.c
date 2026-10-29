@@ -18,8 +18,11 @@
  *
  * Since ws213-p004 the cursor thread (cursor-thread.c) presents the plane
  * from the cursor's box, where the input thread writes the pointer's
- * place.  The main thread here makes and destroys the plane's objects,
- * chooses the image the plane shows at each pass of its loop and writes
+ * place.  The plane's Vulkan objects are made and destroyed apart from
+ * the main thread's part (kwl_cursor_plane_make and _stop, which the
+ * display thread calls while an output opens or closes, display-thread.c);
+ * the main thread here adopts and lets go of them, chooses the image the
+ * plane shows at each pass of its loop and writes
  * it to the box: a cursor shape or the arrow as it is (made once, never
  * written again), a client's cursor through one of the plane's two copies
  * (design 4.7), which the main thread writes only while the cursor
@@ -51,8 +54,8 @@
 #define PLANE_PARK_WAIT_MS		2000U
 
 static int plane_state(struct kwl_server *server, const struct kwl_import **image, int32_t *hotspot_x, int32_t *hotspot_y);
-static VkResult plane_find(struct kwl_compose *compose, VkDisplayModeKHR *mode, uint32_t *index, uint32_t *stack, VkExtent2D *extent);
-static VkResult plane_mode(struct kwl_compose *compose, VkDisplayModeKHR *mode);
+static VkResult plane_find(struct kwl_compose *compose, const struct vkdemo_display *output, VkDisplayModeKHR *mode, uint32_t *index, uint32_t *stack, VkExtent2D *extent);
+static VkResult plane_mode(struct kwl_compose *compose, const struct vkdemo_display *output, VkDisplayModeKHR *mode);
 static VkResult plane_objects(struct kwl_compose *compose, struct kwl_cursor_thread *cursor);
 static void plane_objects_destroy(struct kwl_compose *compose, struct kwl_cursor_thread *cursor);
 static VkResult plane_copies_create(struct kwl_compose *compose, struct kwl_cursor_plane *plane);
@@ -65,44 +68,104 @@ static uint64_t plane_period_us(const struct kwl_server *server);
 static uint64_t plane_hold_us(const struct kwl_server *server);
 
 /*
- * Makes the cursor plane's surface and swapchain after the output's, when
- * the display has such a plane, and starts the cursor thread that presents
- * it.
- *
- * Any failure leaves the plane closed, and the cursor composed.
+ * Makes the cursor plane's Vulkan objects for an output's swapchain
+ * (output, made already): a small premultiplied plane of the output's
+ * display and mode, its surface and swapchain, and the cursor thread's
+ * command pool, buffers, fences and semaphores, in a new record of the
+ * cursor thread that has nothing of the main thread's yet.  It touches no
+ * field of the compositor's, so the display thread may call it (design
+ * 4.3).  Returns the record, with the plane's extent and index, or NULL
+ * when the output has no such plane or a step failed (logged, nothing
+ * kept).
  */
-void
-kwl_cursor_plane_open(
-	struct kwl_server *server)
+struct kwl_cursor_thread *
+kwl_cursor_plane_make(
+	struct kwl_compose *compose,
+	const struct vkdemo_display *output,
+	VkExtent2D *extent,
+	uint32_t *index)
 {
-	struct kwl_compose *compose;
-	struct kwl_cursor_plane *plane;
 	struct kwl_cursor_thread *cursor;
 	VkDisplaySurfaceCreateInfoKHR create;
 	VkDisplayModeKHR mode;
-	VkExtent2D extent;
-	uint32_t index;
 	uint32_t stack;
-	unsigned copy;
 	VkResult result;
-	int error;
-
-	/* Nothing when it is open already, or without the box the thread reads (ws213-p004). */
-	compose = server->compose;
-	plane = &compose->cursor_plane;
-	if (plane->open || !server->threads_prepared)
-		return;
-	memset(plane, 0, sizeof(*plane));
 
 	/* A small premultiplied plane of the output's display and mode, or none. */
-	result = plane_find(compose, &mode, &index, &stack, &extent);
+	result = plane_find(compose, output, &mode, index, &stack, extent);
 	if (result != VK_SUCCESS)
-		return;
+		return NULL;
 
 	/* The cursor thread's record, which owns the presentation's objects. */
 	cursor = calloc(1, sizeof(*cursor));
 	if (cursor == NULL)
-		return;
+		return NULL;
+
+	/* Its surface, with per-pixel premultiplied alpha. */
+	memset(&create, 0, sizeof(create));
+	create.sType = VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR;
+	create.displayMode = mode;
+	create.planeIndex = *index;
+	create.planeStackIndex = stack;
+	create.transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+	create.globalAlpha = 1.0f;
+	create.alphaMode = VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_PREMULTIPLIED_BIT_KHR;
+	create.imageExtent = *extent;
+	cursor->output.width = extent->width;
+	cursor->output.height = extent->height;
+	result = vkCreateDisplayPlaneSurfaceKHR(compose->instance, &create, NULL, &cursor->output.surface);
+	if (result != VK_SUCCESS) {
+		printf("KWL CURSOR_PLANE unavailable step=surface result=%d\n", (int)result);
+		free(cursor);
+		return NULL;
+	}
+
+	/*
+	 * Its swapchain, its images filled by copies only: no colour
+	 * attachment, or libvulkan's fast path of a move (ws141-p016 B-u)
+	 * never applies (main 2ef0688a8).  Then the thread's own command pool,
+	 * buffers, fences and semaphores.
+	 */
+	result = vkdemo_display_create_swapchain_exact(compose->physical, compose->device, compose->family, &cursor->output, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
+	if (result == VK_SUCCESS && cursor->output.image_count > KWL_CURSOR_THREAD_IMAGES)
+		result = VK_ERROR_INITIALIZATION_FAILED;
+	if (result == VK_SUCCESS)
+		result = plane_objects(compose, cursor);
+	if (result != VK_SUCCESS) {
+		printf("KWL CURSOR_PLANE unavailable step=swapchain result=%d\n", (int)result);
+		plane_objects_destroy(compose, cursor);
+		vkdemo_display_close(compose->instance, compose->device, &cursor->output);
+		free(cursor);
+		return NULL;
+	}
+
+	/* Succeeded: the record, for the main thread to adopt. */
+	return cursor;
+}
+
+/*
+ * Adopts a cursor thread's record made by kwl_cursor_plane_make for the
+ * output open now, on the main thread: the plane's two copies of a
+ * client's cursor, the box, and the thread, which presents from now on.
+ * Any failure closes the plane, and the cursor is composed.
+ */
+void
+kwl_cursor_plane_adopt(
+	struct kwl_server *server,
+	struct kwl_cursor_thread *cursor,
+	VkExtent2D extent,
+	uint32_t index)
+{
+	struct kwl_compose *compose;
+	struct kwl_cursor_plane *plane;
+	unsigned copy;
+	VkResult result;
+	int error;
+
+	/* The main thread's side of the record. */
+	compose = server->compose;
+	plane = &compose->cursor_plane;
+	memset(plane, 0, sizeof(*plane));
 	cursor->box = &server->cursor_box;
 	cursor->instance = compose->instance;
 	cursor->device = compose->device;
@@ -115,40 +178,8 @@ kwl_cursor_plane_open(
 	plane->width = extent.width;
 	plane->height = extent.height;
 
-	/* Its surface, with per-pixel premultiplied alpha. */
-	memset(&create, 0, sizeof(create));
-	create.sType = VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR;
-	create.displayMode = mode;
-	create.planeIndex = index;
-	create.planeStackIndex = stack;
-	create.transform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
-	create.globalAlpha = 1.0f;
-	create.alphaMode = VK_DISPLAY_PLANE_ALPHA_PER_PIXEL_PREMULTIPLIED_BIT_KHR;
-	create.imageExtent = extent;
-	cursor->output.width = extent.width;
-	cursor->output.height = extent.height;
-	result = vkCreateDisplayPlaneSurfaceKHR(compose->instance, &create, NULL, &cursor->output.surface);
-	if (result != VK_SUCCESS) {
-		printf("KWL CURSOR_PLANE unavailable step=surface result=%d\n", (int)result);
-		free(cursor);
-		memset(plane, 0, sizeof(*plane));
-		return;
-	}
-
-	/*
-	 * Its swapchain, its images filled by copies only: no colour
-	 * attachment, or libvulkan's fast path of a move (ws141-p016 B-u)
-	 * never applies (main 2ef0688a8).  Then the thread's own command pool,
-	 * buffers, fences and semaphores, and the two copies of a client's
-	 * cursor.
-	 */
-	result = vkdemo_display_create_swapchain_exact(compose->physical, compose->device, compose->family, &cursor->output, VK_IMAGE_USAGE_TRANSFER_DST_BIT);
-	if (result == VK_SUCCESS && cursor->output.image_count > KWL_CURSOR_THREAD_IMAGES)
-		result = VK_ERROR_INITIALIZATION_FAILED;
-	if (result == VK_SUCCESS)
-		result = plane_objects(compose, cursor);
-	if (result == VK_SUCCESS)
-		result = plane_copies_create(compose, plane);
+	/* The two copies of a client's cursor. */
+	result = plane_copies_create(compose, plane);
 	if (result != VK_SUCCESS) {
 		printf("KWL CURSOR_PLANE unavailable step=swapchain result=%d\n", (int)result);
 		plane->open = 1;
@@ -187,41 +218,115 @@ kwl_cursor_plane_open(
 }
 
 /*
- * Stops the cursor thread and destroys the plane's objects once the device
- * is idle (before the output's).  A thread whose copies do not finish ends
- * the compositor at once, as no Vulkan call is safe under it (design 4.8).
+ * Stops the cursor thread and destroys the plane's objects (before the
+ * output's): the main thread's part before (kwl_cursor_plane_detach), the
+ * thread's stop and the plane's Vulkan objects (kwl_cursor_plane_stop),
+ * then the main thread's part after (kwl_cursor_plane_detached), all here.
  */
 void
 kwl_cursor_plane_close(
 	struct kwl_server *server)
 {
-	struct kwl_compose *compose;
-	struct kwl_cursor_plane *plane;
-	struct kwl_cursor_thread *cursor;
-	unsigned index;
+	struct kwl_cursor_parts parts;
 	int error;
 
 	/* A closed plane has nothing. */
-	compose = server->compose;
-	plane = &compose->cursor_plane;
+	kwl_cursor_plane_detach(server, &parts);
+	if (parts.thread == NULL)
+		return;
+
+	/* The thread, then the objects. */
+	error = kwl_cursor_plane_stop(server->compose, parts.thread);
+	kwl_cursor_plane_detached(server, &parts, error);
+}
+
+/*
+ * Takes the cursor plane off the output on the main thread, for its stop
+ * (kwl_cursor_plane_stop, which the display thread may call): the plane is
+ * closed from now on for the main thread (the frames draw the cursor), and
+ * parts keeps the cursor thread's record and the plane's copies, which the
+ * thread reads until it has stopped.  parts->thread is NULL for a closed
+ * plane.
+ */
+void
+kwl_cursor_plane_detach(
+	struct kwl_server *server,
+	struct kwl_cursor_parts *parts)
+{
+	struct kwl_cursor_plane *plane;
+	unsigned index;
+
+	/* A closed plane has nothing. */
+	memset(parts, 0, sizeof(*parts));
+	plane = &server->compose->cursor_plane;
 	if (!plane->open)
 		return;
-	cursor = plane->thread;
+
+	/* The record and the copies leave the plane. */
+	parts->thread = plane->thread;
+	parts->shown = plane->shown;
+	for (index = 0; index < KWL_CURSOR_COPIES; index++)
+		parts->copies[index] = plane->copies[index];
+	memset(plane, 0, sizeof(*plane));
+}
+
+/*
+ * Stops a cursor thread taken off its plane and destroys the plane's
+ * Vulkan objects once the device is idle (no copy or present of the plane
+ * may still run): its commands, fences, semaphores and pool, then its
+ * swapchain and surface.  It touches no field of the compositor's, so the
+ * display thread may call it.  Returns 0, or ETIMEDOUT when a copy did not
+ * finish (the objects are kept: no Vulkan call is safe under the thread).
+ */
+int
+kwl_cursor_plane_stop(
+	struct kwl_compose *compose,
+	struct kwl_cursor_thread *cursor)
+{
+	int error;
 
 	/* The thread ends after its copies. */
 	error = kwl_cursor_thread_stop(cursor);
+	if (error != 0)
+		return error;
+
+	/* No copy or present of the plane may still run. */
+	kwl_device_wait_idle(compose);
+
+	/* The commands, fences, semaphores and pool, then the swapchain and surface. */
+	plane_objects_destroy(compose, cursor);
+	vkdemo_display_close(compose->instance, compose->device, &cursor->output);
+
+	/* Succeeded: nothing of the plane's Vulkan is left but the copies. */
+	return 0;
+}
+
+/*
+ * Finishes a plane's close on the main thread, after its thread stopped
+ * (error is kwl_cursor_plane_stop's; a copy that did not finish ends the
+ * compositor at once, design 4.8): the copies and the record go, and the
+ * box shows nothing and has no copies.
+ */
+void
+kwl_cursor_plane_detached(
+	struct kwl_server *server,
+	struct kwl_cursor_parts *parts,
+	int error)
+{
+	struct kwl_cursor_plane copies;
+	unsigned index;
+
+	/* A thread whose copies did not finish leaves nothing safe. */
 	if (error != 0) {
 		kwl_fatal("KWL FAILED site=park errno=%d thread=cursor step=stop", error);
 		_exit(1);
 	}
 
-	/* No copy of the plane may still run. */
-	kwl_device_wait_idle(compose);
-
-	/* The commands, fences, semaphores and pool, the copies, then the swapchain and surface. */
-	plane_objects_destroy(compose, cursor);
-	plane_copies_destroy(compose, plane);
-	vkdemo_display_close(compose->instance, compose->device, &cursor->output);
+	/* The copies, which nothing reads any more. */
+	memset(&copies, 0, sizeof(copies));
+	for (index = 0; index < KWL_CURSOR_COPIES; index++)
+		copies.copies[index] = parts->copies[index];
+	plane_copies_destroy(server->compose, &copies);
 
 	/* The box shows nothing and has no copies. */
 	pthread_mutex_lock(&server->cursor_box.lock);
@@ -240,10 +345,10 @@ kwl_cursor_plane_close(
 	pthread_mutex_unlock(&server->cursor_box.lock);
 
 	/* A frame shows the cursor again. */
-	if (plane->shown)
+	if (parts->shown)
 		server->dirty = 1;
-	free(cursor);
-	memset(plane, 0, sizeof(*plane));
+	free(parts->thread);
+	memset(parts, 0, sizeof(*parts));
 	printf("KWL CURSOR_PLANE closed\n");
 }
 
@@ -443,10 +548,11 @@ plane_state(
 	/* Succeeded: the plane shows this image. */
 	return 1;
 }
-/* Finds a plane of the output's display and mode with per-pixel premultiplied alpha and a small image, above the output's. */
+/* Finds a plane of the output's display and mode (output's size) with per-pixel premultiplied alpha and a small image, above the output's. */
 static VkResult
 plane_find(
 	struct kwl_compose *compose,
+	const struct vkdemo_display *output,
 	VkDisplayModeKHR *mode,
 	uint32_t *index,
 	uint32_t *stack,
@@ -463,7 +569,7 @@ plane_find(
 	int matches;
 
 	/* The mode the output shows. */
-	result = plane_mode(compose, mode);
+	result = plane_mode(compose, output, mode);
 	if (result != VK_SUCCESS)
 		return result;
 
@@ -513,10 +619,11 @@ plane_find(
 }
 
 
-/* Finds the mode of the output's display with the output's size. */
+/* Finds the mode of the output's display with the size of the output's swapchain (output). */
 static VkResult
 plane_mode(
 	struct kwl_compose *compose,
+	const struct vkdemo_display *output,
 	VkDisplayModeKHR *mode)
 {
 	VkDisplayModePropertiesKHR modes[16];
@@ -532,8 +639,8 @@ plane_mode(
 
 	/* The first of the output's size. */
 	for (index = 0; index < count; index++) {
-		if (modes[index].parameters.visibleRegion.width == compose->output.width &&
-		    modes[index].parameters.visibleRegion.height == compose->output.height) {
+		if (modes[index].parameters.visibleRegion.width == output->width &&
+		    modes[index].parameters.visibleRegion.height == output->height) {
 			*mode = modes[index].displayMode;
 			return VK_SUCCESS;
 		}

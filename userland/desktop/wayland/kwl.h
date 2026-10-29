@@ -1511,7 +1511,9 @@ struct kwl_server {
 	int frame_fd;
 	uint64_t map_order;
 	uint32_t windows;
+	/* How long window mode's last entry took, and when it began (display.c). */
 	uint64_t mode_switch_ms;
+	uint64_t mode_start_ms;
 	/*
 	 * An opening or closing of App Home or Wiseview waiting for its first
 	 * frame (ws099-p002, C5): what it is (NULL for none) and when it was
@@ -1683,8 +1685,10 @@ struct kwl_server {
 	 * the window it shows, the image the display holds and the one its
 	 * present in flight shows next (NULL when none is), the frames
 	 * presented, the last reason it was left or not entered (logged once),
-	 * a window the display refused, the window last logged, and the
-	 * pointer's place and when it last moved.
+	 * a window the display refused, the window last logged, the
+	 * pointer's place and when it last moved, and the window being entered
+	 * (the display thread asked whether the display can show it, or the
+	 * output closing for it) and when its entry began.
 	 */
 	struct kl_backend_scanout *scanout;
 	struct kwl_object *scanout_surface;
@@ -1696,6 +1700,8 @@ struct kwl_server {
 	struct kwl_object *scanout_noted;
 	int32_t scanout_pointer[2];
 	uint64_t scanout_motion_ms;
+	struct kwl_object *scanout_entering;
+	uint64_t scanout_entering_ms;
 	/*
 	 * Wiseview (shell.c): how far it is open (0 closed, 1 open) when settled,
 	 * a gesture from the bottom edge and where it started, the animation to
