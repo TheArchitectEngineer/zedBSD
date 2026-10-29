@@ -48,3 +48,11 @@ ODROID-C5（Amlogic S905X5M）の起動の道・console・各 block の register
 5. 夜の試験は `plan/ws313/tests/c5-night-test.sh`。
 
 消してほしい物（Q1 へ）: `build/ref/hk612.log`・`up.log`・`hkcd.log`、`plan/ws313/tests/__pycache__/`（py_compile の副産物）、配下の結果の後に `src/drivers/platform/s905x5m/s905x5m-stubs.c`。
+
+### 配下の結果（ラップアップの時点）
+
+- 配下 A（MMC・USB・Ethernet）: bb0d741ae。調べの記録 [peripherals.md](../peripherals.md) だけで、driver の code は無い（stub のまま）。dw-eqos.c への追加の差分の案（`configure_phy`・`phy_context` の 2 欄）と、夜の serial での確かめの順は peripherals.md の末尾。
+- 配下 B（Mali・display）: b9829a406。`src/drivers/gpu/mali/` に register の表・page table（host の試験 PASS）・firmware の header の parser（host の試験 PASS）・ID の読み・soft reset・L2・割り込み。attach の口（`mali-attach.h` の `drv_mali_gpu_attach`）・S7D の clock と reset・MMU・firmware の読み込みと CSF の起動・queue・display・`platform/arm64/mali.mk` は未了。詳細と順は [gpu.md](../gpu.md) §9。
+  GPU の事実（vendor の DTS）: Mali-G310 は arch 10・product 4 の CSF、register 0xfd000000（8 MiB、meson-s7d.dtsi が 0xfe400000 を上書き）、SPI 144/145/146、cache coherent でない、firmware は linux-firmware の `arm/mali/arch10.<minor>/mali_csffw.bin`（minor は GPU_ID で決まる、license は LICENCE.mali_csffw、未読）。
+- **注意**: `config/ci/config-odroid-c5-keiland.mk` は CONFIG_DRIVER_MALI_GPU=y だが `platform/arm64/mali.mk` が無いので、その config の build は今は通らない。text の config（`config-odroid-c5.mk`、MALI=n）は通る。
+- 消してほしい物に追加: `build/mali-check/`、`build/ref/mali-extract/`（配下 B の作業物）。
