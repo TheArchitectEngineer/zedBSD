@@ -543,6 +543,8 @@ static int tcp_input(struct packet_buf *packet, uint32_t source, uint32_t destin
 static int tcp6_input(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
 static int tcp_segment_input(struct packet_buf *packet, const struct tcp_segment_addresses *addresses);
 static int tcp6_route(struct tcp_endpoint *endpoint, struct net_device **device, struct in6_addr *source);
+static int tcp6_route_cached(struct tcp_endpoint *endpoint, struct net_device **device, struct in6_addr *source, struct in6_addr *next_hop);
+static void tcp6_route_remember(struct tcp_endpoint *endpoint, struct net_device *device, unsigned long generation);
 
 static const struct socket_ops tcp_ops = {
 	.bind = tcp_bind,
@@ -2021,6 +2023,86 @@ tcp6_route(
 }
 
 /*
+ * Takes the way the connection's last IPv6 lookup found, while nothing
+ * has changed since: the interface (with a reference), the source and
+ * the next hop.  Reports 0 when there is none to take, and the caller
+ * looks it up.
+ */
+static int
+tcp6_route_cached(
+	struct tcp_endpoint *endpoint,
+	struct net_device **device,
+	struct in6_addr *source,
+	struct in6_addr *next_hop)
+{
+	struct net_device *output;
+	unsigned long irq;
+	unsigned ifindex;
+	int valid;
+
+	/* What was kept, while the table and the addresses are as they were. */
+	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	valid = endpoint->tcp.route_cached != 0 &&
+	    endpoint->tcp.route_generation_seen == route_generation();
+	*source = endpoint->tcp.inet.local6;
+	*next_hop = endpoint->tcp.route_next_hop6;
+	ifindex = endpoint->tcp.route_ifindex;
+
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
+
+	/* Nothing kept, or something changed. */
+	if (!valid || ifindex == 0)
+		return 0;
+
+	/* The interface, when it is still there. */
+	output = net_device_find_by_index_ref(ifindex);
+	if (output == NULL)
+		return 0;
+
+	/* Succeeded: the way the segment goes. */
+	*device = output;
+	return 1;
+}
+
+/*
+ * Keeps the way an IPv6 lookup found for the connection's later
+ * segments: the interface the route goes out of and its next hop, with
+ * the count of changes read before the lookup (generation).  device (may
+ * be NULL) is the interface the lookup was asked for.  A peer that is one
+ * of this host's own addresses, or one no route reaches, is not kept.
+ */
+static void
+tcp6_route_remember(
+	struct tcp_endpoint *endpoint,
+	struct net_device *device,
+	unsigned long generation)
+{
+	struct net_device *output;
+	struct in6_addr next_hop;
+	unsigned long irq;
+	unsigned ifindex;
+	int error;
+
+	/* The way to the peer; the host's own and an unreachable peer give none. */
+	error = ipv6_route_next_hop(device, &endpoint->tcp.inet.remote6, &output, &next_hop);
+	if (error != 0)
+		return;
+	ifindex = output->ifindex;
+	net_device_release(output);
+
+	/* Kept for the segments after, with the count it holds for. */
+	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	endpoint->tcp.route_cached = 1;
+	endpoint->tcp.route_generation_seen = generation;
+	endpoint->tcp.route_ifindex = ifindex;
+	endpoint->tcp.route_next_hop6 = next_hop;
+
+	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
+}
+
+/*
  * Transmits one segment with an explicit sequence number and counts it.
  *
  * Every segment this end sends goes through here, so the counts of
@@ -2327,6 +2409,7 @@ tcp_output_segment(
 	struct packet_buf *packet;
 	struct tcp_wire *tcp;
 	struct in6_addr source6;
+	struct in6_addr next_hop6;
 	unsigned long generation;
 	uint32_t next_hop;
 	uint32_t source;
@@ -2362,7 +2445,18 @@ tcp_output_segment(
 	routed = 0;
 	next_hop = 0;
 	if (ipv6) {
-		error = tcp6_route(endpoint, &device, &source6);
+		/*
+		 * The way the connection's last lookup found, while nothing has
+		 * changed since; else a lookup, kept for the segments after.
+		 */
+		routed = tcp6_route_cached(endpoint, &device, &source6, &next_hop6);
+		error = 0;
+		if (!routed) {
+			generation = route_generation();
+			error = tcp6_route(endpoint, &device, &source6);
+			if (error == 0)
+				tcp6_route_remember(endpoint, device, generation);
+		}
 	} else {
 		/*
 		 * The way the connection's last lookup found, while nothing has
@@ -2504,7 +2598,12 @@ tcp_output_segment(
 		checksum = net_checksum_pseudo6(source6.s6_addr, endpoint->tcp.inet.remote6.s6_addr, IPPROTO_TCP,
 		    packet->data, packet->length);
 		wire_put16(tcp->checksum, checksum);
-		error = ipv6_output(device, &source6, &endpoint->tcp.inet.remote6, IPPROTO_TCP, 0U, packet);
+		if (routed) {
+			error = ipv6_output_routed(device, &source6, &endpoint->tcp.inet.remote6, &next_hop6,
+			    IPPROTO_TCP, packet);
+		} else {
+			error = ipv6_output(device, &source6, &endpoint->tcp.inet.remote6, IPPROTO_TCP, 0U, packet);
+		}
 		if (device != NULL)
 			net_device_release(device);
 		if (error != 0)

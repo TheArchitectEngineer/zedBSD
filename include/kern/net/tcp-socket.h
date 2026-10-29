@@ -218,6 +218,14 @@ struct tcp_socket {
 	uint32_t route_source;
 	uint32_t route_next_hop;
 	/*
+	 * The same for IPv6 segments, under route_cached and
+	 * route_generation_seen too: the interface the route goes out of
+	 * (route_ifindex) and its next hop; the source is inet.local6, which
+	 * the first segment fixed.
+	 */
+	unsigned route_ifindex;
+	struct in6_addr route_next_hop6;
+	/*
 	 * Segments queued and not yet acknowledged, oldest first.  Several
 	 * may be in flight at once, bounded by the peer's advertised window
 	 * and by the size of this ring; each keeps a copy of its payload so

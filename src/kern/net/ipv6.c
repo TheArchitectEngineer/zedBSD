@@ -38,6 +38,7 @@
 #include "kern/net/ethernet.h"
 #include "kern/net/net-device.h"
 #include "kern/net/packet-buf.h"
+#include "kern/net/route.h"
 #include "kern/net/socket.h"
 #include "kern/clock.h"
 #include "kern/lock.h"
@@ -131,6 +132,7 @@ static int ipv6_extensions(struct packet_buf *packet, uint8_t *next_header, size
 static int ipv6_options(struct packet_buf *packet, size_t start, size_t length, const struct in6_addr *destination);
 static int ipv6_deliver(struct packet_buf *packet, uint8_t next_header, size_t field, const struct in6_addr *source, const struct in6_addr *destination);
 static int ipv6_next_hop(struct net_device **device, const struct in6_addr *destination, struct in6_addr *next_hop);
+static int ipv6_header_push(struct net_device *device, const struct in6_addr *source, const struct in6_addr *destination, uint8_t next_header, unsigned hop_limit, struct packet_buf *packet);
 static void ipv6_interfaces_ensure(void);
 static void ipv6_interface_ensure(struct net_device *device);
 static struct ipv6_interface *ipv6_interface_locked(const struct net_device *device);
@@ -217,13 +219,9 @@ ipv6_output(
 	unsigned hop_limit,
 	struct packet_buf *packet)
 {
-	struct ipv6_wire *header;
-	struct ipv6_link link;
 	struct in6_addr next_hop;
 	struct in6_addr chosen;
 	uint8_t group_link[6];
-	size_t payload;
-	unsigned mtu;
 	int multicast;
 	int local;
 	int error;
@@ -284,46 +282,15 @@ ipv6_output(
 		source = &chosen;
 	}
 
-	/* The link values: the hop limit (a group's is 1) and the MTU (the path's may be smaller). */
-	error = ipv6_link_get(device, &link);
+	/* The header, a group's with the hop limit 1 unless one is given. */
+	if (hop_limit == 0U && multicast)
+		hop_limit = 1U;
+	error = ipv6_header_push(device, source, destination, next_header, hop_limit, packet);
 	if (error != 0) {
 		net_device_release(device);
 		packet_buf_free(packet);
 		return error;
 	}
-
-	/* The hop limit: given, a group's 1, or the interface's. */
-	if (hop_limit == 0U && multicast)
-		hop_limit = 1U;
-	if (hop_limit == 0U)
-		hop_limit = link.hop_limit;
-	mtu = icmp6_path_mtu(destination, link.mtu);
-
-	/* No fragment is made: a payload that does not fit is refused. */
-	payload = packet->length;
-	if (payload + IPV6_HEADER_LENGTH > mtu || payload > 0xffffU) {
-		net_device_release(device);
-		packet_buf_free(packet);
-		return EMSGSIZE;
-	}
-
-	/* The header. */
-	header = packet_buf_push(packet, sizeof(*header));
-	if (header == NULL) {
-		net_device_release(device);
-		packet_buf_free(packet);
-		return ENOBUFS;
-	}
-
-	/* Its fields. */
-	kern_memset(header, 0, sizeof(*header));
-	header->version_class_flow[0] = 0x60U;
-	wire_put16(header->payload_length, (uint16_t)payload);
-	header->next_header = next_header;
-	header->hop_limit = (uint8_t)hop_limit;
-	kern_memcpy(header->source, source->s6_addr, 16U);
-	kern_memcpy(header->destination, destination->s6_addr, 16U);
-	packet->l3_offset = (uint16_t)(packet->data - packet->storage);
 
 	/* A group: its Ethernet address. */
 	if (multicast) {
@@ -347,6 +314,93 @@ ipv6_output(
 		return error;
 
 	/* Succeeded: sent or held. */
+	return 0;
+}
+
+/*
+ * Sends a unicast payload the way ipv6_route_next_hop found: through
+ * device (the caller keeps its reference) to next_hop, from source.  The
+ * hop limit is the interface's and the path MTU is still looked at, so a
+ * Packet Too Big learnt since the lookup holds.  The packet is consumed.
+ * Returns 0 (sent, or held until the next hop's link address is known),
+ * or an errno value.
+ */
+int
+ipv6_output_routed(
+	struct net_device *device,
+	const struct in6_addr *source,
+	const struct in6_addr *destination,
+	const struct in6_addr *next_hop,
+	uint8_t next_header,
+	struct packet_buf *packet)
+{
+	int error;
+
+	/* A packet, a way and the addresses. */
+	if (packet == NULL)
+		return EINVAL;
+	if (device == NULL || source == NULL || destination == NULL || next_hop == NULL) {
+		packet_buf_free(packet);
+		return EINVAL;
+	}
+
+	/* The header, with the interface's hop limit. */
+	error = ipv6_header_push(device, source, destination, next_header, 0U, packet);
+	if (error != 0) {
+		packet_buf_free(packet);
+		return error;
+	}
+
+	/* A neighbor: resolved (or the packet held) by neighbor discovery. */
+	error = nd6_output(device, next_hop, packet);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: sent or held. */
+	return 0;
+}
+
+/*
+ * Finds the way ipv6_output sends a unicast packet to a destination that
+ * is not one of the host's own: the interface (referenced; the caller
+ * releases it) and the next hop.  device (may be NULL) is the interface
+ * asked for.  A sender that keeps the way checks route_generation(),
+ * which every change of the routes and the addresses moves.  Returns 0,
+ * EINVAL (a group, or the host's own address), ENETUNREACH or
+ * EHOSTUNREACH.
+ */
+int
+ipv6_route_next_hop(
+	struct net_device *device,
+	const struct in6_addr *destination,
+	struct net_device **output,
+	struct in6_addr *next_hop)
+{
+	struct net_device *found;
+	int multicast;
+	int local;
+	int error;
+
+	/* Only a unicast destination elsewhere has a way to keep. */
+	if (destination == NULL || output == NULL || next_hop == NULL)
+		return EINVAL;
+	multicast = in6_is_multicast(destination);
+	if (multicast)
+		return EINVAL;
+	local = in6_is_loopback(destination);
+	if (!local)
+		local = ipv6_address_is_local(destination);
+	if (local)
+		return EINVAL;
+
+	/* The route, on the interface asked for when there is one. */
+	found = device;
+	error = ipv6_next_hop(&found, destination, next_hop);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the interface held and the next hop. */
+	*output = found;
 	return 0;
 }
 
@@ -669,8 +723,9 @@ ipv6_duplicate(
 
 	spin_unlock_irqrestore(&ipv6_lock, irq);
 
-	/* Said in the log and on the routing sockets (networkd makes another address). */
+	/* Said in the log and on the routing sockets (networkd makes another address); kept ways are looked up again. */
 	if (duplicate) {
+		route_changed();
 		kern_logf("ipv6: %s: duplicate address detected\n", device->name);
 		ipv6_tell(device->ifindex, event.kind, &event.address, event.prefixlen, event.flags);
 	}
@@ -737,7 +792,8 @@ ipv6_address_add(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the timer runs the detection. */
+	/* Succeeded: what senders kept is looked up again, and the timer runs the detection. */
+	route_changed();
 	net_worker_wakeup();
 	return 0;
 }
@@ -777,7 +833,8 @@ ipv6_address_remove(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: what senders kept of the address and its route is looked up again. */
+	route_changed();
 	return 0;
 }
 
@@ -862,6 +919,9 @@ ipv6_enable(
 	if (!found)
 		return ENODEV;
 
+	/* What senders kept is looked up again. */
+	route_changed();
+
 	/* Off: no neighbor stays. */
 	if (!enabled)
 		nd6_purge_device(device);
@@ -892,7 +952,8 @@ ipv6_route_delete(
 	if (error != 0)
 		return error;
 
-	/* Succeeded. */
+	/* Succeeded: what senders kept is looked up again. */
+	route_changed();
 	return 0;
 }
 
@@ -988,7 +1049,8 @@ ipv6_route_add(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: added (the routes borrow the record's device reference). */
+	/* Succeeded: added (the routes borrow the record's device reference); kept ways are looked up again. */
+	route_changed();
 	return 0;
 }
 
@@ -1051,7 +1113,8 @@ ipv6_route_redirect(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the destination goes the new way. */
+	/* Succeeded: the destination goes the new way, which senders that kept the old one look up. */
+	route_changed();
 	return 0;
 }
 
@@ -1069,8 +1132,10 @@ ipv6_timer_run(
 	struct ipv6_work work[IPV6_WORK_MAX];
 	void *expired[8];
 	unsigned long irq;
+	unsigned expired_count;
 	unsigned count;
 	unsigned index;
+	unsigned told;
 	uint64_t now;
 
 	/* Every device has its record. */
@@ -1088,9 +1153,22 @@ ipv6_timer_run(
 	}
 
 	/* The routes run out. */
-	(void)in6_route_expire(&ipv6_routes, now, expired, 8U);
+	expired_count = in6_route_expire(&ipv6_routes, now, expired, 8U);
 
 	spin_unlock_irqrestore(&ipv6_lock, irq);
+
+	/*
+	 * A route gone, or an address changed (detected, deprecated, run
+	 * out, or checked again on the carrier's return: each is told):
+	 * what senders kept is looked up again.
+	 */
+	told = 0U;
+	for (index = 0U; index < count; index++) {
+		if (work[index].kind == IPV6_WORK_TELL)
+			told++;
+	}
+	if (expired_count != 0U || told != 0U)
+		route_changed();
 
 	/* The work, then the neighbors. */
 	ipv6_work_do(work, count);
@@ -1187,7 +1265,8 @@ ipv6_purge_device(
 
 	spin_unlock_irqrestore(&ipv6_lock, irq);
 
-	/* The neighbors, and the record's reference. */
+	/* What senders kept is looked up again; the neighbors, and the record's reference, go. */
+	route_changed();
 	nd6_purge_device(device);
 	if (release != NULL)
 		net_device_release(release);
@@ -1532,6 +1611,59 @@ ipv6_deliver(
 
 	/* Nobody takes it (RFC 8200 section 4: a Parameter Problem pointing at the next header). */
 	icmp6_error(packet, ICMP6_PARAMETER_PROBLEM, ICMP6_PARAMETER_NEXT_HEADER, (uint32_t)field);
+	return 0;
+}
+
+/*
+ * Puts the IPv6 header in front of a payload for device: hop_limit (0
+ * for the interface's), and the path MTU, which a payload that does not
+ * fit breaks (no fragment is made).  The packet is not consumed.
+ * Returns 0, ENODEV, EMSGSIZE or ENOBUFS.
+ */
+static int
+ipv6_header_push(
+	struct net_device *device,
+	const struct in6_addr *source,
+	const struct in6_addr *destination,
+	uint8_t next_header,
+	unsigned hop_limit,
+	struct packet_buf *packet)
+{
+	struct ipv6_wire *header;
+	struct ipv6_link link;
+	size_t payload;
+	unsigned mtu;
+	int error;
+
+	/* The link values: the hop limit and the MTU (the path's may be smaller). */
+	error = ipv6_link_get(device, &link);
+	if (error != 0)
+		return error;
+	if (hop_limit == 0U)
+		hop_limit = link.hop_limit;
+	mtu = icmp6_path_mtu(destination, link.mtu);
+
+	/* No fragment is made: a payload that does not fit is refused. */
+	payload = packet->length;
+	if (payload + IPV6_HEADER_LENGTH > mtu || payload > 0xffffU)
+		return EMSGSIZE;
+
+	/* The header. */
+	header = packet_buf_push(packet, sizeof(*header));
+	if (header == NULL)
+		return ENOBUFS;
+
+	/* Its fields. */
+	kern_memset(header, 0, sizeof(*header));
+	header->version_class_flow[0] = 0x60U;
+	wire_put16(header->payload_length, (uint16_t)payload);
+	header->next_header = next_header;
+	header->hop_limit = (uint8_t)hop_limit;
+	kern_memcpy(header->source, source->s6_addr, 16U);
+	kern_memcpy(header->destination, destination->s6_addr, 16U);
+	packet->l3_offset = (uint16_t)(packet->data - packet->storage);
+
+	/* Succeeded: the header is in place. */
 	return 0;
 }
 

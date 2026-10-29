@@ -85,11 +85,19 @@ if [ -n "$kernel" ]; then
 	up=no
 	while [ $tries -lt 3 ]; do
 		tries=$((tries + 1))
-		python3 -I plan/tools/switchbot.py cycle "$plug" 10 > /dev/null
+		# A mark in /tmp that only a reboot takes away: SSH answering is not enough (2026-10-29: a cycle that did
+		# not cut the power left the old kernel running).
+		T=20 board 'echo up > /tmp/vf2-tcp.not-rebooted' > /dev/null
+		python3 -I plan/tools/switchbot.py cycle "$plug" 10 > "$out/switchbot-$tries.txt" 2>&1
 		sleep 20
 		if wait_ssh; then
-			up=yes
-			break
+			mark=$(T=20 board 'cat /tmp/vf2-tcp.not-rebooted 2>/dev/null')
+			if [ -z "$mark" ]; then
+				up=yes
+				break
+			fi
+			say "the board did not reboot on power cycle $tries ($(tr '\n' ' ' < "$out/switchbot-$tries.txt"))"
+			continue
 		fi
 		say "no SSH 3 minutes after power cycle $tries"
 	done
