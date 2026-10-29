@@ -331,6 +331,8 @@ class Walk:
 		run.click("chosen")
 		run.click("next")
 		run.wait_screen("s4-edit")
+		run.key("ret")
+		time.sleep(0.8)
 		run.set_field("size", "6 GiB")
 		run.shot("usb-s4-size")
 		mark = len(run.read_log())
