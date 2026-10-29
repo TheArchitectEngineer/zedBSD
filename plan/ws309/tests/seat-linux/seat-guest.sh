@@ -38,7 +38,7 @@ if [ $failed = 0 ]; then
 	g screenshot "$out/session.png" > /dev/null 2>&1
 	g ssh 'pidof wayland' > "$out/pid1.txt" 2>&1
 	g ssh 'loginctl show-session $(loginctl list-sessions --no-legend | awk "\$3==\"kei\"{print \$1}") -p VTNr --value' > "$out/vt.txt" 2>&1
-	vt=$(tr -dc 0-9 < "$out/vt.txt")
+	vt=$(head -n 1 "$out/vt.txt" | tr -dc 0-9)
 	[ -n "$vt" ] || vt=1
 	g ssh 'journalctl -b -o cat --no-pager | grep -c "^KWL INPUT device="' > "$out/inputs-before.txt" 2>&1
 

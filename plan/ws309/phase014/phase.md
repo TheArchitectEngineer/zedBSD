@@ -39,6 +39,9 @@
     同じ条件の 2 回（p014u・p014v）は guest の SSH が 240 s で答えず（test の中身の前。`zdesktop-guest.sh start` は QEMU を起こした（start.log に pid と ssh の port）、
     `guest.py wait` が「no answer on SSH within 240s」）。image は `build/ws309/img/hdd-image.img`（2026-10-29 14:16 の build、snapshot で起動）、前後の p014t・p014w・p014z は
     同じ image で答えた。その時の host には他の担当の QEMU（p2-ws068、CPU 84%）が動いていた。原因は未解析（gdbstub・QMP で見ていない、Q1 の指示: 再び出たら gdbstub・QMP で見る）。
+    参考（2026-10-30 Q1 から、P4 の解析）: host の fdatasync が遅い時（load 12〜15）、boot の USB stick の xHCI の command が timeout して stick を失い、/sbin/init が
+    動けない事が gdbstub の klog_buffer で見つかった（[BUG-359](../../bugs/BUG-359.md)）。同じ症状なら stick と disk を `cache=unsafe` にすると避けられる。p014u・p014v が
+    これだったかは確かめていない。
   - QEMU（compositor）`plan/ws309/tests/spawn-guest.sh build/ws309/p014z … build/amd64/dynamic/libc.so` PASS: `KWL DESKTOP start pid=122 …`、program は
     3〜20 の fd を何も持たない（`closed-ok`）、`KWL THREADS … io-file …`、KWL FAILED 無し。
 - 注意: この後の compositor は新しい libc の `posix_spawn_file_actions_addclosefrom_np` を要る。古い image に /bin/wayland だけを入れる試験は

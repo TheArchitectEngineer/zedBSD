@@ -7,10 +7,11 @@
 
 /*
  * A keyboard that comes and goes, for the Linux guest's seat test: makes a
- * uinput keyboard, waits SECONDS (the compositor's scan finds it and asks
- * logind for it), types "a" COUNT times a second apart, waits again and
- * destroys it (logind tells the compositor it is gone).  Prints its node's
- * name when it can.
+ * uinput keyboard (the keys A and Z, by which the compositor tells a
+ * keyboard), waits SECONDS (the compositor's scan finds it and asks logind
+ * for it), types "a" COUNT times a second apart, waits again and destroys
+ * it (logind tells the compositor it is gone).  Prints its node's name
+ * when it can.
  *
  *   uinput-key SECONDS COUNT
  */
@@ -52,7 +53,7 @@ main(
 	seconds = (unsigned)strtoul(argv[1], NULL, 10);
 	count = (unsigned)strtoul(argv[2], NULL, 10);
 
-	/* The device: a keyboard with the key A. */
+	/* The device: a keyboard with the keys A and Z. */
 	descriptor = open("/dev/uinput", O_WRONLY | O_NONBLOCK);
 	if (descriptor < 0) {
 		fprintf(stderr, "uinput-key: open errno=%d\n", errno);
@@ -61,6 +62,8 @@ main(
 	error = ioctl(descriptor, UI_SET_EVBIT, EV_KEY);
 	if (error == 0)
 		error = ioctl(descriptor, UI_SET_KEYBIT, KEY_A);
+	if (error == 0)
+		error = ioctl(descriptor, UI_SET_KEYBIT, KEY_Z);
 	if (error == 0)
 		error = ioctl(descriptor, UI_SET_KEYBIT, KEY_ENTER);
 	if (error != 0) {
