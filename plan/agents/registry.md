@@ -10,7 +10,7 @@
 | P3 | phase-runner | ws221 p014 (q1689-i01) | `/home/awe/zedBSD-worktrees/p3-ws221g` / `agent/p3-ws221g` | running（p014 xHCI） | 6e505d986（merge beb355d65） |
 | P4 | phase-runner | ws307 p011 (q1665-i10) | `/home/awe/zedBSD-worktrees/p4-ws307n` / `agent/p4-ws307n` | running（q1688 cleared。試験待ちの branch: agent/p4-ws283 b7fd8d23e） | 92e3362f8（merge ed93695ac） |
 | P5 | phase-runner | Notes on RTX (q1692-i01) | `/home/awe/zedBSD-worktrees/p5-ws243` / `agent/p5-ws243` | running（10.0.10.3） | a99b9213d（merge 65d8082c1） |
-| P6 | phase-runner | ws282・ws284 (q1667-i05 返却) | `/home/awe/zedBSD-worktrees/p6-ws282d` / `agent/p6-ws282d` | returned（handover: plan/ws282/handover.md・plan/ws284/handover.md） | 5b8b78e5f（merge 769552b00） |
+| P6 | phase-runner＋Sonnet | ws314 p011・p012 (q1691-i01 cleared) | `/home/awe/zedBSD-worktrees/p6-ws314doc` / `agent/p6-ws314doc` | returned | 64f09ca82（merge d4ba04b96） |
 | P7 | phase-runner | ws313 (q1687-i01 返却) | `/home/awe/zedBSD-worktrees/p7-ws313e` / `agent/p7-ws313e` | returned（実機の結果待ち） | b35b6240c（merge b6649f09f） |
 
 - 同時に動かす数は 6（2026-10-29 ユーザーの P1〜P6 の指示）。VF2（主）と 5330（従）は P3、10.0.10.3 は P2。
