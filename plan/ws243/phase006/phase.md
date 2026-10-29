@@ -51,6 +51,14 @@ Status: in-progress（2026-10-29 q1677-i02 P5。kernel の側の実装・build�
   address、block linear、block 1x2x1 GOB、大きさ、2D 1 level、行の幅 = decoder の pitch。swizzle）。
 - 既存: `nvdec-host-test.sh` 88/0、`wire-host-test.sh` 32/0、`nvrtx-vk-host-test.sh` 86/0、`nvrtx-vk-d3-host-test.sh` 209/0。
 
+- 2026-10-29 23:3x（e4a019432 の後）: Video Player の shader（picture.vert・picture.frag・overlay.frag）が nvrtx の SM75 の compiler で通る:
+  `plan/tools/nvrtx/nvrtx-sm75-desktop-test.sh --sm 75` → 62 compiled, 0 refused, 0 disagreed（picture.frag 56 命令、IR と 200 入力で一致）。
+- 実機の vmunix は e4a019432 の `build/ws243/vmunix`（cksum 1672525563、p005 の書き方の直しと video_parameters_create の直しを含む）。
+- 10.0.10.3 は 2026-10-29 23:2x のユーザーの決定で P3 の 10GbE の作業が終わるまで P3 のもの。空いたら Q1 が知らせる。
+- 実機の後の受け入れ（WS の完了）: V1 の hash（720p30・1080p30・1080p60・1080p24 が software と一致）、V4 の Video Player が 4 本とも
+  `gpu_pictures=1`・「pictures the GPU holds」・`FAILED` 無し、1080p60 で `FRAMES shown` が clip の 596 枚近く・`late` が小さい、画面の PNG に動画。
+  hang の非退行と restore（NVMe の kernel は vmunix-va1 1463007375 に戻す）。
+
 ## 未実施・残り
 
 - 実機: `PERF_BUILD=build/ws243 sh plan/ws243/tests/rtx-p004.sh OUT build/ws243/vmunix RESTORE video hang restore`（V1 の hash に 1080p60 も入る、V4 が GPU の道）。
