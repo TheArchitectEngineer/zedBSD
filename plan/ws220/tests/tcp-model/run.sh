@@ -249,8 +249,11 @@ scenario rtt-step 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 
     --expect-retransmits-max 72 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:1
 # ws220-p005: the same with zedBSD as the receiver (its window moves): no resend on a reopened window keeps the sample.
 # (ws221-p009: zedBSD's 128 KB window, 128 segments of the flight; the Linux-like peer above keeps 64 KB.)
+# (ws221-p012: with SACK on both ends an acknowledgement that only reports a duplicate (D-SACK) is no duplicate
+# acknowledgement (RFC 6675 section 2), so the spurious fast retransmit is gone and the megabyte is through before SRTT
+# has settled at 600 ms: 494 ms after 19 samples, still rising.  The lower bound follows.)
 scenario rtt-step-zedbsd 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 --limit-s 120 \
-    --expect-retransmits-max 128 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:1
+    --expect-retransmits-max 128 --expect-srtt-us 450000:700000 --expect-fast-retransmits 0:1
 # ws220-p004 review-1 G2: B's reader stops for 5 s, B's window closes: A's probes double apart (at most 10, p003: 17739).
 # ws220-p005: the duplicates of the closed window start no fast retransmit; one after the window opens (the hole of a
 # segment B refused) may.

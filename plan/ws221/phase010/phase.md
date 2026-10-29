@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p010 -->
 # ws221-p010: 10GbE での TCP の stack の改善（RDNA 機の RTL8127 ↔ centris、限界まで）
 
-Status: in-progress（2026-10-29 P3 q1679-i02: ATR 有効の recv 2875〜3729、ATR 無効 4819〜5286（原因の参考）。SACK は p012。i01: send 6280 Mbit/s（Linux 6808 の 92 %）、recv 3320〜3401（Linux 5458、未達）。recv は SACK と ACK の順の調べが次）
+Status: cleared（2026-10-30 P3 q1679-i02: ATR 有効の 10GbE で send 6281〜6286（Linux 6808 の 92 %、PCIe の上限 約 7 Gbit/s の近く）、recv 4897〜5282（Linux 5458 の 90〜97 %、p012 の SACK と ACK 8 segment ごと）。VF2・5330 の非退行 PASS。Q1・ユーザーの確かめ待ち）
 Parent: [WS221](../ws.md)
 Queue: q1679 / q1679-i01・i02（P3）
 依存: WS235（RTL8127 の driver、completed）、p002〜p009、WS311（CUBIC、completed）
@@ -105,6 +105,7 @@ kernel: 現 = b36ed1860（ACK と窓を出力で socket の lock の下で読む
 - 変更: 23:23:20 に `sudo ethtool -K enp94s0f0 ntuple on`（前は `ntuple-filters: off`、ixgbe は ntuple を on にすると flow director の ATR を止める）。変更の後も link 10000・ping 10.0.10.3・10.0.30.3 通る。
 - 戻した: 23:35:38 に `sudo ethtool -K enp94s0f0 ntuple off`、読み戻し `ntuple-filters: off`、link 10000、ping 10.0.10.3 通る（ユーザーの決定「ATRを有効にした評価で進めます。」で終わりを待たずに戻した）。
 - 10.0.10.3 は p010 が終わるまで P3 の専有（Q1 2026-10-29 23:2x、ユーザーの決定）。centris の /tmp/zedbsd-rdna.lock を sleep の holder で持ち続ける。
+- 2026-10-30 00:18 に返した（Q1 の指示: 送り側の SACK と q1689 は 10.0.10.3 を使わない）。Debian（6.12.111+deb13-amd64）、NVMe の /boot/boot0/vmunix は cksum 1463007375 3412320（vmunix-va1）、lock は空き。
 
 ## 未実施・残り
 

@@ -7,7 +7,7 @@ Parent: [WS243](ws.md)、Phase [p001](phase001/phase.md)
 
 ## 0. 要約
 
-**本線は GPU の道**（SAMPLED の NV12 を compositor・app が GPU で使う、p006 案）。この文書の readback の道（下）は正しさを先に確かめるための一時の物で、guardrail「画像の処理は GPU で」からの一時の例外として [ws.md](ws.md) に記録した（2026-10-29 Q1 の指示）。
+**本線は GPU の道**（SAMPLED の NV12 を compositor・app が GPU で使う、p006 案）。この文書の readback の道（下）は機能の試験（hash の照合）の 1 段に限る（2026-10-29 ユーザーの決定、[ws.md](ws.md)「ユーザーの決定」）。GPU の道は [p006](phase006/phase.md)。
 
 - nvrtx の GPU device に **NVDEC の channel** を 1 本足す。GR の work channel と**同じ address の空間**（`NVRTX_HANDLE_WORK_SPACE`）に作るので、
   app の memory は GR と同じ GPU の address のまま NVDEC から見える。firmware は GSP-RM が持つので driver は load しない。

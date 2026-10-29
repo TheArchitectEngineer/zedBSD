@@ -7,9 +7,9 @@
 | --- | --- | --- | --- | --- | --- |
 | P1 | phase-runner | ws309 p016〜p018 (q1662-i10) | `/home/awe/zedBSD-worktrees/p1-ws309i` / `agent/p1-ws309i` | running（p015 はユーザーの判断待ち） | b23a771e6（merge e554645ca） |
 | P2 | phase-runner | ws314 p003〜 (q1690-i01) | `/home/awe/zedBSD-worktrees/p2-ws314` / `agent/p2-ws314` | running | e02e7f60b（merge d05c1582d） |
-| P3 | phase-runner | ws221 p010 (q1679-i02) | `/home/awe/zedBSD-worktrees/p3-ws221g` / `agent/p3-ws221g` | running | bbc43c185（merge da517b612） |
+| P3 | phase-runner | ws221 p014 (q1689-i01) | `/home/awe/zedBSD-worktrees/p3-ws221g` / `agent/p3-ws221g` | running（p014 xHCI） | 6e505d986（merge beb355d65） |
 | P4 | phase-runner | ws307 p011 (q1665-i10) | `/home/awe/zedBSD-worktrees/p4-ws307n` / `agent/p4-ws307n` | running（q1688 cleared。試験待ちの branch: agent/p4-ws283 b7fd8d23e） | 92e3362f8（merge ed93695ac） |
-| P5 | phase-runner | ws243 p006 の実機 (q1677-i02) | `/home/awe/zedBSD-worktrees/p5-ws243` / `agent/p5-ws243` | running（10.0.10.3、P3 が 00:18 に返した後） | 005871516（merge fbe855149） |
+| P5 | phase-runner | Notes on RTX (q1692-i01) | `/home/awe/zedBSD-worktrees/p5-ws243` / `agent/p5-ws243` | running（10.0.10.3） | a99b9213d（merge 65d8082c1） |
 | P6 | phase-runner | ws282・ws284 (q1667-i05 返却) | `/home/awe/zedBSD-worktrees/p6-ws282d` / `agent/p6-ws282d` | returned（handover: plan/ws282/handover.md・plan/ws284/handover.md） | 5b8b78e5f（merge 769552b00） |
 | P7 | phase-runner | ws313 (q1687-i01 返却) | `/home/awe/zedBSD-worktrees/p7-ws313e` / `agent/p7-ws313e` | returned（実機の結果待ち） | b35b6240c（merge b6649f09f） |
 

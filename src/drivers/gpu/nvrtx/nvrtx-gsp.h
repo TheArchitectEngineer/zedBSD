@@ -708,6 +708,9 @@ struct nvrtx_fwsec {
 #define NVRTX_COPY_PARAMS_BYTES		8U
 #define NVRTX_FREE_PARAMS_BYTES		16U
 
+/* The most bytes nvrtx_push_copy_clear() writes: thirteen words. */
+#define NVRTX_PUSH_COPY_CLEAR_BYTES	52U
+
 /*
  * The control commands of address-space to channel-stop.
  *
@@ -954,6 +957,7 @@ size_t nvrtx_push_fence(uint8_t *push, uint64_t semaphore, uint32_t value);
 size_t nvrtx_push_fence_timed(uint8_t *push, uint64_t semaphore, uint32_t value);
 size_t nvrtx_push_stamp(uint8_t *push, uint64_t semaphore, uint32_t value);
 size_t nvrtx_push_copy_fill(uint8_t *push, uint32_t subchannel, uint32_t copy_class, uint64_t destination, uint32_t words, uint32_t value);
+size_t nvrtx_push_copy_clear(uint8_t *push, uint32_t subchannel, uint64_t destination, uint32_t line_words, uint32_t lines, uint32_t value);
 void nvrtx_ring_entry(uint8_t *entry, uint64_t va, uint32_t words);
 void nvrtx_free_params(uint8_t *params, uint32_t client, uint32_t object);
 void nvrtx_space_params_shared(uint8_t *params);

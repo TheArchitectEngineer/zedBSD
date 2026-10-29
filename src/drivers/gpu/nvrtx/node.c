@@ -38,6 +38,7 @@
 #include <kern/thread.h>
 #include <uapi/errno.h>
 #include <uapi/gpu.h>
+#include <uapi/gpu-allocation.h>
 #include <uapi/gpu-display.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-node.h"
@@ -45,10 +46,12 @@
 
 /*
  * The device's capabilities: storage, VRAM blobs, transfers, CPU mappings,
- * sharing of blobs, and the display with its events and its control.
+ * sharing of blobs (as images, and as plain allocations such as a decoded
+ * picture another open samples), and the display with its events and its
+ * control.
  */
 #define NODE_CAPABILITIES		(GPU_CAP_RESOURCE | GPU_CAP_BLOB | GPU_CAP_TRANSFER | GPU_CAP_MAPPING | GPU_CAP_SHARE | \
-					 GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL)
+					 GPU_CAP_ALLOCATION_SHARE | GPU_CAP_DISPLAY | GPU_CAP_DISPLAY_EVENTS | GPU_CAP_DISPLAY_CONTROL)
 
 /* The largest resource, and how many one session may hold. */
 #define NODE_MAX_RESOURCE_BYTES		(64ULL << 20)
@@ -712,8 +715,21 @@ node_blob_create(
 	error = nvrtx_bo_alloc(node->gpu, request->bytes, NODE_BLOB_ALIGN, &backing->bo);
 	if (error == 0)
 		error = nvrtx_bo_clear(node->gpu, &backing->bo);
+
+	/*
+	 * VRAM the copy engine may still write is never given back: the blob
+	 * takes other VRAM, which the CPU clears (the copy engine's clears
+	 * are off from then on).
+	 */
+	if (error == EBUSY) {
+		error = nvrtx_bo_alloc(node->gpu, request->bytes, NODE_BLOB_ALIGN, &backing->bo);
+		if (error == 0)
+			error = nvrtx_bo_clear(node->gpu, &backing->bo);
+	}
 	if (error != 0) {
-		nvrtx_bo_free(node->gpu, &backing->bo);
+		/* What the copy engine may still write stays taken. */
+		if (error != EBUSY)
+			nvrtx_bo_free(node->gpu, &backing->bo);
 		kern_free(backing);
 		kern_free(resource);
 		return error;

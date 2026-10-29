@@ -1350,16 +1350,28 @@ execute_texture(
 	uint8_t *cpu;
 	int error;
 
-	/* The view's image, with storage, in a colour format (a depth or video image is not sampled). */
+	/* The view's image, with storage, in a colour format or a plane of a video image (a depth image is not sampled). */
 	image = view->image->payload;
-	if (image->depth || image->video)
+	if (image->depth || (image->video && view->plane == 0U))
 		return EINVAL;
 	error = nvrtx_vk_image_address(image, &va, &cpu);
 	if (error != 0)
 		return error;
 
-	/* The header: a tiled image's with the view's levels, a pitch-linear image's of its one level; the sampler. */
-	if (image->tiled) {
+	/*
+	 * The header: a video plane's (the luma plane full size, the chroma
+	 * plane's pairs half each way), a tiled image's with the view's levels,
+	 * a pitch-linear image's of its one level; the sampler.
+	 */
+	if (image->video) {
+		if (view->plane == 1U) {
+			nvrtx_exec_texture_header_plane(header, va + image->plane_offset[0], image->width, image->height, 1U,
+							view->swizzle);
+		} else {
+			nvrtx_exec_texture_header_plane(header, va + image->plane_offset[1], image->width / 2U,
+							image->height / 2U, 2U, view->swizzle);
+		}
+	} else if (image->tiled) {
 		nvrtx_exec_texture_header_tiled(header, va, image->width, image->height, image->levels, view->base_level,
 						view->level_count, view->format, view->swizzle);
 	} else {
@@ -1599,17 +1611,24 @@ execute_video_copy(
 			plane_width = image->width / 2U;
 			plane_height = image->height / 2U;
 		} else {
+			/* A region of any other aspect is refused. */
 			return EINVAL;
 		}
 
-		/* Inside the plane, inside the buffer. */
+		/* Inside the plane, not empty. */
 		inside = execute_region_inside(region->imageOffset.x, region->imageOffset.y, region->imageExtent.width,
 					       region->imageExtent.height, plane_width, plane_height);
-		if (!inside || region->imageExtent.width == 0U || region->imageExtent.height == 0U)
+		if (!inside ||
+		    region->imageExtent.width == 0U ||
+		    region->imageExtent.height == 0U)
 			return EINVAL;
+
+		/* The buffer's rows: tightly packed unless the region names a row length. */
 		row = region->bufferRowLength;
 		if (row == 0U)
 			row = region->imageExtent.width;
+
+		/* Inside the buffer: the bytes from its first to its last row's end. */
 		span = (uint64_t)row * pixel * (region->imageExtent.height - 1U) + (uint64_t)region->imageExtent.width * pixel;
 		if (region->bufferOffset > buffer->size || span > buffer->size - region->bufferOffset)
 			return EINVAL;
@@ -1793,8 +1812,14 @@ execute_buffer_image(
 		error = nvrtx_vk_image_address(image, &image_va, &image_cpu);
 	if (error == 0 && image->depth)
 		error = EINVAL;
-	if (error == 0 && image->video && to_image)
+
+	/* Refuses a copy into a video image, which only the decoder writes. */
+	if (error == 0 &&
+	    image->video &&
+	    to_image)
 		error = EINVAL;
+
+	/* Propagates a refusal. */
 	if (error != 0)
 		return error;
 

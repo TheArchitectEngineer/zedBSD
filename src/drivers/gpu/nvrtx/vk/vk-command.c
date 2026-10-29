@@ -120,9 +120,13 @@ nvrtx_vk_command_reset(
 		record = &command->records[index];
 		for (object = 0U; object < record->object_count; object++)
 			(void)nvrtx_vk_object_release(record->objects[object]);
+
+		/* A video or query command's structure goes with what it holds. */
 		video = nvrtx_vk_video_recorded(record->opcode);
 		if (video)
 			nvrtx_vk_video_drop(record);
+
+		/* The regions and the push buffer, when the record kept them. */
 		if (record->regions != NULL)
 			kern_free(record->regions);
 		if (record->push != NULL)

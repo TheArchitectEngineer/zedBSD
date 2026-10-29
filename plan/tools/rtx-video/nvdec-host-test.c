@@ -49,6 +49,7 @@ static int checks;
 int
 main(void)
 {
+	/* Runs every group of checks. */
 	test_pic();
 	test_slices();
 	test_push();
@@ -57,9 +58,15 @@ main(void)
 	test_dpb();
 	test_copy();
 	test_rm();
+
+	/* Tells the caller how many checks ran and how many failed. */
 	printf("nvdec host test: %d checks, %d failed\n", checks, failures);
+
+	/* Fails the run when any check failed. */
 	if (failures != 0)
 		return 1;
+
+	/* Succeeded: every check passed. */
 	return 0;
 }
 
@@ -69,9 +76,14 @@ check(
 	int ok,
 	const char *what)
 {
+	/* Counts the check, so a run that skipped checks shows in the total. */
 	checks++;
+
+	/* A passing check needs nothing more. */
 	if (ok)
 		return;
+
+	/* Counts the failure and names the check that failed. */
 	failures++;
 	printf("FAIL: %s\n", what);
 }
@@ -82,7 +94,13 @@ word(
 	const uint8_t *bytes,
 	size_t at)
 {
-	return nvrtx_get32(bytes, at);
+	uint32_t value;
+
+	/* Reads the word through the driver's own accessor. */
+	value = nvrtx_get32(bytes, at);
+
+	/* Reports the word. */
+	return value;
 }
 
 /* Reads a bit field of a little-endian word. */
@@ -95,9 +113,14 @@ bits(
 {
 	uint32_t value;
 
+	/* Extracts the bit field from the word. */
 	value = word(bytes, at) >> low;
+
+	/* Masks the field to its width, unless it takes the whole word. */
 	if (count < 32U)
 		value &= (1U << count) - 1U;
+
+	/* Reports the field. */
 	return value;
 }
 
@@ -110,6 +133,7 @@ test_pic(void)
 	uint8_t pic[NVRTX_NVDEC_PIC_BYTES];
 	uint32_t index;
 
+	/* Describes a picture and encodes it into the hardware's picture structure. */
 	memset(&picture, 0, sizeof(picture));
 	picture.log2_max_poc_lsb_minus4 = 2U;
 	picture.delta_poc_always_zero = 1U;
@@ -145,6 +169,8 @@ test_pic(void)
 	picture.references[1].non_existing = 1U;
 	picture.references[1].frame_index = 2U;
 	picture.dpb_entry[1] = 5U;
+
+	/* Gives the 4x4 and the 8x8 scaling lists distinguishable values. */
 	for (index = 0U; index < 16U; index++)
 		picture.scaling_4x4[2][index] = (uint8_t)(index + 1U);
 	for (index = 0U; index < 64U; index++)
@@ -157,6 +183,7 @@ test_pic(void)
 	memset(pic, 0xa5, sizeof(pic));
 	nvrtx_nvdec_h264_pic(pic, &picture);
 
+	/* Checks the fields of the encoded picture structure against the hardware layout. */
 	check(memcmp(pic + 52, eos, sizeof(eos)) == 0, "pic: end of stream at 52");
 	check(pic[68] == 1U, "pic: explicit end of stream at 68");
 	check(word(pic, 72) == 5016U, "pic: stream_len is the range and the end of stream");
@@ -195,12 +222,14 @@ test_slices(void)
 	uint32_t offsets[300];
 	uint32_t index;
 
+	/* Packs three slices into the table. */
 	offsets[0] = 0U;
 	offsets[1] = 100U;
 	offsets[2] = 250U;
 	nvrtx_nvdec_slices(table, offsets, 3U, 400U);
 	check(table[0] == 0U && table[1] == 100U && table[2] == 250U && table[3] == 400U && table[4] == 0U, "slices: three and the end");
 
+	/* Offers more slices than the table holds. */
 	for (index = 0U; index < 300U; index++)
 		offsets[index] = index;
 	nvrtx_nvdec_slices(table, offsets, 300U, 9999U);
@@ -217,6 +246,7 @@ test_push(void)
 	size_t length;
 	uint32_t index;
 
+	/* Describes one decode frame and its surfaces. */
 	memset(&frame, 0, sizeof(frame));
 	frame.pic = 0x123456700ULL;
 	frame.bitstream = 0x200000100ULL;
@@ -231,6 +261,8 @@ test_push(void)
 		frame.luma[index] = 0x10000000ULL + (uint64_t)index * 0x100000ULL;
 		frame.chroma[index] = 0x20000000ULL + (uint64_t)index * 0x100000ULL;
 	}
+
+	/* Encodes the decode push buffer and checks each method against the hardware layout. */
 	length = nvrtx_nvdec_push_decode(push, &frame);
 	check(length <= NVRTX_NVDEC_DECODE_PUSH_BYTES, "push: within its bound");
 	check(word(push, 0) == 0x20018080U && word(push, 4) == 3U, "push: application id H.264 on subchannel 4");
@@ -247,6 +279,7 @@ test_push(void)
 	check(word(push, 216) == (0x20018000U | (0x500U >> 2)) && word(push, 220) == 0x07000000U, "push: mbhist");
 	check(word(push, 224) == (0x20018000U | (0x300U >> 2)) && word(push, 228) == 0U && length == 232U, "push: execute last");
 
+	/* Encodes the object push buffer for the Turing class and checks the class by family. */
 	length = nvrtx_nvdec_push_object(object, NVRTX_NVDEC_CLASS_TURING);
 	check(length == 8U && word(object, 0) == 0x20018000U && word(object, 4) == 0xc4b0U, "push: the class on subchannel 4");
 	check(nvrtx_nvdec_class(NVRTX_FAMILY_TURING) == 0xc4b0U && nvrtx_nvdec_class(NVRTX_FAMILY_AMPERE) == 0xc7b0U &&
@@ -260,6 +293,7 @@ test_sizes(void)
 	struct nvrtx_nvdec_buffers buffers;
 	struct nvrtx_video_layout layout;
 
+	/* Sizes the work buffers for 1080p and 720p streams. */
 	nvrtx_nvdec_buffer_sizes(120U, 68U, 16U, &buffers);
 	check(buffers.coloc == 522240U * 17U, "sizes: 1080p coloc for 17 surfaces");
 	check(buffers.mbhist == 12544U && buffers.history == 92160U, "sizes: 1080p histories");
@@ -267,6 +301,7 @@ test_sizes(void)
 	check(buffers.coloc == ((46U * 80U * 64U - 63U + 255U) & ~255U) * 5U, "sizes: 720p coloc rounds the map units to pairs");
 	check(buffers.mbhist == 8448U && buffers.history == 61440U, "sizes: 720p histories");
 
+	/* Lays out the 1080p NV12 surface. */
 	nvrtx_video_layout(1920U, 1080U, &layout);
 	check(layout.pitch == 1920U && layout.plane_rows[0] == 1088U && layout.plane_rows[1] == 544U, "layout: 1080p rows in blocks");
 	check(layout.plane_offset[1] == 1920U * 1088U && layout.bytes == 1920U * 1632U, "layout: 1080p planes");
@@ -285,6 +320,7 @@ test_scaling(void)
 	uint8_t s8[2][64];
 	uint32_t index;
 
+	/* Resolves the scaling matrices of a stream that carries none. */
 	memset(&sps, 0, sizeof(sps));
 	memset(&pps, 0, sizeof(pps));
 	nvrtx_video_scaling_resolve(&sps, &pps, s4, s8);
@@ -295,6 +331,8 @@ test_scaling(void)
 	sps.has_scaling = true;
 	sps.scaling.present_mask = (1U << 0) | (1U << 3) | (1U << 6);
 	sps.scaling.default_mask = (1U << 3);
+
+	/* Gives the sequence's 4x4 and 8x8 lists distinguishable values. */
 	for (index = 0U; index < 16U; index++)
 		sps.scaling.list4[0][index] = (uint8_t)index;
 	for (index = 0U; index < 64U; index++)
@@ -310,6 +348,8 @@ test_scaling(void)
 	pps.flags = NVRTX_VIDEO_PPS_SCALING;
 	pps.has_scaling = true;
 	pps.scaling.present_mask = (1U << 1);
+
+	/* Gives the picture set's second 4x4 list a value of its own. */
 	for (index = 0U; index < 16U; index++)
 		pps.scaling.list4[1][index] = 50U;
 	nvrtx_video_scaling_resolve(&sps, &pps, s4, s8);
@@ -328,6 +368,7 @@ test_dpb(void)
 	uint32_t index;
 	int error;
 
+	/* Hands out DPB entries to slots in order. */
 	nvrtx_video_dpb_reset(&dpb);
 	error = nvrtx_video_dpb_entry(&dpb, 5U, &entry);
 	check(error == 0 && entry == 0U, "dpb: first slot takes entry 0");
@@ -336,6 +377,7 @@ test_dpb(void)
 	error = nvrtx_video_dpb_entry(&dpb, 5U, &entry);
 	check(error == 0 && entry == 0U, "dpb: a slot keeps its entry");
 
+	/* Keeps only slot 2 bound and checks that a freed entry is reused. */
 	for (index = 0U; index < NVRTX_VIDEO_SLOTS; index++)
 		active[index] = false;
 	active[2] = true;
@@ -345,6 +387,7 @@ test_dpb(void)
 	nvrtx_video_dpb_forget(&dpb, 2U);
 	check(dpb.entry[2] == -1, "dpb: a new picture forgets the slot's entry");
 
+	/* Picks the lowest free surface for a picture that has no slot. */
 	referenced[0] = 0U;
 	referenced[1] = 1U;
 	nvrtx_video_dpb_reset(&dpb);
@@ -352,6 +395,7 @@ test_dpb(void)
 	index = nvrtx_video_free_surface(&dpb, referenced, 2U);
 	check(index == 3U, "dpb: a picture without a slot takes the lowest free surface");
 
+	/* Fills all sixteen entries and checks the next one is refused. */
 	nvrtx_video_dpb_reset(&dpb);
 	for (index = 0U; index < 16U; index++)
 		(void)nvrtx_video_dpb_entry(&dpb, index, &entry);
@@ -367,6 +411,7 @@ test_copy(void)
 	uint8_t push[NVRTX_EXEC_PLANE_COPY_BYTES];
 	size_t at;
 
+	/* Describes a plane copy and encodes its push buffer. */
 	memset(&copy, 0, sizeof(copy));
 	copy.source = 0x123456000ULL;
 	copy.source_pitch = 1920U;
@@ -400,14 +445,17 @@ test_rm(void)
 	uint32_t bytes;
 	int error;
 
+	/* Encodes the channel promote parameters and checks each word. */
 	nvrtx_nvdec_promote_params(params, 0xc1d00000U, 16U, 0xf1f00010U, 0x28200000ULL, 0x3000ULL);
 	check(word(params, 0) == 0x13U && word(params, 4) == 0xc1d00000U && word(params, 8) == 16U, "rm: promote engine, client, chid");
 	check(word(params, 12) == 0xc1d00000U && word(params, 16) == 0xf1f00010U && word(params, 20) == 0U, "rm: promote channel");
 	check(word(params, 24) == 0x28200000U && word(params, 28) == 0U && word(params, 32) == 0x3000U && word(params, 40) == 0U, "rm: promote address, size, no entries");
 
+	/* Encodes the decoder object parameters. */
 	nvrtx_nvdec_alloc_params(params);
 	check(word(params, 0) == 12U && word(params, 4) == 0U && word(params, 8) == 0U, "rm: decoder object parameters");
 
+	/* Builds a falcon list and looks the decoder's context size up by descriptor. */
 	memset(falcons, 0, sizeof(falcons));
 	nvrtx_put32(falcons, 0U, 2U);
 	nvrtx_put32(falcons, 4U, 0x111U);

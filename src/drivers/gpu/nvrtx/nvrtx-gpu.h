@@ -344,7 +344,8 @@ struct nvrtx_bo {
  *
  * chid is its number on the graphics runlist and the handles name the
  * channel and its 3D, compute and copy objects for the resource manager
- * (the copy object only with the video decoder, nvrtx.video=1).
+ * (the copy object on the driver's channel always, on a session's only
+ * with the video decoder, nvrtx.video=1).
  * instance and userd are its instance block and USERD in the VRAM (in
  * the space's arena for the driver's channel, in the channel's own arena
  * for a session's, which also holds the channel's own context buffers).
@@ -441,6 +442,17 @@ struct nvrtx_work_state {
 	int root_set;
 	int ready;
 	int timed;
+	/*
+	 * Whether the driver's channel had its copy object at the start (the
+	 * sessions' channels are made the same way), whether the copy engine's
+	 * clears of the VRAM are off for good (one failed, or the boot asked
+	 * for the CPU's clears, nvrtx.clear.cpu=1), and whether the
+	 * next one is to be broken on purpose (nvrtx.clear.fault=1, a test of
+	 * the way back to the CPU's clears).
+	 */
+	int copy_ready;
+	int clear_off;
+	int clear_fault;
 	struct nvrtx_work_channel driver;
 };
 
@@ -864,6 +876,7 @@ void nvrtx_work_release(struct nvrtx_gpu *gpu);
 int nvrtx_work_map_vram(struct nvrtx_gpu *gpu, uint64_t physical, uint64_t size, uint64_t *va);
 int nvrtx_work_map_system(struct nvrtx_gpu *gpu, const uint64_t *pages, size_t count, uint64_t *va);
 int nvrtx_work_unmap(struct nvrtx_gpu *gpu, uint64_t va, uint64_t size);
+int nvrtx_work_clear(struct nvrtx_gpu *gpu, uint64_t physical, uint64_t size);
 uint64_t nvrtx_work_root(const struct nvrtx_gpu *gpu);
 int nvrtx_work_channel_open(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, uint32_t chid);
 int nvrtx_work_channel_close(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);

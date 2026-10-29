@@ -154,6 +154,7 @@ nvrtx_nvdec_start(
 	struct nvrtx_nvdec_state *nvdec;
 	int error;
 
+	/* Marks the start of the bring-up in the stage log. */
 	nvrtx_stage_mark("nvdec-channel begin");
 
 	/* The decoder's channel lives in the work channel's space. */
@@ -167,6 +168,7 @@ nvrtx_nvdec_start(
 	if (nvdec == NULL)
 		return ENOMEM;
 
+	/* Starts the state's lock and publishes the state, so a failed bring-up can still be released. */
 	(void)mutex_init(&nvdec->lock, LOCK_RANK_DEVICE, "nvrtx nvdec");
 	gpu->nvdec = nvdec;
 
@@ -175,19 +177,22 @@ nvrtx_nvdec_start(
 	if (error != 0)
 		return error;
 
-	/* The memory, the channel, its context and the object. */
+	/* Makes the memory the channel needs. */
 	error = nvdec_memory(gpu, nvdec);
 	if (error != 0)
 		return error;
 
+	/* Makes the channel on the decoder's runlist. */
 	error = nvdec_channel(gpu, nvdec);
 	if (error != 0)
 		return error;
 
+	/* Promotes the engine context to the channel. */
 	error = nvdec_context(gpu, nvdec);
 	if (error != 0)
 		return error;
 
+	/* Allocates the decoder object on the channel. */
 	error = nvdec_object(gpu, nvdec);
 	if (error != 0)
 		return error;
@@ -220,6 +225,7 @@ nvrtx_nvdec_stop(
 	int failures;
 	int error;
 
+	/* Starts the teardown with no failure counted. */
 	nvdec = gpu->nvdec;
 	failures = 0;
 
@@ -251,6 +257,7 @@ nvrtx_nvdec_stop(
 		nvdec->object_made = 0;
 	}
 
+	/* Frees the channel from the resource manager. */
 	if (nvdec->channel_made != 0) {
 		error = nvrtx_rm_free(gpu, NVDEC_HANDLE_CHANNEL);
 		if (error != 0)
@@ -258,7 +265,7 @@ nvrtx_nvdec_stop(
 		nvdec->channel_made = 0;
 	}
 
-	/* Gives the page's and the context's addresses in the work space back. */
+	/* Gives the page's address in the work space back. */
 	if (nvdec->page_mapped != 0) {
 		error = nvrtx_work_unmap(gpu, nvdec->page_va, NVRTX_GSP_PAGE_SIZE);
 		if (error != 0)
@@ -266,6 +273,7 @@ nvrtx_nvdec_stop(
 		nvdec->page_mapped = 0;
 	}
 
+	/* Unmaps the engine context from the work space. */
 	if (nvdec->context_mapped != 0) {
 		error = nvrtx_work_unmap(gpu, nvdec->context_va, nvdec->context.size);
 		if (error != 0)
@@ -290,6 +298,7 @@ nvrtx_nvdec_release(
 {
 	struct nvrtx_nvdec_state *nvdec;
 
+	/* Takes the decoder's state, which may not exist. */
 	nvdec = gpu->nvdec;
 
 	/* Nothing was made without the state. */
@@ -306,6 +315,7 @@ nvrtx_nvdec_release(
 		nvdec->context_made = 0;
 	}
 
+	/* Frees the instance block. */
 	if (nvdec->block_made != 0) {
 		nvrtx_bo_free(gpu, &nvdec->block);
 		nvdec->block_made = 0;
@@ -327,6 +337,7 @@ nvrtx_nvdec_ready(
 	const struct nvrtx_nvdec_state *nvdec;
 	int ready;
 
+	/* Takes the decoder's state, which may not exist. */
 	nvdec = gpu->nvdec;
 
 	/* No state, no decoder. */
@@ -373,8 +384,10 @@ nvrtx_nvdec_run(
 {
 	struct nvrtx_nvdec_state *nvdec;
 	uint32_t fence;
+	uint32_t seen;
 	int error;
 
+	/* Takes the decoder's state, which may not exist. */
 	nvdec = gpu->nvdec;
 
 	/* No state, no decoder. */
@@ -382,26 +395,38 @@ nvrtx_nvdec_run(
 		return ENODEV;
 
 	/* Whole words of one ring entry. */
-	if (length == 0U || (length & 3U) != 0U || length / 4U > NVRTX_WORK_SEGMENT_WORDS_MAX)
+	if (length == 0U ||
+	    (length & 3U) != 0U ||
+	    length / 4U > NVRTX_WORK_SEGMENT_WORDS_MAX)
 		return EINVAL;
 
 	/* Submits the segment and its fence, then waits for the fence, one picture at a time. */
 	mutex_lock(&nvdec->lock);
 
 	error = ENODEV;
+
+	/* Submits only to a decoder that has not been taken out of use. */
 	if (nvdec->ready != 0)
 		error = nvdec_submit(gpu, nvdec, push_va, length, &fence);
+
+	/* Waits for the segment's fence. */
 	if (error == 0)
 		error = nvdec_wait(nvdec, fence, timeout_us);
+
+	/* A decoder that did not finish is taken out of use, so no later picture queues behind it. */
 	if (error == ETIMEDOUT)
 		__atomic_store_n(&nvdec->ready, 0, __ATOMIC_RELEASE);
 
 	mutex_unlock(&nvdec->lock);
 
 	/* Reports a decoder that is not running or did not finish. */
-	if (error == ETIMEDOUT)
+	if (error == ETIMEDOUT) {
+		seen = nvdec_semaphore(nvdec);
 		nvrtx_stage_mark("nvdec: a picture did not finish (fence %u, semaphore %08x); the decoder is off", (unsigned)fence,
-		    (unsigned)nvdec_semaphore(nvdec));
+		    (unsigned)seen);
+	}
+
+	/* Propagates the failure of the segment. */
 	if (error != 0)
 		return error;
 
@@ -437,14 +462,16 @@ nvdec_find(
 		return ENODEV;
 	}
 
+	/* Keeps the runlist and the descriptor the table gave. */
 	nvdec->runlist = gpu->engine.pick.nvdec_runlist;
 	nvdec->engine_descriptor = gpu->engine.pick.nvdec_descriptor;
 
-	/* Asks the resource manager for the falcons it made, and their contexts' sizes. */
+	/* Allocates the parameters of the falcon query. */
 	params = kern_calloc(1U, NVRTX_FALCON_INFO_PARAMS_BYTES);
 	if (params == NULL)
 		return ENOMEM;
 
+	/* Asks the resource manager for the falcons it made, and their contexts' sizes. */
 	error = nvrtx_rm_control(gpu,
 	    gpu->internal_client,
 	    gpu->internal_subdevice,
@@ -466,6 +493,7 @@ nvdec_find(
 		return error;
 	}
 
+	/* Refuses an engine whose context has no size. */
 	if (nvdec->context_bytes == 0U) {
 		nvrtx_stage_mark("nvdec-channel fail: engine %x has no context size", (unsigned)nvdec->engine_descriptor);
 		return ENODEV;
@@ -501,6 +529,7 @@ nvdec_memory(
 		return error;
 	}
 
+	/* Marks the block made, so the release frees it, then zeroes it. */
 	nvdec->block_made = 1;
 	error = nvrtx_vram_zero(gpu, nvdec->block.vram, (size_t)NVDEC_BLOCK_BYTES);
 	if (error != 0)
@@ -511,6 +540,7 @@ nvdec_memory(
 	if (instance == NULL)
 		return ENOMEM;
 
+	/* Builds the instance block from the work channel's root and writes it. */
 	root = nvrtx_work_root(gpu);
 	nvrtx_mmu_instance(instance, root, NVDEC_VA_LIMIT);
 	error = nvrtx_vram_write(gpu, nvdec->block.vram + NVDEC_INSTANCE_AT, instance, NVRTX_INSTANCE_BYTES);
@@ -527,15 +557,18 @@ nvdec_memory(
 			return error;
 		}
 
+		/* Marks the context made, so the release frees it, then zeroes it. */
 		nvdec->context_made = 1;
 		error = nvrtx_vram_zero(gpu, nvdec->context.vram, (size_t)context_size);
 		if (error != 0)
 			return error;
 
+		/* Maps the context into the work space. */
 		error = nvrtx_work_map_vram(gpu, nvdec->context.vram, context_size, &nvdec->context_va);
 		if (error != 0)
 			return error;
 
+		/* Marks the context mapped, so the release unmaps it. */
 		nvdec->context_mapped = 1;
 	}
 
@@ -544,11 +577,13 @@ nvdec_memory(
 	if (error != 0)
 		return error;
 
+	/* Maps the page into the work space. */
 	page = nvdec->page.dma.device_address;
 	error = nvrtx_work_map_system(gpu, &page, 1U, &nvdec->page_va);
 	if (error != 0)
 		return error;
 
+	/* Marks the page mapped, so the release unmaps it. */
 	nvdec->page_mapped = 1;
 
 	/* The method buffer, as large as the resource manager asked for the first channel's. */
@@ -592,10 +627,12 @@ nvdec_channel(
 	setup.methods = nvdec->methods.dma.device_address;
 	setup.methods_size = gpu->engine.methods_size;
 
+	/* Allocates the channel's parameters. */
 	params = kern_malloc(NVRTX_CHANNEL_PARAMS_BYTES);
 	if (params == NULL)
 		return ENOMEM;
 
+	/* Describes the channel to the resource manager and allocates it. */
 	nvrtx_channel_params(params, &setup);
 	error = nvrtx_rm_allocate(gpu, NVRTX_HANDLE_DEVICE, NVDEC_HANDLE_CHANNEL, gpu->identity.chip.profile->class_channel, params, NVRTX_CHANNEL_PARAMS_BYTES);
 	kern_free(params);
@@ -604,6 +641,7 @@ nvdec_channel(
 		return error;
 	}
 
+	/* Marks the channel made, so the release frees it. */
 	nvdec->channel_made = 1;
 
 	/* Binds it to the decoder. */
@@ -649,6 +687,7 @@ nvdec_context(
 	if (params == NULL)
 		return ENOMEM;
 
+	/* Fills the promote's parameters and sends them. */
 	nvrtx_nvdec_promote_params(params, NVRTX_HANDLE_CLIENT, NVDEC_CHID, NVDEC_HANDLE_CHANNEL, nvdec->context_va, nvdec->context.size);
 	error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, NVRTX_HANDLE_SUBDEVICE, NVRTX_CTL_PROMOTE_CONTEXT, params, NVRTX_NVDEC_PROMOTE_BYTES, &reply, &reply_length);
 	kern_free(params);
@@ -691,6 +730,7 @@ nvdec_first(
 {
 	uint8_t *push;
 	uint32_t fence;
+	uint32_t seen;
 	size_t length;
 	int error;
 
@@ -708,8 +748,12 @@ nvdec_first(
 
 	fence = 0U;
 	error = nvdec_submit(gpu, nvdec, nvdec->page_va + NVDEC_OBJECT_AT, length, &fence);
+
+	/* Waits for the fence once the submission took. */
 	if (error == 0)
 		error = nvdec_wait(nvdec, fence, NVDEC_FIRST_FENCE_US);
+
+	/* Opens the channel to pictures once the first fence has passed. */
 	if (error == 0)
 		__atomic_store_n(&nvdec->ready, 1, __ATOMIC_RELEASE);
 
@@ -717,8 +761,9 @@ nvdec_first(
 
 	/* Reports a first fence that did not come. */
 	if (error != 0) {
+		seen = nvdec_semaphore(nvdec);
 		nvrtx_stage_mark("nvdec-channel fail: the first fence %u did not come (%d, semaphore %08x)", (unsigned)fence, error,
-		    (unsigned)nvdec_semaphore(nvdec));
+		    (unsigned)seen);
 		return error;
 	}
 
@@ -755,11 +800,16 @@ nvdec_submit(
 
 	/* The segment, then the fence, then the doorbell: the decoder's runlist and the channel. */
 	error = nvdec_ring_put(gpu, nvdec, push_va, length);
+
+	/* The fence follows the segment on the ring. */
 	if (error == 0)
 		error = nvdec_ring_put(gpu, nvdec, nvdec->page_va + NVDEC_FENCE_AT, fence_length);
+
+	/* Refuses to ring the doorbell for a ring that did not take its entries. */
 	if (error != 0)
 		return error;
 
+	/* Rings the doorbell, so the engine reads the ring. */
 	nvrtx_wr32(gpu, NVDEC_REG_DOORBELL, (nvdec->runlist << 16) | NVDEC_CHID);
 
 	/* Succeeded: the semaphore reaches the value once the segment is done. */
@@ -821,6 +871,7 @@ nvdec_wait(
 		if (passed)
 			break;
 
+		/* Gives up on a segment that has taken longer than the caller allows. */
 		spent = nvrtx_now_us() - start;
 		if (spent > timeout_us)
 			return ETIMEDOUT;

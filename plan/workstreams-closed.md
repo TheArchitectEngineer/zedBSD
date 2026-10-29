@@ -201,6 +201,7 @@ WS が完了・取り下げになったら、行を master.md からここへ移
 | [WS238](ws238/ws.md) | MG004 | amd64 の native の image を ESP（loader だけ）・FAT32（kernel と boot の設定）・UFS の root・swap の構成にする | completed（2026-10-27 精査 q1608） | 実機の確認は未実施 |
 | [WS239](ws239/ws.md) | MG002 | Wayland（compositor）の起動の失敗時に text console の login へ戻す | completed（2026-10-27 精査 q1608） | p002 の QEMU の確かめは未実施 |
 | [WS241](ws241/ws.md) | MG006 | nvrtx（RTX）の描画の速さ（2026-10-15 ユーザー） | canceled（WS291 へ）（2026-10-27 精査 q1608） | WS291 p010・p011 |
+| [WS243](ws243/ws.md) | MG006 | nvrtx の NVDEC で H.264（Vulkan Video）（2026-10-15 ユーザー） | completed（2026-10-30、P5 q1677-i02。RTX 2070 で H.264 の hash 4 本一致、Video Player の 1080p60 全画面を GPU の道で 584/596・late 12、hang の非退行） | 制限: i915・amdrdna の実機の Video Player は未実施、BUG-353 の glass の時間は未計測（ws.md の「制限・移管」） |
 | [WS244](ws244/ws.md) | MG006 | i915 の Linux 由来の code の整理（Gen9 の display を guardrail に、GT・compiler・header・license）（2026-10-15 ユーザー） | completed（2026-10-27 01:54、ws.md を完了の形に、5330 の自動の回帰で判定） | — |
 | [WS245](ws245/ws.md) | MG006 | i915 の Gen12 系（display 12・13、Skylake〜Raptor Lake Refresh の方針で 5330 を特別扱いしない）の display の書き直し（2026-10-15 ユーザー） | completed（2026-10-27 01:54、ws.md を完了の形に、5330 の自動の回帰で判定） | — |
 | [WS246](ws246/ws.md) | MG006 | nvrtx の compiler を sm75.h・sm75.c にまとめて refactor（2026-10-15 ユーザー）、2026-10-22 ユーザーの指示で compiler/sm75/ の 14 file に分け直した（d73ca1f65） | completed（2026-10-27 精査 q1608） | p002 の latency の表への直しは残す、p003 の規約は一括の見直しへ |

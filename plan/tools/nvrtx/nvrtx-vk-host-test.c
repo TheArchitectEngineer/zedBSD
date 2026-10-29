@@ -252,19 +252,29 @@ nvrtx_vk_blob_read(void *owner, uint8_t *to, const uint8_t *from, size_t length)
 	memcpy(to, from, length);
 }
 
+/* Reports that the node decodes no video here. */
 bool
-nvrtx_vk_video_available(void *owner)
+nvrtx_vk_video_available(
+	void *owner)
 {
 	(void)owner;
+
+	/* Reports no decoder. */
 	return false;
 }
 
+/* Refuses a decode, which the executor under test never reaches without a decoder. */
 int
-nvrtx_vk_video_decode(void *owner, uint64_t va, uint32_t bytes)
+nvrtx_vk_video_decode(
+	void *owner,
+	uint64_t va,
+	uint32_t bytes)
 {
 	(void)owner;
 	(void)va;
 	(void)bytes;
+
+	/* Refuses the decode. */
 	return EIO;
 }
 

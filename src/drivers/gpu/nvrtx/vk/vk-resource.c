@@ -39,6 +39,7 @@ static void resource_image_layout(struct nvrtx_vk_image *image);
 static int resource_layout(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int resource_create_view(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static uint32_t resource_swizzle(VkComponentSwizzle swizzle, uint32_t identity);
+static uint32_t resource_view_plane(const VkImageViewCreateInfo *info);
 static int resource_create_sampler(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int resource_buffer_destroy(struct nvrtx_vk_session *session, void *payload);
 static int resource_image_destroy(struct nvrtx_vk_session *session, void *payload);
@@ -196,6 +197,8 @@ resource_create_image(
 	/* Refuses by name an image the executor does not lay out (a video image only with the video decoder). */
 	error = 0;
 	supported = resource_image_supported(&info);
+
+	/* A video picture is laid out only by a device that decodes video. */
 	if (supported == 2) {
 		video = nvrtx_vk_video_available(session->owner);
 		if (!video)
@@ -364,6 +367,7 @@ resource_image_supported(
 {
 	uint32_t side;
 	uint32_t levels;
+	uint32_t allowed;
 	bool colour;
 
 	/* A 2D image of one layer and one sample, of a level at least. */
@@ -386,16 +390,27 @@ resource_image_supported(
 
 	/*
 	 * A video picture of one level and even sides, decoded into, a
-	 * reference and read out by a copy, nothing else (2: the caller asks
-	 * whether the device decodes video).
+	 * reference, read out by a copy and its planes sampled, nothing else
+	 * (2: the caller asks whether the device decodes video).
 	 */
 	if (info->format == NVRTX_VK_FORMAT_NV12) {
+		/* One level, in optimal tiling. */
 		if (info->mipLevels != 1U || info->tiling != VK_IMAGE_TILING_OPTIMAL)
 			return 0;
+
+		/* Even sides, as the half-size chroma plane needs. */
 		if ((info->extent.width & 1U) != 0U || (info->extent.height & 1U) != 0U)
 			return 0;
-		if ((info->usage & ~(uint32_t)(VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_TRANSFER_SRC_BIT)) != 0U)
+
+		/* Only the uses a video picture has. */
+		allowed = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
+			  VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
+			  VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+			  VK_IMAGE_USAGE_SAMPLED_BIT;
+		if ((info->usage & ~allowed) != 0U)
 			return 0;
+
+		/* Succeeded: a video picture, which only a device with the decoder lays out. */
 		return 2;
 	}
 
@@ -467,7 +482,12 @@ resource_layout(
 	/* Level 0 of layer 0 of a pitch-linear image: where it starts, its rows pitch bytes apart. */
 	kern_memset(&layout, 0, sizeof(layout));
 	image = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, identity);
-	if (image != NULL && !image->depth && !image->tiled && !image->video && subresource.mipLevel == 0U && subresource.arrayLayer == 0U) {
+	if (image != NULL &&
+	    !image->depth &&
+	    !image->tiled &&
+	    !image->video &&
+	    subresource.mipLevel == 0U &&
+	    subresource.arrayLayer == 0U) {
 		nvrtx_vk_image_level(image, subresource.mipLevel, &offset, &width, &height, &pitch);
 		layout.offset = offset;
 		layout.size = (uint64_t)pitch * height;
@@ -500,6 +520,7 @@ resource_create_view(
 	const struct nvrtx_vk_image *picture;
 	struct nvrtx_vk_view *view;
 	uint64_t identity;
+	uint32_t plane;
 	bool colour;
 	int error;
 
@@ -522,6 +543,7 @@ resource_create_view(
 	if (image != NULL)
 		picture = image->payload;
 	colour = nvrtx_vk_format_colour(info.format);
+	plane = 0U;
 	if (picture == NULL) {
 		error = EINVAL;
 	} else if (info.viewType != VK_IMAGE_VIEW_TYPE_2D) {
@@ -532,7 +554,8 @@ resource_create_view(
 		if (info.format != VK_FORMAT_D32_SFLOAT)
 			error = ENOTSUP;
 	} else if (picture->video) {
-		if (info.format != NVRTX_VK_FORMAT_NV12)
+		plane = resource_view_plane(&info);
+		if (info.format != NVRTX_VK_FORMAT_NV12 && plane == 0U)
 			error = ENOTSUP;
 	} else if (!colour) {
 		error = ENOTSUP;
@@ -561,6 +584,7 @@ resource_create_view(
 		view->swizzle[1] = resource_swizzle(info.components.g, VK_COMPONENT_SWIZZLE_G);
 		view->swizzle[2] = resource_swizzle(info.components.b, VK_COMPONENT_SWIZZLE_B);
 		view->swizzle[3] = resource_swizzle(info.components.a, VK_COMPONENT_SWIZZLE_A);
+		view->plane = plane;
 	}
 
 	/* Publishes the view and answers. */
@@ -568,6 +592,24 @@ resource_create_view(
 
 	/* Succeeded: the reply carries the create's result. */
 	return 0;
+}
+
+/*
+ * Reports the plane a view of a video image reads: 1 the luma plane as
+ * R8_UNORM, 2 the chroma plane as R8G8_UNORM, 0 for any other view.
+ */
+static uint32_t
+resource_view_plane(
+	const VkImageViewCreateInfo *info)
+{
+	/* The luma plane, then the chroma plane. */
+	if (info->format == VK_FORMAT_R8_UNORM && info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_PLANE_0_BIT)
+		return 1U;
+	if (info->format == VK_FORMAT_R8G8_UNORM && info->subresourceRange.aspectMask == VK_IMAGE_ASPECT_PLANE_1_BIT)
+		return 2U;
+
+	/* Succeeded: not a plane's view. */
+	return 0U;
 }
 
 /* Reports where a channel of a view comes from: the identity swizzle is the channel's own. */

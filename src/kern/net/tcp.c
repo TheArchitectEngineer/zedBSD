@@ -140,6 +140,9 @@
  */
 #define TCP_SACK_BLOCKS_MAX 4U
 
+/* The most holes the SACK blocks show that one acknowledgement has resent (RFC 6675 NextSeg). */
+#define TCP_SACK_RESENDS_MAX 4U
+
 /* The largest window scale shift (RFC 7323 section 2.3). */
 #define TCP_WSCALE_MAX 14U
 
@@ -573,6 +576,9 @@ static void tcp_retransmit_reset(struct tcp_endpoint *endpoint, struct tcp_disca
 static void tcp_discard_free(struct tcp_discard *discard);
 static uint32_t tcp_in_flight(const struct tcp_endpoint *endpoint);
 static void tcp_retire_acknowledged(struct tcp_endpoint *endpoint, uint32_t acknowledgement, struct tcp_discard *discard);
+static int tcp_sack_take_locked(struct tcp_endpoint *endpoint, const struct tcp_wire *tcp, size_t header_length);
+static void tcp_sack_clear_locked(struct tcp_endpoint *endpoint, int sacked);
+static void tcp_sack_resend(struct tcp_endpoint *endpoint);
 static void tcp_retransmit_clear(struct tcp_endpoint *endpoint);
 static void tcp_reorder_keep(struct tcp_endpoint *endpoint, struct packet_buf **packet, uint32_t sequence);
 static void tcp_reorder_drain(struct tcp_endpoint *endpoint, int discard);
@@ -1227,6 +1233,12 @@ tcp_timer_run(
 		 * acknowledgements as before.
 		 */
 		if (!immediate && !persist) {
+			/*
+			 * The SACK marks go (RFC 6675 section 5.1): after a
+			 * timeout what the peer holds is learnt again.
+			 */
+			tcp_sack_clear_locked(endpoint, 1);
+
 			/* Repeated within the recovery an earlier timeout started, or the first. */
 			repeated = 0;
 			if (endpoint->tcp.recovery_by_timeout != 0)
@@ -1307,6 +1319,13 @@ tcp_timer_run(
 		if (length != 0 &&
 		    sequence + oldest->advance - endpoint->tcp.send_unacknowledged > (uint32_t)endpoint->tcp.peer_window)
 			oldest->probe = 1;
+
+		/* Sent again for a loss within this recovery: the SACK resends pass it by. */
+		if (immediate == TCP_IMMEDIATE_LOSS) {
+			oldest->resent = 1;
+			oldest->resend_order = endpoint->tcp.resend_serial++;
+		}
+
 		spin_unlock_irqrestore(&socket->lock, irq);
 
 		/* Resends the oldest segment, cut to the segment size. */
@@ -2384,8 +2403,15 @@ tcp_send_segment_at(
 	const void *data,
 	size_t length)
 {
-	/* Sent whatever it tells. */
-	return tcp_send_segment_news(endpoint, sequence, flags, data, length, 0);
+	int error;
+
+	/* Sends the segment whatever it tells. */
+	error = tcp_send_segment_news(endpoint, sequence, flags, data, length, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the segment went. */
+	return 0;
 }
 
 /*
@@ -2765,9 +2791,14 @@ tcp_output_segment(
 	 */
 	sack_count = 0;
 	sack_acknowledgement = 0;
-	if ((flags & (TCP_SYN | TCP_RST)) == 0 && (flags & TCP_ACK) != 0 && length == 0 && carrier == NULL &&
+	if ((flags & (TCP_SYN | TCP_RST)) == 0 &&
+	    (flags & TCP_ACK) != 0 &&
+	    length == 0 &&
+	    carrier == NULL &&
 	    endpoint->tcp.sack_on != 0)
 		sack_count = tcp_sack_blocks(endpoint, sack_blocks, &sack_acknowledgement);
+
+	/* Makes room for the option the blocks make. */
 	if (sack_count != 0)
 		options = 4U + 8U * sack_count;
 
@@ -2884,6 +2915,8 @@ tcp_output_segment(
 		option[2] = (uint8_t)(mss >> 8);
 		option[3] = (uint8_t)(mss & 0xffU);
 		at = 4U;
+
+		/* Then SACK-Permitted when this end offers selective acknowledgements. */
 		if (endpoint->tcp.sack_offered != 0) {
 			option[at] = TCP_OPTION_NOP;
 			option[at + 1U] = TCP_OPTION_NOP;
@@ -2907,6 +2940,8 @@ tcp_output_segment(
 		option[1] = TCP_OPTION_NOP;
 		option[2] = TCP_OPTION_SACK;
 		option[3] = (uint8_t)(2U + 8U * sack_count);
+
+		/* Writes each block's left edge and the sequence after its right edge. */
 		for (index = 0; index < sack_count; index++) {
 			wire_put32(option + 4U + 8U * index, sack_blocks[index][0]);
 			wire_put32(option + 8U + 8U * index, sack_blocks[index][1]);
@@ -3804,8 +3839,12 @@ tcp_syn_offered_sack(
 	at = 0;
 	while (at < length) {
 		kind = options[at];
+
+		/* The end of the options. */
 		if (kind == TCP_OPTION_END)
 			break;
+
+		/* A padding byte is a single byte long. */
 		if (kind == TCP_OPTION_NOP) {
 			at++;
 			continue;
@@ -3814,11 +3853,15 @@ tcp_syn_offered_sack(
 		/* An option with a length: one that does not fit ends the list. */
 		if (at + 1U >= length)
 			break;
+
+		/* Reads the option's length. */
 		size = options[at + 1U];
+
+		/* A length too short or running past the options ends the list. */
 		if (size < 2U || at + size > length)
 			break;
 
-		/* SACK-Permitted. */
+		/* Reports the SYN as offering SACK-Permitted. */
 		if (kind == TCP_OPTION_SACK_PERMITTED && size == 2U)
 			return 1;
 
@@ -3851,10 +3894,12 @@ tcp_sack_block_add(
 	if (taken)
 		return count;
 
-	/* Partly: from the acknowledgement. */
+	/* Cuts the block to start at the acknowledgement when it began below it. */
 	below = tcp_sequence_before(start, acknowledgement);
 	if (below)
 		start = acknowledgement;
+
+	/* Records the block. */
 	blocks[count][0] = start;
 	blocks[count][1] = end;
 
@@ -3891,10 +3936,12 @@ tcp_sack_blocks(
 	int from_start;
 	int before_end;
 
-	/* Nothing to report, read without the lock (most acknowledgements). */
+	/* Reports nothing when no segment is kept and no duplicate is owed, read without the lock (most acknowledgements). */
 	count = 0;
 	if (tcp->reorder_count == 0 && tcp->dsack_pending == 0)
 		return 0;
+
+	/* Reads the kept segments and the owed duplicate under the socket lock. */
 	irq = spin_lock_irqsave(&tcp->inet.socket.lock);
 
 	/* The acknowledgement the blocks go with, read with them. */
@@ -3919,15 +3966,22 @@ tcp_sack_blocks(
 
 		/* The segments that touch or overlap it join it. */
 		for (;;) {
+			/* The last kept segment ends the block. */
 			if (index >= tcp->reorder_count)
 				break;
+
+			/* A segment starting beyond the block's end leaves a gap, which ends it. */
 			joins = tcp_sequence_at_or_before(tcp->reorder_sequence[index], end);
 			if (!joins)
 				break;
+
+			/* Extends the block over the segment when it reaches further. */
 			entry_end = tcp->reorder_sequence[index] + tcp->reorder_length[index];
 			longer = tcp_sequence_before(end, entry_end);
 			if (longer)
 				end = entry_end;
+
+			/* Moves on to the next kept segment. */
 			index++;
 		}
 
@@ -3950,23 +4004,34 @@ tcp_sack_blocks(
 		end = start + tcp->reorder_length[index];
 		first = index;
 		for (;;) {
+			/* The lowest kept segment ends the block. */
 			if (first == 0)
 				break;
+
+			/* A segment ending below the block's start leaves a gap, which ends it. */
 			entry_end = tcp->reorder_sequence[first - 1U] + tcp->reorder_length[first - 1U];
 			joins = tcp_sequence_at_or_before(start, entry_end);
 			if (!joins)
 				break;
+
+			/* Takes the segment into the block, which then starts there. */
 			first--;
 			start = tcp->reorder_sequence[first];
+
+			/* Extends the block's end when the segment reaches further. */
 			longer = tcp_sequence_before(end, entry_end);
 			if (longer)
 				end = entry_end;
 		}
 
-		/* The next block down starts below this one; the one reported first is not repeated. */
+		/* The next block down starts below this one. */
 		index = first;
+
+		/* The block reported first is not repeated. */
 		if (recent_found && start == recent_start)
 			continue;
+
+		/* Adds the block. */
 		count = tcp_sack_block_add(blocks, count, start, end, *acknowledgement);
 	}
 
@@ -3974,6 +4039,347 @@ tcp_sack_blocks(
 
 	/* Succeeded: the blocks filled. */
 	return count;
+}
+
+/*
+ * Marks the sent segments that an acknowledgement's SACK blocks report
+ * held (RFC 2018 section 3, RFC 6675 section 4), each wholly within one
+ * block, and returns how many it newly marks, or -1 when the segment
+ * carries no SACK option.  A block is read modulo 2^32 and cut to what
+ * lies between the acknowledgement and the most ever sent; one whose
+ * edges are out of order says nothing.  The caller holds the socket lock.
+ */
+static int
+tcp_sack_take_locked(
+	struct tcp_endpoint *endpoint,
+	const struct tcp_wire *tcp,
+	size_t header_length)
+{
+	struct tcp_pending *entry;
+	const uint8_t *options;
+	const uint8_t *block;
+	size_t length;
+	size_t at;
+	uint8_t kind;
+	uint8_t size;
+	uint32_t left;
+	uint32_t right;
+	uint32_t low;
+	uint32_t high;
+	unsigned blocks;
+	unsigned index;
+	unsigned sent;
+	unsigned position;
+	int found;
+	int newly;
+	int empty;
+	int below;
+	int above;
+	int starts_inside;
+	int ends_inside;
+	int resend_held;
+	uint16_t latest;
+
+	/* The options between the fixed header and the data, and the SACK option among them. */
+	options = (const uint8_t *)(tcp + 1);
+	length = header_length - sizeof(*tcp);
+	found = 0;
+	block = NULL;
+	blocks = 0;
+	at = 0;
+	while (at < length && !found) {
+		kind = options[at];
+
+		/* The end of the options. */
+		if (kind == TCP_OPTION_END)
+			break;
+
+		/* A padding byte is a single byte long. */
+		if (kind == TCP_OPTION_NOP) {
+			at++;
+			continue;
+		}
+
+		/* An option with a length: one that does not fit ends the list. */
+		if (at + 1U >= length)
+			break;
+
+		/* Reads the option's length. */
+		size = options[at + 1U];
+
+		/* A length too short or running past the options ends the list. */
+		if (size < 2U || at + size > length)
+			break;
+
+		/* The SACK option: kind 5, two bytes and eight a block. */
+		if (kind == TCP_OPTION_SACK &&
+		    size >= 10U &&
+		    (size - 2U) % 8U == 0) {
+			found = 1;
+			block = options + at + 2U;
+			blocks = (size - 2U) / 8U;
+		}
+
+		/* Any other option is skipped by its length. */
+		at += size;
+	}
+
+	/* None: the acknowledgement says nothing of held segments. */
+	if (!found)
+		return -1;
+
+	/* Each block marks the sent segments it holds whole. */
+	low = endpoint->tcp.send_unacknowledged;
+	high = endpoint->tcp.send_max;
+	sent = tcp_sent_count_locked(endpoint);
+	newly = 0;
+	resend_held = 0;
+	latest = 0;
+	for (index = 0; index < blocks; index++) {
+		left = wire_get32(block + 8U * index);
+		right = wire_get32(block + 4U + 8U * index);
+
+		/* A block whose edges are out of order says nothing. */
+		empty = tcp_sequence_at_or_before(right, left);
+		if (empty)
+			continue;
+
+		/* Cuts the block to what is outstanding: not below the acknowledgement, not above the most sent. */
+		below = tcp_sequence_before(left, low);
+		if (below)
+			left = low;
+
+		/* Cuts the block's right edge to the most sent. */
+		above = tcp_sequence_before(high, right);
+		if (above)
+			right = high;
+
+		/* A block wholly outside what is outstanding is empty by now. */
+		empty = tcp_sequence_at_or_before(right, left);
+		if (empty)
+			continue;
+
+		/* The segments within it. */
+		for (position = 0; position < sent; position++) {
+			entry = &endpoint->tcp.send_queue[(endpoint->tcp.send_first + position) % TCP_SEND_QUEUE_MAX];
+
+			/* A segment already marked, or one that carries no data, is passed by. */
+			if (entry->sacked != 0 || entry->length == 0)
+				continue;
+
+			/* Only a segment that lies wholly within the block is held. */
+			starts_inside = tcp_sequence_at_or_before(left, entry->sequence);
+			if (!starts_inside)
+				continue;
+
+			/* The segment's end must not pass the block's right edge. */
+			ends_inside = tcp_sequence_at_or_before(entry->sequence + entry->length, right);
+			if (!ends_inside)
+				continue;
+
+			/* Marks the segment as held by the peer. */
+			entry->sacked = 1;
+			newly++;
+
+			/* The latest resend the peer now reports held. */
+			if (entry->resent != 0 &&
+			    (!resend_held ||
+			     (int16_t)(entry->resend_order - latest) > 0)) {
+				latest = entry->resend_order;
+				resend_held = 1;
+			}
+		}
+	}
+
+	/*
+	 * A resend not held while a later one is was lost as well (as Linux
+	 * finds lost retransmissions): it may go again, the oldest at once.
+	 */
+	for (position = 0; resend_held && position < sent; position++) {
+		entry = &endpoint->tcp.send_queue[(endpoint->tcp.send_first + position) % TCP_SEND_QUEUE_MAX];
+
+		/* Only a resend that is not held while a later one is was lost. */
+		if (entry->sacked != 0 ||
+		    entry->resent == 0 ||
+		    (int16_t)(latest - entry->resend_order) <= 0)
+			continue;
+
+		/* Lets the segment go again. */
+		entry->resent = 0;
+
+		/* The oldest goes at once. */
+		if (position == 0) {
+			endpoint->tcp.retransmit_deadline = sched_ticks();
+			endpoint->tcp.retransmit_immediate = TCP_IMMEDIATE_LOSS;
+			endpoint->tcp.counters.immediate_resends++;
+		}
+	}
+
+	/* Succeeded: the count newly marked. */
+	return newly;
+}
+
+/*
+ * Takes the resend marks off every segment in the ring, and with sacked
+ * the SACK marks too.  The caller holds the socket lock.
+ */
+static void
+tcp_sack_clear_locked(
+	struct tcp_endpoint *endpoint,
+	int sacked)
+{
+	struct tcp_pending *entry;
+	unsigned position;
+
+	/* Each entry in the ring. */
+	for (position = 0; position < endpoint->tcp.send_count; position++) {
+		entry = &endpoint->tcp.send_queue[(endpoint->tcp.send_first + position) % TCP_SEND_QUEUE_MAX];
+		entry->resent = 0;
+
+		/* The SACK mark goes too when asked. */
+		if (sacked)
+			entry->sacked = 0;
+	}
+}
+
+/*
+ * Resends, within a fast recovery, the holes the SACK blocks show lost
+ * (RFC 6675 section 5, NextSeg's first rule): from the lowest, a segment
+ * not held, not yet resent in this recovery, with more than
+ * (DupThresh - 1) segments' bytes held above it (IsLost), while what is
+ * in the network (SetPipe: each byte not held and not lost counts once,
+ * and once more when resent) leaves room in the congestion window.  The
+ * oldest segment is the fast retransmit's and the partial
+ * acknowledgements' (the timer sends it), so it is passed by.  A resend
+ * holds a reference on the segment's copy while the socket lock is
+ * released, so an acknowledgement that retires it meanwhile does not
+ * free it.  At most TCP_SACK_RESENDS_MAX go for one acknowledgement.
+ */
+static void
+tcp_sack_resend(
+	struct tcp_endpoint *endpoint)
+{
+	struct socket *socket = &endpoint->tcp.inet.socket;
+	struct tcp_pending *entry;
+	struct tcp_pending *chosen;
+	struct packet_buf *copy;
+	const uint8_t *payload;
+	unsigned long irq;
+	unsigned position;
+	unsigned sent;
+	unsigned resends;
+	uint32_t held_above;
+	uint32_t threshold;
+	uint32_t pipe;
+	uint32_t sequence;
+	uint32_t mss;
+	uint16_t length;
+	uint8_t flags;
+	enum tcp_refusal refusal;
+	int lost;
+	int retries;
+	int error;
+
+	/* One resend at a time, each chosen afresh. */
+	for (resends = 0; resends < TCP_SACK_RESENDS_MAX; resends++) {
+		irq = spin_lock_irqsave(&socket->lock);
+
+		/* Only within a fast recovery with SACK. */
+		if (endpoint->tcp.sack_on == 0 ||
+		    endpoint->tcp.recovery == 0 ||
+		    endpoint->tcp.recovery_by_timeout != 0) {
+			spin_unlock_irqrestore(&socket->lock, irq);
+			return;
+		}
+
+		/*
+		 * From the highest down: the bytes held above each segment,
+		 * whether it is lost, what is in the network, and the lowest
+		 * lost one not yet resent (the oldest passed by).
+		 */
+		mss = tcp_segment_size_locked(endpoint);
+		threshold = (TCP_DUPLICATE_ACKS_FAST - 1U) * mss;
+		sent = tcp_sent_count_locked(endpoint);
+		held_above = 0;
+		pipe = 0;
+		chosen = NULL;
+		position = sent;
+		while (position > 0) {
+			position--;
+			entry = &endpoint->tcp.send_queue[(endpoint->tcp.send_first + position) % TCP_SEND_QUEUE_MAX];
+			if (entry->sacked != 0) {
+				held_above += entry->length;
+				continue;
+			}
+
+			/* Lost when more than the threshold's bytes are held above it. */
+			lost = held_above > threshold;
+
+			/* A segment not lost is in the network once. */
+			if (!lost)
+				pipe += entry->advance;
+
+			/* A resend is in the network once more. */
+			if (entry->resent != 0)
+				pipe += entry->advance;
+
+			/* The lowest lost segment not yet resent is the next to go; the oldest is not. */
+			if (lost &&
+			    entry->resent == 0 &&
+			    entry->length != 0 &&
+			    position != 0)
+				chosen = entry;
+		}
+
+		/* Nothing to resend, or no room for it. */
+		if (chosen == NULL || pipe + chosen->length > endpoint->tcp.cwnd) {
+			spin_unlock_irqrestore(&socket->lock, irq);
+			return;
+		}
+
+		/* Taken for the resend: marked, its copy held, the timing stopped (Karn). */
+		chosen->resent = 1;
+		chosen->resend_order = endpoint->tcp.resend_serial++;
+		copy = chosen->packet;
+		packet_buf_ref(copy);
+		payload = copy->storage + chosen->payload_offset;
+		sequence = chosen->sequence;
+		length = chosen->length;
+		flags = chosen->flags;
+		endpoint->tcp.rtt_timing = 0;
+
+		spin_unlock_irqrestore(&socket->lock, irq);
+
+		/* Resends it, cut to the segment size. */
+		error = tcp_send_segment_cut(endpoint, sequence, flags, payload, length);
+		refusal = tcp_refusal_of(error);
+		retries = tcp_refusal_retries(refusal);
+
+		/* Counts the resend that went, and marks one the device or the pool refused for another try. */
+		irq = spin_lock_irqsave(&socket->lock);
+
+		/* A resend that went is counted. */
+		if (error == 0) {
+			endpoint->tcp.counters.retransmit_segments++;
+			endpoint->tcp.counters.retransmit_bytes += length;
+			endpoint->tcp.counters.immediate_resends++;
+		}
+
+		/* A refused one is marked to go again. */
+		sent = tcp_sent_count_locked(endpoint);
+		for (position = 0; retries && position < sent; position++) {
+			entry = &endpoint->tcp.send_queue[(endpoint->tcp.send_first + position) % TCP_SEND_QUEUE_MAX];
+			if (entry->sequence == sequence)
+				entry->resent = 0;
+		}
+
+		spin_unlock_irqrestore(&socket->lock, irq);
+		packet_buf_free(copy);
+
+		/* A failed resend ends this round: the next acknowledgement tries again. */
+		if (error != 0)
+			return;
+	}
 }
 
 /*
@@ -5057,6 +5463,7 @@ tcp_retire_acknowledged(
 	int copy_jumbo;
 	int small_acked;
 	int before;
+	int oldest_resent;
 
 	/*
 	 * Takes the covered entries off the front of the ring.  Only an entry
@@ -5119,6 +5526,15 @@ tcp_retire_acknowledged(
 	}
 
 	/*
+	 * An acknowledgement that stops at a segment the peer reported held
+	 * says the peer dropped it after all (it reneged, RFC 2018 section
+	 * 8): the marks no longer say what the peer has.
+	 */
+	sent = tcp_sent_count_locked(endpoint);
+	if (sent != 0 && endpoint->tcp.send_queue[endpoint->tcp.send_first].sacked != 0)
+		tcp_sack_clear_locked(endpoint, 1);
+
+	/*
 	 * With the short segment sent before it acknowledged, a short last
 	 * entry that Nagle's algorithm held may go.
 	 */
@@ -5174,6 +5590,9 @@ tcp_retire_acknowledged(
 		/* Out of the recovery: recover means nothing until the next one (review-1 G2). */
 		endpoint->tcp.recovery = 0;
 		endpoint->tcp.recovery_by_timeout = 0;
+
+		/* The resends of this recovery are not those of the next. */
+		tcp_sack_clear_locked(endpoint, 0);
 	}
 
 	/* The backoff of a closed window ends when its probe is answered, and the persist state with it. */
@@ -5238,9 +5657,16 @@ tcp_retire_acknowledged(
 	 */
 	timeout = tcp_backoff_timeout(rto, endpoint->tcp.rto_backoff);
 	endpoint->tcp.retransmit_immediate = 0;
+
+	/* Notes whether the oldest segment was resent already within this recovery. */
+	oldest_resent = 0;
+	if (sent != 0)
+		oldest_resent = endpoint->tcp.send_queue[endpoint->tcp.send_first].resent != 0;
+
+	/* Sets the deadline by whether anything is in flight and whether to resend at once. */
 	if (sent == 0) {
 		endpoint->tcp.retransmit_deadline = 0;
-	} else if (recovering && !going_back) {
+	} else if (recovering && !going_back && !oldest_resent) {
 		endpoint->tcp.retransmit_deadline = now;
 		endpoint->tcp.retransmit_immediate = TCP_IMMEDIATE_LOSS;
 		endpoint->tcp.counters.immediate_resends++;
@@ -5450,6 +5876,8 @@ tcp_send_reliable(
 		entry->payload_offset = (uint16_t)(copy->data - copy->storage);
 		entry->flags = flags;
 		entry->fresh = 1;
+		entry->sacked = 0;
+		entry->resent = 0;
 		endpoint->tcp.send_count++;
 		endpoint->tcp.send_unsent++;
 		if (jumbo)
@@ -6314,8 +6742,15 @@ tcp_send_ack(
 	struct tcp_endpoint *endpoint,
 	int duplicate)
 {
-	/* Sent whatever it tells. */
-	return tcp_send_ack_news(endpoint, duplicate, 0);
+	int error;
+
+	/* Sends the acknowledgement whatever it tells. */
+	error = tcp_send_ack_news(endpoint, duplicate, 0);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the acknowledgement went. */
+	return 0;
 }
 
 /*
@@ -7952,6 +8387,7 @@ tcp_passive_syn(
 	/* A SYN that offers selective acknowledgements is answered with SACK-Permitted, and both ends use them. */
 	child->tcp.sack_offered = (uint8_t)(offered_sack != 0);
 	child->tcp.sack_on = (uint8_t)(offered_sack != 0);
+
 	child->tcp.send_next = (uint32_t)sched_ticks() * 1103515245U +
 	    child->tcp.inet.local_port + source_port;
 	child->tcp.send_next = tcp_initial_sequence(child->tcp.send_next);
@@ -8189,6 +8625,8 @@ tcp_segment_input(
 	int window_opened;
 	int duplicate;
 	int counted;
+	int sack_new;
+	int sack_resend;
 	int moved;
 	int fast;
 	int reprobe;
@@ -8423,6 +8861,7 @@ tcp_segment_input(
 			offered_sack = tcp_syn_offered_sack(tcp, header_length);
 			if (endpoint->tcp.sack_offered != 0 && offered_sack)
 				endpoint->tcp.sack_on = 1;
+
 			endpoint->tcp.peer_window = wire_get16(tcp->window);
 			endpoint->tcp.send_window_sequence = sequence;
 			endpoint->tcp.send_window_acknowledgement = acknowledgement;
@@ -8580,9 +9019,21 @@ tcp_segment_input(
 		}
 
 		/*
+		 * The SACK blocks mark the segments the peer holds above the
+		 * acknowledgement (RFC 6675 section 4): how many it newly
+		 * reports, or -1 when it carries none.
+		 */
+		sack_new = -1;
+		if (endpoint->tcp.sack_on != 0 && !acknowledges_old)
+			sack_new = tcp_sack_take_locked(endpoint, tcp, header_length);
+
+		/*
 		 * So is a duplicate acknowledgement (RFC 5681 section 2): one
 		 * that takes nothing new while data waits, carries no data, no
-		 * SYN or FIN, and leaves the window as it was.
+		 * SYN or FIN, and leaves the window as it was.  With SACK only
+		 * one that reports a segment newly held counts (RFC 6675
+		 * section 2): a D-SACK alone answers a resend that was not
+		 * needed.
 		 */
 		sent = tcp_sent_count_locked(endpoint);
 		duplicate = 0;
@@ -8593,6 +9044,10 @@ tcp_segment_input(
 		    payload_length == 0 &&
 		    (flags & (TCP_SYN | TCP_FIN)) == 0)
 			duplicate = 1;
+
+		/* With SACK, an acknowledgement that reports no segment newly held does not count. */
+		if (duplicate && sack_new == 0)
+			duplicate = 0;
 
 		/*
 		 * An acknowledgement into the middle of the oldest segment moved
@@ -8636,6 +9091,7 @@ tcp_segment_input(
 
 		/* The fast retransmit: the window halved, a recovery up to what was sent, and the oldest resent at once. */
 		if (fast) {
+			tcp_sack_clear_locked(endpoint, 0);
 			tcp_cwnd_loss_locked(endpoint, 0, 0);
 			endpoint->tcp.recover = tcp_sent_end_locked(endpoint);
 			endpoint->tcp.recovery = 1;
@@ -8680,11 +9136,22 @@ tcp_segment_input(
 		if (retired || window_opened)
 			wake = tcp_send_wake_due_locked(endpoint);
 
+		/* A fast recovery with SACK resends the holes the blocks show (RFC 6675 section 5). */
+		sack_resend = 0;
+		if (endpoint->tcp.sack_on != 0 &&
+		    endpoint->tcp.recovery != 0 &&
+		    endpoint->tcp.recovery_by_timeout == 0)
+			sack_resend = 1;
+
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
 		if (retired)
 			tcp_discard_free(&retransmit);
 		if (wake)
 			socket_wake_send(&endpoint->tcp.inet.socket);
+
+		/* Resends the holes outside the socket lock. */
+		if (sack_resend)
+			tcp_sack_resend(endpoint);
 	}
 
 	/*
@@ -8721,9 +9188,12 @@ tcp_segment_input(
 		 * a duplicate (D-SACK, RFC 2883 section 4): the peer learns its
 		 * resend was not needed.
 		 */
-		if (endpoint->tcp.sack_on != 0 && (old_payload || overlap != 0)) {
+		if (endpoint->tcp.sack_on != 0 &&
+		    (old_payload || overlap != 0)) {
 			endpoint->tcp.dsack_start = sequence;
 			endpoint->tcp.dsack_end = endpoint->tcp.receive_next;
+
+			/* A segment taken wholly is reported to its end, one taken in part to where it was cut. */
 			if (old_payload)
 				endpoint->tcp.dsack_end = sequence + (uint32_t)payload_length;
 			endpoint->tcp.dsack_pending = 1;
@@ -8793,6 +9263,8 @@ tcp_segment_input(
 			    &endpoint->tcp.receive_next);
 			packet = NULL;
 			queued = 0;
+
+			/* A payload that was queued has moved receive_next already. */
 			if (enqueue_error == 0) {
 				queued = 1;
 				advanced = 1;
@@ -8802,8 +9274,12 @@ tcp_segment_input(
 		/* A discarded payload moves receive_next here; a queued one is counted. */
 		socket_irq = spin_lock_irqsave(
 		    &endpoint->tcp.inet.socket.lock);
+
+		/* A payload that was discarded still moves receive_next past it. */
 		if (queued && !advanced && endpoint->tcp.receive_next == sequence)
 			endpoint->tcp.receive_next += (uint32_t)payload_length;
+
+		/* A payload taken is counted. */
 		if (queued)
 			endpoint->tcp.counters.data_bytes_in += payload_length;
 
@@ -9065,8 +9541,12 @@ tcp_reorder_keep(
 			/* Reported once as a duplicate (D-SACK, RFC 2883 section 4). */
 			if (tcp->sack_on != 0) {
 				held = tcp->reorder_length[place];
+
+				/* The duplicate covers the shorter of the two copies. */
 				if (held > length)
 					held = length;
+
+				/* Records the range for the next acknowledgement, and makes this segment the block reported first. */
 				tcp->dsack_start = sequence;
 				tcp->dsack_end = sequence + held;
 				tcp->dsack_pending = 1;

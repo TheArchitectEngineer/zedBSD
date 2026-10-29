@@ -6,7 +6,7 @@
  */
 
 /*
- * The libvulkan side of the WS243 wire round trip: libvulkan's own video
+ * The libvulkan side of the video wire round trip: libvulkan's own video
  * encoders (userland/desktop/libvulkan/video.c, included so its static
  * encoders can be called) write a decode, a begin and a parameters
  * create into byte runs the executor's readers then read (wire-decode.c).
@@ -17,43 +17,70 @@
 
 #include <stdlib.h>
 
-#include "plan/ws243/tests/wire-test.h"
+#include "plan/tools/rtx-video/wire-test.h"
 
 static size_t encode_take(struct vulkan_writer *writer, uint8_t *out, size_t capacity);
 
 /* A handle stands for its own identity on the wire. */
 struct vulkan_object *
-vulkan_nondispatchable_object(uint64_t handle)
+vulkan_nondispatchable_object(
+	uint64_t handle)
 {
-	return (struct vulkan_object *)(uintptr_t)handle;
+	struct vulkan_object *object;
+
+	/* Takes the handle's value as the object, so the wire id reads it back. */
+	object = (struct vulkan_object *)(uintptr_t)handle;
+
+	/* Reports the object that stands for the handle. */
+	return object;
 }
 
+/* Reports the wire id of an object, which is the handle it stands for. */
 uint64_t
-vulkan_object_wire_id(const struct vulkan_object *object)
+vulkan_object_wire_id(
+	const struct vulkan_object *object)
 {
-	return (uint64_t)(uintptr_t)object;
+	uint64_t id;
+
+	/* Takes the object's address back as the handle. */
+	id = (uint64_t)(uintptr_t)object;
+
+	/* Reports the wire id. */
+	return id;
 }
 
+/* Drops the error the encoders report, which this test never reaches. */
 void
-vulkan_context_error(struct vulkan_context *context, VkResult error)
+vulkan_context_error(
+	struct vulkan_context *context,
+	VkResult error)
 {
 	(void)context;
 	(void)error;
 }
 
+/* Stops the run if an encoder tries to talk to a real executor, which the test never wires up. */
 VkResult
-vulkan_context_execute(struct vulkan_context *context, const struct vulkan_writer *writer, size_t reply_capacity, struct vulkan_reader *reader)
+vulkan_context_execute(
+	struct vulkan_context *context,
+	const struct vulkan_writer *writer,
+	size_t reply_capacity,
+	struct vulkan_reader *reader)
 {
 	(void)context;
 	(void)writer;
 	(void)reply_capacity;
 	(void)reader;
+
+	/* Aborts: no call under test is meant to reach the executor. */
 	abort();
 }
 
 /* Encodes a decode: [present][VkVideoDecodeInfoKHR and its chain], as vkCmdDecodeVideoKHR records it. */
 size_t
-wire_encode_decode(uint8_t *out, size_t capacity)
+wire_encode_decode(
+	uint8_t *out,
+	size_t capacity)
 {
 	StdVideoDecodeH264PictureInfo std_picture;
 	VkVideoDecodeH264PictureInfoKHR picture;
@@ -66,7 +93,9 @@ wire_encode_decode(uint8_t *out, size_t capacity)
 	struct vulkan_writer writer;
 	uint32_t slices[3] = { 0U, 1000U, 2048U };
 	uint32_t index;
+	size_t length;
 
+	/* Describes the picture: an IDR reference with its ids, number and order counts. */
 	memset(&std_picture, 0, sizeof(std_picture));
 	std_picture.flags.is_reference = 1U;
 	std_picture.flags.IdrPicFlag = 1U;
@@ -81,6 +110,7 @@ wire_encode_decode(uint8_t *out, size_t capacity)
 	picture.sliceCount = 3U;
 	picture.pSliceOffsets = slices;
 
+	/* Describes the three picture resources: the output and the two references. */
 	for (index = 0U; index < 3U; index++) {
 		memset(&resources[index], 0, sizeof(resources[index]));
 		resources[index].sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
@@ -89,6 +119,7 @@ wire_encode_decode(uint8_t *out, size_t capacity)
 		resources[index].imageViewBinding = (VkImageView)(uintptr_t)(0x50U + index);
 	}
 
+	/* Describes the two reference slots with their DPB info and resources. */
 	for (index = 0U; index < 2U; index++) {
 		memset(&std_references[index], 0, sizeof(std_references[index]));
 		std_references[index].FrameNum = 5U + (uint16_t)index;
@@ -103,13 +134,17 @@ wire_encode_decode(uint8_t *out, size_t capacity)
 		slots[index].slotIndex = (int32_t)index + 1;
 		slots[index].pPictureResource = &resources[index + 1U];
 	}
+
+	/* Marks the second reference as a long-term reference. */
 	std_references[1].flags.used_for_long_term_reference = 1U;
 
+	/* Describes the setup slot, which the decoded picture becomes. */
 	memset(&setup, 0, sizeof(setup));
 	setup.sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
 	setup.slotIndex = 3;
 	setup.pPictureResource = &resources[0];
 
+	/* Describes the decode: the stream range, the output, the setup slot and the references. */
 	memset(&decode, 0, sizeof(decode));
 	decode.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR;
 	decode.pNext = &picture;
@@ -121,26 +156,38 @@ wire_encode_decode(uint8_t *out, size_t capacity)
 	decode.referenceSlotCount = 2U;
 	decode.pReferenceSlots = slots;
 
+	/* Writes the present flag and the encoded decode. */
 	vulkan_writer_init(&writer);
 	vulkan_write_u64(&writer, 1);
 	video_encode_struct(&writer, (const VkBaseInStructure *)&decode);
-	return encode_take(&writer, out, capacity);
+
+	/* Takes the bytes out of the writer. */
+	length = encode_take(&writer, out, capacity);
+
+	/* Reports the length of the encoded decode. */
+	return length;
 }
 
 /* Encodes a begin: [present][VkVideoBeginCodingInfoKHR], three slots (one without a picture, one without a slot). */
 size_t
-wire_encode_begin(uint8_t *out, size_t capacity)
+wire_encode_begin(
+	uint8_t *out,
+	size_t capacity)
 {
 	VkVideoPictureResourceInfoKHR resource;
 	VkVideoReferenceSlotInfoKHR slots[3];
 	VkVideoBeginCodingInfoKHR begin;
 	struct vulkan_writer writer;
+	size_t length;
 
+	/* Describes the picture resource the first and the third slot name. */
 	memset(&resource, 0, sizeof(resource));
 	resource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
 	resource.codedExtent.width = 640U;
 	resource.codedExtent.height = 480U;
 	resource.imageViewBinding = (VkImageView)(uintptr_t)0x60U;
+
+	/* Describes the slots: one with a picture, one without, one without a slot. */
 	memset(slots, 0, sizeof(slots));
 	slots[0].sType = VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR;
 	slots[0].slotIndex = 4;
@@ -151,6 +198,7 @@ wire_encode_begin(uint8_t *out, size_t capacity)
 	slots[2].slotIndex = -1;
 	slots[2].pPictureResource = &resource;
 
+	/* Describes the begin with its session, its parameters and the three slots. */
 	memset(&begin, 0, sizeof(begin));
 	begin.sType = VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR;
 	begin.videoSession = (VkVideoSessionKHR)(uintptr_t)0x70U;
@@ -158,10 +206,16 @@ wire_encode_begin(uint8_t *out, size_t capacity)
 	begin.referenceSlotCount = 3U;
 	begin.pReferenceSlots = slots;
 
+	/* Writes the present flag and the encoded begin. */
 	vulkan_writer_init(&writer);
 	vulkan_write_u64(&writer, 1);
 	video_encode_struct(&writer, (const VkBaseInStructure *)&begin);
-	return encode_take(&writer, out, capacity);
+
+	/* Takes the bytes out of the writer. */
+	length = encode_take(&writer, out, capacity);
+
+	/* Reports the length of the encoded begin. */
+	return length;
 }
 
 /*
@@ -169,7 +223,9 @@ wire_encode_begin(uint8_t *out, size_t capacity)
  * and its chain]: one SPS with scaling lists, one PPS.
  */
 size_t
-wire_encode_parameters(uint8_t *out, size_t capacity)
+wire_encode_parameters(
+	uint8_t *out,
+	size_t capacity)
 {
 	StdVideoH264ScalingLists scaling;
 	StdVideoH264SequenceParameterSet sps;
@@ -180,12 +236,16 @@ wire_encode_parameters(uint8_t *out, size_t capacity)
 	struct vulkan_writer writer;
 	int32_t cycle[2] = { 3, -4 };
 	uint32_t index;
+	size_t length;
 
+	/* Describes the scaling lists: one list present, one using the default matrix. */
 	memset(&scaling, 0, sizeof(scaling));
 	scaling.scaling_list_present_mask = 0x41U;
 	scaling.use_default_scaling_matrix_mask = 0x40U;
 	for (index = 0U; index < 16U; index++)
 		scaling.ScalingList4x4[0][index] = (uint8_t)(index + 1U);
+
+	/* Describes the sequence parameter set with its order count cycle and scaling lists. */
 	memset(&sps, 0, sizeof(sps));
 	sps.flags.frame_mbs_only_flag = 1U;
 	sps.flags.direct_8x8_inference_flag = 1U;
@@ -202,6 +262,8 @@ wire_encode_parameters(uint8_t *out, size_t capacity)
 	sps.pic_height_in_map_units_minus1 = 67U;
 	sps.pOffsetForRefFrame = cycle;
 	sps.pScalingLists = &scaling;
+
+	/* Describes the picture parameter set. */
 	memset(&pps, 0, sizeof(pps));
 	pps.flags.entropy_coding_mode_flag = 1U;
 	pps.flags.transform_8x8_mode_flag = 1U;
@@ -213,6 +275,7 @@ wire_encode_parameters(uint8_t *out, size_t capacity)
 	pps.chroma_qp_index_offset = -2;
 	pps.second_chroma_qp_index_offset = 3;
 
+	/* Describes the sets to add, then the H.264 create, then the create itself. */
 	memset(&add, 0, sizeof(add));
 	add.sType = VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR;
 	add.stdSPSCount = 1U;
@@ -229,23 +292,37 @@ wire_encode_parameters(uint8_t *out, size_t capacity)
 	create.pNext = &h264;
 	create.videoSession = (VkVideoSessionKHR)(uintptr_t)0x70U;
 
+	/* Writes the present flag and the encoded create. */
 	vulkan_writer_init(&writer);
 	vulkan_write_u64(&writer, 1);
 	video_encode_struct(&writer, (const VkBaseInStructure *)&create);
-	return encode_take(&writer, out, capacity);
+
+	/* Takes the bytes out of the writer. */
+	length = encode_take(&writer, out, capacity);
+
+	/* Reports the length of the encoded create. */
+	return length;
 }
 
 /* Copies a writer's bytes out (0 when it failed or does not fit) and frees it. */
 static size_t
-encode_take(struct vulkan_writer *writer, uint8_t *out, size_t capacity)
+encode_take(
+	struct vulkan_writer *writer,
+	uint8_t *out,
+	size_t capacity)
 {
 	size_t bytes;
 
+	/* Takes the bytes only when the writer succeeded and they fit. */
 	bytes = 0U;
 	if (writer->error == VK_SUCCESS && writer->bytes <= capacity) {
 		memcpy(out, writer->data, writer->bytes);
 		bytes = writer->bytes;
 	}
+
+	/* Frees the writer's buffer. */
 	vulkan_writer_finish(writer);
+
+	/* Reports how many bytes were taken. */
 	return bytes;
 }

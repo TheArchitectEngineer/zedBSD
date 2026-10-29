@@ -109,6 +109,7 @@ nvrtx_vk_record_route(
 	case GPU_OP_CMD_END_RENDER_PASS:
 		break;
 	default:
+		/* The video and query commands are taken here too; any other opcode is another route's. */
 		video = nvrtx_vk_video_recorded(opcode);
 		if (!video)
 			return 0;
@@ -125,9 +126,10 @@ nvrtx_vk_record_route(
 	/* Reads the record to its end; a record that does not decode leaves the stream unreadable. */
 	kern_memset(&record, 0, sizeof(record));
 	record.opcode = opcode;
+
+	/* A video or query command keeps a structure of its own and takes its scope from the recording. */
 	video = nvrtx_vk_video_recorded(opcode);
 	if (video) {
-		/* A video or query command keeps a structure of its own and takes its scope from the recording. */
 		command = nvrtx_vk_payload(session, I915_VK_OBJ_COMMAND_BUFFER, identity);
 		if (command != NULL && command->state != NVRTX_VK_COMMAND_RECORDING)
 			command = NULL;
@@ -135,6 +137,8 @@ nvrtx_vk_record_route(
 	} else {
 		refused = record_decode(session, opcode, reader, &record);
 	}
+
+	/* Drops a record that did not decode. */
 	if (refused == EINVAL || reader->error != 0) {
 		record_drop(&record);
 		return EINVAL;

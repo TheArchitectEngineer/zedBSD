@@ -381,6 +381,175 @@ drv_usb_cdc_ncm_build_ntb16(
 	return 0;
 }
 
+/*
+ * Builds one NTB16 that carries as many of the frames, in order, as fit:
+ * the NTH16, each datagram at the next place the OUT alignment allows
+ * (its payload at wNdpOutPayloadRemainder modulo wNdpOutDivisor), and
+ * after the last one the NDP16 at wNdpOutAlignment with a pointer entry
+ * for each and the terminating null entry.  A frame joins while the
+ * block, with its zero-length-packet byte, stays within ntb_capacity and
+ * dwNtbOutMaxSize and the datagrams within wNtbOutMaxDatagrams.  *taken
+ * is how many it carries; the first frame must fit (EMSGSIZE otherwise).
+ */
+int
+drv_usb_cdc_ncm_build_ntb16_frames(
+	const struct drv_usb_cdc_ncm_profile *profile,
+	uint16_t sequence,
+	const void *const *frames,
+	const size_t *lengths,
+	size_t count,
+	void *ntb,
+	size_t ntb_capacity,
+	size_t *ntb_length,
+	size_t *taken)
+{
+	uint8_t *bytes = ntb;
+	size_t offsets[DRV_USB_CDC_NCM_MAX_TX_DATAGRAMS];
+	size_t limit;
+	size_t at;
+	size_t datagram;
+	size_t end;
+	size_t ndp;
+	size_t ndp_length;
+	size_t block;
+	size_t no_zlp_exact;
+	size_t carried;
+	size_t used;
+	size_t index;
+	int valid;
+	int error;
+
+	/* Reports nothing built and nothing taken until a block is complete. */
+	if (ntb_length != NULL)
+		*ntb_length = 0;
+
+	/* The count taken is zero as well. */
+	if (taken != NULL)
+		*taken = 0;
+
+	/* Refuses a profile or arguments that no block can be built from. */
+	valid = profile_valid(profile);
+	if (!valid || frames == NULL || lengths == NULL || count == 0 ||
+	    bytes == NULL || ntb_length == NULL || taken == NULL) {
+		/* Failed. */
+		return EINVAL;
+	}
+
+	/* Bounds the block by the buffer, the function's block size and what wBlockLength can say. */
+	limit = ntb_capacity;
+	if (limit > profile->ntb_out_max_size)
+		limit = profile->ntb_out_max_size;
+
+	/* The length field is 16 bits wide. */
+	if (limit > UINT16_MAX)
+		limit = UINT16_MAX;
+
+	/* Notes the block size at which no zero-length packet is needed. */
+	no_zlp_exact = 0;
+	if (profile->ntb_out_max_is_device_max)
+		no_zlp_exact = profile->ntb_out_max_size;
+
+	/* Places each frame while the block with it still fits. */
+	carried = 0;
+	used = 0;
+	at = DRV_USB_CDC_NCM_NTH16_SIZE;
+	while (carried < count && carried < profile->tx_max_datagrams &&
+	    carried < DRV_USB_CDC_NCM_MAX_TX_DATAGRAMS) {
+		if (frames[carried] == NULL ||
+		    lengths[carried] < DRV_USB_CDC_NCM_ETHERNET_HEADER_SIZE ||
+		    lengths[carried] > profile->max_datagram_size) {
+			/* Failed: a frame no NTB carries. */
+			return EINVAL;
+		}
+
+		/* Finds the place this datagram's payload takes. */
+		error = datagram_at_or_after(at, profile->ndp_out_divisor, profile->ndp_out_payload_remainder, &datagram);
+		if (error != 0)
+			return error;
+
+		/* Finds where the datagram ends. */
+		error = checked_add(datagram, lengths[carried], &end);
+		if (error != 0)
+			return error;
+
+		/* Finds the NDP that would follow it, with one more pointer entry. */
+		error = congruent_at_or_after(end, profile->ndp_out_alignment, 0, &ndp);
+		if (error != 0)
+			return error;
+
+		/* Sizes that NDP: its header, an entry for each datagram so far and this one, and the null entry. */
+		ndp_length = DRV_USB_CDC_NCM_NDP16_HEADER_SIZE + DRV_USB_CDC_NCM_DPE16_SIZE * (carried + 2U);
+
+		/* Finds the block length that would result. */
+		error = checked_add(ndp, ndp_length, &block);
+		if (error != 0)
+			return error;
+
+		/* Adds the trailing byte the zero-length-packet rule asks for. */
+		error = finish_block_length(&block, profile->bulk_out_max_packet_size, no_zlp_exact);
+		if (error != 0)
+			return error;
+
+		/* One that would not fit ends the block. */
+		if (block > limit)
+			break;
+		offsets[carried] = datagram;
+		used = end;
+		at = end;
+		carried++;
+	}
+
+	/* Not even the first frame fits. */
+	if (carried == 0)
+		return EMSGSIZE;
+
+	/* Finds the NDP after the last datagram that was kept. */
+	error = congruent_at_or_after(used, profile->ndp_out_alignment, 0, &ndp);
+	if (error != 0)
+		return error;
+
+	/* Sizes the NDP: its header, an entry for each datagram carried, and the null entry. */
+	ndp_length = DRV_USB_CDC_NCM_NDP16_HEADER_SIZE + DRV_USB_CDC_NCM_DPE16_SIZE * (carried + 1U);
+	block = ndp + ndp_length;
+
+	/* Adds the trailing byte the zero-length-packet rule asks for. */
+	error = finish_block_length(&block, profile->bulk_out_max_packet_size, no_zlp_exact);
+	if (error != 0)
+		return error;
+
+	/* Clears the block so every byte not written below is zero. */
+	kern_memset(bytes, 0, block);
+
+	/* Copies each datagram to its place. */
+	for (index = 0; index < carried; index++)
+		kern_memcpy(bytes + offsets[index], frames[index], lengths[index]);
+
+	/* Writes the block header, which names the block's length and its NDP. */
+	store_le32(bytes, DRV_USB_CDC_NCM_NTH16_SIGNATURE);
+	store_le16(bytes + 4U, DRV_USB_CDC_NCM_NTH16_SIZE);
+	store_le16(bytes + 6U, sequence);
+	store_le16(bytes + 8U, (uint16_t)block);
+	store_le16(bytes + 10U, (uint16_t)ndp);
+
+	/* Writes the NDP header, whose next-NDP field says there is no other. */
+	store_le32(bytes + ndp, DRV_USB_CDC_NCM_NDP16_NOCRC_SIGNATURE);
+	store_le16(bytes + ndp + 4U, (uint16_t)ndp_length);
+	store_le16(bytes + ndp + 6U, 0);
+
+	/* Writes one pointer entry per datagram, ended by the zeroed null entry. */
+	for (index = 0; index < carried; index++) {
+		store_le16(bytes + ndp + 8U + 4U * index, (uint16_t)offsets[index]);
+		store_le16(bytes + ndp + 10U + 4U * index, (uint16_t)lengths[index]);
+	}
+
+	/* Reports the block's length and how many frames it carries. */
+	*ntb_length = block;
+	*taken = carried;
+
+	/* Succeeded. */
+	return 0;
+}
+
 /* Supports the load le16 operation. */
 static uint16_t
 load_le16(

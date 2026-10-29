@@ -4,7 +4,7 @@
 # the copy engine's plane copy, the resource manager's parameters and the device table's pick.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
-# usage: plan/ws243/tests/nvdec-host-test.sh   (from anywhere)
+# usage: plan/tools/rtx-video/nvdec-host-test.sh   (from anywhere)
 # The binary goes in a new directory below build/tmp; nothing is removed.
 set -eu
 repo=$(cd "$(dirname "$0")/../../.." && pwd)
@@ -17,6 +17,6 @@ cc -std=gnu11 -O1 -g -DKERN_USER_ABI_LP64 -Wall -Wextra -Werror -Wdeclaration-af
 	-fsanitize=address,undefined -fno-sanitize=alignment \
 	-I"$out/client-headers" -I"$repo/include" -I"$repo/src" -I"$repo" \
 	-o "$out/nvdec-host-test" \
-	"$repo/plan/ws243/tests/nvdec-host-test.c" \
+	"$repo/plan/tools/rtx-video/nvdec-host-test.c" \
 	"$src/nvdec-records.c" "$src/vk/vk-video-h264.c" "$src/vk/exec-copy.c" "$src/objects.c" "$src/wire.c"
 "$out/nvdec-host-test"
