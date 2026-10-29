@@ -140,3 +140,15 @@
   build/ws291/rtx/m6/shot-1/shot.png（縮小は各 shot-small.png）。
 - 返却: 09:46 Debian、RTX は vfio-pci、BootOrder 0002,0000、NVMe の kernel は vmunix-va1（cksum 1463007375、sha256 6a06e796…）。lock は free。
 - 5000 copies の 42.02 fps は depth test が効いていない状態（画が出ていない）の値なので p011 の起点にしない。
+
+### host の続き（09:50〜）と次の枠の手順
+
+- 見た事: ZF32 の PTE の kind は Turing では GENERIC_MEMORY（0x06、Mesa 25.3 系 nil/image.rs の tu102_choose_pte_kind、tu102 dev_mmu.h）で、
+  block linear の colour と同じ kind。block linear の colour の影は kind 0 のまま正しく出た（m5・m6）。depth test の有無で背景の clear まで消えるのは
+  kind だけでは説明しにくい。depth の method の番号（DEPTH_TEST・WRITE・FUNC・ZT_*・Z_CLEAR_VALUE・CLEAR_SURFACE）と FUNC の値（OGL 0x200+op）は
+  clc597.h と一致。ZCULL は ACTIVE_ZCULL_REGION 0x3f（NVK の zcull 無しの時と同じ）。
+- 診断を足した（63ebcaf71）: vk-node.c で run の後に GR の 0x400100・0x400108・0x400118 を読み、0 でなければ最初の 4 回だけ
+  `vk: gr after a run:` を出す。GSP が止めずに扱った trap が有るかを見る。
+- 次の枠の script: `sh plan/ws291/tests/rtx-depth-probe.sh build/ws291/rtx/p1 build/ws291/vmunix-va1 build/ws291/vmunix-p010a4 build/ws291/vmunix-z-nowrite`
+  （各 kernel で shot 1 と dmesg 全部、最後に vmunix-va1 を戻して Debian）。vmunix-p010a4 = 63ebcaf71（cksum 869726610）、
+  vmunix-z-nowrite = 同じ tree で draw の depth write だけを切った実験（cksum 4163372434、source には残していない）。
