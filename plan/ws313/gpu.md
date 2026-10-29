@@ -247,3 +247,29 @@ file の並び（案）:
 | 計 | 約 155 | 40〜58 時間（実機の試験と bisect を除く） |
 
 危険: Valhall の ISA の encode と scheduling の誤りは GPU の hang として見えるので、命令の encode の host 試験（Mesa の ISA の表との照合）と、firmware の CS の fault の値（`CS_FAULT`・`CS_FATAL`、exception type）を log に出す道具を G6 の最初に作る。
+
+## 12. compiler（G7、Valhall の shader compiler）
+
+担当: P7 の配下 C。記録の本体は [phase010](phase010/phase.md)。2026-10-29、実機未試験。
+
+- 場所: `src/drivers/gpu/mali/compiler/`（`shader.h` が口と shader の ABI の本体、`va-isa.h`・`va-encode.c`・`va-schedule.c`・
+  `va-compile.c`）。共通の front end `src/drivers/gpu/compiler/` の IR から。
+- 参照: Mesa 26.2.6（MIT）`src/panfrost/compiler/bifrost/valhall/ISA.xml`・`va_pack.c`・`va_insert_flow.c`・
+  `bifrost_compile.c`・`pan_nir_lower_*.c`。値は block ごとの出典、code・構造は写していない。
+- ABI の要点: FAU = push constants、vertex は viewport の 6 float、buffer の 64 bit の address。resource table 0 texture・
+  1 sampler・2 attribute・3 vertex buffer。vertex は position program（offset 0）と varying program（`varying_offset`）、
+  出力は table 61 entry 0 の LEA_BUF（r59）、varying location L は byte 16L。fragment は ATEST の後 BLEND（descriptor L）。
+- host の試験: `plan/ws313/tests/mali-compiler-host-test.sh`（ISA.xml から生成した表 `tests/mali-compiler-isa-table.inc`、
+  生成の tool `plan/ws313/tests/mali-compiler-isa-table.py`、encode の既知の語、assembler-cases の decode、1 lane の模型
+  `tests/mali-compiler-model.c` と IR の参照）、`plan/ws313/tests/mali-compiler-desktop-test.sh`（desktop の全 60 module）。
+  2026-10-29 両方 PASS（host のみ、GPU の証拠ではない）。
+
+## 13. render・executor・CS（G6・G8、配下 D、2026-10-29、実機未試験）
+
+記録の本体は [phase011](phase011/phase.md)。ここは形の要点だけ。
+
+- **stream と scheduler**（`mali-queue.c`・`sched.c`）: driver の stream は group 0・AS 1・doorbell 1（self-test: NOP＋SYNC_ADD64）。render の stream は group 1・stream 0・doorbell 2・AS slot 2。ring（64 KiB）と sync の page は全ての session の空間の同じ VA（0x100000・0x200000）に map し、submit のたびに session の table を slot 2 に差し替える。ring の列: MOVE32 0 → FLUSH_CACHE2（clean+invalidate、signal 0）→ MOVE48 stream → MOVE32 bytes → WAIT(0) → CALL → WAIT(all) → FLUSH_CACHE2 → WAIT(0) → MOVE48 sync → MOVE48 1 → SYNC_ADD64（system、error propagate）→ ERROR_BARRIER（Values referenced: Linux v7.3 panthor_sched.c queue_run_job）。ring の register は stream の最後の 4 本。
+- **CS の register の割当**（executor の stream）: r0〜r60 は RUN_* の staging（v10.xml の COMPUTE/IDVS/FRAGMENT SR）、r64〜r79 は copy・fill の data、r80〜r89 は loop の scratch、r92〜r95 は ring。stream の work register が 96 未満なら executor は submit を拒否する。scoreboard: load/store は 0、endpoint は 1（SET_SB_ENTRY）。各 RUN_COMPUTE・pass の終わりで WAIT(all)。
+- **descriptor**（`vk/vk-desc.c`、host 試験あり）: SRT の pointer は address | table 数（4 の倍数）、FAU の pointer は address | (64 bit の entry 数 << 56)、table 0 texture・1 sampler・2 attribute・3 vertex buffer（C の §12 の ABI）。FAU は push constants → buffer の address（fau_word）→ range（size_fau_word）→ texture の size → vertex の viewport の 6 float（viewport_fau_word）。
+- **render pass**: 1 subpass、color だけ。tile 16×16、RT の internal は R8G8B8A8（4 byte/px）、writeback は linear。tiler context と heap の descriptor は pass ごとに stage に新しく書き、heap の 1 chunk（8 MiB）を使い直す。draw は RUN_IDVS（malloc enable、varying の選択 (0,0,1,0)、fragment (2,2,2,0)）、pass の終わりに FINISH_TILING → RUN_FRAGMENT（FBD の pointer、bbox）。
+- **未確認の点**（夜に見る）: 動いている group の AS の差し替え、FLUSH_CACHE2 の flush id 0、RUN_COMPUTE の task increment 1、HEAP_SET 無しの tiler、blend の memory format、sample の位置の表、tiler の hierarchy mask、RT の swizzle（BGRA）、DCD flags の early/late。

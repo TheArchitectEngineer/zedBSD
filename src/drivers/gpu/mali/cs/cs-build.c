@@ -43,6 +43,7 @@ static uint64_t base(unsigned opcode);
 static uint64_t registers(unsigned first, unsigned second);
 static uint64_t async_part(uint32_t wait_mask, unsigned signal_slot);
 static uint64_t sync_part(bool flag, unsigned scope, uint32_t wait_mask, unsigned data, unsigned address, unsigned signal_slot);
+static void rows_loop(struct mali_cs *cs, bool fill, unsigned data, unsigned scratch, uint64_t destination, int32_t destination_stride, uint64_t source, int32_t source_stride, uint32_t row_bytes, uint32_t rows, unsigned load_store_slot);
 
 /* Builds NOP: nothing. */
 uint64_t
@@ -856,6 +857,141 @@ mali_cs_fill(
 	mali_cs_emit(cs, mali_cs_add64(destination_pair, destination_pair, (int32_t)LOOP_STEP_BYTES));
 	mali_cs_emit(cs, mali_cs_add32(count, count, -1));
 	mali_cs_emit(cs, mali_cs_branch(-5, MALI_CS_NEQUAL, count));
+}
+
+/* Appends a copy of rows (see cs-build.h). */
+void
+mali_cs_copy_rows(
+	struct mali_cs *cs,
+	unsigned data,
+	unsigned scratch,
+	uint64_t destination,
+	int32_t destination_stride,
+	uint64_t source,
+	int32_t source_stride,
+	uint32_t row_bytes,
+	uint32_t rows,
+	unsigned load_store_slot)
+{
+	rows_loop(cs, false, data, scratch, destination, destination_stride, source, source_stride, row_bytes, rows, load_store_slot);
+}
+
+/* Appends a fill of rows (see cs-build.h): the pattern into the data registers, then the loop. */
+void
+mali_cs_fill_rows(
+	struct mali_cs *cs,
+	unsigned data,
+	unsigned scratch,
+	uint64_t destination,
+	int32_t stride,
+	uint32_t pattern,
+	uint32_t row_bytes,
+	uint32_t rows,
+	unsigned load_store_slot)
+{
+	unsigned index;
+
+	/* The pattern in every data register. */
+	for (index = 0; index < MALI_CS_MOVE_REGISTERS; index++)
+		mali_cs_emit(cs, mali_cs_move32(data + index, pattern));
+
+	/* The loop. */
+	rows_loop(cs, true, data, scratch, destination, stride, 0, 0, row_bytes, rows, load_store_slot);
+}
+
+/*
+ * Appends a two-level loop over rows: the outer loop walks the row
+ * starts, the inner one moves 64 bytes a pass, and the row's tail of
+ * fewer than 64 bytes is moved with one masked load and store.  With
+ * fill, nothing is loaded: the data registers hold the pattern.
+ */
+static void
+rows_loop(
+	struct mali_cs *cs,
+	bool fill,
+	unsigned data,
+	unsigned scratch,
+	uint64_t destination,
+	int32_t destination_stride,
+	uint64_t source,
+	int32_t source_stride,
+	uint32_t row_bytes,
+	uint32_t rows,
+	unsigned load_store_slot)
+{
+	unsigned source_row;
+	unsigned destination_row;
+	unsigned source_pair;
+	unsigned destination_pair;
+	unsigned row_count;
+	unsigned pass_count;
+	uint32_t passes;
+	uint32_t tail_mask;
+	uint32_t slot_mask;
+	uint32_t outer;
+	uint32_t inner;
+
+	/* Nothing to move, or a row the loop cannot step through. */
+	if (rows == 0U || row_bytes == 0U)
+		return;
+	if ((row_bytes & 3U) != 0U) {
+		cs->error = 1;
+		return;
+	}
+
+	/* The scratch: the row starts, the moving addresses, then the two counts. */
+	source_row = scratch;
+	destination_row = scratch + 2U;
+	source_pair = scratch + 4U;
+	destination_pair = scratch + 6U;
+	row_count = scratch + 8U;
+	pass_count = scratch + 9U;
+	passes = row_bytes / LOOP_STEP_BYTES;
+	tail_mask = (1U << ((row_bytes % LOOP_STEP_BYTES) / 4U)) - 1U;
+	slot_mask = 1U << load_store_slot;
+	if (!fill)
+		mali_cs_move64(cs, source_row, source);
+	mali_cs_move64(cs, destination_row, destination);
+	mali_cs_emit(cs, mali_cs_move32(row_count, rows));
+
+	/* The outer loop's start: this row's addresses. */
+	outer = cs->count;
+	if (!fill)
+		mali_cs_emit(cs, mali_cs_add64(source_pair, source_row, 0));
+	mali_cs_emit(cs, mali_cs_add64(destination_pair, destination_row, 0));
+
+	/* The inner loop over the row's whole passes. */
+	if (passes != 0U) {
+		mali_cs_emit(cs, mali_cs_move32(pass_count, passes));
+		inner = cs->count;
+		if (!fill) {
+			mali_cs_emit(cs, mali_cs_load(data, source_pair, 0xffffU, 0));
+			mali_cs_emit(cs, mali_cs_wait(slot_mask));
+			mali_cs_emit(cs, mali_cs_add64(source_pair, source_pair, (int32_t)LOOP_STEP_BYTES));
+		}
+		mali_cs_emit(cs, mali_cs_store(data, destination_pair, 0xffffU, 0));
+		mali_cs_emit(cs, mali_cs_wait(slot_mask));
+		mali_cs_emit(cs, mali_cs_add64(destination_pair, destination_pair, (int32_t)LOOP_STEP_BYTES));
+		mali_cs_emit(cs, mali_cs_add32(pass_count, pass_count, -1));
+		mali_cs_emit(cs, mali_cs_branch((int32_t)inner - (int32_t)cs->count - 1, MALI_CS_NEQUAL, pass_count));
+	}
+
+	/* The tail of the row. */
+	if (tail_mask != 0U) {
+		if (!fill) {
+			mali_cs_emit(cs, mali_cs_load(data, source_pair, tail_mask, 0));
+			mali_cs_emit(cs, mali_cs_wait(slot_mask));
+		}
+		mali_cs_emit(cs, mali_cs_store(data, destination_pair, tail_mask, 0));
+		mali_cs_emit(cs, mali_cs_wait(slot_mask));
+	}
+
+	/* The next row, until the rows are done. */
+	if (!fill)
+		mali_cs_emit(cs, mali_cs_add64(source_row, source_row, source_stride));
+	mali_cs_emit(cs, mali_cs_add64(destination_row, destination_row, destination_stride));
+	mali_cs_emit(cs, mali_cs_add32(row_count, row_count, -1));
+	mali_cs_emit(cs, mali_cs_branch((int32_t)outer - (int32_t)cs->count - 1, MALI_CS_NEQUAL, row_count));
 }
 
 /* Gives an instruction with only its opcode. */

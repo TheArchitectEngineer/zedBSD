@@ -1,0 +1,19 @@
+#version 450
+// The Mali compiler's host check: shared memory, a barrier, atomics with and without a predicate, and division.
+layout(local_size_x = 8, local_size_y = 4) in;
+layout(std430, set = 0, binding = 0) buffer B { uint data[]; } b;
+layout(std430, set = 0, binding = 1) buffer S { int signed_data[]; } s;
+shared uint scratch[32];
+void main()
+{
+	uint i = gl_LocalInvocationIndex;
+	scratch[i] = gl_GlobalInvocationID.x * 3u + gl_WorkGroupID.y;
+	barrier();
+	uint x = scratch[(i + 1u) % 32u];
+	if (x > 5u)
+		atomicMax(b.data[0], x);
+	atomicAdd(b.data[1], 0u - i);
+	b.data[2u + i] = x / (i + 1u) + (x % 5u);
+	s.signed_data[i] = int(x) / -3 - int(i) % 4;
+	atomicCompSwap(b.data[40], 0u, i);
+}

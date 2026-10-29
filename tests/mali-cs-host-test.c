@@ -303,6 +303,30 @@ check_loops(void)
 	expect("fill bytes", (uint64_t)same, 1);
 	expect("fill stopped", memory[0x200], (uint8_t)(0x200U * 7U + 3U));
 
+	/* A copy of 3 rows of 100 bytes, strides 256 and 128. */
+	for (index = 0; index < MEMORY_BYTES; index++)
+		memory[index] = (uint8_t)(index * 13U + 1U);
+	mali_cs_init(&cs, words, 64);
+	mali_cs_copy_rows(&cs, 64, 80, MEMORY_BASE + 0x9000U, 128, MEMORY_BASE + 0x100U, 256, 100, 3, 0);
+	expect("rows built", (uint64_t)cs.error, 0);
+	fault = run(words, cs.count);
+	expect("rows ran", (uint64_t)fault, 0);
+	same = 1;
+	for (index = 0; index < 3U; index++) {
+		if (memcmp(&memory[0x9000U + index * 128U], &memory[0x100U + index * 256U], 100) != 0)
+			same = 0;
+	}
+	expect("rows bytes", (uint64_t)same, 1);
+	expect("rows gap kept", memory[0x9000U + 100U], (uint8_t)((0x9000U + 100U) * 13U + 1U));
+
+	/* A fill of 2 rows of 8 bytes (only a tail), stride 64. */
+	mali_cs_init(&cs, words, 64);
+	mali_cs_fill_rows(&cs, 64, 80, MEMORY_BASE + 0xa000U, 64, 0x11223344U, 8, 2, 0);
+	fault = run(words, cs.count);
+	expect("fill rows ran", (uint64_t)fault, 0);
+	expect("fill rows word", (uint64_t)memory[0xa000U + 64U + 4U], 0x44);
+	expect("fill rows gap", memory[0xa000U + 8U], (uint8_t)((0xa000U + 8U) * 13U + 1U));
+
 	/* A size that is not whole passes is refused. */
 	mali_cs_init(&cs, words, 64);
 	mali_cs_copy(&cs, 64, 80, MEMORY_BASE, MEMORY_BASE, 100, 0);

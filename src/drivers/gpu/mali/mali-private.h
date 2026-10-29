@@ -20,15 +20,17 @@
 #include <stdint.h>
 
 #include <drivers/generic/fdt.h>
+#include <kern/lock.h>
 #include <kern/pmem.h>
 
 #include "drivers/gpu/mali/mali-firmware-image.h"
 #include "drivers/gpu/mali/mali-interface.h"
 #include "drivers/gpu/mali/mali-pagetable.h"
 
-/* The address space the microcontroller's firmware runs in, and the one of the driver's own group. */
+/* The address space the microcontroller's firmware runs in, the one of the driver's own group, and the render node's. */
 #define MALI_MCU_ADDRESS_SPACE		0U
 #define MALI_GROUP_ADDRESS_SPACE	1U
+#define MALI_RENDER_ADDRESS_SPACE	2U
 
 /* The microcontroller's virtual space: 4 GiB. */
 #define MALI_MCU_VIRTUAL_BYTES		0x100000000ULL
@@ -111,18 +113,39 @@ struct mali_address_space {
  * reads its instructions; the ring's two small blocks (the input page,
  * then the output page) and the group's suspend buffers live in the
  * microcontroller's space, where the firmware reads and writes them.
- * Running is nonzero once the firmware acknowledged the start.
+ * Running is nonzero once the firmware acknowledged the start.  space
+ * is the address space the group translates through (its slot is what
+ * the group is programmed with), inserted the bytes written to the ring
+ * since the start, and registers the stream's work registers.
  */
 struct mali_queue {
 	struct mali_buffer ring;
 	struct mali_buffer ring_blocks;
 	struct mali_buffer suspend;
 	struct mali_buffer protected_suspend;
+	struct mali_address_space *space;
+	uint64_t inserted;
 	unsigned group_slot;
 	unsigned stream;
 	unsigned doorbell;
+	unsigned registers;
 	int running;
 };
+
+/*
+ * What a stream reported while it was waited for: its last fault and
+ * fatal words (the exception type in the low byte, its data above) and
+ * their 64-bit information words, and how many faults it raised.
+ */
+struct mali_queue_fault {
+	uint32_t fault;
+	uint32_t fatal;
+	uint64_t fault_info;
+	uint64_t fatal_info;
+	unsigned faults;
+};
+
+struct mali_render;
 
 /*
  * The board's GPU.
@@ -192,8 +215,19 @@ struct mali_device {
 	struct mali_interfaces interfaces;
 	int firmware_running;
 
-	/* The driver's own command stream. */
+	/* The driver's own command stream, and its self-test's sync object. */
 	struct mali_queue queue;
+	struct mali_buffer queue_sync;
+
+	/*
+	 * Serializes every use of the firmware's interface and of the
+	 * address space slots after the later stage's start: the watch's
+	 * pings and the render node's submissions.
+	 */
+	struct mutex lock;
+
+	/* The render node, once published (render.c). */
+	struct mali_render *render;
 
 	/* The microcontroller's status last written to the log, so only a change is written. */
 	uint32_t mcu_status;
@@ -223,6 +257,8 @@ int mali_as_init(struct mali_device *device, struct mali_address_space *space, u
 int mali_as_map(struct mali_device *device, struct mali_address_space *space, uint64_t gpu_address, struct mali_buffer *buffer, unsigned flags);
 int mali_as_enable(struct mali_device *device, struct mali_address_space *space);
 void mali_as_disable(struct mali_device *device, struct mali_address_space *space);
+int mali_as_unmap(struct mali_device *device, struct mali_address_space *space, uint64_t gpu_address, uint64_t bytes);
+void mali_as_destroy(struct mali_address_space *space);
 int mali_as_flush(struct mali_device *device, struct mali_address_space *space, uint64_t gpu_address, uint64_t bytes);
 int mali_mcu_alloc(struct mali_device *device, struct mali_buffer *buffer, uint64_t bytes, unsigned flags);
 int mali_group_alloc(struct mali_device *device, struct mali_buffer *buffer, uint64_t bytes, unsigned flags);
@@ -240,8 +276,17 @@ int mali_csf_wait_global(struct mali_device *device, uint32_t mask, unsigned mil
 int mali_csf_wait_group(struct mali_device *device, unsigned slot, uint32_t mask, unsigned milliseconds);
 void mali_csf_report_status(struct mali_device *device);
 
-/* The queue of mali-queue.c. */
+/* The streams of mali-queue.c. */
 int mali_queue_start(struct mali_device *device);
+int mali_queue_open(struct mali_device *device, struct mali_queue *queue);
+int mali_queue_stop(struct mali_device *device, struct mali_queue *queue);
+int mali_queue_push(struct mali_device *device, struct mali_queue *queue, const uint64_t *words, uint32_t count);
+unsigned mali_queue_scratch(const struct mali_queue *queue);
+int mali_queue_wait(struct mali_device *device, struct mali_queue *queue, const volatile uint64_t *sync, uint64_t target, unsigned milliseconds, struct mali_queue_fault *fault);
+void mali_queue_report(struct mali_device *device, struct mali_queue *queue, const char *what);
+
+/* The render node of render.c, over the running firmware. */
+int mali_render_start(struct mali_device *device);
 
 /* The S7D's glue of mali-s7d.c. */
 int mali_s7d_glue(const struct drv_fdt *fdt, uint32_t gpu_node, struct mali_glue *glue);
