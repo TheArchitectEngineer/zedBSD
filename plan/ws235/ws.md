@@ -3,7 +3,7 @@
 # WS235: Realtek RTL8127・8125・8126・8122・8121・8120 の共通の Ethernet driver（まず PCIe の RTL8127 10GbE）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-29 開き直し、P1 が RDNA 機の PCIe の RTL8127 から。下の 2026-10-29 の決定。p001〜p007 cleared（11:0x）、次は p008）
+Status: incomplete（2026-10-29 開き直し、P1 が RDNA 機の PCIe の RTL8127 から。下の 2026-10-29 の決定。p001〜p008 cleared（11:1x）。WS の受け入れ（server の config で有効にする事はユーザーの判断）は Q1）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 <!-- awesome-plan-current:end -->
@@ -37,6 +37,8 @@ Parent: [Master](../master.md)
   68% → 15% にしても send は変わらず、recv は driver 30%・CPU の飽和無し・NIC の取りこぼし 0 → 律速は stack（WS221 p010）。既定の config で send 4935・recv 3360 Mbit/s。
   多 vector の MSI-X は pcat の共通の口まで（driver は 1 vector、RSS・zero copy は入れない、理由は [p006](phase006/phase.md)）。p007 で 8125・8125B・8125D・8126 の EPHY・PHY の表。
   次は p008（規約の全文の見直し）。機械は Debian 6.12.111、NVMe の kernel は P2 の vmunix-va1。
+- 2026-10-29 11:1x P1（q1669-i04）: p008 cleared（[phase008](phase008/phase.md)）。全 Phase cleared。残り: WS の受け入れの確かめ（Q1）、server の config で有効にする事（ユーザー）、
+  見直しの後の実機の非退行（未実施）。
 
 ## Phase（2026-10-29 P1 が p001 でユーザーの順に直した。旧の表と見積もり（2026-10-14 Q1）は git の履歴に）
 
@@ -52,7 +54,7 @@ Parent: [Master](../master.md)
 | [ws235-p005](phase005/phase.md) | 実機（共通の段）: link・IPv4（static か DHCP）・ping・ssh・TCP の転送の計測と直し、同じ機械の Linux の基準 | 6 LW | cleared（2026-10-29 09:1x P1、q1669-i03。zedBSD send 3539・recv 3373、Linux 6808・5458 Mbit/s） | p003・p004 |
 | [ws235-p006](phase006/phase.md) | RTL8127 の拡張: 多 vector の MSI-X、RSS と複数の RX queue、割り込みの抑え、RX の zero copy、約 7 Gbit/s（Linux の値）に近づける。律速が stack なら記録して WS221 と組で Q1 へ。checksum・TSO の offload は、stack の口（WS221 p010、P3 が設計）ができたら driver の側を足す | 10 LW | cleared（2026-10-29 11:0x P1、q1669-i04。driver は律速でない、send 4935・recv 3360。driver は 1 vector、RSS・zero copy は入れない） | p005。offload は WS221 p010 の口 |
 | [ws235-p007](phase007/phase.md) | 他の chip の版の表と差の hook（8125・8125B・8125D・8126。実機は未確かめ。8122・8121・8120 は版の値が未確認） | 4 LW | cleared（2026-10-29 11:0x P1、q1669-i04。EPHY・PHY の表、他の chip は未確かめ、8122・8121・8120 は版の値が無く入れない） | p003 |
-| ws235-p008 | 規約の全文の見直し | 2 LW | planned | 全て |
+| [ws235-p008](phase008/phase.md) | 規約の全文の見直し | 2 LW | cleared（2026-10-29 11:1x P1、q1669-i04。書き方だけ、build warning 0、実機の非退行は未実施） | 全て |
 
 - RTL8122・8121・8120 は未実装: 版の値（TXCFG）が Linux の r8169（2026-10-29 の torvalds/linux.git）にも FreeBSD rge にも無く、版の表に入れられない（[p007](phase007/phase.md)）。
 - server の build の config（`config/ci/config-amd64-server.mk`、ユーザーの物）で有効にするのは、p005 の後にユーザーに頼む（担当は変えない）。
