@@ -52,3 +52,10 @@ Resume point: 2026-10-29 P5（q1676-i02、worktree p5-ws250、先頭は記録の
 | [p005](phase005/phase.md) | session ごとの lane（番号ごとの thread の pool）と executor の待ちの一部の lock の外出し | cleared（2026-10-29 P5、q1676-i02。実機 S0・S2） | p003 |
 | p006 | 選択肢: `reset`（GSP の再起動）。既定は作らない（ユーザーの判断） | planned（選択肢） | — |
 | [p007](phase007/phase.md) | 規約の全文と出典の監査、ws.md を完了の形に | cleared（2026-10-29 P5、q1676-i02。f6c18a9c5、WS の受け入れの残りは phase.md） | 全部 |
+
+
+## 受け入れの残り（2026-10-29 Q1 の判断）
+
+- QEMU の boot の回帰: nvrtx は QEMU（Venus）では読まれないので要らない（amd64 の vmunix の build は main で warning 0 を確かめた）。
+- GPU の fault を出す app の試験と isolate の道: Future Work の候補（その app と stuck の出る条件が無い）。
+- RESET を先にする案（取り消しの停滞 4.3 s → 約 2 s の見込み）: ユーザーの決定 Q250-1（STOP）から外れるのでユーザーに聞いている。答えまで WS250 は incomplete。
