@@ -4,7 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」）。旧: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13…
-Resume point: 2026-10-29 P3 q1679-i02: p010 in-progress（ATR 有効の recv は 2875〜3729、ATR 無効で 4819〜5286: 律速は centris の ATR による入れ替わりと SACK の無さ）→ p012（SACK）in-progress、その後 q1689（5330 の CDC NCM）。10.0.10.3 は p010 の終わりまで P3 の専有（centris の /tmp/zedbsd-rdna.lock を holder が保持）。VF2 は使わない（/boot/boot0/vmunix は be5651cd）。5330 の NVMe の zedBSD は build/i02-5330 の image
+Resume point: 2026-10-29 P3 q1679-i02: p010 in-progress（ATR 有効の recv は 2875〜3729、ATR 無効で 4819〜5286: 律速は centris の ATR による入れ替わりと SACK の無さ）→ p012（SACK）in-progress、その後 q1689（5330 の CDC NCM）。10.0.10.3 は 2026-10-30 00:18 に返した（Debian、NVMe の kernel は vmunix-va1）。VF2 は使わない（/boot/boot0/vmunix は be5651cd）。5330 の NVMe の zedBSD は build/i02-5330 の image
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -116,7 +116,15 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p012](phase012/phase.md) | TCP の SACK（RFC 2018・2883・6675） | in-progress（2026-10-29 P3 q1679-i02: 設計） | p008〜p011、WS311 |
+| [p012](phase012/phase.md) | TCP の SACK（RFC 2018・2883・6675） | in-progress（2026-10-30 P3 q1679-i02: 受け側・D-SACK・ACK 8 segment ごと（bbc43c185: 10GbE の recv 4897〜5282 ＝ Linux の 90〜97 %、ATR 有効）、送り側（RFC 6675 の保守的な形、tcp-model PASS）） | p008〜p011、WS311 |
+
+## ユーザーの決定（2026-10-29、USB の 2.5G）
+
+- 原文: 「P3で、2.5GのUSBが遅いことは、ドライバの問題と思いますので、5330を使って修正してほしいです。」→ Q1（2026-10-30）: 新しい Phase **p013: USB CDC NCM の送受信の速さ（5330 の RTL8156）**（q1689）。目標は Linux の r8152 の 2353 Mbit/s にできるだけ近く。xHCI の endpoint ごとの要求 1 つが天井と測れたら、HCD の変更は Q1 が判断。
+
+| Phase | 目的 | 状態 | 依存 |
+| --- | --- | --- | --- |
+| [p013](phase013/phase.md) | USB CDC NCM の送受信の速さ（5330 の RTL8156）: NTB に複数の datagram、RX の 2 つの buffer | planned（2026-10-30 P3: 設計） | p003、p012 |
 
 ## ユーザーの指示（2026-10-29、IPv6）
 

@@ -163,4 +163,15 @@ int drv_usb_cdc_ncm_build_ntb16(
 	const void *frame, size_t frame_length, void *ntb,
 	size_t ntb_capacity, size_t *ntb_length);
 
+/*
+ * Builds one NTB16 that carries as many of count frames, in order, as fit
+ * the buffer, dwNtbOutMaxSize and wNtbOutMaxDatagrams (*taken of them; the
+ * first must fit).  The length is wBlockLength, with the same trailing
+ * byte rule as drv_usb_cdc_ncm_build_ntb16.
+ */
+int drv_usb_cdc_ncm_build_ntb16_frames(
+	const struct drv_usb_cdc_ncm_profile *profile, uint16_t sequence,
+	const void *const *frames, const size_t *lengths, size_t count,
+	void *ntb, size_t ntb_capacity, size_t *ntb_length, size_t *taken);
+
 #endif
