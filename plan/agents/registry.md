@@ -10,7 +10,7 @@
 | P3 | phase-runner | ws221 p010 (q1679-i02) | `/home/awe/zedBSD-worktrees/p3-ws221g` / `agent/p3-ws221g` | running | b05aacf5b（merge b4d1043b3） |
 | P4 | phase-runner | ws307 (q1665-i10) | `/home/awe/zedBSD-worktrees/p4-ws307n` / `agent/p4-ws307n` | running（試験待ちの branch: agent/p4-ws283 b7fd8d23e） | 580a117e3（merge ee83a6eda） |
 | P5 | phase-runner | ws243 (q1677-i02) | `/home/awe/zedBSD-worktrees/p5-ws243` / `agent/p5-ws243` | running | 005871516（merge fbe855149） |
-| P6 | phase-runner | ws282 (q1667-i05) | `/home/awe/zedBSD-worktrees/p6-ws282d` / `agent/p6-ws282d` | running（実装だけ。試験待ちの branch: agent/p6-ws243c（P5 が合わせ直し中）、agent/p6-ws299、agent/p6-ws300、agent/p6-ws052） | 930169a83（merge 45c65539d） |
+| P6 | phase-runner | ws282・ws284 (q1667-i05 返却) | `/home/awe/zedBSD-worktrees/p6-ws282d` / `agent/p6-ws282d` | returned（先頭 212cbdd4a、実装だけ・未 merge。試験待ちの branch: agent/p6-ws243c（P5 が取り込み済み）、agent/p6-ws299、agent/p6-ws300、agent/p6-ws052） | 930169a83（merge 45c65539d） |
 | P7 | phase-runner | ws313 (q1687-i01) | `/home/awe/zedBSD-worktrees/p7-ws313e` / `agent/p7-ws313e` | running（実装だけ、実機・QEMU 未実施） | c08176e6c（merge a5ebe1b77） |
 
 - 同時に動かす数は 6（2026-10-29 ユーザーの P1〜P6 の指示）。VF2（主）と 5330（従）は P3、10.0.10.3 は P2。
