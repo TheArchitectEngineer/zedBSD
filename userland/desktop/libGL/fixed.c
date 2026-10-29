@@ -86,7 +86,8 @@ static const struct fixed_extension_entry fixed_extensions[] = {
 	{ "GL_ARB_timer_query", 33U, 0, 0U },
 	{ "GL_ARB_uniform_buffer_object", 30U, 0, 0U },
 	{ "GL_ARB_vertex_array_object", 30U, 0, 0U },
-	{ "GL_ARB_vertex_type_2_10_10_10_rev", 33U, 0, 0U }
+	{ "GL_ARB_vertex_type_2_10_10_10_rev", 33U, 0, 0U },
+	{ "GL_KHR_debug", 30U, 0, 0U }
 };
 
 /*
@@ -138,7 +139,8 @@ static const struct gles_fixed_hooks fixed_hooks = {
 	fixed_glsl_version,
 	fixed_extension_count,
 	fixed_extension,
-	fixed_core_profile
+	fixed_core_profile,
+	gl_debug_error
 };
 
 /*
@@ -1164,6 +1166,7 @@ fixed_capability(
 {
 	struct fixed_state *fixed;
 	struct zegl_context *current;
+	int debugging;
 
 	/* The state. */
 	(void)context;
@@ -1222,7 +1225,10 @@ fixed_capability(
 		break;
 	}
 
-	/* Not one. */
+	/* The debug output's two, or not one. */
+	debugging = gl_debug_capability(cap, flag);
+	if (debugging == 0)
+		return 0;
 	return -1;
 }
 
@@ -1367,6 +1373,7 @@ fixed_get(
 	struct fixed_state *fixed;
 	struct gles_state *state;
 	unsigned version;
+	unsigned count;
 	GLint flags;
 
 	/* The state. */
@@ -1462,8 +1469,9 @@ fixed_get(
 		break;
 	}
 
-	/* Not one of this layer's. */
-	return 0U;
+	/* The debug output's states and limits, or not one of this layer's. */
+	count = gl_debug_get(pname, values);
+	return count;
 }
 
 /* Returns the strings that are desktop GL's rather than OpenGL ES's: the versions of the context's GL (glx.c) and GLSL. */
@@ -1742,7 +1750,8 @@ fixed_release(
 	if (fixed == NULL)
 		return;
 
-	/* The lists, the vertices and the state. */
+	/* The debug state, the lists, the vertices and the state. */
+	gl_debug_release(fixed);
 	fixed_lists_free(fixed);
 	free(fixed->vertices);
 	free(fixed);

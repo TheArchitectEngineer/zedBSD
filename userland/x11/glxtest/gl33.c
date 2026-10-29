@@ -20,7 +20,9 @@
  *   glVertexAttribP3ui (signed), an RGB10_A2UI texture drawn into, and
  *   (when the context names GL_ARB_tessellation_shader; skipped, green,
  *   otherwise) a quad patch tessellated over the target, and a square
- *   drawn by glDrawArraysIndirect (GL_ARB_draw_indirect).
+ *   drawn by glDrawArraysIndirect (GL_ARB_draw_indirect), and the debug
+ *   output (GL_KHR_debug: a message inserted, an error, a group, a label,
+ *   the log).
  *
  * The start's checks each print a line; a check whose value is not the
  * expected one fails the run.
@@ -34,7 +36,7 @@
 #include <string.h>
 
 /* The outcomes shown, the side of the framebuffer object, and the attribute locations of the corners and of a colour. */
-#define GL33_OUTCOMES		10U
+#define GL33_OUTCOMES		11U
 #define GL33_SIDE		8
 #define GL33_POSITION		0U
 #define GL33_COLOUR		1U
@@ -147,8 +149,13 @@ static const char gl33_attrib_fragment_source[] =
 /* The names of the outcomes. */
 static const char *const gl33_names[GL33_OUTCOMES] = {
 	"version", "time-elapsed", "timestamps", "dual-layout", "dual-bound", "packed-unsigned", "packed-signed", "rgb10-a2ui",
-	"tessellation", "draw-indirect"
+	"tessellation", "draw-indirect", "debug"
 };
+
+/* The debug messages the callback heard, by type: inserted markers, errors, pushes and pops. */
+static int gl33_heard_markers;
+static int gl33_heard_errors;
+static int gl33_heard_groups;
 
 /* The tessellation shaders: a patch of the square's four corners, its quad domain over them, green. */
 static const char gl33_tess_vertex_source[] =
@@ -208,6 +215,8 @@ static void gl33_packed(GLuint program, GLenum type, GLuint value, int four, uns
 static void gl33_rgb10_a2ui(void);
 static void gl33_tessellation(void);
 static void gl33_draw_indirect(void);
+static void gl33_debug(void);
+static void APIENTRY gl33_debug_heard(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, const GLchar *message, const void *user);
 static int gl33_expect(const char *what, long got, long expected);
 
 /*
@@ -282,6 +291,7 @@ glxtest_gl33_start(void)
 	gl33_rgb10_a2ui();
 	gl33_tessellation();
 	gl33_draw_indirect();
+	gl33_debug();
 
 	/* The window again, and no error the checks did not expect. */
 	glBindFramebuffer(GL_FRAMEBUFFER, 0U);
@@ -328,15 +338,15 @@ glxtest_gl33_draw(
 		gl33_quad(x, y, 0.2f, 0.25f, rgb);
 	}
 
-	/* The next cell (the third of the third row) with the fixed function, as the compatibility profile keeps it. */
+	/* The next cell (the last of the third row) with the fixed function, as the compatibility profile keeps it. */
 	glBindVertexArray(0U);
 	glUseProgram(0U);
 	glColor3f(0.0f, 1.0f, 0.0f);
 	glBegin(GL_QUADS);
-	glVertex2f(0.05f, -0.91f);
-	glVertex2f(0.45f, -0.91f);
-	glVertex2f(0.45f, -0.41f);
-	glVertex2f(0.05f, -0.41f);
+	glVertex2f(0.55f, -0.91f);
+	glVertex2f(0.95f, -0.91f);
+	glVertex2f(0.95f, -0.41f);
+	glVertex2f(0.55f, -0.41f);
 	glEnd();
 }
 
@@ -909,6 +919,92 @@ gl33_draw_indirect(void)
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0U);
 	glDeleteBuffers(1, &buffer);
 	gl33_outcomes[9] = passed;
+}
+
+/*
+ * Checks GL_KHR_debug: with the output on and a callback, a marker
+ * inserted, an error and a group's push and pop are heard; a buffer
+ * takes a label; without the callback a message waits in the log.
+ */
+static void
+gl33_debug(void)
+{
+	static const char marker[] = "glxtest marker";
+	char label[32];
+	char text[64];
+	GLuint buffer;
+	GLenum type;
+	GLsizei length;
+	GLuint taken;
+	GLint depth;
+	int passed;
+
+	/* The output on, the callback ours. */
+	glEnable(GL_DEBUG_OUTPUT);
+	glDebugMessageCallback(gl33_debug_heard, NULL);
+
+	/* A marker, an error (a capability that is not one), a group. */
+	glDebugMessageInsert(GL_DEBUG_SOURCE_APPLICATION, GL_DEBUG_TYPE_MARKER, 1U, GL_DEBUG_SEVERITY_NOTIFICATION, -1, marker);
+	glEnable(0xffffU);
+	(void)glGetError();
+	glPushDebugGroup(GL_DEBUG_SOURCE_APPLICATION, 2U, -1, "glxtest group");
+	depth = 0;
+	glGetIntegerv(GL_DEBUG_GROUP_STACK_DEPTH, &depth);
+	glPopDebugGroup();
+	passed = gl33_expect("debug-markers", (long)gl33_heard_markers, 1L);
+	passed &= gl33_expect("debug-errors", (long)gl33_heard_errors, 1L);
+	passed &= gl33_expect("debug-groups", (long)gl33_heard_groups, 2L);
+	passed &= gl33_expect("debug-group-depth", (long)depth, 2L);
+
+	/* A buffer's label. */
+	glGenBuffers(1, &buffer);
+	glBindBuffer(GL_ARRAY_BUFFER, buffer);
+	glObjectLabel(GL_BUFFER, buffer, -1, "glxtest buffer");
+	memset(label, 0, sizeof(label));
+	length = 0;
+	glGetObjectLabel(GL_BUFFER, buffer, (GLsizei)sizeof(label), &length, label);
+	passed &= gl33_expect("debug-label", (long)strcmp(label, "glxtest buffer"), 0L);
+	passed &= gl33_expect("debug-label-length", (long)length, 14L);
+	glBindBuffer(GL_ARRAY_BUFFER, 0U);
+	glDeleteBuffers(1, &buffer);
+
+	/* Without the callback, the log. */
+	glDebugMessageCallback(NULL, NULL);
+	glDebugMessageInsert(GL_DEBUG_SOURCE_APPLICATION, GL_DEBUG_TYPE_OTHER, 3U, GL_DEBUG_SEVERITY_HIGH, -1, marker);
+	memset(text, 0, sizeof(text));
+	type = GL_NONE;
+	taken = glGetDebugMessageLog(1U, (GLsizei)sizeof(text), NULL, &type, NULL, NULL, NULL, text);
+	passed &= gl33_expect("debug-log-taken", (long)taken, 1L);
+	passed &= gl33_expect("debug-log-type", (long)type, (long)GL_DEBUG_TYPE_OTHER);
+	passed &= gl33_expect("debug-log-text", (long)strcmp(text, marker), 0L);
+	glDisable(GL_DEBUG_OUTPUT);
+	gl33_outcomes[10] = passed;
+}
+
+/* Counts a debug message the callback hears, by its type. */
+static void APIENTRY
+gl33_debug_heard(
+	GLenum source,
+	GLenum type,
+	GLuint id,
+	GLenum severity,
+	GLsizei length,
+	const GLchar *message,
+	const void *user)
+{
+	/* Only the type counts. */
+	(void)source;
+	(void)id;
+	(void)severity;
+	(void)length;
+	(void)message;
+	(void)user;
+	if (type == GL_DEBUG_TYPE_MARKER)
+		gl33_heard_markers++;
+	if (type == GL_DEBUG_TYPE_ERROR)
+		gl33_heard_errors++;
+	if (type == GL_DEBUG_TYPE_PUSH_GROUP || type == GL_DEBUG_TYPE_POP_GROUP)
+		gl33_heard_groups++;
 }
 
 /* Prints one of the start's checks, counting it when the value is not the one expected; returns 1 when it is. */

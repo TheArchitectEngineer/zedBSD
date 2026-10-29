@@ -202,6 +202,10 @@ gles_error(
 	/* Only the first counts. */
 	if (context->gles.error == GL_NO_ERROR)
 		context->gles.error = error;
+
+	/* Desktop GL's debug output hears every one (libGL). */
+	if (gles_fixed != NULL && gles_fixed->error != NULL)
+		gles_fixed->error(context, error);
 }
 
 /*

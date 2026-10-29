@@ -1589,6 +1589,9 @@ struct gles_fixed_hooks {
 
 	/* Whether the context is a core profile's (draws need a vertex array object of the application's). */
 	int (*core_profile)(void);
+
+	/* Hears each GL error recorded (the debug output's messages). */
+	void (*error)(struct zegl_context *context, GLenum error);
 };
 
 /* The fixed-function layer, NULL without one (gles.c; libGL sets it). */

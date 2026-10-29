@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p036`
 Parent: [WS068](../ws.md)
-Status: in-progress（分割の案と最初の一部だけ実装・試験未実施。2026-10-29 q1682-i01 P2。cleared にしない）
+Status: in-progress（分割の案と a・i だけ実装・試験未実施。2026-10-29 q1682-i01 P2。cleared にしない）
 Phase disposition: normal
 依存: p034、p035
 再開（2026-10-29）: ユーザー「作業の手が空いてしまったら、テストなしで実装だけ進める戦略で、残っているWSのphaseをまんべんなく進めましょう。」
@@ -31,7 +31,7 @@ sampleRateShading）は fixed.c の extension の表の features の欄（p034 �
 | f. separate shader objects・program pipeline | GL_ARB_separate_shader_objects、glProgramUniform* | 4.1 | 未着手 |
 | g. vertex attrib binding | GL_ARB_vertex_attrib_binding | 4.3 | 未着手 |
 | h. image load/store・atomic counter | p035 の残り（GL_ARB_shader_image_load_store、GL_ARB_shader_atomic_counters） | 4.2 | 未着手（p035） |
-| i. KHR_debug | glDebugMessageCallback・Insert・Control、object label、debug group | 4.3 | 未着手 |
+| i. KHR_debug | glDebugMessageCallback・Insert・Control、object label、debug group | 4.3 | **実装済み**（2026-10-29、下） |
 | j. DSA の部分・clip control | GL_ARB_direct_state_access の一部、GL_ARB_clip_control（gl_Position の書き換えと depth の範囲） | 4.5 | 未着手 |
 | k. SPIR-V の shader | GL_ARB_gl_spirv（glShaderBinary の SPIR-V と glSpecializeShader） | 4.6 | 未着手 |
 | l. 版の名乗り | 4.0〜4.6 の context（libGLX の attributes、fixed.c の文字列・GLSL の上限、extension の表の版、`zgl_glx_version_limit` の device の条件） | — | 未着手（全て揃ってから） |
@@ -46,6 +46,20 @@ sampleRateShading）は fixed.c の extension の表の features の欄（p034 �
 - extension の表に `GL_ARB_draw_indirect`（3.1 以上）。`GL/gl.h` に宣言と定数。
 - glxtest `--gl33` の 10 個目の outcome「draw-indirect」（command で緑の四角、binding の glGet、ずれた offset の拒否）。`glx-p037.sh` の期待のマスを増やした。
 
+## 実装（2026-10-29）: i. KHR_debug
+
+- libGL `debug.c`（新）: `glDebugMessageCallback`・`glDebugMessageControl`（source・type・severity の bit、id の規則 64 まで、GL_DONT_CARE）・
+  `glDebugMessageInsert`・`glGetDebugMessageLog`（callback が無い時の 16 件の log）・`glPushDebugGroup`・`glPopDebugGroup`（深さ 64、
+  group ごとの control の state、push・pop の message、GL_STACK_OVERFLOW・UNDERFLOW）・`glObjectLabel`・`glGetObjectLabel`（各 namespace の
+  名前を確かめる）・`glObjectPtrLabel`・`glGetObjectPtrLabel`（sync）・`glGetPointerv`（callback と user param）。`GL_DEBUG_OUTPUT`（debug の
+  context で既定 on）・`GL_DEBUG_OUTPUT_SYNCHRONOUS` は fixed の capability、glGet の `GL_MAX_DEBUG_*`・`GL_DEBUG_LOGGED_MESSAGES`・
+  `GL_DEBUG_NEXT_LOGGED_MESSAGE_LENGTH`・`GL_DEBUG_GROUP_STACK_DEPTH`・`GL_MAX_LABEL_LENGTH`。既定で low の severity は出さない。
+- libGLESv2: `gles_fixed_hooks.error`（gles_error が毎回呼ぶ）で GL の誤りを API・ERROR・HIGH の message に（id は誤りの enum）。
+  hook は context の state を作らない（作る時の誤りで再帰しない）。出力は常に同期（message を作った call の中で callback）。
+- extension の表に `GL_KHR_debug`（3.0 以上）。`GL/gl.h` に GLDEBUGPROC と宣言・定数。glxtest `--gl33` の 11 個目の outcome「debug」
+  （marker・誤り・group の push と pop を callback が聞く、group の深さ、buffer の label、callback 無しの log）。glx-p037.sh の期待のマスは 12 全て緑。
+- 制限: 消した object の label は残る（同じ名前の次の object が引き継ぐ）。shader compiler の message は出さない。
+
 ## 判断（推しで進めた）
 
 - indirect の command は GPU の vkCmdDrawIndirect にせず CPU で読む（draw の index の展開・flat の並べ替え・feedback の数えが CPU で count を要るため）。
@@ -53,5 +67,5 @@ sampleRateShading）は fixed.c の extension の表の features の欄（p034 �
 
 ## 検証
 
-- build（2026-10-29）: amd64・arm64・riscv64 の libGL・libGLESv2・libEGL、amd64 の glxtest → exit 0、warning 0。
-- 未実施: Venus の glx-p037（draw-indirect の outcome）、host の試験（GL の draw の道は host で走らない）。
+- build（2026-10-29、i の後）: amd64・arm64・riscv64 の libGL・libGLESv2・libEGL・libGLX・glxtest → exit 0、warning 0（sysroot を作り直し）。
+- 未実施: Venus の glx-p037（draw-indirect・debug の outcome）、host の試験（libGL は host で走らない）。
