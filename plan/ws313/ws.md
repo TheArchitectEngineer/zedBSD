@@ -2,7 +2,7 @@
 
 # WS313: ODROID-C5（Amlogic S905X5M）の BSP と Mali の GPU で、起動して desktop を表示する
 
-Status: planning
+Status: incomplete
 Primary Milestone: MG008
 Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/README.md)）の結果で各 Phase を直す。desktop（p009）は Vulkan の段（[gpu.md](gpu.md) §11、約 155 LW）が無いと出ない。担当は P7（q1675-i02）。
 
