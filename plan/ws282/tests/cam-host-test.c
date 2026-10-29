@@ -18,9 +18,11 @@
  */
 
 #include <drivers/camera/cam.h>
+#include <drivers/gpu/gpu-scanout.h>
 #include <kern/cdev.h>
 #include <kern/clock.h>
 #include <kern/file.h>
+#include <kern/handle.h>
 #include <kern/kmem.h>
 #include <kern/lock.h>
 #include <kern/page.h>
@@ -122,6 +124,27 @@ static uint64_t ticks;
 static enum sleep_mode sleep_mode;
 static void (*sleep_hook)(void);
 static volatile unsigned sleeps;
+
+/*
+ * A GPU capability an application could pass as a descriptor: the
+ * descriptor is its index.  The fake GPU core describes its pages with the
+ * flags and the error the case sets.
+ */
+struct fake_capability {
+	struct kernel_handle handle;
+	void *memory;
+	uint64_t page;
+	uint64_t bytes;
+	uint32_t flags;
+	int backing_error;
+	unsigned references;
+};
+
+#define FAKE_CAPABILITIES	4
+
+static struct fake_capability capabilities[FAKE_CAPABILITIES];
+static unsigned live_handles;
+static unsigned live_uncached_views;
 
 /* The fake camera and the device the framework made of it. */
 static struct fake_source source;
@@ -479,6 +502,90 @@ kern_pmem_free(
 	free((void *)(uintptr_t)run->paddr);
 	run->paddr = 0;
 
+	return 0;
+}
+
+/* Returns a strong reference to the capability a descriptor names. */
+struct kernel_handle *
+handle_fd_get(
+	int descriptor,
+	uint32_t expected_type)
+{
+	struct fake_capability *capability;
+
+	assert(held_spinlocks == 0U);
+	if (descriptor < 0 || descriptor >= FAKE_CAPABILITIES || expected_type != KERNEL_HANDLE_DRIVER)
+		return NULL;
+	capability = &capabilities[descriptor];
+	if (capability->memory == NULL)
+		return NULL;
+
+	capability->references++;
+	live_handles++;
+	return &capability->handle;
+}
+
+/* Drops a reference handle_fd_get() gave. */
+void
+handle_put(
+	struct kernel_handle *handle)
+{
+	struct fake_capability *capability;
+
+	assert(held_spinlocks == 0U);
+	capability = handle->object;
+	assert(capability->references != 0U);
+	assert(live_handles != 0U);
+	capability->references--;
+	live_handles--;
+}
+
+/* Describes a capability's pages as the GPU core would. */
+int
+drv_gpu_shared_backing(
+	struct kernel_handle *handle,
+	struct drv_gpu_scanout_backing *backing,
+	uint64_t *device_identity)
+{
+	struct fake_capability *capability;
+
+	assert(held_spinlocks == 0U);
+	capability = handle->object;
+	assert(capability->references != 0U);
+	if (capability->backing_error != 0)
+		return capability->backing_error;
+
+	backing->pages = &capability->page;
+	backing->page_count = (capability->bytes + KERN_PAGE_SIZE - 1U) / KERN_PAGE_SIZE;
+	backing->bytes = capability->bytes;
+	backing->page_bytes = KERN_PAGE_SIZE;
+	backing->flags = capability->flags;
+	*device_identity = 7U;
+	return 0;
+}
+
+/* Maps a run uncached, which is the identity here. */
+int
+kern_pmem_map_uncached(
+	const struct kern_pmem *run,
+	void **mapped)
+{
+	assert(held_spinlocks == 0U);
+	*mapped = (void *)(uintptr_t)run->paddr;
+	live_uncached_views++;
+	return 0;
+}
+
+/* Removes an uncached view. */
+int
+kern_pmem_unmap_uncached(
+	void *mapped,
+	size_t size)
+{
+	assert(held_spinlocks == 0U);
+	assert(mapped != NULL && size != 0U);
+	assert(live_uncached_views != 0U);
+	live_uncached_views--;
 	return 0;
 }
 
@@ -1534,6 +1641,178 @@ case_fault(
 	printf("fault: PASS\n");
 }
 
+/* Makes a fake GPU capability of bytes with the backing flags. */
+static void
+capability_make(
+	unsigned descriptor,
+	size_t bytes,
+	uint32_t flags,
+	int backing_error)
+{
+	struct fake_capability *capability;
+	size_t rounded;
+
+	capability = &capabilities[descriptor];
+	rounded = (bytes + KERN_PAGE_SIZE - 1U) & ~((size_t)KERN_PAGE_SIZE - 1U);
+	capability->memory = aligned_alloc(KERN_PAGE_SIZE, rounded);
+	assert(capability->memory != NULL);
+	memset(capability->memory, 0x11, rounded);
+	capability->handle.type = KERNEL_HANDLE_DRIVER;
+	capability->handle.object = capability;
+	capability->page = (uint64_t)(uintptr_t)capability->memory;
+	capability->bytes = bytes;
+	capability->flags = flags;
+	capability->backing_error = backing_error;
+	capability->references = 0U;
+}
+
+/* Queues an imported buffer, naming its memory by descriptor. */
+static int
+import_queue(
+	struct fake_node *node,
+	struct file *file,
+	uint32_t index,
+	int32_t descriptor)
+{
+	struct cam_buffer buffer;
+
+	buffer_fill(&buffer, index);
+	buffer.memory = CAM_MEMORY_IMPORT;
+	buffer.fd = descriptor;
+	return camera_ioctl(node, file, CAM_QUEUE_BUFFER, &buffer);
+}
+
+/*
+ * Checks buffers imported from GPU memory: what memory qualifies, that
+ * the frame lands in it through the uncached view, that the slot keeps
+ * the capability until the buffers are freed, and that it cannot be
+ * mapped through the camera.
+ */
+static void
+case_import(
+	struct fake_node *node,
+	struct file *owner)
+{
+	struct vm_device_mapping *mapping;
+	struct cam_request_buffers request;
+	struct cam_buffer buffer;
+	struct cam_format format;
+	struct cam_info info;
+	const uint8_t *bytes;
+	unsigned index;
+	int error;
+
+	/* The framework offers imports for a CPU-writing source. */
+	memset(&info, 0, sizeof(info));
+	info.version = CAM_ABI_VERSION;
+	info.size = sizeof(info);
+	error = camera_ioctl(node, owner, CAM_GET_INFO, &info);
+	assert(error == 0);
+	assert((info.capabilities & CAM_CAP_IMPORT_GPU) != 0U);
+
+	/* Three imported slots of a YUYV frame, without memory yet. */
+	error = buffers_request(node, owner, 0U, &request);
+	assert(error == 0);
+	format_fill(&format, CAM_FORMAT_YUYV, FAKE_WIDTH, FAKE_HEIGHT);
+	error = camera_ioctl(node, owner, CAM_SET_FORMAT, &format);
+	assert(error == 0);
+	memset(&request, 0, sizeof(request));
+	request.version = CAM_ABI_VERSION;
+	request.size = sizeof(request);
+	request.count = 3U;
+	request.memory = CAM_MEMORY_IMPORT;
+	error = camera_ioctl(node, owner, CAM_REQUEST_BUFFERS, &request);
+	assert(error == 0);
+	assert(request.count == 3U);
+	assert(request.bytes == FAKE_WIDTH * FAKE_HEIGHT * 2U);
+	assert(live_pmem == 0U);
+
+	/* A slot reports imported memory, no mmap offset and no binding yet. */
+	buffer_fill(&buffer, 0U);
+	error = camera_ioctl(node, owner, CAM_QUERY_BUFFER, &buffer);
+	assert(error == 0);
+	assert(buffer.memory == CAM_MEMORY_IMPORT);
+	assert(buffer.mmap_offset == 0U);
+	assert((buffer.flags & CAM_BUFFER_IMPORTED) == 0U);
+	error = node->cdev.ops->mmap(owner, 0, KERN_PAGE_SIZE, KERN_PROT_READ, &mapping);
+	assert(error == EINVAL);
+
+	/* Memory that does not qualify. */
+	capability_make(0U, request.bytes, DRV_GPU_BACKING_CONTIGUOUS | DRV_GPU_BACKING_UNCACHED, 0);
+	capability_make(1U, request.bytes, DRV_GPU_BACKING_CONTIGUOUS, 0);
+	capability_make(2U, request.bytes - 2U, DRV_GPU_BACKING_CONTIGUOUS | DRV_GPU_BACKING_UNCACHED, 0);
+	capability_make(3U, request.bytes, DRV_GPU_BACKING_CONTIGUOUS | DRV_GPU_BACKING_UNCACHED, ENOTSUP);
+	error = import_queue(node, owner, 0U, -1);
+	assert(error == EINVAL);
+	error = import_queue(node, owner, 0U, 9);
+	assert(error == EINVAL);
+	buffer_fill(&buffer, 0U);
+	buffer.fd = 0;
+	error = camera_ioctl(node, owner, CAM_QUEUE_BUFFER, &buffer);
+	assert(error == EINVAL);
+	error = import_queue(node, owner, 0U, 1);
+	assert(error == EXDEV);
+	error = import_queue(node, owner, 0U, 2);
+	assert(error == EXDEV);
+	error = import_queue(node, owner, 0U, 3);
+	assert(error == EXDEV);
+	capabilities[1].flags |= DRV_GPU_BACKING_DEVICE | DRV_GPU_BACKING_UNCACHED;
+	error = import_queue(node, owner, 0U, 1);
+	assert(error == EXDEV);
+	capabilities[1].flags = DRV_GPU_BACKING_UNCACHED;
+	error = import_queue(node, owner, 0U, 1);
+	assert(error == EXDEV);
+	assert(live_handles == 0U);
+	assert(live_uncached_views == 0U);
+
+	/* Qualifying memory binds the slot and keeps the capability. */
+	error = import_queue(node, owner, 0U, 0);
+	assert(error == 0);
+	assert(live_handles == 1U);
+	assert(live_uncached_views == 1U);
+	buffer_fill(&buffer, 0U);
+	error = camera_ioctl(node, owner, CAM_QUERY_BUFFER, &buffer);
+	assert(error == 0);
+	assert((buffer.flags & (CAM_BUFFER_IMPORTED | CAM_BUFFER_QUEUED)) == (CAM_BUFFER_IMPORTED | CAM_BUFFER_QUEUED));
+
+	/* The frame lands in the GPU memory. */
+	error = camera_ioctl(node, owner, CAM_STREAM_ON, NULL);
+	assert(error == 0);
+	error = frame_produce(request.bytes, 5U);
+	assert(error == 0);
+	buffer_fill(&buffer, 0U);
+	error = camera_ioctl(node, owner, CAM_DEQUEUE_BUFFER, &buffer);
+	assert(error == 0);
+	assert(buffer.index == 0U);
+	assert(buffer.memory == CAM_MEMORY_IMPORT);
+	assert(buffer.mmap_offset == 0U);
+	assert((buffer.flags & CAM_BUFFER_IMPORTED) != 0U);
+	assert(buffer.metadata.used_bytes == request.bytes);
+	bytes = capabilities[0].memory;
+	assert(bytes[0] == 0xc3U && bytes[request.bytes - 1U] == 0xc3U);
+
+	/* A later queue names no memory; the binding stays. */
+	error = import_queue(node, owner, 0U, 0);
+	assert(error == EINVAL);
+	error = import_queue(node, owner, 0U, -1);
+	assert(error == 0);
+	assert(live_handles == 1U);
+	error = camera_ioctl(node, owner, CAM_STREAM_OFF, NULL);
+	assert(error == 0);
+
+	/* Freeing the buffers gives the capability and the view back. */
+	error = buffers_request(node, owner, 0U, &request);
+	assert(error == 0);
+	assert(live_handles == 0U);
+	assert(live_uncached_views == 0U);
+	for (index = 0U; index < FAKE_CAPABILITIES; index++) {
+		assert(capabilities[index].references == 0U);
+		free(capabilities[index].memory);
+		capabilities[index].memory = NULL;
+	}
+	printf("import: PASS\n");
+}
+
 /* Checks an MJPEG frame's used bytes, and a frame larger than its buffer. */
 static void
 case_mjpeg(
@@ -1759,6 +2038,7 @@ main(
 	case_buffers_and_mapping(node, owner, other);
 	case_stream(node, owner, other);
 	case_fault(node, owner);
+	case_import(node, owner);
 	case_mjpeg(node, owner);
 
 	/* The other open goes first; the owner's close is part of the case. */
@@ -1773,6 +2053,8 @@ main(
 	assert(live_mappings == 0U);
 	assert(live_pmem == 0U);
 	assert(live_allocations == 0U);
+	assert(live_handles == 0U);
+	assert(live_uncached_views == 0U);
 	assert(held_spinlocks == 0U);
 	printf("cam-host-test: PASS (%u poll notifications)\n", poll_notifications);
 

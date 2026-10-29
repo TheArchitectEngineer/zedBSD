@@ -17,12 +17,18 @@
  * under the device mutex and outside the spinlock.  Only the framework
  * stops a stream: STREAM_OFF, the owner's close, the device's retirement,
  * and STREAM_OFF out of FAULT are the only callers of the source's stop.
+ *
+ * Imported buffers are GPU allocations an application exported: the slot
+ * keeps the capability's handle and writes the frame through an uncached
+ * view of its pages, since the GPU reads that memory without caching.
  */
 
 #include <drivers/camera/cam.h>
+#include <drivers/gpu/gpu-scanout.h>
 #include <kern/cdev.h>
 #include <kern/clock.h>
 #include <kern/file.h>
+#include <kern/handle.h>
 #include <kern/kcrt.h>
 #include <kern/klog.h>
 #include <kern/kmem.h>
@@ -48,6 +54,15 @@
 
 /* The fewest buffers a stream starts with. */
 #define CAM_MIN_START_BUFFERS	1U
+
+/*
+ * The GPU core and the uncached views are in only some kernels.  An
+ * imported buffer needs both, so they are declared weak and tested before
+ * use; a kernel without them refuses CAM_MEMORY_IMPORT.
+ */
+extern int drv_gpu_shared_backing(struct kernel_handle *handle, struct drv_gpu_scanout_backing *backing, uint64_t *device_identity) __attribute__((weak));
+extern int kern_pmem_map_uncached(const struct kern_pmem *run, void **mapped) __attribute__((weak));
+extern int kern_pmem_unmap_uncached(void *mapped, size_t size) __attribute__((weak));
 
 /*
  * The states of a stream.
@@ -79,9 +94,11 @@ enum cam_slot_state {
  * One buffer of a stream.
  *
  * The memory is one physically contiguous run, zeroed when it is
- * allocated and addressed through the cached direct map.  next links the
- * slot into the free or the done queue; the device spinlock guards state,
- * next, mappings and metadata.
+ * allocated and addressed through the cached direct map.  An imported
+ * slot instead holds the GPU capability it was queued with and addresses
+ * its pages through an uncached view; it has neither until its first
+ * queue.  next links the slot into the free or the done queue; the device
+ * spinlock guards state, next, mappings and metadata.
  */
 struct drv_cam_slot {
 	struct drv_cam_device *device;
@@ -89,6 +106,7 @@ struct drv_cam_slot {
 	unsigned index;
 	enum cam_slot_state state;
 	struct kern_pmem memory;
+	struct kernel_handle *import;
 	uint8_t *address;
 	size_t bytes;
 	size_t capacity;
@@ -121,6 +139,7 @@ struct drv_cam_device {
 	struct file *owner;
 	unsigned format_set;
 	struct drv_cam_mode_result mode;
+	uint32_t memory;
 	unsigned buffer_count;
 	unsigned mapped;
 	struct drv_cam_slot slots[CAM_BUFFERS_MAX];
@@ -170,6 +189,9 @@ static void cam_slots_reset_locked(struct drv_cam_device *device);
 static void cam_stream_stop(struct drv_cam_device *device);
 static void cam_buffers_free(struct drv_cam_device *device);
 static int cam_buffers_allocate(struct drv_cam_device *device, unsigned count);
+static void cam_buffers_prepare_import(struct drv_cam_device *device, unsigned count);
+static int cam_import_available(const struct drv_cam_device *device);
+static int cam_slot_import(struct drv_cam_device *device, struct drv_cam_slot *slot, int32_t descriptor);
 static int cam_record_check(uint32_t version, uint32_t size, size_t expected);
 static void cam_format_from_result(struct cam_format *format, const struct drv_cam_mode_result *result);
 static int cam_get_info(struct drv_cam_device *device, uintptr_t argument);
@@ -265,6 +287,7 @@ drv_cam_register(
 	spin_init(&device->lock, LOCK_RANK_DEVICE, "camera queues");
 	waitq_init(&device->waitq, "camera");
 	device->state = CAM_STATE_IDLE;
+	device->memory = CAM_MEMORY_DEVICE;
 
 	/* Initializes every slot as unused. */
 	for (index = 0U; index < CAM_BUFFERS_MAX; index++) {
@@ -426,13 +449,13 @@ drv_cam_slot_take(
 }
 
 /*
- * Reports the cached kernel address a CPU-writing source fills.
+ * Reports the kernel address a CPU-writing source fills.
  */
 void *
 drv_cam_slot_address(
 	const struct drv_cam_slot *slot)
 {
-	/* The direct-map address of the slot's run. */
+	/* The direct-map address of the slot's run, or the uncached view of an import. */
 	return slot->address;
 }
 
@@ -870,11 +893,17 @@ cam_buffers_free(
 	struct drv_cam_slot *slot;
 	unsigned index;
 
-	/* Gives every run back to the physical allocator. */
+	/* Gives every run back to the physical allocator, or every import back to the GPU. */
 	for (index = 0U; index < device->buffer_count; index++) {
 		slot = &device->slots[index];
-		if (slot->address != NULL)
+		if (slot->import != NULL) {
+			if (slot->address != NULL)
+				(void)kern_pmem_unmap_uncached(slot->address, slot->bytes);
+			handle_put(slot->import);
+			slot->import = NULL;
+		} else if (slot->address != NULL) {
 			(void)kern_pmem_free(&slot->memory);
+		}
 		slot->address = NULL;
 		slot->bytes = 0U;
 		slot->capacity = 0U;
@@ -883,6 +912,7 @@ cam_buffers_free(
 	}
 
 	device->buffer_count = 0U;
+	device->memory = CAM_MEMORY_DEVICE;
 	device->free_head = NULL;
 	device->free_tail = NULL;
 	device->done_head = NULL;
@@ -937,6 +967,125 @@ cam_buffers_allocate(
 		return ENOMEM;
 
 	/* Succeeded: buffer_count buffers exist. */
+	device->memory = CAM_MEMORY_DEVICE;
+	return 0;
+}
+
+/*
+ * Makes count imported slots that have no memory yet; each takes its GPU
+ * allocation on its first queue.  The mutex is held and no buffer exists.
+ */
+static void
+cam_buffers_prepare_import(
+	struct drv_cam_device *device,
+	unsigned count)
+{
+	struct drv_cam_slot *slot;
+	unsigned index;
+
+	/* Every slot waits for its first queue to name its memory. */
+	for (index = 0U; index < count; index++) {
+		slot = &device->slots[index];
+		slot->import = NULL;
+		slot->address = NULL;
+		slot->bytes = 0U;
+		slot->capacity = device->mode.image_bytes;
+		slot->state = CAM_SLOT_UNUSED;
+		slot->mappings = 0U;
+		slot->next = NULL;
+	}
+
+	device->buffer_count = count;
+	device->memory = CAM_MEMORY_IMPORT;
+}
+
+/* Tells whether this kernel and this source can fill imported GPU memory. */
+static int
+cam_import_available(
+	const struct drv_cam_device *device)
+{
+	/* The source writes with the CPU, which the uncached view serves. */
+	if ((device->desc.flags & DRV_CAM_SOURCE_CPU_WRITES) == 0U)
+		return 0;
+
+	/* The GPU core and the uncached views are in this kernel. */
+	if (drv_gpu_shared_backing == NULL ||
+	    kern_pmem_map_uncached == NULL ||
+	    kern_pmem_unmap_uncached == NULL)
+		return 0;
+
+	/* Succeeded: imported memory can be filled. */
+	return 1;
+}
+
+/*
+ * Binds an imported slot to the GPU allocation behind a descriptor and
+ * maps its pages uncached for the source to write.
+ *
+ * The allocation must be one contiguous run of RAM that the GPU maps
+ * uncached and that holds a whole frame; anything else is EXDEV.  The slot
+ * keeps the descriptor's handle until the buffers are freed, so the pages
+ * stay put while the source writes them.  The mutex is held.
+ */
+static int
+cam_slot_import(
+	struct drv_cam_device *device,
+	struct drv_cam_slot *slot,
+	int32_t descriptor)
+{
+	struct drv_gpu_scanout_backing backing;
+	struct kernel_handle *handle;
+	struct kern_pmem run;
+	uint64_t identity;
+	uint64_t extent;
+	size_t bytes;
+	void *view;
+	int error;
+
+	/* The first queue of an imported slot names its memory. */
+	if (descriptor < 0)
+		return EINVAL;
+	handle = handle_fd_get(descriptor, KERNEL_HANDLE_DRIVER);
+	if (handle == NULL)
+		return EINVAL;
+
+	/* Asks the GPU core for the pages; the exporter's identity is not needed by a CPU writer. */
+	kern_memset(&backing, 0, sizeof(backing));
+	error = drv_gpu_shared_backing(handle, &backing, &identity);
+	if (error == ENOTSUP)
+		error = EXDEV;
+	if (error != 0) {
+		handle_put(handle);
+		return error;
+	}
+
+	/* The whole frame in one run of ordinary RAM that the GPU reads uncached. */
+	bytes = ((size_t)device->mode.image_bytes + KERN_PAGE_SIZE - 1U) & ~((size_t)KERN_PAGE_SIZE - 1U);
+	extent = backing.page_count * backing.page_bytes;
+	if ((backing.flags & DRV_GPU_BACKING_CONTIGUOUS) == 0U ||
+	    (backing.flags & DRV_GPU_BACKING_DEVICE) != 0U ||
+	    (backing.flags & DRV_GPU_BACKING_UNCACHED) == 0U ||
+	    (backing.pages[0] & (KERN_PAGE_SIZE - 1U)) != 0U ||
+	    backing.bytes < device->mode.image_bytes ||
+	    extent < bytes) {
+		handle_put(handle);
+		return EXDEV;
+	}
+
+	/* The source's view of the pages, uncached like the GPU's. */
+	run.paddr = (hal_physaddr_t)backing.pages[0];
+	run.size = bytes;
+	error = kern_pmem_map_uncached(&run, &view);
+	if (error != 0) {
+		handle_put(handle);
+		return error;
+	}
+
+	/* Succeeded: the slot holds the allocation until the buffers are freed. */
+	slot->import = handle;
+	slot->memory = run;
+	slot->address = view;
+	slot->bytes = bytes;
 	return 0;
 }
 
@@ -987,6 +1136,8 @@ cam_get_info(
 	kern_snprintf(info.name, sizeof(info.name), "%s", device->desc.device_name);
 	kern_snprintf(info.location, sizeof(info.location), "%s", device->desc.location);
 	info.capabilities = device->desc.capabilities;
+	if (cam_import_available(device))
+		info.capabilities |= CAM_CAP_IMPORT_GPU;
 	info.max_buffers = device->desc.max_buffers;
 	info.clock_hz = device->desc.clock_hz;
 
@@ -1361,20 +1512,27 @@ cam_request_buffers(
 	if (error == 0 && request.count != 0U && device->format_set == 0U)
 		error = EINVAL;
 
-	/* Refuses memory the framework does not provide yet. */
+	/* Refuses memory the framework does not provide. */
 	if (error == 0 && request.count != 0U) {
-		if (request.memory != CAM_MEMORY_DEVICE)
+		if (request.memory == CAM_MEMORY_IMPORT) {
+			if (!cam_import_available(device))
+				error = EOPNOTSUPP;
+		} else if (request.memory != CAM_MEMORY_DEVICE) {
 			error = EOPNOTSUPP;
-		else if ((device->desc.flags & DRV_CAM_SOURCE_CPU_WRITES) == 0U)
+		} else if ((device->desc.flags & DRV_CAM_SOURCE_CPU_WRITES) == 0U) {
 			error = ENOTSUP;
+		}
 	}
 
-	/* Allocates as many as the camera allows. */
+	/* Allocates as many as the camera allows, or prepares as many imports. */
 	if (error == 0 && request.count != 0U) {
 		count = request.count;
 		if (count > device->desc.max_buffers)
 			count = device->desc.max_buffers;
-		error = cam_buffers_allocate(device, count);
+		if (request.memory == CAM_MEMORY_IMPORT)
+			cam_buffers_prepare_import(device, count);
+		else
+			error = cam_buffers_allocate(device, count);
 		if (error == 0) {
 			device->state = CAM_STATE_BUFFERS;
 			device->owner = file;
@@ -1424,6 +1582,10 @@ cam_slot_flags_locked(
 	if (slot->mappings != 0U)
 		flags |= CAM_BUFFER_MAPPED;
 
+	/* A slot bound to imported GPU memory. */
+	if (slot->import != NULL)
+		flags |= CAM_BUFFER_IMPORTED;
+
 	/* Reports the flags. */
 	return flags;
 }
@@ -1456,9 +1618,11 @@ cam_query_buffer(
 		error = EINVAL;
 	} else {
 		slot = &device->slots[buffer.index];
-		buffer.memory = CAM_MEMORY_DEVICE;
+		buffer.memory = device->memory;
 		buffer.bytes = (uint32_t)slot->capacity;
-		buffer.mmap_offset = (uint64_t)buffer.index * slot->bytes;
+		buffer.mmap_offset = 0U;
+		if (device->memory == CAM_MEMORY_DEVICE)
+			buffer.mmap_offset = (uint64_t)buffer.index * slot->bytes;
 		buffer.fd = -1;
 		irq = spin_lock_irqsave(&device->lock);
 		buffer.flags = cam_slot_flags_locked(slot);
@@ -1513,6 +1677,21 @@ cam_queue_buffer(
 		error = EBUSY;
 	} else if (buffer.index >= device->buffer_count) {
 		error = EINVAL;
+	}
+
+	/*
+	 * An imported slot takes its memory on its first queue and keeps it;
+	 * a later queue names no memory.  The slot is UNUSED then, because
+	 * only a queue moves it out of UNUSED.
+	 */
+	if (error == 0 && device->memory == CAM_MEMORY_IMPORT) {
+		slot = &device->slots[buffer.index];
+		if (buffer.memory != CAM_MEMORY_IMPORT)
+			error = EINVAL;
+		else if (slot->import == NULL)
+			error = cam_slot_import(device, slot, buffer.fd);
+		else if (buffer.fd != -1)
+			error = EINVAL;
 	}
 
 	/* Queues the buffer unless the stream or the owner still has it. */
@@ -1620,9 +1799,11 @@ cam_dequeue_buffer(
 		slot->state = CAM_SLOT_UNUSED;
 		buffer.metadata = slot->metadata;
 		buffer.index = slot->index;
-		buffer.memory = CAM_MEMORY_DEVICE;
+		buffer.memory = device->memory;
 		buffer.bytes = (uint32_t)slot->capacity;
-		buffer.mmap_offset = (uint64_t)slot->index * slot->bytes;
+		buffer.mmap_offset = 0U;
+		if (device->memory == CAM_MEMORY_DEVICE)
+			buffer.mmap_offset = (uint64_t)slot->index * slot->bytes;
 		buffer.flags = cam_slot_flags_locked(slot);
 		buffer.fd = -1;
 	}
@@ -2241,7 +2422,7 @@ cam_mmap(
 
 	if (device->owner != file) {
 		error = EBUSY;
-	} else if (device->buffer_count == 0U) {
+	} else if (device->buffer_count == 0U || device->memory != CAM_MEMORY_DEVICE) {
 		error = EINVAL;
 	} else {
 		/* Finds the buffer and the place in it. */

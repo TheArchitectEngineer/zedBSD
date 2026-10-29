@@ -23,10 +23,10 @@
 | [p003](phase003/phase.md) | uvc の bind と descriptor の解析（MJPEG の 11 byte の形、GUID の byte 列）と dump、VS の claim、PROBE/COMMIT と補正、`ENOSPC`、登録、build。devfs の 0600（Q1）。板（5330 + HDMI capture + webcam）で dump、仕様の節の確定（3〜4 LW） | p002 | in-progress（実装済み・試験未実施、agent/p6-ws282c。板の dump は未実施） |
 | [p004a](phase004a/phase.md) | xHCI の HS isoch IN の実地（URB の予約・投入の順の ring・worker・halt だけ、`camcap --probe-only`）。xHCI の不具合は BUG の ticket にして WS197 へ（2〜3 LW） | p003 | in-progress（実装済み・試験未実施、agent/p6-ws282c。実地は未実施） |
 | [p004b](phase004b/phase.md) | streaming（payload の解析と frame の組み立て、COMMIT の再送、watchdog、bulk は host 試験のみ）、`camcap`・`camcommon`。板で最初の frame（P ≤ 1024 の mode、5〜7 LW） | p004a | in-progress（実装済み・試験未実施、agent/p6-ws282c） |
-| p005 | xHCI の HS の high-bandwidth（encoder・TBC/TLBPC・enqueue、WS197 の source、D10）。**前提: WS197 p007a2 の L2 が PASS して main にある事**、Q1 が順を決める。T1 に `bt-sco-loopback` の前後比較と HID（4〜5 LW） | p004b、WS197 p007a2 | planned |
-| p006 | `camcheck` と `pattern.html`（D11）で画素の試験、HDMI capture の YUYV と 1080p の受け入れ、drop の測定、stop/start 100 回の leak、2 つ目の open、device の quirk、bulk の device があれば実地（3〜4 LW） | p004b（高い mode は p005） | planned |
-| p007 | Linux の xHCI の quirk の表 → Pi 5・Pi 4・VF2 の確認（T1）、IRQ の中の staging の複写の時間（1.5〜2.5 LW） | p006 | planned |
-| p008 | `CAM_MEMORY_IMPORT`（GPU core と bcm2711 の share の差分は WS282 の担当が書き Q1 が merge、D9）、`camvk`（4〜5 LW） | p004b、p007（Pi 5）、WS279 の V3D | planned |
+| [p005](phase005/phase.md) | xHCI の HS の high-bandwidth（encoder・TBC/TLBPC・enqueue、WS197 の source、D10）。**前提: WS197 p007a2 の L2 が PASS して main にある事**、Q1 が順を決める。T1 に `bt-sco-loopback` の前後比較と HID（4〜5 LW） | p004b、WS197 p007a2 | in-progress（実装済み・試験未実施、agent/p6-ws282d。前提の WS197 p007a2 は未達） |
+| [p006](phase006/phase.md) | `camcheck` と `pattern.html`（D11）で画素の試験、HDMI capture の YUYV と 1080p の受け入れ、drop の測定、stop/start 100 回の leak、2 つ目の open、device の quirk、bulk の device があれば実地（3〜4 LW） | p004b（高い mode は p005） | in-progress（実装済み・試験未実施、agent/p6-ws282d） |
+| [p007](phase007/phase.md) | Linux の xHCI の quirk の表 → Pi 5・Pi 4・VF2 の確認（T1）、IRQ の中の staging の複写の時間（1.5〜2.5 LW） | p006 | in-progress（表と試験の config だけ、3 板の確認と複写の時間は未実施、agent/p6-ws282d） |
+| [p008](phase008/phase.md) | `CAM_MEMORY_IMPORT`（GPU core と bcm2711 の share の差分は WS282 の担当が書き Q1 が merge、D9）、`camvk`（4〜5 LW） | p004b、p007（Pi 5）、WS279 の V3D | in-progress（実装済み・試験未実施、agent/p6-ws282d） |
 | p009 | `docs/reference/camera.md`、`KERN_SYSTEM_EVENT_CAMERA` と sessiond の seat（Q1 に依頼）、`camcap`・`camcheck` を Tools に（1〜2 LW） | p006 | planned |
 | p010 | control（UVC の processing unit、id 32 以降。ユーザー「最初は無し」なので後で、2〜3 LW） | p004b | planning |
 | p011 | 規約の全文の見直しと license の監査（2 LW） | p008・p009 | planned |
@@ -50,3 +50,4 @@
 
 - 2026-10-29 P6（q1667-i04、agent/p6-ws282c、基点 c60cdbd44）: p002 の mapping の寿命の 2 点は cam.c でなく host の fixture が file の hold を写していなかった物と分かり、fixture を直した（cam.c は変えず）。rpi4 の vmunix も rc 0・warning 0。試験は未実施。続きは p003。
 - 2026-10-29 P6（q1667-i04）: p003 の uvc（descriptor・bind・PROBE/COMMIT・登録・devfs の 0600）と p004a/p004b の stream・assembler を実装、amd64・rpi4・rpi5・vf2・pcat の vmunix が rc 0・warning 0。試験は未実施。詳細は [phase003](phase003/phase.md)。
+- 2026-10-29 P6（q1667-i05、agent/p6-ws282d、基点 d3e2a737d）: p005（xHCI の high-bandwidth）・p006（camcheck・pattern.html）・p007（quirk の表と 3 板の config）・p008（GPU の allocation の backing、`CAM_MEMORY_IMPORT`、camvk）を実装。host の試験（cam・uvc・xhci-hb・camcheck）と build だけ、実機・QEMU は未実施。詳細は各 phase.md。

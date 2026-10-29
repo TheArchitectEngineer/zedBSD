@@ -158,7 +158,10 @@ uint32_t drv_cam_frame_begin(struct drv_cam_device *device);
  */
 int drv_cam_slot_take(struct drv_cam_device *device, uint32_t sequence, struct drv_cam_slot **slot);
 
-/* Reports the cached kernel address a CPU-writing source fills. */
+/*
+ * Reports the kernel address a CPU-writing source fills: cached for the
+ * framework's own buffers, an uncached view for imported GPU memory.
+ */
 void *drv_cam_slot_address(const struct drv_cam_slot *slot);
 
 /* Reports the bus address a DMA source gives its hardware. */
