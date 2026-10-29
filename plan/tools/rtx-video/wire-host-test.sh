@@ -4,7 +4,7 @@
 # vk-video.c) read them back, every byte and every field.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
-# usage: plan/ws243/tests/wire-host-test.sh   (from anywhere)
+# usage: plan/tools/rtx-video/wire-host-test.sh   (from anywhere)
 # The objects and the binary go in a new directory below build/tmp; nothing is removed.
 set -eu
 repo=$(cd "$(dirname "$0")/../../.." && pwd)
@@ -17,11 +17,11 @@ flags="-std=gnu11 -O1 -g -D_POSIX_C_SOURCE=200809L -DKERN_USER_ABI_LP64 -include
 -ffunction-sections -fdata-sections -fsanitize=address,undefined -fno-sanitize=alignment \
 -I$out/client-headers -I$repo/include -I$repo/src -I$repo"
 # The libvulkan side (its static encoders), its wire and codec.
-cc $flags -Wno-unused-function -c -o "$out/encode.o" "$repo/plan/ws243/tests/wire-encode.c"
+cc $flags -Wno-unused-function -c -o "$out/encode.o" "$repo/plan/tools/rtx-video/wire-encode.c"
 cc $flags -c -o "$out/lv-wire.o" "$repo/userland/desktop/libvulkan/wire.c"
 cc $flags -c -o "$out/lv-codec.o" "$repo/userland/desktop/libvulkan/codec.c"
 # The executor's side (its static readers) and what they call.
-cc $flags -Wno-unused-function -c -o "$out/decode.o" "$repo/plan/ws243/tests/wire-decode.c"
+cc $flags -Wno-unused-function -c -o "$out/decode.o" "$repo/plan/tools/rtx-video/wire-decode.c"
 for file in vk/vk-object.c vk/vk-reply.c vk/vk-video-h264.c nvdec-records.c wire.c; do
 	cc $flags -c -o "$out/$(echo "$file" | tr / -).o" "$src/$file"
 done

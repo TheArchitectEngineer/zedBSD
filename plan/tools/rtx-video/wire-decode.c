@@ -19,7 +19,7 @@
 
 #include "src/drivers/gpu/nvrtx/vk/vk-video.c"
 
-#include "plan/ws243/tests/wire-test.h"
+#include "plan/tools/rtx-video/wire-test.h"
 
 static void check(int ok, const char *what);
 static void reader_on(struct i915_wire_reader *reader, const uint8_t *bytes, size_t length);

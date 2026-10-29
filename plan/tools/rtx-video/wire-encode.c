@@ -17,7 +17,7 @@
 
 #include <stdlib.h>
 
-#include "plan/ws243/tests/wire-test.h"
+#include "plan/tools/rtx-video/wire-test.h"
 
 static size_t encode_take(struct vulkan_writer *writer, uint8_t *out, size_t capacity);
 

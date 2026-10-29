@@ -4,7 +4,7 @@
 # Cr interleaved) are hashed as media-probe hashes a picture.  Prints "TIME_US SHA256" lines, one a frame.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 #
-# usage: python3 -I plan/ws243/tests/nv12-hashes.py CLIP.mp4 > CLIP.ref
+# usage: python3 -I plan/tools/rtx-video/nv12-hashes.py CLIP.mp4 > CLIP.ref
 import hashlib
 import json
 import subprocess

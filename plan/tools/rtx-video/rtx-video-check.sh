@@ -11,18 +11,18 @@
 #       pictures the GPU holds (sampled NV12 planes, nothing read back), libmedia's picture counts, errors, and a
 #       desktop shot 6 s in (OUT/v4-NAME.png)
 # then the line taken out again; zedBSD is left running.  The logs stay in OUT, a summary is printed
-# (OUT/summary.txt).  The programs come from PERF_BUILD (default build/ws243): bin/media-probe,
+# (OUT/summary.txt).  The programs come from PERF_BUILD (default build/rtx-video): bin/media-probe,
 # dynamic/libmedia.so and dynamic/libvulkan.so (used through LD_LIBRARY_PATH), usb/bin/mview.
 # VIDEO_STEPS (default "v1 v2 v3 v4") picks the steps after V0; V4_OPTIONS (default --fullscreen) are the player's
 # options (a window, say --width=1280 --height=720, is composed, so its shot shows the video; full screen may be shown
 # without composing, and its shot is then empty); V4_CLIP (default every clip) names the one clip V4 plays.
-#   usage: plan/ws243/tests/rtx-video-check.sh OUT VMUNIX [CLIPS]   (from the top of the tree)
+#   usage: plan/tools/rtx-video/rtx-video-check.sh OUT VMUNIX [CLIPS]   (from the top of the tree)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 OUT=${1:?usage: rtx-video-check.sh OUT VMUNIX [CLIPS]}
 VMUNIX=${2:?usage: rtx-video-check.sh OUT VMUNIX [CLIPS]}
 export GPU_PERF_MACHINE=${GPU_PERF_MACHINE:-rtx}
-export PERF_BUILD=${PERF_BUILD:-build/ws243}
+export PERF_BUILD=${PERF_BUILD:-build/rtx-video}
 CLIPS=${3:-$PERF_BUILD/clips}
 MEASURE="sh plan/tools/gpu-perf/measure.sh"
 top=$(pwd)

@@ -8,7 +8,7 @@
 #   S2  vkhang while mview runs, as the hang check does: lost, mview's frames, the control
 # A kernel given as VMUNIX@NAME=VALUE runs with the boot line NAME=VALUE (taken out again after its runs).  The last
 # kernel given stays in place (the NVMe's own kernel last puts the machine back).  OUT/summary.txt holds the summaries.
-#   usage: plan/ws243/tests/rtx-s5-check.sh OUT VMUNIX[@NAME=VALUE]...   (from the top of the tree)
+#   usage: plan/tools/rtx-video/rtx-s5-check.sh OUT VMUNIX[@NAME=VALUE]...   (from the top of the tree)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 OUT=${1:?usage: rtx-s5-check.sh OUT VMUNIX...}
