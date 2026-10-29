@@ -58,8 +58,8 @@ Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/
 | [p006](phase006/phase.md) | Ethernet（EQoS・RGMII の PHY） | in-progress（実装済み・実機未試験） | p002 |
 | [p007](phase007/phase.md) | display（U-Boot の mode の OSD1） | in-progress（実装済み・実機未試験） | p002 |
 | [p008](phase008/phase.md) | GPU（Mali-G310）と Vulkan の device | in-progress（kernel の driver は実装済み・実機未試験。Vulkan の段は設計だけ） | p002 |
-| [p010](phase010/phase.md) | Valhall の shader compiler（`src/drivers/gpu/mali/compiler/`） | in-progress（配下 C） | p008 |
-| [p011](phase011/phase.md) | render の node・scheduler・Vulkan の executor・CS の builder | in-progress（配下 D） | p008・p010 |
+| [p010](phase010/phase.md) | Valhall の shader compiler（`src/drivers/gpu/mali/compiler/`） | in-progress（実装済み・host の試験 PASS・実機未試験） | p008 |
+| [p011](phase011/phase.md) | render の node・scheduler・Vulkan の executor・CS の builder | in-progress（実装済み・実機未試験） | p008・p010 |
 | p009 | desktop（Keiland の config） | planned | p007・p010・p011 |
 | 最後 | 規約の全文の見直し | planned | 全て |
 
