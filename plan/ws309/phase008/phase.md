@@ -2,18 +2,8 @@
 
 # ws309-p008 render を GPU の queue の唯一の持ち主に (1): fence 付きの task と queue の lock
 
-- 親: [WS309](../ws.md)、設計 [design.md](../design.md) §4.1（レビュー 1）・§4.2・§11 の (1)、J2。Queue: q1662-i04（P1）。
-- 状態: in-progress（2026-10-29 P1。queue の lock は済み、fence 付きの task は未着手）。
-- 再開点（2026-10-29 04:54 P1 q1662-i05、branch `agent/p1-ws309e`、ラップアップ）: source の変更は無い。下の「残り」1 から。
-  - build の手順（確かめた）: worktree の `build/` に main の `build/` の `NoctLang`・`distfiles`・`llvm`・`llvm-build`・`llvm-source`・`sources`・`ws035-sq-venus` の symlink を作り、
-    `make ZEDBSD_CONFIG=plan/ws309/tests/config-amd64-p1.mk build/amd64/bin/wayland -j16`（sysroot は make が作る。基点 11781c470 で exit 0・warning 0）。
-  - 調べた事（実装の案、未実装）: task の完了は FIFO の順に刈るので、main は `compose->task_done`（終わった task の最後の番号）を持ち、image に `task`（その遷移の task の番号、0 は無し）を置けば
-    「`task == 0 || task <= task_done` なら ready」で済む（TASK_DONE で list を歩かない）。render は step の初め（park の外）に受けた task を全て queue の lock の下で fence を付けて submit
-    （answer の list より先に受けた task が job より先の submission order になり、barrier の scope は submission order で queue の中の後の submit に及ぶ）、BLOCKED で task が in flight なら
-    最古の task の fence を KWL_RENDER_POLL_NS 待って WORKED（render_main が cond で眠り込まない）。ops に `submit_task`・`wait_task` を足す（compose.c:1128 の ops の組み立て）。
-    pending の image を外す所: draw-list・cursor box・cursor plane の copy・frame の host の copy の list（shm.c の `list->copies`、`compose->host_images`）。
-    image の破棄が task の in flight と重なる時（shm.c:198 の quiesce の前）の扱いは p009 の遅らせた破棄までは quiesce に頼る（要確認: quiesce が task の fence を覆うか）。
-  - 前の P1 の未実施（まだ未実施）: p008 の queue lock の後の arm64・riscv64 の build、Linux/FreeBSD の build（kl_backend_options に field を足した分）。
+- 親: [WS309](../ws.md)、設計 [design.md](../design.md) §4.1（レビュー 1）・§4.2・§11 の (1)、J2。Queue: q1662-i04・i05・i06（P1）。
+- 状態: cleared（2026-10-29 12:2x P1 q1662-i06。QEMU Venus `task-guest.sh` PASS。arm64・riscv64・FreeBSD の build と実機は未実施）。
 - 依存: p002。
 
 ## 済み（6eab69097）
@@ -24,15 +14,26 @@
   libvulkan（zedBSD）は queue の中で mutex を持つが、Vulkan の外部同期の規則と Linux（Mesa）のため compositor が守る。
 - amd64 bin/wayland warning 0。QEMU Venus `plan/ws309/tests/font-guest.sh build/ws309/p008a ... wayland-p008a ...` PASS（回帰の確かめだけ）。
 
-## 残り（次の起動はここから）
+## 済み（q1662-i06、db2cce02e ほか、branch `agent/p1-ws309f`、基点 cb6c3f489）
 
-1. main の自分の command pool（`compose->task_pool`、main の thread だけが使う。今の `compose->pool` は render thread の frame の物）。
-2. render の message に task（`KWL_RENDER_TASK`: command buffer、fence、印）を足す（render-thread.[ch]）。render は受けた task を後に受けた frame・layer の job より先に、
-   queue の lock の下で fence を付けて submit し、fence を `vkGetFenceStatus`（または次の poll）で見て、終わったら出口へ TASK_DONE（main の wake）。main は command buffer と fence を解放。
-3. `image_layout`（shm.c、今は `kwl_render_wait_idle` ＋ submit ＋ `vkQueueWaitIdle`）を task に: host の書き込みを済ませてから遷移を task_pool に記録して渡す。
-   image（`struct kwl_import` か host image）に `pending` を足し、TASK_DONE まで draw-list・cursor box・cursor plane の copy に出さない（呼ぶ所: shm.c:893・896 の host image の作成 ← shm の初回・size の変化、
-   cursor.c:759 の cursor の形、cursor-plane.c:644 の copy の host image、glass の画像）。起動（`setup_batching`、READY の前）は今のまま。
-4. `import_layout`（import.c:293・310 の `kwl_render_wait_idle`、KWL_LAYOUTS_MAX を超えた時）も同じ task に。
-5. `kwl_render_wait_idle` の呼び手が無くなれば消す（設計 §4.1 の表の最後の行）。
-6. 試験: host（render thread の task の順と TASK_DONE、可能なら）、QEMU Venus（shm の client（weston-simple-shm 相当の probe）、cursor の形の変更、`KWL PERF pass` の pass_max_us）。
-   注意: cursor thread は frame の無い時も staging を GENERAL で読む（設計 §4.1）ので、cursor の形の image は TASK_DONE まで box に出さない。
+- render thread の task（render-thread.[ch]）: main が作る message（`KWL_RENDER_TASK_DONE`、番号・command buffer・fence）を `kwl_render_task` で渡す。
+  render は step の初めと、LIST の answer を取る同じ lock の下で受けた task を取り、job より先に submit（ops `submit_task`、queue の lock の下）。
+  fence は ops `wait_task` で見て、渡した順に同じ message を出口へ返す（submit の失敗もその順で）。park の間も task は submit と刈り取りを続け（swapchain に触れない）、
+  stop は task が全て終わるまで待つ。`kwl_render_wait_task(number, ms)` は render の側の完了の番号を待つ（main の解放の前の待ち）。`kwl_render_wait_idle` は消した。
+- compose（compose.[ch]）: main だけが使う `task_pool`（TRANSIENT）、記録中の task（`task_command`・`task_open`）、`task_given`・`task_done`・`task_error`。
+  `kwl_compose_task_record`・`_current`・`_flush`・`_ready`・`kwl_compose_tasks_busy`・`kwl_compose_task_wait`。flush は render への LIST の answer の直前（frame と layer の 2 か所）と
+  event loop の poll の直前（`kwl_compose_give_tasks`、kwl.h）、batch_end（render の動作中）、close（stop の前）。TASK_DONE で command buffer と fence を解放（`--log-frames` で `KWL TASK done`）。
+- 使う所: `image_layout`（shm.c、render の動作中は task に記録、開始の前は今のまま batch か単独の submit＋wait）、`kwl_host_image_batch_end`（回転の時は flush だけ）、
+  `import_layout`（KWL_LAYOUTS_MAX を超えた分、render の動作中は task）。`struct kwl_import` に `task`。
+- 設計からの変え方（判断）: draw-list の image は `pending` の印を見ない。render は渡された順（task が先、LIST が後）に submit し、barrier は submission order で後の submit に及ぶので足りる。
+  代わりに、task が飛んでいる間は host の staging の書き込みをしない（`compose_may_draw`・`kwl_compose_host_writable`・`kwl_layers_tick` が task の完了まで待つ。main は待たず、TASK_DONE の wake で次の pass）。
+  cursor thread は render の順の外で読むので、cursor plane（`kwl_cursor_plane_update`）は image と copy の task の完了まで box に出さない（`plane_ready`）。
+  task の完了の前の image の解放（作ってすぐ消す時）は `kwl_compose_task_wait` で待つ（5 s で fatal）。p009 の遅らせた破棄で置き換える。
+- 確かめ: amd64 `make ZEDBSD_CONFIG=plan/ws309/tests/config-amd64-p1.mk build/amd64/bin/wayland` exit 0・warning 0。Linux の compositor
+  （`make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/ws309/keiland-linux build/ws309/keiland-linux/bin/wayland`、-Werror）exit 0。
+  host 試験 `sh plan/ws309/tests/render-task/run.sh`（ASan+UBSan・TSan）PASS（task と LIST の順、完了の順、submit の失敗、park 中の task、stop が task を待つ）。
+  QEMU Venus `plan/ws309/tests/task-guest.sh build/ws309/p008b build/ws309/img/hdd-image.img build/ws309/img/bin/wayland`: KWL TASK done 6（全て result=0）、wlshm 6 窓の
+  WLSHM DONE、保持した窓の色が画面の中央の 3750/3750、FAILED・VULKAN_ERROR なし。比べ（同じ image に基点 cb6c3f489 の wayland、`build/ws309/p008b-base`、各 1 回）:
+  2 つ目以降の 5 s の窓で pass_max_us 375〜392 ms（基点 492〜500 ms）、vk_outside_max_us 128〜245 ms（基点 249〜499 ms）。残る vk_outside は shm の image の破棄の quiesce（p009）と見ている（未確かめ）。
+  画面は基点と時計の文字の他は同じ。
+- 未実施: arm64・riscv64 の build（sysroot の許可は amd64 だけ）、FreeBSD の build、実機（RDNA・VF2）、import の溢れ（33 個以上の新しい GPU buffer を 1 frame で）の経路の試験、回転（batch_end の task）の試験。
