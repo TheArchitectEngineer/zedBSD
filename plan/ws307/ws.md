@@ -135,7 +135,8 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 | p011 | 通しの試験: installer の image（試験の hook、J4）、AAT で GUI の導入（全体・選ぶ・共存・既存の partition を root に・swap 無し・キャンセル・失敗・拒む disk・dd した disk との同居・4096 の disk）、導入先の起動（自動 login を切った導入で boot-test.sh、中は OpenSSH の SSH）、`plan/ws307/tests/` の 1 本の script（spec §12）。p007 の承認が無い間は Boot#### の確認を「未実施（承認待ち）」と記録 | p002・p004・p010（4096 は p006 と p008 の 4096 の段） | 12 LW | planning |
 | p012 | 実機の導入（Q1 の割り当て、ユーザーの試験の一覧） | p011 | 2 LW | planning |
 | p013 | 文書: `docs/howto/boot-and-storage.md` の古い zedinst の節を新しい installer に置き換え（「installer の image を運用に使ってはいけない」規則と root 起動相当の扱い、J5）、`docs/reference` に install-admin・efiboot・mkswap・diskpart・mkfs・loader の UFS の追加 | p012 | 3 LW | planning |
-| p014 | 規約の全文の見直し（WS307 が変えた C）。WS の最後 | p013 | 5 LW | planning |
+| p015 | 画面の lock（idle の後の lock）の既定を never にし、never でも実際には lock される不具合を直す（2026-10-29 ユーザー「WS307でついでに行ってほしいのですが、デスクトップがロックされるデフォルトの時間の設定を、neverをデフォルトにしてほしいです。また、neverにしても、現在は実際にはロックされてしまうみたいなので、直しておいてほしいです。」）。P5、q1674 | — | 3 LW | in-progress |
+| p014 | 規約の全文の見直し（WS307 が変えた C）。WS の最後 | p013・p015 | 5 LW | planning |
 
 - 2026-10-28 ユーザー「P4を立てて、WS307の仕様検討を行ってもらってください。ユーザ確認事項があれば回答させていただきます。仕様を確定させたいです。そのためのphaseをQ1が作り、P4に実行させてください。」
 - 2026-10-28 ユーザー「P4に、ESPにカーネルをインストールすると回答してしまいましたが、ブートローダがUFSからカーネルをロードできるようにしたいです。そのphaseを作ってほしいです。」→ boot loader が UFS から kernel を読む Phase を足す（P4 が spec と Phase の表に、q1643）。

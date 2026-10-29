@@ -9,7 +9,7 @@
 | P2 | phase-runner | ws291 の NVIDIA の段 (q1670-i05) | `/home/awe/zedBSD-worktrees/p2-ws291q` / `agent/p2-ws291q` | running | 0b35eee90（merge 5aa6b291a） |
 | P3 | phase-runner | ws311 (q1673-i01) | `/home/awe/zedBSD-worktrees/p3-ws311` / `agent/p3-ws311` | running | 642d812f3（merge 1fd28c4de） |
 | P4 | phase-runner | ws307 (q1665-i07) | `/home/awe/zedBSD-worktrees/p4-ws307k` / `agent/p4-ws307k` | running | dc4dd958e（merge 23d2741ea） |
-| P5 | phase-runner | ws307 p002 の残り (q1671-i01) | `/home/awe/zedBSD-worktrees/p5-ws307p002` / `agent/p5-ws307p002` | returned（2026-10-29、upload 待ち。upload 用の file は build/tmp/nightly-new/ に残す） | 24a0ea956（merge 96ee703c6） |
+| P5 | phase-runner | ws307 p015 (q1674-i01) | `/home/awe/zedBSD-worktrees/p5-ws307lock` / `agent/p5-ws307lock` | running（前の p5-ws307p002 は upload 待ちで残す） | 24a0ea956（merge 96ee703c6） |
 | P6 | phase-runner | ws312 (q1672-i01) | `/home/awe/zedBSD-worktrees/p6-ws312` / `agent/p6-ws312` | running | —（この WS は merge する。前の agent/p6-ws282c・p6-ws296c は merge しない） |
 
 - 同時に動かす数は 6（2026-10-29 ユーザーの P1〜P6 の指示）。VF2（主）と 5330（従）は P3、10.0.10.3 は P2。
