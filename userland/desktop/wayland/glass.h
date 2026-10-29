@@ -74,7 +74,7 @@ enum glass_size {
 };
 
 /*
- * The Kei mark's colours: the translucent glass of the boot splash (the
+ * The mark's colours: the translucent glass of the boot splash (the
  * greeter and the lock screen), or the deeper and less see-through ones
  * that read on the light system bar (the launcher, ws035-p118).
  */

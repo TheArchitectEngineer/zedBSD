@@ -27,7 +27,7 @@
  * (GLASS_EMOJI_FONT, opened on the first such character),
  * whose colour glyph goes into the cell as it is and is drawn as an image.
  * The titlebar's icons (icons.c) are rendered into the atlas once, at two
- * sizes, and so are the seven layers of the Kei mark (artwork/mark.c),
+ * sizes, and so are the seven layers of the mark (artwork/mark.c),
  * which the login and lock screens draw.  The applications'
  * tiles (icons.c: the banded rounded square with the picture
  * cut out) are rendered in colour into an image of their own at each size
@@ -137,11 +137,11 @@
 #define GLASS_CELL		48U
 #define GLASS_CELLS		512U
 
-/* The Kei mark's layers in the atlas, in pixels a side. */
+/* The mark's layers in the atlas, in pixels a side. */
 #define GLASS_MARK_PIXELS	128U
 
 /*
- * The Kei mark's layers again at the system bar's launcher size, in pixels a
+ * The mark's layers again at the system bar's launcher size, in pixels a
  * side: drawn one to one, they stay crisp where the large ones
  * would be shrunk five times.  They sit in the free column right of the
  * large ones, GLASS_MARK_SMALL_ACROSS a row.
@@ -264,7 +264,7 @@ struct glass_cached {
  * The look's images and glyphs: the wallpaper and its blur, the atlas with
  * the ASCII glyphs at each size, the icons at their sizes, the
  * applications' tiles in their own image (tiles_ready once they are drawn
- * there), the Kei mark's
+ * there), the mark's
  * layers large and at the launcher's size, and the cache of
  * other characters; the fonts stay open (with their files' bytes) to
  * render the cache's glyphs.  cache_top is the atlas row the cache starts
@@ -1199,7 +1199,7 @@ landscape_row(
 }
 
 /*
- * Colors one pixel of the landscape in the Kei look: a bright sky that pales towards the
+ * Colors one pixel of the landscape in the desktop's look: a bright sky that pales towards the
  * horizon with a soft sun, three ranges of misty hills (pale blue far away,
  * young green near), a still lake that reflects them, soft green leaves at
  * the top left and along the foot with a few blurred white flowers, and the
@@ -1667,7 +1667,7 @@ atlas_fill(
 	printf("KWL STARTUP step=glyphs-icons ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 	started = kwl_milliseconds();
 
-	/* The Kei mark's layers in the row after them. */
+	/* The mark's layers in the row after them. */
 	error = atlas_mark(glass, &pen_y);
 	if (error != 0)
 		return error;
@@ -3309,7 +3309,7 @@ glass_draw_app_tile(
 }
 
 /*
- * Draws the Kei mark in a square of a size in pixels at (x, y): its seven
+ * Draws the mark in a square of a size in pixels at (x, y): its seven
  * layers from the atlas, each in the colour of the look asked for, the
  * whole as opaque as asked (0..1).  A mark about the launcher's size uses
  * the layers rendered at that size.
@@ -3811,7 +3811,7 @@ large_glyph_of(
 }
 
 /*
- * Renders the Kei mark's layers into the atlas side by side from a row on,
+ * Renders the mark's layers into the atlas side by side from a row on,
  * the small ones at the launcher's size in the column right of them,
  * and moves the row past them; returns 0, or ENOSPC when the
  * atlas is full.
