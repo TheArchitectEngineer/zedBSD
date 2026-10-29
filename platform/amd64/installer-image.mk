@@ -44,7 +44,8 @@ INSTALLER_PARTUUIDS := $(INSTALLER_DIR)/partuuids
 INSTALLER_ZEDBSD_CONFIG := $(INSTALLER_DIR)/zedbsd.cfg
 INSTALLER_AUTOLOGIN := $(INSTALLER_DIR)/autologin
 INSTALLER_IMAGE := $(BUILD)/installer-image.img
-INSTALLER_ITEMS := $(AMD64_PLATFORM)/installer-items
+# The items of the page of what to install; a test that leaves units out (ZEDBSD_INSTALLER_TEST_OMIT) gives its own.
+INSTALLER_ITEMS := $(or $(ZEDBSD_INSTALLER_TEST_ITEMS),$(AMD64_PLATFORM)/installer-items)
 
 #
 # The files an ordinary image may be given from the command line are not units: the installer's image takes
@@ -67,7 +68,7 @@ ZEDBSD_INSTALLER_TEST_FILES ?=
 
 # The programs only the live root has, built as their class is: the installer's own, and a test's.
 INSTALLER_LIVE_PROGRAMS := $(ZEDBSD_INSTALLER_PROGRAMS) $(ZEDBSD_INSTALLER_TEST_PROGRAMS)
-$(foreach command,$(filter $(USERLAND_BASIC_PROGRAMS),$(INSTALLER_LIVE_PROGRAMS)),\
+$(foreach command,$(filter-out installer,$(filter $(USERLAND_BASIC_PROGRAMS),$(INSTALLER_LIVE_PROGRAMS))),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 $(foreach command,$(filter $(USERLAND_NETWORK_PROGRAMS),$(INSTALLER_LIVE_PROGRAMS)),\
 	$(eval $(call AMD64_USER_NET_COMMAND,$(command))))
@@ -77,6 +78,25 @@ INSTALLER_LIVE_FILES := $(foreach program,$(INSTALLER_LIVE_PROGRAMS),\
 	--file $(call zedbsd_userland_destination,$(program))=$(BUILD)/bin/$(program) \
 	$(if $(USERLAND_$(program)_MODE),--mode $(call zedbsd_userland_destination,$(program))=$(USERLAND_$(program)_MODE))) \
 	--file /etc/keiland/autologin=$(INSTALLER_AUTOLOGIN) $(ZEDBSD_INSTALLER_TEST_FILES)
+
+# The installer's window, linked as the desktop's applications are (Wayland, Vulkan, TrueType and the widgets).
+INSTALLER_APP_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,installer)
+
+$(BUILD)/bin/installer: $(DYNAMIC_SYSROOT)/usr/lib/crt1.o \
+	$(INSTALLER_APP_OBJS) $(DYNAMIC_DIR)/libvulkan.so $(DYNAMIC_DIR)/libwayland-client.so \
+	$(DYNAMIC_DIR)/libkeiland.so $(DYNAMIC_DIR)/libtruetype.so \
+	$(DYNAMIC_DIR)/libc.so $(DYNAMIC_DIR)/ld.so $(DYNAMIC_VULKAN_CHECK)
+	@mkdir -p $(dir $@)
+	$(CC) $(DYNAMIC_LINK_CFLAGS) -nostdlib -pie -Wl,--no-relax \
+ -Wl,--hash-style=gnu,-z,now,-z,relro,-z,separate-code \
+ -Wl,-z,stack-size=0x100000,--allow-shlib-undefined \
+ -Wl,--dynamic-linker=/lib/ld.so \
+ $(DYNAMIC_SYSROOT)/usr/lib/crt1.o $(INSTALLER_APP_OBJS) \
+ -L$(DYNAMIC_DIR) -Wl,-rpath-link,$(DYNAMIC_DIR) \
+ -l:libvulkan.so -l:libwayland-client.so -l:libkeiland.so -l:libtruetype.so -l:libc.so -o $@
+	$(PYTHON) $(DYNAMIC_VULKAN_CHECK) --machine $(DYNAMIC_ELF_MACHINE) --role application \
+ --needed libvulkan.so --needed libwayland-client.so --needed libkeiland.so --needed libtruetype.so \
+ --needed libc.so $@
 
 # The whole root, staged as an ordinary root is (the platform's own files without a test's replacements).
 $(eval $(call ZEDBSD_ROOTFS_TREE_RULE,amd64,$(ZEDBSD_ROOTFS_INPUTS),$(ZEDBSD_ROOTFS_FILES),$(INSTALLER_FULL)))

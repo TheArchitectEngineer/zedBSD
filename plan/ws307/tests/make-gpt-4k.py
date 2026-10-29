@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Writes a protective MBR and both GPT copies with 4096-byte sectors into an image file (WS307 p008's 4Kn check).
 
-    make-gpt-4k.py IMAGE START,COUNT,TYPE,PARTUUID,NAME ...
+    make-gpt-4k.py [--sector 512] IMAGE START,COUNT,TYPE,PARTUUID,NAME ...
 
-START and COUNT are 4096-byte sectors.  The image must already have its size.
+START and COUNT are sectors (4096 bytes unless --sector says 512, p010's disk of another system).  The image must
+already have its size.
 
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 """
@@ -21,6 +22,10 @@ def guid_bytes(text):
 
 
 def main():
+	global SECTOR
+	if sys.argv[1] == "--sector":
+		SECTOR = int(sys.argv[2])
+		del sys.argv[1:3]
 	path = sys.argv[1]
 	size = os.path.getsize(path)
 	sectors = size // SECTOR

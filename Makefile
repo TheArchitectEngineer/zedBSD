@@ -536,6 +536,14 @@ override ZEDBSD_USER_PROGRAMS := $(foreach program,$(ZEDBSD_ALL_USER_PROGRAMS),\
  $(if $(call user_program_applies,$(program)),$(program)))) \
 	$(filter $(ZEDBSD_INSTALLER_FIRMWARE),$(foreach program,$(ZEDBSD_ALL_USER_PROGRAMS),\
  $(if $(filter firmware,$(USERLAND_$(program)_MENU)),$(program))))
+#
+# A test's image may leave out programs it does not build (the toolchain's
+# packages, whose build is not a test's to make); only a test's
+# configuration sets ZEDBSD_INSTALLER_TEST_OMIT, and with it
+# ZEDBSD_INSTALLER_TEST_ITEMS, items that do not name the units left out
+# (platform/amd64/installer-image.mk).
+#
+override ZEDBSD_USER_PROGRAMS := $(filter-out $(ZEDBSD_INSTALLER_TEST_OMIT),$(ZEDBSD_USER_PROGRAMS))
 else ifneq ($(strip $(ZEDBSD_IMAGE_PROFILE)),)
 $(error Unknown ZEDBSD_IMAGE_PROFILE '$(ZEDBSD_IMAGE_PROFILE)'; the only profile is installer)
 endif
