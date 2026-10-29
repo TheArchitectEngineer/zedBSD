@@ -39,8 +39,8 @@
 | --- | --- | --- | --- |
 | [ws314-p001](phase001/phase.md) | `keiland.h` を `keiland_*.h` に分ける（定義の移動だけ、API・ABI は変えない。KL_VERSION の履歴の comment の置き場所も）。comment から開発の管理情報を除く（決定 10） | cleared | — |
 | [ws314-p002](phase002/phase.md) | `docs/` に Keiland のプログラミングの解説（英語）: app → window → titlebar → ui と main loop → widget → menu → その他。fd の API は書かない | cleared | p001 |
-| ws314-p003 | 設計: post・`kl_process`・`kl_instance` の event・libbrowser の network の thread（design.md、design-reviewer） | planned | p001 |
-| ws314-p004 | `kl_app_post`・`kl_window_post` の実装と Mailer の移行 | planned | p003 |
+| [ws314-p003](phase003/phase.md) | 設計: post・`kl_process`・`kl_instance` の event・libbrowser の network の thread（[design.md](design.md)、design-reviewer） | cleared（判断 A〜D 待ち） | p001 |
+| ws314-p004 | `kl_app_post`・`kl_window_post` の実装と Mailer の移行 | in-progress | p003 |
 | ws314-p005 | `kl_process_*` の実装と Installer・Terminal・起動する program の移行 | planned | p003 |
 | ws314-p006 | `kl_instance` の event と Settings の移行 | planned | p004 |
 | ws314-p007 | libbrowser の network の thread と Browser の shell の移行 | planned | p004 |
@@ -61,3 +61,5 @@
   pipe・fork/exec・socket・poll の利用（file の数）: mailer pipe 1・socket 1・poll 2、installer pipe 2・exec 2・poll 1、terminal exec 1、
   settings exec 1、browser poll 2、libbrowser pipe 1・socket 2・poll 6、files exec 1、preview exec 2・socket 1、pdfviewer exec 1、phone exec 1。
   既存の `kl_window_post(window, code)`（KL_WINDOW_POST、dispatch の中で同じ thread から入力を積む）がある。`kl_app_post` は thread から呼べる別物として設計する。
+- 2026-10-30 P2（再開）: p003 cleared（[design.md](design.md)、design-reviewer 23 件を反映）。ユーザーの判断 A〜D を Q1 へ（phase003 の phase.md）。
+  p004 を実装中（libkeiland の post と Mailer、host の試験 tests/post-test.c は PASS）。
