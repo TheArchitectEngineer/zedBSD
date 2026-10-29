@@ -654,6 +654,8 @@ lay_out(
 	uint32_t index;
 	uint32_t location;
 	uint32_t slot;
+	uint32_t message;
+	uint32_t sized;
 
 	/* The push constants come first, and the next words start on an even word. */
 	program->push_bytes = ir->push_bytes;
@@ -704,16 +706,38 @@ lay_out(
 			program->image_count++;
 		}
 	}
-	/* Gives the sizes the program queries their words. */
+	/*
+	 * Gives FAU words to the sizes the program reads: those it queries,
+	 * and a cube's, from which a sample with derivatives computes its
+	 * level.
+	 */
 	for (index = 0U; index < ir->instruction_count; index++) {
 		inst = &ir->instructions[index];
+
+		/* Whether a texture instruction reads its image's sizes. */
+		sized = 0U;
+		if (inst->op == DRV_GPU_IR_TEXTURE) {
+			message = inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK;
+
+			/* A size query reads them all. */
+			if (message == DRV_GPU_IR_TEXTURE_RESINFO)
+				sized = 1U;
+
+			/* A cube sample with derivatives reads the cube's width. */
+			if ((message == DRV_GPU_IR_TEXTURE_SAMPLE_DERIVS ||
+			     message == DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE) &&
+			    (inst->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK) == DRV_GPU_IR_IMAGE_CUBE)
+				sized = 1U;
+		}
+
+		/* A buffer's range takes one word, an image's sizes four. */
 		if (inst->op == DRV_GPU_IR_STORAGE_SIZE) {
 			slot = buffer_of(ir, program, inst->location);
 			if (slot < program->buffer_count && program->buffers[slot].size_fau_word == MALI_SHADER_NO_FAU_WORD) {
 				program->buffers[slot].size_fau_word = word;
 				word++;
 			}
-		} else if (inst->op == DRV_GPU_IR_TEXTURE && (inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK) == DRV_GPU_IR_TEXTURE_RESINFO) {
+		} else if (sized != 0U) {
 			for (slot = 0U; slot < program->texture_count; slot++) {
 				if (program->textures[slot].set != inst->location || program->textures[slot].binding != inst->immediate)
 					continue;
