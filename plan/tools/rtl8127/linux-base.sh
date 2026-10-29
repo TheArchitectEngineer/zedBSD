@@ -2,10 +2,10 @@
 # ws235: the Linux reference for the RTL8127 on the RDNA machine (10.0.10.3): Debian with the trixie-backports kernel
 # and firmware-realtek (r8169), measured with the same tcp-perf (userland/tests/tcp-perf, built for Linux here)
 # against plan/ws221/tests/perf-peer.py on this host.  The caller holds the RDNA slot's lock.
-#   sh plan/ws235/tests/linux-base.sh survey  OUT    reads only: release, kernels, apt sources, GRUB, network, the NIC
-#   sh plan/ws235/tests/linux-base.sh install OUT    the backports kernel and firmware-realtek; GRUB's default stays on
+#   sh plan/tools/rtl8127/linux-base.sh survey  OUT    reads only: release, kernels, apt sources, GRUB, network, the NIC
+#   sh plan/tools/rtl8127/linux-base.sh install OUT    the backports kernel and firmware-realtek; GRUB's default stays on
 #                                                    the running kernel (GRUB_DEFAULT=saved and grub-set-default)
-#   sh plan/ws235/tests/linux-base.sh measure OUT    grub-reboot into the newest kernel in /boot once, the RTL8127's address
+#   sh plan/tools/rtl8127/linux-base.sh measure OUT    grub-reboot into the newest kernel in /boot once, the RTL8127's address
 #                                                    (NIC_ADDR for the run when it has none: no DHCP client there), a host route to PEER_IP over
 #                                                    it, ethtool and the PCIe link, tcp-perf send and recv SECONDS each,
 #                                                    then a reboot back to the default kernel, read back with uname -r

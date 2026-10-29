@@ -3,7 +3,7 @@
 # the NVMe's zedBSD kernel is saved, the test kernel put in, zedBSD started once with UEFI BootNext, the driver's
 # interface brought up and read over SSH (ifconfig: flags, media, address) with the link partner's side read on this
 # host (ethtool of centris's X540 port), then zedBSD rebooted into Debian and the saved kernel put back.
-#   sh plan/ws235/tests/rtl-link.sh VMUNIX OUT        (from the top of the tree; the caller holds the RDNA slot's lock)
+#   sh plan/tools/rtl8127/rtl-link.sh VMUNIX OUT        (from the top of the tree; the caller holds the RDNA slot's lock)
 # With IPTEST=1 the link also carries IPv4 (zedBSD ZIP, this host PIP on PARTNER, added for the run and removed after):
 # ping both ways and an SSH command over the link.
 # With LANTEST=1 the address the interface took from the LAN's DHCP is reached from this host instead: ping, an SSH
@@ -13,8 +13,8 @@
 # a power cycle, which POWERCYCLE=1 does once with the plug PLUG (the caller holds the slot's lock).
 # With PERF=<tcp-perf built for zedBSD> as well (LANTEST=1 or 2), the program is copied to /tmp over IFACE's address and
 # run send and recv for SECONDS_PERF seconds each against plan/ws221/tests/perf-peer.py on PEER_IP:PERF_PORT here.
-# With PROFILE=1 as well (a kernel built with plan/ws235/tests/config-amd64-rtl8127-profile.mk), each direction is
-# bracketed by hw.cputimes and the driver's last profile line, which plan/ws235/tests/profile-summary.py turns into
+# With PROFILE=1 as well (a kernel built with plan/tools/rtl8127/config-amd64-rtl8127-profile.mk), each direction is
+# bracketed by hw.cputimes and the driver's last profile line, which plan/tools/rtl8127/profile-summary.py turns into
 # the driver's share of the time and each CPU's load (OUT/profile.txt).
 # OUT/summary.txt is the result; OUT also keeps the raw outputs.  Nothing is removed.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
@@ -181,7 +181,7 @@ if [ -n "$zip" ]; then
 						grep '^Tcp:' /proc/net/snmp > "$out/snmp-$dir-after.txt"
 						sleep 2
 						zs "$rip" "sysctl hw.cputimes; dmesg | grep 'rtl8125: $IFACE profile' | tail -1" > "$out/profile-$dir-after.txt" 2>&1
-						python3 -I plan/ws235/tests/profile-summary.py "$dir" "$SECONDS_PERF" "$out/profile-$dir-before.txt" "$out/profile-$dir-after.txt" > "$out/profile-$dir.txt" 2>&1
+						python3 -I plan/tools/rtl8127/profile-summary.py "$dir" "$SECONDS_PERF" "$out/profile-$dir-before.txt" "$out/profile-$dir-after.txt" > "$out/profile-$dir.txt" 2>&1
 						say "profile $dir: $(tr '\n' ' ' < "$out/profile-$dir.txt")"
 					fi
 				done

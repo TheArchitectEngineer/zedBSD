@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ws235: turns the hw.cputimes and the RTL8125-family driver's profile line taken before and after one tcp-perf run
-# (plan/ws235/tests/rtl-link.sh PROFILE=1) into the driver's time a second, its cost a frame, and each CPU's load.
+# (plan/tools/rtl8127/rtl-link.sh PROFILE=1) into the driver's time a second, its cost a frame, and each CPU's load.
 #   profile-summary.py DIRECTION SECONDS BEFORE AFTER
 # The driver's line: "rtl8125: IF profile ms T irq N US poll N FULL FRAMES US tx N COPIES REFUSALS US [missed M]" (totals).
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib

@@ -1,7 +1,0 @@
-# ws235: config-amd64-rtl8127-perf.mk with the RTL8125-family driver's profile (its interrupt, poll and transmit
-# counted and timed, logged once a second while frames move), for plan/ws235/tests/rtl-link.sh PROFILE=1.
-# Build:  make ZEDBSD_CONFIG=plan/ws235/tests/config-amd64-rtl8127-profile.mk BUILD=build/ws235/amd64-p build/ws235/amd64-p/vmunix
-# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
-include plan/ws235/tests/config-amd64-rtl8127-perf.mk
-
-CONFIG_DRIVER_PCI_RTL8125_PROFILE := y

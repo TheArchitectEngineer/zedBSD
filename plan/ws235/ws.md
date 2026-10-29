@@ -3,7 +3,7 @@
 # WS235: Realtek RTL8127・8125・8126・8122・8121・8120 の共通の Ethernet driver（まず PCIe の RTL8127 10GbE）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-29 開き直し、P1 が RDNA 機の PCIe の RTL8127 から。下の 2026-10-29 の決定。p001〜p008 cleared（11:1x）。WS の受け入れ（server の config で有効にする事はユーザーの判断）は Q1）
+Status: completed（2026-10-29、Q1 の判定）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 <!-- awesome-plan-current:end -->
@@ -19,50 +19,23 @@ Parent: [Master](../master.md)
 - 他の chip は版の判定と表まで（実機が無いので未確かめと明記）。
 - server の build の config（`config/ci/config-amd64-server.mk`、ユーザーが作った物）で有効にする。
 
-## Resume point
+## 結果
 
-- 2026-10-29 07:0x P1（q1669-i02、worktree p1-ws235b）: p001 cleared（判断の 5 件の回答は下の「p001 の判断」と phase001 の末尾）。p002・p003 は code と build まで。
-  2026-10-29 07:20〜07:30 の RDNA 機の枠で 3 回: attach・link（2.5G の switch）・DHCP・LAN 越しの ping 200/200 は成立、ssh は未成立（下の p004）。
-  次は RTL8127 の 10G の switch への移設の後の枠で `LANTEST=2 rtl-link.sh`（ue0 を落として rge0 だけで ssh・転送）。
-- 2026-10-29 08:3x P1（q1669-i03、worktree p1-ws235c）: ユーザー「移設完了、起動済みです。」（RTL8127 は 10GbE の switch）。枠は P2 の次（Q1 の知らせ待ち）。
-  用意: kernel `build/ws235/amd64-c/vmunix`（main 7b297b46a、cksum 4251467738）、`rtl-link.sh` の LANTEST=2 は ue0 の connected route も消す
-  （閉じた device の route が残り、返事が ue0 に向かうため）、`PERF=` で tcp-perf の両向き、`POWERCYCLE=1`。Linux の基準は `linux-base.sh survey|install|measure`。
-  枠の中の順: `POWERCYCLE=1 LANTEST=2 PERF=build/ws235/amd64-c/bin/tcp-perf sh plan/ws235/tests/rtl-link.sh build/ws235/amd64-c/vmunix build/tmp/ws235-link-4`
-  → 通れば `linux-base.sh survey`（install・measure は時間が残れば）。
-- 2026-10-29 09:1x P1（q1669-i03）: 08:57〜09:10 の枠で、rge0 が 10GbE の switch と 10000Mbps、rge0 だけで ping・ssh・100 MB 両向き・reboot、
-  tcp-perf 20 s send 3539・recv 3373 Mbit/s（errors 0）。Linux の基準（backports 7.2.11・r8169、PCIe 8GT/s x1）send 6808・recv 5458 Mbit/s。
-  p002〜p005 を cleared と記録（[p005](phase005/phase.md)）。機械は Debian 6.12.111（既定）、NVMe の kernel は P2 の物に戻した。
-  次は p006（profile で driver と stack の律速を分け、多 vector の MSI-X・RSS・割り込みの抑え・zero copy）。server の config で有効にする事は p005 の後にユーザーに頼む（Q1）。
-- 2026-10-29 11:0x P1（q1669-i04、worktree p1-ws235d）: p006・p007 cleared。profile（`CONFIG_DRIVER_PCI_RTL8125_PROFILE`）で、TX の割り込みを外して send の driver の CPU を
-  68% → 15% にしても send は変わらず、recv は driver 30%・CPU の飽和無し・NIC の取りこぼし 0 → 律速は stack（WS221 p010）。既定の config で send 4935・recv 3360 Mbit/s。
-  多 vector の MSI-X は pcat の共通の口まで（driver は 1 vector、RSS・zero copy は入れない、理由は [p006](phase006/phase.md)）。p007 で 8125・8125B・8125D・8126 の EPHY・PHY の表。
-  次は p008（規約の全文の見直し）。機械は Debian 6.12.111、NVMe の kernel は P2 の vmunix-va1。
-- 2026-10-29 11:1x P1（q1669-i04）: p008 cleared（[phase008](phase008/phase.md)）。全 Phase cleared。残り: WS の受け入れの確かめ（Q1）、server の config で有効にする事（ユーザー）、
-  見直しの後の実機の非退行（未実施）。
-- 2026-10-29 11:4x P1（q1669-i05、worktree p1-ws235e）: WS の受け入れの最後の確かめ（[phase008](phase008/phase.md) の「WS の受け入れの最後の確かめ」）。見直しの後の tree（main 054afe9a9）で
-  試験の config と server の config（`CONFIG_DRIVER_PCI_RTL8125 := y`）の kernel を build（warning 0）、10.0.10.3 で `LANTEST=2` の rtl-link.sh: 両方で rge0 10000Mbps・ping 200/200・ssh・
-  tcp-perf 30 s（試験の config send 5642・recv 3311、server の config send 4743・recv 3364 Mbit/s）・errors 0。機械は Debian 6.12.111、NVMe の kernel は P2 の vmunix-va1。
-  残り: WS を完了の形に書き直す事（Q1）。
+- `src/drivers/ethernet/rtl8125.c`（`CONFIG_DRIVER_PCI_RTL8125`）: RTL8125 系の共通の driver（FreeBSD・OpenBSD の rge を参考、Linux r8169 の値は block ごとの出典）。版の判定（TXCFG）、MAC・PHY・CSI・EPHY の OCP の窓、firmware 無しの MAC・PHY の初期化と link、v1・v2 の descriptor の RX・TX の ring（1 queue・1 vector）、TX の割り込みを外して poll で回収。8125・8125B・8125D（2 版）・8126（2 版）・8127 の EPHY・PHY の表と PHY の patch mode。診断の profile（`CONFIG_DRIVER_PCI_RTL8125_PROFILE`、既定 n）。
+- pcat の PCI の driver に多 vector の MSI-X の共通の口（`src/drivers/pci/pci-pcat.c`・`pci.c`・`include/drivers/pci/pci.h`、HAL は不変）。RTL8127 の driver は 1 vector で使う。
+- 受け入れ（ユーザーの決定 ③「driver が律速でない事の profile と両向きの tcp-perf」）: 10.0.10.3 の RTL8127（PCIe Gen3 x1、10GbE の switch）で、TX の割り込みを外して driver の CPU を 68% → 15% にしても send は変わらず、recv は driver 30%・CPU の飽和無し・NIC の取りこぼし 0 → 律速は stack（WS221 p010 へ）。最後の確かめ（p008 の後の tree、2026-10-29 11:3x〜11:41）: 試験の config と server の config の両方で rge0 10000Mbps・rge0 だけで ping 200/200・ssh・100 MB 両向き・tcp-perf 30 s（試験 send 5642・recv 3311、server send 4743・recv 3364 Mbit/s）・errors 0。同じ機械の Linux（backports 7.2.11・r8169）は send 6808・recv 5458。
+- server の config（`config/ci/config-amd64-server.mk`）で `CONFIG_DRIVER_PCI_RTL8125 := y`（2026-10-29 ユーザー「コンフィグはあなたが書き換えてOKです。」、Q1 が足した）。
 
-## Phase（2026-10-29 P1 が p001 でユーザーの順に直した。旧の表と見積もり（2026-10-14 Q1）は git の履歴に）
+## 制限・移管
 
-順はユーザーの「まずRTL81xxのドライバを、他のOSを参考にして作成して動くようにしてから、RTL8127の拡張部分を実装する」: p002〜p005 が RTL81xx の共通の driver で RTL8127 を
-動かす段、p006 が RTL8127 の拡張。見積もりは 1 LW ≈ 15〜25 分。
+- 約 7 Gbit/s への詰め（stack が 1 本の worker、MSI が全て BSP 宛て、RSS・複数 RX queue・zero copy は今の stack では効かない）は WS221 p010 へ。
+- 8125・8125B・8125D・8126 は実機が無く未確かめ。RTL8122・8121・8120 は版の値（TXCFG）が Linux r8169 にも FreeBSD rge にも無く未実装。
+- 未確かめ: jumbo frame、長時間の転送、switch 側の port、試験の config と server の config の send の差の原因。
+- 試験の道具は `plan/tools/rtl8127/`（`rtl-link.sh`・`linux-base.sh`・`profile-summary.py`・試験の config、[plan/tools.md](../tools.md) に登録）。
 
-| ID | 内容 | 見積もり | 状態 | 依存 |
-| --- | --- | --- | --- | --- |
-| [ws235-p001](phase001/phase.md) | 調べと設計: 10.0.10.3 の観測、rge（OpenBSD・FreeBSD）の作りが RTL8127 に当たるか、firmware と license、zedBSD の口、Phase の表 | 4 LW | cleared（2026-10-29 07:0x P1、q1669-i02。判断の 5 件の回答を記録） | — |
-| [ws235-p002](phase002/phase.md) | 共通の骨格: PCI の ID、BAR2、bus master、版の判定（TXCFG）、MAC・PHY・CSI・EPHY の OCP の窓、reset、MAC address、1 vector の割り込み、net device の登録、`CONFIG_DRIVER_PCI_RTL8125`、試験の config `plan/ws235/tests/` | 6 LW | cleared（2026-10-29 09:1x P1、q1669-i03。版の値は ssh で読めず未確かめ） | p001 |
-| [ws235-p003](phase003/phase.md) | MAC・PHY の初期化と link（共通の手順＋RTL8127 に要る MCU・EPHY・PHY の表）: firmware 無しから試し、要れば zedBSD-firmware の手順で（Q1 に先に）。auto-negotiation、link の報告（両側） | 10 LW | cleared（2026-10-29 09:1x P1、q1669-i03。firmware 無しで 2.5G・10G の link） | p002 |
-| [ws235-p004](phase004/phase.md) | RX・TX の ring（v1・v2 の descriptor）、1 queue・1 vector、net の worker への接続（offload 無し） | 8 LW | cleared（2026-10-29 09:1x P1、q1669-i03。ssh・TCP の両向き、errors 0） | p002 |
-| [ws235-p005](phase005/phase.md) | 実機（共通の段）: link・IPv4（static か DHCP）・ping・ssh・TCP の転送の計測と直し、同じ機械の Linux の基準 | 6 LW | cleared（2026-10-29 09:1x P1、q1669-i03。zedBSD send 3539・recv 3373、Linux 6808・5458 Mbit/s） | p003・p004 |
-| [ws235-p006](phase006/phase.md) | RTL8127 の拡張: 多 vector の MSI-X、RSS と複数の RX queue、割り込みの抑え、RX の zero copy、約 7 Gbit/s（Linux の値）に近づける。律速が stack なら記録して WS221 と組で Q1 へ。checksum・TSO の offload は、stack の口（WS221 p010、P3 が設計）ができたら driver の側を足す | 10 LW | cleared（2026-10-29 11:0x P1、q1669-i04。driver は律速でない、send 4935・recv 3360。driver は 1 vector、RSS・zero copy は入れない） | p005。offload は WS221 p010 の口 |
-| [ws235-p007](phase007/phase.md) | 他の chip の版の表と差の hook（8125・8125B・8125D・8126。実機は未確かめ。8122・8121・8120 は版の値が未確認） | 4 LW | cleared（2026-10-29 11:0x P1、q1669-i04。EPHY・PHY の表、他の chip は未確かめ、8122・8121・8120 は版の値が無く入れない） | p003 |
-| [ws235-p008](phase008/phase.md) | 規約の全文の見直し | 2 LW | cleared（2026-10-29 11:1x P1、q1669-i04。書き方だけ、build warning 0、実機の非退行は未実施） | 全て |
+## Phase（全て cleared、記録は git の履歴に）
 
-- RTL8122・8121・8120 は未実装: 版の値（TXCFG）が Linux の r8169（2026-10-29 の torvalds/linux.git）にも FreeBSD rge にも無く、版の表に入れられない（[p007](phase007/phase.md)）。
-- server の build の config（`config/ci/config-amd64-server.mk`、ユーザーの物）: 2026-10-29 ユーザー「コンフィグはあなたが書き換えてOKです。」→ Q1 が `CONFIG_DRIVER_PCI_RTL8125 := y` を足した（vmunix の build は rc 0・warning 0）。担当は変えない。
-- 同じ機械の Linux の値は下の「p001 の判断」の 5（backports の kernel）。
+p001 調べと設計 → p002 共通の骨格 → p003 MAC・PHY の初期化と link → p004 RX・TX の ring → p005 実機の共通の段と Linux の基準 → p006 RTL8127 の拡張（profile・MSI-X の共通の口） → p007 他の chip の表 → p008 規約の全文の見直し。
 
 ## ユーザーの決定（2026-10-29）
 
@@ -81,13 +54,13 @@ Parent: [Master](../master.md)
 - ユーザーの回答（Q1 経由、2026-10-29 クリック）: RTL8127 の port の相手は「centris の 10GbE に直結」。Q1 の訂正: 直結の相手は centris の `enp94s0f1`
   （Intel X540-AT2、ixgbe。`enp94s0f0` は LAN の switch 側の 10G）。centris の側の設定は変えない（IP を付けるなどは先に Q1 に案を送る）、ethtool・ip の読みは自由。
   - 観測（2026-10-29 06:1x P1）: RTL8127 の PHYSTAT（MMIO 0x6c）は driver 無しで 100M full の link を示すが、centris の `enp94s0f1` は `Link detected: no`。
-    食い違いは未確認として [p001](phase001/phase.md) に。X540 の広告は 100baseT・1000baseT・10000baseT（2.5G・5G は無い）。
+    食い違いは未確認として p001（git の履歴） に。X540 の広告は 100baseT・1000baseT・10000baseT（2.5G・5G は無い）。
   - **訂正**（2026-10-29 07:3x）: ユーザーの回答（Q1 経由、クリック）「2.5G の switch」→ RTL8127 の cable は 2.5G の switch に繋がっていた（centris の enp94s0f1 との直結ではない。
     上の「centris の 10GbE に直結」は誤り）。P1 の観測（p004 の kernel）でも rge0 が LAN の DHCP で 10.0.30.6/16 を取り、media 2500Mbps、enp94s0f1 は link 無し。
   - ユーザー（原文、2026-10-29、Q1 経由）: 「もしよかったら、10GbEスイッチに移設します。電源を切ってもいいですか？」→ P1 は 07:30 に機械を Debian にして返した。
     移設の後の経路（10G の switch）での試験の枠は Q1 が知らせる。10GbE の計測（p005 の受け入れ・WS221 p010）にはこの 10G の経路が要る。
 
-## p001 の判断（2026-10-29、Q1 経由のユーザーのクリック。原文と解釈を分ける。詳しくは [p001](phase001/phase.md) の「判断の回答」）
+## p001 の判断（2026-10-29、Q1 経由のユーザーのクリック。原文と解釈を分ける。詳しくは p001（git の履歴） の「判断の回答」）
 
 1. ユーザー（原文）: 「別の mirror も可」→ Q1 の解釈: FreeBSD の `if_rge_microcode.h`・`if_rge_hw.h` は FreeBSD の公式の mirror（git の clone を含む）から取ってよい。GET・clone で、拒否・制限に当たったら止める。
 2. ユーザー（原文）: 「WS235 に入れる (推し)」→ Q1 の解釈: 複数の MSI-X の vector は p006 で、pcat の PCI の driver の変更、他の driver も使える共通の口、HAL は変えない（HAL を変える必要があれば理由を具体的に Q1 へ）。
