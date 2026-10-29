@@ -47,7 +47,9 @@ struct nvrtx_gpu;
 #define NVRTX_NVDEC_CLASS_ADA		0xc9b0U
 
 /*
- * The resource manager's engine type of the first decoder (the "BSP").
+ * The first decoder's engine type (the "BSP") as the channel's allocation,
+ * its bind and the promote of its context name it (the device information
+ * table numbers it otherwise, objects.c).
  *
  * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
  * src/common/sdk/nvidia/inc/class/cl2080_notification.h

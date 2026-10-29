@@ -214,3 +214,31 @@ class の番号だけが違う（C7B0・C9B0）。method・pic・session の mem
 | ITU-T H.264（Table 7-2・8.5.6 の zig-zag・既定の scaling の表）| 規格 | 表の値 |
 
 zedBSD の code は Zlib。名前（関数・型・macro）は自分で付け、出典の symbol の名前を写さない。
+
+## 13. review 1（design-reviewer、2026-10-29）の対応
+
+| 指摘 | 対応 |
+| --- | --- |
+| F1 query が無いと libmedia が動かない（libvulkan は queryResultStatusSupport を必ず VK_TRUE で返す） | **採る**。`VK_QUERY_TYPE_RESULT_STATUS_ONLY_KHR` の pool（作成・破棄・結果）と reset・begin・end の記録を `vk/vk-video.c` に足す。decode は同期なので結果は実行の時に決まる: NVDEC_STATUS の区画の mbs_in_error が 0 なら COMPLETE、他・飛ばした絵は ERROR（R6 も解く）。§6 の「query は出さない」を消す |
+| I1 devinfo の engine type と control の番号は別 | **採る**。devinfo（RM の内部の番号）は 570 で RM_ENGINE_TYPE_NVDEC0 = **0x1d**（Linux v6.19 `r570/nvrm/engine.h`）。channel の確保・BIND・PROMOTE は NV2080 の 0x13（nouveau の r535_fifo の engn->id が NV2080 の番号）。選んだ entry を段の log に出す |
+| I2 marking | 実装で入れた（短期 1・長期 2、両 field）。§3 に足す |
+| I3 coloc | **採る**。COLOC は session の coloc の先頭だけ（NVK と同じ、区画は firmware が col_idx で選ぶ）。大きさは max(maxDpbSlots, maxActive + 1) 区画。§3 の「÷17」は誤り |
+| I4 slice の表の溢れ・確かめ | **採る**。sliceCount 1〜255、offset は増えて range の中、srcBufferOffset + Range は buffer の中、出力・参照の image が session の絵を収める、session の memory が bind 済み、set の id が範囲の中。API の規則違反は記録を失敗に、bitstream の値の不正はその絵を飛ばす（status ERROR） |
+| I5 timeout・fault の回復 | **採る（一部）**。timeout で NVDEC の channel を使わなくする（以後の decode は即 EIO、video は boot まで無い）。memory の解放を NVDEC の停止まで延ばす件と RC の通知の扱いは p004 で（R7・R8 に足す） |
+| I6 hook の漏れ | **採る**。`vk-memory.c` の整列（video の image は 4 KiB）、`execute_buffer_image` の aspect の分岐を確かめの前に、NV12 の image を sample・copy_image・blit・clear・target にするのを断る、`resource_layout` は NV12 を除く、NV12 の linear の features 0、記録は自分の struct に deep copy |
+| I7 D4 と guardrail「画像の処理は GPU で」 | **Q1 へ上げる**。readback の道は libmedia が CPU で crop と copy をする（app の側）。推し: WS243 では readback で正しさを先に（p004 の hash の照合はこの道）、SAMPLED の NV12（R8・R8G8 の BL で GOB 2 段の texture header）と export を後の Phase（p006 案）にして gpu の道を本線にする。それまで readback を例外として記録する |
+| I8 copy object は video=1 の時だけ | 実装済み（断られても続け、video を出さない）。§7 の表の `nvrtx_work_push_objects` は work-records.c（訂正） |
+| I9 R3 は今相談 | **Q1 へ上げる**（1080p30 で約 94 MB/s を BAR1 越しに読む。候補: host cached の system memory の memory type、または I7 の gpu の道） |
+| I10 drain が全 session の GR を待つ | 危険の表に足す（R9）。p004 で compositor の frame 時間も測る |
+| M1 page の kind | 今の VRAM の entry は kind 0（pitch）。NVDEC・CE が kind pitch の page に BL を書けるかを R10 に |
+| M2 ERROR_FRM_IDX | NVK と同じ「通し番号 mod max_num_ref_frames」（0 なら 1） |
+| M3 CE の offset | OFFSET_OUT = buffer + bufferOffset、ORIGIN は imageOffset（plane 1 は半分の単位を byte に） |
+| M4 置き場所 | session ごとに executor の system memory の run（pic 1 KiB・slice 1 KiB・status 4 KiB・push 512 B）を作成の時に取る |
+| M5 surface の空き | setup の slot の無い decode で空きが無い時は飛ばす（ERROR） |
+| M6 update の順 | Pi と同じく updateSequenceCount が前の + 1 であることを見る |
+| M7 capset | `capacity >= 176` の時だけ 176 byte |
+| M8 出典の語 | method の並びは「Procedure referenced:」。版は Mesa main 921d028a（video）、Mesa 25.3.6（nv_push.h、既存の引用）を §12 に足す |
+| M9 wire の往復の試験 | host 試験に libvulkan の video.c の encoder と nvrtx の reader を 1 本で往復させる物を足す（T7） |
+| M10 Phase の表 | ws.md の p003 の範囲に CE・query・NV12 の hook を書く |
+
+追加の危険: R7 NVDEC の timeout 後に NVDEC がまだ書いているかもしれない memory の解放、R8 GSP-RM の RC・MMU fault の通知、R9 node の lock の下の同期の待ちで compositor が止まる、R10 kind pitch の page の BL。

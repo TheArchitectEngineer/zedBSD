@@ -455,12 +455,20 @@ nvdec_find(
 		return error;
 	}
 
-	/* The decoder's context size. */
+	/* The decoder's context size; a decoder needs one. */
 	error = nvrtx_nvdec_context_bytes(reply, reply_length, nvdec->engine_descriptor, &nvdec->context_bytes);
 	if (error != 0) {
 		nvrtx_stage_mark("nvdec-channel fail: engine %x is not among the falcons (%d)", (unsigned)nvdec->engine_descriptor, error);
 		return error;
 	}
+
+	if (nvdec->context_bytes == 0U) {
+		nvrtx_stage_mark("nvdec-channel fail: engine %x has no context size", (unsigned)nvdec->engine_descriptor);
+		return ENODEV;
+	}
+
+	/* The decoder found, by the table's entry. */
+	nvrtx_stage_mark("nvdec-channel: decoder engine %x on runlist %u", (unsigned)nvdec->engine_descriptor, (unsigned)nvdec->runlist);
 
 	/* Succeeded: the decoder is known. */
 	return 0;
@@ -506,7 +514,7 @@ nvdec_memory(
 	if (error != 0)
 		return error;
 
-	/* The engine context, cleared, in the space; a decoder without one has none. */
+	/* The engine context, cleared, in the space. */
 	if (nvdec->context_bytes != 0U) {
 		context_size = nvdec_round(nvdec->context_bytes, NVDEC_CONTEXT_ALIGN);
 		error = nvrtx_bo_alloc(gpu, context_size, NVDEC_CONTEXT_ALIGN, &nvdec->context);

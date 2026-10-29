@@ -81,17 +81,19 @@
 #define OBJECTS_DEVINFO_RUNLIST_AT	12U
 
 /*
- * An entry's engine descriptor (its word 0), and the engine type of the
- * first video decoder.
+ * An entry's engine descriptor (its word 0), and the first video
+ * decoder's engine type in the table's numbering, the resource manager's
+ * own (570 numbers twenty copy engines before it; the controls name the
+ * decoder by another number, NVRTX_ENGINE_NVDEC0).
  *
  * Values referenced: Linux v6.19
  * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/fifo.h
- * (ENGINE_INFO_TYPE_ENG_DESC) and NVIDIA open-gpu-kernel-modules 570.144
- * src/common/sdk/nvidia/inc/class/cl2080_notification.h
- * (NV2080_ENGINE_TYPE_NVDEC0).
+ * (ENGINE_INFO_TYPE_ENG_DESC) and
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/engine.h
+ * (RM_ENGINE_TYPE_NVDEC0).
  */
 #define OBJECTS_DEVINFO_DESCRIPTOR_AT	0U
-#define OBJECTS_ENGINE_NVDEC0		0x13U
+#define OBJECTS_ENGINE_NVDEC0		0x1dU
 
 /*
  * The engine types: graphics, and the ten copy engines (the same numbers in
