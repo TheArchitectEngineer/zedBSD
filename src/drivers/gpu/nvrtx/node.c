@@ -835,6 +835,17 @@ node_resource_map(
 	mapping->bytes = resource->backing->bo.size;
 	mapping->attributes = DRV_GPU_MAPPING_DEVICE;
 
+	/*
+	 * The application's writes into the window combine (amd64; another
+	 * port refuses the policy), as the amdrdna driver's do: the
+	 * host-visible memory is written far more than read (a frame's
+	 * instance data), and the submission's locked instructions on the
+	 * writing processor drain its combining buffers before the GPU reads.
+	 */
+#if defined(HAL_ARCH_AMD64)
+	mapping->attributes |= DRV_GPU_MAPPING_WRITE_COMBINE;
+#endif
+
 	/* Succeeded: the view covers the whole object. */
 	return 0;
 }
