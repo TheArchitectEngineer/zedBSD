@@ -3,7 +3,7 @@
 # ws307-p011 通しの試験
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §12。Queue: q1665 / q1665-i08（担当 P4、2026-10-29、worktree p4-ws307l）、q1665-i10（P4、2026-10-29、worktree p4-ws307n、基点 main 8ba9bdbbb: BUG-356・357 の直しを含む）。
-- Status: in-progress（q1665-i10: p011-install.py PASS（12 回目）・日本語の画面 PASS（p010-screens.py --language ja の 5 回目）。Q1 の判定待ち）
+- Status: cleared（2026-10-30 Q1 の判定。q1665-i10: p011-install.py PASS（12 回目）・日本語の画面 PASS（p010-screens.py --language ja の 5 回目）。Boot#### は p007 の承認待ち・GTK4 の app は p004 の後で範囲外）
 - 承認: q1665-i01 と同じ（Q1 の中継）。2026-10-29 Q1 の判断: p004 抜きで進める（GTK4 の app の build の確かめだけを p004 の後に残す）。
 - 前提: p010（installer の app）、p009（install-admin）、p006・p008 の 4096。
 
