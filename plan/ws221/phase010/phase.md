@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p010 -->
 # ws221-p010: 10GbE での TCP の stack の改善（RDNA 機の RTL8127 ↔ centris、限界まで）
 
-Status: in-progress（2026-10-29 P3 q1679-i01: send 6280 Mbit/s（Linux 6808 の 92 %）、recv 3320〜3401（Linux 5458、未達）。recv は SACK と ACK の順の調べが次）
+Status: in-progress（2026-10-29 P3 q1679-i02: ATR 有効の recv 2875〜3729、ATR 無効 4819〜5286（原因の参考）。SACK は p012。i01: send 6280 Mbit/s（Linux 6808 の 92 %）、recv 3320〜3401（Linux 5458、未達）。recv は SACK と ACK の順の調べが次）
 Parent: [WS221](../ws.md)
 Queue: q1679 / q1679-i01・i02（P3）
 依存: WS235（RTL8127 の driver、completed）、p002〜p009、WS311（CUBIC、completed）

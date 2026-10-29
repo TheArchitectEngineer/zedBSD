@@ -4,7 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」）。旧: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13…
-Resume point: 2026-10-29 P3 q1679-i01: p010 in-progress（[phase.md](phase010/phase.md)）。前: P3 q1664-i05: p011 cleared（0342c9d89 まで、[phase.md](phase011/phase.md)）。次: WS311 p001（CUBIC の調べと設計）。p010 は WS235 の後。VF2（10.0.30.2）は P3、/boot/boot0/vmunix は 0342c9d89 の tree、vmunix.old は 53080d387 の tree、en0 1500。5330 は 1500 に戻した
+Resume point: 2026-10-29 P3 q1679-i02: p010 in-progress（ATR 有効の recv は 2875〜3729、ATR 無効で 4819〜5286: 律速は centris の ATR による入れ替わりと SACK の無さ）→ p012（SACK）in-progress、その後 q1689（5330 の CDC NCM）。10.0.10.3 は p010 の終わりまで P3 の専有（centris の /tmp/zedbsd-rdna.lock を holder が保持）。VF2 は使わない（/boot/boot0/vmunix は be5651cd）。5330 の NVMe の zedBSD は build/i02-5330 の image
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -101,13 +101,22 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p010](phase010/phase.md) | 10GbE での TCP の stack の改善（RDNA 機の RTL8127 ↔ centris、限界まで） | in-progress（2026-10-29 P3 q1679-i01: send 6280 Mbit/s（Linux 6808 の 92 %、PCIe の上限の近く）、recv 3320〜3401（Linux 5458、未達: CPU でなく相手の偽の fast retransmit と窓、SACK と ACK の順の調べが次）。checksum の offload の口と RTL8127 の TX/RX） | WS235（RTL8127）、p002〜p009 |
+| [p010](phase010/phase.md) | 10GbE での TCP の stack の改善（RDNA 機の RTL8127 ↔ centris、限界まで） | in-progress（2026-10-29 P3 q1679-i02: VF2・5330 の非退行 PASS、ACK の直し b36ed1860・354116a79。recv は ATR 有効で 2875〜3729、ATR 無効で 4819〜5286（Linux 5458、原因の参考）: centris の ATR の入れ替わりと SACK の無さ → p012。i01: send 6280・6275（Linux 6808 の 92 %）、checksum の offload） | WS235（RTL8127）、p002〜p009 |
 - 訂正（原文、2026-10-29）: 「すみません、チップ名を間違いました。RTL8127です。」→ p010 の NIC は RDNA 機の PCIe の RTL8127。
 - ユーザー（原文、2026-10-29）「このマシンはPCIeの帯域の制約があり、7Gbit/sくらいしか出ないです。」→ p010 の目標は 10.0.10.3 で約 7 Gbit/s（PCIe の帯域の上限）を基準にする。
 - Q1 の判断（2026-10-29）: checksum・TSO の offload の stack の口（packet-buf・net-device の flag）は p010 で設計する（WS235 の RTL8127 の driver は offload 無しで先に動かし、口ができたら WS235 p006 で driver の側を足す）。
 - 2026-10-29 ユーザーの指示（原文）「CUBICを実装して、性能がよくなったらCUBICに切り替えるWSを作って、取り組んでほしいです。jumbo frameの続きでやってほしいです。」→ Q1 が WS311 を作った。WS221 の後に P3 が続けて取り組む。
 - ユーザーの判定（原文、2026-10-29、p005 の VF2 の値: MTU 9000 で受け 987.1・送り 990.7〜990.9、理論 991）: 「VF2で受信が若干遅いのは、割り込み応答性能なのかなあ。なんだろうね。まあこの水準なら合格です。」→ 受けの約 0.4 % の差は合格。原因は未確かめ（候補: 受けの copy と software の checksum、接続ごとの受けの jumbo の上限 8（窓 約 72 KB）、2 segment に 1 つの delayed ACK、割り込みの応答）。
 - Q1 の判断（2026-10-29、P3 の問い）: p008 の「byte の送りの buffer」は案 B（ring を保ち、送りの copy は標準の packet の受けの予約を取らない＋接続ごとの送りを SO_SNDBUF の byte で抑える、Nagle と IPv6 の Packet Too Big は ring の上で）。ユーザーの決定「FreeBSD と同じ＋p006 で pool を切り離す (Recommended)」の目的（答え続ける相手が pool を握らない）はこれで満たせる、と Q1 が読んだ。byte の buffer そのものは Future Work（WS311 の後に再評価）。
+
+## ユーザーの決定（2026-10-29、SACK）
+
+- 原文: 「P3は、SACKの実装を優先してください。ATRを有効にした評価で進めます。」→ 新しい Phase **p012: TCP の SACK**（RFC 2018 の交渉と受け側の block、RFC 2883 の D-SACK、RFC 6675 の送り側の回復）。評価は centris の ixgbe の ATR を有効（既定）のまま行う。ATR を止めた p010 の値（recv 4819〜5286）は原因の参考で、受け入れの値にしない。
+- 原文（同じ日、centris）: 「centrisのNICの設定は、変更してOKです。」→ p010 で ATR を止めて原因を確かめ、23:35 に戻した（[phase010](phase010/phase.md)）。
+
+| Phase | 目的 | 状態 | 依存 |
+| --- | --- | --- | --- |
+| [p012](phase012/phase.md) | TCP の SACK（RFC 2018・2883・6675） | in-progress（2026-10-29 P3 q1679-i02: 設計） | p008〜p011、WS311 |
 
 ## ユーザーの指示（2026-10-29、IPv6）
 
