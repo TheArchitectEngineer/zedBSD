@@ -33,9 +33,14 @@
  * A change running when such a caller comes ends first (kwl_display_settle).
  *
  * The game mode's question whether the display could show a window
- * straight (kl_backend_scanout_possible, which opens the GPU device) and
- * the heads' swapchains (kwl_display_heads) and the reading of the
- * displays connected (kwl_display_enumerate) are the display thread's too.
+ * straight (kl_backend_scanout_possible, which opens the GPU device), its
+ * claim of the display and its release once the present thread's present
+ * has returned (kl_backend_scanout_open and _close), the heads' swapchains
+ * (kwl_display_heads) and the reading of the displays connected
+ * (kwl_display_enumerate) are the display thread's too.  A job that
+ * must run on the event loop's thread waits for the thread's jobs given
+ * before it, so a release given to the thread comes before a swapchain
+ * made here.
  */
 
 #include "compose.h"
@@ -64,6 +69,10 @@ enum display_kind {
 	DISPLAY_OPEN,
 	/* Whether the display could show a window straight (the game mode). */
 	DISPLAY_SCANOUT_QUERY,
+	/* The display claimed for the game mode. */
+	DISPLAY_SCANOUT_OPEN,
+	/* The game mode's claim released, once its present has returned. */
+	DISPLAY_SCANOUT_CLOSE,
 	/* Heads' swapchains destroyed (their displays given back) and made. */
 	DISPLAY_HEADS,
 	/* The displays connected read. */
@@ -88,7 +97,11 @@ enum display_kind {
  * output (DISPLAY_CLOSE), plane whether a cursor plane is to be made and
  * cursor, plane_extent and plane_index the one made (DISPLAY_OPEN);
  * readback and scene_supported what the swapchain's images allow; width
- * and height the game mode's size (DISPLAY_SCANOUT_QUERY); rests and opens
+ * and height the game mode's size (DISPLAY_SCANOUT_QUERY and _OPEN);
+ * scanout the game mode's claim (made by DISPLAY_SCANOUT_OPEN, given back
+ * by DISPLAY_SCANOUT_CLOSE) and slot where the main thread takes in the
+ * one made; ran says the job was run (a release dropped at the end runs
+ * then, a claim made and dropped is given back); rests and opens
  * (rest_count and open_count of them, the caller's until its then) the
  * heads' swapchains to destroy and to make (DISPLAY_HEADS); list the
  * displays read (DISPLAY_ENUMERATE, the caller's until its then);
@@ -119,6 +132,9 @@ struct display_job {
 	struct kwl_head_opening *opens;
 	unsigned open_count;
 	struct kwl_display_list *list;
+	struct kl_backend_scanout *scanout;
+	struct kl_backend_scanout **slot;
+	unsigned ran;
 	unsigned percent;
 	int error;
 	unsigned spare;
@@ -178,6 +194,9 @@ kwl_display_start(
 	if (compose == NULL || compose->display_started || !server->threads_prepared)
 		return;
 
+	/* The game mode's present thread first (the display thread waits on it for a release). */
+	kwl_scanout_start(server);
+
 	/* The thread, which waits for the first job. */
 	error = kwl_lane_start(&compose->display_lane, "display", 1U, server->wake[1]);
 	if (error != 0) {
@@ -192,7 +211,7 @@ kwl_display_start(
 
 /*
  * Stops the display thread at the end, after the change running (if any)
- * has ended.
+ * has ended, then the game mode's present thread.
  */
 void
 kwl_display_stop(
@@ -202,13 +221,18 @@ kwl_display_stop(
 
 	/* Nothing runs. */
 	compose = server->compose;
-	if (compose == NULL || !compose->display_started)
+	if (compose == NULL)
 		return;
 
-	/* The change running ends, then the thread (a question not taken is dropped). */
-	kwl_display_settle(server);
-	kwl_lane_stop(&compose->display_lane);
-	compose->display_started = 0U;
+	/* The change running ends, then the thread (a question not taken is dropped, a release runs here). */
+	if (compose->display_started) {
+		kwl_display_settle(server);
+		kwl_lane_stop(&compose->display_lane);
+		compose->display_started = 0U;
+	}
+
+	/* Then the game mode's present thread (a game mode still shown is left here). */
+	kwl_scanout_stop(server);
 }
 
 /*
@@ -595,6 +619,52 @@ kwl_display_scanout_query(
 }
 
 /*
+ * Asks the display thread to claim the display for the game mode at a size
+ * (the swapchain closed); *scanout takes the claim (NULL on a failure) on
+ * the event loop's thread, then then(server, error, context) is called
+ * with 0 or the claim's failure.
+ */
+void
+kwl_display_scanout_open(
+	struct kwl_server *server,
+	uint32_t width,
+	uint32_t height,
+	struct kl_backend_scanout **scanout,
+	kwl_display_fn *then,
+	void *context)
+{
+	struct display_job *job;
+
+	/* The claim. */
+	job = display_job_new(server, DISPLAY_SCANOUT_OPEN, then, context);
+	job->width = width;
+	job->height = height;
+	job->slot = scanout;
+	display_submit(server, job);
+}
+
+/*
+ * Asks the display thread to give the game mode's claim back once the
+ * present thread's present (if any) has returned; then(server, 0, context)
+ * is called after, on the event loop's thread (at the end too, the release
+ * run there if the thread had not run it).
+ */
+void
+kwl_display_scanout_close(
+	struct kwl_server *server,
+	struct kl_backend_scanout *scanout,
+	kwl_display_fn *then,
+	void *context)
+{
+	struct display_job *job;
+
+	/* The release. */
+	job = display_job_new(server, DISPLAY_SCANOUT_CLOSE, then, context);
+	job->scanout = scanout;
+	display_submit(server, job);
+}
+
+/*
  * Opens window mode's output as a change of its own: begun, opened, ended,
  * then the desktop fitted to what the output shows now against what it
  * showed when it last opened (kwl_output_rotated).  then(server, error,
@@ -753,9 +823,10 @@ display_submit(
 {
 	struct kwl_compose *compose;
 
-	/* Here, at once. */
+	/* Here, at once, after the thread's jobs given before (a release of the game mode's claim first). */
 	compose = server->compose;
 	if (!compose->display_started || compose->display_inline || job->spare) {
+		kwl_lane_wait(&compose->display_lane);
 		display_run(&job->lane);
 		display_done(server, &job->lane);
 		return;
@@ -799,6 +870,18 @@ display_run(
 	case DISPLAY_SCANOUT_QUERY:
 		job->error = kl_backend_scanout_possible(job->server->backend, job->width, job->height);
 		break;
+	case DISPLAY_SCANOUT_OPEN:
+		job->error = kl_backend_scanout_open(job->server->backend, job->width, job->height, &job->scanout);
+		if (job->error != 0)
+			job->scanout = NULL;
+		break;
+	case DISPLAY_SCANOUT_CLOSE:
+		/* The present running returns first (the display reads its buffer until then), then the display goes back. */
+		kwl_scanout_present_wait();
+		kl_backend_scanout_close(job->scanout);
+		job->scanout = NULL;
+		job->error = 0;
+		break;
 	case DISPLAY_HEADS:
 		/* No present of the heads let go may still run, then they go; then the new ones. */
 		if (job->rest_count > 0U) {
@@ -835,6 +918,9 @@ display_run(
 		job->error = EINVAL;
 		break;
 	}
+
+	/* Succeeded: the job has run (its drop at the end needs no run of its own). */
+	job->ran = 1U;
 }
 
 /* Takes a job's result on the event loop's thread, and goes on with the change. */
@@ -914,6 +1000,12 @@ display_done_step(
 		started = kwl_milliseconds();
 		error = kwl_compose_output_take(server, scene_supported, cursor, plane_extent, plane_index);
 		printf("KWL DISPLAY step=take ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
+		then(server, error, then_context);
+		return;
+	case DISPLAY_SCANOUT_OPEN:
+		/* The claim is the caller's (none on a failure). */
+		*job->slot = job->scanout;
+		display_job_free(job);
 		then(server, error, then_context);
 		return;
 	case DISPLAY_LIGHT_OPEN:
@@ -1041,13 +1133,31 @@ display_light_submit(
 	kwl_lane_submit(&server->compose->display_lane, &job->lane, &display_ops, key);
 }
 
-/* Frees a job not run (the thread stopped): its change never goes on, at the end. */
+/*
+ * Frees a job not run or not taken (the thread stopped): its change never
+ * goes on, at the end.  The game mode's release runs here if it had not
+ * run, and its then is called; a claim made and not taken goes back.
+ */
 static void
 display_drop(
 	struct kwl_lane_job *lane)
 {
+	struct display_job *job;
+
+	/* The game mode's release always happens, and its caller hears of it. */
+	job = (struct display_job *)lane;
+	if (job->kind == DISPLAY_SCANOUT_CLOSE) {
+		if (!job->ran)
+			display_run(&job->lane);
+		job->then(job->server, 0, job->context);
+	}
+
+	/* A claim nobody takes in. */
+	if (job->kind == DISPLAY_SCANOUT_OPEN && job->scanout != NULL)
+		kl_backend_scanout_close(job->scanout);
+
 	/* Freed. */
-	display_job_free((struct display_job *)lane);
+	display_job_free(job);
 }
 
 /*

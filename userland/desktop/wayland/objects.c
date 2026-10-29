@@ -599,7 +599,8 @@ kwl_client_destroy(
 		kwl_object_destroy(surface);
 	}
 
-	/* The surfaces are gone. */
+	/* The surfaces are gone; a release of the display not done yet lets go of the client's images it held. */
+	kwl_scanout_client_gone(server, client);
 	surfaces_done = kwl_milliseconds();
 
 	/* Toplevel and popup backreferences must retire before their xdg_surface storage. */

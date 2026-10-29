@@ -167,29 +167,15 @@ kl_backend_scanout_begin(
 }
 
 /*
- * Has no present in flight: no scanout opens here.
+ * Shows nothing: no scanout opens here.
  */
 int
-kl_backend_scanout_fd(
+kl_backend_scanout_present(
 	struct kl_backend_scanout *scanout)
 {
 	/* Not on this system. */
 	(void)scanout;
-	return -1;
-}
-
-/*
- * Has no present to end: no scanout opens here.
- */
-int
-kl_backend_scanout_end(
-	struct kl_backend_scanout *scanout,
-	int *result)
-{
-	/* Not on this system. */
-	(void)scanout;
-	(void)result;
-	return 0;
+	return ENOTSUP;
 }
 
 /*
