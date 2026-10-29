@@ -658,9 +658,12 @@ struct nvrtx_gpu {
 	/*
 	 * Serializes the register window onto the VRAM (PRAMIN) and the TLB
 	 * invalidate, which every thread that writes the VRAM or the page
-	 * tables shares; set up when the function is kept.
+	 * tables shares; set up when the function is kept.  window_wanted
+	 * counts the users other than a fill that wait for it (atomic): a
+	 * fill steps aside between its pieces while it is not zero.
 	 */
 	struct mutex window_lock;
+	uint32_t window_wanted;
 
 	/*
 	 * The static information static-info read, and the resource manager's

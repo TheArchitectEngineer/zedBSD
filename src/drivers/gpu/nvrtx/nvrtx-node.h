@@ -165,6 +165,11 @@ struct nvrtx_node_entry {
  * push_bytes their push buffers.  streams, stream_bytes and stream_us are the
  * command streams copied out of the blobs through the window and the time those
  * copies took.
+ *
+ * The cursor plane's side: cursor_sets the images the lease set, cursor_same
+ * those equal to the image already shown (nothing sent), cursor_set_us the
+ * time the sets held the node's lock; cursor_moves the moves and
+ * cursor_move_us the time they held it.
  */
 struct nvrtx_node_perf {
 	uint64_t runs;
@@ -190,6 +195,11 @@ struct nvrtx_node_perf {
 	uint64_t held_us;
 	uint64_t flips;
 	uint64_t flip_us;
+	uint64_t cursor_sets;
+	uint64_t cursor_same;
+	uint64_t cursor_set_us;
+	uint64_t cursor_moves;
+	uint64_t cursor_move_us;
 };
 
 /*
@@ -219,7 +229,10 @@ struct nvrtx_node_perf {
  * of 64 by 64 pixels (slots), cursor_ready says the cursor channel and the
  * slots exist, cursor_slot is the slot last written (the one a shown cursor
  * reads), cursor_has_image that the lease set one, cursor_visible that the
- * core shows it, cursor_point the position word last sent.
+ * core shows it, cursor_point the position word last sent.  cursor_pixels
+ * holds the CPU's copy of each slot (the words written into it, one slot
+ * after the other): the copy of cursor_slot is what the slot holds while
+ * cursor_has_image is set, so an image equal to it is not sent again.
  *
  * The renderer (runtime.c, nvrtx.vk=1; renderer is set when it is bound):
  * queue_lock (IRQ-safe) guards the queue from head to tail, the parked
@@ -268,6 +281,7 @@ struct nvrtx_node {
 	int cursor_has_image;
 	int cursor_visible;
 	uint32_t cursor_point;
+	uint32_t *cursor_pixels;
 	int renderer;
 	struct spinlock queue_lock;
 	struct wait_queue available;
