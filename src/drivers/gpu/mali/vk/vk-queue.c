@@ -58,6 +58,8 @@ static uint32_t unorm8(uint32_t bits);
 static const struct mali_vk_descriptor *find_slot(const struct mali_vk_descriptor_set *const *sets, uint32_t set, uint32_t binding);
 static int write_texture(struct mali_vk_build *build, const struct mali_vk_descriptor *slot, volatile uint32_t *texture, volatile uint32_t *sampler);
 static void store_words(volatile uint32_t *destination, const uint32_t *source, unsigned count);
+static uint32_t range_bytes(const struct mali_vk_descriptor *slot);
+static void texture_size(const struct mali_vk_descriptor *slot, uint32_t *words);
 
 /* Runs the queue's submission. */
 int
@@ -203,6 +205,25 @@ mali_vk_build_resources(
 			return ENOTSUP;
 		words[program->buffers[index].fau_word] = (uint32_t)address;
 		words[program->buffers[index].fau_word + 1U] = (uint32_t)(address >> 32);
+
+		/* The range's bytes, when the program reads the array's length. */
+		if (program->buffers[index].size_fau_word != MALI_SHADER_NO_FAU_WORD) {
+			if (program->buffers[index].size_fau_word >= FAU_WORDS_MAX)
+				return ENOTSUP;
+			slot = NULL;
+			if (program->buffers[index].set != DRV_GPU_IR_SYSTEM_SET)
+				slot = find_slot(sets, program->buffers[index].set, program->buffers[index].binding);
+			words[program->buffers[index].size_fau_word] = range_bytes(slot);
+		}
+	}
+
+	/* A queried texture's size: its width, height, one layer and one level. */
+	for (index = 0; index < program->texture_count; index++) {
+		if (program->textures[index].size_fau_word == MALI_SHADER_NO_FAU_WORD)
+			continue;
+		if (program->textures[index].size_fau_word + 4U > FAU_WORDS_MAX)
+			return ENOTSUP;
+		texture_size(find_slot(sets, program->textures[index].set, program->textures[index].binding), &words[program->textures[index].size_fau_word]);
 	}
 
 	if (viewport_words != NULL && program->viewport_fau_word + 6U <= FAU_WORDS_MAX)
@@ -1039,4 +1060,54 @@ store_words(
 
 	for (index = 0; index < count; index++)
 		destination[index] = source[index];
+}
+
+/* Reports the bytes of a buffer descriptor's range: VK_WHOLE_SIZE is to the buffer's end. */
+static uint32_t
+range_bytes(
+	const struct mali_vk_descriptor *slot)
+{
+	const struct mali_vk_buffer *buffer;
+	uint64_t bytes;
+
+	/* No buffer has no bytes. */
+	if (slot == NULL || slot->buffer == NULL)
+		return 0;
+	buffer = slot->buffer->payload;
+	if (slot->offset >= buffer->size)
+		return 0;
+
+	/* The range, within the buffer. */
+	bytes = slot->range;
+	if (bytes == VK_WHOLE_SIZE || bytes > buffer->size - slot->offset)
+		bytes = buffer->size - slot->offset;
+	if (bytes > 0xffffffffULL)
+		bytes = 0xffffffffULL;
+	return (uint32_t)bytes;
+}
+
+/* Writes a texture's four size words: width, height, one layer, one level (zero without an image). */
+static void
+texture_size(
+	const struct mali_vk_descriptor *slot,
+	uint32_t *words)
+{
+	const struct mali_vk_image_view *view;
+	const struct mali_vk_image *image;
+
+	/* No view. */
+	words[0] = 0;
+	words[1] = 0;
+	words[2] = 0;
+	words[3] = 0;
+	if (slot == NULL || slot->view == NULL)
+		return;
+
+	/* The view's image. */
+	view = slot->view->payload;
+	image = view->image->payload;
+	words[0] = image->width;
+	words[1] = image->height;
+	words[2] = image->layers;
+	words[3] = image->levels;
 }
