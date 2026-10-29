@@ -10,6 +10,8 @@ Queue: q1689 / q1689-i01（P3）
 
 - ユーザー（原文、2026-10-29）:「P3で、2.5GのUSBが遅いことは、ドライバの問題と思いますので、5330を使って修正してほしいです。」
 - Q1（2026-10-30、承認）: HCD の変更は HAL でなく driver の変更で、ユーザーの指示は USB の 2.5G を Linux に近づけること。条件: endpoint ごとの opt-in（bulk だけ）、他の全ての device は depth 1 で今と同じ、host 試験（TRB の address による event の照合、完了の順、複数が出ている時の cancel・STALL・reset、ASan・UBSan）、実機 5330（NCM の send・recv、USB storage の非退行（stick があれば read/write）、HID の非退行（USB の HID があれば））、全 platform の build warning 0、実装の前に設計を phase.md に。
+- ユーザー（原文、2026-10-30）:「xHCIの改修は行いましょう。たとえ今回効果がなくても、価値がある実装だと考えます。」→ 測った効きが小さくても入れる（価値は効きに依らない）。
+- Q1（2026-10-30）: この後ユーザーは Realtek の vendor の mode の driver も望む（WS315 の予定）。その根拠として、この Phase で NCM の到達点を記録する: p014 の後の 5330 の send・recv、Linux の r8152 の値を向きごとに測り直して（send・recv を分けて）並べる。
 - p013 の測り: 方向ごとに転送 1 つで、send は 17404 byte の block の 1 回 約 92 µs（bus 約 40 µs）、recv は 32 KB の 1 回 約 185 µs（bus 約 75 µs）。完了から次の submit までの間（割り込み → network worker の poll → 組み立て・parse → submit）が半分ほど。
 
 ## 今の xHCI（`src/drivers/pci/pci-xhci.c`、読んだ所）
@@ -44,4 +46,4 @@ Queue: q1689 / q1689-i01（P3）
 
 ## 結果
 
-（未）
+（未。記録する事: p014 の後の 5330 の NCM の send・recv（30 s、`NO_VF2=1 5330-ncm.sh`）、同じ 5330 の Debian の r8152 で同じ道具（tcp-perf と perf-peer.py、相手 centris）の send・recv を向きごとに。WS315（vendor の mode）の根拠）

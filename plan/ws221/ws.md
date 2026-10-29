@@ -122,6 +122,8 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 
 - 原文: 「P3で、2.5GのUSBが遅いことは、ドライバの問題と思いますので、5330を使って修正してほしいです。」→ Q1（2026-10-30）: 新しい Phase **p013: USB CDC NCM の送受信の速さ（5330 の RTL8156）**（q1689）。目標は Linux の r8152 の 2353 Mbit/s にできるだけ近く。xHCI の endpoint ごとの要求 1 つが天井と測れたら、HCD の変更は Q1 が判断。
 
+- 原文（2026-10-30）: 「xHCIの改修は行いましょう。たとえ今回効果がなくても、価値がある実装だと考えます。」→ p014（xHCI の bulk endpoint に転送を重ねる）は効きが小さくても入れる。その後の Realtek の vendor の mode の driver（WS315 の予定）の根拠に、p014 の後の NCM の send・recv と Linux r8152 の向きごとの値を p014 に記録する。
+
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
 | [p013](phase013/phase.md) | USB CDC NCM の送受信の速さ（5330 の RTL8156）: NTB に複数の datagram、RX の 2 つの buffer | in-progress（2026-10-30 P3: 17dd7f7d0・bff52ee82、5330 で send 272 → 1513、recv 1225 → 1411 Mbit/s（Linux 2353）。残り: xHCI の endpoint ごとの要求 1 つ（HCD の変更は Q1 の判断）） | p003、p012 |
