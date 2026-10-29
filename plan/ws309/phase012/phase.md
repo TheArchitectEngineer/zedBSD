@@ -123,6 +123,17 @@
 - 27d4ecfde の build: arm64（`config/ci/config-rpi5.mk` の build/rpi5/bin/wayland、この worktree の sysroot-arm64）・riscv64（`config/ci/config-visionfive2-keiland.mk`）exit 0・warning 0。
   同じ build で QEMU `rotate-guest.sh`・`hand-guest.sh` も PASS（16:3x）。
 
+- RTX の基準の run（2026-10-29 16:56 前の P1、`build/tmp/rtx-r1c.out`・`build/ws309/rtx/r1c-base/`、KEEP=1）: 基点の compositor（825213100）・kernel `build/ws309/rtxk/vmunix`
+  （4097497588、22db6e258 の main を取り込んだ tree）・libkeiland 1274512932。a over15=2、c=2073252（写らない）、f=2（写る）。BUG-353 の c を再現。
+  - 読み（22:2x、q1662-i09 の新しい起動）: c の session.log では、ゲームモードの leave の後に window mode が main で開き直り（switch_ms=2032）、続けて main が
+    glass maps を 6 枚作り直した（KWL SLOW_PASS layers_us 0.44〜0.90 s が続けて約 3.9 s。時間は image の大きさにほぼ比例: 8 MB 約 0.55 s、16 MB 0.83 s。
+    nvrtx の memory の確保が遅い見込み、未確かめ）。measure.sh の shot は mview の起動から 6 s で写すので、mview の最初の commit（frame 928 で描かれた）が写しの後になった。
+    window が出ないのではなく、main が塞がれて出るのが 6 s より遅れた、という見込み。
+  - 直し（55ef19028）: 出力の let-go で glass maps を破棄しない（大きさの違う map は次の描画で作り直す既存の仕組み、glass-map.c。exit では device の idle の後に破棄）。
+    amd64・Linux warning 0、QEMU `scanout-guest.sh` PASS（build/ws309/p012t）、`resize-guest.sh` PASS（build/ws309/p012u、移動の区間の pass_max_us 0.96 s → 0.63 s、
+    large.png の glass を目で確かめた）。
+  - RTX の次の run（23:10〜23:40 の枠）: 1 回目 p012 の tip（2474418728、55ef19028 の前）、2 回目 55ef19028（720781269）。どちらも kernel rtxk・libkeiland 1274512932。
+
 ## 注意
 
 - 同時に P2（WS242）・P5（WS250）・P6（WS243）が nvrtx を触る。compositor（userland/desktop/wayland）は P1 だけ。libkeiland-backend-zedbsd の scanout-zedbsd.c を変える時は先に Q1 に知らせる。
