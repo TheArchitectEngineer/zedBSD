@@ -130,6 +130,15 @@
 #define TCP_OPTION_NOP 1U
 #define TCP_OPTION_MSS 2U
 #define TCP_OPTION_WSCALE 3U
+#define TCP_OPTION_SACK_PERMITTED 4U
+#define TCP_OPTION_SACK 5U
+
+/*
+ * The most SACK blocks an acknowledgement carries: four fill the forty
+ * bytes of options with the two NOPs in front (RFC 2018 section 3, no
+ * timestamps here).
+ */
+#define TCP_SACK_BLOCKS_MAX 4U
 
 /* The largest window scale shift (RFC 7323 section 2.3). */
 #define TCP_WSCALE_MAX 14U
@@ -285,6 +294,27 @@ struct tcp_segment_addresses {
 
 /* The duplicate acknowledgements in a row that start a fast retransmit (RFC 5681 section 3.2). */
 #define TCP_DUPLICATE_ACKS_FAST 3U
+
+/*
+ * The in-order segments one acknowledgement waits for at most; fewer are
+ * acknowledged when the network worker has taken the segments that had
+ * arrived (tcp_ack_flush), so a flight that pauses is acknowledged at
+ * once.  RFC 5681 section 4.2 asks for every second full segment; the
+ * 64-bit machines, whose receive window holds 128 segments, acknowledge
+ * every eighth, as a receiver that merges segments (Linux's GRO) does
+ * more sparsely still: at 10 Gbit/s an acknowledgement for every second
+ * segment costs the sender more than the link (a peer handling 200,000
+ * acknowledgements a second sent 3 Gbit/s, one handling a quarter of them
+ * 5 Gbit/s).  The 32-bit boards, whose window is a few segments, keep two.
+ */
+#ifndef CONFIG_TCP_ACK_SEGMENTS
+#if PACKET_BUF_POOL_COUNT >= 1024U
+#define CONFIG_TCP_ACK_SEGMENTS 8
+#else
+#define CONFIG_TCP_ACK_SEGMENTS 2
+#endif
+#endif
+#define TCP_ACK_SEGMENTS ((unsigned)CONFIG_TCP_ACK_SEGMENTS)
 
 /*
  * What an immediate resend (retransmit_immediate) is for (ws220-p005): a
@@ -465,8 +495,9 @@ static int tcp_route(struct tcp_endpoint *endpoint, struct net_device **device, 
 static int tcp_route_cached(struct tcp_endpoint *endpoint, struct net_device **device, uint32_t *source, uint32_t *next_hop);
 static void tcp_route_remember(struct tcp_endpoint *endpoint, struct net_device *device, uint32_t source, unsigned long generation);
 static int tcp_send_segment_at(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
+static int tcp_send_segment_news(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length, int news_only);
 static int tcp_send_segment_cut(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length);
-static int tcp_output_segment(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length, struct packet_buf *carrier);
+static int tcp_output_segment(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, const void *data, size_t length, struct packet_buf *carrier, int news_only);
 static int tcp_send_segment_carried(struct tcp_endpoint *endpoint, uint32_t sequence, uint8_t flags, struct packet_buf *carrier);
 static void tcp_stats_fill_locked(const struct tcp_endpoint *endpoint, uint64_t now, int superuser, struct tcp_stats_entry *entry);
 static int tcp_allocate_port(struct tcp_endpoint *endpoint);
@@ -484,6 +515,7 @@ static void tcp_output_retry(struct tcp_endpoint *endpoint, uint8_t *payload, ui
 static void tcp_send_unsent(struct tcp_endpoint *endpoint, uint8_t *payload);
 static void tcp_send_ack_pending(struct tcp_endpoint *endpoint);
 static int tcp_send_ack(struct tcp_endpoint *endpoint, int duplicate);
+static int tcp_send_ack_news(struct tcp_endpoint *endpoint, int duplicate, int news_only);
 static int tcp_sequence_before(uint32_t left, uint32_t right);
 static int tcp_sequence_at_or_before(uint32_t left, uint32_t right);
 static uint32_t tcp_initial_sequence(uint32_t chosen);
@@ -504,6 +536,9 @@ static void tcp_persist_leave_locked(struct tcp_endpoint *endpoint);
 static int tcp_oldest_fits_window_locked(const struct tcp_endpoint *endpoint);
 static uint32_t tcp_syn_offered_mss(const struct tcp_wire *tcp, size_t header_length);
 static int tcp_syn_offered_wscale(const struct tcp_wire *tcp, size_t header_length);
+static int tcp_syn_offered_sack(const struct tcp_wire *tcp, size_t header_length);
+static unsigned tcp_sack_block_add(uint32_t blocks[TCP_SACK_BLOCKS_MAX][2], unsigned count, uint32_t start, uint32_t end, uint32_t acknowledgement);
+static unsigned tcp_sack_blocks(struct tcp_endpoint *endpoint, uint32_t blocks[TCP_SACK_BLOCKS_MAX][2], uint32_t *acknowledgement);
 static uint32_t tcp_segment_window_locked(const struct tcp_endpoint *endpoint, const struct tcp_wire *tcp);
 static void tcp_start_sending(struct tcp_endpoint *endpoint, uint32_t offered_mss);
 static uint32_t tcp_device_mss(const struct net_device *device, int ipv6, int local);
@@ -572,7 +607,7 @@ static void tcp_keepalive_arm_locked(struct tcp_endpoint *endpoint);
 static struct tcp_endpoint * tcp_lookup(const struct tcp_segment_addresses *addresses, uint16_t source_port, uint16_t destination_port);
 static int tcp_connection_matches(const struct tcp_endpoint *endpoint, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint16_t destination_port);
 static int tcp_listener_matches(const struct tcp_endpoint *endpoint, const struct tcp_segment_addresses *addresses, uint16_t destination_port);
-static struct tcp_endpoint * tcp_passive_syn(struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint32_t sequence, uint32_t offered_mss, int offered_wscale);
+static struct tcp_endpoint * tcp_passive_syn(struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses, uint16_t source_port, uint32_t sequence, uint32_t offered_mss, int offered_wscale, int offered_sack);
 static void tcp_child_addresses(struct tcp_endpoint *child, const struct tcp_endpoint *listener, const struct tcp_segment_addresses *addresses);
 static int tcp_input(struct packet_buf *packet, uint32_t source, uint32_t destination);
 static int tcp6_input(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
@@ -2349,11 +2384,33 @@ tcp_send_segment_at(
 	const void *data,
 	size_t length)
 {
+	/* Sent whatever it tells. */
+	return tcp_send_segment_news(endpoint, sequence, flags, data, length, 0);
+}
+
+/*
+ * Transmits one segment as tcp_send_segment_at does; with news_only, a pure
+ * acknowledgement that would repeat the last segment's acknowledgement and
+ * window is not sent (EALREADY) and not counted.
+ */
+static int
+tcp_send_segment_news(
+	struct tcp_endpoint *endpoint,
+	uint32_t sequence,
+	uint8_t flags,
+	const void *data,
+	size_t length,
+	int news_only)
+{
 	unsigned long irq;
 	int error;
 
 	/* Builds and hands the segment to the device. */
-	error = tcp_output_segment(endpoint, sequence, flags, data, length, NULL);
+	error = tcp_output_segment(endpoint, sequence, flags, data, length, NULL, news_only);
+
+	/* One that would have told nothing new did not go. */
+	if (error == EALREADY)
+		return error;
 
 	/* Counts the segment and, when it went, a closed window it told of. */
 	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
@@ -2455,7 +2512,7 @@ tcp_send_segment_carried(
 	int error;
 
 	/* Builds the segment around the payload and hands it to the device. */
-	error = tcp_output_segment(endpoint, sequence, flags, NULL, 0, carrier);
+	error = tcp_output_segment(endpoint, sequence, flags, NULL, 0, carrier, 0);
 
 	/* Counts the segment as tcp_send_segment_at does. */
 	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
@@ -2655,12 +2712,12 @@ tcp_output_segment(
 	uint8_t flags,
 	const void *data,
 	size_t length,
-	struct packet_buf *carrier)
+	struct packet_buf *carrier,
+	int news_only)
 {
 	struct net_device *device;
 	struct packet_buf *packet;
 	struct tcp_wire *tcp;
-	unsigned long irq;
 	uint32_t acknowledgement;
 	struct in6_addr source6;
 	struct ipv6_way way6;
@@ -2677,6 +2734,11 @@ tcp_output_segment(
 	uint16_t mss;
 	uint8_t *option;
 	size_t options;
+	uint32_t sack_blocks[TCP_SACK_BLOCKS_MAX][2];
+	uint32_t sack_acknowledgement;
+	unsigned sack_count;
+	unsigned index;
+	size_t at;
 	void *payload;
 	int ipv6;
 	int error;
@@ -2689,8 +2751,25 @@ tcp_output_segment(
 	options = 0;
 	if ((flags & TCP_SYN) != 0)
 		options = 4U;
+	if ((flags & TCP_SYN) != 0 && endpoint->tcp.sack_offered != 0)
+		options += 4U;
 	if ((flags & TCP_SYN) != 0 && endpoint->tcp.wscale_offered != 0)
 		options += 4U;
+
+	/*
+	 * A segment without data that acknowledges (not a SYN or a reset)
+	 * reports the segments kept ahead of a gap and a duplicate's range
+	 * (RFC 2018, RFC 2883): two NOPs, then kind 5 with a length of 2 and
+	 * eight bytes a block.  One with data carries none: its payload is a
+	 * full segment, which the options would push past the MTU.
+	 */
+	sack_count = 0;
+	sack_acknowledgement = 0;
+	if ((flags & (TCP_SYN | TCP_RST)) == 0 && (flags & TCP_ACK) != 0 && length == 0 && carrier == NULL &&
+	    endpoint->tcp.sack_on != 0)
+		sack_count = tcp_sack_blocks(endpoint, sack_blocks, &sack_acknowledgement);
+	if (sack_count != 0)
+		options = 4U + 8U * sack_count;
 
 	/* Routes the segment: over IPv6 to an IPv6 peer (ws130-p003), else over IPv4. */
 	source = 0;
@@ -2792,37 +2871,60 @@ tcp_output_segment(
 	tcp->data_offset = (uint8_t)((5U + options / 4U) << 4);
 	tcp->flags = flags;
 
-	/* Writes the MSS option (kind 2, length 4) after the fixed header. */
-	if (options != 0) {
-		option = (uint8_t *)(tcp + 1);
+	/*
+	 * A SYN's options after the fixed header: the MSS (kind 2, length 4),
+	 * SACK-Permitted (two NOPs, kind 4, length 2) and the window scale (a
+	 * NOP, kind 3, length 3, this end's shift), each offered.
+	 */
+	option = (uint8_t *)(tcp + 1);
+	at = 0;
+	if ((flags & TCP_SYN) != 0) {
 		option[0] = TCP_OPTION_MSS;
 		option[1] = 4U;
 		option[2] = (uint8_t)(mss >> 8);
 		option[3] = (uint8_t)(mss & 0xffU);
+		at = 4U;
+		if (endpoint->tcp.sack_offered != 0) {
+			option[at] = TCP_OPTION_NOP;
+			option[at + 1U] = TCP_OPTION_NOP;
+			option[at + 2U] = TCP_OPTION_SACK_PERMITTED;
+			option[at + 3U] = 2U;
+			at += 4U;
+		}
+
+		/* Then the window scale. */
+		if (endpoint->tcp.wscale_offered != 0) {
+			option[at] = TCP_OPTION_NOP;
+			option[at + 1U] = TCP_OPTION_WSCALE;
+			option[at + 2U] = 3U;
+			option[at + 3U] = endpoint->tcp.receive_wscale;
+		}
+	}
+
+	/* An acknowledgement's SACK blocks, each its left and right edge. */
+	if (sack_count != 0) {
+		option[0] = TCP_OPTION_NOP;
+		option[1] = TCP_OPTION_NOP;
+		option[2] = TCP_OPTION_SACK;
+		option[3] = (uint8_t)(2U + 8U * sack_count);
+		for (index = 0; index < sack_count; index++) {
+			wire_put32(option + 4U + 8U * index, sack_blocks[index][0]);
+			wire_put32(option + 8U + 8U * index, sack_blocks[index][1]);
+		}
 	}
 
 	/*
-	 * And the window scale option (a NOP, then kind 3, length 3) with this
-	 * end's shift.
+	 * The acknowledgement, read once for its field and the edge, without
+	 * the socket lock: receive_next moves with the receive queue under that
+	 * lock (socket_enqueue_stream_advance), and taking the lock for every
+	 * segment slowed the receive path.  What it would spare is rare: an
+	 * acknowledgement a moment old with the window already narrowed.
 	 */
-	if (options == 8U) {
-		option = (uint8_t *)(tcp + 1);
-		option[4] = TCP_OPTION_NOP;
-		option[5] = TCP_OPTION_WSCALE;
-		option[6] = 3U;
-		option[7] = endpoint->tcp.receive_wscale;
-	}
-
-	/*
-	 * The acknowledgement and the window, from one hold of the socket
-	 * lock, under which receive_next and the receive queue move together:
-	 * a segment never tells of an old receive_next with a window the data
-	 * after it already narrowed (to the peer a duplicate acknowledgement),
-	 * and two threads sending at once do not interleave the edge.
-	 */
-	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
-
 	acknowledgement = endpoint->tcp.receive_next;
+
+	/* One with SACK blocks acknowledges what they were made against (they lie above it). */
+	if (sack_count != 0)
+		acknowledgement = sack_acknowledgement;
 
 	/*
 	 * The window: scaled by this end's shift once both ends scale, never
@@ -2852,11 +2954,26 @@ tcp_output_segment(
 	if ((window >> shift) > 0xffffU)
 		window = 0xffffU << shift;
 	field = (uint16_t)(window >> shift);
+
+	/*
+	 * A window update that would repeat the last segment's acknowledgement
+	 * and window does not go: an acknowledgement sent meanwhile told the
+	 * peer of the room already, and the same one again is a duplicate
+	 * acknowledgement to it, which its fast retransmit counts.
+	 */
+	if (news_only && sack_count == 0 && endpoint->tcp.receive_edge_set != 0 &&
+	    acknowledgement + endpoint->tcp.advertised_window == endpoint->tcp.receive_edge &&
+	    ((uint32_t)field << shift) == endpoint->tcp.advertised_window) {
+		packet_buf_free(packet);
+		if (device != NULL)
+			net_device_release(device);
+		return EALREADY;
+	}
+
+	/* What the peer is now told: the window and its right edge. */
 	endpoint->tcp.advertised_window = (uint32_t)field << shift;
 	endpoint->tcp.receive_edge = acknowledgement + endpoint->tcp.advertised_window;
 	endpoint->tcp.receive_edge_set = 1;
-
-	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
 
 	/* Both in their fields. */
 	wire_put32(tcp->acknowledgement, acknowledgement);
@@ -3665,6 +3782,198 @@ tcp_syn_offered_wscale(
 
 	/* None offered. */
 	return -1;
+}
+
+/* Tells whether a SYN offers SACK-Permitted (RFC 2018 section 2: kind 4, length 2). */
+static int
+tcp_syn_offered_sack(
+	const struct tcp_wire *tcp,
+	size_t header_length)
+{
+	const uint8_t *options;
+	size_t length;
+	size_t at;
+	uint8_t kind;
+	uint8_t size;
+
+	/* The options between the fixed header and the data. */
+	options = (const uint8_t *)(tcp + 1);
+	length = header_length - sizeof(*tcp);
+
+	/* Each option in turn until SACK-Permitted is found or the options end. */
+	at = 0;
+	while (at < length) {
+		kind = options[at];
+		if (kind == TCP_OPTION_END)
+			break;
+		if (kind == TCP_OPTION_NOP) {
+			at++;
+			continue;
+		}
+
+		/* An option with a length: one that does not fit ends the list. */
+		if (at + 1U >= length)
+			break;
+		size = options[at + 1U];
+		if (size < 2U || at + size > length)
+			break;
+
+		/* SACK-Permitted. */
+		if (kind == TCP_OPTION_SACK_PERMITTED && size == 2U)
+			return 1;
+
+		/* Any other option is skipped by its length. */
+		at += size;
+	}
+
+	/* None offered. */
+	return 0;
+}
+
+/*
+ * Adds a block of kept segments, cut to what lies above the
+ * acknowledgement it goes with (a block at or below it would read as a
+ * D-SACK, RFC 2883), and returns the count of blocks then.
+ */
+static unsigned
+tcp_sack_block_add(
+	uint32_t blocks[TCP_SACK_BLOCKS_MAX][2],
+	unsigned count,
+	uint32_t start,
+	uint32_t end,
+	uint32_t acknowledgement)
+{
+	int taken;
+	int below;
+
+	/* Wholly taken already: none. */
+	taken = tcp_sequence_at_or_before(end, acknowledgement);
+	if (taken)
+		return count;
+
+	/* Partly: from the acknowledgement. */
+	below = tcp_sequence_before(start, acknowledgement);
+	if (below)
+		start = acknowledgement;
+	blocks[count][0] = start;
+	blocks[count][1] = end;
+
+	/* Succeeded: one more. */
+	return count + 1U;
+}
+
+/*
+ * Fills the SACK blocks an acknowledgement reports (RFC 2018 section 4,
+ * RFC 2883), each its left edge and the sequence after its right, and
+ * returns how many: first a duplicate's range the last segment in brought
+ * (D-SACK, reported once), then the block of the segments kept ahead of a
+ * gap that holds the one kept last, then the other kept blocks from the
+ * highest down.  Kept segments that touch or overlap make one block.
+ */
+static unsigned
+tcp_sack_blocks(
+	struct tcp_endpoint *endpoint,
+	uint32_t blocks[TCP_SACK_BLOCKS_MAX][2],
+	uint32_t *acknowledgement)
+{
+	struct tcp_socket *tcp = &endpoint->tcp;
+	unsigned long irq;
+	unsigned count;
+	unsigned index;
+	unsigned first;
+	uint32_t start;
+	uint32_t end;
+	uint32_t entry_end;
+	uint32_t recent_start;
+	int recent_found;
+	int joins;
+	int longer;
+	int from_start;
+	int before_end;
+
+	/* Nothing to report, read without the lock (most acknowledgements). */
+	count = 0;
+	if (tcp->reorder_count == 0 && tcp->dsack_pending == 0)
+		return 0;
+	irq = spin_lock_irqsave(&tcp->inet.socket.lock);
+
+	/* The acknowledgement the blocks go with, read with them. */
+	*acknowledgement = tcp->receive_next;
+
+	/* A duplicate's range, once. */
+	if (tcp->dsack_pending != 0) {
+		blocks[count][0] = tcp->dsack_start;
+		blocks[count][1] = tcp->dsack_end;
+		count++;
+		tcp->dsack_pending = 0;
+	}
+
+	/* The block that holds the segment kept last, found from the lowest. */
+	recent_found = 0;
+	recent_start = 0;
+	index = 0;
+	while (tcp->sack_recent_set != 0 && index < tcp->reorder_count) {
+		start = tcp->reorder_sequence[index];
+		end = start + tcp->reorder_length[index];
+		index++;
+
+		/* The segments that touch or overlap it join it. */
+		for (;;) {
+			if (index >= tcp->reorder_count)
+				break;
+			joins = tcp_sequence_at_or_before(tcp->reorder_sequence[index], end);
+			if (!joins)
+				break;
+			entry_end = tcp->reorder_sequence[index] + tcp->reorder_length[index];
+			longer = tcp_sequence_before(end, entry_end);
+			if (longer)
+				end = entry_end;
+			index++;
+		}
+
+		/* The block reported first when it holds the segment kept last. */
+		from_start = tcp_sequence_at_or_before(start, tcp->sack_recent);
+		before_end = tcp_sequence_before(tcp->sack_recent, end);
+		if (from_start && before_end) {
+			recent_found = 1;
+			recent_start = start;
+			count = tcp_sack_block_add(blocks, count, start, end, *acknowledgement);
+			break;
+		}
+	}
+
+	/* The others from the highest down, each from its last segment back to its first. */
+	index = tcp->reorder_count;
+	while (index > 0 && count < TCP_SACK_BLOCKS_MAX) {
+		index--;
+		start = tcp->reorder_sequence[index];
+		end = start + tcp->reorder_length[index];
+		first = index;
+		for (;;) {
+			if (first == 0)
+				break;
+			entry_end = tcp->reorder_sequence[first - 1U] + tcp->reorder_length[first - 1U];
+			joins = tcp_sequence_at_or_before(start, entry_end);
+			if (!joins)
+				break;
+			first--;
+			start = tcp->reorder_sequence[first];
+			longer = tcp_sequence_before(end, entry_end);
+			if (longer)
+				end = entry_end;
+		}
+
+		/* The next block down starts below this one; the one reported first is not repeated. */
+		index = first;
+		if (recent_found && start == recent_start)
+			continue;
+		count = tcp_sack_block_add(blocks, count, start, end, *acknowledgement);
+	}
+
+	spin_unlock_irqrestore(&tcp->inet.socket.lock, irq);
+
+	/* Succeeded: the blocks filled. */
+	return count;
 }
 
 /*
@@ -4634,15 +4943,15 @@ tcp_ack_delay(
 	endpoint->tcp.ack_owed++;
 	owed = endpoint->tcp.ack_owed;
 	listing = 0;
-	if (owed < 2U && endpoint->tcp.ack_listed == 0) {
+	if (owed < TCP_ACK_SEGMENTS && endpoint->tcp.ack_listed == 0) {
 		endpoint->tcp.ack_listed = 1;
 		listing = 1;
 	}
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
-	/* The second segment is acknowledged now. */
-	if (owed >= 2U) {
+	/* The second segment (or the TCP_ACK_SEGMENTS-th) is acknowledged now. */
+	if (owed >= TCP_ACK_SEGMENTS) {
 		(void)tcp_send_ack(endpoint, 0);
 		return;
 	}
@@ -6005,6 +6314,21 @@ tcp_send_ack(
 	struct tcp_endpoint *endpoint,
 	int duplicate)
 {
+	/* Sent whatever it tells. */
+	return tcp_send_ack_news(endpoint, duplicate, 0);
+}
+
+/*
+ * Sends a pure acknowledgement as tcp_send_ack does; with news_only (a
+ * reader's window update), not when it would repeat the last segment's
+ * acknowledgement and window (EALREADY, nothing kept to send again).
+ */
+static int
+tcp_send_ack_news(
+	struct tcp_endpoint *endpoint,
+	int duplicate,
+	int news_only)
+{
 	struct socket *socket;
 	unsigned long irq;
 	uint32_t sequence;
@@ -6023,8 +6347,10 @@ tcp_send_ack(
 
 	spin_unlock_irqrestore(&socket->lock, irq);
 
-	/* Hands it to the device. */
-	error = tcp_send_segment_at(endpoint, sequence, TCP_ACK, NULL, 0);
+	/* Hands it to the device, unless it would tell nothing new. */
+	error = tcp_send_segment_news(endpoint, sequence, TCP_ACK, NULL, 0, news_only);
+	if (error == EALREADY)
+		return error;
 	refusal = tcp_refusal_of(error);
 	retries = tcp_refusal_retries(refusal);
 
@@ -6388,6 +6714,12 @@ tcp_connect(
 	endpoint->tcp.wscale_on = 0;
 	endpoint->tcp.peer_wscale = 0;
 	endpoint->tcp.receive_wscale = TCP_RECEIVE_WSCALE;
+
+	/* And selective acknowledgements; the SYN-ACK says whether the peer takes them. */
+	endpoint->tcp.sack_offered = 1;
+	endpoint->tcp.sack_on = 0;
+	endpoint->tcp.sack_recent_set = 0;
+	endpoint->tcp.dsack_pending = 0;
 
 	/* A new connection measures its own round trip (ws220-p004). */
 	tcp_rtt_forget_locked(endpoint);
@@ -6921,9 +7253,13 @@ tcp_recvfrom(
 	    (endpoint->tcp.state == TCP_ESTABLISHED ||
 	     endpoint->tcp.state == TCP_FIN_WAIT_1 ||
 	     endpoint->tcp.state == TCP_FIN_WAIT_2)) {
-		sent = tcp_send_ack(endpoint, 0);
+		sent = tcp_send_ack_news(endpoint, 0, 1);
 
-		/* An update that went is counted for net.tcpstats (a refused one is sent again later). */
+		/*
+		 * An update that went is counted for net.tcpstats (a refused one is
+		 * sent again later; one an acknowledgement sent meanwhile made
+		 * the same as the last did not go).
+		 */
 		if (sent == 0) {
 			irq = spin_lock_irqsave(&socket->lock);
 
@@ -6992,10 +7328,10 @@ tcp_receive_sws_step(
  * each packet left, which every packet but the last holds at least.  A connection that offered segments larger than a standard packet
  * holds also promises no more than TCP_RECEIVE_JUMBO_MAX jumbo packets,
  * those its queue holds counted, for the pool has few of them.  A peer
- * that keeps within it is never refused.  A segment's output reads it
- * under the socket lock, with the receive_next it goes with; a reader
- * deciding whether to tell the peer of room reads it without, a value a
- * moment old.  It is in bytes; the segment's field scales it.
+ * that keeps within it is never refused.  It is read without
+ * the socket lock, because segments are also sent with that lock held; a
+ * value a moment old is what any peer sees anyway.  It is in bytes; the
+ * segment's field scales it.
  */
 static uint32_t
 tcp_receive_window(
@@ -7571,7 +7907,8 @@ tcp_passive_syn(
 	uint16_t source_port,
 	uint32_t sequence,
 	uint32_t offered_mss,
-	int offered_wscale)
+	int offered_wscale,
+	int offered_sack)
 {
 	struct socket *created;
 	struct tcp_endpoint *child;
@@ -7611,6 +7948,10 @@ tcp_passive_syn(
 		child->tcp.peer_wscale = (uint8_t)offered_wscale;
 		child->tcp.receive_wscale = TCP_RECEIVE_WSCALE;
 	}
+
+	/* A SYN that offers selective acknowledgements is answered with SACK-Permitted, and both ends use them. */
+	child->tcp.sack_offered = (uint8_t)(offered_sack != 0);
+	child->tcp.sack_on = (uint8_t)(offered_sack != 0);
 	child->tcp.send_next = (uint32_t)sched_ticks() * 1103515245U +
 	    child->tcp.inet.local_port + source_port;
 	child->tcp.send_next = tcp_initial_sequence(child->tcp.send_next);
@@ -7860,6 +8201,7 @@ tcp_segment_input(
 	uint32_t segment_window;
 	uint32_t previous_window;
 	int offered_wscale;
+	int offered_sack;
 	uint32_t offered_mss;
 	int within_max;
 	int before;
@@ -7904,7 +8246,9 @@ tcp_segment_input(
 		if ((flags & (TCP_SYN | TCP_ACK | TCP_RST)) == TCP_SYN) {
 			offered_mss = tcp_syn_offered_mss(tcp, header_length);
 			offered_wscale = tcp_syn_offered_wscale(tcp, header_length);
-			(void)tcp_passive_syn(endpoint, addresses, source_port, sequence, offered_mss, offered_wscale);
+			offered_sack = tcp_syn_offered_sack(tcp, header_length);
+			(void)tcp_passive_syn(endpoint, addresses, source_port, sequence, offered_mss, offered_wscale,
+			    offered_sack);
 		}
 		packet_buf_free(packet);
 		socket_release(&endpoint->tcp.inet.socket);
@@ -8074,6 +8418,11 @@ tcp_segment_input(
 				endpoint->tcp.wscale_on = 1;
 				endpoint->tcp.peer_wscale = (uint8_t)offered_wscale;
 			}
+
+			/* Selective acknowledgements are on when the SYN-ACK offers them too. */
+			offered_sack = tcp_syn_offered_sack(tcp, header_length);
+			if (endpoint->tcp.sack_offered != 0 && offered_sack)
+				endpoint->tcp.sack_on = 1;
 			endpoint->tcp.peer_window = wire_get16(tcp->window);
 			endpoint->tcp.send_window_sequence = sequence;
 			endpoint->tcp.send_window_acknowledgement = acknowledgement;
@@ -8365,6 +8714,19 @@ tcp_segment_input(
 			starts_before = tcp_sequence_before(sequence, endpoint->tcp.receive_next);
 			if (starts_before)
 				overlap = endpoint->tcp.receive_next - sequence;
+		}
+
+		/*
+		 * What was taken already, wholly or in part, is reported once as
+		 * a duplicate (D-SACK, RFC 2883 section 4): the peer learns its
+		 * resend was not needed.
+		 */
+		if (endpoint->tcp.sack_on != 0 && (old_payload || overlap != 0)) {
+			endpoint->tcp.dsack_start = sequence;
+			endpoint->tcp.dsack_end = endpoint->tcp.receive_next;
+			if (old_payload)
+				endpoint->tcp.dsack_end = sequence + (uint32_t)payload_length;
+			endpoint->tcp.dsack_pending = 1;
 		}
 
 		/* The segment then starts at receive_next, shorter by the part cut off. */
@@ -8676,6 +9038,7 @@ tcp_reorder_keep(
 	uint32_t length;
 	uint32_t window;
 	uint32_t offset;
+	uint32_t held;
 	unsigned index;
 	unsigned place;
 	int before;
@@ -8699,6 +9062,18 @@ tcp_reorder_keep(
 	/* Its place in the order (a segment of the same start is kept already). */
 	for (place = 0; place < tcp->reorder_count; place++) {
 		if (tcp->reorder_sequence[place] == sequence) {
+			/* Reported once as a duplicate (D-SACK, RFC 2883 section 4). */
+			if (tcp->sack_on != 0) {
+				held = tcp->reorder_length[place];
+				if (held > length)
+					held = length;
+				tcp->dsack_start = sequence;
+				tcp->dsack_end = sequence + held;
+				tcp->dsack_pending = 1;
+				tcp->sack_recent = sequence;
+				tcp->sack_recent_set = 1;
+			}
+
 			spin_unlock_irqrestore(&tcp->inet.socket.lock, irq);
 			return;
 		}
@@ -8709,9 +9084,14 @@ tcp_reorder_keep(
 			break;
 	}
 
-	/* A full queue: the farthest goes for a nearer one, or the new one is not kept. */
+	/*
+	 * A full queue: the farthest goes for a nearer one, or the new one is
+	 * not kept.  With SACK none that a block may have reported goes (that
+	 * would renege, RFC 2018 section 8): the new one is not kept, and the
+	 * peer, which knows the gaps, sends the nearer ones again.
+	 */
 	if (tcp->reorder_count >= TCP_REORDER_LIMIT) {
-		if (place >= tcp->reorder_count) {
+		if (place >= tcp->reorder_count || tcp->sack_on != 0) {
 			spin_unlock_irqrestore(&tcp->inet.socket.lock, irq);
 			return;
 		}
@@ -8736,6 +9116,10 @@ tcp_reorder_keep(
 	tcp->reorder_count++;
 	tcp->counters.out_of_order_kept++;
 	*packet = NULL;
+
+	/* The block an acknowledgement reports first is the one this joins. */
+	tcp->sack_recent = sequence;
+	tcp->sack_recent_set = 1;
 
 	spin_unlock_irqrestore(&tcp->inet.socket.lock, irq);
 

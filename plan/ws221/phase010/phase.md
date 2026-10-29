@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p010 -->
 # ws221-p010: 10GbE での TCP の stack の改善（RDNA 機の RTL8127 ↔ centris、限界まで）
 
-Status: in-progress（2026-10-29 P3 q1679-i01: send 6280 Mbit/s（Linux 6808 の 92 %）、recv 3320〜3401（Linux 5458、未達）。recv は SACK と ACK の順の調べが次）
+Status: in-progress（2026-10-29 P3 q1679-i02: ATR 有効の recv 2875〜3729、ATR 無効 4819〜5286（原因の参考）。SACK は p012。i01: send 6280 Mbit/s（Linux 6808 の 92 %）、recv 3320〜3401（Linux 5458、未達）。recv は SACK と ACK の順の調べが次）
 Parent: [WS221](../ws.md)
 Queue: q1679 / q1679-i01・i02（P3）
 依存: WS235（RTL8127 の driver、completed）、p002〜p009、WS311（CUBIC、completed）
@@ -78,6 +78,33 @@ Queue: q1679 / q1679-i01・i02（P3）
 - `ack-order.py` に IPv4 の ID による分け: 古い ACK（最後に進めた ACK より後ろ）の ID が、その進めた ACK の ID より前なら「IP の出力の後で追い越された」、後なら「stack が古い点を読んで作った」。zedBSD は IP の出力の順に ID を振る。
 - 前の P3 の capture（相手 centris、zedBSD が受け、20 s）: 4b39403c5 の tree（i02-base 1 回目）は古い ACK 111815 のうち作りの遅れ 862・追い越し 110953。ACK の直しの kernel（前の P3 の build/p010/fix、56e121052dc551a5。b36ed1860 と同じ code かは未確かめ、i02-fix 1 回目）は 136431 のうち作りの遅れ 0・追い越し 136431。直しで作りの遅れは消えた。残りの殆どは IP の出力の後の入れ替わり: centris の受けの queue（ixgbe の flow director ATR が、送り手の thread の CPU に合わせて受けの queue を移す。zedBSD の ACK は queue 1・2 と 14〜31 に分かれた）か、zedBSD の IP の出力から device の ring までの間（RTL8127 の TX の ring は 1 つ）。
 - 同じ capture の recv: 4b39403c5 の tree 3303・3556・3683・3120、その直しの kernel 2923・2967・3001・3141 Mbit/s（相手の TCPFastRetrans は前 113〜903、今 15〜166）。fast retransmit は減ったが recv は上がっていない。
+
+### 10.0.10.3 の測り（i02、2026-10-29 22:53〜23:36、tcp-perf 20 s、recv は 10.0.10.3 が受ける、相手 centris）
+
+kernel: 現 = b36ed1860（ACK と窓を出力で socket の lock の下で読む、0728f214）、前 = 4b39403c5（f1d85b42）、A = 出力の lock を外した物（2261a721）、B = A ＋ 窓の更新の完全な重複を出さない（e3d7cfa7）。PEER_CPU=2 は perf-peer.py を centris の CPU 2 に固定（受けの queue の散りは止まらなかった）。
+
+| 条件 | kernel | recv Mbit/s | 相手の TCPFastRetrans |
+| --- | --- | --- | --- |
+| ATR 有効（既定） | 現 | 2913・2926・3335・3061・3212・3286・3342・3602・3447 | 59〜891 |
+| ATR 有効 | 前 | 3003・3535・3239・3300（前の P3 の 3303・3556・3683・3120） | 76〜903 |
+| ATR 有効 | A | 3729・3278・3230・3596・3138・3419 | 29〜522 |
+| ATR 有効 | B | 2959・2926・2875 | 77・101・0 |
+| ATR 無効（ntuple on、原因の参考、受け入れの値でない） | 現 | 5170・4819 | 0・1 |
+| ATR 無効 | B | 4916・5095 | 0・0 |
+| ATR 無効 | 前 | 5286・5054 | 724・8 |
+
+- send（現 6159、B 6233）は前の 6280 と同じ水準。
+- 所見: ATR 有効では kernel の差は run の揺れ（2875〜3729）の中。ATR を止めると recv は 4819〜5286（Linux 5458 の 88〜97 %）、古い ACK は約 11 万 → 1975、相手の再送 0〜8（前の kernel の 1 回だけ 724）。recv を抑えていたのは centris の ixgbe の ATR（送り手の CPU の移りで zedBSD の ACK と受けの queue が入れ替わる、IP の出力の後の追い越しが約 3 %、ACK の種類によらず同じ割合）と、SACK の無い相手の偽の fast retransmit。
+- 窓の更新の完全な重複（同じ ACK・同じ窓、IP ID が続き、間に data が無い）: 1 回の 20 s で 3 千〜8 万。Linux はこれを dupack に数える。読み手が窓の更新を決めてから出すまでに worker の ACK が同じ窓を出した時にできる。B はこの時に出さない（`tcp_send_ack_news`・`tcp_output_segment` の news_only）。
+- 決め（P3）: A と B を入れる（出力の lock は効きが見えず、毎 segment の lock を持たない方が軽い。B は相手に偽の dupack を渡さない）。recv の改善の数字としては扱わない（ATR 有効の揺れの中）。
+- ユーザーの決定（2026-10-29、原文）:「P3は、SACKの実装を優先してください。ATRを有効にした評価で進めます。」→ 評価は ATR 有効で行う。ATR 無効の値は原因の参考だけ。次は SACK（[p012](../phase012/phase.md)）。
+
+### centris の NIC の設定の変更（2026-10-29 ユーザー「centrisのNICの設定は、変更してOKです。」）
+
+- 対象: centris の enp94s0f0（ixgbe、firmware 0x8000052f、10.0.10.2/16、10000Mb/s。10.0.10.3・10.0.30.6 への route はこの interface。WS235 の記録の enp94s0f1 は DOWN で使っていない）。
+- 変更: 23:23:20 に `sudo ethtool -K enp94s0f0 ntuple on`（前は `ntuple-filters: off`、ixgbe は ntuple を on にすると flow director の ATR を止める）。変更の後も link 10000・ping 10.0.10.3・10.0.30.3 通る。
+- 戻した: 23:35:38 に `sudo ethtool -K enp94s0f0 ntuple off`、読み戻し `ntuple-filters: off`、link 10000、ping 10.0.10.3 通る（ユーザーの決定「ATRを有効にした評価で進めます。」で終わりを待たずに戻した）。
+- 10.0.10.3 は p010 が終わるまで P3 の専有（Q1 2026-10-29 23:2x、ユーザーの決定）。centris の /tmp/zedbsd-rdna.lock を sleep の holder で持ち続ける。
 
 ## 未実施・残り
 
