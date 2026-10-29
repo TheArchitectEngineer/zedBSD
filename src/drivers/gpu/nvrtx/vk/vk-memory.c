@@ -405,6 +405,10 @@ memory_bind_to(
 		if (picture->depth || picture->tiled)
 			align = NVRTX_VK_GOB_BYTES;
 
+		/* A depth image with a stencil on a page of its own. */
+		if (picture->stencil)
+			align = NVRTX_VK_KIND_ALIGN;
+
 		/* A video image is placed on the decoder's boundary. */
 		if (picture->video)
 			align = NVRTX_VK_VIDEO_ALIGN;
@@ -477,6 +481,10 @@ memory_requirements(
 			bytes = picture->bytes;
 		if (picture != NULL && (picture->depth || picture->tiled))
 			align = NVRTX_VK_GOB_BYTES;
+
+		/* A depth image with a stencil on a page of its own. */
+		if (picture != NULL && picture->stencil)
+			align = NVRTX_VK_KIND_ALIGN;
 
 		/* A video image is placed on the decoder's boundary. */
 		if (picture != NULL && picture->video)

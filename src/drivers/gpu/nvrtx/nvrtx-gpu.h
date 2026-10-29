@@ -877,6 +877,7 @@ int nvrtx_work_map_vram(struct nvrtx_gpu *gpu, uint64_t physical, uint64_t size,
 int nvrtx_work_map_system(struct nvrtx_gpu *gpu, const uint64_t *pages, size_t count, uint64_t *va);
 int nvrtx_work_unmap(struct nvrtx_gpu *gpu, uint64_t va, uint64_t size);
 int nvrtx_work_clear(struct nvrtx_gpu *gpu, uint64_t physical, uint64_t size);
+int nvrtx_work_remap_vram(struct nvrtx_gpu *gpu, uint64_t va, uint64_t physical, uint64_t size, uint32_t kind);
 uint64_t nvrtx_work_root(const struct nvrtx_gpu *gpu);
 int nvrtx_work_channel_open(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, uint32_t chid);
 int nvrtx_work_channel_close(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);

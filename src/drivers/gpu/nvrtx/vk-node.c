@@ -180,6 +180,41 @@ nvrtx_vk_memory_detach(
 }
 
 /*
+ * Gives a part of a memory's storage a memory kind: its VRAM pages written
+ * again at the same addresses with the kind.  The caller holds the node's
+ * lock.  Returns EINVAL for a part outside the backing, or the remap's
+ * error.
+ */
+int
+nvrtx_vk_memory_kind(
+	void *owner,
+	void *backing,
+	uint64_t offset,
+	uint64_t va,
+	uint64_t bytes,
+	uint32_t kind)
+{
+	struct nvrtx_session *session;
+	struct nvrtx_backing *held;
+	int error;
+
+	session = owner;
+	held = backing;
+
+	/* A part of the backing's VRAM. */
+	if (offset > held->bo.size || bytes > held->bo.size - offset)
+		return EINVAL;
+
+	/* Its pages again, of the kind. */
+	error = nvrtx_work_remap_vram(session->node->gpu, va, held->bo.vram + offset, bytes, kind);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the part is of the kind. */
+	return 0;
+}
+
+/*
  * Takes a blob of the session's as an imported VkDeviceMemory's storage:
  * maps it for the work channel and holds its backing.  The caller holds
  * the node's lock.

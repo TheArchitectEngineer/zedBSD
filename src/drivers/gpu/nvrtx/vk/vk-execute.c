@@ -45,6 +45,7 @@
 #include <uapi/errno.h>
 #include <uapi/gpu-op.h>
 
+#include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 #include "drivers/gpu/nvrtx/vk/nvrtx-vk-objects.h"
 #include "drivers/gpu/nvrtx/vk/nvrtx-exec.h"
 #include "drivers/gpu/nvrtx/nvrtx-draw.h"
@@ -271,7 +272,7 @@ static int execute_clear_image(struct nvrtx_vk_execute *execute, struct execute_
 static int execute_quad(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct execute_quad *quad);
 static int execute_image_target(const struct nvrtx_vk_image *image, uint32_t level, uint32_t format, struct nvrtx_exec_target *target);
 static int execute_image_source(const struct nvrtx_vk_image *image, uint32_t level, struct execute_quad *quad);
-static int execute_depth_target(const struct nvrtx_vk_image *image, struct nvrtx_exec_target *target);
+static int execute_depth_target(struct nvrtx_vk_session *session, struct nvrtx_vk_image *image, struct nvrtx_exec_target *target);
 static int execute_uniforms(const struct execute_state *state, const struct nvrtx_vk_program *program, uint32_t group, uint8_t *push, size_t *at);
 static int execute_copy_buffer(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, const struct nvrtx_vk_record *record);
 static uint64_t execute_gob_offset(uint32_t pitch, uint32_t x, uint32_t y);
@@ -876,6 +877,7 @@ execute_begin_pass(
 	const struct nvrtx_vk_view *view;
 	bool clear_colour;
 	bool clear_depth;
+	bool clear_stencil;
 	int32_t x1;
 	int32_t y1;
 	int error;
@@ -901,7 +903,7 @@ execute_begin_pass(
 	/* The depth target: the depth view's image. */
 	if (pass->depth != 0U && pass->depth_attachment < framebuffer->view_count) {
 		view = framebuffer->views[pass->depth_attachment]->payload;
-		error = execute_depth_target(view->image->payload, &state->target);
+		error = execute_depth_target(session, view->image->payload, &state->target);
 		if (error != 0)
 			return error;
 	}
@@ -916,7 +918,8 @@ execute_begin_pass(
 	/* A pass loading by clearing clears its area, within the framebuffer and the image. */
 	clear_colour = (pass->load_op == VK_ATTACHMENT_LOAD_OP_CLEAR);
 	clear_depth = (state->target.depth_address != 0U && pass->depth_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR);
-	if (!clear_colour && !clear_depth)
+	clear_stencil = (state->target.depth_stencil != 0U && pass->stencil_load_op == VK_ATTACHMENT_LOAD_OP_CLEAR);
+	if (!clear_colour && !clear_depth && !clear_stencil)
 		return 0;
 	execute->at = nvrtx_exec_target(execute->cpu + EXECUTE_PUSH_AT, execute->at, &state->target);
 	state->target_written = true;
@@ -938,6 +941,9 @@ execute_begin_pass(
 	if (clear_depth)
 		execute->at = nvrtx_exec_clear_depth(execute->cpu + EXECUTE_PUSH_AT, execute->at, record->values[4],
 						     (uint32_t)state->area.offset.x, (uint32_t)state->area.offset.y, (uint32_t)x1, (uint32_t)y1);
+	if (clear_stencil)
+		execute->at = nvrtx_exec_clear_stencil(execute->cpu + EXECUTE_PUSH_AT, execute->at, record->values[5],
+						       (uint32_t)state->area.offset.x, (uint32_t)state->area.offset.y, (uint32_t)x1, (uint32_t)y1);
 
 	/* Succeeded: the pass draws into its target. */
 	return 0;
@@ -1189,13 +1195,18 @@ execute_draw(
 	execute->at = nvrtx_exec_viewport(push, execute->at, viewport);
 	execute->at = nvrtx_exec_scissor(push, execute->at, (uint32_t)x0, (uint32_t)y0, (uint32_t)x1, (uint32_t)y1);
 
-	/* The culling, and the depth test when the pass has a depth target. */
+	/* The culling, the depth test when the pass has a depth target, and the stencil test when it has a stencil. */
 	execute->at = nvrtx_exec_raster(push, execute->at, pipeline->cull_mode, pipeline->front_face);
 	kern_memset(&depth, 0, sizeof(depth));
 	if (state->target.depth_address != 0U) {
 		depth.test = pipeline->depth_test;
 		depth.write = pipeline->depth_write;
 		depth.compare = pipeline->depth_compare;
+	}
+	if (state->target.depth_stencil != 0U) {
+		depth.stencil = pipeline->stencil_test;
+		depth.front = pipeline->stencil_front;
+		depth.back = pipeline->stencil_back;
 	}
 	execute->at = nvrtx_exec_depth(push, execute->at, &depth);
 
@@ -2264,12 +2275,19 @@ execute_image_target(
 	return 0;
 }
 
-/* Puts a depth image beside a colour target as its depth target; EIO without storage, EINVAL for a colour image. */
+/*
+ * Puts a depth image beside a colour target as its depth target; one with
+ * a stencil has its pages given the S8Z24 memory kind the first time (the
+ * 3D engine refuses a stencil target in pages of another kind).  EIO
+ * without storage, EINVAL for a colour image, or the kind's error.
+ */
 static int
 execute_depth_target(
-	const struct nvrtx_vk_image *image,
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_image *image,
 	struct nvrtx_exec_target *target)
 {
+	const struct nvrtx_vk_memory *memory;
 	uint8_t *cpu;
 	int error;
 
@@ -2280,9 +2298,22 @@ execute_depth_target(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the target has its depth target. */
+	/* A stencil image's pages of the S8Z24 kind, once. */
+	if (image->stencil && !image->kinded) {
+		memory = image->memory->payload;
+		error = nvrtx_vk_memory_kind(session->owner, memory->backing, image->offset, target->depth_address, image->bytes,
+					     NVRTX_MMU_KIND_S8Z24);
+		if (error != 0)
+			return error;
+		image->kinded = true;
+	}
+
+	/* Succeeded: the target has its depth target, and its stencil when the format has one. */
 	target->depth_pitch = image->pitch;
 	target->depth_height = image->height;
+	target->depth_stencil = 0U;
+	if (image->stencil)
+		target->depth_stencil = 1U;
 	return 0;
 }
 

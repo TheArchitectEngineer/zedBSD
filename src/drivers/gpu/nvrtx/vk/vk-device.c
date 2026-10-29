@@ -650,7 +650,8 @@ device_format_features(
 		properties->linearTilingFeatures = DEVICE_COLOUR_FEATURES;
 		break;
 	case VK_FORMAT_D32_SFLOAT:
-		/* The depth format: a depth attachment of optimal tiling only. */
+	case VK_FORMAT_D24_UNORM_S8_UINT:
+		/* The depth formats (the second with a stencil): a depth attachment of optimal tiling only. */
 		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
 		break;
 	case NVRTX_VK_FORMAT_NV12:
@@ -719,7 +720,7 @@ device_usage_features(
 	if ((usage & VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR) != 0U)
 		required |= VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR;
 
-	/* Rendering depth needs the depth attachment feature (D32_SFLOAT's). */
+	/* Rendering depth needs the depth attachment feature (the depth formats'). */
 	if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U)
 		required |= VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
@@ -802,7 +803,7 @@ device_image_format(
 	image.maxExtent.height = 16384U;
 	image.maxExtent.depth = 1U;
 	image.maxMipLevels = NVRTX_VK_LEVELS_MAX;
-	if (format == VK_FORMAT_D32_SFLOAT || format == NVRTX_VK_FORMAT_NV12)
+	if (format == VK_FORMAT_D32_SFLOAT || format == VK_FORMAT_D24_UNORM_S8_UINT || format == NVRTX_VK_FORMAT_NV12)
 		image.maxMipLevels = 1U;
 	image.maxArrayLayers = 1U;
 	image.sampleCounts = VK_SAMPLE_COUNT_1_BIT;

@@ -48,6 +48,7 @@
 #define MMU_PTE_VALID			(1ULL << 0)
 #define MMU_PTE_SYSTEM			(2ULL << 1)
 #define MMU_PTE_VOLATILE		(1ULL << 3)
+#define MMU_PTE_KIND_SHIFT		56U
 
 /*
  * A page only privileged work (the context switch) may use, and one it may only
@@ -635,12 +636,29 @@ nvrtx_mmu_gr_entries_vram(
 	uint64_t physical,
 	uint64_t pages)
 {
+	/* Kind 0 (pitch), as every run of the work space has. */
+	nvrtx_mmu_gr_entries_vram_kind(entries, physical, pages, 0U);
+}
+
+/*
+ * Writes the entries of a run of VRAM pages for work of a memory kind
+ * (NVRTX_MMU_KIND_*), one after another, as nvrtx_mmu_gr_entries_vram()
+ * does otherwise; entries is pages * 8 bytes long.
+ */
+void
+nvrtx_mmu_gr_entries_vram_kind(
+	uint8_t *entries,
+	uint64_t physical,
+	uint64_t pages,
+	uint32_t kind)
+{
 	uint64_t page;
 	uint64_t entry;
 
-	/* Writes each page's entry. */
+	/* Writes each page's entry, the kind in its top byte. */
 	for (page = 0U; page < pages; page++) {
 		entry = ((physical + page * NVRTX_GSP_PAGE_SIZE) >> MMU_ADDRESS_SHIFT) | MMU_PTE_VALID;
+		entry |= (uint64_t)(kind & 0xffU) << MMU_PTE_KIND_SHIFT;
 		nvrtx_put64(entries, (size_t)page * 8U, entry);
 	}
 }

@@ -1,8 +1,9 @@
 #!/bin/sh
 # Notes on the RTX 2070 machine (GPU_PERF_MACHINE=rtx, 10.0.10.3, nvrtx), in one command: the test kernel (with the
 # AAT's input injection, plan/tools/rtx-video/config-amd64-rtx-inject.mk) deployed and zedBSD up on its own userland,
-# aat-input copied in, then Notes started as the session's user: a shot when it shows (OUT/n1.png), T (the text
-# tool), a click on the page, "Hello RTX" typed, a shot (OUT/n2.png), Escape and Ctrl+W.  Kept in OUT: Notes's lines,
+# aat-input copied in, then Notes started as the session's user: a shot when it shows (OUT/n1.png), two strokes
+# dragged with the pen (filled through the stencil, OUT/n2.png), T (the text tool), a click on the page, "Hello
+# RTX" typed, a shot (OUT/n3.png), Escape and Ctrl+W.  Kept in OUT: Notes's lines,
 # the compositor's lines of the run (session.log), the kernel's nvrtx lines; a summary is printed (OUT/summary.txt).
 # zedBSD stays up with the test kernel (rtx-p004.sh's restore step puts the machine back).
 #   usage: plan/tools/rtx-video/rtx-notes-check.sh OUT VMUNIX AAT_INPUT [NOTES]   (from the top of the tree; NOTES: a
@@ -67,12 +68,17 @@ counts=$(zs "$IP" "echo \$(wc -l < $SESSION) \$(dmesg | wc -l)" < /dev/null)
 zs "$IP" "$AS_USER \"$ENVS $program --timeout-s=40\" > /tmp/notes.log 2>&1 < /dev/null &" < /dev/null
 sleep 8
 shot n1
+input drag 760 520 1160 700 40
+sleep 1
+input drag 760 700 1160 520 40
+sleep 2
+shot n2
 input key t
-input click left 960 600
+input click left 960 800
 sleep 1
 input "type 'Hello RTX'"
 sleep 2
-shot n2
+shot n3
 input key esc
 sleep 1
 input key ctrl+w
@@ -89,5 +95,5 @@ zs "$IP" "/tmp/aat-input stop" > /dev/null 2>&1 < /dev/null
 say "NOTES: $(grep -E 'NOTES (START|EXIT|DISCONNECTED)|NOTES .* none|notes: ' "$OUT/notes.log" | cut -c1-120 | tr '\n' ' ')"
 say "NOTES TEXT: $(grep -c 'NOTES TEXT' "$OUT/notes.log") lines | $(grep -E 'NOTES TEXT box (open|input)' "$OUT/notes.log" | head -2 | cut -c1-120 | tr '\n' ' ')"
 say "failures: notes $(grep -ciE 'fail|error' "$OUT/notes.log"), compositor KWL FAILED $(grep -c 'KWL FAILED' "$OUT/session.log"), VULKAN_ERROR/VULKAN fail $(grep -cE 'VULKAN_ERROR|VULKAN .*fail' "$OUT/session.log" "$OUT/notes.log" | awk -F: '{ s += $2 } END { print s }'), kernel $(grep -ciE 'fail|lost|fault|refused' "$OUT/kernel.log")"
-say "shots: n1 $(wc -c < "$OUT/n1.png") bytes, n2 $(wc -c < "$OUT/n2.png") bytes"
+say "shots: n1 $(wc -c < "$OUT/n1.png") bytes, n2 $(wc -c < "$OUT/n2.png") bytes, n3 $(wc -c < "$OUT/n3.png") bytes"
 say "done: $OUT"

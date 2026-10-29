@@ -132,6 +132,18 @@ nvrtx_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t bytes)
 }
 
 int
+nvrtx_vk_memory_kind(void *owner, void *backing, uint64_t offset, uint64_t va, uint64_t bytes, uint32_t kind)
+{
+	(void)owner;
+	(void)backing;
+	(void)offset;
+	(void)va;
+	(void)bytes;
+	(void)kind;
+	return 0;
+}
+
+int
 nvrtx_vk_memory_import(void *owner, uint32_t resource_id, uint64_t bytes, uint8_t **cpu, uint64_t *va, void **backing)
 {
 	(void)owner;
@@ -592,6 +604,21 @@ test_device(void)
 	check((reply_word(&at) & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) != 0 && (reply_word(&at) & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0 && reply_word(&at) == 0, "device: BGRA renders and samples in both tilings, no buffer feature");
 	check(reply_word(&at) == GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES && reply_word(&at) == 1 && reply_word(&at) == 0 && reply_word(&at) == 0 && reply_word(&at) == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT && reply_word(&at) == 0, "device: depth is a depth attachment of optimal tiling only");
 
+	/* vkGetPhysicalDeviceFormatProperties for D24_UNORM_S8_UINT: a depth and stencil attachment too. */
+	client.bytes = 0;
+	memset(reply_words, 0, sizeof(reply_words));
+	encode_selector(&client, 200);
+	vulkan_write_u32(&client, GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u64(&client, 0x101);
+	vulkan_write_u32(&client, VK_FORMAT_D24_UNORM_S8_UINT);
+	vulkan_write_u64(&client, 1);
+	error = nvrtx_vk_stream_execute(session, client.data, (uint32_t)client.bytes, nvrtx_vk_dispatch);
+	at = 4;
+	check(error == 0 && reply_word(&at) == GPU_OP_GET_PHYSICAL_DEVICE_FORMAT_PROPERTIES && reply_word(&at) == 1 && reply_word(&at) == 0 &&
+	      reply_word(&at) == 0 && reply_word(&at) == VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT && reply_word(&at) == 0,
+	      "device: D24_UNORM_S8_UINT is a depth and stencil attachment of optimal tiling only");
+
 	/* vkGetPhysicalDeviceMemoryProperties: one coherent device-local type. */
 	client.bytes = 0;
 	memset(reply_words, 0, sizeof(reply_words));
@@ -714,9 +741,46 @@ test_push(void)
 	check(push_value(push, at, 0x1538, &value) && value == 1, "push: one depth target selected");
 	check(push_value(push, at, 0x1228, &value) && value == 1920 && push_value(push, at, 0x122c, &value) && value == 1080 &&
 	      push_value(push, at, 0x1230, &value) && value == 1, "push: the depth target's size");
+	target.depth_stencil = 1;
+	at = nvrtx_exec_target(push, 0, &target);
+	check(push_value(push, at, 0x0fe8, &value) && value == 0x16, "push: S8Z24 for a depth target with a stencil");
+	target.depth_stencil = 0;
 	target.depth_address = 0;
 	at = nvrtx_exec_target(push, 0, &target);
 	check(push_value(push, at, 0x1538, &value) && value == 0 && !push_value(push, at, 0x0fe0, &value), "push: no depth target without one");
+
+	/* The stencil test, two-sided: the front face adds where it passes, the back face takes away; off without it. */
+	memset(&depth, 0, sizeof(depth));
+	depth.stencil = 1;
+	depth.front.fail = VK_STENCIL_OP_KEEP;
+	depth.front.depth_fail = VK_STENCIL_OP_ZERO;
+	depth.front.pass = VK_STENCIL_OP_INCREMENT_AND_WRAP;
+	depth.front.compare = VK_COMPARE_OP_ALWAYS;
+	depth.front.compare_mask = 0x0f;
+	depth.front.write_mask = 0xff;
+	depth.front.reference = 3;
+	depth.back = depth.front;
+	depth.back.pass = VK_STENCIL_OP_DECREMENT_AND_WRAP;
+	depth.back.compare = VK_COMPARE_OP_NOT_EQUAL;
+	depth.back.write_mask = 0x7f;
+	at = nvrtx_exec_depth(push, 0, &depth);
+	check(push_value(push, at, 0x1380, &value) && value == 1 && push_value(push, at, 0x1594, &value) && value == 1, "push: the stencil test on, two-sided");
+	check(push_value(push, at, 0x1384, &value) && value == 1 && push_value(push, at, 0x1388, &value) && value == 2 &&
+	      push_value(push, at, 0x138c, &value) && value == 7 && push_value(push, at, 0x1390, &value) && value == 0x207,
+	      "push: the front face's operations (D3D values) and function (OGL)");
+	check(push_value(push, at, 0x1394, &value) && value == 3 && push_value(push, at, 0x1398, &value) && value == 0x0f &&
+	      push_value(push, at, 0x139c, &value) && value == 0xff, "push: the front face's reference, compare mask and write mask");
+	check(push_value(push, at, 0x15a0, &value) && value == 8 && push_value(push, at, 0x15a4, &value) && value == 0x205 &&
+	      push_value(push, at, 0x0f54, &value) && value == 3 && push_value(push, at, 0x0f58, &value) && value == 0x7f &&
+	      push_value(push, at, 0x0f5c, &value) && value == 0x0f, "push: the back face's operation, function, reference and masks");
+	depth.stencil = 0;
+	at = nvrtx_exec_depth(push, 0, &depth);
+	check(push_value(push, at, 0x1380, &value) && value == 0 && !push_value(push, at, 0x1384, &value), "push: the stencil test off");
+
+	/* A clear of the stencil only: its value, the rectangle, the stencil bit. */
+	at = nvrtx_exec_clear_stencil(push, 0, 0x1ab, 0, 0, 64, 32);
+	check(push_value(push, at, 0x0da0, &value) && value == 0xab && push_value(push, at, 0x19d0, &value) && value == 2,
+	      "push: a stencil clear of the low 8 bits, the stencil only");
 
 	/* A block-linear colour target: its width the row's pixels, one-GOB blocks, its array pitch the level. */
 	target.block_linear = 1;

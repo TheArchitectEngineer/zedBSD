@@ -150,6 +150,14 @@ uint32_t nvrtx_vk_threed_class(void *owner);
 void nvrtx_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t bytes);
 
 /*
+ * Gives the pages of a part of a memory's storage (bytes from offset, at
+ * va for the GPU, whole pages) a memory kind (NVRTX_MMU_KIND_*), as a depth
+ * target with a stencil needs.  Provided by the node; the caller holds the
+ * node's lock and makes sure no work uses the part meanwhile.
+ */
+int nvrtx_vk_memory_kind(void *owner, void *backing, uint64_t offset, uint64_t va, uint64_t bytes, uint32_t kind);
+
+/*
  * Takes a blob of the owner's as the storage of an imported VkDeviceMemory
  * of bytes (provided by the node): maps it for the GPU, holds its backing,
  * and gives the CPU's view, the GPU's address and the backing, which

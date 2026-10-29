@@ -79,21 +79,33 @@
 #define M_SET_SINGLE_CT_WRITE_CONTROL		0x0f90U
 
 /*
- * The depth target, the depth test, the index buffer and the culling.
+ * The depth target, the depth and stencil tests, the index buffer and the
+ * culling.
  *
  * Values referenced: Mesa 25.0.7
  * src/nouveau/headers/nvidia/classes/cl9097.h (NV9097_SET_ZT_*,
- * NV9097_SET_DEPTH_FUNC, NV9097_SET_Z_CLEAR_VALUE, NV9097_SET_INDEX_BUFFER_*,
+ * NV9097_SET_DEPTH_FUNC, NV9097_SET_Z_CLEAR_VALUE,
+ * NV9097_SET_STENCIL_CLEAR_VALUE, NV9097_SET_STENCIL_OP_FAIL to
+ * NV9097_SET_STENCIL_MASK, NV9097_SET_BACK_STENCIL_FUNC_REF to
+ * NV9097_SET_BACK_STENCIL_FUNC_MASK, NV9097_SET_TWO_SIDED_STENCIL_TEST,
+ * NV9097_SET_BACK_STENCIL_OP_FAIL to NV9097_SET_BACK_STENCIL_FUNC,
+ * NV9097_SET_INDEX_BUFFER_*,
  * NV9097_DRAW_INDEX_BUFFER, NV9097_SET_DA_PRIMITIVE_RESTART,
  * NV9097_OGL_SET_CULL_FACE, NV9097_SET_Z_COMPRESSION) and clc597.h
  * (NVC597_SET_INDEX_BUFFER_SIZE_A, NVC597_SET_ZT_SPARSE).
  */
 #define M_SET_INDEX_BUFFER_SIZE_A		0x0238U
 #define M_SET_Z_CLEAR_VALUE			0x0d90U
+#define M_SET_STENCIL_CLEAR_VALUE		0x0da0U
+#define M_SET_BACK_STENCIL_FUNC_REF		0x0f54U
 #define M_SET_ZT_A				0x0fe0U
 #define M_SET_ZT_SPARSE				0x1208U
 #define M_SET_ZT_SIZE_A				0x1228U
 #define M_SET_DEPTH_FUNC			0x130cU
+#define M_SET_STENCIL_OP_FAIL			0x1384U
+#define M_SET_STENCIL_FUNC_REF			0x1394U
+#define M_SET_TWO_SIDED_STENCIL_TEST		0x1594U
+#define M_SET_BACK_STENCIL_OP_FAIL		0x1598U
 #define M_SET_DA_PRIMITIVE_RESTART		0x1644U
 #define M_SET_ZT_LAYER				0x179cU
 #define M_SET_INDEX_BUFFER_A			0x17c8U
@@ -151,20 +163,27 @@
 #define V_INVALIDATE_CONSTANTS			(1U << 12)
 
 /*
- * The depth target's format and its blocks (one GOB each way), the array
- * size taken from the third dimension, the depth functions (the OGL values
- * in the order of VkCompareOp), the faces culled, the front faces, the
- * index sizes and a clear of depth only.
+ * The depth target's formats (ZF32 for D32_SFLOAT, S8Z24 for
+ * D24_UNORM_S8_UINT: the depth in the low 24 bits, the stencil in the
+ * high 8) and its blocks (one GOB each way), the array size taken from
+ * the third dimension, the depth and stencil functions (the OGL values in
+ * the order of VkCompareOp), the stencil operations (the D3D values, one
+ * more than VkStencilOp), the faces culled, the front faces, the index
+ * sizes and clears of depth only and of stencil only.
  *
  * Values referenced: Mesa 25.0.7
  * src/nouveau/headers/nvidia/classes/cl9097.h (NV9097_SET_ZT_FORMAT_V_ZF32,
- * NV9097_SET_ZT_BLOCK_SIZE, NV9097_SET_ZT_SIZE_C_CONTROL,
- * NV9097_SET_DEPTH_FUNC_V_OGL_*, NV9097_OGL_SET_CULL_FACE_V_*,
+ * NV9097_SET_ZT_FORMAT_V_S8Z24, NV9097_SET_ZT_BLOCK_SIZE,
+ * NV9097_SET_ZT_SIZE_C_CONTROL, NV9097_SET_DEPTH_FUNC_V_OGL_*,
+ * NV9097_SET_STENCIL_OP_FAIL_V_D3D_*, NV9097_OGL_SET_CULL_FACE_V_*,
  * NV9097_OGL_SET_FRONT_FACE_V_*, NV9097_SET_INDEX_BUFFER_E_INDEX_SIZE_*,
- * NV9097_CLEAR_SURFACE_Z_ENABLE) and src/nouveau/vulkan/nvk_cmd_draw.c
- * (vk_to_nv9097_front_face: Vulkan's counterclockwise is the class's).
+ * NV9097_CLEAR_SURFACE_Z_ENABLE, NV9097_CLEAR_SURFACE_STENCIL_ENABLE),
+ * Mesa 26.2.6 src/nouveau/nil/nil_formats.csv (Z24_UNORM_S8_UINT as S8Z24)
+ * and src/nouveau/vulkan/nvk_cmd_draw.c (vk_to_nv9097_front_face: Vulkan's
+ * counterclockwise is the class's; vk_to_nv9097_stencil_op).
  */
 #define V_ZT_FORMAT_ZF32			0x0aU
+#define V_ZT_FORMAT_S8Z24			0x16U
 #define V_ZT_BLOCK_ONE_GOB			0U
 #define V_ZT_SIZE_ARRAY				0U
 #define V_DEPTH_FUNC_NEVER			0x200U
@@ -175,6 +194,7 @@
 #define V_INDEX_SIZE_TWO_BYTES			1U
 #define V_INDEX_SIZE_FOUR_BYTES			2U
 #define V_CLEAR_Z				1U
+#define V_CLEAR_STENCIL				2U
 #define V_GROUP_VALID				1U
 #define V_GROUP_SLOT_SHIFT			4U
 
@@ -330,6 +350,8 @@
 static size_t exec_method(uint8_t *push, size_t at, uint32_t method, uint32_t count);
 static size_t exec_set(uint8_t *push, size_t at, uint32_t method, uint32_t value);
 static uint32_t exec_blend_op(uint32_t op);
+static uint32_t exec_stencil_op(uint32_t op);
+static uint32_t exec_compare_op(uint32_t op);
 static uint32_t exec_blend_factor(uint32_t factor);
 static uint32_t exec_attribute_widths(uint32_t format);
 static uint32_t exec_address_mode(uint32_t mode);
@@ -439,16 +461,16 @@ nvrtx_exec_target(
 	}
 
 	/*
-	 * The depth target when there is one: its address, ZF32 in blocks of
-	 * one GOB, one layer the array's pitch, its width the row's pixels (the
-	 * depth hardware has no tile width), its height, uncompressed and not
-	 * sparse.  One sample a pixel.
+	 * The depth target when there is one: its address, ZF32 (S8Z24 with a
+	 * stencil) in blocks of one GOB, one layer the array's pitch, its width
+	 * the row's pixels (the depth hardware has no tile width), its height,
+	 * uncompressed and not sparse.  One sample a pixel.
 	 */
 	if (target->depth_address != 0U) {
 		at = exec_method(push, at, M_SET_ZT_A, 5U);
 		nvrtx_put32(push, at, (uint32_t)(target->depth_address >> 32));
 		nvrtx_put32(push, at + 4U, (uint32_t)(target->depth_address & 0xffffffffU));
-		nvrtx_put32(push, at + 8U, V_ZT_FORMAT_ZF32);
+		nvrtx_put32(push, at + 8U, target->depth_stencil != 0U ? V_ZT_FORMAT_S8Z24 : V_ZT_FORMAT_ZF32);
 		nvrtx_put32(push, at + 12U, V_ZT_BLOCK_ONE_GOB);
 		nvrtx_put32(push, at + 16U, (uint32_t)(((uint64_t)target->depth_pitch * target->depth_height) >> 2));
 		at += 20U;
@@ -899,7 +921,9 @@ nvrtx_exec_raster(
 
 /*
  * Writes the depth test: on or off, the writes, and the function (a
- * VkCompareOp: the OGL values follow its order).
+ * VkCompareOp: the OGL values follow its order); then the stencil test:
+ * on or off, and when on both faces' operations, functions, masks and
+ * references, two-sided.
  *
  * Returns where the push buffer goes on.
  *
@@ -934,8 +958,68 @@ nvrtx_exec_depth(
 	if (depth->test != 0U)
 		at = exec_set(push, at, M_SET_DEPTH_FUNC, V_DEPTH_FUNC_NEVER + compare);
 
-	/* Succeeded: the depth test is set. */
+	/* The stencil test, off unless asked; when on, the front face's state, then the back face's. */
+	if (depth->stencil == 0U) {
+		at = exec_set(push, at, M_SET_STENCIL_TEST, V_FALSE);
+		return at;
+	}
+	at = exec_set(push, at, M_SET_STENCIL_TEST, V_TRUE);
+	at = exec_set(push, at, M_SET_TWO_SIDED_STENCIL_TEST, V_TRUE);
+
+	/* The front face: its operations and function, then its reference, compare mask and write mask. */
+	at = exec_method(push, at, M_SET_STENCIL_OP_FAIL, 4U);
+	nvrtx_put32(push, at, exec_stencil_op(depth->front.fail));
+	nvrtx_put32(push, at + 4U, exec_stencil_op(depth->front.depth_fail));
+	nvrtx_put32(push, at + 8U, exec_stencil_op(depth->front.pass));
+	nvrtx_put32(push, at + 12U, exec_compare_op(depth->front.compare));
+	at += 16U;
+	at = exec_method(push, at, M_SET_STENCIL_FUNC_REF, 3U);
+	nvrtx_put32(push, at, depth->front.reference & 0xffU);
+	nvrtx_put32(push, at + 4U, depth->front.compare_mask & 0xffU);
+	nvrtx_put32(push, at + 8U, depth->front.write_mask & 0xffU);
+	at += 12U;
+
+	/* The back face the same way (its reference, write mask and compare mask in that order). */
+	at = exec_method(push, at, M_SET_BACK_STENCIL_OP_FAIL, 4U);
+	nvrtx_put32(push, at, exec_stencil_op(depth->back.fail));
+	nvrtx_put32(push, at + 4U, exec_stencil_op(depth->back.depth_fail));
+	nvrtx_put32(push, at + 8U, exec_stencil_op(depth->back.pass));
+	nvrtx_put32(push, at + 12U, exec_compare_op(depth->back.compare));
+	at += 16U;
+	at = exec_method(push, at, M_SET_BACK_STENCIL_FUNC_REF, 3U);
+	nvrtx_put32(push, at, depth->back.reference & 0xffU);
+	nvrtx_put32(push, at + 4U, depth->back.write_mask & 0xffU);
+	nvrtx_put32(push, at + 8U, depth->back.compare_mask & 0xffU);
+	at += 12U;
+
+	/* Succeeded: the depth and stencil tests are set. */
 	return at;
+}
+
+/* The class's value of a VkStencilOp (D3D_KEEP for one out of range). */
+static uint32_t
+exec_stencil_op(
+	uint32_t op)
+{
+	/* KEEP to DECREMENT_AND_WRAP in order, one more than Vulkan's. */
+	if (op > VK_STENCIL_OP_DECREMENT_AND_WRAP)
+		op = VK_STENCIL_OP_KEEP;
+
+	/* Succeeded: the D3D value. */
+	return op + 1U;
+}
+
+/* The class's value of a VkCompareOp (ALWAYS for one out of range). */
+static uint32_t
+exec_compare_op(
+	uint32_t op)
+{
+	/* NEVER to ALWAYS in order. */
+	if (op > VK_COMPARE_OP_ALWAYS)
+		op = VK_COMPARE_OP_ALWAYS;
+
+	/* Succeeded: the OGL value. */
+	return V_DEPTH_FUNC_NEVER + op;
 }
 
 /*
@@ -1054,6 +1138,45 @@ nvrtx_exec_clear_depth(
 	at = exec_set(push, at, M_SET_RENDER_ENABLE_OVERRIDE, V_RENDER_USE_ENABLE);
 
 	/* Succeeded: the rectangle is cleared. */
+	return at;
+}
+
+/*
+ * Writes a clear of the depth target's stencil over a rectangle (the far
+ * edges excluded) to a value (its low 8 bits), whatever the render enable
+ * says.
+ *
+ * Returns where the push buffer goes on.
+ *
+ * Procedure referenced: Mesa 25.0.7 src/nouveau/vulkan/nvk_cmd_clear.c
+ * (nvk_CmdClearAttachments).
+ */
+size_t
+nvrtx_exec_clear_stencil(
+	uint8_t *push,
+	size_t at,
+	uint32_t stencil,
+	uint32_t x0,
+	uint32_t y0,
+	uint32_t x1,
+	uint32_t y1)
+{
+	/* Rendered always, by the clear rectangle. */
+	at = exec_set(push, at, M_SET_RENDER_ENABLE_OVERRIDE, V_RENDER_ALWAYS);
+	at = exec_set(push, at, M_SET_CLEAR_SURFACE_CONTROL, V_CLEAR_USE_RECT);
+
+	/* The value, the rectangle, then the clear of the stencil only. */
+	at = exec_set(push, at, M_SET_STENCIL_CLEAR_VALUE, stencil & 0xffU);
+	at = exec_method(push, at, M_SET_CLEAR_RECT_HORIZONTAL, 2U);
+	nvrtx_put32(push, at, (x0 & 0xffffU) | ((x1 & 0xffffU) << 16));
+	nvrtx_put32(push, at + 4U, (y0 & 0xffffU) | ((y1 & 0xffffU) << 16));
+	at += 8U;
+	at = exec_set(push, at, M_CLEAR_SURFACE, V_CLEAR_STENCIL);
+
+	/* Back to the render enable. */
+	at = exec_set(push, at, M_SET_RENDER_ENABLE_OVERRIDE, V_RENDER_USE_ENABLE);
+
+	/* Succeeded: the rectangle's stencil is cleared. */
 	return at;
 }
 

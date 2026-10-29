@@ -69,6 +69,7 @@ static int pipeline_decode_vertex_input(struct nvrtx_vk_session *session, struct
 static void pipeline_decode_viewport(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct nvrtx_vk_pipeline *pipeline);
 static void pipeline_decode_blend(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct nvrtx_vk_pipeline *pipeline);
 static void pipeline_decode_dynamic(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct nvrtx_vk_pipeline *pipeline);
+static void pipeline_stencil_face(const VkStencilOpState *state, struct nvrtx_exec_stencil_face *face);
 static int pipeline_compile(struct nvrtx_vk_session *session, struct nvrtx_vk_pipeline *pipeline, struct pipeline_build *build);
 static int pipeline_compile_stage(const struct nvrtx_vk_shader *module, enum drv_gpu_shader_stage stage, uint32_t shader_model, struct nvrtx_sm75_binary **binary);
 static int pipeline_program(struct nvrtx_vk_program *program, const struct nvrtx_sm75_binary *binary, uint8_t *cpu, uint64_t va);
@@ -337,7 +338,7 @@ pipeline_decode(
 			refused = ENOTSUP;
 	}
 
-	/* The depth test (no stencil test, no depth bounds). */
+	/* The depth test and the stencil test of both faces (no depth bounds). */
 	present = drv_i915_wire_read_u64(reader);
 	if (present != 0U) {
 		kern_memset(&depth, 0, sizeof(depth));
@@ -349,7 +350,12 @@ pipeline_decode(
 		if (depth.depthWriteEnable != VK_FALSE)
 			pipeline->depth_write = 1U;
 		pipeline->depth_compare = depth.depthCompareOp;
-		if ((depth.stencilTestEnable != VK_FALSE || depth.depthBoundsTestEnable != VK_FALSE) && refused == 0)
+		pipeline->stencil_test = 0U;
+		if (depth.stencilTestEnable != VK_FALSE)
+			pipeline->stencil_test = 1U;
+		pipeline_stencil_face(&depth.front, &pipeline->stencil_front);
+		pipeline_stencil_face(&depth.back, &pipeline->stencil_back);
+		if (depth.depthBoundsTestEnable != VK_FALSE && refused == 0)
 			refused = ENOTSUP;
 	}
 
@@ -586,6 +592,24 @@ pipeline_decode_blend(
 	pipeline->blend_dst_alpha = attachment->dstAlphaBlendFactor;
 	pipeline->blend_alpha_op = attachment->alphaBlendOp;
 	pipeline->write_mask = attachment->colorWriteMask & 0xfU;
+}
+
+/* Keeps a face's stencil test: its operations, function, masks and reference (the masks and reference 8 bits). */
+static void
+pipeline_stencil_face(
+	const VkStencilOpState *state,
+	struct nvrtx_exec_stencil_face *face)
+{
+	/* The operations and the function, as Vulkan numbers them. */
+	face->fail = state->failOp;
+	face->pass = state->passOp;
+	face->depth_fail = state->depthFailOp;
+	face->compare = state->compareOp;
+
+	/* The masks and the reference, of the 8-bit stencil. */
+	face->compare_mask = state->compareMask & 0xffU;
+	face->write_mask = state->writeMask & 0xffU;
+	face->reference = state->reference & 0xffU;
 }
 
 /* Decodes the dynamic state: whether the viewport and the scissor come from the command buffer. */

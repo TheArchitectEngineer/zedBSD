@@ -161,6 +161,18 @@ nvrtx_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t bytes)
 	detached_backing = backing;
 }
 
+int
+nvrtx_vk_memory_kind(void *owner, void *backing, uint64_t offset, uint64_t va, uint64_t bytes, uint32_t kind)
+{
+	(void)owner;
+	(void)backing;
+	(void)offset;
+	(void)va;
+	(void)bytes;
+	(void)kind;
+	return 0;
+}
+
 /* Resource 7 is a blob of 0x10000 bytes the session can import. */
 int
 nvrtx_vk_memory_import(void *owner, uint32_t resource_id, uint64_t bytes, uint8_t **cpu, uint64_t *va, void **backing)
@@ -822,6 +834,69 @@ test_views(void)
 	check(view != NULL && view->swizzle[0] == VK_COMPONENT_SWIZZLE_B && view->swizzle[1] == VK_COMPONENT_SWIZZLE_G &&
 	    view->swizzle[2] == VK_COMPONENT_SWIZZLE_R && view->swizzle[3] == VK_COMPONENT_SWIZZLE_A, "views: the swizzle, identity resolved");
 
+	/* A depth image with a stencil (D24_UNORM_S8_UINT, a depth attachment only), a view of it, and a D32 view of it refused. */
+	{
+		struct vulkan_object stencil_image;
+		VkImageCreateInfo depth_info;
+		struct nvrtx_vk_image *depth_image;
+
+		memset(&stencil_image, 0, sizeof(stencil_image));
+		stencil_image.wire_id = 0x311;
+		memset(&depth_info, 0, sizeof(depth_info));
+		depth_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+		depth_info.imageType = VK_IMAGE_TYPE_2D;
+		depth_info.format = VK_FORMAT_D24_UNORM_S8_UINT;
+		depth_info.extent.width = 100;
+		depth_info.extent.height = 10;
+		depth_info.extent.depth = 1;
+		depth_info.mipLevels = 1;
+		depth_info.arrayLayers = 1;
+		depth_info.samples = VK_SAMPLE_COUNT_1_BIT;
+		depth_info.tiling = VK_IMAGE_TILING_OPTIMAL;
+		depth_info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		frame_begin(&client);
+		command_begin(&client, GPU_OP_CREATE_IMAGE);
+		vulkan_write_u64(&client, TEST_DEVICE);
+		vulkan_write_u64(&client, 1);
+		vulkan_encode_VkImageCreateInfo(&client, &depth_info);
+		write_tail(&client, 0x311);
+		memset(&info, 0, sizeof(info));
+		info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+		info.image = (VkImage)(uintptr_t)&stencil_image;
+		info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+		info.format = VK_FORMAT_D24_UNORM_S8_UINT;
+		info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+		info.subresourceRange.levelCount = 1;
+		info.subresourceRange.layerCount = 1;
+		command_begin(&client, GPU_OP_CREATE_IMAGE_VIEW);
+		vulkan_write_u64(&client, TEST_DEVICE);
+		vulkan_write_u64(&client, 1);
+		vulkan_encode_VkImageViewCreateInfo(&client, &info);
+		write_tail(&client, 0x312);
+		info.format = VK_FORMAT_D32_SFLOAT;
+		command_begin(&client, GPU_OP_CREATE_IMAGE_VIEW);
+		vulkan_write_u64(&client, TEST_DEVICE);
+		vulkan_write_u64(&client, 1);
+		vulkan_encode_VkImageViewCreateInfo(&client, &info);
+		write_tail(&client, 0x313);
+		error = frame_run(session, &client);
+		check(error == 0, "views: the stencil creates ran");
+		at = TEST_REPLY_AT / 4U;
+		check(reply_u32(&at) == GPU_OP_CREATE_IMAGE && reply_u32(&at) == VK_SUCCESS && reply_u64(&at) == 1 && reply_u64(&at) == 0x311,
+		    "views: a D24_UNORM_S8_UINT image");
+		check(reply_u32(&at) == GPU_OP_CREATE_IMAGE_VIEW && reply_u32(&at) == VK_SUCCESS && reply_u64(&at) == 1 && reply_u64(&at) == 0x312,
+		    "views: its depth and stencil view");
+		check(reply_u32(&at) == GPU_OP_CREATE_IMAGE_VIEW && reply_u32(&at) != VK_SUCCESS, "views: a view in another depth format refused");
+		depth_image = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, 0x311);
+		check(depth_image != NULL && depth_image->depth && depth_image->stencil && depth_image->pitch == 448 && depth_image->bytes == 8192U,
+		    "views: the stencil image's layout (four bytes a pixel in whole GOBs, whole pages)");
+		frame_begin(&client);
+		write_pair(&client, GPU_OP_DESTROY_IMAGE_VIEW, 0x312, 0);
+		write_pair(&client, GPU_OP_DESTROY_IMAGE, 0x311, 0);
+		error = frame_run(session, &client);
+		check(error == 0, "views: the stencil image and view destroyed");
+	}
+
 	/* The image destroyed first lives on in its view. */
 	frame_begin(&client);
 	write_pair(&client, GPU_OP_DESTROY_IMAGE, 0x301, 0);
@@ -913,6 +988,7 @@ test_pipeline(const char *directory)
 	VkPipelineViewportStateCreateInfo viewport;
 	VkPipelineRasterizationStateCreateInfo raster;
 	VkPipelineMultisampleStateCreateInfo multisample;
+	VkPipelineDepthStencilStateCreateInfo depth_stencil;
 	VkPipelineColorBlendAttachmentState blend_attachment;
 	VkPipelineColorBlendStateCreateInfo blend;
 	VkDynamicState dynamic_states[2];
@@ -1198,6 +1274,71 @@ test_pipeline(const char *directory)
 	    pipeline->attributes[0].format == VK_FORMAT_R32G32_SFLOAT && pipeline->blend_enable == 1 &&
 	    pipeline->blend_dst_colour == VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA && pipeline->dynamic_viewport == 1 && pipeline->dynamic_scissor == 1 &&
 	    pipeline->write_mask == 0xf, "pipeline: the vertex input, blend and dynamic state");
+
+	/* The same pipeline with a two-sided stencil test (a fill's winding count: the front faces add, the back ones take away). */
+	memset(&depth_stencil, 0, sizeof(depth_stencil));
+	depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+	depth_stencil.stencilTestEnable = VK_TRUE;
+	depth_stencil.front.failOp = VK_STENCIL_OP_KEEP;
+	depth_stencil.front.passOp = VK_STENCIL_OP_INCREMENT_AND_WRAP;
+	depth_stencil.front.depthFailOp = VK_STENCIL_OP_KEEP;
+	depth_stencil.front.compareOp = VK_COMPARE_OP_ALWAYS;
+	depth_stencil.front.compareMask = 0x1ff;
+	depth_stencil.front.writeMask = 0xff;
+	depth_stencil.front.reference = 3;
+	depth_stencil.back = depth_stencil.front;
+	depth_stencil.back.passOp = VK_STENCIL_OP_DECREMENT_AND_WRAP;
+	depth_stencil.back.compareOp = VK_COMPARE_OP_NOT_EQUAL;
+	frame_begin(&client);
+	command_begin(&client, GPU_OP_CREATE_GRAPHICS_PIPELINES);
+	vulkan_write_u64(&client, TEST_DEVICE);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u32(&client, 1);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u32(&client, VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u32(&client, 2);
+	vulkan_write_u64(&client, 2);
+	vulkan_encode_VkPipelineShaderStageCreateInfo(&client, &stages[0]);
+	vulkan_encode_VkPipelineShaderStageCreateInfo(&client, &stages[1]);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineVertexInputStateCreateInfo(&client, &vertex_input);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineInputAssemblyStateCreateInfo(&client, &assembly);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineViewportStateCreateInfo(&client, &viewport);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineRasterizationStateCreateInfo(&client, &raster);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineMultisampleStateCreateInfo(&client, &multisample);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineDepthStencilStateCreateInfo(&client, &depth_stencil);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineColorBlendStateCreateInfo(&client, &blend);
+	vulkan_write_u64(&client, 1);
+	vulkan_encode_VkPipelineDynamicStateCreateInfo(&client, &dynamic);
+	vulkan_write_u64(&client, 0x404);
+	vulkan_write_u64(&client, 0x40a);
+	vulkan_write_u32(&client, 0);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u32(&client, (uint32_t)-1);
+	vulkan_write_u64(&client, 0);
+	vulkan_write_u64(&client, 1);
+	vulkan_write_u64(&client, 0x40d);
+	error = frame_run(session, &client);
+	at = TEST_REPLY_AT / 4U;
+	check(error == 0 && reply_u32(&at) == GPU_OP_CREATE_GRAPHICS_PIPELINES && reply_u32(&at) == VK_SUCCESS,
+	    "pipeline: a stencil test is taken");
+	pipeline = nvrtx_vk_payload(session, I915_VK_OBJ_PIPELINE, 0x40d);
+	check(pipeline != NULL && pipeline->stencil_test == 1 && pipeline->depth_test == 0 &&
+	    pipeline->stencil_front.pass == VK_STENCIL_OP_INCREMENT_AND_WRAP && pipeline->stencil_front.compare == VK_COMPARE_OP_ALWAYS &&
+	    pipeline->stencil_back.pass == VK_STENCIL_OP_DECREMENT_AND_WRAP && pipeline->stencil_back.compare == VK_COMPARE_OP_NOT_EQUAL,
+	    "pipeline: both faces' operations and functions");
+	check(pipeline != NULL && pipeline->stencil_front.compare_mask == 0xff && pipeline->stencil_front.write_mask == 0xff &&
+	    pipeline->stencil_front.reference == 3 && pipeline->stencil_back.fail == VK_STENCIL_OP_KEEP,
+	    "pipeline: the masks and reference, of 8 bits");
 
 	/* The pool's destruction takes its set; closing frees everything. */
 	frame_begin(&client);

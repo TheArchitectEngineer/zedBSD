@@ -712,6 +712,19 @@ struct nvrtx_fwsec {
 #define NVRTX_PUSH_COPY_CLEAR_BYTES	52U
 
 /*
+ * The memory kinds of a page entry: pitch (every run's), and S8Z24, which
+ * the 3D engine's depth target in S8Z24 needs its pages to be (else a Z
+ * kind violation).
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/nouveau/headers/nvidia/hwref/turing/tu102/dev_mmu.h
+ * (NV_MMU_PTE_KIND_PITCH, NV_MMU_PTE_KIND_S8Z24) and src/nouveau/nil/image.rs
+ * (tu102_choose_pte_kind: Z24_UNORM_S8_UINT uncompressed is S8Z24).
+ */
+#define NVRTX_MMU_KIND_PITCH		0x00U
+#define NVRTX_MMU_KIND_S8Z24		0x03U
+
+/*
  * The control commands of address-space to channel-stop.
  *
  * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
@@ -972,6 +985,7 @@ int nvrtx_mmu_gr_map_system(uint8_t *image, uint64_t va_base, uint64_t va_bytes,
 int nvrtx_mmu_gr_map_vram(uint8_t *image, uint64_t va_base, uint64_t va_bytes, uint64_t va, uint64_t physical, uint64_t size);
 size_t nvrtx_mmu_gr_pte_offset(uint64_t va_base, uint64_t va_bytes, uint64_t va);
 void nvrtx_mmu_gr_entries_vram(uint8_t *entries, uint64_t physical, uint64_t pages);
+void nvrtx_mmu_gr_entries_vram_kind(uint8_t *entries, uint64_t physical, uint64_t pages, uint32_t kind);
 void nvrtx_mmu_gr_entries_privileged(uint8_t *entries, uint64_t physical, uint64_t pages, int read_only);
 void nvrtx_mmu_gr_entries_system(uint8_t *entries, const uint64_t *pages, size_t count);
 

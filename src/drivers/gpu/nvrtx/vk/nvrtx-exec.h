@@ -38,9 +38,10 @@
 /*
  * A colour target: its GPU address, size, pitch (bytes between rows),
  * VkFormat and whether it is block linear in one-GOB blocks (else pitch
- * linear); and the depth target beside it (D32_SFLOAT, block linear of
- * one-GOB blocks): its GPU address (0 for none), its row pitch in bytes
- * and its height.
+ * linear); and the depth target beside it (D32_SFLOAT or
+ * D24_UNORM_S8_UINT, four bytes a pixel, block linear of one-GOB blocks):
+ * its GPU address (0 for none), its row pitch in bytes, its height and
+ * whether it has a stencil.
  */
 struct nvrtx_exec_target {
 	uint64_t address;
@@ -52,13 +53,36 @@ struct nvrtx_exec_target {
 	uint64_t depth_address;
 	uint32_t depth_pitch;
 	uint32_t depth_height;
+	uint32_t depth_stencil;
 };
 
-/* The depth test of a draw: whether it tests and writes, and its VkCompareOp. */
+/*
+ * The stencil test of one face: its VkStencilOp for a failed stencil test,
+ * a passed one and a failed depth test, its VkCompareOp, and its compare
+ * mask, write mask and reference.
+ */
+struct nvrtx_exec_stencil_face {
+	uint32_t fail;
+	uint32_t pass;
+	uint32_t depth_fail;
+	uint32_t compare;
+	uint32_t compare_mask;
+	uint32_t write_mask;
+	uint32_t reference;
+};
+
+/*
+ * The depth and stencil tests of a draw: whether the depth test tests and
+ * writes, and its VkCompareOp; whether the stencil test runs (only with a
+ * target that has a stencil), and its front and back faces.
+ */
 struct nvrtx_exec_depth {
 	uint32_t test;
 	uint32_t write;
 	uint32_t compare;
+	uint32_t stencil;
+	struct nvrtx_exec_stencil_face front;
+	struct nvrtx_exec_stencil_face back;
 };
 
 /*
@@ -135,6 +159,7 @@ size_t nvrtx_exec_depth(uint8_t *push, size_t at, const struct nvrtx_exec_depth 
 size_t nvrtx_exec_uniform(uint8_t *push, size_t at, uint32_t group, uint32_t slot, uint64_t address, uint32_t size);
 size_t nvrtx_exec_clear(uint8_t *push, size_t at, const uint32_t *colour, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 size_t nvrtx_exec_clear_depth(uint8_t *push, size_t at, uint32_t depth, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
+size_t nvrtx_exec_clear_stencil(uint8_t *push, size_t at, uint32_t stencil, uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 size_t nvrtx_exec_barrier(uint8_t *push, size_t at);
 
 /*
