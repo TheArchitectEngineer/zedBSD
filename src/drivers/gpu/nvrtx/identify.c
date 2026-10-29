@@ -71,9 +71,8 @@ struct identify_entry {
  * family the driver was brought up and seen working on (RTX 2070).
  *
  * Values referenced: Linux v6.19
- * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c, tu116.c, ga102.c and
- * ad102.c (the families' firmware and boot paths), and NVIDIA open-gpu-doc
- * (the class numbers).
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c (the family's firmware
+ * and boot path), and NVIDIA open-gpu-doc (the class numbers).
  */
 static const struct nvrtx_profile identify_tu10x = {
 	"TU10x",
@@ -113,6 +112,10 @@ static const struct nvrtx_profile identify_tu10x = {
  * TU116 and TU117 (GeForce GTX 16): Turing as TU10x, with booters of their
  * own below tu116 and their own signature in the same GSP image, and no
  * scrubber channel.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu116.c (the family's firmware
+ * and boot path), and NVIDIA open-gpu-doc (the class numbers).
  */
 static const struct nvrtx_profile identify_tu11x = {
 	"TU11x",
@@ -153,6 +156,11 @@ static const struct nvrtx_profile identify_tu11x = {
  * load by DMA and check signatures in their boot ROM, the VRAM size in
  * MiB, the larger heap of the third operating-system version, Ampere's
  * classes and QMD 3.0.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ga102.c (the family's firmware
+ * and boot path), and NVIDIA open-gpu-doc (the class numbers and the QMD
+ * version).
  */
 static const struct nvrtx_profile identify_ga10x = {
 	"GA10x",
@@ -192,6 +200,11 @@ static const struct nvrtx_profile identify_ga10x = {
  * AD102 to AD107 (GeForce RTX 40): Ampere's boot path with the bootloader
  * and booters below ad102 and the GSP image shared with GA10x (its Ada
  * signature), Ada's 3D, compute and display-core classes.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/ad102.c (the family's firmware
+ * and boot path), and NVIDIA open-gpu-doc (the class numbers and the QMD
+ * version).
  */
 static const struct nvrtx_profile identify_ad10x = {
 	"AD10x",
