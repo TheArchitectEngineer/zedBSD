@@ -3,7 +3,7 @@
 # ws307-p013 文書: installer の how-to と reference
 
 - 親: [WS307](../ws.md)。Queue: q1665 / q1665-i09（担当 P4、2026-10-29、worktree p4-ws307m、基点 main 3f2370248）。
-- Status: in-progress（文書を書いて links.py と anchor の確かめまで。Q1 の判定待ち）
+- Status: cleared（2026-10-29 Q1 の判定: links 0 broken・anchor 0 error。docs/ は目標の設計なので efiboot を書いた判断も可）
 - 範囲（Q1）: `docs/howto/boot-and-storage.md` の古い zedinst の節を新しい installer に置き換え、「installer の image を運用に使ってはいけない」規則と root 起動相当の扱い（J5）、`docs/reference` の installer・install-admin の頁。ws.md の行の install-admin・efiboot・mkswap・diskpart・mkfs・loader の UFS も含める。docs/ は目標の設計を書き、plan/ を参照しない。
 - 依存の p012（実機）は未着手だが、文書は目標の設計を書く物なので Q1 の割り当てで先に行った。
 
