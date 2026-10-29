@@ -10,7 +10,8 @@ Venus GPU, a USB tablet and seven disks, and walks the installer as a person wou
   failure   the 4096-byte NVMe disk whole with a unit damaged (a byte appended): the helper refuses its SHA-256, S10
   whole     the NVMe disk whole, the user's automatic login off; the 4096-byte disk whole (the unit put back)
   chosen    the SATA disk of another system (an ESP with \\EFI\\BOOT\\BOOTX64.EFI and a file, two basic data
-            partitions): a 1 GiB partition made on S4 for swap, the second basic data partition chosen as the root
+            partitions): a size that cannot be read refused on S4 (its error shown, nothing written), a 1 GiB
+            partition made on S4 for swap, the second basic data partition chosen as the root
             (its erasure confirmed); the first is never touched, and the loader goes to \\EFI\\ZEDBSD
   swap file the USB disk with an empty GPT: S4 makes the ESP and a partition, no swap partition, a swap file
 
@@ -285,6 +286,19 @@ class Walk:
 		run.wait_screen("s4-edit")
 		run.key("ret")
 		time.sleep(0.8)
+		# A size that cannot be read: the error on the screen and in the log, and nothing written.
+		parts = [n for n in run.controls()[1] if n.startswith("part-")]
+		run.set_field("size", "abc")
+		mark = len(run.read_log())
+		run.click("create")
+		_index, line = run.wait_line(r"INSTALLER EDIT ", 60, mark)
+		time.sleep(1.5)
+		run.shot("other-s4-size-refused")
+		later = run.read_log()[mark:]
+		wrote = [l for l in later if "INSTALLER EDIT request" in l or "INSTALLER HELPER session" in l]
+		after = [n for n in run.controls()[1] if n.startswith("part-")]
+		self.step("size-refused", "EDIT refused reason=size" in line and not wrote and after == parts,
+			  f"{line.strip()} parts={len(parts)}->{len(after)}")
 		run.set_field("size", "1 GiB")
 		run.shot("other-s4-size")
 		mark = len(run.read_log())

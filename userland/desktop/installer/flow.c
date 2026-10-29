@@ -607,6 +607,9 @@ inst_edit_create(
 		(void)snprintf(app->edit_message, sizeof(app->edit_message), "%s", kl_tr("Type a size such as 20 GiB or 512 MiB."));
 		app->edit_failed = 1;
 		app->dirty = 1;
+
+		/* Says in the log why nothing was made. */
+		inst_log("EDIT refused reason=size");
 		return;
 	}
 
@@ -624,6 +627,9 @@ inst_edit_create(
 		(void)snprintf(app->edit_message, sizeof(app->edit_message), "%s", kl_tr("There is no room for a partition of that size."));
 		app->edit_failed = 1;
 		app->dirty = 1;
+
+		/* Says in the log why nothing was made. */
+		inst_log("EDIT refused reason=room");
 		return;
 	}
 
