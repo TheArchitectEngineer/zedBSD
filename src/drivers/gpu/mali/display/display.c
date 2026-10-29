@@ -17,13 +17,21 @@
  * mode, its clocks or the plane's window and format; the only register
  * it writes is the plane's buffer address.
  *
+ * A resource is a run of this node's own memory, or an image the render
+ * node exported and the session imported for shared frames: a linear
+ * image of a packed four-byte format in one contiguous run of RAM, which
+ * the resource holds through the render node until it is freed.  An
+ * image of another shape is not imported, and the swapchain copies its
+ * frames into a run of this node instead.
+ *
  * A presentation is shown one of two ways.  When the plane reads a
  * linear buffer and shows exactly the boot framebuffer, a frame of the
  * screen's extent, row pitch and byte order, at a 16-byte aligned place
- * of a resource of this node (contiguous, below 4 GiB), is shown by
- * pointing the plane at the resource itself: the frame's bytes are
- * cleaned out of the processor's caches, the address is written, and
- * the presentation returns one frame later, when the plane reads the
+ * of a resource (contiguous, below 4 GiB), is shown by pointing the
+ * plane at the resource itself: a run's frame is first cleaned out of
+ * the processor's caches (an import is written by the GPU and read by
+ * the processor only through an uncached view), the address is written,
+ * and the presentation returns one frame later, when the plane reads the
  * new buffer and the previous one is free again.  Any other frame is
  * copied by the processor onto the framebuffer, row by row, clipped to
  * the screen, with red and blue swapped when the orders differ and the
@@ -66,7 +74,9 @@
 #include <uapi/gpu-scanout.h>
 
 #include "drivers/gpu/mali/display/osd.h"
+#include "drivers/gpu/mali/display/scanout.h"
 #include "drivers/gpu/mali/mali-private.h"
+#include "drivers/gpu/mali/render.h"
 
 /* The one output's identifier and generation; the screen never changes. */
 #define DISPLAY_ID			1U
@@ -112,16 +122,24 @@ struct display_session {
 
 /*
  * One resource of a session: a contiguous run of ordinary cacheable RAM
- * below 4 GiB.
+ * below 4 GiB, or an imported image of the render node.
  *
- * Made by resource_create and freed by resource_destroy, or, when the
- * plane shows it at that time, by whatever moves the plane off it
+ * Made by resource_create (a run) or import_image (an import, whose
+ * render node object bo is held) and freed by resource_destroy, or, when
+ * the plane shows it at that time, by whatever moves the plane off it
  * (destroyed is then set, under the node's mutex, and the owner is never
- * looked at again).
+ * looked at again).  physical and address are the first byte of the
+ * memory (the run, or the exported object) as the plane and the
+ * processor see it; an import's address is the render node's uncached
+ * view, and image is the layout it was exported with.  None of them
+ * change in between.
  */
 struct display_resource {
 	struct display_session *owner;
 	struct kern_pmem run;
+	struct mali_bo *bo;
+	struct gpu_image_descriptor image;
+	uint64_t physical;
 	uint8_t *address;
 	uint64_t bytes;
 	int destroyed;
@@ -171,6 +189,9 @@ struct display {
 	/* The route the log last named under this lease (-1 before the first frame). */
 	int logged_route;
 
+	/* Nonzero once a refused import was said; later ones are not. */
+	int import_logged;
+
 	/* The core's handle of the registered node. */
 	struct drv_gpu_device *gpu;
 };
@@ -204,7 +225,7 @@ static const struct drv_gpu_display_ops display_operations = {
 	.wait = output_wait,
 };
 
-/* The scanout operations: the node's role and constraints; it imports nothing. */
+/* The scanout operations: the node's role and constraints, and the import of the render node's images. */
 static const struct drv_gpu_scanout_ops scanout_operations = {
 	.query_device = output_device,
 	.constraints = output_constraints,
@@ -243,6 +264,7 @@ static int can_flip(const struct display *display, const struct display_resource
 static void point_plane(struct display *display, uint64_t address, struct display_resource *front, struct display_resource **freed);
 static void end_lease(struct display *display, struct display_resource **freed);
 static void free_resource(struct display_resource *resource);
+static int shared_frame_valid(const struct display_resource *resource, const struct gpu_display_present *request);
 
 /*
  * Registers the display node on the bootloader's screen, and finds out
@@ -446,6 +468,7 @@ resource_create(
 	/* New storage holds zeroes, not an earlier owner's bytes. */
 	kern_memset(resource->address, 0, (size_t)bytes);
 	resource->owner = session;
+	resource->physical = resource->run.paddr;
 	resource->bytes = request->bytes;
 
 	/* Counts the resource against the session's limit. */
@@ -517,9 +540,11 @@ resource_read(
 	(void)device;
 	resource = private_resource;
 
-	/* Only the owner's run, and only inside it. */
+	/* Only the owner's run, and only inside it; an import is the render node's to read. */
 	if (resource->owner != session)
 		return EINVAL;
+	if (resource->bo != NULL)
+		return ENOTSUP;
 	if (offset > resource->bytes || bytes > resource->bytes - offset)
 		return EINVAL;
 
@@ -545,9 +570,11 @@ resource_write(
 	(void)device;
 	resource = private_resource;
 
-	/* Only the owner's run, and only inside it. */
+	/* Only the owner's run, and only inside it; an import is the render node's to write. */
 	if (resource->owner != session)
 		return EINVAL;
+	if (resource->bo != NULL)
+		return ENOTSUP;
 	if (offset > resource->bytes || bytes > resource->bytes - offset)
 		return EINVAL;
 
@@ -571,9 +598,11 @@ resource_map(
 	(void)device;
 	resource = private_resource;
 
-	/* Only the owner maps its run. */
+	/* Only the owner maps its run; an import is mapped through the render node. */
 	if (resource->owner != session)
 		return EINVAL;
+	if (resource->bo != NULL)
+		return ENOTSUP;
 
 	/* Ordinary cacheable RAM; a flip cleans the frame out of the caches before the plane reads it. */
 	mapping->physical = resource->run.paddr;
@@ -787,16 +816,29 @@ output_present(
 	struct display_resource *freed;
 	uint64_t frame_bytes;
 	int direct;
+	int shared;
+	int route;
+	int error;
 
 	display = device;
 	resource = private_resource;
 	freed = NULL;
 
-	/* Only the session's own run; the core checked the frame lies inside it, and nothing is shared. */
+	/*
+	 * Only the session's own resource; the core checked the frame lies
+	 * inside it.  A shared frame is an import in its exported layout, an
+	 * ordinary one a frame of a run.
+	 */
 	if (resource->owner != session)
 		return EINVAL;
-	if ((request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U)
+	shared = (request->flags & GPU_DISPLAY_PRESENT_BLOB) != 0U;
+	if (shared) {
+		error = shared_frame_valid(resource, request);
+		if (error != 0)
+			return error;
+	} else if (resource->bo != NULL) {
 		return EINVAL;
+	}
 
 	/* Shows the frame under the mutex, for the holder of this lease and generation only. */
 	mutex_lock(&display->mutex);
@@ -814,20 +856,27 @@ output_present(
 	/* The plane reads the resource itself when it can; else the frame is copied and the plane goes back. */
 	direct = can_flip(display, resource, request);
 	if (direct) {
-		frame_bytes = (uint64_t)request->stride * request->height;
-		kern_dcache_clean_range(resource->address + request->offset, (size_t)frame_bytes);
-		point_plane(display, resource->run.paddr + request->offset, resource, &freed);
+		if (resource->bo == NULL) {
+			frame_bytes = (uint64_t)request->stride * request->height;
+			kern_dcache_clean_range(resource->address + request->offset, (size_t)frame_bytes);
+		}
+
+		point_plane(display, resource->physical + request->offset, resource, &freed);
 	} else {
 		copy_frame(display, resource, request);
 		if (display->front != NULL)
 			point_plane(display, display->screen.physical_base, NULL, &freed);
 	}
 
-	/* Says the route when it changes. */
-	if (direct != display->logged_route) {
-		display->logged_route = direct;
-		kern_logf("mali: display lease %llu: frames %s\n",
+	/* Says the route when it changes: flipped or copied, from an import or a run. */
+	route = direct;
+	if (shared)
+		route |= 2;
+	if (route != display->logged_route) {
+		display->logged_route = route;
+		kern_logf("mali: display lease %llu: %s frames %s\n",
 			  (unsigned long long)display->lease,
+			  shared ? "shared" : "copied-in",
 			  direct ? "flipped" : "copied");
 	}
 
@@ -923,8 +972,14 @@ output_constraints(
 	if (request->generation != DISPLAY_GENERATION)
 		return ESTALE;
 
-	/* Frames from the node's own storage, in the two packed formats, rows of whole pixels. */
-	request->flags = GPU_SCANOUT_COPY;
+	/*
+	 * Frames from the node's own storage, and images the render node
+	 * exported (a trial: an image that is not one contiguous linear run
+	 * is refused and the swapchain copies instead), in the two packed
+	 * formats, rows of whole pixels.  An import below 4 GiB may be
+	 * flipped; one above is copied, so no placement is asked for.
+	 */
+	request->flags = GPU_SCANOUT_COPY | GPU_SCANOUT_SHARED | GPU_SCANOUT_FOREIGN;
 	request->formats = GPU_DISPLAY_FORMAT_BGRA8888 | GPU_DISPLAY_FORMAT_RGBA8888;
 	request->stride_alignment = DISPLAY_PIXEL_BYTES;
 	request->offset_alignment = DISPLAY_PIXEL_BYTES;
@@ -935,23 +990,85 @@ output_constraints(
 	return 0;
 }
 
-/* Refuses every import: the board has no render node whose buffers the node knows. */
+/*
+ * Imports an image the render node exported, for shared frames: a
+ * linear image of a packed four-byte format in one contiguous run of
+ * RAM, whose object the resource holds through the render node.  Any
+ * other image, or a backing the render node did not hand out, is
+ * ENOTSUP (said once), and the swapchain copies its frames instead.
+ */
 static int
 import_image(
 	void *device,
-	void *session,
+	void *private_session,
 	const struct gpu_image_descriptor *image,
 	const struct drv_gpu_scanout_backing *backing,
 	void **result)
 {
-	(void)device;
-	(void)session;
-	(void)image;
-	(void)backing;
+	struct display *display;
+	struct display_session *session;
+	struct display_resource *resource;
+	struct mali_bo *bo;
+	const char *reason;
+	uint64_t physical;
+	int error;
 
-	/* Owns nothing. */
+	display = device;
+	session = private_session;
+
+	/* Owns nothing on failure. */
 	*result = NULL;
-	return ENOTSUP;
+
+	/* An image the plane or the copies can read from one physical run. */
+	reason = NULL;
+	error = mali_scanout_check(image, backing, &physical, &reason);
+	if (error == 0) {
+		/* An export of the render node, held while the resource lives. */
+		error = mali_render_scanout_hold(backing, &bo);
+		if (error != 0)
+			reason = "is not an export of the render node";
+	}
+
+	if (error != 0) {
+		if (!display->import_logged) {
+			display->import_logged = 1;
+			kern_logf("mali: display: an image is not imported (%d): the image %s; its frames are copied\n", error, reason);
+		}
+
+		return error;
+	}
+
+	/* The record of the import. */
+	resource = kern_calloc(1, sizeof(*resource));
+	if (resource == NULL) {
+		mali_render_scanout_drop(bo);
+		return ENOMEM;
+	}
+
+	resource->owner = session;
+	resource->bo = bo;
+	resource->image = *image;
+	resource->physical = physical - image->offset;
+	resource->address = (uint8_t *)(uintptr_t)bo->buffer.view;
+	resource->bytes = backing->bytes;
+
+	/* Counts the import against the session's limit. */
+	mutex_lock(&display->mutex);
+
+	if (session->resources >= DISPLAY_RESOURCES) {
+		mutex_unlock(&display->mutex);
+		mali_render_scanout_drop(bo);
+		kern_free(resource);
+		return ENOSPC;
+	}
+
+	session->resources++;
+
+	mutex_unlock(&display->mutex);
+
+	/* Succeeded: the resource holds the object until resource_destroy. */
+	*result = resource;
+	return 0;
 }
 
 /* Reports whether the copies can write a screen: a known format and room for every row. */
@@ -1248,7 +1365,7 @@ can_flip(
 		return 0;
 
 	/* A start the address word names, wholly below 4 GiB. */
-	address = resource->run.paddr + request->offset;
+	address = resource->physical + request->offset;
 	if ((address & (DISPLAY_SCAN_ALIGNMENT - 1U)) != 0U)
 		return 0;
 	if (address + (uint64_t)request->stride * request->height - 1U > DISPLAY_SCAN_LIMIT)
@@ -1327,12 +1444,42 @@ end_lease(
 	kern_text_resume();
 }
 
-/* Frees one resource's run and record. */
+/* Frees one resource's run, or its hold on an imported object, and its record. */
 static void
 free_resource(
 	struct display_resource *resource)
 {
-	/* The run, then the record. */
-	(void)kern_pmem_free(&resource->run);
+	/* An import gives its hold back; a run its memory. */
+	if (resource->bo != NULL)
+		mali_render_scanout_drop(resource->bo);
+	else
+		(void)kern_pmem_free(&resource->run);
+
+	/* The record. */
 	kern_free(resource);
+}
+
+/*
+ * Checks a shared frame: an import, shown in the layout it was exported
+ * with.
+ */
+static int
+shared_frame_valid(
+	const struct display_resource *resource,
+	const struct gpu_display_present *request)
+{
+	/* Only an import is a shared frame. */
+	if (resource->bo == NULL)
+		return EINVAL;
+
+	/* The exported layout is the one shown. */
+	if (request->width != resource->image.width ||
+	    request->height != resource->image.height ||
+	    request->format != resource->image.format ||
+	    request->stride != resource->image.stride ||
+	    request->offset != resource->image.offset)
+		return EINVAL;
+
+	/* Succeeded: the frame lies in the object (checked at import). */
+	return 0;
 }

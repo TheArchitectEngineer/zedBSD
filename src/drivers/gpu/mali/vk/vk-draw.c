@@ -11,11 +11,15 @@
  * and tiling run, then the pass's fragment run.
  *
  * A pass has one subpass of colour attachments.  Its tiles start with
- * the attachments' clear colours; an attachment the pass loads is not
- * read back into the tiles (that needs a pre-frame program), so a load
- * draws like a clear to transparent black, said once a session.  The
- * tiler uses one heap chunk of its session's tiler memory, used afresh
- * by every pass (each pass's work ends before the next starts).
+ * the attachments' clear colours, and a cleared target writes back every
+ * tile.  A colour target 0 the pass loads is read back into the tiles a
+ * primitive touches by a pre-frame draw (vk-preload.c); the tiles no
+ * primitive touched are not written back, so they keep the attachment's
+ * pixels.  A load of another target, or one the pre-frame draw cannot
+ * make, draws like a clear to transparent black, said once a
+ * session.  The tiler uses one heap chunk of its session's tiler
+ * memory, used afresh by every pass (each pass's work ends before the
+ * next starts).
  */
 
 #include <stdbool.h>
@@ -29,6 +33,8 @@
 
 #include "drivers/gpu/mali/vk/vk-build.h"
 #include "drivers/gpu/mali/vk/vk-desc.h"
+#include "drivers/gpu/mali/vk/vk-frame.h"
+#include "drivers/gpu/mali/vk/vk-preload.h"
 
 /*
  * The session's tiler memory: the heap chunk, the geometry buffer, and
@@ -110,6 +116,8 @@ struct pass_state {
 
 static int tiler_memory(struct mali_vk_build *build, uint64_t *address);
 static int pass_begin(struct mali_vk_build *build, const struct mali_vk_record *entry, struct pass_state *state);
+static bool pass_targets(const struct mali_vk_record *entry, struct pass_state *state, volatile uint8_t *targets_view);
+static int pass_preload(struct mali_vk_build *build, struct pass_state *state, uint64_t *draws);
 static void pass_end(struct mali_vk_build *build, struct pass_state *state, uint64_t fbd);
 static void draw(struct mali_vk_build *build, struct pass_state *state, const struct mali_vk_record *entry);
 static void viewport_words(const VkViewport *viewport, uint32_t *words);
@@ -211,10 +219,12 @@ tiler_memory(
 }
 
 /*
- * Starts a pass: the heap descriptor, the tiler context, the
- * framebuffer descriptor with its render targets (their clear colours),
- * the thread storage.  Reports the framebuffer descriptor's address in
- * state->tiler (the caller moves it out) and keeps the tiler context's.
+ * Starts a pass: the heap descriptor, the tiler context, the thread
+ * storage, the framebuffer descriptor with its render targets (their
+ * clear colours) and, when the pass loads its colour attachment, the
+ * pre-frame draw that reads it back.  Reports the framebuffer
+ * descriptor's address in state->tiler (the caller moves it out) and
+ * keeps the tiler context's.
  */
 static int
 pass_begin(
@@ -222,10 +232,6 @@ pass_begin(
 	const struct mali_vk_record *entry,
 	struct pass_state *state)
 {
-	struct mali_desc_target target;
-	const struct mali_vk_image_view *view;
-	const struct mali_vk_image *image;
-	const uint32_t *clears;
 	uint32_t words[32];
 	volatile uint8_t *heap_view;
 	volatile uint8_t *tiler_view;
@@ -235,10 +241,11 @@ pass_begin(
 	uint64_t heap;
 	uint64_t tiler;
 	uint64_t fbd;
+	uint64_t draws;
 	uint32_t width;
 	uint32_t height;
-	uint32_t index;
-	uint32_t attachment;
+	uint32_t mode;
+	bool clean_tiles;
 	int error;
 
 	/* The pass and the framebuffer. */
@@ -269,20 +276,92 @@ pass_begin(
 			hierarchy_mask(build->session->owner->render->device->tiler_features, width, height));
 	store(tiler_view, words, 32);
 
+	/* The thread storage every draw's programs share, the pre-frame draw's among them. */
+	storage_view = mali_vk_build_take(build, MALI_DESC_BYTES, 64U, &state->storage);
+	if (storage_view == NULL)
+		return build->error;
+	mali_desc_local_storage(words);
+	store(storage_view, words, 8);
+
 	/* The framebuffer descriptor and its targets after it. */
 	fbd_view = mali_vk_build_take(build, MALI_DESC_FBD_BYTES + (uint64_t)state->targets * MALI_DESC_RT_BYTES, 64U, &fbd);
 	if (fbd_view == NULL)
 		return build->error;
+
+	/* Each colour target, and whether a cleared one writes back every tile. */
+	clean_tiles = pass_targets(entry, state, fbd_view + MALI_DESC_FBD_BYTES);
+
+	/* The pre-frame draw of a loaded colour attachment. */
+	error = pass_preload(build, state, &draws);
+	if (error != 0)
+		return error;
+
+	/*
+	 * The framebuffer, with the sample positions and the frame shader
+	 * draws.  A pre-frame draw runs on the tiles a primitive touches;
+	 * when a cleared target writes back every tile, on every tile.
+	 *
+	 * Procedure referenced:
+	 * Mesa 26.2.6 src/panfrost/lib/pan_desc.h (pan_fix_frame_shader_mode:
+	 * an intersecting frame shader runs always when a clean tile is
+	 * written); src/panfrost/vulkan/panvk_vX_cmd_frame_shaders.c
+	 * (cmd_preload_color_attachments: a loaded colour target's preload
+	 * intersects).
+	 */
 	mali_desc_framebuffer(words, width, height, state->targets, TILE_PIXELS,
 			      (TILE_PIXELS * TILE_BYTES_PER_PIXEL * state->targets + 1023U) & ~1023U, tiler);
 	words[4] = (uint32_t)(memory + TILER_SAMPLES_AT);
 	words[5] = (uint32_t)((memory + TILER_SAMPLES_AT) >> 32);
+	if (draws != 0U) {
+		mode = MALI_FRAME_INTERSECT;
+		if (clean_tiles)
+			mode = MALI_FRAME_ALWAYS;
+		mali_frame_shaders(words, mode, draws);
+	}
+
 	store(fbd_view, words, 16);
 
-	/* Each colour target: its view's memory, its format, its clear, whether it is stored. */
+	/* The tiler context in its staging register for the draws, and the framebuffer for the end. */
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_TILER_CONTEXT, tiler);
+	state->tiler = fbd;
+
+	/* Succeeded: the pass is started. */
+	return 0;
+}
+
+/*
+ * Writes a pass's colour targets after its framebuffer descriptor: each
+ * one's memory, format, clear and whether it is stored.  A cleared
+ * target that is stored writes back the tiles no primitive touched too
+ * (else they would keep the old pixels); a loaded or undefined one only
+ * those drawn on.  Says whether any target writes back every tile.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.6 src/panfrost/lib/pan_desc.c (pan_get_clean_tile_info: a
+ * cleared render target's clean tile write).
+ */
+static bool
+pass_targets(
+	const struct mali_vk_record *entry,
+	struct pass_state *state,
+	volatile uint8_t *targets_view)
+{
+	struct mali_desc_target target;
+	const struct mali_vk_image_view *view;
+	const struct mali_vk_image *image;
+	const uint32_t *clears;
+	uint32_t words[16];
+	uint32_t index;
+	uint32_t attachment;
+	bool cleared;
+	bool clean_tiles;
+
+	/* Each colour target in turn. */
 	clears = entry->data;
+	clean_tiles = false;
 	for (index = 0; index < state->targets; index++) {
 		kern_memset(&target, 0, sizeof(target));
+		cleared = false;
 		attachment = state->pass->color[index];
 		if (attachment != VK_ATTACHMENT_UNUSED && attachment < state->framebuffer->count) {
 			view = state->framebuffer->views[attachment]->payload;
@@ -296,10 +375,9 @@ pass_begin(
 			target.write = state->pass->store_op[attachment] == VK_ATTACHMENT_STORE_OP_STORE && target.base != 0U;
 			if (state->pass->load_op[attachment] == VK_ATTACHMENT_LOAD_OP_CLEAR && clears != NULL && attachment < entry->values[7]) {
 				target.clear[0] = pack_clear(view->format, &clears[attachment * 5U + 1U]);
-			} else if (state->pass->load_op[attachment] == VK_ATTACHMENT_LOAD_OP_LOAD && !build->load_warned) {
-				kern_logf("mali: vk: a pass that loads its attachment draws on a cleared tile\n");
-				build->load_warned = true;
+				cleared = true;
 			}
+
 			target.clear[1] = target.clear[0];
 			target.clear[2] = target.clear[0];
 			target.clear[3] = target.clear[0];
@@ -307,23 +385,97 @@ pass_begin(
 				state->target_mask |= 1U << index;
 		}
 
+		/* The descriptor, with every tile written back for a stored clear. */
 		target.internal_offset = index * TILE_PIXELS * TILE_BYTES_PER_PIXEL;
 		mali_desc_target(words, &target);
-		store(fbd_view + MALI_DESC_FBD_BYTES + (uint64_t)index * MALI_DESC_RT_BYTES, words, 16);
+		if (cleared && target.write) {
+			mali_frame_clean_tile(words);
+			clean_tiles = true;
+		}
+
+		store(targets_view + (uint64_t)index * MALI_DESC_RT_BYTES, words, 16);
 	}
 
-	/* The thread storage every draw's programs share. */
-	storage_view = mali_vk_build_take(build, MALI_DESC_BYTES, 64U, &state->storage);
-	if (storage_view == NULL)
-		return build->error;
-	mali_desc_local_storage(words);
-	store(storage_view, words, 8);
+	/* Succeeded: whether a target writes back every tile. */
+	return clean_tiles;
+}
 
-	/* The tiler context in its staging register for the draws, and the framebuffer for the end. */
-	mali_cs_move64(&build->cs, MALI_CS_IDVS_TILER_CONTEXT, tiler);
-	state->tiler = fbd;
+/*
+ * Makes the pre-frame draw of a pass whose colour target 0 loads its
+ * attachment, and reports the frame shader draws' address (zero for a
+ * pass without one).  A load the draw does not take -- of another
+ * target, or when the program or its code is not there -- draws on a
+ * cleared tile, said once a session.
+ */
+static int
+pass_preload(
+	struct mali_vk_build *build,
+	struct pass_state *state,
+	uint64_t *draws)
+{
+	struct mali_vk_preload preload;
+	const struct mali_vk_image_view *view;
+	const struct mali_vk_image *image;
+	uint64_t memory;
+	uint32_t index;
+	uint32_t attachment;
+	uint32_t equation;
+	bool supported;
+	bool loaded;
+	bool unloaded;
+	int error;
 
-	/* Succeeded: the pass is started. */
+	/* Which targets load: target 0 by the pre-frame draw, any other not at all. */
+	*draws = 0;
+	loaded = false;
+	unloaded = false;
+	view = NULL;
+	for (index = 0; index < state->targets; index++) {
+		attachment = state->pass->color[index];
+		if (attachment == VK_ATTACHMENT_UNUSED || attachment >= state->framebuffer->count)
+			continue;
+		if (state->pass->load_op[attachment] != VK_ATTACHMENT_LOAD_OP_LOAD)
+			continue;
+		if (index == 0U) {
+			view = state->framebuffer->views[attachment]->payload;
+			loaded = true;
+		} else {
+			unloaded = true;
+		}
+	}
+
+	/* A loaded view the texture can read: one of a bound image. */
+	if (loaded) {
+		image = view->image->payload;
+		memory = mali_vk_image_address(image);
+		if (memory == 0U) {
+			loaded = false;
+			unloaded = true;
+		}
+	}
+
+	/* The pre-frame draw, which writes colour 0 into target 0 as a replace of every component. */
+	if (loaded) {
+		kern_memset(&preload, 0, sizeof(preload));
+		preload.view = view;
+		preload.storage = state->storage;
+		equation = mali_desc_blend_equation(REPLACE_EQUATION, 0xfU, &supported);
+		mali_desc_blend(preload.blend, false, equation, 0xfU, 0U, blend_format(view->format));
+		error = mali_vk_preload_draws(build, &preload, draws);
+		if (error == ENOTSUP) {
+			unloaded = true;
+		} else if (error != 0) {
+			return error;
+		}
+	}
+
+	/* Says once a session that a load draws on a cleared tile. */
+	if (unloaded && !build->session->owner->load_warned) {
+		kern_logf("mali: vk: a pass that loads its attachment draws on a cleared tile\n");
+		build->session->owner->load_warned = true;
+	}
+
+	/* Succeeded: the draws, or none. */
 	return 0;
 }
 

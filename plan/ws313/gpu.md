@@ -123,7 +123,8 @@ S7D の glue（Values referenced: hardkernel/kernel_common_drivers odroids7d-6.1
   (a) flip できて、frame が画面と同じ幅・高さ・行の幅（OSD の行の幅）・byte の順で、始まりが 16 byte に揃い 4 GiB より下なら、frame を CPU の cache から clean し、BLK1_CFG_W4 を書き換え、1 frame（20 ms）待って返す。前の resource は返る（session が既に壊していればここで free）。
   (b) それ以外は CPU で boot の framebuffer へ写し（赤と青の入れ替え、alpha を 0xff に。plane は alpha で blend するため）、clean し、plane が resource を見ていれば framebuffer に戻す。
 - plane が見ている resource が壊されたら、plane が他を見るまで free を延ばす。lease の終わり・close で plane を framebuffer に戻し、text console を再開する。
-- 経路が変わると「display lease N: frames flipped / copied」を 1 行に出す。
+- resource は表示の node の run か、render の node（gpu1）が export した image の import（`import_image`、2026-10-29 q1675-i03）。import は RGBA8888・BGRA8888・linear・4 byte 単位・page 1 本の連続の物だけ（`display/scanout.c` の検査）、render の node の bo の参照を持つ。外れた物は ENOTSUP（1 度だけ 1 行）で、libvulkan は copy の route に戻る。constraints は COPY・SHARED・FOREIGN。import の frame は (a) の条件なら clean 無しで flip、だめなら render の uncached の view から CPU で copy。
+- 経路が変わると「display lease N: shared|copied-in frames flipped|copied」を 1 行に出す（shared は import の frame、copied-in は表示の node の run）。
 - 未確認の点: OSD1 の address が vsync で latch されるか（されなければ flip の瞬間に裂ける）。U-Boot が canvas mode なら (b) だけになる（安全側）。flip した frame の alpha が 0 だと透ける（Keiland の frame は不透明の見込み、未確認）。(b) は guardrail「画像の処理は GPU で」に反する予備の経路で、(a) が使えない時だけ。
 
 ## 6. 段の計画と大きさ
@@ -272,4 +273,6 @@ file の並び（案）:
 - **CS の register の割当**（executor の stream）: r0〜r60 は RUN_* の staging（v10.xml の COMPUTE/IDVS/FRAGMENT SR）、r64〜r79 は copy・fill の data、r80〜r89 は loop の scratch、r92〜r95 は ring。stream の work register が 96 未満なら executor は submit を拒否する。scoreboard: load/store は 0、endpoint は 1（SET_SB_ENTRY）。各 RUN_COMPUTE・pass の終わりで WAIT(all)。
 - **descriptor**（`vk/vk-desc.c`、host 試験あり）: SRT の pointer は address | table 数（4 の倍数）、FAU の pointer は address | (64 bit の entry 数 << 56)、table 0 texture・1 sampler・2 attribute・3 vertex buffer（C の §12 の ABI）。FAU は push constants → buffer の address（fau_word）→ range（size_fau_word）→ texture の size → vertex の viewport の 6 float（viewport_fau_word）。
 - **render pass**: 1 subpass、color だけ。tile 16×16、RT の internal は R8G8B8A8（4 byte/px）、writeback は linear。tiler context と heap の descriptor は pass ごとに stage に新しく書き、heap の 1 chunk（8 MiB）を使い直す。draw は RUN_IDVS（malloc enable、varying の選択 (0,0,1,0)、fragment (2,2,2,0)）、pass の終わりに FINISH_TILING → RUN_FRAGMENT（FBD の pointer、bbox）。
+- **LOAD の pre-frame の draw**（2026-10-29 q1675-i03、`vk/vk-frame.c`・`vk/vk-preload.c`）: colour target 0 が LOAD の pass は FBD の pre-frame 0 に frame shader の DCD（FragCoord で前の内容を texelFetch する fragment program、node で 1 回 compile）。mode は INTERSECT（CLEAR の target があれば ALWAYS）。失敗は 1 行で従来の cleared tile に戻り、pre-frame を含む submission の FAULT・timeout の後は node の preload を止める。
+- **clean tile write**: CLEAR かつ STORE の RT に立てた（primitive の無い tile も書き戻す。前は古い内容が残った）。
 - **未確認の点**（夜に見る）: 動いている group の AS の差し替え、FLUSH_CACHE2 の flush id 0、RUN_COMPUTE の task increment 1、HEAP_SET 無しの tiler、blend の memory format、sample の位置の表、tiler の hierarchy mask、RT の swizzle（BGRA）、DCD flags の early/late。

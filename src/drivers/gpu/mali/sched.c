@@ -172,12 +172,20 @@ mali_sched_run(
 	unsigned address;
 	unsigned value;
 	uint64_t target;
+	unsigned long enabled;
 	bool waited;
+	bool failed;
+	bool preloaded;
 	int error;
+
+	/* Whether the stream runs a pre-frame draw (said while it was built); the next stream starts without. */
+	preloaded = session->preload_used;
+	session->preload_used = false;
 
 	/* Nothing to call. */
 	kern_memset(&fault, 0, sizeof(fault));
 	waited = false;
+	failed = false;
 	render = session->render;
 	device = render->device;
 	queue = &render->queue;
@@ -237,6 +245,7 @@ mali_sched_run(
 
 	/* A fault or a timeout: the state, the group stopped and started again, the session lost. */
 	if (waited && (error == EIO || error == ETIMEDOUT)) {
+		failed = true;
 		render->failures++;
 		kern_logf("mali: render: submission %u failed (%d): stream %llx bytes %u, fault %08x (%llx), fatal %08x (%llx), %u faults\n",
 			  render->submissions,
@@ -264,6 +273,21 @@ mali_sched_run(
 	}
 
 	mutex_unlock(&device->lock);
+
+	/*
+	 * A failed stream that ran a pre-frame draw stops every later pass
+	 * of the node from using one: their loads draw on cleared tiles, as
+	 * without the draw, rather than risk the fault again.
+	 */
+	if (failed && preloaded) {
+		enabled = spin_lock_irqsave(&render->guard);
+
+		render->preload_refused = true;
+
+		spin_unlock_irqrestore(&render->guard, enabled);
+
+		kern_logf("mali: render: submission %u ran a pre-frame load; later loads draw on cleared tiles\n", render->submissions);
+	}
 
 	/* A lost session's core is told; it stops the session. */
 	if (session->lost && render->node != NULL)
