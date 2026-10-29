@@ -70,7 +70,7 @@ static void pipeline_decode_viewport(struct nvrtx_vk_session *session, struct i9
 static void pipeline_decode_blend(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct nvrtx_vk_pipeline *pipeline);
 static void pipeline_decode_dynamic(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct nvrtx_vk_pipeline *pipeline);
 static int pipeline_compile(struct nvrtx_vk_session *session, struct nvrtx_vk_pipeline *pipeline, struct pipeline_build *build);
-static int pipeline_compile_stage(const struct nvrtx_vk_shader *module, enum drv_gpu_shader_stage stage, struct nvrtx_sm75_binary **binary);
+static int pipeline_compile_stage(const struct nvrtx_vk_shader *module, enum drv_gpu_shader_stage stage, uint32_t shader_model, struct nvrtx_sm75_binary **binary);
 static int pipeline_program(struct nvrtx_vk_program *program, const struct nvrtx_sm75_binary *binary, uint8_t *cpu, uint64_t va);
 static uint32_t pipeline_program_bytes(const struct nvrtx_sm75_binary *binary);
 static void pipeline_build_free(struct pipeline_build *build);
@@ -633,14 +633,16 @@ pipeline_compile(
 	uint64_t va;
 	uint32_t vertex_bytes;
 	uint32_t fragment_bytes;
+	uint32_t shader_model;
 	int error;
 
-	/* Compiles the two programs. */
-	error = pipeline_compile_stage(build->vertex_module, DRV_GPU_STAGE_VERTEX, &build->vertex);
+	/* Compiles the two programs for the owner's shader model. */
+	shader_model = nvrtx_vk_shader_model(session->owner);
+	error = pipeline_compile_stage(build->vertex_module, DRV_GPU_STAGE_VERTEX, shader_model, &build->vertex);
 	if (error != 0)
 		return error;
 
-	error = pipeline_compile_stage(build->fragment_module, DRV_GPU_STAGE_FRAGMENT, &build->fragment);
+	error = pipeline_compile_stage(build->fragment_module, DRV_GPU_STAGE_FRAGMENT, shader_model, &build->fragment);
 	if (error != 0)
 		return error;
 
@@ -675,14 +677,15 @@ static int
 pipeline_compile_stage(
 	const struct nvrtx_vk_shader *module,
 	enum drv_gpu_shader_stage stage,
+	uint32_t shader_model,
 	struct nvrtx_sm75_binary **binary)
 {
 	struct nvrtx_sm75_diagnostic diagnostic;
 	int error;
 
-	/* Compiled for SM75. */
+	/* Compiled for the shader model asked for. */
 	kern_memset(&diagnostic, 0, sizeof(diagnostic));
-	error = nvrtx_sm75_compile_stage(module->words, module->word_count, stage, binary, &diagnostic);
+	error = nvrtx_sm75_compile_stage_sm(module->words, module->word_count, stage, shader_model, binary, &diagnostic);
 	if (error != 0) {
 		kern_logf("nvrtx: vk: a stage %u module of %u words did not compile (%d at %u: %s)\n",
 			  (unsigned)stage,

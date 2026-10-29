@@ -85,6 +85,21 @@ int mali_vk_build_resources(struct mali_vk_build *build, const struct mali_shade
 /* Keeps the state a binding record binds (vk-queue.c). */
 void mali_vk_build_bind(struct mali_vk_build *build, const struct mali_vk_record *entry);
 
+/*
+ * Writes a thread storage descriptor into the stage with thread local
+ * storage for a program of tls_bytes a thread (the program's tls_bytes;
+ * none for zero) and no workgroup memory, and reports its address (zero
+ * with the build's error set when the stage has no room).
+ */
+uint64_t mali_vk_build_thread_storage(struct mali_vk_build *build, uint32_t tls_bytes);
+
+/*
+ * Writes a compute run into the stream: the staging registers of the
+ * tables, the FAU, the program, the storage, the workgroup size and the
+ * workgroup counts, the run, and a wait for it.
+ */
+void mali_vk_build_compute(struct mali_vk_build *build, uint64_t table, uint64_t fau, uint64_t shader, uint64_t storage, const uint32_t *local_size, const uint32_t *counts);
+
 /* Writes a shader program descriptor into the stage. */
 uint64_t mali_vk_build_shader(struct mali_vk_build *build, unsigned stage, uint32_t work_registers, uint32_t preload, uint64_t code);
 

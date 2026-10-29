@@ -3,7 +3,7 @@
 # ws307-p015 画面の lock の既定を never にし、never でも lock される不具合を直す
 
 - 親: [WS307](../ws.md)。Queue: q1674 / q1674-i01（担当 P5、2026-10-29、worktree p5-ws307lock、基点 main 55ee43590）。
-- Status: in-progress（実装と QEMU の試験は PASS、Q1 の判定待ち。sleep の既定を Never にするかは Q1 がユーザーに確認中で、答えまで変えない）
+- Status: cleared（2026-10-29 Q1 の判定、QEMU の 3 試験 PASS、実機は未実施。sleep の既定を Never にするかは Q1 がユーザーに確認中で、答えまで変えない）
 - ユーザーの指示（原文、2026-10-29）:「WS307でついでに行ってほしいのですが、デスクトップがロックされるデフォルトの時間の設定を、neverをデフォルトにしてほしいです。また、neverにしても、現在は実際にはロックされてしまうみたいなので、直しておいてほしいです。」
 - 範囲（Q1）: idle の後に画面を lock する時間の既定を never に（Settings の頁、compositor の既定、設定の file の既定。file に値がある利用者はその値を保つ）。never でも lock される原因を探して直す。sleep（suspend）の既定は範囲の外（変えない）。
 

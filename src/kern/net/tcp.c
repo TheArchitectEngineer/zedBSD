@@ -2845,6 +2845,9 @@ tcp_output_segment(
 	endpoint->tcp.receive_edge_set = 1;
 	wire_put16(tcp->window, field);
 
+	/* A copy sent before may carry the marks of its last way out. */
+	packet->flags &= ~(PACKET_BUF_TX_CSUM_TCP | PACKET_BUF_TX_CSUM_IPV4);
+
 	/* Hands the segment to IPv6, with the checksum over its pseudo-header. */
 	if (ipv6) {
 		checksum = net_checksum_pseudo6(source6.s6_addr, endpoint->tcp.inet.remote6.s6_addr, IPPROTO_TCP,
@@ -2863,9 +2866,21 @@ tcp_output_segment(
 		return 0;
 	}
 
-	/* Hands the segment to IPv4. */
-	checksum = net_checksum_pseudo(source, endpoint->tcp.inet.remote_address,
-	    IPPROTO_TCP, packet->data, packet->length);
+	/*
+	 * Hands the segment to IPv4: with its checksum, or with the
+	 * pseudo-header's partial sum for a device that completes it.
+	 */
+	if (device != NULL && (device->capabilities & NET_DEVICE_CAP_TX_CSUM_IPV4_TCP) != 0) {
+		checksum = net_checksum_pseudo_partial(source, endpoint->tcp.inet.remote_address,
+		    IPPROTO_TCP, packet->length);
+		packet->flags |= PACKET_BUF_TX_CSUM_TCP;
+		packet->l4_offset = (uint16_t)(packet->data - packet->storage);
+	} else {
+		checksum = net_checksum_pseudo(source, endpoint->tcp.inet.remote_address,
+		    IPPROTO_TCP, packet->data, packet->length);
+	}
+
+	/* The checksum, or the partial sum, in its field. */
 	wire_put16(tcp->checksum, checksum);
 	if (routed) {
 		error = ipv4_output_routed(device, endpoint->tcp.inet.remote_address, next_hop,
@@ -5006,6 +5021,7 @@ tcp_send_reliable(
 	int jumbo;
 	int owner;
 	int retries;
+	int deadline_new;
 	int error;
 	unsigned copy_flags;
 	struct tcp_discard discard;
@@ -5123,9 +5139,15 @@ tcp_send_reliable(
 		endpoint->tcp.counters.data_bytes_out += length;
 	}
 
-	/* Data queued with nothing waiting starts the time TCP_MAXUNACKTIME measures (ws220-p005). */
-	if (length != 0 && endpoint->tcp.unack_since == 0)
+	/*
+	 * Data queued with nothing waiting starts the time TCP_MAXUNACKTIME
+	 * measures (ws220-p005), a deadline the worker must learn of.
+	 */
+	deadline_new = 0;
+	if (length != 0 && endpoint->tcp.unack_since == 0) {
 		endpoint->tcp.unack_since = sched_ticks();
+		deadline_new = 1;
+	}
 
 	/*
 	 * This thread sends the entry itself when it is the only unsent one,
@@ -5139,6 +5161,10 @@ tcp_send_reliable(
 	owner = 0;
 	nagle = tcp_nagle_holds_locked(endpoint);
 	if (endpoint->tcp.send_unsent == 1U && endpoint->tcp.send_flushing == 0 && !nagle) {
+		/* The first segment in flight arms the retransmission timer. */
+		sent = tcp_sent_count_locked(endpoint);
+		if (sent == 0)
+			deadline_new = 1;
 		endpoint->tcp.send_flushing = 1;
 		tcp_mark_sent_locked(endpoint, now);
 		owner = 1;
@@ -5263,16 +5289,25 @@ tcp_send_reliable(
 	endpoint->tcp.send_flushing = 0;
 	tcp_output_retry_settle_locked(endpoint);
 
+	/*
+	 * The worker learns of the new deadlines: one this segment armed, or
+	 * the output retry's, which it did not count while this thread was
+	 * sending.  A segment sent behind others in flight changes neither
+	 * (the timer runs from the oldest), so the worker, busy with the
+	 * acknowledgements, is not woken once a segment for nothing.
+	 */
+	if (endpoint->tcp.output_retry_on_pass != 0 || endpoint->tcp.output_retry_deadline != 0 ||
+	    endpoint->tcp.persist != 0 || refusal != TCP_REFUSAL_NONE)
+		deadline_new = 1;
+
 	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
 
 	/* Frees the copy taken back, outside the lock. */
 	tcp_discard_free(&discard);
 
-	/*
-	 * The worker learns of the new deadlines: the retransmission's, or the
-	 * output retry's, which it did not count while this thread was sending.
-	 */
-	net_worker_wakeup();
+	/* The worker learns of a new deadline. */
+	if (deadline_new)
+		net_worker_wakeup();
 
 	/* Reports a segment taken back for an error that will not pass. */
 	if (error != 0)
@@ -7687,7 +7722,10 @@ tcp_input(
 		return EINVAL;
 	}
 
-	checksum = net_checksum_pseudo(source, destination, IPPROTO_TCP, packet->data, packet->length);
+	/* Checks the checksum, unless the device found it right. */
+	checksum = 0;
+	if ((packet->flags & PACKET_BUF_RX_CSUM_L4) == 0)
+		checksum = net_checksum_pseudo(source, destination, IPPROTO_TCP, packet->data, packet->length);
 	if (checksum != 0) {
 		packet_buf_free(packet);
 		return EINVAL;
@@ -7724,7 +7762,14 @@ tcp6_input(
 		return EINVAL;
 	}
 
-	checksum = net_checksum_pseudo6(source->s6_addr, destination->s6_addr, IPPROTO_TCP, packet->data, packet->length);
+	/* Checks the checksum, unless the device found it right. */
+	checksum = 0;
+	if ((packet->flags & PACKET_BUF_RX_CSUM_L4) == 0) {
+		checksum = net_checksum_pseudo6(source->s6_addr, destination->s6_addr, IPPROTO_TCP, packet->data,
+		    packet->length);
+	}
+
+	/* Drops a corrupt one. */
 	if (checksum != 0) {
 		packet_buf_free(packet);
 		return EINVAL;

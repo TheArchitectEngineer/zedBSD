@@ -4,7 +4,7 @@
 
 Status: incomplete
 Primary Milestone: MG008
-Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/README.md)）の結果で各 Phase を直す。desktop（p009）は Vulkan の段（[gpu.md](gpu.md) §11、約 155 LW）が無いと出ない。担当は P7（q1675-i02）。
+Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/README.md)）の結果で各 Phase を直す。担当は P7（q1675-i03、2026-10-29: render pass の LOAD の pre-frame・display の import・gpu1 を待つ hw.gpu.attaching・compiler の cube・gather/compare・storage image・spill・bootloader の notice を実装。q1675-i04、2026-10-29: WLS を使う compute の dispatch・拡大の blit・pass の中の clear attachments・FragDepth と SampleMask・UBO の vector load（既定は無効）・TSD の「WLS 無し」の語を Mesa の形に、他の GPU との対応範囲の表は [gpu.md](gpu.md) §15。全て実機未試験）。変更ごとの確かめは `sh plan/ws313/tests/c5-build-check.sh <tag>`（5 つの vmunix の warning 0 と host の試験）。
 
 ## ユーザーの指示（原文、2026-10-29）
 
@@ -58,14 +58,14 @@ Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 調べと設計 | in-progress（design-reviewer の 1 回） | — |
 | [p002](phase002/phase.md) | HAL の BSP（起動・UART・FDT・GIC・timer・PSCI）と build の配線・config | in-progress（実装済み・実機未試験） | p001 |
-| [p003](phase003/phase.md) | 媒体（DTB・boot.scr・SD の image）と夜の試験の手順・script | in-progress（image の build まで済み・実機未試験） | p002 |
+| [p003](phase003/phase.md) | 媒体（DTB・boot.scr・SD の image）と夜の試験の手順・script | in-progress（image の build まで済み、bootloader の notice 済み・実機未試験） | p002 |
 | [p004](phase004/phase.md) | SD（meson の MMC）と root | in-progress（実装済み・実機未試験） | p002 |
 | [p005](phase005/phase.md) | USB（PHY・CRG の xHCI） | in-progress（実装済み・実機未試験） | p002 |
 | [p006](phase006/phase.md) | Ethernet（EQoS・RGMII の PHY） | in-progress（実装済み・実機未試験） | p002 |
 | [p007](phase007/phase.md) | display（U-Boot の mode の OSD1） | in-progress（実装済み・実機未試験） | p002 |
 | [p008](phase008/phase.md) | GPU（Mali-G310）と Vulkan の device | in-progress（kernel の driver は実装済み・実機未試験。Vulkan の段は設計だけ） | p002 |
-| [p010](phase010/phase.md) | Valhall の shader compiler（`src/drivers/gpu/mali/compiler/`） | in-progress（実装済み・host の試験 PASS・実機未試験） | p008 |
-| [p011](phase011/phase.md) | render の node・scheduler・Vulkan の executor・CS の builder | in-progress（実装済み・実機未試験） | p008・p010 |
+| [p010](phase010/phase.md) | Valhall の shader compiler（`src/drivers/gpu/mali/compiler/`、cube・gather/compare・storage image・spill・FragDepth・SampleMask・UBO の vector load を含む） | in-progress（実装済み・host の試験 PASS・実機未試験） | p008 |
+| [p011](phase011/phase.md) | render の node・scheduler・Vulkan の executor・CS の builder（LOAD の pre-frame・display の import・WLS・拡大の blit・clear attachments を含む） | in-progress（実装済み・実機未試験） | p008・p010 |
 | p009 | desktop（Keiland の config） | planned | p007・p010・p011 |
 | 最後 | 規約の全文の見直し | planned | 全て |
 

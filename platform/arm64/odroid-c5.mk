@@ -82,6 +82,7 @@ CHECK_RUN_TARGETS += odroid-c5-fdt-host-test
 $(BUILD)/hdd-image.img: $(BUILD)/vmunix $(BUILD)/ufs-root.img $(DATA_IMAGE) $(SWAP_IMAGE) \
 	$(ODROID_C5_DTB) $(ODROID_C5_BOOT_SCRIPT) $(ODROID_C5_BOOTLOADER_RECORD) \
 	$(ODROID_C5_BOOTLOADER_FROM) \
+	platform/arm64/odroid-c5-bootloader.notice \
 	platform/arm64/tools/make-odroid-c5-hdd-image.py tools/build/check-ufs-image.py
 	$(PYTHON) platform/arm64/tools/make-odroid-c5-hdd-image.py --force \
  --kernel $(BUILD)/vmunix --dtb $(ODROID_C5_DTB) --script $(ODROID_C5_BOOT_SCRIPT) \

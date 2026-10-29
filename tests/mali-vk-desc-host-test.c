@@ -33,6 +33,7 @@ int
 main(void)
 {
 	struct mali_desc_target target = { 0 };
+	struct mali_desc_view view;
 	uint32_t words[32];
 	bool supported;
 	uint32_t equation;
@@ -48,7 +49,7 @@ main(void)
 
 	/* The storage, a table entry, a buffer. */
 	mali_desc_local_storage(words);
-	expect("storage no WLS", words[1], 0x80000000U);
+	expect("storage no WLS", words[1], 0x1fU);
 	mali_desc_resource(words, 0x10000040ULL, 64);
 	expect("resource low", words[0], 0x10000040U);
 	expect("resource descriptors", words[1], 1U << 24);
@@ -124,6 +125,71 @@ main(void)
 	expect("tiler geometry", words[8], 0x40U | 0x200000U);
 	expect("primitive", mali_desc_primitive(MALI_DESC_DRAW_TRIANGLES, 2), 8U | (2U << 8) | (1U << 16) | (1U << 17) | (1U << 22));
 	expect("clump 16", mali_desc_clump_format(16), 4);
+
+	/* A cube array of two cubes (twelve layers) of RGBA8, 256 square, and the same image for storage. */
+	view.dimension = MALI_DESC_DIMENSION_CUBE;
+	view.pixel = 187U << 12;
+	view.width = 256;
+	view.height = 256;
+	view.depth = 1;
+	view.levels = 1;
+	view.array_size = 2;
+	view.swizzle = 0x60aU;
+	view.storage = false;
+	view.planes = 0x5000ULL;
+	mali_desc_texture_view(words, &view);
+	expect("cube word 0", words[0], 2U | (0U << 4) | ((187U << 12) << 10));
+	expect("cube extent", words[1], 255U | (255U << 16));
+	expect("cube swizzle and levels", words[2], 0x60aU);
+	expect("cube LOD", words[3], 0);
+	expect("cube planes", words[4], 0x5000U);
+	expect("cube array size", words[6], 1);
+	expect("cube depth", words[7], 0);
+	view.dimension = MALI_DESC_DIMENSION_2D;
+	view.array_size = 12;
+	view.storage = true;
+	mali_desc_texture_view(words, &view);
+	expect("storage word 0", words[0], 2U | (2U << 4) | ((187U << 12) << 10));
+	expect("storage swizzle", words[2], 0x688U);
+	expect("storage layers", words[6], 11);
+
+	/* Thread storage: 256 bytes a thread (16 units, shift 4) at 0x12345000, packed. */
+	expect("tls size 16", mali_desc_tls_size(16), 0);
+	expect("tls size 17", mali_desc_tls_size(17), 1);
+	expect("tls size 256", mali_desc_tls_size(256), 4);
+	mali_desc_thread_storage(words, 256, 0x1234567000ULL);
+	expect("tls word 0", words[0], 4);
+	expect("tls no WLS", words[1], 0x1fU);
+	expect("tls base low", words[2], 0x12345670U);
+	expect("tls base high and mode", words[3], 0U | (1U << 28));
+	mali_desc_thread_storage(words, 0, 0);
+	expect("no tls word 0", words[0], 0);
+	expect("no tls word 3", words[3], 0);
+
+	/*
+	 * Workgroup memory: 300 shared bytes take a 512-byte instance (the
+	 * least is 128), eight instances a core (log2 3 at word 1 bits 0..4),
+	 * the size scale log2(512) + 1 = 10 at bits 8..12, the base at words
+	 * 4..5; the thread local storage words stay as packed.
+	 */
+	expect("wls bytes none", mali_desc_wls_bytes(0), 0);
+	expect("wls bytes least", mali_desc_wls_bytes(1), 128);
+	expect("wls bytes 300", mali_desc_wls_bytes(300), 512);
+	expect("wls bytes 16384", mali_desc_wls_bytes(16384), 16384);
+	mali_desc_thread_storage(words, 256, 0x1234567000ULL);
+	mali_desc_workgroup_storage(words, 8, mali_desc_wls_bytes(300), 0x2345678000ULL);
+	expect("wls tls kept", words[0], 4);
+	expect("wls instances and scale", words[1], 3U | (10U << 8));
+	expect("wls tls base kept", words[2], 0x12345670U);
+	expect("wls base low", words[4], 0x45678000U);
+	expect("wls base high", words[5], 0x23U);
+	mali_desc_thread_storage(words, 0, 0);
+	mali_desc_workgroup_storage(words, 1, 128, 0x10000ULL);
+	expect("wls one instance", words[1], 0U | (8U << 8));
+	expect("wls no tls", words[0], 0);
+
+	/* A sampler's compare: less or equal (3) at word 1 bits 13..15. */
+	expect("compare lequal", mali_desc_sampler_compare(3), 3U << 13);
 
 	/* The report. */
 	if (failures != 0) {

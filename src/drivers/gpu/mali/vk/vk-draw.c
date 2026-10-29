@@ -11,11 +11,15 @@
  * and tiling run, then the pass's fragment run.
  *
  * A pass has one subpass of colour attachments.  Its tiles start with
- * the attachments' clear colours; an attachment the pass loads is not
- * read back into the tiles (that needs a pre-frame program), so a load
- * draws like a clear to transparent black, said once a session.  The
- * tiler uses one heap chunk of its session's tiler memory, used afresh
- * by every pass (each pass's work ends before the next starts).
+ * the attachments' clear colours, and a cleared target writes back every
+ * tile.  A colour target 0 the pass loads is read back into the tiles a
+ * primitive touches by a pre-frame draw (vk-preload.c); the tiles no
+ * primitive touched are not written back, so they keep the attachment's
+ * pixels.  A load of another target, or one the pre-frame draw cannot
+ * make, draws like a clear to transparent black, said once a
+ * session.  The tiler uses one heap chunk of its session's tiler
+ * memory, used afresh by every pass (each pass's work ends before the
+ * next starts).
  */
 
 #include <stdbool.h>
@@ -29,6 +33,9 @@
 
 #include "drivers/gpu/mali/vk/vk-build.h"
 #include "drivers/gpu/mali/vk/vk-desc.h"
+#include "drivers/gpu/mali/vk/vk-frame.h"
+#include "drivers/gpu/mali/vk/vk-meta.h"
+#include "drivers/gpu/mali/vk/vk-preload.h"
 
 /*
  * The session's tiler memory: the heap chunk, the geometry buffer, and
@@ -72,6 +79,34 @@
 #define FLAG_CULL_FRONT		(1U << 17)
 #define FLAG_CULL_BACK		(1U << 18)
 
+/*
+ * A draw flag: the fragment program changes its coverage (struct "DCD
+ * Flags 0", shader modifies coverage at bit 20).
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/genxml/v10.xml (struct "DCD Flags 0").
+ */
+#define FLAG_SHADER_COVERAGE	(1U << 20)
+
+/*
+ * A clear inside a pass: the four corners of its rectangle as a strip of
+ * two triangles, one instance.
+ */
+#define CLEAR_VERTICES		4U
+
+/* The float bits of zero, for the offsets of the clear's identity viewport transform. */
+#define FLOAT_ZERO		0U
+
+/*
+ * The words of one attachment of a clear's record: its aspects, its
+ * colour attachment, the clear value's tag and its four words.
+ */
+#define CLEAR_WORDS		7U
+#define CLEAR_ASPECTS		0U
+#define CLEAR_TARGET		1U
+#define CLEAR_TAG		2U
+#define CLEAR_COLOR		3U
+
 /* A primitive flag: a varying (secondary) shader runs (struct "Primitive Flags" bit 18). */
 #define PRIMITIVE_SECONDARY	(1U << 18)
 
@@ -89,6 +124,16 @@
 #define DEPTH_WORD0		(7U | (7U << 4) | (7U << 16))
 #define DEPTH_WORD1		0xffff0000U
 #define DEPTH_WORD4		((1U << 22) | (1U << 23) | (2U << 25) | (7U << 29))
+
+/*
+ * The same descriptor for a fragment program that writes its depth: the
+ * depth from the shader ("Depth Source" shader 3 at 4:25).
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/genxml/v10.xml (struct "Depth/stencil": depth
+ * source 4:25; enum "Depth Source").
+ */
+#define DEPTH_WORD4_SHADER	((1U << 22) | (1U << 23) | (3U << 25) | (7U << 29))
 
 /* The blend state of a replace, as the pipeline packs it: ONE and ZERO, added, for colour and alpha. */
 #define REPLACE_EQUATION	(1U | (1U << 13))
@@ -110,8 +155,12 @@ struct pass_state {
 
 static int tiler_memory(struct mali_vk_build *build, uint64_t *address);
 static int pass_begin(struct mali_vk_build *build, const struct mali_vk_record *entry, struct pass_state *state);
+static bool pass_targets(const struct mali_vk_record *entry, struct pass_state *state, volatile uint8_t *targets_view);
+static int pass_preload(struct mali_vk_build *build, struct pass_state *state, uint64_t *draws);
 static void pass_end(struct mali_vk_build *build, struct pass_state *state, uint64_t fbd);
 static void draw(struct mali_vk_build *build, struct pass_state *state, const struct mali_vk_record *entry);
+static int clear_attachments(struct mali_vk_build *build, struct pass_state *state, const struct mali_vk_record *entry);
+static int clear_rect(struct mali_vk_build *build, struct pass_state *state, uint32_t target, const uint32_t *color, const VkClearRect *rect);
 static void viewport_words(const VkViewport *viewport, uint32_t *words);
 static int64_t fixed_from_float(uint32_t bits);
 static uint32_t float_from_fixed(int64_t value);
@@ -153,9 +202,13 @@ mali_vk_draw_pass(
 		if (entry->opcode == GPU_OP_CMD_DRAW || entry->opcode == GPU_OP_CMD_DRAW_INDEXED) {
 			draw(build, &state, entry);
 		} else if (entry->opcode == GPU_OP_CMD_CLEAR_ATTACHMENTS) {
-			if (!build->load_warned)
+			error = clear_attachments(build, &state, entry);
+			if (error == ENOTSUP && !build->load_warned)
 				kern_logf("mali: vk: a clear of attachments inside a pass is not run\n");
-			build->load_warned = true;
+			if (error == ENOTSUP)
+				build->load_warned = true;
+			else if (error != 0 && build->error == 0)
+				build->error = error;
 		} else {
 			mali_vk_build_bind(build, entry);
 		}
@@ -211,10 +264,12 @@ tiler_memory(
 }
 
 /*
- * Starts a pass: the heap descriptor, the tiler context, the
- * framebuffer descriptor with its render targets (their clear colours),
- * the thread storage.  Reports the framebuffer descriptor's address in
- * state->tiler (the caller moves it out) and keeps the tiler context's.
+ * Starts a pass: the heap descriptor, the tiler context, the thread
+ * storage, the framebuffer descriptor with its render targets (their
+ * clear colours) and, when the pass loads its colour attachment, the
+ * pre-frame draw that reads it back.  Reports the framebuffer
+ * descriptor's address in state->tiler (the caller moves it out) and
+ * keeps the tiler context's.
  */
 static int
 pass_begin(
@@ -222,10 +277,6 @@ pass_begin(
 	const struct mali_vk_record *entry,
 	struct pass_state *state)
 {
-	struct mali_desc_target target;
-	const struct mali_vk_image_view *view;
-	const struct mali_vk_image *image;
-	const uint32_t *clears;
 	uint32_t words[32];
 	volatile uint8_t *heap_view;
 	volatile uint8_t *tiler_view;
@@ -235,10 +286,11 @@ pass_begin(
 	uint64_t heap;
 	uint64_t tiler;
 	uint64_t fbd;
+	uint64_t draws;
 	uint32_t width;
 	uint32_t height;
-	uint32_t index;
-	uint32_t attachment;
+	uint32_t mode;
+	bool clean_tiles;
 	int error;
 
 	/* The pass and the framebuffer. */
@@ -269,20 +321,92 @@ pass_begin(
 			hierarchy_mask(build->session->owner->render->device->tiler_features, width, height));
 	store(tiler_view, words, 32);
 
+	/* The thread storage every draw's programs share, the pre-frame draw's among them. */
+	storage_view = mali_vk_build_take(build, MALI_DESC_BYTES, 64U, &state->storage);
+	if (storage_view == NULL)
+		return build->error;
+	mali_desc_local_storage(words);
+	store(storage_view, words, 8);
+
 	/* The framebuffer descriptor and its targets after it. */
 	fbd_view = mali_vk_build_take(build, MALI_DESC_FBD_BYTES + (uint64_t)state->targets * MALI_DESC_RT_BYTES, 64U, &fbd);
 	if (fbd_view == NULL)
 		return build->error;
+
+	/* Each colour target, and whether a cleared one writes back every tile. */
+	clean_tiles = pass_targets(entry, state, fbd_view + MALI_DESC_FBD_BYTES);
+
+	/* The pre-frame draw of a loaded colour attachment. */
+	error = pass_preload(build, state, &draws);
+	if (error != 0)
+		return error;
+
+	/*
+	 * The framebuffer, with the sample positions and the frame shader
+	 * draws.  A pre-frame draw runs on the tiles a primitive touches;
+	 * when a cleared target writes back every tile, on every tile.
+	 *
+	 * Procedure referenced:
+	 * Mesa 26.2.6 src/panfrost/lib/pan_desc.h (pan_fix_frame_shader_mode:
+	 * an intersecting frame shader runs always when a clean tile is
+	 * written); src/panfrost/vulkan/panvk_vX_cmd_frame_shaders.c
+	 * (cmd_preload_color_attachments: a loaded colour target's preload
+	 * intersects).
+	 */
 	mali_desc_framebuffer(words, width, height, state->targets, TILE_PIXELS,
 			      (TILE_PIXELS * TILE_BYTES_PER_PIXEL * state->targets + 1023U) & ~1023U, tiler);
 	words[4] = (uint32_t)(memory + TILER_SAMPLES_AT);
 	words[5] = (uint32_t)((memory + TILER_SAMPLES_AT) >> 32);
+	if (draws != 0U) {
+		mode = MALI_FRAME_INTERSECT;
+		if (clean_tiles)
+			mode = MALI_FRAME_ALWAYS;
+		mali_frame_shaders(words, mode, draws);
+	}
+
 	store(fbd_view, words, 16);
 
-	/* Each colour target: its view's memory, its format, its clear, whether it is stored. */
+	/* The tiler context in its staging register for the draws, and the framebuffer for the end. */
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_TILER_CONTEXT, tiler);
+	state->tiler = fbd;
+
+	/* Succeeded: the pass is started. */
+	return 0;
+}
+
+/*
+ * Writes a pass's colour targets after its framebuffer descriptor: each
+ * one's memory, format, clear and whether it is stored.  A cleared
+ * target that is stored writes back the tiles no primitive touched too
+ * (else they would keep the old pixels); a loaded or undefined one only
+ * those drawn on.  Says whether any target writes back every tile.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.6 src/panfrost/lib/pan_desc.c (pan_get_clean_tile_info: a
+ * cleared render target's clean tile write).
+ */
+static bool
+pass_targets(
+	const struct mali_vk_record *entry,
+	struct pass_state *state,
+	volatile uint8_t *targets_view)
+{
+	struct mali_desc_target target;
+	const struct mali_vk_image_view *view;
+	const struct mali_vk_image *image;
+	const uint32_t *clears;
+	uint32_t words[16];
+	uint32_t index;
+	uint32_t attachment;
+	bool cleared;
+	bool clean_tiles;
+
+	/* Each colour target in turn. */
 	clears = entry->data;
+	clean_tiles = false;
 	for (index = 0; index < state->targets; index++) {
 		kern_memset(&target, 0, sizeof(target));
+		cleared = false;
 		attachment = state->pass->color[index];
 		if (attachment != VK_ATTACHMENT_UNUSED && attachment < state->framebuffer->count) {
 			view = state->framebuffer->views[attachment]->payload;
@@ -296,10 +420,9 @@ pass_begin(
 			target.write = state->pass->store_op[attachment] == VK_ATTACHMENT_STORE_OP_STORE && target.base != 0U;
 			if (state->pass->load_op[attachment] == VK_ATTACHMENT_LOAD_OP_CLEAR && clears != NULL && attachment < entry->values[7]) {
 				target.clear[0] = pack_clear(view->format, &clears[attachment * 5U + 1U]);
-			} else if (state->pass->load_op[attachment] == VK_ATTACHMENT_LOAD_OP_LOAD && !build->load_warned) {
-				kern_logf("mali: vk: a pass that loads its attachment draws on a cleared tile\n");
-				build->load_warned = true;
+				cleared = true;
 			}
+
 			target.clear[1] = target.clear[0];
 			target.clear[2] = target.clear[0];
 			target.clear[3] = target.clear[0];
@@ -307,23 +430,97 @@ pass_begin(
 				state->target_mask |= 1U << index;
 		}
 
+		/* The descriptor, with every tile written back for a stored clear. */
 		target.internal_offset = index * TILE_PIXELS * TILE_BYTES_PER_PIXEL;
 		mali_desc_target(words, &target);
-		store(fbd_view + MALI_DESC_FBD_BYTES + (uint64_t)index * MALI_DESC_RT_BYTES, words, 16);
+		if (cleared && target.write) {
+			mali_frame_clean_tile(words);
+			clean_tiles = true;
+		}
+
+		store(targets_view + (uint64_t)index * MALI_DESC_RT_BYTES, words, 16);
 	}
 
-	/* The thread storage every draw's programs share. */
-	storage_view = mali_vk_build_take(build, MALI_DESC_BYTES, 64U, &state->storage);
-	if (storage_view == NULL)
-		return build->error;
-	mali_desc_local_storage(words);
-	store(storage_view, words, 8);
+	/* Succeeded: whether a target writes back every tile. */
+	return clean_tiles;
+}
 
-	/* The tiler context in its staging register for the draws, and the framebuffer for the end. */
-	mali_cs_move64(&build->cs, MALI_CS_IDVS_TILER_CONTEXT, tiler);
-	state->tiler = fbd;
+/*
+ * Makes the pre-frame draw of a pass whose colour target 0 loads its
+ * attachment, and reports the frame shader draws' address (zero for a
+ * pass without one).  A load the draw does not take -- of another
+ * target, or when the program or its code is not there -- draws on a
+ * cleared tile, said once a session.
+ */
+static int
+pass_preload(
+	struct mali_vk_build *build,
+	struct pass_state *state,
+	uint64_t *draws)
+{
+	struct mali_vk_preload preload;
+	const struct mali_vk_image_view *view;
+	const struct mali_vk_image *image;
+	uint64_t memory;
+	uint32_t index;
+	uint32_t attachment;
+	uint32_t equation;
+	bool supported;
+	bool loaded;
+	bool unloaded;
+	int error;
 
-	/* Succeeded: the pass is started. */
+	/* Which targets load: target 0 by the pre-frame draw, any other not at all. */
+	*draws = 0;
+	loaded = false;
+	unloaded = false;
+	view = NULL;
+	for (index = 0; index < state->targets; index++) {
+		attachment = state->pass->color[index];
+		if (attachment == VK_ATTACHMENT_UNUSED || attachment >= state->framebuffer->count)
+			continue;
+		if (state->pass->load_op[attachment] != VK_ATTACHMENT_LOAD_OP_LOAD)
+			continue;
+		if (index == 0U) {
+			view = state->framebuffer->views[attachment]->payload;
+			loaded = true;
+		} else {
+			unloaded = true;
+		}
+	}
+
+	/* A loaded view the texture can read: one of a bound image. */
+	if (loaded) {
+		image = view->image->payload;
+		memory = mali_vk_image_address(image);
+		if (memory == 0U) {
+			loaded = false;
+			unloaded = true;
+		}
+	}
+
+	/* The pre-frame draw, which writes colour 0 into target 0 as a replace of every component. */
+	if (loaded) {
+		kern_memset(&preload, 0, sizeof(preload));
+		preload.view = view;
+		preload.storage = state->storage;
+		equation = mali_desc_blend_equation(REPLACE_EQUATION, 0xfU, &supported);
+		mali_desc_blend(preload.blend, false, equation, 0xfU, 0U, blend_format(view->format));
+		error = mali_vk_preload_draws(build, &preload, draws);
+		if (error == ENOTSUP) {
+			unloaded = true;
+		} else if (error != 0) {
+			return error;
+		}
+	}
+
+	/* Says once a session that a load draws on a cleared tile. */
+	if (unloaded && !build->session->owner->load_warned) {
+		kern_logf("mali: vk: a pass that loads its attachment draws on a cleared tile\n");
+		build->session->owner->load_warned = true;
+	}
+
+	/* Succeeded: the draws, or none. */
 	return 0;
 }
 
@@ -413,8 +610,10 @@ draw(
 	uint64_t fragment_shader;
 	uint64_t blends;
 	uint64_t depth;
+	uint64_t storage;
 	uint64_t index_address;
 	uint32_t index_bytes;
+	uint32_t tls_bytes;
 	uint32_t index_type;
 	uint32_t flags;
 	uint32_t primitive;
@@ -485,17 +684,32 @@ draw(
 		store(blend_view + (uint64_t)target * MALI_DESC_BLEND_BYTES, words, 4);
 	}
 
-	/* The depth and stencil descriptor that passes everything. */
+	/* The depth and stencil descriptor that passes everything, the depth from a program that writes it. */
 	kern_memset(words, 0, sizeof(words));
 	words[0] = DEPTH_WORD0;
 	words[1] = DEPTH_WORD1;
 	words[4] = DEPTH_WORD4;
+	if (fragment->writes_depth != 0U)
+		words[4] = DEPTH_WORD4_SHADER;
 	store(depth_view, words, 8);
 
-	/* The draw's flags: the kill operation, the faces and the culls. */
+	/*
+	 * The draw's flags: the kill operation (late for a program that
+	 * discards or writes its depth), the faces, the culls, and whether
+	 * the program changes its coverage.
+	 *
+	 * Procedure referenced:
+	 * Mesa 26.2.6 src/panfrost/vulkan/csf/panvk_vX_cmd_draw.c
+	 * (prepare_dcd: a depth written by the shader forces late kill and
+	 * update; a written sample mask modifies the coverage).
+	 */
 	flags = (KILL_WEAK_EARLY << 2) | (KILL_WEAK_EARLY << 4);
 	if (fragment->discards != 0U)
 		flags = (KILL_FORCE_LATE << 2) | (KILL_FORCE_LATE << 4);
+	if (fragment->writes_depth != 0U)
+		flags = (KILL_FORCE_LATE << 2) | (KILL_FORCE_LATE << 4);
+	if (fragment->writes_sample_mask != 0U)
+		flags |= FLAG_SHADER_COVERAGE;
 	if (graphics->front_face == VK_FRONT_FACE_COUNTER_CLOCKWISE)
 		flags |= FLAG_FRONT_CCW;
 	if ((graphics->cull_mode & VK_CULL_MODE_FRONT_BIT) != 0U)
@@ -555,8 +769,20 @@ draw(
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_SPD, position_shader);
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_SPD + 2U, varying_shader);
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_SPD + 4U, fragment_shader);
-	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD, state->storage);
-	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD + 4U, state->storage);
+
+	/* The draw's thread storage: the pass's, or one with the programs' thread local storage. */
+	storage = state->storage;
+	tls_bytes = vertex->tls_bytes;
+	if (fragment->tls_bytes > tls_bytes)
+		tls_bytes = fragment->tls_bytes;
+	if (tls_bytes != 0U) {
+		storage = mali_vk_build_thread_storage(build, tls_bytes);
+		if (storage == 0U)
+			return;
+	}
+
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD, storage);
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD + 4U, storage);
 
 	/* The draw's counts and offsets. */
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_GLOBAL_OFFSET, 0));
@@ -594,6 +820,264 @@ draw(
 	/* The run: the vertex stages from sets 0 and 1 with the heap's varyings, the fragment's from set 2. */
 	mali_cs_emit(&build->cs, mali_cs_run_idvs(0, true, false, false, false, true, false));
 	state->draws++;
+}
+
+/*
+ * Draws a clear of attachments inside a pass: for each colour
+ * attachment it names and each of its rectangles, a draw of the
+ * rectangle by the executor's clear programs.  ENOTSUP when the
+ * programs are not there, or a rectangle is of a layer past the first
+ * (the pass draws one layer); the draws written before stay.
+ */
+static int
+clear_attachments(
+	struct mali_vk_build *build,
+	struct pass_state *state,
+	const struct mali_vk_record *entry)
+{
+	const uint32_t *words;
+	const VkClearRect *rects;
+	uint32_t attachments;
+	uint32_t count;
+	uint32_t index;
+	uint32_t rect;
+	uint32_t target;
+	int refused;
+	int error;
+
+	/* The attachments' words, then the rectangles after them. */
+	words = entry->data;
+	attachments = entry->values[7];
+	count = entry->values[6];
+	if (words == NULL || attachments == 0U || count == 0U)
+		return 0;
+	rects = (const VkClearRect *)(const void *)&words[attachments * CLEAR_WORDS];
+
+	/* Each colour attachment with a colour value, each rectangle; a refusal is kept and the others go on. */
+	refused = 0;
+	for (index = 0; index < attachments; index++) {
+		if ((words[index * CLEAR_WORDS + CLEAR_ASPECTS] & VK_IMAGE_ASPECT_COLOR_BIT) == 0U)
+			continue;
+		if (words[index * CLEAR_WORDS + CLEAR_TAG] != 0U)
+			continue;
+		target = words[index * CLEAR_WORDS + CLEAR_TARGET];
+		for (rect = 0; rect < count; rect++) {
+			error = clear_rect(build, state, target, &words[index * CLEAR_WORDS + CLEAR_COLOR], &rects[rect]);
+			if (error == ENOTSUP) {
+				refused = ENOTSUP;
+				continue;
+			}
+
+			if (error != 0)
+				return error;
+		}
+	}
+
+	/* A part left out. */
+	if (refused != 0)
+		return refused;
+
+	/* Succeeded: every clear is in the stream. */
+	return 0;
+}
+
+/*
+ * Draws one clear rectangle of one colour target: the vertex program
+ * places the rectangle's corners in pixels (the viewport transform is
+ * the identity), the fragment program of the target's location writes
+ * the colour; the blend of the target replaces every component, the
+ * other targets' blends write nothing, the scissor is the rectangle
+ * inside the render area.  The registers of the run are those of a
+ * pass's own draw, every one written, so the next draw finds nothing of
+ * the clear's.  Nothing for a target the pass does not store, or a
+ * rectangle outside the area.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.6 src/panfrost/vulkan/csf/panvk_vX_cmd_draw.c (the draw's
+ * staging registers, as draw() takes them); the Vulkan specification 1.0
+ * (vkCmdClearAttachments: the rectangles of the attachment cleared as
+ * if drawn, regardless of the pipeline's state).
+ */
+static int
+clear_rect(
+	struct mali_vk_build *build,
+	struct pass_state *state,
+	uint32_t target,
+	const uint32_t *color,
+	const VkClearRect *rect)
+{
+	const struct mali_shader_program *vertex;
+	const struct mali_shader_program *fragment;
+	const struct mali_vk_image_view *view;
+	uint32_t words[MALI_VK_META_FAU_WORDS];
+	uint32_t blend[4];
+	uint32_t index;
+	uint32_t attachment;
+	uint32_t equation;
+	bool supported;
+	int32_t box[4];
+	volatile uint8_t *blend_view;
+	volatile uint8_t *depth_view;
+	uint64_t vertex_code;
+	uint64_t fragment_code;
+	uint64_t vertex_fau;
+	uint64_t fragment_fau;
+	uint64_t table;
+	uint64_t position_shader;
+	uint64_t fragment_shader;
+	uint64_t blends;
+	uint64_t depth;
+	int error;
+
+	/* A colour target of the pass that is stored. */
+	if (target >= state->targets || target >= MALI_VK_ATTACHMENTS_MAX)
+		return 0;
+	attachment = state->pass->color[target];
+	if (attachment == VK_ATTACHMENT_UNUSED || attachment >= state->framebuffer->count)
+		return 0;
+	if ((state->target_mask & (1U << target)) == 0U)
+		return 0;
+	view = state->framebuffer->views[attachment]->payload;
+
+	/* The pass's one layer. */
+	if (rect->layerCount == 0U)
+		return 0;
+	if (rect->baseArrayLayer != 0U)
+		return ENOTSUP;
+
+	/* The rectangle inside the render area. */
+	box[0] = rect->rect.offset.x;
+	box[1] = rect->rect.offset.y;
+	box[2] = rect->rect.offset.x + (int32_t)rect->rect.extent.width;
+	box[3] = rect->rect.offset.y + (int32_t)rect->rect.extent.height;
+	if (box[0] < (int32_t)state->area[0])
+		box[0] = (int32_t)state->area[0];
+	if (box[1] < (int32_t)state->area[1])
+		box[1] = (int32_t)state->area[1];
+	if (state->area[2] != 0U && box[2] > (int32_t)(state->area[0] + state->area[2]))
+		box[2] = (int32_t)(state->area[0] + state->area[2]);
+	if (state->area[3] != 0U && box[3] > (int32_t)(state->area[1] + state->area[3]))
+		box[3] = (int32_t)(state->area[1] + state->area[3]);
+	if (box[2] > (int32_t)state->framebuffer->width)
+		box[2] = (int32_t)state->framebuffer->width;
+	if (box[3] > (int32_t)state->framebuffer->height)
+		box[3] = (int32_t)state->framebuffer->height;
+	if (box[2] <= box[0] || box[3] <= box[1])
+		return 0;
+
+	/* The two programs and their code. */
+	error = mali_vk_meta_program(build, MALI_VK_META_CLEAR_VERTEX, &vertex, &vertex_code);
+	if (error != 0)
+		return ENOTSUP;
+	error = mali_vk_meta_program(build, MALI_VK_META_CLEAR_COLOR + target, &fragment, &fragment_code);
+	if (error != 0)
+		return ENOTSUP;
+
+	/* The vertex program's FAU words: the rectangle, then the identity viewport transform (scales one, offsets zero). */
+	kern_memset(words, 0, sizeof(words));
+	words[0] = (uint32_t)box[0];
+	words[1] = (uint32_t)box[1];
+	words[2] = (uint32_t)box[2];
+	words[3] = (uint32_t)box[3];
+	words[vertex->viewport_fau_word] = FLOAT_ONE;
+	words[vertex->viewport_fau_word + 1U] = FLOAT_ONE;
+	words[vertex->viewport_fau_word + 2U] = FLOAT_ONE;
+	words[vertex->viewport_fau_word + 3U] = FLOAT_ZERO;
+	words[vertex->viewport_fau_word + 4U] = FLOAT_ZERO;
+	words[vertex->viewport_fau_word + 5U] = FLOAT_ZERO;
+	error = mali_vk_meta_fau(build, words, vertex->fau_words, &vertex_fau);
+	if (error != 0)
+		return error;
+
+	/* The fragment program's: the colour's four words. */
+	kern_memset(words, 0, sizeof(words));
+	words[0] = color[0];
+	words[1] = color[1];
+	words[2] = color[2];
+	words[3] = color[3];
+	error = mali_vk_meta_fau(build, words, fragment->fau_words, &fragment_fau);
+	if (error != 0)
+		return error;
+
+	/* The empty tables both read, and the two program descriptors. */
+	table = mali_vk_meta_tables(build);
+	position_shader = mali_vk_build_shader(build, MALI_DESC_STAGE_VERTEX, vertex->work_registers, vertex->preload, vertex_code);
+	fragment_shader = mali_vk_build_shader(build, MALI_DESC_STAGE_FRAGMENT, fragment->work_registers, fragment->preload, fragment_code);
+	if (table == 0U || position_shader == 0U || fragment_shader == 0U)
+		return build->error;
+
+	/* One blend a colour target: the cleared one replaced, the others not written. */
+	blend_view = mali_vk_build_take(build, (uint64_t)state->targets * MALI_DESC_BLEND_BYTES, 64U, &blends);
+	depth_view = mali_vk_build_take(build, MALI_DESC_BYTES, 64U, &depth);
+	if (blend_view == NULL || depth_view == NULL)
+		return build->error;
+	for (index = 0; index < state->targets; index++) {
+		attachment = state->pass->color[index];
+		view = NULL;
+		if (attachment != VK_ATTACHMENT_UNUSED && attachment < state->framebuffer->count)
+			view = state->framebuffer->views[attachment]->payload;
+		if (index == target) {
+			equation = mali_desc_blend_equation(REPLACE_EQUATION, 0xfU, &supported);
+			mali_desc_blend(blend, false, equation, 0xfU, index, view != NULL ? blend_format(view->format) : 0U);
+		} else {
+			equation = mali_desc_blend_equation(REPLACE_EQUATION, 0U, &supported);
+			mali_desc_blend(blend, false, equation, 0U, index, view != NULL ? blend_format(view->format) : 0U);
+		}
+
+		store(blend_view + (uint64_t)index * MALI_DESC_BLEND_BYTES, blend, 4);
+	}
+
+	/* The depth and stencil descriptor that passes everything. */
+	kern_memset(words, 0, sizeof(words));
+	words[0] = DEPTH_WORD0;
+	words[1] = DEPTH_WORD1;
+	words[4] = DEPTH_WORD4;
+	store(depth_view, words, 8);
+
+	/* The programs, their tables and FAU, the pass's storage. */
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_SRT, table);
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_SRT + 4U, table);
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_FAU, vertex_fau);
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_FAU + 4U, fragment_fau);
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_SPD, position_shader);
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_SPD + 2U, 0);
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_SPD + 4U, fragment_shader);
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD, state->storage);
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD + 4U, state->storage);
+
+	/* Four vertices of one instance, no index buffer. */
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_GLOBAL_OFFSET, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_INDEX_COUNT, CLEAR_VERTICES));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_INSTANCE_COUNT, 1));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_INDEX_OFFSET, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_VERTEX_OFFSET, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_INSTANCE_OFFSET, 0));
+
+	/* No index buffer, the scissor of the rectangle, the depth clamps. */
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD2, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_INDEX_BUFFER_SIZE, 0));
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_INDEX_BUFFER, 0);
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_SCISSOR, mali_desc_scissor_low((uint32_t)box[0], (uint32_t)box[1])));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_SCISSOR + 1U, mali_desc_scissor_high((uint32_t)box[2] - 1U, (uint32_t)box[3] - 1U)));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DEPTH_LOW, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DEPTH_HIGH, FLOAT_ONE));
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_OCCLUSION, 0);
+
+	/* No varyings, the blends, the depth, a strip without culls, weak early kill, the target alone. */
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_VARYING_SIZE, vertex->varying_bytes));
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_BLEND, (blends & ~0xfULL) | state->targets);
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_DEPTH_STENCIL, depth);
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_TILER_FLAGS, mali_desc_primitive(MALI_DESC_DRAW_TRIANGLE_STRIP, 0)));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD0, (KILL_WEAK_EARLY << 2) | (KILL_WEAK_EARLY << 4)));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_DCD1, 0xffffU | ((1U << target) << 16)));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_PRIMITIVE_SIZE, FLOAT_ONE));
+
+	/* The run, as a pass's own draw. */
+	mali_cs_emit(&build->cs, mali_cs_run_idvs(0, true, false, false, false, true, false));
+	state->draws++;
+
+	/* Succeeded: the rectangle is drawn. */
+	return 0;
 }
 
 /*

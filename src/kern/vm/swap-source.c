@@ -154,6 +154,7 @@ kern_swap_source_prepare_file(
 	uint64_t bytes;
 	struct backing_claim_extent *claim_extents;
 	ssize_t header_bytes;
+	int unsupported;
 	int error;
 	unsigned index;
 
@@ -244,7 +245,8 @@ kern_swap_source_prepare_file(
 	}
 
 	/* A disk whose blocks are not whole sectors, or more than a page. */
-	if (disk_sector_supported(data->disk) != 0) {
+	unsupported = disk_sector_supported(data->disk);
+	if (unsupported != 0) {
 		error = EIO;
 		goto out;
 	}
@@ -1334,6 +1336,7 @@ collect_extent(
 	struct file_swap_data *data;
 	struct fat_swap_extent *extent;
 	uint32_t per_block;
+	int extent_off_block;
 
 	/* Rejects an empty extent or one past the table capacity. */
 	data = argument;
@@ -1346,9 +1349,14 @@ collect_extent(
 	 * on them.
 	 */
 	per_block = data->disk->d_block_size / DISK_SECTOR_SIZE;
-	if (file_block % per_block != 0U ||
-	    disk_block % per_block != 0U ||
-	    count % per_block != 0U) {
+	extent_off_block = 0;
+	if (file_block % per_block != 0U)
+		extent_off_block = 1;
+	if (disk_block % per_block != 0U)
+		extent_off_block = 1;
+	if (count % per_block != 0U)
+		extent_off_block = 1;
+	if (extent_off_block) {
 		data->extent_error = EINVAL;
 		return EINVAL;
 	}

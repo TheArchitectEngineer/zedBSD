@@ -1777,8 +1777,7 @@ pdf_writer_begin_page_edited(
 
 /*
  * Reads an image of Notes back from the editor's page: the image of the
- * page's XObjects whose private key /ZedBSDNotesImage is id (ws175-p006,
- * design.md [M6]), as a source the editor takes again -- a JPEG's bytes
+ * page's XObjects whose private key /ZedBSDNotesImage is id, as a source the editor takes again -- a JPEG's bytes
  * (DCTDecode), a PNG's rows (FlateDecode with the PNG predictor, kept
  * compressed), or RGBA (the samples and the soft mask decoded) --, its
  * data in *owned, which the caller frees.  Returns 0, EINVAL, ENOENT for

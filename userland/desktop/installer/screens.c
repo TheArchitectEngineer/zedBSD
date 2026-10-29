@@ -209,9 +209,11 @@ screen_title(
 	const char *title,
 	const char *summary)
 {
+	unsigned flags;
 	int cancel_width;
 	int bottom;
 	int enabled;
+	int pressed;
 
 	/* Cancel, at the top right, while there is something to cancel. */
 	cancel_width = 0;
@@ -220,8 +222,13 @@ screen_title(
 		if (app->screen == INST_S9 && app->stop_asked)
 			enabled = 0;
 		(void)screen_button(app, SCREEN_ID_CANCEL, 0, 0, kl_tr("Cancel"), 0U, NULL, &cancel_width);
-		if (screen_button(app, SCREEN_ID_CANCEL, panel->x + panel->width - SCREEN_INSET - cancel_width, panel->y + 22, kl_tr("Cancel"),
-				  enabled ? 0U : KL_BUTTON_DISABLED, "cancel", NULL))
+
+		/* A Cancel that cannot be pressed is faded. */
+		flags = 0U;
+		if (!enabled)
+			flags = KL_BUTTON_DISABLED;
+		pressed = screen_button(app, SCREEN_ID_CANCEL, panel->x + panel->width - SCREEN_INSET - cancel_width, panel->y + 22, kl_tr("Cancel"), flags, "cancel", NULL);
+		if (pressed)
 			inst_cancel_asked(app);
 	}
 
@@ -253,6 +260,7 @@ screen_bar(
 	int step;
 	int width;
 	int y;
+	int pressed;
 
 	/* A thin line over the bar. */
 	theme = app->style.theme;
@@ -269,18 +277,23 @@ screen_bar(
 	/* The last screens: their own buttons at the right. */
 	if (app->screen == INST_S10 || app->screen == INST_S11) {
 		(void)screen_button(app, SCREEN_ID_CLOSE, 0, 0, kl_tr("Close"), 0U, NULL, &width);
-		if (screen_button(app, SCREEN_ID_CLOSE, right - width, button_y, kl_tr("Close"), 0U, "close", NULL))
+		pressed = screen_button(app, SCREEN_ID_CLOSE, right - width, button_y, kl_tr("Close"), 0U, "close", NULL);
+		if (pressed)
 			app->quit = 1;
 		right -= width + 10;
 		if (app->screen == INST_S10) {
 			(void)screen_button(app, SCREEN_ID_START_OVER, 0, 0, kl_tr("Start over"), 0U, NULL, &width);
-			if (screen_button(app, SCREEN_ID_START_OVER, right - width, button_y, kl_tr("Start over"), KL_BUTTON_PRIMARY, "start-over", NULL))
+			pressed = screen_button(app, SCREEN_ID_START_OVER, right - width, button_y, kl_tr("Start over"), KL_BUTTON_PRIMARY, "start-over", NULL);
+			if (pressed)
 				inst_start_over(app);
 		} else {
 			(void)screen_button(app, SCREEN_ID_REBOOT, 0, 0, kl_tr("Restart"), 0U, NULL, &width);
-			if (screen_button(app, SCREEN_ID_REBOOT, right - width, button_y, kl_tr("Restart"), KL_BUTTON_PRIMARY, "reboot", NULL))
+			pressed = screen_button(app, SCREEN_ID_REBOOT, right - width, button_y, kl_tr("Restart"), KL_BUTTON_PRIMARY, "reboot", NULL);
+			if (pressed)
 				inst_reboot(app);
 		}
+
+		/* The last screens have no Back nor Next. */
 		return;
 	}
 
@@ -290,7 +303,8 @@ screen_bar(
 
 	/* Back, but on the first screen. */
 	if (app->screen != INST_S1) {
-		if (screen_button(app, SCREEN_ID_BACK, left, button_y, kl_tr("Back"), 0U, "back", &width))
+		pressed = screen_button(app, SCREEN_ID_BACK, left, button_y, kl_tr("Back"), 0U, "back", &width);
+		if (pressed)
 			inst_back(app);
 		left += width + 12;
 	}
@@ -303,10 +317,15 @@ screen_bar(
 		label = kl_tr("Install");
 		flags = KL_BUTTON_DANGER;
 	}
+
+	/* A screen that is not ready fades Next. */
 	if (reason != NULL)
 		flags |= KL_BUTTON_DISABLED;
+
+	/* Measures the button, then draws it at the right. */
 	(void)screen_button(app, SCREEN_ID_NEXT, 0, 0, label, 0U, NULL, &next_width);
-	if (screen_button(app, SCREEN_ID_NEXT, right - next_width, button_y, label, flags, "next", NULL))
+	pressed = screen_button(app, SCREEN_ID_NEXT, right - next_width, button_y, label, flags, "next", NULL);
+	if (pressed)
 		inst_next(app);
 	right -= next_width + 14;
 
@@ -461,6 +480,8 @@ screen_dialog(
 			(void)kl_tr_format(body, sizeof(body), kl_tr("{1}. It is formatted: everything on it is erased."), line, (const char *)NULL);
 			english = labels_erase;
 		}
+
+		/* The heading was written into the buffer above. */
 		title = heading;
 		break;
 	case INST_DIALOG_NO_SWAP:
@@ -609,7 +630,9 @@ screen_choice(
 	kl_color ground;
 	kl_color edge;
 	kl_color ink;
+	kl_color secondary;
 	unsigned hit;
+	float border;
 	float cx;
 	float cy;
 
@@ -625,20 +648,27 @@ screen_choice(
 	if ((hit & KL_HIT_HOT) != 0U)
 		ground = kl_color_mix(theme->card, theme->accent, 0.08f);
 	edge = theme->card_edge;
-	if (selected)
+	border = 1.0f;
+	if (selected) {
 		edge = theme->accent;
-	kl_canvas_round(&app->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, ground);
-	kl_canvas_round_border(&app->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius,
-			       selected ? 2.0f : 1.0f, edge);
+		border = 2.0f;
+	}
 
-	/* The ring at the left. */
+	/* The row's body and its border. */
+	kl_canvas_round(&app->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, ground);
+	kl_canvas_round_border(&app->canvas, (float)rect->x, (float)rect->y, (float)rect->width, (float)rect->height, theme->control_radius, border, edge);
+
+	/* The ring at the left, faded when the row cannot be chosen. */
 	cx = (float)(rect->x + 22);
 	cy = (float)(rect->y + rect->height / 2);
-	kl_canvas_ring(&app->canvas, cx, cy, 8.0f, 1.5f, 1.0f, enabled ? theme->text_secondary : theme->text_faint);
+	secondary = theme->text_secondary;
+	if (!enabled)
+		secondary = theme->text_faint;
+	kl_canvas_ring(&app->canvas, cx, cy, 8.0f, 1.5f, 1.0f, secondary);
 	if (selected)
 		kl_canvas_circle(&app->canvas, cx, cy, 5.0f, theme->accent);
 
-	/* The title, and the detail under it. */
+	/* The title in full ink, and the detail under it in the secondary ink; both faint when not enabled. */
 	ink = theme->text;
 	if (!enabled)
 		ink = theme->text_faint;
@@ -649,7 +679,7 @@ screen_choice(
 		(void)kl_text_draw_fit(&app->text, &app->canvas, rect->x + 42, rect->y + rect->height / 2 - 4, title, SCREEN_TEXT_TITLE, 1,
 				       rect->width - 54, ink);
 		(void)kl_text_draw_fit(&app->text, &app->canvas, rect->x + 42, rect->y + rect->height / 2 + 15, detail, SCREEN_TEXT_SMALL, 0,
-				       rect->width - 54, enabled ? theme->text_secondary : theme->text_faint);
+				       rect->width - 54, secondary);
 	}
 
 	/* Reports a click (the frame it changes is drawn next). */
@@ -657,6 +687,8 @@ screen_choice(
 		app->dirty = 1;
 		return 1;
 	}
+
+	/* Not clicked. */
 	return 0;
 }
 
@@ -759,6 +791,7 @@ screen_welcome(
 {
 	const struct kl_theme *theme;
 	char words[256];
+	int pressed;
 	int y;
 
 	/* The mark and the greeting beside it. */
@@ -776,7 +809,7 @@ screen_welcome(
 			kl_tr("Installing may erase what is on the disk you choose. Copy anything you want to keep to another place before you go on."),
 			theme->card_edge);
 
-	/* The rule of the image (spec 9.1). */
+	/* The rule of the image. */
 	y = screen_card(app, x, y + SCREEN_GAP, width, kl_tr("This image is for installing only"),
 			kl_tr("Do not use it as your everyday system: do not keep starting the computer from it, copy it to an internal disk, offer network services from it or keep your files on it. In a system started from this image every program has the same power as root."),
 			theme->danger);
@@ -788,7 +821,8 @@ screen_welcome(
 	} else if (app->probe_state == 3) {
 		(void)snprintf(words, sizeof(words), "%s %s", kl_tr("The disks could not be read:"), app->probe_message);
 		y = screen_lines(app, x, y, width, words, SCREEN_TEXT, 0, theme->bad, 3);
-		if (screen_button(app, SCREEN_ID_RETRY, x, y + 8, kl_tr("Try again"), 0U, "retry", NULL))
+		pressed = screen_button(app, SCREEN_ID_RETRY, x, y + 8, kl_tr("Try again"), 0U, "retry", NULL);
+		if (pressed)
 			inst_probe_again(app);
 		y += 8 + theme->control_height;
 	} else if (app->probe_state == 2 && !app->probe.uefi) {
@@ -818,7 +852,13 @@ screen_disks(
 	char title[192];
 	char detail[256];
 	char name[32];
+	const char *table;
+	unsigned flags;
 	unsigned i;
+	int clicked;
+	int selected;
+	int enabled;
+	int pressed;
 	int y;
 
 	/* Each disk. */
@@ -826,22 +866,33 @@ screen_disks(
 	for (i = 0; i < app->probe.disk_count; i++) {
 		disk = &app->probe.disk[i];
 		screen_disk_line(app, disk, title, sizeof(title));
+
+		/* The detail: why the disk cannot be chosen, else its partition table. */
 		reason = inst_disk_refusal(app, disk);
 		if (reason != NULL) {
 			(void)snprintf(detail, sizeof(detail), "%s", kl_tr(reason));
 		} else {
-			(void)snprintf(detail, sizeof(detail), "%s: %s, %u %s", kl_tr("Partition table"), disk->table[0] != '\0' ? disk->table : "none",
-				       disk->entries, kl_tr("partitions"));
+			table = "none";
+			if (disk->table[0] != '\0')
+				table = disk->table;
+			(void)snprintf(detail, sizeof(detail), "%s: %s, %u %s", kl_tr("Partition table"), table, disk->entries, kl_tr("partitions"));
 		}
+
+		/* The row, chosen when it is the disk now selected. */
 		rect.x = x;
 		rect.y = y;
 		rect.width = width;
 		rect.height = SCREEN_ROW;
 		(void)snprintf(name, sizeof(name), "disk-%s", disk->name);
-		if (screen_choice(app, SCREEN_ID_DISK, i, &rect, app->disk == disk->registration, reason == NULL, title, detail, name)) {
+		selected = app->disk == disk->registration;
+		enabled = reason == NULL;
+		clicked = screen_choice(app, SCREEN_ID_DISK, i, &rect, selected, enabled, title, detail, name);
+		if (clicked) {
 			app->disk = disk->registration;
 			inst_log("DISK chosen name=%s registration=%u", disk->name, (unsigned)disk->registration);
 		}
+
+		/* The next row, below this one. */
 		y += SCREEN_ROW + 8;
 	}
 
@@ -850,7 +901,12 @@ screen_disks(
 		y = screen_lines(app, x, y, width, kl_tr("No disk was found. Connect one, then press Reload."), SCREEN_TEXT, 0, app->style.theme->text_secondary, 2);
 
 	/* Reload: the disks asked for again. */
-	if (screen_button(app, SCREEN_ID_RELOAD, x, y + 6, kl_tr("Reload"), inst_helper_busy(app) ? KL_BUTTON_DISABLED : 0U, "reload", NULL))
+	flags = 0U;
+	enabled = inst_helper_busy(app);
+	if (enabled)
+		flags = KL_BUTTON_DISABLED;
+	pressed = screen_button(app, SCREEN_ID_RELOAD, x, y + 6, kl_tr("Reload"), flags, "reload", NULL);
+	if (pressed)
 		inst_probe_again(app);
 
 	/* Reports the edge below. */
@@ -869,9 +925,12 @@ screen_handling(
 	const struct inst_disk *disk;
 	const struct inst_part *part;
 	const char *reason;
+	const char *detail;
 	struct kl_rect rect;
 	char line[256];
 	unsigned i;
+	int clicked;
+	int enabled;
 	int y;
 
 	/* The disk. */
@@ -885,8 +944,9 @@ screen_handling(
 	rect.y = top;
 	rect.width = width;
 	rect.height = SCREEN_ROW;
-	if (screen_choice(app, SCREEN_ID_HANDLING, 0U, &rect, app->whole == 1, 1, kl_tr("Use the whole disk"),
-			  kl_tr("Every partition on the disk is erased; an EFI system partition, a swap partition and the system's partition are made."), "whole"))
+	clicked = screen_choice(app, SCREEN_ID_HANDLING, 0U, &rect, app->whole == 1, 1, kl_tr("Use the whole disk"),
+				kl_tr("Every partition on the disk is erased; an EFI system partition, a swap partition and the system's partition are made."), "whole");
+	if (clicked)
 		app->whole = 1;
 	y = top + SCREEN_ROW + 8;
 
@@ -898,14 +958,21 @@ screen_handling(
 			screen_part_line(disk, part, line, sizeof(line));
 			y = screen_lines(app, x + 54, y + 2, width - 54, line, SCREEN_TEXT_SMALL, 0, theme->text_secondary, 1);
 		}
+
+		/* Room between the list and the next choice. */
 		y += 8;
 	}
 
 	/* Partitions chosen, or why not. */
 	reason = inst_chosen_refusal(app, disk);
 	rect.y = y + 6;
-	if (screen_choice(app, SCREEN_ID_HANDLING, 1U, &rect, app->whole == 0, reason == NULL, kl_tr("Choose partitions"),
-			  reason != NULL ? kl_tr(reason) : kl_tr("Keep the partitions there are; delete or create some, then choose where the system goes."), "chosen"))
+	enabled = reason == NULL;
+	if (reason != NULL)
+		detail = kl_tr(reason);
+	else
+		detail = kl_tr("Keep the partitions there are; delete or create some, then choose where the system goes.");
+	clicked = screen_choice(app, SCREEN_ID_HANDLING, 1U, &rect, app->whole == 0, enabled, kl_tr("Choose partitions"), detail, "chosen");
+	if (clicked)
 		app->whole = 0;
 
 	/* Reports the edge below. */
@@ -929,6 +996,7 @@ screen_edit(
 	char detail[256];
 	char name[32];
 	char size[32];
+	kl_color ink;
 	uint64_t gap_start;
 	uint64_t gap_sectors;
 	unsigned changes;
@@ -939,6 +1007,11 @@ screen_edit(
 	int esp;
 	int error;
 	int width_button;
+	int is_esp;
+	int unassigned;
+	int clicked;
+	int pressed;
+	int create;
 	int y;
 
 	/* The disk. */
@@ -953,28 +1026,43 @@ screen_edit(
 	esp = 0;
 	for (i = 0; i < disk->part_count; i++) {
 		part = &app->probe.part[disk->first_part + i];
-		if (inst_part_esp(part))
+		is_esp = inst_part_esp(part);
+		if (is_esp)
 			esp = 1;
+
+		/* The detail: a partition made here, or one the system holds mounted. */
 		screen_part_line(disk, part, title, sizeof(title));
 		detail[0] = '\0';
-		if (inst_part_unassigned(part))
+		unassigned = inst_part_unassigned(part);
+		if (unassigned)
 			(void)snprintf(detail, sizeof(detail), "%s", kl_tr("New, not used yet"));
 		else if (part->mounted)
 			(void)snprintf(detail, sizeof(detail), "%s", kl_tr("Mounted now (it is unmounted before a write)"));
+
+		/* A row with a detail is taller. */
 		rect.x = x;
 		rect.y = y;
 		rect.width = width;
-		rect.height = detail[0] != '\0' ? SCREEN_ROW : SCREEN_ROW_SMALL;
+		rect.height = SCREEN_ROW_SMALL;
+		if (detail[0] != '\0')
+			rect.height = SCREEN_ROW;
+
+		/* The row is selected when it is the partition now selected. */
 		selected = 0;
 		if (app->has_selected) {
 			inst_tuple_of(part, &tuple);
 			selected = inst_tuple_same(&tuple, &app->selected);
 		}
+
+		/* Selects the partition when its row is clicked. */
 		(void)snprintf(name, sizeof(name), "part-%u", part->slot);
-		if (screen_choice(app, SCREEN_ID_PART, i, &rect, selected, !busy, title, detail, name)) {
+		clicked = screen_choice(app, SCREEN_ID_PART, i, &rect, selected, !busy, title, detail, name);
+		if (clicked) {
 			inst_tuple_of(part, &app->selected);
 			app->has_selected = 1;
 		}
+
+		/* The next row, below this one. */
 		y += rect.height + 6;
 	}
 
@@ -992,7 +1080,8 @@ screen_edit(
 	if (!app->has_selected || busy)
 		flags |= KL_BUTTON_DISABLED;
 	y += 10;
-	if (screen_button(app, SCREEN_ID_DELETE, x, y, kl_tr("Delete partition"), flags, "delete", &width_button))
+	pressed = screen_button(app, SCREEN_ID_DELETE, x, y, kl_tr("Delete partition"), flags, "delete", &width_button);
+	if (pressed)
 		app->dialog = INST_DIALOG_DELETE;
 
 	/* The size, its default the largest room (less the ESP's when one is made), and Create. */
@@ -1003,6 +1092,8 @@ screen_edit(
 		(void)snprintf(size, sizeof(size), "%llu MiB", (unsigned long long)gap_sectors);
 		kl_field_set(&app->create_size, size);
 	}
+
+	/* The size field beside Delete. */
 	rect.x = x + width_button + 24;
 	rect.y = y;
 	rect.width = 160;
@@ -1012,24 +1103,38 @@ screen_edit(
 	flags = 0;
 	if (busy || error != 0)
 		flags |= KL_BUTTON_DISABLED;
-	if (screen_button(app, SCREEN_ID_CREATE, rect.x + rect.width + 10, y, kl_tr("Create partition"), flags, "create", NULL) ||
-	    ((changes & KL_FIELD_SUBMITTED) != 0U && flags == 0U))
+
+	/* Create is pressed, or Enter is pressed in the size field while Create is offered. */
+	create = screen_button(app, SCREEN_ID_CREATE, rect.x + rect.width + 10, y, kl_tr("Create partition"), flags, "create", NULL);
+	if (!create && (changes & KL_FIELD_SUBMITTED) != 0U && flags == 0U)
+		create = 1;
+	if (create)
 		inst_edit_create(app);
+
+	/* The row of controls is passed. */
 	y += theme->control_height + 10;
 
 	/* A new ESP is made with the first partition. */
-	if (!esp)
+	if (!esp) {
 		y = screen_lines(app, x, y, width, kl_tr("The disk has no EFI system partition: one of 512 MiB is made before the first new partition."),
 				 SCREEN_TEXT_SMALL, 0, theme->text_secondary, 2);
+	}
 
 	/* The write, or what the last one said. */
-	if (busy)
+	if (busy) {
 		y = screen_lines(app, x, y + 4, width, kl_tr("Writing to the disk..."), SCREEN_TEXT, 0, theme->text_secondary, 1);
-	else if (app->edit_message[0] != '\0')
-		y = screen_lines(app, x, y + 4, width, app->edit_message, SCREEN_TEXT, 0, app->edit_failed ? theme->bad : theme->good, 3);
-	if (app->reload_failed)
+	} else if (app->edit_message[0] != '\0') {
+		ink = theme->good;
+		if (app->edit_failed)
+			ink = theme->bad;
+		y = screen_lines(app, x, y + 4, width, app->edit_message, SCREEN_TEXT, 0, ink, 3);
+	}
+
+	/* A restart is needed before the new partitions can be used. */
+	if (app->reload_failed) {
 		y = screen_lines(app, x, y + 4, width, kl_tr("The table was written, but the new partitions can be used only after the computer restarts."),
 				 SCREEN_TEXT, 1, theme->bad, 3);
+	}
 
 	/* Reports the edge below. */
 	return y;
@@ -1067,6 +1172,8 @@ screen_swap(
 	struct kl_rect rect;
 	char size[32];
 	char words[192];
+	int clicked;
+	int selected;
 	int y;
 
 	/* None: a swap file on the root. */
@@ -1076,7 +1183,9 @@ screen_swap(
 	rect.y = top;
 	rect.width = width;
 	rect.height = SCREEN_ROW;
-	if (screen_choice(app, SCREEN_ID_SWAP, 0U, &rect, app->swap_none && !app->has_swap, 1, kl_tr("No swap partition"), words, "swap-none"))
+	selected = app->swap_none && !app->has_swap;
+	clicked = screen_choice(app, SCREEN_ID_SWAP, 0U, &rect, selected, 1, kl_tr("No swap partition"), words, "swap-none");
+	if (clicked)
 		inst_choose_swap(app, NULL);
 	y = top + SCREEN_ROW + 8;
 
@@ -1105,10 +1214,16 @@ screen_part_rows(
 	char title[256];
 	char detail[256];
 	char name[32];
+	const char *contents;
+	const char *role;
 	unsigned pass;
 	unsigned i;
 	int selected;
 	int enabled;
+	int clicked;
+	int is_esp;
+	int unassigned;
+	int same;
 	int y;
 
 	/* The disk. */
@@ -1121,39 +1236,62 @@ screen_part_rows(
 	for (pass = 0; pass < 2U; pass++) {
 		for (i = 0; i < disk->part_count; i++) {
 			part = &app->probe.part[disk->first_part + i];
-			if (inst_part_esp(part))
+
+			/* An ESP is never offered. */
+			is_esp = inst_part_esp(part);
+			if (is_esp)
 				continue;
-			if ((pass == 0U) != (inst_part_unassigned(part) != 0))
+
+			/* The first pass takes the unassigned partitions, the second the others. */
+			unassigned = inst_part_unassigned(part);
+			if ((pass == 0U) != (unassigned != 0))
 				continue;
+
+			/* The swap list leaves out the root's partition. */
 			inst_tuple_of(part, &tuple);
-			if (swap && app->has_root && inst_tuple_same(&tuple, &app->root))
+			same = inst_tuple_same(&tuple, &app->root);
+			if (swap && app->has_root && same)
 				continue;
 
 			/* The row: chosen, or faded while the system uses it. */
 			selected = 0;
 			if (!swap && app->has_root)
-				selected = inst_tuple_same(&tuple, &app->root);
+				selected = same;
 			if (swap && app->has_swap)
 				selected = inst_tuple_same(&tuple, &app->swap);
 			enabled = !part->mounted && !part->swap;
 			screen_part_line(disk, part, title, sizeof(title));
-			if (inst_part_unassigned(part))
+			if (unassigned) {
 				(void)snprintf(detail, sizeof(detail), "%s", kl_tr("New, not used yet"));
-			else if (!enabled)
+			} else if (!enabled) {
 				(void)snprintf(detail, sizeof(detail), "%s", kl_tr("In use by the running system"));
-			else
-				(void)snprintf(detail, sizeof(detail), "%s %s", kl_tr("Its contents are erased:"), part->fstype[0] != '\0' ? part->fstype : kl_tr("unknown contents"));
+			} else {
+				contents = kl_tr("unknown contents");
+				if (part->fstype[0] != '\0')
+					contents = part->fstype;
+				(void)snprintf(detail, sizeof(detail), "%s %s", kl_tr("Its contents are erased:"), contents);
+			}
+
+			/* The row's place, and its name for the log. */
 			rect.x = x;
 			rect.y = y;
 			rect.width = width;
 			rect.height = SCREEN_ROW;
-			(void)snprintf(name, sizeof(name), "%s-%u", swap ? "swap" : "root", part->slot);
-			if (screen_choice(app, id, i + 1U, &rect, selected, enabled, title, detail, name)) {
+			role = "root";
+			if (swap)
+				role = "swap";
+			(void)snprintf(name, sizeof(name), "%s-%u", role, part->slot);
+
+			/* A click chooses the partition for the screen's role. */
+			clicked = screen_choice(app, id, i + 1U, &rect, selected, enabled, title, detail, name);
+			if (clicked) {
 				if (swap)
 					inst_choose_swap(app, part);
 				else
 					inst_choose_root(app, part);
 			}
+
+			/* The next row, below this one. */
 			y += SCREEN_ROW + 8;
 		}
 	}
@@ -1178,10 +1316,16 @@ screen_items(
 	char needed[32];
 	char room[32];
 	char words[256];
+	const char *agree_text;
 	uint64_t bytes;
+	uint64_t disk_bytes;
+	uint64_t swap_bytes;
 	unsigned i;
 	int firmware;
 	int depth;
+	int pressed;
+	int loaded;
+	int changed;
 	int y;
 
 	/* The top items and the packages' under them ("Other packages" open or closed). */
@@ -1198,30 +1342,40 @@ screen_items(
 					continue;
 			}
 		}
+
+		/* The row, and the edge below it. */
 		y = screen_item_row(app, i, x, y, width, depth);
 	}
 
-	/* The firmware's licences, read and agreed (spec 4.7, U18). */
+	/* The firmware's licences, read and agreed. */
 	firmware = inst_catalog_has(&app->catalog, "firmware");
 	if (firmware && app->catalog.license_count > 0U) {
 		y += 10;
 		y = screen_lines(app, x, y, width, kl_tr("The firmware comes under its makers' licences. Read them, and agree to install the firmware."), SCREEN_TEXT, 0,
 				 theme->text_secondary, 2);
-		if (screen_button(app, SCREEN_ID_LICENSES, x, y + 6, kl_tr("Read the licences"), 0U, "licenses", NULL)) {
-			if (inst_license_load(app, 0U) == 0) {
+		pressed = screen_button(app, SCREEN_ID_LICENSES, x, y + 6, kl_tr("Read the licences"), 0U, "licenses", NULL);
+		if (pressed) {
+			loaded = inst_license_load(app, 0U);
+			if (loaded == 0) {
 				app->license_view = 1;
 				kl_scroll_move_to(&app->scroll, 0.0, 0.0, 0, kl_clock_us());
 			}
 		}
+
+		/* The switch that agrees to the licences, beside the button. */
 		rect.x = x + 240;
 		rect.y = y + 6 + (theme->control_height - theme->switch_height) / 2;
 		rect.width = theme->switch_width;
 		rect.height = theme->switch_height;
-		if (kl_switch(app->ui, &app->style, SCREEN_ID_AGREE, rect.x, rect.y, &app->license_agreed, 0U))
+		changed = kl_switch(app->ui, &app->style, SCREEN_ID_AGREE, rect.x, rect.y, &app->license_agreed, 0U);
+		if (changed)
 			app->dirty = 1;
 		inst_control(app, "license-agree", &rect, 1);
+
+		/* The words beside the switch. */
+		agree_text = kl_tr("I agree to the firmware's licences");
 		(void)kl_text_draw(&app->text, &app->canvas, rect.x + rect.width + 12, kl_text_center(SCREEN_TEXT, y + 6, theme->control_height),
-				   kl_tr("I agree to the firmware's licences"), strlen(kl_tr("I agree to the firmware's licences")), SCREEN_TEXT, 0, theme->text);
+				   agree_text, strlen(agree_text), SCREEN_TEXT, 0, theme->text);
 		y += 6 + theme->control_height;
 	}
 
@@ -1230,9 +1384,11 @@ screen_items(
 	(void)snprintf(room, sizeof(room), "%s", "-");
 	disk = screen_disk(app);
 	if (disk != NULL) {
+		disk_bytes = inst_disk_bytes(disk);
+		swap_bytes = inst_whole_swap_bytes(app, disk);
 		bytes = 0;
-		if (app->whole == 1 && inst_disk_bytes(disk) > INST_ESP_BYTES + inst_whole_swap_bytes(app, disk) + 2U * INST_MIB)
-			bytes = inst_disk_bytes(disk) - INST_ESP_BYTES - inst_whole_swap_bytes(app, disk) - 2U * INST_MIB;
+		if (app->whole == 1 && disk_bytes > INST_ESP_BYTES + swap_bytes + 2U * INST_MIB)
+			bytes = disk_bytes - INST_ESP_BYTES - swap_bytes - 2U * INST_MIB;
 		part = NULL;
 		if (app->whole == 0 && app->has_root)
 			part = inst_part_find(&app->probe, &app->root);
@@ -1240,6 +1396,8 @@ screen_items(
 			bytes = inst_part_bytes(disk, part);
 		inst_bytes_text(bytes, room, sizeof(room));
 	}
+
+	/* The sentence that sets the need against the room. */
 	(void)kl_tr_format(words, sizeof(words), kl_tr("Needs {1} (with room to spare); the system's partition has {2}."), needed, room, (const char *)NULL);
 	y = screen_lines(app, x, y + 14, width, words, SCREEN_TEXT, 1, theme->text, 2);
 
@@ -1267,6 +1425,7 @@ screen_item_row(
 	char detail[192];
 	char size[32];
 	char name[80];
+	const char *toggle_label;
 	uint64_t bytes;
 	unsigned flags;
 	unsigned j;
@@ -1275,6 +1434,7 @@ screen_item_row(
 	int changed;
 	int indent;
 	int same;
+	int pressed;
 
 	/* The heading of the packages: a title, and "Other packages" opens. */
 	theme = app->style.theme;
@@ -1287,10 +1447,17 @@ screen_item_row(
 			(void)screen_lines(app, x + indent, top + 14, width - indent, kl_tr(entry->label), SCREEN_TEXT_TITLE, 1, theme->text, 1);
 			return top + 40;
 		}
+
+		/* "Other packages": its title, and a button that opens or closes the list. */
 		(void)kl_text_draw_fit(&app->text, &app->canvas, x + indent, kl_text_center(SCREEN_TEXT, top, SCREEN_ROW_SMALL), kl_tr(entry->label),
 				       SCREEN_TEXT, 0, width - indent - 120, theme->text);
-		if (screen_button(app, SCREEN_ID_ITEM, x + width - 100, top + (SCREEN_ROW_SMALL - theme->control_height) / 2,
-				  app->other_open ? kl_tr("Hide") : kl_tr("Show"), 0U, name, NULL))
+
+		/* The button says what pressing it does to the list. */
+		toggle_label = kl_tr("Show");
+		if (app->other_open)
+			toggle_label = kl_tr("Hide");
+		pressed = screen_button(app, SCREEN_ID_ITEM, x + width - 100, top + (SCREEN_ROW_SMALL - theme->control_height) / 2, toggle_label, 0U, name, NULL);
+		if (pressed)
 			inst_item_toggle(app, item);
 		return top + SCREEN_ROW_SMALL;
 	}
@@ -1351,17 +1518,22 @@ screen_license(
 	size_t done;
 	size_t length;
 	size_t end;
+	unsigned flags;
 	int baseline;
 	int lines;
 	int bx;
 	int w;
 	int y;
+	int pressed;
 
 	/* Which licence. */
 	theme = app->style.theme;
 	license = &app->catalog.license[app->license_index];
 	base = strrchr(license->path, '/');
-	base = base != NULL ? base + 1 : license->path;
+	if (base != NULL)
+		base = base + 1;
+	else
+		base = license->path;
 	(void)snprintf(number, sizeof(number), "%u", app->license_index + 1U);
 	(void)snprintf(count, sizeof(count), "%u", app->catalog.license_count);
 	(void)kl_tr_format(words, sizeof(words), kl_tr("Licence {1} of {2}: {3}, {4}"), number, count, license->package, base, (const char *)NULL);
@@ -1369,34 +1541,61 @@ screen_license(
 
 	/* The buttons: the licence before and after, the page before and after, Close. */
 	bx = x;
-	if (screen_button(app, SCREEN_ID_LICENSE_BEFORE, bx, y + 6, kl_tr("Previous licence"), app->license_index == 0U ? KL_BUTTON_DISABLED : 0U,
-			  "license-before", &w))
+
+	/* The licence before, faded on the first. */
+	flags = 0U;
+	if (app->license_index == 0U)
+		flags = KL_BUTTON_DISABLED;
+	pressed = screen_button(app, SCREEN_ID_LICENSE_BEFORE, bx, y + 6, kl_tr("Previous licence"), flags, "license-before", &w);
+	if (pressed)
 		(void)inst_license_load(app, app->license_index - 1U);
 	bx += w + 8;
-	if (screen_button(app, SCREEN_ID_LICENSE_AFTER, bx, y + 6, kl_tr("Next licence"),
-			  app->license_index + 1U >= app->catalog.license_count ? KL_BUTTON_DISABLED : 0U, "license-after", &w))
+
+	/* The licence after, faded on the last. */
+	flags = 0U;
+	if (app->license_index + 1U >= app->catalog.license_count)
+		flags = KL_BUTTON_DISABLED;
+	pressed = screen_button(app, SCREEN_ID_LICENSE_AFTER, bx, y + 6, kl_tr("Next licence"), flags, "license-after", &w);
+	if (pressed)
 		(void)inst_license_load(app, app->license_index + 1U);
 	bx += w + 8;
-	if (screen_button(app, SCREEN_ID_PAGE_BEFORE, bx, y + 6, kl_tr("Previous page"), app->license_depth == 0U ? KL_BUTTON_DISABLED : 0U,
-			  "page-before", &w)) {
+
+	/* The page before, faded on the first page. */
+	flags = 0U;
+	if (app->license_depth == 0U)
+		flags = KL_BUTTON_DISABLED;
+	pressed = screen_button(app, SCREEN_ID_PAGE_BEFORE, bx, y + 6, kl_tr("Previous page"), flags, "page-before", &w);
+	bx += w + 8;
+	if (pressed) {
 		app->license_depth--;
 		app->license_offset = app->license_history[app->license_depth];
 	}
+
+	/* The page after, faded on the last page. */
+	flags = 0U;
+	if (app->license_page_end >= app->license_length)
+		flags = KL_BUTTON_DISABLED;
+	pressed = screen_button(app, SCREEN_ID_PAGE_AFTER, bx, y + 6, kl_tr("Next page"), flags, "page-after", &w);
 	bx += w + 8;
-	if (screen_button(app, SCREEN_ID_PAGE_AFTER, bx, y + 6, kl_tr("Next page"), app->license_page_end >= app->license_length ? KL_BUTTON_DISABLED : 0U,
-			  "page-after", &w)) {
+	if (pressed) {
 		if (app->license_depth < sizeof(app->license_history) / sizeof(app->license_history[0])) {
 			app->license_history[app->license_depth] = app->license_offset;
 			app->license_depth++;
 		}
+
+		/* The next page starts where this one ended. */
 		app->license_offset = app->license_page_end;
 	}
-	bx += w + 8;
-	if (screen_button(app, SCREEN_ID_LICENSE_CLOSE, bx, y + 6, kl_tr("Back to the items"), KL_BUTTON_PRIMARY, "license-close", &w)) {
+
+	/* Back to the items: the viewer closes. */
+	pressed = screen_button(app, SCREEN_ID_LICENSE_CLOSE, bx, y + 6, kl_tr("Back to the items"), KL_BUTTON_PRIMARY, "license-close", &w);
+	if (pressed) {
 		app->license_view = 0;
 		inst_license_close(app);
 		return y;
 	}
+
+	/* The page starts below the buttons. */
 	y += 6 + theme->control_height + 12;
 
 	/* The page: lines broken to the column, a newline ending one. */
@@ -1432,6 +1631,8 @@ screen_license(
 			done++;
 		baseline += metrics.height + 2;
 	}
+
+	/* Where the next page starts. */
 	app->license_page_end = done;
 
 	/* Reports the edge below. */
@@ -1450,6 +1651,7 @@ screen_user(
 	struct kl_rect rect;
 	unsigned flags;
 	int desktop;
+	int changed;
 	int y;
 
 	/* The fields. */
@@ -1469,16 +1671,24 @@ screen_user(
 	rect.y = y + (40 - theme->switch_height) / 2;
 	rect.width = theme->switch_width;
 	rect.height = theme->switch_height;
-	flags = desktop ? 0U : KL_BUTTON_DISABLED;
-	if (!desktop)
+	flags = 0U;
+	if (!desktop) {
+		flags = KL_BUTTON_DISABLED;
 		app->autologin = 0;
-	if (kl_switch(app->ui, &app->style, SCREEN_ID_AUTOLOGIN, rect.x, rect.y, &app->autologin, flags))
+	}
+
+	/* The switch, and a redraw when it was turned. */
+	changed = kl_switch(app->ui, &app->style, SCREEN_ID_AUTOLOGIN, rect.x, rect.y, &app->autologin, flags);
+	if (changed)
 		app->dirty = 1;
 	inst_control(app, "autologin", &rect, desktop);
 	y += 40;
-	if (!desktop)
+	if (!desktop) {
 		y = screen_lines(app, x, y + 4, width, kl_tr("Without the desktop the system starts at the console's login."), SCREEN_TEXT_SMALL, 0,
 				 theme->text_secondary, 2);
+	}
+
+	/* The user's rights. */
 	y = screen_lines(app, x, y + 8, width, kl_tr("The user is an administrator of the installed system (the wheel group)."), SCREEN_TEXT_SMALL, 0,
 			 theme->text_secondary, 2);
 
@@ -1538,8 +1748,14 @@ screen_confirm(
 	char text[256];
 	char esp_size[32];
 	char swap_size[32];
+	const char *separator;
+	const char *automatic;
+	const char *erase_text;
 	size_t used;
+	size_t room;
 	unsigned i;
+	int dependency;
+	int changed;
 	int y;
 
 	/* The disk. */
@@ -1588,12 +1804,16 @@ screen_confirm(
 			inst_bytes_text(inst_swapfile_bytes(app), swap_size, sizeof(swap_size));
 			(void)kl_tr_format(line, sizeof(line), kl_tr("A swap file of {1} on the system's partition"), swap_size, (const char *)NULL);
 		}
+
+		/* The swap partition, or the swap file that takes its place. */
 		screen_summary_row(app, x, &y, width, kl_tr("Swap"), line);
 	}
 
-	/* The loader's place (spec 5.4, U5). */
+	/* The loader's place. */
 	(void)snprintf(line, sizeof(line), "%s", "\\EFI\\BOOT\\BOOTX64.EFI");
-	part = app->whole == 1 ? NULL : inst_disk_esp(app, disk);
+	part = NULL;
+	if (app->whole != 1)
+		part = inst_disk_esp(app, disk);
 	if (part != NULL && part->boot_loader != INST_NO)
 		(void)snprintf(line, sizeof(line), "%s (%s)", "\\EFI\\ZEDBSD\\BOOTX64.EFI", kl_tr("the loader there is kept"));
 	screen_summary_row(app, x, &y, width, kl_tr("Loader"), line);
@@ -1603,16 +1823,39 @@ screen_confirm(
 	line[0] = '\0';
 	for (i = 0; i < app->catalog.item_count; i++) {
 		item = &app->catalog.item[i];
-		if (item->unit_count == 0U || (!item->chosen && !inst_item_by_dependency(&app->catalog, i)))
+
+		/* A heading, and an item that is neither chosen nor needed, are not listed. */
+		if (item->unit_count == 0U)
 			continue;
-		used += (size_t)snprintf(line + used, used < sizeof(line) ? sizeof(line) - used : 0U, "%s%s", used > 0U ? ", " : "", kl_tr(item->label));
+		dependency = inst_item_by_dependency(&app->catalog, i);
+		if (!item->chosen && !dependency)
+			continue;
+
+		/* The label, after a comma unless it is the first. */
+		separator = "";
+		if (used > 0U)
+			separator = ", ";
+		room = 0U;
+		if (used < sizeof(line))
+			room = sizeof(line) - used;
+		used += (size_t)snprintf(line + used, room, "%s%s", separator, kl_tr(item->label));
 		if (used >= sizeof(line))
 			break;
 	}
+
+	/* The items installed. */
 	screen_summary_row(app, x, &y, width, kl_tr("Install"), line);
 
-	/* The user and the computer's name. */
-	(void)snprintf(line, sizeof(line), "%s%s%s", app->user.text, app->autologin ? ", " : "", app->autologin ? kl_tr("logs in automatically") : "");
+	/* The user, and whether the desktop logs in by itself. */
+	separator = "";
+	automatic = "";
+	if (app->autologin) {
+		separator = ", ";
+		automatic = kl_tr("logs in automatically");
+	}
+
+	/* The user's line. */
+	(void)snprintf(line, sizeof(line), "%s%s%s", app->user.text, separator, automatic);
 	screen_summary_row(app, x, &y, width, kl_tr("User"), line);
 	screen_summary_row(app, x, &y, width, kl_tr("Computer's name"), app->hostname.text);
 
@@ -1624,11 +1867,15 @@ screen_confirm(
 		rect.y = y + 8;
 		rect.width = theme->switch_width;
 		rect.height = theme->switch_height;
-		if (kl_switch(app->ui, &app->style, SCREEN_ID_ERASE, rect.x, rect.y, &app->erase_agreed, 0U))
+		changed = kl_switch(app->ui, &app->style, SCREEN_ID_ERASE, rect.x, rect.y, &app->erase_agreed, 0U);
+		if (changed)
 			app->dirty = 1;
 		inst_control(app, "erase-agree", &rect, 1);
+
+		/* The words beside the switch. */
+		erase_text = kl_tr("Erase the disk");
 		(void)kl_text_draw(&app->text, &app->canvas, rect.x + rect.width + 12, kl_text_center(SCREEN_TEXT, rect.y, rect.height),
-				   kl_tr("Erase the disk"), strlen(kl_tr("Erase the disk")), SCREEN_TEXT, 0, theme->text);
+				   erase_text, strlen(erase_text), SCREEN_TEXT, 0, theme->text);
 		y = rect.y + rect.height + 6;
 	}
 
@@ -1673,25 +1920,42 @@ screen_progress(
 	char done[32];
 	char all[32];
 	char clock[32];
+	const char *step_words;
 	double fraction;
 	uint64_t seconds;
+	unsigned done_steps;
+	size_t length;
+	int same;
 	int y;
 
 	/* The step. */
 	theme = app->style.theme;
 	(void)snprintf(number, sizeof(number), "%u", app->step);
 	(void)snprintf(total, sizeof(total), "%u", app->steps);
-	(void)kl_tr_format(words, sizeof(words), kl_tr("Step {1} of {2}: {3}"), number, total,
-			   app->step_name[0] != '\0' ? kl_tr(screen_step_words(app->step_name)) : kl_tr("Starting"), (const char *)NULL);
-	if (app->stop_asked)
-		(void)snprintf(words + strlen(words), sizeof(words) - strlen(words), " (%s)", kl_tr("stopping"));
+	step_words = kl_tr("Starting");
+	if (app->step_name[0] != '\0')
+		step_words = kl_tr(screen_step_words(app->step_name));
+	(void)kl_tr_format(words, sizeof(words), kl_tr("Step {1} of {2}: {3}"), number, total, step_words, (const char *)NULL);
+	if (app->stop_asked) {
+		length = strlen(words);
+		(void)snprintf(words + length, sizeof(words) - length, " (%s)", kl_tr("stopping"));
+	}
+
+	/* The step, drawn large. */
 	y = screen_lines(app, x, top + 10, width, words, 18U, 1, theme->text, 2);
 
 	/* The bar: the steps, the unpacking by its bytes within its step. */
 	fraction = 0.0;
-	if (app->steps > 0U)
-		fraction = ((double)(app->step > 0U ? app->step - 1U : 0U)) / (double)app->steps;
-	if (app->bytes_total > 0U && strcmp(app->step_name, "unpack") == 0)
+	if (app->steps > 0U) {
+		done_steps = 0U;
+		if (app->step > 0U)
+			done_steps = app->step - 1U;
+		fraction = ((double)done_steps) / (double)app->steps;
+	}
+
+	/* Unpacking adds the bytes done within its step. */
+	same = strcmp(app->step_name, "unpack");
+	if (app->bytes_total > 0U && same == 0)
 		fraction += ((double)app->bytes_done / (double)app->bytes_total) / (double)app->steps;
 	bar.x = x;
 	bar.y = y + 16;
@@ -1701,12 +1965,14 @@ screen_progress(
 	y = bar.y + bar.height + 16;
 
 	/* The unit, the bytes and the time it has taken. */
-	if (strcmp(app->step_name, "unpack") == 0 && app->unit_name[0] != '\0') {
+	if (same == 0 && app->unit_name[0] != '\0') {
 		inst_bytes_text(app->bytes_done, done, sizeof(done));
 		inst_bytes_text(app->bytes_total, all, sizeof(all));
 		(void)kl_tr_format(words, sizeof(words), kl_tr("{1}: {2} of {3}"), app->unit_name, done, all, (const char *)NULL);
 		y = screen_lines(app, x, y, width, words, SCREEN_TEXT, 0, theme->text_secondary, 1);
 	}
+
+	/* The time since the installation was sent. */
 	seconds = (now_us - app->started_us) / 1000000U;
 	(void)snprintf(clock, sizeof(clock), "%llu:%02llu", (unsigned long long)(seconds / 60U), (unsigned long long)(seconds % 60U));
 	(void)kl_tr_format(words, sizeof(words), kl_tr("Time so far: {1}"), clock, (const char *)NULL);
@@ -1732,6 +1998,8 @@ screen_failed(
 	const struct kl_theme *theme;
 	char words[512];
 	unsigned i;
+	int same_check;
+	int same_start;
 	int y;
 
 	/* What happened. */
@@ -1749,15 +2017,21 @@ screen_failed(
 	y = screen_lines(app, x, y + 4, width, kl_tr("What the disk holds now"), SCREEN_TEXT_TITLE, 1, theme->text, 1) + 4;
 	if (app->write_count == 0U && app->fail_step[0] == '\0')
 		y = screen_lines(app, x + 12, y, width - 12, kl_tr("The disk was not changed."), SCREEN_TEXT, 0, theme->text_secondary, 2);
+
+	/* Each change S4 wrote. */
 	for (i = 0; i < app->write_count; i++)
 		y = screen_lines(app, x + 12, y + 2, width - 12, app->writes[i], SCREEN_TEXT, 0, theme->text_secondary, 2);
 
 	/* An installation that began: the table and the partitions may have changed. */
-	if (app->fail_step[0] != '\0' && strcmp(app->fail_step, "check") != 0 && strcmp(app->fail_step, "start") != 0) {
+	same_check = strcmp(app->fail_step, "check");
+	same_start = strcmp(app->fail_step, "start");
+	if (app->fail_step[0] != '\0' && same_check != 0 && same_start != 0) {
 		y = screen_lines(app, x + 12, y + 2, width - 12,
 				 kl_tr("The installation began: the partition table and the partitions may have been changed and formatted. The installed system does not start, for its start was not written. A restart may be needed before the disk is used again."),
 				 SCREEN_TEXT, 0, theme->text_secondary, 5);
 	}
+
+	/* What the disk holds, as the helper reported it. */
 	for (i = 0; i < app->state_count; i++)
 		y = screen_lines(app, x + 12, y + 2, width - 12, app->states[i], SCREEN_TEXT_SMALL, 0, theme->text_faint, 2);
 
@@ -1780,9 +2054,10 @@ screen_done(
 	const struct kl_theme *theme;
 	char words[512];
 	int zedbsd;
+	int same;
 	int y;
 
-	/* How to start it: the loader's place decides the words (spec 4.11, U5). */
+	/* How to start it: the loader's place decides the words. */
 	theme = app->style.theme;
 	zedbsd = strstr(app->loader_path, "ZEDBSD") != NULL;
 	screen_mark(app, x, top, 64U);
@@ -1798,15 +2073,18 @@ screen_done(
 				   kl_tr("Restart and choose the disk in the firmware's boot menu; the firmware's settings can make it the first to start."),
 				   app->os_name, (const char *)NULL);
 	}
+
+	/* The card that says how to start it. */
 	y = screen_card(app, x, y, width, kl_tr("Start the installed system"), words, theme->accent);
 
 	/* The user. */
 	(void)kl_tr_format(words, sizeof(words), kl_tr("Log in as {1} with the password you chose."), app->installed_user, (const char *)NULL);
 	y = screen_lines(app, x, y + SCREEN_GAP, width, words, SCREEN_TEXT, 0, theme->text, 2);
-	if (strcmp(app->swap_kind, "none") == 0)
+	same = strcmp(app->swap_kind, "none");
+	if (same == 0)
 		y = screen_lines(app, x, y + 4, width, kl_tr("The system has no swap: the swap file could not be used."), SCREEN_TEXT, 0, theme->text_secondary, 2);
 
-	/* The rule of the image (spec 9.1). */
+	/* The rule of the image. */
 	y = screen_card(app, x, y + SCREEN_GAP, width, kl_tr("Remove the installer's USB"),
 			kl_tr("The installer's image is for installing only: once the installed system starts, remove it and do not use it as your system. Until it is removed the firmware may start from it again."),
 			theme->danger);
@@ -1814,6 +2092,8 @@ screen_done(
 	/* A restart that failed. */
 	if (app->power_message[0] != '\0')
 		y = screen_lines(app, x, y + 8, width, app->power_message, SCREEN_TEXT, 0, theme->bad, 2);
+
+	/* What Close does. */
 	y = screen_lines(app, x, y + 8, width, kl_tr("Close keeps the desktop of the installer's image for now."), SCREEN_TEXT_SMALL, 0, theme->text_faint, 2);
 
 	/* Reports the edge below. */
@@ -1876,7 +2156,10 @@ screen_titles(
 		*summary = named;
 		break;
 	case INST_S10:
-		*title = app->canceled ? kl_tr("The installation was cancelled") : kl_tr("The installation failed");
+		if (app->canceled)
+			*title = kl_tr("The installation was cancelled");
+		else
+			*title = kl_tr("The installation failed");
 		*summary = kl_tr("The installed system does not start");
 		if (app->fail_step[0] == '\0')
 			*summary = kl_tr("Nothing was installed");
@@ -1910,18 +2193,32 @@ screen_disk_line(
 	size_t size)
 {
 	const char *kind;
+	const char *sectors;
 	char bytes[32];
+	uint64_t disk_bytes;
+	int same;
 
+	/* The application is not needed to write the line. */
 	(void)app;
 
-	/* The kind as people know it (AHCI's disks are IDE's kind, spec 4.2). */
+	/* The kind as people know it (AHCI's disks are IDE's kind). */
 	kind = kl_tr("SATA/IDE");
-	if (strcmp(disk->kind, "nvme") == 0)
+	same = strcmp(disk->kind, "nvme");
+	if (same == 0) {
 		kind = "NVMe";
-	else if (strcmp(disk->kind, "removable") == 0)
-		kind = kl_tr("USB or removable");
-	inst_bytes_text(inst_disk_bytes(disk), bytes, sizeof(bytes));
-	(void)snprintf(text, size, "%s  %s  %s%s", disk->name, kind, bytes, disk->sector_bytes == 4096U ? "  (4096-byte sectors)" : "");
+	} else {
+		same = strcmp(disk->kind, "removable");
+		if (same == 0)
+			kind = kl_tr("USB or removable");
+	}
+
+	/* Its size, and the sector size when it is the large one. */
+	disk_bytes = inst_disk_bytes(disk);
+	inst_bytes_text(disk_bytes, bytes, sizeof(bytes));
+	sectors = "";
+	if (disk->sector_bytes == 4096U)
+		sectors = "  (4096-byte sectors)";
+	(void)snprintf(text, size, "%s  %s  %s%s", disk->name, kind, bytes, sectors);
 }
 
 /* Writes a partition's line: its slot, its size, its type, its labels. */
@@ -1933,16 +2230,30 @@ screen_part_line(
 	size_t size)
 {
 	char bytes[32];
+	const char *type_name;
+	uint64_t part_bytes;
+	size_t used;
+	size_t name_length;
 
 	/* Slot, size, type, then the GPT name and the file system's label when they say something. */
-	inst_bytes_text(inst_part_bytes(disk, part), bytes, sizeof(bytes));
-	(void)snprintf(text, size, "%u  %s  %s", part->slot, bytes, inst_type_name(part->type));
-	if (part->name[0] != '\0' && strlen(text) + strlen(part->name) + 5U < size) {
+	part_bytes = inst_part_bytes(disk, part);
+	inst_bytes_text(part_bytes, bytes, sizeof(bytes));
+	type_name = inst_type_name(part->type);
+	(void)snprintf(text, size, "%u  %s  %s", part->slot, bytes, type_name);
+
+	/* The GPT name, when it fits. */
+	used = strlen(text);
+	name_length = strlen(part->name);
+	if (part->name[0] != '\0' && used + name_length + 5U < size) {
 		(void)strcat(text, "  \"");
 		(void)strcat(text, part->name);
 		(void)strcat(text, "\"");
 	}
-	if (part->fslabel[0] != '\0' && strlen(text) + strlen(part->fslabel) + 4U < size) {
+
+	/* The file system's label, when it fits. */
+	used = strlen(text);
+	name_length = strlen(part->fslabel);
+	if (part->fslabel[0] != '\0' && used + name_length + 4U < size) {
 		(void)strcat(text, "  [");
 		(void)strcat(text, part->fslabel);
 		(void)strcat(text, "]");

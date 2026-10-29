@@ -21,6 +21,7 @@ Vulkan の段（render の node・executor、Valhall の shader compiler、CS �
 - `mali-csf.c`: section の load と map、MCU_CONTROL = AUTO と起動の poll、interface の読み、global の設定、PING、doorbell、status の報告。
 - `mali-queue.c`: CSG 0・CS 0 を AS 1 の 64 KiB の空の ring で起動（doorbell 1）。
 - `platform/arm64/mali.mk`: `ARM64_MALI_SOURCES`。
+- 2026-10-29（q1675-i03）: render の node（gpu1）は root の mount の後の firmware の読みの後に出るので、`drv_mali_gpu_attach` が後の段の thread の前に `kern_gpu_attach_begin()`、後の段が node を出した（か諦めた）所で `kern_gpu_attach_end()`（powervr・amdrdna・nvrtx・i915 と同じ形）。sessiond は hw.gpu.attaching が 0 になるまで desktop の起動を待つので、compositor の側は変えない。thread を作れなければその場で end。
 - driver の arch minor の file が無ければ arch10.12・10.10・10.8 を順に読む（linux-firmware の 3 本は同じ file、[gpu.md](../gpu.md) §4）。
 
 ## 確かめ
@@ -31,6 +32,8 @@ Vulkan の段（render の node・executor、Valhall の shader compiler、CS �
 - 実機: 未実施。QEMU: 未実施（S7D・Mali の machine が無い）。
 
 ## 夜の試験で見る物
+
+- boot の step の log に `a GPU device began attaching` と、`mali: render node ready …`（か失敗の行）の後の `a GPU device finished attaching`。desktop は後者の後に始まる（sessiond の待ちの上限まで）。
 
 [gpu.md](../gpu.md) §9 の「夜の serial で見る行」の 2〜10（clock の値、GPU_ID と arch、reset と L2、firmware の file、interface の版、PING、queue、job の割り込み）。
 

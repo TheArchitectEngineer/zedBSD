@@ -48,8 +48,10 @@ an installer root image. Writes to this leaf are refused.
 
 The query retains the live root, lower path and loop backing file while reading
 their relationship and identity. It does not reconstruct a private pathname.
-The installer separately resolves rootfs.img on the admitted source partition
-and compares device, inode and size, alongside the retained physical provenance
-above. A file with that name merely existing is insufficient. Recheck the live
-record and source identity after interaction before committing changes.
+A consumer that must know which image is the live root compares device,
+inode and size with this record, alongside the retained physical provenance
+above; a file with the expected name merely existing is insufficient. Recheck
+the live record after interaction before committing changes. The
+[installer](installer.md) treats a nonempty `firmware_partition` as the sign of
+a UEFI start and the disk it names as one the running system uses.
 

@@ -117,13 +117,47 @@
 /* The byte offset of the attribute record within a vertex's output (the point size). */
 #define VA_ATTRIBUTE_RECORD	4U
 
+/* The kinds of sampler message: a filtered sample, a texel load and a gather. */
+#define VA_TEXTURE_SAMPLE	0U
+#define VA_TEXTURE_FETCH	1U
+#define VA_TEXTURE_GATHER	2U
+
+/* The bits of a cube's s coordinate below its face (bits 31:29). */
+#define VA_CUBE_COORDINATE_MASK	0x1FFFFFFFU
+
+/*
+ * The 32-bit words of thread local storage a program may keep spilled
+ * values in (1 KiB a thread), no word, and the least bytes a thread's
+ * storage has.
+ *
+ * Value referenced: Mesa 26.2.6 src/panfrost/lib/pan_scratch.c (a
+ * thread's stack is a power of two of at least 16 bytes).
+ */
+#define VA_TLS_WORDS		256U
+#define VA_NO_TLS_WORD		UINT32_MAX
+#define VA_TLS_MIN_BYTES	16U
+
 /*
  * One lowering in progress: the IR, the program it describes, the list of
  * instructions, each value's register (or its constant: a constant is made
  * again in a temporary register at each reader, or read from the constant
  * table), each value's last use, the free registers and the first one the
  * stage's preloads leave alone, the temporaries of the instruction,
- * the outputs the program writes at its end, and the loops it is in.
+ * the outputs the program writes at its end (a fragment program's depth
+ * and sample mask among them), the loops it is in (their heads' places
+ * in the list and in the IR), and the compile's MALI_SHADER_OPTION_*.
+ *
+ * A value the registers cannot keep is spilled to a word of thread local
+ * storage (tls_word, VA_NO_TLS_WORD for none) and loaded again where it
+ * is read: pinned marks the values a register must keep (a loop
+ * variable, which every MOVE writes, and a predicated load's result),
+ * touched the step (one a lowered IR instruction, step counting them)
+ * that last handed out a value's register, which may not be spilled
+ * while that step lasts; sources lists the values the instruction being
+ * lowered reads; tls_used marks the words in use, tls_words counts the
+ * words ever used; in_branch is nonzero inside a block that only some
+ * lanes run, where nothing may be spilled or loaded again; loop_reserve
+ * is the registers a loop's head makes free by spilling.
  */
 struct va_compiler {
 	const struct drv_gpu_shader_ir *ir;
@@ -148,24 +182,70 @@ struct va_compiler {
 	uint32_t output_value[MALI_SHADER_LOCATIONS][4];
 	uint32_t position_value[4];
 	uint32_t point_size_value;
+	uint32_t depth_value;
+	uint32_t sample_mask_value;
+	uint32_t options;
 
 	uint32_t loop_start[VA_LOOP_DEPTH];
+	uint32_t loop_head[VA_LOOP_DEPTH];
 	uint32_t loop_depth;
+
+	uint32_t *tls_word;
+	uint8_t *pinned;
+	uint32_t *touched;
+	uint32_t step;
+	uint32_t sources[VA_MAX_SOURCES];
+	uint32_t source_count;
+	uint8_t tls_used[VA_TLS_WORDS];
+	uint32_t tls_words;
+	uint32_t in_branch;
+	uint32_t loop_reserve;
 
 	int error;
 	const char *reason;
 	uint32_t at;
 };
 
+/*
+ * One sampler message as the lowering reads it: its kind (VA_TEXTURE_*),
+ * whether it compares with a depth reference, whether its image is a
+ * cube and an array, its dimension and the coordinate parameters it has
+ * (a cube's three of the direction), its level of detail mode, the
+ * places among its parameters of the first coordinate, the reference,
+ * the level (or bias) and the layer (VA_NOT_DEFINED for none), a
+ * gather's channel, the constant texel offset, and the parameters'
+ * registers.
+ */
+struct va_texture {
+	uint32_t kind;
+	uint32_t compare;
+	uint32_t cube;
+	uint32_t array;
+	uint32_t dimension;
+	uint32_t coordinates;
+	uint32_t lod_mode;
+	uint32_t first;
+	uint32_t ref_slot;
+	uint32_t lod_slot;
+	uint32_t layer_slot;
+	uint32_t channel;
+	uint32_t offset;
+	uint32_t parameter_count;
+	uint32_t parameters[DRV_GPU_IR_TEXTURE_MAX_PARAMS];
+};
+
 /* The texture and sampler handle's table and index bits for texture slot k. */
 static uint32_t texture_handle(uint32_t slot);
 
-static int compile_variant(const struct drv_gpu_shader_ir *ir, struct mali_shader_program *program, uint32_t variant, uint8_t *out, size_t room, size_t *length, uint32_t *work_registers, uint32_t *preload, struct mali_shader_diagnostic *diagnostic);
+static int compile_variant(const struct drv_gpu_shader_ir *ir, struct mali_shader_program *program, uint32_t variant, uint32_t options, uint8_t *out, size_t room, size_t *length, uint32_t *work_registers, uint32_t *preload, struct mali_shader_diagnostic *diagnostic);
 static int lay_out(const struct drv_gpu_shader_ir *ir, struct mali_shader_program *program);
 static uint32_t buffer_of(const struct drv_gpu_shader_ir *ir, const struct mali_shader_program *program, uint32_t uniform);
 static void lower_size_query(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static int optimize_for(const struct drv_gpu_shader_ir *ir, uint32_t variant, struct drv_gpu_shader_ir *optimized);
 static int lower(struct va_compiler *c);
+static int lower_with_room(struct va_compiler *c);
+static void make_loop_room(struct va_compiler *c);
+static int read_in_loop(const struct va_compiler *c, uint32_t value, uint32_t begin, uint32_t end);
 static void lower_instruction(struct va_compiler *c, uint32_t index);
 static void lower_end(struct va_compiler *c);
 static uint32_t ir_sources(const struct drv_gpu_shader_ir_inst *inst, uint32_t *sources);
@@ -173,6 +253,13 @@ static uint32_t ir_defines(const struct drv_gpu_shader_ir_inst *inst);
 static int compute_liveness(struct va_compiler *c);
 static void fail(struct va_compiler *c, int error, const char *reason);
 static uint32_t alloc_block(struct va_compiler *c, uint32_t count);
+static uint32_t find_block(struct va_compiler *c, uint32_t count);
+static int spill_one(struct va_compiler *c);
+static int spill_candidate(const struct va_compiler *c, uint32_t value);
+static uint32_t reload_value(struct va_compiler *c, uint32_t value);
+static void reload_before_branch(struct va_compiler *c, uint32_t value);
+static void mark_pinned(struct va_compiler *c);
+static uint64_t tls_access(uint32_t word);
 static void free_reg(struct va_compiler *c, uint32_t reg);
 static uint32_t value_reg(struct va_compiler *c, uint32_t value);
 static uint32_t value_operand(struct va_compiler *c, uint32_t value);
@@ -204,12 +291,21 @@ static void lower_load_input(struct va_compiler *c, uint32_t index);
 static void lower_vertex_attribute(struct va_compiler *c, uint32_t index);
 static void lower_varying(struct va_compiler *c, uint32_t index);
 static void lower_special_input(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
-static void lower_load_ubo(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
+static void lower_load_ubo(struct va_compiler *c, uint32_t index);
+static uint32_t ubo_run(const struct va_compiler *c, uint32_t index);
 static uint32_t buffer_address(struct va_compiler *c, uint32_t uniform, uint32_t offset_reg);
 static void lower_storage(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static void lower_atomic(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static void lower_system(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static void lower_texture(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
+static void read_texture(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst, struct va_texture *texture);
+static void emit_cube_coordinates(struct va_compiler *c, uint32_t block, uint32_t x, uint32_t y, uint32_t z);
+static void lower_image(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
+static uint32_t image_coordinates(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
+static uint32_t image_address(struct va_compiler *c, uint32_t slot, uint32_t coordinates);
+static uint32_t image_slot(struct va_compiler *c, uint32_t uniform);
+static uint32_t image_register_format(uint32_t format);
+static uint32_t image_components(uint32_t format);
 static void lower_store_output(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static uint32_t texture_slot(struct va_compiler *c, uint32_t set, uint32_t binding);
 static uint32_t buffer_slot(struct va_compiler *c, uint32_t uniform);
@@ -263,10 +359,10 @@ mali_shader_compile(
 		return EINVAL;
 	}
 
-	/* Parses the stage, a compute shader's sampled images included. */
+	/* Parses the stage, with the images (a compute shader's included) the compiler lowers. */
 	ir = NULL;
 	kern_memset(&parse_diagnostic, 0, sizeof(parse_diagnostic));
-	error = drv_gpu_shader_parse_features(words, word_count, ir_stage, DRV_GPU_SPIRV_FEATURE_COMPUTE_IMAGES, &ir, &parse_diagnostic);
+	error = drv_gpu_shader_parse_features(words, word_count, ir_stage, MALI_SHADER_SPIRV_FEATURES, &ir, &parse_diagnostic);
 	if (error != 0) {
 		if (diagnostic != NULL) {
 			diagnostic->instruction = parse_diagnostic.word_offset;
@@ -306,10 +402,8 @@ mali_shader_compile_ir(
 	size_t second;
 	uint32_t work;
 	uint32_t preload;
+	uint32_t flags;
 	int error;
-
-	/* No option changes the program yet. */
-	(void)options;
 
 	/* Starts with no program and no refusal. */
 	if (program != NULL)
@@ -320,6 +414,11 @@ mali_shader_compile_ir(
 	/* A missing IR or result is refused. */
 	if (ir == NULL || program == NULL)
 		return EINVAL;
+
+	/* Takes the options asked for (none without a record). */
+	flags = 0U;
+	if (options != NULL)
+		flags = options->flags;
 
 	/* Allocates the program's description. */
 	made = kern_calloc(1U, sizeof(*made));
@@ -362,9 +461,9 @@ mali_shader_compile_ir(
 	/* Compiles the main program, or a vertex shader's position program. */
 	first = 0U;
 	if (ir->stage == DRV_GPU_STAGE_VERTEX) {
-		error = compile_variant(ir, made, VA_VARIANT_POSITION, code, room, &first, &work, &preload, diagnostic);
+		error = compile_variant(ir, made, VA_VARIANT_POSITION, flags, code, room, &first, &work, &preload, diagnostic);
 	} else {
-		error = compile_variant(ir, made, VA_VARIANT_MAIN, code, room, &first, &work, &preload, diagnostic);
+		error = compile_variant(ir, made, VA_VARIANT_MAIN, flags, code, room, &first, &work, &preload, diagnostic);
 	}
 	if (error != 0) {
 		kern_free(code);
@@ -379,7 +478,7 @@ mali_shader_compile_ir(
 	/* Compiles a vertex shader's varying program after the position program, when it writes varyings. */
 	second = 0U;
 	if (ir->stage == DRV_GPU_STAGE_VERTEX && made->varying_mask != 0U) {
-		error = compile_variant(ir, made, VA_VARIANT_VARYING, code + first, room - first, &second, &work, &preload, diagnostic);
+		error = compile_variant(ir, made, VA_VARIANT_VARYING, flags, code + first, room - first, &second, &work, &preload, diagnostic);
 		if (error != 0) {
 			kern_free(code);
 			kern_free(made);
@@ -423,6 +522,7 @@ compile_variant(
 	const struct drv_gpu_shader_ir *ir,
 	struct mali_shader_program *program,
 	uint32_t variant,
+	uint32_t options,
 	uint8_t *out,
 	size_t room,
 	size_t *length,
@@ -435,6 +535,7 @@ compile_variant(
 	size_t written;
 	size_t bound;
 	uint32_t highest;
+	uint32_t bytes;
 	int error;
 
 	/* Optimizes a private copy for what this program writes. */
@@ -451,6 +552,7 @@ compile_variant(
 	}
 	c->program = program;
 	c->variant = variant;
+	c->options = options;
 	if (optimized.instructions != NULL) {
 		c->ir = &optimized;
 	} else {
@@ -458,14 +560,15 @@ compile_variant(
 	}
 
 	/* Lowers the program, then the parsed one if the rewritten one was refused for any reason but memory. */
-	error = lower(c);
+	error = lower_with_room(c);
 	if (error != 0 && error != ENOMEM && c->ir != ir) {
 		va_code_release(&c->code);
 		kern_memset(c, 0, sizeof(*c));
 		c->program = program;
 		c->variant = variant;
+		c->options = options;
 		c->ir = ir;
-		error = lower(c);
+		error = lower_with_room(c);
 	}
 	if (error != 0) {
 		if (diagnostic != NULL) {
@@ -505,6 +608,15 @@ compile_variant(
 	*length = written;
 	*work_registers = highest;
 	*preload = c->preload;
+
+	/* A thread's spill words, as a power of two of at least the least storage, for every program of the shader. */
+	if (c->tls_words != 0U) {
+		bytes = VA_TLS_MIN_BYTES;
+		while (bytes < c->tls_words * 4U)
+			bytes *= 2U;
+		if (bytes > program->tls_bytes)
+			program->tls_bytes = bytes;
+	}
 
 	/* Succeeded: the program is written. */
 	va_code_release(&c->code);
@@ -564,6 +676,15 @@ lay_out(
 			program->textures[program->texture_count].index = program->texture_count;
 			program->textures[program->texture_count].size_fau_word = MALI_SHADER_NO_FAU_WORD;
 			program->texture_count++;
+		} else if (uniform->kind == DRV_GPU_IR_UNIFORM_STORAGE_IMAGE) {
+			if (program->image_count == MALI_SHADER_IMAGES)
+				return ENOSPC;
+			program->images[program->image_count].set = uniform->set;
+			program->images[program->image_count].binding = uniform->binding;
+			program->images[program->image_count].index = program->image_count;
+			program->images[program->image_count].format = uniform->format;
+			program->images[program->image_count].size_fau_word = MALI_SHADER_NO_FAU_WORD;
+			program->image_count++;
 		}
 	}
 	/* Gives the sizes the program queries their words. */
@@ -581,6 +702,14 @@ lay_out(
 					continue;
 				if (program->textures[slot].size_fau_word == MALI_SHADER_NO_FAU_WORD) {
 					program->textures[slot].size_fau_word = word;
+					word += 4U;
+				}
+			}
+			for (slot = 0U; slot < program->image_count; slot++) {
+				if (program->images[slot].set != inst->location || program->images[slot].binding != inst->immediate)
+					continue;
+				if (program->images[slot].size_fau_word == MALI_SHADER_NO_FAU_WORD) {
+					program->images[slot].size_fau_word = word;
 					word += 4U;
 				}
 			}
@@ -698,6 +827,52 @@ optimize_for(
 	return 0;
 }
 
+/*
+ * Lowers the program, again with more registers kept free at each loop's
+ * head (by spilling the values that live through the loop without being
+ * read in it) while the registers run out.
+ */
+static int
+lower_with_room(
+	struct va_compiler *c)
+{
+	static const uint32_t reserves[] = { 0U, 16U, 32U, VA_REGISTERS };
+	const struct drv_gpu_shader_ir *ir;
+	struct mali_shader_program *program;
+	uint32_t variant;
+	uint32_t options;
+	uint32_t attempt;
+	int error;
+
+	/* Tries each reserve while the registers run out. */
+	ir = c->ir;
+	program = c->program;
+	variant = c->variant;
+	options = c->options;
+	error = 0;
+	for (attempt = 0U; attempt < sizeof(reserves) / sizeof(reserves[0]); attempt++) {
+		if (attempt != 0U) {
+			va_code_release(&c->code);
+			kern_memset(c, 0, sizeof(*c));
+			c->program = program;
+			c->variant = variant;
+			c->options = options;
+			c->ir = ir;
+		}
+		c->loop_reserve = reserves[attempt];
+		error = lower(c);
+		if (error != ENOSPC)
+			break;
+	}
+
+	/* Reports the lowering's refusal. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the list is complete. */
+	return 0;
+}
+
 /* Lowers the whole program. */
 static int
 lower(
@@ -738,6 +913,19 @@ lower(
 	if (c->done == NULL)
 		goto out;
 
+	/* Allocates each value's spill word, pin and last step. */
+	c->tls_word = kern_malloc((size_t)value_count * sizeof(*c->tls_word));
+	if (c->tls_word == NULL)
+		goto out;
+	kern_memset(c->tls_word, 0xFF, (size_t)value_count * sizeof(*c->tls_word));
+	c->pinned = kern_calloc(value_count, 1U);
+	if (c->pinned == NULL)
+		goto out;
+	c->touched = kern_calloc(value_count, sizeof(*c->touched));
+	if (c->touched == NULL)
+		goto out;
+	mark_pinned(c);
+
 	/*
 	 * Starts with every register below the stage's preloads free (r48, the
 	 * blend shader's link, is free without blend shaders) and no output
@@ -756,6 +944,8 @@ lower(
 	for (component = 0U; component < 4U; component++)
 		c->position_value[component] = VA_NOT_DEFINED;
 	c->point_size_value = VA_NOT_DEFINED;
+	c->depth_value = VA_NOT_DEFINED;
+	c->sample_mask_value = VA_NOT_DEFINED;
 
 	/* Finds each value's definition and last use. */
 	error = compute_liveness(c);
@@ -764,15 +954,19 @@ lower(
 		goto out;
 	}
 
-	/* Lowers every instruction, freeing what dies after it. */
+	/* Lowers every instruction, each a step reading its sources, freeing what dies after it. */
 	for (index = 0U; index < c->ir->instruction_count && c->error == 0; index++) {
 		c->at = index;
+		c->step++;
+		c->source_count = ir_sources(&c->ir->instructions[index], c->sources);
 		if (c->done[index] == 0U)
 			lower_instruction(c, index);
 		release_after(c, index);
 	}
 
-	/* Writes what the stage leaves at its end. */
+	/* Writes what the stage leaves at its end, a step of its own. */
+	c->step++;
+	c->source_count = 0U;
 	if (c->error == 0)
 		lower_end(c);
 
@@ -788,6 +982,12 @@ out:
 	kern_free(c->last_use);
 	kern_free(c->defined_at);
 	kern_free(c->done);
+	kern_free(c->tls_word);
+	kern_free(c->pinned);
+	kern_free(c->touched);
+	c->tls_word = NULL;
+	c->pinned = NULL;
+	c->touched = NULL;
 	c->reg = NULL;
 	c->is_constant = NULL;
 	c->constant = NULL;
@@ -847,7 +1047,7 @@ lower_instruction(
 		break;
 
 	case DRV_GPU_IR_LOAD_UBO:
-		lower_load_ubo(c, inst);
+		lower_load_ubo(c, index);
 		break;
 
 	case DRV_GPU_IR_LOAD_STORAGE:
@@ -884,6 +1084,11 @@ lower_instruction(
 		lower_size_query(c, inst);
 		break;
 
+	case DRV_GPU_IR_IMAGE_READ:
+	case DRV_GPU_IR_IMAGE_WRITE:
+		lower_image(c, inst);
+		break;
+
 	case DRV_GPU_IR_KILL:
 		/* Discards and ends the lanes whose Boolean is set (all ones is a NaN, unequal to zero). */
 		emit(c,
@@ -906,7 +1111,9 @@ lower_instruction(
 			fail(c, ENOTSUP, "loops nest too deep");
 			break;
 		}
+		make_loop_room(c);
 		c->loop_start[c->loop_depth] = c->code.count;
+		c->loop_head[c->loop_depth] = c->at;
 		c->loop_depth++;
 		break;
 
@@ -2020,6 +2227,25 @@ lower_special_input(
 		return;
 	}
 
+	/*
+	 * gl_SampleMaskIn: the samples the rasterizer found covered, bits
+	 * 15:0 of r61, widened.
+	 *
+	 * Procedure referenced: Mesa 26.2.6
+	 * src/panfrost/compiler/bifrost/bifrost_compile.c (the
+	 * load_sample_mask_in intrinsic).
+	 */
+	if (inst->location == DRV_GPU_SHADER_LOCATION_SAMPLE_MASK) {
+		emit(c,
+		     VA_OP_U16_TO_U32 | va_source_register(VA_PRELOAD_RASTER_COVERAGE) | va_dest(dst),
+		     va_register_mask(VA_PRELOAD_RASTER_COVERAGE, 1U),
+		     va_register_mask(dst, 1U),
+		     0U);
+		c->preload |= 1U << (VA_PRELOAD_RASTER_COVERAGE - VA_PRELOAD_FIRST);
+		c->program->reads_sample_mask = 1U;
+		return;
+	}
+
 	/* The fragment coordinate's z and w, and the point coordinate, are special varyings. */
 	if (inst->location == DRV_GPU_SHADER_LOCATION_FRAG_COORD) {
 		special = 3U;
@@ -2041,39 +2267,67 @@ lower_special_input(
 }
 
 /*
- * Loads a uniform buffer word: LOAD.i32 from the buffer's address in the
- * FAU at the word's byte offset (a 16-bit immediate; a farther word's
- * address is computed).
+ * Loads uniform buffer words: one LOAD from the buffer's address in the
+ * FAU at the first word's byte offset (a 16-bit immediate; a farther
+ * word's address is computed), of the word alone or, with
+ * MALI_SHADER_OPTION_VECTOR_UBO, of the run of following words
+ * ubo_run() finds, into a block whose registers the run's values take.
  */
 static void
 lower_load_ubo(
 	struct va_compiler *c,
-	const struct drv_gpu_shader_ir_inst *inst)
+	uint32_t index)
 {
+	static const uint64_t loads[4] = {
+		VA_OP_LOAD_I32,
+		VA_OP_LOAD_I64 | ((uint64_t)VA_LOAD_LANE_64_IDENTITY << VA_SHIFT_LOAD_LANE),
+		VA_OP_LOAD_I96 | ((uint64_t)VA_LOAD_LANE_96_IDENTITY << VA_SHIFT_LOAD_LANE),
+		VA_OP_LOAD_I128 | ((uint64_t)VA_LOAD_LANE_128_IDENTITY << VA_SHIFT_LOAD_LANE)
+	};
+	const struct drv_gpu_shader_ir_inst *inst;
 	uint32_t slot;
 	uint32_t word;
 	uint32_t dst;
+	uint32_t count;
+	uint32_t next;
 	uint32_t offset;
 	uint32_t address;
 	uint64_t bits;
+
+	inst = &c->ir->instructions[index];
 
 	/* Finds the buffer's address word. */
 	slot = buffer_slot(c, inst->location);
 	if (c->error != 0)
 		return;
 	word = c->program->buffers[slot].fau_word;
-	dst = define_value(c, inst->dst);
+
+	/* Gives the word its register, or the run's words a block of them. */
+	count = ubo_run(c, index);
+	if (count == 1U) {
+		dst = define_value(c, inst->dst);
+	} else {
+		dst = alloc_block(c, count);
+	}
 	if (c->error != 0)
 		return;
 
+	/* The run's values take the block's registers; their own loads are done. */
+	if (count != 1U)
+		bind_value(c, inst->dst, dst);
+	for (next = 1U; next < count; next++) {
+		bind_value(c, c->ir->instructions[index + next].dst, dst + next);
+		c->done[index + next] = 1U;
+	}
+
 	/* A near offset loads from the FAU address directly. */
 	if (inst->immediate < 0x8000U) {
-		bits = VA_OP_LOAD_I32 | va_source_uniform(word);
+		bits = loads[count - 1U] | va_source_uniform(word);
 		bits |= va_field(va_uniform_page(word), VA_SHIFT_FAU_PAGE);
 		bits |= va_field(inst->immediate, VA_SHIFT_MEMORY_OFFSET);
 		bits |= va_field(1U, VA_SHIFT_LOAD_UNSIGNED);
-		bits |= va_staging(dst, 1U, VA_STAGING_WRITE);
-		emit(c, bits, 0U, va_register_mask(dst, 1U), VA_INST_MESSAGE);
+		bits |= va_staging(dst, count, VA_STAGING_WRITE);
+		emit(c, bits, 0U, va_register_mask(dst, count), VA_INST_MESSAGE);
 		return;
 	}
 
@@ -2083,12 +2337,59 @@ lower_load_ubo(
 	free_reg(c, offset);
 	if (c->error != 0)
 		return;
-	bits = VA_OP_LOAD_I32 | va_source_register(address);
+	bits = loads[count - 1U] | va_source_register(address);
 	bits |= va_field(1U, VA_SHIFT_LOAD_UNSIGNED);
-	bits |= va_staging(dst, 1U, VA_STAGING_WRITE);
-	emit(c, bits, va_register_mask(address, 2U), va_register_mask(dst, 1U), VA_INST_MESSAGE);
+	bits |= va_staging(dst, count, VA_STAGING_WRITE);
+	emit(c, bits, va_register_mask(address, 2U), va_register_mask(dst, count), VA_INST_MESSAGE);
 	free_reg(c, address);
 	free_reg(c, address + 1U);
+}
+
+/*
+ * Counts the uniform buffer words one load reads from the LOAD_UBO at
+ * index: with MALI_SHADER_OPTION_VECTOR_UBO, it and the LOAD_UBOs right
+ * after it of the next words of the same buffer, up to four, kept to two
+ * when the first word's offset is not aligned to 16 bytes and to one
+ * when it is not aligned to 8 (a load is aligned to its size rounded up
+ * to a power of two); otherwise one.
+ *
+ * Procedure referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/bifrost_nir.c (mem_access_size_align_cb:
+ * at most 16 bytes, aligned to the next power of two of their size).
+ */
+static uint32_t
+ubo_run(
+	const struct va_compiler *c,
+	uint32_t index)
+{
+	const struct drv_gpu_shader_ir_inst *first;
+	const struct drv_gpu_shader_ir_inst *inst;
+	uint32_t count;
+
+	/* Without the option every word is a load of its own. */
+	if ((c->options & MALI_SHADER_OPTION_VECTOR_UBO) == 0U)
+		return 1U;
+
+	/* Takes each following load of the next word of the same buffer. */
+	first = &c->ir->instructions[index];
+	count = 1U;
+	while (count < 4U && index + count < c->ir->instruction_count) {
+		inst = &c->ir->instructions[index + count];
+		if (inst->op != DRV_GPU_IR_LOAD_UBO || inst->location != first->location)
+			break;
+		if (inst->immediate != first->immediate + 4U * count || inst->dst > c->ir->value_count)
+			break;
+		count++;
+	}
+
+	/* Three or four words need 16-byte alignment, two need 8. */
+	if (count > 2U && (first->immediate & 15U) != 0U)
+		count = 2U;
+	if (count == 2U && (first->immediate & 7U) != 0U)
+		count = 1U;
+
+	/* Reports the words of the load. */
+	return count;
 }
 
 /*
@@ -2181,6 +2482,10 @@ lower_storage(
 	if (c->error != 0)
 		return;
 
+	/* A spilled stored value is loaded before the block that stores it. */
+	if (dst == VA_NO_REG)
+		reload_before_branch(c, inst->src[1]);
+
 	/* Skips the access for the lanes whose predicate is false. */
 	branch = 0U;
 	if (predicated != 0U)
@@ -2231,6 +2536,8 @@ lower_atomic(
 	uint32_t branch;
 	uint32_t predicate;
 	uint32_t compare;
+	uint32_t slot;
+	uint32_t coordinates;
 	uint64_t bits;
 
 	/* Chooses the hardware operation. */
@@ -2283,14 +2590,23 @@ lower_atomic(
 		return;
 	}
 
-	/* An image's texel is not a buffer word. */
-	if (inst->image_shape != 0U) {
-		fail(c, ENOTSUP, "an image atomic");
-		return;
+	/* Computes the address of the buffer's word, or of the storage image's texel. */
+	if ((inst->image_shape & DRV_GPU_IR_IMAGE_TEXEL) != 0U) {
+		slot = image_slot(c, inst->location);
+		if (c->error != 0)
+			return;
+		coordinates = image_coordinates(c, inst);
+		if (c->error != 0)
+			return;
+		address = image_address(c, slot, coordinates);
+		if (c->error != 0)
+			return;
+		free_reg(c, address + 2U);
+	} else {
+		address = buffer_address(c, inst->location, value_reg(c, inst->src[0]));
 	}
 
-	/* Computes the address and copies the operands into the staging block. */
-	address = buffer_address(c, inst->location, value_reg(c, inst->src[0]));
+	/* Copies the operands into the staging block. */
 	count = 1U + compare;
 	block = alloc_block(c, count);
 	dst = define_value(c, inst->dst);
@@ -2410,146 +2726,233 @@ lower_system(
 }
 
 /*
- * Samples a texture: TEX_SINGLE (or TEX_FETCH for a texel load) with the
- * coordinates, the array layer and the level of detail or its bias in a
- * block of staging registers, the texture's and sampler's table entries
- * in a register pair (with the constant texel offset in its high word),
- * and the four results in a block.
+ * Reads a sampler message: its kind, whether it compares, its image's
+ * dimension and array, and where its coordinates, its layer, its depth
+ * reference and its level of detail (or bias) are among its parameters
+ * (the parameters' registers in texture->parameters).
+ *
+ * The TEXTURE operation's parameters are, in order: the reference of a
+ * compare, the bias or level of a biased or levelled sample, then the
+ * coordinates (u, v, and r of a 3D image; the direction x, y, z of a
+ * cube) and the layer of an array; a texel load's are u, v, the level,
+ * then r.  The SAMPLE operations are a 2D image's u and v and the bias
+ * or level after them.
+ */
+static void
+read_texture(
+	struct va_compiler *c,
+	const struct drv_gpu_shader_ir_inst *inst,
+	struct va_texture *texture)
+{
+	uint32_t kind;
+	uint32_t message;
+	uint32_t component;
+
+	/* Starts as a 2D sample of no array, computed level and no offset. */
+	kern_memset(texture, 0, sizeof(*texture));
+	texture->kind = VA_TEXTURE_SAMPLE;
+	texture->coordinates = 2U;
+	texture->dimension = VA_DIMENSION_2D;
+	texture->lod_mode = VA_LOD_MODE_COMPUTED;
+	texture->ref_slot = VA_NOT_DEFINED;
+	texture->lod_slot = VA_NOT_DEFINED;
+	texture->layer_slot = VA_NOT_DEFINED;
+
+	/* The SAMPLE operations: a 2D image's u and v, the bias or level after them. */
+	if (inst->op != DRV_GPU_IR_TEXTURE) {
+		texture->offset = inst->component & 0xFFFU;
+		texture->parameter_count = 2U;
+		texture->parameters[0] = value_reg(c, inst->src[0]);
+		texture->parameters[1] = value_reg(c, inst->src[1]);
+		if (inst->op == DRV_GPU_IR_SAMPLE_BIAS || inst->op == DRV_GPU_IR_SAMPLE_LOD) {
+			texture->parameters[2] = value_reg(c, inst->src[2]);
+			texture->parameter_count = 3U;
+			texture->lod_slot = 2U;
+			texture->lod_mode = VA_LOD_MODE_COMPUTED_BIAS;
+			if (inst->op == DRV_GPU_IR_SAMPLE_LOD)
+				texture->lod_mode = VA_LOD_MODE_EXPLICIT;
+		}
+		return;
+	}
+
+	/* The image's shape: 2D, 3D or cube, of an array or not. */
+	message = inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK;
+	texture->offset = (inst->component >> 8) & 0xFFFU;
+	texture->channel = DRV_GPU_IR_TEXTURE_CHANNEL(inst->component);
+	kind = inst->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK;
+	if (kind == DRV_GPU_IR_IMAGE_3D) {
+		texture->coordinates = 3U;
+		texture->dimension = VA_DIMENSION_3D;
+	} else if (kind == DRV_GPU_IR_IMAGE_CUBE) {
+		/* A cube's direction is three parameters, sampled as two coordinates and the face. */
+		texture->coordinates = 3U;
+		texture->dimension = VA_DIMENSION_CUBE;
+		texture->cube = 1U;
+	} else if (kind != DRV_GPU_IR_IMAGE_2D) {
+		fail(c, ENOTSUP, "a buffer texture");
+		return;
+	}
+	if ((inst->image_shape & DRV_GPU_IR_IMAGE_ARRAYED) != 0U)
+		texture->array = 1U;
+	if ((inst->image_shape & DRV_GPU_IR_IMAGE_MULTISAMPLED) != 0U) {
+		fail(c, ENOTSUP, "a multisampled texture");
+		return;
+	}
+
+	/* Places the reference, the level and the coordinates by the message. */
+	switch (message) {
+	case DRV_GPU_IR_TEXTURE_SAMPLE:
+		break;
+
+	case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS:
+	case DRV_GPU_IR_TEXTURE_SAMPLE_LOD:
+		texture->lod_slot = 0U;
+		texture->first = 1U;
+		break;
+
+	case DRV_GPU_IR_TEXTURE_SAMPLE_COMPARE:
+		texture->compare = 1U;
+		texture->ref_slot = 0U;
+		texture->first = 1U;
+		break;
+
+	case DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE:
+	case DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE:
+		texture->compare = 1U;
+		texture->ref_slot = 0U;
+		texture->lod_slot = 1U;
+		texture->first = 2U;
+		break;
+
+	case DRV_GPU_IR_TEXTURE_LD:
+		texture->kind = VA_TEXTURE_FETCH;
+		texture->lod_slot = 2U;
+		break;
+
+	case DRV_GPU_IR_TEXTURE_GATHER4:
+		texture->kind = VA_TEXTURE_GATHER;
+		break;
+
+	case DRV_GPU_IR_TEXTURE_GATHER4_COMPARE:
+		texture->kind = VA_TEXTURE_GATHER;
+		texture->compare = 1U;
+		texture->ref_slot = 0U;
+		texture->first = 1U;
+		break;
+
+	default:
+		fail(c, ENOTSUP, "a texture message the Valhall lowering does not have");
+		return;
+	}
+
+	/* A biased or levelled message's mode. */
+	if (message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS || message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE)
+		texture->lod_mode = VA_LOD_MODE_COMPUTED_BIAS;
+	if (message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE)
+		texture->lod_mode = VA_LOD_MODE_EXPLICIT;
+
+	/* A cube has no texel load; the layer follows the coordinates (a texel load's is its fourth). */
+	if (texture->cube != 0U && texture->kind == VA_TEXTURE_FETCH) {
+		fail(c, ENOTSUP, "a texel load of a cube");
+		return;
+	}
+	if (texture->array != 0U) {
+		texture->layer_slot = texture->first + texture->coordinates;
+		if (texture->kind == VA_TEXTURE_FETCH)
+			texture->layer_slot = 3U;
+	}
+
+	/* Reads the parameters' registers. */
+	texture->parameter_count = inst->src[1];
+	if (texture->parameter_count > DRV_GPU_IR_TEXTURE_MAX_PARAMS)
+		texture->parameter_count = DRV_GPU_IR_TEXTURE_MAX_PARAMS;
+	for (component = 0U; component < texture->parameter_count; component++)
+		texture->parameters[component] = value_reg(c, inst->src[0] + component);
+}
+
+/*
+ * Samples a texture: TEX_SINGLE (TEX_FETCH for a texel load, TEX_GATHER
+ * for a gather) with the coordinates, the array layer, the depth
+ * reference of a compare and the level of detail or its bias in a block
+ * of staging registers, the texture's and sampler's table entries in a
+ * register pair (with the constant texel offset in its high word), and
+ * the results in a block of four.
  *
  * Values referenced: Mesa 26.2.6
  * src/panfrost/compiler/pan_nir_lower_tex.c (va_lower_tex: the order of
  * the staging registers, the narrow handle and offsets, the 8.8 fixed
- * level of detail).
+ * level of detail, the shadow reference) and bifrost_compile.c
+ * (bi_emit_tex_valhall: the gather's channel).
  */
 static void
 lower_texture(
 	struct va_compiler *c,
 	const struct drv_gpu_shader_ir_inst *inst)
 {
+	struct va_texture texture;
 	uint32_t staging[DRV_GPU_IR_TEXTURE_MAX_PARAMS + 2U];
-	uint32_t parameters[DRV_GPU_IR_TEXTURE_MAX_PARAMS];
-	uint32_t parameter_count;
-	uint32_t coordinates;
 	uint32_t count;
-	uint32_t message;
 	uint32_t slot;
 	uint32_t handle;
 	uint32_t block;
 	uint32_t result;
 	uint32_t component;
-	uint32_t offset;
 	uint32_t narrow;
-	uint32_t lod_mode;
-	uint32_t dimension;
 	uint32_t lod;
-	uint32_t lod_slot;
-	uint32_t layer_slot;
+	uint32_t layer_index;
 	uint32_t scale;
-	uint32_t first;
-	uint32_t fetch;
-	uint32_t array;
+	uint32_t write_mask;
+	uint32_t write_count;
 	uint64_t bits;
 
-	/* Reads the message, its image's shape and its parameters (SAMPLE's are u, v and the bias or level). */
-	fetch = 0U;
-	array = 0U;
-	coordinates = 2U;
-	dimension = VA_DIMENSION_2D;
-	lod_mode = VA_LOD_MODE_COMPUTED;
-	if (inst->op == DRV_GPU_IR_TEXTURE) {
-		message = inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK;
-		offset = (inst->component >> 8) & 0xFFFU;
-		if ((inst->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK) == DRV_GPU_IR_IMAGE_3D) {
-			coordinates = 3U;
-			dimension = VA_DIMENSION_3D;
-		} else if ((inst->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK) != DRV_GPU_IR_IMAGE_2D) {
-			fail(c, ENOTSUP, "a cube or buffer texture");
-			return;
-		}
-		if ((inst->image_shape & DRV_GPU_IR_IMAGE_ARRAYED) != 0U)
-			array = 1U;
-		if ((inst->image_shape & DRV_GPU_IR_IMAGE_MULTISAMPLED) != 0U) {
-			fail(c, ENOTSUP, "a multisampled texture");
-			return;
-		}
-		parameter_count = inst->src[1];
-		if (parameter_count > DRV_GPU_IR_TEXTURE_MAX_PARAMS)
-			parameter_count = DRV_GPU_IR_TEXTURE_MAX_PARAMS;
-		for (component = 0U; component < parameter_count; component++)
-			parameters[component] = value_reg(c, inst->src[0] + component);
-	} else {
-		message = DRV_GPU_IR_TEXTURE_SAMPLE;
-		if (inst->op == DRV_GPU_IR_SAMPLE_BIAS)
-			message = DRV_GPU_IR_TEXTURE_SAMPLE_BIAS;
-		if (inst->op == DRV_GPU_IR_SAMPLE_LOD)
-			message = DRV_GPU_IR_TEXTURE_SAMPLE_LOD;
-		offset = inst->component & 0xFFFU;
-		parameter_count = 2U;
-		parameters[0] = value_reg(c, inst->src[0]);
-		parameters[1] = value_reg(c, inst->src[1]);
-		if (message != DRV_GPU_IR_TEXTURE_SAMPLE) {
-			parameters[2] = value_reg(c, inst->src[2]);
-			parameter_count = 3U;
-		}
-	}
+	/* Reads the message and its parameters. */
+	read_texture(c, inst, &texture);
 	if (c->error != 0)
 		return;
 
 	/*
-	 * Finds where the coordinates, the layer and the level are among the
-	 * parameters: bias or level first for SAMPLE_BIAS and SAMPLE_LOD of
-	 * the TEXTURE operation, last for the SAMPLE operations; u v lod r
-	 * for a texel load.
+	 * Lists the staging registers: s, t (r), the layer, the reference,
+	 * then the offsets word or the level.  A cube's s and t are made from
+	 * its direction once the block is allocated.
 	 */
-	first = 0U;
-	lod_slot = VA_NOT_DEFINED;
-	layer_slot = VA_NOT_DEFINED;
-	if (message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD) {
-		if (inst->op == DRV_GPU_IR_TEXTURE) {
-			lod_slot = 0U;
-			first = 1U;
-		} else {
-			lod_slot = 2U;
-		}
-		lod_mode = VA_LOD_MODE_COMPUTED_BIAS;
-		if (message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD)
-			lod_mode = VA_LOD_MODE_EXPLICIT;
-	} else if (message == DRV_GPU_IR_TEXTURE_LD) {
-		fetch = 1U;
-		lod_slot = 2U;
-	} else if (message != DRV_GPU_IR_TEXTURE_SAMPLE) {
-		fail(c, ENOTSUP, "a texture message the Valhall lowering does not have");
-		return;
-	}
-	if (array != 0U) {
-		layer_slot = first + coordinates;
-		if (fetch != 0U)
-			layer_slot = 3U;
-	}
-
-	/* Lists the staging registers: s, t (r), the layer, then the offsets word or the level. */
 	count = 0U;
-	for (component = 0U; component < coordinates; component++) {
-		if (fetch != 0U && component == 2U) {
+	for (component = 0U; component < texture.coordinates; component++) {
+		if (texture.cube != 0U) {
+			/* The direction's three values become s (with the face) and t. */
+			if (component < 2U) {
+				staging[count] = VA_OPERAND_NONE;
+				count++;
+			}
+			continue;
+		}
+		if (texture.kind == VA_TEXTURE_FETCH && component == 2U) {
 			staging[count] = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
-			if (parameter_count > 3U)
-				staging[count] = parameters[3];
-		} else if (first + component < parameter_count) {
-			staging[count] = parameters[first + component];
+			if (texture.parameter_count > 3U)
+				staging[count] = texture.parameters[3];
+		} else if (texture.first + component < texture.parameter_count) {
+			staging[count] = texture.parameters[texture.first + component];
 		} else {
 			staging[count] = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
 		}
 		count++;
 	}
-	if (layer_slot != VA_NOT_DEFINED) {
+	layer_index = VA_NOT_DEFINED;
+	if (texture.layer_slot != VA_NOT_DEFINED) {
+		layer_index = count;
 		staging[count] = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
-		if (layer_slot < parameter_count)
-			staging[count] = parameters[layer_slot];
+		if (texture.layer_slot < texture.parameter_count)
+			staging[count] = texture.parameters[texture.layer_slot];
+		count++;
+	}
+	if (texture.ref_slot != VA_NOT_DEFINED) {
+		staging[count] = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
+		if (texture.ref_slot < texture.parameter_count)
+			staging[count] = texture.parameters[texture.ref_slot];
 		count++;
 	}
 	lod = VA_OPERAND_NONE;
-	if (lod_slot != VA_NOT_DEFINED && lod_slot < parameter_count)
-		lod = parameters[lod_slot];
+	if (texture.lod_slot != VA_NOT_DEFINED && texture.lod_slot < texture.parameter_count)
+		lod = texture.parameters[texture.lod_slot];
 	if (lod != VA_OPERAND_NONE) {
 		staging[count] = lod;
 		count++;
@@ -2559,9 +2962,9 @@ lower_texture(
 	slot = texture_slot(c, inst->location, inst->immediate);
 	if (c->error != 0)
 		return;
-	narrow = (offset >> 8) & 0xFU;
-	narrow |= ((offset >> 4) & 0xFU) << 4;
-	narrow |= (offset & 0xFU) << 8;
+	narrow = (texture.offset >> 8) & 0xFU;
+	narrow |= ((texture.offset >> 4) & 0xFU) << 4;
+	narrow |= (texture.offset & 0xFU) << 8;
 
 	/* Writes the handle pair. */
 	handle = alloc_block(c, 2U);
@@ -2570,23 +2973,36 @@ lower_texture(
 	emit_constant(c, handle, texture_handle(slot));
 	emit_constant(c, handle + 1U, narrow);
 
-	/* Copies the staging values into a block. */
-	block = gather_block(c, staging, count, count);
+	/* Copies the staging values into a block (a cube's first two are made below). */
+	block = alloc_block(c, count);
 	if (c->error != 0)
 		return;
+	for (component = 0U; component < count; component++) {
+		if (staging[component] != VA_OPERAND_NONE)
+			emit_move(c, block + component, staging[component]);
+	}
+
+	/* A cube's direction becomes its face's s and t. */
+	if (texture.cube != 0U) {
+		emit_cube_coordinates(c,
+				      block,
+				      texture.parameters[texture.first],
+				      texture.parameters[texture.first + 1U],
+				      texture.parameters[texture.first + 2U]);
+	}
 
 	/* A sampled array's layer is the nearest integer to the coordinate. */
-	if (layer_slot != VA_NOT_DEFINED && fetch == 0U) {
-		emit_alu(c, VA_OP_FROUND_F32 | va_field(VA_ROUND_RTE, VA_SHIFT_ROUND_MODE), block + coordinates, block + coordinates, VA_OPERAND_NONE, VA_OPERAND_NONE);
-		emit_alu(c, VA_OP_F32_TO_U32 | va_field(VA_ROUND_RTZ, VA_SHIFT_ROUND_MODE), block + coordinates, block + coordinates, VA_OPERAND_NONE, VA_OPERAND_NONE);
+	if (layer_index != VA_NOT_DEFINED && texture.kind != VA_TEXTURE_FETCH) {
+		emit_alu(c, VA_OP_FROUND_F32 | va_field(VA_ROUND_RTE, VA_SHIFT_ROUND_MODE), block + layer_index, block + layer_index, VA_OPERAND_NONE, VA_OPERAND_NONE);
+		emit_alu(c, VA_OP_F32_TO_U32 | va_field(VA_ROUND_RTZ, VA_SHIFT_ROUND_MODE), block + layer_index, block + layer_index, VA_OPERAND_NONE, VA_OPERAND_NONE);
 	}
 
 	/* A sampled level or bias is 8.8 fixed point (a bias in the low half, no minimum level above it). */
-	if (lod != VA_OPERAND_NONE && fetch == 0U) {
+	if (lod != VA_OPERAND_NONE && texture.kind != VA_TEXTURE_FETCH) {
 		scale = temp_constant(c, 0x43800000U);
 		emit_fmul(c, block + count - 1U, block + count - 1U, scale);
 		emit_alu(c, VA_OP_F32_TO_S32 | va_field(VA_ROUND_RTE, VA_SHIFT_ROUND_MODE), block + count - 1U, block + count - 1U, VA_OPERAND_NONE, VA_OPERAND_NONE);
-		if (lod_mode == VA_LOD_MODE_COMPUTED_BIAS) {
+		if (texture.lod_mode == VA_LOD_MODE_COMPUTED_BIAS) {
 			emit_constant(c, scale, 0xFFFFU);
 			emit_alu(c, VA_OP_LSHIFT_AND_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), block + count - 1U, block + count - 1U, VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO, scale);
 		}
@@ -2594,32 +3010,46 @@ lower_texture(
 	}
 
 	/* A texel load's level is the top byte of its offsets word, below it the offsets. */
-	if (lod != VA_OPERAND_NONE && fetch != 0U) {
+	if (lod != VA_OPERAND_NONE && texture.kind == VA_TEXTURE_FETCH) {
 		scale = temp_constant(c, 24U);
 		emit_alu(c, VA_OP_LSHIFT_OR_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), block + count - 1U, block + count - 1U, scale, handle + 1U);
 		emit_constant(c, handle + 1U, 0U);
 		free_reg(c, scale);
 	}
 
+	/* A compared sample writes its one result; the others write four. */
+	write_mask = VA_WRITE_MASK_RGBA;
+	write_count = 3U;
+	if (texture.compare != 0U && texture.kind == VA_TEXTURE_SAMPLE) {
+		write_mask = 1U;
+		write_count = 0U;
+	}
+
+	/* Chooses the instruction and its own fields. */
+	if (texture.kind == VA_TEXTURE_FETCH) {
+		bits = VA_OP_TEX_FETCH;
+		if (lod != VA_OPERAND_NONE)
+			bits |= va_field(1U, VA_SHIFT_TEX_OFFSET);
+	} else if (texture.kind == VA_TEXTURE_GATHER) {
+		bits = VA_OP_TEX_GATHER | va_field(texture.channel, VA_SHIFT_TEX_FETCH_COMPONENT);
+		bits |= va_field(texture.compare, VA_SHIFT_TEX_SHADOW);
+	} else {
+		bits = VA_OP_TEX_SINGLE | va_field(texture.lod_mode, VA_SHIFT_TEX_LOD_MODE);
+		bits |= va_field(texture.compare, VA_SHIFT_TEX_SHADOW);
+	}
+
 	/* Samples into a block of four results. */
 	result = alloc_block(c, 4U);
 	if (c->error != 0)
 		return;
-	if (fetch != 0U) {
-		bits = VA_OP_TEX_FETCH;
-		if (lod != VA_OPERAND_NONE)
-			bits |= va_field(1U, VA_SHIFT_TEX_OFFSET);
-	} else {
-		bits = VA_OP_TEX_SINGLE | va_field(lod_mode, VA_SHIFT_TEX_LOD_MODE);
-	}
 	bits |= va_source_register(handle);
-	bits |= va_field(array, VA_SHIFT_TEX_ARRAY);
+	bits |= va_field(texture.array, VA_SHIFT_TEX_ARRAY);
 	bits |= va_field(result, VA_SHIFT_STAGING_DEST);
-	bits |= va_field(VA_WRITE_MASK_RGBA, VA_SHIFT_TEX_WRITE_MASK);
+	bits |= va_field(write_mask, VA_SHIFT_TEX_WRITE_MASK);
 	bits |= va_field(VA_REGISTER_TYPE_F, VA_SHIFT_TEX_REGISTER_TYPE);
-	bits |= va_field(dimension, VA_SHIFT_TEX_DIMENSION);
+	bits |= va_field(texture.dimension, VA_SHIFT_TEX_DIMENSION);
 	bits |= va_field(1U, VA_SHIFT_TEX_REGISTER_WIDTH);
-	bits |= va_field(3U, VA_SHIFT_STAGING_WRITE_COUNT);
+	bits |= va_field(write_count, VA_SHIFT_STAGING_WRITE_COUNT);
 	bits |= va_field(count, VA_SHIFT_STAGING_COUNT);
 	bits |= va_field(block, VA_SHIFT_DEST);
 	emit(c,
@@ -2635,6 +3065,365 @@ lower_texture(
 	/* Gives the four results to the instruction's values. */
 	for (component = 0U; component < 4U; component++)
 		bind_value(c, inst->dst + component, result + component);
+}
+
+/*
+ * Makes a cube's s and t from its direction (x, y, z) in block[0] and
+ * block[1]: the major axis's magnitude (CUBEFACE1) and its face
+ * (CUBEFACE2, the face number in bits 31:29), the face's coordinates
+ * (CUBE_SSEL, CUBE_TSEL) scaled by half the magnitude's reciprocal and
+ * offset by a half, clamped to [0, 1], and the face put in s's top
+ * three bits (a float in [0, 1] has them 001, which the hardware
+ * restores).
+ *
+ * Procedure referenced: Mesa 26.2.6
+ * src/panfrost/compiler/pan_nir_lower_tex.c (build_cube_coord2_face and
+ * build_cube_desc: the operand order of the selects, the scale and the
+ * 29-bit mask) and bifrost_compile.c (nir_intrinsic_cubeface_pan on v9
+ * and later: CUBEFACE1 and CUBEFACE2_V9).
+ */
+static void
+emit_cube_coordinates(
+	struct va_compiler *c,
+	uint32_t block,
+	uint32_t x,
+	uint32_t y,
+	uint32_t z)
+{
+	uint32_t magnitude;
+	uint32_t face;
+	uint32_t half;
+	uint32_t mask;
+
+	/* The major axis's magnitude and its face. */
+	magnitude = alloc_block(c, 1U);
+	face = alloc_block(c, 1U);
+	if (c->error != 0)
+		return;
+	emit_alu(c, VA_OP_CUBEFACE1, magnitude, x, y, z);
+	emit_alu(c, VA_OP_CUBEFACE2_V9, face, x, y, z);
+
+	/* The face's coordinates. */
+	emit_alu(c, VA_OP_CUBE_SSEL, block, z, x, face);
+	emit_alu(c, VA_OP_CUBE_TSEL, block + 1U, y, z, face);
+
+	/* Half the magnitude's reciprocal, and s, t = coordinate * it + 0.5 within [0, 1]. */
+	emit_alu(c, VA_OP_FRCP_F32, magnitude, magnitude, VA_OPERAND_NONE, VA_OPERAND_NONE);
+	half = temp_constant(c, VA_FLOAT_HALF);
+	if (c->error != 0)
+		return;
+	emit_fmul(c, magnitude, magnitude, half);
+	emit_alu(c, VA_OP_FMA_F32 | va_field(VA_CLAMP_0_1, VA_SHIFT_CLAMP), block, block, magnitude, half);
+	emit_alu(c, VA_OP_FMA_F32 | va_field(VA_CLAMP_0_1, VA_SHIFT_CLAMP), block + 1U, block + 1U, magnitude, half);
+
+	/* The face in s's top three bits. */
+	mask = temp_constant(c, VA_CUBE_COORDINATE_MASK);
+	if (c->error != 0)
+		return;
+	emit_alu(c, VA_OP_MUX_I32 | va_field(VA_MUX_BIT, VA_SHIFT_MUX), block, block, face, mask);
+	free_reg(c, mask);
+	free_reg(c, half);
+	free_reg(c, magnitude);
+	free_reg(c, face);
+}
+
+/*
+ * Lowers a storage image's texel read or write.  The texel's x, y and
+ * layer go as 16-bit halves in two registers: x | y << 16 and
+ * layer << 16 (image_coordinates()).  A read is
+ * LD_TEX_IMM of the image's table entry into four registers, converted
+ * to the format's kind (floats, signed or unsigned integers; the
+ * components the format lacks read 0, 0, 0, 1); a write finds the
+ * texel's address and conversion with LEA_TEX_IMM and stores the
+ * format's components with ST_CVT.  A predicated access is branched
+ * around for the lanes whose predicate is false.
+ *
+ * Procedure referenced: Mesa 26.2.6
+ * src/panfrost/compiler/pan_nir_lower_image.c (pack_image_coords: the
+ * 16:16 coordinates with the array index in the top half of the second
+ * register on v9 and later; lower_image_store: LEA_TEX and the store with
+ * conversion, the data trimmed to the format's components, the automatic
+ * register format) and bifrost_compile.c (bi_emit_load_tex_to,
+ * bi_emit_lea_tex_to: the immediate forms).
+ */
+static void
+lower_image(
+	struct va_compiler *c,
+	const struct drv_gpu_shader_ir_inst *inst)
+{
+	uint32_t values[4];
+	uint32_t slot;
+	uint32_t coordinates;
+	uint32_t predicate;
+	uint32_t branch;
+	uint32_t block;
+	uint32_t address;
+	uint32_t data;
+	uint32_t components;
+	uint32_t component;
+	uint64_t bits;
+
+	/* Finds the image and packs the texel's coordinates. */
+	slot = image_slot(c, inst->location);
+	if (c->error != 0)
+		return;
+	coordinates = image_coordinates(c, inst);
+	if (c->error != 0)
+		return;
+
+	/* The predicate of a predicated access, read before its branch. */
+	predicate = VA_NO_REG;
+	if (inst->component == 1U && inst->op == DRV_GPU_IR_IMAGE_READ)
+		predicate = value_reg(c, inst->src[2]);
+	if (inst->component == 1U && inst->op == DRV_GPU_IR_IMAGE_WRITE)
+		predicate = value_reg(c, inst->src[3]);
+
+	/* A read loads four components into its results. */
+	if (inst->op == DRV_GPU_IR_IMAGE_READ) {
+		block = alloc_block(c, 4U);
+		if (c->error != 0)
+			return;
+		branch = 0U;
+		if (predicate != VA_NO_REG)
+			branch_begin(c, predicate, &branch);
+		bits = VA_OP_LD_TEX_IMM | va_source_register(coordinates);
+		bits |= va_field(va_source_register(coordinates + 1U), VA_SHIFT_SOURCE1);
+		bits |= va_field(MALI_SHADER_TABLE_IMAGES, VA_SHIFT_TEX_IMM_TABLE);
+		bits |= va_field(c->program->images[slot].index, VA_SHIFT_TEX_IMM_INDEX);
+		bits |= va_field(image_register_format(c->program->images[slot].format), VA_SHIFT_REGISTER_FORMAT);
+		bits |= va_field(3U, VA_SHIFT_VECTOR_SIZE);
+		bits |= va_staging(block, 4U, VA_STAGING_WRITE);
+		emit(c, bits, va_register_mask(coordinates, 2U), va_register_mask(block, 4U), VA_INST_MESSAGE | VA_INST_MEMORY);
+		if (predicate != VA_NO_REG)
+			branch_end(c, branch);
+		free_reg(c, coordinates);
+		free_reg(c, coordinates + 1U);
+
+		/* Gives the four components to the instruction's values. */
+		for (component = 0U; component < 4U; component++)
+			bind_value(c, inst->dst + component, block + component);
+		return;
+	}
+
+	/* A write's components: those of the format, from its values. */
+	components = image_components(c->program->images[slot].format);
+	for (component = 0U; component < components; component++)
+		values[component] = value_operand(c, inst->src[2] + component);
+	data = gather_block(c, values, components, components);
+	if (c->error != 0)
+		return;
+
+	/* The texel's address and conversion. */
+	address = image_address(c, slot, coordinates);
+	if (c->error != 0)
+		return;
+
+	/* Stores the components, converted, for the lanes whose predicate holds. */
+	branch = 0U;
+	if (predicate != VA_NO_REG)
+		branch_begin(c, predicate, &branch);
+	bits = VA_OP_ST_CVT | va_source_register(address);
+	bits |= va_field(va_source_register(address + 2U), VA_SHIFT_SOURCE2);
+	bits |= va_field(VA_REGISTER_FORMAT_AUTO, VA_SHIFT_REGISTER_FORMAT);
+	bits |= va_field(components - 1U, VA_SHIFT_VECTOR_SIZE);
+	bits |= va_staging(data, components, VA_STAGING_READ);
+	emit(c,
+	     bits,
+	     va_register_mask(address, 3U) | va_register_mask(data, components),
+	     0U,
+	     VA_INST_MESSAGE | VA_INST_MEMORY);
+	if (predicate != VA_NO_REG)
+		branch_end(c, branch);
+
+	/* Gives back the address and the data. */
+	for (component = 0U; component < 3U; component++)
+		free_reg(c, address + component);
+	for (component = 0U; component < components; component++)
+		free_reg(c, data + component);
+}
+
+/*
+ * Packs a texel's coordinates (the three consecutive integers from the
+ * instruction's src[0]) into a fresh register pair: x | y << 16, and the
+ * third (an array's layer, a cube's face, a 3D image's slice) << 16.  A
+ * storage image is a 2D image of layers to the program (a 3D one of its
+ * slices, as the shader ABI says), so an atomic's texel, whose IR does
+ * not say the image's dimension, is found the same way.
+ */
+static uint32_t
+image_coordinates(
+	struct va_compiler *c,
+	const struct drv_gpu_shader_ir_inst *inst)
+{
+	uint32_t kind;
+	uint32_t pair;
+	uint32_t x;
+	uint32_t y;
+	uint32_t third;
+	uint32_t zero;
+	uint32_t layered;
+
+	/* A multisampled or buffer image has no texel of this form. */
+	kind = inst->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK;
+	if ((inst->image_shape & DRV_GPU_IR_IMAGE_MULTISAMPLED) != 0U || kind == DRV_GPU_IR_IMAGE_BUFFER) {
+		fail(c, ENOTSUP, "a multisampled or buffer storage image");
+		return 0U;
+	}
+
+	/* An array, a cube, a 3D image and an atomic's texel have a layer. */
+	layered = 0U;
+	if ((inst->image_shape & (DRV_GPU_IR_IMAGE_ARRAYED | DRV_GPU_IR_IMAGE_TEXEL)) != 0U)
+		layered = 1U;
+	if (kind == DRV_GPU_IR_IMAGE_CUBE || kind == DRV_GPU_IR_IMAGE_3D)
+		layered = 1U;
+
+	/* Reads the three coordinates. */
+	x = value_reg(c, inst->src[0]);
+	y = value_reg(c, inst->src[0] + 1U);
+	third = value_reg(c, inst->src[0] + 2U);
+	pair = alloc_block(c, 2U);
+	if (c->error != 0)
+		return 0U;
+	zero = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
+
+	/* x and y; then the layer, which a 2D image of one layer does not have. */
+	emit_alu(c, VA_OP_MKVEC_V2I16, pair, x, y, VA_OPERAND_NONE);
+	if (layered != 0U) {
+		emit_alu(c, VA_OP_MKVEC_V2I16, pair + 1U, zero, third, VA_OPERAND_NONE);
+	} else {
+		emit_move(c, pair + 1U, zero);
+	}
+
+	/* Reports the pair. */
+	return pair;
+}
+
+/*
+ * Finds a texel's address and its conversion descriptor with LEA_TEX_IMM
+ * into a fresh aligned block of three registers (the address's low and
+ * high words, then the conversion), and gives back the coordinates.
+ */
+static uint32_t
+image_address(
+	struct va_compiler *c,
+	uint32_t slot,
+	uint32_t coordinates)
+{
+	uint32_t block;
+	uint64_t bits;
+
+	/* Allocates the three registers. */
+	block = alloc_block(c, 3U);
+	if (c->error != 0)
+		return 0U;
+
+	/* Asks for the texel's address. */
+	bits = VA_OP_LEA_TEX_IMM | va_source_register(coordinates);
+	bits |= va_field(va_source_register(coordinates + 1U), VA_SHIFT_SOURCE1);
+	bits |= va_field(MALI_SHADER_TABLE_IMAGES, VA_SHIFT_TEX_IMM_TABLE);
+	bits |= va_field(c->program->images[slot].index, VA_SHIFT_TEX_IMM_INDEX);
+	bits |= va_staging(block, 3U, VA_STAGING_WRITE);
+	emit(c, bits, va_register_mask(coordinates, 2U), va_register_mask(block, 3U), VA_INST_MESSAGE);
+	free_reg(c, coordinates);
+	free_reg(c, coordinates + 1U);
+
+	/* Reports the block. */
+	return block;
+}
+
+/* Finds the image slot of an IR uniform. */
+static uint32_t
+image_slot(
+	struct va_compiler *c,
+	uint32_t uniform)
+{
+	const struct drv_gpu_shader_ir_uniform *record;
+	uint32_t index;
+
+	/* A uniform the IR does not have is refused. */
+	if (uniform >= c->ir->uniform_count) {
+		fail(c, EINVAL, "an image without its uniform");
+		return 0U;
+	}
+	record = &c->ir->uniforms[uniform];
+
+	/* Only a storage image has a slot. */
+	if (record->kind != DRV_GPU_IR_UNIFORM_STORAGE_IMAGE) {
+		fail(c, ENOTSUP, "a storage texel buffer or an input attachment");
+		return 0U;
+	}
+
+	/* Looks through the program's images. */
+	for (index = 0U; index < c->program->image_count; index++) {
+		if (c->program->images[index].set == record->set && c->program->images[index].binding == record->binding)
+			return index;
+	}
+
+	/* An image the layout did not list is refused. */
+	fail(c, EINVAL, "an image without its slot");
+	return 0U;
+}
+
+/*
+ * Reports the register format a storage image's texels load as: signed
+ * or unsigned integers for an integer format, floats otherwise.
+ *
+ * Values referenced: the Vulkan specification, VkFormat (R8G8B8A8_UINT
+ * 41, R8G8B8A8_SINT 42, R16G16B16A16_UINT 95, R16G16B16A16_SINT 96,
+ * R32_UINT 98, R32_SINT 99, R32G32_UINT 101, R32G32_SINT 102,
+ * R32G32B32A32_UINT 107, R32G32B32A32_SINT 108).
+ */
+static uint32_t
+image_register_format(
+	uint32_t format)
+{
+	/* One case a format of integers. */
+	switch (format) {
+	case 41U:
+	case 95U:
+	case 98U:
+	case 101U:
+	case 107U:
+		return VA_REGISTER_FORMAT_U32;
+
+	case 42U:
+	case 96U:
+	case 99U:
+	case 102U:
+	case 108U:
+		return VA_REGISTER_FORMAT_S32;
+
+	default:
+		return VA_REGISTER_FORMAT_F32;
+	}
+}
+
+/*
+ * Reports the components of a storage image's format.
+ *
+ * Values referenced: the Vulkan specification, VkFormat (R32_UINT 98,
+ * R32_SINT 99, R32_SFLOAT 100, R32G32_UINT 101, R32G32_SINT 102,
+ * R32G32_SFLOAT 103).
+ */
+static uint32_t
+image_components(
+	uint32_t format)
+{
+	/* The one- and two-component formats; the others have four. */
+	switch (format) {
+	case 98U:
+	case 99U:
+	case 100U:
+		return 1U;
+
+	case 101U:
+	case 102U:
+	case 103U:
+		return 2U;
+
+	default:
+		return 4U;
+	}
 }
 
 /*
@@ -2668,11 +3457,20 @@ lower_size_query(
 		return;
 	}
 
-	/* A texture's four words, the first three shifted by the level. */
-	slot = texture_slot(c, inst->location, inst->immediate);
-	if (c->error != 0)
-		return;
-	word = c->program->textures[slot].size_fau_word;
+	/* A storage image's four words, or a texture's. */
+	word = MALI_SHADER_NO_FAU_WORD;
+	for (slot = 0U; slot < c->program->image_count; slot++) {
+		if (c->program->images[slot].set == inst->location && c->program->images[slot].binding == inst->immediate)
+			word = c->program->images[slot].size_fau_word;
+	}
+	if (word == MALI_SHADER_NO_FAU_WORD) {
+		slot = texture_slot(c, inst->location, inst->immediate);
+		if (c->error != 0)
+			return;
+		word = c->program->textures[slot].size_fau_word;
+	}
+
+	/* The first three are shifted by the level. */
 	level = value_reg(c, inst->src[0]);
 	mask = alloc_block(c, 1U);
 	if (c->error != 0)
@@ -2702,7 +3500,7 @@ lower_store_output(
 	struct va_compiler *c,
 	const struct drv_gpu_shader_ir_inst *inst)
 {
-	/* The position, the point size and the located outputs are kept by slot. */
+	/* The position, the point size, the depth, the sample mask and the located outputs are kept by slot. */
 	if (inst->location == DRV_GPU_IR_LOCATION_POSITION) {
 		if (inst->component < 4U)
 			c->position_value[inst->component] = inst->src[0];
@@ -2710,6 +3508,14 @@ lower_store_output(
 	}
 	if (inst->location == DRV_GPU_IR_LOCATION_POINT_SIZE) {
 		c->point_size_value = inst->src[0];
+		return;
+	}
+	if (inst->location == DRV_GPU_IR_LOCATION_FRAG_DEPTH) {
+		c->depth_value = inst->src[0];
+		return;
+	}
+	if (inst->location == DRV_GPU_IR_LOCATION_SAMPLE_MASK) {
+		c->sample_mask_value = inst->src[0];
 		return;
 	}
 	if (inst->location < MALI_SHADER_LOCATIONS && inst->component < 4U) {
@@ -3014,14 +3820,17 @@ lower_varying_end(
 }
 
 /*
- * Ends a fragment program: ATEST of the preloaded coverage with colour
- * 0's alpha (1 without colour 0), then BLEND of each colour written, as
- * four 32-bit floats, to its render target with the target's blend
- * descriptor.
+ * Ends a fragment program: the written sample mask ANDed into the
+ * preloaded coverage, ATEST of the coverage with colour 0's alpha (1
+ * without colour 0), ZS_EMIT of the written depth, then BLEND of each
+ * colour written, as four 32-bit floats, to its render target with the
+ * target's blend descriptor.  The coverage stays in r60, which ATEST and
+ * ZS_EMIT read and write.
  *
  * Procedure referenced: Mesa 26.2.6
  * src/panfrost/compiler/pan_nir_lower_fs_outputs.c and bifrost_compile.c
- * (the atest_pan and blend_pan intrinsics).
+ * (the atest_pan, zs_emit_pan and blend_pan intrinsics) and bi_ra.c (the
+ * coverage of ATEST and ZS_EMIT in the cumulative coverage register).
  */
 static void
 lower_fragment_end(
@@ -3031,8 +3840,24 @@ lower_fragment_end(
 	uint32_t location;
 	uint32_t component;
 	uint32_t alpha;
+	uint32_t mask;
+	uint32_t depth;
 	uint32_t block;
 	uint64_t bits;
+
+	/* A written sample mask keeps only the samples the hardware covers. */
+	c->preload |= 1U << (VA_PRELOAD_COVERAGE - VA_PRELOAD_FIRST);
+	if (c->sample_mask_value != VA_NOT_DEFINED) {
+		mask = value_operand(c, c->sample_mask_value);
+		emit_alu(c,
+			 VA_OP_LSHIFT_AND_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES),
+			 VA_PRELOAD_COVERAGE,
+			 mask,
+			 VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO,
+			 VA_PRELOAD_COVERAGE);
+		release_temps(c);
+		c->program->writes_sample_mask = 1U;
+	}
 
 	/* Tests the coverage with colour 0's alpha. */
 	alpha = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_FLOAT_ONE;
@@ -3049,7 +3874,25 @@ lower_fragment_end(
 	     va_register_mask(VA_PRELOAD_COVERAGE, 1U) | operand_mask(alpha),
 	     va_register_mask(VA_PRELOAD_COVERAGE, 1U),
 	     VA_INST_MESSAGE | VA_INST_ATEST);
-	c->preload |= 1U << (VA_PRELOAD_COVERAGE - VA_PRELOAD_FIRST);
+
+	/* Emits the written depth (no stencil) with the tested coverage. */
+	if (c->depth_value != VA_NOT_DEFINED) {
+		depth = value_reg(c, c->depth_value);
+		if (c->error != 0)
+			return;
+		bits = VA_OP_ZS_EMIT | va_source_register(depth);
+		bits |= va_field(operand_byte(VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO), VA_SHIFT_SOURCE1);
+		bits |= va_field(va_source_register(VA_PRELOAD_COVERAGE), VA_SHIFT_SOURCE2);
+		bits |= va_field(1U, VA_SHIFT_ZS_EMIT_DEPTH);
+		bits |= va_staging(VA_PRELOAD_COVERAGE, 1U, VA_STAGING_WRITE);
+		emit(c,
+		     bits,
+		     va_register_mask(depth, 1U) | va_register_mask(VA_PRELOAD_COVERAGE, 1U),
+		     va_register_mask(VA_PRELOAD_COVERAGE, 1U),
+		     VA_INST_MESSAGE | VA_INST_ATEST);
+		release_temps(c);
+		c->program->writes_depth = 1U;
+	}
 
 	/* Blends each colour written. */
 	for (location = 0U; location < MALI_SHADER_COLORS; location++) {
@@ -3102,6 +3945,7 @@ branch_begin(
 	*branch = c->code.count - 1U;
 	if (c->code.failed == 0)
 		c->code.list[*branch].flow = VA_FLOW_RECONVERGE;
+	c->in_branch++;
 }
 
 /* Ends a skipped block: the next instruction is the branch's target. */
@@ -3111,6 +3955,7 @@ branch_end(
 	uint32_t branch)
 {
 	/* The skipped block may end the program: a NOP is the target then. */
+	c->in_branch--;
 	if (c->code.failed != 0)
 		return;
 	c->code.list[branch].target = (int32_t)c->code.count;
@@ -3225,14 +4070,40 @@ ir_sources(
 		break;
 
 	case DRV_GPU_IR_ATOMIC:
+		/* An image texel's atomic reads the texel's three coordinates from src[0]. */
+		if ((inst->image_shape & DRV_GPU_IR_IMAGE_TEXEL) != 0U) {
+			list[count++] = inst->src[0] + 1U;
+			list[count++] = inst->src[0] + 2U;
+		}
 		list[count++] = inst->src[0];
 		list[count++] = inst->src[1];
 		if (inst->immediate == DRV_GPU_IR_ATOMIC_CMPXCHG)
 			list[count++] = inst->src[2];
 		if (inst->component == DRV_GPU_IR_ATOMIC_PREDICATED) {
-			list[count] = inst->src[count];
-			count++;
+			if (inst->immediate == DRV_GPU_IR_ATOMIC_CMPXCHG) {
+				list[count++] = inst->src[3];
+			} else {
+				list[count++] = inst->src[2];
+			}
 		}
+		break;
+
+	case DRV_GPU_IR_IMAGE_READ:
+		list[count++] = inst->src[0];
+		list[count++] = inst->src[0] + 1U;
+		list[count++] = inst->src[0] + 2U;
+		if (inst->component == 1U)
+			list[count++] = inst->src[2];
+		break;
+
+	case DRV_GPU_IR_IMAGE_WRITE:
+		list[count++] = inst->src[0];
+		list[count++] = inst->src[0] + 1U;
+		list[count++] = inst->src[0] + 2U;
+		for (index = 0U; index < 4U; index++)
+			list[count++] = inst->src[2] + index;
+		if (inst->component == 1U)
+			list[count++] = inst->src[3];
 		break;
 
 	case DRV_GPU_IR_TEXTURE:
@@ -3414,10 +4285,35 @@ fail(
 
 /*
  * Allocates count consecutive free registers, aligned to two for two and
- * to four for more.
+ * to four for more; when none are free, spills values to thread local
+ * storage until they are.
  */
 static uint32_t
 alloc_block(
+	struct va_compiler *c,
+	uint32_t count)
+{
+	uint32_t reg;
+	int spilled;
+
+	/* Takes a free run, spilling one value at a time while there is none. */
+	for (;;) {
+		reg = find_block(c, count);
+		if (reg != VA_NO_REG)
+			return reg;
+		spilled = spill_one(c);
+		if (spilled == 0)
+			break;
+	}
+
+	/* The registers ran out, and no value could be spilled. */
+	fail(c, ENOSPC, "the program needs more registers than the preloads leave and spilling frees");
+	return VA_NO_REG;
+}
+
+/* Takes the lowest aligned run of count free registers, or reports VA_NO_REG. */
+static uint32_t
+find_block(
 	struct va_compiler *c,
 	uint32_t count)
 {
@@ -3442,9 +4338,310 @@ alloc_block(
 		}
 	}
 
-	/* The registers ran out. */
-	fail(c, ENOSPC, "the program needs more registers than the preloads leave");
+	/* No run is free. */
 	return VA_NO_REG;
+}
+
+/*
+ * Spills the value that lives longest of those that may be spilled: its
+ * register is stored to a word of thread local storage (unless the word
+ * already holds it) and given back.  Reports whether a register was
+ * freed.
+ *
+ * Procedure referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/bi_ra.c (bi_store_tl, bi_load_tl on v9
+ * and later: the thread local storage pointer as the address, the
+ * immediate offset, the force access hint).
+ */
+static int
+spill_one(
+	struct va_compiler *c)
+{
+	uint32_t value;
+	uint32_t victim;
+	uint32_t word;
+	uint32_t reg;
+	int candidate;
+
+	/* Nothing is spilled where only some lanes run. */
+	if (c->in_branch != 0U)
+		return 0;
+
+	/* Chooses the candidate whose last read is farthest. */
+	victim = VA_NOT_DEFINED;
+	for (value = 0U; value <= c->ir->value_count; value++) {
+		candidate = spill_candidate(c, value);
+		if (candidate == 0)
+			continue;
+		if (victim == VA_NOT_DEFINED || c->last_use[value] > c->last_use[victim])
+			victim = value;
+	}
+	if (victim == VA_NOT_DEFINED)
+		return 0;
+	reg = c->reg[victim];
+
+	/* Stores the register to a word of its own, unless a word already holds the value. */
+	if (c->tls_word[victim] == VA_NO_TLS_WORD) {
+		for (word = 0U; word < VA_TLS_WORDS; word++) {
+			if (c->tls_used[word] == 0U)
+				break;
+		}
+		if (word == VA_TLS_WORDS)
+			return 0;
+		c->tls_used[word] = 1U;
+		if (word + 1U > c->tls_words)
+			c->tls_words = word + 1U;
+		c->tls_word[victim] = word;
+		emit(c,
+		     VA_OP_STORE_I32 | tls_access(word) | va_staging(reg, 1U, VA_STAGING_READ),
+		     va_register_mask(reg, 1U),
+		     0U,
+		     VA_INST_MESSAGE | VA_INST_MEMORY);
+	}
+
+	/* Gives the register back. */
+	free_reg(c, reg);
+	c->reg[victim] = VA_NO_REG;
+
+	/* Succeeded: a register is free. */
+	return 1;
+}
+
+/*
+ * Reports whether a value may be spilled now: it is in a register, not
+ * pinned, not handed out in this step and not read by the instruction
+ * being lowered; inside a loop it was made in the innermost loop's body
+ * (a value made before the loop is read again from its register when the
+ * loop goes round, so it may only be spilled before the loop).
+ */
+static int
+spill_candidate(
+	const struct va_compiler *c,
+	uint32_t value)
+{
+	uint32_t index;
+
+	/* Only a value of a register that a register need not keep. */
+	if (c->reg[value] == VA_NO_REG || c->reg[value] >= c->reg_limit)
+		return 0;
+	if (c->is_constant[value] != 0U || c->pinned[value] != 0U)
+		return 0;
+	if (c->touched[value] == c->step)
+		return 0;
+
+	/* Not one the instruction reads. */
+	for (index = 0U; index < c->source_count; index++) {
+		if (c->sources[index] == value)
+			return 0;
+	}
+
+	/* Inside a loop, only one the innermost loop's body made. */
+	if (c->loop_depth != 0U && c->defined_at[value] <= c->loop_head[c->loop_depth - 1U])
+		return 0;
+
+	/* The value may be spilled. */
+	return 1;
+}
+
+/* Loads a spilled value into a fresh register, which then holds it to its last read. */
+static uint32_t
+reload_value(
+	struct va_compiler *c,
+	uint32_t value)
+{
+	uint32_t reg;
+
+	/* Nothing is loaded again where only some lanes run. */
+	if (c->in_branch != 0U) {
+		fail(c, ENOSPC, "a spilled value read where only some lanes run");
+		return 0U;
+	}
+
+	/* Takes a register and loads the value's word into it. */
+	reg = alloc_block(c, 1U);
+	if (reg == VA_NO_REG)
+		return 0U;
+	emit(c,
+	     VA_OP_LOAD_I32 | tls_access(c->tls_word[value]) | va_field(1U, VA_SHIFT_LOAD_UNSIGNED) | va_staging(reg, 1U, VA_STAGING_WRITE),
+	     0U,
+	     va_register_mask(reg, 1U),
+	     VA_INST_MESSAGE | VA_INST_MEMORY);
+	c->reg[value] = (uint8_t)reg;
+	c->touched[value] = c->step;
+
+	/* Reports the register. */
+	return reg;
+}
+
+/* Loads a spilled value again before a block only some lanes run reads it. */
+static void
+reload_before_branch(
+	struct va_compiler *c,
+	uint32_t value)
+{
+	/* Only a spilled value of the program. */
+	if (value > c->ir->value_count || c->reg[value] != VA_NO_REG || c->tls_word[value] == VA_NO_TLS_WORD)
+		return;
+
+	/* Loads it now. */
+	(void)reload_value(c, value);
+}
+
+/*
+ * Frees loop_reserve registers before the loop beginning at the
+ * instruction being lowered: spills, the farthest read first, the values
+ * that live through the loop without being read in it (inside the loop
+ * they could no longer be spilled).
+ */
+static void
+make_loop_room(
+	struct va_compiler *c)
+{
+	const struct drv_gpu_shader_ir_inst *inst;
+	uint32_t end;
+	uint32_t depth;
+	uint32_t value;
+	uint32_t victim;
+	uint32_t word;
+	uint32_t reg;
+	int candidate;
+	int read;
+
+	/* Nothing to free without a reserve. */
+	if (c->loop_reserve == 0U)
+		return;
+
+	/* Finds the loop's end. */
+	depth = 0U;
+	for (end = c->at; end < c->ir->instruction_count; end++) {
+		inst = &c->ir->instructions[end];
+		if (inst->op == DRV_GPU_IR_LOOP_BEGIN)
+			depth++;
+		if (inst->op == DRV_GPU_IR_LOOP_END)
+			depth--;
+		if (depth == 0U)
+			break;
+	}
+
+	/* Spills while fewer registers than the reserve are free. */
+	while ((uint32_t)__builtin_popcountll(c->free_regs) < c->loop_reserve && c->error == 0) {
+		victim = VA_NOT_DEFINED;
+		for (value = 0U; value <= c->ir->value_count; value++) {
+			candidate = spill_candidate(c, value);
+			if (candidate == 0 || c->last_use[value] <= end)
+				continue;
+			read = read_in_loop(c, value, c->at, end);
+			if (read != 0)
+				continue;
+			if (victim == VA_NOT_DEFINED || c->last_use[value] > c->last_use[victim])
+				victim = value;
+		}
+		if (victim == VA_NOT_DEFINED)
+			return;
+
+		/* Stores it to a word of its own unless one holds it, and gives its register back. */
+		reg = c->reg[victim];
+		if (c->tls_word[victim] == VA_NO_TLS_WORD) {
+			for (word = 0U; word < VA_TLS_WORDS; word++) {
+				if (c->tls_used[word] == 0U)
+					break;
+			}
+			if (word == VA_TLS_WORDS)
+				return;
+			c->tls_used[word] = 1U;
+			if (word + 1U > c->tls_words)
+				c->tls_words = word + 1U;
+			c->tls_word[victim] = word;
+			emit(c,
+			     VA_OP_STORE_I32 | tls_access(word) | va_staging(reg, 1U, VA_STAGING_READ),
+			     va_register_mask(reg, 1U),
+			     0U,
+			     VA_INST_MESSAGE | VA_INST_MEMORY);
+		}
+		free_reg(c, reg);
+		c->reg[victim] = VA_NO_REG;
+	}
+}
+
+/* Reports whether an instruction of [begin, end] reads a value. */
+static int
+read_in_loop(
+	const struct va_compiler *c,
+	uint32_t value,
+	uint32_t begin,
+	uint32_t end)
+{
+	uint32_t sources[VA_MAX_SOURCES];
+	uint32_t count;
+	uint32_t index;
+	uint32_t source;
+
+	/* Looks through the loop's instructions. */
+	for (index = begin; index <= end && index < c->ir->instruction_count; index++) {
+		count = ir_sources(&c->ir->instructions[index], sources);
+		for (source = 0U; source < count; source++) {
+			if (sources[source] == value)
+				return 1;
+		}
+	}
+
+	/* No instruction of the loop reads it. */
+	return 0;
+}
+
+/*
+ * Pins the values a register must keep: a loop variable (a value more
+ * than one MOVE writes, each into its register; a value one MOVE makes is
+ * a plain copy) and a predicated load's result (the lanes that skip the
+ * load keep what the register held).  pinned counts a value's MOVEs on
+ * the way (1 for one, 2 for more).
+ */
+static void
+mark_pinned(
+	struct va_compiler *c)
+{
+	const struct drv_gpu_shader_ir_inst *inst;
+	uint32_t index;
+	uint32_t value;
+
+	/* Counts each value's MOVEs, and pins the predicated loads' results. */
+	for (index = 0U; index < c->ir->instruction_count; index++) {
+		inst = &c->ir->instructions[index];
+		if (inst->dst > c->ir->value_count)
+			continue;
+		if (inst->op == DRV_GPU_IR_MOVE && c->pinned[inst->dst] < 2U)
+			c->pinned[inst->dst]++;
+		if ((inst->op == DRV_GPU_IR_LOAD_STORAGE || inst->op == DRV_GPU_IR_LOAD_SHARED) && inst->component == 1U)
+			c->pinned[inst->dst] = 2U;
+	}
+
+	/* Keeps the pins of the values written more than once. */
+	for (value = 0U; value <= c->ir->value_count; value++) {
+		if (c->pinned[value] < 2U)
+			c->pinned[value] = 0U;
+	}
+}
+
+/*
+ * The address fields of a thread local storage word's access: the
+ * thread local storage pointer (FAU special page 1), the word's byte
+ * offset and the force hint (the access is made in a discarded lane
+ * too).
+ */
+static uint64_t
+tls_access(
+	uint32_t word)
+{
+	uint64_t bits;
+
+	/* The pointer, its page, the offset and the hint. */
+	bits = va_source_special(VA_SPECIAL_THREAD_LOCAL, 0U);
+	bits |= va_field(1U, VA_SHIFT_FAU_PAGE);
+	bits |= va_field(word * 4U, VA_SHIFT_MEMORY_OFFSET);
+	bits |= va_field(VA_MEMORY_FORCE, VA_SHIFT_MEMORY_ACCESS);
+
+	/* Reports the fields. */
+	return bits;
 }
 
 /* Gives a register back. */
@@ -3469,13 +4666,18 @@ value_reg(
 	if (value <= c->ir->value_count && c->is_constant[value] != 0U)
 		return constant_temp(c, c->constant[value]);
 
+	/* A spilled value is loaded again. */
+	if (value <= c->ir->value_count && c->reg[value] == VA_NO_REG && c->tls_word[value] != VA_NO_TLS_WORD)
+		return reload_value(c, value);
+
 	/* A value that has no register is a lowering error. */
 	if (value > c->ir->value_count || c->reg[value] == VA_NO_REG) {
 		fail(c, EINVAL, "a value read before its definition");
 		return 0U;
 	}
 
-	/* Reports the register. */
+	/* Reports the register, handed out in this step. */
+	c->touched[value] = c->step;
 	return c->reg[value];
 }
 
@@ -3493,11 +4695,12 @@ define_value(
 		return 0U;
 	}
 
-	/* Allocates one register. */
+	/* Allocates one register, handed out in this step. */
 	reg = alloc_block(c, 1U);
 	if (reg == VA_NO_REG)
 		return 0U;
 	c->reg[value] = (uint8_t)reg;
+	c->touched[value] = c->step;
 
 	/* Reports the register. */
 	return reg;
@@ -3516,6 +4719,7 @@ bind_value(
 		return;
 	}
 	c->reg[value] = (uint8_t)reg;
+	c->touched[value] = c->step;
 }
 
 /* Frees the registers of the values that die after instruction index. */
@@ -3536,16 +4740,20 @@ release_after(
 	/* The instruction's temporaries die. */
 	release_temps(c);
 
-	/* A source whose last use is here dies. */
+	/* A source whose last use is here dies, its spill word too. */
 	count = ir_sources(inst, sources);
 	for (source = 0U; source < count; source++) {
 		value = sources[source];
-		if (value > c->ir->value_count || c->reg[value] == VA_NO_REG)
+		if (value > c->ir->value_count || c->last_use[value] != index)
 			continue;
-		if (c->last_use[value] == index) {
-			free_reg(c, c->reg[value]);
-			c->reg[value] = VA_NO_REG;
+		if (c->tls_word[value] != VA_NO_TLS_WORD) {
+			c->tls_used[c->tls_word[value]] = 0U;
+			c->tls_word[value] = VA_NO_TLS_WORD;
 		}
+		if (c->reg[value] == VA_NO_REG)
+			continue;
+		free_reg(c, c->reg[value]);
+		c->reg[value] = VA_NO_REG;
 	}
 
 	/* A value defined here that nothing reads dies at once. */

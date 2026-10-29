@@ -2846,6 +2846,8 @@ ufs_identify(
 	uint32_t second;
 	uint64_t first_block;
 	uint64_t block_count;
+	uint64_t disk_sectors;
+	int unsupported;
 	int error;
 
 	/* Rejects a call that names no disk or nowhere to report. */
@@ -2853,13 +2855,15 @@ ufs_identify(
 		return EINVAL;
 
 	/* This driver reads disks whose blocks are whole sectors. */
-	if (disk_sector_supported(disk) != 0)
+	unsupported = disk_sector_supported(disk);
+	if (unsupported != 0)
 		return EOPNOTSUPP;
 	first_block = UFS_SBLOCK_OFFSET / UFS_SECTOR_SIZE;
 
 	/* The superblock sits at a fixed offset, in whole sectors. */
 	block_count = UFS_SBLOCK_SIZE / UFS_SECTOR_SIZE;
-	if (ufs_disk_sectors(disk) < first_block + block_count)
+	disk_sectors = ufs_disk_sectors(disk);
+	if (disk_sectors < first_block + block_count)
 		return EOPNOTSUPP;
 
 	/* Takes the staging the superblock is read into. */
@@ -2872,12 +2876,14 @@ ufs_identify(
 				     buffer, 0, 1, NULL);
 	if (error == 0) {
 		error = drv_ufs_super_decode(buffer, UFS_SBLOCK_SIZE,
-					     ufs_disk_sectors(disk), &super);
+					     disk_sectors, &super);
 	}
 
 	/* A fragment smaller than the disk's block was not written on it. */
 	if (error == 0 && super.fsize < disk->d_block_size)
 		error = EOPNOTSUPP;
+
+	/* Reports why the superblock could not be taken. */
 	if (error != 0) {
 		kern_free(buffer);
 
@@ -3300,12 +3306,14 @@ journal_discover(
 	uint32_t version;
 	uint32_t stored_digest;
 	uint32_t computed_digest;
+	uint64_t disk_sectors;
 	int old_signature;
 	int signature;
 	int error;
 
 	/* A volume too small to hold the locator carries no journal. */
-	if (end >= ufs_disk_sectors(mountp->m_disk))
+	disk_sectors = ufs_disk_sectors(mountp->m_disk);
+	if (end >= disk_sectors)
 		return 0;
 
 	/* Reads the last sector, where the locator lives. */
@@ -3357,7 +3365,7 @@ journal_discover(
 	}
 
 	/* Nor can one that would reach past the end of the volume. */
-	if ((uint64_t)sectors + 1U > ufs_disk_sectors(mountp->m_disk) - end) {
+	if ((uint64_t)sectors + 1U > disk_sectors - end) {
 		/* Failed. */
 		return EINVAL;
 	}
@@ -3400,11 +3408,13 @@ snapshot_discover(
 	uint32_t stored_digest;
 	uint32_t computed_digest;
 	size_t map_count;
+	uint64_t disk_sectors;
 	int signature;
 	int error;
 
 	/* A volume too small to hold the locator carries no snapshot. */
-	if (end >= ufs_disk_sectors(mountp->m_disk))
+	disk_sectors = ufs_disk_sectors(mountp->m_disk);
+	if (end >= disk_sectors)
 		return 0;
 
 	/* Reads the last sector, where the locator lives. */
@@ -3435,7 +3445,7 @@ snapshot_discover(
 		sectors = locator_get32(locator + 8);
 
 		/* A journal reaching past the volume names nothing real. */
-		if (sectors > ufs_disk_sectors(mountp->m_disk) - end - 1U) {
+		if (sectors > disk_sectors - end - 1U) {
 			/* Failed. */
 			return EINVAL;
 		}
@@ -3445,7 +3455,7 @@ snapshot_discover(
 	}
 
 	/* A locator pointing past the volume names nothing. */
-	if (cursor >= ufs_disk_sectors(mountp->m_disk))
+	if (cursor >= disk_sectors)
 		return 0;
 
 	/* Reads the sector the locator points at. */
@@ -3499,7 +3509,7 @@ snapshot_discover(
 	}
 
 	/* Nor may the area reach past the end of the volume. */
-	if ((uint64_t)sectors + 1U > ufs_disk_sectors(mountp->m_disk) - cursor) {
+	if ((uint64_t)sectors + 1U > disk_sectors - cursor) {
 		/* Failed. */
 		return EINVAL;
 	}
@@ -5585,6 +5595,7 @@ ufs_backing_lock(struct file *file, struct ufs_mount_state **result)
 	struct mount *mountp;
 	struct ufs_mount_state *ms;
 	const struct ufs_super *super;
+	int unsupported;
 
 	if (file == NULL || file->f_inode == NULL)
 		return EINVAL;
@@ -5598,8 +5609,10 @@ ufs_backing_lock(struct file *file, struct ufs_mount_state **result)
 	if (ms == NULL)
 		return EIO;
 	super = &ms->super;
-	if (disk_sector_supported(mountp->m_disk) != 0 ||
-	    super->cgoffset != 0)
+	unsupported = disk_sector_supported(mountp->m_disk);
+	if (unsupported != 0)
+		return EOPNOTSUPP;
+	if (super->cgoffset != 0)
 		return EOPNOTSUPP;
 	if (super->bsize == 0 || super->bsize % UFS_SECTOR_SIZE != 0 ||
 	    super->fsize < UFS_SECTOR_SIZE || super->fsize % UFS_SECTOR_SIZE != 0 ||
@@ -5634,6 +5647,7 @@ ufs_file_extents(struct file *file, file_extent_cb callback, void *context)
 	uint64_t run_physical;
 	uint32_t count;
 	uint32_t run_count;
+	uint64_t disk_sectors;
 	int error;
 
 	if (callback == NULL)
@@ -5644,6 +5658,7 @@ ufs_file_extents(struct file *file, file_extent_cb callback, void *context)
 	inode = file->f_inode;
 	mountp = inode->i_mount;
 	super = &ms->super;
+	disk_sectors = ufs_disk_sectors(mountp->m_disk);
 	remaining = (uint64_t)inode->i_size / UFS_SECTOR_SIZE;
 	logical = 0;
 	run_logical = 0;
@@ -5663,8 +5678,8 @@ ufs_file_extents(struct file *file, file_extent_cb callback, void *context)
 		count = super->bsize / UFS_SECTOR_SIZE;
 		if (remaining < count)
 			count = (uint32_t)remaining;
-		if (physical >= ufs_disk_sectors(mountp->m_disk) ||
-		    count > ufs_disk_sectors(mountp->m_disk) - physical) {
+		if (physical >= disk_sectors ||
+		    count > disk_sectors - physical) {
 			error = EIO;
 			break;
 		}
@@ -5701,6 +5716,7 @@ ufs_metadata_tree(struct mount *mountp, uint64_t fragment, unsigned depth,
 	uint64_t used;
 	uint32_t index;
 	uint32_t sectors;
+	uint64_t disk_sectors;
 	unsigned level;
 	int error;
 
@@ -5714,8 +5730,9 @@ ufs_metadata_tree(struct mount *mountp, uint64_t fragment, unsigned depth,
 		return EOVERFLOW;
 	physical = fragment * (super->fsize / UFS_SECTOR_SIZE);
 	sectors = super->bsize / UFS_SECTOR_SIZE;
-	if (physical >= ufs_disk_sectors(mountp->m_disk) ||
-	    sectors > ufs_disk_sectors(mountp->m_disk) - physical)
+	disk_sectors = ufs_disk_sectors(mountp->m_disk);
+	if (physical >= disk_sectors ||
+	    sectors > disk_sectors - physical)
 		return EIO;
 	error = callback(physical, sectors, context);
 	if (error != 0 || depth == 1U)
@@ -17038,10 +17055,15 @@ ufs_read_super(
 	struct ufs_super *super)
 {
 	uint8_t *buffer;
+	uint64_t disk_sectors;
+	int unsupported;
 	int error;
 
 	/* This driver reads disks whose blocks are whole sectors. */
-	if (disk == NULL || disk_sector_supported(disk) != 0)
+	if (disk == NULL)
+		return EOPNOTSUPP;
+	unsupported = disk_sector_supported(disk);
+	if (unsupported != 0)
 		return EOPNOTSUPP;
 
 	/* Takes the staging the superblock is read into. */
@@ -17053,8 +17075,9 @@ ufs_read_super(
 	error = observed_disk_read(disk, UFS_SBLOCK_OFFSET / UFS_SECTOR_SIZE,
 				   UFS_SBLOCK_SIZE / UFS_SECTOR_SIZE, buffer);
 	if (error == 0) {
+		disk_sectors = ufs_disk_sectors(disk);
 		error = drv_ufs_super_decode(buffer, UFS_SBLOCK_SIZE,
-					     ufs_disk_sectors(disk), super);
+					     disk_sectors, super);
 	}
 
 	/* A fragment smaller than the disk's block was not written on it. */
@@ -21198,6 +21221,7 @@ j3_extents_read(
 	struct ufs_j3_extent *extent;
 	const uint8_t *entry;
 	uint64_t file_sector;
+	uint64_t disk_sectors;
 	uint32_t n;
 
 	/* Takes the table of extents. */
@@ -21206,6 +21230,7 @@ j3_extents_read(
 		return ENOMEM;
 
 	/* Reads each extent: its first disk sector and its length. */
+	disk_sectors = ufs_disk_sectors(mountp->m_disk);
 	file_sector = 0;
 	for (n = 0; n < count; n++) {
 		extent = &j3->extents[n];
@@ -21217,7 +21242,7 @@ j3_extents_read(
 		/* An empty extent, or one past the end of the disk, is not the journal's. */
 		if (extent->count == 0)
 			return EINVAL;
-		if (extent->lba + extent->count > ufs_disk_sectors(mountp->m_disk))
+		if (extent->lba + extent->count > disk_sectors)
 			return EINVAL;
 
 		/* The next extent continues the file. */

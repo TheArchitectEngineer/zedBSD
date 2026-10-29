@@ -60,6 +60,56 @@ but kernel reload failed. Any error after writing may leave changed metadata.
 Neither initialization nor rollback is crash-atomic. Existing filesystem data
 sectors are not wiped, and the command does not format a filesystem.
 
+## diskpart add, delete and batch
+
+```text
+diskpart add DISK SLOT START COUNT TYPE [PARTUUID [NAME]]
+diskpart delete DISK SLOT
+diskpart batch DISK OPERATION...
+```
+
+`add` and `delete` change one entry of an existing GPT or primary MBR. SLOT
+is one-based; START and COUNT are decimal logical sectors. A GPT TYPE is a
+GUID; an MBR TYPE is a hexadecimal primary type. No entry is moved, resized
+or formatted, and data sectors are not wiped.
+
+`batch` applies up to 32 operations to a GPT in order, in memory, and writes
+the result once, after one confirmation:
+
+| Operation | Effect |
+| --- | --- |
+| `add SLOT START COUNT TYPE PARTUUID NAME` | a new entry in an unused slot |
+| `delete SLOT` | the entry is cleared |
+| `set SLOT TYPE PARTUUID NAME ATTRIBUTES` | the entry's type, PARTUUID, name and attribute bits (decimal) are replaced; its range is kept |
+
+Every number and GUID is checked before the disk is opened. An operation the
+table refuses names its position (`batch operation N refused`) and nothing is
+written. The resulting table may have at most 16 active entries. Entries the
+batch does not name are kept byte for byte, including their attributes. A
+batch on an MBR disk returns `EOPNOTSUPP`.
+
+GPT edits require 128-byte entries, a 92-byte header, the backup header at
+the last LBA, consistent copies, no hybrid MBR and at most 16 active entries;
+otherwise they return `EOPNOTSUPP`. Logical sectors of 512 and 4096 bytes are
+supported. Each command displays the target, its registration and the
+proposed table, then requires the exact `WRITE NAME:REGISTRATION` phrase.
+A mounted partition of the disk, even an unchanged one, prevents the reload:
+`delete` and `batch` check it before writing, while `add` may write and then
+report the reload failure. Exit statuses are those of `init`: 3 means the
+table was written and verified but the kernel did not reload it, so the new
+entries are usable only after a restart.
+
+`diskpart --machine list` and `--machine show DISK` print the records
+described in [block command output](block-command-output.md).
+
+### GPT types
+
+`diskpart show` names the partition types it knows, including
+`zedBSD-unassigned` (`7EF6A3E2-F243-445D-B77A-C37CA9605418`,
+[`<uapi/gpt-type.h>`](../../include/uapi/gpt-type.h)): a partition made for
+zedBSD that is not yet a root or swap. The installer creates partitions with
+this type and changes the type when it uses one.
+
 ## Partition reservations
 
 `BLKRESERVE` also accepts a direct partition of a physical disk. It compares
@@ -73,5 +123,5 @@ Acquisition conservatively requires an idle physical I/O/cache frontier, so
 transient sibling activity may return `EBUSY`; it does not permanently exclude
 an idle mounted sibling. Owner reads and writes stay within the target range.
 `BLKREREADPART` on a partition returns `EINVAL`: only a whole-disk owner may
-replace partition mappings. Partition filesystem formatting and installer
-integration remain separate implementation work.
+replace partition mappings. Formatting a partition belongs to
+[mkfs and mkswap](image-formatters.md).

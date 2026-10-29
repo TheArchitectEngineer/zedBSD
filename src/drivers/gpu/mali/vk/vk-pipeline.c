@@ -248,6 +248,7 @@ graphics_pipeline(
 		error = compile(vertex, MALI_SHADER_VERTEX, &graphics->vertex);
 	if (error == 0)
 		error = compile(fragment, MALI_SHADER_FRAGMENT, &graphics->fragment);
+
 	if (error == 0)
 		error = upload(session, pipeline);
 	if (error != 0) {

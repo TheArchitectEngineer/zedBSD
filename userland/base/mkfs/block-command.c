@@ -32,6 +32,14 @@ mkfs_capacity_command(int argc, char **argv)
 	int fat;
 	int sized;
 	int error;
+	int has_option;
+	int is_t;
+	int is_ufs;
+	int is_fat32;
+	int is_native;
+	int is_check;
+	int printed;
+	int flushed;
 
 	/*
 	 * Takes the optional --sector-size=N before --check-size: the
@@ -39,7 +47,10 @@ mkfs_capacity_command(int argc, char **argv)
 	 */
 	sector_size = 512U;
 	sized = 0;
-	if (argc >= 5 && strncmp(argv[argc - 3], "--sector-size=", 14) == 0) {
+	has_option = 1;
+	if (argc >= 5)
+		has_option = strncmp(argv[argc - 3], "--sector-size=", 14);
+	if (argc >= 5 && has_option == 0) {
 		error = parse_sector_size(argv[argc - 3] + 14, &sector_size);
 		if (error != 0)
 			return 2;
@@ -47,11 +58,25 @@ mkfs_capacity_command(int argc, char **argv)
 	}
 
 	/* Accepts the two profiles' exact command lines. */
-	native = argc == 6 + sized && strcmp(argv[1], "-t") == 0 &&
-	    strcmp(argv[2], "ufs") == 0 && strcmp(argv[3], "--profile=native") == 0 &&
-	    strcmp(argv[argc - 2], "--check-size") == 0;
-	fat = argc == 5 + sized && strcmp(argv[1], "-t") == 0 &&
-	    strcmp(argv[2], "fat32") == 0 && strcmp(argv[argc - 2], "--check-size") == 0;
+	is_t = 1;
+	is_ufs = 1;
+	is_fat32 = 1;
+	is_native = 1;
+	is_check = 1;
+	if (argc >= 5) {
+		is_t = strcmp(argv[1], "-t");
+		is_ufs = strcmp(argv[2], "ufs");
+		is_fat32 = strcmp(argv[2], "fat32");
+		is_check = strcmp(argv[argc - 2], "--check-size");
+	}
+	if (argc >= 4)
+		is_native = strcmp(argv[3], "--profile=native");
+	native = 0;
+	if (argc == 6 + sized && is_t == 0 && is_ufs == 0 && is_native == 0 && is_check == 0)
+		native = 1;
+	fat = 0;
+	if (argc == 5 + sized && is_t == 0 && is_fat32 == 0 && is_check == 0)
+		fat = 1;
 	if (!native && !fat) {
 		fprintf(stderr, "usage: mkfs -t fat32 [--sector-size=512|4096] --check-size BYTES\n");
 		fprintf(stderr, "       mkfs -t ufs --profile=native [--sector-size=512|4096] --check-size BYTES\n");
@@ -92,11 +117,18 @@ mkfs_capacity_command(int argc, char **argv)
 		fprintf(stderr, "mkfs: capacity: %s\n", strerror(error));
 		return 1;
 	}
+
 	/* FAT has no fixed inode table; zero is meaningful only for that profile. */
-	if (printf("format\t1\t%s\t%u\t%llu\t%llu\t%llu\t%u\n", format,
+	printed = printf("format\t1\t%s\t%u\t%llu\t%llu\t%llu\t%u\n", format,
 	    sector_size, (unsigned long long)bytes, (unsigned long long)free_bytes,
-	    (unsigned long long)free_inodes, unit) < 0 || fflush(stdout) != 0)
+	    (unsigned long long)free_inodes, unit);
+	if (printed < 0)
 		return 1;
+	flushed = fflush(stdout);
+	if (flushed != 0)
+		return 1;
+
+	/* Succeeded: the capacity line is printed. */
 	return 0;
 }
 
@@ -178,6 +210,7 @@ mkfs_block_command(int argc, char **argv)
 		goto out;
 	}
 	bytes = info.sector_count * info.sector_size;
+
 	/*
 	 * A FAT32 volume's serial is random: the loader and the kernel find
 	 * the boot volume by it (boot0=UUID=), so it must not repeat the
@@ -189,6 +222,8 @@ mkfs_block_command(int argc, char **argv)
 		if (error != 0)
 			goto out;
 	}
+
+	/* Checks the volume fits the format being written. */
 	if (native)
 		error = ufs_format_native_validate_size(bytes, info.sector_size);
 	else
@@ -282,12 +317,17 @@ parse_sector_size(
 	const char *text,
 	uint32_t *sector_size)
 {
+	int is_512;
+	int is_4096;
+
 	/* Accepts the two logical sector sizes the formats are made for. */
-	if (strcmp(text, "512") == 0) {
+	is_512 = strcmp(text, "512");
+	if (is_512 == 0) {
 		*sector_size = 512U;
 		return 0;
 	}
-	if (strcmp(text, "4096") == 0) {
+	is_4096 = strcmp(text, "4096");
+	if (is_4096 == 0) {
 		*sector_size = 4096U;
 		return 0;
 	}

@@ -32,6 +32,7 @@
 #include <kern/kmem.h>
 #include <kern/pmem.h>
 #include <kern/sched.h>
+#include <kern/sysctl.h>
 #include <kern/thread.h>
 #include <uapi/errno.h>
 
@@ -171,9 +172,16 @@ drv_mali_gpu_attach(
 	if (error != 0)
 		return -error;
 
-	/* The later stage on a thread of its own; nobody joins it. */
+	/*
+	 * The later stage on a thread of its own; nobody joins it.  Until it
+	 * has published the render node or given up, the GPU counts as
+	 * attaching (hw.gpu.attaching), so the graphical login waits for the
+	 * render node as well as the display; the later stage ends the count.
+	 */
+	kern_gpu_attach_begin();
 	error = kthread_create(late_thread, device, SCHED_PRIORITY_DEFAULT, &thread);
 	if (error != 0) {
+		kern_gpu_attach_end();
 		kern_logf("mali: no thread for the firmware (%d)\n", error);
 		return -error;
 	}
@@ -416,6 +424,9 @@ late_thread(
 	/* Brings the firmware up; a failure stops the microcontroller and ends the stage. */
 	device = argument;
 	error = late_bring_up(device);
+
+	/* The render node is published or never will be; the graphical login stops waiting. */
+	kern_gpu_attach_end();
 	if (error != 0) {
 		mali_write32(device, MALI_REG_MCU_CONTROL, MALI_MCU_DISABLE);
 		mali_gpu_report_events(device);

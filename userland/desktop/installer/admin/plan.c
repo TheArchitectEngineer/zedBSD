@@ -74,6 +74,10 @@ plan_request_read(
 {
 	struct plan_reader reader;
 	char verb[PLAN_TOKEN_MAX];
+	int probe_diff;
+	int cancel_diff;
+	int edit_diff;
+	int install_diff;
 	int error;
 
 	/* A missing text or result. */
@@ -92,16 +96,20 @@ plan_request_read(
 	/* The verb decides the rest. */
 	error = plan_token(&reader, verb, sizeof(verb));
 	if (error == 0) {
-		if (strcmp(verb, "probe") == 0) {
+		probe_diff = strcmp(verb, "probe");
+		cancel_diff = strcmp(verb, "cancel");
+		edit_diff = strcmp(verb, "edit");
+		install_diff = strcmp(verb, "install");
+		if (probe_diff == 0) {
 			/* A probe has nothing more. */
 			request->verb = PLAN_PROBE;
-		} else if (strcmp(verb, "cancel") == 0) {
+		} else if (cancel_diff == 0) {
 			/* A cancellation has nothing more. */
 			request->verb = PLAN_CANCEL;
-		} else if (strcmp(verb, "edit") == 0) {
+		} else if (edit_diff == 0) {
 			/* One change of the partition table. */
 			error = plan_read_edit(&reader, request);
-		} else if (strcmp(verb, "install") == 0) {
+		} else if (install_diff == 0) {
 			/* The installation. */
 			error = plan_read_install(&reader, request);
 		} else {
@@ -145,6 +153,7 @@ plan_install_check(
 	unsigned i;
 	unsigned j;
 	int same;
+	int valid;
 	int error;
 
 	/* A missing disk or plan. */
@@ -179,19 +188,24 @@ plan_install_check(
 	}
 
 	/* The user, as Settings would allow one. */
-	if (!plan_user_valid(plan->user))
+	valid = plan_user_valid(plan->user);
+	if (!valid)
 		return EINVAL;
-	if (!plan_fullname_valid(plan->fullname))
+	valid = plan_fullname_valid(plan->fullname);
+	if (!valid)
 		return EINVAL;
 
 	/* The passwords, both of them set. */
-	if (!plan_password_valid(plan->password))
+	valid = plan_password_valid(plan->password);
+	if (!valid)
 		return EINVAL;
-	if (!plan_password_valid(plan->root_password))
+	valid = plan_password_valid(plan->root_password);
+	if (!valid)
 		return EINVAL;
 
 	/* The hostname. */
-	if (!plan_hostname_valid(plan->hostname))
+	valid = plan_hostname_valid(plan->hostname);
+	if (!valid)
 		return EINVAL;
 
 	/* Succeeded: the plan holds together. */
@@ -481,6 +495,7 @@ plan_cfg_text(
 	size_t *length)
 {
 	size_t used;
+	int valid;
 	int error;
 
 	/* A missing configuration or result. */
@@ -488,10 +503,14 @@ plan_cfg_text(
 		return EINVAL;
 
 	/* The PARTUUIDs the lines name. */
-	if (!plan_guid_valid(cfg->root_partuuid))
+	valid = plan_guid_valid(cfg->root_partuuid);
+	if (!valid)
 		return EINVAL;
-	if (cfg->swap_partuuid != NULL && !plan_guid_valid(cfg->swap_partuuid))
-		return EINVAL;
+	if (cfg->swap_partuuid != NULL) {
+		valid = plan_guid_valid(cfg->swap_partuuid);
+		if (!valid)
+			return EINVAL;
+	}
 
 	/* The kernel from the root, and the root. */
 	used = 0;
@@ -756,6 +775,7 @@ plan_read_disk(
 	char token[PLAN_TOKEN_MAX];
 	uint64_t sector_bytes;
 	size_t length;
+	int valid;
 	int error;
 
 	/* The word, the registration number. */
@@ -771,7 +791,10 @@ plan_read_disk(
 	if (error != 0)
 		return error;
 	length = strlen(token);
-	if (length > PLAN_DEVICE_MAX || !plan_token_valid(token))
+	if (length > PLAN_DEVICE_MAX)
+		return EINVAL;
+	valid = plan_token_valid(token);
+	if (!valid)
 		return EINVAL;
 	memcpy(disk->name, token, length + 1U);
 
@@ -809,6 +832,7 @@ plan_read_tuple(
 	char *colon;
 	unsigned count;
 	size_t i;
+	int valid;
 	int error;
 
 	/* The token. */
@@ -828,6 +852,8 @@ plan_read_tuple(
 		count++;
 		colon = strchr(colon + 1, ':');
 	}
+
+	/* A tuple has exactly four parts. */
 	if (count != 4U)
 		return EINVAL;
 
@@ -847,7 +873,10 @@ plan_read_tuple(
 		if (part[3][i] >= 'A' && part[3][i] <= 'F')
 			part[3][i] = (char)(part[3][i] - 'A' + 'a');
 	}
-	if (!plan_guid_valid(part[3]))
+
+	/* Refuses a PARTUUID that is not a GUID. */
+	valid = plan_guid_valid(part[3]);
+	if (!valid)
 		return EINVAL;
 	memcpy(tuple->partuuid, part[3], PLAN_GUID_TEXT + 1U);
 
@@ -884,6 +913,9 @@ plan_read_edit(
 	struct plan_request *request)
 {
 	char kind[PLAN_TOKEN_MAX];
+	int delete_diff;
+	int create_diff;
+	int create_esp_diff;
 	int error;
 
 	/* Which change, and the disk. */
@@ -895,21 +927,24 @@ plan_read_edit(
 		return error;
 
 	/* Choose the change. */
-	if (strcmp(kind, "delete") == 0) {
+	delete_diff = strcmp(kind, "delete");
+	create_diff = strcmp(kind, "create");
+	create_esp_diff = strcmp(kind, "create-with-esp");
+	if (delete_diff == 0) {
 		/* The partition to delete. */
 		request->verb = PLAN_EDIT_DELETE;
 		error = plan_word(reader, "part");
 		if (error != 0)
 			return error;
 		error = plan_read_tuple(reader, &request->part);
-	} else if (strcmp(kind, "create") == 0) {
+	} else if (create_diff == 0) {
 		/* The partition to make. */
 		request->verb = PLAN_EDIT_CREATE;
 		error = plan_word(reader, "new");
 		if (error != 0)
 			return error;
 		error = plan_read_extent(reader, &request->part_new);
-	} else if (strcmp(kind, "create-with-esp") == 0) {
+	} else if (create_esp_diff == 0) {
 		/* The ESP and the partition to make together. */
 		request->verb = PLAN_EDIT_CREATE_WITH_ESP;
 		error = plan_word(reader, "esp");
@@ -926,6 +961,8 @@ plan_read_edit(
 		/* No such change. */
 		error = EINVAL;
 	}
+
+	/* Reports why the change could not be read. */
 	if (error != 0)
 		return error;
 
@@ -941,6 +978,8 @@ plan_read_layout(
 {
 	char kind[PLAN_TOKEN_MAX];
 	struct plan_reader saved;
+	int whole_diff;
+	int chosen_diff;
 	int error;
 
 	/* Which layout. */
@@ -949,7 +988,9 @@ plan_read_layout(
 		return error;
 
 	/* The whole disk: the sizes of the ESP and of the swap partition. */
-	if (strcmp(kind, "whole") == 0) {
+	whole_diff = strcmp(kind, "whole");
+	chosen_diff = strcmp(kind, "chosen");
+	if (whole_diff == 0) {
 		plan->layout = PLAN_WHOLE;
 		error = plan_number(reader, &plan->whole_esp_bytes);
 		if (error != 0)
@@ -966,7 +1007,7 @@ plan_read_layout(
 	}
 
 	/* Anything but the two layouts. */
-	if (strcmp(kind, "chosen") != 0)
+	if (chosen_diff != 0)
 		return EINVAL;
 
 	/* The chosen partitions: the ESP and the root. */
@@ -1019,6 +1060,7 @@ plan_read_units(
 	uint64_t count;
 	size_t length;
 	unsigned i;
+	int valid;
 	int error;
 
 	/* The word and the count. */
@@ -1037,10 +1079,15 @@ plan_read_units(
 		if (error != 0)
 			return error;
 		length = strlen(token);
-		if (length >= INDEX_NAME_MAX || !plan_token_valid(token))
+		if (length >= INDEX_NAME_MAX)
+			return EINVAL;
+		valid = plan_token_valid(token);
+		if (!valid)
 			return EINVAL;
 		memcpy(plan->unit[i], token, length + 1U);
 	}
+
+	/* Keeps the number of names read. */
 	plan->unit_count = (unsigned)count;
 
 	/* Succeeded: the units are read. */
@@ -1054,6 +1101,8 @@ plan_read_people(
 	struct install_plan *plan)
 {
 	char answer[PLAN_TOKEN_MAX];
+	int yes_diff;
+	int no_diff;
 	int error;
 
 	/* The user's login name and display name. */
@@ -1091,9 +1140,11 @@ plan_read_people(
 	error = plan_token(reader, answer, sizeof(answer));
 	if (error != 0)
 		return error;
-	if (strcmp(answer, "yes") == 0)
+	yes_diff = strcmp(answer, "yes");
+	no_diff = strcmp(answer, "no");
+	if (yes_diff == 0)
 		plan->autologin = 1;
-	else if (strcmp(answer, "no") == 0)
+	else if (no_diff == 0)
 		plan->autologin = 0;
 	else
 		return EINVAL;
@@ -1219,9 +1270,11 @@ plan_extent_aligned(
 	const struct plan_extent *extent)
 {
 	uint64_t grid;
+	int inside;
 
 	/* On the disk. */
-	if (!plan_extent_inside(disk, extent->start, extent->sectors))
+	inside = plan_extent_inside(disk, extent->start, extent->sectors);
+	if (!inside)
 		return EINVAL;
 
 	/* Its start and its size whole MiB. */

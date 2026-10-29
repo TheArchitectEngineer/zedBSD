@@ -2186,7 +2186,9 @@ lan_send_policy(
 	size_t length;
 	size_t name_length;
 	size_t address_length;
+	int server_error;
 	int status;
+	unsigned attempt;
 	size_t index;
 
 	/* Handles a configuration that cannot be read. */
@@ -2278,9 +2280,26 @@ lan_send_policy(
 		}
 	}
 
-	/* Obtains the backend exchange result. */
-	return backend_exchange(NETWORKD_OP_LAN_ENABLE, payload, writer.used,
-				0, 15U, 1) == 0 ? 0 : 1;
+	/*
+	 * Sends the policy, and once more after a moment when the daemon
+	 * answers that it is busy and to retry: the boot sends the policy only
+	 * once, and an interface it misses stays unconfigured.
+	 */
+	for (attempt = 0U; attempt < 2U; attempt++) {
+		server_error = 0;
+		status = backend_exchange_result(NETWORKD_OP_LAN_ENABLE, payload,
+		    writer.used, 0, 15U, 1, NULL, &server_error);
+		if (status == 0)
+			return 0;
+
+		/* Gives up on anything but a busy daemon, or after the retry. */
+		if (server_error != EBUSY || attempt != 0U)
+			break;
+		(void)sleep(1U);
+	}
+
+	/* Reports that the daemon did not take the policy. */
+	return 1;
 }
 
 /*

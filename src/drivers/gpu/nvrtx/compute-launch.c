@@ -20,11 +20,13 @@
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 
 /*
- * QMD version 2.2: the bit positions of its fields, and the version it
- * names.
+ * The bit positions of the QMD fields at the same place in versions 2.2 and
+ * 3.0.
  *
  * Values referenced: Mesa 25.3.6
- * src/nouveau/headers/nvidia/classes/clc3c0qmd.h (NVC3C0_QMDV02_02_*).
+ * src/nouveau/headers/nvidia/classes/clc3c0qmd.h (NVC3C0_QMDV02_02_*) and
+ * NVIDIA open-gpu-doc classes/compute/clc6c0qmd.h and clc9c0qmd.h
+ * (NVC6C0_QMDV03_00_*, NVC9C0_QMDV03_00_*).
  */
 #define QMD_SM_GLOBAL_CACHING		134U
 #define QMD_API_CALL_LIMIT		378U
@@ -34,21 +36,14 @@
 #define QMD_RASTER_DEPTH_LOW		448U
 #define QMD_SHARED_SIZE_LOW		544U
 #define QMD_SHARED_SIZE_BITS		18U
-#define QMD_MIN_SHARED_CONFIG_LOW	562U
-#define QMD_MAX_SHARED_CONFIG_LOW	569U
-#define QMD_SHARED_CONFIG_BITS		7U
 #define QMD_VERSION_LOW			576U
 #define QMD_MAJOR_VERSION_LOW		580U
-#define QMD_VERSION			2U
-#define QMD_MAJOR_VERSION		2U
 #define QMD_THREADS0_LOW		592U
 #define QMD_THREADS1_LOW		608U
 #define QMD_THREADS2_LOW		624U
 #define QMD_CBUF_VALID_LOW		640U
 #define QMD_REGISTER_COUNT_LOW		648U
 #define QMD_REGISTER_COUNT_BITS		9U
-#define QMD_TARGET_SHARED_CONFIG_LOW	657U
-#define QMD_BARRIER_COUNT_LOW		955U
 #define QMD_BARRIER_COUNT_BITS		5U
 #define QMD_CBUF_ADDRESS_LOW_LOW	1024U
 #define QMD_CBUF_ADDRESS_HIGH_LOW	1056U
@@ -60,6 +55,34 @@
 #define QMD_PROGRAM_LOW_LOW		1536U
 #define QMD_PROGRAM_HIGH_LOW		1568U
 #define QMD_PROGRAM_HIGH_BITS		17U
+
+/*
+ * The fields that moved between QMD version 2.2 (Turing) and 3.0 (Ampere
+ * and Ada): the shared-memory configurations, one bit narrower in 3.0, and
+ * the barrier count; and the version each names.
+ *
+ * Values referenced: Mesa 25.3.6
+ * src/nouveau/headers/nvidia/classes/clc3c0qmd.h
+ * (NVC3C0_QMDV02_02_MIN_SM_CONFIG_SHARED_MEM_SIZE,
+ * _MAX_SM_CONFIG_SHARED_MEM_SIZE, _TARGET_SM_CONFIG_SHARED_MEM_SIZE,
+ * _BARRIER_COUNT) and NVIDIA open-gpu-doc classes/compute/clc6c0qmd.h
+ * (the same fields of NVC6C0_QMDV03_00), with src/nouveau/compiler/nak/qmd.rs
+ * (the version numbers each QMD writes).
+ */
+#define QMD22_MINOR			2U
+#define QMD22_MAJOR			2U
+#define QMD22_MIN_SHARED_CONFIG_LOW	562U
+#define QMD22_MAX_SHARED_CONFIG_LOW	569U
+#define QMD22_TARGET_SHARED_CONFIG_LOW	657U
+#define QMD22_SHARED_CONFIG_BITS	7U
+#define QMD22_BARRIER_COUNT_LOW		955U
+#define QMD30_MINOR			0U
+#define QMD30_MAJOR			3U
+#define QMD30_MIN_SHARED_CONFIG_LOW	562U
+#define QMD30_MAX_SHARED_CONFIG_LOW	569U
+#define QMD30_TARGET_SHARED_CONFIG_LOW	657U
+#define QMD30_SHARED_CONFIG_BITS	6U
+#define QMD30_BARRIER_COUNT_LOW		763U
 
 /*
  * Turing's shared memory carve-outs in KiB, and the warps an SM holds (the
@@ -91,6 +114,18 @@
 #define COMPUTE_SEND_SIGNALING_PCAS_B	0x02bcU
 #define COMPUTE_PCAS_INVALIDATE		(1U << 0)
 #define COMPUTE_PCAS_SCHEDULE		(1U << 1)
+
+/*
+ * The launch method of the compute classes after Turing's, and its
+ * invalidate-copy-and-schedule action.
+ *
+ * Values referenced: NVIDIA open-gpu-doc classes/compute/clc6c0.h
+ * (NVC6C0_SEND_SIGNALING_PCAS2_B, _PCAS_ACTION_INVALIDATE_COPY_SCHEDULE) and
+ * Mesa 25.3.6 src/nouveau/vulkan/nvk_cmd_dispatch.c (nvk_CmdDispatchBase:
+ * the method for classes above TURING_COMPUTE_A).
+ */
+#define COMPUTE_SEND_SIGNALING_PCAS2_B	0x02c0U
+#define COMPUTE_PCAS2_INVALIDATE_COPY_SCHEDULE	3U
 #define COMPUTE_LOCAL_WINDOW_A		0x07b0U
 
 /*
@@ -111,33 +146,106 @@
  */
 #define COMPUTE_METHOD_INCREMENT	(1U << 29)
 
+/* Where one QMD version keeps the fields that moved, and the version it names. */
+struct qmd_layout {
+	uint32_t minor;
+	uint32_t major;
+	unsigned min_shared_low;
+	unsigned max_shared_low;
+	unsigned target_shared_low;
+	unsigned shared_config_bits;
+	unsigned barrier_low;
+};
+
+/* QMD version 2.2 (Turing). */
+static const struct qmd_layout qmd_layout_22 = {
+	QMD22_MINOR,
+	QMD22_MAJOR,
+	QMD22_MIN_SHARED_CONFIG_LOW,
+	QMD22_MAX_SHARED_CONFIG_LOW,
+	QMD22_TARGET_SHARED_CONFIG_LOW,
+	QMD22_SHARED_CONFIG_BITS,
+	QMD22_BARRIER_COUNT_LOW
+};
+
+/* QMD version 3.0 (Ampere and Ada). */
+static const struct qmd_layout qmd_layout_30 = {
+	QMD30_MINOR,
+	QMD30_MAJOR,
+	QMD30_MIN_SHARED_CONFIG_LOW,
+	QMD30_MAX_SHARED_CONFIG_LOW,
+	QMD30_TARGET_SHARED_CONFIG_LOW,
+	QMD30_SHARED_CONFIG_BITS,
+	QMD30_BARRIER_COUNT_LOW
+};
+
+/* Turing's launches: QMD 2.2 and its compute class, for the callers that name no generation. */
+static const struct nvrtx_compute_kind compute_kind_turing = {
+	2U,
+	2U,
+	NVRTX_CLASS_COMPUTE
+};
+
 static void qmd_set(uint32_t *qmd, unsigned low, unsigned bits, uint64_t value);
 static uint32_t qmd_shared_config(uint32_t kib);
 static uint32_t qmd_pick_shared(uint32_t bytes, uint32_t groups);
 static size_t compute_method(uint8_t *push, size_t at, uint32_t method, uint32_t count);
 
 /*
- * Builds a launch's QMD, version 2.2, for Turing: the version, global caching
- * on, no call limit, the grid and the workgroup, the shared memory and the
- * carve-outs it allows, the registers, the barriers, no local memory, the
- * constant buffers and the program.
- *
- * Returns 0, or EINVAL for a value a field cannot hold or a misaligned
- * address or size.
- *
- * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/qmd.rs
- * (fill_qmd for version 2.2).
+ * Builds a launch's QMD for Turing (version 2.2), as nvrtx_qmd_build_for().
  */
 int
 nvrtx_qmd_build(
 	uint32_t *qmd,
 	const struct nvrtx_qmd_info *info)
 {
+	int error;
+
+	/* Turing's version. */
+	error = nvrtx_qmd_build_for(qmd, info, &compute_kind_turing);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the QMD is complete. */
+	return 0;
+}
+
+/*
+ * Builds a launch's QMD in the generation's version (2.2 for Turing, 3.0
+ * for Ampere and Ada): the version, global caching on, no call limit, the
+ * grid and the workgroup, the shared memory and the carve-outs it allows,
+ * the registers, the barriers, no local memory, the constant buffers and
+ * the program.  The carve-outs are Turing's (32 and 64 KiB), which Ampere's
+ * and Ada's SMs also offer.
+ *
+ * Returns 0, or EINVAL for a value a field cannot hold, a misaligned
+ * address or size, or a QMD version this driver does not write.
+ *
+ * Procedure referenced: Mesa 25.3.6 src/nouveau/compiler/nak/qmd.rs
+ * (fill_qmd for versions 2.2 and 3.0).
+ */
+int
+nvrtx_qmd_build_for(
+	uint32_t *qmd,
+	const struct nvrtx_qmd_info *info,
+	const struct nvrtx_compute_kind *kind)
+{
+	const struct qmd_layout *layout;
 	uint32_t threads;
 	uint32_t warps;
 	uint32_t shared;
 	uint32_t groups_per_sm;
 	uint32_t index;
+
+	/* The version's layout. */
+	if (kind->qmd_major == QMD22_MAJOR && kind->qmd_minor == QMD22_MINOR) {
+		layout = &qmd_layout_22;
+	} else if (kind->qmd_major == QMD30_MAJOR && kind->qmd_minor == QMD30_MINOR) {
+		layout = &qmd_layout_30;
+	} else {
+		/* A version this driver does not write. */
+		return EINVAL;
+	}
 
 	/* Every field must fit: the program and the buffers on their boundaries. */
 	if ((info->program & (NVRTX_QMD_ALIGN - 1U)) != 0U)
@@ -159,8 +267,8 @@ nvrtx_qmd_build(
 	kern_memset(qmd, 0, NVRTX_QMD_WORDS * sizeof(uint32_t));
 
 	/* The version, global caching, and no check of the call limit. */
-	qmd_set(qmd, QMD_VERSION_LOW, 4U, QMD_VERSION);
-	qmd_set(qmd, QMD_MAJOR_VERSION_LOW, 4U, QMD_MAJOR_VERSION);
+	qmd_set(qmd, QMD_VERSION_LOW, 4U, layout->minor);
+	qmd_set(qmd, QMD_MAJOR_VERSION_LOW, 4U, layout->major);
 	qmd_set(qmd, QMD_SM_GLOBAL_CACHING, 1U, 1U);
 	qmd_set(qmd, QMD_API_CALL_LIMIT, 1U, QMD_API_CALL_LIMIT_NO_CHECK);
 
@@ -174,7 +282,7 @@ nvrtx_qmd_build(
 
 	/* The registers and the barriers; the local memory and the call stack stay zero. */
 	qmd_set(qmd, QMD_REGISTER_COUNT_LOW, QMD_REGISTER_COUNT_BITS, info->gpr_count);
-	qmd_set(qmd, QMD_BARRIER_COUNT_LOW, QMD_BARRIER_COUNT_BITS, info->barrier_count);
+	qmd_set(qmd, layout->barrier_low, QMD_BARRIER_COUNT_BITS, info->barrier_count);
 
 	/*
 	 * The shared memory, in 256-byte units, and the carve-outs: the least
@@ -188,9 +296,9 @@ nvrtx_qmd_build(
 	if (groups_per_sm == 0U)
 		groups_per_sm = 1U;
 	qmd_set(qmd, QMD_SHARED_SIZE_LOW, QMD_SHARED_SIZE_BITS, shared);
-	qmd_set(qmd, QMD_MIN_SHARED_CONFIG_LOW, QMD_SHARED_CONFIG_BITS, qmd_shared_config(qmd_pick_shared(shared, 1U)));
-	qmd_set(qmd, QMD_TARGET_SHARED_CONFIG_LOW, QMD_SHARED_CONFIG_BITS, qmd_shared_config(qmd_pick_shared(shared, groups_per_sm)));
-	qmd_set(qmd, QMD_MAX_SHARED_CONFIG_LOW, QMD_SHARED_CONFIG_BITS, qmd_shared_config(QMD_SHARED_LARGE_KIB));
+	qmd_set(qmd, layout->min_shared_low, layout->shared_config_bits, qmd_shared_config(qmd_pick_shared(shared, 1U)));
+	qmd_set(qmd, layout->target_shared_low, layout->shared_config_bits, qmd_shared_config(qmd_pick_shared(shared, groups_per_sm)));
+	qmd_set(qmd, layout->max_shared_low, layout->shared_config_bits, qmd_shared_config(QMD_SHARED_LARGE_KIB));
 
 	/* Each bound constant buffer: its address, its size in 16-byte units, and its valid bit. */
 	for (index = 0U; index < NVRTX_QMD_CBUFS; index++) {
@@ -217,10 +325,29 @@ nvrtx_qmd_build(
 }
 
 /*
- * Writes the push buffer of one launch on the compute subchannel: the compute
- * class bound there, the shared and local memory windows, the shader caches
- * invalidated, then the QMD sent and scheduled (Turing's
- * SEND_SIGNALING_PCAS_B).
+ * Writes the push buffer of one launch for Turing, as
+ * nvrtx_push_compute_launch_for().
+ */
+size_t
+nvrtx_push_compute_launch(
+	uint8_t *push,
+	uint64_t qmd_va)
+{
+	size_t length;
+
+	/* Turing's class and launch method. */
+	length = nvrtx_push_compute_launch_for(push, qmd_va, &compute_kind_turing);
+
+	/* Succeeded: the push buffer's length. */
+	return length;
+}
+
+/*
+ * Writes the push buffer of one launch on the compute subchannel: the
+ * generation's compute class bound there, the shared and local memory
+ * windows, the shader caches invalidated, then the QMD sent and scheduled
+ * (SEND_SIGNALING_PCAS_B on Turing, SEND_SIGNALING_PCAS2_B on the classes
+ * after it).
  *
  * Returns the length in bytes.
  *
@@ -228,15 +355,16 @@ nvrtx_qmd_build(
  * (nvk_push_dispatch_state_init, nvk_CmdDispatchBase).
  */
 size_t
-nvrtx_push_compute_launch(
+nvrtx_push_compute_launch_for(
 	uint8_t *push,
-	uint64_t qmd_va)
+	uint64_t qmd_va,
+	const struct nvrtx_compute_kind *kind)
 {
 	size_t at;
 
-	/* Binds the compute class to its subchannel. */
+	/* Binds the generation's compute class to its subchannel. */
 	at = compute_method(push, 0U, COMPUTE_SET_OBJECT, 1U);
-	nvrtx_put32(push, at, NVRTX_CLASS_COMPUTE);
+	nvrtx_put32(push, at, kind->compute_class);
 	at += 4U;
 
 	/* The shared and the local memory windows, below 4 GiB. */
@@ -258,8 +386,15 @@ nvrtx_push_compute_launch(
 	at = compute_method(push, at, COMPUTE_SEND_PCAS_A, 1U);
 	nvrtx_put32(push, at, (uint32_t)(qmd_va >> 8));
 	at += 4U;
-	at = compute_method(push, at, COMPUTE_SEND_SIGNALING_PCAS_B, 1U);
-	nvrtx_put32(push, at, COMPUTE_PCAS_INVALIDATE | COMPUTE_PCAS_SCHEDULE);
+	if (kind->compute_class > NVRTX_CLASS_COMPUTE) {
+		/* The classes after Turing's schedule the QMD through the second method. */
+		at = compute_method(push, at, COMPUTE_SEND_SIGNALING_PCAS2_B, 1U);
+		nvrtx_put32(push, at, COMPUTE_PCAS2_INVALIDATE_COPY_SCHEDULE);
+	} else {
+		/* Turing's class invalidates and schedules with the first. */
+		at = compute_method(push, at, COMPUTE_SEND_SIGNALING_PCAS_B, 1U);
+		nvrtx_put32(push, at, COMPUTE_PCAS_INVALIDATE | COMPUTE_PCAS_SCHEDULE);
+	}
 	at += 4U;
 
 	/* Succeeded: the push buffer's length. */

@@ -358,6 +358,8 @@ format_run(
 		if (error != 0)
 			return error;
 	}
+
+	/* Derives the geometry of the volume. */
 	error = initialize_context(&context, fd, bytes, verify, profile, fragment);
 	if (error != 0)
 		return error;
@@ -593,9 +595,12 @@ initialize_context(
 	uint32_t fpg, max_fpg;
 
 	/* Only the native profile has a fragment other than 1 KiB. */
-	if (fragment != FORMAT_FRAGMENT &&
-	    (profile != FORMAT_NATIVE || fragment != FORMAT_LARGE_FRAGMENT))
-		return EINVAL;
+	if (fragment != FORMAT_FRAGMENT) {
+		if (profile != FORMAT_NATIVE)
+			return EINVAL;
+		if (fragment != FORMAT_LARGE_FRAGMENT)
+			return EINVAL;
+	}
 
 	/* Reject unsupported offsets before subtraction or any I/O. */
 	if (bytes < UFS_FORMAT_MIN_BYTES || bytes % fragment != 0)
@@ -1067,6 +1072,8 @@ format_inodes(
 		format_inode(buffer, FORMAT_BLOCK, 5U, FORMAT_DIRECTORY | 0755U, 2U, 512U, 432U, 1U, 0U);
 		format_inode(buffer, FORMAT_BLOCK, 6U, FORMAT_REGULAR | 0644U, 1U, sizeof(FORMAT_ROOT_MARKER) - 1U, 416U, 1U, 0U);
 	}
+
+	/* Writes the first block of the first group's inode table. */
 	offset = (uint64_t)context->iblkno * context->fsize;
 	error = transfer(context, offset, buffer, sizeof(buffer));
 	if (error != 0)
@@ -1151,6 +1158,7 @@ make_super(
 	uint32_t fragments;
 	uint64_t remaining;
 	uint32_t first_used, allocated_inodes, directories;
+	uint32_t group_used;
 
 	/* Initialize the canonical fixed geometry and filesystem identity. */
 	memset(buffer, 0, FORMAT_BLOCK);
@@ -1194,8 +1202,12 @@ make_super(
 	for (group = 0; group < context->ncg; group++) {
 		remaining = context->fragments - (uint64_t)group * context->fpg;
 		fragments = remaining > context->fpg ? context->fpg : (uint32_t)remaining;
-		free_fragments = fragments - (group == 0 ?
-		    first_used : context->dblkno);
+
+		/* The first group also holds the root directory's block. */
+		group_used = context->dblkno;
+		if (group == 0)
+			group_used = first_used;
+		free_fragments = fragments - group_used;
 		free_blocks += free_fragments / FORMAT_FRAGMENTS_PER_BLOCK;
 		partial_fragments += free_fragments % FORMAT_FRAGMENTS_PER_BLOCK;
 	}

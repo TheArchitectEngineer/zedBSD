@@ -106,7 +106,7 @@ web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の ha
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-357 · q1683 · WS314 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-358 · q1686 · WS314 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
@@ -151,7 +151,7 @@ BUG-357 · q1683 · WS314 · KL_VERSION 97。使う前に衝突を確かめる�
 | WS | Primary | 内容 | 状態 | 再開点 |
 | --- | --- | --- | --- | --- |
 | [WS299](ws299/ws.md) | MG004 | 5330 の NVMe の読み書きを速くする（512 MiB の崖、転送・queue・readahead）（2026-10-27 ユーザー） | incomplete | p001〜p003・p009 cleared（raw の読み 583 MB/s ≒ Debian の 50%）。受け入れは Debian の 95% 以上、HMB はやる（ユーザー）。q1634（P1）で p004 raw の先読み → p005〜p008 |
-| [WS300](ws300/ws.md) | MG003 | NVMe と VMD の低電力（S0 idle の VMD の suspend・NVMe の状態、APST・ASPM・LTR）（2026-10-27 ユーザー） | planning | p001・p002（VMD の suspend、WS052 の前提）、約 27 LW |
+| [WS300](ws300/ws.md) | MG003 | NVMe と VMD の低電力（S0 idle の VMD の suspend・NVMe の状態、APST・ASPM・LTR）（2026-10-27 ユーザー） | incomplete（p001 cleared、p002〜p005 実装済み・試験未実施、branch agent/p6-ws300 は 5330 の試験の後に merge） | p006（5330、WS052 p014 と一緒）。Q300-6（_OSC 無しの ASPM）はユーザーの判断待ち |
 | [WS301](ws301/ws.md) | MG004 | CPU の DVFS と P/E core の相対性能の枠組み（UAPI は /dev/thermal、HAL は変えない、HWP の無い CPU も P-state を driver で）（2026-10-27・29 ユーザー） | planning | 設計 第 3 版の改訂 2（P5）、review の minor の反映と再 review、約 25 LW |
 | [WS302](ws302/ws.md) | MG006 | デスクトップスレッドバランサ DTB（CONFIG_DTB、sched への hint）（2026-10-27 ユーザー） | planning | p001 検討（WS301 p001 の後）、約 32 LW |
 | [WS303](ws303/ws.md) | MG004 | 熱と fan（/dev/thermal・/sbin/thermal、strategy performance・balanced・powersave・manual、fan は上げるだけ、非常の停止）（2026-10-27・29 ユーザー） | planning | 設計 第 5 版（P5）、design-reviewer の後に Q303-15〜19、約 35 LW、passive は WS301 に依存 |

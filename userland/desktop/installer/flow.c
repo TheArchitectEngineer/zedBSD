@@ -84,8 +84,10 @@ inst_flow_start(
 	FILE *release;
 	char line[256];
 	char *value;
+	char *text;
 	size_t length;
 	int error;
+	int same;
 
 	/* The catalog of what can be installed. */
 	error = inst_catalog_read(&app->catalog);
@@ -96,9 +98,18 @@ inst_flow_start(
 	(void)snprintf(app->os_name, sizeof(app->os_name), "%s", ZEDBSD_OS_NAME);
 	release = fopen(INST_OS_RELEASE, "r");
 	if (release != NULL) {
-		while (fgets(line, sizeof(line), release) != NULL) {
-			if (strncmp(line, "NAME=", 5U) != 0)
+		for (;;) {
+			/* Reads the next line of the file. */
+			text = fgets(line, sizeof(line), release);
+			if (text == NULL)
+				break;
+
+			/* Only the NAME line matters. */
+			same = strncmp(line, "NAME=", 5U);
+			if (same != 0)
 				continue;
+
+			/* Takes the name between its quotes. */
 			value = line + 5;
 			if (*value == '"')
 				value++;
@@ -107,6 +118,8 @@ inst_flow_start(
 			if (length > 0U)
 				(void)snprintf(app->os_name, sizeof(app->os_name), "%s", value);
 		}
+
+		/* The file is read to its end. */
 		(void)fclose(release);
 	}
 
@@ -148,6 +161,8 @@ inst_flow_line(
 	default:
 		break;
 	}
+
+	/* The screen is drawn again for what the line changed. */
 	app->dirty = 1;
 }
 
@@ -170,6 +185,8 @@ inst_flow_ended(
 			if (app->probe_message[0] == '\0')
 				(void)snprintf(app->probe_message, sizeof(app->probe_message), "%s (%d)", kl_tr("The installer's helper did not answer."), status);
 		}
+
+		/* The probe is over. */
 		inst_log("PROBE state=%d disks=%u", app->probe_state, app->probe.disk_count);
 		return;
 	}
@@ -201,6 +218,7 @@ inst_next_refusal(
 	const struct inst_part *part;
 	const char *reason;
 	uint64_t needed;
+	uint64_t bytes;
 	int refused;
 	int firmware;
 
@@ -236,6 +254,8 @@ inst_next_refusal(
 			if (reason != NULL)
 				return kl_tr(reason);
 		}
+
+		/* The way of using the disk can go on. */
 		return NULL;
 	case INST_S4:
 		refused = inst_helper_busy(app);
@@ -256,7 +276,8 @@ inst_next_refusal(
 		if (part == NULL)
 			return kl_tr("Choose the partition for the system.");
 		needed = inst_root_needed(app, 1);
-		if (inst_part_bytes(disk, part) < needed)
+		bytes = inst_part_bytes(disk, part);
+		if (bytes < needed)
 			return kl_tr("The partition is too small for the system.");
 		return NULL;
 	case INST_S6:
@@ -264,13 +285,17 @@ inst_next_refusal(
 			part = inst_part_find(&app->probe, &app->swap);
 			if (part == NULL)
 				return kl_tr("Choose a swap partition, or none.");
-			if (inst_part_bytes(disk, part) < INST_SWAP_MIN_BYTES)
+			bytes = inst_part_bytes(disk, part);
+			if (bytes < INST_SWAP_MIN_BYTES)
 				return kl_tr("A swap partition must be 64 MiB or larger.");
 		}
+
+		/* The swap partition is fine, or none is asked for. */
 		return NULL;
 	case INST_S7:
 		needed = inst_root_needed(app, 0);
-		if (flow_root_bytes(app) < needed)
+		bytes = flow_root_bytes(app);
+		if (bytes < needed)
 			return kl_tr("The system's partition is too small for what is chosen.");
 		firmware = inst_catalog_has(&app->catalog, "firmware");
 		if (firmware && app->catalog.license_count > 0U && !app->license_agreed)
@@ -316,7 +341,7 @@ inst_next(
 		inst_show(app, INST_S2);
 		break;
 	case INST_S2:
-		/* A session bound to another disk ends (spec 5.2). */
+		/* A session bound to another disk ends. */
 		if (app->helper.session_pid > 0 && disk != NULL && app->helper.session_disk != disk->registration)
 			inst_helper_end_session(app);
 		inst_show(app, INST_S3);
@@ -326,11 +351,14 @@ inst_next(
 			inst_show(app, INST_S7);
 			break;
 		}
+
+		/* The partitions are edited on S4, with a notice the first time. */
 		inst_show(app, INST_S4);
 		if (!app->edit_notice_shown) {
 			app->edit_notice_shown = 1;
 			app->dialog = INST_DIALOG_EDIT_NOTICE;
 		}
+
 		break;
 	case INST_S4:
 		inst_show(app, INST_S5);
@@ -344,6 +372,8 @@ inst_next(
 			app->dialog = INST_DIALOG_NO_SWAP;
 			break;
 		}
+
+		/* The swap is settled: goes on to the packages. */
 		inst_show(app, INST_S7);
 		break;
 	case INST_S7:
@@ -358,6 +388,8 @@ inst_next(
 	default:
 		break;
 	}
+
+	/* The screen is drawn again for the one now shown. */
 	app->dirty = 1;
 }
 
@@ -432,6 +464,8 @@ inst_cancel_asked(
 		app->dirty = 1;
 		return;
 	}
+
+	/* Asks to leave the wizard. */
 	app->dialog = INST_DIALOG_CANCEL;
 	app->dirty = 1;
 }
@@ -444,6 +478,7 @@ inst_dialog_answer(
 {
 	enum inst_dialog dialog;
 	int item;
+	int same;
 
 	/* The dialog goes either way. */
 	dialog = app->dialog;
@@ -467,7 +502,8 @@ inst_dialog_answer(
 	case INST_DIALOG_ERASE_ROOT:
 		app->root = app->pending;
 		app->has_root = 1;
-		if (app->has_swap && inst_tuple_same(&app->swap, &app->root))
+		same = inst_tuple_same(&app->swap, &app->root);
+		if (app->has_swap && same)
 			app->has_swap = 0;
 		break;
 	case INST_DIALOG_ERASE_SWAP:
@@ -486,6 +522,7 @@ inst_dialog_answer(
 			app->catalog.item[item].chosen = 0;
 			inst_catalog_choose(&app->catalog);
 		}
+
 		break;
 	case INST_DIALOG_START:
 		flow_install(app);
@@ -554,9 +591,11 @@ inst_edit_create(
 	uint64_t start;
 	uint64_t sectors;
 	uint64_t bytes;
+	unsigned long long esp_sectors;
 	size_t used;
 	int with_esp;
 	int error;
+	int is_esp;
 	unsigned i;
 
 	/* The disk and the size. */
@@ -574,7 +613,8 @@ inst_edit_create(
 	/* An ESP comes first when the disk has none. */
 	with_esp = 1;
 	for (i = 0; i < disk->part_count; i++) {
-		if (inst_part_esp(&app->probe.part[disk->first_part + i]))
+		is_esp = inst_part_esp(&app->probe.part[disk->first_part + i]);
+		if (is_esp)
 			with_esp = 0;
 	}
 
@@ -596,11 +636,16 @@ inst_edit_create(
 	if (error == 0)
 		error = flow_disk_text(app, disk, request + used, sizeof(request) - used);
 	used = strlen(request);
-	if (error == 0 && with_esp)
-		error = flow_append(request, sizeof(request), &used, " esp %llu %llu", (unsigned long long)esp_start,
-				    (unsigned long long)(INST_ESP_BYTES / disk->sector_bytes));
+	if (error == 0 && with_esp) {
+		esp_sectors = (unsigned long long)(INST_ESP_BYTES / disk->sector_bytes);
+		error = flow_append(request, sizeof(request), &used, " esp %llu %llu", (unsigned long long)esp_start, esp_sectors);
+	}
+
+	/* The new partition's place and size. */
 	if (error == 0)
 		error = flow_append(request, sizeof(request), &used, " new %llu %llu\n", (unsigned long long)start, (unsigned long long)sectors);
+
+	/* A request that did not fit is not sent. */
 	if (error != 0)
 		return;
 
@@ -619,11 +664,16 @@ inst_choose_root(
 	struct inst_app *app,
 	const struct inst_part *part)
 {
+	int unassigned;
+	int same;
+
 	/* A partition made here holds nothing. */
-	if (inst_part_unassigned(part)) {
+	unassigned = inst_part_unassigned(part);
+	if (unassigned) {
 		inst_tuple_of(part, &app->root);
 		app->has_root = 1;
-		if (app->has_swap && inst_tuple_same(&app->swap, &app->root))
+		same = inst_tuple_same(&app->swap, &app->root);
+		if (app->has_swap && same)
 			app->has_swap = 0;
 		app->dirty = 1;
 		return;
@@ -642,6 +692,8 @@ inst_choose_swap(
 	struct inst_app *app,
 	const struct inst_part *part)
 {
+	int unassigned;
+
 	/* None: a swap file on the root. */
 	if (part == NULL) {
 		app->has_swap = 0;
@@ -651,7 +703,8 @@ inst_choose_swap(
 	}
 
 	/* A partition made here holds nothing. */
-	if (inst_part_unassigned(part)) {
+	unassigned = inst_part_unassigned(part);
+	if (unassigned) {
 		inst_tuple_of(part, &app->swap);
 		app->has_swap = 1;
 		app->swap_none = 0;
@@ -678,6 +731,7 @@ inst_item_toggle(
 {
 	struct inst_item *entry;
 	int same;
+	int needed;
 
 	/* An item there is. */
 	if (item >= app->catalog.item_count)
@@ -696,7 +750,8 @@ inst_item_toggle(
 	/* The base, and an item another needs, stay. */
 	if (entry->fallback == 2)
 		return;
-	if (inst_item_by_dependency(&app->catalog, item))
+	needed = inst_item_by_dependency(&app->catalog, item);
+	if (needed)
 		return;
 
 	/* The desktop and the firmware go after a warning. */
@@ -707,6 +762,8 @@ inst_item_toggle(
 			app->dialog = INST_DIALOG_DROP_DESKTOP;
 			return;
 		}
+
+		/* The firmware too. */
 		same = strcmp(entry->id, "firmware");
 		if (same == 0) {
 			app->pending_item = (int)item;
@@ -776,9 +833,13 @@ inst_reboot(
 	error = ENOTSUP;
 	if (app->system != NULL)
 		error = kl_system_power_action(app->system, KL_POWER_REBOOT, &request);
+
+	/* A restart that was refused is told on S11. */
 	inst_log("REBOOT error=%d", error);
 	if (error != 0)
 		(void)snprintf(app->power_message, sizeof(app->power_message), "%s (%s)", kl_tr("The computer could not be restarted."), strerror(error));
+
+	/* The screen is drawn again for the message. */
 	app->dirty = 1;
 }
 
@@ -803,37 +864,51 @@ inst_user_refusal(
 	const char **reason)
 {
 	int same;
+	int valid;
 
 	/* The login name. */
-	if (!flow_name_valid(app->user.text)) {
+	valid = flow_name_valid(app->user.text);
+	if (!valid) {
 		*reason = kl_tr("The user name starts with a small letter; then small letters, digits, - and _.");
 		return 1;
 	}
-	if (flow_system_user(app->user.text)) {
+
+	/* A name the system already uses. */
+	valid = flow_system_user(app->user.text);
+	if (valid) {
 		*reason = kl_tr("That user name is the system's own.");
 		return 1;
 	}
 
 	/* The display name. */
-	if (!flow_text_valid(app->fullname.text, FLOW_FULLNAME_MAX, 0)) {
+	valid = flow_text_valid(app->fullname.text, FLOW_FULLNAME_MAX, 0);
+	if (!valid) {
 		*reason = kl_tr("The full name cannot hold a colon or control characters.");
 		return 1;
 	}
 
-	/* The passwords, set and typed twice alike. */
-	if (app->password.length == 0U || !flow_text_valid(app->password.text, FLOW_PASSWORD_MAX, 1)) {
+	/* The user's password, set and typed twice alike. */
+	valid = flow_text_valid(app->password.text, FLOW_PASSWORD_MAX, 1);
+	if (app->password.length == 0U || !valid) {
 		*reason = kl_tr("Type a password for the user.");
 		return 1;
 	}
+
+	/* The two entries of the user's password. */
 	same = strcmp(app->password.text, app->password_again.text);
 	if (same != 0) {
 		*reason = kl_tr("The user's two passwords differ.");
 		return 1;
 	}
-	if (app->root_password.length == 0U || !flow_text_valid(app->root_password.text, FLOW_PASSWORD_MAX, 1)) {
+
+	/* Root's password, set and typed twice alike. */
+	valid = flow_text_valid(app->root_password.text, FLOW_PASSWORD_MAX, 1);
+	if (app->root_password.length == 0U || !valid) {
 		*reason = kl_tr("Type a password for root.");
 		return 1;
 	}
+
+	/* The two entries of root's password. */
 	same = strcmp(app->root_password.text, app->root_password_again.text);
 	if (same != 0) {
 		*reason = kl_tr("Root's two passwords differ.");
@@ -841,7 +916,8 @@ inst_user_refusal(
 	}
 
 	/* The hostname. */
-	if (!flow_hostname_valid(app->hostname.text)) {
+	valid = flow_hostname_valid(app->hostname.text);
+	if (!valid) {
 		*reason = kl_tr("The computer's name takes small letters, digits and -, up to 63.");
 		return 1;
 	}
@@ -870,6 +946,8 @@ flow_probe(
 		inst_log("PROBE start-failed errno=%d", error);
 		return;
 	}
+
+	/* The probe is under way. */
 	app->probe_state = 1;
 }
 
@@ -880,9 +958,11 @@ flow_probe_line(
 	char *line)
 {
 	int read;
+	int same;
 
 	/* A failure of the helper. */
-	if (strncmp(line, "FAIL ", 5U) == 0) {
+	same = strncmp(line, "FAIL ", 5U);
+	if (same == 0) {
 		app->probe_state = 3;
 		(void)snprintf(app->probe_message, sizeof(app->probe_message), "%s", line + 5);
 		return;
@@ -918,16 +998,22 @@ flow_probe_read(
 		if (part == NULL)
 			app->has_root = 0;
 	}
+
+	/* The swap partition. */
 	if (app->has_swap) {
 		part = inst_part_find(&app->probe, &app->swap);
 		if (part == NULL)
 			app->has_swap = 0;
 	}
+
+	/* The partition selected on S4. */
 	if (app->has_selected) {
 		part = inst_part_find(&app->probe, &app->selected);
 		if (part == NULL)
 			app->has_selected = 0;
 	}
+
+	/* The new list is logged. */
 	inst_log("PROBE read disks=%u parts=%u uefi=%d memory=%llu", app->probe.disk_count, app->probe.part_count, app->probe.uefi,
 		 (unsigned long long)app->probe.memory);
 }
@@ -940,24 +1026,33 @@ flow_edit_line(
 {
 	char *text;
 	int error;
+	int same;
 
-	/* The table written (what S10 lists), a reload that failed, an ESP left behind. */
+	/* The table written, which S10 lists. */
 	inst_log("EDIT %s", line);
-	if (strncmp(line, "STATE table ", 12U) == 0) {
+	same = strncmp(line, "STATE table ", 12U);
+	if (same == 0) {
 		flow_pending_wrote = 1;
 		return;
 	}
-	if (strcmp(line, "STATE reload-failed") == 0) {
+
+	/* A reload of the table that failed. */
+	same = strcmp(line, "STATE reload-failed");
+	if (same == 0) {
 		app->reload_failed = 1;
 		return;
 	}
-	if (strcmp(line, "STATE created-not-deleted") == 0) {
+
+	/* An ESP left behind. */
+	same = strcmp(line, "STATE created-not-deleted");
+	if (same == 0) {
 		flow_record_write(app, kl_tr("A new EFI system partition and partition could not be removed after the failure."));
 		return;
 	}
 
 	/* Done: the choices of S5 to S8 go (a slot may now name another partition). */
-	if (strcmp(line, "DONE") == 0) {
+	same = strcmp(line, "DONE");
+	if (same == 0) {
 		app->edit_message[0] = '\0';
 		app->edit_failed = 0;
 		flow_forget_choices(app);
@@ -965,7 +1060,8 @@ flow_edit_line(
 	}
 
 	/* A failure, said under the buttons. */
-	if (strncmp(line, "FAIL ", 5U) == 0) {
+	same = strncmp(line, "FAIL ", 5U);
+	if (same == 0) {
 		text = strchr(line + 5, ' ');
 		error = 0;
 		if (text != NULL)
@@ -974,6 +1070,8 @@ flow_edit_line(
 			text = line + 5;
 		while (*text == ' ')
 			text++;
+
+		/* The message says whether the table was already written. */
 		(void)snprintf(app->edit_message, sizeof(app->edit_message), "%s: %s (%d)", kl_tr("The disk was not changed"), text, error);
 		if (flow_pending_wrote)
 			(void)snprintf(app->edit_message, sizeof(app->edit_message), "%s: %s (%d)", kl_tr("The change failed after the table was written"), text, error);
@@ -995,9 +1093,12 @@ flow_install_line(
 	char word[64];
 	char *text;
 	int error;
+	int same;
+	int matched;
 
 	/* A step begun. */
-	if (sscanf(line, "STEP %u %u %31s", &step, &steps, name) == 3) {
+	matched = sscanf(line, "STEP %u %u %31s", &step, &steps, name);
+	if (matched == 3) {
 		app->step = step;
 		app->steps = steps;
 		(void)snprintf(app->step_name, sizeof(app->step_name), "%s", name);
@@ -1005,47 +1106,63 @@ flow_install_line(
 		return;
 	}
 
-	/* The bytes unpacked, and the unit. */
-	if (sscanf(line, "BYTES %llu %llu", &done, &total) == 2) {
+	/* The bytes unpacked. */
+	matched = sscanf(line, "BYTES %llu %llu", &done, &total);
+	if (matched == 2) {
 		app->bytes_done = done;
 		app->bytes_total = total;
 		return;
 	}
-	if (sscanf(line, "UNIT %63s", word) == 1) {
+
+	/* The unit being unpacked. */
+	matched = sscanf(line, "UNIT %63s", word);
+	if (matched == 1) {
 		(void)snprintf(app->unit_name, sizeof(app->unit_name), "%s", word);
 		return;
 	}
 
 	/* What the disk holds: the loader's place, the swap, and the rest for S10. */
 	inst_log("INSTALL %s", line);
-	if (sscanf(line, "STATE loader %255s", app->loader_path) == 1)
+	matched = sscanf(line, "STATE loader %255s", app->loader_path);
+	if (matched == 1)
 		return;
-	if (sscanf(line, "STATE swap %15s", app->swap_kind) == 1)
+	matched = sscanf(line, "STATE swap %15s", app->swap_kind);
+	if (matched == 1)
 		return;
-	if (strncmp(line, "STATE ", 6U) == 0) {
+	same = strncmp(line, "STATE ", 6U);
+	if (same == 0) {
 		if (app->state_count < INST_STATES_MAX) {
 			(void)snprintf(app->states[app->state_count], INST_MESSAGE_MAX, "%s", line + 6);
 			app->state_count++;
 		}
+
+		/* The line is listed or dropped; either way it is taken. */
 		return;
 	}
 
-	/* The end: S11, or S10 with the step that failed. */
-	if (strcmp(line, "DONE") == 0) {
+	/* The end: S11. */
+	same = strcmp(line, "DONE");
+	if (same == 0) {
 		app->ended_us = kl_clock_us();
 		inst_helper_end_session(app);
 		inst_show(app, INST_S11);
 		return;
 	}
-	if (strncmp(line, "FAIL ", 5U) == 0) {
+
+	/* The failure: S10 with the step that failed. */
+	same = strncmp(line, "FAIL ", 5U);
+	if (same == 0) {
 		name[0] = '\0';
 		error = 0;
 		text = line + 5;
-		if (sscanf(text, "%31s %d", name, &error) == 2) {
+		matched = sscanf(text, "%31s %d", name, &error);
+		if (matched == 2) {
 			text = strchr(text, ' ');
 			if (text != NULL)
 				text = strchr(text + 1, ' ');
 		}
+
+		/* The words after the code are the text. */
 		if (text == NULL)
 			text = (char *)"";
 		while (*text == ' ')
@@ -1067,6 +1184,8 @@ flow_failed(
 	app->canceled = 0;
 	if (error == ECANCELED)
 		app->canceled = 1;
+
+	/* What S10 shows of it. */
 	(void)snprintf(app->fail_step, sizeof(app->fail_step), "%s", step);
 	app->fail_errno = error;
 	(void)snprintf(app->fail_text, sizeof(app->fail_text), "%s", text);
@@ -1117,7 +1236,10 @@ flow_root_bytes(
 	part = inst_part_find(&app->probe, &app->root);
 	if (part == NULL)
 		return 0;
-	return inst_part_bytes(disk, part);
+
+	/* The partition's room. */
+	bytes = inst_part_bytes(disk, part);
+	return bytes;
 }
 
 /* Writes a request's disk: "disk REGISTRATION NAME SECTOR-BYTES SECTORS DIGEST"; returns 0 or ENOSPC. */
@@ -1130,6 +1252,7 @@ flow_disk_text(
 {
 	int written;
 
+	/* The application is not needed to write the disk. */
 	(void)app;
 
 	/* The disk as the screen saw it. */
@@ -1228,6 +1351,8 @@ flow_send_edit(
 		app->edit_failed = 1;
 		flow_pending_write[0] = '\0';
 	}
+
+	/* The screen is drawn again for the message or the busy state. */
 	app->dirty = 1;
 }
 
@@ -1244,6 +1369,7 @@ flow_install(
 	size_t used;
 	unsigned count;
 	unsigned i;
+	uint64_t swap_bytes;
 	int desktop;
 	int error;
 
@@ -1262,8 +1388,8 @@ flow_install(
 		error = flow_disk_text(app, disk, request + used, INST_REQUEST_MAX - used);
 	used = strlen(request);
 	if (error == 0 && app->whole == 1) {
-		error = flow_append(request, INST_REQUEST_MAX, &used, " whole %llu %llu", (unsigned long long)INST_ESP_BYTES,
-				    (unsigned long long)inst_whole_swap_bytes(app, disk));
+		swap_bytes = inst_whole_swap_bytes(app, disk);
+		error = flow_append(request, INST_REQUEST_MAX, &used, " whole %llu %llu", (unsigned long long)INST_ESP_BYTES, (unsigned long long)swap_bytes);
 	} else if (error == 0) {
 		esp = inst_disk_esp(app, disk);
 		error = EINVAL;
@@ -1272,9 +1398,13 @@ flow_install(
 			flow_tuple_text(&esp_tuple, tuple, sizeof(tuple));
 			error = flow_append(request, INST_REQUEST_MAX, &used, " chosen esp %s", tuple);
 		}
+
+		/* The root partition. */
 		flow_tuple_text(&app->root, tuple, sizeof(tuple));
 		if (error == 0)
 			error = flow_append(request, INST_REQUEST_MAX, &used, " root %s", tuple);
+
+		/* The swap partition, or none. */
 		flow_tuple_text(&app->swap, tuple, sizeof(tuple));
 		if (error == 0 && app->has_swap)
 			error = flow_append(request, INST_REQUEST_MAX, &used, " swap %s", tuple);
@@ -1288,6 +1418,8 @@ flow_install(
 		if (app->catalog.closure[i])
 			count++;
 	}
+
+	/* How many, then each by its name. */
 	if (error == 0)
 		error = flow_append(request, INST_REQUEST_MAX, &used, " units %u", count);
 	for (i = 0; i < app->catalog.unit_count && error == 0; i++) {
@@ -1305,8 +1437,14 @@ flow_install(
 		error = flow_field(request, INST_REQUEST_MAX, &used, "password", app->password.text);
 	if (error == 0)
 		error = flow_field(request, INST_REQUEST_MAX, &used, "root-password", app->root_password.text);
-	if (error == 0)
-		error = flow_append(request, INST_REQUEST_MAX, &used, " autologin %s", app->autologin && desktop ? "yes" : "no");
+	if (error == 0) {
+		if (app->autologin && desktop)
+			error = flow_append(request, INST_REQUEST_MAX, &used, " autologin yes");
+		else
+			error = flow_append(request, INST_REQUEST_MAX, &used, " autologin no");
+	}
+
+	/* The hostname, and the end of the request. */
 	if (error == 0)
 		error = flow_field(request, INST_REQUEST_MAX, &used, "hostname", app->hostname.text);
 	if (error == 0)
@@ -1329,6 +1467,8 @@ flow_install(
 		inst_log("INSTALL request units=%u whole=%d", count, app->whole);
 		error = inst_helper_request(app, disk->registration, INST_JOB_INSTALL, request);
 	}
+
+	/* The request held the passwords: wipes it, and the fields. */
 	memset(request, 0, INST_REQUEST_MAX);
 	free(request);
 	flow_forget_passwords(app);
@@ -1336,6 +1476,8 @@ flow_install(
 		flow_failed(app, "start", error, strerror(error));
 		return;
 	}
+
+	/* The installation runs: shows its progress. */
 	inst_show(app, INST_S9);
 }
 
@@ -1388,6 +1530,7 @@ flow_name_valid(
 {
 	size_t i;
 	char c;
+	int same;
 
 	/* A small letter first. */
 	if (name[0] < 'a' || name[0] > 'z')
@@ -1404,7 +1547,8 @@ flow_name_valid(
 	}
 
 	/* Not root. */
-	if (strcmp(name, "root") == 0)
+	same = strcmp(name, "root");
+	if (same == 0)
 		return 0;
 
 	/* The name may be used. */
@@ -1479,6 +1623,7 @@ flow_system_user(
 	char *uid;
 	long number;
 	int same;
+	char *text;
 	int found;
 
 	/* The image's accounts (the base's, as installed). */
@@ -1488,7 +1633,10 @@ flow_system_user(
 
 	/* Each line: NAME:PASSWORD:UID:... */
 	found = 0;
-	while (fgets(line, sizeof(line), passwd) != NULL) {
+	for (;;) {
+		text = fgets(line, sizeof(line), passwd);
+		if (text == NULL)
+			break;
 		colon = strchr(line, ':');
 		if (colon == NULL)
 			continue;
@@ -1503,6 +1651,8 @@ flow_system_user(
 		if (number != FLOW_DEFAULT_UID)
 			found = 1;
 	}
+
+	/* The file is read to its end. */
 	(void)fclose(passwd);
 
 	/* Whether the name is taken. */

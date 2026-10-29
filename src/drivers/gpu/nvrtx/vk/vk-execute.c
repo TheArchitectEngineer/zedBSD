@@ -186,6 +186,9 @@ struct nvrtx_vk_execute {
 	void *shadow_token;
 	uint64_t shadow_va;
 	uint64_t shadow_bytes;
+	/* The owner's generation: the shader model of the programs and the 3D class of the push buffers. */
+	uint32_t shader_model;
+	uint32_t threed_class;
 };
 
 /*
@@ -235,7 +238,7 @@ struct execute_quad {
 
 static int execute_open(struct nvrtx_vk_session *session, struct nvrtx_vk_execute **execute);
 static int execute_programs(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
-static int execute_compile(struct nvrtx_draw_ir *program, uint8_t *cpu, uint32_t *gprs, uint32_t *bytes);
+static int execute_compile(struct nvrtx_draw_ir *program, uint32_t shader_model, uint8_t *cpu, uint32_t *gprs, uint32_t *bytes);
 static int execute_slot_make(struct nvrtx_vk_session *session, struct execute_slot *slot);
 static int execute_start(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
 static void execute_begin(struct nvrtx_vk_execute *execute);
@@ -397,6 +400,10 @@ execute_open(
 	opened->cpu = opened->slots[0].cpu;
 	opened->va = opened->slots[0].va;
 
+	/* The owner's generation, read once: the programs and the push buffers follow it. */
+	opened->shader_model = nvrtx_vk_shader_model(session->owner);
+	opened->threed_class = nvrtx_vk_threed_class(session->owner);
+
 	/* The executor's programs. */
 	session->execute = opened;
 	error = execute_programs(session, opened);
@@ -478,10 +485,10 @@ execute_programs(
 
 	/* The vertex program in the first page, the fragment program in the second. */
 	nvrtx_draw_vertex_ir(program, 1);
-	error = execute_compile(program, cpu, &execute->quad_vertex_gprs, &bytes);
+	error = execute_compile(program, execute->shader_model, cpu, &execute->quad_vertex_gprs, &bytes);
 	if (error == 0) {
 		nvrtx_draw_fragment_ir(program, 1);
-		error = execute_compile(program, cpu + NVRTX_GSP_PAGE_SIZE, &execute->quad_fragment_gprs, &bytes);
+		error = execute_compile(program, execute->shader_model, cpu + NVRTX_GSP_PAGE_SIZE, &execute->quad_fragment_gprs, &bytes);
 	}
 	kern_free(program);
 	if (error != 0)
@@ -498,6 +505,7 @@ execute_programs(
 static int
 execute_compile(
 	struct nvrtx_draw_ir *program,
+	uint32_t shader_model,
 	uint8_t *cpu,
 	uint32_t *gprs,
 	uint32_t *bytes)
@@ -507,10 +515,10 @@ execute_compile(
 	uint32_t code;
 	int error;
 
-	/* Compiled for SM75. */
+	/* Compiled for the owner's shader model. */
 	binary = NULL;
 	kern_memset(&diagnostic, 0, sizeof(diagnostic));
-	error = nvrtx_sm75_compile_ir(&program->ir, &binary, &diagnostic);
+	error = nvrtx_sm75_compile_ir_sm(&program->ir, shader_model, &binary, &diagnostic);
 	if (error != 0) {
 		kern_logf("nvrtx: vk: a quad program did not compile (%d)\n", error);
 		return error;
@@ -617,7 +625,7 @@ execute_begin(
 
 	/* The state and the pools. */
 	push = execute->cpu + EXECUTE_PUSH_AT;
-	execute->at = nvrtx_push_draw_init(push, 0U, execute->va + EXECUTE_ZERO_AT);
+	execute->at = nvrtx_push_draw_init_class(push, 0U, execute->va + EXECUTE_ZERO_AT, execute->threed_class);
 	execute->at = nvrtx_push_draw_textures(push, execute->at, execute->va + EXECUTE_HEADERS_AT, EXECUTE_POOL_ENTRIES,
 					       execute->va + EXECUTE_SAMPLERS_AT, EXECUTE_POOL_ENTRIES);
 

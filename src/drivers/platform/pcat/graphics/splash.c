@@ -6,7 +6,7 @@
  */
 
 /*
- * The boot splash's spinner (ws035-p107).
+ * The boot splash's spinner.
  *
  * On a quiet boot (kmsg=quiet) the loaders draw the boot splash in the
  * middle of the screen over black bars (tools/build/make-boot-splash.py:

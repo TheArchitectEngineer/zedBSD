@@ -44,6 +44,16 @@ struct nvrtx_vk_session;
 /* The markers of supervised jobs the renderer holds at once (runtime.c). */
 #define NVRTX_NODE_MARKERS		64U
 
+/*
+ * How long a run of a session's may take on the GPU from its submission
+ * (or from the end of the last stop, when later) before the recovery looks
+ * for what holds the GPU up, and how long it may wait at most from the same
+ * start (outside the recovery's stops) before its session is lost even when
+ * no stop came.
+ */
+#define NVRTX_NODE_RUN_US		2000000U
+#define NVRTX_NODE_RUN_LIMIT_US		8000000U
+
 /* Where a queue entry is: free (a marker), reserved, queued, being run. */
 #define NVRTX_ENTRY_FREE		0U
 #define NVRTX_ENTRY_RESERVED		1U
@@ -111,6 +121,19 @@ struct nvrtx_resource {
  * waited), which the next wait expects; run_lost is set (atomically, by whoever waited)
  * once a run of the session did not end in time: the session puts nothing
  * more on the GPU and its waits fail at once.
+ *
+ * channel is where the session's runs go, made by its first frame (under
+ * the node's channel_lock, NULL before): a channel of its own, or the
+ * driver's work channel when shared is set (no channel of its own could be
+ * made, or the boot asked for none), whose runs all sessions share.
+ * quarantined (under queue_lock) is set by the core's isolate: the
+ * session's channel and memory are kept the device's (never given back).
+ * lane is the renderer's lane its frames and markers go through (set with
+ * channel: its number's lane, NULL for the node's main lane).  exec_lock
+ * (taken before the node's lock) holds the session's executor for one
+ * frame, a blob's attach or the close: the node's lock is let go while a
+ * frame waits for one of its runs to end, and the session's executor stays
+ * its frame's meanwhile.
  */
 struct nvrtx_session {
 	struct nvrtx_node *node;
@@ -123,6 +146,11 @@ struct nvrtx_session {
 	uint64_t run_us;
 	uint64_t run_took_us;
 	int run_lost;
+	struct nvrtx_work_channel *channel;
+	int shared;
+	int quarantined;
+	struct nvrtx_lane *lane;
+	struct mutex exec_lock;
 };
 
 /*
@@ -144,6 +172,28 @@ struct nvrtx_node_entry {
 	uint8_t *wire;
 	uint32_t run_fence;
 	uint64_t run_us;
+};
+
+/*
+ * One lane of the renderer (runtime.c): a queue of frames and markers (head
+ * to tail) its worker thread takes in order, woken by available, and the
+ * markers parked for their runs (parked_head to parked_tail) its completer
+ * thread completes in order, woken by parked_more; all under the node's
+ * queue_lock.  The node's main lane serves every session that shares the
+ * work channel; each session's number on the runlist has a lane of its own,
+ * whose threads are made the first time a session takes the number
+ * (started) and serve every session that has it, one after the other, for
+ * the node's life.
+ */
+struct nvrtx_lane {
+	struct nvrtx_node *node;
+	struct nvrtx_node_entry *head;
+	struct nvrtx_node_entry *tail;
+	struct wait_queue available;
+	struct nvrtx_node_entry *parked_head;
+	struct nvrtx_node_entry *parked_tail;
+	struct wait_queue parked_more;
+	int started;
 };
 
 /*
@@ -235,12 +285,33 @@ struct nvrtx_node_perf {
  * cursor_has_image is set, so an image equal to it is not sent again.
  *
  * The renderer (runtime.c, nvrtx.vk=1; renderer is set when it is bound):
- * queue_lock (IRQ-safe) guards the queue from head to tail, the parked
- * markers from parked_head to parked_tail, the markers, every session's
- * pending and queued counts and faulted; available wakes the worker,
- * parked_more the completer, retired the drains.  faulted is set by the GPU
+ * queue_lock (IRQ-safe) guards the lanes (main_lane, and lanes, one per
+ * session's number: their queues and parked markers), the markers, every
+ * session's pending and queued counts and faulted; retired wakes the
+ * drains.  faulted is set by the GPU
  * core's fault: nothing new is taken and what is queued or parked completes
  * with EIO.
+ *
+ * The sessions' channels (runtime.c): channel_lock (a mutex, taken before
+ * the GSP's lock and never with the node's lock) serializes their making
+ * and closing; chid_used has a bit for each session's number on the
+ * runlist in use (NVRTX_WORK_SESSION_CHID_FIRST onward), chid_last is the
+ * last one handed out (the next is looked for after it, so a number is not
+ * reused at once), and channels names the session of each number (under
+ * queue_lock as well, for the GSP's error reports).  channels_wanted is set
+ * at the start unless the boot asked for no channel of the sessions' own
+ * (nvrtx.channels=0).
+ *
+ * The recovery (runtime.c): the reaper thread looks at the channels every
+ * period, or when reaper_wake wakes it, and stops the one that holds the
+ * graphics engine up; it holds channel_lock while it looks and stops.
+ * kill_end_us is when its last stop ended (atomically; a run's time counts
+ * from it when later), kills_wanted is set at the start unless the boot
+ * asked for no stop (nvrtx.kill=0), recovery_stuck once a stop left a
+ * channel stuck (no other channel is stopped then: the device faults),
+ * bus_lost (atomically) once the GSP reported the GPU off the bus,
+ * reaper_stop (under queue_lock) by the stop for the reboot, after which
+ * the reaper stops nothing, and reaper_busy while it calls the GSP.
  *
  * The message drain (node.c): drain_running is set while its thread runs,
  * drain_stop asks it to end at its next turn (the reboot's stop, which
@@ -284,15 +355,23 @@ struct nvrtx_node {
 	uint32_t *cursor_pixels;
 	int renderer;
 	struct spinlock queue_lock;
-	struct wait_queue available;
 	struct wait_queue retired;
-	struct nvrtx_node_entry *head;
-	struct nvrtx_node_entry *tail;
-	struct wait_queue parked_more;
-	struct nvrtx_node_entry *parked_head;
-	struct nvrtx_node_entry *parked_tail;
+	struct nvrtx_lane main_lane;
+	struct nvrtx_lane lanes[NVRTX_WORK_SESSION_CHANNELS];
 	struct nvrtx_node_entry markers[NVRTX_NODE_MARKERS];
 	int faulted;
+	struct mutex channel_lock;
+	uint32_t chid_used;
+	uint32_t chid_last;
+	struct nvrtx_session *channels[NVRTX_WORK_SESSION_CHANNELS];
+	int channels_wanted;
+	struct wait_queue reaper_wake;
+	uint64_t kill_end_us;
+	int kills_wanted;
+	int recovery_stuck;
+	int bus_lost;
+	int reaper_stop;
+	int reaper_busy;
 	volatile int drain_running;
 	volatile int drain_stop;
 	int perf;
@@ -363,8 +442,11 @@ int nvrtx_cursor_hide(void *private_data, void *session, const struct gpu_displa
 void nvrtx_runtime_bind(struct nvrtx_node *node);
 void nvrtx_runtime_start(struct nvrtx_node *node);
 void nvrtx_runtime_stop(struct nvrtx_node *node);
+void nvrtx_runtime_session_close(struct nvrtx_node *node, struct nvrtx_session *session);
+void nvrtx_runtime_reaper_wake(struct nvrtx_node *node);
 
 int nvrtx_vk_node_run_wait(struct nvrtx_session *session, uint32_t fence, uint64_t submitted_us);
+bool nvrtx_vk_node_run_passed(struct nvrtx_session *session, uint32_t fence);
 int nvrtx_vk_node_blob_attach(struct nvrtx_node *node, struct nvrtx_session *session, uint64_t blob_id, struct nvrtx_backing *backing, uint64_t bytes);
 
 void nvrtx_node_backing_put(struct nvrtx_node *node, struct nvrtx_backing *backing);

@@ -64,7 +64,6 @@
 
 #include <uapi/sysctl.h>
 
-#define PHYSICAL_DISK_MAX 4U
 #define VFS_HIGH __attribute__((section(".hightext")))
 /* kern_logf() reaches both the console and the ring buffer. */
 #define VFS_LOG(...) kern_logf(__VA_ARGS__)
@@ -107,6 +106,20 @@ static unsigned vfs_boot_slot_published[KERN_BOOT_SOURCE_SLOT_COUNT]
  * shown.  It lives in .vfs_bss with the other boot-time VFS state.
  */
 static struct mount *vfs_efi_mount
+	__attribute__((section(".vfs_bss")));
+
+/*
+ * The whole disks the boot-time scan reads partition tables from.
+ *
+ * It has room for every disk the registry can hold, so no disk is left
+ * unscanned because of where the bus enumeration put it: the boot stick
+ * may come after any number of other disks.  The scan fills it, reads each
+ * entry once and drops each reference before it returns, so between scans
+ * it holds nothing.  It lives in .vfs_bss with the other boot-time VFS
+ * state rather than on the stack, which on the small ports cannot spare a
+ * pointer for every possible disk.
+ */
+static struct disk *vfs_scan_disks[DISK_MAX]
 	__attribute__((section(".vfs_bss")));
 
 struct vfs_disk_range {
@@ -1412,12 +1425,13 @@ vfs_scan_physical_disks(
 	struct disk *boot_physical,
 	struct disk **loader_boot_partition)
 {
-	struct disk *physical[PHYSICAL_DISK_MAX];
+	struct disk **physical;
 	struct partition entries[PARTITION_MAX];
 	struct disk_geometry geometry;
 	struct disk *disk;
 	const char *boot_name;
 	unsigned physical_count;
+	unsigned skipped;
 	unsigned i;
 	int geometry_error;
 	int partition_error;
@@ -1425,24 +1439,53 @@ vfs_scan_physical_disks(
 	int slot;
 	int matches;
 
+	physical = vfs_scan_disks;
 	physical_count = 0;
+	skipped = 0;
 
-	/* Collects up to the supported number of whole disks. */
-	for (i = 0; i < disk_count() && physical_count < PHYSICAL_DISK_MAX;
+	/*
+	 * Collects every whole disk before any partition is published, so
+	 * the partitions this scan adds to the registry are not walked as
+	 * disks of their own.  The walk ends where the registry does, and
+	 * the array holds as many disks as the registry can, so a disk is
+	 * skipped only if the registry has changed underneath the walk.
+	 */
+	for (i = 0;
+	     ;
 	     i++) {
 		disk = disk_at(i);
-		if (disk != NULL && !(disk->d_flags & DISK_PARTITION))
-			physical[physical_count++] = disk;
-		else if (disk != NULL)
+		if (disk == NULL)
+			break;
+
+		/* A partition is published by the scan of its whole disk. */
+		if ((disk->d_flags & DISK_PARTITION) != 0) {
 			disk_release(disk);
+			continue;
+		}
+
+		/* A disk that does not fit is named, never dropped in silence. */
+		if (physical_count == DISK_MAX) {
+			VFS_LOG("vfs: %s not scanned: more than %u disks\n",
+				disk->d_name, DISK_MAX);
+			skipped++;
+			disk_release(disk);
+			continue;
+		}
+
+		physical[physical_count++] = disk;
 	}
 
+	/* Reports the disk the loader named and how many disks are read. */
 	if (boot_physical != NULL)
 		boot_name = boot_physical->d_name;
 	else
 		boot_name = "none";
 	VFS_LOG("vfs: native boot disk=%s physical disks=%u\n", boot_name,
 		physical_count);
+
+	/* Says how many disks the scan could not hold. */
+	if (skipped != 0)
+		VFS_LOG("vfs: %u disks not scanned\n", skipped);
 
 	/* Scans each disk's partition table and publishes its entries. */
 	for (i = 0; i < physical_count; i++) {
@@ -1460,6 +1503,7 @@ vfs_scan_physical_disks(
 				physical[i]->d_name, geometry_error, count);
 		if (count < 0) {
 			disk_release(physical[i]);
+			physical[i] = NULL;
 			continue;
 		}
 
@@ -1523,6 +1567,7 @@ vfs_scan_physical_disks(
 		}
 
 		disk_release(physical[i]);
+		physical[i] = NULL;
 	}
 }
 

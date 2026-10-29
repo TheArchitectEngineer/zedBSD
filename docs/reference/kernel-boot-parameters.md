@@ -41,6 +41,7 @@ when a non-x86 architecture supplies a NULL parameter-source pointer; Section
 | Runtime swap separation | [`include/uapi/system.h`](../../include/uapi/system.h), [`src/kern/vm/swap-control.c`](../../src/kern/vm/swap-control.c), [`src/drivers/generic/system-device.c`](../../src/drivers/generic/system-device.c) |
 | PID 1 selection | [`src/kern/main.c`](../../src/kern/main.c), [`src/kern/init.c`](../../src/kern/init.c) |
 | Common configured-loader language | [`bootloader/uefi/zedbsd-config.c`](../../bootloader/uefi/zedbsd-config.c), [`bootloader/uefi/zedbsd-config.h`](../../bootloader/uefi/zedbsd-config.h) |
+| amd64 UEFI root-partition paths | [`bootloader/uefi/root-config.c`](../../bootloader/uefi/root-config.c), [`bootloader/common/ufs-read.c`](../../bootloader/common/ufs-read.c), [`bootloader/uefi/bootx64.c`](../../bootloader/uefi/bootx64.c) |
 | Four current x86 loader paths | [`bootloader/uefi/bootx64.c`](../../bootloader/uefi/bootx64.c), [`bootloader/pcat/bootzbsd.S`](../../bootloader/pcat/bootzbsd.S), [`bootloader/pc98/bootzbsd.S`](../../bootloader/pc98/bootzbsd.S), [`src/hal/x86/boot-parameters.c`](../../src/hal/x86/boot-parameters.c) |
 
 ## 2. Text format
@@ -533,7 +534,8 @@ zero candidates is fatal, while multiple candidates warn and use the first.
 
 The three loader implementations use the same bounded configuration parser.
 Exactly one `kernel=` directive selects a safe path relative to the selected
-FAT and is consumed by the loader. Every other nonempty line contributes one
+FAT, or on amd64 UEFI a path on the root partition (Section 9.2), and is
+consumed by the loader. Every other nonempty line contributes one
 kernel-parameter token; on amd64 UEFI the boot keys may then drop and append
 tokens of the assembled record (Section 7c). The parser synthesizes `boot0=UUID=XXXX-XXXX` when
 `boot0=` is absent and qualifies bare `overlay-root`, `overlay-data`, and
@@ -594,6 +596,40 @@ architecture build's `ZEDBSD_INIT_PATH`: normally `/sbin/init`,
 `/bin/sh` for sparcv9, and `/x68k/bin/sh` for x68k. Any non-NULL parameter
 source, including on a non-x86 architecture, uses the strict common contract;
 a non-NULL empty source does not enter legacy automatic root selection.
+
+### 9.2 amd64 UEFI: the kernel on the root partition
+
+On amd64 UEFI, `kernel=` and `logo=` may begin with `rootpart:`, which names an
+absolute path in the UFS filesystem of the partition `rootpart=` selects:
+
+```text
+kernel=rootpart:/boot/vmunix
+rootpart=PARTUUID=0F3C2B6A-7D51-4E0B-9A47-2C1D5E8F6A90
+logo=rootpart:/boot/logo.ppm
+```
+
+- The loader removes the prefix before the shared parser checks the rest of
+  the path, so the path rules (`..`, `:`, length) are unchanged. A path without
+  the prefix is relative to the configuration FAT as before.
+- `rootpart:` needs exactly one `rootpart=` line, and the loader accepts only
+  the `PARTUUID=` form (other selectors stop with `rootpart= is not
+  PARTUUID=`). The `rootpart=` line still reaches the kernel unchanged.
+- The loader enumerates the firmware's block devices and takes the GPT
+  partition on its own physical disk whose partition signature equals the
+  PARTUUID, compared as binary GUIDs, case-insensitively in text. None, or more
+  than one, on that disk stops it. The same PARTUUID on another disk stops it
+  with `duplicate PARTUUID`, since the kernel would refuse that root.
+- It reads native little-endian UFS read-only: superblock, inodes, direct and
+  indirect blocks, holes as zero bytes, and directories. Symbolic links are not
+  followed, and the journal is not replayed. A byte-swapped volume, a fragment
+  smaller than the device's block, a volume larger than its partition or a
+  block number past the volume stops it. Logical blocks that are powers of
+  two from 512 to 4096 bytes are accepted.
+- Every failure shows `A64 KERN UFS <reason>` and stops; there is no fallback
+  to a kernel on the FAT.
+
+The BIOS loaders do not read UFS: they reject a `rootpart:` path like any
+other invalid path.
 
 ## 10. Verification contract
 
