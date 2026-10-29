@@ -52,6 +52,13 @@ struct drv_gpu_compile_diagnostic {
 #define DRV_GPU_SHADER_LOCATION_SAMPLE_MASK 70U
 
 /*
+ * The fragment shader's SampleId input builtin, the number of the sample
+ * the invocation runs for, read raw like a Flat input.  Only a parse with
+ * the SAMPLE_ID feature makes it.
+ */
+#define DRV_GPU_SHADER_LOCATION_SAMPLE_ID 71U
+
+/*
  * What a parse may lower beyond the profile every backend shares, as bits
  * of its `features`: the SampleMask input and output and the FragDepth
  * output builtins, the Centroid decoration recorded on the inputs,
@@ -70,6 +77,19 @@ struct drv_gpu_compile_diagnostic {
 
 /* A compute shader's sampled and storage images (refused otherwise). */
 #define DRV_GPU_SPIRV_FEATURE_COMPUTE_IMAGES 0x40U
+
+/*
+ * A fragment shader's SampleId input and FragStencilRefEXT output
+ * (SPV_EXT_shader_stencil_export) builtins (refused otherwise).
+ */
+#define DRV_GPU_SPIRV_FEATURE_SAMPLE_ID 0x80U
+#define DRV_GPU_SPIRV_FEATURE_STENCIL_EXPORT 0x100U
+
+/*
+ * A module of several functions: the entry function's calls are inlined
+ * before the parse (refused otherwise, as more than one function).
+ */
+#define DRV_GPU_SPIRV_FEATURE_INLINE_CALLS 0x200U
 
 /* The features the GHCI backend lowers. */
 #define DRV_GPU_SPIRV_FEATURES_GHCI 0x7FU

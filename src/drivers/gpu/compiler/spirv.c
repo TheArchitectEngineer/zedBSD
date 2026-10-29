@@ -315,6 +315,10 @@
 #define BUILTIN_SAMPLE_MASK 20U
 #define BUILTIN_FRAG_DEPTH 22U
 
+/* The fragment built-ins only a parse with their own features lowers. */
+#define BUILTIN_SAMPLE_ID 18U
+#define BUILTIN_FRAG_STENCIL_REF 5014U
+
 /* The built-in inputs of a compute shader. */
 #define BUILTIN_NUM_WORKGROUPS 24U
 #define BUILTIN_WORKGROUP_ID 26U
@@ -983,6 +987,8 @@ struct drv_gpu_spirv_parser {
 	int returned;
 };
 
+static int drv_gpu_spirv_parse_module(const uint32_t *words, size_t word_count, enum drv_gpu_shader_stage stage, uint32_t features, struct drv_gpu_shader_ir **out, struct drv_gpu_compile_diagnostic *diagnostic);
+static int drv_gpu_spirv_inline(const uint32_t *words, size_t word_count, uint32_t **out, size_t *out_count, struct drv_gpu_compile_diagnostic *diagnostic);
 static int drv_gpu_spirv_pass_declarations(struct drv_gpu_spirv_parser *parser);
 static int drv_gpu_spirv_declare(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
 static int drv_gpu_spirv_declare_entry_point(struct drv_gpu_spirv_parser *parser, const uint32_t *word, uint32_t count, uint32_t opcode, uint32_t offset);
@@ -1206,6 +1212,78 @@ drv_gpu_shader_parse(
  */
 int
 drv_gpu_shader_parse_features(
+	const uint32_t *words,
+	size_t word_count,
+	enum drv_gpu_shader_stage stage,
+	uint32_t features,
+	struct drv_gpu_shader_ir **out,
+	struct drv_gpu_compile_diagnostic *diagnostic)
+{
+	int error;
+	uint32_t *inlined;
+	size_t inlined_count;
+
+	/* Without the inlining feature the module is parsed as it is. */
+	if ((features & DRV_GPU_SPIRV_FEATURE_INLINE_CALLS) == 0U) {
+		error = drv_gpu_spirv_parse_module(words,
+						   word_count,
+						   stage,
+						   features,
+						   out,
+						   diagnostic);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the IR is the caller's. */
+		return 0;
+	}
+
+	/* Every call starts without a previous module refusal. */
+	if (diagnostic != NULL)
+		kern_memset(diagnostic, 0, sizeof(*diagnostic));
+	if (out == NULL)
+		return EINVAL;
+	*out = NULL;
+
+	/* Rewrites a module of several functions with the calls inlined. */
+	error = drv_gpu_spirv_inline(words,
+				     word_count,
+				     &inlined,
+				     &inlined_count,
+				     diagnostic);
+	if (error != 0)
+		return error;
+
+	/* A module of one function is parsed as it is, a rewritten one as rewritten. */
+	if (inlined == NULL) {
+		error = drv_gpu_spirv_parse_module(words,
+						   word_count,
+						   stage,
+						   features,
+						   out,
+						   diagnostic);
+	} else {
+		error = drv_gpu_spirv_parse_module(inlined,
+						   inlined_count,
+						   stage,
+						   features,
+						   out,
+						   diagnostic);
+		kern_free(inlined);
+	}
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the IR is the caller's. */
+	return 0;
+}
+
+/*
+ * Parses one module's words into the scalar IR of one stage, lowering what
+ * the bits of `features` add; the entry function is the only function.
+ */
+static int
+drv_gpu_spirv_parse_module(
 	const uint32_t *words,
 	size_t word_count,
 	enum drv_gpu_shader_stage stage,
@@ -2488,6 +2566,15 @@ drv_gpu_spirv_declare_variable(
 			 */
 			record->has_location = 1U;
 			record->location = DRV_GPU_SHADER_LOCATION_SAMPLE_MASK;
+			record->flat = 1U;
+		} else if (record->builtin == BUILTIN_SAMPLE_ID &&
+			   (parser->features & DRV_GPU_SPIRV_FEATURE_SAMPLE_ID) != 0U) {
+			/*
+			 * gl_SampleID: the number of the sample the invocation
+			 * runs for, read bit for bit.
+			 */
+			record->has_location = 1U;
+			record->location = DRV_GPU_SHADER_LOCATION_SAMPLE_ID;
 			record->flat = 1U;
 		}
 	}
@@ -6174,6 +6261,10 @@ drv_gpu_spirv_lower_store_output(
 			   parser->ir->stage == DRV_GPU_STAGE_FRAGMENT &&
 			   (parser->features & DRV_GPU_SPIRV_FEATURE_SAMPLE_MASK) != 0U) {
 			builtin_location = DRV_GPU_IR_LOCATION_SAMPLE_MASK;
+		} else if (builtin == BUILTIN_FRAG_STENCIL_REF &&
+			   parser->ir->stage == DRV_GPU_STAGE_FRAGMENT &&
+			   (parser->features & DRV_GPU_SPIRV_FEATURE_STENCIL_EXPORT) != 0U) {
+			builtin_location = DRV_GPU_IR_LOCATION_FRAG_STENCIL;
 		} else {
 			/*
 			 * Records the unsupported instruction in the caller's
@@ -16226,3 +16317,6 @@ drv_gpu_spirv_result(
 
 /* The storage images, the input attachments and the sample query. */
 #include "spirv-image.inc"
+
+/* The inlining of function calls. */
+#include "spirv-inline.inc"
