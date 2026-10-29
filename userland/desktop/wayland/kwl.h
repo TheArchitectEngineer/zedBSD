@@ -2130,6 +2130,14 @@ struct kwl_server {
 	uint64_t retire_next_ms;
 };
 
+/*
+ * What a step of a change of the display goes on with (display-thread.c):
+ * called on the main thread with the step's result (0 or an errno) and the
+ * context it was given.
+ */
+typedef void kwl_display_fn(struct kwl_server *server, int error, void *context);
+void kwl_display_settle(struct kwl_server *server);
+
 uint64_t kwl_milliseconds(void);
 uint64_t kwl_microseconds(void);
 uint64_t kwl_log_us(void);
@@ -2185,8 +2193,8 @@ void kwl_output_pointer_turn(struct kwl_server *server, unsigned before, unsigne
 void kwl_output_state(struct kwl_server *server, struct kwl_rotate_state *state);
 unsigned kwl_output_rotated(struct kwl_server *server);
 int kwl_output_external_available(struct kwl_server *server);
-int kwl_output_use_external(struct kwl_server *server);
-int kwl_output_use_internal(struct kwl_server *server);
+int kwl_output_use_external(struct kwl_server *server, kwl_display_fn *then, void *context);
+int kwl_output_use_internal(struct kwl_server *server, kwl_display_fn *then, void *context);
 int kwl_output_display_internal(struct kwl_server *server, VkDisplayKHR display);
 
 /* A wl_output binding of a head that closed (ws113-p004b). */

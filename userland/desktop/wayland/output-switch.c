@@ -45,6 +45,13 @@
 /* How often the hotplug fence is looked at (ms): each look is a request to the display node. */
 #define OUTPUT_HOTPLUG_MS	250U
 
+/* A move to an external display (kwl_output_use_external): what was kept off before, and what goes on with the result. */
+struct output_use {
+	VkDisplayKHR previous;
+	kwl_display_fn *then;
+	void *context;
+};
+
 /* The looks at the displays the hotplug's tick makes (output_listed). */
 #define OUTPUT_LOOK_FIRST	1U
 #define OUTPUT_LOOK_SIGNAL	2U
@@ -111,6 +118,7 @@ static int output_internal(const struct kwl_compose *compose, unsigned index);
 static int output_index(const struct kwl_compose *compose, VkDisplayKHR display);
 static void output_hotplug_register(struct kwl_server *server);
 static void output_recover(struct kwl_server *server);
+static void output_used_external(struct kwl_server *server, int error, void *context);
 static void output_heads_sync(struct kwl_server *server);
 static int output_fail_back(struct kwl_server *server);
 static void output_failed_back(struct kwl_server *server, int error, void *context);
@@ -890,15 +898,24 @@ kwl_output_external_available(
 }
 
 /*
- * Moves the output to the first external display that takes it.  Returns
- * 0, ENOENT when none is connected, or the last move's error.
+ * Moves the output to the first external display that takes it, in a
+ * change of the display while the passes go on; the machine's own display
+ * left (under the closed lid) is kept off, no head for it (ws113-p004b),
+ * unless no display takes the output.  then(server, error, context) is
+ * called at the end with 0 or the last try's error.  Returns 0 when the
+ * move began, ENODEV without the hotplug's list, ENOENT when no external
+ * display is connected, or kwl_output_move's error.
  */
 int
 kwl_output_use_external(
-	struct kwl_server *server)
+	struct kwl_server *server,
+	kwl_display_fn *then,
+	void *context)
 {
+	VkDisplayKHR candidates[OUTPUT_MOVE_MAX];
 	struct kwl_compose *compose;
-	VkDisplayKHR previous;
+	struct output_use *use;
+	unsigned count;
 	unsigned index;
 	int internal;
 	int shown;
@@ -909,10 +926,9 @@ kwl_output_use_external(
 	if (compose == NULL)
 		return ENODEV;
 
-	/* Each external display, until one takes the output. */
-	error = ENOENT;
+	/* Each external display not refused, and not one whose move failed (BUG-266). */
+	count = 0U;
 	for (index = 0U; index < compose->display_count; index++) {
-		/* Not the machine's own, not refused, not one whose move failed (BUG-266). */
 		internal = output_internal(compose, index);
 		if (internal)
 			continue;
@@ -920,25 +936,59 @@ kwl_output_use_external(
 			continue;
 		if ((compose->move_failed & ((uint32_t)1U << index)) != 0U)
 			continue;
+		candidates[count] = compose->displays[index];
+		count++;
+	}
+	if (count == 0U)
+		return ENOENT;
 
-		/* The move; the machine's own display left (under the closed lid) is kept off, no head for it (ws113-p004b). */
-		previous = compose->kept_off;
-		shown = output_index(compose, compose->display);
-		if (shown >= 0) {
-			internal = output_internal(compose, (unsigned)shown);
-			if (internal)
-				compose->kept_off = compose->display;
-		}
-
-		/* The move itself; a refused one keeps off what was kept off before. */
-		error = kwl_output_switch(server, compose->displays[index]);
-		if (error == 0)
-			return 0;
-		compose->kept_off = previous;
+	/* The machine's own display left is kept off; a move that fails keeps off what was kept off before. */
+	use = calloc(1, sizeof(*use));
+	if (use == NULL)
+		return ENOMEM;
+	use->previous = compose->kept_off;
+	use->then = then;
+	use->context = context;
+	shown = output_index(compose, compose->display);
+	if (shown >= 0) {
+		internal = output_internal(compose, (unsigned)shown);
+		if (internal)
+			compose->kept_off = compose->display;
 	}
 
-	/* No external display took the output. */
-	return error;
+	/* The move. */
+	error = kwl_output_move(server, candidates, NULL, count, output_used_external, use);
+	if (error != 0) {
+		compose->kept_off = use->previous;
+		free(use);
+		return error;
+	}
+
+	/* Succeeded: the move runs. */
+	return 0;
+}
+
+/* The move to an external display ended: a failure keeps off what was kept off before; the result is told. */
+static void
+output_used_external(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	kwl_display_fn *then;
+	struct output_use *use;
+	void *then_context;
+
+	/* The record goes first. */
+	use = context;
+	if (error != 0)
+		server->compose->kept_off = use->previous;
+	then = use->then;
+	then_context = use->context;
+	free(use);
+
+	/* The result. */
+	then(server, error, then_context);
 }
 
 /* Tells whether a display connected now is the machine's own (see the file's comment). */
@@ -965,18 +1015,23 @@ kwl_output_display_internal(
 }
 
 /*
- * Moves the output back to the machine's own display.  Returns 0 (also
- * when it shows it already), ENOENT when it is not connected, or the
- * move's error.
+ * Moves the output back to the machine's own display, in a change of the
+ * display while the passes go on; nothing is kept off from now on: the
+ * external display becomes a head again (ws113-p004b).  then(server,
+ * error, context) is called at the end (0 also when it shows it already).
+ * Returns 0 when the move began, ENODEV without the hotplug's list, ENOENT
+ * when it is not connected, or kwl_output_move's error.
  */
 int
 kwl_output_use_internal(
-	struct kwl_server *server)
+	struct kwl_server *server,
+	kwl_display_fn *then,
+	void *context)
 {
 	struct kwl_compose *compose;
+	VkDisplayKHR target;
 	unsigned index;
 	int internal;
-	int error;
 
 	/* Without the hotplug there is no list. */
 	compose = server->compose;
@@ -994,14 +1049,10 @@ kwl_output_use_internal(
 	if (index == compose->display_count)
 		return ENOENT;
 
-	/* The move; nothing is kept off from now on: the external display becomes a head again (ws113-p004b). */
+	/* The move. */
 	compose->kept_off = VK_NULL_HANDLE;
-	error = kwl_output_switch(server, compose->displays[index]);
-	if (error != 0)
-		return error;
-
-	/* Succeeded: the output shows the machine's own display. */
-	return 0;
+	target = compose->displays[index];
+	return kwl_output_move(server, &target, NULL, 1U, then, context);
 }
 
 /*

@@ -28,6 +28,9 @@
 
 static struct kwl_input_device *backend_input(struct kwl_server *server, const char *path);
 static const char *power_source_text(unsigned source);
+static void lid_external_moved(struct kwl_server *server, int error, void *context);
+static void lid_internal_moved(struct kwl_server *server, int error, void *context);
+static void lid_follow_rest(struct kwl_server *server, unsigned open);
 
 /*
  * The seat is paused: drawing stops and the output closes now (Vulkan's
@@ -309,9 +312,6 @@ kwl_lid_follow(
 	struct kwl_server *server,
 	unsigned open)
 {
-	unsigned actions;
-	int session;
-	int locked;
 	int matters;
 	int deferred;
 	int available;
@@ -346,27 +346,88 @@ kwl_lid_follow(
 	if (open == 0U) {
 		available = kwl_output_external_available(server);
 		if (available) {
-			error = kwl_output_use_external(server);
-			if (error == 0) {
-				server->lid.closed = 1U;
-				server->lid.closed_ms = kwl_milliseconds();
-				server->lid.lock_is_lid = 0U;
-				server->output_lid_moved = 1U;
-				printf("KWL LID external: the desktop moved to the external display\n");
-				return;
+			/* The move runs while the passes go on (a change running ends first); lid_external_moved goes on. */
+			error = kwl_output_use_external(server, lid_external_moved, NULL);
+			if (error == EBUSY) {
+				kwl_display_settle(server);
+				error = kwl_output_use_external(server, lid_external_moved, NULL);
 			}
-
-			/* Refused (the limit of outputs shown at once): the closing locks and sleeps as usual. */
-			printf("KWL LID external refused errno=%d\n", error);
+			if (error == 0)
+				return;
+			lid_external_moved(server, error, NULL);
+			return;
 		}
 	}
 
-	/* Opened after the closing moved the desktop to an external display: it comes back to the panel (N8). */
+	/* Opened after the closing moved the desktop to an external display: it comes back to the panel (N8), then the rest. */
 	if (open != 0U && server->output_lid_moved) {
 		server->output_lid_moved = 0U;
-		error = kwl_output_use_internal(server);
-		printf("KWL LID internal: the desktop comes back to the panel errno=%d\n", error);
+		error = kwl_output_use_internal(server, lid_internal_moved, NULL);
+		if (error == EBUSY) {
+			kwl_display_settle(server);
+			error = kwl_output_use_internal(server, lid_internal_moved, NULL);
+		}
+		if (error == 0)
+			return;
+		lid_internal_moved(server, error, NULL);
+		return;
 	}
+
+	/* What it asks for. */
+	lid_follow_rest(server, open);
+}
+
+/*
+ * The closing's move to an external display ended: moved, the desktop
+ * goes on, unlocked and lit (N8, R4), the lid counting as closed so that
+ * the machine sleeps if the external display goes and the output comes
+ * back to the panel; refused (the limit of outputs shown at once), the
+ * closing locks and sleeps as usual.
+ */
+static void
+lid_external_moved(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	/* Moved. */
+	(void)context;
+	if (error == 0) {
+		server->lid.closed = 1U;
+		server->lid.closed_ms = kwl_milliseconds();
+		server->lid.lock_is_lid = 0U;
+		server->output_lid_moved = 1U;
+		printf("KWL LID external: the desktop moved to the external display\n");
+		return;
+	}
+
+	/* Refused: as usual. */
+	printf("KWL LID external refused errno=%d\n", error);
+	lid_follow_rest(server, 0U);
+}
+
+/* The opening's move back to the panel ended: the opening goes on. */
+static void
+lid_internal_moved(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	/* The log, then the rest of the opening. */
+	(void)context;
+	printf("KWL LID internal: the desktop comes back to the panel errno=%d\n", error);
+	lid_follow_rest(server, 1U);
+}
+
+/* Carries out what the lid asks for, after its moves of the output: the lock, the screen out, the unlock, the light. */
+static void
+lid_follow_rest(
+	struct kwl_server *server,
+	unsigned open)
+{
+	unsigned actions;
+	int session;
+	int locked;
 
 	/* What it asks for: a session is any but the login screen's. */
 	session = 1;

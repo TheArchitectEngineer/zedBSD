@@ -390,12 +390,6 @@ struct kwl_head {
 
 struct kwl_cursor_thread;
 
-/*
- * What a step of a change of the display goes on with (display-thread.c):
- * called on the main thread with the step's result (0 or an errno) and the
- * context it was given.
- */
-typedef void kwl_display_fn(struct kwl_server *server, int error, void *context);
 
 /*
  * What is left of a head the main thread let go (heads.c): its swapchain
@@ -1038,7 +1032,6 @@ void kwl_display_stop(struct kwl_server *server);
 void kwl_display_take(struct kwl_server *server);
 void kwl_display_parked(struct kwl_server *server);
 int kwl_display_busy(struct kwl_server *server);
-void kwl_display_settle(struct kwl_server *server);
 int kwl_display_begin(struct kwl_server *server, kwl_display_fn *parked, void *context);
 void kwl_display_end(struct kwl_server *server);
 void kwl_display_close(struct kwl_server *server, kwl_display_fn *then, void *context);

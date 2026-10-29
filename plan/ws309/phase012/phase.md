@@ -113,7 +113,10 @@
   - 列挙: tick と recover は T3 が読んだ一覧（`kwl_display_enumerate`）で続く（`output_listed`）。
   - backlight: 上の「答えの形」のとおり T3 の job と main の写し。
   - QEMU: resize（head の open も T3 に出た、pass_max 0.96 s）・scanout・grave PASS。
-- 未実施: RTX（枠は Q1 の知らせ待ち）、backlight の成功の経路（QEMU に backlight が無い。実機で）、lid の外部・内部と Settings の anchor の非同期化（その場のまま）、
+- lid（16:3x、WIP の次の commit）: 閉じた時の外部への移動・開いた時の panel への戻しを変更の操作に（`kwl_output_use_external/internal` は then を取る、
+  lid の残り（lock・消灯・unlock）は移動の終わりで `lid_follow_rest`）。QEMU で lid は試せない（未実施）。移動の仕組みは resize の recover と同じ。
+  amd64・Linux warning 0、resize-guest PASS。
+- 未実施: RTX（枠は Q1 の知らせ待ち）、backlight の成功の経路と lid の経路（QEMU に無い。実機で）、Settings の anchor を消した時の移動（その場のまま）、
   let-go の破棄の T3 化（layers・glass maps は main の構造に触るので別の形が要る）、seat の pause の答えを T3 の完了で返す形（p016 と一緒）。
 - 27d4ecfde の build: arm64（`config/ci/config-rpi5.mk` の build/rpi5/bin/wayland、この worktree の sysroot-arm64）・riscv64（`config/ci/config-visionfive2-keiland.mk`）exit 0・warning 0。
   同じ build で QEMU `rotate-guest.sh`・`hand-guest.sh` も PASS（16:3x）。
