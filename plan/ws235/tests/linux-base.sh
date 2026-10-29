@@ -5,8 +5,8 @@
 #   sh plan/ws235/tests/linux-base.sh survey  OUT    reads only: release, kernels, apt sources, GRUB, network, the NIC
 #   sh plan/ws235/tests/linux-base.sh install OUT    the backports kernel and firmware-realtek; GRUB's default stays on
 #                                                    the running kernel (GRUB_DEFAULT=saved and grub-set-default)
-#   sh plan/ws235/tests/linux-base.sh measure OUT    grub-reboot into the backports kernel once, the RTL8127's address
-#                                                    (DHCP for the run when it has none), a host route to PEER_IP over
+#   sh plan/ws235/tests/linux-base.sh measure OUT    grub-reboot into the newest kernel in /boot once, the RTL8127's address
+#                                                    (NIC_ADDR for the run when it has none: no DHCP client there), a host route to PEER_IP over
 #                                                    it, ethtool and the PCIe link, tcp-perf send and recv SECONDS each,
 #                                                    then a reboot back to the default kernel, read back with uname -r
 # OUT/summary.txt is the result; OUT also keeps the raw outputs.  Nothing is removed.
@@ -20,6 +20,7 @@ NIC_PCI=${NIC_PCI:-0000:03:00.0}
 PEER_IP=${PEER_IP:-10.0.10.2}
 PERF_PORT=${PERF_PORT:-5322}
 SECONDS_PERF=${SECONDS_PERF:-10}
+NIC_ADDR=${NIC_ADDR:-10.0.30.6/16}
 PERF_SRC=userland/tests/tcp-perf/main.c
 SSHOPT="-o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 summary=$out/summary.txt
@@ -53,7 +54,7 @@ case $stage in
 survey)
 	deb "cat /etc/os-release; echo; ls /boot; echo; cat /etc/apt/sources.list /etc/apt/sources.list.d/* 2> /dev/null; echo;
 		grep -E '^GRUB_DEFAULT|^GRUB_SAVEDEFAULT' /etc/default/grub; sudo -n grub-editenv list; echo;
-		grep -E \"^[[:space:]]*(menuentry|submenu) \" /boot/grub/grub.cfg | cut -c1-160; echo;
+		sudo -n grep -E \"^[[:space:]]*(menuentry|submenu) \" /boot/grub/grub.cfg | cut -c1-160; echo;
 		systemctl is-active NetworkManager systemd-networkd networking 2> /dev/null; ls /etc/network/interfaces.d 2> /dev/null;
 		ip -br addr; ip route; echo; sudo -n lspci -s $NIC_PCI -nnk -vv | grep -E 'Ethernet|Kernel|LnkCap:|LnkSta:'" \
 		> "$out/survey.txt" 2>&1
@@ -65,11 +66,11 @@ survey)
 install)
 	running=$(deb uname -r)
 	# The running kernel's menu entry, so that it stays the default after a newer kernel is added.
-	entry=$(deb "grep -E \"^[[:space:]]*menuentry \" /boot/grub/grub.cfg" |
+	entry=$(deb "sudo -n grep -E \"^[[:space:]]*menuentry \" /boot/grub/grub.cfg" |
 		awk -v k="$running" 'index($0, k) && $0 !~ /recovery/ {match($0, /\$menuentry_id_option '"'"'[^'"'"']*'"'"'/); print substr($0, RSTART + 22, RLENGTH - 23); exit}')
 	say "running $running, its entry id: ${entry:-none}"
 	[ -n "$entry" ] || { say "FAIL: no menu entry for the running kernel"; exit 1; }
-	sub=$(deb "grep -E \"^submenu \" /boot/grub/grub.cfg" |
+	sub=$(deb "sudo -n grep -E \"^submenu \" /boot/grub/grub.cfg" |
 		sed -n "s/.*\$menuentry_id_option '\([^']*\)'.*/\1/p" | head -1)
 	default="$entry"
 	[ -n "$sub" ] && default="$sub>$entry"
@@ -88,11 +89,11 @@ install)
 measure)
 	cc -O2 -Wall -o "$out/tcp-perf" "$PERF_SRC" || { say "FAIL: tcp-perf for Linux"; exit 1; }
 	timeout 60 scp $SSHOPT -q "$out/tcp-perf" "$DEBIAN:ws235-tcp-perf" || { say "FAIL: copy of tcp-perf"; exit 1; }
-	bpo=$(deb "ls /boot" | sed -n 's/^vmlinuz-\(.*bpo.*\)$/\1/p' | sort -V | tail -1)
+	bpo=$(deb "ls /boot" | sed -n 's/^vmlinuz-\(.*\)$/\1/p' | sort -V | tail -1)
 	[ -n "$bpo" ] || { say "FAIL: no backports kernel in /boot"; exit 1; }
-	entry=$(deb "grep -E \"^[[:space:]]*menuentry \" /boot/grub/grub.cfg" |
+	entry=$(deb "sudo -n grep -E \"^[[:space:]]*menuentry \" /boot/grub/grub.cfg" |
 		awk -v k="$bpo" 'index($0, k) && $0 !~ /recovery/ {match($0, /\$menuentry_id_option '"'"'[^'"'"']*'"'"'/); print substr($0, RSTART + 22, RLENGTH - 23); exit}')
-	sub=$(deb "grep -E \"^submenu \" /boot/grub/grub.cfg" | sed -n "s/.*\$menuentry_id_option '\([^']*\)'.*/\1/p" | head -1)
+	sub=$(deb "sudo -n grep -E \"^submenu \" /boot/grub/grub.cfg" | sed -n "s/.*\$menuentry_id_option '\([^']*\)'.*/\1/p" | head -1)
 	once="$entry"
 	[ -n "$sub" ] && once="$sub>$entry"
 	say "backports kernel $bpo, once: $once"
@@ -102,20 +103,25 @@ measure)
 	nic=$(nic_name)
 	say "RTL8127 interface: ${nic:-none}"
 	if [ -n "$nic" ]; then
-		deb "sudo -n ip link set $nic up; sleep 5; sudo -n ethtool $nic; sudo -n ethtool -i $nic;
+		# No ethtool on the machine: the speed and the driver from sysfs.
+		deb "sudo -n ip link set $nic up; sleep 8; echo speed \$(cat /sys/class/net/$nic/speed) carrier \$(cat /sys/class/net/$nic/carrier);
+			echo driver \$(basename \$(readlink /sys/class/net/$nic/device/driver)); sudo -n dmesg | grep -i -E 'r8169|$nic' | tail -5;
 			sudo -n lspci -s $NIC_PCI -vv | grep -E 'LnkCap:|LnkSta:'" > "$out/nic.txt" 2>&1
-		say "NIC: $(grep -E 'Speed|Link detected|driver:|firmware-version|LnkSta:' "$out/nic.txt" | tr -s ' \t' ' ' | tr '\n' ' ')"
+		say "NIC: $(grep -E '^speed|^driver|LnkSta:|firmware|r8169' "$out/nic.txt" | tr -s ' \t' ' ' | tr '\n' ' ')"
 		addr=$(deb "ip -4 -br addr show dev $nic" | awk '{print $3}' | cut -d/ -f1)
 		if [ -z "$addr" ]; then
-			# An address for the run only: the lease goes with the reboot back to the default kernel.
-			T=90 deb "sudo -n timeout 60 dhclient -1 -v $nic" > "$out/dhcp.txt" 2>&1
+			# No DHCP client on the machine: the address the LAN's DHCP leases to this MAC (zedBSD's rge0 took it),
+			# for the run only; it goes with the reboot back to the default kernel.
+			deb "sudo -n ip addr add $NIC_ADDR dev $nic" > "$out/addr.txt" 2>&1
 			addr=$(deb "ip -4 -br addr show dev $nic" | awk '{print $3}' | cut -d/ -f1)
 		fi
 		say "RTL8127 address: ${addr:-none}"
 		if [ -n "$addr" ]; then
-			deb "sudo -n ip route replace $PEER_IP/32 dev $nic src $addr; ip route get $PEER_IP" > "$out/route.txt" 2>&1
+			# Two ports on one subnet: ARP answered only by the port with the address (for the run; a reboot resets it).
+			deb "sudo -n sysctl -q -w net.ipv4.conf.all.arp_ignore=1 net.ipv4.conf.all.arp_announce=2;
+				sudo -n ip route replace $PEER_IP/32 dev $nic src $addr; ip route get $PEER_IP" > "$out/route.txt" 2>&1
 			say "route: $(tr '\n' ' ' < "$out/route.txt")"
-			deb "ip -s link show dev $nic" > "$out/counters-before.txt" 2>&1
+			deb "ip -s link" > "$out/counters-before.txt" 2>&1
 			: > "$out/peer.log"
 			timeout $((4 * SECONDS_PERF + 120)) python3 -I plan/ws221/tests/perf-peer.py "$PEER_IP" "$PERF_PORT" "$out/peer.log" 2 > /dev/null 2>&1 &
 			peer=$!
@@ -128,8 +134,9 @@ measure)
 			kill "$peer" 2> /dev/null
 			wait "$peer"
 			say "peer: $(tr '\n' ' ' < "$out/peer.log")"
-			deb "ip -s link show dev $nic" > "$out/counters-after.txt" 2>&1
-			say "counters after: $(tr -s ' ' < "$out/counters-after.txt" | tr '\n' ' ')"
+			deb "ip -s link" > "$out/counters-after.txt" 2>&1
+			say "counters before: $(grep -A5 -E '^[0-9]+: (enp|enx)' "$out/counters-before.txt" | grep -E '^[0-9]|^ +[0-9]' | tr -s ' ' | tr '\n' ' ')"
+			say "counters after: $(grep -A5 -E '^[0-9]+: (enp|enx)' "$out/counters-after.txt" | grep -E '^[0-9]|^ +[0-9]' | tr -s ' ' | tr '\n' ' ')"
 		fi
 	fi
 	say "reboot to the default kernel"
