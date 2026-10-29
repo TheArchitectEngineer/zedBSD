@@ -93,6 +93,9 @@ struct drv_usb_endpoint {
 	enum drv_usb_transfer_type type;
 	unsigned companion_valid;
 	atomic_uint_t halted;
+
+	/* URBs the bound class driver lets the HCD queue at once (0 and 1: one). */
+	atomic_uint_t queue_depth;
 	uintptr_t hcd_private[4];
 };
 
@@ -275,6 +278,7 @@ static int shutdown_interfaces(struct drv_usb_device *device, int *retain);
 static int interface_binding_quiesce(struct drv_usb_interface *interface, unsigned expected_state);
 static int interface_binding_detach(struct drv_usb_interface *interface, unsigned flags, unsigned expected_state);
 static void interface_binding_clear(struct drv_usb_interface *interface);
+static void interface_queue_depth_reset(struct drv_usb_interface *interface);
 static struct drv_usb_interface * interface_claim_owner(const struct drv_usb_interface *interface);
 static void io_gate_close_wait(atomic_uint_t *gate);
 static int io_gate_close_empty(atomic_uint_t *gate);
@@ -565,7 +569,8 @@ drv_usb_hcd_register(
 	    (hcd->capabilities & ~(DRV_USB_HCD_CAP_CONCURRENT_URBS |
 				   DRV_USB_HCD_CAP_TRANSFER_RESERVE |
 				   DRV_USB_HCD_CAP_SHARED_STAGING |
-				   DRV_USB_HCD_CAP_BULK_STREAMS)) != 0 ||
+				   DRV_USB_HCD_CAP_BULK_STREAMS |
+				   DRV_USB_HCD_CAP_QUEUED_BULK)) != 0 ||
 	    ((hcd->capabilities & DRV_USB_HCD_CAP_BULK_STREAMS) != 0 &&
 	     (hcd->ops->endpoint_streams == NULL || hcd->ops->endpoint_enable == NULL)) ||
 	    ((hcd->ops->urb_reserve == NULL) !=
@@ -4121,6 +4126,65 @@ drv_usb_endpoint_set_hcd_data(
 }
 
 /*
+ * Lets a bound class driver queue several URBs on one bulk endpoint.
+ */
+int
+drv_usb_endpoint_set_queue_depth(
+	struct drv_usb_endpoint *endpoint,
+	unsigned depth,
+	unsigned *granted)
+{
+	struct drv_usb_device *device;
+	unsigned capabilities;
+
+	/* Only a bulk endpoint, and a depth within the limit, are taken. */
+	if (endpoint == NULL || granted == NULL ||
+	    endpoint->type != DRV_USB_TRANSFER_BULK ||
+	    depth == 0 || depth > DRV_USB_ENDPOINT_QUEUE_MAX)
+		return EINVAL;
+	*granted = 1;
+
+	/* The endpoint must belong to a device still known. */
+	if (endpoint->interface == NULL)
+		return EINVAL;
+	device = endpoint->interface->device;
+
+	/* An HCD that queues one URB at a time keeps one. */
+	capabilities = device->bus->hcd->capabilities;
+	if ((capabilities & DRV_USB_HCD_CAP_QUEUED_BULK) == 0)
+		depth = 1;
+
+	/* The HCD reads the depth at each submit. */
+	atomic_store_release(&endpoint->queue_depth, depth);
+	*granted = depth;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/*
+ * Reports how many URBs one endpoint may have queued at once.
+ */
+unsigned
+drv_usb_endpoint_queue_depth(
+	const struct drv_usb_endpoint *endpoint)
+{
+	unsigned depth;
+
+	/* A missing endpoint queues one. */
+	if (endpoint == NULL)
+		return 1;
+
+	/* Zero, never set, means one. */
+	depth = atomic_load_acquire(&endpoint->queue_depth);
+	if (depth == 0)
+		depth = 1;
+
+	/* Succeeded. */
+	return depth;
+}
+
+/*
  * Clears the halt an endpoint has fallen into.
  */
 /* Configure streams with the same lifetime/admission barriers as endpoint reset. */
@@ -4869,9 +4933,13 @@ interface_binding_clear(
 			 */
 			io_gate_close_wait(&sibling->io_gate);
 			interface_publish_claim(sibling, NULL);
+			interface_queue_depth_reset(sibling);
 			io_gate_open(&sibling->io_gate);
 		}
 	}
+
+	/* The next driver starts with one URB per endpoint. */
+	interface_queue_depth_reset(interface);
 
 	interface->driver = NULL;
 	interface->driver_data = NULL;
@@ -4879,6 +4947,22 @@ interface_binding_clear(
 	atomic_store_release(&interface->binding_submitters,
 			     USB_IO_GATE_CLOSED);
 	atomic_store_release(&interface->binding_state, USB_BINDING_DEAD);
+}
+
+/* Gives every endpoint of every alternate of an interface a queue depth of one again. */
+static void
+interface_queue_depth_reset(
+	struct drv_usb_interface *interface)
+{
+	struct drv_usb_host_interface *alternate;
+	unsigned index;
+
+	/* Each alternate's endpoints. */
+	for (alternate = interface->alternates; alternate != NULL;
+	     alternate = alternate->next) {
+		for (index = 0; index < alternate->endpoint_count; index++)
+			atomic_store_release(&alternate->endpoints[index].queue_depth, 0U);
+	}
 }
 
 /* Reports the driver that holds an interface. */

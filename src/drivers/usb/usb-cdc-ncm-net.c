@@ -90,6 +90,17 @@
 #define NCM_TX_QUEUE_MAX		8U
 #endif
 #define NCM_TX_BATCH_MAX		DRV_USB_CDC_NCM_MAX_TX_DATAGRAMS
+
+/*
+ * The receive and transmit transfers kept on the bus at once, where the
+ * host controller queues several on one bulk endpoint
+ * (drv_usb_endpoint_set_queue_depth): with four receive blocks asked for,
+ * the device has somewhere to put the next while the poll parses one, and
+ * with two transmit blocks the next goes out behind the one on the wire.
+ * A controller that queues one keeps one of each.
+ */
+#define NCM_RX_URBS			4U
+#define NCM_TX_URBS			2U
 #define NCM_TRANSFER_TIMEOUT_MS		5000U
 #define NCM_CONTROL_TIMEOUT_MS		1000U
 #define NCM_REARM_RETRY_MAX		3U
@@ -124,21 +135,47 @@ struct ncm_adapter {
 	struct drv_usb_endpoint *bulk_in;
 	struct drv_usb_endpoint *bulk_out;
 	struct drv_usb_urb *notification_urb;
-	struct drv_usb_urb *rx_urb;
-	struct drv_usb_urb *tx_urb;
+	struct drv_usb_urb *rx_urbs[NCM_RX_URBS];
+	struct drv_usb_urb *tx_urbs[NCM_TX_URBS];
+	unsigned rx_urb_count;
+	unsigned tx_urb_count;
 	struct net_device *net_device;
 	struct drv_usb_cdc_ncm_profile profile;
 	struct drv_usb_cdc_ncm_rx_state rx_state;
 	struct spinlock lock;
 	uint8_t *notification_buffer;
 	/*
-	 * The receive transfer's buffer, one of the two in rx_buffers: a
-	 * completed block is parsed from one while the transfer fills the
-	 * other.
+	 * The receive buffers, one more than the receive transfers: each
+	 * transfer fills the one in rx_urb_buffers, and a completed block is
+	 * parsed from its buffer while the transfer goes back on with the
+	 * spare (rx_spare, NULL during the parse), which the parsed buffer
+	 * then becomes.  Only the poll that holds the block and rearms changes
+	 * them.
 	 */
-	uint8_t *rx_buffer;
-	uint8_t *rx_buffers[2];
-	uint8_t *tx_buffer;
+	uint8_t *rx_buffers[NCM_RX_URBS + 1U];
+	uint8_t *rx_urb_buffers[NCM_RX_URBS];
+	uint8_t *rx_spare;
+	/* Each transmit transfer's block. */
+	uint8_t *tx_buffers[NCM_TX_URBS];
+	/*
+	 * Under the adapter lock: the receive transfers on the bus in the
+	 * order they were submitted (the controller completes them in that
+	 * order), as indexes from rx_order_head; rx_done, a bit for each
+	 * transfer whose completion has come and not been taken; rx_idle, a
+	 * bit for each transfer off the bus and waiting for a rearm.
+	 */
+	unsigned rx_order[NCM_RX_URBS];
+	unsigned rx_order_head;
+	unsigned rx_order_count;
+	unsigned rx_done;
+	unsigned rx_idle;
+	/*
+	 * Under the adapter lock: tx_free, a bit for each transmit transfer
+	 * off the bus; tx_done, a bit for each whose completion has come and
+	 * not been taken.
+	 */
+	unsigned tx_free;
+	unsigned tx_done;
 	struct packet_buf *rx_queue[NCM_RX_QUEUE_MAX];
 	size_t rx_queue_head;
 	size_t rx_queue_count;
@@ -160,19 +197,22 @@ struct ncm_adapter {
 	unsigned stopping;
 	unsigned quarantined;
 	unsigned notification_ready;
-	unsigned rx_ready;
-	unsigned tx_ready;
 	unsigned notification_rearm;
 	unsigned rx_rearm;
 	unsigned notification_rearm_active;
 	unsigned rx_rearm_active;
 	unsigned notification_retries;
 	unsigned rx_retries;
+	/*
+	 * A thread builds and submits transmit blocks (ncm_tx_pump), the only
+	 * one at a time, so the blocks go out in the order of their frames and
+	 * sequence numbers.
+	 */
 	unsigned tx_busy;
 	/*
-	 * Frames waiting for the transmit transfer, linked through their next
+	 * Frames waiting for a transmit transfer, linked through their next
 	 * field and owned by the adapter.  The adapter lock guards the list;
-	 * each transmit completion sends the head, and stop frees what is left.
+	 * the pump sends from the head, and stop frees what is left.
 	 */
 	struct packet_buf *tx_queue_head;
 	struct packet_buf *tx_queue_tail;
@@ -217,7 +257,11 @@ static int ncm_stop(struct ncm_adapter *adapter);
 static int ncm_open(struct net_device *device);
 static void ncm_close(struct net_device *device);
 static int ncm_transmit(struct net_device *device, struct packet_buf *packet);
-static int ncm_tx_submit(struct ncm_adapter *adapter, struct packet_buf *packets);
+static int ncm_tx_submit(struct ncm_adapter *adapter, unsigned index, struct packet_buf *packets);
+static void ncm_tx_pump(struct ncm_adapter *adapter);
+static int ncm_rx_start_idle(struct ncm_adapter *adapter);
+static int ncm_rx_head_done_locked(const struct ncm_adapter *adapter);
+static unsigned ncm_lowest_bit(unsigned mask);
 static void ncm_tx_queue_free(struct ncm_adapter *adapter);
 static int ncm_queue_datagram(const void *frame, size_t length, void *argument);
 static void ncm_notification_process(struct ncm_adapter *adapter);
@@ -1028,17 +1072,28 @@ ncm_completion(
 	void *argument)
 {
 	struct ncm_adapter *adapter = argument;
-	unsigned long irq = spin_lock_irqsave(&adapter->lock);
+	enum drv_usb_urb_status status;
+	unsigned long irq;
+	unsigned index;
 	int tx_error = 0;
 
-	/* Handles the urb condition. */
+	/* The transfer's end, read before the lock. */
+	status = drv_usb_urb_status(urb);
+
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	/* Marks the transfer that ended for the poll to take. */
 	if (urb == adapter->notification_urb)
 		adapter->notification_ready = 1;
-	else if (urb == adapter->rx_urb)
-		adapter->rx_ready = 1;
-	else if (urb == adapter->tx_urb) {
-		adapter->tx_ready = 1;
-		tx_error = ncm_tx_status_is_error(drv_usb_urb_status(urb));
+	for (index = 0; index < adapter->rx_urb_count; index++) {
+		if (urb == adapter->rx_urbs[index])
+			adapter->rx_done |= 1U << index;
+	}
+	for (index = 0; index < adapter->tx_urb_count; index++) {
+		if (urb != adapter->tx_urbs[index])
+			continue;
+		adapter->tx_done |= 1U << index;
+		tx_error = ncm_tx_status_is_error(status);
 	}
 
 	spin_unlock_irqrestore(&adapter->lock, irq);
@@ -1177,6 +1232,7 @@ ncm_stop(
 	struct ncm_adapter *adapter)
 {
 	unsigned long irq;
+	unsigned index;
 	int error = 0, candidate;
 
 	/* Continue until the operation reaches a terminal state. */
@@ -1207,24 +1263,34 @@ ncm_stop(
 	if (error == 0)
 		error = candidate;
 
-	/* Checks the operation status. */
-	candidate = ncm_cancel_and_drain(adapter->rx_urb);
-	if (error == 0)
-		error = candidate;
-
-	/* Checks the operation status. */
-	candidate = ncm_cancel_and_drain(adapter->tx_urb);
-	if (error == 0)
-		error = candidate;
+	/*
+	 * The receive transfers, then the transmit ones.  Where several are
+	 * queued on an endpoint, the first cancel ends them all and the others
+	 * are only waited for.
+	 */
+	for (index = 0; index < adapter->rx_urb_count; index++) {
+		candidate = ncm_cancel_and_drain(adapter->rx_urbs[index]);
+		if (error == 0)
+			error = candidate;
+	}
+	for (index = 0; index < adapter->tx_urb_count; index++) {
+		candidate = ncm_cancel_and_drain(adapter->tx_urbs[index]);
+		if (error == 0)
+			error = candidate;
+	}
 	if (error == 0)
 		ncm_free_rx_queue(adapter);
 	irq = spin_lock_irqsave(&adapter->lock);
 
-	/* Checks the operation status. */
+	/* Every transfer is off the bus: all receive ones wait for a rearm, all transmit ones are free. */
 	if (error == 0) {
 		adapter->notification_ready = 0;
-		adapter->rx_ready = 0;
-		adapter->tx_ready = 0;
+		adapter->rx_done = 0;
+		adapter->rx_order_head = 0;
+		adapter->rx_order_count = 0;
+		adapter->rx_idle = (1U << adapter->rx_urb_count) - 1U;
+		adapter->tx_done = 0;
+		adapter->tx_free = (1U << adapter->tx_urb_count) - 1U;
 		adapter->notification_rearm = 0;
 		adapter->rx_rearm = 0;
 		adapter->notification_rearm_active = 0;
@@ -1275,6 +1341,7 @@ ncm_open(
 {
 	struct ncm_adapter *adapter = device->driver_data;
 	unsigned long irq;
+	unsigned rearm;
 	int error;
 
 	irq = spin_lock_irqsave(&adapter->lock);
@@ -1311,9 +1378,26 @@ ncm_open(
 				      adapter->notification_length);
 	}
 	if (error == 0) {
-		error = ncm_start_urb(adapter, adapter->rx_urb,
-				      adapter->rx_buffer,
-				      adapter->profile.ntb_in_max_size);
+		/* Holds the right to rearm while every receive transfer goes on. */
+		irq = spin_lock_irqsave(&adapter->lock);
+
+		adapter->rx_rearm_active = 1;
+
+		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		/* Puts every receive transfer on the bus. */
+		error = ncm_rx_start_idle(adapter);
+
+		/* Gives the right up; a poll that asked for a rearm meanwhile is run again. */
+		irq = spin_lock_irqsave(&adapter->lock);
+
+		adapter->rx_rearm_active = 0;
+		rearm = adapter->rx_rearm;
+
+		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		if (error == 0 && rearm)
+			net_device_schedule_poll(device);
 	}
 	if (error != 0) {
 		(void)ncm_stop(adapter);
@@ -1337,8 +1421,9 @@ ncm_close(
 }
 
 /*
- * Sends one packet, wrapped in the block format the device wants, or
- * queues it while the transmit transfer is busy.
+ * Queues one packet for the device and, when no thread is sending and a
+ * transmit transfer is free, sends the queue, wrapped in the block format
+ * the device wants.
  */
 static int
 ncm_transmit(
@@ -1347,7 +1432,7 @@ ncm_transmit(
 {
 	struct ncm_adapter *adapter = device->driver_data;
 	unsigned long irq;
-	int error;
+	int pump;
 
 	/* Handles the packet availability. */
 	if (packet == NULL)
@@ -1364,57 +1449,126 @@ ncm_transmit(
 		return ENETDOWN;
 	}
 
-	/* Queues the frame behind a busy transfer; only a full queue drops it. */
-	if (adapter->tx_busy) {
-		if (adapter->tx_queue_count >= NCM_TX_QUEUE_MAX) {
-			spin_unlock_irqrestore(&adapter->lock, irq);
-			packet_buf_free(packet);
-
-			/* Failed. */
-			return ENOBUFS;
-		}
-
-		packet->next = NULL;
-		if (adapter->tx_queue_tail != NULL)
-			adapter->tx_queue_tail->next = packet;
-		else
-			adapter->tx_queue_head = packet;
-		adapter->tx_queue_tail = packet;
-		adapter->tx_queue_count++;
+	/* Only a full queue drops the frame; TCP keeps it and hands it over again. */
+	if (adapter->tx_queue_count >= NCM_TX_QUEUE_MAX) {
 		spin_unlock_irqrestore(&adapter->lock, irq);
+		packet_buf_free(packet);
 
-		/* Succeeded: a transmit completion sends it. */
-		return 0;
+		/* Failed. */
+		return ENOBUFS;
 	}
 
-	/* tx_busy makes this caller the transfer's owner; starts_active holds off teardown. */
-	adapter->tx_busy = 1;
-	adapter->starts_active++;
+	/* Queues the frame behind those waiting, so the frames go out in order. */
+	packet->next = NULL;
+	if (adapter->tx_queue_tail != NULL)
+		adapter->tx_queue_tail->next = packet;
+	else
+		adapter->tx_queue_head = packet;
+	adapter->tx_queue_tail = packet;
+	adapter->tx_queue_count++;
+
+	/* Becomes the sender when none sends and a transfer is free; starts_active holds off teardown. */
+	pump = 0;
+	if (!adapter->tx_busy && adapter->tx_free != 0) {
+		adapter->tx_busy = 1;
+		adapter->starts_active++;
+		pump = 1;
+	}
 
 	spin_unlock_irqrestore(&adapter->lock, irq);
 
-	/* Sends the frame. */
-	error = ncm_tx_submit(adapter, packet);
-	if (error != 0)
-		return error;
+	/* Sends the queue. */
+	if (pump)
+		ncm_tx_pump(adapter);
 
-	/* Succeeded. */
+	/* Succeeded: the frame is queued or sent. */
 	return 0;
 }
 
 /*
- * Wraps frames in one transfer block and submits the transfer.
+ * Sends the queued frames, a block a free transmit transfer at a time,
+ * until the queue is empty, no transfer is free, or the adapter goes down.
+ *
+ * The caller has set tx_busy and counted itself in starts_active under the
+ * adapter lock; this gives both up in the same section that finds nothing
+ * more to send, so a transmit completion that frees a transfer afterwards
+ * finds tx_busy clear and sends itself.  The frames of a block whose
+ * submit fails are dropped.
+ */
+static void
+ncm_tx_pump(
+	struct ncm_adapter *adapter)
+{
+	struct packet_buf *packets;
+	struct packet_buf *last;
+	unsigned long irq;
+	unsigned index;
+	unsigned taken;
+	int error;
+
+	/* Sends block after block. */
+	for (;;) {
+		irq = spin_lock_irqsave(&adapter->lock);
+
+		/* Stops when going down, with nothing queued, or with no transfer free. */
+		if (adapter->closing || !adapter->opened ||
+		    adapter->tx_queue_head == NULL || adapter->tx_free == 0) {
+			if (adapter->starts_active == 0)
+				__builtin_trap();
+			adapter->tx_busy = 0;
+			adapter->starts_active--;
+			spin_unlock_irqrestore(&adapter->lock, irq);
+			break;
+		}
+
+		/* Takes a free transfer. */
+		index = ncm_lowest_bit(adapter->tx_free);
+		adapter->tx_free &= ~(1U << index);
+
+		/* Takes the waiting frames one block carries off the queue as one list. */
+		packets = adapter->tx_queue_head;
+		last = packets;
+		for (taken = 1; taken < NCM_TX_BATCH_MAX && last->next != NULL; taken++)
+			last = last->next;
+		adapter->tx_queue_head = last->next;
+		if (adapter->tx_queue_head == NULL)
+			adapter->tx_queue_tail = NULL;
+		adapter->tx_queue_count -= taken;
+		last->next = NULL;
+
+		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		/* Builds and submits the block; the frames it does not carry go back to the head of the queue. */
+		error = ncm_tx_submit(adapter, index, packets);
+		if (error == 0)
+			continue;
+
+		/* A transfer that did not go keeps nothing: it is free again and its frames are dropped. */
+		irq = spin_lock_irqsave(&adapter->lock);
+
+		adapter->tx_free |= 1U << index;
+
+		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		if (adapter->net_device != NULL)
+			adapter->net_device->tx_dropped++;
+	}
+}
+
+/*
+ * Wraps frames in one transfer block and submits it on transmit transfer
+ * index.
  *
  * packets is a list of frames in order, linked through their next field.
  * The block carries as many of them as fit it; those it does not carry go
  * back to the head of the queue, in order, for the next transfer.  The
- * caller has set tx_busy and counted itself in starts_active under the
- * adapter lock.  The frames carried are consumed.  On failure tx_busy is
- * cleared and the frames carried are dropped.
+ * caller is the pump and has taken the transfer off tx_free.  The frames
+ * carried are consumed, on a failure too.
  */
 static int
 ncm_tx_submit(
 	struct ncm_adapter *adapter,
+	unsigned index,
 	struct packet_buf *packets)
 {
 	struct packet_buf *list[NCM_TX_BATCH_MAX];
@@ -1426,7 +1580,7 @@ ncm_tx_submit(
 	size_t ntb_length = 0;
 	size_t count;
 	size_t taken;
-	size_t index;
+	size_t frame;
 	unsigned left;
 	uint16_t sequence;
 	int error;
@@ -1453,7 +1607,7 @@ ncm_tx_submit(
 	taken = 0;
 	error = drv_usb_cdc_ncm_build_ntb16_frames(
 		&adapter->profile, sequence, frames, lengths, count,
-		adapter->tx_buffer, adapter->profile.ntb_out_max_size,
+		adapter->tx_buffers[index], adapter->profile.ntb_out_max_size,
 		&ntb_length, &taken);
 	if (error != 0)
 		taken = count;
@@ -1491,35 +1645,29 @@ ncm_tx_submit(
 	spin_unlock_irqrestore(&adapter->lock, irq);
 
 	/* Frees the frames carried (or, on a failure, those that would have been). */
-	for (index = 0; index < taken; index++) {
-		list[index]->next = NULL;
-		packet_buf_free(list[index]);
+	for (frame = 0; frame < taken; frame++) {
+		list[frame]->next = NULL;
+		packet_buf_free(list[frame]);
 	}
 
-	/* Checks the operation status. */
+	/* Submits the block. */
 	if (error == 0) {
 		error = drv_usb_urb_setup(
-			adapter->tx_urb, adapter->tx_buffer, ntb_length, 0,
-			NCM_TRANSFER_TIMEOUT_MS, ncm_completion, adapter);
+			adapter->tx_urbs[index], adapter->tx_buffers[index],
+			ntb_length, 0, NCM_TRANSFER_TIMEOUT_MS, ncm_completion,
+			adapter);
 	}
 	if (error == 0)
-		error = drv_usb_urb_submit(adapter->tx_urb);
-	irq = spin_lock_irqsave(&adapter->lock);
+		error = drv_usb_urb_submit(adapter->tx_urbs[index]);
 
-	/* Handles the adapter condition. */
-	if (adapter->starts_active == 0)
-		__builtin_trap();
+	/* The next block takes the next sequence number. */
+	if (error == 0) {
+		irq = spin_lock_irqsave(&adapter->lock);
 
-	/* Checks the operation status. */
-	if (error == 0)
 		adapter->tx_sequence++;
-	adapter->starts_active--;
 
-	/* Checks the operation status. */
-	if (error != 0)
-		adapter->tx_busy = 0;
-
-	spin_unlock_irqrestore(&adapter->lock, irq);
+		spin_unlock_irqrestore(&adapter->lock, irq);
+	}
 
 	/* Reports the failure. */
 	if (error != 0)
@@ -1734,26 +1882,36 @@ ncm_rearm(
 	struct ncm_adapter *adapter,
 	int notification)
 {
-	struct drv_usb_urb *urb =
-		notification ? adapter->notification_urb : adapter->rx_urb;
-	void *buffer = notification ? (void *)adapter->notification_buffer
-				    : (void *)adapter->rx_buffer;
-	size_t length = notification ? adapter->notification_length
-				     : adapter->profile.ntb_in_max_size;
-	int error = ncm_start_urb(adapter, urb, buffer, length);
-	unsigned long irq = spin_lock_irqsave(&adapter->lock);
-	unsigned *retry = notification ? &adapter->notification_retries
-				       : &adapter->rx_retries;
-	unsigned *pending = notification ? &adapter->notification_rearm
-					 : &adapter->rx_rearm;
-	unsigned *active = notification ? &adapter->notification_rearm_active
-					: &adapter->rx_rearm_active;
-	int retryable = error == EBUSY || error == ENOMEM || error == EAGAIN ||
-			error == ENOBUFS;
+	int error;
+	unsigned long irq;
+	unsigned *retry;
+	unsigned *pending;
+	unsigned *active;
+	int retryable;
 	int retry_scheduled = 0;
 	int quarantine = 0;
-	int stopping = !adapter->ready || !adapter->opened ||
-		       adapter->closing || adapter->stopping;
+	int stopping;
+
+	/* Puts the notification transfer, or every receive transfer off the bus, back on. */
+	if (notification) {
+		error = ncm_start_urb(adapter, adapter->notification_urb,
+				      adapter->notification_buffer,
+				      adapter->notification_length);
+	} else {
+		error = ncm_rx_start_idle(adapter);
+	}
+
+	irq = spin_lock_irqsave(&adapter->lock);
+	retry = notification ? &adapter->notification_retries
+				       : &adapter->rx_retries;
+	pending = notification ? &adapter->notification_rearm
+			       : &adapter->rx_rearm;
+	active = notification ? &adapter->notification_rearm_active
+			      : &adapter->rx_rearm_active;
+	retryable = error == EBUSY || error == ENOMEM || error == EAGAIN ||
+		    error == ENOBUFS;
+	stopping = !adapter->ready || !adapter->opened ||
+		   adapter->closing || adapter->stopping;
 
 	/* Handles the active condition. */
 	if (*active == 0)
@@ -1813,6 +1971,104 @@ ncm_rearm(
 
 	/* Succeeded. */
 	return 0;
+}
+
+/*
+ * Puts every receive transfer that is off the bus back on, each with the
+ * buffer it is to fill, and notes it in the submission order first: the
+ * controller completes them in that order, and a completion may come
+ * before the submit returns.  The caller holds the right to rearm.  A
+ * transfer whose submit fails stays off the bus for the next rearm.
+ */
+static int
+ncm_rx_start_idle(
+	struct ncm_adapter *adapter)
+{
+	unsigned long irq;
+	unsigned index;
+	unsigned tail;
+	int error;
+
+	/* One transfer after another until none is off the bus. */
+	error = 0;
+	for (;;) {
+		irq = spin_lock_irqsave(&adapter->lock);
+
+		/* Nothing is off the bus. */
+		if (adapter->rx_idle == 0) {
+			spin_unlock_irqrestore(&adapter->lock, irq);
+			break;
+		}
+
+		/* Takes one and places it last in the order. */
+		index = ncm_lowest_bit(adapter->rx_idle);
+		adapter->rx_idle &= ~(1U << index);
+		tail = (adapter->rx_order_head + adapter->rx_order_count) % NCM_RX_URBS;
+		adapter->rx_order[tail] = index;
+		adapter->rx_order_count++;
+
+		spin_unlock_irqrestore(&adapter->lock, irq);
+
+		/* Submits it. */
+		error = ncm_start_urb(adapter, adapter->rx_urbs[index],
+				      adapter->rx_urb_buffers[index],
+				      adapter->profile.ntb_in_max_size);
+		if (error == 0)
+			continue;
+
+		/* It did not go: out of the order (it is the last) and off the bus again. */
+		irq = spin_lock_irqsave(&adapter->lock);
+
+		adapter->rx_order_count--;
+		adapter->rx_idle |= 1U << index;
+
+		spin_unlock_irqrestore(&adapter->lock, irq);
+		break;
+	}
+
+	/* Reports the failure. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded. */
+	return 0;
+}
+
+/* Tells whether the oldest receive transfer on the bus has completed, under the adapter lock. */
+static int
+ncm_rx_head_done_locked(
+	const struct ncm_adapter *adapter)
+{
+	unsigned index;
+
+	/* None is on the bus. */
+	if (adapter->rx_order_count == 0)
+		return 0;
+
+	/* The oldest one's completion has come. */
+	index = adapter->rx_order[adapter->rx_order_head];
+	if ((adapter->rx_done & (1U << index)) != 0)
+		return 1;
+
+	/* It is still on the bus. */
+	return 0;
+}
+
+/* Returns the index of the lowest bit set in a nonzero mask. */
+static unsigned
+ncm_lowest_bit(
+	unsigned mask)
+{
+	unsigned index;
+
+	/* Counts the clear bits below it. */
+	for (index = 0; index < 31U; index++) {
+		if ((mask & (1U << index)) != 0)
+			break;
+	}
+
+	/* Succeeded. */
+	return index;
 }
 
 /* Hands the queued packets up to the network stack. */
@@ -1956,83 +2212,65 @@ ncm_take_rx_rearm(
 	return taken;
 }
 
-/* Takes the transmit completion the poll found. */
+/*
+ * Takes the transmit completions the poll found: each transfer that ended
+ * is free again, and, when no thread sends and frames wait, this poll
+ * sends them.
+ */
 static int
 ncm_poll_tx_completion(
 	struct ncm_adapter *adapter)
 {
-	struct packet_buf *packet;
-	struct packet_buf *last;
 	unsigned long irq;
-	unsigned taken;
+	unsigned done;
+	unsigned index;
 	int error;
+	int pump;
 
-	/* Checks the ncm take pending result. */
-	if (!ncm_take_pending(adapter, &adapter->tx_ready))
-		return 0;
-
-	/* Handles the adapter condition. */
+	/* Takes the completions that came. */
 	irq = spin_lock_irqsave(&adapter->lock);
-	if (adapter->starts_active != 0) {
-		spin_unlock_irqrestore(&adapter->lock, irq);
-		ncm_restore_pending(adapter, &adapter->tx_ready);
 
-		/* Succeeded. */
+	done = adapter->tx_done;
+	adapter->tx_done = 0;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* None came. */
+	if (done == 0)
 		return 0;
+
+	/* Frees each transfer once its completion has wholly returned; one still returning is taken by a later poll. */
+	for (index = 0; index < adapter->tx_urb_count; index++) {
+		if ((done & (1U << index)) == 0)
+			continue;
+		error = drv_usb_urb_drain(adapter->tx_urbs[index], NCM_TRANSFER_TIMEOUT_MS);
+		irq = spin_lock_irqsave(&adapter->lock);
+		if (error == 0)
+			adapter->tx_free |= 1U << index;
+		else
+			adapter->tx_done |= 1U << index;
+		spin_unlock_irqrestore(&adapter->lock, irq);
+	}
+
+	/* Becomes the sender when none sends, a transfer is free and frames wait. */
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	pump = 0;
+	if (!adapter->tx_busy && adapter->tx_free != 0 &&
+	    adapter->tx_queue_head != NULL && adapter->opened &&
+	    !adapter->closing) {
+		adapter->tx_busy = 1;
+		adapter->starts_active++;
+		pump = 1;
 	}
 
 	spin_unlock_irqrestore(&adapter->lock, irq);
 
-	/* Checks the drv usb urb drain result. */
-	if (drv_usb_urb_drain(adapter->tx_urb, NCM_TRANSFER_TIMEOUT_MS) != 0) {
-		ncm_restore_pending(adapter, &adapter->tx_ready);
+	/* Sends the waiting frames. */
+	if (pump)
+		ncm_tx_pump(adapter);
 
-		/* Succeeded. */
-		return 0;
-	}
-
-	/*
-	 * Hands the transfer to the waiting frames, as many as a block takes,
-	 * keeping tx_busy, or frees it when none waits.  Frames whose submit
-	 * fails are dropped and the next ones are tried, so the queue never
-	 * stalls behind them.
-	 */
-	for (;;) {
-		irq = spin_lock_irqsave(&adapter->lock);
-
-		packet = adapter->tx_queue_head;
-		if (packet != NULL) {
-			/* Finds the last of the waiting frames that one block carries. */
-			last = packet;
-			for (taken = 1; taken < NCM_TX_BATCH_MAX && last->next != NULL; taken++)
-				last = last->next;
-
-			/* Takes those frames off the queue as one list. */
-			adapter->tx_queue_head = last->next;
-			if (adapter->tx_queue_head == NULL)
-				adapter->tx_queue_tail = NULL;
-			adapter->tx_queue_count -= taken;
-			last->next = NULL;
-			adapter->tx_busy = 1;
-			adapter->starts_active++;
-		} else {
-			adapter->tx_busy = 0;
-		}
-
-		spin_unlock_irqrestore(&adapter->lock, irq);
-
-		if (packet == NULL)
-			break;
-
-		error = ncm_tx_submit(adapter, packet);
-		if (error == 0)
-			break;
-
-		if (adapter->net_device != NULL)
-			adapter->net_device->tx_dropped++;
-	}
-
-	/* Reports operation failure. */
+	/* Succeeded: a completion was taken. */
 	return 1;
 }
 
@@ -2061,47 +2299,68 @@ ncm_poll_notification_completion(
 	return 1;
 }
 
-/* Takes the receive completion the poll found. */
+/*
+ * Takes the oldest receive transfer, when it has completed: it goes back
+ * on at once with the spare buffer, so the device fills the next block
+ * while this one is parsed and queued for the stack (the delivery queue
+ * is empty here, the poll hands each block up whole before it takes the
+ * next).
+ */
 static int
 ncm_poll_rx_completion(
 	struct net_device *device,
 	struct ncm_adapter *adapter)
 {
+	struct drv_usb_urb *urb;
 	size_t count = 0;
 	size_t length;
 	uint8_t *block;
+	unsigned long irq;
+	unsigned index;
 	int rearm;
+	int done;
 	int error;
 
-	/* Checks the ncm take pending result. */
-	if (!ncm_take_pending(adapter, &adapter->rx_ready))
+	/* The oldest transfer on the bus, if its completion has come. */
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	done = ncm_rx_head_done_locked(adapter);
+	index = adapter->rx_order[adapter->rx_order_head];
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	if (!done)
 		return 0;
 
-	/* Checks the drv usb urb drain result. */
-	if (drv_usb_urb_drain(adapter->rx_urb, NCM_TRANSFER_TIMEOUT_MS) != 0) {
-		ncm_restore_pending(adapter, &adapter->rx_ready);
-
-		/* Succeeded. */
+	/* Waits for its completion to return wholly; a later poll takes one still returning. */
+	urb = adapter->rx_urbs[index];
+	error = drv_usb_urb_drain(urb, NCM_TRANSFER_TIMEOUT_MS);
+	if (error != 0)
 		return 0;
-	}
 
-	/*
-	 * The block received, and the transfer at once back on the device
-	 * with the other buffer: the device fills the next block while this
-	 * one is parsed and handed up (the delivery queue is empty here, the
-	 * poll hands each block up whole before it takes the next).
-	 */
-	error = ncm_urb_status_error(drv_usb_urb_status(adapter->rx_urb));
-	block = adapter->rx_buffer;
-	length = drv_usb_urb_actual_length(adapter->rx_urb);
+	/* Takes it off the bus and out of the order. */
+	irq = spin_lock_irqsave(&adapter->lock);
 
-	/* Points the next transfer at the buffer that is not holding this block. */
-	adapter->rx_buffer = adapter->rx_buffers[0];
-	if (block == adapter->rx_buffers[0])
-		adapter->rx_buffer = adapter->rx_buffers[1];
+	adapter->rx_done &= ~(1U << index);
+	adapter->rx_order_head = (adapter->rx_order_head + 1U) % NCM_RX_URBS;
+	adapter->rx_order_count--;
 
-	/* Asks for the receive transfer to be armed again. */
-	ncm_restore_pending(adapter, &adapter->rx_rearm);
+	spin_unlock_irqrestore(&adapter->lock, irq);
+
+	/* The block received, and the spare buffer for the transfer's next. */
+	error = ncm_urb_status_error(drv_usb_urb_status(urb));
+	length = drv_usb_urb_actual_length(urb);
+	block = adapter->rx_urb_buffers[index];
+	adapter->rx_urb_buffers[index] = adapter->rx_spare;
+	adapter->rx_spare = NULL;
+
+	/* Asks for the transfer to be armed again. */
+	irq = spin_lock_irqsave(&adapter->lock);
+
+	adapter->rx_idle |= 1U << index;
+	adapter->rx_rearm = 1;
+
+	spin_unlock_irqrestore(&adapter->lock, irq);
 
 	/* Arms it at once, when nothing else holds the right to. */
 	rearm = ncm_take_rx_rearm(adapter);
@@ -2115,11 +2374,14 @@ ncm_poll_rx_completion(
 			ncm_queue_datagram, adapter, &count);
 	}
 
+	/* The parsed block's buffer is the next spare. */
+	adapter->rx_spare = block;
+
 	/* Counts a block that could not be taken as a receive error. */
 	if (error != 0)
 		device->rx_errors++;
 
-	/* Reports operation failure. */
+	/* Succeeded: a block was taken. */
 	return 1;
 }
 
@@ -2131,8 +2393,9 @@ ncm_has_poll_work(
 	unsigned long irq = spin_lock_irqsave(&adapter->lock);
 	int pending = adapter->ready && adapter->opened && !adapter->closing &&
 		      !adapter->stopping && !adapter->quarantined &&
-		      (adapter->notification_ready || adapter->rx_ready ||
-		       adapter->tx_ready ||
+		      (adapter->notification_ready ||
+		       ncm_rx_head_done_locked(adapter) ||
+		       adapter->tx_done != 0 ||
 		       (adapter->notification_rearm &&
 			!adapter->notification_rearm_active) ||
 		       (adapter->rx_rearm && !adapter->rx_rearm_active) ||
@@ -2206,6 +2469,16 @@ ncm_poll_receive(
 		spin_unlock_irqrestore(&adapter->lock, irq);
 	}
 
+	/* The receive blocks that completed behind the first, each handed up whole before the next. */
+	while (work < budget) {
+		completed = ncm_poll_rx_completion(device, adapter);
+		if (!completed)
+			break;
+		rx_progress = 1;
+		(void)ncm_deliver_queued(adapter, NCM_RX_QUEUE_MAX);
+		work++;
+	}
+
 	/* Handles the work condition. */
 	if (work < budget) {
 		delivered = ncm_deliver_queued(adapter, budget - work);
@@ -2276,36 +2549,66 @@ static void
 ncm_urbs_free(
 	struct ncm_adapter *adapter)
 {
-	drv_usb_urb_free(adapter->tx_urb);
-	drv_usb_urb_free(adapter->rx_urb);
+	unsigned index;
+
+	/* Each transmit and receive transfer, then the notification one. */
+	for (index = 0; index < NCM_TX_URBS; index++) {
+		drv_usb_urb_free(adapter->tx_urbs[index]);
+		adapter->tx_urbs[index] = NULL;
+	}
+	for (index = 0; index < NCM_RX_URBS; index++) {
+		drv_usb_urb_free(adapter->rx_urbs[index]);
+		adapter->rx_urbs[index] = NULL;
+	}
 	drv_usb_urb_free(adapter->notification_urb);
-	adapter->tx_urb = NULL;
-	adapter->rx_urb = NULL;
 	adapter->notification_urb = NULL;
 }
 
-/* Takes the transfers this device needs. */
+/* Takes the transfers this device needs: the notification one and rx_urb_count and tx_urb_count of the bulk ones. */
 static int
 ncm_urbs_alloc(
 	struct ncm_adapter *adapter)
 {
+	unsigned index;
+	int missing;
+
+	/* The notification transfer. */
+	missing = 0;
 	adapter->notification_urb = drv_usb_urb_alloc(
 		adapter->usb_device, adapter->notification_endpoint, 0);
-	adapter->rx_urb =
-		drv_usb_urb_alloc(adapter->usb_device, adapter->bulk_in, 0);
-	adapter->tx_urb =
-		drv_usb_urb_alloc(adapter->usb_device, adapter->bulk_out, 0);
+	if (adapter->notification_urb == NULL)
+		missing = 1;
 
-	/* Handles the notification urb availability. */
-	if (adapter->notification_urb != NULL && adapter->rx_urb != NULL &&
-	    adapter->tx_urb != NULL) {
-		/* Succeeded. */
-		return 0;
+	/* The receive transfers. */
+	for (index = 0; index < adapter->rx_urb_count; index++) {
+		adapter->rx_urbs[index] =
+			drv_usb_urb_alloc(adapter->usb_device, adapter->bulk_in, 0);
+		if (adapter->rx_urbs[index] == NULL)
+			missing = 1;
 	}
-	ncm_urbs_free(adapter);
 
-	/* Failed. */
-	return ENOMEM;
+	/* The transmit transfers. */
+	for (index = 0; index < adapter->tx_urb_count; index++) {
+		adapter->tx_urbs[index] =
+			drv_usb_urb_alloc(adapter->usb_device, adapter->bulk_out, 0);
+		if (adapter->tx_urbs[index] == NULL)
+			missing = 1;
+	}
+
+	/* All of them, or none. */
+	if (missing) {
+		ncm_urbs_free(adapter);
+
+		/* Failed. */
+		return ENOMEM;
+	}
+
+	/* None is on the bus: all receive ones wait for a rearm, all transmit ones are free. */
+	adapter->rx_idle = (1U << adapter->rx_urb_count) - 1U;
+	adapter->tx_free = (1U << adapter->tx_urb_count) - 1U;
+
+	/* Succeeded. */
+	return 0;
 }
 
 /* Gives the buffers this device used back. */
@@ -2313,38 +2616,71 @@ static void
 ncm_buffers_free(
 	struct ncm_adapter *adapter)
 {
-	kern_free(adapter->tx_buffer);
-	kern_free(adapter->rx_buffers[0]);
-	kern_free(adapter->rx_buffers[1]);
+	unsigned index;
+
+	/* Each buffer once, from the lists that own them. */
+	for (index = 0; index < NCM_TX_URBS; index++) {
+		kern_free(adapter->tx_buffers[index]);
+		adapter->tx_buffers[index] = NULL;
+	}
+	for (index = 0; index < NCM_RX_URBS + 1U; index++) {
+		kern_free(adapter->rx_buffers[index]);
+		adapter->rx_buffers[index] = NULL;
+	}
+	for (index = 0; index < NCM_RX_URBS; index++)
+		adapter->rx_urb_buffers[index] = NULL;
+	adapter->rx_spare = NULL;
 	kern_free(adapter->notification_buffer);
-	adapter->tx_buffer = NULL;
-	adapter->rx_buffer = NULL;
-	adapter->rx_buffers[0] = NULL;
-	adapter->rx_buffers[1] = NULL;
 	adapter->notification_buffer = NULL;
 }
 
-/* Takes the buffers this device needs. */
+/*
+ * Takes the buffers this device needs: the notification one, one more
+ * receive buffer than receive transfers (the spare), and one block for
+ * each transmit transfer.
+ */
 static int
 ncm_buffers_alloc(
 	struct ncm_adapter *adapter)
 {
+	unsigned index;
+	int missing;
+
+	/* The notification buffer. */
+	missing = 0;
 	adapter->notification_buffer = kern_malloc(NCM_NOTIFICATION_SIZE);
-	adapter->rx_buffers[0] = kern_malloc(adapter->profile.ntb_in_max_size);
-	adapter->rx_buffers[1] = kern_malloc(adapter->profile.ntb_in_max_size);
-	adapter->rx_buffer = adapter->rx_buffers[0];
-	adapter->tx_buffer = kern_malloc(adapter->profile.ntb_out_max_size);
+	if (adapter->notification_buffer == NULL)
+		missing = 1;
 
-	/* Handles the notification buffer availability. */
-	if (adapter->notification_buffer != NULL && adapter->rx_buffers[0] != NULL &&
-	    adapter->rx_buffers[1] != NULL && adapter->tx_buffer != NULL) {
-		/* Succeeded. */
-		return 0;
+	/* The receive buffers: each transfer's, and the spare last. */
+	for (index = 0; index < adapter->rx_urb_count + 1U; index++) {
+		adapter->rx_buffers[index] = kern_malloc(adapter->profile.ntb_in_max_size);
+		if (adapter->rx_buffers[index] == NULL)
+			missing = 1;
 	}
-	ncm_buffers_free(adapter);
 
-	/* Failed. */
-	return ENOMEM;
+	/* The transmit blocks. */
+	for (index = 0; index < adapter->tx_urb_count; index++) {
+		adapter->tx_buffers[index] = kern_malloc(adapter->profile.ntb_out_max_size);
+		if (adapter->tx_buffers[index] == NULL)
+			missing = 1;
+	}
+
+	/* All of them, or none. */
+	if (missing) {
+		ncm_buffers_free(adapter);
+
+		/* Failed. */
+		return ENOMEM;
+	}
+
+	/* Hands each receive transfer its buffer, and keeps the spare. */
+	for (index = 0; index < adapter->rx_urb_count; index++)
+		adapter->rx_urb_buffers[index] = adapter->rx_buffers[index];
+	adapter->rx_spare = adapter->rx_buffers[adapter->rx_urb_count];
+
+	/* Succeeded. */
+	return 0;
 }
 
 /* Publishes this device as a network interface. */
@@ -2511,6 +2847,17 @@ ncm_attach(
 		return error;
 	drv_usb_cdc_ncm_rx_reset(&adapter->rx_state);
 
+	/*
+	 * Asks the host controller to keep several bulk transfers on the bus
+	 * at once; one that keeps one, or refuses, gives one of each.
+	 */
+	error = drv_usb_endpoint_set_queue_depth(binding.bulk_in, NCM_RX_URBS, &adapter->rx_urb_count);
+	if (error != 0)
+		adapter->rx_urb_count = 1;
+	error = drv_usb_endpoint_set_queue_depth(binding.bulk_out, NCM_TX_URBS, &adapter->tx_urb_count);
+	if (error != 0)
+		adapter->tx_urb_count = 1;
+
 	/* Checks the operation status. */
 	error = ncm_buffers_alloc(adapter);
 	if (error != 0)
@@ -2539,14 +2886,15 @@ ncm_attach(
 	ncm_set_ready(adapter, 1);
 	kern_logf("usb-cdc-ncm: %s mac=%02x:%02x:%02x:%02x:%02x:%02x "
 		   "segment=%u ntb_in=%u ntb_out=%u max_datagram=%u read_back=%u "
-		   "caps=0x%02x mtu_max=%u\n",
+		   "caps=0x%02x mtu_max=%u urbs=%u/%u\n",
 		   adapter->net_device->name, mac[0], mac[1], mac[2], mac[3],
 		   mac[4], mac[5], adapter->max_segment_size,
 		   (unsigned)adapter->profile.ntb_in_max_size,
 		   (unsigned)adapter->profile.ntb_out_max_size,
 		   adapter->profile.max_datagram_size,
 		   adapter->max_datagram_read_back, adapter->capabilities,
-		   adapter->net_device->mtu_max);
+		   adapter->net_device->mtu_max, adapter->rx_urb_count,
+		   adapter->tx_urb_count);
 
 	/* Succeeded. */
 	return 0;
