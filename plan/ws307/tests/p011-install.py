@@ -286,6 +286,7 @@ class Walk:
 		run.key("ret")
 		time.sleep(0.8)
 		run.set_field("size", "1 GiB")
+		run.shot("other-s4-size")
 		mark = len(run.read_log())
 		run.click("create")
 		run.wait_line(r"INSTALLER EDIT (DONE|FAIL)", 180, mark)
@@ -317,6 +318,7 @@ class Walk:
 		run.click("next")
 		run.wait_screen("s4-edit")
 		run.set_field("size", "6 GiB")
+		run.shot("usb-s4-size")
 		mark = len(run.read_log())
 		run.click("create")
 		run.wait_line(r"INSTALLER EDIT (DONE|FAIL)", 180, mark)
@@ -401,6 +403,10 @@ def main():
 	except (Failed, subprocess.TimeoutExpired, OSError) as error:
 		run.say(f"FAIL {error}")
 		walk.status = 1
+		try:
+			run.shot("failed")
+		except Exception:  # noqa: BLE001
+			pass
 	finally:
 		try:
 			lines = run.read_log()
