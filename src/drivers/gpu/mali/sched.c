@@ -184,16 +184,21 @@ mali_sched_run(
 	if (stream_bytes == 0U)
 		return 0;
 
-	/* The ring's sequence: flush, call, wait, clean, add, barrier. */
+	/*
+	 * The ring's sequence: flush, call, wait, clean, add, barrier.  Each
+	 * flush names flush id zero, so it is never skipped as done already.
+	 */
 	address = mali_queue_scratch(queue);
 	value = address + 2U;
 	mali_cs_init(&cs, words, RING_WORDS);
+	mali_cs_emit(&cs, mali_cs_move32(value, 0));
 	mali_cs_emit(&cs, mali_cs_flush_cache(MALI_CS_FLUSH_CLEAN_INVALIDATE, MALI_CS_FLUSH_CLEAN_INVALIDATE, MALI_CS_FLUSH_OTHER_INVALIDATE, 0, value, RING_FLUSH_SLOT));
 	mali_cs_emit(&cs, mali_cs_move48(address, stream_address));
 	mali_cs_emit(&cs, mali_cs_move32(value, stream_bytes));
 	mali_cs_emit(&cs, mali_cs_wait(1U << RING_FLUSH_SLOT));
 	mali_cs_emit(&cs, mali_cs_call(address, value));
 	mali_cs_emit(&cs, mali_cs_wait(WAIT_ALL));
+	mali_cs_emit(&cs, mali_cs_move32(value, 0));
 	mali_cs_emit(&cs, mali_cs_flush_cache(MALI_CS_FLUSH_CLEAN_INVALIDATE, MALI_CS_FLUSH_CLEAN_INVALIDATE, MALI_CS_FLUSH_OTHER_INVALIDATE, 0, value, RING_FLUSH_SLOT));
 	mali_cs_emit(&cs, mali_cs_wait(1U << RING_FLUSH_SLOT));
 	mali_cs_emit(&cs, mali_cs_move48(address, MALI_RENDER_SYNC_ADDRESS));
