@@ -17,7 +17,7 @@
 - 見立て: GPU は 1 frame に約 19.6 ms。CPU（app の record、executor の push の組み立て、present）の約 4 ms が GPU と重ならない（submit が GPU を待つため）。
   重ねれば frame は約 19.6 ms（51 fps）。余裕が小さいので、GPU の側（2 つ目の run の中身、vertex の program の質）も次に見る。
 
-## 今の形（main 290d67f73 の src/drivers/gpu/nvrtx、読んだ事実）
+## 今の形（main f18444bb7 の src/drivers/gpu/nvrtx、読んだ事実）
 
 - runtime.c: worker は node に 1 本。frame は `node->lock`（mutex）を持って executor を走らせる（runtime_execute、768〜775 行）。
   marker は worker が順に completion する（GPU の待ちは無い。frame が同期なので marker の時には GPU は済んでいる）。
