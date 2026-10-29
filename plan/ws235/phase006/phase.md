@@ -39,7 +39,43 @@
 | a580715fe | profile の計上（config で有効）、試験の config・`PROFILE=1`・`profile-summary.py` |
 | 3e2087929 | pcat の `allocate_irqs` が MSI-X で min〜max 本（table の大きさまで、vector i に entry i）、`pci.c` が device ごとに MSI-X の vector を数え、最後の 1 本の disestablish で capability の control を戻す。`pci.h` の説明。既存の呼び手は全て 1〜1 本 |
 | fe85b1da9 | poll が budget を使い切った時は IMR を開けない（受けの ring が空になるまで割り込みを閉じたまま） |
+| 58044230e | pcat の変更の書き方（関数の呼び出しを条件の外へ） |
+| 8018d289b | IMR から TX_OK と TX_UNAVAILABLE を外す（TX の回収は transmit の半分の時と poll。poll は RX の割り込みと service の thread の 20 ms）。`rtl-link.sh` の `PROFILE=1` に top と centris の `/proc/net/snmp` |
+| f9c8d0edd | profile の行に controller の tally counter の missed（descriptor が無くて落とした frame、16 bit）。`profile-summary.py` が読む |
 
 ## 記録
+
+### 2026-10-29 09:54〜10:26 の RDNA 機の枠（lock「P1 q1669-i04 start 09:54 end 10:39」、10:26 に返した）
+
+命令（worktree p1-ws235d、出力は `build/tmp/ws235-prof-N/`）:
+`KEY=$PWD/plan/tmp/guest/id_ed25519 POWERCYCLE=1 LANTEST=2 PROFILE=1 SECONDS_PERF=20 PERF=build/ws235/amd64-p/bin/tcp-perf sh plan/ws235/tests/rtl-link.sh build/ws235/kN/vmunix build/tmp/ws235-prof-N`
+（各回 4〜5 分。tcp-perf は k1 の build の物）。machine: 16 CPU、counter 2496000000 Hz、counter の 1 回の読み 40 ns（dmesg の profile on の行）。
+
+| 回 | kernel（cksum） | send Mbit/s | send の driver（1 CPU 比） | recv Mbit/s | recv の driver（1 CPU 比） |
+| --- | --- | --- | --- | --- | --- |
+| 1 | k1: a580715fe＋3e2087929（4079549303） | 3568 | 71.7%（irq 31.4・poll 11.4・tx 28.9）、irq 99987/s、tx 0.94 us/frame | 3368 | 35.7%（irq 10.1・poll 18.7・tx 6.9）、irq 51527/s、poll 0.64 us/frame |
+| 2 | k2: fe85b1da9（2854028322） | 3763 | 68.5%、irq 96861/s | 3233 | 31.5%、irq 44324/s |
+| 3 | k3: k2＋TX_OK を外す（3875452462） | 2989 | 46.0%（irq 31.6%、TX_UNAVAILABLE が 94579/s 鳴った）、tx 0.26 us/frame | 3291 | 31.3% |
+| 4 | k4: 8018d289b（1480656801） | 3547 | **10.5%**（irq 2.4・poll 3.1・tx 5.0）、irq 8996/s | 3553 | 30.3%（irq 5.5・poll 19.8・tx 5.1） |
+| 5 | k4（top を足した） | **5505** | 17.7%、irq 10493/s | 3358 | 29.8% |
+| 6 | k4 | **5405** | 15.2% | 3201 | 28.0% |
+| 7 | k4（centris の snmp を足した） | 4519 | 16.1% | **4252** | 28.8% |
+
+- CPU ごとの負荷（hw.cputimes の差 ÷ 20 s）: send の回 4 は cpu13 86%（他は 26% 以下）で 3547、回 5・6 は cpu0 84〜98%・cpu1 78〜95% の 2 つに集まって 5405〜5505。
+  同じ kernel で 3547〜5505 と振れ、送りの thread と worker の置き場所（CPU）で変わる見込み（未確認、scheduler・stack の側）。
+- recv はどの回もどの CPU も 100% に届かない（最大 cpu0 78%・cpu11 59%・cpu1 61% など）。driver は 1 CPU の 28〜36%（poll 0.59〜0.66 us/frame）。
+- 回 7 の centris の `/proc/net/snmp`: recv の 20 s で OutSegs 7366641・**RetransSegs 866**、send は RetransSegs 0。zedBSD の rge0 の errors・dropped は 0
+  （driver の `rx_dropped` は packet の不足と誤りの frame、stack の input queue の溢れは device の `rx_dropped` に数える）。取りこぼしの場所（NIC の ring の溢れか
+  stack か、Linux の TLP の見かけの再送か）は未確認 → tally counter の missed（f9c8d0edd）と RX の ring 1024（k5b）を次の枠で。
+- top（`top -b -n 2 -d 10`）は全ての process の %CPU が 0.0 で使えない（zedBSD の top の不具合か、未確認。この Phase では直さない）。
+- 最後の状態（各回の script の照合と 10:25 の ssh）: Debian 6.12.111（saved_entry 6.12.111、next_entry 空）、RTX 01:00.0 は vfio-pci、NVMe の kernel は P2 の物（sha256 6a06e796a7b9b632…、一致）。電源の入れ直しは無し。
+- 判定は ssh（ifconfig・sysctl hw.cputimes・dmesg の profile の行）と centris の perf-peer.py・/proc/net/snmp で。console・serial の log は読んでいない。
+
+### 読み（2026-10-29 10:3x P1）
+
+- send: TX の割り込みを外して driver の CPU を 68% → 15% に下げても、同じ置き場所の回（1 と 4）の send は 3568 → 3547 で変わらない。律速は driver の外
+  （送りの thread の CPU（cpu13 86%、回 5・6 は cpu0・cpu1 の 2 つ）＝TCP の分割・checksum・user からの copy、と置き場所）。
+- recv: CPU が飽和せず、相手が再送している。driver の CPU は 28〜30% で、全てを 0 にしても飽和していない律速は解けない。取りこぼしが NIC の ring なら driver の側（ring の大きさ・補充の速さ）、
+  stack なら WS221 p010。次の枠の k5a（missed）・k5b（ring 1024）で分ける。
 
 ## 判定
