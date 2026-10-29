@@ -726,6 +726,29 @@ nvrtx_work_wait(
 	uint32_t fence,
 	uint32_t timeout_us)
 {
+	int error;
+
+	/* Spins from the start. */
+	error = nvrtx_work_wait_late(gpu, fence, timeout_us, 0U);
+
+	/* Reports the wait's result. */
+	return error;
+}
+
+/*
+ * Waits as nvrtx_work_wait() does for work the caller expects to take
+ * about quiet_us more: until then the semaphore is looked at only between
+ * sleeps, then without pause for 2 ms, then between sleeps again.  A
+ * sleep lasts a scheduler tick, so work that ends while the wait spins is
+ * seen as it ends without the processor spinning all along.
+ */
+int
+nvrtx_work_wait_late(
+	struct nvrtx_gpu *gpu,
+	uint32_t fence,
+	uint32_t timeout_us,
+	uint32_t quiet_us)
+{
 	uint64_t start;
 	uint64_t spent;
 	bool passed;
@@ -741,8 +764,8 @@ nvrtx_work_wait(
 		if (spent > timeout_us)
 			return ETIMEDOUT;
 
-		/* Spins at first; work that takes longer is looked at again after a sleep. */
-		if (spent < WORK_SPIN_US) {
+		/* Spins while the end is near; else it looks again after a sleep. */
+		if (spent >= quiet_us && spent < (uint64_t)quiet_us + WORK_SPIN_US) {
 			atomic_spin_hint();
 		} else {
 			kern_usleep_range(WORK_POLL_US, WORK_POLL_US * 2U);

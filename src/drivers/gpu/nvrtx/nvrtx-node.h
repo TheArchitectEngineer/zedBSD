@@ -106,7 +106,9 @@ struct nvrtx_resource {
  *
  * The executor's runs (vk-node.c): run_fence is the work channel's fence
  * of the session's newest run and run_us when it was submitted (both
- * under the node's lock); run_lost is set (atomically, by whoever waited)
+ * under the node's lock); run_took_us is the time from the submission to
+ * the end a wait last saw for one of its runs (atomically, by whoever
+ * waited), which the next wait expects; run_lost is set (atomically, by whoever waited)
  * once a run of the session did not end in time: the session puts nothing
  * more on the GPU and its waits fail at once.
  */
@@ -119,6 +121,7 @@ struct nvrtx_session {
 	int stopping;
 	uint32_t run_fence;
 	uint64_t run_us;
+	uint64_t run_took_us;
 	int run_lost;
 };
 
