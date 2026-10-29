@@ -37,7 +37,7 @@
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
 | [ws314-p001](phase001/phase.md) | `keiland.h` を `keiland_*.h` に分ける（定義の移動だけ、API・ABI は変えない。KL_VERSION の履歴の comment の置き場所も）。comment から開発の管理情報を除く（決定 10） | cleared | — |
-| ws314-p002 | `docs/` に Keiland のプログラミングの解説（英語）: app → window → titlebar → ui と main loop → widget → menu → その他。fd の API は書かない | planned | p001 |
+| [ws314-p002](phase002/phase.md) | `docs/` に Keiland のプログラミングの解説（英語）: app → window → titlebar → ui と main loop → widget → menu → その他。fd の API は書かない | cleared | p001 |
 | ws314-p003 | 設計: post・`kl_process`・`kl_instance` の event・libbrowser の network の thread（design.md、design-reviewer） | planned | p001 |
 | ws314-p004 | `kl_app_post`・`kl_window_post` の実装と Mailer の移行 | planned | p003 |
 | ws314-p005 | `kl_process_*` の実装と Installer・Terminal・起動する program の移行 | planned | p003 |
@@ -50,4 +50,11 @@
 ## Resume point
 
 - 2026-10-30 Q1: 作成。P2 が q1690 で p001 から。
-- 2026-10-30 P2: p001 cleared（30 の header、zedBSD 3 arch・Linux の前後の symbol が同じ）。p002 の解説を書いた。
+- 2026-10-30 P2: p001 cleared（73f0ec352、30 の header、zedBSD 3 arch・Linux の前後の symbol が同じ）。p002 cleared（5fe9561c5、
+  docs/howto/keiland-programming.md）。
+- 再開点（2026-10-30 P2、context の残りが少ないため返却）: p003（設計）から。未着手。手がかり:
+  fd の API の利用者は担当の範囲の中だけ（mailer/main.c・sync.c、installer/main.c・helper.c、settings/main.c・window.c、
+  browser/shell/window.c、terminal/window.c、と libkeiland の instance.c・ui/app.c・ui/window.h）。`kl_instance_*` の利用者は settings だけ。
+  pipe・fork/exec・socket・poll の利用（file の数）: mailer pipe 1・socket 1・poll 2、installer pipe 2・exec 2・poll 1、terminal exec 1、
+  settings exec 1、browser poll 2、libbrowser pipe 1・socket 2・poll 6、files exec 1、preview exec 2・socket 1、pdfviewer exec 1、phone exec 1。
+  既存の `kl_window_post(window, code)`（KL_WINDOW_POST、dispatch の中で同じ thread から入力を積む）がある。`kl_app_post` は thread から呼べる別物として設計する。
