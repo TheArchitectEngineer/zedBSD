@@ -630,10 +630,12 @@ static int
 enter_window_mode(
 	struct kwl_server *server)
 {
+	int busy;
 	int error;
 
 	/* A change running (this one, or another) is waited for by the later passes. */
-	if (kwl_display_busy(server))
+	busy = kwl_display_busy(server);
+	if (busy)
 		return EAGAIN;
 
 	/* The switch is timed from here (KWL MODE). */

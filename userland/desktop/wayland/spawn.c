@@ -64,8 +64,7 @@ struct spawn_job {
 	int error;
 };
 
-static int spawn_submit(struct kwl_server *server, const char *path, const char *const *arguments, const char *const *sets, const char *const *removes,
-    int lent, unsigned null_input, kwl_spawn_fn *then, void *context);
+static int spawn_submit(struct kwl_server *server, const char *path, const char *const *arguments, const char *const *sets, const char *const *removes, int lent, unsigned null_input, kwl_spawn_fn *then, void *context);
 static char **spawn_environment(const char *const *sets, const char *const *removes);
 static char **spawn_strings(const char *const *strings);
 static void spawn_strings_free(char **strings);

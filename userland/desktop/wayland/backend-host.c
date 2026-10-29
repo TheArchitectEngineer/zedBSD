@@ -642,6 +642,8 @@ power_apply(
 	struct kl_backend_power_state *state,
 	int error)
 {
+	const char *source_text;
+
 	/* A state that could not be read is unknown, with no action. */
 	if (error != 0) {
 		state->source = KL_BACKEND_POWER_SOURCE_UNKNOWN;
@@ -652,8 +654,12 @@ power_apply(
 
 	/* Kept for the bar, and written in the log. */
 	server->power = *state;
-	printf("KWL POWER source=%s percent=%d charging=%u\n", power_source_text(state->source), state->percent,
-	       state->charging);
+	source_text = power_source_text(state->source);
+	printf(
+	    "KWL POWER source=%s percent=%d charging=%u\n",
+	    source_text,
+	    state->percent,
+	    state->charging);
 
 	/* A low battery is warned of (notify-system.c, ws156-p003). */
 	kwl_notify_battery(server);

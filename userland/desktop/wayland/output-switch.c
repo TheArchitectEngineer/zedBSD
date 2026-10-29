@@ -379,6 +379,7 @@ kwl_output_move(
 	struct kwl_compose *compose;
 	struct output_move *move;
 	unsigned index;
+	int busy;
 	int error;
 
 	/* Only window mode's output moves, to some display. */
@@ -387,7 +388,8 @@ kwl_output_move(
 		return ENODEV;
 	if (count == 0U)
 		return EINVAL;
-	if (kwl_display_busy(server))
+	busy = kwl_display_busy(server);
+	if (busy)
 		return EBUSY;
 
 	/* The displays to try, in their order. */
@@ -1043,6 +1045,7 @@ kwl_output_use_internal(
 	VkDisplayKHR target;
 	unsigned index;
 	int internal;
+	int error;
 
 	/* Without the hotplug there is no list. */
 	compose = server->compose;
@@ -1063,7 +1066,14 @@ kwl_output_use_internal(
 	/* The move. */
 	compose->kept_off = VK_NULL_HANDLE;
 	target = compose->displays[index];
-	return kwl_output_move(server, &target, NULL, 1U, then, context);
+	error = kwl_output_move(server, &target, NULL, 1U, then, context);
+
+	/* Reports why the move could not begin. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the move began. */
+	return 0;
 }
 
 /*

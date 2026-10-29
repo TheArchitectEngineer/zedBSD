@@ -836,6 +836,7 @@ kwl_glass_blur_take(
 {
 	struct wallpaper_picture picture;
 	struct glass_blur_job *job;
+	uint64_t now;
 	int writable;
 	int done;
 
@@ -871,8 +872,13 @@ kwl_glass_blur_take(
 	if (job == NULL)
 		return;
 	writable = kwl_compose_host_writable(server);
-	if (!writable && kwl_milliseconds() - glass_blur_held_ms < GLASS_BLUR_HOLD_MS)
-		return;
+	if (!writable) {
+		now = kwl_milliseconds();
+		if (now - glass_blur_held_ms < GLASS_BLUR_HOLD_MS)
+			return;
+	}
+
+	/* Shows the held drawing and lets it go. */
 	glass_blur_held = NULL;
 	blur_apply(server, job);
 	blur_free(job);
@@ -951,7 +957,13 @@ blur_run(
 	}
 
 	/* The picture drawn into them. */
-	drawn = wallpaper_render(&job->picture, job->width, job->height, (unsigned char *)job->rows, (size_t)job->width * sizeof(*job->rows), (unsigned char *)job->blurred,
+	drawn = wallpaper_render(
+	    &job->picture,
+	    job->width,
+	    job->height,
+	    (unsigned char *)job->rows,
+	    (size_t)job->width * sizeof(*job->rows),
+	    (unsigned char *)job->blurred,
 	    (size_t)small_width * sizeof(*job->blurred));
 	if (drawn != 0)
 		job->error = drawn;
@@ -965,6 +977,8 @@ blur_done(
 {
 	struct kwl_server *server;
 	struct glass_blur_job *job;
+	int hold;
+	int writable;
 
 	/* A drawing of an output's old size is made again at the new one, from the same picture. */
 	server = context;
@@ -984,12 +998,19 @@ blur_done(
 	 * Held for a pass where the images it fits may be written (instead of
 	 * new ones made); one held already is shown first, as it is older.
 	 */
+	hold = 0;
 	if (job->error == 0 &&
 	    server->compose != NULL &&
 	    server->compose->glass != NULL &&
 	    server->compose->glass->wallpaper.width == job->width &&
-	    server->compose->glass->wallpaper.height == job->height &&
-	    !kwl_compose_host_writable(server)) {
+	    server->compose->glass->wallpaper.height == job->height) {
+		writable = kwl_compose_host_writable(server);
+		if (!writable)
+			hold = 1;
+	}
+
+	/* Shows the one held already first, then holds this one. */
+	if (hold) {
 		if (glass_blur_held != NULL) {
 			blur_apply(server, glass_blur_held);
 			blur_free(glass_blur_held);
@@ -1149,9 +1170,14 @@ wallpaper_target(
 
 	/* New ones, the old ones let go after the frames given before. */
 	error = wallpaper_renew(server, glass, width, height);
-	if (error == 0)
-		*renewed = 1U;
-	return error;
+
+	/* Reports why the images could not be renewed. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: new images stand. */
+	*renewed = 1U;
+	return 0;
 }
 
 /*
@@ -3153,6 +3179,7 @@ glass_large_prepare(
 {
 	struct kwl_glass *glass;
 	VkResult result;
+	int writable;
 	int error;
 
 	/* Nothing without the look's text. */
@@ -3185,10 +3212,13 @@ glass_large_prepare(
 		result = kwl_host_image_create(server->compose, GLASS_LARGE_WIDTH, GLASS_LARGE_HEIGHT, server->compose->sampler, &glass->large);
 		if (result != VK_SUCCESS)
 			return EIO;
-	} else if (!glass->worker_running && !kwl_compose_host_writable(server)) {
-		error = glass_image_renew(server, &glass->large, GLASS_LARGE_WIDTH, GLASS_LARGE_HEIGHT, server->compose->sampler);
-		if (error != 0)
-			return error;
+	} else if (!glass->worker_running) {
+		writable = kwl_compose_host_writable(server);
+		if (!writable) {
+			error = glass_image_renew(server, &glass->large, GLASS_LARGE_WIDTH, GLASS_LARGE_HEIGHT, server->compose->sampler);
+			if (error != 0)
+				return error;
+		}
 	}
 
 	/*

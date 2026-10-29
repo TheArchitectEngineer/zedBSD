@@ -130,6 +130,7 @@ kwl_scanout_pass(
 {
 	struct kwl_scanout_facts facts;
 	unsigned reason;
+	int busy;
 
 	/* The pass's facts and the rules' answer. */
 	scanout_facts(server, top, &facts);
@@ -154,7 +155,10 @@ kwl_scanout_pass(
 	}
 
 	/* Only with the present thread; one entry at a time, not while the display changes (a later pass tries again). */
-	if (!scanout_started || server->compose == NULL || server->scanout_entering != NULL || kwl_display_busy(server))
+	if (!scanout_started || server->compose == NULL || server->scanout_entering != NULL)
+		return 0;
+	busy = kwl_display_busy(server);
+	if (busy)
 		return 0;
 
 	/*
@@ -479,6 +483,7 @@ scanout_answered(
 	void *context)
 {
 	struct kwl_scanout_facts facts;
+	struct kwl_object *current;
 	struct kwl_object *top;
 	unsigned reason;
 
@@ -500,7 +505,14 @@ scanout_answered(
 	/* The facts as they are now: a window no longer to be shown straight stays composed. */
 	scanout_facts(server, top, &facts);
 	reason = kwl_scanout_decide(&facts);
-	if (reason != KWL_SCANOUT_DIRECT || top != kwl_top_window(server)) {
+	if (reason != KWL_SCANOUT_DIRECT) {
+		server->scanout_entering = NULL;
+		return;
+	}
+
+	/* A window that is no longer the top one stays composed too. */
+	current = kwl_top_window(server);
+	if (top != current) {
 		server->scanout_entering = NULL;
 		return;
 	}

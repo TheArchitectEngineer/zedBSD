@@ -251,7 +251,11 @@ kwl_display_take(
 	(void)kwl_lane_take(&server->compose->display_lane, server);
 }
 
-/* Tells whether a change of the display runs: no frame is drawn meanwhile. */
+/*
+ * Tells whether a change of the display runs.
+ *
+ * No frame is drawn meanwhile.
+ */
 int
 kwl_display_busy(
 	struct kwl_server *server)
@@ -277,6 +281,7 @@ kwl_display_settle(
 {
 	struct kwl_compose *compose;
 	uint64_t deadline;
+	uint64_t now;
 	unsigned taken;
 	unsigned busy;
 
@@ -289,7 +294,8 @@ kwl_display_settle(
 	deadline = kwl_milliseconds() + DISPLAY_SETTLE_MS;
 	while (compose->display_busy) {
 		/* A change that lasts leaves nothing safe. */
-		if (kwl_milliseconds() > deadline) {
+		now = kwl_milliseconds();
+		if (now > deadline) {
 			kwl_fatal("KWL FAILED site=display errno=%d step=settle parking=%u", ETIMEDOUT, compose->display_parking);
 			_exit(1);
 		}
@@ -691,9 +697,15 @@ kwl_display_output_open(
 	if (change == NULL)
 		return ENOMEM;
 	error = kwl_display_begin(server, display_open_parked, change);
-	if (error != 0)
+
+	/* A change that did not begin is freed here. */
+	if (error != 0) {
 		free(change);
-	return error;
+		return error;
+	}
+
+	/* Succeeded: the change began. */
+	return 0;
 }
 
 /*
@@ -724,9 +736,15 @@ kwl_display_output_close(
 	if (change == NULL)
 		return ENOMEM;
 	error = kwl_display_begin(server, display_close_parked, change);
-	if (error != 0)
+
+	/* A change that did not begin is freed here. */
+	if (error != 0) {
 		free(change);
-	return error;
+		return error;
+	}
+
+	/* Succeeded: the change began. */
+	return 0;
 }
 
 /*

@@ -155,7 +155,12 @@ kwl_layers_open(
 	printf("KWL LAYER ready width=%u height=%u images=%u\n", layers->width, layers->height, KWL_LAYERS);
 }
 
-/* Destroys the layers' pictures (nothing in flight draws or reads them); a drawing still to complete is not taken. */
+/*
+ * Destroys the layers' pictures.
+ *
+ * Nothing in flight draws or reads them; a drawing still to complete is
+ * not taken.
+ */
 void
 kwl_layers_close(
 	struct kwl_compose *compose)

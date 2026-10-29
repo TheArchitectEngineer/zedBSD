@@ -1857,15 +1857,18 @@ bt_send_request(
 
 	/* The connection and the line. */
 	error = bt_connect(&bluetooth->request, line);
-	if (error == 0)
-		return 0;
 
 	/* A request that cannot be sent ends at once, failed. */
-	changed = 0;
-	(void)snprintf(bluetooth->request_reason, sizeof(bluetooth->request_reason), "%s", "lost");
-	bluetooth->request_error = ENOTCONN;
-	bt_request_end(bluetooth, &changed);
-	return error;
+	if (error != 0) {
+		changed = 0;
+		(void)snprintf(bluetooth->request_reason, sizeof(bluetooth->request_reason), "%s", "lost");
+		bluetooth->request_error = ENOTCONN;
+		bt_request_end(bluetooth, &changed);
+		return error;
+	}
+
+	/* Succeeded: the request is sent. */
+	return 0;
 }
 
 /* The daemon does not answer: unreachable, no device, the agent dropped; the questions asked are over. */

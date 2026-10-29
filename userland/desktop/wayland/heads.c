@@ -2012,8 +2012,12 @@ heads_file_done(
 	/* How it went, logged with how long it waited and took. */
 	server = context;
 	job = (struct heads_file_job *)lane_job;
-	printf("KWL DISPLAYS saved by=io-file ticket=%llu errno=%d wait_ms=%llu ms=%llu\n", (unsigned long long)job->ticket, job->error,
-	    (unsigned long long)(job->started_ms - job->given_ms), (unsigned long long)(job->ended_ms - job->started_ms));
+	printf(
+	    "KWL DISPLAYS saved by=io-file ticket=%llu errno=%d wait_ms=%llu ms=%llu\n",
+	    (unsigned long long)job->ticket,
+	    job->error,
+	    (unsigned long long)(job->started_ms - job->given_ms),
+	    (unsigned long long)(job->ended_ms - job->started_ms));
 
 	/* The file holds every choice up to its ticket. */
 	heads_saving.written = job->ticket;
