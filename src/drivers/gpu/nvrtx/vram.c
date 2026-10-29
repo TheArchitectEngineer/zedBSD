@@ -75,6 +75,9 @@
 /* How many times a full window is told in the log (the first ones say why an allocation failed). */
 #define VRAM_BAR1_FULL_MARKS		8U
 
+/* The objects from this size on are cleared by the copy engine when it can (smaller ones take the CPU a few ms at most). */
+#define VRAM_CLEAR_COPY_BYTES		0x40000ULL
+
 /* The window's page tables are on a 64 KiB boundary, so one window position of PRAMIN starts them. */
 #define VRAM_TABLES_ALIGN		0x10000ULL
 
@@ -439,9 +442,16 @@ nvrtx_bo_map(
 }
 
 /*
- * Clears a buffer object's VRAM: through the window when the object is
- * mapped, else through the register window (PRAMIN), so an object the CPU
- * never reads takes no part of the window.
+ * Clears a buffer object's VRAM.  A large one goes to the copy engine when
+ * the driver's work channel can take it (the CPU's windows write about
+ * 32 MB/s, 250 ms for one 1920x1080 picture); otherwise the CPU writes it,
+ * through the window when the object is mapped, else through the register
+ * window (PRAMIN), so an object the CPU never reads takes no part of the
+ * window.
+ *
+ * Returns 0, the error of the register window, or EBUSY when the copy
+ * engine's fill did not end: the GPU may still write the object's VRAM,
+ * which must then never be given back.
  */
 int
 nvrtx_bo_clear(
@@ -450,6 +460,14 @@ nvrtx_bo_clear(
 {
 	volatile uint8_t *cpu;
 	uint64_t at;
+	int error;
+
+	/* A large object by the copy engine, when it can; a fill that did not end is told. */
+	if (bo->size >= VRAM_CLEAR_COPY_BYTES) {
+		error = nvrtx_work_clear(gpu, bo->vram, bo->size);
+		if (error == 0 || error == EBUSY)
+			return error;
+	}
 
 	/* An unmapped object: the register window in 64 KiB pieces. */
 	if (bo->bar1_mapped == 0)

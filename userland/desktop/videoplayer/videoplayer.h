@@ -48,15 +48,13 @@ struct kl_window;
 
 /*
  * Whether the player draws with its own presenter and takes pictures the
- * GPU holds (ws236-p011): on the Raspberry Pi 4 (the arm64 build), where
- * the CPU cannot convert and scale a picture at its rate.  Elsewhere the
- * frame is drawn by the CPU and shown by libkeiland, as before.
+ * GPU holds: the CPU cannot convert and scale a picture at its rate on the
+ * Raspberry Pi 4, nor read one out of a discrete GPU's memory fast enough.
+ * A device that cannot import memory gets pictures the CPU scaled instead.
+ * Without the presenter the frame is drawn by the CPU and shown by
+ * libkeiland.
  */
-#if defined(__aarch64__)
 #define VP_GPU_PRESENT		1
-#else
-#define VP_GPU_PRESENT		0
-#endif
 
 /*
  * With the presenter, the pictures decoded ahead at most, and the pictures

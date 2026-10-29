@@ -328,11 +328,13 @@ static const struct objects_gr_kind objects_gr_kinds[] = {
 
 /*
  * The copy engine's methods and values for a fill: the constant, the
- * component setup, the destination, the launch.
+ * component setup, the destination, the launch (one line, or several
+ * lines a pitch apart).
  *
  * Values referenced: NVIDIA open-gpu-doc classes/host/clc46f.h
- * (NVC46F_SET_OBJECT) and classes/dma-copy/clc5b5.h (NVC5B5_LAUNCH_DMA,
- * NVC5B5_OFFSET_OUT_UPPER, NVC5B5_LINE_LENGTH_IN, NVC5B5_SET_REMAP_CONST_A,
+ * (NVC46F_SET_OBJECT) and classes/dma-copy/clc5b5.h (NVC5B5_LAUNCH_DMA and
+ * its MULTI_LINE_ENABLE field, NVC5B5_OFFSET_OUT_UPPER to NVC5B5_LINE_COUNT,
+ * NVC5B5_LINE_LENGTH_IN, NVC5B5_SET_REMAP_CONST_A,
  * NVC5B5_SET_REMAP_COMPONENTS and their fields).
  */
 #define OBJECTS_COPY_SET_OBJECT		0x000U
@@ -343,6 +345,7 @@ static const struct objects_gr_kind objects_gr_kinds[] = {
 #define OBJECTS_COPY_REMAP_COMPONENTS	0x708U
 #define OBJECTS_COPY_REMAP_FILL_A	(0x4U | (0x3U << 16))
 #define OBJECTS_COPY_LAUNCH_FILL	(0x2U | (1U << 2) | (1U << 7) | (1U << 8) | (1U << 10))
+#define OBJECTS_COPY_LAUNCH_MULTI_LINE	(1U << 9)
 
 static void objects_clear(uint8_t *bytes, size_t length);
 static size_t objects_method(uint8_t *push, size_t at, uint32_t method, uint32_t count);
@@ -672,6 +675,61 @@ nvrtx_push_copy_fill(
 	/* Launches a non-pipelined, flushed, pitch-to-pitch fill. */
 	at = objects_method_on(push, at, subchannel, OBJECTS_COPY_LAUNCH, 1U);
 	nvrtx_put32(push, at, OBJECTS_COPY_LAUNCH_FILL);
+	at += 4U;
+
+	/* Succeeded: the push buffer's length. */
+	return at;
+}
+
+/*
+ * Writes the push buffer of a copy-engine fill of lines rows of line_words
+ * 4-byte words, line_words * 4 bytes apart (one run of
+ * lines * line_words words), with one constant, on a subchannel the copy
+ * class is already bound to.
+ *
+ * Returns the length in bytes (at most NVRTX_PUSH_COPY_CLEAR_BYTES).
+ *
+ * Procedure referenced: Mesa 25.0.7 src/nouveau/vulkan/nvk_cmd_copy.c
+ * (nvk_CmdFillBuffer: the constant and the components, then the
+ * destination, both pitches, the line's length in components and the
+ * lines, then a multi-line launch with the remap).
+ */
+size_t
+nvrtx_push_copy_clear(
+	uint8_t *push,
+	uint32_t subchannel,
+	uint64_t destination,
+	uint32_t line_words,
+	uint32_t lines,
+	uint32_t value)
+{
+	size_t at;
+
+	/* Fills from one 4-byte constant. */
+	at = objects_method_on(push, 0U, subchannel, OBJECTS_COPY_REMAP_CONST_A, 1U);
+	nvrtx_put32(push, at, value);
+	at += 4U;
+	at = objects_method_on(push, at, subchannel, OBJECTS_COPY_REMAP_COMPONENTS, 1U);
+	nvrtx_put32(push, at, OBJECTS_COPY_REMAP_FILL_A);
+	at += 4U;
+
+	/*
+	 * The destination's virtual address, then the rows: the source's and
+	 * the destination's pitch in bytes (the engine checks both of a
+	 * multi-line launch), their length in words, their count.
+	 */
+	at = objects_method_on(push, at, subchannel, OBJECTS_COPY_OFFSET_OUT_UPPER, 6U);
+	nvrtx_put32(push, at, (uint32_t)(destination >> 32));
+	nvrtx_put32(push, at + 4U, (uint32_t)(destination & 0xffffffffU));
+	nvrtx_put32(push, at + 8U, line_words * 4U);
+	nvrtx_put32(push, at + 12U, line_words * 4U);
+	nvrtx_put32(push, at + 16U, line_words);
+	nvrtx_put32(push, at + 20U, lines);
+	at += 24U;
+
+	/* Launches a non-pipelined, flushed, pitch-to-pitch fill of the rows. */
+	at = objects_method_on(push, at, subchannel, OBJECTS_COPY_LAUNCH, 1U);
+	nvrtx_put32(push, at, OBJECTS_COPY_LAUNCH_FILL | OBJECTS_COPY_LAUNCH_MULTI_LINE);
 	at += 4U;
 
 	/* Succeeded: the push buffer's length. */

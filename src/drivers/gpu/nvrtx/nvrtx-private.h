@@ -470,6 +470,13 @@ bool
 nvrtx_stage_video_wanted(void);
 
 /*
+ * Reports whether the boot asked for the first copy-engine clear of the
+ * VRAM to be broken on purpose (nvrtx.clear.fault=1).
+ */
+bool
+nvrtx_stage_clear_fault_wanted(void);
+
+/*
  * Reports whether the GPU device is also a renderer (the default; nvrtx.vk=0
  * turns it off).
  */

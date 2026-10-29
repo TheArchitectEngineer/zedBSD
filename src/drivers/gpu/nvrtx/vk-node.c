@@ -1007,8 +1007,9 @@ vk_node_backing_drop(
 
 /*
  * Reports whether the node's GPU decodes video: its decoder takes
- * pictures and the driver's work channel has the copy object its pictures
- * are read out with (the sessions' channels are made the same way).
+ * pictures and the driver's work channel had at the start the copy object
+ * its pictures are read out with (the sessions' channels are made the
+ * same way; a later loss of the driver's channel leaves them as they are).
  */
 bool
 nvrtx_node_video_available(
@@ -1022,7 +1023,7 @@ nvrtx_node_video_available(
 		return false;
 
 	/* The copy object reads the pictures out. */
-	if (node->gpu->work.driver.copy_made == 0)
+	if (node->gpu->work.copy_ready == 0)
 		return false;
 
 	/* Succeeded: the GPU decodes video. */
