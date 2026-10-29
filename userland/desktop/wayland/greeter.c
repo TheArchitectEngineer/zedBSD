@@ -82,6 +82,7 @@
 #include "lock-swipe.h"
 
 #include "userland/desktop/libkeiland-backend/keiland-backend.h"
+#include "include/kern/os-name.h"
 
 #include <keiland/keiland.h>
 
@@ -182,7 +183,7 @@
 #define GREETER_KEY_LEFTMETA	125U
 #define GREETER_KEY_RIGHTMETA	126U
 
-/* The Kei mark's square at the bottom left, in pixels. */
+/* The mark's square at the bottom left, in pixels. */
 #define GREETER_BRAND_MARK	48
 
 /* The evdev codes of the keys the screen takes apart from the characters. */
@@ -626,7 +627,7 @@ kwl_greeter_draw(
 	/* The time and the date, above the card. */
 	greeter_draw_clock(server, command, &layout);
 
-	/* The Kei mark and word at the bottom left (ws035-p108). */
+	/* The mark and the system's name at the bottom left. */
 	greeter_draw_brand(server, command);
 
 	/* Shutting down or restarting: only that, with a spinner, in the card. */
@@ -1573,8 +1574,8 @@ greeter_draw_button(
 }
 
 /*
- * Draws the Kei mark and the word Kei at the bottom left of the output, as
- * on the boot screen (the word in three letters, never a lone K).
+ * Draws the mark and the system's name at the bottom left of the output, as
+ * on the boot screen (the whole name, never its first letter alone).
  */
 static void
 greeter_draw_brand(
@@ -1590,8 +1591,8 @@ greeter_draw_brand(
 	y = (int32_t)server->height - GREETER_MARGIN - GREETER_BRAND_MARK;
 	glass_draw_mark(server, command, x, y, GREETER_BRAND_MARK, GLASS_MARK_SPLASH, 1.0f);
 
-	/* The word beside it, on the mark's lower part, in the boot screen's slate. */
-	glass_draw_text(server, command, SIZE_ICON, x + GREETER_BRAND_MARK + 8, y + GREETER_BRAND_MARK - 12, "Kei", 200, slate);
+	/* The name beside it, on the mark's lower part, in the boot screen's slate. */
+	glass_draw_text(server, command, SIZE_ICON, x + GREETER_BRAND_MARK + 8, y + GREETER_BRAND_MARK - 12, ZEDBSD_OS_NAME, 200, slate);
 }
 
 /*

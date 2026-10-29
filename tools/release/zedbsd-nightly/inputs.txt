@@ -1,4 +1,4 @@
-# Pinned inputs for the Kei-nightly base archive (ws088-p001).
+# Pinned inputs for the zedbsd-nightly base archive.
 # Format: <file name> <SHA-256> <URL>. Each file is downloaded once into the
 # cache directory and must match its digest before anything reads it.
 # The MSYS2 packages are the exact UCRT64 packages whose DLLs are bundled

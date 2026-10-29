@@ -1,13 +1,13 @@
-Kei-nightly: third-party software
-=================================
+zedbsd-nightly: third-party software
+====================================
 
 This package bundles the programs and libraries below. Each keeps its own
 license; the full texts are in the LICENSES directory (LICENSES/<name>/).
 Where a license (GPL, LGPL) requires the corresponding source code, the
 "Source" line says where to get the exact source of the bundled binary.
 
-Kei itself (data/hdd-image.img, when present) is zedBSD, distributed under
-the zlib license: https://github.com/awemorris/zedBSD. The licenses of the
+The disk image (data/hdd-image.img, when present) is zedBSD, distributed
+under the zlib license: https://github.com/awemorris/zedBSD. The licenses of the
 software inside the image are installed in the image under /usr/share/licenses.
 
 
@@ -19,7 +19,7 @@ Files:   qemu-system-x86_64.exe, qemu-img.exe,
          share/kvmvapic.bin, share/linuxboot_dma.bin, share/multiboot_dma.bin,
          share/pvh.bin, share/vof.bin, share/vof-nvram.bin
 Version: QEMU 11.0.0 with the WINQ-EMU alpha10 patches (WHPX, Venus on
-         Windows) and changes for Kei
+         Windows) and changes for zedBSD
 License: GPL-2.0-only; some parts are under other GPL-compatible licenses
          (LICENSES/qemu/LICENSE explains which)
 Source:  https://github.com/awemorris/qemu-win32-vulkan
@@ -34,7 +34,7 @@ virglrenderer (WINQ-EMU fork)
 
 Files:   libvirglrenderer-1.dll
 Version: virglrenderer with the WINQ-EMU alpha10 patches (Venus on Windows)
-         and changes for Kei
+         and changes for zedBSD
 License: MIT (LICENSES/virglrenderer/COPYING)
 Source:  https://github.com/awemorris/virglrenderer
          commit @VIRGLRENDERER_COMMIT@

@@ -664,7 +664,7 @@ kwl_notify_draw_glass(
 }
 
 /*
- * Draws a notification's icon in a square at (x, y): the Kei mark for the
+ * Draws a notification's icon in a square at (x, y): the mark for the
  * compositor's own, the application's picture when it has one, else its
  * name's first letter on a tile of the accent colour.
  */
@@ -684,7 +684,7 @@ popup_draw_icon(
 	float ink[4];
 	int picture;
 
-	/* The compositor's own: the Kei mark. */
+	/* The compositor's own: the mark. */
 	if (item->client == 0U) {
 		glass_draw_mark(server, command, x, y, POPUP_ICON, GLASS_MARK_BAR, opacity);
 		return;
