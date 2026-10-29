@@ -154,8 +154,8 @@ WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§13。compiler は配
 
 ## P7 への案（変えていない）
 
-- （D3）`plan/ws313/tests/c5-build-check.sh` に `tests/mali-vk-meta-host-test.c` の行（上の cc の行、引数に SPIR-V の directory）を足すこと（script は D3 の所有の外）。
-- （D3）`vk-desc.c` の `NO_WORKGROUP_MEMORY` の語（上の D3 の判断の最後）を v10.xml の log2 の形（word 1 = 0x1f）にするか、夜の結果を見てから決めること。直すなら `tests/mali-vk-desc-host-test.c` の 2 つの `0x80000000U` も直す。
+- ~~（D3）`plan/ws313/tests/c5-build-check.sh` に `tests/mali-vk-meta-host-test.c` の行~~（P7 が足した、2026-10-29。引数無しで流す）。
+- ~~（D3）`vk-desc.c` の `NO_WORKGROUP_MEMORY` の語~~: **P7 が v10.xml の log2 の形（word 1 = 0x1f）に直した**（2026-10-29、q1675-i04）。判断: Mesa（panvk・gallium）が v10 の実機で使う語は gen_pack の util_logbase2(0x80000000) = 31 で、今までの 0x80000000 は field としては「instance 1 個・size scale 0・base 0」という Mesa が出さない語だった。どちらも G310 の実機では未試験だが、資料の上で正しく実機で使われている形に合わせる方を推しとした。全ての TSD（compute の dispatch、pass の draw、pre-frame の DCD が指す TSD）の word 1 が変わるので、**夜に最初の compute・draw で TSD の fault（`mali: render: submission K failed` の fault の値が TSD の descriptor を指す）が出たら、まずこの 1 語（`vk-desc.c` の `NO_WORKGROUP_MEMORY`）を 0x80000000U に戻して比べる**。`tests/mali-vk-desc-host-test.c` の 2 か所も 0x1fU に。
 - （D3）compiler（A3）: OpFunctionCall の inline（glslc の -O 無しの出力の関数が lower されない）。
 
 - ~~`display/display.c` の `import_image`~~（D2 で実装、実機未試験）。
