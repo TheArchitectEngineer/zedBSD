@@ -238,6 +238,22 @@ nvrtx_vk_blob_read(void *owner, uint8_t *to, const uint8_t *from, size_t length)
 	memcpy(to, from, length);
 }
 
+bool
+nvrtx_vk_video_available(void *owner)
+{
+	(void)owner;
+	return false;
+}
+
+int
+nvrtx_vk_video_decode(void *owner, uint64_t va, uint32_t bytes)
+{
+	(void)owner;
+	(void)va;
+	(void)bytes;
+	return EIO;
+}
+
 int
 main(void)
 {
