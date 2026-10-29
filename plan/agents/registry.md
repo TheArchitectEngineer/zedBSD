@@ -7,7 +7,7 @@
 | --- | --- | --- | --- | --- | --- |
 | P1 | phase-runner | ws309 (q1662-i07) | `/home/awe/zedBSD-worktrees/p1-ws309g` / `agent/p1-ws309g` | running | a436f63ae（merge 2b5979b98） |
 | P2 | phase-runner | ws242 (q1678-i01) | `/home/awe/zedBSD-worktrees/p2-ws242` / `agent/p2-ws242` | running（実装だけ、merge は試験の後） | fdca948fe（merge ae2e1283c） |
-| P3 | phase-runner | ws311 (q1673-i01) | `/home/awe/zedBSD-worktrees/p3-ws311` / `agent/p3-ws311` | running | 642d812f3（merge 1fd28c4de） |
+| P3 | phase-runner | ws221 p010 (q1679-i01) | `/home/awe/zedBSD-worktrees/p3-ws221f` / `agent/p3-ws221f` | running | cc2ad2075（merge 3edf82c60） |
 | P4 | phase-runner | ws307 (q1665-i08) | `/home/awe/zedBSD-worktrees/p4-ws307l` / `agent/p4-ws307l` | running | d6139052b（merge 6b115e9fd） |
 | P5 | phase-runner | ws250 (q1676-i01) | `/home/awe/zedBSD-worktrees/p5-ws250` / `agent/p5-ws250` | running（実装だけ、merge は試験の後） | 8755132b3（merge 478c88fdf） |
 | P6 | phase-runner | ws243 (q1677-i01) | `/home/awe/zedBSD-worktrees/p6-ws243c` / `agent/p6-ws243c` | running（実装だけ、merge は試験の後） | 930169a83（merge 45c65539d） |
