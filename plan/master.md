@@ -33,6 +33,7 @@ main に未 merge の branch は [registry](agents/registry.md) の試験待ち�
 - 解釈（Q1）: 10.0.10.3 は P3 の WS221 p010 が終わるまで P3 が専有、次に P5（WS243 p006 の実機）、その後 RTX の driver の最適化（WS291 の NVIDIA の段）。VF2 は P3 が手放した後に C5 の試験へ。
 - WS068（2026-10-29 ユーザー「WS068ですが、i915の試験を受け入れ条件から外して、VenusのみでOKとします。また、残りが大きい件は了解しましたので、phaseに分解して、目標を管理しながら、空いた時間に細々と取り組んで、WS完了に近づいていけるように、準備してください。」）: 受け入れは Venus のみ。P2 が残りを Phase に分けて返却し、以後は手の空いた担当が Phase ごとに進める（前の「P2 は WS068 の完了で返却」を置き換える、Q1 の解釈）。
 - WS221（2026-10-29 ユーザー「P3は、SACKの実装を優先してください。ATRを有効にした評価で進めます。」）: centris の ixgbe の ATR は有効に戻し、評価は ATR 有効で。P3 は zedBSD の TCP の SACK を先に実装し、その後 q1689（5330 の NCM）。
+- WS221 p014・WS315（2026-10-30 ユーザー「xHCIの改修は行いましょう。たとえ今回効果がなくても、価値がある実装だと考えます。Realtek方式については、NCMでどこまで速度が上がるか観察してから、ぜひ実装しましょう。…」原文は ws315/ws.md）: xHCI の 1 endpoint に複数の要求は効果が無くても入れる。その後 Realtek の vendor mode の driver（WS315）。
 <!-- master:agents:end -->
 
 **ユーザー不在の間の自律実行（2026-10-29 12:4x ユーザー「夜まで寝ます。しばらく質問に回答できないので、疑問で止まったphaseがあれば、質問はメッセージ表示だけしてクリック回答にはせず、別なphaseに移って作業を進めてください。」）**: 判断が要る Phase は uncleared・止めにして理由と要る判断を記録し、Q1 は問いをメッセージで書くだけ（クリックの問いにしない）。担当は別の Phase に移る。
@@ -102,7 +103,7 @@ main に未 merge の branch は [registry](agents/registry.md) の試験待ち�
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-362 · q1693 · WS315 · KL_VERSION 99（97・98 は WS314 の P2 が使用、未 merge）。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-362 · q1693 · WS316 · KL_VERSION 99（97・98 は WS314 の P2 が使用、未 merge）。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
@@ -170,6 +171,7 @@ BUG-362 · q1693 · WS315 · KL_VERSION 99（97・98 は WS314 の P2 が使用�
 | [WS310](ws310/ws.md) | MG004 | ACPI の _OSC を呼び、システム全体の挙動を厳重に確かめる（WS301 の Q301-3、2026-10-29 ユーザー「最終的には呼ぶが、別なWSにして…今は呼ばない。」） | planning | p001（WS301 の後） |
 | [WS313](ws313/ws.md) | MG008 | ODROID-C5（Amlogic S905X5M）の BSP（bsp-s905x5m）と Mali の GPU で、起動して desktop を表示する（2026-10-29 ユーザー） | incomplete（全 block の code を揃えた、実装済み・実機未試験。2026-10-29 夜にユーザーが実機で試験） | 夜の試験（plan/ws313/tests/README.md）→ 直し、Mali の desktop（render pass の LOAD など） |
 | [WS314](ws314/ws.md) | MG006 | libkeiland の API を component ごとの header に分け、プログラミングの解説（英語）を書き、fd と UNIX への依存を API から外す（2026-10-30 ユーザー） | planning（q1690 P2） | p001 header の分割から |
+| [WS315](ws315/ws.md) | MG003 | Realtek の USB 2.5G・5G の NIC を独自の方式（vendor mode）の driver で速く（2026-10-30 ユーザー） | planning | WS221 p014（xHCI）と NCM の観察の後に p001 設計 |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
 | [WS296](ws296/ws.md) | MG001 | src/drivers（gpu/ を除く）の comment から開発の管理情報を消し、XXX の規約の当て直し（usb など 11 file） | planned | 18 LW、担当の起動はユーザーの指示の時 |
