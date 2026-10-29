@@ -22,9 +22,9 @@
 
 ## 確かめ
 
-- build（target の clang、`-Werror`）: `make -k -j32 ZEDBSD_CONFIG=plan/ws307/tests/config-amd64-p009.mk BUILD=build/p014 <変えた userland の 36 個の .o>` rc 0、warning 0。install-admin の main.o は index の hash の header を仮の値にして同じ command で compile（warning 0）。`make … build/p014/vmunix build/p014/uefi/BOOTX64.EFI build/zedimage-host` rc 0、warning 0、`amd64 vmunix check: PASS`。
+- build（target の clang、`-Werror`）: `make -k -j32 ZEDBSD_CONFIG=plan/ws307/tests/config-amd64-p009.mk BUILD=build/p014 <変えた userland の 36 個の .o>` rc 0、warning 0。install-admin の main.o は index の hash の header を仮の値にして同じ command で compile（warning 0、基点との code の比較も同じ方法で: code は違い data は同じ）。`make … build/p014/vmunix build/p014/uefi/BOOTX64.EFI build/zedimage-host` rc 0、warning 0、`amd64 vmunix check: PASS`。
 - 動作が変わらないことの確かめ: 基点（766f5584b を `git archive` した `build/tmp/p014-base.*`）で同じ object・vmunix・BOOTX64.EFI を build し、逆アセンブルを比べた。
-  - userland の 36 個のうち 18 個（comment だけの p002 の file、installer の catalog・disk・helper、settings の page-about など）は code と data が同じ。残り 18 は条件を分けた所の code の並びが違い、data は文字列の並びだけ（flow.c の `" autologin %s"` が `" autologin yes"`・`" autologin no"` の 2 つの文字列に。送る要求の byte は同じ）。
+  - userland の 36 個のうち 21 個（comment だけの p002 の file、diskpart の table、installer の catalog・disk・helper、settings の page-about など）は code と data が同じ。残り 15 は条件を分けた所の code の並びが違い、data は文字列の並びだけ（flow.c の `" autologin %s"` が `" autologin yes"`・`" autologin no"` の 2 つの文字列に。送る要求の byte は同じ）。
   - vmunix: 関数ごとに address・即値・comment を除いて比べ、違う関数は fat.c・ufs.c・file.c の 8 つ（fat_identify・parse_bpb・collect_extent・ufs_identify・ufs_mount_impl・ufs_file_extents・j3_replay・quota_import_config）だけ。その差分を読み、分けた条件の return の値が元と同じことを確かめた。
 - host の試験（基点と直した後の両方、scratchpad の 1 本の runner）: diskpart-table-test・mkswap-partition-test・mkfs-fat32-test・root-config-test・fat-bpb-4k-test・install-admin-plan-test・install-admin-unpack-test・installer-model-test（p4-ws307l の build の index）・ufs-read-test・mkfs-ufs-native-test・native-partuuid-test・installer-manifest-test・installer-units-test の 13 個が両方で PASS。
 - `git diff --check` clean。追加の行に WS・Phase・plan/ の参照が無いことを grep で確かめた。
