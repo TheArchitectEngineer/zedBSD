@@ -32,6 +32,7 @@
 #include <kern/clock.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
+#include <kern/sched.h>
 #include <uapi/errno.h>
 
 #include "drivers/gpu/nvrtx/nvrtx-gpu.h"
@@ -49,6 +50,18 @@
 #define CHANNEL_REG_WINDOW_BASE		0x001700U
 #define CHANNEL_WINDOW_AT		0x700000U
 #define CHANNEL_WINDOW_BYTES		0x100000U
+
+/*
+ * A fill holds the register window for one piece of at most 16 KiB (4096
+ * register writes), then steps aside while another user waits for the
+ * window: the mutex's release does not hand it over, so a fill that took
+ * it again at once kept every other user (the display's notifiers, the work
+ * channel's submissions) waiting until a fill of megabytes (a new blob)
+ * ended.  The step aside ends when no user waits, or after 2 ms, so a
+ * stream of users cannot hold a fill back for good.
+ */
+#define CHANNEL_FILL_PIECE_BYTES	0x4000U
+#define CHANNEL_FILL_ASIDE_US		2000U
 
 /* The VRAM block: the page tables, then the instance block, then the USERD page. */
 #define CHANNEL_BLOCK_BYTES		0x10000U
@@ -132,6 +145,8 @@
 static int channel_vram_write(struct nvrtx_gpu *gpu, uint64_t address, const uint8_t *data, size_t length);
 static int channel_vram_read32(struct nvrtx_gpu *gpu, uint64_t address, uint32_t *value);
 static int channel_vram_fill(struct nvrtx_gpu *gpu, uint64_t address, uint32_t value, size_t length);
+static void channel_window_take(struct nvrtx_gpu *gpu);
+static void channel_fill_aside(struct nvrtx_gpu *gpu);
 static int channel_buffers(struct nvrtx_gpu *gpu);
 static int channel_flush_tlb(struct nvrtx_gpu *gpu);
 static int channel_flush(struct nvrtx_gpu *gpu, uint64_t root, uint32_t type);
@@ -622,8 +637,10 @@ nvrtx_vram_zero(
 /*
  * Fills a run of the VRAM with one 32-bit value through the register window.
  *
- * The run goes in pieces that each lie inside one 64 KiB step of the
- * window.  The address and the length are whole words.
+ * The run goes in pieces of at most CHANNEL_FILL_PIECE_BYTES that each lie
+ * inside one 64 KiB step of the window; between them the fill steps aside
+ * for the window's other users.  The address and the length are whole
+ * words.
  */
 int
 nvrtx_vram_fill(
@@ -640,16 +657,20 @@ nvrtx_vram_fill(
 	if ((address % 4U) != 0U || (length % 4U) != 0U)
 		return EINVAL;
 
-	/* Fills up to the next 64 KiB boundary each time. */
+	/* Fills up to the next 64 KiB boundary or one piece each time, stepping aside before the next. */
 	done = 0U;
 	while (done < length) {
 		piece = 0x10000U - (size_t)((address + done) & 0xffffU);
+		if (piece > CHANNEL_FILL_PIECE_BYTES)
+			piece = CHANNEL_FILL_PIECE_BYTES;
 		if (piece > length - done)
 			piece = length - done;
 		error = channel_vram_fill(gpu, address + done, value, piece);
 		if (error != 0)
 			return error;
 		done += piece;
+		if (done < length)
+			channel_fill_aside(gpu);
 	}
 
 	/* Succeeded: every word of the run holds the value. */
@@ -696,7 +717,7 @@ channel_vram_write(
 		return EINVAL;
 
 	/* Points the window at the range, writes it word by word, and puts the window back. */
-	mutex_lock(&gpu->window_lock);
+	channel_window_take(gpu);
 
 	saved = nvrtx_rd32(gpu, CHANNEL_REG_WINDOW_BASE);
 	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, (uint32_t)(base >> 16));
@@ -746,6 +767,46 @@ channel_vram_fill(
 	return 0;
 }
 
+/*
+ * Takes the register window's lock for a user other than a fill, counted
+ * as waiting until it has the lock, so a fill steps aside for it.
+ */
+static void
+channel_window_take(
+	struct nvrtx_gpu *gpu)
+{
+	/* Counts the wait, takes the lock, and ends the count. */
+	(void)__atomic_add_fetch(&gpu->window_wanted, 1U, __ATOMIC_ACQ_REL);
+	mutex_lock(&gpu->window_lock);
+	(void)__atomic_sub_fetch(&gpu->window_wanted, 1U, __ATOMIC_ACQ_REL);
+}
+
+/*
+ * Steps a fill aside between its pieces, the window's lock free: gives the
+ * CPU up while another user waits for the lock, until none does or
+ * CHANNEL_FILL_ASIDE_US have passed.
+ */
+static void
+channel_fill_aside(
+	struct nvrtx_gpu *gpu)
+{
+	uint64_t start;
+	uint64_t now;
+	uint32_t wanted;
+
+	/* Gives the CPU up while a user still waits, within the bound. */
+	start = nvrtx_now_us();
+	for (;;) {
+		wanted = __atomic_load_n(&gpu->window_wanted, __ATOMIC_ACQUIRE);
+		if (wanted == 0U)
+			break;
+		now = nvrtx_now_us();
+		if (now - start >= CHANNEL_FILL_ASIDE_US)
+			break;
+		sched_yield();
+	}
+}
+
 /* Reads one word of the VRAM through the register window, then puts the window back. */
 static int
 channel_vram_read32(
@@ -760,7 +821,7 @@ channel_vram_read32(
 		return EINVAL;
 
 	/* Points the window at the word, reads it, and puts the window back. */
-	mutex_lock(&gpu->window_lock);
+	channel_window_take(gpu);
 
 	saved = nvrtx_rd32(gpu, CHANNEL_REG_WINDOW_BASE);
 	nvrtx_wr32(gpu, CHANNEL_REG_WINDOW_BASE, (uint32_t)((address & ~0xffffULL) >> 16));
@@ -1006,7 +1067,7 @@ channel_flush(
 	int error;
 
 	/* Triggers the invalidate and waits for it, one at a time. */
-	mutex_lock(&gpu->window_lock);
+	channel_window_take(gpu);
 
 	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT, (uint32_t)(root >> 8));
 	nvrtx_wr32(gpu, CHANNEL_REG_FLUSH_ROOT_UPPER, 0U);
