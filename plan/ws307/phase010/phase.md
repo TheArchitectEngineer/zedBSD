@@ -3,7 +3,7 @@
 # ws307-p010 installer の app
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §4・§9.1・§10・§11.2（J5・T25）。Queue: q1665 / q1665-i08（担当 P4、2026-10-29、worktree p4-ws307l）。
-- Status: in-progress
+- Status: in-progress（受け入れの QEMU の通しが PASS、Q1 の判定待ち。残りは下の「残り」）
 - 承認: q1665-i01 と同じ（2026-10-29 ユーザー「P4にWS307」、Q1 の中継）。HAL の API・toolchain には触れない。Boot#### は p007 の承認の後（S11 は案内だけ）。
 - ユーザーの要望（原文 2026-10-29）:「インストーラはスクリーンショットをぜひ見せてほしいです。楽しみです。」→ S1〜S11・S7a を QEMU の screendump で撮り `build/` の下の path を Q1 へ。
 
@@ -26,4 +26,13 @@
 
 ## 結果
 
-（実施中）
+- build（2026-10-29）: `make -j32 ZEDBSD_CONFIG=plan/ws307/tests/config-amd64-p010.mk BUILD=build/ws307l-img ZEDBSD_INSTALLER_TEST_FILES="<guest.py extra-files>" installer-image` rc 0、`check-amd64-native-image … OK`。installer の 6 つの .o は target の clang で `-Werror` の warning 0（全 build の warning は外部 package の source だけ）。index は 32 unit（clang・libcxx・emacs 抜き）。
+- host: `sh plan/ws307/tests/host/installer-model-test.sh`（新規、ASan・UBSan、build の index で catalog.c と disk.c）→ PASS（30 ok: index の読み・後ろの unit への依存・既定の閉包・GTK4 の依存・依存で入る項目、probe の読み、live の disk の拒み、GPT 無し・MBR の「選ぶ」の拒み、他の OS の GPT の「選ぶ」可と十分な ESP、FAT の不明で拒む、空きと置き場所、大きさの文字）。`python3 tools/i18n/tr.py check --strict userland/desktop/locale/ja/installer.tr userland/desktop/locale/installer.keys userland/desktop/installer/` → 239 entries、239 translated、0 problems。
+- QEMU: `python3 plan/ws307/tests/p010-screens.py build/ws307l-img/installer-image.img` → **PASS**（`build/ws307-test/p010s.liao5etg`、Venus の GPU、USB で起動、空の NVMe 12 GiB と「他の OS」の SATA 14 GiB（ESP に `\EFI\BOOT\BOOTX64.EFI`、Basic data））。installer が自動で開き（`KWL INSTALLER start`）、QMP の keyboard と tablet で log の control の位置を押して、S1・S2・S3（選ぶ）・S4 の注意の dialog・S4 で 9.7 GiB を作成（`EDIT DONE`、probe の取り直し）・S5・S6 と swap 無しの dialog・S7 と firmware の license・キャンセルの dialog・S10（S4 で書いた変更の一覧）→ やり直して NVMe 全体・S7a・S8・導入の dialog・S9（unpack）・S11（約 7 分）を撮った（21 枚、`shots/`）。撮影は QEMU の VNC の Venus の head（QMP の screendump は GL の scanout の surface が無く失敗する、zdesktop-shot.py の道）。
+- 前の 2 回: `p010s._a_2i2yl`（index の依存の解決の順の不具合で CATALOG EINVAL、S1 で止まった。catalog.c を直した）、`p010s.o5x6af_s`（click の後に再描画されない不具合で license の画面の control が log に出ず止まった。押した時に dirty を立てるよう直した）。
+
+## 残り（p011 へ、または未実施）
+
+- 日本語の画面の撮影（catalog は入っている。言語を切り替えた QEMU の絵は未実施）。
+- 導入先の起動、S9 のキャンセル・失敗、拒む disk の各画面、4096 の disk、swap file の道は p011 の通しの試験で。
+- Boot####（p007 の承認待ち）。S11 は firmware の boot menu で選ぶ案内だけ。
