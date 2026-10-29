@@ -19,7 +19,7 @@
 
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1662-i10 in-progress | [ws309](ws309/ws.md) p013・p014 cleared（main e554645ca）、p016 → p017 → p018。p015 はユーザーの判断待ち（[phase015](ws309/phase015/phase.md)「要る判断」） | — |
+| P1 | q1662-i10 返却 | [ws309](ws309/ws.md) p016〜p018 cleared（main b9c381154）。残りは p015（ユーザーの判断 2 つ待ち） | — |
 | P2 | q1690-i02 in-progress | [ws314](ws314/ws.md) p003〜p006 cleared（main 06998343d）、次は p013・p014・p015・p007〜p010 | — |
 | P3 | q1689-i01 in-progress | [ws221](ws221/ws.md) p010・p012 cleared、p013 NCM 1513/1411 Mbit/s、次は p014 xHCI（design-reviewer → 実装） | 5330 |
 | P4 | q1665-i10 返却 | [ws307](ws307/ws.md) p011 cleared（通し 25 STEP・日本語の画面、main adeab690a）。残りは p007（HAL の案の承認待ち）・p004・p014 規約 | — |
