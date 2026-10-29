@@ -75,6 +75,8 @@ static int device_token;
 static int device_create_instance(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int device_enumerate(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int device_properties(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static int device_identity(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
+static VkPhysicalDeviceProperties *device_describe(struct nvrtx_vk_session *session);
 static void device_limits(VkPhysicalDeviceLimits *limits);
 static int device_features(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int device_memory(struct nvrtx_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
@@ -131,6 +133,9 @@ nvrtx_vk_device_route(
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES:
 		error = device_properties(session, reader, reply);
+		break;
+	case GPU_OP_GET_PHYSICAL_DEVICE_PROPERTIES2:
+		error = device_identity(session, reader, reply);
 		break;
 	case GPU_OP_GET_PHYSICAL_DEVICE_QUEUE_FAMILY_PROPERTIES:
 		error = device_families(session, reader, reply);
@@ -260,7 +265,6 @@ device_properties(
 	struct i915_wire_reader *reader,
 	struct i915_wire_writer *reply)
 {
-	static const char name[] = "zedBSD nvrtx (NVIDIA Turing)";
 	VkPhysicalDeviceProperties *properties;
 
 	/* The physical device and the output's present word. */
@@ -269,12 +273,103 @@ device_properties(
 	if (reader->error != 0)
 		return EINVAL;
 
-	/* A cleared record from the scratch (too large for the stack). */
-	properties = nvrtx_vk_arena_take(session, sizeof(*properties));
+	/* The record. */
+	properties = device_describe(session);
 	if (properties == NULL)
 		return ENOMEM;
 
-	/* Names the device: NVIDIA's, discrete, its PCI product. */
+	/* Replies the present word and the record. */
+	drv_i915_wire_reply_u64(reply, 1U);
+	i915_vkc_enc_VkPhysicalDeviceProperties(reply, properties);
+
+	/* Succeeded: the properties are reported. */
+	return 0;
+}
+
+/*
+ * vkGetPhysicalDeviceProperties2 with only the ID properties chained, which
+ * libvulkan asks before it exports or imports memory by fd: [physical]
+ * [present][PROPERTIES_2 header][ID_PROPERTIES header] -> the two headers,
+ * the device's and the driver's UUIDs, an invalid LUID, then the
+ * properties.  Both sides of a share ask the same device, so the UUIDs are
+ * fixed words of this executor.
+ */
+static int
+device_identity(
+	struct nvrtx_vk_session *session,
+	struct i915_wire_reader *reader,
+	struct i915_wire_writer *reply)
+{
+	static const uint8_t device_uuid[VK_UUID_SIZE] = {
+		'z', 'e', 'd', 'B', 'S', 'D', '-', 'n', 'v', 'r', 't', 'x', 'T', 'U', '1', 'x'
+	};
+	static const uint8_t driver_uuid[VK_UUID_SIZE] = {
+		'z', 'e', 'd', 'B', 'S', 'D', '-', 'n', 'v', 'r', 't', 'x', '-', 'v', 'k', '1'
+	};
+	static const uint8_t luid[VK_LUID_SIZE] = { 0 };
+	VkPhysicalDeviceProperties *properties;
+	uint64_t present;
+	uint64_t chained;
+	uint64_t last;
+	uint32_t outer;
+	uint32_t inner;
+
+	/* The physical device, then the two headers of the output chain. */
+	(void)drv_i915_wire_read_u64(reader);
+	present = drv_i915_wire_read_u64(reader);
+	outer = drv_i915_wire_read_u32(reader);
+	chained = drv_i915_wire_read_u64(reader);
+	inner = drv_i915_wire_read_u32(reader);
+	last = drv_i915_wire_read_u64(reader);
+	if (reader->error != 0 || present != 1U)
+		return EINVAL;
+	if (outer != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2 || chained != 1U ||
+	    inner != VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES || last != 0U)
+		return ENOTSUP;
+
+	/* The record. */
+	properties = device_describe(session);
+	if (properties == NULL)
+		return ENOMEM;
+
+	/* The headers, the identifiers and the properties. */
+	drv_i915_wire_reply_u64(reply, 1U);
+	drv_i915_wire_reply_u32(reply, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2);
+	drv_i915_wire_reply_u64(reply, 1U);
+	drv_i915_wire_reply_u32(reply, VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES);
+	drv_i915_wire_reply_u64(reply, 0U);
+	drv_i915_wire_reply_u64(reply, VK_UUID_SIZE);
+	i915_vkc_reply_bytes(reply, device_uuid, VK_UUID_SIZE);
+	drv_i915_wire_reply_u64(reply, VK_UUID_SIZE);
+	i915_vkc_reply_bytes(reply, driver_uuid, VK_UUID_SIZE);
+	drv_i915_wire_reply_u64(reply, VK_LUID_SIZE);
+	i915_vkc_reply_bytes(reply, luid, VK_LUID_SIZE);
+	drv_i915_wire_reply_u32(reply, 0U);
+	drv_i915_wire_reply_u32(reply, VK_FALSE);
+	i915_vkc_enc_VkPhysicalDeviceProperties(reply, properties);
+
+	/* Succeeded: the identity is reported. */
+	return 0;
+}
+
+/*
+ * The device's properties in a cleared record from the session's scratch
+ * (too large for the stack): NVIDIA's, discrete, its PCI product, and the
+ * limits.  NULL when the scratch is full.
+ */
+static VkPhysicalDeviceProperties *
+device_describe(
+	struct nvrtx_vk_session *session)
+{
+	static const char name[] = "zedBSD nvrtx (NVIDIA Turing)";
+	VkPhysicalDeviceProperties *properties;
+
+	/* A cleared record. */
+	properties = nvrtx_vk_arena_take(session, sizeof(*properties));
+	if (properties == NULL)
+		return NULL;
+
+	/* Names the device. */
 	properties->apiVersion = DEVICE_API_VERSION;
 	properties->driverVersion = DEVICE_DRIVER_VERSION;
 	properties->vendorID = DEVICE_VENDOR;
@@ -285,12 +380,8 @@ device_properties(
 	/* The limits. */
 	device_limits(&properties->limits);
 
-	/* Replies the present word and the record. */
-	drv_i915_wire_reply_u64(reply, 1U);
-	i915_vkc_enc_VkPhysicalDeviceProperties(reply, properties);
-
-	/* Succeeded: the properties are reported. */
-	return 0;
+	/* Succeeded: the record is filled. */
+	return properties;
 }
 
 /* Fills the limits: values a Turing part meets that applications read. */
@@ -520,6 +611,8 @@ device_families(
 	video = nvrtx_vk_video_available(session->owner);
 	if (video)
 		family.queueFlags |= VK_QUEUE_VIDEO_DECODE_BIT_KHR;
+
+	/* Any image transfer may start at any texel. */
 	family.minImageTransferGranularity.width = 1U;
 	family.minImageTransferGranularity.height = 1U;
 	family.minImageTransferGranularity.depth = 1U;
@@ -563,12 +656,14 @@ device_format_features(
 	case NVRTX_VK_FORMAT_NV12:
 		/*
 		 * The video decoder's pictures, of optimal (block-linear) tiling
-		 * only: decoded into, references, copied out (libvulkan hides the
-		 * video features of a device without video decode).
+		 * only: decoded into, references, copied out, their planes sampled
+		 * through R8 and R8G8 views (libvulkan hides the video features of
+		 * a device without video decode).
 		 */
 		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR |
 						    VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR |
-						    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
+						    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+						    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
 		break;
 	default:
 		break;
@@ -616,9 +711,11 @@ device_usage_features(
 	if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U)
 		required |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
 
-	/* Decoding into the image, and keeping it as a reference, need the video features. */
+	/* Decoding into the image needs the video output feature. */
 	if ((usage & VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR) != 0U)
 		required |= VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR;
+
+	/* Keeping the image as a reference needs the video DPB feature. */
 	if ((usage & VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR) != 0U)
 		required |= VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR;
 

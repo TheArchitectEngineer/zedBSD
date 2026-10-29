@@ -3,7 +3,7 @@
 # ws243-p002: NVDEC の channel と engine の起動
 
 Parent: [WS243](../ws.md)、設計 [design.md](../design.md) §1・§2・§7（copy engine）
-Status: in-progress（実装済み・試験未実施。2026-10-29 q1677-i01 P6。cleared にしない: 実機の試験は p004）
+Status: cleared（2026-10-30 q1677-i02 P5。p004・p006 の RTX 2070 の実機で nvdec-channel ok（c4b0）・copy object 4・refused 0）
 
 ## 実装（commit）
 

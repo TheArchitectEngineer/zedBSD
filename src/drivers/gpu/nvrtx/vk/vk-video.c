@@ -319,6 +319,8 @@ struct video_chain {
  * coding scope clears it, a begin query sets it, an end query clears it.
  */
 static struct video_pool *video_open_pool;
+
+/* The open status query's index in video_open_pool; meaningful only while video_open_pool is not NULL. */
 static uint32_t video_open_query;
 
 /* The skipped pictures logged so far (guarded by the node's lock). */
@@ -407,6 +409,7 @@ nvrtx_vk_video_route(
 		return 0;
 	}
 
+	/* Tells the dispatcher that the video code took the opcode. */
 	*handled = 1;
 
 	/* Runs the command the opcode names. */
@@ -508,12 +511,15 @@ nvrtx_vk_video_record(
 	if (video == NULL)
 		return ENOMEM;
 
+	/* Records the opcode and keeps the structure with the record. */
 	video->opcode = opcode;
 	record->regions = video;
 	record->region_count = 0U;
 
 	/* The command's arguments. */
-	if (opcode == GPU_OP_CMD_BEGIN_QUERY || opcode == GPU_OP_CMD_END_QUERY || opcode == GPU_OP_CMD_RESET_QUERY_POOL) {
+	if (opcode == GPU_OP_CMD_BEGIN_QUERY ||
+	    opcode == GPU_OP_CMD_END_QUERY ||
+	    opcode == GPU_OP_CMD_RESET_QUERY_POOL) {
 		error = video_record_query(session, opcode, reader, video);
 	} else {
 		error = video_record_coding(session, command, opcode, reader, video);
@@ -536,6 +542,7 @@ nvrtx_vk_video_drop(
 {
 	struct video_record *video;
 
+	/* Takes the structure the record kept. */
 	video = record->regions;
 
 	/* Nothing was kept. */
@@ -564,6 +571,7 @@ nvrtx_vk_video_run(
 	uint32_t query;
 	int error;
 
+	/* Takes the structure the record kept. */
 	video = record->regions;
 
 	/* A record that kept nothing does nothing. */
@@ -593,6 +601,7 @@ nvrtx_vk_video_run(
 			pool->status[query] = 0;
 			pool->available[query] = 0U;
 		}
+
 		break;
 	case GPU_OP_CMD_BEGIN_QUERY:
 		/* The decodes of the scope report into the query from now on. */
@@ -777,7 +786,8 @@ video_format_properties(
 
 	/* The profiles must all be H.264 decode; usages are the decode's output, reference and readback. */
 	result = 0;
-	video_usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	video_usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+	    VK_IMAGE_USAGE_SAMPLED_BIT;
 	available = nvrtx_vk_video_available(session->owner);
 	if (!available) {
 		result = VIDEO_ERROR_OPERATION;
@@ -796,8 +806,9 @@ video_format_properties(
 	}
 
 	/*
-	 * Replies the one format: NV12, identity swizzle, no create flags,
-	 * 2D, optimal (block linear), decode output, reference and readback.
+	 * Replies the one format: NV12, identity swizzle, its planes viewable
+	 * in their own formats (mutable format, extended usage), 2D, optimal
+	 * (block linear), decode output, reference, readback and sampled.
 	 */
 	drv_i915_wire_reply_u32(reply, 0U);
 	drv_i915_wire_reply_u64(reply, 1U);
@@ -810,7 +821,7 @@ video_format_properties(
 	drv_i915_wire_reply_u32(reply, 0U);
 	drv_i915_wire_reply_u32(reply, 0U);
 	drv_i915_wire_reply_u32(reply, 0U);
-	drv_i915_wire_reply_u32(reply, 0U);
+	drv_i915_wire_reply_u32(reply, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT);
 	drv_i915_wire_reply_u32(reply, VK_IMAGE_TYPE_2D);
 	drv_i915_wire_reply_u32(reply, VK_IMAGE_TILING_OPTIMAL);
 	drv_i915_wire_reply_u32(reply, video_usage);
@@ -883,6 +894,8 @@ video_session_create(
 	uint32_t slots;
 	uint32_t references;
 	uint32_t surfaces;
+	uint32_t width_mbs;
+	uint32_t height_mbs;
 	uint32_t version;
 	uint32_t profile_idc;
 	int32_t result;
@@ -930,7 +943,10 @@ video_session_create(
 		result = VK_ERROR_FEATURE_NOT_PRESENT;
 	} else if (picture_format != NVRTX_VK_FORMAT_NV12 || reference_format != NVRTX_VK_FORMAT_NV12) {
 		result = VIDEO_ERROR_FORMAT;
-	} else if (width < VIDEO_MIN_WIDTH || height < VIDEO_MIN_HEIGHT || width > VIDEO_MAX_SIDE || height > VIDEO_MAX_SIDE) {
+	} else if (width < VIDEO_MIN_WIDTH ||
+	    height < VIDEO_MIN_HEIGHT ||
+	    width > VIDEO_MAX_SIDE ||
+	    height > VIDEO_MAX_SIDE) {
 		result = VK_ERROR_INITIALIZATION_FAILED;
 	} else if (slots > NVRTX_VIDEO_SLOTS || references > NVRTX_VIDEO_REFERENCES) {
 		result = VK_ERROR_INITIALIZATION_FAILED;
@@ -951,6 +967,7 @@ video_session_create(
 		return 0;
 	}
 
+	/* Fills in the session from the create call's fields. */
 	state->owner = session->owner;
 	state->profile_idc = profile_idc;
 	state->width = width;
@@ -967,7 +984,9 @@ video_session_create(
 	surfaces = slots;
 	if (references + 1U > surfaces)
 		surfaces = references + 1U;
-	nvrtx_nvdec_buffer_sizes(video_mbs(width), video_mbs(height), surfaces - 1U, &buffers);
+	width_mbs = video_mbs(width);
+	height_mbs = video_mbs(height);
+	nvrtx_nvdec_buffer_sizes(width_mbs, height_mbs, surfaces - 1U, &buffers);
 	state->sizes[0] = buffers.coloc;
 	state->sizes[1] = buffers.mbhist;
 	state->sizes[2] = buffers.history;
@@ -1098,11 +1117,15 @@ video_bind(
 			storage = memory->payload;
 		if (state == NULL || result != 0) {
 			continue;
-		} else if (index >= VIDEO_BINDINGS || storage == NULL || state->bindings[index].memory != NULL) {
+		} else if (index >= VIDEO_BINDINGS ||
+		    storage == NULL ||
+		    state->bindings[index].memory != NULL) {
 			result = VK_ERROR_INITIALIZATION_FAILED;
 			continue;
-		} else if ((offset & (VIDEO_BIND_ALIGN - 1U)) != 0U || size < state->sizes[index] || offset > storage->bytes ||
-			   size > storage->bytes - offset) {
+		} else if ((offset & (VIDEO_BIND_ALIGN - 1U)) != 0U ||
+		    size < state->sizes[index] ||
+		    offset > storage->bytes ||
+		    size > storage->bytes - offset) {
 			result = VK_ERROR_INITIALIZATION_FAILED;
 			continue;
 		}
@@ -1114,6 +1137,7 @@ video_bind(
 			continue;
 		}
 
+		/* Binds the memory at its offset and size. */
 		state->bindings[index].memory = memory;
 		state->bindings[index].offset = offset;
 		state->bindings[index].size = size;
@@ -1195,14 +1219,18 @@ video_parameters_create(
 			error = ENOMEM;
 	}
 
-	if (error == 0) {
+	/* Holds the session the parameters belong to. */
+	if (error == 0)
 		error = nvrtx_vk_object_retain(owner);
-		if (error == 0)
-			parameters->session = owner;
+
+	/* Records the session and the parameters' capacity once the session is held. */
+	if (error == 0) {
+		parameters->session = owner;
 		parameters->max_sps = chain.max_sps;
 		parameters->max_pps = chain.max_pps;
 	}
 
+	/* Copies the template's sets, then adds the new ones. */
 	if (error == 0 && source != NULL)
 		error = video_parameters_copy(parameters, source);
 	if (error == 0)
@@ -1260,7 +1288,9 @@ video_parameters_update(
 	/* The object must exist and the update be the next one; a malformed set refuses it. */
 	result = 0;
 	parameters = nvrtx_vk_payload(session, I915_VK_OBJ_VIDEO_SESSION_PARAMETERS, identity);
-	if (parameters == NULL || sequence != parameters->update_sequence + 1U || chain.add_error != 0)
+	if (parameters == NULL ||
+	    sequence != parameters->update_sequence + 1U ||
+	    chain.add_error != 0)
 		result = VK_ERROR_INITIALIZATION_FAILED;
 
 	/* Adds the sets; a key already held refuses the whole update. */
@@ -1318,7 +1348,9 @@ video_pool_create(
 
 	/* Only a result status pool of a bounded size. */
 	error = 0;
-	if (type != VIDEO_QUERY_RESULT_STATUS || count == 0U || count > VIDEO_QUERY_MAX) {
+	if (type != VIDEO_QUERY_RESULT_STATUS ||
+	    count == 0U ||
+	    count > VIDEO_QUERY_MAX) {
 		kern_logf("nvrtx: vk: vkCreateQueryPool refused: type %u, %u queries (result status only)\n", (unsigned)type, (unsigned)count);
 		error = ENOTSUP;
 	}
@@ -1391,8 +1423,12 @@ video_pool_results(
 
 	/* Refuses an unknown pool, a range past it, and records that do not fit the reply. */
 	pool = nvrtx_vk_payload(session, I915_VK_OBJ_QUERY_POOL, identity);
-	if (pool == NULL || first > pool->count || count > pool->count - first ||
-	    bytes > VIDEO_QUERY_REPLY_MAX || stride < record || stride > bytes ||
+	if (pool == NULL ||
+	    first > pool->count ||
+	    count > pool->count - first ||
+	    bytes > VIDEO_QUERY_REPLY_MAX ||
+	    stride < record ||
+	    stride > bytes ||
 	    (count != 0U && (uint64_t)(count - 1U) * stride + record > bytes)) {
 		drv_i915_wire_reply_u32(reply, (uint32_t)VK_ERROR_DEVICE_LOST);
 		drv_i915_wire_reply_u64(reply, 0U);
@@ -1421,9 +1457,13 @@ video_pool_results(
 		kern_memcpy(data + width, &available, width);
 		drv_i915_wire_reply_bytes(reply, data, (size_t)record);
 		written += record;
+
+		/* The record's stride ends where the next record starts, or at the end of the data. */
 		end = written - record + stride;
 		if (end > bytes)
 			end = bytes;
+
+		/* Pads the stride with zeros, a chunk at a time. */
 		while (written < end) {
 			value = end - written;
 			if (value > sizeof(zeros))
@@ -1459,6 +1499,7 @@ video_session_destroy(
 
 	UNUSED_PARAMETER(session);
 
+	/* Takes the state the registry kept. */
 	state = payload;
 	error = 0;
 
@@ -1495,6 +1536,7 @@ video_parameters_destroy(
 
 	UNUSED_PARAMETER(session);
 
+	/* Takes the parameters the registry kept. */
 	parameters = payload;
 
 	/* The sets, then the session it held. */
@@ -1580,6 +1622,7 @@ video_read_fields(
 				chain->profile_error = result;
 			}
 		}
+
 		break;
 	case VIDEO_TYPE_H264_PARAMETERS_CREATE:
 		/* The capacity, then the add record the create carries, if any. */
@@ -1596,6 +1639,7 @@ video_read_fields(
 			video_chain_free(&nested);
 			video_read_add(reader, chain);
 		}
+
 		break;
 	case VIDEO_TYPE_H264_PARAMETERS_ADD:
 		/* The sets added. */
@@ -1615,6 +1659,7 @@ video_read_fields(
 			chain->reference.poc[0] = (int32_t)drv_i915_wire_read_u32(reader);
 			chain->reference.poc[1] = (int32_t)drv_i915_wire_read_u32(reader);
 		}
+
 		break;
 	case VIDEO_TYPE_H264_PICTURE:
 		/*
@@ -1653,6 +1698,7 @@ video_read_fields(
 				chain->slices_overflow = true;
 			}
 		}
+
 		break;
 	default:
 		/* A structure the library does not write here. */
@@ -1713,7 +1759,9 @@ video_profile_result(
 		return VIDEO_ERROR_OPERATION;
 
 	/* 8-bit 4:2:0 is the one format. */
-	if (chroma != VIDEO_CHROMA_420 || luma != VIDEO_DEPTH_8 || chroma_depth != VIDEO_DEPTH_8)
+	if (chroma != VIDEO_CHROMA_420 ||
+	    luma != VIDEO_DEPTH_8 ||
+	    chroma_depth != VIDEO_DEPTH_8)
 		return VIDEO_ERROR_FORMAT;
 
 	/* The H.264 record must be there and progressive. */
@@ -2026,6 +2074,7 @@ video_parameters_take(
 
 	/* An update must not repeat a key the object holds. */
 	if (!replace) {
+		/* Nor a sequence set id it holds. */
 		for (index = 0U; index < chain->new_sps_count; index++) {
 			if (parameters->sps[chain->new_sps[index]->id] != NULL)
 				return EINVAL;
@@ -2046,6 +2095,7 @@ video_parameters_take(
 			sps_count++;
 	}
 
+	/* The new sequence sets of ids not held yet. */
 	for (index = 0U; index < chain->new_sps_count; index++) {
 		if (parameters->sps[chain->new_sps[index]->id] == NULL)
 			sps_count++;
@@ -2078,6 +2128,8 @@ video_parameters_take(
 	while (chain->new_pps != NULL) {
 		pps = chain->new_pps;
 		chain->new_pps = pps->next;
+
+		/* Drops the picture sets of the same key the object holds. */
 		link = &parameters->pps;
 		while (*link != NULL) {
 			if ((*link)->pps.sps_id == pps->pps.sps_id && (*link)->pps.pps_id == pps->pps.pps_id) {
@@ -2086,6 +2138,8 @@ video_parameters_take(
 				kern_free(old);
 				continue;
 			}
+
+			/* Moves on to the next picture set. */
 			link = &(*link)->next;
 		}
 
@@ -2245,10 +2299,14 @@ video_record_coding(
 			video->has_setup = true;
 			video_read_slot(reader, &video->setup);
 		}
+
+		/* Reads the reference slots, then the picture and the slices the chain carried. */
 		video_read_slots(reader, video, NVRTX_VIDEO_REFERENCES);
 		video->has_picture = chain.has_picture;
 		video->picture = chain.picture;
 		video->slice_count = chain.slice_count;
+
+		/* A decode with more slices than the table holds is skipped. */
 		if (chain.slices_overflow)
 			video->skip = "more slices than the decoder's table";
 		break;
@@ -2271,6 +2329,8 @@ video_record_coding(
 	} else {
 		error = video_scope(command, video);
 	}
+
+	/* Propagates a refused hold. */
 	if (error != 0)
 		return error;
 
@@ -2279,11 +2339,15 @@ video_record_coding(
 		error = video_hold(session, I915_VK_OBJ_BUFFER, buffer_id, &video->buffer);
 		if (error == 0)
 			error = video_hold(session, I915_VK_OBJ_IMAGE_VIEW, video->destination.view, &video->view);
+
+		/* Holds each reference's view, while nothing has failed. */
 		for (index = 0U; error == 0 && index < video->slot_count; index++) {
 			if (!video->slots[index].has_picture)
 				return EINVAL;
 			error = video_hold(session, I915_VK_OBJ_IMAGE_VIEW, video->slots[index].resource.view, &video->slots[index].view);
 		}
+
+		/* Propagates a refused hold. */
 		if (error != 0)
 			return error;
 	}
@@ -2312,10 +2376,16 @@ video_record_query(
 	pool_id = drv_i915_wire_read_u64(reader);
 	video->query = drv_i915_wire_read_u32(reader);
 	video->query_count = 1U;
+
+	/* A begin's flags word is not used. */
 	if (opcode == GPU_OP_CMD_BEGIN_QUERY)
 		(void)drv_i915_wire_read_u32(reader);
+
+	/* A reset names how many queries it covers. */
 	if (opcode == GPU_OP_CMD_RESET_QUERY_POOL)
 		video->query_count = drv_i915_wire_read_u32(reader);
+
+	/* A stream that did not decode is unreadable. */
 	if (reader->error != 0)
 		return EINVAL;
 
@@ -2324,6 +2394,7 @@ video_record_query(
 	if (error != 0)
 		return error;
 
+	/* Refuses a range of queries the pool does not have. */
 	pool = video->pool->payload;
 	if (video->query > pool->count || video->query_count > pool->count - video->query)
 		return EINVAL;
@@ -2396,6 +2467,7 @@ video_scope(
 	if (error != 0)
 		return error;
 
+	/* Keeps the session, and the parameters when the begin names them. */
 	video->session = begin->session;
 	if (begin->parameters != NULL) {
 		error = nvrtx_vk_object_retain(begin->parameters);
@@ -2415,15 +2487,23 @@ video_release(
 {
 	uint32_t index;
 
-	/* The scope's objects, the bitstream, the output, the pool. */
+	/* The scope's session. */
 	if (video->session != NULL)
 		(void)nvrtx_vk_object_release(video->session);
+
+	/* The scope's parameters. */
 	if (video->parameters != NULL)
 		(void)nvrtx_vk_object_release(video->parameters);
+
+	/* The bitstream's buffer. */
 	if (video->buffer != NULL)
 		(void)nvrtx_vk_object_release(video->buffer);
+
+	/* The output's view. */
 	if (video->view != NULL)
 		(void)nvrtx_vk_object_release(video->view);
+
+	/* The query pool. */
 	if (video->pool != NULL)
 		(void)nvrtx_vk_object_release(video->pool);
 
@@ -2459,6 +2539,7 @@ video_run_begin(
 	if (video->session == NULL)
 		return;
 
+	/* Takes the session's state. */
 	state = video->session->payload;
 
 	/* The slots listed with a picture are bound. */
@@ -2487,6 +2568,7 @@ video_run_control(
 	if ((video->flags & VIDEO_CONTROL_RESET) == 0U || video->session == NULL)
 		return;
 
+	/* Takes the session's state. */
 	state = video->session->payload;
 
 	/* No slot holds a reference, and the pictures are numbered from 0. */
@@ -2532,6 +2614,7 @@ video_run_decode(
 	size_t length;
 	int error;
 
+	/* Takes the session's state. */
 	state = video->session->payload;
 	parameters = NULL;
 	if (video->parameters != NULL)
@@ -2565,6 +2648,8 @@ video_run_decode(
 			image = ((const struct nvrtx_vk_view *)slot->view->payload)->image->payload;
 			error = video_plane_addresses(image, &frame.luma[slot->index], &frame.chroma[slot->index]);
 		}
+
+		/* Refuses a decode whose reference has no entry or no memory. */
 		if (error != 0) {
 			video_skip("a reference has no entry or no memory");
 			video_status(VIDEO_STATUS_ERROR);
@@ -2586,6 +2671,7 @@ video_run_decode(
 		description.dpb_entry[index] = entry;
 	}
 
+	/* Counts the references the picture structure lists. */
 	description.reference_count = video->slot_count;
 
 	/* The picture's surface: its slot's, or a free one; the output's planes there. */
@@ -2595,6 +2681,7 @@ video_run_decode(
 		description.surface = nvrtx_video_free_surface(&state->dpb, surfaces, video->slot_count);
 	}
 
+	/* Resolves the output's planes in the picture's surface. */
 	image = ((const struct nvrtx_vk_view *)video->view->payload)->image->payload;
 	error = video_plane_addresses(image, &frame.luma[description.surface], &frame.chroma[description.surface]);
 	if (error != 0) {
@@ -2612,6 +2699,7 @@ video_run_decode(
 		return 0;
 	}
 
+	/* Describes the stream, its slices and the output's pitch. */
 	description.stream_bytes = (uint32_t)video->range;
 	description.slice_count = video->slice_count;
 	description.pitch = image->pitch;
@@ -2685,6 +2773,8 @@ video_check(
 	uint32_t index;
 	uint32_t width;
 	uint32_t height;
+	uint32_t limit_width;
+	uint32_t limit_height;
 
 	/* The picture's information and its sets. */
 	if (!video->has_picture)
@@ -2697,7 +2787,9 @@ video_check(
 		return "a parameter set the session does not hold";
 
 	/* A progressive 8-bit 4:2:0 frame. */
-	if (sps->chroma_format_idc != 1U || sps->bit_depth_luma_minus8 != 0U || sps->bit_depth_chroma_minus8 != 0U)
+	if (sps->chroma_format_idc != 1U ||
+	    sps->bit_depth_luma_minus8 != 0U ||
+	    sps->bit_depth_chroma_minus8 != 0U)
 		return "not 8-bit 4:2:0";
 	if ((sps->flags & NVRTX_VIDEO_SPS_FRAME_MBS_ONLY) == 0U)
 		return "a sequence of field pictures";
@@ -2707,7 +2799,9 @@ video_check(
 	/* Within the session's largest picture. */
 	width = (sps->pic_width_in_mbs_minus1 + 1U) * VIDEO_MB;
 	height = (sps->pic_height_in_map_units_minus1 + 1U) * VIDEO_MB;
-	if (width > video_mbs(state->width) * VIDEO_MB || height > video_mbs(state->height) * VIDEO_MB)
+	limit_width = video_mbs(state->width) * VIDEO_MB;
+	limit_height = video_mbs(state->height) * VIDEO_MB;
+	if (width > limit_width || height > limit_height)
 		return "a picture larger than the session's";
 
 	/* One to the table's slices, rising, inside the range; the range inside the buffer, on the boundary. */
@@ -2720,6 +2814,7 @@ video_check(
 			return "slices out of order";
 	}
 
+	/* Checks the bitstream range against the buffer. */
 	buffer = video->buffer->payload;
 	if (video->range == 0U || video->range > 0xffffffffU - 16U)
 		return "a bitstream range the decoder cannot take";
@@ -2742,6 +2837,7 @@ video_check(
 			return reason;
 	}
 
+	/* Refuses a setup slot outside the slots. */
 	if (video->has_setup && video->setup.index >= (int32_t)NVRTX_VIDEO_SLOTS)
 		return "a setup slot outside the slots";
 

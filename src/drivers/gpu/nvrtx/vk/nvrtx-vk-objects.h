@@ -129,8 +129,10 @@ struct nvrtx_vk_image {
 
 /*
  * A VkImageView: the image object it holds, the format it reads the image
- * as, the first level it sees and how many, and where each of red, green,
- * blue and alpha comes from (VkComponentSwizzle, identity resolved).
+ * as, the first level it sees and how many, where each of red, green,
+ * blue and alpha comes from (VkComponentSwizzle, identity resolved), and
+ * for a view of one plane of a video image the plane (1 the luma plane as
+ * R8, 2 the chroma plane as R8G8; 0 any other view).
  */
 struct nvrtx_vk_view {
 	struct nvrtx_vk_object *image;
@@ -138,6 +140,7 @@ struct nvrtx_vk_view {
 	uint32_t base_level;
 	uint32_t level_count;
 	uint32_t swizzle[4];
+	uint32_t plane;
 };
 
 /*

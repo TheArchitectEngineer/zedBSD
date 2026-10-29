@@ -108,6 +108,22 @@
 /* How many times a full space for the users' runs is told in the log. */
 #define WORK_VA_FULL_MARKS		8U
 
+/*
+ * A clear of the VRAM by the copy engine: rows of 32768 words (128 KiB, a
+ * fill's rows are kept below 2^17 words), the rest of the words in one row
+ * after them, and how long the driver waits for it.
+ */
+#define WORK_CLEAR_LINE_WORDS		0x8000U
+#define WORK_CLEAR_TIMEOUT_US		2000000U
+
+/*
+ * Where a clear's source pitch lies in its push buffer (the seventh word,
+ * after the constant's, the components' and the destination's): a clear
+ * broken on purpose has it 0, which the engine refuses in a multi-line
+ * launch.
+ */
+#define WORK_CLEAR_PITCH_IN_AT		28U
+
 /* The channel number on the graphics runlist (the golden context 1, the scrubber 2, the compute launch 3). */
 #define WORK_CHID			4U
 
@@ -277,6 +293,15 @@ nvrtx_work_start(
 	/* The space takes mappings and channels, and the driver's channel takes work. */
 	gpu->work.ready = 1;
 	driver->state = NVRTX_WORK_CHANNEL_READY;
+
+	/* Whether it has the copy engine (it clears the VRAM), and whether its first clear is broken on purpose. */
+	gpu->work.copy_ready = driver->copy_made;
+	gpu->work.clear_off = 0;
+	if (nvrtx_stage_clear_cpu_wanted())
+		gpu->work.clear_off = 1;
+	gpu->work.clear_fault = 0;
+	if (nvrtx_stage_clear_fault_wanted())
+		gpu->work.clear_fault = 1;
 
 	/* Reports the GPU's performance level, and raises it when the boot asks (nvrtx.boost=1). */
 	nvrtx_perf_start(gpu);
@@ -822,6 +847,134 @@ nvrtx_work_unmap(
 		return EIO;
 
 	/* Succeeded: the addresses are free again. */
+	return 0;
+}
+
+/*
+ * Clears a run of the VRAM to zero with the copy engine on the driver's
+ * channel and waits for it: a page of system memory holds the fill's push
+ * buffer, the run and the page are mapped into the space for the fill and
+ * unmapped after it.  Work submitted to the channel earlier ends first.
+ *
+ * Returns 0 once the run reads as zero.  ENODEV when the driver's channel
+ * does not run or has no copy object, or the clears are off, EINVAL for a
+ * run not on page boundaries, or the error of a step before the fill was
+ * submitted: the run was not written, and may be cleared another way.
+ * EBUSY when the fill was submitted but its fence did not come: the GPU
+ * may still write the run, which must then stay taken for good.  A
+ * submission or a fill that failed turns the clears off for good, so the
+ * CPU clears from then on; the recovery stops the channel when the GPU
+ * reports the fill's error.
+ */
+int
+nvrtx_work_clear(
+	struct nvrtx_gpu *gpu,
+	uint64_t physical,
+	uint64_t size)
+{
+	struct nvrtx_work_channel *channel;
+	struct nvrtx_buffer push;
+	uint64_t page;
+	uint64_t push_va;
+	uint64_t target;
+	uint64_t words;
+	uint64_t lines;
+	uint32_t rest;
+	uint32_t fence;
+	uint8_t *bytes;
+	size_t length;
+	int unmapped;
+	int error;
+
+	channel = &gpu->work.driver;
+
+	/* Whole pages, rows a fill can count, and a channel with a copy engine. */
+	if (size == 0U || (size & 0xfffU) != 0U || (physical & 0xfffU) != 0U)
+		return EINVAL;
+	words = size / 4U;
+	lines = words / WORK_CLEAR_LINE_WORDS;
+	rest = (uint32_t)(words % WORK_CLEAR_LINE_WORDS);
+	if (lines > 0xffffffffULL)
+		return EINVAL;
+	if (gpu->work.ready == 0 || channel->copy_made == 0 || __atomic_load_n(&gpu->work.clear_off, __ATOMIC_ACQUIRE) != 0)
+		return ENODEV;
+	if (__atomic_load_n(&channel->state, __ATOMIC_ACQUIRE) != NVRTX_WORK_CHANNEL_READY)
+		return ENODEV;
+
+	/* The push buffer's page, reachable from the space. */
+	kern_memset(&push, 0, sizeof(push));
+	error = nvrtx_buffer_alloc(gpu, NVRTX_GSP_PAGE_SIZE, &push);
+	if (error != 0)
+		return error;
+	page = push.dma.device_address;
+	error = nvrtx_work_map_system(gpu, &page, 1U, &push_va);
+	if (error != 0) {
+		nvrtx_buffer_free(gpu, &push);
+		return error;
+	}
+
+	/* The run, at addresses of its own. */
+	error = nvrtx_work_map_vram(gpu, physical, size, &target);
+	if (error != 0) {
+		unmapped = nvrtx_work_unmap(gpu, push_va, NVRTX_GSP_PAGE_SIZE);
+		if (unmapped == 0)
+			nvrtx_buffer_free(gpu, &push);
+		return error;
+	}
+
+	/* The full rows, then the rest of the words in one row. */
+	bytes = push.dma.address;
+	length = 0U;
+	if (lines != 0U)
+		length = nvrtx_push_copy_clear(bytes, NVRTX_WORK_SUBCHANNEL_COPY, target, WORK_CLEAR_LINE_WORDS, (uint32_t)lines, 0U);
+	if (rest != 0U) {
+		length += nvrtx_push_copy_clear(bytes + length,
+		    NVRTX_WORK_SUBCHANNEL_COPY,
+		    target + lines * WORK_CLEAR_LINE_WORDS * 4U,
+		    rest,
+		    1U,
+		    0U);
+	}
+
+	/* The first clear broken on purpose when the boot asks (its source pitch 0). */
+	if (lines != 0U && __atomic_exchange_n(&gpu->work.clear_fault, 0, __ATOMIC_ACQ_REL) != 0) {
+		nvrtx_put32(bytes, WORK_CLEAR_PITCH_IN_AT, 0U);
+		nvrtx_stage_mark("vram clear: this clear is broken on purpose (nvrtx.clear.fault=1)");
+	}
+
+	/* Runs it after the channel's earlier work, and waits for its fence. */
+	fence = 0U;
+	error = nvrtx_work_channel_submit(gpu, channel, push_va, length, &fence);
+	if (error == 0) {
+		error = nvrtx_work_channel_wait(channel, fence, WORK_CLEAR_TIMEOUT_US);
+		if (error != 0) {
+			/* The GPU may still read the page and write the run: both stay as they are, and the CPU clears from now on. */
+			__atomic_store_n(&gpu->work.clear_off, 1, __ATOMIC_RELEASE);
+			nvrtx_stage_mark("vram clear: fence %u did not come (%d); %llu KiB stay taken, the CPU clears from now on",
+			    (unsigned)fence,
+			    error,
+			    (unsigned long long)(size >> 10));
+			return EBUSY;
+		}
+	}
+
+	/* A submission that failed: the CPU clears from now on. */
+	if (error != 0) {
+		__atomic_store_n(&gpu->work.clear_off, 1, __ATOMIC_RELEASE);
+		nvrtx_stage_mark("vram clear: not submitted (%d); the CPU clears from now on", error);
+	}
+
+	/* The run's and the page's addresses back; the page goes once nothing maps it. */
+	(void)nvrtx_work_unmap(gpu, target, size);
+	unmapped = nvrtx_work_unmap(gpu, push_va, NVRTX_GSP_PAGE_SIZE);
+	if (unmapped == 0)
+		nvrtx_buffer_free(gpu, &push);
+
+	/* A submission that failed wrote nothing. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the run reads as zero. */
 	return 0;
 }
 
@@ -1601,12 +1754,14 @@ work_objects(
 }
 
 /*
- * Makes the copy object on a channel when the boot asks for the video
- * decoder (nvrtx.video=1): the class of the copy engine that shares the
+ * Makes the copy object on a channel: on the driver's channel always, on
+ * which the VRAM a blob takes is cleared (nvrtx_work_clear()), and on a
+ * session's channel when the boot asks for the video decoder
+ * (nvrtx.video=1).  It is of the class of the copy engine that shares the
  * graphics runlist, on which the executor's copies out of block-linear
- * video images run.  A copy object the resource manager refuses leaves
- * the channel without one (its session then has no way out of a video
- * image to a buffer).
+ * video images run.  A copy object the resource manager refuses leaves the
+ * channel without one (the VRAM is then cleared through the register
+ * window, and a session has no way out of a video image to a buffer).
  *
  * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
  * src/common/sdk/nvidia/inc/class/clb0b5sw.h
@@ -1622,9 +1777,9 @@ work_copy_object(
 	bool wanted;
 	int error;
 
-	/* Only with the video decoder. */
+	/* On the driver's channel always (it clears the VRAM), on a session's only with the video decoder. */
 	wanted = nvrtx_stage_video_wanted();
-	if (!wanted)
+	if (!wanted && channel != &gpu->work.driver)
 		return;
 
 	/* A copy engine must share the graphics runlist. */
@@ -1679,6 +1834,8 @@ work_first(
 	push = (uint8_t *)channel->fences.dma.address + (size_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
 	push_va = channel->fences_va + (uint64_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
 	length = nvrtx_work_push_objects(push, gpu->identity.chip.profile->class_threed, gpu->identity.chip.profile->class_compute);
+
+	/* The copy engine's object follows when the channel has a copy engine. */
 	if (channel->copy_made != 0)
 		length += nvrtx_work_push_copy_object(push + length, gpu->identity.chip.profile->class_copy);
 
