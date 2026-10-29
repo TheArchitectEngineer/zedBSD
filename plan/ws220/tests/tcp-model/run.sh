@@ -1,5 +1,5 @@
 #!/bin/sh
-# ws220-p001: the host model of a TCP transfer.  Builds src/kern/net/tcp.c, socket.c, packet-buf.c, checksum.c and in6.c
+# ws220-p001: the host model of a TCP transfer.  Builds src/kern/net/tcp.c, tcp-cubic.c, socket.c, packet-buf.c, checksum.c and in6.c
 # as the kernel builds them (freestanding, the kernel's headers) with shim.c and model.c, and runs the transfer
 # scenarios: A sends to B over a modelled link; the model prints each interval's rate and both ends' state.
 #   plan/ws220/tests/tcp-model/run.sh                 the scenarios against WS220's targets, a summary line each and PASS/FAIL
@@ -16,7 +16,7 @@ cc=${CC:-clang}
 flags="-std=c11 -O2 -g -nostdlibinc -Iinclude -Isrc -I. -Iplan/ws220/tests/tcp-model -DKERN_UAPI_NATIVE -DKERN_KCRT_NATIVE
 	-DHAL_ARCH_AMD64 -DHAL_BOARD_PCAT -DKERN_USER_ABI_LP64 -ffreestanding -fno-builtin -Wall -Wextra -Werror ${MODEL_CFLAGS:-}"
 objects=
-for source in src/kern/net/tcp.c src/kern/net/socket.c src/kern/net/packet-buf.c src/kern/net/checksum.c \
+for source in src/kern/net/tcp.c src/kern/net/tcp-cubic.c src/kern/net/socket.c src/kern/net/packet-buf.c src/kern/net/checksum.c \
     src/kern/net/in6.c plan/ws220/tests/tcp-model/shim.c plan/ws220/tests/tcp-model/model.c; do
 	object=$out/$(basename "$source" .c).o
 	# shellcheck disable=SC2086
@@ -27,10 +27,13 @@ done
 $cc -o "$out/tcp-model" $objects -lc || { echo "tcp-model: link failed"; exit 2; }
 # ws311-p002: a second build whose limits let A's window and B's take a bottleneck's round trip (the send ring, B's
 # receive queue and reorder queue raised to 1024; the kernel's defaults are 256, 128 and 128): the congestion scenarios.
+# The model's two hosts share one packet pool, so it is four times the kernel's 1024 (ws311-p003: A's copies and B's
+# queues of a 1 MB window took all 1024, and the connection died).
 mkdir -p "$out/big"
-big_flags="-DCONFIG_TCP_SEND_QUEUE_MAX=1024 -DCONFIG_TCP_RECEIVE_PACKETS=1024 -DCONFIG_TCP_REORDER_MAX=1024"
+big_flags="-DCONFIG_TCP_SEND_QUEUE_MAX=1024 -DCONFIG_TCP_RECEIVE_PACKETS=1024 -DCONFIG_TCP_REORDER_MAX=1024
+	-DCONFIG_PACKET_BUF_POOL_COUNT=4096U"
 objects=
-for source in src/kern/net/tcp.c src/kern/net/socket.c src/kern/net/packet-buf.c src/kern/net/checksum.c \
+for source in src/kern/net/tcp.c src/kern/net/tcp-cubic.c src/kern/net/socket.c src/kern/net/packet-buf.c src/kern/net/checksum.c \
     src/kern/net/in6.c plan/ws220/tests/tcp-model/shim.c plan/ws220/tests/tcp-model/model.c; do
 	object=$out/big/$(basename "$source" .c).o
 	# shellcheck disable=SC2086

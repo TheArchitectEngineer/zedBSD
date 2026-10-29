@@ -1101,6 +1101,7 @@ KERN_NET_SOURCES := \
 	src/kern/net/icmp.c \
 	src/kern/net/udp.c \
 	src/kern/net/tcp.c \
+	src/kern/net/tcp-cubic.c \
 	src/kern/net/in6.c \
 	src/kern/net/in6-address.c \
 	src/kern/net/in6-route.c \

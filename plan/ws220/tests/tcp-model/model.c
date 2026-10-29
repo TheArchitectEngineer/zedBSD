@@ -37,7 +37,7 @@
  *             [--bottleneck-mbps R --bottleneck-queue BYTES] [--run-s S]
  *             [--receive-buffer N] [--second-flow-at-ms T] [--fair-skip-s S]
  *             [--expect-slow-start] [--expect-ca-growth N] [--expect-cwnd-limited SHARE]
- *             [--expect-ssthresh-held]
+ *             [--expect-ssthresh-held] [--cc NAME] [--second-flow-cc NAME] [--measure-from-s S]
  *             [--quiet]
  *
  * --loss-ab is the share (percent) of the frames from A to B (the data) the
@@ -135,6 +135,9 @@
  * --expect-ssthresh-held that a timeout repeated before a round-trip
  * sample leaves the slow start threshold as the timeout before it left
  * it (RFC 5681 section 3.1), the "timeouts:" line counting them.
+ * --cc NAME and --second-flow-cc NAME set TCP_CONGESTION ("reno",
+ * "cubic") on A's first and second connections; --measure-from-s S prints
+ * the "steady:" line, the reader's rate from S seconds in to the end.
  */
 
 #include "kern/net/tcp-socket.h"
@@ -155,6 +158,7 @@ extern void free(void *pointer);
 extern void *memcpy(void *destination, const void *source, size_t count);
 extern void *memset(void *destination, int value, size_t count);
 extern int strcmp(const char *left, const char *right);
+extern size_t strlen(const char *text);
 extern double strtod(const char *text, char **end);
 extern unsigned long long strtoull(const char *text, char **end, int base);
 
@@ -297,6 +301,11 @@ struct model_settings {
 	int second_flow;
 	uint64_t fair_skip_ns;
 	/* The congestion window's checks: slow start, congestion avoidance's growth, and its share as the limit. */
+	/* A's congestion control on the first connection and on the second (--cc, --second-flow-cc; NULL: the default). */
+	const char *cc;
+	const char *second_cc;
+	/* When the steady rate starts to be counted (--measure-from-s), after the first slow start. */
+	uint64_t measure_from_ns;
 	int expect_slow_start;
 	int expect_ssthresh_held;
 	double expect_ca_growth;
@@ -519,6 +528,9 @@ main(
 	uint64_t next_report_ns;
 	uint64_t last_received;
 	uint64_t last_second_received;
+	uint64_t measure_mark_ns;
+	uint64_t measure_mark_bytes;
+	double steady;
 	uint64_t progress_mark;
 	uint64_t last_progress_ns;
 	uint64_t longest_stall_ns;
@@ -526,6 +538,8 @@ main(
 	uint64_t interval_bytes;
 	uint64_t out_of_order;
 	int option_value;
+	char cc_name[TCP_CA_NAME_MAX];
+	socklen_t cc_length;
 	double closed_s;
 	int b_state;
 	struct tcp_socket *a;
@@ -598,6 +612,25 @@ main(
 		printf("tcp-model: pool held by other senders: %u packets\n", held_count);
 	}
 
+	/* A's congestion control, when the scenario names one. */
+	if (settings.cc != NULL) {
+		error = sender->ops->setsockopt(sender, IPPROTO_TCP, TCP_CONGESTION, settings.cc,
+		    (socklen_t)strlen(settings.cc));
+		if (error != 0) {
+			printf("tcp-model: TCP_CONGESTION %s refused (%d)\n", settings.cc, error);
+			return 2;
+		}
+
+		/* Read back as FreeBSD gives it: the name and its NUL. */
+		cc_length = sizeof(cc_name);
+		error = sender->ops->getsockopt(sender, IPPROTO_TCP, TCP_CONGESTION, cc_name, &cc_length);
+		if (error != 0 || cc_length != strlen(settings.cc) + 1U || strcmp(cc_name, settings.cc) != 0) {
+			printf("check: FAIL: TCP_CONGESTION reads back %d (%u bytes), not %s\n", error, (unsigned)cc_length,
+			    settings.cc);
+			return 1;
+		}
+	}
+
 	/* A's TCP_NODELAY, when the scenario sets it. */
 	if (settings.nodelay) {
 		option_value = 1;
@@ -639,6 +672,8 @@ main(
 	next_report_ns = now_ns + settings.interval_ns;
 	last_received = 0;
 	last_second_received = 0;
+	measure_mark_ns = 0;
+	measure_mark_bytes = 0;
 	progress_mark = 0;
 	last_progress_ns = now_ns;
 	longest_stall_ns = 0;
@@ -661,6 +696,12 @@ main(
 		if (settings.blind_at_ns != 0 && !blind_given && now_ns - start_ns >= settings.blind_at_ns) {
 			give_blind_segments();
 			blind_given = 1;
+		}
+
+		/* What the reader had when the steady rate starts to be counted. */
+		if (settings.measure_from_ns != 0 && measure_mark_ns == 0 && now_ns - start_ns >= settings.measure_from_ns) {
+			measure_mark_ns = now_ns;
+			measure_mark_bytes = received;
 		}
 
 		/* The longest time the reader got nothing. */
@@ -707,6 +748,12 @@ main(
 	/* A stall still going at the end counts too. */
 	if (now_ns - last_progress_ns > longest_stall_ns)
 		longest_stall_ns = now_ns - last_progress_ns;
+
+	/* The rate from --measure-from-s on (the "steady:" line). */
+	if (measure_mark_ns != 0 && now_ns > measure_mark_ns) {
+		steady = (double)(received - measure_mark_bytes) / 1048576.0 / ((double)(now_ns - measure_mark_ns) / 1e9);
+		printf("steady: from_s=%.3f mbs=%.3f\n", (double)(measure_mark_ns - start_ns) / 1e9, steady);
+	}
 
 	/* The summary: the stream whole, or for a timed run every byte that came as written. */
 	complete = received == settings.bytes && corrupt == 0;
@@ -1298,6 +1345,12 @@ parse_settings(
 			settings.second_flow = 1;
 		} else if (strcmp(argv[index], "--fair-skip-s") == 0) {
 			settings.fair_skip_ns = strtoull(argv[index + 1], NULL, 0) * 1000000000ULL;
+		} else if (strcmp(argv[index], "--measure-from-s") == 0) {
+			settings.measure_from_ns = strtoull(argv[index + 1], NULL, 0) * 1000000000ULL;
+		} else if (strcmp(argv[index], "--cc") == 0) {
+			settings.cc = argv[index + 1];
+		} else if (strcmp(argv[index], "--second-flow-cc") == 0) {
+			settings.second_cc = argv[index + 1];
 		} else if (strcmp(argv[index], "--expect-ca-growth") == 0) {
 			settings.expect_ca_growth = strtod(argv[index + 1], NULL);
 		} else if (strcmp(argv[index], "--expect-cwnd-limited") == 0) {
@@ -1811,6 +1864,14 @@ run_second_flow(
 		address.sin_family = AF_INET;
 		address.sin_port = model_ntohs(MODEL_PORT);
 		address.sin_addr.s_addr = model_ntohl(MODEL_ADDRESS_B);
+		if (settings.second_cc != NULL) {
+			error = second.sender->ops->setsockopt(second.sender, IPPROTO_TCP, TCP_CONGESTION, settings.second_cc,
+			    (socklen_t)strlen(settings.second_cc));
+			if (error != 0) {
+				transfer_error = error;
+				return;
+			}
+		}
 		error = second.sender->ops->connect(second.sender, (struct sockaddr *)&address, sizeof(address),
 		    SOCKET_IO_NONBLOCK);
 		if (error != EINPROGRESS) {
@@ -2331,6 +2392,17 @@ check_tcpstats(
 		entry = (const struct tcp_stats_entry *)(const void *)(buffer + header->struct_size + index * header->element_size);
 		if ((entry->features & TCP_STATS_HAVE_SEQUENCE) == 0) {
 			printf("tcpstats: FAIL: the superuser's entry %u has no sequence numbers\n", index);
+			return 1;
+		}
+
+		/* Every entry has the congestion control's fields, A's first connection the one the scenario named. */
+		if ((entry->features & TCP_STATS_HAVE_CC) == 0) {
+			printf("tcpstats: FAIL: entry %u has no congestion control\n", index);
+			return 1;
+		}
+		if (entry->local_port == sender_tcp->inet.local_port && entry->state == TCP_ESTABLISHED &&
+		    entry->cc != sender_tcp->cc) {
+			printf("tcpstats: FAIL: A's congestion control %u (socket %u)\n", entry->cc, sender_tcp->cc);
 			return 1;
 		}
 

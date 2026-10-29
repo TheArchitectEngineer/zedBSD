@@ -98,6 +98,7 @@ show_all(
 	    "hw.gputelemetry",
 	    "hw.thermal",
 	    "net.tcpstats",
+	    "net.tcp.congestion",
 	    "kern.boot.firmware_partition",
 	    "kern.boot.config_partition",
 	    "kern.boot.config_matches",
@@ -169,12 +170,13 @@ show_name(
 		return 0;
 	}
 
-	/* Boot selectors are strings; the match count retains numeric
-	 * rendering. */
+	/* Boot selectors and the congestion control's name are strings; the
+	 * match count retains numeric rendering. */
 	if (strcmp(name, "kern.boot.firmware_partition") == 0 ||
 	    strcmp(name, "kern.boot.config_partition") == 0 ||
 	    strcmp(name, "kern.boot.login") == 0 ||
-	    strcmp(name, "kern.boot.kmsg") == 0) {
+	    strcmp(name, "kern.boot.kmsg") == 0 ||
+	    strcmp(name, "net.tcp.congestion") == 0) {
 		char selector[64];
 		size_t size = sizeof(selector);
 
@@ -368,6 +370,14 @@ set_name(
 	name[name_length] = '\0';
 	if (strcmp(name, "vfs.writeback.control") == 0)
 		return set_writeback(equal + 1);
+
+	/* The congestion control new sockets start with is set by its name. */
+	if (strcmp(name, "net.tcp.congestion") == 0) {
+		if (sysctlbyname(name, NULL, NULL, equal + 1, strlen(equal + 1)) != 0)
+			return errno;
+		function_result = show_name(name) == 0 ? 0 : errno;
+		return function_result;
+	}
 	errno = 0;
 	parsed = strtoull(equal + 1, &end, 10);
 
@@ -785,6 +795,7 @@ show_tcpstats(
 {
 	const struct tcp_stats_header *header;
 	const struct tcp_stats_entry *entry;
+	const char *cc_name;
 	unsigned char *buffer;
 	char local[64];
 	char remote[64];
@@ -850,7 +861,7 @@ show_tcpstats(
 		       "send_buffer_sleeps=%llu segment_send_failures=%llu acks_in=%llu duplicate_acks_in=%llu "
 		       "acks_outside=%llu zero_windows_in=%llu zero_windows_out=%llu window_updates_out=%llu "
 		       "old_segments_in=%llu out_of_order_in=%llu out_of_order_kept=%llu receive_refused=%llu "
-		       "fast_retransmits=%llu\n",
+		       "fast_retransmits=%llu",
 		       (unsigned long long)entry->segments_out, (unsigned long long)entry->segments_in,
 		       (unsigned long long)entry->data_segments_out, (unsigned long long)entry->data_bytes_out,
 		       (unsigned long long)entry->data_bytes_in, (unsigned long long)entry->retransmit_segments,
@@ -862,6 +873,13 @@ show_tcpstats(
 		       (unsigned long long)entry->window_updates_out, (unsigned long long)entry->old_segments_in,
 		       (unsigned long long)entry->out_of_order_in, (unsigned long long)entry->out_of_order_kept,
 		       (unsigned long long)entry->receive_refused, (unsigned long long)entry->fast_retransmits);
+
+		/* The congestion control, as its name, with CUBIC's memory of the last loss and its window's state. */
+		cc_name = "reno";
+		if (entry->cc == TCP_STATS_CC_CUBIC)
+			cc_name = "cubic";
+		printf(" cc=%s cubic_w_max_kb=%u cubic_k_ms=%u cwnd_state=0x%x\n", cc_name, entry->cubic_w_max_kb,
+		       entry->cubic_k_ms, entry->cwnd_state);
 	}
 
 	/* The value is not needed any more. */
