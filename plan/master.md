@@ -19,7 +19,7 @@
 
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1669-i03 in-progress | [ws235](ws235/ws.md) RTL81xx の共通の driver → RTL8127（10.0.10.3）。WS309 は止めた（p001〜p007・p019 cleared、再開点は p008 の残り 1） | 10.0.10.3（時間の枠） |
+| P1 | q1669-i04 in-progress | [ws235](ws235/ws.md) RTL81xx の共通の driver で RTL8127 が 10G で動いた（p001〜p005 cleared）→ p006 RTL8127 の拡張（10.0.10.3）。WS309 は止めた（p001〜p007・p019 cleared、再開点は p008 の残り 1） | 10.0.10.3（時間の枠） |
 | P2 | q1670-i02 in-progress | [ws291](ws291/ws.md) の NVIDIA の段（RTX 2070）、RDNA の案 A・B は host・QEMU まで | 10.0.10.3（時間の枠） |
 | P3 | q1664-i04 in-progress | [ws221](ws221/ws.md) p004・p005 cleared、受けの窓を byte・window scale shift 5。残り p008・p009 の残り・p006・p007、その後 WS311（CUBIC）、p010 は WS235 の後 | VF2 |
 | P4 | q1665-i07 in-progress（p009 install-admin の段 5 から） | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
@@ -215,7 +215,7 @@ BUG-353 · q1671 · WS312 · KL_VERSION 97。使う前に衝突を確かめる�
 | [WS222](ws222/ws.md) | MG006 | 画像・PDF・字形の library を menuconfig の Desktop へ戻す（PNG・PDF・JPEG・TrueType）（2026-10-13 ユーザー、今の作業が全部終わってから） | planned・保留（後日） | p001 |
 | [WS225](ws225/ws.md) | MG006 | Vulkan の header を仕様から導ける内容だけで書き直し、Khronos の著作権表示を外す（2026-10-13 ユーザー） | planning・保留（ブロック） | p001 |
 | [WS234](ws234/ws.md) | MG006 | libkeiland の DLL 版（zedBSD 用と Windows 用）で、同じ .exe が zedBSD と Windows の両方で動く | planning・保留 | p001 |
-| [WS235](ws235/ws.md) | MG006 | Realtek RTL8127・8125・8126・8122・8121・8120 の共通の Ethernet driver（まず PCIe の RTL8127 10GbE） | planning・保留（見積もりだけ） | p001〜p007 |
+| [WS235](ws235/ws.md) | MG006 | Realtek RTL8127・8125・8126・8122・8121・8120 の共通の Ethernet driver（まず PCIe の RTL8127 10GbE） | incomplete（p001〜p005 cleared、次は p006） | p006〜p008 |
 | [WS240](ws240/ws.md) | MG006 | nvrtx の RTX 50（Blackwell）（2026-10-15 ユーザー） | planning・保留（開始しない） | — |
 | [WS251](ws251/ws.md) | MG001 | source の tree 全体から開発の管理情報を削除する（2026-10-15 ユーザー） | incomplete・保留（作業対象になった時） | p001 の棚卸し、drivers の外の群 |
 | [WS257](ws257/ws.md) | MG006 | i915 を Haswell・Broadwell（Gen7.5・Gen8）に対応（2026-10-18 ユーザー） | planning・保留（今は取り組まない） | — |
