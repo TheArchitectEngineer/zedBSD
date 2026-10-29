@@ -116,7 +116,9 @@
 - lid（16:3x、WIP の次の commit）: 閉じた時の外部への移動・開いた時の panel への戻しを変更の操作に（`kwl_output_use_external/internal` は then を取る、
   lid の残り（lock・消灯・unlock）は移動の終わりで `lid_follow_rest`）。QEMU で lid は試せない（未実施）。移動の仕組みは resize の recover と同じ。
   amd64・Linux warning 0、resize-guest PASS。
-- 未実施: RTX（枠は Q1 の知らせ待ち）、backlight の成功の経路と lid の経路（QEMU に無い。実機で）、Settings の anchor を消した時の移動（その場のまま）、
+- anchor（2d001e1d6）: hotplug の look の中の「anchor の display を消した時の移動」は変更の操作（`kwl_displays_anchor_follow_later`、候補の列、log は最初の候補だけ）。
+  Settings の要求の中（choice の適用・on/off）は config に新しい anchor を書く前に移動の結果が要るので、その場のまま（`kwl_displays_anchor_follow`）。resize-guest PASS。
+- 未実施: RTX（枠は Q1 の知らせ待ち）、backlight の成功の経路と lid の経路（QEMU に無い。実機で）、Settings の要求の中の移動と head の閉じ（その場のまま）、
   let-go の破棄の T3 化（layers・glass maps は main の構造に触るので別の形が要る）、seat の pause の答えを T3 の完了で返す形（p016 と一緒）。
 - 27d4ecfde の build: arm64（`config/ci/config-rpi5.mk` の build/rpi5/bin/wayland、この worktree の sysroot-arm64）・riscv64（`config/ci/config-visionfive2-keiland.mk`）exit 0・warning 0。
   同じ build で QEMU `rotate-guest.sh`・`hand-guest.sh` も PASS（16:3x）。
