@@ -2,11 +2,14 @@
 # The video decoder's checks on the RTX 2070 machine (GPU_PERF_MACHINE=rtx, 10.0.10.3, zedBSD started once with UEFI
 # BootNext), in one command: the kernel and nvrtx.video=1 put in, zedBSD restarted, then
 #   V0  the driver's lines of the decoder's channel, the copy objects and the sessions' channels (dmesg)
-#   V1  media-probe --video-hash --time on each clip of CLIPS (720p30 High, 1080p30 High, 1080p24 Main), the hashes
+#   V1  media-probe --video-hash --time on each clip of CLIPS (720p30 High, 1080p30 High, 1080p60 High, 1080p24 Main), the hashes
 #       compared with the software decoder's (nv12-hashes.py on the host, CLIPS/NAME.ref): count, order, times
 #   V2  the 1080p30 clip decoded and read back three times: frames, elapsed time, libmedia's own counts
 #   V3  mview in a window (composed) for 10 s alone, then while the 1080p30 clip is decoded over and over: its frame
 #       times both ways
+#   V4  (when PERF_BUILD has bin/videoplayer) Video Player full screen on each clip for 12 s: whether libmedia gave it
+#       pictures the GPU holds (sampled NV12 planes, nothing read back), libmedia's picture counts, errors, and a
+#       desktop shot 6 s in (OUT/v4-NAME.png)
 # then the line taken out again; zedBSD is left running.  The logs stay in OUT, a summary is printed
 # (OUT/summary.txt).  The programs come from PERF_BUILD (default build/ws243): bin/media-probe,
 # dynamic/libmedia.so and dynamic/libvulkan.so (used through LD_LIBRARY_PATH), usb/bin/mview.
@@ -104,7 +107,7 @@ say "V0 copy objects $(grep -c 'copy object on engine' "$OUT/v0.log"), refused $
 # V1: each clip's hashes.
 for clip in "$CLIPS"/*.mp4; do
 	name=$(basename "$clip" .mp4)
-	run "v1-$name" 240 <<EOS
+	run "v1-$name" 300 <<EOS
 n=\$(dmesg | wc -l)
 cd $DIR
 $PROBE --video-hash --time $name.mp4 > /tmp/$name.hash 2> /tmp/$name.err
@@ -147,6 +150,30 @@ $AS_USER "$ENVS $DIR/mview --token=decoding $MVIEW_WINDOW" 2>&1 | grep -E 'MVIEW
 wait
 EOS
 grep -E 'MVIEW (SPIN|HITCHES|FAILED)' "$OUT/v3.log" | cut -c1-200 | sed 's/^/V3 /' | tee -a "$SUMMARY"
+
+# V4: Video Player on the pictures the GPU holds, a shot while it plays.
+if [ -f "$PERF_BUILD/bin/videoplayer" ]; then
+	zput "$PERF_BUILD/bin/videoplayer" "root@$IP:$DIR/" && zs "$IP" "chmod 755 $DIR/videoplayer" < /dev/null
+	for clip in "$CLIPS"/*.mp4; do
+		name=$(basename "$clip" .mp4)
+		run "v4-$name" 60 <<EOS
+cd $DIR
+n=\$(dmesg | wc -l)
+$AS_USER "$ENVS LD_LIBRARY_PATH=$DIR $DIR/videoplayer --fullscreen --timeout-s=12 $DIR/$name.mp4" > /tmp/v4.err 2>&1 &
+sleep 6
+env XDG_RUNTIME_DIR=/run/user/1000 keiland-shot /tmp/v4-$name.png > /dev/null 2>&1
+wait
+echo "--- player"
+grep -E 'VIDEOPLAYER' /tmp/v4.err
+echo "--- kernel"
+dmesg | tail -n +\$n | grep -E 'nvrtx'
+EOS
+		ZS_TIMEOUT=30 zs "$IP" "cat /tmp/v4-$name.png" > "$OUT/v4-$name.png" 2> /dev/null < /dev/null
+		say "V4 $name: $(grep -c 'pictures the GPU holds' "$OUT/v4-$name.log") gpu-holds lines, $(grep -c 'read back' "$OUT/v4-$name.log") read-back lines, $(grep -ci 'fail\|error\|lost' "$OUT/v4-$name.log") failure lines, shot $(wc -c < "$OUT/v4-$name.png") bytes"
+		{ grep -E 'PRESENT|GPU holds|read back|FAILED' "$OUT/v4-$name.log" | head -4; grep -E 'VIDEOPLAYER FRAMES' "$OUT/v4-$name.log" | tail -1;
+		  grep -E 'VIDEOPLAYER DONE' "$OUT/v4-$name.log"; grep -E 'pictures in' "$OUT/v4-$name.log" | tail -2; } | cut -c1-160 | sed 's/^/    /' | tee -a "$SUMMARY" > /dev/null
+	done
+fi
 
 # The line taken out again; zedBSD stays up.
 zs "$IP" "sed -i -e '/^nvrtx\\.video=/d' /boot/boot0/zedbsd.cfg && sync && grep -c '^nvrtx.video' /boot/boot0/zedbsd.cfg" > "$OUT/line-back.txt" 2>&1 < /dev/null

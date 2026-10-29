@@ -563,12 +563,14 @@ device_format_features(
 	case NVRTX_VK_FORMAT_NV12:
 		/*
 		 * The video decoder's pictures, of optimal (block-linear) tiling
-		 * only: decoded into, references, copied out (libvulkan hides the
-		 * video features of a device without video decode).
+		 * only: decoded into, references, copied out, their planes sampled
+		 * through R8 and R8G8 views (libvulkan hides the video features of
+		 * a device without video decode).
 		 */
 		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR |
 						    VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR |
-						    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
+						    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT |
+						    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT;
 		break;
 	default:
 		break;

@@ -288,6 +288,20 @@
  */
 #define TIC_VERSION_BLOCKLINEAR			3U
 #define TIC_TYPE_TWO_D				1U
+
+/*
+ * The one- and two-channel 8-bit component sizes of a texture header (a
+ * video picture's luma plane as R8, its chroma plane as R8G8, red in the
+ * lowest byte), and blocks two GOBs high.
+ *
+ * Values referenced: Mesa 25.0.7
+ * src/nouveau/headers/nvidia/classes/clb097tex.h
+ * (NVB097_TEXHEAD_BL_COMPONENTS_SIZES_R8, _SIZES_G8R8,
+ * NVB097_TEXHEAD_BL_GOBS_PER_BLOCK_HEIGHT_TWO_GOBS).
+ */
+#define TIC_COMPONENTS_R8			0x1dU
+#define TIC_COMPONENTS_G8R8			0x18U
+#define TIC_BLOCK_HEIGHT_TWO_GOBS		1U
 #define TSC_MIP_LINEAR				3U
 #define TSC_LOD_MAX				0xfffU
 
@@ -1183,6 +1197,55 @@ nvrtx_exec_texture_header_tiled(
 	exec_field(header, 124U, 4U, levels - 1U);
 	exec_field(header, 224U, 4U, base_level);
 	exec_field(header, 228U, 4U, base_level + level_count - 1U);
+}
+
+/*
+ * Writes the texture header of one plane of a video picture: block linear
+ * in blocks one GOB wide and two GOBs high, one level, width by height
+ * texels of channels 8-bit unsigned normalized channels (1 the luma plane
+ * as R8, 2 the chroma plane as R8G8).  The channels a plane does not have
+ * read as zero, and alpha as one, before the view's swizzle.
+ *
+ * Values referenced: Mesa 25.0.7 src/nouveau/nil/tic.rs (nvb097_fill_tic,
+ * TEXHEAD_BL_GOBS_PER_BLOCK_HEIGHT from the image's tiling).
+ */
+void
+nvrtx_exec_texture_header_plane(
+	uint32_t *header,
+	uint64_t address,
+	uint32_t width,
+	uint32_t height,
+	uint32_t channels,
+	const uint32_t *swizzle)
+{
+	static const uint32_t red[4] = { TIC_SOURCE_R, TIC_SOURCE_ZERO, TIC_SOURCE_ZERO, TIC_SOURCE_ONE_FLOAT };
+	static const uint32_t red_green[4] = { TIC_SOURCE_R, TIC_SOURCE_G, TIC_SOURCE_ZERO, TIC_SOURCE_ONE_FLOAT };
+	const uint32_t *identity;
+	uint32_t sizes;
+	uint32_t index;
+
+	/* The tiled header of one level, its component sizes and sources taken out. */
+	nvrtx_exec_texture_header_tiled(header, address, width, height, 1U, 0U, 1U, VK_FORMAT_R8G8B8A8_UNORM, swizzle);
+	for (index = 0U; index < 7U; index++)
+		header[index / 32U] &= ~(1U << (index % 32U));
+	for (index = 19U; index < 31U; index++)
+		header[index / 32U] &= ~(1U << (index % 32U));
+
+	/* The plane's channels, each source after the view's swizzle. */
+	identity = red;
+	sizes = TIC_COMPONENTS_R8;
+	if (channels == 2U) {
+		identity = red_green;
+		sizes = TIC_COMPONENTS_G8R8;
+	}
+	exec_field(header, 0U, 7U, sizes);
+	exec_field(header, 19U, 3U, exec_swizzle_source(swizzle[0], identity));
+	exec_field(header, 22U, 3U, exec_swizzle_source(swizzle[1], identity));
+	exec_field(header, 25U, 3U, exec_swizzle_source(swizzle[2], identity));
+	exec_field(header, 28U, 3U, exec_swizzle_source(swizzle[3], identity));
+
+	/* Blocks two GOBs high, as the decoder writes them. */
+	exec_field(header, 99U, 3U, TIC_BLOCK_HEIGHT_TWO_GOBS);
 }
 
 /*

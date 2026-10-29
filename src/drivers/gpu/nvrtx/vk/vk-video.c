@@ -777,7 +777,8 @@ video_format_properties(
 
 	/* The profiles must all be H.264 decode; usages are the decode's output, reference and readback. */
 	result = 0;
-	video_usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	video_usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+	    VK_IMAGE_USAGE_SAMPLED_BIT;
 	available = nvrtx_vk_video_available(session->owner);
 	if (!available) {
 		result = VIDEO_ERROR_OPERATION;
@@ -796,8 +797,9 @@ video_format_properties(
 	}
 
 	/*
-	 * Replies the one format: NV12, identity swizzle, no create flags,
-	 * 2D, optimal (block linear), decode output, reference and readback.
+	 * Replies the one format: NV12, identity swizzle, its planes viewable
+	 * in their own formats (mutable format, extended usage), 2D, optimal
+	 * (block linear), decode output, reference, readback and sampled.
 	 */
 	drv_i915_wire_reply_u32(reply, 0U);
 	drv_i915_wire_reply_u64(reply, 1U);
@@ -810,7 +812,7 @@ video_format_properties(
 	drv_i915_wire_reply_u32(reply, 0U);
 	drv_i915_wire_reply_u32(reply, 0U);
 	drv_i915_wire_reply_u32(reply, 0U);
-	drv_i915_wire_reply_u32(reply, 0U);
+	drv_i915_wire_reply_u32(reply, VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT | VK_IMAGE_CREATE_EXTENDED_USAGE_BIT);
 	drv_i915_wire_reply_u32(reply, VK_IMAGE_TYPE_2D);
 	drv_i915_wire_reply_u32(reply, VK_IMAGE_TILING_OPTIMAL);
 	drv_i915_wire_reply_u32(reply, video_usage);

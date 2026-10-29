@@ -162,6 +162,7 @@ struct nvrtx_exec_plane_copy {
 size_t nvrtx_exec_copy_plane(uint8_t *push, size_t at, const struct nvrtx_exec_plane_copy *copy);
 void nvrtx_exec_texture_header(uint32_t *header, uint64_t address, uint32_t width, uint32_t height, uint32_t pitch, uint32_t format, const uint32_t *swizzle);
 void nvrtx_exec_texture_header_tiled(uint32_t *header, uint64_t address, uint32_t width, uint32_t height, uint32_t levels, uint32_t base_level, uint32_t level_count, uint32_t format, const uint32_t *swizzle);
+void nvrtx_exec_texture_header_plane(uint32_t *header, uint64_t address, uint32_t width, uint32_t height, uint32_t channels, const uint32_t *swizzle);
 void nvrtx_exec_sampler_words(uint32_t *words, const struct nvrtx_exec_sampler *sampler);
 uint32_t nvrtx_exec_float(int32_t value);
 int64_t nvrtx_exec_fixed(uint32_t bits, uint32_t fraction);

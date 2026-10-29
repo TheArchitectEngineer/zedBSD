@@ -1350,16 +1350,28 @@ execute_texture(
 	uint8_t *cpu;
 	int error;
 
-	/* The view's image, with storage, in a colour format (a depth or video image is not sampled). */
+	/* The view's image, with storage, in a colour format or a plane of a video image (a depth image is not sampled). */
 	image = view->image->payload;
-	if (image->depth || image->video)
+	if (image->depth || (image->video && view->plane == 0U))
 		return EINVAL;
 	error = nvrtx_vk_image_address(image, &va, &cpu);
 	if (error != 0)
 		return error;
 
-	/* The header: a tiled image's with the view's levels, a pitch-linear image's of its one level; the sampler. */
-	if (image->tiled) {
+	/*
+	 * The header: a video plane's (the luma plane full size, the chroma
+	 * plane's pairs half each way), a tiled image's with the view's levels,
+	 * a pitch-linear image's of its one level; the sampler.
+	 */
+	if (image->video) {
+		if (view->plane == 1U) {
+			nvrtx_exec_texture_header_plane(header, va + image->plane_offset[0], image->width, image->height, 1U,
+							view->swizzle);
+		} else {
+			nvrtx_exec_texture_header_plane(header, va + image->plane_offset[1], image->width / 2U,
+							image->height / 2U, 2U, view->swizzle);
+		}
+	} else if (image->tiled) {
 		nvrtx_exec_texture_header_tiled(header, va, image->width, image->height, image->levels, view->base_level,
 						view->level_count, view->format, view->swizzle);
 	} else {
