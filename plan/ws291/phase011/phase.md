@@ -148,7 +148,72 @@
 - 証拠: worktree p5-ws291 の build/ws291/measure/q1693-base・q1693-f1（summary.txt）。終わりに Debian、RTX は vfio-pci、NVMe の kernel は vmunix-va1
   （cksum 1463007375、nvrtx.vk.perf の行 0）。lock は 03:40 に返した。
 
-### 残り（03:45 P5）
+### 残り（03:45 P5、下の節に続く）
 
 - frame と GPU の差: mview の fence 19.7 ms と GPU の run 19.4〜19.5 ms の約 0.3 ms（完了の検出から app の起床まで）と、1 frame の 2 つ目の run（present、約 0.1 ms）。
 - nvrtx の big-N・subs-N・scene-1500 は zedBSD で未計測（NVK: big-1000 136.2、subs-1000 75.4、scene-1500 165.6 fps）。差の大きい所を探すには bench の 1 枠が要る。
+
+### bench の差（2026-10-30 03:42〜03:48、kernel f1 = main 相当、`build/ws291/rtx-bench.sh`、list は bench.list と scene-5000）
+
+| run | zedBSD fps（record・submit ms） | NVK fps（p010） |
+| --- | --- | --- |
+| scene-1500 | 156.1 | 165.6 |
+| scene-6500 | 38.8 | 38.4〜39.2 |
+| big-100 | 14.5（63.3・2.7） | — |
+| big-1000 | 1.32（650・42.8） | 136.2 |
+| subs-100 | 66.1（0.75・13.9） | — |
+| subs-1000 | 6.65（6.1・141） | 75.4 |
+
+- 最大の差は big-N の record（約 100 倍）、次が subs-N の submit（1 submit 約 140 µs、約 30 倍）。Q1 に報告し、Q1 の指示（2026-10-30）で RDNA の案 4・5 と同じ形
+  （ws.md のユーザーの回答「両方 (推し)」「まずはデフォルト有効で実装して…」）を nvrtx に当て、続けて draw ごとの全 state の push を変わった物だけに。
+
+### 直し（commit。kernel は plan/ws291/tests/config.mk の build、warning 0・amd64 vmunix check PASS、host: nvrtx-vk 94/0・vk-d3 218/0）
+
+- e8f83ab8f（h1、Q1 が merge）: nvrtx に GPU_CAP_HOST_BLOB。libvulkan の transport の stream（1 MiB の batch）と reply の blob（GPU_BLOB_HOST）を cached の RAM
+  の storage にし（amdrdna の node_host_blob と同じ形）、session の blob 一覧に載せて nvrtx_vk_blob が RAM を返す。前は VRAM の blob で、executor が
+  UC の BAR1 越しに 1 word ずつ読んでいた。present の blob の道と memory_import は kind を先に確かめる（backing の無い blob の NULL 参照を防ぐ）。
+  rtx-video の host 試験 4 本 PASS。
+- 5a2c5f4ff（s1）: capset の native の record を常に出し、sync command の bit（2）を立てる（video の bit は decode できる時）。runtime_command は
+  amdrdna と同じく走る間 pending に数え、終わりに retired を起こす（drain・stop が待つ）。
+- 5ec449b99（d1）: executor の draw は、同じ run の中で前の draw の後に他の method が無い時（generation と push buffer の端で判定）、viewport・
+  scissor・raster・depth・blend・vertex・index と、constants・textures・uniform・programs の組（pipeline・sets・push 定数が同じ時）を書かない。
+- 57f4c5a62（r1）: slot に空きがある間は、次の submit の run を同じ slot の続きに書く（run ごとに class の初期 state・pool・invalidate を頭に）。
+  前は submit ごとに slot（3 個）を替え、空きが無いと最も古い run の終わりを待っていた（subs-N の 1 submit 約 140 µs の見込み）。
+
+### 実機（10.0.10.3 RTX 2070、03:52〜05:0x）
+
+- h1 の 1 回目（03:52〜03:57）: big-1000 1.32 → 23.0 fps（record 650 → 27.5 ms、submit 42.8 → 14.7 ms）、big-100 14.5 → 220.2、subs 不変。
+- 回帰（rtx-async-check.sh）: h1（04:00〜04:05）shot は Linux 参照と max 76・16 以上 2 画素（従来どおり）、scene-5000 49.71 fps、hang は vkhang が
+  worktree に無く未実施。d1（h1+s1+d1、cksum 4142703682、04:18〜04:28）: shot 同じ、scene-5000 49.54、hang: vkhang 2053 ms で DEVICE_LOST
+  （-4）、channel 20 を止めて reset（4039 ms）、vkhang --loops ok、mview after-hang 1263 fps、desktop の shot に窓と panel（compositor は生きている）。
+  vkhang --compute は family -8（compute の queue family が無い）。vkhang は p2-ws291q の物（cksum 2845471830、source は 10-16 から不変）。
+
+- 3 腕 × 2 回の交互（Q1 の指示、`build/ws291/rtx-abc.sh`、04:24〜04:54。前の 1 回ずつの run も併記）:
+
+| kernel | big-100 fps | big-1000 fps（record・submit ms） | subs-1000 fps（submit ms） | scene-5000 |
+| --- | --- | --- | --- | --- |
+| h1（e8f83ab8f） | 220.2・176.1・211.4 | 23.0・19.8・24.1（27.5〜29.4・14.7〜19.3） | 6.68・6.72・6.64（139〜141） | 48.1・48.4・48.6 |
+| s1（+5a2c5f4ff） | 226.4・223.5・183.1 | 24.2・23.7・23.9（24.7〜25.6・15.3〜15.9） | 6.59・6.66・6.62（141〜142） | 48.9・48.5・47.8 |
+| d1（+5ec449b99） | 216.0・208.3・212.3 | 14.7・21.2・22.0（25.7〜35.6・18.2〜30.3） | 6.64・6.62・6.69（140〜142） | 48.6・48.2・48.5 |
+| r1（+57f4c5a62、1 回） | 189.8 | 22.4（25.0・18.0） | 6.68（134、fence 0.27 → 6.7） | 48.0 |
+
+- 読み: h1 は効果あり（big-1000 1.32 → 20〜24 fps、big-100 14.5 → 180〜220）。s1（sync command）は big-1000 で揺れの内か少し上（23.7〜24.2 対
+  19.8〜24.1）、subs は不変。d1（dirty state）は big-1000 の submit が 15 → 18〜30 ms と悪い: big-N は draw ごとに pipeline・sets・push が変わるので
+  組は省けず、比べと写し（vertex の構造 約 650 byte、push 256 byte）の分だけ重い → 効果なし、main に入れない（branch に残す）。r1（slot の続き）は
+  subs の submit 141 → 134 ms・fence 0.27 → 6.7 ms で frame は不変 → 効果なし、main に入れない。
+- libvulkan の timing（r1、`VULKAN_ZEDBSD_SUBMIT_TIMING=1`、05:00〜05:03、`build/ws291/rtx-subsprof.sh`）:
+  - subs-100: 1 submit 122 µs = reserve 24 + execute 76（kernel の transaction、command_ran 66 µs、caller の thread で走った: deferred 6 回のみ）+ 他、
+    reap 21 µs。kernel の 1 submit 約 66 µs（16 draw の record の decode と executor と GPU への submit）が主（RDNA は 1 submit 全体で約 39 µs）。
+  - big-1000: frame 44.5 ms = record 26.3 + submit 17.3。transaction は 1 frame に約 9 回、1 回の kernel の時間 平均 3.7 ms（1 MiB の batch の decode）。
+    1 draw に約 440 byte の stream（sets・push 128 byte・draw）、decode は 1 MiB に 3.7 ms。
+- 証拠: worktree p5-ws291 の build/ws291/measure/q1693-bench1・bench2・bench-s1・bench-d1・abc-*・r1-1・prof1、q1693-h1・q1693-d1（summary.txt、hang/desktop.png）。
+  終わりに Debian、RTX は vfio-pci、NVMe の kernel は vmunix-va1（cksum 1463007375）。lock は 05:05 に返した。
+
+### 再開点（05:05 P5）
+
+- main に入れる物: e8f83ab8f（h1、効果あり、回帰なし）、5a2c5f4ff（s1、RDNA と同じ形、効果は揺れの内〜小、回帰は d1 の hang・shot で確かめ済み）。
+  入れない物: 5ec449b99（d1）・57f4c5a62（r1）、効果なし（branch agent/p5-ws291 に残す。d1 は比べを軽くすれば state の繰り返しが多い app には効く見込み）。
+  r1・d1 は s1 の上に積んであるので、merge は 5a2c5f4ff までにする。
+- 次の候補（効く順の見込み）: (1) kernel の record の decode（1 MiB に 3.7 ms。record_push の draw ごとの kern_malloc・free、wire の byte 単位の読み、
+  record_append の写しを調べる）、(2) subs の kernel の 1 submit 66 µs の内訳（work channel の submit の USERD の書き込みが window_lock と PRAMIN を
+  通るか、executor の 16 draw）、(3) reserve 24 µs・reap 21 µs。nvrtx.vk.perf と kernel の時間の印で内訳を取ってから直す。
