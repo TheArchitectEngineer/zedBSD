@@ -128,6 +128,9 @@ arm64_el1_low:
 	add x1, x1, :lo12:arm64_l1_high
 	str x3, [x1, x4]
 
+	/* Any RAM past the first GiB the board's early boot touches. */
+	arm64_board_boot_extra_ram
+
 	/*
 	 * Attr0=normal WB, Attr1=device-nGnRE, Attr2=device-nGnRnE,
 	 * Attr3=normal non-cacheable (uncached views of RAM for DMA).
