@@ -45,6 +45,10 @@
   - 4 回目（`p011.hfdv7fqg`）: map・refused-tiny・refused-live・refused-mbr・refused-zcfg・cancel（NVMe 512、約 9 分で S10、`failed step=unpack`）・damage ok。failure（4096 の NVMe の全体、既定の項目 165 MiB）が 1800 s で S10 に届かず FAIL: 4096 の native UFS の書きが 22 分で約 50 MB（BUG-358）。ae125c7d4 で回避（failure を NVMe 512 へ、4096 は最後に S7 で desktop・firmware・fonts を外す、timeout 3600 s）。
   - 5 回目（`p011.tjf9naoi`）: refused-zcfg まで ok、cancel の途中（23:23）でユーザーの指示により止めた（q1688: 先に UFS の遅さ BUG-355・358 を直してから流し直す。4096 の導入は既定の項目に戻す）。
   - 条件の変更（走らせた後）: ae125c7d4 の回避（4096 の項目を減らす）は q1688 の後に戻す（ユーザーの指示）。
+  - q1688-i01（P4、2026-10-29〜30）で UFS の遅さを直した（6387b82a0: mkfs の native が tail journal を書かない、4096 の batched journal の sector の単位。[BUG-355](../../bugs/BUG-355.md)・[BUG-358](../../bugs/BUG-358.md)）。image は `build/q1688-img/installer-image.img`（この branch の tree、`make … BUILD=build/q1688-img … installer-image` rc 0）。ae125c7d4 の回避は 9d4baeaa3 で戻した（4096 も既定の項目、failure は 4096 の disk）。
+  - 6 回目（`p011.yygfuq4e`）: live が SSH に上がらず FAIL。gdbstub で `klog_buffer` を読んだ: live の USB stick で xHCI の command 15 が時間切れ、BOT の転送が error 17/42、root が書けず `/sbin/init` の exec が EIO。host の fdatasync は中央値 1 s（load 12〜15）。Q1 が [BUG-359](../../bugs/BUG-359.md) に登録。試験の対処（Q1 の了承）: stick と 7 台の disk を cache=unsafe に（`installer_walk.Run.start` の `-set drive.boot.cache=unsafe`、p011 の drive）。
+  - 7 回目（`p011.3xwutjtb`）: map・refused-*・cancel・damage・failure（4096 の全体、壊した unit → S10、`failed step=unpack errno=5`、約 2 分）・restore・nvme・nvme-harness が ok。nvme の後の S11 に「やり直す」が無く（S11 は「閉じる」と「再起動」だけ、spec §4.11）FAIL。試験の誤り: S11 の後は installer を閉じて live の session で開き直す（`Walk.again`）に直した。
+  - 8 回目（`p011.u2sndh3h`）: 開き直しが働き、k4（4096 の全体、既定の項目、S11）まで ok。「他の OS」の S4 で大きさ「1 GiB」を入れて「作成」を押した後、`INSTALLER EDIT` の行が 180 s 出ず FAIL（installer の log に helper の session も無い。画面を撮っていなかったので原因は未確認）。S4 の大きさを入れた後と FAIL の時の画面を撮るよう直した。
 - p011 の受け入れは未達（MBR・zedbsd.cfg・1 GiB・live の拒みの GUI の確かめは 4・5 回目で ok）。
 
 ## 未実施・残り

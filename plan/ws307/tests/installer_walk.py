@@ -283,11 +283,12 @@ class Run:
 		return names[0]
 
 	def set_field(self, name: str, text: str):
-		"""Types a text into a field in place of what it holds."""
+		"""Types a text into a field in place of what it holds: Ctrl+A selects it all and the typing replaces it.
+		(Backspace does not erase a space in a field of the live session, so erasing key by key leaves text behind.)"""
 		self.click(name)
-		self.key("end")
-		for _ in range(40):
-			self.key("backspace")
+		time.sleep(0.5)
+		self.key("ctrl", "a")
+		time.sleep(0.3)
 		self.type(text)
 
 	def root(self, command: str, timeout: float = 300):
