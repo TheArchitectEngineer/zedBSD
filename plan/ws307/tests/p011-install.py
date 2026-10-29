@@ -2,22 +2,23 @@
 """WS307 p011: the installer end to end in QEMU, through its window.
 
 Boots IMAGE (make installer-image with plan/ws307/tests/config-amd64-p010.mk and the harness's files) from USB with a
-Venus GPU, a USB tablet, an empty NVMe disk and a SATA disk of another system (an ESP with \\EFI\\BOOT\\BOOTX64.EFI, a basic data partition, free room), and walks the installer as a person would
-(plan/ws307/tests/installer_walk.py):
+Venus GPU, a USB tablet and seven disks, and walks the installer as a person would (plan/ws307/tests/installer_walk.py):
 
-  refused   the live USB disk (S2), the empty disk's partitions (no GPT, S3)
-  cancel    the NVMe disk whole, cancelled while the units unpack: S10 says where it stopped
-  failure   the NVMe disk whole with a unit damaged (a byte appended): the helper refuses its SHA-256, S10
-  whole     the NVMe disk whole, the user's automatic login off
-  chosen    the disk of another system: a 1 GiB partition made on S4 for swap, the basic data partition chosen as
-            the root (its erasure confirmed); the other system's files stay, the loader goes to \\EFI\\ZEDBSD
+  refused   a disk of 1 GiB (too small) and the live USB (S2), an MBR disk and a disk whose FAT holds zedbsd.cfg
+            (their partitions cannot be chosen, S3) -- S2 and S3 photographed
+  cancel    the empty NVMe disk whole, cancelled while the units unpack: S10 says where it stopped
+  failure   the 4096-byte NVMe disk whole with a unit damaged (a byte appended): the helper refuses its SHA-256, S10
+  whole     the NVMe disk whole, the user's automatic login off; the 4096-byte disk whole (the unit put back)
+  chosen    the SATA disk of another system (an ESP with \\EFI\\BOOT\\BOOTX64.EFI and a file, two basic data
+            partitions): a 1 GiB partition made on S4 for swap, the second basic data partition chosen as the root
+            (its erasure confirmed); the first is never touched, and the loader goes to \\EFI\\ZEDBSD
+  swap file the USB disk with an empty GPT: S4 makes the ESP and a partition, no swap partition, a swap file
 
-then, the live system stopped, checks the other system's ESP on the host, starts the NVMe disk alone to the console's
-login prompt (plan/tools/boot-test.sh) and logs in to it over SSH as the user with the password chosen.  The SATA
-disk is not started: its loader is in \\EFI\\ZEDBSD, which the firmware starts only through a Boot#### entry (p007).
-The 4096-byte disk, the USB disk of a swap file, and the disks refused for their tables (MBR, zedbsd.cfg) are left
-out: with any of them attached the live system with the Venus GPU did not start (2026-10-29, recorded in
-plan/ws307/phase011/phase.md).
+then, the live system stopped, checks on the host the other system's partition and files and the ESP, starts each
+installed disk alone to the console's login prompt (plan/tools/boot-test.sh: the NVMe disk, the 4096-byte disk, the
+USB disk) and logs in to the NVMe disk's system over SSH as the user with the password chosen.  The SATA disk is not
+started: its loader is in \\EFI\\ZEDBSD, which the firmware starts only through a Boot#### entry (p007, waiting for the
+user's approval).
 
 The pictures go to OUT/shots/; the summary is a line a step ("STEP name ok|fail ...") and "p011-install: PASS|FAIL OUT".
 
@@ -60,15 +61,42 @@ class Walk:
 
 	# The disks.
 	def disks(self) -> str:
-		"""The empty NVMe disk and the disk of another system (the disk set the live system starts with, below)."""
 		out = self.run.out
 		blank(out / "nvme.img", 12)
+		blank(out / "k4.img", 8)
 		other = out / "other.img"
 		blank(other, 14)
-		gpt(other, 512, (1, 300, ESP, "EFI system partition"), (301, 4096, BASIC, "Basic data partition"))
-		fat(other, 1, 300, "OTHERESP", {"/EFI/BOOT/BOOTX64.EFI": OTHER_LOADER})
+		gpt(other, 512, (1, 300, ESP, "EFI system partition"), (301, 2048, BASIC, "Basic data A"),
+		    (2349, 4096, BASIC, "Basic data B"))
+		fat(other, 1, 300, "OTHERESP", {"/EFI/BOOT/BOOTX64.EFI": OTHER_LOADER, "/OTHER/NOTE.TXT": OTHER_FILE})
+		with open(other, "r+b") as f:
+			f.seek(301 << 20)
+			f.write(os.urandom(2048 << 20))
+		usb = out / "usb.img"
+		blank(usb, 9)
+		gpt(usb, 512)
+		mbr = out / "mbr.img"
+		blank(mbr, 2)
+		with open(mbr, "r+b") as f:
+			entry = bytes([0, 0, 0, 0, 0x0c, 0, 0, 0]) + (2048).to_bytes(4, "little") + (1048576).to_bytes(4, "little")
+			f.seek(446)
+			f.write(entry)
+			f.seek(510)
+			f.write(b"\x55\xaa")
+		zcfg = out / "zcfg.img"
+		blank(zcfg, 3)
+		gpt(zcfg, 512, (1, 600, BASIC, "ZEDBSD"))
+		fat(zcfg, 1, 600, "ZEDBSD", {"/zedbsd.cfg": b"kernel=vmunix\n"})
+		blank(out / "tiny.img", 1)
+		self.other_a = self.region(other, 301, 2048)
 		return (f"-drive file={out}/nvme.img,if=none,id=n1,format=raw -device nvme,serial=p011n,drive=n1 "
-			f"-device ahci,id=a1 -drive file={other},if=none,id=s1,format=raw -device ide-hd,drive=s1,bus=a1.0")
+			f"-drive file={out}/k4.img,if=none,id=n2,format=raw "
+			f"-device nvme,serial=p011k,drive=n2,logical_block_size=4096,physical_block_size=4096 "
+			f"-device ahci,id=a1 -drive file={other},if=none,id=s1,format=raw -device ide-hd,drive=s1,bus=a1.0 "
+			f"-drive file={zcfg},if=none,id=s2,format=raw -device ide-hd,drive=s2,bus=a1.1 "
+			f"-drive file={mbr},if=none,id=s3,format=raw -device ide-hd,drive=s3,bus=a1.2 "
+			f"-device qemu-xhci,id=x2 -drive file={usb},if=none,id=u1,format=raw -device usb-storage,bus=x2.0,drive=u1 "
+			f"-drive file={out}/tiny.img,if=none,id=u2,format=raw -device usb-storage,bus=x2.0,drive=u2")
 
 	@staticmethod
 	def region(path: Path, first_mib: int, mib: int) -> str:
@@ -87,7 +115,8 @@ class Walk:
 	def map_disks(self):
 		"""The live system's names of the disks, by their sizes (install-admin probe as root)."""
 		code, text = self.run.root("/usr/libexec/install-admin probe")
-		sizes = {"nvme": 12 << 30, "other": 14 << 30}
+		sizes = {"nvme": 12 << 30, "k4": 8 << 30, "other": 14 << 30, "usb": 9 << 30, "mbr": 2 << 30, "zcfg": 3 << 30,
+			 "tiny": 1 << 30}
 		for line in text.splitlines():
 			field = line.split("\t")
 			if field[0] != "disk":
@@ -160,16 +189,19 @@ class Walk:
 		run.click("next")
 		found = run.wait_screen("s2-disk")
 		run.shot("s2-disks")
-		live = [n for n in found if n.startswith("disk-") and found[n][4] == 0]
+		self.step("refused-tiny", found.get("disk-" + self.names["tiny"], (0, 0, 0, 0, 1))[4] == 0)
+		named = {"disk-" + n for n in self.names.values()}
+		live = [n for n in found if n.startswith("disk-") and n not in named and found[n][4] == 0]
 		self.step("refused-live", len(live) == 1, " ".join(live))
 
-		# The empty NVMe disk's partitions cannot be chosen (no GPT).
-		self.choose("nvme")
-		found = run.wait_screen("s3-handling")
-		run.shot("s3-nvme-empty")
-		self.step("refused-chosen", found.get("chosen", (0, 0, 0, 0, 1))[4] == 0)
-		run.click("back")
-		run.wait_screen("s2-disk")
+		# Disks whose partitions cannot be chosen.
+		for disk in ("mbr", "zcfg"):
+			self.choose(disk)
+			found = run.wait_screen("s3-handling")
+			run.shot(f"s3-{disk}")
+			self.step(f"refused-{disk}", found.get("chosen", (0, 0, 0, 0, 1))[4] == 0 and found.get("whole", (0,) * 5)[4] == 1)
+			run.click("back")
+			run.wait_screen("s2-disk")
 
 		# The NVMe disk whole, cancelled while the units unpack.
 		self.choose("nvme")
@@ -186,10 +218,10 @@ class Walk:
 		self.step("cancel", word == "s10-failed" and any("failed step=unpack" in l for l in lines))
 		self.start_over()
 
-		# The NVMe disk whole with a damaged unit.
+		# The 4096-byte disk whole with a damaged unit.
 		code, _ = run.root(f"cp -p {DAMAGED} /tmp/p011-unit && printf x >> {DAMAGED}")
 		self.step("damage", code == 0)
-		self.choose("nvme")
+		self.choose("k4")
 		run.click("whole")
 		run.click("next")
 		mark = self.items_user_confirm("failure")
@@ -210,6 +242,15 @@ class Walk:
 		self.harness("nvme")
 		self.start_over()
 
+		# The 4096-byte disk whole.
+		self.choose("k4")
+		run.click("whole")
+		run.click("next")
+		mark = self.items_user_confirm("k4")
+		word = self.finish("k4", mark)
+		self.step("k4", word == "s11-done")
+		self.start_over()
+
 		# The disk of another system: a swap partition made, the second basic data partition the root.
 		self.choose("other")
 		run.click("chosen")
@@ -227,7 +268,7 @@ class Walk:
 		run.shot("other-s4")
 		run.click("next")
 		run.wait_screen("s5-root")
-		run.click("root-2")
+		run.click("root-3")
 		time.sleep(1.0)
 		run.shot("other-erase-dialog")
 		run.key("ret")
@@ -235,13 +276,41 @@ class Walk:
 		run.shot("other-s5")
 		run.click("next")
 		run.wait_screen("s6-swap")
-		run.click("swap-3")
+		run.click("swap-4")
 		run.shot("other-s6")
 		run.click("next")
 		mark = self.items_user_confirm("other", autologin=True)
 		word = self.finish("other", mark)
 		zedbsd = any("STATE loader" in l and "ZEDBSD" in l for l in run.read_log()[mark:])
 		self.step("other", word == "s11-done" and zedbsd)
+		self.start_over()
+
+		# The USB disk with an empty GPT: the ESP and a partition made, a swap file.
+		self.choose("usb")
+		run.click("chosen")
+		run.click("next")
+		run.wait_screen("s4-edit")
+		run.set_field("size", "6 GiB")
+		mark = len(run.read_log())
+		run.click("create")
+		run.wait_line(r"INSTALLER EDIT (DONE|FAIL)", 180, mark)
+		run.wait_line(r"INSTALLER PROBE read", 120, mark)
+		time.sleep(1.0)
+		run.shot("usb-s4")
+		run.click("next")
+		run.wait_screen("s5-root")
+		run.click("root-", prefix=True)
+		run.click("next")
+		run.wait_screen("s6-swap")
+		run.click("next")
+		time.sleep(1.0)
+		run.key("ret")
+		mark = self.items_user_confirm("usb")
+		run.wait_line(r"INSTALLER INSTALL step=7/", 1200, mark)
+		run.shot("usb-s9-settings")
+		word = self.finish("usb", mark, 4800)
+		swapfile = any("STATE swap file" in l for l in run.read_log()[mark:])
+		self.step("usb", word == "s11-done" and swapfile)
 
 	def harness(self, disk: str):
 		"""The harness's network on an installed root (slot 3 of the whole disk's layout), for the SSH after."""
@@ -285,7 +354,9 @@ def ssh_check(walk: Walk):
 
 def host_checks(walk: Walk):
 	other = walk.run.out / "other.img"
+	walk.step("other-untouched", walk.region(other, 301, 2048) == walk.other_a)
 	walk.step("other-loader-kept", fat_read(other, 1, "/EFI/BOOT/BOOTX64.EFI") == OTHER_LOADER)
+	walk.step("other-file-kept", fat_read(other, 1, "/OTHER/NOTE.TXT") == OTHER_FILE)
 	ours = fat_read(other, 1, "/EFI/ZEDBSD/BOOTX64.EFI")
 	walk.step("other-loader-ours", ours is not None and ours[:2] == b"MZ" and ours != OTHER_LOADER)
 	cfg = fat_read(other, 1, "/zedbsd.cfg") or b""
@@ -314,6 +385,8 @@ def main():
 	if walk.status == 0:
 		host_checks(walk)
 		boot(walk, "nvme", "uefi-nvme", {})
+		boot(walk, "k4", "uefi-nvme", {"BOOT_NVME_BLOCK_SIZE": "4096"})
+		boot(walk, "usb", "uefi-usb", {})
 		ssh_check(walk)
 	run.say(f"p011-install: {'PASS' if walk.status == 0 else 'FAIL'} {run.out.relative_to(ROOT)}")
 	return walk.status

@@ -2,8 +2,8 @@
 
 # ws307-p011 通しの試験
 
-- 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §12。Queue: q1665 / q1665-i08（担当 P4、2026-10-29、worktree p4-ws307l）。
-- Status: in-progress（BUG-356 で止まっている: 試験の disk を付けた live の system が QEMU で起動しない。GUI の通しは未達）
+- 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §12。Queue: q1665 / q1665-i08（担当 P4、2026-10-29、worktree p4-ws307l）、q1665-i10（P4、2026-10-29、worktree p4-ws307n、基点 main 8ba9bdbbb: BUG-356・357 の直しを含む）。
+- Status: in-progress（q1665-i10: BUG-356・357 の直しの後に流し直す）
 - 承認: q1665-i01 と同じ（Q1 の中継）。2026-10-29 Q1 の判断: p004 抜きで進める（GTK4 の app の build の確かめだけを p004 の後に残す）。
 - 前提: p010（installer の app）、p009（install-admin）、p006・p008 の 4096。
 
@@ -15,6 +15,22 @@
 - disk（縮めた組、BUG-356 のため）: 空の NVMe 12 GiB と「他の OS」の SATA 14 GiB（ESP 300 MiB に `\EFI\BOOT\BOOTX64.EFI`、Basic data 4 GiB、空き）。
 - 場合: 拒む disk（live の USB は S2、空の disk の「選ぶ」は S3）、NVMe 全体の unpack 中のキャンセル（S10、`failed step=unpack`）、unit を壊した NVMe の全体（S10、SHA-256 の不一致）、NVMe 全体（自動 login 切）、「他の OS」の disk に S4 で 1 GiB の swap を作り Basic data を root に（消去の確認、loader は `\EFI\ZEDBSD`）。後で host で他の OS の loader と `\EFI\ZEDBSD\BOOTX64.EFI`・`zedbsd.cfg`、NVMe の導入先だけの起動（boot-test.sh）と導入した利用者の password での SSH。
 - 「他の OS」の disk の導入先の起動は未実施: loader が `\EFI\ZEDBSD` にあり、firmware は Boot#### でしか起動しない（p007、ユーザーの承認待ち）。
+
+## 判定の条件（q1665-i10、2026-10-29、走らせる前に書いた）
+
+- image: この branch の tree から `make -j32 ZEDBSD_CONFIG=plan/ws307/tests/config-amd64-p010.mk BUILD=build/ws307n-img ZEDBSD_INSTALLER_TEST_FILES="<guest.py extra-files>" installer-image`（rc 0）。過去の build の成果は入れない。
+- `p011-install.py` は BUG-356・357 の直しで 7 台の組に戻した（f7f422552 の形。live の USB の拒みの確かめを足した）: 空の NVMe 512（12 GiB）・4096 の NVMe（8 GiB）・「他の OS」の SATA（ESP に `\EFI\BOOT\BOOTX64.EFI` と `\OTHER\NOTE.TXT`、Basic data A 2 GiB を乱数で、Basic data B 4 GiB、空き）・zedbsd.cfg の FAT の SATA・MBR の SATA・空の GPT の USB（9 GiB）・1 GiB の USB、と live の USB。
+- PASS: 最後の行が `p011-install: PASS` で、次の STEP が全て ok（1 つでも fail か途中の FAIL なら FAIL）:
+  - map（7 台を大きさで見つける）・refused-tiny（S2 で 1 GiB の disk が押せない）・refused-live（S2 で名の無い live の USB がちょうど 1 台押せない）・refused-mbr・refused-zcfg（S3 で「選ぶ」が押せず「全体」は押せる）。
+  - cancel（NVMe 512 の全体を unpack 中にキャンセル → S10、log に `failed step=unpack`）。damage・failure（4096 の NVMe の全体、壊した unit → S10、`INSTALLER INSTALL failed`）・restore。
+  - nvme（NVMe 512 の全体、自動 login 切 → S11）・nvme-harness（導入先の root に試験の net.conf、passwd に alice、rc.conf に hostname）・k4（4096 の全体 → S11）。
+  - other（S4 で 1 GiB を作り swap、Basic data B を root、消去の確認 → S11、log の `STATE loader` に ZEDBSD）・usb（空の GPT の USB に S4 で 6 GiB を作り root、swap 無し → swap file → S11、log に `STATE swap file`）。
+  - host の検査（live を止めた後、image の file を直に読む）: other-untouched（Basic data A の SHA-256 が前と同じ）・other-loader-kept・other-file-kept・other-loader-ours（`\EFI\ZEDBSD\BOOTX64.EFI` が MZ で他の OS の物と違う）・other-cfg（zedbsd.cfg に `kernel=rootpart:/boot/vmunix` と `swap0=PARTUUID=`）。
+  - boot-nvme・boot-k4（`BOOT_NVME_BLOCK_SIZE=4096`）・boot-usb: 導入した disk だけで `plan/tools/boot-test.sh`（画面を撮って login prompt を読む）が rc 0。
+  - ssh-nvme: 導入した NVMe だけで起動し、導入した利用者 alice の password で SSH（`id -un` が alice、hostname が p011host）。
+- 判定に使う物: guest の中の session の log（`/run/user/1000/session.log`、SSH で読む。QEMU の console・serial の log ではない）、QMP の操作の結果、VNC の画面の PNG、host での disk の file の検査、boot-test.sh、SSH。QEMU の console・serial の log では判定しない。
+- 日本語の画面: `p010-screens.py --language ja IMAGE`（ui.language を live の利用者で 1 に。Settings の Languages の page が書く同じ設定。installer が再起動なしで `INSTALLER LANGUAGE language=ja` を出す）が `p010-screens: PASS` で、撮った PNG（S1〜S11・S7a と dialog）の文字が日本語であることを PNG を見て確かめる（目で見た結果、ユーザーにも PNG を渡す）。
+- QEMU: P4 の物は `build/ws307-test/` の下の各回の directory（guest.py の runtime、port は guest.py が空きを選ぶ）。同時に 1 台（p011 の後に ja、ja と p011 の導入先の起動は重ねない）。各回に timeout（live の wait 600 s、導入の終わり 1800 s・USB 4800 s、boot-test 500 s）。
 
 ## 結果
 
