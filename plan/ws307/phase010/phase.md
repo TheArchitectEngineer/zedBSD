@@ -3,7 +3,7 @@
 # ws307-p010 installer の app
 
 - 親: [WS307](../ws.md)。仕様: [spec.md](../spec.md) §4・§9.1・§10・§11.2（J5・T25）。Queue: q1665 / q1665-i08（担当 P4、2026-10-29、worktree p4-ws307l）。
-- Status: in-progress（受け入れの QEMU の通しが PASS、Q1 の判定待ち。残りは下の「残り」）
+- Status: cleared（2026-10-29 Q1 の判定: QEMU の p010-screens.py PASS、全画面の PNG 21 枚、host の installer-model-test PASS。日本語の画面と実機は未実施。残りは下の「残り」）
 - 承認: q1665-i01 と同じ（2026-10-29 ユーザー「P4にWS307」、Q1 の中継）。HAL の API・toolchain には触れない。Boot#### は p007 の承認の後（S11 は案内だけ）。
 - ユーザーの要望（原文 2026-10-29）:「インストーラはスクリーンショットをぜひ見せてほしいです。楽しみです。」→ S1〜S11・S7a を QEMU の screendump で撮り `build/` の下の path を Q1 へ。
 
