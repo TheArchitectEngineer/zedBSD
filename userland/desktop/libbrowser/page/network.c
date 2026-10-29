@@ -6,19 +6,17 @@
  */
 
 /*
- * The page's side of the asynchronous loader: the embedder (the shell,
- * later libbrowser's caller) makes a loader, gives it to its pages, runs
- * it from its main loop (the descriptors to poll, how long it may wait,
- * the work when they are ready), and fetches documents with it.  These
- * calls keep the embedder off the network module itself (plan/ws074/
- * design.md §19, ws074-p053's fourth step).
+ * The page's side of the asynchronous loader: the embedder (the view)
+ * makes a loader, gives it to its pages, runs its callbacks when the
+ * loader tells it of news (or waits for the news, headless), and fetches
+ * documents with it.  These calls keep the embedder off the network module
+ * itself (plan/ws074/design.md §19, ws074-p053's fourth step).
  */
 
 #include "page/page.h"
 #include "net/net.h"
 
 #include <errno.h>
-#include <poll.h>
 
 /*
  * Gives a page the loader its http and https images are fetched with
@@ -34,16 +32,20 @@ page_set_loader(
 }
 
 /*
- * Makes a loader (with its resolver's thread).
+ * Makes a loader (with its network and resolver threads); notify (which
+ * may be NULL) is called with context from the loader's thread when there
+ * is news for page_net_process.
  */
 int
 page_net_create(
+	void (*notify)(void *context),
+	void *context,
 	struct net_loader **loader)
 {
 	int error;
 
 	/* The network's loader. */
-	error = net_loader_create(loader);
+	error = net_loader_create(notify, context, loader);
 	if (error != 0)
 		return error;
 
@@ -63,49 +65,43 @@ page_net_destroy(
 }
 
 /*
- * Lists the descriptors the embedder polls for the loader; returns how
- * many (at most capacity).
+ * Tells how many of the loader's requests have not ended yet (cancelled
+ * ones aside).
  */
 size_t
-page_net_poll_fds(
-	const struct net_loader *loader,
-	struct pollfd *fds,
-	size_t capacity)
-{
-	size_t count;
-
-	/* The loader's descriptors. */
-	count = net_loader_poll_fds(loader, fds, capacity);
-	return count;
-}
-
-/*
- * Tells how long the embedder may wait before running the loader anyway,
- * in milliseconds (-1: only when a descriptor is ready).
- */
-int
-page_net_timeout(
+page_net_pending(
 	const struct net_loader *loader)
 {
-	int timeout;
+	size_t pending;
 
-	/* The loader's earliest time out. */
-	timeout = net_loader_timeout(loader);
-	return timeout;
+	/* The loader's count. */
+	pending = net_loader_pending(loader);
+	return pending;
 }
 
 /*
- * Runs the loader after a poll of its descriptors (their revents as poll
- * left them); the requests' callbacks run from here.
+ * Waits until the loader has news for page_net_process, or for a number
+ * of milliseconds at most (-1: until there is news).
+ */
+void
+page_net_wait(
+	struct net_loader *loader,
+	int timeout)
+{
+	/* The loader's wait. */
+	net_loader_wait(loader, timeout);
+}
+
+/*
+ * Takes the loader's news: the callbacks of the requests that ended run
+ * from here.
  */
 void
 page_net_process(
-	struct net_loader *loader,
-	const struct pollfd *fds,
-	size_t count)
+	struct net_loader *loader)
 {
-	/* The loader's work. */
-	net_loader_process(loader, fds, count);
+	/* The loader's callbacks. */
+	net_loader_dispatch(loader);
 }
 
 /*

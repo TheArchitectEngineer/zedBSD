@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>WS314 first</title>
+<style>body { font-family: sans-serif; background: #eef1f6; } img { border: 2px solid #2463b3; }
+a.next { display: block; height: 300px; background: #cfe0f6; color: #1d2b45; font-size: 24px; }</style></head>
+<body>
+<a class="next" href="second.html">The second page (a click here fetches it without blocking)</a>
+<p>Its pictures come through the loader's network thread.</p>
+<p><img id="a" src="picture.png?a" width="160"> <img id="b" src="picture.png?b" width="160"></p>
+<script>
+console.log("ws314-first");
+</script>
+</body></html>

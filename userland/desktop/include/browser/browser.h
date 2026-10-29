@@ -19,9 +19,17 @@
  *
  * A view owns the page shown, the page being fetched, the session history,
  * the scroll, the page's clock and the loader of the network.  The program
- * makes it, gives it a size, loads a location, polls the descriptors it
- * lists, calls browser_view_process, and hears of what happened through
- * callbacks.
+ * makes it, gives it a size, loads a location, calls browser_view_process
+ * when the view wakes it or its timeout passes, and hears of what happened
+ * through callbacks.
+ *
+ * The network runs on the view's own threads, in the library (version 3):
+ * the program never sees a socket or a descriptor.  When the network (or
+ * a media engine) has news, the library calls the program's wake function
+ * from one of its threads, once until the program has called
+ * browser_view_process; the program only arranges for that call to come
+ * soon from its own thread (a Keiland program posts an event to its
+ * application).
  *
  * The page is laid out when something needs its boxes (a drawing, a dump
  * of the layout, the scroll, a click), not when it changes, so a view that
@@ -52,9 +60,10 @@
  * history, F5 and Ctrl+R reload, and Escape stops a load.
  *
  * A view is used from the thread that made it.  Callbacks run synchronously
- * inside the call that caused them.  A callback may inspect browser_view_url,
+ * inside the call that caused them; the wake function alone is called from
+ * the library's threads.  A callback may inspect browser_view_url,
  * browser_view_title, browser_view_can_go, browser_view_scroll_y,
- * browser_view_gpu_failure, browser_view_poll_fds and browser_view_timeout.
+ * browser_view_gpu_failure and browser_view_timeout.
  * It may operate on another view.  Changing, drawing, laying out, processing
  * or destroying the same view must wait until the outer call has returned;
  * browser_view_document_height and browser_view_scroll_range may lay it out.
@@ -92,11 +101,18 @@ extern "C" {
  * each view it makes; a library of another version refuses the view
  * (ENOTSUP) rather than read options laid out differently.
  */
-#define BROWSER_API_VERSION		2
+#define BROWSER_API_VERSION		3
 
 /* A view, opaque to the program. */
 struct browser_view;
-struct pollfd;
+
+/*
+ * The program's wake (version 3): called from one of the library's threads
+ * when the view has work for browser_view_process, once until the program
+ * has called it.  It must not call into the view; it only makes the
+ * program's own thread call browser_view_process soon.
+ */
+typedef void (*browser_wake)(void *context);
 
 /* An offscreen image of the engine's own, opaque to the program. */
 struct browser_offscreen;
@@ -229,8 +245,10 @@ struct browser_gpu_failure {
  * outermost stack frame of the thread that uses it (the heaps of its pages
  * scan the stack up to it; the program's calls into the view are made from
  * frames inside it), its size in pixels, how it fetches (zero is
- * BROWSER_FETCH_DEFAULT), and the GPU it draws with (NULL for none yet;
- * browser_view_set_gpu gives it one later).
+ * BROWSER_FETCH_DEFAULT), the GPU it draws with (NULL for none yet;
+ * browser_view_set_gpu gives it one later), and the program's wake with
+ * the context it is called with (NULL for none: a program without a
+ * window settles the view instead).
  */
 struct browser_view_options {
 	int version;
@@ -241,6 +259,8 @@ struct browser_view_options {
 	unsigned height;
 	enum browser_fetch fetch;
 	const struct browser_gpu *gpu;
+	browser_wake wake;
+	void *wake_context;
 };
 
 /* Making and ending a view. */
@@ -262,10 +282,9 @@ const char *browser_view_url(const struct browser_view *view);
 const char *browser_view_title(const struct browser_view *view);
 double browser_view_document_height(struct browser_view *view);
 
-/* The main loop's side: the descriptors to poll, how long to wait at most (-1: no limit), and the work due. */
-size_t browser_view_poll_fds(const struct browser_view *view, struct pollfd *fds, size_t capacity);
+/* The main loop's side: how long to wait at most for the page's clock (-1: until the wake), and the work due. */
 int browser_view_timeout(const struct browser_view *view);
-void browser_view_process(struct browser_view *view, const struct pollfd *fds, size_t count);
+void browser_view_process(struct browser_view *view);
 
 /* How far the page is scrolled, in pixels. */
 double browser_view_scroll_y(const struct browser_view *view);

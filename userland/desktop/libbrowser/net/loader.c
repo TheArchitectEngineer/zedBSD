@@ -6,15 +6,25 @@
  */
 
 /*
- * The asynchronous loader (plan/ws074/design.md §9): http and https GETs
- * that never block the caller.  The caller's main loop polls the
- * descriptors the loader lists and gives it the ones that became ready;
- * each request goes through its states as far as its socket allows and
- * calls its callback when it ends.
+ * The asynchronous loader (plan/ws074/design.md §9): http and https
+ * requests that never block the caller.  The loader runs them on a
+ * network thread of its own; the caller hears that there is news through
+ * its notify function (or waits for it, net_loader_wait) and takes it with
+ * net_loader_dispatch, which calls each ended request's callback on the
+ * caller's thread.  The caller sees no descriptor.
+ *
+ * The threads, each loader's own:
+ *
+ *   browser-net       one: polls the connections, the resolver's pipe, a
+ *                     control pipe the caller wakes it through, and the
+ *                     descriptors watched for the caller (a media engine's
+ *                     wake, read empty when it rings); runs every request's
+ *                     states, the pool and the cache, and the time outs.
+ *   browser-resolve   one: getaddrinfo, which blocks; the answer comes back
+ *                     through its pipe.
  *
  * A request's states: its host's addresses looked up on the resolver's
- * thread (getaddrinfo blocks, so it is the only work done off the main
- * thread; the result comes back through a pipe), a non-blocking connect
+ * thread, a non-blocking connect
  * to each address in turn, the TLS handshake for https, the request sent,
  * and the response read until its framing (its length, its last chunk, or
  * the end of the connection) says it is complete.  The response is parsed
@@ -37,10 +47,12 @@
  * one with an ETag is revalidated with If-None-Match, and a 304 answers
  * with the kept body.
  *
- * Everything but the resolver's lookups runs on the caller's thread.  A
- * callback may start other requests and cancel any request, itself
- * included; a request ended or cancelled is freed once the loader is no
- * longer walking its list.
+ * The caller makes requests and cancels them on its thread; the network
+ * thread takes them from a list under the loader's lock.  An ended request
+ * goes back on another list and is freed by the caller's thread after its
+ * callback (a cancelled one without it, once the network thread has
+ * closed its connection).  A callback may start other requests and cancel
+ * any request, itself included.
  */
 
 #include "net/net.h"
@@ -56,6 +68,17 @@
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
+
+#if defined(__FreeBSD__)
+#include <pthread_np.h>
+#endif
+
+/* Whether the system keeps a thread's name (pthread_setname_np). */
+#if defined(__linux__) || defined(__FreeBSD__)
+#define LOADER_THREAD_NAMES	1
+#else
+#define LOADER_THREAD_NAMES	0
+#endif
 
 /* How long a request may make no progress, in milliseconds. */
 #define LOADER_TIMEOUT		30000U
@@ -80,6 +103,12 @@
 
 /* The longest place (scheme://host:port) a connection is kept for. */
 #define LOADER_KEY_MAX		320U
+
+/* The most descriptors watched for the caller at a time. */
+#define LOADER_WATCH_MAX	64U
+
+/* How long the network thread waits at most when it could not poll every connection, in milliseconds. */
+#define LOADER_CUT_WAIT		10
 
 /* The deadline of a request that waits for a connection (it does not time out while it waits). */
 #define LOADER_NEVER		((uint64_t)-1)
@@ -148,15 +177,29 @@ struct loader_entry {
  * was replaced already), the request's text and how much of it went, the
  * response's bytes so far and how far they frame it, the cache entry it
  * revalidates (or NULL), when it times out (on the loader's monotonic
- * clock, in milliseconds), and its callback.  error and response are the
- * outcome the callback reads.
+ * clock, in milliseconds), and its callback.  error, response and reason
+ * (the TLS failure's) are the outcome the callback reads.
+ *
+ * Who touches what: the caller's thread fills the request and hands it to
+ * the network thread through the loader's incoming list; from then on the
+ * network thread alone runs it (the state, the connection, cancelled and
+ * retired), until it hands it back through the completed list.  The
+ * caller's thread alone reads delivered and dropped, and frees the
+ * request.  asked_cancel is under the loader's lock.  queue_next links the
+ * request in whichever of the incoming, ended and completed lists holds
+ * it.
  */
 struct net_request {
 	struct net_loader *loader;
 	struct net_request *next;
+	struct net_request *queue_next;
 	uint64_t number;
 	int state;
 	int cancelled;
+	int retired;
+	int asked_cancel;
+	int delivered;
+	int dropped;
 	struct net_url url;
 	int redirects;
 	struct addrinfo *addresses;
@@ -177,6 +220,7 @@ struct net_request {
 	void *context;
 	int error;
 	struct net_response response;
+	char reason[NET_TLS_REASON_MAX];
 	int kind;
 	char *method;
 	char *headers;
@@ -187,33 +231,92 @@ struct net_request {
 };
 
 /*
- * The loader: its requests, the resolver's thread with its queue of jobs
- * and list of answers (under lock; wake tells the thread a job is there),
- * the pipe the thread writes a byte to for each answer, whether the list
- * is being walked (so that requests are freed only after the walk), the
- * pool of idle connections, and the memory cache (most recently used
- * first) with the bytes of its bodies.
+ * The loader.
+ *
+ * The network thread's own: the requests it runs (requests), the ones
+ * that ended since it last handed them over (ended to ended_last, in the
+ * order they ended), the pool of idle connections, the memory cache (most
+ * recently used first) with the bytes of its bodies, the next request's
+ * number, the descriptors of its poll (fds, room for fds_capacity; the
+ * watched descriptors from watch_first on), and whether a watched
+ * descriptor rang since the caller was last told (rang).
+ *
+ * The resolver's thread has its queue of jobs, its list of answers and
+ * resolver_stopping under resolver_lock (resolver_wake tells it a job is
+ * there), and writes a byte to its pipe for each answer.
+ *
+ * Under lock, the caller's thread and the network thread meet: the
+ * requests started and not yet taken by the network thread (incoming),
+ * whether a cancel was asked of a running request (cancel_asked), the
+ * requests ended and not yet taken by the caller (completed), whether the
+ * caller was told of news it has not taken (notified), the descriptors
+ * watched for the caller, the generation of that set and the one the
+ * network thread polls now, and whether the network thread is to stop.
+ * changed is signalled when notified becomes set and when the polled
+ * generation moves.  A byte in the control pipe wakes the network thread
+ * from its poll.
+ *
+ * The caller's own: its notify function and context (set when the loader
+ * is made), and how many requests it started that have neither ended to it
+ * nor been cancelled (pending).
  */
 struct net_loader {
 	struct net_request *requests;
+	struct net_request *ended;
+	struct net_request *ended_last;
 	struct loader_connection *idle;
 	struct loader_entry *cache;
 	size_t cache_bytes;
 	uint64_t next_number;
-	int walking;
+	struct pollfd *fds;
+	size_t fds_capacity;
+	size_t watch_first;
+	int rang;
+	pthread_t resolver;
+	int resolver_started;
+	pthread_mutex_t resolver_lock;
+	pthread_cond_t resolver_wake;
+	struct loader_job *jobs;
+	struct loader_job *answers;
+	int resolver_stopping;
+	int pipe_read;
+	int pipe_write;
 	pthread_t thread;
 	int thread_started;
 	pthread_mutex_t lock;
-	pthread_cond_t wake;
-	struct loader_job *jobs;
-	struct loader_job *answers;
+	pthread_cond_t changed;
+	struct net_request *incoming;
+	struct net_request *incoming_last;
+	struct net_request *completed;
+	struct net_request *completed_last;
+	int cancel_asked;
+	int notified;
+	int watches[LOADER_WATCH_MAX];
+	size_t watch_count;
+	uint64_t watch_generation;
+	uint64_t polled_generation;
 	int stopping;
-	int pipe_read;
-	int pipe_write;
+	int control_read;
+	int control_write;
+	net_loader_notify notify;
+	void *notify_context;
+	size_t pending;
 };
 
 static uint64_t loader_clock(void);
+static void loader_name_thread(const char *name);
+static void loader_poke(struct net_loader *loader);
+static void loader_release(struct net_loader *loader);
+static void loader_free_queue(struct net_request *queue);
 static void *loader_resolver(void *argument);
+static void *loader_run(void *argument);
+static void loader_ready(struct net_loader *loader, size_t count);
+static int loader_intake(struct net_loader *loader);
+static void loader_tick(struct net_loader *loader);
+static void loader_publish(struct net_loader *loader);
+static size_t loader_gather(struct net_loader *loader, int *timeout);
+static int loader_timeout(const struct net_loader *loader);
+static void loader_drain(int descriptor);
 static int loader_begin(struct net_request *request);
 static void loader_answers(struct net_loader *loader);
 static void loader_step(struct net_request *request);
@@ -225,12 +328,13 @@ static int loader_receive(struct net_request *request);
 static int loader_finish(struct net_request *request);
 static void loader_close(struct net_request *request);
 static void loader_end(struct net_request *request, int error);
+static void loader_retire(struct net_request *request);
 static void loader_reap(struct net_loader *loader);
 static void loader_free(struct net_request *request);
 static int loader_prepare(struct net_request *request);
 static int loader_retry(struct net_request *request);
 static int loader_active(const struct net_loader *loader, const char *key);
-static void loader_wake(struct net_loader *loader, const char *key);
+static void loader_release_place(struct net_loader *loader, const char *key);
 static void loader_keep(struct net_request *request);
 static void loader_expire_idle(struct net_loader *loader, uint64_t now);
 static struct loader_entry *loader_cache_find(struct net_loader *loader, const char *url);
@@ -240,121 +344,116 @@ static void loader_cache_store(struct net_request *request);
 static void loader_cache_free(struct net_loader *loader, struct loader_entry *entry);
 
 /*
- * Makes a loader and starts its resolver's thread.
+ * Makes a loader and starts its resolver's thread and its network thread.
+ * notify (which may be NULL) is called with context from the network
+ * thread when there is news for net_loader_dispatch: once, until the
+ * caller has run net_loader_dispatch.
  */
 int
 net_loader_create(
+	net_loader_notify notify,
+	void *context,
 	struct net_loader **loader)
 {
 	struct net_loader *made;
+	pthread_condattr_t attributes;
 	int descriptors[2];
 	int status;
 
-	/* The loader, its lock and its condition. */
+	/* The loader, with no pipe yet. */
 	*loader = NULL;
 	made = calloc(1, sizeof(*made));
 	if (made == NULL)
 		return ENOMEM;
 	made->next_number = 1;
-	pthread_mutex_init(&made->lock, NULL);
-	pthread_cond_init(&made->wake, NULL);
+	made->pipe_read = -1;
+	made->pipe_write = -1;
+	made->control_read = -1;
+	made->control_write = -1;
+	made->notify = notify;
+	made->notify_context = context;
 
-	/* The pipe the answers are signalled through; the main side never blocks on it. */
-	status = pipe2(descriptors, O_CLOEXEC);
+	/* Its locks and conditions; the caller's waits run on the monotonic clock. */
+	pthread_mutex_init(&made->resolver_lock, NULL);
+	pthread_cond_init(&made->resolver_wake, NULL);
+	pthread_mutex_init(&made->lock, NULL);
+	pthread_condattr_init(&attributes);
+	(void)pthread_condattr_setclock(&attributes, CLOCK_MONOTONIC);
+	pthread_cond_init(&made->changed, &attributes);
+	pthread_condattr_destroy(&attributes);
+
+	/* The descriptors of the network thread's poll, with room for some connections. */
+	made->fds_capacity = 2U + LOADER_WATCH_MAX + LOADER_PER_HOST * 4U;
+	made->fds = calloc(made->fds_capacity, sizeof(*made->fds));
+	if (made->fds == NULL) {
+		loader_release(made);
+		return ENOMEM;
+	}
+
+	/* The pipe the resolver's answers are signalled through; neither end blocks. */
+	status = pipe2(descriptors, O_CLOEXEC | O_NONBLOCK);
 	if (status != 0) {
 		status = errno;
-		free(made);
+		loader_release(made);
 		return status;
 	}
 
-	/* The pipe's two ends; the main side's reads never block. */
+	/* Its two ends. */
 	made->pipe_read = descriptors[0];
 	made->pipe_write = descriptors[1];
-	(void)fcntl(made->pipe_read, F_SETFL, O_NONBLOCK);
 
-	/* The resolver's thread. */
-	status = pthread_create(&made->thread, NULL, loader_resolver, made);
+	/* The control pipe that wakes the network thread; neither end blocks. */
+	status = pipe2(descriptors, O_CLOEXEC | O_NONBLOCK);
 	if (status != 0) {
-		close(made->pipe_read);
-		close(made->pipe_write);
-		free(made);
+		status = errno;
+		loader_release(made);
 		return status;
 	}
 
-	/* The thread runs. */
-	made->thread_started = 1;
+	/* Its two ends. */
+	made->control_read = descriptors[0];
+	made->control_write = descriptors[1];
+
+	/* The resolver's thread. */
+	status = pthread_create(&made->resolver, NULL, loader_resolver, made);
+	if (status != 0) {
+		loader_release(made);
+		return status;
+	}
+
+	/* It runs, and the network thread starts. */
+	made->resolver_started = 1;
+	status = pthread_create(&made->thread, NULL, loader_run, made);
+	if (status != 0) {
+		loader_release(made);
+		return status;
+	}
 
 	/* Succeeded: the loader takes requests. */
+	made->thread_started = 1;
 	*loader = made;
 	return 0;
 }
 
 /*
- * Ends a loader: its requests are dropped without their callbacks, and
- * its thread is stopped.
+ * Ends a loader: its threads are stopped, and its requests are dropped
+ * without their callbacks.  notify is not called once this returns.
  */
 void
 net_loader_destroy(
 	struct net_loader *loader)
 {
-	struct net_request *request;
-	struct loader_job *job;
-
 	/* Nothing to end. */
 	if (loader == NULL)
 		return;
 
-	/* Every request. */
-	while (loader->requests != NULL) {
-		request = loader->requests;
-		loader->requests = request->next;
-		loader_free(request);
-	}
-
-	/* The thread, told to stop. */
-	pthread_mutex_lock(&loader->lock);
-
-	loader->stopping = 1;
-	pthread_cond_signal(&loader->wake);
-
-	pthread_mutex_unlock(&loader->lock);
-
-	/* It ends after its current lookup. */
-	if (loader->thread_started)
-		pthread_join(loader->thread, NULL);
-
-	/* The jobs and answers left. */
-	while (loader->jobs != NULL) {
-		job = loader->jobs;
-		loader->jobs = job->next;
-		free(job);
-	}
-	while (loader->answers != NULL) {
-		job = loader->answers;
-		loader->answers = job->next;
-		if (job->addresses != NULL)
-			freeaddrinfo(job->addresses);
-		free(job);
-	}
-
-	/* The idle connections. */
-	loader_expire_idle(loader, LOADER_NEVER);
-
-	/* The cache. */
-	while (loader->cache != NULL)
-		loader_cache_free(loader, loader->cache);
-
-	/* The pipe, then the loader. */
-	close(loader->pipe_read);
-	close(loader->pipe_write);
-	pthread_mutex_destroy(&loader->lock);
-	pthread_cond_destroy(&loader->wake);
-	free(loader);
+	/* The threads, then everything they held. */
+	loader_release(loader);
 }
 
 /*
  * Starts a GET of an http or https URL; done is called with context when
- * it ends (well or not), from net_loader_process.  *request (which may be
+ * it ends (well or not), from net_loader_dispatch.  *request (which may be
  * NULL) is the request, for cancelling it before then.
  */
 int
@@ -384,7 +483,9 @@ net_loader_fetch_kind(
 /*
  * Starts a request with a method, header lines and a body (send; NULL is
  * a plain GET).  Only a plain GET is answered from or kept in the cache,
- * and a redirect of a POST becomes a GET as a browser's does.
+ * and a redirect of a POST becomes a GET as a browser's does.  A request
+ * that cannot even start fails here; one that fails later ends with its
+ * error through its callback.
  */
 int
 net_loader_send(
@@ -407,8 +508,6 @@ net_loader_send(
 	if (made == NULL)
 		return ENOMEM;
 	made->loader = loader;
-	made->number = loader->next_number;
-	loader->next_number++;
 	made->descriptor = -1;
 	made->kind = kind;
 	made->done = done;
@@ -454,39 +553,65 @@ net_loader_send(
 		return EPROTONOSUPPORT;
 	}
 
-	/* Into the loader's list, then its lookup. */
-	made->next = loader->requests;
-	loader->requests = made;
-	error = loader_begin(made);
-	if (error != 0) {
-		made->cancelled = 1;
-		loader_reap(loader);
-		return error;
-	}
+	/* Handed to the network thread, which begins it. */
+	pthread_mutex_lock(&loader->lock);
 
-	/* Succeeded: the request runs. */
+	if (loader->incoming_last != NULL)
+		loader->incoming_last->queue_next = made;
+	else
+		loader->incoming = made;
+	loader->incoming_last = made;
+
+	pthread_mutex_unlock(&loader->lock);
+
+	/* The network thread wakes to take it. */
+	loader_poke(loader);
+
+	/* Succeeded: the request runs, and counts until it ends or is cancelled. */
+	loader->pending++;
 	if (request != NULL)
 		*request = made;
 	return 0;
 }
 
 /*
- * Cancels a request: its callback is not called, and it is freed (at
- * once, or after the callback that cancels it returns).
+ * Cancels a request: its callback is not called, and it is freed once the
+ * network thread has closed its connection (or after the callback that
+ * cancels it returns).
  */
 void
 net_request_cancel(
 	struct net_request *request)
 {
+	struct net_loader *loader;
+
 	/* Nothing to cancel. */
 	if (request == NULL)
 		return;
 
-	/* Marked, and freed when nothing walks the list; a request waiting for its place may go. */
-	request->cancelled = 1;
-	loader_close(request);
-	loader_wake(request->loader, request->key);
-	loader_reap(request->loader);
+	/* A request whose callback runs now is freed when it returns. */
+	if (request->delivered)
+		return;
+
+	/* A request cancelled already. */
+	if (request->dropped)
+		return;
+
+	/* Its callback will not be called, and it no longer counts. */
+	loader = request->loader;
+	request->dropped = 1;
+	loader->pending--;
+
+	/* The network thread is asked to close its connection and hand it back. */
+	pthread_mutex_lock(&loader->lock);
+
+	request->asked_cancel = 1;
+	loader->cancel_asked = 1;
+
+	pthread_mutex_unlock(&loader->lock);
+
+	/* The network thread wakes to do so. */
+	loader_poke(loader);
 }
 
 /* Tells how a request ended: 0, or an errno value (EPROTO for TLS, whose reason net_tls_error gives). */
@@ -508,136 +633,183 @@ net_request_response(
 }
 
 /*
- * Lists the descriptors the caller polls for the loader: the resolver's
- * pipe, then each connection for what it waits for.  Returns how many were
- * written (at most capacity).
+ * Tells how many requests were started that have neither ended to their
+ * callbacks nor been cancelled.
  */
 size_t
-net_loader_poll_fds(
-	const struct net_loader *loader,
-	struct pollfd *fds,
-	size_t capacity)
-{
-	const struct net_request *request;
-	size_t count;
-
-	/* The pipe of the resolver's answers. */
-	count = 0;
-	if (capacity == 0)
-		return 0;
-	fds[count].fd = loader->pipe_read;
-	fds[count].events = POLLIN;
-	fds[count].revents = 0;
-	count++;
-
-	/* Each connection that waits for its socket. */
-	for (request = loader->requests; request != NULL && count < capacity; request = request->next) {
-		if (request->cancelled || request->descriptor < 0 || request->wants == 0)
-			continue;
-		fds[count].fd = request->descriptor;
-		fds[count].events = request->wants;
-		fds[count].revents = 0;
-		count++;
-	}
-
-	/* Succeeded: the descriptors to poll. */
-	return count;
-}
-
-/*
- * Tells how long the caller may wait for the descriptors before the
- * loader must run anyway (the earliest time out), in milliseconds, or -1
- * when there is no request to time out.
- */
-int
-net_loader_timeout(
+net_loader_pending(
 	const struct net_loader *loader)
 {
-	const struct net_request *request;
-	uint64_t earliest;
-	uint64_t now;
-	int found;
-
-	/* The earliest deadline of a request that runs. */
-	found = 0;
-	earliest = 0;
-	for (request = loader->requests; request != NULL; request = request->next) {
-		if (request->cancelled || request->state == LOADER_ENDED || request->state == LOADER_WAITING)
-			continue;
-		if (request->state == LOADER_READY)
-			return 0;
-		if (!found || request->deadline < earliest)
-			earliest = request->deadline;
-		found = 1;
-	}
-
-	/* No request, no time out. */
-	if (!found)
-		return -1;
-
-	/* The time left, none when it has passed. */
-	now = loader_clock();
-	if (earliest <= now)
-		return 0;
-	if (earliest - now > 60000U)
-		return 60000;
-	return (int)(earliest - now);
+	/* The caller's own count. */
+	return loader->pending;
 }
 
 /*
- * Runs the loader: the resolver's answers, the connections whose
- * descriptors are ready (as poll left them in fds), and the time outs.
- * Callbacks run from here.
+ * Waits until the network thread has news for net_loader_dispatch, or for
+ * a number of milliseconds at most (-1: until there is news).  For a
+ * caller without a notify function (the headless modes).
  */
 void
-net_loader_process(
+net_loader_wait(
 	struct net_loader *loader,
-	const struct pollfd *fds,
-	size_t count)
+	int timeout)
 {
+	struct timespec deadline;
+	int status;
+
+	/* The deadline on the monotonic clock. */
+	clock_gettime(CLOCK_MONOTONIC, &deadline);
+	if (timeout > 0) {
+		deadline.tv_sec += timeout / 1000;
+		deadline.tv_nsec += (long)(timeout % 1000) * 1000000L;
+	}
+
+	/* A carry of the nanoseconds into the seconds. */
+	if (deadline.tv_nsec >= 1000000000L) {
+		deadline.tv_sec++;
+		deadline.tv_nsec -= 1000000000L;
+	}
+
+	/* Until the network thread tells of news, or the deadline passes. */
+	pthread_mutex_lock(&loader->lock);
+
+	/* Each wake of the condition, until there is news or the time is up. */
+	status = 0;
+	while (!loader->notified && status != ETIMEDOUT) {
+		if (timeout < 0)
+			pthread_cond_wait(&loader->changed, &loader->lock);
+		else
+			status = pthread_cond_timedwait(&loader->changed, &loader->lock, &deadline);
+	}
+
+	pthread_mutex_unlock(&loader->lock);
+}
+
+/*
+ * Takes the network thread's news: each request that ended (cancelled
+ * ones aside) has its callback called, in the order they ended, then is
+ * freed.  The callbacks may start and cancel requests.  The next news
+ * calls notify again.
+ */
+void
+net_loader_dispatch(
+	struct net_loader *loader)
+{
+	struct net_request *taken;
 	struct net_request *request;
-	uint64_t now;
-	size_t index;
 
-	/* The time, and a walk that frees nothing until it ends. */
-	now = loader_clock();
-	loader->walking++;
+	/* The ended requests, all of them, and the caller is told of the next news again. */
+	pthread_mutex_lock(&loader->lock);
 
-	/* The resolver's answers. */
-	loader_answers(loader);
+	taken = loader->completed;
+	loader->completed = NULL;
+	loader->completed_last = NULL;
+	loader->notified = 0;
 
-	/* The requests the cache answered. */
-	for (request = loader->requests; request != NULL; request = request->next) {
-		if (!request->cancelled && request->state == LOADER_READY)
-			loader_end(request, 0);
-	}
+	pthread_mutex_unlock(&loader->lock);
 
-	/* The idle connections kept too long. */
-	loader_expire_idle(loader, now);
+	/* Each request in turn: its callback (with its TLS reason as the thread's), then it goes. */
+	while (taken != NULL) {
+		request = taken;
+		taken = request->queue_next;
 
-	/* Each ready connection takes its next steps. */
-	for (index = 0; index < count; index++) {
-		if (fds[index].revents == 0 || fds[index].fd == loader->pipe_read)
-			continue;
-		for (request = loader->requests; request != NULL; request = request->next) {
-			if (request->cancelled || request->descriptor != fds[index].fd)
-				continue;
-			loader_step(request);
-			break;
+		/* One cancelled meanwhile, even by an earlier callback, only goes. */
+		if (!request->dropped) {
+			request->delivered = 1;
+			loader->pending--;
+			net_tls_set_error(request->reason);
+			if (request->done != NULL)
+				request->done(request->context, request);
 		}
+
+		/* The request is freed. */
+		loader_free(request);
+	}
+}
+
+/*
+ * Watches a descriptor for the caller: when it becomes readable, the
+ * network thread reads it empty and tells the caller as it tells of an
+ * ended request.  Returns 0, or ENOSPC when LOADER_WATCH_MAX are watched.
+ */
+int
+net_loader_watch(
+	struct net_loader *loader,
+	int descriptor)
+{
+	int full;
+
+	/* The descriptor joins the set, which the next poll uses. */
+	full = 0;
+	pthread_mutex_lock(&loader->lock);
+
+	/* A full set takes no more; the generation moves with each change. */
+	if (loader->watch_count == LOADER_WATCH_MAX) {
+		full = 1;
+	} else {
+		loader->watches[loader->watch_count] = descriptor;
+		loader->watch_count++;
+		loader->watch_generation++;
 	}
 
-	/* The requests that made no progress in time. */
-	for (request = loader->requests; request != NULL; request = request->next) {
-		if (request->cancelled || request->state == LOADER_ENDED || request->state == LOADER_WAITING)
+	pthread_mutex_unlock(&loader->lock);
+
+	/* No room. */
+	if (full)
+		return ENOSPC;
+
+	/* Succeeded: the network thread wakes to poll it. */
+	loader_poke(loader);
+	return 0;
+}
+
+/*
+ * Stops watching a descriptor, and waits until the network thread no
+ * longer polls or reads it: the caller may close it then.
+ */
+void
+net_loader_unwatch(
+	struct net_loader *loader,
+	int descriptor)
+{
+	uint64_t generation;
+	size_t index;
+	int found;
+
+	/* The descriptor leaves the set (the last one takes its place). */
+	found = 0;
+	generation = 0;
+	pthread_mutex_lock(&loader->lock);
+
+	/* The descriptor's entry, when it is watched. */
+	for (index = 0; index < loader->watch_count; index++) {
+		if (loader->watches[index] != descriptor)
 			continue;
-		if (now >= request->deadline)
-			loader_end(request, ETIMEDOUT);
+		loader->watch_count--;
+		loader->watches[index] = loader->watches[loader->watch_count];
+		loader->watch_generation++;
+		generation = loader->watch_generation;
+		found = 1;
+		break;
 	}
 
-	/* The walk is over: the ended and cancelled requests go. */
-	loader->walking--;
-	loader_reap(loader);
+	pthread_mutex_unlock(&loader->lock);
+
+	/* One not watched needs no wait. */
+	if (!found)
+		return;
+
+	/* The network thread wakes and polls the new set. */
+	loader_poke(loader);
+
+	/* Until its poll no longer has the descriptor. */
+	pthread_mutex_lock(&loader->lock);
+
+	/* Each wake of the condition, until the generation polled is the new set's. */
+	while (loader->polled_generation < generation)
+		pthread_cond_wait(&loader->changed, &loader->lock);
+
+	pthread_mutex_unlock(&loader->lock);
 }
 
 /*
@@ -685,20 +857,23 @@ loader_resolver(
 	struct addrinfo hints;
 	unsigned char signal;
 
-	/* Each job, as they come. */
+	/* The thread's name. */
 	loader = argument;
+	loader_name_thread("browser-resolve");
+
+	/* Each job, as they come. */
 	for (;;) {
 		/* The next job, waited for. */
-		pthread_mutex_lock(&loader->lock);
+		pthread_mutex_lock(&loader->resolver_lock);
 
 		/* Waits until a lookup job arrives or shutdown releases the resolver. */
-		while (loader->jobs == NULL && !loader->stopping)
-			pthread_cond_wait(&loader->wake, &loader->lock);
+		while (loader->jobs == NULL && !loader->resolver_stopping)
+			pthread_cond_wait(&loader->resolver_wake, &loader->resolver_lock);
 		job = loader->jobs;
 		if (job != NULL)
 			loader->jobs = job->next;
 
-		pthread_mutex_unlock(&loader->lock);
+		pthread_mutex_unlock(&loader->resolver_lock);
 
 		/* A loader that stops ends the thread. */
 		if (job == NULL)
@@ -711,13 +886,13 @@ loader_resolver(
 		job->addresses = NULL;
 		job->status = getaddrinfo(job->host, job->port, &hints, &job->addresses);
 
-		/* The answer, then a byte through the pipe to wake the main loop. */
-		pthread_mutex_lock(&loader->lock);
+		/* The answer, then a byte through the pipe to wake the network thread. */
+		pthread_mutex_lock(&loader->resolver_lock);
 
 		job->next = loader->answers;
 		loader->answers = job;
 
-		pthread_mutex_unlock(&loader->lock);
+		pthread_mutex_unlock(&loader->resolver_lock);
 
 		/* The byte. */
 		signal = 1;
@@ -726,6 +901,527 @@ loader_resolver(
 
 	/* The loader stopped. */
 	return NULL;
+}
+
+/* Names the calling thread, on a system that keeps names (others leave it unnamed). */
+static void
+loader_name_thread(
+	const char *name)
+{
+	/* The name, or nothing on a system without names. */
+#if LOADER_THREAD_NAMES
+	(void)pthread_setname_np(pthread_self(), name);
+#else
+	(void)name;
+#endif
+}
+
+/* Wakes the network thread from its poll (a full control pipe is readable already). */
+static void
+loader_poke(
+	struct net_loader *loader)
+{
+	unsigned char byte;
+	ssize_t wrote;
+
+	/* One byte. */
+	byte = 1;
+	wrote = write(loader->control_write, &byte, 1U);
+	(void)wrote;
+}
+
+/*
+ * Stops the loader's threads (those that started) and frees everything it
+ * holds: the requests in every list, the jobs and answers, the idle
+ * connections, the cache, the pipes and the loader.
+ */
+static void
+loader_release(
+	struct net_loader *loader)
+{
+	struct net_request *request;
+	struct loader_job *job;
+
+	/* The network thread, told to stop; it ends after its round. */
+	pthread_mutex_lock(&loader->lock);
+
+	loader->stopping = 1;
+
+	pthread_mutex_unlock(&loader->lock);
+
+	/* Woken from its poll, then waited for. */
+	if (loader->thread_started) {
+		loader_poke(loader);
+		pthread_join(loader->thread, NULL);
+	}
+
+	/* The resolver's thread, told to stop. */
+	pthread_mutex_lock(&loader->resolver_lock);
+
+	loader->resolver_stopping = 1;
+	pthread_cond_signal(&loader->resolver_wake);
+
+	pthread_mutex_unlock(&loader->resolver_lock);
+
+	/* It ends after its current lookup. */
+	if (loader->resolver_started)
+		pthread_join(loader->resolver, NULL);
+
+	/* The requests the network thread ran. */
+	while (loader->requests != NULL) {
+		request = loader->requests;
+		loader->requests = request->next;
+		loader_free(request);
+	}
+
+	/* Those it ended and did not hand over, those it did not take, and those the caller did not take. */
+	loader_free_queue(loader->ended);
+	loader_free_queue(loader->incoming);
+	loader_free_queue(loader->completed);
+
+	/* The jobs and answers left. */
+	while (loader->jobs != NULL) {
+		job = loader->jobs;
+		loader->jobs = job->next;
+		free(job);
+	}
+
+	/* The answers nobody took. */
+	while (loader->answers != NULL) {
+		job = loader->answers;
+		loader->answers = job->next;
+		if (job->addresses != NULL)
+			freeaddrinfo(job->addresses);
+		free(job);
+	}
+
+	/* The idle connections. */
+	loader_expire_idle(loader, LOADER_NEVER);
+
+	/* The cache. */
+	while (loader->cache != NULL)
+		loader_cache_free(loader, loader->cache);
+
+	/* The pipes that were made. */
+	if (loader->pipe_read >= 0)
+		close(loader->pipe_read);
+	if (loader->pipe_write >= 0)
+		close(loader->pipe_write);
+	if (loader->control_read >= 0)
+		close(loader->control_read);
+	if (loader->control_write >= 0)
+		close(loader->control_write);
+
+	/* The locks, the poll's descriptors, then the loader. */
+	pthread_mutex_destroy(&loader->resolver_lock);
+	pthread_cond_destroy(&loader->resolver_wake);
+	pthread_mutex_destroy(&loader->lock);
+	pthread_cond_destroy(&loader->changed);
+	free(loader->fds);
+	free(loader);
+}
+
+/* Frees the requests of a list linked by queue_next. */
+static void
+loader_free_queue(
+	struct net_request *queue)
+{
+	struct net_request *request;
+
+	/* Each request of the list. */
+	while (queue != NULL) {
+		request = queue;
+		queue = request->queue_next;
+		loader_free(request);
+	}
+}
+
+/*
+ * The network thread: rounds of what became ready, what the caller asked,
+ * the cache's answers and the time outs, the ended requests handed over,
+ * and a poll of the pipes, the connections and the watched descriptors,
+ * until the loader stops.
+ */
+static void *
+loader_run(
+	void *argument)
+{
+	struct net_loader *loader;
+	size_t count;
+	int timeout;
+	int ready;
+	int stop;
+
+	/* The thread's name, and nothing polled yet. */
+	loader = argument;
+	loader_name_thread("browser-net");
+	count = 0;
+
+	/* Each round, until the loader stops. */
+	for (;;) {
+		/* What the last poll found ready: the resolver's answers, the connections, the watched descriptors. */
+		loader_ready(loader, count);
+
+		/* What the caller asked meanwhile: new requests, cancels, or the end. */
+		stop = loader_intake(loader);
+		if (stop)
+			break;
+
+		/* The cache's answers, the idle connections kept too long, the requests out of time. */
+		loader_tick(loader);
+
+		/* The ended requests go to the caller, who is told. */
+		loader_publish(loader);
+
+		/* The wait for the next thing to happen. */
+		count = loader_gather(loader, &timeout);
+		ready = poll(loader->fds, (nfds_t)count, timeout);
+		if (ready < 0)
+			count = 0;
+	}
+
+	/* The ended requests leave the list; net_loader_destroy frees every request. */
+	loader_reap(loader);
+	return NULL;
+}
+
+/*
+ * Takes what the last poll found ready (the first count descriptors of
+ * fds): the control pipe emptied, the resolver's answers, the next steps
+ * of each ready connection, and each watched descriptor that rang read
+ * empty (the caller is told).
+ */
+static void
+loader_ready(
+	struct net_loader *loader,
+	size_t count)
+{
+	struct net_request *request;
+	size_t index;
+
+	/* The control pipe's bytes; what the caller asked is read under the lock. */
+	loader_drain(loader->control_read);
+
+	/* The resolver's answers. */
+	loader_answers(loader);
+
+	/* Each ready connection takes its next steps. */
+	for (index = 2U; index < count && index < loader->watch_first; index++) {
+		if (loader->fds[index].revents == 0)
+			continue;
+
+		/* The request whose connection it is. */
+		for (request = loader->requests; request != NULL; request = request->next) {
+			if (request->cancelled || request->descriptor != loader->fds[index].fd)
+				continue;
+			loader_step(request);
+			break;
+		}
+	}
+
+	/* Each watched descriptor that rang is read empty, and the caller hears of it. */
+	for (index = loader->watch_first; index < count; index++) {
+		if (loader->fds[index].revents == 0)
+			continue;
+		loader_drain(loader->fds[index].fd);
+		loader->rang = 1;
+	}
+}
+
+/*
+ * Takes what the caller asked: the requests it started (begun, or ended
+ * at once when cancelled already) and the cancels of running requests
+ * (their connections closed).  Returns nonzero when the loader stops.
+ */
+static int
+loader_intake(
+	struct net_loader *loader)
+{
+	struct net_request *taken;
+	struct net_request *request;
+	int error;
+	int stop;
+
+	/* The new requests and the cancels, marked while the caller cannot change them. */
+	pthread_mutex_lock(&loader->lock);
+
+	taken = loader->incoming;
+	loader->incoming = NULL;
+	loader->incoming_last = NULL;
+
+	/* A new request may have been cancelled already. */
+	for (request = taken; request != NULL; request = request->queue_next)
+		request->cancelled = request->asked_cancel;
+
+	/* The running requests whose cancel was asked. */
+	if (loader->cancel_asked) {
+		for (request = loader->requests; request != NULL; request = request->next) {
+			if (request->asked_cancel)
+				request->cancelled = 1;
+		}
+		loader->cancel_asked = 0;
+	}
+
+	/* Whether the caller ends the loader. */
+	stop = loader->stopping;
+
+	pthread_mutex_unlock(&loader->lock);
+
+	/* Each running request cancelled now: its connection closed, its place given up, and back to the caller. */
+	for (request = loader->requests; request != NULL; request = request->next) {
+		if (!request->cancelled || request->retired)
+			continue;
+		loader_close(request);
+		loader_release_place(loader, request->key);
+		loader_retire(request);
+	}
+
+	/* Each new request joins the list; it begins unless it was cancelled or the loader stops. */
+	while (taken != NULL) {
+		request = taken;
+		taken = request->queue_next;
+		request->queue_next = NULL;
+		request->number = loader->next_number;
+		loader->next_number++;
+		request->next = loader->requests;
+		loader->requests = request;
+
+		/* A loader that stops begins nothing. */
+		if (stop)
+			continue;
+
+		/* One cancelled before it began goes back at once. */
+		if (request->cancelled) {
+			loader_retire(request);
+			continue;
+		}
+
+		/* Its lookup, its connection or the cache's answer; one that cannot begin ends. */
+		error = loader_begin(request);
+		if (error != 0)
+			loader_end(request, error);
+	}
+
+	/* Whether the loader stops. */
+	return stop;
+}
+
+/*
+ * Ends the requests the cache answered, closes the idle connections kept
+ * too long, and ends the requests that made no progress in time.
+ */
+static void
+loader_tick(
+	struct net_loader *loader)
+{
+	struct net_request *request;
+	uint64_t now;
+
+	/* The requests the cache answered. */
+	now = loader_clock();
+	for (request = loader->requests; request != NULL; request = request->next) {
+		if (!request->cancelled && request->state == LOADER_READY)
+			loader_end(request, 0);
+	}
+
+	/* The idle connections kept too long. */
+	loader_expire_idle(loader, now);
+
+	/* The requests that made no progress in time. */
+	for (request = loader->requests; request != NULL; request = request->next) {
+		if (request->cancelled || request->state == LOADER_ENDED || request->state == LOADER_WAITING)
+			continue;
+		if (now >= request->deadline)
+			loader_end(request, ETIMEDOUT);
+	}
+}
+
+/*
+ * Hands the requests that ended (in the order they ended) to the caller,
+ * and tells the caller of them or of a watched descriptor that rang: its
+ * notify is called once until it runs net_loader_dispatch, and a caller
+ * waiting in net_loader_wait wakes.
+ */
+static void
+loader_publish(
+	struct net_loader *loader)
+{
+	int tell;
+
+	/* The ended requests leave the network thread's list. */
+	loader_reap(loader);
+
+	/* Nothing ended and nothing rang: nothing to tell. */
+	if (loader->ended == NULL && !loader->rang)
+		return;
+
+	/* The ended requests follow those the caller has not taken; the caller is told once. */
+	tell = 0;
+	pthread_mutex_lock(&loader->lock);
+
+	/* The ended requests, after those already waiting. */
+	if (loader->ended != NULL) {
+		if (loader->completed_last != NULL)
+			loader->completed_last->queue_next = loader->ended;
+		else
+			loader->completed = loader->ended;
+		loader->completed_last = loader->ended_last;
+	}
+
+	/* The caller is told when it was not told already; a waiting caller wakes. */
+	if (!loader->notified)
+		tell = 1;
+	loader->notified = 1;
+	pthread_cond_broadcast(&loader->changed);
+
+	pthread_mutex_unlock(&loader->lock);
+
+	/* The network thread holds none of them now. */
+	loader->ended = NULL;
+	loader->ended_last = NULL;
+	loader->rang = 0;
+
+	/* The caller's notify, outside the lock. */
+	if (tell && loader->notify != NULL)
+		loader->notify(loader->notify_context);
+}
+
+/*
+ * Lists the descriptors of the next poll in fds: the control pipe, the
+ * resolver's pipe, each connection for what it waits for, then the
+ * watched descriptors (from watch_first on); the set of watched
+ * descriptors polled is marked as the caller's latest.  *timeout is how
+ * long the poll may wait.  Returns how many descriptors were listed.
+ */
+static size_t
+loader_gather(
+	struct net_loader *loader,
+	int *timeout)
+{
+	struct net_request *request;
+	struct pollfd *grown;
+	size_t needed;
+	size_t count;
+	size_t index;
+	int cut;
+
+	/* Room for the two pipes, every request's connection and every watched descriptor. */
+	needed = 2U + LOADER_WATCH_MAX;
+	for (request = loader->requests; request != NULL; request = request->next)
+		needed++;
+
+	/* More room when there is not enough (without memory, the connections left out are polled soon after). */
+	if (needed > loader->fds_capacity) {
+		grown = realloc(loader->fds, needed * sizeof(*grown));
+		if (grown != NULL) {
+			loader->fds = grown;
+			loader->fds_capacity = needed;
+		}
+	}
+
+	/* The control pipe, then the resolver's. */
+	loader->fds[0].fd = loader->control_read;
+	loader->fds[0].events = POLLIN;
+	loader->fds[0].revents = 0;
+	loader->fds[1].fd = loader->pipe_read;
+	loader->fds[1].events = POLLIN;
+	loader->fds[1].revents = 0;
+	count = 2U;
+
+	/* Each connection that waits for its socket, while the watched descriptors keep their room. */
+	cut = 0;
+	for (request = loader->requests; request != NULL; request = request->next) {
+		if (request->cancelled || request->descriptor < 0 || request->wants == 0)
+			continue;
+		if (count + LOADER_WATCH_MAX == loader->fds_capacity) {
+			cut = 1;
+			break;
+		}
+		loader->fds[count].fd = request->descriptor;
+		loader->fds[count].events = request->wants;
+		loader->fds[count].revents = 0;
+		count++;
+	}
+
+	/* The watched descriptors as the caller leaves them now; a caller waiting to close one learns it is no longer polled. */
+	loader->watch_first = count;
+	pthread_mutex_lock(&loader->lock);
+
+	/* Each watched descriptor, for reading. */
+	for (index = 0; index < loader->watch_count; index++) {
+		loader->fds[count].fd = loader->watches[index];
+		loader->fds[count].events = POLLIN;
+		loader->fds[count].revents = 0;
+		count++;
+	}
+
+	/* A new set polled: a caller waiting in net_loader_unwatch may go on. */
+	if (loader->polled_generation != loader->watch_generation) {
+		loader->polled_generation = loader->watch_generation;
+		pthread_cond_broadcast(&loader->changed);
+	}
+
+	pthread_mutex_unlock(&loader->lock);
+
+	/* The earliest time out, sooner when connections were left out. */
+	*timeout = loader_timeout(loader);
+	if (cut && (*timeout < 0 || *timeout > LOADER_CUT_WAIT))
+		*timeout = LOADER_CUT_WAIT;
+	return count;
+}
+
+/*
+ * Tells how long the network thread may wait before the loader must run
+ * anyway (the earliest time out), in milliseconds, or -1 when there is no
+ * request to time out.
+ */
+static int
+loader_timeout(
+	const struct net_loader *loader)
+{
+	const struct net_request *request;
+	uint64_t earliest;
+	uint64_t now;
+	int found;
+
+	/* The earliest deadline of a request that runs. */
+	found = 0;
+	earliest = 0;
+	for (request = loader->requests; request != NULL; request = request->next) {
+		if (request->cancelled || request->state == LOADER_ENDED || request->state == LOADER_WAITING)
+			continue;
+		if (request->state == LOADER_READY)
+			return 0;
+		if (!found || request->deadline < earliest)
+			earliest = request->deadline;
+		found = 1;
+	}
+
+	/* No request, no time out. */
+	if (!found)
+		return -1;
+
+	/* The time left, none when it has passed. */
+	now = loader_clock();
+	if (earliest <= now)
+		return 0;
+	if (earliest - now > 60000U)
+		return 60000;
+	return (int)(earliest - now);
+}
+
+/* Reads a descriptor that does not block until it has nothing more. */
+static void
+loader_drain(
+	int descriptor)
+{
+	unsigned char drained[64];
+	ssize_t got;
+
+	/* Its bytes, all of them. */
+	do {
+		got = read(descriptor, drained, sizeof(drained));
+	} while (got > 0);
 }
 
 /*
@@ -850,13 +1546,13 @@ loader_begin(
 	request->deadline = loader_clock() + LOADER_TIMEOUT;
 
 	/* The job to the thread. */
-	pthread_mutex_lock(&loader->lock);
+	pthread_mutex_lock(&loader->resolver_lock);
 
 	job->next = loader->jobs;
 	loader->jobs = job;
-	pthread_cond_signal(&loader->wake);
+	pthread_cond_signal(&loader->resolver_wake);
 
-	pthread_mutex_unlock(&loader->lock);
+	pthread_mutex_unlock(&loader->resolver_lock);
 
 	/* Succeeded: the lookup is under way. */
 	return 0;
@@ -870,22 +1566,18 @@ loader_answers(
 	struct loader_job *answers;
 	struct loader_job *job;
 	struct net_request *request;
-	unsigned char drained[64];
-	ssize_t got;
 	int error;
 
 	/* The pipe's bytes, all of them. */
-	do {
-		got = read(loader->pipe_read, drained, sizeof(drained));
-	} while (got > 0);
+	loader_drain(loader->pipe_read);
 
 	/* The answers, taken at once. */
-	pthread_mutex_lock(&loader->lock);
+	pthread_mutex_lock(&loader->resolver_lock);
 
 	answers = loader->answers;
 	loader->answers = NULL;
 
-	pthread_mutex_unlock(&loader->lock);
+	pthread_mutex_unlock(&loader->resolver_lock);
 
 	/* Each answer to its request, when it is still there and waiting. */
 	while (answers != NULL) {
@@ -1325,14 +2017,17 @@ loader_close(
 }
 
 /*
- * Ends a request with an outcome: its connection closed and its callback
- * called (the request is freed after the walk that ended it).
+ * Ends a request with an outcome: its connection closed, the TLS reason of
+ * an https failure kept, its place given up, and the request goes back to
+ * the caller (whose thread calls its callback).
  */
 static void
 loader_end(
 	struct net_request *request,
 	int error)
 {
+	int differs;
+
 	/* Ended once. */
 	if (request->state == LOADER_ENDED || request->cancelled)
 		return;
@@ -1340,17 +2035,41 @@ loader_end(
 	request->state = LOADER_ENDED;
 	request->error = error;
 
-	/* A request waiting for its place may go. */
-	loader_wake(request->loader, request->key);
+	/* The reason an https request failed, as this thread's TLS kept it. */
+	differs = strcmp(request->url.scheme, "https");
+	if (error != 0 && differs == 0)
+		snprintf(request->reason, sizeof(request->reason), "%s", net_tls_error());
 
-	/* The callback, while nothing is freed. */
-	request->loader->walking++;
-	if (request->done != NULL)
-		request->done(request->context, request);
-	request->loader->walking--;
+	/* A request waiting for its place may go. */
+	loader_release_place(request->loader, request->key);
+
+	/* Back to the caller. */
+	loader_retire(request);
 }
 
-/* Frees the ended and cancelled requests, unless the list is being walked. */
+/* Puts a request that ended or was cancelled on the list handed to the caller next (once). */
+static void
+loader_retire(
+	struct net_request *request)
+{
+	struct net_loader *loader;
+
+	/* Already on it. */
+	if (request->retired)
+		return;
+
+	/* At the end of the list, in the order the requests ended. */
+	loader = request->loader;
+	request->retired = 1;
+	request->queue_next = NULL;
+	if (loader->ended_last != NULL)
+		loader->ended_last->queue_next = request;
+	else
+		loader->ended = request;
+	loader->ended_last = request;
+}
+
+/* Takes the requests that went back to the caller out of the network thread's list. */
 static void
 loader_reap(
 	struct net_loader *loader)
@@ -1358,22 +2077,18 @@ loader_reap(
 	struct net_request **link;
 	struct net_request *request;
 
-	/* Nothing is freed during a walk. */
-	if (loader->walking != 0)
-		return;
-
-	/* Each request that is over leaves the list. */
+	/* Each request that went back leaves the list. */
 	link = &loader->requests;
 	while (*link != NULL) {
 		request = *link;
-		if (request->state != LOADER_ENDED && !request->cancelled) {
+		if (!request->retired) {
 			link = &request->next;
 			continue;
 		}
 
-		/* Unlinked and freed. */
+		/* Unlinked; the caller frees it. */
 		*link = request->next;
-		loader_free(request);
+		request->next = NULL;
 	}
 }
 
@@ -1497,7 +2212,7 @@ loader_active(
 
 /* Starts the first request that waits for a place, when the place has room again. */
 static void
-loader_wake(
+loader_release_place(
 	struct net_loader *loader,
 	const char *key)
 {

@@ -20,14 +20,21 @@
  * any file added with net_tls_add_ca_file (the tests' own CA), and checks
  * the certificate's name or address against the URL's host.  A failure is
  * EPROTO, with its reason kept for net_tls_error.
+ *
+ * Two threads use TLS: the page's (the blocking fetches) and the loader's
+ * network thread.  The libraries are loaded and the context made once,
+ * under tls_load_lock; a connection is used by one thread at a time; and
+ * each thread keeps the reason of its own last failure.
  */
 
 #include "net/net.h"
 
 #include <dlfcn.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <limits.h>
 #include <poll.h>
+#include <pthread.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -138,25 +145,39 @@ struct net_tls {
 	void *ssl;
 };
 
-/* The loaded library, once tls_loaded is set (the process's pages run on one thread). */
+/* The loaded library, once tls_loaded is set (set under tls_load_lock, then only read). */
 static struct tls_library tls_library;
 
-/* 0 before the first attempt to load the library, 1 once loaded, -1 when it cannot be. */
+/* 0 before the first attempt to load the library, 1 once loaded, -1 when it cannot be (under tls_load_lock). */
 static int tls_loaded;
 
-/* The context every connection is made from (its roots and settings), made with the library. */
+/* The context every connection is made from (its roots and settings), made with the library under tls_load_lock. */
 static void *tls_context;
 
-/* The CA files added for the tests, loaded into the context when it is made. */
+/* The lock of the loading: the first thread to need TLS loads it, the others wait and find it loaded. */
+static pthread_mutex_t tls_load_lock = PTHREAD_MUTEX_INITIALIZER;
+
+/* The CA files added for the tests, loaded into the context when it is made (set before the first fetch). */
 static const char *tls_ca_files[TLS_CA_FILES_MAX];
 
 /* How many entries of tls_ca_files are set. */
 static size_t tls_ca_file_count;
 
-/* The reason of the last failure, for net_tls_error. */
-static char tls_reason[TLS_ERROR_MAX];
+/*
+ * The key of each thread's reason of its last failure, for net_tls_error:
+ * a buffer of TLS_ERROR_MAX bytes made the first time the thread keeps a
+ * reason and freed when it ends.  tls_reason_ready says the key was made
+ * (both are set once, under tls_reason_once).
+ */
+static pthread_key_t tls_reason_key;
+static int tls_reason_ready;
+static pthread_once_t tls_reason_once = PTHREAD_ONCE_INIT;
 
 static int tls_load(void);
+static int tls_load_once(void);
+static void tls_make_reason_key(void);
+static char *tls_reason_buffer(void);
+static void tls_set_reason(const char *format, ...) __attribute__((format(printf, 1, 2)));
 static void *tls_open_library(const char *name, const char *versioned, int flags);
 static int tls_find(void *library, const char *name, void *pointer);
 static int tls_find_all(void *ssl, void *crypto);
@@ -199,7 +220,7 @@ net_tls_open(
 
 	/* The library and the shared context. */
 	*tls = NULL;
-	tls_reason[0] = '\0';
+	tls_set_reason("%s", "");
 	error = tls_load();
 	if (error != 0)
 		return error;
@@ -342,7 +363,7 @@ net_tls_start(
 
 	/* The library and the shared context. */
 	*tls = NULL;
-	tls_reason[0] = '\0';
+	tls_set_reason("%s", "");
 	error = tls_load();
 	if (error != 0)
 		return error;
@@ -556,22 +577,64 @@ void
 net_tls_clear_error(void)
 {
 	/* The kept text. */
-	tls_reason[0] = '\0';
+	tls_set_reason("%s", "");
 }
 
 /*
- * The reason of the last TLS failure (for the error line), or "".
+ * Sets the calling thread's reason of the last TLS failure: the loader
+ * hands the page's thread the reason its network thread kept for a
+ * request ("" for none).
+ */
+void
+net_tls_set_error(
+	const char *reason)
+{
+	/* The text, cut to what is kept. */
+	tls_set_reason("%s", reason);
+}
+
+/*
+ * The reason of the calling thread's last TLS failure (for the error
+ * line), or "".
  */
 const char *
 net_tls_error(void)
 {
-	/* The text kept by tls_fail. */
-	return tls_reason;
+	const char *buffer;
+
+	/* The text kept by tls_fail, or none when the thread kept nothing. */
+	buffer = tls_reason_buffer();
+	if (buffer == NULL)
+		return "";
+
+	/* The thread's text. */
+	return buffer;
 }
 
-/* Loads the libraries and makes the context, once; returns 0 or EPROTONOSUPPORT. */
+/* Loads the libraries and makes the context, once for all threads; returns 0 or EPROTONOSUPPORT. */
 static int
 tls_load(void)
+{
+	int error;
+
+	/* The first thread loads; the others wait for it and find the outcome. */
+	pthread_mutex_lock(&tls_load_lock);
+
+	error = tls_load_once();
+
+	pthread_mutex_unlock(&tls_load_lock);
+
+	/* TLS cannot be used. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the library and the context are ready. */
+	return 0;
+}
+
+/* Loads the libraries and makes the context unless that was tried already (under tls_load_lock). */
+static int
+tls_load_once(void)
 {
 	void *ssl;
 	void *crypto;
@@ -581,7 +644,7 @@ tls_load(void)
 	if (tls_loaded > 0)
 		return 0;
 	if (tls_loaded < 0) {
-		snprintf(tls_reason, sizeof(tls_reason), "the OpenSSL package is not installed");
+		tls_set_reason("the OpenSSL package is not installed");
 		return EPROTONOSUPPORT;
 	}
 
@@ -637,7 +700,7 @@ tls_open_library(
 		return library;
 
 	/* Neither: the package is missing or cannot load. */
-	snprintf(tls_reason, sizeof(tls_reason), "cannot load the OpenSSL package's %s: %s", name, first);
+	tls_set_reason("cannot load the OpenSSL package's %s: %s", name, first);
 	return NULL;
 }
 
@@ -653,7 +716,7 @@ tls_find(
 	/* The symbol, stored through the pointer's address. */
 	found = dlsym(library, name);
 	if (found == NULL) {
-		snprintf(tls_reason, sizeof(tls_reason), "OpenSSL has no %s", name);
+		tls_set_reason("OpenSSL has no %s", name);
 		return ENOENT;
 	}
 
@@ -697,14 +760,14 @@ tls_make_context(void)
 	/* The client context. */
 	tls_context = tls_library.ctx_new(tls_library.client_method());
 	if (tls_context == NULL) {
-		snprintf(tls_reason, sizeof(tls_reason), "cannot make an OpenSSL context");
+		tls_set_reason("cannot make an OpenSSL context");
 		return ENOMEM;
 	}
 
 	/* TLS 1.2 or later. */
 	set = tls_library.ctx_ctrl(tls_context, TLS_CTRL_SET_MIN_PROTO_VERSION, TLS_VERSION_1_2, NULL);
 	if (set != 1) {
-		snprintf(tls_reason, sizeof(tls_reason), "OpenSSL refuses TLS 1.2 as the least version");
+		tls_set_reason("OpenSSL refuses TLS 1.2 as the least version");
 		return EPROTO;
 	}
 
@@ -717,7 +780,7 @@ tls_make_context(void)
 	for (index = 0; index < tls_ca_file_count; index++) {
 		result = tls_library.ctx_load_verify_locations(tls_context, tls_ca_files[index], NULL);
 		if (result != 1) {
-			snprintf(tls_reason, sizeof(tls_reason), "cannot read the CA file %s", tls_ca_files[index]);
+			tls_set_reason("cannot read the CA file %s", tls_ca_files[index]);
 			return EPROTO;
 		}
 	}
@@ -805,7 +868,7 @@ tls_fail(
 	verified = tls_library.get_verify_result(ssl);
 	if (verified != TLS_VERIFY_OK) {
 		described = tls_library.verify_error_string(verified);
-		snprintf(tls_reason, sizeof(tls_reason), "%s: certificate verify failed: %s", what, described);
+		tls_set_reason("%s: certificate verify failed: %s", what, described);
 		tls_library.err_clear_error();
 		return;
 	}
@@ -814,7 +877,7 @@ tls_fail(
 	queued = tls_library.err_get_error();
 	if (queued != 0) {
 		tls_library.err_error_string_n(queued, text, sizeof(text));
-		snprintf(tls_reason, sizeof(tls_reason), "%s: %s", what, text);
+		tls_set_reason("%s: %s", what, text);
 		tls_library.err_clear_error();
 		return;
 	}
@@ -823,5 +886,73 @@ tls_fail(
 	reason = TLS_ERROR_SSL;
 	if (result <= 0)
 		reason = tls_library.get_error(ssl, result);
-	snprintf(tls_reason, sizeof(tls_reason), "%s: failed (OpenSSL error %d)", what, reason);
+	tls_set_reason("%s: failed (OpenSSL error %d)", what, reason);
+}
+
+/* Makes the key of the threads' reasons (once). */
+static void
+tls_make_reason_key(void)
+{
+	int status;
+
+	/* Each thread's buffer is freed when the thread ends. */
+	status = pthread_key_create(&tls_reason_key, free);
+	if (status != 0)
+		return;
+
+	/* Succeeded: the threads may keep reasons. */
+	tls_reason_ready = 1;
+}
+
+/* Finds the calling thread's reason buffer, made the first time; NULL without memory. */
+static char *
+tls_reason_buffer(void)
+{
+	char *buffer;
+	int status;
+
+	/* The key, made by the first thread that needs it. */
+	pthread_once(&tls_reason_once, tls_make_reason_key);
+	if (!tls_reason_ready)
+		return NULL;
+
+	/* The thread's buffer, when it has one. */
+	buffer = pthread_getspecific(tls_reason_key);
+	if (buffer != NULL)
+		return buffer;
+
+	/* A new one, empty. */
+	buffer = calloc(1, TLS_ERROR_MAX);
+	if (buffer == NULL)
+		return NULL;
+
+	/* Kept for the thread. */
+	status = pthread_setspecific(tls_reason_key, buffer);
+	if (status != 0) {
+		free(buffer);
+		return NULL;
+	}
+
+	/* Succeeded: the thread's buffer. */
+	return buffer;
+}
+
+/* Keeps the calling thread's reason of a failure (a reason that does not fit is cut; without memory it is lost). */
+static void
+tls_set_reason(
+	const char *format,
+	...)
+{
+	va_list arguments;
+	char *buffer;
+
+	/* The thread's buffer. */
+	buffer = tls_reason_buffer();
+	if (buffer == NULL)
+		return;
+
+	/* The text. */
+	va_start(arguments, format);
+	vsnprintf(buffer, TLS_ERROR_MAX, format, arguments);
+	va_end(arguments);
 }

@@ -9,8 +9,9 @@
  * The window of browser: a window of libkeiland's application (WS131
  * p025, kl_app; its own xdg-shell toplevel and seat before), whose surface
  * the presenter draws on with its own Vulkan (KL_PRESENT_NONE).  The
- * application waits for the compositor and the network's descriptors
- * together (kl_app_watch_fd).
+ * application waits for the compositor; the view's wake, called from the
+ * library's network thread, posts an event to the application
+ * (kl_app_post), which ends the wait.
  *
  * The application queues the window's input; this file turns it into the
  * shell_event values the main loop reads: the pointer's moves (the last of
@@ -25,13 +26,9 @@
 #include "shell/internal.h"
 
 #include <errno.h>
-#include <poll.h>
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
-
-/* How long the loop waits at most while some of the network's descriptors are polled by the shell itself, in ms. */
-#define WINDOW_UNWATCHED_MS	10
 
 /*
  * How the wheel's distance is scaled: libkeiland gives 4 pixels for each
@@ -41,9 +38,6 @@
 #define WINDOW_SCROLL_UNIT	4.0
 #define WINDOW_SCROLL_SCALE	3
 
-static void window_watch(struct shell_window *window, const struct pollfd *extra, size_t count);
-static void window_poll_unwatched(struct shell_window *window, struct pollfd *extra, size_t count);
-static void window_ready(struct pollfd *extra, size_t count, const struct kl_app_event *event);
 static void window_event(struct shell_window *window, const struct kl_window_event *input);
 static void window_button(struct shell_window *window, const struct kl_window_event *input);
 static void window_axis(struct shell_window *window, const struct kl_window_event *input);
@@ -116,21 +110,18 @@ shell_window_open(
 /*
  * Waits up to a timeout (milliseconds, -1 for ever; a held key's repeat
  * or input already queued waits less) for the compositor's events and the
- * other descriptors the caller gives (the network's), and takes what
- * happened: the window's input for shell_window_take, the titlebar's for
- * the titlebar, and each descriptor's readiness in its revents.
+ * view's wake, and takes what happened: the window's input for
+ * shell_window_take and the titlebar's for the titlebar (a wake needs
+ * nothing more: the main loop runs the view after each dispatch).
  *
  * Returns 0, or -1 when the connection is broken.
  */
 int
 shell_window_dispatch(
 	struct shell_window *window,
-	int timeout,
-	struct pollfd *extra,
-	size_t extra_count)
+	int timeout)
 {
 	struct kl_app_event event;
-	size_t index;
 	int status;
 	int taken;
 
@@ -138,41 +129,21 @@ shell_window_dispatch(
 	if (window->event_count != 0U || window->touch_count != 0U)
 		timeout = 0;
 
-	/* The descriptors watched are the network's now; none is ready yet. */
-	if (extra_count > SHELL_NET_FDS)
-		extra_count = SHELL_NET_FDS;
-	window_watch(window, extra, extra_count);
-	for (index = 0; index < extra_count; index++)
-		extra[index].revents = 0;
-
-	/* Descriptors the application could not watch are polled by the shell after a short wait (ws177-p019). */
-	if (window->unwatched_count != 0U && (timeout < 0 || timeout > WINDOW_UNWATCHED_MS))
-		timeout = WINDOW_UNWATCHED_MS;
-
-	/* The compositor and the network, together. */
+	/* The compositor and the view's wake, together. */
 	status = kl_app_dispatch(window->app, timeout);
 	if (status != 0)
 		return -1;
 
-	/* What happened, in its order: the window's input, and the descriptors that became ready. */
+	/* What happened, in its order: the window's input (the view's wakes carry nothing). */
 	for (;;) {
 		taken = kl_app_take(window->app, &event);
 		if (taken == 0)
 			break;
 
 		/* The window's input. */
-		if (event.kind == KL_APP_WINDOW && event.window == window->kui) {
+		if (event.kind == KL_APP_WINDOW && event.window == window->kui)
 			window_event(window, &event.input);
-			continue;
-		}
-
-		/* A descriptor of the network. */
-		if (event.kind == KL_APP_FD)
-			window_ready(extra, extra_count, &event);
 	}
-
-	/* And those the application does not watch. */
-	window_poll_unwatched(window, extra, extra_count);
 
 	/* Succeeded: the events so far have run. */
 	return 0;
@@ -242,148 +213,6 @@ shell_clock(void)
 
 	/* Reports it in milliseconds. */
 	return (uint64_t)now.tv_sec * 1000U + (uint64_t)now.tv_nsec / 1000000U;
-}
-
-/*
- * Watches the network's descriptors for what each waits for, as they are
- * now: one no longer among them stops being watched.
- */
-static void
-window_watch(
-	struct shell_window *window,
-	const struct pollfd *extra,
-	size_t count)
-{
-	unsigned events;
-	unsigned kept;
-	unsigned index;
-	size_t other;
-	int found;
-	int error;
-
-	/* The ones watched that are gone stop being watched. */
-	kept = 0;
-	for (index = 0; index < window->watched_count; index++) {
-		found = 0;
-		for (other = 0; other < count; other++) {
-			if (extra[other].fd == window->watched[index])
-				found = 1;
-		}
-
-		/* Gone: no longer watched. */
-		if (!found) {
-			(void)kl_app_watch_fd(window->app, window->watched[index], 0U);
-			continue;
-		}
-
-		/* Still among them. */
-		window->watched[kept] = window->watched[index];
-		kept++;
-	}
-
-	/* How many are still watched. */
-	window->watched_count = kept;
-
-	/* Each one now, for what it waits for (a new one is added, a known one updated). */
-	for (other = 0; other < count; other++) {
-		/* What it waits for. */
-		events = 0U;
-		if ((extra[other].events & POLLIN) != 0)
-			events |= KL_APP_FD_READ;
-		if ((extra[other].events & POLLOUT) != 0)
-			events |= KL_APP_FD_WRITE;
-
-		/* Watched for it; a refused one is not ready (the view's timeout still runs it). */
-		error = kl_app_watch_fd(window->app, extra[other].fd, events);
-		if (error != 0 || events == 0U)
-			continue;
-
-		/* A new one is remembered. */
-		found = 0;
-		for (index = 0; index < window->watched_count; index++) {
-			if (window->watched[index] == extra[other].fd)
-				found = 1;
-		}
-
-		/* Known already, or no room to remember it. */
-		if (found || window->watched_count == SHELL_WATCHED_MAX)
-			continue;
-		window->watched[window->watched_count] = extra[other].fd;
-		window->watched_count++;
-	}
-}
-
-/*
- * Polls, without waiting, the network's descriptors the application does
- * not watch (more than it can, ws177-p019), and gives them their answers.
- */
-static void
-window_poll_unwatched(
-	struct shell_window *window,
-	struct pollfd *extra,
-	size_t count)
-{
-	struct pollfd single;
-	size_t index;
-	size_t unwatched;
-	unsigned watched;
-	int found;
-	int ready;
-
-	/* Each descriptor the application does not watch, polled alone. */
-	unwatched = 0;
-	for (index = 0; index < count; index++) {
-		found = 0;
-		for (watched = 0; watched < window->watched_count; watched++) {
-			if (window->watched[watched] == extra[index].fd)
-				found = 1;
-		}
-
-		/* One the application watches, or one that waits for nothing. */
-		if (found || extra[index].events == 0)
-			continue;
-		unwatched++;
-
-		/* Its answer now (POLLERR and POLLNVAL as poll gives them). */
-		single = extra[index];
-		single.revents = 0;
-		ready = poll(&single, 1, 0);
-		if (ready > 0)
-			extra[index].revents |= single.revents;
-	}
-
-	/* The log, when the number of those changed. */
-	if (unwatched != window->unwatched_count) {
-		printf("ZBROWSER NET fds=%lu watched=%u polled=%lu\n", (unsigned long)count, window->watched_count, (unsigned long)unwatched);
-		fflush(stdout);
-		window->unwatched_count = unwatched;
-	}
-}
-
-/* Gives the entries of a ready descriptor the poll's answer the view reads. */
-static void
-window_ready(
-	struct pollfd *extra,
-	size_t count,
-	const struct kl_app_event *event)
-{
-	short revents;
-	size_t index;
-
-	/* What it became, as poll says it. */
-	revents = 0;
-	if ((event->ready & KL_APP_FD_READ) != 0U)
-		revents |= POLLIN;
-	if ((event->ready & KL_APP_FD_WRITE) != 0U)
-		revents |= POLLOUT;
-	if ((event->ready & KL_APP_FD_HANGUP) != 0U)
-		revents |= POLLHUP;
-
-	/* Each entry of the descriptor. */
-	for (index = 0; index < count; index++) {
-		if (extra[index].fd == event->fd)
-			extra[index].revents |= revents;
-	}
 }
 
 /* Turns one input of the window into the shell's. */

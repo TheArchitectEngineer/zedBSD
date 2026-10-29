@@ -16,11 +16,16 @@
  * (without a Domain) and Secure.  Expires and Max-Age only delete a
  * cookie when they are in the past (every kept cookie lasts the session).
  * A script (document.cookie) neither sees nor sets an HttpOnly cookie.
+ *
+ * The jar is shared by the page's thread (document.cookie, the blocking
+ * fetches) and the loader's network thread (its requests and responses),
+ * so each call below holds the jar's lock while it reads or changes it.
  */
 
 #include "net/net.h"
 
 #include <errno.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -42,13 +47,15 @@ struct cookie {
 
 /*
  * The process's cookie jar: the cookies in the order they were set.  It
- * lives as long as the process; browser's pages run on one thread,
- * so nothing else touches it.
+ * lives as long as the process, under cookie_lock.
  */
 static struct cookie cookie_jar[COOKIE_MAX];
 
-/* How many entries of cookie_jar are in use (the first ones). */
+/* How many entries of cookie_jar are in use (the first ones), under cookie_lock. */
 static size_t cookie_count;
+
+/* The lock of the jar: the page's thread and the loader's network thread both use it. */
+static pthread_mutex_t cookie_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static int cookie_store(const struct net_url *url, const char *header, size_t length, int from_script);
 static int cookie_pairs(const struct net_url *url, int for_script, struct wb_buffer *out);
@@ -76,7 +83,13 @@ net_cookie_store(
 	int error;
 
 	/* A response may set any cookie. */
+	pthread_mutex_lock(&cookie_lock);
+
 	error = cookie_store(url, header, length, 0);
+
+	pthread_mutex_unlock(&cookie_lock);
+
+	/* The jar could not take it. */
 	if (error != 0)
 		return error;
 
@@ -99,7 +112,13 @@ net_cookie_store_script(
 	int error;
 
 	/* A script may not touch the cookies only HTTP sees. */
+	pthread_mutex_lock(&cookie_lock);
+
 	error = cookie_store(url, text, length, 1);
+
+	pthread_mutex_unlock(&cookie_lock);
+
+	/* The jar could not take it. */
 	if (error != 0)
 		return error;
 
@@ -119,9 +138,15 @@ net_cookie_header(
 	struct wb_buffer pairs;
 	int error;
 
-	/* The name and value pairs of every cookie for the URL. */
+	/* The pairs are gathered apart from the header. */
 	wb_buffer_init(&pairs);
+
+	/* The name and value pairs of every cookie for the URL. */
+	pthread_mutex_lock(&cookie_lock);
+
 	error = cookie_pairs(url, 0, &pairs);
+
+	pthread_mutex_unlock(&cookie_lock);
 
 	/* The header, when there is a cookie. */
 	if (error == 0 && pairs.length != 0)
@@ -146,7 +171,13 @@ net_cookie_string(
 	int error;
 
 	/* The pairs a script may see. */
+	pthread_mutex_lock(&cookie_lock);
+
 	error = cookie_pairs(url, 1, out);
+
+	pthread_mutex_unlock(&cookie_lock);
+
+	/* The pairs could not be written. */
 	if (error != 0)
 		return error;
 
