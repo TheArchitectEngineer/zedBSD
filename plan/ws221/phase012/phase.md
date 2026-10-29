@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p012 -->
 # ws221-p012: TCP の SACK（RFC 2018・2883・6675）
 
-Status: in-progress（2026-10-30 P3 q1679-i02: 受け側・ACK の間隔（bbc43c185）と送り側を実装、tcp-model PASS。規約の全文の見直しと 5330 の非退行（送り側）が残り）
+Status: cleared（2026-10-30 P3 q1679-i02: 受け側・D-SACK・ACK 8 segment ごと（bbc43c185）、送り側（fe31561e8）、tcp-model・QEMU qemu-tcp inet,inet6・5330 の非退行 PASS、10GbE の recv 4897〜5282（Linux 5458 の 90〜97 %、ATR 有効）、規約の全文の見直し済み。RACK-TLP は Future Work の候補）
 Parent: [WS221](../ws.md)
 Queue: q1679 / q1679-i02（P3）
 依存: p008〜p011（送りの ring・NewReno の回復・受けの並べ替えの queue）、WS311（CUBIC）
@@ -127,3 +127,9 @@ tcp-model（host、zedBSD 同士、bbc43c185（段 1）→ 段 2）:
 - lan-loss-1 の比べ: model の損失の乱数は送りの順で決まるので、版が違うと同じ seed でも損失の並びが違う（seed ごとの対は比べられない）。seed 1〜24 の平均（`--loss-ab 1 --peer-window 65535`）: 前（bbc43c185）40.42 MB/s・timeout 計 16 回、後（この形）40.08 MB/s・20 回。1 % の散った損失では SACK の得は無く（NewReno でも 1 つの穴は 1 RTT で直る）、timeout が少し増えた。残りの timeout は失われた再送と flight の末尾の損失で、RACK-TLP（RFC 8985）の timer が要る（範囲の外、Future Work の候補）。
 - 試した形（seed 1〜24 の平均・timeout）: 部分の ACK で毎回再送 47.44・16（check を破る）、同じで D-SACK だけの ACK も dupack に数える 49.46・14（check を破る）、未再送の時だけ（採った形）40.08・20、それに 1.25 RTT の待ち 40.09・20、再送の順の比べ 40.08・20。
 - 確かめ（採った形）: tcp-model 全 scenario PASS（rtt-step-zedbsd の bound を 450000:700000 に、Q1 の許可、`plan/ws220/tests/tcp-model/run.sh` に理由の comment）、amd64・pcat・rpi4・rpi5・zybo・RTL8127 の config の vmunix の build warning 0、style-check tcp.c 111（bbc43c185 と同じ）。QEMU の qemu-tcp inet,inet6 PASS（送り側の途中の版で、guest send/recv inet 46.6/45.2・inet6 40.8/41.6 Mbit/s）。実機（10.0.10.3）の送りは損失が無く SACK の送り側は働かない（測らない、Q1）。
+
+## 規約の全文の見直し（2026-10-30、conformance-reviewer、p010 i02・p012・p013 の hunk）
+
+- 対象: 6a178f697 からの tcp.c・socket.c・socket.h・tcp-socket.h・usb-cdc-ncm.c・usb-cdc-ncm-net.c・usb-cdc-ncm.h・ncm-ntb-frames-test.c の hunk。書き方だけ（直接の `return f()`、条件の中の bool 式と 3 つ以上の clause、段落の comment と空行、臨界区間の空行、試験の C の前方宣言・入れ子の宣言・comment）。動作は変えていない（P3 が diff の comment 以外の行を読んで同じ意味を確かめた）。
+- style-check（6a178f697 → 見直しの後）: tcp.c 115 → 113、socket.c 27 → 27、usb-cdc-ncm.c 31 → 31、usb-cdc-ncm-net.c 83 → 81、ncm-ntb-frames-test.c 10（見直しの前）→ 0。hunk の外の既存の指摘（`ws220-p005` などの comment、`ranges_overlap` の条件の中の呼び出し、`ncm_binding_parse` の `?:`）は範囲の外。
+- 確かめ: amd64・zybo・5330 の config の vmunix の build warning 0、`run-ncm-ntb-frames-test.sh` PASS、tcp-model PASS、`git diff --check` 無し。p014 の HCD の変更の hunk は、その実装の後に短く見直す。

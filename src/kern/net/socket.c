@@ -781,8 +781,12 @@ socket_enqueue_stream_advance(
 		    packet->length);
 		tail->length += packet->length;
 		socket->receive_bytes += packet->length;
+
+		/* Moves the caller's count with the data, under the same hold of the lock. */
 		if (next != NULL)
 			*next += (uint32_t)queued;
+
+		/* Wakes one reader. */
 		waitq_wake_one(&socket->receive_waitq);
 		spin_unlock_irqrestore(&socket->lock, irq);
 		packet_buf_free(packet);
@@ -821,8 +825,12 @@ socket_enqueue_stream_advance(
 	socket->receive_bytes += packet->length;
 	if (jumbo)
 		socket->receive_jumbo++;
+
+	/* Moves the caller's count with the data, under the same hold of the lock. */
 	if (next != NULL)
 		*next += (uint32_t)queued;
+
+	/* Wakes one reader. */
 	waitq_wake_one(&socket->receive_waitq);
 
 	spin_unlock_irqrestore(&socket->lock, irq);

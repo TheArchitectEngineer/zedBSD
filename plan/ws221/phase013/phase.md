@@ -49,3 +49,9 @@ Queue: q1689 / q1689-i01（P3）
 - TX の dropped は損失でなく背圧: queue が満杯の時 `ncm_transmit` が ENOBUFS を返し、TCP はその segment を unsent のまま保ち、転送の完了が回す network worker の pass で送る（`send_refused`、再送ではない）。net_device は満杯の拒否を `tx_dropped` だけに数える（8ea1d234c）。
 - 残りの天井（推定）: 方向ごとに転送 1 つ。送りは 17404 byte の block を 1 秒に約 1.1 万（1 回 約 92 µs、bus の上の時間は 約 40 µs）、受けは 32 KB を約 5400（約 185 µs、bus 約 75 µs）。完了から次の転送を出すまでの間（割り込み → poll → 組み立て・parse → submit）が残りの半分ほど。xHCI の driver は非 isochronous の endpoint ごとに要求 1 つ（`xhci_request_publish_locked`）なので、転送を重ねるには HCD の変更が要る（Q1 に数字と案を送った）。
 - build: amd64・pcat・rpi4・rpi5・zybo・5330 の config の vmunix の warning 0（bff52ee82 の tree、5330 の vmunix は試した物と同じ byte 列）。
+
+## 規約の全文の見直し（2026-10-30、conformance-reviewer、p010 i02・p012・p013 の hunk）
+
+- 対象: 6a178f697 からの tcp.c・socket.c・socket.h・tcp-socket.h・usb-cdc-ncm.c・usb-cdc-ncm-net.c・usb-cdc-ncm.h・ncm-ntb-frames-test.c の hunk。書き方だけ（直接の `return f()`、条件の中の bool 式と 3 つ以上の clause、段落の comment と空行、臨界区間の空行、試験の C の前方宣言・入れ子の宣言・comment）。動作は変えていない（P3 が diff の comment 以外の行を読んで同じ意味を確かめた）。
+- style-check（6a178f697 → 見直しの後）: tcp.c 115 → 113、socket.c 27 → 27、usb-cdc-ncm.c 31 → 31、usb-cdc-ncm-net.c 83 → 81、ncm-ntb-frames-test.c 10（見直しの前）→ 0。hunk の外の既存の指摘（`ws220-p005` などの comment、`ranges_overlap` の条件の中の呼び出し、`ncm_binding_parse` の `?:`）は範囲の外。
+- 確かめ: amd64・zybo・5330 の config の vmunix の build warning 0、`run-ncm-ntb-frames-test.sh` PASS、tcp-model PASS、`git diff --check` 無し。p014 の HCD の変更の hunk は、その実装の後に短く見直す。
