@@ -2867,6 +2867,7 @@ transfer_claim(
 	int normal_short_valid = 1;
 	int isochronous;
 	int halts;
+	int stopped;
 
 	/* An isochronous endpoint's event follows its own rules. */
 	isochronous = xhci_isoch_event_locked(c, event);
@@ -2890,11 +2891,11 @@ transfer_claim(
 	/*
 	 * During a suspend, a request that Stop Endpoint stopped stays on its
 	 * ring: the resume rings the endpoint and the controller runs it on
-	 * from where it stopped.
+	 * from where it stopped.  That includes a TD stopped after a short
+	 * packet (Stopped - Short Packet).
 	 */
-	if (c->suspend_state != XHCI_SUSPEND_NONE &&
-	    (code == XHCI_COMPLETION_STOPPED ||
-	     code == XHCI_COMPLETION_STOPPED_LENGTH)) {
+	stopped = drv_xhci_completion_stopped(code);
+	if (c->suspend_state != XHCI_SUSPEND_NONE && stopped) {
 		spin_unlock_irqrestore(&c->active_lock, irq);
 		return 0;
 	}

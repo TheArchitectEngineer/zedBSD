@@ -37,6 +37,7 @@ static void test_remove(void);
 static void test_room(void);
 static void test_match(void);
 static void test_halts(void);
+static void test_stopped(void);
 static void test_model(void);
 
 /* Returns the device address of one ring entry. */
@@ -232,6 +233,23 @@ test_halts(void)
 	CHECK(drv_xhci_queue_completion_halts(2, DRV_XHCI_ENDPOINT_HALTED));
 }
 
+/* The three Stopped codes a suspend leaves on the ring, Stopped - Short Packet among them. */
+static void
+test_stopped(void)
+{
+	/* Stopped, Stopped - Length Invalid and Stopped - Short Packet. */
+	CHECK(drv_xhci_completion_stopped(26));
+	CHECK(drv_xhci_completion_stopped(27));
+	CHECK(drv_xhci_completion_stopped(28));
+
+	/* Success, short packet, stall and transaction error end the TD. */
+	CHECK(!drv_xhci_completion_stopped(1));
+	CHECK(!drv_xhci_completion_stopped(13));
+	CHECK(!drv_xhci_completion_stopped(6));
+	CHECK(!drv_xhci_completion_stopped(4));
+	CHECK(!drv_xhci_completion_stopped(29));
+}
+
 /*
  * A small model of one endpoint: random submits (admission by depth and
  * ring room), completions of the head in order, the late event of a short
@@ -343,6 +361,7 @@ main(void)
 	test_room();
 	test_match();
 	test_halts();
+	test_stopped();
 	test_model();
 
 	/* Reports the result. */

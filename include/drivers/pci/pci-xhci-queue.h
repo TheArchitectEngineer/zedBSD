@@ -49,6 +49,15 @@
 #define DRV_XHCI_COMPLETION_SPLIT 36U
 
 /*
+ * The completion codes of a TD that Stop Endpoint stopped (xHCI 1.2
+ * section 6.4.5): Stopped, Stopped - Length Invalid and Stopped - Short
+ * Packet (the TD had already seen a short packet).
+ */
+#define DRV_XHCI_COMPLETION_STOPPED 26U
+#define DRV_XHCI_COMPLETION_STOPPED_LENGTH 27U
+#define DRV_XHCI_COMPLETION_STOPPED_SHORT 28U
+
+/*
  * The requests of one endpoint, oldest first: entries[head] is the head and
  * count says how many follow it around the array.  The entries are the
  * driver's own request objects.
@@ -347,6 +356,27 @@ drv_xhci_queue_completion_halts(
 		return 1;
 	default:
 		/* Any other leaves the endpoint as it was. */
+		return 0;
+	}
+}
+
+/*
+ * Tells whether a completion code says Stop Endpoint stopped the TD, which
+ * a suspend leaves on its ring to run on after the resume.
+ */
+static inline int
+drv_xhci_completion_stopped(
+	unsigned code)
+{
+	/* Choose by the completion code. */
+	switch (code) {
+	case DRV_XHCI_COMPLETION_STOPPED:
+	case DRV_XHCI_COMPLETION_STOPPED_LENGTH:
+	case DRV_XHCI_COMPLETION_STOPPED_SHORT:
+		/* One of the three Stopped codes. */
+		return 1;
+	default:
+		/* The TD ended some other way. */
 		return 0;
 	}
 }
