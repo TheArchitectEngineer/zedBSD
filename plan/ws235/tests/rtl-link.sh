@@ -157,10 +157,20 @@ if [ -n "$zip" ]; then
 				sleep 2
 				for dir in send recv; do
 					[ "$PROFILE" = 1 ] && zs "$rip" "sysctl hw.cputimes; dmesg | grep 'rtl8125: $IFACE profile' | tail -1" > "$out/profile-$dir-before.txt" 2>&1
+					# This host's TCP counters (RetransSegs among them) before and after: the peer's side of the run.
+					[ "$PROFILE" = 1 ] && grep '^Tcp:' /proc/net/snmp > "$out/snmp-$dir-before.txt"
+					# With PROFILE=1, top takes two samples 10 s apart in the middle of the run.
+					top=
+					if [ "$PROFILE" = 1 ]; then
+						(sleep 3; T=40 zs "$rip" "top -b -n 2 -d 10" > "$out/top-$dir.txt" 2>&1) &
+						top=$!
+					fi
 					T=$((SECONDS_PERF + 60)) zs "$rip" "/tmp/tcp-perf $dir $PEER_IP $PERF_PORT $SECONDS_PERF" > "$out/perf-$dir.txt" 2>&1
 					say "tcp-perf $dir: exit $? $(tail -1 "$out/perf-$dir.txt")"
+					[ -n "$top" ] && wait "$top"
 					if [ "$PROFILE" = 1 ]; then
 						# The driver logs once a second: the line after the run is at most a second late.
+						grep '^Tcp:' /proc/net/snmp > "$out/snmp-$dir-after.txt"
 						sleep 2
 						zs "$rip" "sysctl hw.cputimes; dmesg | grep 'rtl8125: $IFACE profile' | tail -1" > "$out/profile-$dir-after.txt" 2>&1
 						python3 -I plan/ws235/tests/profile-summary.py "$dir" "$SECONDS_PERF" "$out/profile-$dir-before.txt" "$out/profile-$dir-after.txt" > "$out/profile-$dir.txt" 2>&1
