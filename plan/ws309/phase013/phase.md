@@ -38,4 +38,5 @@
   - QEMU Venus `scanout-guest.sh build/ws309/p013b build/ws309/img/hdd-image.img build/amd64/bin/wayland` PASS:
     `KWL THREADS count=4 names=io-file,io-device,present,display`、`KWL SCANOUT direct=1 … switch_ms=520`、`direct=0 reason=no-window … frames=86`、
     window mode が開き直り（switch_ms=446）、capture 1280x800 spread=169、KWL FAILED 無し。
+  - QEMU `resize-guest.sh build/ws309/p013c …` PASS（inline の wait を足した display の変更の回帰、pass_max_us 0.68 s）。
 - 未実施: 実機（RDNA・RTX・VF2）のゲームモード、arm64・riscv64 の build、FreeBSD の build。
