@@ -12,6 +12,9 @@
 #   sh plan/ws221/tests/rdna-tcp.sh --kernel VMUNIX --bin DIR [--runs LIST] [--seconds N] [--chunk BYTES] NAME
 # --runs: a comma list of send (the machine sends) and recv (it receives), default send,recv; --seconds each (20).
 # The output is build/ws221-rdna/NAME (plan/tools/fresh-out.sh): summary.txt and the raw outputs.  Nothing is removed.
+# CAPTURE=DIRS (a comma list of send and recv): those runs are captured on this host as well, only read (tcpdump -p:
+# no promiscuous mode, nothing about the interface changes), the TCP headers of the run's connection (96 bytes of each
+# frame) into a new directory of the output per run (capture-N-DIR/), and summed up by plan/ws221/tests/ack-order.py.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -44,6 +47,7 @@ ZEDBSD_BOOT=${ZEDBSD_BOOT:-0004}
 IFACE=${IFACE:-rge0}
 CONTROL=${CONTROL:-ue0}
 POWERCYCLE=${POWERCYCLE:-0}
+CAPTURE=${CAPTURE:-}
 PEER_IP=${PEER_IP:-10.0.10.2}
 PERF_PORT=${PERF_PORT:-5321}
 PLUG=${PLUG:-AC276E42B252}
@@ -142,8 +146,30 @@ if [ -n "$zip" ]; then
 			snmp0=$(awk '/^Tcp: [0-9]/ {print $13}' /proc/net/snmp)
 			cp /proc/net/netstat "$out/netstat-$run-before.txt"
 			# net.tcpstats every 2 s over the run, on the machine, read back after.
+			capture=
+			case ,$CAPTURE, in
+			*,$dir,*)
+				# This host's interface towards the machine, read only; the capture ends on its own after the run.
+				capture=$out/capture-$run
+				mkdir "$capture"
+				cif=$(ip -o route get "$rip" | sed -n 's/.* dev \([^ ]*\).*/\1/p')
+				timeout $((seconds + 30)) sudo -n tcpdump -p -n -i "$cif" -s 96 -B 262144 -Z "$(id -un)" \
+				    -w "$capture/run.pcap" "host $rip and tcp port $PERF_PORT" > "$capture/tcpdump.txt" 2>&1 &
+				cpid=$!
+				sleep 2
+				;;
+			esac
 			T=$((seconds + 60)) zs "$rip" "(while :; do /tmp/sysctl net.tcpstats; sleep 2; done) > /tmp/tcpstats-$run.txt 2>&1 & s=\$!; /tmp/tcp-perf $dir $PEER_IP $PERF_PORT $seconds $chunk; kill \$s" > "$out/perf-$run.txt" 2>&1
 			say "run $run: exit $? $(grep '^TCP-PERF' "$out/perf-$run.txt")"
+			if [ -n "$capture" ]; then
+				sleep 2
+				sudo -n pkill -INT -f "tcpdump -p -n -i $cif -s 96 .*$capture/run.pcap" 2> /dev/null
+				wait "$cpid"
+				say "  capture ($capture): $(grep -E 'captured|dropped' "$capture/tcpdump.txt" | tr '\n' ' ')"
+				timeout 600 python3 -I plan/ws221/tests/ack-order.py "$capture/run.pcap" "$rip" "$PERF_PORT" \
+				    > "$capture/ack-order.txt" 2>&1
+				say "  ack order: $(head -20 "$capture/ack-order.txt" | tr '\n' ';')"
+			fi
 			snmp1=$(awk '/^Tcp: [0-9]/ {print $13}' /proc/net/snmp)
 			cp /proc/net/netstat "$out/netstat-$run-after.txt"
 			sleep 2
