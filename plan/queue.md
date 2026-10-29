@@ -158,6 +158,7 @@
 | q1669 / q1669-i02 | P1（worktree `/home/awe/zedBSD-worktrees/p1-ws235b`、基点 main a69e7147e） | ws235 p001 の判断の記録 → link の実機の試験 → p004 | i01 と同じ承認、p001 の回答 ①②③⑤ | 返却（p001 cleared、p002〜p004 は 10G の link と TCP が残り、a62fed7bb → main 7d39bb655） |
 | q1665 / q1665-i06 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307j`、基点 main a69e7147e） | ws307 p009 段 2 の残りから | i01 と同じ承認 | 返却（p009 段 2〜4、dc4dd958e → main 23d2741ea） |
 | q1665 / q1665-i07 | P4（worktree `/home/awe/zedBSD-worktrees/p4-ws307k`、基点 main 7d2f68e67） | ws307 p009 段 5 から | i01 と同じ承認 | in-progress |
-| q1664 / q1664-i04 | P3（worktree `/home/awe/zedBSD-worktrees/p3-ws221d`、基点 main 539fd96e7） | ws221 p008・p009 の残り → p006 → p007 → WS311 p001 | i01 と同じ承認 | in-progress |
+| q1664 / q1664-i04 | P3（worktree `/home/awe/zedBSD-worktrees/p3-ws221d`、基点 main 539fd96e7） | ws221 p008・p009 の残り → p006 → p007 → WS311 p001 | i01 と同じ承認 | 返却（p006〜p009 cleared、e2ce3ff0e → main d0bdf9b87。p011・WS311 p001 は i05 へ） |
+| q1664 / q1664-i05 | P3（worktree `/home/awe/zedBSD-worktrees/p3-ws221e`、基点 main d0bdf9b87） | ws221 p011（IPv6 の TCP の試験と直し）→ WS311 p001 | i01 と同じ承認、p011 はユーザーの指示「IPv6はほとんどテストされていない現実がありますので、TCP改善で一緒にテストして直してください。」 | in-progress |
 | q1670 / q1670-i02 | P2（worktree `/home/awe/zedBSD-worktrees/p2-ws291n`、基点 main 7b297b46a） | ws291 の NVIDIA の段: VA の実機の確かめ → p010a | i01 と同じ承認 | in-progress |
 | q1669 / q1669-i03 | P1（worktree `/home/awe/zedBSD-worktrees/p1-ws235c`、基点 main 7b297b46a） | ws235 の 10G の link と rge0 だけの TCP → p005 | i01 と同じ承認 | in-progress |
