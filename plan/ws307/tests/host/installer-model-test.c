@@ -143,6 +143,18 @@ main(void)
 	disk = inst_disk_find(&app.probe, 11);
 	check(disk != NULL && inst_chosen_refusal(&app, disk) != NULL, "a FAT not known refuses the partitions");
 
+	/* An ESP formatted after it appeared: no file system type named yet, but the FAT was looked into. */
+	probe_feed(&app.probe,
+		"firmware\tuefi\n"
+		"disk\tsdb\t11\tfixed\t512\t29360128\t0\t0\tgpt\t0\t2\t" "bb\n"
+		"part\t11\t1\t2048\t1048576\tC12A7328-F81F-11D2-BA4B-00A0C93EC93B\tc1\t0\tsdb1\t-\t-\t0\t0\tEFI System\t-\n"
+		"fat\t11\t1\t536000000\tno\tno\tno\n"
+		"part\t11\t2\t1050624\t12582912\t00000000-0000-0000-0000-000000000000\tc2\t0\tsdb2\t-\t-\t0\t0\t-\t-\n"
+		"end\n");
+	disk = inst_disk_find(&app.probe, 11);
+	esp = disk != NULL ? inst_disk_esp(&app, disk) : NULL;
+	check(esp != NULL && esp->slot == 1U, "an ESP made on S4 is enough before its type is named");
+
 	/* Sizes. */
 	error = inst_size_parse("20 GiB", &bytes);
 	check(error == 0 && bytes == 20ULL << 30, "20 GiB");

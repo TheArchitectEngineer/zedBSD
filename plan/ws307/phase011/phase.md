@@ -24,6 +24,7 @@
   - map（7 台を大きさで見つける）・refused-tiny（S2 で 1 GiB の disk が押せない）・refused-live（S2 で名の無い live の USB がちょうど 1 台押せない）・refused-mbr・refused-zcfg（S3 で「選ぶ」が押せず「全体」は押せる）。
   - cancel（NVMe 512 の全体を unpack 中にキャンセル → S10、log に `failed step=unpack`）。damage・failure（4096 の NVMe の全体、壊した unit → S10、`INSTALLER INSTALL failed`）・restore。
   - nvme（NVMe 512 の全体、自動 login 切 → S11）・nvme-harness（導入先の root に試験の net.conf、passwd に alice、rc.conf に hostname）・k4（4096 の全体 → S11）。
+  - size-refused（2026-10-30 Q1 の追加、走らせる前に書いた）: 「他の OS」の S4 で読めない大きさ「abc」で「作成」→ log に `INSTALLER EDIT refused reason=size`、画面に誤りの文、helper の session と `EDIT request` が無く partition の数が同じ。
   - other（S4 で 1 GiB を作り swap、Basic data B を root、消去の確認 → S11、log の `STATE loader` に ZEDBSD）・usb（空の GPT の USB に S4 で 6 GiB を作り root、swap 無し → swap file → S11、log に `STATE swap file`）。
   - host の検査（live を止めた後、image の file を直に読む）: other-untouched（Basic data A の SHA-256 が前と同じ）・other-loader-kept・other-file-kept・other-loader-ours（`\EFI\ZEDBSD\BOOTX64.EFI` が MZ で他の OS の物と違う）・other-cfg（zedbsd.cfg に `kernel=rootpart:/boot/vmunix` と `swap0=PARTUUID=`）。
   - boot-nvme・boot-k4（`BOOT_NVME_BLOCK_SIZE=4096`）・boot-usb: 導入した disk だけで `plan/tools/boot-test.sh`（画面を撮って login prompt を読む）が rc 0。
@@ -49,6 +50,8 @@
   - 6 回目（`p011.yygfuq4e`）: live が SSH に上がらず FAIL。gdbstub で `klog_buffer` を読んだ: live の USB stick で xHCI の command 15 が時間切れ、BOT の転送が error 17/42、root が書けず `/sbin/init` の exec が EIO。host の fdatasync は中央値 1 s（load 12〜15）。Q1 が [BUG-359](../../bugs/BUG-359.md) に登録。試験の対処（Q1 の了承）: stick と 7 台の disk を cache=unsafe に（`installer_walk.Run.start` の `-set drive.boot.cache=unsafe`、p011 の drive）。
   - 7 回目（`p011.3xwutjtb`）: map・refused-*・cancel・damage・failure（4096 の全体、壊した unit → S10、`failed step=unpack errno=5`、約 2 分）・restore・nvme・nvme-harness が ok。nvme の後の S11 に「やり直す」が無く（S11 は「閉じる」と「再起動」だけ、spec §4.11）FAIL。試験の誤り: S11 の後は installer を閉じて live の session で開き直す（`Walk.again`）に直した。
   - 8 回目（`p011.u2sndh3h`）: 開き直しが働き、k4（4096 の全体、既定の項目、S11）まで ok。「他の OS」の S4 で大きさ「1 GiB」を入れて「作成」を押した後、`INSTALLER EDIT` の行が 180 s 出ず FAIL（installer の log に helper の session も無い。画面を撮っていなかったので原因は未確認）。S4 の大きさを入れた後と FAIL の時の画面を撮るよう直した。
+  - 9 回目（`p011.fl2cf9xe`）: 8 回目と同じ所で FAIL。S4 の画面（`19-other-s4-size.png`・`20-failed.png`）で欄が「7890 MiB1 GiB」になり、installer は「Type a size such as 20 GiB or 512 MiB.」を出して何も作らなかった（log の行は無い）。切り分け（`build/ws307-test/probe.*`）: live の session の欄で Backspace が空白を消さない（Q1 が [BUG-360](../../bugs/BUG-360.md) に登録）。`set_field` を Ctrl+A と打ち込みに直した（bb56483e0）。Q1 の指示で、読めない大きさを log にも出すよう installer を直し（`flow.c` の `EDIT refused reason=size|room`、67a3dd649）、p011 に size-refused を足した。
+  - 10 回目（`p011.4yxae838`、67a3dd649 の前の image）: other まで ok。USB の S4 で「すぐに書く」の dialog を閉じていなかった（試験の誤り）ので FAIL。1d177cb34 で直した。
 - p011 の受け入れは未達（MBR・zedbsd.cfg・1 GiB・live の拒みの GUI の確かめは 4・5 回目で ok）。
 
 ## 未実施・残り
