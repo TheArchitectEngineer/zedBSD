@@ -2329,11 +2329,15 @@ rtl_poll(
 	/* Passes received frames to the stack. */
 	count = receive_frames(net, budget);
 
-	/* Lets the controller interrupt again once the batch is done; a closed one stays quiet. */
+	/*
+	 * Lets the controller interrupt again once the receive ring is drained;
+	 * a poll that used its whole budget is run again by the worker with the
+	 * interrupts still held off, and a closed interface stays quiet.
+	 */
 	report = 0U;
 	irq = spin_lock_irqsave(&device->lock);
 
-	if (device->opened)
+	if (device->opened && count < budget)
 		write32(device, RTL_REG_INTERRUPT_MASK, RTL_INTERRUPTS_RUNNING);
 
 	/* Counts the poll in the profile. */
