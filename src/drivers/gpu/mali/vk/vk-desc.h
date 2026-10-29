@@ -46,6 +46,36 @@
 #define MALI_DESC_DRAW_TRIANGLE_STRIP	10U
 #define MALI_DESC_DRAW_TRIANGLE_FAN	12U
 
+/* The dimensions of a texture descriptor. */
+#define MALI_DESC_DIMENSION_CUBE	0U
+#define MALI_DESC_DIMENSION_2D		2U
+#define MALI_DESC_DIMENSION_3D		3U
+
+/* The least bytes of a thread's local storage, and the most. */
+#define MALI_DESC_TLS_MIN_BYTES		16U
+#define MALI_DESC_TLS_MAX_BYTES		(16U << 20)
+
+/*
+ * What a texture descriptor describes: its dimension, its pixel format,
+ * its extent (a 3D image's depth, 1 otherwise), its levels, its array
+ * size (the layers, a cube's count of cubes), its swizzle, whether it is
+ * written for storage (one level, no level of detail range) and the
+ * address of its plane descriptors (one for each layer and level, layer
+ * by layer).
+ */
+struct mali_desc_view {
+	uint32_t dimension;
+	uint32_t pixel;
+	uint32_t width;
+	uint32_t height;
+	uint32_t depth;
+	uint32_t levels;
+	uint32_t array_size;
+	uint32_t swizzle;
+	bool storage;
+	uint64_t planes;
+};
+
 /* What a render target of a framebuffer is: its format, its memory and its clear. */
 struct mali_desc_target {
 	uint32_t internal;
@@ -79,5 +109,9 @@ uint32_t mali_desc_primitive(unsigned draw_mode, unsigned index_type);
 uint32_t mali_desc_scissor_low(uint32_t x, uint32_t y);
 uint32_t mali_desc_scissor_high(uint32_t x, uint32_t y);
 uint32_t mali_desc_clump_format(uint32_t texel_bytes);
+void mali_desc_texture_view(uint32_t *words, const struct mali_desc_view *view);
+void mali_desc_thread_storage(uint32_t *words, uint32_t tls_bytes, uint64_t tls_base);
+uint32_t mali_desc_tls_size(uint32_t tls_bytes);
+uint32_t mali_desc_sampler_compare(uint32_t compare_op);
 
 #endif

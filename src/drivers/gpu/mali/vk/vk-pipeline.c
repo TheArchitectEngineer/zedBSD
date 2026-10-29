@@ -248,6 +248,12 @@ graphics_pipeline(
 		error = compile(vertex, MALI_SHADER_VERTEX, &graphics->vertex);
 	if (error == 0)
 		error = compile(fragment, MALI_SHADER_FRAGMENT, &graphics->fragment);
+
+	/* A draw's thread storage has no local storage: a program that spills is refused. */
+	if (error == 0 && (graphics->vertex->tls_bytes != 0U || graphics->fragment->tls_bytes != 0U)) {
+		kern_logf("mali: vk: a vertex or fragment program that spills to thread local storage is not drawn\n");
+		error = ENOTSUP;
+	}
 	if (error == 0)
 		error = upload(session, pipeline);
 	if (error != 0) {

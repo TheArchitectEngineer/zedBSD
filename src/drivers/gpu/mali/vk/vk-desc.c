@@ -14,7 +14,7 @@
  * Type", "Shader Register Allocation", "Texture Dimension", "Plane
  * Type", "Clump Ordering", "Clump Format", "Attribute Type", "Blend
  * Mode", "Blend Operand A/B/C", "Block Format", "Func", "Depth Clamp
- * Mode", "Depth Source").
+ * Mode", "Depth Source", "Address Mode").
  */
 
 #include <stdbool.h>
@@ -41,6 +41,7 @@
 #define BLEND_FIXED		2U
 #define BLOCK_LINEAR		2U
 #define NO_WORKGROUP_MEMORY	0x80000000U
+#define TLS_PACKED		1U
 
 /* The blend operands. */
 #define OPERAND_A_ZERO		1U
@@ -540,6 +541,125 @@ mali_desc_clump_format(
 	default:
 		return 2U;
 	}
+}
+
+/*
+ * Packs a texture descriptor (struct "Texture") of a view: the
+ * dimension, the format, the extent less one, the swizzle (the identity
+ * for storage), the levels less one, the maximum level of detail (the
+ * last level, 8.8 fixed; zero for storage), the planes, the array size
+ * and the depth less one.
+ *
+ * Procedure referenced: Mesa 26.2.6 src/panfrost/lib/pan_texture.c
+ * (pan_sampled_texture_emit and pan_storage_texture_emit: a cube's array
+ * size in cubes, the storage view's level of detail range and swizzle).
+ */
+void
+mali_desc_texture_view(
+	uint32_t *words,
+	const struct mali_desc_view *view)
+{
+	uint32_t levels;
+	uint32_t array_size;
+	uint32_t depth;
+	uint32_t swizzle;
+
+	/* At least one level, layer and slice. */
+	levels = view->levels;
+	if (levels == 0U || view->storage)
+		levels = 1U;
+	array_size = view->array_size;
+	if (array_size == 0U)
+		array_size = 1U;
+	depth = view->depth;
+	if (depth == 0U)
+		depth = 1U;
+	swizzle = view->swizzle;
+	if (view->storage)
+		swizzle = 0x688U;
+
+	/* Word 0: type, dimension 4..6, format 10..31; word 1: the extent; word 2: swizzle, levels 16..20. */
+	clear(words, 8);
+	words[0] = TYPE_TEXTURE | ((view->dimension & 7U) << 4) | ((view->pixel & 0x3fffffU) << 10);
+	words[1] = ((view->width - 1U) & 0xffffU) | (((view->height - 1U) & 0xffffU) << 16);
+	words[2] = (swizzle & 0xfffU) | (((levels - 1U) & 0x1fU) << 16);
+
+	/* Word 3: the maximum level of detail 16..28 (one sample, no minimum). */
+	words[3] = (((levels - 1U) << 8) & 0x1fffU) << 16;
+
+	/* Words 4..5: the planes; word 6: the array size less one; word 7: the depth less one. */
+	put64(words, 4, view->planes);
+	words[6] = (array_size - 1U) & 0xffffU;
+	words[7] = (depth - 1U) & 0xffffU;
+}
+
+/*
+ * Packs a thread storage descriptor (struct "Local Storage") with a
+ * thread's local storage of tls_bytes (none for zero) at tls_base, and
+ * no workgroup memory.  The base, 4096-byte aligned, goes in shifted
+ * right by 8 with the packed address mode, the size as the log2 of its
+ * 16-byte units.
+ *
+ * Procedure referenced: Mesa 26.2.6 src/panfrost/lib/pan_desc.c
+ * (pan_emit_tls for PAN_ARCH 9 and on) and pan_scratch.c
+ * (pan_get_stack_shift).
+ */
+void
+mali_desc_thread_storage(
+	uint32_t *words,
+	uint32_t tls_bytes,
+	uint64_t tls_base)
+{
+	uint64_t pointer;
+
+	/* No workgroup memory. */
+	clear(words, 8);
+	words[1] = NO_WORKGROUP_MEMORY;
+
+	/* No local storage either. */
+	if (tls_bytes == 0U)
+		return;
+
+	/* Word 0: the size; words 2..3: the base >> 8 (48 bits) and the packed mode at 28..31. */
+	words[0] = mali_desc_tls_size(tls_bytes) & 0x1fU;
+	pointer = (tls_base >> 8) & 0x0000ffffffffffffULL;
+	words[2] = (uint32_t)pointer;
+	words[3] = (uint32_t)(pointer >> 32) | (TLS_PACKED << 28);
+}
+
+/* Gives the TLS size field of a thread's bytes: log2 of its 16-byte units, rounded up. */
+uint32_t
+mali_desc_tls_size(
+	uint32_t tls_bytes)
+{
+	uint32_t units;
+	uint32_t shift;
+
+	/* The units, and the least power of two holding them. */
+	units = (tls_bytes + 15U) / 16U;
+	shift = 0U;
+	while ((1U << shift) < units && shift < 31U)
+		shift++;
+
+	/* Succeeded: the shift. */
+	return shift;
+}
+
+/*
+ * Gives a sampler's compare function field (word 1 bits 13..15) of a
+ * VkCompareOp, whose numbers are the hardware's: never, less, equal,
+ * less or equal, greater, not equal, greater or equal, always.
+ *
+ * Values referenced: Mesa 26.2.6 src/panfrost/genxml/v10.xml (enum
+ * "Func"; struct "Sampler": compare function at 1:13); the Vulkan
+ * specification (VkCompareOp).
+ */
+uint32_t
+mali_desc_sampler_compare(
+	uint32_t compare_op)
+{
+	/* Succeeded: the field in place. */
+	return (compare_op & 7U) << 13;
 }
 
 /* Stores a 64-bit value as two words, low first. */
