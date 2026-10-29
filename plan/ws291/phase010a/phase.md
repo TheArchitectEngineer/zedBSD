@@ -3,7 +3,7 @@
 # ws291-p010a nvrtx の executor に mview が要る物を足す（depth・index の draw・instance・mip・uniform buffer・cull）
 
 - 親: [WS291](../ws.md)。
-- 状態: cleared（2026-10-29 10:55 P2、q1670-i04。Q1「p010a は depth・texture が参照と一致したので、受け入れの判断を phase.md に書いて cleared にしてよい（instance rate の実機の未確かめは残りとして記録）」）。
+- 状態: cleared（2026-10-29 10:48 P2、q1670-i04。Q1「p010a は depth・texture が参照と一致したので、受け入れの判断を phase.md に書いて cleared にしてよい（instance rate の実機の未確かめは残りとして記録）」）。
   前: in-progress（2026-10-29 07:30 P2 新設、q1670 の中で Q1 の判断。08:20 から q1670-i02 で P2 が実装）。
 - 出典: Q1 の判断（2026-10-29、q1670）「(2) nvrtx の executor に depth・index・mip（mview が動くまで）→ 新しい p010a、その後 p011（scene-5000 の 50 fps）」
   「RDNA の p002a と同じ「機能を足してから比較」の形」。RDNA の手本は [p002a](../phase002a/phase.md)（2026-10-26 ユーザー「機能を足してから比較（推し）」）。
@@ -189,7 +189,7 @@
   とおり WS250 p005 との分担を Q1 が決めてから）。足りなければ
   vertex の program（SM75 の compiler）の質を見る。
 
-### 受け入れの判断（2026-10-29 10:55 P2）
+### 受け入れの判断（2026-10-29 10:48 P2）
 
 - amd64 の vmunix の warning 0、nvrtx-vk-host-test.sh PASS 86 checks、nvrtx-sm75-host-test.sh 287 checks 0 failures（i02・i03 の記録）: 満たす。
 - 実機の mview（`--content=game --present=mailbox`）の copies 1 と 5000 が動く（o1: 444.00 fps・42.13 fps、GPU の error・fault 無し）: 満たす。
