@@ -1,9 +1,11 @@
 #!/bin/sh
-# WS314's tests on zedBSD (QEMU, Venus): post-test.c, process-test.c, launch-test.c and instance-test.c built for zedBSD
+# WS314's tests on zedBSD (QEMU, Venus): post-test.c, process-test.c, launch-test.c, language-test.c and instance-test.c
+# built for zedBSD
 # against the image's libkeiland, Terminal running a command (its shell's end closes it), a Terminal's new window
 # (Ctrl+Shift+N: kl_launch), Files opening a text in Text Editor (a double click: kl_launch) and a picture's thumbnail
 # (keiland-preview's child), each as the desktop
-# program of a compositor of its own (/bin/wayland --testing at 1280x800).  The image is built first:
+# program of a compositor of its own (/bin/wayland --testing --glass at 1280x800: the menus' shortcuts are the glass
+# look's).  The image is built first:
 #   plan/tools/guest/test-image.sh plan/ws314/tests/config-amd64-guest.mk IMGBUILD
 #   usage: plan/ws314/tests/guest.sh OUT IMGBUILD       (OUT under build/, e.g. build/p2-q/run1)
 # Prints one summary line per test and "ws314-guest: PASS" or "FAIL".  The QEMU console is not read.
@@ -14,7 +16,7 @@ img=${2:?}
 top=$(pwd)
 sysroot=$top/build/amd64/sysroot
 mkdir -p "$out"
-for t in post process launch instance; do
+for t in post process launch language instance; do
 	build/llvm/bin/clang --target=x86_64-unknown-zedbsd --sysroot="$sysroot" -nostdinc -I. -Iinclude \
 	    -isystem "$sysroot/usr/include" -Iuserland/desktop/include -DHAL_ARCH_AMD64 -DKERN_USER_ABI_LP64 \
 	    -DKERN_DYNAMIC_LIBC -m64 -march=x86-64 -mno-red-zone -Os -ffreestanding -fPIC -fno-builtin \
@@ -51,14 +53,12 @@ stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | g
 if [ $failed = 0 ]; then
 	sleep 20
 	g run "$stop_all" > /dev/null 2>&1
-	for t in post process launch instance; do
+	for t in post process launch language instance; do
 		g put "$out/$t-test" "/tmp/$t-test" >> "$out/put.log" 2>&1 || failed=1
 	done
 	g put plan/ws314/tests/guest-client.sh /tmp/ws314-client.sh >> "$out/put.log" 2>&1 || failed=1
 	g put docs/howto/keiland-examples/01-app.png /tmp/ws314-picture.png >> "$out/put.log" 2>&1 || failed=1
-	# Without the input method: a Terminal's keys reach the menus' shortcuts straight from the seat.
-	g run 'if [ -e /usr/libexec/keiland-ime ]; then mv /usr/libexec/keiland-ime /usr/libexec/keiland-ime.off; fi' >> "$out/put.log" 2>&1
-	G_TIMEOUT=400 g run "chmod 755 /tmp/*-test /tmp/ws314-client.sh; rm -rf /tmp/ws314run; mkdir -m 700 /tmp/ws314run; export XDG_RUNTIME_DIR=/tmp/ws314run HOME=/tmp/ws314home; mkdir -p \$HOME; rm -f /tmp/ws314-done /tmp/ws314-files; /bin/wayland --testing --timeout=900 --width=1280 --height=800 --desktop-client=/tmp/ws314-client.sh > /tmp/wayland.log 2>&1 </dev/null & i=0; while [ ! -e /tmp/ws314-done ] && [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; echo waited=\$i" > "$out/guest.out" 2>&1
+	G_TIMEOUT=400 g run "chmod 755 /tmp/*-test /tmp/ws314-client.sh; rm -rf /tmp/ws314run; mkdir -m 700 /tmp/ws314run; export XDG_RUNTIME_DIR=/tmp/ws314run HOME=/tmp/ws314home; mkdir -p \$HOME; rm -f /tmp/ws314-done /tmp/ws314-files; /bin/wayland --testing --timeout=900 --width=1280 --height=800 --glass --desktop-client=/tmp/ws314-client.sh > /tmp/wayland.log 2>&1 </dev/null & i=0; while [ ! -e /tmp/ws314-done ] && [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; echo waited=\$i" > "$out/guest.out" 2>&1
 	# A new window of the Terminal t1 (its log has the new one's too: a launch writes where its starter does).
 	newwindow=FAIL
 	if expect /tmp/t1.log 'ZTERM START run=t1 ' 60; then
@@ -94,7 +94,7 @@ if [ $failed = 0 ]; then
 	thumb=FAIL
 	expect /tmp/files.log 'ZFILES THUMB path=/tmp/ws314demo/picture.png error=0 .* status=0 child=1' 30 && thumb=PASS
 	echo "thumbnail=$thumb" > "$out/thumbnail.txt"
-	for t in post process launch instance terminal t1 files wayland; do
+	for t in post process launch language instance terminal t1 files wayland; do
 		g run "cat /tmp/$t.log" > "$out/$t.log" 2>&1
 	done
 	g run "$stop_all" > /dev/null 2>&1
@@ -114,7 +114,7 @@ if [ -s "$GUEST_RUNTIME/dbus.pid" ]; then
 	kill "$(cat "$GUEST_RUNTIME/dbus.pid")" 2>/dev/null
 fi
 cat "$out/guest.out"
-for t in post process launch instance; do
+for t in post process launch language instance; do
 	echo "$t: $(tail -1 "$out/$t.log")"
 	grep -q '^PASS' "$out/$t.log" || failed=1
 done

@@ -3,7 +3,7 @@
 # ws314-p014 Preview の API から fd・pid を外す
 
 - 親: [WS314](../ws.md)。設計: [design.md](../design.md) §4.5（review 14）。Queue: q1690 / q1690-i02（担当 P2、2026-10-30）。
-- Status: in-progress（2026-10-30。実装・Linux の build・host の試験まで）
+- Status: cleared（2026-10-30。build・host・QEMU（zedBSD）で確かめた）
 - Disposition: normal
 
 ## 目的・受け入れ
@@ -40,4 +40,11 @@
 - host の試験 `plan/ws314/tests/preview-test.c`（新、`sh plan/ws314/tests/preview-test.sh build/ws314-p014-linux`、client.c と linux/spawn.c、
   Linux の keiland-preview（seccomp）、ASan・UBSan）: 絵を作って読む（待つ・待たない）、path の file へ書く、時間切れの子を終える、
   取りやめ、普通の file でない入力の EINVAL、--info、刈り残しが無い。PASS（10 件）。
-- 未: zedBSD 3 arch の build、QEMU の thumbnail。
+- zedBSD（`build/ws314-p014-build-all.sh`）: amd64（desktop 19＋tests 9、mediastorage・phone・photos・settings・files を含む）・arm64・riscv64・
+  installer の image の installer: make 0・warning 0。FreeBSD の `freebsd/spawn.c` は host で `-fsyntax-only`。files の host-model、phone の
+  run-host-phone.sh（client.c と freebsd/spawn.c）も PASS。
+- QEMU（2026-10-30、`sh plan/ws314/tests/guest.sh build/p2-q/run9 build/ws314-img`、image は
+  `plan/tools/guest/test-image.sh plan/ws314/tests/config-amd64-guest.mk build/ws314-img`（files・textedit を足した）、compositor は
+  `/bin/wayland --testing --glass` 1280x800、判定は SSH で取った各試験の結果の行と app の log（console は読まない））: `ws314-guest: PASS`。
+  Files の folder の PNG の thumbnail が `ZFILES THUMB path=/tmp/ws314demo/picture.png error=0 width=256 height=78 cached=0 status=0 child=1`
+  （zedBSD の sandbox_spawn の子で作り、`preview_child_ended` で刈った）。

@@ -454,6 +454,7 @@
 		kl_app_open;
 		kl_app_close;
 		kl_app_dispatch;
+		kl_app_language;
 		kl_app_watch_fd;
 		kl_app_post;
 		kl_app_take;

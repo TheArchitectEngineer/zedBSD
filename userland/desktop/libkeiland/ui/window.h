@@ -174,8 +174,15 @@ struct kl_app {
 	struct kl_menu_service *menu_service;
 	int menu_tried;
 
-	/* The desktop's appearance watched (ws089-p017; NULL under a compositor without it). */
+	/* The desktop's appearance watched (NULL under a compositor without it). */
 	struct kl_appearance *appearance;
+
+	/*
+	 * The desktop's settings, whose language is watched (NULL without
+	 * memory for them), and the language as last heard (kl_app_language).
+	 */
+	struct kl_settings *settings;
+	char language[KL_TR_NAME_MAX + 1U];
 
 	struct kl_app *next;
 };
