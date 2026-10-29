@@ -3,7 +3,7 @@
 # ws314-p005 `kl_process_*` の核と Installer・Terminal・Phone の移行
 
 - 親: [WS314](../ws.md)。設計: [design.md](../design.md) §4。Queue: q1690 / q1690-i01（担当 P2、2026-10-30）。
-- Status: in-progress（2026-10-30。実装・build・Linux の host の試験まで。zedBSD の上での試験（QEMU）は未実施）
+- Status: cleared（2026-10-30。zedBSD（QEMU）で kl_process の試験と Terminal が PASS。Installer の probe と Phone の viewer の QEMU は未実施）
 - Disposition: normal
 
 ## 目的・受け入れ
@@ -52,5 +52,12 @@
   （D14）は Terminal から `#if` が消えたので外した。結果: 基点（6485c1ddc の git archive）と比べて新しい FAIL は B5 の
   `keiland_process`（p001 の分割から続く B5 の類。基点の archive は git が無く B5 を数えないので差に出る）だけ。消えた FAIL: installer/helper.c の
   A4（fork・execv）。前からの FAIL（installer/admin・installer の A1・A5・C4、libbrowser の A1、B5）はそのまま。
-- 未実施: zedBSD（QEMU）での Terminal・Installer の probe・Phone の viewer の動き、`waitid(WNOWAIT)`・`forkpty`・`posix_spawn` の zedBSD の実装での
-  試験。
+- zedBSD（QEMU、2026-10-30、`plan/ws314/tests/guest.sh build/p2-q/run4 build/ws314-img`、image は
+  `plan/tools/guest/test-image.sh plan/ws314/tests/config-amd64-guest.mk build/ws314-img`、Venus、boot disk は `qemu-unsafe.sh` で cache=unsafe、
+  ssh・gdb の port は guest.py が空きから選ぶ、runtime は build/p2-q/run4/runtime）: compositor（`/bin/wayland --testing`）の desktop client
+  （`guest-client.sh`）として post-test・process-test・instance-test を zedBSD 向けに build して走らせ、全て PASS。Terminal
+  （`--command='echo zterm-42 > /tmp/zterm.txt; exit 3'`）は command を走らせ、shell の終わりで `reason=shell-exited` で閉じた。
+  判定は SSH で取った各試験の結果の行（console の log は読まない）。途中の失敗と直し: process-test の terminal の mode の確かめは zedBSD の sh が
+  行の編集の間 ECHO・ICANON を切るので、`read` の待ちの間に確かめる形にした（Linux の dash では前の形でも通っていた）。instance-test は
+  compositor が client に `XDG_RUNTIME_DIR=/tmp`（他人も書ける）を渡すので ENOTSUP。試験の側で私的な directory を渡した（library の動きは正しい）。
+- 未実施: Installer の probe・session（installer の image、`plan/ws307/tests/p011-install.py`）と Phone の viewer の QEMU の動き。

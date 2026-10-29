@@ -48,8 +48,8 @@ if [ $failed = 0 ]; then
 	for t in post process instance; do
 		g put "$out/$t-test" "/tmp/$t-test" >> "$out/put.log" 2>&1 || failed=1
 	done
-	client='/tmp/post-test > /tmp/post.log 2>&1; /tmp/process-test > /tmp/process.log 2>&1; /tmp/instance-test > /tmp/instance.log 2>&1; /bin/terminal --command="echo zterm-$((40+2)) > /tmp/zterm.txt; exit 3" --timeout=30 > /tmp/terminal.log 2>&1; cat /tmp/zterm.txt >> /tmp/terminal.log; echo done > /tmp/ws314-done'
-	G_TIMEOUT=400 g run "chmod 755 /tmp/*-test; export XDG_RUNTIME_DIR=/tmp HOME=/tmp/ws314home; mkdir -p \$HOME; rm -f /tmp/wayland-0 /tmp/ws314-done; /bin/wayland --testing --timeout=300 '--desktop-client=sh -c \"$client\"' > /tmp/wayland.log 2>&1 </dev/null & i=0; while [ ! -e /tmp/ws314-done ] && [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; echo waited=\$i" > "$out/guest.out" 2>&1
+	g put plan/ws314/tests/guest-client.sh /tmp/ws314-client.sh >> "$out/put.log" 2>&1 || failed=1
+	G_TIMEOUT=400 g run "chmod 755 /tmp/*-test /tmp/ws314-client.sh; rm -rf /tmp/ws314run; mkdir -m 700 /tmp/ws314run; export XDG_RUNTIME_DIR=/tmp/ws314run HOME=/tmp/ws314home; mkdir -p \$HOME; rm -f /tmp/ws314-done; /bin/wayland --testing --timeout=300 --desktop-client=/tmp/ws314-client.sh > /tmp/wayland.log 2>&1 </dev/null & i=0; while [ ! -e /tmp/ws314-done ] && [ \$i -lt 300 ]; do sleep 1; i=\$((i+1)); done; echo waited=\$i" > "$out/guest.out" 2>&1
 	for t in post process instance terminal wayland; do
 		g run "cat /tmp/$t.log" > "$out/$t.log" 2>&1
 	done

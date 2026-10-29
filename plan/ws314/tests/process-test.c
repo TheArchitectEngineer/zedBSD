@@ -406,6 +406,23 @@ terminal_wait(struct kl_process *process, const char *text, char *screen, size_t
 	return strstr(screen, text) != NULL;
 }
 
+/* Waits up to a second for the terminal's modes to become the ones expected (the shell sets them as it runs). */
+static int
+terminal_mode_wait(struct kl_process *process, unsigned expected)
+{
+	uint64_t start;
+	unsigned mode;
+
+	start = now_ms();
+	do {
+		if (kl_process_terminal_mode(process, &mode) == 0 &&
+		    (mode & (KL_PROCESS_TERMINAL_ECHO | KL_PROCESS_TERMINAL_LINES)) == expected)
+			return 1;
+		(void)kl_app_dispatch(app, 50);
+	} while (now_ms() - start < 1000U);
+	return 0;
+}
+
 static void
 case_terminal(void)
 {
@@ -416,7 +433,6 @@ case_terminal(void)
 	char screen[8192];
 	size_t length;
 	size_t written;
-	unsigned mode;
 	int error;
 
 	process = start(argv, environment, NULL, KL_PROCESS_TERMINAL, &error);
@@ -428,14 +444,15 @@ case_terminal(void)
 	error = kl_process_write(process, "stty size\n", 10, &written);
 	check(error == 0 && written == 10, "terminal: typed");
 	check(terminal_wait(process, "24 80", screen, sizeof(screen), &length), "terminal: 24 80");
-	check(kl_process_terminal_mode(process, &mode) == 0 && (mode & KL_PROCESS_TERMINAL_ECHO) != 0U, "terminal: echo on");
 	check(kl_process_resize(process, 100, 30) == 0, "terminal: resized");
-	(void)kl_process_write(process, "stty size; stty -echo; echo mark$((0+1))\n", 41, &written);
+	(void)kl_process_write(process, "stty size; echo mark$((0+1)); read x\n", 37, &written);
 	check(terminal_wait(process, "30 100", screen, sizeof(screen), &length), "terminal: 30 100");
 	check(terminal_wait(process, "mark1\r\n", screen, sizeof(screen), &length), "terminal: mark1");
-	check(kl_process_terminal_mode(process, &mode) == 0 && (mode & KL_PROCESS_TERMINAL_ECHO) == 0U &&
-	    (mode & KL_PROCESS_TERMINAL_LINES) != 0U, "terminal: echo off, by the line");
-	(void)kl_process_write(process, "echo bye; exit 4\n", 17, &written);
+	check(terminal_mode_wait(process, KL_PROCESS_TERMINAL_ECHO | KL_PROCESS_TERMINAL_LINES), "terminal: a read echoes, by the line");
+	(void)kl_process_write(process, "a\nstty -echo; echo mark$((1+1)); read y\n", 40, &written);
+	check(terminal_wait(process, "mark2\r\n", screen, sizeof(screen), &length), "terminal: mark2");
+	check(terminal_mode_wait(process, KL_PROCESS_TERMINAL_LINES), "terminal: a secret read: no echo, by the line");
+	(void)kl_process_write(process, "b\nstty echo; echo bye; exit 4\n", 30, &written);
 	memset(&seen, 0, sizeof(seen));
 	seen.read_size = 4096;
 	check(run(process, &seen, 5000), "terminal: ended");

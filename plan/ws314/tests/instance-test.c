@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #ifdef KL_TEST_OWN_SERVER
 static struct wl_display *server;
@@ -169,6 +170,8 @@ main(void)
 
 	error = kl_instance_open("ws314-instance-test", "first", &instance);
 	check(error == 0 && instance != NULL, "open: the one copy");
+	if (instance == NULL)
+		printf("     (error=%d XDG_RUNTIME_DIR=%s uid=%d)\n", error, getenv("XDG_RUNTIME_DIR") != NULL ? getenv("XDG_RUNTIME_DIR") : "(none)", (int)getuid());
 	if (instance == NULL)
 		return 1;
 	check(kl_instance_bind(instance, app) == 0, "bind");

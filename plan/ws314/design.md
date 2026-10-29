@@ -429,3 +429,41 @@ zedBSD の libc には `posix_spawn`・`POSIX_SPAWN_SETSID`・`addclosefrom_np`�
 
 - `kl_app_event` と `kl_window_event` の大きさが変わる（ABI の変更。WS131 の方針で source の互換だけを保つ）。p004 で全ての app と
   userland/tests を作り直す。
+
+## 13. `KL_APP_LANGUAGE`（p015、KL_VERSION 100 の見込み、決定 12・13）
+
+### 13.1 API（`keiland_app.h`）
+
+```c
+#define KL_APP_LANGUAGE	7U
+
+struct kl_app_event {
+	...（§3.1 の物）
+	char language[KL_TR_NAME_MAX + 1U];	/* KL_APP_LANGUAGE: the language changed to ("en", "ja", ...) */
+};
+
+/* The desktop's language when the application opened ("en" without the compositor's settings). */
+const char *kl_app_language(const struct kl_app *app);
+```
+
+- 決定 13 のとおり、event は変わった先の言語の名前を運ぶ。program と kl_tr はその値をそのまま使い、kl_settings を読み直さない。
+- 変更が続けて来れば event も同じ順に来る。最後の event が勝つ。
+
+### 13.2 kl_settings との関係（上に載せる）
+
+- 言語の値は今と同じく compositor の設定の拡張の `ui.language`（`kl_settings_*` の watch）から来る。watch の callback は**変わった値を引数で
+  受ける**（`kl_settings_watch_fn` の `value`）。kl_app はその値を言語の名前（`kl_tr_language_code`）に直して event に入れる。callback の中で
+  `kl_settings_get_*` を読み直さないので、短い間に続いた変更でも各 event の値はその変更の物（決定 13 の理由に応える）。
+- 実装: `kl_app_open` が app の display で `kl_settings_open` を 1 つ持ち、`ui.language` を watch する（`kl_appearance` と同じく app が持つ）。
+  `kl_app_dispatch` が wayland の event の後に `kl_settings_dispatch` を呼び、callback が `KL_APP_LANGUAGE` を積む（queue が満ちれば §3 の
+  post の list へ回し、捨てない）。compositor が設定の拡張を持たなければ event は来ず、`kl_app_language` は "en"。
+- `kl_tr_follow`（kl_settings の上の helper）は kl_app を使わない program のために残す。kl_app の program は `KL_APP_LANGUAGE` を使う
+  （Files・Settings の look・Installer の `kl_tr_follow` を移すかは p015 の中で決める。移すなら `kl_tr_follow` と同じ動きになることを確かめる）。
+
+### 13.3 翻訳（kl_tr）の読み直し
+
+- 同じ thread で: `KL_APP_LANGUAGE` で `kl_tr_open(domain, event.language)`（失敗は "en"）、窓を描き直す。
+- 別の thread で（読みが遅い時、compositor の `wayland/language.c` と同じ形）: program は event ごとに番号（世代）を 1 つ進め、
+  worker の thread に（番号、言語）を渡す。worker は `kl_tr_read` の結果を `kl_app_post(app, CODE, job)` で返す。app の thread は
+  job の番号が最新の番号と違えば `kl_tr_discard`、同じなら `kl_tr_use`。古い言語の読みが新しい言語の後に着いても使われない（決定 13 の「最後が勝つ」）。
+- 解説（p009）に両方の形の完全な例を足す。

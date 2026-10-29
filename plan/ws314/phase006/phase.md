@@ -3,7 +3,7 @@
 # ws314-p006 `kl_instance` の event と Settings の移行
 
 - 親: [WS314](../ws.md)。設計: [design.md](../design.md) §6。Queue: q1690 / q1690-i01（担当 P2、2026-10-30）。
-- Status: in-progress（2026-10-30。実装・build・Linux の host の試験まで。zedBSD（QEMU）の試験は p005 と同じ script で）
+- Status: cleared（2026-10-30。zedBSD（QEMU）で instance-test が PASS。Settings そのものの 2 回目の起動の QEMU は未実施）
 - Disposition: normal
 
 ## 目的・受け入れ
@@ -31,3 +31,5 @@
 - host の試験 `plan/ws314/tests/instance-test.c`（`sh plan/ws314/tests/host-test.sh instance BUILD`）: one copy になり bind、2 度目の bind は
   EINVAL、別の thread の 3 つの起動（`kl_instance_open` の同じ名前）が `KL_APP_INSTANCE` で届き順に take、残り 0、app を先に閉じて copy を閉じる。
   PASS。TSan の libkeiland でも PASS（post・process も）。
+- zedBSD（QEMU）: p005 と同じ run（`build/p2-q/run4`）で instance-test が PASS。
+- 未実施: Settings を 2 回起動して page が渡ること（QEMU）。
