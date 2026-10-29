@@ -176,8 +176,9 @@ gpu
      見つかる。close の途中の session（S5）も）。RC の event で LOST になった channel もここで拾う。
   2. LOST の channel を 1 つずつ取り消す（`rpc_lock` は call ごと。`node->lock` は取らない: executor の待ちが取り消しを待つので）。
      **取り消しの実行者は reaper だけ**（isolate はしない、review v5 M3）。`nvrtx.kill=0` の時は LOST と log だけで取り消さない。
-  3. LOST にした session を共通の層に `drv_gpu_report_session_error(device, session, EIO)` で公開する（spinlock の外。session は reaper が使っている間
-     close が待つ: `node->reaping` と waitq）。
+  3. 共通の層への `drv_gpu_report_session_error` は**呼ばない**（p003 の実装で決めた: reaper が `channel_lock` を持ったまま core の lock を取ると、
+     core が close の中で node の close（`channel_lock`）を呼ぶ時に順が逆になりうる。喪失した session の操作は `run_lost` と channel の state で EIO に
+     なり、marker も EIO で終わるので、公開しなくても app は DEVICE_LOST を受ける）。
 - 取り消しの手順（`nvrtx_work_channel_kill`、R1・R2 の判定を一本にした物）:
   1. state = KILLING。`STOP_CHANNEL`（bImmediate=1、RPC の timeout は今の 5 s、F1）。
   2. STOP が 0 → 証拠あり。STOP が失敗 → `rpc_lock` を手放して、その chid の RC の event を 500 ms 待つ（drain が受ける）。来れば証拠あり。
@@ -346,7 +347,7 @@ script `plan/ws250/tests/rtx-hang-check.sh OUT VMUNIX`（p004）: `measure.sh de
 | scenario | 手順 | 合格 |
 | --- | --- | --- |
 | S0 対照 | `measure.sh mview` を 12 s（scene-5000）、vkhang --loops | fps が p011 の値（49 前後）から −5% 以内、`VKHANG ok`、dmesg に `session channel` の行 |
-| S1 probe（`nvrtx.kill=0`） | mview（12 s）を起動し、その中で vkhang（無限）、10 s 待つ。最後に STOP だけを 1 回送る probe（`nvrtx.kill=probe`）で STOP の返る時間を測る。GSP が RC しなければ GR は詰まったままなので終わりは reboot | 観測だけ: RC の event が来るか・何秒か・type、mview の frame が進むか、0x409b00 の値と照合の結果、STOP の時間（5 s の RPC の timeout との差、review v5 m10） |
+| S1 probe（`nvrtx.kill=0`） | mview（12 s）を起動し、その中で vkhang（無限）、10 s 待つ。STOP の返る時間は S2 の `channel %u stopped …（… ms）` の log で測る（STOP だけの probe の boot の語は作らなかった）。GSP が RC しなければ GR は詰まったままなので終わりは reboot | 観測だけ: RC の event が来るか・何秒か・type、mview の frame が進むか、0x409b00 の値と照合の結果、STOP の時間（5 s の RPC の timeout との差、review v5 m10） |
 | S2 取り消し | vkhang（無限）と同時に mview（12 s） | vkhang は `VKHANG lost`（≤ 3 s）、dmesg に `lost: run` と `stopped and freed`、mview は止まらず完走（fps の落ち込みは 2〜3 s の 1 回）、その後 `vkhang --loops` が ok、desktop の shot が新しい frame |
 | S3 繰り返し | S2 を 5 回 | 5 回とも合格、chid が回る（16, 17, …）、VRAM の残り（perf の行）が戻る |
 | S4 同時 | vkhang 2 つと mview | 2 つとも lost、mview 完走 |
