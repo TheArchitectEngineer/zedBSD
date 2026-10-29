@@ -880,11 +880,14 @@ desktop_welcome(
 	/* The installer's image opens the installer, not the Welcome. */
 	installer = access(DESKTOP_INSTALLER_INDEX, R_OK);
 	if (installer == 0) {
+		/* Starts the installer, which is not started again when it ends. */
 		pid = kwl_spawn(server, "exec " DESKTOP_INSTALLER);
 		if (pid < 0) {
 			printf("KWL INSTALLER start-failed errno=%d\n", errno);
 			return;
 		}
+
+		/* Logs the installer's start. */
 		printf("KWL INSTALLER start pid=%d\n", (int)pid);
 		return;
 	}

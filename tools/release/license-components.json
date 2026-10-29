@@ -375,6 +375,20 @@
    "note": "Binary form only, unmodified, with the licence's notice and disclaimers; the licence forbids reverse engineering, decompilation and disassembly."
   },
   {
+   "id": "mali-csf-firmware",
+   "name": "Arm Mali CSF GPU firmware (Mali-G310, ODROID-C5)",
+   "when": "program:mali-csf-firmware",
+   "license": "LicenseRef-arm-mali-csffw (redistribution allowed)",
+   "upstream": "linux-firmware",
+   "version": "",
+   "notices": [
+    "/usr/share/licenses/mali-csf-firmware/LICENCE.mali_csffw",
+    "/usr/share/licenses/mali-csf-firmware/WHENCE"
+   ],
+   "paths": [],
+   "note": "The whole software with its notices and the licence; use solely with Mali-based products; the licence forbids reverse engineering except as the law permits and is subject to export control laws."
+  },
+  {
    "id": "powervr-firmware",
    "name": "Imagination PowerVR Rogue GPU firmware (BXE-4-32, VisionFive 2)",
    "when": "program:powervr-firmware",

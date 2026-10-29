@@ -21,6 +21,7 @@
 /* The most RAM ranges, reserved ranges and CPUs the record holds. */
 #define RPI_FDT_MAX_MEMORY 8
 #define RPI_FDT_MAX_RESERVED 24
+#define RPI_FDT_MAX_NO_MAP 8
 #define RPI_FDT_MAX_CPUS 8
 
 /*
@@ -68,6 +69,15 @@ struct rpi_fdt_info {
 	unsigned reserved_count;
 	struct rpi_fdt_range memory[RPI_FDT_MAX_MEMORY];
 	struct rpi_fdt_range reserved[RPI_FDT_MAX_RESERVED];
+
+	/*
+	 * The reserved ranges the tree marks no-map (the secure monitor's
+	 * memory): kept out of the kernel's direct map as well, so that no
+	 * speculative access reaches memory the normal world may not touch.
+	 * The Raspberry Pi parsers leave it empty.
+	 */
+	unsigned no_map_count;
+	struct rpi_fdt_range no_map[RPI_FDT_MAX_NO_MAP];
 
 	/* The CPU addresses (and interrupts) of the peripherals the HAL uses; 0 when absent. */
 	uint64_t uart_base;

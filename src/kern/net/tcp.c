@@ -47,6 +47,7 @@
 #include "kern/uaccess.h"
 #include "internal.h"
 #include "ipv6.h"
+#include "tcp-cubic.h"
 #include "wire.h"
 #include <kern/kcrt.h>
 
@@ -205,9 +206,12 @@ struct tcp_segment_addresses {
  * machines gives a connection 128, the 128 KB of its buffer
  * (TCP_RECEIVE_BUFFER) however the peer cuts its segments: the window
  * promised is then always taken.  The small pool of the 32-bit boards keeps
- * the common limit.
+ * the common limit.  CONFIG_TCP_RECEIVE_PACKETS sets another (a build that
+ * measures longer round trips).
  */
-#if PACKET_BUF_POOL_COUNT >= 1024U
+#if defined(CONFIG_TCP_RECEIVE_PACKETS)
+#define TCP_RECEIVE_PACKETS ((unsigned)CONFIG_TCP_RECEIVE_PACKETS)
+#elif PACKET_BUF_POOL_COUNT >= 1024U
 #define TCP_RECEIVE_PACKETS 128U
 #elif PACKET_BUF_POOL_COUNT >= 256U
 #define TCP_RECEIVE_PACKETS 44U
@@ -265,6 +269,19 @@ struct tcp_segment_addresses {
 #ifndef CONFIG_TCP_MAXUNACKTIME_MS
 #define CONFIG_TCP_MAXUNACKTIME_MS 0U
 #endif
+
+/*
+ * The congestion control a new socket starts with until net.tcp.congestion
+ * sets another (TCP_CC_RENO or TCP_CC_CUBIC): CUBIC, as Linux, Windows and
+ * FreeBSD have it, which keeps a long round trip's link busier after a
+ * loss and is no slower on a LAN.
+ */
+#ifndef CONFIG_TCP_CC_DEFAULT
+#define CONFIG_TCP_CC_DEFAULT TCP_CC_CUBIC
+#endif
+
+/* The congestion controls by number (TCP_CC_*), with the names TCP_CONGESTION and net.tcp.congestion give them. */
+#define TCP_CC_COUNT 2U
 
 /* The duplicate acknowledgements in a row that start a fast retransmit (RFC 5681 section 3.2). */
 #define TCP_DUPLICATE_ACKS_FAST 3U
@@ -421,6 +438,16 @@ static uint16_t next_ephemeral;
 static struct spinlock tcp_registry_lock;
 
 /*
+ * The congestion control a new socket starts with (TCP_CC_*), which
+ * net.tcp.congestion sets: one word, read and written atomically under no
+ * lock (a socket made meanwhile takes the old one or the new).
+ */
+static unsigned tcp_cc_default_value = CONFIG_TCP_CC_DEFAULT;
+
+/* The names of the congestion controls by number (TCP_CC_*), which TCP_CONGESTION and net.tcp.congestion use. */
+static const char *const tcp_cc_names[TCP_CC_COUNT] = { "reno", "cubic" };
+
+/*
  * The connections owing a delayed acknowledgement, linked by ack_next,
  * each holding a socket reference the flush drops (tcp_ack_flush).  The
  * lock guards the head and the links.
@@ -491,7 +518,15 @@ static int tcp_nagle_holds_locked(const struct tcp_endpoint *endpoint);
 static int tcp_unsent_fits_cwnd_locked(const struct tcp_endpoint *endpoint);
 static size_t tcp_tail_room_locked(const struct tcp_endpoint *endpoint);
 static void tcp_cwnd_grow_locked(struct tcp_endpoint *endpoint, uint32_t acked);
-static void tcp_cwnd_loss_locked(struct tcp_endpoint *endpoint, int timeout);
+static void tcp_cwnd_loss_locked(struct tcp_endpoint *endpoint, int timeout, int repeated);
+static void tcp_cwnd_round_reset_locked(struct tcp_endpoint *endpoint);
+static void tcp_cwnd_note_sent_locked(struct tcp_endpoint *endpoint);
+static int tcp_cwnd_limited_locked(const struct tcp_endpoint *endpoint, uint32_t mss);
+static void tcp_cwnd_round_advance_locked(struct tcp_endpoint *endpoint);
+static uint64_t tcp_cc_now_ms(void);
+static void tcp_cubic_grow_locked(struct tcp_endpoint *endpoint, uint32_t acked, uint32_t mss);
+static void tcp_cubic_loss_locked(struct tcp_endpoint *endpoint, uint32_t flight, int timeout);
+static void tcp_cc_set_locked(struct tcp_endpoint *endpoint, unsigned cc);
 static void tcp_ack_delay(struct tcp_endpoint *endpoint);
 static int tcp_send_wake_due_locked(const struct tcp_endpoint *endpoint);
 struct tcp_discard {
@@ -597,6 +632,11 @@ tcp_socket_create(
 	/* The system's TCP_MAXUNACKTIME (ws220-p005). */
 	endpoint->tcp.maxunack_seconds = CONFIG_TCP_MAXUNACKTIME_MS / 1000U;
 	endpoint->tcp.maxunack = KERN_MS_TO_TICKS(CONFIG_TCP_MAXUNACKTIME_MS);
+
+	/* The system's congestion control, net.tcp.congestion. */
+	endpoint->tcp.cc = tcp_cc_default();
+
+	/* Puts the socket in the registry of sockets. */
 	irq = spin_lock_irqsave(&tcp_registry_lock);
 
 	endpoint->next = tcp_sockets;
@@ -830,6 +870,9 @@ tcp6_path_mtu_lowered(
 			wake = 1;
 		}
 
+		/* The window's use is measured afresh in the smaller segments. */
+		tcp_cwnd_round_reset_locked(endpoint);
+
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
 	}
 
@@ -895,6 +938,7 @@ tcp_timer_run(
 	int persist;
 	int reset_peer;
 	int before;
+	int repeated;
 	uint32_t sent_end;
 	uint32_t reset_sequence;
 
@@ -1148,7 +1192,11 @@ tcp_timer_run(
 		 * acknowledgements as before.
 		 */
 		if (!immediate && !persist) {
-			tcp_cwnd_loss_locked(endpoint, 1);
+			/* Repeated within the recovery an earlier timeout started, or the first. */
+			repeated = 0;
+			if (endpoint->tcp.recovery_by_timeout != 0)
+				repeated = 1;
+			tcp_cwnd_loss_locked(endpoint, 1, repeated);
 			endpoint->tcp.recover = endpoint->tcp.send_max;
 			sent_end = tcp_sent_end_locked(endpoint);
 			before = tcp_sequence_before(endpoint->tcp.recover, sent_end);
@@ -1167,6 +1215,9 @@ tcp_timer_run(
 			} else {
 				endpoint->tcp.recovery_by_timeout = 2;
 			}
+
+			/* The window's use is measured afresh from the one segment it now lets go. */
+			tcp_cwnd_round_reset_locked(endpoint);
 		}
 
 		/*
@@ -1481,6 +1532,110 @@ tcp_stats_copy(
 }
 
 /*
+ * Gives the name of a congestion control (TCP_CC_*), as TCP_CONGESTION and
+ * net.tcp.congestion show it.
+ */
+const char *
+tcp_cc_name(
+	unsigned cc)
+{
+	/* A number this kernel does not have is shown as the first. */
+	if (cc >= TCP_CC_COUNT)
+		return tcp_cc_names[TCP_CC_RENO];
+
+	/* Succeeded: its name. */
+	return tcp_cc_names[cc];
+}
+
+/*
+ * Finds the congestion control a name of length bytes names, as FreeBSD
+ * reads TCP_CONGESTION: up to the first NUL, no more than TCP_CA_NAME_MAX
+ * - 1 bytes of it (a longer one is cut there).  An empty name fails with
+ * EINVAL, one this kernel does not have with ESRCH.
+ */
+int
+tcp_cc_lookup(
+	const char *name,
+	size_t length,
+	unsigned *cc)
+{
+	const char *known;
+	size_t used;
+	size_t index;
+	unsigned candidate;
+	int same;
+	int error;
+
+	/* Counts the bytes before a NUL, within the longest name. */
+	used = 0;
+	while (used < length &&
+	       used < TCP_CA_NAME_MAX - 1U &&
+	       name[used] != '\0')
+		used++;
+
+	/* An empty name names nothing. */
+	if (used == 0)
+		return EINVAL;
+
+	/* Looks for the congestion control whose name is the same bytes and no more. */
+	error = ESRCH;
+	for (candidate = 0;
+	     candidate < TCP_CC_COUNT;
+	     candidate++) {
+		known = tcp_cc_names[candidate];
+
+		/* Compares the bytes given with this name's. */
+		same = 1;
+		for (index = 0; index < used; index++) {
+			/* A byte that differs makes it another name. */
+			if (known[index] != name[index]) {
+				same = 0;
+				break;
+			}
+		}
+
+		/* The whole name matches only when this one ends where the given one does. */
+		if (same && known[used] == '\0') {
+			*cc = candidate;
+			error = 0;
+			break;
+		}
+	}
+
+	/* Reports that no congestion control has the name. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the congestion control is found. */
+	return 0;
+}
+
+/* Gives the congestion control a new socket starts with (TCP_CC_*). */
+unsigned
+tcp_cc_default(
+	void)
+{
+	unsigned cc;
+
+	/* The word net.tcp.congestion last set. */
+	cc = __atomic_load_n(&tcp_cc_default_value, __ATOMIC_RELAXED);
+	return cc;
+}
+
+/* Sets the congestion control a new socket starts with (TCP_CC_*, one tcp_cc_lookup found). */
+void
+tcp_cc_set_default(
+	unsigned cc)
+{
+	/* Only a number this kernel has. */
+	if (cc >= TCP_CC_COUNT)
+		return;
+
+	/* The word new sockets read. */
+	__atomic_store_n(&tcp_cc_default_value, cc, __ATOMIC_RELAXED);
+}
+
+/*
  * Arms or disarms the idle probe for one socket.
  *
  * The caller holds the socket lock.  Only an established connection probes:
@@ -1536,6 +1691,7 @@ tcp_setsockopt(
 {
 	struct tcp_endpoint *endpoint;
 	unsigned long irq;
+	unsigned cc;
 	int enabled;
 	int error;
 	int wake;
@@ -1552,6 +1708,39 @@ tcp_setsockopt(
 	/* Only this protocol's own level is handled here. */
 	if (socket == NULL || level != IPPROTO_TCP)
 		return ENOPROTOOPT;
+
+	/*
+	 * TCP_CONGESTION: a name, which takes effect at once in any state;
+	 * the window and the threshold stay, the new control's measures start
+	 * afresh.
+	 */
+	if (option == TCP_CONGESTION) {
+		/* Only a TCP socket has a congestion control. */
+		endpoint = tcp_endpoint(socket);
+		if (endpoint == NULL)
+			return ENOPROTOOPT;
+
+		/* A name has to be given. */
+		if (value == NULL)
+			return EINVAL;
+
+		/* Finds the congestion control the name names. */
+		error = tcp_cc_lookup(value, length, &cc);
+		if (error != 0)
+			return error;
+
+		/* Has the connection use it. */
+		irq = spin_lock_irqsave(&socket->lock);
+
+		tcp_cc_set_locked(endpoint, cc);
+
+		spin_unlock_irqrestore(&socket->lock, irq);
+
+		/* Succeeded: the connection uses it. */
+		return 0;
+	}
+
+	/* The other options are an int. */
 	if (option != TCP_NODELAY && option != TCP_MAXUNACKTIME)
 		return ENOPROTOOPT;
 	if (value == NULL || length != sizeof(enabled))
@@ -1620,7 +1809,10 @@ tcp_getsockopt(
 	socklen_t *length)
 {
 	struct tcp_endpoint *endpoint;
+	const char *name;
 	unsigned long irq;
+	unsigned cc;
+	size_t name_length;
 	int enabled;
 	int error;
 
@@ -1636,6 +1828,38 @@ tcp_getsockopt(
 	/* Only this protocol's own level is handled here. */
 	if (socket == NULL || level != IPPROTO_TCP)
 		return ENOPROTOOPT;
+
+	/* TCP_CONGESTION: the name and its NUL, cut to the length given (as FreeBSD gives it). */
+	if (option == TCP_CONGESTION) {
+		/* Only a TCP socket has a congestion control. */
+		endpoint = tcp_endpoint(socket);
+		if (endpoint == NULL)
+			return ENOPROTOOPT;
+
+		/* A place to put the name has to be given. */
+		if (value == NULL || length == NULL)
+			return EINVAL;
+
+		/* Samples the congestion control the connection uses. */
+		irq = spin_lock_irqsave(&socket->lock);
+
+		cc = endpoint->tcp.cc;
+
+		spin_unlock_irqrestore(&socket->lock, irq);
+
+		/* Copies its name, no more of it than the length given. */
+		name = tcp_cc_name(cc);
+		name_length = kern_strlen(name) + 1U;
+		if (name_length > *length)
+			name_length = *length;
+		kern_memcpy(value, name, name_length);
+		*length = (socklen_t)name_length;
+
+		/* Succeeded: the name is given. */
+		return 0;
+	}
+
+	/* The other options are an int. */
 	if (option != TCP_NODELAY && option != TCP_MAXUNACKTIME)
 		return ENOPROTOOPT;
 	if (value == NULL || length == NULL || *length < sizeof(enabled))
@@ -2337,6 +2561,27 @@ tcp_stats_fill_locked(
 		entry->cwnd = tcp->cwnd;
 		entry->ssthresh = tcp->ssthresh;
 	}
+
+	/* The congestion control, and CUBIC's memory of the last loss and its epoch. */
+	entry->features |= TCP_STATS_HAVE_CC;
+	entry->cc = TCP_STATS_CC_RENO;
+	if (tcp->cc == TCP_CC_CUBIC) {
+		entry->cc = TCP_STATS_CC_CUBIC;
+		entry->cubic_w_max_kb = tcp->cubic_w_max / 1024U;
+		entry->cubic_k_ms = tcp->cubic_k_ms;
+	}
+
+	/* A queued segment the window held back in this round. */
+	if (tcp->cwnd_blocked != 0)
+		entry->cwnd_state |= TCP_STATS_CWND_BLOCKED;
+
+	/* A CUBIC epoch runs. */
+	if (tcp->cubic_epoch_started != 0)
+		entry->cwnd_state |= TCP_STATS_CWND_EPOCH;
+
+	/* CUBIC finds the window after a timeout at the next epoch's start. */
+	if (tcp->cubic_after_timeout != 0)
+		entry->cwnd_state |= TCP_STATS_CWND_AFTER_TIMEOUT;
 
 	/*
 	 * The round-trip estimate (ws220-p004; srtt_us and rttvar_us mean
@@ -3480,6 +3725,9 @@ tcp_start_sending(
 	endpoint->tcp.ssthresh = UINT32_MAX;
 	endpoint->tcp.cwnd_acked = 0;
 
+	/* The window's use is measured from the start of the sending. */
+	tcp_cwnd_round_reset_locked(endpoint);
+
 	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
 }
 
@@ -3874,7 +4122,10 @@ tcp_send_wake_due_locked(
  * recovery (RFC 5681 section 3.1): in slow start by what was taken, no
  * more than two segments an acknowledgement (RFC 3465's L, for a peer that
  * acknowledges every second segment); past the threshold by one segment a
- * window's worth of acknowledged bytes.  The caller holds the socket lock.
+ * window's worth of acknowledged bytes.  Only a window the sending uses
+ * grows (RFC 7661): one the peer's window or the writer keeps from being
+ * filled stays as it is, and its acknowledgements count for nothing.  The
+ * caller holds the socket lock.
  */
 static void
 tcp_cwnd_grow_locked(
@@ -3883,11 +4134,27 @@ tcp_cwnd_grow_locked(
 {
 	uint32_t mss;
 	uint32_t step;
+	int limited;
 
 	/* A connection not yet sending has no window to grow. */
 	if (endpoint->tcp.cwnd == 0)
 		return;
 	mss = tcp_segment_size_locked(endpoint);
+
+	/*
+	 * A window the sending leaves unused does not grow.  CUBIC's epoch
+	 * notes from when, so that the time does not count in it (RFC 9438
+	 * section 4.2).
+	 */
+	limited = tcp_cwnd_limited_locked(endpoint, mss);
+	if (!limited) {
+		/* Notes the start of the unused time once, in a running CUBIC epoch. */
+		if (endpoint->tcp.cc == TCP_CC_CUBIC &&
+		    endpoint->tcp.cubic_epoch_started != 0 &&
+		    endpoint->tcp.cubic_limited_since_ms == 0)
+			endpoint->tcp.cubic_limited_since_ms = tcp_cc_now_ms();
+		return;
+	}
 
 	/* Slow start. */
 	if (endpoint->tcp.cwnd < endpoint->tcp.ssthresh) {
@@ -3899,7 +4166,13 @@ tcp_cwnd_grow_locked(
 		return;
 	}
 
-	/* Congestion avoidance: a segment for each window acknowledged. */
+	/* Congestion avoidance: CUBIC's window function. */
+	if (endpoint->tcp.cc == TCP_CC_CUBIC) {
+		tcp_cubic_grow_locked(endpoint, acked, mss);
+		return;
+	}
+
+	/* Reno's: a segment for each window acknowledged. */
 	endpoint->tcp.cwnd_acked += acked;
 	if (endpoint->tcp.cwnd_acked < endpoint->tcp.cwnd)
 		return;
@@ -3912,12 +4185,16 @@ tcp_cwnd_grow_locked(
  * Takes a loss into the congestion window (RFC 5681 sections 3.1 and
  * 3.2): the threshold becomes half of what was in flight, at least two
  * segments; the window becomes the threshold after a fast retransmit, one
- * segment after a timeout.  The caller holds the socket lock.
+ * segment after a timeout.  A timeout repeated within the recovery an
+ * earlier timeout started (what it resends the timer has resent already)
+ * holds the threshold and only takes the window to one segment.  The
+ * caller holds the socket lock.
  */
 static void
 tcp_cwnd_loss_locked(
 	struct tcp_endpoint *endpoint,
-	int timeout)
+	int timeout,
+	int repeated)
 {
 	uint32_t flight;
 	uint32_t mss;
@@ -3928,8 +4205,24 @@ tcp_cwnd_loss_locked(
 		return;
 	mss = tcp_segment_size_locked(endpoint);
 
-	/* Half of what was sent and not acknowledged, at least two segments. */
+	/*
+	 * A repeated timeout: the threshold is held constant (RFC 5681
+	 * section 3.1, the segment having been resent by way of the timer).
+	 */
+	if (timeout && repeated) {
+		endpoint->tcp.cwnd = mss;
+		endpoint->tcp.cwnd_acked = 0;
+		return;
+	}
+
+	/* What was sent and not acknowledged, which CUBIC cuts its own way. */
 	flight = tcp_sent_end_locked(endpoint) - endpoint->tcp.send_unacknowledged;
+	if (endpoint->tcp.cc == TCP_CC_CUBIC) {
+		tcp_cubic_loss_locked(endpoint, flight, timeout);
+		return;
+	}
+
+	/* Reno's: half of it, at least two segments. */
 	threshold = flight / 2U;
 	if (threshold < 2U * mss)
 		threshold = 2U * mss;
@@ -3941,6 +4234,349 @@ tcp_cwnd_loss_locked(
 	else
 		endpoint->tcp.cwnd = threshold;
 	endpoint->tcp.cwnd_acked = 0;
+}
+
+/*
+ * Starts the measure of whether the congestion window is in use afresh,
+ * where the window is set apart from its growth (the start of the
+ * sending, the end of a recovery, a timeout's go-back-N, a smaller
+ * segment size, another congestion control): a round to the end of what
+ * was sent, with what is in flight now and nothing before it, and no
+ * CUBIC epoch.  The caller holds the socket lock.
+ */
+static void
+tcp_cwnd_round_reset_locked(
+	struct tcp_endpoint *endpoint)
+{
+	uint32_t sent_end;
+
+	/* A round to the end of what was sent, holding what is in flight. */
+	sent_end = tcp_sent_end_locked(endpoint);
+	endpoint->tcp.cwnd_round_end = sent_end;
+	endpoint->tcp.cwnd_round_flight = sent_end - endpoint->tcp.send_unacknowledged;
+	endpoint->tcp.cwnd_prev_flight = 0;
+	endpoint->tcp.cwnd_blocked = 0;
+
+	/* CUBIC's epoch starts again at the next acknowledgement of congestion avoidance. */
+	endpoint->tcp.cubic_epoch_started = 0;
+	endpoint->tcp.cubic_limited_since_ms = 0;
+}
+
+/*
+ * Takes a segment just handed to the device into the round's measure:
+ * the most sent and not acknowledged so far in the round.  The caller
+ * holds the socket lock.
+ */
+static void
+tcp_cwnd_note_sent_locked(
+	struct tcp_endpoint *endpoint)
+{
+	uint32_t flight;
+
+	/* What was sent and not acknowledged, with this segment. */
+	flight = tcp_sent_end_locked(endpoint) - endpoint->tcp.send_unacknowledged;
+	if (flight > endpoint->tcp.cwnd_round_flight)
+		endpoint->tcp.cwnd_round_flight = flight;
+}
+
+/*
+ * Tells whether the congestion window is in use, so that it may grow: it
+ * held back a queued segment in this round; or, with the most sent and
+ * not acknowledged in this round or the one before, in slow start it is
+ * less than twice that, and past the threshold within a segment of it.
+ * The caller holds the socket lock.
+ *
+ * Procedure referenced:
+ * RFC 7661 section 4.2 and RFC 9438 section 5.8 (no growth while the
+ * window is not used), and Linux 6.12 include/net/tcp.h
+ * (tcp_is_cwnd_limited: in slow start, twice the most in flight).
+ */
+static int
+tcp_cwnd_limited_locked(
+	const struct tcp_endpoint *endpoint,
+	uint32_t mss)
+{
+	uint32_t flight;
+
+	/* A queued segment the window held back. */
+	if (endpoint->tcp.cwnd_blocked != 0)
+		return 1;
+
+	/* The most in flight in this round or the one before. */
+	flight = endpoint->tcp.cwnd_round_flight;
+	if (endpoint->tcp.cwnd_prev_flight > flight)
+		flight = endpoint->tcp.cwnd_prev_flight;
+
+	/* Slow start: less than twice that. */
+	if (endpoint->tcp.cwnd < endpoint->tcp.ssthresh) {
+		/* The window is less than twice the most in flight: it is in use. */
+		if ((uint64_t)endpoint->tcp.cwnd < 2ULL * flight)
+			return 1;
+
+		/* The window is twice that or more: it is not in use. */
+		return 0;
+	}
+
+	/* Congestion avoidance: within a segment of it. */
+	if ((uint64_t)flight + mss >= endpoint->tcp.cwnd)
+		return 1;
+
+	/* Not in use. */
+	return 0;
+}
+
+/*
+ * Ends the round once the acknowledgements reach its end: its most in
+ * flight becomes the round before's, and a new round runs to the end of
+ * what is sent now, holding what is in flight now.  The caller holds the
+ * socket lock.
+ */
+static void
+tcp_cwnd_round_advance_locked(
+	struct tcp_endpoint *endpoint)
+{
+	uint32_t sent_end;
+	int reached;
+
+	/* Not before the acknowledgements reach the round's end. */
+	reached = tcp_sequence_at_or_before(endpoint->tcp.cwnd_round_end, endpoint->tcp.send_unacknowledged);
+	if (!reached)
+		return;
+
+	/* The round's measure moves back one, and the next round starts. */
+	sent_end = tcp_sent_end_locked(endpoint);
+	endpoint->tcp.cwnd_prev_flight = endpoint->tcp.cwnd_round_flight;
+	endpoint->tcp.cwnd_round_flight = sent_end - endpoint->tcp.send_unacknowledged;
+	endpoint->tcp.cwnd_round_end = sent_end;
+	endpoint->tcp.cwnd_blocked = 0;
+}
+
+/* Gives the time CUBIC counts in: the kernel's ticks in milliseconds. */
+static uint64_t
+tcp_cc_now_ms(
+	void)
+{
+	uint64_t ticks;
+	uint64_t now;
+
+	/* The ticks since boot, in milliseconds. */
+	ticks = sched_ticks();
+	now = kern_ticks_to_ms(ticks);
+	return now;
+}
+
+/*
+ * Grows the window in congestion avoidance as CUBIC does (RFC 9438
+ * sections 4.2 to 4.5), for acked bytes newly acknowledged while the
+ * window is in use.  An epoch starts at the first such acknowledgement:
+ * K and the origin from the window before the last loss (K = 0 at the
+ * window found after a timeout, section 4.8), W_est at the window.  The
+ * time the window went unused since moves the epoch on.  The window goes
+ * towards W_cubic one round trip ahead, at most half again a round trip,
+ * and never below W_est while W_cubic is.  The caller holds the socket
+ * lock.
+ */
+static void
+tcp_cubic_grow_locked(
+	struct tcp_endpoint *endpoint,
+	uint32_t acked,
+	uint32_t mss)
+{
+	uint64_t now;
+	uint64_t elapsed;
+	uint64_t rtt_ms;
+	uint64_t target;
+	uint64_t ceiling;
+	uint64_t growth;
+	uint64_t estimate;
+	uint64_t share;
+	uint32_t cwnd;
+	uint32_t w_cubic;
+
+	/* Reads the time and the window the epoch is measured from. */
+	now = tcp_cc_now_ms();
+	cwnd = endpoint->tcp.cwnd;
+
+	/* Starts the epoch, when none runs. */
+	if (endpoint->tcp.cubic_epoch_started == 0) {
+		endpoint->tcp.cubic_epoch_started = 1;
+		endpoint->tcp.cubic_epoch_ms = now;
+		endpoint->tcp.cubic_limited_since_ms = 0;
+		endpoint->tcp.cubic_w_est = cwnd;
+		endpoint->tcp.cubic_est_rem = 0;
+		endpoint->tcp.cubic_grow_rem = 0;
+		endpoint->tcp.cwnd_acked = 0;
+
+		/* K and the origin: the window found after a timeout, or the window before the last loss. */
+		if (endpoint->tcp.cubic_after_timeout != 0) {
+			endpoint->tcp.cubic_k_ms = 0;
+			endpoint->tcp.cubic_origin = cwnd;
+			endpoint->tcp.cubic_w_max = cwnd;
+
+			/* The timeout's mark ends once no recovery runs. */
+			if (endpoint->tcp.recovery == 0)
+				endpoint->tcp.cubic_after_timeout = 0;
+		} else if (cwnd < endpoint->tcp.cubic_w_max) {
+			endpoint->tcp.cubic_k_ms = tcp_cubic_k_ms(endpoint->tcp.cubic_w_max, cwnd, mss);
+			endpoint->tcp.cubic_origin = endpoint->tcp.cubic_w_max;
+		} else {
+			endpoint->tcp.cubic_k_ms = 0;
+			endpoint->tcp.cubic_origin = cwnd;
+		}
+	}
+
+	/* The time the window went unused does not count in the epoch (section 4.2). */
+	if (endpoint->tcp.cubic_limited_since_ms != 0) {
+		/* Moves the epoch on by the time since, unless the clock is behind it. */
+		if (now > endpoint->tcp.cubic_limited_since_ms)
+			endpoint->tcp.cubic_epoch_ms += now - endpoint->tcp.cubic_limited_since_ms;
+		endpoint->tcp.cubic_limited_since_ms = 0;
+	}
+
+	/* The time into the epoch, none when the clock is behind its start. */
+	elapsed = 0;
+	if (now > endpoint->tcp.cubic_epoch_ms)
+		elapsed = now - endpoint->tcp.cubic_epoch_ms;
+
+	/* The round trip, none before a sample. */
+	rtt_ms = 0;
+	if (endpoint->tcp.rtt_samples != 0)
+		rtt_ms = endpoint->tcp.srtt_us / 1000U;
+
+	/* The target: W_cubic a round trip ahead, within the window and half again (section 4.4). */
+	target = tcp_cubic_window(endpoint->tcp.cubic_origin, endpoint->tcp.cubic_k_ms, elapsed + rtt_ms, mss);
+	ceiling = (uint64_t)cwnd + cwnd / 2U;
+	if (target > ceiling)
+		target = ceiling;
+
+	/*
+	 * Towards it: (target - cwnd) / cwnd of the bytes acknowledged, a
+	 * segment of growth for each segment of them, the remainder carried
+	 * (section 4.5).
+	 */
+	if (target > cwnd) {
+		growth = (uint64_t)acked * (target - cwnd) + endpoint->tcp.cubic_grow_rem;
+		endpoint->tcp.cwnd_acked += (uint32_t)(growth / cwnd);
+		endpoint->tcp.cubic_grow_rem = (uint32_t)(growth % cwnd);
+	}
+
+	/* The segments of growth that came. */
+	while (endpoint->tcp.cwnd_acked >= mss) {
+		endpoint->tcp.cwnd_acked -= mss;
+
+		/* A segment is added unless the window would pass its largest. */
+		if (endpoint->tcp.cwnd <= TCP_CWND_MAX - mss)
+			endpoint->tcp.cwnd += mss;
+	}
+
+	/*
+	 * Value referenced:
+	 * RFC 9438 section 4.3: alpha = 3 (1 - beta) / (1 + beta), 0.529
+	 * with beta = 0.7, taken as 529 thousandths; 1 once W_est reaches
+	 * the window before the loss.
+	 */
+	share = 529U;
+	if (endpoint->tcp.cubic_w_est >= endpoint->tcp.cubic_cwnd_prior)
+		share = 1000U;
+
+	/* W_est grows by alpha segments a window acknowledged, the remainder carried. */
+	estimate = share * acked * mss + endpoint->tcp.cubic_est_rem;
+	endpoint->tcp.cubic_w_est += (uint32_t)(estimate / (1000ULL * cwnd));
+	endpoint->tcp.cubic_est_rem = (uint32_t)(estimate % (1000ULL * cwnd));
+
+	/* W_est stays within the largest window. */
+	if (endpoint->tcp.cubic_w_est > TCP_CWND_MAX)
+		endpoint->tcp.cubic_w_est = TCP_CWND_MAX;
+
+	/* Where W_cubic now (no round trip ahead) is below W_est, the window is at least W_est (section 4.3). */
+	w_cubic = tcp_cubic_window(endpoint->tcp.cubic_origin, endpoint->tcp.cubic_k_ms, elapsed, mss);
+	if (w_cubic < endpoint->tcp.cubic_w_est && endpoint->tcp.cwnd < endpoint->tcp.cubic_w_est)
+		endpoint->tcp.cwnd = endpoint->tcp.cubic_w_est;
+}
+
+/*
+ * Takes a loss into CUBIC's window (RFC 9438 sections 4.6 to 4.8): the
+ * window before it becomes W_max, less when it is below the one before
+ * (fast convergence), and cwnd_prior; the threshold becomes beta of what
+ * was in flight, at least two segments; the window becomes the threshold
+ * after a fast retransmit, one segment after a timeout, whose next epoch
+ * starts at the window it finds.  The epoch ends.  The caller holds the
+ * socket lock.
+ */
+static void
+tcp_cubic_loss_locked(
+	struct tcp_endpoint *endpoint,
+	uint32_t flight,
+	int timeout)
+{
+	uint64_t threshold;
+	uint32_t mss;
+	uint32_t cwnd;
+
+	/* The segment size and the window the loss finds. */
+	mss = tcp_segment_size_locked(endpoint);
+	cwnd = endpoint->tcp.cwnd;
+
+	/*
+	 * Value referenced:
+	 * RFC 9438 section 4.7: below the last W_max, W_max = cwnd (1 + beta)
+	 * / 2, 17 / 20 with beta = 0.7.
+	 */
+	if (cwnd < endpoint->tcp.cubic_w_max)
+		endpoint->tcp.cubic_w_max = (uint32_t)((uint64_t)cwnd * 17U / 20U);
+	else
+		endpoint->tcp.cubic_w_max = cwnd;
+	endpoint->tcp.cubic_cwnd_prior = cwnd;
+
+	/*
+	 * Value referenced:
+	 * RFC 9438 section 4.6: ssthresh = flight_size beta, beta = 0.7, at
+	 * least two segments.
+	 */
+	threshold = (uint64_t)flight * 7U / 10U;
+	if (threshold < 2ULL * mss)
+		threshold = 2ULL * mss;
+	endpoint->tcp.ssthresh = (uint32_t)threshold;
+
+	/* The window to go on with, and the epoch ended. */
+	if (timeout) {
+		endpoint->tcp.cwnd = mss;
+		endpoint->tcp.cubic_after_timeout = 1;
+	} else {
+		endpoint->tcp.cwnd = (uint32_t)threshold;
+		endpoint->tcp.cubic_after_timeout = 0;
+	}
+
+	/* The growth carried and the epoch's measures start over. */
+	endpoint->tcp.cwnd_acked = 0;
+	endpoint->tcp.cubic_epoch_started = 0;
+	endpoint->tcp.cubic_limited_since_ms = 0;
+}
+
+/*
+ * Has a connection use another congestion control: the window and the
+ * threshold stay, the measures of the one before go (its growth towards
+ * the next segment, the round of the window's use, CUBIC's epoch and its
+ * memory of the last loss).  The caller holds the socket lock.
+ */
+static void
+tcp_cc_set_locked(
+	struct tcp_endpoint *endpoint,
+	unsigned cc)
+{
+	/* The same control: nothing to start again. */
+	if (endpoint->tcp.cc == cc)
+		return;
+
+	/* The new one, with nothing of the old one's. */
+	endpoint->tcp.cc = cc;
+	endpoint->tcp.cwnd_acked = 0;
+	endpoint->tcp.cubic_w_max = 0;
+	endpoint->tcp.cubic_cwnd_prior = 0;
+	endpoint->tcp.cubic_after_timeout = 0;
+
+	/* The window's use is measured afresh for it. */
+	tcp_cwnd_round_reset_locked(endpoint);
 }
 
 /*
@@ -4227,9 +4863,15 @@ tcp_retire_acknowledged(
 		if (endpoint->tcp.cwnd > endpoint->tcp.ssthresh)
 			endpoint->tcp.cwnd = endpoint->tcp.ssthresh;
 		endpoint->tcp.cwnd_acked = 0;
+
+		/* The window's use is measured afresh after the recovery. */
+		tcp_cwnd_round_reset_locked(endpoint);
 	} else if (going_back || (!recovering && endpoint->tcp.recovery == 0)) {
 		tcp_cwnd_grow_locked(endpoint, acked);
 	}
+
+	/* The round of the window's use ends once this acknowledgement reaches its end. */
+	tcp_cwnd_round_advance_locked(endpoint);
 
 	/* The duplicates and the resends of the oldest start over, and the peer has answered. */
 	endpoint->tcp.duplicate_acks = 0;
@@ -4544,6 +5186,10 @@ tcp_send_reliable(
 	/* Settles what became of the entry, and gives the sending up. */
 	discard.count = 0;
 	irq = spin_lock_irqsave(&endpoint->tcp.inet.socket.lock);
+
+	/* One the device took is in flight, for the measure of the congestion window's use. */
+	if (!retries)
+		tcp_cwnd_note_sent_locked(endpoint);
 
 	if (retries) {
 		/*
@@ -5100,10 +5746,15 @@ tcp_send_unsent(
 				break;
 		}
 
-		/* Or at one the congestion window does not take now: an acknowledgement sends it. */
+		/*
+		 * Or at one the congestion window does not take now: an
+		 * acknowledgement sends it, and the window is in use.
+		 */
 		fits = tcp_unsent_fits_cwnd_locked(endpoint);
-		if (!fits)
+		if (!fits) {
+			endpoint->tcp.cwnd_blocked = 1;
 			break;
+		}
 
 		/* The first unsent entry, marked sent and copied out. */
 		slot = (endpoint->tcp.send_first + endpoint->tcp.send_count -
@@ -5156,6 +5807,9 @@ tcp_send_unsent(
 			tcp_output_refused_locked(endpoint, refusal, progressed, now);
 			break;
 		}
+
+		/* One the device took is in flight, for the measure of the congestion window's use. */
+		tcp_cwnd_note_sent_locked(endpoint);
 
 		/* A resend of what a timeout or a Packet Too Big made unsent again is counted so for net.tcpstats. */
 		if (error == 0 && resend != 0 && length != 0) {
@@ -6916,6 +7570,7 @@ tcp_passive_syn(
 	    listener->tcp.inet.socket.send_timeout_ticks;
 	child->tcp.maxunack = listener->tcp.maxunack;
 	child->tcp.maxunack_seconds = listener->tcp.maxunack_seconds;
+	child->tcp.cc = listener->tcp.cc;
 	child->tcp.inet.socket.reuse_address =
 	    listener->tcp.inet.socket.reuse_address;
 	child->tcp.inet.bind_reuse_address =
@@ -7568,7 +8223,7 @@ tcp_segment_input(
 
 		/* The fast retransmit: the window halved, a recovery up to what was sent, and the oldest resent at once. */
 		if (fast) {
-			tcp_cwnd_loss_locked(endpoint, 0);
+			tcp_cwnd_loss_locked(endpoint, 0, 0);
 			endpoint->tcp.recover = tcp_sent_end_locked(endpoint);
 			endpoint->tcp.recovery = 1;
 			endpoint->tcp.recovery_by_timeout = 0;

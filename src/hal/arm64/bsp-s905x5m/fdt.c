@@ -101,6 +101,9 @@ struct fdt_node {
 	uint8_t is_reserved_memory;
 	uint8_t is_reserved_child;
 
+	/* Nonzero when a /reserved-memory child carries no-map. */
+	uint8_t is_no_map;
+
 	uint64_t release_addr;
 	uint32_t reg[FDT_MAX_CELLS];
 	uint32_t reg_count;
@@ -883,6 +886,13 @@ commit_reserved(
 		error = add_range(info->reserved, &info->reserved_count, RPI_FDT_MAX_RESERVED, base, size);
 		if (error != FDT_OK)
 			return error;
+
+		/* And out of the direct map, when the tree says it may not be mapped. */
+		if (node->is_no_map) {
+			error = add_range(info->no_map, &info->no_map_count, RPI_FDT_MAX_NO_MAP, base, size);
+			if (error != FDT_OK)
+				return error;
+		}
 	}
 
 	/* Succeeded: every range is recorded. */
@@ -1108,6 +1118,13 @@ record_property(
 	}
 	if (matches && length == 4) {
 		node->release_addr = read_be32(value);
+		return;
+	}
+
+	/* A reserved range the system may not map. */
+	matches = string_equal(name, name_length, "no-map");
+	if (matches) {
+		node->is_no_map = 1;
 		return;
 	}
 

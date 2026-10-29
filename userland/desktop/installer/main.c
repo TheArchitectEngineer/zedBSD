@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 /* The fonts. */
 #define MAIN_FONT		KEILAND_DATADIR "/fonts/keiland.ttf"
@@ -40,6 +41,10 @@
 
 /* How many times a stale swapchain is remade for one frame. */
 #define MAIN_STALE_LIMIT	8U
+
+/* How many times, and how far apart, the presenter is asked for again when the device refuses it. */
+#define MAIN_RESIZE_TRIES	20U
+#define MAIN_RESIZE_WAIT_US	250000U
 
 static int main_parse(int argc, char **argv, const char **display, unsigned *width, unsigned *height);
 static int main_number(const char *text, unsigned *value);
@@ -227,6 +232,7 @@ main_parse(
 {
 	int status;
 	int index;
+	int same;
 
 	/* The defaults. */
 	*display = NULL;
@@ -235,17 +241,25 @@ main_parse(
 
 	/* Each argument. */
 	for (index = 1; index < argc; index++) {
-		if (strncmp(argv[index], "--display=", 10U) == 0) {
+		/* The display to connect to. */
+		same = strncmp(argv[index], "--display=", 10U);
+		if (same == 0) {
 			*display = argv[index] + 10;
 			continue;
 		}
-		if (strncmp(argv[index], "--width=", 8U) == 0) {
+
+		/* The window's width. */
+		same = strncmp(argv[index], "--width=", 8U);
+		if (same == 0) {
 			status = main_number(argv[index] + 8, width);
 			if (status != 0)
 				return status;
 			continue;
 		}
-		if (strncmp(argv[index], "--height=", 9U) == 0) {
+
+		/* The window's height. */
+		same = strncmp(argv[index], "--height=", 9U);
+		if (same == 0) {
 			status = main_number(argv[index] + 9, height);
 			if (status != 0)
 				return status;
@@ -316,6 +330,8 @@ main_loop(
 			inst_log("DONE reason=disconnected");
 			return 0;
 		}
+
+		/* Lets a language change reach the catalogs. */
 		if (app->language != NULL)
 			(void)kl_settings_dispatch(app->language);
 
@@ -328,10 +344,14 @@ main_loop(
 				app->dirty = 1;
 				continue;
 			}
+
+			/* A helper's pipe became readable or hung up. */
 			if (event.kind == KL_APP_FD) {
 				inst_helper_ready(app, event.fd, event.ready);
 				continue;
 			}
+
+			/* Only this window's inputs are taken. */
 			if (event.kind != KL_APP_WINDOW || event.window != app->window)
 				continue;
 			main_event(app, &event.input);
@@ -453,13 +473,13 @@ main_frame(
 		if (status == 0)
 			return 0;
 
-		/* Anything but a stale swapchain is a failure. */
-		if (status != EAGAIN) {
-			fprintf(stderr, "INSTALLER FAILED operation=present error=%d\n", status);
-			return -1;
-		}
-
-		/* A stale swapchain is remade at the window's size. */
+		/*
+		 * A stale swapchain is remade at the window's size; so is one that
+		 * failed otherwise (a device that came back), for an installation
+		 * the window shows must not end with a frame that was not shown.
+		 */
+		if (status != EAGAIN)
+			inst_log("PRESENT error=%d attempt=%u", status, stale);
 		status = main_resize(app);
 		if (status != 0)
 			return -1;
@@ -475,10 +495,21 @@ static int
 main_resize(
 	struct inst_app *app)
 {
+	unsigned attempt;
 	int status;
 
-	/* The presenter at the window's size. */
+	/*
+	 * The presenter at the window's size; a device that refuses it for a
+	 * moment (EIO while the GPU is busy) is asked again a few times.
+	 */
 	status = kl_window_present_resize(app->window, &app->width, &app->height);
+	for (attempt = 1U; status != 0 && attempt < MAIN_RESIZE_TRIES; attempt++) {
+		inst_log("PRESENT resize error=%d attempt=%u", status, attempt);
+		(void)usleep(MAIN_RESIZE_WAIT_US);
+		status = kl_window_present_resize(app->window, &app->width, &app->height);
+	}
+
+	/* Gives up when the presenter never accepted the size. */
 	if (status != 0) {
 		fprintf(stderr, "INSTALLER FAILED operation=present error=%d\n", status);
 		return -1;
@@ -539,17 +570,25 @@ main_log_controls(
 	const struct inst_logged *control;
 	unsigned i;
 	int differs;
+	int same;
 
 	/* The same list on the same screen and dialog is not logged again. */
 	differs = 0;
-	if (!app->logged_once || app->logged_screen != app->screen || app->logged_dialog != app->dialog)
+	if (!app->logged_once)
+		differs = 1;
+	if (app->logged_screen != app->screen)
+		differs = 1;
+	if (app->logged_dialog != app->dialog)
 		differs = 1;
 	if (app->drawn_count != app->logged_count)
 		differs = 1;
 	for (i = 0; i < app->drawn_count && !differs; i++) {
-		if (memcmp(&app->drawn[i], &app->logged[i], sizeof(app->drawn[i])) != 0)
+		same = memcmp(&app->drawn[i], &app->logged[i], sizeof(app->drawn[i]));
+		if (same != 0)
 			differs = 1;
 	}
+
+	/* Nothing changed since the last log. */
 	if (!differs)
 		return;
 

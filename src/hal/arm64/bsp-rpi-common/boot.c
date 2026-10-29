@@ -153,6 +153,29 @@ rpi_boot_set_framebuffer(
 }
 
 /*
+ * Tells whether the range from base for size bytes lies wholly inside a
+ * range the device tree marks no-map.
+ */
+int
+rpi_boot_is_no_map(
+	uint64_t base,
+	uint64_t size)
+{
+	const struct rpi_fdt_range *range;
+	unsigned index;
+
+	/* Looks for a no-map range that holds the whole of it. */
+	for (index = 0; index < boot_info.no_map_count; index++) {
+		range = &boot_info.no_map[index];
+		if (base >= range->base && base - range->base + size <= range->size)
+			return 1;
+	}
+
+	/* No range holds it. */
+	return 0;
+}
+
+/*
  * Reports the device tree's record kept at boot.
  */
 const struct rpi_fdt_info *

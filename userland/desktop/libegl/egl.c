@@ -209,7 +209,7 @@ eglGetPlatformDisplayEXT(
 }
 
 /*
- * eglInitialize, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_initialize).
+ * eglInitialize, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (timed_initialize).
  */
 EGLBoolean EGLAPIENTRY
 eglInitialize(
@@ -542,7 +542,7 @@ eglCreatePlatformWindowSurfaceEXT(
 }
 
 /*
- * eglCreatePbufferSurface, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_create_pbuffer_surface).
+ * eglCreatePbufferSurface, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (timed_create_pbuffer_surface).
  */
 EGLSurface EGLAPIENTRY
 eglCreatePbufferSurface(
@@ -792,7 +792,7 @@ eglQueryAPI(void)
 }
 
 /*
- * eglCreateContext, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_create_context).
+ * eglCreateContext, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (timed_create_context).
  */
 EGLContext EGLAPIENTRY
 eglCreateContext(
@@ -901,7 +901,7 @@ eglDestroyContext(
 }
 
 /*
- * eglMakeCurrent, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (ws101-p016; timed_make_current).
+ * eglMakeCurrent, timed when ZEDBSD_GLES_COMPUTE_TRACE is 2 (timed_make_current).
  */
 EGLBoolean EGLAPIENTRY
 eglMakeCurrent(

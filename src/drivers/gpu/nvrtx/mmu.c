@@ -646,6 +646,34 @@ nvrtx_mmu_gr_entries_vram(
 }
 
 /*
+ * Writes the entries of a run of VRAM pages for a channel's own context
+ * buffers, one after another: each a valid, privileged VRAM page, read-only
+ * when asked, as nvrtx_mmu_gr_map() writes; entries is pages * 8 bytes long.
+ */
+void
+nvrtx_mmu_gr_entries_privileged(
+	uint8_t *entries,
+	uint64_t physical,
+	uint64_t pages,
+	int read_only)
+{
+	uint64_t flags;
+	uint64_t page;
+	uint64_t entry;
+
+	/* A privileged VRAM page, read-only when asked. */
+	flags = MMU_PTE_VALID | MMU_PTE_PRIVILEGED;
+	if (read_only)
+		flags |= MMU_PTE_READ_ONLY;
+
+	/* Writes each page's entry. */
+	for (page = 0U; page < pages; page++) {
+		entry = ((physical + page * NVRTX_GSP_PAGE_SIZE) >> MMU_ADDRESS_SHIFT) | flags;
+		nvrtx_put64(entries, (size_t)page * 8U, entry);
+	}
+}
+
+/*
  * Writes the entries of system-memory pages for work, one after another.
  *
  * Each entry is a valid, coherent, volatile system-memory page that is not

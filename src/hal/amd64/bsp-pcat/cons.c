@@ -451,7 +451,7 @@ quiet_boot(
  * Paints the progress panel at the top right (136x40, where the loader's
  * stages and the kernel's entry draw their blocks) over with the logo:
  * each column of the panel takes the colour just under it, so a picture
- * that covers the screen (the boot splash's sky, ws035-p107) goes on as
+ * that covers the screen (the boot splash's sky) goes on as
  * smoothly as a plain background does.
  */
 static void

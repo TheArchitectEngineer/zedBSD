@@ -21,7 +21,7 @@
  * dashboard is shown; the hero's picture is scaled once for its size.
  *
  * The hero card carries the mark and the system's name at its upper
- * right, as the boot screen does (ws035-p108); fm_mark_draw draws the mark
+ * right, as the boot screen does; fm_mark_draw draws the mark
  * for the empty folders too.
  */
 
@@ -676,7 +676,7 @@ home_hero_art(
 	far_hills[15] = height * 0.60f;
 	kl_canvas_polygon(&canvas, far_hills, 8, KL_RGB(0xc2d6ea));
 
-	/* The near hills, young green (the desktop's look, ws035-p108). */
+	/* The near hills, young green (the desktop's look). */
 	near_hills[0] = 0.0f;
 	near_hills[1] = height * 0.60f;
 	near_hills[2] = width * 0.20f;

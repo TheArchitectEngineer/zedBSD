@@ -24,6 +24,7 @@
 void rpi_boot_set_info(const struct rpi_fdt_info *info, uintptr_t fdt_phys);
 void rpi_boot_set_framebuffer(uint64_t phys, uint64_t size, uint32_t width, uint32_t height, uint32_t pitch, uint32_t format);
 const struct rpi_fdt_info *rpi_boot_info(void);
+int rpi_boot_is_no_map(uint64_t base, uint64_t size);
 uintptr_t rpi_boot_fdt_phys(void);
 const void *rpi_kernel_handoff(void);
 void prekern_bsp_cons_init(void);

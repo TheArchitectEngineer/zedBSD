@@ -153,6 +153,7 @@ about_hero(
 	int left;
 	int baseline;
 	int powered;
+	int differs;
 
 	/* The card, untitled. */
 	(void)se_card_begin(app, canvas, x, top, width, ABOUT_HERO_HEIGHT, NULL, NULL);
@@ -168,7 +169,10 @@ about_hero(
 	kl_text_metrics(app->text, ABOUT_TEXT_NAME, &name);
 	kl_text_metrics(app->text, ABOUT_TEXT_TAGLINE, &tagline);
 	left = x + 28 + (int)ABOUT_MARK + 24;
-	powered = strcmp(ZEDBSD_OS_NAME, ABOUT_KERNEL_NAME) != 0;
+	differs = strcmp(ZEDBSD_OS_NAME, ABOUT_KERNEL_NAME);
+	powered = 0;
+	if (differs != 0)
+		powered = 1;
 	if (powered)
 		baseline = top + (ABOUT_HERO_HEIGHT - name.height - 6 - tagline.height) / 2 + name.ascent;
 	else

@@ -678,7 +678,7 @@ compute_channel(
 	compute->channel_made = 1;
 
 	/* Hands it its context buffers: its own main and patch, the golden context's global ones. */
-	error = nvrtx_gr_promote(gpu, NVRTX_HANDLE_COMPUTE_CHANNEL, compute->physical, false);
+	error = nvrtx_gr_promote(gpu, NVRTX_HANDLE_COMPUTE_CHANNEL, compute->physical, NULL, false);
 	if (error != 0) {
 		kern_free(params);
 		return error;

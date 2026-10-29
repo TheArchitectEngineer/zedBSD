@@ -2,7 +2,7 @@
 
 # ws313-p001: 調べと設計
 
-Status: in-progress
+Status: in-progress（design-reviewer の指摘を反映、実機未試験）
 Queue: q1675-i01（P7）
 WS: [WS313](../ws.md)
 
@@ -56,3 +56,17 @@ ODROID-C5（Amlogic S905X5M）の起動の道・console・各 block の register
   GPU の事実（vendor の DTS）: Mali-G310 は arch 10・product 4 の CSF、register 0xfd000000（8 MiB、meson-s7d.dtsi が 0xfe400000 を上書き）、SPI 144/145/146、cache coherent でない、firmware は linux-firmware の `arm/mali/arch10.<minor>/mali_csffw.bin`（minor は GPU_ID で決まる、license は LICENCE.mali_csffw、未読）。
 - **注意**: `config/ci/config-odroid-c5-keiland.mk` は CONFIG_DRIVER_MALI_GPU=y だが `platform/arm64/mali.mk` が無いので、その config の build は今は通らない。text の config（`config-odroid-c5.mk`、MALI=n）は通る。
 - 消してほしい物に追加: `build/mali-check/`、`build/ref/mali-extract/`（配下 B の作業物）。
+
+## design-reviewer の 1 回（2026-10-29、q1675-i02）
+
+指摘と対処（実機では未確かめ）:
+- A1 早期の framebuffer（0x7f800000）が boot の page table（最初の 1 GiB と device の 1 GiB）の外で、HAL の framebuffer の初期化で止まる → C5 の `locore-board.h` に `arm64_board_boot_extra_ram`（2 GiB 目を Normal WB）を足し、locore.S から呼ぶ（Pi は空の macro）。host の試験に「framebuffer は boot の map の中」を足した。
+- A2 USB の電源の domain が off だと xHCI の読みで固まる → boot.cmd で `powershow`・`powerset 5 0`（USB）・`10 0`（SD）・`11 0`（Ethernet）。kernel の側の SMC は不要。
+- A3 bootloader の指定が変わっても image が作り直されない → 指定の記録を前提に足し、bootloader 無しは `ODROID_C5_NO_BOOTLOADER=y` の明示が無ければ失敗。A4 GPT の donor・空の区画は拒む（偽の donor で確かめた）。
+- B1〜B3 c5-serial.py の誤った PASS・最初の FAIL での打ち切り・timeout の scale → 出力の中身で判定、U-Boot の stage は欠けても先を待つ、timeout を scale に追従（pty の偽の board で確かめた）。
+- B4 cpus=1 を足す口が無い → boot.cmd の bootargs に `${zedbsd_extra_args}`。B5 `outputmode 1080p60hz` を明示。
+- B7 no-map の secure memory（0x05000000〜0x073fffff）が direct map に入る → FDT の no-map を記録し（`rpi_fdt_info.no_map`）、`space.c` が最初の 1 GiB の 2 MiB の block のうち no-map の中の物を map しない。
+- B8 USB の割り込みは既に edge（s905x5m-usb.c）。B9 OSD は alpha で blend する → display.c の flip は frame の角と中心が不透明な時だけ、他は copy（copy は alpha を 0xff にする）。
+- C1〜C7 記録の食い違い → design.md・ws.md・README を直した（GPU の address 0xfd000000、IRQ は SPI 番号、予約の名は linux,meson-fb、QEMU の virt は使えない、p010・p011 を表に）。
+- 未対処: Amlogic の blob の再配布の notice（取得先が未定なので）、U-Boot が silent の build か・EL2/EL1・CONFIG_LEGACY_IMAGE_FORMAT（実機で）。
+- build: C5 text・C5 keiland・rpi4・rpi5 の vmunix が warning 0、`odroid-c5-fdt-host-test` PASS、image（`ODROID_C5_NO_BOOTLOADER=y`）rc=0。

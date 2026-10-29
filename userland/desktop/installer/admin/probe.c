@@ -83,6 +83,7 @@ probe_scan_devices(
 	char path[KERN_BLOCK_NAME_MAX + 8U];
 	DIR *directory;
 	size_t length;
+	mode_t type;
 	int fd;
 	int error;
 
@@ -102,7 +103,10 @@ probe_scan_devices(
 			continue;
 		snprintf(path, sizeof(path), "/dev/%s", entry->d_name);
 		error = stat(path, &status);
-		if (error != 0 || !S_ISBLK(status.st_mode))
+		if (error != 0)
+			continue;
+		type = status.st_mode & S_IFMT;
+		if (type != S_IFBLK)
 			continue;
 
 		/* Its description, and its identity when it has one. */
@@ -118,8 +122,12 @@ probe_scan_devices(
 				device->has_identity = 1;
 			scan->count++;
 		}
+
+		/* Closes the device once it has been described. */
 		close(fd);
 	}
+
+	/* Closes the directory of the devices. */
 	closedir(directory);
 
 	/* How the running system uses them. */
@@ -254,6 +262,8 @@ probe_table_digest(
 			length = (int)sizeof(line) - 1;
 		(void)command_sha256_update(&context, (const uint8_t *)line, (size_t)length);
 	}
+
+	/* Finishes the digest. */
 	command_sha256_final(&context, digest);
 }
 
@@ -267,6 +277,7 @@ probe_report(
 {
 	struct probe_scan *scan;
 	unsigned i;
+	int failed;
 	int error;
 
 	/* The devices; the scan is too large for the stack. */
@@ -292,12 +303,15 @@ probe_report(
 			continue;
 		probe_report_disk(output, scan, &scan->device[i]);
 	}
+
+	/* Ends the records and releases the scan. */
 	fprintf(output, "end\n");
 	free(scan);
 
 	/* The output, whole. */
 	error = fflush(output);
-	if (error != 0 || ferror(output))
+	failed = ferror(output);
+	if (error != 0 || failed)
 		return EIO;
 
 	/* Succeeded: the records are written. */
@@ -337,6 +351,9 @@ probe_mark_mounts(
 	struct probe_device *device;
 	char source[KERN_MOUNT_INFO_PATH_MAX + 1U];
 	unsigned i;
+	int root_diff;
+	int boot_diff;
+	int opt_diff;
 	int fd;
 	int error;
 
@@ -354,6 +371,8 @@ probe_mark_mounts(
 		free(query);
 		return;
 	}
+
+	/* Takes the table and closes the device. */
 	error = ioctl(fd, KERN_SYSTEM_GET_MOUNTS, query);
 	close(fd);
 	if (error != 0) {
@@ -373,11 +392,14 @@ probe_mark_mounts(
 		device->mounted = 1;
 
 		/* The running system's own filesystems. */
-		if (strcmp(entry->target, "/") == 0 ||
-		    strncmp(entry->target, "/boot", 5U) == 0 ||
-		    strncmp(entry->target, "/opt", 4U) == 0)
+		root_diff = strcmp(entry->target, "/");
+		boot_diff = strncmp(entry->target, "/boot", 5U);
+		opt_diff = strncmp(entry->target, "/opt", 4U);
+		if (root_diff == 0 || boot_diff == 0 || opt_diff == 0)
 			probe_mark_live(scan, device);
 	}
+
+	/* Releases the table. */
 	free(query);
 }
 
@@ -390,6 +412,7 @@ probe_mark_swaps(
 	struct probe_device *device;
 	const char *name;
 	unsigned source;
+	int prefix;
 	int fd;
 	int error;
 
@@ -410,7 +433,8 @@ probe_mark_swaps(
 
 		/* A device's name, under /dev or bare; a file is on the root, live already. */
 		name = info.source;
-		if (strncmp(name, "/dev/", 5U) == 0)
+		prefix = strncmp(name, "/dev/", 5U);
+		if (prefix == 0)
 			name += 5;
 		device = probe_by_name(scan, name);
 		if (device == NULL)
@@ -418,6 +442,8 @@ probe_mark_swaps(
 		device->swap = 1;
 		probe_mark_live(scan, device);
 	}
+
+	/* Closes the system device. */
 	close(fd);
 }
 
@@ -438,6 +464,8 @@ probe_mark_firmware(
 	size_t length;
 	unsigned i;
 	int same;
+	int partuuid_diff;
+	int uuid_diff;
 	int error;
 
 	/* The selector, empty when no UEFI loader gave one. */
@@ -456,15 +484,19 @@ probe_mark_firmware(
 		if (!device->has_identity)
 			continue;
 		same = 1;
-		if (strncmp(selector, "PARTUUID=", 9U) == 0) {
+		partuuid_diff = strncmp(selector, "PARTUUID=", 9U);
+		uuid_diff = strncmp(selector, "UUID=", 5U);
+		if (partuuid_diff == 0) {
 			value = selector + 9;
 			if ((device->identity.flags & KERN_BLKID_PARTUUID) != 0U)
 				same = strcasecmp(device->identity.partuuid, value);
-		} else if (strncmp(selector, "UUID=", 5U) == 0) {
+		} else if (uuid_diff == 0) {
 			value = selector + 5;
 			if ((device->identity.flags & KERN_BLKID_UUID) != 0U)
 				same = strcasecmp(device->identity.uuid, value);
 		}
+
+		/* Marks the disk of the device the selector names. */
 		if (same == 0)
 			probe_mark_live(scan, device);
 	}
@@ -509,6 +541,8 @@ probe_mark_live(
 		if (scan->device[i].info.device == device->info.parent_device)
 			scan->device[i].live = 1;
 	}
+
+	/* The partition itself. */
 	device->live = 1;
 }
 
@@ -678,15 +712,24 @@ probe_report_disk(
 	const char *kind;
 	const char *format;
 	unsigned i;
+	const char *type_text;
+	const char *uuid_text;
+	const char *label_text;
+	unsigned restrictions;
+	unsigned entries;
 	int esp;
+	int esp_diff;
 	int fs_fat;
+	int vfat_diff;
+	int disk_diff;
 	int error;
 
 	/* The kind of disk, by what the kernel says of it. */
 	kind = "fixed";
 	if ((disk->info.flags & KERN_BLOCK_REMOVABLE) != 0U)
 		kind = "removable";
-	if (strncmp(disk->info.name, "nvme", 4U) == 0)
+	disk_diff = strncmp(disk->info.name, "nvme", 4U);
+	if (disk_diff == 0)
 		kind = "nvme";
 
 	/* Its table: GPT, MBR, or none the codec reads. */
@@ -700,6 +743,14 @@ probe_report_disk(
 	if (error == 0)
 		probe_table_digest(&table, digest);
 
+	/* The table's restrictions and entries, none for a disk without one. */
+	restrictions = 0U;
+	entries = 0U;
+	if (error == 0) {
+		restrictions = table.restrictions;
+		entries = table.count;
+	}
+
 	/* The disk's record. */
 	fprintf(
 		output,
@@ -712,8 +763,8 @@ probe_report_disk(
 		disk->info.flags,
 		disk->live,
 		format,
-		error == 0 ? table.restrictions : 0U,
-		error == 0 ? table.count : 0U);
+		restrictions,
+		entries);
 	for (i = 0; i < 32U; i++)
 		fprintf(output, "%02x", digest[i]);
 	fputc('\n', output);
@@ -734,27 +785,51 @@ probe_report_disk(
 			part->type,
 			part->uuid,
 			(unsigned long long)part->attributes);
+
+		/* The identity of the device, when it has one. */
+		type_text = NULL;
+		uuid_text = NULL;
+		label_text = NULL;
+		if (device != NULL && device->has_identity) {
+			type_text = device->identity.type;
+			uuid_text = device->identity.uuid;
+			label_text = device->identity.label;
+		}
+
+		/* The device the kernel maps there, or dashes for none. */
 		if (device == NULL) {
 			fprintf(output, "-\t-\t-\t0\t0\t");
 		} else {
 			fprintf(output, "%s\t", device->info.name);
-			probe_print_text(output, device->has_identity ? device->identity.type : NULL);
+			probe_print_text(output, type_text);
 			fputc('\t', output);
-			probe_print_text(output, device->has_identity ? device->identity.uuid : NULL);
+			probe_print_text(output, uuid_text);
 			fprintf(output, "\t%d\t%d\t", device->mounted, device->swap);
 		}
+
+		/* The partition's name and the file system's label. */
 		probe_print_text(output, part->name);
 		fputc('\t', output);
-		probe_print_text(output, device != NULL && device->has_identity ? device->identity.label : NULL);
+		probe_print_text(output, label_text);
 		fputc('\n', output);
 
 		/* A FAT, or an ESP whatever it holds, is looked into. */
-		esp = strcasecmp(part->type, KERN_GPT_TYPE_EFI_SYSTEM) == 0;
+		esp_diff = strcasecmp(part->type, KERN_GPT_TYPE_EFI_SYSTEM);
+		esp = 0;
+		if (esp_diff == 0)
+			esp = 1;
 		fs_fat = 0;
-		if (device != NULL && device->has_identity && strcmp(device->identity.type, "vfat") == 0)
-			fs_fat = 1;
+		if (device != NULL && device->has_identity) {
+			vfat_diff = strcmp(device->identity.type, "vfat");
+			if (vfat_diff == 0)
+				fs_fat = 1;
+		}
+
+		/* Skips what is neither a FAT nor an ESP. */
 		if (!esp && !fs_fat)
 			continue;
+
+		/* Looks into the FAT, or reports it unknown when no device is mapped. */
 		if (device == NULL) {
 			fat.free_bytes = 0;
 			fat.cfg = PROBE_UNKNOWN;
@@ -763,6 +838,8 @@ probe_report_disk(
 		} else {
 			probe_look_into_fat(device, &fat);
 		}
+
+		/* The FAT's record. */
 		fprintf(
 			output,
 			"fat\t%u\t%u\t%llu\t%s\t%s\t%s\n",
@@ -773,5 +850,7 @@ probe_report_disk(
 			probe_answer_text(fat.boot_loader),
 			probe_answer_text(fat.zedbsd_loader));
 	}
+
+	/* Releases the table. */
 	dp_free(&table);
 }

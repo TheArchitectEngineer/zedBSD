@@ -219,7 +219,7 @@ ifneq ($(CONFIG_DRIVER_PCI_I915),y)
 AMD64_NVRTX_SOURCES += src/drivers/gpu/i915/vk/vk-codec.c
 endif
 # P9w: the work channel the GPU device keeps (ws037-p007 stage D1, nvrtx.work=1).
-AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/work-records.c src/drivers/gpu/nvrtx/work.c
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/work-records.c src/drivers/gpu/nvrtx/work.c src/drivers/gpu/nvrtx/recover.c
 # P9p: the GPU's performance state, and its boost with nvrtx.boost=1 (ws241-p001).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/perf.c
 # P8c: the GPU device, its display (events, refresh, cursor) and blob sharing (ws037-p006, nvrtx.resident=1).

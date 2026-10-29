@@ -64,6 +64,14 @@ index_parse(
 	struct index_line *line;
 	size_t offset;
 	int seen_format;
+	int format_error;
+	int format_word;
+	int format_version;
+	int kind_unit;
+	int kind_boot;
+	int kind_setid;
+	int kind_license;
+	int kind_item;
 	int error;
 
 	/* A missing text or result. */
@@ -89,30 +97,43 @@ index_parse(
 
 		/* The format comes first and is the only one this reader knows. */
 		if (!seen_format) {
-			if (line->count != 2U ||
-			    strcmp(line->field[0], "format") != 0 ||
-			    strcmp(line->field[1], "1") != 0) {
+			/* A format line has two fields, "format" and the version 1. */
+			format_error = EINVAL;
+			if (line->count == 2U) {
+				format_word = strcmp(line->field[0], "format");
+				format_version = strcmp(line->field[1], "1");
+				if (format_word == 0 && format_version == 0)
+					format_error = 0;
+			}
+
+			/* Refuses an index of another format. */
+			if (format_error != 0) {
 				error = EINVAL;
 				break;
 			}
 
+			/* Remembers that the format has been read. */
 			seen_format = 1;
 			continue;
 		}
 
 		/* Each kind of record is read by its own reader or passed over. */
-		if (strcmp(line->field[0], "unit") == 0) {
+		kind_unit = strcmp(line->field[0], "unit");
+		kind_boot = strcmp(line->field[0], "boot");
+		kind_setid = strcmp(line->field[0], "setid");
+		kind_license = strcmp(line->field[0], "license");
+		kind_item = strcmp(line->field[0], "item");
+		if (kind_unit == 0) {
 			error = index_read_unit(line, index);
-		} else if (strcmp(line->field[0], "boot") == 0) {
+		} else if (kind_boot == 0) {
 			error = index_read_boot(line, index);
-		} else if (strcmp(line->field[0], "setid") == 0 ||
-			   strcmp(line->field[0], "license") == 0 ||
-			   strcmp(line->field[0], "item") == 0) {
+		} else if (kind_setid == 0 || kind_license == 0 || kind_item == 0) {
 			error = 0;
 		} else {
 			error = EINVAL;
 		}
 
+		/* Ends the pass on a record that is refused. */
 		if (error != 0)
 			break;
 	}
@@ -131,9 +152,13 @@ index_parse(
 			break;
 		if (line->count == 0U)
 			continue;
-		if (strcmp(line->field[0], "unit") == 0)
+
+		/* Names the dependencies of a unit, or the unit of a set-ID file. */
+		kind_unit = strcmp(line->field[0], "unit");
+		kind_setid = strcmp(line->field[0], "setid");
+		if (kind_unit == 0)
 			error = index_link_unit(line, index);
-		else if (strcmp(line->field[0], "setid") == 0)
+		else if (kind_setid == 0)
 			error = index_read_setid(line, index);
 	}
 
@@ -164,6 +189,7 @@ index_digest_matches(
 	struct command_sha256_context context;
 	uint8_t wanted[32];
 	uint8_t digest[32];
+	int difference;
 	int error;
 
 	/* The expected digest, read from its digits. */
@@ -179,7 +205,8 @@ index_digest_matches(
 	command_sha256_final(&context, digest);
 
 	/* Another digest is another index. */
-	if (memcmp(digest, wanted, sizeof(digest)) != 0)
+	difference = memcmp(digest, wanted, sizeof(digest));
+	if (difference != 0)
 		return EBADMSG;
 
 	/* Succeeded: the text is the index the helper was built with. */
@@ -194,10 +221,12 @@ index_find_unit(
 	unsigned *slot)
 {
 	unsigned i;
+	int difference;
 
 	/* Compares the name with each unit's. */
 	for (i = 0; i < index->unit_count; i++) {
-		if (strcmp(index->unit[i].name, name) == 0) {
+		difference = strcmp(index->unit[i].name, name);
+		if (difference == 0) {
 			*slot = i;
 			return 0;
 		}
@@ -224,6 +253,7 @@ index_closure(
 	unsigned i;
 	int error;
 
+	/* Marks every unit as not yet walked and the order as empty. */
 	memset(state, INDEX_UNSEEN, sizeof(state));
 	*order_count = 0;
 
@@ -254,13 +284,17 @@ index_setid_allowed(
 {
 	const struct index_setid *entry;
 	unsigned i;
+	int difference;
 
 	/* Looks for the record of exactly that file. */
 	for (i = 0; i < index->setid_count; i++) {
 		entry = &index->setid[i];
-		if (entry->unit == unit &&
-		    entry->mode == mode &&
-		    strcmp(entry->path, path) == 0)
+		if (entry->unit != unit)
+			continue;
+		if (entry->mode != mode)
+			continue;
+		difference = strcmp(entry->path, path);
+		if (difference == 0)
 			return 0;
 	}
 
@@ -277,10 +311,14 @@ index_hex_digest(
 	unsigned high;
 	unsigned low;
 	unsigned i;
+	size_t size;
 	int error;
 
 	/* Exactly 64 digits. */
-	if (text == NULL || strlen(text) != 64U)
+	if (text == NULL)
+		return EINVAL;
+	size = strlen(text);
+	if (size != 64U)
 		return EINVAL;
 
 	/* Two digits make each byte. */
@@ -313,6 +351,7 @@ index_next_line(
 	size_t start;
 	size_t end;
 	size_t size;
+	size_t actual;
 	char *cursor;
 
 	/* Nothing is left. */
@@ -332,7 +371,8 @@ index_next_line(
 		return EINVAL;
 	memcpy(line->text, text + start, size);
 	line->text[size] = '\0';
-	if (strlen(line->text) != size)
+	actual = strlen(line->text);
+	if (actual != size)
 		return EINVAL;
 
 	/* An empty line has no field. */
@@ -400,6 +440,7 @@ index_number(
 		text++;
 	}
 
+	/* Stores the count. */
 	*value = result;
 
 	/* Succeeded: the count is read. */
@@ -429,6 +470,7 @@ index_octal(
 		text++;
 	}
 
+	/* Stores the mode. */
 	*value = result;
 
 	/* Succeeded: the mode is read. */
@@ -446,10 +488,14 @@ index_hex_nibble(
 		*value = (unsigned)(character - '0');
 		return 0;
 	}
+
+	/* A lowercase letter. */
 	if (character >= 'a' && character <= 'f') {
 		*value = (unsigned)(character - 'a' + 10);
 		return 0;
 	}
+
+	/* An uppercase letter. */
 	if (character >= 'A' && character <= 'F') {
 		*value = (unsigned)(character - 'A' + 10);
 		return 0;
@@ -466,6 +512,7 @@ index_read_unit(
 	struct installer_index *index)
 {
 	struct index_unit *unit;
+	const char *slash;
 	unsigned slot;
 	int error;
 
@@ -501,7 +548,8 @@ index_read_unit(
 		return EINVAL;
 
 	/* A unit's name is a file name of /opt/installer/units. */
-	if (strchr(unit->name, '/') != NULL || unit->name[0] == '.')
+	slash = strchr(unit->name, '/');
+	if (slash != NULL || unit->name[0] == '.')
 		return EINVAL;
 	index->unit_count++;
 
@@ -516,6 +564,7 @@ index_read_boot(
 	struct installer_index *index)
 {
 	struct index_boot *boot;
+	const char *slash;
 	int error;
 
 	/* Five fields and room for one more boot file. */
@@ -535,7 +584,8 @@ index_read_boot(
 		return EINVAL;
 
 	/* A boot file's name is a file name of /opt/installer/boot. */
-	if (strchr(boot->name, '/') != NULL || boot->name[0] == '.')
+	slash = strchr(boot->name, '/');
+	if (slash != NULL || boot->name[0] == '.')
 		return EINVAL;
 	index->boot_count++;
 
@@ -554,6 +604,7 @@ index_link_unit(
 	unsigned slot;
 	char *name;
 	char *next;
+	int difference;
 	int error;
 
 	/* The unit the first pass kept under this name. */
@@ -563,7 +614,8 @@ index_link_unit(
 	unit = &index->unit[slot];
 
 	/* A unit without dependencies says "-". */
-	if (strcmp(line->field[9], "-") == 0)
+	difference = strcmp(line->field[9], "-");
+	if (difference == 0)
 		return 0;
 
 	/* Each name separated by a space is another unit of the index. */
@@ -644,6 +696,7 @@ index_visit(
 			return error;
 	}
 
+	/* Places the unit after its dependencies and marks it placed. */
 	order[(*order_count)++] = slot;
 	state[slot] = INDEX_DONE;
 

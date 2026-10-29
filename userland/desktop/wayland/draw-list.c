@@ -208,11 +208,11 @@ kwl_list_add_vertices(
 	list->vertex_used += bytes;
 }
 
-/* Appends a host image whose staging the frame copies into its sampled image first. */
+/* Appends a host image's copy from its staging into its sampled image, which the frame records first. */
 void
 kwl_list_add_copy(
 	struct kwl_list *list,
-	struct kwl_import *import)
+	const struct kwl_list_copy *copy)
 {
 	size_t capacity;
 	void *memory;
@@ -231,8 +231,8 @@ kwl_list_add_copy(
 	list->copies = memory;
 	list->copy_capacity = (unsigned)(capacity / sizeof(*list->copies));
 
-	/* The image after those before it. */
-	list->copies[list->copy_count] = import;
+	/* The copy after those before it. */
+	list->copies[list->copy_count] = *copy;
 	list->copy_count++;
 }
 

@@ -535,42 +535,6 @@ kwl_render_task(
 }
 
 /*
- * Waits at most wait_ms until the task numbered number (and every task
- * given before it) has completed on the GPU, before the main thread lets
- * go of what the task's commands name.  Its completion message still
- * comes through kwl_render_take.  Returns 0 when it has, ETIMEDOUT
- * otherwise.
- */
-int
-kwl_render_wait_task(
-	struct kwl_render_thread *render,
-	uint64_t number,
-	unsigned wait_ms)
-{
-	struct timespec deadline;
-	int error;
-
-	/* Until the thread posted its completion, or the deadline. */
-	render_deadline(&deadline, wait_ms);
-	error = 0;
-	pthread_mutex_lock(&render->lock);
-
-	while (render->task_done < number && error == 0)
-		error = pthread_cond_timedwait(&render->answered, &render->lock, &deadline);
-	if (render->task_done >= number)
-		error = 0;
-
-	pthread_mutex_unlock(&render->lock);
-
-	/* Not complete in time. */
-	if (error != 0)
-		return ETIMEDOUT;
-
-	/* Succeeded: the task's commands have run. */
-	return 0;
-}
-
-/*
  * Tells whether the render thread is recording, submitting or presenting a
  * job now: while it is, the main thread uses neither the frames' command
  * pool nor the queue.  Returns 1 while it is.
@@ -1062,10 +1026,6 @@ render_post(
 	/* The number of the last completion, for kwl_render_status. */
 	if (message->kind == KWL_RENDER_COMPLETED)
 		render->last_completed = message->number;
-
-	/* The last task complete, for kwl_render_wait_task (tasks are posted in their order). */
-	if (message->kind == KWL_RENDER_TASK_DONE)
-		render->task_done = message->number;
 
 	/* The main thread is woken once for a queue it has not taken yet. */
 	render->messages_tail = message;

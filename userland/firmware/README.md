@@ -19,7 +19,7 @@ driver is turned on, and drops it when no driver that is on needs it any more
 image is built.
 
 The entries are `rtl8822b/`, `intelax211/`, `intelbt/`, `i915/`, `brcmbt/`,
-`bcm43455/`, `nvidia-gsp/`, and `powervr/`; future
+`bcm43455/`, `nvidia-gsp/`, `powervr/`, and `mali-csf/`; future
 RTL8822C support owns a separate `rtl8822c/` entry. RTL8822B uses its frozen GitHub
 acquisition mirror. AX211 uses the official `linux-firmware` tag `20260410`
 dereferenced commit and installs the exact `-89.ucode`, PNVM, complete Intel

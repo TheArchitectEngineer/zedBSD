@@ -87,8 +87,11 @@ main(
 	char **argv)
 {
 	uid_t real;
+	uid_t effective;
 	int lock;
 	int probe;
+	int probe_order;
+	int session_order;
 	int error;
 
 	/* Descriptors 0 to 2 open, whatever the caller left. */
@@ -99,10 +102,16 @@ main(
 		fprintf(stderr, "usage: install-admin probe | session\n");
 		return ADMIN_EXIT_USAGE;
 	}
+
+	/* Compares the word with each request the helper knows. */
+	probe_order = strcmp(argv[1], "probe");
+	session_order = strcmp(argv[1], "session");
+
+	/* Selects a probe, or refuses a word that is neither request. */
 	probe = 0;
-	if (strcmp(argv[1], "probe") == 0) {
+	if (probe_order == 0) {
 		probe = 1;
-	} else if (strcmp(argv[1], "session") != 0) {
+	} else if (session_order != 0) {
 		fprintf(stderr, "usage: install-admin probe | session\n");
 		return ADMIN_EXIT_USAGE;
 	}
@@ -113,7 +122,8 @@ main(
 	openlog("install-admin", LOG_PID, LOG_AUTH);
 
 	/* Installed set-user-ID root, or it can do nothing. */
-	if (geteuid() != 0) {
+	effective = geteuid();
+	if (effective != 0) {
 		fprintf(stderr, "install-admin: not set-user-ID root\n");
 		return ADMIN_EXIT_FAILED;
 	}
@@ -148,6 +158,8 @@ main(
 		fflush(stdout);
 		return ADMIN_EXIT_BUSY;
 	}
+
+	/* Reports any other failure to take the lock. */
 	if (error != 0) {
 		fprintf(stdout, "FAIL lock %d %s\n", error, strerror(error));
 		fflush(stdout);
@@ -205,14 +217,17 @@ admin_caller_allowed(
 	char name[ADMIN_NAME_MAX + 2U];
 	struct passwd *account;
 	FILE *file;
+	char *line;
 	size_t length;
+	int in_wheel;
 
 	/* Root may. */
 	if (real == 0)
 		return 0;
 
 	/* Anyone else is in wheel. */
-	if (!admin_in_wheel())
+	in_wheel = admin_in_wheel();
+	if (!in_wheel)
 		return EPERM;
 
 	/* The image's own user, by the automatic login's first line. */
@@ -220,10 +235,13 @@ admin_caller_allowed(
 	if (file == NULL)
 		return EPERM;
 	memset(name, 0, sizeof(name));
-	if (fgets(name, (int)sizeof(name), file) == NULL) {
+	line = fgets(name, (int)sizeof(name), file);
+	if (line == NULL) {
 		fclose(file);
 		return EPERM;
 	}
+
+	/* Closes the file and takes the first word of the line as the name. */
 	fclose(file);
 	length = strcspn(name, "\r\n \t");
 	name[length] = '\0';
@@ -244,11 +262,15 @@ static int
 admin_in_wheel(void)
 {
 	gid_t groups[64];
+	gid_t real_group;
+	gid_t effective_group;
 	int count;
 	int i;
 
 	/* The primary group. */
-	if (getgid() == 0 || getegid() == 0)
+	real_group = getgid();
+	effective_group = getegid();
+	if (real_group == 0 || effective_group == 0)
 		return 1;
 
 	/* The supplementary groups. */
@@ -290,6 +312,8 @@ admin_index_read(void)
 		if (length == sizeof(admin_index_text))
 			break;
 	}
+
+	/* Keeps the read's failure and closes the file. */
 	error = 0;
 	if (count < 0)
 		error = errno;
@@ -365,6 +389,7 @@ admin_directory(
 	const char *path)
 {
 	struct stat status;
+	mode_t type;
 	int error;
 
 	/* Made, or already there. */
@@ -376,7 +401,8 @@ admin_directory(
 	error = lstat(path, &status);
 	if (error != 0)
 		return errno;
-	if (!S_ISDIR(status.st_mode) || status.st_uid != 0 || (status.st_mode & 07777) != 0700)
+	type = status.st_mode & S_IFMT;
+	if (type != S_IFDIR || status.st_uid != 0 || (status.st_mode & 07777) != 0700)
 		return EPERM;
 
 	/* Succeeded: the directory is the helper's. */
@@ -463,11 +489,15 @@ admin_session(void)
 				error = 0;
 				break;
 			}
+
+			/* Keeps the bytes that arrived and reads the request again. */
 			used += (size_t)count;
 			continue;
 		}
+
+		/* A request that cannot be read ends the session. */
 		if (error != 0) {
-			/* A request that cannot be read ends the session; what follows it cannot be trusted. */
+			/* What follows a request that cannot be read cannot be trusted. */
 			syslog(LOG_NOTICE, "session ended by a request not understood (%d)", error);
 			fprintf(stdout, "FAIL request %d request not understood\n", error);
 			fflush(stdout);
@@ -496,6 +526,8 @@ admin_session(void)
 		} else {
 			error = session_edit(&session, request);
 		}
+
+		/* Forgets the request and sends what was written. */
 		plan_request_forget(request);
 		fflush(stdout);
 	}

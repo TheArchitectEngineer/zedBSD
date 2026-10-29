@@ -473,6 +473,7 @@ dp_modify(
 {
 	uint8_t previous[128];
 	uint8_t *entry;
+	int unused;
 	int error;
 
 	/* Refuses a table the editor may not change and a slot past its end. */
@@ -485,7 +486,8 @@ dp_modify(
 
 	/* Refuses an unused slot, which has nothing to change. */
 	entry = t->edited + (size_t)(slot - 1) * 128U;
-	if (zero(entry, 16))
+	unused = zero(entry, 16);
+	if (unused)
 		return ENOENT;
 
 	/* Keeps the entry so that a refused change can be taken back. */

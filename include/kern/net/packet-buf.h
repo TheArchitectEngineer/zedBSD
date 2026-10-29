@@ -36,10 +36,17 @@
  * slow peers together take no more than the rest, and the frames that
  * arrive, the receive queues and the packets that only pass through
  * (acknowledgements, datagrams, resends) still find one.
+ * CONFIG_PACKET_BUF_POOL_COUNT (an unsigned literal) sets another count of
+ * standard packets on the 64-bit machines, for a build that holds two
+ * hosts' packets in one pool.
  */
 #if defined(HAL_ARCH_AMD64) || defined(HAL_ARCH_ARM64) || \
     defined(HAL_ARCH_RISCV64)
+#if defined(CONFIG_PACKET_BUF_POOL_COUNT)
+#define PACKET_BUF_POOL_COUNT		CONFIG_PACKET_BUF_POOL_COUNT
+#else
 #define PACKET_BUF_POOL_COUNT		1024U
+#endif
 #define PACKET_BUF_JUMBO_STORAGE_SIZE	9216U
 #define PACKET_BUF_JUMBO_COUNT		32U
 #define PACKET_BUF_JUMBO_RESERVE	8U

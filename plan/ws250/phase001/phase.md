@@ -2,7 +2,7 @@
 
 # ws250-p001: nvrtx の取り消しと復帰の設計
 
-Status: in-progress（2026-10-15、q1206 P4。design.md を書き、design-reviewer の review を受けている）
+Status: cleared（2026-10-29 P5、q1676-i01。design.md 第 6 版、design-reviewer 1 回（design-review-v5.md、blocker 2・major 7・minor 12）の指摘を第 6 版で直した。第 6 版の直しは再 review を受けていない）
 Parent: [WS250](../ws.md)
 Approval: 2026-10-15 ユーザー「その場合のキャンセルと復帰を実装した方がよくない？device lostでプログラムがそれ以上動けなくなるのはOK。でもシステムとしては動き続けてほしいな。」
 
@@ -17,3 +17,11 @@ ws.md の「目的と完了の条件」を満たす設計（code は書かない
 - 読んだ公開の source（他の worktree の `plan/ws037/temp/` と、この WS の `plan/ws250/temp/ogkm-src/`（commit しない）: design.md 10 節の一覧）。
 - 未確認（実機でしか決まらない、design.md 9 節）: STOP_CHANNEL が user の channel の無限 loop を止めるか、RESET_CHANNEL が同じ runlist の他の channel を壊さないか、chid 16〜 の USERD の page の割り当て、golden context と違う VA の own buffer の promote、GSP の firmware が自分で RC を送るか（と何秒か）。
 - design-reviewer: [design-review.md](../design-review.md)（結果はこの節に追記）。
+
+## 2026-10-29 P5（q1676-i01）
+
+- design.md を第 5 版で一本に書き直した（WS291 p011 の非同期の submit の上に作る形、commit 6c8609bee）。design-reviewer の第 5 版の review は
+  [design-review-v5.md](../design-review-v5.md)。指摘は全部第 6 版で直した（design.md 12 節の表）。Phase の表は design.md 7 節（ws.md に写した）。
+- 判断の記録（推しで進めた、Q1 に連絡済み）: session ごとの worker（Q250-5）は非同期の submit の後は効き目が「詰まった session の CPU の側の待ちが
+  他を止めない」に縮む（GR は WFI なので取り消しまでの約 2 s は他の channel も GR に載らない）。ユーザーの決定どおり必須のまま。
+  試験の app は既存の vkhang（plan/ws039/tests）と measure.sh hang を使う。
