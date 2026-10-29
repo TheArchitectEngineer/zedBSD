@@ -296,7 +296,8 @@ mali_sched_run(
 
 	/*
 	 * A failed submission that ran the executor's own programs (a scaled
-	 * blit, a clear inside a pass) stops the node from using them: that
+	 * blit, a clear inside a pass, a copy or a clear of one aspect of a
+	 * depth and stencil image) stops the node from using them: that
 	 * work is left out again, as without them, rather than risk the fault
 	 * again.
 	 */
@@ -307,7 +308,7 @@ mali_sched_run(
 
 		spin_unlock_irqrestore(&render->guard, enabled);
 
-		kern_logf("mali: render: submission %u ran the executor's own programs (%x); later blits and clears that need them are not run\n", render->submissions, (unsigned)meta);
+		kern_logf("mali: render: submission %u ran the executor's own programs (%x); later work that needs them (blits, clears, copies of one aspect) is not run\n", render->submissions, (unsigned)meta);
 	}
 
 	/* A lost session's core is told; it stops the session. */
