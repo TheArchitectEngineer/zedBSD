@@ -476,6 +476,7 @@ clipboard_write_step(
 	struct clipboard_write *write_job)
 {
 	ssize_t count;
+	uint64_t now;
 
 	/* As much as the descriptor takes now. */
 	while (write_job->written < write_job->length) {
@@ -487,7 +488,8 @@ clipboard_write_step(
 
 		/* Full for now: another pass, unless it has taken too long. */
 		if (count < 0 && (errno == EAGAIN || errno == EINTR)) {
-			if (kwl_milliseconds() - write_job->started > CLIPBOARD_WRITE_MS)
+			now = kwl_milliseconds();
+			if (now - write_job->started > CLIPBOARD_WRITE_MS)
 				break;
 			return;
 		}

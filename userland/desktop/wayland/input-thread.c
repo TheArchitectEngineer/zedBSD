@@ -345,7 +345,8 @@ kwl_input_thread_attach(
 
 /*
  * Asks the input thread to stop reading a device, and gives the sequence
- * number its acknowledgement will carry (kwl_input_thread_detach_wait).
+ * number its acknowledgement will carry (kwl_input_thread_acked,
+ * kwl_input_thread_detach_wait).
  */
 int
 kwl_input_thread_detach(
@@ -432,6 +433,27 @@ kwl_input_thread_detach_wait(
 
 	/* Succeeded: the descriptor is the main thread's alone. */
 	return 0;
+}
+
+/*
+ * Gives the last detach the input thread has acknowledged: every
+ * descriptor detached up to it is no longer polled or read.
+ */
+uint64_t
+kwl_input_thread_acked(
+	struct kwl_input_thread *input)
+{
+	uint64_t acked;
+
+	/* The number the acknowledgements left. */
+	pthread_mutex_lock(&input->input_lock);
+
+	acked = input->acked_sequence;
+
+	pthread_mutex_unlock(&input->input_lock);
+
+	/* Succeeded: the last acknowledged. */
+	return acked;
 }
 
 /*
@@ -696,6 +718,9 @@ input_detach_reader(
 	pthread_cond_broadcast(&input->acknowledged);
 
 	pthread_mutex_unlock(&input->input_lock);
+
+	/* The main thread, which may owe the seat an answer after it, looks. */
+	input_wake(input->wake_main);
 }
 
 /*

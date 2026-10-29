@@ -97,6 +97,7 @@ static void apply_touchpad_actions(struct kwl_server *server, const struct kwl_i
 static void lock_pad_gesture(struct kwl_server *server, const struct kwl_touchpad_action *action);
 static void input_attach(struct kwl_server *server, struct kwl_input_device *device);
 static void input_detach(struct kwl_server *server, struct kwl_input_device *device);
+static int input_answer_later(struct kwl_server *server, struct kwl_input_device *device);
 static void input_detach_failed(const char *site, const struct kwl_server *server, const struct kwl_input_device *device, unsigned count, uint64_t sequence, uint64_t asked_ms, int error);
 static const char *input_kind_name(const struct kwl_input_device *device);
 static const char *input_reason_name(enum kwl_input_detach_reason reason);
@@ -291,6 +292,7 @@ kwl_input_attach(
 	/* The slot now describes this node. */
 	memset(device, 0, sizeof(*device));
 	device->fd = descriptor;
+	device->seat_fd = descriptor;
 	device->pointer = pointer;
 	device->keyboard = keyboard;
 	snprintf(device->path, sizeof(device->path), "%s", path);
@@ -328,30 +330,38 @@ kwl_input_attach(
 }
 
 /*
- * Forgets one device whose descriptor the seat closes after this returns
- * (libkeiland-backend's input_gone, ws131-p006): the input thread lets go
- * of the descriptor first, and the record goes once the device's last
- * event is applied (a touch pad's release of its buttons among them).
+ * Forgets one device whose descriptor the seat closes (libkeiland-backend's
+ * input_gone, ws131-p006): the input thread lets go of the descriptor, and
+ * the record goes once the device's last event is applied (a touch pad's
+ * release of its buttons among them).  Returns 1 when the seat is to wait
+ * for kwl_input_answer's answer before it closes the descriptor.
  */
-void
+int
 kwl_input_forget(
 	struct kwl_server *server,
 	struct kwl_input_device *device)
 {
-	/* A slot not in use, or one already going, has nothing to forget. */
-	if (!device->live || device->closing)
-		return;
+	int later;
 
-	/* A device the input thread does not read goes now. */
-	if (!device->attached) {
+	/* A slot not in use has nothing to forget. */
+	if (!device->live)
+		return 0;
+
+	/* The input thread lets go, unless it has; one going already only answers. */
+	later = input_answer_later(server, device);
+	if (device->closing)
+		return later;
+
+	/* A device the input thread no longer reads goes now. */
+	if (!later) {
 		input_retire(server, device);
-		return;
+		return 0;
 	}
 
-	/* The input thread lets go; its last event of the device retires the record. */
-	input_detach(server, device);
+	/* The input thread's last event of it retires the record. */
 	device->closing = 1U;
 	device->fd = -1;
+	return 1;
 }
 
 /*
@@ -475,6 +485,9 @@ kwl_input_threads_start(
 		kwl_input_thread_destroy(&server->input_thread);
 		return error;
 	}
+
+	/* No answer is owed the seat yet. */
+	kwl_seat_answers_init(&server->seat_answers);
 
 	/* Succeeded: the devices opened from now on are read by the input thread. */
 	server->input_thread_ready = 1U;
@@ -625,79 +638,74 @@ kwl_input_rotated(
 /*
  * Stops reading one input the seat paused (libkeiland-backend's
  * input_paused); its descriptor stays the seat's, and its record stays for
- * the resume.
+ * the resume.  Returns 1 when the seat is to wait for kwl_input_answer's
+ * answer.
  */
-void
+int
 kwl_input_pause(
 	struct kwl_server *server,
 	struct kwl_input_device *device)
 {
+	int later;
+
 	/* The input thread lets go before the seat revokes the descriptor. */
-	input_detach(server, device);
+	later = input_answer_later(server, device);
 	device->fd = -1;
+	return later;
 }
 
 /*
  * Reads one input again on the new descriptor the seat gave
  * (libkeiland-backend's input_resumed); a report of the old one does not
- * enter it.
+ * enter it.  Returns 1 when the seat is to wait for kwl_input_answer's
+ * answer before it closes the old one.
  */
-void
+int
 kwl_input_resume(
 	struct kwl_server *server,
 	struct kwl_input_device *device,
 	int descriptor)
 {
+	int later;
+
 	/* The old descriptor, should the input thread still read it, is let go first. */
-	input_detach(server, device);
+	later = input_answer_later(server, device);
 
 	/* The new one, read afresh. */
 	device->fd = descriptor;
+	device->seat_fd = descriptor;
 	input_attach(server, device);
+	return later;
 }
 
 /*
- * Stops reading every input (the seat paused the session): the detaches
- * are all asked first, then the last one's acknowledgement is waited for,
- * which comes after every earlier one.
+ * Stops reading every input (the seat paused the session): each attached
+ * device's detach is asked without waiting.  Returns the last one's
+ * number, whose acknowledgement comes after every earlier one (0 when none
+ * was asked).
  */
-void
+uint64_t
 kwl_input_detach_all(
 	struct kwl_server *server)
 {
-	uint64_t sequence;
 	uint64_t last;
-	uint64_t asked_ms;
 	unsigned index;
-	unsigned count;
-	int error;
 
 	/* Nothing runs before the thread starts. */
 	if (!server->input_thread_ready)
-		return;
+		return 0U;
 
-	/* Each attached device's detach, from when they were asked (the failure's line says how long it waited). */
+	/* Each attached device's detach. */
 	last = 0U;
-	count = 0U;
-	asked_ms = kwl_milliseconds();
 	for (index = 0; index < KWL_INPUT_MAX; index++) {
 		if (!server->inputs[index].attached)
 			continue;
-		error = kwl_input_thread_detach(&server->input_thread, index, &sequence);
-		if (error != 0)
-			input_detach_failed("input-detach-all", server, &server->inputs[index], 1U, 0U, asked_ms, error);
-		last = sequence;
-		count++;
+		input_detach(server, &server->inputs[index]);
+		last = server->inputs[index].detach_sequence;
 	}
 
-	/* The last acknowledgement covers them all. */
-	if (last == 0U)
-		return;
-	error = kwl_input_thread_detach_wait(&server->input_thread, last, KWL_INPUT_DETACH_WAIT_MS);
-	if (error != 0)
-		input_detach_failed("input-detach-all", server, NULL, count, last, asked_ms, error);
-	for (index = 0; index < KWL_INPUT_MAX; index++)
-		server->inputs[index].attached = 0U;
+	/* Succeeded: the last asked. */
+	return last;
 }
 
 /*
@@ -718,6 +726,70 @@ kwl_input_attach_all(
 			continue;
 		input_attach(server, device);
 	}
+}
+
+/*
+ * Answers the seat (kl_backend_seat_device_let_go) for every descriptor
+ * whose detach the input thread has acknowledged since the last pass, in
+ * the order its callbacks came; and ends the compositor when an
+ * acknowledgement has been awaited past KWL_INPUT_DETACH_WAIT_MS (the
+ * input thread does not let go of a descriptor that may become another
+ * file's).  Called once a pass, after kwl_input_drain.
+ */
+void
+kwl_input_answer(
+	struct kwl_server *server)
+{
+	uint64_t acked;
+	uint64_t now;
+	uint64_t waited;
+	int descriptor;
+	int late;
+	int due;
+
+	/* Nothing is asked before the thread starts. */
+	if (!server->input_thread_ready)
+		return;
+
+	/* What the input thread has acknowledged. */
+	now = kwl_milliseconds();
+	acked = kwl_input_thread_acked(&server->input_thread);
+	kwl_seat_answers_heard(&server->seat_answers, acked, now);
+
+	/* Each answer due, oldest first. */
+	for (;;) {
+		due = kwl_seat_answers_next(&server->seat_answers, &descriptor);
+		if (!due)
+			break;
+		kl_backend_seat_device_let_go(server->backend, descriptor);
+	}
+
+	/* An input thread that does not answer leaves nothing safe. */
+	late = kwl_seat_answers_late(&server->seat_answers, now, KWL_INPUT_DETACH_WAIT_MS, &waited);
+	if (late)
+		input_detach_failed("input-detach", server, NULL, server->seat_answers.count, server->seat_answers.asked, now - waited, ETIMEDOUT);
+}
+
+/*
+ * Tells whether the input thread has acknowledged the detach numbered
+ * sequence and every one before it (as kwl_input_answer last looked).
+ */
+int
+kwl_input_detached_through(
+	struct kwl_server *server,
+	uint64_t sequence)
+{
+	int pending;
+
+	/* Without the thread nothing reads. */
+	if (!server->input_thread_ready)
+		return 1;
+
+	/* Acknowledged, or not yet. */
+	pending = kwl_seat_answers_pending(&server->seat_answers, sequence);
+	if (pending)
+		return 0;
+	return 1;
 }
 
 /*
@@ -1071,6 +1143,7 @@ attach_touchpad(
 	/* The slot describes this node: a pointer moved by its touch pad layer. */
 	memset(device, 0, sizeof(*device));
 	device->fd = descriptor;
+	device->seat_fd = descriptor;
 	device->pointer = 1;
 	device->touchpad = 1;
 	snprintf(device->path, sizeof(device->path), "%s", path);
@@ -1258,6 +1331,7 @@ attach_tablet(
 	/* The slot now describes this node; it is neither a pointer nor a keyboard of its own. */
 	memset(device, 0, sizeof(*device));
 	device->fd = descriptor;
+	device->seat_fd = descriptor;
 	device->tablet = 1;
 	device->direct = direct;
 	snprintf(device->path, sizeof(device->path), "%s", path);
@@ -1318,6 +1392,7 @@ attach_touch(
 	/* The slot now describes this node; it is neither a pointer nor a keyboard of its own. */
 	memset(device, 0, sizeof(*device));
 	device->fd = descriptor;
+	device->seat_fd = descriptor;
 	device->touch = 1;
 	device->direct = 1U;
 	snprintf(device->path, sizeof(device->path), "%s", path);
@@ -1557,9 +1632,13 @@ apply_detached(
 {
 	int retained;
 
-	/* The main thread asked: a forgotten device's record goes, a paused one stays. */
+	/*
+	 * The main thread asked: a forgotten device's record goes once its
+	 * last detach is acknowledged (an earlier one's event may come first,
+	 * of a pause before a resume), a paused one stays.
+	 */
 	if (detached->reason == KWL_INPUT_DETACH_ASKED) {
-		if (device->closing)
+		if (device->closing && detached->sequence >= device->detach_sequence)
 			input_retire(server, device);
 		return;
 	}
@@ -1761,10 +1840,11 @@ input_attach(
 }
 
 /*
- * Takes a device's descriptor back from the input thread: returns once the
- * input thread no longer polls or reads it.  The compositor ends if the
- * input thread does not answer in time, as a descriptor number it might
- * still read could be another file's after a close (design 6.1 N-1).
+ * Asks the input thread to stop reading a device, without waiting: its
+ * acknowledgement comes after the device's last event (apply_detached),
+ * and the detach's number is kept for the answers it makes due.  The
+ * compositor ends if the input thread cannot be asked, as a descriptor
+ * number it might still read could be another file's after a close.
  */
 static void
 input_detach(
@@ -1782,14 +1862,59 @@ input_detach(
 	if (!server->input_thread_ready)
 		return;
 
-	/* The detach, and its acknowledgement after the device's last event (the failure's line says how long it waited). */
+	/* The detach, numbered (the failure's line says when it was asked). */
 	asked_ms = kwl_milliseconds();
 	error = kwl_input_thread_detach(&server->input_thread, (unsigned)(device - server->inputs), &sequence);
 	if (error != 0)
 		input_detach_failed("input-detach", server, device, 1U, 0U, asked_ms, error);
-	error = kwl_input_thread_detach_wait(&server->input_thread, sequence, KWL_INPUT_DETACH_WAIT_MS);
+
+	/* Its acknowledgement is awaited from now (kwl_input_answer). */
+	device->detach_sequence = sequence;
+	kwl_seat_answers_asked(&server->seat_answers, sequence, asked_ms);
+}
+
+/*
+ * Lets the input thread go of the device's descriptor the seat gave
+ * (seat_fd) for a callback of the seat, and tells whether the seat is to
+ * wait for the answer (1: kwl_input_answer calls
+ * kl_backend_seat_device_let_go once the detach is acknowledged) or may
+ * go on now (0: nothing reads it).  Without room for the answer the
+ * acknowledgement is waited for here.
+ */
+static int
+input_answer_later(
+	struct kwl_server *server,
+	struct kwl_input_device *device)
+{
+	uint64_t asked_ms;
+	int pending;
+	int error;
+
+	/* The input thread stops reading it, if it does. */
+	input_detach(server, device);
+
+	/* Without a descriptor of the seat's, or without the thread, nothing reads it. */
+	if (device->seat_fd < 0 || !server->input_thread_ready)
+		return 0;
+
+	/* A detach acknowledged already (as last looked) leaves nothing to wait for. */
+	pending = kwl_seat_answers_pending(&server->seat_answers, device->detach_sequence);
+	if (!pending)
+		return 0;
+
+	/* The answer owed, after every one before it. */
+	error = kwl_seat_answers_add(&server->seat_answers, device->detach_sequence, device->seat_fd);
+	if (error == 0)
+		return 1;
+
+	/* No room: the acknowledgement here, within the limit (the failure's line says how long it waited). */
+	asked_ms = kwl_milliseconds();
+	error = kwl_input_thread_detach_wait(&server->input_thread, device->detach_sequence, KWL_INPUT_DETACH_WAIT_MS);
 	if (error != 0)
-		input_detach_failed("input-detach", server, device, 1U, sequence, asked_ms, error);
+		input_detach_failed("input-answer", server, device, 1U, device->detach_sequence, asked_ms, error);
+
+	/* Succeeded: the seat may go on now. */
+	return 0;
 }
 
 /*

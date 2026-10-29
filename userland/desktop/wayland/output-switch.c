@@ -289,7 +289,7 @@ output_listed(
 
 	/*
 	 * An anchor turned off by the user gives the desktop to a display on
-	 * (ws113-p014; the heads follow the output's opening, heads_stale), else
+	 * (the heads follow the output's opening, heads_stale), else
 	 * the heads are brought in line.
 	 */
 	moving = kwl_displays_anchor_follow_later(server);
@@ -359,8 +359,8 @@ kwl_output_switch(
  * limited and the output goes back to the display it had, then the next is
  * tried.  An output closed (its display gone, and no other taken) is opened
  * on the display.  clear_kept (NULL for none) says for each display that
- * nothing is kept off from its try on (the machine's own display again,
- * ws113-p004b).  then(server, error, context) is called at the end with 0
+ * nothing is kept off from its try on (the machine's own display
+ * again).  then(server, error, context) is called at the end with 0
  * (a display took the output, or shows it already), ENXIO (the last was not
  * connected) or EAGAIN (the last refused it).  Returns 0 when the move
  * began, ENODEV before window mode, EINVAL without a display, ENOMEM, or
@@ -379,6 +379,7 @@ kwl_output_move(
 	struct kwl_compose *compose;
 	struct output_move *move;
 	unsigned index;
+	int busy;
 	int error;
 
 	/* Only window mode's output moves, to some display. */
@@ -387,7 +388,8 @@ kwl_output_move(
 		return ENODEV;
 	if (count == 0U)
 		return EINVAL;
-	if (kwl_display_busy(server))
+	busy = kwl_display_busy(server);
+	if (busy)
 		return EBUSY;
 
 	/* The displays to try, in their order. */
@@ -401,6 +403,8 @@ kwl_output_move(
 		if (clear_kept != NULL)
 			move->clear_kept[index] = clear_kept[index];
 	}
+
+	/* Records how many displays are tried, who is told the end, and the error if none is connected. */
 	move->count = count;
 	move->then = then;
 	move->context = context;
@@ -467,7 +471,7 @@ output_move_try(
 
 		/*
 		 * What the output had, to go back to: the display, its mode and
-		 * refresh (the angles it showed are compose->opened, WS217).
+		 * refresh (the angles it showed are compose->opened).
 		 */
 		move->old_display = compose->display;
 		move->old_mode_width = compose->mode_width;
@@ -492,7 +496,7 @@ output_move_try(
 /*
  * A move's try, the output closed: the other display, at its native size
  * (unrotated until the output's opening chooses the angle displays.conf
- * keeps for its key, kwl_compose_output_prepare, WS217), is opened.
+ * keeps for its key, kwl_compose_output_prepare), is opened.
  */
 static void
 output_move_closed(
@@ -550,7 +554,7 @@ output_move_opened(
 		return;
 	}
 
-	/* The desktop follows what the output shows now against what it showed when it last opened (review-4 C7). */
+	/* The desktop follows what the output shows now against what it showed when it last opened. */
 	started = kwl_milliseconds();
 	(void)kwl_output_rotated(server);
 	printf("KWL DISPLAY step=fit ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
@@ -907,7 +911,7 @@ kwl_output_external_available(
 /*
  * Moves the output to the first external display that takes it, in a
  * change of the display while the passes go on; the machine's own display
- * left (under the closed lid) is kept off, no head for it (ws113-p004b),
+ * left (under the closed lid) is kept off, no head for it,
  * unless no display takes the output.  then(server, error, context) is
  * called at the end with 0 or the last try's error.  Returns 0 when the
  * move began, ENODEV without the hotplug's list, ENOENT when no external
@@ -946,6 +950,8 @@ kwl_output_use_external(
 		candidates[count] = compose->displays[index];
 		count++;
 	}
+
+	/* Refuses when no external display is left to try. */
 	if (count == 0U)
 		return ENOENT;
 
@@ -1024,7 +1030,7 @@ kwl_output_display_internal(
 /*
  * Moves the output back to the machine's own display, in a change of the
  * display while the passes go on; nothing is kept off from now on: the
- * external display becomes a head again (ws113-p004b).  then(server,
+ * external display becomes a head again.  then(server,
  * error, context) is called at the end (0 also when it shows it already).
  * Returns 0 when the move began, ENODEV without the hotplug's list, ENOENT
  * when it is not connected, or kwl_output_move's error.
@@ -1039,6 +1045,7 @@ kwl_output_use_internal(
 	VkDisplayKHR target;
 	unsigned index;
 	int internal;
+	int error;
 
 	/* Without the hotplug there is no list. */
 	compose = server->compose;
@@ -1059,7 +1066,14 @@ kwl_output_use_internal(
 	/* The move. */
 	compose->kept_off = VK_NULL_HANDLE;
 	target = compose->displays[index];
-	return kwl_output_move(server, &target, NULL, 1U, then, context);
+	error = kwl_output_move(server, &target, NULL, 1U, then, context);
+
+	/* Reports why the move could not begin. */
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the move began. */
+	return 0;
 }
 
 /*
@@ -1224,7 +1238,7 @@ output_recover_listed(
 /*
  * Moves the output from a lost display to the display it had when it is
  * still connected and its move did not fail, else to the machine's own
- * display (nothing kept off from then on, ws113-p004b), else to any other
+ * display (nothing kept off from then on), else to any other
  * connected one.  Without one, the output waits for the next hotplug.
  */
 static void

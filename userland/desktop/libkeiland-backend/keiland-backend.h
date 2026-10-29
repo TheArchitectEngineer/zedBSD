@@ -65,9 +65,9 @@ struct kl_backend_host {
 	void (*session_answer)(void *data, unsigned request, int error);
 	void (*session_paused)(void *data);
 	void (*session_resumed)(void *data);
-	void (*input_paused)(void *data, const char *path);
-	void (*input_resumed)(void *data, const char *path, int descriptor);
-	void (*input_gone)(void *data, const char *path);
+	int (*input_paused)(void *data, const char *path);
+	int (*input_resumed)(void *data, const char *path, int descriptor);
+	int (*input_gone)(void *data, const char *path);
 	int (*input_known)(void *data, const char *path);
 	int (*input_found)(void *data, int descriptor, const char *path, const struct kl_backend_input_caps *caps);
 	void (*input_changed)(void *data);
@@ -2106,15 +2106,27 @@ int kl_backend_session_managed(const struct kl_backend *backend);
  * switch) and give them back later.
  *
  * The callbacks come from kl_backend_poll_done:
- *   session_paused    stop drawing and close the output now; the seat is
- *                     told the compositor has let go when it returns
+ *   session_paused    stop drawing, close the output and stop reading
+ *                     every input; the compositor calls
+ *                     kl_backend_seat_paused_done once it has, from its
+ *                     event loop after the callback, and only then is the
+ *                     seat's service told it has let go
  *   session_resumed   the display may be opened again (the next frame)
  *   input_paused      stop reading the input of path; its descriptor stays
  *                     the seat's and is not closed
  *   input_resumed     read the input of path from descriptor from now on
  *                     (the old one is the seat's to close)
  *   input_gone        the input of path is gone; forget it without closing
- *                     its descriptor, which the seat has closed
+ *                     its descriptor, which is the seat's to close
+ * The three input callbacks return 1 when the compositor may still read
+ * the input's descriptor it had before the callback (another thread of
+ * its own reads it): the compositor then calls
+ * kl_backend_seat_device_let_go with that descriptor once nothing reads
+ * it, from its event loop, once for each such callback and in their order,
+ * and the seat closes the descriptor (or tells its service the input has
+ * stopped) only then.  They return 0 when nothing reads it any longer,
+ * and the seat goes on at once.  A descriptor closed while another thread
+ * might still read it could be another file's by then.
  * A failed authority calls session_stop(KL_BACKEND_SESSION_LOST).
  *
  * The input devices' scan (keiland-backend-evdev.h, ws131-p007) asks
@@ -2122,6 +2134,8 @@ int kl_backend_session_managed(const struct kl_backend *backend);
  * offers each new device with input_found(descriptor, path, caps), which
  * returns 1 when the compositor keeps it (it then owns the descriptor
  * until kl_backend_input_close) and 0 when the backend is to close it.
+ * The offer comes from the scan itself, or from kl_backend_poll_done when
+ * the seat's service answers the open later.
  */
 
 /*
@@ -2150,7 +2164,10 @@ int kl_backend_seat_paused(const struct kl_backend *backend);
 
 /*
  * Opens the input device at path through the seat: a nonblocking
- * descriptor, or -1 with errno (EAGAIN while paused).
+ * descriptor, or -1 with errno (EAGAIN while paused).  A seat whose
+ * service answers later (logind) returns -1 with EINPROGRESS, also while
+ * an earlier request for path is unanswered, and offers the device with
+ * input_found from kl_backend_poll_done once the answer has come.
  */
 int kl_backend_seat_device_open(struct kl_backend *backend, const char *path);
 
@@ -2166,6 +2183,21 @@ void kl_backend_seat_device_close(struct kl_backend *backend, int descriptor);
  * 0 when the compositor closes it as usual.
  */
 int kl_backend_seat_device_revoked(struct kl_backend *backend, int descriptor);
+
+/*
+ * Tells the seat that nothing of the compositor reads descriptor any
+ * longer, the answer to an input callback that returned 1 (above): the
+ * seat may close it or tell its service now.  A descriptor the seat waits
+ * for no answer of is left alone.
+ */
+void kl_backend_seat_device_let_go(struct kl_backend *backend, int descriptor);
+
+/*
+ * Tells the seat that the compositor has done what session_paused asked
+ * (its output is closed and no input is read): the seat lets its service
+ * go on.  Called once for each session_paused, after it.
+ */
+void kl_backend_seat_paused_done(struct kl_backend *backend);
 
 /*
  * Sharing (ws089-p025): the Remote Login (sshd) the Sharing page turns on

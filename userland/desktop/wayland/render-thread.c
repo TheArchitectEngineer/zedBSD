@@ -576,6 +576,8 @@ kwl_render_task(
 	} else {
 		render->tasks_tail->next = task;
 	}
+
+	/* The task is now the last one given, and the thread is told of the change. */
 	render->tasks_tail = task;
 	render->sequence++;
 	pthread_cond_broadcast(&render->changed);
@@ -989,6 +991,8 @@ render_tasks_submit(
 		} else {
 			render->task_flights_tail->next = task;
 		}
+
+		/* The task is now the last one in flight. */
 		render->task_flights_tail = task;
 	}
 }

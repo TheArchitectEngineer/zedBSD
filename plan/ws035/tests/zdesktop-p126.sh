@@ -1,9 +1,9 @@
 #!/bin/sh
 # ws035-p126: the black between the greeter and the session (F-048), on the Venus guest of the graphical login image
-# (plan/ws035/tests/build-login-image.sh BUILD graphical; the image logs the user kei in by itself at boot).
+# (plan/ws035/tests/build-login-image.sh BUILD graphical; the image logs the user user in by itself at boot).
 # Each cycle photographs the screen several times a second (frames.py: black, text or picture) across
-#  1. Log Out: App Home's Log Out ends kei's session and sessiond shows the greeter (SESSIOND GREETER adopt), and
-#  2. Login: kei's password and Enter at the greeter log kei in again (SESSIOND AUTH ok user=kei, SESSIOND HANDOFF go written).
+#  1. Log Out: App Home's Log Out ends user's session and sessiond shows the greeter (SESSIOND GREETER adopt), and
+#  2. Login: user's password and Enter at the greeter log user in again (SESSIOND AUTH ok user=user, SESSIOND HANDOFF go written).
 # Every hand-over is reported with its black pictures and its black time (from the first black picture to the next
 # picture that is not black; the pictures are about 0.2 s apart).  The run fails when a picture is the text console
 # or a step of the hand-over is missing; black pictures are reported, and fail the run only with --no-black.
@@ -62,7 +62,7 @@ report() {
 	total_black=$((total_black + $4))
 }
 
-# The session kei was logged in at boot.
+# The session user was logged in at boot.
 expect_count /var/log/sessiond.log 'SESSIOND HANDOFF go written=3' 1 90
 sleep 4
 cycle=1
@@ -84,13 +84,13 @@ while [ $cycle -le "$cycles" ]; do
 	expect_count /var/log/sessiond.log 'SESSIOND GREETER adopt pid=' "$cycle" 10
 	report logout-$cycle
 
-	# 2. Login at the greeter: kei's password ("kei", the demonstration's accounts) and Enter.
+	# 2. Login at the greeter: user's password ("user", the demonstration's accounts) and Enter.
 	sleep 2
 	frames login-$cycle 12 &
 	sleep 1
-	keys 'kei\n'
+	keys 'user\n'
 	wait
-	expect_count /var/log/sessiond.log 'SESSIOND AUTH ok user=kei' "$cycle" 10
+	expect_count /var/log/sessiond.log 'SESSIOND AUTH ok user=user' "$cycle" 10
 	expect_count /var/log/sessiond.log 'SESSIOND HANDOFF go written=3' $((cycle + 1)) 10
 	report login-$cycle
 	sleep 4

@@ -115,7 +115,7 @@ struct kwl_import {
 	uint32_t version;
 	/*
 	 * The staging's rows written since the last take (last excluded): the
-	 * frame that takes the image copies only those rows (q1534).  Empty
+	 * frame that takes the image copies only those rows.  Empty
 	 * when first equals last.
 	 */
 	uint32_t dirty_first;
@@ -828,7 +828,7 @@ struct kwl_compose {
 	unsigned ready_valid;
 	unsigned park_depth;
 	/*
-	 * The display thread (display-thread.c, design 4.3): one thread of a
+	 * The display thread (display-thread.c): one thread of a
 	 * lane that makes and destroys the output's swapchain, its surface and
 	 * the cursor plane's, takes and gives back the display and asks the
 	 * backend about the game mode, while the event loop goes on.
@@ -1043,6 +1043,7 @@ int kwl_display_scanout_query(struct kwl_server *server, uint32_t width, uint32_
 void kwl_display_scanout_open(struct kwl_server *server, uint32_t width, uint32_t height, struct kl_backend_scanout **scanout, kwl_display_fn *then, void *context);
 void kwl_display_scanout_close(struct kwl_server *server, struct kl_backend_scanout *scanout, kwl_display_fn *then, void *context);
 int kwl_display_output_open(struct kwl_server *server, kwl_display_fn *then, void *context);
+int kwl_display_output_close(struct kwl_server *server, kwl_display_fn *then, void *context);
 void kwl_compose_unpark(struct kwl_server *server);
 void kwl_compose_forget(struct kwl_server *server, unsigned output, unsigned heads_mask);
 uint64_t kwl_compose_generation(struct kwl_compose *compose);

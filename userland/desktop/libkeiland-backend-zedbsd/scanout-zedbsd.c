@@ -312,9 +312,15 @@ kl_backend_scanout_present(
 	error = ioctl(scanout->gpu, GPU_DISPLAY_PRESENT, &present);
 	if (error != 0) {
 		error = errno;
-		printf("KL SCANOUT refused step=present errno=%d format=%u stride=%u offset=%llu %ux%u refresh=%u\n", error, (unsigned)present.format,
-		       (unsigned)present.stride, (unsigned long long)present.offset, (unsigned)present.width, (unsigned)present.height,
-		       (unsigned)present.refresh_millihz);
+		printf(
+		    "KL SCANOUT refused step=present errno=%d format=%u stride=%u offset=%llu %ux%u refresh=%u\n",
+		    error,
+		    (unsigned)present.format,
+		    (unsigned)present.stride,
+		    (unsigned long long)present.offset,
+		    (unsigned)present.width,
+		    (unsigned)present.height,
+		    (unsigned)present.refresh_millihz);
 		return error;
 	}
 

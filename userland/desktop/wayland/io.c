@@ -116,6 +116,8 @@ kwl_io_start(
 		printf("KWL IO thread=io-device errno=%d the devices are waited for in the event loop\n", error);
 		return;
 	}
+
+	/* Marks the device thread as started, so it is started once. */
 	server->io_started = 1U;
 
 	/* The scans and the closes go to the thread from now on, unless a seat opens the devices. */

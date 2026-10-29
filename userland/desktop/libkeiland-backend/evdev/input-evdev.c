@@ -252,6 +252,44 @@ kl_backend_input_close(
 	return;
 }
 
+/*
+ * Offers a device the seat has opened, with its capability bitmaps, to the
+ * compositor; a node it does not keep goes back to the seat.
+ */
+void
+kl_backend_input_offer(
+	struct kl_backend *backend,
+	int descriptor,
+	const char *path)
+{
+	struct kl_backend_input_caps capabilities;
+	int clock_id;
+	int error;
+	int kept;
+
+	/* Matches the common compositor's monotonic clock before interpreting event timestamps. */
+	clock_id = CLOCK_MONOTONIC;
+	error = ioctl(descriptor, EVIOCSCLOCKID, &clock_id);
+	if (error != 0) {
+		kl_backend_seat_device_close(backend, descriptor);
+		return;
+	}
+
+	/* Reads the bits that determine the device's role. */
+	error = read_capabilities(descriptor, &capabilities);
+	if (error != 0) {
+		kl_backend_seat_device_close(backend, descriptor);
+		return;
+	}
+
+	/* The compositor's classification keeps it, or its lease returns here. */
+	kept = 0;
+	if (backend->host.input_found != NULL)
+		kept = backend->host.input_found(backend->host.data, descriptor, path, &capabilities);
+	if (!kept)
+		kl_backend_seat_device_close(backend, descriptor);
+}
+
 /* Reports whether a directory entry is named eventN. */
 static int
 event_node_name(
@@ -278,44 +316,21 @@ event_node_name(
 	return 1;
 }
 
-/* Opens one node through the seat and offers it, with its capability bitmaps, to the compositor. */
+/* Opens one node through the seat and offers it to the compositor. */
 static void
 probe_device(
 	struct kl_backend *backend,
 	const char *path)
 {
-	struct kl_backend_input_caps capabilities;
-	int clock_id;
 	int descriptor;
-	int error;
-	int kept;
 
-	/* Opens a nonblocking descriptor that children cannot inherit. */
+	/* Opens a nonblocking descriptor that children cannot inherit; a seat that answers later offers it then (EINPROGRESS). */
 	descriptor = kl_backend_seat_device_open(backend, path);
 	if (descriptor < 0)
 		return;
 
-	/* Matches the common compositor's monotonic clock before interpreting event timestamps. */
-	clock_id = CLOCK_MONOTONIC;
-	error = ioctl(descriptor, EVIOCSCLOCKID, &clock_id);
-	if (error != 0) {
-		kl_backend_seat_device_close(backend, descriptor);
-		return;
-	}
-
-	/* Reads the bits that determine the device's role. */
-	error = read_capabilities(descriptor, &capabilities);
-	if (error != 0) {
-		kl_backend_seat_device_close(backend, descriptor);
-		return;
-	}
-
-	/* The compositor's classification keeps it, or its lease returns here. */
-	kept = 0;
-	if (backend->host.input_found != NULL)
-		kept = backend->host.input_found(backend->host.data, descriptor, path, &capabilities);
-	if (!kept)
-		kl_backend_seat_device_close(backend, descriptor);
+	/* The compositor classifies it now. */
+	kl_backend_input_offer(backend, descriptor, path);
 }
 
 /* Reads the event, key, relative and absolute capability bitmaps and the properties of one node. */

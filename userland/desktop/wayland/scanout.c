@@ -130,6 +130,7 @@ kwl_scanout_pass(
 {
 	struct kwl_scanout_facts facts;
 	unsigned reason;
+	int busy;
 
 	/* The pass's facts and the rules' answer. */
 	scanout_facts(server, top, &facts);
@@ -154,7 +155,10 @@ kwl_scanout_pass(
 	}
 
 	/* Only with the present thread; one entry at a time, not while the display changes (a later pass tries again). */
-	if (!scanout_started || server->compose == NULL || server->scanout_entering != NULL || kwl_display_busy(server))
+	if (!scanout_started || server->compose == NULL || server->scanout_entering != NULL)
+		return 0;
+	busy = kwl_display_busy(server);
+	if (busy)
 		return 0;
 
 	/*
@@ -300,6 +304,8 @@ kwl_scanout_client_gone(
 			kwl_buffer_put(closing->front);
 			closing->front = NULL;
 		}
+
+		/* Lets go of the flight image of the client likewise. */
 		if (closing->flight != NULL && closing->flight->client == client) {
 			kwl_buffer_put(closing->flight);
 			closing->flight = NULL;
@@ -447,7 +453,7 @@ scanout_overlay(
 }
 
 /*
- * Enters the game mode for a window (design 4.3): the display thread asks
+ * Enters the game mode for a window: the display thread asks
  * the backend first, without claiming, whether the display can show it
  * straight; scanout_answered goes on with the answer.
  */
@@ -456,7 +462,7 @@ scanout_enter(
 	struct kwl_server *server,
 	struct kwl_object *top)
 {
-	/* The question, for the display's mode (the physical size, WS217). */
+	/* The question, for the display's mode (the physical size). */
 	server->scanout_entering = top;
 	server->scanout_entering_ms = kwl_milliseconds();
 	(void)kwl_display_scanout_query(server, server->compose->mode_width, server->compose->mode_height, scanout_answered, NULL);
@@ -477,6 +483,7 @@ scanout_answered(
 	void *context)
 {
 	struct kwl_scanout_facts facts;
+	struct kwl_object *current;
 	struct kwl_object *top;
 	unsigned reason;
 
@@ -498,7 +505,14 @@ scanout_answered(
 	/* The facts as they are now: a window no longer to be shown straight stays composed. */
 	scanout_facts(server, top, &facts);
 	reason = kwl_scanout_decide(&facts);
-	if (reason != KWL_SCANOUT_DIRECT || top != kwl_top_window(server)) {
+	if (reason != KWL_SCANOUT_DIRECT) {
+		server->scanout_entering = NULL;
+		return;
+	}
+
+	/* A window that is no longer the top one stays composed too. */
+	current = kwl_top_window(server);
+	if (top != current) {
 		server->scanout_entering = NULL;
 		return;
 	}
@@ -523,7 +537,7 @@ scanout_parked(
 
 /*
  * Entering the game mode, the swapchain closed: the display thread has the
- * backend claim the display for its mode (the physical size, WS217).  A
+ * backend claim the display for its mode (the physical size).  A
  * window gone meanwhile leaves window mode to open the swapchain again at
  * the next pass.
  */
@@ -635,6 +649,8 @@ scanout_frame(
 		scanout_refuse(server, top, ENOMEM);
 		return;
 	}
+
+	/* The present carries the scanout and the claim it began on, and is handed to the thread. */
 	present->scanout = server->scanout;
 	present->claim = server->scanout_claim;
 	kwl_lane_submit(&scanout_lane, &present->lane, &scanout_present_ops, 0U);
@@ -684,6 +700,8 @@ scanout_present_done(
 		free(present);
 		return;
 	}
+
+	/* The result is read, so the job is freed. */
 	free(present);
 
 	/* A failure is the backend's refusal from now. */

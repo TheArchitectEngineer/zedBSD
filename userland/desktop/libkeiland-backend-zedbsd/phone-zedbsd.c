@@ -1243,6 +1243,8 @@ phone_mms_run(
 		if (mime == NULL)
 			error = ENOMEM;
 	}
+
+	/* Reads the file by position until all of its bytes are in. */
 	done = 0U;
 	while (error == 0 && done < request->length) {
 		got = pread(request->descriptor, mime + done, request->length - done, (off_t)done);
@@ -1323,6 +1325,8 @@ phone_submit(
 			free(asked);
 			return ENOMEM;
 		}
+
+		/* Copies the text the request carries. */
 		memcpy(asked->text, text, length);
 	}
 
@@ -1355,10 +1359,16 @@ phone_submit(
 		phone->request_serials[phone->request_serial_count] = phone->serial;
 		phone->request_serial_count++;
 	}
+
+	/* Remembers which request is the MMS one. */
 	if (kind == PHONE_OP_MMS)
 		phone->mms_serial = phone->serial;
+
+	/* Gives the caller the request's number. */
 	if (id != NULL)
 		*id = asked->id;
+
+	/* Hands the request to the thread. */
 	kl_daemon_link_submit(&phone->link, &asked->op);
 
 	/* Succeeded: asked. */
@@ -1381,6 +1391,8 @@ phone_serials_settle(
 		phone->page_serials[kept] = phone->page_serials[index];
 		kept++;
 	}
+
+	/* Keeps only the pages not run yet. */
 	phone->page_serial_count = kept;
 
 	/* The other requests not run yet. */
@@ -1391,6 +1403,8 @@ phone_serials_settle(
 		phone->request_serials[kept] = phone->request_serials[index];
 		kept++;
 	}
+
+	/* Keeps only the requests not run yet. */
 	phone->request_serial_count = kept;
 
 	/* An MMS run is the thread's to count from now on. */
@@ -1420,6 +1434,8 @@ phone_kept_move(
 			to->item_count--;
 			*changed |= KL_BACKEND_PHONE_CHANGED_DROPPED;
 		}
+
+		/* Moves the oldest item of the source onto the end of the ring, and hands its text over. */
 		slot = (to->item_head + to->item_count) % PHONE_ITEMS_MAX;
 		to->items[slot] = from->items[from->item_head];
 		from->items[from->item_head].text = NULL;
@@ -1435,6 +1451,8 @@ phone_kept_move(
 			to->result_head = (to->result_head + 1U) % PHONE_RESULTS_MAX;
 			to->result_count--;
 		}
+
+		/* Moves the oldest result of the source onto the end of the ring. */
 		slot = (to->result_head + to->result_count) % PHONE_RESULTS_MAX;
 		to->results[slot] = from->results[from->result_head];
 		to->result_count++;
@@ -1448,6 +1466,8 @@ phone_kept_move(
 			to->sent_head = (to->sent_head + 1U) % PHONE_SENTS_MAX;
 			to->sent_count--;
 		}
+
+		/* Moves the oldest sent record of the source onto the end of the ring. */
 		slot = (to->sent_head + to->sent_count) % PHONE_SENTS_MAX;
 		to->sents[slot] = from->sents[from->sent_head];
 		to->sent_count++;
@@ -1461,6 +1481,8 @@ phone_kept_move(
 			to->call_head = (to->call_head + 1U) % PHONE_CALLS_MAX;
 			to->call_count--;
 		}
+
+		/* Moves the oldest call of the source onto the end of the ring. */
 		slot = (to->call_head + to->call_count) % PHONE_CALLS_MAX;
 		to->calls[slot] = from->calls[from->call_head];
 		to->call_count++;
@@ -1486,6 +1508,8 @@ phone_kept_free(
 			close(item->item.mime_descriptor);
 		item->item.has_mime = 0U;
 	}
+
+	/* Empties the ring, whose items are all released. */
 	kept->item_count = 0U;
 }
 

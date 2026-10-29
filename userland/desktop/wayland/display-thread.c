@@ -6,7 +6,7 @@
  */
 
 /*
- * The display thread and the changes of the display (design 4.3): what
+ * The display thread and the changes of the display: what
  * waits when the output opens, closes or moves -- the swapchain's and the
  * surface's creation and destruction (which claim and give back the
  * display), the cursor plane's, the cursor thread's stop, the device's
@@ -251,7 +251,11 @@ kwl_display_take(
 	(void)kwl_lane_take(&server->compose->display_lane, server);
 }
 
-/* Tells whether a change of the display runs: no frame is drawn meanwhile. */
+/*
+ * Tells whether a change of the display runs.
+ *
+ * No frame is drawn meanwhile.
+ */
 int
 kwl_display_busy(
 	struct kwl_server *server)
@@ -277,6 +281,7 @@ kwl_display_settle(
 {
 	struct kwl_compose *compose;
 	uint64_t deadline;
+	uint64_t now;
 	unsigned taken;
 	unsigned busy;
 
@@ -289,7 +294,8 @@ kwl_display_settle(
 	deadline = kwl_milliseconds() + DISPLAY_SETTLE_MS;
 	while (compose->display_busy) {
 		/* A change that lasts leaves nothing safe. */
-		if (kwl_milliseconds() > deadline) {
+		now = kwl_milliseconds();
+		if (now > deadline) {
 			kwl_fatal("KWL FAILED site=display errno=%d step=settle parking=%u", ETIMEDOUT, compose->display_parking);
 			_exit(1);
 		}
@@ -691,9 +697,54 @@ kwl_display_output_open(
 	if (change == NULL)
 		return ENOMEM;
 	error = kwl_display_begin(server, display_open_parked, change);
-	if (error != 0)
+
+	/* A change that did not begin is freed here. */
+	if (error != 0) {
 		free(change);
-	return error;
+		return error;
+	}
+
+	/* Succeeded: the change began. */
+	return 0;
+}
+
+/*
+ * Closes window mode's output as a change of its own, without waiting:
+ * begun, closed, ended (the display given back).  then(server, error,
+ * context) is called after.  Returns 0 (also when nothing is open, then
+ * called at once), ENOMEM, or EBUSY while another change runs.
+ */
+int
+kwl_display_output_close(
+	struct kwl_server *server,
+	kwl_display_fn *then,
+	void *context)
+{
+	struct display_change *change;
+	struct kwl_compose *compose;
+	int error;
+
+	/* Nothing to destroy. */
+	compose = server->compose;
+	if (compose == NULL || (!compose->output_open && !compose->output_prepared)) {
+		then(server, 0, context);
+		return 0;
+	}
+
+	/* The change. */
+	change = display_change_new(then, context);
+	if (change == NULL)
+		return ENOMEM;
+	error = kwl_display_begin(server, display_close_parked, change);
+
+	/* A change that did not begin is freed here. */
+	if (error != 0) {
+		free(change);
+		return error;
+	}
+
+	/* Succeeded: the change began. */
+	return 0;
 }
 
 /*
@@ -759,6 +810,8 @@ kwl_compose_output_close(
 		kwl_fatal("KWL FAILED site=display errno=%d step=close", ENOMEM);
 		_exit(1);
 	}
+
+	/* Begins the close inline, so that its steps run on this thread. */
 	compose->display_inline++;
 	error = kwl_display_begin(server, display_close_parked, change);
 	compose->display_inline--;
@@ -786,6 +839,8 @@ display_job_new(
 			kwl_fatal("KWL FAILED site=display errno=%d step=job", ENOMEM);
 			_exit(1);
 		}
+
+		/* Takes the spare job, which only one change can hold at a time. */
 		display_spare_used = 1U;
 		memset(&display_spare, 0, sizeof(display_spare));
 		job = &display_spare;
@@ -1209,6 +1264,8 @@ display_open_run(
 		job->readback = 0;
 		result = vkdemo_display_create_swapchain(compose->physical, compose->device, compose->family, &job->output, 0);
 	}
+
+	/* Refuses a swapchain the compositor cannot use: it failed, has too many images or has another format. */
 	if (result != VK_SUCCESS ||
 	    job->output.image_count > KWL_SWAPCHAIN_MAX ||
 	    job->output.format != compose->format) {
@@ -1218,6 +1275,8 @@ display_open_run(
 		job->error = EIO;
 		return;
 	}
+
+	/* Reports how long the swapchain took. */
 	printf("KWL STARTUP step=output-swapchain ms=%llu\n", (unsigned long long)(kwl_milliseconds() - started));
 
 	/* The cursor plane's objects, when the output has such a plane (it borrows the output's claim). */
@@ -1297,7 +1356,7 @@ display_open_opened(
 
 	/*
 	 * The change ends, then the desktop follows what the output shows now
-	 * against what it showed when it last opened (review-4 C7): another
+	 * against what it showed when it last opened: another
 	 * logical size (a move to a display of another size), another angle.
 	 */
 	then = change->then;

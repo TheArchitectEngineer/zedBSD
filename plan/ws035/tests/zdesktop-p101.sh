@@ -1,13 +1,13 @@
 #!/bin/sh
 # ws035-p101: the display's hand-over between the greeter and the session, on the Venus guest of the graphical
 # login image (plan/ws035/tests/build-login-image.sh BUILD graphical), photographed several times a second
-# (frames.py; each picture is black, text (the text console) or picture).  The image logs the user kei in by itself
-# at boot (sessiond's autologin; kei's password is "kei", the demonstration's accounts), so the run starts in kei's
+# (frames.py; each picture is black, text (the text console) or picture).  The image logs the user user in by itself
+# at boot (sessiond's autologin; user's password is "user", the demonstration's accounts), so the run starts in user's
 # session (ws035-p127: before, it started at the greeter and logged root in with Enter):
 #  1. Log Out: the session says LOGOUT and keeps the screen, sessiond starts a greeter and, at its READY, tells the
 #     session QUIT; the session gives the display back (SESSIOND HANDOFF session released=1) and the greeter gets GO
 #     (SESSIOND HANDOFF greeter go written=3), then sessiond adopts the greeter.  No picture is the text console.
-#  2. Login: kei's password and Enter at the adopted greeter; the greeter stays ("Starting session...") until the
+#  2. Login: user's password and Enter at the adopted greeter; the greeter stays ("Starting session...") until the
 #     session's zdesktop says READY, sessiond ends the greeter and answers GO (SESSIOND HANDOFF session ready=1,
 #     KWL HANDOFF go=1).  No picture is the text console (before p101 the console's text showed for about
 #     3 seconds; ws035-p126 also took the black away, which plan/ws035/tests/zdesktop-p126.sh measures).
@@ -59,7 +59,7 @@ no_text() {
 	grep -c ' black$' "$out/$1.txt" | sed "s/^/frames: $1: black pictures: /"
 }
 
-# 0. kei's session, logged in at boot.
+# 0. user's session, logged in at boot.
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF go written=3' 1 90
 expect_log /run/user/1000/session.log 'KWL HANDOFF go=1' 1 10
 sleep 4
@@ -78,7 +78,7 @@ else
 	echo "no Power Off icon"
 	status=1
 fi
-expect_log /var/log/sessiond.log 'SESSION end user=kei' 1 10
+expect_log /var/log/sessiond.log 'SESSION end user=user' 1 10
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF greeter ready: waits' 1 5
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF session released=1' 1 5
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF greeter go written=3' 1 5
@@ -90,9 +90,9 @@ no_text logout
 sleep 2
 frames login 16 &
 sleep 2
-keys 'kei\n'
+keys 'user\n'
 wait
-expect_log /var/log/sessiond.log 'AUTH ok user=kei' 1 10
+expect_log /var/log/sessiond.log 'AUTH ok user=user' 1 10
 expect_log /var/log/sessiond.log 'SESSIOND GREETER stays pid=' 1 5
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF session ready=1' 2 5
 expect_log /var/log/sessiond.log 'SESSIOND HANDOFF greeter released=1' 1 5

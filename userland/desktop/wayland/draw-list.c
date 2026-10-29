@@ -208,7 +208,11 @@ kwl_list_add_vertices(
 	list->vertex_used += bytes;
 }
 
-/* Appends a host image's copy from its staging into its sampled image, which the frame records first. */
+/*
+ * Appends a host image's copy from its staging into its sampled image.
+ *
+ * The frame records the copy first.
+ */
 void
 kwl_list_add_copy(
 	struct kwl_list *list,

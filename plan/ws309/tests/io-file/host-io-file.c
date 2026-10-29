@@ -10,9 +10,12 @@
  * (userland/desktop/wayland/settings-store.c's give and run on a lane,
  * lane.c): the session's changes given on the main thread, merged on the
  * lane's thread while the main thread does not wait for a slow flush
- * (fsync wrapped to sleep), taken as written by the finish, a change made
- * after the give written by the finish, a give that did not run written
- * whole by the finish, and one writer a session.
+ * (fsync wrapped to sleep, without the disk's own flush, so that the
+ * host's load on its disks does not decide the times), taken as written by
+ * the finish, a change made after the give written by the finish, a give
+ * that did not run written whole by the finish, and one writer a session.
+ * The wake byte is judged from the end of the job's run (the lane's
+ * thread may start late on a busy host), not from the give.
  */
 
 #include "userland/desktop/wayland/lane.h"
@@ -30,6 +33,10 @@
 #define TEST_FSYNC_MS	300U
 #define TEST_MAIN_MS	5U
 
+/* How long after the job's run has ended its wake byte may take (ms), and the longest the test waits at all (s). */
+#define TEST_WAKE_AFTER_RUN_MS	1000U
+#define TEST_WAIT_ALL_S		120U
+
 /* One merge on the lane: the job and the store's writer it runs. */
 struct test_save {
 	struct kwl_lane_job lane;
@@ -38,7 +45,6 @@ struct test_save {
 	unsigned dropped;
 };
 
-int __real_fsync(int descriptor);
 int __wrap_fsync(int descriptor);
 
 /* The test's home, the fsyncs counted, and the failures. */
@@ -48,6 +54,9 @@ static unsigned fsync_count;
 static pthread_t main_thread;
 static unsigned fsync_on_main;
 static unsigned failures;
+
+/* When the last job's run ended (ms, 0 until one has), under fsync_lock. */
+static uint64_t run_ended_ms;
 
 static void save_run(struct kwl_lane_job *job);
 static void save_done(void *context, struct kwl_lane_job *job);
@@ -106,7 +115,8 @@ __wrap_fsync(
 	pause.tv_sec = 0;
 	pause.tv_nsec = (long)TEST_FSYNC_MS * 1000000L;
 	(void)nanosleep(&pause, NULL);
-	return __real_fsync(descriptor);
+	(void)descriptor;
+	return 0;
 }
 
 /* A change given to the lane's thread, written there, and one made after it written by the finish. */
@@ -203,6 +213,11 @@ save_run(
 
 	save = (struct test_save *)job;
 	kwl_settings_store_save_run(save->writer);
+
+	/* When the run ended, for the wake byte's time. */
+	pthread_mutex_lock(&fsync_lock);
+	run_ended_ms = now_ms();
+	pthread_mutex_unlock(&fsync_lock);
 }
 
 static void
@@ -276,11 +291,28 @@ wait_wake(
 	int descriptor)
 {
 	struct pollfd watch;
+	uint64_t started;
+	uint64_t woken;
+	uint64_t ended;
+	int ready;
 	char byte;
 
-	watch.fd = descriptor;
-	watch.events = POLLIN;
-	watch.revents = 0;
-	check(poll(&watch, 1U, 5000) == 1, "wake byte within 5 s");
+	/* The byte, however late the run is, within the test's own limit. */
+	started = now_ms();
+	ready = 0;
+	while (ready != 1 && now_ms() - started < (uint64_t)TEST_WAIT_ALL_S * 1000U) {
+		watch.fd = descriptor;
+		watch.events = POLLIN;
+		watch.revents = 0;
+		ready = poll(&watch, 1U, 100);
+	}
+	woken = now_ms();
+	check(ready == 1, "wake byte came");
+
+	/* It came soon after the run ended (a byte before the run's end reads as 0 ms). */
+	pthread_mutex_lock(&fsync_lock);
+	ended = run_ended_ms;
+	pthread_mutex_unlock(&fsync_lock);
+	check(ended != 0U && (woken < ended || woken - ended < TEST_WAKE_AFTER_RUN_MS), "wake byte within 1 s of the run's end");
 	(void)read(descriptor, &byte, 1U);
 }

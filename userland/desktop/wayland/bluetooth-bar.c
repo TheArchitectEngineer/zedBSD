@@ -947,5 +947,7 @@ bar_settings_started(
 		printf("KWL BT bar settings pid=-1 errno=%d\n", error);
 		return;
 	}
+
+	/* Reports the settings program started. */
 	printf("KWL BT bar settings pid=%ld\n", (long)pid);
 }

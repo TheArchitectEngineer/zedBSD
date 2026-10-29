@@ -217,6 +217,7 @@ language_read_done(
 	struct language_job *job;
 	int differs;
 
+	/* The server, and the job the thread has run. */
 	server = context;
 	job = (struct language_job *)lane_job;
 

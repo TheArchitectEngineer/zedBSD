@@ -321,7 +321,7 @@ kwl_hand_bounds(
 /*
  * Starts the pool recognizing the ink, the first time the handwriting face
  * is shown, and has one of its threads read the templates ahead, so that
- * the first recognition finds them read (backlog-p2 line 59).  wake is the
+ * the first recognition finds them read.  wake is the
  * write end of the main thread's wake pipe.  When an earlier read failed,
  * puts the note that there is no data in result at once.  Without the
  * pool the first recognition reads the file on the event loop.

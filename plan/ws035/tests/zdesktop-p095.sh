@@ -2,9 +2,9 @@
 # ws035-p095: the graphical login from end to end on the Venus guest of the login image
 # (plan/ws035/tests/build-login-image.sh): sessiond --graphical starts zdesktop --greeter as _greeter at the
 # display's preferred size.  Users alice (uid 1001, "secret word") and bob (uid 1002) are made (zdesktop-p094.sh
-# makes alice; this makes both).  ws136-p002: since 2026-09-29 the image has kei (uid 1000) in its base passwd and
-# sessiond logs kei in at boot (/etc/keiland/autologin); the run empties the autologin file (restored at the end), so
-# the sessiond it starts brings the greeter, which offers kei, alice and bob in passwd's order.
+# makes alice; this makes both).  ws136-p002: since 2026-09-29 the image has user (uid 1000) in its base passwd and
+# sessiond logs user in at boot (/etc/keiland/autologin); the run empties the autologin file (restored at the end), so
+# the sessiond it starts brings the greeter, which offers user, alice and bob in passwd's order.
 #  1. greeter.png: the login screen: the time and date, the card with the three users, Down selects alice.
 #  2. wrong.png: a wrong password: "Wrong password" (SESSIOND AUTH fail).
 #  3. The right password (typed with Shift for nothing, a space in it): the greeter ends, the session runs as alice
@@ -81,7 +81,7 @@ expect_run 'chmod 0666 /dev/gpu0; ls -l /dev/gpu0' '^crw-rw-rw- .* root '
 
 # 1. The login screen.
 guest "/sbin/sessiond --graphical </dev/null >/dev/null 2>&1 & sleep 1; echo started" >/dev/null
-expect_log /var/log/greeter.log 'KWL GREETER open users=3 selected=kei' 20
+expect_log /var/log/greeter.log 'KWL GREETER open users=3 selected=user' 20
 expect_log /var/log/greeter.log 'KWL OUTPUT open' 20
 set -- $(guest "grep 'KWL OUTPUT open' /var/log/greeter.log | tail -1" | sed -n 's/.*width=\([0-9]*\) height=\([0-9]*\).*/\1 \2/p')
 width=${1:-1280}; height=${2:-800}

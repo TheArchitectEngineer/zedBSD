@@ -20,10 +20,11 @@
  *
  * The main thread owns the devices' opening and closing.  It hands a
  * device's descriptor to the input thread with an attach command and takes
- * it back with a detach, which waits until the input thread has stopped
- * using the descriptor; only then is the descriptor closed or given back
- * to the seat, so a descriptor number reused by another file is never read
- * as a device (design 6.1 N-1).
+ * it back with a detach, whose acknowledgement comes once the input thread
+ * has stopped using the descriptor (the main thread looks for it each
+ * pass, kwl_input_thread_acked, or waits for it, kwl_input_thread_detach_wait);
+ * only then is the descriptor closed or given back to the seat, so a
+ * descriptor number reused by another file is never read as a device.
  */
 
 #ifndef KWL_INPUT_THREAD_H
@@ -295,6 +296,7 @@ int kwl_input_thread_step(struct kwl_input_thread *input, int timeout_ms);
 int kwl_input_thread_attach(struct kwl_input_thread *input, const struct kwl_input_attach *device);
 int kwl_input_thread_detach(struct kwl_input_thread *input, unsigned slot, uint64_t *sequence);
 int kwl_input_thread_detach_wait(struct kwl_input_thread *input, uint64_t sequence, unsigned wait_ms);
+uint64_t kwl_input_thread_acked(struct kwl_input_thread *input);
 void kwl_input_thread_settings(struct kwl_input_thread *input, const struct kwl_input_settings *settings);
 struct kwl_input_event *kwl_input_thread_take(struct kwl_input_thread *input);
 int kwl_input_thread_failure(struct kwl_input_thread *input, unsigned *dropped);

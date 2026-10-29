@@ -812,9 +812,13 @@ bt_publish(
 			published->result_count--;
 			memmove(&published->results[0], &published->results[1], published->result_count * sizeof(published->results[0]));
 		}
+
+		/* Appends the result to the published results. */
 		published->results[published->result_count] = bluetooth->results[index];
 		published->result_count++;
 	}
+
+	/* Empties the follower's results, which are all published. */
 	bluetooth->result_count = 0U;
 
 	/* The questions likewise. */
@@ -823,9 +827,13 @@ bt_publish(
 			published->question_count--;
 			memmove(&published->questions[0], &published->questions[1], published->question_count * sizeof(published->questions[0]));
 		}
+
+		/* Appends the question to the published questions. */
 		published->questions[published->question_count] = bluetooth->questions[index];
 		published->question_count++;
 	}
+
+	/* Empties the follower's questions, which are all published. */
 	bluetooth->question_count = 0U;
 
 	/* The changes not taken yet. */
@@ -1034,9 +1042,13 @@ bt_view_take(
 			view->result_count--;
 			memmove(&view->results[0], &view->results[1], view->result_count * sizeof(view->results[0]));
 		}
+
+		/* Appends the result to the view's results. */
 		view->results[view->result_count] = published->results[index];
 		view->result_count++;
 	}
+
+	/* Empties the published results, which are all taken. */
 	published->result_count = 0U;
 
 	/* The questions likewise. */
@@ -1045,9 +1057,13 @@ bt_view_take(
 			view->question_count--;
 			memmove(&view->questions[0], &view->questions[1], view->question_count * sizeof(view->questions[0]));
 		}
+
+		/* Appends the question to the view's questions. */
 		view->questions[view->question_count] = published->questions[index];
 		view->question_count++;
 	}
+
+	/* Empties the published questions, which are all taken. */
 	published->question_count = 0U;
 }
 
@@ -1841,15 +1857,18 @@ bt_send_request(
 
 	/* The connection and the line. */
 	error = bt_connect(&bluetooth->request, line);
-	if (error == 0)
-		return 0;
 
 	/* A request that cannot be sent ends at once, failed. */
-	changed = 0;
-	(void)snprintf(bluetooth->request_reason, sizeof(bluetooth->request_reason), "%s", "lost");
-	bluetooth->request_error = ENOTCONN;
-	bt_request_end(bluetooth, &changed);
-	return error;
+	if (error != 0) {
+		changed = 0;
+		(void)snprintf(bluetooth->request_reason, sizeof(bluetooth->request_reason), "%s", "lost");
+		bluetooth->request_error = ENOTCONN;
+		bt_request_end(bluetooth, &changed);
+		return error;
+	}
+
+	/* Succeeded: the request is sent. */
+	return 0;
 }
 
 /* The daemon does not answer: unreachable, no device, the agent dropped; the questions asked are over. */

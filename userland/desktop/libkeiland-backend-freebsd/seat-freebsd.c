@@ -15,8 +15,11 @@
  * and one device ID each, kept together as a lease), and disables the
  * session while another has the display.  Disabled, nothing of the old
  * leases survives: the compositor stops drawing (session_paused), each
- * input is forgotten (input_gone), every lease is closed, and only then is
- * seatd told the compositor has let go.  Enabled again, the primary node is
+ * input is forgotten (input_gone), each lease is closed once the
+ * compositor no longer reads it (at once, or at its
+ * kl_backend_seat_device_let_go), and once the compositor says it is done
+ * (kl_backend_seat_paused_done) the rest close and only then is seatd told
+ * the compositor has let go.  Enabled again, the primary node is
  * opened afresh and the compositor opens its output and finds its inputs
  * again (session_resumed).
  *
@@ -51,6 +54,8 @@ struct seat_lease {
 	int descriptor;
 	int device;
 	unsigned live;
+	/* The compositor may still read it: it closes at kl_backend_seat_device_let_go. */
+	unsigned waiting;
 	char path[SEAT_PATH_MAX];
 };
 
@@ -78,6 +83,9 @@ static unsigned primary_requested;
 /* A failure inside a libseat callback, reported to the compositor after the dispatch. */
 static unsigned seat_failed;
 
+/* A disable whose answer to seatd waits for the compositor's kl_backend_seat_paused_done. */
+static unsigned seat_disabling;
+
 /* The primary node's absolute path, fixed for the client's lifetime. */
 static char primary_path[SEAT_PATH_MAX];
 
@@ -85,6 +93,7 @@ static int lease_open(unsigned slot, const char *path);
 static void lease_close(unsigned slot);
 static void seat_enable(struct libseat *seat, void *data);
 static void seat_disable(struct libseat *seat, void *data);
+static void seat_disable_finish(struct libseat *seat);
 
 /*
  * Connects to seatd, waits for the first activation and takes the primary
@@ -124,6 +133,7 @@ kl_backend_seat_open(
 	primary_requested = 0;
 	seat_closing = 0;
 	seat_failed = 0;
+	seat_disabling = 0;
 	seat_paused = 1;
 
 	/* Only the seatd provider supplies the authority. */
@@ -178,10 +188,11 @@ kl_backend_seat_close(
 {
 	unsigned slot;
 
-	/* No new device while the leases go back. */
+	/* No new device while the leases go back; a disable waiting for the compositor ends with them. */
 	seat_paused = 1;
 	primary_requested = 0;
 	seat_closing = 1;
+	seat_disabling = 0;
 
 	/* Every lease, the partial ones too. */
 	for (slot = 0; slot < SEAT_LEASE_MAX; slot++)
@@ -311,6 +322,44 @@ kl_backend_seat_device_revoked(
 }
 
 /*
+ * Closes the lease of an input the compositor no longer reads, after a
+ * disable's input_gone that asked to wait.
+ */
+void
+kl_backend_seat_device_let_go(
+	struct kl_backend *backend,
+	int descriptor)
+{
+	unsigned slot;
+
+	/* Only a lease waiting for it. */
+	(void)backend;
+	if (descriptor < 0)
+		return;
+	for (slot = 1; slot < SEAT_LEASE_MAX; slot++) {
+		if (seat_leases[slot].live != 0 && seat_leases[slot].waiting != 0 && seat_leases[slot].descriptor == descriptor) {
+			lease_close(slot);
+			return;
+		}
+	}
+}
+
+/*
+ * Ends a disable once the compositor has closed its output and read no
+ * input any longer: the rest of the leases close, then seatd hears it.
+ */
+void
+kl_backend_seat_paused_done(
+	struct kl_backend *backend)
+{
+	/* Only a disable that waits. */
+	(void)backend;
+	if (seat_disabling == 0)
+		return;
+	seat_disable_finish(seat_client);
+}
+
+/*
  * Counts seatd's descriptor.
  */
 size_t
@@ -398,6 +447,7 @@ lease_open(
 	seat_leases[slot].descriptor = descriptor;
 	seat_leases[slot].device = device;
 	seat_leases[slot].live = 1;
+	seat_leases[slot].waiting = 0;
 	memcpy(seat_leases[slot].path, path, length + 1);
 
 	/* The file does not block the compositor's loop. */
@@ -449,6 +499,7 @@ lease_close(
 	descriptor = seat_leases[slot].descriptor;
 	device = seat_leases[slot].device;
 	seat_leases[slot].live = 0;
+	seat_leases[slot].waiting = 0;
 	seat_leases[slot].descriptor = -1;
 
 	/* The kernel file, even without the service. */
@@ -494,7 +545,12 @@ seat_enable(
 		backend->host.session_resumed(backend->host.data);
 }
 
-/* seatd disables the session: the compositor stops, its inputs are forgotten, every lease closes, then seatd hears it. */
+/*
+ * seatd disables the session: the compositor stops, its inputs are
+ * forgotten and each lease it no longer reads closes; the rest close and
+ * seatd hears it once the compositor is done (kl_backend_seat_paused_done),
+ * or at once while the seat is being opened (the compositor is not told).
+ */
 static void
 seat_disable(
 	struct libseat *seat,
@@ -502,7 +558,7 @@ seat_disable(
 {
 	struct kl_backend *backend;
 	unsigned slot;
-	int error;
+	int later;
 
 	/* The final close owns the leases' end. */
 	backend = data;
@@ -512,23 +568,53 @@ seat_disable(
 	/* No new device from now on. */
 	seat_paused = 1;
 
-	/* The compositor stops drawing and closes its output (Vulkan's duplicate of the primary node goes). */
-	if (seat_opening == 0 && backend->host.session_paused != NULL)
+	/* Nothing was given to the compositor while opening: everything goes now. */
+	if (seat_opening != 0) {
+		seat_disable_finish(seat);
+		return;
+	}
+
+	/* The compositor stops drawing and closes its output (Vulkan's duplicate of the primary node goes), and stops reading every input. */
+	seat_disabling = 1;
+	if (backend->host.session_paused != NULL)
 		backend->host.session_paused(backend->host.data);
 
-	/* Each input is forgotten by the compositor, then its lease closes. */
+	/* Each input is forgotten by the compositor; its lease closes now or once the compositor lets go of it. */
 	for (slot = 1; slot < SEAT_LEASE_MAX; slot++) {
 		if (seat_leases[slot].live == 0)
 			continue;
-		if (seat_opening == 0 && backend->host.input_gone != NULL)
-			backend->host.input_gone(backend->host.data, seat_leases[slot].path);
+		later = 0;
+		if (backend->host.input_gone != NULL)
+			later = backend->host.input_gone(backend->host.data, seat_leases[slot].path);
+		if (later != 0) {
+			seat_leases[slot].waiting = 1;
+			continue;
+		}
 		lease_close(slot);
 	}
 
-	/* The primary node last, after the output that used it. */
+	/* A compositor without the pause's callback has nothing to finish. */
+	if (backend->host.session_paused == NULL)
+		seat_disable_finish(seat);
+}
+
+/* Closes every lease left, the primary node last, then tells seatd the session may switch. */
+static void
+seat_disable_finish(
+	struct libseat *seat)
+{
+	unsigned slot;
+	int error;
+
+	/* The inputs, then the primary node after the output that used it. */
+	seat_disabling = 0;
+	for (slot = 1; slot < SEAT_LEASE_MAX; slot++)
+		lease_close(slot);
 	lease_close(0);
 
 	/* seatd may switch only after every file has gone. */
+	if (seat == NULL)
+		return;
 	error = libseat_disable_seat(seat);
 	if (error != 0)
 		seat_failed = 1;

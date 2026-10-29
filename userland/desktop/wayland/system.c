@@ -1841,6 +1841,8 @@ system_account_request(
 		} else {
 			memcpy(job->fresh, fresh, fresh_length + 1U);
 		}
+
+		/* Records who asked, so that the answer finds the object. */
 		job->client = object->client->number;
 		job->object = object->id;
 		job->number = number;

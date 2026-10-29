@@ -60,7 +60,9 @@ struct kl_backend_input_caps {
  * events' times, and offers each to the compositor (host input_found).
  * A node the compositor does not keep is closed here.  A missing directory
  * is no error; the compositor scans again from time to time for devices
- * that come later.  The callbacks are called from this call.
+ * that come later.  The callbacks are called from this call, or, for a
+ * node the seat's service opens later (logind), from kl_backend_poll_done
+ * once its answer has come.
  */
 void kl_backend_input_scan(struct kl_backend *backend);
 

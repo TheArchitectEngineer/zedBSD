@@ -64,8 +64,7 @@ struct spawn_job {
 	int error;
 };
 
-static int spawn_submit(struct kwl_server *server, const char *path, const char *const *arguments, const char *const *sets, const char *const *removes,
-    int lent, unsigned null_input, kwl_spawn_fn *then, void *context);
+static int spawn_submit(struct kwl_server *server, const char *path, const char *const *arguments, const char *const *sets, const char *const *removes, int lent, unsigned null_input, kwl_spawn_fn *then, void *context);
 static char **spawn_environment(const char *const *sets, const char *const *removes);
 static char **spawn_strings(const char *const *strings);
 static void spawn_strings_free(char **strings);
@@ -113,7 +112,7 @@ kwl_spawn(
 	int error;
 
 	/*
-	 * The program's activation token (activation.c, ws089-p016): with it
+	 * The program's activation token (activation.c): with it
 	 * the program may bring a window to the front, its own or that of a
 	 * running copy of itself it hands its request to.  A program starts
 	 * without one when none can be made, never with the compositor's own.
@@ -137,6 +136,8 @@ kwl_spawn(
 	} else {
 		(void)snprintf(display_variable, sizeof(display_variable), "WAYLAND_DISPLAY=%s", server->socket_path);
 	}
+
+	/* Adds WAYLAND_DISPLAY and ends both lists with NULL. */
 	sets[set_count++] = display_variable;
 	sets[set_count] = NULL;
 	removes[remove_count] = NULL;
@@ -229,6 +230,8 @@ spawn_submit(
 			close(lent);
 		return ENOMEM;
 	}
+
+	/* Records which descriptor is lent to the program, and the number it appears as. */
 	job->lent = lent;
 	job->lent_at = SPAWN_LENT_AT;
 	if (lent == SPAWN_LENT_AT)
@@ -292,6 +295,8 @@ spawn_environment(
 			spawn_strings_free(copy);
 			return NULL;
 		}
+
+		/* The copy counts in the result. */
 		taken++;
 	}
 
@@ -302,6 +307,8 @@ spawn_environment(
 			spawn_strings_free(copy);
 			return NULL;
 		}
+
+		/* The copy counts in the result. */
 		taken++;
 	}
 
@@ -414,12 +421,16 @@ spawn_run(
 		job->error = error;
 		return;
 	}
+
+	/* The program's input is /dev/null when asked. */
 	if (job->null_input)
 		error = posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0);
 	if (error == 0 && job->lent >= 0) {
 		error = posix_spawn_file_actions_adddup2(&actions, job->lent, job->lent_at);
 		first_closed = job->lent_at + 1;
 	}
+
+	/* Closes every other descriptor from the one after the lent one. */
 	if (error == 0)
 		error = posix_spawn_file_actions_addclosefrom_np(&actions, first_closed);
 
@@ -431,6 +442,8 @@ spawn_run(
 		job->error = error;
 		return;
 	}
+
+	/* Applies the session, the mask and the default signals. */
 	flags = POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_SETSIGDEF;
 #ifdef POSIX_SPAWN_SETSID
 	flags |= POSIX_SPAWN_SETSID;
