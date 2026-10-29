@@ -97,6 +97,17 @@
 #define VA_SPECIAL_LANE_ID		1U
 
 /*
+ * The thread local storage pointer of FAU special page 1 (each thread's
+ * own, which the hardware places in the storage the thread storage
+ * descriptor names).
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/ISA.xml (enum "FAU special page
+ * 1": thread_local_pointer) and va_pack.c (va_pack_fau_special).
+ */
+#define VA_SPECIAL_THREAD_LOCAL		1U
+
+/*
  * The flow control values: waits on dependency slots (a mask of slots 0
  * to 2), the waits before ATEST and before BLEND, reconvergence, and the
  * end of the program.
@@ -186,6 +197,24 @@
 #define VA_OP_BLEND			0x007F000000000000ULL
 
 /*
+ * The opcode bits of the cube map transform, the texture gather, the
+ * image texel loads and addresses, and the converting store.
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/ISA.xml (the opcode elements of
+ * CUBEFACE1, CUBEFACE2_V9, CUBE_SSEL, CUBE_TSEL, TEX_GATHER, LD_TEX_IMM,
+ * LEA_TEX_IMM and ST_CVT).
+ */
+#define VA_OP_CUBEFACE1			0x00C0000000000000ULL
+#define VA_OP_CUBEFACE2_V9		0x00C1000000000000ULL
+#define VA_OP_CUBE_SSEL			0x00BC000000000000ULL
+#define VA_OP_CUBE_TSEL			0x00BC000001000000ULL
+#define VA_OP_TEX_GATHER		0x0129000000000000ULL
+#define VA_OP_LD_TEX_IMM		0x0066002000000000ULL
+#define VA_OP_LEA_TEX_IMM		0x0067002000000000ULL
+#define VA_OP_ST_CVT			0x0071000000000000ULL
+
+/*
  * The modifier fields the compiler sets, by their first bit: a
  * comparison's condition and its result type, a conversion's or a
  * rounding's round mode, a negate and an absolute value of each of the
@@ -234,6 +263,18 @@
 #define VA_MUX_INT_ZERO			1U
 
 /*
+ * A MUX that selects bit by bit (the first source where the mask's bit
+ * is set), and the clamp of a float result to [0, 1] (bits 33:32).
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/ISA.xml (enums "MUX" and
+ * "Clamp") and valhall.py (MODIFIERS: clamp).
+ */
+#define VA_MUX_BIT			3U
+#define VA_SHIFT_CLAMP			32U
+#define VA_CLAMP_0_1			3U
+
+/*
  * The byte lanes b00 of a shift (b11, b22 and b33 follow it), and the
  * widening .w0 of a 64-bit source.
  */
@@ -278,8 +319,11 @@
 
 #define VA_REGISTER_FORMAT_AUTO		0U
 #define VA_REGISTER_FORMAT_F32		2U
+#define VA_REGISTER_FORMAT_S32		4U
+#define VA_REGISTER_FORMAT_U32		6U
 #define VA_MEMORY_ISTREAM		1U
 #define VA_MEMORY_ESTREAM		2U
+#define VA_MEMORY_FORCE			3U
 #define VA_SOURCE_FORMAT_FLAT32		0U
 #define VA_SOURCE_FORMAT_F32		2U
 #define VA_UPDATE_STORE			0U
@@ -341,6 +385,29 @@
 #define VA_LOD_MODE_EXPLICIT		4U
 #define VA_LOD_MODE_COMPUTED_BIAS	5U
 #define VA_REGISTER_TYPE_F		1U
+
+/*
+ * The compare (shadow) bit of TEX_SINGLE and TEX_GATHER, and the channel a
+ * TEX_GATHER reads (bits 15:14).
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/valhall.py (MODIFIERS: shadow,
+ * fetch_component) and va_pack.c (va_pack_instr, the texture cases).
+ */
+#define VA_SHIFT_TEX_SHADOW		12U
+#define VA_SHIFT_TEX_FETCH_COMPONENT	14U
+
+/*
+ * The memory access hint of ST_CVT (bits 39:37) and the table and index
+ * of LD_TEX_IMM and LEA_TEX_IMM (bits 19:16 and 23:20).
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/ISA.xml (ST_CVT's va_mod
+ * memory_access, the imm elements of LD_TEX_IMM and LEA_TEX_IMM).
+ */
+#define VA_SHIFT_CVT_MEMORY_ACCESS	37U
+#define VA_SHIFT_TEX_IMM_TABLE		16U
+#define VA_SHIFT_TEX_IMM_INDEX		20U
 #define VA_DIMENSION_1D			0U
 #define VA_DIMENSION_2D			1U
 #define VA_DIMENSION_3D			2U

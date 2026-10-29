@@ -62,6 +62,12 @@ static const uint32_t model_immediates[32] = ISA_TABLE_IMMEDIATES;
 #define SHARED_BASE	0x2000000000ULL
 #define OUTPUT_INDEX	0x40U
 #define MAX_STEPS	200000U
+#define TLS_BASE	0x3000000000ULL
+#define TLS_WORDS	4096U
+#define IMAGE_BASE	0x40000000000ULL
+#define IMAGES		4U
+#define IMAGE_TEXELS	4096U
+#define CVT_TOKEN	0xC7000000U
 
 /* The inputs of one trial, shared by the reference and the model. */
 struct trial {
@@ -79,6 +85,7 @@ struct trial {
 	uint32_t instance_id;
 	uint32_t frag_x;
 	uint32_t frag_y;
+	uint32_t images[IMAGES][IMAGE_TEXELS * 4U];
 };
 
 /* What one side produced. */
@@ -89,7 +96,9 @@ struct result {
 	uint32_t color_written;
 	int killed;
 	uint32_t buffers[BUFFERS][WORDS];
+	uint32_t images[IMAGES][IMAGE_TEXELS * 4U];
 	const char *why;
+	uint32_t why_at;
 };
 
 static uint32_t random_state;
@@ -100,6 +109,18 @@ static uint32_t as_bits(float value);
 static uint32_t to_half(float value);
 static float from_half(uint32_t half);
 static void texture_value(uint32_t slot, float u, float v, uint32_t *out);
+static void texel_value(uint32_t slot, float s, float t, float r, uint32_t layer, uint32_t face, uint32_t *out);
+static uint32_t cube_face(float x, float y, float z);
+static float cube_select_s(float z, float x, uint32_t face);
+static float cube_select_t(float y, float z, uint32_t face);
+static void message_reply(const uint32_t *texel, int gather, uint32_t channel, int compare, float reference, uint32_t *out);
+static uint32_t image_texel(uint32_t x, uint32_t y, uint32_t layer);
+static uint32_t format_components(uint32_t format);
+static int format_is_integer(uint32_t format);
+static int find_image(const struct mali_shader_program *program, uint32_t set, uint32_t binding);
+static uint32_t sampled_layer(float coordinate);
+static void reference_texture(const struct mali_shader_program *program, const struct trial *trial, const uint32_t *value, const struct drv_gpu_shader_ir_inst *inst, uint32_t *texel);
+static void reference_image(const struct drv_gpu_shader_ir *ir, const struct mali_shader_program *program, uint32_t *value, const struct drv_gpu_shader_ir_inst *inst, struct result *result);
 static int find_buffer(const struct mali_shader_program *program, const struct drv_gpu_shader_ir *ir, uint32_t uniform);
 static int find_texture(const struct mali_shader_program *program, uint32_t set, uint32_t binding);
 static void run_reference(const struct drv_gpu_shader_ir *ir, const struct mali_shader_program *program, const struct trial *trial, struct result *result);
@@ -208,6 +229,156 @@ texture_value(
 	out[3] = as_bits(1.0f - u * 0.125f);
 }
 
+/*
+ * The texel both sides return for a texture slot at (s, t), of a 3D
+ * image's r, an array's layer and a cube's face: each adds to one
+ * channel, so a misplaced coordinate shows.
+ */
+static void
+texel_value(
+	uint32_t slot,
+	float s,
+	float t,
+	float r,
+	uint32_t layer,
+	uint32_t face,
+	uint32_t *out)
+{
+	texture_value(slot, s, t, out);
+	if (r != 0.0f)
+		out[1] = as_bits(as_float(out[1]) + r * 0.375f);
+	if (layer != 0U)
+		out[0] = as_bits(as_float(out[0]) + (float)layer * 0.0625f);
+	if (face != 0U)
+		out[3] = as_bits(as_float(out[3]) + (float)face * 0.125f);
+}
+
+/*
+ * The face of a cube's direction (+X 0, -X 1, +Y 2, -Y 3, +Z 4, -Z 5),
+ * x winning ties over y and y over z: the model's CUBEFACE2 and the
+ * reference agree on it (the hardware's choice in a tie is not known).
+ */
+static uint32_t
+cube_face(
+	float x,
+	float y,
+	float z)
+{
+	if (fabsf(x) >= fabsf(y) && fabsf(x) >= fabsf(z))
+		return x < 0.0f ? 1U : 0U;
+	if (fabsf(y) >= fabsf(z))
+		return y < 0.0f ? 3U : 2U;
+	return z < 0.0f ? 5U : 4U;
+}
+
+/* A face's s coordinate before the division by the major axis (Vulkan's cube face table). */
+static float
+cube_select_s(
+	float z,
+	float x,
+	uint32_t face)
+{
+	switch (face) {
+	case 0U: return -z;
+	case 1U: return z;
+	case 5U: return -x;
+	default: return x;
+	}
+}
+
+/* A face's t coordinate before the division by the major axis. */
+static float
+cube_select_t(
+	float y,
+	float z,
+	uint32_t face)
+{
+	switch (face) {
+	case 2U: return z;
+	case 3U: return -z;
+	default: return -y;
+	}
+}
+
+/*
+ * A message's reply from its texel: a gather's four values of its channel
+ * (the texel's, then offsets of 0.25 standing for the other three
+ * texels), a compare's results of reference <= value (the sampler's
+ * compare function, which both sides take as less or equal).
+ */
+static void
+message_reply(
+	const uint32_t *texel,
+	int gather,
+	uint32_t channel,
+	int compare,
+	float reference,
+	uint32_t *out)
+{
+	uint32_t index;
+	float value;
+
+	for (index = 0U; index < 4U; index++) {
+		out[index] = texel[index];
+		if (gather)
+			out[index] = as_bits(as_float(texel[compare ? 0U : channel & 3U]) + 0.25f * (float)index);
+		if (compare && (gather || index == 0U)) {
+			value = as_float(out[index]);
+			out[index] = as_bits(reference <= value ? 1.0f : 0.0f);
+		}
+	}
+}
+
+/* A storage image's texel number in the model's memory. */
+static uint32_t
+image_texel(
+	uint32_t x,
+	uint32_t y,
+	uint32_t layer)
+{
+	return (x & 15U) + 16U * (y & 15U) + 256U * (layer & 15U);
+}
+
+/* The components of a storage image format (VkFormat). */
+static uint32_t
+format_components(
+	uint32_t format)
+{
+	if (format == 98U || format == 99U || format == 100U)
+		return 1U;
+	if (format == 101U || format == 102U || format == 103U)
+		return 2U;
+	return 4U;
+}
+
+/* Whether a storage image format holds integers. */
+static int
+format_is_integer(
+	uint32_t format)
+{
+	switch (format) {
+	case 41U: case 42U: case 95U: case 96U: case 98U: case 99U: case 101U: case 102U: case 107U: case 108U:
+		return 1;
+	default:
+		return 0;
+	}
+}
+
+static int
+find_image(
+	const struct mali_shader_program *program,
+	uint32_t set,
+	uint32_t binding)
+{
+	uint32_t index;
+
+	for (index = 0U; index < program->image_count; index++) {
+		if (program->images[index].set == set && program->images[index].binding == binding)
+			return (int)index;
+	}
+	return -1;
+}
+
 static int
 find_buffer(
 	const struct mali_shader_program *program,
@@ -263,6 +434,174 @@ float_to_int(
 	return (uint32_t)value;
 }
 
+/* The sampled array layer of a float coordinate: the nearest integer, at least 0. */
+static uint32_t
+sampled_layer(
+	float coordinate)
+{
+	coordinate = rintf(coordinate);
+	if (!(coordinate > 0.0f))
+		return 0U;
+	return (uint32_t)coordinate;
+}
+
+/*
+ * The reference's sampler message: the parameters read in the order the
+ * IR states (the reference of a compare, the bias or level, the
+ * coordinates, the layer; a texel load's u v lod r), the cube's face and
+ * coordinates by Vulkan's face selection, the reply as message_reply().
+ */
+static void
+reference_texture(
+	const struct mali_shader_program *program,
+	const struct trial *trial,
+	const uint32_t *value,
+	const struct drv_gpu_shader_ir_inst *inst,
+	uint32_t *texel)
+{
+	uint32_t base[4];
+	uint32_t message;
+	uint32_t kind;
+	uint32_t first;
+	uint32_t component;
+	uint32_t word;
+	uint32_t layer;
+	uint32_t face;
+	int slot;
+	int compare;
+	int gather;
+	int arrayed;
+	float s;
+	float t;
+	float r;
+	float x;
+	float y;
+	float z;
+	float major;
+	float reference;
+
+	slot = find_texture(program, inst->location, inst->immediate);
+	if (inst->op != DRV_GPU_IR_TEXTURE) {
+		texture_value((uint32_t)slot, as_float(value[inst->src[0]]), as_float(value[inst->src[1]]), texel);
+		return;
+	}
+	message = inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK;
+	kind = inst->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK;
+	arrayed = (inst->image_shape & DRV_GPU_IR_IMAGE_ARRAYED) != 0U;
+	if (message == DRV_GPU_IR_TEXTURE_RESINFO) {
+		if (slot < 0) {
+			slot = find_image(program, inst->location, inst->immediate);
+			if (slot >= 0)
+				slot += 8;
+		}
+		for (component = 0U; component < 4U; component++) {
+			word = trial->texture_size[slot & 15][component];
+			if (component < 2U || (component == 2U && kind == DRV_GPU_IR_IMAGE_3D)) {
+				word >>= value[inst->src[0]] & 31U;
+				if (word == 0U)
+					word = 1U;
+			}
+			texel[component] = word;
+		}
+		return;
+	}
+	if (message == DRV_GPU_IR_TEXTURE_LD) {
+		r = 0.0f;
+		layer = 0U;
+		if (kind == DRV_GPU_IR_IMAGE_3D && inst->src[1] > 3U)
+			r = (float)(int32_t)value[inst->src[0] + 3U];
+		if (arrayed && inst->src[1] > 3U)
+			layer = value[inst->src[0] + 3U];
+		texel_value((uint32_t)slot, (float)(int32_t)value[inst->src[0]], (float)(int32_t)value[inst->src[0] + 1U], r, layer, 0U, texel);
+		return;
+	}
+	compare = message == DRV_GPU_IR_TEXTURE_SAMPLE_COMPARE || message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE ||
+		  message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE || message == DRV_GPU_IR_TEXTURE_GATHER4_COMPARE;
+	gather = message == DRV_GPU_IR_TEXTURE_GATHER4 || message == DRV_GPU_IR_TEXTURE_GATHER4_COMPARE;
+	first = 0U;
+	if (compare)
+		first++;
+	if (message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD ||
+	    message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE)
+		first++;
+	reference = compare ? as_float(value[inst->src[0]]) : 0.0f;
+#define PARAM(N) ((N) < inst->src[1] ? as_float(value[inst->src[0] + (N)]) : 0.0f)
+	s = PARAM(first);
+	t = PARAM(first + 1U);
+	r = 0.0f;
+	face = 0U;
+	layer = 0U;
+	if (kind == DRV_GPU_IR_IMAGE_CUBE) {
+		x = s;
+		y = t;
+		z = PARAM(first + 2U);
+		face = cube_face(x, y, z);
+		major = fmaxf(fabsf(x), fmaxf(fabsf(y), fabsf(z)));
+		s = fminf(fmaxf(cube_select_s(z, x, face) * (0.5f / major) + 0.5f, 0.0f), 1.0f);
+		t = fminf(fmaxf(cube_select_t(y, z, face) * (0.5f / major) + 0.5f, 0.0f), 1.0f);
+		if (arrayed)
+			layer = sampled_layer(PARAM(first + 3U));
+	} else if (kind == DRV_GPU_IR_IMAGE_3D) {
+		r = PARAM(first + 2U);
+	} else if (arrayed) {
+		layer = sampled_layer(PARAM(first + 2U));
+	}
+#undef PARAM
+	texel_value((uint32_t)slot, s, t, r, layer, face, base);
+	message_reply(base, gather, DRV_GPU_IR_TEXTURE_CHANNEL(inst->component), compare, reference, texel);
+}
+
+/*
+ * The reference's storage image access: the texel at x, y and the layer
+ * (the third coordinate) holds four raw words; a read gives the format's
+ * components and (0, 0, 0, 1) for the rest, a write stores the format's
+ * components.
+ */
+static void
+reference_image(
+	const struct drv_gpu_shader_ir *ir,
+	const struct mali_shader_program *program,
+	uint32_t *value,
+	const struct drv_gpu_shader_ir_inst *inst,
+	struct result *result)
+{
+	const struct drv_gpu_shader_ir_uniform *uniform;
+	uint32_t texel;
+	uint32_t components;
+	uint32_t component;
+	uint32_t one;
+	int slot;
+
+	if (inst->location >= ir->uniform_count) {
+		result->why = "reference: an image without its uniform";
+		return;
+	}
+	uniform = &ir->uniforms[inst->location];
+	slot = find_image(program, uniform->set, uniform->binding);
+	if (slot < 0 || slot >= (int)IMAGES) {
+		result->why = "reference: an image the model does not have";
+		return;
+	}
+	texel = image_texel(value[inst->src[0]], value[inst->src[0] + 1U], value[inst->src[0] + 2U]) * 4U;
+	components = format_components(uniform->format);
+	if (inst->op == DRV_GPU_IR_IMAGE_READ) {
+		if (inst->component == 1U && value[inst->src[2]] == 0U)
+			return;
+		one = format_is_integer(uniform->format) ? 1U : as_bits(1.0f);
+		for (component = 0U; component < 4U; component++) {
+			if (component < components)
+				value[inst->dst + component] = result->images[slot][texel + component];
+			else
+				value[inst->dst + component] = component == 3U ? one : 0U;
+		}
+		return;
+	}
+	if (inst->component == 1U && value[inst->src[3]] == 0U)
+		return;
+	for (component = 0U; component < components; component++)
+		result->images[slot][texel + component] = value[inst->src[2] + component];
+}
+
 /* Runs the IR for one invocation. */
 static void
 run_reference(
@@ -283,9 +622,7 @@ run_reference(
 	int slot;
 	float fa;
 	float fb;
-	uint32_t word;
 	uint32_t component;
-	uint32_t message;
 
 	value = calloc((size_t)ir->value_count + 8U, sizeof(*value));
 	if (value == NULL) {
@@ -437,7 +774,14 @@ run_reference(
 			uint32_t old;
 			uint32_t predicate_source;
 
-			if (inst->location == DRV_GPU_IR_LOCATION_SHARED) {
+			if ((inst->image_shape & DRV_GPU_IR_IMAGE_TEXEL) != 0U) {
+				if (inst->location >= ir->uniform_count)
+					break;
+				slot = find_image(program, ir->uniforms[inst->location].set, ir->uniforms[inst->location].binding);
+				if (slot < 0 || slot >= (int)IMAGES)
+					break;
+				memory_word_ref = &result->images[slot][image_texel(a, value[inst->src[0] + 1U], value[inst->src[0] + 2U]) * 4U];
+			} else if (inst->location == DRV_GPU_IR_LOCATION_SHARED) {
 				memory_word_ref = &result->buffers[BUFFERS - 1U][(a / 4U) % WORDS];
 			} else {
 				slot = find_buffer(program, ir, inst->location);
@@ -493,33 +837,15 @@ run_reference(
 		case DRV_GPU_IR_SAMPLE_BIAS:
 		case DRV_GPU_IR_SAMPLE_LOD:
 		case DRV_GPU_IR_TEXTURE:
-			slot = find_texture(program, inst->location, inst->immediate);
-			if (inst->op == DRV_GPU_IR_TEXTURE) {
-				message = inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK;
-				word = inst->src[0];
-				if (message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD)
-					word++;
-				if (message == DRV_GPU_IR_TEXTURE_RESINFO) {
-					for (component = 0U; component < 4U; component++) {
-						word = trial->texture_size[slot & 15][component];
-						if (component < 2U || (component == 2U && (inst->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK) == DRV_GPU_IR_IMAGE_3D)) {
-							word >>= value[inst->src[0]] & 31U;
-							if (word == 0U)
-								word = 1U;
-						}
-						texel[component] = word;
-					}
-				} else if (message == DRV_GPU_IR_TEXTURE_LD)
-					texture_value((uint32_t)slot, (float)(int32_t)value[word], (float)(int32_t)value[word + 1U], texel);
-				else
-					texture_value((uint32_t)slot, as_float(value[word]), as_float(value[word + 1U]), texel);
-			} else {
-				texture_value((uint32_t)slot, fa, fb, texel);
-			}
+			reference_texture(program, trial, value, inst, texel);
 			for (component = 0U; component < 4U; component++) {
 				if (inst->dst + component <= ir->value_count)
 					value[inst->dst + component] = texel[component];
 			}
+			break;
+		case DRV_GPU_IR_IMAGE_READ:
+		case DRV_GPU_IR_IMAGE_WRITE:
+			reference_image(ir, program, value, inst, result);
 			break;
 		default:
 			result->why = "reference: an operation it does not model";
@@ -560,6 +886,7 @@ model_decode(
 struct model {
 	uint32_t r[64];
 	uint32_t fau[256];
+	uint32_t tls[TLS_WORDS];
 	uint64_t pending[8];
 	const struct mali_shader_program *program;
 	const struct trial *trial;
@@ -585,6 +912,8 @@ read_source(
 	number = (byte >> 1) & 0xFU;
 	if (page == 1U && number == 3U)
 		return (byte & 1U) != 0U ? (uint32_t)(SHARED_BASE >> 32) : (uint32_t)SHARED_BASE;
+	if (page == 1U && number == 1U)
+		return (byte & 1U) != 0U ? (uint32_t)(TLS_BASE >> 32) : (uint32_t)TLS_BASE;
 	if (page == 3U && number == 1U)
 		return 0U;
 	return 0U;
@@ -661,6 +990,14 @@ memory_word(
 	}
 	if (address >= SHARED_BASE && address < SHARED_BASE + 0x100000000ULL)
 		return &m->result->buffers[BUFFERS - 1U][((address - SHARED_BASE) / 4U) % WORDS];
+	if (address >= TLS_BASE && address < TLS_BASE + (uint64_t)m->program->tls_bytes && (address - TLS_BASE) / 4U < TLS_WORDS)
+		return &m->tls[(address - TLS_BASE) / 4U];
+	if (address >= IMAGE_BASE && address < IMAGE_BASE + ((uint64_t)IMAGES << 32)) {
+		record = (address - IMAGE_BASE) >> 32;
+		offset = (address - IMAGE_BASE) & 0xFFFFFFFFULL;
+		if (offset / 4U < IMAGE_TEXELS * 4U)
+			return &m->result->images[record][offset / 4U];
+	}
 	return NULL;
 }
 
@@ -718,6 +1055,99 @@ exponent_of(
 	return e - 1;
 }
 
+/*
+ * Runs a texture instruction on the model: the staging registers read in
+ * the order the instruction's fields imply (s, t, r of a 3D image, the
+ * array layer, the compare's reference, the offsets word, the level or
+ * bias), which must be all of them; a cube's s carries the face in its
+ * top three bits (an inference from Mesa's packing); the reply goes to
+ * the write mask's registers in order.
+ */
+static int
+model_texture(
+	struct model *m,
+	uint64_t word,
+	const char *name,
+	uint32_t dest,
+	uint32_t count)
+{
+	uint32_t base[4];
+	uint32_t reply[4];
+	uint32_t staging[8];
+	uint32_t used;
+	uint32_t dimension;
+	uint32_t lod_mode;
+	uint32_t layer;
+	uint32_t face;
+	uint32_t mask;
+	uint32_t out;
+	uint32_t index;
+	uint32_t slot;
+	int fetch;
+	int gather;
+	int compare;
+	float s;
+	float t;
+	float r;
+	float reference;
+
+	for (index = 0U; index < 8U; index++)
+		staging[index] = m->r[(dest + index) & 63U];
+	fetch = strcmp(name, "TEX_FETCH") == 0;
+	gather = strcmp(name, "TEX_GATHER") == 0;
+	if (!fetch && !gather && strcmp(name, "TEX_SINGLE") != 0) {
+		m->result->why = name;
+		return 1;
+	}
+	dimension = (uint32_t)((word >> 28) & 3U);
+	compare = !fetch && ((word >> 12) & 1U) != 0U;
+	lod_mode = gather || fetch ? 0U : (uint32_t)((word >> 13) & 7U);
+	used = 2U;
+	r = 0.0f;
+	layer = 0U;
+	face = 0U;
+	reference = 0.0f;
+	if (dimension == 2U)
+		r = fetch ? (float)(int32_t)staging[used++] : as_float(staging[used++]);
+	if (((word >> 10) & 1U) != 0U)
+		layer = staging[used++];
+	if (compare)
+		reference = as_float(staging[used++]);
+	if (((word >> 11) & 1U) != 0U)
+		used++;
+	if (lod_mode == 4U || lod_mode == 5U)
+		used++;
+	if (used != count) {
+		m->result->why = "a texture instruction's staging count does not match its fields";
+		return 1;
+	}
+	if (fetch) {
+		s = (float)(int32_t)staging[0];
+		t = (float)(int32_t)staging[1];
+	} else if (dimension == 3U) {
+		face = staging[0] >> 29;
+		s = as_float((staging[0] & 0x1FFFFFFFU) | 0x20000000U);
+		t = as_float(staging[1]);
+	} else {
+		s = as_float(staging[0]);
+		t = as_float(staging[1]);
+	}
+	slot = m->r[word & 0x3FU] & 0x3FFU;
+	texel_value(slot, s, t, r, layer, face, base);
+	message_reply(base, gather, (uint32_t)((word >> 14) & 3U), compare, reference, reply);
+
+	/* The reply's components the write mask names, in order from the staging destination. */
+	mask = (uint32_t)((word >> 22) & 0xFU);
+	out = (uint32_t)((word >> 16) & 0x3FU);
+	for (index = 0U; index < 4U; index++) {
+		if ((mask & (1U << index)) == 0U)
+			continue;
+		m->r[out & 63U] = reply[index];
+		out++;
+	}
+	return 0;
+}
+
 /* Runs one program of the compiled shader on the model. */
 static void
 run_model(
@@ -748,7 +1178,6 @@ run_model(
 	uint32_t a;
 	uint32_t b;
 	uint32_t c;
-	uint32_t texel[4];
 	unsigned shift;
 	int found;
 	int32_t offset;
@@ -778,6 +1207,12 @@ run_model(
 			continue;
 		for (slot = 0U; slot < 4U; slot++)
 			m.fau[(program->textures[index].size_fau_word + slot) & 255U] = trial->texture_size[index][slot];
+	}
+	for (index = 0U; index < program->image_count; index++) {
+		if (program->images[index].size_fau_word == MALI_SHADER_NO_FAU_WORD)
+			continue;
+		for (slot = 0U; slot < 4U; slot++)
+			m.fau[(program->images[index].size_fau_word + slot) & 255U] = trial->texture_size[(8U + index) & 15U][slot];
 	}
 	for (index = 0U; index < program->buffer_count; index++) {
 		address = BUFFER_BASE + ((uint64_t)index << 32);
@@ -810,6 +1245,7 @@ run_model(
 			return;
 		}
 		memcpy(&word, code + (size_t)pc * 8U, 8U);
+		result->why_at = pc * 8U;
 		found = model_decode(word);
 		if (found < 0) {
 			result->why = "a word that does not decode";
@@ -825,10 +1261,15 @@ run_model(
 		/* The registers it touches, for the wait check. */
 		reads = 0U;
 		for (index = 0U; index < entry->sources && index < 3U; index++) {
-			if (((word >> (8U * index)) & 0xC0U) < 0x80U) {
-				reads |= 1ULL << ((word >> (8U * index)) & 0x3FU);
-				if (entry->source_sizes[index] == 64U)
-					reads |= 2ULL << ((word >> (8U * index)) & 0x3FU);
+			/* A conversion's descriptor is the third source byte, its offset the second. */
+			shift = 8U * index;
+			if (index == 1U && (strcmp(name, "ST_CVT") == 0 || strcmp(name, "LD_CVT") == 0))
+				shift = 16U;
+			if (((word >> shift) & 0xC0U) < 0x80U) {
+				reads |= 1ULL << ((word >> shift) & 0x3FU);
+				/* A 64-bit source widened from one word (SHADDX's offset) reads that word alone. */
+				if (entry->source_sizes[index] == 64U && !(index == 1U && strcmp(name, "SHADDX.u64") == 0 && ((word >> 26) & 0xFU) != 0U))
+					reads |= 2ULL << ((word >> shift) & 0x3FU);
 			}
 		}
 		writes = 0U;
@@ -871,7 +1312,20 @@ run_model(
 		} else if (strcmp(name, "FADD.f32") == 0) {
 			m.r[dest] = as_bits(float_source(&m, word, 0U, entry) + float_source(&m, word, 1U, entry));
 		} else if (strcmp(name, "FMA.f32") == 0) {
-			m.r[dest] = as_bits(fmaf(float_source(&m, word, 0U, entry), float_source(&m, word, 1U, entry), float_source(&m, word, 2U, entry)));
+			fa = fmaf(float_source(&m, word, 0U, entry), float_source(&m, word, 1U, entry), float_source(&m, word, 2U, entry));
+			if (((word >> 32) & 1U) != 0U)
+				fa = fmaxf(fa, 0.0f);
+			if (((word >> 33) & 1U) != 0U)
+				fa = fminf(fmaxf(fa, -1.0f), 1.0f);
+			m.r[dest] = as_bits(fa);
+		} else if (strcmp(name, "CUBEFACE1") == 0) {
+			m.r[dest] = as_bits(fmaxf(fabsf(float_source(&m, word, 0U, entry)), fmaxf(fabsf(float_source(&m, word, 1U, entry)), fabsf(float_source(&m, word, 2U, entry)))));
+		} else if (strcmp(name, "CUBEFACE2_V9") == 0) {
+			m.r[dest] = cube_face(float_source(&m, word, 0U, entry), float_source(&m, word, 1U, entry), float_source(&m, word, 2U, entry)) << 29;
+		} else if (strcmp(name, "CUBE_SSEL") == 0) {
+			m.r[dest] = as_bits(cube_select_s(float_source(&m, word, 0U, entry), float_source(&m, word, 1U, entry), c >> 29));
+		} else if (strcmp(name, "CUBE_TSEL") == 0) {
+			m.r[dest] = as_bits(cube_select_t(float_source(&m, word, 0U, entry), float_source(&m, word, 1U, entry), c >> 29));
 		} else if (strcmp(name, "FMIN.f32") == 0) {
 			m.r[dest] = as_bits(fminf(float_source(&m, word, 0U, entry), float_source(&m, word, 1U, entry)));
 		} else if (strcmp(name, "FMAX.f32") == 0) {
@@ -946,6 +1400,10 @@ run_model(
 			else
 				m.r[dest] = a ^ c;
 		} else if (strcmp(name, "MUX.i32") == 0) {
+			if (((word >> 32) & 3U) == 3U) {
+				m.r[dest] = (a & c) | (b & ~c);
+				goto next;
+			}
 			if (((word >> 32) & 3U) != 1U) {
 				result->why = "a MUX mode the model does not run";
 				return;
@@ -998,6 +1456,10 @@ run_model(
 			m.r[(dest + 1U) & 63U] = (uint32_t)(address >> 32);
 		} else if (strncmp(name, "LOAD.", 5) == 0 || strncmp(name, "STORE.", 6) == 0) {
 			address = read_source64(&m, (uint8_t)word, page) + (uint64_t)(int64_t)(int16_t)(uint16_t)(word >> 8);
+			if (address >= TLS_BASE && address < TLS_BASE + 0x100000000ULL && ((word >> 24) & 3U) != 3U) {
+				result->why = "a thread local storage access without the force hint";
+				return;
+			}
 			for (slot = 0U; slot < count; slot++) {
 				memory = memory_word(&m, address + 4U * slot);
 				if (memory == NULL) {
@@ -1038,20 +1500,51 @@ run_model(
 			default: *memory = b; break;
 			}
 			m.r[(word >> 16) & 0x3FU] = a;
-		} else if (strcmp(name, "TEX_SINGLE") == 0 || strcmp(name, "TEX_FETCH") == 0) {
-			a = m.r[word & 0x3FU];
-			index = a & 0x3FFU;
-			if (strcmp(name, "TEX_FETCH") == 0) {
-				fa = (float)(int32_t)m.r[dest];
-				fb = (float)(int32_t)m.r[(dest + 1U) & 63U];
-			} else {
-				fa = as_float(m.r[dest]);
-				fb = as_float(m.r[(dest + 1U) & 63U]);
+		} else if (strncmp(name, "TEX_", 4) == 0) {
+			if (model_texture(&m, word, name, dest, count) != 0)
+				return;
+		} else if (strcmp(name, "LD_TEX_IMM") == 0 || strcmp(name, "LEA_TEX_IMM") == 0) {
+			index = (uint32_t)((word >> 20) & 0xFU);
+			if (((word >> 16) & 0xFU) != MALI_SHADER_TABLE_IMAGES || index >= program->image_count || index >= IMAGES) {
+				result->why = "an image access of another table or entry";
+				return;
 			}
-			texture_value(index, fa, fb, texel);
-			staging = (uint32_t)((word >> 16) & 0x3FU);
-			for (slot = 0U; slot < 4U; slot++)
-				m.r[(staging + slot) & 63U] = texel[slot];
+			if ((b & 0xFFFFU) != 0U) {
+				result->why = "a storage image texel with a z coordinate";
+				return;
+			}
+			slot = image_texel(a & 0xFFFFU, a >> 16, b >> 16) * 4U;
+			if (name[1] == 'E') {
+				address = IMAGE_BASE + ((uint64_t)index << 32) + (uint64_t)slot * 4U;
+				m.r[dest] = (uint32_t)address;
+				m.r[(dest + 1U) & 63U] = (uint32_t)(address >> 32);
+				m.r[(dest + 2U) & 63U] = CVT_TOKEN | index;
+				goto next;
+			}
+			c = format_components(program->images[index].format);
+			for (shift = 0U; shift < count; shift++) {
+				if (shift < c)
+					m.r[(dest + shift) & 63U] = result->images[index][slot + shift];
+				else if (shift == 3U)
+					m.r[(dest + shift) & 63U] = ((word >> 24) & 7U) == 2U ? as_bits(1.0f) : 1U;
+				else
+					m.r[(dest + shift) & 63U] = 0U;
+			}
+		} else if (strcmp(name, "ST_CVT") == 0) {
+			address = read_source64(&m, (uint8_t)word, page);
+			c = m.r[(word >> 16) & 0x3FU];
+			if (address < IMAGE_BASE || c != (CVT_TOKEN | (uint32_t)((address - IMAGE_BASE) >> 32)) || ((word >> 28) & 3U) + 1U != count) {
+				result->why = "ST_CVT of an address, conversion or size LEA_TEX_IMM did not give";
+				return;
+			}
+			for (slot = 0U; slot < count; slot++) {
+				memory = memory_word(&m, address + 4U * slot);
+				if (memory == NULL) {
+					result->why = "a converted store outside the model's memory";
+					return;
+				}
+				*memory = m.r[(dest + slot) & 63U];
+			}
 		} else if (strcmp(name, "ATEST") == 0) {
 			m.r[dest] = a;
 		} else if (strcmp(name, "BLEND") == 0) {
@@ -1141,6 +1634,10 @@ fill_trial(
 	}
 	for (index = 0U; index < BUFFERS; index++)
 		trial->buffer_bytes[index] = (next_random() % 1024U) * 4U;
+	for (index = 0U; index < IMAGES; index++) {
+		for (component = 0U; component < IMAGE_TEXELS * 4U; component++)
+			trial->images[index][component] = next_random() % 4096U;
+	}
 	for (index = 0U; index < 16U; index++) {
 		for (component = 0U; component < 4U; component++)
 			trial->texture_size[index][component] = 1U + next_random() % 4096U;
@@ -1218,7 +1715,7 @@ mali_model_check(
 	ir_stage = stage == MALI_SHADER_VERTEX ? DRV_GPU_STAGE_VERTEX :
 		   stage == MALI_SHADER_FRAGMENT ? DRV_GPU_STAGE_FRAGMENT : DRV_GPU_STAGE_COMPUTE;
 	ir = NULL;
-	if (drv_gpu_shader_parse_features(words, count, ir_stage, DRV_GPU_SPIRV_FEATURE_COMPUTE_IMAGES, &ir, &diagnostic) != 0) {
+	if (drv_gpu_shader_parse_features(words, count, ir_stage, MALI_SHADER_SPIRV_FEATURES, &ir, &diagnostic) != 0) {
 		printf("FAIL %s: the reference cannot parse it\n", name);
 		return 1;
 	}
@@ -1235,6 +1732,7 @@ mali_model_check(
 		fill_trial(trial);
 		memset(reference, 0, sizeof(*reference));
 		memcpy(reference->buffers, trial->buffers, sizeof(trial->buffers));
+		memcpy(reference->images, trial->images, sizeof(trial->images));
 		reference->position[3] = as_bits(1.0f);
 		run_reference(ir, program, trial, reference);
 		if (reference->why != NULL) {
@@ -1245,6 +1743,7 @@ mali_model_check(
 
 		memset(model, 0, sizeof(*model));
 		memcpy(model->buffers, trial->buffers, sizeof(trial->buffers));
+		memcpy(model->images, trial->images, sizeof(trial->images));
 		if (stage == MALI_SHADER_VERTEX) {
 			run_model(program->code, program->varying_offset != 0U ? program->varying_offset : program->length, 1U, program, trial, model);
 			if (model->why == NULL && program->varying_offset != 0U)
@@ -1253,7 +1752,7 @@ mali_model_check(
 			run_model(program->code, program->length, 0U, program, trial, model);
 		}
 		if (model->why != NULL) {
-			printf("FAIL %s: trial %u: model: %s\n", name, run, model->why);
+			printf("FAIL %s: trial %u: model: %s (at byte %04x of its program)\n", name, run, model->why, model->why_at);
 			failed = 1;
 			break;
 		}
@@ -1294,6 +1793,16 @@ mali_model_check(
 							failed = 1;
 						}
 					}
+				}
+			}
+		}
+		for (buffer = 0U; buffer < IMAGES && failed == 0; buffer++) {
+			for (location = 0U; location < IMAGE_TEXELS * 4U; location++) {
+				if (model->images[buffer][location] != reference->images[buffer][location]) {
+					printf("FAIL %s: trial %u: image %u word %u is %08x, the reference %08x\n", name, run, buffer, location,
+					       model->images[buffer][location], reference->images[buffer][location]);
+					failed = 1;
+					break;
 				}
 			}
 		}
