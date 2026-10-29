@@ -130,7 +130,9 @@ camcheck_sample_yuyv(
 	int error;
 
 	/* A frame whose lines hold its pixels, and the region in pixels. */
-	if (frame == NULL || sample == NULL || stride < width * 2U)
+	if (frame == NULL ||
+	    sample == NULL ||
+	    stride < width * 2U)
 		return EINVAL;
 	error = camcheck_bounds(width, height, region, &x0, &y0, &x1, &y1);
 	if (error != 0)
@@ -465,9 +467,14 @@ camcheck_bounds(
 	uint32_t *y1)
 {
 	/* A region within the unit square. */
-	if (region == NULL || width == 0U || height == 0U)
+	if (region == NULL ||
+	    width == 0U ||
+	    height == 0U)
 		return EINVAL;
-	if (region->left < 0.0 || region->top < 0.0 || region->right > 1.0 || region->bottom > 1.0)
+	if (region->left < 0.0 ||
+	    region->top < 0.0 ||
+	    region->right > 1.0 ||
+	    region->bottom > 1.0)
 		return EINVAL;
 
 	/* The pixels it covers. */

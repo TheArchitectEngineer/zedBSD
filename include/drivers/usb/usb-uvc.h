@@ -81,6 +81,7 @@ struct usb_uvc {
 	struct drv_cam_device *camera;
 	struct mutex mutex;
 
+	/* The mode negotiated last: the committed record and what it selects. */
 	unsigned committed;
 	uint8_t commit_record[UVC_PROBE_MAX];
 	size_t commit_length;
@@ -90,6 +91,7 @@ struct usb_uvc {
 	uint32_t payload_bytes;
 	uint32_t interval_100ns;
 
+	/* The stream's handshake with its transfers and worker, guarded by lock. */
 	struct spinlock lock;
 	struct wait_queue waitq;
 	unsigned running;
@@ -113,6 +115,7 @@ struct usb_uvc {
 	uint64_t last_completion_ns;
 	unsigned no_signal_reported;
 
+	/* The frame assembler and the counters of what went wrong. */
 	struct uvc_assembler assembler;
 	uint64_t resubmit_failures;
 	uint64_t halt_timeouts;

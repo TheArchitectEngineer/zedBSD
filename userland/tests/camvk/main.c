@@ -178,6 +178,8 @@ main(
 	struct cam_info info;
 	struct camvk run;
 	double seconds;
+	const char *device_name;
+	const char *visibility;
 	VkResult result;
 	int descriptor;
 	int status;
@@ -197,6 +199,7 @@ main(
 		return CAMVK_EXIT_FAILED;
 	}
 
+	/* Asks what the camera is. */
 	error = camcommon_get_info(descriptor, &info);
 	if (error != 0) {
 		printf("camvk: FAIL (CAM_GET_INFO: %s)\n", strerror(error));
@@ -204,6 +207,7 @@ main(
 		return CAMVK_EXIT_FAILED;
 	}
 
+	/* Tells what the camera is. */
 	camcommon_print_info(&info);
 
 	/* Refuses a camera or a kernel that cannot fill GPU memory. */
@@ -240,26 +244,35 @@ main(
 	status = 0;
 	if (result == VK_SUCCESS)
 		status = ioctl(descriptor, CAM_REQUEST_BUFFERS, &request);
-	if (result == VK_SUCCESS && (status < 0 || request.count < 2U)) {
+	if (result == VK_SUCCESS &&
+	    (status < 0 ||
+	     request.count < 2U)) {
 		printf("camvk: FAIL (CAM_REQUEST_BUFFERS: %s, %u buffers)\n", strerror(errno), (unsigned)request.count);
 		camvk_destroy(&run);
 		close(descriptor);
 		return CAMVK_EXIT_FAILED;
 	}
 
+	/* One Vulkan allocation for each slot the framework gave. */
 	if (result == VK_SUCCESS)
 		result = camvk_create_frames(&run, request.count);
 
 	/* Reports the Vulkan call that failed before any frame. */
 	if (result != VK_SUCCESS) {
-		printf("camvk: FAIL (%s: %s %d)\n", run.name[0] != '\0' ? run.name : "no device", run.failed_call, (int)result);
+		device_name = "no device";
+		if (run.name[0] != '\0')
+			device_name = run.name;
+		printf("camvk: FAIL (%s: %s %d)\n", device_name, run.failed_call, (int)result);
 		camvk_destroy(&run);
 		close(descriptor);
 		return CAMVK_EXIT_FAILED;
 	}
 
-	printf("vulkan: %s, %u buffers of %u bytes, %s\n", run.name, run.frame_count, (unsigned)run.frame_bytes,
-	    run.host_visible ? "host-visible (frames compared)" : "not host-visible (frames not compared)");
+	/* Tells the device and whether the frames can be compared by the CPU. */
+	visibility = "not host-visible (frames not compared)";
+	if (run.host_visible)
+		visibility = "host-visible (frames compared)";
+	printf("vulkan: %s, %u buffers of %u bytes, %s\n", run.name, run.frame_count, (unsigned)run.frame_bytes, visibility);
 
 	/* The frames. */
 	memset(&tally, 0, sizeof(tally));
@@ -287,7 +300,10 @@ main(
 		return CAMVK_EXIT_FAILED;
 	}
 
-	if (tally.mismatched != 0U || tally.errors != 0U || tally.sequence_gaps != 0U) {
+	/* Refuses frames the GPU read differently from the CPU, errors and lost frames. */
+	if (tally.mismatched != 0U ||
+	    tally.errors != 0U ||
+	    tally.sequence_gaps != 0U) {
 		printf("camvk: FAIL (%u of %u frames differ from the CPU, %u errors, %u frames lost)\n",
 		    tally.mismatched, tally.compared, tally.errors, tally.sequence_gaps);
 		return CAMVK_EXIT_FAILED;
@@ -308,6 +324,7 @@ camvk_parse(
 	const char *option;
 	const char *value;
 	int index;
+	int order;
 
 	/* The defaults. */
 	memset(options, 0, sizeof(*options));
@@ -327,30 +344,70 @@ camvk_parse(
 		index++;
 		value = argv[index];
 
-		/* Decides which option the value belongs to. */
-		if (strcmp(option, "-d") == 0) {
+		/* Takes the device path. */
+		order = strcmp(option, "-d");
+		if (order == 0) {
 			options->device = value;
-		} else if (strcmp(option, "-o") == 0) {
-			options->output = value;
-		} else if (strcmp(option, "-w") == 0) {
-			options->width = (uint32_t)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-h") == 0) {
-			options->height = (uint32_t)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-i") == 0) {
-			options->interval_100ns = (uint32_t)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-b") == 0) {
-			options->buffers = (unsigned)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-n") == 0) {
-			options->frames = (unsigned)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-t") == 0) {
-			options->timeout_ms = (unsigned)strtoul(value, NULL, 0);
-		} else {
-			return EINVAL;
+			continue;
 		}
+
+		/* Takes the output path. */
+		order = strcmp(option, "-o");
+		if (order == 0) {
+			options->output = value;
+			continue;
+		}
+
+		/* Takes the width. */
+		order = strcmp(option, "-w");
+		if (order == 0) {
+			options->width = (uint32_t)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the height. */
+		order = strcmp(option, "-h");
+		if (order == 0) {
+			options->height = (uint32_t)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the frame interval. */
+		order = strcmp(option, "-i");
+		if (order == 0) {
+			options->interval_100ns = (uint32_t)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the buffer count. */
+		order = strcmp(option, "-b");
+		if (order == 0) {
+			options->buffers = (unsigned)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the frame count. */
+		order = strcmp(option, "-n");
+		if (order == 0) {
+			options->frames = (unsigned)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the wait for one frame. */
+		order = strcmp(option, "-t");
+		if (order == 0) {
+			options->timeout_ms = (unsigned)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Refuses an option the tool does not know. */
+		return EINVAL;
 	}
 
 	/* Two buffers at least, so one is with the camera while the GPU reads the other. */
-	if (options->buffers < 2U || options->buffers > CAM_BUFFERS_MAX || options->frames == 0U)
+	if (options->buffers < 2U ||
+	    options->buffers > CAM_BUFFERS_MAX ||
+	    options->frames == 0U)
 		return EINVAL;
 
 	/* Succeeded: the options are read. */
@@ -388,9 +445,11 @@ camvk_now_ns(
 	void)
 {
 	struct timespec now;
+	int status;
 
 	/* The monotonic clock; 0 when it cannot be read. */
-	if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+	status = clock_gettime(CLOCK_MONOTONIC, &now);
+	if (status != 0)
 		return 0U;
 
 	/* Succeeded: the time in nanoseconds. */
@@ -408,6 +467,7 @@ camvk_set_format(
 	const struct cam_info *info,
 	struct cam_format *format)
 {
+	const char *format_name;
 	uint64_t pixels;
 	int status;
 	int error;
@@ -427,10 +487,14 @@ camvk_set_format(
 		} else {
 			printf("camvk: FAIL (CAM_SET_FORMAT: %s)\n", strerror(error));
 		}
+
+		/* Reports why the camera refused the format. */
 		return error;
 	}
 
-	printf("format: %s %ux%u interval %u stride %u image %u payload %u\n", camcommon_format_name(format->format),
+	/* Tells the format the camera settled on. */
+	format_name = camcommon_format_name(format->format);
+	printf("format: %s %ux%u interval %u stride %u image %u payload %u\n", format_name,
 	    (unsigned)format->width, (unsigned)format->height, (unsigned)format->interval_100ns,
 	    (unsigned)format->stride_bytes, (unsigned)format->image_bytes, (unsigned)format->payload_bytes);
 
@@ -521,6 +585,7 @@ camvk_open_device(
 			break;
 	}
 
+	/* Refuses a device without a compute queue. */
 	if (index == count)
 		return VK_ERROR_FEATURE_NOT_PRESENT;
 
@@ -689,6 +754,7 @@ camvk_create_gray(
 			break;
 	}
 
+	/* Refuses a device without host-coherent memory for the gray buffer. */
 	run->failed_call = "host-coherent memory type";
 	if (type == memory.memoryTypeCount)
 		return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -789,6 +855,7 @@ camvk_create_frame(
 		}
 	}
 
+	/* Uses the host-visible type when there is one, else any type the buffer fits. */
 	if (visible == memory.memoryTypeCount) {
 		for (type = 0U; type < memory.memoryTypeCount; type++) {
 			if ((requirements.memoryTypeBits & (1U << type)) != 0U)
@@ -798,6 +865,7 @@ camvk_create_frame(
 		type = visible;
 	}
 
+	/* Refuses a buffer that fits no memory type. */
 	run->failed_call = "frame memory type";
 	if (type == memory.memoryTypeCount)
 		return VK_ERROR_FEATURE_NOT_PRESENT;
@@ -830,6 +898,7 @@ camvk_create_frame(
 		frame->mapped = mapped;
 	}
 
+	/* Remembers whether the CPU can read the frames. */
 	run->host_visible = frame->mapped != NULL;
 
 	/* The set that names this frame and the gray buffer. */
@@ -854,6 +923,7 @@ camvk_create_frame(
 	if (result != VK_SUCCESS)
 		return result;
 
+	/* Records the dispatch the frame is read with. */
 	result = camvk_record_frame(run, frame);
 	if (result != VK_SUCCESS)
 		return result;
@@ -1032,6 +1102,7 @@ camvk_capture(
 	uint32_t last_sequence;
 	unsigned index;
 	VkResult result;
+	int differs;
 	int status;
 	int error;
 
@@ -1042,6 +1113,7 @@ camvk_capture(
 			return error;
 	}
 
+	/* Starts the stream. */
 	status = ioctl(descriptor, CAM_STREAM_ON, NULL);
 	if (status < 0) {
 		error = errno;
@@ -1090,10 +1162,12 @@ camvk_capture(
 		/* The CPU reads the same memory and checks the GPU's bytes. */
 		if (frame->mapped != NULL) {
 			tally->compared++;
-			if (camvk_compare(run, frame, format) != 0)
+			differs = camvk_compare(run, frame, format);
+			if (differs != 0)
 				tally->mismatched++;
 		}
 
+		/* Tells the frame. */
 		printf("frame %u: buffer %u sequence %u bytes %u flags 0x%x\n", index, (unsigned)buffer.index,
 		    (unsigned)buffer.metadata.sequence, (unsigned)buffer.metadata.used_bytes, (unsigned)buffer.metadata.flags);
 
@@ -1101,6 +1175,7 @@ camvk_capture(
 		if (index + 1U == options->frames)
 			break;
 
+		/* Gives the slot back to the camera. */
 		error = camvk_queue(descriptor, run, buffer.index);
 		if (error != 0)
 			break;
@@ -1197,7 +1272,9 @@ camvk_write_pgm(
 	char header[64];
 	FILE *file;
 	size_t bytes;
+	size_t written;
 	int length;
+	int closed;
 	int error;
 
 	/* The header and the pixels. */
@@ -1209,11 +1286,21 @@ camvk_write_pgm(
 		return error;
 	}
 
+	/* Writes the header, and the pixels only after it was written whole. */
 	bytes = (size_t)width * height;
 	error = 0;
-	if (fwrite(header, 1U, (size_t)length, file) != (size_t)length || fwrite(gray, 1U, bytes, file) != bytes)
+	written = fwrite(header, 1U, (size_t)length, file);
+	if (written != (size_t)length) {
 		error = EIO;
-	if (fclose(file) != 0 && error == 0)
+	} else {
+		written = fwrite(gray, 1U, bytes, file);
+		if (written != bytes)
+			error = EIO;
+	}
+
+	/* Closes the file, which can also report a failed write. */
+	closed = fclose(file);
+	if (closed != 0 && error == 0)
 		error = EIO;
 
 	/* Reports a short write. */
@@ -1240,6 +1327,8 @@ camvk_destroy(
 			vkDestroyBuffer(run->device, run->frames[index].buffer, NULL);
 			vkFreeMemory(run->device, run->frames[index].memory, NULL);
 		}
+
+		/* The gray buffer, the fence and the pools, then the pipeline. */
 		vkDestroyBuffer(run->device, run->gray_buffer, NULL);
 		vkFreeMemory(run->device, run->gray_memory, NULL);
 		vkDestroyFence(run->device, run->fence, NULL);

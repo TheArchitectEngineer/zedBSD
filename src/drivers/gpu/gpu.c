@@ -944,9 +944,13 @@ drv_gpu_shared_backing(
 	struct gpu_shared_resource *shared;
 	int error;
 
-	/* Only a GPU capability's payload is interpreted. */
-	if (handle == NULL || backing == NULL || device_identity == NULL)
+	/* Refuses missing arguments. */
+	if (handle == NULL ||
+	    backing == NULL ||
+	    device_identity == NULL)
 		return EINVAL;
+
+	/* Only a GPU capability's payload is interpreted. */
 	operations = gpu_shared_operations();
 	if (handle->ops != operations)
 		return EINVAL;
@@ -958,8 +962,11 @@ drv_gpu_shared_backing(
 
 	/* The backend's view, when it has one. */
 	share = shared->device->ops->share;
-	if (share == NULL || share->get_allocation_backing == NULL)
+	if (share == NULL ||
+	    share->get_allocation_backing == NULL)
 		return ENOTSUP;
+
+	/* Asks the backend to describe the pages. */
 	kern_memset(backing, 0, sizeof(*backing));
 	error = share->get_allocation_backing(shared->device->private_data, shared->object, backing);
 	if (error != 0)
@@ -974,8 +981,10 @@ drv_gpu_shared_backing(
 	    backing->bytes > backing->page_count * backing->page_bytes)
 		return EIO;
 
-	/* Succeeded: the pages are borrowed while the caller holds the handle. */
+	/* Tells the caller which device the pages belong to. */
 	*device_identity = shared->device->identity;
+
+	/* Succeeded: the pages are borrowed while the caller holds the handle. */
 	return 0;
 }
 

@@ -119,6 +119,15 @@
 #define UVC_CONTROL_FIXED_RANGE		0x08U
 
 /*
+ * A fixed range one longer from UVC 1.5 on: the power line frequency's
+ * 3 (auto).
+ *
+ * Value(s) referenced: USB Video Class 1.5 §4.2.2.3.6 (Table 4-35).
+ */
+#define UVC_CONTROL_AUTO_FROM_1_5	0x10U
+#define UVC_VERSION_1_5			0x0150U
+
+/*
  * The auto-exposure modes of the camera terminal's AE mode control.
  *
  * Value(s) referenced: USB Video Class 1.1 §4.2.2.1.2 (bAutoExposureMode:
@@ -335,6 +344,9 @@ const struct uvc_control_map *uvc_control_at(unsigned index);
  * that carries it.  Returns 1 or 0.
  */
 int uvc_control_present(const struct uvc_control_desc *control, const struct uvc_control_map *map, uint8_t *unit_id);
+
+/* Reports the largest value of a fixed-range control for a class version. */
+int64_t uvc_control_fixed_maximum(const struct uvc_control_map *map, uint16_t bcd_uvc);
 
 /* Reads a control's value from the bytes of a GET request. */
 int64_t uvc_control_decode(const struct uvc_control_map *map, const uint8_t *bytes);

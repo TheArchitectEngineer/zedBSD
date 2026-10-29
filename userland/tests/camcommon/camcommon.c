@@ -425,8 +425,10 @@ camcommon_write_ppm(
 	/* Creates the file, replacing an older one. */
 	errno = 0;
 	file = fopen(path, "wb");
-	if (file == NULL)
-		return camcommon_errno();
+	if (file == NULL) {
+		error = camcommon_errno();
+		return error;
+	}
 
 	/* Writes the header: the magic, the size and the largest sample. */
 	printed = fprintf(file, "P6\n%u %u\n255\n", (unsigned)width, (unsigned)height);
@@ -447,8 +449,10 @@ camcommon_write_ppm(
 
 	/* Closes the file, which flushes what is still buffered. */
 	closed = fclose(file);
-	if (closed != 0)
-		return camcommon_errno();
+	if (closed != 0) {
+		error = camcommon_errno();
+		return error;
+	}
 
 	/* Succeeded: the file holds the whole image. */
 	return 0;
@@ -473,8 +477,10 @@ camcommon_write_file(
 	/* Creates the file, replacing an older one. */
 	errno = 0;
 	file = fopen(path, "wb");
-	if (file == NULL)
-		return camcommon_errno();
+	if (file == NULL) {
+		error = camcommon_errno();
+		return error;
+	}
 
 	/* Writes the whole run. */
 	written = fwrite(data, 1, length, file);
@@ -486,8 +492,10 @@ camcommon_write_file(
 
 	/* Closes the file, which flushes what is still buffered. */
 	closed = fclose(file);
-	if (closed != 0)
-		return camcommon_errno();
+	if (closed != 0) {
+		error = camcommon_errno();
+		return error;
+	}
 
 	/* Succeeded: the file holds the run. */
 	return 0;
@@ -553,12 +561,15 @@ camcommon_get_info(
 	struct cam_info *info)
 {
 	int status;
+	int error;
 
 	/* Asks the node, with an empty record of the current version. */
 	camcommon_record_init(info, sizeof(*info));
 	status = ioctl(descriptor, CAM_GET_INFO, info);
-	if (status < 0)
-		return camcommon_errno();
+	if (status < 0) {
+		error = camcommon_errno();
+		return error;
+	}
 
 	/* Succeeded: the record describes the camera. */
 	return 0;
@@ -968,6 +979,8 @@ camcommon_print_mode(
 			printf(" [interval %u error=%d (%s)]\n", (unsigned)index, error, strerror(error));
 			return error;
 		}
+
+		/* Tells the interval. */
 		camcommon_print_interval(interval.interval_100ns);
 	}
 

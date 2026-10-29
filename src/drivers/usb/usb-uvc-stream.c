@@ -158,6 +158,7 @@ uvc_stream_negotiate(
 	if (format == NULL)
 		return EINVAL;
 
+	/* The frame of exactly that size. */
 	position = 0U;
 	frame = uvc_desc_find_frame(format, request->width, request->height, &position);
 	if (frame == NULL)
@@ -265,6 +266,7 @@ uvc_stream_start(
 	unsigned long irq;
 	unsigned position;
 	unsigned all;
+	uint32_t host_max;
 	int error;
 
 	/* Only a committed mode starts. */
@@ -290,8 +292,9 @@ uvc_stream_start(
 		position = 0U;
 		error = uvc_alternate_choose(uvc->alternates, uvc->alternate_count, uvc->payload_bytes, &position);
 		if (error != 0) {
+			host_max = uvc_alternate_host_max(uvc->alternates, uvc->alternate_count);
 			kern_logf("usb-uvc: %s: no alternate for payload %u (host accepts up to %u)\n", uvc->tag,
-			    (unsigned)uvc->payload_bytes, (unsigned)uvc_alternate_host_max(uvc->alternates, uvc->alternate_count));
+			    (unsigned)uvc->payload_bytes, (unsigned)host_max);
 			return ENOSPC;
 		}
 
@@ -609,13 +612,16 @@ uvc_stream_prepare(
 		if (uvc->urbs[index] == NULL)
 			return ENOMEM;
 
+		/* The buffer the transfer fills. */
 		uvc->buffers[index] = kern_malloc(uvc->urb_bytes);
 		if (uvc->buffers[index] == NULL)
 			return ENOMEM;
 
 		/* The reservation; a host controller without reservations allocates at each submission instead. */
 		error = drv_usb_urb_reserve_transfer(uvc->urbs[index], uvc->urb_bytes);
-		if (error != 0 && error != ENOTSUP && error != EOPNOTSUPP) {
+		if (error != 0 &&
+		    error != ENOTSUP &&
+		    error != EOPNOTSUPP) {
 			kern_logf("usb-uvc: %s: transfer reservation of %u bytes failed (%d)\n", uvc->tag, (unsigned)uvc->urb_bytes, error);
 			return error;
 		}
@@ -760,6 +766,8 @@ uvc_stream_worker(
 			if ((uvc->done_mask & bit) != 0U)
 				ready = 1U;
 		}
+
+		/* Takes the completion the wait was for. */
 		if (stopping == 0U && ready != 0U)
 			uvc->done_mask &= ~bit;
 
@@ -839,6 +847,7 @@ uvc_stream_take(
 			actual = drv_usb_urb_actual_length(urb);
 			uvc_assembler_bulk(&uvc->assembler, uvc->buffers[index], actual, uvc->urb_bytes, uvc->payload_bytes, now);
 		}
+
 		break;
 	case DRV_USB_URB_CANCELLED:
 		/* The halt's cancel; nothing to read. */
@@ -855,6 +864,7 @@ uvc_stream_take(
 			kern_logf("usb-uvc: %s: bulk transfer ended with status %d\n", uvc->tag, (int)status);
 			uvc_stream_fail(uvc, EIO);
 		}
+
 		break;
 	}
 }
@@ -989,6 +999,7 @@ uvc_stream_submit(
 
 		spin_unlock_irqrestore(&uvc->lock, irq);
 
+		/* A stream being halted is not reported as failed. */
 		if (stopping != 0U)
 			return;
 	}
@@ -1068,6 +1079,7 @@ uvc_stream_watch(
 
 	spin_unlock_irqrestore(&uvc->lock, irq);
 
+	/* A stream that already failed has nothing left to watch. */
 	if (faulted != 0U)
 		return;
 
@@ -1150,14 +1162,18 @@ uvc_stream_sleep_ms(
 	unsigned milliseconds)
 {
 	uint64_t ticks;
+	uint64_t now;
 
 	/* At least one tick. */
 	ticks = kern_ms_to_ticks(milliseconds);
 	if (ticks == 0U)
 		ticks = 1U;
 
+	/* The tick count the sleep starts from. */
+	now = sched_ticks();
+
 	/* Until the tick count passes the deadline. */
-	sched_sleep(sched_ticks() + ticks);
+	sched_sleep(now + ticks);
 }
 
 /* Reads the monotonic clock in nanoseconds; 0 when it cannot be read. */

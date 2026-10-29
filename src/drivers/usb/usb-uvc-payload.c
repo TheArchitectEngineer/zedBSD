@@ -205,7 +205,9 @@ uvc_assembler_bulk(
 	}
 
 	/* The payload goes on while the transfers are full and more is due. */
-	if (length >= requested && (payload_bytes == 0U || assembler->bulk_received < payload_bytes))
+	if (length >= requested &&
+	    (payload_bytes == 0U ||
+	     assembler->bulk_received < payload_bytes))
 		return;
 
 	/* The payload's end: its header's EOF, unless its data was thrown away. */
@@ -332,6 +334,8 @@ uvc_assembler_header(
 			assembler->pts |= (uint32_t)payload[place + 3U] << 24;
 			assembler->has_pts = 1U;
 		}
+
+		/* Moves past the PTS field to where the SCR would start. */
 		place += UVC_HEADER_PTS_BYTES;
 	}
 

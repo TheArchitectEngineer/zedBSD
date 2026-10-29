@@ -122,6 +122,7 @@ drv_xhci_endpoint_context_encode(enum drv_usb_speed speed, unsigned type,
 	unsigned maximum_burst = 0;
 	unsigned microframes;
 	unsigned packet = maximum_packet_size & 0x7ffU;
+	unsigned interval_payload;
 	unsigned periodic;
 	unsigned interrupt;
 
@@ -166,32 +167,51 @@ drv_xhci_endpoint_context_encode(enum drv_usb_speed speed, unsigned type,
 	 * refused.
 	 */
 	if (type == 1U || type == 5U) {
-		unsigned payload;
-
+		/* SuperSpeed and anything slower than full speed are refused. */
 		if (speed >= DRV_USB_SPEED_SUPER || speed < DRV_USB_SPEED_FULL)
 			return 0;
+
+		/* The extra transactions a microframe, which wMaxPacketSize bits 12:11 give. */
 		maximum_burst = (maximum_packet_size >> 11) & 3U;
-		if ((maximum_packet_size & 0xe000U) != 0 || packet == 0 ||
+
+		/* Refuses reserved bits, an empty packet and the reserved burst value. */
+		if ((maximum_packet_size & 0xe000U) != 0 ||
+		    packet == 0 ||
 		    maximum_burst == 3U)
 			return 0;
+
+		/* Full speed has no extra transactions. */
 		if (speed == DRV_USB_SPEED_FULL && maximum_burst != 0)
 			return 0;
-		if (speed == DRV_USB_SPEED_HIGH && maximum_burst != 0 &&
+
+		/* A high-bandwidth endpoint's packet is at most 1024 bytes. */
+		if (speed == DRV_USB_SPEED_HIGH &&
+		    maximum_burst != 0 &&
 		    packet > 1024U)
 			return 0;
+
+		/* Refuses an interval the descriptor cannot express. */
 		if (descriptor_interval == 0 || descriptor_interval > 16U)
 			return 0;
+
+		/* The interval's exponent, in frames at full speed and in microframes at high speed. */
 		interval = descriptor_interval - 1U;
 		if (speed == DRV_USB_SPEED_FULL)
 			interval = descriptor_interval + 2U;
+
+		/* Refuses an exponent the context cannot hold. */
 		if (interval > 15U)
 			return 0;
-		payload = packet * (maximum_burst + 1U);
+
+		/* Encodes the interval, the burst and the bytes an interval carries. */
+		interval_payload = packet * (maximum_burst + 1U);
 		encoded.word0 = (uint32_t)interval << 16;
 		encoded.word1 = ((type & 7U) << 3) | (maximum_burst << 8) |
 		    ((packet & 0xffffU) << 16);
-		encoded.word4 = ((uint32_t)payload << 16) | payload;
+		encoded.word4 = ((uint32_t)interval_payload << 16) | interval_payload;
 		*context = encoded;
+
+		/* Succeeded: the isochronous context is encoded. */
 		return 1;
 	}
 	if (periodic) {

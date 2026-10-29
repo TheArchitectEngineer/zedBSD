@@ -6,8 +6,7 @@
  */
 
 /*
- * The reading of the test pattern (plan/ws282/tests/pattern/pattern.html)
- * in a captured frame: where its parts lie, the average colour of a part,
+ * The reading of the test pattern in a captured frame: where its parts lie, the average colour of a part,
  * the YUV matrix and range a frame was encoded with, the patches' error
  * against what the pattern drew, and the frame counter.
  *

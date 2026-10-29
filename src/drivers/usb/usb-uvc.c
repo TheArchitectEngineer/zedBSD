@@ -140,6 +140,7 @@ usb_uvc_attach(
 	struct drv_usb_interface *interface,
 	const struct drv_usb_id *id)
 {
+	const struct uvc_format *offered;
 	struct usb_uvc *uvc;
 	int error;
 
@@ -150,6 +151,7 @@ usb_uvc_attach(
 	if (uvc == NULL)
 		return ENOMEM;
 
+	/* Remembers the interface and the device behind it. */
 	uvc->control_interface = interface;
 	uvc->device = drv_usb_interface_device(interface);
 
@@ -188,7 +190,8 @@ usb_uvc_attach(
 	usb_uvc_dump(uvc);
 
 	/* A camera without a format the driver offers is not registered. */
-	if (uvc_desc_offered_format(&uvc->stream, 0U) == NULL) {
+	offered = uvc_desc_offered_format(&uvc->stream, 0U);
+	if (offered == NULL) {
 		kern_logf("usb-uvc: %s: no format offered\n", uvc->tag);
 		usb_uvc_free(uvc);
 		return ENODEV;
@@ -254,6 +257,7 @@ usb_uvc_detach(
 	error = uvc_stream_halt(uvc);
 	mutex_unlock(&uvc->mutex);
 
+	/* Keeps the camera bound while a transfer is still out. */
 	if (error != 0)
 		return error;
 
@@ -373,6 +377,7 @@ usb_uvc_read_control(
 		if (error != 0)
 			break;
 
+		/* Parses the descriptor into the VideoControl record. */
 		error = uvc_desc_control_feed(&uvc->control, descriptor, length);
 		if (error != 0) {
 			kern_logf("usb-uvc: %s: VideoControl descriptor %u too short (%u bytes)\n", uvc->tag, index, (unsigned)length);
@@ -414,6 +419,7 @@ usb_uvc_claim_stream(
 	if (configuration == NULL)
 		return ENODEV;
 
+	/* The streaming interface the control header names. */
 	stream = drv_usb_configuration_find_interface(configuration, uvc->control.streams[0]);
 	if (stream == NULL) {
 		kern_logf("usb-uvc: %s: streaming interface %u not found\n", uvc->tag, (unsigned)uvc->control.streams[0]);
@@ -465,6 +471,7 @@ usb_uvc_read_stream(
 		if (error != 0)
 			break;
 
+		/* Parses the descriptor into the VideoStreaming record. */
 		error = uvc_desc_stream_feed(&uvc->stream, descriptor, length);
 		if (error != 0) {
 			kern_logf("usb-uvc: %s: streaming descriptor %u too short (%u bytes), parsing stopped\n", uvc->tag, index,
@@ -561,6 +568,10 @@ usb_uvc_dump(
 	const struct usb_uvc *uvc)
 {
 	const char *transport;
+	const char *parsing;
+	unsigned processing_unit_id;
+	unsigned camera_terminal_id;
+	unsigned control_count;
 	unsigned index;
 
 	/* The transport's name. */
@@ -581,14 +592,25 @@ usb_uvc_dump(
 	    (unsigned)uvc->stream.endpoint_address,
 	    transport);
 
+	/* The unit and terminal numbers, zero for a unit the device does not have. */
+	processing_unit_id = 0U;
+	if (uvc->control.processing_unit != 0U)
+		processing_unit_id = (unsigned)uvc->control.processing_unit_id;
+	camera_terminal_id = 0U;
+	if (uvc->control.camera_terminal != 0U)
+		camera_terminal_id = (unsigned)uvc->control.camera_terminal_id;
+
+	/* How many controls the driver and the device have in common. */
+	control_count = usb_uvc_control_count(uvc);
+
 	/* The units that carry controls, with their bmControls. */
 	kern_logf("usb-uvc: %s: processing unit %u controls 0x%x, camera terminal %u controls 0x%x, %u controls offered\n",
 	    uvc->tag,
-	    uvc->control.processing_unit != 0U ? (unsigned)uvc->control.processing_unit_id : 0U,
+	    processing_unit_id,
 	    (unsigned)uvc->control.processing_controls,
-	    uvc->control.camera_terminal != 0U ? (unsigned)uvc->control.camera_terminal_id : 0U,
+	    camera_terminal_id,
 	    (unsigned)uvc->control.camera_controls,
-	    usb_uvc_control_count(uvc));
+	    control_count);
 
 	/* Each format with its frames. */
 	for (index = 0U; index < uvc->stream.format_count; index++)
@@ -598,9 +620,12 @@ usb_uvc_dump(
 	if (uvc->stream.stopped != 0U ||
 	    uvc->stream.dropped_frames != 0U ||
 	    uvc->stream.dropped_intervals != 0U) {
+		parsing = "complete";
+		if (uvc->stream.stopped != 0U)
+			parsing = "stopped";
 		kern_logf("usb-uvc: %s: parsing %s, %u frames and %u intervals left out\n",
 		    uvc->tag,
-		    uvc->stream.stopped != 0U ? "stopped" : "complete",
+		    parsing,
 		    uvc->stream.dropped_frames,
 		    uvc->stream.dropped_intervals);
 	}
@@ -689,7 +714,9 @@ usb_uvc_dump_alternates(
 {
 	const struct uvc_alternate *alternate;
 	char line[UVC_LOG_LINE];
+	const char *taken;
 	size_t used;
+	unsigned host_max;
 	unsigned index;
 	int written;
 
@@ -698,16 +725,21 @@ usb_uvc_dump_alternates(
 	line[0] = '\0';
 	for (index = 0U; index < uvc->alternate_count; index++) {
 		alternate = &uvc->alternates[index];
+		taken = "";
+		if (alternate->accepted != 0U)
+			taken = "*";
 		written = kern_snprintf(line + used, sizeof(line) - used, " %u:%ux%u%s", (unsigned)alternate->setting,
-		    (unsigned)alternate->packet_bytes, (unsigned)alternate->transactions, alternate->accepted != 0U ? "*" : "");
+		    (unsigned)alternate->packet_bytes, (unsigned)alternate->transactions, taken);
 		if (written < 0 || (size_t)written >= sizeof(line) - used)
 			break;
 		used += (size_t)written;
 	}
 
+	/* The host controller's limit. */
+	host_max = (unsigned)uvc_alternate_host_max(uvc->alternates, uvc->alternate_count);
+
 	/* The line, with the host's limit. */
-	kern_logf("usb-uvc: %s: alternates%s (host accepts up to %u)\n", uvc->tag, line,
-	    (unsigned)uvc_alternate_host_max(uvc->alternates, uvc->alternate_count));
+	kern_logf("usb-uvc: %s: alternates%s (host accepts up to %u)\n", uvc->tag, line, host_max);
 }
 
 /* Registers the camera with the framework. */
@@ -717,6 +749,7 @@ usb_uvc_register_camera(
 {
 	struct drv_cam_device_desc desc;
 	const struct uvc_format *format;
+	unsigned control_count;
 	unsigned index;
 	int error;
 
@@ -744,7 +777,8 @@ usb_uvc_register_camera(
 	}
 
 	/* Controls, when the device declares any the driver knows. */
-	if (usb_uvc_control_count(uvc) != 0U)
+	control_count = usb_uvc_control_count(uvc);
+	if (control_count != 0U)
 		desc.capabilities |= CAM_CAP_CONTROLS;
 
 	/* The node. */
@@ -805,6 +839,8 @@ usb_uvc_interval_at(
 			*interval_100ns = frame->intervals[index];
 			return 0;
 		}
+
+		/* Counts this interval as passed. */
 		seen++;
 	}
 
@@ -897,6 +933,7 @@ usb_uvc_enum_mode(
 	if (index >= format->frame_count)
 		return ENOENT;
 
+	/* Selects the frame. */
 	frame = &format->frames[index];
 
 	/* The frame's size and its largest frame. */
@@ -1083,14 +1120,18 @@ usb_uvc_host_payload_max(
 	void *argument)
 {
 	struct usb_uvc *uvc;
+	uint32_t host_max;
 
 	/* A bulk device has no per-interval limit. */
 	uvc = argument;
 	if (uvc->transport != UVC_TRANSPORT_ISOCHRONOUS)
 		return 0U;
 
-	/* Succeeded: the largest alternate the host takes. */
-	return uvc_alternate_host_max(uvc->alternates, uvc->alternate_count);
+	/* The largest alternate the host controller takes. */
+	host_max = uvc_alternate_host_max(uvc->alternates, uvc->alternate_count);
+
+	/* Succeeded: the limit per interval. */
+	return host_max;
 }
 
 /*
@@ -1110,6 +1151,7 @@ usb_uvc_control_info(
 	uint8_t bytes[UVC_CONTROL_BYTES_MAX];
 	uint8_t unit_id;
 	int64_t value;
+	int present;
 	int error;
 
 	/* A control the driver does not know, or the device does not declare, stays unsupported. */
@@ -1118,8 +1160,13 @@ usb_uvc_control_info(
 	map = uvc_control_lookup(id);
 	if (map == NULL)
 		return 0;
+
+	/* Names the control. */
 	kern_snprintf(info->name, sizeof(info->name), "%s", map->name);
-	if (!uvc_control_present(&uvc->control, map, &unit_id))
+
+	/* A control no unit of the device declares stays unsupported. */
+	present = uvc_control_present(&uvc->control, map, &unit_id);
+	if (!present)
 		return 0;
 
 	/* GET_INFO says what the device lets the host do; a control it does not answer stays unsupported. */
@@ -1136,7 +1183,7 @@ usb_uvc_control_info(
 		if ((map->flags & UVC_CONTROL_BOOLEAN) != 0U)
 			info->flags |= CAM_CONTROL_BOOLEAN;
 		info->minimum = map->minimum;
-		info->maximum = map->maximum;
+		info->maximum = uvc_control_fixed_maximum(map, uvc->control.bcd_uvc);
 		info->step = 1;
 		error = usb_uvc_unit_value(uvc, UVC_GET_DEF, map, unit_id, &value);
 		if (error != 0)
@@ -1174,12 +1221,18 @@ usb_uvc_get_control(
 	const struct uvc_control_map *map;
 	struct usb_uvc *uvc;
 	uint8_t unit_id;
+	int present;
 	int error;
 
-	/* Refuses a control the device does not have. */
+	/* Refuses a control the driver does not know. */
 	uvc = argument;
 	map = uvc_control_lookup(id);
-	if (map == NULL || !uvc_control_present(&uvc->control, map, &unit_id))
+	if (map == NULL)
+		return EOPNOTSUPP;
+
+	/* Refuses a control the device does not have. */
+	present = uvc_control_present(&uvc->control, map, &unit_id);
+	if (!present)
 		return EOPNOTSUPP;
 
 	/* The device's current value. */
@@ -1209,12 +1262,18 @@ usb_uvc_set_control(
 	uint8_t unit_id;
 	int64_t minimum;
 	int64_t maximum;
+	int present;
 	int error;
 
-	/* Refuses a control the device does not have. */
+	/* Refuses a control the driver does not know. */
 	uvc = argument;
 	map = uvc_control_lookup(id);
-	if (map == NULL || !uvc_control_present(&uvc->control, map, &unit_id))
+	if (map == NULL)
+		return EOPNOTSUPP;
+
+	/* Refuses a control the device does not have. */
+	present = uvc_control_present(&uvc->control, map, &unit_id);
+	if (!present)
 		return EOPNOTSUPP;
 
 	/* Refuses a control the device does not let the host set now. */
@@ -1228,7 +1287,7 @@ usb_uvc_set_control(
 	/* The range: a switch's or a fixed one, else the device's. */
 	if ((map->flags & (UVC_CONTROL_BOOLEAN | UVC_CONTROL_FIXED_RANGE)) != 0U) {
 		minimum = map->minimum;
-		maximum = map->maximum;
+		maximum = uvc_control_fixed_maximum(map, uvc->control.bcd_uvc);
 	} else {
 		error = usb_uvc_unit_value(uvc, UVC_GET_MIN, map, unit_id, &minimum);
 		if (error == 0)
@@ -1237,6 +1296,7 @@ usb_uvc_set_control(
 			return error;
 	}
 
+	/* Refuses a value outside the range the device accepts. */
 	if (value < minimum || value > maximum)
 		return EINVAL;
 
@@ -1347,6 +1407,7 @@ usb_uvc_control_count(
 	uint8_t unit_id;
 	unsigned count;
 	unsigned index;
+	int present;
 
 	/* Every known control the device's units declare. */
 	count = 0U;
@@ -1354,7 +1415,8 @@ usb_uvc_control_count(
 		map = uvc_control_at(index);
 		if (map == NULL)
 			break;
-		if (uvc_control_present(&uvc->control, map, &unit_id))
+		present = uvc_control_present(&uvc->control, map, &unit_id);
+		if (present)
 			count++;
 	}
 

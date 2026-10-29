@@ -289,6 +289,7 @@ drv_cam_register(
 		return error;
 	}
 
+	/* Initializes the queue lock, the wait queue and the idle state of the device. */
 	spin_init(&device->lock, LOCK_RANK_DEVICE, "camera queues");
 	waitq_init(&device->waitq, "camera");
 	device->state = CAM_STATE_IDLE;
@@ -362,6 +363,7 @@ drv_cam_unregister(
 
 	spin_unlock_irqrestore(&device->lock, irq);
 
+	/* Tells pollers that the camera is gone. */
 	poll_notify();
 
 	/* Stops a running or failed stream through the source, once. */
@@ -524,6 +526,7 @@ drv_cam_slot_done(
 		return;
 	}
 
+	/* Records how much of the slot the source filled and when. */
 	slot->metadata.used_bytes = (uint32_t)used_bytes;
 	slot->metadata.timestamp_ns = now;
 	if (info != NULL) {
@@ -544,6 +547,7 @@ drv_cam_slot_done(
 			device->sequence_gaps += gap - 1U;
 	}
 
+	/* Remembers this frame so the next one can be checked for a gap. */
 	device->last_sequence = slot->metadata.sequence;
 	device->have_last_sequence = 1U;
 	device->last_frame_ns = now;
@@ -637,6 +641,7 @@ drv_cam_source_fault(
 		device->fault_error = error;
 	}
 
+	/* Wakes the waiters so they see the fault. */
 	waitq_wake_all(&device->waitq);
 
 	spin_unlock_irqrestore(&device->lock, irq);
@@ -823,6 +828,7 @@ cam_queue_append(
 		*head = slot;
 	}
 
+	/* The slot is now the last of the queue. */
 	*tail = slot;
 }
 
@@ -862,6 +868,7 @@ cam_slots_reset_locked(
 		device->slots[index].next = NULL;
 	}
 
+	/* Empties both queues. */
 	device->free_head = NULL;
 	device->free_tail = NULL;
 	device->done_head = NULL;
@@ -932,6 +939,8 @@ cam_buffers_free(
 		} else if (slot->address != NULL) {
 			(void)kern_pmem_free(&slot->memory);
 		}
+
+		/* Forgets the memory the slot used. */
 		slot->address = NULL;
 		slot->bytes = 0U;
 		slot->capacity = 0U;
@@ -939,6 +948,7 @@ cam_buffers_free(
 		slot->next = NULL;
 	}
 
+	/* Returns the device to having no buffers. */
 	device->buffer_count = 0U;
 	device->memory = CAM_MEMORY_DEVICE;
 	device->free_head = NULL;
@@ -1023,6 +1033,7 @@ cam_buffers_prepare_import(
 		slot->next = NULL;
 	}
 
+	/* Publishes the prepared slots as imported memory. */
 	device->buffer_count = count;
 	device->memory = CAM_MEMORY_IMPORT;
 }
@@ -1145,6 +1156,7 @@ cam_get_info(
 	struct cam_format_desc format;
 	struct cam_info info;
 	unsigned index;
+	int import_available;
 	int error;
 
 	/* Reads the caller's record. */
@@ -1152,6 +1164,7 @@ cam_get_info(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(info.version, info.size, sizeof(info));
 	if (error != 0)
 		return error;
@@ -1164,8 +1177,13 @@ cam_get_info(
 	kern_snprintf(info.name, sizeof(info.name), "%s", device->desc.device_name);
 	kern_snprintf(info.location, sizeof(info.location), "%s", device->desc.location);
 	info.capabilities = device->desc.capabilities;
-	if (cam_import_available(device))
+
+	/* Advertises GPU import when this kernel and this source can fill imported memory. */
+	import_available = cam_import_available(device);
+	if (import_available)
 		info.capabilities |= CAM_CAP_IMPORT_GPU;
+
+	/* Describes the buffer limit and the clock. */
 	info.max_buffers = device->desc.max_buffers;
 	info.clock_hz = device->desc.clock_hz;
 
@@ -1179,6 +1197,7 @@ cam_get_info(
 		index++;
 	}
 
+	/* Records how many formats were found. */
 	info.format_count = index;
 
 	/* The largest payload the transport takes, when the source has a limit. */
@@ -1209,6 +1228,7 @@ cam_enum_format(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(desc.version, desc.size, sizeof(desc));
 	if (error != 0)
 		return error;
@@ -1250,6 +1270,7 @@ cam_enum_mode(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(desc.version, desc.size, sizeof(desc));
 	if (error != 0)
 		return error;
@@ -1292,6 +1313,7 @@ cam_enum_interval(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(desc.version, desc.size, sizeof(desc));
 	if (error != 0)
 		return error;
@@ -1360,6 +1382,7 @@ cam_get_format(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(format.version, format.size, sizeof(format));
 	if (error != 0)
 		return error;
@@ -1411,6 +1434,7 @@ cam_set_format(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(format.version, format.size, sizeof(format));
 	if (error != 0)
 		return error;
@@ -1500,6 +1524,7 @@ cam_request_buffers(
 	struct cam_request_buffers request;
 	unsigned count;
 	unsigned bytes;
+	int import_available;
 	int error;
 
 	/* Reads the caller's record. */
@@ -1507,6 +1532,7 @@ cam_request_buffers(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(request.version, request.size, sizeof(request));
 	if (error != 0)
 		return error;
@@ -1537,13 +1563,16 @@ cam_request_buffers(
 	}
 
 	/* Refuses a buffer request before a format. */
-	if (error == 0 && request.count != 0U && device->format_set == 0U)
+	if (error == 0 &&
+	    request.count != 0U &&
+	    device->format_set == 0U)
 		error = EINVAL;
 
 	/* Refuses memory the framework does not provide. */
 	if (error == 0 && request.count != 0U) {
 		if (request.memory == CAM_MEMORY_IMPORT) {
-			if (!cam_import_available(device))
+			import_available = cam_import_available(device);
+			if (!import_available)
 				error = EOPNOTSUPP;
 		} else if (request.memory != CAM_MEMORY_DEVICE) {
 			error = EOPNOTSUPP;
@@ -1634,6 +1663,7 @@ cam_query_buffer(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(buffer.version, buffer.size, sizeof(buffer));
 	if (error != 0)
 		return error;
@@ -1692,6 +1722,7 @@ cam_queue_buffer(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(buffer.version, buffer.size, sizeof(buffer));
 	if (error != 0)
 		return error;
@@ -1775,6 +1806,7 @@ cam_dequeue_buffer(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(buffer.version, buffer.size, sizeof(buffer));
 	if (error != 0)
 		return error;
@@ -1909,6 +1941,7 @@ cam_stream_on(
 				}
 			}
 
+			/* The stream is not running, so the device is back to having buffers. */
 			device->state = CAM_STATE_BUFFERS;
 
 			spin_unlock_irqrestore(&device->lock, irq);
@@ -1970,6 +2003,7 @@ cam_control_info(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(info.version, info.size, sizeof(info));
 	if (error != 0)
 		return error;
@@ -2013,6 +2047,7 @@ cam_control_get(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(control.version, control.size, sizeof(control));
 	if (error != 0)
 		return error;
@@ -2055,6 +2090,7 @@ cam_control_set(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(control.version, control.size, sizeof(control));
 	if (error != 0)
 		return error;
@@ -2100,6 +2136,7 @@ cam_get_counters(
 	if (error != 0)
 		return error;
 
+	/* Refuses a record of another version or layout. */
 	error = cam_record_check(counters.version, counters.size, sizeof(counters));
 	if (error != 0)
 		return error;
@@ -2155,6 +2192,7 @@ cam_open(
 	if (error != 0)
 		return error;
 
+	/* Leaves the request that cam_enter admitted. */
 	cam_leave(device);
 
 	/* Succeeded: the file may query the camera. */

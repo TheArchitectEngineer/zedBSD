@@ -388,6 +388,9 @@ case_controls(
 	assert(uvc_control_decode(map, bytes) == 156);
 	map = uvc_control_lookup(CAM_CONTROL_POWER_LINE);
 	assert(map->size == 1U && map->minimum == 0 && map->maximum == 2);
+	assert(uvc_control_fixed_maximum(map, 0x0110U) == 2 && uvc_control_fixed_maximum(map, 0x0150U) == 3);
+	map = uvc_control_lookup(CAM_CONTROL_FOCUS_AUTO);
+	assert(uvc_control_fixed_maximum(map, 0x0150U) == 1);
 
 	/* The auto-exposure switch and the device's modes. */
 	assert(uvc_ae_mode_choose(0x09U, 1) == UVC_AE_APERTURE_PRIORITY);

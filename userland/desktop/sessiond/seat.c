@@ -22,9 +22,9 @@
  * again under that name (a keyboard plugged in again).  A node that appears
  * for the first time comes with devfs's own owner.  sessiond hears the
  * system's events of the input devices, of the USB devices (the smart
- * card slots) and of the cameras on /dev/system (ws132-p002) and gives the devices again as
- * soon as one comes (BUG-264: the compositor, which hears the same event,
- * then finds the node already its user's).  The loops that wait for the
+ * card slots) and of the cameras on /dev/system (ws132-p002) and gives
+ * the devices again as soon as one comes (BUG-264: the compositor,
+ * which hears the same event, then finds the node already its user's).  The loops that wait for the
  * greeter and the session still give them every second, for a kernel
  * without the events and for the nodes that post none (a display that
  * attaches late).

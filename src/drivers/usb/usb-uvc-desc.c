@@ -102,7 +102,8 @@ static const struct uvc_guid_entry uvc_guids[] = {
  * §3.7.2.3 (the camera terminal's bmControls bits) and §3.7.2.5 (the
  * processing unit's bmControls bits); the value sizes and signs are the
  * controls' tables in §4.2.2.1 and §4.2.2.3.  The power line frequency
- * reports no range; its values are 0 (off), 1 (50 Hz) and 2 (60 Hz).
+ * reports no range; its values are 0 (off), 1 (50 Hz) and 2 (60 Hz), and
+ * from UVC 1.5 on also 3 (auto, §4.2.2.3.6 of 1.5).
  */
 static const struct uvc_control_map uvc_controls[] = {
 	{ CAM_CONTROL_BRIGHTNESS, UVC_UNIT_PROCESSING, 0x02U, 0U, 2U, UVC_CONTROL_SIGNED, 0, 0, "brightness" },
@@ -115,7 +116,7 @@ static const struct uvc_control_map uvc_controls[] = {
 	{ CAM_CONTROL_WHITE_BALANCE_AUTO, UVC_UNIT_PROCESSING, 0x0bU, 12U, 1U, UVC_CONTROL_BOOLEAN, 0, 1, "white balance auto" },
 	{ CAM_CONTROL_BACKLIGHT, UVC_UNIT_PROCESSING, 0x01U, 8U, 2U, 0U, 0, 0, "backlight compensation" },
 	{ CAM_CONTROL_GAIN, UVC_UNIT_PROCESSING, 0x04U, 9U, 2U, 0U, 0, 0, "gain" },
-	{ CAM_CONTROL_POWER_LINE, UVC_UNIT_PROCESSING, 0x05U, 10U, 1U, UVC_CONTROL_FIXED_RANGE, 0, 2, "power line frequency" },
+	{ CAM_CONTROL_POWER_LINE, UVC_UNIT_PROCESSING, 0x05U, 10U, 1U, UVC_CONTROL_FIXED_RANGE | UVC_CONTROL_AUTO_FROM_1_5, 0, 2, "power line frequency" },
 	{ CAM_CONTROL_EXPOSURE, UVC_UNIT_CAMERA, 0x04U, 3U, 4U, 0U, 0, 0, "exposure time" },
 	{ CAM_CONTROL_EXPOSURE_AUTO, UVC_UNIT_CAMERA, 0x02U, 1U, 1U, UVC_CONTROL_BOOLEAN | UVC_CONTROL_AE_MODE, 0, 1, "exposure auto" },
 	{ CAM_CONTROL_FOCUS, UVC_UNIT_CAMERA, 0x06U, 5U, 2U, 0U, 0, 0, "focus" },
@@ -213,6 +214,7 @@ uvc_desc_control_feed(
 {
 	unsigned collection;
 	unsigned index;
+	unsigned terminal_type;
 	uint8_t subtype;
 
 	/* A descriptor without its type and subtype cannot be read. */
@@ -231,6 +233,7 @@ uvc_desc_control_feed(
 		if (length < UVC_VC_HEADER_LENGTH)
 			return EINVAL;
 
+		/* Keeps the version and the clock the header gives. */
 		control->has_header = 1U;
 		control->bcd_uvc = uvc_get16(descriptor, 3U);
 		control->clock_hz = uvc_get32(descriptor, 7U);
@@ -253,21 +256,28 @@ uvc_desc_control_feed(
 		if (length < UVC_PROCESSING_UNIT_ID + 1U)
 			return EINVAL;
 
+		/* Keeps the unit, its ID and the controls it carries. */
 		control->processing_unit = 1U;
 		control->processing_unit_id = descriptor[UVC_PROCESSING_UNIT_ID];
 		control->processing_controls = uvc_desc_bitmap(descriptor, length, UVC_PROCESSING_CONTROL_SIZE);
+
+		/* Counts the unit. */
 		control->units++;
 		break;
 	case UVC_VC_INPUT_TERMINAL:
 		/* A camera terminal carries the exposure, focus and zoom controls. */
+		terminal_type = 0U;
+		if (length > UVC_CAMERA_CONTROL_SIZE)
+			terminal_type = uvc_get16(descriptor, UVC_TERMINAL_TYPE);
 		if (length > UVC_CAMERA_CONTROL_SIZE &&
-		    uvc_get16(descriptor, UVC_TERMINAL_TYPE) == UVC_ITT_CAMERA &&
+		    terminal_type == UVC_ITT_CAMERA &&
 		    control->camera_terminal == 0U) {
 			control->camera_terminal = 1U;
 			control->camera_terminal_id = descriptor[3];
 			control->camera_controls = uvc_desc_bitmap(descriptor, length, UVC_CAMERA_CONTROL_SIZE);
 		}
 
+		/* Counts the terminal. */
 		control->units++;
 		break;
 	case UVC_VC_OUTPUT_TERMINAL:
@@ -349,6 +359,22 @@ uvc_control_present(
 }
 
 /*
+ * Reports the largest value of a fixed-range control for a class version.
+ */
+int64_t
+uvc_control_fixed_maximum(
+	const struct uvc_control_map *map,
+	uint16_t bcd_uvc)
+{
+	/* A device of UVC 1.5 or later has one more value. */
+	if ((map->flags & UVC_CONTROL_AUTO_FROM_1_5) != 0U && bcd_uvc >= UVC_VERSION_1_5)
+		return map->maximum + 1;
+
+	/* Succeeded: the table's maximum. */
+	return map->maximum;
+}
+
+/*
  * Reads a control's value from the bytes of a GET request.
  */
 int64_t
@@ -400,6 +426,7 @@ uvc_control_encode(
 		maximum = 0xffffffffLL;
 	}
 
+	/* A signed control spans the negative half of the range as well. */
 	if ((map->flags & UVC_CONTROL_SIGNED) != 0U) {
 		minimum = -(maximum / 2) - 1;
 		maximum = maximum / 2;
@@ -814,7 +841,9 @@ uvc_probe_fixup(
 	}
 
 	/* An isochronous device cannot ask for more than its own largest alternate carries. */
-	if (isochronous != 0U && device_capacity_max != 0U && payload > device_capacity_max) {
+	if (isochronous != 0U &&
+	    device_capacity_max != 0U &&
+	    payload > device_capacity_max) {
 		payload = device_capacity_max;
 		changed |= UVC_FIXUP_CLAMPED;
 	}
@@ -842,6 +871,7 @@ uvc_probe_fixup(
 			payload = device_capacity_max;
 		}
 
+		/* Tells the caller the size was estimated, not read. */
 		changed |= UVC_FIXUP_ESTIMATED;
 	}
 
@@ -1163,6 +1193,8 @@ uvc_desc_frame(
 			stream->dropped_intervals++;
 			continue;
 		}
+
+		/* Keeps the interval the descriptor lists. */
 		frame->intervals[index] = uvc_get32(descriptor, UVC_FRAME_FIXED_LENGTH + 4U * (size_t)index);
 		frame->interval_count++;
 	}

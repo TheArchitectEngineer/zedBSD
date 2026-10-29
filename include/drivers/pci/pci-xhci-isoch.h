@@ -145,13 +145,26 @@ drv_xhci_isoch_burst_bits(unsigned version, unsigned packet,
 	uint32_t residue;
 	uint32_t last;
 
+	/* A controller without the fields, or an empty packet size, takes no burst counts. */
 	if (version < 0x100U || packet == 0)
 		return 0;
-	packets = length == 0 ? 1U : (length + packet - 1U) / packet;
+
+	/* The packets of the TD; an empty TD still sends one. */
+	packets = 1U;
+	if (length != 0)
+		packets = (length + packet - 1U) / packet;
+
+	/* The bursts the packets fill, less one. */
 	burst = maximum_burst + 1U;
 	count = (packets + burst - 1U) / burst - 1U;
+
+	/* The packets of the last burst, less one; a full last burst has all of them. */
 	residue = packets % burst;
-	last = residue == 0 ? maximum_burst : residue - 1U;
+	last = maximum_burst;
+	if (residue != 0)
+		last = residue - 1U;
+
+	/* Succeeded: the control bits of the TD. */
 	return ((count & 3U) << 7) | ((last & 15U) << 16);
 }
 

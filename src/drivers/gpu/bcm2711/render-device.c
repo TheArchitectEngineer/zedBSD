@@ -674,8 +674,9 @@ render_allocation_backing(
 {
 	int error;
 
-	/* Image exports keep the scanout view only. */
 	(void)opaque;
+
+	/* Describes the pages of an allocation-only export; an image export has the scanout view instead. */
 	error = bcm2711_shared_allocation_backing(shared, backing);
 	if (error != 0)
 		return error;

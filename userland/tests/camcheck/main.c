@@ -7,8 +7,7 @@
 
 /*
  * The camcheck program: judges the frames of /dev/camN against the test
- * pattern a PC shows through an HDMI capture device
- * (plan/ws282/tests/pattern/pattern.html).
+ * pattern a PC shows through an HDMI capture device.
  *
  * It captures N frames and, for each, reads the colour patches and the
  * frame counter.  A YUYV stream's matrix and range are guessed from the
@@ -190,6 +189,8 @@ main(
 		fprintf(stderr, "camcheck: %s: %s\n", options.device, strerror(errno));
 		return CAMCHECK_EXIT_FAILED;
 	}
+
+	/* Asks what the camera is. */
 	error = camcommon_get_info(descriptor, &info);
 	if (error != 0) {
 		fprintf(stderr, "camcheck: CAM_GET_INFO: %s\n", strerror(error));
@@ -197,6 +198,7 @@ main(
 		return CAMCHECK_EXIT_FAILED;
 	}
 
+	/* Tells what the camera is. */
 	camcommon_print_info(&info);
 
 	/* The format; a mode the host cannot carry has its own status. */
@@ -218,6 +220,8 @@ main(
 		close(descriptor);
 		return CAMCHECK_EXIT_FAILED;
 	}
+
+	/* Maps the buffers the framework gave. */
 	count = request.count;
 	error = camcheck_map(descriptor, count, buffers);
 	if (error != 0) {
@@ -246,6 +250,7 @@ main(
 		return CAMCHECK_EXIT_FAILED;
 	}
 
+	/* Tells what the frames showed. */
 	camcheck_report(&options, &result);
 
 	/* The stops and starts. */
@@ -298,6 +303,7 @@ camcheck_parse(
 	const char *value;
 	const char *option;
 	int index;
+	int order;
 
 	/* The defaults. */
 	memset(options, 0, sizeof(*options));
@@ -314,8 +320,9 @@ camcheck_parse(
 	for (index = 1; index < argc; index++) {
 		option = argv[index];
 
-		/* The flag without a value. */
-		if (strcmp(option, "--second-open") == 0) {
+		/* Takes the flag that runs the check of a second open. */
+		order = strcmp(option, "--second-open");
+		if (order == 0) {
 			options->second_open = 1;
 			continue;
 		}
@@ -326,41 +333,104 @@ camcheck_parse(
 		index++;
 		value = argv[index];
 
-		/* Decides which option the value belongs to. */
-		if (strcmp(option, "-d") == 0) {
+		/* Takes the device path. */
+		order = strcmp(option, "-d");
+		if (order == 0) {
 			options->device = value;
-		} else if (strcmp(option, "-o") == 0) {
+			continue;
+		}
+
+		/* Takes the output path. */
+		order = strcmp(option, "-o");
+		if (order == 0) {
 			options->output = value;
-		} else if (strcmp(option, "-f") == 0) {
-			if (strcmp(value, "mjpeg") == 0)
+			continue;
+		}
+
+		/* Takes the pixel format, which is one of two names. */
+		order = strcmp(option, "-f");
+		if (order == 0) {
+			order = strcmp(value, "mjpeg");
+			if (order == 0) {
 				options->format = CAM_FORMAT_MJPEG;
-			else if (strcmp(value, "yuyv") == 0)
+				continue;
+			}
+
+			/* The other name the tool takes. */
+			order = strcmp(value, "yuyv");
+			if (order == 0) {
 				options->format = CAM_FORMAT_YUYV;
-			else
-				return EINVAL;
-		} else if (strcmp(option, "-w") == 0) {
-			options->width = (uint32_t)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-h") == 0) {
-			options->height = (uint32_t)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-i") == 0) {
-			options->interval_100ns = (uint32_t)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-b") == 0) {
-			options->buffers = (unsigned)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-n") == 0) {
-			options->frames = (unsigned)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-t") == 0) {
-			options->timeout_ms = (unsigned)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "--tolerance") == 0) {
-			options->tolerance = strtod(value, NULL);
-		} else if (strcmp(option, "--cycles") == 0) {
-			options->cycles = (unsigned)strtoul(value, NULL, 0);
-		} else {
+				continue;
+			}
+
+			/* Refuses a format name the tool does not know. */
 			return EINVAL;
 		}
+
+		/* Takes the width. */
+		order = strcmp(option, "-w");
+		if (order == 0) {
+			options->width = (uint32_t)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the height. */
+		order = strcmp(option, "-h");
+		if (order == 0) {
+			options->height = (uint32_t)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the frame interval. */
+		order = strcmp(option, "-i");
+		if (order == 0) {
+			options->interval_100ns = (uint32_t)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the buffer count. */
+		order = strcmp(option, "-b");
+		if (order == 0) {
+			options->buffers = (unsigned)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the frame count. */
+		order = strcmp(option, "-n");
+		if (order == 0) {
+			options->frames = (unsigned)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the wait for one frame. */
+		order = strcmp(option, "-t");
+		if (order == 0) {
+			options->timeout_ms = (unsigned)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes how far a patch may differ from its expected color. */
+		order = strcmp(option, "--tolerance");
+		if (order == 0) {
+			options->tolerance = strtod(value, NULL);
+			continue;
+		}
+
+		/* Takes how many times the stream stops and starts again. */
+		order = strcmp(option, "--cycles");
+		if (order == 0) {
+			options->cycles = (unsigned)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Refuses an option the tool does not know. */
+		return EINVAL;
 	}
 
 	/* The counts the framework takes, and at least one frame. */
-	if (options->buffers < 2U || options->buffers > CAM_BUFFERS_MAX || options->frames == 0U)
+	if (options->buffers < 2U ||
+	    options->buffers > CAM_BUFFERS_MAX ||
+	    options->frames == 0U)
 		return EINVAL;
 
 	/* The format's tolerance unless one was given. */
@@ -413,6 +483,8 @@ camcheck_set_format(
 		} else {
 			fprintf(stderr, "camcheck: CAM_SET_FORMAT: %s\n", strerror(error));
 		}
+
+		/* Reports why the camera refused the format. */
 		return error;
 	}
 
@@ -558,6 +630,7 @@ camcheck_second_open(
 	struct cam_request_buffers request;
 	struct cam_format format;
 	struct cam_info info;
+	const char *answer;
 	int descriptor;
 	int refused;
 	int status;
@@ -569,6 +642,8 @@ camcheck_second_open(
 		fprintf(stderr, "camcheck: second open: %s\n", strerror(errno));
 		return errno;
 	}
+
+	/* A second open may still ask what the camera is. */
 	error = camcommon_get_info(descriptor, &info);
 	if (error != 0)
 		fprintf(stderr, "camcheck: second open: CAM_GET_INFO: %s\n", strerror(error));
@@ -582,13 +657,19 @@ camcheck_second_open(
 	status = ioctl(descriptor, CAM_TRY_FORMAT, &format);
 	if (status == 0 || errno != EBUSY)
 		refused = 0;
-	printf("second open: TRY_FORMAT %s\n", status == 0 ? "accepted" : strerror(errno));
+	answer = "accepted";
+	if (status != 0)
+		answer = strerror(errno);
+	printf("second open: TRY_FORMAT %s\n", answer);
 
 	/* SET_FORMAT. */
 	status = ioctl(descriptor, CAM_SET_FORMAT, &format);
 	if (status == 0 || errno != EBUSY)
 		refused = 0;
-	printf("second open: SET_FORMAT %s\n", status == 0 ? "accepted" : strerror(errno));
+	answer = "accepted";
+	if (status != 0)
+		answer = strerror(errno);
+	printf("second open: SET_FORMAT %s\n", answer);
 
 	/* REQUEST_BUFFERS. */
 	camcheck_record(&request, sizeof(request));
@@ -597,7 +678,10 @@ camcheck_second_open(
 	status = ioctl(descriptor, CAM_REQUEST_BUFFERS, &request);
 	if (status == 0 || errno != EBUSY)
 		refused = 0;
-	printf("second open: REQUEST_BUFFERS %s\n", status == 0 ? "accepted" : strerror(errno));
+	answer = "accepted";
+	if (status != 0)
+		answer = strerror(errno);
+	printf("second open: REQUEST_BUFFERS %s\n", answer);
 	close(descriptor);
 
 	/* Reports a second open that reached the owner's stream. */
@@ -694,6 +778,8 @@ camcheck_frame(
 	double black;
 	double white;
 	double error_value;
+	const char *matrix_name;
+	const char *range_name;
 	uint8_t *rgb;
 	uint32_t value;
 	size_t rgb_bytes;
@@ -733,9 +819,16 @@ camcheck_frame(
 	if (yuyv) {
 		if (number == 0U) {
 			camcheck_estimate(patches, &result->matrix, &result->range);
-			printf("estimate: %s %s range\n", result->matrix == CAMCHECK_MATRIX_BT709 ? "BT.709" : "BT.601",
-			    result->range == CAMCHECK_RANGE_FULL ? "full" : "limited");
+			matrix_name = "BT.601";
+			if (result->matrix == CAMCHECK_MATRIX_BT709)
+				matrix_name = "BT.709";
+			range_name = "limited";
+			if (result->range == CAMCHECK_RANGE_FULL)
+				range_name = "full";
+			printf("estimate: %s %s range\n", matrix_name, range_name);
 		}
+
+		/* Converts each patch with the estimate. */
 		for (index = 0U; index < CAMCHECK_PATCHES; index++)
 			camcheck_yuv_to_rgb(patches[index].value, result->matrix, result->range, rgb_patches[index].value);
 	} else {
@@ -758,6 +851,8 @@ camcheck_frame(
 		black = (patches[CAMCHECK_PATCH_BLACK].value[0] + patches[CAMCHECK_PATCH_BLACK].value[1] + patches[CAMCHECK_PATCH_BLACK].value[2]) / 3.0;
 		white = (patches[CAMCHECK_PATCH_WHITE].value[0] + patches[CAMCHECK_PATCH_WHITE].value[1] + patches[CAMCHECK_PATCH_WHITE].value[2]) / 3.0;
 	}
+
+	/* Reads the brightness of each square of the counter. */
 	for (index = 0U; index < CAMCHECK_COUNTER_BITS; index++) {
 		camcheck_counter_region(index, &region);
 		if (yuyv)
@@ -768,10 +863,14 @@ camcheck_frame(
 			free(rgb);
 			return error;
 		}
+
+		/* A decoded frame has three channels, which are averaged to one gray level. */
 		brightness[index] = square.value[0];
 		if (!yuyv)
 			brightness[index] = (square.value[0] + square.value[1] + square.value[2]) / 3.0;
 	}
+
+	/* Reads the counter the squares spell and adds it to the run. */
 	value = camcheck_counter_decode(brightness, black, white);
 	camcheck_counter_add(&result->counter, value);
 
@@ -783,6 +882,8 @@ camcheck_frame(
 			if (error == 0)
 				error = camcommon_yuyv_to_rgb(frame, format->width, format->height, format->stride_bytes, &coefficients, rgb);
 		}
+
+		/* Writes the picture the frame shows. */
 		if (error == 0)
 			error = camcommon_write_ppm(options->output, rgb, format->width, format->height);
 		if (error != 0)
@@ -846,7 +947,9 @@ camcheck_jpeg_decode(
 	(void)jpeg_read_header(&info, TRUE);
 	info.out_color_space = JCS_RGB;
 	(void)jpeg_start_decompress(&info);
-	if (info.output_width != width || info.output_height != height || info.output_components != 3) {
+	if (info.output_width != width ||
+	    info.output_height != height ||
+	    info.output_components != 3) {
 		jpeg_destroy_decompress(&info);
 		free(complete);
 		return EINVAL;
@@ -920,6 +1023,8 @@ camcheck_cycles(
 		free(after);
 		return ENOMEM;
 	}
+
+	/* The first snapshot of the counters. */
 	error = camcheck_io_stats(before);
 	if (error != 0) {
 		free(before);
@@ -936,6 +1041,8 @@ camcheck_cycles(
 			if (status < 0)
 				error = errno;
 		}
+
+		/* Waits for one frame. */
 		if (error == 0)
 			error = camcheck_dequeue(descriptor, options->timeout_ms, &buffer);
 		(void)ioctl(descriptor, CAM_STREAM_OFF);
@@ -954,11 +1061,15 @@ camcheck_cycles(
 		if (allocations != frees)
 			*balanced = 0;
 	}
+
+	/* Tells how many cycles gave a frame. */
 	if (error == 0) {
 		printf("cycles: %u of %u started and gave a frame; xHCI requests made %llu\n", options->cycles - failures,
 		    options->cycles,
 		    (unsigned long long)(after->events[IO_XHCI_REQUEST_ALLOC].calls - before->events[IO_XHCI_REQUEST_ALLOC].calls));
 	}
+
+	/* Gives back the two snapshots. */
 	free(before);
 	free(after);
 
@@ -987,7 +1098,11 @@ camcheck_io_stats(
 		fprintf(stderr, "camcheck: vfs.io.stats: %s\n", strerror(errno));
 		return errno;
 	}
-	if (length != sizeof(*stats) || stats->version != IO_STATS_VERSION || stats->count != IO_STAT_COUNT) {
+
+	/* Refuses a snapshot of another layout than this program's. */
+	if (length != sizeof(*stats) ||
+	    stats->version != IO_STATS_VERSION ||
+	    stats->count != IO_STAT_COUNT) {
 		fprintf(stderr, "camcheck: vfs.io.stats: another layout\n");
 		return EINVAL;
 	}

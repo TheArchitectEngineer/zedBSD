@@ -8259,6 +8259,8 @@ xhci_isoch_enqueue(
 	/* One Isoch TRB a packet. */
 	for (packet = 0U; packet < count; packet++) {
 		control = XHCI_TRB_TYPE(XHCI_TRB_ISOCH) | XHCI_TRB_IOC | XHCI_TRB_SIA;
+
+		/* Adds the TD's burst counts, which a controller older than xHCI 1.0 lacks. */
 		control |= drv_xhci_isoch_burst_bits(c->version, size & 0x7ffU,
 		    burst, lengths[packet]);
 		if (r->input)

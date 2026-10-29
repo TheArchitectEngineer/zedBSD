@@ -213,11 +213,15 @@ bcm2711_shared_allocation_backing(
 	/* An image export has the scanout view instead. */
 	if (shared->has_image)
 		return ENOTSUP;
+
+	/* Describes the allocation as one contiguous run of pages. */
 	backing->pages = shared->pages;
 	backing->page_count = shared->page_count;
 	backing->bytes = shared->buffer->bytes;
 	backing->page_bytes = 4096;
 	backing->flags = DRV_GPU_BACKING_CONTIGUOUS;
+
+	/* Tells the other driver to map the run uncached when the allocation is uncached. */
 	if (shared->buffer->uncached)
 		backing->flags |= DRV_GPU_BACKING_UNCACHED;
 

@@ -150,6 +150,7 @@ main(
 		return CAMCAP_EXIT_FAILED;
 	}
 
+	/* Tells what the camera is. */
 	camcommon_print_info(&info);
 
 	/* --controls tells the controls; with -l too it goes on to the formats. */
@@ -197,6 +198,7 @@ main(
 		return CAMCAP_EXIT_FAILED;
 	}
 
+	/* Tells how many buffers the framework gave and how big they are. */
 	count = request.count;
 	printf("buffers: %u of %u bytes\n", count, (unsigned)request.bytes);
 
@@ -234,6 +236,8 @@ camcap_parse(
 	const char *value;
 	const char *option;
 	int index;
+	int order;
+	int error;
 
 	/* The defaults. */
 	memset(options, 0, sizeof(*options));
@@ -250,16 +254,23 @@ camcap_parse(
 	for (index = 1; index < argc; index++) {
 		option = argv[index];
 
-		/* The flags without a value. */
-		if (strcmp(option, "-a") == 0) {
+		/* Takes the flag that saves every frame. */
+		order = strcmp(option, "-a");
+		if (order == 0) {
 			options->save_all = 1;
 			continue;
 		}
-		if (strcmp(option, "-l") == 0) {
+
+		/* Takes the flag that lists the camera's modes. */
+		order = strcmp(option, "-l");
+		if (order == 0) {
 			options->list = 1;
 			continue;
 		}
-		if (strcmp(option, "--controls") == 0) {
+
+		/* Takes the flag that lists the camera's controls. */
+		order = strcmp(option, "--controls");
+		if (order == 0) {
 			options->list_controls = 1;
 			continue;
 		}
@@ -270,38 +281,101 @@ camcap_parse(
 		index++;
 		value = argv[index];
 
-		/* Decides which option the value belongs to. */
-		if (strcmp(option, "-d") == 0) {
+		/* Takes the device path. */
+		order = strcmp(option, "-d");
+		if (order == 0) {
 			options->device = value;
-		} else if (strcmp(option, "-o") == 0) {
+			continue;
+		}
+
+		/* Takes the output path. */
+		order = strcmp(option, "-o");
+		if (order == 0) {
 			options->output = value;
-		} else if (strcmp(option, "-f") == 0) {
-			if (strcmp(value, "mjpeg") == 0)
+			continue;
+		}
+
+		/* Takes the pixel format, which is one of two names. */
+		order = strcmp(option, "-f");
+		if (order == 0) {
+			order = strcmp(value, "mjpeg");
+			if (order == 0) {
 				options->format = CAM_FORMAT_MJPEG;
-			else if (strcmp(value, "yuyv") == 0)
+				continue;
+			}
+
+			/* The other name the tool takes. */
+			order = strcmp(value, "yuyv");
+			if (order == 0) {
 				options->format = CAM_FORMAT_YUYV;
-			else
-				return EINVAL;
-		} else if (strcmp(option, "-w") == 0) {
-			options->width = (uint32_t)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-h") == 0) {
-			options->height = (uint32_t)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-i") == 0) {
-			options->interval_100ns = (uint32_t)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-b") == 0) {
-			options->buffers = (unsigned)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-n") == 0) {
-			options->frames = (unsigned)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "-t") == 0) {
-			options->timeout_ms = (unsigned)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "--probe-only") == 0) {
-			options->probe_ms = (unsigned)strtoul(value, NULL, 0);
-		} else if (strcmp(option, "--control") == 0) {
-			if (camcap_parse_control(value, options) != 0)
-				return EINVAL;
-		} else {
+				continue;
+			}
+
+			/* Refuses a format name the tool does not know. */
 			return EINVAL;
 		}
+
+		/* Takes the width. */
+		order = strcmp(option, "-w");
+		if (order == 0) {
+			options->width = (uint32_t)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the height. */
+		order = strcmp(option, "-h");
+		if (order == 0) {
+			options->height = (uint32_t)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the frame interval. */
+		order = strcmp(option, "-i");
+		if (order == 0) {
+			options->interval_100ns = (uint32_t)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the buffer count. */
+		order = strcmp(option, "-b");
+		if (order == 0) {
+			options->buffers = (unsigned)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the frame count. */
+		order = strcmp(option, "-n");
+		if (order == 0) {
+			options->frames = (unsigned)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the wait for one frame. */
+		order = strcmp(option, "-t");
+		if (order == 0) {
+			options->timeout_ms = (unsigned)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes the time to leave the stream running without saving. */
+		order = strcmp(option, "--probe-only");
+		if (order == 0) {
+			options->probe_ms = (unsigned)strtoul(value, NULL, 0);
+			continue;
+		}
+
+		/* Takes a control to set, written id=value. */
+		order = strcmp(option, "--control");
+		if (order == 0) {
+			error = camcap_parse_control(value, options);
+			if (error != 0)
+				return EINVAL;
+
+			continue;
+		}
+
+		/* Refuses an option the tool does not know. */
+		return EINVAL;
 	}
 
 	/* The buffer count the framework takes. */
@@ -355,6 +429,8 @@ camcap_set_format(
 		} else {
 			fprintf(stderr, "camcap: CAM_SET_FORMAT: %s\n", strerror(error));
 		}
+
+		/* Reports why the camera refused the format. */
 		return error;
 	}
 
@@ -561,6 +637,7 @@ camcap_save(
 	size_t capacity;
 	size_t length;
 	int inserted;
+	const char *added;
 	int error;
 
 	/* An MJPEG frame: the DHT added when the device left it out. */
@@ -581,7 +658,14 @@ camcap_save(
 			fprintf(stderr, "camcap: %s: %s\n", path, strerror(error));
 			return error;
 		}
-		printf("saved %s (%u bytes%s)\n", path, (unsigned)length, inserted ? ", DHT added" : "");
+
+		/* Tells where the file went and whether the table was added. */
+		added = "";
+		if (inserted)
+			added = ", DHT added";
+		printf("saved %s (%u bytes%s)\n", path, (unsigned)length, added);
+
+		/* Succeeded: the frame is saved. */
 		return 0;
 	}
 
@@ -655,7 +739,9 @@ camcap_parse_control(
 
 	/* The id before the '=' and the value after it, both whole numbers. */
 	equals = strchr(text, '=');
-	if (equals == NULL || equals == text || equals[1] == '\0')
+	if (equals == NULL ||
+	    equals == text ||
+	    equals[1] == '\0')
 		return EINVAL;
 	id = strtoul(text, &end, 0);
 	if (end != equals)
@@ -678,6 +764,8 @@ camcap_print_controls(
 {
 	struct cam_control_info info;
 	struct cam_control control;
+	const char *switch_text;
+	const char *read_only_text;
 	uint32_t id;
 	int status;
 
@@ -694,8 +782,18 @@ camcap_print_controls(
 			printf("control %u: CAM_GET_CONTROL_INFO: %s\n", (unsigned)id, strerror(errno));
 			continue;
 		}
+
+		/* A control the camera does not have is not told. */
 		if ((info.flags & CAM_CONTROL_UNSUPPORTED) != 0U)
 			continue;
+
+		/* The words for the control's kind. */
+		switch_text = "";
+		if ((info.flags & CAM_CONTROL_BOOLEAN) != 0U)
+			switch_text = " switch";
+		read_only_text = "";
+		if ((info.flags & CAM_CONTROL_READ_ONLY) != 0U)
+			read_only_text = " read-only";
 
 		/* The value now. */
 		camcap_record(&control, sizeof(control));
@@ -704,15 +802,14 @@ camcap_print_controls(
 		if (status < 0) {
 			printf("control %u %s: %lld..%lld step %lld default %lld%s%s, value: %s\n", (unsigned)id, info.name,
 			    (long long)info.minimum, (long long)info.maximum, (long long)info.step, (long long)info.default_value,
-			    (info.flags & CAM_CONTROL_BOOLEAN) != 0U ? " switch" : "",
-			    (info.flags & CAM_CONTROL_READ_ONLY) != 0U ? " read-only" : "", strerror(errno));
+			    switch_text, read_only_text, strerror(errno));
 			continue;
 		}
 
+		/* Tells the control with its range and its value. */
 		printf("control %u %s: %lld..%lld step %lld default %lld%s%s, value %lld\n", (unsigned)id, info.name,
 		    (long long)info.minimum, (long long)info.maximum, (long long)info.step, (long long)info.default_value,
-		    (info.flags & CAM_CONTROL_BOOLEAN) != 0U ? " switch" : "",
-		    (info.flags & CAM_CONTROL_READ_ONLY) != 0U ? " read-only" : "", (long long)control.value);
+		    switch_text, read_only_text, (long long)control.value);
 	}
 }
 
