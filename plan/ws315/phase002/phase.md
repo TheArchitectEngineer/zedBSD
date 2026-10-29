@@ -25,4 +25,11 @@ Queue: q1694 / q1694-i01（P3）
 
 ## 結果
 
-（5330 の試験の後に記入）
+| run | kernel | 結果 |
+| --- | --- | --- |
+| k1（2026-10-30 04:03、`5330-rtl.sh build/ws315-5330/vmunix k1 30`、MODE=--nvme-kernel） | 5534277a3 の tree | FAIL: 5 分 SSH 無し、10.0.30.3 は ping も無し、NCM の時の MAC の host も無し。5330 は電源の入れ直し待ち（Q1 がユーザーに依頼）。原因は未確定 |
+
+- k1 の後の直し（16122571a）: attach の待ち（autoload・PHY の状態・MAC の reset）を FreeBSD と同じく時間切れでも続ける（10 s、log）、attach・open の手順ごとの失敗の log、
+  link を interrupt が告げない時に worker が 1 秒ごとに PHYSTATUS を読む（carrier が立たず DHCP が始まらない、を候補として）。
+- 試験の script（7712411ab）: 前の起動の /var/log/kernel.log.old の driver の行を集める（届かなかった起動の原因を、次の起動で読む）。出力は build/ws315-hw/NAME。
+- 次: 入れ直しの後、(1) 同じ kernel を `CFG_ADD=usb.rtl815x=off`（NCM）で起動し k1 の log を読む、(2) vendor mode で起動。
