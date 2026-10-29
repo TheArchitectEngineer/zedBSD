@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx、GSP-RM・channel・Vulkan の executor）、[WS083](../ws083/ws.md)（Vulkan Video の拡張と i915 の H.264、`src/drivers/gpu/i915/vk/vk-video.c`）、[WS236](../ws236/ws.md)（Pi 4 の Vulkan Video、`src/drivers/gpu/bcm2711/vulkan-video.c`）、[WS202](../ws202/ws.md)（libmedia の `media_vkvideo_ops`）、[WS242](../ws242/ws.md)（RTX 20/30/40）
-Resume point: 2026-10-29 q1677-i02 P5（worktree p5-ws243、branch agent/p5-ws243）: main を取り込み P6 の hook を WS250 の session ごとの channel に合わせた（f422d14ae）。p004 は実機の script（`plan/ws243/tests/rtx-p004.sh`）まで、10.0.10.3 の枠待ち（[p004](phase004/phase.md)）。host 試験は `plan/ws243/tests/nvdec-host-test.sh`・`wire-host-test.sh`。
+Resume point: 2026-10-29 q1677-i02 P5: p004 cleared（10.0.10.3 の RTX 2070 で NVDEC の H.264 の hash が 3 本とも software と一致、hang の非退行。readback の道は 1080p30 で 3.4 fps（BAR1 の WC の窓を CPU が約 12 MB/s で読む）。Q1 の判断で GPU の道 p006 へ（[p004](phase004/phase.md)）。次は p006 の設計・実装と host 試験、実機は Q1 に枠を頼む。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -36,7 +36,7 @@ Resume point: 2026-10-29 q1677-i02 P5（worktree p5-ws243、branch agent/p5-ws24
 | [p001](phase001/phase.md) | 設計: NVDEC の channel の取り方（RM の alloc、class、firmware）、picture の parameter の組み立て、DPB と出力の image の layout、Vulkan Video の object と executor の口（WS083・WS236 の共通の部分の再利用）、license の監査、試験の道 | in-progress（設計済み・review 1 回済み） |
 | [p002](phase002/phase.md) | 実装: NVDEC の channel と engine の起動、work channel の copy の object（code のみ、host 試験） | in-progress（実装済み・試験未実施） |
 | [p003](phase003/phase.md) | 実装: Vulkan Video の object（profile・capability・session・parameters・DPB）、RESULT_STATUS の query pool、H.264 の decode の命令、NV12 の image と copy engine での readback（code のみ、host 試験） | in-progress（実装済み・試験未実施） |
-| [p004](phase004/phase.md) | 実機の debug（RTX 2070 の素の起動、10.0.10.3）。main の取り込み、1080p30 の readback の速さもここで測る | in-progress（2026-10-29 q1677-i02 P5、実機は未実施） |
+| [p004](phase004/phase.md) | 実機の debug（RTX 2070 の素の起動、10.0.10.3）。main の取り込み、1080p30 の readback の速さもここで測る | cleared（2026-10-29 q1677-i02 P5: hash 3 本一致、readback 3.4 fps） |
 | p005 | 規約の全文の見直し | planned |
 | p006（案） | GPU の道: SAMPLED の NV12（plane の R8・R8G8 の view、BL GOB 2 段の texture header）と memory の export、libmedia の gpu pictures の道を本線に | planned（案） |
 
@@ -51,3 +51,4 @@ Resume point: 2026-10-29 q1677-i02 P5（worktree p5-ws243、branch agent/p5-ws24
 - Q1（原文）:「(1)(2) はユーザーが不在なので推しで進めて: 今は readback で正しさを先に（guardrail の「画像の処理は GPU で」からの一時の例外として ws.md に記録）、SAMPLED NV12 と export の GPU の道は後の Phase（p006 案）に置き、design.md に「本線は GPU の道」と書く。1080p30 の readback の速さは p004 の実機で測ってから判断（cached な system memory の type は WS243 の外の提案として記録だけ）。Q1 がユーザーに後でメッセージで聞く。」
 - **guardrail の一時の例外**: p003〜p004 の間、libmedia の readback の道（NV12 を copy engine で buffer へ写し、libmedia が CPU で crop して copy）を使う。guardrail「画像の処理は GPU で」（2026-10-12 ユーザー）からの一時の例外で、p006 の GPU の道で外す。ユーザーの確認は未（Q1 が後で聞く）。
 - **WS243 の外の提案（記録だけ）**: readback の buffer を host cached な system memory に置く memory type（executor 全体の変更）。p004 で速さが足りない時に Q1 へ。
+- **p004 の結果と判断（2026-10-29 22:3x）**: readback の道の 1080p30 は 3.4 fps（libmedia の CPU の copy が 264 ms/picture、nvrtx の唯一の memory type は VRAM で CPU は BAR1 の WC の窓から約 12 MB/s で読む）。Q1（原文）:「(b) で進めてください。design.md で GPU の道が本線と決めてあり、guardrail「画像の処理は GPU で」に沿うので、p006 を次に。(a) の host cached な memory type は WS243 の外の提案として記録だけ（Q1 がユーザーに聞く）。」 (a) に要る物: executor 全体に host cached な sysmem の memory type（GPU の page table の sysmem の aperture と memory の割当の両方の変更）。
