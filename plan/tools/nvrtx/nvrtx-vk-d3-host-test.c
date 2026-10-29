@@ -368,18 +368,27 @@ nvrtx_vk_gpu_idle(void *owner)
 
 /* The node decodes no video here. */
 bool
-nvrtx_vk_video_available(void *owner)
+nvrtx_vk_video_available(
+	void *owner)
 {
 	(void)owner;
+
+	/* Reports no decoder. */
 	return false;
 }
 
+/* Refuses a decode, which the executor under test never reaches without a decoder. */
 int
-nvrtx_vk_video_decode(void *owner, uint64_t va, uint32_t bytes)
+nvrtx_vk_video_decode(
+	void *owner,
+	uint64_t va,
+	uint32_t bytes)
 {
 	(void)owner;
 	(void)va;
 	(void)bytes;
+
+	/* Refuses the decode. */
 	return EIO;
 }
 

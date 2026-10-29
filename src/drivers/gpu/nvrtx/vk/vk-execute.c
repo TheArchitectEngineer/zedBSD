@@ -1611,17 +1611,24 @@ execute_video_copy(
 			plane_width = image->width / 2U;
 			plane_height = image->height / 2U;
 		} else {
+			/* A region of any other aspect is refused. */
 			return EINVAL;
 		}
 
-		/* Inside the plane, inside the buffer. */
+		/* Inside the plane, not empty. */
 		inside = execute_region_inside(region->imageOffset.x, region->imageOffset.y, region->imageExtent.width,
 					       region->imageExtent.height, plane_width, plane_height);
-		if (!inside || region->imageExtent.width == 0U || region->imageExtent.height == 0U)
+		if (!inside ||
+		    region->imageExtent.width == 0U ||
+		    region->imageExtent.height == 0U)
 			return EINVAL;
+
+		/* The buffer's rows: tightly packed unless the region names a row length. */
 		row = region->bufferRowLength;
 		if (row == 0U)
 			row = region->imageExtent.width;
+
+		/* Inside the buffer: the bytes from its first to its last row's end. */
 		span = (uint64_t)row * pixel * (region->imageExtent.height - 1U) + (uint64_t)region->imageExtent.width * pixel;
 		if (region->bufferOffset > buffer->size || span > buffer->size - region->bufferOffset)
 			return EINVAL;
@@ -1805,8 +1812,14 @@ execute_buffer_image(
 		error = nvrtx_vk_image_address(image, &image_va, &image_cpu);
 	if (error == 0 && image->depth)
 		error = EINVAL;
-	if (error == 0 && image->video && to_image)
+
+	/* Refuses a copy into a video image, which only the decoder writes. */
+	if (error == 0 &&
+	    image->video &&
+	    to_image)
 		error = EINVAL;
+
+	/* Propagates a refusal. */
 	if (error != 0)
 		return error;
 

@@ -37,7 +37,7 @@ Resume point: 2026-10-29 q1677-i02 P5: p004 cleared（hash 3 本一致、readbac
 | [p002](phase002/phase.md) | 実装: NVDEC の channel と engine の起動、work channel の copy の object（code のみ、host 試験） | in-progress（実装済み・試験未実施） |
 | [p003](phase003/phase.md) | 実装: Vulkan Video の object（profile・capability・session・parameters・DPB）、RESULT_STATUS の query pool、H.264 の decode の命令、NV12 の image と copy engine での readback（code のみ、host 試験） | in-progress（実装済み・試験未実施） |
 | [p004](phase004/phase.md) | 実機の debug（RTX 2070 の素の起動、10.0.10.3）。main の取り込み、1080p30 の readback の速さもここで測る | cleared（2026-10-29 q1677-i02 P5: hash 3 本一致、readback 3.4 fps） |
-| p005 | 規約の全文の見直し | planned |
+| [p005](phase005/phase.md) | 規約の全文の見直し | cleared（2026-10-29 q1677-i02 P5） |
 | [p006](phase006/phase.md) | GPU の道: SAMPLED の NV12（plane の R8・R8G8 の view、BL GOB 2 段の texture header）と memory の export、Video Player が NVDEC の picture を GPU で描き compositor へ、RTX 2070 で 1080p60 の再生 | in-progress（2026-10-29 q1677-i02 P5: 実装と host 試験済み、実機は未実施） |
 
 ## ユーザーの決定（2026-10-29 22:4x、Q1 経由）

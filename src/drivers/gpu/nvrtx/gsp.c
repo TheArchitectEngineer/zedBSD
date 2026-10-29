@@ -358,12 +358,18 @@ nvrtx_gsp_start(
 		}
 	}
 
-	/* Makes the video decoder's channel when the boot asks (nvrtx.video=1); without it the GPU decodes no video. */
+	/* Asks whether the boot wants the video decoder's channel (nvrtx.video=1); without it the GPU decodes no video. */
 	wanted = nvrtx_stage_video_wanted();
 	allowed = nvrtx_stage_allowed("nvdec-channel");
+
+	/* Says so when the boot stops before the decoder's channel. */
 	if (wanted && !allowed)
 		nvrtx_stage_mark("nvdec-channel skipped (nvrtx.stop=nvdec-channel)");
-	if (wanted && allowed && gpu->work.ready != 0) {
+
+	/* Makes the decoder's channel once the work channel is ready; a failure leaves the boot going without video. */
+	if (wanted &&
+	    allowed &&
+	    gpu->work.ready != 0) {
 		error = nvrtx_nvdec_start(gpu);
 		if (error != 0)
 			nvrtx_stage_mark("nvdec-channel: no video decoder (%d); the boot goes on", error);

@@ -56,6 +56,7 @@ static const uint8_t h264_zigzag4[16] = {
 	0, 1, 4, 8, 5, 2, 3, 6, 9, 12, 13, 10, 7, 11, 14, 15
 };
 
+/* The 8x8 scan, read the same way. */
 static const uint8_t h264_zigzag8[64] = {
 	0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5,
 	12, 19, 26, 33, 40, 48, 41, 34, 27, 20, 13, 6, 7, 14, 21, 28,
@@ -74,10 +75,12 @@ static const uint8_t h264_default4_intra[16] = {
 	6, 13, 13, 20, 20, 20, 28, 28, 28, 28, 32, 32, 32, 37, 37, 42
 };
 
+/* The default 4x4 list for the inter lists. */
 static const uint8_t h264_default4_inter[16] = {
 	10, 14, 14, 20, 20, 20, 24, 24, 24, 24, 27, 27, 27, 30, 30, 34
 };
 
+/* The default 8x8 list for the intra list. */
 static const uint8_t h264_default8_intra[64] = {
 	6, 10, 10, 13, 11, 13, 16, 16, 16, 16, 18, 18, 18, 18, 18, 23,
 	23, 23, 23, 23, 23, 25, 25, 25, 25, 25, 25, 25, 27, 27, 27, 27,
@@ -85,6 +88,7 @@ static const uint8_t h264_default8_intra[64] = {
 	31, 33, 33, 33, 33, 33, 36, 36, 36, 36, 38, 38, 38, 40, 40, 42
 };
 
+/* The default 8x8 list for the inter list. */
 static const uint8_t h264_default8_inter[64] = {
 	9, 13, 13, 15, 13, 15, 17, 17, 17, 17, 19, 19, 19, 19, 19, 21,
 	21, 21, 21, 21, 21, 22, 22, 22, 22, 22, 22, 22, 24, 24, 24, 24,
@@ -125,6 +129,7 @@ nvrtx_video_scaling_resolve(
 			sequence4[list][index] = H264_FLAT;
 	}
 
+	/* The 8x8 lists are flat likewise. */
 	for (list = 0U; list < 2U; list++) {
 		for (index = 0U; index < 64U; index++)
 			sequence8[list][index] = H264_FLAT;
@@ -159,10 +164,13 @@ nvrtx_video_scaling_resolve(
 		h264_list8(&pps->scaling, H264_LIST_8X8_INTRA, sequence8[0], picture8[0]);
 		h264_list8(&pps->scaling, H264_LIST_8X8_INTER, sequence8[1], picture8[1]);
 	} else {
+		/* No picture set matrix: the picture takes the sequence level's lists. */
 		for (list = 0U; list < 6U; list++) {
 			for (index = 0U; index < 16U; index++)
 				picture4[list][index] = sequence4[list][index];
 		}
+
+		/* The 8x8 lists likewise. */
 		for (list = 0U; list < 2U; list++) {
 			for (index = 0U; index < 64U; index++)
 				picture8[list][index] = sequence8[list][index];
@@ -293,10 +301,14 @@ nvrtx_video_free_surface(
 		used = false;
 		if (surface < NVRTX_VIDEO_SLOTS && dpb->entry[surface] >= 0)
 			used = true;
+
+		/* A surface a reference list names is in use. */
 		for (index = 0U; index < count; index++) {
 			if (referenced[index] == surface)
 				used = true;
 		}
+
+		/* Takes the first surface nothing uses. */
 		if (!used)
 			return surface;
 	}
@@ -304,10 +316,14 @@ nvrtx_video_free_surface(
 	/* Else one the decode does not refer to. */
 	for (surface = 0U; surface < NVRTX_NVDEC_SURFACES; surface++) {
 		used = false;
+
+		/* A surface a reference list names is in use. */
 		for (index = 0U; index < count; index++) {
 			if (referenced[index] == surface)
 				used = true;
 		}
+
+		/* Takes the first surface the decode does not refer to. */
 		if (!used)
 			return surface;
 	}

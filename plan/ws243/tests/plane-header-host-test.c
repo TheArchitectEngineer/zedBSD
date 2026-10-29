@@ -1,8 +1,14 @@
 /*
+ * zedBSD
+ * Copyright (C) 2026 Awe Morris
+ *
+ * SPDX-License-Identifier: Zlib
+ */
+
+/*
  * Host test of the texture headers of a video picture's planes: the luma
  * plane as R8 and the chroma plane as R8G8, block linear in blocks two
  * GOBs high, at the planes' places of the NV12 layout the decoder writes.
- * Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
  *
  * Field positions referenced: Mesa 25.0.7
  * src/nouveau/headers/nvidia/classes/clb097tex.h (NVB097_TEXHEAD_BL_*).
@@ -19,7 +25,10 @@
 #include "drivers/gpu/nvrtx/vk/nvrtx-exec.h"
 #include "drivers/gpu/nvrtx/vk/nvrtx-video.h"
 
+/* How many checks the run has made; it only grows, and the summary reports it. */
 static int checks;
+
+/* How many of the checks failed; zero means the run passed. */
 static int failures;
 
 static void check(int ok, const char *what);
@@ -30,13 +39,20 @@ static void test_swizzle(void);
 int
 main(void)
 {
+	/* Checks the planes of a 1080p, a 720p and an SD picture, and the view swizzle. */
 	test_plane(1920U, 1088U);
 	test_plane(1280U, 720U);
 	test_plane(720U, 480U);
 	test_swizzle();
+
+	/* Tells the caller how many checks ran and how many failed. */
 	printf("plane header host test: %d checks, %d failed\n", checks, failures);
+
+	/* Fails the run when any check failed. */
 	if (failures != 0)
 		return 1;
+
+	/* Succeeded: every check passed. */
 	return 0;
 }
 
@@ -46,7 +62,10 @@ check(
 	int ok,
 	const char *what)
 {
+	/* Counts the check, so a run that skipped checks shows in the total. */
 	checks++;
+
+	/* Reports a check that failed, and counts it. */
 	if (!ok) {
 		failures++;
 		printf("FAIL %s\n", what);
@@ -64,12 +83,17 @@ field(
 	unsigned bit;
 	unsigned position;
 
+	/* Gathers the bits of the field one at a time, lowest first. */
 	value = 0U;
 	for (bit = 0U; bit < bits; bit++) {
 		position = low + bit;
+
+		/* Sets the bit of the field when the bit of the header is set. */
 		if (((words[position / 32U] >> (position % 32U)) & 1U) != 0U)
 			value |= 1U << bit;
 	}
+
+	/* Reports the field's value. */
 	return value;
 }
 
@@ -88,6 +112,7 @@ test_plane(
 	uint64_t address;
 	char what[96];
 
+	/* Builds the headers of both planes of a picture at a fixed image address. */
 	image = 0x1234560000ULL;
 	nvrtx_video_layout(width, height, &layout);
 	nvrtx_exec_texture_header_plane(luma, image + layout.plane_offset[0], width, height, 1U, identity);
@@ -150,7 +175,10 @@ test_swizzle(void)
 					     VK_COMPONENT_SWIZZLE_ZERO };
 	uint32_t header[8];
 
+	/* Builds the chroma plane's header with the swizzle swapped. */
 	nvrtx_exec_texture_header_plane(header, 0x200000ULL, 960U, 544U, 2U, swapped);
+
+	/* Checks that the four sources follow the view's swizzle. */
 	check(field(header, 19U, 3U) == 3U && field(header, 22U, 3U) == 2U && field(header, 25U, 3U) == 7U &&
 	      field(header, 28U, 3U) == 0U, "swizzle: G R 1 0");
 }

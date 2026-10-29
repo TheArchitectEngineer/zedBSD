@@ -1042,6 +1042,7 @@ nvrtx_vk_video_available(
 	struct nvrtx_session *session;
 	bool available;
 
+	/* Takes the session the executor handed back as its owner. */
 	session = owner;
 
 	/* The node's answer. */
@@ -1078,6 +1079,7 @@ nvrtx_vk_video_decode(
 	int held;
 	int error;
 
+	/* Takes the session and its node. */
 	session = owner;
 	node = session->node;
 
@@ -1086,15 +1088,23 @@ nvrtx_vk_video_decode(
 	if (lost)
 		return EIO;
 
-	/* The decoder runs the push buffer and is waited for, without the node's lock. */
+	/* Lets go of the node's lock, if this thread holds it, while the decoder runs. */
 	held = mutex_owned(&node->lock);
 	if (held != 0)
 		mutex_unlock(&node->lock);
+
+	/* The decoder runs the push buffer and is waited for. */
 	error = nvrtx_nvdec_run(node->gpu, va, bytes, NVRTX_NODE_DECODE_US);
+
+	/* Takes the node's lock back if it was let go. */
 	if (held != 0)
 		mutex_lock(&node->lock);
+
+	/* A decoder that timed out puts nothing more on the GPU from this session. */
 	if (error == ETIMEDOUT)
 		__atomic_store_n(&session->run_lost, 1, __ATOMIC_RELEASE);
+
+	/* Refuses a picture the decoder did not finish. */
 	if (error != 0)
 		return EIO;
 

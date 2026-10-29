@@ -410,6 +410,7 @@ runtime_capset(
 
 	UNUSED_PARAMETER(session);
 
+	/* Takes the node the capset is asked of. */
 	node = private_data;
 
 	/* Only the protocol's capset, version 0, in a reply that holds it. */

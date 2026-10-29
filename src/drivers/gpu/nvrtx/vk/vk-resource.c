@@ -197,6 +197,8 @@ resource_create_image(
 	/* Refuses by name an image the executor does not lay out (a video image only with the video decoder). */
 	error = 0;
 	supported = resource_image_supported(&info);
+
+	/* A video picture is laid out only by a device that decodes video. */
 	if (supported == 2) {
 		video = nvrtx_vk_video_available(session->owner);
 		if (!video)
@@ -365,6 +367,7 @@ resource_image_supported(
 {
 	uint32_t side;
 	uint32_t levels;
+	uint32_t allowed;
 	bool colour;
 
 	/* A 2D image of one layer and one sample, of a level at least. */
@@ -391,13 +394,23 @@ resource_image_supported(
 	 * (2: the caller asks whether the device decodes video).
 	 */
 	if (info->format == NVRTX_VK_FORMAT_NV12) {
+		/* One level, in optimal tiling. */
 		if (info->mipLevels != 1U || info->tiling != VK_IMAGE_TILING_OPTIMAL)
 			return 0;
+
+		/* Even sides, as the half-size chroma plane needs. */
 		if ((info->extent.width & 1U) != 0U || (info->extent.height & 1U) != 0U)
 			return 0;
-		if ((info->usage & ~(uint32_t)(VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
-		    VK_IMAGE_USAGE_SAMPLED_BIT)) != 0U)
+
+		/* Only the uses a video picture has. */
+		allowed = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
+			  VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
+			  VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+			  VK_IMAGE_USAGE_SAMPLED_BIT;
+		if ((info->usage & ~allowed) != 0U)
 			return 0;
+
+		/* Succeeded: a video picture, which only a device with the decoder lays out. */
 		return 2;
 	}
 
@@ -469,7 +482,12 @@ resource_layout(
 	/* Level 0 of layer 0 of a pitch-linear image: where it starts, its rows pitch bytes apart. */
 	kern_memset(&layout, 0, sizeof(layout));
 	image = nvrtx_vk_payload(session, I915_VK_OBJ_IMAGE, identity);
-	if (image != NULL && !image->depth && !image->tiled && !image->video && subresource.mipLevel == 0U && subresource.arrayLayer == 0U) {
+	if (image != NULL &&
+	    !image->depth &&
+	    !image->tiled &&
+	    !image->video &&
+	    subresource.mipLevel == 0U &&
+	    subresource.arrayLayer == 0U) {
 		nvrtx_vk_image_level(image, subresource.mipLevel, &offset, &width, &height, &pitch);
 		layout.offset = offset;
 		layout.size = (uint64_t)pitch * height;

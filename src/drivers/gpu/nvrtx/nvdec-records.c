@@ -332,12 +332,13 @@ nvrtx_nvdec_push_decode(
 	at = records_address(push, at, RECORDS_HISTORY, frame->history);
 	at = records_address(push, at, RECORDS_STATUS, frame->status);
 
-	/* Every surface's luma plane, then every surface's chroma plane. */
+	/* Every surface's luma plane. */
 	at = records_method(push, at, RECORDS_LUMA, NVRTX_NVDEC_SURFACES);
 	for (index = 0U; index < NVRTX_NVDEC_SURFACES; index++)
 		nvrtx_put32(push, at + (size_t)index * 4U, (uint32_t)(frame->luma[index] >> 8));
 	at += (size_t)NVRTX_NVDEC_SURFACES * 4U;
 
+	/* The chroma planes, after the luma planes. */
 	at = records_method(push, at, RECORDS_CHROMA, NVRTX_NVDEC_SURFACES);
 	for (index = 0U; index < NVRTX_NVDEC_SURFACES; index++)
 		nvrtx_put32(push, at + (size_t)index * 4U, (uint32_t)(frame->chroma[index] >> 8));
@@ -451,6 +452,7 @@ nvrtx_nvdec_h264_pic(
 			pic[PIC_SCALING_4X4_AT + index * 16U + row] = picture->scaling_4x4[index][row];
 	}
 
+	/* The 8x8 scaling matrices, in the same raster order. */
 	for (index = 0U; index < 2U; index++) {
 		for (row = 0U; row < 64U; row++)
 			pic[PIC_SCALING_8X8_AT + index * 64U + row] = picture->scaling_8x8[index][row];
@@ -587,6 +589,7 @@ nvrtx_nvdec_context_bytes(
 	if (length < FALCON_ENTRIES_AT)
 		return EINVAL;
 
+	/* Reads how many entries the list counts and refuses a count the list cannot hold. */
 	count = nvrtx_get32(reply, FALCON_COUNT_AT);
 	if (count > FALCON_MAX)
 		return EINVAL;
@@ -688,6 +691,7 @@ records_reference(
 	if (entry >= NVRTX_NVDEC_REFERENCES)
 		return;
 
+	/* Finds where the entry lies in the picture structure. */
 	at = PIC_DPB_AT + (size_t)entry * PIC_DPB_ENTRY_BYTES;
 
 	/* A long-term reference is marked so in both fields, a short-term one so. */

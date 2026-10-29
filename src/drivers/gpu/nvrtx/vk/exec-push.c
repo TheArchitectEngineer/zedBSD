@@ -1222,6 +1222,7 @@ nvrtx_exec_texture_header_plane(
 	static const uint32_t red_green[4] = { TIC_SOURCE_R, TIC_SOURCE_G, TIC_SOURCE_ZERO, TIC_SOURCE_ONE_FLOAT };
 	const uint32_t *identity;
 	uint32_t sizes;
+	uint32_t source;
 	uint32_t index;
 
 	/* The tiled header of one level, its component sizes and sources taken out. */
@@ -1238,11 +1239,25 @@ nvrtx_exec_texture_header_plane(
 		identity = red_green;
 		sizes = TIC_COMPONENTS_G8R8;
 	}
+
+	/* The component sizes. */
 	exec_field(header, 0U, 7U, sizes);
-	exec_field(header, 19U, 3U, exec_swizzle_source(swizzle[0], identity));
-	exec_field(header, 22U, 3U, exec_swizzle_source(swizzle[1], identity));
-	exec_field(header, 25U, 3U, exec_swizzle_source(swizzle[2], identity));
-	exec_field(header, 28U, 3U, exec_swizzle_source(swizzle[3], identity));
+
+	/* The red source: the view's swizzle of the plane's channel. */
+	source = exec_swizzle_source(swizzle[0], identity);
+	exec_field(header, 19U, 3U, source);
+
+	/* The green source. */
+	source = exec_swizzle_source(swizzle[1], identity);
+	exec_field(header, 22U, 3U, source);
+
+	/* The blue source. */
+	source = exec_swizzle_source(swizzle[2], identity);
+	exec_field(header, 25U, 3U, source);
+
+	/* The alpha source. */
+	source = exec_swizzle_source(swizzle[3], identity);
+	exec_field(header, 28U, 3U, source);
 
 	/* Blocks two GOBs high, as the decoder writes them. */
 	exec_field(header, 99U, 3U, TIC_BLOCK_HEIGHT_TWO_GOBS);

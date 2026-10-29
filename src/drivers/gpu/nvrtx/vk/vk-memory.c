@@ -404,6 +404,8 @@ memory_bind_to(
 		place = &picture->offset;
 		if (picture->depth || picture->tiled)
 			align = NVRTX_VK_GOB_BYTES;
+
+		/* A video image is placed on the decoder's boundary. */
 		if (picture->video)
 			align = NVRTX_VK_VIDEO_ALIGN;
 	} else {
@@ -475,6 +477,8 @@ memory_requirements(
 			bytes = picture->bytes;
 		if (picture != NULL && (picture->depth || picture->tiled))
 			align = NVRTX_VK_GOB_BYTES;
+
+		/* A video image is placed on the decoder's boundary. */
 		if (picture != NULL && picture->video)
 			align = NVRTX_VK_VIDEO_ALIGN;
 	} else {

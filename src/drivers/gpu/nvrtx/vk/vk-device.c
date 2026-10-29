@@ -520,6 +520,8 @@ device_families(
 	video = nvrtx_vk_video_available(session->owner);
 	if (video)
 		family.queueFlags |= VK_QUEUE_VIDEO_DECODE_BIT_KHR;
+
+	/* Any image transfer may start at any texel. */
 	family.minImageTransferGranularity.width = 1U;
 	family.minImageTransferGranularity.height = 1U;
 	family.minImageTransferGranularity.depth = 1U;
@@ -618,9 +620,11 @@ device_usage_features(
 	if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U)
 		required |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
 
-	/* Decoding into the image, and keeping it as a reference, need the video features. */
+	/* Decoding into the image needs the video output feature. */
 	if ((usage & VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR) != 0U)
 		required |= VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR;
+
+	/* Keeping the image as a reference needs the video DPB feature. */
 	if ((usage & VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR) != 0U)
 		required |= VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR;
 

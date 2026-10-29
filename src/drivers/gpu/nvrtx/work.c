@@ -1679,6 +1679,8 @@ work_first(
 	push = (uint8_t *)channel->fences.dma.address + (size_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
 	push_va = channel->fences_va + (uint64_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
 	length = nvrtx_work_push_objects(push, gpu->identity.chip.profile->class_threed, gpu->identity.chip.profile->class_compute);
+
+	/* The copy engine's object follows when the channel has a copy engine. */
 	if (channel->copy_made != 0)
 		length += nvrtx_work_push_copy_object(push + length, gpu->identity.chip.profile->class_copy);
 
