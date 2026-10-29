@@ -853,6 +853,7 @@ screen_disks(
 	char detail[256];
 	char name[32];
 	const char *table;
+	int none_diff;
 	unsigned flags;
 	unsigned i;
 	int clicked;
@@ -872,9 +873,10 @@ screen_disks(
 		if (reason != NULL) {
 			(void)snprintf(detail, sizeof(detail), "%s", kl_tr(reason));
 		} else {
-			table = kl_tr("none");
-			if (disk->table[0] != '\0')
-				table = disk->table;
+			table = disk->table;
+			none_diff = strcmp(disk->table, "none");
+			if (disk->table[0] == '\0' || none_diff == 0)
+				table = kl_tr("none");
 			(void)snprintf(detail, sizeof(detail), "%s: %s, %u %s", kl_tr("Partition table"), table, disk->entries, kl_tr("partitions"));
 		}
 

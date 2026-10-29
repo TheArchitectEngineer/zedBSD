@@ -57,9 +57,15 @@
 - 判定の材料: 上の STEP（guest の session の log を SSH で読む、QMP、VNC の PNG、host の disk の file の検査、boot-test.sh、SSH）。QEMU の console・serial の log は使っていない。6 回目の解析は gdbstub で kernel の `klog_buffer` を読んだ。
 - 試験の条件の補い: 試験の disk と stick は cache=unsafe（BUG-359 の回避、Q1 の了承）。S11 の後は installer を閉じて開き直す（spec §4.11 の S11 は「閉じる」と「再起動」だけ）。欄は Ctrl+A と打ち込み（BUG-360 の回避）。
 
+## 日本語の画面（q1665-i10、2026-10-30）
+
+- `python3 plan/ws307/tests/p010-screens.py --language ja build/q1688-img/installer-image.img`。live の利用者として Settings の言語の設定 `ui.language` を 1 にする。設定の client（`userland/tests/keiland-settings`）は image に入っていないので、build の `bin/keiland-settings` を guest に写して使う（635ee8306）。その後、installer が再起動なしで `INSTALLER LANGUAGE language=ja` を出す。
+- 1 回目（`p010s-ja.3w3y17pt`）: keiland-settings が image に無く 127 で止まった（上の 635ee8306 で直した）。2 回目（`p010s-ja.5qnw_lx0`）: 21 枚を日本語で撮れたが、最後の導入が unpack 中に errno 42 で S10 になった（host の load 25〜27、boot.img の写しに 9 分）。p010 の disk も cache=unsafe にした（c5a8f4f79）。
+- 3 回目（`p010s-ja.0h0x1im2`）: **PASS**（`p010-screens: PASS`、21 枚: S1・S2・S2 で選んだ所・S3・S4 の注意・S4・S4 で作った後・S5・S6・swap 無しの dialog・S7・S7 の下・license・キャンセルの dialog・S10（キャンセル）・S3（全体）・S7a・S8・導入の dialog・S9・S11）。PNG を目で見て確かめた。窓の題名「Installer」が英語のままだった（題名は窓を作る時だけ付けていた）ので、言語が変わった時に付け直すよう直した（f703b3f28）。3 回目の画面で「インストーラ」になったことを確かめた。英語で残った所が 2 つあった: S10 の副題「Nothing was installed」（catalog に無かった）と S2 の「パーティションテーブル: none」。訳を足した（4a587ed1f、`tools/i18n/tr.py check --strict` は 241/241）。disk の label（"EFI system partition" など、他の OS が付けた物）は data なので、そのまま出す。
+- 4 回目（4a587ed1f の image）: 下に書く。
+
 ## 未実施・残り
 
-- 日本語の画面（`p010-screens.py --language ja`）: 下の「日本語の画面」。
 - GTK4 の app の build の確かめ（p004 の後、Q1 の判断）。
 - Boot#### の確かめ（p007 の承認待ち）。
 - 同じ image を dd した disk との同居（spec §11.2 の既知の制限: 同じ image の 2 台は PARTUUID が重なり曖昧）。
