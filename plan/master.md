@@ -21,7 +21,7 @@
 | --- | --- | --- | --- |
 | P1 | q1662-i10 返却 | [ws309](ws309/ws.md) p016〜p018 cleared（main b9c381154）。残りは p015（ユーザーの判断 2 つ待ち） | — |
 | P2 | q1690-i02 in-progress | [ws314](ws314/ws.md) p003〜p006 cleared（main 06998343d）、次は p013・p014・p015・p007〜p010 | — |
-| P3 | q1689-i01 in-progress | [ws221](ws221/ws.md) p010・p012 cleared、p013 NCM 1513/1411 Mbit/s、次は p014 xHCI（design-reviewer → 実装） | 5330 |
+| P3 | q1694-i01 in-progress | [ws315](ws315/ws.md) Realtek の vendor mode の driver（設計から）。WS221 p014 cleared（5330 NCM send 2097・recv 1449、main 68d7c0caf） | 5330 |
 | P4 | q1665-i10 返却 | [ws307](ws307/ws.md) p011 cleared（通し 25 STEP・日本語の画面、main adeab690a）。残りは p007（HAL の案の承認待ち）・p004・p014 規約 | — |
 | P5 | q1693-i01 in-progress | [ws291](ws291/ws.md) NVIDIA の段 p011（model 50 fps）、WS243 completed・BUG-361 直した（main 95807962e） | 10.0.10.3 |
 | P6 | q1667-i05 返却 | [ws282](ws282/ws.md)・[ws284](ws284/ws.md) は main に merge 済み、別のツリーのセッションは [ws282 handover](ws282/handover.md)・[ws284 handover](ws284/handover.md) の試験から続ける | — |
@@ -103,7 +103,7 @@ main に未 merge の branch は [registry](agents/registry.md) の試験待ち�
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-363 · q1694 · WS318 · KL_VERSION 101（100 は WS314 p013 の kl_launch、未 merge）。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-363 · q1695 · WS318 · KL_VERSION 101（100 は WS314 p013 の kl_launch、未 merge）。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
@@ -171,7 +171,7 @@ BUG-363 · q1694 · WS318 · KL_VERSION 101（100 は WS314 p013 の kl_launch�
 | [WS310](ws310/ws.md) | MG004 | ACPI の _OSC を呼び、システム全体の挙動を厳重に確かめる（WS301 の Q301-3、2026-10-29 ユーザー「最終的には呼ぶが、別なWSにして…今は呼ばない。」） | planning | p001（WS301 の後） |
 | [WS313](ws313/ws.md) | MG008 | ODROID-C5（Amlogic S905X5M）の BSP（bsp-s905x5m）と Mali の GPU で、起動して desktop を表示する（2026-10-29 ユーザー） | incomplete（全 block の code を揃えた、実装済み・実機未試験。2026-10-29 夜にユーザーが実機で試験） | 夜の試験（plan/ws313/tests/README.md）→ 直し、Mali の desktop（render pass の LOAD など） |
 | [WS314](ws314/ws.md) | MG006 | libkeiland の API を component ごとの header に分け、プログラミングの解説（英語）を書き、fd と UNIX への依存を API から外す（2026-10-30 ユーザー） | incomplete（p001〜p003・p011 cleared、P2 q1690・p012 は Sonnet） | p001 header の分割から |
-| [WS315](ws315/ws.md) | MG003 | Realtek の USB 2.5G・5G の NIC を独自の方式（vendor mode）の driver で速く（2026-10-30 ユーザー） | planning | WS221 p014（xHCI）と NCM の観察の後に p001 設計 |
+| [WS315](ws315/ws.md) | MG003 | Realtek の USB 2.5G・5G の NIC を独自の方式（vendor mode）の driver で速く（2026-10-30 ユーザー） | planning（q1694 P3 が p001 から） | WS221 p014（xHCI）と NCM の観察の後に p001 設計 |
 | [WS316](ws316/ws.md) | MG003 | 5330 の USB4 と AQC の 10GbE（2026-10-30 ユーザー） | planning | p001 の調べ（5330 の Debian で CM・AQC の見え方・IOMMU） |
 | [WS317](ws317/ws.md) | MG005 | hotplugd: hot-plug の device（PCIe・USB・ディスク）の承認と driver の開始・終了、volumed を置き換え（2026-10-30 ユーザー） | planning（今は取り組まない、ユーザー） | p001 の設計から |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
