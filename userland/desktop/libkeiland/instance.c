@@ -197,21 +197,6 @@ kl_instance_open(
 }
 
 /*
- * Reports the descriptor a later start makes readable.
- */
-int
-kl_instance_fd(
-	const struct kl_instance *instance)
-{
-	/* No copy, no descriptor. */
-	if (instance == NULL)
-		return -1;
-
-	/* The listening socket. */
-	return instance->listener;
-}
-
-/*
  * Has the requests of later starts arrive as the application's
  * KL_APP_INSTANCE events: a thread of the copy's own takes them.
  */
@@ -1020,7 +1005,6 @@ keiui_instances_queue(
 			return;
 		event->kind = KL_APP_INSTANCE;
 		event->instance = instance;
-		event->fd = -1;
 		instance->queued = 1;
 	}
 }

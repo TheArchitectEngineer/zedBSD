@@ -524,7 +524,6 @@ kl_window_post(
 	event.input.kind = KL_WINDOW_POST;
 	event.input.code = code;
 	event.input.data = data;
-	event.fd = -1;
 	error = keiui_app_post_event(window->app, &event);
 	if (error != 0)
 		return error;

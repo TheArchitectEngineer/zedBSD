@@ -14,13 +14,13 @@
  * keiui_app_global for a display's global before they would search with a
  * registry and a roundtrip of their own.
  *
- * The windows' inputs, the events posted and the descriptors watched
- * become one queue of events.  A dispatch waits for the compositor, the
- * wake of the posts or a descriptor, no longer than until a held key's
- * repeat is due, reads and runs the compositor's events, moves the posts
- * that wait into the queue, queues the descriptors that became ready, and
- * then presses the keys whose repeat is due -- after the events read with
- * them, so that a release among them stops a repeat first.
+ * The windows' inputs, the events posted, the processes' and the copies'
+ * news become one queue of events.  A dispatch waits for the compositor or
+ * the wake of the posts, no longer than until a held key's repeat is due,
+ * reads and runs the compositor's events, moves the posts that wait into
+ * the queue, and then presses the keys whose repeat is due -- after the
+ * events read with them, so that a release among them stops a repeat
+ * first.
  *
  * The library runs on the application's thread; only a post comes from
  * another, and it waits in the application's list of posts (under its lock)
@@ -49,7 +49,6 @@ static struct kl_app *app_list;
 static void app_global(void *data, struct wl_registry *registry, uint32_t name, const char *interface, uint32_t version);
 static void app_global_remove(void *data, struct wl_registry *registry, uint32_t name);
 static int app_has(const struct kl_app *app, const char *interface);
-static void app_fd_events(struct kl_app *app, const struct pollfd *descriptors, unsigned used);
 static int app_wait(const struct kl_app *app, int timeout_ms, uint64_t now_us);
 static void app_repeat(struct kl_app *app);
 static struct kl_app_event *app_slot(struct kl_app *app);
@@ -233,8 +232,8 @@ kl_app_close(
 }
 
 /*
- * Waits for the compositor or a watched descriptor and queues what
- * happened (app.c's header).  Returns 0, or -1 when the connection is
+ * Waits for the compositor or a post and queues what happened (app.c's
+ * header).  Returns 0, or -1 when the connection is
  * broken.
  */
 int
@@ -242,11 +241,8 @@ kl_app_dispatch(
 	struct kl_app *app,
 	int timeout_ms)
 {
-	struct pollfd descriptors[2U + KL_APP_FDS_MAX];
+	struct pollfd descriptors[2];
 	struct kl_window *window;
-	unsigned index;
-	unsigned used;
-	unsigned watched;
 	int status;
 
 	/* Each window's editing state as it is now goes out with what is flushed (edit.c). */
@@ -285,31 +281,16 @@ kl_app_dispatch(
 	keiui_instances_queue(app);
 	timeout_ms = app_wait(app, timeout_ms, kl_clock_us());
 
-	/* The compositor's descriptor, then each one watched. */
+	/* The compositor's descriptor, then the posts' wake. */
 	descriptors[0].fd = wl_display_get_fd(app->display);
 	descriptors[0].events = POLLIN;
 	descriptors[0].revents = 0;
-	used = 1U;
-	for (index = 0; index < app->fd_count; index++) {
-		descriptors[used].fd = app->fds[index];
-		descriptors[used].events = 0;
-		if ((app->fd_events[index] & KL_APP_FD_READ) != 0U)
-			descriptors[used].events |= POLLIN;
-		if ((app->fd_events[index] & KL_APP_FD_WRITE) != 0U)
-			descriptors[used].events |= POLLOUT;
-		descriptors[used].revents = 0;
-		used++;
-	}
+	descriptors[1].fd = keiui_wake_descriptor(&app->post_wake);
+	descriptors[1].events = POLLIN;
+	descriptors[1].revents = 0;
 
-	/* The posts' wake, last. */
-	watched = used;
-	descriptors[used].fd = keiui_wake_descriptor(&app->post_wake);
-	descriptors[used].events = POLLIN;
-	descriptors[used].revents = 0;
-	used++;
-
-	/* Waits for any of them. */
-	status = poll(descriptors, (nfds_t)used, timeout_ms);
+	/* Waits for either. */
+	status = poll(descriptors, 2, timeout_ms);
 
 	/* Reads the compositor's events, or gives the reservation back. */
 	if (status > 0 && (descriptors[0].revents & POLLIN) != 0) {
@@ -335,11 +316,10 @@ kl_app_dispatch(
 	if (app->settings != NULL)
 		(void)kl_settings_dispatch(app->settings);
 
-	/* The posts that wait, the processes' news, the descriptors that became ready, then the repeats now due. */
+	/* The posts that wait, the processes' and the copies' news, then the repeats now due. */
 	app_posts_move(app);
 	keiui_processes_queue(app);
 	keiui_instances_queue(app);
-	app_fd_events(app, descriptors, watched);
 	app_repeat(app);
 
 	/* Succeeded: the events so far are queued. */
@@ -359,52 +339,6 @@ kl_app_language(
 
 	/* The language heard last. */
 	return app->language;
-}
-
-/*
- * Watches a descriptor (or stops watching it, events 0).
- */
-int
-kl_app_watch_fd(
-	struct kl_app *app,
-	int fd,
-	unsigned events)
-{
-	unsigned index;
-
-	/* A descriptor, waited for reading or writing. */
-	if (fd < 0 || (events & ~(KL_APP_FD_READ | KL_APP_FD_WRITE)) != 0U)
-		return EINVAL;
-
-	/* One watched already: its new events, or out of the table. */
-	for (index = 0; index < app->fd_count; index++) {
-		if (app->fds[index] != fd)
-			continue;
-		if (events != 0U) {
-			app->fd_events[index] = events;
-			return 0;
-		}
-
-		/* Out of the table: the last one takes its place. */
-		app->fd_count--;
-		app->fds[index] = app->fds[app->fd_count];
-		app->fd_events[index] = app->fd_events[app->fd_count];
-		return 0;
-	}
-
-	/* Not watched, and not to be. */
-	if (events == 0U)
-		return 0;
-
-	/* A new one, while there is room. */
-	if (app->fd_count == KL_APP_FDS_MAX)
-		return ENOSPC;
-	app->fds[app->fd_count] = fd;
-	app->fd_events[app->fd_count] = events;
-	app->fd_count++;
-
-	/* Succeeded. */
-	return 0;
 }
 
 /*
@@ -429,7 +363,6 @@ kl_app_post(
 	event.kind = KL_APP_POST;
 	event.code = code;
 	event.data = data;
-	event.fd = -1;
 	error = keiui_app_post_event(app, &event);
 	if (error != 0)
 		return error;
@@ -656,7 +589,6 @@ keiui_app_push(
 	/* A window's input. */
 	event->kind = KL_APP_WINDOW;
 	event->window = window;
-	event->fd = -1;
 	return &event->input;
 }
 
@@ -847,40 +779,6 @@ app_has(
 	return 0;
 }
 
-/* Queues an event for each watched descriptor that became ready. */
-static void
-app_fd_events(
-	struct kl_app *app,
-	const struct pollfd *descriptors,
-	unsigned used)
-{
-	struct kl_app_event *event;
-	unsigned ready;
-	unsigned index;
-
-	/* Each watched descriptor's answer. */
-	for (index = 1U; index < used; index++) {
-		/* What it became. */
-		ready = 0;
-		if ((descriptors[index].revents & POLLIN) != 0)
-			ready |= KL_APP_FD_READ;
-		if ((descriptors[index].revents & POLLOUT) != 0)
-			ready |= KL_APP_FD_WRITE;
-		if ((descriptors[index].revents & (POLLHUP | POLLERR | POLLNVAL)) != 0)
-			ready |= KL_APP_FD_HANGUP;
-		if (ready == 0U)
-			continue;
-
-		/* Its event; a full queue drops it (the next dispatch finds it ready again). */
-		event = app_slot(app);
-		if (event == NULL)
-			return;
-		event->kind = KL_APP_FD;
-		event->fd = descriptors[index].fd;
-		event->ready = ready;
-	}
-}
-
 /* Reports how long a dispatch may wait: not past a due repeat, not at all while events wait. */
 static int
 app_wait(
@@ -1036,7 +934,6 @@ app_language_changed(
 	/* The event, with the language's name. */
 	memset(&event, 0, sizeof(event));
 	event.kind = KL_APP_LANGUAGE;
-	event.fd = -1;
 	(void)snprintf(event.language, sizeof(event.language), "%s", app->language);
 	(void)keiui_app_post_event(app, &event);
 }
@@ -1160,8 +1057,7 @@ app_post_orphan(
 		event->kind = KL_APP_POST;
 		event->code = code;
 		event->data = data;
-		event->fd = -1;
-	}
+		}
 
 	/* No window either way. */
 	event->window = NULL;

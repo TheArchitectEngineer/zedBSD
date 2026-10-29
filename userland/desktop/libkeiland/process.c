@@ -468,7 +468,6 @@ keiui_processes_queue(
 		event->kind = KL_APP_PROCESS;
 		event->process = process;
 		event->ready = ready;
-		event->fd = -1;
 		process->queued = 1;
 
 		/* What was told once is told. */
