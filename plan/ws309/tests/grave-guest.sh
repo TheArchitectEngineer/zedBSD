@@ -11,7 +11,8 @@
 # both wallpapers were shown (KWL GLASS wallpaper path=... and path=-), every client's cleanup was told (KWL CLEANUP
 # done), every wlshm drew its frames (WLSHM DONE), the held window's colour (0x2040c0) covers most of the middle of
 # the capture, and no KWL FAILED or VULKAN_ERROR line came.  The worst pass_max_us and vk_outside_max_us of KWL PERF
-# pass after the first window (the start is excluded) and the worst cleanup's quiesce= are printed, not judged.
+# pass after the first window (the start is excluded), the worst cleanup's quiesce= and the wallpaper lines (their ms=
+# and images=, the same images or new ones) are printed, not judged.
 #   usage: plan/ws309/tests/grave-guest.sh OUT IMAGE WAYLAND
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -98,6 +99,8 @@ else:
 	outside = max(float(re.search(r"vk_outside_max_us=(\d+)", line).group(1)) for line in passes[1:])
 	quiesce = max([int(re.search(r"quiesce=(\d+)", line).group(1)) for line in cleanup] or [-1])
 	print("grave-guest: graves=%s pass_max_us(max)=%.0f vk_outside_max_us(max)=%.0f cleanup_quiesce_ms(max)=%d" % (graves[0] if graves else "?", worst, outside, quiesce))
+for line in wallpaper:
+	print("grave-guest: " + line)
 try:
 	from PIL import Image
 	picture = Image.open(sys.argv[2]).convert("RGB")
