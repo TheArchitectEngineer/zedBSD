@@ -1,8 +1,8 @@
 #!/bin/sh
 # ws309-p012: BUG-353 on the RTX 2070 (10.0.10.3, nvrtx): after mview ran in the game mode (mailbox, the display shown
 # straight), a later mview window (fifo) is not on the screen.  Run from the top of the tree:
-#   [LIB=libvulkan.so] [KEEP=1] sh plan/ws309/tests/rtx-bug353.sh OUT VMUNIX WAYLAND RESTORE
-# The stick's /bin/wayland and /lib/libvulkan.so are kept as *.p012old (once); LIB is put in as /lib/libvulkan.so; WAYLAND is loaded once on the stick (its usage line:
+#   [LIBS='libvulkan.so=SRC libkeiland.so=SRC'] [KEEP=1] sh plan/ws309/tests/rtx-bug353.sh OUT VMUNIX WAYLAND RESTORE
+# The stick's /bin/wayland, /lib/libvulkan.so and /lib/libkeiland.so are kept as *.p012old (once); LIBS are put in; WAYLAND is loaded once on the stick (its usage line:
 # the stick's libraries have what it needs), renamed over /bin/wayland, and VMUNIX put in (zedBSD restarted), then
 # the steps of plan/ws291/tests/rtx-mview-order.sh: a still view of 1 copy (a), a spin of 1 copy in the game mode (b),
 # a still view of 1 copy (c), a spin of 5000 copies (d), still views of 5000 (e) and of 1 copy (f).  Each step's lines
@@ -84,19 +84,20 @@ im.save(sys.argv[2])' "$out/$name/shot.png" "$out/$name-small.png"
 
 ip=$($M zedbsd 2> /dev/null | tail -1)
 [ -n "$ip" ] || { say "FAIL zedBSD did not come up"; exit 1; }
-z "test -f /bin/wayland.p012old || cp -p /bin/wayland /bin/wayland.p012old; test -f /lib/libvulkan.so.p012old || cp -p /lib/libvulkan.so /lib/libvulkan.so.p012old; sync; cksum /bin/wayland.p012old /lib/libvulkan.so.p012old" > "$out/stick-old.txt" 2>&1
-sed -n 1p "$out/stick-old.txt" > "$out/wayland-old.txt"
-say "stick compositor and libvulkan $(tr '\n' ' ' < "$out/stick-old.txt")"
-# LIB: a libvulkan.so put in with the kernel (the kernel's driver and its user side from one tree); renamed over the old one.
-if [ -n "${LIB:-}" ]; then
-	timeout 120 scp -O -i "$KEY" $SSHOPT "$LIB" "root@$ip:/tmp/libvulkan.p012" > /dev/null 2>&1 &&
-	    z 'cp /tmp/libvulkan.p012 /lib/libvulkan.so.p012new && mv /lib/libvulkan.so.p012new /lib/libvulkan.so && sync' ||
-	    { say "FAIL libvulkan was not put in"; failed=1; }
-	say "libvulkan $(cksum < "$LIB")"
-fi
+z "test -f /bin/wayland.p012old || cp -p /bin/wayland /bin/wayland.p012old; for l in libvulkan.so libkeiland.so; do test -f /lib/\$l.p012old || cp -p /lib/\$l /lib/\$l.p012old; done; sync; cksum /bin/wayland.p012old /lib/libvulkan.so.p012old /lib/libkeiland.so.p012old" > "$out/stick-old.txt" 2>&1
+say "stick compositor and libraries $(tr '\n' ' ' < "$out/stick-old.txt")"
+# LIBS: libraries of /lib put in with the kernel and the compositor (NAME=SOURCE ..., one tree's), each renamed over the old one.
+for pair in ${LIBS:-}; do
+	name=${pair%%=*}
+	src=${pair#*=}
+	timeout 120 scp -O -i "$KEY" $SSHOPT "$src" "root@$ip:/tmp/$name.p012" > /dev/null 2>&1 &&
+	    z "cp /tmp/$name.p012 /lib/$name.p012new && mv /lib/$name.p012new /lib/$name && sync" ||
+	    { say "FAIL $name was not put in"; failed=1; }
+	say "$name $(cksum < "$src")"
+done
 # The compositor runs: the new one is renamed over it (the running one keeps its file), then the kernel and the restart.
 timeout 120 scp -O -i "$KEY" $SSHOPT "$wl" "root@$ip:/tmp/wayland.p012" > /dev/null 2>&1 &&
-    z 'chmod 755 /tmp/wayland.p012; /tmp/wayland.p012 --no-such-option 2>&1 | head -1' > "$out/wayland-check.txt" 2>&1
+    z 'chmod 755 /tmp/wayland.p012; /tmp/wayland.p012 --no-such-option 2>&1 | head -20' > "$out/wayland-check.txt" 2>&1
 if ! grep -q '^usage: wayland' "$out/wayland-check.txt"; then
 	say "FAIL the compositor does not load on the stick: $(head -1 "$out/wayland-check.txt")"
 	failed=1
@@ -130,7 +131,7 @@ if [ "${KEEP:-0}" = 1 ]; then
 fi
 if [ -n "$ip" ]; then
 	timeout 120 scp -O -i "$KEY" $SSHOPT "$restore" "root@$ip:/tmp/vmunix.restore" > /dev/null 2>&1
-	z 'cp -p /bin/wayland.p012old /bin/wayland.p012new && mv /bin/wayland.p012new /bin/wayland && cp -p /lib/libvulkan.so.p012old /lib/libvulkan.so.p012new && mv /lib/libvulkan.so.p012new /lib/libvulkan.so && cp /tmp/vmunix.restore /boot/boot0/vmunix && sync && cksum /bin/wayland /lib/libvulkan.so /boot/boot0/vmunix' > "$out/restored.txt" 2>&1
+	z 'cp -p /bin/wayland.p012old /bin/wayland.p012new && mv /bin/wayland.p012new /bin/wayland && for l in libvulkan.so libkeiland.so; do cp -p /lib/$l.p012old /lib/$l.p012new && mv /lib/$l.p012new /lib/$l; done && cp /tmp/vmunix.restore /boot/boot0/vmunix && sync && cksum /bin/wayland /lib/libvulkan.so /lib/libkeiland.so /boot/boot0/vmunix' > "$out/restored.txt" 2>&1
 	say "restored $(tr '\n' ' ' < "$out/restored.txt")"
 	say "expected $(sed 's/ \/.*//' "$out/stick-old.txt" | tr '\n' ' ') $(cksum < "$restore")"
 else
