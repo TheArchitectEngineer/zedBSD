@@ -46,7 +46,7 @@ Resume point: 2026-10-29 P5（q1676-i01、worktree p5-ws250）。design.md 第 6
 | Phase | 内容 | 状態 | 依存 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 設計（design.md 第 6 版、design-reviewer 1 回） | cleared（2026-10-29 P5。第 6 版の直しは再 review を受けていない） | — |
-| [p002](phase002/phase.md) | session ごとの channel、`rpc_lock` と drain の turn、chid の next-fit と host 試験 | in-progress（実装中・試験未実施） | p001 |
+| [p002](phase002/phase.md) | session ごとの channel、`rpc_lock` と drain の turn、chid の next-fit と host 試験 | in-progress（実装済み・試験未実施） | p001 |
 | [p003](phase003/phase.md) | 犯人の手がかり（GR の照合・始まりの印）、reaper の見張りと取り消し、RC の event、ops（stop_poll・isolate）、host 試験（scheduler の model） | planned | p002 |
 | [p004](phase004/phase.md) | 実機の scenario の script（rtx-hang-check.sh、S0〜S6） | planned | p002 |
 | [p005](phase005/phase.md) | session ごとの lane（番号ごとの thread の pool）と executor の待ちの一部の lock の外出し | planned | p003 |
