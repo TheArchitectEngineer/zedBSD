@@ -20,12 +20,22 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* The bytes of a descriptor of each kind. */
+/*
+ * The bytes of a descriptor of each kind.  A framebuffer descriptor is
+ * its parameters and their padding; the depth and stencil extension and
+ * the render targets follow it.
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/genxml/v10.xml (aggregate "Framebuffer": the
+ * parameters at 0 and the 16-word padding at 64);
+ * src/panfrost/vulkan/csf/panvk_vX_cmd_draw.c (the extension and the
+ * render targets at pan_size(FRAMEBUFFER) past the descriptor).
+ */
 #define MALI_DESC_BYTES			32U
 #define MALI_DESC_RESOURCE_BYTES	16U
 #define MALI_DESC_BLEND_BYTES		16U
 #define MALI_DESC_RT_BYTES		64U
-#define MALI_DESC_FBD_BYTES		64U
+#define MALI_DESC_FBD_BYTES		128U
 #define MALI_DESC_TILER_BYTES		128U
 #define MALI_DESC_DRAW_BYTES		128U
 #define MALI_DESC_HEAP_BYTES		32U

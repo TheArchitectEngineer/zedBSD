@@ -364,7 +364,9 @@ pass_begin(
 		mali_frame_shaders(words, mode, draws);
 	}
 
-	store(fbd_view, words, 16);
+	/* The parameters and their padding of zeros. */
+	kern_memset(&words[16], 0, 16U * sizeof(words[0]));
+	store(fbd_view, words, 32);
 
 	/* The tiler context in its staging register for the draws, and the framebuffer for the end. */
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_TILER_CONTEXT, tiler);
