@@ -1,27 +1,30 @@
 # WS313 の実機の試験（ODROID-C5）
 
 夜の実機の試験の手順（2026-10-29、ユーザーの指示「今日の夜、まとめてテストします。」）。code は実機なしで書いたので、全てが未試験。
-判定に UART の対話（`c5-serial.py` が生きた line を読む）を使ってよいかはユーザーに確かめ中（AGENTS.md §9 の例外は今は ZYBO・RG350 など）。
-認められなければ、UART は解析だけに使い、判定は HDMI の画面の写真（ユーザー）と、LAN が出た後の SSH にする。
+判定は UART の対話（`c5-serial.py` が生きた line を読む）。ユーザーの判断（2026-10-29 §8「許可する」）で AGENTS.md §9 の例外を ODROID-C5 の実機に広げた（network と画面が出た後は SSH と画面の写真）。
 
 ## 準備（ユーザー）
 
 - USB-UART の adapter（3.3 V、921600 baud を出せる物。Hardkernel の USB-UART kit、CP2102・FT232 など）を C5 の UART の connector（TX・RX・GND）につなぎ、centris の USB へ。pin の配置は wiki.odroid.com が読めず未確認（基板の silk か Hardkernel の資料で）。
 - 12 V/2 A の電源（5.5/2.1 mm）。SwitchBot の plug を使うなら、その ID。
 - microSD（8 GB 以上）、HDMI の display、USB の keyboard・mouse、LAN の cable（DHCP のある網）。
-- Hardkernel の ODROID-C5 の公式の image（bootloader の区画を写すため。`ODROID_C5_BOOTLOADER_FROM` に path を渡す）。
+- Hardkernel の ODROID-C5 の公式の image（bootloader の区画を写すため。`ODROID_C5_BOOTLOADER_FROM` に展開した `.img` の path を渡す。`.xz` などの圧縮のままでは読めない）。
 - eMMC の module は外す（U-Boot は起動した媒体の boot.scr を先に読むが、eMMC から起動すると eMMC の OS が先に起動する）。
 
 ## 媒体
 
+image は main（merge の後）か P7 の worktree で作る。sysroot が無い checkout では先に `make ZEDBSD_CONFIG=config/ci/config-odroid-c5.mk sysroot-arm64`。
+bootloader は、ユーザーの判断（§8「取得して image に入れる」）の公開の取得先がまだ分からないので、今夜は Hardkernel の公式の image から写す（`ODROID_C5_BOOTLOADER_FROM`）。無しでも image はでき（2026-10-29 P7 が確かめた）、その時は bootloader の区画が空で、SD からは起動しない。
+desktop の image は Arm の CSF の firmware（`mali-csf-firmware`）を入れる。その license（`LICENCE.mali_csffw`、Arm の EULA）への同意はユーザーが端末で一度だけ答える（`make ZEDBSD_CONFIG=config/ci/config-odroid-c5-keiland.mk firmware-licenses`。担当は代わりに答えない）。
+
 ```sh
-cd /home/awe/zedBSD-worktrees/p7-ws313
+cd /home/awe/zedBSD-claude1
 # text の console の image（GPU なし）
 make ZEDBSD_CONFIG=config/ci/config-odroid-c5.mk ODROID_C5_BOOTLOADER_FROM=/path/to/hardkernel-odroid-c5.img disk-image
 # desktop の image（Mali の driver つき）
-make ZEDBSD_CONFIG=config/ci/config-odroid-c5-keiland.mk ODROID_C5_BOOTLOADER_FROM=/path/to/hardkernel-odroid-c5.img disk-image
+make ZEDBSD_CONFIG=config/ci/config-odroid-c5-keiland.mk BUILD=build/odroid-c5-keiland ODROID_C5_BOOTLOADER_FROM=/path/to/hardkernel-odroid-c5.img disk-image
 # 書き込み（/dev/sdX は microSD。間違えると他の disk を壊す）
-sudo dd if=build/odroid-c5/hdd-image.img of=/dev/sdX bs=4M conv=fsync status=progress
+sudo dd if=build/odroid-c5/hdd-image.img of=/dev/sdX bs=4M conv=fsync status=progress   # desktop の image は build/odroid-c5-keiland/hdd-image.img
 ```
 
 image の形: MBR、先頭 8 MiB は bootloader（Hardkernel の image から写した物）、part 1 FAT32（8 MiB から、`boot.scr`・`vmunix`・`odroid-c5.dtb`・`data.img`・`swapfile`）、part 2 UFS の root。
