@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p036`
 Parent: [WS068](../ws.md)
-Status: in-progress（分割の案と a・i だけ実装・試験未実施。2026-10-29 q1682-i01 P2。cleared にしない）
+Status: in-progress（分割の案と a・c・i だけ実装・試験未実施。2026-10-29 q1682-i01 P2。cleared にしない）
 Phase disposition: normal
 依存: p034、p035
 再開（2026-10-29）: ユーザー「作業の手が空いてしまったら、テストなしで実装だけ進める戦略で、残っているWSのphaseをまんべんなく進めましょう。」
@@ -25,7 +25,7 @@ sampleRateShading）は fixed.c の extension の表の features の欄（p034 �
 | --- | --- | --- | --- |
 | a. indirect draw | GL_ARB_draw_indirect: GL_DRAW_INDIRECT_BUFFER、glDrawArraysIndirect・glDrawElementsIndirect | 4.0 | **実装済み**（2026-10-29、下） |
 | b. fp64 | GL_ARB_gpu_shader_fp64: GLSL の double・dvec・dmat、SPIR-V の Float64、glUniform*d、device の shaderFloat64 | 4.0 | 未着手 |
-| c. sample shading | GL_ARB_sample_shading: glMinSampleShading・GL_SAMPLE_SHADING、gl_SampleID・gl_SamplePosition・gl_SampleMaskIn | 4.0 | 未着手 |
+| c. sample shading | GL_ARB_sample_shading: glMinSampleShading・GL_SAMPLE_SHADING、gl_SampleID・gl_SamplePosition・gl_SampleMaskIn | 4.0 | **実装済み**（2026-10-29、下。gl_NumSamples は無い） |
 | d. cube map 配列・texture gather | GL_ARB_texture_cube_map_array（samplerCubeArray、VK_IMAGE_VIEW_TYPE_CUBE_ARRAY）、GL_ARB_texture_gather（textureGather*） | 4.0 | 未着手 |
 | e. transform feedback 2/3・gpu_shader5 の残り | 一時停止の object は済み（ES 3.0）、glDrawTransformFeedback、stream、gpu_shader5（bitfield・fma・indexing 等） | 4.0 | 未着手 |
 | f. separate shader objects・program pipeline | GL_ARB_separate_shader_objects、glProgramUniform* | 4.1 | 未着手 |
@@ -60,6 +60,18 @@ sampleRateShading）は fixed.c の extension の表の features の欄（p034 �
   （marker・誤り・group の push と pop を callback が聞く、group の深さ、buffer の label、callback 無しの log）。glx-p037.sh の期待のマスは 12 全て緑。
 - 制限: 消した object の label は残る（同じ名前の次の object が引き継ぐ）。shader compiler の message は出さない。
 
+## 実装（2026-10-29）: c. sample shading
+
+- GLSL: version mask の `GLSL_IN_SAMPLE`（4.00 以上、1.50・3.30 は `#extension GL_ARB_sample_shading`、macro も）。fragment の
+  `gl_SampleID`・`gl_SamplePosition`・`gl_SampleMask[1]`（出力）、4.00 以上は `gl_SampleMaskIn[1]`。SPIR-V の SampleId・SamplePosition
+  （SampleRateShading の capability）・SampleMask、整数の入力は Flat。gl_SamplePosition は向きを変えない（多 sample の target は FBO だけで、
+  FBO は GL の行のまま。窓は 1 sample）。
+- libGLESv2/libGL: `glMinSampleShading`（[0, 1] に clamp、device の sampleRateShading が無ければ `GL_INVALID_OPERATION`）、
+  `GL_SAMPLE_SHADING` の capability（fixed の hook、device が持つ時）、glGet の `GL_MIN_SAMPLE_SHADING_VALUE`、pipeline の
+  `sampleShadingEnable`・`minSampleShading`（多 sample の target で fraction が 0 より大きい時、key の raster に入れる）。
+- extension の表に `GL_ARB_sample_shading`（device の feature の欄 `FIXED_FEATURE_SAMPLE_SHADING`）。`GL/gl.h` に宣言と定数。
+- glsl-host: `pass/samples330ext.*`（spirv-val）、`fail/sample-330.frag`（extension 無しで gl_SampleID は無い）。
+
 ## 判断（推しで進めた）
 
 - indirect の command は GPU の vkCmdDrawIndirect にせず CPU で読む（draw の index の展開・flat の並べ替え・feedback の数えが CPU で count を要るため）。
@@ -67,5 +79,6 @@ sampleRateShading）は fixed.c の extension の表の features の欄（p034 �
 
 ## 検証
 
-- build（2026-10-29、i の後）: amd64・arm64・riscv64 の libGL・libGLESv2・libEGL・libGLX・glxtest → exit 0、warning 0（sysroot を作り直し）。
+- host（2026-10-29、c の後）: `sh plan/ws068/tests/glsl-host/run.sh build/glsl-host-p036c` → `glsl-host: PASS`。
+- build（2026-10-29、c の後）: amd64・arm64・riscv64 の libGL・libGLESv2・libEGL・libGLX・glxtest → exit 0、warning 0（sysroot を作り直し）。
 - 未実施: Venus の glx-p037（draw-indirect・debug の outcome）、host の試験（libGL は host で走らない）。

@@ -504,6 +504,11 @@ GLAPI void APIENTRY glObjectPtrLabel(const void *ptr, GLsizei length, const GLch
 GLAPI void APIENTRY glGetObjectPtrLabel(const void *ptr, GLsizei bufSize, GLsizei *length, GLchar *label);
 GLAPI void APIENTRY glGetPointerv(GLenum pname, void **params);
 
+/* OpenGL 4.0's per-sample shading (GL_ARB_sample_shading on a device that shades per sample). */
+#define GL_SAMPLE_SHADING		0x8C36
+#define GL_MIN_SAMPLE_SHADING_VALUE	0x8C37
+GLAPI void APIENTRY glMinSampleShading(GLfloat value);
+
 #ifdef __cplusplus
 }
 #endif

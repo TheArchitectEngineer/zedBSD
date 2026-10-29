@@ -249,6 +249,7 @@
 		glMaterialiv;
 		glMatrixMode;
 		glMemoryBarrier;
+		glMinSampleShading;
 		glMultMatrixd;
 		glMultMatrixf;
 		glNewList;

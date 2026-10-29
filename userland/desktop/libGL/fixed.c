@@ -34,6 +34,7 @@
 
 /* The device features an extension may need (fixed_extension_entry.features, fixed_device_features). */
 #define FIXED_FEATURE_TESSELLATION 0x1U
+#define FIXED_FEATURE_SAMPLE_SHADING 0x2U
 
 /* GL's GL_CONTEXT_PROFILE_MASK bits. */
 #define FIXED_CORE_PROFILE	0x1
@@ -71,6 +72,7 @@ static const struct fixed_extension_entry fixed_extensions[] = {
 	{ "GL_ARB_occlusion_query2", 30U, 0, 0U },
 	{ "GL_ARB_provoking_vertex", 30U, 0, 0U },
 	{ "GL_ARB_sampler_objects", 30U, 0, 0U },
+	{ "GL_ARB_sample_shading", 30U, 0, FIXED_FEATURE_SAMPLE_SHADING },
 	{ "GL_ARB_seamless_cube_map", 30U, 0, 0U },
 	{ "GL_ARB_shader_bit_encoding", 33U, 0, 0U },
 	{ "GL_ARB_sync", 30U, 0, 0U },
@@ -1166,6 +1168,7 @@ fixed_capability(
 {
 	struct fixed_state *fixed;
 	struct zegl_context *current;
+	struct gles_state *state;
 	int debugging;
 
 	/* The state. */
@@ -1223,6 +1226,13 @@ fixed_capability(
 		return 0;
 	default:
 		break;
+	}
+
+	/* Per-sample shading, on a device that has it (GL_ARB_sample_shading). */
+	state = gles_state(current);
+	if (cap == GL_SAMPLE_SHADING && state != NULL && state->display->features.sampleRateShading) {
+		*flag = &state->sample_shading;
+		return 0;
 	}
 
 	/* The debug output's two, or not one. */
@@ -1730,9 +1740,11 @@ fixed_device_features(void)
 	if (state == NULL)
 		return features;
 
-	/* Tessellation shaders. */
+	/* Tessellation shaders, and per-sample shading. */
 	if (state->display->features.tessellationShader)
 		features |= FIXED_FEATURE_TESSELLATION;
+	if (state->display->features.sampleRateShading)
+		features |= FIXED_FEATURE_SAMPLE_SHADING;
 
 	/* Succeeded: the features. */
 	return features;

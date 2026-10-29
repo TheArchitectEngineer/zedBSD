@@ -245,6 +245,12 @@
 #define SPV_BUILT_IN_TESS_COORD		13U
 #define SPV_BUILT_IN_PATCH_VERTICES	14U
 #define SPV_DECORATION_PATCH		15U
+
+/* Per-sample shading: the capability and the built-ins. */
+#define SPV_CAPABILITY_SAMPLE_RATE_SHADING 35U
+#define SPV_BUILT_IN_SAMPLE_ID		18U
+#define SPV_BUILT_IN_SAMPLE_POSITION	19U
+#define SPV_BUILT_IN_SAMPLE_MASK	20U
 #define SPV_OP_EMIT_VERTEX		218U
 #define SPV_OP_END_PRIMITIVE		219U
 #define SPV_IMAGE_OPERAND_BIAS		1U
@@ -311,6 +317,7 @@ struct glsl_module {
 	unsigned sampled_buffer;
 	unsigned geometry;
 	unsigned tessellation;
+	unsigned sample_rate_shading;
 };
 
 /*

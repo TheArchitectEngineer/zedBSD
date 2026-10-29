@@ -2778,6 +2778,38 @@ glPatchParameterfv(
 }
 
 /*
+ * Sets the least fraction of a pixel's samples shaded on their own while
+ * GL_SAMPLE_SHADING is on (desktop GL 4.0's GL_ARB_sample_shading, libGL),
+ * clamped to [0, 1].
+ */
+GL_APICALL void GL_APIENTRY
+glMinSampleShading(
+	GLfloat value)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state, on a device that shades per sample. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (gles_fixed == NULL || !state->display->features.sampleRateShading) {
+		gles_error(context, GL_INVALID_OPERATION);
+		return;
+	}
+
+	/* Clamped. */
+	if (value < 0.0f)
+		value = 0.0f;
+	if (value > 1.0f)
+		value = 1.0f;
+
+	/* Succeeded: the fraction draws take. */
+	state->min_sample_shading = value;
+}
+
+/*
  * Sets the word of the sample mask (desktop GL 3.2, libGL): which samples
  * a fragment may cover while GL_SAMPLE_MASK is on; there is one word.
  */
@@ -2981,6 +3013,12 @@ gles_floats(
 		return 1U;
 	case GL_SAMPLE_COVERAGE_INVERT:
 		values[0] = (GLfloat)state->sample_coverage_invert;
+		return 1U;
+	case GL_MIN_SAMPLE_SHADING_VALUE:
+		/* Desktop GL's per-sample shading's fraction (libGL). */
+		if (gles_fixed == NULL || !state->display->features.sampleRateShading)
+			return 0U;
+		values[0] = state->min_sample_shading;
 		return 1U;
 	case GL_PATCH_DEFAULT_OUTER_LEVEL:
 		/* Desktop GL 4.0's default levels (libGL). */

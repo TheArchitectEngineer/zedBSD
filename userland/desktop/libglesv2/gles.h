@@ -85,6 +85,14 @@
 #define GL_SRC1_ALPHA			0x8589
 #endif
 
+/* Desktop GL 4.0's per-sample shading (libGL). */
+#ifndef GL_SAMPLE_SHADING
+#define GL_SAMPLE_SHADING		0x8C36
+#endif
+#ifndef GL_MIN_SAMPLE_SHADING_VALUE
+#define GL_MIN_SAMPLE_SHADING_VALUE	0x8C37
+#endif
+
 /* Desktop GL 4.0's tessellation (libGL; OpenGL ES 3.1's headers do not have it). */
 #ifndef GL_PATCHES
 #define GL_PATCHES			0x000E
@@ -1192,6 +1200,9 @@ struct gles_raster {
 
 	/* A patch list's vertices a patch (desktop GL 4.0's tessellation; 0 for another topology). */
 	uint32_t patch_vertices;
+
+	/* Per-sample shading (desktop GL's GL_SAMPLE_SHADING on a multisample target): the least fraction's float bits, 0 when off. */
+	uint32_t min_sample_shading;
 };
 
 /*
@@ -1342,6 +1353,10 @@ struct gles_state {
 	GLint patch_vertices;
 	GLfloat patch_outer[4];
 	GLfloat patch_inner[2];
+
+	/* Desktop GL's per-sample shading (GL_ARB_sample_shading, libGL): on, and the least fraction of samples shaded. */
+	int sample_shading;
+	GLfloat min_sample_shading;
 
 	/* Desktop GL's depth clamping, seamless cube maps (always seamless) and provoking vertex (libGL). */
 	int depth_clamp;

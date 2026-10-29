@@ -1345,6 +1345,18 @@ emit_interface_decorations(
 			break;
 		emit_capability(state, SPV_CAPABILITY_GEOMETRY, &state->module->geometry);
 		break;
+	case GLSL_BUILTIN_SAMPLE_ID:
+		value = SPV_BUILT_IN_SAMPLE_ID;
+		emit_capability(state, SPV_CAPABILITY_SAMPLE_RATE_SHADING, &state->module->sample_rate_shading);
+		break;
+	case GLSL_BUILTIN_SAMPLE_POSITION:
+		value = SPV_BUILT_IN_SAMPLE_POSITION;
+		emit_capability(state, SPV_CAPABILITY_SAMPLE_RATE_SHADING, &state->module->sample_rate_shading);
+		break;
+	case GLSL_BUILTIN_SAMPLE_MASK_IN:
+	case GLSL_BUILTIN_SAMPLE_MASK:
+		value = SPV_BUILT_IN_SAMPLE_MASK;
+		break;
 	case GLSL_BUILTIN_TESS_LEVEL_OUTER:
 		value = SPV_BUILT_IN_TESS_LEVEL_OUTER;
 		break;
@@ -1387,8 +1399,10 @@ emit_interface_decorations(
 		break;
 	}
 
-	/* A fragment shader's gl_PrimitiveID is an integer input, so flat. */
+	/* A fragment shader's gl_PrimitiveID, gl_SampleID and gl_SampleMaskIn are integer inputs, so flat. */
 	if (symbol->builtin == GLSL_BUILTIN_PRIMITIVE_ID && state->shader->stage == GLSL_STAGE_FRAGMENT)
+		glsl_module_decorate(state->module, variable, SPV_DECORATION_FLAT, NULL, 0U);
+	if (symbol->builtin == GLSL_BUILTIN_SAMPLE_ID || symbol->builtin == GLSL_BUILTIN_SAMPLE_MASK_IN)
 		glsl_module_decorate(state->module, variable, SPV_DECORATION_FLAT, NULL, 0U);
 
 	/* A built-in has no location, only its built-in and invariance (the levels are one per patch). */

@@ -2773,6 +2773,10 @@ draw_raster(
 	if (state->sample_mask)
 		raster->sample_mask = (uint32_t)state->sample_mask_value;
 
+	/* Per-sample shading, of a multisample target (a fraction of 0 shades as without it). */
+	if (state->sample_shading && target->samples > 1U && state->min_sample_shading > 0.0f)
+		memcpy(&raster->min_sample_shading, &state->min_sample_shading, sizeof(raster->min_sample_shading));
+
 	/* A device that blends every colour attachment alike blends none when they differ. */
 	if (!state->display->features.independentBlend &&
 	    raster->blend != 0U &&
@@ -2966,6 +2970,10 @@ draw_pipeline(
 		multisample.rasterizationSamples = (VkSampleCountFlagBits)target->samples;
 	multisample.alphaToCoverageEnable = (VkBool32)state->sample_alpha_to_coverage;
 	multisample.pSampleMask = &raster->sample_mask;
+	if (raster->min_sample_shading != 0U) {
+		multisample.sampleShadingEnable = VK_TRUE;
+		memcpy(&multisample.minSampleShading, &raster->min_sample_shading, sizeof(multisample.minSampleShading));
+	}
 
 	/* Depth and stencil (GL's compare functions are Vulkan's in the same order). */
 	memset(&depth, 0, sizeof(depth));

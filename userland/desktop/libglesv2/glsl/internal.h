@@ -260,6 +260,12 @@ enum glsl_keyword {
 #define GLSL_BUILTIN_PATCH_VERTICES 23U
 #define GLSL_BUILTIN_INVOCATION_ID 24U
 
+/* Per-sample shading's fragment built-ins: the sample, its position, and the sample masks in and out. */
+#define GLSL_BUILTIN_SAMPLE_ID	25U
+#define GLSL_BUILTIN_SAMPLE_POSITION 26U
+#define GLSL_BUILTIN_SAMPLE_MASK_IN 27U
+#define GLSL_BUILTIN_SAMPLE_MASK 28U
+
 /*
  * A geometry shader's primitives (the layouts "in" and "out" give), and
  * how many vertices each input primitive has, by its number.
@@ -701,6 +707,9 @@ struct glsl_builtin {
 #define GLSL_IN_400		0x400U
 #define GLSL_IN_TESS		0x800U
 
+/* Per-sample shading's built-ins: 4.00 on, or 1.50 and 3.30 with GL_ARB_sample_shading. */
+#define GLSL_IN_SAMPLE		0x1000U
+
 /* The versions that share a feature. */
 #define GLSL_IN_ALL		0x1efU
 #define GLSL_IN_DESKTOP		0x0eeU
@@ -842,6 +851,7 @@ struct glsl_shader {
 	 * layout), spacing, vertex order and point mode.
 	 */
 	unsigned tessellation;
+	unsigned sample_shading;
 	unsigned tess_vertices;
 	unsigned tess_domain;
 	unsigned tess_spacing;

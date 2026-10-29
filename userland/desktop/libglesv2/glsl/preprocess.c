@@ -332,6 +332,7 @@ pp_start(
 		if (state->compatibility)
 			pp_define_text(state, "GL_compatibility_profile", "1");
 		pp_define_text(state, "GL_ARB_tessellation_shader", "1");
+		pp_define_text(state, "GL_ARB_sample_shading", "1");
 	}
 }
 
@@ -885,6 +886,7 @@ pp_extension(
 	int all;
 	int derivatives;
 	int tessellation;
+	int sample_shading;
 
 	/* The form: a name, a colon, a behavior. */
 	shader = state->shader;
@@ -931,6 +933,14 @@ pp_extension(
 	if (tessellation && !shader->es && shader->version >= GLSL_VERSION_150) {
 		if (shader->version < GLSL_VERSION_400)
 			shader->tessellation = (unsigned)enabled;
+		return;
+	}
+
+	/* GL_ARB_sample_shading: the per-sample built-ins in desktop GLSL 1.50 and 3.30 (4.00 on has them). */
+	sample_shading = glsl_token_is(name, "GL_ARB_sample_shading");
+	if (sample_shading && !shader->es && shader->version >= GLSL_VERSION_150) {
+		if (shader->version < GLSL_VERSION_400)
+			shader->sample_shading = (unsigned)enabled;
 		return;
 	}
 

@@ -570,6 +570,16 @@ glsl_builtin_variables(
 	/* The depth, which OpenGL ES 1.00 does not have. */
 	if ((mask & GLSL_IN_ES100) == 0U)
 		builtins_variable(shader, "gl_FragDepth", glsl_type_scalar(GLSL_BASE_FLOAT), GLSL_VAR_OUTPUT, GLSL_BUILTIN_FRAG_DEPTH);
+
+	/* Per-sample shading's: the sample shaded, its position in the pixel, the mask it writes (and, 4.00 on, the one it covers). */
+	if ((mask & GLSL_IN_SAMPLE) != 0U) {
+		type = glsl_type_array(&shader->arena, glsl_type_scalar(GLSL_BASE_INT), 1U);
+		builtins_variable(shader, "gl_SampleID", glsl_type_scalar(GLSL_BASE_INT), GLSL_VAR_INPUT, GLSL_BUILTIN_SAMPLE_ID);
+		builtins_variable(shader, "gl_SamplePosition", glsl_type_vector(GLSL_BASE_FLOAT, 2U), GLSL_VAR_INPUT, GLSL_BUILTIN_SAMPLE_POSITION);
+		builtins_variable(shader, "gl_SampleMask", type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_SAMPLE_MASK);
+		if ((mask & GLSL_IN_400) != 0U)
+			builtins_variable(shader, "gl_SampleMaskIn", type, GLSL_VAR_INPUT, GLSL_BUILTIN_SAMPLE_MASK_IN);
+	}
 }
 
 /* Matches a signature with its generic codes taking one size. */
