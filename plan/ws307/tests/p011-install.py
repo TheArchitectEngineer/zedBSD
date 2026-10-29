@@ -30,6 +30,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -38,6 +39,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from installer_walk import BASIC, ESP, ROOT, Failed, Run, blank, fat, fat_read, gpt  # noqa: E402
 
+LIVE_USER = "user"
 USER = "alice"
 PASSWORD = "alice123"
 HOSTNAME = "p011host"
@@ -177,8 +179,31 @@ class Walk:
 		return word
 
 	def start_over(self):
+		"""S10's Start over: S2 again, in the same installer."""
 		self.run.click("start-over")
 		self.run.wait_screen("s2-disk")
+
+	def again(self):
+		"""After S11, which has only Close and Restart: closes the installer, opens it again in the live session (its
+		log to the session's log) and goes on to S2.  The new installer starts with nothing agreed and the automatic
+		login on."""
+		run = self.run
+		mark = len(run.read_log())
+		run.click("close")
+		run.wait_line(r"INSTALLER DONE reason=close", 60, mark)
+		mark = len(run.read_log())
+		command = ("cd; export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0; "
+			   "nohup /bin/installer >> /run/user/1000/session.log 2>&1 < /dev/null &")
+		code, text = run.root(f"su {LIVE_USER} -c {shlex.quote(command)}", 60)
+		if code != 0:
+			raise Failed(f"the installer did not start again: {code} {text.strip()}")
+		run.wait_line(r"INSTALLER READY", 300, mark)
+		run.wait_line(r"INSTALLER PROBE read", 120, mark)
+		run.wait_screen("s1-welcome")
+		run.click("next")
+		run.wait_screen("s2-disk")
+		self.agreed = False
+		self.autologin = True
 
 	def walk(self):
 		run = self.run
@@ -241,7 +266,7 @@ class Walk:
 		word = self.finish("nvme", mark)
 		self.step("nvme", word == "s11-done")
 		self.harness("nvme")
-		self.start_over()
+		self.again()
 
 		# The 4096-byte disk whole.
 		self.choose("k4")
@@ -250,7 +275,7 @@ class Walk:
 		mark = self.items_user_confirm("k4")
 		word = self.finish("k4", mark)
 		self.step("k4", word == "s11-done")
-		self.start_over()
+		self.again()
 
 		# The disk of another system: a swap partition made, the second basic data partition the root.
 		self.choose("other")
@@ -284,7 +309,7 @@ class Walk:
 		word = self.finish("other", mark)
 		zedbsd = any("STATE loader" in l and "ZEDBSD" in l for l in run.read_log()[mark:])
 		self.step("other", word == "s11-done" and zedbsd)
-		self.start_over()
+		self.again()
 
 		# The USB disk with an empty GPT: the ESP and a partition made, a swap file.
 		self.choose("usb")
