@@ -325,6 +325,8 @@ CONFIG_DRIVER_PCI_HDA ?= $(if $(filter amd64,$(ZEDBSD_PLATFORM)),y,n)
 
 CONFIG_DRIVER_PCI_INTEL_AX211 ?= n
 CONFIG_DRIVER_PCI_RTL8125 ?= n
+# Counts the RTL8125-family driver's own work and reports it once a second (a diagnostic).
+CONFIG_DRIVER_PCI_RTL8125_PROFILE ?= n
 
 # The Pi 4 onboard Ethernet works independently of the USB host controller.
 CONFIG_DRIVER_BCM2711_GENET ?= $(if $(filter rpi4,$(ZEDBSD_PLATFORM)),y,n)
@@ -906,6 +908,7 @@ ZEDBSD_CONFIG_CPPFLAGS := \
 	-DCONFIG_DRIVER_PCI_HDA=$(if $(filter y,$(CONFIG_DRIVER_PCI_HDA)),1,0) \
 	-DCONFIG_DRIVER_PCI_INTEL_AX211=$(if $(filter y,$(CONFIG_DRIVER_PCI_INTEL_AX211)),1,0) \
 	-DCONFIG_DRIVER_PCI_RTL8125=$(if $(filter y,$(CONFIG_DRIVER_PCI_RTL8125)),1,0) \
+	-DCONFIG_DRIVER_PCI_RTL8125_PROFILE=$(if $(filter y,$(CONFIG_DRIVER_PCI_RTL8125_PROFILE)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_GENET=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_GENET)),1,0) \
 	-DCONFIG_DRIVER_BCM2711_GPU=$(if $(filter y,$(CONFIG_DRIVER_BCM2711_GPU)),1,0) \
 	-DCONFIG_DRIVER_POWERVR=$(if $(filter y,$(CONFIG_DRIVER_POWERVR)),1,0) \

@@ -522,6 +522,29 @@ struct rtl_chip {
 };
 
 /*
+ * The driver's own work, counted only in a kernel built with
+ * CONFIG_DRIVER_PCI_RTL8125_PROFILE: how often the interrupt, the poll and
+ * the transmit ran and how long each took, in the fine counter's units,
+ * which the service thread reports once a second while frames move.  The
+ * poll's time includes handing the received frames to the stack's input
+ * queue but not the stack's work on them.  Guarded by the device's lock.
+ */
+struct rtl_profile {
+	uint64_t interrupts;
+	uint64_t interrupt_time;
+	uint64_t polls;
+	uint64_t full_polls;
+	uint64_t poll_frames;
+	uint64_t poll_time;
+	uint64_t transmits;
+	uint64_t transmit_copies;
+	uint64_t transmit_refusals;
+	uint64_t transmit_time;
+	uint64_t reported_frames;
+	uint64_t next_report;
+};
+
+/*
  * One attached controller.
  *
  * The lock serializes the register windows and every register write after
@@ -591,6 +614,13 @@ struct rtl_device {
 	struct net_device *net;
 	char name[NET_DEVICE_NAME_MAX];
 	uint8_t mac[6];
+	/*
+	 * The profile, the fine counter's rate and what one read of it costs,
+	 * in its units, measured at attach.
+	 */
+	struct rtl_profile profile;
+	uint64_t counter_hz;
+	uint64_t counter_cost;
 };
 
 /*
@@ -982,6 +1012,13 @@ static void start_link_thread(struct rtl_device *device);
 static void link_worker(void *argument);
 static void check_link(struct rtl_device *device);
 static uint32_t speed_of(uint16_t status);
+static void profile_calibrate(struct rtl_device *device);
+static uint64_t profile_now(void);
+static void profile_interrupt(struct rtl_device *device, uint64_t started);
+static void profile_poll(struct rtl_device *device, uint64_t started, unsigned count, unsigned budget);
+static void profile_transmit(struct rtl_device *device, uint64_t started, int in_place, int error);
+static void profile_report(struct rtl_device *device);
+static uint64_t profile_microseconds(const struct rtl_device *device, uint64_t time);
 static uint16_t mac_ocp_read(struct rtl_device *device, uint16_t reg);
 static void mac_ocp_write(struct rtl_device *device, uint16_t reg, uint16_t value);
 static void mac_ocp_clear(struct rtl_device *device, uint16_t reg, uint16_t bits);
@@ -1105,7 +1142,8 @@ rtl_attach(
 		return error;
 	}
 
-	/* Follows the link from here on. */
+	/* Measures the profile's counter, then follows the link from here on. */
+	profile_calibrate(device);
 	start_link_thread(device);
 
 	/* Tells which part was found and under which address. */
@@ -1920,8 +1958,12 @@ rtl_interrupt(
 {
 	struct rtl_device *device;
 	unsigned long irq;
+	uint64_t started;
 	uint32_t status;
 	unsigned schedule;
+
+	/* Notes when the interrupt began, for the profile. */
+	started = profile_now();
 
 	/* Samples and acknowledges what the controller latched. */
 	device = argument;
@@ -1943,6 +1985,9 @@ rtl_interrupt(
 			write32(device, RTL_REG_INTERRUPT_MASK, 0U);
 			schedule = 1U;
 		}
+
+		/* Counts the controller's interrupt in the profile. */
+		profile_interrupt(device, started);
 	}
 
 	spin_unlock_irqrestore(&device->lock, irq);
@@ -2127,6 +2172,7 @@ rtl_transmit(
 	uint8_t *buffer;
 	uint64_t address;
 	uint64_t physical;
+	uint64_t started;
 	unsigned long irq;
 	uint32_t command;
 	unsigned errors;
@@ -2138,6 +2184,9 @@ rtl_transmit(
 	/* Refuses a missing packet. */
 	if (packet == NULL)
 		return EINVAL;
+
+	/* Notes when the transmit began, for the profile. */
+	started = profile_now();
 
 	/* Drops a frame too short for a header or too long for the interface. */
 	device = net->driver_data;
@@ -2219,6 +2268,7 @@ rtl_transmit(
 	}
 
 	done = take_tx_done_locked(device);
+	profile_transmit(device, started, in_place, error);
 
 	spin_unlock_irqrestore(&device->lock, irq);
 
@@ -2251,9 +2301,13 @@ rtl_poll(
 	struct rtl_device *device;
 	struct packet_buf *done;
 	unsigned long irq;
+	uint64_t started;
 	unsigned errors;
 	unsigned count;
 	unsigned report;
+
+	/* Notes when the poll began, for the profile. */
+	started = profile_now();
 
 	/* Frees what the controller has sent. */
 	device = net->driver_data;
@@ -2281,6 +2335,9 @@ rtl_poll(
 
 	if (device->opened)
 		write32(device, RTL_REG_INTERRUPT_MASK, RTL_INTERRUPTS_RUNNING);
+
+	/* Counts the poll in the profile. */
+	profile_poll(device, started, count, budget);
 
 	/* Takes a system error for reporting, once. */
 	if (device->system_error && !device->system_error_reported) {
@@ -3680,6 +3737,9 @@ link_worker(
 		if (opened)
 			net_device_schedule_poll(device->net);
 
+		/* Reports the profile when its second has passed. */
+		profile_report(device);
+
 		/* Sleeps until the next service. */
 		sched_sleep(sched_ticks() + KERN_MS_TO_TICKS(RTL_POLL_MS));
 	}
@@ -3765,4 +3825,206 @@ speed_of(
 
 	/* No speed bit is set. */
 	return 0U;
+}
+
+/*
+ * Measures the fine counter's rate and what one read of it costs, for the
+ * profile; without the profile the counter is not read.
+ */
+static void
+profile_calibrate(
+	struct rtl_device *device)
+{
+	uint64_t first;
+	uint64_t last;
+	uint64_t hz;
+	unsigned reads;
+	bool available;
+
+	/* Leaves the profile off unless the kernel keeps it. */
+	if (!CONFIG_DRIVER_PCI_RTL8125_PROFILE)
+		return;
+
+	/* Takes the counter's rate; without a counter the profile stays off. */
+	available = kern_rtc_read_counter(&first, &hz);
+	if (!available || hz == 0U)
+		return;
+
+	/* Times a run of reads to know what one costs. */
+	for (reads = 0; reads < 64U; reads++)
+		(void)kern_rtc_read_counter(&last, &hz);
+
+	/* Keeps the rate and the cost of one read. */
+	device->counter_cost = (last - first) / 64U;
+	device->counter_hz = hz;
+	kern_logf("rtl8125: %s profile on, counter %llu Hz, %llu ns a read\n",
+		  device->name,
+		  (unsigned long long)hz,
+		  (unsigned long long)(device->counter_cost * 1000000000ULL / hz));
+}
+
+/* Reads the fine counter for the profile, or 0 in a kernel without it. */
+static uint64_t
+profile_now(
+	void)
+{
+	uint64_t counter;
+	uint64_t hz;
+	bool available;
+
+	/* Reads nothing unless the kernel keeps the profile. */
+	if (!CONFIG_DRIVER_PCI_RTL8125_PROFILE)
+		return 0U;
+
+	/* Reads the counter; one that is unavailable counts as 0. */
+	available = kern_rtc_read_counter(&counter, &hz);
+	if (!available)
+		return 0U;
+
+	/* Succeeded: the counter's value. */
+	return counter;
+}
+
+/*
+ * Counts one interrupt of the controller and the time since it began.  The
+ * caller holds the lock.
+ */
+static void
+profile_interrupt(
+	struct rtl_device *device,
+	uint64_t started)
+{
+	uint64_t now;
+
+	/* Counts nothing without a calibrated profile. */
+	if (device->counter_hz == 0U)
+		return;
+
+	/* Adds the interrupt and its time. */
+	now = profile_now();
+	device->profile.interrupts++;
+	device->profile.interrupt_time += now - started;
+}
+
+/*
+ * Counts one poll, the frames it took off the receive ring, whether it used
+ * the whole budget, and the time since it began.  The caller holds the
+ * lock.
+ */
+static void
+profile_poll(
+	struct rtl_device *device,
+	uint64_t started,
+	unsigned count,
+	unsigned budget)
+{
+	uint64_t now;
+
+	/* Counts nothing without a calibrated profile. */
+	if (device->counter_hz == 0U)
+		return;
+
+	/* Adds the poll, its frames and its time. */
+	now = profile_now();
+	device->profile.polls++;
+	device->profile.poll_frames += count;
+	if (count >= budget)
+		device->profile.full_polls++;
+	device->profile.poll_time += now - started;
+}
+
+/*
+ * Counts one transmit, whether the frame was copied or refused, and the
+ * time since it began.  The caller holds the lock.
+ */
+static void
+profile_transmit(
+	struct rtl_device *device,
+	uint64_t started,
+	int in_place,
+	int error)
+{
+	uint64_t now;
+
+	/* Counts nothing without a calibrated profile. */
+	if (device->counter_hz == 0U)
+		return;
+
+	/* Adds the transmit, how it went and its time. */
+	now = profile_now();
+	device->profile.transmits++;
+	if (error != 0) {
+		device->profile.transmit_refusals++;
+	} else if (!in_place) {
+		device->profile.transmit_copies++;
+	}
+	device->profile.transmit_time += now - started;
+}
+
+/*
+ * Logs the profile's totals once a second while frames move, the times in
+ * microseconds with the counter's own reads still in them.
+ */
+static void
+profile_report(
+	struct rtl_device *device)
+{
+	struct rtl_profile profile;
+	unsigned long irq;
+	uint64_t now;
+	uint64_t frames;
+	unsigned report;
+
+	/* Reports nothing without a calibrated profile. */
+	if (device->counter_hz == 0U)
+		return;
+
+	/* Takes a copy of the totals when the second has passed and frames moved since the last report. */
+	now = sched_ticks();
+	report = 0U;
+	irq = spin_lock_irqsave(&device->lock);
+
+	frames = device->profile.poll_frames + device->profile.transmits;
+	if (now >= device->profile.next_report && frames != device->profile.reported_frames) {
+		device->profile.reported_frames = frames;
+		device->profile.next_report = now + KERN_MS_TO_TICKS(1000U);
+		profile = device->profile;
+		report = 1U;
+	}
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* Logs the totals outside the lock. */
+	if (report) {
+		kern_logf("rtl8125: %s profile ms %llu irq %llu %llu poll %llu %llu %llu %llu tx %llu %llu %llu %llu\n",
+			  device->name,
+			  (unsigned long long)(profile_microseconds(device, profile_now()) / 1000U),
+			  (unsigned long long)profile.interrupts,
+			  (unsigned long long)profile_microseconds(device, profile.interrupt_time),
+			  (unsigned long long)profile.polls,
+			  (unsigned long long)profile.full_polls,
+			  (unsigned long long)profile.poll_frames,
+			  (unsigned long long)profile_microseconds(device, profile.poll_time),
+			  (unsigned long long)profile.transmits,
+			  (unsigned long long)profile.transmit_copies,
+			  (unsigned long long)profile.transmit_refusals,
+			  (unsigned long long)profile_microseconds(device, profile.transmit_time));
+	}
+}
+
+/* Converts a span of the fine counter into microseconds. */
+static uint64_t
+profile_microseconds(
+	const struct rtl_device *device,
+	uint64_t time)
+{
+	uint64_t whole;
+	uint64_t part;
+
+	/* Splits the span into whole seconds and the rest, so the product cannot overflow. */
+	whole = time / device->counter_hz;
+	part = time % device->counter_hz;
+
+	/* Succeeded: the span in microseconds. */
+	return whole * 1000000U + part * 1000000U / device->counter_hz;
 }
