@@ -58,7 +58,7 @@ static const uint32_t model_immediates[32] = ISA_TABLE_IMMEDIATES;
 #define WORDS		1024U
 #define BUFFERS		MALI_SHADER_BUFFERS
 #define OUTPUT_BASE	0x7000000000ULL
-#define BUFFER_BASE	0x1000000000ULL
+#define BUFFER_BASE	0x10000000000ULL
 #define SHARED_BASE	0x2000000000ULL
 #define OUTPUT_INDEX	0x40U
 #define MAX_STEPS	200000U
@@ -406,6 +406,52 @@ run_reference(
 		case DRV_GPU_IR_IEQ: DST(BOOLV(a == b)); break;
 		case DRV_GPU_IR_INE: DST(BOOLV(a != b)); break;
 		case DRV_GPU_IR_MOVE: DST(a); break;
+		case DRV_GPU_IR_UDIV: DST(b == 0U ? 0U : a / b); break;
+		case DRV_GPU_IR_UMOD: DST(b == 0U ? 0U : a % b); break;
+		case DRV_GPU_IR_IDIV: DST(b == 0U || (a == 0x80000000U && b == 0xFFFFFFFFU) ? 0U : (uint32_t)((int32_t)a / (int32_t)b)); break;
+		case DRV_GPU_IR_IREM: DST(b == 0U || (a == 0x80000000U && b == 0xFFFFFFFFU) ? 0U : (uint32_t)((int32_t)a % (int32_t)b)); break;
+		case DRV_GPU_IR_LOAD_SHARED:
+			if (inst->component != 1U || b != 0U)
+				DST(result->buffers[BUFFERS - 1U][(a / 4U) % WORDS]);
+			break;
+		case DRV_GPU_IR_STORE_SHARED:
+			if (inst->component != 1U || value[inst->src[2]] != 0U)
+				result->buffers[BUFFERS - 1U][(a / 4U) % WORDS] = b;
+			break;
+		case DRV_GPU_IR_ATOMIC: {
+			uint32_t *memory_word_ref;
+			uint32_t old;
+			uint32_t predicate_source;
+
+			if (inst->location == DRV_GPU_IR_LOCATION_SHARED) {
+				memory_word_ref = &result->buffers[BUFFERS - 1U][(a / 4U) % WORDS];
+			} else {
+				slot = find_buffer(program, ir, inst->location);
+				if (slot < 0)
+					break;
+				memory_word_ref = &result->buffers[slot][(a / 4U) % WORDS];
+			}
+			predicate_source = inst->immediate == DRV_GPU_IR_ATOMIC_CMPXCHG ? 3U : 2U;
+			if (inst->component == DRV_GPU_IR_ATOMIC_PREDICATED && value[inst->src[predicate_source]] == 0U)
+				break;
+			old = *memory_word_ref;
+			switch (inst->immediate) {
+			case DRV_GPU_IR_ATOMIC_ADD: *memory_word_ref = old + b; break;
+			case DRV_GPU_IR_ATOMIC_SUB: *memory_word_ref = old - b; break;
+			case DRV_GPU_IR_ATOMIC_AND: *memory_word_ref = old & b; break;
+			case DRV_GPU_IR_ATOMIC_OR: *memory_word_ref = old | b; break;
+			case DRV_GPU_IR_ATOMIC_XOR: *memory_word_ref = old ^ b; break;
+			case DRV_GPU_IR_ATOMIC_XCHG: *memory_word_ref = b; break;
+			case DRV_GPU_IR_ATOMIC_CMPXCHG: if (old == value[inst->src[2]]) *memory_word_ref = b; break;
+			case DRV_GPU_IR_ATOMIC_SMIN: *memory_word_ref = (int32_t)old < (int32_t)b ? old : b; break;
+			case DRV_GPU_IR_ATOMIC_SMAX: *memory_word_ref = (int32_t)old > (int32_t)b ? old : b; break;
+			case DRV_GPU_IR_ATOMIC_UMIN: *memory_word_ref = old < b ? old : b; break;
+			case DRV_GPU_IR_ATOMIC_UMAX: *memory_word_ref = old > b ? old : b; break;
+			default: result->why = "reference: an atomic it does not model"; break;
+			}
+			DST(old);
+			break;
+		}
 		case DRV_GPU_IR_PACK_HALF: DST(to_half(fa) | (to_half(fb) << 16)); break;
 		case DRV_GPU_IR_UNPACK_HALF: FDST(from_half((a >> (16U * (inst->component & 1U))) & 0xFFFFU)); break;
 		case DRV_GPU_IR_LOOP_BEGIN:
@@ -582,12 +628,12 @@ memory_word(
 			return &m->result->varyings[15][3];
 		return NULL;
 	}
-	if (address >= BUFFER_BASE && address < BUFFER_BASE + (uint64_t)BUFFERS * 0x100000ULL) {
-		record = (address - BUFFER_BASE) / 0x100000ULL;
-		offset = (address - BUFFER_BASE) % 0x100000ULL;
+	if (address >= BUFFER_BASE && address < BUFFER_BASE + ((uint64_t)BUFFERS << 32)) {
+		record = (address - BUFFER_BASE) >> 32;
+		offset = (address - BUFFER_BASE) & 0xFFFFFFFFULL;
 		return &m->result->buffers[record][(offset / 4U) % WORDS];
 	}
-	if (address >= SHARED_BASE && address < SHARED_BASE + WORDS * 4U)
+	if (address >= SHARED_BASE && address < SHARED_BASE + 0x100000000ULL)
 		return &m->result->buffers[BUFFERS - 1U][((address - SHARED_BASE) / 4U) % WORDS];
 	return NULL;
 }
@@ -698,7 +744,7 @@ run_model(
 			m.fau[program->viewport_fau_word + index] = trial->viewport[index];
 	}
 	for (index = 0U; index < program->buffer_count; index++) {
-		address = BUFFER_BASE + (uint64_t)index * 0x100000ULL;
+		address = BUFFER_BASE + ((uint64_t)index << 32);
 		m.fau[program->buffers[index].fau_word] = (uint32_t)address;
 		m.fau[program->buffers[index].fau_word + 1U] = (uint32_t)(address >> 32);
 	}
@@ -846,7 +892,7 @@ run_model(
 		} else if (strcmp(name, "FCMP_OR.f32") == 0) {
 			m.r[dest] = (compare_float((unsigned)((word >> 32) & 7U), float_source(&m, word, 0U, entry), float_source(&m, word, 1U, entry)) ? 0xFFFFFFFFU : 0U) | c;
 		} else if (strcmp(name, "ICMP_OR.u32") == 0 || strcmp(name, "ICMP_OR.s32") == 0) {
-			m.r[dest] = (compare_int((unsigned)((word >> 32) & 7U), a, b, name[9] == 's') ? 0xFFFFFFFFU : 0U) | c;
+			m.r[dest] = (compare_int((unsigned)((word >> 32) & 7U), a, b, name[8] == 's') ? 0xFFFFFFFFU : 0U) | c;
 		} else if (strncmp(name, "LSHIFT_", 7) == 0 || strncmp(name, "RSHIFT_", 7) == 0 || strncmp(name, "ARSHIFT_", 8) == 0) {
 			shift = b & 0xFFU;
 			if (((word >> 35) & 1U) != 0U)
@@ -935,6 +981,12 @@ run_model(
 			}
 			a = *memory;
 			b = m.r[dest];
+			if (((word >> 26) & 1U) != 0U) {
+				if (a == m.r[(dest + 1U) & 63U])
+					*memory = b;
+				m.r[(word >> 16) & 0x3FU] = a;
+				goto next;
+			}
 			switch ((word >> 22) & 0xFU) {
 			case 2U: *memory = a + b; break;
 			case 8U: *memory = (int32_t)a < (int32_t)b ? a : b; break;
@@ -974,6 +1026,7 @@ run_model(
 			return;
 		}
 
+next:
 		/* A message's results arrive at its slot's wait. */
 		if (entry->message != 0U && strcmp(name, "BLEND") != 0) {
 			slot = (uint32_t)((word >> 30) & 7U);

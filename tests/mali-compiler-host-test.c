@@ -415,23 +415,29 @@ test_module(
 	uint32_t *words;
 	uint32_t stage;
 	size_t count;
+	size_t at;
 	FILE *listing;
 	int failed;
 	int error;
 
 	name = strrchr(path, '/');
 	name = name == NULL ? path : name + 1;
-	if (strstr(name, ".vert.") != NULL) {
-		stage = MALI_SHADER_VERTEX;
-	} else if (strstr(name, ".frag.") != NULL) {
-		stage = MALI_SHADER_FRAGMENT;
-	} else {
-		stage = MALI_SHADER_COMPUTE;
-	}
 	words = read_file(path, &count);
 	if (words == NULL) {
 		printf("FAIL %s: cannot read\n", name);
 		return 1;
+	}
+
+	/* The stage is the execution model of the module's first entry point. */
+	stage = MALI_SHADER_COMPUTE;
+	for (at = 5U; at < count && (words[at] >> 16) != 0U; at += words[at] >> 16) {
+		if ((words[at] & 0xFFFFU) == 15U && at + 1U < count) {
+			if (words[at + 1U] == 0U)
+				stage = MALI_SHADER_VERTEX;
+			else if (words[at + 1U] == 4U)
+				stage = MALI_SHADER_FRAGMENT;
+			break;
+		}
 	}
 
 	/* 2: compiles and decodes. */

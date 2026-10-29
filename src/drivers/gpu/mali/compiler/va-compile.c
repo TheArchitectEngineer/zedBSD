@@ -74,7 +74,8 @@
 
 /*
  * Floats the lowering needs as constants: 0.5, 1.0, 2^24, the largest
- * 1 / w the viewport transform keeps (2^15) and its negative.
+ * 1 / w the viewport transform keeps (2^15) and its negative, and
+ * 1 - 2^-20.
  *
  * Values referenced: IEEE 754-2019 (binary32 encodings).
  */
@@ -83,6 +84,7 @@
 #define VA_FLOAT_2_POW_24	0x4B800000U
 #define VA_FLOAT_W_RECIP_MAX	0x47000000U
 #define VA_FLOAT_W_RECIP_MIN	0xC7000000U
+#define VA_FLOAT_ONE_LESS_2_POW_20	0x3F7FFFF0U
 
 /*
  * The largest 1 / w the viewport transform keeps (2^15), so a w near 0
@@ -171,6 +173,8 @@ static void emit_fma(struct va_compiler *c, uint32_t dst, uint32_t a, uint32_t b
 static void emit_log2(struct va_compiler *c, uint32_t dst, uint32_t a);
 static void emit_exp2(struct va_compiler *c, uint32_t dst, uint32_t a);
 static void emit_shift(struct va_compiler *c, uint64_t op, uint32_t dst, uint32_t a, uint32_t amount);
+static void emit_divide(struct va_compiler *c, uint32_t op, uint32_t dst, uint32_t n, uint32_t d);
+static void emit_unsigned_divide(struct va_compiler *c, uint32_t quotient, uint32_t remainder, uint32_t n, uint32_t d);
 static void lower_alu(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static void lower_load_input(struct va_compiler *c, uint32_t index);
 static void lower_vertex_attribute(struct va_compiler *c, uint32_t index);
@@ -1093,6 +1097,13 @@ lower_alu(
 		emit_alu(c, VA_OP_F32_TO_U32 | va_field(VA_ROUND_RTZ, VA_SHIFT_ROUND_MODE), dst, a, VA_OPERAND_NONE, VA_OPERAND_NONE);
 		break;
 
+	case DRV_GPU_IR_UDIV:
+	case DRV_GPU_IR_UMOD:
+	case DRV_GPU_IR_IDIV:
+	case DRV_GPU_IR_IREM:
+		emit_divide(c, inst->op, dst, a, b);
+		break;
+
 	case DRV_GPU_IR_PACK_HALF:
 		emit_alu(c, VA_OP_V2F32_TO_V2F16 | va_field(VA_ROUND_RTE, VA_SHIFT_ROUND_MODE), dst, a, b, VA_OPERAND_NONE);
 		break;
@@ -1267,6 +1278,153 @@ emit_exp2(
 	emit_alu(c, VA_OP_FEXP_F32, dst, scale, scaled, VA_OPERAND_NONE);
 	free_reg(c, scale);
 	free_reg(c, scaled);
+}
+
+/*
+ * Divides 32-bit integers, unsigned or signed: the quotient or the
+ * remainder of n and d into dst.  A signed division divides the
+ * magnitudes and gives the quotient the sign of n times that of d, the
+ * remainder the sign of n.
+ */
+static void
+emit_divide(
+	struct va_compiler *c,
+	uint32_t op,
+	uint32_t dst,
+	uint32_t n,
+	uint32_t d)
+{
+	uint32_t quotient;
+	uint32_t remainder;
+	uint32_t magnitude_n;
+	uint32_t magnitude_d;
+	uint32_t sign_n;
+	uint32_t sign_d;
+	uint32_t zero;
+	int is_signed;
+
+	/* Allocates the quotient and the remainder. */
+	quotient = alloc_block(c, 1U);
+	remainder = alloc_block(c, 1U);
+	if (c->error != 0)
+		return;
+	zero = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
+	is_signed = 0;
+	if (op == DRV_GPU_IR_IDIV || op == DRV_GPU_IR_IREM)
+		is_signed = 1;
+
+	/* An unsigned division divides the operands as they are. */
+	if (is_signed == 0) {
+		emit_unsigned_divide(c, quotient, remainder, n, d);
+		if (op == DRV_GPU_IR_UDIV) {
+			emit_move(c, dst, quotient);
+		} else {
+			emit_move(c, dst, remainder);
+		}
+		free_reg(c, quotient);
+		free_reg(c, remainder);
+		return;
+	}
+
+	/* Takes the signs (all ones for a negative operand) and the magnitudes. */
+	sign_n = alloc_block(c, 1U);
+	sign_d = alloc_block(c, 1U);
+	magnitude_n = alloc_block(c, 1U);
+	magnitude_d = alloc_block(c, 1U);
+	if (c->error != 0)
+		return;
+	emit_alu(c, VA_OP_ICMP_OR_S32 | va_field(VA_CONDITION_LT, VA_SHIFT_CONDITION) | va_field(VA_RESULT_M1, VA_SHIFT_RESULT_TYPE), sign_n, n, zero, zero);
+	emit_alu(c, VA_OP_ICMP_OR_S32 | va_field(VA_CONDITION_LT, VA_SHIFT_CONDITION) | va_field(VA_RESULT_M1, VA_SHIFT_RESULT_TYPE), sign_d, d, zero, zero);
+	emit_alu(c, VA_OP_LSHIFT_XOR_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), magnitude_n, n, zero, sign_n);
+	emit_alu(c, VA_OP_ISUB_U32, magnitude_n, magnitude_n, sign_n, VA_OPERAND_NONE);
+	emit_alu(c, VA_OP_LSHIFT_XOR_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), magnitude_d, d, zero, sign_d);
+	emit_alu(c, VA_OP_ISUB_U32, magnitude_d, magnitude_d, sign_d, VA_OPERAND_NONE);
+
+	/* Divides the magnitudes. */
+	emit_unsigned_divide(c, quotient, remainder, magnitude_n, magnitude_d);
+
+	/* Gives the result its sign: (x ^ s) - s negates x where s is all ones. */
+	if (op == DRV_GPU_IR_IDIV) {
+		emit_alu(c, VA_OP_LSHIFT_XOR_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), sign_n, sign_n, zero, sign_d);
+		emit_alu(c, VA_OP_LSHIFT_XOR_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), quotient, quotient, zero, sign_n);
+		emit_alu(c, VA_OP_ISUB_U32, dst, quotient, sign_n, VA_OPERAND_NONE);
+	} else {
+		emit_alu(c, VA_OP_LSHIFT_XOR_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), remainder, remainder, zero, sign_n);
+		emit_alu(c, VA_OP_ISUB_U32, dst, remainder, sign_n, VA_OPERAND_NONE);
+	}
+	free_reg(c, quotient);
+	free_reg(c, remainder);
+	free_reg(c, sign_n);
+	free_reg(c, sign_d);
+	free_reg(c, magnitude_n);
+	free_reg(c, magnitude_d);
+}
+
+/*
+ * Divides unsigned 32-bit integers.
+ *
+ * The float reciprocal of d, made a little smaller (by 2^-20, more than
+ * the conversions' and the reciprocal's errors together), never
+ * overestimates a quotient: the estimate n * (1 / d), truncated, leaves a
+ * remainder in [0, 2^-19 n + d).  Two refinements with the remainder's
+ * own estimate leave it below d + 1, and two corrections by one bring it
+ * into [0, d).
+ */
+static void
+emit_unsigned_divide(
+	struct va_compiler *c,
+	uint32_t quotient,
+	uint32_t remainder,
+	uint32_t n,
+	uint32_t d)
+{
+	uint32_t reciprocal;
+	uint32_t scratch;
+	uint32_t mask;
+	uint32_t round;
+	uint32_t zero;
+
+	/* Allocates the reciprocal and two scratch registers. */
+	reciprocal = alloc_block(c, 1U);
+	scratch = alloc_block(c, 1U);
+	mask = alloc_block(c, 1U);
+	if (c->error != 0)
+		return;
+	zero = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
+
+	/* The reduced reciprocal (1 - 2^-20) / d. */
+	emit_alu(c, VA_OP_U32_TO_F32 | va_field(VA_ROUND_RTE, VA_SHIFT_ROUND_MODE), scratch, d, VA_OPERAND_NONE, VA_OPERAND_NONE);
+	emit_alu(c, VA_OP_FRCP_F32, reciprocal, scratch, VA_OPERAND_NONE, VA_OPERAND_NONE);
+	emit_constant(c, scratch, VA_FLOAT_ONE_LESS_2_POW_20);
+	emit_fmul(c, reciprocal, reciprocal, scratch);
+
+	/* The estimate, and the remainder it leaves. */
+	emit_alu(c, VA_OP_U32_TO_F32 | va_field(VA_ROUND_RTE, VA_SHIFT_ROUND_MODE), scratch, n, VA_OPERAND_NONE, VA_OPERAND_NONE);
+	emit_fmul(c, scratch, scratch, reciprocal);
+	emit_alu(c, VA_OP_F32_TO_U32 | va_field(VA_ROUND_RTZ, VA_SHIFT_ROUND_MODE), quotient, scratch, VA_OPERAND_NONE, VA_OPERAND_NONE);
+	emit_alu(c, VA_OP_IMUL_I32, scratch, quotient, d, VA_OPERAND_NONE);
+	emit_alu(c, VA_OP_ISUB_U32, remainder, n, scratch, VA_OPERAND_NONE);
+
+	/* Refines twice with the remainder's own estimate. */
+	for (round = 0U; round < 2U; round++) {
+		emit_alu(c, VA_OP_U32_TO_F32 | va_field(VA_ROUND_RTE, VA_SHIFT_ROUND_MODE), scratch, remainder, VA_OPERAND_NONE, VA_OPERAND_NONE);
+		emit_fmul(c, scratch, scratch, reciprocal);
+		emit_alu(c, VA_OP_F32_TO_U32 | va_field(VA_ROUND_RTZ, VA_SHIFT_ROUND_MODE), scratch, scratch, VA_OPERAND_NONE, VA_OPERAND_NONE);
+		emit_alu(c, VA_OP_IADD_U32, quotient, quotient, scratch, VA_OPERAND_NONE);
+		emit_alu(c, VA_OP_IMUL_I32, scratch, quotient, d, VA_OPERAND_NONE);
+		emit_alu(c, VA_OP_ISUB_U32, remainder, n, scratch, VA_OPERAND_NONE);
+	}
+
+	/* Corrects up by one, twice, while the remainder is at least d. */
+	for (round = 0U; round < 2U; round++) {
+		emit_alu(c, VA_OP_ICMP_OR_U32 | va_field(VA_CONDITION_GE, VA_SHIFT_CONDITION) | va_field(VA_RESULT_M1, VA_SHIFT_RESULT_TYPE), mask, remainder, d, zero);
+		emit_alu(c, VA_OP_ISUB_U32, quotient, quotient, mask, VA_OPERAND_NONE);
+		emit_alu(c, VA_OP_LSHIFT_AND_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), scratch, d, zero, mask);
+		emit_alu(c, VA_OP_ISUB_U32, remainder, remainder, scratch, VA_OPERAND_NONE);
+	}
+	free_reg(c, reciprocal);
+	free_reg(c, scratch);
+	free_reg(c, mask);
 }
 
 /* Shifts a by the low five bits of amount. */
@@ -1766,8 +1924,15 @@ lower_storage(
 
 /*
  * Lowers an atomic operation on a storage buffer or shared memory word:
- * ATOM_RETURN.i32, whose staging registers carry the operand in and the
- * old value out.
+ * ATOM_RETURN.i32 reads the operand (for a compare and exchange, the new
+ * value and then the value compared, with the compare bit) from its
+ * staging registers and writes the old value; a subtraction adds the
+ * negated operand.
+ *
+ * Procedure referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/bifrost_compile.c (bi_emit_acmpxchg_to:
+ * the order of the two staging words) and valhall/va_pack.c (the compare
+ * bit, the read and write staging of ATOM_RETURN).
  */
 static void
 lower_atomic(
@@ -1777,14 +1942,18 @@ lower_atomic(
 	uint32_t operation;
 	uint32_t address;
 	uint32_t dst;
-	uint32_t data;
+	uint32_t block;
+	uint32_t count;
 	uint32_t branch;
 	uint32_t predicate;
+	uint32_t compare;
 	uint64_t bits;
 
-	/* Chooses the hardware operation; the compare and exchange is not lowered. */
+	/* Chooses the hardware operation. */
+	compare = 0U;
 	switch (inst->immediate) {
 	case DRV_GPU_IR_ATOMIC_ADD:
+	case DRV_GPU_IR_ATOMIC_SUB:
 		operation = VA_ATOMIC_ADD;
 		break;
 
@@ -1820,6 +1989,11 @@ lower_atomic(
 		operation = VA_ATOMIC_XCHG;
 		break;
 
+	case DRV_GPU_IR_ATOMIC_CMPXCHG:
+		operation = VA_ATOMIC_XCHG;
+		compare = 1U;
+		break;
+
 	default:
 		fail(c, ENOTSUP, "an atomic operation the Valhall lowering does not have");
 		return;
@@ -1831,31 +2005,39 @@ lower_atomic(
 		return;
 	}
 
-	/* Computes the address and copies the operand into the result's register. */
+	/* Computes the address and copies the operands into the staging block. */
 	address = buffer_address(c, inst->location, value_reg(c, inst->src[0]));
+	count = 1U + compare;
+	block = alloc_block(c, count);
 	dst = define_value(c, inst->dst);
-	data = value_reg(c, inst->src[1]);
 	if (c->error != 0)
 		return;
-	emit_move(c, dst, data);
+	if (inst->immediate == DRV_GPU_IR_ATOMIC_SUB) {
+		emit_alu(c, VA_OP_ISUB_U32, block, VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO, value_operand(c, inst->src[1]), VA_OPERAND_NONE);
+	} else {
+		emit_move(c, block, value_operand(c, inst->src[1]));
+	}
+	if (compare != 0U)
+		emit_move(c, block + 1U, value_operand(c, inst->src[2]));
 
 	/* Skips the operation for the lanes whose predicate is false. */
 	branch = 0U;
 	if (inst->component == DRV_GPU_IR_ATOMIC_PREDICATED) {
-		predicate = value_reg(c, inst->src[2]);
+		predicate = value_reg(c, inst->src[2 + compare]);
 		branch_begin(c, predicate, &branch);
 	}
 
-	/* Operates, the old value replacing the operand. */
+	/* Operates, the old value to the result. */
 	bits = VA_OP_ATOM_RETURN_I32 | va_source_register(address);
 	bits |= va_field(operation, VA_SHIFT_ATOMIC_OPERATION);
+	bits |= va_field(compare, VA_SHIFT_ATOMIC_COMPARE);
 	bits |= va_field(0U, VA_SHIFT_STAGING_WRITE_COUNT);
 	bits |= va_field(dst, VA_SHIFT_STAGING_DEST);
-	bits |= va_staging(dst, 1U, VA_STAGING_READ | VA_STAGING_WRITE);
+	bits |= va_staging(block, count, VA_STAGING_READ | VA_STAGING_WRITE);
 	emit(c,
 	     bits,
-	     va_register_mask(address, 2U) | va_register_mask(dst, 1U),
-	     va_register_mask(dst, 1U),
+	     va_register_mask(address, 2U) | va_register_mask(block, count),
+	     va_register_mask(dst, 1U) | va_register_mask(block, count),
 	     VA_INST_MESSAGE | VA_INST_MEMORY);
 
 	/* Rejoins the lanes that skipped it. */
@@ -1863,6 +2045,9 @@ lower_atomic(
 		branch_end(c, branch);
 	free_reg(c, address);
 	free_reg(c, address + 1U);
+	free_reg(c, block);
+	if (compare != 0U)
+		free_reg(c, block + 1U);
 }
 
 /*
