@@ -438,6 +438,26 @@
 #define RTL_MITIGATION_COUNT_SHORT	32U
 #define RTL_MITIGATION_COUNT_LONG	64U
 
+/*
+ * The tally counters the controller writes to memory on request: the
+ * register that takes the block's address with the bit that starts the
+ * write and stays set until it is done, the block's size and alignment,
+ * and where the count of frames missed for want of a receive descriptor
+ * sits in it (a 16-bit count that wraps).
+ *
+ * Values referenced: FreeBSD sys/dev/rge/if_rgereg.h, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (RGE_DTCCR_LO, RGE_DTCCR_HI,
+ * RGE_DTCCR_CMD, struct rge_hw_mac_stats, RGE_STATS_ALIGNMENT).
+ */
+#define RTL_REG_TALLY_LOW		0x0010U
+#define RTL_REG_TALLY_HIGH		0x0014U
+#define RTL_TALLY_DUMP			0x00000008U
+#define RTL_TALLY_BYTES			256U
+#define RTL_TALLY_ALIGNMENT		64U
+#define RTL_TALLY_MISSED		28U
+#define RTL_TALLY_POLLS			1000U
+#define RTL_TALLY_POLL_US		10U
+
 /* The interface's MTU and how many controllers the driver serves. */
 #define RTL_DEFAULT_MTU			1500U
 #define RTL_MAX_DEVICES			4U
@@ -542,6 +562,8 @@ struct rtl_profile {
 	uint64_t transmit_time;
 	uint64_t reported_frames;
 	uint64_t next_report;
+	struct drv_dma_buffer tally;
+	unsigned tally_allocated;
 };
 
 /*
@@ -1019,6 +1041,7 @@ static void profile_poll(struct rtl_device *device, uint64_t started, unsigned c
 static void profile_transmit(struct rtl_device *device, uint64_t started, int in_place, int error);
 static void profile_report(struct rtl_device *device);
 static uint64_t profile_microseconds(const struct rtl_device *device, uint64_t time);
+static int profile_missed(struct rtl_device *device, uint16_t *missed);
 static uint16_t mac_ocp_read(struct rtl_device *device, uint16_t reg);
 static void mac_ocp_write(struct rtl_device *device, uint16_t reg, uint16_t value);
 static void mac_ocp_clear(struct rtl_device *device, uint16_t reg, uint16_t bits);
@@ -3844,6 +3867,7 @@ profile_calibrate(
 	uint64_t hz;
 	unsigned reads;
 	bool available;
+	int error;
 
 	/* Leaves the profile off unless the kernel keeps it. */
 	if (!CONFIG_DRIVER_PCI_RTL8125_PROFILE)
@@ -3857,6 +3881,11 @@ profile_calibrate(
 	/* Times a run of reads to know what one costs. */
 	for (reads = 0; reads < 64U; reads++)
 		(void)kern_rtc_read_counter(&last, &hz);
+
+	/* Takes a block for the tally counters; without one the profile goes without the missed frames. */
+	error = drv_dma_alloc_coherent(device->dma, RTL_TALLY_BYTES, RTL_TALLY_ALIGNMENT, &device->profile.tally);
+	if (error == 0)
+		device->profile.tally_allocated = 1U;
 
 	/* Keeps the rate and the cost of one read. */
 	device->counter_cost = (last - first) / 64U;
@@ -3977,7 +4006,9 @@ profile_report(
 	unsigned long irq;
 	uint64_t now;
 	uint64_t frames;
+	uint16_t missed;
 	unsigned report;
+	int error;
 
 	/* Reports nothing without a calibrated profile. */
 	if (device->counter_hz == 0U)
@@ -3998,22 +4029,83 @@ profile_report(
 
 	spin_unlock_irqrestore(&device->lock, irq);
 
+	/* Nothing to log until the second has passed and frames moved. */
+	if (!report)
+		return;
+
+	/* Reads the frames the controller missed; a failed read reports none. */
+	missed = 0U;
+	error = profile_missed(device, &missed);
+	if (error != 0)
+		missed = 0U;
+
 	/* Logs the totals outside the lock. */
-	if (report) {
-		kern_logf("rtl8125: %s profile ms %llu irq %llu %llu poll %llu %llu %llu %llu tx %llu %llu %llu %llu\n",
-			  device->name,
-			  (unsigned long long)(profile_microseconds(device, profile_now()) / 1000U),
-			  (unsigned long long)profile.interrupts,
-			  (unsigned long long)profile_microseconds(device, profile.interrupt_time),
-			  (unsigned long long)profile.polls,
-			  (unsigned long long)profile.full_polls,
-			  (unsigned long long)profile.poll_frames,
-			  (unsigned long long)profile_microseconds(device, profile.poll_time),
-			  (unsigned long long)profile.transmits,
-			  (unsigned long long)profile.transmit_copies,
-			  (unsigned long long)profile.transmit_refusals,
-			  (unsigned long long)profile_microseconds(device, profile.transmit_time));
+	kern_logf("rtl8125: %s profile ms %llu irq %llu %llu poll %llu %llu %llu %llu tx %llu %llu %llu %llu missed %u\n",
+		  device->name,
+		  (unsigned long long)(profile_microseconds(device, profile_now()) / 1000U),
+		  (unsigned long long)profile.interrupts,
+		  (unsigned long long)profile_microseconds(device, profile.interrupt_time),
+		  (unsigned long long)profile.polls,
+		  (unsigned long long)profile.full_polls,
+		  (unsigned long long)profile.poll_frames,
+		  (unsigned long long)profile_microseconds(device, profile.poll_time),
+		  (unsigned long long)profile.transmits,
+		  (unsigned long long)profile.transmit_copies,
+		  (unsigned long long)profile.transmit_refusals,
+		  (unsigned long long)profile_microseconds(device, profile.transmit_time),
+		  (unsigned)missed);
+}
+
+/*
+ * Has the controller write its tally counters and reads the frames it
+ * missed for want of a receive descriptor, since its reset.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge_stats.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_hw_mac_stats_fetch).
+ */
+static int
+profile_missed(
+	struct rtl_device *device,
+	uint16_t *missed)
+{
+	const volatile uint8_t *block;
+	unsigned long irq;
+	uint32_t command;
+	unsigned polls;
+
+	/* Without a block there is nothing to read. */
+	if (!device->profile.tally_allocated)
+		return ENODEV;
+
+	/* Gives the block's address and starts the write. */
+	irq = spin_lock_irqsave(&device->lock);
+
+	write32(device, RTL_REG_TALLY_HIGH, (uint32_t)(device->profile.tally.device_address >> 32));
+	(void)read8(device, RTL_REG_COMMAND);
+	write32(device, RTL_REG_TALLY_LOW, (uint32_t)device->profile.tally.device_address);
+	write32(device, RTL_REG_TALLY_LOW, (uint32_t)device->profile.tally.device_address | RTL_TALLY_DUMP);
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* Waits for the controller to clear the bit, which ends the write. */
+	for (polls = 0; polls < RTL_TALLY_POLLS; polls++) {
+		command = read32(device, RTL_REG_TALLY_LOW);
+		if ((command & RTL_TALLY_DUMP) == 0)
+			break;
+		kern_usleep_range(RTL_TALLY_POLL_US, RTL_TALLY_POLL_US);
 	}
+
+	/* A write that did not end leaves the block unread. */
+	if ((command & RTL_TALLY_DUMP) != 0)
+		return ETIMEDOUT;
+
+	/* Reads the count after the write that ended. */
+	kern_io_read_barrier();
+	block = device->profile.tally.address;
+	*missed = (uint16_t)(block[RTL_TALLY_MISSED] | (block[RTL_TALLY_MISSED + 1U] << 8));
+
+	/* Succeeded: the count of missed frames. */
+	return 0;
 }
 
 /* Converts a span of the fine counter into microseconds. */
