@@ -3,4 +3,4 @@
 # both ways against this host.  A test image only.
 #   make ZEDBSD_CONFIG=plan/ws221/tests/config-5330-jumbo.mk BUILD=<dir> disk-image
 include plan/tools/hw5330/config-5330.mk
-ZEDBSD_USER_PROGRAMS += sysctl ifconfig ping tcp-perf udp-hold
+ZEDBSD_USER_PROGRAMS += sysctl ifconfig ping tcp-perf udp-hold lsusb camcap

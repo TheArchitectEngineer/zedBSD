@@ -3,7 +3,8 @@
 # writes IMAGE (plan/ws221/tests/config-5330-jumbo.mk) to the NVMe's zedBSD partitions, sets the VisionFive 2's en0 to
 # MTU 9000 for the run (back to 1500 at the end, read back), starts plan/ws221/tests/perf-peer.py on this host for two
 # connections, and has 5330-run.sh's EXTRA step run on the 5330's zedBSD:
-#   the adapter's attach line (segment, NTB sizes, max_datagram and its read back, caps, mtu_max); ifconfig ue0;
+#   lsusb -v (the USB devices and their drivers, for the host controller's non-regression);
+#   the adapter's attach line (segment, NTB sizes, max_datagram and its read back, caps, mtu_max, urbs); ifconfig ue0;
 #   tcp-perf send and recv against this host at MTU 1500 (SECONDS each, default 10); then, as root, ifconfig ue0
 #   mtu at the adapter's mtu_max from its attach line (9000 at most) and ping -s to the VisionFive 2 at that size,
 #   and at 1472;
@@ -12,7 +13,8 @@
 # summary.txt (the lines above), extra.txt (the whole EXTRA output), run.txt (5330-run.sh), peer.log.
 #   plan/ws221/tests/5330-ncm.sh IMAGE NAME [SECONDS]
 # NO_VF2=1 leaves the VisionFive 2 alone (2026-10-29: the board is lent out) and pings this host instead.
-# MODE=--nvme-kernel makes IMAGE a kernel, put alone on the NVMe's zedBSD (the userland stays the one an image run
+# CAMERA=1 also streams ten frames of the built-in camera with camcap.  MODE=--nvme-none boots the NVMe's zedBSD
+# unchanged (IMAGE ignored).  MODE=--nvme-kernel makes IMAGE a kernel, put alone on the NVMe's zedBSD (the userland stays the one an image run
 # wrote): an A/B of two kernels on the same userland.  VF2_HOST (default kei@10.0.30.2), VF2_PASSWORD (default kei).  The 5330's Debian network settings are not touched.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -48,23 +50,32 @@ fi
 timeout 1500 python3 -I plan/ws221/tests/perf-peer.py "$server_ip" "$port" "$out/peer.log" 2 > /dev/null 2>&1 &
 peer=$!
 
-extra="dmesg | grep -E 'usb-cdc-(ncm|ecm):'; echo ---; ifconfig ue0; echo ---;"
+extra="lsusb -v; echo ---; dmesg | grep -E 'usb-cdc-(ncm|ecm):'; echo ---; ifconfig ue0; echo ---;"
 extra="$extra tcp-perf send $server_ip $port $seconds | tail -1; tcp-perf recv $server_ip $port $seconds | tail -1; echo ---;"
 extra="$extra m=\$(dmesg | sed -n 's/.*usb-cdc-ncm: ue0 .*mtu_max=\\([0-9]*\\).*/\\1/p' | tail -1); echo mtu-max=\$m;"
 extra="$extra [ \"\${m:-1500}\" -gt 9000 ] && m=9000; echo user | sudo -S ifconfig ue0 mtu \${m:-1500}; echo mtu-rc=\$?;"
 extra="$extra ifconfig ue0 | head -1; s=\$(( \$(ifconfig ue0 | sed -n 's/.* mtu \\([0-9]*\\).*/\\1/p' | head -1) - 28 ));"
 extra="$extra echo ping-size=\$s; ping -c 3 -W 3 -s \$s $vf2_ip; ping -c 3 -W 3 -s 1472 $vf2_ip; echo ---;"
 extra="$extra sysctl net.tcpstats | head -1; ifconfig ue0"
+# CAMERA=1: the built-in camera (UVC) opens and streams a few frames (camcap, in the image of config-5330-jumbo.mk).
+[ "${CAMERA:-0}" = 1 ] && extra="$extra; echo ---; echo user | sudo -S camcap -n 10 -t 5000 -o /tmp/ws221-cam.jpg 2>&1 | tail -6; echo camcap-rc=\$?"
 # 5330-run.sh gives each zedBSD command T seconds (default 60); the EXTRA step needs the transfers and the pings.
-T=$((seconds * 2 + 120)) EXTRA=$extra timeout 2400 sh plan/tools/hw5330/5330-run.sh "${MODE:---nvme-image}" "$image" "ws221-$name" > "$out/run.txt" 2>&1
+# --nvme-none boots the NVMe's zedBSD as it is (IMAGE is then ignored): the reference before a change.
+case "${MODE:---nvme-image}" in
+--nvme-none) set -- "${MODE}" "ws221-$name" ;;
+*) set -- "${MODE:---nvme-image}" "$image" "ws221-$name" ;;
+esac
+T=$((seconds * 2 + 120)) EXTRA=$extra timeout 2400 sh plan/tools/hw5330/5330-run.sh "$@" > "$out/run.txt" 2>&1
 status=$?
 cp build/hw5330/logs/ws221-$name-extra.txt "$out/extra.txt" 2> /dev/null
 kill "$peer" 2> /dev/null
 grep -E '^5330-run: ' "$out/run.txt" | sed 's/^/5330-ncm: /' | tee -a "$out/summary.txt"
+grep -E '^Bus |Driver ' "$out/extra.txt" | sed 's/^[[:space:]]*/5330-ncm: usb: /' | tee -a "$out/summary.txt"
 grep -E 'usb-cdc-(ncm|ecm):' "$out/extra.txt" | sed 's/^/5330-ncm: attach: /' | tee -a "$out/summary.txt"
 grep -E '^TCP-PERF' "$out/extra.txt" | sed 's/^/5330-ncm: /' | tee -a "$out/summary.txt"
 sed 's/^/5330-ncm: peer: /' "$out/peer.log" | tee -a "$out/summary.txt"
 grep -E 'mtu-max=|mtu-rc=|ping-size=|bytes from|packets transmitted|sendto|ifconfig:' "$out/extra.txt" | sed 's/^/5330-ncm: /' | tee -a "$out/summary.txt"
 grep -E 'RX packets|TX packets' "$out/extra.txt" | tail -2 | sed 's/^/5330-ncm: after: /' | tee -a "$out/summary.txt"
+grep -E 'camcap|frame|fps|camcap-rc=' "$out/extra.txt" | sed 's/^/5330-ncm: camera: /' | tee -a "$out/summary.txt"
 say "5330-run exit $status"
 exit $status

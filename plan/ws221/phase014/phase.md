@@ -33,6 +33,30 @@ Queue: q1689 / q1689-i01（P3）
 6. 純粋な部分を `include/drivers/pci/pci-xhci-queue.h`（列の push・頭の取り外し・TRB による照合・ring の空きの計算）に出し、host 試験（`plan/ws221/tests/xhci-queue-test.c`、ASan・UBSan）: 順の完了、TRB の address の照合（頭・後ろ・ring の wrap）、空きの不足、cancel で全てが順に、STALL の頭と残り。
 7. NCM: RX の URB を 4（buffer 4 つ、完了の順に parse、空いた buffer で出し直す）、TX の URB を 2（組み立てた block を順に）。cancel は全ての URB を出した順に（HCD は 1 つの cancel で全てを返す）。
 
+## design-reviewer の指摘と反映（2026-10-30 P3）
+
+review（致命 2・重大 6・中 8・軽微 7）。実装は上の設計を次のとおり直した形:
+
+| 指摘 | 反映 |
+| --- | --- |
+| C1 submit の組み立ての排他（`recovering`）と STALL の trap | `recovering` を持ち主の数に（submit の組み立てと STALL の公開が重なってよい）。`xhci_recovery_leave_locked` は数を減らすだけ。組み立ての後、他の TD がある時は lock の下で endpoint の状態を読み直し、Running でなければ（`stall_publishing` も）EIO |
+| C2 cancel の間の admission | 頭が `cancelling`（1 か 2）なら submit は EBUSY（1 回目と 2 回目の確かめ）。cancel の開始で queue の全てに印を付ける（`xhci_queue_mark_cancelling_locked`） |
+| S1 取り消しの契約と順 | `xhci_cancel_request(c, d, r, others)`: r は呼び手が公開（dequeue は core、teardown は DISCONNECTED）、他は `xhci_queue_abort_locked` で completion の列の末尾に（`completions_busy`・`completion_busy` を数える）、command が無ければ cancel の thread が `xhci_completion_drain`。順は「列に先にある物、他を queue の順、頼まれた物は core が後で」。usb.h の `urb_dequeue` の comment に契約を書いた |
+| S2 二重の cancel | 開始の時に全てに印。`xhci_urb_dequeue` は queue を探し、無ければ EBUSY、頭が cancelling なら EALREADY。device の drain の `attempted` は dci の bit のまま（1 回で全て退く） |
+| S3 頭の Halted | 成功・short 以外で、code が 3・4・6・36 か output context が Halted なら、後ろを頭の直後に IO_ERROR で退ける（`aborted`: 完了の log を出さない）。Reset Endpoint の後は既存の `xhci_endpoint_recover` が Set TR Dequeue（producer へ）を打つ |
+| S4 depth の不許可 | `drv_usb_endpoint_set_queue_depth(endpoint, depth, &granted)`（core の endpoint に持つ、HCD は `DRV_USB_HCD_CAP_QUEUED_BULK` で）。NCM は認められた数だけ URB を作る（1 なら今と同じ 1 本と buffer 2 つ） |
+| S5 RX の buffer | URB 数 + 1（spare）。完了した block の URB は spare で直ちに出し直し、parse の後にその buffer が spare になる |
+| S6 `->active` の全ての利用 | `active` は queue の頭の写し（publish・unlink で更新）。queue 全体が要る所: event の照合、cancel、request の解放の確かめ（`queued` の flag）、`active_count`（要求ごと）。頭で足りる所: endpoint_reset・streams・disable の admission、busy の確かめ、suspend の `xhci_transfer_busy_locked`（同じ endpoint の要求は同じ種類）、controller の drain（頭を繰り返し外す） |
+| M1 ring の空き | `drv_xhci_queue_admit`: 1 つ空けて、他の TD の後ろでは更に 32（`DRV_XHCI_QUEUE_SLACK`、short packet の後に controller が辿る退いた TD の残り）。depth 1（列が空）は今と同じ上限 |
+| M2 頭より後ろに合う event | 無視して最初の 8 回を log（古い pointer が再利用の slot に合う誤りを避ける。Q1 了承） |
+| M3 depth の寿命 | core の `drv_usb_endpoint` に持ち、interface の driver を外す時（claim した sibling も）1 に戻す。stream・control・interrupt は 1 |
+| M4 cycle bit の順 | 他の TD の後ろの TD は最初の TRB の cycle bit を最後に渡す（`hold_first`・`ring_release_held`） |
+| M5 一時の EBUSY | NCM は submit を endpoint ごとに 1 本に直列にする（RX は rearm の権利、TX は pump）ので組み立ての排他の EBUSY は出ない。ring の空きは NCM の TD（2 TRB 以下）× 4 に十分 |
+| M7 QEMU で depth > 1 | 範囲の外（ECM に opt-in を足さない）。5330 の実機で確かめる（Q1 了承） |
+| M8 Phase の分割 | 1 つのまま（Q1 2026-10-30） |
+| L3 Stopped - Short Packet（28） | Q1 の指示で p014 で直した: suspend の時の「ring に残す」に 28 を加えた（`drv_xhci_completion_stopped`）。他の経路は変えない。host 試験 `test_stopped` |
+| L4 TX の sequence | TX は pump 1 本が組み立てと submit を続けて行い、URB ごとに block の buffer |
+
 ## 確かめ
 
 - host: 上の xhci-queue の試験、`plan/ws197/tests/run-xhci-isoch-test.sh`（isochronous の非退行）、NCM の codec の試験。
