@@ -5,7 +5,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
     perf-peer.py ADDRESS PORT LOG [CONNECTIONS]
 
-Listens on ADDRESS:PORT and serves CONNECTIONS connections one after another
+Listens on ADDRESS:PORT (an IPv4 or IPv6 address, a link-local one with %INTERFACE) and serves CONNECTIONS connections one after another
 (default 1).  The first byte of each says the direction: 'S' (the machine sends:
 this end reads to the end of the stream and closes) or 'R' (the machine
 receives: this end writes until the machine closes).  Each connection appends a
@@ -57,9 +57,11 @@ def main() -> int:
 		return 2
 	address, port, log_path = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 	count = int(sys.argv[4]) if len(sys.argv) == 5 else 1
-	listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	family, kind, protocol, _, where = socket.getaddrinfo(address, port, socket.AF_UNSPEC, socket.SOCK_STREAM, 0,
+	    socket.AI_NUMERICHOST | socket.AI_PASSIVE)[0]
+	listener = socket.socket(family, kind, protocol)
 	listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-	listener.bind((address, port))
+	listener.bind(where)
 	listener.listen(1)
 	with open(log_path, "a", buffering=1) as log:
 		log.write("ready\n")

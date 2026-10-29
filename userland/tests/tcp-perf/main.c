@@ -15,8 +15,8 @@
  * The first byte on the connection tells the peer the direction: 'S' when
  * this program sends (the peer reads to the end), 'R' when it receives
  * (the peer writes until this program closes).  ADDRESS is an IPv4
- * address in dotted form; CHUNK is the bytes of one read or write (default
- * 131072).  Every second a line "t=SECONDS bytes=N mbps=RATE" gives the
+ * address in dotted form or an IPv6 address, a link-local one followed by
+ * %INTERFACE; CHUNK is the bytes of one read or write (default 131072).  Every second a line "t=SECONDS bytes=N mbps=RATE" gives the
  * second's rate; the last line is "TCP-PERF DIRECTION seconds=S bytes=N
  * mbps=RATE" over the whole transfer.  It exits 0, 1 when the transfer
  * failed, or 2 for a bad command line.  The source also builds on Linux.
@@ -30,6 +30,7 @@
 
 #include <arpa/inet.h>
 #include <errno.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -71,6 +72,7 @@ struct perf_progress {
 };
 
 static int perf_parse(int argc, char **argv, int *sending, unsigned long *seconds, unsigned long *chunk);
+static int perf_address(const char *address_text, uint16_t port, struct sockaddr_storage *address, socklen_t *length);
 static int perf_connect(const char *address_text, const char *port_text, int *descriptor);
 static double perf_now(void);
 static void perf_tick(int signal_number);
@@ -227,6 +229,64 @@ perf_parse(
 	return 0;
 }
 
+/*
+ * Reads ADDRESS into a socket address with the port: an IPv4 one, or an
+ * IPv6 one whose %INTERFACE suffix, when there is one, names the scope.
+ */
+static int
+perf_address(
+	const char *address_text,
+	uint16_t port,
+	struct sockaddr_storage *address,
+	socklen_t *length)
+{
+	struct sockaddr_in6 *address6;
+	struct sockaddr_in *address4;
+	char text[INET6_ADDRSTRLEN + IF_NAMESIZE + 1];
+	const char *percent;
+	size_t text_length;
+	unsigned scope;
+	int parsed;
+
+	/* An IPv4 address in dotted form. */
+	memset(address, 0, sizeof(*address));
+	address4 = (struct sockaddr_in *)address;
+	parsed = inet_pton(AF_INET, address_text, &address4->sin_addr);
+	if (parsed == 1) {
+		address4->sin_family = AF_INET;
+		address4->sin_port = htons(port);
+		*length = (socklen_t)sizeof(*address4);
+		return 0;
+	}
+
+	/* Otherwise an IPv6 one, its scope cut off first. */
+	text_length = strlen(address_text);
+	if (text_length >= sizeof(text))
+		return EINVAL;
+	memcpy(text, address_text, text_length + 1U);
+	percent = strchr(address_text, '%');
+	scope = 0;
+	if (percent != NULL) {
+		text[percent - address_text] = '\0';
+		scope = if_nametoindex(percent + 1);
+		if (scope == 0U)
+			return EINVAL;
+	}
+
+	/* The address itself. */
+	address6 = (struct sockaddr_in6 *)address;
+	parsed = inet_pton(AF_INET6, text, &address6->sin6_addr);
+	if (parsed != 1)
+		return EINVAL;
+
+	/* Succeeded: an IPv6 address with its port and scope. */
+	address6->sin6_family = AF_INET6;
+	address6->sin6_port = htons(port);
+	address6->sin6_scope_id = scope;
+	*length = (socklen_t)sizeof(*address6);
+	return 0;
+}
+
 /* Connects a blocking stream socket to the address and port given. */
 static int
 perf_connect(
@@ -234,10 +294,10 @@ perf_connect(
 	const char *port_text,
 	int *descriptor)
 {
-	struct sockaddr_in address;
+	struct sockaddr_storage address;
 	unsigned long port;
+	socklen_t length;
 	char *end;
-	int parsed;
 	int error;
 
 	/* The port, which must be a number of 16 bits. */
@@ -249,17 +309,14 @@ perf_connect(
 	}
 
 	/* The peer's address. */
-	memset(&address, 0, sizeof(address));
-	address.sin_family = AF_INET;
-	address.sin_port = htons((uint16_t)port);
-	parsed = inet_pton(AF_INET, address_text, &address.sin_addr);
-	if (parsed != 1) {
+	error = perf_address(address_text, (uint16_t)port, &address, &length);
+	if (error != 0) {
 		fprintf(stderr, "tcp-perf: bad address %s\n", address_text);
-		return EINVAL;
+		return error;
 	}
 
-	/* The socket. */
-	*descriptor = socket(AF_INET, SOCK_STREAM, 0);
+	/* The socket, of the address's family. */
+	*descriptor = socket(address.ss_family, SOCK_STREAM, 0);
 	if (*descriptor < 0) {
 		error = errno;
 		fprintf(stderr, "tcp-perf: socket: %s\n", strerror(error));
@@ -267,7 +324,7 @@ perf_connect(
 	}
 
 	/* The connection, waited for. */
-	error = connect(*descriptor, (struct sockaddr *)&address, sizeof(address));
+	error = connect(*descriptor, (struct sockaddr *)&address, length);
 	if (error != 0) {
 		error = errno;
 		fprintf(stderr, "tcp-perf: connect %s:%s: %s\n", address_text, port_text, strerror(error));
