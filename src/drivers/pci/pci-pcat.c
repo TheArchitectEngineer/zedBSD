@@ -682,6 +682,8 @@ pcat_allocate_irqs(
 		/* A table smaller than the minimum cannot serve the caller. */
 		if (entries < minimum)
 			return ENOTSUP;
+
+		/* Gives no more vectors than the caller asked for. */
 		if (entries > maximum)
 			entries = maximum;
 

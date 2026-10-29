@@ -109,4 +109,21 @@
     hardware の moderation（0xe2）は Linux の r8169 の表が 10G を持たず、FreeBSD の timer（SIM）は単位が未確認で入れない。
   - RX の zero copy: **入れない**。recv の driver の poll は 0.62 us/frame で律速でない。zero copy は ring の数（1024）の packet を常に持ち、stack の pool（標準 1024）を使い切る。
 - 未実施: 長時間の転送、jumbo frame（WS221）、close の後の再 open、MSI-X の複数本を実際に使う driver の試験（呼び手が無い）、profile の config の menu への登録（診断なので入れていない）。
-- zedBSD の `top -b` が全 process の %CPU 0.0 を出す（未確認の不具合の候補、Q1 へ）。
+- zedBSD の `top -b` が全 process の %CPU 0.0 を出す（Q1 が BUG-354 に登録、未確認）。
+- Q1 の了承（2026-10-29）: 多 vector の MSI-X は pcat の共通の口まで（ユーザーの ② を満たす）、driver は 1 vector、RSS・複数 RX queue・zero copy は入れない。
+
+## WS221 p010（10GbE の詰め）への引き継ぎ
+
+- stack が 1 本の worker（`src/kern/net/core.c` の `network_worker`）である限り、RSS・複数の RX queue・多 vector は効かない: 受けた frame の IP・TCP の処理は全て
+  同じ thread で順に回り、queue を分けても worker が 1 つずつ取るだけ。加えて amd64 の MSI・MSI-X は全て BSP（CPU 0）宛てで（`src/hal/amd64/irq.c` の
+  `hal_irq_register_msi`、`hal_irq_set_affinity` は MSI に `HAL_ERR_UNSUPPORTED`）、vector を分けても割り込みは同じ CPU に来る。
+  並列にするには (1) stack の受けを queue（flow）ごとの worker に分ける、(2) MSI の宛先の CPU を選ぶ（hal.h の宣言の範囲の実装の補完か、契約の変更なら理由を添えて Q1 へ）、
+  が先に要る。その後なら driver の側は RTL8127 の多 vector の mode（INT_CFG0 の EN、vector ごとの IMR・ISR）と RSS（0x4500、indirection の表、hash の key）を足せる。
+  共通の口（pcat の `allocate_irqs` の MSI-X の複数本、`pci.c` の vector の数え）はある。
+- RX の zero copy を入れない理由: recv の driver の poll は 0.62 us/frame（copy を含む）で律速でない。zero copy は RX の ring の数（1024）の packet を常に持ち、
+  stack の標準の pool（`PACKET_BUF_POOL_COUNT` 1024）を使い切る。pool を driver の分だけ増やす設計（stack の側）が先。Linux の r8169 も copy（`napi_alloc_skb`）。
+- 測りの道具: `CONFIG_DRIVER_PCI_RTL8125_PROFILE`（`plan/ws235/tests/config-amd64-rtl8127-profile.mk`）と `rtl-link.sh` の `PROFILE=1`・`profile-summary.py`。
+  driver の CPU（irq・poll・tx）、CPU ごとの負荷、NIC の tally の missed、centris の /proc/net/snmp（RetransSegs）。
+- 見えている事: send は thread の置き場所で 3547〜5505 と振れる（送りの thread と worker が cpu0・cpu1 に並ぶと速い見込み、未確認）。recv はどの CPU も飽和せず、
+  NIC は 1 frame も落とさないのに相手が 20 s に 36〜866 回再送する（stack の受けの取りこぼしか、Linux の TLP・RACK の見かけの再送か、未確認）。
+- checksum・TSO の offload は WS221 p010 の口ができたら driver の側（descriptor の extended の語）を足す（この WS の範囲の外のまま）。

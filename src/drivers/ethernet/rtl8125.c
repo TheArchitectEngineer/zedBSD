@@ -1930,6 +1930,8 @@ rtl_attach(
 	const struct drv_pci_id *id)
 {
 	struct rtl_device *device;
+	const char *suffix;
+	uint32_t version;
 	int error;
 
 	UNUSED_PARAMETER(id);
@@ -1952,8 +1954,8 @@ rtl_attach(
 	/* Learns which member of the family this is; an unknown one is left alone. */
 	error = identify_chip(device);
 	if (error != 0) {
-		kern_logf("rtl8125: unknown version 0x%08x\n",
-			  read32(device, RTL_REG_TX_CONFIG) & RTL_TX_CONFIG_VERSION_MASK);
+		version = read32(device, RTL_REG_TX_CONFIG) & RTL_TX_CONFIG_VERSION_MASK;
+		kern_logf("rtl8125: unknown version 0x%08x\n", version);
 		release_unpublished(device);
 		return error;
 	}
@@ -2006,11 +2008,16 @@ rtl_attach(
 	profile_calibrate(device);
 	start_link_thread(device);
 
+	/* Names the RTL8127's SFP+ part, which the log tells from the copper one. */
+	suffix = "";
+	if (device->fiber)
+		suffix = "ATF";
+
 	/* Tells which part was found and under which address. */
 	kern_logf("rtl8125: %s: %s%s rev %u, address %02x:%02x:%02x:%02x:%02x:%02x\n",
 		  device->name,
 		  device->chip->name,
-		  device->fiber ? "ATF" : "",
+		  suffix,
 		  device->chip->revision,
 		  device->mac[0],
 		  device->mac[1],
@@ -2342,15 +2349,19 @@ static void
 release_unpublished(
 	struct rtl_device *device)
 {
-	/* Frees the rings, which the controller never saw. */
+	/* Frees the receive buffers, which the controller never saw. */
 	if (device->rx_buffers_allocated) {
 		drv_dma_free_coherent(device->dma, &device->rx_buffers);
 		device->rx_buffers_allocated = 0U;
 	}
+
+	/* Frees the transmit bounce buffers. */
 	if (device->tx_buffers_allocated) {
 		drv_dma_free_coherent(device->dma, &device->tx_buffers);
 		device->tx_buffers_allocated = 0U;
 	}
+
+	/* Frees the descriptors. */
 	if (device->descriptors_allocated) {
 		drv_dma_free_coherent(device->dma, &device->descriptors);
 		device->descriptors_allocated = 0U;
@@ -2560,14 +2571,12 @@ reset_controller(
 	write32(device, RTL_REG_RX_CONFIG, config & ~RTL_RX_CONFIG_ACCEPT_MASK);
 
 	/* Gates the receive data path. */
-	write8(device,
-	       RTL_REG_POWER_SWITCH,
-	       (uint8_t)(read8(device, RTL_REG_POWER_SWITCH) | RTL_POWER_SWITCH_RX_GATE));
+	command = read8(device, RTL_REG_POWER_SWITCH);
+	write8(device, RTL_REG_POWER_SWITCH, (uint8_t)(command | RTL_POWER_SWITCH_RX_GATE));
 
 	/* Asks the MAC to stop and gives it time to see the request. */
-	write8(device,
-	       RTL_REG_COMMAND,
-	       (uint8_t)(read8(device, RTL_REG_COMMAND) | RTL_COMMAND_STOP_REQUEST));
+	command = read8(device, RTL_REG_COMMAND);
+	write8(device, RTL_REG_COMMAND, (uint8_t)(command | RTL_COMMAND_STOP_REQUEST));
 	kern_usleep_range(RTL_STOP_SETTLE_US, RTL_STOP_SETTLE_US);
 
 	/* Waits for both FIFOs to empty; a reset follows either way. */
@@ -2701,6 +2710,7 @@ hand_back_phy(
 		if ((state & RTL_PHY_OCP_STATE_MASK) == RTL_PHY_OCP_STATE_HANDED_BACK)
 			break;
 
+		/* Gives the PHY a millisecond before asking again. */
 		kern_usleep_range(RTL_PHY_STATE_POLL_US, RTL_PHY_STATE_POLL_US);
 	}
 
@@ -2922,7 +2932,7 @@ rtl_open(
 	unsigned opened;
 	int error;
 
-	/* A repeated open keeps the running rings. */
+	/* Samples whether the interface is open already. */
 	device = net->driver_data;
 	irq = spin_lock_irqsave(&device->lock);
 
@@ -2930,6 +2940,7 @@ rtl_open(
 
 	spin_unlock_irqrestore(&device->lock, irq);
 
+	/* A repeated open keeps the running rings. */
 	if (opened)
 		return 0;
 
@@ -2996,16 +3007,22 @@ rtl_close(
 	/* Stops the receiver and the transmitter and waits for the DMA to stop. */
 	stop_controller(device);
 
-	/* The packets descriptors still held go on the list to free: the DMA has stopped. */
+	/* Takes the packets the descriptors still held, as the DMA has stopped. */
 	irq = spin_lock_irqsave(&device->lock);
 
+	/* Puts each packet still held in place on the list to free. */
 	for (slot = 0; slot < RTL_TX_COUNT; slot++) {
+		/* A slot with a bounce copy or nothing has no packet to free. */
 		if (device->tx_packets[slot] == NULL)
 			continue;
+
+		/* Moves the packet onto the list to free and empties the slot. */
 		device->tx_packets[slot]->next = device->tx_done;
 		device->tx_done = device->tx_packets[slot];
 		device->tx_packets[slot] = NULL;
 	}
+
+	/* Takes the whole list for freeing outside the lock. */
 	done = take_tx_done_locked(device);
 
 	spin_unlock_irqrestore(&device->lock, irq);
@@ -3101,10 +3118,14 @@ rtl_transmit(
 		} else {
 			buffer = (uint8_t *)device->tx_buffers.address + slot * RTL_BUFFER_BYTES;
 			kern_memcpy(buffer, packet->data, length);
+
+			/* Pads a short frame with zeros up to the shortest the wire carries. */
 			if (length < RTL_MIN_FRAME) {
 				kern_memset(buffer + length, 0, RTL_MIN_FRAME - length);
 				length = RTL_MIN_FRAME;
 			}
+
+			/* Names the bounce buffer's bus address. */
 			address = device->tx_buffers.device_address + slot * RTL_BUFFER_BYTES;
 		}
 
@@ -3114,6 +3135,8 @@ rtl_transmit(
 		descriptor->address_high = (uint32_t)(address >> 32);
 		descriptor->extended = 0U;
 		command = RTL_DESCRIPTOR_OWN | RTL_TX_FIRST | RTL_TX_LAST | (uint32_t)length;
+
+		/* Marks the last descriptor of the ring. */
 		if (slot == RTL_TX_COUNT - 1U)
 			command |= RTL_DESCRIPTOR_END_OF_RING;
 
@@ -3127,6 +3150,7 @@ rtl_transmit(
 		write16(device, RTL_REG_TX_START, RTL_TX_START_NORMAL);
 	}
 
+	/* Takes the finished packets for freeing and counts the transmit in the profile. */
 	done = take_tx_done_locked(device);
 	profile_transmit(device, started, in_place, error);
 
@@ -3174,8 +3198,11 @@ rtl_poll(
 	errors = 0U;
 	irq = spin_lock_irqsave(&device->lock);
 
+	/* Reclaims descriptors only while the interface is open. */
 	if (device->opened)
 		errors = reclaim_tx(device);
+
+	/* Takes the finished packets for freeing outside the lock. */
 	done = take_tx_done_locked(device);
 
 	spin_unlock_irqrestore(&device->lock, irq);
@@ -3427,6 +3454,8 @@ configure_rings_and_pcie(
 	/* Sets the function's PCI Express settings in its configuration space. */
 	value = csi_read(device, 0x070cU) & ~0x3f000000U;
 	csi_write(device, 0x070cU, value | 0x27000000U);
+
+	/* Sets the link's L1 timeout or latency tolerance as the member needs. */
 	if (device->chip->family == RTL_FAMILY_8126 || device->chip->family == RTL_FAMILY_8127) {
 		/* Turns the L1 timeout off. */
 		value = csi_read(device, 0x0890U) & ~0x00000001U;
@@ -3468,6 +3497,8 @@ configure_mac_ocp(
 
 	/* Selects the 32-byte descriptors. */
 	mac_ocp_set(device, 0xeb58U, 0x0001U);
+
+	/* Clears the descriptor mode bits of the RTL8126 and RTL8127, and the RTL8127's further ones. */
 	if (family == RTL_FAMILY_8126 || family == RTL_FAMILY_8127) {
 		clear8(device, RTL_REG_DESCRIPTOR_MODE, 0x02U);
 		if (family == RTL_FAMILY_8127) {
@@ -3486,6 +3517,8 @@ configure_mac_ocp(
 	} else {
 		value = (uint16_t)((value & ~0x0700U) | 0x0300U);
 	}
+
+	/* Writes the thresholds back. */
 	mac_ocp_write(device, 0xe614U, value);
 
 	/* Runs one transmit queue. */
@@ -3502,23 +3535,31 @@ configure_mac_ocp(
 	write8(device, RTL_REG_TX_FIRST_NUMBER, 0x10U);
 	mac_ocp_clear(device, 0xe040U, 0x1000U);
 	mac_ocp_modify(device, 0xea1cU, 0x0003U, 0x0001U);
+
+	/* Selects the flow setting of the member. */
 	if (family == RTL_FAMILY_8125D) {
 		mac_ocp_write(device, 0xe0c0U, 0x4403U);
 	} else {
 		mac_ocp_write(device, 0xe0c0U, 0x4000U);
 	}
+
+	/* Sets and clears the remaining flow bits. */
 	mac_ocp_set(device, 0xe052U, 0x0060U);
 	mac_ocp_clear(device, 0xe052U, 0x0088U);
 	mac_ocp_modify(device, 0xd430U, 0x0fffU, 0x045fU);
 
 	/* Lets the link's DLL power down in the states that allow it. */
 	set8(device, RTL_REG_DLL_POWER, RTL_DLL_POWER_BITS);
+
+	/* The first RTL8125 sets one more bit of the MCU command register. */
 	if (family == RTL_FAMILY_8125)
 		set8(device, RTL_REG_MCU_COMMAND, 0x01U);
 
 	/* Turns EEE plus off where the part has it. */
 	if (family != RTL_FAMILY_8125D)
 		mac_ocp_clear(device, 0xe080U, 0x0002U);
+
+	/* Clears the advanced EEE bits; the RTL8126 and RTL8127 have one more. */
 	if (family == RTL_FAMILY_8126 || family == RTL_FAMILY_8127) {
 		mac_ocp_clear(device, 0xea1cU, 0x0304U);
 	} else {
@@ -3595,6 +3636,8 @@ configure_interrupt_type(
 	mac_ocp_clear(device, 0xe032U, 0x0003U);
 	value = csi_read(device, 0x0098U) & ~0x0000ff00U;
 	csi_write(device, 0x0098U, value);
+
+	/* Sets the last window of the MAC's settings as the member needs. */
 	if (family == RTL_FAMILY_8125D) {
 		mac_ocp_modify(device, 0xe092U, 0x00ffU, 0x0008U);
 	} else {
@@ -3716,6 +3759,8 @@ reclaim_tx(
 			packet->next = device->tx_done;
 			device->tx_done = packet;
 		}
+
+		/* Moves the consumer past the descriptor it has freed. */
 		device->tx_consumer++;
 	}
 
@@ -3903,7 +3948,6 @@ clear8(
 	write8(device, offset, (uint8_t)(value & ~bits));
 }
 
-
 /* Clears the mask bits and sets the value bits of one PHY OCP register. */
 static int
 phy_ocp_modify(
@@ -3980,6 +4024,7 @@ csi_read(
 	uint32_t reg)
 {
 	uint32_t window;
+	uint32_t value;
 	unsigned poll;
 
 	/* Names the longword with every byte enabled. */
@@ -3995,9 +4040,12 @@ csi_read(
 			break;
 	}
 
-	/* Reports the longword after the window settles. */
+	/* Gives the window time to settle, then reads the longword. */
 	kern_usleep_range(RTL_CSI_SETTLE_US, RTL_CSI_SETTLE_US);
-	return read32(device, RTL_REG_CSI_DATA);
+	value = read32(device, RTL_REG_CSI_DATA);
+
+	/* Reports the longword the window returned. */
+	return value;
 }
 
 /*
@@ -4030,6 +4078,8 @@ csi_write(
 		if ((window & RTL_CSI_BUSY) == 0)
 			break;
 	}
+
+	/* Gives the window time to settle. */
 	kern_usleep_range(RTL_CSI_SETTLE_US, RTL_CSI_SETTLE_US);
 }
 
@@ -4061,6 +4111,8 @@ ephy_write(
 		if ((window & RTL_EPHY_BUSY) == 0)
 			break;
 	}
+
+	/* Gives the window time to settle. */
 	kern_usleep_range(RTL_CSI_SETTLE_US, RTL_CSI_SETTLE_US);
 }
 
@@ -4197,6 +4249,7 @@ power_up_phy(
 		if ((state & RTL_PHY_OCP_STATE_MASK) == RTL_PHY_OCP_STATE_READY)
 			break;
 
+		/* Gives the PHY a millisecond before asking again. */
 		kern_usleep_range(RTL_PHY_STATE_POLL_US, RTL_PHY_STATE_POLL_US);
 	}
 
@@ -4306,16 +4359,21 @@ configure_ephy(
 	unsigned index;
 	uint16_t reg;
 
-	/* The RTL8125 and RTL8125B have their own tables; the RTL8125D and RTL8126 keep their reset values. */
+	/* The RTL8125 has its own table and settings. */
 	if (device->chip->family == RTL_FAMILY_8125) {
 		configure_ephy_8125(device);
 		return;
 	}
+
+	/* The RTL8125B has its own table. */
 	if (device->chip->family == RTL_FAMILY_8125B) {
+		/* Writes each entry of the table. */
 		for (index = 0; index < sizeof(rtl_ephy_8125b) / sizeof(rtl_ephy_8125b[0]); index++)
 			ephy_write(device, rtl_ephy_8125b[index].reg, rtl_ephy_8125b[index].value);
 		return;
 	}
+
+	/* The RTL8125D and RTL8126 keep their reset values. */
 	if (device->chip->family != RTL_FAMILY_8127)
 		return;
 
@@ -4343,6 +4401,7 @@ reset_phy(
 	uint16_t advertise;
 	uint16_t multigig;
 	uint16_t control;
+	uint64_t deadline;
 	unsigned poll;
 	int error;
 
@@ -4393,7 +4452,9 @@ reset_phy(
 		if ((control & RTL_MII_CONTROL_RESET) == 0)
 			return 0;
 
-		sched_sleep(sched_ticks() + KERN_MS_TO_TICKS(RTL_PHY_RESET_POLL_MS));
+		/* Sleeps a millisecond before asking again. */
+		deadline = sched_ticks() + KERN_MS_TO_TICKS(RTL_PHY_RESET_POLL_MS);
+		sched_sleep(deadline);
 	}
 
 	/* A PHY that stays in reset is reported. */
@@ -4592,6 +4653,7 @@ link_worker(
 	unsigned long irq;
 	uint64_t next_link;
 	uint64_t now;
+	uint64_t deadline;
 	unsigned opened;
 
 	/* Checks the link at once, then on its interval. */
@@ -4620,7 +4682,8 @@ link_worker(
 		profile_report(device);
 
 		/* Sleeps until the next service. */
-		sched_sleep(sched_ticks() + KERN_MS_TO_TICKS(RTL_POLL_MS));
+		deadline = sched_ticks() + KERN_MS_TO_TICKS(RTL_POLL_MS);
+		sched_sleep(deadline);
 	}
 }
 
@@ -4640,6 +4703,8 @@ check_link(
 	unsigned opened;
 	unsigned carrier;
 	unsigned changed;
+	const char *state;
+	const char *duplex;
 
 	/* Samples the PHY status while the interface is open. */
 	irq = spin_lock_irqsave(&device->lock);
@@ -4675,11 +4740,17 @@ check_link(
 	if (changed) {
 		device->net->link_mbps = mbps;
 		(void)net_device_set_carrier(device->net, (int)carrier);
-		kern_logf("rtl8125: %s link %s %u Mbit/s%s\n",
-			  device->name,
-			  carrier ? "up" : "down",
-			  (unsigned)mbps,
-			  (status & RTL_PHY_STATUS_FULL_DUPLEX) != 0 ? " full duplex" : "");
+
+		/* Words the carrier and the duplex for the log. */
+		state = "down";
+		if (carrier)
+			state = "up";
+		duplex = "";
+		if ((status & RTL_PHY_STATUS_FULL_DUPLEX) != 0)
+			duplex = " full duplex";
+
+		/* Tells the new link state. */
+		kern_logf("rtl8125: %s link %s %u Mbit/s%s\n", device->name, state, (unsigned)mbps, duplex);
 	}
 }
 
@@ -4843,6 +4914,8 @@ profile_transmit(
 	} else if (!in_place) {
 		device->profile.transmit_copies++;
 	}
+
+	/* Adds the time the transmit took. */
 	device->profile.transmit_time += now - started;
 }
 
@@ -4858,6 +4931,10 @@ profile_report(
 	unsigned long irq;
 	uint64_t now;
 	uint64_t frames;
+	uint64_t uptime_ms;
+	uint64_t interrupt_us;
+	uint64_t poll_us;
+	uint64_t transmit_us;
 	uint16_t missed;
 	unsigned report;
 	int error;
@@ -4891,20 +4968,26 @@ profile_report(
 	if (error != 0)
 		missed = 0U;
 
+	/* Converts the counter's spans into the microseconds the log shows. */
+	uptime_ms = profile_microseconds(device, profile_now()) / 1000U;
+	interrupt_us = profile_microseconds(device, profile.interrupt_time);
+	poll_us = profile_microseconds(device, profile.poll_time);
+	transmit_us = profile_microseconds(device, profile.transmit_time);
+
 	/* Logs the totals outside the lock. */
 	kern_logf("rtl8125: %s profile ms %llu irq %llu %llu poll %llu %llu %llu %llu tx %llu %llu %llu %llu missed %u\n",
 		  device->name,
-		  (unsigned long long)(profile_microseconds(device, profile_now()) / 1000U),
+		  (unsigned long long)uptime_ms,
 		  (unsigned long long)profile.interrupts,
-		  (unsigned long long)profile_microseconds(device, profile.interrupt_time),
+		  (unsigned long long)interrupt_us,
 		  (unsigned long long)profile.polls,
 		  (unsigned long long)profile.full_polls,
 		  (unsigned long long)profile.poll_frames,
-		  (unsigned long long)profile_microseconds(device, profile.poll_time),
+		  (unsigned long long)poll_us,
 		  (unsigned long long)profile.transmits,
 		  (unsigned long long)profile.transmit_copies,
 		  (unsigned long long)profile.transmit_refusals,
-		  (unsigned long long)profile_microseconds(device, profile.transmit_time),
+		  (unsigned long long)transmit_us,
 		  (unsigned)missed);
 }
 
@@ -4942,8 +5025,12 @@ profile_missed(
 	/* Waits for the controller to clear the bit, which ends the write. */
 	for (polls = 0; polls < RTL_TALLY_POLLS; polls++) {
 		command = read32(device, RTL_REG_TALLY_LOW);
+
+		/* The write has ended once the controller clears the bit. */
 		if ((command & RTL_TALLY_DUMP) == 0)
 			break;
+
+		/* Gives the controller time before reading again. */
 		kern_usleep_range(RTL_TALLY_POLL_US, RTL_TALLY_POLL_US);
 	}
 
@@ -4990,17 +5077,24 @@ set_phy_patch_mode(
 	struct rtl_device *device,
 	int enter)
 {
+	const char *direction;
 	uint16_t state;
 	uint16_t wanted;
+	uint16_t clear_bits;
+	uint16_t set_bits;
 	unsigned polls;
 	int error;
 
-	/* Sets or clears the request. */
+	/* Chooses whether the request bit is set or cleared. */
+	clear_bits = RTL_PHY_OCP_PATCH_REQUEST_BIT;
+	set_bits = 0U;
 	if (enter) {
-		error = phy_ocp_modify(device, RTL_PHY_OCP_PATCH_REQUEST, 0U, RTL_PHY_OCP_PATCH_REQUEST_BIT);
-	} else {
-		error = phy_ocp_modify(device, RTL_PHY_OCP_PATCH_REQUEST, RTL_PHY_OCP_PATCH_REQUEST_BIT, 0U);
+		clear_bits = 0U;
+		set_bits = RTL_PHY_OCP_PATCH_REQUEST_BIT;
 	}
+
+	/* Sets or clears the request. */
+	error = phy_ocp_modify(device, RTL_PHY_OCP_PATCH_REQUEST, clear_bits, set_bits);
 	if (error != 0)
 		return error;
 
@@ -5013,14 +5107,23 @@ set_phy_patch_mode(
 		error = phy_ocp_read(device, RTL_PHY_OCP_PATCH_STATE, &state);
 		if (error != 0)
 			return error;
+
+		/* The state has followed once its bit matches the request. */
 		if ((state & RTL_PHY_OCP_PATCH_STATE_BIT) == wanted)
 			break;
+
+		/* Gives the PHY time before asking again. */
 		kern_usleep_range(RTL_PATCH_POLL_US, RTL_PATCH_POLL_US);
 	}
 
+	/* Names the change that did not follow, for the log. */
+	direction = "end";
+	if (enter)
+		direction = "start";
+
 	/* Logs a state that did not follow; the settings go on. */
 	if ((state & RTL_PHY_OCP_PATCH_STATE_BIT) != wanted)
-		kern_logf("rtl8125: %s PHY patch mode did not %s\n", device->name, enter ? "start" : "end");
+		kern_logf("rtl8125: %s PHY patch mode did not %s\n", device->name, direction);
 
 	/* Succeeded: the request is made. */
 	return 0;
@@ -5053,6 +5156,8 @@ ephy_read(
 		if ((window & RTL_EPHY_BUSY) != 0)
 			break;
 	}
+
+	/* Gives the window time to settle. */
 	kern_usleep_range(RTL_CSI_SETTLE_US, RTL_CSI_SETTLE_US);
 
 	/* Succeeded: the register's value, or what the window held when the wait ran out. */
@@ -5136,6 +5241,7 @@ phy_steps_of(
 		*count = sizeof(rtl_phy_8125b) / sizeof(rtl_phy_8125b[0]);
 		break;
 	case RTL_FAMILY_8125D:
+		/* The second revision has its own settings. */
 		if (second) {
 			*steps = rtl_phy_8125d_2;
 			*count = sizeof(rtl_phy_8125d_2) / sizeof(rtl_phy_8125d_2[0]);
@@ -5143,8 +5249,10 @@ phy_steps_of(
 			*steps = rtl_phy_8125d_1;
 			*count = sizeof(rtl_phy_8125d_1) / sizeof(rtl_phy_8125d_1[0]);
 		}
+
 		break;
 	case RTL_FAMILY_8126:
+		/* The second revision has its own settings. */
 		if (second) {
 			*steps = rtl_phy_8126_2;
 			*count = sizeof(rtl_phy_8126_2) / sizeof(rtl_phy_8126_2[0]);
@@ -5152,6 +5260,7 @@ phy_steps_of(
 			*steps = rtl_phy_8126_1;
 			*count = sizeof(rtl_phy_8126_1) / sizeof(rtl_phy_8126_1[0]);
 		}
+
 		break;
 	case RTL_FAMILY_8127:
 		*steps = rtl_phy_8127;
