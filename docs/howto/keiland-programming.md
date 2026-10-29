@@ -549,8 +549,8 @@ hello.window = kl_app_window_create(hello.app, &window_options);
 
 `title` is the window's title. `width` and `height` are the size you ask for, until the compositor gives the window a size of its own. The window is **configured** when the call returns: the compositor has already told it its size. `present` chooses how the frames reach the screen, the **presenter**:
 
-- `KL_PRESENT_VULKAN` shows the frames you draw on the CPU through a Vulkan swapchain. It is the one that can be see-through for the desktop's glass (chapter 7).
-- `KL_PRESENT_SHM` shows them through shared memory. Use it for a small window, or where there is no Vulkan.
+- `KL_PRESENT_VULKAN` shows the frames you draw on the CPU through a Vulkan swapchain. It is see-through for the desktop's glass (chapter 7) when the swapchain is premultiplied.
+- `KL_PRESENT_SHM` shows them through shared memory, which is always blended by its alpha, so it is see-through too. Use it for a small window, or where there is no Vulkan.
 - `KL_PRESENT_NONE` leaves the surface to the program's own Vulkan.
 
 **Making a frame ([lines 133-165](keiland-examples/02-window.c#L133-L165), `hello_resize`).** A **frame** is ordinary memory that the program owns: one 32-bit word per pixel, in the form premultiplied `0xAARRGGBB`, row after row. A **canvas** (`struct kl_canvas`) is the object you draw with: it knows the pixels, their width and the stride, and has calls that fill rectangles, circles and so on.
@@ -4202,7 +4202,7 @@ see_through = kl_window_see_through(services.window);
 services.style.glass = see_through;
 ```
 
-Only a window made with `KL_PRESENT_VULKAN` can be see-through, and only when the compositor offers it. Then the program changes its drawing in two ways. It clears the ground to nothing, because the compositor draws the glass there. And it draws the card with `kl_panel`, which draws the veil over the glass ([lines 276-292](keiland-examples/07-services.c#L276-L292)):
+A window is see-through when its frames are blended by their alpha: always for `KL_PRESENT_SHM`, and for `KL_PRESENT_VULKAN` when its swapchain is premultiplied. `kl_window_see_through` tells which. Then the program changes its drawing in two ways. It clears the ground to nothing, because the compositor draws the glass there. And it draws the card with `kl_panel`, which draws the veil over the glass ([lines 276-292](keiland-examples/07-services.c#L276-L292)):
 
 ```c
 if (services->style.glass) {
