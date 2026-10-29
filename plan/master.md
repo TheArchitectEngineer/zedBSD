@@ -15,6 +15,20 @@
 ### 動いている担当と Queue
 
 <!-- master:agents:start -->
+2026-10-29 22:2x 復旧: 16:50 頃にセッションごと止まった P1〜P7 を、同じ名前・同じ worktree の新しい起動で再開した（未 commit の差分は各担当が読んで続ける）。
+
+| 担当 | Queue | WS と次の手 | 実機 |
+| --- | --- | --- | --- |
+| P1 | q1662-i09 in-progress | [ws309](ws309/ws.md) p012（display の thread・park と drain・回転・BUG-353）、worktree p1-ws309i | 10.0.10.3（時間の枠） |
+| P2 | q1682-i02 in-progress | [ws068](ws068/ws.md) Venus の QEMU の試験と直し、worktree p2-ws068（試験待ち: agent/p2-ws242・agent/p2-ws217） | QEMU |
+| P3 | q1679-i02 in-progress | [ws221](ws221/ws.md) p010 の非退行と recv の詰め、worktree p3-ws221g | VF2・5330、10.0.10.3（時間の枠） |
+| P4 | q1665-i10 in-progress | [ws307](ws307/ws.md) p011 の通しの試験 → 日本語の画面の撮影、worktree p4-ws307n（試験待ち: agent/p4-ws283） | QEMU |
+| P5 | q1677-i02 in-progress | [ws243](ws243/ws.md) を main に合わせ、RTX 2070 で p004、worktree p5-ws243 | 10.0.10.3（時間の枠） |
+| P6 | q1667-i05 in-progress | [ws282](ws282/ws.md) p005〜p011 → ws284 の残り、実装だけ、worktree p6-ws282d（試験待ち: agent/p6-ws299・p6-ws300・p6-ws052） | — |
+| P7 | q1675-i05 in-progress | [ws313](ws313/ws.md) Mali の残り、実装だけ、worktree p7-ws313e | — |
+
+止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
+main に未 merge の branch は [registry](agents/registry.md) の試験待ちの欄。web の GET は「統合の注意」の条件で可。HAL の差分の承認は無い。
 <!-- master:agents:end -->
 
 **ユーザー不在の間の自律実行（2026-10-29 12:4x ユーザー「夜まで寝ます。しばらく質問に回答できないので、疑問で止まったphaseがあれば、質問はメッセージ表示だけしてクリック回答にはせず、別なphaseに移って作業を進めてください。」）**: 判断が要る Phase は uncleared・止めにして理由と要る判断を記録し、Q1 は問いをメッセージで書くだけ（クリックの問いにしない）。担当は別の Phase に移る。
