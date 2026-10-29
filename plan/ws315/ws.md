@@ -3,7 +3,7 @@
 # WS315 Realtek の USB の 2.5G・5G の NIC を、Realtek の独自の方式（vendor mode）の driver で速くする
 
 - Master: [plan/master.md](../master.md)（2026-10-30 作成）。Primary Milestone: MG003。
-- Status: planning（2026-10-30 Q1 が作成。着手は WS221 p014（xHCI の 1 endpoint に複数の要求）と NCM での速さの観察の後）
+- Status: incomplete（2026-10-30 Q1 が作成。2026-10-30 P3 q1694-i01 が p001 に着手）
 - 目標: 市場の USB の 2.5GbE・5GbE の NIC のほとんどが使う Realtek の chip（RTL8156・RTL8157 の類）を、汎用の CDC NCM ではなく
   Realtek の独自の方式で動かす driver を作り、Linux（r8152）と同じ程度の速さにする。
 
@@ -27,8 +27,13 @@ Realtek方式については、NCMでどこまで速度が上がるか観察し�
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| ws315-p001 | 設計: Realtek の vendor mode（device の切り替え、RX の集約・TX の詰め・checksum と TSO の offload、PHY・link）、NCM との切り替え、出典と license | planning | WS221 p014 |
+| [ws315-p001](phase001/phase.md) | 設計: Realtek の vendor mode（device の切り替え、RX の集約・TX の詰め・checksum と TSO の offload、PHY・link）、NCM との切り替え、出典と license（[design.md](design.md)） | cleared（2026-10-30 04:04 P3 q1694-i01、review を design.md §12 に反映） | WS221 p014 |
+| [ws315-p002](phase002/phase.md) | 実装: register の読み書き、RTL8156・8156B の初期化・up・down、RX・TX の block（記述子 v1）、checksum、link の worker、選び分け（match 120・CONFIG・boot の token）、host 試験、全 platform の build | cleared（2026-10-30 04:16 P3、16122571a） | p001 |
+| [ws315-p003](phase003/phase.md) | 5330 の実機: send・recv 30 s、NCM・Linux との比べ、USB の他の device の非退行、調整（design.md §5.4・§8） | in-progress（2026-10-30 05:27 k4: vendor mode send 2372.2・recv 2319.1、Linux 2353.4・2353.6。残りは未実施の項目） | p002 |
+| ws315-p004 | RTL8157（資料だけ）: 記述子 v2、version 16 の初期化、5000 の広告、host 試験、build。実機はユーザーの購入の後 | planned | p002 |
+| ws315-p005 | 規約の全文の見直し | planned | p002〜p004 |
 
 ## Resume point
 
 - 2026-10-30 Q1: 作成。WS221 p014（xHCI）と NCM の観察の後に担当を割り当てる。
+- 2026-10-30 P3（q1694-i01）: p001 cleared（design.md、review の反映 §12）。p002 の実装の初版 5534277a3、5330 の試験（plan/ws315/tests/5330-rtl.sh）へ。

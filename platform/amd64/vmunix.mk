@@ -411,6 +411,10 @@ endif
 ifeq ($(CONFIG_DRIVER_USB_CDC_ECM),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-cdc-ecm.c
 endif
+ifeq ($(CONFIG_DRIVER_USB_RTL815X),y)
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-rtl815x.c \
+	src/drivers/usb/usb-rtl815x-frame.c
+endif
 # The CDC notification reader both network drivers share (BUG-222).
 ifneq ($(filter y,$(CONFIG_DRIVER_USB_CDC_NCM) $(CONFIG_DRIVER_USB_CDC_ECM)),)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-cdc-notification.c

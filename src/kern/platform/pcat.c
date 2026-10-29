@@ -81,6 +81,9 @@
 #if CONFIG_DRIVER_USB_CDC_ECM
 #include <drivers/usb/usb-cdc-ecm.h>
 #endif
+#if CONFIG_DRIVER_USB_RTL815X
+#include <drivers/usb/usb-rtl815x.h>
+#endif
 #if CONFIG_DRIVER_USB_HID
 #include <drivers/usb/usb-hid.h>
 #include <drivers/usb/usb-hub.h>
@@ -287,6 +290,10 @@ kern_platform_init(
 #if CONFIG_DRIVER_USB_CDC_ECM
 	if (drv_usb_cdc_ecm_driver_register() != 0)
 		kern_logf("usb: CDC ECM driver registration failed\n");
+#endif
+#if CONFIG_DRIVER_USB_RTL815X
+	if (drv_usb_rtl815x_driver_register() != 0)
+		kern_logf("usb: Realtek RTL815x driver registration failed\n");
 #endif
 #if CONFIG_DRIVER_USB_RTL8822BU
 	if (drv_usb_rtl8822bu_driver_register() != 0)

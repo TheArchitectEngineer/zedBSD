@@ -111,6 +111,10 @@ endif
 ifeq ($(CONFIG_DRIVER_USB_CDC_ECM),y)
 PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-cdc-ecm.o
 endif
+ifeq ($(CONFIG_DRIVER_USB_RTL815X),y)
+PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-rtl815x.o \
+	$(BUILD)/drivers/usb/usb-rtl815x-frame.o
+endif
 # The CDC notification reader both network drivers share (BUG-222).
 ifneq ($(filter y,$(CONFIG_DRIVER_USB_CDC_NCM) $(CONFIG_DRIVER_USB_CDC_ECM)),)
 PCAT_USB_CLASS_OBJS += $(BUILD)/drivers/usb/usb-cdc-notification.o

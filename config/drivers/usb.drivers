@@ -2,6 +2,7 @@
 CONFIG_DRIVER_USB_STORAGE|bool|USB Mass Storage|i386,amd64,rpi4|y|
 CONFIG_DRIVER_USB_CDC_NCM|bool|USB CDC NCM Ethernet|i386,amd64,rpi4|y|
 CONFIG_DRIVER_USB_CDC_ECM|bool|USB CDC ECM Ethernet|i386,amd64,rpi4|y|
+CONFIG_DRIVER_USB_RTL815X|bool|USB Realtek RTL8156 and RTL8157 2.5G/5G Ethernet in vendor mode|amd64|y|
 CONFIG_DRIVER_USB_HID|bool|USB HID input|i386,amd64,rpi4|y|
 CONFIG_DRIVER_USB_HUB|bool|USB 2.0 hubs|i386,amd64,rpi4|y|
 CONFIG_DRIVER_USB_CCID|bool|USB smart card readers (CCID, NFC readers)|i386,amd64,rpi4|y|
