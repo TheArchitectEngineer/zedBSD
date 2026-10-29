@@ -52,7 +52,7 @@ scene_expect() {
 
 # 1. The whole screen, without a compositor.
 guest "$stop_all" >/dev/null
-guest '/bin/egltest --platform=display --scene=glsl --frames=200 --delay-ms=30 --token=d > /tmp/egl-d.log 2>&1 </dev/null & sleep 5; echo started' >/dev/null
+guest '/bin/egltest --platform=display --scene=glsl --frames=200 --delay-ms=30 --token=d > /tmp/egl-d.log 2>&1 </dev/null & i=0; while ! grep -q "EGLTEST CHECK" /tmp/egl-d.log && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done; sleep 1; echo started' >/dev/null
 check "$out/display.png" $(scene_expect 0 0 1280 800) || status=1
 guest 'i=0; while ! grep -q EGLTEST.DONE /tmp/egl-d.log && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done; cat /tmp/egl-d.log' > "$out/display.txt"
 cat "$out/display.txt"
@@ -64,7 +64,7 @@ expect_log /tmp/egl-d.log 'EGLTEST DONE run=d frames=200 glerror=0x0 failures=0'
 # 2. In a zdesktop window.
 guest "$stop_all" >/dev/null
 guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; : > /tmp/zdesktop.log; /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while ! grep -q "KWL READY" /tmp/zdesktop.log 2>/dev/null && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done
-/bin/egltest --display=/tmp/wayland-0 --size=640x400 --scene=glsl --frames=4000 --delay-ms=30 --token=w > /tmp/egl-w.log 2>&1 </dev/null & sleep 6; echo started' >/dev/null
+/bin/egltest --display=/tmp/wayland-0 --size=640x400 --scene=glsl --frames=4000 --delay-ms=30 --token=w > /tmp/egl-w.log 2>&1 </dev/null & i=0; while ! grep -q "EGLTEST CHECK" /tmp/egl-w.log && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done; sleep 1; echo started' >/dev/null
 zwl_app_clients
 set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
 wx=${1:-0}; wy=${2:-0}
