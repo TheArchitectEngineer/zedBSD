@@ -7,15 +7,12 @@ Venus GPU, a USB tablet and seven disks, and walks the installer as a person wou
   refused   a disk of 1 GiB (too small) and the live USB (S2), an MBR disk and a disk whose FAT holds zedbsd.cfg
             (their partitions cannot be chosen, S3) -- S2 and S3 photographed
   cancel    the empty NVMe disk whole, cancelled while the units unpack: S10 says where it stopped
-  failure   the NVMe disk whole with a unit damaged (a byte appended): the helper refuses its SHA-256, S10
-  whole     the NVMe disk whole (the unit put back), the user's automatic login off
+  failure   the 4096-byte NVMe disk whole with a unit damaged (a byte appended): the helper refuses its SHA-256, S10
+  whole     the NVMe disk whole, the user's automatic login off; the 4096-byte disk whole (the unit put back)
   chosen    the SATA disk of another system (an ESP with \\EFI\\BOOT\\BOOTX64.EFI and a file, two basic data
             partitions): a 1 GiB partition made on S4 for swap, the second basic data partition chosen as the root
             (its erasure confirmed); the first is never touched, and the loader goes to \\EFI\\ZEDBSD
   swap file the USB disk with an empty GPT: S4 makes the ESP and a partition, no swap partition, a swap file
-  4096      the 4096-byte NVMe disk whole, last, with the base system and OpenSSH only (the desktop, the firmware
-            and the fonts turned off on S7): the native UFS writes slowly on a 4096-byte disk, and the default
-            items do not unpack there within the run's time
 
 then, the live system stopped, checks on the host the other system's partition and files and the ESP, starts each
 installed disk alone to the console's login prompt (plan/tools/boot-test.sh: the NVMe disk, the 4096-byte disk, the
@@ -137,16 +134,10 @@ class Walk:
 		self.run.click("next")
 		self.run.wait_screen("s3-handling")
 
-	def items_user_confirm(self, label: str, autologin: bool = False, off: tuple = ()):
-		"""S7 (the items OFF turned off, the licences agreed once), S7a, S8 (the erasure agreed for the whole disk),
-		and the install dialog."""
+	def items_user_confirm(self, label: str, autologin: bool = False):
+		"""S7 (the licences agreed once), S7a, S8 (the erasure agreed for the whole disk), and the install dialog."""
 		run = self.run
 		run.wait_screen("s7-items")
-		for item in off:
-			run.click("item-" + item)
-			time.sleep(0.5)
-		if off:
-			run.shot(f"{label}-s7")
 		if not self.agreed:
 			run.click("license-agree")
 			self.agreed = True
@@ -227,10 +218,10 @@ class Walk:
 		self.step("cancel", word == "s10-failed" and any("failed step=unpack" in l for l in lines))
 		self.start_over()
 
-		# The NVMe disk whole with a damaged unit.
+		# The 4096-byte disk whole with a damaged unit.
 		code, _ = run.root(f"cp -p {DAMAGED} /tmp/p011-unit && printf x >> {DAMAGED}")
 		self.step("damage", code == 0)
-		self.choose("nvme")
+		self.choose("k4")
 		run.click("whole")
 		run.click("next")
 		mark = self.items_user_confirm("failure")
@@ -249,6 +240,15 @@ class Walk:
 		word = self.finish("nvme", mark)
 		self.step("nvme", word == "s11-done")
 		self.harness("nvme")
+		self.start_over()
+
+		# The 4096-byte disk whole.
+		self.choose("k4")
+		run.click("whole")
+		run.click("next")
+		mark = self.items_user_confirm("k4")
+		word = self.finish("k4", mark)
+		self.step("k4", word == "s11-done")
 		self.start_over()
 
 		# The disk of another system: a swap partition made, the second basic data partition the root.
@@ -311,15 +311,6 @@ class Walk:
 		word = self.finish("usb", mark, 4800)
 		swapfile = any("STATE swap file" in l for l in run.read_log()[mark:])
 		self.step("usb", word == "s11-done" and swapfile)
-		self.start_over()
-
-		# The 4096-byte disk whole, last, with a small set of items (the choice stays after it).
-		self.choose("k4")
-		run.click("whole")
-		run.click("next")
-		mark = self.items_user_confirm("k4", off=("desktop", "firmware", "fonts"))
-		word = self.finish("k4", mark, 3600)
-		self.step("k4", word == "s11-done")
 
 	def harness(self, disk: str):
 		"""The harness's network on an installed root (slot 3 of the whole disk's layout), for the SSH after."""
