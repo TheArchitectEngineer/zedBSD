@@ -1,7 +1,8 @@
 #!/bin/sh
 # ws291-p011: where the frame of mview's scene goes on the RTX 2070, run from the top of the tree:
 #   sh plan/ws291/tests/rtx-scene-profile.sh OUT RESTORE VMUNIX [COPIES]
-# VMUNIX put in with the driver's counts on (nvrtx.vk.perf=1 on the boot line, zedBSD restarted), mview's scene of
+# VMUNIX put in, mview's still view of COPIES copies captured on the fresh session (OUT/shot/shot.png), then the
+# driver's counts on (nvrtx.vk.perf=1 on the boot line, zedBSD restarted), mview's scene of
 # COPIES (default 5000) copies for 12 s with libvulkan's submission timing, the driver's perf lines of the run (every
 # 5 s: runs, GPU time, frames and flips), then the counts off, RESTORE put back and Debian again.
 # OUT/summary.txt holds what is printed.
@@ -25,6 +26,17 @@ say() {
 
 timeout 400 $M deploy --kernel "$kernel" > "$out/deploy.txt" 2>&1 || { say "FAIL deploy"; exit 1; }
 say "kernel $(cksum < "$kernel")"
+# The still view first: a still view after a spin in the same boot does not show mview's window.
+timeout 120 $M shot "$out/shot" "$copies" > "$out/shot.txt" 2>&1
+grep -E 'MVIEW (DONE|FAILED)' "$out/shot.txt" | sed 's/^/shot /' | tee -a "$summary"
+if [ -s "$out/shot/shot.png" ]; then
+	python3 -I -c 'import sys
+from PIL import Image
+im = Image.open(sys.argv[1])
+im.thumbnail((960, 540))
+im.save(sys.argv[2])' "$out/shot/shot.png" "$out/shot-small.png"
+	say "shot $out/shot-small.png"
+fi
 timeout 400 $M timing on > "$out/timing-on.txt" 2>&1 || say "FAIL timing on"
 ip=$($M zedbsd 2> /dev/null | tail -1)
 if [ -n "$ip" ]; then
