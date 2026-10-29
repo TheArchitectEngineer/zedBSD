@@ -7,15 +7,13 @@ Venus GPU, a USB tablet and seven disks, and walks the installer as a person wou
   refused   a disk of 1 GiB (too small) and the live USB (S2), an MBR disk and a disk whose FAT holds zedbsd.cfg
             (their partitions cannot be chosen, S3) -- S2 and S3 photographed
   cancel    the empty NVMe disk whole, cancelled while the units unpack: S10 says where it stopped
-  failure   the NVMe disk whole with a unit damaged (a byte appended): the helper refuses its SHA-256, S10
-  whole     the NVMe disk whole (the unit put back), the user's automatic login off
+  failure   the 4096-byte NVMe disk whole with a unit damaged (a byte appended): the helper refuses its SHA-256, S10
+  whole     the NVMe disk whole, the user's automatic login off; the 4096-byte disk whole (the unit put back)
   chosen    the SATA disk of another system (an ESP with \\EFI\\BOOT\\BOOTX64.EFI and a file, two basic data
-            partitions): a 1 GiB partition made on S4 for swap, the second basic data partition chosen as the root
+            partitions): a size that cannot be read refused on S4 (its error shown, nothing written), a 1 GiB
+            partition made on S4 for swap, the second basic data partition chosen as the root
             (its erasure confirmed); the first is never touched, and the loader goes to \\EFI\\ZEDBSD
   swap file the USB disk with an empty GPT: S4 makes the ESP and a partition, no swap partition, a swap file
-  4096      the 4096-byte NVMe disk whole, last, with the base system and OpenSSH only (the desktop, the firmware
-            and the fonts turned off on S7): the native UFS writes slowly on a 4096-byte disk, and the default
-            items do not unpack there within the run's time
 
 then, the live system stopped, checks on the host the other system's partition and files and the ESP, starts each
 installed disk alone to the console's login prompt (plan/tools/boot-test.sh: the NVMe disk, the 4096-byte disk, the
@@ -33,6 +31,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -41,6 +40,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from installer_walk import BASIC, ESP, ROOT, Failed, Run, blank, fat, fat_read, gpt  # noqa: E402
 
+LIVE_USER = "user"
 USER = "alice"
 PASSWORD = "alice123"
 HOSTNAME = "p011host"
@@ -92,14 +92,15 @@ class Walk:
 		fat(zcfg, 1, 600, "ZEDBSD", {"/zedbsd.cfg": b"kernel=vmunix\n"})
 		blank(out / "tiny.img", 1)
 		self.other_a = self.region(other, 301, 2048)
-		return (f"-drive file={out}/nvme.img,if=none,id=n1,format=raw -device nvme,serial=p011n,drive=n1 "
-			f"-drive file={out}/k4.img,if=none,id=n2,format=raw "
+		# The disks' flushes are dropped on the host (cache=unsafe), as the stick's are (installer_walk.Run.start).
+		return (f"-drive file={out}/nvme.img,if=none,id=n1,format=raw,cache=unsafe -device nvme,serial=p011n,drive=n1 "
+			f"-drive file={out}/k4.img,if=none,id=n2,format=raw,cache=unsafe "
 			f"-device nvme,serial=p011k,drive=n2,logical_block_size=4096,physical_block_size=4096 "
-			f"-device ahci,id=a1 -drive file={other},if=none,id=s1,format=raw -device ide-hd,drive=s1,bus=a1.0 "
-			f"-drive file={zcfg},if=none,id=s2,format=raw -device ide-hd,drive=s2,bus=a1.1 "
-			f"-drive file={mbr},if=none,id=s3,format=raw -device ide-hd,drive=s3,bus=a1.2 "
-			f"-device qemu-xhci,id=x2 -drive file={usb},if=none,id=u1,format=raw -device usb-storage,bus=x2.0,drive=u1 "
-			f"-drive file={out}/tiny.img,if=none,id=u2,format=raw -device usb-storage,bus=x2.0,drive=u2")
+			f"-device ahci,id=a1 -drive file={other},if=none,id=s1,format=raw,cache=unsafe -device ide-hd,drive=s1,bus=a1.0 "
+			f"-drive file={zcfg},if=none,id=s2,format=raw,cache=unsafe -device ide-hd,drive=s2,bus=a1.1 "
+			f"-drive file={mbr},if=none,id=s3,format=raw,cache=unsafe -device ide-hd,drive=s3,bus=a1.2 "
+			f"-device qemu-xhci,id=x2 -drive file={usb},if=none,id=u1,format=raw,cache=unsafe -device usb-storage,bus=x2.0,drive=u1 "
+			f"-drive file={out}/tiny.img,if=none,id=u2,format=raw,cache=unsafe -device usb-storage,bus=x2.0,drive=u2")
 
 	@staticmethod
 	def region(path: Path, first_mib: int, mib: int) -> str:
@@ -137,16 +138,10 @@ class Walk:
 		self.run.click("next")
 		self.run.wait_screen("s3-handling")
 
-	def items_user_confirm(self, label: str, autologin: bool = False, off: tuple = ()):
-		"""S7 (the items OFF turned off, the licences agreed once), S7a, S8 (the erasure agreed for the whole disk),
-		and the install dialog."""
+	def items_user_confirm(self, label: str, autologin: bool = False):
+		"""S7 (the licences agreed once), S7a, S8 (the erasure agreed for the whole disk), and the install dialog."""
 		run = self.run
 		run.wait_screen("s7-items")
-		for item in off:
-			run.click("item-" + item)
-			time.sleep(0.5)
-		if off:
-			run.shot(f"{label}-s7")
 		if not self.agreed:
 			run.click("license-agree")
 			self.agreed = True
@@ -185,8 +180,31 @@ class Walk:
 		return word
 
 	def start_over(self):
+		"""S10's Start over: S2 again, in the same installer."""
 		self.run.click("start-over")
 		self.run.wait_screen("s2-disk")
+
+	def again(self):
+		"""After S11, which has only Close and Restart: closes the installer, opens it again in the live session (its
+		log to the session's log) and goes on to S2.  The new installer starts with nothing agreed and the automatic
+		login on."""
+		run = self.run
+		mark = len(run.read_log())
+		run.click("close")
+		run.wait_line(r"INSTALLER DONE reason=close", 60, mark)
+		mark = len(run.read_log())
+		command = ("cd; export XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0; "
+			   "nohup /bin/installer >> /run/user/1000/session.log 2>&1 < /dev/null &")
+		code, text = run.root(f"su {LIVE_USER} -c {shlex.quote(command)}", 60)
+		if code != 0:
+			raise Failed(f"the installer did not start again: {code} {text.strip()}")
+		run.wait_line(r"INSTALLER READY", 300, mark)
+		run.wait_line(r"INSTALLER PROBE read", 120, mark)
+		run.wait_screen("s1-welcome")
+		run.click("next")
+		run.wait_screen("s2-disk")
+		self.agreed = False
+		self.autologin = True
 
 	def walk(self):
 		run = self.run
@@ -227,10 +245,10 @@ class Walk:
 		self.step("cancel", word == "s10-failed" and any("failed step=unpack" in l for l in lines))
 		self.start_over()
 
-		# The NVMe disk whole with a damaged unit.
+		# The 4096-byte disk whole with a damaged unit.
 		code, _ = run.root(f"cp -p {DAMAGED} /tmp/p011-unit && printf x >> {DAMAGED}")
 		self.step("damage", code == 0)
-		self.choose("nvme")
+		self.choose("k4")
 		run.click("whole")
 		run.click("next")
 		mark = self.items_user_confirm("failure")
@@ -249,7 +267,16 @@ class Walk:
 		word = self.finish("nvme", mark)
 		self.step("nvme", word == "s11-done")
 		self.harness("nvme")
-		self.start_over()
+		self.again()
+
+		# The 4096-byte disk whole.
+		self.choose("k4")
+		run.click("whole")
+		run.click("next")
+		mark = self.items_user_confirm("k4")
+		word = self.finish("k4", mark)
+		self.step("k4", word == "s11-done")
+		self.again()
 
 		# The disk of another system: a swap partition made, the second basic data partition the root.
 		self.choose("other")
@@ -259,7 +286,21 @@ class Walk:
 		run.wait_screen("s4-edit")
 		run.key("ret")
 		time.sleep(0.8)
+		# A size that cannot be read: the error on the screen and in the log, and nothing written.
+		parts = [n for n in run.controls()[1] if n.startswith("part-")]
+		run.set_field("size", "abc")
+		mark = len(run.read_log())
+		run.click("create")
+		_index, line = run.wait_line(r"INSTALLER EDIT ", 60, mark)
+		time.sleep(1.5)
+		run.shot("other-s4-size-refused")
+		later = run.read_log()[mark:]
+		wrote = [l for l in later if "INSTALLER EDIT request" in l or "INSTALLER HELPER session" in l]
+		after = [n for n in run.controls()[1] if n.startswith("part-")]
+		self.step("size-refused", "EDIT refused reason=size" in line and not wrote and after == parts,
+			  f"{line.strip()} parts={len(parts)}->{len(after)}")
 		run.set_field("size", "1 GiB")
+		run.shot("other-s4-size")
 		mark = len(run.read_log())
 		run.click("create")
 		run.wait_line(r"INSTALLER EDIT (DONE|FAIL)", 180, mark)
@@ -283,14 +324,17 @@ class Walk:
 		word = self.finish("other", mark)
 		zedbsd = any("STATE loader" in l and "ZEDBSD" in l for l in run.read_log()[mark:])
 		self.step("other", word == "s11-done" and zedbsd)
-		self.start_over()
+		self.again()
 
 		# The USB disk with an empty GPT: the ESP and a partition made, a swap file.
 		self.choose("usb")
 		run.click("chosen")
 		run.click("next")
 		run.wait_screen("s4-edit")
+		run.key("ret")
+		time.sleep(0.8)
 		run.set_field("size", "6 GiB")
+		run.shot("usb-s4-size")
 		mark = len(run.read_log())
 		run.click("create")
 		run.wait_line(r"INSTALLER EDIT (DONE|FAIL)", 180, mark)
@@ -311,15 +355,6 @@ class Walk:
 		word = self.finish("usb", mark, 4800)
 		swapfile = any("STATE swap file" in l for l in run.read_log()[mark:])
 		self.step("usb", word == "s11-done" and swapfile)
-		self.start_over()
-
-		# The 4096-byte disk whole, last, with a small set of items (the choice stays after it).
-		self.choose("k4")
-		run.click("whole")
-		run.click("next")
-		mark = self.items_user_confirm("k4", off=("desktop", "firmware", "fonts"))
-		word = self.finish("k4", mark, 3600)
-		self.step("k4", word == "s11-done")
 
 	def harness(self, disk: str):
 		"""The harness's network on an installed root (slot 3 of the whole disk's layout), for the SSH after."""
@@ -384,6 +419,10 @@ def main():
 	except (Failed, subprocess.TimeoutExpired, OSError) as error:
 		run.say(f"FAIL {error}")
 		walk.status = 1
+		try:
+			run.shot("failed")
+		except Exception:  # noqa: BLE001
+			pass
 	finally:
 		try:
 			lines = run.read_log()

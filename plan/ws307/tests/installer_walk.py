@@ -109,7 +109,10 @@ class Run:
 		hostmem = os.environ.get("VENUS_HOSTMEM", "1G")
 		out = self.out
 		shutil.copyfile(self.image, out / "boot.img")
-		extra = (f"-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem "
+		# The stick's flushes are dropped on the host (cache=unsafe): a host fsync of 0.5 to 2 s blocks QEMU's USB
+		# and the guest's xHCI commands to the stick time out, and the live system does not come up.
+		extra = (f"-set drive.boot.cache=unsafe "
+			 f"-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem "
 			 f"-device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem={hostmem},max_outputs=1 "
 			 f"-display egl-headless,rendernode=/dev/dri/renderD128 -vnc unix:{out}/guest/vnc.sock,display=venus "
 			 f"-device usb-tablet,bus=xhci.0,port=4 {disks}")
@@ -280,11 +283,12 @@ class Run:
 		return names[0]
 
 	def set_field(self, name: str, text: str):
-		"""Types a text into a field in place of what it holds."""
+		"""Types a text into a field in place of what it holds: Ctrl+A selects it all and the typing replaces it.
+		(Backspace does not erase a space in a field of the live session, so erasing key by key leaves text behind.)"""
 		self.click(name)
-		self.key("end")
-		for _ in range(40):
-			self.key("backspace")
+		time.sleep(0.5)
+		self.key("ctrl", "a")
+		time.sleep(0.3)
 		self.type(text)
 
 	def root(self, command: str, timeout: float = 300):

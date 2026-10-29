@@ -736,6 +736,11 @@ disk_answer(
  * Reports whether an existing ESP is enough: a FAT the helper
  * looked into, without zedbsd.cfg or \EFI\ZEDBSD\BOOTX64.EFI, whose
  * fallback loader is known, with room for the loader and 16 MiB.
+ *
+ * The helper mounted the FAT to look into it, which is what shows that it
+ * holds one; the partition's file system type is not asked for, since the
+ * kernel names it when the partition appears and an ESP S4 makes is
+ * formatted after that.
  */
 static int
 disk_esp_enough(
@@ -743,7 +748,6 @@ disk_esp_enough(
 	const struct inst_disk *disk,
 	const struct inst_part *part)
 {
-	int same;
 	int is_esp;
 
 	/* The disk is part of the signature the callers share; the partition decides. */
@@ -754,9 +758,6 @@ disk_esp_enough(
 	if (!is_esp)
 		return 0;
 	if (!part->fat)
-		return 0;
-	same = strcmp(part->fstype, "vfat");
-	if (same != 0)
 		return 0;
 
 	/* Nothing of ours on it, and its fallback loader known. */

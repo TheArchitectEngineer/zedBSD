@@ -25,7 +25,7 @@ msg	The disk's EFI system partition is too small or cannot be used.	このディ
 msg	EFI system	EFI システム
 # userland/desktop/locale/installer.keys:16
 msg	System (UFS)	システム（UFS）
-# userland/desktop/locale/installer.keys:17, userland/desktop/installer/screens.c:1583, userland/desktop/installer/screens.c:1849
+# userland/desktop/locale/installer.keys:17, userland/desktop/installer/screens.c:1809, userland/desktop/installer/screens.c:2138
 msg	Swap	スワップ
 # userland/desktop/locale/installer.keys:18
 msg	Unassigned	未割り当て
@@ -57,11 +57,11 @@ msg	Keep	残す
 msg	Erase	消去
 # userland/desktop/locale/installer.keys:33
 msg	Continue	続ける
-# userland/desktop/locale/installer.keys:34, userland/desktop/installer/screens.c:293
+# userland/desktop/locale/installer.keys:34, userland/desktop/installer/screens.c:306
 msg	Back	戻る
 # userland/desktop/locale/installer.keys:35
 msg	Leave out	外す
-# userland/desktop/locale/installer.keys:36, userland/desktop/installer/screens.c:303, userland/desktop/installer/screens.c:1604
+# userland/desktop/locale/installer.keys:36, userland/desktop/installer/screens.c:317, userland/desktop/installer/screens.c:1847
 msg	Install	インストール
 # userland/desktop/locale/installer.keys:37
 msg	Not yet	まだしない
@@ -113,367 +113,371 @@ msg	curl	curl
 msg	Python	Python
 # userland/desktop/locale/installer.keys:63
 msg	Other packages	その他のパッケージ
-# userland/desktop/installer/flow.c:171
+# userland/desktop/installer/flow.c:186
 msg	The installer's helper did not answer.	インストーラの補助プログラムが応答しませんでした。
-# userland/desktop/installer/flow.c:189
+# userland/desktop/installer/flow.c:206
 msg	The installer's helper ended.	インストーラの補助プログラムが終了しました。
-# userland/desktop/installer/flow.c:212
+# userland/desktop/installer/flow.c:230
 msg	The installer's files could not be read.	インストーラのファイルを読めませんでした。
-# userland/desktop/installer/flow.c:214, userland/desktop/installer/flow.c:227, userland/desktop/installer/screens.c:783
+# userland/desktop/installer/flow.c:232, userland/desktop/installer/flow.c:245, userland/desktop/installer/screens.c:820
 msg	Looking at the disks...	ディスクを調べています…
-# userland/desktop/installer/flow.c:216
+# userland/desktop/installer/flow.c:234
 msg	The disks could not be read.	ディスクを読めませんでした。
-# userland/desktop/installer/flow.c:218
+# userland/desktop/installer/flow.c:236
 msg	The installer works only on a computer started with UEFI.	インストーラは UEFI で起動したコンピュータでだけ使えます。
-# userland/desktop/installer/flow.c:222
+# userland/desktop/installer/flow.c:240
 msg	Choose a disk.	ディスクを選んでください。
-# userland/desktop/installer/flow.c:231, userland/desktop/installer/flow.c:247
+# userland/desktop/installer/flow.c:249, userland/desktop/installer/flow.c:267
 msg	The disk is gone.	ディスクが見つかりません。
-# userland/desktop/installer/flow.c:233
+# userland/desktop/installer/flow.c:251
 msg	Choose how to use the disk.	ディスクの使い方を選んでください。
-# userland/desktop/installer/flow.c:243, userland/desktop/installer/screens.c:1023
+# userland/desktop/installer/flow.c:263, userland/desktop/installer/screens.c:1125
 msg	Writing to the disk...	ディスクに書いています…
-# userland/desktop/installer/flow.c:245
+# userland/desktop/installer/flow.c:265
 msg	The new partitions can be used only after a restart.	新しいパーティションは再起動の後でないと使えません。
-# userland/desktop/installer/flow.c:250
+# userland/desktop/installer/flow.c:270
 msg	The disk needs an EFI system partition: create a partition and one is made.	EFI システムパーティションが必要です。パーティションを作成すると自動で作られます。
-# userland/desktop/installer/flow.c:254, userland/desktop/installer/flow.c:257
+# userland/desktop/installer/flow.c:274, userland/desktop/installer/flow.c:277
 msg	Choose the partition for the system.	システムを入れるパーティションを選んでください。
-# userland/desktop/installer/flow.c:260
+# userland/desktop/installer/flow.c:281
 msg	The partition is too small for the system.	このパーティションはシステムには小さすぎます。
-# userland/desktop/installer/flow.c:266
+# userland/desktop/installer/flow.c:287
 msg	Choose a swap partition, or none.	スワップパーティションを選ぶか、使わないを選んでください。
-# userland/desktop/installer/flow.c:268
+# userland/desktop/installer/flow.c:290
 msg	A swap partition must be 64 MiB or larger.	スワップパーティションは 64 MiB 以上が必要です。
-# userland/desktop/installer/flow.c:274
+# userland/desktop/installer/flow.c:299
 msg	The system's partition is too small for what is chosen.	選んだ項目には、システムのパーティションが小さすぎます。
-# userland/desktop/installer/flow.c:277
+# userland/desktop/installer/flow.c:302
 msg	Agree to the firmware's licences, or leave the firmware out.	ファームウェアのライセンスに同意するか、ファームウェアを外してください。
-# userland/desktop/installer/flow.c:286
+# userland/desktop/installer/flow.c:311
 msg	Agree that everything on the disk is erased.	ディスクの内容がすべて消えることに同意してください。
-# userland/desktop/installer/flow.c:289
+# userland/desktop/installer/flow.c:314
 msg	Waiting for the installer's helper...	インストーラの補助プログラムを待っています…
-# userland/desktop/installer/flow.c:539
+# userland/desktop/installer/flow.c:576
 msg	Deleted partition	パーティションを削除しました
-# userland/desktop/installer/flow.c:568
+# userland/desktop/installer/flow.c:607
 msg	Type a size such as 20 GiB or 512 MiB.	20 GiB や 512 MiB のように大きさを入力してください。
-# userland/desktop/installer/flow.c:584
+# userland/desktop/installer/flow.c:627
 msg	There is no room for a partition of that size.	その大きさのパーティションを置く空きがありません。
-# userland/desktop/installer/flow.c:610, userland/desktop/installer/flow.c:612
+# userland/desktop/installer/flow.c:661, userland/desktop/installer/flow.c:663
 msg	Created a partition	パーティションを作成しました
-# userland/desktop/installer/flow.c:610
+# userland/desktop/installer/flow.c:661
 msg	and an EFI system partition of 512 MiB	と 512 MiB の EFI システムパーティション
-# userland/desktop/installer/flow.c:781
+# userland/desktop/installer/flow.c:846
 msg	The computer could not be restarted.	コンピュータを再起動できませんでした。
-# userland/desktop/installer/flow.c:809
+# userland/desktop/installer/flow.c:878
 msg	The user name starts with a small letter; then small letters, digits, - and _.	ユーザ名は英小文字で始め、英小文字・数字・-・_ を使います。
-# userland/desktop/installer/flow.c:813
+# userland/desktop/installer/flow.c:885
 msg	That user name is the system's own.	そのユーザ名はシステムが使っています。
-# userland/desktop/installer/flow.c:819
+# userland/desktop/installer/flow.c:892
 msg	The full name cannot hold a colon or control characters.	フルネームにはコロンや制御文字を使えません。
-# userland/desktop/installer/flow.c:825
+# userland/desktop/installer/flow.c:899
 msg	Type a password for the user.	ユーザのパスワードを入力してください。
-# userland/desktop/installer/flow.c:830
+# userland/desktop/installer/flow.c:906
 msg	The user's two passwords differ.	ユーザのパスワードが一致しません。
-# userland/desktop/installer/flow.c:834
+# userland/desktop/installer/flow.c:913
 msg	Type a password for root.	root のパスワードを入力してください。
-# userland/desktop/installer/flow.c:839
+# userland/desktop/installer/flow.c:920
 msg	Root's two passwords differ.	root のパスワードが一致しません。
-# userland/desktop/installer/flow.c:845
+# userland/desktop/installer/flow.c:927
 msg	The computer's name takes small letters, digits and -, up to 63.	コンピュータ名は英小文字・数字・- で 63 文字までです。
-# userland/desktop/installer/flow.c:869
+# userland/desktop/installer/flow.c:951
 msg	The installer's helper could not be started.	インストーラの補助プログラムを起動できませんでした。
-# userland/desktop/installer/flow.c:955
+# userland/desktop/installer/flow.c:1055
 msg	A new EFI system partition and partition could not be removed after the failure.	失敗の後、新しい EFI システムパーティションとパーティションを削除できませんでした。
-# userland/desktop/installer/flow.c:977, userland/desktop/installer/flow.c:1227
+# userland/desktop/installer/flow.c:1081, userland/desktop/installer/flow.c:1356
 msg	The disk was not changed	ディスクは変更されませんでした
-# userland/desktop/installer/flow.c:979
+# userland/desktop/installer/flow.c:1083
 msg	The change failed after the table was written	テーブルを書いた後に変更が失敗しました
-# userland/desktop/installer/main.c:119
+# userland/desktop/installer/main.c:124, userland/desktop/installer/main.c:624
 msg	Installer	インストーラ
-# userland/desktop/installer/screens.c:222, userland/desktop/installer/screens.c:223
+# userland/desktop/installer/screens.c:224, userland/desktop/installer/screens.c:230
 msg	Cancel	キャンセル
-# userland/desktop/installer/screens.c:271, userland/desktop/installer/screens.c:272
+# userland/desktop/installer/screens.c:279, userland/desktop/installer/screens.c:280
 msg	Close	閉じる
-# userland/desktop/installer/screens.c:276, userland/desktop/installer/screens.c:277
+# userland/desktop/installer/screens.c:285, userland/desktop/installer/screens.c:286
 msg	Start over	最初からやり直す
-# userland/desktop/installer/screens.c:280, userland/desktop/installer/screens.c:281
+# userland/desktop/installer/screens.c:290, userland/desktop/installer/screens.c:291
 msg	Restart	再起動
-# userland/desktop/installer/screens.c:300
+# userland/desktop/installer/screens.c:314
 msg	Next	次へ
-# userland/desktop/installer/screens.c:432
+# userland/desktop/installer/screens.c:451
 msg	Cancel the installation?	インストールをキャンセルしますか？
-# userland/desktop/installer/screens.c:433
+# userland/desktop/installer/screens.c:452
 msg	Nothing more is written. What was already written to the disk stays.	これ以上は書き込みません。ディスクに書き込み済みの内容は残ります。
-# userland/desktop/installer/screens.c:437
-msg	Changes here are written at once	この画面の変更はすぐに書き込まれます
-# userland/desktop/installer/screens.c:439
-msg	Deleting or creating a partition on this screen writes to the disk when you press the button. Cancelling later does not undo it.	この画面でパーティションを削除・作成すると、ボタンを押した時点でディスクに書き込みます。後でキャンセルしても元に戻りません。
 # userland/desktop/installer/screens.c:456
+msg	Changes here are written at once	この画面の変更はすぐに書き込まれます
+# userland/desktop/installer/screens.c:458
+msg	Deleting or creating a partition on this screen writes to the disk when you press the button. Cancelling later does not undo it.	この画面でパーティションを削除・作成すると、ボタンを押した時点でディスクに書き込みます。後でキャンセルしても元に戻りません。
+# userland/desktop/installer/screens.c:475
 msg	Delete this partition?	このパーティションを削除しますか？
-# userland/desktop/installer/screens.c:457
+# userland/desktop/installer/screens.c:476
 msg	{1}. The partition and everything on it are erased.	{1}。このパーティションと中身がすべて消えます。
-# userland/desktop/installer/screens.c:460
+# userland/desktop/installer/screens.c:479
 msg	Erase this partition?	このパーティションを消去しますか？
-# userland/desktop/installer/screens.c:461
+# userland/desktop/installer/screens.c:480
 msg	{1}. It is formatted: everything on it is erased.	{1}。フォーマットされ、中身はすべて消えます。
-# userland/desktop/installer/screens.c:467, userland/desktop/installer/screens.c:1075
+# userland/desktop/installer/screens.c:488, userland/desktop/installer/screens.c:1187
 msg	No swap partition	スワップパーティションなし
-# userland/desktop/installer/screens.c:468
+# userland/desktop/installer/screens.c:489
 msg	A swap file is made on the system's partition instead.	代わりにシステムのパーティションにスワップファイルを作ります。
-# userland/desktop/installer/screens.c:472
+# userland/desktop/installer/screens.c:493
 msg	Leave the desktop out?	デスクトップを外しますか？
-# userland/desktop/installer/screens.c:473
+# userland/desktop/installer/screens.c:494
 msg	The installed system then has only the console's login, without the graphical desktop.	インストールしたシステムはコンソールのログインだけになり、グラフィカルなデスクトップはありません。
-# userland/desktop/installer/screens.c:477
+# userland/desktop/installer/screens.c:498
 msg	Leave the firmware out?	ファームウェアを外しますか？
-# userland/desktop/installer/screens.c:478
+# userland/desktop/installer/screens.c:499
 msg	Devices that need firmware, such as Wi-Fi and graphics, may not work.	Wi-Fi やグラフィックスなど、ファームウェアが必要なデバイスが動かないことがあります。
-# userland/desktop/installer/screens.c:482
+# userland/desktop/installer/screens.c:503
 msg	Write to the disk now?	ディスクに書き込みますか？
-# userland/desktop/installer/screens.c:486
+# userland/desktop/installer/screens.c:507
 msg	The installation starts and writes to {1}.	インストールを始め、{1} に書き込みます。
-# userland/desktop/installer/screens.c:490
+# userland/desktop/installer/screens.c:511
 msg	Stop the installation?	インストールを中止しますか？
-# userland/desktop/installer/screens.c:491
+# userland/desktop/installer/screens.c:512
 msg	It stops at the end of the step it is in. The disk is left partly written and does not start.	今の段階の終わりで止まります。ディスクは途中まで書かれた状態になり、起動しません。
-# userland/desktop/installer/screens.c:763
+# userland/desktop/installer/screens.c:800
 msg	{1} will be installed on a disk of this computer.	{1} をこのコンピュータのディスクにインストールします。
-# userland/desktop/installer/screens.c:766
+# userland/desktop/installer/screens.c:803
 msg	The installer asks which disk, how to use it and what to install, then writes it. Nothing is written before you confirm.	インストール先のディスク、その使い方、入れる項目を選んでから書き込みます。確認するまでは何も書き込みません。
-# userland/desktop/installer/screens.c:771
+# userland/desktop/installer/screens.c:808
 msg	Back up your data first	最初にデータをバックアップしてください
-# userland/desktop/installer/screens.c:772
+# userland/desktop/installer/screens.c:809
 msg	Installing may erase what is on the disk you choose. Copy anything you want to keep to another place before you go on.	インストールすると、選んだディスクの内容が消えることがあります。残したいデータは、先に別の場所へコピーしてください。
-# userland/desktop/installer/screens.c:776
+# userland/desktop/installer/screens.c:813
 msg	This image is for installing only	このイメージはインストール専用です
-# userland/desktop/installer/screens.c:777
+# userland/desktop/installer/screens.c:814
 msg	Do not use it as your everyday system: do not keep starting the computer from it, copy it to an internal disk, offer network services from it or keep your files on it. In a system started from this image every program has the same power as root.	普段使うシステムとして運用しないでください。このイメージから起動し続ける、内蔵ディスクにコピーして使う、ネットワークのサービスを動かす、ファイルを保存する、といった使い方はできません。このイメージで起動したシステムでは、すべてのプログラムが root と同じ権限を持ちます。
-# userland/desktop/installer/screens.c:785
+# userland/desktop/installer/screens.c:822
 msg	The disks could not be read:	ディスクを読めませんでした:
-# userland/desktop/installer/screens.c:787
+# userland/desktop/installer/screens.c:824
 msg	Try again	もう一度
-# userland/desktop/installer/screens.c:791
-msg	This computer was not started with UEFI. The installer installs only on a computer started with UEFI.	このコンピュータは UEFI で起動していません。インストーラは UEFI で起動したコンピュータにだけインストールします。
-# userland/desktop/installer/screens.c:796
-msg	The installer's words follow the desktop's language (Settings, Languages).	インストーラの表示はデスクトップの言語に従います（設定の「言語」）。
 # userland/desktop/installer/screens.c:829
+msg	This computer was not started with UEFI. The installer installs only on a computer started with UEFI.	このコンピュータは UEFI で起動していません。インストーラは UEFI で起動したコンピュータにだけインストールします。
+# userland/desktop/installer/screens.c:834
+msg	The installer's words follow the desktop's language (Settings, Languages).	インストーラの表示はデスクトップの言語に従います（設定の「言語」）。
+# userland/desktop/installer/screens.c:875
+msg	none	なし
+# userland/desktop/installer/screens.c:878
 msg	Partition table	パーティションテーブル
-# userland/desktop/installer/screens.c:830
+# userland/desktop/installer/screens.c:878
 msg	partitions	個のパーティション
-# userland/desktop/installer/screens.c:846
+# userland/desktop/installer/screens.c:901
 msg	No disk was found. Connect one, then press Reload.	ディスクが見つかりません。ディスクをつないでから「再読み込み」を押してください。
-# userland/desktop/installer/screens.c:849
+# userland/desktop/installer/screens.c:908
 msg	Reload	再読み込み
-# userland/desktop/installer/screens.c:884
+# userland/desktop/installer/screens.c:947
 msg	Use the whole disk	ディスク全体を使う
-# userland/desktop/installer/screens.c:885
+# userland/desktop/installer/screens.c:948
 msg	Every partition on the disk is erased; an EFI system partition, a swap partition and the system's partition are made.	ディスクのパーティションはすべて消え、EFI システム・スワップ・システムのパーティションを作ります。
-# userland/desktop/installer/screens.c:891
+# userland/desktop/installer/screens.c:955
 msg	These partitions are erased:	次のパーティションが消えます:
-# userland/desktop/installer/screens.c:903
-msg	Choose partitions	パーティションを選ぶ
-# userland/desktop/installer/screens.c:904
+# userland/desktop/installer/screens.c:973
 msg	Keep the partitions there are; delete or create some, then choose where the system goes.	今のパーティションを残し、削除や作成をしてから、システムを入れる場所を選びます。
-# userland/desktop/installer/screens.c:957, userland/desktop/installer/screens.c:1137
+# userland/desktop/installer/screens.c:974
+msg	Choose partitions	パーティションを選ぶ
+# userland/desktop/installer/screens.c:1038, userland/desktop/installer/screens.c:1265
 msg	New, not used yet	新規、未使用
-# userland/desktop/installer/screens.c:959
+# userland/desktop/installer/screens.c:1040
 msg	Mounted now (it is unmounted before a write)	マウント中（書き込みの前にアンマウントします）
-# userland/desktop/installer/screens.c:983
+# userland/desktop/installer/screens.c:1075
 msg	Free space: {1} at most in one place	空き: 1 か所で最大 {1}
-# userland/desktop/installer/screens.c:991
+# userland/desktop/installer/screens.c:1083
 msg	Delete partition	パーティションを削除
-# userland/desktop/installer/screens.c:1006
+# userland/desktop/installer/screens.c:1101
 msg	Size	大きさ
-# userland/desktop/installer/screens.c:1011
+# userland/desktop/installer/screens.c:1108
 msg	Create partition	パーティションを作成
-# userland/desktop/installer/screens.c:1018
+# userland/desktop/installer/screens.c:1119
 msg	The disk has no EFI system partition: one of 512 MiB is made before the first new partition.	このディスクには EFI システムパーティションがありません。最初に作るパーティションの前に 512 MiB のものを作ります。
-# userland/desktop/installer/screens.c:1027
+# userland/desktop/installer/screens.c:1135
 msg	The table was written, but the new partitions can be used only after the computer restarts.	テーブルは書き込みましたが、新しいパーティションはコンピュータを再起動するまで使えません。
-# userland/desktop/installer/screens.c:1048
+# userland/desktop/installer/screens.c:1157
 msg	The system needs at least {1}. The partition chosen is formatted (UFS).	システムには {1} 以上が必要です。選んだパーティションはフォーマット（UFS）されます。
-# userland/desktop/installer/screens.c:1070
+# userland/desktop/installer/screens.c:1181
 msg	A swap file of {1} is made on the system's partition.	システムのパーティションに {1} のスワップファイルを作ります。
-# userland/desktop/installer/screens.c:1139
+# userland/desktop/installer/screens.c:1267
 msg	In use by the running system	動作中のシステムが使用中
-# userland/desktop/installer/screens.c:1141
-msg	Its contents are erased:	消える中身:
-# userland/desktop/installer/screens.c:1141
+# userland/desktop/installer/screens.c:1269
 msg	unknown contents	不明な中身
-# userland/desktop/installer/screens.c:1204
+# userland/desktop/installer/screens.c:1272
+msg	Its contents are erased:	消える中身:
+# userland/desktop/installer/screens.c:1354
 msg	The firmware comes under its makers' licences. Read them, and agree to install the firmware.	ファームウェアには提供元のライセンスがあります。読んで同意すると、ファームウェアをインストールします。
-# userland/desktop/installer/screens.c:1206
+# userland/desktop/installer/screens.c:1356
 msg	Read the licences	ライセンスを読む
-# userland/desktop/installer/screens.c:1219, userland/desktop/installer/screens.c:1219
+# userland/desktop/installer/screens.c:1376
 msg	I agree to the firmware's licences	ファームウェアのライセンスに同意する
-# userland/desktop/installer/screens.c:1238
+# userland/desktop/installer/screens.c:1401
 msg	Needs {1} (with room to spare); the system's partition has {2}.	必要な大きさは {1}（余裕を含む）、システムのパーティションは {2} です。
-# userland/desktop/installer/screens.c:1288
-msg	Hide	隠す
-# userland/desktop/installer/screens.c:1288
+# userland/desktop/installer/screens.c:1456
 msg	Show	表示
-# userland/desktop/installer/screens.c:1300
+# userland/desktop/installer/screens.c:1458
+msg	Hide	隠す
+# userland/desktop/installer/screens.c:1472
 msg	required	必須
-# userland/desktop/installer/screens.c:1302
-msg	comes with another item	他の項目に必要
-# userland/desktop/installer/screens.c:1362
-msg	Licence {1} of {2}: {3}, {4}	ライセンス {1}/{2}: {3}、{4}
-# userland/desktop/installer/screens.c:1367
-msg	Previous licence	前のライセンス
-# userland/desktop/installer/screens.c:1371
-msg	Next licence	次のライセンス
-# userland/desktop/installer/screens.c:1375
-msg	Previous page	前のページ
-# userland/desktop/installer/screens.c:1381
-msg	Next page	次のページ
-# userland/desktop/installer/screens.c:1390
-msg	Back to the items	項目に戻る
-# userland/desktop/installer/screens.c:1452
-msg	User name	ユーザ名
-# userland/desktop/installer/screens.c:1452
-msg	small letters, such as alice	英小文字（例: alice）
-# userland/desktop/installer/screens.c:1453
-msg	Full name	フルネーム
-# userland/desktop/installer/screens.c:1453
-msg	Optional	省略可
-# userland/desktop/installer/screens.c:1454
-msg	Password	パスワード
-# userland/desktop/installer/screens.c:1454
-msg	The user's password	ユーザのパスワード
-# userland/desktop/installer/screens.c:1455
-msg	Password again	パスワード（確認）
-# userland/desktop/installer/screens.c:1455, userland/desktop/installer/screens.c:1457
-msg	The same again	もう一度同じものを
-# userland/desktop/installer/screens.c:1456
-msg	Root's password	root のパスワード
-# userland/desktop/installer/screens.c:1456
-msg	The administrator's password	管理者のパスワード
-# userland/desktop/installer/screens.c:1457
-msg	Root's password again	root のパスワード（確認）
-# userland/desktop/installer/screens.c:1458, userland/desktop/installer/screens.c:1609
-msg	Computer's name	コンピュータ名
-# userland/desktop/installer/screens.c:1462
-msg	Log in automatically	自動でログイン
 # userland/desktop/installer/screens.c:1474
-msg	Without the desktop the system starts at the console's login.	デスクトップが無い時は、システムはコンソールのログインで起動します。
-# userland/desktop/installer/screens.c:1476
-msg	The user is an administrator of the installed system (the wheel group).	このユーザはインストールしたシステムの管理者（wheel グループ）になります。
-# userland/desktop/installer/screens.c:1544
-msg	Disk	ディスク
-# userland/desktop/installer/screens.c:1550
-msg	The whole disk: an EFI system partition of {1}, a swap partition of {2}, the system's partition in the rest	ディスク全体: {1} の EFI システムパーティション、{2} のスワップパーティション、残りをシステムのパーティションに
-# userland/desktop/installer/screens.c:1552, userland/desktop/installer/screens.c:1841
-msg	Partitions	パーティション
-# userland/desktop/installer/screens.c:1556
-msg	Erased:	消えるもの:
-# userland/desktop/installer/screens.c:1564
-msg	EFI system partition	EFI システムパーティション
-# userland/desktop/installer/screens.c:1570, userland/desktop/installer/screens.c:1578
-msg	formatted	フォーマットします
-# userland/desktop/installer/screens.c:1571
-msg	System's partition	システムのパーティション
-# userland/desktop/installer/screens.c:1581
-msg	A swap file of {1} on the system's partition	システムのパーティションに {1} のスワップファイル
-# userland/desktop/installer/screens.c:1590
-msg	the loader there is kept	今あるローダは残します
+msg	comes with another item	他の項目に必要
+# userland/desktop/installer/screens.c:1539
+msg	Licence {1} of {2}: {3}, {4}	ライセンス {1}/{2}: {3}、{4}
+# userland/desktop/installer/screens.c:1549
+msg	Previous licence	前のライセンス
+# userland/desktop/installer/screens.c:1558
+msg	Next licence	次のライセンス
+# userland/desktop/installer/screens.c:1567
+msg	Previous page	前のページ
+# userland/desktop/installer/screens.c:1578
+msg	Next page	次のページ
 # userland/desktop/installer/screens.c:1591
-msg	Loader	ローダ
-# userland/desktop/installer/screens.c:1607
-msg	logs in automatically	自動でログイン
-# userland/desktop/installer/screens.c:1608, userland/desktop/installer/screens.c:1857
-msg	User	ユーザ
-# userland/desktop/installer/screens.c:1614
-msg	Everything on the disk is erased.	ディスクの内容はすべて消えます。
-# userland/desktop/installer/screens.c:1622, userland/desktop/installer/screens.c:1622
-msg	Erase the disk	ディスクを消去する
-# userland/desktop/installer/screens.c:1675
-msg	Step {1} of {2}: {3}	段階 {1}/{2}: {3}
-# userland/desktop/installer/screens.c:1676
-msg	Starting	開始しています
-# userland/desktop/installer/screens.c:1678
-msg	stopping	中止しています
-# userland/desktop/installer/screens.c:1698
-msg	{1}: {2} of {3}	{1}: {2}/{3}
-# userland/desktop/installer/screens.c:1703
-msg	Time so far: {1}	経過時間: {1}
-# userland/desktop/installer/screens.c:1707
-msg	Do not turn off or restart the computer	コンピュータの電源を切ったり再起動したりしないでください
-# userland/desktop/installer/screens.c:1708
-msg	The disk is being written. Turning the computer off now leaves the disk partly written. Making the swap file can take several minutes.	ディスクに書き込んでいます。今電源を切ると、ディスクは途中まで書かれた状態になります。スワップファイルの作成には数分かかることがあります。
-# userland/desktop/installer/screens.c:1732
-msg	At the step {1}: {2}	段階「{1}」: {2}
-# userland/desktop/installer/screens.c:1740
-msg	What the disk holds now	ディスクの今の状態
-# userland/desktop/installer/screens.c:1742
-msg	The disk was not changed.	ディスクは変更していません。
-# userland/desktop/installer/screens.c:1749
-msg	The installation began: the partition table and the partitions may have been changed and formatted. The installed system does not start, for its start was not written. A restart may be needed before the disk is used again.	インストールは始まっていたため、パーティションテーブルとパーティションが変更・フォーマットされている可能性があります。起動の設定は書かれていないので、このディスクからは起動しません。ディスクをもう一度使う前に再起動が必要なことがあります。
-# userland/desktop/installer/screens.c:1756
-msg	Start over to choose again, or close the installer and keep using the desktop.	「最初からやり直す」で選び直すか、インストーラを閉じてデスクトップを使い続けられます。
+msg	Back to the items	項目に戻る
+# userland/desktop/installer/screens.c:1659
+msg	User name	ユーザ名
+# userland/desktop/installer/screens.c:1659
+msg	small letters, such as alice	英小文字（例: alice）
+# userland/desktop/installer/screens.c:1660
+msg	Full name	フルネーム
+# userland/desktop/installer/screens.c:1660
+msg	Optional	省略可
+# userland/desktop/installer/screens.c:1661
+msg	Password	パスワード
+# userland/desktop/installer/screens.c:1661
+msg	The user's password	ユーザのパスワード
+# userland/desktop/installer/screens.c:1662
+msg	Password again	パスワード（確認）
+# userland/desktop/installer/screens.c:1662, userland/desktop/installer/screens.c:1664
+msg	The same again	もう一度同じものを
+# userland/desktop/installer/screens.c:1663
+msg	Root's password	root のパスワード
+# userland/desktop/installer/screens.c:1663
+msg	The administrator's password	管理者のパスワード
+# userland/desktop/installer/screens.c:1664
+msg	Root's password again	root のパスワード（確認）
+# userland/desktop/installer/screens.c:1665, userland/desktop/installer/screens.c:1860
+msg	Computer's name	コンピュータ名
+# userland/desktop/installer/screens.c:1669
+msg	Log in automatically	自動でログイン
+# userland/desktop/installer/screens.c:1687
+msg	Without the desktop the system starts at the console's login.	デスクトップが無い時は、システムはコンソールのログインで起動します。
+# userland/desktop/installer/screens.c:1692
+msg	The user is an administrator of the installed system (the wheel group).	このユーザはインストールしたシステムの管理者（wheel グループ）になります。
+# userland/desktop/installer/screens.c:1768
+msg	Disk	ディスク
+# userland/desktop/installer/screens.c:1774
+msg	The whole disk: an EFI system partition of {1}, a swap partition of {2}, the system's partition in the rest	ディスク全体: {1} の EFI システムパーティション、{2} のスワップパーティション、残りをシステムのパーティションに
+# userland/desktop/installer/screens.c:1776, userland/desktop/installer/screens.c:2130
+msg	Partitions	パーティション
 # userland/desktop/installer/screens.c:1780
-msg	{1} is installed.	{1} をインストールしました。
-# userland/desktop/installer/screens.c:1785
-msg	The disk already had a loader, which was kept. Restart and choose {1} in the firmware's boot menu (\\EFI\\ZEDBSD\\BOOTX64.EFI on the disk).	ディスクには既にローダがあったので、そのまま残しました。再起動して、ファームウェアのブートメニューで {1}（ディスクの \\EFI\\ZEDBSD\\BOOTX64.EFI）を選んでください。
-# userland/desktop/installer/screens.c:1789
-msg	Restart and choose the disk in the firmware's boot menu; the firmware's settings can make it the first to start.	再起動して、ファームウェアのブートメニューでこのディスクを選んでください。ファームウェアの設定で最初に起動するようにもできます。
-# userland/desktop/installer/screens.c:1792
-msg	Start the installed system	インストールしたシステムを起動する
+msg	Erased:	消えるもの:
+# userland/desktop/installer/screens.c:1788
+msg	EFI system partition	EFI システムパーティション
+# userland/desktop/installer/screens.c:1794, userland/desktop/installer/screens.c:1802
+msg	formatted	フォーマットします
 # userland/desktop/installer/screens.c:1795
-msg	Log in as {1} with the password you chose.	{1} と、選んだパスワードでログインします。
-# userland/desktop/installer/screens.c:1798
-msg	The system has no swap: the swap file could not be used.	スワップファイルを使えなかったため、システムにスワップはありません。
-# userland/desktop/installer/screens.c:1801
-msg	Remove the installer's USB	インストーラの USB を外してください
-# userland/desktop/installer/screens.c:1802
-msg	The installer's image is for installing only: once the installed system starts, remove it and do not use it as your system. Until it is removed the firmware may start from it again.	インストーラのイメージはインストール専用です。インストールしたシステムが起動したら外し、普段のシステムとして使わないでください。外すまでは、ファームウェアが再びこちらから起動することがあります。
-# userland/desktop/installer/screens.c:1808
-msg	Close keeps the desktop of the installer's image for now.	「閉じる」を押すと、しばらくインストーラのイメージのデスクトップを使えます。
-# userland/desktop/installer/screens.c:1827
-msg	Welcome	ようこそ
-# userland/desktop/installer/screens.c:1828
-msg	Install {1} on this computer	{1} をこのコンピュータにインストール
-# userland/desktop/installer/screens.c:1832
-msg	Choose a disk	ディスクの選択
-# userland/desktop/installer/screens.c:1833
-msg	The disk {1} is installed on	{1} をインストールするディスク
-# userland/desktop/installer/screens.c:1837
-msg	How to use the disk	ディスクの使い方
-# userland/desktop/installer/screens.c:1838
-msg	The whole disk, or partitions you choose	ディスク全体か、選んだパーティション
-# userland/desktop/installer/screens.c:1842
-msg	Delete or create partitions (written at once)	パーティションの削除と作成（すぐに書き込みます）
-# userland/desktop/installer/screens.c:1845
-msg	The system's partition	システムのパーティション
-# userland/desktop/installer/screens.c:1846
-msg	Where the system goes	システムを入れる場所
-# userland/desktop/installer/screens.c:1850
-msg	A swap partition, or a swap file	スワップパーティションか、スワップファイル
-# userland/desktop/installer/screens.c:1853
-msg	What to install	インストールする項目
+msg	System's partition	システムのパーティション
+# userland/desktop/installer/screens.c:1805
+msg	A swap file of {1} on the system's partition	システムのパーティションに {1} のスワップファイル
+# userland/desktop/installer/screens.c:1818
+msg	the loader there is kept	今あるローダは残します
+# userland/desktop/installer/screens.c:1819
+msg	Loader	ローダ
 # userland/desktop/installer/screens.c:1854
-msg	The base system, the desktop, the firmware and packages	基本システム・デスクトップ・ファームウェア・パッケージ
-# userland/desktop/installer/screens.c:1858
-msg	The user, the passwords and the computer's name	ユーザ・パスワード・コンピュータ名
-# userland/desktop/installer/screens.c:1861
-msg	Confirm	最終確認
-# userland/desktop/installer/screens.c:1862
-msg	Nothing is written before Install	「インストール」を押すまで何も書き込みません
+msg	logs in automatically	自動でログイン
+# userland/desktop/installer/screens.c:1859, userland/desktop/installer/screens.c:2146
+msg	User	ユーザ
 # userland/desktop/installer/screens.c:1865
+msg	Everything on the disk is erased.	ディスクの内容はすべて消えます。
+# userland/desktop/installer/screens.c:1876
+msg	Erase the disk	ディスクを消去する
+# userland/desktop/installer/screens.c:1935
+msg	Starting	開始しています
+# userland/desktop/installer/screens.c:1938
+msg	Step {1} of {2}: {3}	段階 {1}/{2}: {3}
+# userland/desktop/installer/screens.c:1941
+msg	stopping	中止しています
+# userland/desktop/installer/screens.c:1971
+msg	{1}: {2} of {3}	{1}: {2}/{3}
+# userland/desktop/installer/screens.c:1978
+msg	Time so far: {1}	経過時間: {1}
+# userland/desktop/installer/screens.c:1982
+msg	Do not turn off or restart the computer	コンピュータの電源を切ったり再起動したりしないでください
+# userland/desktop/installer/screens.c:1983
+msg	The disk is being written. Turning the computer off now leaves the disk partly written. Making the swap file can take several minutes.	ディスクに書き込んでいます。今電源を切ると、ディスクは途中まで書かれた状態になります。スワップファイルの作成には数分かかることがあります。
+# userland/desktop/installer/screens.c:2009
+msg	At the step {1}: {2}	段階「{1}」: {2}
+# userland/desktop/installer/screens.c:2017
+msg	What the disk holds now	ディスクの今の状態
+# userland/desktop/installer/screens.c:2019
+msg	The disk was not changed.	ディスクは変更していません。
+# userland/desktop/installer/screens.c:2030
+msg	The installation began: the partition table and the partitions may have been changed and formatted. The installed system does not start, for its start was not written. A restart may be needed before the disk is used again.	インストールは始まっていたため、パーティションテーブルとパーティションが変更・フォーマットされている可能性があります。起動の設定は書かれていないので、このディスクからは起動しません。ディスクをもう一度使う前に再起動が必要なことがあります。
+# userland/desktop/installer/screens.c:2039
+msg	Start over to choose again, or close the installer and keep using the desktop.	「最初からやり直す」で選び直すか、インストーラを閉じてデスクトップを使い続けられます。
+# userland/desktop/installer/screens.c:2064
+msg	{1} is installed.	{1} をインストールしました。
+# userland/desktop/installer/screens.c:2069
+msg	The disk already had a loader, which was kept. Restart and choose {1} in the firmware's boot menu (\\EFI\\ZEDBSD\\BOOTX64.EFI on the disk).	ディスクには既にローダがあったので、そのまま残しました。再起動して、ファームウェアのブートメニューで {1}（ディスクの \\EFI\\ZEDBSD\\BOOTX64.EFI）を選んでください。
+# userland/desktop/installer/screens.c:2073
+msg	Restart and choose the disk in the firmware's boot menu; the firmware's settings can make it the first to start.	再起動して、ファームウェアのブートメニューでこのディスクを選んでください。ファームウェアの設定で最初に起動するようにもできます。
+# userland/desktop/installer/screens.c:2078
+msg	Start the installed system	インストールしたシステムを起動する
+# userland/desktop/installer/screens.c:2081
+msg	Log in as {1} with the password you chose.	{1} と、選んだパスワードでログインします。
+# userland/desktop/installer/screens.c:2085
+msg	The system has no swap: the swap file could not be used.	スワップファイルを使えなかったため、システムにスワップはありません。
+# userland/desktop/installer/screens.c:2088
+msg	Remove the installer's USB	インストーラの USB を外してください
+# userland/desktop/installer/screens.c:2089
+msg	The installer's image is for installing only: once the installed system starts, remove it and do not use it as your system. Until it is removed the firmware may start from it again.	インストーラのイメージはインストール専用です。インストールしたシステムが起動したら外し、普段のシステムとして使わないでください。外すまでは、ファームウェアが再びこちらから起動することがあります。
+# userland/desktop/installer/screens.c:2097
+msg	Close keeps the desktop of the installer's image for now.	「閉じる」を押すと、しばらくインストーラのイメージのデスクトップを使えます。
+# userland/desktop/installer/screens.c:2116
+msg	Welcome	ようこそ
+# userland/desktop/installer/screens.c:2117
+msg	Install {1} on this computer	{1} をこのコンピュータにインストール
+# userland/desktop/installer/screens.c:2121
+msg	Choose a disk	ディスクの選択
+# userland/desktop/installer/screens.c:2122
+msg	The disk {1} is installed on	{1} をインストールするディスク
+# userland/desktop/installer/screens.c:2126
+msg	How to use the disk	ディスクの使い方
+# userland/desktop/installer/screens.c:2127
+msg	The whole disk, or partitions you choose	ディスク全体か、選んだパーティション
+# userland/desktop/installer/screens.c:2131
+msg	Delete or create partitions (written at once)	パーティションの削除と作成（すぐに書き込みます）
+# userland/desktop/installer/screens.c:2134
+msg	The system's partition	システムのパーティション
+# userland/desktop/installer/screens.c:2135
+msg	Where the system goes	システムを入れる場所
+# userland/desktop/installer/screens.c:2139
+msg	A swap partition, or a swap file	スワップパーティションか、スワップファイル
+# userland/desktop/installer/screens.c:2142
+msg	What to install	インストールする項目
+# userland/desktop/installer/screens.c:2143
+msg	The base system, the desktop, the firmware and packages	基本システム・デスクトップ・ファームウェア・パッケージ
+# userland/desktop/installer/screens.c:2147
+msg	The user, the passwords and the computer's name	ユーザ・パスワード・コンピュータ名
+# userland/desktop/installer/screens.c:2150
+msg	Confirm	最終確認
+# userland/desktop/installer/screens.c:2151
+msg	Nothing is written before Install	「インストール」を押すまで何も書き込みません
+# userland/desktop/installer/screens.c:2154
 msg	Installing	インストール中
-# userland/desktop/installer/screens.c:1866
+# userland/desktop/installer/screens.c:2155
 msg	{1} is being written to the disk	{1} をディスクに書き込んでいます
-# userland/desktop/installer/screens.c:1870
+# userland/desktop/installer/screens.c:2160
 msg	The installation was cancelled	インストールをキャンセルしました
-# userland/desktop/installer/screens.c:1870
+# userland/desktop/installer/screens.c:2162
 msg	The installation failed	インストールに失敗しました
-# userland/desktop/installer/screens.c:1871
+# userland/desktop/installer/screens.c:2163
 msg	The installed system does not start	インストール先からは起動しません
-# userland/desktop/installer/screens.c:1874
+# userland/desktop/installer/screens.c:2165
+msg	Nothing was installed	何もインストールしていません
+# userland/desktop/installer/screens.c:2168
 msg	Done	完了
-# userland/desktop/installer/screens.c:1875
+# userland/desktop/installer/screens.c:2169
 msg	The installation has finished	インストールが終わりました
-# userland/desktop/installer/screens.c:1907
+# userland/desktop/installer/screens.c:2205
 msg	SATA/IDE	SATA/IDE
-# userland/desktop/installer/screens.c:1911
+# userland/desktop/installer/screens.c:2212
 msg	USB or removable	USB・取り外し可能
