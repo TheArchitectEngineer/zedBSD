@@ -159,7 +159,7 @@ p001 の表の byte・bit の位置（host で測った物）で書く。値:
 
 - work channel を作る時に copy の class（profile の `class_copy`）の object を GR の runlist の copy engine で確保し（`NVC5B5` の params: version 1、
   engine type = GR の runlist にある COPYn）、最初の push で subchannel 4 に SET_OBJECT。
-- NV12 の image の plane を buffer へ写す時（`vkCmdCopyImageToBuffer`、aspect PLANE_0・PLANE_1）: 
+- NV12 の image の plane を buffer へ写す時（`vkCmdCopyImageToBuffer`、aspect PLANE_0・PLANE_1）:
   OFFSET_IN = plane の address、OFFSET_OUT = buffer の address、PITCH_OUT = bufferRowLength（0 なら幅）× pixel の byte、
   LINE_LENGTH_IN = 幅 × pixel の byte、LINE_COUNT = 高さ、SET_SRC_BLOCK_SIZE（幅 1 GOB、高さ 2 GOB、深さ 1、GOB_HEIGHT_FERMI_8）、
   SET_SRC_WIDTH = pitch、SET_SRC_HEIGHT = plane の行、SET_SRC_DEPTH 1、SET_SRC_LAYER 0、SET_SRC_ORIGIN（x byte、y 行）、
