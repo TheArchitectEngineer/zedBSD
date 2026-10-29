@@ -3,7 +3,7 @@
 # ws314-p010 規約の全文の見直し
 
 - 親: [WS314](../ws.md)。Queue: 規約の見直しの割当（担当 P2、2026-10-30）。
-- Status: cleared（2026-10-30。書き方だけを直し、build・host 試験で動作が同じことを確かめた。残りは下の「残り」）
+- Status: cleared（2026-10-30。書き方だけを直し、build・host 試験・QEMU（zedBSD の guest.sh・guest-browser.sh）・FreeBSD の backend-test で動作が同じことを確かめた。残りは下の「残り」）
 - Disposition: normal
 
 ## 目的・受け入れ
@@ -66,10 +66,23 @@ comment なしで認める形。`style-check.py` の critical section の検出�
 - `doc-examples.sh build/ws314-p010-linux/lib`: SUMMARY pass=71 fail=0 not-done=0（clang・gcc の `-Wall -Wextra -Werror`、link、文書との一致）。
 - `git diff --check`: 出力なし。
 
+- QEMU（zedBSD、2026-10-30、tree `2bf382383`（main を merge した後）、image は
+  `plan/tools/guest/test-image.sh plan/ws314/tests/config-amd64-browser.mk build/ws314-p010-img`（guest の config を含む上位の集合）、
+  `flock /tmp/zedbsd-image-build.lock` の下、exit 0、compiler の warning 0（`warning:` の 1 行は gmake の jobserver の通知）、boot disk は
+  `qemu-unsafe.sh` で cache=unsafe、Venus、compositor は `--testing --glass`。判定は SSH で取った結果の行と画面の PNG）:
+  - `sh plan/ws314/tests/guest.sh build/p2-q/p010-guest1 build/ws314-p010-img`: `ws314-guest: PASS`（post PASS posts=21000、process・launch・
+    language・instance 各 PASS failures=0、Terminal の command と shell の終わりで閉じる（reason=shell-exited）、新しい窓 PASS、Files の
+    double click で Text Editor PASS、thumbnail（child=1）PASS）。
+  - `sh plan/ws314/tests/guest-browser.sh build/p2-q/p010-browser1 build/ws314-p010-img`: `ws314-browser: PASS`（最初の page の script、
+    両 page の画像の取得、2 つ目の page の非同期の取得、script の request の応答）。画面 `build/p2-q/p010-browser1/browser.png`
+    （2 つ目の page と画像が描かれている）。
+- FreeBSD（P1 の 15.1 の guest を読み取り専用の base に `GUEST_DIR`、overlay は `build/tmp/p010/freebsd-run1`、SSH_PORT 2245、
+  `plan/tools/keiland-freebsd/backend-test.sh build/tmp/p010/freebsd-backend1`、tree `2bf382383`）: build・build-warnings (0)・install・audit・
+  host-seat-freebsd・host-session・host-power・sync-rejected・dmabuf-export-rejected すべて PASS（`process-posix.c` を compile した）。
+
 ## 未実施
 
-- QEMU（zedBSD）・実機の回帰（Q1 に頼む）。`doc-examples.sh guest` の写真（comment と空行だけの変更なので未実施）。
-- FreeBSD の build（host に無い。`process-posix.c` の FreeBSD の枝は直した部分に触れない）。
+- 実機の回帰。`doc-examples.sh guest` の写真（comment と空行だけの変更なので未実施）。
 
 ## 他の WS の既存の違反（直していない、記録のみ）
 
