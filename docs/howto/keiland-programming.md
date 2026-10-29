@@ -4866,9 +4866,8 @@ primes_finish(
 	if (primes->count == NULL)
 		return;
 
-	/* Stops the worker; its thread has posted all it will once it is joined. */
+	/* Stops the worker; it posts its count as it ends, and taking that post joins its thread. */
 	atomic_store(&primes->count->stop, 1);
-	(void)thrd_join(primes->worker, NULL);
 
 	/* Takes the posts left, without waiting, until its count came back (the last of them). */
 	while (primes->count != NULL) {
@@ -5006,7 +5005,7 @@ primes->count = count;
 
 From here until `POST_FINISHED` comes back, the program does not touch the record but for `stop`.
 
-**The worker ([lines 510-558](keiland-examples/08-worker.c#L510-L558), `primes_count`).** A **worker** is a thread of the program's own that does a long job. This one looks at every number below the limit. Every `STEP` numbers it reads `stop` and ends when it is asked, or posts a report to the window with `kl_window_post` ([lines 529-542](keiland-examples/08-worker.c#L529-L542)):
+**The worker ([lines 509-557](keiland-examples/08-worker.c#L509-L557), `primes_count`).** A **worker** is a thread of the program's own that does a long job. This one looks at every number below the limit. Every `STEP` numbers it reads `stop` and ends when it is asked, or posts a report to the window with `kl_window_post` ([lines 528-541](keiland-examples/08-worker.c#L528-L541)):
 
 ```c
 if (number % STEP == 0) {
@@ -5019,7 +5018,7 @@ if (number % STEP == 0) {
 			free(progress);
 ```
 
-When a post fails it did not take the data, so the worker frees the report itself. At the end it hands the count back with `kl_app_post` ([lines 551-554](keiland-examples/08-worker.c#L551-L554)):
+When a post fails it did not take the data, so the worker frees the report itself. At the end it hands the count back with `kl_app_post` ([lines 550-553](keiland-examples/08-worker.c#L550-L553)):
 
 ```c
 status = kl_app_post(count->app, POST_FINISHED, count);
@@ -5075,11 +5074,10 @@ if (clicked && primes->count != NULL)
 
 The worker sees it within `STEP` numbers and hands the count back as usual, short of the limit, and the line says "Stopped" ([lines 429-432](keiland-examples/08-worker.c#L429-L432)).
 
-**The end of the program ([191-192](keiland-examples/08-worker.c#L191-L192) and [473-508](keiland-examples/08-worker.c#L473-L508), `primes_finish`).** The window may close while a count runs. The program raises `stop`, joins the thread, then takes the posts it left, dispatching without waiting, until the count came back:
+**The end of the program ([191-192](keiland-examples/08-worker.c#L191-L192) and [473-507](keiland-examples/08-worker.c#L473-L507), `primes_finish`).** The window may close while a count runs. The program raises `stop`, then takes the posts the worker left, dispatching without waiting, until the count came back; taking that last post joins the thread, so the thread is joined exactly once:
 
 ```c
 atomic_store(&primes->count->stop, 1);
-(void)thrd_join(primes->worker, NULL);
 /* ... */
 while (primes->count != NULL) {
 	status = kl_app_dispatch(primes->app, 0);
@@ -5092,12 +5090,12 @@ It does this because the application must not be closed while a thread may still
 
 ### The rules
 
-- `kl_app_post(app, code, data)` and `kl_window_post(window, code, data)` may be called from any thread. Every other call stays on the application's thread: a worker computes and posts, and the application's thread draws ([lines 529-554](keiland-examples/08-worker.c#L529-L554)).
+- `kl_app_post(app, code, data)` and `kl_window_post(window, code, data)` may be called from any thread. Every other call stays on the application's thread: a worker computes and posts, and the application's thread draws ([lines 528-553](keiland-examples/08-worker.c#L528-L553)).
 - A post wakes `kl_app_dispatch` ([lines 155-165](keiland-examples/08-worker.c#L155-L165)).
 - A post to the window arrives among the window's inputs, as `KL_WINDOW_POST` with `input.code` and `input.data`. A post to the application arrives as `KL_APP_POST` with `event.code` and `event.data`, and so does a post to a window that closed first, with `window` `NULL` ([lines 344-369](keiland-examples/08-worker.c#L344-L369)). Use the window's post for news that belongs with that window's input, and the application's for the rest.
 - The posts of one thread arrive in the order they were made, and none is dropped: what the queue has no room for waits for the next dispatch. The posts of two threads have no order between them.
-- The data goes to whoever takes the event. libkeiland neither copies it nor frees it. A post that fails (`ENOMEM`, or `EINVAL` for a `NULL` application or window) did not take the data ([lines 536-541](keiland-examples/08-worker.c#L536-L541)).
-- End the threads that post before `kl_app_close`, and take what they posted: the posts not taken are dropped with their data ([lines 473-508](keiland-examples/08-worker.c#L473-L508)).
+- The data goes to whoever takes the event. libkeiland neither copies it nor frees it. A post that fails (`ENOMEM`, or `EINVAL` for a `NULL` application or window) did not take the data ([lines 535-540](keiland-examples/08-worker.c#L535-L540)).
+- End the threads that post before `kl_app_close`, and take what they posted: the posts not taken are dropped with their data ([lines 473-507](keiland-examples/08-worker.c#L473-L507)).
 - A value two threads use at once is atomic or under a mutex (`stop`, [lines 47-61](keiland-examples/08-worker.c#L47-L61)).
 
 ### Pitfalls

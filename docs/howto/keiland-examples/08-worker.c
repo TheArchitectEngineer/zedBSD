@@ -487,9 +487,8 @@ primes_finish(
 	if (primes->count == NULL)
 		return;
 
-	/* Stops the worker; its thread has posted all it will once it is joined. */
+	/* Stops the worker; it posts its count as it ends, and taking that post joins its thread. */
 	atomic_store(&primes->count->stop, 1);
-	(void)thrd_join(primes->worker, NULL);
 
 	/* Takes the posts left, without waiting, until its count came back (the last of them). */
 	while (primes->count != NULL) {
