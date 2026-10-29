@@ -31,6 +31,7 @@
 
 #include "drivers/gpu/mali/vk/vk-build.h"
 #include "drivers/gpu/mali/vk/vk-desc.h"
+#include "drivers/gpu/mali/vk/vk-meta.h"
 
 #include "drivers/gpu/i915/vk/vk-codec.inc"
 
@@ -55,15 +56,52 @@
 #define TLS_TOTAL_MAX		(64ULL << 20)
 #define TLS_ALIGN		4096U
 
+/*
+ * The workgroup memory of a dispatch: the workgroups of one core that
+ * hold an instance at once are at most the threads TLS_THREADS_PER_CORE
+ * says over a workgroup's threads, and no more than the dispatch has; all
+ * the instances of all the cores take at most WLS_TOTAL_MAX, fewer
+ * instances when they would take more.  A core with fewer instances than
+ * the workgroups it could run holds the others back until one is free,
+ * so the bound costs speed and never correctness.  The memory does not
+ * cross a 4 GiB line.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.6 src/panfrost/lib/pan_desc.h (pan_wls_instances: the
+ * product of the workgroup counts each rounded up to a power of two;
+ * pan_calc_wls_instances: no more instances than a core runs at once,
+ * fewer holding workgroups back; pan_calc_total_wls_size: an instance's
+ * bytes times the instances times the cores' number range);
+ * src/panfrost/lib/pan_desc.c (pan_emit_tls: the base 4096-byte
+ * aligned, inside one 4 GiB part); src/panfrost/vulkan/csf/
+ * panvk_vX_cmd_dispatch.c (cmd_dispatch_prepare_tls: the memory taken
+ * for each dispatch).
+ */
+#define WLS_TOTAL_MAX		(32ULL << 20)
+#define WLS_ALIGN		4096U
+
+/* A dispatch's workgroup memory: the instances a core, an instance's bytes, and the base. */
+struct workgroup_memory {
+	uint32_t instances;
+	uint32_t instance_bytes;
+	uint64_t base;
+};
+
 static int submit(struct mali_vk_session *session, struct i915_wire_reader *reader, struct i915_wire_writer *reply);
 static int build_stream(struct mali_vk_session *session, struct mali_vk_command_buffer **commands, uint32_t count, uint64_t *address, uint32_t *bytes);
 static void run_records(struct mali_vk_build *build, const struct mali_vk_command_buffer *command);
 static void run_dispatch(struct mali_vk_build *build, const struct mali_vk_record *entry);
+static uint64_t storage_descriptor(struct mali_vk_build *build, uint32_t tls_bytes, const struct workgroup_memory *wls);
+static uint64_t core_range(const struct mali_vk_build *build);
+static int workgroup_memory(struct mali_vk_build *build, const struct mali_shader_program *program, const uint32_t *counts, struct workgroup_memory *wls);
+static uint32_t power_above(uint32_t value);
 static void run_copy_buffer(struct mali_vk_build *build, const struct mali_vk_record *entry);
 static void run_fill_buffer(struct mali_vk_build *build, const struct mali_vk_record *entry);
 static void run_copy_image(struct mali_vk_build *build, const struct mali_vk_record *entry);
 static void run_buffer_image(struct mali_vk_build *build, const struct mali_vk_record *entry, bool to_image);
 static void run_clear_image(struct mali_vk_build *build, const struct mali_vk_record *entry);
+static bool blit_is_copy(const VkImageBlit *blit, const struct mali_vk_image *source, const struct mali_vk_image *destination);
+static void run_blit(struct mali_vk_build *build, const VkImageBlit *blit, const struct mali_vk_image *source, const struct mali_vk_image *destination, uint32_t filter);
 static void copy_span(struct mali_vk_build *build, uint64_t destination, uint64_t source, uint64_t bytes);
 static uint32_t pack_color(const struct mali_vk_format *format, const uint32_t *words);
 static uint32_t unorm8(uint32_t bits);
@@ -358,63 +396,14 @@ mali_vk_build_resources(
  * local storage (tls_bytes a thread, none for zero) for every thread of
  * every core the GPU has (by the highest core number), and no workgroup
  * memory.
- *
- * Procedure referenced: Mesa 26.2.6 src/panfrost/lib/pan_scratch.c
- * (pan_get_total_stack_size: a thread's bytes a power of two of at least
- * 16, times the threads of a core, times the cores' number range).
  */
 uint64_t
 mali_vk_build_thread_storage(
 	struct mali_vk_build *build,
 	uint32_t tls_bytes)
 {
-	uint32_t words[8];
-	volatile uint8_t *view;
-	volatile uint8_t *storage_view;
-	uint64_t address;
-	uint64_t storage;
-	uint64_t total;
-	uint64_t cores;
-	uint32_t thread_bytes;
-	int error;
-
-	/* A thread's bytes, a power of two of at least the least. */
-	storage = 0;
-	thread_bytes = 0;
-	if (tls_bytes != 0U) {
-		if (tls_bytes > MALI_DESC_TLS_MAX_BYTES) {
-			build->error = ENOTSUP;
-			return 0;
-		}
-		thread_bytes = MALI_DESC_TLS_MIN_BYTES;
-		while (thread_bytes < tls_bytes)
-			thread_bytes *= 2U;
-
-		/* The cores' number range, and the storage of all their threads (not cleared: a thread writes before it reads). */
-		cores = 64U - (uint64_t)__builtin_clzll(build->session->owner->render->device->shader_present | 1U);
-		total = (uint64_t)thread_bytes * TLS_THREADS_PER_CORE * cores;
-		if (total > TLS_TOTAL_MAX) {
-			build->error = ENOTSUP;
-			return 0;
-		}
-		if (build->error != 0)
-			return 0;
-		error = mali_stage_take(build->session->owner, total, TLS_ALIGN, &storage_view, &storage);
-		if (error != 0) {
-			build->error = error;
-			return 0;
-		}
-	}
-
-	/* The descriptor. */
-	view = mali_vk_build_take(build, MALI_DESC_BYTES, 64U, &address);
-	if (view == NULL)
-		return 0;
-	mali_desc_thread_storage(words, thread_bytes, storage);
-	store_words((volatile uint32_t *)(volatile void *)view, words, 8);
-
-	/* Succeeded: its address. */
-	return address;
+	/* Without workgroup memory. */
+	return storage_descriptor(build, tls_bytes, NULL);
 }
 
 /*
@@ -489,6 +478,45 @@ mali_vk_build_bind(
 	default:
 		break;
 	}
+}
+
+/*
+ * Writes a compute run into the stream: its staging registers (the
+ * tables, the FAU, the program, the storage, the workgroup size and
+ * count, no offsets), the run of one workgroup a task along x, and a
+ * wait for it.
+ *
+ * Procedure referenced:
+ * Mesa 26.2.6 src/panfrost/vulkan/csf/panvk_vX_cmd_dispatch.c
+ * (cmd_dispatch_shader: the staging registers a compute run reads).
+ */
+void
+mali_vk_build_compute(
+	struct mali_vk_build *build,
+	uint64_t table,
+	uint64_t fau,
+	uint64_t shader,
+	uint64_t storage,
+	const uint32_t *local_size,
+	const uint32_t *counts)
+{
+	/* The staging registers. */
+	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_SRT, table);
+	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_FAU, fau);
+	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_SPD, shader);
+	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_TSD, storage);
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_GLOBAL_OFFSET, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_WORKGROUP, mali_desc_workgroup(local_size[0], local_size[1], local_size[2])));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_X, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_Y, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_Z, 0));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_X, counts[0]));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_Y, counts[1]));
+	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_Z, counts[2]));
+
+	/* One workgroup a task along x, then the wait for the run. */
+	mali_cs_emit(&build->cs, mali_cs_run_compute(1, MALI_CS_AXIS_X, 0, 0, 0, 0));
+	mali_cs_emit(&build->cs, mali_cs_wait(MALI_VK_WAIT_ALL));
 }
 
 /*
@@ -586,6 +614,9 @@ build_stream(
 			  MALI_VK_REGISTERS_NEEDED + 4U);
 		return ENOTSUP;
 	}
+
+	/* The executor's own programs the stream runs, none yet (a stream that is not run leaves none behind). */
+	session->owner->meta_used = 0;
 
 	/* The build's state. */
 	build = kern_calloc(1, sizeof(*build));
@@ -704,6 +735,7 @@ run_dispatch(
 	const struct mali_vk_record *entry)
 {
 	const struct mali_shader_program *program;
+	struct workgroup_memory wls;
 	volatile uint8_t *view;
 	volatile uint32_t *counts;
 	uint64_t fau;
@@ -714,18 +746,12 @@ run_dispatch(
 	uint32_t index;
 	int error;
 
-	/* A bound compute pipeline without workgroup memory. */
+	/* A bound compute pipeline. */
 	if (build->compute == NULL || build->compute->program == NULL) {
 		build->error = EINVAL;
 		return;
 	}
-
 	program = build->compute->program;
-	if (program->shared_bytes != 0U) {
-		kern_logf("mali: vk: a dispatch with workgroup memory is not run\n");
-		build->error = ENOTSUP;
-		return;
-	}
 
 	/* gl_NumWorkGroups, when the program reads it. */
 	counts_address = 0;
@@ -749,27 +775,197 @@ run_dispatch(
 	}
 
 	shader = mali_vk_build_shader(build, MALI_DESC_STAGE_COMPUTE, program->work_registers, program->preload, build->compute->code_address);
-	storage = mali_vk_build_thread_storage(build, program->tls_bytes);
+	if (program->shared_bytes == 0U) {
+		storage = mali_vk_build_thread_storage(build, program->tls_bytes);
+	} else {
+		/* With the workgroup memory of the dispatch's workgroups. */
+		error = workgroup_memory(build, program, entry->values, &wls);
+		if (error != 0) {
+			if (build->error == 0)
+				build->error = error;
+			return;
+		}
+		storage = storage_descriptor(build, program->tls_bytes, &wls);
+	}
+
 	if (storage == 0U || shader == 0U)
 		return;
 
-	/* The staging registers. */
-	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_SRT, table);
-	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_FAU, fau);
-	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_SPD, shader);
-	mali_cs_move64(&build->cs, MALI_CS_COMPUTE_TSD, storage);
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_GLOBAL_OFFSET, 0));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_WORKGROUP, mali_desc_workgroup(program->local_size[0], program->local_size[1], program->local_size[2])));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_X, 0));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_Y, 0));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_OFFSET_Z, 0));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_X, entry->values[0]));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_Y, entry->values[1]));
-	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_COMPUTE_SIZE_Z, entry->values[2]));
+	/* The staging registers of the run, the run, and the wait for it. */
+	mali_vk_build_compute(build, table, fau, shader, storage, program->local_size, entry->values);
+}
 
-	/* One workgroup a task along x, then the wait for the run. */
-	mali_cs_emit(&build->cs, mali_cs_run_compute(1, MALI_CS_AXIS_X, 0, 0, 0, 0));
-	mali_cs_emit(&build->cs, mali_cs_wait(MALI_VK_WAIT_ALL));
+/*
+ * Takes the workgroup memory of a dispatch of a program with shared
+ * memory, for the workgroup counts: as many instances a core as
+ * WLS_TOTAL_MAX and the bounds above allow, from stage memory that
+ * does not cross a 4 GiB line (not cleared: shared memory starts
+ * undefined).  ENOTSUP, said once, for a program whose shared memory is
+ * above the most; the stage's error when it has no room.
+ */
+static int
+workgroup_memory(
+	struct mali_vk_build *build,
+	const struct mali_shader_program *program,
+	const uint32_t *counts,
+	struct workgroup_memory *wls)
+{
+	volatile uint8_t *view;
+	uint64_t threads;
+	uint64_t total;
+	uint64_t cores;
+	uint64_t base;
+	uint32_t instances;
+	uint32_t most;
+	uint32_t attempt;
+	int error;
+
+	/* An instance's bytes. */
+	kern_memset(wls, 0, sizeof(*wls));
+	if (program->shared_bytes > MALI_DESC_WLS_MAX_BYTES) {
+		if (!build->session->owner->wls_warned)
+			kern_logf("mali: vk: a dispatch of %u bytes of workgroup memory is not run\n", (unsigned)program->shared_bytes);
+		build->session->owner->wls_warned = true;
+		return ENOTSUP;
+	}
+	wls->instance_bytes = mali_desc_wls_bytes(program->shared_bytes);
+
+	/* The workgroups a core holds at once: no more than its threads take, nor than the dispatch has. */
+	threads = (uint64_t)program->local_size[0] * program->local_size[1] * program->local_size[2];
+	if (threads == 0U)
+		threads = 1U;
+	most = power_above((uint32_t)((TLS_THREADS_PER_CORE + threads - 1U) / threads));
+	instances = power_above(counts[0]);
+	if (instances < most)
+		instances *= power_above(counts[1]);
+	if (instances < most)
+		instances *= power_above(counts[2]);
+	if (instances > most || instances == 0U)
+		instances = most;
+
+	/* Fewer instances while all the cores' would take more than the most. */
+	cores = core_range(build);
+	total = (uint64_t)wls->instance_bytes * instances * cores;
+	while (total > WLS_TOTAL_MAX && instances > 1U) {
+		instances /= 2U;
+		total = (uint64_t)wls->instance_bytes * instances * cores;
+	}
+	if (total > WLS_TOTAL_MAX) {
+		build->error = ENOTSUP;
+		return ENOTSUP;
+	}
+	wls->instances = instances;
+
+	/* The memory, again past a 4 GiB line the first take crosses. */
+	if (build->error != 0)
+		return build->error;
+	for (attempt = 0; attempt < 2U; attempt++) {
+		error = mali_stage_take(build->session->owner, total, WLS_ALIGN, &view, &base);
+		if (error != 0) {
+			build->error = error;
+			return error;
+		}
+		if ((base >> 32) == ((base + total - 1U) >> 32)) {
+			wls->base = base;
+			return 0;
+		}
+	}
+
+	/* Two takes crossed a line: the stage is not usable for it. */
+	build->error = ENOMEM;
+	return ENOMEM;
+}
+
+/* Gives the least power of two not below a value (one for zero), at most 2^31. */
+static uint32_t
+power_above(
+	uint32_t value)
+{
+	uint32_t power;
+
+	/* Doubling from one. */
+	power = 1U;
+	while (power < value && power < 0x80000000U)
+		power *= 2U;
+
+	/* Succeeded: the power. */
+	return power;
+}
+
+/*
+ * Writes a thread storage descriptor into the stage, with a thread's
+ * local storage (tls_bytes, none for zero) and, when wls is not NULL,
+ * the workgroup memory it names.  The thread local storage is made for
+ * every thread of every core the GPU has (by the highest core number).
+ *
+ * Procedure referenced: Mesa 26.2.6 src/panfrost/lib/pan_scratch.c
+ * (pan_get_total_stack_size: a thread's bytes a power of two of at least
+ * 16, times the threads of a core, times the cores' number range).
+ */
+static uint64_t
+storage_descriptor(
+	struct mali_vk_build *build,
+	uint32_t tls_bytes,
+	const struct workgroup_memory *wls)
+{
+	uint32_t words[8];
+	volatile uint8_t *view;
+	volatile uint8_t *storage_view;
+	uint64_t address;
+	uint64_t storage;
+	uint64_t total;
+	uint64_t cores;
+	uint32_t thread_bytes;
+	int error;
+
+	/* A thread's bytes, a power of two of at least the least. */
+	storage = 0;
+	thread_bytes = 0;
+	if (tls_bytes != 0U) {
+		if (tls_bytes > MALI_DESC_TLS_MAX_BYTES) {
+			build->error = ENOTSUP;
+			return 0;
+		}
+		thread_bytes = MALI_DESC_TLS_MIN_BYTES;
+		while (thread_bytes < tls_bytes)
+			thread_bytes *= 2U;
+
+		/* The cores' number range, and the storage of all their threads (not cleared: a thread writes before it reads). */
+		cores = core_range(build);
+		total = (uint64_t)thread_bytes * TLS_THREADS_PER_CORE * cores;
+		if (total > TLS_TOTAL_MAX) {
+			build->error = ENOTSUP;
+			return 0;
+		}
+		if (build->error != 0)
+			return 0;
+		error = mali_stage_take(build->session->owner, total, TLS_ALIGN, &storage_view, &storage);
+		if (error != 0) {
+			build->error = error;
+			return 0;
+		}
+	}
+
+	/* The descriptor, with the workgroup memory when there is some. */
+	view = mali_vk_build_take(build, MALI_DESC_BYTES, 64U, &address);
+	if (view == NULL)
+		return 0;
+	mali_desc_thread_storage(words, thread_bytes, storage);
+	if (wls != NULL)
+		mali_desc_workgroup_storage(words, wls->instances, wls->instance_bytes, wls->base);
+	store_words((volatile uint32_t *)(volatile void *)view, words, 8);
+
+	/* Succeeded: its address. */
+	return address;
+}
+
+/* Reports the cores' number range: one past the highest core the GPU has. */
+static uint64_t
+core_range(
+	const struct mali_vk_build *build)
+{
+	/* The highest bit of the shader cores present, at least core 0. */
+	return 64U - (uint64_t)__builtin_clzll(build->session->owner->render->device->shader_present | 1U);
 }
 
 /* Runs vkCmdCopyBuffer: each region as a span. */
@@ -887,11 +1083,8 @@ run_copy_image(
 			source_layer = blits[index].srcSubresource.baseArrayLayer;
 			destination_layer = blits[index].dstSubresource.baseArrayLayer;
 			layers = blits[index].srcSubresource.layerCount;
-			if (blits[index].dstOffsets[1].x - dx != (int32_t)width || blits[index].dstOffsets[1].y - dy != (int32_t)height ||
-			    source->format != destination->format) {
-				if (!build->load_warned)
-					kern_logf("mali: vk: a scaling or converting blit is not run\n");
-				build->load_warned = true;
+			if (!blit_is_copy(&blits[index], source, destination)) {
+				run_blit(build, &blits[index], source, destination, entry->values[5]);
 				continue;
 			}
 		}
@@ -930,6 +1123,72 @@ run_copy_image(
 					  MALI_VK_SLOT_LOAD_STORE);
 		}
 	}
+}
+
+/*
+ * Says whether a blit region is a copy the stream's own loops take: of
+ * one format, the same size on both sides, neither side running
+ * backwards.
+ */
+static bool
+blit_is_copy(
+	const VkImageBlit *blit,
+	const struct mali_vk_image *source,
+	const struct mali_vk_image *destination)
+{
+	int32_t width;
+	int32_t height;
+
+	/* One format. */
+	if (source->format != destination->format)
+		return false;
+
+	/* The source forwards. */
+	width = blit->srcOffsets[1].x - blit->srcOffsets[0].x;
+	height = blit->srcOffsets[1].y - blit->srcOffsets[0].y;
+	if (width <= 0 || height <= 0)
+		return false;
+
+	/* The target forwards and of the same size. */
+	if (blit->dstOffsets[1].x - blit->dstOffsets[0].x != width)
+		return false;
+	if (blit->dstOffsets[1].y - blit->dstOffsets[0].y != height)
+		return false;
+
+	/* Succeeded: a copy. */
+	return true;
+}
+
+/*
+ * Runs a blit region the loops do not take on the executor's blit
+ * program; one it cannot take is left out, said once a submission.
+ */
+static void
+run_blit(
+	struct mali_vk_build *build,
+	const VkImageBlit *blit,
+	const struct mali_vk_image *source,
+	const struct mali_vk_image *destination,
+	uint32_t filter)
+{
+	int error;
+
+	/* The compute run of the region. */
+	error = mali_vk_meta_blit(build, source, destination, blit, filter);
+	if (error == 0)
+		return;
+
+	/* A region the program does not take, as before. */
+	if (error == ENOTSUP) {
+		if (!build->load_warned)
+			kern_logf("mali: vk: a scaling or converting blit is not run\n");
+		build->load_warned = true;
+		return;
+	}
+
+	/* The stage's failure fails the submission. */
+	if (build->error == 0)
+		build->error = error;
 }
 
 /* Runs vkCmdCopyBufferToImage or vkCmdCopyImageToBuffer: the rows of each region's layers. */

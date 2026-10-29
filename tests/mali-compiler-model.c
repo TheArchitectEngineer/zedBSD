@@ -15,14 +15,22 @@
  * executed by that name; the fields are read where the ISA description
  * puts them.  The model also checks the program's waits: a register a
  * message writes may not be read or written before the program waits on
- * the message's slot, ATEST needs the wait0126 flow before it and BLEND
- * the wait flow.  Both sides get the same random attributes, varyings,
+ * the message's slot, ATEST and ZS_EMIT need the wait0126 flow before
+ * them and BLEND the wait flow; ZS_EMIT and BLEND come after ATEST (and
+ * BLEND after ZS_EMIT, the order Mesa's lowering writes) and read the
+ * coverage ATEST wrote.  Both sides get the same random attributes, varyings,
  * push constants, buffers and textures; the outputs must agree.
  *
  * The model's arithmetic is that of the host's floats.  FREXPE, FLOGD,
  * FADD_LSCALE and FEXP are modelled as the logarithm and exponent
  * sequences the compiler writes expect them (an inference, not a
- * documented behaviour).  Nothing here is evidence about the GPU.
+ * documented behaviour).  A fragment's preloaded coverage (r60) is
+ * modelled as the rasterizer's coverage (bits 15:0 of r61, under the
+ * sample number in bits 23:16) less its lowest sample when it has more
+ * than one, so reading one for the other shows; ZS_EMIT writes the depth
+ * of its first source and passes its coverage through, as ATEST does (an
+ * inference from Mesa's lowering, not a documented behaviour).  Nothing
+ * here is evidence about the GPU.
  */
 
 #include "tests/mali-compiler-model.h"
@@ -85,6 +93,9 @@ struct trial {
 	uint32_t instance_id;
 	uint32_t frag_x;
 	uint32_t frag_y;
+	uint32_t raster_coverage;
+	uint32_t coverage;
+	uint32_t sample_id;
 	uint32_t images[IMAGES][IMAGE_TEXELS * 4U];
 };
 
@@ -94,6 +105,12 @@ struct result {
 	uint32_t varyings[16][4];
 	uint32_t colors[8][4];
 	uint32_t color_written;
+	uint32_t depth;
+	uint32_t depth_written;
+	uint32_t sample_mask;
+	uint32_t sample_mask_written;
+	uint32_t coverage;
+	uint32_t coverage_tested;
 	int killed;
 	uint32_t buffers[BUFFERS][WORDS];
 	uint32_t images[IMAGES][IMAGE_TEXELS * 4U];
@@ -663,6 +680,8 @@ run_reference(
 				DST(trial->instance_id);
 			} else if (inst->location == DRV_GPU_SHADER_LOCATION_FRONT_FACING) {
 				DST(0xFFFFFFFFU);
+			} else if (inst->location == DRV_GPU_SHADER_LOCATION_SAMPLE_MASK) {
+				DST(trial->raster_coverage);
 			} else if (inst->location == DRV_GPU_SHADER_LOCATION_FRAG_COORD) {
 				if (inst->component == 0U)
 					FDST((float)trial->frag_x + 0.5f);
@@ -679,7 +698,13 @@ run_reference(
 		case DRV_GPU_IR_STORE_OUTPUT:
 			if (inst->location == DRV_GPU_IR_LOCATION_POSITION && inst->component < 4U)
 				result->position[inst->component] = a;
-			else if (inst->location < 16U && ir->stage == DRV_GPU_STAGE_VERTEX)
+			else if (inst->location == DRV_GPU_IR_LOCATION_FRAG_DEPTH) {
+				result->depth = a;
+				result->depth_written = 1U;
+			} else if (inst->location == DRV_GPU_IR_LOCATION_SAMPLE_MASK) {
+				result->sample_mask = a;
+				result->sample_mask_written = 1U;
+			} else if (inst->location < 16U && ir->stage == DRV_GPU_STAGE_VERTEX)
 				result->varyings[inst->location][inst->component & 3U] = a;
 			else if (inst->location < 8U && ir->stage == DRV_GPU_STAGE_FRAGMENT) {
 				result->colors[inst->location][inst->component & 3U] = a;
@@ -888,6 +913,9 @@ struct model {
 	uint32_t fau[256];
 	uint32_t tls[TLS_WORDS];
 	uint64_t pending[8];
+	uint32_t tested;
+	uint32_t emitted;
+	uint32_t coverage_out;
 	const struct mali_shader_program *program;
 	const struct trial *trial;
 	struct result *result;
@@ -1233,8 +1261,8 @@ run_model(
 		m.r[61] = trial->instance_id;
 	} else {
 		m.r[59] = trial->frag_x | (trial->frag_y << 16);
-		m.r[60] = 1U;
-		m.r[61] = 0U;
+		m.r[60] = trial->coverage;
+		m.r[61] = trial->raster_coverage | (trial->sample_id << 16);
 	}
 
 	pc = 0U;
@@ -1292,6 +1320,10 @@ run_model(
 		}
 		if (strcmp(name, "ATEST") == 0 && last_flow != 8U && last_flow != 9U) {
 			result->why = "ATEST without wait0126 before it";
+			return;
+		}
+		if (strcmp(name, "ZS_EMIT") == 0 && last_flow != 8U && last_flow != 9U) {
+			result->why = "ZS_EMIT without wait0126 before it";
 			return;
 		}
 		if (strcmp(name, "BLEND") == 0 && last_flow != 9U) {
@@ -1373,6 +1405,8 @@ run_model(
 			m.r[dest] = float_to_int(fa, name[7] == 'S');
 		} else if (strcmp(name, "F16_TO_F32") == 0) {
 			m.r[dest] = as_bits(from_half((a >> (16U * ((word >> 28) & 1U))) & 0xFFFFU));
+		} else if (strcmp(name, "U16_TO_U32") == 0) {
+			m.r[dest] = (a >> (16U * ((word >> 28) & 1U))) & 0xFFFFU;
 		} else if (strcmp(name, "U16_TO_F32") == 0) {
 			m.r[dest] = as_bits((float)((a >> (16U * ((word >> 28) & 1U))) & 0xFFFFU));
 		} else if (strcmp(name, "V2F32_TO_V2F16") == 0) {
@@ -1546,8 +1580,33 @@ run_model(
 				*memory = m.r[(dest + slot) & 63U];
 			}
 		} else if (strcmp(name, "ATEST") == 0) {
+			if (m.tested != 0U) {
+				result->why = "a second ATEST";
+				return;
+			}
 			m.r[dest] = a;
+			m.tested = 1U;
+			m.coverage_out = a;
+			result->coverage = a;
+			result->coverage_tested = 1U;
+		} else if (strcmp(name, "ZS_EMIT") == 0) {
+			if (m.tested == 0U || m.emitted != 0U || c != m.coverage_out) {
+				result->why = "ZS_EMIT before ATEST, twice, or of a coverage ATEST did not write";
+				return;
+			}
+			if (((word >> 24) & 1U) != 0U || ((word >> 25) & 1U) == 0U) {
+				result->why = "ZS_EMIT that writes the stencil or no depth";
+				return;
+			}
+			result->depth = a;
+			result->depth_written = 1U;
+			m.r[dest] = c;
+			m.emitted = 1U;
 		} else if (strcmp(name, "BLEND") == 0) {
+			if (m.tested == 0U || c != m.coverage_out || (program->writes_depth != 0U && m.emitted == 0U)) {
+				result->why = "BLEND before ATEST or ZS_EMIT, or of a coverage ATEST did not write";
+				return;
+			}
 			index = (((uint32_t)word >> 1) & 0xFU) - 8U;
 			for (slot = 0U; slot < 4U && index < 8U; slot++)
 				result->colors[index][slot] = m.r[(dest + slot) & 63U];
@@ -1650,6 +1709,13 @@ fill_trial(
 	trial->instance_id = next_random() % 4U;
 	trial->frag_x = next_random() % 1920U;
 	trial->frag_y = next_random() % 1080U;
+
+	/* The samples covered, from the position (the other draws stay as they were). */
+	trial->raster_coverage = 1U + (trial->frag_x + 3U * trial->frag_y) % 15U;
+	trial->coverage = trial->raster_coverage;
+	if ((trial->raster_coverage & (trial->raster_coverage - 1U)) != 0U)
+		trial->coverage = trial->raster_coverage & (trial->raster_coverage - 1U);
+	trial->sample_id = trial->frag_x % 4U;
 }
 
 /* The screen space position the position program must store for a clip space one. */
@@ -1708,6 +1774,7 @@ mali_model_check(
 	uint32_t location;
 	uint32_t component;
 	uint32_t buffer;
+	uint32_t covered;
 	unsigned run;
 	int failed;
 	enum drv_gpu_shader_stage ir_stage;
@@ -1783,6 +1850,19 @@ mali_model_check(
 				printf("FAIL %s: trial %u: discarded %d, the reference %d\n", name, run, model->killed, reference->killed);
 				failed = 1;
 			} else if (reference->killed == 0) {
+				covered = trial->coverage;
+				if (reference->sample_mask_written != 0U)
+					covered &= reference->sample_mask;
+				if (model->coverage_tested == 0U || model->coverage != covered) {
+					printf("FAIL %s: trial %u: coverage tested %08x, the reference %08x\n", name, run, model->coverage, covered);
+					failed = 1;
+				}
+				if (model->depth_written != reference->depth_written ||
+				    (reference->depth_written != 0U && !close_enough(model->depth, reference->depth))) {
+					printf("FAIL %s: trial %u: depth %08x (written %u), the reference %08x (written %u)\n", name, run,
+					       model->depth, model->depth_written, reference->depth, reference->depth_written);
+					failed = 1;
+				}
 				for (location = 0U; location < 8U; location++) {
 					if ((reference->color_written & (1U << location)) == 0U)
 						continue;

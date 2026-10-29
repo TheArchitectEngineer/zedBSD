@@ -76,6 +76,15 @@ else
 	fail "mali preload ($host/preload.log)"
 fi
 
+if timeout 300 cc -std=gnu11 -DKERN_USER_ABI_LP64 -Iinclude -Isrc -I. -idirafter libc/include -Wall -Wextra -Werror \
+	tests/mali-vk-meta-host-test.c src/drivers/gpu/mali/vk/vk-meta-spirv.c src/drivers/gpu/mali/compiler/va-compile.c \
+	src/drivers/gpu/mali/compiler/va-encode.c src/drivers/gpu/mali/compiler/va-schedule.c src/drivers/gpu/compiler/spirv.c \
+	src/drivers/gpu/compiler/optimize.c -lm -o "$host/meta" > "$host/meta.log" 2>&1 && timeout 120 "$host/meta" >> "$host/meta.log" 2>&1; then
+	pass "mali meta: $(tail -n 1 "$host/meta.log")"
+else
+	fail "mali meta ($host/meta.log)"
+fi
+
 if timeout 1800 sh plan/ws313/tests/mali-compiler-host-test.sh 50 > "$host/compiler.log" 2>&1; then
 	pass "mali compiler: $(grep -c '^PASS' "$host/compiler.log") PASS lines"
 else

@@ -97,6 +97,15 @@
  * into render target L with blend descriptor L (the fixed function
  * blend); the last blend ends the program.
  *
+ * A fragment program that writes gl_SampleMask ANDs it into the coverage
+ * the hardware preloads before the test, and gl_SampleMaskIn reads the
+ * samples the rasterizer found covered (bits 15:0 of the preloaded r61).
+ * A fragment program that writes gl_FragDepth emits it (ZS_EMIT, a
+ * 32-bit float) after the coverage test and before its blends:
+ * writes_depth says so, and the draw then takes the depth from the
+ * shader (the depth/stencil descriptor's depth source) and tests and
+ * updates depth late.
+ *
  * Compute programs.  A compute program reads its local invocation id from
  * the preloaded r55 (x in bits 15:0, y in 31:16) and r56 (z in 15:0), and
  * its workgroup id from r57, r58 and r59.  gl_NumWorkGroups is a storage
@@ -139,9 +148,11 @@ enum mali_shader_stage {
 
 /*
  * What the compiler asks the SPIR-V parse to lower beyond the shared
- * profile: storage images and a compute shader's images.
+ * profile: storage images, a compute shader's images, a fragment
+ * shader's gl_FragDepth, and its gl_SampleMask and gl_SampleMaskIn.
  */
-#define MALI_SHADER_SPIRV_FEATURES	(DRV_GPU_SPIRV_FEATURE_COMPUTE_IMAGES | DRV_GPU_SPIRV_FEATURE_STORAGE_IMAGE)
+#define MALI_SHADER_SPIRV_FEATURES	(DRV_GPU_SPIRV_FEATURE_COMPUTE_IMAGES | DRV_GPU_SPIRV_FEATURE_STORAGE_IMAGE | \
+					 DRV_GPU_SPIRV_FEATURE_FRAG_DEPTH | DRV_GPU_SPIRV_FEATURE_SAMPLE_MASK)
 
 /* The resource tables a program reads (see the shader ABI above). */
 #define MALI_SHADER_TABLE_TEXTURES		0U
@@ -313,6 +324,15 @@ struct mali_shader_program {
 	uint32_t local_size[3];
 	uint32_t shared_bytes;
 	uint32_t uses_barrier;
+
+	/*
+	 * A fragment program: whether it writes the depth (gl_FragDepth),
+	 * whether it changes its coverage (gl_SampleMask), and whether it
+	 * reads the samples its primitive covers (gl_SampleMaskIn).
+	 */
+	uint32_t writes_depth;
+	uint32_t writes_sample_mask;
+	uint32_t reads_sample_mask;
 };
 
 /*

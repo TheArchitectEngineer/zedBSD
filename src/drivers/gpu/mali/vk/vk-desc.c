@@ -40,7 +40,17 @@
 #define ATTRIBUTE_1D		1U
 #define BLEND_FIXED		2U
 #define BLOCK_LINEAR		2U
-#define NO_WORKGROUP_MEMORY	0x80000000U
+/*
+ * The Local Storage word 1 of no workgroup memory: the WLS Instances
+ * field (1:0, five bits) holds the log2 of the instances, and the
+ * enumerated "No Workgroup Mem" value 0x80000000 goes in as its log2.
+ *
+ * Values referenced: Mesa 26.2.6 src/panfrost/genxml/v10.xml (struct
+ * "Local Storage", WLS Instances with the log2 modifier and its value
+ * No Workgroup Mem) and genxml/gen_pack.py (a log2 field packs
+ * util_logbase2 of its value).
+ */
+#define NO_WORKGROUP_MEMORY	0x1fU
 #define TLS_PACKED		1U
 
 /* The blend operands. */
@@ -625,6 +635,71 @@ mali_desc_thread_storage(
 	pointer = (tls_base >> 8) & 0x0000ffffffffffffULL;
 	words[2] = (uint32_t)pointer;
 	words[3] = (uint32_t)(pointer >> 32) | (TLS_PACKED << 28);
+}
+
+/*
+ * Gives the bytes one workgroup's instance of workgroup memory takes: a
+ * workgroup's shared bytes rounded up to a power of two of at least the
+ * least (zero for none).
+ *
+ * Procedure referenced: Mesa 26.2.6 src/panfrost/lib/pan_desc.h
+ * (pan_wls_adjust_size: the next power of two of at least 128).
+ */
+uint32_t
+mali_desc_wls_bytes(
+	uint32_t shared_bytes)
+{
+	uint32_t bytes;
+
+	/* None for none. */
+	if (shared_bytes == 0U)
+		return 0;
+
+	/* The least power of two of at least the least holding them. */
+	bytes = MALI_DESC_WLS_MIN_BYTES;
+	while (bytes < shared_bytes && bytes < MALI_DESC_WLS_MAX_BYTES)
+		bytes *= 2U;
+
+	/* Succeeded: the bytes. */
+	return bytes;
+}
+
+/*
+ * Adds workgroup memory to a thread storage descriptor packed by
+ * mali_desc_thread_storage(): instances of it a core (a power of two),
+ * each of instance_bytes (as mali_desc_wls_bytes() gives them), from
+ * wls_base (4096-byte aligned).  The instance count goes in as its
+ * log2, the size as the log2 of the instance's bytes plus one; the size
+ * base stays zero.
+ *
+ * Values referenced: Mesa 26.2.6 src/panfrost/genxml/v10.xml (struct
+ * "Local Storage": WLS Instances 1:0 of 5 bits, a log2; WLS Size Base
+ * 1:5; WLS Size Scale 1:8 of 5 bits; WLS Base Pointer 4:0 of 64 bits).
+ *
+ * Procedure referenced: Mesa 26.2.6 src/panfrost/lib/pan_desc.c
+ * (pan_emit_tls: the size scale from the adjusted size).
+ */
+void
+mali_desc_workgroup_storage(
+	uint32_t *words,
+	uint32_t instances,
+	uint32_t instance_bytes,
+	uint64_t wls_base)
+{
+	uint32_t instance_shift;
+	uint32_t size_shift;
+
+	/* The log2 of the instances and of an instance's bytes. */
+	instance_shift = 0U;
+	while ((1U << instance_shift) < instances && instance_shift < 31U)
+		instance_shift++;
+	size_shift = 0U;
+	while ((1U << size_shift) < instance_bytes && size_shift < 31U)
+		size_shift++;
+
+	/* Word 1: the instances 0..4, the size scale 8..12; words 4..5: the base. */
+	words[1] = (instance_shift & 0x1fU) | (((size_shift + 1U) & 0x1fU) << 8);
+	put64(words, 4, wls_base);
 }
 
 /* Gives the TLS size field of a thread's bytes: log2 of its 16-byte units, rounded up. */

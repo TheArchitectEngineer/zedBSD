@@ -215,6 +215,18 @@
 #define VA_OP_ST_CVT			0x0071000000000000ULL
 
 /*
+ * The opcode bits of the depth and stencil write and of the 16-bit to
+ * 32-bit integer widening, and ZS_EMIT's depth write (bit 25).
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/ISA.xml (the opcode elements of
+ * ZS_EMIT and U16_TO_U32, and ZS_EMIT's va_mod z).
+ */
+#define VA_OP_ZS_EMIT			0x007E000000000000ULL
+#define VA_OP_U16_TO_U32		0x0090000000140000ULL
+#define VA_SHIFT_ZS_EMIT_DEPTH		25U
+
+/*
  * The modifier fields the compiler sets, by their first bit: a
  * comparison's condition and its result type, a conversion's or a
  * rounding's round mode, a negate and an absolute value of each of the
@@ -428,11 +440,13 @@
  * id (r57 to r59), the vertex's internal output index (r59), its vertex
  * and instance index (r60, r61), a fragment's primitive flags (r58, bit 0
  * set for a back face), its pixel position (r59), its
- * coverage (r60) and the interpolation's sample source (r61).
+ * coverage (r60), and the interpolation's sample source (r61, whose bits
+ * 15:0 are the samples the rasterizer found covered).
  *
  * Values referenced: Mesa 26.2.6
  * src/panfrost/compiler/bifrost/compiler.h (bi_preload_reg, arch 9 and
- * later) and bifrost_compile.c (bi_varying_src0_for_barycentric).
+ * later) and bifrost_compile.c (bi_varying_src0_for_barycentric, the
+ * load_sample_mask_in intrinsic).
  */
 #define VA_PRELOAD_FIRST		48U
 #define VA_PRELOAD_LOCAL_ID_XY		55U
@@ -445,6 +459,7 @@
 #define VA_PRELOAD_POSITION_XY		59U
 #define VA_PRELOAD_COVERAGE		60U
 #define VA_PRELOAD_VARYING_SOURCE	61U
+#define VA_PRELOAD_RASTER_COVERAGE	61U
 
 /* The registers of a program. */
 #define VA_REGISTERS			64U

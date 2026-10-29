@@ -143,8 +143,9 @@
  * again in a temporary register at each reader, or read from the constant
  * table), each value's last use, the free registers and the first one the
  * stage's preloads leave alone, the temporaries of the instruction,
- * the outputs the program writes at its end, and the loops it is in
- * (their heads' places in the list and in the IR).
+ * the outputs the program writes at its end (a fragment program's depth
+ * and sample mask among them), and the loops it is in (their heads'
+ * places in the list and in the IR).
  *
  * A value the registers cannot keep is spilled to a word of thread local
  * storage (tls_word, VA_NO_TLS_WORD for none) and loaded again where it
@@ -181,6 +182,8 @@ struct va_compiler {
 	uint32_t output_value[MALI_SHADER_LOCATIONS][4];
 	uint32_t position_value[4];
 	uint32_t point_size_value;
+	uint32_t depth_value;
+	uint32_t sample_mask_value;
 
 	uint32_t loop_start[VA_LOOP_DEPTH];
 	uint32_t loop_head[VA_LOOP_DEPTH];
@@ -843,7 +846,7 @@ lower_with_room(
 			kern_memset(c, 0, sizeof(*c));
 			c->program = program;
 			c->variant = variant;
-			c->ir = ir;
+				c->ir = ir;
 		}
 		c->loop_reserve = reserves[attempt];
 		error = lower(c);
@@ -930,6 +933,8 @@ lower(
 	for (component = 0U; component < 4U; component++)
 		c->position_value[component] = VA_NOT_DEFINED;
 	c->point_size_value = VA_NOT_DEFINED;
+	c->depth_value = VA_NOT_DEFINED;
+	c->sample_mask_value = VA_NOT_DEFINED;
 
 	/* Finds each value's definition and last use. */
 	error = compute_liveness(c);
@@ -2211,6 +2216,25 @@ lower_special_input(
 		return;
 	}
 
+	/*
+	 * gl_SampleMaskIn: the samples the rasterizer found covered, bits
+	 * 15:0 of r61, widened.
+	 *
+	 * Procedure referenced: Mesa 26.2.6
+	 * src/panfrost/compiler/bifrost/bifrost_compile.c (the
+	 * load_sample_mask_in intrinsic).
+	 */
+	if (inst->location == DRV_GPU_SHADER_LOCATION_SAMPLE_MASK) {
+		emit(c,
+		     VA_OP_U16_TO_U32 | va_source_register(VA_PRELOAD_RASTER_COVERAGE) | va_dest(dst),
+		     va_register_mask(VA_PRELOAD_RASTER_COVERAGE, 1U),
+		     va_register_mask(dst, 1U),
+		     0U);
+		c->preload |= 1U << (VA_PRELOAD_RASTER_COVERAGE - VA_PRELOAD_FIRST);
+		c->program->reads_sample_mask = 1U;
+		return;
+	}
+
 	/* The fragment coordinate's z and w, and the point coordinate, are special varyings. */
 	if (inst->location == DRV_GPU_SHADER_LOCATION_FRAG_COORD) {
 		special = 3U;
@@ -3390,7 +3414,7 @@ lower_store_output(
 	struct va_compiler *c,
 	const struct drv_gpu_shader_ir_inst *inst)
 {
-	/* The position, the point size and the located outputs are kept by slot. */
+	/* The position, the point size, the depth, the sample mask and the located outputs are kept by slot. */
 	if (inst->location == DRV_GPU_IR_LOCATION_POSITION) {
 		if (inst->component < 4U)
 			c->position_value[inst->component] = inst->src[0];
@@ -3398,6 +3422,14 @@ lower_store_output(
 	}
 	if (inst->location == DRV_GPU_IR_LOCATION_POINT_SIZE) {
 		c->point_size_value = inst->src[0];
+		return;
+	}
+	if (inst->location == DRV_GPU_IR_LOCATION_FRAG_DEPTH) {
+		c->depth_value = inst->src[0];
+		return;
+	}
+	if (inst->location == DRV_GPU_IR_LOCATION_SAMPLE_MASK) {
+		c->sample_mask_value = inst->src[0];
 		return;
 	}
 	if (inst->location < MALI_SHADER_LOCATIONS && inst->component < 4U) {
@@ -3702,14 +3734,17 @@ lower_varying_end(
 }
 
 /*
- * Ends a fragment program: ATEST of the preloaded coverage with colour
- * 0's alpha (1 without colour 0), then BLEND of each colour written, as
- * four 32-bit floats, to its render target with the target's blend
- * descriptor.
+ * Ends a fragment program: the written sample mask ANDed into the
+ * preloaded coverage, ATEST of the coverage with colour 0's alpha (1
+ * without colour 0), ZS_EMIT of the written depth, then BLEND of each
+ * colour written, as four 32-bit floats, to its render target with the
+ * target's blend descriptor.  The coverage stays in r60, which ATEST and
+ * ZS_EMIT read and write.
  *
  * Procedure referenced: Mesa 26.2.6
  * src/panfrost/compiler/pan_nir_lower_fs_outputs.c and bifrost_compile.c
- * (the atest_pan and blend_pan intrinsics).
+ * (the atest_pan, zs_emit_pan and blend_pan intrinsics) and bi_ra.c (the
+ * coverage of ATEST and ZS_EMIT in the cumulative coverage register).
  */
 static void
 lower_fragment_end(
@@ -3719,8 +3754,24 @@ lower_fragment_end(
 	uint32_t location;
 	uint32_t component;
 	uint32_t alpha;
+	uint32_t mask;
+	uint32_t depth;
 	uint32_t block;
 	uint64_t bits;
+
+	/* A written sample mask keeps only the samples the hardware covers. */
+	c->preload |= 1U << (VA_PRELOAD_COVERAGE - VA_PRELOAD_FIRST);
+	if (c->sample_mask_value != VA_NOT_DEFINED) {
+		mask = value_operand(c, c->sample_mask_value);
+		emit_alu(c,
+			 VA_OP_LSHIFT_AND_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES),
+			 VA_PRELOAD_COVERAGE,
+			 mask,
+			 VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO,
+			 VA_PRELOAD_COVERAGE);
+		release_temps(c);
+		c->program->writes_sample_mask = 1U;
+	}
 
 	/* Tests the coverage with colour 0's alpha. */
 	alpha = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_FLOAT_ONE;
@@ -3737,7 +3788,25 @@ lower_fragment_end(
 	     va_register_mask(VA_PRELOAD_COVERAGE, 1U) | operand_mask(alpha),
 	     va_register_mask(VA_PRELOAD_COVERAGE, 1U),
 	     VA_INST_MESSAGE | VA_INST_ATEST);
-	c->preload |= 1U << (VA_PRELOAD_COVERAGE - VA_PRELOAD_FIRST);
+
+	/* Emits the written depth (no stencil) with the tested coverage. */
+	if (c->depth_value != VA_NOT_DEFINED) {
+		depth = value_reg(c, c->depth_value);
+		if (c->error != 0)
+			return;
+		bits = VA_OP_ZS_EMIT | va_source_register(depth);
+		bits |= va_field(operand_byte(VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO), VA_SHIFT_SOURCE1);
+		bits |= va_field(va_source_register(VA_PRELOAD_COVERAGE), VA_SHIFT_SOURCE2);
+		bits |= va_field(1U, VA_SHIFT_ZS_EMIT_DEPTH);
+		bits |= va_staging(VA_PRELOAD_COVERAGE, 1U, VA_STAGING_WRITE);
+		emit(c,
+		     bits,
+		     va_register_mask(depth, 1U) | va_register_mask(VA_PRELOAD_COVERAGE, 1U),
+		     va_register_mask(VA_PRELOAD_COVERAGE, 1U),
+		     VA_INST_MESSAGE | VA_INST_ATEST);
+		release_temps(c);
+		c->program->writes_depth = 1U;
+	}
 
 	/* Blends each colour written. */
 	for (location = 0U; location < MALI_SHADER_COLORS; location++) {

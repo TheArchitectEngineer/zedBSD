@@ -48,7 +48,7 @@ ATEST と各 render target への BLEND。
 | gather・compare | 済み: TEX_GATHER（channel bits 15:14）、shadow bit 12 と reference の staging（S T R ARRAY SHADOW OFFSET LOD の順）、compare の TEX_SINGLE は R だけ書く、compare gather | 済み: sampler の compareEnable → compare function（word 1 bits 13..15）、D16_UNORM・D32_SFLOAT を sample だけの format に（depth attachment は無い） |
 | storage image | 済み: LD_TEX_IMM（format の型で f32・s32・u32）、LEA_TEX_IMM と ST_CVT（format の成分数、AUTO）、image の atomic（LEA_TEX_IMM の address に ATOM_RETURN）、imageSize、table 4 | 済み: set layout の STORAGE_IMAGE、table 4 に storage 用の texture descriptor（identity swizzle、LOD 0、plane を layer ごと）、format の STORAGE_IMAGE（・R32_UINT/R32_SINT の ATOMIC）、usage STORAGE、limit |
 | spill | 済み: register が尽きた時、最も遠くまで生きる値を TLS へ STORE.i32（force）、読む所で LOAD.i32。loop の頭で足りなければ loop を通り抜ける値を先に spill（再試行の reserve 0・16・32・64）。program の tls_bytes | compute: 済み（TSD に TLS、`mali_vk_build_thread_storage`）。graphics: 済み（P7 が vk-draw.c に当て、vk-pipeline.c の拒否を外した。fragment の TLS の読み先は未確認） |
-| FragDepth・SampleMask・UBO の vector load | 未着手（render pass に depth attachment が無く FragDepth は役に立たない。UBO の vector load は最適化だけ） | — |
+| FragDepth・SampleMask・UBO の vector load | FragDepth・SampleMask は q1675-i04 で済み（下）。UBO の vector load は未着手（最適化だけ） | — |
 
 shader.h の ABI（先頭の comment が本体）に足した物: `MALI_SHADER_TABLE_IMAGES`（4）と `images[]`・`image_count`
 （set・binding・index・format・size_fau_word）、`tls_bytes`、`MALI_SHADER_SPIRV_FEATURES`（COMPUTE_IMAGES |
@@ -60,6 +60,64 @@ vk-desc に足した関数（既存の signature は変えていない）: `mali
 copy（buffer↔image・image↔image）と clear は layer を扱う（clear は range ごと）。device: `imageCubeArray` を公表し、
 create_device は公表した feature だけを受ける。maxImageDimensionCube 8192、maxImageArrayLayers 256、
 storage image 8。
+
+## 実装の追加（q1675-i04、P7 の配下 A3、2026-10-29、実機未試験）
+
+範囲: 拒否していた物を compile できるように（ユーザー「余裕があればきちんと実装の対応範囲を他のGPUと同様に広げてください。」）。
+今まで compile できた program の出力は変えない。driver は直していない（下の「driver への案」）。
+
+| 機能 | compiler | 状態 |
+| --- | --- | --- |
+| FragDepth（gl_FragDepth） | parse の feature に `DRV_GPU_SPIRV_FEATURE_FRAG_DEPTH`。STORE_OUTPUT の `DRV_GPU_IR_LOCATION_FRAG_DEPTH` を持ち、ATEST の後・BLEND の前に `ZS_EMIT`（z の bit 25、depth を source 0、stencil の source は定数 0、coverage r60 を読み staging r60 に書く）。slot 0・前に wait0126（ATEST と同じ扱い、`VA_INST_ATEST` を流用）。program の `writes_depth` | 済み（host のみ） |
+| SampleMask の書き込み（gl_SampleMask[0]） | feature `DRV_GPU_SPIRV_FEATURE_SAMPLE_MASK`。ATEST の前に `r60 = mask & r60`（LSHIFT_AND）。program の `writes_sample_mask` | 済み（host のみ） |
+| SampleMaskIn の読み（gl_SampleMaskIn[0]） | `U16_TO_U32` で r61 の bits 15:0（rasterizer の coverage）。preload の bit r61。program の `reads_sample_mask` | 済み（host のみ） |
+| SampleId | 共通の front end に BuiltIn SampleId（18）が無く拒否される。backend だけでは作れない（下の「他への案」） | 未対応 |
+| UBO の vector load | 未着手（P7 の指示で FragDepth・SampleMask の区切りで一度報告。残り） | 残り |
+
+shader.h に足した物（既存の field の位置・意味は不変、struct の末尾に追加）: `writes_depth`・`writes_sample_mask`・
+`reads_sample_mask`、`MALI_SHADER_SPIRV_FEATURES` に FRAG_DEPTH と SAMPLE_MASK、ABI の comment（fragment の depth・sample mask）。
+va-isa.h: `VA_OP_ZS_EMIT`・`VA_OP_U16_TO_U32`・`VA_SHIFT_ZS_EMIT_DEPTH`・`VA_PRELOAD_RASTER_COVERAGE`（ISA.xml・compiler.h から出典つき）。
+
+判断（推し）:
+- coverage は r60 に置いたまま（Mesa の bi_ra.c が ATEST・ZS_EMIT の coverage を cumulative coverage の register に固定するのに倣う）。
+  SampleMask の AND は Mesa の pan_nir_lower_fs_outputs.c と同じく preload の coverage（r60）と取る。SampleMaskIn は Mesa の
+  load_sample_mask_in と同じく r61 の bits 15:0。
+- 順は ATEST → ZS_EMIT → BLEND（Mesa の順）。EarlyFragmentTests の時に depth の書き込みを捨てる Mesa の扱いは無い
+  （共通の front end が ExecutionMode EarlyFragmentTests を IR に残さない）。stencil の書き込み（FragStencilRef）も front end に無い。
+- ZS_EMIT の depth は常に register（定数でも temp に作る）。
+- 模型（tests/mali-compiler-model.c）の推定: fragment の preload の r60 を「rasterizer の coverage から最も低い sample を除いた物
+  （2 個以上の時）」、r61 を rasterizer の coverage と sample 番号（bits 23:16）にした（r60 と r61 の取り違えが見える様に）。
+  ZS_EMIT は source 0 の depth を書き coverage を素通しする（ATEST と同じ、推定）。模型は ATEST が 1 回、ZS_EMIT と BLEND が
+  ATEST の後（BLEND は depth を書く program では ZS_EMIT の後）で ATEST の書いた coverage を読む事、ZS_EMIT の前の wait0126、
+  stencil の bit が無く z の bit がある事を検査し、ATEST の検査した coverage と depth を IR の参照と比べる。新しい乱数は引かない
+  （coverage は画素の位置から作るので既存の試行の入力は変わらない）。
+
+### 確かめ（q1675-i04、2026-10-29、host だけ。GPU の証拠ではない）
+
+- `timeout 1800 sh plan/ws313/tests/mali-compiler-host-test.sh 200`: PASS、24 module（新しく `mali-compiler-shaders/` に
+  depth.frag（discard の後に depth と colour）・depth-only.frag（colour 無し、ZS_EMIT で end）・sample-mask.frag）。
+  既存の 21 module の listing は変更前（`build/pc/mali-compiler-host.pwQwe5`）と byte で一致（`build/pc/mali-compiler-host.ifep0J`）。
+- `timeout 1800 sh plan/ws313/tests/mali-compiler-desktop-test.sh 200`: PASS、60 module。60 の listing は変更前
+  （`build/pc/mali-compiler-desktop.pJVHqW`）と byte で一致（`build/pc/mali-compiler-desktop.6jfgn3`）。
+- 突然変異（手で、`build/a3-mut/` の複写の va-compile.c で、script には無い）: SampleMask の AND を OR に・SampleMaskIn を r60 から・
+  ZS_EMIT の z の bit の削除・ZS_EMIT の wait0126 の削除・ZS_EMIT の depth の source を r60 に、の 5 つが全部 FAIL になった。
+- `make -j6 ZEDBSD_CONFIG=config/ci/config-odroid-c5-keiland.mk BUILD=build/a3-k build/a3-k/vmunix`: exit 0、warning 0
+  （D3 の作業中の vk の変更を含む tree）。
+- `tests/mali-preload-host-test.c`（c5-build-check.sh の cc の行と同じ flag）: all checks passed (15)。
+- 実機・QEMU: 未実施。
+
+### driver（D3）への案（q1675-i04、直していない）
+
+この driver には depth attachment が無いので、FragDepth は今は効果が無い（ZS_EMIT は走るが書く先が無い）。depth を付ける時:
+- `writes_depth` の時: Depth/stencil descriptor の word 4 の「Depth source」（bits 26:25）を Shader（3）に（今は vk-frame.c・vk-draw.c が
+  Fixed function 2）。DCD Flags 0 の「Pixel Kill Operation」（bits 3:2）と「ZS Update Operation」（bits 5:4）を Force Late（3）に
+  （Mesa の pan_earlyzs.c: shader が z を書けば late kill・late update）。値は Mesa 26.2.6 src/panfrost/genxml/v10.xml
+  （struct "Depth/stencil"・"DCD Flags 0"、enum "Depth Source"・"Pixel Kill"）と lib/pan_shader.h（pan_depth_source）。
+- `writes_sample_mask` か `discards` の時: DCD Flags 0 の「Shader Modifies Coverage」（bit 20）を立てる（Mesa の panvk の
+  shader_modifies_coverage = writes_coverage || can_discard || alpha_to_coverage）。今の vk-draw.c は discard で Force Late に
+  するだけで bit 20 を立てていない（2026-10-29 の vk-draw.c の FLAG_* に無い事を読んで確かめた。立てるべきかは Mesa に倣った推定で、実機未確認）。
+- `reads_sample_mask`: driver の追加は無い（r61 は preload の bit で program の `preload` に入っている）。
+- multisample が無い今は coverage は 1 sample で、SampleMask の効果は bit 0 だけ。
 
 ## 判断（推しで進めた所、夜の試験で確かめる）
 
@@ -154,7 +212,7 @@ storage image 8。
   program descriptor の preload の mask）と合わせる必要がある（D）。
 - 無い物（q1675-i03 の後）: buffer・multisample の texture、texture の gradient（textureGrad、TEX_GRADIENT）、
   texel buffer・input attachment、mip level が 2 以上の image、3D の image（driver）、geometry shader、dual source の
-  第 2 color、FragDepth・SampleMask、UBO の vector の load（今は 1 語ずつ）、image の座標の範囲外の検査、
+  第 2 color、SampleId・stencil の書き込み（front end に無い）、UBO の vector の load（今は 1 語ずつ）、image の座標の範囲外の検査、
   graphics の spill（vk-draw.c の TSD 待ち）、compute の workgroup memory（vk-queue.c が dispatch を拒否する。
   WLS の descriptor が無い。範囲外なので触っていない）、helper の lane の discard の flow（最適化）、register の
   last-use の bit（hint）。
@@ -185,6 +243,9 @@ storage image 8。
   	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD, storage);
   	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD + 4U, storage);
   ```
+- 共通の front end（`spirv.c`）へ（q1675-i04、案だけ）: fragment の入力の BuiltIn SampleId（18）を、SAMPLE_MASK の feature の時に
+  新しい location（例 `DRV_GPU_SHADER_LOCATION_SAMPLE_ID` 71、flat）にすれば、backend は r61 の bits 23:16 を RSHIFT_AND で
+  取れる（Mesa の bi_load_sample_id_to は 5 bit の mask）。他の GPU（GHCI）は feature の bit を見て決めるので影響は無い見込み（未確認）。
 - 共通の front end（`spirv-compute.inc` の texel atomic、`inst->image_shape = DRV_GPU_IR_IMAGE_TEXEL;`）へ: texel pointer
   の image type の `drv_gpu_spirv_image_shape(type)` を OR すれば backend が 3D と array を分けられる（GHCI は TEXEL の
   bit だけを見るので影響しない見込み、未確認）。今は要らない（Mali は 3D を slice の array として扱う）。
@@ -200,6 +261,11 @@ storage image 8。
   待ち）、preload の register、varying の offset、viewport の FAU の位置、TEX の handle の table と index。
 - 余裕があれば（q1675-i03 の後）: graphics の spill（上の vk-draw.c の案）、textureGrad（TEX_GRADIENT）、mip level、
   UBO の vector load、FragDepth（depth attachment と一緒に）、compute の workgroup memory（WLS、範囲外）。
+- 残り（q1675-i04）: UBO の vector load（LOAD.i64・i96・i128、Mesa の bifrost_nir.c の mem_access_size_align_cb の
+  「大きさの 2 の冪に揃う」規則。desktop では libGL の 7 module の listing が変わる見込みなので、MALI_SHADER_OPTION の 1 bit で
+  切り替え、P7 が有効にするか決める形の予定）。
+- q1675-i04 の物が夜に壊れたら（depth・sample mask を使う shader は desktop に無い）: ZS_EMIT の source の並び・z の bit、
+  coverage の r60 の扱い。
 - q1675-i03 の新しい機能が夜に壊れたら疑う順: cube の face の bit（CUBEFACE2 の出力と MUX.bit）、storage の
   texture descriptor（table 4、plane の数）、TLS の descriptor（base >> 8、packed、size の shift）。
 - 規約: 明らかな違反（条件の中の関数呼び出し、まとめた確保の検査、三項演算子）は直した。全部の if の前の comment など
