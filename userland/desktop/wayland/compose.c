@@ -3021,10 +3021,9 @@ kwl_compose_tasks_busy(
  * Lets go of an image record: its objects are released now when no
  * drawing being written, given and not completed and no task that moves
  * it may still use them (always before the render thread starts and after
- * it stops),
- * otherwise once they have completed (at a later poll), without waiting.
- * destroy releases the objects; the record is cleared either way and may
- * be used again or freed at once.  Without memory for the wait the
+ * it stops), otherwise once they have completed (at a later poll), without
+ * waiting.  destroy releases the objects; the record is cleared either way
+ * and may be used again or freed at once.  Without memory for the wait the
  * compositor ends, as nothing in use may be destroyed.
  */
 void
