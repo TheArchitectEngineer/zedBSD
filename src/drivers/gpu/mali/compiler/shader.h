@@ -20,6 +20,11 @@
  *
  *   - words [0, push_bytes / 4): the push constants, word w holding the
  *     push constant bytes [4w, 4w + 4);
+ *   - a vertex program: from the first even word after them, the six
+ *     32-bit floats of the viewport transform at viewport_fau_word: the
+ *     scale x, y, z, then the offset x, y, z (the hardware takes the
+ *     position in screen space: the program divides by w, scales and
+ *     offsets x, y and z, and writes 1 / w as the fourth component);
  *   - then, from the first even word on, one 64-bit entry for each buffer
  *     of the program's buffer table (struct mali_shader_buffer): the
  *     buffer's GPU address, low word first, at buffer.fau_word.  A uniform
@@ -62,7 +67,9 @@
  *
  * Fragment programs.  A fragment program reads varying location L at
  * byte 16 L of the varying record, interpolated at the pixel's centre (or
- * flat, from the provoking vertex).  It ends by testing its coverage
+ * flat, from the provoking vertex; a NoPerspective varying the vertex
+ * program wrote multiplied by w, and the fragment program multiplies by
+ * the fragment's 1 / w).  It ends by testing its coverage
  * (ATEST, with the hardware's alpha test datum, using colour 0's alpha)
  * and blending each colour location L it writes, as four 32-bit floats,
  * into render target L with blend descriptor L (the fixed function
@@ -180,9 +187,13 @@ struct mali_shader_program {
 	uint32_t varying_work_registers;
 	uint32_t varying_preload;
 
-	/* The FAU words the driver writes, an even number, and the push constant bytes among them. */
+	/*
+	 * The FAU words the driver writes, an even number, the push constant
+	 * bytes among them, and a vertex program's first viewport word.
+	 */
 	uint32_t fau_words;
 	uint32_t push_bytes;
+	uint32_t viewport_fau_word;
 
 	/* The buffers the program binds, whose addresses the FAU words carry. */
 	struct mali_shader_buffer buffers[MALI_SHADER_BUFFERS];
