@@ -99,6 +99,39 @@ gles_pipelines_forget(
 }
 
 /*
+ * Gives each attribute that reads a binding point the binding point's
+ * array: its buffer, the binding point's offset with the attribute's,
+ * its stride (exactly 0 when glBindVertexBuffer gave 0; 0 from
+ * glVertexAttribPointer is tightly packed) and its divisor.
+ */
+void
+gles_vertex_binding_apply(
+	struct gles_state *state,
+	GLuint binding)
+{
+	const struct gles_attrib *point;
+	struct gles_attrib *attrib;
+	unsigned index;
+
+	/* Each attribute reading the binding point. */
+	point = &state->attribs[binding];
+	for (index = 0U; index < GLES_ATTRIBS; index++) {
+		attrib = &state->attribs[index];
+		if (attrib->binding != binding)
+			continue;
+
+		/* The binding point's array, at the attribute's offset in its elements. */
+		attrib->buffer = point->binding_buffer;
+		attrib->pointer = (const void *)(uintptr_t)(point->binding_offset + (GLintptr)attrib->relative_offset);
+		attrib->stride = point->binding_stride;
+		attrib->divisor = point->binding_divisor;
+		attrib->zero_stride = 0;
+		if (point->binding_exact && point->binding_stride == 0)
+			attrib->zero_stride = 1;
+	}
+}
+
+/*
  * Reads a rectangle of the read framebuffer's read buffer (the read
  * surface's image, or a framebuffer object's colour attachment) as RGBA8
  * rows from the bottom up, waiting for what the frame drew.  Pixels
@@ -806,15 +839,23 @@ glVertexAttribPointer(
 		return;
 	}
 
-	/* The array, in the bound array buffer or the application's memory, read as floats. */
+	/* The format, read as floats, at the start of the attribute's own binding point's elements. */
 	attrib = &state->attribs[index];
 	attrib->size = size;
 	attrib->type = type;
 	attrib->normalized = normalized;
-	attrib->stride = stride;
-	attrib->pointer = pointer;
-	attrib->buffer = state->array_buffer;
 	attrib->integer = 0;
+	attrib->binding = index;
+	attrib->relative_offset = 0U;
+
+	/* The binding point's array, in the bound array buffer or the application's memory (a stride of 0: packed). */
+	attrib->binding_buffer = state->array_buffer;
+	attrib->binding_offset = (GLintptr)(uintptr_t)pointer;
+	attrib->binding_stride = stride;
+	attrib->binding_exact = 0;
+
+	/* Succeeded: the attributes reading the binding point take the array. */
+	gles_vertex_binding_apply(state, index);
 }
 
 /*
@@ -869,15 +910,23 @@ glVertexAttribIPointer(
 		return;
 	}
 
-	/* The array, in the bound array buffer or the application's memory, read as integers. */
+	/* The format, read as integers, at the start of the attribute's own binding point's elements. */
 	attrib = &state->attribs[index];
 	attrib->size = size;
 	attrib->type = type;
 	attrib->normalized = GL_FALSE;
-	attrib->stride = stride;
-	attrib->pointer = pointer;
-	attrib->buffer = state->array_buffer;
 	attrib->integer = 1;
+	attrib->binding = index;
+	attrib->relative_offset = 0U;
+
+	/* The binding point's array, in the bound array buffer or the application's memory (a stride of 0: packed). */
+	attrib->binding_buffer = state->array_buffer;
+	attrib->binding_offset = (GLintptr)(uintptr_t)pointer;
+	attrib->binding_stride = stride;
+	attrib->binding_exact = 0;
+
+	/* Succeeded: the attributes reading the binding point take the array. */
+	gles_vertex_binding_apply(state, index);
 }
 
 /*
@@ -902,8 +951,10 @@ glVertexAttribDivisor(
 		return;
 	}
 
-	/* The divisor. */
-	state->attribs[index].divisor = divisor;
+	/* The divisor, of the attribute's own binding point, which it reads again. */
+	state->attribs[index].binding = index;
+	state->attribs[index].binding_divisor = divisor;
+	gles_vertex_binding_apply(state, index);
 }
 
 /*
@@ -1265,6 +1316,18 @@ glGetVertexAttribiv(
 		return;
 	case GL_VERTEX_ATTRIB_ARRAY_DIVISOR:
 		*params = (GLint)attrib->divisor;
+		return;
+	case GL_VERTEX_ATTRIB_BINDING:
+		/* Desktop GL 4.3's binding point it reads (libGL). */
+		if (gles_fixed == NULL)
+			break;
+		*params = (GLint)attrib->binding;
+		return;
+	case GL_VERTEX_ATTRIB_RELATIVE_OFFSET:
+		/* Desktop GL 4.3's offset in the binding point's elements (libGL). */
+		if (gles_fixed == NULL)
+			break;
+		*params = (GLint)attrib->relative_offset;
 		return;
 	case GL_CURRENT_VERTEX_ATTRIB:
 		for (component = 0U; component < 4U; component++)
@@ -2064,7 +2127,7 @@ draw_vertices(
 		format = draw_format(attrib->size, attrib->type, attrib->normalized, attrib->integer, &bytes);
 		fetchable = draw_format_ok(state, format);
 		stride = (size_t)attrib->stride;
-		if (stride == 0U)
+		if (stride == 0U && !attrib->zero_stride)
 			stride = bytes;
 
 		/*
@@ -2611,6 +2674,11 @@ draw_sampler_shape(
 	case GL_INT_SAMPLER_2D_MULTISAMPLE:
 	case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE:
 		return GLES_SHAPE_MS;
+	case GL_SAMPLER_CUBE_MAP_ARRAY:
+	case GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW:
+	case GL_INT_SAMPLER_CUBE_MAP_ARRAY:
+	case GL_UNSIGNED_INT_SAMPLER_CUBE_MAP_ARRAY:
+		return GLES_SHAPE_CUBE_ARRAY;
 	default:
 		break;
 	}
@@ -2633,6 +2701,7 @@ draw_sampler_kind(
 	case GL_INT_SAMPLER_2D_RECT:
 	case GL_INT_SAMPLER_BUFFER:
 	case GL_INT_SAMPLER_2D_MULTISAMPLE:
+	case GL_INT_SAMPLER_CUBE_MAP_ARRAY:
 		return 1U;
 	case GL_UNSIGNED_INT_SAMPLER_2D:
 	case GL_UNSIGNED_INT_SAMPLER_CUBE:
@@ -2641,11 +2710,13 @@ draw_sampler_kind(
 	case GL_UNSIGNED_INT_SAMPLER_2D_RECT:
 	case GL_UNSIGNED_INT_SAMPLER_BUFFER:
 	case GL_UNSIGNED_INT_SAMPLER_2D_MULTISAMPLE:
+	case GL_UNSIGNED_INT_SAMPLER_CUBE_MAP_ARRAY:
 		return 2U;
 	case GL_SAMPLER_2D_SHADOW:
 	case GL_SAMPLER_CUBE_SHADOW:
 	case GL_SAMPLER_2D_ARRAY_SHADOW:
 	case GL_SAMPLER_2D_RECT_SHADOW:
+	case GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW:
 		return 3U;
 	default:
 		break;
@@ -2753,9 +2824,13 @@ draw_raster(
 		raster->stencil_zpass[face] = state->stencil_zpass[face];
 	}
 
-	/* Culling (triangles only). */
+	/*
+	 * Culling (triangles, and patches: the tessellator's triangles are
+	 * culled, its lines and points are not, as Vulkan does).
+	 */
 	raster->front_face = state->front_face;
-	if (state->cull && topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST) {
+	if (state->cull &&
+	    (topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST || topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST)) {
 		raster->cull = 1U;
 		raster->cull_mode = state->cull_mode;
 	}
@@ -2776,6 +2851,12 @@ draw_raster(
 	/* Per-sample shading, of a multisample target (a fraction of 0 shades as without it). */
 	if (state->sample_shading && target->samples > 1U && state->min_sample_shading > 0.0f)
 		memcpy(&raster->min_sample_shading, &state->min_sample_shading, sizeof(raster->min_sample_shading));
+
+	/* Desktop GL's clip control. */
+	if (state->clip_origin == GL_UPPER_LEFT)
+		raster->clip_control |= GLES_CLIP_UPPER_LEFT;
+	if (state->clip_depth == GL_ZERO_TO_ONE)
+		raster->clip_control |= GLES_CLIP_ZERO_TO_ONE;
 
 	/* A device that blends every colour attachment alike blends none when they differ. */
 	if (!state->display->features.independentBlend &&
@@ -2832,6 +2913,9 @@ draw_pipeline(
 	struct gles_pipeline *entry;
 	VkPipelineShaderStageCreateInfo stages[5];
 	uint32_t stage_count;
+	uint32_t last_stage;
+	VkShaderModule zero_module;
+	int flip;
 	VkPipelineTessellationStateCreateInfo tessellation;
 	VkVertexInputBindingDescription bindings[GLES_ATTRIBS];
 	VkVertexInputAttributeDescription attributes[GLES_ATTRIBS];
@@ -2866,12 +2950,22 @@ draw_pipeline(
 			return entry->pipeline;
 	}
 
+	/*
+	 * Whether the last stage turns y over: for a window (whose rows go
+	 * down), unless desktop GL's clip control puts the clip space's
+	 * y = 1 at the bottom (GL_UPPER_LEFT), which a framebuffer object
+	 * turns over instead.
+	 */
+	flip = target->flip;
+	if ((raster->clip_control & GLES_CLIP_UPPER_LEFT) != 0U)
+		flip = !flip;
+
 	/* The two stages. */
 	memset(stages, 0, sizeof(stages));
 	stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
 	stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
 	stages[0].module = state->program->vertex_module;
-	if (!target->flip)
+	if (!flip)
 		stages[0].module = state->program->vertex_module_fbo;
 	stages[0].pName = "main";
 	stages[1] = stages[0];
@@ -2884,7 +2978,7 @@ draw_pipeline(
 		stages[2] = stages[0];
 		stages[2].stage = VK_SHADER_STAGE_GEOMETRY_BIT;
 		stages[2].module = state->program->geometry_module;
-		if (!target->flip)
+		if (!flip)
 			stages[2].module = state->program->geometry_module_fbo;
 		stage_count = 3U;
 	}
@@ -2898,9 +2992,24 @@ draw_pipeline(
 		stages[stage_count] = stages[0];
 		stages[stage_count].stage = VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
 		stages[stage_count].module = state->program->tess_evaluation_module;
-		if (!target->flip)
+		if (!flip)
 			stages[stage_count].module = state->program->tess_evaluation_module_fbo;
 		stage_count++;
+	}
+
+	/* The last stage before the rasterizer: the geometry stage, else the tessellation evaluation stage, else the vertex stage. */
+	last_stage = 0U;
+	if (state->program->geometry_module != VK_NULL_HANDLE)
+		last_stage = 2U;
+	else if (state->program->tess_control_module != VK_NULL_HANDLE)
+		last_stage = stage_count - 1U;
+
+	/* Desktop GL's clip control with the depth range from 0: the last stage keeps gl_Position's z. */
+	if ((raster->clip_control & GLES_CLIP_ZERO_TO_ONE) != 0U) {
+		zero_module = gles_program_zero_module(state, state->program, flip);
+		if (zero_module == VK_NULL_HANDLE)
+			return VK_NULL_HANDLE;
+		stages[last_stage].module = zero_module;
 	}
 
 	/* One binding per attribute at its rate (per vertex or per instance), the attribute at offset 0 of it. */
@@ -2948,11 +3057,15 @@ draw_pipeline(
 			rasterization.cullMode = VK_CULL_MODE_FRONT_AND_BACK;
 	}
 
-	/* The front face: GL's winding, turned over for a framebuffer object (its y is not turned over as a window's is). */
+	/*
+	 * The front face: GL's winding, turned over when the last stage does
+	 * not turn y over (a framebuffer object, or a window under
+	 * GL_UPPER_LEFT, whose front faces GL keeps those of the clip space).
+	 */
 	clockwise = 0;
 	if (raster->front_face == GL_CW)
 		clockwise = 1;
-	if (!target->flip)
+	if (!flip)
 		clockwise = !clockwise;
 	rasterization.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 	if (clockwise)
@@ -3289,6 +3402,8 @@ gles_draw_descriptors(
 					texture = state->rect_units[unit];
 				if (shape == GLES_SHAPE_MS)
 					texture = state->ms_units[unit];
+				if (shape == GLES_SHAPE_CUBE_ARRAY)
+					texture = state->cube_array_units[unit];
 				if (state->unit_samplers[unit] != NULL)
 					sampling = &state->unit_samplers[unit]->sampling;
 			}

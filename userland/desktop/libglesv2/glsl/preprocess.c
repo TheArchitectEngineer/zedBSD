@@ -334,6 +334,12 @@ pp_start(
 		pp_define_text(state, "GL_ARB_tessellation_shader", "1");
 		pp_define_text(state, "GL_ARB_sample_shading", "1");
 	}
+
+	/* The desktop extensions of 1.30 on. */
+	if (!state->shader->es && state->shader->version >= GLSL_VERSION_130) {
+		pp_define_text(state, "GL_ARB_texture_gather", "1");
+		pp_define_text(state, "GL_ARB_texture_cube_map_array", "1");
+	}
 }
 
 /* Defines a macro whose value is computed where it is used. */
@@ -887,6 +893,8 @@ pp_extension(
 	int derivatives;
 	int tessellation;
 	int sample_shading;
+	int texture_gather;
+	int cube_map_array;
 
 	/* The form: a name, a colon, a behavior. */
 	shader = state->shader;
@@ -941,6 +949,22 @@ pp_extension(
 	if (sample_shading && !shader->es && shader->version >= GLSL_VERSION_150) {
 		if (shader->version < GLSL_VERSION_400)
 			shader->sample_shading = (unsigned)enabled;
+		return;
+	}
+
+	/* GL_ARB_texture_gather: textureGather and textureGatherOffset in desktop GLSL 1.30 to 3.30 (4.00 on has them). */
+	texture_gather = glsl_token_is(name, "GL_ARB_texture_gather");
+	if (texture_gather && !shader->es && shader->version >= GLSL_VERSION_130) {
+		if (shader->version < GLSL_VERSION_400)
+			shader->texture_gather = (unsigned)enabled;
+		return;
+	}
+
+	/* GL_ARB_texture_cube_map_array: the cube map array samplers in desktop GLSL 1.30 to 3.30 (4.00 on has them). */
+	cube_map_array = glsl_token_is(name, "GL_ARB_texture_cube_map_array");
+	if (cube_map_array && !shader->es && shader->version >= GLSL_VERSION_130) {
+		if (shader->version < GLSL_VERSION_400)
+			shader->cube_map_array = (unsigned)enabled;
 		return;
 	}
 

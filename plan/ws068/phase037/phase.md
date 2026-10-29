@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p037`
 Parent: [WS068](../ws.md)
-Status: cleared（2026-10-29 q1682-i02 P2。Venus で glx-p037 と回帰 PASS。i915 実機は未実施）。旧: in-progress（実装済み・試験未実施、q1682-i01）
+Status: cleared（2026-10-29 q1682-i02 P2。Venus で glx-p037 と回帰 PASS。i915 実機は未実施）。旧: in-progress（実装済み・試験未実施、q1682-i01） 2026-10-29 ユーザーの決定で WS068 の受け入れは Venus だけ（i915 実機は受け入れに含めない、[ws.md](../ws.md) の「ユーザーの決定」）。
 Phase disposition: normal
 保留の理由（旧）: 2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」
 （p033 の GL 3.2 は Venus で PASS）。

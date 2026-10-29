@@ -673,6 +673,8 @@ glsl_emit_image_type(
 		break;
 	case GLSL_SAMPLER_CUBE:
 		operands[2] = 3U;
+		if (type->arrayed)
+			emit_capability(state, SPV_CAPABILITY_SAMPLED_CUBE_ARRAY, &state->module->sampled_cube_array);
 		break;
 	case GLSL_SAMPLER_BUFFER:
 		operands[2] = 5U;

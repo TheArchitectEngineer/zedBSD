@@ -199,6 +199,25 @@
 #define GL_FRAMEBUFFER_ATTACHMENT_LAYERED	0x8DA7
 #define GL_FRAMEBUFFER_INCOMPLETE_LAYER_TARGETS	0x8DA8
 #endif
+#ifndef GL_MAX_PROGRAM_TEXTURE_GATHER_COMPONENTS_ARB
+#define GL_MAX_PROGRAM_TEXTURE_GATHER_COMPONENTS_ARB 0x8F9F
+#endif
+#ifndef GL_TEXTURE_CUBE_MAP_ARRAY
+#define GL_TEXTURE_CUBE_MAP_ARRAY	0x9009
+#define GL_TEXTURE_BINDING_CUBE_MAP_ARRAY 0x900A
+#define GL_SAMPLER_CUBE_MAP_ARRAY	0x900C
+#define GL_SAMPLER_CUBE_MAP_ARRAY_SHADOW 0x900D
+#define GL_INT_SAMPLER_CUBE_MAP_ARRAY	0x900E
+#define GL_UNSIGNED_INT_SAMPLER_CUBE_MAP_ARRAY 0x900F
+#endif
+#ifndef GL_CLIP_ORIGIN
+#define GL_LOWER_LEFT			0x8CA1
+#define GL_UPPER_LEFT			0x8CA2
+#define GL_CLIP_ORIGIN			0x935C
+#define GL_CLIP_DEPTH_MODE		0x935D
+#define GL_NEGATIVE_ONE_TO_ONE		0x935E
+#define GL_ZERO_TO_ONE			0x935F
+#endif
 #ifndef GL_PROVOKING_VERTEX
 #define GL_FIRST_VERTEX_CONVENTION	0x8E4D
 #define GL_LAST_VERTEX_CONVENTION	0x8E4E
@@ -243,6 +262,13 @@
 
 /* Desktop GL 3.2's multisample textures (read by texelFetch of one sample; black as their own kind). */
 #define GLES_SHAPE_MS		6U
+
+/* Desktop GL 4.0's cube map arrays (a 2D array of layer-faces viewed as cubes; black as their own kind). */
+#define GLES_SHAPE_CUBE_ARRAY	7U
+
+/* Desktop GL's clip control in a pipeline's key (gles_raster.clip_control): the upper-left origin, the depth range from 0. */
+#define GLES_CLIP_UPPER_LEFT	0x1U
+#define GLES_CLIP_ZERO_TO_ONE	0x2U
 
 /* The most vertices of a patch (gl_MaxPatchVertices, the size of the GLSL compiler's unsized tessellation inputs; at most the device's). */
 #define GLES_MAX_PATCH_VERTICES	32
@@ -953,6 +979,19 @@ struct gles_program {
 	VkShaderModule tess_control_module;
 	VkShaderModule tess_evaluation_module;
 	VkShaderModule tess_evaluation_module_fbo;
+	/*
+	 * The last stage before the rasterizer (the geometry stage, else the
+	 * tessellation evaluation stage, else the vertex stage): its code as
+	 * the link left it before gl_Position was rewritten, and its modules
+	 * with z kept as the shader wrote it (desktop GL's
+	 * glClipControl(GL_ZERO_TO_ONE)), with y turned over (index 1, as a
+	 * window's module) and not (index 0), each made at its first draw
+	 * (VK_NULL_HANDLE before).
+	 */
+	uint32_t *last_code;
+	size_t last_words;
+	VkShaderModule zero_modules[2];
+
 	GLint tess_vertices;
 	GLenum tess_mode;
 	GLenum tess_spacing;
@@ -1058,6 +1097,26 @@ struct gles_attrib {
 
 	/* The type of the current value: GL_FLOAT, or GL_INT or GL_UNSIGNED_INT from glVertexAttribI. */
 	GLenum value_type;
+
+	/*
+	 * Desktop GL 4.3's vertex attribute binding (libGL; OpenGL ES keeps
+	 * every attribute on its own binding point): the binding point the
+	 * attribute reads (its own index until glVertexAttribBinding) and its
+	 * offset in that point's elements, and whether its stride of 0 means
+	 * 0 rather than tightly packed.  The binding point of this index: its
+	 * buffer (NULL: the application's memory), offset, stride, divisor,
+	 * and whether glBindVertexBuffer set its stride (0 is then 0).  The
+	 * array above (pointer, buffer, stride, divisor) is the one the
+	 * attribute's binding point gives it (gles_vertex_binding_apply).
+	 */
+	GLuint binding;
+	GLuint relative_offset;
+	int zero_stride;
+	struct gles_buffer *binding_buffer;
+	GLintptr binding_offset;
+	GLsizei binding_stride;
+	GLuint binding_divisor;
+	int binding_exact;
 };
 
 /*
@@ -1106,7 +1165,7 @@ struct gles_garbage {
 	VkPipeline pipeline;
 	VkPipelineLayout layout;
 	VkDescriptorSetLayout set_layout;
-	VkShaderModule modules[8];
+	VkShaderModule modules[10];
 
 	/* A framebuffer object's render pass and framebuffer. */
 	VkRenderPass pass;
@@ -1203,6 +1262,9 @@ struct gles_raster {
 
 	/* Per-sample shading (desktop GL's GL_SAMPLE_SHADING on a multisample target): the least fraction's float bits, 0 when off. */
 	uint32_t min_sample_shading;
+
+	/* Desktop GL's clip control (glClipControl): GLES_CLIP_UPPER_LEFT and GLES_CLIP_ZERO_TO_ONE, 0 for GL's own. */
+	uint32_t clip_control;
 };
 
 /*
@@ -1358,6 +1420,15 @@ struct gles_state {
 	int sample_shading;
 	GLfloat min_sample_shading;
 
+	/*
+	 * Desktop GL's clip control (GL_ARB_clip_control, libGL): where the
+	 * clip space's y = 1 lands (GL_LOWER_LEFT: the top; GL_UPPER_LEFT:
+	 * the bottom) and the clip space's depth range (GL_NEGATIVE_ONE_TO_ONE
+	 * or GL_ZERO_TO_ONE).
+	 */
+	GLenum clip_origin;
+	GLenum clip_depth;
+
 	/* Desktop GL's depth clamping, seamless cube maps (always seamless) and provoking vertex (libGL). */
 	int depth_clamp;
 	int cube_seamless;
@@ -1382,6 +1453,9 @@ struct gles_state {
 
 	/* Each unit's multisample texture (desktop GL 3.2, libGL). */
 	struct gles_texture *ms_units[GLES_UNITS];
+
+	/* Each unit's cube map array texture (desktop GL 4.0, libGL, a device with imageCubeArray). */
+	struct gles_texture *cube_array_units[GLES_UNITS];
 
 	/* Desktop GL's sample mask: on (GL_SAMPLE_MASK), and the samples it keeps (glSampleMaski's word 0). */
 	int sample_mask;
@@ -1572,6 +1646,9 @@ struct gles_state {
 
 	/* The multisample textures sampled where a unit has none (float, int, uint), made at their first use. */
 	struct gles_texture *black_ms[3];
+
+	/* The cube map array textures sampled where a unit has none complete (float, int, uint, depth), made at their first use. */
+	struct gles_texture *black_cube_arrays[GLES_BLACK_KINDS];
 };
 
 /*
@@ -1635,6 +1712,7 @@ void gles_collect(struct gles_state *state);
 void gles_frame_finished(struct gles_state *state, int finished);
 int gles_frame_retire(struct zegl_context *context, struct gles_state *state);
 int gles_buffer_sync(struct gles_state *state, struct gles_buffer *buffer);
+struct gles_buffer *gles_buffer_named(struct zegl_context *context, struct gles_state *state, GLuint name);
 void gles_buffer_free(struct gles_state *state, struct gles_buffer *buffer);
 int gles_buffer_writable(struct gles_state *state, struct gles_buffer *buffer);
 void gles_spares_release(struct gles_state *state);
@@ -1648,6 +1726,7 @@ int gles_texture_complete(struct gles_texture *texture, const struct gles_sampli
 VkSampler gles_sampler_get(struct gles_state *state, struct gles_texture *texture, const struct gles_sampling *sampling);
 struct gles_texture *gles_texture_black(struct gles_state *state, unsigned shape, unsigned kind);
 VkBufferView gles_texture_buffer_view(struct gles_state *state, struct gles_texture *texture, unsigned kind);
+struct gles_texture *gles_texture_black_cube_array(struct gles_state *state, unsigned kind, GLenum internal, GLenum type);
 struct gles_texture *gles_texture_black_ms(struct gles_state *state, unsigned kind);
 void gles_texture_free(struct gles_state *state, struct gles_texture *texture);
 void gles_texture_define(struct gles_texture *texture, unsigned face, GLint level, int width, int height, unsigned char *pixels, const struct gles_format *format);
@@ -1719,10 +1798,12 @@ int gles_query_timestamp(struct zegl_context *context, struct gles_state *state,
 
 /* program.c: shaders and programs. */
 void gles_program_release(struct gles_state *state, struct gles_program *program);
+VkShaderModule gles_program_zero_module(struct gles_state *state, struct gles_program *program, int flip);
 void gles_shader_release(struct gles_shader *shader);
 
 /* draw.c: pipelines, the frame, and readback. */
 void gles_pipelines_forget(struct gles_state *state, uint64_t program);
+void gles_vertex_binding_apply(struct gles_state *state, GLuint binding);
 int gles_read_rgba(struct zegl_context *context, GLint x, GLint y, GLsizei width, GLsizei height, unsigned char *rows);
 int gles_read_pixels(struct zegl_context *context, GLint x, GLint y, GLsizei width, GLsizei height, GLenum format, GLenum type, int clamped, unsigned char *rows);
 uint32_t *gles_expand(GLenum mode, const uint32_t *indices, uint32_t first, GLsizei count, int rotate, uint32_t *expanded);
@@ -1774,6 +1855,6 @@ struct gles_spirv {
 GLenum gles_gl_type(unsigned base, unsigned components, unsigned columns);
 int gles_spirv_reflect(const uint32_t *code, size_t words, struct gles_spirv *out, char *log, size_t log_size);
 void gles_spirv_free(struct gles_spirv *spirv);
-uint32_t *gles_spirv_position(const uint32_t *code, size_t words, int flip, size_t *out_words);
+uint32_t *gles_spirv_position(const uint32_t *code, size_t words, int flip, int half_depth, size_t *out_words);
 
 #endif

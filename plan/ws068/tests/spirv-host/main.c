@@ -1,6 +1,7 @@
 /*
  * Host test of libGLESv2's SPIR-V side (ws068-p008): reflects glslc's output and rewrites the vertex
- * shader's gl_Position; spirv-val checks the result (run.sh).
+ * shader's gl_Position (and, given a third path, rewrites it again with z kept, ws068-p036's clip control);
+ * spirv-val checks the result (run.sh).
  * Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
  */
 #include "../../../../userland/desktop/libglesv2/gles.h"
@@ -61,7 +62,7 @@ int main(int argc, char **argv)
 		       spirv.uniforms[index].offset, spirv.uniforms[index].array_stride, spirv.uniforms[index].matrix_stride,
 		       spirv.uniforms[index].sampler, spirv.uniforms[index].binding);
 	gles_spirv_free(&spirv);
-	patched = gles_spirv_position(code, words, 1, &patched_words);
+	patched = gles_spirv_position(code, words, 1, 1, &patched_words);
 	if (patched == NULL) {
 		printf("position failed\n");
 		return 1;
@@ -70,5 +71,19 @@ int main(int argc, char **argv)
 	fwrite(patched, 4U, patched_words, out);
 	fclose(out);
 	printf("patched words=%zu (was %zu)\n", patched_words, words);
+
+	/* The rewrite of glClipControl(GL_UPPER_LEFT, GL_ZERO_TO_ONE) on a window: y as it is, z as it is. */
+	if (argc >= 4) {
+		free(patched);
+		patched = gles_spirv_position(code, words, 0, 0, &patched_words);
+		if (patched == NULL) {
+			printf("zero position failed\n");
+			return 1;
+		}
+		out = fopen(argv[3], "wb");
+		fwrite(patched, 4U, patched_words, out);
+		fclose(out);
+		printf("zero patched words=%zu\n", patched_words);
+	}
 	return 0;
 }

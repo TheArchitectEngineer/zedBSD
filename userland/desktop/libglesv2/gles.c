@@ -155,6 +155,10 @@ gles_state(
 	state->patch_inner[0] = 1.0f;
 	state->patch_inner[1] = 1.0f;
 
+	/* GL's own clip space: y = 1 at the top, depths from -1 (desktop GL's glClipControl). */
+	state->clip_origin = GL_LOWER_LEFT;
+	state->clip_depth = GL_NEGATIVE_ONE_TO_ONE;
+
 	/* Lines one wide, dithering on, rows aligned to 4. */
 	state->line_width = 1.0f;
 	state->dither = 1;
@@ -174,12 +178,13 @@ gles_state(
 	/* Whether the context offers OpenGL ES 3.1's compute (ws101-p009). */
 	state->compute = gles_compute_offered(context, &state->limits);
 
-	/* Every array four floats and disabled, every current value the floats (0, 0, 0, 1). */
+	/* Every array four floats, disabled and on its own binding point, every current value the floats (0, 0, 0, 1). */
 	for (index = 0U; index < GLES_ATTRIBS; index++) {
 		state->attribs[index].size = 4;
 		state->attribs[index].type = GL_FLOAT;
 		state->attribs[index].value[3] = 1.0f;
 		state->attribs[index].value_type = GL_FLOAT;
+		state->attribs[index].binding = (GLuint)index;
 	}
 
 	/* Succeeded: the first frame, and the callbacks libEGL makes. */
@@ -1716,12 +1721,16 @@ gles_release(
 			gles_texture_free(state, state->textures.objects[name]);
 	}
 
-	/* The black textures of each shape and kind. */
+	/* The black textures of each shape and kind, and the black cube map arrays. */
 	for (shape = 0U; shape < GLES_SHAPES; shape++) {
 		for (kind = 0U; kind < GLES_BLACK_KINDS; kind++) {
 			if (state->blacks[shape][kind] != NULL)
 				gles_texture_free(state, state->blacks[shape][kind]);
 		}
+	}
+	for (kind = 0U; kind < GLES_BLACK_KINDS; kind++) {
+		if (state->black_cube_arrays[kind] != NULL)
+			gles_texture_free(state, state->black_cube_arrays[kind]);
 	}
 
 	/* The black texel buffer's views (buffer textures; nothing runs any more). */
@@ -2588,6 +2597,15 @@ gles_desktop_integers(
 		if (texture != NULL)
 			values[0] = (GLint)texture->name;
 		return 1U;
+	case GL_TEXTURE_BINDING_CUBE_MAP_ARRAY:
+		/* Desktop GL 4.0's cube map arrays (libGL). */
+		if (gles_fixed == NULL)
+			return 0U;
+		texture = state->cube_array_units[state->active_unit];
+		values[0] = 0;
+		if (texture != NULL)
+			values[0] = (GLint)texture->name;
+		return 1U;
 	case GL_MAX_SAMPLE_MASK_WORDS:
 		values[0] = 1;
 		return 1U;
@@ -2602,6 +2620,48 @@ gles_desktop_integers(
 	case GL_DRAW_INDIRECT_BUFFER_BINDING:
 		/* The buffer indirect draws read (GL_ARB_draw_indirect). */
 		values[0] = gles_buffer_name(state->draw_indirect_buffer);
+		return 1U;
+	case GL_MIN_PROGRAM_TEXTURE_GATHER_OFFSET:
+		/* Desktop GL's texture gathers' offsets (libGL), the device's. */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = (GLint)state->limits.minTexelGatherOffset;
+		return 1U;
+	case GL_MAX_PROGRAM_TEXTURE_GATHER_OFFSET:
+		/* Desktop GL's texture gathers' offsets (libGL), the device's. */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = (GLint)state->limits.maxTexelGatherOffset;
+		return 1U;
+	case GL_MAX_PROGRAM_TEXTURE_GATHER_COMPONENTS_ARB:
+		/* Desktop GL's texture gathers read every format's first component (libGL). */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = 4;
+		return 1U;
+	case GL_MAX_VERTEX_ATTRIB_BINDINGS:
+		/* Desktop GL 4.3's vertex buffer binding points (libGL): one per attribute. */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = (GLint)GLES_ATTRIBS;
+		return 1U;
+	case GL_MAX_VERTEX_ATTRIB_RELATIVE_OFFSET:
+		/* Desktop GL 4.3's largest offset of an attribute in its binding point's elements (libGL). */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = 2047;
+		return 1U;
+	case GL_CLIP_ORIGIN:
+		/* Desktop GL's clip control (libGL). */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = (GLint)state->clip_origin;
+		return 1U;
+	case GL_CLIP_DEPTH_MODE:
+		/* Desktop GL's clip control (libGL). */
+		if (gles_fixed == NULL)
+			return 0U;
+		values[0] = (GLint)state->clip_depth;
 		return 1U;
 	case GL_MAX_GEOMETRY_UNIFORM_COMPONENTS:
 		values[0] = 1024;

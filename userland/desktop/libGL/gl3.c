@@ -685,6 +685,9 @@ gl3_texture(
 	case GL_TEXTURE_2D_ARRAY:
 		*layered = 1;
 		return state->array_units[state->active_unit];
+	case GL_TEXTURE_CUBE_MAP_ARRAY:
+		*layered = 1;
+		return state->cube_array_units[state->active_unit];
 	case GL_TEXTURE_RECTANGLE:
 		return state->rect_units[state->active_unit];
 	case GL_TEXTURE_2D_MULTISAMPLE:
