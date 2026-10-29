@@ -710,6 +710,14 @@ gsp_prepare_placement(
 		return error;
 	}
 
+	/* The reserved memory must lie in the end the firmware scrubbed. */
+	error = nvrtx_wpr_scrubbed(&gpu->layout);
+	if (error != 0) {
+		nvrtx_stage_mark("layout fail: the reserved %lluM reach below the scrubbed end of the VRAM",
+		    (unsigned long long)((vram_size - gpu->layout.outer_heap) >> 20));
+		return error;
+	}
+
 	/* Writes the record. */
 	error = nvrtx_buffer_alloc(gpu, NVRTX_WPRM_BYTES, &memory->record);
 	if (error != 0)

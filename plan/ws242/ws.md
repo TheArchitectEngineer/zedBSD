@@ -34,7 +34,7 @@ nvrtx が RTX 20（Turing、GTX 16xx を含む）・30（Ampere）・40（Ada）
 | ws242-p002 | compiler: SM86・SM89 の encode・latency・規則（SM75 の出力は不変） | in-progress（実装・host 試験・build まで） | — | P4 |
 | ws242-p003 | [host 試験の復元と追従、identify・profile・製品・起動の判断](phase003/phase.md) | in-progress（実装済み・試験未実施） | — | P2（q1678-i01） |
 | ws242-p004 | [SM を compiler に、QMD 3.0・class・PCAS2_B、HBLANK_DELAY](phase004/phase.md) | in-progress（実装済み・試験未実施。HBLANK_DELAY は入れない判断） | p003 | P2（q1678-i01） |
-| ws242-p005 | [scrub 済みの末尾 256 MiB の検査、firmware の package の確かめ](phase005/phase.md) | planned | p003 | P2（q1678-i01） |
+| ws242-p005 | [scrub 済みの末尾 256 MiB の検査、firmware の package の確かめ](phase005/phase.md) | in-progress（実装済み・試験未実施） | p003 | P2（q1678-i01） |
 | ws242-p006 | [段ごとに諦めて firmware の画面に戻す道](phase006/phase.md) | planned | p004 | P2（q1678-i01） |
 | ws242-p007 | [GTX 16・RTX 30・40 を既定で起動](phase007/phase.md) | planned | p004・p006 | P2（q1678-i01） |
 | ws242-p008 | [RTX 2070 の実機の回帰](phase008/phase.md)（RDNA と差し替え、Q242-4） | planned | p004〜p007 | 未定（T1） |

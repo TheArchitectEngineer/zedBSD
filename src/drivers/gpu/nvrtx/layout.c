@@ -78,6 +78,20 @@
 #define LAYOUT_HEAP_CLIENTS		(48ULL * LAYOUT_KIB * 2048ULL)
 
 /*
+ * The end of the VRAM the firmware has scrubbed by the time the driver
+ * starts, Turing to Ada: the GSP's reserved memory, from the heap outside
+ * the protected region to the end of the VRAM, must lie inside it, or the
+ * resource manager would find memory it did not clear.
+ *
+ * Value referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/src/kernel/gpu/gsp/arch/turing/kernel_gsp_tu102.c (the 256 MiB
+ * the firmware scrubs at the end of the frame buffer) and
+ * src/nvidia/generated/g_kernel_gsp_nvoc.c (the same size for Turing,
+ * Ampere and Ada).
+ */
+#define LAYOUT_SCRUBBED_BYTES		(256ULL * LAYOUT_MIB)
+
+/*
  * The heap outside the protected region.
  *
  * Value referenced: Linux v6.19 drivers/gpu/drm/nouveau/nvkm/subdev/gsp/tu102.c
@@ -178,6 +192,33 @@ nvrtx_vga_workspace(
 
 	/* Succeeded: the register's address. */
 	return address;
+}
+
+/*
+ * Checks that the GSP's reserved memory of a placement lies in the end of the
+ * VRAM the firmware scrubbed: from the heap outside the protected region to
+ * the end of the VRAM, at most 256 MiB.
+ *
+ * Returns 0, or ENOSPC when it reaches below the scrubbed end (the boot then
+ * stops before it changes anything on the GPU).
+ *
+ * Procedure referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/nvidia/src/kernel/gpu/gsp/kernel_gsp.c (the reserved size measured as
+ * the frame buffer's size less the start of the non-WPR heap).
+ */
+int
+nvrtx_wpr_scrubbed(
+	const struct nvrtx_wpr_layout *layout)
+{
+	uint64_t reserved;
+
+	/* From the heap outside the protected region to the end of the VRAM. */
+	reserved = layout->vram_size - layout->outer_heap;
+	if (reserved > LAYOUT_SCRUBBED_BYTES)
+		return ENOSPC;
+
+	/* Succeeded: the firmware cleared all of it. */
+	return 0;
 }
 
 /*

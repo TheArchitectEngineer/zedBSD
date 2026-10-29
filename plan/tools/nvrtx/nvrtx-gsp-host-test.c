@@ -653,6 +653,35 @@ test_layout_ampere(void)
 	error = nvrtx_wpr_layout(vram, vram - 0x100000, 0x1000, 0x3a00000ULL, 0, 64ULL << 20, &l);
 	check(error == 0 && l.heap_size < 170ULL << 20, "layout ampere: Turing's heap would be smaller");
 
+	/* The reserved memory of the usual layouts lies in the scrubbed 256 MiB. */
+	error = nvrtx_wpr_layout(vram, vram - 0x100000, 0x1000, 0x3a00000ULL, 22ULL << 20, 170ULL << 20, &l);
+	check(error == 0 && nvrtx_wpr_scrubbed(&l) == 0, "scrubbed: Ampere 12 GiB (233 MiB reserved) inside");
+	error = nvrtx_wpr_layout(24ULL << 30, (24ULL << 30) - 0x100000, 0x6000, 0x3c99000ULL, 22ULL << 20, 170ULL << 20, &l);
+	check(error == 0 && nvrtx_wpr_scrubbed(&l) == 0, "scrubbed: Ada 24 GiB with the real image size inside");
+	printf("info scrubbed: 24 GiB Ada reserves %llu MiB\n", (unsigned long long)(((24ULL << 30) - l.outer_heap) >> 20));
+	error = nvrtx_wpr_layout(8ULL << 30, (8ULL << 30) - 0x100000, 0x1000, 0x1b34ea0, 0, 64ULL << 20, &l);
+	check(error == 0 && nvrtx_wpr_scrubbed(&l) == 0, "scrubbed: RTX 2070 (137 MiB reserved) inside");
+
+	/*
+	 * The boundary, by the size measured as open-gpu-kernel-modules does
+	 * (the frame buffer's size less the start of the non-WPR heap):
+	 * 255 and 256 MiB pass, 257 MiB does not.
+	 */
+	memset(&l, 0, sizeof(l));
+	l.vram_size = 12ULL << 30;
+	l.outer_heap = l.vram_size - (255ULL << 20);
+	check(nvrtx_wpr_scrubbed(&l) == 0, "scrubbed: 255 MiB reserved inside");
+	l.outer_heap = l.vram_size - (256ULL << 20);
+	check(nvrtx_wpr_scrubbed(&l) == 0, "scrubbed: 256 MiB reserved inside");
+	l.outer_heap = l.vram_size - (257ULL << 20);
+	check(nvrtx_wpr_scrubbed(&l) == ENOSPC, "scrubbed: 257 MiB reserved refused");
+	l.outer_heap = l.vram_size - (256ULL << 20) - 0x1000;
+	check(nvrtx_wpr_scrubbed(&l) == ENOSPC, "scrubbed: 256 MiB and a page refused");
+
+	/* A larger heap than the scrubbed end holds is refused by the check, not the layout. */
+	error = nvrtx_wpr_layout(vram, vram - 0x100000, 0x1000, 0x3a00000ULL, 22ULL << 20, 200ULL << 20, &l);
+	check(error == 0 && nvrtx_wpr_scrubbed(&l) == ENOSPC, "scrubbed: a 200 MiB heap with a 58 MiB image refused");
+
 	/* A VRAM too small for a 170 MiB heap is refused. */
 	error = nvrtx_wpr_layout(256ULL << 20, (256ULL << 20) - 0x100000, 0x1000, 0x3a00000ULL, 22ULL << 20, 170ULL << 20, &l);
 	check(error == EINVAL, "layout ampere: 256 MiB VRAM refused");
