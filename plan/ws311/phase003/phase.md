@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws311-p003 -->
 # ws311-p003: CUBIC と選び方の口（TCP_CONGESTION・net.tcp.congestion・net.tcpstats）
 
-Status: in-progress（2026-10-29 P3 q1673-i01: 128e60640 で実装、試験の途中）
+Status: cleared（2026-10-29 P3 q1673-i01: 128e60640。模型・host・QEMU・5 platform の build、VF2 の LAN で非退行）
 Parent: [WS311](../ws.md)
 Queue: q1673 / q1673-i01（P3）
 依存: [p002](../phase002/phase.md)
@@ -42,6 +42,11 @@ FreeBSD releng/14.1 の sys/netinet/tcp_usrreq.c（raw.githubusercontent.com の
 | `tcp-model --cc cubic --bytes 16777216` | getsockopt の読み戻し・tcpstats（length 1056 = 72 + 3 × 328）PASS |
 | 5 platform の vmunix と VF2 の sysctl・tcp-perf（build5.sh p003） | rc=0、warning 0 |
 | `cc -std=c11 -Wall -Wextra -Werror userland/tests/tcp-perf/main.c`（Linux） | build できる |
+| `plan/ws311/tests/cc-model.sh`（模型、各 5 つの種の中央値、300 秒、20 秒から） | `cc-model: PASS`: cc-lan 比 1.000、cc-20ms-loss 8.257 → 8.788 MB/s 比 1.064（≥ 0.97）、cc-80ms-loss 3.133 → 2.480 比 0.792（記録）、fair-cubic-cubic Jain 0.998、fair-cubic-reno Reno の取り分 0.473（≥ 0.25） |
+| `plan/ws221/tests/qemu-tcp.sh "" 20 inet,inet6`（QEMU） | `qemu-tcp: PASS` |
+| 実機 VF2 ↔ 5330 の LAN（vf2-tcp.sh、128e60640 の kernel） | 送り 949.2、受け 949.3 Mbps |
+
+未実施: p001 §5.1 の cc-100ms-step（t = K の軌跡の check）と書き手の休み → 再開の scenario は作っていない（模型の判定は上の 5 つ）。CUBIC の伸びは host 単体試験と cc-* の中央値で見た。
 
 ## 5. 模型の所見（種 1 つ、2026-10-29）
 

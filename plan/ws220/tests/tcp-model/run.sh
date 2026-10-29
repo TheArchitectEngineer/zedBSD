@@ -243,8 +243,10 @@ scenario delayed-ack-stream 30 --bytes 16777216 --ack-delay-ms 200 --expect-retr
 # more than the flight (ws221-p008: the 64 KB window, 64 of the model's 1024-byte segments; before, the ring's 8).
 # (ws221-p008: a timeout goes back to the oldest segment and resends the flight in slow start; after this spurious one
 # the resends of segments B had come back as duplicates, which may bring one fast retransmit, as on BSD.)
+# (ws311-p004: with CUBIC, the default since, a timeout leaves the threshold at 0.7 of the flight rather than half, so
+# the slow start after the second spurious timeout resends a few more segments B had: 69 (Reno 57), at most 72.)
 scenario rtt-step 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 --peer-window 65535 --limit-s 120 \
-    --expect-retransmits-max 64 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:1
+    --expect-retransmits-max 72 --expect-srtt-us 500000:700000 --expect-fast-retransmits 0:1
 # ws220-p005: the same with zedBSD as the receiver (its window moves): no resend on a reopened window keeps the sample.
 # (ws221-p009: zedBSD's 128 KB window, 128 segments of the flight; the Linux-like peer above keeps 64 KB.)
 scenario rtt-step-zedbsd 0 --bytes 1048576 --delay-step-at-ms 2 --delay-step-us 300000 --limit-s 120 \
@@ -348,12 +350,12 @@ big_scenario() {
 	scenario "$@"
 	out=$saved
 }
-big_scenario reno-bottleneck 4 --run-s 60 --delay-us 10000 --bottleneck-mbps 100 --bottleneck-queue 62500 \
+big_scenario reno-bottleneck 4 --cc reno --run-s 60 --delay-us 10000 --bottleneck-mbps 100 --bottleneck-queue 62500 \
     --send-buffer 1048576 --receive-buffer 1048576 --write-bytes 65536 --expect-slow-start --expect-ca-growth 0.8 \
     --expect-cwnd-limited 0.8
 # ws311-p002: a second connection 5 s in over the same router (the "fair:" line gives the shares; p003 sets what they
 # must be): both streams arrive intact (the least rate is the first connection's, which shares the router).
-big_scenario reno-two-flows 1 --run-s 60 --delay-us 10000 --bottleneck-mbps 100 --bottleneck-queue 62500 \
+big_scenario reno-two-flows 1 --cc reno --second-flow-cc reno --run-s 60 --delay-us 10000 --bottleneck-mbps 100 --bottleneck-queue 62500 \
     --send-buffer 1048576 --receive-buffer 1048576 --write-bytes 65536 --second-flow-at-ms 5000
 
 [ $status = 0 ] && echo "tcp-model: PASS" || echo "tcp-model: FAIL"

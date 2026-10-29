@@ -272,10 +272,12 @@ struct tcp_segment_addresses {
 
 /*
  * The congestion control a new socket starts with until net.tcp.congestion
- * sets another (TCP_CC_RENO or TCP_CC_CUBIC).
+ * sets another (TCP_CC_RENO or TCP_CC_CUBIC): CUBIC, as Linux, Windows and
+ * FreeBSD have it, which keeps a long round trip's link busier after a
+ * loss and is no slower on a LAN.
  */
 #ifndef CONFIG_TCP_CC_DEFAULT
-#define CONFIG_TCP_CC_DEFAULT TCP_CC_RENO
+#define CONFIG_TCP_CC_DEFAULT TCP_CC_CUBIC
 #endif
 
 /* The congestion controls by number (TCP_CC_*), with the names TCP_CONGESTION and net.tcp.congestion give them. */

@@ -5,7 +5,9 @@
 # plan/ws221/tests/vf2-tcp.sh --kernel); this copies tcp-perf to its /tmp and runs ROUNDS rounds of reno then cubic
 # (tcp-perf --cc), each SECONDS long, against plan/ws221/tests/perf-peer.py on the 5330.  Judged from the programs' own
 # lines over SSH, never the console; the board's net.tcpstats halfway through each run must name the control asked for.
-#   plan/ws311/tests/vf2-cc.sh [--bin DIR] [--seconds N] [--rounds N] [--netem "ARGS"] NAME
+#   plan/ws311/tests/vf2-cc.sh [--bin DIR] [--seconds N] [--rounds N] [--netem "ARGS"] [--mtu N] NAME
+# --mtu N sets the board's adapter (en0) and the 5330's to N for the runs, both back to 1500 at the end (trap EXIT).
+# PEER_ADDRESS may be the 5330's IPv6 address (the runs are then over IPv6).
 # --netem ARGS: the netem qdisc's arguments on the 5330's ifb device (for example "delay 80ms rate 35mbit loss 0.004%
 # limit 240"); with it the 5330's adapter's GRO is off for the run.  Before, the 5330 must have no ingress qdisc and no
 # ifb module loaded; at the end (also on failure, trap EXIT) the ingress qdisc and the ifb device go, the module is
@@ -22,12 +24,14 @@ bin=build/vf2/bin
 seconds=30
 rounds=5
 netem=
+mtu=
 while [ $# -gt 1 ]; do
 	case $1 in
 	--bin) bin=$2 ;;
 	--seconds) seconds=$2 ;;
 	--rounds) rounds=$2 ;;
 	--netem) netem=$2 ;;
+	--mtu) mtu=$2 ;;
 	*) echo "vf2-cc: unknown option $1"; exit 2 ;;
 	esac
 	shift 2
@@ -46,6 +50,7 @@ out=build/ws311-vf2/$name
 
 say() { echo "vf2-cc: $*" | tee -a "$out/summary.txt"; }
 board() { timeout "${T:-60}" sshpass -e ssh $so "$host" "$1" 2>&1 | tr -d '\r'; }
+board_root() { printf '%s\n' "$SSHPASS" | timeout "${T:-60}" sshpass -e ssh $so "$host" "sudo -S sh -c '$1'" 2>&1 | tr -d '\r'; }
 on_peer() { timeout "${T:-60}" ssh -o BatchMode=yes "$peer" "$1" 2>&1; }
 
 # The 5330's state after a run: its qdiscs, any ifb device, the module, GRO.
@@ -55,8 +60,13 @@ peer_state() {
 	    sudo -n /usr/sbin/ethtool -k $peer_if | grep generic-receive-offload" | tr '\n' ';'
 }
 
-# Takes the path away again: the ingress qdisc, the ifb device and module, and GRO as it was.
+# Takes the path away again: the ingress qdisc, the ifb device and module, GRO as it was, and both MTUs at 1500.
 restore_peer() {
+	if [ -n "$mtu" ]; then
+		board_root "/tmp/ifconfig en0 mtu 1500" > /dev/null
+		on_peer "sudo -n ip link set $peer_if mtu 1500" > /dev/null
+		say "mtu after: board $(board '/tmp/ifconfig en0' | head -1 | sed -n 's/.*\(mtu [0-9]*\).*/\1/p'), 5330 $(on_peer "ip -o link show $peer_if" | sed -n 's/.*\(mtu [0-9]*\).*/\1/p')"
+	fi
 	[ -n "$netem" ] || return 0
 	on_peer "sudo -n /usr/sbin/tc qdisc del dev $peer_if ingress 2>/dev/null; sudo -n ip link del ifb311 2>/dev/null;
 	    sudo -n modprobe -r ifb 2>/dev/null; sudo -n /usr/sbin/ethtool -K $peer_if gro $gro_before" > /dev/null
@@ -67,7 +77,7 @@ peer_dir=$(on_peer 'mktemp -d /tmp/vf2-cc.XXXXXX')
 [ -n "$peer_dir" ] || { say "FAIL: no directory on the 5330"; exit 1; }
 say "5330's files: $peer:$peer_dir"
 timeout 60 scp -q plan/ws221/tests/perf-peer.py "$peer:$peer_dir/" || { say "FAIL: copy of the peer"; exit 1; }
-timeout 60 sshpass -e scp $so "$bin/tcp-perf" "$bin/sysctl" "$host:/tmp/" || { say "FAIL: copy to the board"; exit 1; }
+timeout 60 sshpass -e scp $so "$bin/tcp-perf" "$bin/sysctl" "$bin/ifconfig" "$host:/tmp/" || { say "FAIL: copy to the board"; exit 1; }
 say "board: $(board 'uname -a')"
 gro_before=on
 if [ -n "$netem" ]; then
@@ -87,6 +97,12 @@ if [ -n "$netem" ]; then
 	    sudo -n /usr/sbin/tc qdisc add dev ifb311 root netem $netem && /usr/sbin/tc qdisc show dev ifb311" > "$out/netem.txt"
 	grep -q netem "$out/netem.txt" || { say "FAIL: netem: $(tr '\n' ' ' < "$out/netem.txt")"; exit 1; }
 	say "path: $(tr '\n' ' ' < "$out/netem.txt")"
+fi
+if [ -n "$mtu" ]; then
+	trap restore_peer EXIT
+	on_peer "sudo -n ip link set $peer_if mtu $mtu" > /dev/null
+	board_root "/tmp/ifconfig en0 mtu $mtu" > /dev/null
+	say "mtu: board $(board '/tmp/ifconfig en0' | head -1 | sed -n 's/.*\(mtu [0-9]*\).*/\1/p'), 5330 $(on_peer "ip -o link show $peer_if" | sed -n 's/.*\(mtu [0-9]*\).*/\1/p')"
 fi
 say "server=$server_ip seconds=$seconds rounds=$rounds"
 
