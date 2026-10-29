@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws311-p002 -->
 # ws311-p002: cwnd を使っている時だけ増やす門、Reno の 2 回目の timeout、模型の拡張
 
-Status: in-progress（2026-10-29 P3 q1673-i01）
+Status: cleared（2026-10-29 P3 q1673-i01: b2c86795a。tcp-model 全 PASS、5 platform の build warning 0、qemu-tcp PASS、VF2 の LAN 949 Mbps で非退行）
 Parent: [WS311](../ws.md)
 Queue: q1673 / q1673-i01（P3）
 依存: [p001](../phase001/phase.md)（cleared、第 3 版）
@@ -52,6 +52,14 @@ Queue: q1673 / q1673-i01（P3）
 | 最低の mean MB/s | 全部 | 損失のある物（lan-loss-*、rtt-10ms-loss-0.1、queue-1-loss-1、burst-loss、reno-bottleneck）は依る | 同じ最低で走らせる（CUBIC の目標は §5.1 の cc-*） |
 | `--expect-ca-growth 0.8` | reno-bottleneck | 依る（CUBIC の W_est は約 0.53、W_max の近くは約 0、review-2 M5） | Reno だけ。CUBIC は p001 §5.1 の軌跡の check |
 
-## 5. 残り
+## 5. build・QEMU・実機（2026-10-29、b2c86795a の tree）
 
-- 5 platform の build（warning 0）、qemu-tcp、VF2 の LAN の非退行（`plan/ws221/tests/vf2-tcp.sh`、5330 を相手に）。
+| コマンド | 結果 |
+| --- | --- |
+| `make ZEDBSD_CONFIG=plan/ws221/tests/config-vf2-tcp.mk BUILD=build/vf2 -j16 build/vf2/vmunix build/vf2/bin/{tcp-perf,sysctl,ifconfig}`、`config/ci/config-{amd64,pcat,rpi4,zybo}.mk` の `$(BUILD)/vmunix` | 5 つとも rc=0、`grep -c 'warning:'` 0（build/ws311/p002-*.log） |
+| `plan/ws221/tests/qemu-tcp.sh "" 20 inet,inet6`（QEMU、amd64 の image を tree から build） | `qemu-tcp: PASS`（inet 送り・受け、inet6 送り 40.8・受け 30.2 Mbps、emulator の速さ） |
+| `flock /tmp/i915-hw.lock plan/ws221/tests/vf2-tcp.sh --kernel build/vf2/vmunix --peer awe@10.0.30.3,10.0.30.3 --runs send,recv,send,recv p002-lan`（実機 VF2 ↔ 5330、MTU 1500、各 30 秒） | `vf2-tcp: PASS`。送り 949.1・949.1（最遅の秒 948.0）、受け 949.2・949.3（最遅 942.7）Mbps。WS221 の基準（送り 949.1、受け 949.1/949.2）と同じ。再送 1・0、fast retransmit 0 |
+
+- 板の送りの間の net.tcpstats（1 秒ごと）: cwnd の最大 749129（その前は 9 億 byte 台へ伸びた）、in_flight の最大 246740。cwnd は送りの ring（256 × 1460 ≈ 374 KB）の flight の 2 倍の中で止まる。
+- VF2 の /boot/boot0/vmunix は b2c86795a の tree（sha256 の先頭 39ec1bd56d3796f5）、vmunix.old は 0342c9d89 の tree。SwitchBot の入れ直し 1 回で上がった。5330 に置いた物: `/tmp/vf2-tcp.dJ4woj`（vf2-tcp.sh、Q1 が消す）。5330 の MTU は変えていない。
+- QEMU と実機の証拠は上の行のとおり分けた。IPv6・MTU 9000 の実機は p004 で測る。

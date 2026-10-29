@@ -4,7 +4,7 @@
 
 Status: incomplete
 Primary Milestone: MG005
-Resume point: 2026-10-29 P3 q1673-i01: p001 cleared（第 3 版、review-2 に答えた）。p002 の門（tcp.c）と模型の拡張を実装中。
+Resume point: 2026-10-29 P3 q1673-i01: p001・p002 cleared。p003 を実装中（tcp-cubic.c と host 試験は済み、tcp.c の状態の機械と口は途中）。
 
 ## ユーザーの指示（原文、2026-10-29）
 
@@ -32,7 +32,7 @@ Resume point: 2026-10-29 P3 q1673-i01: p001 cleared（第 3 版、review-2 に�
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
 | [p001](phase001/phase.md) | 調べと設計（RFC 9438、今の tcp.c の cwnd の形、選び方の口、測りの条件と「良くなった」の基準）→ design-reviewer | cleared（2026-10-29 P3 q1673-i01: 第 3 版、review-1・review-2 の全部に答えた、§10） | — |
-| [p002](phase002/phase.md) | cwnd を使っている時だけ増やす門（Reno も、WS221 p011 で見つけた不具合）、Reno の 2 回目の timeout で ssthresh を保つ（RFC 5681 §3.1）、tcp-model の拡張（drop-tail の bottleneck、2 本目の接続、上限、新しい check） | in-progress | p001 |
-| p003 | CUBIC の実装（TCP_CONGESTION・sysctl・net.tcpstats の UAPI、cc-*・fair-* の scenario） | planning | p002 |
+| [p002](phase002/phase.md) | cwnd を使っている時だけ増やす門（Reno も、WS221 p011 で見つけた不具合）、Reno の 2 回目の timeout で ssthresh を保つ（RFC 5681 §3.1）、tcp-model の拡張（drop-tail の bottleneck、2 本目の接続、上限、新しい check） | cleared（2026-10-29 P3 q1673-i01: b2c86795a、tcp-model 全 PASS、5 platform warning 0、qemu-tcp PASS、VF2 実機 LAN 949 Mbps 非退行） | p001 |
+| [p003](phase003/phase.md) | CUBIC の実装（TCP_CONGESTION・sysctl・net.tcpstats の UAPI、cc-*・fair-* の scenario） | in-progress | p002 |
 | p004 | 実機の測り（Reno と CUBIC、遅延の経路、取り合い）と既定の切り替えの判定 | planning | p003 |
 | p005 | 規約の全文の見直し | planning | p003（p004 の後） |
