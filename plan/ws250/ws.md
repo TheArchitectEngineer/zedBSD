@@ -7,7 +7,7 @@ Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「すぐ取
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx）、[WS291 p011](../ws291/phase011/phase.md)（非同期の submit、この WS はその上に作る）、[WS242](../ws242/ws.md)（Ampere/Ada、chid の管理）、`src/drivers/gpu/gpu.c`（共通の GPU の層の監視と drv_gpu_recovery_ops）、`src/drivers/gpu/i915/reset.c`（isolate の手本）
-Resume point: 2026-10-29 P5（q1676-i01、worktree p5-ws250）。design.md 第 6 版（review 1 回: design-review-v5.md、指摘は第 6 版で直した）。p002・p003 は実装済み・試験未実施。p004 は script を書いた（実機で未実行）。次は p005 → p007。実機の試験は p005 の後にまとめて Q1 の割当で。
+Resume point: 2026-10-29 P5（q1676-i01、worktree p5-ws250）。design.md 第 6 版（review 1 回: design-review-v5.md、指摘は第 6 版で直した）。p002・p003 は実装済み・試験未実施。p004 は script を書いた（実機で未実行）。p005 も実装済み・試験未実施。次は Q1 の割当の実機で rtx-hang-check.sh（S0〜S5、--probe で S1）→ 直し → p007。実機の試験は p005 の後にまとめて Q1 の割当で。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
@@ -49,6 +49,6 @@ Resume point: 2026-10-29 P5（q1676-i01、worktree p5-ws250）。design.md 第 6
 | [p002](phase002/phase.md) | session ごとの channel、`rpc_lock` と drain の turn、chid の next-fit と host 試験 | in-progress（実装済み・試験未実施） | p001 |
 | [p003](phase003/phase.md) | 犯人の手がかり（GR の照合・始まりの印）、reaper の見張りと取り消し、RC の event、ops（stop_poll・isolate）、host 試験（scheduler の model） | in-progress（実装済み・試験未実施） | p002 |
 | [p004](phase004/phase.md) | 実機の scenario の script（rtx-hang-check.sh、S0〜S6） | in-progress（script を書いた・実機で未実行） | p002 |
-| [p005](phase005/phase.md) | session ごとの lane（番号ごとの thread の pool）と executor の待ちの一部の lock の外出し | planned | p003 |
+| [p005](phase005/phase.md) | session ごとの lane（番号ごとの thread の pool）と executor の待ちの一部の lock の外出し | in-progress（実装済み・試験未実施） | p003 |
 | p006 | 選択肢: `reset`（GSP の再起動）。既定は作らない（ユーザーの判断） | planned（選択肢） | — |
 | [p007](phase007/phase.md) | 規約の全文と出典の監査、ws.md を完了の形に | planned | 全部 |

@@ -233,7 +233,8 @@ gpu
   EBUSY を返すだけ、review v5 M5）。その番号の channel を持つ session の frame と marker を扱い、session の close の後は空で寝て次の session を待つ。
   共有の session と channel を持つ前の session（最初の frame）は今の node の worker・completer。lane の thread を作れなければ node の worker に退く。
 - queue の entry・marker の slot・`queued`・`pending` の意味は今のまま。marker の順は session の中で保ち、他の session の marker を待たない。
-- **executor の待ちと `node->lock`**（review v5 M4）: 手放すのは executor の frame の中の待ちのうち、slot の再利用と CPU の copy の前の待ちだけ
+- **executor の待ちと `node->lock`**（review v5 M4）: 手放すのは executor の frame の中の待ちのうち、slot の再利用の待ちだけ（p005 の実装: CPU の copy の
+  前の execute_drain は `nvrtx_vk_gpu_idle` を使うので、vk 層を変えずに済む slot の再利用だけにした。以下の「CPU の copy の前」は読み替える）
   （vk 層が呼ぶ `nvrtx_vk_gpu_wait`。手放す前に `mutex_owned` で持っていることを確かめる。completer は持たずに呼ぶ）。destructor の中の待ち
   （memory の detach・run の free の `nvrtx_vk_gpu_idle`）と vkQueueWaitIdle は手放さない。session の executor は `exec_lock`（session ごとの mutex）で
   守り、`exec_lock` を取るのは frame（`runtime_execute`・`runtime_command`）、blob の attach（`nvrtx_vk_node_blob_attach`）、close の executor の close。
