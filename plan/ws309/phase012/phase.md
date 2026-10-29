@@ -114,7 +114,9 @@
   - backlight: 上の「答えの形」のとおり T3 の job と main の写し。
   - QEMU: resize（head の open も T3 に出た、pass_max 0.96 s）・scanout・grave PASS。
 - 未実施: RTX（枠は Q1 の知らせ待ち）、backlight の成功の経路（QEMU に backlight が無い。実機で）、lid の外部・内部と Settings の anchor の非同期化（その場のまま）、
-  let-go の破棄の T3 化（layers・glass maps は main の構造に触るので別の形が要る）、seat の pause の答えを T3 の完了で返す形（p016 と一緒）、arm64・riscv64 の build（背景で実行中）。
+  let-go の破棄の T3 化（layers・glass maps は main の構造に触るので別の形が要る）、seat の pause の答えを T3 の完了で返す形（p016 と一緒）。
+- 27d4ecfde の build: arm64（`config/ci/config-rpi5.mk` の build/rpi5/bin/wayland、この worktree の sysroot-arm64）・riscv64（`config/ci/config-visionfive2-keiland.mk`）exit 0・warning 0。
+  同じ build で QEMU `rotate-guest.sh`・`hand-guest.sh` も PASS（16:3x）。
 
 ## 注意
 
