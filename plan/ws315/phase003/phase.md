@@ -21,4 +21,9 @@ Queue: q1694 / q1694-i01（P3）
 - k1 の後の直し（16122571a）: attach の待ち（autoload・PHY の状態・MAC の reset）を FreeBSD と同じく時間切れでも続ける（10 s、log）、attach・open の手順ごとの失敗の log、
   link を interrupt が告げない時に worker が 1 秒ごとに PHYSTATUS を読む（carrier が立たず DHCP が始まらない、を候補として）。
 - 試験の script（7712411ab）: 前の起動の /var/log/kernel.log.old の driver の行を集める（届かなかった起動の原因を、次の起動で読む）。出力は build/ws315-hw/NAME。
+| k2-ncm（04:5x、16122571a、`CFG_ADD=usb.rtl815x=off`） | NCM | 5330-run PASS: token で NCM（urbs=4/2、link 2500）、send 2062.8・recv 1473.7 Mbit/s、ping 1472 3/3、MTU 9000 は NCM の上限（1504）で拒否（想定どおり）、1500 に戻して ping 3/3。終わりの zedBSD の reboot の後に Debian が 5 分戻らず（cfg の行を戻せず: NVMe の zedbsd.cfg に `usb.rtl815x=off` が残る）。5330 は再び到達不能 |
+
+- k1 の原因（k2-ncm が集めた /var/log/kernel.log.old）: `usb-rtl815x: ue0 chip=RTL8156B version=0x7410 mac=6c:1f:f7:06:14:8a mtu_max=9000 urbs=4/4 rx_block=49152`
+  （attach は成功、MAC は Debian と同じ）、その後 `ue0 open failed (3)`（EINVAL）×5。原因: RX・TX の URB に付けた `drv_usb_urb_reserve_transfer` が同期の staging を作り、
+  callback 付きの `drv_usb_urb_setup` を EINVAL で拒む。予約を外した（次の commit）。5330 の RTL8156 は RTL8156B（0x7410）だった。
 - 次: 入れ直しの後、(1) 同じ kernel を `CFG_ADD=usb.rtl815x=off`（NCM）で起動し k1 の log を読む、(2) vendor mode で起動。

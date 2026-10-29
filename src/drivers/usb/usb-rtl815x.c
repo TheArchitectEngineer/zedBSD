@@ -3239,7 +3239,6 @@ rtl_urbs_alloc(
 	struct rtl_adapter *adapter)
 {
 	unsigned index;
-	int error;
 
 	/* The link interrupt's. */
 	adapter->interrupt_urb = drv_usb_urb_alloc(adapter->usb_device, adapter->interrupt_endpoint, 0);
@@ -3263,26 +3262,6 @@ rtl_urbs_alloc(
 		if (adapter->tx_urbs[index] == NULL) {
 			rtl_urbs_free(adapter);
 			return ENOMEM;
-		}
-	}
-
-	/*
-	 * The host controller's request and DMA staging for each bulk
-	 * transfer, made once here instead of at every submission; a
-	 * controller without reservations allocates at each submission.
-	 */
-	for (index = 0; index < adapter->rx_urb_count; index++) {
-		error = drv_usb_urb_reserve_transfer(adapter->rx_urbs[index], adapter->rx_block_size);
-		if (error != 0 && error != ENOTSUP && error != EOPNOTSUPP) {
-			rtl_urbs_free(adapter);
-			return error;
-		}
-	}
-	for (index = 0; index < adapter->tx_urb_count; index++) {
-		error = drv_usb_urb_reserve_transfer(adapter->tx_urbs[index], RTL_TX_BLOCK);
-		if (error != 0 && error != ENOTSUP && error != EOPNOTSUPP) {
-			rtl_urbs_free(adapter);
-			return error;
 		}
 	}
 

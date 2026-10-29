@@ -156,8 +156,8 @@ Linux の `r8156_init`・`rtl8156_up`・`rtl8156_enable` と違う所は、ま�
 - `drv_usb_endpoint_set_queue_depth`（WS221 p014）で bulk-in に 4（上限 `DRV_USB_ENDPOINT_QUEUE_MAX`）、bulk-out に 4 を頼み、認められた数の URB を作る（1 なら 1 本ずつ）。
   Linux は RX 10・TX 4 本を出す。zedBSD の上限 4 で 48 KB × 4 = 192 KB が device から見た受けの空き。
 - xHCI の ring の空き: TRB は 64 KB の境界で分かれ（pci-xhci.c の TD の組み立て）、48 KB の TD は 2 個ほど。4 本と余白でも ring に十分入る（review m5）。
-- RX・TX の URB に `drv_usb_urb_reserve_transfer` で HCD の要求と DMA の staging を attach の時に確保する（無いと submit ごとに kern_malloc と 48 KB の coherent の確保が走る。
-  uvc・uas と同じ形。NCM はしていない）。
+- `drv_usb_urb_reserve_transfer` は使わない: 予約は同期の staging（sync_buffer）を作り、callback 付きの setup を EINVAL で拒む（usb.c の `drv_usb_urb_setup`）。
+  review m5 の案で入れた 5534277a3 は 5330 の k1 で open が EINVAL になった（p003）。submit ごとの確保の費用は p003 の数字で見る。
 - interrupt-in は depth 1。
 
 ## 9. MTU と jumbo
@@ -204,7 +204,7 @@ review: 致命 1・重大 4・中 9・軽微（[phase001](phase001/phase.md) に
 | m2 RTL8157 の EARLY_SIZE /16・IDLE_SPDWN | EARLY_SIZE は世代 2 で /16（実装済み）。IDLE_SPDWN を飛ばすのは p004 で |
 | m3 link up の RE・TE、自動交渉 | link up で RE・TE を立て直す（開いている時）。自動交渉の開始は attach の一度だけ（open のたびに link を落とさない） |
 | m4 interrupt の buffer | endpoint の wMaxPacketSize の大きさで受け、先頭の le16 を読む |
-| m5 xHCI | §8 を直した（reservation） |
+| m5 xHCI | ring の空きは十分（§8）。reservation は callback と両立せず、入れて外した（§8、p003 の k1） |
 | m6 範囲の外の chip | ID の表を 0x8156・0x8157 に絞る。拒否は log に version と token を出す。core に configuration の前の probe の口を足すのは範囲の外（記録だけ） |
 | m7 登録の場所 | pcat.c の NCM の隣（amd64・pcat）。arm64 の platform は既定 n なので今は足さない |
 | m8 開いたままの MTU | RMS・EARLY_SIZE・（8156B の）TX FIFO を書き直すだけ。p003 で開いたままの変更と ping を試す。問題が出たら disable → enable の形へ |
