@@ -929,6 +929,7 @@ int nvrtx_mmu_gr_map_system(uint8_t *image, uint64_t va_base, uint64_t va_bytes,
 int nvrtx_mmu_gr_map_vram(uint8_t *image, uint64_t va_base, uint64_t va_bytes, uint64_t va, uint64_t physical, uint64_t size);
 size_t nvrtx_mmu_gr_pte_offset(uint64_t va_base, uint64_t va_bytes, uint64_t va);
 void nvrtx_mmu_gr_entries_vram(uint8_t *entries, uint64_t physical, uint64_t pages);
+void nvrtx_mmu_gr_entries_privileged(uint8_t *entries, uint64_t physical, uint64_t pages, int read_only);
 void nvrtx_mmu_gr_entries_system(uint8_t *entries, const uint64_t *pages, size_t count);
 
 int nvrtx_vbios_walk(const uint8_t *rom, size_t size, struct nvrtx_vbios *vbios);

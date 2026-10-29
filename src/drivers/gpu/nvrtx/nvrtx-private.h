@@ -447,6 +447,20 @@ bool
 nvrtx_stage_vk_perf_wanted(void);
 
 /*
+ * Reports whether each session gets a channel of its own (nvrtx.channels=0
+ * shares the work channel instead).
+ */
+bool
+nvrtx_stage_channels_wanted(void);
+
+/*
+ * Reports whether a session's channel whose work did not end is stopped
+ * (nvrtx.kill=0 only reports the loss).
+ */
+bool
+nvrtx_stage_kill_wanted(void);
+
+/*
  * Reports whether the GPU stays up as a GPU device after the takeover: by
  * default, unless the boot says nvrtx.resident=0.
  */

@@ -488,7 +488,7 @@ node_open(
 	return 0;
 }
 
-/* Closes a session: its lease ends (the console surface comes back), its executor session closes, then it goes. */
+/* Closes a session: its lease ends (the console surface comes back), its executor session and its channel close, then it goes. */
 static void
 node_close(
 	void *private_data,
@@ -513,6 +513,9 @@ node_close(
 
 	if (error != 0)
 		nvrtx_stage_mark("gpu-device: an executor session closed with %d", error);
+
+	/* Frees the session's channel, its runs being over. */
+	nvrtx_runtime_session_close(node, closing);
 
 	/* Frees the session. */
 	kern_free(session);

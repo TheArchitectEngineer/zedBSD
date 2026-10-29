@@ -16,8 +16,9 @@
  * which the renderer's completer calls without it.  Every run is mapped
  * once for the work channel: the VA it gets lives as long as the run.
  *
- * A push buffer is put on the work channel without waiting for it: the
- * session keeps its newest run's fence, and whatever needs the GPU done
+ * A push buffer is put on the session's channel (its own, or the shared
+ * work channel) without waiting for it: the session keeps its newest
+ * run's fence, and whatever needs the GPU done
  * with the session's work first (a run of memory given back, a copy by the
  * CPU, vkQueueWaitIdle) waits for it.  A run may take VK_NODE_RUN_US from
  * its submission; one that takes longer loses the session's runs.
@@ -80,6 +81,7 @@ struct vk_node_run {
 static uint8_t *vk_node_backing_view(struct nvrtx_node *node, const struct nvrtx_backing *backing);
 static void vk_node_backing_drop(struct nvrtx_node *node, struct nvrtx_backing *backing);
 static int vk_node_wait(struct nvrtx_session *session, uint32_t fence, uint64_t submitted_us, uint64_t *waited_us);
+static bool vk_node_passed(struct nvrtx_session *session, uint32_t fence);
 static void vk_node_gr_check(struct nvrtx_node *node);
 
 /*
@@ -370,10 +372,10 @@ nvrtx_vk_gpu_free(
 }
 
 /*
- * Puts a push buffer on the work channel with the driver's fence after it,
- * without waiting for it; the session's newest run is this one from now
- * on.  Returns 0, EIO once the session's runs are lost, or the
- * submission's error.
+ * Puts a push buffer on the session's channel with the driver's fence after
+ * it, without waiting for it; the session's newest run is this one from now
+ * on.  Returns 0, EIO once the session's runs are lost, ENODEV for a
+ * session without its channel, or the submission's error.
  */
 int
 nvrtx_vk_gpu_submit(
@@ -397,9 +399,13 @@ nvrtx_vk_gpu_submit(
 	if (__atomic_load_n(&session->run_lost, __ATOMIC_ACQUIRE) != 0)
 		return EIO;
 
-	/* Puts the push buffer on the ring with the driver's fence after it. */
+	/* The renderer gives the session its channel before its first frame runs. */
+	if (session->channel == NULL)
+		return ENODEV;
+
+	/* Puts the push buffer on the session's channel's ring with the driver's fence after it. */
 	submitted = nvrtx_now_us();
-	error = nvrtx_work_submit(node->gpu, va, bytes, &fence);
+	error = nvrtx_work_channel_submit(node->gpu, session->channel, va, bytes, &fence);
 	if (error != 0) {
 		nvrtx_stage_mark("executor fail: a push buffer was not submitted (%d)", error);
 		return error;
@@ -430,13 +436,15 @@ nvrtx_vk_gpu_wait(
 	struct nvrtx_session *session;
 	struct nvrtx_node *node;
 	uint64_t waited;
+	bool passed;
 	int error;
 
 	session = owner;
 	node = session->node;
 
 	/* A run that ended is no wait. */
-	if (nvrtx_work_passed(node->gpu, ticket->fence))
+	passed = vk_node_passed(session, ticket->fence);
+	if (passed)
 		return 0;
 
 	/* Waits, and counts the wait. */
@@ -462,10 +470,12 @@ nvrtx_vk_node_run_wait(
 	uint64_t submitted_us)
 {
 	uint64_t waited;
+	bool passed;
 	int error;
 
 	/* A run that ended is no wait. */
-	if (nvrtx_work_passed(session->node->gpu, fence))
+	passed = vk_node_passed(session, fence);
+	if (passed)
 		return 0;
 
 	/* Waits. */
@@ -475,6 +485,21 @@ nvrtx_vk_node_run_wait(
 
 	/* Succeeded: the GPU has done the run. */
 	return 0;
+}
+
+/* Reports, without the node's lock (the renderer), whether a run of the session's has ended. */
+bool
+nvrtx_vk_node_run_passed(
+	struct nvrtx_session *session,
+	uint32_t fence)
+{
+	bool passed;
+
+	/* The session's channel's semaphore at or past the fence. */
+	passed = vk_node_passed(session, fence);
+
+	/* Succeeded: whether it ended. */
+	return passed;
 }
 
 /* Reports whether a run of the session's has ended. */
@@ -488,8 +513,8 @@ nvrtx_vk_gpu_passed(
 
 	session = owner;
 
-	/* The work channel's semaphore at or past the run's fence. */
-	passed = nvrtx_work_passed(session->node->gpu, ticket->fence);
+	/* The channel's semaphore at or past the run's fence. */
+	passed = vk_node_passed(session, ticket->fence);
 
 	/* Succeeded: whether it ended. */
 	return passed;
@@ -507,18 +532,22 @@ nvrtx_vk_gpu_retire(
 	struct nvrtx_session *session;
 	struct nvrtx_node *node;
 	uint64_t gpu_ns;
+	bool passed;
 	int timed;
 
 	session = owner;
 	node = session->node;
 
 	/* No run, or one that has not ended. */
-	if (ticket->fence == 0U || !nvrtx_work_passed(node->gpu, ticket->fence))
+	if (ticket->fence == 0U)
+		return;
+	passed = vk_node_passed(session, ticket->fence);
+	if (!passed)
 		return;
 
 	/* The GPU's own time for the run. */
 	if (node->perf != 0) {
-		timed = nvrtx_work_run_time(node->gpu, ticket->fence, &gpu_ns);
+		timed = nvrtx_work_channel_run_time(session->channel, ticket->fence, &gpu_ns);
 		if (timed == 0) {
 			nvrtx_node_count(node, &node->counts.timed, 1U);
 			nvrtx_node_count(node, &node->counts.gpu_us, gpu_ns / 1000U);
@@ -612,8 +641,8 @@ vk_node_wait(
 	if (took > age + VK_NODE_SPIN_EARLY_US && took - age - VK_NODE_SPIN_EARLY_US < left)
 		quiet = (uint32_t)(took - age - VK_NODE_SPIN_EARLY_US);
 
-	/* Waits for the fence. */
-	error = nvrtx_work_wait_late(node->gpu, fence, left, quiet);
+	/* Waits for the fence on the session's channel. */
+	error = nvrtx_work_channel_wait_late(session->channel, fence, left, quiet);
 	spent = nvrtx_now_us();
 	*waited_us = spent - start;
 	if (error != 0) {
@@ -630,6 +659,31 @@ vk_node_wait(
 
 	/* Succeeded: the run ended. */
 	return 0;
+}
+
+/*
+ * Reports whether a run of the session's has ended: no run (fence 0, or a
+ * session that has no channel yet: it never submitted), or its channel's
+ * semaphore at or past the fence.
+ */
+static bool
+vk_node_passed(
+	struct nvrtx_session *session,
+	uint32_t fence)
+{
+	struct nvrtx_work_channel *channel;
+	bool passed;
+
+	/* No run at all. */
+	channel = session->channel;
+	if (fence == 0U || channel == NULL)
+		return true;
+
+	/* The channel's semaphore. */
+	passed = nvrtx_work_channel_passed(channel, fence);
+
+	/* Succeeded: whether it ended. */
+	return passed;
 }
 
 /* Tells a trap or exception the 3D engine holds after a run, the first few times. */

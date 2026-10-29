@@ -13,7 +13,8 @@
  * NVRTX_WORK_VA_BASE, whose low part holds the graphics context's buffers at
  * the golden context's addresses, then the driver's own pages (the ring, the
  * semaphore and the fences' push buffers), then the runs the device maps for
- * its users.  Each submission takes two ring entries: the caller's push buffer
+ * its users and the regions of the sessions' own channels, which share the
+ * space.  Each submission takes two ring entries: the caller's push buffer
  * segment, then a fence of the driver's that releases the next value of the
  * semaphore.
  */
@@ -41,6 +42,15 @@
 #define NVRTX_WORK_VA_DRIVER		0x28000000ULL
 #define NVRTX_WORK_VA_USER		0x28100000ULL
 
+/*
+ * The sessions' own channels: their numbers on the graphics runlist (after
+ * the driver's channels: the golden context 1, the scrubber 2, the compute
+ * launch 3, the work channel 4, the copy channel 8) and how many there are
+ * at most.
+ */
+#define NVRTX_WORK_SESSION_CHID_FIRST	16U
+#define NVRTX_WORK_SESSION_CHANNELS	32U
+
 /* The ring's entries (a power of two; one page of 8-byte entries) and the push buffer bytes of one fence. */
 #define NVRTX_WORK_RING_ENTRIES		512U
 #define NVRTX_WORK_FENCE_BYTES		64U
@@ -65,5 +75,6 @@
 
 bool nvrtx_work_fence_passed(uint32_t seen, uint32_t value);
 size_t nvrtx_work_push_objects(uint8_t *push, uint32_t threed_class, uint32_t compute_class);
+int nvrtx_recover_chid_next(uint32_t used, uint32_t last, uint32_t count);
 
 #endif

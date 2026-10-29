@@ -111,6 +111,11 @@ struct nvrtx_resource {
  * waited), which the next wait expects; run_lost is set (atomically, by whoever waited)
  * once a run of the session did not end in time: the session puts nothing
  * more on the GPU and its waits fail at once.
+ *
+ * channel is where the session's runs go, made by its first frame (under
+ * the node's channel_lock, NULL before): a channel of its own, or the
+ * driver's work channel when shared is set (no channel of its own could be
+ * made, or the boot asked for none), whose runs all sessions share.
  */
 struct nvrtx_session {
 	struct nvrtx_node *node;
@@ -123,6 +128,8 @@ struct nvrtx_session {
 	uint64_t run_us;
 	uint64_t run_took_us;
 	int run_lost;
+	struct nvrtx_work_channel *channel;
+	int shared;
 };
 
 /*
@@ -242,6 +249,16 @@ struct nvrtx_node_perf {
  * core's fault: nothing new is taken and what is queued or parked completes
  * with EIO.
  *
+ * The sessions' channels (runtime.c): channel_lock (a mutex, taken before
+ * the GSP's lock and never with the node's lock) serializes their making
+ * and closing; chid_used has a bit for each session's number on the
+ * runlist in use (NVRTX_WORK_SESSION_CHID_FIRST onward), chid_last is the
+ * last one handed out (the next is looked for after it, so a number is not
+ * reused at once), and channels names the session of each number (under
+ * queue_lock as well, for the GSP's error reports).  channels_wanted is set
+ * at the start unless the boot asked for no channel of the sessions' own
+ * (nvrtx.channels=0).
+ *
  * The message drain (node.c): drain_running is set while its thread runs,
  * drain_stop asks it to end at its next turn (the reboot's stop, which
  * then reads the GSP's replies itself).
@@ -293,6 +310,11 @@ struct nvrtx_node {
 	struct nvrtx_node_entry *parked_tail;
 	struct nvrtx_node_entry markers[NVRTX_NODE_MARKERS];
 	int faulted;
+	struct mutex channel_lock;
+	uint32_t chid_used;
+	uint32_t chid_last;
+	struct nvrtx_session *channels[NVRTX_WORK_SESSION_CHANNELS];
+	int channels_wanted;
 	volatile int drain_running;
 	volatile int drain_stop;
 	int perf;
@@ -363,8 +385,10 @@ int nvrtx_cursor_hide(void *private_data, void *session, const struct gpu_displa
 void nvrtx_runtime_bind(struct nvrtx_node *node);
 void nvrtx_runtime_start(struct nvrtx_node *node);
 void nvrtx_runtime_stop(struct nvrtx_node *node);
+void nvrtx_runtime_session_close(struct nvrtx_node *node, struct nvrtx_session *session);
 
 int nvrtx_vk_node_run_wait(struct nvrtx_session *session, uint32_t fence, uint64_t submitted_us);
+bool nvrtx_vk_node_run_passed(struct nvrtx_session *session, uint32_t fence);
 int nvrtx_vk_node_blob_attach(struct nvrtx_node *node, struct nvrtx_session *session, uint64_t blob_id, struct nvrtx_backing *backing, uint64_t bytes);
 
 void nvrtx_node_backing_put(struct nvrtx_node *node, struct nvrtx_backing *backing);

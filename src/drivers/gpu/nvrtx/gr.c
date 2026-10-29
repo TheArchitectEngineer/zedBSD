@@ -541,12 +541,17 @@ gr_channel(
  * the ones it initializes, and the access map is not mapped.  For the
  * scrubber the global buffers are the golden context's and only its own
  * buffers are filled; the unrestricted access map is left out.
+ *
+ * Each buffer is named at its golden context address, or at the address
+ * virtual_address gives for it when that is not NULL (a channel sharing
+ * the work space has its own buffers elsewhere in it).
  */
 int
 nvrtx_gr_promote(
 	struct nvrtx_gpu *gpu,
 	uint32_t channel,
 	const uint64_t *physical,
+	const uint64_t *virtual_address,
 	bool golden)
 {
 	struct nvrtx_gr_state *gr;
@@ -582,6 +587,10 @@ nvrtx_gr_promote(
 		if (made_here && buffer->buffer_id == GR_BUFFER_PRIV_MAP)
 			entry->nonmapped = 1;
 		entry->virtual_address = gr->virtual_address[index];
+		if (virtual_address != NULL) {
+			/* The caller's address for it. */
+			entry->virtual_address = virtual_address[index];
+		}
 		entry->physical = physical[index];
 		entry->size = buffer->size;
 		count++;
@@ -673,7 +682,7 @@ gr_golden(
 		return error;
 
 	/* Hands it every buffer, all new. */
-	error = nvrtx_gr_promote(gpu, NVRTX_HANDLE_GOLDEN_CHANNEL, gr->golden_physical, true);
+	error = nvrtx_gr_promote(gpu, NVRTX_HANDLE_GOLDEN_CHANNEL, gr->golden_physical, NULL, true);
 	if (error != 0)
 		return error;
 
@@ -735,7 +744,7 @@ gr_scrubber(
 		return error;
 
 	/* Hands it its own buffers and the shared global ones. */
-	error = nvrtx_gr_promote(gpu, NVRTX_HANDLE_SCRUBBER_CHANNEL, gr->scrubber_physical, false);
+	error = nvrtx_gr_promote(gpu, NVRTX_HANDLE_SCRUBBER_CHANNEL, gr->scrubber_physical, NULL, false);
 	if (error != 0)
 		return error;
 

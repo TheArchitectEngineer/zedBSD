@@ -24,6 +24,11 @@
  * queue_lock (a spinlock) guards the queue, the parked markers, the
  * markers, every session's pending and queued counts and the fault flag;
  * the node's lock (a mutex) is taken only outside it, around the executor.
+ *
+ * A session's first frame gives it a channel of its own on the GPU (made
+ * under the node's channel_lock, before the node's lock is taken, as it
+ * calls the GSP), or the driver's work channel to share when none can be
+ * made; its close frees that channel.
  */
 
 #include <stdbool.h>
@@ -33,6 +38,7 @@
 #include <drivers/gpu/gpu.h>
 #include <kern/kcrt.h>
 #include <kern/kmem.h>
+#include <kern/lock.h>
 #include <kern/sched.h>
 #include <kern/thread.h>
 #include <kern/waitq.h>
@@ -82,6 +88,7 @@ static bool runtime_park(struct nvrtx_node *node, struct nvrtx_node_entry *entry
 static void runtime_dequeued(struct nvrtx_node *node, struct nvrtx_session *owner);
 static void runtime_retire(struct nvrtx_node *node, struct nvrtx_node_entry *entry);
 static int runtime_execute(struct nvrtx_node *node, struct nvrtx_session *session, const void *wire, uint32_t bytes);
+static void runtime_channel(struct nvrtx_node *node, struct nvrtx_session *session);
 static void runtime_enqueue(struct nvrtx_node *node, struct nvrtx_node_entry *entry);
 static struct nvrtx_node_entry *runtime_marker(struct nvrtx_node *node, struct nvrtx_session *session, void *token, struct drv_gpu_completion *completion);
 static unsigned runtime_free_markers(const struct nvrtx_node *node);
@@ -118,6 +125,8 @@ void
 nvrtx_runtime_bind(
 	struct nvrtx_node *node)
 {
+	bool wanted;
+
 	/* The queue, the parked markers, their lock and the wait queues. */
 	spin_init(&node->queue_lock, LOCK_RANK_DEVICE, "nvrtx queue");
 	waitq_init(&node->available, "nvrtx queue available");
@@ -125,6 +134,15 @@ nvrtx_runtime_bind(
 	waitq_init(&node->parked_more, "nvrtx queue parked");
 	node->parked_head = NULL;
 	node->parked_tail = NULL;
+
+	/* The sessions' channels: none made yet, the first number taken first, unless the boot asked for none. */
+	(void)mutex_init(&node->channel_lock, LOCK_RANK_DEVICE, "nvrtx channels");
+	node->chid_used = 0U;
+	node->chid_last = NVRTX_WORK_SESSION_CHANNELS - 1U;
+	wanted = nvrtx_stage_channels_wanted();
+	node->channels_wanted = 0;
+	if (wanted)
+		node->channels_wanted = 1;
 
 	/* The operations and the capabilities they make good. */
 	node->ops.get_capset = runtime_capset;
@@ -197,6 +215,53 @@ nvrtx_runtime_stop(
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
 	nvrtx_stage_mark("unload shutdown: the renderer takes no more work");
+}
+
+/*
+ * Closes a session's channel once its executor session is closed (its
+ * runs ended, or were given up): a channel of its own is freed and its
+ * number free again; one the resource manager would not free stays the
+ * device's, with its number.  The shared work channel stays.
+ */
+void
+nvrtx_runtime_session_close(
+	struct nvrtx_node *node,
+	struct nvrtx_session *session)
+{
+	struct nvrtx_work_channel *channel;
+	unsigned long enabled;
+	uint32_t number;
+	int error;
+
+	/* A session that never ran a frame, or one that shares the work channel, has none of its own. */
+	channel = session->channel;
+	if (channel == NULL || session->shared != 0)
+		return;
+	number = channel->chid - NVRTX_WORK_SESSION_CHID_FIRST;
+
+	/* The GSP's reports no longer name the session. */
+	enabled = spin_lock_irqsave(&node->queue_lock);
+
+	node->channels[number] = NULL;
+
+	spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+	/* Frees the channel, then its number, under the lock of the channels' making. */
+	mutex_lock(&node->channel_lock);
+
+	error = nvrtx_work_channel_close(node->gpu, channel);
+	if (error == 0)
+		node->chid_used &= ~(1U << number);
+
+	mutex_unlock(&node->channel_lock);
+
+	/* A channel that stays keeps its record, as its memory stays. */
+	session->channel = NULL;
+	if (error != 0)
+		return;
+
+	/* Succeeded: the channel is gone. */
+	kern_free(channel);
 }
 
 /* Reports the protocol's capset: wire 1, XML 1.3.269, timelines, the vendor suffix and its flags. */
@@ -856,7 +921,7 @@ runtime_park(
 	mutex_unlock(&node->lock);
 
 	/* Whether it still runs. */
-	passed = nvrtx_work_passed(node->gpu, entry->run_fence);
+	passed = nvrtx_vk_node_run_passed(entry->session, entry->run_fence);
 
 	/*
 	 * It leaves the worker's queue, with its run taken (before the
@@ -940,6 +1005,9 @@ runtime_execute(
 	uint64_t left;
 	int error;
 
+	/* The session's channel, before its first frame takes the node's lock. */
+	runtime_channel(node, session);
+
 	/* Runs the frame, timing the lock's wait and hold only when the counts are asked for. */
 	asked = 0U;
 	if (node->perf != 0)
@@ -968,6 +1036,78 @@ runtime_execute(
 
 	/* Succeeded: the frame ran. */
 	return 0;
+}
+
+/*
+ * Gives a session its channel when it has none yet: a channel of its own
+ * under the next free number, or the driver's work channel to share when
+ * the boot asked for none, every number is in use or the making failed.
+ * The node's lock is not held (the making calls the GSP).
+ */
+static void
+runtime_channel(
+	struct nvrtx_node *node,
+	struct nvrtx_session *session)
+{
+	struct nvrtx_work_channel *made;
+	unsigned long enabled;
+	int number;
+	int error;
+
+	/* Looks and makes under the lock of the channels' making. */
+	mutex_lock(&node->channel_lock);
+
+	if (session->channel != NULL) {
+		mutex_unlock(&node->channel_lock);
+		return;
+	}
+
+	/* A free number of the sessions', unless every session shares the work channel. */
+	number = -1;
+	if (node->channels_wanted != 0)
+		number = nvrtx_recover_chid_next(node->chid_used, node->chid_last, NVRTX_WORK_SESSION_CHANNELS);
+
+	/* The channel under that number. */
+	made = NULL;
+	error = ENOSPC;
+	if (number >= 0)
+		made = kern_calloc(1U, sizeof(*made));
+	if (made != NULL)
+		error = nvrtx_work_channel_open(node->gpu, made, NVRTX_WORK_SESSION_CHID_FIRST + (uint32_t)number);
+	if (error == 0) {
+		node->chid_used |= 1U << (uint32_t)number;
+		node->chid_last = (uint32_t)number;
+	} else if (made != NULL && made->arena_made == 0 && made->region_made == 0 && made->channel_made == 0) {
+		/* Nothing of a failed channel stays: its record goes. */
+		kern_free(made);
+		made = NULL;
+	} else if (made != NULL) {
+		/* What the resource manager kept of a failed channel stays the device's, with its number. */
+		node->chid_used |= 1U << (uint32_t)number;
+		node->chid_last = (uint32_t)number;
+		made = NULL;
+	}
+
+	/* The session's channel: its own, or the shared one. */
+	if (error == 0) {
+		enabled = spin_lock_irqsave(&node->queue_lock);
+
+		made->state = NVRTX_WORK_CHANNEL_READY;
+		node->channels[number] = session;
+
+		spin_unlock_irqrestore(&node->queue_lock, enabled);
+
+		session->channel = made;
+	} else {
+		session->channel = &node->gpu->work.driver;
+		session->shared = 1;
+	}
+
+	mutex_unlock(&node->channel_lock);
+
+	/* A session that shares the work channel is told. */
+	if (error != 0 && node->channels_wanted != 0)
+		nvrtx_stage_mark("renderer: a session shares the work channel (%d)", error);
 }
 
 /* Appends an entry to the queue and wakes the worker; the caller holds queue_lock. */
