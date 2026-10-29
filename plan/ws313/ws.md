@@ -10,6 +10,15 @@ Resume point: p001（調べと設計）。担当は P7（q1675）。
 
 「WSを立てます。P7の作業として開始します。ODROID-C5基板が届きました。基板を見たところ、SoC＋メモリ＋LAN/USB/AudioのドライバICくらいしかついていないです。amlogicのこのSoCに対応してほしいです。BSPを追加して、ODROID-C5というボードにします。Amlogic S905X5MがSoCです。BSPはbsp-s905x5m/でいいと思います。情報としては、正しいかわかりませんが、EthernetのMACはDesignWare MAC、PHYはAmlogic Internal MII PHY (rmii?)だそうです。あと、Mali G31のドライバ(Valhalla)も必要です。これがでかいですね。起動してデスクトップが表示できるところまでをゴールにして、WSを作ります。」
 
+## ユーザーの指示（原文、2026-10-29、進め方）
+
+「WS313の進め方は、Linuxを参考に、カーネル、ドライバを揃えておいてください。実機テストなしでコードだけ書いて揃えておいてください。今日の夜、まとめてテストします。」
+
+- 解釈（Q1 経由）: p001 の調べと設計は短く（起動の道・console・各 block の register と出典・GPU の世代・Phase の表）、design-reviewer は 1 回で、すぐ実装へ。
+  実機の試験なしで、起動と console・割り込み・timer・SMP・MMC・USB・Ethernet・display・GPU（Mali と Vulkan）・desktop の config まで code を書いて揃える。
+  確かめは build（warning 0）と、書ける所の host の試験・QEMU の `virt` での起動まで。各 Phase は「実装済み・実機未試験」と記録し cleared にしない。
+  夜の実機の試験の手順（媒体への書き込み・UART の配線・確かめる順・判定）を phase.md と `plan/ws313/tests/` の script にまとめる。
+
 ## 目標（Q1 の解釈）
 
 - 新しい board「ODROID-C5」を足す。SoC は Amlogic S905X5M（arm64）。BSP は `src/hal/arm64/bsp-s905x5m/`（既存の `bsp-rpi4`・`bsp-rpi5` と同じ並び）、platform の build（`platform/arm64/` の board の分け方に倣う）、`config/ci/config-odroid-c5.mk`。
