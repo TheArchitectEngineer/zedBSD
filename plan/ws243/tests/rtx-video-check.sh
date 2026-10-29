@@ -13,6 +13,9 @@
 # then the line taken out again; zedBSD is left running.  The logs stay in OUT, a summary is printed
 # (OUT/summary.txt).  The programs come from PERF_BUILD (default build/ws243): bin/media-probe,
 # dynamic/libmedia.so and dynamic/libvulkan.so (used through LD_LIBRARY_PATH), usb/bin/mview.
+# VIDEO_STEPS (default "v1 v2 v3 v4") picks the steps after V0; V4_OPTIONS (default --fullscreen) are the player's
+# options (a window, say --width=1280 --height=720, is composed, so its shot shows the video; full screen may be shown
+# without composing, and its shot is then empty); V4_CLIP (default every clip) names the one clip V4 plays.
 #   usage: plan/ws243/tests/rtx-video-check.sh OUT VMUNIX [CLIPS]   (from the top of the tree)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -35,7 +38,18 @@ ENVS="env XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0"
 DIR=/root/ws243
 PROBE="env LD_LIBRARY_PATH=$DIR $DIR/media-probe"
 MVIEW_WINDOW="--spin=10 --windowed --present=fifo --copies=500"
-KLINES="nvdec|copy object|video|work-channel ok|session channel|shares the work channel|executor fail|lost|fault"
+KLINES="nvdec|copy object|video|work-channel ok|session channel|shares the work channel|executor fail|lost|fault|vram clear"
+VIDEO_STEPS=${VIDEO_STEPS:-v1 v2 v3 v4}
+V4_OPTIONS=${V4_OPTIONS:---fullscreen}
+V4_CLIP=${V4_CLIP:-}
+
+# wanted STEP: whether VIDEO_STEPS names the step.
+wanted() {
+	case " $VIDEO_STEPS " in
+	*" $1 "*) return 0 ;;
+	esac
+	return 1
+}
 
 say() {
 	echo "$(date +%H:%M:%S) $*" | tee -a "$SUMMARY"
@@ -106,6 +120,7 @@ say "V0 copy objects $(grep -c 'copy object on engine' "$OUT/v0.log"), refused $
 
 # V1: each clip's hashes.
 for clip in "$CLIPS"/*.mp4; do
+	wanted v1 || break
 	name=$(basename "$clip" .mp4)
 	run "v1-$name" 300 <<EOS
 n=\$(dmesg | wc -l)
@@ -124,6 +139,7 @@ EOS
 done
 
 # V2: the 1080p30 readback's speed, three runs.
+if wanted v2; then
 run v2 300 <<EOS
 cd $DIR
 for i in 1 2 3; do
@@ -139,8 +155,10 @@ frames = [int(x) for x in re.findall(r"frames=(\d+) sound", text)]
 for e, f in zip(elapsed, frames):
     print("%d frames in %.1f ms: %.1f fps" % (f, e / 1000.0, f * 1e6 / e if e else 0.0))
 EOF
+fi
 
 # V3: mview's frame times in a window, alone and while the clip is decoded over and over.
+if wanted v3; then
 run v3 120 <<EOS
 cd $DIR
 $AS_USER "$ENVS $DIR/mview --token=alone $MVIEW_WINDOW" 2>&1 | grep -E 'MVIEW (SPIN|HITCHES|FAILED)'
@@ -150,18 +168,22 @@ $AS_USER "$ENVS $DIR/mview --token=decoding $MVIEW_WINDOW" 2>&1 | grep -E 'MVIEW
 wait
 EOS
 grep -E 'MVIEW (SPIN|HITCHES|FAILED)' "$OUT/v3.log" | cut -c1-200 | sed 's/^/V3 /' | tee -a "$SUMMARY"
+fi
 
 # V4: Video Player on the pictures the GPU holds, a shot while it plays.
-if [ -f "$PERF_BUILD/bin/videoplayer" ]; then
+if wanted v4 && [ -f "$PERF_BUILD/bin/videoplayer" ]; then
 	zput "$PERF_BUILD/bin/videoplayer" "root@$IP:$DIR/" && zs "$IP" "chmod 755 $DIR/videoplayer" < /dev/null
 	for clip in "$CLIPS"/*.mp4; do
 		name=$(basename "$clip" .mp4)
+		[ -z "$V4_CLIP" ] || [ "$V4_CLIP" = "$name" ] || continue
 		run "v4-$name" 60 <<EOS
 cd $DIR
 n=\$(dmesg | wc -l)
-$AS_USER "$ENVS LD_LIBRARY_PATH=$DIR $DIR/videoplayer --fullscreen --timeout-s=12 $DIR/$name.mp4" > /tmp/v4.err 2>&1 &
+$AS_USER "$ENVS LD_LIBRARY_PATH=$DIR $DIR/videoplayer $V4_OPTIONS --timeout-s=12 $DIR/$name.mp4" > /tmp/v4.err 2>&1 &
 sleep 6
-env XDG_RUNTIME_DIR=/run/user/1000 keiland-shot /tmp/v4-$name.png > /dev/null 2>&1
+env XDG_RUNTIME_DIR=/run/user/1000 keiland-shot /tmp/v4-$name.png > /tmp/v4-shot.err 2>&1
+echo "keiland-shot rc \$?"
+cat /tmp/v4-shot.err
 wait
 echo "--- player"
 grep -E 'VIDEOPLAYER' /tmp/v4.err

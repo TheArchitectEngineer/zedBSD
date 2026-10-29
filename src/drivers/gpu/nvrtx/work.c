@@ -297,6 +297,8 @@ nvrtx_work_start(
 	/* Whether it has the copy engine (it clears the VRAM), and whether its first clear is broken on purpose. */
 	gpu->work.copy_ready = driver->copy_made;
 	gpu->work.clear_off = 0;
+	if (nvrtx_stage_clear_cpu_wanted())
+		gpu->work.clear_off = 1;
 	gpu->work.clear_fault = 0;
 	if (nvrtx_stage_clear_fault_wanted())
 		gpu->work.clear_fault = 1;

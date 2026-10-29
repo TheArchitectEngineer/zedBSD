@@ -445,7 +445,8 @@ struct nvrtx_work_state {
 	/*
 	 * Whether the driver's channel had its copy object at the start (the
 	 * sessions' channels are made the same way), whether the copy engine's
-	 * clears of the VRAM are off for good (one failed), and whether the
+	 * clears of the VRAM are off for good (one failed, or the boot asked
+	 * for the CPU's clears, nvrtx.clear.cpu=1), and whether the
 	 * next one is to be broken on purpose (nvrtx.clear.fault=1, a test of
 	 * the way back to the CPU's clears).
 	 */

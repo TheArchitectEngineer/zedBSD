@@ -114,6 +114,9 @@
 /* The whole token that breaks the first copy-engine clear of the VRAM on purpose. */
 #define STAGE_CLEAR_FAULT_TOKEN		"nvrtx.clear.fault=1"
 
+/* The whole token that has the CPU clear the VRAM, never the copy engine. */
+#define STAGE_CLEAR_CPU_TOKEN		"nvrtx.clear.cpu=1"
+
 /*
  * The whole token that asks for the renderer's and the display's counts every
  * 5 s.
@@ -378,6 +381,24 @@ nvrtx_stage_clear_fault_wanted(void)
 		return true;
 
 	/* Without it every clear is as it should be. */
+	return false;
+}
+
+/*
+ * Reports whether the boot asked for the VRAM to be cleared by the CPU only
+ * (nvrtx.clear.cpu=1), as before the copy engine cleared it.
+ */
+bool
+nvrtx_stage_clear_cpu_wanted(void)
+{
+	bool present;
+
+	/* Looks for nvrtx.clear.cpu=1 among the boot parameters. */
+	present = stage_token_present(STAGE_CLEAR_CPU_TOKEN);
+	if (present)
+		return true;
+
+	/* Without it the copy engine clears the large blobs. */
 	return false;
 }
 

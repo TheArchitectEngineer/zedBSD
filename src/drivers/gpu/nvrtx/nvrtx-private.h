@@ -477,6 +477,13 @@ bool
 nvrtx_stage_clear_fault_wanted(void);
 
 /*
+ * Reports whether the boot asked for the VRAM to be cleared by the CPU only
+ * (nvrtx.clear.cpu=1).
+ */
+bool
+nvrtx_stage_clear_cpu_wanted(void);
+
+/*
  * Reports whether the GPU device is also a renderer (the default; nvrtx.vk=0
  * turns it off).
  */

@@ -3,7 +3,7 @@
 # ws243-p001: 設計（NVDEC の H.264 を Vulkan Video で）
 
 Parent: [WS243](../ws.md)
-Status: in-progress（設計済み・review 1 回済み、2026-10-29 q1677-i01。cleared の判断は Q1）
+Status: cleared（2026-10-30 q1677-i02 P5。設計どおりに p002・p003・p006 で実装され、p004・p006 の RTX 2070 の実機で確かめた（hash 4 本一致、GPU の道で 1080p60）。設計の訂正は ws.md の「設計の訂正」）
 担当: P6（2026-10-15、2026-10-29 再開）。
 
 ## 再開の点

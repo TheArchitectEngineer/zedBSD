@@ -3,7 +3,7 @@
 # ws243-p003: Vulkan Video の object と H.264 の decode の命令
 
 Parent: [WS243](../ws.md)、設計 [design.md](../design.md) §3〜§7・§13
-Status: in-progress（実装済み・試験未実施。2026-10-29 q1677-i01 P6。cleared にしない: 実機の試験は p004）
+Status: cleared（2026-10-30 q1677-i02 P5。p004・p006 の RTX 2070 の実機で H.264 の hash 4 本が software と一致、query の status も p004 で確かめた）
 
 ## 実装（commit）
 
