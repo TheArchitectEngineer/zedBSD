@@ -4,7 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」）。旧: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13…
-Resume point: 2026-10-29 P3 q1664-i05: p011 cleared（0342c9d89 まで、[phase.md](phase011/phase.md)）。次: WS311 p001（CUBIC の調べと設計）。p010 は WS235 の後。VF2（10.0.30.2）は P3、/boot/boot0/vmunix は 0342c9d89 の tree、vmunix.old は 53080d387 の tree、en0 1500。5330 は 1500 に戻した
+Resume point: 2026-10-29 P3 q1679-i01: p010 in-progress（[phase.md](phase010/phase.md)）。前: P3 q1664-i05: p011 cleared（0342c9d89 まで、[phase.md](phase011/phase.md)）。次: WS311 p001（CUBIC の調べと設計）。p010 は WS235 の後。VF2（10.0.30.2）は P3、/boot/boot0/vmunix は 0342c9d89 の tree、vmunix.old は 53080d387 の tree、en0 1500。5330 は 1500 に戻した
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -101,7 +101,7 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| p010 | 10GbE での TCP の stack の改善（RDNA 機の RTL8127 ↔ centris、限界まで） | planned | WS235（RTL8127）、p002〜p009 |
+| [p010](phase010/phase.md) | 10GbE での TCP の stack の改善（RDNA 機の RTL8127 ↔ centris、限界まで） | in-progress（2026-10-29 P3 q1679-i01: send 5406 → 6254 Mbit/s（7034cea3a）、recv 3250 は read(2) の pin・bounce が律速、read の直の経路と checksum の offload を試験中） | WS235（RTL8127）、p002〜p009 |
 - 訂正（原文、2026-10-29）: 「すみません、チップ名を間違いました。RTL8127です。」→ p010 の NIC は RDNA 機の PCIe の RTL8127。
 - ユーザー（原文、2026-10-29）「このマシンはPCIeの帯域の制約があり、7Gbit/sくらいしか出ないです。」→ p010 の目標は 10.0.10.3 で約 7 Gbit/s（PCIe の帯域の上限）を基準にする。
 - Q1 の判断（2026-10-29）: checksum・TSO の offload の stack の口（packet-buf・net-device の flag）は p010 で設計する（WS235 の RTL8127 の driver は offload 無しで先に動かし、口ができたら WS235 p006 で driver の側を足す）。
