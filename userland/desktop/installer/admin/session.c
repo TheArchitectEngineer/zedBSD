@@ -106,6 +106,9 @@
 #define SESSION_REPORT_BYTES	(8ULL * 1024ULL * 1024ULL)
 #define SESSION_CANCEL_ENTRIES	256U
 
+/* The times diskpart, mkfs and mkswap are tried when a partition was busy for a moment. */
+#define SESSION_TRIES		3U
+
 /* The steps of an installation. */
 #define SESSION_STEPS		10U
 
@@ -1137,6 +1140,8 @@ session_format(
 	char path[SESSION_PATH_MAX];
 	char answer[KERN_BLOCK_NAME_MAX + 32U];
 	char *argument[8];
+	struct timespec pause;
+	unsigned tries;
 	unsigned count;
 	int status;
 	int error;
@@ -1165,16 +1170,27 @@ session_format(
 	argument[count++] = path;
 	argument[count] = NULL;
 
-	/* The partition checked again (the clearing took time), then the format. */
-	error = session_partition_ready(tuple, &info);
-	if (error != 0)
-		return error;
-	error = session_run(argument, answer, NULL, 0, 0, &status);
-	if (error != 0)
-		return error;
-	if (status != 0) {
+	/*
+	 * The partition checked again (the clearing took time), then the
+	 * format; a few tries, for the partition may be open for a moment
+	 * (volumed looks at a disk again after each reload) and a format
+	 * begun again writes the same.
+	 */
+	pause.tv_sec = 1;
+	pause.tv_nsec = 0;
+	for (tries = 0;; tries++) {
+		error = session_partition_ready(tuple, &info);
+		if (error != 0)
+			return error;
+		error = session_run(argument, answer, NULL, 0, 0, &status);
+		if (error != 0)
+			return error;
+		if (status == 0)
+			break;
 		syslog(LOG_NOTICE, "%s on %s ended %d", program, path, status);
-		return EIO;
+		if (tries + 1U >= SESSION_TRIES)
+			return EIO;
+		(void)nanosleep(&pause, NULL);
 	}
 
 	/* Succeeded: the partition holds a new filesystem or swap area. */
@@ -1199,7 +1215,10 @@ session_diskpart(
 	char *argument[SESSION_ARGUMENTS_MAX];
 	char path[SESSION_PATH_MAX];
 	char answer[KERN_BLOCK_NAME_MAX + 32U];
+	struct timespec pause;
+	uint8_t before[32];
 	const char *word;
+	unsigned tries;
 	unsigned i;
 	int initialize;
 	int differs;
@@ -1208,6 +1227,8 @@ session_diskpart(
 
 	/* The command line: diskpart, the verb, the disk, the operations. */
 	*reload_failed = 0;
+	pause.tv_sec = 1;
+	pause.tv_nsec = 0;
 	if (count < 1U || count + 3U > SESSION_ARGUMENTS_MAX)
 		return EINVAL;
 	initialize = 0;
@@ -1222,41 +1243,60 @@ session_diskpart(
 		argument[i + 2U] = operation[i];
 	argument[count + 2U] = NULL;
 
-	/* Nothing of the disk mounted, and the disk as the kernel describes it now. */
-	error = session_unmount_disk((uint32_t)disk->registration);
-	if (error != 0)
-		return error;
-	error = session_disk_load(disk, &found);
-	if (error == ESTALE) {
-		/* A disk whose table the request does not quote again: it is the one by its name and size. */
-		error = 0;
-	}
-	if (error != 0) {
+	/*
+	 * A few tries: diskpart refuses a disk whose partition another
+	 * program has open for a moment (volumed looks at a disk again after
+	 * each reload), and is tried again while the table is as it was.
+	 */
+	for (tries = 0;; tries++) {
+		/* Nothing of the disk mounted, and the disk as the kernel describes it now. */
+		error = session_unmount_disk((uint32_t)disk->registration);
+		if (error != 0)
+			return error;
+		error = session_disk_load(disk, &found);
+		if (error == ESTALE) {
+			/* A disk whose table the request does not quote again: it is the one by its name and size. */
+			error = 0;
+		}
+		if (error != 0) {
+			session_disk_free(&found);
+			return error;
+		}
+		word = "WRITE";
+		if (initialize)
+			word = "ERASE";
+		snprintf(answer, sizeof(answer), "%s %s:%u\n", word, found.device->info.name, found.device->info.device);
+		differs = strcmp(found.device->info.name, disk->name);
+		if (found.device->info.sector_size != disk->sector_bytes || found.device->info.sector_count != disk->sectors)
+			differs = 1;
+		memcpy(before, found.digest, sizeof(before));
 		session_disk_free(&found);
-		return error;
-	}
-	word = "WRITE";
-	if (initialize)
-		word = "ERASE";
-	snprintf(answer, sizeof(answer), "%s %s:%u\n", word, found.device->info.name, found.device->info.device);
-	differs = strcmp(found.device->info.name, disk->name);
-	if (found.device->info.sector_size != disk->sector_bytes || found.device->info.sector_count != disk->sectors)
-		differs = 1;
-	session_disk_free(&found);
-	if (differs != 0)
-		return ESTALE;
+		if (differs != 0)
+			return ESTALE;
 
-	/* diskpart, and how it ended. */
-	error = session_run(argument, answer, NULL, 0, 0, &status);
-	if (error != 0)
-		return error;
-	if (status == 3) {
-		*reload_failed = 1;
-		return 0;
-	}
-	if (status != 0) {
+		/* diskpart, and how it ended. */
+		error = session_run(argument, answer, NULL, 0, 0, &status);
+		if (error != 0)
+			return error;
+		if (status == 3) {
+			*reload_failed = 1;
+			return 0;
+		}
+		if (status == 0)
+			break;
 		syslog(LOG_NOTICE, "diskpart %s %s ended %d", operation[0], path, status);
-		return EIO;
+
+		/* A failure that wrote nothing, tried again a second later. */
+		error = session_disk_load(disk, &found);
+		if (error != 0 && error != ESTALE) {
+			session_disk_free(&found);
+			return error;
+		}
+		differs = memcmp(before, found.digest, sizeof(before));
+		session_disk_free(&found);
+		if (differs != 0 || tries + 1U >= SESSION_TRIES)
+			return EIO;
+		(void)nanosleep(&pause, NULL);
 	}
 
 	/* Succeeded: the table is written and the kernel uses it. */
@@ -1738,16 +1778,25 @@ session_write_new(
 		return error;
 	}
 
-	/* The rename, then the directory to the device. */
+	/* The rename. */
 	error = renameat(directory, temporary, directory, leaf);
 	if (error != 0) {
 		error = errno;
 		(void)unlinkat(directory, temporary, 0);
 		return error;
 	}
-	error = fsync(directory);
-	if (error != 0)
-		return errno;
+
+	/*
+	 * The directory to the device; a filesystem that cannot sync a
+	 * directory alone (the FAT) has it written by the sync that ends the
+	 * step.
+	 */
+	ended = fsync(directory);
+	if (ended != 0) {
+		error = errno;
+		if (error != EOPNOTSUPP && error != EINVAL)
+			return error;
+	}
 
 	/* Succeeded: the file has its new bytes. */
 	return 0;

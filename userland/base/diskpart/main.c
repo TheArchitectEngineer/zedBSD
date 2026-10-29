@@ -762,6 +762,8 @@ batch_disk(
 	struct batch_operation operations[BATCH_OPERATIONS_MAX];
 	struct kern_block_info info;
 	struct dp_table table;
+	struct dp_table loaded_view;
+	struct dp_part *loaded_parts;
 	struct dp_io io;
 	unsigned operation_count;
 	int reloaded;
@@ -771,6 +773,7 @@ batch_disk(
 	int fd;
 
 	/* Refuses a malformed batch before any device is opened. */
+	loaded_parts = NULL;
 	if (argc < 4) {
 		help();
 		return 2;
@@ -806,6 +809,21 @@ batch_disk(
 	if (error != 0)
 		goto out;
 
+	/*
+	 * Keeps the extents of the table as it was read: after the pause the
+	 * kernel must still map those (a deleted entry is still mapped until
+	 * the write and its reload), not the proposed table's.
+	 */
+	loaded_parts = calloc(table.count + 1U, sizeof(*loaded_parts));
+	if (loaded_parts == NULL) {
+		error = ENOMEM;
+		goto out;
+	}
+	memcpy(loaded_parts, table.parts, table.count * sizeof(*loaded_parts));
+	memset(&loaded_view, 0, sizeof(loaded_view));
+	loaded_view.count = table.count;
+	loaded_view.parts = loaded_parts;
+
 	/* Shows the disk and the table as it is before the batch. */
 	printf("Target /dev/%s registration=%u sector-size=%u sectors=%llu\n", info.name,
 	    info.device, info.sector_size, (unsigned long long)info.sector_count);
@@ -829,7 +847,7 @@ batch_disk(
 		error = errno;
 		goto out;
 	}
-	error = live_extents_match(&info, &table);
+	error = live_extents_match(&info, &loaded_view);
 	if (error != 0)
 		goto out;
 
@@ -849,15 +867,17 @@ batch_disk(
 		fprintf(stderr, "diskpart: Table written and verified, but reload failed: %s.%s\n",
 		    strerror(error), error == EBUSY ? " Reboot required; live devices unchanged" : " No rollback attempted");
 		dp_free(&table);
+		free(loaded_parts);
 		close(fd);
 		return 3;
 	}
 	puts("Table written, flushed, verified; kernel partition devices reloaded.");
 
 out:
-	/* Releases the table and the disk, keeping the first error. */
+	/* Releases the table, its first extents and the disk, keeping the first error. */
 	if (loaded)
 		dp_free(&table);
+	free(loaded_parts);
 	if (fd >= 0 && close(fd) < 0 && error == 0)
 		error = errno;
 	if (fflush(stdout) != 0 && error == 0)
