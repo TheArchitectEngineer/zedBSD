@@ -81,7 +81,7 @@ endif
 
 ZEDBSD_PLATFORM_DIR := $(strip \
 	$(if $(filter i386,$(ZEDBSD_PLATFORM)),pcat,\
-	$(if $(filter rpi4 rpi5,$(ZEDBSD_PLATFORM)),arm64,\
+	$(if $(filter rpi4 rpi5 odroid-c5,$(ZEDBSD_PLATFORM)),arm64,\
 	$(if $(filter sun4u,$(ZEDBSD_PLATFORM)),sparcv9,\
 	$(if $(filter riscv64-virt visionfive2,$(ZEDBSD_PLATFORM)),riscv64,\
 	$(if $(filter riscv32-virt,$(ZEDBSD_PLATFORM)),riscv32,\
@@ -115,6 +115,11 @@ endif
 # The Raspberry Pi 5 shares the Pi 4's platform directory, not its build tree.
 ifeq ($(ZEDBSD_PLATFORM),rpi5)
 BUILD := build/rpi5
+endif
+
+# So does the ODROID-C5.
+ifeq ($(ZEDBSD_PLATFORM),odroid-c5)
+BUILD := build/odroid-c5
 endif
 
 #
@@ -214,6 +219,7 @@ ZEDBSD_VARIANTS_amd64_pcat := native hybrid uefi bios
 ZEDBSD_VARIANTS_i386_pc98 := default
 ZEDBSD_VARIANTS_arm64_rpi4 := default
 ZEDBSD_VARIANTS_arm64_rpi5 := default
+ZEDBSD_VARIANTS_arm64_odroid-c5 := default
 ZEDBSD_VARIANTS_riscv64_virt := default
 ZEDBSD_VARIANTS_riscv64_visionfive2 := default
 ZEDBSD_VARIANTS_riscv32_virt := default
@@ -232,6 +238,7 @@ ZEDBSD_PLATFORM_TARGET_amd64 := amd64_pcat
 ZEDBSD_PLATFORM_TARGET_pc98 := i386_pc98
 ZEDBSD_PLATFORM_TARGET_rpi4 := arm64_rpi4
 ZEDBSD_PLATFORM_TARGET_rpi5 := arm64_rpi5
+ZEDBSD_PLATFORM_TARGET_odroid-c5 := arm64_odroid-c5
 ZEDBSD_PLATFORM_TARGET_riscv64-virt := riscv64_virt
 ZEDBSD_PLATFORM_TARGET_visionfive2 := riscv64_visionfive2
 ZEDBSD_PLATFORM_TARGET_riscv32-virt := riscv32_virt
@@ -947,6 +954,10 @@ ZEDBSD_CONFIG_CPPFLAGS += -DRPI4_SERIAL_CONSOLE
 endif
 # The Pi 5 shares the Pi 4's console code, which the same switch turns to the serial line.
 ifeq ($(ZEDBSD_PLATFORM)$(CONFIG_RPI5_SERIAL_CONSOLE),rpi5y)
+ZEDBSD_CONFIG_CPPFLAGS += -DRPI4_SERIAL_CONSOLE
+endif
+# So does the ODROID-C5, whose debug UART is the console by default.
+ifeq ($(ZEDBSD_PLATFORM)$(CONFIG_ODROID_C5_SERIAL_CONSOLE),odroid-c5y)
 ZEDBSD_CONFIG_CPPFLAGS += -DRPI4_SERIAL_CONSOLE
 endif
 ifeq ($(CONFIG_INPUT_TEST_INJECT),y)

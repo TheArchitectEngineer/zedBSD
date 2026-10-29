@@ -4,15 +4,30 @@
 
 Status: planning
 Primary Milestone: MG008
-Resume point: p001（調べと設計）。担当は P7（q1675）。
+Resume point: p001 の design-reviewer、p003 の媒体と試験の script。配下 A（MMC・USB・Ethernet）と B（GPU・display）が実装中。担当は P7（q1675）。
 
 ## ユーザーの指示（原文、2026-10-29）
 
 「WSを立てます。P7の作業として開始します。ODROID-C5基板が届きました。基板を見たところ、SoC＋メモリ＋LAN/USB/AudioのドライバICくらいしかついていないです。amlogicのこのSoCに対応してほしいです。BSPを追加して、ODROID-C5というボードにします。Amlogic S905X5MがSoCです。BSPはbsp-s905x5m/でいいと思います。情報としては、正しいかわかりませんが、EthernetのMACはDesignWare MAC、PHYはAmlogic Internal MII PHY (rmii?)だそうです。あと、Mali G31のドライバ(Valhalla)も必要です。これがでかいですね。起動してデスクトップが表示できるところまでをゴールにして、WSを作ります。」
 
-- 2026-10-29（続き）: 「WS313の進め方は、Linuxを参考に、カーネル、ドライバを揃えておいてください。実機テストなしでコードだけ書いて揃えておいてください。今日の夜、まとめてテストします。」→ Q1: p001 は短くし、実機の試験なしで全ての block の code を書いて揃える（build・host・QEMU の virt まで）。各 Phase は「実装済み・実機未試験」。夜の実機の試験の手順と script を用意する。
+## ユーザーの指示（原文、2026-10-29、進め方）
 
-- 2026-10-29（続き）: 「WS313は調査、コード作成などで、2つまでサブエージェントを作って並列化し、効率化してください。」→ Q1: P7 の配下は同時 2 つまで、file・directory を分けて衝突させない。
+「WS313の進め方は、Linuxを参考に、カーネル、ドライバを揃えておいてください。実機テストなしでコードだけ書いて揃えておいてください。今日の夜、まとめてテストします。」
+
+- 解釈（Q1 経由）: p001 の調べと設計は短く（起動の道・console・各 block の register と出典・GPU の世代・Phase の表）、design-reviewer は 1 回で、すぐ実装へ。
+  実機の試験なしで、起動と console・割り込み・timer・SMP・MMC・USB・Ethernet・display・GPU（Mali と Vulkan）・desktop の config まで code を書いて揃える。
+  確かめは build（warning 0）と、書ける所の host の試験・QEMU の `virt` での起動まで。各 Phase は「実装済み・実機未試験」と記録し cleared にしない。
+  夜の実機の試験の手順（媒体への書き込み・UART の配線・確かめる順・判定）を phase.md と `plan/ws313/tests/` の script にまとめる。
+
+## ユーザーの指示（原文、2026-10-29、並列化）
+
+「WS313は調査、コード作成などで、2つまでサブエージェントを作って並列化し、効率化してください。」
+
+- 解釈（Q1 経由）: P7 は配下のサブエージェントを同時に 2 つまで使ってよい。配下も同じ worktree の中で、互いに別の file・directory を持たせる
+  （例: 一つは GPU（Mali の driver と Vulkan）、一つは周辺の driver（MMC・USB・Ethernet・display））。配下にも AGENTS.md の規則を渡す。
+  commit は同じ index を同時に触らないよう順に。上限に当たったら Q1 が配下を止める事がある。
+
+## ユーザーの判断（2026-10-29、§8）
 
 - 2026-10-29 §8 の判断（ユーザーのクリック、Q1 の中継。前置きで WS・状態・未決・用語を説明した）:
   - bootloader の binary（Amlogic の BL2・BL31 と Hardkernel の U-Boot）: 「取得して image に入れる」→ build で Hardkernel の公開の binary を取得し SHA-256 で検証して image に入れる。再配布の条件（Amlogic の blob の license）を確かめて記録する（notice の file）。
@@ -29,10 +44,21 @@ Resume point: p001（調べと設計）。担当は P7（q1675）。
 - HAL は既存の口で足りる見込み。HAL を変える必要があると主張する時は AGENTS.md §7 のとおり理由を具体的に。
 - 出典: Linux（GPL）の meson・panfrost・stmmac の driver と Mesa の panfrost/panvk は値・表を block ごとの出典で使えるが、code・comment・構造は写さない（guardrail）。
 
-## Phase（案、p001 で確定）
+## Phase（p001 の設計、[design.md](design.md) §5）
+
+実機なしで揃える。実装の Phase は「実装済み・実機未試験」と記録し、cleared にしない（ユーザーの指示、2026-10-29）。
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| p001 | 調べと設計（S905X5M と ODROID-C5 の資料、起動の道、console、各 block の register と出典、GPU の世代の確かめ、実機の準備（UART・電源・媒体）、Phase の表） | planning | — |
-| p002〜 | 実装（p001 で分割: 起動と console → 割り込み・timer・SMP → MMC → USB → Ethernet → display → GPU → desktop） | planning | p001 |
-| 最後 | 規約の全文の見直し | planning | 全て |
+| [p001](phase001/phase.md) | 調べと設計 | in-progress（design-reviewer 待ち） | — |
+| p002 | HAL の BSP（起動・UART・FDT・GIC・timer・PSCI）と build の配線・config | in-progress（build 通る、実機未試験） | p001 |
+| p003 | 媒体（DTB・boot.scr・SD の image）と夜の試験の手順・script | planned | p002 |
+| p004 | SD（meson の MMC）と root | in-progress（配下 A） | p002 |
+| p005 | USB（PHY・CRG の xHCI） | in-progress（配下 A） | p002 |
+| p006 | Ethernet（EQoS・RGMII の PHY） | in-progress（配下 A） | p002 |
+| p007 | display（U-Boot の mode の OSD1） | in-progress（配下 B） | p002 |
+| p008 | GPU（Mali-G310）と Vulkan の device | in-progress（配下 B） | p002 |
+| p009 | desktop（Keiland の config） | planned | p007・p008 |
+| 最後 | 規約の全文の見直し | planned | 全て |
+
+Audio（line-out）は desktop の表示の受け入れに要らないので Future Work の案（Q1 へ）。
