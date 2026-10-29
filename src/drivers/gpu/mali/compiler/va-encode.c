@@ -23,6 +23,23 @@
 /* The instructions the list grows by when it is full. */
 #define VA_CODE_GROWTH		256U
 
+/*
+ * The constant table every instruction may read without a register.
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/ISA.xml (lut "Immediates").
+ */
+static const uint32_t va_immediates[32] = {
+	0x00000000U, 0xFFFFFFFFU, 0x7FFFFFFFU, 0xFAFCFDFEU,
+	0x01000000U, 0x80002000U, 0x70605030U, 0xC0B0A090U,
+	0x03020100U, 0x07060504U, 0x0B0A0908U, 0x0F0E0D0CU,
+	0x13121110U, 0x17161514U, 0x1B1A1918U, 0x1F1E1D1CU,
+	0x3F800000U, 0x3DCCCCCDU, 0x3EA2F983U, 0x3F317218U,
+	0x40490FDBU, 0x00000000U, 0x477FFF00U, 0x5C005BF8U,
+	0x2E660000U, 0x34000000U, 0x38000000U, 0x3C000000U,
+	0x40000000U, 0x44000000U, 0x48000000U, 0x42480000U
+};
+
 /* The 64-bit FAU slots of one page, and the words of one page. */
 #define VA_PAGE_SLOTS		32U
 #define VA_PAGE_WORDS		64U
@@ -92,6 +109,36 @@ va_source_register(
 {
 	/* Reports the register's number. */
 	return (uint8_t)(reg & 0x3FU);
+}
+
+/*
+ * Finds the entry of the constant table that holds a value.
+ */
+int
+va_immediate_entry(
+	uint32_t value)
+{
+	uint32_t entry;
+
+	/* Looks through the table. */
+	for (entry = 0U; entry < 32U; entry++) {
+		if (va_immediates[entry] == value)
+			return (int)entry;
+	}
+
+	/* The value is not in the table. */
+	return -1;
+}
+
+/*
+ * Reports the value of an entry of the constant table.
+ */
+uint32_t
+va_immediate_value(
+	uint32_t entry)
+{
+	/* Reports the entry's value. */
+	return va_immediates[entry & 0x1FU];
 }
 
 /*

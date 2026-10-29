@@ -10,16 +10,19 @@
  * a list of Valhall instructions, which va-schedule.c then gives its
  * waits and writes as code.
  *
- * Every IR value lives in one of the registers r0 to r47 for one lane
- * of the warp; r48 to r63 are left to what the hardware preloads.  A
+ * Every IR value lives in a register below those the stage's hardware
+ * preloads (r55 for compute, r57 for fragment, r59 for vertex programs),
+ * for one lane of the warp; a constant takes no register of its own but
+ * is read from the constant table or made again at each reader.  A
  * value gets the lowest free register when it is defined and gives it
  * back after the last instruction that reads it; a value made before a
  * loop and read in it lives to the loop's end, and a loop variable keeps
  * its register through every MOVE into it.  A message's results land in
  * a block of consecutive registers (aligned to two, or to four for three
  * or more), and a message that reads a vector reads it from such a block
- * the values are copied into.  Every arithmetic source is a register:
- * constants are made with IADD_IMM, uniforms are moved from the FAU.
+ * the values are copied into.  Every arithmetic source is a register or
+ * an entry of the constant table: other constants are made with
+ * IADD_IMM, uniforms are moved from the FAU.
  *
  * The IR runs both sides of a selection, so the program is straight
  * code: a loop is the one backward branch, and a predicated memory access
@@ -50,11 +53,12 @@
 /* A value not yet defined, and the end of the program as a last use. */
 #define VA_NOT_DEFINED		UINT32_MAX
 
-/* The registers values may take: r0 to r47. */
-#define VA_ALLOCATABLE		0x0000FFFFFFFFFFFFULL
 
 /* The deepest loop nest. */
 #define VA_LOOP_DEPTH		16U
+
+/* The registers one IR instruction's constants may take while it is lowered. */
+#define VA_MAX_TEMPS		16U
 
 /* The most values one IR instruction reads. */
 #define VA_MAX_SOURCES		DRV_GPU_IR_TEXTURE_MAX_PARAMS
@@ -93,7 +97,10 @@
 
 /*
  * One lowering in progress: the IR, the program it describes, the list of
- * instructions, each value's register and last use, the free registers,
+ * instructions, each value's register (or its constant: a constant is made
+ * again in a temporary register at each reader, or read from the constant
+ * table), each value's last use, the free registers and the first one the
+ * stage's preloads leave alone, the temporaries of the instruction,
  * the outputs the program writes at its end, and the loops it is in.
  */
 struct va_compiler {
@@ -103,12 +110,17 @@ struct va_compiler {
 	struct va_code code;
 
 	uint8_t *reg;
+	uint8_t *is_constant;
+	uint32_t *constant;
 	uint32_t *last_use;
 	uint32_t *defined_at;
 	uint8_t *done;
 
 	uint64_t free_regs;
 	uint64_t used_regs;
+	uint32_t reg_limit;
+	uint32_t temps[VA_MAX_TEMPS];
+	uint32_t temp_count;
 	uint32_t preload;
 
 	uint32_t output_value[MALI_SHADER_LOCATIONS][4];
@@ -139,10 +151,14 @@ static void fail(struct va_compiler *c, int error, const char *reason);
 static uint32_t alloc_block(struct va_compiler *c, uint32_t count);
 static void free_reg(struct va_compiler *c, uint32_t reg);
 static uint32_t value_reg(struct va_compiler *c, uint32_t value);
+static uint32_t value_operand(struct va_compiler *c, uint32_t value);
+static uint32_t constant_temp(struct va_compiler *c, uint32_t value);
+static void release_temps(struct va_compiler *c);
 static uint32_t define_value(struct va_compiler *c, uint32_t value);
 static void bind_value(struct va_compiler *c, uint32_t value, uint32_t reg);
 static void release_after(struct va_compiler *c, uint32_t index);
 static uint8_t operand_byte(uint32_t operand);
+static int is_immediate(uint32_t operand);
 static uint64_t operand_mask(uint32_t operand);
 static void emit(struct va_compiler *c, uint64_t bits, uint64_t reads, uint64_t writes, uint32_t flags);
 static void emit_alu(struct va_compiler *c, uint64_t bits, uint32_t dst, uint32_t a, uint32_t b, uint32_t third);
@@ -619,17 +635,28 @@ lower(
 	/* Allocates the per-value and per-instruction tables. */
 	value_count = c->ir->value_count + 1U;
 	c->reg = kern_malloc(value_count);
+	c->is_constant = kern_calloc(value_count, 1U);
+	c->constant = kern_calloc(value_count, sizeof(*c->constant));
 	c->last_use = kern_malloc((size_t)value_count * sizeof(*c->last_use));
 	c->defined_at = kern_malloc((size_t)value_count * sizeof(*c->defined_at));
 	c->done = kern_calloc((size_t)c->ir->instruction_count + 1U, 1U);
-	if (c->reg == NULL || c->last_use == NULL || c->defined_at == NULL || c->done == NULL) {
+	if (c->reg == NULL || c->is_constant == NULL || c->constant == NULL || c->last_use == NULL || c->defined_at == NULL || c->done == NULL) {
 		error = ENOMEM;
 		goto out;
 	}
 	kern_memset(c->reg, VA_NO_REG, value_count);
 
-	/* Starts with every allocatable register free and no output written. */
-	c->free_regs = VA_ALLOCATABLE;
+	/*
+	 * Starts with every register below the stage's preloads free (r48, the
+	 * blend shader's link, is free without blend shaders) and no output
+	 * written.
+	 */
+	c->reg_limit = VA_PRELOAD_LOCAL_ID_XY;
+	if (c->ir->stage == DRV_GPU_STAGE_FRAGMENT)
+		c->reg_limit = VA_PRELOAD_WORKGROUP_X;
+	if (c->ir->stage == DRV_GPU_STAGE_VERTEX)
+		c->reg_limit = VA_PRELOAD_OUTPUT_INDEX;
+	c->free_regs = va_register_mask(0U, c->reg_limit);
 	for (location = 0U; location < MALI_SHADER_LOCATIONS; location++) {
 		for (component = 0U; component < 4U; component++)
 			c->output_value[location][component] = VA_NOT_DEFINED;
@@ -664,10 +691,14 @@ lower(
 
 out:
 	kern_free(c->reg);
+	kern_free(c->is_constant);
+	kern_free(c->constant);
 	kern_free(c->last_use);
 	kern_free(c->defined_at);
 	kern_free(c->done);
 	c->reg = NULL;
+	c->is_constant = NULL;
+	c->constant = NULL;
 	c->last_use = NULL;
 	c->defined_at = NULL;
 	c->done = NULL;
@@ -703,8 +734,11 @@ lower_instruction(
 	case DRV_GPU_IR_CONST:
 	case DRV_GPU_IR_ICONST:
 	case DRV_GPU_IR_BOOL:
-		reg = define_value(c, inst->dst);
-		emit_constant(c, reg, inst->immediate);
+		/* A constant takes no register: each reader makes it again or reads it from the table. */
+		if (inst->dst <= c->ir->value_count) {
+			c->is_constant[inst->dst] = 1U;
+			c->constant[inst->dst] = inst->immediate;
+		}
 		break;
 
 	case DRV_GPU_IR_LOAD_PUSH:
@@ -798,7 +832,7 @@ lower_instruction(
 		reg = c->reg[inst->dst];
 		if (reg == VA_NO_REG)
 			reg = define_value(c, inst->dst);
-		emit_move(c, reg, value_reg(c, inst->src[0]));
+		emit_move(c, reg, value_operand(c, inst->src[0]));
 		break;
 
 	default:
@@ -847,11 +881,11 @@ lower_alu(
 	b = VA_OPERAND_NONE;
 	s = VA_OPERAND_NONE;
 	if (ir_sources(inst, NULL) >= 1U)
-		a = value_reg(c, inst->src[0]);
+		a = value_operand(c, inst->src[0]);
 	if (ir_sources(inst, NULL) >= 2U)
-		b = value_reg(c, inst->src[1]);
+		b = value_operand(c, inst->src[1]);
 	if (ir_sources(inst, NULL) >= 3U)
-		s = value_reg(c, inst->src[2]);
+		s = value_operand(c, inst->src[2]);
 	if (c->error != 0)
 		return;
 	dst = define_value(c, inst->dst);
@@ -2325,7 +2359,7 @@ lower_position_end(
 	/* Reads the position, a missing component as 0 (w as 1). */
 	for (axis = 0U; axis < 4U; axis++) {
 		if (c->position_value[axis] != VA_NOT_DEFINED) {
-			source[axis] = value_reg(c, c->position_value[axis]);
+			source[axis] = value_operand(c, c->position_value[axis]);
 		} else if (axis == 3U) {
 			source[axis] = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_FLOAT_ONE;
 		} else {
@@ -2418,12 +2452,13 @@ lower_varying_end(
 			continue;
 		for (component = 0U; component < 4U; component++) {
 			if (c->output_value[location][component] != VA_NOT_DEFINED) {
-				source[component] = value_reg(c, c->output_value[location][component]);
+				source[component] = value_operand(c, c->output_value[location][component]);
 			} else {
 				source[component] = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO;
 			}
 		}
 		block = gather_block(c, source, 4U, 4U);
+		release_temps(c);
 		if (c->error != 0)
 			return;
 
@@ -2494,7 +2529,7 @@ lower_fragment_end(
 			continue;
 		for (component = 0U; component < 4U; component++) {
 			if (c->output_value[location][component] != VA_NOT_DEFINED) {
-				source[component] = value_reg(c, c->output_value[location][component]);
+				source[component] = value_operand(c, c->output_value[location][component]);
 			} else if (component == 3U) {
 				source[component] = VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_FLOAT_ONE;
 			} else {
@@ -2502,6 +2537,7 @@ lower_fragment_end(
 			}
 		}
 		block = gather_block(c, source, 4U, 4U);
+		release_temps(c);
 		if (c->error != 0)
 			return;
 		bits = VA_OP_BLEND | va_source_special(VA_SPECIAL_BLEND_DESCRIPTOR_0 + location, 0U);
@@ -2870,7 +2906,7 @@ alloc_block(
 
 	/* Takes the lowest aligned run of free registers. */
 	mask = va_register_mask(0U, count);
-	for (reg = 0U; reg + count <= VA_PRELOAD_FIRST; reg += alignment) {
+	for (reg = 0U; reg + count <= c->reg_limit; reg += alignment) {
 		if (((c->free_regs >> reg) & mask) == mask) {
 			c->free_regs &= ~(mask << reg);
 			c->used_regs |= mask << reg;
@@ -2879,7 +2915,7 @@ alloc_block(
 	}
 
 	/* The registers ran out. */
-	fail(c, ENOSPC, "the program needs more registers than r0 to r47");
+	fail(c, ENOSPC, "the program needs more registers than the preloads leave");
 	return VA_NO_REG;
 }
 
@@ -2890,7 +2926,7 @@ free_reg(
 	uint32_t reg)
 {
 	/* Only an allocatable register returns to the pool. */
-	if (reg >= VA_PRELOAD_FIRST)
+	if (reg >= c->reg_limit)
 		return;
 	c->free_regs |= (uint64_t)1U << reg;
 }
@@ -2901,6 +2937,10 @@ value_reg(
 	struct va_compiler *c,
 	uint32_t value)
 {
+	/* A constant is made again in a temporary the instruction frees. */
+	if (value <= c->ir->value_count && c->is_constant[value] != 0U)
+		return constant_temp(c, c->constant[value]);
+
 	/* A value that has no register is a lowering error. */
 	if (value > c->ir->value_count || c->reg[value] == VA_NO_REG) {
 		fail(c, EINVAL, "a value read before its definition");
@@ -2965,6 +3005,9 @@ release_after(
 
 	inst = &c->ir->instructions[index];
 
+	/* The instruction's temporaries die. */
+	release_temps(c);
+
 	/* A source whose last use is here dies. */
 	count = ir_sources(inst, sources);
 	for (source = 0U; source < count; source++) {
@@ -2990,6 +3033,67 @@ release_after(
 	}
 }
 
+/*
+ * Reports a value as an operand: a constant the constant table has is
+ * read from the table, another constant made in a temporary.
+ */
+static uint32_t
+value_operand(
+	struct va_compiler *c,
+	uint32_t value)
+{
+	int entry;
+
+	/* A constant of the table is read from it. */
+	if (value <= c->ir->value_count && c->is_constant[value] != 0U) {
+		entry = va_immediate_entry(c->constant[value]);
+		if (entry >= 0)
+			return VA_OPERAND_IMMEDIATE | (uint32_t)entry;
+	}
+
+	/* Anything else is a register. */
+	return value_reg(c, value);
+}
+
+/* Makes a constant in a temporary register the instruction frees when it is lowered. */
+static uint32_t
+constant_temp(
+	struct va_compiler *c,
+	uint32_t value)
+{
+	uint32_t reg;
+
+	/* The instruction's temporaries are bounded. */
+	if (c->temp_count == VA_MAX_TEMPS) {
+		fail(c, ENOSPC, "an instruction reads too many constants");
+		return 0U;
+	}
+
+	/* Allocates the register and writes the constant. */
+	reg = alloc_block(c, 1U);
+	if (reg == VA_NO_REG)
+		return 0U;
+	emit_constant(c, reg, value);
+	c->temps[c->temp_count] = reg;
+	c->temp_count++;
+
+	/* Reports the register. */
+	return reg;
+}
+
+/* Frees the temporaries of the instruction just lowered. */
+static void
+release_temps(
+	struct va_compiler *c)
+{
+	uint32_t index;
+
+	/* Gives each temporary back. */
+	for (index = 0U; index < c->temp_count; index++)
+		free_reg(c, c->temps[index]);
+	c->temp_count = 0U;
+}
+
 /* Encodes an operand as a source byte. */
 static uint8_t
 operand_byte(
@@ -3003,6 +3107,21 @@ operand_byte(
 
 	/* Reports the register. */
 	return va_source_register(operand);
+}
+
+/* Reports whether an operand is an entry of the constant table. */
+static int
+is_immediate(
+	uint32_t operand)
+{
+	/* Nothing is not an entry. */
+	if (operand == VA_OPERAND_NONE)
+		return 0;
+	if ((operand & VA_OPERAND_IMMEDIATE) == 0U)
+		return 0;
+
+	/* An entry of the table. */
+	return 1;
 }
 
 /* Reports the registers an operand reads. */
@@ -3057,6 +3176,13 @@ emit_alu(
 	uint32_t third)
 {
 	uint64_t reads;
+
+	/*
+	 * An instruction reads at most two words of the constant table and
+	 * the FAU: a third constant is made in a temporary.
+	 */
+	if (is_immediate(a) && is_immediate(b) && is_immediate(third) && a != b && b != third && a != third)
+		a = constant_temp(c, va_immediate_value(a & 0x1FU));
 
 	/* Places the operands and the destination. */
 	bits |= operand_byte(a);

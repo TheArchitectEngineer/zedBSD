@@ -79,6 +79,12 @@ void va_code_release(struct va_code *code);
 /* The source byte of register reg. */
 uint8_t va_source_register(uint32_t reg);
 
+/* The entry of the constant table holding value, or -1. */
+int va_immediate_entry(uint32_t value);
+
+/* The value of entry entry of the constant table. */
+uint32_t va_immediate_value(uint32_t entry);
+
 /* The source byte of entry entry of the constant table. */
 uint8_t va_source_immediate(uint32_t entry);
 

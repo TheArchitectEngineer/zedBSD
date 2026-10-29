@@ -472,7 +472,7 @@ test_module(
 	free(words);
 	if (error != 0)
 		return 1;
-	printf("PASS %s: %zu bytes, %u registers\n", name, (size_t)0U + (size_t)0U, 0U);
+	printf("PASS %s\n", name);
 	return 0;
 }
 
