@@ -162,6 +162,8 @@ static uint32_t texture_handle(uint32_t slot);
 
 static int compile_variant(const struct drv_gpu_shader_ir *ir, struct mali_shader_program *program, uint32_t variant, uint8_t *out, size_t room, size_t *length, uint32_t *work_registers, uint32_t *preload, struct mali_shader_diagnostic *diagnostic);
 static int lay_out(const struct drv_gpu_shader_ir *ir, struct mali_shader_program *program);
+static uint32_t buffer_of(const struct drv_gpu_shader_ir *ir, const struct mali_shader_program *program, uint32_t uniform);
+static void lower_size_query(struct va_compiler *c, const struct drv_gpu_shader_ir_inst *inst);
 static int optimize_for(const struct drv_gpu_shader_ir *ir, uint32_t variant, struct drv_gpu_shader_ir *optimized);
 static int lower(struct va_compiler *c);
 static void lower_instruction(struct va_compiler *c, uint32_t index);
@@ -261,10 +263,10 @@ mali_shader_compile(
 		return EINVAL;
 	}
 
-	/* Parses the stage. */
+	/* Parses the stage, a compute shader's sampled images included. */
 	ir = NULL;
 	kern_memset(&parse_diagnostic, 0, sizeof(parse_diagnostic));
-	error = drv_gpu_shader_parse(words, word_count, ir_stage, &ir, &parse_diagnostic);
+	error = drv_gpu_shader_parse_features(words, word_count, ir_stage, DRV_GPU_SPIRV_FEATURE_COMPUTE_IMAGES, &ir, &parse_diagnostic);
 	if (error != 0) {
 		if (diagnostic != NULL) {
 			diagnostic->instruction = parse_diagnostic.word_offset;
@@ -516,9 +518,11 @@ lay_out(
 	struct mali_shader_program *program)
 {
 	const struct drv_gpu_shader_ir_uniform *uniform;
+	const struct drv_gpu_shader_ir_inst *inst;
 	uint32_t word;
 	uint32_t index;
 	uint32_t location;
+	uint32_t slot;
 
 	/* The push constants come first, and the next words start on an even word. */
 	program->push_bytes = ir->push_bytes;
@@ -540,6 +544,7 @@ lay_out(
 			program->buffers[program->buffer_count].set = uniform->set;
 			program->buffers[program->buffer_count].binding = uniform->binding;
 			program->buffers[program->buffer_count].fau_word = word;
+			program->buffers[program->buffer_count].size_fau_word = MALI_SHADER_NO_FAU_WORD;
 			if (uniform->kind == DRV_GPU_IR_UNIFORM_BLOCK) {
 				program->buffers[program->buffer_count].kind = MALI_SHADER_BUFFER_UNIFORM;
 				program->buffers[program->buffer_count].size = uniform->offset + uniform->size;
@@ -555,10 +560,31 @@ lay_out(
 			program->textures[program->texture_count].set = uniform->set;
 			program->textures[program->texture_count].binding = uniform->binding;
 			program->textures[program->texture_count].index = program->texture_count;
+			program->textures[program->texture_count].size_fau_word = MALI_SHADER_NO_FAU_WORD;
 			program->texture_count++;
 		}
 	}
-	program->fau_words = word;
+	/* Gives the sizes the program queries their words. */
+	for (index = 0U; index < ir->instruction_count; index++) {
+		inst = &ir->instructions[index];
+		if (inst->op == DRV_GPU_IR_STORAGE_SIZE) {
+			slot = buffer_of(ir, program, inst->location);
+			if (slot < program->buffer_count && program->buffers[slot].size_fau_word == MALI_SHADER_NO_FAU_WORD) {
+				program->buffers[slot].size_fau_word = word;
+				word++;
+			}
+		} else if (inst->op == DRV_GPU_IR_TEXTURE && (inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK) == DRV_GPU_IR_TEXTURE_RESINFO) {
+			for (slot = 0U; slot < program->texture_count; slot++) {
+				if (program->textures[slot].set != inst->location || program->textures[slot].binding != inst->immediate)
+					continue;
+				if (program->textures[slot].size_fau_word == MALI_SHADER_NO_FAU_WORD) {
+					program->textures[slot].size_fau_word = word;
+					word += 4U;
+				}
+			}
+		}
+	}
+	program->fau_words = (word + 1U) & ~1U;
 
 	/* Records the interface: a vertex program's inputs and varyings, a fragment program's inputs and colours. */
 	for (index = 0U; index < ir->input_count; index++) {
@@ -595,6 +621,29 @@ lay_out(
 
 	/* Succeeded: the layout is recorded. */
 	return 0;
+}
+
+/* Finds the program's buffer of an IR uniform, or the buffer count when it has none. */
+static uint32_t
+buffer_of(
+	const struct drv_gpu_shader_ir *ir,
+	const struct mali_shader_program *program,
+	uint32_t uniform)
+{
+	uint32_t index;
+
+	/* A uniform the IR does not have has no buffer. */
+	if (uniform >= ir->uniform_count)
+		return program->buffer_count;
+
+	/* Looks through the buffers by (set, binding). */
+	for (index = 0U; index < program->buffer_count; index++) {
+		if (program->buffers[index].set == ir->uniforms[uniform].set && program->buffers[index].binding == ir->uniforms[uniform].binding)
+			return index;
+	}
+
+	/* The uniform is not a buffer. */
+	return program->buffer_count;
 }
 
 /*
@@ -802,8 +851,20 @@ lower_instruction(
 	case DRV_GPU_IR_SAMPLE:
 	case DRV_GPU_IR_SAMPLE_BIAS:
 	case DRV_GPU_IR_SAMPLE_LOD:
-	case DRV_GPU_IR_TEXTURE:
 		lower_texture(c, inst);
+		break;
+
+	case DRV_GPU_IR_TEXTURE:
+		/* A size query reads the FAU; every other message samples. */
+		if ((inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK) == DRV_GPU_IR_TEXTURE_RESINFO) {
+			lower_size_query(c, inst);
+		} else {
+			lower_texture(c, inst);
+		}
+		break;
+
+	case DRV_GPU_IR_STORAGE_SIZE:
+		lower_size_query(c, inst);
 		break;
 
 	case DRV_GPU_IR_KILL:
@@ -2555,6 +2616,65 @@ lower_texture(
 	/* Gives the four results to the instruction's values. */
 	for (component = 0U; component < 4U; component++)
 		bind_value(c, inst->dst + component, result + component);
+}
+
+/*
+ * Reads a size the driver writes in the FAU: a storage buffer's bytes, or
+ * a texture's size at a level (the width, height and, for a 3D image,
+ * depth of level 0 shifted right by the level, at least 1; an array's
+ * layers; the level count).
+ */
+static void
+lower_size_query(
+	struct va_compiler *c,
+	const struct drv_gpu_shader_ir_inst *inst)
+{
+	uint32_t slot;
+	uint32_t word;
+	uint32_t component;
+	uint32_t level;
+	uint32_t mask;
+	uint32_t reg;
+
+	/* A buffer's bytes are one word. */
+	if (inst->op == DRV_GPU_IR_STORAGE_SIZE) {
+		slot = buffer_slot(c, inst->location);
+		if (c->error != 0)
+			return;
+		word = c->program->buffers[slot].size_fau_word;
+		reg = define_value(c, inst->dst);
+		if (c->error != 0)
+			return;
+		emit_move_uniform(c, reg, word);
+		return;
+	}
+
+	/* A texture's four words, the first three shifted by the level. */
+	slot = texture_slot(c, inst->location, inst->immediate);
+	if (c->error != 0)
+		return;
+	word = c->program->textures[slot].size_fau_word;
+	level = value_reg(c, inst->src[0]);
+	mask = alloc_block(c, 1U);
+	if (c->error != 0)
+		return;
+	for (component = 0U; component < 4U; component++) {
+		reg = define_value(c, inst->dst + component);
+		if (c->error != 0)
+			return;
+		emit_move_uniform(c, reg, word + component);
+		/* The level count, and an array's layers, are not shifted. */
+		if (component == 3U)
+			continue;
+		if (component == 2U && (inst->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK) != DRV_GPU_IR_IMAGE_3D)
+			continue;
+
+		/* max(size >> level, 1). */
+		emit_alu(c, VA_OP_RSHIFT_OR_I32 | va_field(VA_LANES_B00, VA_SHIFT_LANES), reg, reg, level, VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO);
+		emit_alu(c, VA_OP_ICMP_OR_U32 | va_field(VA_CONDITION_EQ, VA_SHIFT_CONDITION) | va_field(VA_RESULT_M1, VA_SHIFT_RESULT_TYPE), mask, reg, VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO, VA_OPERAND_IMMEDIATE | VA_IMMEDIATE_ZERO);
+		emit_alu(c, VA_OP_ISUB_U32, reg, reg, mask, VA_OPERAND_NONE);
+	}
+	free_reg(c, mask);
 }
 
 /* Records a STORE_OUTPUT, which the program's end writes. */

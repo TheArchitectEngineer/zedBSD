@@ -73,6 +73,8 @@ struct trial {
 	uint32_t shared[WORDS];
 	uint32_t local_id[3];
 	uint32_t group_id[3];
+	uint32_t buffer_bytes[BUFFERS];
+	uint32_t texture_size[16][4];
 	uint32_t vertex_id;
 	uint32_t instance_id;
 	uint32_t frag_x;
@@ -354,6 +356,10 @@ run_reference(
 			slot = find_buffer(program, ir, inst->location);
 			DST(slot < 0 ? 0U : trial->buffers[slot][(inst->immediate / 4U) % WORDS]);
 			break;
+		case DRV_GPU_IR_STORAGE_SIZE:
+			slot = find_buffer(program, ir, inst->location);
+			DST(slot < 0 ? 0U : trial->buffer_bytes[slot]);
+			break;
 		case DRV_GPU_IR_LOAD_STORAGE:
 			slot = find_buffer(program, ir, inst->location);
 			if (slot >= 0 && (inst->component != 1U || b != 0U))
@@ -493,7 +499,17 @@ run_reference(
 				word = inst->src[0];
 				if (message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD)
 					word++;
-				if (message == DRV_GPU_IR_TEXTURE_LD)
+				if (message == DRV_GPU_IR_TEXTURE_RESINFO) {
+					for (component = 0U; component < 4U; component++) {
+						word = trial->texture_size[slot & 15][component];
+						if (component < 2U || (component == 2U && (inst->image_shape & DRV_GPU_IR_IMAGE_KIND_MASK) == DRV_GPU_IR_IMAGE_3D)) {
+							word >>= value[inst->src[0]] & 31U;
+							if (word == 0U)
+								word = 1U;
+						}
+						texel[component] = word;
+					}
+				} else if (message == DRV_GPU_IR_TEXTURE_LD)
 					texture_value((uint32_t)slot, (float)(int32_t)value[word], (float)(int32_t)value[word + 1U], texel);
 				else
 					texture_value((uint32_t)slot, as_float(value[word]), as_float(value[word + 1U]), texel);
@@ -752,6 +768,16 @@ run_model(
 	if (program->stage == MALI_SHADER_VERTEX) {
 		for (index = 0U; index < 6U; index++)
 			m.fau[program->viewport_fau_word + index] = trial->viewport[index];
+	}
+	for (index = 0U; index < program->buffer_count; index++) {
+		if (program->buffers[index].size_fau_word != MALI_SHADER_NO_FAU_WORD)
+			m.fau[program->buffers[index].size_fau_word & 255U] = trial->buffer_bytes[index];
+	}
+	for (index = 0U; index < program->texture_count; index++) {
+		if (program->textures[index].size_fau_word == MALI_SHADER_NO_FAU_WORD)
+			continue;
+		for (slot = 0U; slot < 4U; slot++)
+			m.fau[(program->textures[index].size_fau_word + slot) & 255U] = trial->texture_size[index][slot];
 	}
 	for (index = 0U; index < program->buffer_count; index++) {
 		address = BUFFER_BASE + ((uint64_t)index << 32);
@@ -1113,6 +1139,12 @@ fill_trial(
 		for (component = 0U; component < WORDS; component++)
 			trial->buffers[index][component] = as_bits(((float)(next_random() % 4001U) - 2000.0f) / 1000.0f);
 	}
+	for (index = 0U; index < BUFFERS; index++)
+		trial->buffer_bytes[index] = (next_random() % 1024U) * 4U;
+	for (index = 0U; index < 16U; index++) {
+		for (component = 0U; component < 4U; component++)
+			trial->texture_size[index][component] = 1U + next_random() % 4096U;
+	}
 	for (index = 0U; index < 3U; index++) {
 		trial->local_id[index] = next_random() % 4U;
 		trial->group_id[index] = next_random() % 8U;
@@ -1186,7 +1218,7 @@ mali_model_check(
 	ir_stage = stage == MALI_SHADER_VERTEX ? DRV_GPU_STAGE_VERTEX :
 		   stage == MALI_SHADER_FRAGMENT ? DRV_GPU_STAGE_FRAGMENT : DRV_GPU_STAGE_COMPUTE;
 	ir = NULL;
-	if (drv_gpu_shader_parse(words, count, ir_stage, &ir, &diagnostic) != 0) {
+	if (drv_gpu_shader_parse_features(words, count, ir_stage, DRV_GPU_SPIRV_FEATURE_COMPUTE_IMAGES, &ir, &diagnostic) != 0) {
 		printf("FAIL %s: the reference cannot parse it\n", name);
 		return 1;
 	}

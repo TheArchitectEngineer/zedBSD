@@ -31,8 +31,16 @@
  *     buffer's address is that of the byte its binding's offset names; a
  *     storage buffer's likewise.
  *
+ *   - then the words of the sizes the program queries: for a storage
+ *     buffer whose length it reads (OpArrayLength), one word with the
+ *     bytes of the buffer's range at buffer.size_fau_word; for a texture
+ *     whose size it queries, four words at texture.size_fau_word: the
+ *     width, the height and the depth (or the layers of an array) of
+ *     level 0, and the number of levels.
+ *
  * fau_words counts them all and is even; the driver gives the stage
- * fau_words / 2 entries.
+ * fau_words / 2 entries.  A size word the program does not read is
+ * MALI_SHADER_NO_FAU_WORD.
  *
  * Resource tables.  Textures, samplers and vertex attributes are read
  * through the resource table the stage's resource table pointer names.
@@ -124,6 +132,9 @@ enum mali_shader_stage {
 #define MALI_SHADER_LOCATIONS			16U
 #define MALI_SHADER_COLORS			8U
 
+/* No FAU word: the program does not read that size. */
+#define MALI_SHADER_NO_FAU_WORD			0xFFFFFFFFU
+
 /* The bytes of one generic varying location in the varying record. */
 #define MALI_SHADER_VARYING_STRIDE		16U
 
@@ -132,8 +143,9 @@ enum mali_shader_stage {
 
 /*
  * One buffer the program binds: its (set, binding), its kind, the FAU word
- * its 64-bit address goes in, and for a uniform buffer the bytes the
- * program reads of it (from the binding's offset).
+ * its 64-bit address goes in, for a uniform buffer the bytes the program
+ * reads of it (from the binding's offset), and for a storage buffer the
+ * FAU word of its range's bytes (or MALI_SHADER_NO_FAU_WORD).
  */
 struct mali_shader_buffer {
 	uint32_t set;
@@ -141,16 +153,19 @@ struct mali_shader_buffer {
 	uint32_t kind;
 	uint32_t fau_word;
 	uint32_t size;
+	uint32_t size_fau_word;
 };
 
 /*
- * One combined image sampler the program samples: its (set, binding) and
- * the entry of the texture and sampler tables its descriptors go in.
+ * One combined image sampler the program samples: its (set, binding),
+ * the entry of the texture and sampler tables its descriptors go in, and
+ * the first FAU word of its size (or MALI_SHADER_NO_FAU_WORD).
  */
 struct mali_shader_texture {
 	uint32_t set;
 	uint32_t binding;
 	uint32_t index;
+	uint32_t size_fau_word;
 };
 
 /*
