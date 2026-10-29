@@ -419,11 +419,15 @@ drv_usb_cdc_ncm_build_ntb16_frames(
 	int valid;
 	int error;
 
-	/* Nothing yet. */
+	/* Reports nothing built and nothing taken until a block is complete. */
 	if (ntb_length != NULL)
 		*ntb_length = 0;
+
+	/* The count taken is zero as well. */
 	if (taken != NULL)
 		*taken = 0;
+
+	/* Refuses a profile or arguments that no block can be built from. */
 	valid = profile_valid(profile);
 	if (!valid || frames == NULL || lengths == NULL || count == 0 ||
 	    bytes == NULL || ntb_length == NULL || taken == NULL) {
@@ -431,12 +435,16 @@ drv_usb_cdc_ncm_build_ntb16_frames(
 		return EINVAL;
 	}
 
-	/* The bounds: the buffer, the function's block size and its datagram count. */
+	/* Bounds the block by the buffer, the function's block size and what wBlockLength can say. */
 	limit = ntb_capacity;
 	if (limit > profile->ntb_out_max_size)
 		limit = profile->ntb_out_max_size;
+
+	/* The length field is 16 bits wide. */
 	if (limit > UINT16_MAX)
 		limit = UINT16_MAX;
+
+	/* Notes the block size at which no zero-length packet is needed. */
 	no_zlp_exact = 0;
 	if (profile->ntb_out_max_is_device_max)
 		no_zlp_exact = profile->ntb_out_max_size;
@@ -454,20 +462,30 @@ drv_usb_cdc_ncm_build_ntb16_frames(
 			return EINVAL;
 		}
 
-		/* Where it goes, and the NDP after it with one more entry. */
+		/* Finds the place this datagram's payload takes. */
 		error = datagram_at_or_after(at, profile->ndp_out_divisor, profile->ndp_out_payload_remainder, &datagram);
 		if (error != 0)
 			return error;
+
+		/* Finds where the datagram ends. */
 		error = checked_add(datagram, lengths[carried], &end);
 		if (error != 0)
 			return error;
+
+		/* Finds the NDP that would follow it, with one more pointer entry. */
 		error = congruent_at_or_after(end, profile->ndp_out_alignment, 0, &ndp);
 		if (error != 0)
 			return error;
+
+		/* Sizes that NDP: its header, an entry for each datagram so far and this one, and the null entry. */
 		ndp_length = DRV_USB_CDC_NCM_NDP16_HEADER_SIZE + DRV_USB_CDC_NCM_DPE16_SIZE * (carried + 2U);
+
+		/* Finds the block length that would result. */
 		error = checked_add(ndp, ndp_length, &block);
 		if (error != 0)
 			return error;
+
+		/* Adds the trailing byte the zero-length-packet rule asks for. */
 		error = finish_block_length(&block, profile->bulk_out_max_packet_size, no_zlp_exact);
 		if (error != 0)
 			return error;
@@ -485,36 +503,46 @@ drv_usb_cdc_ncm_build_ntb16_frames(
 	if (carried == 0)
 		return EMSGSIZE;
 
-	/* The final layout: the NDP after the last datagram. */
+	/* Finds the NDP after the last datagram that was kept. */
 	error = congruent_at_or_after(used, profile->ndp_out_alignment, 0, &ndp);
 	if (error != 0)
 		return error;
+
+	/* Sizes the NDP: its header, an entry for each datagram carried, and the null entry. */
 	ndp_length = DRV_USB_CDC_NCM_NDP16_HEADER_SIZE + DRV_USB_CDC_NCM_DPE16_SIZE * (carried + 1U);
 	block = ndp + ndp_length;
+
+	/* Adds the trailing byte the zero-length-packet rule asks for. */
 	error = finish_block_length(&block, profile->bulk_out_max_packet_size, no_zlp_exact);
 	if (error != 0)
 		return error;
 
-	/* The bytes: zeros, then each datagram in its place. */
+	/* Clears the block so every byte not written below is zero. */
 	kern_memset(bytes, 0, block);
+
+	/* Copies each datagram to its place. */
 	for (index = 0; index < carried; index++)
 		kern_memcpy(bytes + offsets[index], frames[index], lengths[index]);
 
-	/* The block header and the datagram pointers, ended by a null entry. */
+	/* Writes the block header, which names the block's length and its NDP. */
 	store_le32(bytes, DRV_USB_CDC_NCM_NTH16_SIGNATURE);
 	store_le16(bytes + 4U, DRV_USB_CDC_NCM_NTH16_SIZE);
 	store_le16(bytes + 6U, sequence);
 	store_le16(bytes + 8U, (uint16_t)block);
 	store_le16(bytes + 10U, (uint16_t)ndp);
+
+	/* Writes the NDP header, whose next-NDP field says there is no other. */
 	store_le32(bytes + ndp, DRV_USB_CDC_NCM_NDP16_NOCRC_SIGNATURE);
 	store_le16(bytes + ndp + 4U, (uint16_t)ndp_length);
 	store_le16(bytes + ndp + 6U, 0);
+
+	/* Writes one pointer entry per datagram, ended by the zeroed null entry. */
 	for (index = 0; index < carried; index++) {
 		store_le16(bytes + ndp + 8U + 4U * index, (uint16_t)offsets[index]);
 		store_le16(bytes + ndp + 10U + 4U * index, (uint16_t)lengths[index]);
 	}
 
-	/* The block's length and the frames it carries. */
+	/* Reports the block's length and how many frames it carries. */
 	*ntb_length = block;
 	*taken = carried;
 

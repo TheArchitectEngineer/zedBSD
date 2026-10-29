@@ -116,7 +116,7 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| [p012](phase012/phase.md) | TCP の SACK（RFC 2018・2883・6675） | in-progress（2026-10-30 P3 q1679-i02: 受け側・D-SACK・ACK 8 segment ごと（bbc43c185: 10GbE の recv 4897〜5282 ＝ Linux の 90〜97 %、ATR 有効）、送り側（RFC 6675 の保守的な形、tcp-model PASS）） | p008〜p011、WS311 |
+| [p012](phase012/phase.md) | TCP の SACK（RFC 2018・2883・6675） | cleared（2026-10-30 P3 q1679-i02: bbc43c185・fe31561e8、10GbE の recv 4897〜5282（Linux の 90〜97 %、ATR 有効）、tcp-model・QEMU・5330 PASS、規約の全文の見直し済み） | p008〜p011、WS311 |
 
 ## ユーザーの決定（2026-10-29、USB の 2.5G）
 

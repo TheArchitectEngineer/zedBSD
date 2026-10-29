@@ -1431,7 +1431,7 @@ ncm_tx_submit(
 	uint16_t sequence;
 	int error;
 
-	/* The frames in order, up to a block's datagrams; the list past them stays linked. */
+	/* Collects the frames in order, up to a block's datagrams; the list past them stays linked. */
 	count = 0;
 	rest = packets;
 	while (rest != NULL && count < NCM_TX_BATCH_MAX) {
@@ -1442,14 +1442,14 @@ ncm_tx_submit(
 		rest = rest->next;
 	}
 
-	/* Builds the block; the transfer never refers to the packets. */
+	/* Samples the sequence number of the block; the transfer never refers to the packets. */
 	irq = spin_lock_irqsave(&adapter->lock);
 
 	sequence = adapter->tx_sequence;
 
 	spin_unlock_irqrestore(&adapter->lock, irq);
 
-	/* As many frames as the block takes; a failure drops them all. */
+	/* Builds a block of as many frames as it takes; a failure drops them all. */
 	taken = 0;
 	error = drv_usb_cdc_ncm_build_ntb16_frames(
 		&adapter->profile, sequence, frames, lengths, count,
@@ -1464,7 +1464,7 @@ ncm_tx_submit(
 		rest = list[taken];
 	}
 
-	/* How many go back, and the last of them. */
+	/* Counts the frames that go back and finds the last of them. */
 	left = 0;
 	tail = NULL;
 	for (packets = rest; packets != NULL; packets = packets->next) {
@@ -1472,10 +1472,14 @@ ncm_tx_submit(
 		left++;
 	}
 
-	/* Checks the operation status, and puts the frames not carried back. */
+	/* Refuses a block for an adapter going down, and puts the frames not carried back. */
 	irq = spin_lock_irqsave(&adapter->lock);
+
+	/* A block built for an adapter that is closing is not sent. */
 	if (error == 0 && (adapter->closing || !adapter->opened))
 		error = ENETDOWN;
+
+	/* The frames not carried are the next transfer's first. */
 	if (rest != NULL) {
 		tail->next = adapter->tx_queue_head;
 		if (adapter->tx_queue_head == NULL)
@@ -1486,7 +1490,7 @@ ncm_tx_submit(
 
 	spin_unlock_irqrestore(&adapter->lock, irq);
 
-	/* The frames carried (or, on a failure, those that would have been) are freed. */
+	/* Frees the frames carried (or, on a failure, those that would have been). */
 	for (index = 0; index < taken; index++) {
 		list[index]->next = NULL;
 		packet_buf_free(list[index]);
@@ -1998,9 +2002,12 @@ ncm_poll_tx_completion(
 
 		packet = adapter->tx_queue_head;
 		if (packet != NULL) {
+			/* Finds the last of the waiting frames that one block carries. */
 			last = packet;
 			for (taken = 1; taken < NCM_TX_BATCH_MAX && last->next != NULL; taken++)
 				last = last->next;
+
+			/* Takes those frames off the queue as one list. */
 			adapter->tx_queue_head = last->next;
 			if (adapter->tx_queue_head == NULL)
 				adapter->tx_queue_tail = NULL;
@@ -2087,20 +2094,28 @@ ncm_poll_rx_completion(
 	error = ncm_urb_status_error(drv_usb_urb_status(adapter->rx_urb));
 	block = adapter->rx_buffer;
 	length = drv_usb_urb_actual_length(adapter->rx_urb);
+
+	/* Points the next transfer at the buffer that is not holding this block. */
 	adapter->rx_buffer = adapter->rx_buffers[0];
 	if (block == adapter->rx_buffers[0])
 		adapter->rx_buffer = adapter->rx_buffers[1];
+
+	/* Asks for the receive transfer to be armed again. */
 	ncm_restore_pending(adapter, &adapter->rx_rearm);
+
+	/* Arms it at once, when nothing else holds the right to. */
 	rearm = ncm_take_rx_rearm(adapter);
 	if (rearm)
 		(void)ncm_rearm(adapter, 0);
 
-	/* The block parsed. */
+	/* Parses the block and queues its datagrams. */
 	if (error == 0) {
 		error = drv_usb_cdc_ncm_parse_ntb16(
 			&adapter->profile, &adapter->rx_state, block, length,
 			ncm_queue_datagram, adapter, &count);
 	}
+
+	/* Counts a block that could not be taken as a receive error. */
 	if (error != 0)
 		device->rx_errors++;
 
