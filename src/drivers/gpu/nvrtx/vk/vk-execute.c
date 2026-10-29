@@ -8,14 +8,20 @@
 /*
  * The running of a command buffer's records on the GPU.
  *
- * Each session has a run of the executor's GPU memory for its
- * submissions: the push buffer, a constant buffer 0 for each draw, the
- * texture header and sampler pools, a zero page and the corners of a quad.
- * The records are turned into methods in order (exec-push.c and
- * draw-push.c) and the push buffer is run on the work channel when it is
- * full, when a copy must be done by the CPU, and at the end; each run is
- * waited for, so the run's memory is free again after it and nothing a
- * submission names is in use by the GPU once it returns.
+ * Each session has up to EXECUTE_SLOTS runs (slots) of the executor's GPU
+ * memory for its submissions, each with a push buffer, a constant buffer 0
+ * for each draw, the texture header and sampler pools, a zero page and the
+ * corners of a quad.  The records are turned into methods in order
+ * (exec-push.c and draw-push.c) and the push buffer is put on the work
+ * channel when it is full, when a copy must be done by the CPU, and at the
+ * end, without waiting for the GPU: the next push buffer is written in a
+ * slot whose run has ended (a new slot is made while one is to be had,
+ * else the oldest run is waited for), so the CPU writes one while the GPU
+ * runs the others.  The runs on the one work channel run in order, each
+ * after the one before has finished (its fence waits for idle).  What
+ * needs the GPU done with the session's work first waits for its newest
+ * run: a copy by the CPU, a shadow given back, the session's close (and,
+ * in the node, a memory or a run of the executor's memory given back).
  *
  * A draw writes everything it uses: its constants (the push constants and
  * its texture handles) in a constant buffer of its own, a header and a
@@ -45,7 +51,13 @@
 #include "drivers/gpu/nvrtx/nvrtx-gsp.h"
 #include "drivers/gpu/nvrtx/compiler/sm75/sm75.h"
 
-/* The session's run: its size and where each of its parts starts. */
+/*
+ * The runs (slots) a session writes its submissions in at most: one being
+ * written while the GPU runs the others.
+ */
+#define EXECUTE_SLOTS			3U
+
+/* A slot's run: its size and where each of its parts starts. */
 #define EXECUTE_RUN_BYTES		(2U * 1024U * 1024U)
 #define EXECUTE_PUSH_AT			0U
 #define EXECUTE_PUSH_BYTES		(1024U * 1024U)
@@ -129,17 +141,31 @@
 #define EXECUTE_TEXTURE_PITCH_ALIGN	32U
 
 /*
+ * One slot: its run (token names it to the node, cpu and va its two views)
+ * and the GPU's run of the push buffer last written in it, which must end
+ * before the slot is written again.
+ */
+struct execute_slot {
+	void *token;
+	uint8_t *cpu;
+	uint64_t va;
+	struct nvrtx_vk_ticket ticket;
+};
+
+/*
  * The executor's own programs (a textured quad placed by push constants,
- * the draw-test draw's) and the session's run.
+ * the draw-test draw's) and the session's slots.
  *
- * token names the run to the node, cpu and va its two views; at is where the
- * push buffer goes on, constants, headers and samplers how much of their parts
- * the push buffer uses, draws and quads how many application draws and own
- * quads it holds (for the node's counts).  The programs are compiled once, into
- * a run of their own.
+ * slot is the slot the push buffer is written in, cpu and va its views;
+ * started says a push buffer is begun there and not yet submitted.  at is
+ * where the push buffer goes on, constants, headers and samplers how much
+ * of their parts the push buffer uses, draws and quads how many
+ * application draws and own quads it holds (for the node's counts).  The
+ * programs are compiled once, into a run of their own.
  */
 struct nvrtx_vk_execute {
-	void *token;
+	struct execute_slot slots[EXECUTE_SLOTS];
+	uint32_t slot;
 	uint8_t *cpu;
 	uint64_t va;
 	size_t at;
@@ -210,8 +236,12 @@ struct execute_quad {
 static int execute_open(struct nvrtx_vk_session *session, struct nvrtx_vk_execute **execute);
 static int execute_programs(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
 static int execute_compile(struct nvrtx_draw_ir *program, uint8_t *cpu, uint32_t *gprs, uint32_t *bytes);
-static void execute_start(struct nvrtx_vk_execute *execute);
+static int execute_slot_make(struct nvrtx_vk_session *session, struct execute_slot *slot);
+static int execute_start(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
+static void execute_begin(struct nvrtx_vk_execute *execute);
+static int execute_submit(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
 static int execute_flush(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
+static int execute_drain(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute);
 static int execute_room(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state);
 static int execute_record(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static void execute_bind(struct execute_state *state, const struct nvrtx_vk_record *record);
@@ -244,9 +274,9 @@ static bool execute_region_inside(int32_t x, int32_t y, uint32_t width, uint32_t
 static void execute_full_viewport(uint32_t *viewport, int32_t x0, int32_t y0, int32_t x1, int32_t y1);
 
 /*
- * Runs an executable command buffer's records on the GPU and waits for
- * them.  Returns 0, EINVAL for a command buffer that is not executable, or
- * the error of the run that failed (the GPU then did not finish).
+ * Puts an executable command buffer's records on the GPU without waiting
+ * for them.  Returns 0, EINVAL for a command buffer that is not
+ * executable, or the error of the submission or the wait that failed.
  */
 int
 nvrtx_vk_execute(
@@ -274,10 +304,16 @@ nvrtx_vk_execute(
 	if (state == NULL)
 		return ENOMEM;
 
-	/* Each record in order, the push buffer started over when it fills. */
-	execute_start(execute);
+	/* A push buffer begun before and never submitted (its command buffer failed) is begun again; else a slot is taken. */
 	error = 0;
-	for (index = 0U; index < command->record_count; index++) {
+	if (execute->started) {
+		execute_begin(execute);
+	} else {
+		error = execute_start(session, execute);
+	}
+
+	/* Each record in order, the push buffer put on the GPU when it fills. */
+	for (index = 0U; index < command->record_count && error == 0; index++) {
 		error = execute_room(session, execute, state);
 		if (error != 0)
 			break;
@@ -288,31 +324,34 @@ nvrtx_vk_execute(
 
 	/* The rest of the push buffer. */
 	if (error == 0)
-		error = execute_flush(session, execute);
+		error = execute_submit(session, execute);
 	kern_free(state);
 
 	/* Reports a run that failed. */
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the GPU has done the command buffer. */
+	/* Succeeded: the GPU runs the command buffer. */
 	return 0;
 }
 
-/* Gives back a closing session's run and programs. */
+/* Gives back a closing session's slots and programs once its runs have ended. */
 void
 nvrtx_vk_execute_close(
 	struct nvrtx_vk_session *session)
 {
 	struct nvrtx_vk_execute *execute;
+	uint32_t index;
 
 	execute = session->execute;
 	if (execute == NULL)
 		return;
 
-	/* The runs, then the record. */
-	if (execute->token != NULL)
-		nvrtx_vk_gpu_free(session->owner, execute->token);
+	/* The runs (the node waits for the session's runs first), then the record. */
+	for (index = 0U; index < EXECUTE_SLOTS; index++) {
+		if (execute->slots[index].token != NULL)
+			nvrtx_vk_gpu_free(session->owner, execute->slots[index].token);
+	}
 	if (execute->program_token != NULL)
 		nvrtx_vk_gpu_free(session->owner, execute->program_token);
 	if (execute->shadow_token != NULL)
@@ -322,8 +361,8 @@ nvrtx_vk_execute_close(
 }
 
 /*
- * Gives the session's run, made at its first submission: the zero page
- * and the quad's corners written once, and the executor's programs.
+ * Gives the session's slots, made at its first submission with the first
+ * slot, and the executor's programs.
  */
 static int
 execute_open(
@@ -331,15 +370,6 @@ execute_open(
 	struct nvrtx_vk_execute **execute)
 {
 	struct nvrtx_vk_execute *opened;
-	static const uint32_t corners[EXECUTE_CORNERS * 2U] = {
-		0U, 0U,
-		EXECUTE_FLOAT_ONE, 0U,
-		0U, EXECUTE_FLOAT_ONE,
-		EXECUTE_FLOAT_ONE, 0U,
-		EXECUTE_FLOAT_ONE, EXECUTE_FLOAT_ONE,
-		0U, EXECUTE_FLOAT_ONE
-	};
-	uint32_t index;
 	int error;
 
 	/* Made once; programs that did not compile are tried again. */
@@ -354,20 +384,18 @@ execute_open(
 		return 0;
 	}
 
-	/* The record and the run. */
+	/* The record and its first slot, the one written first. */
 	opened = kern_calloc(1U, sizeof(*opened));
 	if (opened == NULL)
 		return ENOMEM;
-	error = nvrtx_vk_gpu_alloc(session->owner, EXECUTE_RUN_BYTES, &opened->token, &opened->cpu, &opened->va);
+	error = execute_slot_make(session, &opened->slots[0]);
 	if (error != 0) {
 		kern_free(opened);
 		return error;
 	}
-
-	/* The zero page, and the corners: (0,0) (1,0) (0,1), (1,0) (1,1) (0,1). */
-	kern_memset(opened->cpu + EXECUTE_ZERO_AT, 0, NVRTX_GSP_PAGE_SIZE);
-	for (index = 0U; index < EXECUTE_CORNERS * 2U; index++)
-		nvrtx_put32(opened->cpu, EXECUTE_CORNERS_AT + index * 4U, corners[index]);
+	opened->slot = 0U;
+	opened->cpu = opened->slots[0].cpu;
+	opened->va = opened->slots[0].va;
 
 	/* The executor's programs. */
 	session->execute = opened;
@@ -375,8 +403,45 @@ execute_open(
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the run is the session's. */
+	/* Succeeded: the slots are the session's. */
 	*execute = opened;
+	return 0;
+}
+
+/* Makes a slot: its run, the zero page and the quad's corners written once. */
+static int
+execute_slot_make(
+	struct nvrtx_vk_session *session,
+	struct execute_slot *slot)
+{
+	static const uint32_t corners[EXECUTE_CORNERS * 2U] = {
+		0U, 0U,
+		EXECUTE_FLOAT_ONE, 0U,
+		0U, EXECUTE_FLOAT_ONE,
+		EXECUTE_FLOAT_ONE, 0U,
+		EXECUTE_FLOAT_ONE, EXECUTE_FLOAT_ONE,
+		0U, EXECUTE_FLOAT_ONE
+	};
+	uint32_t index;
+	int error;
+
+	/* The run, in system memory the CPU writes through its cache (else in VRAM). */
+	error = nvrtx_vk_gpu_alloc_system(session->owner, EXECUTE_RUN_BYTES, &slot->token, &slot->cpu, &slot->va);
+	if (error != 0)
+		error = nvrtx_vk_gpu_alloc(session->owner, EXECUTE_RUN_BYTES, &slot->token, &slot->cpu, &slot->va);
+	if (error != 0) {
+		slot->token = NULL;
+		return error;
+	}
+
+	/* The zero page, and the corners: (0,0) (1,0) (0,1), (1,0) (1,1) (0,1). */
+	kern_memset(slot->cpu + EXECUTE_ZERO_AT, 0, NVRTX_GSP_PAGE_SIZE);
+	for (index = 0U; index < EXECUTE_CORNERS * 2U; index++)
+		nvrtx_put32(slot->cpu, EXECUTE_CORNERS_AT + index * 4U, corners[index]);
+
+	/* Succeeded: no run reads the slot yet. */
+	slot->ticket.fence = 0U;
+	slot->ticket.submitted_us = 0U;
 	return 0;
 }
 
@@ -470,16 +535,82 @@ execute_compile(
 }
 
 /*
- * Starts a push buffer: the 3D class's state a queue starts with, the
- * header and sampler pools, and the shader caches emptied; nothing of the
- * run's parts is used yet.
+ * Starts a push buffer in a slot whose run has ended: the current slot,
+ * another one made earlier, a new one while one is to be had, or else the
+ * slot of the oldest run once it ended.  Returns 0, or the error of the
+ * wait for that run.
+ */
+static int
+execute_start(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute)
+{
+	struct execute_slot *slot;
+	uint32_t chosen;
+	uint32_t index;
+	uint32_t at;
+	bool passed;
+	int error;
+
+	/* The current slot when its run ended, else another made one whose run ended. */
+	chosen = EXECUTE_SLOTS;
+	for (index = 0U; index < EXECUTE_SLOTS && chosen == EXECUTE_SLOTS; index++) {
+		at = (execute->slot + index) % EXECUTE_SLOTS;
+		slot = &execute->slots[at];
+		if (slot->token == NULL)
+			continue;
+		passed = nvrtx_vk_gpu_passed(session->owner, &slot->ticket);
+		if (passed)
+			chosen = at;
+	}
+
+	/* Else a new slot, while one is to be had (one that cannot be made is waited for instead). */
+	for (index = 0U; index < EXECUTE_SLOTS && chosen == EXECUTE_SLOTS; index++) {
+		if (execute->slots[index].token != NULL)
+			continue;
+		error = execute_slot_make(session, &execute->slots[index]);
+		if (error == 0)
+			chosen = index;
+		break;
+	}
+
+	/* Else the slot of the oldest run, once it ended (the first slot is always made). */
+	if (chosen == EXECUTE_SLOTS) {
+		chosen = 0U;
+		for (index = 1U; index < EXECUTE_SLOTS; index++) {
+			if (execute->slots[index].token == NULL)
+				continue;
+			if (execute->slots[index].ticket.submitted_us < execute->slots[chosen].ticket.submitted_us)
+				chosen = index;
+		}
+		error = nvrtx_vk_gpu_wait(session->owner, &execute->slots[chosen].ticket);
+		if (error != 0)
+			return error;
+	}
+
+	/* The slot's run is over: counted and forgotten; the push buffer is written there. */
+	slot = &execute->slots[chosen];
+	nvrtx_vk_gpu_retire(session->owner, &slot->ticket);
+	execute->slot = chosen;
+	execute->cpu = slot->cpu;
+	execute->va = slot->va;
+	execute_begin(execute);
+
+	/* Succeeded: the push buffer is begun. */
+	return 0;
+}
+
+/*
+ * Begins a push buffer in the current slot: the 3D class's state a queue
+ * starts with, the header and sampler pools, and the shader caches
+ * emptied; nothing of the slot's parts is used yet.
  *
  * Procedure referenced: Mesa 25.3.6 src/nouveau/vulkan/nvk_queue.c
  * (nvk_queue_init_context_state) and src/nouveau/vulkan/nvk_cmd_draw.c
  * (nvk_push_draw_state_init).
  */
 static void
-execute_start(
+execute_begin(
 	struct nvrtx_vk_execute *execute)
 {
 	uint8_t *push;
@@ -503,8 +634,32 @@ execute_start(
 }
 
 /*
- * Runs the push buffer written so far and waits for it, then starts the
- * next one.  Returns the run's error.
+ * Puts the push buffer written so far on the GPU without waiting for it;
+ * no push buffer is begun after it.  Returns the submission's error.
+ */
+static int
+execute_submit(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute)
+{
+	struct execute_slot *slot;
+	int error;
+
+	/* Counts its draws, then submits it; the slot keeps its run. */
+	slot = &execute->slots[execute->slot];
+	nvrtx_vk_gpu_drawn(session->owner, execute->draws, execute->quads);
+	error = nvrtx_vk_gpu_submit(session->owner, execute->va + EXECUTE_PUSH_AT, (uint32_t)execute->at, &slot->ticket);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the GPU runs it. */
+	execute->started = false;
+	return 0;
+}
+
+/*
+ * Puts the push buffer written so far on the GPU, then starts the next
+ * one.  Returns the submission's error or the wait's for a slot.
  */
 static int
 execute_flush(
@@ -513,14 +668,39 @@ execute_flush(
 {
 	int error;
 
-	/* Counts its draws, then runs it. */
-	nvrtx_vk_gpu_drawn(session->owner, execute->draws, execute->quads);
-	error = nvrtx_vk_gpu_run(session->owner, execute->va + EXECUTE_PUSH_AT, (uint32_t)execute->at);
+	/* The push buffer, then the next one. */
+	error = execute_submit(session, execute);
+	if (error == 0)
+		error = execute_start(session, execute);
 	if (error != 0)
 		return error;
 
-	/* Succeeded: the GPU has done it; the next push buffer starts. */
-	execute_start(execute);
+	/* Succeeded: the next push buffer is begun. */
+	return 0;
+}
+
+/*
+ * Puts the push buffer written so far on the GPU and waits until the
+ * session's runs have ended (a copy by the CPU follows), then starts the
+ * next one.  Returns the error of the submission or the wait.
+ */
+static int
+execute_drain(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute)
+{
+	int error;
+
+	/* The push buffer, the wait for it, then the next one. */
+	error = execute_submit(session, execute);
+	if (error == 0)
+		error = nvrtx_vk_gpu_idle(session->owner);
+	if (error == 0)
+		error = execute_start(session, execute);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the GPU has done the work before; the next push buffer is begun. */
 	return 0;
 }
 
@@ -1527,7 +1707,7 @@ execute_buffer_image(
 
 		/* Any other region is copied by the CPU, after the work before it. */
 		if (!drawn) {
-			error = execute_flush(session, execute);
+			error = execute_drain(session, execute);
 			if (error == 0)
 				error = execute_cpu_copy(session, buffer, image, region, to_image);
 			if (error != 0)
@@ -1714,7 +1894,7 @@ execute_copy_buffer(
 	}
 
 	/* The work before has run; the two views. */
-	error = execute_flush(session, execute);
+	error = execute_drain(session, execute);
 	if (error == 0)
 		error = nvrtx_vk_buffer_cpu(session, source, &source_cpu);
 	if (error == 0)
