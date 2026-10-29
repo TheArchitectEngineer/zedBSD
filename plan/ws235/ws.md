@@ -3,7 +3,7 @@
 # WS235: Realtek RTL8127・8125・8126・8122・8121・8120 の共通の Ethernet driver（まず PCIe の RTL8127 10GbE）
 
 <!-- awesome-plan-current:start -->
-Status: incomplete（2026-10-29 開き直し、P1 が RDNA 機の PCIe の RTL8127 から。下の 2026-10-29 の決定。p001〜p005 cleared（09:1x）、次は p006）
+Status: incomplete（2026-10-29 開き直し、P1 が RDNA 機の PCIe の RTL8127 から。下の 2026-10-29 の決定。p001〜p007 cleared（11:0x）、次は p008）
 Primary Milestone: MG006
 Parent: [Master](../master.md)
 <!-- awesome-plan-current:end -->
@@ -33,6 +33,10 @@ Parent: [Master](../master.md)
   tcp-perf 20 s send 3539・recv 3373 Mbit/s（errors 0）。Linux の基準（backports 7.2.11・r8169、PCIe 8GT/s x1）send 6808・recv 5458 Mbit/s。
   p002〜p005 を cleared と記録（[p005](phase005/phase.md)）。機械は Debian 6.12.111（既定）、NVMe の kernel は P2 の物に戻した。
   次は p006（profile で driver と stack の律速を分け、多 vector の MSI-X・RSS・割り込みの抑え・zero copy）。server の config で有効にする事は p005 の後にユーザーに頼む（Q1）。
+- 2026-10-29 11:0x P1（q1669-i04、worktree p1-ws235d）: p006・p007 cleared。profile（`CONFIG_DRIVER_PCI_RTL8125_PROFILE`）で、TX の割り込みを外して send の driver の CPU を
+  68% → 15% にしても send は変わらず、recv は driver 30%・CPU の飽和無し・NIC の取りこぼし 0 → 律速は stack（WS221 p010）。既定の config で send 4935・recv 3360 Mbit/s。
+  多 vector の MSI-X は pcat の共通の口まで（driver は 1 vector、RSS・zero copy は入れない、理由は [p006](phase006/phase.md)）。p007 で 8125・8125B・8125D・8126 の EPHY・PHY の表。
+  次は p008（規約の全文の見直し）。機械は Debian 6.12.111、NVMe の kernel は P2 の vmunix-va1。
 
 ## Phase（2026-10-29 P1 が p001 でユーザーの順に直した。旧の表と見積もり（2026-10-14 Q1）は git の履歴に）
 
@@ -46,8 +50,8 @@ Parent: [Master](../master.md)
 | [ws235-p003](phase003/phase.md) | MAC・PHY の初期化と link（共通の手順＋RTL8127 に要る MCU・EPHY・PHY の表）: firmware 無しから試し、要れば zedBSD-firmware の手順で（Q1 に先に）。auto-negotiation、link の報告（両側） | 10 LW | cleared（2026-10-29 09:1x P1、q1669-i03。firmware 無しで 2.5G・10G の link） | p002 |
 | [ws235-p004](phase004/phase.md) | RX・TX の ring（v1・v2 の descriptor）、1 queue・1 vector、net の worker への接続（offload 無し） | 8 LW | cleared（2026-10-29 09:1x P1、q1669-i03。ssh・TCP の両向き、errors 0） | p002 |
 | [ws235-p005](phase005/phase.md) | 実機（共通の段）: link・IPv4（static か DHCP）・ping・ssh・TCP の転送の計測と直し、同じ機械の Linux の基準 | 6 LW | cleared（2026-10-29 09:1x P1、q1669-i03。zedBSD send 3539・recv 3373、Linux 6808・5458 Mbit/s） | p003・p004 |
-| ws235-p006 | RTL8127 の拡張: 多 vector の MSI-X、RSS と複数の RX queue、割り込みの抑え、RX の zero copy、約 7 Gbit/s（Linux の値）に近づける。律速が stack なら記録して WS221 と組で Q1 へ。checksum・TSO の offload は、stack の口（WS221 p010、P3 が設計）ができたら driver の側を足す | 10 LW | planned | p005。offload は WS221 p010 の口 |
-| ws235-p007 | 他の chip の版の表と差の hook（8125・8125B・8125D・8126。実機は未確かめ。8122・8121・8120 は版の値が未確認） | 4 LW | planned | p003 |
+| [ws235-p006](phase006/phase.md) | RTL8127 の拡張: 多 vector の MSI-X、RSS と複数の RX queue、割り込みの抑え、RX の zero copy、約 7 Gbit/s（Linux の値）に近づける。律速が stack なら記録して WS221 と組で Q1 へ。checksum・TSO の offload は、stack の口（WS221 p010、P3 が設計）ができたら driver の側を足す | 10 LW | cleared（2026-10-29 11:0x P1、q1669-i04。driver は律速でない、send 4935・recv 3360。driver は 1 vector、RSS・zero copy は入れない） | p005。offload は WS221 p010 の口 |
+| [ws235-p007](phase007/phase.md) | 他の chip の版の表と差の hook（8125・8125B・8125D・8126。実機は未確かめ。8122・8121・8120 は版の値が未確認） | 4 LW | cleared（2026-10-29 11:0x P1、q1669-i04。EPHY・PHY の表、他の chip は未確かめ、8122・8121・8120 は版の値が無く入れない） | p003 |
 | ws235-p008 | 規約の全文の見直し | 2 LW | planned | 全て |
 
 - server の build の config（`config/ci/config-amd64-server.mk`、ユーザーの物）: 2026-10-29 ユーザー「コンフィグはあなたが書き換えてOKです。」→ Q1 が `CONFIG_DRIVER_PCI_RTL8125 := y` を足した（vmunix の build は rc 0・warning 0）。担当は変えない。

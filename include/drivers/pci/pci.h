@@ -577,6 +577,12 @@ drv_pci_device_unmap_bar(
 
 /*
  * Interrupt allocation and handler registration.
+ *
+ * allocate_irqs gives from min up to max vectors of the first type the
+ * flags allow that has min of them: MSI-X as many as the function's table
+ * holds (vector i uses table entry i) where the bus offers several, MSI and
+ * the pin one.  The caller establishes each vector it was given; a
+ * function's MSI-X stays on until its last vector is disestablished.
  */
 int
 drv_pci_device_allocate_irqs(

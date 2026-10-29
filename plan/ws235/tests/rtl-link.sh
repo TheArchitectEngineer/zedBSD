@@ -13,6 +13,9 @@
 # a power cycle, which POWERCYCLE=1 does once with the plug PLUG (the caller holds the slot's lock).
 # With PERF=<tcp-perf built for zedBSD> as well (LANTEST=1 or 2), the program is copied to /tmp over IFACE's address and
 # run send and recv for SECONDS_PERF seconds each against plan/ws221/tests/perf-peer.py on PEER_IP:PERF_PORT here.
+# With PROFILE=1 as well (a kernel built with plan/ws235/tests/config-amd64-rtl8127-profile.mk), each direction is
+# bracketed by hw.cputimes and the driver's last profile line, which plan/ws235/tests/profile-summary.py turns into
+# the driver's share of the time and each CPU's load (OUT/profile.txt).
 # OUT/summary.txt is the result; OUT also keeps the raw outputs.  Nothing is removed.
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
@@ -33,6 +36,7 @@ PERF=${PERF:-}
 PEER_IP=${PEER_IP:-10.0.10.2}
 PERF_PORT=${PERF_PORT:-5321}
 SECONDS_PERF=${SECONDS_PERF:-10}
+PROFILE=${PROFILE:-0}
 PLUG=${PLUG:-AC276E42B252}
 ZIP=${ZIP:-192.168.127.2}
 PIP=${PIP:-192.168.127.1}
@@ -152,9 +156,28 @@ if [ -n "$zip" ]; then
 				peer=$!
 				sleep 2
 				for dir in send recv; do
+					[ "$PROFILE" = 1 ] && zs "$rip" "sysctl hw.cputimes; dmesg | grep 'rtl8125: $IFACE profile' | tail -1" > "$out/profile-$dir-before.txt" 2>&1
+					# This host's TCP counters (RetransSegs among them) before and after: the peer's side of the run.
+					[ "$PROFILE" = 1 ] && grep '^Tcp:' /proc/net/snmp > "$out/snmp-$dir-before.txt"
+					# With PROFILE=1, top takes two samples 10 s apart in the middle of the run.
+					top=
+					if [ "$PROFILE" = 1 ]; then
+						(sleep 3; T=40 zs "$rip" "top -b -n 2 -d 10" > "$out/top-$dir.txt" 2>&1) &
+						top=$!
+					fi
 					T=$((SECONDS_PERF + 60)) zs "$rip" "/tmp/tcp-perf $dir $PEER_IP $PERF_PORT $SECONDS_PERF" > "$out/perf-$dir.txt" 2>&1
 					say "tcp-perf $dir: exit $? $(tail -1 "$out/perf-$dir.txt")"
+					[ -n "$top" ] && wait "$top"
+					if [ "$PROFILE" = 1 ]; then
+						# The driver logs once a second: the line after the run is at most a second late.
+						grep '^Tcp:' /proc/net/snmp > "$out/snmp-$dir-after.txt"
+						sleep 2
+						zs "$rip" "sysctl hw.cputimes; dmesg | grep 'rtl8125: $IFACE profile' | tail -1" > "$out/profile-$dir-after.txt" 2>&1
+						python3 -I plan/ws235/tests/profile-summary.py "$dir" "$SECONDS_PERF" "$out/profile-$dir-before.txt" "$out/profile-$dir-after.txt" > "$out/profile-$dir.txt" 2>&1
+						say "profile $dir: $(tr '\n' ' ' < "$out/profile-$dir.txt")"
+					fi
 				done
+				[ "$PROFILE" = 1 ] && zs "$rip" "dmesg | grep rtl8125" > "$out/dmesg-rtl.txt" 2>&1
 				sleep 2
 				kill "$peer" 2> /dev/null
 				wait "$peer"

@@ -156,8 +156,8 @@
 #define RTL_INTERRUPT_PCS_TIMEOUT	0x00004000U
 #define RTL_INTERRUPT_SYSTEM_ERROR	0x00008000U
 #define RTL_INTERRUPTS_RUNNING		(RTL_INTERRUPT_RX_OK | RTL_INTERRUPT_RX_ERROR | \
-					 RTL_INTERRUPT_TX_OK | RTL_INTERRUPT_TX_ERROR | \
-					 RTL_INTERRUPT_LINK_CHANGE | RTL_INTERRUPT_TX_UNAVAILABLE | \
+					 RTL_INTERRUPT_TX_ERROR | \
+					 RTL_INTERRUPT_LINK_CHANGE | \
 					 RTL_INTERRUPT_PCS_TIMEOUT | RTL_INTERRUPT_SYSTEM_ERROR)
 #define RTL_RX_CONFIG_ALL_PHYSICAL	0x00000001U
 #define RTL_RX_CONFIG_OWN_ADDRESS	0x00000002U
@@ -336,6 +336,20 @@
 #define RTL_PHY_OCP_RAM_CODE_VERSION	0x801eU
 
 /*
+ * The PHY's patch mode: the request bit, the state bit that follows it,
+ * and the bounded wait for the state.
+ *
+ * Values referenced: FreeBSD sys/dev/rge/if_rge_hw.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_patch_phy_mcu).
+ */
+#define RTL_PHY_OCP_PATCH_REQUEST	0xb820U
+#define RTL_PHY_OCP_PATCH_REQUEST_BIT	0x0010U
+#define RTL_PHY_OCP_PATCH_STATE		0xb800U
+#define RTL_PHY_OCP_PATCH_STATE_BIT	0x0040U
+#define RTL_PATCH_POLLS			1000U
+#define RTL_PATCH_POLL_US		100U
+
+/*
  * The MAC OCP registers the hardware set-up uses.
  *
  * Values referenced: OpenBSD sys/dev/pci/if_rge.c 1.48 (rge_hw_init,
@@ -408,9 +422,14 @@
 /*
  * The rings: descriptors per ring, the bytes of a receive buffer and of a
  * transmit bounce buffer, which hold a whole frame, and the alignments.
+ * The receive ring holds about 1.2 ms of full-size frames at 10 Gbit/s,
+ * for the network worker's pauses.
+ *
+ * Value referenced: FreeBSD sys/dev/rge/if_rgereg.h, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (RGE_RX_LIST_CNT).
  */
 #define RTL_TX_COUNT			512U
-#define RTL_RX_COUNT			512U
+#define RTL_RX_COUNT			1024U
 #define RTL_DESCRIPTOR_BYTES		32U
 #define RTL_BUFFER_BYTES		2048U
 #define RTL_RING_ALIGNMENT		256U
@@ -438,6 +457,26 @@
 #define RTL_MITIGATION_COUNT_SHORT	32U
 #define RTL_MITIGATION_COUNT_LONG	64U
 
+/*
+ * The tally counters the controller writes to memory on request: the
+ * register that takes the block's address with the bit that starts the
+ * write and stays set until it is done, the block's size and alignment,
+ * and where the count of frames missed for want of a receive descriptor
+ * sits in it (a 16-bit count that wraps).
+ *
+ * Values referenced: FreeBSD sys/dev/rge/if_rgereg.h, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (RGE_DTCCR_LO, RGE_DTCCR_HI,
+ * RGE_DTCCR_CMD, struct rge_hw_mac_stats, RGE_STATS_ALIGNMENT).
+ */
+#define RTL_REG_TALLY_LOW		0x0010U
+#define RTL_REG_TALLY_HIGH		0x0014U
+#define RTL_TALLY_DUMP			0x00000008U
+#define RTL_TALLY_BYTES			256U
+#define RTL_TALLY_ALIGNMENT		64U
+#define RTL_TALLY_MISSED		28U
+#define RTL_TALLY_POLLS			1000U
+#define RTL_TALLY_POLL_US		10U
+
 /* The interface's MTU and how many controllers the driver serves. */
 #define RTL_DEFAULT_MTU			1500U
 #define RTL_MAX_DEVICES			4U
@@ -458,7 +497,8 @@ enum rtl_family {
 enum rtl_phy_step_kind {
 	RTL_PHY_STEP_WRITE,
 	RTL_PHY_STEP_MODIFY,
-	RTL_PHY_STEP_READ
+	RTL_PHY_STEP_READ,
+	RTL_PHY_STEP_PATCH
 };
 
 /*
@@ -466,7 +506,8 @@ enum rtl_phy_step_kind {
  *
  * A write stores value; a modify clears the mask bits and sets the value
  * bits of what the register holds; a read only reads, for a register whose
- * read has an effect.
+ * read has an effect; a patch step takes the PHY into its patch mode when
+ * value is 1 and out of it when value is 0.
  */
 struct rtl_phy_step {
 	enum rtl_phy_step_kind kind;
@@ -519,6 +560,31 @@ struct rtl_chip {
 	enum rtl_family family;
 	unsigned revision;
 	const char *name;
+};
+
+/*
+ * The driver's own work, counted only in a kernel built with
+ * CONFIG_DRIVER_PCI_RTL8125_PROFILE: how often the interrupt, the poll and
+ * the transmit ran and how long each took, in the fine counter's units,
+ * which the service thread reports once a second while frames move.  The
+ * poll's time includes handing the received frames to the stack's input
+ * queue but not the stack's work on them.  Guarded by the device's lock.
+ */
+struct rtl_profile {
+	uint64_t interrupts;
+	uint64_t interrupt_time;
+	uint64_t polls;
+	uint64_t full_polls;
+	uint64_t poll_frames;
+	uint64_t poll_time;
+	uint64_t transmits;
+	uint64_t transmit_copies;
+	uint64_t transmit_refusals;
+	uint64_t transmit_time;
+	uint64_t reported_frames;
+	uint64_t next_report;
+	struct drv_dma_buffer tally;
+	unsigned tally_allocated;
 };
 
 /*
@@ -591,6 +657,13 @@ struct rtl_device {
 	struct net_device *net;
 	char name[NET_DEVICE_NAME_MAX];
 	uint8_t mac[6];
+	/*
+	 * The profile, the fine counter's rate and what one read of it costs,
+	 * in its units, measured at attach.
+	 */
+	struct rtl_profile profile;
+	uint64_t counter_hz;
+	uint64_t counter_cost;
 };
 
 /*
@@ -879,6 +952,817 @@ static const struct rtl_phy_step rtl_phy_8127[] = {
 	{ RTL_PHY_STEP_MODIFY, 0xa430, 0x1000, 0x0000 },
 };
 
+/*
+ * The RTL8125's PCI Express PHY table writes, without the read-modify-write
+ * settings that the reference applies after them.
+ *
+ * Values referenced: FreeBSD sys/dev/rge/if_rge_microcode.h, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (mac_r25_ephy).
+ */
+static const struct rtl_ephy_write rtl_ephy_8125[] = {
+	{ 0x0004, 0xd000 }, { 0x000a, 0x8653 }, { 0x0023, 0xab66 },
+	{ 0x0020, 0x9455 }, { 0x0021, 0x99ff }, { 0x0029, 0xfe04 },
+	{ 0x0044, 0xd000 }, { 0x004a, 0x8653 }, { 0x0063, 0xab66 },
+	{ 0x0060, 0x9455 }, { 0x0061, 0x99ff }, { 0x0069, 0xfe04 }
+};
+
+/*
+ * The RTL8125B's PCI Express PHY settings.
+ *
+ * Values referenced: FreeBSD sys/dev/rge/if_rge_microcode.h, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (mac_r25b_ephy).
+ */
+static const struct rtl_ephy_write rtl_ephy_8125b[] = {
+	{ 0x000b, 0xa908 }, { 0x001e, 0x20eb }, { 0x0022, 0x0023 },
+	{ 0x0002, 0x60c2 }, { 0x0029, 0xff00 }, { 0x004b, 0xa908 },
+	{ 0x005e, 0x28eb }, { 0x0062, 0x0023 }, { 0x0042, 0x60c2 },
+	{ 0x0069, 0xff00 }
+};
+
+/*
+ * The RTL8125's PHY settings after its reset, in order, without the PHY
+ * microcode patch that the reference loads first; the PATCH steps
+ * bracket the settings the PHY takes only in its patch mode.
+ *
+ * Procedure and values referenced: FreeBSD sys/dev/rge/if_rge_hw.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_phy_config_mac_r25).
+ */
+static const struct rtl_phy_step rtl_phy_8125[] = {
+	{ RTL_PHY_STEP_MODIFY, 0xad4e, 0x0000, 0x0010 },
+	{ RTL_PHY_STEP_MODIFY, 0xad16, 0x03ff, 0x03ff },
+	{ RTL_PHY_STEP_MODIFY, 0xad32, 0x003f, 0x0006 },
+	{ RTL_PHY_STEP_MODIFY, 0xac08, 0x1000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xac08, 0x0100, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xacc0, 0x0003, 0x0002 },
+	{ RTL_PHY_STEP_MODIFY, 0xad40, 0x00e0, 0x0040 },
+	{ RTL_PHY_STEP_MODIFY, 0xad40, 0x0007, 0x0004 },
+	{ RTL_PHY_STEP_MODIFY, 0xac14, 0x0080, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xac80, 0x0300, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xac5e, 0x0007, 0x0002 },
+	{ RTL_PHY_STEP_WRITE, 0xad4c, 0x0000, 0x00a8 },
+	{ RTL_PHY_STEP_WRITE, 0xac5c, 0x0000, 0x01ff },
+	{ RTL_PHY_STEP_MODIFY, 0xac8a, 0x00f0, 0x0030 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8157 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0500 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8159 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0700 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x80a2 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0153 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x809c },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0153 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81b3 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0043 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00a7 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00d6 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00ec },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00f6 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00fb },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00fd },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00ff },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00bb },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0058 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0029 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0013 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0009 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0004 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0002 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8257 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x020f },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80ea },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x7843 },
+	{ RTL_PHY_STEP_PATCH, 0x0000, 0x0000, 0x0001 },
+	{ RTL_PHY_STEP_MODIFY, 0xb896, 0x0001, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xb892, 0xff00, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc091 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x6e12 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc092 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x1214 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc094 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x1516 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc096 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x171b },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc098 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x1b1c },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc09a },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x1f1f },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc09c },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x2021 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc09e },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x2224 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc0a0 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x2424 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc0a2 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x2424 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc0a4 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x2424 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc018 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x0af2 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc01a },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x0d4a },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc01c },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x0f26 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc01e },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x118d },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc020 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x14f3 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc022 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x175a },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc024 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x19c0 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc026 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x1c26 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc089 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x6050 },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc08a },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x5f6e },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc08c },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x6e6e },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc08e },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x6e6e },
+	{ RTL_PHY_STEP_WRITE, 0xb88e, 0x0000, 0xc090 },
+	{ RTL_PHY_STEP_WRITE, 0xb890, 0x0000, 0x6e12 },
+	{ RTL_PHY_STEP_MODIFY, 0xb896, 0x0000, 0x0001 },
+	{ RTL_PHY_STEP_PATCH, 0x0000, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xd068, 0x0000, 0x2000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81a2 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0000, 0x0100 },
+	{ RTL_PHY_STEP_MODIFY, 0xb54c, 0xff00, 0xdb00 },
+	{ RTL_PHY_STEP_MODIFY, 0xa454, 0x0001, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa5d4, 0x0000, 0x0020 },
+	{ RTL_PHY_STEP_MODIFY, 0xad4e, 0x0010, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa86a, 0x0001, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa442, 0x0000, 0x0800 },
+	{ RTL_PHY_STEP_MODIFY, 0xa424, 0x0000, 0x0008 },
+};
+
+/*
+ * The RTL8125B's PHY settings after its reset, in order, without the PHY
+ * microcode patch that the reference loads first.
+ *
+ * Procedure and values referenced: FreeBSD sys/dev/rge/if_rge_hw.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_phy_config_mac_r25b).
+ */
+static const struct rtl_phy_step rtl_phy_8125b[] = {
+	{ RTL_PHY_STEP_MODIFY, 0xa442, 0x0000, 0x0800 },
+	{ RTL_PHY_STEP_MODIFY, 0xac46, 0x00f0, 0x0090 },
+	{ RTL_PHY_STEP_MODIFY, 0xad30, 0x0003, 0x0001 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x80f5 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x760e },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8107 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x360e },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8551 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0800 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf00, 0xe000, 0xa000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf46, 0x0f00, 0x0300 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8044 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x2417 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x804a },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x2417 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8050 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x2417 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8056 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x2417 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x805c },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x2417 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8062 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x2417 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8068 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x2417 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x806e },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x2417 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8074 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x2417 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x807a },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x2417 },
+	{ RTL_PHY_STEP_MODIFY, 0xa4ca, 0x0000, 0x0040 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf84, 0xe000, 0xa000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8170 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x2700, 0xd800 },
+	{ RTL_PHY_STEP_MODIFY, 0xa424, 0x0000, 0x0008 },
+};
+
+/*
+ * The RTL8125D's (first revision) PHY settings after its reset, in order,
+ * without the PHY microcode patch that the reference loads first; the
+ * PATCH steps bracket the settings the PHY takes only in its patch mode.
+ *
+ * Procedure and values referenced: FreeBSD sys/dev/rge/if_rge_hw.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_phy_config_mac_r25d_1).
+ */
+static const struct rtl_phy_step rtl_phy_8125d_1[] = {
+	{ RTL_PHY_STEP_MODIFY, 0xa442, 0x0000, 0x0800 },
+	{ RTL_PHY_STEP_PATCH, 0x0000, 0x0000, 0x0001 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf96, 0x0000, 0x8000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf94, 0x0007, 0x0005 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf8e, 0x3c00, 0x2800 },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0xc000, 0x4000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0x0000, 0xc000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0xc000, 0x4000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc80, 0x001f, 0x0004 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc82, 0x0000, 0xe000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc82, 0x0000, 0x1c00 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc80, 0x001f, 0x0005 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc82, 0x00e0, 0x0040 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc82, 0x0000, 0x001c },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0xc000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0xc000, 0x8000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0xc000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbd70, 0x0100, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa466, 0x0000, 0x0002 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x836a },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x0000 },
+	{ RTL_PHY_STEP_PATCH, 0x0000, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x832c },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0500 },
+	{ RTL_PHY_STEP_MODIFY, 0xb106, 0x0700, 0x0100 },
+	{ RTL_PHY_STEP_MODIFY, 0xb206, 0x0700, 0x0200 },
+	{ RTL_PHY_STEP_MODIFY, 0xb306, 0x0700, 0x0300 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x80cb },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0300 },
+	{ RTL_PHY_STEP_WRITE, 0xbcf4, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xbcf6, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xbc12, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x844d },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0200 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8feb },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fe9 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0600 },
+	{ RTL_PHY_STEP_MODIFY, 0xac7e, 0x01fc, 0x00b4 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8105 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x7a00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8117 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x3a00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8103 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x7400 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8115 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x3400 },
+	{ RTL_PHY_STEP_MODIFY, 0xad40, 0x0030, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xad66, 0x000f, 0x0007 },
+	{ RTL_PHY_STEP_MODIFY, 0xad68, 0xf000, 0x8000 },
+	{ RTL_PHY_STEP_MODIFY, 0xad68, 0x0f00, 0x0500 },
+	{ RTL_PHY_STEP_MODIFY, 0xad68, 0x000f, 0x0002 },
+	{ RTL_PHY_STEP_MODIFY, 0xad6a, 0xf000, 0x7000 },
+	{ RTL_PHY_STEP_WRITE, 0xac50, 0x0000, 0x01e8 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x81fa },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x5400 },
+	{ RTL_PHY_STEP_MODIFY, 0xa864, 0x00f0, 0x00c0 },
+	{ RTL_PHY_STEP_MODIFY, 0xa42c, 0x00ff, 0x0002 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80e1 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x0f00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80de },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xf000, 0x0700 },
+	{ RTL_PHY_STEP_MODIFY, 0xa846, 0x0000, 0x0080 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80ba },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x8a04 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80bd },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xca00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80b7 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xb300 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80ce },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x8a04 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80d1 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xca00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80cb },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xbb00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80a6 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x4909 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80a8 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x05b8 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8200 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x5800 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8ff1 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x7078 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8ff3 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x5d78 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8ff5 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x7862 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8ff7 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x1400 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x814c },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x8455 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x814e },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x84a6 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8163 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x0600 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x816a },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x0500 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8171 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x1f00 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc3a, 0x000f, 0x0006 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8064 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0700, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8067 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0700, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x806a },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0700, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x806d },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0700, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8070 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0700, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8073 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0700, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8076 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0700, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8079 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0700, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x807c },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0700, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x807f },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0700, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbfa0, 0xff70, 0x5500 },
+	{ RTL_PHY_STEP_WRITE, 0xbfa2, 0x0000, 0x9d00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8165 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0700, 0x0200 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8019 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0000, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8fe3 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0005 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00ed },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0502 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0b00 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0xd401 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x2900 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8018 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x1700 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x815b },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x1700 },
+	{ RTL_PHY_STEP_MODIFY, 0xa4e0, 0x8000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa5d4, 0x0020, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa654, 0x0800, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa430, 0x0000, 0x1001 },
+	{ RTL_PHY_STEP_MODIFY, 0xa442, 0x0000, 0x0080 },
+};
+
+/*
+ * The RTL8125D's (second revision) PHY settings after its reset, in order,
+ * without the PHY microcode patch that the reference loads first; the
+ * PATCH steps bracket the settings the PHY takes only in its patch mode.
+ *
+ * Procedure and values referenced: FreeBSD sys/dev/rge/if_rge_hw.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_phy_config_mac_r25d_2).
+ */
+static const struct rtl_phy_step rtl_phy_8125d_2[] = {
+	{ RTL_PHY_STEP_MODIFY, 0xa442, 0x0000, 0x0800 },
+	{ RTL_PHY_STEP_PATCH, 0x0000, 0x0000, 0x0001 },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0xc000, 0x4000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0x0000, 0xc000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0xc000, 0x4000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc80, 0x001f, 0x0004 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc82, 0x0000, 0xe000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc82, 0x0000, 0x1c00 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc80, 0x001f, 0x0005 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc82, 0x00e0, 0x0040 },
+	{ RTL_PHY_STEP_MODIFY, 0xbc82, 0x0000, 0x001c },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0xc000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0xc000, 0x8000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbcd8, 0xc000, 0x0000 },
+	{ RTL_PHY_STEP_PATCH, 0x0000, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xac7e, 0x01fc, 0x00b4 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8105 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x7a00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8117 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x3a00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8103 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x7400 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8115 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x3400 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8feb },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0500 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fea },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0700 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x80d6 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0xef00 },
+	{ RTL_PHY_STEP_MODIFY, 0xa5d4, 0x0020, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa654, 0x0800, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa448, 0x0400, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa586, 0x0400, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xa430, 0x0000, 0x1001 },
+	{ RTL_PHY_STEP_MODIFY, 0xa442, 0x0000, 0x0080 },
+};
+
+/*
+ * The RTL8126's (first revision) PHY settings after its reset, in order,
+ * without the PHY microcode patch that the reference loads first; the
+ * PATCH steps bracket the settings the PHY takes only in its patch mode.
+ *
+ * Procedure and values referenced: FreeBSD sys/dev/rge/if_rge_hw.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_phy_config_mac_r26_1).
+ */
+static const struct rtl_phy_step rtl_phy_8126_1[] = {
+	{ RTL_PHY_STEP_MODIFY, 0xa442, 0x0000, 0x0800 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80bf },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xed00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80cd },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x1000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80d1 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xc800 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80d4 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0xc800 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80e1 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x10cc },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x80e5 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x4f0c },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8387 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x4700 },
+	{ RTL_PHY_STEP_MODIFY, 0xa80c, 0x00c0, 0x0080 },
+	{ RTL_PHY_STEP_MODIFY, 0xac90, 0x0010, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xad2c, 0x8000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8321 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x1100 },
+	{ RTL_PHY_STEP_MODIFY, 0xacf8, 0x0000, 0x000c },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8183 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x5900 },
+	{ RTL_PHY_STEP_MODIFY, 0xad94, 0x0000, 0x0020 },
+	{ RTL_PHY_STEP_MODIFY, 0xa654, 0x0800, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xb648, 0x0000, 0x4000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x839e },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x2f00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83f2 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0800 },
+	{ RTL_PHY_STEP_MODIFY, 0xada0, 0x0000, 0x0002 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x80f3 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x9900 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8126 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0xc100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x893a },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x8080 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8647 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0xe600 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x862c },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x1200 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x864a },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0xe600 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x80a0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xbcbc },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x805e },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0xbcbc },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8056 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x3077 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8058 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x5a00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8098 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x3077 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x809a },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x5a00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8052 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x3733 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8094 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x3733 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x807f },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x7c75 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x803d },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x7c75 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8036 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x3000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8078 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x3000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8031 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x3300 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8073 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x3300 },
+	{ RTL_PHY_STEP_MODIFY, 0xae06, 0xfc00, 0x7c00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x89d1 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0004 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8fbd },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x0a00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8fbe },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0d09 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x89cd },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0f0f },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x89cf },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0f0f },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83a4 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x6600 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83a6 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x6601 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83c0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x6600 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83c2 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x6601 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8414 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x6600 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8416 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x6601 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83f8 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x6600 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x83fa },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x6601 },
+	{ RTL_PHY_STEP_PATCH, 0x0000, 0x0000, 0x0001 },
+	{ RTL_PHY_STEP_MODIFY, 0xbd96, 0x1f00, 0x1000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf1c, 0x0007, 0x0007 },
+	{ RTL_PHY_STEP_MODIFY, 0xbfbe, 0x8000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf40, 0x0380, 0x0280 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf90, 0x0080, 0x0060 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf90, 0x0010, 0x000c },
+	{ RTL_PHY_STEP_PATCH, 0x0000, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x843b },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x2000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x843d },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x2000 },
+	{ RTL_PHY_STEP_MODIFY, 0xb516, 0x007f, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xbf80, 0x0030, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8188 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0044 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00a8 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00d6 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00ec },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00f6 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00fc },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00fe },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00fe },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00bc },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0058 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x002a },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8015 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0800 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ffd },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fff },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x7f00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ffb },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fe9 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0002 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fef },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x00a5 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ff1 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0106 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fe1 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0102 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fe3 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0400 },
+	{ RTL_PHY_STEP_MODIFY, 0xa654, 0x0000, 0x0800 },
+	{ RTL_PHY_STEP_MODIFY, 0xa654, 0x0003, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xac3a, 0x0000, 0x5851 },
+	{ RTL_PHY_STEP_MODIFY, 0xac3c, 0xd000, 0x2000 },
+	{ RTL_PHY_STEP_MODIFY, 0xac42, 0x0200, 0x01c0 },
+	{ RTL_PHY_STEP_MODIFY, 0xac3e, 0xe000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xac42, 0x0038, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xac42, 0x0002, 0x0005 },
+	{ RTL_PHY_STEP_WRITE, 0xac1a, 0x0000, 0x00db },
+	{ RTL_PHY_STEP_WRITE, 0xade4, 0x0000, 0x01b5 },
+	{ RTL_PHY_STEP_MODIFY, 0xad9c, 0x0c00, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x814b },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x1100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x814d },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x1100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x814f },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0b00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8142 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8144 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8150 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8118 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0700 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x811a },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0700 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x811c },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0500 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x810f },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8111 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x811d },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_MODIFY, 0xac36, 0x0000, 0x1000 },
+	{ RTL_PHY_STEP_MODIFY, 0xad1c, 0x0100, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xade8, 0xffc0, 0x1400 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x864b },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x9d00 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8f97 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x003f },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x3f02 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x023c },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x3b0a },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x1c00 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xad9c, 0x0000, 0x0020 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8122 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0c00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x82c8 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ed },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ff },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0009 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03fe },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x000b },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0021 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03f7 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03b8 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03e0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0049 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0049 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03e0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03b8 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03f7 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0021 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x000b },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03fe },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0009 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ff },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ed },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x80ef },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0c00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x82a0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x000e },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03fe },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ed },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0006 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x001a },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03f1 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03d8 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0023 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0054 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0322 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x00dd },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ab },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03dc },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0027 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x000e },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03e5 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03f9 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0012 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0001 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03f1 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8018 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0x0000, 0x2000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fe4 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xb54c, 0xffc0, 0x3700 },
+};
+
+/*
+ * The RTL8126's (second revision) PHY settings after its reset, in order,
+ * without the PHY microcode patch that the reference loads first.
+ *
+ * Procedure and values referenced: FreeBSD sys/dev/rge/if_rge_hw.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_phy_config_mac_r26_2).
+ */
+static const struct rtl_phy_step rtl_phy_8126_2[] = {
+	{ RTL_PHY_STEP_MODIFY, 0xa442, 0x0000, 0x0800 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8183 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x5900 },
+	{ RTL_PHY_STEP_MODIFY, 0xa654, 0x0000, 0x0800 },
+	{ RTL_PHY_STEP_MODIFY, 0xb648, 0x0000, 0x4000 },
+	{ RTL_PHY_STEP_MODIFY, 0xad2c, 0x0000, 0x8000 },
+	{ RTL_PHY_STEP_MODIFY, 0xad94, 0x0000, 0x0020 },
+	{ RTL_PHY_STEP_MODIFY, 0xada0, 0x0000, 0x0002 },
+	{ RTL_PHY_STEP_MODIFY, 0xae06, 0xfc00, 0x7c00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8647 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0xe600 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8036 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x3000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8078 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x3000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x89e9 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0x0000, 0xff00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ffd },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8ffe },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0200 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8fff },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0400 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8018 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x7700 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8f9c },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0005 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x00ed },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0502 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0b00 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0xd401 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8fa8 },
+	{ RTL_PHY_STEP_MODIFY, 0xa438, 0xff00, 0x2900 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x814b },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x1100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x814d },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x1100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x814f },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0b00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8142 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8144 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8150 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8118 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0700 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x811a },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0700 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x811c },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0500 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x810f },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8111 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x811d },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0100 },
+	{ RTL_PHY_STEP_MODIFY, 0xad1c, 0x0000, 0x0100 },
+	{ RTL_PHY_STEP_MODIFY, 0xade8, 0xffc0, 0x1400 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x864b },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x9d00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x862c },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x1200 },
+	{ RTL_PHY_STEP_WRITE, 0xa436, 0x0000, 0x8566 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x003f },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x3f02 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x023c },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x3b0a },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x1c00 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_WRITE, 0xa438, 0x0000, 0x0000 },
+	{ RTL_PHY_STEP_MODIFY, 0xad9c, 0x0000, 0x0020 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8122 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0c00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x82c8 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ed },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ff },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0009 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03fe },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x000b },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0021 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03f7 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03b8 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03e0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0049 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0049 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03e0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03b8 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03f7 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0021 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x000b },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03fe },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0009 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ff },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ed },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x80ef },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x0c00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x82a0 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x000e },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03fe },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ed },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0006 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x001a },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03f1 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03d8 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0023 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0054 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0322 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x00dd },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03ab },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03dc },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0027 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x000e },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03e5 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03f9 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0012 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x0001 },
+	{ RTL_PHY_STEP_WRITE, 0xb87e, 0x0000, 0x03f1 },
+	{ RTL_PHY_STEP_MODIFY, 0xa430, 0x0000, 0x0003 },
+	{ RTL_PHY_STEP_MODIFY, 0xb54c, 0xffc0, 0x3700 },
+	{ RTL_PHY_STEP_MODIFY, 0xb648, 0x0000, 0x0040 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x8082 },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x5d00 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x807c },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x5000 },
+	{ RTL_PHY_STEP_WRITE, 0xb87c, 0x0000, 0x809d },
+	{ RTL_PHY_STEP_MODIFY, 0xb87e, 0xff00, 0x5000 },
+};
+
 /* The PCI identities the driver binds. */
 static const struct drv_pci_id rtl_pci_ids[] = {
 	{
@@ -968,6 +1852,11 @@ static uint32_t csi_read(struct rtl_device *device, uint32_t reg);
 static void csi_write(struct rtl_device *device, uint32_t reg, uint32_t value);
 static void ephy_write(struct rtl_device *device, uint16_t reg, uint16_t value);
 static int run_phy_steps(struct rtl_device *device, const struct rtl_phy_step *steps, unsigned count);
+static int set_phy_patch_mode(struct rtl_device *device, int enter);
+static uint16_t ephy_read(struct rtl_device *device, uint16_t reg);
+static void ephy_modify(struct rtl_device *device, uint16_t reg, uint16_t mask, uint16_t value);
+static void configure_ephy_8125(struct rtl_device *device);
+static int phy_steps_of(const struct rtl_device *device, const struct rtl_phy_step **steps, unsigned *count);
 static int bring_up_link(struct rtl_device *device);
 static int power_up_phy(struct rtl_device *device);
 static void disable_clock_request(struct rtl_device *device);
@@ -982,6 +1871,14 @@ static void start_link_thread(struct rtl_device *device);
 static void link_worker(void *argument);
 static void check_link(struct rtl_device *device);
 static uint32_t speed_of(uint16_t status);
+static void profile_calibrate(struct rtl_device *device);
+static uint64_t profile_now(void);
+static void profile_interrupt(struct rtl_device *device, uint64_t started);
+static void profile_poll(struct rtl_device *device, uint64_t started, unsigned count, unsigned budget);
+static void profile_transmit(struct rtl_device *device, uint64_t started, int in_place, int error);
+static void profile_report(struct rtl_device *device);
+static uint64_t profile_microseconds(const struct rtl_device *device, uint64_t time);
+static int profile_missed(struct rtl_device *device, uint16_t *missed);
 static uint16_t mac_ocp_read(struct rtl_device *device, uint16_t reg);
 static void mac_ocp_write(struct rtl_device *device, uint16_t reg, uint16_t value);
 static void mac_ocp_clear(struct rtl_device *device, uint16_t reg, uint16_t bits);
@@ -1105,7 +2002,8 @@ rtl_attach(
 		return error;
 	}
 
-	/* Follows the link from here on. */
+	/* Measures the profile's counter, then follows the link from here on. */
+	profile_calibrate(device);
 	start_link_thread(device);
 
 	/* Tells which part was found and under which address. */
@@ -1920,8 +2818,12 @@ rtl_interrupt(
 {
 	struct rtl_device *device;
 	unsigned long irq;
+	uint64_t started;
 	uint32_t status;
 	unsigned schedule;
+
+	/* Notes when the interrupt began, for the profile. */
+	started = profile_now();
 
 	/* Samples and acknowledges what the controller latched. */
 	device = argument;
@@ -1943,6 +2845,9 @@ rtl_interrupt(
 			write32(device, RTL_REG_INTERRUPT_MASK, 0U);
 			schedule = 1U;
 		}
+
+		/* Counts the controller's interrupt in the profile. */
+		profile_interrupt(device, started);
 	}
 
 	spin_unlock_irqrestore(&device->lock, irq);
@@ -2127,6 +3032,7 @@ rtl_transmit(
 	uint8_t *buffer;
 	uint64_t address;
 	uint64_t physical;
+	uint64_t started;
 	unsigned long irq;
 	uint32_t command;
 	unsigned errors;
@@ -2138,6 +3044,9 @@ rtl_transmit(
 	/* Refuses a missing packet. */
 	if (packet == NULL)
 		return EINVAL;
+
+	/* Notes when the transmit began, for the profile. */
+	started = profile_now();
 
 	/* Drops a frame too short for a header or too long for the interface. */
 	device = net->driver_data;
@@ -2219,6 +3128,7 @@ rtl_transmit(
 	}
 
 	done = take_tx_done_locked(device);
+	profile_transmit(device, started, in_place, error);
 
 	spin_unlock_irqrestore(&device->lock, irq);
 
@@ -2251,9 +3161,13 @@ rtl_poll(
 	struct rtl_device *device;
 	struct packet_buf *done;
 	unsigned long irq;
+	uint64_t started;
 	unsigned errors;
 	unsigned count;
 	unsigned report;
+
+	/* Notes when the poll began, for the profile. */
+	started = profile_now();
 
 	/* Frees what the controller has sent. */
 	device = net->driver_data;
@@ -2275,12 +3189,19 @@ rtl_poll(
 	/* Passes received frames to the stack. */
 	count = receive_frames(net, budget);
 
-	/* Lets the controller interrupt again once the batch is done; a closed one stays quiet. */
+	/*
+	 * Lets the controller interrupt again once the receive ring is drained;
+	 * a poll that used its whole budget is run again by the worker with the
+	 * interrupts still held off, and a closed interface stays quiet.
+	 */
 	report = 0U;
 	irq = spin_lock_irqsave(&device->lock);
 
-	if (device->opened)
+	if (device->opened && count < budget)
 		write32(device, RTL_REG_INTERRUPT_MASK, RTL_INTERRUPTS_RUNNING);
+
+	/* Counts the poll in the profile. */
+	profile_poll(device, started, count, budget);
 
 	/* Takes a system error for reporting, once. */
 	if (device->system_error && !device->system_error_reported) {
@@ -3164,6 +4085,9 @@ run_phy_steps(
 		case RTL_PHY_STEP_MODIFY:
 			error = phy_ocp_modify(device, steps[index].reg, steps[index].mask, steps[index].value);
 			break;
+		case RTL_PHY_STEP_PATCH:
+			error = set_phy_patch_mode(device, steps[index].value != 0U);
+			break;
 		default:
 			error = phy_ocp_read(device, steps[index].reg, &ignored);
 			break;
@@ -3382,7 +4306,16 @@ configure_ephy(
 	unsigned index;
 	uint16_t reg;
 
-	/* Only the RTL8127's table is known here; the others keep their reset values. */
+	/* The RTL8125 and RTL8125B have their own tables; the RTL8125D and RTL8126 keep their reset values. */
+	if (device->chip->family == RTL_FAMILY_8125) {
+		configure_ephy_8125(device);
+		return;
+	}
+	if (device->chip->family == RTL_FAMILY_8125B) {
+		for (index = 0; index < sizeof(rtl_ephy_8125b) / sizeof(rtl_ephy_8125b[0]); index++)
+			ephy_write(device, rtl_ephy_8125b[index].reg, rtl_ephy_8125b[index].value);
+		return;
+	}
 	if (device->chip->family != RTL_FAMILY_8127)
 		return;
 
@@ -3476,6 +4409,8 @@ static int
 configure_phy(
 	struct rtl_device *device)
 {
+	const struct rtl_phy_step *steps;
+	unsigned count;
 	int error;
 
 	/* Reads the version of the microcode the PHY runs. */
@@ -3486,12 +4421,13 @@ configure_phy(
 	if (error != 0)
 		return error;
 
-	/* Applies the RTL8127's settings; the other parts keep the PHY's own. */
-	if (device->chip->family == RTL_FAMILY_8127) {
-		error = run_phy_steps(device, rtl_phy_8127, sizeof(rtl_phy_8127) / sizeof(rtl_phy_8127[0]));
-		if (error != 0)
-			return error;
-	}
+	/* Applies the part's settings. */
+	error = phy_steps_of(device, &steps, &count);
+	if (error != 0)
+		return error;
+	error = run_phy_steps(device, steps, count);
+	if (error != 0)
+		return error;
 
 	/* Clears the bit every part's settings end with. */
 	error = phy_ocp_modify(device, 0xa5b4U, 0x8000U, 0U);
@@ -3680,6 +4616,9 @@ link_worker(
 		if (opened)
 			net_device_schedule_poll(device->net);
 
+		/* Reports the profile when its second has passed. */
+		profile_report(device);
+
 		/* Sleeps until the next service. */
 		sched_sleep(sched_ticks() + KERN_MS_TO_TICKS(RTL_POLL_MS));
 	}
@@ -3765,4 +4704,463 @@ speed_of(
 
 	/* No speed bit is set. */
 	return 0U;
+}
+
+/*
+ * Measures the fine counter's rate and what one read of it costs, for the
+ * profile; without the profile the counter is not read.
+ */
+static void
+profile_calibrate(
+	struct rtl_device *device)
+{
+	uint64_t first;
+	uint64_t last;
+	uint64_t hz;
+	unsigned reads;
+	bool available;
+	int error;
+
+	/* Leaves the profile off unless the kernel keeps it. */
+	if (!CONFIG_DRIVER_PCI_RTL8125_PROFILE)
+		return;
+
+	/* Takes the counter's rate; without a counter the profile stays off. */
+	available = kern_rtc_read_counter(&first, &hz);
+	if (!available || hz == 0U)
+		return;
+
+	/* Times a run of reads to know what one costs. */
+	for (reads = 0; reads < 64U; reads++)
+		(void)kern_rtc_read_counter(&last, &hz);
+
+	/* Takes a block for the tally counters; without one the profile goes without the missed frames. */
+	error = drv_dma_alloc_coherent(device->dma, RTL_TALLY_BYTES, RTL_TALLY_ALIGNMENT, &device->profile.tally);
+	if (error == 0)
+		device->profile.tally_allocated = 1U;
+
+	/* Keeps the rate and the cost of one read. */
+	device->counter_cost = (last - first) / 64U;
+	device->counter_hz = hz;
+	kern_logf("rtl8125: %s profile on, counter %llu Hz, %llu ns a read\n",
+		  device->name,
+		  (unsigned long long)hz,
+		  (unsigned long long)(device->counter_cost * 1000000000ULL / hz));
+}
+
+/* Reads the fine counter for the profile, or 0 in a kernel without it. */
+static uint64_t
+profile_now(
+	void)
+{
+	uint64_t counter;
+	uint64_t hz;
+	bool available;
+
+	/* Reads nothing unless the kernel keeps the profile. */
+	if (!CONFIG_DRIVER_PCI_RTL8125_PROFILE)
+		return 0U;
+
+	/* Reads the counter; one that is unavailable counts as 0. */
+	available = kern_rtc_read_counter(&counter, &hz);
+	if (!available)
+		return 0U;
+
+	/* Succeeded: the counter's value. */
+	return counter;
+}
+
+/*
+ * Counts one interrupt of the controller and the time since it began.  The
+ * caller holds the lock.
+ */
+static void
+profile_interrupt(
+	struct rtl_device *device,
+	uint64_t started)
+{
+	uint64_t now;
+
+	/* Counts nothing without a calibrated profile. */
+	if (device->counter_hz == 0U)
+		return;
+
+	/* Adds the interrupt and its time. */
+	now = profile_now();
+	device->profile.interrupts++;
+	device->profile.interrupt_time += now - started;
+}
+
+/*
+ * Counts one poll, the frames it took off the receive ring, whether it used
+ * the whole budget, and the time since it began.  The caller holds the
+ * lock.
+ */
+static void
+profile_poll(
+	struct rtl_device *device,
+	uint64_t started,
+	unsigned count,
+	unsigned budget)
+{
+	uint64_t now;
+
+	/* Counts nothing without a calibrated profile. */
+	if (device->counter_hz == 0U)
+		return;
+
+	/* Adds the poll, its frames and its time. */
+	now = profile_now();
+	device->profile.polls++;
+	device->profile.poll_frames += count;
+	if (count >= budget)
+		device->profile.full_polls++;
+	device->profile.poll_time += now - started;
+}
+
+/*
+ * Counts one transmit, whether the frame was copied or refused, and the
+ * time since it began.  The caller holds the lock.
+ */
+static void
+profile_transmit(
+	struct rtl_device *device,
+	uint64_t started,
+	int in_place,
+	int error)
+{
+	uint64_t now;
+
+	/* Counts nothing without a calibrated profile. */
+	if (device->counter_hz == 0U)
+		return;
+
+	/* Adds the transmit, how it went and its time. */
+	now = profile_now();
+	device->profile.transmits++;
+	if (error != 0) {
+		device->profile.transmit_refusals++;
+	} else if (!in_place) {
+		device->profile.transmit_copies++;
+	}
+	device->profile.transmit_time += now - started;
+}
+
+/*
+ * Logs the profile's totals once a second while frames move, the times in
+ * microseconds with the counter's own reads still in them.
+ */
+static void
+profile_report(
+	struct rtl_device *device)
+{
+	struct rtl_profile profile;
+	unsigned long irq;
+	uint64_t now;
+	uint64_t frames;
+	uint16_t missed;
+	unsigned report;
+	int error;
+
+	/* Reports nothing without a calibrated profile. */
+	if (device->counter_hz == 0U)
+		return;
+
+	/* Takes a copy of the totals when the second has passed and frames moved since the last report. */
+	now = sched_ticks();
+	report = 0U;
+	irq = spin_lock_irqsave(&device->lock);
+
+	frames = device->profile.poll_frames + device->profile.transmits;
+	if (now >= device->profile.next_report && frames != device->profile.reported_frames) {
+		device->profile.reported_frames = frames;
+		device->profile.next_report = now + KERN_MS_TO_TICKS(1000U);
+		profile = device->profile;
+		report = 1U;
+	}
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* Nothing to log until the second has passed and frames moved. */
+	if (!report)
+		return;
+
+	/* Reads the frames the controller missed; a failed read reports none. */
+	missed = 0U;
+	error = profile_missed(device, &missed);
+	if (error != 0)
+		missed = 0U;
+
+	/* Logs the totals outside the lock. */
+	kern_logf("rtl8125: %s profile ms %llu irq %llu %llu poll %llu %llu %llu %llu tx %llu %llu %llu %llu missed %u\n",
+		  device->name,
+		  (unsigned long long)(profile_microseconds(device, profile_now()) / 1000U),
+		  (unsigned long long)profile.interrupts,
+		  (unsigned long long)profile_microseconds(device, profile.interrupt_time),
+		  (unsigned long long)profile.polls,
+		  (unsigned long long)profile.full_polls,
+		  (unsigned long long)profile.poll_frames,
+		  (unsigned long long)profile_microseconds(device, profile.poll_time),
+		  (unsigned long long)profile.transmits,
+		  (unsigned long long)profile.transmit_copies,
+		  (unsigned long long)profile.transmit_refusals,
+		  (unsigned long long)profile_microseconds(device, profile.transmit_time),
+		  (unsigned)missed);
+}
+
+/*
+ * Has the controller write its tally counters and reads the frames it
+ * missed for want of a receive descriptor, since its reset.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge_stats.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_hw_mac_stats_fetch).
+ */
+static int
+profile_missed(
+	struct rtl_device *device,
+	uint16_t *missed)
+{
+	const volatile uint8_t *block;
+	unsigned long irq;
+	uint32_t command;
+	unsigned polls;
+
+	/* Without a block there is nothing to read. */
+	if (!device->profile.tally_allocated)
+		return ENODEV;
+
+	/* Gives the block's address and starts the write. */
+	irq = spin_lock_irqsave(&device->lock);
+
+	write32(device, RTL_REG_TALLY_HIGH, (uint32_t)(device->profile.tally.device_address >> 32));
+	(void)read8(device, RTL_REG_COMMAND);
+	write32(device, RTL_REG_TALLY_LOW, (uint32_t)device->profile.tally.device_address);
+	write32(device, RTL_REG_TALLY_LOW, (uint32_t)device->profile.tally.device_address | RTL_TALLY_DUMP);
+
+	spin_unlock_irqrestore(&device->lock, irq);
+
+	/* Waits for the controller to clear the bit, which ends the write. */
+	for (polls = 0; polls < RTL_TALLY_POLLS; polls++) {
+		command = read32(device, RTL_REG_TALLY_LOW);
+		if ((command & RTL_TALLY_DUMP) == 0)
+			break;
+		kern_usleep_range(RTL_TALLY_POLL_US, RTL_TALLY_POLL_US);
+	}
+
+	/* A write that did not end leaves the block unread. */
+	if ((command & RTL_TALLY_DUMP) != 0)
+		return ETIMEDOUT;
+
+	/* Reads the count after the write that ended. */
+	kern_io_read_barrier();
+	block = device->profile.tally.address;
+	*missed = (uint16_t)(block[RTL_TALLY_MISSED] | (block[RTL_TALLY_MISSED + 1U] << 8));
+
+	/* Succeeded: the count of missed frames. */
+	return 0;
+}
+
+/* Converts a span of the fine counter into microseconds. */
+static uint64_t
+profile_microseconds(
+	const struct rtl_device *device,
+	uint64_t time)
+{
+	uint64_t whole;
+	uint64_t part;
+
+	/* Splits the span into whole seconds and the rest, so the product cannot overflow. */
+	whole = time / device->counter_hz;
+	part = time % device->counter_hz;
+
+	/* Succeeded: the span in microseconds. */
+	return whole * 1000000U + part * 1000000U / device->counter_hz;
+}
+
+/*
+ * Takes the PHY into its patch mode or out of it and waits for its state to
+ * follow.  A state that does not follow is logged and the sequence goes on,
+ * as the reference does.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge_hw.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_patch_phy_mcu).
+ */
+static int
+set_phy_patch_mode(
+	struct rtl_device *device,
+	int enter)
+{
+	uint16_t state;
+	uint16_t wanted;
+	unsigned polls;
+	int error;
+
+	/* Sets or clears the request. */
+	if (enter) {
+		error = phy_ocp_modify(device, RTL_PHY_OCP_PATCH_REQUEST, 0U, RTL_PHY_OCP_PATCH_REQUEST_BIT);
+	} else {
+		error = phy_ocp_modify(device, RTL_PHY_OCP_PATCH_REQUEST, RTL_PHY_OCP_PATCH_REQUEST_BIT, 0U);
+	}
+	if (error != 0)
+		return error;
+
+	/* Waits for the state bit to match the request. */
+	wanted = 0U;
+	if (enter)
+		wanted = RTL_PHY_OCP_PATCH_STATE_BIT;
+	state = (uint16_t)~wanted;
+	for (polls = 0; polls < RTL_PATCH_POLLS; polls++) {
+		error = phy_ocp_read(device, RTL_PHY_OCP_PATCH_STATE, &state);
+		if (error != 0)
+			return error;
+		if ((state & RTL_PHY_OCP_PATCH_STATE_BIT) == wanted)
+			break;
+		kern_usleep_range(RTL_PATCH_POLL_US, RTL_PATCH_POLL_US);
+	}
+
+	/* Logs a state that did not follow; the settings go on. */
+	if ((state & RTL_PHY_OCP_PATCH_STATE_BIT) != wanted)
+		kern_logf("rtl8125: %s PHY patch mode did not %s\n", device->name, enter ? "start" : "end");
+
+	/* Succeeded: the request is made. */
+	return 0;
+}
+
+/*
+ * Reads one PCI Express PHY register.
+ *
+ * Procedure referenced: FreeBSD sys/dev/rge/if_rge_hw.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_read_ephy).
+ */
+static uint16_t
+ephy_read(
+	struct rtl_device *device,
+	uint16_t reg)
+{
+	uint32_t window;
+	unsigned poll;
+
+	/* Names the register without the flag, which the controller sets once the data is in. */
+	window = (uint32_t)(reg & RTL_EPHY_ADDRESS_MASK) << RTL_EPHY_ADDRESS_SHIFT;
+	write32(device, RTL_REG_EPHY, window);
+
+	/* Waits for the read to finish; the window settles either way. */
+	for (poll = 0; poll < RTL_OCP_POLLS; poll++) {
+		kern_usleep_range(RTL_OCP_POLL_US, RTL_OCP_POLL_US);
+
+		/* The data is in once the flag is set. */
+		window = read32(device, RTL_REG_EPHY);
+		if ((window & RTL_EPHY_BUSY) != 0)
+			break;
+	}
+	kern_usleep_range(RTL_CSI_SETTLE_US, RTL_CSI_SETTLE_US);
+
+	/* Succeeded: the register's value, or what the window held when the wait ran out. */
+	return (uint16_t)(window & RTL_EPHY_DATA_MASK);
+}
+
+/* Clears the mask bits and sets the value bits of one PCI Express PHY register. */
+static void
+ephy_modify(
+	struct rtl_device *device,
+	uint16_t reg,
+	uint16_t mask,
+	uint16_t value)
+{
+	uint16_t current;
+
+	/* Writes the register back with the bits changed. */
+	current = ephy_read(device, reg);
+	ephy_write(device, reg, (uint16_t)((current & ~mask) | value));
+}
+
+/*
+ * Writes the RTL8125's PCI Express PHY table and the settings that follow
+ * it on both lanes.
+ *
+ * Procedure and values referenced: FreeBSD sys/dev/rge/if_rge_hw.c, main
+ * 8fa55fdcae4ecbd2ec13ef91cc9d172095e21189 (rge_ephy_config_mac_r25).
+ */
+static void
+configure_ephy_8125(
+	struct rtl_device *device)
+{
+	unsigned index;
+
+	/* Writes the table. */
+	for (index = 0; index < sizeof(rtl_ephy_8125) / sizeof(rtl_ephy_8125[0]); index++)
+		ephy_write(device, rtl_ephy_8125[index].reg, rtl_ephy_8125[index].value);
+
+	/* Sets the first lane. */
+	ephy_modify(device, 0x002aU, 0x7000U, 0x3000U);
+	ephy_modify(device, 0x0019U, 0x0040U, 0U);
+	ephy_modify(device, 0x001bU, 0U, 0x0e00U);
+	ephy_modify(device, 0x001bU, 0x7000U, 0U);
+	ephy_write(device, 0x0002U, 0x6042U);
+	ephy_write(device, 0x0006U, 0x0014U);
+
+	/* Sets the second lane the same way. */
+	ephy_modify(device, 0x006aU, 0x7000U, 0x3000U);
+	ephy_modify(device, 0x0059U, 0x0040U, 0U);
+	ephy_modify(device, 0x005bU, 0U, 0x0e00U);
+	ephy_modify(device, 0x005bU, 0x7000U, 0U);
+	ephy_write(device, 0x0042U, 0x6042U);
+	ephy_write(device, 0x0046U, 0x0014U);
+}
+
+/*
+ * Picks the PHY settings of the controller's part and revision.  Every
+ * part the table of versions names has its settings.
+ */
+static int
+phy_steps_of(
+	const struct rtl_device *device,
+	const struct rtl_phy_step **steps,
+	unsigned *count)
+{
+	unsigned second;
+
+	/* The two revisions of a family differ in their settings. */
+	second = 0U;
+	if (device->chip->revision == 2U)
+		second = 1U;
+
+	/* Takes the table of the family and revision. */
+	switch (device->chip->family) {
+	case RTL_FAMILY_8125:
+		*steps = rtl_phy_8125;
+		*count = sizeof(rtl_phy_8125) / sizeof(rtl_phy_8125[0]);
+		break;
+	case RTL_FAMILY_8125B:
+		*steps = rtl_phy_8125b;
+		*count = sizeof(rtl_phy_8125b) / sizeof(rtl_phy_8125b[0]);
+		break;
+	case RTL_FAMILY_8125D:
+		if (second) {
+			*steps = rtl_phy_8125d_2;
+			*count = sizeof(rtl_phy_8125d_2) / sizeof(rtl_phy_8125d_2[0]);
+		} else {
+			*steps = rtl_phy_8125d_1;
+			*count = sizeof(rtl_phy_8125d_1) / sizeof(rtl_phy_8125d_1[0]);
+		}
+		break;
+	case RTL_FAMILY_8126:
+		if (second) {
+			*steps = rtl_phy_8126_2;
+			*count = sizeof(rtl_phy_8126_2) / sizeof(rtl_phy_8126_2[0]);
+		} else {
+			*steps = rtl_phy_8126_1;
+			*count = sizeof(rtl_phy_8126_1) / sizeof(rtl_phy_8126_1[0]);
+		}
+		break;
+	case RTL_FAMILY_8127:
+		*steps = rtl_phy_8127;
+		*count = sizeof(rtl_phy_8127) / sizeof(rtl_phy_8127[0]);
+		break;
+	default:
+		return ENODEV;
+	}
+
+	/* Succeeded: the part's settings. */
+	return 0;
 }
