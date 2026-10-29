@@ -173,7 +173,7 @@ BUG-363 · q1695 · WS318 · KL_VERSION 103。使う前に衝突を確かめる�
 | [WS310](ws310/ws.md) | MG004 | ACPI の _OSC を呼び、システム全体の挙動を厳重に確かめる（WS301 の Q301-3、2026-10-29 ユーザー「最終的には呼ぶが、別なWSにして…今は呼ばない。」） | planning | p001（WS301 の後） |
 | [WS313](ws313/ws.md) | MG008 | ODROID-C5（Amlogic S905X5M）の BSP（bsp-s905x5m）と Mali の GPU で、起動して desktop を表示する（2026-10-29 ユーザー） | incomplete（全 block の code を揃えた、実装済み・実機未試験。2026-10-29 夜にユーザーが実機で試験） | 夜の試験（plan/ws313/tests/README.md）→ 直し、Mali の desktop（render pass の LOAD など） |
 | [WS314](ws314/ws.md) | MG006 | libkeiland の API を component ごとの header に分け、プログラミングの解説（英語）を書き、fd と UNIX への依存を API から外す（2026-10-30 ユーザー） | incomplete（p001〜p003・p011 cleared、P2 q1690・p012 は Sonnet） | p001 header の分割から |
-| [WS315](ws315/ws.md) | MG003 | Realtek の USB 2.5G・5G の NIC を独自の方式（vendor mode）の driver で速く（2026-10-30 ユーザー） | planning（q1694 P3 が p001 から） | WS221 p014（xHCI）と NCM の観察の後に p001 設計 |
+| [WS315](ws315/ws.md) | MG003 | Realtek の USB 2.5G・5G の NIC を独自の方式（vendor mode）の driver で速く（2026-10-30 ユーザー） | incomplete（p001・p002・p004・p005 cleared、p003 は 5330 の image の試験待ち） | WS221 p014（xHCI）と NCM の観察の後に p001 設計 |
 | [WS316](ws316/ws.md) | MG003 | 5330 の USB4 と AQC の 10GbE（2026-10-30 ユーザー） | planning | p001 の調べ（5330 の Debian で CM・AQC の見え方・IOMMU） |
 | [WS317](ws317/ws.md) | MG005 | hotplugd: hot-plug の device（PCIe・USB・ディスク）の承認と driver の開始・終了、volumed を置き換え（2026-10-30 ユーザー） | planning（今は取り組まない、ユーザー） | p001 の設計から |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
