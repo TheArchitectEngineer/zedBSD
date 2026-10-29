@@ -19,6 +19,14 @@ Resume point: p001（調べと設計）。担当は P7（q1675）。
   確かめは build（warning 0）と、書ける所の host の試験・QEMU の `virt` での起動まで。各 Phase は「実装済み・実機未試験」と記録し cleared にしない。
   夜の実機の試験の手順（媒体への書き込み・UART の配線・確かめる順・判定）を phase.md と `plan/ws313/tests/` の script にまとめる。
 
+## ユーザーの指示（原文、2026-10-29、並列化）
+
+「WS313は調査、コード作成などで、2つまでサブエージェントを作って並列化し、効率化してください。」
+
+- 解釈（Q1 経由）: P7 は配下のサブエージェントを同時に 2 つまで使ってよい。配下も同じ worktree の中で、互いに別の file・directory を持たせる
+  （例: 一つは GPU（Mali の driver と Vulkan）、一つは周辺の driver（MMC・USB・Ethernet・display））。配下にも AGENTS.md の規則を渡す。
+  commit は同じ index を同時に触らないよう順に。上限に当たったら Q1 が配下を止める事がある。
+
 ## 目標（Q1 の解釈）
 
 - 新しい board「ODROID-C5」を足す。SoC は Amlogic S905X5M（arm64）。BSP は `src/hal/arm64/bsp-s905x5m/`（既存の `bsp-rpi4`・`bsp-rpi5` と同じ並び）、platform の build（`platform/arm64/` の board の分け方に倣う）、`config/ci/config-odroid-c5.mk`。
