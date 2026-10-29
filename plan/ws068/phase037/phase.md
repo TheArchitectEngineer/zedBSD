@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p037`
 Parent: [WS068](../ws.md)
-Status: in-progress（実装済み・試験未実施。2026-10-29 q1682-i01 P2。cleared にしない）
+Status: cleared（2026-10-29 q1682-i02 P2。Venus で glx-p037 と回帰 PASS。i915 実機は未実施）。旧: in-progress（実装済み・試験未実施、q1682-i01）
 Phase disposition: normal
 保留の理由（旧）: 2026-09-27 ユーザー「OpenGL 3.2が問題なければ、それ以降のOpenGLはいったん保留して、i915の高度化に進んでください。」
 （p033 の GL 3.2 は Venus で PASS）。
@@ -101,5 +101,15 @@ build・host の試験まで。branch は試験の後に Q1 が merge する。
   `git diff --check` 問題なし。
 - host: `sh plan/ws068/tests/glsl-host/run.sh build/glsl-host-p037` → `glsl-host: PASS`（compile・expect・link と spirv-val・反射の
   index（dual330: `out factor location=0 index=1`、`out colour location=0 index=0`）・i915 の受け入れ（dual330 を含む）・lavapipe の 24 試験）。
-- 未実施: Venus の `glx-p037.sh`（glxtest --gl33）と回帰（glx-p013・p031・p033、egl-p019〜p030）、i915 実機。
-  `program_output_indexes`（Index の挿入）と timer query は host で走らせていない（Vulkan の device の上の libGL が要る）。
+- Venus（QEMU、host の lavapipe、2026-10-29 q1682-i02 P2）: `plan/ws068/tests/venus-all.sh`（image の build → guest の起動 → 試験 → 停止 →
+  summary の 1 本）を tree 595743d90 で流した。image は `build/p2-img6`（新しい dir で作り直し、`warning:` 0、sha256 の先頭 8b5ab7d858b78d41）。
+  - `build/p2-v6/summary.txt`: glx-p013・p031・p033、egl-p039、egl-p019・p020・p022〜p030 が rc=0 PASS。glx-p037 は FAIL だったが、
+    原因は script の誤り（`zdesktop-guest.sh start` は emulator を起こすだけで SSH を待たず、最初の試験の guest の命令が走らなかった:
+    `/tmp/glx3.log` が無い、画面は全面 000000）。`guest.py wait` を足した。
+  - `build/p2-v7/summary.txt`（同じ image、wait を足した script）: glx-p037 rc=0 PASS。画面の 12 square と固定機能の square が期待の色、
+    log は `version="3.3 zedBSD …"`、`GLXTEST GL33 elapsed=10980184 ns`、timestamps の順、dual-layout・dual-bound・packed-unsigned・
+    packed-signed が 00ff00、`rgb10-a2ui texel=1023,512,7,3`、`GL33 ready failures=0`、`EGLTEST CHECK run=g33 failures=0 glerror=0x0`。
+    同じ画面の tessellation（p034）・draw-indirect（p036 a）の square も 00ff00（この Phase の受け入れではない観察）。
+  - 前の起動（2026-10-29 16:38〜16:56、`build/p2-v4`・`p2-v5`）でも同じ結果（egl-p019 は display の撮影が最初の frame の前で FAIL、
+    egl-p019 の script を EGLTEST CHECK を待つよう直して PASS）。その image の出所は記録が無いので、上の作り直しを証拠とする。
+- 未実施: i915 実機（device が dualSrcBlend を出さないので GL 3.2 が上限、上の「判断」）。

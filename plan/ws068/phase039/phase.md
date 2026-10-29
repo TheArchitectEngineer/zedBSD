@@ -4,7 +4,7 @@
 
 Phase ID: `ws068-p039`
 Parent: [WS068](../ws.md)
-Status: in-progress（実装済み・試験未実施（Venus・実機）。2026-10-29 q1682-i01 P2。cleared にしない）
+Status: in-progress（実装済み。2026-10-29 q1682-i02 P2: Venus で egl-p039 PASS、cleared の判断は Q1（q1682-i02 の範囲外）。i915 実機は未実施）
 Phase disposition: normal
 依存: p004
 経緯: 2026-10-05 Q1 が p004 の範囲外から新設（その時は実行しない）。2026-10-29 ユーザー「作業の手が空いてしまったら、テストなしで実装だけ
@@ -43,4 +43,8 @@ OpenGL ES 3.0 の必須の 10 format（`GL_COMPRESSED_R11_EAC`・`SIGNED_R11_EAC
 - host: `sh plan/ws068/tests/etc2-host/run.sh build/etc2-host` → `etc2-host: PASS`（`reference.py`: 仕様の表から書いた独立の参照で、
   64-bit の整数の bit の範囲で読む。7 format（sRGB は同じ展開）×64 block の乱数、T・H・planar・differential を強制した block と
   punch-through の透明を含む、全 texel が一致。ASan・UBSan）。参照も同じ人の読みなので、仕様の誤読は両方に入りうる（未確かめ）。
-- 未実施: egltest の scene（ETC2 の texture を描いて読む）、Venus・i915。
+- Venus（QEMU、2026-10-29 q1682-i02 P2）: `plan/ws068/tests/egl-p039.sh`（egltest `--scene=etc2`、display 直接と zdesktop の窓）を
+  `plan/ws068/tests/venus-all.sh` で tree 595743d90 から作り直した image で流し、rc=0 PASS（`build/p2-v6/egl-p039.txt`: 2 枚の画面の読み取り、
+  `EGLTEST ETC2 ready failures=0`、`EGLTEST CHECK run=d|w failures=0 glerror=0x0`）。q1682-i02 の範囲（p037 と回帰）の外の試験なので
+  Status は Q1 が決める。
+- 未実施: i915 実機。
