@@ -112,8 +112,8 @@ UEFI＋ACPI の PC 向けに、Keiland のアプリとして動くウィザー�
 ## 制限
 
 - loader（p008）: cfg に `video=640x480` がある時、root の partition の失敗（`A64 KERN UFS …`）の文字が画面に出ない（debug port には出て、loader は `halt()` で止まっている）。導入先の cfg は `video=` を持たないので、その形では出る。原因（GOP の mode を変えた後の firmware の console の行の位置と見られる）は未確定（2026-10-29、P4）。
-- swap file（p009、2026-10-29 P4）: installer が UFS の上に作る 2 GiB の swap file の 0 書きが QEMU（KVM、SATA）で約 1 MB/s（約 30 分）。下の native UFS の書き込みの遅さと同じと見られる（未確認）。p010・p011 の前に Q1 の判断。
-- native UFS（p006）: 4096 byte の logical sector の disk では書き込みが 512 の disk より遅い。QEMU（KVM、NVMe、whole disk の native UFS、`plan/ws307/tests/p006-ufs-speed.sh`）で 16 MiB の dd が 512 で 23 秒、4096 で 63 秒（約 2.7 倍）。見立ては 512 byte の journal の record の read-modify-write（未確認）。正しさに関わらないので直していない（2026-10-29 Q1 の判断）。
+- swap file（p009、2026-10-29 P4）: installer が UFS の上に作る 2 GiB の swap file の 0 書きが QEMU（KVM、SATA）で約 1 MB/s（約 30 分）。下の native UFS の書き込みの遅さと同じと見られる（未確認）。p010・p011 の前に Q1 の判断。→ 原因は mkfs の native の tail journal（[BUG-355](../bugs/BUG-355.md)）。q1688-i01 で直した（6387b82a0、Q1 の判定待ち、QEMU だけ）。
+- native UFS（p006）: 4096 byte の logical sector の disk では書き込みが 512 の disk より遅い。QEMU（KVM、NVMe、whole disk の native UFS、`plan/ws307/tests/p006-ufs-speed.sh`）で 16 MiB の dd が 512 で 23 秒、4096 で 63 秒（約 2.7 倍）。見立ては 512 byte の journal の record の read-modify-write（未確認）。正しさに関わらないので直していない（2026-10-29 Q1 の判断）。→ [BUG-358](../bugs/BUG-358.md)（2026-10-29 ユーザー「P4は、先にUFSが遅いバグを修正してください。…」）で直した（q1688-i01、6387b82a0。tail journal をやめ、4096 の batched journal の sector の単位の誤りを直した。Q1 の判定待ち、QEMU だけ）。
 
 ## Phase
 
