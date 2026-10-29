@@ -109,7 +109,10 @@ class Run:
 		hostmem = os.environ.get("VENUS_HOSTMEM", "1G")
 		out = self.out
 		shutil.copyfile(self.image, out / "boot.img")
-		extra = (f"-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem "
+		# The stick's flushes are dropped on the host (cache=unsafe): a host fsync of 0.5 to 2 s blocks QEMU's USB
+		# and the guest's xHCI commands to the stick time out, and the live system does not come up.
+		extra = (f"-set drive.boot.cache=unsafe "
+			 f"-object memory-backend-memfd,id=mem,size=8G,share=on -machine memory-backend=mem "
 			 f"-device virtio-gpu-gl-pci,id=venus,venus=on,blob=on,hostmem={hostmem},max_outputs=1 "
 			 f"-display egl-headless,rendernode=/dev/dri/renderD128 -vnc unix:{out}/guest/vnc.sock,display=venus "
 			 f"-device usb-tablet,bus=xhci.0,port=4 {disks}")

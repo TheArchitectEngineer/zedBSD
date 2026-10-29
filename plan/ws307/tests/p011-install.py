@@ -89,14 +89,15 @@ class Walk:
 		fat(zcfg, 1, 600, "ZEDBSD", {"/zedbsd.cfg": b"kernel=vmunix\n"})
 		blank(out / "tiny.img", 1)
 		self.other_a = self.region(other, 301, 2048)
-		return (f"-drive file={out}/nvme.img,if=none,id=n1,format=raw -device nvme,serial=p011n,drive=n1 "
-			f"-drive file={out}/k4.img,if=none,id=n2,format=raw "
+		# The disks' flushes are dropped on the host (cache=unsafe), as the stick's are (installer_walk.Run.start).
+		return (f"-drive file={out}/nvme.img,if=none,id=n1,format=raw,cache=unsafe -device nvme,serial=p011n,drive=n1 "
+			f"-drive file={out}/k4.img,if=none,id=n2,format=raw,cache=unsafe "
 			f"-device nvme,serial=p011k,drive=n2,logical_block_size=4096,physical_block_size=4096 "
-			f"-device ahci,id=a1 -drive file={other},if=none,id=s1,format=raw -device ide-hd,drive=s1,bus=a1.0 "
-			f"-drive file={zcfg},if=none,id=s2,format=raw -device ide-hd,drive=s2,bus=a1.1 "
-			f"-drive file={mbr},if=none,id=s3,format=raw -device ide-hd,drive=s3,bus=a1.2 "
-			f"-device qemu-xhci,id=x2 -drive file={usb},if=none,id=u1,format=raw -device usb-storage,bus=x2.0,drive=u1 "
-			f"-drive file={out}/tiny.img,if=none,id=u2,format=raw -device usb-storage,bus=x2.0,drive=u2")
+			f"-device ahci,id=a1 -drive file={other},if=none,id=s1,format=raw,cache=unsafe -device ide-hd,drive=s1,bus=a1.0 "
+			f"-drive file={zcfg},if=none,id=s2,format=raw,cache=unsafe -device ide-hd,drive=s2,bus=a1.1 "
+			f"-drive file={mbr},if=none,id=s3,format=raw,cache=unsafe -device ide-hd,drive=s3,bus=a1.2 "
+			f"-device qemu-xhci,id=x2 -drive file={usb},if=none,id=u1,format=raw,cache=unsafe -device usb-storage,bus=x2.0,drive=u1 "
+			f"-drive file={out}/tiny.img,if=none,id=u2,format=raw,cache=unsafe -device usb-storage,bus=x2.0,drive=u2")
 
 	@staticmethod
 	def region(path: Path, first_mib: int, mib: int) -> str:
