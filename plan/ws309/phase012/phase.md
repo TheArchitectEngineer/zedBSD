@@ -60,6 +60,17 @@
   5. ゲームモード: QEMU で mview の spin が scanout を取れるかを見る。取れなければ `KWL SCANOUT direct=0 reason=backend` の経路（可否の問いが T3 から答える）と、
      その後に window mode が続く事の確かめだけ。
   6. RTX（10.0.10.3、Q1 の枠）: `plan/ws291/tests/rtx-mview-order.sh` で BUG-353 の再現が消える事（o1 の a・c・e・f が全て出る）。
+     （2026-10-29 15:0x 具体化、走らせる前）script は新しい `plan/ws309/tests/rtx-bug353.sh OUT VMUNIX WAYLAND RESTORE`（rtx-mview-order.sh と同じ順に
+     各段の session.log を回収、/bin/wayland は rename で入れ替え、終わりに元の compositor と vmunix-va1 を戻して cksum で照合、Debian の RTX の vfio-pci を数える）。
+     kernel は P2 が再現した vmunix-p010a4（63ebcaf71、cksum 869726610。stick の libvulkan と組で再現した物。compositor だけを変える比べ）。
+     判定: a・c・f の shot の over15（Linux の参照と 16 段以上違う画素）が 1000 未満（P2 の o1 は a=2・c=2073252・f=2）、e（5000）は参照が無いので画像を見て記録、
+     KWL FAILED・VULKAN_ERROR 無し。
+  5'. 5 の script は新しい `plan/ws309/tests/scanout-guest.sh OUT IMAGE WAYLAND`（2026-10-29 15:0x、走らせる前）: 判定は compositor の READY、spin の window に
+     KWL SCANOUT の行（direct=1、または direct=0 reason=backend … output=kept）、その後の still の mview が最後まで（MVIEW DONE run=still）、capture が画（spread 24 以上）、
+     compositor が生きている、KWL FAILED・VULKAN_ERROR 無し。
+- hand-guest の 1 回目の FAIL（2026-10-29 15:0x）: 3 画の認識の答えが無く 4 画だけ。見込みの原因: 最初の認識で templates を読む時間（QEMU）が 3 画の後の固定の 1.5 s を超え、
+  4 画目の job が同じ key の 3 画の job を置き換えた（最新だけの決まり）。試験の直し（Q1 の指示）: 4 画目の前を、時間でなく log の
+  `KWL OSK hand recognize strokes=3 ` を待つ形（上限 10 s）にした（`plan/ws309/tests/hand-guest.sh`）。
 - 回転・head の open/close・backlight・列挙を T3 へは、この起動で届かなければ残りに書く。
 
 ## 注意
