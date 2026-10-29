@@ -50,13 +50,33 @@
 /* The smallest register window the driver uses: up to the last doorbell it rings. */
 #define REGISTERS_MIN_BYTES	(MALI_DOORBELL_BASE + 2U * MALI_DOORBELL_STRIDE)
 
-/* The largest firmware file the driver reads (16 MiB), and the longest path it builds. */
+/* The largest firmware file the driver reads (16 MiB), the longest path it builds, and where the files are. */
 #define FIRMWARE_LIMIT		(16U * 1024U * 1024U)
 #define FIRMWARE_PATH_BYTES	64U
+#define FIRMWARE_DIRECTORY	"/lib/firmware/arm/mali"
+#define FIRMWARE_NAME		"mali_csffw.bin"
+
+/*
+ * The minor architectures of v10 whose firmware is published, tried in
+ * turn when the GPU's own has no file.  The three published files are
+ * one and the same image.
+ *
+ * Values referenced:
+ * Linux v7.3 drivers/gpu/drm/panthor/panthor_fw.c (the MODULE_FIRMWARE
+ * list of arch10.8, arch10.10 and arch10.12).
+ */
+static const unsigned firmware_minors[] = {
+	12U,
+	10U,
+	8U,
+};
 
 /* How often the later stage writes what it saw (1 s), and how often it pings the firmware (10 s). */
 #define REPORT_MS		1000U
 #define PING_EVERY_REPORTS	10U
+
+/* How many pings in a row may go unanswered before the later stage stops pinging. */
+#define PINGS_UNANSWERED_MAX	3U
 
 /*
  * The board's one GPU.
@@ -75,6 +95,7 @@ static int bring_up(struct mali_device *device);
 static void report_identity(const struct mali_device *device);
 static void late_thread(void *argument);
 static int late_bring_up(struct mali_device *device);
+static int read_other_minor(const struct mali_device *device, char *path, uint8_t **bytes, size_t *size);
 static void watch(struct mali_device *device);
 
 /*
@@ -405,8 +426,10 @@ late_bring_up(
 	int error;
 
 	/* The file is named by the architecture's major and minor numbers. */
-	kern_snprintf(path, sizeof(path), "/lib/firmware/arm/mali/arch%u.%u/mali_csffw.bin", device->arch_major, device->arch_minor);
+	kern_snprintf(path, sizeof(path), FIRMWARE_DIRECTORY "/arch%u.%u/" FIRMWARE_NAME, device->arch_major, device->arch_minor);
 	error = mali_firmware_read(path, FIRMWARE_LIMIT, &bytes, &size);
+	if (error == ENOENT)
+		error = read_other_minor(device, path, &bytes, &size);
 	if (error != 0) {
 		kern_logf("mali: firmware %s not read (%d)\n", path, error);
 		return error;
@@ -441,6 +464,48 @@ late_bring_up(
 }
 
 /*
+ * Reads the firmware of another published minor architecture of the
+ * GPU's major one, leaving the path it read (or tried last) in path.
+ */
+static int
+read_other_minor(
+	const struct mali_device *device,
+	char *path,
+	uint8_t **bytes,
+	size_t *size)
+{
+	unsigned index;
+	int error;
+
+	/* Only the major architecture whose published files are one image. */
+	if (device->arch_major != MALI_ARCH_VALHALL_CSF)
+		return ENOENT;
+
+	/* Each published minor in turn, skipping the GPU's own, tried already. */
+	error = ENOENT;
+	for (index = 0U; index < sizeof(firmware_minors) / sizeof(firmware_minors[0]); index++) {
+		if (firmware_minors[index] == device->arch_minor)
+			continue;
+
+		/* The file of that minor; anything but an absent file ends the search. */
+		kern_snprintf(path, FIRMWARE_PATH_BYTES, FIRMWARE_DIRECTORY "/arch%u.%u/" FIRMWARE_NAME, device->arch_major, firmware_minors[index]);
+		error = mali_firmware_read(path, FIRMWARE_LIMIT, bytes, size);
+		if (error != ENOENT)
+			break;
+	}
+
+	/* No published file was read either. */
+	if (error != 0)
+		return error;
+
+	/* Says which file stands in for the GPU's own. */
+	kern_logf("mali: no firmware of arch %u.%u; using %s\n", device->arch_major, device->arch_minor, path);
+
+	/* Succeeded: the caller owns the bytes. */
+	return 0;
+}
+
+/*
  * Writes, once a second, what the interrupt handlers recorded and a
  * change of the microcontroller's status, and pings the firmware every
  * ten seconds so its watchdog knows the host is there.
@@ -451,10 +516,13 @@ watch(
 {
 	uint32_t jobs;
 	unsigned reports;
+	unsigned unanswered;
 	int jobs_seen;
+	int error;
 
 	/* Forever, one report a second. */
 	reports = 0U;
+	unanswered = 0U;
 	jobs_seen = 0;
 	for (;;) {
 		sched_sleep(sched_ticks() + kern_ms_to_ticks(REPORT_MS));
@@ -470,9 +538,20 @@ watch(
 			jobs_seen = 1;
 		}
 
-		/* The watchdog's ping. */
+		/* The watchdog's ping, until the firmware has left several unanswered in a row. */
 		reports++;
-		if (reports % PING_EVERY_REPORTS == 0U)
-			(void)mali_csf_ping(device);
+		if (reports % PING_EVERY_REPORTS != 0U || unanswered >= PINGS_UNANSWERED_MAX)
+			continue;
+
+		error = mali_csf_ping(device);
+		if (error == 0) {
+			unanswered = 0U;
+			continue;
+		}
+
+		/* Says once that the pings stop, so a dead firmware does not fill the log. */
+		unanswered++;
+		if (unanswered == PINGS_UNANSWERED_MAX)
+			kern_logf("mali: firmware left %u pings unanswered; no more pings\n", unanswered);
 	}
 }
