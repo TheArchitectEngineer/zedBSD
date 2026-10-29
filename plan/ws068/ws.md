@@ -81,7 +81,7 @@ EGL と OpenGL ES（2.0、次に 3.0）を、zedBSD の libvulkan（Vulkan）と
 | ws068-p007 | 規約の全文との照合と回帰（最後） | planning | 全 Phase |
 | [ws068-p008](phase008/phase.md) | GLES 2.0 の描画の核（SPIR-V の shader binary、変換層。compiler の方式に依らない部分） | cleared（q475-i01。Venus で strip・texture・blend・depth・cull、display 直接と窓と resize） | p002 |
 | [ws068-p009](phase009/phase.md) | frame を 2 枚重ねる（EGL の frame in flight。Venus で clear だけ 125 ms/frame、WSI 直接は 50 ms） | cleared（2026-10-18 Q1: phase.md に合わせた。旧: in-progress（2026-10-05 P1 q747。実装は merge 済み、T1-180 の Venus の回帰と計測待ち）） | p008 |
-| [ws068-p039](phase039/phase.md) | ETC2・EAC の圧縮 texture（ES 3.0 の必須の 10 format、`glCompressedTexImage2D`・`glCompressedTexSubImage2D`。device に無ければ CPU で展開。i915 の Gen12 は hardware に無い） | in-progress（実装済み、2026-10-29 q1682-i01 P2。常に CPU で展開、etc2-host PASS。2026-10-29 q1682-i02: Venus で egl-p039 PASS、cleared の判断は Q1。i915 実機は未実施）。旧: planned（2026-10-05 Q1 が p004 の範囲外から新設） | p004 |
+| [ws068-p039](phase039/phase.md) | ETC2・EAC の圧縮 texture（ES 3.0 の必須の 10 format、`glCompressedTexImage2D`・`glCompressedTexSubImage2D`。device に無ければ CPU で展開。i915 の Gen12 は hardware に無い） | cleared（2026-10-29 Q1、Venus で egl-p039 PASS（q1682-i02 P2）、etc2-host PASS。i915 実機は未実施）。旧: planned（2026-10-05 Q1 が p004 の範囲外から新設） | p004 |
 | [ws068-p010](phase010/phase.md) | EGL の pbuffer（offscreen。GLX の描画先） | cleared（q476-i01。Venus で 600 frame と 2048x1536） | p008 |
 | ws068-p011 | framebuffer object・renderbuffer・cube map（texture への描画） | 2026-09-27 に p022（FBO・renderbuffer）と p023（cube map・mipmap の GPU 化・FBO からの copy）に分けた | p008 |
 | [ws068-p022](phase022/phase.md) | framebuffer object と renderbuffer（texture への描画、FBO の readback） | cleared（q493-i01、2026-09-27。Venus で egl-p022） | p008 |
