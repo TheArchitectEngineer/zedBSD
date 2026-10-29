@@ -30,7 +30,9 @@
 
 /* The helper, the index of what it installs, and the files of the image. */
 #define INST_HELPER		"/usr/libexec/install-admin"
+#ifndef INST_INDEX
 #define INST_INDEX		"/opt/installer/index"
+#endif
 #define INST_OS_RELEASE		"/etc/os-release"
 #define INST_PASSWD		"/etc/passwd"
 

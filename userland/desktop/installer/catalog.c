@@ -39,7 +39,7 @@ static int catalog_file(const char *path, size_t limit, char **text, size_t *len
 static unsigned catalog_split(char *line, char **field, unsigned most);
 static int catalog_units(struct inst_catalog *catalog, char *text);
 static int catalog_records(struct inst_catalog *catalog, char *text);
-static int catalog_unit_record(struct inst_catalog *catalog, char **field, unsigned count);
+static int catalog_unit_record(struct inst_catalog *catalog, unsigned slot, char **field, unsigned count);
 static int catalog_item_record(struct inst_catalog *catalog, char **field, unsigned count);
 static void catalog_copy(char *target, size_t size, const char *source);
 static void catalog_close_over(struct inst_catalog *catalog, unsigned unit);
@@ -393,11 +393,12 @@ catalog_records(
 	char *line;
 	char *end;
 	unsigned count;
+	unsigned slot;
 	int same;
 	int error;
 
-	/* The units are read again in the same order. */
-	catalog->unit_count = 0;
+	/* The units come in the order the first pass named them. */
+	slot = 0;
 
 	/* Each line. */
 	for (line = text; line != NULL && *line != '\0'; line = end) {
@@ -411,9 +412,10 @@ catalog_records(
 		/* A unit. */
 		same = strcmp(field[0], "unit");
 		if (same == 0) {
-			error = catalog_unit_record(catalog, field, count);
+			error = catalog_unit_record(catalog, slot, field, count);
 			if (error != 0)
 				return error;
+			slot++;
 			continue;
 		}
 
@@ -457,6 +459,7 @@ catalog_records(
 static int
 catalog_unit_record(
 	struct inst_catalog *catalog,
+	unsigned slot,
 	char **field,
 	unsigned count)
 {
@@ -466,9 +469,9 @@ catalog_unit_record(
 	int found;
 
 	/* The record whole. */
-	if (count < 10U || catalog->unit_count >= INST_UNITS_MAX)
+	if (count < 10U || slot >= catalog->unit_count)
 		return EINVAL;
-	unit = &catalog->unit[catalog->unit_count];
+	unit = &catalog->unit[slot];
 	catalog_copy(unit->label, sizeof(unit->label), field[2]);
 	catalog_copy(unit->group, sizeof(unit->group), field[3]);
 	unit->bytes = strtoull(field[6], NULL, 10);
@@ -490,7 +493,6 @@ catalog_unit_record(
 		unit->dependency[unit->dependency_count] = (unsigned)found;
 		unit->dependency_count++;
 	}
-	catalog->unit_count++;
 
 	/* Succeeded: the unit is read. */
 	return 0;

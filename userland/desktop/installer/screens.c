@@ -652,9 +652,11 @@ screen_choice(
 				       rect->width - 54, enabled ? theme->text_secondary : theme->text_faint);
 	}
 
-	/* Reports a click. */
-	if ((hit & KL_HIT_CLICKED) != 0U)
+	/* Reports a click (the frame it changes is drawn next). */
+	if ((hit & KL_HIT_CLICKED) != 0U) {
+		app->dirty = 1;
 		return 1;
+	}
 	return 0;
 }
 
@@ -695,7 +697,9 @@ screen_button(
 	if ((flags & KL_BUTTON_DISABLED) != 0U)
 		return 0;
 
-	/* Reports a press. */
+	/* Reports a press (the frame it changes is drawn next). */
+	if (pressed)
+		app->dirty = 1;
 	return pressed;
 }
 
@@ -1213,7 +1217,8 @@ screen_items(
 		rect.y = y + 6 + (theme->control_height - theme->switch_height) / 2;
 		rect.width = theme->switch_width;
 		rect.height = theme->switch_height;
-		(void)kl_switch(app->ui, &app->style, SCREEN_ID_AGREE, rect.x, rect.y, &app->license_agreed, 0U);
+		if (kl_switch(app->ui, &app->style, SCREEN_ID_AGREE, rect.x, rect.y, &app->license_agreed, 0U))
+			app->dirty = 1;
 		inst_control(app, "license-agree", &rect, 1);
 		(void)kl_text_draw(&app->text, &app->canvas, rect.x + rect.width + 12, kl_text_center(SCREEN_TEXT, y + 6, theme->control_height),
 				   kl_tr("I agree to the firmware's licences"), strlen(kl_tr("I agree to the firmware's licences")), SCREEN_TEXT, 0, theme->text);
@@ -1317,7 +1322,7 @@ screen_item_row(
 	rect.y = top + (SCREEN_ROW_SMALL - theme->switch_height) / 2;
 	rect.width = theme->switch_width;
 	rect.height = theme->switch_height;
-	changed = kl_switch(app->ui, &app->style, SCREEN_ID_ITEM, rect.x, rect.y, &on, flags);
+	changed = kl_switch(app->ui, &app->style, SCREEN_ID_ITEM + 1000U + item, rect.x, rect.y, &on, flags);
 	inst_control(app, name, &rect, flags == 0U);
 	if (changed && flags == 0U)
 		inst_item_toggle(app, item);
@@ -1467,7 +1472,8 @@ screen_user(
 	flags = desktop ? 0U : KL_BUTTON_DISABLED;
 	if (!desktop)
 		app->autologin = 0;
-	(void)kl_switch(app->ui, &app->style, SCREEN_ID_AUTOLOGIN, rect.x, rect.y, &app->autologin, flags);
+	if (kl_switch(app->ui, &app->style, SCREEN_ID_AUTOLOGIN, rect.x, rect.y, &app->autologin, flags))
+		app->dirty = 1;
 	inst_control(app, "autologin", &rect, desktop);
 	y += 40;
 	if (!desktop)
@@ -1506,6 +1512,8 @@ screen_field_row(
 	rect.height = app->style.theme->control_height;
 	changes = kl_field(app->ui, &app->style, SCREEN_ID_FIELD + 100U * (index + 1U), &rect, field, placeholder);
 	inst_control(app, name, &rect, 1);
+	if (changes != 0U)
+		app->dirty = 1;
 	if ((changes & KL_FIELD_SUBMITTED) != 0U)
 		inst_next(app);
 
@@ -1616,7 +1624,8 @@ screen_confirm(
 		rect.y = y + 8;
 		rect.width = theme->switch_width;
 		rect.height = theme->switch_height;
-		(void)kl_switch(app->ui, &app->style, SCREEN_ID_ERASE, rect.x, rect.y, &app->erase_agreed, 0U);
+		if (kl_switch(app->ui, &app->style, SCREEN_ID_ERASE, rect.x, rect.y, &app->erase_agreed, 0U))
+			app->dirty = 1;
 		inst_control(app, "erase-agree", &rect, 1);
 		(void)kl_text_draw(&app->text, &app->canvas, rect.x + rect.width + 12, kl_text_center(SCREEN_TEXT, rect.y, rect.height),
 				   kl_tr("Erase the disk"), strlen(kl_tr("Erase the disk")), SCREEN_TEXT, 0, theme->text);
@@ -1869,6 +1878,8 @@ screen_titles(
 	case INST_S10:
 		*title = app->canceled ? kl_tr("The installation was cancelled") : kl_tr("The installation failed");
 		*summary = kl_tr("The installed system does not start");
+		if (app->fail_step[0] == '\0')
+			*summary = kl_tr("Nothing was installed");
 		break;
 	default:
 		*title = kl_tr("Done");
