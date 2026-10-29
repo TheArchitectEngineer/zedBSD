@@ -85,6 +85,40 @@
 #define GL_SRC1_ALPHA			0x8589
 #endif
 
+/* Desktop GL 4.0's tessellation (libGL; OpenGL ES 3.1's headers do not have it). */
+#ifndef GL_PATCHES
+#define GL_PATCHES			0x000E
+#endif
+#ifndef GL_TESS_CONTROL_SHADER
+#define GL_PATCH_VERTICES		0x8E72
+#define GL_PATCH_DEFAULT_INNER_LEVEL	0x8E73
+#define GL_PATCH_DEFAULT_OUTER_LEVEL	0x8E74
+#define GL_TESS_CONTROL_OUTPUT_VERTICES	0x8E75
+#define GL_TESS_GEN_MODE		0x8E76
+#define GL_TESS_GEN_SPACING		0x8E77
+#define GL_TESS_GEN_VERTEX_ORDER	0x8E78
+#define GL_TESS_GEN_POINT_MODE		0x8E79
+#define GL_ISOLINES			0x8E7A
+#define GL_FRACTIONAL_ODD		0x8E7B
+#define GL_FRACTIONAL_EVEN		0x8E7C
+#define GL_MAX_PATCH_VERTICES		0x8E7D
+#define GL_MAX_TESS_GEN_LEVEL		0x8E7E
+#define GL_MAX_TESS_CONTROL_UNIFORM_COMPONENTS 0x8E7F
+#define GL_MAX_TESS_EVALUATION_UNIFORM_COMPONENTS 0x8E80
+#define GL_MAX_TESS_CONTROL_TEXTURE_IMAGE_UNITS 0x8E81
+#define GL_MAX_TESS_EVALUATION_TEXTURE_IMAGE_UNITS 0x8E82
+#define GL_MAX_TESS_CONTROL_OUTPUT_COMPONENTS 0x8E83
+#define GL_MAX_TESS_PATCH_COMPONENTS	0x8E84
+#define GL_MAX_TESS_CONTROL_TOTAL_OUTPUT_COMPONENTS 0x8E85
+#define GL_MAX_TESS_EVALUATION_OUTPUT_COMPONENTS 0x8E86
+#define GL_TESS_EVALUATION_SHADER	0x8E87
+#define GL_TESS_CONTROL_SHADER		0x8E88
+#define GL_MAX_TESS_CONTROL_UNIFORM_BLOCKS 0x8E89
+#define GL_MAX_TESS_EVALUATION_UNIFORM_BLOCKS 0x8E8A
+#define GL_MAX_TESS_CONTROL_INPUT_COMPONENTS 0x886C
+#define GL_MAX_TESS_EVALUATION_INPUT_COMPONENTS 0x886D
+#endif
+
 /* Desktop GL 3.0's context state (libGL answers them). */
 #ifndef GL_CONTEXT_FLAGS
 #define GL_CONTEXT_FLAGS	0x821E
@@ -201,6 +235,9 @@
 
 /* Desktop GL 3.2's multisample textures (read by texelFetch of one sample; black as their own kind). */
 #define GLES_SHAPE_MS		6U
+
+/* The most vertices of a patch (gl_MaxPatchVertices, the size of the GLSL compiler's unsized tessellation inputs; at most the device's). */
+#define GLES_MAX_PATCH_VERTICES	32
 
 /* The largest 3D texture side and the most layers of a 2D array texture (at most the device's). */
 #define GLES_MAX_3D_SIZE	2048
@@ -861,6 +898,10 @@ struct gles_program {
 	struct gles_shader *geometry;
 	struct gles_shader *compute;
 
+	/* The tessellation control and evaluation shaders (desktop GL, libGL; both or neither). */
+	struct gles_shader *tess_control;
+	struct gles_shader *tess_evaluation;
+
 	/* The locations glBindAttribLocation gave, by name, for the next link. */
 	char bound_names[GLES_ATTRIBS][GLES_NAME];
 	GLuint bound_locations[GLES_ATTRIBS];
@@ -893,6 +934,22 @@ struct gles_program {
 	GLenum geometry_output;
 	GLint geometry_vertices;
 	VkShaderStageFlags stages;
+
+	/*
+	 * The tessellation stages' modules (VK_NULL_HANDLE without them; the
+	 * evaluation one for a window and for a framebuffer object, which
+	 * rewrite its gl_Position when no geometry stage follows), and the
+	 * layouts as GL names them: the output vertices, the domain, the
+	 * spacing, the vertex order and the point mode.
+	 */
+	VkShaderModule tess_control_module;
+	VkShaderModule tess_evaluation_module;
+	VkShaderModule tess_evaluation_module_fbo;
+	GLint tess_vertices;
+	GLenum tess_mode;
+	GLenum tess_spacing;
+	GLenum tess_order;
+	GLboolean tess_point_mode;
 
 	/* The attributes. */
 	struct gles_attribute attributes[GLES_ATTRIBS];
@@ -1041,7 +1098,7 @@ struct gles_garbage {
 	VkPipeline pipeline;
 	VkPipelineLayout layout;
 	VkDescriptorSetLayout set_layout;
-	VkShaderModule modules[5];
+	VkShaderModule modules[8];
 
 	/* A framebuffer object's render pass and framebuffer. */
 	VkRenderPass pass;
@@ -1132,6 +1189,9 @@ struct gles_raster {
 
 	/* The samples a fragment may cover (desktop GL's GL_SAMPLE_MASK: its value; every sample otherwise). */
 	uint32_t sample_mask;
+
+	/* A patch list's vertices a patch (desktop GL 4.0's tessellation; 0 for another topology). */
+	uint32_t patch_vertices;
 };
 
 /*
@@ -1269,6 +1329,16 @@ struct gles_state {
 	/* Desktop GL's primitive restart (libGL): whether it is on, and the index that restarts (GL_PRIMITIVE_RESTART_INDEX). */
 	int primitive_restart_any;
 	GLuint restart_index;
+
+	/*
+	 * Desktop GL 4.0's tessellation (libGL): a patch's vertices
+	 * (GL_PATCH_VERTICES), and the default levels a program without a
+	 * control shader would take (kept for glGet; such a program does not
+	 * link).
+	 */
+	GLint patch_vertices;
+	GLfloat patch_outer[4];
+	GLfloat patch_inner[2];
 
 	/* Desktop GL's depth clamping, seamless cube maps (always seamless) and provoking vertex (libGL). */
 	int depth_clamp;

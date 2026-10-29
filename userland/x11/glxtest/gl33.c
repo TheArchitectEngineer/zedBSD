@@ -17,7 +17,9 @@
  *   in order, a dual-source blend whose second colour is layout(index =
  *   1), one whose second colour glBindFragDataLocationIndexed gave, a
  *   current attribute value from glVertexAttribP4ui (unsigned) and from
- *   glVertexAttribP3ui (signed), and an RGB10_A2UI texture drawn into.
+ *   glVertexAttribP3ui (signed), an RGB10_A2UI texture drawn into, and
+ *   (when the context names GL_ARB_tessellation_shader; skipped, green,
+ *   otherwise) a quad patch tessellated over the target.
  *
  * The start's checks each print a line; a check whose value is not the
  * expected one fails the run.
@@ -31,7 +33,7 @@
 #include <string.h>
 
 /* The outcomes shown, the side of the framebuffer object, and the attribute locations of the corners and of a colour. */
-#define GL33_OUTCOMES		8U
+#define GL33_OUTCOMES		9U
 #define GL33_SIDE		8
 #define GL33_POSITION		0U
 #define GL33_COLOUR		1U
@@ -143,8 +145,53 @@ static const char gl33_attrib_fragment_source[] =
 
 /* The names of the outcomes. */
 static const char *const gl33_names[GL33_OUTCOMES] = {
-	"version", "time-elapsed", "timestamps", "dual-layout", "dual-bound", "packed-unsigned", "packed-signed", "rgb10-a2ui"
+	"version", "time-elapsed", "timestamps", "dual-layout", "dual-bound", "packed-unsigned", "packed-signed", "rgb10-a2ui",
+	"tessellation"
 };
+
+/* The tessellation shaders: a patch of the square's four corners, its quad domain over them, green. */
+static const char gl33_tess_vertex_source[] =
+	"#version 330 core\n"
+	"layout(location = 0) in vec2 a_position;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"\tgl_Position = vec4(a_position, 0.0, 1.0);\n"
+	"}\n";
+static const char gl33_tess_control_source[] =
+	"#version 330 core\n"
+	"#extension GL_ARB_tessellation_shader : require\n"
+	"layout(vertices = 4) out;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"\tgl_out[gl_InvocationID].gl_Position = gl_in[gl_InvocationID].gl_Position;\n"
+	"\tgl_TessLevelOuter[0] = 3.0;\n"
+	"\tgl_TessLevelOuter[1] = 3.0;\n"
+	"\tgl_TessLevelOuter[2] = 3.0;\n"
+	"\tgl_TessLevelOuter[3] = 3.0;\n"
+	"\tgl_TessLevelInner[0] = 3.0;\n"
+	"\tgl_TessLevelInner[1] = 3.0;\n"
+	"}\n";
+static const char gl33_tess_evaluation_source[] =
+	"#version 330 core\n"
+	"#extension GL_ARB_tessellation_shader : require\n"
+	"layout(quads, equal_spacing, ccw) in;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"\tvec4 below = mix(gl_in[0].gl_Position, gl_in[1].gl_Position, gl_TessCoord.x);\n"
+	"\tvec4 above = mix(gl_in[2].gl_Position, gl_in[3].gl_Position, gl_TessCoord.x);\n"
+	"\tgl_Position = mix(below, above, gl_TessCoord.y);\n"
+	"}\n";
+static const char gl33_green_source[] =
+	"#version 330 core\n"
+	"layout(location = 0) out vec4 o_colour;\n"
+	"\n"
+	"void main()\n"
+	"{\n"
+	"\to_colour = vec4(0.0, 1.0, 0.0, 1.0);\n"
+	"}\n";
 
 static GLuint gl33_program(const char *vertex_source, const char *fragment_source);
 static GLuint gl33_shader(GLenum type, const char *source);
@@ -158,6 +205,7 @@ static void gl33_timestamps(void);
 static void gl33_dual(GLuint program, unsigned outcome, const char *what);
 static void gl33_packed(GLuint program, GLenum type, GLuint value, int four, unsigned outcome, const char *what);
 static void gl33_rgb10_a2ui(void);
+static void gl33_tessellation(void);
 static int gl33_expect(const char *what, long got, long expected);
 
 /*
@@ -230,6 +278,7 @@ glxtest_gl33_start(void)
 	gl33_packed(gl33_attrib, GL_UNSIGNED_INT_2_10_10_10_REV, (3U << 30) | (1023U << 10), 1, 5U, "packed-unsigned");
 	gl33_packed(gl33_attrib_turned, GL_INT_2_10_10_10_REV, 511U, 0, 6U, "packed-signed");
 	gl33_rgb10_a2ui();
+	gl33_tessellation();
 
 	/* The window again, and no error the checks did not expect. */
 	glBindFramebuffer(GL_FRAMEBUFFER, 0U);
@@ -276,15 +325,15 @@ glxtest_gl33_draw(
 		gl33_quad(x, y, 0.2f, 0.25f, rgb);
 	}
 
-	/* The next cell (the first of the third row) with the fixed function, as the compatibility profile keeps it. */
+	/* The next cell (the second of the third row) with the fixed function, as the compatibility profile keeps it. */
 	glBindVertexArray(0U);
 	glUseProgram(0U);
 	glColor3f(0.0f, 1.0f, 0.0f);
 	glBegin(GL_QUADS);
-	glVertex2f(-0.95f, -0.91f);
-	glVertex2f(-0.55f, -0.91f);
-	glVertex2f(-0.55f, -0.41f);
-	glVertex2f(-0.95f, -0.41f);
+	glVertex2f(-0.45f, -0.91f);
+	glVertex2f(-0.05f, -0.91f);
+	glVertex2f(-0.05f, -0.41f);
+	glVertex2f(-0.45f, -0.41f);
 	glEnd();
 }
 
@@ -724,6 +773,93 @@ gl33_rgb10_a2ui(void)
 	glDeleteFramebuffers(1, &framebuffer);
 	glDeleteTextures(1, &texture);
 	gl33_outcomes[7] = passed;
+}
+
+/*
+ * Checks GL_ARB_tessellation_shader when the context names it: the
+ * square's corners as one patch of four vertices, tessellated as a quad
+ * over the red target, make it green; the program's layouts and the
+ * patch's vertices read back.  Skipped (green) without the extension.
+ */
+static void
+gl33_tessellation(void)
+{
+	const char *extensions;
+	const char *found;
+	GLuint program;
+	GLuint shaders[4];
+	GLint value;
+	GLint linked;
+	GLenum error;
+	unsigned got;
+	unsigned index;
+	int passed;
+	char log[512];
+
+	/* Without the extension, nothing to check. */
+	extensions = (const char *)glGetString(GL_EXTENSIONS);
+	found = strstr(extensions, "GL_ARB_tessellation_shader");
+	if (found == NULL) {
+		printf("GLXTEST GL33 tessellation skipped (no GL_ARB_tessellation_shader)\n");
+		gl33_outcomes[8] = 1;
+		return;
+	}
+
+	/* The four stages' program. */
+	shaders[0] = gl33_shader(GL_VERTEX_SHADER, gl33_tess_vertex_source);
+	shaders[1] = gl33_shader(GL_TESS_CONTROL_SHADER, gl33_tess_control_source);
+	shaders[2] = gl33_shader(GL_TESS_EVALUATION_SHADER, gl33_tess_evaluation_source);
+	shaders[3] = gl33_shader(GL_FRAGMENT_SHADER, gl33_green_source);
+	program = glCreateProgram();
+	for (index = 0U; index < 4U; index++) {
+		if (shaders[index] != 0U)
+			glAttachShader(program, shaders[index]);
+	}
+	glLinkProgram(program);
+	linked = GL_FALSE;
+	glGetProgramiv(program, GL_LINK_STATUS, &linked);
+	if (!linked) {
+		log[0] = '\0';
+		glGetProgramInfoLog(program, (GLsizei)sizeof(log), NULL, log);
+		printf("GLXTEST GL33 tessellation link failed: %s\n", log);
+	}
+	passed = gl33_expect("tess-linked", (long)linked, (long)GL_TRUE);
+
+	/* The program's layouts. */
+	value = 0;
+	glGetProgramiv(program, GL_TESS_CONTROL_OUTPUT_VERTICES, &value);
+	passed &= gl33_expect("tess-output-vertices", (long)value, 4L);
+	glGetProgramiv(program, GL_TESS_GEN_MODE, &value);
+	passed &= gl33_expect("tess-mode", (long)value, (long)GL_QUADS);
+
+	/* A triangle draw is refused; a patch of the four corners covers the red target. */
+	gl33_clear(GL33_RED);
+	glUseProgram(program);
+	(void)glGetError();
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+	error = glGetError();
+	passed &= gl33_expect("tess-triangles-refused", (long)error, (long)GL_INVALID_OPERATION);
+	glPatchParameteri(GL_PATCH_VERTICES, 4);
+	glGetIntegerv(GL_PATCH_VERTICES, &value);
+	passed &= gl33_expect("tess-patch-vertices", (long)value, 4L);
+	glDrawArrays(GL_PATCHES, 0, 4);
+	error = glGetError();
+	passed &= gl33_expect("tess-draw-glerror", (long)error, (long)GL_NO_ERROR);
+	got = gl33_read(GL33_SIDE / 2, GL33_SIDE / 2);
+	printf("GLXTEST GL33 tessellation got=%06x\n", got);
+	passed &= gl33_expect("tessellation", (long)got, (long)GL33_GREEN);
+	got = gl33_read(0, 0);
+	passed &= gl33_expect("tessellation-corner", (long)got, (long)GL33_GREEN);
+
+	/* The program and its shaders go. */
+	glPatchParameteri(GL_PATCH_VERTICES, 3);
+	glUseProgram(0U);
+	glDeleteProgram(program);
+	for (index = 0U; index < 4U; index++) {
+		if (shaders[index] != 0U)
+			glDeleteShader(shaders[index]);
+	}
+	gl33_outcomes[8] = passed;
 }
 
 /* Prints one of the start's checks, counting it when the value is not the one expected; returns 1 when it is. */

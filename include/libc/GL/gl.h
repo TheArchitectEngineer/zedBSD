@@ -411,6 +411,26 @@ GLAPI void APIENTRY glVertexAttribP2uiv(GLuint index, GLenum type, GLboolean nor
 GLAPI void APIENTRY glVertexAttribP3uiv(GLuint index, GLenum type, GLboolean normalized, const GLuint *value);
 GLAPI void APIENTRY glVertexAttribP4uiv(GLuint index, GLenum type, GLboolean normalized, const GLuint *value);
 
+/* OpenGL 4.0's tessellation (GL_ARB_tessellation_shader on 3.2 and 3.3 contexts of a device that has it). */
+#define GL_PATCHES			0x000E
+#define GL_PATCH_VERTICES		0x8E72
+#define GL_PATCH_DEFAULT_INNER_LEVEL	0x8E73
+#define GL_PATCH_DEFAULT_OUTER_LEVEL	0x8E74
+#define GL_TESS_CONTROL_OUTPUT_VERTICES	0x8E75
+#define GL_TESS_GEN_MODE		0x8E76
+#define GL_TESS_GEN_SPACING		0x8E77
+#define GL_TESS_GEN_VERTEX_ORDER	0x8E78
+#define GL_TESS_GEN_POINT_MODE		0x8E79
+#define GL_ISOLINES			0x8E7A
+#define GL_FRACTIONAL_ODD		0x8E7B
+#define GL_FRACTIONAL_EVEN		0x8E7C
+#define GL_MAX_PATCH_VERTICES		0x8E7D
+#define GL_MAX_TESS_GEN_LEVEL		0x8E7E
+#define GL_TESS_EVALUATION_SHADER	0x8E87
+#define GL_TESS_CONTROL_SHADER		0x8E88
+GLAPI void APIENTRY glPatchParameteri(GLenum pname, GLint value);
+GLAPI void APIENTRY glPatchParameterfv(GLenum pname, const GLfloat *values);
+
 #ifdef __cplusplus
 }
 #endif

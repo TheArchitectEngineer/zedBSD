@@ -67,6 +67,7 @@ static void gles_blend_buffer(GLenum target, GLuint index, int on);
 static int gles_version_three(struct zegl_context *context);
 static int gles_compute_offered(struct zegl_context *context, const VkPhysicalDeviceLimits *limits);
 static unsigned gles_desktop_integers(struct gles_state *state, GLenum pname, GLint *values);
+static int gles_tess_integers(struct gles_state *state, GLenum pname, GLint *values);
 static unsigned gles_floats(struct zegl_context *context, struct gles_state *state, GLenum pname, GLfloat *values);
 
 /*
@@ -146,6 +147,13 @@ gles_state(
 	state->cull_mode = GL_BACK;
 	state->front_face = GL_CCW;
 	memcpy(state->scissor, context->gles.viewport, sizeof(state->scissor));
+
+	/* Patches of three vertices, default levels of 1 (desktop GL 4.0). */
+	state->patch_vertices = 3;
+	for (index = 0U; index < 4U; index++)
+		state->patch_outer[index] = 1.0f;
+	state->patch_inner[0] = 1.0f;
+	state->patch_inner[1] = 1.0f;
 
 	/* Lines one wide, dithering on, rows aligned to 4. */
 	state->line_width = 1.0f;
@@ -2592,8 +2600,72 @@ gles_desktop_integers(
 		break;
 	}
 
+	/* Desktop GL 4.0's tessellation, on a device that has it. */
+	if (state->display->features.tessellationShader) {
+		count = gles_tess_integers(state, pname, values);
+		return (unsigned)count;
+	}
+
 	/* Not one of desktop GL's. */
 	return 0U;
+}
+
+/* Writes one of desktop GL 4.0's tessellation states and limits (libGL); returns how many values, 0 when the name is not one. */
+static int
+gles_tess_integers(
+	struct gles_state *state,
+	GLenum pname,
+	GLint *values)
+{
+	/* The state asked for, or the device's limit (gl_MaxPatchVertices at most). */
+	switch (pname) {
+	case GL_PATCH_VERTICES:
+		values[0] = state->patch_vertices;
+		return 1;
+	case GL_MAX_PATCH_VERTICES:
+		values[0] = (GLint)state->limits.maxTessellationPatchSize;
+		if (values[0] > GLES_MAX_PATCH_VERTICES)
+			values[0] = GLES_MAX_PATCH_VERTICES;
+		return 1;
+	case GL_MAX_TESS_GEN_LEVEL:
+		values[0] = (GLint)state->limits.maxTessellationGenerationLevel;
+		return 1;
+	case GL_MAX_TESS_CONTROL_UNIFORM_COMPONENTS:
+	case GL_MAX_TESS_EVALUATION_UNIFORM_COMPONENTS:
+		values[0] = 1024;
+		return 1;
+	case GL_MAX_TESS_CONTROL_TEXTURE_IMAGE_UNITS:
+	case GL_MAX_TESS_EVALUATION_TEXTURE_IMAGE_UNITS:
+		values[0] = (GLint)GLES_UNITS;
+		return 1;
+	case GL_MAX_TESS_CONTROL_UNIFORM_BLOCKS:
+	case GL_MAX_TESS_EVALUATION_UNIFORM_BLOCKS:
+		values[0] = (GLint)GLES_STAGE_BLOCKS;
+		return 1;
+	case GL_MAX_TESS_CONTROL_OUTPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationControlPerVertexOutputComponents;
+		return 1;
+	case GL_MAX_TESS_PATCH_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationControlPerPatchOutputComponents;
+		return 1;
+	case GL_MAX_TESS_CONTROL_TOTAL_OUTPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationControlTotalOutputComponents;
+		return 1;
+	case GL_MAX_TESS_EVALUATION_OUTPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationEvaluationOutputComponents;
+		return 1;
+	case GL_MAX_TESS_CONTROL_INPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationControlPerVertexInputComponents;
+		return 1;
+	case GL_MAX_TESS_EVALUATION_INPUT_COMPONENTS:
+		values[0] = (GLint)state->limits.maxTessellationEvaluationInputComponents;
+		return 1;
+	default:
+		break;
+	}
+
+	/* Not one of tessellation's. */
+	return 0;
 }
 
 /*
@@ -2615,6 +2687,75 @@ glPrimitiveRestartIndex(
 
 	/* Succeeded: the index draws compare with. */
 	state->restart_index = index;
+}
+
+/*
+ * Sets a patch's vertices (GL_PATCH_VERTICES) for the draws of patches
+ * (desktop GL 4.0, libGL), at most GL_MAX_PATCH_VERTICES.
+ */
+GL_APICALL void GL_APIENTRY
+glPatchParameteri(
+	GLenum pname,
+	GLint value)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	GLint largest;
+
+	/* A context with its state, on a device with tessellation, and the one parameter. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (gles_fixed == NULL || !state->display->features.tessellationShader || pname != GL_PATCH_VERTICES) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* Between 1 and the most a patch has. */
+	largest = (GLint)state->limits.maxTessellationPatchSize;
+	if (largest > GLES_MAX_PATCH_VERTICES)
+		largest = GLES_MAX_PATCH_VERTICES;
+	if (value <= 0 || value > largest) {
+		gles_error(context, GL_INVALID_VALUE);
+		return;
+	}
+
+	/* Succeeded: the vertices of each patch drawn. */
+	state->patch_vertices = value;
+}
+
+/*
+ * Sets the default outer or inner levels (desktop GL 4.0, libGL): kept
+ * for glGet; a program without a control shader, which would take them,
+ * does not link here.
+ */
+GL_APICALL void GL_APIENTRY
+glPatchParameterfv(
+	GLenum pname,
+	const GLfloat *values)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+
+	/* A context with its state, on a device with tessellation. */
+	context = gles_context();
+	state = gles_state(context);
+	if (state == NULL)
+		return;
+	if (gles_fixed == NULL || !state->display->features.tessellationShader) {
+		gles_error(context, GL_INVALID_ENUM);
+		return;
+	}
+
+	/* The four outer levels, or the two inner ones. */
+	if (pname == GL_PATCH_DEFAULT_OUTER_LEVEL) {
+		memcpy(state->patch_outer, values, sizeof(state->patch_outer));
+	} else if (pname == GL_PATCH_DEFAULT_INNER_LEVEL) {
+		memcpy(state->patch_inner, values, sizeof(state->patch_inner));
+	} else {
+		gles_error(context, GL_INVALID_ENUM);
+	}
 }
 
 /*
@@ -2822,6 +2963,17 @@ gles_floats(
 	case GL_SAMPLE_COVERAGE_INVERT:
 		values[0] = (GLfloat)state->sample_coverage_invert;
 		return 1U;
+	case GL_PATCH_DEFAULT_OUTER_LEVEL:
+		/* Desktop GL 4.0's default levels (libGL). */
+		if (gles_fixed == NULL || !state->display->features.tessellationShader)
+			return 0U;
+		memcpy(values, state->patch_outer, sizeof(state->patch_outer));
+		return 4U;
+	case GL_PATCH_DEFAULT_INNER_LEVEL:
+		if (gles_fixed == NULL || !state->display->features.tessellationShader)
+			return 0U;
+		memcpy(values, state->patch_inner, sizeof(state->patch_inner));
+		return 2U;
 	case GL_ALIASED_LINE_WIDTH_RANGE:
 		values[0] = 1.0f;
 		values[1] = 1.0f;

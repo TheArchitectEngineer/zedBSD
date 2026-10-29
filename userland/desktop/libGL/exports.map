@@ -245,6 +245,8 @@
 		glNormal3fv;
 		glNormalPointer;
 		glOrtho;
+		glPatchParameterfv;
+		glPatchParameteri;
 		glPauseTransformFeedback;
 		glPixelStorei;
 		glPointSize;

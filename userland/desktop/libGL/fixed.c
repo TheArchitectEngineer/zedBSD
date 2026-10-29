@@ -28,9 +28,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* The longest list of the extensions' names, spaces between them, and how many kinds of context have a list of their own. */
-#define FIXED_EXTENSIONS_LENGTH	1024U
-#define FIXED_EXTENSION_KINDS	8U
+/* The longest list of the extensions' names, spaces between them, and how many kinds of context keep a list of their own. */
+#define FIXED_EXTENSIONS_LENGTH	2048U
+#define FIXED_EXTENSION_KINDS	16U
+
+/* The device features an extension may need (fixed_extension_entry.features, fixed_device_features). */
+#define FIXED_FEATURE_TESSELLATION 0x1U
 
 /* GL's GL_CONTEXT_PROFILE_MASK bits. */
 #define FIXED_CORE_PROFILE	0x1
@@ -39,56 +42,66 @@
 /*
  * One extension an OpenGL 3.x context names (WS068 p031, p033): the ARB
  * extension of something the translation does, the first version whose
- * contexts name it, and whether only a compatibility profile's does
- * (GL_ARB_compatibility, from 3.1).  An OpenGL 1.4 context names OpenGL
- * ES's.
+ * contexts name it, whether only a compatibility profile's does
+ * (GL_ARB_compatibility, from 3.1), and the device features it needs
+ * (FIXED_FEATURE_*).  An OpenGL 1.4 context names OpenGL ES's.
  */
 struct fixed_extension_entry {
 	const char *name;
 	unsigned since;
 	int compatibility;
+	unsigned features;
 };
 
 /* The extensions, by name. */
 static const struct fixed_extension_entry fixed_extensions[] = {
-	{ "GL_ARB_blend_func_extended", 33U, 0 },
-	{ "GL_ARB_compatibility", 31U, 1 },
-	{ "GL_ARB_copy_buffer", 30U, 0 },
-	{ "GL_ARB_depth_buffer_float", 30U, 0 },
-	{ "GL_ARB_depth_clamp", 30U, 0 },
-	{ "GL_ARB_draw_elements_base_vertex", 30U, 0 },
-	{ "GL_ARB_draw_instanced", 30U, 0 },
-	{ "GL_ARB_explicit_attrib_location", 33U, 0 },
-	{ "GL_ARB_framebuffer_object", 30U, 0 },
-	{ "GL_ARB_half_float_vertex", 30U, 0 },
-	{ "GL_ARB_instanced_arrays", 30U, 0 },
-	{ "GL_ARB_map_buffer_range", 30U, 0 },
-	{ "GL_ARB_occlusion_query2", 30U, 0 },
-	{ "GL_ARB_provoking_vertex", 30U, 0 },
-	{ "GL_ARB_sampler_objects", 30U, 0 },
-	{ "GL_ARB_seamless_cube_map", 30U, 0 },
-	{ "GL_ARB_shader_bit_encoding", 33U, 0 },
-	{ "GL_ARB_sync", 30U, 0 },
-	{ "GL_ARB_texture_buffer_object", 30U, 0 },
-	{ "GL_ARB_texture_float", 30U, 0 },
-	{ "GL_ARB_texture_multisample", 32U, 0 },
-	{ "GL_ARB_texture_rectangle", 30U, 0 },
-	{ "GL_ARB_texture_rg", 30U, 0 },
-	{ "GL_ARB_texture_rgb10_a2ui", 33U, 0 },
-	{ "GL_ARB_texture_storage", 30U, 0 },
-	{ "GL_ARB_texture_swizzle", 30U, 0 },
-	{ "GL_ARB_timer_query", 33U, 0 },
-	{ "GL_ARB_uniform_buffer_object", 30U, 0 },
-	{ "GL_ARB_vertex_array_object", 30U, 0 },
-	{ "GL_ARB_vertex_type_2_10_10_10_rev", 33U, 0 }
+	{ "GL_ARB_blend_func_extended", 33U, 0, 0U },
+	{ "GL_ARB_compatibility", 31U, 1, 0U },
+	{ "GL_ARB_copy_buffer", 30U, 0, 0U },
+	{ "GL_ARB_depth_buffer_float", 30U, 0, 0U },
+	{ "GL_ARB_depth_clamp", 30U, 0, 0U },
+	{ "GL_ARB_draw_elements_base_vertex", 30U, 0, 0U },
+	{ "GL_ARB_draw_instanced", 30U, 0, 0U },
+	{ "GL_ARB_explicit_attrib_location", 33U, 0, 0U },
+	{ "GL_ARB_framebuffer_object", 30U, 0, 0U },
+	{ "GL_ARB_half_float_vertex", 30U, 0, 0U },
+	{ "GL_ARB_instanced_arrays", 30U, 0, 0U },
+	{ "GL_ARB_map_buffer_range", 30U, 0, 0U },
+	{ "GL_ARB_occlusion_query2", 30U, 0, 0U },
+	{ "GL_ARB_provoking_vertex", 30U, 0, 0U },
+	{ "GL_ARB_sampler_objects", 30U, 0, 0U },
+	{ "GL_ARB_seamless_cube_map", 30U, 0, 0U },
+	{ "GL_ARB_shader_bit_encoding", 33U, 0, 0U },
+	{ "GL_ARB_sync", 30U, 0, 0U },
+	{ "GL_ARB_tessellation_shader", 32U, 0, FIXED_FEATURE_TESSELLATION },
+	{ "GL_ARB_texture_buffer_object", 30U, 0, 0U },
+	{ "GL_ARB_texture_float", 30U, 0, 0U },
+	{ "GL_ARB_texture_multisample", 32U, 0, 0U },
+	{ "GL_ARB_texture_rectangle", 30U, 0, 0U },
+	{ "GL_ARB_texture_rg", 30U, 0, 0U },
+	{ "GL_ARB_texture_rgb10_a2ui", 33U, 0, 0U },
+	{ "GL_ARB_texture_storage", 30U, 0, 0U },
+	{ "GL_ARB_texture_swizzle", 30U, 0, 0U },
+	{ "GL_ARB_timer_query", 33U, 0, 0U },
+	{ "GL_ARB_uniform_buffer_object", 30U, 0, 0U },
+	{ "GL_ARB_vertex_array_object", 30U, 0, 0U },
+	{ "GL_ARB_vertex_type_2_10_10_10_rev", 33U, 0, 0U }
 };
 
 /*
- * The names a kind of context has (fixed_extension_kind) joined with
- * spaces, each made at its first glGetString(GL_EXTENSIONS) and kept for
- * the process.
+ * The names a kind of context has (its version, profile and device
+ * features) joined with spaces, each made at the first
+ * glGetString(GL_EXTENSIONS) of the kind and kept for the process; a
+ * kind past the last list shares the last.
  */
-static char fixed_extensions_joined[FIXED_EXTENSION_KINDS][FIXED_EXTENSIONS_LENGTH];
+struct fixed_extension_list {
+	unsigned version;
+	GLint profile;
+	unsigned features;
+	char joined[FIXED_EXTENSIONS_LENGTH];
+};
+static struct fixed_extension_list fixed_extension_lists[FIXED_EXTENSION_KINDS];
+static unsigned fixed_extension_list_count;
 
 static int fixed_capability(struct zegl_context *context, GLenum cap, int **flag);
 static struct gles_program *fixed_program(struct zegl_context *context, int *flat);
@@ -100,8 +113,9 @@ static int fixed_extension_count(void);
 static int fixed_core_profile(void);
 static const char *fixed_extension(GLuint index);
 static const GLubyte *fixed_extension_string(void);
-static int fixed_extension_named(const struct fixed_extension_entry *entry, unsigned version, GLint profile);
-static unsigned fixed_extension_kind(unsigned version, GLint profile);
+static int fixed_extension_named(const struct fixed_extension_entry *entry, unsigned version, GLint profile, unsigned features);
+static struct fixed_extension_list *fixed_extension_list(unsigned version, GLint profile, unsigned features);
+static unsigned fixed_device_features(void);
 static struct fixed_state *fixed_new(struct gles_state *state);
 static GLuint fixed_make_program(unsigned which, struct fixed_uniforms *uniforms);
 static GLuint fixed_shader(GLenum type, const uint32_t *code, size_t size);
@@ -1538,6 +1552,7 @@ fixed_extension_count(void)
 {
 	unsigned version;
 	unsigned index;
+	unsigned features;
 	GLint flags;
 	GLint profile;
 	int count;
@@ -1548,11 +1563,12 @@ fixed_extension_count(void)
 	if (version < 30U)
 		return -1;
 
-	/* Those of its version and profile. */
+	/* Those of its version, profile and device. */
 	profile = gl_context_profile();
+	features = fixed_device_features();
 	count = 0;
 	for (index = 0U; index < sizeof(fixed_extensions) / sizeof(fixed_extensions[0]); index++) {
-		named = fixed_extension_named(&fixed_extensions[index], version, profile);
+		named = fixed_extension_named(&fixed_extensions[index], version, profile, features);
 		if (named)
 			count++;
 	}
@@ -1568,6 +1584,7 @@ fixed_extension(
 {
 	unsigned version;
 	unsigned entry;
+	unsigned features;
 	GLint flags;
 	GLint profile;
 	int named;
@@ -1575,8 +1592,9 @@ fixed_extension(
 	/* The index-th of those the context names. */
 	version = gl_context_version(&flags);
 	profile = gl_context_profile();
+	features = fixed_device_features();
 	for (entry = 0U; entry < sizeof(fixed_extensions) / sizeof(fixed_extensions[0]); entry++) {
-		named = fixed_extension_named(&fixed_extensions[entry], version, profile);
+		named = fixed_extension_named(&fixed_extensions[entry], version, profile, features);
 		if (!named)
 			continue;
 		if (index == 0U)
@@ -1592,11 +1610,13 @@ fixed_extension(
 static const GLubyte *
 fixed_extension_string(void)
 {
+	struct fixed_extension_list *list;
 	char *joined;
 	size_t length;
 	size_t used;
 	unsigned version;
 	unsigned index;
+	unsigned features;
 	GLint flags;
 	GLint profile;
 	int named;
@@ -1604,13 +1624,15 @@ fixed_extension_string(void)
 	/* The kind's list. */
 	version = gl_context_version(&flags);
 	profile = gl_context_profile();
-	joined = fixed_extensions_joined[fixed_extension_kind(version, profile)];
+	features = fixed_device_features();
+	list = fixed_extension_list(version, profile, features);
+	joined = list->joined;
 
 	/* Made at the first call. */
 	if (joined[0] == '\0') {
 		used = 0U;
 		for (index = 0U; index < sizeof(fixed_extensions) / sizeof(fixed_extensions[0]); index++) {
-			named = fixed_extension_named(&fixed_extensions[index], version, profile);
+			named = fixed_extension_named(&fixed_extensions[index], version, profile, features);
 			if (!named)
 				continue;
 			length = strlen(fixed_extensions[index].name);
@@ -1630,42 +1652,81 @@ fixed_extension_string(void)
 	return (const GLubyte *)joined;
 }
 
-/* Reports whether a context of a version and profile names an extension. */
+/* Reports whether a context of a version, profile and device features names an extension. */
 static int
 fixed_extension_named(
 	const struct fixed_extension_entry *entry,
 	unsigned version,
-	GLint profile)
+	GLint profile,
+	unsigned features)
 {
-	/* Not before its version, nor a compatibility extension in a core context. */
+	/* Not before its version, nor a compatibility extension in a core context, nor without the device's features. */
 	if (version < entry->since)
 		return 0;
 	if (entry->compatibility && profile == FIXED_CORE_PROFILE)
+		return 0;
+	if ((entry->features & ~features) != 0U)
 		return 0;
 
 	/* Succeeded: named. */
 	return 1;
 }
 
-/* Returns which of the joined lists a context of a version and profile has: by version from 3.0, core profiles apart. */
-static unsigned
-fixed_extension_kind(
+/*
+ * Returns the joined list of a kind of context (its version, profile and
+ * device features): the one made for the kind, else a new empty one, else
+ * (every list taken) the last.
+ */
+static struct fixed_extension_list *
+fixed_extension_list(
 	unsigned version,
-	GLint profile)
+	GLint profile,
+	unsigned features)
 {
-	unsigned kind;
+	struct fixed_extension_list *list;
+	unsigned index;
 
-	/* Versions 3.0 to 3.3, then the profile. */
-	kind = 0U;
-	if (version > 30U)
-		kind = (version - 30U) * 2U;
-	if (profile == FIXED_CORE_PROFILE)
-		kind++;
-	if (kind >= FIXED_EXTENSION_KINDS)
-		kind = FIXED_EXTENSION_KINDS - 1U;
+	/* The kind's list made before. */
+	for (index = 0U; index < fixed_extension_list_count; index++) {
+		list = &fixed_extension_lists[index];
+		if (list->version == version && list->profile == profile && list->features == features)
+			return list;
+	}
 
-	/* Succeeded: the kind. */
-	return kind;
+	/* Every list taken: the last serves. */
+	if (fixed_extension_list_count == FIXED_EXTENSION_KINDS)
+		return &fixed_extension_lists[FIXED_EXTENSION_KINDS - 1U];
+
+	/* Succeeded: a new list of the kind, made by the caller. */
+	list = &fixed_extension_lists[fixed_extension_list_count++];
+	list->version = version;
+	list->profile = profile;
+	list->features = features;
+	list->joined[0] = '\0';
+	return list;
+}
+
+/* Returns the device features (FIXED_FEATURE_*) of the current context's device that extensions need. */
+static unsigned
+fixed_device_features(void)
+{
+	struct zegl_context *context;
+	struct gles_state *state;
+	unsigned features;
+
+	/* The current context's state. */
+	context = gles_context();
+	state = gles_state(context);
+	features = 0U;
+	if (state == NULL)
+		return features;
+
+	/* Tessellation shaders. */
+	if (state->display->features.tessellationShader)
+		features |= FIXED_FEATURE_TESSELLATION;
+
+	/* Succeeded: the features. */
+	return features;
 }
 
 /* Frees a context's fixed-function state (its programs go with the context's objects). */
