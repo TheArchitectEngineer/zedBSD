@@ -20,7 +20,7 @@
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
 | P1 | q1662-i10 in-progress | [ws309](ws309/ws.md) p013・p014 cleared（main e554645ca）、p016 → p017 → p018。p015 はユーザーの判断待ち（[phase015](ws309/phase015/phase.md)「要る判断」） | — |
-| P2 | q1686-i01 in-progress | [ws068](ws068/ws.md) p034〜p036 の残りの実装と Venus の試験（q1682 は cleared、main fe49f1d60。試験待ち: agent/p2-ws242・agent/p2-ws217） | — |
+| P2 | q1686-i01 返却 | [ws068](ws068/ws.md) p034・p040〜p044・p046 cleared、残りを p045・p047〜p068 に分けた（main 782237d73）。以後は手の空いた担当が Phase ごとに | — |
 | P3 | q1679-i02 in-progress、q1689-i01 pending | [ws221](ws221/ws.md) p010 の 10GbE の受信（10.0.10.3 を専有）、次に 5330 の USB 2.5G の NCM の driver。終われば返却。VF2 は手放す | 10.0.10.3（専有）、5330 |
 | P4 | q1688-i01 in-progress | [BUG-355](bugs/BUG-355.md)・[BUG-358](bugs/BUG-358.md) UFS の書き込みの遅さを直す → [ws307](ws307/ws.md) p011 の通しを流し直す（ユーザーの指示で p011 は中止） | QEMU |
 | P5 | q1677-i02 返却（実機待ち） | [ws243](ws243/ws.md) p006 は host まで（agent/p5-ws243 fb8d9af77、未 merge）。10.0.10.3 が P3 から空いたら P5 を起動し直し、`rtx-p004.sh … video hang restore` から | 10.0.10.3（P3 の後） |
@@ -156,7 +156,7 @@ BUG-359 · q1690 · WS314 · KL_VERSION 97。使う前に衝突を確かめる�
 | [WS306](ws306/ws.md) | MG006 | GPU の driver の枠組みの「ゲーム最適化」の UAPI（ON/OFF と option の文字列、GPU の名前と driver の版の取得）（2026-10-27 ユーザー） | planning | p001 の設計（使用量が戻ってから） |
 | [WS052](ws052/ws.md) | MG003 | 電源管理（S0ix を 5330 で初めて動かす、modern standby、/dev/system） | incomplete | 再開点 p014（WS300 p002 の後）、並べて p015・p016、約 31 LW |
 | [WS009](ws009/ws.md) | MG001 | 文書 | incomplete（DOC-54 を今書く、2026-10-27 ユーザーの回答「今書く」） | DOC-54（/dev/gpu の UAPI の文書） |
-| [WS068](ws068/ws.md) | MG006 | EGL と OpenGL ES（と desktop GL 3.0〜4.6）を Vulkan と display 拡張の上に実装する（Wayland とディスプレイ直接の両方）（2026-09-26・27 ユーザー指示） | incomplete・継続（空き時間だけ、2026-10-27 ユーザーの回答「継続」） | p037・p034〜p036（GL 3.3〜4.6）、p039 ETC2、p007 規約 |
+| [WS068](ws068/ws.md) | MG006 | EGL と OpenGL ES（と desktop GL 3.0〜4.6）を Vulkan と display 拡張の上に実装する（Wayland とディスプレイ直接の両方）（2026-09-26・27 ユーザー指示） | incomplete・継続（空き時間だけ。受け入れは Venus のみ、2026-10-29 ユーザー） | 次は p045（sample shading、Venus の試験だけ）→ p047〜p068（GL 4.x を分けた物）→ p007 規約 |
 | [WS074](ws074/ws.md) | MG006 | zedBSD の Web ブラウザ `userland/base/zdesktop-browser`（HTML5 の layout engine → 最適化にこだわらない JavaScript engine の接続 → CSS の準拠と Chrome との比較で目標値を段階的に上げる。JS と Wasm の実行 engine を共通化。画像は libpng-compat・新しい libjpeg-compat、TLS は当面 OpenSSL）（2026-09-27 ユーザー指示） | incomplete・継続（Codex のセッション） | WPT Interop 2025 の 100%（ws074-q20261019-55 active） |
 | [WS217](ws217/ws.md) | MG006 | 画面の回転（Settings の Display、縦長で Notes を使う）（2026-10-13 ユーザーの UAT） | incomplete（2026-10-28 ユーザー「WS217 を開き直す」） | p009-1（Intel の PRM）・p009〜p011（scanout の 180°）・p005（複数 head）・p006（pen・touch と display の結び付け）・p012（game の session）→ p007 確かめ・p008 規約。p002a・p002b・p003・p004 は済み |
 | [WS221](ws221/ws.md) | MG005 | Jumbo frame（Ethernet の L2 の大きな MTU、device ごとの上限、IP・TCP の MSS）（2026-10-13 ユーザー） | incomplete（すぐ取り組む物、2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」） | p001 の判断から（p008・p009 は WS220 の旧 p006 tcp_device_mss・p007 を移した物、2026-10-28 ユーザー「WS221 へ移す (推し)」） |
