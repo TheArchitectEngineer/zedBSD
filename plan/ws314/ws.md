@@ -23,6 +23,7 @@
 
 11. 「keiland-programming.mdをレビューしました。まず、コードスニペットがわかりづらかったです。スニペットではなく、完全に動くソースファイル全体をなるべく毎回示すのがいいと思います。また、そのせいでkl_uiの説明がぜんぜん理解できなかったです。kl_buttonのスニペットしか示されていないのに、kl_uiがどういうものであるかを説明していて、これは意味不明でした。kl_uiのサンプル全体をまず示して、その中でkl_buttonがどういう風に使われているのかを示し、全体としてkl_uiやフレーム、immediateモードという概念を、どう使うのかというサンプルから、帰納的に理解しつつ、演繹的な説明を参照できるように、書き換えていきたいです。一方で、Opus 5.5はこのようなドキュメント作成が苦手です。そこで、このようなサンプル全文を提示して帰納的な理解を促しつつ演繹的な説明も行うスタイルを、Opus 5.5がドキュメント概要として設計し、keiland-programming.mdに、ここにこういう説明を入れる、というコメントを入れていってほしいです。そのあとで、Sonnetで書き直しを行います。Sonnetは人間向けの文章が得意だからです。」（2026-10-30）
 12. 「kl_appに、システムの言語の変更を通知するイベントを追加してほしいです。KeilandのリファクタのWSに追加しておいてください。」（2026-10-30）
+13. 「kl_appの言語変更イベントは、変更された言語名も通知するのがいいです。連続する変更が短時間にあると、kl_settingsの読みが最新とは限らないからです。」（2026-10-30、p015 に効く）
 ## 承認された案（2026-10-30 Q1 の提案、上の 7 で承認）
 
 - **app・window への event の post**: thread から呼べる `kl_app_post`（と `kl_window_post`）。Mailer の pipe 2 本を外す。起こす仕組みは platform の層に閉じる。
@@ -50,7 +51,7 @@
 | ws314-p010 | 規約の全文の見直し | planned | p009 |
 | ws314-p011 | 解説の構成の設計（Opus）: 章ごとに完全に動く source の全文を示し、そこから帰納的に分からせ演繹的な説明も引ける構成。keiland-programming.md に「ここにこういう説明を入れる」の comment を入れ、例の全文は compile・実行で確かめる | cleared | p002 |
 | ws314-p012 | 解説の書き直し（Sonnet）: p011 の構成と comment に沿って人間向けの文章に | planned | p011 |
-| ws314-p015 | kl_app に system の言語の変更を知らせる event（`KL_APP_LANGUAGE` の類）を足す。今の kl_settings の読み（kl_settings_dispatch）との関係、translation（kl_tr）の読み直しの手順、解説への記述（p009 と一緒に） | planned | p004 |
+| ws314-p015 | kl_app に system の言語の変更を知らせる event（`KL_APP_LANGUAGE` の類）を足す。event は変わった先の言語の名前（"ja" など）を運ぶ（決定 13）。今の kl_settings の読み（kl_settings_dispatch）との関係、translation（kl_tr）の読み直しの手順、解説への記述（p009 と一緒に） | planned | p004 |
 
 ## Resume point
 
