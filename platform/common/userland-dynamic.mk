@@ -1108,6 +1108,19 @@ $(DYNAMIC_DIR)/libmedia.so: $(DYNAMIC_MEDIA_LIBRARY_OBJS) $(DYNAMIC_DIR)/libc.so
 	$(PYTHON) tools/build/check-dynamic-elf.py --machine $(DYNAMIC_ELF_MACHINE) --role shared-library \
  --needed libc.so --soname libmedia.so $@
 
+# The YOLOX-Nano detector library runs on the CPU or, when a Vulkan loader is there, through it by dlopen; it
+# links the C library alone, and only the calls of <yolox.h> leave it.
+DYNAMIC_YOLOX_LIBRARY_OBJS := $(call ZEDBSD_USERLAND_OBJECTS,$(DYNAMIC_DIR)/obj,libyolox)
+
+$(DYNAMIC_DIR)/libyolox.so: $(DYNAMIC_YOLOX_LIBRARY_OBJS) $(DYNAMIC_DIR)/libc.so \
+	userland/desktop/libyolox/exports.map tools/build/check-dynamic-elf.py
+	$(LD) $(DYNAMIC_LINK_LDFLAGS) -shared -soname libyolox.so --hash-style=both -Bsymbolic-functions \
+ -z defs -z now -z relro -z separate-code -z stack-size=0x100000 \
+ --version-script=userland/desktop/libyolox/exports.map \
+ $(DYNAMIC_YOLOX_LIBRARY_OBJS) -L$(DYNAMIC_DIR) -l:libc.so -o $@
+	$(PYTHON) tools/build/check-dynamic-elf.py --machine $(DYNAMIC_ELF_MACHINE) --role shared-library \
+ --needed libc.so --soname libyolox.so $@
+
 # The Web browser engine (WS074, libbrowser since ws074-p057) keeps its modules in subdirectories of
 # userland/desktop/libbrowser and includes their private headers from that root; it imports standard Vulkan for its
 # GPU renderer (ws074-p014), libtruetype for its text, libjpeg-compat, libpng-compat (with
