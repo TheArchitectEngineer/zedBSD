@@ -25,7 +25,7 @@
 | P4 | q1665-i10 in-progress | [ws307](ws307/ws.md) p011 の通しの試験 → 日本語の画面の撮影、worktree p4-ws307n（試験待ち: agent/p4-ws283） | QEMU |
 | P5 | q1677-i02 in-progress | [ws243](ws243/ws.md) を main に合わせ、RTX 2070 で p004、worktree p5-ws243 | 10.0.10.3（時間の枠） |
 | P6 | q1667-i05 返却 | [ws282](ws282/ws.md) p008〜p011 と [ws284](ws284/ws.md) の build 規則・T2b・p002 の変換を実装（agent/p6-ws282d 212cbdd4a、未 merge、実機は全部未実施）。再開点は ws284 p002 の yolox-nano-weights の package | — |
-| P7 | q1687-i01 in-progress | [ws313](ws313/ws.md) Mali の未対応の残りと p010・p011 の残り、実装だけ（q1675-i05 は返却、main 0b8486f08） | — |
+| P7 | q1687-i01 返却 | [ws313](ws313/ws.md) Mali の残りと Mesa との照合の直しを main に（b6649f09f）。実機未実施。C5 で描画がおかしい時の境目は c08176e6c・db080e110 | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
 main に未 merge の branch は [registry](agents/registry.md) の試験待ちの欄。web の GET は「統合の注意」の条件で可。HAL の差分の承認は無い。
