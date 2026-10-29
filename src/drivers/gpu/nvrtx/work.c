@@ -24,10 +24,10 @@
  *   4. a first submission that binds both classes to their subchannels,
  *      and its fence.
  *
- * Afterwards nvrtx_work_submit() hands a push buffer segment to the channel
- * followed by a fence of the driver's, nvrtx_work_channel_passed() tells
- * whether a fence has passed and nvrtx_work_channel_wait() polls for one,
- * and the map calls write the space's page entries for a run and drop the
+ * Afterwards nvrtx_work_channel_submit() hands a push buffer segment to the
+ * channel followed by a fence of the driver's, nvrtx_work_channel_passed()
+ * tells whether a fence has passed and nvrtx_work_channel_wait() polls for
+ * one, and the map calls write the space's page entries for a run and drop the
  * stale translations.  The stop undoes 3 and 2 before the graphics
  * context's stop.
  *
@@ -206,6 +206,8 @@ nvrtx_work_start(
 	int error;
 
 	nvrtx_stage_mark("work-channel begin");
+
+	/* The driver's channel is the one the work space holds. */
 	driver = &gpu->work.driver;
 
 	/* Each run is timed on the GPU when the boot asks for the counts (nvrtx.vk.perf=1). */
@@ -446,6 +448,7 @@ nvrtx_work_channel_close(
 			return EBUSY;
 		}
 
+		/* The region is given back. */
 		channel->region_made = 0;
 	}
 
@@ -478,6 +481,7 @@ nvrtx_work_channel_look(
 	size_t record;
 	bool passed;
 
+	/* Nothing is known of the channel until it shows an unfinished run. */
 	view->busy = 0;
 	view->oldest_submit_us = 0U;
 	view->started = 0;
@@ -828,6 +832,7 @@ nvrtx_work_channel_submit(
 {
 	uint8_t *slot;
 	uint64_t record_va;
+	uint64_t submitted_us;
 	uint32_t entries[4];
 	uint32_t count;
 	uint32_t index;
@@ -885,11 +890,20 @@ nvrtx_work_channel_submit(
 	/* The fence; the doorbell after the put moved past them all. */
 	slot = (uint8_t *)channel->fences.dma.address + (size_t)entries[count - 1U] * NVRTX_WORK_FENCE_BYTES;
 	slot_length = nvrtx_push_fence(slot, channel->semaphore_va, value);
-	if (error == 0)
-		error = work_ring_put(gpu, channel, entries[count - 1U], channel->fences_va + (uint64_t)entries[count - 1U] * NVRTX_WORK_FENCE_BYTES,
-				      slot_length);
+	if (error == 0) {
+		error = work_ring_put(
+			gpu,
+			channel,
+			entries[count - 1U],
+			channel->fences_va + (uint64_t)entries[count - 1U] * NVRTX_WORK_FENCE_BYTES,
+			slot_length);
+	}
+
+	/* The doorbell, once every entry is on the ring. */
 	if (error == 0)
 		error = work_doorbell(gpu, channel);
+
+	/* Gives up the submission, with the lock released. */
 	if (error != 0) {
 		mutex_unlock(&channel->lock);
 		return error;
@@ -902,7 +916,12 @@ nvrtx_work_channel_submit(
 	 */
 	for (index = 0U; index < count; index++)
 		channel->entry_fence[entries[index]] = value;
-	__atomic_store_n(&channel->submitted_us[value & (NVRTX_WORK_RUN_RECORDS - 1U)], nvrtx_now_us(), __ATOMIC_RELAXED);
+
+	/* The CPU's time of this submission, which the recovery reads to tell how long the run has waited. */
+	submitted_us = nvrtx_now_us();
+	__atomic_store_n(&channel->submitted_us[value & (NVRTX_WORK_RUN_RECORDS - 1U)], submitted_us, __ATOMIC_RELAXED);
+
+	/* The newest fence is published after its time. */
 	__atomic_store_n(&channel->fence, value, __ATOMIC_RELEASE);
 
 	mutex_unlock(&channel->lock);
@@ -1392,8 +1411,11 @@ work_session_region(
 
 	mutex_unlock(&work->lock);
 
+	/* Reports a full space. */
 	if (error != 0)
 		return error;
+
+	/* The region is the channel's, and its close gives it back. */
 	channel->region = region;
 	channel->region_made = 1;
 
@@ -1417,6 +1439,7 @@ work_session_region(
 		if (entries == NULL)
 			return ENOMEM;
 
+		/* Writes them into the space's tables. */
 		nvrtx_mmu_gr_entries_privileged(entries, channel->physical[index], size / NVRTX_GSP_PAGE_SIZE, buffer->read_only);
 		error = work_map_entries(gpu, channel->virtual_address[index], entries, size / NVRTX_GSP_PAGE_SIZE);
 		kern_free(entries);
@@ -1439,6 +1462,7 @@ work_session_region(
 	if (entries == NULL)
 		return ENOMEM;
 
+	/* Writes them into the space's tables. */
 	nvrtx_mmu_gr_entries_system(entries, pages, WORK_DRIVER_PAGES);
 	error = work_map_entries(gpu, channel->ring_va, entries, WORK_DRIVER_PAGES);
 	kern_free(entries);
@@ -1575,6 +1599,7 @@ work_first(
 	uint64_t waited;
 	size_t length;
 	uint32_t fence;
+	uint32_t semaphore;
 	int error;
 
 	/*
@@ -1605,11 +1630,14 @@ work_first(
 		error = nvrtx_work_channel_wait(channel, fence, WORK_FIRST_FENCE_US);
 	if (error != 0) {
 		channel->ready = 0;
+
+		/* Says how far the semaphore got. */
+		semaphore = work_semaphore(channel);
 		nvrtx_stage_mark("work-channel fail: channel %u's first fence %u did not come (%d, semaphore %08x)",
 		    (unsigned)channel->chid,
 		    (unsigned)fence,
 		    error,
-		    (unsigned)work_semaphore(channel));
+		    (unsigned)semaphore);
 		return error;
 	}
 
@@ -1645,6 +1673,7 @@ work_channel_free(
 	int failures;
 	int error;
 
+	/* Counts the resource manager's calls that fail. */
 	failures = 0;
 
 	/* Nothing is submitted from now on. */
@@ -1667,6 +1696,7 @@ work_channel_free(
 		channel->threed_made = 0;
 	}
 
+	/* The compute object. */
 	if (channel->compute_made != 0) {
 		error = nvrtx_rm_free(gpu, channel->handle_compute);
 		if (error != 0)

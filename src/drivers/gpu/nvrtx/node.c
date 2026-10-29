@@ -933,12 +933,14 @@ node_drain(
 
 	/* Takes messages turn after turn; a turn ends when its time is spent, and the stop ends the turns. */
 	for (;;) {
+		/* Holds the GSP's lock through one turn. */
 		nvrtx_rpc_lock(node->gpu);
 
 		error = nvrtx_rpc_wait(node->gpu, NODE_DRAIN_NO_FUNCTION, 0U, NODE_DRAIN_TURN_US, &length);
 
 		nvrtx_rpc_unlock(node->gpu);
 
+		/* A failed turn is followed by a pause. */
 		if (error != 0 && error != ETIMEDOUT)
 			kern_usleep_range(NODE_DRAIN_PAUSE_US, NODE_DRAIN_PAUSE_US);
 

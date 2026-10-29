@@ -394,12 +394,17 @@ display_control(
 	size_t reply_length;
 	int error;
 
-	/* Sends it and copies a reply of this layout back, under the GSP's lock (the reply lies in the one reply buffer). */
+	/* Holds the GSP's lock from the call to the copy of its reply (the reply lies in the one reply buffer). */
 	nvrtx_rpc_lock(gpu);
 
+	/* Sends the control and waits for the reply. */
 	error = nvrtx_rm_control(gpu, client, object, command, params, length, &reply, &reply_length);
+
+	/* A short reply is not this layout. */
 	if (error == 0 && reply_length < length)
 		error = EIO;
+
+	/* Copies the reply back into the parameters while it is still the GSP's last. */
 	if (error == 0)
 		kern_memcpy(params, reply, length);
 

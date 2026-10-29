@@ -78,6 +78,7 @@
 
 bool nvrtx_work_fence_passed(uint32_t seen, uint32_t value);
 size_t nvrtx_work_push_objects(uint8_t *push, uint32_t threed_class, uint32_t compute_class);
+
 /*
  * The states of a channel of the work space (struct nvrtx_work_channel):
  * none before it exists, ready while it takes work, lost once its work

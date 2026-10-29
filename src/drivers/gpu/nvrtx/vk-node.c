@@ -14,14 +14,15 @@
  * and so do these, except nvrtx_vk_node_blob_attach(), which the node
  * calls from a blob's creation and which takes both itself, and
  * nvrtx_vk_node_run_wait(), which the renderer's completer calls without
- * them; nvrtx_vk_gpu_wait() lets the node's lock go while it waits.  Every run is mapped
- * once for the work channel: the VA it gets lives as long as the run.
+ * them; nvrtx_vk_gpu_wait() lets the node's lock go while it waits.  Every
+ * run is mapped once for the work channel: the VA it gets lives as long as
+ * the run.
  *
  * A push buffer is put on the session's channel (its own, or the shared
- * work channel) without waiting for it: the session keeps its newest
- * run's fence, and whatever needs the GPU done
- * with the session's work first (a run of memory given back, a copy by the
- * CPU, vkQueueWaitIdle) waits for it.  A run may take NVRTX_NODE_RUN_US
+ * work channel) without waiting for it: the session keeps its newest run's
+ * fence, and whatever needs the GPU done with the session's work first (a
+ * run of memory given back, a copy by the CPU, vkQueueWaitIdle) waits for
+ * it.  A run may take NVRTX_NODE_RUN_US
  * from its submission (or from the recovery's last stop); one that takes
  * longer wakes the recovery, which stops the channel holding the GPU up,
  * and a run whose channel is stopped loses the session's runs.
@@ -117,6 +118,7 @@ nvrtx_vk_node_blob_attach(
 	/* The memory takes its reference holding the session's executor and the node's lock, as everything the executor holds. */
 	cpu = vk_node_backing_view(node, backing);
 
+	/* Takes the session's executor, then the node's lock. */
 	mutex_lock(&session->exec_lock);
 	mutex_lock(&node->lock);
 
@@ -470,8 +472,10 @@ nvrtx_vk_gpu_wait(
 	if (held != 0)
 		mutex_unlock(&node->lock);
 
+	/* Waits for the run. */
 	error = vk_node_wait(session, ticket->fence, ticket->submitted_us, &waited);
 
+	/* Takes the node's lock back for the rest of the frame. */
 	if (held != 0)
 		mutex_lock(&node->lock);
 
@@ -710,13 +714,21 @@ vk_node_wait(
 		if (left == 0U) {
 			nvrtx_runtime_reaper_wake(node);
 			stopping = __atomic_load_n(&node->reaper_busy, __ATOMIC_ACQUIRE);
-			if (stopping == 0 && now >= since && now - since >= NVRTX_NODE_RUN_LIMIT_US)
+
+			/* The limit is reached and the reaper is not stopping a channel: the run is given up. */
+			if (stopping == 0 &&
+			    now >= since &&
+			    now - since >= NVRTX_NODE_RUN_LIMIT_US)
 				break;
+
 			left = VK_NODE_LATE_SLICE_US;
 		}
 
+		/* Waits one slice for the fence. */
 		error = nvrtx_work_channel_wait_late(session->channel, fence, left, quiet);
 		quiet = 0U;
+
+		/* The fence came. */
 		if (error == 0)
 			break;
 

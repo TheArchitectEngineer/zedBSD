@@ -144,15 +144,21 @@ perf_state(
 	uint32_t number;
 	int error;
 
-	/* The subdevice's current state, its reply read under the GSP's lock (the one reply buffer). */
+	/* Prepares the query for the subdevice's current state. */
 	nvrtx_put32(params, PERF_CURRENT_STATE_AT, 0U);
 	mask = 0U;
 
+	/* Holds the GSP's lock from the call to the read of its reply (the one reply buffer). */
 	nvrtx_rpc_lock(gpu);
 
+	/* Asks the subdevice for its current state. */
 	error = nvrtx_rm_control(gpu, NVRTX_HANDLE_CLIENT, NVRTX_HANDLE_SUBDEVICE, PERF_CTL_CURRENT_STATE, params, sizeof(params), &reply, &reply_length);
+
+	/* A reply too short to hold the mask is no reply. */
 	if (error == 0 && reply_length < PERF_CURRENT_STATE_BYTES)
 		error = EIO;
+
+	/* Reads the mask while the reply is still the GSP's last. */
 	if (error == 0)
 		mask = nvrtx_get32(reply, PERF_CURRENT_STATE_AT);
 

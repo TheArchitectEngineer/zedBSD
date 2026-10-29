@@ -118,6 +118,7 @@ nvrtx_recover_culprit(
 			waited = 1;
 	}
 
+	/* No run has waited long enough: no channel is to blame yet. */
 	if (waited == 0)
 		return -1;
 
@@ -129,15 +130,24 @@ nvrtx_recover_culprit(
 	oldest_us = 0U;
 	for (index = 0U; index < count; index++) {
 		view = &views[index];
+
+		/* A channel with nothing unfinished, or one that may not be stopped, is passed over. */
 		if (view->busy == 0 || view->stoppable == 0)
 			continue;
 
+		/* The channel the engine holds. */
 		if (view->resident != 0)
 			resident = (int)index;
-		if (view->started != 0 && (latest < 0 || view->start_ns > latest_ns)) {
+
+		/* The channel whose run began last. */
+		if (view->started != 0 &&
+		    (latest < 0 ||
+		     view->start_ns > latest_ns)) {
 			latest = (int)index;
 			latest_ns = view->start_ns;
 		}
+
+		/* The channel whose oldest unfinished run was submitted first. */
 		if (oldest < 0 || view->oldest_submit_us < oldest_us) {
 			oldest = (int)index;
 			oldest_us = view->oldest_submit_us;
@@ -173,7 +183,9 @@ nvrtx_recover_kill_state(
 
 	/* Any sign that the GPU no longer runs the channel. */
 	evidence = 0;
-	if (stopped != 0 || reported != 0 || reset != 0)
+	if (stopped != 0 ||
+	    reported != 0 ||
+	    reset != 0)
 		evidence = 1;
 
 	/* Nothing showed it stopped. */
@@ -199,7 +211,9 @@ nvrtx_recover_stopped(
 	int busy)
 {
 	/* A channel the GPU no longer runs, or none. */
-	if (state == NVRTX_WORK_CHANNEL_FREED || state == NVRTX_WORK_CHANNEL_STOPPED || state == NVRTX_WORK_CHANNEL_NONE)
+	if (state == NVRTX_WORK_CHANNEL_FREED ||
+	    state == NVRTX_WORK_CHANNEL_STOPPED ||
+	    state == NVRTX_WORK_CHANNEL_NONE)
 		return true;
 
 	/* A ready channel whose runs have all ended. */

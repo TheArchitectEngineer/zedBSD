@@ -448,6 +448,7 @@ nvrtx_rpc_lock(
 	/* One more thread waits: the drain yields after its turn while any does. */
 	(void)__atomic_add_fetch(&gpu->rpc_wanted, 1U, __ATOMIC_ACQ_REL);
 
+	/* Sleeps until the lock's holder gives it up. */
 	mutex_lock(&gpu->rpc_lock);
 
 	/* The thread holds it and no longer waits. */
@@ -497,6 +498,7 @@ rpc_exchange(
 		return error;
 	}
 
+	/* Any other failure of the wait. */
 	if (error != 0)
 		return error;
 

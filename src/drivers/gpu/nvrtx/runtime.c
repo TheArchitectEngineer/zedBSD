@@ -263,6 +263,7 @@ nvrtx_runtime_start(
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
+	/* Says which thread could not be made. */
 	nvrtx_stage_mark("renderer: no renderer worker, completer or reaper (%d)", error);
 }
 
@@ -305,6 +306,7 @@ nvrtx_runtime_stop(
 			break;
 		}
 
+		/* Gives the reaper a step to finish. */
 		kern_usleep_range(RUNTIME_REAPER_STOP_STEP_US, RUNTIME_REAPER_STOP_STEP_US * 2U);
 	}
 
@@ -350,9 +352,12 @@ nvrtx_runtime_session_close(
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
+	/* An isolated session's channel stays the device's; any other is closed. */
 	error = EBUSY;
 	if (quarantined == 0)
 		error = nvrtx_work_channel_close(node->gpu, channel);
+
+	/* The number is free again only once the channel is gone. */
 	if (error == 0)
 		node->chid_used &= ~(1U << number);
 
@@ -1124,6 +1129,7 @@ runtime_park(
 	} else {
 		lane->parked_tail->next = entry;
 	}
+
 	lane->parked_tail = entry;
 	waitq_wake_one(&lane->parked_more);
 
@@ -1182,6 +1188,7 @@ runtime_reaper(
 	struct nvrtx_node *node;
 	unsigned long enabled;
 	uint64_t observed;
+	uint64_t deadline;
 	int stopping;
 
 	node = argument;
@@ -1191,7 +1198,8 @@ runtime_reaper(
 		enabled = spin_lock_irqsave(&node->queue_lock);
 
 		observed = waitq_sequence(&node->reaper_wake);
-		(void)waitq_sleep(&node->reaper_wake, &node->queue_lock, observed, sched_ticks() + KERN_MS_TO_TICKS(RUNTIME_REAPER_PERIOD_MS), 0U);
+		deadline = sched_ticks() + KERN_MS_TO_TICKS(RUNTIME_REAPER_PERIOD_MS);
+		(void)waitq_sleep(&node->reaper_wake, &node->queue_lock, observed, deadline, 0U);
 		stopping = node->reaper_stop;
 
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
@@ -1200,6 +1208,7 @@ runtime_reaper(
 		if (stopping != 0)
 			continue;
 
+		/* Looks at the channels once. */
 		runtime_reap(node);
 	}
 }
@@ -1237,12 +1246,19 @@ runtime_reap(
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
 	stopping = node->reaper_stop;
-	if (found != 0 && stopping == 0 && node->kills_wanted != 0)
+
+	/* Marks the reaper busy, so the stop for the reboot waits for the stop that follows. */
+	if (found != 0 &&
+	    stopping == 0 &&
+	    node->kills_wanted != 0)
 		__atomic_store_n(&node->reaper_busy, 1, __ATOMIC_RELEASE);
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
-	if (found != 0 && stopping == 0 && node->kills_wanted != 0) {
+	/* Stops the picked channel; when stops are not allowed, remembers that nothing else is picked. */
+	if (found != 0 &&
+	    stopping == 0 &&
+	    node->kills_wanted != 0) {
 		runtime_kill(node, picked);
 		__atomic_store_n(&node->reaper_busy, 0, __ATOMIC_RELEASE);
 	} else if (found != 0) {
@@ -1280,6 +1296,7 @@ runtime_pick(
 	uint32_t index;
 	int culprit;
 
+	/* Nothing is picked yet. */
 	*picked = NULL;
 
 	/* The sessions' channels and the shared one, each with its state; one lost already is stopped first. */
@@ -1295,15 +1312,24 @@ runtime_pick(
 			channels[index] = &node->gpu->work.driver;
 		}
 
+		/* A ready channel may be stopped, unless a stop left one stuck. */
 		views[index].stoppable = 0;
-		if (channels[index] != NULL && channels[index]->state == NVRTX_WORK_CHANNEL_READY && node->recovery_stuck == 0)
+		if (channels[index] != NULL &&
+		    channels[index]->state == NVRTX_WORK_CHANNEL_READY &&
+		    node->recovery_stuck == 0)
 			views[index].stoppable = 1;
-		if (channels[index] != NULL && channels[index]->state == NVRTX_WORK_CHANNEL_LOST && node->kills_wanted != 0 && *picked == NULL)
+
+		/* The first channel already lost is the one to stop, when stops are allowed. */
+		if (channels[index] != NULL &&
+		    channels[index]->state == NVRTX_WORK_CHANNEL_LOST &&
+		    node->kills_wanted != 0 &&
+		    *picked == NULL)
 			*picked = channels[index];
 	}
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
+	/* A channel lost already is stopped before another is looked for. */
 	if (*picked != NULL)
 		return 1;
 
@@ -1319,16 +1345,25 @@ runtime_pick(
 	now = nvrtx_now_us();
 	kill_end = __atomic_load_n(&node->kill_end_us, __ATOMIC_ACQUIRE);
 	culprit = nvrtx_recover_culprit(views, RUNTIME_VIEWS, now, kill_end, NVRTX_NODE_RUN_US);
+
+	/* No run has waited its time: nothing is to be stopped. */
 	if (culprit < 0)
 		return 0;
+
+	/* Asks the engine which busy channel it holds. */
 	for (index = 0U; index < RUNTIME_VIEWS; index++) {
 		if (views[index].busy != 0)
 			views[index].resident = (int)nvrtx_work_channel_resident(node->gpu, channels[index]);
 	}
 
+	/* Picks again with the engine's answer. */
 	culprit = nvrtx_recover_culprit(views, RUNTIME_VIEWS, now, kill_end, NVRTX_NODE_RUN_US);
+
+	/* No channel can be stopped: nothing is picked. */
 	if (culprit < 0)
 		return 0;
+
+	/* The channel to blame. */
 	channel = channels[culprit];
 
 	/* The culprit is lost, once: its session (or the work channel's sessions) answers EIO from now on. */
@@ -1343,6 +1378,7 @@ runtime_pick(
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
+	/* Says what the engine showed of the lost channel. */
 	nvrtx_stage_mark("channel %u lost: its run held the graphics engine (resident %d, started %d)",
 	    (unsigned)channel->chid,
 	    views[culprit].resident,
@@ -1367,7 +1403,9 @@ runtime_kill(
 	struct nvrtx_work_channel *channel)
 {
 	unsigned long enabled;
+	const char *outcome;
 	uint64_t start;
+	uint64_t now;
 	uint64_t spent;
 	uint32_t state;
 	uint32_t rc_type;
@@ -1378,6 +1416,7 @@ runtime_kill(
 	int failures;
 	int error;
 
+	/* The stop's time is counted from here. */
 	start = nvrtx_now_us();
 
 	/* Being stopped. */
@@ -1394,7 +1433,9 @@ runtime_kill(
 		stopped = 1;
 
 	/* Says how long the stop took (the resource manager waits for the preempt). */
-	nvrtx_stage_mark("channel %u: stop answered %d after %u ms", (unsigned)channel->chid, error, (unsigned)((nvrtx_now_us() - start) / 1000U));
+	now = nvrtx_now_us();
+	spent = now - start;
+	nvrtx_stage_mark("channel %u: stop answered %d after %u ms", (unsigned)channel->chid, error, (unsigned)(spent / 1000U));
 
 	/* A stop that failed: the GSP reports the channel's error once it has taken it off (the drain reads the report). */
 	reported = 0;
@@ -1403,9 +1444,14 @@ runtime_kill(
 		if (rc_type != 0U)
 			reported = 1;
 		spent = nvrtx_now_us() - start;
-		if (stopped != 0 || reported != 0 || spent > RUNTIME_REPORT_WAIT_US)
+
+		/* The stop answered, the report came, or the wait is spent. */
+		if (stopped != 0 ||
+		    reported != 0 ||
+		    spent > RUNTIME_REPORT_WAIT_US)
 			break;
 
+		/* Gives the drain the time to read the report. */
 		kern_usleep_range(RUNTIME_REPORT_STEP_US, RUNTIME_REPORT_STEP_US * 2U);
 	}
 
@@ -1417,12 +1463,16 @@ runtime_kill(
 			reset = 1;
 
 		/* Says how long it took with the stop. */
-		nvrtx_stage_mark("channel %u: reset answered %d after %u ms", (unsigned)channel->chid, error, (unsigned)((nvrtx_now_us() - start) / 1000U));
+		now = nvrtx_now_us();
+		spent = now - start;
+		nvrtx_stage_mark("channel %u: reset answered %d after %u ms", (unsigned)channel->chid, error, (unsigned)(spent / 1000U));
 	}
 
 	/* The resource manager frees a channel the GPU no longer runs. */
 	freed = 0;
-	if (stopped != 0 || reported != 0 || reset != 0) {
+	if (stopped != 0 ||
+	    reported != 0 ||
+	    reset != 0) {
 		failures = nvrtx_work_channel_free(node->gpu, channel);
 		if (failures == 0)
 			freed = 1;
@@ -1431,6 +1481,7 @@ runtime_kill(
 	/* What the stop left, and when it ended. */
 	state = nvrtx_recover_kill_state(stopped, reported, reset, freed);
 
+	/* Publishes the channel's state; a stuck channel stops every later pick. */
 	enabled = spin_lock_irqsave(&node->queue_lock);
 
 	channel->state = state;
@@ -1439,7 +1490,9 @@ runtime_kill(
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
-	__atomic_store_n(&node->kill_end_us, nvrtx_now_us(), __ATOMIC_RELEASE);
+	/* The other runs' time counts from now. */
+	now = nvrtx_now_us();
+	__atomic_store_n(&node->kill_end_us, now, __ATOMIC_RELEASE);
 	spent = nvrtx_now_us() - start;
 
 	/* Says how it went. */
@@ -1448,10 +1501,15 @@ runtime_kill(
 		return;
 	}
 
+	/* Says whether the resource manager freed the channel or keeps it. */
+	outcome = ", kept";
+	if (state == NVRTX_WORK_CHANNEL_FREED)
+		outcome = " and freed";
+
 	/* Succeeded: the GPU no longer runs the channel. */
 	nvrtx_stage_mark("channel %u stopped%s (stop %d, report %d, reset %d, %u ms)",
 	    (unsigned)channel->chid,
-	    state == NVRTX_WORK_CHANNEL_FREED ? " and freed" : ", kept",
+	    outcome,
 	    stopped,
 	    reported,
 	    reset,
@@ -1649,6 +1707,7 @@ runtime_channel(
 
 	spin_unlock_irqrestore(&node->queue_lock, enabled);
 
+	/* Refused: the session goes without a channel. */
 	if (refused != 0) {
 		mutex_unlock(&node->channel_lock);
 		return;
@@ -1669,7 +1728,10 @@ runtime_channel(
 	if (error == 0) {
 		node->chid_used |= 1U << (uint32_t)number;
 		node->chid_last = (uint32_t)number;
-	} else if (made != NULL && made->arena_made == 0 && made->region_made == 0 && made->channel_made == 0) {
+	} else if (made != NULL &&
+		   made->arena_made == 0 &&
+		   made->region_made == 0 &&
+		   made->channel_made == 0) {
 		/* Nothing of a failed channel stays: its record goes. */
 		kern_free(made);
 		made = NULL;
@@ -1693,6 +1755,8 @@ runtime_channel(
 		lane_error = runtime_lane_start(&node->lanes[number]);
 		if (lane_error == 0)
 			__atomic_store_n(&session->lane, &node->lanes[number], __ATOMIC_RELEASE);
+
+		/* A lane without threads is told; the main lane serves the session. */
 		if (lane_error != 0)
 			nvrtx_stage_mark("renderer: channel %u's lane has no threads (%d); the main lane serves it", (unsigned)made->chid, lane_error);
 		__atomic_store_n(&session->channel, made, __ATOMIC_RELEASE);
@@ -1733,6 +1797,7 @@ runtime_lane_start(
 	completer->detached = 1;
 	thread_start(completer);
 
+	/* The lane's worker. */
 	error = kthread_create(runtime_worker, lane, SCHED_PRIORITY_DEFAULT, &worker);
 	if (error != 0)
 		return error;
