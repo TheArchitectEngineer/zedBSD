@@ -6,7 +6,10 @@
 #   2. a UDP socket on the board that reads nothing (udp-hold) gets 10 datagrams of 8000 bytes and then 5 of 1000
 #      bytes from the 5330: it holds 2 of the jumbo ones and all the small ones (7, under the socket's 8 datagrams),
 #      and the pool's jumbo packets are all free afterwards (net.tcpstats jumbo_used=0, jumbo_alloc_failures
-#      unchanged).
+#      unchanged);
+#   3. over IPv6 (the 5330's global address on the adapter): ping -s 8952 from the board comes back at 8960 bytes,
+#      ping -s 8953 (a packet of 9001 bytes) is refused on the board (IPv6 makes no fragments) and none goes out, and
+#      the 5330's ping -6 -M do -s 8952 to the board's stable address gets its 3 replies.
 #   plan/ws221/tests/vf2-jumbo.sh [--bin DIR] NAME
 # --bin: ping, ifconfig, sysctl and udp-hold for riscv64 (default build/vf2/bin, plan/ws221/tests/config-vf2-tcp.mk),
 # run from the board's /tmp.  The output is build/ws221-vf2/NAME (plan/tools/fresh-out.sh); the last line is
@@ -91,6 +94,19 @@ echo "$after" | grep -q 'jumbo_used=0 '; check "no jumbo packet left taken" $?
 f0=$(echo "$before" | sed -n 's/.*jumbo_alloc_failures=\([0-9]*\).*/\1/p')
 f1=$(echo "$after" | sed -n 's/.*jumbo_alloc_failures=\([0-9]*\).*/\1/p')
 [ -n "$f0" ] && [ "$f0" = "$f1" ]; check "no jumbo allocation failure ($f0 -> $f1)" $?
+
+# 3. IPv6 jumbo echoes, and the size past the MTU refused.
+peer6=$(peer_run "ip -6 -o addr show dev $peer_if scope global" | awk '!/temporary/ {print $4}' | cut -d/ -f1 | head -1)
+board6=$(board 'ifconfig en0' | awk '/inet6/ && !/temporary/ && !/fe80/ && !/tentative/ {print $2; exit}')
+say "ipv6: board $board6, peer $peer6"
+board_root "/tmp/ping -c 3 -W 3 -s 8952 $peer6" > "$out/ping6.txt"
+grep -c '^8960 bytes from' "$out/ping6.txt" | grep -qx 3; check "ping -s 8952 over IPv6: 3 replies of 8960 bytes" $?
+board_root "/tmp/ping -c 2 -W 2 -s 8953 $peer6" > "$out/ping6-over.txt"
+replies=$(grep -c 'bytes from' "$out/ping6-over.txt")
+say "ping -s 8953 over IPv6: $(grep -v '^\[sudo\]' "$out/ping6-over.txt" | head -2 | tr '\n' ' ')"
+[ "$replies" = 0 ]; check "ping -s 8953 over IPv6: no reply (no fragment made)" $?
+peer_run "ping -6 -c 3 -W 3 -M do -s 8952 $board6" > "$out/peer-ping6.txt"
+grep -q '3 received' "$out/peer-ping6.txt"; check "the 5330's ping -6 -M do -s 8952: 3 replies" $?
 
 [ $status = 0 ] && say "PASS" || say "FAIL"
 exit $status

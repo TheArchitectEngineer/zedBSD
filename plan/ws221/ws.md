@@ -4,7 +4,7 @@
 
 <!-- awesome-plan-current:start -->
 Status: incomplete（すぐ取り組む物。2026-10-27 ユーザー「Jumbo Frameはすぐやるものの一つにします。」）。旧: incomplete・保留（ユーザーの判断待ち）（2026-10-27 P3 の精査 q1608、ユーザー「…masterとWSを修正して、completedやcanceledにしてください。」: p001 第 2 版の設計の後、design-reviewer の review-2 とユーザーの判断 §9 Q1〜Q13…
-Resume point: 2026-10-29 08:5x P3 q1664-i04: p006・p007・p008・p009 cleared（code の末尾 d62b3924f: pool の切り離し・Nagle・IPv6 の PTB・受けの SWS 回避・timeout の後の go-back-N、規約の見直し。VF2 で 1500 は 949、9000 は 990）。次: p011（IPv6 の TCP の試験と直し、Q1 が足した）→ WS311 p001。p010 は WS235 の後。VF2（10.0.30.2）は P3、/boot/boot0/vmunix は d62b3924f の tree（sha256 fd1c4fd1f241165c…）、vmunix.old は fff5467c0 の tree、en0 1500。5330 は 1500 に戻した
+Resume point: 2026-10-29 P3 q1664-i05: p011 cleared（0342c9d89 まで、[phase.md](phase011/phase.md)）。次: WS311 p001（CUBIC の調べと設計）。p010 は WS235 の後。VF2（10.0.30.2）は P3、/boot/boot0/vmunix は 0342c9d89 の tree、vmunix.old は 53080d387 の tree、en0 1500。5330 は 1500 に戻した
 Primary Milestone: MG005
 Related Milestones: なし
 <!-- awesome-plan-current:end -->
@@ -115,4 +115,4 @@ p001 の設計の要点（第 2 版）: QEMU の usb-net（CDC ECM）は descrip
 
 | Phase | 目的 | 状態 | 依存 |
 | --- | --- | --- | --- |
-| p011 | IPv6 の TCP の試験と直し（IPv6 の tcp-perf、実機・QEMU、jumbo、PTB の実地） | planned | p002〜p009 |
+| [p011](phase011/phase.md) | IPv6 の TCP の試験と直し（IPv6 の tcp-perf、実機・QEMU、jumbo、PTB の実地） | cleared（2026-10-29 P3 q1664-i05: 0342c9d89 まで。IPv6 の way の保持（送り 613 → 894〜932、受け 821 → 936.3）、PTB の RFC 8201 の確かめ、RST の後の write の errno、lo0 の NODAD。jumbo・PTB の注入・link-local・QEMU inet6 PASS） | p002〜p009 |

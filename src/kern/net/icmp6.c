@@ -19,6 +19,7 @@
 
 #include "kern/net/net-device.h"
 #include "kern/net/packet-buf.h"
+#include "kern/net/route.h"
 #include "kern/lock.h"
 #include "internal.h"
 #include "wire.h"
@@ -375,7 +376,10 @@ icmp6_echo(
 
 /*
  * Takes a Packet Too Big: the path to the invoking packet's destination
- * has the MTU it gives (never under the minimum), for a while.
+ * has the MTU it gives (never under the minimum), for a while.  Only a
+ * packet this host sent is believed (its source one of the host's own),
+ * and an estimate is never raised by one (RFC 8201 section 4): a larger
+ * MTU than the one learnt leaves it.
  */
 static void
 icmp6_too_big(
@@ -384,12 +388,15 @@ icmp6_too_big(
 	const struct icmp6_wire *message;
 	const struct ipv6_wire *inner;
 	struct in6_addr destination;
+	struct in6_addr source;
 	unsigned long irq;
 	unsigned index;
 	unsigned slot;
 	unsigned mtu;
 	uint64_t now;
+	int lowered;
 	int same;
+	int own;
 
 	/* The message and the start of the packet that was too big. */
 	if (packet->length < sizeof(*message) + sizeof(*inner)) {
@@ -402,9 +409,15 @@ icmp6_too_big(
 	inner = (const struct ipv6_wire *)(packet->data + sizeof(*message));
 	mtu = wire_get32(message->data);
 	kern_memcpy(destination.s6_addr, inner->destination, 16U);
+	kern_memcpy(source.s6_addr, inner->source, 16U);
 	packet_buf_free(packet);
 	if (mtu < IPV6_MINIMUM_MTU)
 		mtu = IPV6_MINIMUM_MTU;
+
+	/* A packet another host sent is not this host's path to learn. */
+	own = ipv6_address_is_local(&source);
+	if (!own)
+		return;
 
 	/* The destination's entry, a free one, or the one that runs out first. */
 	now = ipv6_now_ms();
@@ -423,14 +436,31 @@ icmp6_too_big(
 			slot = index;
 	}
 
+	/* An estimate that is still held and no larger stays as it is. */
+	lowered = 1;
+	same = in6_equal(&icmp6_paths[slot].destination, &destination);
+	if (same && now < icmp6_paths[slot].expires_ms && icmp6_paths[slot].mtu <= mtu)
+		lowered = 0;
+
 	/* The path's MTU, for a while. */
-	icmp6_paths[slot].destination = destination;
-	icmp6_paths[slot].mtu = mtu;
-	icmp6_paths[slot].expires_ms = now + IPV6_PATH_MTU_MS;
+	if (lowered) {
+		icmp6_paths[slot].destination = destination;
+		icmp6_paths[slot].mtu = mtu;
+		icmp6_paths[slot].expires_ms = now + IPV6_PATH_MTU_MS;
+	}
 
 	spin_unlock_irqrestore(&icmp6_lock, irq);
 
-	/* TCP's connections to the destination cut their segments to it (RFC 8201 section 4). */
+	/* Nothing learnt. */
+	if (!lowered)
+		return;
+
+	/*
+	 * What senders kept of the path is looked up again, and TCP's
+	 * connections to the destination cut their segments to it (RFC 8201
+	 * section 4).
+	 */
+	route_changed();
 	tcp6_path_mtu_lowered(&destination, mtu);
 }
 
