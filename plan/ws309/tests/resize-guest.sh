@@ -48,7 +48,7 @@ wait_line() {
 }
 failed=0
 VENUS_DISPLAY=dbus VENUS_OUTPUTS=2 timeout 300 sh plan/ws035/tests/zdesktop-guest.sh start "$image" > "$out/start.log" 2>&1
-g wait > "$out/wait.log" 2>&1 || { echo "resize-guest: the guest did not answer"; failed=1; }
+G_TIMEOUT=300 g wait > "$out/wait.log" 2>&1 || { echo "resize-guest: the guest did not answer"; failed=1; }
 sleep 30
 stop_all='service stop greeter >/dev/null 2>&1; for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[w]lshm" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[w]lshm" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
 if [ $failed = 0 ]; then
