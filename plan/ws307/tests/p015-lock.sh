@@ -35,7 +35,11 @@ if [ $failed -eq 0 ]; then
 	timeout 300 python3 plan/tools/guest/guest.py wait > "$out/guest-wait.txt" 2>&1
 	status=$?
 	note "ssh status=$status"
-	[ $status -eq 0 ] || failed=1
+	if [ $status -ne 0 ]; then
+		# The screen the guest stopped at (QMP screendump), for the analysis.
+		timeout 30 python3 plan/tools/guest/guest.py screenshot "$out/no-ssh.png" > /dev/null 2>&1
+		failed=1
+	fi
 fi
 if [ $failed -eq 0 ]; then
 	timeout 240 python3 plan/tools/aat/aat --qemu wait-log 'KWL READY socket=.* role=normal' --timeout 180 \
@@ -56,10 +60,11 @@ if [ $failed -eq 0 ]; then
 	timeout 2400 python3 plan/ws307/tests/p015-lock.py --outdir "$out" -- --qemu > "$out/items.txt" 2>&1
 	note "items status=$?"
 	if [ -s "$out/verdicts.tsv" ]; then
-		while IFS='	' read -r ident verdict title pictures text seconds scenario; do
-			note "$ident $verdict $text ($seconds s; $pictures)"
-			[ "$verdict" = pass ] || failed=1
-		done < "$out/verdicts.tsv"
+		# The fields are separated by single TABs and may be empty (no pictures), so awk splits them, not read.
+		awk -F '\t' '{ printf "%s %s %s (%s s; %s)\n", $1, $2, $5, $6, $4 }' "$out/verdicts.tsv" | while read -r line; do
+			note "$line"
+		done
+		[ "$(awk -F '\t' '$2 != "pass"' "$out/verdicts.tsv" | wc -l)" -eq 0 ] || failed=1
 	else
 		note "no verdicts"
 		failed=1

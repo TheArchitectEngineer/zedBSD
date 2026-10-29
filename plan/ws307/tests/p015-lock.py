@@ -26,6 +26,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "plan/tools/aat/scenarios"))
 import aatlib  # noqa: E402
+import common  # noqa: E402
 
 run = aatlib.Run.from_command_line("p015")
 
@@ -120,8 +121,11 @@ def locks(item):
 
 
 def after(item):
-	"""Puts the lock back to never after each item."""
+	"""Puts the lock back to never after each item, and tidies as the AAT's helpers do."""
 	run.as_user("/bin/keiland-settings set power.lock 0", wait=True)
+	tidy(item)
 
 
-sys.exit(run.go(after=after))
+# The AAT's own preparation before each item (the applications ended: the first session's Settings shows Welcome).
+tidy = common.after(run)
+sys.exit(run.go(before=common.before(run), after=after))
