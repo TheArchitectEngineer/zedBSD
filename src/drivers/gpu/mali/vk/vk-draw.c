@@ -565,8 +565,10 @@ draw(
 	uint64_t fragment_shader;
 	uint64_t blends;
 	uint64_t depth;
+	uint64_t storage;
 	uint64_t index_address;
 	uint32_t index_bytes;
+	uint32_t tls_bytes;
 	uint32_t index_type;
 	uint32_t flags;
 	uint32_t primitive;
@@ -707,8 +709,20 @@ draw(
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_SPD, position_shader);
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_SPD + 2U, varying_shader);
 	mali_cs_move64(&build->cs, MALI_CS_IDVS_SPD + 4U, fragment_shader);
-	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD, state->storage);
-	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD + 4U, state->storage);
+
+	/* The draw's thread storage: the pass's, or one with the programs' thread local storage. */
+	storage = state->storage;
+	tls_bytes = vertex->tls_bytes;
+	if (fragment->tls_bytes > tls_bytes)
+		tls_bytes = fragment->tls_bytes;
+	if (tls_bytes != 0U) {
+		storage = mali_vk_build_thread_storage(build, tls_bytes);
+		if (storage == 0U)
+			return;
+	}
+
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD, storage);
+	mali_cs_move64(&build->cs, MALI_CS_IDVS_TSD + 4U, storage);
 
 	/* The draw's counts and offsets. */
 	mali_cs_emit(&build->cs, mali_cs_move32(MALI_CS_IDVS_GLOBAL_OFFSET, 0));

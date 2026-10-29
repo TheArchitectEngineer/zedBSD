@@ -265,6 +265,8 @@ file の並び（案）:
   `tests/mali-compiler-model.c` と IR の参照）、`plan/ws313/tests/mali-compiler-desktop-test.sh`（desktop の全 60 module）。
   2026-10-29 両方 PASS（host のみ、GPU の証拠ではない）。
 
+- 2026-10-29（q1675-i03、配下 A2）: cube・cube array、gather・compare（shadow）、storage image（load・store・atomic・size、resource table 4）、TLS への spill（program の `tls_bytes`、driver が TSD に TLS）を compiler と driver に足した。desktop の 60 module の listing は byte まで不変。記録は phase010。
+
 ## 13. render・executor・CS（G6・G8、配下 D、2026-10-29、実機未試験）
 
 記録の本体は [phase011](phase011/phase.md)。ここは形の要点だけ。

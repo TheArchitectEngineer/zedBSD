@@ -47,7 +47,7 @@ ATEST と各 render target への BLEND。
 | cube・cube array の texture | 済み: CUBEFACE1・CUBEFACE2_V9・CUBE_SSEL・CUBE_TSEL、FRCP・FMA.clamp_0_1 で s・t、MUX.bit で face を s の bit 31:29 に、dimension cube | 済み: arrayLayers > 1・CUBE_COMPATIBLE の image（layer を続けて置く）、view の 2D・2D_ARRAY・CUBE・CUBE_ARRAY、texture descriptor（dimension cube、array size = cube の数、plane を layer ごと）、textureSize の cube 数 |
 | gather・compare | 済み: TEX_GATHER（channel bits 15:14）、shadow bit 12 と reference の staging（S T R ARRAY SHADOW OFFSET LOD の順）、compare の TEX_SINGLE は R だけ書く、compare gather | 済み: sampler の compareEnable → compare function（word 1 bits 13..15）、D16_UNORM・D32_SFLOAT を sample だけの format に（depth attachment は無い） |
 | storage image | 済み: LD_TEX_IMM（format の型で f32・s32・u32）、LEA_TEX_IMM と ST_CVT（format の成分数、AUTO）、image の atomic（LEA_TEX_IMM の address に ATOM_RETURN）、imageSize、table 4 | 済み: set layout の STORAGE_IMAGE、table 4 に storage 用の texture descriptor（identity swizzle、LOD 0、plane を layer ごと）、format の STORAGE_IMAGE（・R32_UINT/R32_SINT の ATOMIC）、usage STORAGE、limit |
-| spill | 済み: register が尽きた時、最も遠くまで生きる値を TLS へ STORE.i32（force）、読む所で LOAD.i32。loop の頭で足りなければ loop を通り抜ける値を先に spill（再試行の reserve 0・16・32・64）。program の tls_bytes | compute: 済み（TSD に TLS、`mali_vk_build_thread_storage`）。graphics: draw の TSD は vk-draw.c（D2）なので未。spill する vertex・fragment の pipeline は vk-pipeline.c で拒否（1 行の log） |
+| spill | 済み: register が尽きた時、最も遠くまで生きる値を TLS へ STORE.i32（force）、読む所で LOAD.i32。loop の頭で足りなければ loop を通り抜ける値を先に spill（再試行の reserve 0・16・32・64）。program の tls_bytes | compute: 済み（TSD に TLS、`mali_vk_build_thread_storage`）。graphics: 済み（P7 が vk-draw.c に当て、vk-pipeline.c の拒否を外した。fragment の TLS の読み先は未確認） |
 | FragDepth・SampleMask・UBO の vector load | 未着手（render pass に depth attachment が無く FragDepth は役に立たない。UBO の vector load は最適化だけ） | — |
 
 shader.h の ABI（先頭の comment が本体）に足した物: `MALI_SHADER_TABLE_IMAGES`（4）と `images[]`・`image_count`
@@ -164,6 +164,9 @@ storage image 8。
 
 ## 他への案
 
+- **当てた（2026-10-29、P7）**: 下の vk-draw.c の差分（局所の `vertex`・`fragment` を使う形）と vk-pipeline.c の拒否の削除。graphics の spill も TSD に TLS を持つ。
+  未確認: fragment の program の TLS を GPU が draw の TSD（IDVS の FRAGMENT_TSD）から読むか、FBD の Local Storage から読むか（今の FBD の Local Storage に TLS は無い）。
+  spill する fragment の program が fault したら最初に疑う。desktop の 60 module は spill しない（listing が変わらない）ので今夜の desktop には響かない。
 - vk-draw.c（D2）へ（graphics の spill の TLS、q1675-i03）: draw() の TSD の 2 行を次に替え、`uint64_t storage;` と
   `uint32_t tls_bytes;` を宣言に足す。当てたら vk-pipeline.c の「A draw's thread storage has no local storage」の
   拒否を外す（P7）。
