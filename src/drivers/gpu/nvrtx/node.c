@@ -454,6 +454,36 @@ nvrtx_vk_heap_bytes(
 	return memory->bar1_window - memory->bar1_cpu_from;
 }
 
+/*
+ * Gives the shader model the executor compiles the owner's programs for.
+ */
+uint32_t
+nvrtx_vk_shader_model(
+	void *owner)
+{
+	struct nvrtx_session *session;
+
+	session = owner;
+
+	/* The generation's model from its family record. */
+	return session->node->gpu->identity.chip.profile->sm;
+}
+
+/*
+ * Gives the 3D class the executor's push buffers bind.
+ */
+uint32_t
+nvrtx_vk_threed_class(
+	void *owner)
+{
+	struct nvrtx_session *session;
+
+	session = owner;
+
+	/* The generation's class from its family record. */
+	return session->node->gpu->identity.chip.profile->class_threed;
+}
+
 /* Opens a session: it names its node and has an executor session of its own. */
 static int
 node_open(

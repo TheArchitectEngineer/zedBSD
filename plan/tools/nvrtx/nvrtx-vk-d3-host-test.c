@@ -133,6 +133,24 @@ nvrtx_vk_heap_bytes(void *owner)
 	return 240ULL << 20;
 }
 
+/* The generation the fake owner reports: Turing first, then Ampere and Ada. */
+static uint32_t test_shader_model = 75U;
+static uint32_t test_threed_class = 0xc597U;
+
+uint32_t
+nvrtx_vk_shader_model(void *owner)
+{
+	(void)owner;
+	return test_shader_model;
+}
+
+uint32_t
+nvrtx_vk_threed_class(void *owner)
+{
+	(void)owner;
+	return test_threed_class;
+}
+
 void
 nvrtx_vk_memory_detach(void *owner, void *backing, uint64_t va, uint64_t bytes)
 {
@@ -165,7 +183,7 @@ struct test_run {
 	uint64_t bytes;
 };
 
-static struct test_run runs[16];
+static struct test_run runs[64];
 static unsigned run_count;
 static unsigned gpu_runs;
 static unsigned gpu_draws;
@@ -181,7 +199,7 @@ int
 nvrtx_vk_gpu_alloc(void *owner, uint64_t bytes, void **token, uint8_t **cpu, uint64_t *va)
 {
 	(void)owner;
-	if (run_count >= 16U)
+	if (run_count >= 64U)
 		return ENOMEM;
 	*cpu = calloc(1U, (size_t)bytes);
 	if (*cpu == NULL)
@@ -403,6 +421,19 @@ main(int argc, char **argv)
 	test_views();
 	test_pipeline(argv[1]);
 	test_submit(argv[1]);
+	check(methods_with(0x0000, 0xc597U, 0) >= 1, "submit SM75: the push buffers bind Turing's 3D class");
+
+	/* The same commands for Ampere (SM86) and Ada (SM89): their shader model and their 3D class. */
+	test_shader_model = 86U;
+	test_threed_class = 0xc797U;
+	test_submit(argv[1]);
+	check(methods_with(0x0000, 0xc797U, 0) >= 1 && methods_with(0x0000, 0xc597U, 0) == 0, "submit SM86: the push buffers bind Ampere's 3D class");
+	test_shader_model = 89U;
+	test_threed_class = 0xc997U;
+	test_submit(argv[1]);
+	check(methods_with(0x0000, 0xc997U, 0) >= 1 && methods_with(0x0000, 0xc797U, 0) == 0, "submit SM89: the push buffers bind Ada's 3D class");
+	test_shader_model = 75U;
+	test_threed_class = 0xc597U;
 	test_compositor_shaders();
 	printf("%s nvrtx vk d3: %u checks, %u failures\n", failures == 0 ? "PASS" : "FAIL", checks, failures);
 	return failures == 0 ? 0 : 1;
