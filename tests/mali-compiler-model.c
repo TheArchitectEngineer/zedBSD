@@ -28,9 +28,22 @@
  * modelled as the rasterizer's coverage (bits 15:0 of r61, under the
  * sample number in bits 23:16) less its lowest sample when it has more
  * than one, so reading one for the other shows; ZS_EMIT writes the depth
- * of its first source and passes its coverage through, as ATEST does (an
- * inference from Mesa's lowering, not a documented behaviour).  Nothing
- * here is evidence about the GPU.
+ * of its first source (with its z bit) and the stencil reference of its
+ * second (with its stencil bit) and passes its coverage through, as ATEST
+ * does (an inference from Mesa's lowering, not a documented behaviour).
+ * The sample number in r61 has garbage above its five bits.
+ *
+ * The model's texture reply is a fixed function of what the sample is
+ * given, not a filter: a level or bias (the 8.8 fixed point value in the
+ * low half of its staging register) adds a 1/32 of itself to the second
+ * channel, and a gradient descriptor adds a weighted sum of the
+ * derivatives TEX_GRADIENT was given to the first and third.  The
+ * descriptor's two words are the model's own (the sum, and a token naming
+ * the texture and the dimension), not the hardware's.  The reference
+ * gives the same functions their values from the IR: the level and bias
+ * as Mesa packs them (within 16 levels either way), the derivatives, and
+ * a cube's level from the derivatives by Mesa's lower_gradient_cube_map().
+ * Nothing here is evidence about the GPU.
  */
 
 #include "tests/mali-compiler-model.h"
@@ -76,6 +89,8 @@ static const uint32_t model_immediates[32] = ISA_TABLE_IMMEDIATES;
 #define IMAGES		4U
 #define IMAGE_TEXELS	4096U
 #define CVT_TOKEN	0xC7000000U
+#define GRDESC_TOKEN	0x6D000000U
+#define OFFSETS_NONE	0xFFFFFFFFU
 
 /* The inputs of one trial, shared by the reference and the model. */
 struct trial {
@@ -109,6 +124,8 @@ struct result {
 	uint32_t depth_written;
 	uint32_t sample_mask;
 	uint32_t sample_mask_written;
+	uint32_t stencil;
+	uint32_t stencil_written;
 	uint32_t coverage;
 	uint32_t coverage_tested;
 	int killed;
@@ -131,6 +148,14 @@ static uint32_t cube_face(float x, float y, float z);
 static float cube_select_s(float z, float x, uint32_t face);
 static float cube_select_t(float y, float z, uint32_t face);
 static void message_reply(const uint32_t *texel, int gather, uint32_t channel, int compare, float reference, uint32_t *out);
+static int32_t level_fixed(float level);
+static void apply_level(uint32_t *texel, int32_t fixed);
+static float gradient_sum(const float *derivatives, uint32_t count);
+static void apply_gradient(uint32_t *texel, float sum);
+static void apply_offset(uint32_t *texel, int32_t s, int32_t t, int32_t r);
+static int32_t signed_bits(uint32_t value, uint32_t bits);
+static void apply_ir_offset(uint32_t *texel, uint32_t offset);
+static float cube_gradient_level(const float *p, const float *dpdx, const float *dpdy, uint32_t width);
 static uint32_t image_texel(uint32_t x, uint32_t y, uint32_t layer);
 static uint32_t format_components(uint32_t format);
 static int format_is_integer(uint32_t format);
@@ -347,6 +372,147 @@ message_reply(
 	}
 }
 
+/*
+ * A level or bias as the sampler takes it: 8.8 fixed point, kept within
+ * 16 levels either way.
+ *
+ * Procedure referenced: Mesa 26.2.6
+ * src/panfrost/compiler/pan_nir_lower_tex.c (build_sfixed_8_8).
+ */
+static int32_t
+level_fixed(
+	float level)
+{
+	level = fminf(fmaxf(level / 16.0f, -1.0f), 1.0f);
+	return (int32_t)rintf(level * 16.0f * 256.0f);
+}
+
+/* Adds a level or bias (8.8 fixed point) to a texel: a 1/32 of it to the second channel. */
+static void
+apply_level(
+	uint32_t *texel,
+	int32_t fixed)
+{
+	texel[1] = as_bits(as_float(texel[1]) + (float)fixed / 8192.0f);
+}
+
+/* The model's gradient: the derivatives (dx, dy of each coordinate in turn) weighed by their places. */
+static float
+gradient_sum(
+	const float *derivatives,
+	uint32_t count)
+{
+	uint32_t index;
+	float sum;
+
+	sum = 0.0f;
+	for (index = 0U; index < count; index++)
+		sum += derivatives[index] * (float)(index + 1U) * 0.0625f;
+	return sum;
+}
+
+/* Adds a gradient to a texel: half of it to the first channel, all of it to the third. */
+static void
+apply_gradient(
+	uint32_t *texel,
+	float sum)
+{
+	texel[0] = as_bits(as_float(texel[0]) + sum * 0.5f);
+	texel[2] = as_bits(as_float(texel[2]) + sum);
+}
+
+/*
+ * Adds a constant texel offset (s, t, r) to a texel: each weighed by its
+ * place, to the fourth channel, so a lost, swapped or wrongly signed
+ * component shows.
+ */
+static void
+apply_offset(
+	uint32_t *texel,
+	int32_t s,
+	int32_t t,
+	int32_t r)
+{
+	texel[3] = as_bits(as_float(texel[3]) + (float)(s + 16 * t + 256 * r) / 4096.0f);
+}
+
+/* Gives the low bits of a value as a signed number. */
+static int32_t
+signed_bits(
+	uint32_t value,
+	uint32_t bits)
+{
+	uint32_t sign;
+
+	value &= (1U << bits) - 1U;
+	sign = 1U << (bits - 1U);
+	return (int32_t)(value ^ sign) - (int32_t)sign;
+}
+
+/* Adds the IR's constant texel offset (u in bits 11:8, v in 7:4, r in 3:0) to a texel. */
+static void
+apply_ir_offset(
+	uint32_t *texel,
+	uint32_t offset)
+{
+	apply_offset(texel, signed_bits(offset >> 8, 4U), signed_bits(offset >> 4, 4U), signed_bits(offset, 4U));
+}
+
+/*
+ * The level of a cube sample with derivatives, from the direction p, its
+ * derivatives and the cube's width: the major axis third (z winning a tie
+ * over y, y over x), the face coordinates' derivatives by the quotient
+ * rule, and -1 + log2(L * L * max(|dx|^2, |dy|^2)) / 2.
+ *
+ * Procedure referenced: Mesa 26.2.6 src/compiler/nir/nir_lower_tex.c
+ * (lower_gradient_cube_map).
+ */
+static float
+cube_gradient_level(
+	const float *p,
+	const float *dpdx,
+	const float *dpdy,
+	uint32_t width)
+{
+	static const uint32_t order[3][3] = { { 1U, 2U, 0U }, { 0U, 2U, 1U }, { 0U, 1U, 2U } };
+	const uint32_t *swizzle;
+	float q[3];
+	float qx[3];
+	float qy[3];
+	float recip;
+	float dx[2];
+	float dy[2];
+	float m;
+	float size;
+	uint32_t axis;
+
+	/* Selects the major axis. */
+	swizzle = order[0];
+	if (fabsf(p[2]) >= fmaxf(fabsf(p[0]), fabsf(p[1])))
+		swizzle = order[2];
+	else if (fabsf(p[1]) >= fmaxf(fabsf(p[0]), fabsf(p[2])))
+		swizzle = order[1];
+
+	/* Reorders the direction and its derivatives so the major axis is third. */
+	for (axis = 0U; axis < 3U; axis++) {
+		q[axis] = p[swizzle[axis]];
+		qx[axis] = dpdx[swizzle[axis]];
+		qy[axis] = dpdy[swizzle[axis]];
+	}
+
+	/* The quotient rule. */
+	recip = 1.0f / q[2];
+	for (axis = 0U; axis < 2U; axis++) {
+		dx[axis] = recip * (qx[axis] - q[axis] * recip * qx[2]);
+		dy[axis] = recip * (qy[axis] - q[axis] * recip * qy[2]);
+	}
+
+	/* The level. */
+	m = fmaxf(dx[0] * dx[0] + dx[1] * dx[1], dy[0] * dy[0] + dy[1] * dy[1]);
+	size = (float)width;
+	return -1.0f + 0.5f * log2f(size * size * m);
+}
+
 /* A storage image's texel number in the model's memory. */
 static uint32_t
 image_texel(
@@ -466,8 +632,11 @@ sampled_layer(
 /*
  * The reference's sampler message: the parameters read in the order the
  * IR states (the reference of a compare, the bias or level, the
- * coordinates, the layer; a texel load's u v lod r), the cube's face and
- * coordinates by Vulkan's face selection, the reply as message_reply().
+ * coordinates, each followed by its two derivatives in a sample with
+ * them, the layer; a texel load's u v lod r), the cube's face and
+ * coordinates by Vulkan's face selection, the level or bias and the
+ * gradient as apply_level() and apply_gradient() (a cube's derivatives
+ * as the level of cube_gradient_level()), the reply as message_reply().
  */
 static void
 reference_texture(
@@ -481,6 +650,9 @@ reference_texture(
 	uint32_t message;
 	uint32_t kind;
 	uint32_t first;
+	uint32_t stride;
+	uint32_t coordinates;
+	uint32_t lod_slot;
 	uint32_t component;
 	uint32_t word;
 	uint32_t layer;
@@ -497,10 +669,19 @@ reference_texture(
 	float z;
 	float major;
 	float reference;
+	float derivatives[6];
+	float direction[3];
+	float dpdx[3];
+	float dpdy[3];
+	int gradient;
 
+	/* The SAMPLE operations: u, v and the bias or level after them. */
 	slot = find_texture(program, inst->location, inst->immediate);
 	if (inst->op != DRV_GPU_IR_TEXTURE) {
 		texture_value((uint32_t)slot, as_float(value[inst->src[0]]), as_float(value[inst->src[1]]), texel);
+		apply_ir_offset(texel, inst->component & 0xFFFU);
+		if (inst->op == DRV_GPU_IR_SAMPLE_BIAS || inst->op == DRV_GPU_IR_SAMPLE_LOD)
+			apply_level(texel, level_fixed(as_float(value[inst->src[2]])));
 		return;
 	}
 	message = inst->component & DRV_GPU_IR_TEXTURE_MESSAGE_MASK;
@@ -531,41 +712,85 @@ reference_texture(
 		if (arrayed && inst->src[1] > 3U)
 			layer = value[inst->src[0] + 3U];
 		texel_value((uint32_t)slot, (float)(int32_t)value[inst->src[0]], (float)(int32_t)value[inst->src[0] + 1U], r, layer, 0U, texel);
+		apply_ir_offset(texel, (inst->component >> 8) & 0xFFFU);
 		return;
 	}
 	compare = message == DRV_GPU_IR_TEXTURE_SAMPLE_COMPARE || message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE ||
 		  message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE || message == DRV_GPU_IR_TEXTURE_GATHER4_COMPARE;
 	gather = message == DRV_GPU_IR_TEXTURE_GATHER4 || message == DRV_GPU_IR_TEXTURE_GATHER4_COMPARE;
+	gradient = message == DRV_GPU_IR_TEXTURE_SAMPLE_DERIVS || message == DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE;
+
+	/* A sample with derivatives may compare too. */
+	if (message == DRV_GPU_IR_TEXTURE_SAMPLE_DERIV_COMPARE)
+		compare = 1;
+
+	/* The places of the reference, the level or bias, and the first coordinate. */
 	first = 0U;
 	if (compare)
 		first++;
+	lod_slot = DRV_GPU_IR_TEXTURE_MAX_PARAMS;
 	if (message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD ||
-	    message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE)
+	    message == DRV_GPU_IR_TEXTURE_SAMPLE_BIAS_COMPARE || message == DRV_GPU_IR_TEXTURE_SAMPLE_LOD_COMPARE) {
+		lod_slot = first;
 		first++;
+	}
+
+	/* A coordinate takes three parameters with its derivatives; a cube and a 3D image have three coordinates. */
+	stride = 1U;
+	if (gradient)
+		stride = 3U;
+	coordinates = 2U;
+	if (kind == DRV_GPU_IR_IMAGE_CUBE || kind == DRV_GPU_IR_IMAGE_3D)
+		coordinates = 3U;
+
+	/* Reads the coordinates and the layer, and makes the texel. */
 	reference = compare ? as_float(value[inst->src[0]]) : 0.0f;
 #define PARAM(N) ((N) < inst->src[1] ? as_float(value[inst->src[0] + (N)]) : 0.0f)
 	s = PARAM(first);
-	t = PARAM(first + 1U);
+	t = PARAM(first + stride);
 	r = 0.0f;
 	face = 0U;
 	layer = 0U;
 	if (kind == DRV_GPU_IR_IMAGE_CUBE) {
 		x = s;
 		y = t;
-		z = PARAM(first + 2U);
+		z = PARAM(first + 2U * stride);
 		face = cube_face(x, y, z);
 		major = fmaxf(fabsf(x), fmaxf(fabsf(y), fabsf(z)));
 		s = fminf(fmaxf(cube_select_s(z, x, face) * (0.5f / major) + 0.5f, 0.0f), 1.0f);
 		t = fminf(fmaxf(cube_select_t(y, z, face) * (0.5f / major) + 0.5f, 0.0f), 1.0f);
-		if (arrayed)
-			layer = sampled_layer(PARAM(first + 3U));
 	} else if (kind == DRV_GPU_IR_IMAGE_3D) {
-		r = PARAM(first + 2U);
-	} else if (arrayed) {
-		layer = sampled_layer(PARAM(first + 2U));
+		r = PARAM(first + 2U * stride);
+	}
+
+	/* An array's layer follows the coordinates. */
+	if (arrayed)
+		layer = sampled_layer(PARAM(first + coordinates * stride));
+	texel_value((uint32_t)slot, s, t, r, layer, face, base);
+	apply_ir_offset(base, (inst->component >> 8) & 0xFFFU);
+
+	/* A level or bias changes the texel. */
+	if (lod_slot != DRV_GPU_IR_TEXTURE_MAX_PARAMS)
+		apply_level(base, level_fixed(PARAM(lod_slot)));
+
+	/* So do the derivatives (a cube's as its level). */
+	if (gradient) {
+		/* Reads each coordinate's x and y derivatives. */
+		for (component = 0U; component < coordinates; component++) {
+			direction[component] = PARAM(first + component * stride);
+			dpdx[component] = PARAM(first + component * stride + 1U);
+			dpdy[component] = PARAM(first + component * stride + 2U);
+			derivatives[2U * component] = dpdx[component];
+			derivatives[2U * component + 1U] = dpdy[component];
+		}
+
+		/* A cube's level is computed; the others' derivatives are summed. */
+		if (kind == DRV_GPU_IR_IMAGE_CUBE)
+			apply_level(base, level_fixed(cube_gradient_level(direction, dpdx, dpdy, trial->texture_size[slot & 15][0])));
+		else
+			apply_gradient(base, gradient_sum(derivatives, 2U * coordinates));
 	}
 #undef PARAM
-	texel_value((uint32_t)slot, s, t, r, layer, face, base);
 	message_reply(base, gather, DRV_GPU_IR_TEXTURE_CHANNEL(inst->component), compare, reference, texel);
 }
 
@@ -683,6 +908,8 @@ run_reference(
 				DST(0xFFFFFFFFU);
 			} else if (inst->location == DRV_GPU_SHADER_LOCATION_SAMPLE_MASK) {
 				DST(trial->raster_coverage);
+			} else if (inst->location == DRV_GPU_SHADER_LOCATION_SAMPLE_ID) {
+				DST(trial->sample_id);
 			} else if (inst->location == DRV_GPU_SHADER_LOCATION_FRAG_COORD) {
 				if (inst->component == 0U)
 					FDST((float)trial->frag_x + 0.5f);
@@ -705,6 +932,9 @@ run_reference(
 			} else if (inst->location == DRV_GPU_IR_LOCATION_SAMPLE_MASK) {
 				result->sample_mask = a;
 				result->sample_mask_written = 1U;
+			} else if (inst->location == DRV_GPU_IR_LOCATION_FRAG_STENCIL) {
+				result->stencil = a;
+				result->stencil_written = 1U;
 			} else if (inst->location < 16U && ir->stage == DRV_GPU_STAGE_VERTEX)
 				result->varyings[inst->location][inst->component & 3U] = a;
 			else if (inst->location < 8U && ir->stage == DRV_GPU_STAGE_FRAGMENT) {
@@ -1085,12 +1315,68 @@ exponent_of(
 }
 
 /*
+ * Runs TEX_GRADIENT on the model: the derivatives in its staging
+ * registers (dx, dy of each coordinate of its dimension), which must be
+ * all of them, from registers (derivative_enable), of a handle whose high
+ * word is zero; the descriptor's two words, the model's own, go to the
+ * staging destination: gradient_sum() of the derivatives, and a token of
+ * the texture and the dimension that a sample checks.
+ */
+static int
+model_gradient(
+	struct model *m,
+	uint64_t word,
+	uint32_t dest,
+	uint32_t count)
+{
+	float derivatives[8];
+	uint64_t handle;
+	uint32_t dimension;
+	uint32_t coordinates;
+	uint32_t index;
+	uint32_t out;
+
+	/* Checks the fields: derivatives from registers, two words written, as many derivatives as the dimension has. */
+	dimension = (uint32_t)((word >> 28) & 3U);
+	coordinates = dimension + 1U;
+	handle = read_source64(m, (uint8_t)word, (uint32_t)((word >> 57) & 3U));
+	if (((word >> 15) & 1U) == 0U ||
+	    ((word >> 22) & 0xFU) != 3U ||
+	    ((word >> 36) & 7U) != 1U) {
+		m->result->why = "TEX_GRADIENT without derivatives in registers or not writing two words";
+		return 1;
+	}
+
+	/* A cube's level is computed by the program, not by TEX_GRADIENT. */
+	if (dimension == 3U || count != 2U * coordinates) {
+		m->result->why = "TEX_GRADIENT of a cube, or whose staging count does not match its dimension";
+		return 1;
+	}
+
+	/* The descriptor is of the texture alone. */
+	if ((handle >> 32) != 0U) {
+		m->result->why = "TEX_GRADIENT of a handle with offsets or a level";
+		return 1;
+	}
+
+	/* Makes the descriptor. */
+	for (index = 0U; index < count; index++)
+		derivatives[index] = as_float(m->r[(dest + index) & 63U]);
+	out = (uint32_t)((word >> 16) & 0x3FU);
+	m->r[out] = as_bits(gradient_sum(derivatives, count));
+	m->r[(out + 1U) & 63U] = GRDESC_TOKEN | (dimension << 12) | ((uint32_t)handle & 0x3FFU);
+	return 0;
+}
+
+/*
  * Runs a texture instruction on the model: the staging registers read in
  * the order the instruction's fields imply (s, t, r of a 3D image, the
  * array layer, the compare's reference, the offsets word, the level or
- * bias), which must be all of them; a cube's s carries the face in its
- * top three bits (an inference from Mesa's packing); the reply goes to
- * the write mask's registers in order.
+ * bias, the gradient descriptor's two words), which must be all of them;
+ * a cube's s carries the face in its top three bits (an inference from
+ * Mesa's packing); the level or bias and the gradient change the texel as
+ * apply_level() and apply_gradient(); the reply goes to the write mask's
+ * registers in order.  TEX_GRADIENT runs as model_gradient().
  */
 static int
 model_texture(
@@ -1112,9 +1398,14 @@ model_texture(
 	uint32_t out;
 	uint32_t index;
 	uint32_t slot;
+	uint32_t descriptor;
+	uint32_t offsets;
+	uint32_t narrow;
+	int32_t level;
 	int fetch;
 	int gather;
 	int compare;
+	int levelled;
 	float s;
 	float t;
 	float r;
@@ -1122,6 +1413,10 @@ model_texture(
 
 	for (index = 0U; index < 8U; index++)
 		staging[index] = m->r[(dest + index) & 63U];
+
+	/* TEX_GRADIENT makes a descriptor; the others sample. */
+	if (strcmp(name, "TEX_GRADIENT") == 0)
+		return model_gradient(m, word, dest, count);
 	fetch = strcmp(name, "TEX_FETCH") == 0;
 	gather = strcmp(name, "TEX_GATHER") == 0;
 	if (!fetch && !gather && strcmp(name, "TEX_SINGLE") != 0) {
@@ -1142,10 +1437,25 @@ model_texture(
 		layer = staging[used++];
 	if (compare)
 		reference = as_float(staging[used++]);
+	offsets = OFFSETS_NONE;
 	if (((word >> 11) & 1U) != 0U)
+		offsets = used++;
+
+	/* An explicit level or a bias is 8.8 fixed point in the low half of its register. */
+	levelled = 0;
+	level = 0;
+	if (lod_mode == 4U || lod_mode == 5U) {
+		level = (int32_t)(int16_t)(uint16_t)(staging[used & 7U] & 0xFFFFU);
+		levelled = 1;
 		used++;
-	if (lod_mode == 4U || lod_mode == 5U)
-		used++;
+	}
+
+	/* A gradient descriptor's two words come last. */
+	descriptor = used;
+	if (lod_mode == 6U)
+		used += 2U;
+
+	/* Every staging register is one of these. */
 	if (used != count) {
 		m->result->why = "a texture instruction's staging count does not match its fields";
 		return 1;
@@ -1163,6 +1473,40 @@ model_texture(
 	}
 	slot = m->r[word & 0x3FU] & 0x3FFU;
 	texel_value(slot, s, t, r, layer, face, base);
+
+	/*
+	 * The texel offset: signed bytes s, t, r of the offsets word (its top
+	 * byte a texel load's level), else signed nibbles s, t, r in the
+	 * handle's high word (Mesa's pan_nir_lower_tex.c packs them so); the
+	 * high word's other bits (a narrow level or layer) are not modelled.
+	 */
+	narrow = m->r[((word & 0x3FU) + 1U) & 63U];
+	if ((narrow & ~0xFFFU) != 0U) {
+		m->result->why = "a texture handle with a narrow level or layer";
+		return 1;
+	}
+	if (offsets != OFFSETS_NONE) {
+		if (narrow != 0U) {
+			m->result->why = "a texel offset in both the handle and the offsets word";
+			return 1;
+		}
+		apply_offset(base, signed_bits(staging[offsets & 7U], 8U), signed_bits(staging[offsets & 7U] >> 8, 8U), signed_bits(staging[offsets & 7U] >> 16, 8U));
+	} else {
+		apply_offset(base, signed_bits(narrow, 4U), signed_bits(narrow >> 4, 4U), signed_bits(narrow >> 8, 4U));
+	}
+
+	/* The level or bias changes the texel. */
+	if (levelled)
+		apply_level(base, level);
+
+	/* A gradient descriptor must be the one TEX_GRADIENT made for this texture and dimension. */
+	if (lod_mode == 6U) {
+		if (staging[(descriptor + 1U) & 7U] != (GRDESC_TOKEN | (dimension << 12) | slot)) {
+			m->result->why = "a gradient descriptor TEX_GRADIENT did not make for this texture";
+			return 1;
+		}
+		apply_gradient(base, as_float(staging[descriptor & 7U]));
+	}
 	message_reply(base, gather, (uint32_t)((word >> 14) & 3U), compare, reference, reply);
 
 	/* The reply's components the write mask names, in order from the staging destination. */
@@ -1295,7 +1639,7 @@ run_model(
 	} else {
 		m.r[59] = trial->frag_x | (trial->frag_y << 16);
 		m.r[60] = trial->coverage;
-		m.r[61] = trial->raster_coverage | (trial->sample_id << 16);
+		m.r[61] = trial->raster_coverage | (trial->sample_id << 16) | ((trial->frag_y & 7U) << 21);
 	}
 
 	pc = 0U;
@@ -1631,16 +1975,22 @@ run_model(
 				result->why = "ZS_EMIT before ATEST, twice, or of a coverage ATEST did not write";
 				return;
 			}
-			if (((word >> 24) & 1U) != 0U || ((word >> 25) & 1U) == 0U) {
-				result->why = "ZS_EMIT that writes the stencil or no depth";
+			if (((word >> 24) & 3U) == 0U) {
+				result->why = "ZS_EMIT that writes neither depth nor stencil";
 				return;
 			}
-			result->depth = a;
-			result->depth_written = 1U;
+			if (((word >> 25) & 1U) != 0U) {
+				result->depth = a;
+				result->depth_written = 1U;
+			}
+			if (((word >> 24) & 1U) != 0U) {
+				result->stencil = b;
+				result->stencil_written = 1U;
+			}
 			m.r[dest] = c;
 			m.emitted = 1U;
 		} else if (strcmp(name, "BLEND") == 0) {
-			if (m.tested == 0U || c != m.coverage_out || (program->writes_depth != 0U && m.emitted == 0U)) {
+			if (m.tested == 0U || c != m.coverage_out || ((program->writes_depth != 0U || program->writes_stencil != 0U) && m.emitted == 0U)) {
 				result->why = "BLEND before ATEST or ZS_EMIT, or of a coverage ATEST did not write";
 				return;
 			}
@@ -1752,7 +2102,7 @@ fill_trial(
 	trial->coverage = trial->raster_coverage;
 	if ((trial->raster_coverage & (trial->raster_coverage - 1U)) != 0U)
 		trial->coverage = trial->raster_coverage & (trial->raster_coverage - 1U);
-	trial->sample_id = trial->frag_x % 4U;
+	trial->sample_id = trial->frag_x % 16U;
 }
 
 /* The screen space position the position program must store for a clip space one. */
@@ -1898,6 +2248,12 @@ mali_model_check(
 				    (reference->depth_written != 0U && !close_enough(model->depth, reference->depth))) {
 					printf("FAIL %s: trial %u: depth %08x (written %u), the reference %08x (written %u)\n", name, run,
 					       model->depth, model->depth_written, reference->depth, reference->depth_written);
+					failed = 1;
+				}
+				if (model->stencil_written != reference->stencil_written ||
+				    (reference->stencil_written != 0U && model->stencil != reference->stencil)) {
+					printf("FAIL %s: trial %u: stencil %08x (written %u), the reference %08x (written %u)\n", name, run,
+					       model->stencil, model->stencil_written, reference->stencil, reference->stencil_written);
 					failed = 1;
 				}
 				for (location = 0U; location < 8U; location++) {

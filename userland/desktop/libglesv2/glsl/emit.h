@@ -163,6 +163,7 @@
 #define SPV_DECORATION_CENTROID		16U
 #define SPV_DECORATION_INVARIANT	18U
 #define SPV_DECORATION_LOCATION		30U
+#define SPV_DECORATION_INDEX		32U
 #define SPV_DECORATION_BINDING		33U
 #define SPV_DECORATION_DESCRIPTOR_SET	34U
 #define SPV_DECORATION_OFFSET		35U
@@ -200,6 +201,7 @@
 /* Scopes and memory semantics of the barriers and atomics (ws101-p008). */
 #define SPV_SCOPE_DEVICE		1U
 #define SPV_SCOPE_WORKGROUP		2U
+#define SPV_SCOPE_INVOCATION		4U
 #define SPV_SEMANTICS_ACQUIRE_RELEASE	0x8U
 #define SPV_SEMANTICS_UNIFORM_MEMORY	0x40U
 #define SPV_SEMANTICS_WORKGROUP_MEMORY	0x100U
@@ -223,6 +225,32 @@
 #define SPV_MODE_OUTPUT_LINE_STRIP	28U
 #define SPV_MODE_OUTPUT_TRIANGLE_STRIP	29U
 #define SPV_CAPABILITY_GEOMETRY		2U
+
+/* Tessellation: the capability, the two execution models, their modes, the built-ins and the Patch decoration. */
+#define SPV_CAPABILITY_TESSELLATION	3U
+#define SPV_MODEL_TESS_CONTROL		1U
+#define SPV_MODEL_TESS_EVALUATION	2U
+#define SPV_MODE_SPACING_EQUAL		1U
+#define SPV_MODE_SPACING_FRACTIONAL_EVEN 2U
+#define SPV_MODE_SPACING_FRACTIONAL_ODD	3U
+#define SPV_MODE_VERTEX_ORDER_CW	4U
+#define SPV_MODE_VERTEX_ORDER_CCW	5U
+#define SPV_MODE_POINT_MODE		10U
+#define SPV_MODE_TRIANGLES		22U
+#define SPV_MODE_QUADS			24U
+#define SPV_MODE_ISOLINES		25U
+#define SPV_BUILT_IN_INVOCATION_ID	8U
+#define SPV_BUILT_IN_TESS_LEVEL_OUTER	11U
+#define SPV_BUILT_IN_TESS_LEVEL_INNER	12U
+#define SPV_BUILT_IN_TESS_COORD		13U
+#define SPV_BUILT_IN_PATCH_VERTICES	14U
+#define SPV_DECORATION_PATCH		15U
+
+/* Per-sample shading: the capability and the built-ins. */
+#define SPV_CAPABILITY_SAMPLE_RATE_SHADING 35U
+#define SPV_BUILT_IN_SAMPLE_ID		18U
+#define SPV_BUILT_IN_SAMPLE_POSITION	19U
+#define SPV_BUILT_IN_SAMPLE_MASK	20U
 #define SPV_OP_EMIT_VERTEX		218U
 #define SPV_OP_END_PRIMITIVE		219U
 #define SPV_IMAGE_OPERAND_BIAS		1U
@@ -288,6 +316,8 @@ struct glsl_module {
 	unsigned image_query;
 	unsigned sampled_buffer;
 	unsigned geometry;
+	unsigned tessellation;
+	unsigned sample_rate_shading;
 };
 
 /*

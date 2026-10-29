@@ -93,6 +93,10 @@ mali_vk_command_route(
 	case GPU_OP_CMD_BIND_PIPELINE:
 	case GPU_OP_CMD_SET_VIEWPORT:
 	case GPU_OP_CMD_SET_SCISSOR:
+	case GPU_OP_CMD_SET_DEPTH_BIAS:
+	case GPU_OP_CMD_SET_STENCIL_COMPARE_MASK:
+	case GPU_OP_CMD_SET_STENCIL_WRITE_MASK:
+	case GPU_OP_CMD_SET_STENCIL_REFERENCE:
 	case GPU_OP_CMD_BIND_DESCRIPTOR_SETS:
 	case GPU_OP_CMD_BIND_INDEX_BUFFER:
 	case GPU_OP_CMD_BIND_VERTEX_BUFFERS:
@@ -106,6 +110,7 @@ mali_vk_command_route(
 	case GPU_OP_CMD_COPY_IMAGE_TO_BUFFER:
 	case GPU_OP_CMD_FILL_BUFFER:
 	case GPU_OP_CMD_CLEAR_COLOR_IMAGE:
+	case GPU_OP_CMD_CLEAR_DEPTH_STENCIL_IMAGE:
 	case GPU_OP_CMD_CLEAR_ATTACHMENTS:
 	case GPU_OP_CMD_PIPELINE_BARRIER:
 	case GPU_OP_CMD_PUSH_CONSTANTS:
@@ -606,6 +611,18 @@ decode(
 			}
 		}
 		break;
+	case GPU_OP_CMD_SET_DEPTH_BIAS:
+		/* [constant factor][clamp][slope factor], as float bits */
+		for (index = 0; index < 3U; index++)
+			entry->values[index] = drv_i915_wire_read_u32(reader);
+		break;
+	case GPU_OP_CMD_SET_STENCIL_COMPARE_MASK:
+	case GPU_OP_CMD_SET_STENCIL_WRITE_MASK:
+	case GPU_OP_CMD_SET_STENCIL_REFERENCE:
+		/* [face mask][value] */
+		entry->values[0] = drv_i915_wire_read_u32(reader);
+		entry->values[1] = drv_i915_wire_read_u32(reader);
+		break;
 	case GPU_OP_CMD_BIND_DESCRIPTOR_SETS:
 		/* [bind point][layout][first][count][count][sets][dynamic][dynamic][offsets] */
 		entry->values[0] = drv_i915_wire_read_u32(reader);
@@ -683,6 +700,7 @@ decode(
 	case GPU_OP_CMD_COPY_BUFFER_TO_IMAGE:
 	case GPU_OP_CMD_COPY_IMAGE_TO_BUFFER:
 	case GPU_OP_CMD_CLEAR_COLOR_IMAGE:
+	case GPU_OP_CMD_CLEAR_DEPTH_STENCIL_IMAGE:
 	case GPU_OP_CMD_CLEAR_ATTACHMENTS:
 	case GPU_OP_CMD_BEGIN_RENDER_PASS:
 		error = decode_regions(session, opcode, reader, entry);
@@ -787,7 +805,9 @@ take_data(
  * VkImageCopy, VkImageBlit, VkBufferImageCopy, VkImageSubresourceRange);
  * a clear of attachments keeps, per attachment, [aspect][index][tag]
  * [four words], then the rectangles; a pass's start keeps its clear
- * values as [tag][four words] each.
+ * values as [tag][four words] each.  A clear of a depth and stencil
+ * image keeps its depth's float bits and its stencil in the first two
+ * values (zero when the value is absent).
  */
 static int
 decode_regions(
@@ -800,6 +820,7 @@ decode_regions(
 	uint8_t *regions;
 	uint64_t count;
 	uint64_t rects;
+	uint64_t present;
 	uint64_t index;
 	size_t size;
 	int error;
@@ -843,6 +864,18 @@ decode_regions(
 			return EINVAL;
 		for (index = 0; index < 4U; index++)
 			entry->values[index] = drv_i915_wire_read_u32(reader);
+		size = sizeof(VkImageSubresourceRange);
+	} else if (opcode == GPU_OP_CMD_CLEAR_DEPTH_STENCIL_IMAGE) {
+		/* [image][layout][present][depth][stencil]: the value only when present is one. */
+		error = hold(session, entry, I915_VK_OBJ_IMAGE, drv_i915_wire_read_u64(reader));
+		(void)drv_i915_wire_read_u32(reader);
+		present = drv_i915_wire_read_u64(reader);
+		if (present > 1U)
+			return EINVAL;
+		if (present == 1U) {
+			entry->values[0] = drv_i915_wire_read_u32(reader);
+			entry->values[1] = drv_i915_wire_read_u32(reader);
+		}
 		size = sizeof(VkImageSubresourceRange);
 	} else if (opcode == GPU_OP_CMD_BEGIN_RENDER_PASS) {
 		/* [present][sType][chain][pass][framebuffer][area] */
@@ -916,7 +949,7 @@ decode_regions(
 			i915_vkc_dec_VkImageCopy(reader, &session->arena, (VkImageCopy *)(void *)(regions + index * size));
 		} else if (opcode == GPU_OP_CMD_BLIT_IMAGE) {
 			i915_vkc_dec_VkImageBlit(reader, &session->arena, (VkImageBlit *)(void *)(regions + index * size));
-		} else if (opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE) {
+		} else if (opcode == GPU_OP_CMD_CLEAR_COLOR_IMAGE || opcode == GPU_OP_CMD_CLEAR_DEPTH_STENCIL_IMAGE) {
 			i915_vkc_dec_VkImageSubresourceRange(reader, &session->arena, (VkImageSubresourceRange *)(void *)(regions + index * size));
 		} else {
 			i915_vkc_dec_VkBufferImageCopy(reader, &session->arena, (VkBufferImageCopy *)(void *)(regions + index * size));

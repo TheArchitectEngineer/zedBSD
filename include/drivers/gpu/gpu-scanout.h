@@ -18,12 +18,15 @@
 #define DRV_GPU_BACKING_COHERENT		1U
 #define DRV_GPU_BACKING_DEVICE			2U
 #define DRV_GPU_BACKING_CONTIGUOUS		4U
+#define DRV_GPU_BACKING_UNCACHED		8U
 
 /*
  * Physical pages borrowed from an independently retained source allocation.
  * Pages have page_bytes bytes each; bytes describes the usable allocation.
  * The source guarantees immutable addresses and cache attributes while its
  * exported handle survives. DEVICE denotes MMIO rather than ordinary RAM.
+ * UNCACHED tells that the source maps the RAM without caching, so another
+ * driver writing it with the CPU must map it uncached as well.
  * This view carries no renderer-local IDs and never implies DMA reachability.
  */
 struct drv_gpu_scanout_backing {

@@ -86,6 +86,7 @@ static const struct parse_keyword parse_keywords[] = {
 	{ "restrict", GLSL_K_RESTRICT, GLSL_IN_ES310 },
 	{ "readonly", GLSL_K_READONLY, GLSL_IN_ES310 },
 	{ "writeonly", GLSL_K_WRITEONLY, GLSL_IN_ES310 },
+	{ "patch", GLSL_K_PATCH, GLSL_IN_TESS },
 	{ "attribute", GLSL_K_RESERVED, GLSL_IN_ES300 },
 	{ "varying", GLSL_K_RESERVED, GLSL_IN_ES300 },
 	{ "noperspective", GLSL_K_RESERVED, GLSL_IN_ES300 },
@@ -196,6 +197,8 @@ static void parse_qualifiers(struct glsl_shader *shader, struct glsl_node *type)
 static void parse_layout(struct glsl_shader *shader, struct glsl_node *type);
 static unsigned parse_primitive(const struct glsl_token *token);
 static unsigned parse_local_size(const struct glsl_token *token);
+static unsigned parse_spacing(const struct glsl_token *token);
+static unsigned parse_order(const struct glsl_token *token);
 static int parse_starts_block(struct glsl_shader *shader);
 static struct glsl_node *parse_interface(struct glsl_shader *shader);
 static void parse_type_specifier(struct glsl_shader *shader, struct glsl_node *type);
@@ -665,6 +668,7 @@ parse_is_qualifier(
 	case GLSL_K_RESTRICT:
 	case GLSL_K_READONLY:
 	case GLSL_K_WRITEONLY:
+	case GLSL_K_PATCH:
 		return 1;
 	default:
 		break;
@@ -929,6 +933,9 @@ parse_qualifiers(
 		case GLSL_K_WRITEONLY:
 			type->memory |= GLSL_MEMORY_WRITEONLY;
 			break;
+		case GLSL_K_PATCH:
+			type->patch = 1U;
+			break;
 		case GLSL_K_LAYOUT:
 			parse_layout(shader, type);
 			continue;
@@ -971,10 +978,15 @@ parse_layout(
 	int is_row;
 	int is_column;
 	int is_location;
+	int is_index;
 	int is_max;
 	int is_std430;
 	int is_binding;
+	int is_vertices;
+	int is_point_mode;
 	int closes;
+	unsigned spacing;
+	unsigned order;
 	unsigned primitive;
 	unsigned axis;
 
@@ -995,9 +1007,14 @@ parse_layout(
 		is_row = glsl_token_is(token, "row_major");
 		is_column = glsl_token_is(token, "column_major");
 		is_location = glsl_token_is(token, "location");
+		is_index = glsl_token_is(token, "index");
 		is_max = glsl_token_is(token, "max_vertices");
 		is_std430 = glsl_token_is(token, "std430");
 		is_binding = glsl_token_is(token, "binding");
+		is_vertices = glsl_token_is(token, "vertices");
+		is_point_mode = glsl_token_is(token, "point_mode");
+		spacing = parse_spacing(token);
+		order = parse_order(token);
 		axis = parse_local_size(token);
 		primitive = parse_primitive(token);
 		if (axis < 3U) {
@@ -1016,6 +1033,25 @@ parse_layout(
 				glsl_fatal(shader, value->line, "a layout binding must be an integer");
 			type->layout |= GLSL_LAYOUT_BINDING;
 			type->binding = value->integer;
+		} else if (is_vertices) {
+			/* vertices = an integer (a tessellation control shader's output patch). */
+			parse_expect(shader, GLSL_P_ASSIGN, "'='");
+			value = parse_take(shader);
+			if (value->kind != GLSL_TOKEN_INT && value->kind != GLSL_TOKEN_UINT)
+				glsl_fatal(shader, value->line, "vertices must be an integer");
+			type->layout |= GLSL_LAYOUT_VERTICES;
+			type->vertices = value->integer;
+		} else if (spacing != 0U) {
+			/* A tessellation evaluation shader's spacing. */
+			type->layout |= GLSL_LAYOUT_SPACING;
+			type->spacing = spacing;
+		} else if (order != 0U) {
+			/* A tessellation evaluation shader's vertex order. */
+			type->layout |= GLSL_LAYOUT_ORDER;
+			type->order = order;
+		} else if (is_point_mode) {
+			type->layout |= GLSL_LAYOUT_POINT_MODE;
+			type->point_mode = 1U;
 		} else if (is_std430) {
 			type->layout |= GLSL_LAYOUT_STD430;
 		} else if (primitive != GLSL_PRIMITIVE_NONE) {
@@ -1048,6 +1084,14 @@ parse_layout(
 				glsl_fatal(shader, value->line, "a layout location must be an integer");
 			type->layout |= GLSL_LAYOUT_LOCATION;
 			type->location = value->integer;
+		} else if (is_index) {
+			/* index = an integer (desktop GLSL 3.30's dual-source blending). */
+			parse_expect(shader, GLSL_P_ASSIGN, "'='");
+			value = parse_take(shader);
+			if (value->kind != GLSL_TOKEN_INT && value->kind != GLSL_TOKEN_UINT)
+				glsl_fatal(shader, value->line, "a layout index must be an integer");
+			type->layout |= GLSL_LAYOUT_INDEX;
+			type->output_index = value->integer;
 		} else {
 			glsl_error(shader, token->line, "unknown layout qualifier '%.*s'", (int)token->length, token->text);
 		}
@@ -1103,7 +1147,9 @@ parse_primitive(
 		{ "triangles", GLSL_PRIMITIVE_TRIANGLES },
 		{ "triangles_adjacency", GLSL_PRIMITIVE_TRIANGLES_ADJACENCY },
 		{ "line_strip", GLSL_PRIMITIVE_LINE_STRIP },
-		{ "triangle_strip", GLSL_PRIMITIVE_TRIANGLE_STRIP }
+		{ "triangle_strip", GLSL_PRIMITIVE_TRIANGLE_STRIP },
+		{ "quads", GLSL_PRIMITIVE_QUADS },
+		{ "isolines", GLSL_PRIMITIVE_ISOLINES }
 	};
 	unsigned index;
 	int same;
@@ -1117,6 +1163,47 @@ parse_primitive(
 
 	/* Not a primitive. */
 	return GLSL_PRIMITIVE_NONE;
+}
+
+/* Returns the spacing (GLSL_SPACING_*) a tessellation layout qualifier names, 0 for another qualifier. */
+static unsigned
+parse_spacing(
+	const struct glsl_token *token)
+{
+	int same;
+
+	/* equal_spacing, fractional_even_spacing, fractional_odd_spacing. */
+	same = glsl_token_is(token, "equal_spacing");
+	if (same)
+		return GLSL_SPACING_EQUAL;
+	same = glsl_token_is(token, "fractional_even_spacing");
+	if (same)
+		return GLSL_SPACING_FRACTIONAL_EVEN;
+	same = glsl_token_is(token, "fractional_odd_spacing");
+	if (same)
+		return GLSL_SPACING_FRACTIONAL_ODD;
+
+	/* Not a spacing. */
+	return 0U;
+}
+
+/* Returns the vertex order (GLSL_ORDER_*) a tessellation layout qualifier names, 0 for another qualifier. */
+static unsigned
+parse_order(
+	const struct glsl_token *token)
+{
+	int same;
+
+	/* cw or ccw. */
+	same = glsl_token_is(token, "cw");
+	if (same)
+		return GLSL_ORDER_CW;
+	same = glsl_token_is(token, "ccw");
+	if (same)
+		return GLSL_ORDER_CCW;
+
+	/* Not an order. */
+	return 0U;
 }
 
 /*

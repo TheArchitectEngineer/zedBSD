@@ -282,6 +282,8 @@ unsigned
 glsl_version_mask(
 	const struct glsl_shader *shader)
 {
+	unsigned extensions;
+
 	/* OpenGL ES 1.00, 3.00, and 3.10 (everything of 3.00 and its own, ws101-p008). */
 	if (shader->es && shader->version >= GLSL_VERSION_ES310)
 		return GLSL_IN_ES300 | GLSL_IN_ES310;
@@ -289,6 +291,25 @@ glsl_version_mask(
 		return GLSL_IN_ES300;
 	if (shader->es)
 		return GLSL_IN_ES100;
+
+	/* Desktop 4.30 on: everything of 4.00, with OpenGL ES 3.10's compute shaders and shader storage blocks. */
+	if (shader->version >= GLSL_VERSION_430)
+		return GLSL_IN_330 | GLSL_IN_400 | GLSL_IN_TESS | GLSL_IN_SAMPLE | GLSL_IN_ES310;
+
+	/* Desktop 4.00 on: everything of 3.30, with tessellation and per-sample shading. */
+	if (shader->version >= GLSL_VERSION_400)
+		return GLSL_IN_330 | GLSL_IN_400 | GLSL_IN_TESS | GLSL_IN_SAMPLE;
+
+	/* Desktop 1.50 and 3.30 with GL_ARB_tessellation_shader and GL_ARB_sample_shading. */
+	extensions = 0U;
+	if (shader->tessellation)
+		extensions |= GLSL_IN_TESS;
+	if (shader->sample_shading)
+		extensions |= GLSL_IN_SAMPLE;
+	if (extensions != 0U && shader->version == GLSL_VERSION_150)
+		return GLSL_IN_150 | extensions;
+	if (extensions != 0U && shader->version == GLSL_VERSION_330)
+		return GLSL_IN_330 | extensions;
 
 	/* Desktop 1.10 to 3.30. */
 	switch (shader->version) {

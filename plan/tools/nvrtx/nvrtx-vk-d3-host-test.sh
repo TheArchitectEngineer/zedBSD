@@ -26,6 +26,7 @@ cc -std=gnu11 -D_POSIX_C_SOURCE=200809L -DKERN_USER_ABI_LP64 -include time.h -Wa
 	"$src/vk/vk-object.c" "$src/vk/vk-session.c" "$src/vk/vk-stream.c" "$src/vk/vk-dispatch.c" "$src/vk/vk-device.c" \
 	"$src/vk/vk-reply.c" "$src/vk/vk-memory.c" "$src/vk/vk-resource.c" "$src/vk/vk-layout.c" "$src/vk/vk-target.c" "$src/vk/vk-pipeline.c" \
 	"$src/vk/vk-command.c" "$src/vk/vk-record.c" "$src/vk/vk-execute.c" "$src/vk/vk-queue.c" "$src/vk/exec-push.c" "$src/draw-push.c" "$src/wire.c" \
+	"$src/vk/vk-video.c" "$src/vk/vk-video-h264.c" "$src/vk/exec-copy.c" "$src/nvdec-records.c" \
 	"$src/compiler/sm75"/*.c "$repo/src/drivers/gpu/compiler/spirv.c" \
 	"$repo/src/drivers/gpu/compiler/optimize.c" \
 	"$repo/src/drivers/gpu/i915/vk/vk-codec.c" "$repo/userland/desktop/libvulkan/wire.c" "$out/client-codec.c" -lm

@@ -12,8 +12,8 @@
  * src/panfrost/genxml/v10.xml, and the fixed-function blend equations of
  * a replace, a straight alpha blend and a premultiplied one.
  *
- * cc -std=c11 -Wall -Wextra -Werror -Isrc -Iinclude \
- *    tests/mali-vk-desc-host-test.c src/drivers/gpu/mali/vk/vk-desc.c -o <out> && <out>
+ * cc -std=c11 -Wall -Wextra -Werror -Isrc -Iinclude tests/mali-vk-desc-host-test.c \
+ *    src/drivers/gpu/mali/vk/vk-desc.c src/drivers/gpu/mali/vk/vk-surface.c -o <out> && <out>
  */
 
 #include <stdbool.h>
@@ -21,6 +21,7 @@
 #include <stdio.h>
 
 #include "drivers/gpu/mali/vk/vk-desc.h"
+#include "drivers/gpu/mali/vk/vk-surface.h"
 
 /* How many checks failed and ran. */
 static int failures;
@@ -45,7 +46,11 @@ main(void)
 	expect("shader code low", words[2], 0x23456780U);
 	expect("shader code high", words[3], 0x1U);
 	mali_desc_shader(words, MALI_DESC_STAGE_FRAGMENT, 16, 0, 0);
-	expect("shader 32 registers", words[0], 8U | (2U << 4) | (2U << 30));
+	expect("shader 32 registers", words[0], 8U | (2U << 4) | (1U << 8) | (2U << 30));
+	mali_desc_shader(words, MALI_DESC_STAGE_VERTEX, 16, 0, 0);
+	expect("shader position half warps", words[0], 8U | (3U << 4) | (1U << 8) | (2U << 30));
+	mali_desc_shader(words, MALI_DESC_STAGE_VERTEX | MALI_DESC_STAGE_VARYING, 16, 0, 0);
+	expect("shader varying full warps", words[0], 8U | (3U << 4) | (2U << 30));
 
 	/* The storage, a table entry, a buffer. */
 	mali_desc_local_storage(words);
@@ -89,8 +94,10 @@ main(void)
 	equation = mali_desc_blend_equation(1U | (1U << 5) | (3U << 10), 0xf, &supported);
 	expect("min refused", supported, 0);
 	mali_desc_blend(words, true, 0x12345678U, 0xf, 2, 187U << 12);
-	expect("blend word 0", words[0], 1U | (1U << 9));
+	expect("blend word 0", words[0], 1U | (1U << 9) | (1U << 11));
 	expect("blend word 2", words[2], 2U | (3U << 3) | (2U << 16));
+	mali_desc_blend(words, false, 0, 0xf, 0, (237U << 12) | (1U << 20));
+	expect("blend sRGB word 0", words[0], (1U << 9) | (1U << 10) | (1U << 11));
 
 	/* A render target of RGBA8 written linearly, its clear. */
 	target.internal = 1;
@@ -110,7 +117,7 @@ main(void)
 	/* A framebuffer of 1920 by 1080, one target, tiles of 256 pixels, 1 KiB of colour. */
 	mali_desc_framebuffer(words, 1920, 1080, 1, 256, 1024, 0x6000ULL);
 	expect("framebuffer extent", words[8], 1919U | (1079U << 16));
-	expect("framebuffer word 11", words[11], (8U << 9) | (1U << 14) | (1U << 15) | (1U << 24));
+	expect("framebuffer word 11", words[11], (2U << 6) | (8U << 9) | (1U << 14) | (1U << 24));
 	expect("framebuffer tiler", words[14], 0x6000U);
 	expect("framebuffer pointer", mali_desc_framebuffer_pointer(0x7040ULL, 2), 0x7040U | 1U | (1U << 2));
 
@@ -153,6 +160,50 @@ main(void)
 	expect("storage swizzle", words[2], 0x688U);
 	expect("storage layers", words[6], 11);
 
+	/*
+	 * A view of levels 2..5 of a 300 by 17 RGBA8 image: the extent of
+	 * level 2 (75 by 4), four levels (3 at 2:16), the maximum LOD three
+	 * levels (768 in 8.8 at 3:16); for storage one level and no LOD.
+	 */
+	view.dimension = MALI_DESC_DIMENSION_2D;
+	view.pixel = 187U << 12;
+	view.width = mali_surface_extent(300, 2);
+	view.height = mali_surface_extent(17, 2);
+	view.levels = 4;
+	view.array_size = 1;
+	view.swizzle = 0x688U;
+	view.storage = false;
+	view.planes = 0x6000ULL;
+	mali_desc_texture_view(words, &view);
+	expect("levels extent", words[1], 74U | (3U << 16));
+	expect("levels field", words[2], 0x688U | (3U << 16));
+	expect("levels LOD", words[3], 768U << 16);
+	view.storage = true;
+	mali_desc_texture_view(words, &view);
+	expect("levels storage field", words[2], 0x688U);
+	expect("levels storage LOD", words[3], 0);
+
+	/*
+	 * The plane of level 1 of that image's layer 3 at 0x100000: the
+	 * layer's start (3 times the 27840-byte layer) and the level's
+	 * offset (20672), its 640-byte rows, its 5120 bytes, 150 by 8.
+	 */
+	{
+		struct mali_surface_level levels[MALI_SURFACE_LEVELS];
+		uint64_t layer_bytes;
+		uint64_t address;
+
+		layer_bytes = mali_surface_levels(300, 17, 4, 64, 9, levels);
+		expect("plane layer bytes", layer_bytes, 27840);
+		address = 0x100000ULL + 3U * layer_bytes + levels[1].offset;
+		mali_desc_plane(words, 4, address, levels[1].pitch, levels[1].bytes, levels[1].width, levels[1].height);
+		expect("level plane word 0", words[0], 10U | (1U << 4) | (2U << 8) | (2U << 24));
+		expect("level plane size", words[1], 5120);
+		expect("level plane pointer", words[2], 0x100000U + 3U * 27840U + 20672U);
+		expect("level plane row", words[4], 640);
+		expect("level plane extent", words[7], 149U | (7U << 16));
+	}
+
 	/* Thread storage: 256 bytes a thread (16 units, shift 4) at 0x12345000, packed. */
 	expect("tls size 16", mali_desc_tls_size(16), 0);
 	expect("tls size 17", mali_desc_tls_size(17), 1);
@@ -188,8 +239,10 @@ main(void)
 	expect("wls one instance", words[1], 0U | (8U << 8));
 	expect("wls no tls", words[0], 0);
 
-	/* A sampler's compare: less or equal (3) at word 1 bits 13..15. */
-	expect("compare lequal", mali_desc_sampler_compare(3), 3U << 13);
+	/* A sampler's compare at word 1 bits 13..15, the sides exchanged: less or equal (3) is greater or equal (6). */
+	expect("compare lequal", mali_desc_sampler_compare(3), 6U << 13);
+	expect("compare greater", mali_desc_sampler_compare(4), 1U << 13);
+	expect("compare equal", mali_desc_sampler_compare(2), 2U << 13);
 
 	/* The report. */
 	if (failures != 0) {

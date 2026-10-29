@@ -72,6 +72,7 @@ static const struct drv_gpu_share_ops node_share_ops = {
 	node_export,
 	node_release,
 	node_import,
+	NULL,
 	NULL
 };
 

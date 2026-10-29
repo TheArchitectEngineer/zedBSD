@@ -49,6 +49,7 @@ static void check(int condition, const char *what);
 static unsigned wake_bytes(int descriptor);
 static void sleep_ms(unsigned milliseconds);
 static unsigned take_until(struct kwl_lane *lane, int descriptor, unsigned wanted);
+static void *waiter(void *argument);
 
 /* The operations of the test's jobs. */
 static const struct kwl_lane_ops job_ops = { job_run, job_done, job_drop };
@@ -58,6 +59,7 @@ main(void)
 {
 	struct kwl_lane lane;
 	struct test_job *job;
+	pthread_t other;
 	unsigned taken;
 	unsigned index;
 	int pipes[2];
@@ -103,6 +105,23 @@ main(void)
 	check(done_count == 2U, "two run");
 	check(done_order[0] == 100U, "slow first");
 	check(done_order[1] == 202U, "latest of the key");
+
+	/*
+	 * Wait from another thread (the display thread for the present
+	 * thread): it returns once both jobs ran, and takes none of them.
+	 */
+	done_count = 0U;
+	for (index = 0U; index < 2U; index++) {
+		job = job_new(250U + index, 20U);
+		kwl_lane_submit(&lane, &job->lane, &job_ops, 0U);
+	}
+	error = pthread_create(&other, NULL, waiter, &lane);
+	check(error == 0, "waiter");
+	(void)pthread_join(other, NULL);
+	check(kwl_lane_busy(&lane) == 0U, "idle after the wait");
+	check(done_count == 0U, "the wait takes nothing");
+	taken = take_until(&lane, pipes[0], 2U);
+	check(taken == 2U, "two taken after the wait");
 
 	/* Finish: every job given runs, then they are taken. */
 	done_count = 0U;
@@ -306,4 +325,14 @@ take_until(
 		taken += kwl_lane_take(lane, NULL);
 	}
 	return taken;
+}
+
+/* Waits on another thread until the lane has run every job given to it. */
+static void *
+waiter(
+	void *argument)
+{
+	/* The wait. */
+	kwl_lane_wait(argument);
+	return NULL;
 }

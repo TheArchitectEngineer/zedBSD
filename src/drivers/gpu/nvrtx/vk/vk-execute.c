@@ -262,6 +262,8 @@ static int execute_pool_entry(struct nvrtx_vk_execute *execute, const uint32_t *
 static int execute_constants(struct nvrtx_vk_execute *execute, uint8_t **cpu, uint64_t *va);
 static void execute_vertex_input(const struct nvrtx_vk_pipeline *pipeline, const struct execute_state *state, struct nvrtx_exec_vertex *vertex);
 static int execute_transfer(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
+static int execute_decode(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
+static int execute_video_copy(struct nvrtx_vk_execute *execute, const struct nvrtx_vk_image *image, uint64_t image_va, const struct nvrtx_vk_buffer *buffer, uint64_t buffer_va, const struct nvrtx_vk_record *record);
 static int execute_copy_images(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static int execute_buffer_image(struct nvrtx_vk_session *session, struct nvrtx_vk_execute *execute, struct execute_state *state, const struct nvrtx_vk_record *record);
 static int execute_cpu_copy(struct nvrtx_vk_session *session, const struct nvrtx_vk_buffer *buffer, const struct nvrtx_vk_image *image, const VkBufferImageCopy *region, bool to_image);
@@ -786,6 +788,17 @@ execute_record(
 	case GPU_OP_CMD_COPY_IMAGE_TO_BUFFER:
 	case GPU_OP_CMD_CLEAR_COLOR_IMAGE:
 		error = execute_transfer(session, execute, state, record);
+		break;
+	case GPU_OP_CMD_DECODE_VIDEO:
+		error = execute_decode(session, execute, state, record);
+		break;
+	case GPU_OP_CMD_BEGIN_VIDEO_CODING:
+	case GPU_OP_CMD_END_VIDEO_CODING:
+	case GPU_OP_CMD_CONTROL_VIDEO_CODING:
+	case GPU_OP_CMD_BEGIN_QUERY:
+	case GPU_OP_CMD_END_QUERY:
+	case GPU_OP_CMD_RESET_QUERY_POOL:
+		error = nvrtx_vk_video_run(session, record);
 		break;
 	default:
 		break;
@@ -1337,9 +1350,9 @@ execute_texture(
 	uint8_t *cpu;
 	int error;
 
-	/* The view's image, with storage, in a colour format. */
+	/* The view's image, with storage, in a colour format (a depth or video image is not sampled). */
 	image = view->image->payload;
-	if (image->depth)
+	if (image->depth || image->video)
 		return EINVAL;
 	error = nvrtx_vk_image_address(image, &va, &cpu);
 	if (error != 0)
@@ -1512,6 +1525,113 @@ execute_transfer(
 }
 
 /*
+ * Runs a video decode in its place among the records: the push buffer so
+ * far is run and waited for (the graphics work before has ended), the
+ * decoder runs the picture and is waited for, and the next push buffer
+ * is begun, so what follows reads the decoded picture.
+ */
+static int
+execute_decode(
+	struct nvrtx_vk_session *session,
+	struct nvrtx_vk_execute *execute,
+	struct execute_state *state,
+	const struct nvrtx_vk_record *record)
+{
+	int error;
+
+	/* The graphics work before the decode. */
+	error = execute_drain(session, execute);
+	if (error != 0)
+		return error;
+
+	/* The decode, waited for; the next push buffer's target is written anew. */
+	error = nvrtx_vk_video_run(session, record);
+	state->target_written = false;
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the picture is decoded. */
+	return 0;
+}
+
+/*
+ * Copies regions of a video image's planes out to a buffer with the copy
+ * engine, which reads the block-linear planes: each region's aspect names
+ * its plane (the luma plane of one byte a pixel, the chroma plane of two
+ * at half the size), the buffer's rows are its row length's pixels of the
+ * plane's bytes.
+ */
+static int
+execute_video_copy(
+	struct nvrtx_vk_execute *execute,
+	const struct nvrtx_vk_image *image,
+	uint64_t image_va,
+	const struct nvrtx_vk_buffer *buffer,
+	uint64_t buffer_va,
+	const struct nvrtx_vk_record *record)
+{
+	const VkBufferImageCopy *regions;
+	const VkBufferImageCopy *region;
+	struct nvrtx_exec_plane_copy copy;
+	uint32_t index;
+	uint32_t plane;
+	uint32_t pixel;
+	uint32_t plane_width;
+	uint32_t plane_height;
+	uint32_t row;
+	uint64_t span;
+	bool inside;
+
+	/* Each region. */
+	regions = record->regions;
+	for (index = 0U; index < record->region_count; index++) {
+		region = &regions[index];
+
+		/* The plane its aspect names, its pixel's bytes and its size. */
+		if (region->imageSubresource.aspectMask == VK_IMAGE_ASPECT_PLANE_0_BIT) {
+			plane = 0U;
+			pixel = 1U;
+			plane_width = image->width;
+			plane_height = image->height;
+		} else if (region->imageSubresource.aspectMask == VK_IMAGE_ASPECT_PLANE_1_BIT) {
+			plane = 1U;
+			pixel = 2U;
+			plane_width = image->width / 2U;
+			plane_height = image->height / 2U;
+		} else {
+			return EINVAL;
+		}
+
+		/* Inside the plane, inside the buffer. */
+		inside = execute_region_inside(region->imageOffset.x, region->imageOffset.y, region->imageExtent.width,
+					       region->imageExtent.height, plane_width, plane_height);
+		if (!inside || region->imageExtent.width == 0U || region->imageExtent.height == 0U)
+			return EINVAL;
+		row = region->bufferRowLength;
+		if (row == 0U)
+			row = region->imageExtent.width;
+		span = (uint64_t)row * pixel * (region->imageExtent.height - 1U) + (uint64_t)region->imageExtent.width * pixel;
+		if (region->bufferOffset > buffer->size || span > buffer->size - region->bufferOffset)
+			return EINVAL;
+
+		/* The copy of the region. */
+		copy.source = image_va + image->plane_offset[plane];
+		copy.source_pitch = image->pitch;
+		copy.source_rows = image->plane_rows[plane];
+		copy.x_bytes = (uint32_t)region->imageOffset.x * pixel;
+		copy.y = (uint32_t)region->imageOffset.y;
+		copy.destination = buffer_va + region->bufferOffset;
+		copy.destination_pitch = row * pixel;
+		copy.line_bytes = region->imageExtent.width * pixel;
+		copy.lines = region->imageExtent.height;
+		execute->at = nvrtx_exec_copy_plane(execute->cpu + EXECUTE_PUSH_AT, execute->at, &copy);
+	}
+
+	/* Succeeded: the regions are written. */
+	return 0;
+}
+
+/*
  * Copies or blits regions between two images by drawing quads: the
  * destination region's quad samples the source region (a copy one to one
  * and nearest, a blit scaled and filtered).  A blit's region given
@@ -1673,8 +1793,18 @@ execute_buffer_image(
 		error = nvrtx_vk_image_address(image, &image_va, &image_cpu);
 	if (error == 0 && image->depth)
 		error = EINVAL;
+	if (error == 0 && image->video && to_image)
+		error = EINVAL;
 	if (error != 0)
 		return error;
+
+	/* A video image's planes are read out by the copy engine. */
+	if (image->video) {
+		error = execute_video_copy(execute, image, image_va, buffer, buffer_va, record);
+		if (error != 0)
+			return error;
+		return 0;
+	}
 
 	/* Each region. */
 	regions = record->regions;
@@ -2143,8 +2273,8 @@ execute_image_source(
 	uint8_t *cpu;
 	int error;
 
-	/* A colour image with storage. */
-	if (image->depth)
+	/* A colour image with storage (a depth or video image is no quad's source). */
+	if (image->depth || image->video)
 		return EINVAL;
 	error = nvrtx_vk_image_address(image, &va, &cpu);
 	if (error != 0)

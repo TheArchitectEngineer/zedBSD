@@ -3,8 +3,8 @@
 # ws243-p001: 設計（NVDEC の H.264 を Vulkan Video で）
 
 Parent: [WS243](../ws.md)
-Status: in-progress（2026-10-15 ユーザーの指示で WS243 を一時停止。調べの途中で止めた。design.md はまだ書いていない）
-担当: P6（2026-10-15）。code は書いていない。
+Status: in-progress（設計済み・review 1 回済み、2026-10-29 q1677-i01。cleared の判断は Q1）
+担当: P6（2026-10-15、2026-10-29 再開）。
 
 ## 再開の点
 
@@ -66,3 +66,4 @@ Status: in-progress（2026-10-15 ユーザーの指示で WS243 を一時停止�
 ## 記録
 
 - 2026-10-15 P6: 規則・手本（nvrtx の channel・work channel・executor、i915・Pi の Vulkan Video、libmedia の vkvideo-runtime、vkvideo-probe）と出典（open-gpu-doc、open-gpu-kernel-modules 570.144、Mesa NVK、nouveau v6.19）を読んだ。上の事実を集めた所で、ユーザーの指示で WS243 を一時停止（Q1 のラップアップの依頼）。code・試験・build は未実施。
+- 2026-10-29 P6（q1677-i01）: 出典を取り直した（open-gpu-doc 9fdf5c40・open-gpu-kernel-modules 570.144 の sparse・Mesa main 921d028a の sparse を自分の worktree の `build/tmp/ws243-ref/` に、git に入れない。nouveau v6.19 は P7 の worktree の `build/ref/linux-upstream/` を読んだだけ）。[design.md](../design.md) を書き（282b79da9）、design-reviewer を 1 回（致命 1・重要 10・軽微 10）。対応は design.md §13（bb263c464）。判断 D1〜D5 は Q1 の指示で推しのまま（ws.md の「推しで進めた判断」）。

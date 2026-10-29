@@ -15,28 +15,22 @@
 ### 動いている担当と Queue
 
 <!-- master:agents:start -->
-2026-10-29 01:37 起動: P1〜P6（同時に 6、ユーザーの指示）。
+2026-10-29 22:2x 復旧: 16:50 頃にセッションごと止まった P1〜P7 を、同じ名前・同じ worktree の新しい起動で再開した（未 commit の差分は各担当が読んで続ける）。
 
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
-| P1 | q1662-i06 in-progress | [ws309](ws309/ws.md) Keiland の compositor の thread の整理を p008 の残り 1 から再開（WS235 は 2026-10-29 completed） | — |
-| P2 | q1670-i02 in-progress | [ws291](ws291/ws.md) の NVIDIA の段（RTX 2070）、RDNA の案 A・B は host・QEMU まで | 10.0.10.3（時間の枠） |
-| P3 | q1664-i04 in-progress | [ws221](ws221/ws.md) p004・p005 cleared、受けの窓を byte・window scale shift 5。残り p008・p009 の残り・p006・p007、その後 WS311（CUBIC）、p010 は WS235 の後 | VF2 |
-| P4 | q1665-i07 in-progress（p009 install-admin の段 5 から） | [ws307](ws307/ws.md) p002〜p014: spec.md どおりに実装 | QEMU |
-| P5 | q1666-i04 停止（ユーザー） | 詳細の決まっていない WS の設計: code は書かない | — |
-| P6 | q1667-i04 返却（ラップアップ） | 実装だけ（merge しない）: WS296 全 Phase（agent/p6-ws296c 1809873bd）、WS282 p002〜p004b（agent/p6-ws282c 677277d8f）、WS284 p002 script・p003 CPU の参照（同じ branch、zedBSD の libyolox.so の build 規則は共有の userland-dynamic.mk に要る、未決）。試験は全部未実施 | — |
+| P1 | q1662-i10 in-progress | [ws309](ws309/ws.md) p013（present の常駐の thread）から（p012 cleared・BUG-353 PASS、main a9d07b850）、worktree p1-ws309i | 10.0.10.3（時間の枠） |
+| P2 | q1686-i01 in-progress | [ws068](ws068/ws.md) p034〜p036 の残りの実装と Venus の試験（q1682 は cleared、main fe49f1d60。試験待ち: agent/p2-ws242・agent/p2-ws217） | — |
+| P3 | q1679-i02 in-progress、q1689-i01 pending | [ws221](ws221/ws.md) p010 の 10GbE の受信（10.0.10.3 を専有）、次に 5330 の USB 2.5G の NCM の driver。終われば返却。VF2 は手放す | 10.0.10.3（専有）、5330 |
+| P4 | q1688-i01 in-progress | [BUG-355](bugs/BUG-355.md)・[BUG-358](bugs/BUG-358.md) UFS の書き込みの遅さを直す → [ws307](ws307/ws.md) p011 の通しを流し直す（ユーザーの指示で p011 は中止） | QEMU |
+| P5 | q1677-i02 in-progress | [ws243](ws243/ws.md) p006 の実機（Video Player 1080p60）は P3 の後。WS243 completed で返却 | 10.0.10.3（P3 の後） |
+| P6 | q1667-i05 返却・merge 済み（main 7be3822e6） | [ws282](ws282/ws.md)・[ws284](ws284/ws.md) の handover（別のツリーのセッションが試験から続ける）を書いている | — |
+| P7 | q1687-i01 返却 | [ws313](ws313/ws.md) Mali の残りと Mesa との照合の直しを main に（b6649f09f）。実機未実施。C5 で描画がおかしい時の境目は c08176e6c・db080e110 | — |
 
 止めたまま: [WS305](ws305/ws.md) VFIO、[WS304](ws304/ws.md) Pi 5 の NVMe、[WS290](ws290/ws.md) GHCI（保留）、[WS299](ws299/ws.md)（継続の判断待ち）。
-
-**06:15 に P1〜P4 を再開した（P5・P6 は返却のまま）。**
-
-**ラップアップ（2026-10-29 04:5x ユーザー「P2とP3は継続、それ以外をラップアップしてください。」）: P1・P4・P6 は返却、P5 は停止（ユーザー）、P3 は返却、P2 は停止（返却）（ユーザー「P2は計測を中断して停止し、再開できる地点で終了し、再開を待ちます。中断は強制的ではなく、次の計測が終わった後でいいです。」）。**
-
-**再開の予定（2026-10-29 05:01 ユーザー「午前6時15分になったら、P1, P2だけ再開してください。」、訂正「間違いました、タイマーでP1, P2, P3だけの再開です、」、再訂正「訂正します、タイマーでP1, P2, P3, P4だけの再開です。計測の項目が多く、調査の項目ガスないので、トークン消費が少ないと見込まれるため、増やしました。」）: 06:15 に P1（WS309 p008 の残り 1 から）・P2（WS291、停止の時の再開点から）・P3（WS221、止まっていれば Resume point から）・P4（WS307、p008-4k の kernel の boot の探索の 4096 から）だけを起動する。P1 は WS309 を止め、WS235 の RTL8127 の driver（q1669）から（2026-10-29 ユーザー「P1は、RTL8159というPCIeの10GbEアダプタのドライバを書いてほしいです。」、WS309 は「止める」）。RDNA 機は plan/tools.md の「RDNA 機の時間の枠」で P1・P2・P3 が分ける。Q1 はこのセッションに 06:15 の 1 回の予定を入れた（セッションが終わっていれば手で）。
-
-**中断からの復旧（2026-10-29 04:5x、5 時間の利用の上限の見込み）**: 担当は全員こまめに WIP commit している。復旧は各 branch の先頭と phase.md の再開点から、同じ名前の新しい起動で。
-main に未 merge の branch: `agent/p2-ws291l`（WS291、merge の前に venus-reg と arm64・riscv64 の libvulkan、実機の A/B の結果を見て効果の無い ioctl は入れない）、`agent/p3-ws221`（WS221、他 platform の build を確かめてから）、`agent/p6-ws282c`・`agent/p6-ws296c`（P6、merge しない）。P1・P4・P5 は先頭まで merge 済み（P4 は試験の走行中、P5 は WS301・WS303 の review の走行中）。
-web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の hal-fw-variables.md はユーザーの review 待ち）。
+main に未 merge の branch は [registry](agents/registry.md) の試験待ちの欄。web の GET は「統合の注意」の条件で可。HAL の差分の承認は無い。
+**終わりの条件と機械の割当（2026-10-29 23:2x ユーザー）**: 「P6の結果はマージしてOKです。別なツリーのセッションで再開したときに試験から継続できるように、P6からハンドオーバーしてください。」「P5は、NVDECが実機video appで動いて、WS completedになったら、P5は終了して返却してください。」「P4は、先にUFSが遅いバグを修正してください。…」（q1688）「P3は、お願いしてあるネットワークの改善が終わったら、終了して返却してください。」「P2は、WS068が完了したら、終了して返却してください。」「P1は、WS309が完了したら、終了して返却してください。」「P3で、2.5GのUSBが遅いことは、ドライバの問題と思いますので、5330を使って修正してほしいです。」（q1689）「GPUドライバの改善は、ゴールがまだ見えないので、先にP3のネットワークを優先して、デスクトップ機に割り当てて、P3の作業を完了させるようにスケジューリングしてください。そのあとに、P5のNVDECを完了させます。そのあと、デスクトップ機では、RTXドライバの最適化に進んでください。エージェントは再利用しても新規で立ててもOKです。」「VF2を他のエージェントが使わなくなるのを待って、実機でP7のODROID-C5のテストを行います。」「centrisのNICの設定は、変更してOKです。」
+- 解釈（Q1）: 10.0.10.3 は P3 の WS221 p010 が終わるまで P3 が専有、次に P5（WS243 p006 の実機）、その後 RTX の driver の最適化（WS291 の NVIDIA の段）。VF2 は P3 が手放した後に C5 の試験へ。
 <!-- master:agents:end -->
 
 **ユーザー不在の間の自律実行（2026-10-29 12:4x ユーザー「夜まで寝ます。しばらく質問に回答できないので、疑問で止まったphaseがあれば、質問はメッセージ表示だけしてクリック回答にはせず、別なphaseに移って作業を進めてください。」）**: 判断が要る Phase は uncleared・止めにして理由と要る判断を記録し、Q1 は問いをメッセージで書くだけ（クリックの問いにしない）。担当は別の Phase に移る。
@@ -106,7 +100,7 @@ web の取得は禁止のまま。HAL の差分の承認は無い（WS307 の ha
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-358 · q1686 · WS314 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-359 · q1690 · WS314 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的

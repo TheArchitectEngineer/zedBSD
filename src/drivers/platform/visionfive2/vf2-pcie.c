@@ -28,6 +28,7 @@
 #include <drivers/pci/pci-xhci.h>
 #include <drivers/usb/usb.h>
 #include <drivers/usb/usb-hid.h>
+#include <drivers/usb/usb-uvc.h>
 #include <drivers/usb/usb-hub.h>
 #include <drivers/usb/usb-storage.h>
 #include <kern/device-io.h>
@@ -222,6 +223,13 @@ register_drivers(
 		error = drv_usb_storage_driver_register();
 		if (error != 0)
 			kern_logf("usb: storage registration failed (%d)\n", error);
+#endif
+
+		/* Registers the USB Video Class cameras. */
+#if CONFIG_DRIVER_USB_UVC
+		error = drv_usb_uvc_driver_register();
+		if (error != 0)
+			kern_logf("usb: video class registration failed (%d)\n", error);
 #endif
 
 		/* Registers the keyboard and mouse driver. */

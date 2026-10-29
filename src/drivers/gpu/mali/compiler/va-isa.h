@@ -227,6 +227,43 @@
 #define VA_SHIFT_ZS_EMIT_DEPTH		25U
 
 /*
+ * ZS_EMIT's stencil write (bit 24).
+ *
+ * Value referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/ISA.xml (ZS_EMIT's va_mod
+ * stencil).
+ */
+#define VA_SHIFT_ZS_EMIT_STENCIL	24U
+
+/*
+ * The opcode bits of the right shift with an AND (RSHIFT_AND.i32).
+ *
+ * Value referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/ISA.xml (the opcode elements of
+ * RSHIFT_AND.i32).
+ */
+#define VA_OP_RSHIFT_AND_I32		0x00B4000000000000ULL
+
+/*
+ * The texture gradient (TEX_GRADIENT): its opcode bits, its flags (the
+ * derivatives given in registers, no level of detail bias, no level of
+ * detail clamp), and the level of detail mode of a sample whose level
+ * comes from the gradient descriptor it makes.
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/ISA.xml (the opcode element of
+ * TEX_GRADIENT, enum "LOD mode") and va_pack.c (va_pack_instr, the
+ * TEX_GRADIENT flags in bits 13, 14 and 15).
+ */
+#define VA_OP_TEX_GRADIENT		0x012A000000000000ULL
+#define VA_SHIFT_TEX_LOD_BIAS_DISABLE	13U
+#define VA_SHIFT_TEX_LOD_CLAMP_DISABLE	14U
+#define VA_SHIFT_TEX_DERIVATIVE_ENABLE	15U
+#define VA_LOD_MODE_GRDESC		6U
+#define VA_REGISTER_TYPE_U		2U
+#define VA_WRITE_MASK_RG		3U
+
+/*
  * The opcode bits of the loads of two, three and four words, and the
  * identity load lane they take (bits 38:36).
  *
@@ -294,7 +331,8 @@
 
 /*
  * A MUX that selects bit by bit (the first source where the mask's bit
- * is set), and the clamp of a float result to [0, 1] (bits 33:32).
+ * is set), and the clamps of a float result to [-1, 1] and to [0, 1]
+ * (bits 33:32).
  *
  * Values referenced: Mesa 26.2.6
  * src/panfrost/compiler/bifrost/valhall/ISA.xml (enums "MUX" and
@@ -302,6 +340,7 @@
  */
 #define VA_MUX_BIT			3U
 #define VA_SHIFT_CLAMP			32U
+#define VA_CLAMP_M1_1			2U
 #define VA_CLAMP_0_1			3U
 
 /*
@@ -478,6 +517,19 @@
 #define VA_PRELOAD_COVERAGE		60U
 #define VA_PRELOAD_VARYING_SOURCE	61U
 #define VA_PRELOAD_RASTER_COVERAGE	61U
+
+/*
+ * The register whose bits 23:16 hold the number of the sample a fragment
+ * program runs for, and the shift and mask that read it (the top bits of
+ * the field may read garbage, so only five are kept).
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/compiler.h (BI_PRELOAD_SAMPLE_ID) and
+ * bifrost_compile.c (bi_load_sample_id_to).
+ */
+#define VA_PRELOAD_SAMPLE_ID		61U
+#define VA_SAMPLE_ID_SHIFT		16U
+#define VA_SAMPLE_ID_MASK		0x1FU
 
 /* The registers of a program. */
 #define VA_REGISTERS			64U

@@ -20,12 +20,22 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-/* The bytes of a descriptor of each kind. */
+/*
+ * The bytes of a descriptor of each kind.  A framebuffer descriptor is
+ * its parameters and their padding; the depth and stencil extension and
+ * the render targets follow it.
+ *
+ * Values referenced:
+ * Mesa 26.2.6 src/panfrost/genxml/v10.xml (aggregate "Framebuffer": the
+ * parameters at 0 and the 16-word padding at 64);
+ * src/panfrost/vulkan/csf/panvk_vX_cmd_draw.c (the extension and the
+ * render targets at pan_size(FRAMEBUFFER) past the descriptor).
+ */
 #define MALI_DESC_BYTES			32U
 #define MALI_DESC_RESOURCE_BYTES	16U
 #define MALI_DESC_BLEND_BYTES		16U
 #define MALI_DESC_RT_BYTES		64U
-#define MALI_DESC_FBD_BYTES		64U
+#define MALI_DESC_FBD_BYTES		128U
 #define MALI_DESC_TILER_BYTES		128U
 #define MALI_DESC_DRAW_BYTES		128U
 #define MALI_DESC_HEAP_BYTES		32U
@@ -34,6 +44,12 @@
 #define MALI_DESC_STAGE_COMPUTE		1U
 #define MALI_DESC_STAGE_FRAGMENT	2U
 #define MALI_DESC_STAGE_VERTEX		3U
+
+/*
+ * Marks a vertex stage's descriptor as the varying (secondary) program's,
+ * which runs full warps; the position program runs half warps.
+ */
+#define MALI_DESC_STAGE_VARYING		0x100U
 
 /* The resource table entries a table pointer must be a multiple of. */
 #define MALI_DESC_TABLE_ALIGN		4U

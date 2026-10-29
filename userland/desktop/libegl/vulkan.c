@@ -121,8 +121,9 @@ zegl_vulkan_open(
 		return EGL_NOT_INITIALIZED;
 	}
 
-	/* That family's queue draws every frame. */
+	/* That family's queue draws every frame, and its timestamps' bits time desktop GL's timer queries. */
 	display->family = family;
+	display->timestamp_bits = families[family].timestampValidBits;
 
 	/*
 	 * The optional features GL's translation uses, those the device has:
@@ -130,7 +131,8 @@ zegl_vulkan_open(
 	 * vertex shaders (transform feedback) and fragment shaders, wide
 	 * lines and large points, geometry and tessellation shaders, clip
 	 * distances, depth clamping, fill modes, cube map arrays, sample
-	 * shading and exact occlusion query counts (desktop GL).
+	 * shading and exact occlusion query counts (desktop GL), and blending
+	 * with a fragment shader's second colour (desktop GL 3.3).
 	 */
 	memset(&available, 0, sizeof(available));
 	vkGetPhysicalDeviceFeatures(display->physical, &available);
@@ -148,6 +150,7 @@ zegl_vulkan_open(
 	display->features.imageCubeArray = available.imageCubeArray;
 	display->features.sampleRateShading = available.sampleRateShading;
 	display->features.occlusionQueryPrecise = available.occlusionQueryPrecise;
+	display->features.dualSrcBlend = available.dualSrcBlend;
 
 	/* The device with one queue of that family, the swapchain extension and those features. */
 	priority = 1.0f;

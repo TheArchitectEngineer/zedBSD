@@ -3,7 +3,7 @@
 # ws313-p010: Mali-G310（Valhall v10）の shader compiler
 
 Status: in-progress（実装済み・実機未試験）
-Queue: q1675-i02（P7 の配下 C）
+Queue: q1675-i02（P7 の配下 C）、q1675-i05 の一部（P7 と配下 P7-A: textureGrad・SampleId・stencil の書き込み・共通の front end の OpFunctionCall の inline）、q1687-i01 の一部（P7: program の writes_memory、texel offset の試験）
 WS: [WS313](../ws.md)、設計 [gpu.md](../gpu.md) §11・§12
 
 ## 目的
@@ -71,7 +71,7 @@ storage image 8。
 | FragDepth（gl_FragDepth） | parse の feature に `DRV_GPU_SPIRV_FEATURE_FRAG_DEPTH`。STORE_OUTPUT の `DRV_GPU_IR_LOCATION_FRAG_DEPTH` を持ち、ATEST の後・BLEND の前に `ZS_EMIT`（z の bit 25、depth を source 0、stencil の source は定数 0、coverage r60 を読み staging r60 に書く）。slot 0・前に wait0126（ATEST と同じ扱い、`VA_INST_ATEST` を流用）。program の `writes_depth` | 済み（host のみ） |
 | SampleMask の書き込み（gl_SampleMask[0]） | feature `DRV_GPU_SPIRV_FEATURE_SAMPLE_MASK`。ATEST の前に `r60 = mask & r60`（LSHIFT_AND）。program の `writes_sample_mask` | 済み（host のみ） |
 | SampleMaskIn の読み（gl_SampleMaskIn[0]） | `U16_TO_U32` で r61 の bits 15:0（rasterizer の coverage）。preload の bit r61。program の `reads_sample_mask` | 済み（host のみ） |
-| SampleId | 共通の front end に BuiltIn SampleId（18）が無く拒否される。backend だけでは作れない（下の「他への案」） | 未対応 |
+| SampleId | q1675-i05 で対応（下の i05 の節） | 済み（host のみ） |
 | UBO の vector load | `MALI_SHADER_OPTION_VECTOR_UBO`（shader.h、`struct mali_shader_options` の flags）の時だけ、IR で隣り合う同じ buffer の次の語の LOAD_UBO を最大 4 語まで 1 つの LOAD.i64・i96・i128 に（`ubo_run()`）。3・4 語は offset が 16 の倍数、2 語は 8 の倍数の時だけ（足りなければ縮める）。結果は揃えた block（2 は偶数、3・4 は 4 の倍数の register）に置き、値に割り当てる。遠い offset（0x8000 以上）も SHADDX の address から同じに。**既定（option 無し・NULL）は従来どおり 1 語ずつ**で、driver（vk-pipeline.c・vk-preload.c）は NULL を渡すので今夜の desktop の出力は不変 | 済み（host のみ、既定は無効） |
 
 shader.h に足した物（既存の field の位置・意味は不変、struct の末尾に追加）: `writes_depth`・`writes_sample_mask`・
@@ -155,6 +155,38 @@ uniform buffer を持たないので関係無い）。実機での LOAD.i96・i1
   するだけで bit 20 を立てていない（2026-10-29 の vk-draw.c の FLAG_* に無い事を読んで確かめた。立てるべきかは Mesa に倣った推定で、実機未確認）。
 - `reads_sample_mask`: driver の追加は無い（r61 は preload の bit で program の `preload` に入っている）。
 - multisample が無い今は coverage は 1 sample で、SampleMask の効果は bit 0 だけ。
+
+## 実装の追加（q1675-i05、P7 と配下 P7-A、2026-10-29、実機未試験）
+
+| 機能 | 中身 | 状態 |
+| --- | --- | --- |
+| 共通の front end の OpFunctionCall の inline | `src/drivers/gpu/compiler/spirv-inline.inc`（spirv.c が include）。feature `DRV_GPU_SPIRV_FEATURE_INLINE_CALLS`（0x200）の時だけ、関数が 2 つ以上の module を parse の前に書き直す: entry の call を callee の body に置き換え（新しい id、parameter は引数、Function の variable は entry の最初の block へ、戻り値は OpCopyObject）、他の関数と、その id の OpName・OpDecorate を落とす。拒否（ENOTSUP）: 再帰、途中の return、body の無い宣言、loop の header・continue からの複数 block の call。Mali だけが feature を立てる（`MALI_SHADER_SPIRV_FEATURES`）。他の GPU は parse が前と同じ（関数の分け方の変更だけ） | 済み（host のみ） |
+| SampleId | front end: fragment の BuiltIn SampleId（18）を feature `DRV_GPU_SPIRV_FEATURE_SAMPLE_ID` の時に `DRV_GPU_SHADER_LOCATION_SAMPLE_ID`（71、flat）。backend: r61 の bits 20:16 を `RSHIFT_AND.i32`（Mesa の bi_load_sample_id_to の 5 bit）。program の `reads_sample_id` | 済み（host のみ） |
+| stencil の書き込み（gl_FragStencilRefARB） | front end: BuiltIn FragStencilRefEXT（5014）を feature `DRV_GPU_SPIRV_FEATURE_STENCIL_EXPORT` の時に `DRV_GPU_IR_LOCATION_FRAG_STENCIL`。backend: ATEST の後の ZS_EMIT に stencil の bit 24、source 1 に値（depth と一緒でも一つだけでも）。program の `writes_stencil`（driver は ZSD の Stencil from shader と kill/update の Force Late） | 済み（host のみ） |
+| textureGrad | 2D・3D・array・shadow: `TEX_GRADIENT`（derivative enable・LOD bias と clamp 無し、RG の 2 語を書く）で gradient descriptor を作り、sample の staging の最後の 2 語に置いて LOD mode grdesc（6）。cube: Mesa の lower_gradient_cube_map の式で level を ALU で出し（major 軸の選択・商の微分・log2・[-16, 16]）explicit で sample。cube の幅の FAU 語を `lay_out()` が割り当てる（P7-A が見つけた誤り: 割り当てが無く `MOV flow 15` で program が終わっていた。直した） | 済み（host のみ） |
+
+確かめ（host だけ。GPU の証拠ではない）:
+- `sh plan/ws313/tests/spirv-inline-host-test.sh 100` → PASS（3 pair が -O の版と模型で一致、早い return の拒否、inline 後の 3 本が spirv-val を通る、1 関数の 72 本は feature の有無で同じ IR）。直した所: 落とした関数の OpName・OpDecorate が残り spirv-val が落ちていた。試験の期待（-O 無しの module の拒否の理由は「not lowered」の時がある）。
+- `sh plan/ws313/tests/mali-compiler-host-test.sh 50` → 31 module PASS（新しい grad・grad-cube・sample-id・stencil・stencil-depth・stencil-only の 6 本を含む）、`mali-compiler-desktop-test.sh 50` → 60/60 PASS。既存の listing は `mali-listing-compare.sh` で host 27・desktop 67 とも SAME。
+- P7-A が compiler をわざと壊した 5 つの写し（微分の順、cube の -1、sample id の mask、ZS_EMIT の source、cube の MUX）で、どれも試験が FAIL になる事を確かめた。
+- 模型の仮定（実機の証拠ではない）: TEX_GRADIENT の descriptor の 2 語は模型の独自の token（hardware の形ではない）、texture の値は入力の決まった関数、r61 の bits 23:21 は不定、ZS_EMIT の source 1 が stencil の値。
+
+未確認・気になる点:
+- explicit の LOD の詰め方が Mesa と違う（Mesa は [-16, 16] に clamp して 16 bit を 0 拡張、ここは lod×256 の F32_TO_S32 で負なら上位 16 bit が 0xFFFF）。hardware が上位 16 bit を読むかは不明。既存の listing が変わるので触っていない。負の LOD の textureLod・cube の textureGrad が夜に変なら最初に疑う。
+- textureGradOffset は試験していない。→ q1687-i01 で試験した（下）。
+
+## 実装の追加（q1687-i01、P7、2026-10-29、実機未試験）
+
+| 機能 | 中身 | 状態 |
+| --- | --- | --- |
+| program の `writes_memory` | `shader.h` に印、`va-compile.c` が storage buffer の store・storage image の store・buffer と image の atomic で立てる（shared memory の atomic・store は立てない）。driver（[phase011](../phase011/phase.md) の q1687-i01）が draw の pixel kill を late にするのに使う | 済み（host のみ） |
+| texel offset の試験 | 模型（`tests/mali-compiler-model.c`）が texel offset を照合するようにした。それまでは offset を全く見ていなかった（handle の上の語も offsets の staging も読み捨て）。模型: handle の上の語の符号付き nibble s 3:0・t 7:4・r 11:8（Mesa の pan_nir_lower_tex.c の narrow の形）か、texel_offset の bit の時は offsets の語の符号付き byte、を texel の第 4 成分に重み付きで足す。参照: IR の offset（u 11:8・v 7:4・r 3:0）を同じ式で。handle の上の語に bit 12 以上（narrow の level・layer）があれば FAIL。新しい shader `grad-offset.frag`（textureGradOffset の 2D・2D array・3D・shadow）と `fetch-offset.frag`（texelFetchOffset、level は shader が計算） | 済み（host のみ） |
+
+確かめ（host だけ。GPU の証拠ではない）:
+- `sh plan/ws313/tests/mali-compiler-host-test.sh 20` → 33 module PASS（grad-offset・fetch-offset を含む）、`mali-compiler-desktop-test.sh 30` → 60/60 PASS。
+- 突然変異（手で、build/p7e-grad/mut の写し）: narrow の offset を 0 に → grad-offset が FAIL、s と t の nibble を入れ替え → FAIL。模型の変更の前は offset を 0 にしても PASS だった。
+- desktop の 60 program を host の compiler に通した probe（build/p7e-probe/、試験の file にはしていない）: `writes_memory` は 60 本とも 0（fragment で discard するのは 2 本）。storage の store・atomic・image の store の fragment は 1、shared の atomic の compute は 0。
+- 調べて分かった事: texelFetchOffset の offset は共通の front end が整数の座標に足す（listing の IADD_IMM、handle の上の語は 0）。textureGatherOffset も narrow を 0 にした写しで PASS のままなので、offset は TEX の外で座標に入っている見込み（未確認）。
 
 ## 判断（推しで進めた所、夜の試験で確かめる）
 

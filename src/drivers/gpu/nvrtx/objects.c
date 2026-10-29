@@ -81,6 +81,21 @@
 #define OBJECTS_DEVINFO_RUNLIST_AT	12U
 
 /*
+ * An entry's engine descriptor (its word 0), and the first video
+ * decoder's engine type in the table's numbering, the resource manager's
+ * own (570 numbers twenty copy engines before it; the controls name the
+ * decoder by another number, NVRTX_ENGINE_NVDEC0).
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r535/nvrm/fifo.h
+ * (ENGINE_INFO_TYPE_ENG_DESC) and
+ * drivers/gpu/drm/nouveau/nvkm/subdev/gsp/rm/r570/nvrm/engine.h
+ * (RM_ENGINE_TYPE_NVDEC0).
+ */
+#define OBJECTS_DEVINFO_DESCRIPTOR_AT	0U
+#define OBJECTS_ENGINE_NVDEC0		0x1dU
+
+/*
  * The engine types: graphics, and the ten copy engines (the same numbers in
  * both of the resource manager's numberings).
  *
@@ -406,7 +421,10 @@ nvrtx_pdir_params(
  *
  * The graphics engine's runlist is found first; the first copy engine on
  * another runlist is chosen (a copy engine that shares the graphics runlist
- * belongs to it).  Returns ENOENT when there is none.
+ * belongs to it).  The first video decoder and the first copy engine on the
+ * graphics runlist are noted too, for the decoder's channel and the work
+ * channel's copy object.  Returns ENOENT when there is no copy engine of a
+ * runlist of its own.
  */
 int
 nvrtx_devinfo_pick(
@@ -438,6 +456,31 @@ nvrtx_devinfo_pick(
 	}
 
 	pick->graphics_runlist = graphics_runlist;
+
+	/* Notes the first video decoder and the first copy engine on the graphics runlist. */
+	pick->graphics_copy = 0xffffffffU;
+	pick->nvdec_found = 0U;
+	pick->nvdec_runlist = 0U;
+	pick->nvdec_descriptor = 0U;
+	for (index = 0U; index < count; index++) {
+		at = OBJECTS_DEVINFO_ENTRIES_AT + (size_t)index * OBJECTS_DEVINFO_ENTRY_BYTES;
+		type = nvrtx_get32(params, at + OBJECTS_DEVINFO_TYPE_AT);
+		runlist = nvrtx_get32(params, at + OBJECTS_DEVINFO_RUNLIST_AT);
+
+		/* The first decoder's runlist and descriptor. */
+		if (type == OBJECTS_ENGINE_NVDEC0 && pick->nvdec_found == 0U) {
+			pick->nvdec_found = 1U;
+			pick->nvdec_runlist = runlist;
+			pick->nvdec_descriptor = nvrtx_get32(params, at + OBJECTS_DEVINFO_DESCRIPTOR_AT);
+		}
+
+		/* The first copy engine that shares the graphics runlist. */
+		if (type >= OBJECTS_ENGINE_COPY_FIRST &&
+		    type <= OBJECTS_ENGINE_COPY_LAST &&
+		    runlist == graphics_runlist &&
+		    pick->graphics_copy == 0xffffffffU)
+			pick->graphics_copy = type;
+	}
 
 	/* Takes the first copy engine on a runlist of its own. */
 	for (index = 0U; index < count; index++) {

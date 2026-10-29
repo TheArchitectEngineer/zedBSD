@@ -67,11 +67,11 @@ struct drv_gpu_scanout_backing;
 
 /*
  * The executor's own programs (vk-meta.c): the blit that scales or
- * converts, the vertex program of a clear inside a pass, and the
- * fragment program of such a clear for each of the eight colour
- * locations.
+ * converts, the vertex program of a clear inside a pass, the fragment
+ * program of such a clear for each of the eight colour locations, and
+ * the copy of one aspect of a depth and stencil texel.
  */
-#define MALI_RENDER_META_PROGRAMS	10U
+#define MALI_RENDER_META_PROGRAMS	11U
 
 /*
  * One buffer object: a run of memory that one or more resources map.

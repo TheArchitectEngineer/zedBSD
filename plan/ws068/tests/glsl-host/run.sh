@@ -33,6 +33,8 @@ version_of() {
 	*130*|*modern*) echo 130;;
 	*300*|*es300*) echo 300;;
 	*330*) echo 330;;
+	*400*) echo 400;;
+	*430*) echo 430;;
 	*140*) echo 140;;
 	*150*) echo 150;;
 	*120*) echo 120;;
@@ -42,15 +44,15 @@ version_of() {
 }
 
 # 1. Every pass shader compiles.
-for f in "$here"/pass/*.vert "$here"/pass/*.frag "$here"/pass/*.geom; do
-	stage=vert; case $f in *.frag) stage=frag;; *.geom) stage=geom;; esac
+for f in "$here"/pass/*.vert "$here"/pass/*.frag "$here"/pass/*.geom "$here"/pass/*.tesc "$here"/pass/*.tese "$here"/pass/*.comp; do
+	stage=vert; case $f in *.frag) stage=frag;; *.geom) stage=geom;; *.tesc) stage=tesc;; *.tese) stage=tese;; *.comp) stage=comp;; esac
 	"$out/glsl-test" compile $stage "$f" "$(version_of "$f")" > "$out/compile.txt" 2>&1 || { cat "$out/compile.txt"; fail "compile $f"; }
 done
 echo "compile: done"
 
 # 2. Every fail shader fails as it expects.
 for f in "$here"/fail/*; do
-	stage=vert; case $f in *.frag) stage=frag;; *.geom) stage=geom;; esac
+	stage=vert; case $f in *.frag) stage=frag;; *.geom) stage=geom;; *.tesc) stage=tesc;; *.tese) stage=tese;; *.comp) stage=comp;; esac
 	"$out/glsl-test" expect $stage "$f" 100 > "$out/expect.txt" 2>&1 || { cat "$out/expect.txt"; fail "expect $f"; }
 done
 echo "expect: done"
@@ -66,6 +68,13 @@ for vert in "$here"/pass/*.vert; do
 		"$out/spirv-test" "$out/$name.$stage.spv" "$out/$name.$stage.linked.spv" > "$out/$name.$stage.reflect.txt" 2>&1 || { cat "$out/$name.$stage.reflect.txt"; fail "reflect $name.$stage"; }
 		spirv-val --target-env vulkan1.0 "$out/$name.$stage.linked.spv" || fail "spirv-val linked $name.$stage"
 	done
+	# Tessellation stages (WS068 p034), when the pair has them: both valid, the evaluation stage's gl_Position rewritten.
+	if [ -f "$here/pass/$name.tesc" ]; then
+		spirv-val --target-env vulkan1.0 "$out/$name.tesc.spv" || fail "spirv-val $name.tesc"
+		spirv-val --target-env vulkan1.0 "$out/$name.tese.spv" || fail "spirv-val $name.tese"
+		"$out/spirv-test" "$out/$name.tese.spv" "$out/$name.tese.linked.spv" > "$out/$name.tese.reflect.txt" 2>&1 || { cat "$out/$name.tese.reflect.txt"; fail "reflect $name.tese"; }
+		spirv-val --target-env vulkan1.0 "$out/$name.tese.linked.spv" || fail "spirv-val linked $name.tese"
+	fi
 	# A geometry stage (WS068 p032), when the pair has one; libGLESv2 rewrites its gl_Position before each EmitVertex.
 	if [ -f "$here/pass/$name.geom" ]; then
 		spirv-val --target-env vulkan1.0 "$out/$name.geom.spv" || fail "spirv-val $name.geom"
@@ -94,8 +103,13 @@ done
 grep -q "^uniform gl_DepthRange.near " "$out/es2-builtins.vert.reflect.txt" || fail "es2-builtins.vert reflection lacks gl_DepthRange.near"
 echo "es2: done"
 
+# 3d. ws068-p037: a dual-source blend's second colour carries Index 1 at location 0, the first none (0).
+grep -q "^out factor location=0 index=1" "$out/dual330.frag.reflect.txt" || fail "dual330 reflection lacks the index 1 output"
+grep -q "^out colour location=0 index=0" "$out/dual330.frag.reflect.txt" || fail "dual330 reflection lacks the index 0 output"
+echo "dual: done"
+
 # 4. The i915 compiler takes the shaders that stay inside what it supports; a geometry stage after its vertex stage (ws075-p007a).
-I915_PAIRS=${I915_PAIRS:-scene fixed scene300 glsl150-geometry}
+I915_PAIRS=${I915_PAIRS:-scene fixed scene300 glsl150-geometry dual330}
 for name in $I915_PAIRS; do
 	"$out/i915-check" vertex "$out/$name.vert.linked.spv" || fail "i915 $name.vert"
 	if [ -f "$out/$name.geom.linked.spv" ]; then

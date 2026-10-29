@@ -121,6 +121,7 @@
 #define WORK_SESSION_HANDLE_CHANNEL	0xf1f00010U
 #define WORK_SESSION_HANDLE_THREED	0x97000010U
 #define WORK_SESSION_HANDLE_COMPUTE	0xc5c00010U
+#define WORK_SESSION_HANDLE_COPY	0xc5b50010U
 #define WORK_SESSION_ARENA_ALIGN	0x200000ULL
 #define WORK_SESSION_INSTANCE_AT	0x0000ULL
 #define WORK_SESSION_USERD_AT		0x1000ULL
@@ -176,6 +177,7 @@ static int work_session_arena(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *
 static int work_session_region(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
 static int work_channel(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
 static int work_objects(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
+static void work_copy_object(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
 static int work_first(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, bool wait);
 static int work_channel_free(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
 static int work_map_entries(struct nvrtx_gpu *gpu, uint64_t va, const uint8_t *entries, uint64_t pages);
@@ -221,6 +223,7 @@ nvrtx_work_start(
 	driver->handle_channel = NVRTX_HANDLE_WORK_CHANNEL;
 	driver->handle_threed = NVRTX_HANDLE_WORK_THREED;
 	driver->handle_compute = NVRTX_HANDLE_WORK_COMPUTE;
+	driver->handle_copy = NVRTX_HANDLE_WORK_COPY;
 	driver->ring_va = WORK_RING_VA;
 	driver->semaphore_va = WORK_SEMAPHORE_VA;
 	driver->fences_va = WORK_FENCES_VA;
@@ -356,6 +359,18 @@ nvrtx_work_release(
 }
 
 /*
+ * Reports the VRAM address of the work space's page tables' root, which
+ * another channel in the same space names in its instance block.
+ */
+uint64_t
+nvrtx_work_root(
+	const struct nvrtx_gpu *gpu)
+{
+	/* Succeeded: the tables' first byte in the arena. */
+	return gpu->work.arena.vram + WORK_TABLES_AT;
+}
+
+/*
  * Makes a session's own channel in the work space, numbered chid on the
  * graphics runlist (NVRTX_WORK_SESSION_CHID_FIRST onward): its arena and
  * system-memory buffers, its region of the space with its own context
@@ -389,6 +404,7 @@ nvrtx_work_channel_open(
 	channel->handle_channel = WORK_SESSION_HANDLE_CHANNEL + number;
 	channel->handle_threed = WORK_SESSION_HANDLE_THREED + number;
 	channel->handle_compute = WORK_SESSION_HANDLE_COMPUTE + number;
+	channel->handle_copy = WORK_SESSION_HANDLE_COPY + number;
 	channel->timed = gpu->work.timed;
 
 	/* Its arena, its buffers and its region of the space. */
@@ -1562,6 +1578,9 @@ work_objects(
 
 	channel->compute_made = 1;
 
+	/* The copy object on the copy engine of the graphics runlist, with the video decoder only. */
+	work_copy_object(gpu, channel);
+
 	/* Binds the channel to the graphics engine. */
 	kern_memset(params, 0, sizeof(params));
 	nvrtx_put32(params, 0U, NVRTX_ENGINE_GRAPHICS);
@@ -1582,8 +1601,58 @@ work_objects(
 }
 
 /*
- * Runs the channel's first submission: both classes on their subchannels,
- * then its fence, waited for when wait is set (the driver's channel at the
+ * Makes the copy object on a channel when the boot asks for the video
+ * decoder (nvrtx.video=1): the class of the copy engine that shares the
+ * graphics runlist, on which the executor's copies out of block-linear
+ * video images run.  A copy object the resource manager refuses leaves
+ * the channel without one (its session then has no way out of a video
+ * image to a buffer).
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/class/clb0b5sw.h
+ * (NVB0B5_ALLOCATION_PARAMETERS: version, engineType).
+ */
+static void
+work_copy_object(
+	struct nvrtx_gpu *gpu,
+	struct nvrtx_work_channel *channel)
+{
+	uint8_t params[NVRTX_COPY_PARAMS_BYTES];
+	uint32_t engine;
+	bool wanted;
+	int error;
+
+	/* Only with the video decoder. */
+	wanted = nvrtx_stage_video_wanted();
+	if (!wanted)
+		return;
+
+	/* A copy engine must share the graphics runlist. */
+	engine = gpu->engine.pick.graphics_copy;
+	if (engine == 0xffffffffU) {
+		nvrtx_stage_mark("channel %u: no copy engine on the graphics runlist; no copy object", (unsigned)channel->chid);
+		return;
+	}
+
+	/* The object, version 1, on that copy engine. */
+	kern_memset(params, 0, sizeof(params));
+	nvrtx_put32(params, 0U, 1U);
+	nvrtx_put32(params, 4U, engine);
+	error = nvrtx_rm_allocate(gpu, channel->handle_channel, channel->handle_copy, gpu->identity.chip.profile->class_copy, params, sizeof(params));
+	if (error != 0) {
+		nvrtx_stage_mark("channel %u: the copy object on engine %x was refused (%d)", (unsigned)channel->chid, (unsigned)engine, error);
+		return;
+	}
+
+	/* The free takes it before the compute object. */
+	channel->copy_made = 1;
+	nvrtx_stage_mark("channel %u: copy object on engine %x", (unsigned)channel->chid, (unsigned)engine);
+}
+
+/*
+ * Runs the channel's first submission: both classes (and the copy class,
+ * when the channel has its object) on their subchannels, then its fence,
+ * waited for when wait is set (the driver's channel at the
  * start; a session's channel is made while other channels may hold the
  * graphics engine, and its runs follow the submission on the ring).
  */
@@ -1610,6 +1679,8 @@ work_first(
 	push = (uint8_t *)channel->fences.dma.address + (size_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
 	push_va = channel->fences_va + (uint64_t)(NVRTX_WORK_RING_ENTRIES - 1U) * NVRTX_WORK_FENCE_BYTES;
 	length = nvrtx_work_push_objects(push, gpu->identity.chip.profile->class_threed, gpu->identity.chip.profile->class_compute);
+	if (channel->copy_made != 0)
+		length += nvrtx_work_push_copy_object(push + length, gpu->identity.chip.profile->class_copy);
 
 	/* Opens the channel to submissions; the semaphore starts at 0. */
 	kern_memset(channel->semaphore.dma.address, 0, NVRTX_GSP_PAGE_SIZE);
@@ -1652,8 +1723,8 @@ work_first(
 }
 
 /*
- * Takes a channel off the scheduler and frees its 3D and compute objects
- * and the channel itself, each that exists; nothing is submitted to it
+ * Takes a channel off the scheduler and frees its 3D, copy and compute
+ * objects and the channel itself, each that exists; nothing is submitted to it
  * afterwards.  Returns how many of the resource manager's calls failed
  * (an object whose free failed is taken as gone: the unload removes it).
  *
@@ -1688,12 +1759,20 @@ work_channel_free(
 		channel->scheduled = 0;
 	}
 
-	/* Frees the 3D object, then the compute object. */
+	/* Frees the 3D object, then the copy object, then the compute object. */
 	if (channel->threed_made != 0) {
 		error = nvrtx_rm_free(gpu, channel->handle_threed);
 		if (error != 0)
 			failures++;
 		channel->threed_made = 0;
+	}
+
+	/* The copy object. */
+	if (channel->copy_made != 0) {
+		error = nvrtx_rm_free(gpu, channel->handle_copy);
+		if (error != 0)
+			failures++;
+		channel->copy_made = 0;
 	}
 
 	/* The compute object. */

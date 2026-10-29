@@ -12,6 +12,8 @@
 #ifndef DRIVERS_GPU_SHARE_H
 #define DRIVERS_GPU_SHARE_H
 
+#include <kern/handle.h>
+#include <stdint.h>
 #include <uapi/gpu.h>
 #include <drivers/gpu/gpu-scanout.h>
 
@@ -39,6 +41,20 @@ struct drv_gpu_share_ops {
 
 	/* Optional physical view remains borrowed while the exported object lives. */
 	int (*get_scanout_backing)(void *, void *, struct drv_gpu_scanout_backing *);
+
+	/* Optional physical view of an allocation-only export, borrowed the same way. */
+	int (*get_allocation_backing)(void *, void *, struct drv_gpu_scanout_backing *);
 };
+
+/*
+ * Describes the physical pages of an allocation-only GPU capability for
+ * another kernel driver (a camera writing frames into memory a Vulkan
+ * application allocated).  The handle is a descriptor's typed reference;
+ * the pages stay valid while the caller keeps a reference to it.  The
+ * exporting device's identity is reported.  EINVAL for a handle that is
+ * not a GPU capability or carries an image, ENOTSUP for a backend
+ * without the view.
+ */
+int drv_gpu_shared_backing(struct kernel_handle *handle, struct drv_gpu_scanout_backing *backing, uint64_t *device_identity);
 
 #endif

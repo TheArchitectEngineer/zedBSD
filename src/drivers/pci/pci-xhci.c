@@ -254,6 +254,7 @@ struct xhci_controller {
 	struct xhci_ring command;
 	struct xhci_trb *events;
 	unsigned event_dequeue, event_cycle, context_size, max_slots, ports;
+	unsigned version;	/* HCIVERSION, BCD */
 	unsigned scratchpad_count;
 	struct drv_usb_hcd hcd;
 	struct drv_usb_bus *bus;
@@ -6423,6 +6424,7 @@ xhci_attach(
 	doorbell_offset = snapshot.doorbell_offset_raw & ~3U;
 	runtime_offset = snapshot.runtime_offset_raw & ~31U;
 	c->max_slots = snapshot.structural_parameters1 & 0xffU;
+	c->version = snapshot.version;
 	c->ports = (snapshot.structural_parameters1 >> 24) & 0xffU;
 	c->context_size =
 		(snapshot.capability_parameters1 & (1U << 2)) ? 64U : 32U;
@@ -8128,6 +8130,9 @@ xhci_isoch_address(
  * Queues an isochronous URB (xhci_urb_enqueue, inside the submission
  * gate, which this leaves): a TD (one Isoch TRB) for each packet, Start
  * Isoch ASAP, IOC on each and BEI on all but every eighth and the last.
+ * A packet is one interval's data: up to Max Packet Size x (the extra
+ * transactions + 1) bytes on a high-bandwidth endpoint, with the TD's
+ * burst counts in its TRB.
  */
 static int
 xhci_isoch_enqueue(
@@ -8147,6 +8152,8 @@ xhci_isoch_enqueue(
 	size_t offset;
 	size_t packet_length;
 	unsigned maximum;
+	unsigned size;
+	unsigned burst;
 	unsigned count;
 	unsigned packet;
 	unsigned first;
@@ -8155,9 +8162,11 @@ xhci_isoch_enqueue(
 	int bei;
 	int e;
 
-	/* Its packets: at most a FIFO entry's, none over the endpoint's packet size. */
+	/* Its packets: at most a FIFO entry's, none over the endpoint's interval payload. */
 	count = drv_usb_urb_iso_count(u);
-	maximum = drv_usb_endpoint_max_packet_size(drv_usb_urb_endpoint(u)) & 0x7ffU;
+	size = drv_usb_endpoint_max_packet_size(drv_usb_urb_endpoint(u));
+	burst = (size >> 11) & 3U;
+	maximum = (size & 0x7ffU) * (burst + 1U);
 	length = drv_usb_urb_length(u);
 	if (count == 0U || count > DRV_XHCI_ISOCH_PACKETS_MAX || maximum == 0U) {
 		xhci_submission_leave(c);
@@ -8250,6 +8259,10 @@ xhci_isoch_enqueue(
 	/* One Isoch TRB a packet. */
 	for (packet = 0U; packet < count; packet++) {
 		control = XHCI_TRB_TYPE(XHCI_TRB_ISOCH) | XHCI_TRB_IOC | XHCI_TRB_SIA;
+
+		/* Adds the TD's burst counts, which a controller older than xHCI 1.0 lacks. */
+		control |= drv_xhci_isoch_burst_bits(c->version, size & 0x7ffU,
+		    burst, lengths[packet]);
 		if (r->input)
 			control |= XHCI_TRB_ISP;
 		bei = drv_xhci_isoch_bei(packet, count);

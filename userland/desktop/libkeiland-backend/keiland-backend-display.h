@@ -76,23 +76,26 @@ VkResult kl_backend_display_release(struct kl_backend *backend, const struct kl_
  *       video's decode stopped the firmware's decoder, ws236-p011)
  *   kl_backend_scanout_open     claims the display for an output of the
  *       given size (after the swapchain has gone); 0, ENOTSUP, or the
- *       claim's failure
- *   kl_backend_scanout_begin    begins showing a buffer (one of the GPU
- *       buffers' protocol, keiland-backend-gpu.h, whose rendering is done)
- *       as the whole output and returns at once; one present is in flight
- *       at a time.  0, EBUSY while one is, EINVAL for a buffer that cannot
- *       be scanned out (not a GPU buffer, another size), or the import's
- *       failure
- *   kl_backend_scanout_fd       the fd that becomes readable when the
- *       present in flight has ended (for the compositor's poll), -1 when
- *       none is in flight
- *   kl_backend_scanout_end      takes the present in flight once it has
- *       ended: 1 with its outcome (0: the display reads the buffer, and the
- *       one it replaces is no longer read; or the present's failure), 0
- *       while it has not ended or none is in flight
- *   kl_backend_scanout_close    waits for the present in flight, then
- *       releases the display (the swapchain may be made again); NULL does
- *       nothing
+ *       claim's failure.  The compositor's display thread calls it
+ *   kl_backend_scanout_begin    readies a buffer (one of the GPU buffers'
+ *       protocol, keiland-backend-gpu.h, whose rendering is done) to be
+ *       shown as the whole output, on the compositor's main thread: it is
+ *       imported once, and nothing waits.  0, EINVAL for a buffer that
+ *       cannot be scanned out (not a GPU buffer, another size), or the
+ *       import's failure
+ *   kl_backend_scanout_present  shows the buffer readied last and returns
+ *       once the display reads it (at the next refresh): 0 (the display
+ *       reads the buffer, and the one it replaces is no longer read), EINVAL
+ *       with none readied, or the present's failure.  The compositor's
+ *       present thread calls it; one present runs at a time, and the next
+ *       buffer is readied only after it has returned
+ *   kl_backend_scanout_close    releases the display (the swapchain may be
+ *       made again) once no present runs; NULL does nothing.  The
+ *       compositor's display thread calls it
+ *
+ * Only the compositor's main thread readies buffers, and a buffer's record
+ * may go (its handle forgotten) on it while the display thread opens or
+ * closes a scanout: the backend keeps them apart.
  */
 struct kl_backend_scanout;
 struct kl_backend_protocol_host;
@@ -100,8 +103,7 @@ struct kl_backend_resource;
 int kl_backend_scanout_possible(struct kl_backend *backend, uint32_t width, uint32_t height);
 int kl_backend_scanout_open(struct kl_backend *backend, uint32_t width, uint32_t height, struct kl_backend_scanout **scanout);
 int kl_backend_scanout_begin(struct kl_backend_scanout *scanout, const struct kl_backend_protocol_host *host, struct kl_backend_resource *buffer);
-int kl_backend_scanout_fd(struct kl_backend_scanout *scanout);
-int kl_backend_scanout_end(struct kl_backend_scanout *scanout, int *result);
+int kl_backend_scanout_present(struct kl_backend_scanout *scanout);
 void kl_backend_scanout_close(struct kl_backend_scanout *scanout);
 
 /*

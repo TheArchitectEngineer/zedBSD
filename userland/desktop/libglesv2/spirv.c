@@ -71,6 +71,7 @@
 #define DECORATION_MATRIX_STRIDE 7U
 #define DECORATION_BUILT_IN	11U
 #define DECORATION_LOCATION	30U
+#define DECORATION_INDEX	32U
 #define DECORATION_BINDING	33U
 #define DECORATION_SET		34U
 #define DECORATION_OFFSET	35U
@@ -108,6 +109,9 @@ struct spirv_module {
 	/* Each id's Location (and the word it is in), Binding, DescriptorSet, BuiltIn and ArrayStride; SPIRV_NONE when absent. */
 	uint32_t *locations;
 	size_t *location_words;
+
+	/* The word of each id's Index (a fragment output's dual-source blend input; 0 when absent). */
+	size_t *index_words;
 	uint32_t *bindings;
 	uint32_t *sets;
 	uint32_t *builtins;
@@ -544,13 +548,14 @@ spirv_open(
 	module->names = calloc(module->bound, sizeof(*module->names));
 	module->locations = malloc(module->bound * sizeof(*module->locations));
 	module->location_words = calloc(module->bound, sizeof(*module->location_words));
+	module->index_words = calloc(module->bound, sizeof(*module->index_words));
 	module->bindings = malloc(module->bound * sizeof(*module->bindings));
 	module->sets = malloc(module->bound * sizeof(*module->sets));
 	module->builtins = malloc(module->bound * sizeof(*module->builtins));
 	module->array_strides = malloc(module->bound * sizeof(*module->array_strides));
 	module->blocks = calloc(module->bound, 1U);
 	if (module->defs == NULL || module->names == NULL || module->locations == NULL || module->location_words == NULL ||
-	    module->bindings == NULL || module->sets == NULL || module->builtins == NULL || module->array_strides == NULL ||
+	    module->index_words == NULL || module->bindings == NULL || module->sets == NULL || module->builtins == NULL || module->array_strides == NULL ||
 	    module->blocks == NULL) {
 		spirv_close(module);
 		return -1;
@@ -631,6 +636,7 @@ spirv_close(
 	free(module->names);
 	free(module->locations);
 	free(module->location_words);
+	free(module->index_words);
 	free(module->bindings);
 	free(module->sets);
 	free(module->builtins);
@@ -662,6 +668,10 @@ spirv_decorate(
 	case DECORATION_LOCATION:
 		module->locations[target] = value;
 		module->location_words[target] = at + 3U;
+		break;
+	case DECORATION_INDEX:
+		if (length > 3U)
+			module->index_words[target] = at + 3U;
 		break;
 	case DECORATION_BINDING:
 		module->bindings[target] = value;
@@ -1117,6 +1127,11 @@ spirv_variable(
 		(void)snprintf(variable->name, sizeof(variable->name), "%s", name);
 		variable->location = module->locations[id];
 		variable->location_word = module->location_words[id];
+		variable->id = id;
+		variable->index = 0U;
+		variable->index_word = module->index_words[id];
+		if (variable->index_word != 0U)
+			variable->index = code[variable->index_word];
 		variable->type = leaf.type;
 		variable->size = (GLint)length;
 		variable->components = leaf.components;

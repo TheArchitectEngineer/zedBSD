@@ -36,6 +36,8 @@ static int compute_pipeline(struct mali_vk_session *session, struct i915_wire_re
 static int graphics_pipeline(struct mali_vk_session *session, struct i915_wire_reader *reader, struct mali_vk_pipeline **result);
 static int graphics_decode(struct mali_vk_session *session, struct i915_wire_reader *reader, VkGraphicsPipelineCreateInfo *info, const struct mali_vk_shader **vertex, const struct mali_vk_shader **fragment);
 static int graphics_state(const VkGraphicsPipelineCreateInfo *info, struct mali_vk_graphics *graphics);
+static void depth_state(const VkGraphicsPipelineCreateInfo *info, struct mali_vk_graphics *graphics);
+static void stencil_face(const VkStencilOpState *state, struct mali_surface_stencil_face *face);
 static int compile(const struct mali_vk_shader *shader, uint32_t stage, struct mali_shader_program **program);
 static int upload(struct mali_vk_session *session, struct mali_vk_pipeline *pipeline);
 static int pipeline_destroy(struct mali_vk_session *session, void *payload);
@@ -427,6 +429,9 @@ graphics_state(
 		}
 	}
 
+	/* The depth and stencil tests, their faces, the depth bias, and which of them the commands set. */
+	depth_state(info, graphics);
+
 	/* A viewport and a scissor the pipeline fixes (not dynamic). */
 	if (info->pViewportState != NULL && info->pViewportState->pViewports != NULL) {
 		graphics->viewport_static = true;
@@ -440,6 +445,85 @@ graphics_state(
 
 	/* Succeeded: the state is kept. */
 	return 0;
+}
+
+/*
+ * Keeps a graphics pipeline's depth and stencil state: the depth test,
+ * write and compare, the stencil test and its two faces, the depth bias
+ * (its constant, clamp and slope factors' float bits), and which of the
+ * bias, the stencil masks and the reference the commands set instead.
+ * The pass's aspects and the program's own writes are the draw's.
+ */
+static void
+depth_state(
+	const VkGraphicsPipelineCreateInfo *info,
+	struct mali_vk_graphics *graphics)
+{
+	const VkPipelineDepthStencilStateCreateInfo *depth;
+	const VkPipelineRasterizationStateCreateInfo *raster;
+	const VkPipelineDynamicStateCreateInfo *dynamic;
+	struct mali_surface_zs_state *zs;
+	uint32_t index;
+
+	/* The tests and the faces. */
+	zs = &graphics->zs;
+	depth = info->pDepthStencilState;
+	if (depth != NULL) {
+		zs->depth_test = depth->depthTestEnable != VK_FALSE;
+		zs->depth_write = depth->depthWriteEnable != VK_FALSE;
+		zs->depth_compare = depth->depthCompareOp;
+		zs->stencil_test = depth->stencilTestEnable != VK_FALSE;
+		stencil_face(&depth->front, &zs->front);
+		stencil_face(&depth->back, &zs->back);
+	}
+
+	/* The depth bias, as the rasterization fixes it. */
+	raster = info->pRasterizationState;
+	if (raster != NULL && raster->depthBiasEnable != VK_FALSE) {
+		zs->bias = true;
+		kern_memcpy(&zs->bias_constant, &raster->depthBiasConstantFactor, sizeof(zs->bias_constant));
+		kern_memcpy(&zs->bias_clamp, &raster->depthBiasClamp, sizeof(zs->bias_clamp));
+		kern_memcpy(&zs->bias_slope, &raster->depthBiasSlopeFactor, sizeof(zs->bias_slope));
+	}
+
+	/* The states the commands set. */
+	dynamic = info->pDynamicState;
+	if (dynamic == NULL || dynamic->pDynamicStates == NULL)
+		return;
+	for (index = 0; index < dynamic->dynamicStateCount; index++) {
+		switch (dynamic->pDynamicStates[index]) {
+		case VK_DYNAMIC_STATE_DEPTH_BIAS:
+			graphics->dynamic_bias = true;
+			break;
+		case VK_DYNAMIC_STATE_STENCIL_COMPARE_MASK:
+			graphics->dynamic_compare_mask = true;
+			break;
+		case VK_DYNAMIC_STATE_STENCIL_WRITE_MASK:
+			graphics->dynamic_write_mask = true;
+			break;
+		case VK_DYNAMIC_STATE_STENCIL_REFERENCE:
+			graphics->dynamic_reference = true;
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+/* Copies one face's stencil state. */
+static void
+stencil_face(
+	const VkStencilOpState *state,
+	struct mali_surface_stencil_face *face)
+{
+	/* The ops, the compare, the masks and the reference. */
+	face->fail_op = state->failOp;
+	face->pass_op = state->passOp;
+	face->depth_fail_op = state->depthFailOp;
+	face->compare_op = state->compareOp;
+	face->compare_mask = state->compareMask;
+	face->write_mask = state->writeMask;
+	face->reference = state->reference;
 }
 
 /* Compiles one stage of a module; a refusal is written once with its reason. */

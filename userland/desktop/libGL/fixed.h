@@ -132,7 +132,12 @@ struct fixed_uniforms {
 /*
  * A context's fixed-function state.
  */
+struct gl_debug;
+
 struct fixed_state {
+	/* The debug output's state (debug.c), NULL until its first use. */
+	struct gl_debug *debug;
+
 	/* The capabilities glEnable takes that OpenGL ES does not have. */
 	int lighting;
 	int light_enabled[FIXED_LIGHTS];
@@ -208,5 +213,11 @@ GLint gl_context_profile(void);
 /* immediate.c: recording into the list being compiled, and freeing the lists. */
 int fixed_record(struct fixed_state *fixed, enum fixed_op op, GLenum e0, GLenum e1, const GLfloat *f, unsigned count);
 void fixed_lists_free(struct fixed_state *fixed);
+
+/* debug.c: the debug output (GL_KHR_debug). */
+void gl_debug_error(struct zegl_context *context, GLenum error);
+int gl_debug_capability(GLenum cap, int **flag);
+unsigned gl_debug_get(GLenum pname, GLfloat *values);
+void gl_debug_release(struct fixed_state *fixed);
 
 #endif

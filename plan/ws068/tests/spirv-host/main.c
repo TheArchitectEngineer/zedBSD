@@ -53,7 +53,8 @@ int main(int argc, char **argv)
 		printf("in %s location=%u type=0x%x components=%u\n", spirv.inputs[index].name, spirv.inputs[index].location,
 		       spirv.inputs[index].type, spirv.inputs[index].components);
 	for (index = 0U; index < spirv.output_count; index++)
-		printf("out %s location=%u\n", spirv.outputs[index].name, spirv.outputs[index].location);
+		printf("out %s location=%u index=%u\n", spirv.outputs[index].name, spirv.outputs[index].location,
+		       spirv.outputs[index].index);
 	for (index = 0U; index < spirv.uniform_count; index++)
 		printf("uniform %s type=0x%x size=%d offset=%u stride=%u mstride=%u sampler=%d binding=%u\n",
 		       spirv.uniforms[index].name, spirv.uniforms[index].type, spirv.uniforms[index].size,

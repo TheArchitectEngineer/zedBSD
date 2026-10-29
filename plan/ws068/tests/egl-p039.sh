@@ -1,0 +1,75 @@
+#!/bin/sh
+# ws068-p039: ETC2 and EAC compressed textures (OpenGL ES 3.0's ten formats, glCompressedTex(Sub)Image2D and 3D) on the
+# Venus guest (the lean image, plan/ws068/tests/build-glsl-image.sh; run by plan/ws035/tests/zdesktop-guest.sh start).
+# egltest --scene=etc2 (an OpenGL ES 3 context, GLSL ES 3.00) draws twelve squares, one per compressed texture of two
+# blocks (or two layers), each fetching a texel of each block and green when both decode to the values the blocks
+# encode: RGB8, SRGB8, RGB8 and SRGB8 punch-through (an opaque block and a transparent one), RGBA8 and SRGB8_ALPHA8 with
+# EAC alpha, R11, SIGNED_R11, RG11, SIGNED_RG11, an RGB8 texture with a block replaced by glCompressedTexSubImage2D and a
+# 2D array (glCompressedTexImage3D, a layer replaced by glCompressedTexSubImage3D).  The start checks the listed formats
+# and the errors of wrong calls (EGLTEST ETC2 check lines), the first frame is read back (EGLTEST CHECK) and the screen is
+# photographed and read.
+#  1. display.png: without zdesktop, the whole screen.
+#  2. wayland.png: in a zdesktop --glass window of 640x400.
+#
+#   plan/ws068/tests/egl-p039.sh [OUTDIR]
+# Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
+set -u
+cd "$(dirname -- "$0")/../../.."
+export GUEST_RUNTIME="${GUEST_RUNTIME:-$PWD/build/ws068-run}"
+out=${1:-build/ws068-p039}
+mkdir -p "$out"
+guest() { timeout 150 python3 plan/tools/guest/guest.py run "$1" 2>&1; }
+. plan/tools/guest/zwl-clients.sh
+check() { python3 plan/ws035/tests/zdesktop-check.py "$@" --runtime "$GUEST_RUNTIME"; }
+pointer() { python3 plan/ws035/tests/qmp-pointer.py "$GUEST_RUNTIME/qmp.sock" "$@"; }
+stop_all='for p in $(ps -A -o pid,args | grep -E "[w]ayland( |$)|[e]gltest" | awk "{print \$1}"); do kill $p; done; i=0; while ps -A -o args | grep -qE "[w]ayland( |$)|[e]gltest" && [ $i -lt 50 ]; do sleep 0.2; i=$((i+1)); done'
+status=0
+
+# Fails the run unless a log has a line matching a pattern.
+expect_log() {
+	found=$(guest "grep -cE '$2' $1" | tail -1)
+	if [ "${found:-0}" -gt 0 ] 2>/dev/null; then
+		echo "log: $2 ok"
+	else
+		echo "log: $2 MISSING"
+		status=1
+	fi
+}
+
+# The squares' colours on the screen, for a window at X,Y of W x H (screen coordinates, from the top): all green, and
+# the grey between them.
+etc2_expect() {
+	x=$1; y=$2; w=$3; h=$4
+	for cell in 0 1 2 3 4 5 6 7 8 9 10 11; do
+		column=$((cell % 4)); row=$((cell / 4))
+		echo "--expect $((x + w * (125 + 250 * column) / 1000)),$((y + h * (17 + 33 * row) / 100)),00ff00"
+	done
+	echo "--expect $((x + w / 2)),$((y + h / 3)),202020"
+}
+
+# 1. The whole screen, without a compositor.
+guest "$stop_all" >/dev/null
+guest '/bin/egltest --platform=display --scene=etc2 --frames=120 --delay-ms=30 --token=d > /tmp/egl-d.log 2>&1 </dev/null & i=0; while ! grep -q "EGLTEST CHECK" /tmp/egl-d.log && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done; sleep 1; echo started' >/dev/null
+check "$out/display.png" $(etc2_expect 0 0 1280 800) || status=1
+guest 'i=0; while ! grep -q EGLTEST.DONE /tmp/egl-d.log && [ $i -lt 110 ]; do sleep 1; i=$((i+1)); done; cat /tmp/egl-d.log' > "$out/display.txt"
+cat "$out/display.txt"
+expect_log /tmp/egl-d.log 'EGLTEST ETC2 ready failures=0'
+expect_log /tmp/egl-d.log 'EGLTEST CHECK run=d failures=0 glerror=0x0'
+expect_log /tmp/egl-d.log 'EGLTEST DONE run=d frames=120 glerror=0x0 failures=0'
+
+# 2. In a zdesktop window.
+guest "$stop_all" >/dev/null
+guest 'export XDG_RUNTIME_DIR=/tmp; rm -f /tmp/wayland-0; : > /tmp/zdesktop.log; /bin/wayland --testing --timeout=600 --width=1280 --height=800 --glass --log-frames > /tmp/zdesktop.log 2>&1 </dev/null & i=0; while ! grep -q "KWL READY" /tmp/zdesktop.log 2>/dev/null && [ $i -lt 60 ]; do sleep 0.5; i=$((i+1)); done
+/bin/egltest --display=/tmp/wayland-0 --size=640x400 --scene=etc2 --frames=300 --delay-ms=30 --token=w > /tmp/egl-w.log 2>&1 </dev/null & i=0; while ! grep -q "EGLTEST CHECK" /tmp/egl-w.log && [ $i -lt 60 ]; do sleep 1; i=$((i+1)); done; sleep 1; echo started' >/dev/null
+zwl_app_clients
+set -- $(guest "grep 'KWL MAP client=$zc1 ' /tmp/zdesktop.log" | sed -n 's/.* x=\([-0-9]*\) y=\([-0-9]*\).*/\1 \2/p')
+wx=${1:-0}; wy=${2:-0}
+pointer move 1250 780 sleep 400
+check "$out/wayland.png" $(etc2_expect "$wx" "$wy" 640 400) || status=1
+guest 'cat /tmp/egl-w.log' > "$out/wayland.txt"
+cat "$out/wayland.txt"
+expect_log /tmp/egl-w.log 'EGLTEST ETC2 ready failures=0'
+expect_log /tmp/egl-w.log 'EGLTEST CHECK run=w failures=0 glerror=0x0'
+guest "$stop_all" >/dev/null
+[ $status -eq 0 ] && echo "egl-p039: PASS" || echo "egl-p039: FAIL"
+exit $status

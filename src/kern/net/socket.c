@@ -705,10 +705,37 @@ socket_enqueue_stream(
 	struct socket *socket,
 	struct packet_buf *packet)
 {
+	int error;
+
+	/* Queues it with no count to advance. */
+	error = socket_enqueue_stream_advance(socket, packet, NULL);
+	if (error != 0)
+		return error;
+
+	/* Succeeded: the data is queued. */
+	return 0;
+}
+
+/*
+ * Queues stream data for receive as socket_enqueue_stream does, and adds
+ * the bytes queued to *next in the same hold of the socket lock (nothing
+ * when the data is not taken).  next is a count the socket lock guards:
+ * TCP's receive_next, so that the acknowledgement a segment carries and
+ * the window the queue leaves always agree (one built between the two
+ * would acknowledge the old point with the window already narrowed, which
+ * the peer counts as a duplicate acknowledgement).  next may be NULL.
+ */
+int
+socket_enqueue_stream_advance(
+	struct socket *socket,
+	struct packet_buf *packet,
+	uint32_t *next)
+{
 	struct packet_buf *tail;
 	unsigned long irq;
 	size_t room;
 	size_t fill;
+	size_t queued;
 	unsigned references;
 	int jumbo;
 	int error;
@@ -734,6 +761,9 @@ socket_enqueue_stream(
 		return error;
 	}
 
+	/* The bytes the count moves by once they are queued. */
+	queued = packet->length;
+
 	/* The room at the end of the waiting packet, when it is unshared. */
 	tail = socket->receive_tail;
 	room = 0;
@@ -751,6 +781,8 @@ socket_enqueue_stream(
 		    packet->length);
 		tail->length += packet->length;
 		socket->receive_bytes += packet->length;
+		if (next != NULL)
+			*next += (uint32_t)queued;
 		waitq_wake_one(&socket->receive_waitq);
 		spin_unlock_irqrestore(&socket->lock, irq);
 		packet_buf_free(packet);
@@ -789,6 +821,8 @@ socket_enqueue_stream(
 	socket->receive_bytes += packet->length;
 	if (jumbo)
 		socket->receive_jumbo++;
+	if (next != NULL)
+		*next += (uint32_t)queued;
 	waitq_wake_one(&socket->receive_waitq);
 
 	spin_unlock_irqrestore(&socket->lock, irq);

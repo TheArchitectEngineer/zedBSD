@@ -20,6 +20,7 @@ int bcm2711_shared_create(struct bcm2711_buffer *buffer, const struct gpu_image_
 void bcm2711_shared_release(struct bcm2711_shared *shared);
 struct bcm2711_buffer *bcm2711_shared_buffer(struct bcm2711_shared *shared);
 int bcm2711_shared_backing(struct bcm2711_shared *shared, struct drv_gpu_scanout_backing *backing);
+int bcm2711_shared_allocation_backing(struct bcm2711_shared *shared, struct drv_gpu_scanout_backing *backing);
 int bcm2711_shared_lookup(const struct gpu_image_descriptor *image, const struct drv_gpu_scanout_backing *backing, struct bcm2711_buffer **result);
 bool bcm2711_shared_description(struct bcm2711_shared *shared, struct gpu_image_descriptor *image);
 int bcm2711_shared_image(const struct bcm2711_buffer *buffer, const struct gpu_image_descriptor *image);

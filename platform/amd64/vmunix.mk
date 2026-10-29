@@ -214,12 +214,15 @@ AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/vk/vk-object.c src/drivers/gpu/nvrt
 	src/drivers/gpu/nvrtx/runtime.c src/drivers/gpu/nvrtx/vk/vk-reply.c src/drivers/gpu/nvrtx/vk/vk-memory.c src/drivers/gpu/nvrtx/vk/vk-resource.c \
 	src/drivers/gpu/nvrtx/vk-node.c src/drivers/gpu/nvrtx/vk/vk-layout.c src/drivers/gpu/nvrtx/vk/vk-target.c src/drivers/gpu/nvrtx/vk/vk-pipeline.c \
 	src/drivers/gpu/nvrtx/vk/vk-command.c src/drivers/gpu/nvrtx/vk/vk-record.c src/drivers/gpu/nvrtx/vk/vk-execute.c src/drivers/gpu/nvrtx/vk/vk-queue.c \
-	src/drivers/gpu/nvrtx/vk/exec-push.c
+	src/drivers/gpu/nvrtx/vk/exec-push.c src/drivers/gpu/nvrtx/vk/exec-copy.c src/drivers/gpu/nvrtx/vk/vk-video.c \
+	src/drivers/gpu/nvrtx/vk/vk-video-h264.c
 ifneq ($(CONFIG_DRIVER_PCI_I915),y)
 AMD64_NVRTX_SOURCES += src/drivers/gpu/i915/vk/vk-codec.c
 endif
 # P9w: the work channel the GPU device keeps (ws037-p007 stage D1, nvrtx.work=1).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/work-records.c src/drivers/gpu/nvrtx/work.c src/drivers/gpu/nvrtx/recover.c
+# The video decoder's channel (nvrtx.video=1).
+AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/nvdec-records.c src/drivers/gpu/nvrtx/nvdec.c
 # P9p: the GPU's performance state, and its boost with nvrtx.boost=1 (ws241-p001).
 AMD64_NVRTX_SOURCES += src/drivers/gpu/nvrtx/perf.c
 # P8c: the GPU device, its display (events, refresh, cursor) and blob sharing (ws037-p006, nvrtx.resident=1).
@@ -434,6 +437,10 @@ endif
 ifeq ($(CONFIG_DRIVER_USB_HUB),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-hub.c
 endif
+# The USB Video Class cameras, on the camera framework.
+ifeq ($(CONFIG_DRIVER_USB_UVC),y)
+AMD64_USB_CLASS_SOURCES += src/drivers/usb/usb-uvc.c src/drivers/usb/usb-uvc-desc.c src/drivers/usb/usb-uvc-stream.c src/drivers/usb/usb-uvc-payload.c
+endif
 ifeq ($(CONFIG_DRIVER_USB_RTL8822BU),y)
 AMD64_USB_CLASS_SOURCES += src/drivers/wifi/rtl8822b/rtl8822b.c \
 	src/drivers/wifi/rtl8822b/rtl8822b-security.c \
@@ -531,6 +538,10 @@ AMD64_KERNEL_SOURCES += \
 	src/drivers/platform/pcat/graphics/font.c \
 	src/drivers/platform/pcat/graphics/text.c \
 	src/drivers/platform/pcat/serial-mirror.c
+endif
+# The camera framework, /dev/camN; the camera source drivers build on it.
+ifneq ($(filter y,$(CONFIG_DRIVER_CAMERA) $(CONFIG_DRIVER_USB_UVC)),)
+AMD64_KERNEL_SOURCES += src/drivers/camera/cam.c
 endif
 AMD64_KERNEL_SOURCES += $(KERN_NET_SOURCES) $(KERN_BLOCK_IDENTITY_SOURCES) \
 	$(KERN_UFS_SOURCES)
@@ -1020,7 +1031,7 @@ $(BUILD)/bin/$(1): $(AMD64_APP_INPUTS) $(AMD64_USER_BASIC_COMMON_OBJ) \
  $(call ZEDBSD_USERLAND_OBJECTS,$(AMD64_APP_OBJ),$(1)) $(AMD64_APP_LIBS) -o $$@
 	$(AMD64_APP_CHECK) $$@
 endef
-$(foreach command,$(filter-out vkdemo vkcompute vkreset vkcoherency vkimage vkstage vkquad vkvideo-probe media-probe mediastorage display-events wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer music photos phone calendar mailer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system keiland-notify printtest fidoctl passkey-fido2,$(USER_BASIC_COMMANDS)),\
+$(foreach command,$(filter-out camvk vkdemo vkcompute vkreset vkcoherency vkimage vkstage vkquad vkvideo-probe media-probe mediastorage display-events wltest wlshm mview wayland terminal files notes monitor pdfviewer settings imageview textedit videoplayer music photos phone calendar mailer kuidemo browser browser-probe xserver egltest glescompute glxtest zgears gpu-share-test gpu-fence-test acquire-fence-test gpu-forge-test menu-probe titlebar-probe popup-probe subsurface-probe seat-probe data-probe extras-probe tablet-probe keiland-ime ime-probe keiland-settings keiland-system keiland-notify printtest fidoctl passkey-fido2,$(USER_BASIC_COMMANDS)),\
 	$(eval $(call AMD64_USER_BASIC_COMMAND,$(command))))
 # Static programs (the class static, ws168-p002): linked with the static C
 # library alone and no runtime linker, as a child that sandbox_spawn starts

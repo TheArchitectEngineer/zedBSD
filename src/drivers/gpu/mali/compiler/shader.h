@@ -104,7 +104,12 @@
  * 32-bit float) after the coverage test and before its blends:
  * writes_depth says so, and the draw then takes the depth from the
  * shader (the depth/stencil descriptor's depth source) and tests and
- * updates depth late.
+ * updates depth late.  A fragment program that writes its stencil
+ * reference (gl_FragStencilRefARB, an integer whose low 8 bits count)
+ * emits it with the same ZS_EMIT: writes_stencil says so, and the draw
+ * then takes the stencil reference from the shader.  gl_SampleID reads
+ * the sample the invocation runs for (bits 20:16 of the preloaded r61):
+ * reads_sample_id says so.
  *
  * Compute programs.  A compute program reads its local invocation id from
  * the preloaded r55 (x in bits 15:0, y in 31:16) and r56 (z in 15:0), and
@@ -157,10 +162,14 @@ enum mali_shader_stage {
 /*
  * What the compiler asks the SPIR-V parse to lower beyond the shared
  * profile: storage images, a compute shader's images, a fragment
- * shader's gl_FragDepth, and its gl_SampleMask and gl_SampleMaskIn.
+ * shader's gl_FragDepth, its gl_SampleMask and gl_SampleMaskIn, its
+ * gl_SampleID and its stencil reference (gl_FragStencilRefARB), and a
+ * module's function calls (inlined).
  */
 #define MALI_SHADER_SPIRV_FEATURES	(DRV_GPU_SPIRV_FEATURE_COMPUTE_IMAGES | DRV_GPU_SPIRV_FEATURE_STORAGE_IMAGE | \
-					 DRV_GPU_SPIRV_FEATURE_FRAG_DEPTH | DRV_GPU_SPIRV_FEATURE_SAMPLE_MASK)
+					 DRV_GPU_SPIRV_FEATURE_FRAG_DEPTH | DRV_GPU_SPIRV_FEATURE_SAMPLE_MASK | \
+					 DRV_GPU_SPIRV_FEATURE_SAMPLE_ID | DRV_GPU_SPIRV_FEATURE_STENCIL_EXPORT | \
+					 DRV_GPU_SPIRV_FEATURE_INLINE_CALLS)
 
 /* The resource tables a program reads (see the shader ABI above). */
 #define MALI_SHADER_TABLE_TEXTURES		0U
@@ -341,6 +350,21 @@ struct mali_shader_program {
 	uint32_t writes_depth;
 	uint32_t writes_sample_mask;
 	uint32_t reads_sample_mask;
+
+	/*
+	 * A fragment program: whether it writes its stencil reference
+	 * (gl_FragStencilRefARB), and whether it reads the number of the
+	 * sample it runs for (gl_SampleID).
+	 */
+	uint32_t writes_stencil;
+	uint32_t reads_sample_id;
+
+	/*
+	 * Whether the program writes memory other threads or later work can
+	 * see: a store to a storage buffer or a storage image, or an atomic
+	 * operation on either (not shared memory).
+	 */
+	uint32_t writes_memory;
 };
 
 /*

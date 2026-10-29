@@ -27,6 +27,8 @@
 #include "drivers/gpu/nvrtx/nvrtx-private.h"
 #include "drivers/gpu/nvrtx/nvrtx-work.h"
 
+struct nvrtx_nvdec_state;
+
 struct nvrtx_node;
 
 /* The firmware directory the GSP files are read from; a chip's files are named by its profile below it. */
@@ -115,13 +117,14 @@ struct nvrtx_node;
 
 /*
  * The work channel's objects (work-channel): its address space
- * (owned by the driver), its graphics channel (chid 4) and the 3D and
- * compute objects on it, in the same families.
+ * (owned by the driver), its graphics channel (chid 4) and the 3D, compute
+ * and copy objects on it, in the same families.
  */
 #define NVRTX_HANDLE_WORK_SPACE		0x90f10004U
 #define NVRTX_HANDLE_WORK_CHANNEL	0xf1f00004U
 #define NVRTX_HANDLE_WORK_THREED	0x97000004U
 #define NVRTX_HANDLE_WORK_COMPUTE	0xc5c00004U
+#define NVRTX_HANDLE_WORK_COPY		0xc5b50004U
 
 /*
  * The first draw's place in the compute launch's range: its system-memory
@@ -340,7 +343,8 @@ struct nvrtx_bo {
  * the driver's own work channel, or a channel of one session's.
  *
  * chid is its number on the graphics runlist and the handles name the
- * channel and its 3D and compute objects for the resource manager.
+ * channel and its 3D, compute and copy objects for the resource manager
+ * (the copy object only with the video decoder, nvrtx.video=1).
  * instance and userd are its instance block and USERD in the VRAM (in
  * the space's arena for the driver's channel, in the channel's own arena
  * for a session's, which also holds the channel's own context buffers).
@@ -377,6 +381,7 @@ struct nvrtx_work_channel {
 	uint32_t handle_channel;
 	uint32_t handle_threed;
 	uint32_t handle_compute;
+	uint32_t handle_copy;
 	struct nvrtx_bo arena;
 	uint64_t instance;
 	uint64_t userd;
@@ -400,6 +405,7 @@ struct nvrtx_work_channel {
 	int channel_made;
 	int threed_made;
 	int compute_made;
+	int copy_made;
 	int scheduled;
 	int ready;
 	int timed;
@@ -721,6 +727,9 @@ struct nvrtx_gpu {
 	/* The work channel the GPU device keeps (work-channel). */
 	struct nvrtx_work_state work;
 
+	/* The video decoder's channel (nvdec-channel, nvdec.c), NULL until it is begun. */
+	struct nvrtx_nvdec_state *nvdec;
+
 	/* The VRAM allocator and the BAR1 window. */
 	struct nvrtx_memory_state memory_state;
 
@@ -855,6 +864,7 @@ void nvrtx_work_release(struct nvrtx_gpu *gpu);
 int nvrtx_work_map_vram(struct nvrtx_gpu *gpu, uint64_t physical, uint64_t size, uint64_t *va);
 int nvrtx_work_map_system(struct nvrtx_gpu *gpu, const uint64_t *pages, size_t count, uint64_t *va);
 int nvrtx_work_unmap(struct nvrtx_gpu *gpu, uint64_t va, uint64_t size);
+uint64_t nvrtx_work_root(const struct nvrtx_gpu *gpu);
 int nvrtx_work_channel_open(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel, uint32_t chid);
 int nvrtx_work_channel_close(struct nvrtx_gpu *gpu, struct nvrtx_work_channel *channel);
 void nvrtx_work_channel_look(struct nvrtx_work_channel *channel, struct nvrtx_recover_view *view);

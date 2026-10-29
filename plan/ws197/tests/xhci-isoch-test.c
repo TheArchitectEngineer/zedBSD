@@ -595,7 +595,7 @@ test_retain(
 	check(isoch.state == DRV_XHCI_ISOCH_NORMAL, "normal after the flush");
 }
 
-/* The isochronous endpoint context (X7): full and high speed, one transaction an interval, CErr 0. */
+/* The isochronous endpoint context (X7): full and high speed, high bandwidth at high speed, CErr 0. */
 static void
 test_context(
 	void)
@@ -613,9 +613,12 @@ test_context(
 	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_HIGH, 1U, 192U, 4U, NULL, &words);
 	check(made && words.word0 == (3U << 16) && words.word1 == ((1U << 3) | (192U << 16)), "high speed interval");
 
-	/* Refused: high bandwidth, SuperSpeed, an interval past 15, bInterval 0, no packet. */
+	/* High bandwidth, 2 x 512 a microframe: Max Burst 1, ESIT payload 1024. */
 	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_HIGH, 5U, 0x0800U | 512U, 1U, NULL, &words);
-	check(!made, "high bandwidth refused");
+	check(made && words.word1 == ((5U << 3) | (1U << 8) | (512U << 16)), "high bandwidth max burst");
+	check(words.word4 == ((1024U << 16) | 1024U), "high bandwidth ESIT payload");
+
+	/* Refused: SuperSpeed, an interval past 15, bInterval 0, no packet. */
 	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_SUPER, 5U, 512U, 1U, NULL, &words);
 	check(!made, "SuperSpeed isochronous refused");
 	made = drv_xhci_endpoint_context_encode(DRV_USB_SPEED_FULL, 5U, 49U, 14U, NULL, &words);

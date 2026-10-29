@@ -33,12 +33,14 @@
 
 #include <string.h>
 
-/* The stages a built-in exists in (BI_BOTH: every stage, the compute stage of ws101-p008 among them). */
+/* The stages a built-in exists in (BI_BOTH: every stage, the compute and tessellation stages among them). */
 #define BI_VERTEX		1U
 #define BI_FRAGMENT		2U
 #define BI_GEOMETRY		4U
 #define BI_COMPUTE		8U
-#define BI_BOTH			15U
+#define BI_TESS_CONTROL		16U
+#define BI_TESS_EVALUATION	32U
+#define BI_BOTH			63U
 
 /* The SPIR-V opcodes of the built-ins that are one instruction. */
 #define BI_OP_ANY		154U
@@ -325,6 +327,7 @@ static const struct glsl_builtin builtins_table[] = {
 	{ "atomicCompSwap", "uuuu", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_COMP_SWAP, BI_COMPUTE, GLSL_IN_ES310 },
 	{ "atomicCompSwap", "iiii", GLSL_BI_SPECIAL, GLSL_SPECIAL_ATOMIC_COMP_SWAP, BI_COMPUTE, GLSL_IN_ES310 },
 	{ "barrier", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_BARRIER, BI_COMPUTE, GLSL_IN_ES310 },
+	{ "barrier", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_BARRIER, BI_TESS_CONTROL, GLSL_IN_TESS },
 	{ "memoryBarrier", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_MEMORY_BARRIER, BI_COMPUTE, GLSL_IN_ES310 },
 	{ "memoryBarrierBuffer", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_MEMORY_BARRIER_BUFFER, BI_COMPUTE, GLSL_IN_ES310 },
 	{ "memoryBarrierShared", "v", GLSL_BI_SPECIAL, GLSL_SPECIAL_MEMORY_BARRIER_SHARED, BI_COMPUTE, GLSL_IN_ES310 },
@@ -361,7 +364,9 @@ static const struct builtins_constant builtins_constants[] = {
 	{ "gl_MaxTextureUnits", 16, GLSL_IN_DESKTOP },
 	{ "gl_MaxLights", 8, GLSL_IN_DESKTOP },
 	{ "gl_MaxClipPlanes", 8, GLSL_IN_DESKTOP },
-	{ "gl_MaxClipDistances", 8, GLSL_IN_130_UP }
+	{ "gl_MaxClipDistances", 8, GLSL_IN_130_UP },
+	{ "gl_MaxPatchVertices", (int)GLSL_MAX_PATCH_VERTICES, GLSL_IN_TESS },
+	{ "gl_MaxTessGenLevel", 64, GLSL_IN_TESS }
 };
 
 static int builtins_match_size(const struct glsl_builtin *builtin, const struct glsl_type **arguments, unsigned count, unsigned size, int convert, const struct glsl_type **parameters, const struct glsl_type **result);
@@ -370,6 +375,8 @@ static int builtins_accepts(const struct glsl_type *parameter, const struct glsl
 static int builtins_sampler_code(char code, const struct glsl_type *argument);
 static void builtins_variable(struct glsl_shader *shader, const char *name, const struct glsl_type *type, unsigned where, unsigned builtin);
 static void builtins_geometry(struct glsl_shader *shader);
+static struct glsl_type *builtins_per_vertex(struct glsl_shader *shader, unsigned storage);
+static void builtins_tessellation(struct glsl_shader *shader);
 static struct glsl_symbol *builtins_uniform(struct glsl_shader *shader, const char *name, const struct glsl_type *type);
 static void builtins_depth_range(struct glsl_shader *shader);
 static void builtins_compute(struct glsl_shader *shader);
@@ -452,6 +459,10 @@ glsl_builtin_match(
 		stage = BI_GEOMETRY;
 	if (shader->stage == GLSL_STAGE_COMPUTE)
 		stage = BI_COMPUTE;
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL)
+		stage = BI_TESS_CONTROL;
+	if (shader->stage == GLSL_STAGE_TESS_EVALUATION)
+		stage = BI_TESS_EVALUATION;
 	if ((builtin->stages & stage) == 0U)
 		return 0;
 
@@ -526,6 +537,12 @@ glsl_builtin_variables(
 		return;
 	}
 
+	/* The tessellation stages: the patch's vertices, the levels, and the coordinate or the invocation. */
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL || shader->stage == GLSL_STAGE_TESS_EVALUATION) {
+		builtins_tessellation(shader);
+		return;
+	}
+
 	/* The compute stage (ws101-p008): its invocation's and group's places, and the workgroup size. */
 	if (shader->stage == GLSL_STAGE_COMPUTE) {
 		builtins_compute(shader);
@@ -553,6 +570,16 @@ glsl_builtin_variables(
 	/* The depth, which OpenGL ES 1.00 does not have. */
 	if ((mask & GLSL_IN_ES100) == 0U)
 		builtins_variable(shader, "gl_FragDepth", glsl_type_scalar(GLSL_BASE_FLOAT), GLSL_VAR_OUTPUT, GLSL_BUILTIN_FRAG_DEPTH);
+
+	/* Per-sample shading's: the sample shaded, its position in the pixel, the mask it writes (and, 4.00 on, the one it covers). */
+	if ((mask & GLSL_IN_SAMPLE) != 0U) {
+		type = glsl_type_array(&shader->arena, glsl_type_scalar(GLSL_BASE_INT), 1U);
+		builtins_variable(shader, "gl_SampleID", glsl_type_scalar(GLSL_BASE_INT), GLSL_VAR_INPUT, GLSL_BUILTIN_SAMPLE_ID);
+		builtins_variable(shader, "gl_SamplePosition", glsl_type_vector(GLSL_BASE_FLOAT, 2U), GLSL_VAR_INPUT, GLSL_BUILTIN_SAMPLE_POSITION);
+		builtins_variable(shader, "gl_SampleMask", type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_SAMPLE_MASK);
+		if ((mask & GLSL_IN_400) != 0U)
+			builtins_variable(shader, "gl_SampleMaskIn", type, GLSL_VAR_INPUT, GLSL_BUILTIN_SAMPLE_MASK_IN);
+	}
 }
 
 /* Matches a signature with its generic codes taking one size. */
@@ -951,6 +978,84 @@ builtins_geometry(
 	builtins_variable(shader, "gl_PointSize", float_type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_POINT_SIZE);
 	builtins_variable(shader, "gl_PrimitiveID", int_type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_PRIMITIVE_ID);
 	builtins_variable(shader, "gl_Layer", int_type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_LAYER);
+}
+
+/*
+ * Makes the struct of gl_PerVertex, the block gl_in and gl_out are arrays
+ * of: gl_Position (gl_PointSize needs a device feature, and there is no
+ * gl_ClipDistance yet).
+ */
+static struct glsl_type *
+builtins_per_vertex(
+	struct glsl_shader *shader,
+	unsigned storage)
+{
+	struct glsl_type *per_vertex;
+
+	/* The block's struct, one member. */
+	per_vertex = glsl_alloc(&shader->arena, sizeof(*per_vertex));
+	per_vertex->kind = GLSL_KIND_STRUCT;
+	per_vertex->name = "gl_PerVertex";
+	per_vertex->block = storage;
+	per_vertex->fields = glsl_alloc(&shader->arena, sizeof(*per_vertex->fields));
+	per_vertex->fields[0].name = "gl_Position";
+	per_vertex->fields[0].type = glsl_type_vector(GLSL_BASE_FLOAT, 4U);
+	per_vertex->field_count = 1U;
+
+	/* Succeeded: the struct. */
+	return per_vertex;
+}
+
+/*
+ * Declares a tessellation shader's built-ins: gl_in (gl_MaxPatchVertices
+ * of the vertices' gl_PerVertex), gl_PatchVerticesIn and gl_PrimitiveID,
+ * the levels (a control shader's patch outputs, an evaluation shader's
+ * patch inputs); a control shader's gl_InvocationID and gl_out (sized by
+ * its vertices layout), and an evaluation shader's gl_TessCoord and the
+ * outputs a vertex shader has.
+ */
+static void
+builtins_tessellation(
+	struct glsl_shader *shader)
+{
+	const struct glsl_type *float_type;
+	const struct glsl_type *int_type;
+	const struct glsl_type *outer;
+	const struct glsl_type *inner;
+	struct glsl_type *per_vertex;
+	unsigned levels;
+
+	/* The inputs both stages have. */
+	float_type = glsl_type_scalar(GLSL_BASE_FLOAT);
+	int_type = glsl_type_scalar(GLSL_BASE_INT);
+	per_vertex = builtins_per_vertex(shader, GLSL_STORAGE_IN);
+	builtins_variable(shader, "gl_in", glsl_type_array(&shader->arena, per_vertex, GLSL_MAX_PATCH_VERTICES), GLSL_VAR_INPUT,
+			  GLSL_BUILTIN_PER_VERTEX);
+	builtins_variable(shader, "gl_PatchVerticesIn", int_type, GLSL_VAR_INPUT, GLSL_BUILTIN_PATCH_VERTICES);
+	builtins_variable(shader, "gl_PrimitiveID", int_type, GLSL_VAR_INPUT, GLSL_BUILTIN_PRIMITIVE_ID);
+
+	/* The levels: the control shader writes them, the evaluation shader reads them. */
+	levels = GLSL_VAR_INPUT;
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL)
+		levels = GLSL_VAR_OUTPUT;
+	outer = glsl_type_array(&shader->arena, float_type, 4U);
+	inner = glsl_type_array(&shader->arena, float_type, 2U);
+	builtins_variable(shader, "gl_TessLevelOuter", outer, levels, GLSL_BUILTIN_TESS_LEVEL_OUTER);
+	builtins_variable(shader, "gl_TessLevelInner", inner, levels, GLSL_BUILTIN_TESS_LEVEL_INNER);
+
+	/* A control shader's invocation, and gl_out (its size comes with the vertices layout). */
+	if (shader->stage == GLSL_STAGE_TESS_CONTROL) {
+		builtins_variable(shader, "gl_InvocationID", int_type, GLSL_VAR_INPUT, GLSL_BUILTIN_INVOCATION_ID);
+		per_vertex = builtins_per_vertex(shader, GLSL_STORAGE_OUT);
+		builtins_variable(shader, "gl_out", glsl_type_array(&shader->arena, per_vertex, 0U), GLSL_VAR_OUTPUT,
+				  GLSL_BUILTIN_PER_VERTEX);
+		return;
+	}
+
+	/* An evaluation shader's coordinate in the domain, and its vertex's outputs. */
+	builtins_variable(shader, "gl_TessCoord", glsl_type_vector(GLSL_BASE_FLOAT, 3U), GLSL_VAR_INPUT, GLSL_BUILTIN_TESS_COORD);
+	builtins_variable(shader, "gl_Position", glsl_type_vector(GLSL_BASE_FLOAT, 4U), GLSL_VAR_OUTPUT, GLSL_BUILTIN_POSITION);
+	builtins_variable(shader, "gl_PointSize", float_type, GLSL_VAR_OUTPUT, GLSL_BUILTIN_POINT_SIZE);
 }
 
 /*

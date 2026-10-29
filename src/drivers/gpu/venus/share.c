@@ -39,7 +39,7 @@ static void share_context_drop(struct venus_controller *controller, struct venus
 
 /* Every registered Venus instance borrows these immutable allocation operations. */
 const struct drv_gpu_share_ops drv_venus_share_operations = {
-	share_export, share_release, share_import, NULL
+	share_export, share_release, share_import, NULL, NULL
 };
 
 /*

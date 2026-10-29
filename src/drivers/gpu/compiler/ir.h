@@ -152,6 +152,14 @@
 #define DRV_GPU_IR_LOCATION_SAMPLE_MASK 0xFFFFFFF9U
 
 /*
+ * The STORE_OUTPUT location of a fragment shader's FragStencilRefEXT
+ * builtin, component 0: the stencil reference, an integer whose low 8 bits
+ * the stencil test and write take.  Only a parse with the STENCIL_EXPORT
+ * feature makes it.
+ */
+#define DRV_GPU_IR_LOCATION_FRAG_STENCIL 0xFFFFFFF8U
+
+/*
  * The `immediate` bit of a LOAD_VERTEX_INPUT whose input vertex is chosen
  * at run time: src[0] is then the integer number of the
  * vertex, and the other bits are zero.

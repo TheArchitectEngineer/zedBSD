@@ -78,6 +78,7 @@ nvrtx_vk_record_route(
 	struct nvrtx_vk_command_buffer *command;
 	struct nvrtx_vk_record record;
 	uint64_t identity;
+	bool video;
 	int refused;
 	int error;
 
@@ -108,7 +109,10 @@ nvrtx_vk_record_route(
 	case GPU_OP_CMD_END_RENDER_PASS:
 		break;
 	default:
-		return 0;
+		video = nvrtx_vk_video_recorded(opcode);
+		if (!video)
+			return 0;
+		break;
 	}
 
 	*handled = 1;
@@ -121,7 +125,16 @@ nvrtx_vk_record_route(
 	/* Reads the record to its end; a record that does not decode leaves the stream unreadable. */
 	kern_memset(&record, 0, sizeof(record));
 	record.opcode = opcode;
-	refused = record_decode(session, opcode, reader, &record);
+	video = nvrtx_vk_video_recorded(opcode);
+	if (video) {
+		/* A video or query command keeps a structure of its own and takes its scope from the recording. */
+		command = nvrtx_vk_payload(session, I915_VK_OBJ_COMMAND_BUFFER, identity);
+		if (command != NULL && command->state != NVRTX_VK_COMMAND_RECORDING)
+			command = NULL;
+		refused = nvrtx_vk_video_record(session, command, opcode, reader, &record);
+	} else {
+		refused = record_decode(session, opcode, reader, &record);
+	}
 	if (refused == EINVAL || reader->error != 0) {
 		record_drop(&record);
 		return EINVAL;
@@ -997,11 +1010,17 @@ record_drop(
 	struct nvrtx_vk_record *record)
 {
 	uint32_t index;
+	bool video;
 
 	/* Its objects. */
 	for (index = 0U; index < record->object_count; index++)
 		(void)nvrtx_vk_object_release(record->objects[index]);
 	record->object_count = 0U;
+
+	/* A video or query command's structure, with what it holds. */
+	video = nvrtx_vk_video_recorded(record->opcode);
+	if (video)
+		nvrtx_vk_video_drop(record);
 
 	/* Its runs. */
 	if (record->regions != NULL)

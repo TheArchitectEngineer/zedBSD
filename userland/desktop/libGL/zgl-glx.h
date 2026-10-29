@@ -18,6 +18,7 @@
 #define LIBGL_ZGL_GLX_H
 
 #include <GL/gl.h>
+#include <EGL/egl.h>
 
 /* The desktop GL version of a context without a binding that says otherwise: 1.4, major * 10 + minor. */
 #define ZGL_GL_LEGACY		14U
@@ -37,5 +38,12 @@ struct zgl_glx_query {
 
 /* libGL.so: takes the binding's answers and turns on the fixed-function layer (libGLX calls it before its first context). */
 void zgl_glx_attach(const struct zgl_glx_query *query);
+
+/*
+ * libGL.so: the latest desktop GL version (major * 10 + minor) a context
+ * on an initialized EGL display of libEGL's may have: what the display's
+ * device does decides it (OpenGL 3.3 needs dual-source blending).
+ */
+unsigned zgl_glx_version_limit(EGLDisplay display);
 
 #endif

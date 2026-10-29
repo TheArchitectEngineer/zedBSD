@@ -497,8 +497,7 @@ device_families(
 {
 	VkQueueFamilyProperties family;
 	uint64_t array_count;
-
-	UNUSED_PARAMETER(session);
+	bool video;
 
 	/* The physical device, the present word and the count, then the array's count. */
 	(void)drv_i915_wire_read_u64(reader);
@@ -516,6 +515,11 @@ device_families(
 	kern_memset(&family, 0, sizeof(family));
 	family.queueFlags = VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT;
 	family.queueCount = 1U;
+
+	/* The same family decodes video when the device has the video decoder. */
+	video = nvrtx_vk_video_available(session->owner);
+	if (video)
+		family.queueFlags |= VK_QUEUE_VIDEO_DECODE_BIT_KHR;
 	family.minImageTransferGranularity.width = 1U;
 	family.minImageTransferGranularity.height = 1U;
 	family.minImageTransferGranularity.depth = 1U;
@@ -555,6 +559,16 @@ device_format_features(
 	case VK_FORMAT_D32_SFLOAT:
 		/* The depth format: a depth attachment of optimal tiling only. */
 		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT;
+		break;
+	case NVRTX_VK_FORMAT_NV12:
+		/*
+		 * The video decoder's pictures, of optimal (block-linear) tiling
+		 * only: decoded into, references, copied out (libvulkan hides the
+		 * video features of a device without video decode).
+		 */
+		properties->optimalTilingFeatures = VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR |
+						    VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR |
+						    VK_FORMAT_FEATURE_TRANSFER_SRC_BIT;
 		break;
 	default:
 		break;
@@ -601,6 +615,12 @@ device_usage_features(
 	/* Rendering colour needs the colour attachment feature. */
 	if ((usage & VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT) != 0U)
 		required |= VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT;
+
+	/* Decoding into the image, and keeping it as a reference, need the video features. */
+	if ((usage & VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR) != 0U)
+		required |= VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR;
+	if ((usage & VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR) != 0U)
+		required |= VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR;
 
 	/* Rendering depth needs the depth attachment feature (D32_SFLOAT's). */
 	if ((usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0U)
@@ -685,7 +705,7 @@ device_image_format(
 	image.maxExtent.height = 16384U;
 	image.maxExtent.depth = 1U;
 	image.maxMipLevels = NVRTX_VK_LEVELS_MAX;
-	if (format == VK_FORMAT_D32_SFLOAT)
+	if (format == VK_FORMAT_D32_SFLOAT || format == NVRTX_VK_FORMAT_NV12)
 		image.maxMipLevels = 1U;
 	image.maxArrayLayers = 1U;
 	image.sampleCounts = VK_SAMPLE_COUNT_1_BIT;
