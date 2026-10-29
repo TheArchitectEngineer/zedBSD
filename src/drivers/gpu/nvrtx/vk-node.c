@@ -40,6 +40,20 @@
 #define VK_NODE_RUN_ALIGN		0x10000ULL
 
 /*
+ * The 3D engine's pending interrupt, trap and GPC exception registers, read
+ * after a run to tell a run the engine trapped in without stopping the
+ * channel; the first few such runs are told.
+ *
+ * Values referenced: Linux v6.19
+ * drivers/gpu/drm/nouveau/nvkm/engine/gr/gf100.c (gf100_gr_intr 0x400100,
+ * gf100_gr_trap_intr 0x400108 and 0x400118).
+ */
+#define VK_NODE_GR_INTR			0x400100U
+#define VK_NODE_GR_TRAP			0x400108U
+#define VK_NODE_GR_GPC_EXCEPTION	0x400118U
+#define VK_NODE_GR_TOLD_MAX		4U
+
+/*
  * One run of the executor's own GPU memory: the VRAM and where the work
  * channel reads it.
  */
@@ -50,6 +64,7 @@ struct vk_node_run {
 
 static uint8_t *vk_node_backing_view(struct nvrtx_node *node, const struct nvrtx_backing *backing);
 static void vk_node_backing_drop(struct nvrtx_node *node, struct nvrtx_backing *backing);
+static void vk_node_gr_check(struct nvrtx_node *node);
 
 /*
  * Attaches a new blob's VRAM to the VkDeviceMemory its blob_id names: maps
@@ -310,8 +325,32 @@ nvrtx_vk_gpu_run(
 		nvrtx_node_count_max(node, &node->counts.gpu_max_us, gpu_ns / 1000U);
 	}
 
+	/* A run the engine trapped in is told, the first few times. */
+	vk_node_gr_check(node);
+
 	/* Succeeded: the GPU has done the work. */
 	return 0;
+}
+
+/* Tells a trap or exception the 3D engine holds after a run, the first few times. */
+static void
+vk_node_gr_check(
+	struct nvrtx_node *node)
+{
+	static uint32_t told;
+	uint32_t intr;
+	uint32_t trap;
+	uint32_t gpc;
+
+	if (told >= VK_NODE_GR_TOLD_MAX)
+		return;
+	intr = nvrtx_rd32(node->gpu, VK_NODE_GR_INTR);
+	trap = nvrtx_rd32(node->gpu, VK_NODE_GR_TRAP);
+	gpc = nvrtx_rd32(node->gpu, VK_NODE_GR_GPC_EXCEPTION);
+	if (intr == 0U && trap == 0U && gpc == 0U)
+		return;
+	told++;
+	nvrtx_stage_mark("vk: gr after a run: intr %08x trap %08x gpc %08x", (unsigned)intr, (unsigned)trap, (unsigned)gpc);
 }
 
 /*

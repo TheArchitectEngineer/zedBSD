@@ -98,8 +98,26 @@
 #define RPC_ERROR_FAULT_KIND_AT		36U
 #define RPC_ERROR_BYTES			40U
 
+/*
+ * A graphics class error (a method the 3D engine refused): its kind, and the
+ * engine's registers that keep the refused method, its data and the error's
+ * code, and the class bound to each subchannel.
+ *
+ * Values referenced: NVIDIA open-gpu-kernel-modules 570.144
+ * src/common/sdk/nvidia/inc/nverror.h (ROBUST_CHANNEL_GR_CLASS_ERROR) and
+ * Linux v6.19 drivers/gpu/drm/nouveau/nvkm/engine/gr/gf100.c (gf100_gr_intr:
+ * 0x400100, 0x400704, 0x400708, 0x400110, 0x404200).
+ */
+#define RPC_GR_CLASS_ERROR		69U
+#define RPC_GR_STATUS			0x400100U
+#define RPC_GR_TRAPPED_ADDR		0x400704U
+#define RPC_GR_TRAPPED_DATA		0x400708U
+#define RPC_GR_ERROR_CODE		0x400110U
+#define RPC_GR_SUBCHANNEL_CLASS		0x404200U
+
 static int rpc_sequencer(struct nvrtx_gpu *gpu, uint8_t *payload, size_t length);
 static void rpc_error_log(const uint8_t *payload, size_t length);
+static void rpc_gr_class_error(struct nvrtx_gpu *gpu);
 static int rpc_core_resume(struct nvrtx_gpu *gpu);
 static int rpc_exchange(struct nvrtx_gpu *gpu, uint32_t function, size_t call_length, size_t *reply_length);
 
@@ -257,6 +275,8 @@ nvrtx_rpc_wait(
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_FAULT_HIGH_AT),
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_FAULT_LOW_AT),
 			    (unsigned)nvrtx_get32(gpu->reply, RPC_ERROR_FAULT_KIND_AT));
+			if (nvrtx_get32(gpu->reply, RPC_ERROR_TYPE_AT) == RPC_GR_CLASS_ERROR)
+				rpc_gr_class_error(gpu);
 			continue;
 		}
 
@@ -664,4 +684,25 @@ rpc_core_resume(
 
 	/* Succeeded: the GSP's core runs the firmware again. */
 	return 0;
+}
+
+/*
+ * Shows what the 3D engine kept of a method it refused: the status, the
+ * subchannel and method with their data, the error's code and the class on
+ * that subchannel, on two lines that fit an 80-column screen.
+ */
+static void
+rpc_gr_class_error(
+	struct nvrtx_gpu *gpu)
+{
+	uint32_t address;
+	uint32_t subchannel;
+
+	address = nvrtx_rd32(gpu, RPC_GR_TRAPPED_ADDR);
+	subchannel = (address >> 16) & 0x7U;
+	nvrtx_stage_mark("gr refused: status %08x subc %u method %04x",
+	    (unsigned)nvrtx_rd32(gpu, RPC_GR_STATUS), (unsigned)subchannel, (unsigned)(address & 0x3ffcU));
+	nvrtx_stage_mark("gr refused: data %08x code %08x class %04x",
+	    (unsigned)nvrtx_rd32(gpu, RPC_GR_TRAPPED_DATA), (unsigned)nvrtx_rd32(gpu, RPC_GR_ERROR_CODE),
+	    (unsigned)(nvrtx_rd32(gpu, RPC_GR_SUBCHANNEL_CLASS + subchannel * 4U) & 0xffffU));
 }
