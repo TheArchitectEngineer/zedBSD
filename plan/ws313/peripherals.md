@@ -1,10 +1,11 @@
 # WS313: the S905X5M peripheral drivers (SD, Ethernet, USB): research notes
 
-State on 2026-10-29: research only. No driver code is written yet, and the build
-still lists only `src/drivers/platform/s905x5m/s905x5m-stubs.c`. Everything below
-was read from the trees under `build/ref/` in the p7-ws313 worktree (read with
-`git show HEAD:<path>` where the checkout is sparse). Nothing here has been
-checked on hardware.
+State on 2026-10-29 12:30: the drivers are written and build (warning 0), but
+nothing is checked on hardware. The research below was read from the trees under
+`build/ref/` in the p7-ws313 worktree (read with `git show HEAD:<path>` where the
+checkout is sparse). What was built from it is in "Result" at the end and in
+[phase004](phase004/phase.md) (SD), [phase005](phase005/phase.md) (USB) and
+[phase006](phase006/phase.md) (Ethernet).
 
 Sources:
 - [HK] hk-common-drivers-s7d-6.12 @34daba9 (Hardkernel common_drivers, odroids7d-6.12.y)
@@ -73,11 +74,11 @@ Note: the SD and USB IRQs are edge-triggered in this tree, and the Ethernet IRQ 
   2. set level reset bit 9 at 0xfe002040, i.e. take the PHY out of reset (hold_reset(true) ORs the bit in);
   3. pulse USB reset: write 1<<4 to 0xfe002000 (done once);
   4. wait 50 µs;
-  5. host mode: r0 (0xfe348000) host_device = 1, POR = 0 (bit positions not yet confirmed: the u2p_r0_v2 union lookup timed out);
+  5. host mode: r0 (0xfe348000) host_device = 1 (bit 0), POR = 0 (bit 3) ([HK] include/linux/amlogic/usb-v2.h union u2p_r0_v2);
   6. reset the PHY config: clear level bit 9, wait 50-100 µs, set it again;
   7. trim: efuse 0xfe010330 bit 12 = trim valid, value = ((reg>>8)&0xf)+2 capped at 12, else pll-settings[4] = 9. Write a thermometer mask ((1<<n)-1) into the low 12 bits of cfg+0x10 (cfg = 0xfe34c000), which differs from the briefing;
   8. cfg+0xc = 0x39, clear cfg+0x38 bit 27, cfg+0x50 = pll-settings[3] = 0x7e18;
-  9. poll r1 (0xfe348004) phy_rdy (bit 0 per the briefing, unconfirmed) up to about 1 ms;
+  9. poll r1 (0xfe348004) phy_rdy (bit 0, [HK] usb-v2.h union u2p_r1_v2) up to about 1 ms;
   10. PLL at cfg+0x40: set bit 27; write 0x549540|bit27; set 26, wait 20 µs; set 25, wait 20 µs; set 24; poll bit 31 up to 5×20 µs; retry up to 5 times.
 - U-Boot powers the hub only when `early_usb_start=true` (cmd/showlogo.c: "usb hub-on 1"). The power domain U2H (5) may therefore be off if U-Boot never started USB. Reading the controller's registers in an off domain may hang.
 
@@ -98,3 +99,21 @@ The kernel has no SMC call open to drivers (nothing in include/hal/hal.h or incl
 SD: log the CLKC 0x16c and controller CLOCK/CFG before init, the card-detect level, CMD8 echo, OCR, CID/CSD, bus 4-bit/clock, then a read of MBR sector 0 (0x55aa).
 Ethernet: PRG_ETH0/1 before and after, the MAC version register, the PHY ID (regs 2/3), the PHY delay register values, then link speed.
 USB: the 0x20FC value, PHY r1 ready, PLL cfg+0x40 lock bit 31, xHCI CAPLENGTH/HCIVERSION/HCSPARAMS1, port status of the hub port.
+
+## Result (2026-10-29, implemented, not tested on hardware)
+
+| File | What |
+| --- | --- |
+| `src/drivers/platform/s905x5m/s905x5m-soc.{c,h}` | clock gates and the SD clock selector, reset pulse/level, pinmux, GPIO, FDT lookups (node by compatible and address, GIC interrupt, GPIO specifier, raw reg for the USB PHY's bus without ranges), spin delay |
+| `src/drivers/mmc/meson-mmc.{c,h}` | the Amlogic SD/eMMC core: direct mode, polled, 64 KiB bounce buffer below 4 GiB, card layer after dw-mmc.c, mmcblk<unit> |
+| `src/drivers/platform/s905x5m/s905x5m-mmc.c` | sd_emmc_b glue: gate, pins, supplies from the DT regulators, CLKC selector (xtal for 400 kHz and 24 MHz, fclk_div2 for 50 MHz), sector 0 check |
+| `src/drivers/platform/s905x5m/s905x5m-ethernet.c` | PRG_ETH0/1 for RGMII (125 MHz from fclk_div2 /4 /2, 2 ns TX delay), MDIO mux external, PHY reset GPIOH_9, RTL8211F delays off through the new dw-eqos `configure_phy` hook |
+| `src/drivers/platform/s905x5m/s905x5m-usb.c` | USB 2 PHY1 bring-up, CRG host role, virtual PCI root bus for pci-xhci.c, 32-bit DMA, SPI 130 edge + polling |
+| `include/drivers/ethernet/dw-eqos.h`, `src/drivers/ethernet/dw-eqos.c` | `configure_phy` and `phy_context` (additive; VF2 builds with 0 warnings) |
+| `platform/arm64/s905x5m.mk` | the stubs replaced by the files above, dw-eqos.c, mii-phy.c, yt8531.c and pci.c |
+| `tests/meson-mmc-host-test.c` | host test with a fake controller and card (driver 39, version1 5, glue on the real DTB 12 checks; all PASS) |
+
+Choices made while writing: the card detect is logged only (the card U-Boot read is
+tried even if the pin says empty); the default speed runs from the crystal (24 MHz),
+as the vendor driver runs its legacy timing; IRQ_EN stays 0 and the status is polled.
+The serial lines to read are listed in each phase.md.
