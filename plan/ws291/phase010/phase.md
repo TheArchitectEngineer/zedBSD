@@ -3,7 +3,7 @@
 # ws291-p010 NVIDIA（RTX 2070）: nvrtx の起動・desktop の計測と 60 fps、Linux の NVK の基準
 
 - 親: [WS291](../ws.md)。
-- 状態: in-progress（2026-10-29 06:20 P2、q1670-i01、worktree p2-ws291m、基点 main 42da8d889）。
+- 状態: in-progress（2026-10-29 06:20 P2、q1670-i01、worktree p2-ws291m、基点 main 42da8d889。12:55 q1670-i06: driver 側の直し（cursor・window_lock）の後、全段 60 fps 以上か入力の間隔で決まる値。受け入れの判定は WS309 の後に測り直して）。
 - 承認: ユーザーの回答（クリック、2026-10-29）「WS291 の NVIDIA の段 (推し)」（問い: RX 5600 XT を外している間、P2 は何をするか）。
   機械の変更（原文）「再起動後、RTL8127と、RTX 2070が接続されています。RX 5600 XTはPCIスロットの高さの関係で、RTL8127と排他だからです。」
 - Linux の基準の driver: ユーザーの回答（クリック、2026-10-29、Q1 経由）「NVK（nouveau） (推し)」→ Mesa の NVK、設定の file は変えず、計測の時だけ sysfs で
@@ -137,3 +137,85 @@
   swapchain を越えて `api=depth format result=-11`（[p010a](../phase010a/phase.md) で足す物）まで進み、kernel の行に `work space full`・`window full` は無い → VA の拡張は効いている。
 - desktop（counts 無し）: keys 167、output 67、type 61、home 63、wiseview 62、launch 49、scroll 20、hover 23、drag 36 fps（前の lazy と同じ）。
 - 終わり: Debian、RTX は vfio-pci、NVMe の zedBSD の kernel は vmunix-va1（前の物は vmunix.old）。
+
+## q1670-i06（2026-10-29 12:19〜12:55 P2、worktree p2-ws291r、基点 main 2dcea9df9）
+
+- 範囲（Q1）: p010 の残り、RTX の desktop の操作の fps を 60 に。まず p011 の後の値と遅い段の 1 frame の内訳。
+- ユーザー（原文、Q1 経由）「WS291は、Keilandのスレッドの修正を適用後でないと、正確にならないかもしれないです。」→ Q1: desktop の fps の受け入れは
+  WS309（Keiland の thread の整理）の後に測り直して判定する。今は driver の側の直しまで、compositor の側の調整はしない。
+- 道具: `plan/ws291/tests/rtx-desk-profile.sh OUT RESTORE VMUNIX [perf]`（kernel を入れ、起動直後の session で frame-ops、表と launch・hover・drag の
+  frame ごとの値（frames.txt）、perf を付けると nvrtx.vk.perf=1 でもう 1 回と kernel の perf の行、最後に RESTORE に戻して Debian）。
+
+### 段の読み方（p001 と同じ）
+
+- scroll（wheel 50 ms 間隔）・hover（move 15 ms 間隔と aat-input の起動）・keys（200 ms 間隔）の fps は試験の入力の間隔で決まる（RDNA の p001 も
+  scroll 20・hover 23）。この 3 段は fps でなく work（draw→submit）と lag で見る。60 fps に届かない本物は drag と launch だった。
+
+### 計測 1（dp1、今の main の build、cksum 3566687130、build/ws291/rtx/dp1）
+
+| 段 | fps | work p50/max | next p50/max | 備考 |
+| --- | --- | --- | --- | --- |
+| launch | 51・54 | 1/2・0/100 | 16/78・16/80 | terminal の起動の 3 frame で next 76〜78 ms |
+| hover | 22 | 2/18 | 32/79 | 入力の間隔 |
+| drag | 31・38 | 1/19 | 32/40 | period 33（2 vblank） |
+| home・wiseview・type・output | 59〜69 | 0〜1（wiseview max 87〜90） | 16〜17 | |
+
+- p011 の非同期の submit で work は全段 0〜2 ms（va1 の 6〜10 ms から）。drag の 1 frame: work 1、shown 1、next 32 ms。
+- 原因（session の log と code）: 毎 frame の acquire の直前に cursor の plane の present（Keiland の cursor-thread、queue_lock を持ったまま
+  vkQueuePresentKHR）が約 30 ms（KWL PERF main: cursor presents=189、present 合計 2665 ms、max 46 ms）。libvulkan は cursor の present ごとに
+  GPU_DISPLAY_CURSOR_SET と MOVE を呼ぶ。nvrtx の cursor_set は毎回 64x64 を blob（VRAM）から UC の BAR1 越しに byte 単位で読み（16384 回）、
+  node->lock の下で slot に書いて core の update を送り、前の core の update が vblank まで残る間は EBUSY → libvulkan が 1 refresh 眠って再試行。
+
+### 直し 1: cursor（c72afc267）
+
+- display/cursor.c: cursor_set は image を CPU の写し（node->cursor_pixels、slot ごと）に読み、今の slot の写しと同じなら hardware に触らず 0
+  （EBUSY にしない）。違う image だけ前と同じく core の settle を見て slot に書き core の update。読みは offset・stride が 4 の倍数なら word 単位
+  （4096 回）。node.c: perf の行 `perf: cursor sets N same N avg Nus, moves N avg Nus`（node->lock を持つ時間）。HAL・ABI・libvulkan は不変。
+- 確かめ（host）: vmunix warning 0、amd64 vmunix check PASS、`plan/tools/nvrtx/nvrtx-vk-host-test.sh` PASS 86/0。
+
+| 段（dp2、cksum 3859311083） | fps（perf 無し・有り） | work max | next p50/max |
+| --- | --- | --- | --- |
+| drag | **60・61**（182 frames） | 5・6 | 16/22・16/21 |
+| hover | 23・23 | 5（前 18） | 28/75 |
+| launch | 59・50 | 100・78 | 16/78（terminal の起動の frame が残る） |
+
+- cursor の perf: 動く間 `sets 197 same 198 avg 4959us`。同じ image の set が 1 回約 5 ms node->lock を持つ（16 KiB を UC で読む、1 word 約 1.1 µs）。
+  drag は 60 になったが、node->lock を 5 ms 握るのは残りの候補（読みを node->lock の外へ、か比べる量を減らす）。
+
+### 直し 2: launch の window_lock（5daead373）
+
+- launch の遅い frame: terminal の起動で next 76〜78 ms が 3 回、submit が 57〜76 ms の frame も。見立て（code）: blob を作る時の VRAM の clear
+  （nvrtx_bo_clear → nvrtx_vram_fill、PRAMIN の register window、約 4 MB の swapchain の image ごと）が 64 KiB ごとに window_lock を取り直すが、
+  kernel の mutex の release は待ち手に手渡さない（mutex_unlock は FREE にして 1 人を起こすだけ）ので、clear の thread がすぐ取り直し、window を使う
+  他の道（display の flip の notifier の読み・reset、work の submit の USERD の PUT の書き込み、TLB の invalidate）が clear の終わりまで待つ。
+- 形（Q1 の指示「固定の sleep より、塊ごとに外して待ち手が取れる形か、window を使わない道」）: channel.c で fill は 16 KiB ごとに window_lock を外し、
+  その間「他の利用者が待っている間だけ」CPU を譲る（channel_window_take: fill 以外の利用者は gpu->window_wanted を atomic に数えてから lock、
+  channel_fill_aside: window_wanted が 0 になるまで sched_yield、飢えの防ぎに 2 ms の上限）。待ち手がいなければ休まない。
+  window を使わない道を採らなかった理由: GPU の copy engine の fill は blob の VRAM を copy の channel の VA に map する仕組みが無い（copy の channel
+  は自分の buffer だけを map）。BAR1 の WC の map は kernel の PCI の BAR の map に WC の flag が無い（DRV_PCI_MAP_PREFETCHABLE は定義だけで未使用）、
+  BAR1 の window も消費する。どちらも範囲が広がるので後回し（terminal の起動そのものの速さ、clear の 76 ms は残る）。
+- 確かめ（host）: vmunix warning 0、vmunix check PASS、host test PASS 86/0（cksum 1245428584）。
+
+| 段（dp3、cksum 1245428584、perf 無し） | fps | work p50/max | period p50/max | next p50/max |
+| --- | --- | --- | --- | --- |
+| launch | **64**（60 frames、terminal は開いた） | 1/2 | 17/19 | 16/18 |
+| type | 61 | 0/1 | 17/17 | 17/17 |
+| keys | 36（200 ms 間隔） | 0/1 | — | — |
+| output | 65 | 0/1 | 15/17 | 14/17 |
+| scroll | 19（50 ms 間隔） | 1/1 | 52/53 | 51/53 |
+| hover | 23（15 ms 間隔） | 4/5 | 32/80 | 27/75 |
+| drag | **61**（182 frames） | 1/5 | 17/22 | 16/21 |
+| home | 63 | 0/1 | 17/24 | 16/23 |
+| wiseview | 62 | 1/90 | 17/51 | 16/24 |
+
+- 証拠: worktree p2-ws291r の build/ws291/rtx/dp1・dp2・dp3（summary.txt、desk/frames.txt、dp1・dp2 は perf/kernel.txt）。実機の結果だけ、QEMU は無し。
+- 終わり（12:53）: Debian（6.12.111）、RTX は vfio-pci（lspci）、NVMe の zedBSD の kernel は vmunix-va1（cksum 1463007375）、cfg の nvrtx.vk.perf の行 0。
+  lock は 12:53 に返した。
+
+### 残り・再開点（12:55 P2）
+
+- 受け入れの判定は WS309 の後に同じ script で測り直す（`sh plan/ws291/tests/rtx-desk-profile.sh OUT RESTORE VMUNIX`）。
+- wiseview の work max 87〜144 ms（compositor の cpu＝draw→recorded の frame、area が画面より大きい capture の frame）。compositor の側なので今は触らない。
+- cursor の同じ image の set の 5 ms（上）。terminal の起動の blob の clear 自体（4 MB で約 76 ms、起動する client だけが待つ）。
+- 1 回ずつの計測（dp3 は 1 回）。揺れの確かめは WS309 の後の測り直しで。
+
