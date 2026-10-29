@@ -48,7 +48,7 @@
 | [ws314-p006](phase006/phase.md) | `kl_instance` の event と Settings の移行 | cleared（Settings の 2 回目の起動の QEMU は未実施） | p004 |
 | [ws314-p007](phase007/phase.md) | libbrowser の network の thread と Browser の shell の移行（BROWSER_API_VERSION 3） | cleared | p004 |
 | [ws314-p008](phase008/phase.md) | `kl_app_watch_fd`・`kl_instance_fd` を公開の API から外す（KL_VERSION 102）、Linux・FreeBSD の build | cleared | p004〜p007・p013・p014 |
-| ws314-p009 | 解説に新しい API（post・process・instance）を足す | planned | p008・p012 |
+| [ws314-p009](phase009/phase.md) | 解説に新しい API（post・process・instance・launch・language）を足す | in-progress（前半（構成と例）済み、後半は Sonnet） | p008・p012 |
 | ws314-p010 | 規約の全文の見直し | planned | p009 |
 | ws314-p011 | 解説の構成の設計（Opus）: 章ごとに完全に動く source の全文を示し、そこから帰納的に分からせ演繹的な説明も引ける構成。keiland-programming.md に「ここにこういう説明を入れる」の comment を入れ、例の全文は compile・実行で確かめる | cleared | p002 |
 | ws314-p012 | 解説の書き直し（Sonnet）: p011 の構成と comment に沿って人間向けの文章に | cleared | p011 |

@@ -5115,9 +5115,9 @@ that comes back after a later change is set aside, and only the reading of the l
 always ends in the language the desktop ends in.
 
 Picture keiland-examples/08-language.png: taken after three clicks 200 ms apart: the window in Japanese (こんにちは,
-the line naming "ja", the counts of catalogs used and set aside, the button 言語を切り替える, the title 言語).  Say that
-the two counts depend on timing: a fast disk reads each language before the next change comes, and then every
-reading is used.  The catalog keiland-examples/locale/ja/language.tr is shown under the program; install it as in
+the line naming "ja", "使ったカタログ: 3。捨てたカタログ: 0。", the button 言語を切り替える, the title 言語); the
+desktop's clock in the panel turned Japanese too.  Say that the two counts depend on timing: here each language was
+read before the next change came, so every reading was used; a slow disk sets readings aside.  The catalog keiland-examples/locale/ja/language.tr is shown under the program; install it as in
 chapter 7 to see Japanese.
 
 New against 07-services.c's language handling: the reader's shared record (struct reader) and its answer (struct
@@ -6366,9 +6366,10 @@ terminal prints, and types the command written in the field into it.  It is not 
 text and drops the terminal's control sequences.  When the shell turns the echo off and reads by the line, as a
 program asking for a password does, the field hides what is typed.
 
-Picture keiland-examples/09-shell.png: taken after "echo hello from sh" and Enter, "stty -echo" and Enter, and
-"secret" typed in the field: the lines "$ echo hello from sh", "hello from sh", "$ stty -echo" and the prompt, the
-note "The shell turned the echo off: what you type is hidden." and the field showing dots.
+Picture keiland-examples/09-shell.png: taken after "echo hello from sh" and Enter, then
+'stty -echo; printf "Password: "; read word' and Enter, then "secret" typed in the field: the lines
+"$ echo hello from sh", "hello from sh", the second command and "Password:", the note "The shell turned the echo off:
+what you type is hidden." and the field showing six dots.
 
 It grows from 09-sort.c, and its field is chapter 5's.  New: KL_PROCESS_TERMINAL, the terminal's size
 (kl_process_resize), its modes (kl_process_terminal_mode), reading bytes (kl_process_read), and hanging up.  Terms
@@ -7009,8 +7010,11 @@ shell_new_line(
 4. Lines 473-525 (shell_news): the terminal's output is read as bytes with kl_process_read, all that waits (a prompt
    has no line's end, so lines would never come).  Then kl_process_terminal_mode: when the echo is off and the input
    is taken by the line, a program is asking for a password, and the field hides what is typed (lines 502-509).  The
-   mode is looked at after output because a program turns the echo off and then prints its prompt.  Define "echo" and
-   "line mode" here.  At the end: how it ended, and kl_process_close.
+   mode is looked at after output because a program turns the echo off and then prints its prompt.  The mode is the
+   terminal's as the program reading it now set it: a shell that edits its own command line (zedBSD's sh does)
+   turns the echo and the line mode off while it waits at its prompt, and echoes by itself; while read waits after
+   stty -echo, the terminal has no echo but the line mode, and that is when the field hides what is typed (the
+   picture).  Define "echo" and "line mode" here.  At the end: how it ended, and kl_process_close.
 5. Lines 527-594 (shell_print), briefly: the program keeps the text and drops the control sequences.  A terminal
    emulator interprets them; that is the program's work, not libkeiland's.
 6. Lines 445-471 (shell_type): Enter in the field types its line and a new line into the terminal; a short write is
@@ -7026,7 +7030,8 @@ shell_new_line(
 - KL_PROCESS_TERMINAL gives the process one terminal for its input, output and errors, read as KL_PROCESS_OUTPUT.
 - Read a terminal's output as bytes.
 - The size is in characters: give it at the start and at every new size.
-- kl_process_terminal_mode tells the echo and the line mode; no echo but line mode means a password is being typed.
+- kl_process_terminal_mode tells the echo and the line mode as the program reading the terminal now set them; no echo
+  but line mode means a password is being typed.
 - kl_process_resize and kl_process_terminal_mode answer ENOTSUP for a process without a terminal (and the mode where
   the system does not tell), and EIO once the terminal hung up.
 - End a terminal's process with KL_PROCESS_HANGUP.

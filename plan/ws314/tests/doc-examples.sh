@@ -11,7 +11,7 @@
 # (make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=DIR DIR/lib/libkeiland.so); default
 # build/p009-linux/lib.  Without libkeiland.so there, the link is reported as not done.
 #
-#   sh plan/ws314/tests/doc-examples.sh guest [BUILD]
+#   sh plan/ws314/tests/doc-examples.sh guest [BUILD [NAME...]]
 #
 # runs every example on the zedBSD Venus guest and photographs it: builds the lean desktop image
 # (plan/tools/titlebar/build-menu-image.sh BUILD, default build/amd64), compiles the examples against that build's
@@ -20,6 +20,7 @@
 # desktop's are, starts the compositor with glass, and for each example starts it, gives it a few keys or a click, and
 # takes the compositor's picture into build/review/ws314-doc-NAME.png.  07-services runs twice: first, and last after
 # 08-language left the desktop in Japanese (the picture 07-services-ja).
+# NAMEs (pictures' names, such as 09-shell) run only those.
 # The judgement is the pictures and the programs' exit status read over SSH; no console log is read.  Needs the Venus
 # renderer in build/ws035-sq-venus and /dev/dri/renderD128 (plan/tools.md).
 #
@@ -34,8 +35,9 @@ examples=docs/howto/keiland-examples
 guide=docs/howto/keiland-programming.md
 flags="-std=gnu17 -Wall -Wextra -Werror -Iuserland/desktop/include"
 
+# The run's own directory, not the link to the latest run: a run started meanwhile moves the link.
 fresh_out build/tmp/doc-examples
-out=build/tmp/doc-examples
+out=build/tmp/$(basename "$fresh_dir")
 pass=0
 fail=0
 skipped=0
@@ -57,6 +59,9 @@ summary() {
 # The guest's run: image, programs, boot, one picture per example.
 if [ "${1:-}" = guest ]; then
 	build=${2:-build/amd64}
+	shift
+	[ $# -gt 0 ] && shift
+	only=" $* "
 	runtime=$PWD/build/p009-run
 	sysroot=$build/sysroot
 	clang=build/llvm/bin/clang
@@ -167,6 +172,11 @@ EOF
 		09-sort 09-shell 10-instance 08-language 07-services-ja:07-services; do
 		name=${run%%:*}
 		program=${run#*:}
+		case $only in
+		"  ") ;;
+		*" $name "*) ;;
+		*) continue ;;
+		esac
 		# The notification of 01-app goes after a few seconds; the windows are waited for longer.
 		wait_start=8
 		[ "$name" = 01-app ] && wait_start=2
@@ -190,7 +200,10 @@ EOF
 		07-services) pointer move 670 542 sleep 300 down sleep 80 up sleep 1000 move 476 542 sleep 300 down sleep 80 up sleep 6000 ;;
 		08-worker) pointer move 492 528 sleep 300 down sleep 80 up sleep 2500 ;;
 		09-sort) pointer move 492 558 sleep 300 down sleep 80 up sleep 2000 ;;
-		09-shell) keys 'echo hello from sh' '<ret>'; sleep 1; keys 'stty -echo' '<ret>'; sleep 1; keys 'secret' ; sleep 1 ;;
+		# 09-shell: a command, then a password read (zedBSD's sh edits its own prompt without the terminal's echo and
+		# line mode; a read waits with the modes stty set).
+		09-shell) keys 'echo hello from sh' '<ret>'; sleep 1; keys 'stty -echo; printf "Password: "; read word' '<ret>'
+			sleep 1; keys 'secret'; sleep 1 ;;
 		10-instance) pointer move 514 558 sleep 300 down sleep 80 up sleep 1500 down sleep 80 up sleep 1500
 			guest "export XDG_RUNTIME_DIR=$runtime_dir HOME=/tmp; cd /tmp; /tmp/10-instance From-the-shell; echo handed=\$?" \
 				> "$out/$name.second.txt"; sleep 2 ;;

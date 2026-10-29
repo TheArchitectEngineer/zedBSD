@@ -3,7 +3,7 @@
 # ws314-p009 解説に新しい API（post・process・instance・launch・language）の章を足す
 
 - 親: [WS314](../ws.md)。設計: [design.md](../design.md) §3〜§6・§13。Queue: q1690（前半は担当 P6、2026-10-30）。
-- Status: in-progress（前半の構成と例は済み。後半の文章の書き直しは Sonnet）
+- Status: in-progress（前半の構成と例は済み（2026-10-30、host・QEMU）。後半の文章の書き直しは Sonnet）
 - Disposition: normal
 - ユーザーの決定（ws.md の原文）: 8「…fdの削除後、作成されたAPIに関する説明を追記します。」、11（完全に動く source の全体を示し、
   帰納と演繹で読ませる。構成は Opus、文章は Sonnet）、12・13（`KL_APP_LANGUAGE` と言語の名前）。
@@ -46,12 +46,41 @@
   `make -f userland/desktop/keiland-linux.mk KEILAND_LINUX_BUILD=build/p009-linux build/p009-linux/lib/libkeiland.so`、warning 0）:
   13 本の例を clang・gcc で `-std=gnu17 -Wall -Wextra -Werror`、libkeiland.so に link、catalog 2 つ（`kl_tr_open_directory` で
   全ての msg・plural が訳になる。誤った訳を渡すと FAIL することも確かめた）、文書の block と file の一致 15、marker 15。
-  結果は下の「結果」。
-- QEMU: 下の「結果」。
+- QEMU（`sh plan/ws314/tests/doc-examples.sh guest`、lean な desktop の image（`plan/tools/titlebar/build-menu-image.sh build/amd64`、
+  worktree の tree で再 build）、例はその sysroot と libkeiland で zedBSD 向けに -Werror で build、runtime build/p009-run、boot の disk は
+  cache=unsafe、SSH の待ち 300 s、catalog は guest の /usr/share/keiland/locale/ja/ へ複写、compositor は `--testing --glass` 1280x800、
+  判定は VNC の画面と SSH で読んだ各例の stderr（console・serial の log は読まない））。
+- 道具の直し: 1 回目は guest の実行中に同じ worktree で host の確かめを流し、`fresh_out` の link（build/tmp/doc-examples）が新しい run へ
+  移って guest の run の出力先が消え、04-counter-parts 以降の画面と program の複写が失敗した（10 FAIL、例の誤りではない）。script は
+  自分の run の directory（`$fresh_dir`）を使う形に直した。名前を渡すと一部だけ流せる（`guest BUILD NAME...`）。
 
 ## 結果
 
-（記入中）
+- host: 2026-10-30 `SUMMARY pass=71 fail=0 not-done=0`。
+- QEMU（2026-10-30 2 回目、`build/tmp/doc-examples.run.0Zkifh`）: `SUMMARY pass=29 fail=0 not-done=0`（image・zedBSD の build 13・guest up・
+  画面 14）。各例の stderr に失敗の行は無い。画面で確かめた事（`build/review/ws314-doc-NN.png`、切り抜きを
+  `docs/howto/keiland-examples/{08-worker,08-language,09-sort,09-shell,10-instance,07-services-ja}.png`）:
+  - 01〜07: p011 と同じ画面（07 は KL_APP_LANGUAGE の形に直した後も glass の card・Appearance: Light・0 files opened）。
+  - 08-worker: Start の 2.5 s 後に bar が途中、「489319 primes below 7200000 so far.」、Start が無効・Stop が有効（worker の
+    `kl_window_post` が届き、窓が描き続けた）。
+  - 09-sort: Sort の後に右の列が apple〜pear の順、「sort ended with the code 0.」（stdin の書き・close_input・行の読み・終了の code）。
+  - 10-instance: Start Another を 2 回と shell からの `/tmp/10-instance From-the-shell`（exit 0 で受け渡して終わった）の後に一覧が
+    「Request 1 from Start Another」「Request 2 from Start Another」「From-the-shell」（`kl_launch` で起きた copy が要求を渡し、
+    `KL_APP_INSTANCE` で届いた）。runtime の directory は 0700 の /tmp/run10（compositor の /tmp は他人も書けるので ENOTSUP になる）。
+  - 08-language: Switch Language を 200 ms 間隔で 3 回の後、窓が日本語（こんにちは、「…: ja。」、「使ったカタログ: 3。捨てたカタログ: 0。」、
+    title 言語）、panel の時計も日本語（desktop の ui.language が変わった）。この run では 3 つの読みが全て次の変更より先に戻った。
+  - 07-services-ja: 08-language の後に 07 を起動し、card が日本語（外観: ライト、開いたファイル 0 件、開く...・パスをコピー・通知、
+    title サービス、`kl_app_language` と catalog）。
+  - 09-shell（3 回目、`build/tmp/doc-examples.run.yiy56w`、09-shell だけ）: 「$ echo hello from sh」「hello from sh」、
+    `stty -echo; printf "Password: "; read word` の後に「Password:」、note「The shell turned the echo off…」、field が点 6 つ。
+    2 回目は `stty -echo` を prompt で打っただけで、note が出なかった。調べた（診断の stderr の一時の版、元へ戻した）ところ
+    `kl_process_terminal_mode` は prompt の間 mode 0 を返す: zedBSD の sh は行の編集の間 ECHO・ICANON を切り自分で echo する
+    （p005 の phase.md の記録と同じ。library の誤りではない）。`read` の待ちの間は stty の設定（行のみ）が見える。試験の入力と WRITE を
+    これに合わせた。
+- 未実施: 窓を閉じる時の後始末の道（08-worker の `primes_finish`、08-language の reader の終わり、09-shell の HANGUP、10-instance の
+  `kl_instance_close`。script は program を kill で終える）、08-worker の Stop、09-sort の Reverse と Bad Option（stderr と code）、
+  10-instance の `kl_activate` で窓が前へ出ること（窓は 1 つで見分けられない）、08-language で読みが捨てられる場合（この run では 0）、
+  Linux の compositor での実行。実機は対象外。
 
 ## 残り
 
