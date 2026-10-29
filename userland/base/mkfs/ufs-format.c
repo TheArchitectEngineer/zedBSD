@@ -1237,7 +1237,7 @@ locator_digest(
 	return value;
 }
 
-/* Initializes disjoint journal and inactive snapshot storage after the volume. */
+/* Initializes the storage after the volume: a tail journal and an inactive snapshot, or zeros for native. */
 static int
 format_tail(
 	struct format_context *context)
@@ -1267,6 +1267,26 @@ format_tail(
 	    context->medium_bytes - (cursor + 2U) * 512U);
 	if (error != 0)
 		return error;
+
+	/*
+	 * A native volume publishes no tail journal and no snapshot: with the
+	 * tail journal the kernel writes every change through it, flushing
+	 * the device several times for each, where a volume without one gets
+	 * the batched journal its superblock's request sizes (the image
+	 * roots' form).  The locators an earlier format left are cleared.
+	 */
+	if (context->profile == FORMAT_NATIVE) {
+		/* Clears the journal locator and the two snapshot records. */
+		error = zero_region(context, end * 512U, 512U);
+		if (error != 0)
+			return error;
+		error = zero_region(context, cursor * 512U, 2U * 512U);
+		if (error != 0)
+			return error;
+
+		/* Succeeded: the tail is zero and the volume names no journal there. */
+		return 0;
+	}
 
 	/* Publish the bounded journal locator. */
 	memset(buffer, 0, sizeof(buffer));

@@ -1,8 +1,9 @@
 #!/bin/sh
 # The host test of mkfs's native UFS profiles: the 1 KiB-fragment profiles (ordinary, feature and native on
 # 512-byte sectors) are byte for byte what the formatter of OLD (default d94ceac00, before the 4 KiB-fragment
-# profile) writes, and the native profile on 512- and 4096-byte sectors verifies, decodes and mounts with the
-# loaders' reader.  Output goes to a new build/ws307-test/mkfs-ufs.* directory (sparse files, a few MB on disk).
+# profile) writes -- except that native no longer writes the tail journal's and the snapshot's records after the
+# volume, which are cleared from OLD's output before the comparison -- and the native profile on 512- and
+# 4096-byte sectors verifies, decodes, has no tail record and mounts with the loaders' reader.  Output goes to a new build/ws307-test/mkfs-ufs.* directory (sparse files, a few MB on disk).
 #   sh plan/ws307/tests/host/mkfs-ufs-native-test.sh [OLD]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -eu
@@ -25,6 +26,20 @@ for case in ordinary:4194304 ordinary:67108864 ordinary:2147482624 feature:41943
 	bytes=${case#*:}
 	"$out/old/old" write "$profile" 512 "$bytes" "$out/a.img"
 	"$out/new" write "$profile" 512 "$bytes" "$out/b.img"
+	[ "$profile" = native ] && python3 -I -c '
+import sys
+path = sys.argv[1]
+with open(path, "r+b") as f:
+	f.seek(0, 2)
+	size = f.tell()
+	offset = max(0, size - (3 << 20))
+	while offset + 512 <= size:
+		f.seek(offset)
+		if f.read(4) in (b"ZUJ2", b"ZSL1", b"ZSN1"):
+			f.seek(offset)
+			f.write(bytes(512))
+		offset += 512
+' "$out/a.img"
 	if cmp -s "$out/a.img" "$out/b.img"; then
 		echo "same $profile $bytes"
 	else

@@ -19,8 +19,10 @@
  *
  * check formats FILE with the native profile for SECTOR, verifies it with
  * the formatter, decodes the superblock with mkfs's decoder, compares the
- * capacity report with the superblock, and mounts it with the loaders'
- * reader on a medium of SECTOR-byte blocks.
+ * capacity report with the superblock, checks that the tail after the
+ * volume names no tail journal or snapshot (no "ZUJ2", "ZSL1" or "ZSN1"
+ * record: the kernel gives the volume the batched journal), and mounts it
+ * with the loaders' reader on a medium of SECTOR-byte blocks.
  */
 
 #include "ufs-format.h"
@@ -45,6 +47,7 @@ static int medium_read(void *context, uint64_t block, uint32_t count, void *buff
 static int open_volume(const char *path, uint64_t bytes);
 static int write_command(char **argv);
 static int check_command(char **argv);
+static int tail_has_record(int fd, uint64_t bytes);
 static void check(int condition, const char *what);
 
 /* The reader's work storage, too large for the stack. */
@@ -168,6 +171,9 @@ check_command(
 	    sector, (unsigned long long)bytes, super.fsize, super.bsize, super.ncg, super.fpg,
 	    (unsigned long long)capacity.free_bytes, (unsigned long long)capacity.free_inodes);
 
+	/* The tail after the volume holds no journal or snapshot record. */
+	check(!tail_has_record(fd, bytes), "no tail journal or snapshot");
+
 	/* Mounts the volume with the reader on blocks of the disk's sector. */
 	medium.fd = fd;
 	medium.block_size = sector;
@@ -211,6 +217,32 @@ check_command(
 		printf("check %u %llu: FAIL (%d)\n", sector, (unsigned long long)bytes, failures);
 		return 1;
 	}
+	return 0;
+}
+
+/* Reports whether a sector of the tail after the volume starts a tail record. */
+static int
+tail_has_record(
+	int fd,
+	uint64_t bytes)
+{
+	uint8_t sector[512];
+	uint64_t offset;
+	ssize_t count;
+
+	/* Reads each sector of the reserved tail and the alignment padding. */
+	offset = bytes > (UINT64_C(3) << 20) ? bytes - (UINT64_C(3) << 20) : 0;
+	for (; offset + sizeof(sector) <= bytes; offset += sizeof(sector)) {
+		count = pread(fd, sector, sizeof(sector), (off_t)offset);
+		if (count != (ssize_t)sizeof(sector))
+			return 1;
+		if (memcmp(sector, "ZUJ2", 4) == 0 ||
+		    memcmp(sector, "ZSL1", 4) == 0 ||
+		    memcmp(sector, "ZSN1", 4) == 0)
+			return 1;
+	}
+
+	/* None is there. */
 	return 0;
 }
 #else
