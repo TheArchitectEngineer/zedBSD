@@ -20,7 +20,7 @@
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
 | P1 | q1662-i10 返却 | [ws309](ws309/ws.md) p016〜p018 cleared（main b9c381154）。残りは p015（ユーザーの判断 2 つ待ち） | — |
-| P2 | q1690-i02 返却 | [ws314](ws314/ws.md) p001〜p008・p011〜p015 cleared（main d4b58dd84）、残りは p009（解説の追記）・p010（規約） | — |
+| P2 | q1690-i02 返却 | [ws314](ws314/ws.md) 全 Phase cleared（main 122c7620a）。completed の判定は p005・p013 の process・launch の QEMU の回帰（p010 で制御の流れを直した）とユーザーの判断 A〜D の後 | — |
 | P3 | q1694-i01 in-progress | [ws315](ws315/ws.md) 5330 の RTL8156B を vendor mode で send 2372・recv 2319 Mbit/s（Linux と同等、main 145280b3e）。残りは p003（camcap・同時）・p004 RTL8157・p005 | 5330 |
 | P4 | q1665-i10 返却 | [ws307](ws307/ws.md) p011 cleared（通し 25 STEP・日本語の画面、main adeab690a）。残りは p007（HAL の案の承認待ち）・p004・p014 規約 | — |
 | P5 | q1693-i01 返却 | [ws291](ws291/ws.md) p011 cleared（scene-5000 49.7、NVK と同等）、big-1000 1.3→24 fps（NVK 136）、subs-1000 6.7（NVK 75）。次は record の decode・subs の submit（main 9e1691e6b） | — |
