@@ -20,7 +20,7 @@
 | 担当 | Queue | WS と次の手 | 実機 |
 | --- | --- | --- | --- |
 | P1 | q1662-i10 in-progress | [ws309](ws309/ws.md) p013・p014 cleared（main e554645ca）、p016 → p017 → p018。p015 はユーザーの判断待ち（[phase015](ws309/phase015/phase.md)「要る判断」） | — |
-| P2 | q1686-i01 返却 | [ws068](ws068/ws.md) p034・p040〜p044・p046 cleared、残りを p045・p047〜p068 に分けた（main 782237d73）。以後は手の空いた担当が Phase ごとに | — |
+| P2 | q1690-i01 in-progress | [ws314](ws314/ws.md) libkeiland の header の分割 → 解説 → fd の削除（前の q1686 は返却、WS068 は空き時間に） | — |
 | P3 | q1679-i02 in-progress、q1689-i01 pending | [ws221](ws221/ws.md) p012 SACK の送る側（tcp-model）→ q1689 5330 の USB 2.5G の NCM。10GbE の recv は ATR 有効で Linux の 90〜97%（bbc43c185） | 5330（10.0.10.3 は 00:18 に返却） |
 | P4 | q1665-i10 in-progress | BUG-355・358 は直した（main ed93695ac）。[ws307](ws307/ws.md) p011 の通しを既定の項目で流し直す → 日本語の画面 | QEMU |
 | P5 | q1677-i02 in-progress | [ws243](ws243/ws.md) p006 の実機（Video Player 1080p60）、通れば WS243 completed で返却 | 10.0.10.3 |
@@ -102,7 +102,7 @@ main に未 merge の branch は [registry](agents/registry.md) の試験待ち�
 ### 次の番号
 
 <!-- master:next:start -->
-BUG-360 · q1690 · WS314 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
+BUG-360 · q1691 · WS315 · KL_VERSION 97。使う前に衝突を確かめる（`ls plan/bugs`・`ls -d plan/ws*`・`grep q16 plan/queue.md`）。
 <!-- master:next:end -->
 
 ## 目的
@@ -170,6 +170,7 @@ BUG-360 · q1690 · WS314 · KL_VERSION 97。使う前に衝突を確かめる�
 | [WS309](ws309/ws.md) | MG006 | Keiland の compositor の thread の構成を整理し main loop が待たないようにする。ゲームモードは Vulkan display の仕様の中で | incomplete（p001〜p007・p019 cleared、P1 q1662-i05） | p008 の残り（fence 付きの task）から |
 | [WS310](ws310/ws.md) | MG004 | ACPI の _OSC を呼び、システム全体の挙動を厳重に確かめる（WS301 の Q301-3、2026-10-29 ユーザー「最終的には呼ぶが、別なWSにして…今は呼ばない。」） | planning | p001（WS301 の後） |
 | [WS313](ws313/ws.md) | MG008 | ODROID-C5（Amlogic S905X5M）の BSP（bsp-s905x5m）と Mali の GPU で、起動して desktop を表示する（2026-10-29 ユーザー） | incomplete（全 block の code を揃えた、実装済み・実機未試験。2026-10-29 夜にユーザーが実機で試験） | 夜の試験（plan/ws313/tests/README.md）→ 直し、Mali の desktop（render pass の LOAD など） |
+| [WS314](ws314/ws.md) | MG006 | libkeiland の API を component ごとの header に分け、プログラミングの解説（英語）を書き、fd と UNIX への依存を API から外す（2026-10-30 ユーザー） | planning（q1690 P2） | p001 header の分割から |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |
 | [WS296](ws296/ws.md) | MG001 | src/drivers（gpu/ を除く）の comment から開発の管理情報を消し、XXX の規約の当て直し（usb など 11 file） | planned | 18 LW、担当の起動はユーザーの指示の時 |
