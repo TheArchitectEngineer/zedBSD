@@ -65,6 +65,7 @@ const struct drv_gpu_share_ops nvrtx_share_ops = {
 	share_export,
 	share_release,
 	share_import,
+	NULL,
 	NULL
 };
 

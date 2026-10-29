@@ -930,6 +930,56 @@ drv_gpu_capacity_changed(
 }
 
 /*
+ * Describes the physical pages of an allocation-only GPU capability for
+ * another kernel driver, and the exporting device's identity.
+ */
+int
+drv_gpu_shared_backing(
+	struct kernel_handle *handle,
+	struct drv_gpu_scanout_backing *backing,
+	uint64_t *device_identity)
+{
+	const struct drv_gpu_share_ops *share;
+	const struct kernel_handle_ops *operations;
+	struct gpu_shared_resource *shared;
+	int error;
+
+	/* Only a GPU capability's payload is interpreted. */
+	if (handle == NULL || backing == NULL || device_identity == NULL)
+		return EINVAL;
+	operations = gpu_shared_operations();
+	if (handle->ops != operations)
+		return EINVAL;
+
+	/* An allocation-only capability: an image export has its own scanout view. */
+	shared = handle->object;
+	if (shared->allocation.version == 0U)
+		return EINVAL;
+
+	/* The backend's view, when it has one. */
+	share = shared->device->ops->share;
+	if (share == NULL || share->get_allocation_backing == NULL)
+		return ENOTSUP;
+	kern_memset(backing, 0, sizeof(*backing));
+	error = share->get_allocation_backing(shared->device->private_data, shared->object, backing);
+	if (error != 0)
+		return error;
+
+	/* Rejects an incomplete or overflowing page extent before the caller reads it. */
+	if (backing->pages == NULL ||
+	    backing->page_count == 0U ||
+	    backing->page_bytes == 0U ||
+	    (backing->page_bytes & (backing->page_bytes - 1U)) != 0U ||
+	    backing->page_count > UINT64_MAX / backing->page_bytes ||
+	    backing->bytes > backing->page_count * backing->page_bytes)
+		return EIO;
+
+	/* Succeeded: the pages are borrowed while the caller holds the handle. */
+	*device_identity = shared->device->identity;
+	return 0;
+}
+
+/*
  * Says the GPU ioctl timing's sums since the last report and clears them.
  *
  * The pairs of one thread's consecutive requests that took the most time
