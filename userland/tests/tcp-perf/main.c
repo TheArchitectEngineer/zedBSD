@@ -11,6 +11,7 @@
  * way for a number of seconds.
  *
  *   tcp-perf send|recv ADDRESS PORT SECONDS [CHUNK]
+ *   tcp-perf serve ADDRESS PORT SECONDS [CHUNK]
  *
  * The first byte on the connection tells the peer the direction: 'S' when
  * this program sends (the peer reads to the end), 'R' when it receives
@@ -20,6 +21,12 @@
  * second's rate; the last line is "TCP-PERF DIRECTION seconds=S bytes=N
  * mbps=RATE" over the whole transfer.  It exits 0, 1 when the transfer
  * failed, or 2 for a bad command line.  The source also builds on Linux.
+ *
+ * serve is the other end, so that this machine's accepted connections are
+ * measured too: it listens on ADDRESS (:: or 0.0.0.0 for any) and PORT,
+ * takes one connection from a tcp-perf send or recv, and receives until
+ * that end closes or sends until it closes (at most SECONDS and ten more);
+ * its last line names it "serve-recv" or "serve-send".
  *
  * The time is kept by an interval timer that raises SIGALRM every second,
  * not by reading the clock around each read or write: on a system whose
@@ -51,6 +58,14 @@
 /* The longest transfer the command line may ask for, in seconds. */
 #define PERF_SECONDS_MAX 3600UL
 
+/* What the command line asks for. */
+#define PERF_MODE_RECV	0	/* connect and receive */
+#define PERF_MODE_SEND	1	/* connect and send */
+#define PERF_MODE_SERVE	2	/* listen, and move bytes the way the connection asks */
+
+/* The seconds a serving end goes on past its own, so that the connecting end ends the transfer. */
+#define PERF_SERVE_GRACE 10UL
+
 /*
  * The seconds the interval timer has counted since the transfer started.
  *
@@ -71,14 +86,16 @@ struct perf_progress {
 	unsigned second;
 };
 
-static int perf_parse(int argc, char **argv, int *sending, unsigned long *seconds, unsigned long *chunk);
+static int perf_parse(int argc, char **argv, int *mode, unsigned long *seconds, unsigned long *chunk);
 static int perf_address(const char *address_text, uint16_t port, struct sockaddr_storage *address, socklen_t *length);
 static int perf_connect(const char *address_text, const char *port_text, int *descriptor);
+static int perf_accept(const char *address_text, const char *port_text, int *descriptor);
+static int perf_open(int mode, const char *address_text, const char *port_text, int *descriptor, int *sending);
 static double perf_now(void);
 static void perf_tick(int signal_number);
 static int perf_start_timer(void);
 static void perf_count(struct perf_progress *progress, size_t bytes);
-static int perf_send(int descriptor, unsigned char *buffer, unsigned long chunk, unsigned long seconds, struct perf_progress *progress);
+static int perf_send(int descriptor, unsigned char *buffer, unsigned long chunk, unsigned long seconds, int until_closed, struct perf_progress *progress);
 static int perf_receive(int descriptor, unsigned char *buffer, unsigned long chunk, unsigned long seconds, struct perf_progress *progress);
 
 /*
@@ -95,15 +112,14 @@ main(
 	unsigned long chunk;
 	unsigned long index;
 	double elapsed;
-	char direction;
 	const char *name;
-	ssize_t sent;
 	int descriptor;
 	int sending;
+	int mode;
 	int error;
 
-	/* The direction, the duration and the chunk. */
-	error = perf_parse(argc, argv, &sending, &seconds, &chunk);
+	/* The mode, the duration and the chunk. */
+	error = perf_parse(argc, argv, &mode, &seconds, &chunk);
 	if (error != 0)
 		return 2;
 
@@ -118,28 +134,20 @@ main(
 	for (index = 0; index < chunk; index++)
 		buffer[index] = (unsigned char)((index * 131UL + 7UL) & 0xffUL);
 
-	/* The connection to the peer. */
-	error = perf_connect(argv[2], argv[3], &descriptor);
+	/* The connection, and the way the bytes go on it. */
+	descriptor = -1;
+	sending = 0;
+	error = perf_open(mode, argv[2], argv[3], &descriptor, &sending);
 	if (error != 0) {
 		free(buffer);
 		return 1;
 	}
 
-	/* The direction byte, which the peer reads first. */
-	direction = 'R';
-	name = "recv";
-	if (sending) {
-		direction = 'S';
-		name = "send";
-	}
-
-	/* Sends the byte. */
-	sent = write(descriptor, &direction, 1);
-	if (sent != 1) {
-		fprintf(stderr, "tcp-perf: the direction byte was not sent\n");
-		close(descriptor);
-		free(buffer);
-		return 1;
+	/* The names of the ends; a serving end goes on until the other one ends the transfer. */
+	name = sending ? "send" : "recv";
+	if (mode == PERF_MODE_SERVE) {
+		name = sending ? "serve-send" : "serve-recv";
+		seconds += PERF_SERVE_GRACE;
 	}
 
 	/* The transfer, timed from its first byte. */
@@ -156,7 +164,7 @@ main(
 
 	/* Moves the bytes in the direction asked. */
 	if (sending)
-		error = perf_send(descriptor, buffer, chunk, seconds, &progress);
+		error = perf_send(descriptor, buffer, chunk, seconds, mode == PERF_MODE_SERVE, &progress);
 	else
 		error = perf_receive(descriptor, buffer, chunk, seconds, &progress);
 	elapsed = perf_now() - progress.start;
@@ -175,34 +183,95 @@ main(
 	return 0;
 }
 
+/*
+ * Opens the connection the mode asks for: a connecting end tells the
+ * peer its direction in the first byte; a serving end reads it from the
+ * end that connected, and sends when that end receives.
+ */
+static int
+perf_open(
+	int mode,
+	const char *address_text,
+	const char *port_text,
+	int *descriptor,
+	int *sending)
+{
+	char direction;
+	ssize_t moved;
+	int error;
+
+	/* A serving end: the connection it takes, and the direction that end asks. */
+	if (mode == PERF_MODE_SERVE) {
+		error = perf_accept(address_text, port_text, descriptor);
+		if (error != 0)
+			return error;
+		moved = read(*descriptor, &direction, 1);
+		if (moved != 1 || (direction != 'S' && direction != 'R')) {
+			fprintf(stderr, "tcp-perf: no direction byte from the connecting end\n");
+			close(*descriptor);
+			return EPROTO;
+		}
+		*sending = 0;
+		if (direction == 'R')
+			*sending = 1;
+		return 0;
+	}
+
+	/* A connecting end. */
+	error = perf_connect(address_text, port_text, descriptor);
+	if (error != 0)
+		return error;
+
+	/* The direction byte, which the peer reads first. */
+	direction = 'R';
+	*sending = 0;
+	if (mode == PERF_MODE_SEND) {
+		direction = 'S';
+		*sending = 1;
+	}
+	moved = write(*descriptor, &direction, 1);
+	if (moved != 1) {
+		fprintf(stderr, "tcp-perf: the direction byte was not sent\n");
+		close(*descriptor);
+		return EIO;
+	}
+
+	/* Succeeded: connected, the direction told. */
+	return 0;
+}
+
 /* Reads the direction, the duration and the chunk from the command line. */
 static int
 perf_parse(
 	int argc,
 	char **argv,
-	int *sending,
+	int *mode,
 	unsigned long *seconds,
 	unsigned long *chunk)
 {
 	char *end;
 	int compare;
 	int compare_recv;
+	int compare_serve;
 
-	/* Refuses a command line without the direction, the address, the port and the duration. */
+	/* Refuses a command line without the mode, the address, the port and the duration. */
 	if (argc != 5 && argc != 6) {
-		fprintf(stderr, "usage: tcp-perf send|recv ADDRESS PORT SECONDS [CHUNK]\n");
+		fprintf(stderr, "usage: tcp-perf send|recv|serve ADDRESS PORT SECONDS [CHUNK]\n");
 		return EINVAL;
 	}
 
-	/* The direction. */
+	/* The mode. */
 	compare = strcmp(argv[1], "send");
 	compare_recv = strcmp(argv[1], "recv");
+	compare_serve = strcmp(argv[1], "serve");
 	if (compare == 0) {
-		*sending = 1;
+		*mode = PERF_MODE_SEND;
 	} else if (compare_recv == 0) {
-		*sending = 0;
+		*mode = PERF_MODE_RECV;
+	} else if (compare_serve == 0) {
+		*mode = PERF_MODE_SERVE;
 	} else {
-		fprintf(stderr, "tcp-perf: the direction is send or recv, not %s\n", argv[1]);
+		fprintf(stderr, "tcp-perf: the mode is send, recv or serve, not %s\n", argv[1]);
 		return EINVAL;
 	}
 
@@ -336,6 +405,86 @@ perf_connect(
 	return 0;
 }
 
+/*
+ * Listens on the address and port given and takes one connection; a
+ * written-to connection that closed raises no SIGPIPE.
+ */
+static int
+perf_accept(
+	const char *address_text,
+	const char *port_text,
+	int *descriptor)
+{
+	struct sockaddr_storage address;
+	unsigned long port;
+	socklen_t length;
+	char *end;
+	int listener;
+	int reuse;
+	int error;
+
+	/* The port, which must be a number of 16 bits. */
+	errno = 0;
+	port = strtoul(port_text, &end, 10);
+	if (errno != 0 || *end != '\0' || port == 0 || port > 65535UL) {
+		fprintf(stderr, "tcp-perf: bad port %s\n", port_text);
+		return EINVAL;
+	}
+
+	/* The address listened on. */
+	error = perf_address(address_text, (uint16_t)port, &address, &length);
+	if (error != 0) {
+		fprintf(stderr, "tcp-perf: bad address %s\n", address_text);
+		return error;
+	}
+
+	/* A peer that closes first ends a send with EPIPE, not the signal. */
+	(void)signal(SIGPIPE, SIG_IGN);
+
+	/* The listening socket. */
+	listener = socket(address.ss_family, SOCK_STREAM, 0);
+	if (listener < 0) {
+		error = errno;
+		fprintf(stderr, "tcp-perf: socket: %s\n", strerror(error));
+		return error;
+	}
+
+	/* Bound to the address, after an earlier run's connection on the port. */
+	reuse = 1;
+	(void)setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+	error = bind(listener, (struct sockaddr *)&address, length);
+	if (error != 0) {
+		error = errno;
+		fprintf(stderr, "tcp-perf: bind %s:%s: %s\n", address_text, port_text, strerror(error));
+		close(listener);
+		return error;
+	}
+
+	/* Listening, said for the one that starts the connecting end. */
+	error = listen(listener, 1);
+	if (error != 0) {
+		error = errno;
+		fprintf(stderr, "tcp-perf: listen: %s\n", strerror(error));
+		close(listener);
+		return error;
+	}
+	printf("ready\n");
+	fflush(stdout);
+
+	/* The one connection. */
+	*descriptor = accept(listener, NULL, NULL);
+	if (*descriptor < 0) {
+		error = errno;
+		fprintf(stderr, "tcp-perf: accept: %s\n", strerror(error));
+		close(listener);
+		return error;
+	}
+
+	/* Succeeded: the connection taken, the listener closed. */
+	close(listener);
+	return 0;
+}
+
 /* Reads the monotonic clock in seconds. */
 static double
 perf_now(void)
@@ -424,7 +573,9 @@ perf_count(
 
 /*
  * Writes chunks for the duration, then shuts the sending side down and
- * reads until the peer closes, so the peer has taken every byte.
+ * reads until the peer closes, so the peer has taken every byte.  With
+ * until_closed the peer ends the transfer: its close ends the writes
+ * without an error.
  */
 static int
 perf_send(
@@ -432,6 +583,7 @@ perf_send(
 	unsigned char *buffer,
 	unsigned long chunk,
 	unsigned long seconds,
+	int until_closed,
 	struct perf_progress *progress)
 {
 	ssize_t moved;
@@ -448,6 +600,8 @@ perf_send(
 			error = errno;
 			if (error == EINTR)
 				continue;
+			if (until_closed && (error == EPIPE || error == ECONNRESET))
+				return 0;
 			return error;
 		}
 

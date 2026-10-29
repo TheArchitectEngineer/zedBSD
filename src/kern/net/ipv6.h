@@ -99,14 +99,25 @@ struct ipv6_link {
 	unsigned retrans_ms;
 };
 
+/*
+ * The way a unicast packet to a destination goes, as ipv6_route_way
+ * found it: the next hop on the interface, the hop limit, and the path's
+ * MTU.  It stands while route_generation() does not move.
+ */
+struct ipv6_way {
+	struct in6_addr next_hop;
+	unsigned hop_limit;
+	unsigned mtu;
+};
+
 /* ipv6.c */
 int ipv6_init(void);
 int ipv6_protocol_register(uint8_t next_header, ipv6_input_fn input);
 int ipv6_output(struct net_device *device, const struct in6_addr *source, const struct in6_addr *destination, uint8_t next_header, unsigned hop_limit, struct packet_buf *packet);
 int ipv6_source_select(struct net_device *device, const struct in6_addr *destination, struct in6_addr *source);
 int ipv6_route_source(struct net_device *device, const struct in6_addr *destination, struct in6_addr *source, unsigned *mtu);
-int ipv6_route_next_hop(struct net_device *device, const struct in6_addr *destination, struct net_device **output, struct in6_addr *next_hop);
-int ipv6_output_routed(struct net_device *device, const struct in6_addr *source, const struct in6_addr *destination, const struct in6_addr *next_hop, uint8_t next_header, struct packet_buf *packet);
+int ipv6_route_way(struct net_device *device, const struct in6_addr *destination, struct net_device **output, struct ipv6_way *way);
+int ipv6_output_way(struct net_device *device, const struct in6_addr *source, const struct in6_addr *destination, const struct ipv6_way *way, uint8_t next_header, struct packet_buf *packet);
 int ipv6_address_state(struct net_device *device, const struct in6_addr *address, unsigned *flags);
 int ipv6_address_is_local(const struct in6_addr *address);
 int ipv6_link_get(struct net_device *device, struct ipv6_link *link);

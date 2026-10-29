@@ -11,7 +11,9 @@
 # plan/ws221/tests/config-vf2-tcp.mk); ifconfig is used only from /tmp, for --mtu (the board's adapter set to N, as
 # root, before the runs).  Each run also reports each CPU's busy share over the run (hw.cputimes).
 # --runs: a comma list of send (the board sends) and recv (the board receives), default send,recv; --seconds each run
-# (default 30).  The output is build/ws221-vf2/NAME (plan/tools/fresh-out.sh): summary.txt, the client's and the
+# (default 30).  serve-send and serve-recv (with --peer) measure the board's accepted connections: the board runs
+# tcp-perf serve on the port and the peer connects with tcp-perf built there from the same source (/tmp/tcp-perf-linux),
+# to the board's own address (over IPv6 its stable global one when ADDRESS is IPv6).  The output is build/ws221-vf2/NAME (plan/tools/fresh-out.sh): summary.txt, the client's and the
 # peer's lines, the samples.  The last line is "vf2-tcp: PASS" when every run moved bytes in both ends' count.
 # --peer USER@HOST,ADDRESS runs the peer on another Linux machine over SSH (its python3, /tmp/perf-peer.py) at ADDRESS
 # instead of this host (2026-10-29: the 5330's Debian on the board's own switch; the path from the board to this host
@@ -60,6 +62,13 @@ if [ -n "$peer_remote" ]; then
 	server_ip=${peer_remote#*,}
 	timeout 60 scp -q plan/ws221/tests/perf-peer.py plan/ws221/tests/ptb6.py "$peer_host:/tmp/" ||
 	    { echo "vf2-tcp: FAIL: copy of the peer"; exit 1; }
+	case $runs in
+	*serve*)
+		timeout 60 scp -q userland/tests/tcp-perf/main.c "$peer_host:/tmp/tcp-perf-main.c" &&
+		    timeout 120 ssh -o BatchMode=yes "$peer_host" 'cc -O2 -o /tmp/tcp-perf-linux /tmp/tcp-perf-main.c' ||
+		    { echo "vf2-tcp: FAIL: tcp-perf on the peer"; exit 1; }
+		;;
+	esac
 fi
 port=5301
 so="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=8"
@@ -137,18 +146,27 @@ status=0
 for run in $(echo "$runs" | tr ',' ' '); do
 	case $run in
 	send|recv) ;;
+	serve-send|serve-recv)
+		[ -n "$peer_host" ] || { say "$run needs --peer"; status=1; continue; } ;;
 	*) say "unknown run $run"; status=1; continue ;;
 	esac
 	: > "$out/peer-$run.log"
-	if [ -n "$peer_host" ]; then
-		timeout $((seconds + 60)) ssh -o BatchMode=yes "$peer_host" \
-		    "f=\$(mktemp /tmp/perf-peer.XXXXXX); python3 -I /tmp/perf-peer.py $server_ip $port \$f 1; cat \$f" \
-		    > "$out/peer-$run.log" 2>&1 &
-	else
-		timeout $((seconds + 60)) python3 -I plan/ws221/tests/perf-peer.py "$server_ip" "$port" "$out/peer-$run.log" 1 &
-	fi
-	peer=$!
-	sleep 1
+	case $run in
+	serve-*)
+		# The board listens; the peer connects once the samples run (below).
+		;;
+	*)
+		if [ -n "$peer_host" ]; then
+			timeout $((seconds + 60)) ssh -o BatchMode=yes "$peer_host" \
+			    "f=\$(mktemp /tmp/perf-peer.XXXXXX); python3 -I /tmp/perf-peer.py $server_ip $port \$f 1; cat \$f" \
+			    > "$out/peer-$run.log" 2>&1 &
+		else
+			timeout $((seconds + 60)) python3 -I plan/ws221/tests/perf-peer.py "$server_ip" "$port" "$out/peer-$run.log" 1 &
+		fi
+		peer=$!
+		sleep 1
+		;;
+	esac
 	board "nohup sh -c 'while :; do /tmp/sysctl net.tcpstats; sleep 1; done' > /tmp/ws221-samples-$run.txt 2>&1 < /dev/null & echo \$! > /tmp/ws221-sampler.pid" > /dev/null
 	board '/tmp/sysctl hw.cputimes' > "$out/cpu-before-$run.txt"
 	ptb_job=
@@ -165,14 +183,42 @@ for run in $(echo "$runs" | tr ',' ' '); do
 		done ) > "$out/ptb-$run.txt" 2>&1 &
 		ptb_job=$!
 	fi
-	T=$((seconds + 40)) board "/tmp/tcp-perf $run $server_ip $port $seconds $chunk; echo exit=\$?" > "$out/client-$run.txt"
+	case $run in
+	serve-*)
+		# The board's address the peer connects to, and the one it listens on.
+		case $server_ip in
+		*:*)
+			listen=::
+			target=$(board "ifconfig $iface" | awk '/inet6/ && !/temporary/ && !/fe80/ && !/tentative/ {print $2; exit}') ;;
+		*)
+			listen=0.0.0.0
+			target=$board_ip ;;
+		esac
+		board "nohup sh -c '/tmp/tcp-perf serve $listen $port $seconds $chunk; echo exit=\$?' > /tmp/ws221-serve.txt 2>&1 < /dev/null &" > /dev/null
+		sleep 2
+		direction=send
+		[ $run = serve-send ] && direction=recv
+		timeout $((seconds + 60)) ssh -o BatchMode=yes "$peer_host" "/tmp/tcp-perf-linux $direction $target $port $seconds $chunk" \
+		    > "$out/peer-$run.log" 2>&1
+		tries=0
+		until board 'cat /tmp/ws221-serve.txt' > "$out/client-$run.txt" && grep -q '^exit=' "$out/client-$run.txt"; do
+			tries=$((tries + 1))
+			[ $tries -gt 20 ] && break
+			sleep 1
+		done
+		peer=
+		;;
+	*)
+		T=$((seconds + 40)) board "/tmp/tcp-perf $run $server_ip $port $seconds $chunk; echo exit=\$?" > "$out/client-$run.txt"
+		;;
+	esac
 	[ -n "$ptb_job" ] && wait "$ptb_job"
 	board '/tmp/sysctl hw.cputimes' > "$out/cpu-after-$run.txt"
-	wait "$peer"
+	[ -n "$peer" ] && wait "$peer"
 	board 'kill $(cat /tmp/ws221-sampler.pid)' > /dev/null
 	timeout 60 sshpass -e scp $so "$host:/tmp/ws221-samples-$run.txt" "$out/samples-$run.txt" > /dev/null 2>&1
 	client=$(grep '^TCP-PERF' "$out/client-$run.txt")
-	peerline=$(grep '^done' "$out/peer-$run.log")
+	peerline=$(grep -E '^(done|TCP-PERF)' "$out/peer-$run.log")
 	say "$run: board ${client:-no result} | host ${peerline:-no result}"
 	min=$(awk -F'mbps=' '/^t=/ {v = $2 + 0; if (n++ == 0 || v < m) m = v} END {if (n) printf "%.1f", m}' "$out/client-$run.txt")
 	say "$run: slowest second ${min:-?} Mbps"

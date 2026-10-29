@@ -19,6 +19,7 @@
 
 #include "kern/net/net-device.h"
 #include "kern/net/packet-buf.h"
+#include "kern/net/route.h"
 #include "kern/lock.h"
 #include "internal.h"
 #include "wire.h"
@@ -454,7 +455,12 @@ icmp6_too_big(
 	if (!lowered)
 		return;
 
-	/* TCP's connections to the destination cut their segments to it (RFC 8201 section 4). */
+	/*
+	 * What senders kept of the path is looked up again, and TCP's
+	 * connections to the destination cut their segments to it (RFC 8201
+	 * section 4).
+	 */
+	route_changed();
 	tcp6_path_mtu_lowered(&destination, mtu);
 }
 

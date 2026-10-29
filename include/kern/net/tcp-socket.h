@@ -220,11 +220,14 @@ struct tcp_socket {
 	/*
 	 * The same for IPv6 segments, under route_cached and
 	 * route_generation_seen too: the interface the route goes out of
-	 * (route_ifindex) and its next hop; the source is inet.local6, which
-	 * the first segment fixed.
+	 * (route_ifindex), its next hop, the interface's hop limit and the
+	 * path's MTU; the source is inet.local6, which the first segment
+	 * fixed.
 	 */
 	unsigned route_ifindex;
 	struct in6_addr route_next_hop6;
+	unsigned route_hop_limit;
+	unsigned route_mtu;
 	/*
 	 * Segments queued and not yet acknowledged, oldest first.  Several
 	 * may be in flight at once, bounded by the peer's advertised window

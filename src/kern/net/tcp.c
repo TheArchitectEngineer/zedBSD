@@ -543,7 +543,7 @@ static int tcp_input(struct packet_buf *packet, uint32_t source, uint32_t destin
 static int tcp6_input(struct packet_buf *packet, const struct in6_addr *source, const struct in6_addr *destination);
 static int tcp_segment_input(struct packet_buf *packet, const struct tcp_segment_addresses *addresses);
 static int tcp6_route(struct tcp_endpoint *endpoint, struct net_device **device, struct in6_addr *source);
-static int tcp6_route_cached(struct tcp_endpoint *endpoint, struct net_device **device, struct in6_addr *source, struct in6_addr *next_hop);
+static int tcp6_route_cached(struct tcp_endpoint *endpoint, struct net_device **device, struct in6_addr *source, struct ipv6_way *way);
 static void tcp6_route_remember(struct tcp_endpoint *endpoint, struct net_device *device, unsigned long generation);
 
 static const struct socket_ops tcp_ops = {
@@ -2024,16 +2024,16 @@ tcp6_route(
 
 /*
  * Takes the way the connection's last IPv6 lookup found, while nothing
- * has changed since: the interface (with a reference), the source and
- * the next hop.  Reports 0 when there is none to take, and the caller
- * looks it up.
+ * has changed since: the interface (with a reference), the source, and
+ * the next hop, hop limit and MTU.  Reports 0 when there is none to take,
+ * and the caller looks it up.
  */
 static int
 tcp6_route_cached(
 	struct tcp_endpoint *endpoint,
 	struct net_device **device,
 	struct in6_addr *source,
-	struct in6_addr *next_hop)
+	struct ipv6_way *way)
 {
 	struct net_device *output;
 	unsigned long irq;
@@ -2046,7 +2046,9 @@ tcp6_route_cached(
 	valid = endpoint->tcp.route_cached != 0 &&
 	    endpoint->tcp.route_generation_seen == route_generation();
 	*source = endpoint->tcp.inet.local6;
-	*next_hop = endpoint->tcp.route_next_hop6;
+	way->next_hop = endpoint->tcp.route_next_hop6;
+	way->hop_limit = endpoint->tcp.route_hop_limit;
+	way->mtu = endpoint->tcp.route_mtu;
 	ifindex = endpoint->tcp.route_ifindex;
 
 	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
@@ -2067,8 +2069,8 @@ tcp6_route_cached(
 
 /*
  * Keeps the way an IPv6 lookup found for the connection's later
- * segments: the interface the route goes out of and its next hop, with
- * the count of changes read before the lookup (generation).  device (may
+ * segments: the interface the route goes out of, its next hop, hop limit
+ * and MTU, with the count of changes read before the lookup (generation).  device (may
  * be NULL) is the interface the lookup was asked for.  A peer that is one
  * of this host's own addresses, or one no route reaches, is not kept.
  */
@@ -2079,13 +2081,13 @@ tcp6_route_remember(
 	unsigned long generation)
 {
 	struct net_device *output;
-	struct in6_addr next_hop;
+	struct ipv6_way way;
 	unsigned long irq;
 	unsigned ifindex;
 	int error;
 
 	/* The way to the peer; the host's own and an unreachable peer give none. */
-	error = ipv6_route_next_hop(device, &endpoint->tcp.inet.remote6, &output, &next_hop);
+	error = ipv6_route_way(device, &endpoint->tcp.inet.remote6, &output, &way);
 	if (error != 0)
 		return;
 	ifindex = output->ifindex;
@@ -2097,7 +2099,9 @@ tcp6_route_remember(
 	endpoint->tcp.route_cached = 1;
 	endpoint->tcp.route_generation_seen = generation;
 	endpoint->tcp.route_ifindex = ifindex;
-	endpoint->tcp.route_next_hop6 = next_hop;
+	endpoint->tcp.route_next_hop6 = way.next_hop;
+	endpoint->tcp.route_hop_limit = way.hop_limit;
+	endpoint->tcp.route_mtu = way.mtu;
 
 	spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, irq);
 }
@@ -2409,7 +2413,7 @@ tcp_output_segment(
 	struct packet_buf *packet;
 	struct tcp_wire *tcp;
 	struct in6_addr source6;
-	struct in6_addr next_hop6;
+	struct ipv6_way way6;
 	unsigned long generation;
 	uint32_t next_hop;
 	uint32_t source;
@@ -2449,7 +2453,7 @@ tcp_output_segment(
 		 * The way the connection's last lookup found, while nothing has
 		 * changed since; else a lookup, kept for the segments after.
 		 */
-		routed = tcp6_route_cached(endpoint, &device, &source6, &next_hop6);
+		routed = tcp6_route_cached(endpoint, &device, &source6, &way6);
 		error = 0;
 		if (!routed) {
 			generation = route_generation();
@@ -2599,8 +2603,8 @@ tcp_output_segment(
 		    packet->data, packet->length);
 		wire_put16(tcp->checksum, checksum);
 		if (routed) {
-			error = ipv6_output_routed(device, &source6, &endpoint->tcp.inet.remote6, &next_hop6,
-			    IPPROTO_TCP, packet);
+			error = ipv6_output_way(device, &source6, &endpoint->tcp.inet.remote6, &way6, IPPROTO_TCP,
+			    packet);
 		} else {
 			error = ipv6_output(device, &source6, &endpoint->tcp.inet.remote6, IPPROTO_TCP, 0U, packet);
 		}
@@ -5861,8 +5865,21 @@ tcp_send_bytes(
 	if ((flags & ~(MSG_DONTWAIT | MSG_NOSIGNAL)) != 0)
 		return -EINVAL;
 
-	/* A shut-down or unconnected socket cannot send. */
+	/*
+	 * A shut-down or unconnected socket cannot send; what ended a
+	 * connection (a reset: ECONNRESET) is told once, first.
+	 */
 	irq = spin_lock_irqsave(&socket->lock);
+
+	error = 0;
+	if (endpoint->tcp.state != TCP_ESTABLISHED && endpoint->tcp.state != TCP_CLOSE_WAIT) {
+		error = socket->error;
+		socket->error = 0;
+	}
+	if (error != 0) {
+		spin_unlock_irqrestore(&socket->lock, irq);
+		return -error;
+	}
 
 	if (socket->write_shutdown) {
 		spin_unlock_irqrestore(&socket->lock, irq);
@@ -7217,6 +7234,14 @@ tcp_segment_input(
 		endpoint->tcp.active_connect_generation = 0;
 		endpoint->tcp.connect_wait_deadline = 0;
 		tcp_forget_peer(endpoint);
+
+		/*
+		 * A connection that was reset sends no more: after the error is
+		 * told, a write is EPIPE (the BSD stacks' socantsendmore), not
+		 * ENOTCONN as for a socket never connected.
+		 */
+		if (reset_error == ECONNRESET)
+			endpoint->tcp.inet.socket.write_shutdown = 1;
 		spin_unlock_irqrestore(&endpoint->tcp.inet.socket.lock, socket_irq);
 		tcp_discard_free(&retransmit);
 		socket_set_error(&endpoint->tcp.inet.socket, reset_error);
