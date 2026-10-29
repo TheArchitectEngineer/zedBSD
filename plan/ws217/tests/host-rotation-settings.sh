@@ -10,9 +10,9 @@ repo=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 . "$repo/plan/tools/fresh-out.sh"
 fresh_out "$repo/build/tmp/ws217-rotation-settings"
 work=$fresh_dir
-# Only keiland/keiland.h from the tree: the tree's wayland-client.h is zedBSD's, the host's is the one to link with.
+# Only keiland/keiland*.h from the tree: the tree's wayland-client.h is zedBSD's, the host's is the one to link with.
 mkdir -p "$work/include/keiland"
-cp "$repo/userland/desktop/include/keiland/keiland.h" "$work/include/keiland/keiland.h"
+cp "$repo/userland/desktop/include/keiland/"keiland*.h "$work/include/keiland/"
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -Wall -Wextra -Werror -O1 -g \
 	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
 	-I"$repo" -I"$work/include" \

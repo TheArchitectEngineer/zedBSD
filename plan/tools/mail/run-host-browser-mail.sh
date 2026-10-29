@@ -7,7 +7,7 @@ set -eu
 cd "$(dirname -- "$0")/../../.."
 out=${1:-build/ws169/host-browser-mail}
 mkdir -p "$(dirname -- "$out")/include/keiland" "$(dirname -- "$out")/include/browser"
-cp userland/desktop/include/keiland/keiland.h "$(dirname -- "$out")/include/keiland/keiland.h"
+cp userland/desktop/include/keiland/keiland*.h "$(dirname -- "$out")/include/keiland/"
 cp userland/desktop/include/browser/browser.h "$(dirname -- "$out")/include/browser/browser.h"
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \
 	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \

@@ -8,7 +8,7 @@ cd "$(dirname -- "$0")/../../.."
 out=$(pwd)/build/ws100-host
 mkdir -p "$out/include"
 mkdir -p "$out/include/keiland"
-ln -sf "$(pwd)/userland/desktop/include/keiland/keiland.h" "$out/include/keiland/keiland.h"
+ln -sf "$(pwd)/userland/desktop/include/keiland/"keiland*.h "$out/include/keiland/"
 ${CC:-cc} -std=gnu89 -Wall -Wextra -Werror -D_GNU_SOURCE -I"$out/include" -I. \
     "-DAUDIO_SOCKET_PATH=\"$out/audiod.sock\"" \
     userland/desktop/libkeiland-backend-zedbsd/audio-zedbsd.c userland/desktop/libkeiland-backend-zedbsd/daemon-link-zedbsd.c \

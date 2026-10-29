@@ -10,8 +10,8 @@ cd "$(dirname -- "$0")/../../.."
 out=${1:-build/keiland-machine-host}
 fresh_out "$out"
 mkdir -p "$out/include/keiland"
-# Only keiland/keiland.h from the tree (the host's libc and headers otherwise).
-cp userland/desktop/include/keiland/keiland.h "$out/include/keiland/keiland.h"
+# Only keiland/keiland*.h from the tree (the host's libc and headers otherwise).
+cp userland/desktop/include/keiland/keiland*.h "$out/include/keiland/"
 ${CC:-cc} -std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror \
 	-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer \
 	-I. -I"$out/include" \

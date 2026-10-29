@@ -16,7 +16,7 @@ cc=${CC:-cc}
 san='-fsanitize=address,undefined -fno-sanitize-recover=all -fno-omit-frame-pointer'
 U=userland/desktop
 
-# The client side: the tree's headers (wayland-client.h, keiland/keiland.h) and libwayland.
+# The client side: the tree's headers (wayland-client.h, keiland/keiland*.h) and libwayland.
 client_flags="-std=gnu17 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror $san -I. -I$U/include -I$U/libkeiland/audio -Iplan/ws191/tests"
 wayland=$(sed -n 's#^.*\(userland/desktop/libwayland/[a-z-]*\.c\).*$#\1#p' $U/libwayland/Makefile.linux)
 for file in $wayland $U/libkeiland/audio/audio.c $U/libkeiland/audio/audio-protocol.c plan/ws191/tests/host-audio-client.c; do
@@ -25,7 +25,7 @@ done
 
 # The server side: the compositor's headers, as plan/ws131/tests/host-system.sh builds them.
 mkdir -p "$work/include/keiland"
-cp $U/include/keiland/keiland.h "$work/include/keiland/keiland.h"
+cp $U/include/keiland/keiland*.h "$work/include/keiland/"
 server_flags="-std=gnu99 -D_GNU_SOURCE -O1 -g -Wall -Wextra -Werror -pthread $san -I. -I$work/include -Iplan/ws191/tests"
 for file in $U/wayland/audio-stream.c $U/libkeiland-backend-linux/peer-linux.c plan/ws191/tests/host-audio-server.c; do
 	$cc $server_flags -c "$file" -o "$work/server-$(basename "$file" .c).o"

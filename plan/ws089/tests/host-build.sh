@@ -20,7 +20,7 @@ mkdir -p "$out/include" "$out/obj"
 mkdir -p "$out/include/truetype"
 ln -sf "$(pwd)/userland/desktop/include/truetype/truetype.h" "$out/include/truetype/truetype.h"
 mkdir -p "$out/include/keiland"
-ln -sf "$(pwd)/userland/desktop/include/keiland/keiland.h" "$out/include/keiland/keiland.h"
+ln -sf "$(pwd)/userland/desktop/include/keiland/"keiland*.h "$out/include/keiland/"
 ln -sfn "$(pwd)/include/libc/compat" "$out/include/compat"
 cc=${CC:-cc}
 flags="-O2 -g -std=gnu89 -Wall -Wextra -Werror -Wno-unused-parameter -D_GNU_SOURCE -I$out/include -I$src -I."

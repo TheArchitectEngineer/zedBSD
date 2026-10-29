@@ -12,9 +12,9 @@ cc=${CC:-clang}
 extra=${EXTRA_CFLAGS:-}
 mkdir -p "$out/include"
 
-# Only <keiland/keiland.h> is taken from include/libc: the rest of that directory is zedBSD's C library.
+# Only <keiland/keiland*.h> are taken from include/libc: the rest of that directory is zedBSD's C library.
 mkdir -p "$out/include/keiland"
-ln -sf "$root/userland/desktop/include/keiland/keiland.h" "$out/include/keiland/keiland.h"
+ln -sf "$root/userland/desktop/include/keiland/"keiland*.h "$out/include/keiland/"
 
 flags="-std=gnu11 -O2 -g -Wall -Wextra -Werror -Wconversion -Wno-sign-conversion $extra -I$out/include"
 for name in motion scroll gesture; do

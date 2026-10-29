@@ -12,7 +12,7 @@ fresh_out "$repo/build/tmp/ws190-host"
 work=$fresh_dir
 mkdir -p "$work/inc/truetype" "$work/inc/keiland"
 cp userland/desktop/include/truetype/truetype.h "$work/inc/truetype/"
-cp userland/desktop/include/keiland/keiland.h "$work/inc/keiland/"
+cp userland/desktop/include/keiland/keiland*.h "$work/inc/keiland/"
 ln -sfn "$repo/include/libc/compat" "$work/inc/compat"
 U=userland/desktop
 K=$U/libkeiland/ui

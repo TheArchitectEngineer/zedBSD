@@ -2,7 +2,7 @@
 # zedBSD
 # Copyright (C) 2026 Awe Morris
 # SPDX-License-Identifier: Zlib
-"""Writes or checks libkeiland's exports.map from its public header (keiland.h; with keiland-ui.h until WS131 p023) (WS131 p012, plan/ws131/design.md section 5.4).
+"""Writes or checks libkeiland's exports.map from its public headers (keiland.h and the keiland_*.h it includes).
 
 Only the functions the public headers declare leave the library: every
 prototype at the top level of the headers below, by name, without a glob, so
@@ -19,9 +19,8 @@ import re
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-HEADERS = [
-    os.path.join(HERE, "..", "include", "keiland", "keiland.h"),
-]
+INCLUDE = os.path.join(HERE, "..", "include")
+ENTRY = os.path.join(INCLUDE, "keiland", "keiland.h")
 MAP = os.path.join(HERE, "exports.map")
 
 HEAD = """/*
@@ -87,9 +86,17 @@ def declared(path):
     return names
 
 
+def headers():
+    """The headers of the library's parts, in the order <keiland/keiland.h> includes them."""
+    with open(ENTRY, encoding="utf-8") as stream:
+        text = stream.read()
+    parts = re.findall(r"^#include <(keiland/keiland_\w+\.h)>", text, flags=re.M)
+    return [os.path.join(INCLUDE, part) for part in parts]
+
+
 def main():
     names = []
-    for header in HEADERS:
+    for header in headers():
         for name in declared(header):
             if name not in names:
                 names.append(name)
