@@ -3,7 +3,7 @@
 # ws235-p004 RX・TX の ring（v1 の descriptor）、1 queue・1 vector、net の worker への接続
 
 - 親: [WS235](../ws.md)。
-- 状態: in-progress（2026-10-29 07:1x P1、q1669-i02）。DHCP・ping は実機で成立（07:2x、下）、TCP（ssh・転送）は未確かめ。
+- 状態: cleared（2026-10-29 09:1x P1、q1669-i03。下の「判定」）。
 - 依存: [p002](../phase002/phase.md)。実機は p003 の link と同じ枠で。
 
 ## 範囲（p001 の設計の段 3）
@@ -52,3 +52,20 @@
   接続で `route_lookup_ref(remote)` の device を使い、その device の address を source にする。ue0（10.0.30.5）と rge0（10.0.30.6）が同じ 10.0.0.0/16 にあると、
   rge0 に着いた SYN の返事は route の先の device（ue0）から出うる。stack（kern/net）の multi-homing の振る舞いで、この WS の範囲の外。試験は `LANTEST=2`
   （ue0 を落とし rge0 だけ）で避ける。driver の TCP は未確かめのまま。
+
+## 実機の試験（2026-10-29 08:57〜09:10 P1、q1669-i03、RDNA 機 10.0.10.3、RTL8127 は 10GbE の switch、lock「P1 q1669-i03 start 08:57 end 09:42」、09:10 に返した）
+
+| 回 | kernel | 命令 | 結果（summary.txt、worktree p1-ws235c） |
+| --- | --- | --- | --- |
+| 4 | `build/ws235/amd64-c/vmunix`（main 7b297b46a、cksum 4251467738、sha256 8715652c0d0fc359…） | `POWERCYCLE=1 LANTEST=2 PERF=build/ws235/amd64-c/bin/tcp-perf sh plan/ws235/tests/rtl-link.sh build/ws235/amd64-c/vmunix build/tmp/ws235-link-4` | rge0 media **10000Mbps**、DHCP 10.0.30.6/16。ue0 を down・その connected route を消した後（route show で rge0 の 10.0.0.0/16 だけ）、centris → 10.0.30.6 の ping 200/200（avg 0.114 ms）、ssh 成立、SSH で 100 MB 両向き（zedBSD→ 0.90 s、→zedBSD 1.34 s）、tcp-perf 10 s: send 2983・recv 3284 Mbit/s（perf-peer の側も同じ）。rge0 の errors 0・dropped 0（RX 3018025・TX 4551366 packets）。reboot も rge0 の address で通った |
+| 5 | 同じ | 同じ＋`SECONDS_PERF=20`、出力 `build/tmp/ws235-link-5` | media 10000Mbps、ping 200/200（avg 0.096 ms）、ssh・100 MB 両向き成立、tcp-perf 20 s: **send 3539・recv 3373 Mbit/s**（毎秒の値 send 3228〜3980、recv 3213〜3553）、errors 0 |
+
+- 各回の終わりに NVMe の kernel を保存した物（P2 の vmunix-va1、sha256 6a06e796a7b9b632…）に戻し照合が一致、Debian に戻った。電源の入れ直しは無し。
+- 判定は ssh の ifconfig・route show、centris の ping・ssh・perf-peer.py で（console・serial の log は読んでいない）。
+- 前の回 3 の ssh の失敗は stack の出口の選び（閉じた device の route が残り、route の device とその address で送る）で、`rtl-link.sh` の LANTEST=2 は ue0 の connected route も消す（1918d909f）。
+
+## 判定（2026-10-29 09:1x P1、q1669-i03）
+
+- cleared。v1 の descriptor の RX・TX の ring、1 queue・1 vector、net の worker への接続（offload 無し）で、10G の link の上に DHCP・ping・ssh・SSH の 100 MB 両向き・
+  tcp-perf の両向き（20 s で send 3539・recv 3373 Mbit/s）が通り、rge0 の errors・dropped は 0（回 4・5）。close は reboot の経路で通った（close の後の再 open は試していない）。
+- 速さの差（Linux 6808・5458 Mbit/s）の分析と詰めは [p005](../phase005/phase.md) の記録と p006（多 vector・RSS・割り込みの抑え・zero copy）。

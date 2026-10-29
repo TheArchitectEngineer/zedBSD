@@ -3,7 +3,7 @@
 # ws235-p002 共通の骨格: RTL8125 系の PCI の attach・版の判定・OCP の窓・MAC address・割り込み・net device
 
 - 親: [WS235](../ws.md)。
-- 状態: in-progress（2026-10-29 P1、q1669-i01・i02）。build と実機の attach（07:2x、下）まで。cleared の判定は p003・p004 とまとめて Q1 へ。
+- 状態: cleared（2026-10-29 09:1x P1、q1669-i03。下の「判定」）。
 - 依存: [p001](../phase001/phase.md)。
 
 ## 範囲
@@ -41,3 +41,21 @@
 - 各回の終わりに NVMe の kernel を保存した物に戻し、sha256 の照合が一致（00ddcb7045fbaca5…）、Debian に戻った。最後の状態: Debian、NVMe の kernel は P2 の物（cksum 204755418）。
 - 判定は ssh の ifconfig と centris の ping・ethtool・ip で（console・serial の log は読んでいない）。
 - 相手は 2.5G の switch だった（ws.md の訂正）。10G の link と RTL8127ATF・PHY の microcode の版は未確かめ。
+
+## 実機の試験（2026-10-29 08:57〜09:10 P1、q1669-i03、RDNA 機 10.0.10.3、RTL8127 は 10GbE の switch、lock「P1 q1669-i03 start 08:57 end 09:42」、09:10 に返した）
+
+| 回 | kernel | 命令 | 結果（summary.txt、worktree p1-ws235c） |
+| --- | --- | --- | --- |
+| 4 | `build/ws235/amd64-c/vmunix`（main 7b297b46a、cksum 4251467738、sha256 8715652c0d0fc359…） | `POWERCYCLE=1 LANTEST=2 PERF=build/ws235/amd64-c/bin/tcp-perf sh plan/ws235/tests/rtl-link.sh build/ws235/amd64-c/vmunix build/tmp/ws235-link-4` | rge0 media **10000Mbps**、DHCP 10.0.30.6/16。ue0 を down・その connected route を消した後（route show で rge0 の 10.0.0.0/16 だけ）、centris → 10.0.30.6 の ping 200/200（avg 0.114 ms）、ssh 成立、SSH で 100 MB 両向き（zedBSD→ 0.90 s、→zedBSD 1.34 s）、tcp-perf 10 s: send 2983・recv 3284 Mbit/s（perf-peer の側も同じ）。rge0 の errors 0・dropped 0（RX 3018025・TX 4551366 packets）。reboot も rge0 の address で通った |
+| 5 | 同じ | 同じ＋`SECONDS_PERF=20`、出力 `build/tmp/ws235-link-5` | media 10000Mbps、ping 200/200（avg 0.096 ms）、ssh・100 MB 両向き成立、tcp-perf 20 s: **send 3539・recv 3373 Mbit/s**（毎秒の値 send 3228〜3980、recv 3213〜3553）、errors 0 |
+
+- 各回の終わりに NVMe の kernel を保存した物（P2 の vmunix-va1、sha256 6a06e796a7b9b632…）に戻し照合が一致、Debian に戻った。電源の入れ直しは無し。
+- 判定は ssh の ifconfig・route show、centris の ping・ssh・perf-peer.py で（console・serial の log は読んでいない）。
+- 前の回 3 の ssh の失敗は stack の出口の選び（閉じた device の route が残り、route の device とその address で送る）で、`rtl-link.sh` の LANTEST=2 は ue0 の connected route も消す（1918d909f）。
+
+## 判定（2026-10-29 09:1x P1、q1669-i03）
+
+- cleared。範囲の 1〜4: build（warning 0、amd64-c でも exit 0・warning 0・amd64 vmunix check PASS）、実機で rge0 が出て MAC address が Debian で読んだ値と同じ（回 1）、
+  1 vector の割り込みで送受が回る（回 4・5。20 ms の保険の poll だけでは 512 個の ring で約 2.6 万 frame/s・約 300 Mbit/s が上限なので、3 Gbit/s 台は割り込みが働いている事の
+  間接の証拠。割り込みの数は数えていない）。
+- 未確かめ: 版の判定と RTL8127ATF の判定の値（ssh で読む口が無い。10G の link と RTL8127 の表が効いている事からの推測）。8125・8126 の分岐は実機が無い（p007）。
