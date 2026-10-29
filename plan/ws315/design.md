@@ -128,7 +128,7 @@ Linux の `r8156_init`・`rtl8156_up`・`rtl8156_enable` と違う所は、ま�
 ### 6.3 checksum の offload
 
 - TX: net device の capability `NET_DEVICE_CAP_TX_CSUM_IPV4_TCP` を立てる。packet の `PACKET_BUF_TX_CSUM_TCP` に対し opts2 に TCP_CS（bit 30）・IPV4_CS（bit 29）・
-  L4 の offset（`l4_offset`、frame の頭から）<< 17（最大 0x7ff、v2 は 0x3ff）。`PACKET_BUF_TX_CSUM_IPV4` は IPV4_CS。offset が上限を超える frame は software で
+  L4 の offset（frame の頭から。zedBSD の `l3_offset`・`l4_offset` は `packet->storage` からの位置なので、`storage + l3_offset − data` に IPv4 の header の長さを足して求める）<< 17（最大 0x7ff、v2 は 0x3ff）。`PACKET_BUF_TX_CSUM_IPV4` は IPV4_CS。offset が上限を超える frame は software で
   `packet_buf_checksum_finish` してから送る（落とさない）。TCP の checksum の field は pseudo header の和（補数にしない）を持つ約束（packet-buf.h）が、Linux の CHECKSUM_PARTIAL と同じ形。
 - RX: v1 は opts2 の IPV4_CS（bit 19）・IPV6_CS（bit 20）・TCP_CS（bit 22）・UDP_CS（bit 23）と opts3 の IPF（bit 23）・UDPF（bit 22）・TCPF（bit 21）、
   v2 は opts3 の IPV4（bit 14）・IPV6（bit 15）・TCP（bit 10）・UDP（bit 11）・IPF（bit 26）・UDPF（bit 25）・TCPF（bit 24）。
@@ -155,8 +155,9 @@ Linux の `r8156_init`・`rtl8156_up`・`rtl8156_enable` と違う所は、ま�
 
 - `drv_usb_endpoint_set_queue_depth`（WS221 p014）で bulk-in に 4（上限 `DRV_USB_ENDPOINT_QUEUE_MAX`）、bulk-out に 4 を頼み、認められた数の URB を作る（1 なら 1 本ずつ）。
   Linux は RX 10・TX 4 本を出す。zedBSD の上限 4 で 48 KB × 4 = 192 KB が device から見た受けの空き。
-- xHCI の ring の空き: 48 KB の TD の TRB の数は buffer の page の切れ目で決まる（`drv_xhci_queue_admit` の余白 32 で 4 本が入るかを実装の時に確かめる。入らなければ EBUSY で
-  rearm の再試行になる。その時は block を 32 KB に下げる）。
+- xHCI の ring の空き: TRB は 64 KB の境界で分かれ（pci-xhci.c の TD の組み立て）、48 KB の TD は 2 個ほど。4 本と余白でも ring に十分入る（review m5）。
+- RX・TX の URB に `drv_usb_urb_reserve_transfer` で HCD の要求と DMA の staging を attach の時に確保する（無いと submit ごとに kern_malloc と 48 KB の coherent の確保が走る。
+  uvc・uas と同じ形。NCM はしていない）。
 - interrupt-in は depth 1。
 
 ## 9. MTU と jumbo
@@ -188,7 +189,29 @@ Linux の `r8156_init`・`rtl8156_up`・`rtl8156_enable` と違う所は、ま�
 | p004 | RTL8157（資料だけ）: v2 の記述子、Linux の `r8156_init`・`rtl8156_up` の version 16 の枝と `r8157_hw_phy_cfg` の値、5000 の広告、host 試験、build | p002 |
 | p005 | 規約の全文の見直し | p002〜p004 |
 
-## 12. 危険と未決
+## 12. design-reviewer の指摘と反映（2026-10-30）
+
+review: 致命 1・重大 4・中 9・軽微（[phase001](phase001/phase.md) に要約）。実装（p002）は上の本文を次のとおり直した形:
+
+| 指摘 | 反映 |
+| --- | --- |
+| F1 TX の L4 の offset の起点 | §6.3 を直した。`rtl_tx_prepare` は `storage + l3_offset − data` と IPv4 の IHL で frame の頭からの offset を出す。headroom の無い・header の見えない frame、60 byte 未満の frame（device が詰める）、offset が上限を超える frame は `packet_buf_checksum_finish` で software |
+| M1 FreeBSD の MCU 種別の誤り | `INDICATE_FLAG`・`SUSPEND_FLAG`・`EXTRA_STATUS`・`CONFIG34`・`RSTTALLY` は PLA（Linux の値）。出典の comment に書いた |
+| M2 register の直列化 | adapter ごとの mutex（`register_lock`、LOCK_RANK_DEVICE）で open・close・set_mtu・worker の register の列を囲む。attach は worker と net device を作る前に一人で行う。順序は mutex → adapter の spin lock |
+| M3 worker と detach | worker は `kthread_create`（usb-bt と同じ形）、interrupt の完了は worker を起こすだけ。worker は INTR_LINK の bit を前の link と比べ、違う時（と open の時）だけ PHYSTATUS を読む。close は transfer を止めてから mutex の中で MAC を止め、worker は `opened` の時だけ RE・TE を立てる。detach: ready=0 → stop（URB の cancel・drain）→ worker を join → `net_device_gone` → 解放。1 秒の poll の代わりは置かない（interrupt が失敗した時は link を読み直す） |
+| M4 merge で既定が vendor mode に | 既定は Q1 の指示（2026-10-30「amd64 の USB を持つ config は y、他は n」）。p003 の 5330 の試験が通るまで branch を merge しない事を Q1 に頼んだ。逃げ道は boot の token `usb.rtl815x=off` |
+| m1 0x7420 | Linux と同じく 0x7410・0x7420 で flash の読み込みを待つ |
+| m2 RTL8157 の EARLY_SIZE /16・IDLE_SPDWN | EARLY_SIZE は世代 2 で /16（実装済み）。IDLE_SPDWN を飛ばすのは p004 で |
+| m3 link up の RE・TE、自動交渉 | link up で RE・TE を立て直す（開いている時）。自動交渉の開始は attach の一度だけ（open のたびに link を落とさない） |
+| m4 interrupt の buffer | endpoint の wMaxPacketSize の大きさで受け、先頭の le16 を読む |
+| m5 xHCI | §8 を直した（reservation） |
+| m6 範囲の外の chip | ID の表を 0x8156・0x8157 に絞る。拒否は log に version と token を出す。core に configuration の前の probe の口を足すのは範囲の外（記録だけ） |
+| m7 登録の場所 | pcat.c の NCM の隣（amd64・pcat）。arm64 の platform は既定 n なので今は足さない |
+| m8 開いたままの MTU | RMS・EARLY_SIZE・（8156B の）TX FIFO を書き直すだけ。p003 で開いたままの変更と ping を試す。問題が出たら disable → enable の形へ |
+| m9 試験 | 5330-rtl.sh に down・up の後の ping、開いたままの MTU の変更を入れた。send と recv の同時、port の上げ下げは p003 で。Linux の基準の firmware の有無は p003 で dmesg を見る。試験の config は `plan/ws315/tests/config-5330-rtl.mk` |
+| 軽微 | ZLP は `DRV_USB_URB_ZERO_PACKET`。boot の token は一度だけ読む。Linux の版は ref の tree の commit c339f4010（7.3 の開発版）。register・bit の名前は FreeBSD・Linux と違う独自の名前にした。PHY の firmware は範囲の外。IPV4_CS に IP header の計算を任せる（FreeBSD と同じ）のは p003 の send の成否で確かめる |
+
+## 13. 危険と未決
 
 - FreeBSD の手順だけでは Linux の速さに届かない場合（PHY の patch・firmware の有無）。p003 で数字を見て §5.4 を試す。
 - 範囲の外の chip に config 1 が選ばれて使えなくなる危険: ID の表を 0x8156・0x8157 に絞り、逃げ道の token を用意する。

@@ -2574,12 +2574,8 @@ rtl_tx_submit(
 
 	spin_unlock_irqrestore(&adapter->lock, irq);
 
-	/* Counts and frees the frames carried (or, on a failure, those that would have been). */
+	/* Frees the frames carried (or, on a failure, those that would have been); the core counted them. */
 	for (frame = 0; frame < taken; frame++) {
-		if (error == 0 && adapter->net_device != NULL) {
-			adapter->net_device->tx_packets++;
-			adapter->net_device->tx_bytes += list[frame]->length;
-		}
 		list[frame]->next = NULL;
 		packet_buf_free(list[frame]);
 	}
@@ -3036,7 +3032,6 @@ rtl_poll_rx_completion(
 	error = EIO;
 	if (status == DRV_USB_URB_COMPLETE)
 		error = drv_usb_rtl815x_parse_rx(&adapter->format, block, length, rtl_rx_deliver, adapter, &count);
-	device->rx_packets += count;
 
 	/* The parsed block's buffer is the next spare. */
 	adapter->rx_spare = block;

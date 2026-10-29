@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws315-p001 -->
 # ws315-p001: 設計（Realtek の vendor mode の driver）
 
-Status: in-progress（2026-10-30 P3 q1694-i01: design.md を作成、design-reviewer に回す）
+Status: cleared（2026-10-30 04:04 P3 q1694-i01: design.md、design-reviewer の指摘を design.md §12 に反映）
 Parent: [WS315](../ws.md)
 Queue: q1694 / q1694-i01（P3）
 依存: WS221 p014（xHCI の 1 endpoint に複数の要求、NCM の到達点）
@@ -24,6 +24,14 @@ Queue: q1694 / q1694-i01（P3）
 - RX の集約 48 KB × 4 URB、TX の詰め 16 KB × 4 URB、TX の TCP/IPv4 の checksum と RX の checksum の offload、jumbo 9000、link は interrupt-in と worker の thread。TSO は stack に口が無く範囲の外。
 - Phase: p002 実装、p003 5330 の実機、p004 RTL8157、p005 規約の全文の見直し。
 
+## 既定の選び分け（Q1、2026-10-30）
+
+- Q1（原文）:「The default is CONFIG_DRIVER_USB_RTL815X=y for amd64 configs that have USB (including 5330), and n for the others for now; write down why in phase001.」
+- 理由（P3 の記録）: 試せる実機は 5330（amd64）の RTL8156 だけで、vendor mode の driver は amd64 の platform（pcat.c の登録）でしか試験されない。arm64（Pi 4・Pi 5・C5）・i386 は
+  NCM のまま（既定 n、試験の後に広げる）。amd64 で NCM を build する config（CI の amd64・intelmac、5330）は y、`config/ci/config-amd64-server.mk` はユーザーの物で触らない
+  （Makefile の既定（amd64 で NCM と同じ）に従う）。Makefile の既定は `$(if $(filter amd64,$(ZEDBSD_PLATFORM)),$(CONFIG_DRIVER_USB_CDC_NCM),n)`。
+
 ## 結果
 
-（design-reviewer の後に記入）
+- design-reviewer（2026-10-30）: 致命 1（TX の L4 の offset の起点が storage）・重大 4（FreeBSD の MCU 種別の誤り、register の直列化、worker と detach の lifecycle、merge で既定が切り替わる）・
+  中 9・軽微。全てを design.md §12 に反映（実装は p002）。M4 は Q1 に「p003 の 5330 の試験の後に merge」を頼んだ。
