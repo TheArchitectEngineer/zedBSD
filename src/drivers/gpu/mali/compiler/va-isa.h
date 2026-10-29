@@ -227,6 +227,24 @@
 #define VA_SHIFT_ZS_EMIT_DEPTH		25U
 
 /*
+ * The opcode bits of the loads of two, three and four words, and the
+ * identity load lane they take (bits 38:36).
+ *
+ * Values referenced: Mesa 26.2.6
+ * src/panfrost/compiler/bifrost/valhall/ISA.xml (the opcode elements of
+ * LOAD.i64, LOAD.i96 and LOAD.i128, and the enums "Load lane (64-bit)",
+ * "Load lane (96-bit)" and "Load lane (128-bit)") and
+ * test/assembler-cases.txt (the LOAD.i64, LOAD.i96 and LOAD.i128 words).
+ */
+#define VA_OP_LOAD_I64			0x0060000028000000ULL
+#define VA_OP_LOAD_I96			0x0060000030000000ULL
+#define VA_OP_LOAD_I128			0x0060000038000000ULL
+#define VA_SHIFT_LOAD_LANE		36U
+#define VA_LOAD_LANE_64_IDENTITY	7U
+#define VA_LOAD_LANE_96_IDENTITY	6U
+#define VA_LOAD_LANE_128_IDENTITY	7U
+
+/*
  * The modifier fields the compiler sets, by their first bit: a
  * comparison's condition and its result type, a conversion's or a
  * rounding's round mode, a negate and an absolute value of each of the

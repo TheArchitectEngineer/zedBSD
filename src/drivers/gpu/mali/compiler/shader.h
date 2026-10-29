@@ -113,6 +113,14 @@
  * holding the three group counts.  Workgroup shared memory is addressed
  * from the workgroup local storage pointer the driver sets.
  *
+ * Uniform buffers.  A program reads a uniform buffer word by word from
+ * its FAU address.  Compiled with MALI_SHADER_OPTION_VECTOR_UBO it reads
+ * a run of consecutive words with one load of two to four words, whose
+ * byte offset is aligned to the load's size rounded up to a power of two
+ * (8 for two words, 16 for three or four), so the buffer's address must
+ * then be aligned to 16 bytes (a binding's offset is a multiple of the
+ * device's uniform buffer offset alignment).
+ *
  * Thread local storage.  A program whose values do not fit its registers
  * keeps some of them in memory of its own thread: tls_bytes is the bytes
  * one thread uses (a power of two, at least 16; zero for none), which
@@ -336,12 +344,19 @@ struct mali_shader_program {
 };
 
 /*
- * What a pipeline asks of a compile beyond the module.  Flags is zero
- * today; the record is the place for later keys.
+ * What a pipeline asks of a compile beyond the module: flags, a set of
+ * MALI_SHADER_OPTION_* (zero, or no record, for none).
  */
 struct mali_shader_options {
 	uint32_t flags;
 };
+
+/*
+ * Reads a run of consecutive uniform buffer words with one load where
+ * the run's offset is aligned for it (see "Uniform buffers" above);
+ * without it every word is a load of its own.
+ */
+#define MALI_SHADER_OPTION_VECTOR_UBO	0x1U
 
 /*
  * Why a program was refused: the IR instruction (or the SPIR-V word
