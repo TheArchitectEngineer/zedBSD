@@ -146,6 +146,7 @@
   | Linux・FreeBSD の QEMU guest（WS105・WS108・WS109・WS131。Linux の backend は QEMU+KVM） | `127.0.0.1` の転送 port からの SSH の疎通と QMP の `screendump` の PNG |
   | ZYBO の QEMU `xilinx-zynq-a9` と実機（WS286） | 生きた serial を対話で読む（armv7 の QEMU `virt` は boot-test.sh） |
   | ZYBO の LAN（WS289） | `127.0.0.1` の転送 port から guest の SSH |
+  | ODROID-C5 の実機（WS313） | 生きた serial を対話で読む（network と画面が出た後は SSH と画面の PNG）（2026-10-29 ユーザーのクリック「許可する」） |
   | RG350 の実機（WS273） | ユーザーが画面・LED を目で見て写真で返した結果 |
 
 - 回帰試験では GPU を使わず framebuffer で login prompt だけを確かめる。GPU の確認は GPU を扱う WS の Phase で。

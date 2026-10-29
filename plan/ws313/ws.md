@@ -14,6 +14,12 @@ Resume point: p001（調べと設計）。担当は P7（q1675）。
 
 - 2026-10-29（続き）: 「WS313は調査、コード作成などで、2つまでサブエージェントを作って並列化し、効率化してください。」→ Q1: P7 の配下は同時 2 つまで、file・directory を分けて衝突させない。
 
+- 2026-10-29 §8 の判断（ユーザーのクリック、Q1 の中継。前置きで WS・状態・未決・用語を説明した）:
+  - bootloader の binary（Amlogic の BL2・BL31 と Hardkernel の U-Boot）: 「取得して image に入れる」→ build で Hardkernel の公開の binary を取得し SHA-256 で検証して image に入れる。再配布の条件（Amlogic の blob の license）を確かめて記録する（notice の file）。
+  - GPU の CSF の firmware（mali_csffw.bin）: 「取得・検証・同意 (推し)」→ 他の firmware と同じく linux-firmware から取得・SHA-256 で検証・license への同意の形で image に。
+  - UART の対話での判定: 「許可する (推し)」→ AGENTS.md §9 の例外を ODROID-C5 の実機に広げる（生きた serial を対話で読む。network と画面が出た後は SSH と画面の PNG）。
+  - 起動の道（Hardkernel の U-Boot＋boot.scr＋booti）・DTB の出所（Hardkernel の DTS から build）・範囲（eMMC・OTG・Audio・HDMI の mode の変更は後回し）は Q1 の判断で推しどおり。
+
 ## 目標（Q1 の解釈）
 
 - 新しい board「ODROID-C5」を足す。SoC は Amlogic S905X5M（arm64）。BSP は `src/hal/arm64/bsp-s905x5m/`（既存の `bsp-rpi4`・`bsp-rpi5` と同じ並び）、platform の build（`platform/arm64/` の board の分け方に倣う）、`config/ci/config-odroid-c5.mk`。
