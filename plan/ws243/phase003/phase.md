@@ -15,11 +15,11 @@ Status: in-progress（実装済み・試験未実施。2026-10-29 q1677-i01 P6�
 ## 確かめた事
 
 - build: amd64 の vmunix、rc 0・`amd64 vmunix check: PASS`・warning 0（p002 と同じ回）。libvulkan・libmedia は変えていない（`git diff 69c15ae94 HEAD -- userland/` が空）ので、venus-reg・arm64・riscv64 の libvulkan の build はしていない（変わり得ない）。
+- T7 wire の往復（review M9）: `plan/ws243/tests/wire-host-test.sh`（libvulkan の video.c の static な encoder をそのまま呼んで decode・begin・parameters の作成を書き、vk-video.c の static な reader で読む）→ `ws243 wire round trip: 32 checks, 0 failed`、3 つとも全 byte を読み切った。
 - host 試験: `plan/ws243/tests/nvdec-host-test.sh` → 88 checks, 0 failed（T1 pic の位置と値、slice の表、T3 push、T4 大きさと NV12 の配置、T2 scaling、DPB、T5 copy engine、T6 RM の params と devinfo）。`plan/tools/nvrtx/nvrtx-vk-host-test.sh` → `PASS nvrtx vk: 86 checks, 0 failures`（既存の試験が壊れていない）。
 
 ## 未実施・残り
 
-- T7（libvulkan の video.c の encoder と nvrtx の reader の往復の host 試験、review M9）: 未実施。libvulkan の video.c は `vulkan_command_execute` などの context の口を要るので、stub を作って往復させる試験を次に。
 - 実機（p004）: libmedia（vkvideo-probe の readback の道）で 720p・1080p の hash の照合、query の status、copy engine の readback、1080p30 の readback の速さ（R3）、compositor の frame 時間（R9）。
 - 規約の全文の見直し（p005）。
 - GPU の道（SAMPLED の NV12 と export、p006 案）。

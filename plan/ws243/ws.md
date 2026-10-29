@@ -8,7 +8,7 @@ Primary Milestone: MG006
 Related Milestones: MG002
 Parent: [Master](../master.md)
 Related: [WS037](../ws037/ws.md)（nvrtx、GSP-RM・channel・Vulkan の executor）、[WS083](../ws083/ws.md)（Vulkan Video の拡張と i915 の H.264、`src/drivers/gpu/i915/vk/vk-video.c`）、[WS236](../ws236/ws.md)（Pi 4 の Vulkan Video、`src/drivers/gpu/bcm2711/vulkan-video.c`）、[WS202](../ws202/ws.md)（libmedia の `media_vkvideo_ops`）、[WS242](../ws242/ws.md)（RTX 20/30/40）
-Resume point: p001〜p003 は実装済み・試験未実施（2026-10-29 q1677-i01、branch agent/p6-ws243c、[p003](phase003/phase.md) の「未実施・残り」）。次は T7（wire の往復の host 試験）、その後 p004（実機、WS241 の後）。
+Resume point: p001〜p003 は実装済み・試験未実施（2026-10-29 q1677-i01、branch agent/p6-ws243c、[p003](phase003/phase.md) の「未実施・残り」）。次は p004（実機、WS241 の後）。host 試験は `plan/ws243/tests/nvdec-host-test.sh`・`wire-host-test.sh`。
 <!-- awesome-plan-current:end -->
 
 ## ユーザーの指示（原文、2026-10-15）
