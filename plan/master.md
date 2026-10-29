@@ -170,7 +170,6 @@ BUG-355 · q1676 · WS314 · KL_VERSION 97。使う前に衝突を確かめる�
 | [WS309](ws309/ws.md) | MG006 | Keiland の compositor の thread の構成を整理し main loop が待たないようにする。ゲームモードは Vulkan display の仕様の中で | incomplete（p001〜p007・p019 cleared、P1 q1662-i05） | p008 の残り（fence 付きの task）から |
 | [WS310](ws310/ws.md) | MG004 | ACPI の _OSC を呼び、システム全体の挙動を厳重に確かめる（WS301 の Q301-3、2026-10-29 ユーザー「最終的には呼ぶが、別なWSにして…今は呼ばない。」） | planning | p001（WS301 の後） |
 | [WS311](ws311/ws.md) | MG005 | TCP の輻輳の制御に CUBIC を実装し、性能が良ければ既定を CUBIC に（2026-10-29 ユーザー「CUBICを実装して、性能がよくなったらCUBICに切り替えるWSを作って、取り組んでほしいです。jumbo frameの続きでやってほしいです。」） | planning | p001（P3、WS221 の続き） |
-| [WS312](ws312/ws.md) | MG005 | IPv6 の fragment の受け取りと再組立て（2026-10-29 ユーザー「IPv6のfragment対応は、今P6を立ててやっていいです。」、F-WS221-ipv6-frag を昇格） | planning | p001（P6、q1672） |
 | [WS313](ws313/ws.md) | MG008 | ODROID-C5（Amlogic S905X5M）の BSP（bsp-s905x5m）と Mali の GPU で、起動して desktop を表示する（2026-10-29 ユーザー） | planning | p001（P7、q1675） |
 | [WS292](ws292/ws.md) | MG006 | GHCI の session の保護（PROT）を zedBSD の driver に（WS290 の後） | planning | p001 設計（WS290 と G29 の回答の後） |
 | [WS295](ws295/ws.md) | MG006 | Intel の xe の driver（Meteor Lake 以降の iGPU と discrete の Arc、GuC の submission、i915 の使える所は写して重複） | planning | p001 調査（担当の起動はユーザーの指示の時） |

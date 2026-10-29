@@ -1,8 +1,8 @@
 #!/bin/sh
-# IPv6 fragments reassembled on a QEMU guest of plan/ws312/tests/config-amd64-frag.mk.  The guest's second usb-net
+# IPv6 fragments reassembled on a QEMU guest of plan/tools/ipv6-frag/config-amd64-frag.mk.  The guest's second usb-net
 # adapter (MAC 52:54:00:33:00:02) is on the host tap p6tap0, in the new bridge p6br0 with the veth p6v0, whose other end
 # p6v1 is in the network namespace p6ws312 with fd00:312::1/64; the guest has fd00:312::2/64.  The host's Linux in the
-# namespace is the peer (plan/ws312/tests/frag6.py); the first adapter stays on QEMU's user network for SSH.  The
+# namespace is the peer (plan/tools/ipv6-frag/frag6.py); the first adapter stays on QEMU's user network for SSH.  The
 # namespace's host route to the guest has mtu 1280, so Linux cuts what it sends to the guest at 1280.
 #  1. ping -6 -s 1400 from the namespace: three replies of 1408 bytes (an echo request in two fragments, the reply
 #     1448 bytes in one frame).
@@ -19,7 +19,7 @@
 # Judged by the guest's output over SSH and the namespace's tools; never the console.  The host's part needs sudo
 # (ip, AF_PACKET and raw ICMPv6 sockets); it touches no physical NIC, existing bridge, route, firewall or global
 # sysctl, and takes down and reads back what it made.  The last line is "qemu-frag: PASS" when every judged check held.
-#   plan/ws312/tests/qemu-frag.sh [IMAGE [OUTDIR]]
+#   plan/tools/ipv6-frag/qemu-frag.sh [IMAGE [OUTDIR]]
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -27,7 +27,7 @@ image=${1:-}
 out=${2:-build/ws312-qemu}
 mkdir -p "$out"
 if [ -z "$image" ]; then
-	flock /tmp/zedbsd-image-build.lock timeout 5400 sh plan/tools/guest/test-image.sh plan/ws312/tests/config-amd64-frag.mk \
+	flock /tmp/zedbsd-image-build.lock timeout 5400 sh plan/tools/guest/test-image.sh plan/tools/ipv6-frag/config-amd64-frag.mk \
 	    build/ws312-frag > build/ws312-frag.log 2>&1 || { echo "qemu-frag: FAIL (image build, build/ws312-frag.log)"; exit 1; }
 	image=build/ws312-frag/hdd-image.img
 fi
@@ -39,7 +39,7 @@ port=3120
 guest_mac=52:54:00:33:00:02
 here=fd00:312::1
 there=fd00:312::2
-helper=$(pwd)/plan/ws312/tests/frag6.py
+helper=$(pwd)/plan/tools/ipv6-frag/frag6.py
 status=0
 ok() { echo "ok: $1"; }
 bad() { echo "FAIL: $1"; status=1; }

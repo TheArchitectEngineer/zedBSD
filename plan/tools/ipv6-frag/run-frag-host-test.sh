@@ -3,7 +3,7 @@
 # as the kernel builds them (freestanding, the kernel's headers), with ASan and UBSan, once as a 64-bit machine with
 # jumbo packets and once as a 32-bit board without.  OUT= chooses the build folder (default build/ws312-host).
 # The last line is "run-frag-host-test: PASS|FAIL".
-#   plan/ws312/tests/run-frag-host-test.sh
+#   plan/tools/ipv6-frag/run-frag-host-test.sh
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
 cd "$(dirname -- "$0")/../../.."
@@ -23,7 +23,7 @@ for arch in AMD64 I386; do
 		$cc $kernel $sanitize -c "$source" -o "$out/$name-$arch.o" || built=n
 	done
 	# shellcheck disable=SC2086
-	$cc $common $sanitize -c plan/ws312/tests/frag-host-test.c -o "$out/frag-host-test-$arch.o" || built=n
+	$cc $common $sanitize -c plan/tools/ipv6-frag/frag-host-test.c -o "$out/frag-host-test-$arch.o" || built=n
 	# shellcheck disable=SC2086
 	[ $built = y ] && $cc $bits $sanitize -o "$out/frag-host-test-$arch" "$out/ipv6-frag-$arch.o" "$out/in6-$arch.o" \
 	    "$out/packet-buf-$arch.o" "$out/frag-host-test-$arch.o" || built=n

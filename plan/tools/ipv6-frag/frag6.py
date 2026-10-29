@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The host's side of plan/ws312/tests/qemu-frag.sh: IPv6 datagrams and hand-made fragments to a guest.
+"""The host's side of plan/tools/ipv6-frag/qemu-frag.sh: IPv6 datagrams and hand-made fragments to a guest.
 
 Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
