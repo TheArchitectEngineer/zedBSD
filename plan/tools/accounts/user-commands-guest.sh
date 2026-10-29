@@ -1,19 +1,19 @@
 #!/bin/sh
 # ws196-p004 (T1): account-admin's root form (ws196-p002) and root's useradd, usermod and userdel (ws196-p003) on the
 # guest of plan/tools/accounts/config-amd64-users.mk (plan/tools/guest/guest.py start IMAGE; the harness logs in as root
-# over SSH).  kei (password "kei", in wheel) is the only administrator who can log in.  /etc/passwd, /etc/group and
+# over SSH).  user (password "user", in wheel) is the only administrator who can log in.  /etc/passwd, /etc/group and
 # /etc/shadow are saved first and put back at the end (in the guest), with the homes made and the record of the last
 # user ID given.
-#  1. /sbin/useradd, usermod, userdel: mode 0755 root, not set-user-ID; kei (not root) is refused with status 1.
+#  1. /sbin/useradd, usermod, userdel: mode 0755 root, not set-user-ID; user (not root) is refused with status 1.
 #  2. account-admin's root form: user-add (uid above every one used and equal to /etc/account-admin.last-id, home 0700
-#     owned by the user, a locked password), an unlock with no password (no-password), kei's lock (last-administrator),
+#     owned by the user, a locked password), an unlock with no password (no-password), user's lock (last-administrator),
 #     user-remove with home remove, and a later user-add given a higher uid (no reuse).
 #  3. The lock: two user-adds at once both ok, /etc/shadow.lock left, passwd -s works after them (flock on zedBSD).
-#  4. useradd: -G wheel,network -c; the same name again (9); usermod -U with no password (1); usermod -L kei (1, the
+#  4. useradd: -G wheel,network -c; the same name again (9); usermod -U with no password (1); usermod -L user (1, the
 #     new administrator has no password yet); passwd -s, then usermod -L and -U, and su to the user works; usermod -G ''.
-#  5. userdel: kei (1, last administrator), a user with a running process (8, then -f: 0), -r (the home goes),
+#  5. userdel: user (1, last administrator), a user with a running process (8, then -f: 0), -r (the home goes),
 #     -r with -f (2), a name not there (6).
-#  6. Through sudo: kei runs sudo -S useradd; the system log says "user-add by root (sudo kei) for sam: ok".
+#  6. Through sudo: user runs sudo -S useradd; the system log says "user-add by root (sudo user) for sam: ok".
 # PASS: the last line "user-commands-guest: status=0".
 #   plan/tools/guest/guest.py start IMAGE; plan/tools/guest/guest.py wait
 #   plan/tools/accounts/user-commands-guest.sh [OUTDIR]          (default build/ws196-p004-guest)
@@ -91,7 +91,7 @@ printf '%s\n' "$modes" > "$out/modes.txt"
 expect mode-useradd '^-rwxr-xr-x .* root .*/sbin/useradd$' "$modes"
 expect mode-usermod '^-rwxr-xr-x .* root .*/sbin/usermod$' "$modes"
 expect mode-userdel '^-rwxr-xr-x .* root .*/sbin/userdel$' "$modes"
-refused=$(guest "/bin/su kei -c '/sbin/useradd tom; echo status=\$?' 2>&1")
+refused=$(guest "/bin/su user -c '/sbin/useradd tom; echo status=\$?' 2>&1")
 expect not-root-said 'useradd: Permission denied\.' "$refused"
 expect not-root-status '^status=1$' "$refused"
 
@@ -103,7 +103,7 @@ expect form-add-record "^$tom_uid\$" "$(guest 'cat /etc/account-admin.last-id')"
 expect form-add-home '^drwx------ .* tom .*/home/tom$' "$(guest 'ls -ld /home/tom')"
 expect form-add-locked '^tom:!:' "$(guest 'grep "^tom:" /etc/shadow')"
 expect form-no-password '^error no-password$' "$(admin 'user-modify\nname tom\npassword unlock\n')"
-expect form-last-lock '^error last-administrator$' "$(admin 'user-modify\nname kei\npassword lock\n')"
+expect form-last-lock '^error last-administrator$' "$(admin 'user-modify\nname user\npassword lock\n')"
 expect form-remove '^ok$' "$(admin 'user-remove\nname tom\nhome remove\n')"
 expect form-remove-home 'gone' "$(guest '[ -e /home/tom ] && echo still || echo gone')"
 expect form-add-again '^ok$' "$(admin 'user-add\nname tom\nhome none\n')"
@@ -135,17 +135,17 @@ again=$(run '/sbin/useradd tom')
 expect add-tom-again '^status=9$' "$again"
 expect add-tom-again-said 'useradd: tom: the name is used by a user or a group' "$again"
 expect mod-unlock-none '^status=1$' "$(run '/sbin/usermod -U tom')"
-expect mod-last-lock '^status=1$' "$(run '/sbin/usermod -L kei')"
+expect mod-last-lock '^status=1$' "$(run '/sbin/usermod -L user')"
 expect tom-password '^status=0$' "$(run "printf 'tompass123\n' | /bin/passwd -s tom")"
 expect mod-lock '^status=0$' "$(run '/sbin/usermod -L tom')"
 expect mod-locked '^tom:!\$6\$' "$(guest 'grep "^tom:" /etc/shadow')"
 expect mod-unlock '^status=0$' "$(run '/sbin/usermod -U tom')"
-expect su-tom '^tom$' "$(guest "/bin/su kei -c 'printf \"tompass123\n\" | /bin/su tom -c /bin/whoami' 2>/dev/null")"
+expect su-tom '^tom$' "$(guest "/bin/su user -c 'printf \"tompass123\n\" | /bin/su tom -c /bin/whoami' 2>/dev/null")"
 expect mod-groups-empty '^status=0$' "$(run "/sbin/usermod -G '' tom")"
-expect mod-groups-empty-wheel '^wheel:x:0:root,kei$' "$(guest 'grep "^wheel:" /etc/group')"
+expect mod-groups-empty-wheel '^wheel:x:0:root,user$' "$(guest 'grep "^wheel:" /etc/group')"
 
 # 5. userdel.
-expect del-last '^status=1$' "$(run '/sbin/userdel kei')"
+expect del-last '^status=1$' "$(run '/sbin/userdel user')"
 guest "/bin/su tom -c 'exec sleep 40' >/dev/null 2>&1 </dev/null & echo \$! > /tmp/p004-busy.pid; sleep 1; echo started" >/dev/null
 busy=$(run '/sbin/userdel tom')
 expect del-busy '^status=8$' "$busy"
@@ -160,10 +160,10 @@ expect del-r-f '^status=2$' "$(run '/sbin/userdel -r -f jay')"
 expect del-missing '^status=6$' "$(run '/sbin/userdel nobodyhere')"
 
 # 6. Through sudo, logged with the user who ran it.
-expect sudo-add '^status=0$' "$(run "/bin/su kei -c 'printf \"kei\n\" | /bin/sudo -S /sbin/useradd -M sam'")"
+expect sudo-add '^status=0$' "$(run "/bin/su user -c 'printf \"user\n\" | /bin/sudo -S /sbin/useradd -M sam'")"
 log=$(guest 'grep account-admin /var/log/messages')
 printf '%s\n' "$log" > "$out/messages.txt"
-expect log-sudo 'user-add by root \(sudo kei\) for sam: ok' "$log"
+expect log-sudo 'user-add by root \(sudo user\) for sam: ok' "$log"
 expect sudo-del '^status=0$' "$(run '/sbin/userdel sam')"
 
 # The files put back, with the homes made and the record of the last user ID.

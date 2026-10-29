@@ -1,7 +1,7 @@
 #!/bin/sh
 # ws035-p116: builds the Venus guest image for the demonstration's walk-through (config-amd64-demo-venus.mk): the
 # guest harness's files, App Home's list, the wallpaper and the sample home maker.  The base system's accounts are
-# the demonstration's (root/root, kei/kei, kei logged in at boot).
+# the demonstration's (root/root, user/user, user logged in at boot).
 # ws136-p001 (2026-10-04): the image is a config.mk build plus files of the tree (plan/tools/guest/test-image.sh).
 # The fonts come with the compositor's package (userland/desktop/fonts/); the wallpaper is
 # userland/desktop/wallpapers/Birch-Lake.png.

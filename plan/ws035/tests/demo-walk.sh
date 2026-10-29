@@ -7,9 +7,9 @@
 #   08 Wiseview (the bottom edge's swipe), 09 the lock screen (App Home's Lock Screen), 10 unlocked,
 #   11 the greeter again (App Home's Log Out).
 # The pointer is driven through QMP like a finger or a pen: a press, moves and a release.
-# ws035-p120: the demonstration logs in as the person kei ("Kei", no password; the base accounts, userland/base/etc):
-# the session's log is /run/user/1000/session.log, the PDF goes to /home/kei/Documents, and the walk checks that
-# Notes saved its notebook in /home/kei/Documents/Notes as kei, that the session has the group network, and that
+# ws035-p120: the demonstration logs in as the person user ("Kei", no password; the base accounts, userland/base/etc):
+# the session's log is /run/user/1000/session.log, the PDF goes to /home/user/Documents, and the walk checks that
+# Notes saved its notebook in /home/user/Documents/Notes as user, that the session has the group network, and that
 # PDF Viewer opened over the fullscreen Notes leaves the system bar away (KWL GLASS bar hidden).
 #
 #   plan/ws035/tests/build-demo-venus-image.sh build/amd64
@@ -29,9 +29,9 @@ guest() { timeout 90 python3 plan/tools/guest/guest.py run "$1" 2>&1 </dev/null;
 pointer() { python3 plan/ws035/tests/qmp-pointer.py --width $width --height $height "$GUEST_RUNTIME/qmp.sock" "$@"; }
 keys() { python3 plan/ws035/tests/qmp-keys.py "$GUEST_RUNTIME/qmp.sock" "$@"; sleep 0.6; }
 status=0
-user=kei
+user=user
 uid=1000
-home=/home/kei
+home=/home/user
 session=/run/user/$uid/session.log
 
 # Takes the Venus output as OUTDIR/NAME.png (and PREFIX-NAME.png).
@@ -114,7 +114,7 @@ wait_log /var/log/greeter.log 'KWL GREETER open' 90
 sleep 3
 shot 01-greeter
 
-# 02. The login (kei, no password: Enter): the desktop.
+# 02. The login (user, no password: Enter): the desktop.
 wait_log /var/log/greeter.log "KWL GREETER open users=1 selected=$user" 5
 keys '\n'
 wait_log $session 'KWL HANDOFF go=1' 30
@@ -123,7 +123,7 @@ sleep 4
 shot 02-desktop
 guest "ls -ld $home $home/Documents; grep \"SESSIOND SESSION home=\" /var/log/sessiond.log" | sed 's/^/home: /'
 
-# A PDF for step 07 in kei's Documents (the session made the folder): DEMO_PDF, or the quilt manual of the host.
+# A PDF for step 07 in user's Documents (the session made the folder): DEMO_PDF, or the quilt manual of the host.
 pdf=${DEMO_PDF:-/usr/share/doc/quilt/quilt.pdf}
 if [ -f "$pdf" ]; then
 	timeout 60 python3 plan/tools/guest/guest.py put "$pdf" "$home/Documents/$(basename "$pdf")" </dev/null
@@ -164,11 +164,11 @@ pointer move 700 300 sleep 200 down sleep 30 move 740 380 sleep 20 move 760 420 
 park
 shot 06-notes
 
-# Notes saves the notebook NOTES_AUTOSAVE_IDLE_MS (5 s) after the stroke, as kei, in kei's Documents/Notes.
+# Notes saves the notebook NOTES_AUTOSAVE_IDLE_MS (5 s) after the stroke, as user, in user's Documents/Notes.
 sleep 6
 saved=$(guest "ls -l $home/Documents/Notes/*.pdf 2>/dev/null | head -1")
 echo "notes: $saved"
-echo "$saved" | grep -Eq "^-[rw-]+ +[0-9]+ +$user +$user .*note-[0-9-]+\.pdf" || { echo "notes: no notebook of kei's"; status=1; }
+echo "$saved" | grep -Eq "^-[rw-]+ +[0-9]+ +$user +$user .*note-[0-9-]+\.pdf" || { echo "notes: no notebook of user's"; status=1; }
 
 # 07. PDF Viewer from App Home; Ctrl+O, Documents, the first PDF.
 guest "ls $home/Documents/*.pdf 2>/dev/null | head -1" | grep -q pdf || echo "note: no PDF in $home/Documents (put one there first)"
@@ -198,7 +198,7 @@ wait_log $session 'KWL LOCK locked reason=home' 10
 park
 shot 09-lock
 
-# 10. Unlocked (Enter: kei has no password).
+# 10. Unlocked (Enter: user has no password).
 keys '\n'
 wait_log $session 'KWL LOCK unlocked' 10
 sleep 2
