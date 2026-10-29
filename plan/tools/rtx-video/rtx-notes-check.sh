@@ -1,11 +1,11 @@
 #!/bin/sh
 # Notes on the RTX 2070 machine (GPU_PERF_MACHINE=rtx, 10.0.10.3, nvrtx), in one command: the test kernel (with the
-# AAT's input injection, plan/ws243/tests/config-amd64-rtx-inject.mk) deployed and zedBSD up on its own userland,
+# AAT's input injection, plan/tools/rtx-video/config-amd64-rtx-inject.mk) deployed and zedBSD up on its own userland,
 # aat-input copied in, then Notes started as the session's user: a shot when it shows (OUT/n1.png), T (the text
 # tool), a click on the page, "Hello RTX" typed, a shot (OUT/n2.png), Escape and Ctrl+W.  Kept in OUT: Notes's lines,
 # the compositor's lines of the run (session.log), the kernel's nvrtx lines; a summary is printed (OUT/summary.txt).
 # zedBSD stays up with the test kernel (rtx-p004.sh's restore step puts the machine back).
-#   usage: plan/ws243/tests/rtx-notes-check.sh OUT VMUNIX AAT_INPUT [NOTES]   (from the top of the tree; NOTES: a
+#   usage: plan/tools/rtx-video/rtx-notes-check.sh OUT VMUNIX AAT_INPUT [NOTES]   (from the top of the tree; NOTES: a
 #          Notes to run instead of the machine's /bin/notes)
 # Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 set -u
