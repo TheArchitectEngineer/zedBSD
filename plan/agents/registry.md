@@ -5,7 +5,7 @@
 
 | 担当 | 定義 | 仕事（Queue） | worktree / branch | 状態 | 最後の merge |
 | --- | --- | --- | --- | --- | --- |
-| P1 | phase-runner | ws235 (q1669-i04) | `/home/awe/zedBSD-worktrees/p1-ws235d` / `agent/p1-ws235d` | running | d3248bf1a（merge 0bc806084） |
+| P1 | phase-runner | ws235 (q1669-i05) | `/home/awe/zedBSD-worktrees/p1-ws235e` / `agent/p1-ws235e` | running | 2dfb45018（merge 1a0f63b26） |
 | P2 | phase-runner | ws291 の NVIDIA の段 (q1670-i05) | `/home/awe/zedBSD-worktrees/p2-ws291q` / `agent/p2-ws291q` | running | 0b35eee90（merge 5aa6b291a） |
 | P3 | phase-runner | ws311 (q1673-i01) | `/home/awe/zedBSD-worktrees/p3-ws311` / `agent/p3-ws311` | running | 642d812f3（merge 1fd28c4de） |
 | P4 | phase-runner | ws307 (q1665-i08) | `/home/awe/zedBSD-worktrees/p4-ws307l` / `agent/p4-ws307l` | running | d6139052b（merge 6b115e9fd） |
