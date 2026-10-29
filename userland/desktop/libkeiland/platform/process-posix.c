@@ -25,6 +25,12 @@
  * After the end, the reading thread reads what the pipes still hold (a
  * terminal: until it reports its end, at most PROCESS_DRAIN_MS) and then
  * tells the end, after the output.
+ *
+ * A launch (kl_launch) is started through a child that makes a session of
+ * its own, starts the program in a child of it and ends at once: the
+ * application reaps that child, and the program, whose parent is gone, is
+ * the system's to wait for.  No thread serves it.  A start that fails in
+ * the program's child is told back through a pipe that its exec closes.
  */
 
 #include "userland/desktop/libkeiland/process.h"
@@ -59,6 +65,12 @@
 /* The PATH a program is looked for in when the environment has none. */
 #define PROCESS_PATH_DEFAULT	"/bin:/usr/bin"
 
+/* The system's command interpreter, which runs a launch's command line. */
+#define PROCESS_SHELL	"/bin/sh"
+
+/* What a started program reads when nothing writes its standard input. */
+#define PROCESS_NULL_DEVICE	"/dev/null"
+
 /* The environment the application runs with. */
 extern char **environ;
 
@@ -76,6 +88,9 @@ static void process_launch_free(struct process_launch *launch);
 static int process_spawn(struct kl_process *process, const struct process_launch *launch, const char *directory);
 static int process_spawn_terminal(struct kl_process *process, const struct process_launch *launch, const char *directory, unsigned columns, unsigned rows);
 static void process_child_terminal(const struct process_launch *launch, const char *directory);
+static void process_child_launch(const struct process_launch *launch, const char *directory, int report);
+static void process_child_signals(void);
+static void process_child_report(int report, int error);
 static int process_pipe(int ends[2]);
 static void process_close(int *descriptor);
 static void *process_wait_run(void *argument);
@@ -314,6 +329,90 @@ keiui_child_end(
 }
 
 /*
+ * Starts a launch's program apart from the application, with the
+ * environment's changes given (the activation token's among them).
+ * Returns 0 once it runs, or an errno value: the program's path or the
+ * memory for what it is started with is missing, or its child could not
+ * start it.
+ */
+int
+keiui_launch_start(
+	const struct kl_launch_options *options,
+	const char *const *environment)
+{
+	struct process_launch launch;
+	const char *shell[4];
+	const char *const *argv;
+	int report[2];
+	int child_error;
+	ssize_t got;
+	pid_t child;
+	pid_t reaped;
+	int status;
+	int error;
+
+	/* The program's arguments, or the command interpreter's on the command line. */
+	argv = options->argv;
+	if (options->command != NULL) {
+		shell[0] = PROCESS_SHELL;
+		shell[1] = "-c";
+		shell[2] = options->command;
+		shell[3] = NULL;
+		argv = shell;
+	}
+
+	/* The path, the arguments, the environment and the pipe the start is told back by, made now. */
+	memset(&launch, 0, sizeof(launch));
+	error = process_find(argv[0], &launch.path);
+	if (error == 0)
+		error = process_arguments(argv, &launch.argv);
+	if (error == 0)
+		error = process_environment(environment, &launch.envp);
+	if (error == 0)
+		error = process_pipe(report);
+	if (error != 0) {
+		process_launch_free(&launch);
+		return error;
+	}
+
+	/* The child, which starts the program in a session of its own and ends. */
+	child = fork();
+	if (child < 0) {
+		error = errno;
+		process_launch_free(&launch);
+		process_close(&report[0]);
+		process_close(&report[1]);
+		return error;
+	}
+	if (child == 0)
+		process_child_launch(&launch, options->directory, report[1]);
+
+	/* The child ends at once and is reaped here; the program is nobody's child. */
+	process_close(&report[1]);
+	process_launch_free(&launch);
+	do {
+		reaped = waitpid(child, &status, 0);
+	} while (reaped < 0 && errno == EINTR);
+
+	/*
+	 * What came of the start: the pipe ends empty when the program runs
+	 * (its exec closed it), or with the errno value of what failed.
+	 */
+	child_error = 0;
+	do {
+		got = read(report[0], &child_error, sizeof(child_error));
+	} while (got < 0 && errno == EINTR);
+	process_close(&report[0]);
+
+	/* The program's child could not start it. */
+	if (got == (ssize_t)sizeof(child_error))
+		return child_error;
+
+	/* Succeeded: the program runs. */
+	return 0;
+}
+
+/*
  * Finds a program: a name with a '/' is its path, any other is looked for
  * in PATH.  Returns 0 with the path allocated, ENOENT, EACCES or ENOMEM.
  */
@@ -546,7 +645,7 @@ process_spawn(
 	if (input[0] >= 0)
 		error = posix_spawn_file_actions_adddup2(&actions, input[0], STDIN_FILENO);
 	else
-		error = posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+		error = posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, PROCESS_NULL_DEVICE, O_RDONLY, 0);
 	if (error == 0 && output[1] >= 0)
 		error = posix_spawn_file_actions_adddup2(&actions, output[1], STDOUT_FILENO);
 	if (error == 0 && error_pipe[1] >= 0)
@@ -659,18 +758,10 @@ process_child_terminal(
 	const struct process_launch *launch,
 	const char *directory)
 {
-	struct sigaction action;
-	sigset_t none;
-	int number;
 	int status;
 
 	/* Every signal's default action, none blocked. */
-	memset(&action, 0, sizeof(action));
-	action.sa_handler = SIG_DFL;
-	for (number = 1; number < NSIG; number++)
-		(void)sigaction(number, &action, NULL);
-	(void)sigemptyset(&none);
-	(void)sigprocmask(SIG_SETMASK, &none, NULL);
+	process_child_signals();
 
 	/* The directory, nothing but the terminal open, and the program. */
 	if (directory != NULL) {
@@ -680,6 +771,108 @@ process_child_terminal(
 	}
 	closefrom(STDERR_FILENO + 1);
 	(void)execve(launch->path, launch->argv, launch->envp);
+	_exit(127);
+}
+
+/*
+ * Starts a launch's program from the child that fork made: only what is
+ * safe after a fork of a process with threads.  The child makes a session
+ * of its own and ends once it made the program's; the program's child
+ * starts with the signals' default actions, an empty input, nothing open
+ * but the standard streams, and the directory.  What fails is told through
+ * report.
+ */
+static void
+process_child_launch(
+	const struct process_launch *launch,
+	const char *directory,
+	int report)
+{
+	pid_t grandchild;
+	int null_device;
+	int status;
+
+	/* A session of its own, and the program's child; this one ends. */
+	(void)setsid();
+	grandchild = fork();
+	if (grandchild < 0)
+		process_child_report(report, errno);
+	if (grandchild > 0)
+		_exit(0);
+
+	/* Every signal's default action, none blocked. */
+	process_child_signals();
+
+	/* The report's end, kept just above the standard streams (its exec still closes it); nothing else open. */
+	if (report != STDERR_FILENO + 1) {
+		status = dup2(report, STDERR_FILENO + 1);
+		if (status < 0)
+			_exit(127);
+		report = STDERR_FILENO + 1;
+		(void)fcntl(report, F_SETFD, FD_CLOEXEC);
+	}
+	closefrom(report + 1);
+
+	/* An empty input. */
+	null_device = open(PROCESS_NULL_DEVICE, O_RDONLY);
+	if (null_device < 0)
+		process_child_report(report, errno);
+	if (null_device != STDIN_FILENO) {
+		status = dup2(null_device, STDIN_FILENO);
+		if (status < 0)
+			process_child_report(report, errno);
+		(void)close(null_device);
+	}
+
+	/* The directory. */
+	if (directory != NULL) {
+		status = chdir(directory);
+		if (status != 0)
+			process_child_report(report, errno);
+	}
+
+	/* The program; only a failed exec comes back. */
+	(void)execve(launch->path, launch->argv, launch->envp);
+	process_child_report(report, errno);
+}
+
+/*
+ * Gives every signal its default action and blocks none, in a child that
+ * fork made (only calls safe there).
+ */
+static void
+process_child_signals(void)
+{
+	struct sigaction action;
+	sigset_t none;
+	int number;
+
+	/* Each signal's default action. */
+	memset(&action, 0, sizeof(action));
+	action.sa_handler = SIG_DFL;
+	for (number = 1; number < NSIG; number++)
+		(void)sigaction(number, &action, NULL);
+
+	/* None blocked. */
+	(void)sigemptyset(&none);
+	(void)sigprocmask(SIG_SETMASK, &none, NULL);
+}
+
+/*
+ * Tells the application why a launch's child could not start the program,
+ * and ends the child.
+ */
+static void
+process_child_report(
+	int report,
+	int error)
+{
+	ssize_t written;
+
+	/* The errno value, whole or not at all (the pipe is empty). */
+	do {
+		written = write(report, &error, sizeof(error));
+	} while (written < 0 && errno == EINTR);
 	_exit(127);
 }
 

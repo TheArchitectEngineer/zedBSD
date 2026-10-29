@@ -7,7 +7,7 @@ Copyright (C) 2026 Awe Morris; SPDX-License-Identifier: Zlib
 
 Files and Settings make their pictures with keiland-preview in a sandbox (sandbox_spawn): the AAT's samples (a PNG, a
 JPEG, a PDF) and a damaged PNG are put in the session user's ~/AATThumbs, Files opens the folder, and each thumbnail is made by a
-child (its THUMB line names the child's pid and status), the damaged one refused; opened again, they come from the
+child (its THUMB line says it was made by a child, child=1, and its status), the damaged one refused; opened again, they come from the
 cache.  Settings' Wallpaper page makes its tiles the same way.  The kernel's log has no "SANDBOX deny" line (the
 child keeps to its set of calls).
 """
@@ -56,7 +56,7 @@ def thumbnails(item):
 		run.shot(item, "files")
 		for name in ("sample.png", "sample.jpg", "sample.pdf"):
 			line = made[name] or ""
-			item.check(" error=0 " in line and " status=0 " in line and not line.endswith(" pid=0"),
+			item.check(" error=0 " in line and " status=0 " in line and line.endswith(" child=1"),
 				f"{name}: no thumbnail from a child ({line})")
 		item.check(made["broken.png"] and " error=0 " not in made["broken.png"], "the damaged PNG was not refused")
 		# ws177-p010: two children at once (two starts before the first end).

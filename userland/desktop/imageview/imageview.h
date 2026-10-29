@@ -445,7 +445,12 @@ void iv_app_chosen(struct iv_app *app, const char *path);
 void iv_app_removed(struct iv_app *app);
 void iv_app_slideshow(struct iv_app *app, int on);
 
+/* The application and the window Open With starts programs from (<keiland/keiland.h>). */
+struct kl_app;
+struct kl_window;
+
 /* What the viewer shares with Files: the trash and Open With (share.c). */
+void iv_share_attach(struct kl_app *app, struct kl_window *window);
 int iv_share_trash(const char *path, char *trashed, size_t size);
 int iv_share_openers(const char *path, const char *format, char names[][IV_OPENER_NAME], int capacity);
 int iv_share_open_with(const char *path, const char *format, int index);

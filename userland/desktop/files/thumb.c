@@ -514,7 +514,6 @@ thumb_start(
 {
 	struct preview_request request;
 	int error;
-	int fd;
 
 	/* The record's place and the stamp the cache reads (the file's time and size). */
 	memset(&request, 0, sizeof(request));
@@ -526,13 +525,9 @@ thumb_start(
 
 	/* The file the child writes, new, named for this process and this maker. */
 	(void)snprintf(making->temporary, sizeof(making->temporary), "%s.%ld.%d", making->record, (long)getpid(), (int)(making - thumb_makers));
-	fd = open(making->temporary, O_CREAT | O_TRUNC | O_WRONLY | O_CLOEXEC, 0600);
-	if (fd < 0)
-		return errno;
 
-	/* The child. */
-	error = preview_start(thumb->path, fd, &request, &making->job);
-	(void)close(fd);
+	/* The child, writing that file. */
+	error = preview_start(thumb->path, making->temporary, &request, &making->job);
 	if (error != 0) {
 		(void)unlink(making->temporary);
 		return error;
@@ -544,7 +539,7 @@ thumb_start(
 	thumb->pending = 1;
 
 	/* The log line the tests read: the child's start (two run at once, ws177-p010). */
-	fm_log("THUMB start path=%s pid=%ld", thumb->path, (long)making->job.pid);
+	fm_log("THUMB start path=%s", thumb->path);
 
 	/* Succeeded: the child makes it. */
 	return 0;
@@ -596,8 +591,8 @@ thumb_follow(
 		(void)fm_thumb_cache_fail(thumb->path);
 
 	/* The log line the tests wait for. */
-	fm_log("THUMB path=%s error=%d width=%d height=%d cached=0 status=%d pid=%ld", thumb->path, error, thumb->image.width, thumb->image.height, status,
-	    (long)making->job.pid);
+	fm_log("THUMB path=%s error=%d width=%d height=%d cached=0 status=%d child=%d", thumb->path, error, thumb->image.width, thumb->image.height, status,
+	    making->job.apart);
 	return 1;
 }
 

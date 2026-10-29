@@ -19,39 +19,53 @@
 #define _GNU_SOURCE
 #endif
 
-#include "../client.h"
+#include "../spawn.h"
 
 #include "userland/desktop/paths.h"
 
 #include <errno.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/resource.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 /* The program. */
 #define SPAWN_PROGRAM		KEILAND_LIBEXECDIR "/keiland-preview"
 
+/*
+ * The system's record of a child: its process ID, which only this file
+ * knows.  It lives from preview_spawn until the child is collected.
+ */
+struct preview_child {
+	pid_t pid;
+};
+
 static void spawn_child(int input, int output, char **argv) __attribute__((noreturn));
 
 /*
- * Starts the child.  Returns 0 with its process ID, or an errno value.
+ * Starts the child.  Returns 0 with its record, or an errno value.
  */
 int
 preview_spawn(
 	int input,
 	int output,
 	const struct preview_request *request,
-	pid_t *pid,
+	struct preview_child **child,
 	int *status)
 {
+	struct preview_child *made;
 	char width[32];
 	char height[32];
 	char stamp[PREVIEW_STAMP_MAX + 16U];
 	char *argv[6];
 	size_t count;
+	pid_t pid;
+	int error;
 
 	/* The arguments. */
-	*pid = 0;
+	*child = NULL;
 	*status = PREVIEW_NO_SANDBOX;
 	(void)snprintf(width, sizeof(width), "--width=%d", request->width);
 	(void)snprintf(height, sizeof(height), "--height=%d", request->height);
@@ -75,17 +89,84 @@ preview_spawn(
 	/* The list's end. */
 	argv[count] = NULL;
 
+	/* The child's record, made before the child (nothing is allocated in it). */
+	made = malloc(sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+
 	/* The child. */
-	*pid = fork();
-	if (*pid < 0) {
-		*pid = 0;
-		return errno;
+	pid = fork();
+	if (pid < 0) {
+		error = errno;
+		free(made);
+		return error;
 	}
 
 	/* The child goes on in spawn_child. */
-	if (*pid == 0)
+	if (pid == 0)
 		spawn_child(input, output, argv);
+
+	/* Succeeded: the child runs. */
+	made->pid = pid;
+	*child = made;
 	return 0;
+}
+
+/*
+ * Looks at a child without waiting: 1 when it ended (its record freed),
+ * 0 while it runs.
+ */
+int
+preview_child_ended(
+	struct preview_child *child,
+	int *status)
+{
+	pid_t ended;
+	int wait_status;
+	int exited;
+	int signalled;
+
+	/* Still running, or the look was cut short (it is looked at again). */
+	ended = waitpid(child->pid, &wait_status, WNOHANG);
+	if (ended == 0)
+		return 0;
+	if (ended < 0 && errno == EINTR)
+		return 0;
+
+	/* How it ended: its exit status, the signal that ended it, or not known (collected already). */
+	*status = PREVIEW_KILLED;
+	if (ended == child->pid) {
+		exited = WIFEXITED(wait_status);
+		signalled = WIFSIGNALED(wait_status);
+		if (exited)
+			*status = WEXITSTATUS(wait_status);
+		else if (signalled)
+			*status = PREVIEW_KILLED + WTERMSIG(wait_status);
+	}
+
+	/* Succeeded: it ended, and its record goes. */
+	free(child);
+	return 1;
+}
+
+/*
+ * Ends a child that runs and collects it (its record freed).
+ */
+int
+preview_child_end(
+	struct preview_child *child)
+{
+	pid_t ended;
+
+	/* Ended, and collected. */
+	(void)kill(child->pid, SIGKILL);
+	do {
+		ended = waitpid(child->pid, NULL, 0);
+	} while (ended < 0 && errno == EINTR);
+	free(child);
+
+	/* Succeeded: it was ended by the signal. */
+	return PREVIEW_KILLED + SIGKILL;
 }
 
 /* In the child: its two files, its limits, then the program (or the end, 127). */

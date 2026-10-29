@@ -28,14 +28,10 @@
 #include "userland/desktop/paths.h"
 
 #include <errno.h>
-#include <spawn.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-/* The environment a started program inherits. */
-extern char **environ;
 
 /* Files, which the Welcome opens at its end (ws164-p002). */
 #define MAIN_FILES		KEILAND_BINDIR "/files"
@@ -888,14 +884,16 @@ main_shorter(
 static int
 main_open_files(void)
 {
-	char *arguments[2];
-	pid_t child;
+	struct kl_launch_options options;
+	const char *arguments[2];
 	int error;
 
 	/* Files, on its own (its window is the compositor's to place). */
-	arguments[0] = (char *)(uintptr_t)MAIN_FILES;
+	arguments[0] = MAIN_FILES;
 	arguments[1] = NULL;
-	error = posix_spawn(&child, MAIN_FILES, NULL, NULL, arguments, environ);
+	memset(&options, 0, sizeof(options));
+	options.argv = arguments;
+	error = kl_launch(main_window.app, &options);
 	se_log("WELCOME files error=%d", error);
 	if (error != 0)
 		return error;

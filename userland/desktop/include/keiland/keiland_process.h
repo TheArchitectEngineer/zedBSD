@@ -39,6 +39,7 @@ extern "C" {
  */
 struct kl_app;
 struct kl_process;
+struct kl_window;
 
 /* The streams the program uses (kl_process_options' streams); the others are inherited, but the standard input, which is empty. */
 #define KL_PROCESS_INPUT	0x1U
@@ -180,6 +181,37 @@ void *kl_process_data(const struct kl_process *process);
  * not ended by it; the library reaps it when it ends.
  */
 void kl_process_close(struct kl_process *process);
+
+/*
+ * KL_VERSION 100: a program started apart from the application (a
+ * launch), such as another program's window opened on a file or a new
+ * window of the same program.  It runs on when the application ends; its
+ * standard input is empty, it writes where the application does, and
+ * nothing of it comes back: a program that wants to hear of its end starts
+ * it as a process.
+ *
+ * What a launch is started with: its arguments (argv[0] is the program, a
+ * path or a name looked for in PATH; NULL ends them) or a command line the
+ * system's command interpreter runs (exactly one of the two), the changes
+ * to the application's environment (as a process's), the directory it
+ * starts in (NULL: the application's), and the window the user works in
+ * (NULL for none): the compositor is asked for leave for the program's
+ * window to come to the front from it.
+ */
+struct kl_launch_options {
+	const char *const *argv;
+	const char *command;
+	const char *const *environment;
+	const char *directory;
+	struct kl_window *from;
+};
+
+/*
+ * Starts a program apart from the application.  It is on its way when this
+ * returns.  Returns 0, or EINVAL, ENOENT or EACCES (the program cannot be
+ * found or run), ENOMEM, or another error of the system's start.
+ */
+int kl_launch(struct kl_app *app, const struct kl_launch_options *options);
 
 #ifdef __cplusplus
 }

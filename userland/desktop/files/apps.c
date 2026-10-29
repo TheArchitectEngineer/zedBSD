@@ -48,7 +48,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
 #include <unistd.h>
 
 /* The system's list, and the user's under the configuration folder. */
@@ -70,9 +69,6 @@
 /* The application's name in the desktop's settings, and the prefix of the key of a type's chosen way. */
 #define APPS_SETTINGS_APP	"files"
 #define APPS_SETTINGS_PREFIX	"files.open-with."
-
-/* How many descriptors a started program closes before it runs (all the window may have open). */
-#define APPS_DESCRIPTORS	1024
 
 /* The picture types Image Viewer reads (it tells them by their first bytes, and reads no others). */
 #define APPS_IMAGE_TYPES	"image/png,image/jpeg,image/gif"
@@ -145,6 +141,14 @@ static const struct apps_builtin apps_builtins[] = {
 /* The folders a needed program is looked for in. */
 static const char *const apps_program_folders[] = {KEILAND_BINDIR, "/bin", "/usr/bin", "/usr/local/bin"};
 
+/*
+ * The application programs are started from, and its window they are
+ * started from (fm_apps_attach); NULL before it is attached.  Only the
+ * application's thread uses them.
+ */
+static struct kl_app *apps_app;
+static struct kl_window *apps_window;
+
 static int apps_user_list(char *list, size_t size);
 static int apps_choice_key(const char *type, char *key, size_t size);
 static int apps_choice(const char *type, struct fm_opener *opener);
@@ -165,8 +169,6 @@ static int apps_read_at(int descriptor, uint64_t offset, void *buffer, size_t le
 static uint64_t apps_le(const unsigned char *bytes, unsigned width);
 static int apps_expand(const char *command, const char *path, char *expanded, size_t size);
 static int apps_quote(const char *path, char *quoted, size_t size);
-static void apps_run(const char *command);
-static void apps_exec(char *const arguments[]);
 
 /*
  * Fills the ways a file can be opened, the default first, and reports how
@@ -260,20 +262,38 @@ fm_apps_is_quicklook(
 }
 
 /*
- * Starts an opener's command on a file, apart from the file manager (in a
- * session of its own, so it outlives the window).
+ * Attaches the application (and its window, NULL for none) the programs
+ * are started from: a program started brings its window to the front from
+ * that window.
+ */
+void
+fm_apps_attach(
+	struct kl_app *app,
+	struct kl_window *window)
+{
+	/* The application and the window, for the starts to come. */
+	apps_app = app;
+	apps_window = window;
+}
+
+/*
+ * Starts an opener's command on a file, apart from the file manager (it
+ * outlives the window): a "@terminal" command in a new terminal window,
+ * any other by the system's command interpreter.
  *
  * Returns 0, ENAMETOOLONG when the command with the path is too long, or
- * the errno value of a failed fork.
+ * the error of a start that failed.
  */
 int
 fm_apps_launch(
 	const struct fm_opener *opener,
 	const char *path)
 {
+	char terminal_command[APPS_EXPANDED + 16];
 	char expanded[APPS_EXPANDED];
-	pid_t child;
-	int status;
+	struct kl_launch_options options;
+	const char *arguments[3];
+	int is_terminal;
 	int error;
 
 	/* The command with the path put in. */
@@ -281,21 +301,24 @@ fm_apps_launch(
 	if (error != 0)
 		return error;
 
-	/*
-	 * A child that starts a grandchild and leaves at once: the grandchild
-	 * runs the command, and, having no parent left, is not the file
-	 * manager's to wait for.
-	 */
-	child = fork();
-	if (child < 0)
-		return errno;
-	if (child == 0) {
-		apps_run(expanded);
-		_exit(0);
+	/* A terminal command: the rest runs in a new terminal window; anything else runs by the command interpreter. */
+	memset(&options, 0, sizeof(options));
+	options.from = apps_window;
+	is_terminal = strncmp(expanded, APPS_TERMINAL_WORD, strlen(APPS_TERMINAL_WORD));
+	if (is_terminal == 0) {
+		snprintf(terminal_command, sizeof(terminal_command), "--command=%s", expanded + strlen(APPS_TERMINAL_WORD));
+		arguments[0] = APPS_TERMINAL;
+		arguments[1] = terminal_command;
+		arguments[2] = NULL;
+		options.argv = arguments;
+	} else {
+		options.command = expanded;
 	}
 
-	/* The child leaves at once; it is waited for so it does not linger. */
-	(void)waitpid(child, &status, 0);
+	/* The program, on its way apart from the file manager. */
+	error = kl_launch(apps_app, &options);
+	if (error != 0)
+		return error;
 
 	/* The log line the tests wait for. */
 	fm_log("LAUNCH name=%s command=%s", opener->name, expanded);
@@ -306,29 +329,25 @@ fm_apps_launch(
 
 /*
  * Starts a program with its arguments apart from the file manager, as a
- * launch does, but keeping the standard input, output and error (a new
- * window of this program writes its log where this one does).
+ * launch does (a new window of this program writes its log where this one
+ * does).
  *
- * Returns 0, or the errno value of a failed fork.
+ * Returns 0, or the error of a start that failed.
  */
 int
 fm_apps_spawn(
 	char *const arguments[])
 {
-	pid_t child;
-	int status;
+	struct kl_launch_options options;
+	int error;
 
-	/* A child that starts a grandchild and leaves, as for a launch. */
-	child = fork();
-	if (child < 0)
-		return errno;
-	if (child == 0) {
-		apps_exec(arguments);
-		_exit(0);
-	}
-
-	/* The child leaves at once; it is waited for so it does not linger. */
-	(void)waitpid(child, &status, 0);
+	/* The program, on its way apart from the file manager. */
+	memset(&options, 0, sizeof(options));
+	options.argv = (const char *const *)arguments;
+	options.from = apps_window;
+	error = kl_launch(apps_app, &options);
+	if (error != 0)
+		return error;
 	fm_log("SPAWN program=%s", arguments[0]);
 
 	/* Succeeded: the program is on its way. */
@@ -1188,78 +1207,4 @@ apps_quote(
 
 	/* Succeeded: the path is quoted. */
 	return 0;
-}
-
-/*
- * Runs a command from the child that fork made: a grandchild in a session
- * of its own runs it, in a terminal or by the shell, with nothing of the
- * window's input or output.
- */
-static void
-apps_run(
-	const char *command)
-{
-	char terminal_command[APPS_EXPANDED + 16];
-	pid_t grandchild;
-	int descriptor;
-	int is_terminal;
-
-	/* The grandchild; the child leaves as soon as it is made. */
-	grandchild = fork();
-	if (grandchild != 0)
-		return;
-
-	/* A session of its own, and no terminal of the window's. */
-	(void)setsid();
-	descriptor = open("/dev/null", O_RDWR);
-	if (descriptor >= 0) {
-		(void)dup2(descriptor, 0);
-		(void)dup2(descriptor, 1);
-		(void)dup2(descriptor, 2);
-		if (descriptor > 2)
-			close(descriptor);
-	}
-
-	/*
-	 * None of the window's other descriptors: the program must not keep
-	 * the file manager's connection to the compositor (or its GPU) open
-	 * after the window closes.
-	 */
-	for (descriptor = 3; descriptor < APPS_DESCRIPTORS; descriptor++)
-		(void)close(descriptor);
-
-	/* A terminal command: the rest runs in a new terminal window. */
-	is_terminal = strncmp(command, APPS_TERMINAL_WORD, strlen(APPS_TERMINAL_WORD));
-	if (is_terminal == 0) {
-		snprintf(terminal_command, sizeof(terminal_command), "--command=%s", command + strlen(APPS_TERMINAL_WORD));
-		execl(APPS_TERMINAL, "terminal", terminal_command, (char *)NULL);
-		_exit(127);
-	}
-
-	/* Anything else runs by the shell. */
-	execl("/bin/sh", "sh", "-c", command, (char *)NULL);
-	_exit(127);
-}
-
-/* Runs a program from the child that fork made: a grandchild in a session of its own, with only the standard descriptors. */
-static void
-apps_exec(
-	char *const arguments[])
-{
-	pid_t grandchild;
-	int descriptor;
-
-	/* The grandchild; the child leaves as soon as it is made. */
-	grandchild = fork();
-	if (grandchild != 0)
-		return;
-
-	/* A session of its own, and none of the window's descriptors but the standard ones. */
-	(void)setsid();
-	for (descriptor = 3; descriptor < APPS_DESCRIPTORS; descriptor++)
-		(void)close(descriptor);
-
-	/* The program; only a failed exec comes back. */
-	execv(arguments[0], arguments);
-	_exit(127);
 }

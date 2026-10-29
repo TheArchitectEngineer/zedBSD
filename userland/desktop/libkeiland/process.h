@@ -99,4 +99,7 @@ int keiui_child_resize(struct kl_process *process, unsigned columns, unsigned ro
 int keiui_child_mode(struct kl_process *process, unsigned *mode);
 void keiui_child_end(struct kl_process *process);
 
+/* A launch started apart from the application, with the environment's changes (platform-posix.c). */
+int keiui_launch_start(const struct kl_launch_options *options, const char *const *environment);
+
 #endif

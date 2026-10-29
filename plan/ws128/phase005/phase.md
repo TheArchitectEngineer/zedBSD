@@ -41,7 +41,7 @@ libkeiland に吸収されるので、その時に `kl_` の clipboard の API �
   slideshow が全画面にした時は全画面も戻す。log `SLIDESHOW start|next|stop`。
 - Makefile（zedBSD・Linux・FreeBSD）に `share.c`・`files/trash.c`・`files/apps.c` と mount の表の読み手（mntent／FreeBSD）を足した。
 - 試験: `plan/tools/imageview/host-imageview.c` の view に slideshow（待ち・次・一周・Esc）、Delete と Open With の要求、
-  `iv_app_removed`（途中・最後）。新しい [host-share](../tests/host-share.sh)（trash・同名の .2・無い file・利用者の open-with の行・起動・範囲外）。
+  `iv_app_removed`（途中・最後）。新しい host-share（`plan/ws128/tests/host-share.sh`、2026-10-30 削除）（trash・同名の .2・無い file・利用者の open-with の行・起動・範囲外）。
   guest の手順 [imageview-p005.sh](../tests/imageview-p005.sh) と image の config [config-amd64-imageview.mk](../tests/config-amd64-imageview.mk)。
 
 ## 確認（host。QEMU は T1 待ち、実機は未実施）

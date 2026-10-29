@@ -14,31 +14,43 @@
  * instruction.
  */
 
-#include "../client.h"
+#include "../spawn.h"
 
 #include "userland/desktop/paths.h"
 
 #include <errno.h>
 #include <fcntl.h>
 #include <sandbox.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 /* The program. */
 #define SPAWN_PROGRAM		KEILAND_LIBEXECDIR "/keiland-preview"
 
 /*
- * Starts the child.  Returns 0 with its process ID, or an errno value.
+ * The system's record of a child: its process ID, which only this file
+ * knows.  It lives from preview_spawn until the child is collected.
+ */
+struct preview_child {
+	pid_t pid;
+};
+
+/*
+ * Starts the child.  Returns 0 with its record, or an errno value.
  */
 int
 preview_spawn(
 	int input,
 	int output,
 	const struct preview_request *request,
-	pid_t *pid,
+	struct preview_child **child,
 	int *status)
 {
+	struct preview_child *made;
 	struct sandbox_spawn spawn;
 	struct sandbox_fd fds[2];
 	char width[32];
@@ -46,11 +58,12 @@ preview_spawn(
 	char stamp[PREVIEW_STAMP_MAX + 16U];
 	char *argv[6];
 	size_t count;
+	pid_t pid;
 	int image;
 	int error;
 
 	/* The arguments. */
-	*pid = 0;
+	*child = NULL;
 	*status = PREVIEW_NO_SANDBOX;
 	(void)snprintf(width, sizeof(width), "--width=%d", request->width);
 	(void)snprintf(height, sizeof(height), "--height=%d", request->height);
@@ -74,10 +87,18 @@ preview_spawn(
 	/* The list's end. */
 	argv[count] = NULL;
 
+	/* The child's record. */
+	made = malloc(sizeof(*made));
+	if (made == NULL)
+		return ENOMEM;
+
 	/* The program's image. */
 	image = open(SPAWN_PROGRAM, O_RDONLY | O_CLOEXEC);
-	if (image < 0)
-		return errno;
+	if (image < 0) {
+		error = errno;
+		free(made);
+		return error;
+	}
 
 	/* The request: two files, the limits, nothing else allowed. */
 	fds[0].from = input;
@@ -93,14 +114,73 @@ preview_spawn(
 	spawn.memory_max = PREVIEW_MEMORY_MAX;
 	spawn.cpu_seconds = PREVIEW_CPU_SECONDS;
 	spawn.write_max = PREVIEW_WRITE_MAX;
-	*pid = sandbox_spawn(&spawn);
+	pid = sandbox_spawn(&spawn);
 	error = errno;
 	(void)close(image);
-	if (*pid < 0) {
-		*pid = 0;
+	if (pid < 0) {
+		free(made);
 		return error;
 	}
 
-	/* Started. */
+	/* Succeeded: the child runs. */
+	made->pid = pid;
+	*child = made;
 	return 0;
+}
+
+/*
+ * Looks at a child without waiting: 1 when it ended (its record freed),
+ * 0 while it runs.
+ */
+int
+preview_child_ended(
+	struct preview_child *child,
+	int *status)
+{
+	pid_t ended;
+	int wait_status;
+	int exited;
+	int signalled;
+
+	/* Still running, or the look was cut short (it is looked at again). */
+	ended = waitpid(child->pid, &wait_status, WNOHANG);
+	if (ended == 0)
+		return 0;
+	if (ended < 0 && errno == EINTR)
+		return 0;
+
+	/* How it ended: its exit status, the signal that ended it, or not known (collected already). */
+	*status = PREVIEW_KILLED;
+	if (ended == child->pid) {
+		exited = WIFEXITED(wait_status);
+		signalled = WIFSIGNALED(wait_status);
+		if (exited)
+			*status = WEXITSTATUS(wait_status);
+		else if (signalled)
+			*status = PREVIEW_KILLED + WTERMSIG(wait_status);
+	}
+
+	/* Succeeded: it ended, and its record goes. */
+	free(child);
+	return 1;
+}
+
+/*
+ * Ends a child that runs and collects it (its record freed).
+ */
+int
+preview_child_end(
+	struct preview_child *child)
+{
+	pid_t ended;
+
+	/* Ended, and collected. */
+	(void)kill(child->pid, SIGKILL);
+	do {
+		ended = waitpid(child->pid, NULL, 0);
+	} while (ended < 0 && errno == EINTR);
+	free(child);
+
+	/* Succeeded: it was ended by the signal. */
+	return PREVIEW_KILLED + SIGKILL;
 }

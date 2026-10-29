@@ -321,6 +321,9 @@ main(
 	/* The window's time. */
 	main_startup.window = fm_clock();
 
+	/* The programs Files starts are started from its application and window. */
+	fm_apps_attach(main_window.app, main_window.kui);
+
 	/* The fingers; without memory for them they do nothing. */
 	error = fm_touch_open(&main_touch);
 	if (error != 0)

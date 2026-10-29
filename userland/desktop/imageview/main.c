@@ -206,6 +206,9 @@ main(
 		return 1;
 	}
 
+	/* The applications that open the image are started from the viewer's window. */
+	iv_share_attach(main_kl, main_window.kui);
+
 	/* The presenter. */
 	result = iv_present_open(&main_present, &main_window);
 	if (result != VK_SUCCESS) {
