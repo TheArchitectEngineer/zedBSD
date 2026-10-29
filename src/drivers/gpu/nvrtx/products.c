@@ -31,7 +31,6 @@
  * Values referenced: pci.ids of the PCI ID repository (pci-ids.ucw.cz) of
  * 2026-10-15 (the IDs and names of the NVIDIA devices).
  */
-
 static const struct nvrtx_product products_table[] = {
 	{ 0x1e02U, 0x162U, 0, "TITAN RTX" },
 	{ 0x1e03U, 0x162U, 0, "GeForce RTX 2080 Ti 12GB" },

@@ -152,7 +152,7 @@ nvrtx_sm75_compile_stage_sm(
 	if (words == NULL)
 		return EINVAL;
 
-	/* Parses the compute stage. */
+	/* Parses the module's stage. */
 	ir = NULL;
 	parse_diagnostic.reason = NULL;
 	error = drv_gpu_shader_parse(words, word_count, stage, &ir, &parse_diagnostic);
@@ -446,7 +446,7 @@ nvrtx_sm75_known_model(
 	if (sm == NVRTX_SM_ADA)
 		return 1;
 
-	/* Succeeded: any other is not targeted. */
+	/* Any other model is not targeted. */
 	return 0;
 }
 
