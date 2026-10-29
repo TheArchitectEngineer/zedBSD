@@ -20,3 +20,6 @@
 ## 2026-10-29 P6（q1667-i05、agent/p6-ws282d）
 
 - 再開点 1 を済ませた: `platform/common/userland-dynamic.mk` に `$(DYNAMIC_DIR)/libyolox.so` の規則（libc だけを link、`exports.map`、`check-dynamic-elf.py`）。`plan/ws284/tests/config-rpi5.mk`（新規）。`make ZEDBSD_CONFIG=plan/ws284/tests/config.mk BUILD=build/ws284/p6d-amd64 build/ws284/p6d-amd64/dynamic/libyolox.so` と rpi5 の同じ物が rc 0・warning 0（log は worktree の `build/ws282/logs/ws284-libyolox-*.log`）。実行は未実施。
+- 再開点 2 のうち T2b を書いて流した: `plan/ws284/tests/znet-host-test.c` と `run-znet-host-test.sh`（新規）。合成の小さな network（space-to-depth・conv・maxpool・add・upsample・concat と 3 level の head、19 tensor・18 op、fp32）を正しい ZNET に書いて load し、CPU の runner（64）で 1 回 detect（level 0 の obj と class 0 の bias で 64 個の検出、全部 class 0・score > 0.9、capacity 16 で先頭 16 個）。1 か所ずつ壊した 38 の変種（magic・版・header・flag・数・各 offset の範囲と境界・溢れる大きさ・入力・色・大きさ・class・stride・level の tensor・予約・tensor の channel/約数/flag・op の種類・maxpool の活性化・kernel・stride・groups・add の入力の数・表の外の入力・未生成の入力・二重の生成・重みの数/境界/範囲・名前の範囲・concat の channel・head の約数）と名前の NUL 無し・切れた file・header だけ・空の file が全部 `YOLOX_ERROR_FORMAT`（空は IO も可）。API の引数の誤り（load・runner の作成・detect・read_tensor・reason・class_name）。通常と ASan/UBSan（leak の検出あり）で `znet-host-test: PASS`。
+- 注意: 「未生成の入力」「二重の生成」の変種は形の検査（`znet_check_op`）でも落ちるので、graph の検査だけを狙った物にはなっていない。
+- 残り: T2（PyTorch の参照との照合、p002 の script を流して参照を作ってから）、Makefile.linux、p004（Vulkan）、p002 の重みの package。
