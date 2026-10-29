@@ -1050,11 +1050,17 @@ runtime_channel(
 	struct nvrtx_session *session)
 {
 	struct nvrtx_work_channel *made;
+	struct nvrtx_work_channel *given;
 	unsigned long enabled;
 	int number;
 	int error;
 
-	/* Looks and makes under the lock of the channels' making. */
+	/* A session that has its channel keeps it (it is given once and never changes). */
+	given = __atomic_load_n(&session->channel, __ATOMIC_ACQUIRE);
+	if (given != NULL)
+		return;
+
+	/* Looks again and makes under the lock of the channels' making. */
 	mutex_lock(&node->channel_lock);
 
 	if (session->channel != NULL) {
@@ -1097,10 +1103,10 @@ runtime_channel(
 
 		spin_unlock_irqrestore(&node->queue_lock, enabled);
 
-		session->channel = made;
+		__atomic_store_n(&session->channel, made, __ATOMIC_RELEASE);
 	} else {
-		session->channel = &node->gpu->work.driver;
 		session->shared = 1;
+		__atomic_store_n(&session->channel, &node->gpu->work.driver, __ATOMIC_RELEASE);
 	}
 
 	mutex_unlock(&node->channel_lock);

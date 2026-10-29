@@ -2,7 +2,7 @@
 
 # ws250-p002: session ごとの channel と rpc_lock
 
-Status: in-progress（2026-10-29 P5、q1676-i01。実装中・試験未実施）
+Status: in-progress（2026-10-29 P5、q1676-i01。実装済み・試験未実施（実機の S0 待ち）。cleared にしない）
 Parent: [WS250](../ws.md)
 Approval: 2026-10-27 ユーザー「すぐ取り組むものの一つです。」、2026-10-29 Q250-4「案 A を必須に」、2026-10-29（Q1 の中継）「作業の手が空いてしまったら、テストなしで実装だけ進める戦略で、残っているWSのphaseをまんべんなく進めましょう。」
 
@@ -26,8 +26,13 @@ build（amd64 vmunix）warning 0、`plan/tools/nvrtx/nvrtx-vk-host-test.sh` PASS
   vk-node.c は session の channel で submit・待ち・passed、`recover.c` の `nvrtx_recover_chid_next`（next-fit）、stage.c の `nvrtx.channels=0`・`nvrtx.kill=0`。
 - build: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws250/k build/ws250/k/vmunix` rc=0、warning 0（f535c24b1 の tree）。
 
+- 5f684d746: session の channel の first fence を待たない（design 第 6 版 4.2、最後の ring entry の再利用はその fence の後）、host 試験
+  `plan/ws250/tests/nvrtx-recover-host-test.sh`（chid の next-fit）。その後 runtime.c の `runtime_channel` に作成済みの速い道（atomic の load）。
+- 確かめた事（2026-10-29 13:3x、host）: `make ZEDBSD_CONFIG=config/ci/config-amd64.mk BUILD=build/ws250/k build/ws250/k/vmunix` rc=0・warning 0、
+  `plan/ws250/tests/nvrtx-recover-host-test.sh` 14 checks 0 failed、`plan/tools/nvrtx/nvrtx-vk-host-test.sh` PASS 86 checks 0 failures。
+
 ## 残り
 
-- design.md 第 6 版の直し（first fence を待たない、ENOSPC の計算）を code に入れる。
-- host 試験 `plan/ws250/tests/nvrtx-recover-host-test.sh`（chid）と既存の vk の host 試験。
-- 未実施: 実機（S0）、QEMU の boot の回帰。
+- 未実施: 実機（design.md 6.3 の S0: dmesg の `channel 16: session channel on runlist`、mview の fps が p011 の値から −5% 以内、desktop の回帰）、QEMU の boot の回帰。
+- 実機で U3（chid 16〜 の USERD、別の VA の promote）が通らなければ、`channel %u: no session channel` の log で退避（共有）になる。GPU の側で働かない時は
+  session の run が期限で喪失になる（逃げ道は boot の語 `nvrtx.channels=0`）。
