@@ -18,19 +18,26 @@
  * here.  To enter, the display thread asks the backend whether the
  * display can show the window, then the swapchain is closed in a change of
  * the display (display-thread.c: the frame in flight completes first,
- * libvulkan gives the display back) and the backend claims the display,
- * while window mode's passes go on;
- * each new image of the window is then presented, and when the present has
- * ended (the backend's thread makes it while the compositor takes the
- * clients' commits, so a mailbox client's replaced images go back at
- * once) the frame callbacks are done and the image it replaces let go.
- * One present is in flight at a time; the newest image goes next.  As
- * soon as the facts change --
- * something to draw over it (an edge's gesture, App Home, a menu, the
- * keyboard), the pointer moving, a screenshot asked, another size -- the
- * backend releases the display and window mode opens the swapchain again
- * (display.c), so the gesture's feedback and the pointer are drawn.  The
- * input goes to the compositor all along.
+ * libvulkan gives the display back) and the display thread has the backend
+ * claim the display, while window mode's passes go on.
+ *
+ * Each new image of the window is then readied by the backend here (its
+ * import) and presented by the present thread, one resident thread of a
+ * lane named "present" that waits for the display's refresh while the
+ * compositor takes the clients' commits (so a mailbox client's replaced
+ * images go back at once).  When its present has returned, the result is
+ * taken after the threads' wake pipe: the frame callbacks are done and the
+ * image it replaces let go.  One present is in flight at a time; the
+ * newest image goes next.
+ *
+ * As soon as the facts change -- something to draw over it (an edge's
+ * gesture, App Home, a menu, the keyboard), the pointer moving, a
+ * screenshot asked, another size -- the game mode is left: the display
+ * thread releases the display once the present in flight has returned,
+ * and window mode opens the swapchain again after it (display.c), so the
+ * gesture's feedback and the pointer are drawn.  The images the display
+ * held are let go when it has been released, or when their client goes.
+ * The input goes to the compositor all along.
  *
  * Log: "KWL SCANOUT direct=1 surface=N client=C switch_ms=M" and
  * "KWL SCANOUT direct=0 reason=R surface=N frames=F" (also once for a
@@ -45,10 +52,42 @@
 
 #include "userland/desktop/libkeiland-backend/keiland-backend-display.h"
 
+#include "lane.h"
+
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+/*
+ * One present for the present thread: the scanout it shows on (its buffer
+ * readied by the backend), the number of the claim (server->scanout_claim
+ * then), and the present's result.
+ */
+struct scanout_present {
+	struct kwl_lane_job lane;
+	struct kl_backend_scanout *scanout;
+	uint64_t claim;
+	int result;
+};
+
+/*
+ * A release of the display given to the display thread after the game mode
+ * was left: the images the display held (the one shown and the one in
+ * flight, each with a hold, NULL once let go) until the release is done.
+ */
+struct scanout_closing {
+	struct scanout_closing *next;
+	struct kwl_object *front;
+	struct kwl_object *flight;
+};
+
+static void scanout_present_run(struct kwl_lane_job *lane);
+static void scanout_present_done(void *context, struct kwl_lane_job *lane);
+static void scanout_present_drop(struct kwl_lane_job *lane);
+static void scanout_release(struct kwl_server *server, struct kl_backend_scanout *scanout, struct kwl_object *front, struct kwl_object *flight);
+static void scanout_released(struct kwl_server *server, int error, void *context);
+static void scanout_claimed(struct kwl_server *server, int error, void *context);
 static void scanout_facts(struct kwl_server *server, struct kwl_object *top, struct kwl_scanout_facts *facts);
 static int scanout_overlay(struct kwl_server *server, struct kwl_object *top);
 static void scanout_enter(struct kwl_server *server, struct kwl_object *top);
@@ -59,6 +98,24 @@ static void scanout_frame(struct kwl_server *server, struct kwl_object *top);
 static void scanout_refuse(struct kwl_server *server, struct kwl_object *top, int error);
 static void scanout_callbacks(struct kwl_server *server, struct kwl_object *shown);
 static void scanout_note(struct kwl_server *server, struct kwl_object *top, unsigned reason);
+
+/* The present thread's jobs. */
+static const struct kwl_lane_ops scanout_present_ops = {
+	scanout_present_run,
+	scanout_present_done,
+	scanout_present_drop
+};
+
+/*
+ * The present thread's lane, and whether it runs (the game mode is not
+ * entered without it); only the event loop's thread starts and stops it,
+ * and the display thread waits on it for a release.
+ */
+static struct kwl_lane scanout_lane;
+static unsigned scanout_started;
+
+/* The releases given to the display thread and not done yet, the event loop's thread's own. */
+static struct scanout_closing *scanout_closings;
 
 /*
  * Runs the game mode's part of a pass, after the commits were taken.
@@ -96,8 +153,8 @@ kwl_scanout_pass(
 		return 0;
 	}
 
-	/* One entry at a time, not while the display changes; a later pass tries again. */
-	if (server->compose == NULL || server->scanout_entering != NULL || kwl_display_busy(server))
+	/* Only with the present thread; one entry at a time, not while the display changes (a later pass tries again). */
+	if (!scanout_started || server->compose == NULL || server->scanout_entering != NULL || kwl_display_busy(server))
 		return 0;
 
 	/*
@@ -111,31 +168,34 @@ kwl_scanout_pass(
 }
 
 /*
- * Leaves the game mode for a reason (KWL_SCANOUT_*): the backend releases
- * the display, the image shown is let go, and window mode opens the
- * swapchain again on the next pass (server->windowed is 0).
+ * Leaves the game mode for a reason (KWL_SCANOUT_*): the display thread
+ * releases the display once the present in flight has returned, the
+ * images shown are let go after, and window mode opens the swapchain again
+ * from the next pass (server->windowed is 0; its open runs on the display
+ * thread after the release).
  */
 void
 kwl_scanout_leave(
 	struct kwl_server *server,
 	unsigned reason)
 {
+	struct kl_backend_scanout *scanout;
 	struct kwl_object *front;
+	struct kwl_object *flight;
 	uint32_t surface_id;
 
 	/* Not in it. */
 	if (server->scanout == NULL)
 		return;
 
-	/* The display goes back once the present in flight has ended, then the images it showed. */
-	kl_backend_scanout_close(server->scanout);
-	server->scanout = NULL;
+	/* The display goes back on the display thread, the images it showed with it (a present's result from now is not this one's). */
+	scanout = server->scanout;
 	front = server->scanout_front;
+	flight = server->scanout_flight;
+	server->scanout = NULL;
 	server->scanout_front = NULL;
-	kwl_buffer_put(front);
-	front = server->scanout_flight;
 	server->scanout_flight = NULL;
-	kwl_buffer_put(front);
+	scanout_release(server, scanout, front, flight);
 
 	/* The log, and window mode's frame from the next pass. */
 	surface_id = 0U;
@@ -145,6 +205,106 @@ kwl_scanout_leave(
 	server->scanout_surface = NULL;
 	server->scanout_reason = reason;
 	server->dirty = 1;
+}
+
+/*
+ * Starts the present thread once the threads' wake pipe is there (with the
+ * display thread).  Without it the game mode is not entered (logged).
+ */
+void
+kwl_scanout_start(
+	struct kwl_server *server)
+{
+	int error;
+
+	/* Once, after the wake pipe. */
+	if (scanout_started || !server->threads_prepared)
+		return;
+
+	/* The thread, which waits for the first present. */
+	error = kwl_lane_start(&scanout_lane, "present", 1U, server->wake[1]);
+	if (error != 0) {
+		printf("KWL SCANOUT thread=present errno=%d the game mode is not entered\n", error);
+		return;
+	}
+
+	/* Succeeded: the game mode may be entered. */
+	scanout_started = 1U;
+}
+
+/*
+ * Stops the present thread at the end, after the display thread: a game
+ * mode still shown is left first (its release runs here), then the
+ * thread's present returns and the thread ends.
+ */
+void
+kwl_scanout_stop(
+	struct kwl_server *server)
+{
+	/* The game mode left; its release waits for the present running. */
+	if (server->scanout != NULL)
+		kwl_scanout_leave(server, KWL_SCANOUT_NO_WINDOW);
+
+	/* Nothing runs. */
+	if (!scanout_started)
+		return;
+
+	/* The thread ends (a result not taken is dropped). */
+	kwl_lane_stop(&scanout_lane);
+	scanout_started = 0U;
+}
+
+/*
+ * Takes the present thread's results, on the event loop's thread after the
+ * threads' wake pipe.
+ */
+void
+kwl_scanout_take(
+	struct kwl_server *server)
+{
+	/* Nothing runs. */
+	if (!scanout_started)
+		return;
+
+	/* Each present that has returned. */
+	(void)kwl_lane_take(&scanout_lane, server);
+}
+
+/*
+ * Waits until the present thread has no present given or running: the
+ * display thread, before it releases the display (whose buffer the
+ * present shows until it returns).
+ */
+void
+kwl_scanout_present_wait(void)
+{
+	/* Every present given has returned. */
+	kwl_lane_wait(&scanout_lane);
+}
+
+/*
+ * Lets go of a client's images still held by a release of the display
+ * that is not done yet, as the client goes (its buffers are freed after).
+ */
+void
+kwl_scanout_client_gone(
+	struct kwl_server *server,
+	struct kwl_client *client)
+{
+	struct scanout_closing *closing;
+
+	/* Each release waiting, the client's images in it. */
+	(void)server;
+	for (closing = scanout_closings; closing != NULL; closing = closing->next) {
+		if (closing->front != NULL && closing->front->client == client) {
+			kwl_buffer_put(closing->front);
+			closing->front = NULL;
+		}
+		if (closing->flight != NULL && closing->flight->client == client) {
+			kwl_buffer_put(closing->flight);
+			closing->flight = NULL;
+		}
+	}
 }
 
 /*
@@ -362,10 +522,10 @@ scanout_parked(
 }
 
 /*
- * Entering the game mode, the swapchain closed: the backend claims the
- * display for its mode (the physical size, WS217), and the change ends.  A
- * window gone meanwhile, or a claim's failure, leaves window mode to open
- * the swapchain again at the next pass.
+ * Entering the game mode, the swapchain closed: the display thread has the
+ * backend claim the display for its mode (the physical size, WS217).  A
+ * window gone meanwhile leaves window mode to open the swapchain again at
+ * the next pass.
  */
 static void
 scanout_closed(
@@ -373,21 +533,50 @@ scanout_closed(
 	int error,
 	void *context)
 {
-	struct kwl_object *top;
-
 	/* Window mode opens again from the next pass unless the claim holds. */
 	(void)error;
 	(void)context;
-	top = server->scanout_entering;
-	server->scanout_entering = NULL;
 	server->windowed = 0;
-	if (top == NULL) {
+	if (server->scanout_entering == NULL) {
 		kwl_display_end(server);
 		return;
 	}
 
-	/* The claim. */
-	error = kl_backend_scanout_open(server->backend, server->compose->mode_width, server->compose->mode_height, &server->scanout);
+	/* The claim, taken in by scanout_claimed. */
+	kwl_display_scanout_open(server, server->compose->mode_width, server->compose->mode_height, &server->scanout, scanout_claimed, NULL);
+}
+
+/*
+ * Entering the game mode, the display claimed (or not): the window is
+ * shown straight from the next pass, and the change ends.  A claim's
+ * failure leaves the window composed; a window gone meanwhile gives the
+ * claim back.
+ */
+static void
+scanout_claimed(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	struct kl_backend_scanout *scanout;
+	struct kwl_object *top;
+
+	/* The window being entered, if it is still there. */
+	(void)context;
+	top = server->scanout_entering;
+	server->scanout_entering = NULL;
+
+	/* Gone meanwhile: the claim goes back on the display thread, before window mode's open. */
+	if (top == NULL) {
+		scanout = server->scanout;
+		server->scanout = NULL;
+		if (scanout != NULL)
+			scanout_release(server, scanout, NULL, NULL);
+		kwl_display_end(server);
+		return;
+	}
+
+	/* Refused. */
 	if (error != 0) {
 		server->scanout = NULL;
 		server->scanout_refused = top;
@@ -398,6 +587,7 @@ scanout_closed(
 	}
 
 	/* Succeeded: the window is shown straight from the next pass. */
+	server->scanout_claim++;
 	server->scanout_surface = top;
 	server->scanout_frames = 0U;
 	server->scanout_noted = NULL;
@@ -415,6 +605,7 @@ scanout_frame(
 	struct kwl_server *server,
 	struct kwl_object *top)
 {
+	struct scanout_present *present;
 	struct kwl_object *buffer;
 	int error;
 
@@ -431,12 +622,22 @@ scanout_frame(
 	if (buffer == NULL || (buffer == server->scanout_front && !top->fresh))
 		return;
 
-	/* The image to the display's thread; a failure is the backend's refusal from now. */
+	/* The image readied by the backend; a failure is the backend's refusal from now. */
 	error = kl_backend_scanout_begin(server->scanout, kwl_gpu_host(), kwl_gpu_resource(buffer));
 	if (error != 0) {
 		scanout_refuse(server, top, error);
 		return;
 	}
+
+	/* The present, for the present thread. */
+	present = calloc(1, sizeof(*present));
+	if (present == NULL) {
+		scanout_refuse(server, top, ENOMEM);
+		return;
+	}
+	present->scanout = server->scanout;
+	present->claim = server->scanout_claim;
+	kwl_lane_submit(&scanout_lane, &present->lane, &scanout_present_ops, 0U);
 
 	/* The present holds the image until it has ended. */
 	kwl_buffer_get(buffer);
@@ -446,43 +647,44 @@ scanout_frame(
 	server->damaged = 0;
 }
 
-/*
- * Reports the fd that becomes readable when the game mode's present in
- * flight has ended (for the main loop's poll), -1 when none is.
- */
-int
-kwl_scanout_fd(
-	struct kwl_server *server)
+/* Makes a present on the present thread: it returns once the display reads the image. */
+static void
+scanout_present_run(
+	struct kwl_lane_job *lane)
 {
-	/* Only in the game mode, with a present in flight. */
-	if (server->scanout == NULL || server->scanout_flight == NULL)
-		return -1;
+	struct scanout_present *present;
 
-	/* Succeeded: the backend's fd. */
-	return kl_backend_scanout_fd(server->scanout);
+	/* The backend's present of the image readied. */
+	present = (struct scanout_present *)lane;
+	present->result = kl_backend_scanout_present(present->scanout);
 }
 
 /*
- * Takes the game mode's present once it has ended: the display holds its
- * image, the one it replaces is let go and the frame callbacks are done
- * (the next pass shows a newer image).  A present that failed leaves the
- * game mode.
+ * Takes a present that has returned, on the event loop's thread: the
+ * display holds its image, the one it replaces is let go and the frame
+ * callbacks are done (the next pass shows a newer image).  A present that
+ * failed leaves the game mode; one of a game mode left meanwhile is only
+ * freed (its images went with the release).
  */
-void
-kwl_scanout_ended(
-	struct kwl_server *server)
+static void
+scanout_present_done(
+	void *context,
+	struct kwl_lane_job *lane)
 {
+	struct scanout_present *present;
+	struct kwl_server *server;
 	struct kwl_object *previous;
 	int result;
-	int ended;
 
-	/* Only a present in flight that has ended. */
-	if (server->scanout == NULL || server->scanout_flight == NULL)
+	/* Its result, and the job freed. */
+	server = context;
+	present = (struct scanout_present *)lane;
+	result = present->result;
+	if (server->scanout == NULL || present->claim != server->scanout_claim || server->scanout_flight == NULL) {
+		free(present);
 		return;
-	result = 0;
-	ended = kl_backend_scanout_end(server->scanout, &result);
-	if (!ended)
-		return;
+	}
+	free(present);
 
 	/* A failure is the backend's refusal from now. */
 	if (result != 0) {
@@ -499,6 +701,75 @@ kwl_scanout_ended(
 
 	/* The window draws its next frame; the hidden windows are not kept waiting. */
 	scanout_callbacks(server, server->scanout_surface);
+}
+
+/* Frees a present not taken (the thread stopped, at the end). */
+static void
+scanout_present_drop(
+	struct kwl_lane_job *lane)
+{
+	/* Freed. */
+	free(lane);
+}
+
+/*
+ * Gives the display thread the release of a scanout, with the images the
+ * display held (their holds are kept until it is done; without memory for
+ * that they are let go at once).
+ */
+static void
+scanout_release(
+	struct kwl_server *server,
+	struct kl_backend_scanout *scanout,
+	struct kwl_object *front,
+	struct kwl_object *flight)
+{
+	struct scanout_closing *closing;
+
+	/* The images' record, among the releases waiting. */
+	closing = calloc(1, sizeof(*closing));
+	if (closing == NULL) {
+		kwl_buffer_put(front);
+		kwl_buffer_put(flight);
+	} else {
+		closing->front = front;
+		closing->flight = flight;
+		closing->next = scanout_closings;
+		scanout_closings = closing;
+	}
+
+	/* The release, on the display thread after the present running. */
+	kwl_display_scanout_close(server, scanout, scanout_released, closing);
+}
+
+/* Lets go of the images a release held, once the display is released. */
+static void
+scanout_released(
+	struct kwl_server *server,
+	int error,
+	void *context)
+{
+	struct scanout_closing *closing;
+	struct scanout_closing **link;
+
+	/* Nothing held (no memory for the record). */
+	(void)server;
+	(void)error;
+	closing = context;
+	if (closing == NULL)
+		return;
+
+	/* Out of the releases waiting. */
+	link = &scanout_closings;
+	while (*link != NULL && *link != closing)
+		link = &(*link)->next;
+	if (*link == closing)
+		*link = closing->next;
+
+	/* Succeeded: the images go back to their clients. */
+	kwl_buffer_put(closing->front);
+	kwl_buffer_put(closing->flight);
+	free(closing);
 }
 
 /* Leaves the game mode because the display refused a window's image: the window stays composed until it goes or asks again. */

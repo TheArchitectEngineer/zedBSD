@@ -93,6 +93,7 @@ int kwl_lane_start(struct kwl_lane *lane, const char *name, unsigned count, int 
 void kwl_lane_submit(struct kwl_lane *lane, struct kwl_lane_job *job, const struct kwl_lane_ops *ops, uint64_t key);
 unsigned kwl_lane_take(struct kwl_lane *lane, void *context);
 unsigned kwl_lane_busy(struct kwl_lane *lane);
+void kwl_lane_wait(struct kwl_lane *lane);
 void kwl_lane_finish(struct kwl_lane *lane, void *context);
 void kwl_lane_stop(struct kwl_lane *lane);
 

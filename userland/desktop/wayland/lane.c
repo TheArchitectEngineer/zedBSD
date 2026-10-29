@@ -217,6 +217,29 @@ kwl_lane_busy(
 }
 
 /*
+ * Waits until the lane has run every job given to it, without taking them:
+ * any thread may wait so for another lane (the display thread for the
+ * present thread's present), and the main thread only where waiting is the
+ * point.
+ */
+void
+kwl_lane_wait(
+	struct kwl_lane *lane)
+{
+	/* A lane that is not running has nothing to run. */
+	if (!lane->started)
+		return;
+
+	/* Every job given has ended. */
+	pthread_mutex_lock(&lane->lock);
+
+	while (lane->pending != NULL || lane->running != 0U)
+		pthread_cond_wait(&lane->idle, &lane->lock);
+
+	pthread_mutex_unlock(&lane->lock);
+}
+
+/*
  * Waits until the lane has run every job given to it, then takes them
  * (kwl_lane_take): only at the end of the session, after the event loop,
  * where waiting for a file's write is the point.
@@ -231,12 +254,7 @@ kwl_lane_finish(
 		return;
 
 	/* Every job given has ended. */
-	pthread_mutex_lock(&lane->lock);
-
-	while (lane->pending != NULL || lane->running != 0U)
-		pthread_cond_wait(&lane->idle, &lane->lock);
-
-	pthread_mutex_unlock(&lane->lock);
+	kwl_lane_wait(lane);
 
 	/* What they came to. */
 	(void)kwl_lane_take(lane, context);
