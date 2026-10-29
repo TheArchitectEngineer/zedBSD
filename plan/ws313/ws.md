@@ -4,7 +4,7 @@
 
 Status: incomplete
 Primary Milestone: MG008
-Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/README.md)）の結果で各 Phase を直す。担当は P7（q1675-i03、2026-10-29: render pass の LOAD の pre-frame・display の import・gpu1 を待つ hw.gpu.attaching・compiler の cube・gather/compare・storage image・spill・bootloader の notice を実装。q1675-i04、2026-10-29: WLS を使う compute の dispatch・拡大の blit・pass の中の clear attachments・FragDepth と SampleMask・UBO の vector load（既定は無効）・TSD の「WLS 無し」の語を Mesa の形に、他の GPU との対応範囲の表は [gpu.md](gpu.md) §15。全て実機未試験）。変更ごとの確かめは `sh plan/ws313/tests/c5-build-check.sh <tag>`（5 つの vmunix の warning 0 と host の試験）。
+Resume point: 今夜のユーザーの実機の試験（[tests/README.md](tests/README.md)）の結果で各 Phase を直す。担当は P7（q1675-i03、2026-10-29: render pass の LOAD の pre-frame・display の import・gpu1 を待つ hw.gpu.attaching・compiler の cube・gather/compare・storage image・spill・bootloader の notice を実装。q1675-i04、2026-10-29: WLS を使う compute の dispatch・拡大の blit・pass の中の clear attachments・FragDepth と SampleMask・UBO の vector load（既定は無効）・TSD の「WLS 無し」の語を Mesa の形に、他の GPU との対応範囲の表は [gpu.md](gpu.md) §15。全て実機未試験）。**q1675-i05（2026-10-29、P7）の修正**: render pass の framebuffer descriptor の大きさを 64 → 128 byte（`vk/vk-desc.h` の `MALI_DESC_FBD_BYTES`、v10.xml の aggregate "Framebuffer" は Parameters 64 + Padding 64、panvk も render target を pan_size(FRAMEBUFFER) の後に置く）にし、padding を 0 で書く（`vk/vk-draw.c` の pass_begin）。それまでは render target を fbd+64 に書いており、GPU は fbd+128 から読む見込みだった。**実機では未確認**（build の warning 0 と host の vk-frame・vk-desc の試験だけ）。夜の描画が出ない・fault の時、試験した main がこの修正の前か後かを先に確かめる。変更ごとの確かめは `sh plan/ws313/tests/c5-build-check.sh <tag>`（5 つの vmunix の warning 0 と host の試験）。
 
 ## ユーザーの指示（原文、2026-10-29）
 
