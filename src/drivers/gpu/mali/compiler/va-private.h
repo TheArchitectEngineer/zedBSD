@@ -26,8 +26,9 @@
  * is a message (it takes a dependency slot and its results arrive later),
  * that it reads or writes memory a later access must not overtake, that
  * it loads a varying (which serializes with the other varying loads),
- * that it is an ATEST, a BLEND or a BARRIER (each with its own waits),
- * that it is a branch, and that a branch jumps to it.
+ * that it is an ATEST or a ZS_EMIT (both on slot 0 after the wait0126), a
+ * BLEND or a BARRIER (each with its own waits), that it is a branch, and
+ * that a branch jumps to it.
  */
 #define VA_INST_MESSAGE		0x01U
 #define VA_INST_MEMORY		0x02U
