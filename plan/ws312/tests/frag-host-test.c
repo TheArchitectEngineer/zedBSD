@@ -47,8 +47,9 @@
 /* The bounds the reassembly is built with: records, fragments a record keeps, fragments kept in all. */
 #if PACKET_BUF_JUMBO_COUNT != 0
 #define TEST_DATAGRAMS		16U
-#define TEST_PIECES		64U
+#define TEST_PIECES		32U
 #define TEST_HELD		128U
+#define TEST_HELD_JUMBO		((PACKET_BUF_JUMBO_COUNT - PACKET_BUF_JUMBO_RESERVE) / 2U)
 #else
 #define TEST_DATAGRAMS		2U
 #define TEST_PIECES		4U
@@ -62,6 +63,7 @@ struct test_error {
 	uint32_t data;
 	uint32_t identification;
 	unsigned offset;
+	unsigned quoted_length;
 };
 
 /* How many checks ran, and how many failed. */
@@ -81,6 +83,9 @@ static int device_references;
 
 /* The bytes of the datagrams the tests send. */
 static uint8_t pattern[65536];
+
+/* The ECN codepoint the next fragments are made with. */
+static unsigned test_ecn;
 
 static void check(int condition, const char *what);
 static struct packet_buf *fragment_make(struct net_device *device, uint32_t identification, unsigned offset, int more, uint8_t next_header, const uint8_t *data, size_t length, unsigned before);
@@ -103,6 +108,12 @@ static void test_ends(void);
 static void test_unfragmentable(void);
 static void test_purge(void);
 static void test_devices_key(void);
+static void test_jumbo(void);
+static void test_tcp_size(void);
+static void test_ecn_merge(void);
+static void test_mixed_unfragmentable(void);
+static void test_allocation(void);
+static void test_quoted_error(void);
 
 /* The kcrt copies are the host's. */
 void *
@@ -236,6 +247,7 @@ icmp6_error(
 		fragment = (const struct ipv6_fragment_wire *)(quoted + IPV6_HEADER_LENGTH + 8U);
 	last_error.identification = wire_get32(fragment->identification);
 	last_error.offset = wire_get16(fragment->offset_flags) & 0xfff8U;
+	last_error.quoted_length = packet->l3_length;
 	error_count++;
 	packet_buf_free(packet);
 }
@@ -268,6 +280,12 @@ main(void)
 	test_unfragmentable();
 	test_purge();
 	test_devices_key();
+	test_jumbo();
+	test_tcp_size();
+	test_ecn_merge();
+	test_mixed_unfragmentable();
+	test_allocation();
+	test_quoted_error();
 
 	/* The verdict. */
 	if (failures != 0U) {
@@ -334,6 +352,7 @@ fragment_make(
 	memset(bytes, 0, headers);
 	header = (struct ipv6_wire *)bytes;
 	header->version_class_flow[0] = 0x60U;
+	header->version_class_flow[1] = (uint8_t)(test_ecn << 4);
 	wire_put16(header->payload_length, (uint16_t)(headers + length - IPV6_HEADER_LENGTH));
 	header->next_header = IPV6_NEXT_FRAGMENT;
 	header->hop_limit = 64U;
@@ -689,6 +708,7 @@ test_timeout(void)
 	check(error_count == 1U, "timeout: one error");
 	check(last_error.type == ICMP6_TIME_EXCEEDED && last_error.code == 1U, "timeout: Time Exceeded code 1");
 	check(last_error.identification == 30U && last_error.offset == 0U, "timeout: quotes the offset-zero fragment");
+	check(last_error.quoted_length == IPV6_HEADER_LENGTH + 8U + 600U, "timeout: quotes the whole fragment");
 	check(packet_buf_in_use() == 0U, "timeout: everything freed");
 	settle("timeout");
 
@@ -844,52 +864,50 @@ test_size(void)
 	settle("size past");
 }
 
-/* More datagrams than records: the oldest makes way, dead before live. */
+/* More datagrams than records: a young record stays, an older one makes way, a dead one first. */
 static void
 test_records(void)
 {
 	struct packet_buf *whole;
-	unsigned records;
 	unsigned index;
 	int error;
 
-	/* Fill the records one a millisecond, then one more; the records are as many as the kept packets before the overflow. */
-	records = 0U;
-	for (index = 0U; index < 64U; index++) {
+	/* Every record filled at once. */
+	for (index = 0U; index < TEST_DATAGRAMS; index++) {
 		error = fragment_send(&test_devices[0], 100U + index, 8U, 1, 8U, &whole);
 		check(error == EINPROGRESS, "records: kept");
-		test_now_ms++;
-		if (packet_buf_in_use() == index + 1U)
-			records = index + 1U;
 	}
-	check(records == TEST_DATAGRAMS, "records: as many as the bound");
-	check(packet_buf_in_use() == records, "records: one packet a record");
+	check(packet_buf_in_use() == TEST_DATAGRAMS, "records: one packet a record");
 
-	/* The oldest gone: its last fragment starts a fresh record, and the newest is still there. */
-	error = fragment_send(&test_devices[0], 100U + 63U, 0U, 1, 8U, &whole);
-	check(error == EINPROGRESS, "records: newest still under way");
-	error = fragment_send(&test_devices[0], 100U + 63U, 16U, 0, 8U, &whole);
-	check(error == 0, "records: newest completes");
+	/* One more while they are all young: it is the one dropped. */
+	error = fragment_send(&test_devices[0], 199U, 8U, 1, 8U, &whole);
+	check(error == EINVAL, "records: no young record makes way");
+	check(packet_buf_in_use() == TEST_DATAGRAMS, "records: all still kept");
+
+	/* A second on, the oldest makes way, and the newcomer completes. */
+	test_now_ms += 1100U;
+	error = fragment_send(&test_devices[0], 199U, 8U, 1, 8U, &whole);
+	check(error == EINPROGRESS, "records: an old record made way");
+	check(packet_buf_in_use() == TEST_DATAGRAMS, "records: still one packet a record");
+	error = fragment_send(&test_devices[0], 199U, 0U, 1, 8U, &whole);
+	error = fragment_send(&test_devices[0], 199U, 16U, 0, 8U, &whole);
+	check(error == 0, "records: newcomer completes");
 	if (whole != NULL)
 		packet_buf_free(whole);
 	settle("records");
 
-	/* A dead record makes way before an older live one. */
+	/* A dead record makes way even when young; the live ones stay. */
 	error = fragment_send(&test_devices[0], 200U, 0U, 1, 16U, &whole);
 	check(error == EINPROGRESS, "dead first: live kept");
-	test_now_ms++;
 	error = fragment_send(&test_devices[0], 201U, 0U, 1, 16U, &whole);
 	error = fragment_send(&test_devices[0], 201U, 8U, 1, 16U, &whole);
 	check(error == EINVAL, "dead first: overlap kills");
-	for (index = 0U; index < records - 2U; index++) {
-		test_now_ms++;
+	for (index = 0U; index + 2U < TEST_DATAGRAMS; index++)
 		error = fragment_send(&test_devices[0], 300U + index, 8U, 1, 8U, &whole);
-	}
-	test_now_ms++;
 	error = fragment_send(&test_devices[0], 400U, 8U, 1, 8U, &whole);
-	check(error == EINPROGRESS, "dead first: one more kept");
+	check(error == EINPROGRESS, "dead first: one more kept in the dead one's place");
 	error = fragment_send(&test_devices[0], 200U, 16U, 0, 8U, &whole);
-	check(error == 0, "dead first: the oldest live one stayed");
+	check(error == 0, "dead first: the live one stayed");
 	if (whole != NULL)
 		packet_buf_free(whole);
 	settle("dead first");
@@ -906,9 +924,9 @@ test_held(void)
 	unsigned identification;
 	int error;
 
-	/* Datagrams of several pieces with gaps, until well past the bound of fragments kept in all. */
-	pieces = 16U;
-	if (TEST_PIECES < 2U * pieces + 1U)
+	/* Datagrams of several pieces with gaps, a second apart, until well past the bound of fragments kept in all. */
+	pieces = (TEST_PIECES - 1U) / 2U;
+	if (pieces < 2U)
 		pieces = TEST_PIECES - 1U;
 	held = 0U;
 	error = 0;
@@ -918,7 +936,7 @@ test_held(void)
 			if (packet_buf_in_use() > held)
 				held = packet_buf_in_use();
 		}
-		test_now_ms++;
+		test_now_ms += 1100U;
 	}
 	check(error == EINPROGRESS, "held: the newest still kept");
 	check(held == TEST_HELD, "held: reaches the bound and no further");
@@ -1060,4 +1078,199 @@ test_devices_key(void)
 	check(error == 0, "device key: whole on 0");
 	check(whole_check(whole, 700U, IPV6_HEADER_LENGTH), "device key: bytes");
 	settle("device key");
+}
+
+/* Jumbo fragments: no more are kept than the bound, so the drivers' receive keeps its reserve. */
+static void
+test_jumbo(void)
+{
+#if PACKET_BUF_JUMBO_COUNT != 0
+	struct packet_buf_pool_usage usage;
+	struct packet_buf *whole;
+	unsigned identification;
+	unsigned piece;
+	unsigned most;
+	int error;
+
+	/* Datagrams of three 2400-byte pieces with the last missing, a second apart. */
+	most = 0U;
+	error = 0;
+	for (identification = 1000U; identification < 1006U; identification++) {
+		for (piece = 0U; piece < 3U; piece++) {
+			error = fragment_send(&test_devices[0], identification, 2400U * piece, 1, 2400U, &whole);
+			packet_buf_pool_usage(&usage);
+			if (usage.jumbo_used > most)
+				most = usage.jumbo_used;
+		}
+		test_now_ms += 1100U;
+	}
+	check(error == EINPROGRESS, "jumbo: newest kept");
+	check(most == TEST_HELD_JUMBO, "jumbo: kept up to the bound and no further");
+	check(PACKET_BUF_JUMBO_COUNT - most >= PACKET_BUF_JUMBO_RESERVE, "jumbo: the receive reserve left");
+	settle("jumbo");
+#endif
+}
+
+/* A TCP segment is reassembled only as large as a standard packet holds. */
+static void
+test_tcp_size(void)
+{
+	struct packet_buf *packet;
+	uint8_t next_header;
+	size_t offset;
+	size_t field;
+	int error;
+
+	/* 1600 bytes: whole. */
+	packet = fragment_make(&test_devices[0], 1100U, 0U, 1, TEST_TCP, pattern, 1000U, TEST_PLAIN);
+	error = fragment_feed(&packet, &next_header, &offset, &field);
+	check(error == EINPROGRESS, "tcp: first kept");
+	packet = fragment_make(&test_devices[0], 1100U, 1000U, 0, TEST_TCP, pattern + 1000U, 600U, TEST_PLAIN);
+	error = fragment_feed(&packet, &next_header, &offset, &field);
+	check(error == 0 && next_header == TEST_TCP, "tcp: 1600 bytes whole");
+	if (error == 0)
+		packet_buf_free(packet);
+	settle("tcp small");
+
+	/* Past a standard packet: dropped, the datagram dead. */
+	packet = fragment_make(&test_devices[0], 1101U, 0U, 1, TEST_TCP, pattern, 1232U, TEST_PLAIN);
+	error = fragment_feed(&packet, &next_header, &offset, &field);
+	check(error == EINPROGRESS, "tcp: large first kept");
+	packet = fragment_make(&test_devices[0], 1101U, 1232U, 0, TEST_TCP, pattern + 1232U, 800U, TEST_PLAIN);
+	error = fragment_feed(&packet, &next_header, &offset, &field);
+	check(error == EINVAL, "tcp: past a standard packet dropped");
+	check(packet_buf_in_use() == 0U, "tcp: datagram thrown away");
+	settle("tcp large");
+
+	/* The same size for UDP is reassembled where a jumbo packet holds it. */
+	if (TEST_LARGEST >= IPV6_HEADER_LENGTH + 2032U) {
+		packet = fragment_make(&test_devices[0], 1102U, 0U, 1, TEST_UDP, pattern, 1232U, TEST_PLAIN);
+		error = fragment_feed(&packet, &next_header, &offset, &field);
+		packet = fragment_make(&test_devices[0], 1102U, 1232U, 0, TEST_UDP, pattern + 1232U, 800U, TEST_PLAIN);
+		error = fragment_feed(&packet, &next_header, &offset, &field);
+		check(error == 0, "tcp: the same size of UDP whole");
+		if (error == 0)
+			packet_buf_free(packet);
+	}
+	settle("tcp udp");
+}
+
+/* ECN: a CE piece makes the datagram CE; a Not-ECT piece among ECT ones drops it. */
+static void
+test_ecn_merge(void)
+{
+	struct packet_buf *whole;
+	const struct ipv6_wire *header;
+	int error;
+
+	/* ECT(0), then CE. */
+	test_ecn = 2U;
+	error = fragment_send(&test_devices[0], 1200U, 0U, 1, 600U, &whole);
+	check(error == EINPROGRESS, "ecn: ECT(0) kept");
+	test_ecn = 3U;
+	error = fragment_send(&test_devices[0], 1200U, 600U, 0, 100U, &whole);
+	check(error == 0, "ecn: CE makes it whole");
+	if (whole != NULL) {
+		header = (const struct ipv6_wire *)whole->data;
+		check(((header->version_class_flow[1] >> 4) & 3U) == 3U, "ecn: whole is CE");
+		packet_buf_free(whole);
+	}
+	settle("ecn ce");
+
+	/* Not-ECT, then ECT(1). */
+	test_ecn = 0U;
+	error = fragment_send(&test_devices[0], 1201U, 0U, 1, 600U, &whole);
+	check(error == EINPROGRESS, "ecn: Not-ECT kept");
+	test_ecn = 1U;
+	error = fragment_send(&test_devices[0], 1201U, 600U, 0, 100U, &whole);
+	check(error == ENOBUFS && whole == NULL, "ecn: Not-ECT with ECT dropped");
+	test_ecn = 0U;
+	settle("ecn mixed");
+}
+
+/* The pieces' unfragmentable parts differ: the offset-zero one's is kept, whichever piece comes last. */
+static void
+test_mixed_unfragmentable(void)
+{
+	struct packet_buf *packet;
+	struct packet_buf *whole;
+	uint8_t next_header;
+	size_t offset;
+	size_t field;
+	int error;
+
+	/* The offset-zero piece without options, then the last with destination options before its fragment header. */
+	error = fragment_send(&test_devices[0], 1300U, 0U, 1, 600U, &whole);
+	check(error == EINPROGRESS, "mixed: first kept");
+	packet = fragment_make(&test_devices[0], 1300U, 600U, 0, TEST_UDP, pattern + 600U, 300U, TEST_DSTOPTS);
+	error = fragment_feed(&packet, &next_header, &offset, &field);
+	check(error == 0, "mixed: whole");
+	check(next_header == TEST_UDP && offset == IPV6_HEADER_LENGTH && field == 6U, "mixed: walked on from the offset-zero piece's part");
+	if (error == 0)
+		check(whole_check(packet, 900U, IPV6_HEADER_LENGTH), "mixed: bytes and length");
+	settle("mixed");
+}
+
+/* No packet free for the whole datagram: it is lost, its pieces freed. */
+static void
+test_allocation(void)
+{
+#if PACKET_BUF_JUMBO_COUNT != 0
+	struct packet_buf *taken[PACKET_BUF_JUMBO_COUNT];
+	struct packet_buf *whole;
+	unsigned count;
+	int error;
+
+	/* Every jumbo packet taken. */
+	count = 0U;
+	while (count < PACKET_BUF_JUMBO_COUNT) {
+		taken[count] = packet_buf_alloc_for(0U, 4000U, PACKET_BUF_ALLOC_RECEIVE, &error);
+		if (taken[count] == NULL)
+			break;
+		count++;
+	}
+
+	/* A 3000-byte datagram in standard fragments: kept, then lost at the end. */
+	error = fragment_send(&test_devices[0], 1400U, 0U, 1, 1232U, &whole);
+	check(error == EINPROGRESS, "allocation: first kept");
+	error = fragment_send(&test_devices[0], 1400U, 1232U, 1, 1232U, &whole);
+	error = fragment_send(&test_devices[0], 1400U, 2464U, 0, 536U, &whole);
+	check(error == ENOBUFS && whole == NULL, "allocation: no packet for the whole");
+	check(packet_buf_in_use() == count, "allocation: the pieces freed");
+
+	/* The jumbo packets given back. */
+	while (count > 0U) {
+		count--;
+		packet_buf_free(taken[count]);
+	}
+	settle("allocation");
+#endif
+}
+
+/* An ICMPv6 error message behind destination options in a first fragment is not answered either. */
+static void
+test_quoted_error(void)
+{
+	struct packet_buf *packet;
+	uint8_t data[600];
+	uint8_t next_header;
+	size_t offset;
+	size_t field;
+	int error;
+
+	/* Destination options naming ICMPv6, then a Destination Unreachable. */
+	memcpy(data, pattern, sizeof(data));
+	data[0] = IPV6_NEXT_ICMPV6;
+	data[1] = 0U;
+	data[2] = 1U;
+	data[3] = 4U;
+	memset(data + 4, 0, 4U);
+	data[8] = 1U;
+	packet = fragment_make(&test_devices[0], 1500U, 0U, 1, IPV6_NEXT_DSTOPTS, data, sizeof(data), TEST_PLAIN);
+	error = fragment_feed(&packet, &next_header, &offset, &field);
+	check(error == EINPROGRESS, "quoted error: kept");
+	test_now_ms += 60000U;
+	ipv6_fragment_timer_run(test_now_ms);
+	check(error_count == 0U, "quoted error: no Time Exceeded about an error message");
+	settle("quoted error");
 }
