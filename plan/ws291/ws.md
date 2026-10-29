@@ -48,8 +48,8 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 | p007 | RDNA: NGG C（vertex の詰め直しと属性の後回し、wave をまたぐ subgroup）、目標 GPU 約 20 ms | p006 | p006 に統合（2026-10-27 14:50 Q1。目標 GPU 約 20 ms は p006 の受け入れへ） |
 | p008〜p009 | RDNA: HTILE、guard band、CPU 側の record（2.3 ms）の短縮 | p007 | — |
 | [p010](phase010/phase.md) | NVIDIA（RTX 2070）: nvrtx の起動、desktop の計測と 60 fps、Linux の NVK の基準 | 機械の入れ替え（2026-10-29 ユーザー）、P2 | in-progress（q1670: 起動・表示 ok、BAR1 の window の直しで client が動く、VA の満杯と depth の形式が次、NVK の scene-5000 50.1 fps） |
-| [p010a](phase010a/phase.md) | NVIDIA: nvrtx の executor に mview が要る物（depth・index の draw・instance・mip・uniform buffer・cull） | p010 | in-progress（2026-10-29 Q1 の判断で新設。q1670-i04: 実機で depth・texture ok、scene-5000 42.2 fps） |
-| p011 | NVIDIA: Linux（NVK）で約 50 fps の scene（qs40 ×5000）での差の計測と 50 fps（p012〜p019 は改善の予備）。GPU の待ちを lock の外へ出す件（非同期の submit）は 2026-10-29 Q1 の判断でこの p011 で行う（WS250 は担当が無く止まっている。WS250 の design.md の期限の STOP・session ごとの worker と食い違わない形にし、WS250 はその上に作る） | p010a | planned |
+| [p010a](phase010a/phase.md) | NVIDIA: nvrtx の executor に mview が要る物（depth・index の draw・instance・mip・uniform buffer・cull） | p010 | cleared（2026-10-29 10:48 q1670-i04: 実機で depth・texture が参照と一致、scene-5000 42.2 fps。残り: instance の rate の実機の個別の確かめ） |
+| [p011](phase011/phase.md) | NVIDIA: Linux（NVK）で約 50 fps の scene（qs40 ×5000）での差の計測と 50 fps（p012〜p019 は改善の予備）。GPU の待ちを lock の外へ出す件（非同期の submit）は 2026-10-29 Q1 の判断でこの p011 で行う（WS250 は担当が無く止まっている。WS250 の design.md の期限の STOP・session ごとの worker と食い違わない形にし、WS250 はその上に作る） | p010a | in-progress（2026-10-29 q1670-i04 P2: 設計だけ、実装は未着手） |
 | p020 | PowerVR（VF2）: model の 50 fps（RDNA で確立した手順、P3） | RDNA の手順の確立（p002 と最初の改善） | planned |
 | 最後 | 規約の全文の見直し | 実装の全部 | — |
 
@@ -215,4 +215,4 @@ GPU ごとに同じ手順（desktop の 60 fps、重い 3D の model の 50 fps�
 
 - 承認は q1670 と同じ。再開点（10:46 P2）: depth は実機で動く（mview copies 1 が Linux の参照と 2 画素差、[p010a](phase010a/phase.md) の q1670-i04 の節）。
   前回の「全体が消える」は、mailbox の mview の後の mview の window が出ない別の件だった。scene-5000 は 42.2 fps（GPU は 1 frame に約 19.6 ms）。
-  次は p011: vkQueueSubmit を GPU を待たない形にする（amdrdna の手本）。
+  p010a は cleared（Q1 の許可）。次は p011: vkQueueSubmit を GPU を待たない形にする（amdrdna の手本、WS250 の design.md の期限の STOP・session ごとの worker と食い違わない形）。
