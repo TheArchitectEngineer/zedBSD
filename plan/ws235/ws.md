@@ -50,7 +50,7 @@ Parent: [Master](../master.md)
 | ws235-p007 | 他の chip の版の表と差の hook（8125・8125B・8125D・8126。実機は未確かめ。8122・8121・8120 は版の値が未確認） | 4 LW | planned | p003 |
 | ws235-p008 | 規約の全文の見直し | 2 LW | planned | 全て |
 
-- server の build の config（`config/ci/config-amd64-server.mk`、ユーザーの物）で有効にするのは、p005 の後にユーザーに頼む（担当は変えない）。
+- server の build の config（`config/ci/config-amd64-server.mk`、ユーザーの物）: 2026-10-29 ユーザー「コンフィグはあなたが書き換えてOKです。」→ Q1 が `CONFIG_DRIVER_PCI_RTL8125 := y` を足した（vmunix の build は rc 0・warning 0）。担当は変えない。
 - 同じ機械の Linux の値は下の「p001 の判断」の 5（backports の kernel）。
 
 ## ユーザーの決定（2026-10-29）
