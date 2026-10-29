@@ -105,6 +105,7 @@ kernel: 現 = b36ed1860（ACK と窓を出力で socket の lock の下で読む
 - 変更: 23:23:20 に `sudo ethtool -K enp94s0f0 ntuple on`（前は `ntuple-filters: off`、ixgbe は ntuple を on にすると flow director の ATR を止める）。変更の後も link 10000・ping 10.0.10.3・10.0.30.3 通る。
 - 戻した: 23:35:38 に `sudo ethtool -K enp94s0f0 ntuple off`、読み戻し `ntuple-filters: off`、link 10000、ping 10.0.10.3 通る（ユーザーの決定「ATRを有効にした評価で進めます。」で終わりを待たずに戻した）。
 - 10.0.10.3 は p010 が終わるまで P3 の専有（Q1 2026-10-29 23:2x、ユーザーの決定）。centris の /tmp/zedbsd-rdna.lock を sleep の holder で持ち続ける。
+- 2026-10-30 00:18 に返した（Q1 の指示: 送り側の SACK と q1689 は 10.0.10.3 を使わない）。Debian（6.12.111+deb13-amd64）、NVMe の /boot/boot0/vmunix は cksum 1463007375 3412320（vmunix-va1）、lock は空き。
 
 ## 未実施・残り
 

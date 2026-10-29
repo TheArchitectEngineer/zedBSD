@@ -99,6 +99,20 @@ struct tcp_pending {
 	uint8_t probe;
 	uint8_t fresh;
 	uint8_t rewound;
+	/*
+	 * With SACK (RFC 6675): the peer reported the whole payload held
+	 * (sacked), and the segment was sent again within the recovery that
+	 * now runs (resent), by a fast retransmit, a partial acknowledgement
+	 * or a hole the SACK blocks showed.
+	 */
+	uint8_t sacked;
+	uint8_t resent;
+	/*
+	 * The order of that resend among the connection's (resend_serial): a
+	 * later resend the peer reports held while this one is not says this
+	 * one was lost too.
+	 */
+	uint16_t resend_order;
 };
 
 /*
@@ -163,6 +177,8 @@ struct tcp_socket {
 	 */
 	uint8_t sack_offered;
 	uint8_t sack_on;
+	/* The order the next resend of a loss takes (tcp_pending.resend_order). */
+	uint16_t resend_serial;
 	/*
 	 * The sequence and acknowledgement numbers of the segment peer_window
 	 * was last taken from (RFC 9293's SND.WL1 and SND.WL2).  A segment

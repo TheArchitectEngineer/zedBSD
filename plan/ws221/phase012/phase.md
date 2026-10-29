@@ -1,7 +1,7 @@
 <!-- awesome-plan project=zedbsd record=ws221-p012 -->
 # ws221-p012: TCP の SACK（RFC 2018・2883・6675）
 
-Status: in-progress（2026-10-29 P3 q1679-i02: 設計を書いた、受け側から実装）
+Status: in-progress（2026-10-30 P3 q1679-i02: 受け側・ACK の間隔（bbc43c185）と送り側を実装、tcp-model PASS。規約の全文の見直しと 5330 の非退行（送り側）が残り）
 Parent: [WS221](../ws.md)
 Queue: q1679 / q1679-i02（P3）
 依存: p008〜p011（送りの ring・NewReno の回復・受けの並べ替えの queue）、WS311（CUBIC）
@@ -55,7 +55,7 @@ Queue: q1679 / q1679-i02（P3）
 
 | 指摘 | 要旨 | 扱い |
 | --- | --- | --- |
-| S1 | 送り側の IsLost だけで回復を始めると、ATR の入れ替わりで偽の回復が今より増える（D-SACK の undo も閾値の適応も無い） | 回復の始まりは今の 3 つの dupack のまま（IsLost だけでは始めない）。D-SACK による undo（RFC 3708・4015）と DupThresh の適応（RFC 4653・8985）は範囲を広げるので Q1・ユーザーに諮る |
+| S1 | 送り側の IsLost だけで回復を始めると、ATR の入れ替わりで偽の回復が今より増える（D-SACK の undo も閾値の適応も無い） | 回復の始まりは今の 3 つの dupack のまま（IsLost だけでは始めない）。D-SACK による undo（RFC 3708・4015）と DupThresh の適応（RFC 4653・8985）は範囲の外（Q1 の判断 2026-10-30: send は Linux の 92 %・再送 0 で、送り側は IsLost だけで回復を始めないので偽の回復は増えない） |
 | S2 | 穴の途中の entry を再送する経路が無い（今の即時の再送は最古だけを timer の経路で） | 送り側の設計に足す: 入力の処理で lock の中で entry を選び、その copy の packet の参照を取って lock を外し、`tcp_send_segment_cut` で送る（参照があるので累積の ACK が先に ring から外しても use-after-free にならない）。拒まれたら印を戻す。1 つの ACK で送る数に上限。Karn: 再送の後は timing を止める。`retransmit_segments` に数える |
 | S3 | 「この回復で再送した」の印が無く、部分の ACK の再送と二重になる。末尾の損失は RTO 待ち | entry に `retransmitted` を足し、全ての再送が立てる。部分の ACK の即時の再送は最古が未再送の時だけ。NextSeg の rule 3 は入れる、rule 4（rescue）は入れない（理由: 末尾の損失は今の部分の ACK の再送と RTO で拾う、ATR の入れ替わりで偽の再送を増やさない） |
 | S4 | 同じ始まりの重複への D-SACK が持っていない byte を申告する | 直した: D-SACK の長さを持っている長さとの小さい方に |
@@ -97,3 +97,33 @@ Queue: q1679 / q1679-i02（P3）
 - 10GbE の recv は Linux の 90〜97 %（4897〜5282）、send は 92 %（6281〜6286）。
 - 非退行: 5330（RTL8156、CDC NCM、相手 centris、30 s、`NO_VF2=1 5330-ncm.sh`）send 272.0、recv **1224.8**（前 555〜696: ACK が減って NCM の 1 本の転送の取り合いが減った）、RX errors 0、ping 1472 通る（mtu_max − 28 の 1476 は centris の MTU 1500 を超えるので通らない、想定どおり）。
 - host: tcp-model PASS（scenario の値は前と同じ）、amd64・pcat・rpi4・rpi5・zybo・RTL8127 の config の vmunix の build warning 0、style-check tcp.c 113 → 111。
+
+### 段 2: 送り側（RFC 6675 の保守的な形、2026-10-30）
+
+実装（review-1 の扱いのとおり）:
+- `tcp_pending` に `sacked`・`resent`・`resend_order`、接続に `resend_serial`。新しい entry で 0。
+- `tcp_sack_take_locked`: SACK のある接続で、ACK の SACK block（modulo 2^32、左端 ≥ 右端は捨て、[SND.UNA, send_max] に切る）が全部を含む送った entry に `sacked`。新しく印を付けた数を返す（option が無ければ −1）。
+- dupack（M2）: SACK の option があって新しく印が付かない ACK は dupack に数えない（D-SACK だけの ACK）。回復の始まりは今の 3 つの dupack（S1）。
+- `tcp_sack_resend`: fast recovery の中（timeout の回復でない）で、ACK ごとに最大 4 つ、最古を除く「SACK されていない・この回復で未再送・上に (DupThresh − 1) × MSS を超える SACK 済みの byte」の最も低い entry を、pipe（SetPipe: SACK されていない byte を、IsLost でなければ 1、再送していれば 1）が cwnd に収まる間だけ再送する。copy の packet の参照を取って lock を外して送る。拒まれたら印を戻す。Karn で timing を止める。
+- 最古: fast retransmit と部分の ACK が timer の経路で送る（印 `resent`）。部分の ACK は最古がこの回復で未再送の時だけ即時に再送する（S3）。毎回再送する形（前の NewReno と同じ）は lan-loss-1 の 24 seed の平均 47.4 MB/s と良かったが、SACK の経路で送った穴を重ねて送り、WS220 の「再送 ≤ 損失」の check を破った（lan-loss-1 66 > 64、window-lost 12 > 8）ので採らない。再送した最古の待ちを 1.25 RTT にする形・再送の順で判断する形も試したが平均は変わらなかった（40.1）。
+- 失われた再送の検出（Linux の lost retransmit と同じ考え方）: 後に再送した segment が SACK されて前に再送した物がされていなければ、前の再送も失われた: 印を戻し、最古なら即時に再送。
+- reneging（S6）: 累積の ACK が SACK 済みの entry の始まりで止まったら全ての印を消す。timeout（§5.1）でも消す。回復の終わりと fast retransmit の始まりで `resent` を消す。
+- 範囲の外: NextSeg の rule 2〜4（新しい data は今の送りの経路、rescue は入れない）、PRR。
+
+tcp-model（host、zedBSD 同士、bbc43c185（段 1）→ 段 2）:
+
+| scenario | 前 MB/s | 後 MB/s |
+| --- | --- | --- |
+| two-holes | 90.44 | 99.43 |
+| two-holes-zedbsd | 90.44 | 99.43 |
+| window-lost | 58.89 | 91.06 |
+| reno-bottleneck | 5.67 | 7.42 |
+| reno-two-flows | 3.98 | 4.36 |
+| lan-loss-1（seed 1） | 24.79 | 24.01（seed ごとの比べは下の注） |
+| lan-loss-1-zedbsd | 24.19 | 25.40 |
+| queue-1-loss-1 | 32.80 | 34.06 |
+| rtt-step-zedbsd | srtt ≥ 500 ms で PASS | srtt 494 ms で前の check の外: D-SACK だけの ACK を dupack に数えないので偽の fast retransmit が無くなり（fast 1 → 0）、SRTT が 600 ms に近づく前に終わる（9.30 s、19 sample、330 → 494 ms と上がり続けていた）。Q1 の許可で bound を 450000:700000 に |
+
+- lan-loss-1 の比べ: model の損失の乱数は送りの順で決まるので、版が違うと同じ seed でも損失の並びが違う（seed ごとの対は比べられない）。seed 1〜24 の平均（`--loss-ab 1 --peer-window 65535`）: 前（bbc43c185）40.42 MB/s・timeout 計 16 回、後（この形）40.08 MB/s・20 回。1 % の散った損失では SACK の得は無く（NewReno でも 1 つの穴は 1 RTT で直る）、timeout が少し増えた。残りの timeout は失われた再送と flight の末尾の損失で、RACK-TLP（RFC 8985）の timer が要る（範囲の外、Future Work の候補）。
+- 試した形（seed 1〜24 の平均・timeout）: 部分の ACK で毎回再送 47.44・16（check を破る）、同じで D-SACK だけの ACK も dupack に数える 49.46・14（check を破る）、未再送の時だけ（採った形）40.08・20、それに 1.25 RTT の待ち 40.09・20、再送の順の比べ 40.08・20。
+- 確かめ（採った形）: tcp-model 全 scenario PASS（rtt-step-zedbsd の bound を 450000:700000 に、Q1 の許可、`plan/ws220/tests/tcp-model/run.sh` に理由の comment）、amd64・pcat・rpi4・rpi5・zybo・RTL8127 の config の vmunix の build warning 0、style-check tcp.c 111（bbc43c185 と同じ）。QEMU の qemu-tcp inet,inet6 PASS（送り側の途中の版で、guest send/recv inet 46.6/45.2・inet6 40.8/41.6 Mbit/s）。実機（10.0.10.3）の送りは損失が無く SACK の送り側は働かない（測らない、Q1）。
