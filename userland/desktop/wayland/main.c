@@ -1160,6 +1160,7 @@ event_loop(
 			kwl_scanout_ended(server);
 		kwl_compose_poll(server);
 		kwl_glass_glyphs_poll(server);
+		kwl_glass_blur_take(server);
 		server->perf.frame_done_cycles += kwl_cycles() - part;
 
 		/*
